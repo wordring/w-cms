@@ -123,6 +123,11 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO client_orders (order_no, client_name, pdf_path, page_id, ordered_at) 
 			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(order_no) DO UPDATE SET
+				client_name = excluded.client_name,
+				pdf_path = excluded.pdf_path,
+				page_id = excluded.page_id,
+				ordered_at = excluded.ordered_at
 		`, order.OrderNo, order.ClientName, order.PDFPath, pageIDInt, orderedAt)
 		if err != nil {
 			return err
@@ -149,6 +154,11 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO our_orders (order_no, supplier_name, pdf_path, page_id, ordered_at) 
 			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(order_no) DO UPDATE SET
+				supplier_name = excluded.supplier_name,
+				pdf_path = excluded.pdf_path,
+				page_id = excluded.page_id,
+				ordered_at = excluded.ordered_at
 		`, order.OrderNo, order.SupplierName, order.PDFPath, pageIDInt, orderedAt)
 		if err != nil {
 			return err
