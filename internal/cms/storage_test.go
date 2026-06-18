@@ -2,6 +2,9 @@ package cms
 
 import (
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"w-cms/internal/database"
@@ -189,6 +192,15 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 			quantity INTEGER,
 			status TEXT
 		);`,
+		`CREATE TABLE part_materials (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			part_id TEXT,
+			material_name TEXT,
+			cost INTEGER,
+			supplier_name TEXT,
+			quantity INTEGER,
+			page_id TEXT
+		);`,
 	}
 	for _, q := range queries {
 		if _, err := db.Exec(q); err != nil {
@@ -276,5 +288,166 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	}
 	if totalQty != 15 {
 		t.Errorf("合計数量が違います: %d", totalQty)
+	}
+}
+
+func TestRequiredMaterialsCalculation(t *testing.T) {
+	// 1. テスト用のインメモリDB初期化
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	defer db.Close()
+
+	// アプリ全体のグローバル DB 接続を一時差し替え
+	database.DB = db
+
+	// 必要なすべてのテーブルを初期化
+	queries := []string{
+		`CREATE TABLE pages (
+			id TEXT PRIMARY KEY,
+			title TEXT,
+			file_path TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE client_orders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_no TEXT UNIQUE,
+			client_name TEXT,
+			pdf_path TEXT,
+			page_id TEXT,
+			ordered_at DATE
+		);`,
+		`CREATE TABLE client_order_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_no TEXT,
+			item_id TEXT,
+			item_name TEXT,
+			price INTEGER,
+			quantity INTEGER,
+			status TEXT
+		);`,
+		`CREATE TABLE our_orders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_no TEXT UNIQUE,
+			supplier_name TEXT,
+			pdf_path TEXT,
+			page_id TEXT,
+			ordered_at DATE
+		);`,
+		`CREATE TABLE our_order_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_no TEXT,
+			item_name TEXT,
+			cost INTEGER,
+			quantity INTEGER,
+			status TEXT
+		);`,
+		`CREATE TABLE part_materials (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			part_id TEXT,
+			material_name TEXT,
+			cost INTEGER,
+			supplier_name TEXT,
+			quantity INTEGER,
+			page_id TEXT
+		);`,
+	}
+	for _, q := range queries {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("テストテーブル作成エラー: %v", err)
+		}
+	}
+
+	// 2. 部品ページ(材料マスタ)の登録をシミュレート
+	// SHAFT-01 という部品は、鋼材(S45C)が1本、高周波焼入れが1個必要
+	_, err = db.Exec(`
+		INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
+		VALUES 
+		('SHAFT-01', 'シャフト用鋼材 (S45C)', 2500, '東邦金属工業', 1, '00003'),
+		('SHAFT-01', '外注高周波焼入れ', 1500, '山下熱処理', 1, '00003')
+	`)
+	if err != nil {
+		t.Fatalf("部材マスタ登録エラー: %v", err)
+	}
+
+	// 3. 受注ページ(00002)の登録をシミュレート
+	// 受注：SHAFT-01 を 10本
+	_, err = db.Exec(`
+		INSERT INTO client_orders (order_no, client_name, page_id) VALUES ('PO-A100', 'トーア', '00002')
+	`)
+	if err != nil {
+		t.Fatalf("受注ヘッダー登録エラー: %v", err)
+	}
+	_, err = db.Exec(`
+		INSERT INTO client_order_items (order_no, item_id, item_name, price, quantity, status)
+		VALUES ('PO-A100', 'SHAFT-01', 'シャフトA', 8000, 10, '加工中')
+	`)
+	if err != nil {
+		t.Fatalf("受注明細登録エラー: %v", err)
+	}
+
+	// 自社発注実績：鋼材をすでに10本発注済み
+	_, err = db.Exec(`
+		INSERT INTO our_orders (order_no, supplier_name, page_id) VALUES ('PO-OUR-001', '東邦金属工業', '00002')
+	`)
+	if err != nil {
+		t.Fatalf("自社発注ヘッダー登録エラー: %v", err)
+	}
+	_, err = db.Exec(`
+		INSERT INTO our_order_items (order_no, item_name, cost, quantity, status)
+		VALUES ('PO-OUR-001', 'シャフト用鋼材 (S45C)', 2500, 10, '未納品')
+	`)
+	if err != nil {
+		t.Fatalf("自社発注明細登録エラー: %v", err)
+	}
+
+	// 4. APIハンドラーにHTTPリクエストを送ってテスト
+	req, err := http.NewRequest("GET", "/api/required-materials?page_id=00002", nil)
+	if err != nil {
+		t.Fatalf("リクエスト作成エラー: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(RequiredMaterialsAPIHandler)
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("ステータスコードが期待と異なります: got %v want %v", status, http.StatusOK)
+	}
+
+	var results []RequiredMaterialResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &results); err != nil {
+		t.Fatalf("JSONのパースに失敗しました: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("結果の部材数が異なります: got %d want 2", len(results))
+	}
+
+	// 結果の検証
+	// 'シャフト用鋼材 (S45C)': 必要数10, 発注済10 -> 残0
+	// '外注高周波焼入れ': 必要数10, 発注済0 -> 残10
+	var foundSteel, foundHeat bool
+	for _, res := range results {
+		if res.MaterialName == "シャフト用鋼材 (S45C)" {
+			foundSteel = true
+			if res.TotalRequired != 10 || res.Ordered != 10 || res.Remaining != 0 {
+				t.Errorf("シャフト用鋼材の計算結果が不正です: %+v", res)
+			}
+		}
+		if res.MaterialName == "外注高周波焼入れ" {
+			foundHeat = true
+			if res.TotalRequired != 10 || res.Ordered != 0 || res.Remaining != 10 {
+				t.Errorf("外注高周波焼入れの計算結果が不正です: %+v", res)
+			}
+		}
+	}
+
+	if !foundSteel {
+		t.Error("シャフト用鋼材 (S45C) の結果が見つかりません")
+	}
+	if !foundHeat {
+		t.Error("外注高周波焼入れ の結果が見つかりません")
 	}
 }

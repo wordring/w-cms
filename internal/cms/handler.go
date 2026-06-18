@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"encoding/json"
 	"html/template"
 	"io"
 	"net/http"
@@ -14,6 +15,134 @@ type PageMeta struct {
 	ID       string
 	Title    string
 	FilePath string
+}
+
+// RequiredMaterialResponse は部材手配の進捗状況を返却するためのJSON構造体です。
+type RequiredMaterialResponse struct {
+	MaterialName  string `json:"material_name"`
+	SupplierName  string `json:"supplier_name"`
+	Cost          int    `json:"cost"`
+	TotalRequired int    `json:"total_required"`
+	Ordered       int    `json:"ordered"`
+	Remaining     int    `json:"remaining"`
+}
+
+// RequiredMaterialsAPIHandler は指定されたpage_id(受注ページ)に紐づく部材の要手配数・発注済数を集計して返却します。
+func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pageID := r.URL.Query().Get("page_id")
+	if pageID == "" {
+		http.Error(w, "Missing page_id parameter", http.StatusBadRequest)
+		return
+	}
+
+	// 1. そのページ内の受注 client_orders の明細を取得する
+	rows, err := database.DB.Query(`
+		SELECT item_id, quantity 
+		FROM client_order_items 
+		WHERE order_no IN (
+			SELECT order_no FROM client_orders WHERE page_id = ?
+		)
+	`, pageID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type orderItem struct {
+		ItemID   string
+		Quantity int
+	}
+	var clientItems []orderItem
+	for rows.Next() {
+		var item orderItem
+		if err := rows.Scan(&item.ItemID, &item.Quantity); err == nil {
+			clientItems = append(clientItems, item)
+		}
+	}
+
+	// 2. 各受注部品に対し、必要な部材の定義 part_materials を取得し、総必要数を集計する
+	materialsMap := make(map[string]*RequiredMaterialResponse)
+
+	for _, item := range clientItems {
+		matRows, err := database.DB.Query(`
+			SELECT material_name, cost, supplier_name, quantity 
+			FROM part_materials 
+			WHERE part_id = ?
+		`, item.ItemID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for matRows.Next() {
+			var matName, supplierName string
+			var cost, unitQty int
+			if err := matRows.Scan(&matName, &cost, &supplierName, &unitQty); err == nil {
+				totalReq := unitQty * item.Quantity
+				if existing, ok := materialsMap[matName]; ok {
+					existing.TotalRequired += totalReq
+				} else {
+					materialsMap[matName] = &RequiredMaterialResponse{
+						MaterialName:  matName,
+						SupplierName:  supplierName,
+						Cost:          cost,
+						TotalRequired: totalReq,
+						Ordered:       0,
+					}
+				}
+			}
+		}
+		matRows.Close()
+	}
+
+	// 3. 同じ page_id に紐づく弊社の発注実績 our_orders の明細を取得し、発注済数を集計する
+	ourRows, err := database.DB.Query(`
+		SELECT ooi.item_name, ooi.quantity, oo.supplier_name 
+		FROM our_order_items ooi
+		JOIN our_orders oo ON ooi.order_no = oo.order_no
+		WHERE oo.page_id = ?
+	`, pageID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer ourRows.Close()
+
+	for ourRows.Next() {
+		var itemName, supplierName string
+		var quantity int
+		if err := ourRows.Scan(&itemName, &quantity, &supplierName); err == nil {
+			if existing, ok := materialsMap[itemName]; ok {
+				existing.Ordered += quantity
+			} else {
+				materialsMap[itemName] = &RequiredMaterialResponse{
+					MaterialName:  itemName,
+					SupplierName:  supplierName,
+					Cost:          0,
+					TotalRequired: 0,
+					Ordered:       quantity,
+				}
+			}
+		}
+	}
+
+	// 4. 残要注文数を算出し、スライスに変換
+	list := make([]RequiredMaterialResponse, 0)
+	for _, m := range materialsMap {
+		m.Remaining = m.TotalRequired - m.Ordered
+		if m.Remaining < 0 {
+			m.Remaining = 0
+		}
+		list = append(list, *m)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
 }
 
 // UploadHandler はブラウザからのファイルアップロードリクエストを受け取り、保存と同期を行います。

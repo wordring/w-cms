@@ -130,9 +130,184 @@
             margin-top: -15px;
             margin-bottom: 20px;
         }
+        /* エディタツールバー */
+        .editor-toolbar {
+            display: none !important;
+        }
+        body[edit-mode] .editor-toolbar {
+            display: flex !important;
+        }
+        body[edit-mode] #editor-content {
+            border-top-left-radius: 0 !important;
+            border-top-right-radius: 0 !important;
+        }
+
+        /* Notion-like Block Editor Styles */
+        .editor-block {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 2px;
+            position: relative;
+        }
+
+        .block-controls {
+            display: none;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+            margin-right: 8px;
+            padding-top: 4px; /* Align with text */
+            user-select: none;
+        }
+
+        body[edit-mode] .block-controls {
+            display: flex;
+        }
+
+        body[edit-mode] .editor-block:hover .block-controls {
+            opacity: 1;
+        }
+
+        .block-controls button, .block-controls .drag-handle {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 4px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .block-controls button:hover, .block-controls .drag-handle:hover {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        .drag-handle {
+            cursor: grab !important;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing !important;
+        }
+
+        .block-content {
+            flex-grow: 1;
+            min-width: 0;
+            position: relative;
+        }
+
+        .block-content > * {
+            margin: 0 !important;
+            padding: 4px 2px;
+            outline: none; /* remove contenteditable border */
+        }
+
+        body[edit-mode] .block-content p:empty::before {
+            content: "「/」でコマンドを入力...";
+            color: #cbd5e1;
+            pointer-events: none;
+            display: block;
+        }
+
+        .editor-block.dragging {
+            opacity: 0.5;
+        }
+
+        .editor-block.drag-over {
+            border-top: 2px solid #38bdf8;
+        }
+
+        /* Slash Menu Styles */
+        .slash-menu {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            padding: 8px;
+            display: none;
+            z-index: 1000;
+            width: 250px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .slash-menu.active {
+            display: block;
+        }
+
+        .slash-menu-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #334155;
+        }
+
+        .slash-menu-item:hover, .slash-menu-item.selected {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+
+        /* Context Toolbar Styles */
+        .context-toolbar {
+            position: absolute;
+            background: #1e293b;
+            color: #fff;
+            border-radius: 6px;
+            padding: 4px;
+            display: none;
+            z-index: 999;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            align-items: center;
+            gap: 4px;
+        }
+
+        .context-toolbar.active {
+            display: flex;
+        }
+
+        .context-toolbar button {
+            background: transparent;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .context-toolbar button:hover {
+            background: #334155;
+        }
     </style>
 </head>
 <body>
+
+<!-- スラッシュコマンドメニュー -->
+<div id="slash-menu" class="slash-menu">
+    <div class="slash-menu-item" data-type="h1"><b>H1</b> 見出し</div>
+    <div class="slash-menu-item" data-type="p"><b>P</b> 段落</div>
+    <div class="slash-menu-item" data-type="m-tag">🏷️ 可変タグ</div>
+    <div class="slash-menu-item" data-type="m-file-client">📩 顧客の発注書</div>
+    <div class="slash-menu-item" data-type="m-file-our">📤 自社の発注書</div>
+    <div class="slash-menu-item" data-type="m-material">🔩 部材定義</div>
+    <div class="slash-menu-item" data-type="m-required-materials">📊 手配状況リスト</div>
+</div>
+
+<!-- コンテキストツールバー -->
+<div id="context-toolbar" class="context-toolbar">
+    <!-- 動的にボタンが追加されます -->
+</div>
 
 <div class="container">
     <div class="header">
@@ -147,6 +322,18 @@
     </div>
     
     <p class="tip">💡 スイッチをONにすると「編集モード」に切り替わり、テキストボックスが出現して値を直接編集できるようになります。値を変えると下の「保存されるHTML」がリアルタイムに書き換わります。</p>
+
+    <!-- エディタツールバー（編集モード時のみ表示） -->
+    <div class="editor-toolbar" style="background: #f8fafc; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 8px 8px 0 0; padding: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <span style="font-size: 12px; font-weight: bold; color: #475569; margin-right: 8px;">➕ 挿入:</span>
+        <button type="button" onclick="insertComponent('h1')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">H1 見出し</button>
+        <button type="button" onclick="insertComponent('p')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">P 段落</button>
+        <button type="button" onclick="insertComponent('m-tag')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">🏷️ 可変タグ</button>
+        <button type="button" onclick="insertComponent('m-file-client')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">📩 顧客の発注書</button>
+        <button type="button" onclick="insertComponent('m-file-our')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">📤 自社の発注書</button>
+        <button type="button" onclick="insertComponent('m-material')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">🔩 部材定義</button>
+        <button type="button" onclick="insertComponent('m-required-materials')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">📊 手配状況リスト</button>
+    </div>
 
     <!-- エディタコンテンツ領域（ここが保存対象のHTMLの中身になります） -->
     <div id="editor-content">
@@ -179,6 +366,12 @@
 </div>
 
 <script>
+    let slashMenuVisible = false;
+    let currentSlashBlock = null;
+    let slashSelectedIndex = 0;
+    let draggedBlock = null;
+    let activeBlock = null;
+
     // モード切り替えの処理
     function toggleMode() {
         const toggle = document.getElementById('mode-toggle');
@@ -195,10 +388,24 @@
             document.body.removeAttribute('edit-mode');
             modeText.innerText = "閲覧モード";
             modeText.style.color = "#475569";
+            hideSlashMenu();
+            hideContextToolbar();
         }
 
+        // 標準要素（h1, pなど）の contenteditable 切り替え
+        const standardElements = editor.querySelectorAll('.block-content > h1, .block-content > h2, .block-content > h3, .block-content > p');
+        standardElements.forEach(el => {
+            if (toggle.checked) {
+                el.setAttribute('contenteditable', 'true');
+                el.oninput = updateHtmlPreview;
+            } else {
+                el.removeAttribute('contenteditable');
+                el.oninput = null;
+            }
+        });
+
         // Web Componentsの再描画を促すためにコンポーネント内のrenderメソッドを再実行
-        const components = editor.querySelectorAll('m-tag, m-file, m-item');
+        const components = editor.querySelectorAll('m-tag, m-file, m-item, m-material, m-required-materials');
         components.forEach(c => {
             if (typeof c.render === 'function') {
                 c.render();
@@ -215,9 +422,11 @@
         let output = "";
 
         // エディタ内の要素を順番にシリアライズする
-        const children = container.children;
-        for (let i = 0; i < children.length; i++) {
-            const child = children[i];
+        const blocks = container.querySelectorAll('.editor-block > .block-content > *, #editor-content > :not(.editor-block)');
+        
+        for (let i = 0; i < blocks.length; i++) {
+            const child = blocks[i];
+            if (!child) continue;
             const tagName = child.tagName.toLowerCase();
 
             if (tagName === 'm-tag') {
@@ -265,6 +474,16 @@
                 } else {
                     output += `<m-file ${attrs}></m-file>\n`;
                 }
+            } else if (tagName === 'm-material') {
+                const itemName = child.getAttribute('item-name') || '';
+                const cost = child.getAttribute('cost') || '0';
+                const supplierName = child.getAttribute('supplier-name') || '';
+                const quantity = child.getAttribute('quantity') || '1';
+                output += `<m-material item-name="${itemName}" cost="${cost}" supplier-name="${supplierName}" quantity="${quantity}"></m-material>\n`;
+            } else if (tagName === 'm-required-materials') {
+                const pageIdAttr = child.getAttribute('page-id');
+                const pageIdAttrStr = pageIdAttr ? ` page-id="${pageIdAttr}"` : '';
+                output += `<m-required-materials${pageIdAttrStr}></m-required-materials>\n`;
             } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'p') {
                 output += `<${tagName}>${child.innerText}</${tagName}>\n`;
             }
@@ -273,8 +492,493 @@
         document.getElementById('html-preview').value = output.trim();
     }
 
+    function createComponentElement(type, isEdit) {
+        let newEl;
+        if (type === 'h1') {
+            newEl = document.createElement('h1');
+            newEl.innerText = '';
+        } else if (type === 'p') {
+            newEl = document.createElement('p');
+            newEl.innerText = '';
+        } else if (type === 'm-tag') {
+            newEl = document.createElement('m-tag');
+            newEl.setAttribute('name', '新規タグ');
+            newEl.setAttribute('value', '値');
+        } else if (type === 'm-file-client') {
+            newEl = document.createElement('m-file');
+            newEl.setAttribute('tag', '顧客の発注書');
+            newEl.setAttribute('src', 'sample_po.pdf');
+            newEl.setAttribute('name', '顧客発注書.pdf');
+            newEl.setAttribute('order-no', 'PO-' + Date.now().toString().slice(-4));
+            newEl.setAttribute('client-name', '新規顧客');
+            newEl.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
+            const item = document.createElement('m-item');
+            item.setAttribute('item-id', 'NEW-ITEM');
+            item.setAttribute('item-name', '新規部品');
+            item.setAttribute('price', '1000');
+            item.setAttribute('quantity', '1');
+            item.setAttribute('status', '未着手');
+            newEl.appendChild(item);
+        } else if (type === 'm-file-our') {
+            newEl = document.createElement('m-file');
+            newEl.setAttribute('tag', '弊社の発注書');
+            newEl.setAttribute('src', 'sample_order.pdf');
+            newEl.setAttribute('name', '自社発注書.pdf');
+            newEl.setAttribute('order-no', 'PO-OUR-' + Date.now().toString().slice(-4));
+            newEl.setAttribute('supplier-name', '新規仕入先');
+            newEl.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
+            const item = document.createElement('m-item');
+            item.setAttribute('item-name', '新規品目');
+            item.setAttribute('cost', '500');
+            item.setAttribute('quantity', '1');
+            item.setAttribute('status', '未納品');
+            newEl.appendChild(item);
+        } else if (type === 'm-material') {
+            newEl = document.createElement('m-material');
+            newEl.setAttribute('item-name', '新規部材');
+            newEl.setAttribute('cost', '100');
+            newEl.setAttribute('supplier-name', '新規仕入先');
+            newEl.setAttribute('quantity', '1');
+        } else if (type === 'm-required-materials') {
+            newEl = document.createElement('m-required-materials');
+            newEl.setAttribute('page-id', '00002');
+        }
+
+        if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
+            newEl.setAttribute('contenteditable', 'true');
+            newEl.oninput = updateHtmlPreview;
+        }
+
+        return newEl;
+    }
+
+    function insertComponent(type, refBlock = null, position = 'after') {
+        const editor = document.getElementById('editor-content');
+        const isEdit = document.body.hasAttribute('edit-mode');
+        
+        const newEl = createComponentElement(type, isEdit);
+        if (!newEl) return null;
+
+        const block = wrapInBlock(newEl);
+
+        if (refBlock && refBlock.classList.contains('editor-block')) {
+            if (position === 'after') {
+                refBlock.parentNode.insertBefore(block, refBlock.nextSibling);
+            } else {
+                refBlock.parentNode.insertBefore(block, refBlock);
+            }
+        } else {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0 && editor.contains(selection.anchorNode)) {
+                let targetNode = selection.anchorNode;
+                while (targetNode && targetNode.parentNode !== editor) {
+                    if (targetNode.classList && targetNode.classList.contains('editor-block')) break;
+                    targetNode = targetNode.parentNode;
+                }
+                if (targetNode && targetNode.classList && targetNode.classList.contains('editor-block')) {
+                    targetNode.parentNode.insertBefore(block, targetNode.nextSibling);
+                } else {
+                    editor.appendChild(block);
+                }
+            } else {
+                editor.appendChild(block);
+            }
+        }
+        
+        if (typeof newEl.render === 'function') {
+            newEl.render();
+        }
+        updateHtmlPreview();
+
+        if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
+            newEl.focus();
+        }
+
+        return newEl;
+    }
+
+    function replaceBlockWithComponent(type, block) {
+        const isEdit = document.body.hasAttribute('edit-mode');
+        const newEl = createComponentElement(type, isEdit);
+        if (!newEl) return null;
+
+        const contentWrapper = block.querySelector('.block-content');
+        contentWrapper.innerHTML = '';
+        contentWrapper.appendChild(newEl);
+
+        if (typeof newEl.render === 'function') {
+            newEl.render();
+        }
+        updateHtmlPreview();
+        
+        if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'P')) {
+            newEl.focus();
+        }
+        return newEl;
+    }
+
+    function setupDragAndDrop(block) {
+        const dragHandle = block.querySelector('.drag-handle');
+        if (!dragHandle) return;
+
+        dragHandle.addEventListener('dragstart', (e) => {
+            draggedBlock = block;
+            setTimeout(() => block.classList.add('dragging'), 0);
+        });
+
+        block.addEventListener('dragend', () => {
+            draggedBlock = null;
+            block.classList.remove('dragging');
+            document.querySelectorAll('.editor-block').forEach(b => b.classList.remove('drag-over'));
+        });
+
+        block.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (block !== draggedBlock) {
+                block.classList.add('drag-over');
+            }
+        });
+
+        block.addEventListener('dragleave', () => {
+            block.classList.remove('drag-over');
+        });
+
+        block.addEventListener('drop', (e) => {
+            e.preventDefault();
+            block.classList.remove('drag-over');
+            if (draggedBlock && draggedBlock !== block) {
+                const bounding = block.getBoundingClientRect();
+                const offset = e.clientY - bounding.top;
+                if (offset > bounding.height / 2) {
+                    block.parentNode.insertBefore(draggedBlock, block.nextSibling);
+                } else {
+                    block.parentNode.insertBefore(draggedBlock, block);
+                }
+                updateHtmlPreview();
+            }
+        });
+    }
+
+    function wrapInBlock(element) {
+        if (element.classList && element.classList.contains('editor-block')) return element;
+        
+        const block = document.createElement('div');
+        block.className = 'editor-block';
+        
+        const controls = document.createElement('div');
+        controls.className = 'block-controls';
+        controls.contentEditable = 'false';
+        
+        const addBtn = document.createElement('button');
+        addBtn.className = 'add-btn';
+        addBtn.innerHTML = '＋';
+        addBtn.title = 'ブロックを下に追加';
+        addBtn.onclick = () => {
+            const newP = insertComponent('p', block, 'after');
+            if (newP) {
+                // Focus the newly inserted empty block
+                newP.focus();
+                // Treat it as if the user typed '/' to open the menu for replacement
+                newP.innerText = '/';
+                showSlashMenu(newP);
+            }
+        };
+        
+        const dragHandle = document.createElement('div');
+        dragHandle.className = 'drag-handle';
+        dragHandle.innerHTML = '⠿';
+        dragHandle.draggable = true;
+        dragHandle.title = 'ドラッグして移動';
+        
+        controls.appendChild(addBtn);
+        controls.appendChild(dragHandle);
+        
+        const contentWrapper = document.createElement('div');
+        contentWrapper.className = 'block-content';
+        
+        if (element.parentNode) {
+            element.parentNode.insertBefore(block, element);
+        }
+        contentWrapper.appendChild(element);
+        block.appendChild(controls);
+        block.appendChild(contentWrapper);
+
+        setupDragAndDrop(block);
+        
+        return block;
+    }
+
+    function initBlocks() {
+        const container = document.getElementById('editor-content');
+        const children = Array.from(container.children);
+        children.forEach(child => {
+            if (!child.classList.contains('editor-block') && child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE') {
+                wrapInBlock(child);
+            }
+        });
+    }
+
+    // Slash Menu Logic
+    function showSlashMenu(targetElement) {
+        slashMenuVisible = true;
+        const menu = document.getElementById('slash-menu');
+        currentSlashBlock = targetElement.closest('.editor-block');
+        menu.classList.add('active');
+        
+        const rect = targetElement.getBoundingClientRect();
+        menu.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+        menu.style.left = (rect.left + window.scrollX) + 'px';
+
+        slashSelectedIndex = 0;
+        updateSlashMenuSelection();
+    }
+
+    function hideSlashMenu() {
+        slashMenuVisible = false;
+        const menu = document.getElementById('slash-menu');
+        if (menu) menu.classList.remove('active');
+        currentSlashBlock = null;
+    }
+
+    function updateSlashMenuSelection() {
+        const items = document.querySelectorAll('#slash-menu .slash-menu-item');
+        items.forEach((item, idx) => {
+            if (idx === slashSelectedIndex) {
+                item.classList.add('selected');
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+
+    function handleSlashMenuKey(e) {
+        const items = document.querySelectorAll('#slash-menu .slash-menu-item');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            slashSelectedIndex = (slashSelectedIndex + 1) % items.length;
+            updateSlashMenuSelection();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            slashSelectedIndex = (slashSelectedIndex - 1 + items.length) % items.length;
+            updateSlashMenuSelection();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const type = items[slashSelectedIndex].getAttribute('data-type');
+            if (currentSlashBlock) {
+                replaceBlockWithComponent(type, currentSlashBlock);
+            }
+            hideSlashMenu();
+        } else if (e.key === 'Escape') {
+            hideSlashMenu();
+        }
+    }
+
+    function setupEditorEvents() {
+        const editor = document.getElementById('editor-content');
+        
+        editor.addEventListener('input', (e) => {
+            if (!document.body.hasAttribute('edit-mode')) return;
+            const target = e.target;
+            if (target.tagName === 'P' && target.innerText === '/') {
+                showSlashMenu(target);
+            } else {
+                hideSlashMenu();
+            }
+        });
+
+        editor.addEventListener('keydown', (e) => {
+            if (!document.body.hasAttribute('edit-mode')) return;
+            
+            const target = e.target;
+            if (target.tagName !== 'P' && target.tagName !== 'H1' && target.tagName !== 'H2' && target.tagName !== 'H3') {
+                return; // Ignore inputs inside web components
+            }
+
+            const block = target.closest('.editor-block');
+            if (!block) return;
+
+            if (slashMenuVisible) {
+                if (['ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) {
+                    handleSlashMenuKey(e);
+                    return;
+                }
+            }
+
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                insertComponent('p', block, 'after');
+            } else if (e.key === 'Backspace' && target.innerText === '') {
+                e.preventDefault();
+                const prevBlock = block.previousElementSibling;
+                if (prevBlock && prevBlock.classList.contains('editor-block')) {
+                    const content = prevBlock.querySelector('.block-content > *');
+                    if (content && content.focus) {
+                        content.focus();
+                        const selection = window.getSelection();
+                        const range = document.createRange();
+                        range.selectNodeContents(content);
+                        range.collapse(false); // End of content
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    }
+                }
+                block.remove();
+                updateHtmlPreview();
+            } else if (e.key === 'ArrowUp') {
+                const prevBlock = block.previousElementSibling;
+                if (prevBlock && prevBlock.classList.contains('editor-block')) {
+                    const content = prevBlock.querySelector('.block-content > *');
+                    if (content && content.focus) content.focus();
+                }
+            } else if (e.key === 'ArrowDown') {
+                const nextBlock = block.nextElementSibling;
+                if (nextBlock && nextBlock.classList.contains('editor-block')) {
+                    const content = nextBlock.querySelector('.block-content > *');
+                    if (content && content.focus) content.focus();
+                }
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#slash-menu') && !e.target.closest('.editor-block')) {
+                hideSlashMenu();
+            }
+        });
+
+        document.addEventListener('selectionchange', () => {
+            if (slashMenuVisible) return;
+            updateContextToolbar();
+        });
+
+        // Hide toolbar when clicking outside editor
+        document.addEventListener('mousedown', (e) => {
+            if (!e.target.closest('#editor-content') && !e.target.closest('#context-toolbar')) {
+                hideContextToolbar();
+            }
+        });
+
+        const items = document.querySelectorAll('#slash-menu .slash-menu-item');
+        items.forEach((item, idx) => {
+            item.addEventListener('click', () => {
+                const type = item.getAttribute('data-type');
+                if (currentSlashBlock) {
+                    replaceBlockWithComponent(type, currentSlashBlock);
+                }
+                hideSlashMenu();
+            });
+            item.addEventListener('mouseenter', () => {
+                slashSelectedIndex = idx;
+                updateSlashMenuSelection();
+            });
+        });
+    }
+
+    function updateContextToolbar() {
+        if (!document.body.hasAttribute('edit-mode')) {
+            hideContextToolbar();
+            return;
+        }
+
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return;
+
+        let targetNode = selection.anchorNode;
+        if (!targetNode) return;
+        
+        const block = targetNode.nodeType === 3 ? targetNode.parentNode.closest('.editor-block') : (targetNode.closest ? targetNode.closest('.editor-block') : null);
+        
+        if (!block) {
+            hideContextToolbar();
+            return;
+        }
+
+        if (activeBlock !== block) {
+            activeBlock = block;
+            showContextToolbarForBlock(block);
+        }
+    }
+
+    function showContextToolbarForBlock(block) {
+        const toolbar = document.getElementById('context-toolbar');
+        toolbar.innerHTML = '';
+        let hasButtons = false;
+
+        const content = block.querySelector('.block-content > *');
+        if (!content) return hideContextToolbar();
+        const tagName = content.tagName.toLowerCase();
+
+        if (tagName === 'm-file') {
+            const tag = content.getAttribute('tag');
+            if (tag === '顧客の発注書') {
+                const btn = document.createElement('button');
+                btn.innerText = '＋ 部品を追加';
+                btn.onclick = () => {
+                    const item = document.createElement('m-item');
+                    item.setAttribute('item-id', 'NEW-ITEM');
+                    item.setAttribute('item-name', '新規部品');
+                    item.setAttribute('price', '0');
+                    item.setAttribute('quantity', '1');
+                    item.setAttribute('status', '未着手');
+                    const container = content.querySelector('.items-list') || content;
+                    container.appendChild(item);
+                    if(typeof content.render === 'function') content.render();
+                    updateHtmlPreview();
+                };
+                toolbar.appendChild(btn);
+                hasButtons = true;
+            } else if (tag === '弊社の発注書') {
+                const btn = document.createElement('button');
+                btn.innerText = '＋ 品目を追加';
+                btn.onclick = () => {
+                    const item = document.createElement('m-item');
+                    item.setAttribute('item-name', '新規品目');
+                    item.setAttribute('cost', '0');
+                    item.setAttribute('quantity', '1');
+                    item.setAttribute('status', '未納品');
+                    const container = content.querySelector('.items-list') || content;
+                    container.appendChild(item);
+                    if(typeof content.render === 'function') content.render();
+                    updateHtmlPreview();
+                };
+                toolbar.appendChild(btn);
+                hasButtons = true;
+            }
+        } else if (tagName === 'p' || tagName === 'h1' || tagName === 'h2' || tagName === 'h3') {
+            ['B', 'I', 'U'].forEach(cmd => {
+                const btn = document.createElement('button');
+                btn.innerText = cmd;
+                btn.style.minWidth = '24px';
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    document.execCommand(cmd === 'B' ? 'bold' : cmd === 'I' ? 'italic' : 'underline', false, null);
+                    updateHtmlPreview();
+                };
+                toolbar.appendChild(btn);
+            });
+            hasButtons = true;
+        }
+
+        if (hasButtons) {
+            toolbar.classList.add('active');
+            const rect = block.getBoundingClientRect();
+            toolbar.style.top = (rect.top + window.scrollY - 35) + 'px';
+            toolbar.style.left = (rect.left + window.scrollX + 20) + 'px';
+        } else {
+            hideContextToolbar();
+        }
+    }
+
+    function hideContextToolbar() {
+        const toolbar = document.getElementById('context-toolbar');
+        if(toolbar) toolbar.classList.remove('active');
+        activeBlock = null;
+    }
+
     // 初回読み込み時の初期表示
     window.onload = function() {
+        initBlocks();
+        setupEditorEvents();
         updateHtmlPreview();
     };
 </script>
