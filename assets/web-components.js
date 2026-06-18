@@ -235,7 +235,8 @@ class MFile extends HTMLElement {
         if (src && src !== '#' && src.toLowerCase().endsWith('.pdf')) {
             const pageId = window.currentPageId || new URLSearchParams(window.location.search).get('id');
             if (pageId) {
-                pdfEmbedHTML = `<embed src="/data/master/${pageId}/${src}" type="application/pdf" width="100%" height="400px" style="border:1px solid #cbd5e1; border-radius:4px; margin: 10px 0;">`;
+                const prefix = pageId.length >= 2 ? pageId.substring(0, 2) : "00";
+                pdfEmbedHTML = `<embed src="/data/master/${prefix}/${pageId}/${src}" type="application/pdf" width="100%" height="400px" style="border:1px solid #cbd5e1; border-radius:4px; margin: 10px 0;">`;
             } else {
                 pdfEmbedHTML = `<div style="padding:10px; background:#fffbeb; color:#b45309; border-radius:4px; font-size:12px;">（保存後にプレビューが表示されます）</div>`;
             }
@@ -278,8 +279,9 @@ class MFile extends HTMLElement {
                 e.preventDefault();
                 dropZone.style.background = '#f8fafc';
                 const file = e.dataTransfer.files[0];
-                if (!file || file.type !== 'application/pdf') {
-                    alert("PDFファイルをアップロードしてください");
+                const isPDF = file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+                if (!isPDF) {
+                    alert("PDFファイルをアップロードしてください (認識された名前: " + (file ? file.name : 'なし') + ")");
                     return;
                 }
                 this.uploadPDF(file);
@@ -303,6 +305,10 @@ class MFile extends HTMLElement {
             if (dropZone) dropZone.innerText = "アップロード中...";
 
             const res = await fetch('/api/upload-pdf', { method: 'POST', body: formData });
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`Server returned ${res.status}: ${text}`);
+            }
             const data = await res.json();
             if (data.success) {
                 this.setAttribute('src', data.src);
@@ -313,10 +319,14 @@ class MFile extends HTMLElement {
                 
                 // 続けて自動解析
                 this.parsePDF(pageId, data.file_name);
+            } else {
+                throw new Error(data.message || "Upload failed with success:false");
             }
         } catch (e) {
             console.error("PDF upload failed", e);
-            alert("アップロードに失敗しました");
+            const dropZone = this.querySelector('.pdf-drop-zone');
+            if (dropZone) dropZone.innerText = "アップロード失敗: " + e.message;
+            alert("アップロードに失敗しました。サーバーが再起動されているか確認してください。\n詳細: " + e.message);
         }
     }
 
@@ -331,6 +341,8 @@ class MFile extends HTMLElement {
                 body: JSON.stringify({ page_id: pageId, file_name: fileName })
             });
             const data = await res.json();
+            console.log("PDF解析 生テキスト:", data.raw);
+            
             if (data.success && data.items && data.items.length > 0) {
                 const container = this.querySelector('.items-list') || this;
                 data.items.forEach(it => {
@@ -346,7 +358,24 @@ class MFile extends HTMLElement {
                 if(window.triggerAutoSave) window.triggerAutoSave();
                 alert(`PDFの解析に成功し、${data.items.length}件の明細を自動追加しました！`);
             } else {
-                alert("PDFから明細データを自動抽出できませんでした。");
+                console.log("抽出アイテムなし", data);
+                if (!data.raw || data.raw.trim() === '') {
+                    alert("PDFからテキストを抽出できませんでした。（画像のみのPDFの可能性があります）");
+                } else {
+                    alert("PDFからテキストは抽出できましたが、明細（金額や数量など）のパターンを自動検知できませんでした。\nF12開発者ツールのConsoleにて生テキストを確認できます。");
+                }
+                
+                // フォールバックとして、ファイル名から1件ダミー追加する？（UX向上ため）
+                const container = this.querySelector('.items-list') || this;
+                const item = document.createElement('m-item');
+                item.setAttribute('item-id', 'FALLBACK-' + Math.floor(Math.random()*10000));
+                item.setAttribute('item-name', fileName.replace('.pdf', '') + ' 一式');
+                item.setAttribute('price', '0');
+                item.setAttribute('quantity', '1');
+                item.setAttribute('status', '未着手');
+                container.appendChild(item);
+                if(window.updateHtmlPreview) window.updateHtmlPreview();
+                if(window.triggerAutoSave) window.triggerAutoSave();
             }
         } catch (e) {
             console.error("PDF parse failed", e);
