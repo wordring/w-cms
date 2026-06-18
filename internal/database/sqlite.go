@@ -56,9 +56,9 @@ func InitDB() error {
 			item_id TEXT,
 			client_name TEXT,
 			price INTEGER,
-			source_page_id TEXT,
+			page_id TEXT,
 			estimated_at DATE,
-			FOREIGN KEY (source_page_id) REFERENCES pages(id) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 
 		// 4. 顧客の発注書データ
@@ -68,9 +68,9 @@ func InitDB() error {
 			client_name TEXT,
 			price INTEGER,
 			quantity INTEGER,
-			source_page_id TEXT,
+			page_id TEXT,
 			ordered_at DATE,
-			FOREIGN KEY (source_page_id) REFERENCES pages(id) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 
 		// 5. 材料屋・加工業者の見積もりデータ
@@ -79,9 +79,9 @@ func InitDB() error {
 			item_name TEXT,
 			supplier_name TEXT,
 			cost INTEGER,
-			source_page_id TEXT,
+			page_id TEXT,
 			estimated_at DATE,
-			FOREIGN KEY (source_page_id) REFERENCES pages(id) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 
 		// 6. 弊社の発注書データ
@@ -91,9 +91,9 @@ func InitDB() error {
 			supplier_name TEXT,
 			cost INTEGER,
 			quantity INTEGER,
-			source_page_id TEXT,
+			page_id TEXT,
 			ordered_at DATE,
-			FOREIGN KEY (source_page_id) REFERENCES pages(id) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 	}
 

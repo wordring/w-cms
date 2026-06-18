@@ -138,7 +138,7 @@ customElements.define('m-tag', MTag);
 *   `item_id` (TEXT): 製品ID（図面番号等）
 *   `client_name` (TEXT): 見積提示先の顧客名
 *   `price` (INTEGER): 見積単価
-*   `source_page_id` (TEXT, FOREIGN KEY): 抽出元HTMLのページID
+*   `page_id` (TEXT, FOREIGN KEY): 抽出元HTMLのページID
 *   `estimated_at` (DATE): 見積日
 
 ### ④ `client_orders` テーブル（「顧客の発注書」インデックス）
@@ -147,7 +147,7 @@ customElements.define('m-tag', MTag);
 *   `client_name` (TEXT): 発注元顧客名
 *   `price` (INTEGER): 受注単価
 *   `quantity` (INTEGER): 数量
-*   `source_page_id` (TEXT, FOREIGN KEY): 抽出元HTMLのページID
+*   `page_id` (TEXT, FOREIGN KEY): 抽出元HTMLのページID
 *   `ordered_at` (DATE): 受注日
 
 ### ⑤ `supplier_estimates` テーブル（「材料屋・加工業者の見積もり」インデックス）
@@ -155,7 +155,7 @@ customElements.define('m-tag', MTag);
 *   `item_name` (TEXT): 材料名、または外注加工内容
 *   `supplier_name` (TEXT): 仕入・加工先の名前
 *   `cost` (INTEGER): 予定原価
-*   `source_page_id` (TEXT, FOREIGN KEY): 抽出元HTMLのページID
+*   `page_id` (TEXT, FOREIGN KEY): 抽出元HTMLのページID
 *   `estimated_at` (DATE): 見積日
 
 ### ⑥ `our_orders` テーブル（「弊社の発注書」インデックス）
@@ -164,7 +164,7 @@ customElements.define('m-tag', MTag);
 *   `supplier_name` (TEXT): 発注先の名前
 *   `cost` (INTEGER): 実績原価
 *   `quantity` (INTEGER): 数量
-*   `source_page_id` (TEXT, FOREIGN KEY): 抽出元HTML의 ページID
+*   `page_id` (TEXT, FOREIGN KEY): 抽出元HTML의 ページID
 *   `ordered_at` (DATE): 発注日
 
 ---
