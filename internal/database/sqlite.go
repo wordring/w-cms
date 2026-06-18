@@ -37,6 +37,7 @@ func InitDB() error {
 		`CREATE TABLE IF NOT EXISTS pages (
 			id TEXT PRIMARY KEY,
 			title TEXT,
+			parent_id TEXT DEFAULT '',
 			file_path TEXT,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
@@ -137,5 +138,9 @@ func InitDB() error {
 			return err
 		}
 	}
+
+	// 既存DBにparent_idを追加するマイグレーション
+	DB.Exec(`ALTER TABLE pages ADD COLUMN parent_id TEXT DEFAULT '';`)
+
 	return nil
 }

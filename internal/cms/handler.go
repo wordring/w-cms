@@ -2,7 +2,6 @@ package cms
 
 import (
 	"encoding/json"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -247,51 +246,74 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// IndexHandler はデータベースから記事一覧を取得しブラウザに描画します。
-func IndexHandler(w http.ResponseWriter, r *http.Request) {
-	// 手順1: pagesテーブルからデータを取得する
-	rows, err := database.DB.Query("SELECT id, title, file_path FROM pages ORDER BY id DESC")
+// ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。
+func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
+	parentID := r.URL.Query().Get("parent_id")
+	if parentID == "" {
+		http.Error(w, "Missing parent_id", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := database.DB.Query("SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC", parentID)
 	if err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
-	// 手順2: 取得したデータを PageMeta のスライスに詰め替える
 	var pages []PageMeta
 	for rows.Next() {
 		var p PageMeta
-		if err := rows.Scan(&p.ID, &p.Title, &p.FilePath); err == nil {
+		if err := rows.Scan(&p.ID, &p.Title); err == nil {
 			pages = append(pages, p)
 		}
 	}
 
-	// 手順3: HTMLテンプレート
-	tmpl := `
-	<!DOCTYPE html>
-	<html>
-	<head><title>w-cms 統合データベース</title></head>
-	<body>
-		<h1>w-cms 統合データ登録</h1>
-		<form action="/upload" method="post" enctype="multipart/form-data">
-			<input type="file" name="html_page" accept=".html" required>
-			<button type="submit">アップロード</button>
-		</form>
-		<hr>
-		<h2>登録済みデータ一覧</h2>
-		<table border="1">
-			<tr><th>ID</th><th>タイトル</th><th>操作</th></tr>
-			{{range .}}
-			<tr>
-				<td>{{.ID}}</td>
-				<td>{{.Title}}</td>
-				<td><a href="/assets/test.html?id={{.ID}}">編集する</a></td>
-			</tr>
-			{{end}}
-		</table>
-	</body>
-	</html>
-	`
-	t, _ := template.New("index").Parse(tmpl)
-	t.Execute(w, pages)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pages)
+}
+
+// NewIDAPIHandler は、バックエンドの連番アルゴリズムを使用して新しいページIDを生成し、フロントエンドに返します。
+func NewIDAPIHandler(w http.ResponseWriter, r *http.Request) {
+	newID := GenerateNextID(database.DB)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": newID})
+}
+
+// RootHandler はWiki型のルーティングを担当します。
+func RootHandler(w http.ResponseWriter, r *http.Request) {
+	// `/assets/` などの静的ファイルは既に mux で処理されている前提
+	id := r.URL.Path[1:] // 先頭の `/` を取り除く
+	if id == "" || id == "index.html" {
+		id = "000000"
+	}
+
+	// 初回起動時の 000000 ページ自動生成
+	if id == "000000" {
+		var exists bool
+		database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM pages WHERE id = '000000')").Scan(&exists)
+		if !exists {
+			defaultHTML := `<h1>w-cms Wiki トップページ</h1>
+<p>ここはすべての起点となるトップページです。</p>
+<p>右上のスイッチで「編集モード」に切り替えると、Notionのようにブロックベースで編集できます。</p>
+<h2>子ページ一覧</h2>
+<m-child-list></m-child-list>`
+			
+			pageDir := GetPageDir("000000")
+			os.MkdirAll(pageDir, 0755)
+			htmlPath := filepath.Join(pageDir, "000000.html")
+			os.WriteFile(htmlPath, []byte(defaultHTML), 0644)
+			SyncIndex("000000", defaultHTML)
+		}
+	}
+
+	// id が英数字ハイフンのみか簡易チェック
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	http.ServeFile(w, r, "assets/test.html")
 }

@@ -390,6 +390,59 @@ class MFile extends HTMLElement {
 }
 customElements.define('m-file', MFile);
 
+class MChildList extends HTMLElement {
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+    }
+
+    connectedCallback() {
+        this.render();
+    }
+
+    async render() {
+        // currentPageId is defined globally in test.html
+        const pageId = window.currentPageId || "000000";
+        const res = await fetch(`/api/children?parent_id=${pageId}`);
+        let pages = [];
+        if (res.ok) {
+            pages = await res.json() || [];
+        }
+
+        let itemsHtml = pages.length === 0 
+            ? `<li style="color: #94a3b8; font-style: italic;">子ページはありません</li>`
+            : pages.map(p => `<li><a href="/${p.ID}" style="color: #38bdf8; text-decoration: none;">📄 ${p.Title}</a></li>`).join('');
+
+        const html = `
+        <style>
+            .child-list {
+                background: #f8fafc;
+                border: 1px dashed #cbd5e1;
+                border-radius: 8px;
+                padding: 16px;
+                margin: 10px 0;
+                list-style: none;
+            }
+            .child-list li {
+                margin-bottom: 8px;
+            }
+            .child-list a:hover {
+                text-decoration: underline !important;
+            }
+        </style>
+        <ul class="child-list">
+            ${itemsHtml}
+        </ul>
+        `;
+        this.shadowRoot.innerHTML = html;
+    }
+}
+customElements.define('m-child-list', MChildList);
+
+// ============================================
+// Register all components
+// ============================================
+
 // === <m-material> (必要部材定義) の定義 ===
 class MMaterial extends HTMLElement {
     static get observedAttributes() { return ['item-name', 'cost', 'supplier-name', 'quantity']; }

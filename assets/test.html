@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>w-cms Web Components テスト画面</title>
     <!-- 自作のWeb Componentsをロード -->
-    <script src="web-components.js" defer></script>
+    <script src="/assets/web-components.js" defer></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -302,6 +302,7 @@
     <div class="slash-menu-item" data-type="m-file-our">📤 自社の発注書</div>
     <div class="slash-menu-item" data-type="m-material">🔩 部材定義</div>
     <div class="slash-menu-item" data-type="m-required-materials">📊 手配状況リスト</div>
+    <div class="slash-menu-item" data-type="m-child-list">📂 子ページ一覧</div>
 </div>
 
 <!-- コンテキストツールバー -->
@@ -311,7 +312,14 @@
 
 <div class="container">
     <div class="header">
-        <h1 class="title">w-cms Web Components 動作テスト</h1>
+        <div class="title-area">
+            <h1 class="title">w-cms Wiki Editor</h1>
+            <div style="font-size: 13px; color: #64748b; margin-top: 5px;">
+                ページID: <strong id="display-page-id"></strong> | 
+                親ページID: <input type="text" id="parent-id-input" onchange="updateParentIDTag()" style="width: 80px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; outline: none;">
+                <button onclick="createSubpage()" style="margin-left: 10px; padding: 3px 10px; cursor: pointer; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">＋ 子ページを作成</button>
+            </div>
+        </div>
         <div class="switch-container">
             <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: none;"></span>
             <span class="mode-label" id="mode-text">閲覧モード</span>
@@ -362,8 +370,57 @@
     let slashSelectedIndex = 0;
     let draggedBlock = null;
     let activeBlock = null;
-    let currentPageId = new URLSearchParams(window.location.search).get('id') || "";
+    
+    // URLのパスからページIDを取得（/102300 のような形式）
+    let pathId = window.location.pathname.replace(/^\/+/, '');
+    if (pathId === '' || pathId === 'index.html') {
+        pathId = '000000';
+    }
+    window.currentPageId = pathId; // global access for web components
+    
+    let currentPageId = pathId;
     let saveTimeout = null;
+
+    async function createSubpage() {
+        try {
+            const res = await fetch('/api/new-id');
+            const data = await res.json();
+            const newId = data.id;
+            // 現在のページを親ページとして設定した新しいページを開く
+            window.open(`/${newId}?edit=true&parent=${currentPageId}`, '_blank');
+        } catch (err) {
+            console.error("Failed to generate new ID", err);
+            // エラー時はフォールバックとしてタイムスタンプ擬似乱数を使用
+            const fallbackId = Date.now().toString().slice(-6);
+            window.open(`/${fallbackId}?edit=true&parent=${currentPageId}`, '_blank');
+        }
+    }
+
+    function updateParentIDTag() {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        const parentId = document.getElementById('parent-id-input').value.trim();
+        const editor = document.getElementById('editor-content');
+        
+        let tagEl = editor.querySelector('m-tag[name="親ページID"]');
+        if (parentId === '') {
+            // 空なら削除
+            if (tagEl) {
+                const block = tagEl.closest('.editor-block');
+                if (block) block.remove();
+                else tagEl.remove();
+            }
+        } else {
+            // あれば更新、なければ作成
+            if (tagEl) {
+                tagEl.setAttribute('value', parentId);
+                if(typeof tagEl.render === 'function') tagEl.render();
+            } else {
+                insertComponent('m-tag-parent', null, 'after', parentId);
+            }
+        }
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
 
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
@@ -435,20 +492,32 @@
 
     // モード切り替えの処理
     function toggleMode() {
+        // URLに ?edit があれば編集モード自動ON
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('edit')) {
+            const toggle = document.getElementById('mode-toggle');
+            if (toggle) {
+                // ここではすでに true になっている想定ですが念のため
+            }
+        }
+
         const toggle = document.getElementById('mode-toggle');
         const modeText = document.getElementById('mode-text');
         const editor = document.getElementById('editor-content');
+        const parentInput = document.getElementById('parent-id-input');
 
         if (toggle.checked) {
             // 編集モード
             document.body.setAttribute('edit-mode', '');
             modeText.innerText = "編集モード";
             modeText.style.color = "#10b981";
+            parentInput.disabled = false;
         } else {
             // 閲覧モード
             document.body.removeAttribute('edit-mode');
             modeText.innerText = "閲覧モード";
             modeText.style.color = "#475569";
+            parentInput.disabled = true;
             hideSlashMenu();
             hideContextToolbar();
         }
@@ -545,6 +614,8 @@
                 const pageIdAttr = child.getAttribute('page-id');
                 const pageIdAttrStr = pageIdAttr ? ` page-id="${pageIdAttr}"` : '';
                 output += `<m-required-materials${pageIdAttrStr}></m-required-materials>\n`;
+            } else if (tagName === 'm-child-list') {
+                output += `<m-child-list></m-child-list>\n`;
             } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'p') {
                 output += `<${tagName}>${child.innerText}</${tagName}>\n`;
             }
@@ -602,7 +673,13 @@
             newEl.setAttribute('quantity', '1');
         } else if (type === 'm-required-materials') {
             newEl = document.createElement('m-required-materials');
-            newEl.setAttribute('page-id', '00002');
+            newEl.setAttribute('page-id', currentPageId);
+        } else if (type === 'm-child-list') {
+            newEl = document.createElement('m-child-list');
+        } else if (type === 'm-tag-parent') {
+            newEl = document.createElement('m-tag');
+            newEl.setAttribute('name', '親ページID');
+            newEl.setAttribute('value', arguments[3] || '');
         }
 
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
@@ -1038,43 +1115,64 @@
 
     // 初回読み込み時の初期表示
     window.onload = function() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const id = urlParams.get('id');
+        document.getElementById('display-page-id').innerText = currentPageId;
         
-        if (id) {
-            // 既存データのロード
-            fetch('/api/load?id=' + id)
-                .then(res => res.text())
-                .then(htmlStr => {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(htmlStr, 'text/html');
-                    const editorContent = document.getElementById('editor-content');
-                    editorContent.innerHTML = '';
-                    
-                    Array.from(doc.body.children).forEach(child => {
-                        if (child.tagName.toLowerCase() === 'script') return;
-                        editorContent.appendChild(child);
-                    });
-                    
-                    initBlocks();
-                    setupEditorEvents();
-                    updateHtmlPreview();
-                    setupAutoSave();
-                })
-                .catch(err => {
-                    console.error("Load error:", err);
-                    initBlocks();
-                    setupEditorEvents();
-                    updateHtmlPreview();
-                    setupAutoSave();
-                });
-        } else {
-            // 新規作成（デフォルトモックデータを使用）
-            initBlocks();
-            setupEditorEvents();
-            updateHtmlPreview();
-            setupAutoSave();
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // 子ページ作成から飛んできた場合の親ID初期化
+        const parentParam = urlParams.get('parent');
+        
+        // 編集モード自動判定（?editパラメータがあるか）
+        if (urlParams.has('edit')) {
+            const toggle = document.getElementById('mode-toggle');
+            if (toggle) {
+                toggle.checked = true;
+                // document.body attribute is set in toggleMode() but we call it below
+            }
         }
+        
+        fetch('/api/load?id=' + currentPageId)
+            .then(res => {
+                if (!res.ok) throw new Error("Not found");
+                return res.text();
+            })
+            .then(htmlStr => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlStr, 'text/html');
+                const editorContent = document.getElementById('editor-content');
+                editorContent.innerHTML = '';
+                
+                Array.from(doc.body.children).forEach(child => {
+                    if (child.tagName.toLowerCase() === 'script') return;
+                    editorContent.appendChild(child);
+                });
+                
+                // 親ページIDの抽出
+                const tagEl = editorContent.querySelector('m-tag[name="親ページID"]');
+                if (tagEl) {
+                    document.getElementById('parent-id-input').value = tagEl.getAttribute('value') || "";
+                } else if (parentParam) {
+                    document.getElementById('parent-id-input').value = parentParam;
+                    insertComponent('m-tag-parent', null, 'after', parentParam);
+                }
+
+                initBlocks();
+                setupEditorEvents();
+                toggleMode();
+                setupAutoSave();
+            })
+            .catch(err => {
+                console.log("Load error, creating new document:", err);
+                // 新規作成
+                if (parentParam) {
+                    document.getElementById('parent-id-input').value = parentParam;
+                    insertComponent('m-tag-parent', null, 'after', parentParam);
+                }
+                initBlocks();
+                setupEditorEvents();
+                toggleMode();
+                setupAutoSave();
+            });
     };
 </script>
 
