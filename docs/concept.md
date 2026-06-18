@@ -1,12 +1,12 @@
 # w-cms ソフトウェアコンセプト・設計仕様書
 
-このドキュメントでは、**w-cms** の基本コンセプトである「自由なファイルベース保存と、Web Components（HTML5カスタムエレメント）を活用した双方向データ連携」の仕様について定義します。
+このドキュメントでは、**w-cms** の基本コンセプトである「自由なファイルベース保存と、タグ（名前：値）による意味付けをベースとした双方向データ連携」の仕様について定義します。
 
 ---
 
-## 1. コア・コンセプト：HTMLファイルとWeb Componentsによる自律型双方向連携
+## 1. コア・コンセプト：自由な記述と「タグ」によるデータの意味付け
 
-w-cms は、ドキュメントの本文データや構造情報をデータベース（SQLite）に格納しません。**「ドキュメントの本体はすべて標準的な『HTMLファイル（index.html）』として物理保存し、さらにHTML5のWeb Components技術（カスタムエレメント）を用いて、HTML自体が表示・編集UIのロジックを自律的に保持する」**という設計を採用します。
+w-cms は、入力項目が固定された硬直的な入力フォーム（帳票システム）を排除します。**「Notionのように、テキストや画像を自由なレイアウトで記述し、PDF等の原本ファイルを好きな場所に配置し、タグを付与することでその情報の意味（発注書なのか見積書なのか）をデータベースに認識させる」**という自律型データ連携を採用します。
 
 ```mermaid
 graph TD
@@ -31,17 +31,20 @@ graph TD
     DB -- 4. 最新の原価・利益をロード --> UI
 ```
 
-### ① HTMLファイルへの集約とWeb ComponentsによるUIの自律描画
-すべてのデータやブロック情報は `index.html` に格納されます。
-HTML内に記述された定義スクリプト（Web Components）により、ブラウザでHTMLを開いた瞬間、カスタムタグ（`<m-tag>` や `<m-file>`）が自動的に見やすいデザインや編集用フォームへと自律的に描画されます。
+### ① 自由な記述（コンテキストの保存）
+ユーザーは、取引の経緯、注意点、打ち合わせメモなどの文章（HTML）を自由に書き込みます。その文書の任意の場所に、原本データであるPDFファイル等をインラインで配置します。
 
-### ② OneNote風リアルタイム自動保存（オートセーブ）とDB登録（インプット）
-ユーザーがエディタ上で文字入力や値の変更を行うと、**「OneNote」のようにボタンを押すことなく自動で保存されます。**
-*   **動作仕様（デバウンス処理）**: タイピング中は保存を保留し、「ユーザーの入力の手が止まって1〜2秒経過した瞬間」または「入力フォームからフォーカスが外れた瞬間」に、バックグラウンドで自動的に `/save` APIへHTMLデータが送信され、物理ファイル（`index.html`）を上書き保存します。
-*   上書き保存と同時に、GoのバックエンドがHTMLを再パースし、データベース（SQLite）のタグ情報や取引数値（単価・数量など）をリアルタイムに自動更新（同期）します。
+### ② `<m-file>` タグによる意味付け（セマンティクス）
+配置したファイルには、**`<m-file>`（ファイルブロック）** を用い、`tag` 属性（例: `tag="顧客の発注書"`）を指定することでそのファイルの意味を示します。
+Go言語のバックエンドは、このHTMLファイルをスキャンし、`tag` の値に基づいて適切なSQLiteのテーブル（受注、仕入見積など）に、ファイルパスと取引数値（単価・数量など）を自動で振り分けてインデックス登録します。
 
-### ③ データベースによる一元集計と動的描画（アウトプット）
-データベースにはすべてのドキュメントから抽出されたデータが集約されます。製品詳細ページ等の `「原価・利益算出ブロック」` などの動的ブロックは、ページ表示時に自律的にSQLiteから最新データを取得し、常に最新の粗利益などをリアルタイムに反映します。
+### ③ データベースによる一元集計と時系列に依存しない「非同期集計」
+データベースにはすべてのドキュメントから抽出されたデータが集約されます。
+w-cms は**「データの登録順序」を強制しません。**
+同一の `item_id`（製品コード/プロジェクトID）で紐付いていれば、いつどの書類（発注書や見積書）が登録されても、データベースが自動で名寄せして原価と売上を集計します。
+
+*   **開発案件（先行製造）**: 先に材料仕入や加工ログ（原価）が登録され、製造完了後に「顧客の発注書」が登録された時点で、自動的に粗利益が確定・反映されます。
+*   **自社開発案件**: 「顧客の発注書」が登録されないため、売上0円として扱い、かかった「総開発原価（コストの累計）」のみをプロジェクトコストとして集計します。
 
 ### ④ Gemini API によるPDFデータ自動抽出とアシスト入力（OCR機能）
 PDF（見積書や発注書）をアップロードすると、バックエンドが裏でGemini API（マルチモーダル機能）を呼び出し、自動でレイアウト解析と文字認識（OCR）を実行します。
@@ -59,32 +62,33 @@ Geminiは書類から「品名」「図面番号（製品ID）」「単価」「
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>各マシーン用部品の調達と受注記録</title>
+    <title>開発案件：新型シャフトの試作記録</title>
     <script src="/assets/web-components.js" defer></script>
 </head>
 <body>
 
-    <!-- ドキュメント全体の可変メタデータ（どこに配置してもよい） -->
-    <m-tag name="自社担当" value="紀平"></m-tag>
-    <m-tag name="件名" value="各マシーン用"></m-tag>
+    <!-- 案件区分タグでプロジェクトの種類を分類（一般受注 / 受託開発 / 自社開発） -->
+    <m-tag name="案件区分" value="受託開発"></m-tag>
+    <m-tag name="自社担当" value="佐藤"></m-tag>
+    <m-tag name="プロジェクト名" value="新型シャフト先行開発"></m-tag>
 
-    <h1>トーアスポーツマシーン様向けの製品製造に関して</h1>
-    <p>本日、潮﨑様より追加発注分の注文書（原本PDF）をいただきました。希望納期は6月10日とのことです。</p>
+    <h1>新型シャフト（試作コード: DEV-SHAFT-99）の開発と調達記録</h1>
+    <p>メーカー側からの正式発注は試作評価後となりますが、先行して部材調達および試作加工を開始します。</p>
 
-    <!-- 顧客の発注書PDFを文脈に合わせて配置 -->
-    <m-file src="attachments/po_260603.pdf" name="顧客発注書_原本.pdf" 
-            tag="顧客の発注書" item-id="W120-P180-05-03A" price="1197" quantity="20"></m-file>
+    <p>先行して手配した鋼材の材料見積書（PDF）です。</p>
+    <!-- 先にコスト（見積）を登録 -->
+    <m-file src="attachments/material_shaft.pdf" name="シャフト用鋼材見積.pdf" 
+            tag="材料屋・加工業者の見積もり" item-name="特殊鋼材" cost="2500" supplier-name="東邦金属工業"></m-file>
 
-    <p>材料については、以下の材料屋見積書（PDF）を参考に、アイアン素材を確保予定です。</p>
-
-    <!-- 材料見積書PDFを別の場所に配置 -->
-    <m-file src="attachments/iron_quote.pdf" name="アイアン素材見積書.pdf" 
-            tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" cost="500" supplier-name="東邦金属工業"></m-file>
+    <p>【更新履歴 2026-07-01】評価合格に伴い、メーカーより正式な発注書を受領しました。以下に原本を添付します。</p>
+    <!-- 後から顧客発注（売上）を同じページ内に配置 -->
+    <m-file src="attachments/po_shaft.pdf" name="正式発注書_トーア.pdf" 
+            tag="顧客の発注書" item-id="DEV-SHAFT-99" price="8000" quantity="10"></m-file>
 
     <hr>
-    <h3>この製品の原価・利益シミュレーション（自動計算）</h3>
-    <!-- 動的利益計算ブロック (DBからデータをロードして表示) -->
-    <m-profit-calculator item-id="W120-P180-05-03A"></m-profit-calculator>
+    <h3>このプロジェクトの原価・利益推移</h3>
+    <!-- 動的利益計算ブロック (DBから 'DEV-SHAFT-99' の売上・原価を自動集計) -->
+    <m-profit-calculator item-id="DEV-SHAFT-99"></m-profit-calculator>
 
 </body>
 </html>
@@ -105,40 +109,52 @@ class MFile extends HTMLElement {
         const tag = this.getAttribute('tag') || '未分類';
         const isEdit = document.body.hasAttribute('edit-mode');
 
-        // タグの種類に応じたカラーやアイコンを設定
-        let tagColor = '#6c757d';
-        if (tag === '顧客の発注書') tagColor = '#28a745';
-        if (tag === '弊社の発注書') tagColor = '#dc3545';
-        if (tag === '材料屋・加工業者の見積もり') tagColor = '#ffc107';
-        if (tag === '弊社の見積もり') tagColor = '#007bff';
+        // タグの種類に応じたカラーの設定
+        let tagColor = '#64748b';
+        let bgColor = '#f8fafc';
+        if (tag === '顧客の発注書') { tagColor = '#10b981'; bgColor = '#ecfdf5'; }
+        if (tag === '弊社の発注書') { tagColor = '#ef4444'; bgColor = '#fef2f2'; }
+        if (tag === '材料屋・加工業者の見積もり') { tagColor = '#f59e0b'; bgColor = '#fffbeb'; }
+        if (tag === '弊社の見積もり') { tagColor = '#3b82f6'; bgColor = '#eff6ff'; }
 
         let innerHTML = `
-            <div class="file-block" style="border: 1px solid #ddd; border-left: 5px solid ${tagColor}; border-radius: 4px; padding: 10px; margin: 10px 0; background: #fafafa; font-family: sans-serif;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <div>
-                        <span style="font-size: 12px; font-weight: bold; color: ${tagColor}; background: ${tagColor}15; padding: 2px 6px; border-radius: 4px; margin-right: 8px;">${tag}</span>
-                        <a href="${src}" target="_blank" style="text-decoration: none; color: #0066cc; font-weight: bold;">📄 ${name}</a>
+            <div class="file-block" style="border: 1px solid #e2e8f0; border-left: 5px solid ${tagColor}; border-radius: 6px; padding: 12px 16px; margin: 12px 0; background: #fff; font-family: sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s;">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 11px; font-weight: bold; color: ${tagColor}; background: ${bgColor}; padding: 3px 8px; border-radius: 4px; border: 1px solid ${tagColor}20;">${tag}</span>
+                        <a href="${src}" target="_blank" style="text-decoration: none; color: #1e40af; font-weight: 600; font-size: 14px;">📄 ${name}</a>
                     </div>
                     <div>
-                        <a href="${src}" download style="font-size: 12px; text-decoration: none; background: #eee; padding: 4px 8px; border-radius: 4px; color: #333;">ダウンロード</a>
+                        <a href="${src}" download style="font-size: 12px; text-decoration: none; background: #f1f5f9; padding: 6px 12px; border-radius: 4px; color: #475569; font-weight: 500; border: 1px solid #cbd5e1; transition: background 0.2s;">ダウンロード</a>
                     </div>
                 </div>
         `;
 
         if (isEdit) {
-            // 編集モード時のフォーム表示
-            innerHTML += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #eee; font-size: 13px; color:#555;">`;
+            innerHTML += `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; font-size: 13px; color:#475569; display: flex; gap: 16px; align-items: center;">`;
             if (tag === '顧客の発注書' || tag === '弊社の見積もり') {
                 const price = this.getAttribute('price') || '0';
                 const quantity = this.getAttribute('quantity') || '1';
                 innerHTML += `
-                    単価: <input type="number" value="${price}" oninput="this.getRootNode().host.setAttribute('price', this.value)" style="width: 80px; margin-right:10px;">
-                    数量: <input type="number" value="${quantity}" oninput="this.getRootNode().host.setAttribute('quantity', this.value)" style="width: 60px;">
+                    <div>
+                        単価 (売上): 
+                        <input type="number" value="${price}" style="width: 90px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
+                               oninput="this.getRootNode().host.setAttribute('price', this.value);"> 円
+                    </div>
+                    <div>
+                        数量: 
+                        <input type="number" value="${quantity}" style="width: 60px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
+                               oninput="this.getRootNode().host.setAttribute('quantity', this.value);">
+                    </div>
                 `;
             } else if (tag === '材料屋・加工業者の見積もり' || tag === '弊社の発注書') {
                 const cost = this.getAttribute('cost') || '0';
                 innerHTML += `
-                    単価(原価): <input type="number" value="${cost}" oninput="this.getRootNode().host.setAttribute('cost', this.value)" style="width: 80px;">
+                    <div>
+                        単価 (仕入原価): 
+                        <input type="number" value="${cost}" style="width: 90px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
+                               oninput="this.getRootNode().host.setAttribute('cost', this.value);"> 円
+                    </div>
                 `;
             }
             innerHTML += `</div>`;
@@ -155,7 +171,7 @@ customElements.define('m-file', MFile);
 
 ## 3. 実装に向けたデータモデル設計（案）
 
-データベーステーブルに、PDFファイルへの参照パスを保持するためのカラム（`pdf_path`）などを拡張します。
+データベーステーブルは、HTML上のカスタムタグ（`<m-tag>` や `<m-file>` など）から抽出した各種インデックス情報を保持します。
 
 ### ① `pages` テーブル（ドキュメントのインデックス）
 *   `id` (TEXT, PRIMARY KEY): ページID
@@ -165,12 +181,12 @@ customElements.define('m-file', MFile);
 
 ### ② `page_tags` テーブル（可変属性インデックス）
 *   `page_id` (TEXT, FOREIGN KEY): `pages.id` に紐づく
-*   `name` (TEXT): 属性の名前 (例: `"発注元"`, `"希望納入日"`)
-*   `value` (TEXT): 属性の値 (例: `"株式会社トーアスポーツマシーン"`, `"2026-06-10"`)
+*   `name` (TEXT): 属性の名前 (例: `"案件区分"`, `"自社担当"`, `"支払条件"`)
+*   `value` (TEXT): 属性の値 (例: `"受託開発"`, `"佐藤"`, `"通常"`)
 
 ### ③ `our_estimates` テーブル（「弊社の見積もり」インデックス）
 *   `id` (INTEGER, PRIMARY KEY AUTOINCREMENT)
-*   `item_id` (TEXT): 製品ID（図面番号等）
+*   `item_id` (TEXT): 製品ID（図面番号/プロジェクトID等）
 *   `client_name` (TEXT): 見積提示先の顧客名
 *   `price` (INTEGER): 見積単価
 *   `pdf_path` (TEXT)
@@ -179,7 +195,7 @@ customElements.define('m-file', MFile);
 
 ### ④ `client_orders` テーブル（「顧客の発注書」インデックス）
 *   `id` (INTEGER, PRIMARY KEY AUTOINCREMENT)
-*   `item_id` (TEXT)
+*   `item_id` (TEXT): 製品ID（図面番号/プロジェクトID等）
 *   `client_name` (TEXT)
 *   `price` (INTEGER)
 *   `quantity` (INTEGER)
