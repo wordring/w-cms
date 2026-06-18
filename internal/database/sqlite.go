@@ -56,6 +56,7 @@ func InitDB() error {
 			item_id TEXT,
 			client_name TEXT,
 			price INTEGER,
+			pdf_path TEXT,
 			page_id TEXT,
 			estimated_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
@@ -68,6 +69,7 @@ func InitDB() error {
 			client_name TEXT,
 			price INTEGER,
 			quantity INTEGER,
+			pdf_path TEXT,
 			page_id TEXT,
 			ordered_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
@@ -79,6 +81,7 @@ func InitDB() error {
 			item_name TEXT,
 			supplier_name TEXT,
 			cost INTEGER,
+			pdf_path TEXT,
 			page_id TEXT,
 			estimated_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
@@ -91,6 +94,7 @@ func InitDB() error {
 			supplier_name TEXT,
 			cost INTEGER,
 			quantity INTEGER,
+			pdf_path TEXT,
 			page_id TEXT,
 			ordered_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
