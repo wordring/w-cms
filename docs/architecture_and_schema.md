@@ -20,8 +20,9 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 
 ### ドキュメント管理テーブル
 *   **`pages`**: すべてのドキュメントの基本情報。
-    *   `id` (TEXT, PK): ページID。
+    *   `id` (INTEGER, PK): ページID。6桁のゼロ埋め文字列として扱うためのベースとなる数値。
     *   `title` (TEXT): HTMLから抽出したタイトル。
+    *   `parent_id` (INTEGER): 親ページのID。
     *   `file_path` (TEXT): 物理ファイルの保存先パス。
 *   **`page_tags`**: `<m-tag name="..." value="...">` から抽出された可変タグ。
     *   `page_id` (FK), `name`, `value`
