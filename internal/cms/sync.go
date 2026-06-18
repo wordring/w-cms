@@ -24,13 +24,14 @@ func SyncIndex(id string, htmlContent string) error {
 
 	// 1. pagesテーブルへのupsert
 	_, err = tx.Exec(`
-		INSERT INTO pages (id, title, file_path) 
-		VALUES (?, ?, ?)
+		INSERT INTO pages (id, title, parent_id, file_path) 
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title = excluded.title,
+			parent_id = excluded.parent_id,
 			file_path = excluded.file_path,
 			updated_at = CURRENT_TIMESTAMP
-	`, parsed.ID, parsed.Title, filePath)
+	`, parsed.ID, parsed.Title, parsed.ParentID, filePath)
 	if err != nil {
 		return err
 	}

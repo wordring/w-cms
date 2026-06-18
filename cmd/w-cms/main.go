@@ -27,8 +27,10 @@ func main() {
 	mux.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	mux.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
 	
+	mux.HandleFunc("/api/new-id", cms.NewIDAPIHandler)
+	mux.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
 	mux.HandleFunc("/upload", cms.UploadHandler)
-	mux.HandleFunc("/", cms.IndexHandler)
+	mux.HandleFunc("/", cms.RootHandler)
 
 	// サーバーの起動
 	log.Println("w-cms 起動: http://localhost:8080")

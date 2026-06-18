@@ -64,24 +64,23 @@ func TestGenerateNextID(t *testing.T) {
 		t.Fatalf("テーブル作成エラー: %v", err)
 	}
 
-	// 3. データが何もない場合のテスト（初期値 "00000" のはず）
-	t.Run("初期状態でのID生成", func(t *testing.T) {
+	// 3. データが何もない場合のテスト（初期値 "000000" のはず）
+	t.Run("空のDBでのID生成", func(t *testing.T) {
 		got := GenerateNextID(db)
-		want := "00000"
+		want := "000000"
 		if got != want {
-			t.Errorf("GenerateNextID() = %q, want %q", got, want)
+			t.Errorf("GenerateNextID() = %v, want %v", got, want)
 		}
 	})
 
-	// 4. "00000" を追加した後のテスト（"00001" のはず）
-	t.Run("00000存在時の次のID生成", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO pages (id, title) VALUES ('00000', 'test')")
+	// 4. "000000" を追加した後のテスト（"000001" のはず）
+	t.Run("000000存在時の次のID生成", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO pages (id, title) VALUES ('000000', 'test')")
 		if err != nil {
-			t.Fatalf("テストデータ挿入エラー: %v", err)
+			t.Fatal(err)
 		}
-
 		got := GenerateNextID(db)
-		want := "00001"
+		want := "000001"
 		if got != want {
 			t.Errorf("GenerateNextID() = %q, want %q", got, want)
 		}

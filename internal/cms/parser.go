@@ -11,6 +11,7 @@ import (
 type ParsedPage struct {
 	ID                string
 	Title             string
+	ParentID          string
 	Tags              []PageTag
 	ClientOrders      []ClientOrder
 	OurOrders         []OurOrder
@@ -223,6 +224,14 @@ func ParseHTMLMaster(id string, htmlContent string) ParsedPage {
 	if partID != "" {
 		for i := range parsed.Materials {
 			parsed.Materials[i].PartID = partID
+		}
+	}
+
+	// 「親ページID」タグの値を検索して、ParentID にセット
+	for _, tag := range parsed.Tags {
+		if tag.Name == "親ページID" {
+			parsed.ParentID = tag.Value
+			break
 		}
 	}
 
