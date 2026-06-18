@@ -19,7 +19,14 @@ func main() {
 	// ルーティングの設定
 	mux := http.NewServeMux()
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
+	mux.Handle("/data/", http.StripPrefix("/data/", http.FileServer(http.Dir("data"))))
+	
 	mux.HandleFunc("/api/required-materials", cms.RequiredMaterialsAPIHandler)
+	mux.HandleFunc("/api/save", cms.SaveAPIHandler)
+	mux.HandleFunc("/api/load", cms.LoadAPIHandler)
+	mux.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
+	mux.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
+	
 	mux.HandleFunc("/upload", cms.UploadHandler)
 	mux.HandleFunc("/", cms.IndexHandler)
 

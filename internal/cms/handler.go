@@ -145,15 +145,85 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(list)
 }
 
+// SaveRequest はオートセーブで送られてくるJSON構造体です。
+type SaveRequest struct {
+	PageID string `json:"page_id"`
+	HTML   string `json:"html"`
+}
+
+// SaveAPIHandler はエディタからの自動保存（JSON）を受け取り、HTMLファイルとDB同期を上書き保存します。
+func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	id := req.PageID
+	if id == "" {
+		id = GenerateNextID(database.DB)
+	}
+
+	pageDir := GetPageDir(id)
+	os.MkdirAll(pageDir, 0755)
+
+	htmlPath := filepath.Join(pageDir, id+".html")
+	if err := os.WriteFile(htmlPath, []byte(req.HTML), 0644); err != nil {
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		return
+	}
+
+	SyncIndex(id, req.HTML)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"page_id": id,
+	})
+}
+
+// LoadAPIHandler は指定されたpage_idのHTMLファイルを読み込んで返却します。
+func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing id", http.StatusBadRequest)
+		return
+	}
+
+	var filePath string
+	err := database.DB.QueryRow("SELECT file_path FROM pages WHERE id = ?", id).Scan(&filePath)
+	if err != nil {
+		http.Error(w, "Page not found", http.StatusNotFound)
+		return
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		http.Error(w, "Failed to read file", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(content)
+}
+
 // UploadHandler はブラウザからのファイルアップロードリクエストを受け取り、保存と同期を行います。
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
-	// POSTリクエスト以外は弾く
 	if r.Method != http.MethodPost {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	// ファイルをメモリに読み込む
 	r.ParseMultipartForm(32 << 20)
 	file, _, err := r.FormFile("html_page")
 	if err != nil {
@@ -164,17 +234,14 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	content, _ := io.ReadAll(file)
 
-	// 階層化された保存先（物理パス）を取得し、フォルダを作成して保存
 	newID := GenerateNextID(database.DB)
 	pageDir := GetPageDir(newID)
 
 	os.MkdirAll(pageDir, 0755)
 
-	// 物理ファイル名にページIDを使用する (例: 00001.html)
 	htmlPath := filepath.Join(pageDir, newID+".html")
 	os.WriteFile(htmlPath, content, 0644)
 
-	// データベースへ同期
 	SyncIndex(newID, string(content))
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -213,12 +280,12 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 		<hr>
 		<h2>登録済みデータ一覧</h2>
 		<table border="1">
-			<tr><th>ID</th><th>タイトル</th><th>物理ファイルパス</th></tr>
+			<tr><th>ID</th><th>タイトル</th><th>操作</th></tr>
 			{{range .}}
 			<tr>
 				<td>{{.ID}}</td>
 				<td>{{.Title}}</td>
-				<td><code>{{.FilePath}}</code></td>
+				<td><a href="/assets/test.html?id={{.ID}}">編集する</a></td>
 			</tr>
 			{{end}}
 		</table>

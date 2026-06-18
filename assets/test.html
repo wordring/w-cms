@@ -313,6 +313,7 @@
     <div class="header">
         <h1 class="title">w-cms Web Components 動作テスト</h1>
         <div class="switch-container">
+            <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: none;"></span>
             <span class="mode-label" id="mode-text">閲覧モード</span>
             <label class="switch">
                 <input type="checkbox" id="mode-toggle" onchange="toggleMode()">
@@ -323,17 +324,7 @@
     
     <p class="tip">💡 スイッチをONにすると「編集モード」に切り替わり、テキストボックスが出現して値を直接編集できるようになります。値を変えると下の「保存されるHTML」がリアルタイムに書き換わります。</p>
 
-    <!-- エディタツールバー（編集モード時のみ表示） -->
-    <div class="editor-toolbar" style="background: #f8fafc; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 8px 8px 0 0; padding: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-        <span style="font-size: 12px; font-weight: bold; color: #475569; margin-right: 8px;">➕ 挿入:</span>
-        <button type="button" onclick="insertComponent('h1')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">H1 見出し</button>
-        <button type="button" onclick="insertComponent('p')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">P 段落</button>
-        <button type="button" onclick="insertComponent('m-tag')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">🏷️ 可変タグ</button>
-        <button type="button" onclick="insertComponent('m-file-client')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">📩 顧客の発注書</button>
-        <button type="button" onclick="insertComponent('m-file-our')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">📤 自社の発注書</button>
-        <button type="button" onclick="insertComponent('m-material')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">🔩 部材定義</button>
-        <button type="button" onclick="insertComponent('m-required-materials')" style="background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">📊 手配状況リスト</button>
-    </div>
+
 
     <!-- エディタコンテンツ領域（ここが保存対象のHTMLの中身になります） -->
     <div id="editor-content">
@@ -371,6 +362,76 @@
     let slashSelectedIndex = 0;
     let draggedBlock = null;
     let activeBlock = null;
+    let currentPageId = new URLSearchParams(window.location.search).get('id') || "";
+    let saveTimeout = null;
+
+    function saveToServer() {
+        if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
+        const statusEl = document.getElementById('save-status');
+        statusEl.style.display = 'inline';
+        statusEl.innerText = "保存中...";
+        statusEl.style.color = "#f59e0b"; // 琥珀色
+
+        // 保存時は最新のHTMLを取得
+        updateHtmlPreview(); 
+        const html = document.getElementById('html-preview').value;
+
+        fetch('/api/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ page_id: currentPageId, html: html })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                if (currentPageId !== data.page_id) {
+                    currentPageId = data.page_id;
+                    // URLを書き換える（ページリロードなし）
+                    window.history.pushState({}, '', '?id=' + currentPageId);
+                }
+                statusEl.innerText = "✅ 保存済";
+                statusEl.style.color = "#10b981"; // 緑色
+            } else {
+                statusEl.innerText = "❌ 保存エラー";
+                statusEl.style.color = "#ef4444";
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            statusEl.innerText = "❌ 保存エラー";
+            statusEl.style.color = "#ef4444";
+        });
+    }
+
+    function triggerAutoSave() {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        const statusEl = document.getElementById('save-status');
+        statusEl.style.display = 'inline';
+        statusEl.innerText = "未保存";
+        statusEl.style.color = "#94a3b8";
+
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => {
+            saveToServer();
+        }, 1500); // 1.5秒デバウンス
+    }
+
+    function setupAutoSave() {
+        const observer = new MutationObserver((mutations) => {
+            triggerAutoSave();
+        });
+        observer.observe(document.getElementById('editor-content'), {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['value', 'order-no', 'client-name', 'ordered-at', 'supplier-name', 'item-id', 'item-name', 'price', 'quantity', 'cost', 'status', 'tag']
+        });
+        
+        document.getElementById('editor-content').addEventListener('input', () => {
+            triggerAutoSave();
+        });
+    }
 
     // モード切り替えの処理
     function toggleMode() {
@@ -977,9 +1038,43 @@
 
     // 初回読み込み時の初期表示
     window.onload = function() {
-        initBlocks();
-        setupEditorEvents();
-        updateHtmlPreview();
+        const urlParams = new URLSearchParams(window.location.search);
+        const id = urlParams.get('id');
+        
+        if (id) {
+            // 既存データのロード
+            fetch('/api/load?id=' + id)
+                .then(res => res.text())
+                .then(htmlStr => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlStr, 'text/html');
+                    const editorContent = document.getElementById('editor-content');
+                    editorContent.innerHTML = '';
+                    
+                    Array.from(doc.body.children).forEach(child => {
+                        if (child.tagName.toLowerCase() === 'script') return;
+                        editorContent.appendChild(child);
+                    });
+                    
+                    initBlocks();
+                    setupEditorEvents();
+                    updateHtmlPreview();
+                    setupAutoSave();
+                })
+                .catch(err => {
+                    console.error("Load error:", err);
+                    initBlocks();
+                    setupEditorEvents();
+                    updateHtmlPreview();
+                    setupAutoSave();
+                });
+        } else {
+            // 新規作成（デフォルトモックデータを使用）
+            initBlocks();
+            setupEditorEvents();
+            updateHtmlPreview();
+            setupAutoSave();
+        }
     };
 </script>
 
