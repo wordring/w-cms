@@ -27,6 +27,9 @@ w-cms/
 ├── cmd/
 │   └── w-cms/
 │       └── main.go         # アプリケーション起動とルーティングの設定
+├── docs/
+│   ├── requirements.md     # 新機能・改修の要件定義書
+│   └── deploy.md           # 本番デプロイ・運用マニュアル
 ├── internal/
 │   ├── database/
 │   │   └── sqlite.go       # データベース（SQLite）の初期化と接続管理
@@ -36,7 +39,7 @@ w-cms/
 │       ├── storage.go      # IDの自動採番（Base-36）と保存ディレクトリの決定
 │       ├── sync.go         # データベースへのメタデータ同期（UPSERT）
 │       └── storage_test.go # ID採番やファイルパス決定ロジックの単体テスト
-├── data/                   # 起動時に自動生成されるデータ保存先
+├── data/                   # 起動時に自動生成されるデータ保存先（.gitignore対象）
 │   ├── cms.db              # SQLiteデータベースファイル
 │   └── master/             # HTMLの物理ファイルが階層化されて保存されるディレクトリ
 └── go.mod / go.sum         # go.mod依存関係
@@ -66,4 +69,12 @@ ID採番ロジックや保存パス生成ロジックのテストを実行しま
 
 ```bash
 go test ./internal/cms -v
+```
+
+---
+
+## 🚀 デプロイ・運用について
+
+本番環境（Linuxサーバーなど）で運用する際のディレクトリ設定や `systemd` によるデーモン化手順は、[deploy.md](file:///C:/Users/kouic/source/repos/w-cms/docs/deploy.md) にまとめてあります。
+会社や自宅など、異なる環境で同じように動かすための仕様も記載していますので、デプロイ時にはそちらを参照してください。
 ```
