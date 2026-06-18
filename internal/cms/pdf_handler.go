@@ -120,7 +120,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model := client.GenerativeModel("gemini-1.5-flash-latest")
+	model := client.GenerativeModel("gemini-3.5-flash")
 
 	prompt := genai.Text(`このPDFは発注書または見積書です。
 記載されているすべての部品明細（品名、単価、数量）を抽出し、以下の形式のJSON配列のみを出力してください。
