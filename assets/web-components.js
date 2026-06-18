@@ -186,7 +186,9 @@ class MFile extends HTMLElement {
                             item.setAttribute('price', '0');
                             item.setAttribute('quantity', '1');
                             item.setAttribute('status', '未着手');
-                            this.closest('m-file').appendChild(item);
+                            const file = this.closest('m-file');
+                            const container = file.querySelector('.items-list') || file;
+                            container.appendChild(item);
                             if(window.updateHtmlPreview) window.updateHtmlPreview();
                         " style="background:#10b981; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold;">＋ 部品を追加</button>
                     </div>
@@ -217,7 +219,9 @@ class MFile extends HTMLElement {
                             item.setAttribute('cost', '0');
                             item.setAttribute('quantity', '1');
                             item.setAttribute('status', '未納品');
-                            this.closest('m-file').appendChild(item);
+                            const file = this.closest('m-file');
+                            const container = file.querySelector('.items-list') || file;
+                            container.appendChild(item);
                             if(window.updateHtmlPreview) window.updateHtmlPreview();
                         " style="background:#10b981; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold;">＋ 品目を追加</button>
                     </div>
