@@ -1,16 +1,16 @@
 package cms
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
-	"github.com/ledongthuc/pdf"
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/option"
 )
 
 // UploadPDFHandler はドラッグ＆ドロップされたPDFを該当ページIDのフォルダに保存します
@@ -22,8 +22,6 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 
 	pageID := r.FormValue("page_id")
 	if pageID == "" {
-		// page_idが未確定の場合は、とりあえず新規発番するか、フロント側で保存してからアップロードさせる
-		// 今回は、フロント側でオートセーブして page_id を確定させてからアップロードする設計とします。
 		http.Error(w, "page_id is required", http.StatusBadRequest)
 		return
 	}
@@ -62,17 +60,20 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ParsedItem はPDFから推測された品目データです
+// ParsedItem はPDFから抽出された品目データです
 type ParsedItem struct {
 	ItemName string `json:"item_name"`
 	Price    string `json:"price"`
 	Quantity string `json:"quantity"`
 }
 
-// ParsePDFHandler は保存されたPDFを開き、簡易的なテキスト抽出と正規表現解析を行います
+// ParsePDFHandler は保存されたPDFをGemini APIに渡し、JSONとして明細を抽出します
 func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Method not allowed"})
 		return
 	}
 
@@ -81,7 +82,8 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		FileName string `json:"file_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Invalid request body"})
 		return
 	}
 
@@ -89,104 +91,92 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	pdfPath := filepath.Join(pageDir, filepath.Base(req.FileName))
 
 	if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
-		http.Error(w, "PDF file not found", http.StatusNotFound)
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "PDF file not found on server"})
 		return
 	}
 
-	// ledongthuc/pdf を使ってテキスト抽出
-	text, err := extractPDFText(pdfPath)
-	if err != nil {
-		// 失敗した場合は空配列を返す
-		w.Header().Set("Content-Type", "application/json")
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"items":   []ParsedItem{},
-			"raw":     "",
+			"message": "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/",
 		})
 		return
 	}
 
-	// 簡易的な解析ロジック（本来はAI等の高度な処理が入る部分）
-	items := parseDummyItems(text)
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Geminiクライアントの作成に失敗しました: " + err.Error()})
+		return
+	}
+	defer client.Close()
 
-	w.Header().Set("Content-Type", "application/json")
+	pdfBytes, err := os.ReadFile(pdfPath)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "PDFファイルの読み込みに失敗しました"})
+		return
+	}
+
+	model := client.GenerativeModel("gemini-1.5-flash")
+
+	prompt := genai.Text(`このPDFは発注書または見積書です。
+記載されているすべての部品明細（品名、単価、数量）を抽出し、以下の形式のJSON配列のみを出力してください。
+キーは必ず "item_name", "price", "quantity" にしてください。
+単価はカンマを除いた数値文字列にしてください。
+マークダウンのコードブロック修飾 (例: ` + "```json" + ` ) は付けず、純粋なJSON配列から出力してください。
+
+[
+  {"item_name": "部品A", "price": "1000", "quantity": "2"}
+]`)
+
+	pdfBlob := genai.Blob{
+		MIMEType: "application/pdf",
+		Data:     pdfBytes,
+	}
+
+	resp, err := model.GenerateContent(ctx, pdfBlob, prompt)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Gemini APIの呼び出しに失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	var respText string
+	if len(resp.Candidates) > 0 {
+		for _, part := range resp.Candidates[0].Content.Parts {
+			if t, ok := part.(genai.Text); ok {
+				respText += string(t)
+			}
+		}
+	}
+
+	cleanJson := strings.TrimSpace(respText)
+	if strings.HasPrefix(cleanJson, "```json") {
+		cleanJson = strings.TrimPrefix(cleanJson, "```json")
+		cleanJson = strings.TrimSuffix(cleanJson, "```")
+		cleanJson = strings.TrimSpace(cleanJson)
+	}
+
+	var items []ParsedItem
+	err = json.Unmarshal([]byte(cleanJson), &items)
+	if err != nil {
+		// パース失敗時はエラーではなく空配列を返す（フロント側でダミー追加ロジックが走るため）
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"items":   []ParsedItem{},
+			"raw":     respText,
+		})
+		return
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"items":   items,
-		"raw":     text, // デバッグ用に生のテキストも返す
+		"raw":     respText,
 	})
-}
-
-func extractPDFText(path string) (string, error) {
-	f, r, err := pdf.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	var buf bytes.Buffer
-	b, err := r.GetPlainText()
-	if err != nil {
-		return "", err
-	}
-	buf.ReadFrom(b)
-	return buf.String(), nil
-}
-
-func parseDummyItems(rawText string) []ParsedItem {
-	var items []ParsedItem
-	lines := strings.Split(rawText, "\n")
-
-	// 簡単な推測ロジック:
-	// 金額らしきもの（〇〇円）や数量らしきもの（〇〇個）がある行を品目とみなす
-	// ※あくまでプロトタイプ実装です
-	priceRegex := regexp.MustCompile(`(\d{1,3}(,\d{3})*|\d+)\s*円`)
-	qtyRegex := regexp.MustCompile(`(\d+)\s*[個台本枚]`)
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		priceMatch := priceRegex.FindStringSubmatch(line)
-		qtyMatch := qtyRegex.FindStringSubmatch(line)
-
-		if priceMatch != nil || qtyMatch != nil {
-			// 品名推測: 数字や記号を取り除いた文字列の先頭部分
-			name := line
-			if priceMatch != nil {
-				name = strings.Replace(name, priceMatch[0], "", 1)
-			}
-			if qtyMatch != nil {
-				name = strings.Replace(name, qtyMatch[0], "", 1)
-			}
-			// さらに不要な空白やカンマを削除
-			name = strings.TrimSpace(strings.ReplaceAll(name, ",", ""))
-			if len(name) > 30 {
-				name = name[:30] + "..."
-			}
-			if name == "" {
-				name = "不明な部品"
-			}
-
-			price := "0"
-			if priceMatch != nil {
-				price = strings.ReplaceAll(priceMatch[1], ",", "")
-			}
-
-			qty := "1"
-			if qtyMatch != nil {
-				qty = qtyMatch[1]
-			}
-
-			items = append(items, ParsedItem{
-				ItemName: name,
-				Price:    price,
-				Quantity: qty,
-			})
-		}
-	}
-
-	return items
 }
