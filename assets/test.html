@@ -75,7 +75,7 @@
             border-radius: 50%;
         }
         input:checked + .slider {
-            background-color: #007bff;
+            background-color: #10b981;
         }
         input:checked + .slider:before {
             transform: translateX(26px);
@@ -115,7 +115,7 @@
         }
         #html-preview {
             width: 100%;
-            height: 200px;
+            height: 250px;
             background: transparent;
             color: #38bdf8;
             border: none;
@@ -152,20 +152,23 @@
     <div id="editor-content">
         <!-- 可変タグブロック -->
         <m-tag name="発注元" value="株式会社トーアスポーツマシーン"></m-tag>
-        <m-tag name="希望納期" value="2026-06-10"></m-tag>
+        <m-tag name="希望納期" value="2026-07-10"></m-tag>
         <m-tag name="支払条件" value="通常"></m-tag>
         <m-tag name="自社担当" value="紀平"></m-tag>
 
         <h1>各マシーン用部品の調達と受注記録</h1>
         <p>以下の通り、取引先から発注書をいただき、材料見積もりを保管しました。</p>
 
-        <!-- 添付ファイルブロック（顧客の発注書） -->
+        <!-- 添付ファイルブロック（顧客の発注書 - 部品をぶら下げる） -->
         <m-file src="sample_po.pdf" name="顧客発注書_原本.pdf" 
-                tag="顧客の発注書" item-id="W120-P180-05-03A" price="1197" quantity="20"></m-file>
+                tag="顧客の発注書" order-no="PO-2026-001" client-name="トーアスポーツマシーン" ordered-at="2026-06-18">
+            <m-item item-id="W120-P180-05" item-name="側板ブラケット" price="1200" quantity="20" status="未着手"></m-item>
+            <m-item item-id="W120-P180-06" item-name="補強バー" price="800" quantity="10" status="加工中"></m-item>
+        </m-file>
 
-        <!-- 添付ファイルブロック（材料屋の見積もり） -->
+        <!-- 添付ファイルブロック（材料屋の見積もり - フラット） -->
         <m-file src="sample_material.pdf" name="アイアン素材見積書.pdf" 
-                tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" cost="500" supplier-name="東邦金属工業"></m-file>
+                tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" cost="500" supplier-name="東邦金属工業" estimated-at="2026-06-16"></m-file>
     </div>
 
     <!-- リアルタイムに生成されるHTMLデータの表示（真のデータ） -->
@@ -186,7 +189,7 @@
             // 編集モード
             document.body.setAttribute('edit-mode', '');
             modeText.innerText = "編集モード";
-            modeText.style.color = "#007bff";
+            modeText.style.color = "#10b981";
         } else {
             // 閲覧モード
             document.body.removeAttribute('edit-mode');
@@ -195,7 +198,7 @@
         }
 
         // Web Componentsの再描画を促すためにコンポーネント内のrenderメソッドを再実行
-        const components = editor.querySelectorAll('m-tag, m-file');
+        const components = editor.querySelectorAll('m-tag, m-file, m-item');
         components.forEach(c => {
             if (typeof c.render === 'function') {
                 c.render();
@@ -225,17 +228,44 @@
                 const src = child.getAttribute('src') || '';
                 const name = child.getAttribute('name') || '';
                 const tag = child.getAttribute('tag') || '';
-                let extra = '';
                 
-                if (tag === '顧客の発注書' || tag === '弊社の見積もり') {
-                    extra = ` price="${child.getAttribute('price') || '0'}" quantity="${child.getAttribute('quantity') || '1'}"`;
-                } else if (tag === '材料屋・加工業者の見積もり' || tag === '弊社の発注書') {
-                    extra = ` cost="${child.getAttribute('cost') || '0'}"`;
+                let attrs = `src="${src}" name="${name}" tag="${tag}"`;
+                
+                if (tag === '顧客の発注書') {
+                    attrs += ` order-no="${child.getAttribute('order-no') || ''}" client-name="${child.getAttribute('client-name') || ''}" ordered-at="${child.getAttribute('ordered-at') || ''}"`;
+                } else if (tag === '弊社の発注書') {
+                    attrs += ` order-no="${child.getAttribute('order-no') || ''}" supplier-name="${child.getAttribute('supplier-name') || ''}" ordered-at="${child.getAttribute('ordered-at') || ''}"`;
+                } else if (tag === '弊社の見積もり') {
+                    attrs += ` price="${child.getAttribute('price') || '0'}" quantity="${child.getAttribute('quantity') || '1'}"`;
+                } else if (tag === '材料屋・加工業者の見積もり') {
+                    attrs += ` cost="${child.getAttribute('cost') || '0'}"`;
                 }
                 
-                output += `<m-file src="${src}" name="${name}" tag="${tag}"${extra}></m-file>\n`;
+                // 子要素である m-item をシリアライズする
+                const itemsList = child.querySelectorAll('m-item');
+                if (itemsList.length > 0) {
+                    output += `<m-file ${attrs}>\n`;
+                    itemsList.forEach(item => {
+                        const itemId = item.getAttribute('item-id') || '';
+                        const itemName = item.getAttribute('item-name') || '';
+                        const price = item.getAttribute('price') || '';
+                        const cost = item.getAttribute('cost') || '';
+                        const quantity = item.getAttribute('quantity') || '1';
+                        const status = item.getAttribute('status') || '';
+                        
+                        let itemAttrs = `item-name="${itemName}" quantity="${quantity}" status="${status}"`;
+                        if (tag === '顧客の発注書') {
+                            itemAttrs = `item-id="${itemId}" ` + itemAttrs + ` price="${price}"`;
+                        } else {
+                            itemAttrs = itemAttrs + ` cost="${cost}"`;
+                        }
+                        output += `    <m-item ${itemAttrs}></m-item>\n`;
+                    });
+                    output += `</m-file>\n`;
+                } else {
+                    output += `<m-file ${attrs}></m-file>\n`;
+                }
             } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'p') {
-                // 標準HTMLタグはそのままテキストコンテンツを出力
                 output += `<${tagName}>${child.innerText}</${tagName}>\n`;
             }
         }

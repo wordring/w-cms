@@ -1,0 +1,83 @@
+# ユースケース：原価と利益の管理
+
+このドキュメントでは、**w-cms** における原価および利益（売上・粗利）の算出ロジックと、それに使用するカスタムタグの設計仕様を定義します。
+
+---
+
+## 1. 目的
+見積書（売上予定）、発注書（売上確定）、仕入先への見積・発注書（原価）をHTMLドキュメント内で適切に表現し、データベースがそれら非同期に登録される各種データを `item_id`（製品コード/図面番号）で名寄せして、リアルタイムな原価・利益管理を行えるようにします。
+
+---
+
+## 2. タグ設計仕様
+
+### 2.1. 弊社の見積もり (`our_estimates`)
+顧客に対して提示した見積金額（売上予定）を記録します。
+```html
+<m-file src="attachments/EST-2026-001.pdf" 
+        name="見積書_EST-2026-001.pdf" 
+        tag="弊社の見積もり" 
+        item-id="SHAFT-01" 
+        price="10000" 
+        client-name="トーア" 
+        estimated-at="2026-06-15"></m-file>
+```
+
+### 2.2. 顧客の発注書 (`client_orders` / `client_order_items`)
+顧客から受領した正式な発注金額（売上確定）を記録します。1枚の発注書に複数部品が載るため、ネスト構造をとります。
+```html
+<m-file src="attachments/PO-1001.pdf" 
+        name="発注書_PO-1001.pdf" 
+        tag="顧客の発注書" 
+        order-no="PO-1001" 
+        client-name="トーア" 
+        ordered-at="2026-06-18">
+    <m-item item-id="SHAFT-01" item-name="シャフトA" price="8000" quantity="10" status="未着手"></m-item>
+</m-file>
+```
+
+### 2.3. 材料屋・加工業者の見積もり (`supplier_estimates`)
+外注や材料発注にあたり、業者から受領した見積もり（原価予定）を記録します。
+```html
+<m-file src="attachments/SUP-EST-501.pdf" 
+        name="材料見積_SUP-EST-501.pdf" 
+        tag="材料屋・加工業者の見積もり" 
+        item-name="特殊鋼材" 
+        cost="2500" 
+        supplier-name="東邦金属工業" 
+        estimated-at="2026-06-16"></m-file>
+```
+
+### 2.4. 弊社の発注書 (`our_orders` / `our_order_items`)
+材料購入や外注加工のために、弊社が発行した注文（確定原価）を記録します。こちらもネスト構造をとります。
+```html
+<m-file src="attachments/PO-OUR-001.pdf" 
+        name="注文書_PO-OUR-001.pdf" 
+        tag="弊社の発注書" 
+        order-no="PO-OUR-001" 
+        supplier-name="東邦金属工業" 
+        ordered-at="2026-06-18">
+    <m-item item-name="特殊鋼材" cost="2300" quantity="10" status="未納品"></m-item>
+</m-file>
+```
+
+---
+
+## 3. 集計ロジック (粗利計算)
+
+データベースは、`item_id`（または `item_name`）をキーとして、同一案件/部品ごとの売上高と原価高を紐づけて算出します。
+
+### 3.1. 売上（収入）の算出
+1.  **確定売上**: `client_order_items` の `price * quantity` の合計。
+2.  **予定売上**: 顧客からの発注書がまだない場合、`our_estimates` の `price` を売上予定（数量1と仮定、または見積情報）として参照します。
+
+### 3.2. 原価（支出）の算出
+1.  **確定原価**: `our_order_items` の `cost * quantity` の合計。
+2.  **予定原価**: 弊社からの発注書がまだない場合、`supplier_estimates` の `cost` を原価予定として参照します。
+
+### 3.3. 利益計算
+$$利益 (粗利) = 売上 - 原価$$
+$$利益率 = \frac{利益}{売上} \times 100\%$$
+
+この計算は、画面上の `<m-profit-calculator item-id="SHAFT-01"></m-profit-calculator>` コンポーネントがロードされた際、SQLiteのインデックス情報を非同期でロードし、動的に描画します。
+これにより、すべての書類が揃っていない段階でも「現在の暫定利益率」をリアルタイムに視覚化できます。
