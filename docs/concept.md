@@ -16,7 +16,7 @@ graph TD
     end
 
     subgraph Storage [ファイルシステム (物理ストレージ)]
-        F1["data/master/xx/xxxxx/index.html (HTML本体)"]
+        F1["data/master/xx/xxxxx/xxxxx.html (ID名のHTML本体)"]
         F2["data/master/xx/xxxxx/attachments/ (PDF等)"]
     end
 
@@ -31,31 +31,38 @@ graph TD
     DB -- 4. 最新の原価・利益をロード --> UI
 ```
 
-### ① すべてがフラットな「ただのメモ（ページ）」
-システム上には「顧客ページ」「製品ページ」といった特有のページ種別や専用フォルダ階層は存在しません。すべてのページはフラットな数字IDのフォルダに格納された、同一の構造を持つHTMLファイル（`index.html`）です。
+### ① すべてがフラットな「ただのメモ（ページ）」とファイル名
+システム上には「顧客ページ」「製品ページ」といった特有のページ種別や専用フォルダ階層は存在しません。すべてのページはフラットな数字IDのフォルダに格納された、同一の構造を持つHTMLファイルです。
+*   **ファイル名仕様**: `index.html` のような固定名ではなく、**`[ページID].html`（例: `00001.html`, `260603-103.html`）** という物理ファイル名で保存します。これにより、ファイルシステム上での検索や特定が非常に容易になります。
+*   *保存先パスの例*: `data/master/26/260603-103/260603-103.html`
 
 ### ② 記述内容によって「役割」が動的に決まる
 白紙のメモに、ユーザーが何を書くかによってページの役割が決まります。
 *   `<m-tag name="顧客名" value="〇〇">` を埋め込めば、そのページは「顧客のページ」として機能します。
-*   `<m-tag name="親ページ" value="顧客ID">` を埋め込めば、そのページは「顧客の下にぶら下がる製品（または部品）ページ」になります。
 *   `<m-file tag="顧客の発注書">` を配置すれば、「受注記録」としての役割を持ちます。
 
-### ③ データベースによる一元集計と時系列に依存しない「非同期集計」
+### ③ タグによる「仮想的な親子関係（階層）」の表現
+「顧客 ＞ 完成品機種 ＞ 部品」のような階層構造も、データベースの固定設計ではなく、ページ内に記述する「親ページを示すタグ」によって表現します。
+*   **ルール**: 親ページを指定するタグには、**親ページのページID（数字）をそのまま記入します。**
+    ```html
+    <!-- ページID "00002" (製品) の中に記述する親 (顧客 "00001") の指定例 -->
+    <m-tag name="親ページ" value="00001"></m-tag>
+    ```
+*   これにより、システムは複雑な階層構造を意識することなく、単に「『親ページ』タグに記載されたIDを順番にたどる」だけで、動的にパンくずリストや階層ツリーを生成できます。
+
+### ④ データベースによる一元集計と時系列に依存しない「非同期集計」
 データベースにはすべてのドキュメントから抽出されたデータがフラットに集約されます。
 同一の `item_id`（製品コード/プロジェクトID）で紐付いていれば、いつどの書類（発注書や見積書）が登録されても、データベースが自動で名寄せして原価と売上を集計します。
 
-*   **開発案件（先行製造）**: 先に材料手配や日報（原価）が登録され、製造完了後に「顧客の発注書」が登録された時点で、自動的に粗利益が確定・反映されます。
-*   **自社開発案件**: 「顧客の発注書」が登録されないため、売上0円として扱い、かかった「総開発原価（コストの累計）」のみをプロジェクトコストとして集計します。
-
-### ④ Gemini API によるPDFデータ自動抽出とアシスト入力（OCR機能）
+### ⑤ Gemini API によるPDFデータ自動抽出とアシスト入力（OCR機能）
 PDF（見積書や発注書）をアップロードすると、バックエンドが裏でGemini API（マルチモーダル機能）を呼び出し、自動でレイアウト解析と文字認識（OCR）を実行します。
-Geminiは書類から「品名」「図面番号（製品ID）」「単価」「数量」「取引日付」「書類の種類（タグ）」を構造化データとして自動で抽出し、エディタ上の `<m-file>` タグの属性値（`price`や`quantity`など）に自動で下書き（プリフィル）します。
+Geminiは書類から「品名」「図面番号（製品ID）」「単価」「数量」「取引日付」「書類の種類（タグ）」を構造化データとして自動で抽出し、エディタ上の `<m-file>` タグの属性値に自動で下書き（プリフィル）します。
 
 ---
 
 ## 2. HTML上のブロック表現とWeb Componentsの仕様
 
-### 2.1. マークアップ例 (`index.html`：自由な配置の例)
+### 2.1. マークアップ例 (`data/master/26/260603-103/260603-103.html` の例)
 固定フォームではなく、通常の文書の中にPDFやタグが自由に配置されている例です。
 
 ```html
@@ -64,129 +71,54 @@ Geminiは書類から「品名」「図面番号（製品ID）」「単価」「
 <head>
     <meta charset="UTF-8">
     <title>開発案件：新型シャフトの試作記録</title>
-    <script src="/assets/web-components.js" defer></script>
+    <!-- Web Components定義へのパス（階層に合わせた相対パス） -->
+    <script src="../../../../assets/web-components.js" defer></script>
 </head>
 <body>
 
-    <!-- パンくずリスト（親ページタグをたどって自動で階層リンクを生成） -->
+    <!-- パンくずリスト（親ページタグに書かれたID "260603-100" をたどって階層リンクを自動生成） -->
     <m-breadcrumbs></m-breadcrumbs>
 
-    <!-- タグによってページの属性を定義（親ページIDや案件区分を指定） -->
+    <!-- 親ページのIDを指定するタグ -->
+    <m-tag name="親ページ" value="260603-100"></m-tag>
     <m-tag name="案件区分" value="受託開発"></m-tag>
-    <m-tag name="親ページ" value="260603-100"></m-tag> <!-- 親のページIDを指定 -->
     <m-tag name="自社担当" value="佐藤"></m-tag>
 
     <h1>新型シャフト（試作コード: DEV-SHAFT-99）の開発と調達記録</h1>
     <p>メーカー側からの正式発注は試作評価後となりますが、先行して部材調達および試作加工を開始します。</p>
 
     <p>先行して手配した鋼材の材料見積書（PDF）です。</p>
-    <!-- 先にコスト（見積）を登録 -->
     <m-file src="attachments/material_shaft.pdf" name="シャフト用鋼材見積.pdf" 
             tag="材料屋・加工業者の見積もり" item-name="特殊鋼材" cost="2500" supplier-name="東邦金属工業"></m-file>
 
     <p>【更新履歴 2026-07-01】評価合格に伴い、メーカーより正式な発注書を受領しました。以下に原本を添付します。</p>
-    <!-- 後から顧客発注（売上）を同じページ内に配置 -->
     <m-file src="attachments/po_shaft.pdf" name="正式発注書_トーア.pdf" 
             tag="顧客の発注書" item-id="DEV-SHAFT-99" price="8000" quantity="10"></m-file>
 
     <hr>
     <h3>このプロジェクトの原価・利益推移</h3>
-    <!-- 各種データから 'DEV-SHAFT-99' の売上・原価を自動集計するブロック -->
     <m-profit-calculator item-id="DEV-SHAFT-99"></m-profit-calculator>
 
 </body>
 </html>
 ```
 
-### 2.2. Web Componentsの実装例 (`web-components.js` の `<m-file>` 部分)
-PDF等のファイルをダウンロードリンクとして綺麗に描画し、編集時には属性（単価や数量）をフォームとして編集できるUIを自動生成します。
-
-```javascript
-class MFile extends HTMLElement {
-    static get observedAttributes() { return ['src', 'name', 'tag', 'price', 'quantity', 'cost']; }
-    connectedCallback() { this.render(); }
-    attributeChangedCallback() { this.render(); }
-
-    render() {
-        const src = this.getAttribute('src') || '';
-        const name = this.getAttribute('name') || '添付ファイル';
-        const tag = this.getAttribute('tag') || '未分類';
-        const isEdit = document.body.hasAttribute('edit-mode');
-
-        // タグの種類に応じたカラーの設定
-        let tagColor = '#64748b';
-        let bgColor = '#f8fafc';
-        if (tag === '顧客の発注書') { tagColor = '#10b981'; bgColor = '#ecfdf5'; }
-        if (tag === '弊社の発注書') { tagColor = '#ef4444'; bgColor = '#fef2f2'; }
-        if (tag === '材料屋・加工業者の見積もり') { tagColor = '#f59e0b'; bgColor = '#fffbeb'; }
-        if (tag === '弊社の見積もり') { tagColor = '#3b82f6'; bgColor = '#eff6ff'; }
-
-        let innerHTML = `
-            <div class="file-block" style="border: 1px solid #e2e8f0; border-left: 5px solid ${tagColor}; border-radius: 6px; padding: 12px 16px; margin: 12px 0; background: #fff; font-family: sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s;">
-                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 11px; font-weight: bold; color: ${tagColor}; background: ${bgColor}; padding: 3px 8px; border-radius: 4px; border: 1px solid ${tagColor}20;">${tag}</span>
-                        <a href="${src}" target="_blank" style="text-decoration: none; color: #1e40af; font-weight: 600; font-size: 14px;">📄 ${name}</a>
-                    </div>
-                    <div>
-                        <a href="${src}" download style="font-size: 12px; text-decoration: none; background: #f1f5f9; padding: 6px 12px; border-radius: 4px; color: #475569; font-weight: 500; border: 1px solid #cbd5e1; transition: background 0.2s;">ダウンロード</a>
-                    </div>
-                </div>
-        `;
-
-        if (isEdit) {
-            innerHTML += `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; font-size: 13px; color:#475569; display: flex; gap: 16px; align-items: center;">`;
-            if (tag === '顧客の発注書' || tag === '弊社の見積もり') {
-                const price = this.getAttribute('price') || '0';
-                const quantity = this.getAttribute('quantity') || '1';
-                innerHTML += `
-                    <div>
-                        単価 (売上): 
-                        <input type="number" value="${price}" style="width: 90px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
-                               oninput="this.getRootNode().host.setAttribute('price', this.value);"> 円
-                    </div>
-                    <div>
-                        数量: 
-                        <input type="number" value="${quantity}" style="width: 60px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
-                               oninput="this.getRootNode().host.setAttribute('quantity', this.value);">
-                    </div>
-                `;
-            } else if (tag === '材料屋・加工業者の見積もり' || tag === '弊社の発注書') {
-                const cost = this.getAttribute('cost') || '0';
-                innerHTML += `
-                    <div>
-                        単価 (仕入原価): 
-                        <input type="number" value="${cost}" style="width: 90px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
-                               oninput="this.getRootNode().host.setAttribute('cost', this.value);"> 円
-                    </div>
-                `;
-            }
-            innerHTML += `</div>`;
-        }
-
-        innerHTML += `</div>`;
-        this.innerHTML = innerHTML;
-    }
-}
-customElements.define('m-file', MFile);
-```
-
 ---
 
 ## 3. 実装に向けたデータモデル設計（案）
 
-データベーステーブルは、HTML上のカスタムタグ（`<m-tag>` や `<m-file>` など）から抽出した各種インデックス情報を保持します。
+データベーステーブルは、HTML上のカスタムタグから抽出した各種インデックス情報を保持します。
 
 ### ① `pages` テーブル（ドキュメントのインデックス：完全にフラット）
 *   `id` (TEXT, PRIMARY KEY): ページID（数字IDなど）
 *   `title` (TEXT): ページタイトル
-*   `file_path` (TEXT): 物理HTMLファイルの保存先パス (例: `"data/master/26/260603-103/index.html"`)
+*   `file_path` (TEXT): 物理HTMLファイルの保存先パス (例: `"data/master/26/260603-103/260603-103.html"`)
 *   `updated_at` (DATETIME): 更新日時
 
 ### ② `page_tags` テーブル（可変属性・階層インデックス）
 *   `page_id` (TEXT, FOREIGN KEY): `pages.id` に紐づく
 *   `name` (TEXT): 属性の名前 (例: `"親ページ"`, `"案件区分"`, `"自社担当"`)
-*   `value` (TEXT): 属性の値 (例: `"260603-100"`, `"受託開発"`, `"佐藤"`)
+*   `value` (TEXT): 属性の値 (例: `"260603-100"`, `"受託開発"`, `"佐藤"`) -- ※"親ページ"の場合、値は親のページID（数字）になる
 
 ### ③ `our_estimates` テーブル（「弊社の見積もり」インデックス）
 *   `id` (INTEGER, PRIMARY KEY AUTOINCREMENT)
@@ -199,7 +131,7 @@ customElements.define('m-file', MFile);
 
 ### ④ `client_orders` テーブル（「顧客の発注書」インデックス）
 *   `id` (INTEGER, PRIMARY KEY AUTOINCREMENT)
-*   `item_id` (TEXT): 製品ID（図面番号/プロジェクトID等）
+*   `item_id` (TEXT)
 *   `client_name` (TEXT)
 *   `price` (INTEGER)
 *   `quantity` (INTEGER)
@@ -231,9 +163,9 @@ customElements.define('m-file', MFile);
 ## 4. 今後の開発ロードマップ
 
 1.  **Web Components（web-components.js）の基本定義**:
-    *   `<m-tag>`、`<m-file>`、および親を動的にたどる `<m-breadcrumbs>`（パンくずリスト）のUI表現と描画ロジックの実装。
+    *   `<m-tag>`、`<m-file>`、および親のページID（数字）をたどって階層リンクを動的に生成する `<m-breadcrumbs>` の実装。
 2.  **HTMLパーサー（parser.go）の書き換え**:
-    *   HTMLから `<m-tag>` や `<m-file tag="...">` の各種属性値（単価、パス等）をパースする処理の実装。
+    *   HTMLファイル（`[ID].html`）から `<m-tag>` や `<m-file tag="...">` の各種属性値（単価、パス等）をパースする処理の実装。
 3.  **データベース（sqlite.go）のインデックス化**:
     *   `pdf_path` カラムを拡張した各取引テーブルの初期化。
 4.  **データ同期ロジック（sync.go）の実装**:
@@ -241,6 +173,6 @@ customElements.define('m-file', MFile);
 5.  **フロントエンド（エディタの自動保存機能）の実装**:
     *   ブラウザ上でHTMLをロードし、`edit-mode`を付与して編集させ、キー入力停止後1〜2秒で自動的にHTMLソースをバックエンドに保存（オートセーブ）するデバウンス処理の実装。
 6.  **DB再構築（リビルド）機能の実装**:
-    *   DBファイルが紛失・破損した際、物理ストレージ（`data/master`）内のHTMLファイルを再帰的に走査・再パースして、原本PDFへの参照と数値をDBへ100%完全復旧するバッチ・管理処理の実装。
+    *   DBファイルが紛失・破損した際、物理ストレージ（`data/master`）内の各HTMLファイル（`[ID].html`）を再帰的に走査・再パースして、原本PDFへの参照と数値をDBへ100%完全復旧するバッチ・管理処理の実装。
 7.  **Gemini API によるPDF自動解析・OCR機能の実装**:
     *   PDFアップロード時にバックエンドでGemini APIを呼び出し、ドキュメントのOCRおよび構造化データ（JSON）を自動抽出してエディタ側に返す連携APIの実装。
