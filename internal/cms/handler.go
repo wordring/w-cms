@@ -185,7 +185,11 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SyncIndex(id, req.HTML)
+	if err := SyncIndex(id, req.HTML); err != nil {
+		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
+		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

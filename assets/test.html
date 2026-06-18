@@ -1186,6 +1186,10 @@
             .catch(err => {
                 console.log("Load error, creating new document:", err);
                 
+                // 新規ページなのでエディタを空にする（ダミーデータによるUNIQUE制約違反を防ぐため）
+                const editorContent = document.getElementById('editor-content');
+                editorContent.innerHTML = '<h1>新しいページ</h1><p>ここから編集を始めてください。</p>';
+
                 initBlocks();
                 setupEditorEvents();
                 toggleMode();
