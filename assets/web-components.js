@@ -116,8 +116,8 @@ class MFile extends HTMLElement {
     async attributeChangedCallback() { await this.render(); }
 
     async render() {
-        // 先に子ノード（m-item）を退避
-        const items = Array.from(this.childNodes).filter(node => node.nodeName === 'M-ITEM');
+        // 先に子ノード（m-item）を退避（孫要素のコンテナ内に移動しているものも含む）
+        const items = Array.from(this.querySelectorAll('m-item')).filter(item => item.closest('m-file') === this);
 
         const src = this.getAttribute('src') || '#';
         const name = this.getAttribute('name') || '添付ファイル';
