@@ -624,7 +624,7 @@
         document.getElementById('html-preview').value = output.trim();
     }
 
-    function createComponentElement(type, isEdit) {
+    function createComponentElement(type, isEdit, ...args) {
         let newEl;
         if (type === 'h1') {
             newEl = document.createElement('h1');
@@ -679,7 +679,7 @@
         } else if (type === 'm-tag-parent') {
             newEl = document.createElement('m-tag');
             newEl.setAttribute('name', '親ページID');
-            newEl.setAttribute('value', arguments[3] || '');
+            newEl.setAttribute('value', args[0] || '');
         }
 
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
@@ -690,11 +690,11 @@
         return newEl;
     }
 
-    function insertComponent(type, refBlock = null, position = 'after') {
+    function insertComponent(type, refBlock = null, position = 'after', ...args) {
         const editor = document.getElementById('editor-content');
         const isEdit = document.body.hasAttribute('edit-mode');
         
-        const newEl = createComponentElement(type, isEdit);
+        const newEl = createComponentElement(type, isEdit, ...args);
         if (!newEl) return null;
 
         const block = wrapInBlock(newEl);
@@ -1151,27 +1151,34 @@
                 const tagEl = editorContent.querySelector('m-tag[name="親ページID"]');
                 if (tagEl) {
                     document.getElementById('parent-id-input').value = tagEl.getAttribute('value') || "";
-                } else if (parentParam) {
-                    document.getElementById('parent-id-input').value = parentParam;
-                    insertComponent('m-tag-parent', null, 'after', parentParam);
                 }
 
                 initBlocks();
                 setupEditorEvents();
                 toggleMode();
                 setupAutoSave();
-            })
-            .catch(err => {
-                console.log("Load error, creating new document:", err);
-                // 新規作成
-                if (parentParam) {
+
+                if (!tagEl && parentParam) {
                     document.getElementById('parent-id-input').value = parentParam;
                     insertComponent('m-tag-parent', null, 'after', parentParam);
                 }
+            })
+            .catch(err => {
+                console.log("Load error, creating new document:", err);
+                
                 initBlocks();
                 setupEditorEvents();
                 toggleMode();
                 setupAutoSave();
+
+                // 新規作成時にタグを挿入
+                if (parentParam) {
+                    document.getElementById('parent-id-input').value = parentParam;
+                    insertComponent('m-tag-parent', null, 'after', parentParam);
+                }
+                
+                // 新規ページを強制的に初期保存してDBに実体を作る
+                triggerAutoSave();
             });
     };
 </script>
