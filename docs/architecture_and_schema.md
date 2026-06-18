@@ -120,26 +120,52 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     }
     ```
 
-### 5.2. Parse PDF API (`POST /api/parse-pdf`)
-保存済みのPDFファイルを読み込み、テキストを抽出して明細データ（品目、単価、数量など）を推測します。
+### 3.4. PDF解析API (`POST /api/parse-pdf`)
 
-*   **リクエスト形式**: JSON
+保存済みのPDFをGoogleのGemini API（`gemini-3.5-flash` モデル）に直接送信し、画像や複雑なレイアウトからでも完璧に明細を抽出して返すエンドポイントです。
+
+**前提条件**:
+*   サーバーの環境変数 `GEMINI_API_KEY` にGoogle AI StudioのAPIキーが設定されている必要があります。設定されていない場合はエラーになります。
+
+**リクエスト**:
+*   **Method**: `POST`
+*   **Content-Type**: `application/json`
+*   **Body**:
     ```json
     {
-      "page_id": "00002",
-      "file_name": "example.pdf"
+      "page_id": "00A1B",
+      "file_name": "sample.pdf"
     }
     ```
-*   **バックエンド処理フロー**:
-    1.  `github.com/ledongthuc/pdf` を用いてPDFファイルのプレーンテキストを抽出します。
-    2.  正規表現によるプロトタイプ解析（「〇〇円」「〇〇個」の行を探すなど）を実行し、簡易的な明細オブジェクトを生成します。
-*   **レスポンス**: JSON
-    ```json
+
+**内部処理フロー**:
+1.  リクエストの `page_id` と `file_name` から、サーバー上のPDFファイルのパスを特定し、バイナリとして読み込みます。
+2.  `github.com/google/generative-ai-go/genai` を使用してGeminiクライアントを初期化します。
+3.  PDFバイナリを `application/pdf` のBlobとしてモデルに渡し、以下のプロンプト（指示）とともに送信します。
+    *   *「このPDFは発注書または見積書です。記載されているすべての部品明細（品名、単価、数量）を抽出し、以下の形式のJSON配列のみを出力してください...」*
+4.  Geminiから返却された文字列から、マークダウン装飾（` ```json `）等を取り除き、純粋なJSONテキストを抽出します。
+5.  JSONテキストを `ParsedItem` 構造体の配列にパースします。
+
+**レスポンス例 (成功時)**:
+```json
+{
+  "success": true,
+  "items": [
     {
-      "success": true,
-      "items": [
-        { "item_name": "部品A", "price": "1000", "quantity": "1" }
-      ],
-      "raw": "..."
+      "item_name": "高耐久ギア",
+      "price": "15000",
+      "quantity": "2"
     }
-    ```
+  ],
+  "raw": "[Geminiからの生レスポンステキスト]"
+}
+```
+
+**レスポンス例 (エラー時)**:
+```json
+{
+  "success": false,
+  "message": "Gemini APIの呼び出しに失敗しました: [エラー詳細]"
+}
+```
+※旧バージョン（正規表現ベース）のテキスト抽出機能は廃止されました。
