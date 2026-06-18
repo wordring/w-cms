@@ -317,8 +317,12 @@
             <div style="font-size: 13px; color: #64748b; margin-top: 5px;">
                 ページID: <strong id="display-page-id"></strong> | 
                 親ページID: <input type="text" id="parent-id-input" onchange="updateParentIDTag()" style="width: 80px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; outline: none;">
-                <button onclick="createSubpage()" style="margin-left: 10px; padding: 3px 10px; cursor: pointer; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">＋ 子ページを作成</button>
-            </div>
+                <button onclick="createSubpage()" style="margin-left: 10px; padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+        ＋ 子ページを作成
+    </button>
+    <button onclick="rebuildDatabase()" style="margin-left: 10px; padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;" title="HTMLファイルからデータベースのインデックスを再構築します">
+        🔄 DB再構築
+    </button>
         </div>
         <div class="switch-container">
             <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: none;"></span>
@@ -393,6 +397,21 @@
             // エラー時はフォールバックとしてタイムスタンプ擬似乱数を使用
             const fallbackId = Date.now().toString().slice(-6);
             window.open(`/${fallbackId}?edit=true&parent=${currentPageId}`, '_blank');
+        }
+    }
+
+    async function rebuildDatabase() {
+        if (!confirm("データベースのインデックスをHTMLファイルから完全に再構築します。よろしいですか？")) {
+            return;
+        }
+        try {
+            const res = await fetch('/api/rebuild-db', { method: 'POST' });
+            if (!res.ok) throw new Error("Rebuild failed");
+            alert("データベースの再構築が完了しました！\nページをリロードして反映します。");
+            window.location.reload();
+        } catch (err) {
+            console.error(err);
+            alert("データベースの再構築に失敗しました。");
         }
     }
 

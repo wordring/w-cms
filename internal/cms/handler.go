@@ -280,6 +280,23 @@ func NewIDAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"id": newID})
 }
 
+// RebuildDBAPIHandler は、HTMLファイルからデータベースを完全に再構築します。
+func RebuildDBAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	err := RebuildDatabase()
+	if err != nil {
+		http.Error(w, "Rebuild error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
 // RootHandler はWiki型のルーティングを担当します。
 func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// `/assets/` などの静的ファイルは既に mux で処理されている前提

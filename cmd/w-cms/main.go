@@ -29,6 +29,7 @@ func main() {
 	
 	mux.HandleFunc("/api/new-id", cms.NewIDAPIHandler)
 	mux.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
+	mux.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	mux.HandleFunc("/upload", cms.UploadHandler)
 	mux.HandleFunc("/", cms.RootHandler)
 
