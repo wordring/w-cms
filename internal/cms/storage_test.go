@@ -16,13 +16,13 @@ func TestGetPageDir(t *testing.T) {
 	}{
 		{
 			name: "5桁のID",
-			id:   "00A1B",
-			want: filepath.Join("data/master", "00", "00A1B"),
+			id:   "00001",
+			want: filepath.Join("data/master", "00", "00001"),
 		},
 		{
 			name: "1桁の短いID",
-			id:   "A",
-			want: filepath.Join("data/master", "00", "A"),
+			id:   "1",
+			want: filepath.Join("data/master", "00", "1"),
 		},
 		{
 			name: "2桁のID",
@@ -85,33 +85,31 @@ func TestGenerateNextID(t *testing.T) {
 		}
 	})
 
-	// 5. Base-36 の文字を含むIDを追加した後のテスト
-	t.Run("Base-36文字を含むID存在時の次のID生成", func(t *testing.T) {
-		// "00A1B" を挿入 (10進数で 13007)
-		// 次は "00A1C" (10進数で 13008) のはず
-		_, err := db.Exec("INSERT INTO pages (id, type) VALUES ('00A1B', 'test')")
+	// 5. 10進数の桁上がりのテスト
+	t.Run("10進数での桁上がり（繰り上げ）テスト", func(t *testing.T) {
+		// "00009" を挿入。次は "00010" のはず
+		_, err := db.Exec("INSERT INTO pages (id, type) VALUES ('00009', 'test')")
 		if err != nil {
 			t.Fatalf("テストデータ挿入エラー: %v", err)
 		}
 
 		got := GenerateNextID(db)
-		want := "00A1C"
+		want := "00010"
 		if got != want {
 			t.Errorf("GenerateNextID() = %q, want %q", got, want)
 		}
 	})
 
-	// 6. Base-36 の桁上がり（繰り上げ）テスト
-	t.Run("Base-36の繰り上げが発生する次のID生成", func(t *testing.T) {
-		// "00A1Z" を挿入 (10進数で 13031)
-		// 次は "00A20" (10進数で 13032) のはず
-		_, err := db.Exec("INSERT INTO pages (id, type) VALUES ('00A1Z', 'test')")
+	// 6. 大きな値のテスト
+	t.Run("より大きな数値IDの連番テスト", func(t *testing.T) {
+		// "12345" を挿入。次は "12346" のはず
+		_, err := db.Exec("INSERT INTO pages (id, type) VALUES ('12345', 'test')")
 		if err != nil {
 			t.Fatalf("テストデータ挿入エラー: %v", err)
 		}
 
 		got := GenerateNextID(db)
-		want := "00A20"
+		want := "12346"
 		if got != want {
 			t.Errorf("GenerateNextID() = %q, want %q", got, want)
 		}

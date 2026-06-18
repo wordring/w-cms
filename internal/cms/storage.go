@@ -5,13 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
-// IDLength は生成する Base-36 IDの桁数（5桁 = 約6000万件対応）
 const IDLength = 5
-
-// MasterDir は製品データを保存するルートディレクトリ
 const MasterDir = "data/master"
 
 // GetPageDir は ID (例: "00A1B") を受け取り、階層化された保存先パス (例: "data/master/00/00A1B") を返します。
@@ -26,7 +22,7 @@ func GetPageDir(id string) string {
 }
 
 // GenerateNextID はデータベースから現在登録されている最大のIDを取得し、
-// 次に保存すべき新しいID（5桁のBase-36）を生成します。
+// 次に保存すべき新しいID（5桁の10進数連番）を生成します。
 // 主キーのインデックスを活用してミリ秒以下で最大IDを取得します。
 func GenerateNextID(db *sql.DB) string {
 	var maxID string
@@ -36,13 +32,13 @@ func GenerateNextID(db *sql.DB) string {
 		return "00000"
 	}
 
-	// 取得したBase-36文字列を数値にデコード
-	maxVal, err := strconv.ParseInt(maxID, 36, 64)
+	// 取得した10進数文字列を数値にデコード
+	maxVal, err := strconv.ParseInt(maxID, 10, 64)
 	if err != nil {
 		return "00000"
 	}
 
-	// 最大値に+1し、Base-36文字列に戻して指定桁数(5桁)で0埋めする
+	// 最大値に+1し、10進数文字列に戻して指定桁数(5桁)で0埋めする
 	next := maxVal + 1
-	return fmt.Sprintf("%0*s", IDLength, strings.ToUpper(strconv.FormatInt(next, 36)))
+	return fmt.Sprintf("%0*s", IDLength, strconv.FormatInt(next, 10))
 }
