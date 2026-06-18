@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"w-cms/internal/database"
@@ -17,6 +18,21 @@ func SyncIndex(id string, htmlContent string) error {
 	// 手順2: 物理ファイルの保存先パスを構築
 	pageDir := GetPageDir(id)
 	filePath := filepath.Join(pageDir, id+".html")
+
+	// 整数型への変換
+	pageIDInt, err := strconv.Atoi(parsed.ID)
+	if err != nil {
+		return err
+	}
+
+	var parentIDInt sql.NullInt64
+	if parsed.ParentID != "" {
+		pid, err := strconv.Atoi(parsed.ParentID)
+		if err == nil {
+			parentIDInt.Int64 = int64(pid)
+			parentIDInt.Valid = true
+		}
+	}
 
 	// 手順3: データベース同期トランザクションを開始
 	tx, err := database.DB.Begin()
@@ -34,7 +50,7 @@ func SyncIndex(id string, htmlContent string) error {
 			parent_id = excluded.parent_id,
 			file_path = excluded.file_path,
 			updated_at = CURRENT_TIMESTAMP
-	`, parsed.ID, parsed.Title, parsed.ParentID, filePath)
+	`, pageIDInt, parsed.Title, parentIDInt, filePath)
 	if err != nil {
 		return err
 	}
@@ -48,7 +64,7 @@ func SyncIndex(id string, htmlContent string) error {
 		"part_materials",
 	}
 	for _, table := range tablesToDelete {
-		_, err = tx.Exec("DELETE FROM "+table+" WHERE page_id = ?", parsed.ID)
+		_, err = tx.Exec("DELETE FROM "+table+" WHERE page_id = ?", pageIDInt)
 		if err != nil {
 			return err
 		}
@@ -59,7 +75,7 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO page_tags (page_id, name, value) 
 			VALUES (?, ?, ?)
-		`, parsed.ID, tag.Name, tag.Value)
+		`, pageIDInt, tag.Name, tag.Value)
 		if err != nil {
 			return err
 		}
@@ -75,7 +91,7 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO our_estimates (item_id, client_name, price, pdf_path, page_id, estimated_at) 
 			VALUES (?, ?, ?, ?, ?, ?)
-		`, est.ItemID, est.ClientName, est.Price, est.PDFPath, parsed.ID, estimatedAt)
+		`, est.ItemID, est.ClientName, est.Price, est.PDFPath, pageIDInt, estimatedAt)
 		if err != nil {
 			return err
 		}
@@ -91,7 +107,7 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO supplier_estimates (item_name, supplier_name, cost, pdf_path, page_id, estimated_at) 
 			VALUES (?, ?, ?, ?, ?, ?)
-		`, est.ItemName, est.SupplierName, est.Cost, est.PDFPath, parsed.ID, estimatedAt)
+		`, est.ItemName, est.SupplierName, est.Cost, est.PDFPath, pageIDInt, estimatedAt)
 		if err != nil {
 			return err
 		}
@@ -107,7 +123,7 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO client_orders (order_no, client_name, pdf_path, page_id, ordered_at) 
 			VALUES (?, ?, ?, ?, ?)
-		`, order.OrderNo, order.ClientName, order.PDFPath, parsed.ID, orderedAt)
+		`, order.OrderNo, order.ClientName, order.PDFPath, pageIDInt, orderedAt)
 		if err != nil {
 			return err
 		}
@@ -133,7 +149,7 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO our_orders (order_no, supplier_name, pdf_path, page_id, ordered_at) 
 			VALUES (?, ?, ?, ?, ?)
-		`, order.OrderNo, order.SupplierName, order.PDFPath, parsed.ID, orderedAt)
+		`, order.OrderNo, order.SupplierName, order.PDFPath, pageIDInt, orderedAt)
 		if err != nil {
 			return err
 		}
@@ -154,7 +170,7 @@ func SyncIndex(id string, htmlContent string) error {
 		_, err = tx.Exec(`
 			INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id) 
 			VALUES (?, ?, ?, ?, ?, ?)
-		`, mat.PartID, mat.MaterialName, mat.Cost, mat.SupplierName, mat.Quantity, parsed.ID)
+		`, mat.PartID, mat.MaterialName, mat.Cost, mat.SupplierName, mat.Quantity, pageIDInt)
 		if err != nil {
 			return err
 		}

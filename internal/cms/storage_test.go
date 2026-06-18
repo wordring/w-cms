@@ -56,7 +56,7 @@ func TestGenerateNextID(t *testing.T) {
 	// 2. テスト用テーブルの作成
 	query := `
 	CREATE TABLE pages (
-		id TEXT PRIMARY KEY,
+		id INTEGER PRIMARY KEY,
 		title TEXT,
 		file_path TEXT
 	);`
@@ -73,14 +73,14 @@ func TestGenerateNextID(t *testing.T) {
 		}
 	})
 
-	// 4. "000000" を追加した後のテスト（"000001" のはず）
-	t.Run("000000存在時の次のID生成", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO pages (id, title) VALUES ('000000', 'test')")
+	// 4. "000001" を追加した後のテスト（"000002" のはず）
+	t.Run("000001存在時の次のID生成", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO pages (id, title) VALUES (1, 'test')")
 		if err != nil {
 			t.Fatal(err)
 		}
 		got := GenerateNextID(db)
-		want := "000001"
+		want := "000002"
 		if got != want {
 			t.Errorf("GenerateNextID() = %q, want %q", got, want)
 		}
@@ -88,13 +88,13 @@ func TestGenerateNextID(t *testing.T) {
 
 	// 5. 10進数の桁上がりのテスト
 	t.Run("10進数での桁上がり（繰り上げ）テスト", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO pages (id, title) VALUES ('00009', 'test')")
+		_, err := db.Exec("INSERT INTO pages (id, title) VALUES (9, 'test')")
 		if err != nil {
 			t.Fatalf("テストデータ挿入エラー: %v", err)
 		}
 
 		got := GenerateNextID(db)
-		want := "00010"
+		want := "000010"
 		if got != want {
 			t.Errorf("GenerateNextID() = %q, want %q", got, want)
 		}
@@ -102,13 +102,13 @@ func TestGenerateNextID(t *testing.T) {
 
 	// 6. 大きな値のテスト
 	t.Run("より大きな数値IDの連番テスト", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO pages (id, title) VALUES ('12345', 'test')")
+		_, err := db.Exec("INSERT INTO pages (id, title) VALUES (12345, 'test')")
 		if err != nil {
 			t.Fatalf("テストデータ挿入エラー: %v", err)
 		}
 
 		got := GenerateNextID(db)
-		want := "12346"
+		want := "012346"
 		if got != want {
 			t.Errorf("GenerateNextID() = %q, want %q", got, want)
 		}
@@ -129,13 +129,14 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	// テーブル初期化
 	queries := []string{
 		`CREATE TABLE pages (
-			id TEXT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			title TEXT,
+			parent_id INTEGER,
 			file_path TEXT,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
-		`CREATE TABLE page_tags (
-			page_id TEXT,
+		`CREATE TABLE IF NOT EXISTS page_tags (
+			page_id INTEGER,
 			name TEXT,
 			value TEXT,
 			PRIMARY KEY (page_id, name)
@@ -163,7 +164,7 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 			client_name TEXT,
 			price INTEGER,
 			pdf_path TEXT,
-			page_id TEXT,
+			page_id INTEGER,
 			estimated_at DATE
 		);`,
 		`CREATE TABLE supplier_estimates (
@@ -172,7 +173,7 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 			supplier_name TEXT,
 			cost INTEGER,
 			pdf_path TEXT,
-			page_id TEXT,
+			page_id INTEGER,
 			estimated_at DATE
 		);`,
 		`CREATE TABLE our_orders (
@@ -373,7 +374,7 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 	// 3. 受注ページ(00002)の登録をシミュレート
 	// 受注：SHAFT-01 を 10本
 	_, err = db.Exec(`
-		INSERT INTO client_orders (order_no, client_name, page_id) VALUES ('PO-A100', 'トーア', '00002')
+		INSERT INTO client_orders (order_no, client_name, page_id) VALUES ('PO-A100', 'トーア', 2)
 	`)
 	if err != nil {
 		t.Fatalf("受注ヘッダー登録エラー: %v", err)
@@ -388,7 +389,7 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 
 	// 自社発注実績：鋼材をすでに10本発注済み
 	_, err = db.Exec(`
-		INSERT INTO our_orders (order_no, supplier_name, page_id) VALUES ('PO-OUR-001', '東邦金属工業', '00002')
+		INSERT INTO our_orders (order_no, supplier_name, page_id) VALUES ('PO-OUR-001', '東邦金属工業', 2)
 	`)
 	if err != nil {
 		t.Fatalf("自社発注ヘッダー登録エラー: %v", err)

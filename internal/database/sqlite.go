@@ -35,16 +35,16 @@ func InitDB() error {
 	queries := []string{
 		// 1. ドキュメントの基本インデックス情報（本文はファイル保存）
 		`CREATE TABLE IF NOT EXISTS pages (
-			id TEXT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			title TEXT,
-			parent_id TEXT DEFAULT '',
+			parent_id INTEGER,
 			file_path TEXT,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
 
 		// 2. 可変タグテーブル（名前：値 の属性情報）
 		`CREATE TABLE IF NOT EXISTS page_tags (
-			page_id TEXT,
+			page_id INTEGER,
 			name TEXT,
 			value TEXT,
 			PRIMARY KEY (page_id, name),
@@ -58,7 +58,7 @@ func InitDB() error {
 			client_name TEXT,
 			price INTEGER,
 			pdf_path TEXT,
-			page_id TEXT,
+			page_id INTEGER,
 			estimated_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
@@ -69,7 +69,7 @@ func InitDB() error {
 			order_no TEXT UNIQUE,
 			client_name TEXT,
 			pdf_path TEXT,
-			page_id TEXT,
+			page_id INTEGER,
 			ordered_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
@@ -93,7 +93,7 @@ func InitDB() error {
 			supplier_name TEXT,
 			cost INTEGER,
 			pdf_path TEXT,
-			page_id TEXT,
+			page_id INTEGER,
 			estimated_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
@@ -104,7 +104,7 @@ func InitDB() error {
 			order_no TEXT UNIQUE,
 			supplier_name TEXT,
 			pdf_path TEXT,
-			page_id TEXT,
+			page_id INTEGER,
 			ordered_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
@@ -128,7 +128,7 @@ func InitDB() error {
 			cost INTEGER,
 			supplier_name TEXT,
 			quantity INTEGER,
-			page_id TEXT,
+			page_id INTEGER,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 	}
@@ -138,9 +138,6 @@ func InitDB() error {
 			return err
 		}
 	}
-
-	// 既存DBにparent_idを追加するマイグレーション
-	DB.Exec(`ALTER TABLE pages ADD COLUMN parent_id TEXT DEFAULT '';`)
 
 	return nil
 }
