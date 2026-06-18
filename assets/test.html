@@ -1177,8 +1177,8 @@
                     insertComponent('m-tag-parent', null, 'after', parentParam);
                 }
                 
-                // 新規ページを強制的に初期保存してDBに実体を作る
-                triggerAutoSave();
+                // 新規ページを直ちに強制保存してDBに実体を作る（デバウンスを待たない）
+                saveToServer();
             });
     };
 </script>
