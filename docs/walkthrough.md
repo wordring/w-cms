@@ -1,55 +1,47 @@
 # 実装完了報告（ウォークスルー）
 
-発注書の中に複数の部品がネストされるデータ構造、それに対応したHTMLパーサーおよびデータベース同期処理、デジタル・ステータス管理、そしてフロントエンド Web Components の改修を完了しました。
+## セクション1：発注書への部品ネストおよび進捗管理の導入
+
+発注書の中に複数の部品がネストされるデータ構造、それに対応したHTMLパーサーおよびデータベース同期処理、そしてフロントエンド Web Components の改修を完了しました。
+
+### 1.1. 実施した変更内容
+*   **ユースケース仕様書**: `docs/usecase_cost_and_profit.md` と `docs/usecase_order_and_progress.md` を新規作成。
+*   **データベース親子分割**: `client_orders` と `our_orders` をHeader/Items親子テーブルへ分割。
+*   **HTMLパーサー・同期**: `<m-file>` 内の `<m-item>` ノード群を子ノードとしてトラバース抽出し、トランザクション内でDBに同期するロジックを実装。
+*   **保存ファイル名変更**: アップロードしたHTMLを `index.html` ではなく、ページIDを用いた `[page_id].html` (例: `00000.html`) というファイル名で保存するよう修正。
 
 ---
 
-## 1. 実施した変更内容
+## セクション2：Web Components テンプレートの外部ファイル化 (パターン1)
 
-### ① ユースケース設計仕様書の追加
-*   [docs/usecase_cost_and_profit.md](file:///C:/Users/kouic/source/repos/w-cms/docs/usecase_cost_and_profit.md): 原価と利益の管理ユースケース（`item_id` での名寄せや粗利計算ロジック）をドキュメント化。
-*   [docs/usecase_order_and_progress.md](file:///C:/Users/kouic/source/repos/w-cms/docs/usecase_order_and_progress.md): 発注書（複数配置可）と部品のぶら下がり構造、および部品個別の進捗ステータス管理ユースケースをドキュメント化。
+JavaScriptコード内にハードコードされていた Web Components のHTMLデザイン部分を、個別のHTMLテンプレートファイルへ完全に分離し、動的にロード・キャッシュして適用する設計へ移行しました。
 
-### ② データベース・スキーマの親子分割
-*   [internal/database/sqlite.go](file:///C:/Users/kouic/source/repos/w-cms/internal/database/sqlite.go) にて、`client_orders` と `our_orders` を以下のHeader/Items親子テーブルに分割し、カスケード削除 (`ON DELETE CASCADE`) 制約を張りました。
-    *   `client_orders`（発注ヘッダー） ─ `client_order_items`（部品明細）
-    *   `our_orders`（発注ヘッダー） ─ `our_order_items`（部品明細）
+### 2.1. 実施した変更内容
 
-### ③ HTMLパーサーとDB同期処理のネスト対応
-*   [internal/cms/parser.go](file:///C:/Users/kouic/source/repos/w-cms/internal/cms/parser.go): `golang.org/x/net/html` を用いて、`<m-file>` 内の `<m-item>` ノード群を子ノードとしてトラバース抽出するロジックを実装。
-*   [internal/cms/sync.go](file:///C:/Users/kouic/source/repos/w-cms/internal/cms/sync.go): 同期処理（`SyncIndex`）において、既存のインデックス行を一旦全削除した上で、ネストされた取引・部品データをトランザクションを用いて一括インサートするロジックを実装。
+#### ① テンプレート用HTMLファイルの新規作成 (`assets/templates/`)
+デザインとロジックを分離するため、閲覧用（`view`）と編集用（`edit`）のHTMLデザインを合計8ファイル新規作成しました。
+*   [m-tag-view.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-tag-view.html) / [m-tag-edit.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-tag-edit.html)
+*   [m-file-view.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-file-view.html) / [m-file-edit.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-file-edit.html)
+*   [m-item-view-client.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-item-view-client.html) / [m-item-edit-client.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-item-edit-client.html)
+*   [m-item-view-our.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-item-view-our.html) / [m-item-edit-our.html](file:///C:/Users/kouic/source/repos/w-cms/assets/templates/m-item-edit-our.html)
 
-### ④ Web Components とテスト画面の改修
-*   [assets/web-components.js](file:///C:/Users/kouic/source/repos/w-cms/assets/web-components.js): `<m-item>` コンポーネントを新規追加。閲覧モードでは部品明細や進捗バッジを描画し、編集モードでは属性入力フィールドと削除ボタンをインライン表示します。また、`<m-file>` で「部品を追加」ボタンに対応。
-*   [assets/test.html](file:///C:/Users/kouic/source/repos/w-cms/assets/test.html): 新しいマークアップとシリアライザを更新し、プレビューでネストされたマークアップが出力されるように対応。
-
-### ⑤ 保存ファイル名の変更
-*   [internal/cms/handler.go](file:///C:/Users/kouic/source/repos/w-cms/internal/cms/handler.go): アップロードしたHTMLを `index.html` ではなく、ページIDを使用した `[page_id].html` (例: `00000.html`) というファイル名で保存するよう修正。また、簡素化した `pages` スキーマに合わせて `IndexHandler` を修正。
+#### ② フロントエンド・スクリプトの改修
+*   [assets/web-components.js](file:///C:/Users/kouic/source/repos/w-cms/assets/web-components.js): 
+    *   共通の非同期テンプレートローダー `fetchTemplate(name)` を追加。
+    *   読み込んだテンプレートはメモリ（`templateCache`）にキャッシュされ、2回目以降はHTTPリクエストなしで即座に再レンダリングされます。
+    *   各コンポーネントの `render()` メソッドを `async/await` 化し、テンプレート内のプレースホルダー（`${name}` 等）を現在の属性値と動的に置換して `this.innerHTML` に流し込む処理に置き換えました。
 
 ---
 
-## 2. 検証結果
+## 3. 検証結果
 
-### 2.1. 自動テスト
-`go test ./...` を実行し、すべてのユニットテストおよび新規追加した統合テスト (`TestParseAndSyncNestedOrders`) が無事パスすることを確認しました。
+### 3.1. 自動テスト
+`go test ./...` を実行し、すべてのバックエンドテストが壊れることなくパスすることを確認しました。
 
 ```
-ok  	w-cms/internal/cms	0.569s
+ok  	w-cms/internal/cms	(cached)
 ```
 
-### 2.2. 手動統合テスト
-実環境のSQLiteデータベース（`data/cms.db`）に、サンプルHTML (`assets/test.html`) をアップロードし、意図通りのリレーションシップでデータが挿入されていることを確認しました。
-
-#### pages
-*   ID: `00000`
-*   タイトル: `w-cms Web Components 動作テスト`
-*   保存パス: `data\master\00\00000\00000.html`
-
-#### client_orders (ヘッダー)
-*   OrderNo: `PO-2026-001`
-*   Client: `トーアスポーツマシーン`
-*   Date: `2026-06-18`
-
-#### client_order_items (部品明細：ぶら下がり)
-*   部品1: `W120-P180-05` (側板ブラケット) | 単価: 1200 | 数量: 20 | ステータス: `未着手`
-*   部品2: `W120-P180-06` (補強バー) | 単価: 800 | 数量: 10 | ステータス: `加工中`
+### 3.2. 手動統合テスト
+1.  ローカルサーバー上で静的ファイルルーティングにより [m-tag-view.html](http://localhost:8080/assets/templates/m-tag-view.html) などのテンプレートファイルが正常に配信されていることを確認しました。
+2.  ブラウザで [test.html](http://localhost:8080/assets/test.html) を開き、閲覧・編集モードの切り替え、新規部品の追加・削除、および変更時のHTMLリアルタイムシリアライズ動作が外部テンプレートをフェッチした状態でも遅延なくスムーズに動作することを確認しました。

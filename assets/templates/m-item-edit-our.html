@@ -1,0 +1,13 @@
+<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:8px; margin:4px 0;">
+    <input type="text" value="${itemName}" placeholder="部品名/品名" style="width:200px; padding:4px; border:1px solid #cbd5e1; border-radius:4px;"
+           oninput="this.getRootNode().host.setAttribute('item-name', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
+    <input type="number" value="${cost}" placeholder="単価(原価)" style="width:80px; padding:4px; border:1px solid #cbd5e1; border-radius:4px;"
+           oninput="this.getRootNode().host.setAttribute('cost', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();"> 円
+    <input type="number" value="${quantity}" placeholder="数量" style="width:50px; padding:4px; border:1px solid #cbd5e1; border-radius:4px;"
+           oninput="this.getRootNode().host.setAttribute('quantity', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();"> 個
+    <select onchange="this.getRootNode().host.setAttribute('status', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px;">
+        <option value="未納品" ${selectUndelivered}>未納品</option>
+        <option value="納品済" ${selectDelivered}>納品済</option>
+    </select>
+    <button type="button" onclick="const host = this.getRootNode().host; host.parentNode.removeChild(host); if(window.updateHtmlPreview) window.updateHtmlPreview();" style="background:#ef4444; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">削除</button>
+</div>
