@@ -18,6 +18,7 @@ func main() {
 
 	// ルーティングの設定
 	mux := http.NewServeMux()
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
 	mux.HandleFunc("/upload", cms.UploadHandler)
 	mux.HandleFunc("/", cms.IndexHandler)
 
