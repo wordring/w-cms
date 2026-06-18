@@ -62,17 +62,27 @@ func InitDB() error {
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 
-		// 4. 顧客の発注書データ
+		// 4. 顧客の発注書データ (Header)
 		`CREATE TABLE IF NOT EXISTS client_orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			item_id TEXT,
+			order_no TEXT UNIQUE,
 			client_name TEXT,
-			price INTEGER,
-			quantity INTEGER,
 			pdf_path TEXT,
 			page_id TEXT,
 			ordered_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+		);`,
+
+		// 4-2. 顧客の発注部品明細 (Items)
+		`CREATE TABLE IF NOT EXISTS client_order_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_no TEXT,
+			item_id TEXT,
+			item_name TEXT,
+			price INTEGER,
+			quantity INTEGER,
+			status TEXT,
+			FOREIGN KEY (order_no) REFERENCES client_orders(order_no) ON DELETE CASCADE
 		);`,
 
 		// 5. 材料屋・加工業者の見積もりデータ
@@ -87,17 +97,26 @@ func InitDB() error {
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 
-		// 6. 弊社の発注書データ
+		// 6. 弊社の発注書データ (Header)
 		`CREATE TABLE IF NOT EXISTS our_orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			item_name TEXT,
+			order_no TEXT UNIQUE,
 			supplier_name TEXT,
-			cost INTEGER,
-			quantity INTEGER,
 			pdf_path TEXT,
 			page_id TEXT,
 			ordered_at DATE,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+		);`,
+
+		// 6-2. 弊社の発注部品明細 (Items)
+		`CREATE TABLE IF NOT EXISTS our_order_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_no TEXT,
+			item_name TEXT,
+			cost INTEGER,
+			quantity INTEGER,
+			status TEXT,
+			FOREIGN KEY (order_no) REFERENCES our_orders(order_no) ON DELETE CASCADE
 		);`,
 	}
 

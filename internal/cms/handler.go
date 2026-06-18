@@ -9,6 +9,13 @@ import (
 	"w-cms/internal/database"
 )
 
+// PageMeta は一覧表示用の簡素化されたメタデータ構造体です。
+type PageMeta struct {
+	ID       string
+	Title    string
+	FilePath string
+}
+
 // UploadHandler はブラウザからのファイルアップロードリクエストを受け取り、保存と同期を行います。
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	// POSTリクエスト以外は弾く
@@ -34,10 +41,11 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	os.MkdirAll(pageDir, 0755)
 
-	htmlPath := filepath.Join(pageDir, "index.html")
+	// 物理ファイル名にページIDを使用する (例: 00001.html)
+	htmlPath := filepath.Join(pageDir, newID+".html")
 	os.WriteFile(htmlPath, content, 0644)
 
-	// データベースへ同期（ここでpathも保存される）
+	// データベースへ同期
 	SyncIndex(newID, string(content))
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -45,8 +53,8 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 // IndexHandler はデータベースから記事一覧を取得しブラウザに描画します。
 func IndexHandler(w http.ResponseWriter, r *http.Request) {
-	// 手順1: pagesテーブルから、仮想階層を示す path カラムも含めてデータを取得する
-	rows, err := database.DB.Query("SELECT id, type, path, title, summary FROM pages ORDER BY id DESC")
+	// 手順1: pagesテーブルからデータを取得する
+	rows, err := database.DB.Query("SELECT id, title, file_path FROM pages ORDER BY id DESC")
 	if err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
@@ -57,13 +65,12 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 	var pages []PageMeta
 	for rows.Next() {
 		var p PageMeta
-		// ★追加: スキャンする対象に Path を追加
-		if err := rows.Scan(&p.ID, &p.Type, &p.Path, &p.Title, &p.Summary); err == nil {
+		if err := rows.Scan(&p.ID, &p.Title, &p.FilePath); err == nil {
 			pages = append(pages, p)
 		}
 	}
 
-	// 手順3: 仮想階層(Path)を表示するための列を追加したHTMLテンプレート
+	// 手順3: HTMLテンプレート
 	tmpl := `
 	<!DOCTYPE html>
 	<html>
@@ -77,14 +84,12 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 		<hr>
 		<h2>登録済みデータ一覧</h2>
 		<table border="1">
-			<tr><th>ID</th><th>種類(Type)</th><th>階層(Path)</th><th>タイトル</th><th>要約</th></tr>
+			<tr><th>ID</th><th>タイトル</th><th>物理ファイルパス</th></tr>
 			{{range .}}
 			<tr>
 				<td>{{.ID}}</td>
-				<td><strong>{{.Type}}</strong></td>
-				<td><code>{{.Path}}</code></td>
 				<td>{{.Title}}</td>
-				<td>{{.Summary}}</td>
+				<td><code>{{.FilePath}}</code></td>
 			</tr>
 			{{end}}
 		</table>
