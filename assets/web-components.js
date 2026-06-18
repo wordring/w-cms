@@ -231,6 +231,16 @@ class MFile extends HTMLElement {
             }
         }
 
+        let pdfEmbedHTML = '';
+        if (src && src !== '#' && src.toLowerCase().endsWith('.pdf')) {
+            const pageId = window.currentPageId || new URLSearchParams(window.location.search).get('id');
+            if (pageId) {
+                pdfEmbedHTML = `<embed src="/data/master/${pageId}/${src}" type="application/pdf" width="100%" height="400px" style="border:1px solid #cbd5e1; border-radius:4px; margin: 10px 0;">`;
+            } else {
+                pdfEmbedHTML = `<div style="padding:10px; background:#fffbeb; color:#b45309; border-radius:4px; font-size:12px;">（保存後にプレビューが表示されます）</div>`;
+            }
+        }
+
         const templateName = isEdit ? 'm-file-edit' : 'm-file-view';
         let html = await fetchTemplate(templateName);
 
@@ -242,16 +252,105 @@ class MFile extends HTMLElement {
             .replace(/\${src}/g, src)
             .replace(/\${name}/g, name)
             .replace(/\${headerMetaHTML}/g, headerMetaHTML)
-            .replace(/\${editFieldsHTML}/g, editFieldsHTML);
+            .replace(/\${editFieldsHTML}/g, editFieldsHTML)
+            .replace(/\${pdfEmbedHTML}/g, pdfEmbedHTML);
 
         this.innerHTML = html;
 
         // 退避させていた m-item 子要素たちを `.items-list` 領域に再配置
         const container = this.querySelector('.items-list');
         if (container) {
-            items.forEach(item => {
-                container.appendChild(item);
+            items.forEach(item => container.appendChild(item));
+        }
+
+        // PDFのD&D設定
+        const dropZone = this.querySelector('.pdf-drop-zone');
+        if (dropZone) {
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.style.background = '#e2e8f0';
             });
+            dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dropZone.style.background = '#f8fafc';
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.style.background = '#f8fafc';
+                const file = e.dataTransfer.files[0];
+                if (!file || file.type !== 'application/pdf') {
+                    alert("PDFファイルをアップロードしてください");
+                    return;
+                }
+                this.uploadPDF(file);
+            });
+        }
+    }
+
+    async uploadPDF(file) {
+        let pageId = window.currentPageId || new URLSearchParams(window.location.search).get('id');
+        if (!pageId) {
+            alert("先に一度内容を入力し、オートセーブ（URLにidが付く）されるのをお待ちください。");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('page_id', pageId);
+        formData.append('pdf_file', file);
+
+        try {
+            const dropZone = this.querySelector('.pdf-drop-zone');
+            if (dropZone) dropZone.innerText = "アップロード中...";
+
+            const res = await fetch('/api/upload-pdf', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                this.setAttribute('src', data.src);
+                this.setAttribute('name', data.file_name);
+                if(window.updateHtmlPreview) window.updateHtmlPreview();
+                if(window.triggerAutoSave) window.triggerAutoSave();
+                this.render(); 
+                
+                // 続けて自動解析
+                this.parsePDF(pageId, data.file_name);
+            }
+        } catch (e) {
+            console.error("PDF upload failed", e);
+            alert("アップロードに失敗しました");
+        }
+    }
+
+    async parsePDF(pageId, fileName) {
+        try {
+            const dropZone = this.querySelector('.pdf-drop-zone');
+            if (dropZone) dropZone.innerText = "PDF内容をAI解析中...";
+
+            const res = await fetch('/api/parse-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_id: pageId, file_name: fileName })
+            });
+            const data = await res.json();
+            if (data.success && data.items && data.items.length > 0) {
+                const container = this.querySelector('.items-list') || this;
+                data.items.forEach(it => {
+                    const item = document.createElement('m-item');
+                    item.setAttribute('item-id', 'PARSED-' + Math.floor(Math.random()*10000));
+                    item.setAttribute('item-name', it.item_name);
+                    item.setAttribute('price', it.price);
+                    item.setAttribute('quantity', it.quantity);
+                    item.setAttribute('status', '未着手');
+                    container.appendChild(item);
+                });
+                if(window.updateHtmlPreview) window.updateHtmlPreview();
+                if(window.triggerAutoSave) window.triggerAutoSave();
+                alert(`PDFの解析に成功し、${data.items.length}件の明細を自動追加しました！`);
+            } else {
+                alert("PDFから明細データを自動抽出できませんでした。");
+            }
+        } catch (e) {
+            console.error("PDF parse failed", e);
+            alert("PDFの解析に失敗しました。");
         }
     }
 }
