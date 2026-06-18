@@ -2,7 +2,10 @@ package cms
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
+	"strings"
+
 	"w-cms/internal/database"
 )
 
@@ -159,4 +162,50 @@ func SyncIndex(id string, htmlContent string) error {
 
 	// コミット
 	return tx.Commit()
+}
+
+// RebuildDatabase は、HTMLファイル群（data/master配下）を正として、データベースのインデックスを完全に再構築します。
+func RebuildDatabase() error {
+	// 1. すべてのテーブルのデータを消去
+	tables := []string{
+		"part_materials",
+		"our_order_items",
+		"our_orders",
+		"client_order_items",
+		"client_orders",
+		"page_tags",
+		"pages",
+	}
+	
+	// 外部キー制約を一時的に無効化して削除（必要に応じて）するか、子から順番に削除する。
+	// ここでは子テーブルから順番に削除する安全なアプローチをとります。
+	for _, table := range tables {
+		_, err := database.DB.Exec("DELETE FROM " + table)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 2. data/master 以下のすべての .html ファイルを探索して SyncIndex を実行
+	err := filepath.Walk(MasterDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".html") {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			id := strings.TrimSuffix(info.Name(), ".html")
+			// 再度パースしてUPSERTを行う
+			err = SyncIndex(id, string(content))
+			if err != nil {
+				// エラーが出ても他のファイルのパースは継続する
+				return nil
+			}
+		}
+		return nil
+	})
+
+	return err
 }
