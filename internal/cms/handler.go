@@ -2,10 +2,12 @@ package cms
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"w-cms/internal/database"
 )
 
@@ -39,6 +41,12 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pageIDInt, err := strconv.Atoi(pageID)
+	if err != nil {
+		http.Error(w, "Invalid page_id format", http.StatusBadRequest)
+		return
+	}
+
 	// 1. そのページ内の受注 client_orders の明細を取得する
 	rows, err := database.DB.Query(`
 		SELECT item_id, quantity 
@@ -46,7 +54,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		WHERE order_no IN (
 			SELECT order_no FROM client_orders WHERE page_id = ?
 		)
-	`, pageID)
+	`, pageIDInt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -105,7 +113,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		FROM our_order_items ooi
 		JOIN our_orders oo ON ooi.order_no = oo.order_no
 		WHERE oo.page_id = ?
-	`, pageID)
+	`, pageIDInt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -199,8 +207,14 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idInt, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "Invalid id format", http.StatusBadRequest)
+		return
+	}
+
 	var filePath string
-	err := database.DB.QueryRow("SELECT file_path FROM pages WHERE id = ?", id).Scan(&filePath)
+	err = database.DB.QueryRow("SELECT file_path FROM pages WHERE id = ?", idInt).Scan(&filePath)
 	if err != nil {
 		http.Error(w, "Page not found", http.StatusNotFound)
 		return
@@ -254,7 +268,13 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := database.DB.Query("SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC", parentID)
+	parentIDInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		http.Error(w, "Invalid parent_id format", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := database.DB.Query("SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC", parentIDInt)
 	if err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
@@ -264,7 +284,9 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var pages []PageMeta
 	for rows.Next() {
 		var p PageMeta
-		if err := rows.Scan(&p.ID, &p.Title); err == nil {
+		var idInt int
+		if err := rows.Scan(&idInt, &p.Title); err == nil {
+			p.ID = fmt.Sprintf("%0*d", IDLength, idInt)
 			pages = append(pages, p)
 		}
 	}
@@ -308,7 +330,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// 初回起動時の 000000 ページ自動生成
 	if id == "000000" {
 		var exists bool
-		database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM pages WHERE id = '000000')").Scan(&exists)
+		database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM pages WHERE id = 0)").Scan(&exists)
 		if !exists {
 			defaultHTML := `<h1>w-cms Wiki トップページ</h1>
 <p>ここはすべての起点となるトップページです。</p>

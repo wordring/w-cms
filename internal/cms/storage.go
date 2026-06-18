@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
-	"strconv"
 )
 
 const IDLength = 6
@@ -22,29 +21,16 @@ func GetPageDir(id string) string {
 }
 
 // GenerateNextID はデータベースから現在登録されている最大のIDを取得し、
-// 次に保存すべき新しいID（6桁の10進数連番）を生成します。
-// 主キーのインデックスを活用してミリ秒以下で最大IDを取得します。
+// 次に保存すべき新しいID（6桁のゼロ埋め文字列）を生成します。
 func GenerateNextID(db *sql.DB) string {
-	var maxID string
-	// idは文字列なので、旧仕様の5桁と新仕様の6桁が混在していると辞書順ソートがおかしくなります。
-	// CAST(id AS INTEGER) とすることで数値として正確に最大値を取得します。
-	err := db.QueryRow("SELECT id FROM pages ORDER BY CAST(id AS INTEGER) DESC LIMIT 1").Scan(&maxID)
-	if err != nil {
+	var maxID sql.NullInt64
+	// idはINTEGER型に変更されたため、単純なORDER BYで正しくソートされます
+	err := db.QueryRow("SELECT id FROM pages ORDER BY id DESC LIMIT 1").Scan(&maxID)
+	if err != nil || !maxID.Valid {
 		// レコードがまだ登録されていない場合は初期値 "000000"
 		return "000000"
 	}
 
-	if maxID == "" {
-		return "000000"
-	}
-
-	// 取得した10進数文字列を数値にデコード
-	maxVal, err := strconv.ParseInt(maxID, 10, 64)
-	if err != nil {
-		return "000000"
-	}
-
-	// 最大値に+1し、10進数文字列に戻して指定桁数(6桁)で0埋めする
-	next := maxVal + 1
-	return fmt.Sprintf("%0*s", IDLength, strconv.FormatInt(next, 10))
+	next := maxID.Int64 + 1
+	return fmt.Sprintf("%0*d", IDLength, next)
 }
