@@ -26,7 +26,9 @@ func GetPageDir(id string) string {
 // 主キーのインデックスを活用してミリ秒以下で最大IDを取得します。
 func GenerateNextID(db *sql.DB) string {
 	var maxID string
-	err := db.QueryRow("SELECT id FROM pages ORDER BY id DESC LIMIT 1").Scan(&maxID)
+	// idは文字列なので、旧仕様の5桁と新仕様の6桁が混在していると辞書順ソートがおかしくなります。
+	// CAST(id AS INTEGER) とすることで数値として正確に最大値を取得します。
+	err := db.QueryRow("SELECT id FROM pages ORDER BY CAST(id AS INTEGER) DESC LIMIT 1").Scan(&maxID)
 	if err != nil {
 		// レコードがまだ登録されていない場合は初期値 "000000"
 		return "000000"
