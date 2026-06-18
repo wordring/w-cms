@@ -18,6 +18,7 @@ class MTag extends HTMLElement {
     async attributeChangedCallback() { await this.render(); }
 
     async render() {
+        if (!this.isConnected) return;
         const name = this.getAttribute('name') || '';
         const value = this.getAttribute('value') || '';
         const isEdit = document.body.hasAttribute('edit-mode');
@@ -39,6 +40,7 @@ class MItem extends HTMLElement {
     async attributeChangedCallback() { await this.render(); }
 
     async render() {
+        if (!this.isConnected) return;
         const itemId = this.getAttribute('item-id') || '';
         const itemName = this.getAttribute('item-name') || '';
         const price = this.getAttribute('price') || '0';
@@ -116,6 +118,7 @@ class MFile extends HTMLElement {
     async attributeChangedCallback() { await this.render(); }
 
     async render() {
+        if (!this.isConnected) return;
         // 先に子ノード（m-item）を退避（孫要素のコンテナ内に移動しているものも含む）
         const items = Array.from(this.querySelectorAll('m-item')).filter(item => item.closest('m-file') === this);
 
