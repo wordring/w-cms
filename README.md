@@ -29,6 +29,7 @@ w-cms/
 │       └── main.go         # アプリケーション起動とルーティングの設定
 ├── docs/
 │   ├── requirements.md     # 新機能・改修の要件定義書
+│   ├── concept.md          # ソフトウェアコンセプト・設計仕様書
 │   └── deploy.md           # 本番デプロイ・運用マニュアル
 ├── internal/
 │   ├── database/
