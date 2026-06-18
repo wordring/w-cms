@@ -385,7 +385,7 @@
     let currentPageId = pathId;
     let saveTimeout = null;
 
-    async function createChildPage() {
+    async function createSubpage() {
         try {
             // キャッシュ回避のためクエリパラメータを追加
             const res = await fetch('/api/new-id?t=' + Date.now());
