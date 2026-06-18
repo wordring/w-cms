@@ -385,9 +385,10 @@
     let currentPageId = pathId;
     let saveTimeout = null;
 
-    async function createSubpage() {
+    async function createChildPage() {
         try {
-            const res = await fetch('/api/new-id');
+            // キャッシュ回避のためクエリパラメータを追加
+            const res = await fetch('/api/new-id?t=' + Date.now());
             const data = await res.json();
             const newId = data.id;
             // 現在のページを親ページとして設定した新しいページを開く

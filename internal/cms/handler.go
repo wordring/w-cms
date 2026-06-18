@@ -298,6 +298,7 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 // NewIDAPIHandler は、バックエンドの連番アルゴリズムを使用して新しいページIDを生成し、フロントエンドに返します。
 func NewIDAPIHandler(w http.ResponseWriter, r *http.Request) {
 	newID := GenerateNextID(database.DB)
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"id": newID})
 }
