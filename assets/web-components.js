@@ -181,20 +181,6 @@ class MFile extends HTMLElement {
                                    onchange="this.getRootNode().host.setAttribute('ordered-at', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
                         </div>
                     </div>
-                    <div style="margin-top:8px;">
-                        <button type="button" onclick="
-                            const item = document.createElement('m-item');
-                            item.setAttribute('item-id', 'NEW-ITEM');
-                            item.setAttribute('item-name', '新規部品');
-                            item.setAttribute('price', '0');
-                            item.setAttribute('quantity', '1');
-                            item.setAttribute('status', '未着手');
-                            const file = this.closest('m-file');
-                            const container = file.querySelector('.items-list') || file;
-                            container.appendChild(item);
-                            if(window.updateHtmlPreview) window.updateHtmlPreview();
-                        " style="background:#10b981; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold;">＋ 部品を追加</button>
-                    </div>
                 `;
             } else if (tag === '弊社の発注書') {
                 editFieldsHTML = `
@@ -214,19 +200,6 @@ class MFile extends HTMLElement {
                             <input type="date" value="${orderedAt}" style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;"
                                    onchange="this.getRootNode().host.setAttribute('ordered-at', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
                         </div>
-                    </div>
-                    <div style="margin-top:8px;">
-                        <button type="button" onclick="
-                            const item = document.createElement('m-item');
-                            item.setAttribute('item-name', '新規品目');
-                            item.setAttribute('cost', '0');
-                            item.setAttribute('quantity', '1');
-                            item.setAttribute('status', '未納品');
-                            const file = this.closest('m-file');
-                            const container = file.querySelector('.items-list') || file;
-                            container.appendChild(item);
-                            if(window.updateHtmlPreview) window.updateHtmlPreview();
-                        " style="background:#10b981; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold;">＋ 品目を追加</button>
                     </div>
                 `;
             } else if (tag === '弊社の見積もり') {
@@ -283,3 +256,115 @@ class MFile extends HTMLElement {
     }
 }
 customElements.define('m-file', MFile);
+
+// === <m-material> (必要部材定義) の定義 ===
+class MMaterial extends HTMLElement {
+    static get observedAttributes() { return ['item-name', 'cost', 'supplier-name', 'quantity']; }
+    async connectedCallback() { await this.render(); }
+    async attributeChangedCallback() { await this.render(); }
+
+    async render() {
+        if (!this.isConnected) return;
+        const itemName = this.getAttribute('item-name') || '';
+        const cost = this.getAttribute('cost') || '0';
+        const supplierName = this.getAttribute('supplier-name') || '';
+        const quantity = this.getAttribute('quantity') || '1';
+        const isEdit = document.body.hasAttribute('edit-mode');
+
+        const templateName = isEdit ? 'm-material-edit' : 'm-material-view';
+        let html = await fetchTemplate(templateName);
+
+        const costNum = Number(cost);
+
+        // 変数置換
+        html = html
+            .replace(/\${itemName}/g, itemName)
+            .replace(/\${costDisplay}/g, costNum.toLocaleString())
+            .replace(/\${cost}/g, cost)
+            .replace(/\${supplierName}/g, supplierName)
+            .replace(/\${quantity}/g, quantity);
+
+        this.innerHTML = html;
+    }
+}
+customElements.define('m-material', MMaterial);
+
+// === <m-required-materials> (手配進捗状況) の定義 ===
+class MRequiredMaterials extends HTMLElement {
+    static get observedAttributes() { return ['page-id']; }
+    async connectedCallback() { await this.render(); }
+    async attributeChangedCallback() { await this.render(); }
+
+    async render() {
+        if (!this.isConnected) return;
+        const isEdit = document.body.hasAttribute('edit-mode');
+        const templateName = isEdit ? 'm-required-materials-edit' : 'm-required-materials-view';
+        let html = await fetchTemplate(templateName);
+        this.innerHTML = html;
+
+        if (isEdit) return; // 編集モード時はプレースホルダー表示のみ
+
+        // 閲覧モードの場合はAPIからデータをフェッチ
+        const pageId = this.getAttribute('page-id') || new URLSearchParams(window.location.search).get('page_id') || '';
+        if (!pageId) {
+            const loadingEl = this.querySelector('.materials-loading');
+            if (loadingEl) loadingEl.innerText = 'ページIDが指定されていません。';
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/required-materials?page_id=${pageId}`);
+            if (!response.ok) throw new Error('API error');
+            const data = await response.json();
+
+            const loadingEl = this.querySelector('.materials-loading');
+            if (loadingEl) loadingEl.style.display = 'none';
+
+            const tableEl = this.querySelector('.materials-table');
+            const tbodyEl = this.querySelector('.materials-tbody');
+
+            if (!tbodyEl) return;
+
+            if (data.length === 0) {
+                if (loadingEl) {
+                    loadingEl.style.display = 'block';
+                    loadingEl.innerText = '必要部材として登録されているアイテムはありません。';
+                }
+                return;
+            }
+
+            tableEl.style.display = 'table';
+            tbodyEl.innerHTML = '';
+
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #f1f5f9';
+                
+                let statusBadge = '';
+                if (item.remaining === 0) {
+                    statusBadge = `<span style="background-color: #ecfdf5; color: #10b981; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">手配完了</span>`;
+                } else {
+                    statusBadge = `<span style="background-color: #fef2f2; color: #ef4444; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">要手配 (${item.remaining})</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td style="padding: 10px; font-weight: 500; color: #1e293b;">${item.material_name}</td>
+                    <td style="padding: 10px; color: #475569;">${item.supplier_name || '-'}</td>
+                    <td style="padding: 10px; text-align: right; color: #1e293b;">${item.total_required.toLocaleString()}</td>
+                    <td style="padding: 10px; text-align: right; color: #475569;">${item.ordered.toLocaleString()}</td>
+                    <td style="padding: 10px; text-align: right; font-weight: bold; color: ${item.remaining > 0 ? '#ef4444' : '#1e293b'};">${item.remaining.toLocaleString()}</td>
+                    <td style="padding: 10px; text-align: center;">${statusBadge}</td>
+                `;
+                tbodyEl.appendChild(tr);
+            });
+        } catch (e) {
+            const loadingEl = this.querySelector('.materials-loading');
+            if (loadingEl) loadingEl.style.display = 'none';
+            const errorEl = this.querySelector('.materials-error');
+            if (errorEl) errorEl.style.display = 'block';
+            console.error(e);
+        }
+    }
+}
+customElements.define('m-required-materials', MRequiredMaterials);
+

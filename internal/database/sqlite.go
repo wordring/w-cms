@@ -118,6 +118,18 @@ func InitDB() error {
 			status TEXT,
 			FOREIGN KEY (order_no) REFERENCES our_orders(order_no) ON DELETE CASCADE
 		);`,
+
+		// 7. 部品構成・材料構成データ (マスタ情報)
+		`CREATE TABLE IF NOT EXISTS part_materials (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			part_id TEXT,
+			material_name TEXT,
+			cost INTEGER,
+			supplier_name TEXT,
+			quantity INTEGER,
+			page_id TEXT,
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+		);`,
 	}
 
 	for _, q := range queries {

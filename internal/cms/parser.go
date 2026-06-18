@@ -16,11 +16,20 @@ type ParsedPage struct {
 	OurOrders         []OurOrder
 	OurEstimates      []OurEstimate
 	SupplierEstimates []SupplierEstimate
+	Materials         []PartMaterial
 }
 
 type PageTag struct {
 	Name  string
 	Value string
+}
+
+type PartMaterial struct {
+	PartID       string
+	MaterialName string
+	Cost         int
+	SupplierName string
+	Quantity     int
 }
 
 type ClientOrder struct {
@@ -176,6 +185,25 @@ func ParseHTMLMaster(id string, htmlContent string) ParsedPage {
 					parsed.OurOrders = append(parsed.OurOrders, order)
 				}
 			}
+
+			// <m-material> の解析
+			if n.Data == "m-material" {
+				var material PartMaterial
+				material.Quantity = 1 // デフォルト値
+				for _, attr := range n.Attr {
+					switch attr.Key {
+					case "item-name":
+						material.MaterialName = attr.Val
+					case "cost":
+						material.Cost, _ = strconv.Atoi(attr.Val)
+					case "supplier-name":
+						material.SupplierName = attr.Val
+					case "quantity":
+						material.Quantity, _ = strconv.Atoi(attr.Val)
+					}
+				}
+				parsed.Materials = append(parsed.Materials, material)
+			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			traverse(c)
@@ -183,6 +211,21 @@ func ParseHTMLMaster(id string, htmlContent string) ParsedPage {
 	}
 
 	traverse(doc)
+
+	// 「部品番号」タグの値を検索して、すべての Materials.PartID にセット
+	var partID string
+	for _, tag := range parsed.Tags {
+		if tag.Name == "部品番号" {
+			partID = tag.Value
+			break
+		}
+	}
+	if partID != "" {
+		for i := range parsed.Materials {
+			parsed.Materials[i].PartID = partID
+		}
+	}
+
 	return parsed
 }
 

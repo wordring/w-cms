@@ -35,13 +35,13 @@ func SyncIndex(id string, htmlContent string) error {
 		return err
 	}
 
-	// 2. 既存の関連インデックスデータの全削除（カスケード削除も含む）
 	tablesToDelete := []string{
 		"page_tags",
 		"client_orders",
 		"our_orders",
 		"our_estimates",
 		"supplier_estimates",
+		"part_materials",
 	}
 	for _, table := range tablesToDelete {
 		_, err = tx.Exec("DELETE FROM "+table+" WHERE page_id = ?", parsed.ID)
@@ -142,6 +142,17 @@ func SyncIndex(id string, htmlContent string) error {
 			if err != nil {
 				return err
 			}
+		}
+	}
+
+	// 8. part_materials の挿入
+	for _, mat := range parsed.Materials {
+		_, err = tx.Exec(`
+			INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id) 
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, mat.PartID, mat.MaterialName, mat.Cost, mat.SupplierName, mat.Quantity, parsed.ID)
+		if err != nil {
+			return err
 		}
 	}
 
