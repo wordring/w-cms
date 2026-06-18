@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"log"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
@@ -139,6 +140,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := model.GenerateContent(ctx, pdfBlob, prompt)
 	if err != nil {
+		log.Printf("[Gemini API Error] %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"message": "Gemini APIの呼び出しに失敗しました: " + err.Error(),
