@@ -341,8 +341,13 @@ class MFile extends HTMLElement {
                 body: JSON.stringify({ page_id: pageId, file_name: fileName })
             });
             const data = await res.json();
-            console.log("PDF解析 生テキスト:", data.raw);
+            console.log("PDF解析 レスポンス:", data);
             
+            if (data.success === false) {
+                alert("バックエンドエラー: " + (data.message || "不明なエラー"));
+                return;
+            }
+
             if (data.success && data.items && data.items.length > 0) {
                 const container = this.querySelector('.items-list') || this;
                 data.items.forEach(it => {
