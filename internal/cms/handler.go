@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"w-cms/internal/database"
 )
 
@@ -300,12 +302,61 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(pages)
 }
 
-// NewIDAPIHandler は、バックエンドの連番アルゴリズムを使用して新しいページIDを生成し、フロントエンドに返します。
-func NewIDAPIHandler(w http.ResponseWriter, r *http.Request) {
-	newID := GenerateNextID(database.DB)
-	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"id": newID})
+// NewPageAPIHandler はサーバー側で新しいページを作成し、そのページへリダイレクトします。
+func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
+	// 1. 親ページIDの取得
+	parentIDStr := r.URL.Query().Get("parent")
+	var parentID sql.NullInt64
+	if parentIDStr != "" {
+		pid, err := strconv.Atoi(parentIDStr)
+		if err != nil {
+			http.Error(w, "Invalid parent ID", http.StatusBadRequest)
+			return
+		}
+		parentID = sql.NullInt64{Int64: int64(pid), Valid: true}
+	}
+
+	// 2. DBにページレコードを挿入（IDはSQLiteが自動採番）
+	result, err := database.DB.Exec(
+		`INSERT INTO pages (title, parent_id, file_path) VALUES (?, ?, '')`,
+		"新しいページ", parentID,
+	)
+	if err != nil {
+		http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	newIDInt, _ := result.LastInsertId()
+	newID := fmt.Sprintf("%0*d", IDLength, newIDInt)
+
+	// 3. デフォルトHTMLを構築（親ページIDタグを含む）
+	var htmlBuilder strings.Builder
+	if parentID.Valid {
+		parentStr := fmt.Sprintf("%0*d", IDLength, parentID.Int64)
+		fmt.Fprintf(&htmlBuilder,
+			"<m-tag name=\"親ページID\" value=\"%s\"></m-tag>\n", parentStr)
+	}
+	htmlBuilder.WriteString("<h1>新しいページ</h1>\n")
+	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>\n")
+	htmlBuilder.WriteString("<h2>子ページ一覧</h2>\n")
+	htmlBuilder.WriteString("<m-child-list></m-child-list>")
+	html := htmlBuilder.String()
+
+	// 4. HTMLファイルを物理保存
+	pageDir := GetPageDir(newID)
+	os.MkdirAll(pageDir, 0755)
+	htmlPath := filepath.Join(pageDir, newID+".html")
+	if err := os.WriteFile(htmlPath, []byte(html), 0644); err != nil {
+		http.Error(w, "Failed to write file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 5. DB同期（タグなどのインデックス更新）
+	if err := SyncIndex(newID, html); err != nil {
+		log.Printf("SyncIndex failed for new page %s: %v\n", newID, err)
+	}
+
+	// 6. 新しいページへリダイレクト
+	http.Redirect(w, r, "/"+newID+"?edit=true", http.StatusFound)
 }
 
 // RebuildDBAPIHandler は、HTMLファイルからデータベースを完全に再構築します。
@@ -360,5 +411,5 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.ServeFile(w, r, "assets/test.html")
+	http.ServeFile(w, r, "assets/index.html")
 }

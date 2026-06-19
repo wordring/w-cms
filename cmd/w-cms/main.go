@@ -27,7 +27,7 @@ func main() {
 	mux.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	mux.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
 	
-	mux.HandleFunc("/api/new-id", cms.NewIDAPIHandler)
+	mux.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	mux.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
 	mux.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	mux.HandleFunc("/upload", cms.UploadHandler)

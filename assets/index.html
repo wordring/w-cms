@@ -386,20 +386,9 @@
     let currentPageId = pathId;
     let saveTimeout = null;
 
-    async function createSubpage() {
-        try {
-            // キャッシュ回避のためクエリパラメータを追加
-            const res = await fetch('/api/new-id?t=' + Date.now());
-            const data = await res.json();
-            const newId = data.id;
-            // 現在のページを親ページとして設定した新しいページを開く
-            window.open(`/${newId}?edit=true&parent=${currentPageId}`, '_blank');
-        } catch (err) {
-            console.error("Failed to generate new ID", err);
-            // エラー時はフォールバックとしてタイムスタンプ擬似乱数を使用
-            const fallbackId = Date.now().toString().slice(-6);
-            window.open(`/${fallbackId}?edit=true&parent=${currentPageId}`, '_blank');
-        }
+    function createSubpage() {
+        // 表示中のページの下に子ページを作成する
+        window.open(`/api/new-page?parent=${currentPageId}`, '_blank');
     }
 
     async function rebuildDatabase() {
@@ -1140,8 +1129,7 @@
         
         const urlParams = new URLSearchParams(window.location.search);
         
-        // 子ページ作成から飛んできた場合の親ID初期化
-        const parentParam = urlParams.get('parent');
+
         
         // 編集モード自動判定（?editパラメータがあるか）
         if (urlParams.has('edit')) {
@@ -1179,31 +1167,12 @@
                 toggleMode();
                 setupAutoSave();
 
-                if (!tagEl && parentParam) {
-                    document.getElementById('parent-id-input').value = parentParam;
-                    insertComponent('m-tag-parent', null, 'after', parentParam);
-                }
+
             })
             .catch(err => {
-                console.log("Load error, creating new document:", err);
-                
-                // 新規ページなのでエディタを空にする（ダミーデータによるUNIQUE制約違反を防ぐため）
+                console.error("ページの読み込みに失敗しました:", err);
                 const editorContent = document.getElementById('editor-content');
-                editorContent.innerHTML = '<h1>新しいページ</h1><p>ここから編集を始めてください。</p>';
-
-                initBlocks();
-                setupEditorEvents();
-                toggleMode();
-                setupAutoSave();
-
-                // 新規作成時にタグを挿入
-                if (parentParam) {
-                    document.getElementById('parent-id-input').value = parentParam;
-                    insertComponent('m-tag-parent', null, 'after', parentParam);
-                }
-                
-                // 新規ページを直ちに強制保存してDBに実体を作る（デバウンスを待たない）
-                saveToServer();
+                editorContent.innerHTML = '<p style="color:#ef4444;">ページの読み込みに失敗しました。ページが存在しないか、サーバーに接続できません。</p>';
             });
     };
 </script>
