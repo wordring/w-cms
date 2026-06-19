@@ -36,11 +36,11 @@ w-cms/
 │   └── w-cms/
 │       └── main.go         # アプリケーション起動とルーティングの設定
 ├── docs/
-│   ├── concept.md                 # ソフトウェアコンセプト・コア思想
-│   ├── architecture_and_schema.md # アーキテクチャとDBスキーマ仕様
-│   ├── editor_spec.md             # Notion風ブロックエディタの技術仕様
-│   ├── requirements.md            # 新機能・改修の要件定義書
-│   └── deploy.md                  # 本番デプロイ・運用マニュアル
+│   ├── コンセプト.md                 # ソフトウェアコンセプト・コア思想
+│   ├── アーキテクチャとDBスキーマ.md  # アーキテクチャとDBスキーマ仕様
+│   ├── エディタ仕様.md               # Notion風ブロックエディタの技術仕様
+│   ├── 要件定義書.md                 # 新機能・改修の要件定義書
+│   └── デプロイ・運用マニュアル.md     # 本番デプロイ・運用マニュアル
 ├── internal/
 │   ├── database/
 │   │   └── sqlite.go       # データベースの初期化と接続管理・スキーマ定義
@@ -90,6 +90,6 @@ go test ./internal/cms -v
 ## 🚀 ドキュメント・仕様詳細
 
 より詳しい技術仕様や概念については、`docs/` フォルダ内の以下のドキュメントを参照してください。
-* [concept.md](docs/concept.md): 設計思想とコンセプト
-* [architecture_and_schema.md](docs/architecture_and_schema.md): データベーススキーマと同期アーキテクチャ
-* [editor_spec.md](docs/editor_spec.md): ブロックエディタのUI/UX実装仕様
+* [コンセプト.md](docs/コンセプト.md): 設計思想とコンセプト
+* [アーキテクチャとDBスキーマ.md](docs/アーキテクチャとDBスキーマ.md): データベーススキーマと同期アーキテクチャ
+* [エディタ仕様.md](docs/エディタ仕様.md): ブロックエディタのUI/UX実装仕様
