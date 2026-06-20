@@ -11,13 +11,9 @@ import (
 // ページ権限の管理API（フェーズ3）。サイドカー（正本）を書き換えてから
 // page_perms を更新します。これらのAPIのみがサイドカーを書き換えます。
 
-// PagePermsHandler は mode / group を変更します（chmod / chgrp）。
-// 権限: 対象ページの owner または admin（認証認可設計.md 3.5節）。
+// PagePermsHandler は GET で現在の権限を返し、POST で mode / group を変更します（chmod / chgrp）。
+// GET: read 権限。POST: 対象ページの owner または admin（認証認可設計.md 3.5節）。
 func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	u := auth.CurrentUser(r)
 	if u == nil {
 		http.Error(w, "認証が必要です", http.StatusUnauthorized)
@@ -31,6 +27,25 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cur := GetPerms(pageID)
+
+	// GET: 現在の権限を返す（read権限が必要）
+	if r.Method == http.MethodGet {
+		if !cur.CanRead(u) {
+			http.Error(w, "このページの権限を参照できません", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"owner": cur.Owner, "group": cur.Group, "mode": cur.Mode,
+			"can_chmod": u.IsAdmin || u.Username == cur.Owner, "can_chown": u.IsAdmin,
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if !u.IsAdmin && u.Username != cur.Owner {
 		http.Error(w, "権限を変更できるのは所有者または管理者のみです", http.StatusForbidden)
 		return

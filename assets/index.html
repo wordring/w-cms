@@ -326,7 +326,11 @@
         </div>
         </div>
         <div class="switch-container">
-            <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: none;"></span>
+            <span id="user-bar" style="font-size: 12px; color: #475569; margin-right: 10px;"></span>
+            <button onclick="openPermsPanel()" style="margin-right: 8px; padding: 5px 10px; background: #475569; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;" title="このページの権限（owner/group/mode）を確認・変更します">🔒 権限</button>
+            <a id="admin-link" href="/assets/admin.html" style="display: none; margin-right: 8px; padding: 5px 10px; background: #7c3aed; color: white; border-radius: 4px; text-decoration: none; font-size: 12px;">⚙ 管理</a>
+            <button onclick="logout()" style="margin-right: 12px; padding: 5px 10px; background: #e2e8f0; color: #334155; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">ログアウト</button>
+            <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: inline-block; min-width: 92px; text-align: right;"></span>
             <span class="mode-label" id="mode-text">閲覧モード</span>
             <label class="switch">
                 <input type="checkbox" id="mode-toggle" onchange="toggleMode()">
@@ -335,6 +339,30 @@
         </div>
     </div>
     
+    <!-- ページ権限パネル（🔒 権限ボタンで開閉） -->
+    <div id="perms-panel" style="display: none; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin: 10px 0; background: #f8fafc;">
+        <strong style="font-size: 14px;">🔒 このページの権限</strong>
+        <div style="font-size: 13px; margin-top: 10px;">
+            所有者 (owner): <strong id="pp-owner"></strong>
+            <span id="pp-chown" style="display: none; margin-left: 8px;">
+                → <input id="pp-owner-input" placeholder="新しい所有者" style="width: 110px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                <button onclick="chownPage()" style="padding: 3px 8px; font-size: 12px;">所有者変更(chown)</button>
+            </span>
+        </div>
+        <div style="font-size: 13px; margin-top: 8px;">
+            グループ (group): <input id="pp-group" style="width: 130px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
+        </div>
+        <div style="font-size: 13px; margin-top: 8px;">
+            mode: <input id="pp-mode" maxlength="3" style="width: 50px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: monospace;">
+            <span style="color: #94a3b8; margin-left: 6px;">3桁（owner/group/other、各桁 r=2・w=1・rw=3・なし=0）例: 330, 302</span>
+        </div>
+        <div style="margin-top: 12px;">
+            <button onclick="savePerms()" style="padding: 5px 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">保存</button>
+            <button onclick="document.getElementById('perms-panel').style.display='none'" style="padding: 5px 12px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer;">閉じる</button>
+            <span id="pp-msg" style="margin-left: 10px; font-size: 12px;"></span>
+        </div>
+    </div>
+
     <p class="tip">💡 スイッチをONにすると「編集モード」に切り替わり、テキストボックスが出現して値を直接編集できるようになります。値を変えると下の「保存されるHTML」がリアルタイムに書き換わります。</p>
 
 
@@ -391,6 +419,79 @@
         window.open(`/api/new-page?parent=${currentPageId}`, '_blank');
     }
 
+    // --- 認証・権限まわり ---
+    let currentUserIsAdmin = false;
+
+    async function loadMe() {
+        try {
+            const res = await fetch('/api/me');
+            if (!res.ok) return;
+            const me = await res.json();
+            currentUserIsAdmin = !!me.is_admin;
+            document.getElementById('user-bar').textContent =
+                '👤 ' + me.username + (me.is_admin ? '（管理者）' : '');
+            if (me.is_admin) document.getElementById('admin-link').style.display = '';
+        } catch (e) { /* 未ログイン等は無視 */ }
+    }
+
+    async function logout() {
+        try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+        window.location.href = '/login';
+    }
+
+    async function openPermsPanel() {
+        const panel = document.getElementById('perms-panel');
+        const msg = document.getElementById('pp-msg');
+        msg.textContent = '';
+        try {
+            const res = await fetch('/api/page-perms?id=' + currentPageId);
+            if (!res.ok) { alert('権限情報を取得できませんでした（このページのread権限が必要です）。'); return; }
+            const p = await res.json();
+            document.getElementById('pp-owner').textContent = p.owner || '(なし)';
+            document.getElementById('pp-group').value = p.group || '';
+            document.getElementById('pp-mode').value = p.mode || '';
+            // chown は admin のみ、chmod/chgrp は owner か admin
+            document.getElementById('pp-chown').style.display = p.can_chown ? '' : 'none';
+            if (p.can_chown) document.getElementById('pp-owner-input').value = p.owner || '';
+            const canEdit = !!p.can_chmod;
+            document.getElementById('pp-group').disabled = !canEdit;
+            document.getElementById('pp-mode').disabled = !canEdit;
+            panel.style.display = 'block';
+        } catch (e) { alert('権限情報の取得に失敗しました。'); }
+    }
+
+    async function savePerms() {
+        const mode = document.getElementById('pp-mode').value.trim();
+        const group = document.getElementById('pp-group').value;
+        const msg = document.getElementById('pp-msg');
+        try {
+            const res = await fetch('/api/page-perms?id=' + currentPageId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: mode, group: group })
+            });
+            if (res.ok) { msg.style.color = '#16a34a'; msg.textContent = '保存しました。'; }
+            else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
+        } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '通信エラー'; }
+    }
+
+    async function chownPage() {
+        const owner = document.getElementById('pp-owner-input').value.trim();
+        const msg = document.getElementById('pp-msg');
+        if (!owner) { msg.style.color = '#dc2626'; msg.textContent = '所有者を入力してください'; return; }
+        try {
+            const res = await fetch('/api/page-chown?id=' + currentPageId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ owner: owner })
+            });
+            if (res.ok) {
+                document.getElementById('pp-owner').textContent = owner;
+                msg.style.color = '#16a34a'; msg.textContent = '所有者を変更しました。';
+            } else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
+        } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '通信エラー'; }
+    }
+
     async function rebuildDatabase() {
         if (!confirm("データベースのインデックスをHTMLファイルから完全に再構築します。よろしいですか？")) {
             return;
@@ -435,7 +536,6 @@
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
         const statusEl = document.getElementById('save-status');
-        statusEl.style.display = 'inline';
         statusEl.innerText = "保存中...";
         statusEl.style.color = "#f59e0b"; // 琥珀色
 
@@ -473,7 +573,6 @@
     function triggerAutoSave() {
         if (!document.body.hasAttribute('edit-mode')) return;
         const statusEl = document.getElementById('save-status');
-        statusEl.style.display = 'inline';
         statusEl.innerText = "未保存";
         statusEl.style.color = "#94a3b8";
 
@@ -1126,6 +1225,7 @@
     // 初回読み込み時の初期表示
     window.onload = function() {
         document.getElementById('display-page-id').innerText = currentPageId;
+        loadMe(); // ログインユーザー名・管理リンクを表示
         
         const urlParams = new URLSearchParams(window.location.search);
         
