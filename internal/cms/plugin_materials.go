@@ -104,6 +104,10 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing page_id parameter", http.StatusBadRequest)
 		return
 	}
+	// 集計対象ページの read 権限を要求する
+	if !RequirePageRead(w, r, pageID) {
+		return
+	}
 
 	pageIDInt, err := strconv.Atoi(pageID)
 	if err != nil {

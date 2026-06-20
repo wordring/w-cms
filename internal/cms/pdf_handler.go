@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"log"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
@@ -24,6 +24,10 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	pageID := r.FormValue("page_id")
 	if pageID == "" {
 		http.Error(w, "page_id is required", http.StatusBadRequest)
+		return
+	}
+	// PDFの追加はページ内容の変更なので write 権限を要求する
+	if !RequirePageWrite(w, r, pageID) {
 		return
 	}
 
@@ -85,6 +89,10 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Invalid request body"})
+		return
+	}
+	// PDF解析→明細挿入はページ内容の変更につながるため write 権限を要求する
+	if !RequirePageWrite(w, r, req.PageID) {
 		return
 	}
 

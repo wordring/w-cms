@@ -74,6 +74,11 @@ func SyncIndex(id string, htmlContent string) error {
 		}
 	}
 
+	// コア3: ページ権限インデックス（サイドカー <id>.meta.json → page_perms）の同期
+	if err = syncPagePerms(tx, pageIDInt, id); err != nil {
+		return err
+	}
+
 	// 手順5: 各プラグインがユースケース固有テーブルを洗い替え
 	for _, p := range Plugins() {
 		if err = p.Sync(tx, pageIDInt, root); err != nil {

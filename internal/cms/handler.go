@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"w-cms/internal/auth"
 	"w-cms/internal/database"
 )
 
@@ -42,7 +44,16 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	id := req.PageID
 	if id == "" {
+		// 新規ページ：作成者を所有者としてサイドカーを作成してから同期する
 		id = GenerateNextID(database.DB)
+		if u := auth.CurrentUser(r); u != nil {
+			EnsureSidecar(id, u.Username, u.PrimaryGroup)
+		}
+	} else {
+		// 既存ページ：write権限を要求する
+		if !RequirePageWrite(w, r, id) {
+			return
+		}
 	}
 
 	pageDir := GetPageDir(id)
@@ -77,6 +88,10 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing id", http.StatusBadRequest)
+		return
+	}
+	// ページ本文の取得は read 権限を要求する
+	if !RequirePageRead(w, r, id) {
 		return
 	}
 
@@ -128,6 +143,11 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	htmlPath := filepath.Join(pageDir, newID+".html")
 	os.WriteFile(htmlPath, content, 0644)
 
+	// アップロード者を所有者とする権限サイドカーを作成（SyncIndexより前）
+	if u := auth.CurrentUser(r); u != nil {
+		EnsureSidecar(newID, u.Username, u.PrimaryGroup)
+	}
+
 	SyncIndex(newID, string(content))
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -146,6 +166,11 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid parent_id format", http.StatusBadRequest)
 		return
 	}
+	// 一覧表示には親ページの read 権限を要求する（Unixの「ディレクトリの読み取り」に相当）
+	if !RequirePageRead(w, r, parentID) {
+		return
+	}
+	user := auth.CurrentUser(r)
 
 	rows, err := database.DB.Query("SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC", parentIDInt)
 	if err != nil {
@@ -154,13 +179,16 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var pages []PageMeta
+	// 各子ページのうち、閲覧者が read 権限を持つものだけを返す
+	pages := make([]PageMeta, 0)
 	for rows.Next() {
 		var p PageMeta
 		var idInt int
 		if err := rows.Scan(&idInt, &p.Title); err == nil {
-			p.ID = fmt.Sprintf("%0*d", IDLength, idInt)
-			pages = append(pages, p)
+			if GetPerms(idInt).CanRead(user) {
+				p.ID = fmt.Sprintf("%0*d", IDLength, idInt)
+				pages = append(pages, p)
+			}
 		}
 	}
 
@@ -180,7 +208,17 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		parentID = sql.NullInt64{Int64: int64(pid), Valid: true}
+		// 子ページの作成には親ページの write 権限を要求する
+		if !RequirePageWrite(w, r, parentIDStr) {
+			return
+		}
+	} else {
+		// 親なし（トップレベル）ページの作成は admin のみ
+		if !RequireAdmin(w, r) {
+			return
+		}
 	}
+	creator := auth.CurrentUser(r)
 
 	// 2. DBにページレコードを挿入（IDはSQLiteが自動採番）
 	result, err := database.DB.Exec(
@@ -216,6 +254,11 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 4-2. 権限サイドカーを作成（作成者が所有者。SyncIndexより前に作る）
+	if creator != nil {
+		EnsureSidecar(newID, creator.Username, creator.PrimaryGroup)
+	}
+
 	// 5. DB同期（タグなどのインデックス更新）
 	if err := SyncIndex(newID, html); err != nil {
 		log.Printf("SyncIndex failed for new page %s: %v\n", newID, err)
@@ -229,6 +272,10 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 func RebuildDBAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// 全再構築は admin のみ
+	if !RequireAdmin(w, r) {
 		return
 	}
 
@@ -265,6 +312,9 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 			os.MkdirAll(pageDir, 0755)
 			htmlPath := filepath.Join(pageDir, "000000.html")
 			os.WriteFile(htmlPath, []byte(defaultHTML), 0644)
+			// トップページは全員が閲覧できるよう other に read を付与（owner rw / other r）。
+			// 書き込みは admin（owner）のみ。
+			WriteSidecar("000000", PagePerms{Owner: defaultOwner, Mode: "302"})
 			SyncIndex("000000", defaultHTML)
 		}
 	}

@@ -40,7 +40,8 @@ func main() {
 	// --- ルーティング ---
 	// 保護対象のルート（要認証）。RootHandler や各APIをここに登録する。
 	protected := http.NewServeMux()
-	protected.Handle("/data/", http.StripPrefix("/data/", http.FileServer(http.Dir("data"))))
+	// /data 配下（PDF原本など）はページのread権限を確認して配信する
+	protected.HandleFunc("/data/", cms.DataFileHandler)
 
 	protected.HandleFunc("/api/save", cms.SaveAPIHandler)
 	protected.HandleFunc("/api/load", cms.LoadAPIHandler)
