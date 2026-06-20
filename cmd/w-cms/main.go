@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/database"
 )
@@ -27,34 +28,54 @@ func main() {
 		log.Printf("起動時の自動再構築でエラー: %v", err)
 	}
 
-	// ルーティングの設定
-	mux := http.NewServeMux()
-	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
-	mux.Handle("/data/", http.StripPrefix("/data/", http.FileServer(http.Dir("data"))))
+	// 認証用DB（data/auth.db）を初期化し、初期管理者をブートストラップする。
+	if err := database.InitAuthDB(); err != nil {
+		log.Fatalf("認証DB初期化エラー: %v", err)
+	}
+	defer database.AuthDB.Close()
+	if err := auth.BootstrapAdmin(); err != nil {
+		log.Fatalf("初期管理者の作成エラー: %v", err)
+	}
 
-	// コアAPI
-	mux.HandleFunc("/api/save", cms.SaveAPIHandler)
-	mux.HandleFunc("/api/load", cms.LoadAPIHandler)
-	mux.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
-	mux.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
+	// --- ルーティング ---
+	// 保護対象のルート（要認証）。RootHandler や各APIをここに登録する。
+	protected := http.NewServeMux()
+	protected.Handle("/data/", http.StripPrefix("/data/", http.FileServer(http.Dir("data"))))
 
-	mux.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
-	mux.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
-	mux.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
-	mux.HandleFunc("/upload", cms.UploadHandler)
+	protected.HandleFunc("/api/save", cms.SaveAPIHandler)
+	protected.HandleFunc("/api/load", cms.LoadAPIHandler)
+	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
+	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
+	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
+	protected.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
+	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
+	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
+	protected.HandleFunc("/api/me", auth.MeAPIHandler)
+	protected.HandleFunc("/upload", cms.UploadHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	for _, route := range cms.PluginRoutes() {
-		mux.HandleFunc(route.Pattern, route.Handler)
+		protected.HandleFunc(route.Pattern, route.Handler)
 		log.Printf("プラグインAPI登録: %s", route.Pattern)
 	}
 
 	// ルート（Wiki型ルーティング）は最後に登録する
-	mux.HandleFunc("/", cms.RootHandler)
+	protected.HandleFunc("/", cms.RootHandler)
+
+	// 公開ルート（認証不要）。ログイン関連とフロントの静的アセット。
+	root := http.NewServeMux()
+	root.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
+	root.HandleFunc("/login", auth.LoginPageHandler)
+	root.HandleFunc("/api/login", auth.LoginAPIHandler)
+	// 上記以外はすべて認証必須の protected へ。
+	root.Handle("/", auth.RequireAuth(protected))
+
+	// CSRF対策（状態変更系のオリジン検証）を全体に適用する。
+	handler := auth.CSRFProtect(root)
 
 	// サーバーの起動
 	log.Println("w-cms 起動: http://localhost:8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	if err := http.ListenAndServe(":8080", handler); err != nil {
 		log.Fatalf("サーバー終了: %v", err)
 	}
 }
