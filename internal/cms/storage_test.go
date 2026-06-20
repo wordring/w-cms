@@ -217,6 +217,70 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	}
 }
 
+// TestPageInfoCreatedFieldsSync は、<m-page-info> の created-at / created-by が
+// ParseCore で抽出され、SyncIndex によって pages テーブルへ反映されること、
+// および空属性での再同期が既存の作成情報を上書きしない（COALESCE）ことを確認します。
+func TestPageInfoCreatedFieldsSync(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	defer db.Close()
+	database.DB = db
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
+	}
+	if err := ApplySchema(db); err != nil {
+		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
+	}
+
+	htmlContent := `<m-page-info created-at="2026-05-01T10:00:00Z" created-by="admin">
+	<m-tag name="親ページID" value="00001"></m-tag>
+</m-page-info>
+<h1>テストページ</h1>`
+
+	// ParseCore が created-at / created-by / 親ページID を抽出する
+	root, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		t.Fatalf("HTMLパースエラー: %v", err)
+	}
+	core := ParseCore(root)
+	if core.CreatedAt != "2026-05-01T10:00:00Z" {
+		t.Errorf("CreatedAtの抽出が違います: %q", core.CreatedAt)
+	}
+	if core.CreatedBy != "admin" {
+		t.Errorf("CreatedByの抽出が違います: %q", core.CreatedBy)
+	}
+	if core.ParentID != "00001" {
+		t.Errorf("内包する親ページIDの抽出が違います: %q", core.ParentID)
+	}
+
+	// SyncIndex で pages テーブルへ反映される
+	if err := SyncIndex("00002", htmlContent); err != nil {
+		t.Fatalf("SyncIndexでエラー: %v", err)
+	}
+	var createdAt, createdBy string
+	err = db.QueryRow("SELECT created_at, created_by FROM pages WHERE id = ?", "00002").Scan(&createdAt, &createdBy)
+	if err != nil {
+		t.Fatalf("pagesのクエリでエラー: %v", err)
+	}
+	if createdAt != "2026-05-01T10:00:00Z" || createdBy != "admin" {
+		t.Errorf("created_at/created_by が反映されていません: at=%q, by=%q", createdAt, createdBy)
+	}
+
+	// 作成情報を持たないHTMLで再同期しても、既存の作成情報は保持される（改竄・消失防止）
+	if err := SyncIndex("00002", `<h1>作成情報を消したい改竄HTML</h1>`); err != nil {
+		t.Fatalf("再同期でエラー: %v", err)
+	}
+	err = db.QueryRow("SELECT created_at, created_by FROM pages WHERE id = ?", "00002").Scan(&createdAt, &createdBy)
+	if err != nil {
+		t.Fatalf("再同期後のクエリでエラー: %v", err)
+	}
+	if createdAt != "2026-05-01T10:00:00Z" || createdBy != "admin" {
+		t.Errorf("再同期で作成情報が失われました: at=%q, by=%q", createdAt, createdBy)
+	}
+}
+
 func TestRequiredMaterialsCalculation(t *testing.T) {
 	// 1. テスト用のインメモリDB初期化
 	db, err := sql.Open("sqlite", ":memory:")

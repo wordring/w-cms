@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite" // WindowsでもCコンパイラ不要で動くPure Goドライバ
 )
@@ -41,12 +42,16 @@ func InitDB() error {
 // pages は全ドキュメントの基本情報、page_tags は <m-tag> の可変属性を保持します。
 // これらは外部キーの参照先となるため、プラグインのテーブルより先に作成する必要があります。
 var CoreTables = []string{
-	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）
+	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）。
+	//    created_at / created_by は HTML本文の <m-page-info> から同期される
+	//    （DB再構築で失わないよう、真の値はファイルが正）。
 	`CREATE TABLE IF NOT EXISTS pages (
 		id INTEGER PRIMARY KEY,
 		title TEXT,
 		parent_id INTEGER,
 		file_path TEXT,
+		created_at DATETIME,
+		created_by TEXT,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
 
@@ -70,11 +75,25 @@ var CoreTables = []string{
 	);`,
 }
 
+// coreMigrations は、既存DB（CREATE TABLE IF NOT EXISTS では更新されない）に
+// 後から追加された列を補うための冪等なマイグレーションです。
+// 列が既に存在する場合の "duplicate column name" エラーは無視します。
+var coreMigrations = []string{
+	`ALTER TABLE pages ADD COLUMN created_at DATETIME`,
+	`ALTER TABLE pages ADD COLUMN created_by TEXT`,
+}
+
 // CreateCoreTables はコアテーブル（pages / page_tags）を作成します。
 // 本番では InitDB から、テストでは各テストのセットアップから呼び出します。
 func CreateCoreTables(db *sql.DB) error {
 	for _, q := range CoreTables {
 		if _, err := db.Exec(q); err != nil {
+			return err
+		}
+	}
+	// 既存DBへの列追加（新規DBでは CREATE TABLE 済みのため冪等にスキップ）。
+	for _, q := range coreMigrations {
+		if _, err := db.Exec(q); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return err
 		}
 	}
