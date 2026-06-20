@@ -28,8 +28,10 @@ type Plugin interface {
 	// 必ず "CREATE TABLE IF NOT EXISTS ..." の形にしてください（多重作成に耐えるため）。
 	Schema() []string
 
-	// Tables はこのプラグインが所有するテーブル名を「子→親」の順で返します。
-	// DB全再構築（RebuildDatabase）での全行削除に使われます。
+	// Tables はこのプラグインが所有するテーブル名を返します（自己文書化・整合性検証用）。
+	// 全再構築（RebuildDatabase）は sqlite_master から全テーブルをDROPするため、
+	// このリストの記載漏れが再構築バグを引き起こすことはありません。ただし Schema() で
+	// 定義したテーブルはここにも列挙してください（テストで両者の整合性を検証します）。
 	Tables() []string
 
 	// Sync は1ページ分のHTMLノード木を走査し、自分のテーブルを当該ページ分だけ
@@ -85,15 +87,6 @@ func PluginRoutes() []Route {
 		}
 	}
 	return routes
-}
-
-// pluginTables は全プラグインの所有テーブルを「子→親」順で連結して返します（全再構築用）。
-func pluginTables() []string {
-	var tables []string
-	for _, p := range registry {
-		tables = append(tables, p.Tables()...)
-	}
-	return tables
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ package cms
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -85,20 +86,103 @@ func SyncIndex(id string, htmlContent string) error {
 
 // RebuildDatabase は、HTMLファイル群（data/master配下）を正として、
 // データベースのインデックスを完全に再構築します。
+//
+// 既存の全テーブルをDROPしてスキーマごと作り直すため、廃止されたプラグインの
+// 残存テーブルなどスキーマのdriftも含めて完全に初期化されます。DBファイル自体は
+// 削除せず、接続を開いたまま実行することで、Windowsでのファイルロックや
+// リビルド中の他リクエストとの競合を避けています。処理は冪等です。
 func RebuildDatabase() error {
-	// 1. すべてのテーブルのデータを消去する。
-	//    プラグインの所有テーブル（子→親順）→ コアテーブル の順で削除する。
-	tables := append([]string{}, pluginTables()...)
-	tables = append(tables, "page_tags", "pages")
-	for _, table := range tables {
-		if _, err := database.DB.Exec("DELETE FROM " + table); err != nil {
+	// 1. 現在DBに存在する全テーブルを sqlite_master から列挙してDROPする。
+	if err := dropAllTables(database.DB); err != nil {
+		return err
+	}
+
+	// 2. コアテーブルと全プラグインのテーブルを作り直す。
+	if err := database.CreateCoreTables(database.DB); err != nil {
+		return err
+	}
+	if err := ApplySchema(database.DB); err != nil {
+		return err
+	}
+
+	// 3. data/master 以下のすべての .html ファイルを探索して SyncIndex を実行する。
+	return resyncAllPages()
+}
+
+// dropAllTables は sqlite_master を列挙して、ユーザー定義の全テーブルをDROPします。
+func dropAllTables(db *sql.DB) error {
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		names = append(names, name)
+	}
+	rows.Close()
+
+	// 外部キー制約による削除順の問題を避けるため、DROP中は一時的にFKを無効化する。
+	if _, err := db.Exec("PRAGMA foreign_keys = OFF;"); err != nil {
+		return err
+	}
+	defer db.Exec("PRAGMA foreign_keys = ON;")
+
+	for _, name := range names {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + name); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
-	// 2. data/master 以下のすべての .html ファイルを探索して SyncIndex を実行する
+// RebuildIfEmpty は、pages テーブルが空でかつ data/master にHTMLファイルが存在する場合に、
+// データベースを全再構築します。バックアップからファイル（data/master）だけを復元した状態で
+// アプリを起動するだけでDBが自動再生成されるようにするための、起動時フックです。
+func RebuildIfEmpty() error {
+	var count int
+	if err := database.DB.QueryRow("SELECT COUNT(*) FROM pages").Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	if !hasHTMLFiles(MasterDir) {
+		return nil
+	}
+	log.Println("空のDBとHTMLファイルを検出: データベースを自動再構築します")
+	return RebuildDatabase()
+}
+
+// hasHTMLFiles は dir 配下に .html ファイルが1つでも存在するかを返します。
+func hasHTMLFiles(dir string) bool {
+	found := false
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".html") {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
+// resyncAllPages は data/master 配下の全 .html を走査して SyncIndex を実行します。
+// 個々のファイルのエラーは握り潰して他ファイルの処理を継続します（冪等な再実行で回復可能）。
+func resyncAllPages() error {
 	return filepath.Walk(MasterDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			// data/master が存在しない場合などは、再構築対象なしとして正常終了する。
+			if os.IsNotExist(err) {
+				return filepath.SkipDir
+			}
 			return err
 		}
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".html") {
@@ -107,7 +191,6 @@ func RebuildDatabase() error {
 				return err
 			}
 			id := strings.TrimSuffix(info.Name(), ".html")
-			// エラーが出ても他のファイルの処理は継続する
 			_ = SyncIndex(id, string(content))
 		}
 		return nil
