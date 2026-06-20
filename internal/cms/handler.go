@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/html"
+
 	"w-cms/internal/auth"
 	"w-cms/internal/database"
 )
@@ -121,6 +123,19 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 更新日時は保存のたびにサーバーが「今」を刻む。
 	updatedAt := time.Now().UTC().Format(time.RFC3339)
+
+	// 親ページIDが変更される場合のみ、変更先の妥当性を検証する（実在・循環・write権限）。
+	// 親が変わらない通常の保存では検証しない（親にwrite権限が無くても自分のページは保存できる）。
+	idInt, _ := strconv.Atoi(id)
+	newParent := parseParentID(req.HTML)
+	var oldParent sql.NullInt64
+	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", idInt).Scan(&oldParent)
+	if parentChanged(oldParent, newParent) {
+		if msg, code := validateParentChange(auth.CurrentUser(r), idInt, newParent); code != 0 {
+			http.Error(w, msg, code)
+			return
+		}
+	}
 
 	// 受け取ったHTMLの <m-page-info> をサーバー権威値で上書きしてから永続化する。
 	htmlOut := setPageInfoAttrs(req.HTML, createdAt, createdBy, updatedAt)
@@ -351,6 +366,114 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 6. 新しいページへリダイレクト
 	http.Redirect(w, r, "/"+newID+"?edit=true", http.StatusFound)
+}
+
+// parseParentID は保存対象HTMLから親ページID（<m-tag name="親ページID"> の値）を取り出します。
+// 無ければ空文字を返します。
+func parseParentID(htmlContent string) string {
+	root, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		return ""
+	}
+	return ParseCore(root).ParentID
+}
+
+// parentChanged は、DB上の現在の親（old）と新しい親文字列（newStr）が異なるかを返します。
+// 親が変わらない通常の保存では検証をスキップするための判定です。
+func parentChanged(old sql.NullInt64, newStr string) bool {
+	newNorm := -1 // 親なし
+	if newStr != "" {
+		if v, err := strconv.Atoi(newStr); err == nil {
+			newNorm = v
+		} else {
+			newNorm = -2 // 数値でない不正値。必ず検証を走らせて弾く
+		}
+	}
+	oldNorm := -1
+	if old.Valid {
+		oldNorm = int(old.Int64)
+	}
+	return newNorm != oldNorm
+}
+
+// parentCreatesCycle は、ページ childID の親を newParentID にすると木に循環が生じるかを返します。
+// newParentID から parent_id チェーンを上にたどり、childID に到達すれば循環です。
+// 既存データの破損による無限ループに備え、探索回数に上限を設けます。
+func parentCreatesCycle(childID, newParentID int) bool {
+	cur := newParentID
+	for i := 0; i < 10000; i++ {
+		if cur == childID {
+			return true
+		}
+		var parent sql.NullInt64
+		if err := database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", cur).Scan(&parent); err != nil || !parent.Valid {
+			return false
+		}
+		cur = int(parent.Int64)
+	}
+	return false
+}
+
+// validateParentChange は、ページ childID の親を newParentStr に変更する操作の妥当性を検証します。
+// 呼び出し側は「親が実際に変わるとき」だけ呼ぶこと（不変の保存では検証しない）。
+// 妥当なら ("", 0)、不正なら (ユーザー向けメッセージ, HTTPステータス) を返します。
+//
+// ルール（子ページ作成 NewPageAPIHandler と同じポリシー）:
+//   - 親を空（トップレベル）にするには admin 権限が必要
+//   - 親IDは数値かつ実在するページであること
+//   - 自分自身や自分の子孫を親に指定できない（循環防止）
+//   - 新しい親ページへの write 権限が必要
+func validateParentChange(user *auth.User, childID int, newParentStr string) (string, int) {
+	if user == nil {
+		return "認証が必要です", http.StatusUnauthorized
+	}
+	if newParentStr == "" {
+		if !user.IsAdmin {
+			return "親なし（トップレベル）に変更するには管理者権限が必要です", http.StatusForbidden
+		}
+		return "", 0
+	}
+	parentID, err := strconv.Atoi(newParentStr)
+	if err != nil {
+		return "親ページIDが不正です", http.StatusBadRequest
+	}
+	var exists bool
+	database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM pages WHERE id = ?)", parentID).Scan(&exists)
+	if !exists {
+		return "指定された親ページが存在しません", http.StatusBadRequest
+	}
+	if parentID == childID {
+		return "自分自身を親ページに指定できません", http.StatusBadRequest
+	}
+	if parentCreatesCycle(childID, parentID) {
+		return "自分の子孫ページを親に指定できません（循環します）", http.StatusBadRequest
+	}
+	if !GetPerms(parentID).CanWrite(user) {
+		return "新しい親ページへの書き込み権限がありません", http.StatusForbidden
+	}
+	return "", 0
+}
+
+// ValidateParentAPIHandler は、編集中ページの親ページ変更が妥当かを返します（クライアントの即時検証用）。
+// 権威的な検証は保存API側でも行われます。対象ページのwrite権限を前提とします。
+func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if !RequirePageWrite(w, r, id) {
+		return
+	}
+	childID, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
+
+	w.Header().Set("Content-Type", "application/json")
+	if msg, code := validateParentChange(auth.CurrentUser(r), childID, newParent); code != 0 {
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": msg})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 }
 
 // RebuildDBAPIHandler は、HTMLファイルからデータベースを完全に再構築します。
