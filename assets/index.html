@@ -320,9 +320,6 @@
                 <button onclick="createSubpage()" style="margin-left: 10px; padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
         ＋ 子ページを作成
     </button>
-    <button onclick="rebuildDatabase()" style="margin-left: 10px; padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;" title="HTMLファイルからデータベースのインデックスを再構築します">
-        🔄 DB再構築
-    </button>
         </div>
         </div>
         <div class="switch-container">
@@ -490,21 +487,6 @@
                 msg.style.color = '#16a34a'; msg.textContent = '所有者を変更しました。';
             } else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
         } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '通信エラー'; }
-    }
-
-    async function rebuildDatabase() {
-        if (!confirm("データベースのインデックスをHTMLファイルから完全に再構築します。よろしいですか？")) {
-            return;
-        }
-        try {
-            const res = await fetch('/api/rebuild-db', { method: 'POST' });
-            if (!res.ok) throw new Error("Rebuild failed");
-            alert("データベースの再構築が完了しました！\nページをリロードして反映します。");
-            window.location.reload();
-        } catch (err) {
-            console.error(err);
-            alert("データベースの再構築に失敗しました。");
-        }
     }
 
     function updateParentIDTag() {

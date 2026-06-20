@@ -64,6 +64,16 @@
       </div>
     </div>
 
+    <!-- メンテナンス -->
+    <h2>メンテナンス</h2>
+    <div class="card">
+      <div class="row">
+        <button onclick="rebuildDatabase()" style="background:#ef4444;">🔄 データベース再構築</button>
+        <span style="font-size:12px; color:#64748b;">HTMLファイル（<code>data/master</code>）を正としてDBインデックスを完全に作り直します。</span>
+        <span id="rebuild-msg" class="msg"></span>
+      </div>
+    </div>
+
     <!-- 監査ログ -->
     <h2>監査ログ（最近200件）</h2>
     <div class="card">
@@ -160,6 +170,15 @@ async function loadAudit() {
     tr.innerHTML = `<td>${esc(e.ts)}</td><td>${esc(e.username)}</td><td>${esc(e.action)}</td><td>${esc(e.target)}</td>`;
     tb.appendChild(tr);
   });
+}
+
+async function rebuildDatabase() {
+  if (!confirm('HTMLファイルからデータベースのインデックスを完全に再構築します。よろしいですか？')) return;
+  const el = document.getElementById('rebuild-msg');
+  el.style.color = '#64748b'; el.textContent = '再構築中...';
+  const res = await api('POST', '/api/rebuild-db');
+  if (res.ok) { el.style.color = '#16a34a'; el.textContent = '再構築が完了しました。'; loadAudit(); }
+  else { el.style.color = '#dc2626'; el.textContent = '失敗: ' + await res.text(); }
 }
 
 function val(id) { return document.getElementById(id).value.trim(); }
