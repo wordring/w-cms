@@ -199,6 +199,8 @@ func RebuildDatabase() error {
 		"our_orders",
 		"client_order_items",
 		"client_orders",
+		"our_estimates",
+		"supplier_estimates",
 		"page_tags",
 		"pages",
 	}
