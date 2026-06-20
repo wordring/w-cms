@@ -54,6 +54,18 @@ func main() {
 	protected.HandleFunc("/api/me", auth.MeAPIHandler)
 	protected.HandleFunc("/upload", cms.UploadHandler)
 
+	// 権限管理（owner/admin）
+	protected.HandleFunc("/api/page-perms", cms.PagePermsHandler)
+	protected.HandleFunc("/api/page-chown", cms.PageChownHandler)
+
+	// 管理API（admin限定）
+	protected.HandleFunc("/api/admin/users", auth.UsersAPIHandler)
+	protected.HandleFunc("/api/admin/users/password", auth.UserPasswordAPIHandler)
+	protected.HandleFunc("/api/admin/users/disable", auth.UserDisableAPIHandler)
+	protected.HandleFunc("/api/admin/groups", auth.GroupsAPIHandler)
+	protected.HandleFunc("/api/admin/groups/members", auth.GroupMembersAPIHandler)
+	protected.HandleFunc("/api/admin/audit", auth.AuditAPIHandler)
+
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	for _, route := range cms.PluginRoutes() {
 		protected.HandleFunc(route.Pattern, route.Handler)

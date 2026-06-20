@@ -104,6 +104,37 @@ func syncPagePerms(tx *sql.Tx, pageID int, id string) error {
 	return err
 }
 
+// RefreshPerms はサイドカー（正本）から cms.db の page_perms を更新します（トランザクション外）。
+// chmod/chown など、本文の再同期を伴わない権限変更のあとに呼びます。
+func RefreshPerms(id string) error {
+	pageID, err := strconv.Atoi(id)
+	if err != nil {
+		return err
+	}
+	p, ok := ReadSidecar(id)
+	if !ok {
+		p = PagePerms{Owner: defaultOwner, Group: "", Mode: DefaultMode}
+	}
+	_, err = database.DB.Exec(`
+		INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (?, ?, ?, ?)
+		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode
+	`, pageID, p.Owner, p.Group, p.Mode)
+	return err
+}
+
+// ValidMode は mode が3桁・各桁0〜3かを検証します。
+func ValidMode(m string) bool {
+	if len(m) != 3 {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		if m[i] < '0' || m[i] > '3' {
+			return false
+		}
+	}
+	return true
+}
+
 // GetPerms は cms.db からページ権限を取得します。レコードが無い場合は
 // 「admin所有・既定mode」のフォールバックを返します（フェイルクローズ）。
 func GetPerms(pageID int) PagePerms {

@@ -71,6 +71,10 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if u := auth.CurrentUser(r); u != nil {
+		auth.Audit(u.Username, "save", id)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,

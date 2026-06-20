@@ -65,6 +65,15 @@ var AuthTables = []string{
 		fail_count INTEGER NOT NULL DEFAULT 0,
 		last_fail DATETIME
 	);`,
+
+	// 監査ログ（書き込み・権限変更・管理操作を記録）。
+	`CREATE TABLE IF NOT EXISTS audit_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ts DATETIME NOT NULL,
+		username TEXT,
+		action TEXT,
+		target TEXT
+	);`,
 }
 
 // CreateAuthTables は認証用テーブルを作成します（本番は InitAuthDB、テストは各セットアップから呼ぶ）。
