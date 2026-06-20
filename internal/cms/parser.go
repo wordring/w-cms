@@ -18,6 +18,11 @@ type CorePage struct {
 	Title    string
 	ParentID string
 	Tags     []PageTag
+
+	// CreatedAt / CreatedBy は文書先頭の <m-page-info> から抽出されるページ属性です。
+	// （作成日時・作成者。サーバーが生成時に1回だけ刻み、以後は改竄されてもサーバーが復元する）
+	CreatedAt string
+	CreatedBy string
 }
 
 // ParseCore はHTMLノード木から、ページの基本情報（タイトル・親ページID・タグ）を抽出します。
@@ -36,6 +41,11 @@ func ParseCore(root *html.Node) CorePage {
 			if name := Attr(n, "name"); name != "" {
 				core.Tags = append(core.Tags, PageTag{Name: name, Value: Attr(n, "value")})
 			}
+		case "m-page-info":
+			// ページ属性ブロック。作成日時・作成者をHTMLから読み取る。
+			// 親ページIDは内包する <m-tag name="親ページID"> 経由で別途同期される。
+			core.CreatedAt = Attr(n, "created-at")
+			core.CreatedBy = Attr(n, "created-by")
 		}
 	})
 

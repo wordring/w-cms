@@ -11,10 +11,20 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/database"
 )
+
+// escapeAttr はHTML属性値（ダブルクォート囲み）に安全に埋め込めるよう、
+// 特殊文字をエスケープします。標準 html.EscapeString と同等ですが、本ファイルでは
+// ローカル変数 html がパッケージ名を隠すため、最小限の置換器を用意しています。
+var attrEscaper = strings.NewReplacer(`&`, "&amp;", `<`, "&lt;", `>`, "&gt;", `"`, "&#34;", `'`, "&#39;")
+
+func escapeAttr(s string) string {
+	return attrEscaper.Replace(s)
+}
 
 // PageMeta は一覧表示用の簡素化されたメタデータ構造体です。
 type PageMeta struct {
@@ -236,13 +246,24 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	newIDInt, _ := result.LastInsertId()
 	newID := fmt.Sprintf("%0*d", IDLength, newIDInt)
 
-	// 3. デフォルトHTMLを構築（親ページIDタグを含む）
+	// 3. デフォルトHTMLを構築。
+	//    ページ属性は文書先頭の <m-page-info> に集約する。作成日時・作成者は
+	//    サーバーがここで1回だけ刻む（以後の改竄は保存APIが復元する）。
+	//    親ページIDは <m-page-info> に内包する <m-tag name="親ページID"> で表す。
 	var htmlBuilder strings.Builder
+	createdAt := time.Now().UTC().Format(time.RFC3339)
+	createdBy := ""
+	if creator != nil {
+		createdBy = creator.Username
+	}
+	fmt.Fprintf(&htmlBuilder,
+		"<m-page-info created-at=\"%s\" created-by=\"%s\">\n", createdAt, escapeAttr(createdBy))
 	if parentID.Valid {
 		parentStr := fmt.Sprintf("%0*d", IDLength, parentID.Int64)
 		fmt.Fprintf(&htmlBuilder,
-			"<m-tag name=\"親ページID\" value=\"%s\"></m-tag>\n", parentStr)
+			"  <m-tag name=\"親ページID\" value=\"%s\"></m-tag>\n", parentStr)
 	}
+	htmlBuilder.WriteString("</m-page-info>\n")
 	htmlBuilder.WriteString("<h1>新しいページ</h1>\n")
 	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>\n")
 	htmlBuilder.WriteString("<h2>子ページ一覧</h2>\n")
