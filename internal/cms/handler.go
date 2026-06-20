@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,47 @@ var attrEscaper = strings.NewReplacer(`&`, "&amp;", `<`, "&lt;", `>`, "&gt;", `"
 
 func escapeAttr(s string) string {
 	return attrEscaper.Replace(s)
+}
+
+// pageInfoOpenRe は <m-page-info ...> の開始タグ全体（属性部分をキャプチャ）にマッチします。
+var pageInfoOpenRe = regexp.MustCompile(`(?is)<m-page-info\b([^>]*)>`)
+
+// pageInfoAttrRe は name="value" 形式の属性（ダブルクォート）にマッチします。
+var pageInfoAttrRe = regexp.MustCompile(`([a-zA-Z][\w-]*)\s*=\s*"([^"]*)"`)
+
+// setPageInfoAttrs は保存対象HTML中の <m-page-info> 開始タグについて、
+// サーバー権限属性（created-at / created-by / updated-at）を与えられたサーバー値で
+// 強制的に設定して返します。クライアント由来の同名属性は破棄します（改竄防止）。
+// created-at / created-by は空文字なら属性を出力しません（作成情報が無い既存ページ用）。
+// updated-at は常に設定します。<m-page-info> が無ければ文書先頭に新設します。
+func setPageInfoAttrs(htmlContent, createdAt, createdBy, updatedAt string) string {
+	build := func(existing string) string {
+		var attrs []string
+		// 既存属性のうち、サーバー権限フィールド以外はそのまま保持する。
+		for _, m := range pageInfoAttrRe.FindAllStringSubmatch(existing, -1) {
+			switch strings.ToLower(m[1]) {
+			case "created-at", "created-by", "updated-at":
+				// サーバー値で置き換えるため破棄
+			default:
+				attrs = append(attrs, fmt.Sprintf(`%s="%s"`, m[1], m[2]))
+			}
+		}
+		if createdAt != "" {
+			attrs = append(attrs, fmt.Sprintf(`created-at="%s"`, escapeAttr(createdAt)))
+		}
+		if createdBy != "" {
+			attrs = append(attrs, fmt.Sprintf(`created-by="%s"`, escapeAttr(createdBy)))
+		}
+		attrs = append(attrs, fmt.Sprintf(`updated-at="%s"`, escapeAttr(updatedAt)))
+		return "<m-page-info " + strings.Join(attrs, " ") + ">"
+	}
+
+	if loc := pageInfoOpenRe.FindStringSubmatchIndex(htmlContent); loc != nil {
+		existing := htmlContent[loc[2]:loc[3]]
+		return htmlContent[:loc[0]] + build(existing) + htmlContent[loc[1]:]
+	}
+	// <m-page-info> が無い既存・旧HTMLには先頭に新設する。
+	return build("") + "</m-page-info>\n" + htmlContent
 }
 
 // PageMeta は一覧表示用の簡素化されたメタデータ構造体です。
@@ -52,30 +94,47 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// サーバー権限フィールド（作成日時・作成者・更新日時）の権威値を決める。
+	// クライアントが送ってきたHTML内の値は信用せず、後でサーバー値で上書きする（改竄防止）。
 	id := req.PageID
+	var createdAt, createdBy string
 	if id == "" {
-		// 新規ページ：作成者を所有者としてサイドカーを作成してから同期する
+		// 新規ページ：作成者を所有者としてサイドカーを作成してから同期する。
+		// 作成日時＝今、作成者＝現在のユーザー（サーバーが1回だけ刻む）。
 		id = GenerateNextID(database.DB)
 		if u := auth.CurrentUser(r); u != nil {
 			EnsureSidecar(id, u.Username, u.PrimaryGroup)
+			createdBy = u.Username
 		}
+		createdAt = time.Now().UTC().Format(time.RFC3339)
 	} else {
 		// 既存ページ：write権限を要求する
 		if !RequirePageWrite(w, r, id) {
 			return
 		}
+		// 作成日時・作成者はDB（＝作成時にサーバーが刻んだ値）を正とし、復元する。
+		if idInt, err := strconv.Atoi(id); err == nil {
+			var ca, cb sql.NullString
+			database.DB.QueryRow("SELECT created_at, created_by FROM pages WHERE id = ?", idInt).Scan(&ca, &cb)
+			createdAt, createdBy = ca.String, cb.String
+		}
 	}
+	// 更新日時は保存のたびにサーバーが「今」を刻む。
+	updatedAt := time.Now().UTC().Format(time.RFC3339)
+
+	// 受け取ったHTMLの <m-page-info> をサーバー権威値で上書きしてから永続化する。
+	htmlOut := setPageInfoAttrs(req.HTML, createdAt, createdBy, updatedAt)
 
 	pageDir := GetPageDir(id)
 	os.MkdirAll(pageDir, 0755)
 
 	htmlPath := filepath.Join(pageDir, id+".html")
-	if err := os.WriteFile(htmlPath, []byte(req.HTML), 0644); err != nil {
+	if err := os.WriteFile(htmlPath, []byte(htmlOut), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
 
-	if err := SyncIndex(id, req.HTML); err != nil {
+	if err := SyncIndex(id, htmlOut); err != nil {
 		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
 		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -87,8 +146,9 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"page_id": id,
+		"success":    true,
+		"page_id":    id,
+		"updated_at": updatedAt,
 	})
 }
 

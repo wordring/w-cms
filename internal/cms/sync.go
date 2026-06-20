@@ -42,14 +42,19 @@ func SyncIndex(id string, htmlContent string) error {
 		}
 	}
 
-	// 作成日時・作成者は <m-page-info> から読み取る。空の場合はNULLとし、
-	// 既存レコードの値を上書きしない（COALESCE）。
-	var createdAt, createdBy sql.NullString
+	// 作成日時・作成者・更新日時は <m-page-info> から読み取る。空の場合はNULLとする。
+	// created_*: NULLなら既存レコードの値を保持（COALESCE）。
+	// updated_at: NULLなら CURRENT_TIMESTAMP（＝今）にフォールバックするが、HTMLに
+	// 値があればそれを採用するため、DB再構築でも真の更新日時が保持される。
+	var createdAt, createdBy, updatedAt sql.NullString
 	if core.CreatedAt != "" {
 		createdAt = sql.NullString{String: core.CreatedAt, Valid: true}
 	}
 	if core.CreatedBy != "" {
 		createdBy = sql.NullString{String: core.CreatedBy, Valid: true}
+	}
+	if core.UpdatedAt != "" {
+		updatedAt = sql.NullString{String: core.UpdatedAt, Valid: true}
 	}
 
 	// 手順4: トランザクション開始
@@ -61,16 +66,16 @@ func SyncIndex(id string, htmlContent string) error {
 
 	// コア1: pages テーブルへの upsert
 	if _, err = tx.Exec(`
-		INSERT INTO pages (id, title, parent_id, file_path, created_at, created_by)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO pages (id, title, parent_id, file_path, created_at, created_by, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
 		ON CONFLICT(id) DO UPDATE SET
 			title = excluded.title,
 			parent_id = excluded.parent_id,
 			file_path = excluded.file_path,
 			created_at = COALESCE(excluded.created_at, pages.created_at),
 			created_by = COALESCE(excluded.created_by, pages.created_by),
-			updated_at = CURRENT_TIMESTAMP
-	`, pageIDInt, core.Title, parentIDInt, filePath, createdAt, createdBy); err != nil {
+			updated_at = COALESCE(excluded.updated_at, CURRENT_TIMESTAMP)
+	`, pageIDInt, core.Title, parentIDInt, filePath, createdAt, createdBy, updatedAt); err != nil {
 		return err
 	}
 
