@@ -21,6 +21,12 @@ func main() {
 		log.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
+	// DBが空でファイル（data/master）が存在する場合は自動再構築する。
+	// バックアップからファイルだけ復元して起動した場合の復旧フック。
+	if err := cms.RebuildIfEmpty(); err != nil {
+		log.Printf("起動時の自動再構築でエラー: %v", err)
+	}
+
 	// ルーティングの設定
 	mux := http.NewServeMux()
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))

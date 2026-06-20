@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -323,5 +324,184 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 	}
 	if !foundHeat {
 		t.Error("外注高周波焼入れ の結果が見つかりません")
+	}
+}
+
+// TestPluginTablesConsistency は、各プラグインの Tables() が宣言するテーブルが
+// すべて Schema() で実際に作成されることを検証します（Schema/Tablesのdrift防止）。
+func TestPluginTablesConsistency(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	defer db.Close()
+
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
+	}
+	if err := ApplySchema(db); err != nil {
+		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
+	}
+
+	existing := map[string]bool{}
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table'`)
+	if err != nil {
+		t.Fatalf("sqlite_masterのクエリでエラー: %v", err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			existing[name] = true
+		}
+	}
+	rows.Close()
+
+	for _, p := range Plugins() {
+		for _, tbl := range p.Tables() {
+			if !existing[tbl] {
+				t.Errorf("プラグイン %q の Tables() が宣言する %q が Schema() で作成されていません", p.Name(), tbl)
+			}
+		}
+	}
+}
+
+// TestRebuildDatabase は、全テーブルDROP方式の再構築が
+// (1) スキーマのdrift（廃止テーブル）を除去し、
+// (2) DBに残ったファイル無しの孤児ページを一掃し、
+// (3) data/master のHTMLファイルから正しく再同期する
+// ことを検証します。
+func TestRebuildDatabase(t *testing.T) {
+	// data/master を一時ディレクトリに切り替える（カレントディレクトリを変更）。
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("カレントディレクトリ取得エラー: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("Chdirエラー: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	// インメモリDBを準備
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	defer db.Close()
+	database.DB = db
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
+	}
+	if err := ApplySchema(db); err != nil {
+		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
+	}
+
+	// (a) 廃止プラグインの残存テーブルを模した stale_table を作る
+	if _, err := db.Exec(`CREATE TABLE stale_table (x TEXT)`); err != nil {
+		t.Fatalf("stale_table作成エラー: %v", err)
+	}
+	// (b) ファイルが存在しない孤児ページをDBに直接挿入する
+	if _, err := db.Exec(`INSERT INTO pages (id, title, file_path) VALUES (999, '孤児', '')`); err != nil {
+		t.Fatalf("孤児ページ挿入エラー: %v", err)
+	}
+
+	// (c) data/master に実ファイルを1つ作成する（顧客の発注書を含む）
+	pageDir := GetPageDir("000001")
+	if err := os.MkdirAll(pageDir, 0755); err != nil {
+		t.Fatalf("ディレクトリ作成エラー: %v", err)
+	}
+	htmlContent := `<h1>受注ページ</h1>
+<m-file tag="顧客の発注書" order-no="PO-RB1" client-name="トーア">
+	<m-item item-id="SHAFT-01" item-name="シャフトA" price="8000" quantity="3" status="未着手"></m-item>
+</m-file>`
+	if err := os.WriteFile(filepath.Join(pageDir, "000001.html"), []byte(htmlContent), 0644); err != nil {
+		t.Fatalf("HTMLファイル作成エラー: %v", err)
+	}
+
+	// 再構築を実行
+	if err := RebuildDatabase(); err != nil {
+		t.Fatalf("RebuildDatabaseでエラー: %v", err)
+	}
+
+	// (1) stale_table が消えていること
+	var staleCount int
+	db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='stale_table'`).Scan(&staleCount)
+	if staleCount != 0 {
+		t.Errorf("廃止テーブル stale_table が再構築後も残っています")
+	}
+
+	// (2) 孤児ページ(999)が消え、(3) ファイル由来のページ(1)が存在すること
+	var orphan, real int
+	db.QueryRow(`SELECT COUNT(*) FROM pages WHERE id = 999`).Scan(&orphan)
+	if orphan != 0 {
+		t.Errorf("ファイル無しの孤児ページが再構築後も残っています")
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM pages WHERE id = 1`).Scan(&real)
+	if real != 1 {
+		t.Errorf("ファイル由来のページが再構築されていません")
+	}
+
+	// (3) 発注書明細がファイルから再同期されていること
+	var qty int
+	db.QueryRow(`SELECT quantity FROM client_order_items WHERE order_no = 'PO-RB1'`).Scan(&qty)
+	if qty != 3 {
+		t.Errorf("発注明細が再同期されていません: quantity=%d", qty)
+	}
+}
+
+// TestRebuildIfEmpty は、DBが空でファイルが存在するとき自動再構築が走り、
+// DBに既存データがあるときは何もしないことを検証します。
+func TestRebuildIfEmpty(t *testing.T) {
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("カレントディレクトリ取得エラー: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("Chdirエラー: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	defer db.Close()
+	database.DB = db
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
+	}
+	if err := ApplySchema(db); err != nil {
+		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
+	}
+
+	// data/master にファイルを用意するが、DBは空のまま
+	pageDir := GetPageDir("000002")
+	if err := os.MkdirAll(pageDir, 0755); err != nil {
+		t.Fatalf("ディレクトリ作成エラー: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pageDir, "000002.html"), []byte(`<h1>復元テスト</h1>`), 0644); err != nil {
+		t.Fatalf("HTMLファイル作成エラー: %v", err)
+	}
+
+	// 空DB＋ファイルあり → 自動再構築が走る
+	if err := RebuildIfEmpty(); err != nil {
+		t.Fatalf("RebuildIfEmptyでエラー: %v", err)
+	}
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM pages WHERE id = 2`).Scan(&count)
+	if count != 1 {
+		t.Errorf("空DBからの自動再構築でページが復元されていません")
+	}
+
+	// 既存データあり → 何もしない（タイトルが書き換わらないことで確認）
+	db.Exec(`UPDATE pages SET title = '手動編集' WHERE id = 2`)
+	if err := RebuildIfEmpty(); err != nil {
+		t.Fatalf("RebuildIfEmpty(2回目)でエラー: %v", err)
+	}
+	var title string
+	db.QueryRow(`SELECT title FROM pages WHERE id = 2`).Scan(&title)
+	if title != "手動編集" {
+		t.Errorf("DBが空でないのに再構築が走りました: title=%s", title)
 	}
 }
