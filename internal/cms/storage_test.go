@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"w-cms/internal/auth"
 	"w-cms/internal/database"
 
 	"golang.org/x/net/html"
@@ -277,11 +279,12 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		t.Fatalf("自社発注明細登録エラー: %v", err)
 	}
 
-	// 4. APIハンドラーにHTTPリクエストを送ってテスト
+	// 4. APIハンドラーにHTTPリクエストを送ってテスト（adminユーザーで権限チェックを通す）
 	req, err := http.NewRequest("GET", "/api/required-materials?page_id=00002", nil)
 	if err != nil {
 		t.Fatalf("リクエスト作成エラー: %v", err)
 	}
+	req = auth.WithUser(req, &auth.User{Username: "tester", IsAdmin: true})
 
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(RequiredMaterialsAPIHandler)

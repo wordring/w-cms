@@ -58,6 +58,16 @@ var CoreTables = []string{
 		PRIMARY KEY (page_id, name),
 		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 	);`,
+
+	// 3. ページ権限の検索インデックス（サイドカー <id>.meta.json から再生成される派生データ）。
+	//    owner=所有ユーザー名, grp=所有グループ名, mode=3桁の権限（認証認可設計.md 3章）。
+	`CREATE TABLE IF NOT EXISTS page_perms (
+		page_id INTEGER PRIMARY KEY,
+		owner TEXT,
+		grp TEXT,
+		mode TEXT,
+		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+	);`,
 }
 
 // CreateCoreTables はコアテーブル（pages / page_tags）を作成します。
