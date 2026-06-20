@@ -85,18 +85,23 @@ go mod tidy
 ```
 
 ### 2. アプリケーションの起動
-以下のコマンドでサーバーを起動します。
+**初回のみ**、初期管理者を環境変数で指定して起動します（認証が有効です）。
 
 ```bash
-go run cmd/w-cms/main.go
+# ローカル検証（HTTP）では Secure Cookie を無効化する
+WCMS_ADMIN_USER=admin WCMS_ADMIN_PASSWORD='強いパスワード' WCMS_SECURE_COOKIES=0 \
+  go run cmd/w-cms/main.go
 ```
-起動すると、`http://localhost:8080` でWebサーバーが立ち上がります。
-エディタ機能の検証は `http://localhost:8080/assets/index.html` にアクセスしてください。
+2回目以降は環境変数なしで `go run cmd/w-cms/main.go` で起動できます（管理者は `data/auth.db` に保存済み）。
+
+起動すると `http://localhost:8080` で立ち上がります。ブラウザでアクセスするとログイン画面（`/login`）にリダイレクトされるので、上で設定した管理者でログインしてください。
+
+> 本番（インターネット公開）では TLS/HTTPS が必須です。リバースプロキシ（Caddy/nginx）でTLS終端し、`WCMS_SECURE_COOKIES` は設定しない（既定の Secure 有効）でください。詳細は [認証認可設計.md](docs/認証認可設計.md) と [デプロイ・運用マニュアル.md](docs/デプロイ・運用マニュアル.md)。
 
 ### 3. テストの実行
 
 ```bash
-go test ./internal/cms -v
+go test ./...
 ```
 
 ---
