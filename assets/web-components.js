@@ -613,9 +613,29 @@ class MPageInfo extends HTMLElement {
         }
     }
 
-    // 親ページID入力を内包する <m-tag name="親ページID"> へ反映し、保存をトリガーする。
-    applyParentID(rawValue) {
+    // 親ページID入力を検証し、妥当なら内包する <m-tag name="親ページID"> へ反映して保存をトリガーする。
+    // 検証はサーバー（/api/validate-parent）が権威。実在・循環・新しい親へのwrite権限を確認する。
+    // 不正な場合はパネル内にエラーを表示し、反映も保存もしない。
+    async applyParentID(rawValue) {
         const parentId = (rawValue || '').trim();
+        const input = this.shadowRoot.querySelector('.pi-parent-input');
+        const errEl = this.shadowRoot.querySelector('.pi-parent-error');
+        const setError = (m) => {
+            if (errEl) errEl.textContent = m || '';
+            if (input) input.classList.toggle('pi-invalid', !!m);
+        };
+
+        const childId = window.currentPageId || '';
+        try {
+            const res = await fetch(`/api/validate-parent?id=${encodeURIComponent(childId)}&parent=${encodeURIComponent(parentId)}`);
+            const data = await res.json();
+            if (!data.ok) { setError(data.error || '指定できない親ページです'); return; }
+        } catch (e) {
+            setError('親ページの検証に失敗しました（通信エラー）');
+            return;
+        }
+        setError('');
+
         let tagEl = this.querySelector('m-tag[name="親ページID"]');
         if (parentId === '') {
             if (tagEl) tagEl.remove();

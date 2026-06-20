@@ -96,6 +96,70 @@ func TestSidecarAndPermsSync(t *testing.T) {
 	}
 }
 
+// TestValidateParentChange は親ページ付け替えの検証（実在・自己参照・循環・write権限・
+// トップレベル化はadmin）を確認します。
+func TestValidateParentChange(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	defer db.Close()
+	database.DB = db
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
+	}
+
+	// 木構造: 1 (alice所有, owner-write) → 2 → 3。10 は別所有(bob, other不可)。
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (1, 'root', NULL)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (2, 'child', 1)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (3, 'grand', 2)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (10, 'other', NULL)`)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (1, 'alice', '', '300')`) // owner rw
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (10, 'bob', '', '300')`)  // alice はother(不可)
+
+	alice := &auth.User{Username: "alice"}
+	admin := &auth.User{Username: "root", IsAdmin: true}
+
+	cases := []struct {
+		name      string
+		user      *auth.User
+		child     int
+		newParent string
+		wantOK    bool
+	}{
+		{"実在しない親は不可", alice, 3, "999", false},
+		{"数値でない親は不可", alice, 3, "abc", false},
+		{"自己参照は不可", alice, 3, "3", false},
+		{"子孫を親にする循環は不可", alice, 1, "3", false},      // 1の子孫3を1の親に→循環
+		{"write権限の無い親は不可", alice, 3, "10", false},     // 10はaliceがother(不可)
+		{"write権限のある親はOK", alice, 3, "1", true},        // 1はalice所有
+		{"トップレベル化はadmin以外不可", alice, 3, "", false},
+		{"トップレベル化はadminならOK", admin, 3, "", true},
+		{"adminは任意の親へ付け替え可", admin, 3, "10", true},
+	}
+	for _, c := range cases {
+		msg, code := validateParentChange(c.user, c.child, c.newParent)
+		gotOK := code == 0
+		if gotOK != c.wantOK {
+			t.Errorf("%s: ok=%v want %v (msg=%q code=%d)", c.name, gotOK, c.wantOK, msg, code)
+		}
+	}
+
+	// parentChanged: 親不変ならfalse、変化すればtrue
+	if parentChanged(sql.NullInt64{Int64: 1, Valid: true}, "1") {
+		t.Error("親が同じ（1→1）なのに変更と判定されました")
+	}
+	if !parentChanged(sql.NullInt64{Int64: 1, Valid: true}, "2") {
+		t.Error("親が変わった（1→2）のに不変と判定されました")
+	}
+	if parentChanged(sql.NullInt64{Valid: false}, "") {
+		t.Error("親なし→親なし が変更と判定されました")
+	}
+	if !parentChanged(sql.NullInt64{Valid: false}, "1") {
+		t.Error("親なし→1 が不変と判定されました")
+	}
+}
+
 // TestGetPermsFailClosed はサイドカー/レコードが無いページが admin 所有・other不可で
 // フェイルクローズすることを検証します。
 func TestGetPermsFailClosed(t *testing.T) {

@@ -31,6 +31,15 @@
         font-size: 13px;
         outline: none;
     }
+    .m-page-info input.pi-parent-input.pi-invalid {
+        border-color: #ef4444;
+        background: #fef2f2;
+    }
+    .m-page-info .pi-parent-error {
+        color: #ef4444;
+        font-size: 12px;
+        margin-left: 8px;
+    }
     /* サーバーが管理する読み取り専用フィールドは淡色で示す */
     .m-page-info .pi-readonly {
         color: #94a3b8;
@@ -39,7 +48,7 @@
 <!-- 仮レイアウト（編集可能なのは親ページIDのみ。他はサーバー管理の読み取り専用） -->
 <section class="m-page-info">
     <div class="pi-row"><span class="pi-label">ページID</span><span class="pi-value pi-readonly">${pageId}</span></div>
-    <div class="pi-row"><span class="pi-label">親ページID</span><span class="pi-value"><input class="pi-parent-input" type="text" value="${parentId}" placeholder="（なし）"></span></div>
+    <div class="pi-row"><span class="pi-label">親ページID</span><span class="pi-value"><input class="pi-parent-input" type="text" value="${parentId}" placeholder="（なし）"><span class="pi-parent-error"></span></span></div>
     <div class="pi-row"><span class="pi-label">作成日時</span><span class="pi-value pi-readonly">${createdAt}</span></div>
     <div class="pi-row"><span class="pi-label">作成者</span><span class="pi-value pi-readonly">${createdBy}</span></div>
     <div class="pi-row"><span class="pi-label">更新日時</span><span class="pi-value pi-readonly">${updatedAt}</span></div>
