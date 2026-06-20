@@ -1,0 +1,42 @@
+<style>
+    .m-page-info {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #f8fafc;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
+        color: #475569;
+    }
+    .m-page-info .pi-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 0;
+    }
+    .m-page-info .pi-label {
+        flex: 0 0 84px;
+        font-weight: 600;
+        color: #64748b;
+    }
+    .m-page-info .pi-value {
+        color: #1e293b;
+    }
+    .m-page-info input.pi-parent-input {
+        width: 100px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 13px;
+        outline: none;
+    }
+</style>
+<!-- 仮レイアウト（項目を並べただけ。詳細な見た目は後で詰める） -->
+<section class="m-page-info">
+    <div class="pi-row"><span class="pi-label">ページID</span><span class="pi-value">${pageId}</span></div>
+    <div class="pi-row"><span class="pi-label">親ページID</span><span class="pi-value">${parentId}</span></div>
+    <div class="pi-row"><span class="pi-label">作成日時</span><span class="pi-value">${createdAt}</span></div>
+    <div class="pi-row"><span class="pi-label">作成者</span><span class="pi-value">${createdBy}</span></div>
+    <div class="pi-row"><span class="pi-label">更新日時</span><span class="pi-value">${updatedAt}</span></div>
+</section>

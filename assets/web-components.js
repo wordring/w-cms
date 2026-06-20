@@ -19,6 +19,9 @@ class MTag extends HTMLElement {
 
     async render() {
         if (!this.isConnected) return;
+        // <m-page-info> に内包される親ページID等のタグは、ページ情報パネルが表示を
+        // 担当するため、本文中にはインライン表示しない（値はシリアライズ時に属性から読む）。
+        if (this.closest('m-page-info')) { this.innerHTML = ''; return; }
         const name = this.getAttribute('name') || '';
         const value = this.getAttribute('value') || '';
         const isEdit = document.body.hasAttribute('edit-mode');
@@ -553,4 +556,80 @@ class MRequiredMaterials extends HTMLElement {
     }
 }
 customElements.define('m-required-materials', MRequiredMaterials);
+
+// === <m-page-info> (ページ情報パネル) の定義 ===
+// 文書先頭に1つだけ置き、ページの属性（ページID・親ページID・作成日時・作成者・
+// 更新日時）を集約表示する。編集できるのは親ページIDのみで、内包する
+// <m-tag name="親ページID"> の value を裏で更新する（既存の同期機構をそのまま活用）。
+// 作成日時・作成者・更新日時はサーバーが管理する読み取り専用フィールド。
+class MPageInfo extends HTMLElement {
+    static get observedAttributes() { return ['created-at', 'created-by', 'updated-at']; }
+
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+    }
+
+    async connectedCallback() { await this.render(); }
+    async attributeChangedCallback() { await this.render(); }
+
+    // ISO8601（RFC3339）の日時を日本語ロケールで読みやすく整形する。空・不正値は「—」。
+    formatDateTime(value) {
+        if (!value) return '—';
+        const d = new Date(value);
+        if (isNaN(d.getTime())) return value;
+        return d.toLocaleString('ja-JP', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    // 内包する親ページIDタグの現在値（無ければ空文字）。
+    parentValue() {
+        const tagEl = this.querySelector('m-tag[name="親ページID"]');
+        return tagEl ? (tagEl.getAttribute('value') || '') : '';
+    }
+
+    async render() {
+        if (!this.isConnected) return;
+        const isEdit = document.body.hasAttribute('edit-mode');
+        const pageId = window.currentPageId || '（未保存）';
+        const parentId = this.parentValue();
+
+        const templateName = isEdit ? 'm-page-info-edit' : 'm-page-info-view';
+        let html = await fetchTemplate(templateName);
+        html = html
+            .replace(/\$\{pageId\}/g, pageId)
+            .replace(/\$\{parentId\}/g, parentId || (isEdit ? '' : '—'))
+            .replace(/\$\{createdAt\}/g, this.formatDateTime(this.getAttribute('created-at')))
+            .replace(/\$\{createdBy\}/g, this.getAttribute('created-by') || '—')
+            .replace(/\$\{updatedAt\}/g, this.formatDateTime(this.getAttribute('updated-at')));
+        this.shadowRoot.innerHTML = html;
+
+        // 編集モードでは親ページID入力を内包タグへ反映する。
+        const input = this.shadowRoot.querySelector('.pi-parent-input');
+        if (input) {
+            input.addEventListener('change', () => this.applyParentID(input.value));
+        }
+    }
+
+    // 親ページID入力を内包する <m-tag name="親ページID"> へ反映し、保存をトリガーする。
+    applyParentID(rawValue) {
+        const parentId = (rawValue || '').trim();
+        let tagEl = this.querySelector('m-tag[name="親ページID"]');
+        if (parentId === '') {
+            if (tagEl) tagEl.remove();
+        } else {
+            if (!tagEl) {
+                tagEl = document.createElement('m-tag');
+                tagEl.setAttribute('name', '親ページID');
+                this.appendChild(tagEl);
+            }
+            tagEl.setAttribute('value', parentId);
+        }
+        if (window.updateHtmlPreview) window.updateHtmlPreview();
+        if (window.triggerAutoSave) window.triggerAutoSave();
+    }
+}
+customElements.define('m-page-info', MPageInfo);
 
