@@ -7,16 +7,21 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 システムの中核は、HTMLという「非構造化（あるいは半構造化）データ」を、データベース上の「構造化データ（インデックス）」に同期させる処理にあります。
 
 ### Goバックエンドの構成（`internal/`）
-*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteを用いたデータベース・テーブルの初期化を行います。外部キー制約（PRAGMA foreign_keys = ON）を有効にしています。
-*   **`cms/handler.go`**: HTTPリクエストを処理します。APIエンドポイント（例: `/api/required-materials`）の実装もここで行われ、フロントエンドのコンポーネントからの非同期データ要求に応答します。
-*   **`cms/parser.go`**: `x/net/html` を用いて、エディタから送られてきたHTML文字列を解析（パース）し、特定のカスタムタグ（`<m-tag>`, `<m-file>`, `<m-material>` など）から属性値を抽出します。子要素としてネストされた `<m-item>` も同時に解析し、ヘッダと明細の関係を構築して返却します。
-*   **`cms/sync.go`**: パースされたデータをSQLiteの各種テーブルに `INSERT` または更新します。既存のデータを一度 `DELETE` し、新しいHTMLの構造に基づいて再 `INSERT` する UPSERT 的な同期処理を担います。
+*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。外部キー制約（PRAGMA foreign_keys = ON）を有効にし、**コアテーブル（`pages` / `page_tags`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
+*   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。
+*   **`cms/plugin_*.go`**: 1ファイル＝1ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・同期処理（`Sync`）を持ち、`init()` で自己登録します。新しいユースケースはここにファイルを足すだけで追加できます（[プラグイン開発ガイド.md](プラグイン開発ガイド.md) 参照）。
+*   **`cms/parser.go`**: `x/net/html` を用いて、HTML文字列から**コア情報（タイトル・親ページID・`<m-tag>`）のみ**を抽出します（`ParseCore`）。ユースケース固有の抽出は各プラグインが担当します。
+*   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_tags）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全プラグインの `Tables()` ＋コアを全削除してから再同期します。
+*   **`cms/handler.go`**: コアのHTTPハンドラ（保存・読込・子ページ作成など）。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
 
 ---
 
 ## 2. データベーススキーマ設計
 
 ドキュメント本文はファイルシステムに保存されますが、検索や集計に必要なメタデータはすべてSQLiteにインデックス化されます。
+
+> [!NOTE]
+> `pages` / `page_tags` は **コアテーブル**（`database/sqlite.go` が作成）です。それ以外の各テーブルは、対応する**プラグイン**（`cms/plugin_*.go`）が `Schema()` で定義し、起動時に `cms.ApplySchema()` で作成されます。どのプラグインがどのテーブルを所有するかは [プラグイン開発ガイド.md](プラグイン開発ガイド.md) の一覧を参照してください。
 
 ### ドキュメント管理テーブル
 *   **`pages`**: すべてのドキュメントの基本情報。
