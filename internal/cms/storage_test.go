@@ -279,6 +279,64 @@ func TestPageInfoCreatedFieldsSync(t *testing.T) {
 	if createdAt != "2026-05-01T10:00:00Z" || createdBy != "admin" {
 		t.Errorf("再同期で作成情報が失われました: at=%q, by=%q", createdAt, createdBy)
 	}
+
+	// updated-at を持つHTMLを同期すると、その値が updated_at に保持される
+	// （CURRENT_TIMESTAMP で上書きされない＝DB再構築でも真の更新日時が残る）。
+	withUpdated := `<m-page-info created-at="2026-05-01T10:00:00Z" created-by="admin" updated-at="2026-06-20T19:03:00Z"></m-page-info><h1>x</h1>`
+	if err := SyncIndex("00002", withUpdated); err != nil {
+		t.Fatalf("updated-at同期でエラー: %v", err)
+	}
+	var updatedAt string
+	if err := db.QueryRow("SELECT updated_at FROM pages WHERE id = ?", "00002").Scan(&updatedAt); err != nil {
+		t.Fatalf("updated_atのクエリでエラー: %v", err)
+	}
+	if updatedAt != "2026-06-20T19:03:00Z" {
+		t.Errorf("HTMLのupdated-atが反映されていません: %q", updatedAt)
+	}
+}
+
+// TestSetPageInfoAttrs は、保存時のサーバー権限フィールド上書きロジックを検証します。
+func TestSetPageInfoAttrs(t *testing.T) {
+	t.Run("既存タグのサーバー属性を上書きし他属性は保持", func(t *testing.T) {
+		in := `<m-page-info data-x="keep" created-at="FORGED" created-by="attacker" updated-at="OLD"><m-tag name="親ページID" value="00001"></m-tag></m-page-info><h1>本文</h1>`
+		out := setPageInfoAttrs(in, "2026-05-01T10:00:00Z", "admin", "2026-06-20T19:00:00Z")
+		for _, want := range []string{
+			`data-x="keep"`,
+			`created-at="2026-05-01T10:00:00Z"`,
+			`created-by="admin"`,
+			`updated-at="2026-06-20T19:00:00Z"`,
+			`<m-tag name="親ページID" value="00001">`,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("出力に %q が含まれていません: %s", want, out)
+			}
+		}
+		for _, ng := range []string{"FORGED", "attacker", `updated-at="OLD"`} {
+			if strings.Contains(out, ng) {
+				t.Errorf("改竄値 %q が残存しています: %s", ng, out)
+			}
+		}
+	})
+
+	t.Run("m-page-infoが無ければ先頭に新設", func(t *testing.T) {
+		out := setPageInfoAttrs(`<h1>旧HTML</h1>`, "2026-05-01T10:00:00Z", "admin", "2026-06-20T19:00:00Z")
+		if !strings.HasPrefix(out, "<m-page-info ") {
+			t.Errorf("先頭に m-page-info が新設されていません: %s", out)
+		}
+		if !strings.Contains(out, "</m-page-info>") || !strings.Contains(out, "<h1>旧HTML</h1>") {
+			t.Errorf("本文が保持されていません: %s", out)
+		}
+	})
+
+	t.Run("作成情報が空なら作成属性を出力しない", func(t *testing.T) {
+		out := setPageInfoAttrs(`<h1>x</h1>`, "", "", "2026-06-20T19:00:00Z")
+		if strings.Contains(out, "created-at=") || strings.Contains(out, "created-by=") {
+			t.Errorf("空の作成情報が属性として出力されています: %s", out)
+		}
+		if !strings.Contains(out, `updated-at="2026-06-20T19:00:00Z"`) {
+			t.Errorf("更新日時が設定されていません: %s", out)
+		}
+	})
 }
 
 func TestRequiredMaterialsCalculation(t *testing.T) {
