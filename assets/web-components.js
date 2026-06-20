@@ -401,7 +401,7 @@ class MChildList extends HTMLElement {
     }
 
     async render() {
-        // currentPageId is defined globally in test.html
+        // currentPageId is defined globally in index.html
         const pageId = window.currentPageId || "000000";
         const res = await fetch(`/api/children?parent_id=${pageId}`);
         let pages = [];
