@@ -1,0 +1,156 @@
+package cms
+
+import (
+	"database/sql"
+	"fmt"
+	"net/http"
+	"strconv"
+
+	"golang.org/x/net/html"
+)
+
+// ─────────────────────────────────────────────────────────────────────────
+// プラグイン機構（レジストリ＋インターフェース方式）
+//
+// 1つのユースケース（例:「顧客の発注書」）を、1つの自己完結したプラグインとして
+// 表現するための仕組みです。プラグインは init() で自身を Register() に登録し、
+// コア（parser/sync/schema/routing）は登録済みプラグインを走査するだけで動作します。
+//
+// 新しいユースケースの追加手順は docs/プラグイン開発ガイド.md を参照してください。
+// ─────────────────────────────────────────────────────────────────────────
+
+// Plugin は1つのユースケース（タグ→テーブルの抽出・同期）を自己完結で表す拡張単位です。
+type Plugin interface {
+	// Name は識別子（ログ・デバッグ用）。テーブル名やタグ名と重複しても構いません。
+	Name() string
+
+	// Schema はこのプラグインが必要とする CREATE TABLE 文を返します。
+	// 必ず "CREATE TABLE IF NOT EXISTS ..." の形にしてください（多重作成に耐えるため）。
+	Schema() []string
+
+	// Tables はこのプラグインが所有するテーブル名を「子→親」の順で返します。
+	// DB全再構築（RebuildDatabase）での全行削除に使われます。
+	Tables() []string
+
+	// Sync は1ページ分のHTMLノード木を走査し、自分のテーブルを当該ページ分だけ
+	// 洗い替え（DELETE → INSERT）します。トランザクション tx の中で呼ばれます。
+	Sync(tx *sql.Tx, pageID int, root *html.Node) error
+}
+
+// RouteProvider は集計APIなどのHTTPエンドポイントを提供したいプラグインが
+// 追加で実装する任意インターフェースです（Tier 2: コードプラグイン）。
+type RouteProvider interface {
+	Routes() []Route
+}
+
+// Route は1つのHTTPエンドポイント登録を表します。
+type Route struct {
+	Pattern string
+	Handler http.HandlerFunc
+}
+
+// registry は登録済みの全プラグイン。各プラグインファイルの init() から Register される。
+var registry []Plugin
+
+// Register はプラグインを登録します。各プラグインの init() から呼び出してください。
+func Register(p Plugin) {
+	registry = append(registry, p)
+}
+
+// Plugins は登録済みの全プラグインを返します。
+func Plugins() []Plugin {
+	return registry
+}
+
+// ApplySchema は登録済みの全プラグインのテーブルを作成します。
+// 本番では database.InitDB() でコアテーブルを作成した後、main から呼び出します。
+func ApplySchema(db *sql.DB) error {
+	for _, p := range registry {
+		for _, q := range p.Schema() {
+			if _, err := db.Exec(q); err != nil {
+				return fmt.Errorf("プラグイン %q のスキーマ作成に失敗: %w", p.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// PluginRoutes は RouteProvider を実装する全プラグインのルートを集約して返します。
+// main がこれを走査して mux に登録します。
+func PluginRoutes() []Route {
+	var routes []Route
+	for _, p := range registry {
+		if rp, ok := p.(RouteProvider); ok {
+			routes = append(routes, rp.Routes()...)
+		}
+	}
+	return routes
+}
+
+// pluginTables は全プラグインの所有テーブルを「子→親」順で連結して返します（全再構築用）。
+func pluginTables() []string {
+	var tables []string
+	for _, p := range registry {
+		tables = append(tables, p.Tables()...)
+	}
+	return tables
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// プラグインの実装を簡潔にするための DOM / 値変換ヘルパー
+// ─────────────────────────────────────────────────────────────────────────
+
+// Attr は要素ノード n の属性 key の値を返します。存在しなければ空文字列。
+func Attr(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// AtoiSafe は文字列を整数に変換します。変換できない場合は 0 を返します。
+func AtoiSafe(s string) int {
+	v, _ := strconv.Atoi(s)
+	return v
+}
+
+// Quantity は数量属性を返します。未指定・変換不能の場合はデフォルトの 1 を返します。
+func Quantity(n *html.Node) int {
+	if v := Attr(n, "quantity"); v != "" {
+		return AtoiSafe(v)
+	}
+	return 1
+}
+
+// WalkElements はノード木 root を先行順（document order）で走査し、
+// すべての要素ノードに対して fn を呼び出します。
+func WalkElements(root *html.Node, fn func(*html.Node)) {
+	if root.Type == html.ElementNode {
+		fn(root)
+	}
+	for c := root.FirstChild; c != nil; c = c.NextSibling {
+		WalkElements(c, fn)
+	}
+}
+
+// TagValue は <m-tag name="{tagName}" value="..."> の value を返します。
+// 同名タグが複数ある場合は最初の1つ。見つからなければ空文字列。
+func TagValue(root *html.Node, tagName string) string {
+	var found string
+	WalkElements(root, func(n *html.Node) {
+		if found == "" && n.Data == "m-tag" && Attr(n, "name") == tagName {
+			found = Attr(n, "value")
+		}
+	})
+	return found
+}
+
+// NullableString は空文字列を SQL の NULL に変換します（日付列などで使用）。
+func NullableString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}

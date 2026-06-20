@@ -31,113 +31,42 @@ func InitDB() error {
 		return err
 	}
 
-	// 手順3: データベーススキーマ（各種テーブル）の作成
-	queries := []string{
-		// 1. ドキュメントの基本インデックス情報（本文はファイル保存）
-		`CREATE TABLE IF NOT EXISTS pages (
-			id INTEGER PRIMARY KEY,
-			title TEXT,
-			parent_id INTEGER,
-			file_path TEXT,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);`,
+	// 手順3: コアテーブル（pages / page_tags）を作成する。
+	// ユースケース固有のテーブル（発注書・見積もり・部材など）は、
+	// internal/cms の各プラグインが Schema() で定義し、main から cms.ApplySchema() で作成する。
+	return CreateCoreTables(DB)
+}
 
-		// 2. 可変タグテーブル（名前：値 の属性情報）
-		`CREATE TABLE IF NOT EXISTS page_tags (
-			page_id INTEGER,
-			name TEXT,
-			value TEXT,
-			PRIMARY KEY (page_id, name),
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-		);`,
+// CoreTables はどのユースケースにも共通する基盤テーブル（pages / page_tags）の定義です。
+// pages は全ドキュメントの基本情報、page_tags は <m-tag> の可変属性を保持します。
+// これらは外部キーの参照先となるため、プラグインのテーブルより先に作成する必要があります。
+var CoreTables = []string{
+	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）
+	`CREATE TABLE IF NOT EXISTS pages (
+		id INTEGER PRIMARY KEY,
+		title TEXT,
+		parent_id INTEGER,
+		file_path TEXT,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);`,
 
-		// 3. 弊社の見積もりデータ
-		`CREATE TABLE IF NOT EXISTS our_estimates (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			item_id TEXT,
-			client_name TEXT,
-			price INTEGER,
-			pdf_path TEXT,
-			page_id INTEGER,
-			estimated_at DATE,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-		);`,
+	// 2. 可変タグテーブル（名前：値 の属性情報）
+	`CREATE TABLE IF NOT EXISTS page_tags (
+		page_id INTEGER,
+		name TEXT,
+		value TEXT,
+		PRIMARY KEY (page_id, name),
+		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+	);`,
+}
 
-		// 4. 顧客の発注書データ (Header)
-		`CREATE TABLE IF NOT EXISTS client_orders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
-			client_name TEXT,
-			pdf_path TEXT,
-			page_id INTEGER,
-			ordered_at DATE,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-		);`,
-
-		// 4-2. 顧客の発注部品明細 (Items)
-		`CREATE TABLE IF NOT EXISTS client_order_items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT,
-			item_id TEXT,
-			item_name TEXT,
-			price INTEGER,
-			quantity INTEGER,
-			status TEXT,
-			FOREIGN KEY (order_no) REFERENCES client_orders(order_no) ON DELETE CASCADE
-		);`,
-
-		// 5. 材料屋・加工業者の見積もりデータ
-		`CREATE TABLE IF NOT EXISTS supplier_estimates (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			item_name TEXT,
-			supplier_name TEXT,
-			cost INTEGER,
-			pdf_path TEXT,
-			page_id INTEGER,
-			estimated_at DATE,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-		);`,
-
-		// 6. 弊社の発注書データ (Header)
-		`CREATE TABLE IF NOT EXISTS our_orders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
-			supplier_name TEXT,
-			pdf_path TEXT,
-			page_id INTEGER,
-			ordered_at DATE,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-		);`,
-
-		// 6-2. 弊社の発注部品明細 (Items)
-		`CREATE TABLE IF NOT EXISTS our_order_items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT,
-			item_name TEXT,
-			cost INTEGER,
-			quantity INTEGER,
-			status TEXT,
-			FOREIGN KEY (order_no) REFERENCES our_orders(order_no) ON DELETE CASCADE
-		);`,
-
-		// 7. 部品構成・材料構成データ (マスタ情報)
-		`CREATE TABLE IF NOT EXISTS part_materials (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			part_id TEXT,
-			material_name TEXT,
-			cost INTEGER,
-			supplier_name TEXT,
-			quantity INTEGER,
-			page_id INTEGER,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-		);`,
-	}
-
-	for _, q := range queries {
-		if _, err = DB.Exec(q); err != nil {
+// CreateCoreTables はコアテーブル（pages / page_tags）を作成します。
+// 本番では InitDB から、テストでは各テストのセットアップから呼び出します。
+func CreateCoreTables(db *sql.DB) error {
+	for _, q := range CoreTables {
+		if _, err := db.Exec(q); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }

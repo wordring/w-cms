@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"w-cms/internal/database"
 
+	"golang.org/x/net/html"
 	_ "modernc.org/sqlite"
 )
 
@@ -126,86 +128,12 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	// アプリ全体のグローバル DB 接続を一時差し替え
 	database.DB = db
 
-	// テーブル初期化
-	queries := []string{
-		`CREATE TABLE pages (
-			id INTEGER PRIMARY KEY,
-			title TEXT,
-			parent_id INTEGER,
-			file_path TEXT,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);`,
-		`CREATE TABLE IF NOT EXISTS page_tags (
-			page_id INTEGER,
-			name TEXT,
-			value TEXT,
-			PRIMARY KEY (page_id, name)
-		);`,
-		`CREATE TABLE client_orders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
-			client_name TEXT,
-			pdf_path TEXT,
-			page_id TEXT,
-			ordered_at DATE
-		);`,
-		`CREATE TABLE client_order_items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT,
-			item_id TEXT,
-			item_name TEXT,
-			price INTEGER,
-			quantity INTEGER,
-			status TEXT
-		);`,
-		`CREATE TABLE our_estimates (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			item_id TEXT,
-			client_name TEXT,
-			price INTEGER,
-			pdf_path TEXT,
-			page_id INTEGER,
-			estimated_at DATE
-		);`,
-		`CREATE TABLE supplier_estimates (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			item_name TEXT,
-			supplier_name TEXT,
-			cost INTEGER,
-			pdf_path TEXT,
-			page_id INTEGER,
-			estimated_at DATE
-		);`,
-		`CREATE TABLE our_orders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
-			supplier_name TEXT,
-			pdf_path TEXT,
-			page_id TEXT,
-			ordered_at DATE
-		);`,
-		`CREATE TABLE our_order_items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT,
-			item_name TEXT,
-			cost INTEGER,
-			quantity INTEGER,
-			status TEXT
-		);`,
-		`CREATE TABLE part_materials (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			part_id TEXT,
-			material_name TEXT,
-			cost INTEGER,
-			supplier_name TEXT,
-			quantity INTEGER,
-			page_id TEXT
-		);`,
+	// テーブル初期化（本番と同じスキーマ: コア + 全プラグイン）
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
 	}
-	for _, q := range queries {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatalf("テストテーブル作成エラー: %v", err)
-		}
+	if err := ApplySchema(db); err != nil {
+		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
 	// 2. パース対象のテストHTML
@@ -225,36 +153,21 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	</html>
 	`
 
-	// 3. パース処理のテスト
+	// 3. コア情報のパーステスト（タイトル・タグ）
+	root, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		t.Fatalf("HTMLパースエラー: %v", err)
+	}
+	core := ParseCore(root)
+	if core.Title != "試作受注の記録" {
+		t.Errorf("期待値と異なるタイトル: %s", core.Title)
+	}
+	if len(core.Tags) != 2 {
+		t.Errorf("タグ数が合いません: %d", len(core.Tags))
+	}
+
+	// 4. 同期処理のテスト（プラグイン経由でDBに反映される）
 	pageID := "00002"
-	parsed := ParseHTMLMaster(pageID, htmlContent)
-
-	if parsed.Title != "試作受注の記録" {
-		t.Errorf("期待値と異なるタイトル: %s", parsed.Title)
-	}
-
-	if len(parsed.Tags) != 2 {
-		t.Errorf("タグ数が合いません: %d", len(parsed.Tags))
-	}
-
-	if len(parsed.ClientOrders) != 1 {
-		t.Fatalf("顧客の発注書数が合いません: %d", len(parsed.ClientOrders))
-	}
-
-	order := parsed.ClientOrders[0]
-	if order.OrderNo != "PO-T100" {
-		t.Errorf("発注書番号が違います: %s", order.OrderNo)
-	}
-	if len(order.Items) != 2 {
-		t.Fatalf("部品明細数が合いません: %d", len(order.Items))
-	}
-
-	item1 := order.Items[0]
-	if item1.ItemID != "SHAFT-01" || item1.Price != 8000 || item1.Quantity != 10 || item1.Status != "未着手" {
-		t.Errorf("部品明細1の値が不正です: %+v", item1)
-	}
-
-	// 4. 同期処理のテスト
 	err = SyncIndex(pageID, htmlContent)
 	if err != nil {
 		t.Fatalf("SyncIndexでエラー: %v", err)
@@ -268,6 +181,16 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	}
 	if title != "試作受注の記録" {
 		t.Errorf("データベースのページタイトルが違います: %s", title)
+	}
+
+	// page_tags が2件同期されていることを確認
+	var tagCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM page_tags WHERE page_id = ?", pageID).Scan(&tagCount)
+	if err != nil {
+		t.Fatalf("page_tagsのクエリでエラー: %v", err)
+	}
+	if tagCount != 2 {
+		t.Errorf("page_tagsの件数が違います: %d", tagCount)
 	}
 
 	// client_orders / client_order_items の確認
@@ -302,61 +225,12 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 	// アプリ全体のグローバル DB 接続を一時差し替え
 	database.DB = db
 
-	// 必要なすべてのテーブルを初期化
-	queries := []string{
-		`CREATE TABLE pages (
-			id TEXT PRIMARY KEY,
-			title TEXT,
-			file_path TEXT,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);`,
-		`CREATE TABLE client_orders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
-			client_name TEXT,
-			pdf_path TEXT,
-			page_id TEXT,
-			ordered_at DATE
-		);`,
-		`CREATE TABLE client_order_items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT,
-			item_id TEXT,
-			item_name TEXT,
-			price INTEGER,
-			quantity INTEGER,
-			status TEXT
-		);`,
-		`CREATE TABLE our_orders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
-			supplier_name TEXT,
-			pdf_path TEXT,
-			page_id TEXT,
-			ordered_at DATE
-		);`,
-		`CREATE TABLE our_order_items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT,
-			item_name TEXT,
-			cost INTEGER,
-			quantity INTEGER,
-			status TEXT
-		);`,
-		`CREATE TABLE part_materials (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			part_id TEXT,
-			material_name TEXT,
-			cost INTEGER,
-			supplier_name TEXT,
-			quantity INTEGER,
-			page_id TEXT
-		);`,
+	// テーブル初期化（本番と同じスキーマ: コア + 全プラグイン）
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
 	}
-	for _, q := range queries {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatalf("テストテーブル作成エラー: %v", err)
-		}
+	if err := ApplySchema(db); err != nil {
+		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
 	// 2. 部品ページ(材料マスタ)の登録をシミュレート
