@@ -1054,7 +1054,8 @@
             const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' });
             if (res.status === 423) {
                 const d = await res.json().catch(() => ({}));
-                notify(`「${d.holder || '他のユーザー'}」さんが編集中です。閲覧のみ可能です（空き次第で自動的に編集に入ります）。`,
+                const who = d.same_user ? 'このページは別のタブ／ウィンドウ' : `このページは「${d.holder || '他のユーザー'}」さん`;
+                notify(`${who}で編集中です。閲覧のみ可能です（空き次第で自動的に編集に入ります）。`,
                     { type: 'warn', duration: 0, id: 'lock' });
                 startWaiterPolling();
                 return false;
@@ -1093,7 +1094,7 @@
             if (st.waiter_present) {
                 const mins = Math.max(1, Math.ceil((st.grace_remaining_sec || 0) / 60));
                 setLockRemaining(`⏳ 編集権の移行まで約${mins}分`);
-                notify(`他のユーザーが編集を待っています。あと約${mins}分で編集権が移ります。`, {
+                notify(`このページの編集を待っている人がいます。あと約${mins}分で編集権が移ります。`, {
                     type: 'warn', duration: 0, id: 'waiter',
                     action: { label: '保存して解放', onClick: () => { saveToServer(); leaveEditMode(); } }
                 });

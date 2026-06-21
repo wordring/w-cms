@@ -88,28 +88,32 @@ func (m *lockManager) reap(pageID int, l *pageLock, now time.Time) *pageLock {
 type AcquireResult struct {
 	Acquired       bool
 	Token          string        // 取得成功時のロックトークン
-	Holder         string        // busy 時の現保持者
+	Holder         string        // busy 時の現保持者（ユーザー名）
+	SameUser       bool          // busy 時、保持者が要求者と同一ユーザー（別タブ等）か
 	GraceRemaining time.Duration // busy 時の明け渡しまでの残り（猶予未起動なら 0）
 }
 
 // tryAcquireAt は user がページのロックを取得しようとします（now を明示指定）。
-func (m *lockManager) tryAcquireAt(pageID int, user string, now time.Time) AcquireResult {
+// ロックの保持者は「エディタ個体＝トークン」で識別します。token に現在の保持トークンを
+// 提示した場合のみ「同一エディタの再取得」として許可し、それ以外（同一ユーザーの別タブ含む）は
+// busy 扱いにします（同じ人でも別エディタの同時編集を競合として検知するため）。
+func (m *lockManager) tryAcquireAt(pageID int, user, token string, now time.Time) AcquireResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	l := m.reap(pageID, m.locks[pageID], now)
 	if l == nil {
-		// 空き → 取得
-		token := newLockToken()
-		m.locks[pageID] = &pageLock{holder: user, token: token, holderLastSeen: now}
-		return AcquireResult{Acquired: true, Token: token}
+		// 空き → 取得（新しいトークンを発行）
+		tk := newLockToken()
+		m.locks[pageID] = &pageLock{holder: user, token: tk, holderLastSeen: now}
+		return AcquireResult{Acquired: true, Token: tk}
 	}
-	if l.holder == user {
-		// 自分が保持中 → 既存トークンを返し、死活時刻を更新。
+	if token != "" && l.token == token {
+		// 同一エディタ（トークン一致）の再取得 → 同じトークンを返し、死活時刻を更新。
 		l.holderLastSeen = now
 		return AcquireResult{Acquired: true, Token: l.token}
 	}
-	// 他者が保持中 → busy。競合トリガーを起動/更新する。
+	// ロックが存在しトークンが一致しない → 別エディタとして busy。競合トリガーを起動/更新する。
 	if l.graceDeadline.IsZero() {
 		l.graceDeadline = now.Add(lockGraceDuration)
 	}
@@ -118,12 +122,12 @@ func (m *lockManager) tryAcquireAt(pageID int, user string, now time.Time) Acqui
 	if d := l.graceDeadline.Sub(now); d > 0 {
 		rem = d
 	}
-	return AcquireResult{Acquired: false, Holder: l.holder, GraceRemaining: rem}
+	return AcquireResult{Acquired: false, Holder: l.holder, SameUser: l.holder == user, GraceRemaining: rem}
 }
 
-// TryAcquire は now=現在時刻で tryAcquireAt を呼びます。
-func (m *lockManager) TryAcquire(pageID int, user string) AcquireResult {
-	return m.tryAcquireAt(pageID, user, time.Now())
+// TryAcquire は now=現在時刻で tryAcquireAt を呼びます。token は再取得の検証用（新規取得時は空）。
+func (m *lockManager) TryAcquire(pageID int, user, token string) AcquireResult {
+	return m.tryAcquireAt(pageID, user, token, time.Now())
 }
 
 // LockStatus は status エンドポイント向けの状態です。

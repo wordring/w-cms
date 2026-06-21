@@ -15,24 +15,33 @@ func TestLockAcquireBasic(t *testing.T) {
 	t0 := time.Now()
 
 	// 空き → 取得成功
-	a := m.tryAcquireAt(1, "alice", t0)
+	a := m.tryAcquireAt(1, "alice", "", t0)
 	if !a.Acquired || a.Token == "" {
 		t.Fatalf("空きページの取得に失敗: %+v", a)
 	}
 
-	// 自分が再取得 → 同じトークン
-	a2 := m.tryAcquireAt(1, "alice", t0.Add(time.Second))
+	// 同一エディタ（トークン一致）の再取得 → 同じトークン
+	a2 := m.tryAcquireAt(1, "alice", a.Token, t0.Add(time.Second))
 	if !a2.Acquired || a2.Token != a.Token {
-		t.Errorf("自分の再取得でトークンが変わりました: %+v", a2)
+		t.Errorf("トークン一致の再取得でトークンが変わりました: %+v", a2)
 	}
 
-	// 他者 → busy、保持者名と猶予残りを返す
-	b := m.tryAcquireAt(1, "bob", t0.Add(2*time.Second))
+	// 同一ユーザーでも別エディタ（トークンなし）→ busy、SameUser=true
+	self := m.tryAcquireAt(1, "alice", "", t0.Add(2*time.Second))
+	if self.Acquired {
+		t.Errorf("同一ユーザーの別タブが取得できてしまいました（競合にならない）")
+	}
+	if !self.SameUser {
+		t.Errorf("同一ユーザーの別タブで SameUser が false です: %+v", self)
+	}
+
+	// 他者 → busy、保持者名と猶予残りを返す、SameUser=false
+	b := m.tryAcquireAt(1, "bob", "", t0.Add(3*time.Second))
 	if b.Acquired {
 		t.Errorf("他者が保持中なのに取得できました")
 	}
-	if b.Holder != "alice" {
-		t.Errorf("保持者名が違います: %q", b.Holder)
+	if b.Holder != "alice" || b.SameUser {
+		t.Errorf("busy 応答が不正です: %+v", b)
 	}
 	if b.GraceRemaining <= 0 || b.GraceRemaining > lockGraceDuration {
 		t.Errorf("猶予残りが不正です: %v", b.GraceRemaining)
@@ -43,10 +52,10 @@ func TestLockAcquireBasic(t *testing.T) {
 func TestLockForcedHandover(t *testing.T) {
 	m := newTestLockManager()
 	t0 := time.Now()
-	tokA := m.tryAcquireAt(1, "alice", t0).Token
+	tokA := m.tryAcquireAt(1, "alice", "", t0).Token
 
 	// bob が要求 → 猶予開始（t0+2分）
-	if r := m.tryAcquireAt(1, "bob", t0); r.Acquired {
+	if r := m.tryAcquireAt(1, "bob", "", t0); r.Acquired {
 		t.Fatal("bob が即取得してしまいました")
 	}
 	// 猶予満了まで、両者がそれぞれの閾値内でポーリングし続ける
@@ -54,13 +63,13 @@ func TestLockForcedHandover(t *testing.T) {
 	for d := 10; d <= 120; d += 10 {
 		ts := t0.Add(time.Duration(d) * time.Second)
 		m.statusAt(1, "alice", tokA, ts)
-		if r := m.tryAcquireAt(1, "bob", ts); r.Acquired {
+		if r := m.tryAcquireAt(1, "bob", "", ts); r.Acquired {
 			t.Fatalf("猶予中(%ds)に bob が取得してしまいました", d)
 		}
 	}
 
 	// 猶予満了直後 → bob が取得（強制明け渡し）
-	r := m.tryAcquireAt(1, "bob", t0.Add(121*time.Second))
+	r := m.tryAcquireAt(1, "bob", "", t0.Add(121*time.Second))
 	if !r.Acquired {
 		t.Errorf("猶予満了後も bob が取得できません: %+v", r)
 	}
@@ -74,11 +83,11 @@ func TestLockForcedHandover(t *testing.T) {
 func TestLockHolderStaleSteal(t *testing.T) {
 	m := newTestLockManager()
 	t0 := time.Now()
-	m.tryAcquireAt(1, "alice", t0) // alice は以後ポーリングしない（落ちた想定）
+	m.tryAcquireAt(1, "alice", "", t0) // alice は以後ポーリングしない（落ちた想定）
 
 	// bob は30秒以内の間隔でポーリングし続ける
-	m.tryAcquireAt(1, "bob", t0.Add(20*time.Second)) // busy（aliceまだstaleでない）
-	r := m.tryAcquireAt(1, "bob", t0.Add(35*time.Second))
+	m.tryAcquireAt(1, "bob", "", t0.Add(20*time.Second)) // busy（aliceまだstaleでない）
+	r := m.tryAcquireAt(1, "bob", "", t0.Add(35*time.Second))
 	if !r.Acquired {
 		t.Errorf("保持者が落ちているのに bob が奪取できません: %+v", r)
 	}
@@ -88,8 +97,8 @@ func TestLockHolderStaleSteal(t *testing.T) {
 func TestLockRequesterLeft(t *testing.T) {
 	m := newTestLockManager()
 	t0 := time.Now()
-	tokA := m.tryAcquireAt(1, "alice", t0).Token
-	m.tryAcquireAt(1, "bob", t0) // bob が一度要求（猶予開始）。以後ポーリングしない。
+	tokA := m.tryAcquireAt(1, "alice", "", t0).Token
+	m.tryAcquireAt(1, "bob", "", t0) // bob が一度要求（猶予開始）。以後ポーリングしない。
 
 	// alice が status を見る頃には bob は離脱扱い → 猶予キャンセル・alice 継続
 	st := m.statusAt(1, "alice", tokA, t0.Add(40*time.Second))
@@ -111,7 +120,7 @@ func TestLockValidate(t *testing.T) {
 		t.Errorf("ロック無しページの保存が拒否されました")
 	}
 
-	tokA := m.tryAcquireAt(1, "alice", t0).Token
+	tokA := m.tryAcquireAt(1, "alice", "", t0).Token
 	if !m.validateAt(1, "alice", tokA, t0.Add(time.Second)) {
 		t.Errorf("保持者本人の保存が拒否されました")
 	}
@@ -131,7 +140,7 @@ func TestLockReleaseAndForce(t *testing.T) {
 	m := newTestLockManager()
 	t0 := time.Now()
 
-	tokA := m.tryAcquireAt(1, "alice", t0).Token
+	tokA := m.tryAcquireAt(1, "alice", "", t0).Token
 	// 他者は解放できない
 	m.Release(1, "bob", "x")
 	if !m.validateAt(1, "alice", tokA, t0) {
@@ -144,7 +153,7 @@ func TestLockReleaseAndForce(t *testing.T) {
 	}
 
 	// 強制解除 → lost
-	tokA2 := m.tryAcquireAt(2, "alice", t0).Token
+	tokA2 := m.tryAcquireAt(2, "alice", "", t0).Token
 	m.ForceRelease(2)
 	if st := m.statusAt(2, "alice", tokA2, t0); st.IsHolder || !st.Lost {
 		t.Errorf("強制解除後の status が不正です: %+v", st)
@@ -155,8 +164,8 @@ func TestLockReleaseAndForce(t *testing.T) {
 func TestLockStatusWaiterNotice(t *testing.T) {
 	m := newTestLockManager()
 	t0 := time.Now()
-	tokA := m.tryAcquireAt(1, "alice", t0).Token
-	m.tryAcquireAt(1, "bob", t0.Add(time.Second)) // bob 要求
+	tokA := m.tryAcquireAt(1, "alice", "", t0).Token
+	m.tryAcquireAt(1, "bob", "", t0.Add(time.Second)) // bob 要求
 
 	st := m.statusAt(1, "alice", tokA, t0.Add(2*time.Second))
 	if !st.IsHolder || !st.WaiterPresent {
