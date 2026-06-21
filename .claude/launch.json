@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "w-cms",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "cmd/w-cms/main.go"],
+      "port": 8080
+    }
+  ]
+}

@@ -36,12 +36,105 @@
             padding: 20px;
         }
         .container {
-            max-width: 1000px;
+            max-width: 1280px;
             margin: 0 auto;
             background: var(--bg-paper);
             padding: 30px;
             border-radius: var(--radius-lg);
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            /* 内側のコンテナクエリ基準。広いときだけサイドパネルを脇に出す。 */
+            container-type: inline-size;
+        }
+
+        /* 作業領域：文書（内容）とサイドパネル（属性・操作）の2カラム。
+           狭いときはコンテナクエリで1カラムに畳む（下記 @container を参照）。 */
+        .work-area {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 300px;
+            gap: 24px;
+            align-items: start;
+        }
+        .doc-column { min-width: 0; }
+
+        /* サイドパネル（クローム側。ファイルには保存されない） */
+        .rail {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: sticky;
+            top: 20px;
+        }
+        .rail-card {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-subtle);
+            font-size: 13px;
+        }
+        .rail-card summary {
+            cursor: pointer;
+            padding: 10px 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+        }
+        .rail-card summary::-webkit-details-marker { display: none; }
+        .rail-card summary::before {
+            content: "▸";
+            font-size: 11px;
+            color: var(--text-dim);
+            transition: transform .15s;
+        }
+        .rail-card details[open] > summary::before { transform: rotate(90deg); }
+        .rail-card .card-body { padding: 0 14px 14px; }
+
+        /* ページ情報の定義リスト */
+        dl.pi { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 10px; align-items: baseline; }
+        dl.pi dt { color: var(--text-faint); font-weight: 600; white-space: nowrap; }
+        dl.pi dd { margin: 0; color: var(--text); word-break: break-all; }
+        .pi-parent-input {
+            width: 110px;
+            border: 1px solid var(--border-strong);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 13px;
+            outline: none;
+        }
+        .pi-parent-input.invalid { border-color: var(--danger); background: #fef2f2; }
+        .pi-err { color: var(--danger); font-size: 12px; margin-top: 4px; }
+        /* 編集モードの有無で親ページIDの表示／編集を切り替える */
+        .pi-parent-edit { display: none; }
+        body[edit-mode] .pi-parent-view { display: none; }
+        body[edit-mode] .pi-parent-edit { display: inline-block; }
+
+        /* サイドパネル内の入力・ボタン */
+        .rail-card input[type="text"], .rail-card input:not([type]) {
+            border: 1px solid var(--border-strong);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 13px;
+        }
+        .rail-btn {
+            padding: 4px 10px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: var(--accent);
+            color: #fff;
+        }
+        .rail-btn:hover { background: var(--accent-strong); }
+        .rail-btn.secondary { background: var(--border); color: var(--text-muted); }
+        .rail-row { margin-top: 8px; }
+        .rail-hint { color: var(--text-dim); font-size: 11px; }
+
+        /* 文書幅が狭いときはサイドパネルを下段へ回す（ウィンドウ幅ではなくカード幅基準） */
+        @container (max-width: 760px) {
+            .work-area { grid-template-columns: 1fr; }
+            .rail { position: static; }
         }
         .header {
             display: flex;
@@ -380,61 +473,95 @@
         <button class="page-action-btn" onclick="createSubpage()">＋ 子ページを作成</button>
     </nav>
 
-    <!-- ページ権限パネル（🔒 権限ボタンで開閉） -->
-    <div id="perms-panel" style="display: none; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin: 10px 0; background: #f8fafc;">
-        <strong style="font-size: 14px;">🔒 このページの権限</strong>
-        <div style="font-size: 13px; margin-top: 10px;">
-            所有者 (owner): <strong id="pp-owner"></strong>
-            <span id="pp-chown" style="display: none; margin-left: 8px;">
-                → <input id="pp-owner-input" placeholder="新しい所有者" style="width: 110px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                <button onclick="chownPage()" style="padding: 3px 8px; font-size: 12px;">所有者変更(chown)</button>
-            </span>
+    <div class="work-area">
+        <div class="doc-column">
+            <p class="tip">💡 スイッチをONにすると「編集モード」に切り替わり、テキストボックスが出現して値を直接編集できるようになります。値を変えると下の「保存されるHTML」がリアルタイムに書き換わります。</p>
+
+            <!-- エディタコンテンツ領域（ここが保存対象のHTML本文＝ページの「内容」になります。
+                 ページの「属性」はサイドカーが正本で、右のサイドパネルで扱います） -->
+            <div id="editor-content">
+                <!-- 可変タグブロック -->
+                <m-tag name="発注元" value="株式会社トーアスポーツマシーン"></m-tag>
+                <m-tag name="希望納期" value="2026-07-10"></m-tag>
+                <m-tag name="支払条件" value="通常"></m-tag>
+                <m-tag name="自社担当" value="紀平"></m-tag>
+
+                <h1>各マシーン用部品の調達と受注記録</h1>
+                <p>以下の通り、取引先から発注書をいただき、材料見積もりを保管しました。</p>
+
+                <!-- 添付ファイルブロック（顧客の発注書 - 部品をぶら下げる） -->
+                <m-file src="sample_po.pdf" name="顧客発注書_原本.pdf"
+                        tag="顧客の発注書" order-no="PO-2026-001" client-name="トーアスポーツマシーン" ordered-at="2026-06-18">
+                    <m-item item-id="W120-P180-05" item-name="側板ブラケット" price="1200" quantity="20" status="未着手"></m-item>
+                    <m-item item-id="W120-P180-06" item-name="補強バー" price="800" quantity="10" status="加工中"></m-item>
+                </m-file>
+
+                <!-- 添付ファイルブロック（材料屋の見積もり - フラット） -->
+                <m-file src="sample_material.pdf" name="アイアン素材見積書.pdf"
+                        tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" cost="500" supplier-name="東邦金属工業" estimated-at="2026-06-16"></m-file>
+            </div>
+
+            <!-- リアルタイムに生成されるHTMLデータの表示（真のデータ） -->
+            <div class="preview-section">
+                <div class="preview-title">💾 リアルタイムで書き換わるHTMLソース（真のデータとしてファイルに保存される内容）</div>
+                <textarea id="html-preview" readonly></textarea>
+            </div>
         </div>
-        <div style="font-size: 13px; margin-top: 8px;">
-            グループ (group): <input id="pp-group" style="width: 130px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
-        </div>
-        <div style="font-size: 13px; margin-top: 8px;">
-            mode: <input id="pp-mode" maxlength="3" style="width: 50px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: monospace;">
-            <span style="color: #94a3b8; margin-left: 6px;">3桁（owner/group/other、各桁 r=2・w=1・rw=3・なし=0）例: 330, 302</span>
-        </div>
-        <div style="margin-top: 12px;">
-            <button onclick="savePerms()" style="padding: 5px 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">保存</button>
-            <button onclick="document.getElementById('perms-panel').style.display='none'" style="padding: 5px 12px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer;">閉じる</button>
-            <span id="pp-msg" style="margin-left: 10px; font-size: 12px;"></span>
-        </div>
-    </div>
 
-    <p class="tip">💡 スイッチをONにすると「編集モード」に切り替わり、テキストボックスが出現して値を直接編集できるようになります。値を変えると下の「保存されるHTML」がリアルタイムに書き換わります。</p>
+        <!-- サイドパネル（クローム）：ページの属性表示・操作を集約。保存対象外。 -->
+        <aside class="rail" aria-label="ページ情報と操作">
+            <!-- ページ情報パネル（属性はサイドカーが正本。/api/page-meta で取得） -->
+            <section class="rail-card">
+                <details open>
+                    <summary>ページ情報</summary>
+                    <div class="card-body">
+                        <dl class="pi">
+                            <dt>ページID</dt><dd id="pi-id">—</dd>
+                            <dt>親ページID</dt>
+                            <dd>
+                                <span class="pi-parent-view" id="pi-parent">—</span>
+                                <span class="pi-parent-edit">
+                                    <input class="pi-parent-input" id="pi-parent-input" placeholder="（トップレベル）">
+                                    <button class="rail-btn" onclick="applyParent()">適用</button>
+                                    <div class="pi-err" id="pi-parent-err"></div>
+                                </span>
+                            </dd>
+                            <dt>作成日時</dt><dd id="pi-created-at">—</dd>
+                            <dt>作成者</dt><dd id="pi-created-by">—</dd>
+                            <dt>更新日時</dt><dd id="pi-updated-at">—</dd>
+                        </dl>
+                    </div>
+                </details>
+            </section>
 
-
-
-    <!-- エディタコンテンツ領域（ここが保存対象のHTMLの中身になります） -->
-    <div id="editor-content">
-        <!-- 可変タグブロック -->
-        <m-tag name="発注元" value="株式会社トーアスポーツマシーン"></m-tag>
-        <m-tag name="希望納期" value="2026-07-10"></m-tag>
-        <m-tag name="支払条件" value="通常"></m-tag>
-        <m-tag name="自社担当" value="紀平"></m-tag>
-
-        <h1>各マシーン用部品の調達と受注記録</h1>
-        <p>以下の通り、取引先から発注書をいただき、材料見積もりを保管しました。</p>
-
-        <!-- 添付ファイルブロック（顧客の発注書 - 部品をぶら下げる） -->
-        <m-file src="sample_po.pdf" name="顧客発注書_原本.pdf" 
-                tag="顧客の発注書" order-no="PO-2026-001" client-name="トーアスポーツマシーン" ordered-at="2026-06-18">
-            <m-item item-id="W120-P180-05" item-name="側板ブラケット" price="1200" quantity="20" status="未着手"></m-item>
-            <m-item item-id="W120-P180-06" item-name="補強バー" price="800" quantity="10" status="加工中"></m-item>
-        </m-file>
-
-        <!-- 添付ファイルブロック（材料屋の見積もり - フラット） -->
-        <m-file src="sample_material.pdf" name="アイアン素材見積書.pdf" 
-                tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" cost="500" supplier-name="東邦金属工業" estimated-at="2026-06-16"></m-file>
-    </div>
-
-    <!-- リアルタイムに生成されるHTMLデータの表示（真のデータ） -->
-    <div class="preview-section">
-        <div class="preview-title">💾 リアルタイムで書き換わるHTMLソース（真のデータとしてファイルに保存される内容）</div>
-        <textarea id="html-preview" readonly></textarea>
+            <!-- 権限パネル（owner/group/mode。chmod/chown） -->
+            <section class="rail-card">
+                <details id="perms-details">
+                    <summary>🔒 権限</summary>
+                    <div class="card-body">
+                        <dl class="pi">
+                            <dt>所有者</dt>
+                            <dd>
+                                <strong id="pp-owner"></strong>
+                                <span id="pp-chown" style="display:none;">
+                                    <div class="rail-row">
+                                        <input id="pp-owner-input" placeholder="新しい所有者">
+                                        <button class="rail-btn" onclick="chownPage()">変更</button>
+                                    </div>
+                                </span>
+                            </dd>
+                            <dt>グループ</dt><dd><input id="pp-group"></dd>
+                            <dt>mode</dt><dd><input id="pp-mode" maxlength="3" style="width:50px; font-family:monospace;"></dd>
+                        </dl>
+                        <div class="rail-hint">mode は3桁（owner/group/other、各桁 r=2・w=1・rw=3・なし=0）例: 330, 302</div>
+                        <div class="rail-row">
+                            <button class="rail-btn" onclick="savePerms()">保存</button>
+                            <span id="pp-msg" style="margin-left: 8px; font-size: 12px;"></span>
+                        </div>
+                    </div>
+                </details>
+            </section>
+        </aside>
     </div>
 </main>
 
@@ -480,13 +607,19 @@
         window.location.href = '/login';
     }
 
+    // サイドパネルの権限カードを開き、最新の権限を読み込んで表示する。
     async function openPermsPanel() {
-        const panel = document.getElementById('perms-panel');
+        const details = document.getElementById('perms-details');
+        if (details) details.open = true;
+        await loadPerms();
+    }
+
+    async function loadPerms() {
         const msg = document.getElementById('pp-msg');
         msg.textContent = '';
         try {
             const res = await fetch('/api/page-perms?id=' + currentPageId);
-            if (!res.ok) { alert('権限情報を取得できませんでした（このページのread権限が必要です）。'); return; }
+            if (!res.ok) { msg.style.color = '#dc2626'; msg.textContent = '権限を取得できません'; return; }
             const p = await res.json();
             document.getElementById('pp-owner').textContent = p.owner || '(なし)';
             document.getElementById('pp-group').value = p.group || '';
@@ -497,8 +630,60 @@
             const canEdit = !!p.can_chmod;
             document.getElementById('pp-group').disabled = !canEdit;
             document.getElementById('pp-mode').disabled = !canEdit;
-            panel.style.display = 'block';
-        } catch (e) { alert('権限情報の取得に失敗しました。'); }
+        } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '権限の取得に失敗しました'; }
+    }
+
+    // --- ページ情報パネル（属性はサイドカーが正本。/api/page-meta で取得） ---
+
+    // ISO8601（RFC3339）の日時を日本語ロケールで読みやすく整形する。空・不正値は「—」。
+    function formatDateTime(value) {
+        if (!value) return '—';
+        const d = new Date(value);
+        if (isNaN(d.getTime())) return value;
+        return d.toLocaleString('ja-JP', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    // ページ属性をサーバーから取得してサイドパネルに反映する。
+    async function loadPageMeta() {
+        document.getElementById('pi-id').textContent = currentPageId;
+        try {
+            const res = await fetch('/api/page-meta?id=' + currentPageId);
+            if (!res.ok) return;
+            const m = await res.json();
+            const parent = m.parent_id || '';
+            document.getElementById('pi-parent').textContent = parent || '（トップレベル）';
+            document.getElementById('pi-parent-input').value = parent;
+            document.getElementById('pi-created-at').textContent = formatDateTime(m.created_at);
+            document.getElementById('pi-created-by').textContent = m.created_by || '—';
+            document.getElementById('pi-updated-at').textContent = formatDateTime(m.updated_at);
+        } catch (e) { /* 取得失敗時は既定表示のまま */ }
+    }
+
+    // 親ページIDの付け替え。検証はサーバー（/api/set-parent）が権威。
+    async function applyParent() {
+        const input = document.getElementById('pi-parent-input');
+        const errEl = document.getElementById('pi-parent-err');
+        const parent = input.value.trim();
+        errEl.textContent = '';
+        input.classList.remove('invalid');
+        try {
+            const res = await fetch(`/api/set-parent?id=${encodeURIComponent(currentPageId)}&parent=${encodeURIComponent(parent)}`, { method: 'POST' });
+            if (!res.ok) {
+                input.classList.add('invalid');
+                errEl.textContent = (await res.text()) || '指定できない親ページです';
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('pi-parent').textContent = data.parent_id || '（トップレベル）';
+            document.getElementById('pi-parent-input').value = data.parent_id || '';
+            if (data.updated_at) document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
+        } catch (e) {
+            input.classList.add('invalid');
+            errEl.textContent = '親ページの変更に失敗しました（通信エラー）';
+        }
     }
 
     async function savePerms() {
@@ -533,9 +718,8 @@
         } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '通信エラー'; }
     }
 
-    // 親ページIDの編集導線は <m-page-info> パネルに一本化した。
-    // パネル内の入力欄が、内包する <m-tag name="親ページID"> の value を直接更新する
-    // （MPageInfo.applyParentID を参照）。
+    // 親ページIDの編集はサイドパネルの「親ページID」入力＋適用ボタンが担い、
+    // /api/set-parent（サーバーが検証）でサイドカーへ反映する（applyParent を参照）。
 
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
@@ -560,11 +744,11 @@
                     window.currentPageId = data.page_id;
                     // URLを書き換える（ページリロードなし）
                     window.history.pushState({}, '', '?id=' + currentPageId);
+                    document.getElementById('pi-id').textContent = currentPageId;
                 }
-                // サーバーが刻んだ更新日時をパネルへ反映する（属性変更で自動再描画）。
+                // サーバーが刻んだ更新日時をサイドパネルへ反映する。
                 if (data.updated_at) {
-                    const pi = document.querySelector('m-page-info');
-                    if (pi) pi.setAttribute('updated-at', data.updated_at);
+                    document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
                 }
                 statusEl.innerText = "✅ 保存済";
                 statusEl.style.color = "#10b981"; // 緑色
@@ -651,7 +835,7 @@
         });
 
         // Web Componentsの再描画を促すためにコンポーネント内のrenderメソッドを再実行
-        const components = editor.querySelectorAll('m-page-info, m-tag, m-file, m-item, m-material, m-required-materials');
+        const components = editor.querySelectorAll('m-tag, m-file, m-item, m-material, m-required-materials');
         components.forEach(c => {
             if (typeof c.render === 'function') {
                 c.render();
@@ -675,22 +859,7 @@
             if (!child) continue;
             const tagName = child.tagName.toLowerCase();
 
-            if (tagName === 'm-page-info') {
-                // ページ情報パネル。サーバー管理属性はそのまま引き継ぎ（保存時にサーバーが
-                // 上書きする）、内包する親ページIDタグも併せてシリアライズする。
-                let attrs = '';
-                ['created-at', 'created-by', 'updated-at'].forEach(a => {
-                    const v = child.getAttribute(a);
-                    if (v) attrs += ` ${a}="${v}"`;
-                });
-                const parentTag = child.querySelector('m-tag[name="親ページID"]');
-                const parentVal = parentTag ? (parentTag.getAttribute('value') || '') : '';
-                if (parentVal) {
-                    output += `<m-page-info${attrs}>\n    <m-tag name="親ページID" value="${parentVal}"></m-tag>\n</m-page-info>\n`;
-                } else {
-                    output += `<m-page-info${attrs}></m-page-info>\n`;
-                }
-            } else if (tagName === 'm-tag') {
+            if (tagName === 'm-tag') {
                 const name = child.getAttribute('name') || '';
                 const value = child.getAttribute('value') || '';
                 output += `<m-tag name="${name}" value="${value}"></m-tag>\n`;
@@ -977,9 +1146,7 @@
         const container = document.getElementById('editor-content');
         const children = Array.from(container.children);
         children.forEach(child => {
-            // m-page-info は文書先頭の固定パネル。ドラッグ・削除対象にしないため
-            // editor-block でラップしない（script/style と同様に除外）。
-            if (!child.classList.contains('editor-block') && child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE' && child.tagName !== 'M-PAGE-INFO') {
+            if (!child.classList.contains('editor-block') && child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE') {
                 wrapInBlock(child);
             }
         });
@@ -1272,28 +1439,19 @@
                 
                 Array.from(doc.body.children).forEach(child => {
                     if (child.tagName.toLowerCase() === 'script') return;
+                    // 旧形式の親ページIDタグ（本文中の m-tag）はサイドカーへ移行済みのため取り込まない。
+                    if (child.tagName.toLowerCase() === 'm-tag' && child.getAttribute('name') === '親ページID') return;
                     editorContent.appendChild(child);
                 });
-
-                // ページ情報パネルを必ず文書先頭に1つ用意する。
-                // 旧形式（m-page-info が無く、親ページIDが本文中の m-tag だけ）の
-                // ページは、その親ページIDタグをパネル内へ取り込んで移行する。
-                let pageInfo = editorContent.querySelector('m-page-info');
-                if (!pageInfo) {
-                    pageInfo = document.createElement('m-page-info');
-                    const legacyParent = editorContent.querySelector('m-tag[name="親ページID"]');
-                    if (legacyParent) pageInfo.appendChild(legacyParent);
-                    editorContent.insertBefore(pageInfo, editorContent.firstChild);
-                } else if (pageInfo !== editorContent.firstChild) {
-                    editorContent.insertBefore(pageInfo, editorContent.firstChild);
-                }
 
                 initBlocks();
                 setupEditorEvents();
                 toggleMode();
                 setupAutoSave();
 
-
+                // ページ属性（親・作成/更新情報）と権限をサイドパネルへ読み込む。
+                loadPageMeta();
+                loadPerms();
             })
             .catch(err => {
                 console.error("ページの読み込みに失敗しました:", err);
