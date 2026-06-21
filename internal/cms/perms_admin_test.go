@@ -16,7 +16,7 @@ import (
 
 // setupPermsDB は data/master を一時ディレクトリにし、cms.db を用意して
 // 指定ページのサイドカー＋page_perms を作ります。
-func setupPermsDB(t *testing.T, id string, p PagePerms) {
+func setupPermsDB(t *testing.T, id string, p PageMeta) {
 	t.Helper()
 	origWd, _ := os.Getwd()
 	if err := os.Chdir(t.TempDir()); err != nil {
@@ -56,7 +56,7 @@ func postPerms(handler http.HandlerFunc, path, body string, u *auth.User) *httpt
 }
 
 func TestPagePermsHandler_chmod(t *testing.T) {
-	setupPermsDB(t, "000005", PagePerms{Owner: "alice", Group: "", Mode: "300"})
+	setupPermsDB(t, "000005", PageMeta{Owner: "alice", Group: "", Mode: "300"})
 
 	// 所有者 alice が chmod 300 -> 320
 	rr := postPerms(PagePermsHandler, "/api/page-perms?id=000005", `{"mode":"320"}`, &auth.User{Username: "alice"})
@@ -81,7 +81,7 @@ func TestPagePermsHandler_chmod(t *testing.T) {
 }
 
 func TestPageChownHandler(t *testing.T) {
-	setupPermsDB(t, "000005", PagePerms{Owner: "alice", Group: "", Mode: "300"})
+	setupPermsDB(t, "000005", PageMeta{Owner: "alice", Group: "", Mode: "300"})
 
 	// admin が chown alice -> bob
 	rr := postPerms(PageChownHandler, "/api/page-chown?id=000005", `{"owner":"bob"}`, &auth.User{Username: "root", IsAdmin: true})

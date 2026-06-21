@@ -31,8 +31,8 @@ const DefaultMode = "330"
 // defaultOwner はサイドカーが無いページのフォールバック所有者（admin相当の扱い）。
 const defaultOwner = "admin"
 
-// PagePerms はページの所有権・権限です。
-type PagePerms struct {
+// PageMeta はページの所有権・権限です。
+type PageMeta struct {
 	Owner     string `json:"owner"`
 	Group     string `json:"group"`
 	Mode      string `json:"mode"`
@@ -46,14 +46,14 @@ func sidecarPath(id string) string {
 }
 
 // ReadSidecar はサイドカーを読み込みます。存在しなければ ok=false。
-func ReadSidecar(id string) (PagePerms, bool) {
+func ReadSidecar(id string) (PageMeta, bool) {
 	data, err := os.ReadFile(sidecarPath(id))
 	if err != nil {
-		return PagePerms{}, false
+		return PageMeta{}, false
 	}
-	var p PagePerms
+	var p PageMeta
 	if err := json.Unmarshal(data, &p); err != nil {
-		return PagePerms{}, false
+		return PageMeta{}, false
 	}
 	if p.Mode == "" {
 		p.Mode = DefaultMode
@@ -63,7 +63,7 @@ func ReadSidecar(id string) (PagePerms, bool) {
 
 // WriteSidecar はサイドカーを書き込みます。本文保存パスからは呼ばず、
 // 新規ページ作成・chmod/chown などの権限操作からのみ呼びます（自己認可防止）。
-func WriteSidecar(id string, p PagePerms) error {
+func WriteSidecar(id string, p PageMeta) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if p.CreatedAt == "" {
 		p.CreatedAt = now
@@ -87,15 +87,15 @@ func EnsureSidecar(id, owner, group string) error {
 	if _, ok := ReadSidecar(id); ok {
 		return nil
 	}
-	return WriteSidecar(id, PagePerms{Owner: owner, Group: group, Mode: DefaultMode})
+	return WriteSidecar(id, PageMeta{Owner: owner, Group: group, Mode: DefaultMode})
 }
 
-// syncPagePerms はサイドカー（正本）から cms.db の page_perms を更新します。
+// syncPageMeta はサイドカー（正本）から cms.db の page_perms を更新します。
 // SyncIndex から呼ばれます。サイドカーが無いページは admin 所有の既定として扱います。
-func syncPagePerms(tx *sql.Tx, pageID int, id string) error {
+func syncPageMeta(tx *sql.Tx, pageID int, id string) error {
 	p, ok := ReadSidecar(id)
 	if !ok {
-		p = PagePerms{Owner: defaultOwner, Group: "", Mode: DefaultMode}
+		p = PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
 	}
 	_, err := tx.Exec(`
 		INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (?, ?, ?, ?)
@@ -113,7 +113,7 @@ func RefreshPerms(id string) error {
 	}
 	p, ok := ReadSidecar(id)
 	if !ok {
-		p = PagePerms{Owner: defaultOwner, Group: "", Mode: DefaultMode}
+		p = PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
 	}
 	_, err = database.DB.Exec(`
 		INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (?, ?, ?, ?)
@@ -137,13 +137,13 @@ func ValidMode(m string) bool {
 
 // GetPerms は cms.db からページ権限を取得します。レコードが無い場合は
 // 「admin所有・既定mode」のフォールバックを返します（フェイルクローズ）。
-func GetPerms(pageID int) PagePerms {
-	var p PagePerms
+func GetPerms(pageID int) PageMeta {
+	var p PageMeta
 	err := database.DB.QueryRow(
 		`SELECT owner, grp, mode FROM page_perms WHERE page_id = ?`, pageID,
 	).Scan(&p.Owner, &p.Group, &p.Mode)
 	if err != nil {
-		return PagePerms{Owner: defaultOwner, Group: "", Mode: DefaultMode}
+		return PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
 	}
 	if p.Mode == "" {
 		p.Mode = DefaultMode
@@ -166,7 +166,7 @@ func classDigit(mode string, class int) int {
 }
 
 // effectiveClass はユーザー u がページ p に対してどのクラスで判定されるかを返します。
-func effectiveClass(p PagePerms, u *auth.User) int {
+func effectiveClass(p PageMeta, u *auth.User) int {
 	if u.Username == p.Owner {
 		return 0 // owner
 	}
@@ -179,7 +179,7 @@ func effectiveClass(p PagePerms, u *auth.User) int {
 }
 
 // CanRead はユーザー u がページ p を閲覧できるかを返します（adminはバイパス）。
-func (p PagePerms) CanRead(u *auth.User) bool {
+func (p PageMeta) CanRead(u *auth.User) bool {
 	if u.IsAdmin {
 		return true
 	}
@@ -187,7 +187,7 @@ func (p PagePerms) CanRead(u *auth.User) bool {
 }
 
 // CanWrite はユーザー u がページ p を編集できるかを返します（adminはバイパス）。
-func (p PagePerms) CanWrite(u *auth.User) bool {
+func (p PageMeta) CanWrite(u *auth.User) bool {
 	if u.IsAdmin {
 		return true
 	}
