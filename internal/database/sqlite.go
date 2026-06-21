@@ -19,16 +19,18 @@ func InitDB() error {
 		return err
 	}
 
-	// 手順2: データベースファイル (data/cms.db) への接続を開く
+	// 手順2: データベースファイル (data/cms.db) への接続を開く。
+	// 接続ごとに効く設定（foreign_keys / busy_timeout）は DSN の _pragma で指定し、
+	// プール内のどの接続にも確実に適用されるようにする（Exec は1接続にしか効かないため）。
+	//   - foreign_keys(1): 外部キー制約を有効化
+	//   - busy_timeout(5000): 書き込みロック衝突時に最大5秒リトライ待ち（database is locked 緩和）
+	//   - journal_mode(WAL): 読み取りと書き込みの並行性を上げる（DB全体の永続設定）
+	// 同時編集の堅牢化（[docs/同時編集の競合対策（検討中）.md] シナリオD）。
 	dbPath := filepath.Join("data", "cms.db")
+	dsn := filepath.ToSlash(dbPath) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	var err error
-	DB, err = sql.Open("sqlite", dbPath)
+	DB, err = sql.Open("sqlite", dsn)
 	if err != nil {
-		return err
-	}
-
-	// SQLite の外部キー（Foreign Key）制約を有効化
-	if _, err = DB.Exec("PRAGMA foreign_keys = ON;"); err != nil {
 		return err
 	}
 

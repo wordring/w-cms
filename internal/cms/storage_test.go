@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"w-cms/internal/auth"
@@ -50,74 +51,64 @@ func TestGetPageDir(t *testing.T) {
 	}
 }
 
-func TestGenerateNextID(t *testing.T) {
-	// 1. インメモリのSQLiteデータベースを初期化
-	db, err := sql.Open("sqlite", ":memory:")
+// TestReserveNewPageID は、原子的なID採番が形式（6桁ゼロ埋め）を満たし、
+// 同時実行でも一意なIDを返す（MAX+1 のID衝突を起こさない）ことを検証します。
+func TestReserveNewPageID(t *testing.T) {
+	// ファイルDBを busy_timeout 付きで開く（並行書き込みのロック待ちを許容）。
+	dbPath := filepath.Join(t.TempDir(), "t.db")
+	dsn := filepath.ToSlash(dbPath) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		t.Fatalf("データベース接続エラー: %v", err)
+		t.Fatalf("DB接続エラー: %v", err)
 	}
 	defer db.Close()
-
-	// 2. テスト用テーブルの作成
-	query := `
-	CREATE TABLE pages (
-		id INTEGER PRIMARY KEY,
-		title TEXT,
-		file_path TEXT
-	);`
-	if _, err := db.Exec(query); err != nil {
-		t.Fatalf("テーブル作成エラー: %v", err)
+	database.DB = db
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
 	}
 
-	// 3. データが何もない場合のテスト（初期値 "000000" のはず）
-	t.Run("空のDBでのID生成", func(t *testing.T) {
-		got := GenerateNextID(db)
-		want := "000000"
-		if got != want {
-			t.Errorf("GenerateNextID() = %v, want %v", got, want)
-		}
-	})
+	// 形式チェック（6桁ゼロ埋め）
+	id, err := reserveNewPageID(sql.NullInt64{})
+	if err != nil {
+		t.Fatalf("reserveNewPageIDエラー: %v", err)
+	}
+	if len(id) != IDLength {
+		t.Errorf("IDの桁数が違います: %q", id)
+	}
 
-	// 4. "000001" を追加した後のテスト（"000002" のはず）
-	t.Run("000001存在時の次のID生成", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO pages (id, title) VALUES (1, 'test')")
-		if err != nil {
-			t.Fatal(err)
+	// 同時に多数採番しても一意であること
+	const n = 30
+	ids := make(chan string, n)
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, e := reserveNewPageID(sql.NullInt64{})
+			if e != nil {
+				errs <- e
+				return
+			}
+			ids <- got
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	close(errs)
+	for e := range errs {
+		t.Fatalf("並行採番でエラー: %v", e)
+	}
+	seen := make(map[string]bool)
+	for got := range ids {
+		if seen[got] {
+			t.Errorf("IDが重複しました: %q", got)
 		}
-		got := GenerateNextID(db)
-		want := "000002"
-		if got != want {
-			t.Errorf("GenerateNextID() = %q, want %q", got, want)
-		}
-	})
-
-	// 5. 10進数の桁上がりのテスト
-	t.Run("10進数での桁上がり（繰り上げ）テスト", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO pages (id, title) VALUES (9, 'test')")
-		if err != nil {
-			t.Fatalf("テストデータ挿入エラー: %v", err)
-		}
-
-		got := GenerateNextID(db)
-		want := "000010"
-		if got != want {
-			t.Errorf("GenerateNextID() = %q, want %q", got, want)
-		}
-	})
-
-	// 6. 大きな値のテスト
-	t.Run("より大きな数値IDの連番テスト", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO pages (id, title) VALUES (12345, 'test')")
-		if err != nil {
-			t.Fatalf("テストデータ挿入エラー: %v", err)
-		}
-
-		got := GenerateNextID(db)
-		want := "012346"
-		if got != want {
-			t.Errorf("GenerateNextID() = %q, want %q", got, want)
-		}
-	})
+		seen[got] = true
+	}
+	if len(seen) != n {
+		t.Errorf("一意なIDが %d 件あるべきですが %d 件でした", n, len(seen))
+	}
 }
 
 func TestParseAndSyncNestedOrders(t *testing.T) {

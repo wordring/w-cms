@@ -29,6 +29,22 @@ type SaveRequest struct {
 	HTML   string `json:"html"`
 }
 
+// reserveNewPageID は pages テーブルへ最小限の行を原子的に INSERT し、SQLite の自動採番で
+// 確定した新しいページID（6桁ゼロ埋め）を返します。`MAX(id)+1` と異なり同時実行でも一意な
+// IDが得られ、ID衝突（[docs/同時編集の競合対策（検討中）.md] シナリオE）を防ぎます。
+// parent は親ページID（トップレベルは無効値 sql.NullInt64{}）。属性の正本はサイドカーです。
+func reserveNewPageID(parent sql.NullInt64) (string, error) {
+	result, err := database.DB.Exec(
+		`INSERT INTO pages (title, parent_id, file_path) VALUES (?, ?, '')`,
+		"新しいページ", parent,
+	)
+	if err != nil {
+		return "", err
+	}
+	idInt, _ := result.LastInsertId()
+	return fmt.Sprintf("%0*d", IDLength, idInt), nil
+}
+
 // SaveAPIHandler はエディタからの自動保存（JSON）を受け取り、HTMLファイルとDB同期を上書き保存します。
 func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -47,11 +63,18 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 親ページIDの変更は専用API（SetParentAPIHandler）が担い、保存では扱わない。
 	id := req.PageID
 	if id == "" {
-		// 新規ページ：作成者を所有者としてサイドカーを作成する（作成日時・作成者・
-		// 更新日時はサイドカーが刻む）。
-		id = GenerateNextID(database.DB)
+		// 新規ページ：IDを原子的に採番（同時保存でも衝突しない）。作成者を所有者として
+		// サイドカーを作成する（作成日時・作成者・更新日時はサイドカーが刻む）。
+		var err error
+		id, err = reserveNewPageID(sql.NullInt64{})
+		if err != nil {
+			http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		if u := auth.CurrentUser(r); u != nil {
 			EnsureSidecar(id, u.Username, u.PrimaryGroup, "")
+		} else {
+			EnsureSidecar(id, defaultOwner, "", "")
 		}
 	} else {
 		// 既存ページ：write権限を要求する
@@ -151,7 +174,11 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	content, _ := io.ReadAll(file)
 
-	newID := GenerateNextID(database.DB)
+	newID, err := reserveNewPageID(sql.NullInt64{})
+	if err != nil {
+		http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	pageDir := GetPageDir(newID)
 
 	os.MkdirAll(pageDir, 0755)
@@ -236,17 +263,12 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	creator := auth.CurrentUser(r)
 
-	// 2. DBにページレコードを挿入（IDはSQLiteが自動採番）
-	result, err := database.DB.Exec(
-		`INSERT INTO pages (title, parent_id, file_path) VALUES (?, ?, '')`,
-		"新しいページ", parentID,
-	)
+	// 2. ページレコードを原子的にINSERTしてIDを採番する（reserveNewPageID）。
+	newID, err := reserveNewPageID(parentID)
 	if err != nil {
 		http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	newIDInt, _ := result.LastInsertId()
-	newID := fmt.Sprintf("%0*d", IDLength, newIDInt)
 
 	// 親ページIDはゼロ詰め文字列に正規化（サイドカーへ記録する）。空＝トップレベル。
 	parentStr := ""
