@@ -9,66 +9,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
-	"time"
-
-	"golang.org/x/net/html"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/database"
 )
-
-// escapeAttr はHTML属性値（ダブルクォート囲み）に安全に埋め込めるよう、
-// 特殊文字をエスケープします。標準 html.EscapeString と同等ですが、本ファイルでは
-// ローカル変数 html がパッケージ名を隠すため、最小限の置換器を用意しています。
-var attrEscaper = strings.NewReplacer(`&`, "&amp;", `<`, "&lt;", `>`, "&gt;", `"`, "&#34;", `'`, "&#39;")
-
-func escapeAttr(s string) string {
-	return attrEscaper.Replace(s)
-}
-
-// pageInfoOpenRe は <m-page-info ...> の開始タグ全体（属性部分をキャプチャ）にマッチします。
-var pageInfoOpenRe = regexp.MustCompile(`(?is)<m-page-info\b([^>]*)>`)
-
-// pageInfoAttrRe は name="value" 形式の属性（ダブルクォート）にマッチします。
-var pageInfoAttrRe = regexp.MustCompile(`([a-zA-Z][\w-]*)\s*=\s*"([^"]*)"`)
-
-// setPageInfoAttrs は保存対象HTML中の <m-page-info> 開始タグについて、
-// サーバー権限属性（created-at / created-by / updated-at）を与えられたサーバー値で
-// 強制的に設定して返します。クライアント由来の同名属性は破棄します（改竄防止）。
-// created-at / created-by は空文字なら属性を出力しません（作成情報が無い既存ページ用）。
-// updated-at は常に設定します。<m-page-info> が無ければ文書先頭に新設します。
-func setPageInfoAttrs(htmlContent, createdAt, createdBy, updatedAt string) string {
-	build := func(existing string) string {
-		var attrs []string
-		// 既存属性のうち、サーバー権限フィールド以外はそのまま保持する。
-		for _, m := range pageInfoAttrRe.FindAllStringSubmatch(existing, -1) {
-			switch strings.ToLower(m[1]) {
-			case "created-at", "created-by", "updated-at":
-				// サーバー値で置き換えるため破棄
-			default:
-				attrs = append(attrs, fmt.Sprintf(`%s="%s"`, m[1], m[2]))
-			}
-		}
-		if createdAt != "" {
-			attrs = append(attrs, fmt.Sprintf(`created-at="%s"`, escapeAttr(createdAt)))
-		}
-		if createdBy != "" {
-			attrs = append(attrs, fmt.Sprintf(`created-by="%s"`, escapeAttr(createdBy)))
-		}
-		attrs = append(attrs, fmt.Sprintf(`updated-at="%s"`, escapeAttr(updatedAt)))
-		return "<m-page-info " + strings.Join(attrs, " ") + ">"
-	}
-
-	if loc := pageInfoOpenRe.FindStringSubmatchIndex(htmlContent); loc != nil {
-		existing := htmlContent[loc[2]:loc[3]]
-		return htmlContent[:loc[0]] + build(existing) + htmlContent[loc[1]:]
-	}
-	// <m-page-info> が無い既存・旧HTMLには先頭に新設する。
-	return build("") + "</m-page-info>\n" + htmlContent
-}
 
 // PageSummary は一覧表示用の簡素化されたメタデータ構造体です。
 type PageSummary struct {
@@ -96,60 +42,41 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// サーバー権限フィールド（作成日時・作成者・更新日時）の権威値を決める。
-	// クライアントが送ってきたHTML内の値は信用せず、後でサーバー値で上書きする（改竄防止）。
+	// 本文（HTML）はそのまま保存し、ページ属性はサイドカーが正本。保存では
+	// 更新日時だけを進める（作成日時・作成者・親・権限はサイドカーが保持）。
+	// 親ページIDの変更は専用API（SetParentAPIHandler）が担い、保存では扱わない。
 	id := req.PageID
-	var createdAt, createdBy string
 	if id == "" {
-		// 新規ページ：作成者を所有者としてサイドカーを作成してから同期する。
-		// 作成日時＝今、作成者＝現在のユーザー（サーバーが1回だけ刻む）。
+		// 新規ページ：作成者を所有者としてサイドカーを作成する（作成日時・作成者・
+		// 更新日時はサイドカーが刻む）。
 		id = GenerateNextID(database.DB)
 		if u := auth.CurrentUser(r); u != nil {
-			EnsureSidecar(id, u.Username, u.PrimaryGroup)
-			createdBy = u.Username
+			EnsureSidecar(id, u.Username, u.PrimaryGroup, "")
 		}
-		createdAt = time.Now().UTC().Format(time.RFC3339)
 	} else {
 		// 既存ページ：write権限を要求する
 		if !RequirePageWrite(w, r, id) {
 			return
 		}
-		// 作成日時・作成者はDB（＝作成時にサーバーが刻んだ値）を正とし、復元する。
-		if idInt, err := strconv.Atoi(id); err == nil {
-			var ca, cb sql.NullString
-			database.DB.QueryRow("SELECT created_at, created_by FROM pages WHERE id = ?", idInt).Scan(&ca, &cb)
-			createdAt, createdBy = ca.String, cb.String
-		}
-	}
-	// 更新日時は保存のたびにサーバーが「今」を刻む。
-	updatedAt := time.Now().UTC().Format(time.RFC3339)
-
-	// 親ページIDが変更される場合のみ、変更先の妥当性を検証する（実在・循環・write権限）。
-	// 親が変わらない通常の保存では検証しない（親にwrite権限が無くても自分のページは保存できる）。
-	idInt, _ := strconv.Atoi(id)
-	newParent := parseParentID(req.HTML)
-	var oldParent sql.NullInt64
-	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", idInt).Scan(&oldParent)
-	if parentChanged(oldParent, newParent) {
-		if msg, code := validateParentChange(auth.CurrentUser(r), idInt, newParent); code != 0 {
-			http.Error(w, msg, code)
-			return
-		}
 	}
 
-	// 受け取ったHTMLの <m-page-info> をサーバー権威値で上書きしてから永続化する。
-	htmlOut := setPageInfoAttrs(req.HTML, createdAt, createdBy, updatedAt)
+	// 更新日時は保存のたびにサーバーが「今」を刻む（サイドカーが正本）。
+	updatedAt, err := BumpUpdatedAt(id)
+	if err != nil {
+		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
+		return
+	}
 
 	pageDir := GetPageDir(id)
 	os.MkdirAll(pageDir, 0755)
 
 	htmlPath := filepath.Join(pageDir, id+".html")
-	if err := os.WriteFile(htmlPath, []byte(htmlOut), 0644); err != nil {
+	if err := os.WriteFile(htmlPath, []byte(req.HTML), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
 
-	if err := SyncIndex(id, htmlOut); err != nil {
+	if err := SyncIndex(id, req.HTML); err != nil {
 		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
 		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -232,9 +159,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	htmlPath := filepath.Join(pageDir, newID+".html")
 	os.WriteFile(htmlPath, content, 0644)
 
-	// アップロード者を所有者とする権限サイドカーを作成（SyncIndexより前）
+	// アップロード者を所有者とする属性サイドカーを作成（SyncIndexより前）
 	if u := auth.CurrentUser(r); u != nil {
-		EnsureSidecar(newID, u.Username, u.PrimaryGroup)
+		EnsureSidecar(newID, u.Username, u.PrimaryGroup, "")
 	}
 
 	SyncIndex(newID, string(content))
@@ -321,24 +248,14 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	newIDInt, _ := result.LastInsertId()
 	newID := fmt.Sprintf("%0*d", IDLength, newIDInt)
 
-	// 3. デフォルトHTMLを構築。
-	//    ページ属性は文書先頭の <m-page-info> に集約する。作成日時・作成者は
-	//    サーバーがここで1回だけ刻む（以後の改竄は保存APIが復元する）。
-	//    親ページIDは <m-page-info> に内包する <m-tag name="親ページID"> で表す。
-	var htmlBuilder strings.Builder
-	createdAt := time.Now().UTC().Format(time.RFC3339)
-	createdBy := ""
-	if creator != nil {
-		createdBy = creator.Username
-	}
-	fmt.Fprintf(&htmlBuilder,
-		"<m-page-info created-at=\"%s\" created-by=\"%s\">\n", createdAt, escapeAttr(createdBy))
+	// 親ページIDはゼロ詰め文字列に正規化（サイドカーへ記録する）。空＝トップレベル。
+	parentStr := ""
 	if parentID.Valid {
-		parentStr := fmt.Sprintf("%0*d", IDLength, parentID.Int64)
-		fmt.Fprintf(&htmlBuilder,
-			"  <m-tag name=\"親ページID\" value=\"%s\"></m-tag>\n", parentStr)
+		parentStr = fmt.Sprintf("%0*d", IDLength, parentID.Int64)
 	}
-	htmlBuilder.WriteString("</m-page-info>\n")
+
+	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
+	var htmlBuilder strings.Builder
 	htmlBuilder.WriteString("<h1>新しいページ</h1>\n")
 	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>\n")
 	htmlBuilder.WriteString("<h2>子ページ一覧</h2>\n")
@@ -354,28 +271,21 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4-2. 権限サイドカーを作成（作成者が所有者。SyncIndexより前に作る）
+	// 4-2. 属性サイドカーを作成（作成者が所有者＝created_by。親ページIDも記録）。
+	//      作成日時・更新日時はサイドカーが刻む。SyncIndexより前に作る。
 	if creator != nil {
-		EnsureSidecar(newID, creator.Username, creator.PrimaryGroup)
+		EnsureSidecar(newID, creator.Username, creator.PrimaryGroup, parentStr)
+	} else {
+		EnsureSidecar(newID, defaultOwner, "", parentStr)
 	}
 
-	// 5. DB同期（タグなどのインデックス更新）
+	// 5. DB同期（タグなどのインデックス更新。親・作成情報はサイドカーから読まれる）
 	if err := SyncIndex(newID, html); err != nil {
 		log.Printf("SyncIndex failed for new page %s: %v\n", newID, err)
 	}
 
 	// 6. 新しいページへリダイレクト
 	http.Redirect(w, r, "/"+newID+"?edit=true", http.StatusFound)
-}
-
-// parseParentID は保存対象HTMLから親ページID（<m-tag name="親ページID"> の値）を取り出します。
-// 無ければ空文字を返します。
-func parseParentID(htmlContent string) string {
-	root, err := html.Parse(strings.NewReader(htmlContent))
-	if err != nil {
-		return ""
-	}
-	return ParseCore(root).ParentID
 }
 
 // parentChanged は、DB上の現在の親（old）と新しい親文字列（newStr）が異なるかを返します。
@@ -474,6 +384,105 @@ func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}
+
+// SetParentAPIHandler は編集中ページの親ページを付け替えます（親はサイドカーが正本）。
+// 対象ページの write 権限に加え、変更先の妥当性（実在・循環・新しい親への write、
+// トップレベル化は admin）を検証してからサイドカーへ反映し、pages インデックスを更新します。
+func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if !RequirePageWrite(w, r, id) {
+		return
+	}
+	childID, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
+
+	// 親が実際に変わるときだけ検証する。
+	var oldParent sql.NullInt64
+	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", childID).Scan(&oldParent)
+	if parentChanged(oldParent, newParent) {
+		if msg, code := validateParentChange(auth.CurrentUser(r), childID, newParent); code != 0 {
+			http.Error(w, msg, code)
+			return
+		}
+	}
+
+	// 親IDをゼロ詰めに正規化してサイドカーへ反映（更新日時も進む）。
+	parentStore := ""
+	if newParent != "" {
+		if pid, e := strconv.Atoi(newParent); e == nil {
+			parentStore = fmt.Sprintf("%0*d", IDLength, pid)
+		}
+	}
+	updatedAt, err := SetSidecarParent(id, parentStore)
+	if err != nil {
+		http.Error(w, "親ページの保存に失敗しました: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// pages インデックスの親ページ・更新日時を更新する（本文の再同期は不要）。
+	var parentDB sql.NullInt64
+	if parentStore != "" {
+		if pid, e := strconv.Atoi(parentStore); e == nil {
+			parentDB = sql.NullInt64{Int64: int64(pid), Valid: true}
+		}
+	}
+	if _, err := database.DB.Exec("UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?", parentDB, updatedAt, childID); err != nil {
+		http.Error(w, "インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if u := auth.CurrentUser(r); u != nil {
+		auth.Audit(u.Username, "set-parent", id+"->"+parentStore)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "parent_id": parentStore, "updated_at": updatedAt})
+}
+
+// PageMetaAPIHandler はサイドパネル表示用に、ページの属性（親・作成/更新情報）を返します。
+// 対象ページの read 権限を要求します。
+func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if !RequirePageRead(w, r, id) {
+		return
+	}
+	idInt, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+
+	var parent sql.NullInt64
+	var createdAt, createdBy, updatedAt sql.NullString
+	err = database.DB.QueryRow(
+		"SELECT parent_id, created_at, created_by, updated_at FROM pages WHERE id = ?", idInt,
+	).Scan(&parent, &createdAt, &createdBy, &updatedAt)
+	if err != nil {
+		http.Error(w, "ページが見つかりません", http.StatusNotFound)
+		return
+	}
+
+	parentStr := ""
+	if parent.Valid {
+		parentStr = fmt.Sprintf("%0*d", IDLength, parent.Int64)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":         id,
+		"parent_id":  parentStr,
+		"created_at": createdAt.String,
+		"created_by": createdBy.String,
+		"updated_at": updatedAt.String,
+	})
 }
 
 // RebuildDBAPIHandler は、HTMLファイルからデータベースを完全に再構築します。

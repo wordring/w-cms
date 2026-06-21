@@ -12,22 +12,16 @@ type PageTag struct {
 	Value string
 }
 
-// CorePage はどのページにも共通する基本インデックス情報です。
-// ユースケース固有のデータ（発注書・部材など）は各プラグインが個別に抽出します。
+// CorePage はHTML本文（＝ページの内容）から抽出される基本インデックス情報です。
+// ページの属性（親ページID・作成/更新情報・権限）はHTMLではなくサイドカーが正本で、
+// ここには含めません。ユースケース固有のデータは各プラグインが個別に抽出します。
 type CorePage struct {
-	Title    string
-	ParentID string
-	Tags     []PageTag
-
-	// CreatedAt / CreatedBy / UpdatedAt は文書先頭の <m-page-info> から抽出される
-	// ページ属性です（作成日時・作成者・更新日時）。いずれもサーバーが書き込む権限を
-	// 持ち、保存APIがHTMLへ注入する。HTMLに記録するためDB再構築でも失われない。
-	CreatedAt string
-	CreatedBy string
-	UpdatedAt string
+	Title string
+	Tags  []PageTag
 }
 
-// ParseCore はHTMLノード木から、ページの基本情報（タイトル・親ページID・タグ）を抽出します。
+// ParseCore はHTMLノード木から、ページ内容由来の基本情報（タイトル・タグ）を抽出します。
+// 親ページID等の属性はサイドカー（<id>.meta.json）が正本のため、ここでは扱いません。
 // ユースケース固有の抽出は plugin_*.go の各 Sync が担当します。
 func ParseCore(root *html.Node) CorePage {
 	core := CorePage{Title: "No Title"}
@@ -40,25 +34,13 @@ func ParseCore(root *html.Node) CorePage {
 				core.Title = extractText(n)
 			}
 		case "m-tag":
-			if name := Attr(n, "name"); name != "" {
+			// 旧方式の「親ページID」タグはサイドカーへ移行済みのため、ユーザータグとしては扱わない。
+			name := Attr(n, "name")
+			if name != "" && name != "親ページID" {
 				core.Tags = append(core.Tags, PageTag{Name: name, Value: Attr(n, "value")})
 			}
-		case "m-page-info":
-			// ページ属性ブロック。作成日時・作成者をHTMLから読み取る。
-			// 親ページIDは内包する <m-tag name="親ページID"> 経由で別途同期される。
-			core.CreatedAt = Attr(n, "created-at")
-			core.CreatedBy = Attr(n, "created-by")
-			core.UpdatedAt = Attr(n, "updated-at")
 		}
 	})
-
-	// 「親ページID」タグがあれば ParentID に採用する
-	for _, tag := range core.Tags {
-		if tag.Name == "親ページID" {
-			core.ParentID = tag.Value
-			break
-		}
-	}
 
 	return core
 }

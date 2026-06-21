@@ -217,10 +217,16 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	}
 }
 
-// TestPageInfoCreatedFieldsSync は、<m-page-info> の created-at / created-by が
-// ParseCore で抽出され、SyncIndex によって pages テーブルへ反映されること、
-// および空属性での再同期が既存の作成情報を上書きしない（COALESCE）ことを確認します。
-func TestPageInfoCreatedFieldsSync(t *testing.T) {
+// TestSidecarAttributesSync は、ページ属性（親ページID・作成日時・作成者・更新日時）が
+// サイドカー（正本）から SyncIndex によって pages テーブルへ反映されること、および
+// HTML本文中の旧「親ページID」タグがユーザータグとして混入しないことを確認します。
+func TestSidecarAttributesSync(t *testing.T) {
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdirエラー: %v", err)
+	}
+	defer os.Chdir(origWd)
+
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("DB接続エラー: %v", err)
@@ -234,109 +240,94 @@ func TestPageInfoCreatedFieldsSync(t *testing.T) {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
-	htmlContent := `<m-page-info created-at="2026-05-01T10:00:00Z" created-by="admin">
-	<m-tag name="親ページID" value="00001"></m-tag>
-</m-page-info>
-<h1>テストページ</h1>`
-
-	// ParseCore が created-at / created-by / 親ページID を抽出する
-	root, err := html.Parse(strings.NewReader(htmlContent))
-	if err != nil {
-		t.Fatalf("HTMLパースエラー: %v", err)
+	// サイドカーに属性を書いてから同期する（サイドカーが正本）。
+	if err := WriteSidecar("000002", PageMeta{
+		Owner: "admin", Mode: DefaultMode,
+		ParentID: "000001", CreatedAt: "2026-05-01T10:00:00Z", CreatedBy: "admin",
+		UpdatedAt: "2026-06-20T19:03:00Z",
+	}); err != nil {
+		t.Fatalf("WriteSidecarエラー: %v", err)
 	}
-	core := ParseCore(root)
-	if core.CreatedAt != "2026-05-01T10:00:00Z" {
-		t.Errorf("CreatedAtの抽出が違います: %q", core.CreatedAt)
-	}
-	if core.CreatedBy != "admin" {
-		t.Errorf("CreatedByの抽出が違います: %q", core.CreatedBy)
-	}
-	if core.ParentID != "00001" {
-		t.Errorf("内包する親ページIDの抽出が違います: %q", core.ParentID)
+	if err := SyncIndex("000002", "<h1>テストページ</h1>"); err != nil {
+		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	// SyncIndex で pages テーブルへ反映される
-	if err := SyncIndex("00002", htmlContent); err != nil {
-		t.Fatalf("SyncIndexでエラー: %v", err)
-	}
-	var createdAt, createdBy string
-	err = db.QueryRow("SELECT created_at, created_by FROM pages WHERE id = ?", "00002").Scan(&createdAt, &createdBy)
-	if err != nil {
+	var parent sql.NullInt64
+	var createdAt, createdBy, updatedAt string
+	if err := db.QueryRow(
+		"SELECT parent_id, created_at, created_by, updated_at FROM pages WHERE id = ?", "000002",
+	).Scan(&parent, &createdAt, &createdBy, &updatedAt); err != nil {
 		t.Fatalf("pagesのクエリでエラー: %v", err)
 	}
-	if createdAt != "2026-05-01T10:00:00Z" || createdBy != "admin" {
-		t.Errorf("created_at/created_by が反映されていません: at=%q, by=%q", createdAt, createdBy)
-	}
-
-	// 作成情報を持たないHTMLで再同期しても、既存の作成情報は保持される（改竄・消失防止）
-	if err := SyncIndex("00002", `<h1>作成情報を消したい改竄HTML</h1>`); err != nil {
-		t.Fatalf("再同期でエラー: %v", err)
-	}
-	err = db.QueryRow("SELECT created_at, created_by FROM pages WHERE id = ?", "00002").Scan(&createdAt, &createdBy)
-	if err != nil {
-		t.Fatalf("再同期後のクエリでエラー: %v", err)
+	if !parent.Valid || parent.Int64 != 1 {
+		t.Errorf("親ページIDがサイドカーから反映されていません: %+v", parent)
 	}
 	if createdAt != "2026-05-01T10:00:00Z" || createdBy != "admin" {
-		t.Errorf("再同期で作成情報が失われました: at=%q, by=%q", createdAt, createdBy)
-	}
-
-	// updated-at を持つHTMLを同期すると、その値が updated_at に保持される
-	// （CURRENT_TIMESTAMP で上書きされない＝DB再構築でも真の更新日時が残る）。
-	withUpdated := `<m-page-info created-at="2026-05-01T10:00:00Z" created-by="admin" updated-at="2026-06-20T19:03:00Z"></m-page-info><h1>x</h1>`
-	if err := SyncIndex("00002", withUpdated); err != nil {
-		t.Fatalf("updated-at同期でエラー: %v", err)
-	}
-	var updatedAt string
-	if err := db.QueryRow("SELECT updated_at FROM pages WHERE id = ?", "00002").Scan(&updatedAt); err != nil {
-		t.Fatalf("updated_atのクエリでエラー: %v", err)
+		t.Errorf("作成情報が反映されていません: at=%q by=%q", createdAt, createdBy)
 	}
 	if updatedAt != "2026-06-20T19:03:00Z" {
-		t.Errorf("HTMLのupdated-atが反映されていません: %q", updatedAt)
+		t.Errorf("更新日時がサイドカーから反映されていません: %q", updatedAt)
+	}
+
+	// HTML本文に旧「親ページID」タグがあっても、ユーザータグとして混入せず、
+	// サイドカーの親ページIDも上書きしない。
+	if err := SyncIndex("000002", `<h1>x</h1><m-tag name="親ページID" value="999"></m-tag>`); err != nil {
+		t.Fatalf("再同期でエラー: %v", err)
+	}
+	if err := db.QueryRow("SELECT parent_id FROM pages WHERE id = ?", "000002").Scan(&parent); err != nil {
+		t.Fatalf("再クエリエラー: %v", err)
+	}
+	if !parent.Valid || parent.Int64 != 1 {
+		t.Errorf("HTMLの親IDタグがサイドカーの親を上書きしました: %+v", parent)
+	}
+	var tagCount int
+	db.QueryRow(`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = '親ページID'`, "000002").Scan(&tagCount)
+	if tagCount != 0 {
+		t.Errorf("親ページIDタグがユーザータグとして混入しています: %d", tagCount)
 	}
 }
 
-// TestSetPageInfoAttrs は、保存時のサーバー権限フィールド上書きロジックを検証します。
-func TestSetPageInfoAttrs(t *testing.T) {
-	t.Run("既存タグのサーバー属性を上書きし他属性は保持", func(t *testing.T) {
-		in := `<m-page-info data-x="keep" created-at="FORGED" created-by="attacker" updated-at="OLD"><m-tag name="親ページID" value="00001"></m-tag></m-page-info><h1>本文</h1>`
-		out := setPageInfoAttrs(in, "2026-05-01T10:00:00Z", "admin", "2026-06-20T19:00:00Z")
-		for _, want := range []string{
-			`data-x="keep"`,
-			`created-at="2026-05-01T10:00:00Z"`,
-			`created-by="admin"`,
-			`updated-at="2026-06-20T19:00:00Z"`,
-			`<m-tag name="親ページID" value="00001">`,
-		} {
-			if !strings.Contains(out, want) {
-				t.Errorf("出力に %q が含まれていません: %s", want, out)
-			}
-		}
-		for _, ng := range []string{"FORGED", "attacker", `updated-at="OLD"`} {
-			if strings.Contains(out, ng) {
-				t.Errorf("改竄値 %q が残存しています: %s", ng, out)
-			}
-		}
-	})
+// TestSidecarMutators は BumpUpdatedAt / SetSidecarParent が、所有権・作成情報を
+// 保持したまま更新日時・親ページIDだけを変更することを確認します（改竄防止の規律）。
+func TestSidecarMutators(t *testing.T) {
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdirエラー: %v", err)
+	}
+	defer os.Chdir(origWd)
 
-	t.Run("m-page-infoが無ければ先頭に新設", func(t *testing.T) {
-		out := setPageInfoAttrs(`<h1>旧HTML</h1>`, "2026-05-01T10:00:00Z", "admin", "2026-06-20T19:00:00Z")
-		if !strings.HasPrefix(out, "<m-page-info ") {
-			t.Errorf("先頭に m-page-info が新設されていません: %s", out)
-		}
-		if !strings.Contains(out, "</m-page-info>") || !strings.Contains(out, "<h1>旧HTML</h1>") {
-			t.Errorf("本文が保持されていません: %s", out)
-		}
-	})
+	orig := PageMeta{
+		Owner: "alice", Group: "sales", Mode: "330",
+		CreatedAt: "2026-01-01T00:00:00Z", CreatedBy: "alice", UpdatedAt: "2026-01-01T00:00:00Z",
+	}
+	if err := WriteSidecar("000003", orig); err != nil {
+		t.Fatalf("WriteSidecarエラー: %v", err)
+	}
 
-	t.Run("作成情報が空なら作成属性を出力しない", func(t *testing.T) {
-		out := setPageInfoAttrs(`<h1>x</h1>`, "", "", "2026-06-20T19:00:00Z")
-		if strings.Contains(out, "created-at=") || strings.Contains(out, "created-by=") {
-			t.Errorf("空の作成情報が属性として出力されています: %s", out)
-		}
-		if !strings.Contains(out, `updated-at="2026-06-20T19:00:00Z"`) {
-			t.Errorf("更新日時が設定されていません: %s", out)
-		}
-	})
+	// BumpUpdatedAt：更新日時だけ進み、所有権・作成情報は保持される。
+	newUpdated, err := BumpUpdatedAt("000003")
+	if err != nil {
+		t.Fatalf("BumpUpdatedAtエラー: %v", err)
+	}
+	got, _ := ReadSidecar("000003")
+	if got.Owner != "alice" || got.CreatedAt != "2026-01-01T00:00:00Z" || got.CreatedBy != "alice" {
+		t.Errorf("BumpUpdatedAtが所有権/作成情報を変更しました: %+v", got)
+	}
+	if got.UpdatedAt != newUpdated || got.UpdatedAt == "2026-01-01T00:00:00Z" {
+		t.Errorf("更新日時が進んでいません: %q", got.UpdatedAt)
+	}
+
+	// SetSidecarParent：親ページIDを設定。所有権・作成者は保持される。
+	if _, err := SetSidecarParent("000003", "000001"); err != nil {
+		t.Fatalf("SetSidecarParentエラー: %v", err)
+	}
+	got, _ = ReadSidecar("000003")
+	if got.ParentID != "000001" {
+		t.Errorf("親ページIDが設定されていません: %q", got.ParentID)
+	}
+	if got.Owner != "alice" || got.CreatedBy != "alice" {
+		t.Errorf("SetSidecarParentが所有権/作成者を変更しました: %+v", got)
+	}
 }
 
 func TestRequiredMaterialsCalculation(t *testing.T) {
