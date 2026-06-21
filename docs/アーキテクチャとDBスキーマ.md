@@ -10,7 +10,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 *   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。外部キー制約（PRAGMA foreign_keys = ON）を有効にし、**コアテーブル（`pages` / `page_tags`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
 *   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。
 *   **`cms/plugin_*.go`**: 1ファイル＝1ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・同期処理（`Sync`）を持ち、`init()` で自己登録します。新しいユースケースはここにファイルを足すだけで追加できます（[プラグイン開発ガイド.md](プラグイン開発ガイド.md) 参照）。
-*   **`cms/parser.go`**: `x/net/html` を用いて、HTML文字列から**コア情報（タイトル・親ページID・`<m-tag>`、および `<m-page-info>` のページ属性 created-at / created-by / updated-at）のみ**を抽出します（`ParseCore`）。ユースケース固有の抽出は各プラグインが担当します。
+*   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルと `<m-tag>` のみ**を抽出します（`ParseCore`）。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
 *   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_tags）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
 *   **`cms/handler.go`**: コアのHTTPハンドラ（保存・読込・子ページ作成など）。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
 
@@ -29,10 +29,10 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     *   `title` (TEXT): HTMLから抽出したタイトル。
     *   `parent_id` (INTEGER): 親ページのID。
     *   `file_path` (TEXT): 物理ファイルの保存先パス。
-    *   `created_at` (DATETIME): 作成日時。文書先頭の `<m-page-info created-at="...">` から同期される。
-    *   `created_by` (TEXT): 作成者。`<m-page-info created-by="...">` から同期される。
-    *   `updated_at` (DATETIME): 更新日時。`<m-page-info updated-at="...">` があればそれを採用し、無ければ同期時刻（`CURRENT_TIMESTAMP`）にフォールバックする。
-    *   これらページ属性は **HTML本文の `<m-page-info>` が正本**で、保存のたびにサーバーが権威値を書き込む（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。HTMLに記録するため、DB再構築（8章）でも作成日時・作成者・真の更新日時が失われない。
+    *   `created_at` (DATETIME): 作成日時。サイドカーから同期される。
+    *   `created_by` (TEXT): 作成者。サイドカーから同期される。
+    *   `updated_at` (DATETIME): 更新日時。サイドカーの値を採用し、無ければ同期時刻（`CURRENT_TIMESTAMP`）にフォールバックする。
+    *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` と `page_tags` のみHTML本文由来）。
     *   `created_at` / `created_by` 列は `CREATE TABLE` に加え、既存DB向けに冪等な `ALTER TABLE ADD COLUMN` マイグレーション（`database/sqlite.go` の `coreMigrations`）でも追加される。
 *   **`page_tags`**: `<m-tag name="..." value="...">` から抽出された可変タグ。
     *   `page_id` (FK), `name`, `value`
@@ -92,23 +92,28 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     }
     ```
 *   **バックエンド処理フロー**:
-    1.  `page_id` が空の場合、`storage.go` の `GenerateNextID()` で新しいページID（例: `00002`）を発番します。
-    2.  **サーバー権限フィールドの上書き（改竄防止）**: クライアントが送ってきたHTML内の `<m-page-info>` の作成日時・作成者・更新日時は信用せず、サーバー権威値で上書きします（`setPageInfoAttrs`）。作成日時/作成者は新規なら「今／現在ユーザー」、既存ならDB（作成時の値）を復元。更新日時は保存のたびに「今」を刻みます。`<m-page-info>` が無い旧HTMLには先頭に新設します。
-    3.  **親ページIDの検証（変更時のみ）**: 親が実際に変わる保存に限り、新しい親の妥当性を検証します（実在・自己参照/循環の防止・新しい親への write 権限、トップレベル化は admin）。親が変わらない通常保存では検証しないため、親に write 権限が無くても自分のページは保存できます。不正なら HTTP 4xx を返します。
-    4.  指定・発番されたIDに基づく物理ディレクトリ（`data/master/...`）を確保します。
-    5.  上書き済みの `html` を `[page_id].html` に書き込み（上書き保存）します。
-    6.  `SyncIndex(page_id, html)` を呼び出し、タグや受発注データをDB（SQLite）に再同期します。
+    1.  `page_id` が空の場合、`storage.go` の `GenerateNextID()` で新しいページID（例: `00002`）を発番し、作成者を所有者とするサイドカーを作成します（作成日時・作成者・更新日時はサイドカーが刻む）。
+    2.  HTMLは「内容」なのでそのまま `[page_id].html` に書き込みます（属性の注入・上書きは行いません）。
+    3.  **更新日時の前進**: `BumpUpdatedAt()` がサイドカーの `updated_at` を「今」に進めます（所有権・親・作成情報は保持。本文保存で権限を書き換えないため自己認可を防止）。
+    4.  `SyncIndex(page_id, html)` を呼び出し、タイトル・タグや受発注データをDBに再同期します（親・作成情報・更新日時はサイドカーから読まれます）。
+    *   親ページIDの変更は保存では扱わず、専用API（4.1.2）が担います。
 *   **レスポンス形式**: JSON
     ```json
     {
       "success": true,
       "page_id": "00002",          // フロントエンドに確定したIDを返す
-      "updated_at": "2026-06-20T19:03:00Z"  // サーバーが刻んだ更新日時（パネル表示の更新に使う）
+      "updated_at": "2026-06-20T19:03:00Z"  // サーバーが刻んだ更新日時（サイドパネル表示の更新に使う）
     }
     ```
 
 ### 4.1.1. 親ページ検証 API (`GET /api/validate-parent?id={編集中ページ}&parent={新しい親}`)
-ページ情報パネルで親ページIDを入力した際の**即時フィードバック用**エンドポイント。保存API（4.1）と同じ検証ロジック（`validateParentChange`）を共有し、権威的な検証は保存時にも行われます。対象ページの write 権限を前提とし、`{"ok": true}` または `{"ok": false, "error": "..."}` を返します。
+サイドパネルで親ページIDを入力した際の**即時フィードバック用**エンドポイント。付け替えAPI（4.1.2）・保存と同じ検証ロジック（`validateParentChange`）を共有します。対象ページの write 権限を前提とし、`{"ok": true}` または `{"ok": false, "error": "..."}` を返します。
+
+### 4.1.2. 親ページ付け替え API (`POST /api/set-parent?id={ページ}&parent={新しい親}`)
+親ページIDは**サイドカーが正本**のため、変更はこの専用APIで行います。対象ページの write 権限を要求し、親が実際に変わるときだけ `validateParentChange`（実在・自己参照/循環の防止・新しい親への write 権限、トップレベル化は admin）で検証します。妥当ならサイドカーの `parent_id` と `updated_at` を更新し、`pages` インデックスにも反映します。`{"ok": true, "parent_id": "...", "updated_at": "..."}` を返します。
+
+### 4.1.3. ページ属性取得 API (`GET /api/page-meta?id={page_id}`)
+サイドパネル表示用に、ページの属性（`parent_id` / `created_at` / `created_by` / `updated_at`）を返します。対象ページの read 権限を要求します。
 
 ### 4.2. Load API (`GET /api/load?id={page_id}`)
 既存のページデータをエディタに読み込むために使用します。
@@ -217,7 +222,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 フロントエンド（`assets/index.html`）で「＋ 子ページを作成」ボタンが押された際のフローは、`NewPageAPIHandler` がサーバー側で完結させます（DOM構造・イベント面の詳細は [エディタ仕様.md](エディタ仕様.md) 6.2参照）。
 1. フロントエンドは `/api/new-page?parent={現在のページID}` を呼び出します。
 2. バックエンドは `INSERT INTO pages (title, parent_id, file_path) VALUES (...)` を実行し、SQLiteの自動採番（`AUTOINCREMENT`）で確定した `LastInsertId()` を6桁ゼロ埋めした文字列を新しいページIDとします。
-3. 文書先頭に `<m-page-info created-at="..." created-by="...">` を置き、その中に親ページIDのタグ（`<m-tag name="親ページID" value="...">`）を内包した初期HTMLを生成します（作成日時・作成者はサーバーがここで1回だけ刻む）。続けて `<m-child-list>` 等を生成し、物理ファイルへ書き込み、`SyncIndex` でDBに同期します。
+3. 初期HTMLは「内容」のみ（`<h1>` と `<m-child-list>` 等）を生成して物理ファイルへ書き込みます。親ページID・作成者・作成日時などの属性は `EnsureSidecar()` でサイドカー `<id>.meta.json` に記録し（作成者＝所有者、作成日時・更新日時はサイドカーが刻む）、続けて `SyncIndex` でDBへ同期します（親・作成情報はサイドカーから読まれます）。
 4. レスポンスとして `/{新しいID}?edit=true` へ302リダイレクトします。ID発番・ファイル生成・DB同期・リダイレクトが単一のリクエストでアトミックに完結するため、フロントエンドが後から個別に `saveToServer()` を呼ぶ必要はありません。
 
 ### 6.3. 過去に発生したトラブルと、現在の設計に至った経緯（履歴）
@@ -262,10 +267,15 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 ## 8. データの正本性と全再構築
 
 ### 8.1. 正本はファイル、DBは派生インデックス
-w-cms では **`data/master/` 配下のファイル群（HTML本体とアップロードPDF）が唯一の正データ**であり、**`data/cms.db`（SQLite）は検索・集計のための派生インデックス**にすぎません。DBの全カラムは `SyncIndex` によってHTMLから再生成できます。
+w-cms では **`data/master/` 配下のファイル群が唯一の正データ**であり、**`data/cms.db`（SQLite）は検索・集計のための派生インデックス**にすぎません。各ページのファイルは次の2種類で、UNIX流に「内容」と「属性」を分けます。
+
+*   **HTML本体（`<id>.html`）＝ページの内容**: タイトル・本文・`<m-tag>`・受発注タグなど。
+*   **サイドカー（`<id>.meta.json`）＝ページの属性**: 所有権・権限（owner/group/mode）に加え、親ページID・作成日時・作成者・更新日時。
+
+DBの全カラムは `SyncIndex` によって **HTML本体とサイドカーから** 再生成できます（アップロードPDF等の添付も `data/master` 配下に置かれます）。
 
 > [!IMPORTANT]
-> **不変条件**: データベースには「ファイルから再生成できないデータ」を一切持たせないこと。新しいプラグインを追加する際も、そのテーブルの全データが `data/master` のHTML（カスタムタグ）から `Sync()` で再生成可能であることを保証してください。この不変条件により、`cms.db` はいつでも破棄して作り直せる「使い捨て可能なキャッシュ」として扱え、バックアップはファイルのみで完結します（運用手順は [デプロイ・運用マニュアル.md](デプロイ・運用マニュアル.md) の「4. バックアップと復元」参照）。
+> **不変条件**: データベースには「ファイルから再生成できないデータ」を一切持たせないこと。新しいプラグインを追加する際も、そのテーブルの全データが `data/master` のファイル（HTMLのカスタムタグ、またはサイドカー）から `Sync()` で再生成可能であることを保証してください。この不変条件により、`cms.db` はいつでも破棄して作り直せる「使い捨て可能なキャッシュ」として扱え、バックアップはファイルのみで完結します（運用手順は [デプロイ・運用マニュアル.md](デプロイ・運用マニュアル.md) の「4. バックアップと復元」参照）。
 
 ### 8.2. 全再構築の方式（全テーブルDROP）
 `RebuildDatabase`（`POST /api/rebuild-db`）は次の手順でDBを完全に作り直します。
