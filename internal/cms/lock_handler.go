@@ -42,14 +42,16 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := pageLocks.TryAcquire(idInt, user.Username)
+	// token は再取得（同一エディタ）の検証用。新規取得時は空。
+	res := pageLocks.TryAcquire(idInt, user.Username, r.URL.Query().Get("token"))
 	w.Header().Set("Content-Type", "application/json")
 	if !res.Acquired {
-		// 他者が編集中 → 423 Locked。保持者名と明け渡しまでの残り秒を返す。
+		// 他エディタが編集中 → 423 Locked。保持者名・同一ユーザーか・残り秒を返す。
 		w.WriteHeader(http.StatusLocked)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok":                  false,
 			"holder":              res.Holder,
+			"same_user":           res.SameUser,
 			"grace_remaining_sec": int(res.GraceRemaining.Seconds()),
 		})
 		return
