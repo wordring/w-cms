@@ -984,7 +984,6 @@
     // docs/同時編集の競合対策（検討中）.md を参照。
     let lockToken = null;       // 保持中のみ非null
     let lockPollTimer = null;   // 保持者の status ポーリング
-    let waiterPollTimer = null; // busy 時の空き待ちポーリング
 
     // applyMode は表示/編集の DOM 切り替えのみを行う（ロックの取得・解放は onModeToggle が担う）。
     function applyMode() {
@@ -1021,16 +1020,25 @@
     async function onModeToggle() {
         const toggle = document.getElementById('mode-toggle');
         if (toggle.checked) {
-            const ok = await acquireLock();
-            if (!ok) { toggle.checked = false; applyMode(); return; }
-            applyMode();
-            startLockPolling();
+            await enterEditMode();
         } else {
-            stopWaiterPolling();
             stopLockPolling();
             await releaseLock();
             applyMode();
         }
+    }
+
+    // enterEditMode は編集モードへ入る。ロックを取得できたら編集UIへ切り替え死活ポーリングを開始する。
+    // busy なら閲覧モードに留め、再試行トーストを表示する（自動ポーリングはしない）。
+    // 「再試行」ボタンからも呼ばれる（取得できたらそのまま編集に入る）。
+    async function enterEditMode() {
+        const toggle = document.getElementById('mode-toggle');
+        const ok = await acquireLock();
+        if (!ok) { toggle.checked = false; applyMode(); return false; }
+        toggle.checked = true;
+        applyMode();
+        startLockPolling();
+        return true;
     }
 
     // populateEditor は本文HTMLをエディタへ流し込みブロック化する（ロード時・ロック取得時に共用）。
@@ -1048,16 +1056,20 @@
     }
 
     // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
-    // busy なら待機トーストを出し空き待ちポーリングを始めて false を返す。
+    // busy なら「再試行」ボタン付きトーストを出して false を返す（自動ポーリングはしない＝
+    // 放置すればサーバー側で約30秒後に待機者扱いが解除され、保持者は保持を継続できる）。
     async function acquireLock() {
         try {
             const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' });
             if (res.status === 423) {
                 const d = await res.json().catch(() => ({}));
                 const who = d.same_user ? 'このページは別のタブ／ウィンドウ' : `このページは「${d.holder || '他のユーザー'}」さん`;
-                notify(`${who}で編集中です。閲覧のみ可能です（空き次第で自動的に編集に入ります）。`,
-                    { type: 'warn', duration: 0, id: 'lock' });
-                startWaiterPolling();
+                const sec = d.grace_remaining_sec || 0;
+                const tail = sec > 0 ? `あと約${Math.max(1, Math.ceil(sec / 60))}分で取得できます。` : '';
+                notify(`${who}で編集中です。${tail}閲覧のみ可能です。`, {
+                    type: 'warn', duration: 0, id: 'lock',
+                    action: { label: '再試行', onClick: () => enterEditMode() }
+                });
                 return false;
             }
             if (!res.ok) { notify('編集ロックを取得できませんでした。', { type: 'error' }); return false; }
@@ -1104,26 +1116,6 @@
             }
         } catch (e) {}
     }
-
-    // startWaiterPolling は busy だったページが空くのを10秒ごとに待ち、空いたら自動で編集に入る。
-    function startWaiterPolling() {
-        stopWaiterPolling();
-        waiterPollTimer = setInterval(async () => {
-            const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' }).catch(() => null);
-            if (!res || res.status === 423 || !res.ok) return; // まだ埋まっている
-            const d = await res.json();
-            lockToken = d.token;
-            stopWaiterPolling();
-            dismissToast('lock');
-            if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
-            const toggle = document.getElementById('mode-toggle');
-            toggle.checked = true;
-            applyMode();
-            startLockPolling();
-            notify('編集できるようになりました。', { type: 'success' });
-        }, 10000);
-    }
-    function stopWaiterPolling() { if (waiterPollTimer) { clearInterval(waiterPollTimer); waiterPollTimer = null; } }
 
     // handleLockLost は明け渡し/失効で編集権を失ったときの処理。変更を退避して閲覧モードへ。
     function handleLockLost() {
