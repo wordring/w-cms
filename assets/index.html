@@ -1108,7 +1108,8 @@
                 setLockRemaining(`⏳ 編集権の移行まで約${mins}分`);
                 notify(`このページの編集を待っている人がいます。あと約${mins}分で編集権が移ります。`, {
                     type: 'warn', duration: 0, id: 'waiter',
-                    action: { label: '保存して解放', onClick: () => { saveToServer(); leaveEditMode(); } }
+                    // 待たずに今すぐ譲る。直前の内容は保存してから解放するので失われない。
+                    action: { label: '今すぐ編集権を渡す', onClick: () => { saveToServer(); leaveEditMode(); } }
                 });
             } else {
                 setLockRemaining('');
