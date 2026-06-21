@@ -513,7 +513,6 @@
         </div>
         <div class="switch-container">
             <span id="user-bar" style="font-size: 12px; color: #475569; margin-right: 10px;"></span>
-            <button onclick="openPermsPanel()" style="margin-right: 8px; padding: 5px 10px; background: #475569; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;" title="このページの権限（owner/group/mode）を確認・変更します">🔒 権限</button>
             <a id="admin-link" href="/assets/admin.html" style="display: none; margin-right: 8px; padding: 5px 10px; background: #7c3aed; color: white; border-radius: 4px; text-decoration: none; font-size: 12px;">⚙ 管理</a>
             <button onclick="logout()" style="margin-right: 12px; padding: 5px 10px; background: #e2e8f0; color: #334155; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">ログアウト</button>
             <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: inline-block; min-width: 92px; text-align: right;"></span>
@@ -731,13 +730,7 @@
         window.location.href = '/login';
     }
 
-    // サイドパネルの権限カードを開き、最新の権限を読み込んで表示する。
-    async function openPermsPanel() {
-        const details = document.getElementById('perms-details');
-        if (details) details.open = true;
-        await loadPerms();
-    }
-
+    // 権限はサイドパネルの「🔒 権限」カードに常設。読み込み時に取得し、カードを開けば見える。
     async function loadPerms() {
         const msg = document.getElementById('pp-msg');
         msg.textContent = '';
