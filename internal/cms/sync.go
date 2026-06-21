@@ -92,7 +92,7 @@ func SyncIndex(id string, htmlContent string) error {
 	}
 
 	// コア3: ページ権限インデックス（サイドカー <id>.meta.json → page_perms）の同期
-	if err = syncPagePerms(tx, pageIDInt, id); err != nil {
+	if err = syncPageMeta(tx, pageIDInt, id); err != nil {
 		return err
 	}
 

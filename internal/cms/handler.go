@@ -70,8 +70,8 @@ func setPageInfoAttrs(htmlContent, createdAt, createdBy, updatedAt string) strin
 	return build("") + "</m-page-info>\n" + htmlContent
 }
 
-// PageMeta は一覧表示用の簡素化されたメタデータ構造体です。
-type PageMeta struct {
+// PageSummary は一覧表示用の簡素化されたメタデータ構造体です。
+type PageSummary struct {
 	ID       string
 	Title    string
 	FilePath string
@@ -269,9 +269,9 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	// 各子ページのうち、閲覧者が read 権限を持つものだけを返す
-	pages := make([]PageMeta, 0)
+	pages := make([]PageSummary, 0)
 	for rows.Next() {
-		var p PageMeta
+		var p PageSummary
 		var idInt int
 		if err := rows.Scan(&idInt, &p.Title); err == nil {
 			if GetPerms(idInt).CanRead(user) {
@@ -522,7 +522,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 			os.WriteFile(htmlPath, []byte(defaultHTML), 0644)
 			// トップページは全員が閲覧できるよう other に read を付与（owner rw / other r）。
 			// 書き込みは admin（owner）のみ。
-			WriteSidecar("000000", PagePerms{Owner: defaultOwner, Mode: "302"})
+			WriteSidecar("000000", PageMeta{Owner: defaultOwner, Mode: "302"})
 			SyncIndex("000000", defaultHTML)
 		}
 	}

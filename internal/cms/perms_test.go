@@ -14,7 +14,7 @@ import (
 // TestModePermissions は Unix風modeの実効権限判定（owner/group/other/admin）を検証します。
 func TestModePermissions(t *testing.T) {
 	// owner=alice, group=sales, mode="320"（owner rw, group r, other なし）
-	p := PagePerms{Owner: "alice", Group: "sales", Mode: "320"}
+	p := PageMeta{Owner: "alice", Group: "sales", Mode: "320"}
 
 	alice := &auth.User{Username: "alice", Groups: []string{"sales"}}       // 所有者
 	bob := &auth.User{Username: "bob", Groups: []string{"sales"}}           // 同一グループ
@@ -43,7 +43,7 @@ func TestModePermissions(t *testing.T) {
 
 // TestOtherReadableMode は other に read を与えた mode（"302"等）の判定を検証します。
 func TestOtherReadableMode(t *testing.T) {
-	p := PagePerms{Owner: "admin", Group: "", Mode: "302"} // owner rw, other r
+	p := PageMeta{Owner: "admin", Group: "", Mode: "302"} // owner rw, other r
 	stranger := &auth.User{Username: "x", Groups: []string{"y"}}
 	if !p.CanRead(stranger) {
 		t.Error("other=read のページを部外者が読めません")
@@ -76,7 +76,7 @@ func TestSidecarAndPermsSync(t *testing.T) {
 	}
 
 	// サイドカーを書いてから同期する
-	if err := WriteSidecar("000007", PagePerms{Owner: "alice", Group: "sales", Mode: "320"}); err != nil {
+	if err := WriteSidecar("000007", PageMeta{Owner: "alice", Group: "sales", Mode: "320"}); err != nil {
 		t.Fatalf("WriteSidecarエラー: %v", err)
 	}
 	if err := SyncIndex("000007", "<h1>権限テスト</h1>"); err != nil {

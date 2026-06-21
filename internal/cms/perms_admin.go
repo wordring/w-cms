@@ -63,7 +63,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	// 現在のサイドカー（無ければ現在の実効権限）を起点に変更する
 	p, ok := ReadSidecar(id)
 	if !ok {
-		p = PagePerms{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
+		p = PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
 	}
 
 	action := ""
@@ -127,7 +127,7 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 	cur := GetPerms(pageID)
 	p, ok := ReadSidecar(id)
 	if !ok {
-		p = PagePerms{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
+		p = PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
 	}
 	p.Owner = req.Owner
 
