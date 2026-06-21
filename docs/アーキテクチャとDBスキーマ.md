@@ -7,7 +7,8 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 システムの中核は、HTMLという「非構造化（あるいは半構造化）データ」を、データベース上の「構造化データ（インデックス）」に同期させる処理にあります。
 
 ### Goバックエンドの構成（`internal/`）
-*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。外部キー制約（PRAGMA foreign_keys = ON）を有効にし、**コアテーブル（`pages` / `page_tags`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
+*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_tags`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
+*   **`cms/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態。エンドポイントは `cms/lock_handler.go`（4.3 参照）。
 *   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。
 *   **`cms/plugin_*.go`**: 1ファイル＝1ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・同期処理（`Sync`）を持ち、`init()` で自己登録します。新しいユースケースはここにファイルを足すだけで追加できます（[プラグイン開発ガイド.md](プラグイン開発ガイド.md) 参照）。
 *   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルと `<m-tag>` のみ**を抽出します（`ParseCore`）。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
@@ -88,14 +89,16 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     ```json
     {
       "page_id": "00001",  // 新規の場合は空文字 ""
-      "html": "<!DOCTYPE html>..." // シリアライズされた最新のHTML文字列
+      "html": "<!DOCTYPE html>...", // シリアライズされた最新のHTML文字列
+      "token": "..."        // 編集ロックのトークン（保持者の検証に使う。4.3 参照）
     }
     ```
 *   **バックエンド処理フロー**:
-    1.  `page_id` が空の場合、`storage.go` の `GenerateNextID()` で新しいページID（例: `00002`）を発番し、作成者を所有者とするサイドカーを作成します（作成日時・作成者・更新日時はサイドカーが刻む）。
-    2.  HTMLは「内容」なのでそのまま `[page_id].html` に書き込みます（属性の注入・上書きは行いません）。
-    3.  **更新日時の前進**: `BumpUpdatedAt()` がサイドカーの `updated_at` を「今」に進めます（所有権・親・作成情報は保持。本文保存で権限を書き換えないため自己認可を防止）。
-    4.  `SyncIndex(page_id, html)` を呼び出し、タイトル・タグや受発注データをDBに再同期します（親・作成情報・更新日時はサイドカーから読まれます）。
+    1.  `page_id` が空の場合、`reserveNewPageID()` が `pages` への `INSERT` 自動採番で新しいページID（例: `00002`）を原子的に確定し（6章）、作成者を所有者とするサイドカーを作成します（作成日時・作成者・更新日時はサイドカーが刻む）。
+    2.  **編集ロックのトークン検証**: 既存ページの保存では、`token` が現在のロック保持者のものかを検証します。他者が保持中／トークン失効なら **409 Conflict** を返します（明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。ロックが存在しない場合は許可します（無競合。4.3 参照）。
+    3.  HTMLは「内容」なのでそのまま `[page_id].html` に書き込みます（属性の注入・上書きは行いません）。
+    4.  **更新日時の前進**: `BumpUpdatedAt()` がサイドカーの `updated_at` を「今」に進めます（所有権・親・作成情報は保持。本文保存で権限を書き換えないため自己認可を防止）。
+    5.  `SyncIndex(page_id, html)` を呼び出し、タイトル・タグや受発注データをDBに再同期します（親・作成情報・更新日時はサイドカーから読まれます）。
     *   親ページIDの変更は保存では扱わず、専用API（4.1.2）が担います。
 *   **レスポンス形式**: JSON
     ```json
@@ -124,6 +127,19 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     2.  物理ストレージ上の該当HTMLファイルを読み込みます。
 *   **レスポンス**: HTML文字列をそのまま (`text/html` またはプレーンテキストとして) 返却します。
 *   （※フロントエンド側は受け取ったHTMLから `<body>` 内のコンテンツのみを抽出し、エディタ内に展開します）
+
+### 4.3. 編集ロック API（同時編集の競合対策・Phase 1）
+
+同一ページの同時編集による lost update を防ぐため、**ページ単位の悲観ロック**を提供します（競合トリガー方式）。設計の全体像と決定の経緯は [同時編集の競合対策（検討中）.md](同時編集の競合対策（検討中）.md) を参照。ロックは **プロセス内 mutex 付き map** に保持する揮発的なランタイム状態で、サイドカーにもDBにも永続化しません（単一プロセス前提。再起動で全ロックが消えるのは許容＝ロックは元々揮発的）。実装は `internal/cms/lock.go`。
+
+*   **`POST /api/lock?id=`**（要 write 権限）: 編集モード移行時の**ロック取得**、および busy 時の**待機者の再試行ポーリング**（クライアントが10秒間隔で叩く）を兼ねます。
+    *   空き／自分が保持中なら取得し、`{"ok": true, "token": "...", "html": "..."}`（**最新HTML同梱**。古い版で上書きしないよう再ロードさせる）を返す。
+    *   他者が保持中なら **423 Locked** ＋ `{"holder": "...", "grace_remaining_sec": N}` を返す。最初の要求で明け渡しまでの**2分の猶予**が起動する。
+*   **`GET /api/lock-status?id=&token=`**（要 write 権限）: 保持者が10秒間隔で叩く**死活更新＋通知取得**。`{"is_holder", "holder", "waiter_present", "grace_remaining_sec", "lost"}` を返す。`waiter_present` で「編集待機中」を、`lost` で明け渡し済み（編集権喪失）を保持者に伝える。
+*   **`POST /api/unlock?id=&token=`**: 保持者本人による明示解放（閲覧モード復帰・タブ離脱の `navigator.sendBeacon` から呼ぶ）。
+*   **`POST /api/lock/force?id=`**（admin）: 保持者が落ちてスタックした場合の強制解除（`auth.Audit` に記録）。
+
+**有効期間（競合トリガー方式）**: 無競合なら無期限保持。他者要求から **2分**の猶予で強制明け渡し（満了後は早い者勝ち）。要求者のポーリング途絶（約30秒）で猶予キャンセル、保持者のポーリング途絶（約30秒）で待機者がいれば即解放。これらの判定はロックへのアクセス時に遅延評価されます（常駐ゴルーチン不要）。
 
 ---
 
@@ -205,23 +221,23 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 
 フロントエンドで新規ページを作成する際、グローバルで一意の連番IDを安全に生成するための仕組みです。
 
-### 6.1. バックエンドのID生成ロジック (`GenerateNextID`)
-バックエンド（`internal/cms/storage.go`）では、以下のアルゴリズムでIDを採番します。
-1. `pages` テーブル（`id` カラムは `INTEGER PRIMARY KEY`）を対象に、`SELECT id FROM pages ORDER BY id DESC LIMIT 1` を実行し、現在保存されている最大の `id` を数値として取得します。`id` が整数型であるため、文字列の辞書順ソートに起因するバグ（`"9"` が `"10"` より大きく評価される等）は発生しません。
-2. もしレコードが1件も存在しない、または取得したIDが空の場合は、初期値として `"000000"` を返します。
-3. 取得した最大IDに `+1` を加算します。
-4. 計算後の数値を、指定された桁数（`IDLength = 6桁`）でゼロ埋めフォーマット（`fmt.Sprintf("%0*d", IDLength, next)`）して返し、`GetPageDir` で先頭2文字をプレフィックスにした保存先パス（例: `data/master/00/000001`）を決定します。
+### 6.1. バックエンドのID採番ロジック (`reserveNewPageID`)
+バックエンド（`internal/cms/handler.go`）では、`pages` テーブルへ最小限の行を **`INSERT` する自動採番**でIDを原子的に確定します（`id` は `INTEGER PRIMARY KEY`）。
+1. `INSERT INTO pages (title, parent_id, file_path) VALUES ('新しいページ', ?, '')` を実行し、SQLite が採番した `LastInsertId()` を取得します。
+2. その数値を桁数（`IDLength = 6桁`）でゼロ埋め（`fmt.Sprintf("%0*d", IDLength, id)`）して返し、`GetPageDir` で先頭2文字をプレフィックスにした保存先パス（例: `data/master/00/000001`）を決定します。
+
+`INSERT` 自動採番のため、**同時に複数のリクエストが新規採番しても一意なIDが得られます**（DBが採番を直列化）。
 
 > [!NOTE]
-> 以前は `id` が TEXT 型であったため、辞書順ソートによる不具合（`"9"` が `"10"` より大きくなる等）がありましたが、`INTEGER PRIMARY KEY` への移行によって解消されています。
+> 以前は `SELECT MAX(id)+1`（`GenerateNextID`）で採番していましたが、同時実行でID衝突が起こりうる非原子的な方式でした（[同時編集の競合対策（検討中）.md](同時編集の競合対策（検討中）.md) シナリオE）。`reserveNewPageID` による `INSERT` 自動採番への統一でこれを解消し、`GenerateNextID` は廃止しました。
 
 > [!NOTE]
-> `GenerateNextID` は専用のAPIエンドポイントを持ちません。`SaveAPIHandler`（4.1の`/api/save`、`page_id`が空文字の場合）および旧来のファイルアップロード処理（`UploadHandler`）から直接呼び出される内部関数です。
+> `reserveNewPageID` は専用のAPIエンドポイントを持たない内部関数で、`SaveAPIHandler`（4.1、`page_id` が空文字の場合）・`UploadHandler`・`NewPageAPIHandler` から呼び出されます。
 
 ### 6.2. 子ページ作成 (`GET /api/new-page?parent={親ページID}`)
 フロントエンド（`assets/index.html`）で「＋ 子ページを作成」ボタンが押された際のフローは、`NewPageAPIHandler` がサーバー側で完結させます（DOM構造・イベント面の詳細は [エディタ仕様.md](エディタ仕様.md) 6.2参照）。
 1. フロントエンドは `/api/new-page?parent={現在のページID}` を呼び出します。
-2. バックエンドは `INSERT INTO pages (title, parent_id, file_path) VALUES (...)` を実行し、SQLiteの自動採番（`AUTOINCREMENT`）で確定した `LastInsertId()` を6桁ゼロ埋めした文字列を新しいページIDとします。
+2. バックエンドは `reserveNewPageID()`（6.1）で `pages` への `INSERT` 自動採番により新しいページIDを原子的に確定します。
 3. 初期HTMLは「内容」のみ（`<h1>` と `<m-child-list>` 等）を生成して物理ファイルへ書き込みます。親ページID・作成者・作成日時などの属性は `EnsureSidecar()` でサイドカー `<id>.meta.json` に記録し（作成者＝所有者、作成日時・更新日時はサイドカーが刻む）、続けて `SyncIndex` でDBへ同期します（親・作成情報はサイドカーから読まれます）。
 4. レスポンスとして `/{新しいID}?edit=true` へ302リダイレクトします。ID発番・ファイル生成・DB同期・リダイレクトが単一のリクエストでアトミックに完結するため、フロントエンドが後から個別に `saveToServer()` を呼ぶ必要はありません。
 
