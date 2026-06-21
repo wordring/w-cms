@@ -43,8 +43,9 @@ func InitDB() error {
 // これらは外部キーの参照先となるため、プラグインのテーブルより先に作成する必要があります。
 var CoreTables = []string{
 	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）。
-	//    created_at / created_by は HTML本文の <m-page-info> から同期される
-	//    （DB再構築で失わないよう、真の値はファイルが正）。
+	//    parent_id / created_at / created_by / updated_at はサイドカー
+	//    <id>.meta.json（正本）から同期される派生値（DB再構築でも失われない）。
+	//    title と page_tags のみHTML本文（内容）由来。
 	`CREATE TABLE IF NOT EXISTS pages (
 		id INTEGER PRIMARY KEY,
 		title TEXT,

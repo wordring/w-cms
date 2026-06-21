@@ -16,11 +16,13 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────
-// ページ権限（Unix風）— 認証認可設計.md 3〜5章
+// ページの属性（サイドカー）— 認証認可設計.md 3〜5章
 //
-// 各ページの所有権・権限は、本文HTMLとは別の「サイドカー」ファイル
-// data/master/xx/<id>/<id>.meta.json を正本として持ちます（自己認可問題の回避）。
-// cms.db の page_perms はそこから再生成される派生インデックスです。
+// 各ページの属性（所有権・権限・親ページ・作成/更新情報）は、本文HTMLとは別の
+// 「サイドカー」ファイル data/master/xx/<id>/<id>.meta.json を正本として持ちます。
+// UNIXに倣い「ファイルの内容＝HTML」「ファイルの属性＝サイドカー」と分離します。
+// cms.db の pages / page_perms はそこから再生成される派生インデックスです
+// （DB再構築でも属性が失われない。自己認可問題の回避にもなる）。
 //
 // mode は3桁文字列 "<owner><group><other>"。各桁は 0〜3（read=2, write=1, rw=3, なし=0）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -31,12 +33,16 @@ const DefaultMode = "330"
 // defaultOwner はサイドカーが無いページのフォールバック所有者（admin相当の扱い）。
 const defaultOwner = "admin"
 
-// PageMeta はページの所有権・権限です。
+// PageMeta はページの属性です。サイドカー <id>.meta.json の正本となります。
+// 所有権・権限（Owner/Group/Mode）に加え、親ページID・作成日時・作成者・更新日時を持ちます。
+// ParentID はゼロ詰めのページID文字列（空＝トップレベル）。
 type PageMeta struct {
 	Owner     string `json:"owner"`
 	Group     string `json:"group"`
 	Mode      string `json:"mode"`
+	ParentID  string `json:"parent_id,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
+	CreatedBy string `json:"created_by,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
@@ -61,14 +67,18 @@ func ReadSidecar(id string) (PageMeta, bool) {
 	return p, true
 }
 
-// WriteSidecar はサイドカーを書き込みます。本文保存パスからは呼ばず、
-// 新規ページ作成・chmod/chown などの権限操作からのみ呼びます（自己認可防止）。
+// WriteSidecar はサイドカー（与えられた属性そのまま）を書き込みます。
+// CreatedAt / UpdatedAt は空のときだけ「今」で補完します（呼び出し側が値を持って
+// いればそれを尊重）。権限フィールド（Owner/Group/Mode）の変更は chmod/chown 経由のみ、
+// 更新日時の前進は BumpUpdatedAt 経由のみ、という規律で自己認可を防ぎます。
 func WriteSidecar(id string, p PageMeta) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if p.CreatedAt == "" {
 		p.CreatedAt = now
 	}
-	p.UpdatedAt = now
+	if p.UpdatedAt == "" {
+		p.UpdatedAt = now
+	}
 	if p.Mode == "" {
 		p.Mode = DefaultMode
 	}
@@ -83,11 +93,53 @@ func WriteSidecar(id string, p PageMeta) error {
 }
 
 // EnsureSidecar はサイドカーが無ければ作成します（新規ページ作成時に呼ぶ）。
-func EnsureSidecar(id, owner, group string) error {
+// 作成者(owner)を created_by に記録し、parent に親ページID（ゼロ詰め文字列、空可）を設定します。
+func EnsureSidecar(id, owner, group, parent string) error {
 	if _, ok := ReadSidecar(id); ok {
 		return nil
 	}
-	return WriteSidecar(id, PageMeta{Owner: owner, Group: group, Mode: DefaultMode})
+	return WriteSidecar(id, PageMeta{
+		Owner: owner, Group: group, Mode: DefaultMode,
+		CreatedBy: owner, ParentID: parent,
+	})
+}
+
+// readMetaOrPerms はサイドカーを読み、無ければDBの実効権限で最低限を補います。
+// 本文保存・親付け替えなど、既存ページの属性を一部だけ更新する操作の起点に使います
+// （所有権を空で上書きしてしまわないため）。
+func readMetaOrPerms(id string) PageMeta {
+	if meta, ok := ReadSidecar(id); ok {
+		return meta
+	}
+	if idInt, err := strconv.Atoi(id); err == nil {
+		return GetPerms(idInt)
+	}
+	return PageMeta{Owner: defaultOwner, Mode: DefaultMode}
+}
+
+// BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。
+// 進めた更新日時(RFC3339)を返します。
+func BumpUpdatedAt(id string) (string, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	meta := readMetaOrPerms(id)
+	meta.UpdatedAt = now
+	if err := WriteSidecar(id, meta); err != nil {
+		return "", err
+	}
+	return now, nil
+}
+
+// SetSidecarParent は親ページIDを変更し、更新日時を進めます（権限などは保持）。
+// parent はゼロ詰めのページID文字列（空＝トップレベル）。進めた更新日時を返します。
+func SetSidecarParent(id, parent string) (string, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	meta := readMetaOrPerms(id)
+	meta.ParentID = parent
+	meta.UpdatedAt = now
+	if err := WriteSidecar(id, meta); err != nil {
+		return "", err
+	}
+	return now, nil
 }
 
 // syncPageMeta はサイドカー（正本）から cms.db の page_perms を更新します。

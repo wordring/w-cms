@@ -49,6 +49,8 @@ func main() {
 	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	protected.HandleFunc("/api/validate-parent", cms.ValidateParentAPIHandler)
+	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
+	protected.HandleFunc("/api/page-meta", cms.PageMetaAPIHandler)
 	protected.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)

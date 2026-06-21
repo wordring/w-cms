@@ -29,32 +29,33 @@ func SyncIndex(id string, htmlContent string) error {
 		return err
 	}
 
-	// 手順2: コア情報（タイトル・親ページID・タグ）を抽出する
+	// 手順2: HTML本文（内容）からタイトル・タグを抽出する
 	core := ParseCore(root)
 
 	// 手順3: 物理ファイルの保存先パスを構築
 	filePath := filepath.Join(GetPageDir(id), id+".html")
 
+	// ページ属性（親ページID・作成日時・作成者・更新日時）はサイドカー（正本）から読み取る。
+	// サイドカーが無い場合は親なし・作成情報なしとして扱い、更新日時は CURRENT_TIMESTAMP に
+	// フォールバックする。サイドカーが正本なのでDB再構築でも属性が失われない。
+	meta, _ := ReadSidecar(id)
+
 	var parentIDInt sql.NullInt64
-	if core.ParentID != "" {
-		if pid, e := strconv.Atoi(core.ParentID); e == nil {
+	if meta.ParentID != "" {
+		if pid, e := strconv.Atoi(meta.ParentID); e == nil {
 			parentIDInt = sql.NullInt64{Int64: int64(pid), Valid: true}
 		}
 	}
 
-	// 作成日時・作成者・更新日時は <m-page-info> から読み取る。空の場合はNULLとする。
-	// created_*: NULLなら既存レコードの値を保持（COALESCE）。
-	// updated_at: NULLなら CURRENT_TIMESTAMP（＝今）にフォールバックするが、HTMLに
-	// 値があればそれを採用するため、DB再構築でも真の更新日時が保持される。
 	var createdAt, createdBy, updatedAt sql.NullString
-	if core.CreatedAt != "" {
-		createdAt = sql.NullString{String: core.CreatedAt, Valid: true}
+	if meta.CreatedAt != "" {
+		createdAt = sql.NullString{String: meta.CreatedAt, Valid: true}
 	}
-	if core.CreatedBy != "" {
-		createdBy = sql.NullString{String: core.CreatedBy, Valid: true}
+	if meta.CreatedBy != "" {
+		createdBy = sql.NullString{String: meta.CreatedBy, Valid: true}
 	}
-	if core.UpdatedAt != "" {
-		updatedAt = sql.NullString{String: core.UpdatedAt, Valid: true}
+	if meta.UpdatedAt != "" {
+		updatedAt = sql.NullString{String: meta.UpdatedAt, Valid: true}
 	}
 
 	// 手順4: トランザクション開始
