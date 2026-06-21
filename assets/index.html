@@ -109,9 +109,18 @@
         }
         .child-nav-link:hover { background: var(--border); }
         .child-nav-empty { color: var(--text-dim); font-style: italic; }
-        .child-nav-parent { margin-bottom: 8px; }
-        .child-nav-parent a { color: var(--text-muted); text-decoration: none; }
-        .child-nav-parent a:hover { text-decoration: underline; }
+        .child-nav-parent:empty { display: none; } /* トップページ等、親が無いときは何も出さない */
+        .child-nav-parent a {
+            display: block;
+            padding: 6px 10px;
+            color: var(--text-muted);
+            text-decoration: none;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-subtle);
+            font-size: 13px;
+        }
+        .child-nav-parent a:hover { background: var(--border); }
         .rail-card {
             border: 1px solid var(--border);
             border-radius: var(--radius);
@@ -527,12 +536,14 @@
 
     <div class="work-area">
         <!-- 左サイドパネル（クローム）：子ページナビ。/api/children で描画。保存対象外。 -->
-        <aside class="rail rail-left" aria-label="子ページナビゲーション">
+        <aside class="rail rail-left" aria-label="ページナビゲーション">
+            <!-- 親ページへのリンクは最上部（「親=上／子=下」の階層感に合わせる。
+                 子ページカードを畳んでも常に見える） -->
+            <div class="child-nav-parent" id="child-nav-parent"></div>
             <section class="rail-card">
                 <details open>
                     <summary>子ページ</summary>
                     <div class="card-body">
-                        <div class="child-nav-parent" id="child-nav-parent"></div>
                         <ul class="child-nav" id="child-nav-list"></ul>
                     </div>
                 </details>
