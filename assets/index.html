@@ -201,7 +201,58 @@
             border-bottom: 2px solid var(--bg-app);
             padding-bottom: 20px;
             margin-bottom: 20px;
+            /* 編集モードトグルが長いページでも常に見えるよう sticky にする
+               （ロックは編集モードに紐づき頻繁に切り替えるため）。 */
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: var(--bg-paper);
+            padding-top: 8px;
         }
+        /* ロックの明け渡しまでの残り時間などをヘッダーに表示する。 */
+        #lock-remaining {
+            font-size: 12px;
+            color: #b45309;
+            margin-right: 12px;
+        }
+
+        /* アプリ内通知（トースト）エリア。画面右下に固定。 */
+        .toast-host {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 340px;
+        }
+        .toast {
+            background: #1e293b;
+            color: #f8fafc;
+            padding: 10px 14px;
+            border-radius: 8px;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+            font-size: 13px;
+            line-height: 1.5;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .toast.warn { background: #92400e; }
+        .toast.error { background: #991b1b; }
+        .toast.success { background: #065f46; }
+        .toast button {
+            background: rgba(255, 255, 255, 0.18);
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 3px 8px;
+            cursor: pointer;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .toast .toast-close { background: transparent; opacity: 0.7; padding: 0 4px; }
         .title {
             margin: 0;
             font-size: 24px;
@@ -506,6 +557,9 @@
     <!-- 動的にボタンが追加されます -->
 </div>
 
+<!-- アプリ内通知（トースト）エリア。ロック関連・保存エラー等をここへ集約する。 -->
+<div id="toast-host" class="toast-host" aria-live="polite"></div>
+
 <main class="container">
     <header class="header">
         <div class="title-area">
@@ -516,9 +570,10 @@
             <a id="admin-link" href="/assets/admin.html" style="display: none; margin-right: 8px; padding: 5px 10px; background: #7c3aed; color: white; border-radius: 4px; text-decoration: none; font-size: 12px;">⚙ 管理</a>
             <button onclick="logout()" style="margin-right: 12px; padding: 5px 10px; background: #e2e8f0; color: #334155; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">ログアウト</button>
             <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: inline-block; min-width: 92px; text-align: right;"></span>
+            <span id="lock-remaining"></span>
             <span class="mode-label" id="mode-text">閲覧モード</span>
             <label class="switch">
-                <input type="checkbox" id="mode-toggle" onchange="toggleMode()">
+                <input type="checkbox" id="mode-toggle" onchange="onModeToggle()">
                 <span class="slider"></span>
             </label>
         </div>
@@ -858,10 +913,15 @@
         fetch('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ page_id: currentPageId, html: html })
+            body: JSON.stringify({ page_id: currentPageId, html: html, token: lockToken })
         })
-        .then(res => res.json())
+        .then(res => {
+            // 409 = 編集権の喪失（他者へ明け渡し済み）。退避して閲覧モードへ。
+            if (res.status === 409) { handleLockLost(); return null; }
+            return res.json();
+        })
         .then(data => {
+            if (!data) return;
             if (data.success) {
                 if (currentPageId !== data.page_id) {
                     currentPageId = data.page_id;
@@ -917,28 +977,26 @@
         });
     }
 
-    // モード切り替えの処理
-    function toggleMode() {
-        // URLに ?edit があれば編集モード自動ON
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('edit')) {
-            const toggle = document.getElementById('mode-toggle');
-            if (toggle) {
-                // ここではすでに true になっている想定ですが念のため
-            }
-        }
+    // ── 編集モードと編集ロック ──────────────────────────────────────────────
+    // 編集は悲観ロック（ページ単位）で保護する。編集モードに入るときにロックを取得し、
+    // 抜けるとき／タブを閉じるときに解放する。保持中は status を10秒ポーリングして
+    // 「待機者あり」や「明け渡し（lost）」を検知する。設計は
+    // docs/同時編集の競合対策（検討中）.md を参照。
+    let lockToken = null;       // 保持中のみ非null
+    let lockPollTimer = null;   // 保持者の status ポーリング
+    let waiterPollTimer = null; // busy 時の空き待ちポーリング
 
+    // applyMode は表示/編集の DOM 切り替えのみを行う（ロックの取得・解放は onModeToggle が担う）。
+    function applyMode() {
         const toggle = document.getElementById('mode-toggle');
         const modeText = document.getElementById('mode-text');
         const editor = document.getElementById('editor-content');
 
         if (toggle.checked) {
-            // 編集モード
             document.body.setAttribute('edit-mode', '');
             modeText.innerText = "編集モード";
             modeText.style.color = "#10b981";
         } else {
-            // 閲覧モード
             document.body.removeAttribute('edit-mode');
             modeText.innerText = "閲覧モード";
             modeText.style.color = "#475569";
@@ -946,28 +1004,191 @@
             hideContextToolbar();
         }
 
-        // 標準要素（h1, pなど）の contenteditable 切り替え
         const standardElements = editor.querySelectorAll('.block-content > h1, .block-content > h2, .block-content > h3, .block-content > p');
         standardElements.forEach(el => {
-            if (toggle.checked) {
-                el.setAttribute('contenteditable', 'true');
-                el.oninput = updateHtmlPreview;
-            } else {
-                el.removeAttribute('contenteditable');
-                el.oninput = null;
-            }
+            if (toggle.checked) { el.setAttribute('contenteditable', 'true'); el.oninput = updateHtmlPreview; }
+            else { el.removeAttribute('contenteditable'); el.oninput = null; }
         });
 
-        // Web Componentsの再描画を促すためにコンポーネント内のrenderメソッドを再実行
         const components = editor.querySelectorAll('m-tag, m-file, m-item, m-material, m-required-materials');
-        components.forEach(c => {
-            if (typeof c.render === 'function') {
-                c.render();
-            }
-        });
+        components.forEach(c => { if (typeof c.render === 'function') c.render(); });
 
-        // プレビューの更新
         updateHtmlPreview();
+    }
+
+    // onModeToggle は編集モード切替の入口。編集に入るときはロックを取得してから、
+    // 抜けるときはロックを解放してから DOM を切り替える。
+    async function onModeToggle() {
+        const toggle = document.getElementById('mode-toggle');
+        if (toggle.checked) {
+            const ok = await acquireLock();
+            if (!ok) { toggle.checked = false; applyMode(); return; }
+            applyMode();
+            startLockPolling();
+        } else {
+            stopWaiterPolling();
+            stopLockPolling();
+            await releaseLock();
+            applyMode();
+        }
+    }
+
+    // populateEditor は本文HTMLをエディタへ流し込みブロック化する（ロード時・ロック取得時に共用）。
+    function populateEditor(htmlStr) {
+        const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
+        const editorContent = document.getElementById('editor-content');
+        editorContent.innerHTML = '';
+        Array.from(doc.body.children).forEach(child => {
+            if (child.tagName.toLowerCase() === 'script') return;
+            // 旧形式の親ページIDタグ（本文中の m-tag）はサイドカーへ移行済みのため取り込まない。
+            if (child.tagName.toLowerCase() === 'm-tag' && child.getAttribute('name') === '親ページID') return;
+            editorContent.appendChild(child);
+        });
+        initBlocks();
+    }
+
+    // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
+    // busy なら待機トーストを出し空き待ちポーリングを始めて false を返す。
+    async function acquireLock() {
+        try {
+            const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' });
+            if (res.status === 423) {
+                const d = await res.json().catch(() => ({}));
+                notify(`「${d.holder || '他のユーザー'}」さんが編集中です。閲覧のみ可能です（空き次第で自動的に編集に入ります）。`,
+                    { type: 'warn', duration: 0, id: 'lock' });
+                startWaiterPolling();
+                return false;
+            }
+            if (!res.ok) { notify('編集ロックを取得できませんでした。', { type: 'error' }); return false; }
+            const d = await res.json();
+            lockToken = d.token;
+            if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
+            dismissToast('lock');
+            return true;
+        } catch (e) {
+            notify('編集ロックの取得に失敗しました（通信エラー）。', { type: 'error' });
+            return false;
+        }
+    }
+
+    // releaseLock は保持中のロックを明示解放する。
+    async function releaseLock() {
+        if (!lockToken) return;
+        const t = lockToken; lockToken = null;
+        setLockRemaining('');
+        try { await fetch(`/api/unlock?id=${currentPageId}&token=${encodeURIComponent(t)}`, { method: 'POST' }); } catch (e) {}
+    }
+
+    function startLockPolling() { stopLockPolling(); lockPollTimer = setInterval(pollLockStatus, 10000); }
+    function stopLockPolling() { if (lockPollTimer) { clearInterval(lockPollTimer); lockPollTimer = null; } }
+
+    // pollLockStatus は保持者の死活更新＋「待機者あり」「明け渡し」検知を行う。
+    async function pollLockStatus() {
+        if (!lockToken) return;
+        try {
+            const res = await fetch(`/api/lock-status?id=${currentPageId}&token=${encodeURIComponent(lockToken)}`);
+            if (!res.ok) return;
+            const st = await res.json();
+            if (st.lost) { handleLockLost(); return; }
+            if (st.waiter_present) {
+                const mins = Math.max(1, Math.ceil((st.grace_remaining_sec || 0) / 60));
+                setLockRemaining(`⏳ 編集権の移行まで約${mins}分`);
+                notify(`他のユーザーが編集を待っています。あと約${mins}分で編集権が移ります。`, {
+                    type: 'warn', duration: 0, id: 'waiter',
+                    action: { label: '保存して解放', onClick: () => { saveToServer(); leaveEditMode(); } }
+                });
+            } else {
+                setLockRemaining('');
+                dismissToast('waiter');
+            }
+        } catch (e) {}
+    }
+
+    // startWaiterPolling は busy だったページが空くのを10秒ごとに待ち、空いたら自動で編集に入る。
+    function startWaiterPolling() {
+        stopWaiterPolling();
+        waiterPollTimer = setInterval(async () => {
+            const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' }).catch(() => null);
+            if (!res || res.status === 423 || !res.ok) return; // まだ埋まっている
+            const d = await res.json();
+            lockToken = d.token;
+            stopWaiterPolling();
+            dismissToast('lock');
+            if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
+            const toggle = document.getElementById('mode-toggle');
+            toggle.checked = true;
+            applyMode();
+            startLockPolling();
+            notify('編集できるようになりました。', { type: 'success' });
+        }, 10000);
+    }
+    function stopWaiterPolling() { if (waiterPollTimer) { clearInterval(waiterPollTimer); waiterPollTimer = null; } }
+
+    // handleLockLost は明け渡し/失効で編集権を失ったときの処理。変更を退避して閲覧モードへ。
+    function handleLockLost() {
+        stopLockPolling();
+        lockToken = null;
+        setLockRemaining('');
+        try {
+            const html = document.getElementById('html-preview').value;
+            if (navigator.clipboard && html) navigator.clipboard.writeText(html).catch(() => {});
+        } catch (e) {}
+        const toggle = document.getElementById('mode-toggle');
+        toggle.checked = false;
+        applyMode();
+        notify('編集権が他の人に移りました。変更内容はクリップボードへ退避しました。再読込してください。',
+            { type: 'error', duration: 0, id: 'lost' });
+    }
+
+    // leaveEditMode は編集モードを抜ける（トグルOFF相当）。
+    async function leaveEditMode() {
+        const toggle = document.getElementById('mode-toggle');
+        if (!toggle.checked) return;
+        toggle.checked = false;
+        await onModeToggle();
+    }
+
+    function setLockRemaining(text) {
+        const el = document.getElementById('lock-remaining');
+        if (el) el.textContent = text || '';
+    }
+
+    // ── アプリ内通知（トースト） ────────────────────────────────────────────
+    // notify(message, {type, duration, id, action}) でトーストを出す。
+    //   type: info|warn|error|success / duration: ms（0で消えない）/ id: 同一idは置換 /
+    //   action: {label, onClick}
+    function notify(message, opts) {
+        opts = opts || {};
+        const host = document.getElementById('toast-host');
+        if (!host) return;
+        if (opts.id) dismissToast(opts.id);
+        const el = document.createElement('div');
+        el.className = 'toast ' + (opts.type || 'info');
+        if (opts.id) el.dataset.toastId = opts.id;
+        const span = document.createElement('span');
+        span.style.flex = '1';
+        span.textContent = message;
+        el.appendChild(span);
+        if (opts.action) {
+            const b = document.createElement('button');
+            b.textContent = opts.action.label;
+            b.onclick = () => { dismissEl(el); opts.action.onClick(); };
+            el.appendChild(b);
+        }
+        const close = document.createElement('button');
+        close.className = 'toast-close';
+        close.textContent = '✕';
+        close.onclick = () => dismissEl(el);
+        el.appendChild(close);
+        host.appendChild(el);
+        const dur = opts.duration === undefined ? 5000 : opts.duration;
+        if (dur > 0) setTimeout(() => dismissEl(el), dur);
+        return el;
+    }
+    function dismissEl(el) { if (el && el.parentNode) el.parentNode.removeChild(el); }
+    function dismissToast(id) {
+        const host = document.getElementById('toast-host');
+        if (host) host.querySelectorAll(`[data-toast-id="${id}"]`).forEach(dismissEl);
     }
 
     // HTMLソースコードのリアルタイムプレビューを生成する処理
@@ -1534,6 +1755,13 @@
     }
 
     // 初回読み込み時の初期表示
+    // タブを閉じる／離れるときに、保持中のロックをベストエフォートで解放する。
+    window.addEventListener('pagehide', () => {
+        if (lockToken) {
+            navigator.sendBeacon(`/api/unlock?id=${currentPageId}&token=${encodeURIComponent(lockToken)}`);
+        }
+    });
+
     window.onload = function() {
         loadMe(); // ログインユーザー名・管理リンクを表示
         syncRailToggleButtons(); // レール開閉トグルの見た目を保存状態に合わせる
@@ -1542,13 +1770,11 @@
         
 
         
-        // 編集モード自動判定（?editパラメータがあるか）
+        // 編集モード自動判定（?editパラメータがあるか）。実際の編集モード適用と
+        // ロック取得はロード完了後の onModeToggle() が行う。
         if (urlParams.has('edit')) {
             const toggle = document.getElementById('mode-toggle');
-            if (toggle) {
-                toggle.checked = true;
-                // document.body attribute is set in toggleMode() but we call it below
-            }
+            if (toggle) toggle.checked = true;
         }
         
         fetch('/api/load?id=' + currentPageId)
@@ -1557,22 +1783,13 @@
                 return res.text();
             })
             .then(htmlStr => {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(htmlStr, 'text/html');
-                const editorContent = document.getElementById('editor-content');
-                editorContent.innerHTML = '';
-                
-                Array.from(doc.body.children).forEach(child => {
-                    if (child.tagName.toLowerCase() === 'script') return;
-                    // 旧形式の親ページIDタグ（本文中の m-tag）はサイドカーへ移行済みのため取り込まない。
-                    if (child.tagName.toLowerCase() === 'm-tag' && child.getAttribute('name') === '親ページID') return;
-                    editorContent.appendChild(child);
-                });
-
-                initBlocks();
+                // まず閲覧用に本文を流し込む。編集モードへ入る場合は onModeToggle が
+                // ロックを取得し、最新版で再ロードする。
+                populateEditor(htmlStr);
                 setupEditorEvents();
-                toggleMode();
                 setupAutoSave();
+                // ?edit ならロックを取得して編集、なければ閲覧モードを適用する。
+                onModeToggle();
 
                 // ページ属性（親・作成/更新情報）・権限・子ページナビをサイドパネルへ読み込む。
                 loadPageMeta();
