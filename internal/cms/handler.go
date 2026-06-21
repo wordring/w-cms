@@ -255,11 +255,11 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
+	//    子ページ一覧は左サイドパネル（クローム）が担うため、本文には埋め込まない
+	//    （必要なら <m-child-list> を本文に手動で追加できる）。
 	var htmlBuilder strings.Builder
 	htmlBuilder.WriteString("<h1>新しいページ</h1>\n")
-	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>\n")
-	htmlBuilder.WriteString("<h2>子ページ一覧</h2>\n")
-	htmlBuilder.WriteString("<m-child-list></m-child-list>")
+	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>")
 	html := htmlBuilder.String()
 
 	// 4. HTMLファイルを物理保存
@@ -521,9 +521,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		if !exists {
 			defaultHTML := `<h1>w-cms Wiki トップページ</h1>
 <p>ここはすべての起点となるトップページです。</p>
-<p>右上のスイッチで「編集モード」に切り替えると、Notionのようにブロックベースで編集できます。</p>
-<h2>子ページ一覧</h2>
-<m-child-list></m-child-list>`
+<p>右上のスイッチで「編集モード」に切り替えると、Notionのようにブロックベースで編集できます。子ページは左のサイドパネルから辿れます。</p>`
 
 			pageDir := GetPageDir("000000")
 			os.MkdirAll(pageDir, 0755)
