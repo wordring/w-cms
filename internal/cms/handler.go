@@ -27,6 +27,7 @@ type PageSummary struct {
 type SaveRequest struct {
 	PageID string `json:"page_id"`
 	HTML   string `json:"html"`
+	Token  string `json:"token"` // 編集ロックのトークン（保持者の検証に使う）
 }
 
 // reserveNewPageID は pages テーブルへ最小限の行を原子的に INSERT し、SQLite の自動採番で
@@ -80,6 +81,15 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 既存ページ：write権限を要求する
 		if !RequirePageWrite(w, r, id) {
 			return
+		}
+		// 編集ロックのトークン検証：他者が保持中／自分のトークン失効なら拒否する
+		// （明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。
+		// ロックが無い場合は許可（無競合。フロント未対応でも従来どおり保存できる）。
+		if idInt, e := strconv.Atoi(id); e == nil {
+			if u := auth.CurrentUser(r); u != nil && !pageLocks.Validate(idInt, u.Username, req.Token) {
+				http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
+				return
+			}
 		}
 	}
 

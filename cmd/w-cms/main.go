@@ -52,6 +52,13 @@ func main() {
 	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
 	protected.HandleFunc("/api/page-meta", cms.PageMetaAPIHandler)
 	protected.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
+
+	// 同時編集の悲観ロック（ページ単位・競合トリガー方式）
+	protected.HandleFunc("/api/lock", cms.LockAPIHandler)
+	protected.HandleFunc("/api/lock-status", cms.LockStatusAPIHandler)
+	protected.HandleFunc("/api/unlock", cms.UnlockAPIHandler)
+	protected.HandleFunc("/api/lock/force", cms.LockForceAPIHandler)
+
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 	protected.HandleFunc("/api/me", auth.MeAPIHandler)
