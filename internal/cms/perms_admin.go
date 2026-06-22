@@ -50,6 +50,10 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "権限を変更できるのは所有者または管理者のみです", http.StatusForbidden)
 		return
 	}
+	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+	if !RequireEditLock(w, r, id) {
+		return
+	}
 
 	var req struct {
 		Mode  *string `json:"mode"`
@@ -109,6 +113,10 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 	pageID, err := strconv.Atoi(id)
 	if err != nil {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+	if !RequireEditLock(w, r, id) {
 		return
 	}
 

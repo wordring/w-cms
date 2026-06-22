@@ -430,6 +430,10 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !RequirePageWrite(w, r, id) {
 		return
 	}
+	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+	if !RequireEditLock(w, r, id) {
+		return
+	}
 	childID, err := strconv.Atoi(id)
 	if err != nil {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
