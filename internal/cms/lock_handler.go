@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"w-cms/internal/auth"
 )
@@ -19,8 +20,8 @@ func readPageHTML(id string) (string, error) {
 	return string(b), nil
 }
 
-// LockAPIHandler は編集ロックの取得（および待機者の再試行ポーリング）を処理します。
-// POST /api/lock?id= 。対象ページの write 権限を要求します。
+// LockAPIHandler は編集ロックの取得を処理します。
+// POST /api/lock?id=&token= 。対象ページの write 権限を要求します。
 // 取得成功時は最新HTMLも返し、クライアントが古い版で上書きしないよう再ロードさせます。
 func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -46,7 +47,6 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	res := pageLocks.TryAcquire(idInt, user.Username, r.URL.Query().Get("token"))
 	w.Header().Set("Content-Type", "application/json")
 	if !res.Acquired {
-		// 他エディタが編集中 → 423 Locked。保持者名・同一ユーザーか・残り秒を返す。
 		w.WriteHeader(http.StatusLocked)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok":                  false,
@@ -64,13 +64,10 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// LockStatusAPIHandler は保持者の死活更新と「待機者あり」通知のための状態を返します。
-// GET /api/lock-status?id=&token= 。対象ページの write 権限を要求します。
-func LockStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+// LockEventsAPIHandler はロック状態の変化を SSE（text/event-stream）でプッシュします。
+// GET /api/lock-events?id=&role=holder|waiter&token= 。対象ページの write 権限を要求します。
+// 接続中＝presence とみなし、保持者の切断は即明け渡し、待機者の切断は猶予キャンセルに使います。
+func LockEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if !RequirePageWrite(w, r, id) {
 		return
@@ -85,17 +82,47 @@ func LockStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "認証が必要です", http.StatusUnauthorized)
 		return
 	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "ストリーミング非対応", http.StatusInternalServerError)
+		return
+	}
+
+	role := r.URL.Query().Get("role")
+	if role != "holder" {
+		role = "waiter"
+	}
 	token := r.URL.Query().Get("token")
 
-	st := pageLocks.Status(idInt, user.Username, token)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"is_holder":           st.IsHolder,
-		"holder":              st.Holder,
-		"waiter_present":      st.WaiterPresent,
-		"grace_remaining_sec": int(st.GraceRemaining.Seconds()),
-		"lost":                st.Lost,
-	})
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // リバースプロキシのバッファリング抑止
+
+	s := pageLocks.subscribe(idInt, role, user.Username, token)
+	defer pageLocks.unsubscribe(idInt, s)
+
+	w.Write([]byte(": connected\n\n")) // 初期コメント（接続確立）
+	flusher.Flush()
+
+	keepalive := time.NewTicker(25 * time.Second)
+	defer keepalive.Stop()
+	for {
+		select {
+		case ev, open := <-s.ch:
+			if !open {
+				return
+			}
+			b, _ := json.Marshal(ev)
+			w.Write([]byte("data: " + string(b) + "\n\n"))
+			flusher.Flush()
+		case <-keepalive.C:
+			w.Write([]byte(": ping\n\n"))
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 // UnlockAPIHandler は保持者本人によるロックの明示解放です。

@@ -37,6 +37,9 @@ func main() {
 		log.Fatalf("初期管理者の作成エラー: %v", err)
 	}
 
+	// 編集ロックの猶予満了などを定期評価するバックグラウンド処理を起動する。
+	cms.StartLockReaper()
+
 	// --- ルーティング ---
 	// 保護対象のルート（要認証）。RootHandler や各APIをここに登録する。
 	protected := http.NewServeMux()
@@ -53,9 +56,9 @@ func main() {
 	protected.HandleFunc("/api/page-meta", cms.PageMetaAPIHandler)
 	protected.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
 
-	// 同時編集の悲観ロック（ページ単位・競合トリガー方式）
+	// 同時編集の悲観ロック（ページ単位・競合トリガー方式・SSEプッシュ）
 	protected.HandleFunc("/api/lock", cms.LockAPIHandler)
-	protected.HandleFunc("/api/lock-status", cms.LockStatusAPIHandler)
+	protected.HandleFunc("/api/lock-events", cms.LockEventsAPIHandler)
 	protected.HandleFunc("/api/unlock", cms.UnlockAPIHandler)
 	protected.HandleFunc("/api/lock/force", cms.LockForceAPIHandler)
 
