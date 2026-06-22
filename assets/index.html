@@ -1016,14 +1016,15 @@
             await enterEditMode();
         } else {
             closeLockEvents();
+            dismissToast('waiter'); // 自分が編集をやめたら「待機者あり」トーストも消す
             await releaseLock();
             applyMode();
         }
     }
 
-    // enterEditMode は編集モードへ入る。ロックを取得できたら編集UIへ切り替え死活ポーリングを開始する。
-    // busy なら閲覧モードに留め、再試行トーストを表示する（自動ポーリングはしない）。
-    // 「再試行」ボタンからも呼ばれる（取得できたらそのまま編集に入る）。
+    // enterEditMode は編集モードへ入る。ロックを取得できたら編集UIへ切り替え、保持者として SSE を購読する。
+    // busy なら閲覧モードに留め、待機者として購読しつつ「待機をやめる」トーストを表示する
+    // （空き次第サーバーからの available で自動的に編集へ入る。available 経路からも呼ばれる）。
     async function enterEditMode() {
         const toggle = document.getElementById('mode-toggle');
         const ok = await acquireLock();
@@ -1049,7 +1050,7 @@
     }
 
     // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
-    // busy なら「再試行」ボタン付きトーストを出し、待機者として SSE を購読して false を返す
+    // busy なら「待機をやめる」ボタン付きトーストを出し、待機者として SSE を購読して false を返す
     // （空き次第でサーバーから push され、自動的に編集へ入る）。
     async function acquireLock() {
         try {
@@ -1072,15 +1073,24 @@
         }
     }
 
-    // showBusyToast は busy(423)応答／busyイベントから「○○が編集中・残り時間・再試行」トーストを出す。
+    // showBusyToast は busy(423)応答／busyイベントから「○○が編集中・残り時間」トーストを出す。
+    // すでに待機者として購読済みで、空き次第サーバーからの available で自動的に編集へ入るため、
+    // ボタンは取得（再試行）ではなく「待機をやめる（キャンセル）」を提供する。
     function showBusyToast(d) {
         const who = d.same_user ? 'このページは別のタブ／ウィンドウ' : `このページは「${d.holder || '他のユーザー'}」さん`;
         const sec = d.grace_remaining_sec || 0;
-        const tail = sec > 0 ? `あと約${Math.max(1, Math.ceil(sec / 60))}分で取得できます。` : '';
-        notify(`${who}で編集中です。${tail}閲覧のみ可能です。`, {
+        const tail = sec > 0 ? `あと約${Math.max(1, Math.ceil(sec / 60))}分で空きます。` : '';
+        notify(`${who}で編集中です。${tail}空き次第このまま自動で編集を開始します。閲覧のみ可能です。`, {
             type: 'warn', duration: 0, id: 'lock',
-            action: { label: '再試行', onClick: () => enterEditMode() }
+            action: { label: '待機をやめる', onClick: () => cancelWaiting() }
         });
+    }
+
+    // cancelWaiting は空き待ち（待機者としての SSE 購読）をやめ、busyトーストを消す。
+    // 購読を閉じるとサーバーは待機者の離脱として猶予をキャンセルする（保持者は保持を続ける）。
+    function cancelWaiting() {
+        closeLockEvents();
+        dismissToast('lock');
     }
 
     // releaseLock は保持中のロックを明示解放する。
@@ -1136,6 +1146,7 @@
     // （他の人の編集を反映する）。
     async function handleLockLost() {
         closeLockEvents();
+        dismissToast('waiter'); // 「待機者あり」トーストは編集権を失った時点で無意味なので消す
         lockToken = null;
         let saved = false;
         try {
@@ -1148,7 +1159,7 @@
         await reloadContent(); // 最新（他の人の編集）を反映
         const tail = saved ? 'あなたの変更はクリップボードへ退避しました。' : 'あなたの未保存の変更は反映されていない場合があります。';
         notify('編集権が他の人に移りました。最新の内容を再読込しました。' + tail,
-            { type: 'warn', duration: 0, id: 'lost' });
+            { type: 'warn', duration: 10000, id: 'lost' }); // 情報通知なので一定時間で自動消去
     }
 
     // reloadContent は現在のページ本文をサーバーから取り直してエディタへ反映する（閲覧モード想定）。
