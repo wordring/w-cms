@@ -976,9 +976,7 @@
     // 「待機者あり」や「明け渡し（lost）」を検知する。設計は
     // docs/同時編集の競合対策（検討中）.md を参照。
     let lockToken = null;       // 保持中のみ非null
-    let lockPollTimer = null;   // 保持者の status ポーリング
-    let waiterPollTimer = null; // 待機者の自動取得ポーリング（再試行クリック後・時間制限つき）
-    let waiterPollDeadline = 0; // 待機ポーリングの打ち切り時刻（ミリ秒）
+    let lockES = null;          // ロック状態のSSE購読（保持者/待機者で共用。閲覧時はnull）
 
     // applyMode は表示/編集の DOM 切り替えのみを行う（ロックの取得・解放は onModeToggle が担う）。
     function applyMode() {
@@ -1017,8 +1015,7 @@
         if (toggle.checked) {
             await enterEditMode();
         } else {
-            stopWaiterPoll();
-            stopLockPolling();
+            closeLockEvents();
             await releaseLock();
             applyMode();
         }
@@ -1033,7 +1030,7 @@
         if (!ok) { toggle.checked = false; applyMode(); return false; }
         toggle.checked = true;
         applyMode();
-        startLockPolling();
+        openHolderEvents();
         return true;
     }
 
@@ -1052,20 +1049,19 @@
     }
 
     // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
-    // busy なら「再試行」ボタン付きトーストを出して false を返す（自動ポーリングはしない＝
-    // 放置すればサーバー側で約30秒後に待機者扱いが解除され、保持者は保持を継続できる）。
+    // busy なら「再試行」ボタン付きトーストを出し、待機者として SSE を購読して false を返す
+    // （空き次第でサーバーから push され、自動的に編集へ入る）。
     async function acquireLock() {
         try {
             const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' });
             if (res.status === 423) {
                 const d = await res.json().catch(() => ({}));
                 showBusyToast(d);
-                startWaiterPoll(); // 空き次第で自動入室（時間制限つき）。背景タブでも無期限には続けない。
+                openWaiterEvents(); // 空き通知を待つ（プッシュ）
                 return false;
             }
             if (!res.ok) { notify('編集ロックを取得できませんでした。', { type: 'error' }); return false; }
             const d = await res.json();
-            stopWaiterPoll();
             lockToken = d.token;
             if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
             dismissToast('lock');
@@ -1076,7 +1072,7 @@
         }
     }
 
-    // showBusyToast は busy(423)応答から「○○が編集中・残り時間・再試行」トーストを出す。
+    // showBusyToast は busy(423)応答／busyイベントから「○○が編集中・残り時間・再試行」トーストを出す。
     function showBusyToast(d) {
         const who = d.same_user ? 'このページは別のタブ／ウィンドウ' : `このページは「${d.holder || '他のユーザー'}」さん`;
         const sec = d.grace_remaining_sec || 0;
@@ -1087,32 +1083,6 @@
         });
     }
 
-    // startWaiterPoll は再試行クリック後、空くまで数秒間隔でロック取得を試みる（最大約2.5分）。
-    // これにより「要求 → 約2分後に自動移譲 → 待機者が自動で編集開始」が成立する。
-    // 上限を過ぎたら停止し「再試行」ボタンを残す（無期限ポーリングはしない）。
-    function startWaiterPoll() {
-        stopWaiterPoll();
-        waiterPollDeadline = Date.now() + 150000; // 2.5分の上限
-        waiterPollTimer = setInterval(async () => {
-            if (Date.now() > waiterPollDeadline) { stopWaiterPoll(); return; }
-            let res;
-            try { res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' }); } catch (e) { return; }
-            if (res.status === 423) { showBusyToast(await res.json().catch(() => ({}))); return; } // まだ埋まっている（残り時間を更新）
-            if (!res.ok) return;
-            const d = await res.json();
-            stopWaiterPoll();
-            lockToken = d.token;
-            if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
-            dismissToast('lock');
-            const toggle = document.getElementById('mode-toggle');
-            toggle.checked = true;
-            applyMode();
-            startLockPolling();
-            notify('編集できるようになりました。', { type: 'success' });
-        }, 8000);
-    }
-    function stopWaiterPoll() { if (waiterPollTimer) { clearInterval(waiterPollTimer); waiterPollTimer = null; } }
-
     // releaseLock は保持中のロックを明示解放する。
     async function releaseLock() {
         if (!lockToken) return;
@@ -1120,36 +1090,52 @@
         try { await fetch(`/api/unlock?id=${currentPageId}&token=${encodeURIComponent(t)}`, { method: 'POST' }); } catch (e) {}
     }
 
-    function startLockPolling() { stopLockPolling(); lockPollTimer = setInterval(pollLockStatus, 10000); }
-    function stopLockPolling() { if (lockPollTimer) { clearInterval(lockPollTimer); lockPollTimer = null; } }
+    // ── ロック状態のプッシュ通知（SSE） ─────────────────────────────────────
+    // ポーリングの代わりに /api/lock-events を購読し、サーバーからの状態変化を受け取る。
+    // 接続中＝presence なので、タブを閉じれば即座に保持者離脱／待機者離脱が検知される。
 
-    // pollLockStatus は保持者の死活更新＋「待機者あり」「明け渡し」検知を行う。
-    async function pollLockStatus() {
-        if (!lockToken) return;
-        try {
-            const res = await fetch(`/api/lock-status?id=${currentPageId}&token=${encodeURIComponent(lockToken)}`);
-            if (!res.ok) return;
-            const st = await res.json();
-            if (st.lost) { handleLockLost(); return; }
-            if (st.waiter_present) {
+    function closeLockEvents() { if (lockES) { lockES.close(); lockES = null; } }
+
+    // openHolderEvents は保持者として購読し、「待機者あり」「明け渡し（lost）」を受け取る。
+    function openHolderEvents() {
+        closeLockEvents();
+        lockES = new EventSource(`/api/lock-events?id=${currentPageId}&role=holder&token=${encodeURIComponent(lockToken)}`);
+        lockES.onmessage = (e) => {
+            let st; try { st = JSON.parse(e.data); } catch (_) { return; }
+            if (st.type === 'lost') { handleLockLost(); return; }
+            if (st.type === 'waiter') {
                 const mins = Math.max(1, Math.ceil((st.grace_remaining_sec || 0) / 60));
                 notify(`このページの編集を待っている人がいます。あと約${mins}分で編集権が移ります。`, {
                     type: 'warn', duration: 0, id: 'waiter',
                     // 待たずに今すぐ譲る。直前の内容は保存してから解放するので失われない。
                     action: { label: '今すぐ編集権を渡す', onClick: () => { saveToServer(); leaveEditMode(); } }
                 });
-            } else {
+            } else { // holding（待機者なし）
                 dismissToast('waiter');
             }
-        } catch (e) {}
+        };
+    }
+
+    // openWaiterEvents は待機者として購読し、空き次第（available）で自動的に編集へ入る。
+    function openWaiterEvents() {
+        closeLockEvents();
+        lockES = new EventSource(`/api/lock-events?id=${currentPageId}&role=waiter`);
+        lockES.onmessage = (e) => {
+            let st; try { st = JSON.parse(e.data); } catch (_) { return; }
+            if (st.type === 'available') {
+                closeLockEvents();
+                enterEditMode(); // 取得して編集へ（競合に負ければ acquireLock が再び待機購読する）
+            } else if (st.type === 'busy') {
+                showBusyToast(st); // 残り時間などを更新
+            }
+        };
     }
 
     // handleLockLost は明け渡し/失効で編集権を失ったときの処理。
     // 自分の変更をクリップボードへ退避し、閲覧モードへ戻したうえで最新の内容を再読込する
     // （他の人の編集を反映する）。
     async function handleLockLost() {
-        stopLockPolling();
-        stopWaiterPoll();
+        closeLockEvents();
         lockToken = null;
         let saved = false;
         try {
