@@ -676,9 +676,10 @@
                             <dt>グループ</dt><dd><input id="pp-group"></dd>
                             <dt>mode</dt><dd><input id="pp-mode" maxlength="3" style="width:50px; font-family:monospace;"></dd>
                         </dl>
-                        <div class="rail-hint">mode は3桁（owner/group/other、各桁 r=2・w=1・rw=3・なし=0）例: 330, 302</div>
+                        <div class="rail-hint" id="pp-mode-hint">mode は3桁（owner/group/other、各桁 r=2・w=1・rw=3・なし=0）例: 330, 302</div>
+                        <div class="rail-hint" id="pp-view-hint" style="display:none;">変更するには編集モード（右上スイッチ）に切り替えてください。</div>
                         <div class="rail-row">
-                            <button class="rail-btn" onclick="savePerms()">保存</button>
+                            <button class="rail-btn" id="pp-save" onclick="savePerms()">保存</button>
                             <span id="pp-msg" style="margin-left: 8px; font-size: 12px;"></span>
                         </div>
                     </div>
@@ -778,6 +779,25 @@
         window.location.href = '/login';
     }
 
+    // 権限カードの編集可否は「編集モード（＝ロック保持）」かつサーバーが返す権限フラグ（can_chmod/
+    // can_chown）の両方で決まる。編集モードでないあいだは読み取り専用にして、権限変更もロックで
+    // 直列化し、他者との競合を避ける（親ページIDの編集と同じ方針）。
+    let permCanChmod = false, permCanChown = false;
+    function refreshPermsEditable() {
+        const editMode = document.body.hasAttribute('edit-mode');
+        const canEditMeta = editMode && permCanChmod;
+        document.getElementById('pp-group').disabled = !canEditMeta;
+        document.getElementById('pp-mode').disabled = !canEditMeta;
+        document.getElementById('pp-chown').style.display = (editMode && permCanChown) ? '' : 'none';
+        const save = document.getElementById('pp-save');
+        if (save) save.style.display = canEditMeta ? '' : 'none';
+        const modeHint = document.getElementById('pp-mode-hint');
+        if (modeHint) modeHint.style.display = canEditMeta ? '' : 'none';
+        // 権限はあるが閲覧モードのとき、「編集モードへ」の誘導を出す。
+        const viewHint = document.getElementById('pp-view-hint');
+        if (viewHint) viewHint.style.display = (!editMode && (permCanChmod || permCanChown)) ? '' : 'none';
+    }
+
     // 権限はサイドパネルの「🔒 権限」カードに常設。読み込み時に取得し、カードを開けば見える。
     async function loadPerms() {
         const msg = document.getElementById('pp-msg');
@@ -789,12 +809,12 @@
             document.getElementById('pp-owner').textContent = p.owner || '(なし)';
             document.getElementById('pp-group').value = p.group || '';
             document.getElementById('pp-mode').value = p.mode || '';
-            // chown は admin のみ、chmod/chgrp は owner か admin
-            document.getElementById('pp-chown').style.display = p.can_chown ? '' : 'none';
-            if (p.can_chown) document.getElementById('pp-owner-input').value = p.owner || '';
-            const canEdit = !!p.can_chmod;
-            document.getElementById('pp-group').disabled = !canEdit;
-            document.getElementById('pp-mode').disabled = !canEdit;
+            // chown は admin のみ、chmod/chgrp は owner か admin。さらに編集モード（＝ロック保持）の
+            // ときだけ編集可能にする（refreshPermsEditable）。権限フラグは保持して再評価に使う。
+            permCanChmod = !!p.can_chmod;
+            permCanChown = !!p.can_chown;
+            if (permCanChown) document.getElementById('pp-owner-input').value = p.owner || '';
+            refreshPermsEditable();
         } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '権限の取得に失敗しました'; }
     }
 
@@ -1006,6 +1026,7 @@
         components.forEach(c => { if (typeof c.render === 'function') c.render(); });
 
         updateHtmlPreview();
+        refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
     }
 
     // onModeToggle は編集モード切替の入口。編集に入るときはロックを取得してから、
