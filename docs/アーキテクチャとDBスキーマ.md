@@ -141,6 +141,8 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 *   **`POST /api/unlock?id=&token=`**: 保持者本人による明示解放（閲覧モード復帰・タブ離脱の `navigator.sendBeacon` から呼ぶ）。
 *   **`POST /api/lock/force?id=`**（admin）: 保持者が落ちてスタックした場合の強制解除（`auth.Audit` に記録）。
 
+**エディタ内の変更操作の直列化（`RequireEditLock`）**: 本文保存だけでなく、**権限変更 `POST /api/page-perms`・所有者変更 `POST /api/page-chown`・親付け替え `POST /api/set-parent`** も、本文編集と同じ編集ロックで直列化します。共通ゲート `RequireEditLock(w, r, id)`（`lock_handler.go`）が `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `pageLocks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは共通ラッパ `lockedFetch()` がトークンを自動同梱し、409 を `handleLockLost` に集約します。将来の画像/PDF等のリソース操作も、サーバーは `RequireEditLock`、フロントは `lockedFetch` を通すことで同じロックを共有できます。admin がスタックしたページを直すときは `/api/lock/force` で解除してから操作します。
+
 **有効期間（競合トリガー方式）**: 無競合なら無期限保持。待機者（別エディタ）の SSE 接続から **2分**の猶予で強制明け渡し（満了後は早い者勝ち）。**保持者の SSE 切断**で待機者がいれば即解放、**待機者の SSE 切断**で猶予キャンセル（取得直後〜SSE接続までは `holderConnectGrace`＝約10秒の猶予で present とみなす）。猶予満了の評価は `StartLockReaper` の1秒ティッカーが行い、状態変化は全購読者へ broadcast されます。
 
 ---
