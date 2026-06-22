@@ -209,12 +209,6 @@
             background: var(--bg-paper);
             padding-top: 8px;
         }
-        /* ロックの明け渡しまでの残り時間などをヘッダーに表示する。 */
-        #lock-remaining {
-            font-size: 12px;
-            color: #b45309;
-            margin-right: 12px;
-        }
 
         /* アプリ内通知（トースト）エリア。画面右下に固定。 */
         .toast-host {
@@ -570,7 +564,6 @@
             <a id="admin-link" href="/assets/admin.html" style="display: none; margin-right: 8px; padding: 5px 10px; background: #7c3aed; color: white; border-radius: 4px; text-decoration: none; font-size: 12px;">⚙ 管理</a>
             <button onclick="logout()" style="margin-right: 12px; padding: 5px 10px; background: #e2e8f0; color: #334155; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">ログアウト</button>
             <span id="save-status" style="font-size: 12px; font-weight: bold; margin-right: 12px; color: #94a3b8; display: inline-block; min-width: 92px; text-align: right;"></span>
-            <span id="lock-remaining"></span>
             <span class="mode-label" id="mode-text">閲覧モード</span>
             <label class="switch">
                 <input type="checkbox" id="mode-toggle" onchange="onModeToggle()">
@@ -1124,7 +1117,6 @@
     async function releaseLock() {
         if (!lockToken) return;
         const t = lockToken; lockToken = null;
-        setLockRemaining('');
         try { await fetch(`/api/unlock?id=${currentPageId}&token=${encodeURIComponent(t)}`, { method: 'POST' }); } catch (e) {}
     }
 
@@ -1141,14 +1133,12 @@
             if (st.lost) { handleLockLost(); return; }
             if (st.waiter_present) {
                 const mins = Math.max(1, Math.ceil((st.grace_remaining_sec || 0) / 60));
-                setLockRemaining(`⏳ 編集権の移行まで約${mins}分`);
                 notify(`このページの編集を待っている人がいます。あと約${mins}分で編集権が移ります。`, {
                     type: 'warn', duration: 0, id: 'waiter',
                     // 待たずに今すぐ譲る。直前の内容は保存してから解放するので失われない。
                     action: { label: '今すぐ編集権を渡す', onClick: () => { saveToServer(); leaveEditMode(); } }
                 });
             } else {
-                setLockRemaining('');
                 dismissToast('waiter');
             }
         } catch (e) {}
@@ -1161,7 +1151,6 @@
         stopLockPolling();
         stopWaiterPoll();
         lockToken = null;
-        setLockRemaining('');
         let saved = false;
         try {
             const html = document.getElementById('html-preview').value;
@@ -1195,10 +1184,6 @@
         await onModeToggle();
     }
 
-    function setLockRemaining(text) {
-        const el = document.getElementById('lock-remaining');
-        if (el) el.textContent = text || '';
-    }
 
     // ── アプリ内通知（トースト） ────────────────────────────────────────────
     // notify(message, {type, duration, id, action}) でトーストを出す。
