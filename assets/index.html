@@ -984,6 +984,8 @@
     // docs/同時編集の競合対策（検討中）.md を参照。
     let lockToken = null;       // 保持中のみ非null
     let lockPollTimer = null;   // 保持者の status ポーリング
+    let waiterPollTimer = null; // 待機者の自動取得ポーリング（再試行クリック後・時間制限つき）
+    let waiterPollDeadline = 0; // 待機ポーリングの打ち切り時刻（ミリ秒）
 
     // applyMode は表示/編集の DOM 切り替えのみを行う（ロックの取得・解放は onModeToggle が担う）。
     function applyMode() {
@@ -1022,6 +1024,7 @@
         if (toggle.checked) {
             await enterEditMode();
         } else {
+            stopWaiterPoll();
             stopLockPolling();
             await releaseLock();
             applyMode();
@@ -1063,17 +1066,13 @@
             const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' });
             if (res.status === 423) {
                 const d = await res.json().catch(() => ({}));
-                const who = d.same_user ? 'このページは別のタブ／ウィンドウ' : `このページは「${d.holder || '他のユーザー'}」さん`;
-                const sec = d.grace_remaining_sec || 0;
-                const tail = sec > 0 ? `あと約${Math.max(1, Math.ceil(sec / 60))}分で取得できます。` : '';
-                notify(`${who}で編集中です。${tail}閲覧のみ可能です。`, {
-                    type: 'warn', duration: 0, id: 'lock',
-                    action: { label: '再試行', onClick: () => enterEditMode() }
-                });
+                showBusyToast(d);
+                startWaiterPoll(); // 空き次第で自動入室（時間制限つき）。背景タブでも無期限には続けない。
                 return false;
             }
             if (!res.ok) { notify('編集ロックを取得できませんでした。', { type: 'error' }); return false; }
             const d = await res.json();
+            stopWaiterPoll();
             lockToken = d.token;
             if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
             dismissToast('lock');
@@ -1083,6 +1082,43 @@
             return false;
         }
     }
+
+    // showBusyToast は busy(423)応答から「○○が編集中・残り時間・再試行」トーストを出す。
+    function showBusyToast(d) {
+        const who = d.same_user ? 'このページは別のタブ／ウィンドウ' : `このページは「${d.holder || '他のユーザー'}」さん`;
+        const sec = d.grace_remaining_sec || 0;
+        const tail = sec > 0 ? `あと約${Math.max(1, Math.ceil(sec / 60))}分で取得できます。` : '';
+        notify(`${who}で編集中です。${tail}閲覧のみ可能です。`, {
+            type: 'warn', duration: 0, id: 'lock',
+            action: { label: '再試行', onClick: () => enterEditMode() }
+        });
+    }
+
+    // startWaiterPoll は再試行クリック後、空くまで数秒間隔でロック取得を試みる（最大約2.5分）。
+    // これにより「要求 → 約2分後に自動移譲 → 待機者が自動で編集開始」が成立する。
+    // 上限を過ぎたら停止し「再試行」ボタンを残す（無期限ポーリングはしない）。
+    function startWaiterPoll() {
+        stopWaiterPoll();
+        waiterPollDeadline = Date.now() + 150000; // 2.5分の上限
+        waiterPollTimer = setInterval(async () => {
+            if (Date.now() > waiterPollDeadline) { stopWaiterPoll(); return; }
+            let res;
+            try { res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' }); } catch (e) { return; }
+            if (res.status === 423) { showBusyToast(await res.json().catch(() => ({}))); return; } // まだ埋まっている（残り時間を更新）
+            if (!res.ok) return;
+            const d = await res.json();
+            stopWaiterPoll();
+            lockToken = d.token;
+            if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
+            dismissToast('lock');
+            const toggle = document.getElementById('mode-toggle');
+            toggle.checked = true;
+            applyMode();
+            startLockPolling();
+            notify('編集できるようになりました。', { type: 'success' });
+        }, 8000);
+    }
+    function stopWaiterPoll() { if (waiterPollTimer) { clearInterval(waiterPollTimer); waiterPollTimer = null; } }
 
     // releaseLock は保持中のロックを明示解放する。
     async function releaseLock() {
@@ -1118,20 +1154,37 @@
         } catch (e) {}
     }
 
-    // handleLockLost は明け渡し/失効で編集権を失ったときの処理。変更を退避して閲覧モードへ。
-    function handleLockLost() {
+    // handleLockLost は明け渡し/失効で編集権を失ったときの処理。
+    // 自分の変更をクリップボードへ退避し、閲覧モードへ戻したうえで最新の内容を再読込する
+    // （他の人の編集を反映する）。
+    async function handleLockLost() {
         stopLockPolling();
+        stopWaiterPoll();
         lockToken = null;
         setLockRemaining('');
+        let saved = false;
         try {
             const html = document.getElementById('html-preview').value;
-            if (navigator.clipboard && html) navigator.clipboard.writeText(html).catch(() => {});
-        } catch (e) {}
+            if (navigator.clipboard && html) { await navigator.clipboard.writeText(html); saved = true; }
+        } catch (e) { saved = false; }
         const toggle = document.getElementById('mode-toggle');
         toggle.checked = false;
         applyMode();
-        notify('編集権が他の人に移りました。変更内容はクリップボードへ退避しました。再読込してください。',
-            { type: 'error', duration: 0, id: 'lost' });
+        await reloadContent(); // 最新（他の人の編集）を反映
+        const tail = saved ? 'あなたの変更はクリップボードへ退避しました。' : 'あなたの未保存の変更は反映されていない場合があります。';
+        notify('編集権が他の人に移りました。最新の内容を再読込しました。' + tail,
+            { type: 'warn', duration: 0, id: 'lost' });
+    }
+
+    // reloadContent は現在のページ本文をサーバーから取り直してエディタへ反映する（閲覧モード想定）。
+    async function reloadContent() {
+        try {
+            const res = await fetch('/api/load?id=' + currentPageId);
+            if (!res.ok) return;
+            populateEditor(await res.text());
+            applyMode();
+            loadPageMeta(); // 更新日時などの属性表示も最新化
+        } catch (e) {}
     }
 
     // leaveEditMode は編集モードを抜ける（トグルOFF相当）。
