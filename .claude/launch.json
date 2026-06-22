@@ -5,6 +5,7 @@
       "name": "w-cms",
       "runtimeExecutable": "go",
       "runtimeArgs": ["run", "cmd/w-cms/main.go"],
+      "env": { "WCMS_SECURE_COOKIES": "0" },
       "port": 8080
     }
   ]
