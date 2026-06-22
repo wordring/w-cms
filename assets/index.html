@@ -167,6 +167,14 @@
         body[edit-mode] .pi-parent-view { display: none; }
         body[edit-mode] .pi-parent-edit { display: inline-block; }
 
+        /* 編集モード（＝ロック保持中）でのみ操作させたい要素の汎用クラス。
+           将来のエディタ内操作（画像/PDF等の保存・削除ボタンなど）は、UIゲートとして
+           .edit-only を付けるだけでよい（送信は lockedFetch、サーバーは RequireEditLock で検証）。
+           能力フラグ（owner/admin 等）にも依存する権限カードは JS の refreshPermsEditable で別途制御。 */
+        .edit-only { display: none; }
+        body[edit-mode] .edit-only { display: revert; }
+        body[edit-mode] .view-only { display: none; }
+
         /* サイドパネル内の入力・ボタン */
         .rail-card input[type="text"], .rail-card input:not([type]) {
             border: 1px solid var(--border-strong);
@@ -862,7 +870,7 @@
         errEl.textContent = '';
         input.classList.remove('invalid');
         try {
-            const res = await fetch(`/api/set-parent?id=${encodeURIComponent(currentPageId)}&parent=${encodeURIComponent(parent)}`, { method: 'POST' });
+            const res = await lockedFetch(`/api/set-parent?id=${encodeURIComponent(currentPageId)}&parent=${encodeURIComponent(parent)}`, { method: 'POST' });
             if (!res.ok) {
                 input.classList.add('invalid');
                 errEl.textContent = (await res.text()) || '指定できない親ページです';
@@ -873,6 +881,7 @@
             document.getElementById('pi-parent-input').value = data.parent_id || '';
             if (data.updated_at) document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
         } catch (e) {
+            if (e && e.message === 'lock-lost') return; // 編集権喪失は handleLockLost が処理済み
             input.classList.add('invalid');
             errEl.textContent = '親ページの変更に失敗しました（通信エラー）';
         }
@@ -883,14 +892,17 @@
         const group = document.getElementById('pp-group').value;
         const msg = document.getElementById('pp-msg');
         try {
-            const res = await fetch('/api/page-perms?id=' + currentPageId, {
+            const res = await lockedFetch('/api/page-perms?id=' + currentPageId, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: mode, group: group })
             });
             if (res.ok) { msg.style.color = '#16a34a'; msg.textContent = '保存しました。'; }
             else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
-        } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '通信エラー'; }
+        } catch (e) {
+            if (e && e.message === 'lock-lost') return; // 編集権喪失は handleLockLost が処理済み
+            msg.style.color = '#dc2626'; msg.textContent = '通信エラー';
+        }
     }
 
     async function chownPage() {
@@ -898,7 +910,7 @@
         const msg = document.getElementById('pp-msg');
         if (!owner) { msg.style.color = '#dc2626'; msg.textContent = '所有者を入力してください'; return; }
         try {
-            const res = await fetch('/api/page-chown?id=' + currentPageId, {
+            const res = await lockedFetch('/api/page-chown?id=' + currentPageId, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ owner: owner })
@@ -907,7 +919,10 @@
                 document.getElementById('pp-owner').textContent = owner;
                 msg.style.color = '#16a34a'; msg.textContent = '所有者を変更しました。';
             } else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
-        } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '通信エラー'; }
+        } catch (e) {
+            if (e && e.message === 'lock-lost') return; // 編集権喪失は handleLockLost が処理済み
+            msg.style.color = '#dc2626'; msg.textContent = '通信エラー';
+        }
     }
 
     // 親ページIDの編集はサイドパネルの「親ページID」入力＋適用ボタンが担い、
@@ -1119,6 +1134,17 @@
         if (!lockToken) return;
         const t = lockToken; lockToken = null;
         try { await fetch(`/api/unlock?id=${currentPageId}&token=${encodeURIComponent(t)}`, { method: 'POST' }); } catch (e) {}
+    }
+
+    // lockedFetch はエディタ内の変更操作を、現在の編集ロックトークン付き（X-Lock-Token ヘッダ）で送る
+    // 共通ラッパ。サーバー（RequireEditLock）が他者保持/失効を 409 で返したら handleLockLost に集約する
+    // （クリップボード退避＋閲覧復帰＋再読込）。権限変更・親付け替え・将来の画像/PDF操作などは必ず
+    // これを通すことで、本文編集と同じロックを共有して直列化する。409時は Error('lock-lost') を投げる。
+    async function lockedFetch(url, opts = {}) {
+        const headers = Object.assign({}, opts.headers, { 'X-Lock-Token': lockToken || '' });
+        const res = await fetch(url, Object.assign({}, opts, { headers }));
+        if (res.status === 409) { handleLockLost(); throw new Error('lock-lost'); }
+        return res;
     }
 
     // ── ロック状態のプッシュ通知（SSE） ─────────────────────────────────────
