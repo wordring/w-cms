@@ -209,14 +209,20 @@
             border-bottom: 2px solid var(--bg-app);
             padding-bottom: 20px;
             margin-bottom: 20px;
-            /* 編集モードトグルが長いページでも常に見えるよう sticky にする
-               （ロックは編集モードに紐づき頻繁に切り替えるため）。 */
+            /* sticky で上部に追従しつつ、スクロール方向に応じて出し入れする（headroom 型）。
+               下スクロールで隠して本文を広く、上スクロールで再表示する。隠してもレイアウトは
+               ガタつかない（sticky 要素は元の流れ上の領域を保持するため）。編集モードの気付きは
+               トグル常駐ではなく「編集権を取得しました」等の緑トーストで補う（initHeadroom 参照）。 */
             position: sticky;
             top: 0;
             z-index: 50;
             background: var(--bg-paper);
             padding-top: 8px;
+            transition: transform 0.25s ease;
+            will-change: transform;
         }
+        .header.header--hidden { transform: translateY(-100%); }
+        @media (prefers-reduced-motion: reduce) { .header { transition: none; } }
 
         /* アプリ内通知（トースト）エリア。画面右下に固定。 */
         .toast-host {
@@ -1055,6 +1061,8 @@
             dismissToast('waiter'); // 自分が編集をやめたら「待機者あり」トーストも消す
             await releaseLock();
             applyMode();
+            // 自分の操作での退出もモードを明示（ヘッダーが隠れるため）。id:'mode' で取得トーストと置換。
+            notify('閲覧モードに戻りました。', { type: 'info', duration: 2500, id: 'mode' });
         }
     }
 
@@ -1068,6 +1076,9 @@
         toggle.checked = true;
         applyMode();
         openHolderEvents();
+        // ヘッダー（モードトグル）はスクロールで隠れるため、モード移行は緑トーストで明示する。
+        // 待機後に available で自動入室した場合もここを通るので「権限が回ってきた」気付きにもなる。
+        notify('編集権を取得しました。編集モードです。', { type: 'success', duration: 3000, id: 'mode' });
         return true;
     }
 
@@ -1838,9 +1849,30 @@
         }
     });
 
+    // initHeadroom はヘッダーをスクロール方向で出し入れする（headroom 型 / B案）。
+    // 下スクロールで隠し、上スクロール／上端付近（REVEAL_AT_TOP）で再表示する。
+    // rAF でスロットルし passive リスナーにするのでスクロール性能への影響は軽微。
+    function initHeadroom() {
+        const header = document.querySelector('.header');
+        if (!header) return;
+        let lastY = window.scrollY, ticking = false;
+        const REVEAL_AT_TOP = 80, DELTA = 6;
+        function update() {
+            const y = window.scrollY;
+            if (y <= REVEAL_AT_TOP) header.classList.remove('header--hidden');
+            else if (Math.abs(y - lastY) > DELTA) header.classList.toggle('header--hidden', y > lastY);
+            lastY = y;
+            ticking = false;
+        }
+        window.addEventListener('scroll', () => {
+            if (!ticking) { requestAnimationFrame(update); ticking = true; }
+        }, { passive: true });
+    }
+
     window.onload = function() {
         loadMe(); // ログインユーザー名・管理リンクを表示
         syncRailToggleButtons(); // レール開閉トグルの見た目を保存状態に合わせる
+        initHeadroom(); // ヘッダーをスクロール方向で出し入れ（B案）
         
         const urlParams = new URLSearchParams(window.location.search);
         
