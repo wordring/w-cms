@@ -7,12 +7,15 @@
     <!-- 自作のWeb Componentsをロード -->
     <script src="/assets/web-components.js" defer></script>
     <!-- サイドパネルの開閉状態を body 描画前に確定（チラつき防止）。
-         状態はサーバー非依存のUI設定なので localStorage に保存する（クッキー不要）。 -->
+         状態は UI 設定ストア（localStorage の単一キー `wcms.ui`）に保存する（クッキー不要）。
+         本体スクリプト読込前なので、ここでは UI ヘルパに依らず localStorage を直接読む
+         （旧 `wcms.rails` キーは fallback。本体側 UI.migrate が後で正式に取り込む）。 -->
     <script>
         try {
-            var s = JSON.parse(localStorage.getItem('wcms.rails') || '{}');
-            if (s.left === false) document.documentElement.classList.add('left-collapsed');
-            if (s.right === false) document.documentElement.classList.add('right-collapsed');
+            var ui = JSON.parse(localStorage.getItem('wcms.ui') || 'null');
+            var rails = (ui && ui.rails) || JSON.parse(localStorage.getItem('wcms.rails') || '{}');
+            if (rails.left === false) document.documentElement.classList.add('left-collapsed');
+            if (rails.right === false) document.documentElement.classList.add('right-collapsed');
         } catch (e) { /* localStorage 不可時は既定（両方開く） */ }
     </script>
     <style>
@@ -770,6 +773,56 @@
 </main>
 
 <script>
+    // ── UI 設定ストア（クライアント側の表示状態・設定を一元管理） ─────────────────
+    // サーバー非依存のUI設定（レール開閉・将来の配色やカード開閉など）を、localStorage の
+    // 単一ルートキー `wcms.ui` に階層化した JSON で保存する。キーを散らかさず、設定が増えても
+    // セクションを足すだけで済む。`_v` でバージョン管理し、スキーマ変更時は migrate を1本足す。
+    //   UI.get('rails.left', true)   // ドットパスで取得（無ければ既定値）
+    //   UI.set('rails.left', false)  // 階層を掘って保存＋永続化
+    // FOUC 防止のため、<head> のインラインscriptも同じ `wcms.ui` を読む（旧キーfallback付き）。
+    const UI = (() => {
+        const KEY = 'wcms.ui';
+        const VERSION = 1;
+        function migrate(o) {
+            // 初版: 旧 `wcms.rails`（単発キー）を `wcms.ui.rails` へ取り込み、旧キーは掃除する。
+            if (o._v === undefined) {
+                try {
+                    const old = JSON.parse(localStorage.getItem('wcms.rails') || 'null');
+                    if (old && typeof old === 'object') o.rails = Object.assign({}, old, o.rails);
+                } catch (e) { /* ignore */ }
+                try { localStorage.removeItem('wcms.rails'); } catch (e) { /* ignore */ }
+                o._v = VERSION;
+            }
+            return o;
+        }
+        let cache;
+        try { cache = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { cache = null; }
+        if (!cache || typeof cache !== 'object') cache = {};
+        cache = migrate(cache);
+        function persist() { try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch (e) { /* 無効環境は既定動作 */ } }
+        persist(); // 移行結果を確定
+        function get(path, dflt) {
+            let cur = cache;
+            for (const p of path.split('.')) {
+                if (cur == null || typeof cur !== 'object') return dflt;
+                cur = cur[p];
+            }
+            return cur === undefined ? dflt : cur;
+        }
+        function set(path, value) {
+            const parts = path.split('.');
+            let cur = cache;
+            for (let i = 0; i < parts.length - 1; i++) {
+                const p = parts[i];
+                if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = {};
+                cur = cur[p];
+            }
+            cur[parts[parts.length - 1]] = value;
+            persist();
+        }
+        return { get, set };
+    })();
+
     let slashMenuVisible = false;
     let currentSlashBlock = null;
     let slashSelectedIndex = 0;
@@ -791,9 +844,9 @@
         window.open(`/api/new-page?parent=${currentPageId}`, '_blank');
     }
 
-    // --- サイドパネルの開閉（localStorage に永続化。FOUC防止は <head> のインラインscript） ---
+    // --- サイドパネルの開閉（UI ストア `wcms.ui.rails` に永続化。FOUC防止は <head> のインラインscript） ---
     function railState() {
-        try { return JSON.parse(localStorage.getItem('wcms.rails') || '{}'); } catch (e) { return {}; }
+        return UI.get('rails', {});
     }
 
     // 狭幅（ドロワーモード）かどうか。CSS の @media と同じしきい値に合わせる。
@@ -802,12 +855,10 @@
     function toggleRail(side) {
         // 狭幅ではオフキャンバスのドロワーを開閉する（永続化しない・既定は閉）。
         if (railNarrow()) { toggleDrawer(side); return; }
-        // 広い画面では従来どおりインライン折り畳み（localStorage に永続化）。
+        // 広い画面では従来どおりインライン折り畳み（UI ストアに永続化）。
         const cls = side === 'left' ? 'left-collapsed' : 'right-collapsed';
         const collapsed = document.documentElement.classList.toggle(cls);
-        const s = railState();
-        s[side] = !collapsed; // true = 開
-        localStorage.setItem('wcms.rails', JSON.stringify(s));
+        UI.set('rails.' + side, !collapsed); // true = 開
         syncRailToggleButtons();
     }
 
