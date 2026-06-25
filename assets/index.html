@@ -85,6 +85,19 @@
         html.left-collapsed .rail-left { display: none; }
         html.right-collapsed .rail-right { display: none; }
 
+        /* ページ最下部の帯（フッター）。現状は仮表示のみだが、将来サイトリンク等を
+           置く場所として container と同じ幅・スタイルの帯を確保しておく。 */
+        .site-footer {
+            max-width: 1280px;
+            margin: 24px auto 0;
+            padding: 16px 30px;
+            background: var(--bg-subtle);
+            border-radius: var(--radius-lg);
+            color: var(--text-faint);
+            font-size: 13px;
+            text-align: center;
+        }
+
         /* レール開閉トグル：各レール脇の画面端に固定した“つまみ”。
            position:fixed なのでページをスクロールしても常に見え、ページ操作バーに依存しない。
            縦書きラベル＋アイコンのコンパクトなタブ。is-on（開いている）でアクセント色。 */
@@ -782,6 +795,9 @@
         </aside>
     </div>
 </main>
+
+<!-- ページ最下部の帯。将来サイトリンク等を置く想定の仮表示。 -->
+<footer class="site-footer">w-cms</footer>
 
 <script>
     // ── UI 設定ストア（クライアント側の表示状態・設定を一元管理） ─────────────────
