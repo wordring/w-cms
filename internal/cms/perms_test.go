@@ -97,7 +97,7 @@ func TestSidecarAndPermsSync(t *testing.T) {
 }
 
 // TestValidateParentChange は親ページ付け替えの検証（実在・自己参照・循環・write権限・
-// トップレベル化はadmin）を確認します。
+// トップレベル化はトップページ(ID 0)のみ）を確認します。
 func TestValidateParentChange(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -109,8 +109,9 @@ func TestValidateParentChange(t *testing.T) {
 		t.Fatalf("コアテーブル作成エラー: %v", err)
 	}
 
-	// 木構造: 1 (alice所有, owner-write) → 2 → 3。10 は別所有(bob, other不可)。
-	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (1, 'root', NULL)`)
+	// 木構造: 0 (トップ) → 1 (alice所有, owner-write) → 2 → 3。10 は別所有(bob, other不可)。
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (0, 'top', NULL)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (1, 'root', 0)`)
 	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (2, 'child', 1)`)
 	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (3, 'grand', 2)`)
 	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (10, 'other', NULL)`)
@@ -133,8 +134,8 @@ func TestValidateParentChange(t *testing.T) {
 		{"子孫を親にする循環は不可", alice, 1, "3", false},      // 1の子孫3を1の親に→循環
 		{"write権限の無い親は不可", alice, 3, "10", false},     // 10はaliceがother(不可)
 		{"write権限のある親はOK", alice, 3, "1", true},        // 1はalice所有
-		{"トップレベル化はadmin以外不可", alice, 3, "", false},
-		{"トップレベル化はadminならOK", admin, 3, "", true},
+		{"トップページ以外の親なし化はadminでも不可", admin, 3, "", false},
+		{"トップページ自身の親なしはOK", admin, 0, "", true},
 		{"adminは任意の親へ付け替え可", admin, 3, "10", true},
 	}
 	for _, c := range cases {
