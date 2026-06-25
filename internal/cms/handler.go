@@ -266,10 +266,10 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		// 親なし（トップレベル）ページの作成は admin のみ
-		if !RequireAdmin(w, r) {
-			return
-		}
+		// 親なし（トップレベル）のページが許されるのはトップページ（000000）のみで、
+		// それは初回起動時に自動生成済み。新規作成は常に親が必要。
+		http.Error(w, "親ページを指定してください（トップページは作成済みのため新規作成できません）", http.StatusBadRequest)
+		return
 	}
 	creator := auth.CurrentUser(r)
 
@@ -370,8 +370,9 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 		return "認証が必要です", http.StatusUnauthorized
 	}
 	if newParentStr == "" {
-		if !user.IsAdmin {
-			return "親なし（トップレベル）に変更するには管理者権限が必要です", http.StatusForbidden
+		// 親なし（トップレベル）が許されるのはトップページ（ID 0 ＝ "000000"）のみ。
+		if childID != 0 {
+			return "親なし（トップレベル）にできるのはトップページのみです", http.StatusForbidden
 		}
 		return "", 0
 	}
