@@ -206,6 +206,9 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            /* 狭い画面では右側コントロール群を下段へ折り返す（横スクロール防止） */
+            flex-wrap: wrap;
+            row-gap: 8px;
             border-bottom: 2px solid var(--bg-app);
             padding-bottom: 20px;
             margin-bottom: 20px;
@@ -271,6 +274,8 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;          /* 狭い画面で各コントロールが折り返せるように */
+            justify-content: flex-end;
         }
         .switch {
             position: relative;
@@ -315,6 +320,17 @@
             font-weight: bold;
             font-size: 14px;
             color: #475569;
+        }
+
+        /* モバイル（狭幅）対策：余白を詰めて表示幅を取り戻し、ヘッダーのはみ出しを防ぐ。
+           各コントロールは上の flex-wrap で下段へ折り返る。 */
+        @media (max-width: 480px) {
+            body { padding: 10px; }
+            .container { padding: 16px; }
+            .title { font-size: 18px; }
+            /* 保存ステータスの固定幅（min-width:92px・右寄せ）を解除して窮屈さを緩和 */
+            #save-status { min-width: 0 !important; text-align: left !important; }
+            .page-actions { flex-wrap: wrap; }
         }
 
         /* ページ操作バー（ヘッダーと文書の間。アクションを集約する“クローム”側の帯。
