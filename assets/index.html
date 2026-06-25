@@ -51,8 +51,10 @@
             padding: 30px;
             border-radius: var(--radius-lg);
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            /* 内側のコンテナクエリ基準。広いときだけサイドパネルを脇に出す。 */
-            container-type: inline-size;
+            /* 注: 以前は container-type: inline-size でカード幅基準のコンテナクエリにしていたが、
+               狭幅時にサイドパネルを position:fixed のドロワーにするため外した（container-type は
+               contain:layout により fixed の包含ブロックになり、ビューポート基準の固定を妨げるため）。
+               レイアウト切替はビューポート基準の @media (max-width: 760px) で行う。 */
         }
 
         /* 作業領域：左ナビ｜文書｜右情報パネルの3ペイン（flex）。
@@ -196,11 +198,52 @@
         .rail-row { margin-top: 8px; }
         .rail-hint { color: var(--text-dim); font-size: 11px; }
 
-        /* 文書幅が狭いときはサイドパネルを下段へ回す（ウィンドウ幅ではなくカード幅基準） */
-        @container (max-width: 760px) {
+        /* バックドロップ（ドロワー表示時の背景。広い画面では非表示）。 */
+        .drawer-backdrop { display: none; }
+
+        /* 画面が狭いとき：左右サイドパネルをオフキャンバスのドロワーにする。
+           文書は1カラムで全幅、レールは position:fixed で画面外へ退避し、トグルで出し入れする。 */
+        @media (max-width: 760px) {
             .work-area { flex-direction: column; }
-            .rail { position: static; }
-            .rail-left, .rail-right { flex: 1 1 auto; width: 100%; }
+            /* レールをドロワー化（fixed・全高・スクロール可・スライド） */
+            .rail {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                width: 280px;
+                max-width: 85vw;
+                margin: 0;
+                padding: 16px;
+                background: var(--bg-paper);
+                box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
+                z-index: 200;
+                overflow-y: auto;
+                transition: transform 0.25s ease;
+            }
+            .rail-left { left: 0; transform: translateX(-100%); }
+            .rail-right { right: 0; transform: translateX(100%); }
+            /* 狭幅では「畳む（collapsed）」設定は無視し、常にドロワーで開閉する */
+            html.left-collapsed .rail-left,
+            html.right-collapsed .rail-right { display: flex; }
+            /* 開いた側をスライドイン */
+            html.left-drawer-open .rail-left { transform: translateX(0); }
+            html.right-drawer-open .rail-right { transform: translateX(0); }
+            /* バックドロップ（どちらかが開いているとき表示） */
+            .drawer-backdrop {
+                display: block;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.4);
+                z-index: 150;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.25s ease;
+            }
+            html.left-drawer-open .drawer-backdrop,
+            html.right-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .rail, .drawer-backdrop { transition: none; }
         }
         .header {
             display: flex;
@@ -564,6 +607,9 @@
 </head>
 <body>
 
+<!-- ドロワー（狭幅時の左右パネル）の背景。クリックで閉じる。広い画面では非表示。 -->
+<div id="drawer-backdrop" class="drawer-backdrop" onclick="closeDrawers()"></div>
+
 <!-- スラッシュコマンドメニュー -->
 <div id="slash-menu" class="slash-menu">
     <div class="slash-menu-item" data-type="h1"><b>H1</b> 見出し</div>
@@ -746,7 +792,13 @@
         try { return JSON.parse(localStorage.getItem('wcms.rails') || '{}'); } catch (e) { return {}; }
     }
 
+    // 狭幅（ドロワーモード）かどうか。CSS の @media と同じしきい値に合わせる。
+    const railNarrow = () => window.matchMedia('(max-width: 760px)').matches;
+
     function toggleRail(side) {
+        // 狭幅ではオフキャンバスのドロワーを開閉する（永続化しない・既定は閉）。
+        if (railNarrow()) { toggleDrawer(side); return; }
+        // 広い画面では従来どおりインライン折り畳み（localStorage に永続化）。
         const cls = side === 'left' ? 'left-collapsed' : 'right-collapsed';
         const collapsed = document.documentElement.classList.toggle(cls);
         const s = railState();
@@ -755,16 +807,47 @@
         syncRailToggleButtons();
     }
 
+    // toggleDrawer は狭幅時のドロワー開閉。左右は同時に1つだけ開く（片方を開くと他方は閉じる）。
+    function toggleDrawer(side) {
+        const html = document.documentElement;
+        const cls = side === 'left' ? 'left-drawer-open' : 'right-drawer-open';
+        const other = side === 'left' ? 'right-drawer-open' : 'left-drawer-open';
+        const willOpen = !html.classList.contains(cls);
+        html.classList.remove(other);
+        html.classList.toggle(cls, willOpen);
+        syncRailToggleButtons();
+    }
+
+    // closeDrawers は開いているドロワーを全て閉じる（バックドロップclick・Escape・デスクトップ復帰で呼ぶ）。
+    function closeDrawers() {
+        document.documentElement.classList.remove('left-drawer-open', 'right-drawer-open');
+        syncRailToggleButtons();
+    }
+
     // トグルボタンの見た目（押下状態）を現在の開閉状態に合わせる。
+    // 狭幅ではドロワーの開閉、広い画面では折り畳み状態を反映する。
     function syncRailToggleButtons() {
+        const narrow = railNarrow();
         [['left', 'toggle-left'], ['right', 'toggle-right']].forEach(([side, id]) => {
             const btn = document.getElementById(id);
             if (!btn) return;
-            const open = !document.documentElement.classList.contains(side + '-collapsed');
+            const open = narrow
+                ? document.documentElement.classList.contains(side + '-drawer-open')
+                : !document.documentElement.classList.contains(side + '-collapsed');
             btn.classList.toggle('is-on', open);
             btn.setAttribute('aria-pressed', open ? 'true' : 'false');
         });
     }
+
+    // Escape でドロワーを閉じる。
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDrawers();
+    });
+    // 広い画面へ戻ったらドロワー状態を解除し、ボタン表示を折り畳み基準に戻す。
+    window.matchMedia('(max-width: 760px)').addEventListener('change', (e) => {
+        if (!e.matches) document.documentElement.classList.remove('left-drawer-open', 'right-drawer-open');
+        syncRailToggleButtons();
+    });
 
     // 左レール：子ページナビを /api/children から描画する。
     async function loadChildNav() {
