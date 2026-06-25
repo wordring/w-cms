@@ -113,7 +113,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 サイドパネルで親ページIDを入力した際の**即時フィードバック用**エンドポイント。付け替えAPI（4.1.2）・保存と同じ検証ロジック（`validateParentChange`）を共有します。対象ページの write 権限を前提とし、`{"ok": true}` または `{"ok": false, "error": "..."}` を返します。
 
 ### 4.1.2. 親ページ付け替え API (`POST /api/set-parent?id={ページ}&parent={新しい親}`)
-親ページIDは**サイドカーが正本**のため、変更はこの専用APIで行います。対象ページの write 権限を要求し、親が実際に変わるときだけ `validateParentChange`（実在・自己参照/循環の防止・新しい親への write 権限、トップレベル化は admin）で検証します。妥当ならサイドカーの `parent_id` と `updated_at` を更新し、`pages` インデックスにも反映します。`{"ok": true, "parent_id": "...", "updated_at": "..."}` を返します。
+親ページIDは**サイドカーが正本**のため、変更はこの専用APIで行います。対象ページの write 権限を要求し、親が実際に変わるときだけ `validateParentChange`（実在・自己参照/循環の防止・新しい親への write 権限、**親なし（トップレベル）化はトップページ（ID 0／`000000`）自身のみ可能。admin でも他ページを親なしにはできない**）で検証します。妥当ならサイドカーの `parent_id` と `updated_at` を更新し、`pages` インデックスにも反映します。`{"ok": true, "parent_id": "...", "updated_at": "..."}` を返します。
 
 ### 4.1.3. ページ属性取得 API (`GET /api/page-meta?id={page_id}`)
 サイドパネル表示用に、ページの属性（`parent_id` / `created_at` / `created_by` / `updated_at`）を返します。対象ページの read 権限を要求します。
@@ -240,7 +240,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 
 ### 6.2. 子ページ作成 (`GET /api/new-page?parent={親ページID}`)
 フロントエンド（`assets/index.html`）で「＋ 子ページを作成」ボタンが押された際のフローは、`NewPageAPIHandler` がサーバー側で完結させます（DOM構造・イベント面の詳細は [エディタ仕様.md](エディタ仕様.md) 6.2参照）。
-1. フロントエンドは `/api/new-page?parent={現在のページID}` を呼び出します。
+1. フロントエンドは `/api/new-page?parent={現在のページID}` を呼び出します。`parent` は必須です（**親なし＝トップレベルのページが許されるのはトップページ（`000000`）のみ**で、それは初回起動時に自動生成済みのため、新規作成では `parent` を省略できません。admin でも例外はありません）。
 2. バックエンドは `reserveNewPageID()`（6.1）で `pages` への `INSERT` 自動採番により新しいページIDを原子的に確定します。
 3. 初期HTMLは「内容」のみ（`<h1>` と `<m-child-list>` 等）を生成して物理ファイルへ書き込みます。親ページID・作成者・作成日時などの属性は `EnsureSidecar()` でサイドカー `<id>.meta.json` に記録し（作成者＝所有者、作成日時・更新日時はサイドカーが刻む）、続けて `SyncIndex` でDBへ同期します（親・作成情報はサイドカーから読まれます）。
 4. レスポンスとして `/{新しいID}?edit=true` へ302リダイレクトします。ID発番・ファイル生成・DB同期・リダイレクトが単一のリクエストでアトミックに完結するため、フロントエンドが後から個別に `saveToServer()` を呼ぶ必要はありません。
