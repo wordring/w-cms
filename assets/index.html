@@ -85,18 +85,33 @@
         html.left-collapsed .rail-left { display: none; }
         html.right-collapsed .rail-right { display: none; }
 
-        /* レール開閉トグル（ページ操作バーに配置） */
+        /* レール開閉トグル：各レール脇の画面端に固定した“つまみ”。
+           position:fixed なのでページをスクロールしても常に見え、ページ操作バーに依存しない。
+           縦書きラベル＋アイコンのコンパクトなタブ。is-on（開いている）でアクセント色。 */
         .rail-toggle {
-            padding: 6px 10px;
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 60; /* 本文より上・ドロワーのバックドロップ(150)より下 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            padding: 12px 6px;
             background: var(--bg-subtle);
             color: var(--text-muted);
             border: 1px solid var(--border);
-            border-radius: 4px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
+            line-height: 1.2;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         }
         .rail-toggle:hover { background: var(--border); }
         .rail-toggle.is-on { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .rail-toggle .rt-label { writing-mode: vertical-rl; letter-spacing: 1px; }
+        #toggle-left { left: 0; border-left: none; border-radius: 0 8px 8px 0; }
+        #toggle-right { right: 0; border-right: none; border-radius: 8px 0 0 8px; }
+        @media (prefers-reduced-motion: reduce) { .rail-toggle { transition: none; } }
         .spacer { flex: 1 1 auto; }
 
         /* 子ページナビ（左レール） */
@@ -380,21 +395,14 @@
             .title { font-size: 18px; }
             /* 保存ステータスの固定幅（min-width:92px・右寄せ）を解除して窮屈さを緩和 */
             #save-status { min-width: 0 !important; text-align: left !important; }
-            .page-actions { flex-wrap: wrap; }
         }
 
-        /* ページ操作バー（ヘッダーと文書の間。アクションを集約する“クローム”側の帯。
-           文書（紙）とは見た目を区別し、ここの内容はファイルに保存されない） */
-        .page-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 0;
-            margin-bottom: 16px;
-            border-bottom: 1px solid var(--border);
-        }
+        /* 「＋ 子ページを作成」：左レール最上部（親ページリンクの下）に置く、階層への操作。
+           レール幅いっぱいの主ボタン。 */
         .page-action-btn {
-            padding: 6px 12px;
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
             background: var(--accent);
             color: #fff;
             border: none;
@@ -402,6 +410,7 @@
             cursor: pointer;
             font-size: 14px;
             font-weight: bold;
+            text-align: center;
         }
         .page-action-btn:hover {
             background: var(--accent-strong);
@@ -617,6 +626,15 @@
 <!-- ドロワー（狭幅時の左右パネル）の背景。クリックで閉じる。広い画面では非表示。 -->
 <div id="drawer-backdrop" class="drawer-backdrop" onclick="closeDrawers()"></div>
 
+<!-- レール開閉トグル：各レール脇の画面端に固定。スクロールしても常に見える。
+     広い画面ではインライン折り畳み、狭い画面ではドロワーの開閉を行う（toggleRail）。 -->
+<button class="rail-toggle" id="toggle-left" onclick="toggleRail('left')" aria-pressed="true" title="左パネル（ページ階層）の表示/非表示">
+    <span aria-hidden="true">☰</span><span class="rt-label">子ページ</span>
+</button>
+<button class="rail-toggle" id="toggle-right" onclick="toggleRail('right')" aria-pressed="true" title="右パネル（ページ情報）の表示/非表示">
+    <span aria-hidden="true">ⓘ</span><span class="rt-label">ページ情報</span>
+</button>
+
 <!-- スラッシュコマンドメニュー -->
 <div id="slash-menu" class="slash-menu">
     <div class="slash-menu-item" data-type="h1"><b>H1</b> 見出し</div>
@@ -655,21 +673,14 @@
         </div>
     </header>
 
-    <!-- ページ操作バー：このページに対するアクション（保存対象外）。
-         ＋子ページ作成などをここへ集約する。 -->
-    <nav class="page-actions" role="toolbar" aria-label="ページ操作">
-        <button class="page-action-btn" onclick="createSubpage()">＋ 子ページを作成</button>
-        <span class="spacer"></span>
-        <button class="rail-toggle" id="toggle-left" onclick="toggleRail('left')" aria-pressed="true" title="左パネル（子ページ）の表示/非表示">☰ 子ページ</button>
-        <button class="rail-toggle" id="toggle-right" onclick="toggleRail('right')" aria-pressed="true" title="右パネル（ページ情報）の表示/非表示">ⓘ ページ情報</button>
-    </nav>
-
     <div class="work-area">
-        <!-- 左サイドパネル（クローム）：子ページナビ。/api/children で描画。保存対象外。 -->
-        <aside class="rail rail-left" aria-label="ページナビゲーション">
+        <!-- 左サイドパネル（クローム）：ページ階層への情報と操作。/api/children で描画。保存対象外。 -->
+        <aside class="rail rail-left" aria-label="ページ階層">
             <!-- 親ページへのリンクは最上部（「親=上／子=下」の階層感に合わせる。
                  子ページカードを畳んでも常に見える） -->
             <div class="child-nav-parent" id="child-nav-parent"></div>
+            <!-- 子ページ作成：階層に対する操作なので左レール最上部に置く -->
+            <button class="page-action-btn" onclick="createSubpage()">＋ 子ページを作成</button>
             <section class="rail-card">
                 <details open>
                     <summary>子ページ</summary>
