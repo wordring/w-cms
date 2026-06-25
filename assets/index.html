@@ -676,11 +676,11 @@
     <div class="work-area">
         <!-- 左サイドパネル（クローム）：ページ階層への情報と操作。/api/children で描画。保存対象外。 -->
         <aside class="rail rail-left" aria-label="ページ階層">
-            <!-- 親ページへのリンクは最上部（「親=上／子=下」の階層感に合わせる。
+            <!-- 子ページ作成：階層に対する操作なのでレール最上部に置く -->
+            <button class="page-action-btn" onclick="createSubpage()">＋ 子ページを作成</button>
+            <!-- 親ページへのリンク（「親=上／子=下」の階層感に合わせる。
                  子ページカードを畳んでも常に見える） -->
             <div class="child-nav-parent" id="child-nav-parent"></div>
-            <!-- 子ページ作成：階層に対する操作なので左レール最上部に置く -->
-            <button class="page-action-btn" onclick="createSubpage()">＋ 子ページを作成</button>
             <section class="rail-card">
                 <details open>
                     <summary>子ページ</summary>
