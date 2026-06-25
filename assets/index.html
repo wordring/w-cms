@@ -218,8 +218,12 @@
                 box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
                 z-index: 200;
                 overflow-y: auto;
+                overscroll-behavior: contain; /* 末端で背景へスクロールが連鎖しないよう隔離 */
                 transition: transform 0.25s ease;
             }
+            /* ドロワーを開いている間は背景（window）のスクロールをロックし、ドロワーだけが
+               単独でスクロールできるようにする（モーダル相当）。閉じれば解除＝位置は保たれる。 */
+            html.left-drawer-open, html.right-drawer-open { overflow: hidden; }
             .rail-left { left: 0; transform: translateX(-100%); }
             .rail-right { right: 0; transform: translateX(100%); }
             /* 狭幅では「畳む（collapsed）」設定は無視し、常にドロワーで開閉する */
