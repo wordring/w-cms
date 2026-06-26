@@ -41,13 +41,11 @@ func main() {
 	cms.StartLockReaper()
 
 	// --- ルーティング ---
-	// 保護対象のルート（要認証）。RootHandler や各APIをここに登録する。
+	// 保護対象のAPI（要認証）。/api/ 配下にまとめ、RequireAuth でまとめて包む。
+	// 匿名でも閲覧しうるルート（ページ本文・添付配信・/api/me・ページの殻）は別扱い（後述の OptionalAuth）。
 	protected := http.NewServeMux()
-	// /data 配下（PDF原本など）はページのread権限を確認して配信する
-	protected.HandleFunc("/data/", cms.DataFileHandler)
 
 	protected.HandleFunc("/api/save", cms.SaveAPIHandler)
-	protected.HandleFunc("/api/load", cms.LoadAPIHandler)
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
@@ -64,8 +62,6 @@ func main() {
 
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
-	protected.HandleFunc("/api/me", auth.MeAPIHandler)
-	protected.HandleFunc("/upload", cms.UploadHandler)
 
 	// 権限管理（owner/admin）
 	protected.HandleFunc("/api/page-perms", cms.PagePermsHandler)
@@ -85,16 +81,27 @@ func main() {
 		log.Printf("プラグインAPI登録: %s", route.Pattern)
 	}
 
-	// ルート（Wiki型ルーティング）は最後に登録する
-	protected.HandleFunc("/", cms.RootHandler)
-
-	// 公開ルート（認証不要）。ログイン関連とフロントの静的アセット。
+	// 公開ルート（認証不要）とトップレベルのルーティング。
 	root := http.NewServeMux()
 	root.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
 	root.HandleFunc("/login", auth.LoginPageHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
-	// 上記以外はすべて認証必須の protected へ。
-	root.Handle("/", auth.RequireAuth(protected))
+
+	// 匿名でも閲覧しうるルート（OptionalAuth）。認可は各ハンドラが実効公開で個別判定する。
+	//   - /api/load   : ページ本文（匿名でも実効公開なら200、非公開は401）
+	//   - /data/      : 添付（PDF原本など。同上）
+	//   - /api/me     : 認証状態（未認証は {authenticated:false}）
+	root.Handle("/api/load", auth.OptionalAuth(http.HandlerFunc(cms.LoadAPIHandler)))
+	root.Handle("/data/", auth.OptionalAuth(http.HandlerFunc(cms.DataFileHandler)))
+	root.Handle("/api/me", auth.OptionalAuth(http.HandlerFunc(auth.MeAPIHandler)))
+
+	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）と /upload。
+	root.Handle("/api/", auth.RequireAuth(protected))
+	root.Handle("/upload", auth.RequireAuth(http.HandlerFunc(cms.UploadHandler)))
+
+	// ページの殻（assets/index.html を返すだけの静的シェル）は匿名にも返す。
+	// 実際の本文・属性は JS が /api/load 等を叩いて取得し、そこで認可される。
+	root.Handle("/", auth.OptionalAuth(http.HandlerFunc(cms.RootHandler)))
 
 	// CSRF対策（状態変更系のオリジン検証）を全体に適用する。
 	handler := auth.CSRFProtect(root)

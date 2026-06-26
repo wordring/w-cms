@@ -40,6 +40,7 @@ type PageMeta struct {
 	Owner     string `json:"owner"`
 	Group     string `json:"group"`
 	Mode      string `json:"mode"`
+	Public    bool   `json:"public,omitempty"` // 匿名公開フラグ（認証認可設計.md 10章）。実効公開は親チェーンとの AND。
 	ParentID  string `json:"parent_id,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 	CreatedBy string `json:"created_by,omitempty"`
@@ -94,12 +95,17 @@ func WriteSidecar(id string, p PageMeta) error {
 
 // EnsureSidecar はサイドカーが無ければ作成します（新規ページ作成時に呼ぶ）。
 // 作成者(owner)を created_by に記録し、parent に親ページID（ゼロ詰め文字列、空可）を設定します。
-func EnsureSidecar(id, owner, group, parent string) error {
+// mode が空のときは既定（DefaultMode）になります。子ページ作成では group/mode を親から
+// 継承して渡します（認証認可設計.md 10.4。public は常に false ＝ここでは設定しない）。
+func EnsureSidecar(id, owner, group, mode, parent string) error {
 	if _, ok := ReadSidecar(id); ok {
 		return nil
 	}
+	if mode == "" {
+		mode = DefaultMode
+	}
 	return WriteSidecar(id, PageMeta{
-		Owner: owner, Group: group, Mode: DefaultMode,
+		Owner: owner, Group: group, Mode: mode,
 		CreatedBy: owner, ParentID: parent,
 	})
 }
@@ -150,9 +156,9 @@ func syncPageMeta(tx *sql.Tx, pageID int, id string) error {
 		p = PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
 	}
 	_, err := tx.Exec(`
-		INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (?, ?, ?, ?)
-		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode
-	`, pageID, p.Owner, p.Group, p.Mode)
+		INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode, public=excluded.public
+	`, pageID, p.Owner, p.Group, p.Mode, boolToInt(p.Public))
 	return err
 }
 
@@ -168,10 +174,18 @@ func RefreshPerms(id string) error {
 		p = PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
 	}
 	_, err = database.DB.Exec(`
-		INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (?, ?, ?, ?)
-		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode
-	`, pageID, p.Owner, p.Group, p.Mode)
+		INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode, public=excluded.public
+	`, pageID, p.Owner, p.Group, p.Mode, boolToInt(p.Public))
 	return err
+}
+
+// boolToInt は SQLite の 0/1 列へ書き込むためのヘルパです。
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ValidMode は mode が3桁・各桁0〜3かを検証します。
@@ -191,16 +205,45 @@ func ValidMode(m string) bool {
 // 「admin所有・既定mode」のフォールバックを返します（フェイルクローズ）。
 func GetPerms(pageID int) PageMeta {
 	var p PageMeta
+	var public int
 	err := database.DB.QueryRow(
-		`SELECT owner, grp, mode FROM page_perms WHERE page_id = ?`, pageID,
-	).Scan(&p.Owner, &p.Group, &p.Mode)
+		`SELECT owner, grp, mode, public FROM page_perms WHERE page_id = ?`, pageID,
+	).Scan(&p.Owner, &p.Group, &p.Mode, &public)
 	if err != nil {
 		return PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
 	}
+	p.Public = public != 0
 	if p.Mode == "" {
 		p.Mode = DefaultMode
 	}
 	return p
+}
+
+// EffectivePublic は、ページが匿名（未ログイン）に公開されているかを返します。
+// 認証認可設計.md 10.2: 実効公開 = 自分の public ∧ 先祖すべての public ∧ root の public。
+// ルート（000000）も鎖に含む（＝サイト全体のキルスイッチ）。親チェーンを上に辿り、
+// 途中で public でないページがあれば false（パスゲート）。フェイルクローズ。
+func EffectivePublic(pageID int) bool {
+	seen := map[int]bool{}
+	cur := pageID
+	for i := 0; i < 10000; i++ {
+		if seen[cur] {
+			return false // 万一の循環は安全側に倒す
+		}
+		seen[cur] = true
+		if !GetPerms(cur).Public {
+			return false
+		}
+		var parent sql.NullInt64
+		if err := database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", cur).Scan(&parent); err != nil {
+			return false // ページが見つからない等はフェイルクローズ
+		}
+		if !parent.Valid {
+			return true // トップレベル（ルート）まで公開の道が繋がっていた
+		}
+		cur = int(parent.Int64)
+	}
+	return false
 }
 
 // --- mode のビット判定 ---
@@ -275,6 +318,33 @@ func RequirePageRead(w http.ResponseWriter, r *http.Request, idStr string) bool 
 	return true
 }
 
+// RequirePageReadOrPublic は read 権限を要求しますが、未認証（匿名）でも対象ページが
+// 実効公開（EffectivePublic）なら閲覧を許可します（認証認可設計.md 10.5）。
+// 公開ページの本文・添付ファイル配信に使います。書き込み系には使いません。
+//   - 認証済み: 通常の read 判定（不可なら403）。
+//   - 匿名: 実効公開なら許可、そうでなければ401（ログインを促す）。
+func RequirePageReadOrPublic(w http.ResponseWriter, r *http.Request, idStr string) bool {
+	pageID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return false
+	}
+	u := auth.CurrentUser(r)
+	if u != nil {
+		if !GetPerms(pageID).CanRead(u) {
+			http.Error(w, "このページを閲覧する権限がありません", http.StatusForbidden)
+			return false
+		}
+		return true
+	}
+	// 匿名アクセス: 実効公開なら許可、そうでなければ認証を要求する。
+	if EffectivePublic(pageID) {
+		return true
+	}
+	http.Error(w, "認証が必要です", http.StatusUnauthorized)
+	return false
+}
+
 // RequirePageWrite は指定ページIDのwrite権限を要求します。
 func RequirePageWrite(w http.ResponseWriter, r *http.Request, idStr string) bool {
 	u := requireUser(w, r)
@@ -318,7 +388,8 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageID := parts[3]
-	if !RequirePageRead(w, r, pageID) {
+	// 公開ページの添付（PDF原本など）は匿名でも配信する（実効公開のときのみ）。
+	if !RequirePageReadOrPublic(w, r, pageID) {
 		return
 	}
 	http.ServeFile(w, r, filepath.Join(".", filepath.FromSlash(clean)))

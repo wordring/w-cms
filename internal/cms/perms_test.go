@@ -2,6 +2,8 @@ package cms
 
 import (
 	"database/sql"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -131,9 +133,9 @@ func TestValidateParentChange(t *testing.T) {
 		{"実在しない親は不可", alice, 3, "999", false},
 		{"数値でない親は不可", alice, 3, "abc", false},
 		{"自己参照は不可", alice, 3, "3", false},
-		{"子孫を親にする循環は不可", alice, 1, "3", false},      // 1の子孫3を1の親に→循環
-		{"write権限の無い親は不可", alice, 3, "10", false},     // 10はaliceがother(不可)
-		{"write権限のある親はOK", alice, 3, "1", true},        // 1はalice所有
+		{"子孫を親にする循環は不可", alice, 1, "3", false},    // 1の子孫3を1の親に→循環
+		{"write権限の無い親は不可", alice, 3, "10", false}, // 10はaliceがother(不可)
+		{"write権限のある親はOK", alice, 3, "1", true},   // 1はalice所有
 		{"トップページ以外の親なし化はadminでも不可", admin, 3, "", false},
 		{"トップページ自身の親なしはOK", admin, 0, "", true},
 		{"adminは任意の親へ付け替え可", admin, 3, "10", true},
@@ -183,4 +185,110 @@ func TestGetPermsFailClosed(t *testing.T) {
 	if !p.CanRead(&auth.User{Username: "root", IsAdmin: true}) {
 		t.Error("adminが権限レコードの無いページを読めません")
 	}
+}
+
+// setupPublicTree は匿名公開テスト用の木を作ります（認証認可設計.md 10章）。
+//
+//	0(root, public=1) ─┬─ 1(public=1) ── 2(public=0) ── 3(public=1)
+//	                   └─ 10(public=0)
+func setupPublicTree(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	database.DB = db
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
+	}
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (0, 'top', NULL)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (1, 'a', 0)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (2, 'b', 1)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (3, 'c', 2)`)
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (10, 'x', 0)`)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (0, 'admin', '', '302', 1)`)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (1, 'admin', '', '300', 1)`)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (2, 'admin', '', '300', 0)`)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (3, 'admin', '', '300', 1)`)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (10, 'admin', '', '300', 0)`)
+	return db
+}
+
+// TestEffectivePublic は実効公開＝自分∧先祖すべて（ルート含む）のANDになることを検証します。
+func TestEffectivePublic(t *testing.T) {
+	db := setupPublicTree(t)
+	defer db.Close()
+
+	cases := []struct {
+		id   int
+		want bool
+	}{
+		{0, true},   // ルート自身（public=1）
+		{1, true},   // 1 ∧ 0
+		{2, false},  // 自身が非公開
+		{3, false},  // 祖先2が非公開なので自身が公開でも不可（パスゲート）
+		{10, false}, // 自身が非公開
+	}
+	for _, c := range cases {
+		if got := EffectivePublic(c.id); got != c.want {
+			t.Errorf("EffectivePublic(%d)=%v want %v", c.id, got, c.want)
+		}
+	}
+
+	// ルートを非公開にすると、配下すべてが実効非公開になる（キルスイッチ）。
+	db.Exec(`UPDATE page_perms SET public=0 WHERE page_id=0`)
+	if EffectivePublic(1) {
+		t.Error("ルート非公開なのに子(1)が実効公開のまま（キルスイッチが効いていない）")
+	}
+}
+
+// TestParentIsPublishable は公開操作時のパスゲート（親が実効公開か）を検証します。
+func TestParentIsPublishable(t *testing.T) {
+	db := setupPublicTree(t)
+	defer db.Close()
+
+	cases := []struct {
+		id   int
+		want bool
+	}{
+		{0, true},  // ルートは親なしで常に公開可
+		{1, true},  // 親0が公開
+		{2, true},  // 親1が実効公開
+		{3, false}, // 親2が非公開なので公開不可
+		{10, true}, // 親0が公開
+	}
+	for _, c := range cases {
+		if got := parentIsPublishable(c.id); got != c.want {
+			t.Errorf("parentIsPublishable(%d)=%v want %v", c.id, got, c.want)
+		}
+	}
+}
+
+// TestRequirePageReadOrPublic は匿名でも実効公開なら閲覧可、非公開は401、
+// 認証済みは通常のread判定になることを検証します。
+func TestRequirePageReadOrPublic(t *testing.T) {
+	db := setupPublicTree(t)
+	defer db.Close()
+
+	check := func(name, id string, u *auth.User, wantOK bool, wantCode int) {
+		t.Helper()
+		r := httptest.NewRequest("GET", "/api/load?id="+id, nil)
+		if u != nil {
+			r = auth.WithUser(r, u)
+		}
+		w := httptest.NewRecorder()
+		got := RequirePageReadOrPublic(w, r, id)
+		if got != wantOK {
+			t.Errorf("%s: ok=%v want %v", name, got, wantOK)
+		}
+		if !wantOK && w.Result().StatusCode != wantCode {
+			t.Errorf("%s: status=%d want %d", name, w.Result().StatusCode, wantCode)
+		}
+	}
+
+	stranger := &auth.User{Username: "x"} // owner/group いずれでもない
+	check("匿名×公開ページ→可", "1", nil, true, 0)
+	check("匿名×非公開ページ→401", "2", nil, false, http.StatusUnauthorized)
+	check("認証×other不可ページ→403", "1", stranger, false, http.StatusForbidden) // 1は mode 300（other なし）
+	check("認証×other可ページ→可", "0", stranger, true, 0)                        // 0は mode 302（other read）
 }

@@ -71,6 +71,24 @@ func RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// OptionalAuth は、セッションがあればユーザーを解決して後続ハンドラに渡し、無ければ
+// 「未認証のまま」後続へ通します（ブロックしない）。匿名でも閲覧しうる公開ページ系の
+// ルート（ページ本文・添付配信・/api/me）に使い、認可は各ハンドラが
+// RequirePageReadOrPublic 等で個別に判定します（認証認可設計.md 10.5）。
+func OptionalAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie(sessionCookieName); err == nil {
+			if username, ok := ResolveSession(c.Value); ok {
+				if u, e := LookupUser(username); e == nil {
+					next.ServeHTTP(w, WithUser(r, u))
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r) // 匿名（コンテキストにユーザー無し）
+	})
+}
+
 // CSRFProtect は状態変更系（GET/HEAD/OPTIONS以外）のリクエストに対し、
 // Origin（無ければ Referer）のホストがリクエストホストと一致することを要求します。
 // SameSite=Lax Cookie と併用したCSRF対策（認証認可設計.md 2.3節）。
