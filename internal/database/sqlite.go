@@ -69,11 +69,13 @@ var CoreTables = []string{
 
 	// 3. ページ権限の検索インデックス（サイドカー <id>.meta.json から再生成される派生データ）。
 	//    owner=所有ユーザー名, grp=所有グループ名, mode=3桁の権限（認証認可設計.md 3章）。
+	//    public=匿名公開フラグ（0/1。認証認可設計.md 10章）。実効公開は親チェーンとの AND で別途判定。
 	`CREATE TABLE IF NOT EXISTS page_perms (
 		page_id INTEGER PRIMARY KEY,
 		owner TEXT,
 		grp TEXT,
 		mode TEXT,
+		public INTEGER NOT NULL DEFAULT 0,
 		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 	);`,
 }
@@ -84,6 +86,7 @@ var CoreTables = []string{
 var coreMigrations = []string{
 	`ALTER TABLE pages ADD COLUMN created_at DATETIME`,
 	`ALTER TABLE pages ADD COLUMN created_by TEXT`,
+	`ALTER TABLE page_perms ADD COLUMN public INTEGER NOT NULL DEFAULT 0`,
 }
 
 // CreateCoreTables はコアテーブル（pages / page_tags）を作成します。

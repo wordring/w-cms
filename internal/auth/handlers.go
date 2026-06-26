@@ -90,15 +90,18 @@ func LogoutAPIHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
-// MeAPIHandler は現在のユーザー情報を返します（GET /api/me、要認証）。
+// MeAPIHandler は現在のユーザー情報を返します（GET /api/me）。
+// 匿名公開ページでも呼ばれるため OptionalAuth 配下に置き、未認証時は 401 ではなく
+// {authenticated:false} を返す（フロントが匿名＝読み取り専用モードへ切り替えるため）。
 func MeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	u := CurrentUser(r)
+	w.Header().Set("Content-Type", "application/json")
 	if u == nil {
-		http.Error(w, "認証が必要です", http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{"authenticated": false})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
+		"authenticated": true,
 		"username":      u.Username,
 		"is_admin":      u.IsAdmin,
 		"primary_group": u.PrimaryGroup,

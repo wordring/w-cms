@@ -73,9 +73,9 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if u := auth.CurrentUser(r); u != nil {
-			EnsureSidecar(id, u.Username, u.PrimaryGroup, "")
+			EnsureSidecar(id, u.Username, u.PrimaryGroup, "", "")
 		} else {
-			EnsureSidecar(id, defaultOwner, "", "")
+			EnsureSidecar(id, defaultOwner, "", "", "")
 		}
 	} else {
 		// 既存ページ：write権限を要求する
@@ -139,8 +139,8 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing id", http.StatusBadRequest)
 		return
 	}
-	// ページ本文の取得は read 権限を要求する
-	if !RequirePageRead(w, r, id) {
+	// ページ本文の取得は read 権限を要求する（匿名でも実効公開なら閲覧可）。
+	if !RequirePageReadOrPublic(w, r, id) {
 		return
 	}
 
@@ -196,9 +196,10 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	htmlPath := filepath.Join(pageDir, newID+".html")
 	os.WriteFile(htmlPath, content, 0644)
 
-	// アップロード者を所有者とする属性サイドカーを作成（SyncIndexより前）
+	// アップロード者を所有者とする属性サイドカーを作成（SyncIndexより前）。
+	// トップレベルのアップロードなので group は作成者の主グループ、mode は既定。
 	if u := auth.CurrentUser(r); u != nil {
-		EnsureSidecar(newID, u.Username, u.PrimaryGroup, "")
+		EnsureSidecar(newID, u.Username, u.PrimaryGroup, "", "")
 	}
 
 	SyncIndex(newID, string(content))
@@ -305,11 +306,18 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 4-2. 属性サイドカーを作成（作成者が所有者＝created_by。親ページIDも記録）。
 	//      作成日時・更新日時はサイドカーが刻む。SyncIndexより前に作る。
+	//      group / mode は親ページから継承する（setgid 相当・認証認可設計.md 10.4）。
+	//      owner は作成者、public は常に false（EnsureSidecar は public を設定しない）。
+	owner := defaultOwner
 	if creator != nil {
-		EnsureSidecar(newID, creator.Username, creator.PrimaryGroup, parentStr)
-	} else {
-		EnsureSidecar(newID, defaultOwner, "", parentStr)
+		owner = creator.Username
 	}
+	inheritGroup, inheritMode := "", ""
+	if parentID.Valid {
+		pp := GetPerms(int(parentID.Int64))
+		inheritGroup, inheritMode = pp.Group, pp.Mode
+	}
+	EnsureSidecar(newID, owner, inheritGroup, inheritMode, parentStr)
 
 	// 5. DB同期（タグなどのインデックス更新。親・作成情報はサイドカーから読まれる）
 	if err := SyncIndex(newID, html); err != nil {

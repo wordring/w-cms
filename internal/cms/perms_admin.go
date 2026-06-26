@@ -1,11 +1,13 @@
 package cms
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/database"
 )
 
 // ページ権限の管理API（フェーズ3）。サイドカー（正本）を書き換えてから
@@ -34,10 +36,15 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "このページの権限を参照できません", http.StatusForbidden)
 			return
 		}
+		canPublish := u.IsAdmin || u.Username == cur.Owner
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"owner": cur.Owner, "group": cur.Group, "mode": cur.Mode,
-			"can_chmod": u.IsAdmin || u.Username == cur.Owner, "can_chown": u.IsAdmin,
+			"can_chmod": canPublish, "can_chown": u.IsAdmin,
+			// 匿名公開（認証認可設計.md 10章）。public はこのページ自身のフラグ、
+			// effective_public は親チェーンとの AND による実際の公開状態。
+			"public": cur.Public, "effective_public": EffectivePublic(pageID),
+			"can_publish": canPublish, "can_write": cur.CanWrite(u),
 		})
 		return
 	}
@@ -56,8 +63,9 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Mode  *string `json:"mode"`
-		Group *string `json:"group"`
+		Mode   *string `json:"mode"`
+		Group  *string `json:"group"`
+		Public *bool   `json:"public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "リクエストの形式が不正です", http.StatusBadRequest)
@@ -67,7 +75,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	// 現在のサイドカー（無ければ現在の実効権限）を起点に変更する
 	p, ok := ReadSidecar(id)
 	if !ok {
-		p = PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
+		p = PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode, Public: cur.Public}
 	}
 
 	action := ""
@@ -85,8 +93,24 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 			action = "chgrp"
 		}
 	}
+	if req.Public != nil {
+		// 匿名公開フラグの変更（認証認可設計.md 10章）。公開（true）にするときだけ
+		// パスゲートを検証する: 親が実効公開でなければ公開できない（ルートは親なしで可）。
+		if *req.Public && !parentIsPublishable(pageID) {
+			http.Error(w, "親ページが公開されていないため公開できません。先に親ページを公開するか、公開可能な親へ移動してください。", http.StatusForbidden)
+			return
+		}
+		p.Public = *req.Public
+		if action == "" {
+			if *req.Public {
+				action = "publish"
+			} else {
+				action = "unpublish"
+			}
+		}
+	}
 	if action == "" {
-		http.Error(w, "mode または group を指定してください", http.StatusBadRequest)
+		http.Error(w, "mode・group・public のいずれかを指定してください", http.StatusBadRequest)
 		return
 	}
 
@@ -101,7 +125,27 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(u.Username, action, id)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "owner": p.Owner, "group": p.Group, "mode": p.Mode})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true, "owner": p.Owner, "group": p.Group, "mode": p.Mode,
+		"public": p.Public, "effective_public": EffectivePublic(pageID),
+	})
+}
+
+// parentIsPublishable は、ページ pageID を匿名公開してよいか（親チェーンが許すか）を返します。
+// ルート（ID 0）は親なしで公開可。それ以外は親が実効公開（EffectivePublic）である必要があります
+// （認証認可設計.md 10.2 のパスゲートを公開操作時に強制する）。
+func parentIsPublishable(pageID int) bool {
+	if pageID == 0 {
+		return true // ルートは親なしで公開可（サイト全体のキルスイッチ側）
+	}
+	var parent sql.NullInt64
+	if err := database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", pageID).Scan(&parent); err != nil {
+		return false
+	}
+	if !parent.Valid {
+		return false // ルート以外で親なしは異常。安全側に倒す
+	}
+	return EffectivePublic(int(parent.Int64))
 }
 
 // PageChownHandler は所有者を変更します（chown）。権限: admin のみ。
