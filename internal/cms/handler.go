@@ -32,7 +32,7 @@ type SaveRequest struct {
 
 // reserveNewPageID は pages テーブルへ最小限の行を原子的に INSERT し、SQLite の自動採番で
 // 確定した新しいページID（6桁ゼロ埋め）を返します。`MAX(id)+1` と異なり同時実行でも一意な
-// IDが得られ、ID衝突（[docs/同時編集の競合対策（検討中）.md] シナリオE）を防ぎます。
+// IDが得られ、ID衝突（[docs/【考察】同時編集の競合対策.md] シナリオE）を防ぎます。
 // parent は親ページID（トップレベルは無効値 sql.NullInt64{}）。属性の正本はサイドカーです。
 func reserveNewPageID(parent sql.NullInt64) (string, error) {
 	result, err := database.DB.Exec(
