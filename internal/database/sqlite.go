@@ -25,7 +25,7 @@ func InitDB() error {
 	//   - foreign_keys(1): 外部キー制約を有効化
 	//   - busy_timeout(5000): 書き込みロック衝突時に最大5秒リトライ待ち（database is locked 緩和）
 	//   - journal_mode(WAL): 読み取りと書き込みの並行性を上げる（DB全体の永続設定）
-	// 同時編集の堅牢化（[docs/同時編集の競合対策（検討中）.md] シナリオD）。
+	// 同時編集の堅牢化（[docs/【考察】同時編集の競合対策.md] シナリオD）。
 	dbPath := filepath.Join("data", "cms.db")
 	dsn := filepath.ToSlash(dbPath) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	var err error
