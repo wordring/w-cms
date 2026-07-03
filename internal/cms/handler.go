@@ -220,8 +220,9 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid parent_id format", http.StatusBadRequest)
 		return
 	}
-	// 一覧表示には親ページの read 権限を要求する（Unixの「ディレクトリの読み取り」に相当）
-	if !RequirePageRead(w, r, parentID) {
+	// 一覧表示には親ページの read 権限を要求する（Unixの「ディレクトリの読み取り」に相当）。
+	// 匿名でも親が実効公開なら許可する（認証認可設計.md 10.5）。
+	if !RequirePageReadOrPublic(w, r, parentID) {
 		return
 	}
 	user := auth.CurrentUser(r)
@@ -233,13 +234,20 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	// 各子ページのうち、閲覧者が read 権限を持つものだけを返す
+	// 各子ページのうち、閲覧者が見られるものだけを返す。
+	// 認証済みは read 権限、匿名は実効公開（EffectivePublic）で判定する。
 	pages := make([]PageSummary, 0)
 	for rows.Next() {
 		var p PageSummary
 		var idInt int
 		if err := rows.Scan(&idInt, &p.Title); err == nil {
-			if GetPerms(idInt).CanRead(user) {
+			visible := false
+			if user != nil {
+				visible = GetPerms(idInt).CanRead(user)
+			} else {
+				visible = EffectivePublic(idInt)
+			}
+			if visible {
 				p.ID = fmt.Sprintf("%0*d", IDLength, idInt)
 				pages = append(pages, p)
 			}
@@ -493,10 +501,11 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // PageMetaAPIHandler はサイドパネル表示用に、ページの属性（親・作成/更新情報）を返します。
-// 対象ページの read 権限を要求します。
+// 対象ページの read 権限を要求しますが、匿名でも実効公開（EffectivePublic）なら許可します
+// （子ナビと同様の扱い。認証認可設計.md 10.5）。
 func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
-	if !RequirePageRead(w, r, id) {
+	if !RequirePageReadOrPublic(w, r, id) {
 		return
 	}
 	idInt, err := strconv.Atoi(id)

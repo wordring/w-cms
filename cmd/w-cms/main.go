@@ -51,8 +51,6 @@ func main() {
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	protected.HandleFunc("/api/validate-parent", cms.ValidateParentAPIHandler)
 	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
-	protected.HandleFunc("/api/page-meta", cms.PageMetaAPIHandler)
-	protected.HandleFunc("/api/children", cms.ChildPagesAPIHandler)
 
 	// 同時編集の悲観ロック（ページ単位・競合トリガー方式・SSEプッシュ）
 	protected.HandleFunc("/api/lock", cms.LockAPIHandler)
@@ -88,12 +86,16 @@ func main() {
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 
 	// 匿名でも閲覧しうるルート（OptionalAuth）。認可は各ハンドラが実効公開で個別判定する。
-	//   - /api/load   : ページ本文（匿名でも実効公開なら200、非公開は401）
-	//   - /data/      : 添付（PDF原本など。同上）
-	//   - /api/me     : 認証状態（未認証は {authenticated:false}）
+	//   - /api/load     : ページ本文（匿名でも実効公開なら200、非公開は401）
+	//   - /data/        : 添付（PDF原本など。同上）
+	//   - /api/me       : 認証状態（未認証は {authenticated:false}）
+	//   - /api/children : 子ページ一覧（匿名には実効公開の子だけを絞って返す）
+	//   - /api/page-meta: ページ属性（親ページIDなど。匿名には実効公開のときだけ返す）
 	root.Handle("/api/load", auth.OptionalAuth(http.HandlerFunc(cms.LoadAPIHandler)))
 	root.Handle("/data/", auth.OptionalAuth(http.HandlerFunc(cms.DataFileHandler)))
 	root.Handle("/api/me", auth.OptionalAuth(http.HandlerFunc(auth.MeAPIHandler)))
+	root.Handle("/api/children", auth.OptionalAuth(http.HandlerFunc(cms.ChildPagesAPIHandler)))
+	root.Handle("/api/page-meta", auth.OptionalAuth(http.HandlerFunc(cms.PageMetaAPIHandler)))
 
 	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）と /upload。
 	root.Handle("/api/", auth.RequireAuth(protected))
