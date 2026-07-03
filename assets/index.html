@@ -14,9 +14,15 @@
         try {
             var ui = JSON.parse(localStorage.getItem('wcms.ui') || 'null');
             var rails = (ui && ui.rails) || JSON.parse(localStorage.getItem('wcms.rails') || '{}');
-            if (rails.left === false) document.documentElement.classList.add('left-collapsed');
+            // 左側の2レール（ページ階層／目次）は同時に開かない。どちらも明示的に
+            // 畳まれていなければページ階層を優先し、目次を畳んだ状態で描画する。
+            var leftCollapsed = rails.left === false;
+            var tocCollapsed = rails.toc === false;
+            if (!leftCollapsed && !tocCollapsed) tocCollapsed = true;
+            if (leftCollapsed) document.documentElement.classList.add('left-collapsed');
+            if (tocCollapsed) document.documentElement.classList.add('toc-collapsed');
             if (rails.right === false) document.documentElement.classList.add('right-collapsed');
-        } catch (e) { /* localStorage 不可時は既定（両方開く） */ }
+        } catch (e) { /* localStorage 不可時は既定（ページ階層のみ開く） */ }
     </script>
     <style>
         /* デザイントークン（色・角丸）。色のリテラル重複をここへ集約する。
@@ -79,10 +85,12 @@
             top: 20px;
         }
         .rail-left { flex: 0 0 220px; }
+        .rail-toc { flex: 0 0 200px; }
         .rail-right { flex: 0 0 300px; }
 
         /* 開閉：localStorage 由来のクラスを <html> に付けてレールを畳む */
         html.left-collapsed .rail-left { display: none; }
+        html.toc-collapsed .rail-toc { display: none; }
         html.right-collapsed .rail-right { display: none; }
 
         /* ページ最下部の帯（フッター）。現状は仮表示のみだが、将来サイトリンク等を
@@ -99,13 +107,22 @@
         }
 
         /* レール開閉トグル：各レール脇の画面端に固定した“つまみ”。
-           position:fixed なのでページをスクロールしても常に見え、ページ操作バーに依存しない。
+           グループ（rail-toggle-group）ごと position:fixed にして縦に並べ、
+           同じ側に複数レールがあっても重ならないようにする（左側＝ページ階層＋目次）。
+           ページをスクロールしても常に見え、ページ操作バーに依存しない。
            縦書きラベル＋アイコンのコンパクトなタブ。is-on（開いている）でアクセント色。 */
-        .rail-toggle {
+        .rail-toggle-group {
             position: fixed;
             top: 50%;
             transform: translateY(-50%);
             z-index: 60; /* 本文より上・ドロワーのバックドロップ(150)より下 */
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .rail-toggle-group-left { left: 0; }
+        .rail-toggle-group-right { right: 0; }
+        .rail-toggle {
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -122,8 +139,8 @@
         .rail-toggle:hover { background: var(--border); }
         .rail-toggle.is-on { background: var(--accent); color: #fff; border-color: var(--accent); }
         .rail-toggle .rt-label { writing-mode: vertical-rl; letter-spacing: 1px; }
-        #toggle-left { left: 0; border-left: none; border-radius: 0 8px 8px 0; }
-        #toggle-right { right: 0; border-right: none; border-radius: 8px 0 0 8px; }
+        .rail-toggle-group-left .rail-toggle { border-left: none; border-radius: 0 8px 8px 0; }
+        .rail-toggle-group-right .rail-toggle { border-right: none; border-radius: 8px 0 0 8px; }
         @media (prefers-reduced-motion: reduce) { .rail-toggle { transition: none; } }
         .spacer { flex: 1 1 auto; }
 
@@ -142,6 +159,32 @@
         }
         .child-nav-link:hover { background: var(--border); }
         .child-nav-empty { color: var(--text-dim); font-style: italic; }
+
+        /* 目次（本文の見出しへのリンク。フロントのみで構築） */
+        ul.toc-nav { list-style: none; margin: 0; padding: 0; }
+        ul.toc-nav li { margin: 2px 0; }
+        .toc-nav-link {
+            display: block;
+            width: 100%;
+            border: none;
+            background: transparent;
+            font: inherit;
+            text-align: left;
+            padding: 4px 6px;
+            border-radius: 4px;
+            color: var(--accent-strong);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+        }
+        .toc-nav-link:hover { background: var(--border); }
+        .toc-nav-link[data-level="2"] { padding-left: 18px; }
+        .toc-nav-link[data-level="3"] { padding-left: 30px; }
+        .toc-nav-link[data-level="4"] { padding-left: 42px; }
+        .toc-nav-link[data-level="5"] { padding-left: 54px; }
+        .toc-nav-link[data-level="6"] { padding-left: 66px; }
+        .toc-nav-empty { color: var(--text-dim); font-style: italic; }
         .child-nav-parent:empty { display: none; } /* トップページ等、親が無いときは何も出さない */
         .child-nav-parent a {
             display: block;
@@ -248,12 +291,15 @@
         /* バックドロップ（ドロワー表示時の背景。広い画面では非表示）。 */
         .drawer-backdrop { display: none; }
 
-        /* 画面が狭いとき：左右サイドパネルをオフキャンバスのドロワーにする。
-           文書は1カラムで全幅、レールは position:fixed で画面外へ退避し、トグルで出し入れする。 */
-        @media (max-width: 760px) {
-            .work-area { flex-direction: column; }
-            /* レールをドロワー化（fixed・全高・スクロール可・スライド） */
-            .rail {
+        /* 共通のドロワー化スタイル（fixed・全高・スクロール可・スライド）。
+           どのレールに適用するかはブレークポイントごとの @media 内で指定する
+           （右レールを先に、次に左側2レールをドロワー化する段階式。JSの
+           railNarrow の閾値と一致させること）。 */
+
+        /* 段階1（中程度に狭い）：右レール（ページ情報）だけをドロワー化する。
+           文書と左側のレールは横並びのまま（右レール分だけ文書が広がる）。 */
+        @media (max-width: 1100px) {
+            .rail-right {
                 position: fixed;
                 top: 0;
                 bottom: 0;
@@ -267,19 +313,16 @@
                 overflow-y: auto;
                 overscroll-behavior: contain; /* 末端で背景へスクロールが連鎖しないよう隔離 */
                 transition: transform 0.25s ease;
+                right: 0;
+                transform: translateX(100%);
             }
-            /* ドロワーを開いている間は背景（window）のスクロールをロックし、ドロワーだけが
-               単独でスクロールできるようにする（モーダル相当）。閉じれば解除＝位置は保たれる。 */
-            html.left-drawer-open, html.right-drawer-open { overflow: hidden; }
-            .rail-left { left: 0; transform: translateX(-100%); }
-            .rail-right { right: 0; transform: translateX(100%); }
+            /* ドロワーを開いている間は背景（window）のスクロールをロックする（モーダル相当）。 */
+            html.right-drawer-open { overflow: hidden; }
             /* 狭幅では「畳む（collapsed）」設定は無視し、常にドロワーで開閉する */
-            html.left-collapsed .rail-left,
             html.right-collapsed .rail-right { display: flex; }
-            /* 開いた側をスライドイン */
-            html.left-drawer-open .rail-left { transform: translateX(0); }
+            /* 開けばスライドイン */
             html.right-drawer-open .rail-right { transform: translateX(0); }
-            /* バックドロップ（どちらかが開いているとき表示） */
+            /* バックドロップ（開いているとき表示） */
             .drawer-backdrop {
                 display: block;
                 position: fixed;
@@ -290,8 +333,38 @@
                 pointer-events: none;
                 transition: opacity 0.25s ease;
             }
-            html.left-drawer-open .drawer-backdrop,
             html.right-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+        }
+
+        /* 段階2（さらに狭い）：左側の2レール（ページ階層／目次）もドロワー化し、
+           文書は1カラム全幅にする。右レールは段階1で既にドロワー化済み（このクエリも
+           1100px以下を含むため、段階1のルールは引き続き有効）。 */
+        @media (max-width: 760px) {
+            .work-area { flex-direction: column; }
+            .rail-left, .rail-toc {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                width: 280px;
+                max-width: 85vw;
+                margin: 0;
+                padding: 16px;
+                background: var(--bg-paper);
+                box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
+                z-index: 200;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                transition: transform 0.25s ease;
+                left: 0;
+                transform: translateX(-100%);
+            }
+            html.left-drawer-open, html.toc-drawer-open { overflow: hidden; }
+            html.left-collapsed .rail-left,
+            html.toc-collapsed .rail-toc { display: flex; }
+            html.left-drawer-open .rail-left { transform: translateX(0); }
+            html.toc-drawer-open .rail-toc { transform: translateX(0); }
+            html.left-drawer-open .drawer-backdrop,
+            html.toc-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
         }
         @media (prefers-reduced-motion: reduce) {
             .rail, .drawer-backdrop { transition: none; }
@@ -656,13 +729,21 @@
 <div id="drawer-backdrop" class="drawer-backdrop" onclick="closeDrawers()"></div>
 
 <!-- レール開閉トグル：各レール脇の画面端に固定。スクロールしても常に見える。
-     広い画面ではインライン折り畳み、狭い画面ではドロワーの開閉を行う（toggleRail）。 -->
-<button class="rail-toggle" id="toggle-left" onclick="toggleRail('left')" aria-pressed="true" title="左パネル（ページ階層）の表示/非表示">
-    <span aria-hidden="true">☰</span><span class="rt-label">子ページ</span>
-</button>
-<button class="rail-toggle" id="toggle-right" onclick="toggleRail('right')" aria-pressed="true" title="右パネル（ページ情報）の表示/非表示">
-    <span aria-hidden="true">ⓘ</span><span class="rt-label">ページ情報</span>
-</button>
+     広い画面ではインライン折り畳み、狭い画面ではドロワーの開閉を行う（toggleRail）。
+     左側は「ページ階層」「目次」の2レール分をグループ化して縦に並べる。 -->
+<div class="rail-toggle-group rail-toggle-group-left">
+    <button class="rail-toggle" id="toggle-left" onclick="toggleRail('left')" aria-pressed="true" title="左パネル（ページ階層）の表示/非表示">
+        <span aria-hidden="true">☰</span><span class="rt-label">ページ階層</span>
+    </button>
+    <button class="rail-toggle" id="toggle-toc" onclick="toggleRail('toc')" aria-pressed="true" title="左パネル（目次）の表示/非表示">
+        <span aria-hidden="true">📑</span><span class="rt-label">目次</span>
+    </button>
+</div>
+<div class="rail-toggle-group rail-toggle-group-right">
+    <button class="rail-toggle" id="toggle-right" onclick="toggleRail('right')" aria-pressed="true" title="右パネル（ページ情報）の表示/非表示">
+        <span aria-hidden="true">ⓘ</span><span class="rt-label">ページ情報</span>
+    </button>
+</div>
 
 <!-- スラッシュコマンドメニュー -->
 <div id="slash-menu" class="slash-menu">
@@ -718,6 +799,20 @@
             </section>
             <!-- 子ページ作成：試験的に最下部へ -->
             <button class="page-action-btn" onclick="createSubpage()">＋ 子ページを作成</button>
+        </aside>
+
+        <!-- 目次レール：本文の見出し(h1〜h6)へのリンク集。サーバーには依存せず、
+             表示中のDOMを走査して作る（クリックで scrollIntoView）。ページ階層レールとは
+             独立して開閉できる（左側のもう1つのレール）。 -->
+        <aside class="rail rail-toc" aria-label="目次">
+            <section class="rail-card">
+                <details open>
+                    <summary>目次</summary>
+                    <div class="card-body">
+                        <ul class="toc-nav" id="toc-list"></ul>
+                    </div>
+                </details>
+            </section>
         </aside>
 
         <div class="doc-column">
@@ -897,48 +992,66 @@
     }
 
     // --- サイドパネルの開閉（UI ストア `wcms.ui.rails` に永続化。FOUC防止は <head> のインラインscript） ---
+    // レールは3枚（left=ページ階層／toc=目次／right=ページ情報）。
+    // 左側の2枚（left・toc）は同じグループとして扱い、同時には開かない
+    // （片方を開くともう片方は自動で畳む）。right は独立。
+    const RAIL_IDS = ['left', 'toc', 'right'];
+    const RAIL_GROUPS = [['left', 'toc'], ['right']];
+    function railGroupOf(side) {
+        return RAIL_GROUPS.find(g => g.includes(side)) || [side];
+    }
+
     function railState() {
         return UI.get('rails', {});
     }
 
-    // 狭幅（ドロワーモード）かどうか。CSS の @media と同じしきい値に合わせる。
-    const railNarrow = () => window.matchMedia('(max-width: 760px)').matches;
+    // 狭幅（ドロワーモード）かどうか。レールごとに異なる閾値を持つ（CSS の @media と
+    // 一致させること）。右レールを先に、次に左側2レール（left・toc）の順にドロワー化する
+    // 段階式で、本文（doc-column）の幅が狭くなりすぎないようにする。
+    const RAIL_BREAKPOINTS = { left: 760, toc: 760, right: 1100 };
+    const railNarrow = (side) => window.matchMedia(`(max-width: ${RAIL_BREAKPOINTS[side]}px)`).matches;
 
     function toggleRail(side) {
         // 狭幅ではオフキャンバスのドロワーを開閉する（永続化しない・既定は閉）。
-        if (railNarrow()) { toggleDrawer(side); return; }
+        if (railNarrow(side)) { toggleDrawer(side); return; }
         // 広い画面では従来どおりインライン折り畳み（UI ストアに永続化）。
-        const cls = side === 'left' ? 'left-collapsed' : 'right-collapsed';
+        const cls = side + '-collapsed';
         const collapsed = document.documentElement.classList.toggle(cls);
         UI.set('rails.' + side, !collapsed); // true = 開
+        if (!collapsed) {
+            // 開いた側なので、同じグループの他のレールは畳んで同時に開かないようにする
+            railGroupOf(side).forEach(id => {
+                if (id === side) return;
+                document.documentElement.classList.add(id + '-collapsed');
+                UI.set('rails.' + id, false);
+            });
+        }
         syncRailToggleButtons();
     }
 
-    // toggleDrawer は狭幅時のドロワー開閉。左右は同時に1つだけ開く（片方を開くと他方は閉じる）。
+    // toggleDrawer は狭幅時のドロワー開閉。同時に1つだけ開く（開くと他は自動で閉じる）。
     function toggleDrawer(side) {
         const html = document.documentElement;
-        const cls = side === 'left' ? 'left-drawer-open' : 'right-drawer-open';
-        const other = side === 'left' ? 'right-drawer-open' : 'left-drawer-open';
+        const cls = side + '-drawer-open';
         const willOpen = !html.classList.contains(cls);
-        html.classList.remove(other);
+        RAIL_IDS.forEach(id => { if (id !== side) html.classList.remove(id + '-drawer-open'); });
         html.classList.toggle(cls, willOpen);
         syncRailToggleButtons();
     }
 
     // closeDrawers は開いているドロワーを全て閉じる（バックドロップclick・Escape・デスクトップ復帰で呼ぶ）。
     function closeDrawers() {
-        document.documentElement.classList.remove('left-drawer-open', 'right-drawer-open');
+        RAIL_IDS.forEach(id => document.documentElement.classList.remove(id + '-drawer-open'));
         syncRailToggleButtons();
     }
 
     // トグルボタンの見た目（押下状態）を現在の開閉状態に合わせる。
-    // 狭幅ではドロワーの開閉、広い画面では折り畳み状態を反映する。
+    // レールごとに、狭幅ならドロワーの開閉、広い画面では折り畳み状態を反映する。
     function syncRailToggleButtons() {
-        const narrow = railNarrow();
-        [['left', 'toggle-left'], ['right', 'toggle-right']].forEach(([side, id]) => {
-            const btn = document.getElementById(id);
+        RAIL_IDS.forEach(side => {
+            const btn = document.getElementById('toggle-' + side);
             if (!btn) return;
-            const open = narrow
+            const open = railNarrow(side)
                 ? document.documentElement.classList.contains(side + '-drawer-open')
                 : !document.documentElement.classList.contains(side + '-collapsed');
             btn.classList.toggle('is-on', open);
@@ -950,10 +1063,17 @@
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeDrawers();
     });
-    // 広い画面へ戻ったらドロワー状態を解除し、ボタン表示を折り畳み基準に戻す。
-    window.matchMedia('(max-width: 760px)').addEventListener('change', (e) => {
-        if (!e.matches) document.documentElement.classList.remove('left-drawer-open', 'right-drawer-open');
-        syncRailToggleButtons();
+    // 広い画面へ戻ったらドロワー状態を解除し、ボタン表示を折り畳み基準に戻す
+    // （レールごとに閾値が異なるため、使われている閾値ごとにリスナーを張る）。
+    new Set(Object.values(RAIL_BREAKPOINTS)).forEach(bp => {
+        window.matchMedia(`(max-width: ${bp}px)`).addEventListener('change', (e) => {
+            if (!e.matches) {
+                RAIL_IDS.forEach(id => {
+                    if (RAIL_BREAKPOINTS[id] === bp) document.documentElement.classList.remove(id + '-drawer-open');
+                });
+            }
+            syncRailToggleButtons();
+        });
     });
 
     // 左レール：子ページナビを /api/children から描画する。
@@ -977,6 +1097,35 @@
                 list.appendChild(li);
             });
         } catch (e) { list.innerHTML = '<li class="child-nav-empty">通信エラー</li>'; }
+    }
+
+    // 左レール：目次を本文中の見出し(h1〜h6)から構築する。サーバーには一切依存せず、
+    // 表示中の #editor-content を走査するだけ（クリックで scrollIntoView）。
+    // 本文が変わるたび（初回ロード・編集中）に呼び直して最新化する。
+    function buildToc() {
+        const list = document.getElementById('toc-list');
+        if (!list) return;
+        const container = document.getElementById('editor-content');
+        const headings = Array.from(container.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+            .map(el => ({ el, text: el.textContent.trim() }))
+            .filter(h => h.text);
+        list.innerHTML = '';
+        if (headings.length === 0) {
+            list.innerHTML = '<li class="toc-nav-empty">見出しがありません</li>';
+            return;
+        }
+        headings.forEach(({ el, text }) => {
+            const li = document.createElement('li');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'toc-nav-link';
+            btn.dataset.level = el.tagName.slice(1); // "H2" -> "2"
+            btn.textContent = text;
+            btn.title = text;
+            btn.addEventListener('click', () => el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+            li.appendChild(btn);
+            list.appendChild(li);
+        });
     }
 
     // --- 認証・権限まわり ---
@@ -1277,6 +1426,7 @@
     function setupAutoSave() {
         const observer = new MutationObserver((mutations) => {
             triggerAutoSave();
+            buildToc(); // 見出しの追加・削除・移動を目次に反映
         });
         observer.observe(document.getElementById('editor-content'), {
             childList: true,
@@ -1285,9 +1435,10 @@
             attributes: true,
             attributeFilter: ['value', 'order-no', 'client-name', 'ordered-at', 'supplier-name', 'item-id', 'item-name', 'price', 'quantity', 'cost', 'status', 'tag']
         });
-        
+
         document.getElementById('editor-content').addEventListener('input', () => {
             triggerAutoSave();
+            buildToc(); // 見出しテキストの編集を目次に反映
         });
     }
 
@@ -1374,6 +1525,7 @@
             editorContent.appendChild(child);
         });
         initBlocks();
+        buildToc();
     }
 
     // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
