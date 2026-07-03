@@ -564,8 +564,17 @@ func RebuildDBAPIHandler(w http.ResponseWriter, r *http.Request) {
 func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// `/assets/` などの静的ファイルは既に mux で処理されている前提
 	id := r.URL.Path[1:] // 先頭の `/` を取り除く
+
+	// トップページの正規URLは /000000 の1つに統一する（同一文書が複数の名前を
+	// 持たないように）。`/` や `/index.html` はエイリアスとして /000000 へ
+	// リダイレクトする。
 	if id == "" || id == "index.html" {
-		id = "000000"
+		target := "/000000"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+		return
 	}
 
 	// 初回起動時の 000000 ページ自動生成
