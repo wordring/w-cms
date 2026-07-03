@@ -208,11 +208,14 @@
         body[edit-mode] .edit-only { display: revert; }
         body[edit-mode] .view-only { display: none; }
 
-        /* 匿名（未ログイン）で公開ページを閲覧している状態。編集クロームを全て隠し、
-           純粋な読み取り専用ビューにする（認証認可設計.md 10.5）。レール（左右サイドパネルと
-           そのつまみ）・編集スイッチ・ログアウト/管理リンク等の認証前提UIを非表示にする。 */
-        body.anonymous .rail,
-        body.anonymous .rail-toggle,
+        /* 匿名（未ログイン）で公開ページを閲覧している状態。編集クロームを隠し、
+           純粋な読み取り専用ビューにする（認証認可設計.md 10.5）。右サイドパネル（属性・権限・
+           編集操作）・編集スイッチ・ログアウト/管理リンク等の認証前提UIを非表示にする。
+           左サイドパネルの子ページナビは実効公開の子だけをサーバー側で絞って返すため、
+           匿名でも表示する（子ページ作成ボタンのみ書き込み操作なので個別に隠す）。 */
+        body.anonymous .rail-right,
+        body.anonymous #toggle-right,
+        body.anonymous .page-action-btn,
         body.anonymous #admin-link,
         body.anonymous #save-status,
         body.anonymous #mode-text,
@@ -2181,8 +2184,14 @@
                 setupAutoSave();
 
                 if (anon) {
-                    // 匿名は読み取り専用。編集モードへは入らず、認証が要るサイドパネル系も叩かない。
+                    // 匿名は読み取り専用。編集モードへは入らず、権限カード（loadPerms）は
+                    // 叩かない。ページ属性は /api/page-meta が実効公開なら匿名にも返すため、
+                    // 左レールの「親ページへ」リンク表示のために loadPageMeta は呼ぶ
+                    // （右レールの権限系表示は body.anonymous の CSS で非表示のまま）。
+                    // 子ページ一覧も実効公開の子だけをサーバー側で絞って返すため、匿名でも読み込む。
                     applyMode();
+                    loadPageMeta();
+                    loadChildNav();
                     return;
                 }
                 // ?edit ならロックを取得して編集、なければ閲覧モードを適用する。
