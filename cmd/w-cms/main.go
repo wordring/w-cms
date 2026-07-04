@@ -105,8 +105,9 @@ func main() {
 	// 実際の本文・属性は JS が /api/load 等を叩いて取得し、そこで認可される。
 	root.Handle("/", auth.OptionalAuth(http.HandlerFunc(cms.RootHandler)))
 
-	// CSRF対策（状態変更系のオリジン検証）を全体に適用する。
-	handler := auth.CSRFProtect(root)
+	// CSRF対策（状態変更系のオリジン検証）と CSP（Content-Security-Policy）を
+	// 全体に適用する。CSP は最外周に置き、全レスポンスへヘッダを付与する。
+	handler := auth.CSPProtect(auth.CSRFProtect(root))
 
 	// サーバーの起動
 	log.Println("w-cms 起動: http://localhost:8080")

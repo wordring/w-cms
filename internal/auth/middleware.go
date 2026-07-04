@@ -89,6 +89,35 @@ func OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
+// cspPolicy は全レスポンスへ付与する Content-Security-Policy（中間版）です。
+//
+// default-src/object-src/base-uri/frame-ancestors は目標とする strict 版と同値で、
+// 外部オリジンへのデータ送信の遮断とクリックジャッキング防止（frame-ancestors）の
+// 実利を、段階移行の中間段階でも確保します。script-src/style-src のみ暫定で
+// 'unsafe-inline' を許可し、現行フロントの多数のインライン script/style/on* を
+// 生かしています。インラインを外部化・addEventListener 化するリファクタが完了したら
+// 'unsafe-inline' を外して strict 版へ格上げします（docs/【考察】CSP強化.md）。
+//
+// アプリは外部リソース（CDN・web fonts・data:/blob: 等）を一切使わず、PDFは
+// 同一オリジンの <embed src="/data/..."> のため、default-src 'self' と
+// object-src 'self' でインライン以外は何も壊れません。
+const cspPolicy = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"object-src 'self'; " +
+	"base-uri 'self'; " +
+	"frame-ancestors 'self'"
+
+// CSPProtect は全レスポンスへ Content-Security-Policy ヘッダを付与します。
+// 既存の CSRFProtect と同じミドルウェア形（func(http.Handler) http.Handler）で、
+// main.go のハンドラチェーンの最外周に置いて全ルートへ適用します。
+func CSPProtect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", cspPolicy)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // CSRFProtect は状態変更系（GET/HEAD/OPTIONS以外）のリクエストに対し、
 // Origin（無ければ Referer）のホストがリクエストホストと一致することを要求します。
 // SameSite=Lax Cookie と併用したCSRF対策（認証認可設計.md 2.3節）。
