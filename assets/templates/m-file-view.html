@@ -1,14 +1,8 @@
-<div class="file-block" style="border: 1px solid #e2e8f0; border-left: 5px solid ${tagColor}; border-radius: 6px; padding: 12px 16px; margin: 12px 0; background: #fff; font-family: sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s;">
-    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; margin-bottom: 8px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 11px; font-weight: bold; color: ${tagColor}; background: ${bgColor}; padding: 3px 8px; border-radius: 4px; border: 1px solid ${tagColor}20;">${tag}</span>
-            <a href="${src}" target="_blank" style="text-decoration: none; color: #1e40af; font-weight: 600; font-size: 14px; hover:text-decoration:underline;">📄 ${name}</a>
-        </div>
-        <div>
-            <a href="${src}" download style="font-size: 12px; text-decoration: none; background: #f1f5f9; padding: 6px 12px; border-radius: 4px; color: #475569; font-weight: 500; border: 1px solid #cbd5e1; transition: background 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">ダウンロード</a>
-        </div>
+<div class="m-file">
+    <div class="m-file-header">
+        <a class="m-file-name" href="${src}" target="_blank">📄 ${name}</a>
+        <a class="m-file-download" href="${src}" download>ダウンロード</a>
     </div>
-    ${headerMetaHTML}
-    <div class="items-list" style="margin-top: 10px; border-top: 1px dashed #f1f5f9; padding-top: 8px;">
-    </div>
+    ${pdfEmbedHTML}
+    <div class="m-file-contents"></div>
 </div>

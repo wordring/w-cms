@@ -9,11 +9,17 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（ヘッダ・明細構造）: 顧客の発注書
 //
-//   <m-file tag="顧客の発注書" order-no=".." client-name=".." ordered-at="..">
+//   <m-file src="PO-A100.pdf" name="顧客発注書.pdf">      ← 任意の容器（PDF原本）
+//     <m-client-order order-no=".." client-name=".." ordered-at="..">
 //       <m-item item-id=".." item-name=".." price=".." quantity=".." status="..">
+//     </m-client-order>
 //   </m-file>
 //
 //   → client_orders（ヘッダ） 1 : N client_order_items（明細）
+//
+// 意味は要素そのものが持つ（旧: <m-file tag="顧客の発注書">）。tag 文字列による
+// 分岐は廃止した。<m-file> は任意なので、ファイルの無い受注は業務要素だけ置ける。
+// PDFのパスは容器側にあるため ClosestAttr で親の m-file から取る。
 // ─────────────────────────────────────────────────────────────────────────
 
 func init() {
@@ -56,8 +62,8 @@ func (clientOrderPlugin) Tables() []string {
 // Tags は扱うカスタム要素の属性契約。Sync が読む属性は必ず含めること。
 func (clientOrderPlugin) Tags() []TagSpec {
 	return []TagSpec{
-		{Element: "m-file", Attributes: []string{
-			"src", "name", "tag", "order-no", "client-name", "ordered-at",
+		{Element: "m-client-order", Attributes: []string{
+			"order-no", "client-name", "ordered-at",
 		}},
 		{Element: "m-item", Attributes: []string{
 			"item-id", "item-name", "price", "quantity", "status",
@@ -78,7 +84,7 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 
 	var firstErr error
 	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil || n.Data != "m-file" || Attr(n, "tag") != "顧客の発注書" {
+		if firstErr != nil || n.Data != "m-client-order" {
 			return
 		}
 		orderNo := Attr(n, "order-no")
@@ -90,7 +96,7 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 				pdf_path    = excluded.pdf_path,
 				page_id     = excluded.page_id,
 				ordered_at  = excluded.ordered_at
-		`, orderNo, Attr(n, "client-name"), Attr(n, "src"), pageID, NullableString(Attr(n, "ordered-at"))); err != nil {
+		`, orderNo, Attr(n, "client-name"), ClosestAttr(n, "m-file", "src"), pageID, NullableString(Attr(n, "ordered-at"))); err != nil {
 			firstErr = err
 			return
 		}

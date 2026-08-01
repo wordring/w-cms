@@ -9,7 +9,8 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（ヘッダ・明細構造）: 弊社の発注書（材料購入・外注加工）
 //
-//   <m-file tag="弊社の発注書" order-no=".." supplier-name=".." ordered-at="..">
+//   <m-supplier-order order-no=".." supplier-name=".." ordered-at="..">
+//   （容器 <m-file> の中に置いてもよい。PDFのパスは容器から ClosestAttr で拾う）
 //       <m-item item-name=".." cost=".." quantity=".." status="..">
 //   </m-file>
 //
@@ -54,8 +55,8 @@ func (ourOrderPlugin) Tables() []string {
 // Tags は扱うカスタム要素の属性契約。Sync が読む属性は必ず含めること。
 func (ourOrderPlugin) Tags() []TagSpec {
 	return []TagSpec{
-		{Element: "m-file", Attributes: []string{
-			"src", "name", "tag", "order-no", "supplier-name", "ordered-at",
+		{Element: "m-supplier-order", Attributes: []string{
+			"order-no", "supplier-name", "ordered-at",
 		}},
 		{Element: "m-item", Attributes: []string{
 			"item-name", "cost", "quantity", "status",
@@ -75,7 +76,7 @@ func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 
 	var firstErr error
 	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil || n.Data != "m-file" || Attr(n, "tag") != "弊社の発注書" {
+		if firstErr != nil || n.Data != "m-supplier-order" {
 			return
 		}
 		orderNo := Attr(n, "order-no")
@@ -87,7 +88,7 @@ func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 				pdf_path      = excluded.pdf_path,
 				page_id       = excluded.page_id,
 				ordered_at    = excluded.ordered_at
-		`, orderNo, Attr(n, "supplier-name"), Attr(n, "src"), pageID, NullableString(Attr(n, "ordered-at"))); err != nil {
+		`, orderNo, Attr(n, "supplier-name"), ClosestAttr(n, "m-file", "src"), pageID, NullableString(Attr(n, "ordered-at"))); err != nil {
 			firstErr = err
 			return
 		}

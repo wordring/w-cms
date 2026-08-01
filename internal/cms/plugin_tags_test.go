@@ -43,10 +43,11 @@ func TestPluginTagsCoversPluginReads(t *testing.T) {
 		attrs   []string
 		why     string
 	}{
-		{"m-file", []string{"src", "order-no", "client-name", "ordered-at"}, "顧客の発注書 (plugin_client_order)"},
-		{"m-file", []string{"supplier-name"}, "弊社の発注書 (plugin_our_order)"},
-		{"m-file", []string{"item-id", "price", "estimated-at"}, "弊社の見積もり (plugin_estimates)"},
-		{"m-file", []string{"item-name", "cost"}, "材料屋の見積もり (plugin_estimates)"},
+		{"m-file", []string{"src", "name", "ext"}, "ファイル容器 (plugin_file)"},
+		{"m-client-order", []string{"order-no", "client-name", "ordered-at"}, "顧客の発注書 (plugin_client_order)"},
+		{"m-supplier-order", []string{"order-no", "supplier-name", "ordered-at"}, "弊社の発注書 (plugin_our_order)"},
+		{"m-our-estimate", []string{"item-id", "client-name", "price", "estimated-at"}, "弊社の見積もり (plugin_estimates)"},
+		{"m-supplier-estimate", []string{"item-name", "supplier-name", "cost", "estimated-at"}, "材料屋の見積もり (plugin_estimates)"},
 		{"m-material", []string{"item-name", "cost", "supplier-name", "quantity"}, "部材 (plugin_materials)"},
 		{"m-required-materials", []string{"page-id"}, "手配状況リスト (plugin_materials)"},
 	}

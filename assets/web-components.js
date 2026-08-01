@@ -1,6 +1,37 @@
 // === テンプレートキャッシュと非同期ローダー ===
 const templateCache = {};
 
+// escapeText / escapeAttr はテンプレートへ差し込む値をエスケープする。
+// テンプレートは文字列置換＋innerHTML で描画するため、値に < や " が入ると
+// HTMLが壊れたり属性が注入されたりする（サーバー側のサニタイザが除去してしまう）。
+function escapeText(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escapeAttr(s) {
+    return escapeText(s).replace(/"/g, '&quot;');
+}
+
+// closestCustom は el 自身から祖先方向へ、最初のカスタム要素（タグ名に "-" を含む）を返す。
+function closestCustom(el) {
+    for (let p = el; p; p = p.parentElement) {
+        if (p.tagName.includes('-')) return p;
+    }
+    return null;
+}
+
+// takeCustomChildren は「host に属するカスタム要素の子」を集める。
+//
+// 直下の children では**取りこぼす**。コンポーネントは描画時に自前のクローム（<div>）を
+// 挟むため、2回目以降の描画では子がその中に入っているためである。
+// （ここを children で書いていたために、再描画で明細 <m-item> が消える不具合があった）
+// そこで子孫を走査し、「直近のカスタム要素の祖先が host であるもの」だけを拾う。
+function takeCustomChildren(host) {
+    return Array.from(host.querySelectorAll('*')).filter(
+        el => el.tagName.includes('-') && closestCustom(el.parentElement) === host
+    );
+}
+
 async function fetchTemplate(name) {
     if (templateCache[name]) {
         return templateCache[name];
@@ -49,9 +80,9 @@ class MItem extends HTMLElement {
         const status = this.getAttribute('status') || '';
         const isEdit = document.body.hasAttribute('edit-mode');
 
-        // 親の m-file が「顧客の発注書」か「弊社の発注書」かで表示を変える
-        const parentFile = this.closest('m-file');
-        const parentTag = parentFile ? parentFile.getAttribute('tag') : '';
+        // 客先向け（売価）か仕入向け（原価）かは、**親の業務要素**で決まる。
+        // 旧来は親 m-file の tag 文字列を見ていたが、意味は要素そのものが持つようになった。
+        const isClient = !!this.closest('m-client-order');
 
         // ステータスの色分け
         let statusColor = '#64748b';
@@ -71,7 +102,7 @@ class MItem extends HTMLElement {
         }
 
         let templateName = '';
-        if (parentTag === '顧客の発注書') {
+        if (isClient) {
             templateName = isEdit ? 'm-item-edit-client' : 'm-item-view-client';
         } else {
             templateName = isEdit ? 'm-item-edit-our' : 'm-item-view-our';
@@ -89,13 +120,13 @@ class MItem extends HTMLElement {
             .replace(/\${itemName}/g, itemName)
             .replace(/\${priceDisplay}/g, priceNum.toLocaleString())
             .replace(/\${costDisplay}/g, costNum.toLocaleString())
-            .replace(/\${totalDisplay}/g, (parentTag === '顧客の発注書' ? priceNum * qtyNum : costNum * qtyNum).toLocaleString())
+            .replace(/\${totalDisplay}/g, (isClient ? priceNum * qtyNum : costNum * qtyNum).toLocaleString())
             .replace(/\${price}/g, price)
             .replace(/\${cost}/g, cost)
             .replace(/\${quantity}/g, quantity)
             .replace(/\${statusColor}/g, statusColor)
             .replace(/\${statusBg}/g, statusBg)
-            .replace(/\${status}/g, status || (parentTag === '顧客の発注書' ? '未着手' : '未納品'));
+            .replace(/\${status}/g, status || (isClient ? '未着手' : '未納品'));
 
         // selectの選択状態の置換
         html = html
@@ -111,173 +142,68 @@ class MItem extends HTMLElement {
 }
 customElements.define('m-item', MItem);
 
-// === <m-file> (ファイル/PDF) の定義 ===
+// === <m-file> (ファイル容器) の定義 ===
+//
+// 「ここにファイルがある」ことだけを表す**純粋な容器**。業務上の意味は中身の要素
+// （<m-client-order> 等）が持つ（docs/【考察】通信記録処理.md §4.5）。
+//
+// かつては tag 属性の文字列で意味を切り替え、業務属性（order-no・client-name・
+// price…）も直に抱えていたため、この render は長い tag 分岐の塊だった。
+// 責務を分離したことでファイル表示だけの短い実装になっている。
 class MFile extends HTMLElement {
-    static get observedAttributes() { return ['src', 'name', 'tag', 'price', 'quantity', 'cost', 'order-no', 'client-name', 'supplier-name', 'ordered-at']; }
+    static get observedAttributes() { return ['src', 'name', 'ext']; }
     async connectedCallback() { await this.render(); }
     async attributeChangedCallback() { await this.render(); }
 
     async render() {
         if (!this.isConnected) return;
-        // 先に子ノード（m-item）を退避（孫要素のコンテナ内に移動しているものも含む）
-        const items = Array.from(this.querySelectorAll('m-item')).filter(item => item.closest('m-file') === this);
 
-        const src = this.getAttribute('src') || '#';
-        const name = this.getAttribute('name') || '添付ファイル';
-        const tag = this.getAttribute('tag') || '未分類';
-        const orderNo = this.getAttribute('order-no') || '';
-        const clientName = this.getAttribute('client-name') || '';
-        const supplierName = this.getAttribute('supplier-name') || '';
-        const orderedAt = this.getAttribute('ordered-at') || '';
+        // 中身（業務要素など）を退避してから描画し、あとで戻す。
+        // 「子を退避 → クローム描画 → 戻す」は既存コンポーネント共通のパターン。
+        const contents = takeCustomChildren(this);
+
+        const src = this.getAttribute('src') || '';
+        const name = this.getAttribute('name') || 'ファイル';
         const isEdit = document.body.hasAttribute('edit-mode');
 
-        // カラースキームの設定
-        let tagColor = '#64748b';
-        let bgColor = '#f8fafc';
-        if (tag === '顧客の発注書') { tagColor = '#10b981'; bgColor = '#ecfdf5'; }
-        if (tag === '弊社の発注書') { tagColor = '#ef4444'; bgColor = '#fef2f2'; }
-        if (tag === '材料屋・加工業者の見積もり') { tagColor = '#f59e0b'; bgColor = '#fffbeb'; }
-        if (tag === '弊社の見積もり') { tagColor = '#3b82f6'; bgColor = '#eff6ff'; }
-
-        // ヘッダー情報の組み立て
-        let headerMetaHTML = '';
-        if (tag === '顧客の発注書') {
-            headerMetaHTML = `
-                <div style="font-size: 13px; color: #475569; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 16px;">
-                    <div><strong>発注書番号:</strong> ${orderNo || '未指定'}</div>
-                    <div><strong>発注元:</strong> ${clientName || '未指定'}</div>
-                    <div><strong>発注日:</strong> ${orderedAt || '未指定'}</div>
-                </div>
-            `;
-        } else if (tag === '弊社の発注書') {
-            headerMetaHTML = `
-                <div style="font-size: 13px; color: #475569; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 16px;">
-                    <div><strong>発注番号:</strong> ${orderNo || '未指定'}</div>
-                    <div><strong>発注先:</strong> ${supplierName || '未指定'}</div>
-                    <div><strong>発注日:</strong> ${orderedAt || '未指定'}</div>
-                </div>
-            `;
-        }
-
-        // 編集フォーム内レイアウトの組み立て
-        let editFieldsHTML = '';
-        if (isEdit) {
-            if (tag === '顧客の発注書') {
-                editFieldsHTML = `
-                    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:10px;">
-                        <div>
-                            発注書番号: 
-                            <input type="text" value="${orderNo}" style="width: 120px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;"
-                                   oninput="this.getRootNode().host.setAttribute('order-no', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
-                        </div>
-                        <div>
-                            発注元顧客: 
-                            <input type="text" value="${clientName}" style="width: 120px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;"
-                                   oninput="this.getRootNode().host.setAttribute('client-name', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
-                        </div>
-                        <div>
-                            発注日付: 
-                            <input type="date" value="${orderedAt}" style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;"
-                                   onchange="this.getRootNode().host.setAttribute('ordered-at', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
-                        </div>
-                    </div>
-                `;
-            } else if (tag === '弊社の発注書') {
-                editFieldsHTML = `
-                    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:10px;">
-                        <div>
-                            発注書番号: 
-                            <input type="text" value="${orderNo}" style="width: 120px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;"
-                                   oninput="this.getRootNode().host.setAttribute('order-no', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
-                        </div>
-                        <div>
-                            発注先仕入先: 
-                            <input type="text" value="${supplierName}" style="width: 120px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;"
-                                   oninput="this.getRootNode().host.setAttribute('supplier-name', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
-                        </div>
-                        <div>
-                            発注日付: 
-                            <input type="date" value="${orderedAt}" style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px;"
-                                   onchange="this.getRootNode().host.setAttribute('ordered-at', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
-                        </div>
-                    </div>
-                `;
-            } else if (tag === '弊社の見積もり') {
-                const price = this.getAttribute('price') || '0';
-                const quantity = this.getAttribute('quantity') || '1';
-                editFieldsHTML = `
-                    <div style="display:flex; gap:16px; align-items:center;">
-                        <div>
-                            単価 (売上): 
-                            <input type="number" value="${price}" style="width: 90px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
-                                   oninput="this.getRootNode().host.setAttribute('price', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();"> 円
-                        </div>
-                        <div>
-                            数量: 
-                            <input type="number" value="${quantity}" style="width: 60px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
-                                   oninput="this.getRootNode().host.setAttribute('quantity', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();">
-                        </div>
-                    </div>
-                `;
-            } else if (tag === '材料屋・加工業者の見積もり') {
-                const cost = this.getAttribute('cost') || '0';
-                editFieldsHTML = `
-                    <div>
-                        単価 (仕入原価): 
-                        <input type="number" value="${cost}" style="width: 90px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 8px;"
-                                   oninput="this.getRootNode().host.setAttribute('cost', this.value); if(window.updateHtmlPreview) window.updateHtmlPreview();"> 円
-                    </div>
-                `;
-            }
-        }
-
         let pdfEmbedHTML = '';
-        if (src && src !== '#' && src.toLowerCase().endsWith('.pdf')) {
+        if (src && src.toLowerCase().endsWith('.pdf')) {
             const pageId = window.currentPageId || new URLSearchParams(window.location.search).get('id');
             if (pageId) {
                 const prefix = pageId.length >= 2 ? pageId.substring(0, 2) : "00";
-                pdfEmbedHTML = `<embed src="/data/master/${prefix}/${pageId}/${src}" type="application/pdf" width="100%" height="400px" style="border:1px solid #cbd5e1; border-radius:4px; margin: 10px 0;">`;
+                pdfEmbedHTML = `<embed class="m-file-embed" src="/data/master/${prefix}/${pageId}/${src}" type="application/pdf">`;
             } else {
-                pdfEmbedHTML = `<div style="padding:10px; background:#fffbeb; color:#b45309; border-radius:4px; font-size:12px;">（保存後にプレビューが表示されます）</div>`;
+                pdfEmbedHTML = `<div class="m-file-hint">（保存後にプレビューが表示されます）</div>`;
             }
         }
 
         const templateName = isEdit ? 'm-file-edit' : 'm-file-view';
         let html = await fetchTemplate(templateName);
-
-        // 変数置換
         html = html
-            .replace(/\${tagColor}/g, tagColor)
-            .replace(/\${bgColor}/g, bgColor)
-            .replace(/\${tag}/g, tag)
-            .replace(/\${src}/g, src)
-            .replace(/\${name}/g, name)
-            .replace(/\${headerMetaHTML}/g, headerMetaHTML)
-            .replace(/\${editFieldsHTML}/g, editFieldsHTML)
-            .replace(/\${pdfEmbedHTML}/g, pdfEmbedHTML);
+            .replace(/\$\{src\}/g, escapeAttr(src))
+            .replace(/\$\{name\}/g, escapeText(name))
+            .replace(/\$\{pdfEmbedHTML\}/g, pdfEmbedHTML);
 
         this.innerHTML = html;
 
-        // 退避させていた m-item 子要素たちを `.items-list` 領域に再配置
-        const container = this.querySelector('.items-list');
-        if (container) {
-            items.forEach(item => container.appendChild(item));
-        }
+        // 退避した中身を戻す
+        const slot = this.querySelector('.m-file-contents');
+        if (slot) contents.forEach(c => slot.appendChild(c));
 
-        // PDFのD&D設定
+        // PDFのドラッグ＆ドロップ（編集時のみテンプレートに存在）
         const dropZone = this.querySelector('.pdf-drop-zone');
         if (dropZone) {
             dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
-                dropZone.style.background = '#e2e8f0';
+                dropZone.classList.add('is-dragover');
             });
             dropZone.addEventListener('dragleave', (e) => {
                 e.preventDefault();
-                dropZone.style.background = '#f8fafc';
+                dropZone.classList.remove('is-dragover');
             });
             dropZone.addEventListener('drop', (e) => {
                 e.preventDefault();
-                dropZone.style.background = '#f8fafc';
+                dropZone.classList.remove('is-dragover');
                 const file = e.dataTransfer.files[0];
                 const isPDF = file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
                 if (!isPDF) {
@@ -558,3 +484,131 @@ customElements.define('m-required-materials', MRequiredMaterials);
 // 正本になり、サイドパネル（assets/index.html）が /api/page-meta 経由で表示・編集する。
 // このため、かつて文書先頭に置いていた <m-page-info> コンポーネントは廃止した。
 
+
+// ─────────────────────────────────────────────────────────────────────────
+// 業務要素（発注書・見積もり）
+//
+// <m-file> から責務を分離した「業務上の意味」を持つ要素群（docs/【考察】通信記録処理.md §4.5）。
+// 意味は tag 属性の文字列ではなく**要素そのもの**が持つので、プラグインは自分の要素だけを
+// 拾えばよく、分岐が要らない。<m-file> の中に置いても、単独で置いてもよい。
+//
+// 4種はヘッダの項目が違うだけなので、共通の基底クラスにフィールド定義を与えて実装する。
+// 新規コードなので docs/開発方針.md §4 に従い、インライン on*= / style= は使わない
+// （クラス付与＋addEventListener。配色は assets/components.css）。
+// ─────────────────────────────────────────────────────────────────────────
+class MBusinessBlock extends HTMLElement {
+    // サブクラスが定義するもの:
+    //   blockLabel  … 見出しに出す名前
+    //   blockKind   … CSSの配色クラス（m-block--<kind>）
+    //   blockFields … [{ attr, label, type }]（type は 'text' | 'number' | 'date'）
+    //   hasItems    … 明細（<m-item>）を持つか
+    async connectedCallback() { await this.render(); }
+    async attributeChangedCallback() { await this.render(); }
+
+    async render() {
+        if (!this.isConnected) return;
+
+        // 子（明細など）を退避してから描画し、あとで戻す
+        const contents = takeCustomChildren(this);
+        const isEdit = document.body.hasAttribute('edit-mode');
+
+        const rows = this.blockFields.map(f => {
+            const v = this.getAttribute(f.attr) || '';
+            if (isEdit) {
+                return `<label class="m-block-field">
+                    <span class="m-block-field-label">${escapeText(f.label)}</span>
+                    <input class="m-block-input" type="${f.type === 'text' ? 'text' : f.type}"
+                           data-attr="${escapeAttr(f.attr)}" value="${escapeAttr(v)}">
+                </label>`;
+            }
+            return `<div class="m-block-field">
+                <span class="m-block-field-label">${escapeText(f.label)}</span>
+                <span class="m-block-field-value">${escapeText(v || '未指定')}</span>
+            </div>`;
+        }).join('');
+
+        this.innerHTML = `<div class="m-block m-block--${escapeAttr(this.blockKind)}">
+            <div class="m-block-title">${escapeText(this.blockLabel)}</div>
+            <div class="m-block-fields">${rows}</div>
+            ${this.hasItems ? '<div class="m-block-items"></div>' : ''}
+        </div>`;
+
+        // 退避した子（明細）を戻す
+        const slot = this.querySelector('.m-block-items') || this.querySelector('.m-block');
+        if (slot) contents.forEach(c => slot.appendChild(c));
+
+        // 編集フィールドを属性へ書き戻す（インライン on* を使わない）
+        this.querySelectorAll('.m-block-input').forEach(input => {
+            input.addEventListener('input', () => {
+                this.setAttribute(input.dataset.attr, input.value);
+                if (window.updateHtmlPreview) window.updateHtmlPreview();
+            });
+        });
+    }
+}
+
+// 顧客の発注書（売り側）。明細の単価は売価。
+class MClientOrder extends MBusinessBlock {
+    static get observedAttributes() { return ['order-no', 'client-name', 'ordered-at']; }
+    get blockLabel() { return '顧客の発注書'; }
+    get blockKind() { return 'client-order'; }
+    get hasItems() { return true; }
+    get blockFields() {
+        return [
+            { attr: 'order-no', label: '発注書番号', type: 'text' },
+            { attr: 'client-name', label: '発注元', type: 'text' },
+            { attr: 'ordered-at', label: '発注日', type: 'date' },
+        ];
+    }
+}
+customElements.define('m-client-order', MClientOrder);
+
+// 弊社の発注書（買い側）。明細の単価は原価。
+class MSupplierOrder extends MBusinessBlock {
+    static get observedAttributes() { return ['order-no', 'supplier-name', 'ordered-at']; }
+    get blockLabel() { return '弊社の発注書'; }
+    get blockKind() { return 'supplier-order'; }
+    get hasItems() { return true; }
+    get blockFields() {
+        return [
+            { attr: 'order-no', label: '発注番号', type: 'text' },
+            { attr: 'supplier-name', label: '発注先', type: 'text' },
+            { attr: 'ordered-at', label: '発注日', type: 'date' },
+        ];
+    }
+}
+customElements.define('m-supplier-order', MSupplierOrder);
+
+// 弊社の見積もり（客先へ出す見積）。
+class MOurEstimate extends MBusinessBlock {
+    static get observedAttributes() { return ['item-id', 'client-name', 'price', 'estimated-at']; }
+    get blockLabel() { return '弊社の見積もり'; }
+    get blockKind() { return 'our-estimate'; }
+    get hasItems() { return false; }
+    get blockFields() {
+        return [
+            { attr: 'item-id', label: '品番', type: 'text' },
+            { attr: 'client-name', label: '客先', type: 'text' },
+            { attr: 'price', label: '見積単価', type: 'number' },
+            { attr: 'estimated-at', label: '見積日', type: 'date' },
+        ];
+    }
+}
+customElements.define('m-our-estimate', MOurEstimate);
+
+// 材料屋・加工業者の見積もり（仕入側の見積）。
+class MSupplierEstimate extends MBusinessBlock {
+    static get observedAttributes() { return ['item-name', 'supplier-name', 'cost', 'estimated-at']; }
+    get blockLabel() { return '材料屋・加工業者の見積もり'; }
+    get blockKind() { return 'supplier-estimate'; }
+    get hasItems() { return false; }
+    get blockFields() {
+        return [
+            { attr: 'item-name', label: '品名', type: 'text' },
+            { attr: 'supplier-name', label: '仕入先', type: 'text' },
+            { attr: 'cost', label: '仕入単価', type: 'number' },
+            { attr: 'estimated-at', label: '見積日', type: 'date' },
+        ];
+    }
+}
+customElements.define('m-supplier-estimate', MSupplierEstimate);

@@ -139,9 +139,11 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 		<m-tag name="親ページ" value="00001"></m-tag>
 		<m-tag name="担当者" value="山田"></m-tag>
 
-		<m-file src="attachments/po_test.pdf" tag="顧客の発注書" order-no="PO-T100" client-name="トーア" ordered-at="2026-06-18">
-			<m-item item-id="SHAFT-01" item-name="シャフトA" price="8000" quantity="10" status="未着手"></m-item>
-			<m-item item-id="SHAFT-02" item-name="シャフトB" price="12000" quantity="5" status="加工中"></m-item>
+		<m-file src="attachments/po_test.pdf" name="発注書.pdf">
+			<m-client-order order-no="PO-T100" client-name="トーア" ordered-at="2026-06-18">
+				<m-item item-id="SHAFT-01" item-name="シャフトA" price="8000" quantity="10" status="未着手"></m-item>
+				<m-item item-id="SHAFT-02" item-name="シャフトB" price="12000" quantity="5" status="加工中"></m-item>
+			</m-client-order>
 		</m-file>
 	</body>
 	</html>
@@ -516,9 +518,9 @@ func TestRebuildDatabase(t *testing.T) {
 		t.Fatalf("ディレクトリ作成エラー: %v", err)
 	}
 	htmlContent := `<h1>受注ページ</h1>
-<m-file tag="顧客の発注書" order-no="PO-RB1" client-name="トーア">
+<m-client-order order-no="PO-RB1" client-name="トーア">
 	<m-item item-id="SHAFT-01" item-name="シャフトA" price="8000" quantity="3" status="未着手"></m-item>
-</m-file>`
+</m-client-order>`
 	if err := os.WriteFile(filepath.Join(pageDir, "000001.html"), []byte(htmlContent), 0644); err != nil {
 		t.Fatalf("HTMLファイル作成エラー: %v", err)
 	}

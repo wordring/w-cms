@@ -169,6 +169,20 @@ func Attr(n *html.Node, key string) string {
 	return ""
 }
 
+// ClosestAttr は n から祖先方向へ element を探し、見つかった要素の attr の値を返します。
+// 見つからなければ空文字列。
+//
+// 業務要素（<m-client-order> 等）が容器である <m-file> の src を参照するのに使います
+// （【考察】通信記録処理.md §4.5 の責務分離により、ファイルのパスは容器側が持つため）。
+func ClosestAttr(n *html.Node, element, attr string) string {
+	for p := n.Parent; p != nil; p = p.Parent {
+		if p.Type == html.ElementNode && p.Data == element {
+			return Attr(p, attr)
+		}
+	}
+	return ""
+}
+
 // AtoiSafe は文字列を整数に変換します。変換できない場合は 0 を返します。
 func AtoiSafe(s string) int {
 	v, _ := strconv.Atoi(s)
