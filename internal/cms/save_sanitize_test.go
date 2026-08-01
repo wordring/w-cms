@@ -119,21 +119,27 @@ func TestSaveKeepsEstimateAttributes(t *testing.T) {
 		t.Fatalf("WriteSidecarエラー: %v", err)
 	}
 
-	body := `<m-file src="m.pdf" name="見積書.pdf" tag="材料屋・加工業者の見積もり" ` +
-		`item-name="側板用鋼材" supplier-name="東邦金属工業" cost="500" estimated-at="2026-06-16"></m-file>`
+	// 業務要素は容器 <m-file> の中身。pdf_path は容器側から拾われる。
+	body := `<m-file src="m.pdf" name="見積書.pdf">` +
+		`<m-supplier-estimate item-name="側板用鋼材" supplier-name="東邦金属工業" cost="500" estimated-at="2026-06-16"></m-supplier-estimate>` +
+		`</m-file>`
 	resp := postSave(t, id, body)
 
 	if sanitized, _ := resp["sanitized"].(bool); sanitized {
 		t.Errorf("見積もりの属性がサニタイズで除去されました: %v", resp["html"])
 	}
 
-	var itemName, supplierName string
+	var itemName, supplierName, pdfPath string
 	var cost int
 	err := db.QueryRow(
-		`SELECT item_name, supplier_name, cost FROM supplier_estimates WHERE page_id = ?`, 44,
-	).Scan(&itemName, &supplierName, &cost)
+		`SELECT item_name, supplier_name, cost, pdf_path FROM supplier_estimates WHERE page_id = ?`, 44,
+	).Scan(&itemName, &supplierName, &cost, &pdfPath)
 	if err != nil {
 		t.Fatalf("supplier_estimates のクエリでエラー: %v", err)
+	}
+	// pdf_path は業務要素ではなく容器の <m-file src> から拾われる（ClosestAttr）
+	if pdfPath != "m.pdf" {
+		t.Errorf("容器 <m-file> の src が pdf_path に反映されていません: %q", pdfPath)
 	}
 	if itemName != "側板用鋼材" {
 		t.Errorf("item_name が保存されていません: %q", itemName)
@@ -162,8 +168,10 @@ func TestSaveKeepsNormalContentIntact(t *testing.T) {
 	normal := "<m-tag name=\"発注元\" value=\"株式会社テスト\"></m-tag>\n" +
 		"<h1>各マシーン用部品の調達</h1>\n" +
 		"<p>以下の通り発注しました。</p>\n" +
-		"<m-file src=\"po.pdf\" name=\"発注書.pdf\" tag=\"顧客の発注書\" order-no=\"PO-1\" client-name=\"得意先\" ordered-at=\"2026-06-18\">\n" +
-		"    <m-item item-id=\"A-1\" item-name=\"側板\" quantity=\"20\" status=\"未着手\" price=\"1200\"></m-item>\n" +
+		"<m-file src=\"po.pdf\" name=\"発注書.pdf\">\n" +
+		"    <m-client-order order-no=\"PO-1\" client-name=\"得意先\" ordered-at=\"2026-06-18\">\n" +
+		"        <m-item item-id=\"A-1\" item-name=\"側板\" quantity=\"20\" status=\"未着手\" price=\"1200\"></m-item>\n" +
+		"    </m-client-order>\n" +
 		"</m-file>"
 
 	resp := postSave(t, id, normal)

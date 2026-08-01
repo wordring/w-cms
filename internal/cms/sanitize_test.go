@@ -91,8 +91,10 @@ func TestSanitizeRemovesDangerous(t *testing.T) {
 // 許可リストは docs/【一覧】カスタムタグ.md と同期していること。
 func TestSanitizeKeepsCustomElements(t *testing.T) {
 	in := `<m-tag name="発注元" value="株式会社テスト"></m-tag>` +
-		`<m-file src="po.pdf" name="発注書.pdf" tag="顧客の発注書" order-no="PO-1" client-name="得意先" ordered-at="2026-06-18">` +
+		`<m-file src="po.pdf" name="発注書.pdf">` +
+		`<m-client-order order-no="PO-1" client-name="得意先" ordered-at="2026-06-18">` +
 		`<m-item item-id="A-1" item-name="部品" price="1200" quantity="20" status="未着手"></m-item>` +
+		`</m-client-order>` +
 		`</m-file>` +
 		`<m-material item-name="鋼材" cost="500" supplier-name="材料屋" quantity="2"></m-material>` +
 		`<m-required-materials page-id="000123"></m-required-materials>` +
@@ -102,7 +104,8 @@ func TestSanitizeKeepsCustomElements(t *testing.T) {
 
 	for _, want := range []string{
 		`<m-tag name="発注元" value="株式会社テスト">`,
-		`<m-file src="po.pdf"`, `tag="顧客の発注書"`, `order-no="PO-1"`,
+		`<m-file src="po.pdf"`, `name="発注書.pdf"`,
+		`<m-client-order order-no="PO-1"`, `client-name="得意先"`,
 		`<m-item item-id="A-1"`, `status="未着手"`,
 		`<m-material item-name="鋼材"`, `supplier-name="材料屋"`,
 		`<m-required-materials page-id="000123">`,
@@ -128,24 +131,29 @@ func TestSanitizeKeepsPluginReadAttributes(t *testing.T) {
 		attrs []string // 保持されていなければならない属性
 	}{
 		{
+			name:  "ファイル容器（plugin_file）",
+			in:    `<m-file src="po.pdf" name="発注書.pdf" ext="pdf"></m-file>`,
+			attrs: []string{"src", "name", "ext"},
+		},
+		{
 			name:  "顧客の発注書（plugin_client_order）",
-			in:    `<m-file src="po.pdf" name="n" tag="顧客の発注書" order-no="PO-1" client-name="得意先" ordered-at="2026-06-18"></m-file>`,
-			attrs: []string{"src", "order-no", "client-name", "ordered-at"},
+			in:    `<m-client-order order-no="PO-1" client-name="得意先" ordered-at="2026-06-18"></m-client-order>`,
+			attrs: []string{"order-no", "client-name", "ordered-at"},
 		},
 		{
 			name:  "弊社の発注書（plugin_our_order）",
-			in:    `<m-file src="po.pdf" name="n" tag="弊社の発注書" order-no="PO-2" supplier-name="仕入先" ordered-at="2026-06-18"></m-file>`,
-			attrs: []string{"src", "order-no", "supplier-name", "ordered-at"},
+			in:    `<m-supplier-order order-no="PO-2" supplier-name="仕入先" ordered-at="2026-06-18"></m-supplier-order>`,
+			attrs: []string{"order-no", "supplier-name", "ordered-at"},
 		},
 		{
 			name:  "弊社の見積もり（plugin_estimates）",
-			in:    `<m-file src="e.pdf" name="n" tag="弊社の見積もり" item-id="A-1" client-name="得意先" price="1200" estimated-at="2026-06-16"></m-file>`,
-			attrs: []string{"src", "item-id", "client-name", "price", "estimated-at"},
+			in:    `<m-our-estimate item-id="A-1" client-name="得意先" price="1200" estimated-at="2026-06-16"></m-our-estimate>`,
+			attrs: []string{"item-id", "client-name", "price", "estimated-at"},
 		},
 		{
 			name:  "材料屋・加工業者の見積もり（plugin_estimates）",
-			in:    `<m-file src="m.pdf" name="n" tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" supplier-name="東邦金属" cost="500" estimated-at="2026-06-16"></m-file>`,
-			attrs: []string{"src", "item-name", "supplier-name", "cost", "estimated-at"},
+			in:    `<m-supplier-estimate item-name="側板用鋼材" supplier-name="東邦金属" cost="500" estimated-at="2026-06-16"></m-supplier-estimate>`,
+			attrs: []string{"item-name", "supplier-name", "cost", "estimated-at"},
 		},
 		{
 			name:  "明細（m-item）",
@@ -205,7 +213,7 @@ func TestSanitizeIsIdempotent(t *testing.T) {
 	inputs := []string{
 		`<p>ふつうの本文</p>`,
 		`<p onclick="alert(1)">危険</p><script>x</script>`,
-		`<m-file src="a.pdf" name="n" tag="顧客の発注書"><m-item item-name="部品" quantity="1" status=""></m-item></m-file>`,
+		`<m-file src="a.pdf" name="n"><m-client-order order-no="PO-1"><m-item item-name="部品" quantity="1" status=""></m-item></m-client-order></m-file>`,
 		`<section><p>入れ子</p></section>`,
 		`<a href="javascript:alert(1)">リンク</a>`,
 		`<p>記号 &amp; と &lt;タグ風&gt; のテキスト</p>`,

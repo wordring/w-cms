@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>w-cms エディタ</title>
+    <!-- カスタム要素の外観（外部CSS＝CSPの self。新規分はインライン style を使わない） -->
+    <link rel="stylesheet" href="/assets/components.css">
     <!-- 自作のWeb Componentsをロード -->
     <script src="/assets/web-components.js" defer></script>
     <!-- サイドパネルの開閉状態を body 描画前に確定（チラつき防止）。
@@ -752,6 +754,8 @@
     <div class="slash-menu-item" data-type="m-tag">🏷️ 可変タグ</div>
     <div class="slash-menu-item" data-type="m-file-client">📩 顧客の発注書</div>
     <div class="slash-menu-item" data-type="m-file-our">📤 自社の発注書</div>
+    <div class="slash-menu-item" data-type="m-our-estimate">💴 弊社の見積もり</div>
+    <div class="slash-menu-item" data-type="m-supplier-estimate">🏭 材料屋の見積もり</div>
     <div class="slash-menu-item" data-type="m-material">🔩 部材定義</div>
     <div class="slash-menu-item" data-type="m-required-materials">📊 手配状況リスト</div>
     <div class="slash-menu-item" data-type="m-child-list">📂 子ページ一覧</div>
@@ -1854,34 +1858,49 @@
             newEl.setAttribute('name', '新規タグ');
             newEl.setAttribute('value', '値');
         } else if (type === 'm-file-client') {
+            // <m-file>（容器）の中に業務要素を入れる。意味は要素そのものが持つ。
             newEl = document.createElement('m-file');
-            newEl.setAttribute('tag', '顧客の発注書');
             newEl.setAttribute('src', 'sample_po.pdf');
             newEl.setAttribute('name', '顧客発注書.pdf');
-            newEl.setAttribute('order-no', 'PO-' + Date.now().toString().slice(-4));
-            newEl.setAttribute('client-name', '新規顧客');
-            newEl.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
+            const order = document.createElement('m-client-order');
+            order.setAttribute('order-no', 'PO-' + Date.now().toString().slice(-4));
+            order.setAttribute('client-name', '新規顧客');
+            order.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
             const item = document.createElement('m-item');
             item.setAttribute('item-id', 'NEW-ITEM');
             item.setAttribute('item-name', '新規部品');
             item.setAttribute('price', '1000');
             item.setAttribute('quantity', '1');
             item.setAttribute('status', '未着手');
-            newEl.appendChild(item);
+            order.appendChild(item);
+            newEl.appendChild(order);
         } else if (type === 'm-file-our') {
             newEl = document.createElement('m-file');
-            newEl.setAttribute('tag', '弊社の発注書');
             newEl.setAttribute('src', 'sample_order.pdf');
             newEl.setAttribute('name', '自社発注書.pdf');
-            newEl.setAttribute('order-no', 'PO-OUR-' + Date.now().toString().slice(-4));
-            newEl.setAttribute('supplier-name', '新規仕入先');
-            newEl.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
+            const order = document.createElement('m-supplier-order');
+            order.setAttribute('order-no', 'PO-OUR-' + Date.now().toString().slice(-4));
+            order.setAttribute('supplier-name', '新規仕入先');
+            order.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
             const item = document.createElement('m-item');
             item.setAttribute('item-name', '新規品目');
             item.setAttribute('cost', '500');
             item.setAttribute('quantity', '1');
             item.setAttribute('status', '未納品');
-            newEl.appendChild(item);
+            order.appendChild(item);
+            newEl.appendChild(order);
+        } else if (type === 'm-our-estimate') {
+            newEl = document.createElement('m-our-estimate');
+            newEl.setAttribute('item-id', 'NEW-ITEM');
+            newEl.setAttribute('client-name', '新規顧客');
+            newEl.setAttribute('price', '1000');
+            newEl.setAttribute('estimated-at', new Date().toISOString().split('T')[0]);
+        } else if (type === 'm-supplier-estimate') {
+            newEl = document.createElement('m-supplier-estimate');
+            newEl.setAttribute('item-name', '新規部材');
+            newEl.setAttribute('supplier-name', '新規仕入先');
+            newEl.setAttribute('cost', '500');
+            newEl.setAttribute('estimated-at', new Date().toISOString().split('T')[0]);
         } else if (type === 'm-material') {
             newEl = document.createElement('m-material');
             newEl.setAttribute('item-name', '新規部材');
@@ -2259,42 +2278,35 @@
         if (!content) return hideContextToolbar();
         const tagName = content.tagName.toLowerCase();
 
-        if (tagName === 'm-file') {
-            const tag = content.getAttribute('tag');
-            if (tag === '顧客の発注書') {
-                const btn = document.createElement('button');
-                btn.innerText = '＋ 部品を追加';
-                btn.onclick = () => {
-                    const item = document.createElement('m-item');
+        // 明細を追加できるのは業務要素（発注書）。容器の <m-file> が挟まっていても、
+        // 中の業務要素を拾ってそこへ追加する。意味は要素そのものが持つので tag は見ない。
+        const orderEl = content.matches('m-client-order, m-supplier-order')
+            ? content
+            : content.querySelector('m-client-order, m-supplier-order');
+
+        if (orderEl) {
+            const isClient = orderEl.tagName.toLowerCase() === 'm-client-order';
+            const btn = document.createElement('button');
+            btn.innerText = isClient ? '＋ 部品を追加' : '＋ 品目を追加';
+            btn.onclick = () => {
+                const item = document.createElement('m-item');
+                item.setAttribute('item-name', isClient ? '新規部品' : '新規品目');
+                item.setAttribute('quantity', '1');
+                if (isClient) {
                     item.setAttribute('item-id', 'NEW-ITEM');
-                    item.setAttribute('item-name', '新規部品');
                     item.setAttribute('price', '0');
-                    item.setAttribute('quantity', '1');
                     item.setAttribute('status', '未着手');
-                    const container = content.querySelector('.items-list') || content;
-                    container.appendChild(item);
-                    if(typeof content.render === 'function') content.render();
-                    updateHtmlPreview();
-                };
-                toolbar.appendChild(btn);
-                hasButtons = true;
-            } else if (tag === '弊社の発注書') {
-                const btn = document.createElement('button');
-                btn.innerText = '＋ 品目を追加';
-                btn.onclick = () => {
-                    const item = document.createElement('m-item');
-                    item.setAttribute('item-name', '新規品目');
+                } else {
                     item.setAttribute('cost', '0');
-                    item.setAttribute('quantity', '1');
                     item.setAttribute('status', '未納品');
-                    const container = content.querySelector('.items-list') || content;
-                    container.appendChild(item);
-                    if(typeof content.render === 'function') content.render();
-                    updateHtmlPreview();
-                };
-                toolbar.appendChild(btn);
-                hasButtons = true;
-            }
+                }
+                const container = orderEl.querySelector('.m-block-items') || orderEl;
+                container.appendChild(item);
+                if (typeof orderEl.render === 'function') orderEl.render();
+                updateHtmlPreview();
+            };
+            toolbar.appendChild(btn);
+            hasButtons = true;
         } else if (tagName === 'p' || tagName === 'h1' || tagName === 'h2' || tagName === 'h3') {
             ['B', 'I', 'U'].forEach(cmd => {
                 const btn = document.createElement('button');
