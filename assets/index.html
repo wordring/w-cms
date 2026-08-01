@@ -1397,6 +1397,16 @@
                 if (data.updated_at) {
                     document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
                 }
+                // サーバーが安全でない記述を除去した場合は、その結果を画面へ反映して知らせる。
+                // 通常の編集では起きない（エディタが出力する語彙は許可リストの範囲内のため）。
+                if (data.sanitized && typeof data.html === 'string') {
+                    if (applySanitizedHtml(data.html)) {
+                        updateHtmlPreview();
+                        buildToc();
+                    }
+                    notify('安全でない記述（スクリプトやイベント属性など）を除去して保存しました。',
+                        { type: 'warn', duration: 8000, id: 'sanitized' });
+                }
                 statusEl.innerText = "✅ 保存済";
                 statusEl.style.color = "#10b981"; // 緑色
             } else {
@@ -1440,6 +1450,49 @@
             triggerAutoSave();
             buildToc(); // 見出しテキストの編集を目次に反映
         });
+
+        // ブロックの編集が終わった時点（＝フォーカスがそのブロックから外れた時）で即保存する。
+        // サーバーはサニタイズ結果を返すので、除去が起きた場合はその変化がすぐ画面に出る
+        // （docs/本文サニタイズ設計.md のエコーバック方式）。デバウンス保存は、ひとつの
+        // ブロックを編集し続けている間の保険として引き続き効く。
+        document.getElementById('editor-content').addEventListener('focusout', () => {
+            if (!document.body.hasAttribute('edit-mode')) return;
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveToServer();
+        });
+    }
+
+    // applySanitizedHtml はサーバーがサニタイズした本文をエディタへ反映する。
+    // 差分のあったトップレベルのブロックだけを差し替え、フォーカス中のブロックは
+    // キャレットが飛ばないよう据え置く（そのブロックは離脱時の保存で反映される）。
+    function applySanitizedHtml(htmlStr) {
+        const container = document.getElementById('editor-content');
+        const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
+        const incoming = Array.from(doc.body.children);
+        // 現在のトップレベル要素（wrapInBlock により .editor-block > .block-content > 実体）
+        const holders = Array.from(container.children).map(block => {
+            const content = block.classList.contains('editor-block')
+                ? block.querySelector('.block-content')
+                : null;
+            return { block, content, el: content ? content.firstElementChild : block };
+        });
+
+        // 個数が変わった（ブロックごと除去された等）場合は全体を作り直す。
+        if (holders.length !== incoming.length) {
+            populateEditor(htmlStr);
+            return true;
+        }
+
+        let replaced = false;
+        holders.forEach((h, i) => {
+            if (!h.el || !h.content) return;
+            if (h.el.outerHTML === incoming[i].outerHTML) return;
+            // 編集中のブロックは触らない（離脱時の保存で反映される）
+            if (h.block.contains(document.activeElement)) return;
+            h.content.replaceChild(incoming[i], h.el);
+            replaced = true;
+        });
+        return replaced;
     }
 
     // ── 編集モードと編集ロック ──────────────────────────────────────────────
@@ -1711,6 +1764,17 @@
     }
 
     // HTMLソースコードのリアルタイムプレビューを生成する処理
+    // esc は属性値・テキストをHTMLとして安全な形にエスケープする。
+    // これが無いと、タグの値に " や < を入力しただけで生成HTMLが壊れ、値が欠けたり
+    // 意図しない属性が生まれたりする（サーバーのサニタイザがそれを除去してしまう）。
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
     function updateHtmlPreview() {
         const container = document.getElementById('editor-content');
         let output = "";
@@ -1726,22 +1790,22 @@
             if (tagName === 'm-tag') {
                 const name = child.getAttribute('name') || '';
                 const value = child.getAttribute('value') || '';
-                output += `<m-tag name="${name}" value="${value}"></m-tag>\n`;
+                output += `<m-tag name="${esc(name)}" value="${esc(value)}"></m-tag>\n`;
             } else if (tagName === 'm-file') {
                 const src = child.getAttribute('src') || '';
                 const name = child.getAttribute('name') || '';
                 const tag = child.getAttribute('tag') || '';
                 
-                let attrs = `src="${src}" name="${name}" tag="${tag}"`;
-                
+                let attrs = `src="${esc(src)}" name="${esc(name)}" tag="${esc(tag)}"`;
+
                 if (tag === '顧客の発注書') {
-                    attrs += ` order-no="${child.getAttribute('order-no') || ''}" client-name="${child.getAttribute('client-name') || ''}" ordered-at="${child.getAttribute('ordered-at') || ''}"`;
+                    attrs += ` order-no="${esc(child.getAttribute('order-no') || '')}" client-name="${esc(child.getAttribute('client-name') || '')}" ordered-at="${esc(child.getAttribute('ordered-at') || '')}"`;
                 } else if (tag === '弊社の発注書') {
-                    attrs += ` order-no="${child.getAttribute('order-no') || ''}" supplier-name="${child.getAttribute('supplier-name') || ''}" ordered-at="${child.getAttribute('ordered-at') || ''}"`;
+                    attrs += ` order-no="${esc(child.getAttribute('order-no') || '')}" supplier-name="${esc(child.getAttribute('supplier-name') || '')}" ordered-at="${esc(child.getAttribute('ordered-at') || '')}"`;
                 } else if (tag === '弊社の見積もり') {
-                    attrs += ` price="${child.getAttribute('price') || '0'}" quantity="${child.getAttribute('quantity') || '1'}"`;
+                    attrs += ` price="${esc(child.getAttribute('price') || '0')}" quantity="${esc(child.getAttribute('quantity') || '1')}"`;
                 } else if (tag === '材料屋・加工業者の見積もり') {
-                    attrs += ` cost="${child.getAttribute('cost') || '0'}"`;
+                    attrs += ` cost="${esc(child.getAttribute('cost') || '0')}"`;
                 }
                 
                 // 子要素である m-item をシリアライズする
@@ -1756,11 +1820,11 @@
                         const quantity = item.getAttribute('quantity') || '1';
                         const status = item.getAttribute('status') || '';
                         
-                        let itemAttrs = `item-name="${itemName}" quantity="${quantity}" status="${status}"`;
+                        let itemAttrs = `item-name="${esc(itemName)}" quantity="${esc(quantity)}" status="${esc(status)}"`;
                         if (tag === '顧客の発注書') {
-                            itemAttrs = `item-id="${itemId}" ` + itemAttrs + ` price="${price}"`;
+                            itemAttrs = `item-id="${esc(itemId)}" ` + itemAttrs + ` price="${esc(price)}"`;
                         } else {
-                            itemAttrs = itemAttrs + ` cost="${cost}"`;
+                            itemAttrs = itemAttrs + ` cost="${esc(cost)}"`;
                         }
                         output += `    <m-item ${itemAttrs}></m-item>\n`;
                     });
@@ -1773,15 +1837,15 @@
                 const cost = child.getAttribute('cost') || '0';
                 const supplierName = child.getAttribute('supplier-name') || '';
                 const quantity = child.getAttribute('quantity') || '1';
-                output += `<m-material item-name="${itemName}" cost="${cost}" supplier-name="${supplierName}" quantity="${quantity}"></m-material>\n`;
+                output += `<m-material item-name="${esc(itemName)}" cost="${esc(cost)}" supplier-name="${esc(supplierName)}" quantity="${esc(quantity)}"></m-material>\n`;
             } else if (tagName === 'm-required-materials') {
                 const pageIdAttr = child.getAttribute('page-id');
-                const pageIdAttrStr = pageIdAttr ? ` page-id="${pageIdAttr}"` : '';
+                const pageIdAttrStr = pageIdAttr ? ` page-id="${esc(pageIdAttr)}"` : '';
                 output += `<m-required-materials${pageIdAttrStr}></m-required-materials>\n`;
             } else if (tagName === 'm-child-list') {
                 output += `<m-child-list></m-child-list>\n`;
             } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'p') {
-                output += `<${tagName}>${child.innerText}</${tagName}>\n`;
+                output += `<${tagName}>${esc(child.innerText)}</${tagName}>\n`;
             }
         }
 
