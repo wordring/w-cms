@@ -99,16 +99,21 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 本文は許可リスト方式でサニタイズしてから保存する（docs/本文サニタイズ設計.md）。
+	// 正本ファイルを清書された状態に保ち、結果はレスポンスでエディタへ返す。
+	// 編集者は画面上の変化で「何が除去されたか」を知る（エコーバック方式）。
+	safeHTML, sanitized := SanitizeReport(req.HTML)
+
 	pageDir := GetPageDir(id)
 	os.MkdirAll(pageDir, 0755)
 
 	htmlPath := filepath.Join(pageDir, id+".html")
-	if err := os.WriteFile(htmlPath, []byte(req.HTML), 0644); err != nil {
+	if err := os.WriteFile(htmlPath, []byte(safeHTML), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
 
-	if err := SyncIndex(id, req.HTML); err != nil {
+	if err := SyncIndex(id, safeHTML); err != nil {
 		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
 		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -123,6 +128,10 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"success":    true,
 		"page_id":    id,
 		"updated_at": updatedAt,
+		// html はサニタイズ後の本文。sanitized が true のときエディタは差分ブロックを
+		// 置き換えて、除去が起きたことを編集者へ通知する。
+		"html":      safeHTML,
+		"sanitized": sanitized,
 	})
 }
 
