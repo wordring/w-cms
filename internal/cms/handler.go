@@ -573,5 +573,61 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.ServeFile(w, r, "assets/index.html")
+	// ページの実体（本文・タイトル）を取り出し、認可のうえで殻へ埋め込んで返す。
+	pageID, err := strconv.Atoi(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	var filePath, title string
+	err = database.DB.QueryRow(
+		"SELECT file_path, COALESCE(title, '') FROM pages WHERE id = ?", pageID,
+	).Scan(&filePath, &title)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 画面の認可。API（401を返す RequirePageReadOrPublic）とは扱いを変え、匿名は
+	// ログイン画面へ誘導する（RequireAuth の「APIは401・画面は/login」に合わせる）。
+	if !requirePageViewable(w, r, pageID) {
+		return
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 保存経路を通っていない本文（既存データ・バックアップ復元・手動配置）に備え、
+	// 描画時にもサニタイズする（docs/本文サニタイズ設計.md の二層目）。
+	page, err := RenderPageShell(Sanitize(string(content)), title)
+	if err != nil {
+		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// 認可結果に依存する内容なのでキャッシュさせない。
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write([]byte(page))
+}
+
+// requirePageViewable は画面表示のための read 認可を行います。
+// 認証済みで権限が無ければ403、匿名で実効公開でなければ /login へリダイレクトします。
+func requirePageViewable(w http.ResponseWriter, r *http.Request, pageID int) bool {
+	if u := auth.CurrentUser(r); u != nil {
+		if !GetPerms(pageID).CanRead(u) {
+			http.Error(w, "このページを閲覧する権限がありません", http.StatusForbidden)
+			return false
+		}
+		return true
+	}
+	if EffectivePublic(pageID) {
+		return true
+	}
+	http.Redirect(w, r, "/login", http.StatusFound)
+	return false
 }
