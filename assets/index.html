@@ -1345,6 +1345,8 @@
 
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
+        // 語彙が未取得のまま保存すると、カスタム要素が丸ごと欠落した本文を書いてしまう。
+        if (!tagSchema) { console.warn('カスタム要素の語彙が未取得のため保存を見送りました'); return; }
         const statusEl = document.getElementById('save-status');
         statusEl.innerText = "保存中...";
         statusEl.style.color = "#f59e0b"; // 琥珀色
@@ -1744,20 +1746,27 @@
     }
 
     // HTMLソースコードのリアルタイムプレビューを生成する処理
-    // M_FILE_ATTRS_BY_TAG は <m-file> を保存するときに書き出す属性を tag ごとに定める。
-    // <m-file> は tag の値で意味が変わり、tag ごとに別のプラグインが別の属性を読むため、
-    // **`internal/cms/plugin_*.go` が読む属性と一致させること**。ここに載せ忘れた属性は
-    // 保存のたびに失われ、集計（原価・手配）が壊れる。サーバー側の許可リスト
-    // （`internal/cms/sanitize.go`）と docs/【一覧】カスタムタグ.md も同時に更新する。
-    const M_FILE_ATTRS_BY_TAG = {
-        '顧客の発注書': ['order-no', 'client-name', 'ordered-at'],                 // plugin_client_order.go
-        '弊社の発注書': ['order-no', 'supplier-name', 'ordered-at'],               // plugin_our_order.go
-        '弊社の見積もり': ['item-id', 'client-name', 'price', 'quantity', 'estimated-at'], // plugin_estimates.go
-        '材料屋・加工業者の見積もり': ['item-name', 'supplier-name', 'cost', 'estimated-at'], // plugin_estimates.go
-    };
+    //
+    // カスタム要素の語彙（要素名 → 保存する属性）は **サーバーの /api/tag-schema** から取得する。
+    // 各プラグインの Tags() が唯一の正本で、サニタイズ許可リストも同じ宣言から作られるため、
+    // 「保存する属性」と「許可される属性」が食い違いようがない。ここに手書きの表を持たないので、
+    // プラグインを追加すれば新しい要素もそのまま保存されるようになる。
+    let tagSchema = null; // { "m-item": ["cost", "item-id", ...], ... }
+
+    async function loadTagSchema() {
+        try {
+            const res = await fetch('/api/tag-schema');
+            if (!res.ok) throw new Error('tag-schema ' + res.status);
+            const d = await res.json();
+            tagSchema = (d && d.elements) || {};
+        } catch (e) {
+            console.error('カスタム要素の語彙を取得できませんでした:', e);
+            tagSchema = {};
+        }
+    }
 
     // 値が空のときに補う既定値（数値項目のみ。従来の挙動を維持する）。
-    const M_FILE_ATTR_DEFAULTS = { price: '0', cost: '0', quantity: '1' };
+    const CUSTOM_ATTR_DEFAULTS = { price: '0', cost: '0', quantity: '1' };
 
     // esc は属性値・テキストをHTMLとして安全な形にエスケープする。
     // これが無いと、タグの値に " や < を入力しただけで生成HTMLが壊れ、値が欠けたり
@@ -1770,70 +1779,60 @@
             .replace(/"/g, '&quot;');
     }
 
+    // customSelector は語彙に含まれる全カスタム要素にマッチするセレクタ。
+    function customSelector() {
+        const names = Object.keys(tagSchema || {});
+        return names.length ? names.join(',') : null;
+    }
+
+    // serializeCustomElement はカスタム要素を語彙（/api/tag-schema）に従って書き出す。
+    // 要素ごとの手書き分岐を持たないので、プラグインが増えてもここは変更不要。
+    function serializeCustomElement(el, indent) {
+        const name = el.tagName.toLowerCase();
+        const allowed = tagSchema[name];
+        if (!allowed) return ''; // 語彙に無い要素は保存しない
+
+        // **その要素が実際に持っている属性だけ**を書き出す。
+        // 語彙は全プラグインの和集合なので（m-file の price と cost など）、
+        // 持っていない属性まで既定値で埋めると、意味のない値を発明してしまう。
+        let attrs = '';
+        allowed.forEach(a => {
+            if (!el.hasAttribute(a)) return;
+            const v = el.getAttribute(a);
+            const filled = (v === '' && CUSTOM_ATTR_DEFAULTS[a]) ? CUSTOM_ATTR_DEFAULTS[a] : v;
+            attrs += ` ${a}="${esc(filled)}"`;
+        });
+
+        // 子孫のカスタム要素（明細など）を再帰で書き出す。
+        // コンポーネントは描画時に <div> 等のクロームを挟むため直下とは限らないので、
+        // 「直近のカスタム要素の祖先が自分」であるものだけを拾う（孫要素の二重出力を防ぐ）。
+        let inner = '';
+        const sel = customSelector();
+        if (sel) {
+            el.querySelectorAll(sel).forEach(c => {
+                if (!c.parentElement || c.parentElement.closest(sel) !== el) return;
+                inner += serializeCustomElement(c, indent + '    ');
+            });
+        }
+
+        if (inner === '') return `${indent}<${name}${attrs}></${name}>\n`;
+        return `${indent}<${name}${attrs}>\n${inner}${indent}</${name}>\n`;
+    }
+
     function updateHtmlPreview() {
         const container = document.getElementById('editor-content');
         let output = "";
 
         // エディタ内の要素を順番にシリアライズする
         const blocks = container.querySelectorAll('.editor-block > .block-content > *, #editor-content > :not(.editor-block)');
-        
+
         for (let i = 0; i < blocks.length; i++) {
             const child = blocks[i];
             if (!child) continue;
             const tagName = child.tagName.toLowerCase();
 
-            if (tagName === 'm-tag') {
-                const name = child.getAttribute('name') || '';
-                const value = child.getAttribute('value') || '';
-                output += `<m-tag name="${esc(name)}" value="${esc(value)}"></m-tag>\n`;
-            } else if (tagName === 'm-file') {
-                const src = child.getAttribute('src') || '';
-                const name = child.getAttribute('name') || '';
-                const tag = child.getAttribute('tag') || '';
-                
-                let attrs = `src="${esc(src)}" name="${esc(name)}" tag="${esc(tag)}"`;
-
-                (M_FILE_ATTRS_BY_TAG[tag] || []).forEach(a => {
-                    const v = child.getAttribute(a);
-                    attrs += ` ${a}="${esc(v !== null && v !== '' ? v : (M_FILE_ATTR_DEFAULTS[a] || ''))}"`;
-                });
-                
-                // 子要素である m-item をシリアライズする
-                const itemsList = child.querySelectorAll('m-item');
-                if (itemsList.length > 0) {
-                    output += `<m-file ${attrs}>\n`;
-                    itemsList.forEach(item => {
-                        const itemId = item.getAttribute('item-id') || '';
-                        const itemName = item.getAttribute('item-name') || '';
-                        const price = item.getAttribute('price') || '';
-                        const cost = item.getAttribute('cost') || '';
-                        const quantity = item.getAttribute('quantity') || '1';
-                        const status = item.getAttribute('status') || '';
-                        
-                        let itemAttrs = `item-name="${esc(itemName)}" quantity="${esc(quantity)}" status="${esc(status)}"`;
-                        if (tag === '顧客の発注書') {
-                            itemAttrs = `item-id="${esc(itemId)}" ` + itemAttrs + ` price="${esc(price)}"`;
-                        } else {
-                            itemAttrs = itemAttrs + ` cost="${esc(cost)}"`;
-                        }
-                        output += `    <m-item ${itemAttrs}></m-item>\n`;
-                    });
-                    output += `</m-file>\n`;
-                } else {
-                    output += `<m-file ${attrs}></m-file>\n`;
-                }
-            } else if (tagName === 'm-material') {
-                const itemName = child.getAttribute('item-name') || '';
-                const cost = child.getAttribute('cost') || '0';
-                const supplierName = child.getAttribute('supplier-name') || '';
-                const quantity = child.getAttribute('quantity') || '1';
-                output += `<m-material item-name="${esc(itemName)}" cost="${esc(cost)}" supplier-name="${esc(supplierName)}" quantity="${esc(quantity)}"></m-material>\n`;
-            } else if (tagName === 'm-required-materials') {
-                const pageIdAttr = child.getAttribute('page-id');
-                const pageIdAttrStr = pageIdAttr ? ` page-id="${esc(pageIdAttr)}"` : '';
-                output += `<m-required-materials${pageIdAttrStr}></m-required-materials>\n`;
-            } else if (tagName === 'm-child-list') {
-                output += `<m-child-list></m-child-list>\n`;
+            if (tagSchema && tagSchema[tagName]) {
+                output += serializeCustomElement(child, '');
             } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'p') {
                 output += `<${tagName}>${esc(child.innerText)}</${tagName}>\n`;
             }
@@ -2356,8 +2355,9 @@
     }
 
     window.onload = async function() {
-        // 認証状態を先に確定させる（匿名なら body.anonymous が付き、編集・権限系UIを隠す）。
-        await loadMe();
+        // 認証状態とカスタム要素の語彙を先に確定させる。
+        // 語彙（/api/tag-schema）はシリアライズに必須なので、保存が走りうる状態になる前に読む。
+        await Promise.all([loadMe(), loadTagSchema()]);
         const anon = document.body.classList.contains('anonymous');
         syncRailToggleButtons(); // レール開閉トグルの見た目を保存状態に合わせる
         initHeadroom(); // ヘッダーをスクロール方向で出し入れ（B案）

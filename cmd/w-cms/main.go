@@ -109,6 +109,10 @@ func main() {
 	root.HandleFunc("/login", auth.LoginPageHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 
+	// カスタム要素の語彙（各プラグインの Tags() の集約）。エディタが本文の
+	// シリアライズに使う。語彙は秘密ではないので認証不要。
+	root.HandleFunc("/api/tag-schema", cms.TagSchemaAPIHandler)
+
 	// 匿名でも閲覧しうるルート（OptionalAuth）。認可は各ハンドラが実効公開で個別判定する。
 	//   - /api/load     : ページ本文（匿名でも実効公開なら200、非公開は401）
 	//   - /data/        : 添付（PDF原本など。同上）
