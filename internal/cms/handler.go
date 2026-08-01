@@ -182,6 +182,35 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(content)
 }
 
+// TagSchemaAPIHandler は、登録済み全プラグインが宣言したカスタム要素の属性契約を返します。
+//
+// エディタはこれを使って本文をシリアライズします（要素ごとの手書き分岐を持たないため、
+// プラグインを追加しただけで新しい要素が正しく保存されるようになる）。サーバー側の
+// サニタイズ許可リストも同じ PluginTags() から作られるので、**保存する属性と許可する属性が
+// 食い違いようがない**——過去に属性の宣言漏れで値が静かに消える不具合があったための設計。
+//
+// プラグイン側に個別の実装は不要で、Tags() を宣言すれば自動的にここへ現れます。
+// 語彙は秘密情報ではないため認証不要（匿名の閲覧でもエディタの初期化は走る）。
+func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// {"elements": {"m-item": ["cost", "item-id", ...], ...}}
+	elements := make(map[string][]string, 8)
+	for _, spec := range PluginTags() {
+		attrs := spec.Attributes
+		if attrs == nil {
+			attrs = []string{}
+		}
+		elements[spec.Element] = attrs
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"elements": elements})
+}
+
 // ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。
 func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	parentID := r.URL.Query().Get("parent_id")
