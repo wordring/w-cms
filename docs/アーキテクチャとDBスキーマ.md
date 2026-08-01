@@ -37,6 +37,13 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     *   `created_at` / `created_by` 列は `CREATE TABLE` に加え、既存DB向けに冪等な `ALTER TABLE ADD COLUMN` マイグレーション（`database/sqlite.go` の `coreMigrations`）でも追加される。
 *   **`page_tags`**: `<m-tag name="..." value="...">` から抽出された可変タグ。
     *   `page_id` (FK), `name`, `value`
+    *   **主キーは持たない**。`name` は自由語であり、**同じ `name` が同一ページに複数あってよい**
+        （担当者が2人、関連部品番号が複数、といった多値属性を表現できる）。検索用に
+        非一意インデックス `idx_page_tags_page_name (page_id, name)` を張る。
+    *   かつては `PRIMARY KEY (page_id, name)` だったため、同名タグを2つ置くと保存が
+        UNIQUE 制約違反となり **本文ごと保存できない**（500）状態になっていた。
+    *   単一値として扱いたい用途（例: `<m-tag name="部品番号">`）は、HTML木から先頭を採る
+        ヘルパ `cms.TagValue` が担う。この表は現状クエリされていない検索用インデックス。
 
 ### 受発注トランザクションテーブル（ヘッダ・明細構造）
 発注書は `<m-file>` をヘッダとし、その中に複数の `<m-item>`（明細）を持つ 1:N の関係です。

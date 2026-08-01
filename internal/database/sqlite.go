@@ -59,11 +59,16 @@ var CoreTables = []string{
 	);`,
 
 	// 2. 可変タグテーブル（名前：値 の属性情報）
+	//    name は自由語で、**同じ name が同一ページに複数あってよい**（担当者が2人、
+	//    関連部品番号が複数、といった多値属性を表現できる）。そのため (page_id, name) を
+	//    主キーにはせず、検索用の非一意インデックスだけを張る。
+	//    かつては主キーだったため、同名タグを2つ置くと保存が UNIQUE 制約違反で失敗していた。
+	//    値を1つだけ使いたい用途（例: <m-tag name="部品番号">）は、HTML木から先頭を採る
+	//    ヘルパ cms.TagValue が担う（DBのこの表は現状クエリされていない検索用インデックス）。
 	`CREATE TABLE IF NOT EXISTS page_tags (
 		page_id INTEGER,
 		name TEXT,
 		value TEXT,
-		PRIMARY KEY (page_id, name),
 		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 	);`,
 
@@ -78,6 +83,12 @@ var CoreTables = []string{
 		public INTEGER NOT NULL DEFAULT 0,
 		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 	);`,
+}
+
+// coreIndexes はコアテーブルに張る検索用インデックスです。
+// page_tags は主キーを持たないため、ページ単位・タグ名単位の絞り込み用にここで補います。
+var coreIndexes = []string{
+	`CREATE INDEX IF NOT EXISTS idx_page_tags_page_name ON page_tags(page_id, name);`,
 }
 
 // coreMigrations は、既存DB（CREATE TABLE IF NOT EXISTS では更新されない）に
@@ -100,6 +111,11 @@ func CreateCoreTables(db *sql.DB) error {
 	// 既存DBへの列追加（新規DBでは CREATE TABLE 済みのため冪等にスキップ）。
 	for _, q := range coreMigrations {
 		if _, err := db.Exec(q); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	for _, q := range coreIndexes {
+		if _, err := db.Exec(q); err != nil {
 			return err
 		}
 	}
