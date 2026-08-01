@@ -71,10 +71,17 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// サイドカーは権限の正本。書けなかった場合、GetPerms は admin 所有の既定値へ
+		// フォールバックする（フェイルクローズ）ため作成者が自分のページを触れなくなる。
+		// 黙って壊れると原因が追えないのでログに残す。
+		var sidecarErr error
 		if u := auth.CurrentUser(r); u != nil {
-			EnsureSidecar(id, u.Username, u.PrimaryGroup, "", "")
+			sidecarErr = EnsureSidecar(id, u.Username, u.PrimaryGroup, "", "")
 		} else {
-			EnsureSidecar(id, defaultOwner, "", "", "")
+			sidecarErr = EnsureSidecar(id, defaultOwner, "", "", "")
+		}
+		if sidecarErr != nil {
+			log.Printf("サイドカーの作成に失敗しました page=%s: %v", id, sidecarErr)
 		}
 	} else {
 		// 既存ページ：write権限を要求する
@@ -293,7 +300,11 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		pp := GetPerms(int(parentID.Int64))
 		inheritGroup, inheritMode = pp.Group, pp.Mode
 	}
-	EnsureSidecar(newID, owner, inheritGroup, inheritMode, parentStr)
+	// サイドカーは権限・親の正本。失敗すると作成者が自分のページを触れなくなるため
+	// （GetPerms が admin 所有の既定へフェイルクローズする）、原因追跡用にログへ残す。
+	if err := EnsureSidecar(newID, owner, inheritGroup, inheritMode, parentStr); err != nil {
+		log.Printf("サイドカーの作成に失敗しました page=%s: %v", newID, err)
+	}
 
 	// 5. DB同期（タグなどのインデックス更新。親・作成情報はサイドカーから読まれる）
 	if err := SyncIndex(newID, html); err != nil {
@@ -560,8 +571,12 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 			os.WriteFile(htmlPath, []byte(defaultHTML), 0644)
 			// トップページは全員が閲覧できるよう other に read を付与（owner rw / other r）。
 			// 書き込みは admin（owner）のみ。
-			WriteSidecar("000000", PageMeta{Owner: defaultOwner, Mode: "302"})
-			SyncIndex("000000", defaultHTML)
+			if err := WriteSidecar("000000", PageMeta{Owner: defaultOwner, Mode: "302"}); err != nil {
+				log.Printf("トップページのサイドカー作成に失敗しました: %v", err)
+			}
+			if err := SyncIndex("000000", defaultHTML); err != nil {
+				log.Printf("トップページの同期に失敗しました: %v", err)
+			}
 		}
 	}
 

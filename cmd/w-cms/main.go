@@ -3,11 +3,35 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/database"
 )
+
+// noDirListing はディレクトリ一覧の出力を抑止する http.FileSystem です。
+// http.FileServer は index.html を持たないディレクトリにアクセスされると中身を
+// 一覧表示してしまい、匿名ユーザーに配置ファイルが見えてしまう（例: /assets/templates/）。
+// ディレクトリを開こうとしたら「存在しない」として扱い、404 を返させる。
+type noDirListing struct{ fs http.FileSystem }
+
+func (n noDirListing) Open(name string) (http.File, error) {
+	f, err := n.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	if info.IsDir() {
+		f.Close()
+		return nil, os.ErrNotExist
+	}
+	return f, nil
+}
 
 // main はアプリケーションの起動とルーティングの設定を行います。
 func main() {
@@ -81,7 +105,7 @@ func main() {
 
 	// 公開ルート（認証不要）とトップレベルのルーティング。
 	root := http.NewServeMux()
-	root.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
+	root.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(noDirListing{http.Dir("assets")})))
 	root.HandleFunc("/login", auth.LoginPageHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 
