@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"golang.org/x/net/html"
@@ -34,13 +35,40 @@ type Plugin interface {
 	// 定義したテーブルはここにも列挙してください（テストで両者の整合性を検証します）。
 	Tables() []string
 
+	// Tags はこのプラグインが所有するカスタム要素と、その属性契約を返します。
+	//
+	// **カスタムタグはすべてプラグインが所有します**（コアは構造HTMLの安全性しか知りません）。
+	// そのため、このメソッドは任意インターフェースではなく Plugin の必須メソッドです。
+	// 宣言せずに属性を読むプラグインを書けないようにするための、コンパイラによる強制です。
+	// 扱うカスタム要素が無いプラグインは nil を返してください。
+	Tags() []TagSpec
+
 	// Sync は1ページ分のHTMLノード木を走査し、自分のテーブルを当該ページ分だけ
 	// 洗い替え（DELETE → INSERT）します。トランザクション tx の中で呼ばれます。
 	Sync(tx *sql.Tx, pageID int, root *html.Node) error
 }
 
+// TagSpec は1つのカスタム要素の「属性契約」です。
+//
+// ここに挙げるのは「プラグインが読む属性」ではなく **その要素に許される属性の全体** です。
+// 誰も同期しないが保存・表示には要る属性（<m-file> の src/name、
+// <m-required-materials> の page-id など）も1つの宣言で扱えるようにするためです。
+//
+// この単一の宣言が3つの用途を賄います:
+//   - サニタイズの許可リスト（internal/cms/sanitize.go）
+//   - /api/tag-schema（エディタのシリアライザが参照する）
+//   - ドキュメント（docs/【一覧】カスタムタグ.md）の材料
+//
+// ここに載せ忘れた属性は保存のたびに黙って除去されるため、
+// プラグインが読む属性は必ず含めてください。
+type TagSpec struct {
+	Element    string   // 要素名（例: "m-client-order"）
+	Attributes []string // この要素に許される属性
+}
+
 // RouteProvider は集計APIなどのHTTPエンドポイントを提供したいプラグインが
 // 追加で実装する任意インターフェースです（Tier 2: コードプラグイン）。
+// Tags と違い、実装しなくてもプラグインは成立するため任意のままにしています。
 type RouteProvider interface {
 	Routes() []Route
 }
@@ -75,6 +103,44 @@ func ApplySchema(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// PluginTags は登録済み全プラグインのカスタム要素宣言を集約して返します。
+// 同じ要素を複数のプラグインが扱う場合（例: <m-item> は顧客の発注書と弊社の発注書の
+// 双方で使う）は**属性の和集合**になります。どのプラグインが読む属性も落ちません。
+// 戻り値は要素名でソートしてあり、呼び出しごとに順序が変わりません。
+func PluginTags() []TagSpec {
+	merged := map[string]map[string]bool{}
+	for _, p := range registry {
+		for _, spec := range p.Tags() {
+			if spec.Element == "" {
+				continue
+			}
+			if merged[spec.Element] == nil {
+				merged[spec.Element] = map[string]bool{}
+			}
+			for _, a := range spec.Attributes {
+				merged[spec.Element][a] = true
+			}
+		}
+	}
+
+	elements := make([]string, 0, len(merged))
+	for el := range merged {
+		elements = append(elements, el)
+	}
+	sort.Strings(elements)
+
+	out := make([]TagSpec, 0, len(elements))
+	for _, el := range elements {
+		attrs := make([]string, 0, len(merged[el]))
+		for a := range merged[el] {
+			attrs = append(attrs, a)
+		}
+		sort.Strings(attrs)
+		out = append(out, TagSpec{Element: el, Attributes: attrs})
+	}
+	return out
 }
 
 // PluginRoutes は RouteProvider を実装する全プラグインのルートを集約して返します。
