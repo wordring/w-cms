@@ -105,6 +105,47 @@ func TestSaveSanitizesAndEchoesBack(t *testing.T) {
 	}
 }
 
+// TestSaveKeepsEstimateAttributes は、見積もりの m-file を保存したときに、
+// プラグインが読む属性が生き残って集計テーブルへ入ることを検証します
+// （保存 → サニタイズ → ファイル → SyncIndex → supplier_estimates の一気通貫）。
+//
+// item-name はサニタイズ許可リストから漏れており、保存のたびに消えて
+// supplier_estimates.item_name が空になっていた。その回帰防止。
+func TestSaveKeepsEstimateAttributes(t *testing.T) {
+	db := setupSaveTest(t)
+
+	const id = "000044"
+	if err := WriteSidecar(id, PageMeta{Owner: "tester", Mode: DefaultMode}); err != nil {
+		t.Fatalf("WriteSidecarエラー: %v", err)
+	}
+
+	body := `<m-file src="m.pdf" name="見積書.pdf" tag="材料屋・加工業者の見積もり" ` +
+		`item-name="側板用鋼材" supplier-name="東邦金属工業" cost="500" estimated-at="2026-06-16"></m-file>`
+	resp := postSave(t, id, body)
+
+	if sanitized, _ := resp["sanitized"].(bool); sanitized {
+		t.Errorf("見積もりの属性がサニタイズで除去されました: %v", resp["html"])
+	}
+
+	var itemName, supplierName string
+	var cost int
+	err := db.QueryRow(
+		`SELECT item_name, supplier_name, cost FROM supplier_estimates WHERE page_id = ?`, 44,
+	).Scan(&itemName, &supplierName, &cost)
+	if err != nil {
+		t.Fatalf("supplier_estimates のクエリでエラー: %v", err)
+	}
+	if itemName != "側板用鋼材" {
+		t.Errorf("item_name が保存されていません: %q", itemName)
+	}
+	if supplierName != "東邦金属工業" {
+		t.Errorf("supplier_name が保存されていません: %q", supplierName)
+	}
+	if cost != 500 {
+		t.Errorf("cost が保存されていません: %d", cost)
+	}
+}
+
 // TestSaveKeepsNormalContentIntact は、通常の編集で保存した本文が
 // サニタイズによって変化しない（sanitized=false・内容そのまま）ことを検証します。
 // エディタのシリアライザ updateHtmlPreview が出力する語彙は許可リストの範囲内なので、
