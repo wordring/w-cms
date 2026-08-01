@@ -114,6 +114,63 @@ func TestSanitizeKeepsCustomElements(t *testing.T) {
 	}
 }
 
+// TestSanitizeKeepsPluginReadAttributes は、**プラグインが実際に読む属性**が
+// サニタイズで落ちないことを検証します。
+//
+// <m-file> は tag の値で意味が変わり、tag ごとに別のプラグインが別の属性を読むため、
+// 許可リストは全 tag 分の和集合でなければならない。過去に item-name（材料屋の見積もりで
+// plugin_estimates.go が supplier_estimates.item_name として読む）が漏れており、
+// 保存のたびに値が消えて原価集計が壊れる状態だった。その回帰防止。
+func TestSanitizeKeepsPluginReadAttributes(t *testing.T) {
+	cases := []struct {
+		name  string
+		in    string
+		attrs []string // 保持されていなければならない属性
+	}{
+		{
+			name:  "顧客の発注書（plugin_client_order）",
+			in:    `<m-file src="po.pdf" name="n" tag="顧客の発注書" order-no="PO-1" client-name="得意先" ordered-at="2026-06-18"></m-file>`,
+			attrs: []string{"src", "order-no", "client-name", "ordered-at"},
+		},
+		{
+			name:  "弊社の発注書（plugin_our_order）",
+			in:    `<m-file src="po.pdf" name="n" tag="弊社の発注書" order-no="PO-2" supplier-name="仕入先" ordered-at="2026-06-18"></m-file>`,
+			attrs: []string{"src", "order-no", "supplier-name", "ordered-at"},
+		},
+		{
+			name:  "弊社の見積もり（plugin_estimates）",
+			in:    `<m-file src="e.pdf" name="n" tag="弊社の見積もり" item-id="A-1" client-name="得意先" price="1200" estimated-at="2026-06-16"></m-file>`,
+			attrs: []string{"src", "item-id", "client-name", "price", "estimated-at"},
+		},
+		{
+			name:  "材料屋・加工業者の見積もり（plugin_estimates）",
+			in:    `<m-file src="m.pdf" name="n" tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" supplier-name="東邦金属" cost="500" estimated-at="2026-06-16"></m-file>`,
+			attrs: []string{"src", "item-name", "supplier-name", "cost", "estimated-at"},
+		},
+		{
+			name:  "明細（m-item）",
+			in:    `<m-item item-id="A-1" item-name="部品" price="1200" cost="800" quantity="20" status="未着手"></m-item>`,
+			attrs: []string{"item-id", "item-name", "price", "cost", "quantity", "status"},
+		},
+		{
+			name:  "部材（m-material / plugin_materials）",
+			in:    `<m-material item-name="鋼材" cost="500" supplier-name="材料屋" quantity="2"></m-material>`,
+			attrs: []string{"item-name", "cost", "supplier-name", "quantity"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Sanitize(tc.in)
+			for _, a := range tc.attrs {
+				if !strings.Contains(got, a+"=") {
+					t.Errorf("プラグインが読む属性 %q が除去されました:\n入力: %s\n出力: %s", a, tc.in, got)
+				}
+			}
+		})
+	}
+}
+
 // TestSanitizeDropsUnknownAttributes は許可リストに無い属性が落ちることを検証します。
 func TestSanitizeDropsUnknownAttributes(t *testing.T) {
 	got := Sanitize(`<m-tag name="A" value="B" data-evil="x" class="y" id="z"></m-tag>`)

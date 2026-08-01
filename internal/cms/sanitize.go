@@ -60,10 +60,15 @@ var allowedElements = map[string]map[string]bool{
 
 	// ── カスタム要素（docs/【一覧】カスタムタグ.md §1 の6種）──
 	"m-tag": {"name": true, "value": true},
+	// m-file は tag の値で意味が変わり、tag ごとに別のプラグインが別の属性を読む。
+	// ここは全 tag 分の和集合。**プラグインが読む属性（internal/cms/plugin_*.go）を
+	// 落とさないこと**（落とすと保存のたびに値が消え、集計が壊れる）。
+	// 例: item-name は <m-file tag="材料屋・加工業者の見積もり"> で
+	// plugin_estimates.go が supplier_estimates.item_name として読む。
 	"m-file": {
 		"src": true, "name": true, "tag": true,
 		"order-no": true, "client-name": true, "supplier-name": true,
-		"item-id": true, "price": true, "cost": true, "quantity": true,
+		"item-id": true, "item-name": true, "price": true, "cost": true, "quantity": true,
 		"ordered-at": true, "estimated-at": true,
 	},
 	"m-item": {

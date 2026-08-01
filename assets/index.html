@@ -1744,6 +1744,21 @@
     }
 
     // HTMLソースコードのリアルタイムプレビューを生成する処理
+    // M_FILE_ATTRS_BY_TAG は <m-file> を保存するときに書き出す属性を tag ごとに定める。
+    // <m-file> は tag の値で意味が変わり、tag ごとに別のプラグインが別の属性を読むため、
+    // **`internal/cms/plugin_*.go` が読む属性と一致させること**。ここに載せ忘れた属性は
+    // 保存のたびに失われ、集計（原価・手配）が壊れる。サーバー側の許可リスト
+    // （`internal/cms/sanitize.go`）と docs/【一覧】カスタムタグ.md も同時に更新する。
+    const M_FILE_ATTRS_BY_TAG = {
+        '顧客の発注書': ['order-no', 'client-name', 'ordered-at'],                 // plugin_client_order.go
+        '弊社の発注書': ['order-no', 'supplier-name', 'ordered-at'],               // plugin_our_order.go
+        '弊社の見積もり': ['item-id', 'client-name', 'price', 'quantity', 'estimated-at'], // plugin_estimates.go
+        '材料屋・加工業者の見積もり': ['item-name', 'supplier-name', 'cost', 'estimated-at'], // plugin_estimates.go
+    };
+
+    // 値が空のときに補う既定値（数値項目のみ。従来の挙動を維持する）。
+    const M_FILE_ATTR_DEFAULTS = { price: '0', cost: '0', quantity: '1' };
+
     // esc は属性値・テキストをHTMLとして安全な形にエスケープする。
     // これが無いと、タグの値に " や < を入力しただけで生成HTMLが壊れ、値が欠けたり
     // 意図しない属性が生まれたりする（サーバーのサニタイザがそれを除去してしまう）。
@@ -1778,15 +1793,10 @@
                 
                 let attrs = `src="${esc(src)}" name="${esc(name)}" tag="${esc(tag)}"`;
 
-                if (tag === '顧客の発注書') {
-                    attrs += ` order-no="${esc(child.getAttribute('order-no') || '')}" client-name="${esc(child.getAttribute('client-name') || '')}" ordered-at="${esc(child.getAttribute('ordered-at') || '')}"`;
-                } else if (tag === '弊社の発注書') {
-                    attrs += ` order-no="${esc(child.getAttribute('order-no') || '')}" supplier-name="${esc(child.getAttribute('supplier-name') || '')}" ordered-at="${esc(child.getAttribute('ordered-at') || '')}"`;
-                } else if (tag === '弊社の見積もり') {
-                    attrs += ` price="${esc(child.getAttribute('price') || '0')}" quantity="${esc(child.getAttribute('quantity') || '1')}"`;
-                } else if (tag === '材料屋・加工業者の見積もり') {
-                    attrs += ` cost="${esc(child.getAttribute('cost') || '0')}"`;
-                }
+                (M_FILE_ATTRS_BY_TAG[tag] || []).forEach(a => {
+                    const v = child.getAttribute(a);
+                    attrs += ` ${a}="${esc(v !== null && v !== '' ? v : (M_FILE_ATTR_DEFAULTS[a] || ''))}"`;
+                });
                 
                 // 子要素である m-item をシリアライズする
                 const itemsList = child.querySelectorAll('m-item');
