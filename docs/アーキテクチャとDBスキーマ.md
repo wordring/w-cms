@@ -7,12 +7,12 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 システムの中核は、HTMLという「非構造化（あるいは半構造化）データ」を、データベース上の「構造化データ（インデックス）」に同期させる処理にあります。
 
 ### Goバックエンドの構成（`internal/`）
-*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_tags`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
+*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
 *   **`cms/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/lock_handler.go`（4.3 参照）。
-*   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。
-*   **`cms/plugin_*.go`**: 1ファイル＝1ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・同期処理（`Sync`）を持ち、`init()` で自己登録します。新しいユースケースはここにファイルを足すだけで追加できます（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。
-*   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルと `<m-tag>` のみ**を抽出します（`ParseCore`）。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
-*   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_tags）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
+*   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、語彙集約（`PluginTags`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。
+*   **`cms/plugin_*.go`**: 1ファイル＝1ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・**カスタム要素の語彙（`Tags`）**・同期処理（`Sync`）を持ち、`init()` で自己登録します。新しいユースケースはここにファイルを足すだけで追加できます（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。
+*   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルのみ**を抽出します（`ParseCore`）。カスタム要素（`<m-*>`）はコアが知らず、所有プラグインの `Sync` が抽出します。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
+*   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_perms）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
 *   **`cms/handler.go`**: コアのHTTPハンドラ（保存・読込・子ページ作成など）。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
 
 ---
@@ -22,7 +22,11 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 ドキュメント本文はファイルシステムに保存されますが、検索や集計に必要なメタデータはすべてSQLiteにインデックス化されます。
 
 > [!NOTE]
-> `pages` / `page_tags` は **コアテーブル**（`database/sqlite.go` が作成）です。それ以外の各テーブルは、対応する**プラグイン**（`cms/plugin_*.go`）が `Schema()` で定義し、起動時に `cms.ApplySchema()` で作成されます。どのプラグインがどのテーブルを所有するかは [【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) の一覧を参照してください。
+> **コアテーブルは `pages` / `page_perms` の2つだけ**（`database/sqlite.go` が作成）です。
+> カスタム要素（`<m-*>`）由来のテーブルは、`page_tags` を含めてすべて対応する**プラグイン**
+> （`cms/plugin_*.go`）が `Schema()` で定義し、起動時に `cms.ApplySchema()` で作成されます。
+> どのプラグインがどの要素・テーブルを所有するかは
+> [【一覧】カスタムタグ.md](【一覧】カスタムタグ.md) §1 を参照してください。
 
 ### ドキュメント管理テーブル
 *   **`pages`**: すべてのドキュメントの基本情報。
@@ -33,10 +37,12 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     *   `created_at` (DATETIME): 作成日時。サイドカーから同期される。
     *   `created_by` (TEXT): 作成者。サイドカーから同期される。
     *   `updated_at` (DATETIME): 更新日時。サイドカーの値を採用し、無ければ同期時刻（`CURRENT_TIMESTAMP`）にフォールバックする。
-    *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` と `page_tags` のみHTML本文由来）。
+    *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` のみHTML本文由来。`page_tags` はプラグインが同期）。
     *   `created_at` / `created_by` 列は `CREATE TABLE` に加え、既存DB向けに冪等な `ALTER TABLE ADD COLUMN` マイグレーション（`database/sqlite.go` の `coreMigrations`）でも追加される。
 *   **`page_tags`**: `<m-tag name="..." value="...">` から抽出された可変タグ。
     *   `page_id` (FK), `name`, `value`
+    *   **コアテーブルではない**。`<m-tag>` を所有する `plugin_page_tags.go` が
+        `Schema()` で定義する（「カスタムタグはすべてプラグインが所有する」方針）。
     *   **主キーは持たない**。`name` は自由語であり、**同じ `name` が同一ページに複数あってよい**
         （担当者が2人、関連部品番号が複数、といった多値属性を表現できる）。検索用に
         非一意インデックス `idx_page_tags_page_name (page_id, name)` を張る。
@@ -46,7 +52,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
         ヘルパ `cms.TagValue` が担う。この表は現状クエリされていない検索用インデックス。
 
 ### 受発注トランザクションテーブル（ヘッダ・明細構造）
-発注書は `<m-file>` をヘッダとし、その中に複数の `<m-item>`（明細）を持つ 1:N の関係です。
+発注書は `<m-client-order>` / `<m-supplier-order>` をヘッダとし、その中に複数の `<m-item>`（明細）を持つ 1:N の関係です（`<m-file>` は任意の容器で、PDFのパスだけを持ちます）。
 
 *   **`client_orders`** (顧客の発注書 - ヘッダ)
     *   `id`, `order_no` (UNIQUE), `client_name`, `ordered_at`, `pdf_path`, `page_id`
@@ -58,9 +64,9 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
     *   `id`, `order_no` (FK), `item_name` (品目), `cost`, `quantity`, `status`
 
 ### 見積もりテーブル（[【ユースケース】原価と利益.md](【ユースケース】原価と利益.md)参照）
-*   **`our_estimates`** (弊社の見積もり - `<m-file tag="弊社の見積もり">` から抽出)
+*   **`our_estimates`** (弊社の見積もり - `<m-our-estimate>` から抽出)
     *   `id`, `item_id`, `client_name`, `price`, `pdf_path`, `page_id`, `estimated_at`
-*   **`supplier_estimates`** (材料屋・加工業者の見積もり - `<m-file tag="材料屋・加工業者の見積もり">` から抽出)
+*   **`supplier_estimates`** (材料屋・加工業者の見積もり - `<m-supplier-estimate>` から抽出)
     *   `id`, `item_name`, `supplier_name`, `cost`, `pdf_path`, `page_id`, `estimated_at`
 
 ### マスタ・構成情報テーブル
