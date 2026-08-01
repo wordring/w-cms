@@ -820,27 +820,7 @@
 
             <!-- エディタコンテンツ領域（ここが保存対象のHTML本文＝ページの「内容」になります。
                  ページの「属性」はサイドカーが正本で、右のサイドパネルで扱います） -->
-            <div id="editor-content">
-                <!-- 可変タグブロック -->
-                <m-tag name="発注元" value="株式会社トーアスポーツマシーン"></m-tag>
-                <m-tag name="希望納期" value="2026-07-10"></m-tag>
-                <m-tag name="支払条件" value="通常"></m-tag>
-                <m-tag name="自社担当" value="紀平"></m-tag>
-
-                <h1>各マシーン用部品の調達と受注記録</h1>
-                <p>以下の通り、取引先から発注書をいただき、材料見積もりを保管しました。</p>
-
-                <!-- 添付ファイルブロック（顧客の発注書 - 部品をぶら下げる） -->
-                <m-file src="sample_po.pdf" name="顧客発注書_原本.pdf"
-                        tag="顧客の発注書" order-no="PO-2026-001" client-name="トーアスポーツマシーン" ordered-at="2026-06-18">
-                    <m-item item-id="W120-P180-05" item-name="側板ブラケット" price="1200" quantity="20" status="未着手"></m-item>
-                    <m-item item-id="W120-P180-06" item-name="補強バー" price="800" quantity="10" status="加工中"></m-item>
-                </m-file>
-
-                <!-- 添付ファイルブロック（材料屋の見積もり - フラット） -->
-                <m-file src="sample_material.pdf" name="アイアン素材見積書.pdf"
-                        tag="材料屋・加工業者の見積もり" item-name="側板用鋼材" cost="500" supplier-name="東邦金属工業" estimated-at="2026-06-16"></m-file>
-            </div>
+            <div id="editor-content"><!--WCMS_CONTENT--></div>
 
             <!-- リアルタイムに生成されるHTMLデータの表示（真のデータ） -->
             <div class="preview-section">
@@ -2381,48 +2361,32 @@
             if (toggle) toggle.checked = true;
         }
 
-        fetch('/api/load?id=' + currentPageId)
-            .then(res => {
-                // 匿名で非公開ページに来た場合は 401。ログインへ誘導する（エラー扱いにはしない）。
-                if (res.status === 401 && anon) {
-                    window.location.href = '/login';
-                    return null;
-                }
-                if (!res.ok) throw new Error("Not found");
-                return res.text();
-            })
-            .then(htmlStr => {
-                if (htmlStr === null) return; // 上でログインへ遷移済み（正常系）
-                // まず閲覧用に本文を流し込む。編集モードへ入る場合は onModeToggle が
-                // ロックを取得し、最新版で再ロードする。
-                populateEditor(htmlStr);
-                setupEditorEvents();
-                setupAutoSave();
+        // 本文はサーバーが #editor-content へ埋め込み済み（合成方式）。fetch はせず、
+        // 既にあるDOMをそのまま初期コンテンツとしてブロック化する。認可・404・
+        // 匿名のログイン誘導はサーバー側で解決済みなので、ここでは扱わない。
+        initBlocks();
+        buildToc();
+        setupEditorEvents();
+        setupAutoSave();
 
-                if (anon) {
-                    // 匿名は読み取り専用。編集モードへは入らず、権限カード（loadPerms）は
-                    // 叩かない。ページ属性は /api/page-meta が実効公開なら匿名にも返すため、
-                    // 左レールの「親ページへ」リンク表示のために loadPageMeta は呼ぶ
-                    // （右レールの権限系表示は body.anonymous の CSS で非表示のまま）。
-                    // 子ページ一覧も実効公開の子だけをサーバー側で絞って返すため、匿名でも読み込む。
-                    applyMode();
-                    loadPageMeta();
-                    loadChildNav();
-                    return;
-                }
-                // ?edit ならロックを取得して編集、なければ閲覧モードを適用する。
-                onModeToggle();
+        if (anon) {
+            // 匿名は読み取り専用。編集モードへは入らず、権限カード（loadPerms）は
+            // 叩かない。ページ属性は /api/page-meta が実効公開なら匿名にも返すため、
+            // 左レールの「親ページへ」リンク表示のために loadPageMeta は呼ぶ
+            // （右レールの権限系表示は body.anonymous の CSS で非表示のまま）。
+            // 子ページ一覧も実効公開の子だけをサーバー側で絞って返すため、匿名でも読み込む。
+            applyMode();
+            loadPageMeta();
+            loadChildNav();
+            return;
+        }
+        // ?edit ならロックを取得して編集、なければ閲覧モードを適用する。
+        onModeToggle();
 
-                // ページ属性（親・作成/更新情報）・権限・子ページナビをサイドパネルへ読み込む。
-                loadPageMeta();
-                loadPerms();
-                loadChildNav();
-            })
-            .catch(err => {
-                console.error("ページの読み込みに失敗しました:", err);
-                const editorContent = document.getElementById('editor-content');
-                editorContent.innerHTML = '<p style="color:#ef4444;">ページの読み込みに失敗しました。ページが存在しないか、サーバーに接続できません。</p>';
-            });
+        // ページ属性（親・作成/更新情報）・権限・子ページナビをサイドパネルへ読み込む。
+        loadPageMeta();
+        loadPerms();
+        loadChildNav();
     };
 </script>
 
