@@ -50,6 +50,18 @@ func (materialsPlugin) Tables() []string {
 	return []string{"part_materials"}
 }
 
+// Tags は扱うカスタム要素の属性契約。
+// m-required-materials は同期先テーブルを持たない表示専用要素だが、page-id は
+// フロントが集計APIを呼ぶのに必要なので保存されなければならない（属性契約に含める）。
+func (materialsPlugin) Tags() []TagSpec {
+	return []TagSpec{
+		{Element: "m-material", Attributes: []string{
+			"item-name", "cost", "supplier-name", "quantity",
+		}},
+		{Element: "m-required-materials", Attributes: []string{"page-id"}},
+	}
+}
+
 func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	if _, err := tx.Exec(`DELETE FROM part_materials WHERE page_id = ?`, pageID); err != nil {
 		return err

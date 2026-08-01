@@ -3,6 +3,7 @@ package cms
 import (
 	"net/url"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -43,10 +44,10 @@ var voidElements = map[string]bool{
 // urlAttributes はURLとして検証する属性です（javascript: 等を弾く）。
 var urlAttributes = map[string]bool{"href": true, "src": true}
 
-// allowedElements は「要素名 → 許可する属性の集合」です。ここに無い要素はアンラップし
-// （要素は捨てるが子・テキストは残す）、レガシーHTMLの本文が消えないようにします。
-var allowedElements = map[string]map[string]bool{
-	// ── 構造・テキスト ──
+// structuralElements は「要素名 → 許可する属性の集合」のうち、**構造HTML**の分です。
+// サニタイザはHTMLの安全性だけを知り、ドメインの語彙（カスタム要素 <m-*>）は持ちません。
+// カスタム要素はすべてプラグインが Tags() で宣言し、allowedElements() が合成します。
+var structuralElements = map[string]map[string]bool{
 	"h1": {}, "h2": {}, "h3": {}, "h4": {}, "h5": {}, "h6": {},
 	"p": {}, "br": {}, "hr": {}, "div": {}, "span": {},
 	"ul": {}, "li": {}, "blockquote": {}, "pre": {}, "code": {},
@@ -58,28 +59,42 @@ var allowedElements = map[string]map[string]bool{
 	"th":    {"colspan": true, "rowspan": true},
 	"td":    {"colspan": true, "rowspan": true},
 
-	// ── カスタム要素（docs/【一覧】カスタムタグ.md §1 の6種）──
-	"m-tag": {"name": true, "value": true},
-	// m-file は tag の値で意味が変わり、tag ごとに別のプラグインが別の属性を読む。
-	// ここは全 tag 分の和集合。**プラグインが読む属性（internal/cms/plugin_*.go）を
-	// 落とさないこと**（落とすと保存のたびに値が消え、集計が壊れる）。
-	// 例: item-name は <m-file tag="材料屋・加工業者の見積もり"> で
-	// plugin_estimates.go が supplier_estimates.item_name として読む。
-	"m-file": {
-		"src": true, "name": true, "tag": true,
-		"order-no": true, "client-name": true, "supplier-name": true,
-		"item-id": true, "item-name": true, "price": true, "cost": true, "quantity": true,
-		"ordered-at": true, "estimated-at": true,
-	},
-	"m-item": {
-		"item-id": true, "item-name": true, "price": true,
-		"cost": true, "quantity": true, "status": true,
-	},
-	"m-material": {
-		"item-name": true, "cost": true, "supplier-name": true, "quantity": true,
-	},
-	"m-required-materials": {"page-id": true},
-	"m-child-list":         {},
+	// 旧形式のカスタム要素。所有プラグインが未整備のあいだコア側で許可する
+	// （m-tag はページ横断メタ、m-child-list は表示専用の子ページ一覧）。
+	"m-tag":        {"name": true, "value": true},
+	"m-child-list": {},
+}
+
+// allowedElementsCache は合成済みの許可リストです。プラグインは init() で登録され
+// 実行中に増減しないため、初回に一度だけ組み立てて使い回します。
+var (
+	allowedElementsOnce  sync.Once
+	allowedElementsCache map[string]map[string]bool
+)
+
+// allowedElements は「構造HTML ∪ 全プラグインが宣言したカスタム要素」を返します。
+// プラグインが自分で読む属性を宣言するため、「読むのに許可し忘れる」不整合が起きません。
+func allowedElements() map[string]map[string]bool {
+	allowedElementsOnce.Do(func() {
+		merged := make(map[string]map[string]bool, len(structuralElements))
+		for el, attrs := range structuralElements {
+			set := make(map[string]bool, len(attrs))
+			for a := range attrs {
+				set[a] = true
+			}
+			merged[el] = set
+		}
+		for _, spec := range PluginTags() {
+			if merged[spec.Element] == nil {
+				merged[spec.Element] = map[string]bool{}
+			}
+			for _, a := range spec.Attributes {
+				merged[spec.Element][a] = true
+			}
+		}
+		allowedElementsCache = merged
+	})
+	return allowedElementsCache
 }
 
 // Sanitize は本文HTMLを許可リストに従って安全な形へ整えて返します。
@@ -149,7 +164,7 @@ func cleanNode(n *html.Node) []*html.Node {
 
 		kids := cleanNodes(childNodes(n))
 
-		allowedAttrs, ok := allowedElements[name]
+		allowedAttrs, ok := allowedElements()[name]
 		if !ok {
 			// 未知の要素はアンラップ（要素は捨てるが中身は残す）。
 			return kids

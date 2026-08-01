@@ -54,6 +54,20 @@ func (estimatesPlugin) Tables() []string {
 	return []string{"our_estimates", "supplier_estimates"}
 }
 
+// Tags は扱うカスタム要素の属性契約。Sync が読む属性は必ず含めること。
+// item-name は「材料屋・加工業者の見積もり」で supplier_estimates.item_name として読む
+// （過去にこの宣言が無かったため、保存のたびに値が消える不具合になっていた）。
+func (estimatesPlugin) Tags() []TagSpec {
+	return []TagSpec{
+		{Element: "m-file", Attributes: []string{
+			"src", "name", "tag",
+			"item-id", "client-name", "price", // 弊社の見積もり
+			"item-name", "supplier-name", "cost", // 材料屋・加工業者の見積もり
+			"estimated-at",
+		}},
+	}
+}
+
 func (estimatesPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	if _, err := tx.Exec(`DELETE FROM our_estimates WHERE page_id = ?`, pageID); err != nil {
 		return err
