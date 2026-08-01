@@ -34,20 +34,23 @@ func InitDB() error {
 		return err
 	}
 
-	// 手順3: コアテーブル（pages / page_tags）を作成する。
-	// ユースケース固有のテーブル（発注書・見積もり・部材など）は、
+	// 手順3: コアテーブル（pages / page_perms）を作成する。
+	// カスタム要素由来のテーブル（可変タグ・発注書・見積もり・部材など）は、
 	// internal/cms の各プラグインが Schema() で定義し、main から cms.ApplySchema() で作成する。
 	return CreateCoreTables(DB)
 }
 
-// CoreTables はどのユースケースにも共通する基盤テーブル（pages / page_tags）の定義です。
-// pages は全ドキュメントの基本情報、page_tags は <m-tag> の可変属性を保持します。
+// CoreTables はどのユースケースにも依存しない基盤テーブル（pages / page_perms）の定義です。
+// pages は全ドキュメントの基本情報、page_perms は権限の検索インデックス。
 // これらは外部キーの参照先となるため、プラグインのテーブルより先に作成する必要があります。
+//
+// カスタム要素（<m-*>）に対応するテーブルはここには置きません。<m-tag> → page_tags も
+// 「カスタムタグはすべてプラグインが所有する」方針に従い plugin_page_tags.go が持ちます。
 var CoreTables = []string{
 	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）。
 	//    parent_id / created_at / created_by / updated_at はサイドカー
 	//    <id>.meta.json（正本）から同期される派生値（DB再構築でも失われない）。
-	//    title と page_tags のみHTML本文（内容）由来。
+	//    title のみHTML本文（内容）由来。
 	`CREATE TABLE IF NOT EXISTS pages (
 		id INTEGER PRIMARY KEY,
 		title TEXT,
@@ -58,21 +61,7 @@ var CoreTables = []string{
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
 
-	// 2. 可変タグテーブル（名前：値 の属性情報）
-	//    name は自由語で、**同じ name が同一ページに複数あってよい**（担当者が2人、
-	//    関連部品番号が複数、といった多値属性を表現できる）。そのため (page_id, name) を
-	//    主キーにはせず、検索用の非一意インデックスだけを張る。
-	//    かつては主キーだったため、同名タグを2つ置くと保存が UNIQUE 制約違反で失敗していた。
-	//    値を1つだけ使いたい用途（例: <m-tag name="部品番号">）は、HTML木から先頭を採る
-	//    ヘルパ cms.TagValue が担う（DBのこの表は現状クエリされていない検索用インデックス）。
-	`CREATE TABLE IF NOT EXISTS page_tags (
-		page_id INTEGER,
-		name TEXT,
-		value TEXT,
-		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-	);`,
-
-	// 3. ページ権限の検索インデックス（サイドカー <id>.meta.json から再生成される派生データ）。
+	// 2. ページ権限の検索インデックス（サイドカー <id>.meta.json から再生成される派生データ）。
 	//    owner=所有ユーザー名, grp=所有グループ名, mode=3桁の権限（認証認可設計.md 3章）。
 	//    public=匿名公開フラグ（0/1。認証認可設計.md 10章）。実効公開は親チェーンとの AND で別途判定。
 	`CREATE TABLE IF NOT EXISTS page_perms (
@@ -83,12 +72,6 @@ var CoreTables = []string{
 		public INTEGER NOT NULL DEFAULT 0,
 		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 	);`,
-}
-
-// coreIndexes はコアテーブルに張る検索用インデックスです。
-// page_tags は主キーを持たないため、ページ単位・タグ名単位の絞り込み用にここで補います。
-var coreIndexes = []string{
-	`CREATE INDEX IF NOT EXISTS idx_page_tags_page_name ON page_tags(page_id, name);`,
 }
 
 // coreMigrations は、既存DB（CREATE TABLE IF NOT EXISTS では更新されない）に
@@ -111,11 +94,6 @@ func CreateCoreTables(db *sql.DB) error {
 	// 既存DBへの列追加（新規DBでは CREATE TABLE 済みのため冪等にスキップ）。
 	for _, q := range coreMigrations {
 		if _, err := db.Exec(q); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-	for _, q := range coreIndexes {
-		if _, err := db.Exec(q); err != nil {
 			return err
 		}
 	}

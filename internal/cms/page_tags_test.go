@@ -59,6 +59,42 @@ func TestDuplicateTagNamesAreAllowed(t *testing.T) {
 	}
 }
 
+// TestSyncSkipsLegacyParentTag は、旧形式の <m-tag name="親ページID"> が page_tags へ
+// 取り込まれないことを検証します。ページ属性はサイドカー <id>.meta.json が正本のためです。
+//
+// この規則は以前サニタイザ側にありましたが、m-tag の意味を知るのは所有プラグインだけ、
+// という線引きに合わせて plugin_page_tags.go へ移しました。
+func TestSyncSkipsLegacyParentTag(t *testing.T) {
+	setupSaveTest(t)
+
+	const id = "000022"
+	body := `<h1>旧形式タグ</h1>` +
+		`<m-tag name="親ページID" value="000000"></m-tag>` +
+		`<m-tag name="発注元" value="X"></m-tag>`
+
+	if err := SyncIndex(id, body); err != nil {
+		t.Fatalf("SyncIndexエラー: %v", err)
+	}
+
+	var legacy int
+	if err := database.DB.QueryRow(
+		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = ?`, 22, "親ページID").Scan(&legacy); err != nil {
+		t.Fatalf("クエリでエラー: %v", err)
+	}
+	if legacy != 0 {
+		t.Errorf("旧形式の親ページIDタグが取り込まれています: %d件", legacy)
+	}
+
+	var normal int
+	if err := database.DB.QueryRow(
+		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = ?`, 22, "発注元").Scan(&normal); err != nil {
+		t.Fatalf("クエリでエラー: %v", err)
+	}
+	if normal != 1 {
+		t.Errorf("通常のタグまで落ちています: %d件", normal)
+	}
+}
+
 // TestResyncReplacesTags は、洗い替え（DELETE→INSERT）が同名タグでも正しく働き、
 // 再同期のたびに件数が増えていかないことを検証します。
 func TestResyncReplacesTags(t *testing.T) {

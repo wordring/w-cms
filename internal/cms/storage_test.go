@@ -147,7 +147,8 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	</html>
 	`
 
-	// 3. コア情報のパーステスト（タイトル・タグ）
+	// 3. コア情報のパーステスト（タイトルのみ。<m-tag> の抽出は plugin_page_tags.go が担うため、
+	//    タグは下の page_tags の件数確認で検証する）
 	root, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		t.Fatalf("HTMLパースエラー: %v", err)
@@ -155,9 +156,6 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	core := ParseCore(root)
 	if core.Title != "試作受注の記録" {
 		t.Errorf("期待値と異なるタイトル: %s", core.Title)
-	}
-	if len(core.Tags) != 2 {
-		t.Errorf("タグ数が合いません: %d", len(core.Tags))
 	}
 
 	// 4. 同期処理のテスト（プラグイン経由でDBに反映される）

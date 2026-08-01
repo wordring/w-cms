@@ -15,8 +15,8 @@ import (
 )
 
 // SyncIndex はHTMLファイルを解析し、その結果をSQLiteのインデックス用テーブルに保存します。
-// コア（pages / page_tags）を同期したあと、登録済みの全プラグインを走査して
-// ユースケース固有のテーブルを同期します。
+// コア（pages / page_perms）を同期したあと、登録済みの全プラグインを走査して
+// カスタム要素由来のテーブル（可変タグ・発注書・部材など）を同期します。
 func SyncIndex(id string, htmlContent string) error {
 	// 手順1: HTMLをノード木にパースする
 	root, err := html.Parse(strings.NewReader(htmlContent))
@@ -80,19 +80,8 @@ func SyncIndex(id string, htmlContent string) error {
 		return err
 	}
 
-	// コア2: page_tags の洗い替え
-	if _, err = tx.Exec(`DELETE FROM page_tags WHERE page_id = ?`, pageIDInt); err != nil {
-		return err
-	}
-	for _, tag := range core.Tags {
-		if _, err = tx.Exec(
-			`INSERT INTO page_tags (page_id, name, value) VALUES (?, ?, ?)`,
-			pageIDInt, tag.Name, tag.Value); err != nil {
-			return err
-		}
-	}
-
-	// コア3: ページ権限インデックス（サイドカー <id>.meta.json → page_perms）の同期
+	// コア2: ページ権限インデックス（サイドカー <id>.meta.json → page_perms）の同期
+	// （<m-tag> → page_tags はコアではなく plugin_page_tags.go が担う）
 	if err = syncPageMeta(tx, pageIDInt, id); err != nil {
 		return err
 	}

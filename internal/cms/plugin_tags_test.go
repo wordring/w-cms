@@ -111,20 +111,21 @@ func TestSanitizerAllowlistComesFromPlugins(t *testing.T) {
 	}
 }
 
-// TestSanitizerHasNoHardcodedBusinessVocabulary は、サニタイザのコア定義（structuralElements）に
-// 業務ドメインのカスタム要素が直接書かれていないことを検証します。
-// 語彙はプラグインが所有する、という線引きを回帰から守ります。
-func TestSanitizerHasNoHardcodedBusinessVocabulary(t *testing.T) {
+// TestSanitizerHasNoCustomVocabulary は、サニタイザのコア定義（structuralElements）に
+// カスタム要素が1つも直書きされていないことを検証します。
+// 「カスタムタグはすべてプラグインが所有する」という線引きを回帰から守ります。
+func TestSanitizerHasNoCustomVocabulary(t *testing.T) {
 	for el := range structuralElements {
-		if !strings.HasPrefix(el, "m-") {
-			continue
+		if strings.HasPrefix(el, "m-") {
+			t.Errorf("カスタム要素 %q がサニタイザに直書きされています（プラグインの Tags() で宣言してください）", el)
 		}
-		// 所有プラグインが未整備のあいだコアに残す例外のみ許容する。
-		switch el {
-		case "m-tag", "m-child-list":
-			continue
+	}
+
+	// 移設した要素がプラグイン側から供給されていることも確認する
+	for _, el := range []string{"m-tag", "m-child-list"} {
+		if _, ok := findSpec(PluginTags(), el); !ok {
+			t.Errorf("%q を宣言するプラグインがありません", el)
 		}
-		t.Errorf("業務ドメインの要素 %q がサニタイザに直書きされています（プラグインの Tags() で宣言してください）", el)
 	}
 }
 
