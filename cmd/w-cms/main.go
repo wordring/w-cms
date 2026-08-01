@@ -97,9 +97,8 @@ func main() {
 	root.Handle("/api/children", auth.OptionalAuth(http.HandlerFunc(cms.ChildPagesAPIHandler)))
 	root.Handle("/api/page-meta", auth.OptionalAuth(http.HandlerFunc(cms.PageMetaAPIHandler)))
 
-	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）と /upload。
+	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）。
 	root.Handle("/api/", auth.RequireAuth(protected))
-	root.Handle("/upload", auth.RequireAuth(http.HandlerFunc(cms.UploadHandler)))
 
 	// ページの殻（assets/index.html を返すだけの静的シェル）は匿名にも返す。
 	// 実際の本文・属性は JS が /api/load 等を叩いて取得し、そこで認可される。

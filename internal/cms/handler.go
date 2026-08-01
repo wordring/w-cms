@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -165,46 +164,6 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(content)
-}
-
-// UploadHandler はブラウザからのファイルアップロードリクエストを受け取り、保存と同期を行います。
-func UploadHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	r.ParseMultipartForm(32 << 20)
-	file, _, err := r.FormFile("html_page")
-	if err != nil {
-		http.Error(w, "File upload error", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	content, _ := io.ReadAll(file)
-
-	newID, err := reserveNewPageID(sql.NullInt64{})
-	if err != nil {
-		http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	pageDir := GetPageDir(newID)
-
-	os.MkdirAll(pageDir, 0755)
-
-	htmlPath := filepath.Join(pageDir, newID+".html")
-	os.WriteFile(htmlPath, content, 0644)
-
-	// アップロード者を所有者とする属性サイドカーを作成（SyncIndexより前）。
-	// トップレベルのアップロードなので group は作成者の主グループ、mode は既定。
-	if u := auth.CurrentUser(r); u != nil {
-		EnsureSidecar(newID, u.Username, u.PrimaryGroup, "", "")
-	}
-
-	SyncIndex(newID, string(content))
-
-	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。
