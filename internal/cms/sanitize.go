@@ -58,12 +58,11 @@ var structuralElements = map[string]map[string]bool{
 	"table": {}, "thead": {}, "tbody": {}, "tr": {},
 	"th":    {"colspan": true, "rowspan": true},
 	"td":    {"colspan": true, "rowspan": true},
-
-	// 旧形式のカスタム要素。所有プラグインが未整備のあいだコア側で許可する
-	// （m-tag はページ横断メタ、m-child-list は表示専用の子ページ一覧）。
-	"m-tag":        {"name": true, "value": true},
-	"m-child-list": {},
 }
+
+// 注: 旧方式の <m-tag name="親ページID"> を取り込まない規則は、m-tag を所有する
+// plugin_page_tags.go が持ちます。サニタイザはHTMLの安全性だけを見て、
+// カスタム要素の意味には立ち入りません。
 
 // allowedElementsCache は合成済みの許可リストです。プラグインは init() で登録され
 // 実行中に増減しないため、初回に一度だけ組み立てて使い回します。
@@ -157,11 +156,6 @@ func cleanNode(n *html.Node) []*html.Node {
 		if dangerousElements[name] {
 			return nil
 		}
-		// 旧形式の親ページIDタグは取り込まない（属性はサイドカーが正本）。
-		if name == "m-tag" && attrValue(n, "name") == "親ページID" {
-			return nil
-		}
-
 		kids := cleanNodes(childNodes(n))
 
 		allowedAttrs, ok := allowedElements()[name]

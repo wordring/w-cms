@@ -195,17 +195,9 @@ func TestSanitizeUnwrapsUnknownElements(t *testing.T) {
 	}
 }
 
-// TestSanitizeDropsLegacyParentTag は旧形式の親ページIDタグが取り込まれないことを検証します
-// （ページ属性はサイドカー <id>.meta.json が正本）。
-func TestSanitizeDropsLegacyParentTag(t *testing.T) {
-	got := Sanitize(`<m-tag name="親ページID" value="000000"></m-tag><m-tag name="発注元" value="X"></m-tag>`)
-	if strings.Contains(got, "親ページID") {
-		t.Errorf("旧形式の親ページIDタグが残っている: %s", got)
-	}
-	if !strings.Contains(got, "発注元") {
-		t.Errorf("通常のm-tagまで落ちている: %s", got)
-	}
-}
+// 旧形式の <m-tag name="親ページID"> を取り込まない規則は、m-tag を所有する
+// plugin_page_tags.go の責務に移した（サニタイザはカスタム要素の意味に立ち入らない）。
+// 検証は page_tags_test.go の TestSyncSkipsLegacyParentTag を参照。
 
 // TestSanitizeIsIdempotent は冪等性を検証します。保存時にサニタイズ結果をエディタへ返す
 // エコーバック方式は、これが成り立たないと保存のたびに内容が変化して収束しません。
