@@ -70,6 +70,9 @@ func main() {
 	protected := http.NewServeMux()
 
 	protected.HandleFunc("/api/save", cms.SaveAPIHandler)
+	// 1ブロックだけの保存。data-block-id が無い本文や構造変更では使えないため、
+	// クライアントは 409 等で /api/save（全文保存）へフォールバックする。
+	protected.HandleFunc("/api/save-block", cms.SaveBlockAPIHandler)
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)

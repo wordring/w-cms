@@ -44,6 +44,17 @@ var voidElements = map[string]bool{
 // urlAttributes はURLとして検証する属性です（javascript: 等を弾く）。
 var urlAttributes = map[string]bool{"href": true, "src": true}
 
+// BlockIDAttr はブロック単位保存で使う識別子の属性名です。
+//
+// **任意の属性**であり、無くても構いません（無ければ全文保存になります）。
+// そのため手で書いたHTMLやスクリプトが生成したHTMLもそのまま扱えます。
+// 文書構造の都合であってドメインの語彙ではないので、プラグインではなくコアが持ちます。
+const BlockIDAttr = "data-block-id"
+
+// globalAttributes はどの許可要素にも共通で通す属性です。
+// 要素ごとの許可リスト（構造HTML＋プラグイン宣言）に加えて評価されます。
+var globalAttributes = map[string]bool{BlockIDAttr: true}
+
 // structuralElements は「要素名 → 許可する属性の集合」のうち、**構造HTML**の分です。
 // サニタイザはHTMLの安全性だけを知り、ドメインの語彙（カスタム要素 <m-*>）は持ちません。
 // カスタム要素はすべてプラグインが Tags() で宣言し、allowedElements() が合成します。
@@ -201,7 +212,7 @@ func filterAttrs(attrs []html.Attribute, allowed map[string]bool) []html.Attribu
 		if strings.HasPrefix(key, "on") || key == "style" {
 			continue
 		}
-		if !allowed[key] {
+		if !allowed[key] && !globalAttributes[key] {
 			continue
 		}
 		if urlAttributes[key] && !safeURL(a.Val) {
