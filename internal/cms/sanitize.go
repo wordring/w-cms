@@ -49,7 +49,11 @@ var urlAttributes = map[string]bool{"href": true, "src": true}
 // **任意の属性**であり、無くても構いません（無ければ全文保存になります）。
 // そのため手で書いたHTMLやスクリプトが生成したHTMLもそのまま扱えます。
 // 文書構造の都合であってドメインの語彙ではないので、プラグインではなくコアが持ちます。
-const BlockIDAttr = "data-block-id"
+//
+// `id` ではなく data-* にしているのは、本文がシェル（assets/index.html）と同じDOMへ
+// 合成されるため。`id` を許すと本文から `html-preview` などシェル側の要素を乗っ取れてしまい
+// （getElementById は文書順で最初の要素を返す）、保存や権限UIが壊れる経路が開く。
+const BlockIDAttr = "data-id"
 
 // globalAttributes はどの許可要素にも共通で通す属性です。
 // 要素ごとの許可リスト（構造HTML＋プラグイン宣言）に加えて評価されます。
