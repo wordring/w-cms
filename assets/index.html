@@ -1409,6 +1409,10 @@
 
         const plan = decideSaveStrategy(blocks);
         if (plan.kind === 'none') return; // 変更なし。無駄な保存・DB同期・書き込みをしない
+
+        // 変更が確定したこの時点をアンドゥ履歴へ積む（保存と同じ粒度）
+        pushSnapshot(document.getElementById('html-preview').value);
+
         if (plan.kind === 'block') { saveBlockToServer(plan.block, blocks); return; }
         saveFullToServer(blocks);
     }
@@ -1433,6 +1437,8 @@
             if (data.sanitized && typeof data.html === 'string') {
                 if (applySanitizedHtml(data.html)) { updateHtmlPreview(); buildToc(); }
                 notifySanitized();
+                // 除去後の状態を積み直す。積まないと「除去された危険な内容」へアンドゥで戻れてしまう。
+                pushSnapshot(document.getElementById('html-preview').value);
             }
             // 保存できた状態を記録する（次回の差分判定の基準）
             lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
@@ -1473,6 +1479,8 @@
                 updateHtmlPreview();
                 buildToc();
                 notifySanitized();
+                // 除去後の状態を積み直す（アンドゥで危険な内容へ戻らないように）
+                pushSnapshot(document.getElementById('html-preview').value);
                 lastSavedBlocks = serializeBlocks();
             } else {
                 // 送ったブロックだけ記録を更新する
@@ -1494,6 +1502,128 @@
         if (!incoming) { el.parentNode.removeChild(el); return true; }
         el.parentNode.replaceChild(incoming, el);
         return true;
+    }
+
+    // ── 編集中のアンドゥ・リドゥ（docs/【考察】アンドゥ・リドゥ.md §3）────────────
+    //
+    // このエディタは contenteditable に加えプログラム的なDOM操作を大量に行う
+    // （ブロックの挿入・並べ替え・置換、明細の追加、カスタム要素の再描画）。
+    // ブラウザ標準の undo は execCommand とネイティブ入力しか捕捉しないため、
+    // それらを戻せず不整合になる。そこで本文HTMLのスナップショットを積む独自スタックを持つ。
+    //
+    // 粒度は「変更が確定した単位」＝保存が走る単位（既存の1.5秒デバウンス）。
+    // 1キーストロークごとではないので粗いが、カスタム要素も属性ごとHTMLに乗るため
+    // すべてのブロック操作を一様に扱える。
+    const UNDO_LIMIT = 100;
+    let undoStack = [];        // [{html, caret}] 末尾が現在の状態
+    let redoStack = [];
+    let suppressSnapshot = false; // 復元中は積まない（復元が新しい変更として記録されるのを防ぐ）
+
+    // captureCaret は現在のキャレット位置を {blockId, offset} として取り出す。
+    // ブロックの識別にはブロック単位保存で導入した data-block-id を使う。
+    function captureCaret() {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return null;
+        const range = sel.getRangeAt(0);
+        const host = range.startContainer.nodeType === Node.ELEMENT_NODE
+            ? range.startContainer
+            : range.startContainer.parentElement;
+        if (!host) return null;
+        const block = host.closest('[' + BLOCK_ID_ATTR + ']');
+        if (!block) return null;
+
+        // ブロック先頭からの文字数を数える（テキストブロックが対象）
+        let offset = 0;
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+            if (node === range.startContainer) return { blockId: block.getAttribute(BLOCK_ID_ATTR), offset: offset + range.startOffset };
+            offset += node.nodeValue.length;
+        }
+        // カスタム要素の中など、テキストノードを特定できない場合はブロックだけ覚えておく
+        return { blockId: block.getAttribute(BLOCK_ID_ATTR), offset: 0 };
+    }
+
+    // restoreCaret は captureCaret の記録からキャレットを復元する。
+    // 対象ブロックが見つからなければ何もしない（安全側）。
+    function restoreCaret(caret) {
+        if (!caret || !caret.blockId) return;
+        const block = document.querySelector('[' + BLOCK_ID_ATTR + '="' + CSS.escape(caret.blockId) + '"]');
+        if (!block) return;
+
+        let remaining = caret.offset;
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+        let node, target = null, targetOffset = 0;
+        while ((node = walker.nextNode())) {
+            if (remaining <= node.nodeValue.length) { target = node; targetOffset = remaining; break; }
+            remaining -= node.nodeValue.length;
+        }
+        try {
+            // focus() は contenteditable のキャレットを先頭へ動かすので、**範囲を張る前**に呼ぶ。
+            // 逆にすると、せっかく計算した位置が focus() に上書きされてしまう。
+            if (block.focus) block.focus({ preventScroll: true });
+
+            const range = document.createRange();
+            if (target) {
+                range.setStart(target, targetOffset);
+            } else {
+                range.selectNodeContents(block);
+            }
+            range.collapse(true);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } catch (e) { /* 位置が復元できなくても編集は続行できる */ }
+    }
+
+    // pushSnapshot は現在の状態を履歴へ積む。直前と同じ内容なら積まない。
+    function pushSnapshot(html) {
+        if (suppressSnapshot) return;
+        const top = undoStack[undoStack.length - 1];
+        if (top && top.html === html) return;
+        undoStack.push({ html: html, caret: captureCaret() });
+        if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+        redoStack = []; // 新しい変更が入ったらリドゥは無効
+    }
+
+    // resetHistory はセッションの区切りで履歴を捨てる。
+    // 編集権を失ったときは本文がサーバーの最新版に置き換わり手元の編集も失われているため、
+    // 戻せない状態へアンドゥできないようにここで必ず捨てる。
+    function resetHistory(initialHtml) {
+        undoStack = [];
+        redoStack = [];
+        if (typeof initialHtml === 'string') undoStack.push({ html: initialHtml, caret: null });
+    }
+
+    // restoreSnapshot は履歴の状態を画面へ戻し、その結果を保存する。
+    function restoreSnapshot(snap) {
+        suppressSnapshot = true;
+        populateEditor(snap.html);
+        // populateEditor は本文を流し込むだけで編集用の属性は付けない（既存の呼び出し元も
+        // 直後に applyMode を呼んでいる）。これを忘れるとブロックが contenteditable でなくなり、
+        // アンドゥ直後に文字が打てなくなる。キャレット復元より前に呼ぶ必要がある。
+        applyMode();
+        restoreCaret(snap.caret);
+        updateHtmlPreview();
+        suppressSnapshot = false;
+        triggerAutoSave(); // 戻した内容を正本へ反映する
+    }
+
+    function undo() {
+        if (undoStack.length < 2) return; // 先頭は編集開始時の状態なので残す
+        const current = undoStack.pop();
+        redoStack.push(current);
+        // 内容は1つ前の状態へ戻すが、キャレットは**取り消した編集があった位置**へ置く。
+        // 「戻した先の状態が作られたときのキャレット」は今回の操作と無関係な場所なので、
+        // 一般的なエディタと同じく、取り消した編集の位置に寄せるほうが自然に感じられる。
+        restoreSnapshot({ html: undoStack[undoStack.length - 1].html, caret: current.caret });
+    }
+
+    function redo() {
+        if (redoStack.length === 0) return;
+        const next = redoStack.pop();
+        undoStack.push(next);
+        restoreSnapshot(next);
     }
 
     function triggerAutoSave() {
@@ -1640,6 +1770,10 @@
         // 全文保存でIDを正本へ永続化させる（lastSavedBlocks を null のままにする）。
         // すべて採番済みなら、いまの状態を基準にして以降は差分だけ送れる。
         lastSavedBlocks = ensureBlockIds() > 0 ? null : serializeBlocks();
+
+        // アンドゥ履歴はこの編集セッションのもの。開始時の状態を起点として積む。
+        updateHtmlPreview();
+        resetHistory(document.getElementById('html-preview').value);
         // ヘッダー（モードトグル）はスクロールで隠れるため、モード移行は緑トーストで明示する。
         // 待機後に available で自動入室した場合もここを通るので「権限が回ってきた」気付きにもなる。
         notify('編集権を取得しました。編集モードです。', { type: 'success', duration: 3000, id: 'mode' });
@@ -1781,6 +1915,9 @@
         const toggle = document.getElementById('mode-toggle');
         toggle.checked = false;
         applyMode();
+        // 本文がサーバーの最新版に置き換わり、手元の編集は失われている（上で退避済み）。
+        // 戻せない状態へアンドゥできてしまわないよう、履歴はここで捨てる。
+        resetHistory();
         await reloadContent(); // 最新（他の人の編集）を反映
         const tail = saved ? 'あなたの変更はクリップボードへ退避しました。' : 'あなたの未保存の変更は反映されていない場合があります。';
         notify('編集権が他の人に移りました。最新の内容を再読込しました。' + tail,
@@ -1803,6 +1940,7 @@
         const toggle = document.getElementById('mode-toggle');
         if (!toggle.checked) return;
         toggle.checked = false;
+        resetHistory(); // 編集セッションの終わり。アンドゥ履歴は持ち越さない
         await onModeToggle();
     }
 
@@ -2310,7 +2448,17 @@
 
         editor.addEventListener('keydown', (e) => {
             if (!document.body.hasAttribute('edit-mode')) return;
-            
+
+            // アンドゥ・リドゥは独自スタックに一本化する。preventDefault しないと
+            // ブラウザ標準の undo と二重スタックになり、DOM操作を戻せずに壊れる
+            // （docs/【考察】アンドゥ・リドゥ.md §3「必須」）。
+            // カスタム要素内の入力欄からも効かせたいので、下の絞り込みより前に処理する。
+            if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+                const key = e.key.toLowerCase();
+                if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+                if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
+            }
+
             const target = e.target;
             if (target.tagName !== 'P' && target.tagName !== 'H1' && target.tagName !== 'H2' && target.tagName !== 'H3') {
                 return; // Ignore inputs inside web components
