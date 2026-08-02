@@ -1520,7 +1520,7 @@
     let suppressSnapshot = false; // 復元中は積まない（復元が新しい変更として記録されるのを防ぐ）
 
     // captureCaret は現在のキャレット位置を {blockId, offset} として取り出す。
-    // ブロックの識別にはブロック単位保存で導入した data-block-id を使う。
+    // ブロックの識別にはブロック単位保存で導入した data-id を使う。
     function captureCaret() {
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) return null;
@@ -1529,8 +1529,13 @@
             ? range.startContainer
             : range.startContainer.parentElement;
         if (!host) return null;
-        const block = host.closest('[' + BLOCK_ID_ATTR + ']');
-        if (!block) return null;
+
+        // 祖先をたどって「トップレベルのブロック」を探す。属性だけで探すと、
+        // 貼り付けた内容が入れ子に data-id を持っていた場合に取り違える。
+        const blocks = new Set(topLevelBlocks());
+        let block = host;
+        while (block && !blocks.has(block)) block = block.parentElement;
+        if (!block || !block.getAttribute(BLOCK_ID_ATTR)) return null;
 
         // ブロック先頭からの文字数を数える（テキストブロックが対象）
         let offset = 0;
@@ -1548,7 +1553,8 @@
     // 対象ブロックが見つからなければ何もしない（安全側）。
     function restoreCaret(caret) {
         if (!caret || !caret.blockId) return;
-        const block = document.querySelector('[' + BLOCK_ID_ATTR + '="' + CSS.escape(caret.blockId) + '"]');
+        // 探すのはトップレベルのブロックだけ（入れ子の同名 data-id を拾わないため）
+        const block = topLevelBlocks().find(el => el.getAttribute(BLOCK_ID_ATTR) === caret.blockId);
         if (!block) return;
 
         let remaining = caret.offset;
@@ -2024,16 +2030,30 @@
     }
 
     // ── ブロック単位保存のための識別子 ──────────────────────────────────
-    // data-block-id は**任意**の属性。付いていればそのブロックだけを保存でき、
+    // data-id は**任意**の属性。付いていればそのブロックだけを保存でき、
     // 無ければ従来どおり全文保存になる（手で書いたHTMLもそのまま扱えるようにするため）。
-    // 12桁の16進で、正本HTMLのdiffが読みにくくならない長さに留めている。
-    const BLOCK_ID_ATTR = 'data-block-id';
+    //
+    // `id` ではなく data-* にしているのは、本文がシェルと同じDOMへ合成されるため。
+    // `id` を許すと本文から html-preview 等シェル側の要素を乗っ取れてしまい
+    // （getElementById は文書順で最初の要素を返す）、保存や権限UIが壊れる経路が開く。
+    //
+    // 値は4桁の base36。正本HTMLのdiffを読みやすく保つため短くし、
+    // 短さで衝突しうる分は**採番時の重複チェック**で潰す（assignBlockId）。
+    const BLOCK_ID_ATTR = 'data-id';
+    const BLOCK_ID_LEN = 4;
     const TEXT_BLOCK_TAGS = ['h1', 'h2', 'h3', 'p'];
 
-    function newBlockId() {
-        const b = new Uint8Array(6);
-        crypto.getRandomValues(b);
-        return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    // newBlockId は used に無い識別子を返す。短いので衝突しうるが、
+    // 使用済み集合と突き合わせて振り直すため文書内で一意になる。
+    function newBlockId(used) {
+        for (let attempt = 0; attempt < 50; attempt++) {
+            const b = new Uint8Array(BLOCK_ID_LEN);
+            crypto.getRandomValues(b);
+            const id = Array.from(b, x => (x % 36).toString(36)).join('');
+            if (!used || !used.has(id)) return id;
+        }
+        // 万一ここまで衝突が続いたら桁を増やして確実に抜ける
+        return Date.now().toString(36).slice(-6);
     }
 
     // topLevelBlocks は保存対象になるトップレベル要素を文書順で返す。
@@ -2049,17 +2069,23 @@
         return (tagSchema && tagSchema[t]) || TEXT_BLOCK_TAGS.includes(t);
     }
 
-    // ensureBlockIds は未採番のブロックへIDを振る。付与した数を返す。
+    // ensureBlockIds は未採番のブロックへIDを振り、**重複も修復する**。変更した数を返す。
+    //
     // 既存ページは初回の編集時にここで採番され、その回の全文保存で正本へ永続化される。
+    // 重複修復が要るのは、ページ間でブロックをコピーするとIDが重複しうるため
+    // （重複したままだとサーバーが差し替え対象を特定できず 409 で全文保存に落ち続ける）。
     function ensureBlockIds() {
-        let added = 0;
+        const used = new Set();
+        let changed = 0;
         topLevelBlocks().forEach(el => {
-            if (!el.getAttribute(BLOCK_ID_ATTR)) {
-                el.setAttribute(BLOCK_ID_ATTR, newBlockId());
-                added++;
-            }
+            const id = el.getAttribute(BLOCK_ID_ATTR);
+            if (id && !used.has(id)) { used.add(id); return; } // 一意なのでそのまま
+            const fresh = newBlockId(used);                     // 未採番 or 重複 → 振り直す
+            el.setAttribute(BLOCK_ID_ATTR, fresh);
+            used.add(fresh);
+            changed++;
         });
-        return added;
+        return changed;
     }
 
     function blockIdAttrOf(el) {
@@ -2069,7 +2095,7 @@
 
     // serializeCustomElement はカスタム要素を語彙（/api/tag-schema）に従って書き出す。
     // 要素ごとの手書き分岐を持たないので、プラグインが増えてもここは変更不要。
-    // extraAttrs はトップレベルのブロックにだけ付ける追加属性（data-block-id）。
+    // extraAttrs はトップレベルのブロックにだけ付ける追加属性（data-id）。
     // 入れ子の明細などには付けない（ブロック単位保存が扱うのは最上位だけ）。
     function serializeCustomElement(el, indent, extraAttrs) {
         const name = el.tagName.toLowerCase();
