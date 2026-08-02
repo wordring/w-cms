@@ -3,6 +3,7 @@ package cms
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -138,6 +139,106 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// html はサニタイズ後の本文。sanitized が true のときエディタは差分ブロックを
 		// 置き換えて、除去が起きたことを編集者へ通知する。
 		"html":      safeHTML,
+		"sanitized": sanitized,
+	})
+}
+
+// SaveBlockRequest は1ブロックだけを更新する保存リクエストです。
+type SaveBlockRequest struct {
+	PageID  string `json:"page_id"`
+	BlockID string `json:"block_id"`
+	HTML    string `json:"html"`  // 当該ブロックのHTML（そのブロック1つ分）
+	Token   string `json:"token"` // 編集ロックのトークン
+}
+
+// SaveBlockAPIHandler は本文のうち1ブロックだけを差し替えて保存します。
+//
+// ブロックは `data-block-id` で識別しますが、**この属性は任意**です。IDが無い本文
+// （手書きHTML等）や、追加・削除・並べ替えのような構造変更では使えないため、
+// その場合はクライアントが従来の全文保存（SaveAPIHandler）へフォールバックします。
+// 対象が見つからない・重複する場合は **409** を返し、同じくフォールバックさせます。
+//
+// 正本はファイル単位で書き直し、SyncIndex もページ単位の洗い替えのままなので、
+// これで減るのは送信量とエコーバックの粒度です。
+func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SaveBlockRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.PageID == "" || req.BlockID == "" {
+		http.Error(w, "page_id と block_id が必要です", http.StatusBadRequest)
+		return
+	}
+
+	// 全文保存と同じ認可・ロック検証を通す（権限とロックの扱いを分岐させない）。
+	if !RequirePageWrite(w, r, req.PageID) {
+		return
+	}
+	idInt, err := strconv.Atoi(req.PageID)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	if u := auth.CurrentUser(r); u != nil && !pageLocks.Validate(idInt, u.Username, req.Token) {
+		http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
+		return
+	}
+
+	htmlPath := filepath.Join(GetPageDir(req.PageID), req.PageID+".html")
+	current, err := os.ReadFile(htmlPath)
+	if err != nil {
+		http.Error(w, "本文を読み込めませんでした", http.StatusNotFound)
+		return
+	}
+
+	// ブロック単体をサニタイズしてから差し込む（全文と同じ許可リスト）。
+	safeBlock, sanitized := SanitizeReport(req.HTML)
+
+	merged, err := ReplaceBlock(string(current), req.BlockID, safeBlock)
+	if err != nil {
+		// 見つからない／重複 → クライアントは全文保存へフォールバックする
+		if errors.Is(err, ErrBlockNotFound) || errors.Is(err, ErrBlockAmbiguous) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, "本文の更新に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	updatedAt, err := BumpUpdatedAt(req.PageID)
+	if err != nil {
+		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(htmlPath, []byte(merged), 0644); err != nil {
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		return
+	}
+	if err := SyncIndex(req.PageID, merged); err != nil {
+		log.Printf("SyncIndex failed for page %s: %v\n", req.PageID, err)
+		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if u := auth.CurrentUser(r); u != nil {
+		auth.Audit(u.Username, "save-block", req.PageID)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"page_id":    req.PageID,
+		"block_id":   req.BlockID,
+		"updated_at": updatedAt,
+		// html は当該ブロックのサニタイズ後HTML（エコーバックはブロック単位になる）。
+		"html":      safeBlock,
 		"sanitized": sanitized,
 	})
 }

@@ -1347,22 +1347,79 @@
     // 親ページIDの編集はサイドパネルの「親ページID」入力＋適用ボタンが担い、
     // /api/set-parent（サーバーが検証）でサイドカーへ反映する（applyParent を参照）。
 
+    // lastSavedBlocks は直近に保存した状態（[{id, html}]）。変更の有無と、
+    // 「どのブロックが変わったか」の判定に使う。null なら次回は全文保存。
+    let lastSavedBlocks = null;
+
+    // decideSaveStrategy は今回の保存方法を決める。
+    //   none  … 変更なし。送らない（ブロック間を移動しただけ等）
+    //   block … 1ブロックの内容だけが変わった。そのブロックだけ送る
+    //   full  … 追加・削除・並べ替え・ID未採番・複数ブロック変更。従来どおり全文
+    function decideSaveStrategy(blocks) {
+        if (!lastSavedBlocks) return { kind: 'full' };
+
+        // 構造（ブロックの並びとID）が変わっていたら全文で送る
+        const ids = blocks.map(b => b.id).join('\n');
+        const prevIds = lastSavedBlocks.map(b => b.id).join('\n');
+        if (ids !== prevIds) return { kind: 'full' };
+
+        const changed = blocks.filter((b, i) => b.html !== lastSavedBlocks[i].html);
+        if (changed.length === 0) return { kind: 'none' };
+        if (changed.length === 1 && changed[0].id) return { kind: 'block', block: changed[0] };
+        return { kind: 'full' };
+    }
+
+    function setSaveStatus(text, color) {
+        const el = document.getElementById('save-status');
+        el.innerText = text;
+        el.style.color = color;
+    }
+
+    function onSaveFailed(err) {
+        if (err) console.error(err);
+        setSaveStatus("❌ 保存エラー", "#ef4444");
+    }
+
+    // applySavedMeta は保存応答の共通処理（ID確定・更新日時の反映）。
+    function applySavedMeta(data) {
+        if (data.page_id && currentPageId !== data.page_id) {
+            currentPageId = data.page_id;
+            window.currentPageId = data.page_id;
+            window.history.pushState({}, '', '?id=' + currentPageId); // ページリロードなし
+            document.getElementById('pi-id').textContent = currentPageId;
+        }
+        if (data.updated_at) {
+            document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
+        }
+    }
+
+    function notifySanitized() {
+        notify('安全でない記述（スクリプトやイベント属性など）を除去して保存しました。',
+            { type: 'warn', duration: 8000, id: 'sanitized' });
+    }
+
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
         // 語彙が未取得のまま保存すると、カスタム要素が丸ごと欠落した本文を書いてしまう。
         if (!tagSchema) { console.warn('カスタム要素の語彙が未取得のため保存を見送りました'); return; }
-        const statusEl = document.getElementById('save-status');
-        statusEl.innerText = "保存中...";
-        statusEl.style.color = "#f59e0b"; // 琥珀色
 
-        // 保存時は最新のHTMLを取得
-        updateHtmlPreview(); 
-        const html = document.getElementById('html-preview').value;
+        ensureBlockIds(); // 新しく作られたブロックにIDを振る（構造変更なので全文保存になる）
+        const blocks = serializeBlocks();
+        document.getElementById('html-preview').value = joinBlocks(blocks);
 
+        const plan = decideSaveStrategy(blocks);
+        if (plan.kind === 'none') return; // 変更なし。無駄な保存・DB同期・書き込みをしない
+        if (plan.kind === 'block') { saveBlockToServer(plan.block, blocks); return; }
+        saveFullToServer(blocks);
+    }
+
+    // saveFullToServer は本文全体を保存する（従来の方式）。
+    function saveFullToServer(blocks) {
+        setSaveStatus("保存中...", "#f59e0b");
         fetch('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ page_id: currentPageId, html: html, token: lockToken })
+            body: JSON.stringify({ page_id: currentPageId, html: joinBlocks(blocks), token: lockToken })
         })
         .then(res => {
             // 409 = 編集権の喪失（他者へ明け渡し済み）。退避して閲覧モードへ。
@@ -1371,40 +1428,72 @@
         })
         .then(data => {
             if (!data) return;
-            if (data.success) {
-                if (currentPageId !== data.page_id) {
-                    currentPageId = data.page_id;
-                    window.currentPageId = data.page_id;
-                    // URLを書き換える（ページリロードなし）
-                    window.history.pushState({}, '', '?id=' + currentPageId);
-                    document.getElementById('pi-id').textContent = currentPageId;
-                }
-                // サーバーが刻んだ更新日時をサイドパネルへ反映する。
-                if (data.updated_at) {
-                    document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
-                }
-                // サーバーが安全でない記述を除去した場合は、その結果を画面へ反映して知らせる。
-                // 通常の編集では起きない（エディタが出力する語彙は許可リストの範囲内のため）。
-                if (data.sanitized && typeof data.html === 'string') {
-                    if (applySanitizedHtml(data.html)) {
-                        updateHtmlPreview();
-                        buildToc();
-                    }
-                    notify('安全でない記述（スクリプトやイベント属性など）を除去して保存しました。',
-                        { type: 'warn', duration: 8000, id: 'sanitized' });
-                }
-                statusEl.innerText = "✅ 保存済";
-                statusEl.style.color = "#10b981"; // 緑色
-            } else {
-                statusEl.innerText = "❌ 保存エラー";
-                statusEl.style.color = "#ef4444";
+            if (!data.success) { onSaveFailed(); return; }
+            applySavedMeta(data);
+            if (data.sanitized && typeof data.html === 'string') {
+                if (applySanitizedHtml(data.html)) { updateHtmlPreview(); buildToc(); }
+                notifySanitized();
             }
+            // 保存できた状態を記録する（次回の差分判定の基準）
+            lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
+            setSaveStatus("✅ 保存済", "#10b981");
         })
-        .catch(err => {
-            console.error(err);
-            statusEl.innerText = "❌ 保存エラー";
-            statusEl.style.color = "#ef4444";
-        });
+        .catch(onSaveFailed);
+    }
+
+    // saveBlockToServer は1ブロックだけを保存する。
+    // サーバー側でブロックが見つからない／重複する場合は 409 が返るので、全文保存へ切り替える。
+    function saveBlockToServer(block, blocks) {
+        setSaveStatus("保存中...", "#f59e0b");
+        fetch('/api/save-block', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                page_id: currentPageId, block_id: block.id, html: block.html, token: lockToken
+            })
+        })
+        .then(res => {
+            if (res.status === 409) {
+                // 編集権の喪失かブロック不整合か、本文を見て切り分ける
+                return res.text().then(text => {
+                    if (text.indexOf('編集権') >= 0) { handleLockLost(); return null; }
+                    lastSavedBlocks = null; // 次は全文で送り直す
+                    saveFullToServer(blocks);
+                    return null;
+                });
+            }
+            return res.json();
+        })
+        .then(data => {
+            if (!data) return;
+            if (!data.success) { onSaveFailed(); return; }
+            applySavedMeta(data);
+            if (data.sanitized && typeof data.html === 'string') {
+                applySanitizedBlock(block, data.html);
+                updateHtmlPreview();
+                buildToc();
+                notifySanitized();
+                lastSavedBlocks = serializeBlocks();
+            } else {
+                // 送ったブロックだけ記録を更新する
+                lastSavedBlocks = blocks.map(b => ({ id: b.id, html: b.html }));
+            }
+            setSaveStatus("✅ 保存済", "#10b981");
+        })
+        .catch(onSaveFailed);
+    }
+
+    // applySanitizedBlock はサニタイズ結果を当該ブロックへ反映する。
+    // 編集中のブロックはキャレットが飛ぶので触らない（離脱時の保存で反映される）。
+    function applySanitizedBlock(block, htmlStr) {
+        const el = block.el;
+        if (!el || !el.parentNode) return false;
+        if (el.contains(document.activeElement)) return false;
+        const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
+        const incoming = doc.body.firstElementChild;
+        if (!incoming) { el.parentNode.removeChild(el); return true; }
+        el.parentNode.replaceChild(incoming, el);
+        return true;
     }
 
     function triggerAutoSave() {
@@ -1546,6 +1635,11 @@
         toggle.checked = true;
         applyMode();
         openHolderEvents();
+
+        // ブロック単位保存の基準を作る。未採番のブロックがあれば採番し、その回は
+        // 全文保存でIDを正本へ永続化させる（lastSavedBlocks を null のままにする）。
+        // すべて採番済みなら、いまの状態を基準にして以降は差分だけ送れる。
+        lastSavedBlocks = ensureBlockIds() > 0 ? null : serializeBlocks();
         // ヘッダー（モードトグル）はスクロールで隠れるため、モード移行は緑トーストで明示する。
         // 待機後に available で自動入室した場合もここを通るので「権限が回ってきた」気付きにもなる。
         notify('編集権を取得しました。編集モードです。', { type: 'success', duration: 3000, id: 'mode' });
@@ -1553,7 +1647,9 @@
     }
 
     // populateEditor は本文HTMLをエディタへ流し込みブロック化する（ロード時・ロック取得時に共用）。
+    // 本文を丸ごと入れ替えるので、ブロック単位保存の基準は破棄する（次回は全文保存）。
     function populateEditor(htmlStr) {
+        lastSavedBlocks = null;
         const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
         const editorContent = document.getElementById('editor-content');
         editorContent.innerHTML = '';
@@ -1789,9 +1885,55 @@
         return names.length ? names.join(',') : null;
     }
 
+    // ── ブロック単位保存のための識別子 ──────────────────────────────────
+    // data-block-id は**任意**の属性。付いていればそのブロックだけを保存でき、
+    // 無ければ従来どおり全文保存になる（手で書いたHTMLもそのまま扱えるようにするため）。
+    // 12桁の16進で、正本HTMLのdiffが読みにくくならない長さに留めている。
+    const BLOCK_ID_ATTR = 'data-block-id';
+    const TEXT_BLOCK_TAGS = ['h1', 'h2', 'h3', 'p'];
+
+    function newBlockId() {
+        const b = new Uint8Array(6);
+        crypto.getRandomValues(b);
+        return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    }
+
+    // topLevelBlocks は保存対象になるトップレベル要素を文書順で返す。
+    function topLevelBlocks() {
+        const container = document.getElementById('editor-content');
+        return Array.from(container.querySelectorAll(
+            '.editor-block > .block-content > *, #editor-content > :not(.editor-block)'
+        )).filter(el => el && isSerializableBlock(el));
+    }
+
+    function isSerializableBlock(el) {
+        const t = el.tagName.toLowerCase();
+        return (tagSchema && tagSchema[t]) || TEXT_BLOCK_TAGS.includes(t);
+    }
+
+    // ensureBlockIds は未採番のブロックへIDを振る。付与した数を返す。
+    // 既存ページは初回の編集時にここで採番され、その回の全文保存で正本へ永続化される。
+    function ensureBlockIds() {
+        let added = 0;
+        topLevelBlocks().forEach(el => {
+            if (!el.getAttribute(BLOCK_ID_ATTR)) {
+                el.setAttribute(BLOCK_ID_ATTR, newBlockId());
+                added++;
+            }
+        });
+        return added;
+    }
+
+    function blockIdAttrOf(el) {
+        const id = el.getAttribute(BLOCK_ID_ATTR);
+        return id ? ` ${BLOCK_ID_ATTR}="${esc(id)}"` : '';
+    }
+
     // serializeCustomElement はカスタム要素を語彙（/api/tag-schema）に従って書き出す。
     // 要素ごとの手書き分岐を持たないので、プラグインが増えてもここは変更不要。
-    function serializeCustomElement(el, indent) {
+    // extraAttrs はトップレベルのブロックにだけ付ける追加属性（data-block-id）。
+    // 入れ子の明細などには付けない（ブロック単位保存が扱うのは最上位だけ）。
+    function serializeCustomElement(el, indent, extraAttrs) {
         const name = el.tagName.toLowerCase();
         const allowed = tagSchema[name];
         if (!allowed) return ''; // 語彙に無い要素は保存しない
@@ -1799,7 +1941,7 @@
         // **その要素が実際に持っている属性だけ**を書き出す。
         // 語彙は全プラグインの和集合なので（m-file の price と cost など）、
         // 持っていない属性まで既定値で埋めると、意味のない値を発明してしまう。
-        let attrs = '';
+        let attrs = extraAttrs || '';
         allowed.forEach(a => {
             if (!el.hasAttribute(a)) return;
             const v = el.getAttribute(a);
@@ -1823,26 +1965,35 @@
         return `${indent}<${name}${attrs}>\n${inner}${indent}</${name}>\n`;
     }
 
-    function updateHtmlPreview() {
-        const container = document.getElementById('editor-content');
-        let output = "";
-
-        // エディタ内の要素を順番にシリアライズする
-        const blocks = container.querySelectorAll('.editor-block > .block-content > *, #editor-content > :not(.editor-block)');
-
-        for (let i = 0; i < blocks.length; i++) {
-            const child = blocks[i];
-            if (!child) continue;
-            const tagName = child.tagName.toLowerCase();
-
-            if (tagSchema && tagSchema[tagName]) {
-                output += serializeCustomElement(child, '');
-            } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'p') {
-                output += `<${tagName}>${esc(child.innerText)}</${tagName}>\n`;
-            }
+    // serializeBlock は1つのトップレベルブロックを保存用HTMLへ変換する。
+    function serializeBlock(el) {
+        const tagName = el.tagName.toLowerCase();
+        const idAttr = blockIdAttrOf(el);
+        if (tagSchema && tagSchema[tagName]) {
+            return serializeCustomElement(el, '', idAttr);
         }
+        if (TEXT_BLOCK_TAGS.includes(tagName)) {
+            return `<${tagName}${idAttr}>${esc(el.innerText)}</${tagName}>\n`;
+        }
+        return '';
+    }
 
-        document.getElementById('html-preview').value = output.trim();
+    // serializeBlocks は本文を「ブロックの配列」として返す。
+    // 全文保存にも、どのブロックが変わったかの判定にも同じ結果を使う。
+    function serializeBlocks() {
+        return topLevelBlocks().map(el => ({
+            el,
+            id: el.getAttribute(BLOCK_ID_ATTR) || '',
+            html: serializeBlock(el),
+        })).filter(b => b.html !== '');
+    }
+
+    function joinBlocks(blocks) {
+        return blocks.map(b => b.html).join('').trim();
+    }
+
+    function updateHtmlPreview() {
+        document.getElementById('html-preview').value = joinBlocks(serializeBlocks());
     }
 
     function createComponentElement(type, isEdit, ...args) {
