@@ -101,13 +101,13 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 *   **リクエスト形式**: JSON
     ```json
     {
-      "page_id": "00001",  // 新規の場合は空文字 ""
+      "page_id": "00001",  // 必須。空文字は 400（新規作成は /api/new-page）
       "html": "<!DOCTYPE html>...", // シリアライズされた最新のHTML文字列
       "token": "..."        // 編集ロックのトークン（保持者の検証に使う。4.3 参照）
     }
     ```
 *   **バックエンド処理フロー**:
-    1.  `page_id` が空の場合、`reserveNewPageID()` が `pages` への `INSERT` 自動採番で新しいページID（例: `00002`）を原子的に確定し（6章）、作成者を所有者とするサイドカーを作成します（作成日時・作成者・更新日時はサイドカーが刻む）。
+    1.  `page_id` が空の場合は **400** を返します。かつてはここで親なし（トップレベル）のページを作っていましたが、「親なしにできるのはトップページ `000000` のみ」というポリシー（`NewPageAPIHandler` が400で拒否し `validateParentChange` も admin に許さない）を迂回する穴だったため塞ぎました。新規作成は必ず親を指定する `/api/new-page` を通します。
     2.  **編集ロックのトークン検証**: 既存ページの保存では、`token` が現在のロック保持者のものかを検証します。他者が保持中／トークン失効なら **409 Conflict** を返します（明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。ロックが存在しない場合は許可します（無競合。4.3 参照）。
     3.  HTMLは「内容」なのでそのまま `[page_id].html` に書き込みます（属性の注入・上書きは行いません）。
     4.  **更新日時の前進**: `BumpUpdatedAt()` がサイドカーの `updated_at` を「今」に進めます（所有権・親・作成情報は保持。本文保存で権限を書き換えないため自己認可を防止）。
@@ -161,7 +161,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 親ページIDは**サイドカーが正本**のため、変更はこの専用APIで行います。対象ページの write 権限を要求し、親が実際に変わるときだけ `validateParentChange`（実在・自己参照/循環の防止・新しい親への write 権限、**親なし（トップレベル）化はトップページ（ID 0／`000000`）自身のみ可能。admin でも他ページを親なしにはできない**）で検証します。妥当ならサイドカーの `parent_id` と `updated_at` を更新し、`pages` インデックスにも反映します。`{"ok": true, "parent_id": "...", "updated_at": "..."}` を返します。
 
 ### 4.1.3. ページ属性取得 API (`GET /api/page-meta?id={page_id}`)
-サイドパネル表示用に、ページの属性（`parent_id` / `created_at` / `created_by` / `updated_at`）を返します。対象ページの read 権限を要求します。
+サイドパネル表示用に、ページの属性（`parent_id` / **`parent_title`** / `created_at` / `created_by` / `updated_at`）を返します。`parent_title` は親ページの見出し（`pages.title`）で、左レールの「↑ 親ページへ」リンクに表示します（IDだけより辿りやすいため）。対象ページの read 権限を要求します。
 
 ### 4.2. Load API (`GET /api/load?id={page_id}`)
 ページ本文（生HTML）を返します。**初期表示には使いません**（4.2.1 のサーバー合成が担当）。
@@ -174,7 +174,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 *   **バックエンド処理フロー**:
     1.  `pages` テーブルから対象IDの `file_path` を取得します。
     2.  物理ストレージ上の該当HTMLファイルを読み込みます。
-*   **レスポンス**: HTML文字列をそのまま (`text/html`) 返却します。**サニタイズはしません**
+*   **レスポンス**: HTML文字列を **`text/plain; charset=utf-8` ＋ `X-Content-Type-Options: nosniff`** で返却します（エディタは `fetch().text()` で受けて自前で `DOMParser` にかけるため text/html である必要がなく、この URL を直接ブラウザで開いてもHTMLとして実行されない＝多層防御）。**サニタイズはしません**
     （編集は生HTMLから始める必要があるため。ただし保存時サニタイズにより正本自体が清書済み）。
 *   **認可**: `RequirePageReadOrPublic`。匿名でも実効公開なら200、非公開は401。
 
@@ -302,7 +302,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 > 以前は `SELECT MAX(id)+1`（`GenerateNextID`）で採番していましたが、同時実行でID衝突が起こりうる非原子的な方式でした（[【考察】同時編集の競合対策.md](【考察】同時編集の競合対策.md) シナリオE）。`reserveNewPageID` による `INSERT` 自動採番への統一でこれを解消し、`GenerateNextID` は廃止しました。
 
 > [!NOTE]
-> `reserveNewPageID` は専用のAPIエンドポイントを持たない内部関数で、`SaveAPIHandler`（4.1、`page_id` が空文字の場合）・`UploadHandler`・`NewPageAPIHandler` から呼び出されます。
+> `reserveNewPageID` は専用のAPIエンドポイントを持たない内部関数で、`NewPageAPIHandler` から呼び出されます（`SaveAPIHandler` の空 `page_id` 経路と `UploadHandler` は廃止済み）。
 
 ### 6.2. 子ページ作成 (`GET /api/new-page?parent={親ページID}`)
 フロントエンド（`assets/index.html`）で「＋ 子ページを作成」ボタンが押された際のフローは、`NewPageAPIHandler` がサーバー側で完結させます（DOM構造・イベント面の詳細は [エディタ仕様.md](エディタ仕様.md) 6.2参照）。
