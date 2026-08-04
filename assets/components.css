@@ -81,6 +81,53 @@
 
 .pdf-drop-zone.is-dragover { background: #e2e8f0; }
 
+/* ── 必要部材 <m-material> ──────────────────────────────────────────
+ * カード自体のレイアウトはテンプレートのインライン style のまま（CSP強化で移行予定）。
+ * ここにあるのは、インラインの on*= を外したぶんを引き取った状態変化ぶんだけ。
+ */
+.material-card-edit input:focus { border-color: #3b82f6; }
+
+.m-material-remove {
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    transition: background 0.2s;
+}
+
+.m-material-remove:hover { background: #dc2626; }
+
+/* ── 子ページ一覧 <m-child-list> ─────────────────────────────────────
+ * 唯一 Shadow DOM で描画していた要素。Light DOM へ揃えたため、要素内に複製していた
+ * <style> をここへ移した（2026-08-05）。
+ */
+.m-child-list {
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 10px 0;
+    list-style: none;
+}
+
+.m-child-list li { margin-bottom: 8px; }
+
+.m-child-list-empty {
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.m-child-list-link {
+    color: #38bdf8;
+    text-decoration: none;
+}
+
+.m-child-list-link:hover { text-decoration: underline; }
+
 /* ── 業務要素（発注書・見積もり）──────────────────────────────────── */
 .m-block {
     border: 1px solid #e2e8f0;
