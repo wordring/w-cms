@@ -378,6 +378,11 @@ func RequireAdmin(w http.ResponseWriter, r *http.Request) bool {
 
 // DataFileHandler は /data/master/<prefix>/<id>/<file> を、対象ページの read 権限を
 // 確認した上で配信します（PDF原本などの機微ファイルをファイルサーバ直結にしないため）。
+//
+// ここは**ブラウザに解釈させない**ことも仕事です。ページのディレクトリにHTMLやSVGが
+// あると、同一オリジンの文書として配信された時点で保存型XSSになります（本文の
+// サニタイズを通らない経路）。添付は .pdf のみ受け付ける（attachmentFileName）ように
+// してありますが、過去に置かれたファイルやバックアップ復元に備えて配信側でも守ります。
 func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// path.Clean で ".." を解決し、ディレクトリトラバーサルを防ぐ。
 	clean := path.Clean(r.URL.Path) // 例: /data/master/00/000001/foo.pdf
@@ -391,6 +396,26 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// 公開ページの添付（PDF原本など）は匿名でも配信する（実効公開のときのみ）。
 	if !RequirePageReadOrPublic(w, r, pageID) {
 		return
+	}
+
+	// 本文と属性サイドカーは「添付ファイル」ではない。本文は画面／API が、属性は
+	// /api/page-meta と権限APIが、それぞれの認可のもとで返す。ここからは配らない。
+	name := parts[len(parts)-1]
+	if strings.EqualFold(name, pageID+".html") || strings.EqualFold(name, pageID+".meta.json") {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 宣言した型以外に解釈させない。http.ServeFile は Content-Type が未設定のときだけ
+	// 推定するので、先に設定しておけばそれが使われる。
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if strings.EqualFold(path.Ext(name), ".pdf") {
+		// PDFは <embed> でページ内に表示するのでインラインのまま。
+		w.Header().Set("Content-Type", "application/pdf")
+	} else {
+		// 由来の分からないファイルは、表示させずダウンロードさせる。
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", "attachment")
 	}
 	http.ServeFile(w, r, filepath.Join(".", filepath.FromSlash(clean)))
 }
