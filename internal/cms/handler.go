@@ -293,18 +293,19 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// {"elements": {"m-item": ["cost", "item-id", ...], ...}}
-	elements := make(map[string][]string, 8)
-	for _, spec := range PluginTags() {
-		attrs := spec.Attributes
-		if attrs == nil {
-			attrs = []string{}
-		}
-		elements[spec.Element] = attrs
-	}
+	// {"elements": {"p": [...], "m-item": ["cost", "item-id", ...], ...}}
+	//
+	// 構造HTML（h1・ul・table 等）とカスタム要素の**両方**を返す。エディタはこれを
+	// シリアライザの語彙として使うので、サニタイザが通す要素は必ず保存できる。
+	// 片方だけ返すと「画面には出るが保存すると消える」要素が生まれる。
+	elements := AllowedVocabulary()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"elements": elements})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"elements": elements,
+		"void":     VoidElementNames(), // 終了タグを書かない要素（br・img 等）
+		"block_id": BlockIDAttr,        // ブロック単位保存の識別子（data-id）
+	})
 }
 
 // ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。

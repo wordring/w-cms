@@ -194,12 +194,101 @@ func TestSanitizeDropsUnknownAttributes(t *testing.T) {
 
 // TestSanitizeUnwrapsUnknownElements は未知の要素がアンラップされ、中身が残ることを検証します。
 func TestSanitizeUnwrapsUnknownElements(t *testing.T) {
-	got := Sanitize(`<section><article><p>本文</p></article></section>`)
-	if strings.Contains(got, "section") || strings.Contains(got, "article") {
+	// 許可リストにも危険リストにも無い要素はアンラップされ、中身だけが残る。
+	got := Sanitize(`<unknown-thing><weird><p>本文</p></weird></unknown-thing>`)
+	if strings.Contains(got, "unknown-thing") || strings.Contains(got, "weird") {
 		t.Errorf("未知の要素が残っている: %s", got)
 	}
 	if !strings.Contains(got, "<p>本文</p>") {
 		t.Errorf("アンラップ後に中身が失われた: %s", got)
+	}
+}
+
+// TestSanitizeKeepsStructuralElements は、方針「タグは寛容」に従って追加した要素が
+// 通ることを検証します（docs/本文サニタイズ設計.md §5.2）。
+func TestSanitizeKeepsStructuralElements(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"定義リスト", `<dl><dt>用語</dt><dd>説明</dd></dl>`, "<dl>"},
+		{"ルビ（振り仮名）", `<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>`, "<rt>"},
+		{"区分", `<section><article>本文</article></section>`, "<section>"},
+		{"折りたたみ", `<details open=""><summary>概要</summary>中身</details>`, "<summary>"},
+		{"変更履歴", `<ins datetime="2026-08-04">追加</ins><del>削除</del>`, "<ins"},
+		{"上付き・下付き", `H<sub>2</sub>O / m<sup>3</sup>`, "<sub>"},
+		{"表の見出し範囲", `<table><tr><th scope="col">列</th></tr></table>`, `scope="col"`},
+		{"図", `<figure><figcaption>図1</figcaption></figure>`, "<figcaption>"},
+		{"日時", `<time datetime="2026-08-04">8月4日</time>`, "datetime="},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Sanitize(c.in); !strings.Contains(got, c.want) {
+				t.Errorf("%q が失われた:\n入力: %s\n出力: %s", c.want, c.in, got)
+			}
+		})
+	}
+}
+
+// TestSanitizeURLPolicy は、リンク（外部可）と埋め込み（相対のみ）の違いを検証します。
+// docs/本文サニタイズ設計.md §5.5。
+func TestSanitizeURLPolicy(t *testing.T) {
+	t.Run("リンクは外部URLを許可", func(t *testing.T) {
+		for _, in := range []string{
+			`<a href="https://example.com/x">外部</a>`,
+			`<a href="mailto:a@example.com">メール</a>`,
+			`<a href="tel:0312345678">電話</a>`,
+			`<a href="/000123">内部</a>`,
+		} {
+			if got := Sanitize(in); !strings.Contains(got, "href=") {
+				t.Errorf("リンクが落ちた:\n入力: %s\n出力: %s", in, got)
+			}
+		}
+	})
+
+	t.Run("リンクでも危険スキームは拒否", func(t *testing.T) {
+		for _, in := range []string{
+			`<a href="javascript:alert(1)">x</a>`,
+			`<a href="data:text/html,<script>alert(1)</script>">x</a>`,
+		} {
+			if got := Sanitize(in); strings.Contains(got, "href=") {
+				t.Errorf("危険なリンクが残った:\n入力: %s\n出力: %s", in, got)
+			}
+		}
+	})
+
+	t.Run("埋め込みは相対URLのみ", func(t *testing.T) {
+		if got := Sanitize(`<img src="a.png">`); !strings.Contains(got, `src="a.png"`) {
+			t.Errorf("相対URLの画像が落ちた: %s", got)
+		}
+		for _, in := range []string{
+			`<img src="https://evil.example/beacon.png">`,
+			`<video src="https://evil.example/v.mp4"></video>`,
+			`<img src="//evil.example/beacon.png">`, // プロトコル相対＝別ホスト
+		} {
+			if got := Sanitize(in); strings.Contains(got, "evil.example") {
+				t.Errorf("外部URLの埋め込みが残った（トラッキングビーコンになる）:\n入力: %s\n出力: %s", in, got)
+			}
+		}
+	})
+
+	t.Run("リンクでもプロトコル相対は拒否", func(t *testing.T) {
+		if got := Sanitize(`<a href="//evil.example/x">x</a>`); strings.Contains(got, "evil.example") {
+			t.Errorf("プロトコル相対URLが残った: %s", got)
+		}
+	})
+}
+
+// TestSanitizeDropsDangerousAdditions は、危険リストへ追加した要素が消えることを検証します。
+func TestSanitizeDropsDangerousAdditions(t *testing.T) {
+	for _, in := range []string{
+		`<dialog open="">画面を覆う</dialog>`,
+		`<base href="https://evil.example/">`,
+		`<noscript>x</noscript>`,
+	} {
+		got := Sanitize(in)
+		for _, bad := range []string{"dialog", "base", "noscript", "evil.example", "画面を覆う"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("危険な要素の痕跡が残った（%q）:\n入力: %s\n出力: %s", bad, in, got)
+			}
+		}
 	}
 }
 
@@ -253,5 +342,45 @@ func TestSanitizeAttributeInjection(t *testing.T) {
 	got := Sanitize(`<m-tag name="n" value="x" onload="alert(1)"></m-tag>`)
 	if strings.Contains(got, "onload") || strings.Contains(got, "alert") {
 		t.Errorf("注入された on* 属性が残っている: %s", got)
+	}
+}
+
+// TestSanitizeAcceptsEditorOutput は、エディタが書き出すHTMLがサニタイザを
+// **無変更で**通ることを検証します（実際の serializeBlock の出力から採取）。
+//
+// ここが崩れると、保存のたびにサーバーが本文を書き換えて返し、エコーバックで
+// ブロックが差し替わってキャレットが飛びます。エディタの語彙は /api/tag-schema
+// （＝この許可リスト）から導かれるので、本来ズレないはずのものを念のため固定します。
+func TestSanitizeAcceptsEditorOutput(t *testing.T) {
+	outputs := []string{
+		`<h4 data-id="ab12">章タイトル</h4>`,
+		`<p data-id="zz01">これは<strong>太字</strong>と<em>斜体</em>です</p>`,
+		`<p data-id="a003">あ<strong><em>いう</em></strong>えお</p>`,
+		`<p data-id="a008"><strong>あ<em>いう</em>え</strong></p>`,
+		"<ul data-id=\"l001\">\n    <li>あ</li>\n    <li>い</li>\n</ul>",
+		"<dl data-id=\"d001\">\n    <dt>語</dt>\n    <dd>説明</dd>\n</dl>",
+		"<table data-id=\"t001\">\n    <tbody>\n        <tr>\n            <th scope=\"col\">列</th>\n            <td>値</td>\n        </tr>\n    </tbody>\n</table>",
+		`<blockquote data-id="q001" cite="/000123"><p>引用文</p></blockquote>`,
+		`<p data-id="r001"><ruby>漢字<rt>かんじ</rt></ruby></p>`,
+		`<p data-id="a007"><u>あいう</u></p>`,
+	}
+	for _, in := range outputs {
+		got, changed := SanitizeReport(in)
+		if changed || got != in {
+			t.Errorf("エディタの出力がサニタイズで変化した（保存のたびに書き換わる）:\n入力: %s\n出力: %s", in, got)
+		}
+	}
+
+	// 空要素だけは表記が変わる（エディタは `<br>`、Goの描画器は `<br/>` と書く）。
+	// これは同じ木の別表記なので changed は立たず、エコーバックも起きない。
+	// 正本ファイルには `<br/>` の形で残るが、読み込めば同じDOMになるため実害はない。
+	for _, in := range []string{
+		`<p data-id="br01">上<br>下</p>`,
+		`<p data-id="im01"><img src="a.png" alt="図"></p>`,
+	} {
+		got, changed := SanitizeReport(in)
+		if changed {
+			t.Errorf("空要素の表記差でエコーバックが起きている:\n入力: %s\n出力: %s", in, got)
+		}
 	}
 }
