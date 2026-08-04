@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -80,4 +81,22 @@ func VerifyPassword(plain, phc string) (bool, error) {
 
 	got := argon2.IDKey([]byte(plain), salt, time, memory, threads, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
+}
+
+// decoyHash は「存在しないユーザー」に対してもパスワード検証と同じ計算量（argon2id）を
+// 発生させ、実在ユーザーとの応答時間差でユーザー名を列挙されるのを防ぐためのダミーハッシュです。
+// 現在のパラメータで一度だけ生成してキャッシュします（初回の失敗ログイン時に遅延生成）。
+// 生成に失敗したら空文字を返し、呼び出し側はダミー検証をスキップします。
+var (
+	decoyOnce sync.Once
+	decoyPHC  string
+)
+
+func decoyHash() string {
+	decoyOnce.Do(func() {
+		if h, err := HashPassword("wcms-login-timing-equalizer"); err == nil {
+			decoyPHC = h
+		}
+	})
+	return decoyPHC
 }

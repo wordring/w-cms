@@ -64,39 +64,28 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 親ページIDの変更は専用API（SetParentAPIHandler）が担い、保存では扱わない。
 	id := req.PageID
 	if id == "" {
-		// 新規ページ：IDを原子的に採番（同時保存でも衝突しない）。作成者を所有者として
-		// サイドカーを作成する（作成日時・作成者・更新日時はサイドカーが刻む）。
-		var err error
-		id, err = reserveNewPageID(sql.NullInt64{})
-		if err != nil {
-			http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
+		// 空の page_id での保存は許可しない。
+		//
+		// かつてこの経路は reserveNewPageID(NULL) で**親なし（トップレベル）**のページを
+		// 作っていたが、それは「親なしにできるのはトップページ 000000 のみ」という
+		// ポリシー（NewPageAPIHandler が400で拒否し、validateParentChange も admin に
+		// 許さない）を迂回する穴だった。新規作成は必ず親を指定する /api/new-page を通す。
+		// フロントは常に currentPageId を送る（空なら 000000 へ落とす）ので実害はない。
+		http.Error(w, "ページIDが指定されていません。新規ページは /api/new-page で作成してください。", http.StatusBadRequest)
+		return
+	}
+
+	// write権限を要求する
+	if !RequirePageWrite(w, r, id) {
+		return
+	}
+	// 編集ロックのトークン検証：他者が保持中／自分のトークン失効なら拒否する
+	// （明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。
+	// ロックが無い場合は許可（無競合。フロント未対応でも従来どおり保存できる）。
+	if idInt, e := strconv.Atoi(id); e == nil {
+		if u := auth.CurrentUser(r); u != nil && !pageLocks.Validate(idInt, u.Username, req.Token) {
+			http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
 			return
-		}
-		// サイドカーは権限の正本。書けなかった場合、GetPerms は admin 所有の既定値へ
-		// フォールバックする（フェイルクローズ）ため作成者が自分のページを触れなくなる。
-		// 黙って壊れると原因が追えないのでログに残す。
-		var sidecarErr error
-		if u := auth.CurrentUser(r); u != nil {
-			sidecarErr = EnsureSidecar(id, u.Username, u.PrimaryGroup, "", "")
-		} else {
-			sidecarErr = EnsureSidecar(id, defaultOwner, "", "", "")
-		}
-		if sidecarErr != nil {
-			log.Printf("サイドカーの作成に失敗しました page=%s: %v", id, sidecarErr)
-		}
-	} else {
-		// 既存ページ：write権限を要求する
-		if !RequirePageWrite(w, r, id) {
-			return
-		}
-		// 編集ロックのトークン検証：他者が保持中／自分のトークン失効なら拒否する
-		// （明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。
-		// ロックが無い場合は許可（無競合。フロント未対応でも従来どおり保存できる）。
-		if idInt, e := strconv.Atoi(id); e == nil {
-			if u := auth.CurrentUser(r); u != nil && !pageLocks.Validate(idInt, u.Username, req.Token) {
-				http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
-				return
-			}
 		}
 	}
 
@@ -279,7 +268,13 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// 本文はHTMLだが、エディタは fetch().text() で受けて自前で DOMParser にかけるため、
+	// text/html で返す必要がない。text/plain ＋ nosniff で返すことで、この URL を
+	// 直接ブラウザで開いてもHTMLとして実行されない（多層防御）。保存時サニタイズ導入前の
+	// 既存ファイルなど、万一スクリプトを含む本文が残っていても直接ナビゲーションでの
+	// 実行を封じられる。詳細は docs/本文サニタイズ設計.md。
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(content)
 }
 
@@ -634,17 +629,21 @@ func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parentStr := ""
+	parentTitle := ""
 	if parent.Valid {
 		parentStr = fmt.Sprintf("%0*d", IDLength, parent.Int64)
+		// 親ページの見出し（h1）。左レールの「↑ 親ページへ」リンクに表示する。
+		database.DB.QueryRow("SELECT title FROM pages WHERE id = ?", parent.Int64).Scan(&parentTitle)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":         id,
-		"parent_id":  parentStr,
-		"created_at": createdAt.String,
-		"created_by": createdBy.String,
-		"updated_at": updatedAt.String,
+		"id":           id,
+		"parent_id":    parentStr,
+		"parent_title": parentTitle,
+		"created_at":   createdAt.String,
+		"created_by":   createdBy.String,
+		"updated_at":   updatedAt.String,
 	})
 }
 

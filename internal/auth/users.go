@@ -47,6 +47,11 @@ func Authenticate(username, password string) (*User, error) {
 	).Scan(&hash, &isAdmin, &primaryGroup, &disabled)
 	if err != nil || disabled != 0 || !hash.Valid {
 		// ユーザー不在・無効化・ローカルパスワード未設定はすべて一様に失敗扱い。
+		// 実在ユーザー（argon2検証を通る）との応答時間差でユーザー名を列挙されないよう、
+		// ここでもダミーのargon2検証を実行して所要時間を均一化する（結果は捨てる）。
+		if d := decoyHash(); d != "" {
+			VerifyPassword(password, d)
+		}
 		recordFailure(username)
 		return nil, ErrAuthFailed
 	}
