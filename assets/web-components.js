@@ -2,8 +2,22 @@
 const templateCache = {};
 
 // escapeText / escapeAttr はテンプレートへ差し込む値をエスケープする。
-// テンプレートは文字列置換＋innerHTML で描画するため、値に < や " が入ると
-// HTMLが壊れたり属性が注入されたりする（サーバー側のサニタイザが除去してしまう）。
+//
+// **属性値をテンプレートへ差すときは必ず escapeAttr を通すこと。** テンプレートは
+// 文字列置換＋innerHTML で描画するため、素通しすると値がHTMLとして解釈される。
+// これは理屈上の話ではなく、実際に発火する保存型XSSだった（2026-08-04 修正）:
+// `<m-tag value='" onmouseover="…'>` で属性を注入でき、`value` に `<img onerror=…>`
+// を入れればスクリプトが走った。**サーバーのサニタイザでは止まらない**——`value` は
+// URL属性ではないので中身を検査せず、`&lt;img…&gt;` として保存された値を
+// getAttribute() が生の文字列へ戻すため。中間版CSPの `script-src 'unsafe-inline'` も
+// インラインイベントハンドラを許すので防げない。
+//
+// escapeAttr は `& < > "` を落とすので、**二重引用符の属性値と本文テキストの両方で安全**。
+// 同じプレースホルダが両方の文脈で使われるテンプレートがある（`${itemName}` 等）ため、
+// 迷ったら escapeAttr を使う。escapeText は本文にしか現れないと確実な場合だけ。
+//
+// 値を生のHTMLとして差したい箇所（`${pdfEmbedHTML}`）と、コードが生成する固定値
+// （`${statusColor}`・`${selectUnstarted}` 等）はユーザー入力ではないので対象外。
 function escapeText(s) {
     return String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -58,7 +72,7 @@ class MTag extends HTMLElement {
         let html = await fetchTemplate(templateName);
 
         // 変数置換
-        html = html.replace(/\${name}/g, name).replace(/\${value}/g, value);
+        html = html.replace(/\${name}/g, escapeAttr(name)).replace(/\${value}/g, escapeAttr(value));
         this.innerHTML = html;
     }
 }
@@ -116,17 +130,18 @@ class MItem extends HTMLElement {
 
         // 変数置換
         html = html
-            .replace(/\${itemId}/g, itemId)
-            .replace(/\${itemName}/g, itemName)
+            .replace(/\${itemId}/g, escapeAttr(itemId))
+            .replace(/\${itemName}/g, escapeAttr(itemName))
             .replace(/\${priceDisplay}/g, priceNum.toLocaleString())
             .replace(/\${costDisplay}/g, costNum.toLocaleString())
             .replace(/\${totalDisplay}/g, (isClient ? priceNum * qtyNum : costNum * qtyNum).toLocaleString())
-            .replace(/\${price}/g, price)
-            .replace(/\${cost}/g, cost)
-            .replace(/\${quantity}/g, quantity)
+            .replace(/\${price}/g, escapeAttr(price))
+            .replace(/\${cost}/g, escapeAttr(cost))
+            .replace(/\${quantity}/g, escapeAttr(quantity))
+            // statusColor / statusBg は上の分岐が返す固定の色コードなのでエスケープ不要
             .replace(/\${statusColor}/g, statusColor)
             .replace(/\${statusBg}/g, statusBg)
-            .replace(/\${status}/g, status || (isClient ? '未着手' : '未納品'));
+            .replace(/\${status}/g, escapeAttr(status || (isClient ? '未着手' : '未納品')));
 
         // selectの選択状態の置換
         html = html
@@ -335,9 +350,10 @@ class MChildList extends HTMLElement {
             pages = await res.json() || [];
         }
 
-        let itemsHtml = pages.length === 0 
+        // ページ名は利用者が書いた文字列（本文の見出し由来）なので、必ずエスケープしてから差す。
+        let itemsHtml = pages.length === 0
             ? `<li style="color: #94a3b8; font-style: italic;">子ページはありません</li>`
-            : pages.map(p => `<li><a href="/${p.ID}" style="color: #38bdf8; text-decoration: none;">📄 ${p.Title}</a></li>`).join('');
+            : pages.map(p => `<li><a href="/${escapeAttr(p.ID)}" style="color: #38bdf8; text-decoration: none;">📄 ${escapeText(p.Title)}</a></li>`).join('');
 
         const html = `
         <style>
@@ -390,11 +406,11 @@ class MMaterial extends HTMLElement {
 
         // 変数置換
         html = html
-            .replace(/\${itemName}/g, itemName)
+            .replace(/\${itemName}/g, escapeAttr(itemName))
             .replace(/\${costDisplay}/g, costNum.toLocaleString())
-            .replace(/\${cost}/g, cost)
-            .replace(/\${supplierName}/g, supplierName)
-            .replace(/\${quantity}/g, quantity);
+            .replace(/\${cost}/g, escapeAttr(cost))
+            .replace(/\${supplierName}/g, escapeAttr(supplierName))
+            .replace(/\${quantity}/g, escapeAttr(quantity));
 
         this.innerHTML = html;
     }
@@ -459,9 +475,11 @@ class MRequiredMaterials extends HTMLElement {
                     statusBadge = `<span style="background-color: #fef2f2; color: #ef4444; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">要手配 (${item.remaining})</span>`;
                 }
 
+                // 部材名・仕入先名は <m-material> の属性（＝利用者の入力）がDB経由で返ってきた値。
+                // 数値項目は toLocaleString() を通した数なのでエスケープ不要。
                 tr.innerHTML = `
-                    <td style="padding: 10px; font-weight: 500; color: #1e293b;">${item.material_name}</td>
-                    <td style="padding: 10px; color: #475569;">${item.supplier_name || '-'}</td>
+                    <td style="padding: 10px; font-weight: 500; color: #1e293b;">${escapeText(item.material_name)}</td>
+                    <td style="padding: 10px; color: #475569;">${escapeText(item.supplier_name || '-')}</td>
                     <td style="padding: 10px; text-align: right; color: #1e293b;">${item.total_required.toLocaleString()}</td>
                     <td style="padding: 10px; text-align: right; color: #475569;">${item.ordered.toLocaleString()}</td>
                     <td style="padding: 10px; text-align: right; font-weight: bold; color: ${item.remaining > 0 ? '#ef4444' : '#1e293b'};">${item.remaining.toLocaleString()}</td>
