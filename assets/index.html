@@ -1739,7 +1739,12 @@
             hideContextToolbar();
         }
 
-        const standardElements = editor.querySelectorAll('.block-content > h1, .block-content > h2, .block-content > h3, .block-content > p');
+        // 編集できるのは構造HTMLのブロック（見出し・段落・リスト・表・引用…）。
+        // カスタム要素は自前のUIで編集するので contenteditable にしない。
+        // 見出しや段落を名指ししていたころは、許可されている h4〜h6・ul・table が
+        // 表示されるだけで編集できなかった。
+        const standardElements = Array.from(editor.querySelectorAll('.block-content > *'))
+            .filter(el => !isCustomTag(el.tagName.toLowerCase()));
         standardElements.forEach(el => {
             if (toggle.checked) { el.setAttribute('contenteditable', 'true'); el.oninput = updateHtmlPreview; }
             else { el.removeAttribute('contenteditable'); el.oninput = null; }
@@ -2002,7 +2007,8 @@
     // 各プラグインの Tags() が唯一の正本で、サニタイズ許可リストも同じ宣言から作られるため、
     // 「保存する属性」と「許可される属性」が食い違いようがない。ここに手書きの表を持たないので、
     // プラグインを追加すれば新しい要素もそのまま保存されるようになる。
-    let tagSchema = null; // { "m-item": ["cost", "item-id", ...], ... }
+    let tagSchema = null;              // { "p": [], "m-item": ["cost", "item-id", ...], ... }
+    let voidTags = new Set();          // 終了タグを書かない要素（br・img 等）
 
     async function loadTagSchema() {
         try {
@@ -2010,11 +2016,19 @@
             if (!res.ok) throw new Error('tag-schema ' + res.status);
             const d = await res.json();
             tagSchema = (d && d.elements) || {};
+            voidTags = new Set((d && d.void) || []);
         } catch (e) {
-            console.error('カスタム要素の語彙を取得できませんでした:', e);
+            console.error('本文の語彙を取得できませんでした:', e);
             tagSchema = {};
+            voidTags = new Set();
         }
     }
+
+    // isCustomTag はカスタム要素（<m-*>）かどうかを返す。
+    // HTMLの仕様上、名前にハイフンを含む要素は必ずカスタム要素なので、
+    // ここに一覧を持たなくても構造HTMLと区別できる。
+    // 両者はシリアライズの仕方が根本的に違う（下記 serializeCustomElement のコメント参照）。
+    function isCustomTag(name) { return name.indexOf('-') !== -1; }
 
     // 値が空のときに補う既定値（数値項目のみ。従来の挙動を維持する）。
     const CUSTOM_ATTR_DEFAULTS = { price: '0', cost: '0', quantity: '1' };
@@ -2031,8 +2045,10 @@
     }
 
     // customSelector は語彙に含まれる全カスタム要素にマッチするセレクタ。
+    // 構造HTML（p・div 等）は含めない。ここは「入れ子のカスタム要素を拾う」ための
+    // セレクタなので、構造HTMLまで混ぜると明細の親子関係の判定が壊れる。
     function customSelector() {
-        const names = Object.keys(tagSchema || {});
+        const names = Object.keys(tagSchema || {}).filter(isCustomTag);
         return names.length ? names.join(',') : null;
     }
 
@@ -2048,7 +2064,6 @@
     // 短さで衝突しうる分は**採番時の重複チェック**で潰す（assignBlockId）。
     const BLOCK_ID_ATTR = 'data-id';
     const BLOCK_ID_LEN = 4;
-    const TEXT_BLOCK_TAGS = ['h1', 'h2', 'h3', 'p'];
 
     // newBlockId は used に無い識別子を返す。短いので衝突しうるが、
     // 使用済み集合と突き合わせて振り直すため文書内で一意になる。
@@ -2071,9 +2086,16 @@
         )).filter(el => el && isSerializableBlock(el));
     }
 
+    // isSerializableBlock は、その要素が保存対象のトップレベルブロックかを返す。
+    // 判定は語彙（/api/tag-schema ＝ サニタイザの許可リスト）だけに任せる。
+    // エディタ自身が挿す枠（.editor-block / .block-content / .block-controls）は
+    // 本文ではないので除く（div が語彙に入っているため明示的に弾く必要がある）。
+    const EDITOR_CHROME = ['editor-block', 'block-content', 'block-controls'];
+
     function isSerializableBlock(el) {
-        const t = el.tagName.toLowerCase();
-        return (tagSchema && tagSchema[t]) || TEXT_BLOCK_TAGS.includes(t);
+        if (!tagSchema) return false;
+        if (EDITOR_CHROME.some(c => el.classList.contains(c))) return false;
+        return !!tagSchema[el.tagName.toLowerCase()];
     }
 
     // ensureBlockIds は未採番のブロックへIDを振り、**重複も修復する**。変更した数を返す。
@@ -2136,17 +2158,72 @@
         return `${indent}<${name}${attrs}>\n${inner}${indent}</${name}>\n`;
     }
 
+    // ── 構造HTMLのシリアライズ ──────────────────────────────────────────────
+    // カスタム要素と違い、構造HTML（p・ul・table・strong …）は**中身そのものが値**なので、
+    // 属性だけ書き出す serializeCustomElement では表現できない。DOMをそのまま辿って
+    // 「語彙にある要素と属性だけを残す」形で書き出す。判定基準はサニタイザと同じ語彙なので、
+    // ここを通ったものはサーバーでも落ちない。
+    //
+    // el.innerHTML をそのまま使わないのは、ブラウザが編集中に挿す一時的な属性
+    // （contenteditable・spellcheck 等）や、貼り付けで紛れ込んだ未許可の要素・style を
+    // 落とすため。落としておかないと保存のたびにサーバーが除去し、エコーバックで
+    // ブロックが差し替わってキャレットが飛ぶ。
+
+    // WHITESPACE_INSENSITIVE は、子を1行ずつ字下げして書いても表示が変わらない要素。
+    // 逆に p や li の中で改行を入れると空白として描画されてしまうため、対象を絞る。
+    const WHITESPACE_INSENSITIVE = new Set([
+        'ul', 'ol', 'dl', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'colgroup',
+        'figure', 'details', 'section', 'article', 'header', 'footer', 'aside', 'nav',
+    ]);
+
+    function serializeAttrs(el, allowed, extraAttrs) {
+        let attrs = extraAttrs || '';
+        allowed.forEach(a => {
+            if (!el.hasAttribute(a)) return;
+            attrs += ` ${a}="${esc(el.getAttribute(a))}"`;
+        });
+        return attrs;
+    }
+
+    // serializeChildren は子ノード列を書き出す。未知の要素は**アンラップ**して中身だけ残す
+    // （サーバーのサニタイザと同じ扱い。文字が消えるより形が崩れる方が損失が小さい）。
+    function serializeChildren(el, indent) {
+        const pretty = WHITESPACE_INSENSITIVE.has(el.tagName.toLowerCase());
+        let out = '';
+        el.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                // 字下げする要素の中の空白だけのテキストは整形由来なので捨てる
+                if (pretty && !node.nodeValue.trim()) return;
+                out += esc(node.nodeValue);
+                return;
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE) return; // コメント等は残さない
+            const child = serializeNode(node, pretty ? indent + '    ' : '');
+            out += pretty && child ? '\n' + child : child;
+        });
+        return pretty && out ? out + '\n' + indent : out;
+    }
+
+    function serializeNode(el, indent) {
+        const name = el.tagName.toLowerCase();
+        if (isCustomTag(name)) return serializeCustomElement(el, indent).replace(/\n$/, '');
+        const allowed = tagSchema && tagSchema[name];
+        if (!allowed) return serializeChildren(el, indent); // 未知の要素はアンラップ
+        const open = `${indent}<${name}${serializeAttrs(el, allowed)}>`;
+        if (voidTags.has(name)) return open;
+        return `${open}${serializeChildren(el, indent)}</${name}>`;
+    }
+
     // serializeBlock は1つのトップレベルブロックを保存用HTMLへ変換する。
     function serializeBlock(el) {
-        const tagName = el.tagName.toLowerCase();
+        const name = el.tagName.toLowerCase();
         const idAttr = blockIdAttrOf(el);
-        if (tagSchema && tagSchema[tagName]) {
-            return serializeCustomElement(el, '', idAttr);
-        }
-        if (TEXT_BLOCK_TAGS.includes(tagName)) {
-            return `<${tagName}${idAttr}>${esc(el.innerText)}</${tagName}>\n`;
-        }
-        return '';
+        const allowed = tagSchema && tagSchema[name];
+        if (!allowed) return '';
+        if (isCustomTag(name)) return serializeCustomElement(el, '', idAttr);
+        const open = `<${name}${serializeAttrs(el, allowed, idAttr)}>`;
+        if (voidTags.has(name)) return open + '\n';
+        return `${open}${serializeChildren(el, '')}</${name}>\n`;
     }
 
     // serializeBlocks は本文を「ブロックの配列」として返す。
@@ -2490,6 +2567,11 @@
                 const key = e.key.toLowerCase();
                 if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
                 if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
+
+                // Ctrl+B/I/U はブラウザ標準だと execCommand が走り、実装ごとに違うHTML
+                // （<b> か style="font-weight:bold" か）を吐く。必ず横取りして自前実装へ回す。
+                const fmt = { b: 'bold', i: 'italic', u: 'underline' }[key];
+                if (fmt && !e.shiftKey) { e.preventDefault(); toggleInlineFormat(fmt); return; }
             }
 
             const target = e.target;
@@ -2601,6 +2683,182 @@
         }
     }
 
+    // ── インライン装飾（太字・斜体・下線）─────────────────────────────────
+    // document.execCommand は仕様上 deprecated で、ブラウザによって生成されるHTMLが
+    // 違う（<b> か <strong> か、あるいは style="font-weight:bold" か）。style 属性は
+    // サニタイザが落とすので装飾が保存後に消える、という食い違いも起きていた。
+    // ここでは Range を直接操作し、常に <strong>/<em>/<u> を出す。
+    //
+    // アンドゥ・リドゥは本文HTMLのスナップショット方式なので、この操作も
+    // updateHtmlPreview() → pushHistory 経由でそのまま履歴に載る（特別扱い不要）。
+
+    const INLINE_FORMATS = { bold: 'strong', italic: 'em', underline: 'u' };
+    // 統合・除去の対象。装飾要素は入れ子や隣接が増えても表示は同じなので整理する。
+    const INLINE_FORMAT_SELECTOR = 'strong,em,u,b,i,s,code,mark,small,sub,sup';
+
+    // editableHostOf は、その節点を含む編集可能なブロックを返す（無ければ null）。
+    function editableHostOf(node) {
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        if (!el || !el.closest) return null;
+        return el.closest('[contenteditable="true"]');
+    }
+
+    // splitAround は parent を child の前後で分割し、child を parent の兄弟へ引き上げる。
+    // 「選択範囲だけ装飾を外す」ために必要な操作（<strong>ABC</strong> の B だけ外すなら
+    // <strong>A</strong>B<strong>C</strong> にする）。
+    function splitAround(parent, child) {
+        const gp = parent.parentNode;
+        if (!gp) return;
+        let after = null;
+        if (child.nextSibling) {
+            after = parent.cloneNode(false);
+            while (child.nextSibling) after.appendChild(child.nextSibling);
+        }
+        gp.insertBefore(child, parent.nextSibling);
+        if (after) gp.insertBefore(after, child.nextSibling);
+        if (!parent.firstChild) gp.removeChild(parent);
+    }
+
+    // liftOutOf は node を装飾要素 fmt の外へ出す（fmt は必要なだけ分割される）。
+    function liftOutOf(node, fmt) {
+        let cur = node;
+        while (cur.parentNode && cur.parentNode !== fmt) {
+            splitAround(cur.parentNode, cur);
+        }
+        if (cur.parentNode === fmt) splitAround(fmt, cur);
+    }
+
+    // selectedTextNodes は選択範囲に含まれるテキスト節点を返す。
+    // 端が途中で切れている節点は splitText で割り、「範囲＝節点の集合」に揃える。
+    function selectedTextNodes(range, host) {
+        if (range.startContainer.nodeType === Node.TEXT_NODE && range.startOffset > 0) {
+            const tail = range.startContainer.splitText(range.startOffset);
+            range.setStart(tail, 0);
+        }
+        if (range.endContainer.nodeType === Node.TEXT_NODE && range.endOffset < range.endContainer.nodeValue.length) {
+            range.endContainer.splitText(range.endOffset);
+            range.setEnd(range.endContainer, range.endContainer.nodeValue.length);
+        }
+        const nodes = [];
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+            const n = walker.currentNode;
+            if (n.nodeValue !== '' && range.intersectsNode(n)) nodes.push(n);
+        }
+        // intersectsNode は境界に接するだけの節点も拾うので、実際に範囲内のものへ絞る
+        return nodes.filter(n =>
+            range.comparePoint(n, 0) >= 0 && range.comparePoint(n, n.nodeValue.length) <= 0);
+    }
+
+    // FORMAT_ORDER は装飾が入れ子になるときの外側→内側の順序。
+    // 装飾は掛ける順番で <em><strong>x</strong></em> にも <strong><em>x</em></strong> にも
+    // なるが表示は同じ。順序を一つに決めておくと、隣り合う装飾が同じ形になって統合でき、
+    // 保存HTMLが操作履歴に依存して散らからない。
+    const FORMAT_ORDER = ['strong', 'b', 'em', 'i', 'u', 's', 'mark', 'small', 'sub', 'sup', 'code'];
+
+    // tidyInline は装飾要素の空・入れ子・隣接を整理する。
+    // これをしないと、太字を付けては外すたびに <strong></strong> や
+    // <strong>A</strong><strong>B</strong> が積もり、保存HTMLが無意味に膨らむ。
+    function tidyInline(host) {
+        // 何段か整理すると新しい統合機会が生まれるので、変化が止まるまで回す。
+        for (let pass = 0; pass < 10; pass++) {
+            let changed = false;
+            host.querySelectorAll(INLINE_FORMAT_SELECTOR).forEach(el => {
+                if (!el.isConnected) return;
+
+                // 中身が無くなった装飾は捨てる
+                if (!el.textContent) { el.remove(); changed = true; return; }
+
+                const parent = el.parentElement;
+
+                // 同じ装飾の入れ子（<strong><strong>x</strong></strong>）は内側を外す
+                if (parent && parent.tagName === el.tagName) {
+                    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                    el.remove();
+                    changed = true;
+                    return;
+                }
+
+                // 入れ子の順序を FORMAT_ORDER に揃える（内側が上位なら内外を入れ替える）
+                const inner = el.children.length === 1 && el.childNodes.length === 1
+                    ? el.firstElementChild : null;
+                if (inner && inner.matches(INLINE_FORMAT_SELECTOR)) {
+                    const oi = FORMAT_ORDER.indexOf(el.tagName.toLowerCase());
+                    const ii = FORMAT_ORDER.indexOf(inner.tagName.toLowerCase());
+                    if (oi >= 0 && ii >= 0 && ii < oi && parent) {
+                        const lifted = document.createElement(inner.tagName.toLowerCase());
+                        parent.insertBefore(lifted, el);
+                        lifted.appendChild(el);
+                        while (inner.firstChild) el.insertBefore(inner.firstChild, inner);
+                        inner.remove();
+                        changed = true;
+                        return;
+                    }
+                }
+
+                // 隣り合う同じ装飾は1つにまとめる
+                let next = el.nextSibling;
+                while (next && next.nodeType === Node.ELEMENT_NODE && next.tagName === el.tagName) {
+                    while (next.firstChild) el.appendChild(next.firstChild);
+                    next.remove();
+                    next = el.nextSibling;
+                    changed = true;
+                }
+            });
+            if (!changed) break;
+        }
+        host.normalize(); // 分割で細切れになったテキスト節点を戻す
+    }
+
+    // toggleInlineFormat は選択範囲の装飾を付け外しする。
+    // 範囲全体が既にその装飾なら外し、そうでなければ（一部だけの場合も含め）付ける。
+    // ワープロ等と同じ挙動で、「まだ掛かっていない所に揃える」ほうが直感に合う。
+    function toggleInlineFormat(kind) {
+        const tag = INLINE_FORMATS[kind];
+        if (!tag) return;
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 未選択なら何もしない
+
+        const range = sel.getRangeAt(0);
+        const host = editableHostOf(range.commonAncestorContainer);
+        if (!host) return;
+
+        const nodes = selectedTextNodes(range, host);
+        const targets = nodes.filter(n => n.nodeValue.trim() !== '');
+        if (targets.length === 0) return;
+
+        const upper = tag.toUpperCase();
+        const wrapperOf = n => {
+            for (let p = n.parentElement; p && p !== host; p = p.parentElement) {
+                if (p.tagName === upper) return p;
+            }
+            return null;
+        };
+        const alreadyAll = targets.every(n => wrapperOf(n));
+
+        targets.forEach(n => {
+            const fmt = wrapperOf(n);
+            if (alreadyAll) {
+                if (fmt) liftOutOf(n, fmt);
+            } else if (!fmt) {
+                const w = document.createElement(tag);
+                n.parentNode.insertBefore(w, n);
+                w.appendChild(n);
+            }
+        });
+
+        // 選択は操作前と同じ文字範囲に戻す（tidyInline の normalize より前に端を控える）
+        const first = targets[0], last = targets[targets.length - 1];
+        const restored = document.createRange();
+        restored.setStart(first, 0);
+        restored.setEnd(last, last.nodeValue.length);
+        sel.removeAllRanges();
+        sel.addRange(restored);
+
+        tidyInline(host);
+        updateHtmlPreview();
+    }
+
     function showContextToolbarForBlock(block) {
         const toolbar = document.getElementById('context-toolbar');
         toolbar.innerHTML = '';
@@ -2639,16 +2897,20 @@
             };
             toolbar.appendChild(btn);
             hasButtons = true;
-        } else if (tagName === 'p' || tagName === 'h1' || tagName === 'h2' || tagName === 'h3') {
-            ['B', 'I', 'U'].forEach(cmd => {
+        } else if (!isCustomTag(tagName)) {
+            // 構造HTMLのブロックなら装飾ボタンを出す（見出し・段落だけでなく
+            // リストや引用の中の文字も装飾できる）。
+            [['B', 'bold'], ['I', 'italic'], ['U', 'underline']].forEach(([label, kind]) => {
                 const btn = document.createElement('button');
-                btn.innerText = cmd;
+                btn.innerText = label;
                 btn.style.minWidth = '24px';
-                btn.onclick = (e) => {
+                // mousedown で preventDefault しないと、押した瞬間に選択が解除されて
+                // 対象が消えてしまう（execCommand と違い自前実装は選択範囲に依存する）。
+                btn.addEventListener('mousedown', e => e.preventDefault());
+                btn.addEventListener('click', e => {
                     e.preventDefault();
-                    document.execCommand(cmd === 'B' ? 'bold' : cmd === 'I' ? 'italic' : 'underline', false, null);
-                    updateHtmlPreview();
-                };
+                    toggleInlineFormat(kind);
+                });
                 toolbar.appendChild(btn);
             });
             hasButtons = true;
