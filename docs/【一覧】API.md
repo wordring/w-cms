@@ -92,7 +92,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
 | GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML ∪ カスタム要素 → 許可属性）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
-| POST | `/api/upload-pdf` | 要認証 | PDFのアップロード（`data/master/<id>/` へ保存） |
+| POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<id>/` へ保存）。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
 | POST | `/api/parse-pdf` | 要認証 | PDFから明細をAI抽出（Gemini） |
 | GET | `/api/required-materials` | 要認証 | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`） |
 
