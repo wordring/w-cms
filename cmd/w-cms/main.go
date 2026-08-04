@@ -70,7 +70,7 @@ func main() {
 	protected := http.NewServeMux()
 
 	protected.HandleFunc("/api/save", cms.SaveAPIHandler)
-	// 1ブロックだけの保存。data-block-id が無い本文や構造変更では使えないため、
+	// 1ブロックだけの保存。data-id が無い本文や構造変更では使えないため、
 	// クライアントは 409 等で /api/save（全文保存）へフォールバックする。
 	protected.HandleFunc("/api/save-block", cms.SaveBlockAPIHandler)
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
@@ -131,8 +131,9 @@ func main() {
 	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）。
 	root.Handle("/api/", auth.RequireAuth(protected))
 
-	// ページの殻（assets/index.html を返すだけの静的シェル）は匿名にも返す。
-	// 実際の本文・属性は JS が /api/load 等を叩いて取得し、そこで認可される。
+	// ページ本体。RootHandler が assets/index.html へ本文とタイトルを埋め込んだ
+	// 完成HTMLを返す（サーバー合成。初期表示で /api/load は叩かない）。
+	// 認可はハンドラ内で行い、権限無し=403・匿名×非公開=/login へ302・不存在=404 を返す。
 	root.Handle("/", auth.OptionalAuth(http.HandlerFunc(cms.RootHandler)))
 
 	// CSRF対策（状態変更系のオリジン検証）と CSP（Content-Security-Policy）を
