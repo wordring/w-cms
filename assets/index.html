@@ -1750,8 +1750,13 @@
             else { el.removeAttribute('contenteditable'); el.oninput = null; }
         });
 
-        const components = editor.querySelectorAll('m-tag, m-file, m-item, m-material, m-required-materials');
-        components.forEach(c => { if (typeof c.render === 'function') c.render(); });
+        // カスタム要素は表示/編集を自分で描き分けるので、モードが変わったら描き直させる。
+        // 要素名を並べて指定していたころは、あとから増えた業務要素（m-client-order 等）が
+        // 対象から漏れ、編集モードにしても閲覧用の見た目のままだった。DOM にある
+        // カスタム要素すべてに委ねれば、プラグインが増えてもここは変更不要になる。
+        editor.querySelectorAll('*').forEach(el => {
+            if (isCustomTag(el.tagName.toLowerCase()) && typeof el.render === 'function') el.render();
+        });
 
         updateHtmlPreview();
         refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる

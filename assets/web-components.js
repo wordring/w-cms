@@ -56,11 +56,74 @@ async function fetchTemplate(name) {
     return text;
 }
 
-// === <m-tag> (名前：値) の定義 ===
-class MTag extends HTMLElement {
-    static get observedAttributes() { return ['value']; }
+// === 全カスタム要素の基底 MElement ===
+//
+// **描画先は Light DOM（this.innerHTML）に統一する。Shadow DOM は使わない。**
+// 理由は本文（正本）の扱いにある:
+//   - 保存はエディタが**DOMを辿って**行う（index.html の serializeCustomElement）。Shadow に
+//     隠すと入れ子の <m-item> が走査から外れ、保存される本文とサーバーの語彙がずれる。
+//   - 配色は assets/components.css（外部スタイルシート）に置ける。Shadow だと要素ごとに
+//     <style> を複製することになり、CSPのstrict化（docs/【考察】CSP強化.md）とも噛み合わない。
+//   - contenteditable のエディタと同じツリーに乗るので、選択・キャレットの扱いが素直。
+//
+// かつて <m-child-list> だけが Shadow DOM で描画しており、その名残の `getRootNode().host` が
+// Light DOM のテンプレートに残っていた。Light DOM では getRootNode() は document を返し
+// `.host` は undefined なので、m-tag の値編集・m-item の項目編集と削除は**例外で動いて
+// いなかった**（2026-08-05 に解消）。ホストへの書き戻しは data-attr に一本化する。
+class MElement extends HTMLElement {
     async connectedCallback() { await this.render(); }
-    async attributeChangedCallback() { await this.render(); }
+
+    async attributeChangedCallback() {
+        if (this._selfUpdate) return; // 自分のUI操作による変更では描き直さない（updateAttr 参照）
+        await this.render();
+    }
+
+    // updateAttr は「このコンポーネント自身のUI操作による属性変更」を表す。
+    //
+    // 素の setAttribute だと attributeChangedCallback → render() で入力欄が作り直され、
+    // **1文字打つたびにフォーカスが飛ぶ**（＝実質1文字しか入力できない）。自己更新の間だけ
+    // 再描画を止める。入力欄には既に打った値が入っているので、描き直さなくても画面は正しい。
+    // 外から属性が変わったとき（読み込み・PDF解析の結果反映など）は従来どおり再描画する。
+    updateAttr(name, value) {
+        this._selfUpdate = true;
+        try {
+            this.setAttribute(name, value);
+        } finally {
+            this._selfUpdate = false;
+        }
+        if (window.updateHtmlPreview) window.updateHtmlPreview();
+    }
+
+    // bindEditFields は描画したテンプレートへ編集操作を配線する。
+    // インラインの on*= は使わない（docs/開発方針.md §4。CSPのstrict化の前提でもある）。
+    //   data-attr="item-name" … 入力値をその属性へ書き戻す（select は change、他は input）
+    //   data-remove           … 押すとこの要素自身を本文から取り除く
+    //
+    // 対象は**自分が描いたUIだけ**に限る。入れ子のカスタム要素（<m-client-order> の中の
+    // <m-item> など）も同じ data-attr を使うため、素の querySelectorAll では明細の入力欄まで
+    // 拾ってしまい、明細を打つと親ブロックの属性まで書き換わる。takeCustomChildren と同じく
+    // 「直近のカスタム要素の祖先が自分か」で線を引く。
+    bindEditFields() {
+        const isMine = el => closestCustom(el.parentElement) === this;
+
+        this.querySelectorAll('[data-attr]').forEach(field => {
+            if (!isMine(field)) return;
+            const eventName = field.tagName === 'SELECT' ? 'change' : 'input';
+            field.addEventListener(eventName, () => this.updateAttr(field.dataset.attr, field.value));
+        });
+        this.querySelectorAll('[data-remove]').forEach(button => {
+            if (!isMine(button)) return;
+            button.addEventListener('click', () => {
+                this.remove();
+                if (window.updateHtmlPreview) window.updateHtmlPreview();
+            });
+        });
+    }
+}
+
+// === <m-tag> (名前：値) の定義 ===
+class MTag extends MElement {
+    static get observedAttributes() { return ['value']; }
 
     async render() {
         if (!this.isConnected) return;
@@ -74,15 +137,14 @@ class MTag extends HTMLElement {
         // 変数置換
         html = html.replace(/\${name}/g, escapeAttr(name)).replace(/\${value}/g, escapeAttr(value));
         this.innerHTML = html;
+        this.bindEditFields();
     }
 }
 customElements.define('m-tag', MTag);
 
 // === <m-item> (部品明細) の定義 ===
-class MItem extends HTMLElement {
+class MItem extends MElement {
     static get observedAttributes() { return ['item-id', 'item-name', 'price', 'cost', 'quantity', 'status']; }
-    async connectedCallback() { await this.render(); }
-    async attributeChangedCallback() { await this.render(); }
 
     async render() {
         if (!this.isConnected) return;
@@ -153,6 +215,7 @@ class MItem extends HTMLElement {
             .replace(/\${selectDelivered}/g, status === '納品済' ? 'selected' : '');
 
         this.innerHTML = html;
+        this.bindEditFields();
     }
 }
 customElements.define('m-item', MItem);
@@ -165,10 +228,8 @@ customElements.define('m-item', MItem);
 // かつては tag 属性の文字列で意味を切り替え、業務属性（order-no・client-name・
 // price…）も直に抱えていたため、この render は長い tag 分岐の塊だった。
 // 責務を分離したことでファイル表示だけの短い実装になっている。
-class MFile extends HTMLElement {
+class MFile extends MElement {
     static get observedAttributes() { return ['src', 'name', 'ext']; }
-    async connectedCallback() { await this.render(); }
-    async attributeChangedCallback() { await this.render(); }
 
     async render() {
         if (!this.isConnected) return;
@@ -331,16 +392,13 @@ class MFile extends HTMLElement {
 }
 customElements.define('m-file', MFile);
 
-class MChildList extends HTMLElement {
-    constructor() {
-        super();
-        this.attachShadow({ mode: 'open' });
-    }
-
-    connectedCallback() {
-        this.render();
-    }
-
+// === <m-child-list> (子ページ一覧) の定義 ===
+//
+// 唯一 Shadow DOM で描画していた要素だったが、他要素と同じ Light DOM へ揃えた
+// （理由は MElement の説明を参照）。中身は毎回この要素が組み立てる動的な一覧であり、
+// 保存対象ではない。エディタのシリアライザはカスタム要素の**属性と入れ子のカスタム要素**
+// しか書き出さないので、ここで作った <ul> が本文に混ざることはない。
+class MChildList extends MElement {
     async render() {
         // currentPageId is defined globally in index.html
         const pageId = window.currentPageId || "000000";
@@ -351,32 +409,11 @@ class MChildList extends HTMLElement {
         }
 
         // ページ名は利用者が書いた文字列（本文の見出し由来）なので、必ずエスケープしてから差す。
-        let itemsHtml = pages.length === 0
-            ? `<li style="color: #94a3b8; font-style: italic;">子ページはありません</li>`
-            : pages.map(p => `<li><a href="/${escapeAttr(p.ID)}" style="color: #38bdf8; text-decoration: none;">📄 ${escapeText(p.Title)}</a></li>`).join('');
+        const itemsHtml = pages.length === 0
+            ? `<li class="m-child-list-empty">子ページはありません</li>`
+            : pages.map(p => `<li><a class="m-child-list-link" href="/${escapeAttr(p.ID)}">📄 ${escapeText(p.Title)}</a></li>`).join('');
 
-        const html = `
-        <style>
-            .child-list {
-                background: #f8fafc;
-                border: 1px dashed #cbd5e1;
-                border-radius: 8px;
-                padding: 16px;
-                margin: 10px 0;
-                list-style: none;
-            }
-            .child-list li {
-                margin-bottom: 8px;
-            }
-            .child-list a:hover {
-                text-decoration: underline !important;
-            }
-        </style>
-        <ul class="child-list">
-            ${itemsHtml}
-        </ul>
-        `;
-        this.shadowRoot.innerHTML = html;
+        this.innerHTML = `<ul class="m-child-list">${itemsHtml}</ul>`;
     }
 }
 customElements.define('m-child-list', MChildList);
@@ -386,10 +423,8 @@ customElements.define('m-child-list', MChildList);
 // ============================================
 
 // === <m-material> (必要部材定義) の定義 ===
-class MMaterial extends HTMLElement {
+class MMaterial extends MElement {
     static get observedAttributes() { return ['item-name', 'cost', 'supplier-name', 'quantity']; }
-    async connectedCallback() { await this.render(); }
-    async attributeChangedCallback() { await this.render(); }
 
     async render() {
         if (!this.isConnected) return;
@@ -413,15 +448,14 @@ class MMaterial extends HTMLElement {
             .replace(/\${quantity}/g, escapeAttr(quantity));
 
         this.innerHTML = html;
+        this.bindEditFields();
     }
 }
 customElements.define('m-material', MMaterial);
 
 // === <m-required-materials> (手配進捗状況) の定義 ===
-class MRequiredMaterials extends HTMLElement {
+class MRequiredMaterials extends MElement {
     static get observedAttributes() { return ['page-id']; }
-    async connectedCallback() { await this.render(); }
-    async attributeChangedCallback() { await this.render(); }
 
     async render() {
         if (!this.isConnected) return;
@@ -514,14 +548,12 @@ customElements.define('m-required-materials', MRequiredMaterials);
 // 新規コードなので docs/開発方針.md §4 に従い、インライン on*= / style= は使わない
 // （クラス付与＋addEventListener。配色は assets/components.css）。
 // ─────────────────────────────────────────────────────────────────────────
-class MBusinessBlock extends HTMLElement {
+class MBusinessBlock extends MElement {
     // サブクラスが定義するもの:
     //   blockLabel  … 見出しに出す名前
     //   blockKind   … CSSの配色クラス（m-block--<kind>）
     //   blockFields … [{ attr, label, type }]（type は 'text' | 'number' | 'date'）
     //   hasItems    … 明細（<m-item>）を持つか
-    async connectedCallback() { await this.render(); }
-    async attributeChangedCallback() { await this.render(); }
 
     async render() {
         if (!this.isConnected) return;
@@ -555,13 +587,8 @@ class MBusinessBlock extends HTMLElement {
         const slot = this.querySelector('.m-block-items') || this.querySelector('.m-block');
         if (slot) contents.forEach(c => slot.appendChild(c));
 
-        // 編集フィールドを属性へ書き戻す（インライン on* を使わない）
-        this.querySelectorAll('.m-block-input').forEach(input => {
-            input.addEventListener('input', () => {
-                this.setAttribute(input.dataset.attr, input.value);
-                if (window.updateHtmlPreview) window.updateHtmlPreview();
-            });
-        });
+        // 編集フィールドを属性へ書き戻す（data-attr の共通配線。インライン on* は使わない）
+        this.bindEditFields();
     }
 }
 
