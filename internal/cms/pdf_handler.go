@@ -1,8 +1,10 @@
 package cms
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -14,12 +16,69 @@ import (
 	"google.golang.org/api/option"
 )
 
+// maxUploadBytes は添付1件あたりの上限（32MiB）です。
+// 上限が無いとリクエストボディを丸ごとメモリへ読み込んでしまい、認証済みの
+// 利用者がメモリを枯渇させられます。
+const maxUploadBytes = 32 << 20
+
+// allowedAttachmentExts は添付として保存を許す拡張子です。
+//
+// **拡張子を絞ることが要です。** ページのディレクトリ（data/master/xx/<id>/）には
+// 本文 <id>.html と属性サイドカー <id>.meta.json が同居しているため、任意の名前・
+// 種類で書き込めると次の2つが成立してしまいます:
+//
+//   - **権限昇格**: <id>.meta.json を上書きして owner / mode / public を書き換える。
+//     サイドカーは権限の正本であり、次の同期で page_perms へ反映される。write 権限
+//     しか持たない利用者が、本来 admin だけの chown や所有者だけの公開操作を行えてしまう。
+//   - **保存型XSS**: .html や .svg を置き、/data/master/... 経由で**同一オリジンの
+//     HTMLとして**配信させる。本文の保存時サニタイズ（docs/本文サニタイズ設計.md）を
+//     完全に迂回でき、中間版CSPの script-src 'unsafe-inline' はインラインを許すため
+//     スクリプトが動く。
+//
+// 配信側（DataFileHandler）にも多層防御を入れてあるが、そもそも置かせないのが第一。
+var allowedAttachmentExts = map[string]bool{".pdf": true}
+
+// attachmentFileName は受け取ったファイル名を、ページのディレクトリ内へ安全に置ける
+// 名前へ正規化します。使えない名前なら理由つきのエラーを返します。
+func attachmentFileName(pageID, raw string) (string, error) {
+	// パス要素を落とす。filepath.Base は実行中のOSの区切りしか見ないため、
+	// Linux上での "..\\..\\evil.pdf" のような名前に備えて両方の区切りで切る。
+	name := raw
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		name = name[i+1:]
+	}
+	name = strings.TrimSpace(name)
+
+	if name == "" || name == "." || name == ".." {
+		return "", errors.New("ファイル名が不正です")
+	}
+	if strings.HasPrefix(name, ".") {
+		return "", errors.New("ドットで始まるファイル名は使用できません")
+	}
+	for _, c := range name {
+		if c < 0x20 || c == 0x7f {
+			return "", errors.New("ファイル名に制御文字は使用できません")
+		}
+	}
+	if !allowedAttachmentExts[strings.ToLower(filepath.Ext(name))] {
+		return "", errors.New("PDFファイル（.pdf）のみアップロードできます")
+	}
+	// 本文と属性サイドカーは添付として上書きさせない。拡張子の許可リストを将来
+	// 広げたときにも効くよう、ここで名指しで守る。
+	if strings.EqualFold(name, pageID+".html") || strings.EqualFold(name, pageID+".meta.json") {
+		return "", errors.New("この名前のファイルは使用できません")
+	}
+	return name, nil
+}
+
 // UploadPDFHandler はドラッグ＆ドロップされたPDFを該当ページIDのフォルダに保存します
 func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// フォームを読む前に本文サイズを制限する（FormValue が内部でパースするため）。
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
 	pageID := r.FormValue("page_id")
 	if pageID == "" {
@@ -31,13 +90,19 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.ParseMultipartForm(32 << 20)
 	file, header, err := r.FormFile("pdf_file")
 	if err != nil {
-		http.Error(w, "File upload error", http.StatusBadRequest)
+		http.Error(w, "ファイルを受け取れませんでした（サイズ上限は32MiBです）", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
+
+	// 保存する名前を先に確定させる（種類が許可されないなら読み込むまでもない）。
+	fileName, err := attachmentFileName(pageID, header.Filename)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	content, err := io.ReadAll(file)
 	if err != nil {
@@ -45,11 +110,16 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 拡張子は名乗りにすぎないので、中身がPDFであることも確認する
+	// （.pdf という名前のHTMLを置かれると配信側の判定を欺ける）。
+	if !bytes.HasPrefix(content, []byte("%PDF-")) {
+		http.Error(w, "PDFファイルではありません（先頭が %PDF- ではありません）", http.StatusBadRequest)
+		return
+	}
+
 	pageDir := GetPageDir(pageID)
 	os.MkdirAll(pageDir, 0755)
 
-	// 安全なファイル名を作成
-	fileName := filepath.Base(header.Filename)
 	savePath := filepath.Join(pageDir, fileName)
 
 	if err := os.WriteFile(savePath, content, 0644); err != nil {
