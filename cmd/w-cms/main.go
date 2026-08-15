@@ -7,6 +7,8 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/editlock"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -62,7 +64,7 @@ func main() {
 	}
 
 	// 編集ロックの猶予満了などを定期評価するバックグラウンド処理を起動する。
-	cms.StartLockReaper()
+	editlock.StartLockReaper()
 
 	// --- ルーティング ---
 	// 保護対象のAPI（要認証）。/api/ 配下にまとめ、RequireAuth でまとめて包む。
@@ -80,10 +82,10 @@ func main() {
 	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
 
 	// 同時編集の悲観ロック（ページ単位・競合トリガー方式・SSEプッシュ）
-	protected.HandleFunc("/api/lock", cms.LockAPIHandler)
-	protected.HandleFunc("/api/lock-events", cms.LockEventsAPIHandler)
-	protected.HandleFunc("/api/unlock", cms.UnlockAPIHandler)
-	protected.HandleFunc("/api/lock/force", cms.LockForceAPIHandler)
+	protected.HandleFunc("/api/lock", editlock.LockAPIHandler)
+	protected.HandleFunc("/api/lock-events", editlock.LockEventsAPIHandler)
+	protected.HandleFunc("/api/unlock", editlock.UnlockAPIHandler)
+	protected.HandleFunc("/api/lock/force", editlock.LockForceAPIHandler)
 
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
@@ -123,7 +125,7 @@ func main() {
 	//   - /api/children : 子ページ一覧（匿名には実効公開の子だけを絞って返す）
 	//   - /api/page-meta: ページ属性（親ページIDなど。匿名には実効公開のときだけ返す）
 	root.Handle("/api/load", auth.OptionalAuth(http.HandlerFunc(cms.LoadAPIHandler)))
-	root.Handle("/data/", auth.OptionalAuth(http.HandlerFunc(cms.DataFileHandler)))
+	root.Handle("/data/", auth.OptionalAuth(http.HandlerFunc(page.DataFileHandler)))
 	root.Handle("/api/me", auth.OptionalAuth(http.HandlerFunc(auth.MeAPIHandler)))
 	root.Handle("/api/children", auth.OptionalAuth(http.HandlerFunc(cms.ChildPagesAPIHandler)))
 	root.Handle("/api/page-meta", auth.OptionalAuth(http.HandlerFunc(cms.PageMetaAPIHandler)))

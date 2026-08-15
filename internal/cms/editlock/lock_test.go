@@ -1,4 +1,4 @@
-package cms
+package editlock
 
 import (
 	"testing"

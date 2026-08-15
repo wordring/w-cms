@@ -8,12 +8,13 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 
 ### Goバックエンドの構成（`internal/`）
 *   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
-*   **`cms/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/lock_handler.go`（4.3 参照）。
+*   **`cms/editlock/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/editlock/handler.go`（4.3 参照）。
 *   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、語彙集約（`PluginTags`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。
 *   **`cms/plugin_*.go`**: 1ファイル＝1ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・**カスタム要素の語彙（`Tags`）**・同期処理（`Sync`）を持ち、`init()` で自己登録します。新しいユースケースはここにファイルを足すだけで追加できます（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。
 *   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルのみ**を抽出します（`ParseCore`）。カスタム要素（`<m-*>`）はコアが知らず、所有プラグインの `Sync` が抽出します。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
 *   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_perms）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
-*   **`cms/handler.go`**: コアのHTTPハンドラ（保存・読込・子ページ作成など）。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
+*   **`cms/handler_*.go`**: コアのHTTPハンドラ。関心ごとに `handler_save.go`（保存）・`handler_view.go`（画面とページ本文API）・`handler_tree.go`（木構造：新規作成・子一覧・親の付け替え）・`handler_meta.go`（属性・語彙・DB再構築）へ分けています。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
+*   **`cms/page/`**: ページの実体を扱うパッケージ。保存ディレクトリの決定（`GetPageDir`）、属性サイドカーの読み書き、Unix風の認可（`RequirePageWrite` 等）、`/data/` 配下の添付配信ゲート（`DataFileHandler`）。**ハンドラ層（`cms`）と編集ロック（`cms/editlock`）の両方がここに依存し、逆向きの依存はありません。**
 
 ---
 
@@ -199,7 +200,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 
 ### 4.3. 編集ロック API（同時編集の競合対策）
 
-同一ページの同時編集による lost update を防ぐため、**ページ単位の悲観ロック**を提供します（競合トリガー方式・**SSEプッシュ**）。設計の全体像と決定の経緯は [【考察】同時編集の競合対策.md](【考察】同時編集の競合対策.md) を参照。ロックは **プロセス内 mutex 付き map** に保持する揮発的なランタイム状態で、サイドカーにもDBにも永続化しません（単一プロセス前提。再起動で全ロックが消えるのは許容＝ロックは元々揮発的）。**presence（死活）は SSE 接続の有無で判定**します（ポーリングしない）。実装は `internal/cms/lock.go`（コア）と `lock_handler.go`（HTTP/SSE）。
+同一ページの同時編集による lost update を防ぐため、**ページ単位の悲観ロック**を提供します（競合トリガー方式・**SSEプッシュ**）。設計の全体像と決定の経緯は [【考察】同時編集の競合対策.md](【考察】同時編集の競合対策.md) を参照。ロックは **プロセス内 mutex 付き map** に保持する揮発的なランタイム状態で、サイドカーにもDBにも永続化しません（単一プロセス前提。再起動で全ロックが消えるのは許容＝ロックは元々揮発的）。**presence（死活）は SSE 接続の有無で判定**します（ポーリングしない）。実装は `internal/cms/editlock/lock.go`（コア）と `editlock/handler.go`（HTTP/SSE）。
 
 *   **`POST /api/lock?id=&token=`**（要 write 権限）: 編集モード移行時の**ロック取得**（および待機者が空き＝`available` を受けたときの自動取得）。保持者は**ユーザーではなくエディタ個体（トークン）**で識別します（同じユーザーが別タブ/別ウィンドウで開いた場合も競合として検知）。
     *   空き、または現在の保持トークンを `token` で提示した同一エディタの再取得なら取得し、`{"ok": true, "token": "...", "html": "..."}`（**最新HTML同梱**。古い版で上書きしないよう再ロードさせる）を返す。
@@ -210,7 +211,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 *   **`POST /api/unlock?id=&token=`**: 保持者本人による明示解放（閲覧モード復帰・タブ離脱の `navigator.sendBeacon` から呼ぶ）。
 *   **`POST /api/lock/force?id=`**（admin）: 保持者が落ちてスタックした場合の強制解除（`auth.Audit` に記録）。
 
-**エディタ内の変更操作の直列化（`RequireEditLock`）**: 本文保存だけでなく、**権限変更 `POST /api/page-perms`・所有者変更 `POST /api/page-chown`・親付け替え `POST /api/set-parent`** も、本文編集と同じ編集ロックで直列化します。共通ゲート `RequireEditLock(w, r, id)`（`lock_handler.go`）が `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `pageLocks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは共通ラッパ `lockedFetch()` がトークンを自動同梱し、409 を `handleLockLost` に集約します。将来の画像/PDF等のリソース操作も、サーバーは `RequireEditLock`、フロントは `lockedFetch` を通すことで同じロックを共有できます。admin がスタックしたページを直すときは `/api/lock/force` で解除してから操作します。
+**エディタ内の変更操作の直列化（`RequireEditLock`）**: 本文保存だけでなく、**権限変更 `POST /api/page-perms`・所有者変更 `POST /api/page-chown`・親付け替え `POST /api/set-parent`** も、本文編集と同じ編集ロックで直列化します。共通ゲート `editlock.RequireEditLock(w, r, id)`（`editlock/handler.go`）が `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `editlock.Locks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは共通ラッパ `lockedFetch()` がトークンを自動同梱し、409 を `handleLockLost` に集約します。将来の画像/PDF等のリソース操作も、サーバーは `RequireEditLock`、フロントは `lockedFetch` を通すことで同じロックを共有できます。admin がスタックしたページを直すときは `/api/lock/force` で解除してから操作します。
 
 **有効期間（競合トリガー方式）**: 無競合なら無期限保持。待機者（別エディタ）の SSE 接続から **2分**の猶予で強制明け渡し（満了後は早い者勝ち）。**保持者の SSE 切断**で待機者がいれば即解放、**待機者の SSE 切断**で猶予キャンセル（取得直後〜SSE接続までは `holderConnectGrace`＝約10秒の猶予で present とみなす）。猶予満了の評価は `StartLockReaper` の1秒ティッカーが行い、状態変化は全購読者へ broadcast されます。
 
@@ -304,7 +305,7 @@ w-cms は、フロントエンドのWeb Componentsから生成されるHTMLド�
 フロントエンドで新規ページを作成する際、グローバルで一意の連番IDを安全に生成するための仕組みです。
 
 ### 6.1. バックエンドのID採番ロジック (`reserveNewPageID`)
-バックエンド（`internal/cms/handler.go`）では、`pages` テーブルへ最小限の行を **`INSERT` する自動採番**でIDを原子的に確定します（`id` は `INTEGER PRIMARY KEY`）。
+バックエンド（`internal/cms/handler_tree.go`）では、`pages` テーブルへ最小限の行を **`INSERT` する自動採番**でIDを原子的に確定します（`id` は `INTEGER PRIMARY KEY`）。
 1. `INSERT INTO pages (title, parent_id, file_path) VALUES ('新しいページ', ?, '')` を実行し、SQLite が採番した `LastInsertId()` を取得します。
 2. その数値を桁数（`IDLength = 6桁`）でゼロ埋め（`fmt.Sprintf("%0*d", IDLength, id)`）して返し、`GetPageDir` で先頭2文字をプレフィックスにした保存先パス（例: `data/master/00/000001`）を決定します。
 

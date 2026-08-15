@@ -63,17 +63,24 @@ w-cms/
 │       ├── plugin_our_order.go    # ユースケース: 弊社の発注書
 │       ├── plugin_estimates.go    # ユースケース: 見積もり（弊社／業者）
 │       ├── plugin_materials.go    # ユースケース: 部材BOM＋部材手配計算API
-│       ├── handler.go      # コアHTTPハンドラ（保存・読込・子ページ作成など）
-│       ├── shell.go        # ページ本文とindex.htmlのサーバー合成
-│       ├── sanitize.go     # 本文HTMLの許可リスト方式サニタイズ＋語彙の正本
-│       ├── block.go        # ブロック単位保存（data-id での差し替え）
-│       ├── lock.go         # 編集ロック（悲観ロック＋SSE）
-│       ├── perms.go        # ページ単位の認可（Unix風 read/write ＋ 匿名公開）
-│       ├── pdf_handler.go  # PDFアップロード・Gemini解析API
-│       ├── parser.go       # コア情報（タイトル・親ID）の抽出
-│       ├── storage.go      # IDの自動採番と保存ディレクトリの決定
-│       ├── sync.go         # コア同期＋プラグイン走査（SyncIndex / RebuildDatabase）
-│       └── *_test.go       # 単体テスト
+│       ├── handler_save.go  # 保存API（全文・ブロック単位）
+│       ├── handler_view.go  # 画面（サーバー合成）とページ本文API
+│       ├── handler_tree.go  # ページの木構造（新規作成・子一覧・親の付け替え）
+│       ├── handler_meta.go  # ページ属性・本文の語彙・DB再構築
+│       ├── shell.go         # ページ本文とindex.htmlのサーバー合成
+│       ├── sanitize.go      # 本文HTMLの許可リスト方式サニタイズ＋語彙の正本
+│       ├── block.go         # ブロック単位保存（data-id での差し替え）
+│       ├── perms_admin.go   # 権限・所有者・公開の変更API（chmod/chown/publish）
+│       ├── pdf_handler.go   # PDFアップロード・Gemini解析API
+│       ├── parser.go        # コア情報（タイトル）の抽出
+│       ├── sync.go          # コア同期＋プラグイン走査（SyncIndex / RebuildDatabase）
+│       ├── page/            # ページの実体（保存パス・サイドカー・認可・添付配信）
+│       │   ├── storage.go   # 保存ディレクトリの決定（GetPageDir）
+│       │   └── perms.go     # Unix風 read/write ＋ 匿名公開、/data/ の配信ゲート
+│       ├── editlock/        # 編集ロック（悲観ロック＋SSE）
+│       │   ├── lock.go      # ロック状態（プロセス内 mutex map・競合トリガー方式）
+│       │   └── handler.go   # /api/lock・/api/lock-events・/api/unlock・/api/lock/force
+│       └── *_test.go        # 単体テスト
 ├── assets/                 # フロントエンド用静的ファイル
 │   ├── index.html          # エディタの殻（markup のみ。本文はサーバーが合成）
 │   ├── app.css             # 殻のスタイル

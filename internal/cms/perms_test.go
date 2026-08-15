@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 
 	_ "modernc.org/sqlite"
@@ -16,7 +17,7 @@ import (
 // TestModePermissions は Unix風modeの実効権限判定（owner/group/other/admin）を検証します。
 func TestModePermissions(t *testing.T) {
 	// owner=alice, group=sales, mode="320"（owner rw, group r, other なし）
-	p := PageMeta{Owner: "alice", Group: "sales", Mode: "320"}
+	p := page.PageMeta{Owner: "alice", Group: "sales", Mode: "320"}
 
 	alice := &auth.User{Username: "alice", Groups: []string{"sales"}}       // 所有者
 	bob := &auth.User{Username: "bob", Groups: []string{"sales"}}           // 同一グループ
@@ -45,7 +46,7 @@ func TestModePermissions(t *testing.T) {
 
 // TestOtherReadableMode は other に read を与えた mode（"302"等）の判定を検証します。
 func TestOtherReadableMode(t *testing.T) {
-	p := PageMeta{Owner: "admin", Group: "", Mode: "302"} // owner rw, other r
+	p := page.PageMeta{Owner: "admin", Group: "", Mode: "302"} // owner rw, other r
 	stranger := &auth.User{Username: "x", Groups: []string{"y"}}
 	if !p.CanRead(stranger) {
 		t.Error("other=read のページを部外者が読めません")
@@ -55,7 +56,7 @@ func TestOtherReadableMode(t *testing.T) {
 	}
 }
 
-// TestSidecarAndPermsSync はサイドカー→SyncIndex→page_perms→GetPerms の経路を検証します。
+// TestSidecarAndPermsSync はサイドカー→SyncIndex→page_perms→page.GetPerms の経路を検証します。
 func TestSidecarAndPermsSync(t *testing.T) {
 	// data/master を一時ディレクトリに切り替える
 	origWd, _ := os.Getwd()
@@ -78,21 +79,21 @@ func TestSidecarAndPermsSync(t *testing.T) {
 	}
 
 	// サイドカーを書いてから同期する
-	if err := WriteSidecar("000007", PageMeta{Owner: "alice", Group: "sales", Mode: "320"}); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar("000007", page.PageMeta{Owner: "alice", Group: "sales", Mode: "320"}); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 	if err := SyncIndex("000007", "<h1>権限テスト</h1>"); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	// page_perms に反映され、GetPerms で取得できること
-	p := GetPerms(7)
+	// page_perms に反映され、page.GetPerms で取得できること
+	p := page.GetPerms(7)
 	if p.Owner != "alice" || p.Group != "sales" || p.Mode != "320" {
 		t.Errorf("page_permsが期待と異なります: %+v", p)
 	}
 
 	// サイドカー往復
-	got, ok := ReadSidecar("000007")
+	got, ok := page.ReadSidecar("000007")
 	if !ok || got.Owner != "alice" || got.Mode != "320" {
 		t.Errorf("サイドカー読み戻しが不正: ok=%v %+v", ok, got)
 	}
@@ -177,7 +178,7 @@ func TestGetPermsFailClosed(t *testing.T) {
 	}
 
 	// page_perms にレコードが無いページ → admin所有の既定（mode "330", other なし）
-	p := GetPerms(999)
+	p := page.GetPerms(999)
 	stranger := &auth.User{Username: "x"}
 	if p.CanRead(stranger) || p.CanWrite(stranger) {
 		t.Error("権限レコードが無いページを部外者が読み書きできてしまいます（フェイルクローズ違反）")
@@ -230,14 +231,14 @@ func TestEffectivePublic(t *testing.T) {
 		{10, false}, // 自身が非公開
 	}
 	for _, c := range cases {
-		if got := EffectivePublic(c.id); got != c.want {
-			t.Errorf("EffectivePublic(%d)=%v want %v", c.id, got, c.want)
+		if got := page.EffectivePublic(c.id); got != c.want {
+			t.Errorf("page.EffectivePublic(%d)=%v want %v", c.id, got, c.want)
 		}
 	}
 
 	// ルートを非公開にすると、配下すべてが実効非公開になる（キルスイッチ）。
 	db.Exec(`UPDATE page_perms SET public=0 WHERE page_id=0`)
-	if EffectivePublic(1) {
+	if page.EffectivePublic(1) {
 		t.Error("ルート非公開なのに子(1)が実効公開のまま（キルスイッチが効いていない）")
 	}
 }
@@ -277,7 +278,7 @@ func TestRequirePageReadOrPublic(t *testing.T) {
 			r = auth.WithUser(r, u)
 		}
 		w := httptest.NewRecorder()
-		got := RequirePageReadOrPublic(w, r, id)
+		got := page.RequirePageReadOrPublic(w, r, id)
 		if got != wantOK {
 			t.Errorf("%s: ok=%v want %v", name, got, wantOK)
 		}

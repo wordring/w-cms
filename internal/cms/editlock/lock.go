@@ -1,4 +1,4 @@
-package cms
+package editlock
 
 import (
 	"crypto/rand"
@@ -62,8 +62,8 @@ type lockManager struct {
 	subs  map[int]map[*subscriber]struct{}
 }
 
-// pageLocks はプロセス全体で共有されるロックマネージャです。
-var pageLocks = newLockManager()
+// Locks はプロセス全体で共有されるロックマネージャです。
+var Locks = newLockManager()
 
 func newLockManager() *lockManager {
 	return &lockManager{
@@ -303,7 +303,7 @@ func StartLockReaper() {
 		t := time.NewTicker(time.Second)
 		defer t.Stop()
 		for range t.C {
-			pageLocks.tick(time.Now())
+			Locks.tick(time.Now())
 		}
 	}()
 }

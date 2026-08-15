@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -33,12 +34,12 @@ func SyncIndex(id string, htmlContent string) error {
 	core := ParseCore(root)
 
 	// 手順3: 物理ファイルの保存先パスを構築
-	filePath := filepath.Join(GetPageDir(id), id+".html")
+	filePath := filepath.Join(page.GetPageDir(id), id+".html")
 
 	// ページ属性（親ページID・作成日時・作成者・更新日時）はサイドカー（正本）から読み取る。
 	// サイドカーが無い場合は親なし・作成情報なしとして扱い、更新日時は CURRENT_TIMESTAMP に
 	// フォールバックする。サイドカーが正本なのでDB再構築でも属性が失われない。
-	meta, _ := ReadSidecar(id)
+	meta, _ := page.ReadSidecar(id)
 
 	var parentIDInt sql.NullInt64
 	if meta.ParentID != "" {
@@ -82,7 +83,7 @@ func SyncIndex(id string, htmlContent string) error {
 
 	// コア2: ページ権限インデックス（サイドカー <id>.meta.json → page_perms）の同期
 	// （<m-tag> → page_tags はコアではなく plugin_page_tags.go が担う）
-	if err = syncPageMeta(tx, pageIDInt, id); err != nil {
+	if err = page.SyncPageMeta(tx, pageIDInt, id); err != nil {
 		return err
 	}
 
@@ -163,7 +164,7 @@ func RebuildIfEmpty() error {
 	if count > 0 {
 		return nil
 	}
-	if !hasHTMLFiles(MasterDir) {
+	if !hasHTMLFiles(page.MasterDir) {
 		return nil
 	}
 	log.Println("空のDBとHTMLファイルを検出: データベースを自動再構築します")
@@ -189,7 +190,7 @@ func hasHTMLFiles(dir string) bool {
 // resyncAllPages は data/master 配下の全 .html を走査して SyncIndex を実行します。
 // 個々のファイルのエラーは握り潰して他ファイルの処理を継続します（冪等な再実行で回復可能）。
 func resyncAllPages() error {
-	return filepath.Walk(MasterDir, func(path string, info os.FileInfo, err error) error {
+	return filepath.Walk(page.MasterDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// data/master が存在しない場合などは、再構築対象なしとして正常終了する。
 			if os.IsNotExist(err) {

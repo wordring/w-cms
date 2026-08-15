@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 
 	_ "modernc.org/sqlite"
@@ -26,7 +27,7 @@ import (
 
 // setupUploadTest は data/master を一時ディレクトリへ切り替え、対象ページの
 // サイドカーと page_perms を用意します。
-func setupUploadTest(t *testing.T, id string, p PageMeta) {
+func setupUploadTest(t *testing.T, id string, p page.PageMeta) {
 	t.Helper()
 
 	origWd, _ := os.Getwd()
@@ -47,8 +48,8 @@ func setupUploadTest(t *testing.T, id string, p PageMeta) {
 	if err := ApplySchema(db); err != nil {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
-	if err := WriteSidecar(id, p); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar(id, p); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 	if err := SyncIndex(id, "<h1>添付テスト</h1>"); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
@@ -82,7 +83,7 @@ func postUpload(t *testing.T, pageID, fileName string, content []byte, u *auth.U
 // 上書きして所有者・権限・公開フラグを書き換えられないことを検証します（権限昇格の遮断）。
 func TestUploadRejectsSidecarOverwrite(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, PageMeta{Owner: "alice", Mode: "333"})
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
 
 	attacker := &auth.User{Username: "mallory"}
 	evil := []byte(`{"owner":"mallory","mode":"333","public":true}`)
@@ -92,7 +93,7 @@ func TestUploadRejectsSidecarOverwrite(t *testing.T) {
 		t.Fatalf("サイドカーの上書きが拒否されていません: status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
-	meta, ok := ReadSidecar(id)
+	meta, ok := page.ReadSidecar(id)
 	if !ok {
 		t.Fatal("サイドカーが読めません")
 	}
@@ -105,7 +106,7 @@ func TestUploadRejectsSidecarOverwrite(t *testing.T) {
 // （/data/ 経由の同一オリジン配信による保存型XSSの遮断）。
 func TestUploadRejectsNonPDFName(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, PageMeta{Owner: "alice", Mode: "333"})
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
 
 	user := &auth.User{Username: "alice"}
 	for _, name := range []string{"evil.html", "evil.svg", "evil.pdf.html", "evil.js"} {
@@ -113,7 +114,7 @@ func TestUploadRejectsNonPDFName(t *testing.T) {
 		if rr.Code != 400 {
 			t.Errorf("%s のアップロードが拒否されていません: status=%d", name, rr.Code)
 		}
-		if _, err := os.Stat(filepath.Join(GetPageDir(id), name)); err == nil {
+		if _, err := os.Stat(filepath.Join(page.GetPageDir(id), name)); err == nil {
 			t.Errorf("%s がページディレクトリに保存されました", name)
 		}
 	}
@@ -122,7 +123,7 @@ func TestUploadRejectsNonPDFName(t *testing.T) {
 // TestUploadRejectsFakePDF は、拡張子だけPDFを名乗る中身を弾くことを検証します。
 func TestUploadRejectsFakePDF(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, PageMeta{Owner: "alice", Mode: "333"})
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
 
 	rr := postUpload(t, id, "innocent.pdf", []byte("<html><script>alert(1)</script>"), &auth.User{Username: "alice"})
 	if rr.Code != 400 {
@@ -134,7 +135,7 @@ func TestUploadRejectsFakePDF(t *testing.T) {
 // ディレクトリ内へ収まることを検証します。
 func TestUploadStripsPathComponents(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, PageMeta{Owner: "alice", Mode: "333"})
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
 
 	pdf := []byte("%PDF-1.7\n本文")
 	for _, name := range []string{`../../escape.pdf`, `..\..\escape.pdf`, `/etc/escape.pdf`} {
@@ -142,7 +143,7 @@ func TestUploadStripsPathComponents(t *testing.T) {
 		if rr.Code != 200 {
 			t.Fatalf("%s のアップロードが失敗しました: status=%d body=%s", name, rr.Code, rr.Body.String())
 		}
-		if _, err := os.Stat(filepath.Join(GetPageDir(id), "escape.pdf")); err != nil {
+		if _, err := os.Stat(filepath.Join(page.GetPageDir(id), "escape.pdf")); err != nil {
 			t.Errorf("%s がページディレクトリに保存されていません: %v", name, err)
 		}
 		if _, err := os.Stat(filepath.Join("data", "escape.pdf")); err == nil {
@@ -154,7 +155,7 @@ func TestUploadStripsPathComponents(t *testing.T) {
 // TestUploadAcceptsPDF は正常系（本物のPDF）が従来どおり保存されることを検証します。
 func TestUploadAcceptsPDF(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, PageMeta{Owner: "alice", Mode: "333"})
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
 
 	rr := postUpload(t, id, "見積書.pdf", []byte("%PDF-1.4\n..."), &auth.User{Username: "alice"})
 	if rr.Code != 200 {
@@ -163,12 +164,12 @@ func TestUploadAcceptsPDF(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "見積書.pdf") {
 		t.Errorf("レスポンスにファイル名が含まれていません: %s", rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(GetPageDir(id), "見積書.pdf")); err != nil {
+	if _, err := os.Stat(filepath.Join(page.GetPageDir(id), "見積書.pdf")); err != nil {
 		t.Errorf("PDFが保存されていません: %v", err)
 	}
 }
 
-// getData は DataFileHandler へ GET します。
+// getData は page.DataFileHandler へ GET します。
 func getData(t *testing.T, urlPath string, u *auth.User) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest("GET", urlPath, nil)
@@ -176,7 +177,7 @@ func getData(t *testing.T, urlPath string, u *auth.User) *httptest.ResponseRecor
 		req = auth.WithUser(req, u)
 	}
 	rr := httptest.NewRecorder()
-	DataFileHandler(rr, req)
+	page.DataFileHandler(rr, req)
 	return rr
 }
 
@@ -185,9 +186,9 @@ func getData(t *testing.T, urlPath string, u *auth.User) *httptest.ResponseRecor
 // 検証します（アップロード側の許可リストに対する多層防御）。
 func TestDataFileHandlerDoesNotServeExecutableTypes(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, PageMeta{Owner: "alice", Mode: "333"})
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
 
-	dir := GetPageDir(id)
+	dir := page.GetPageDir(id)
 	os.MkdirAll(dir, 0755)
 	os.WriteFile(filepath.Join(dir, "legacy.html"), []byte("<script>alert(1)</script>"), 0644)
 	os.WriteFile(filepath.Join(dir, "doc.pdf"), []byte("%PDF-1.4\n"), 0644)

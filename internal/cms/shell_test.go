@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/page"
 )
 
 // writeTestShell はテスト用の最小シェル（assets/index.html）を作業ディレクトリへ用意します。
@@ -30,17 +31,17 @@ func writeTestShell(t *testing.T) {
 }
 
 // newPage はテスト用のページ（本文ファイル＋サイドカー＋DB同期）を作ります。
-func newPage(t *testing.T, id, body string, meta PageMeta) {
+func newPage(t *testing.T, id, body string, meta page.PageMeta) {
 	t.Helper()
-	dir := GetPageDir(id)
+	dir := page.GetPageDir(id)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("ページディレクトリ作成エラー: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, id+".html"), []byte(body), 0644); err != nil {
 		t.Fatalf("本文書き込みエラー: %v", err)
 	}
-	if err := WriteSidecar(id, meta); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar(id, meta); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 	if err := SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
@@ -66,7 +67,7 @@ func TestRootHandlerComposesBody(t *testing.T) {
 	writeTestShell(t)
 
 	newPage(t, "000010", "<h1>合成テスト</h1><p>本文です</p>",
-		PageMeta{Owner: "alice", Mode: DefaultMode})
+		page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 
 	rr := getPage(t, "/000010", &auth.User{Username: "alice"})
 	if rr.Code != 200 {
@@ -94,7 +95,7 @@ func TestRootHandlerSanitizesOnRender(t *testing.T) {
 
 	// エディタを経由せずファイルへ直接書いた状況（バックアップ復元・手動配置など）
 	newPage(t, "000011", `<h1>題名</h1><script>alert(1)</script><p onclick="alert(2)">本文</p>`,
-		PageMeta{Owner: "alice", Mode: DefaultMode})
+		page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 
 	rr := getPage(t, "/000011", &auth.User{Username: "alice"})
 	body := rr.Body.String()
@@ -114,9 +115,9 @@ func TestRootHandlerAuthorization(t *testing.T) {
 	writeTestShell(t)
 
 	// owner=alice / other 権限なし（非公開）
-	newPage(t, "000012", "<h1>秘密</h1>", PageMeta{Owner: "alice", Mode: "300"})
+	newPage(t, "000012", "<h1>秘密</h1>", page.PageMeta{Owner: "alice", Mode: "300"})
 	// 実効公開のページ
-	newPage(t, "000013", "<h1>公開ページ</h1>", PageMeta{Owner: "alice", Mode: "300", Public: true})
+	newPage(t, "000013", "<h1>公開ページ</h1>", page.PageMeta{Owner: "alice", Mode: "300", Public: true})
 
 	t.Run("匿名×非公開は /login へリダイレクト", func(t *testing.T) {
 		rr := getPage(t, "/000012", nil)

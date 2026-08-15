@@ -1,4 +1,4 @@
-package cms
+package page
 
 import (
 	"database/sql"
@@ -30,8 +30,8 @@ import (
 // DefaultMode は新規ページの既定権限（owner=rw, group=rw, other=なし）。認証認可設計.md 3.4節【確定】。
 const DefaultMode = "330"
 
-// defaultOwner はサイドカーが無いページのフォールバック所有者（admin相当の扱い）。
-const defaultOwner = "admin"
+// DefaultOwner はサイドカーが無いページのフォールバック所有者（admin相当の扱い）。
+const DefaultOwner = "admin"
 
 // PageMeta はページの属性です。サイドカー <id>.meta.json の正本となります。
 // 所有権・権限（Owner/Group/Mode）に加え、親ページID・作成日時・作成者・更新日時を持ちます。
@@ -120,7 +120,7 @@ func readMetaOrPerms(id string) PageMeta {
 	if idInt, err := strconv.Atoi(id); err == nil {
 		return GetPerms(idInt)
 	}
-	return PageMeta{Owner: defaultOwner, Mode: DefaultMode}
+	return PageMeta{Owner: DefaultOwner, Mode: DefaultMode}
 }
 
 // BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。
@@ -148,12 +148,12 @@ func SetSidecarParent(id, parent string) (string, error) {
 	return now, nil
 }
 
-// syncPageMeta はサイドカー（正本）から cms.db の page_perms を更新します。
+// SyncPageMeta はサイドカー（正本）から cms.db の page_perms を更新します。
 // SyncIndex から呼ばれます。サイドカーが無いページは admin 所有の既定として扱います。
-func syncPageMeta(tx *sql.Tx, pageID int, id string) error {
+func SyncPageMeta(tx *sql.Tx, pageID int, id string) error {
 	p, ok := ReadSidecar(id)
 	if !ok {
-		p = PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
+		p = PageMeta{Owner: DefaultOwner, Group: "", Mode: DefaultMode}
 	}
 	_, err := tx.Exec(`
 		INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (?, ?, ?, ?, ?)
@@ -171,7 +171,7 @@ func RefreshPerms(id string) error {
 	}
 	p, ok := ReadSidecar(id)
 	if !ok {
-		p = PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
+		p = PageMeta{Owner: DefaultOwner, Group: "", Mode: DefaultMode}
 	}
 	_, err = database.DB.Exec(`
 		INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (?, ?, ?, ?, ?)
@@ -210,7 +210,7 @@ func GetPerms(pageID int) PageMeta {
 		`SELECT owner, grp, mode, public FROM page_perms WHERE page_id = ?`, pageID,
 	).Scan(&p.Owner, &p.Group, &p.Mode, &public)
 	if err != nil {
-		return PageMeta{Owner: defaultOwner, Group: "", Mode: DefaultMode}
+		return PageMeta{Owner: DefaultOwner, Group: "", Mode: DefaultMode}
 	}
 	p.Public = public != 0
 	if p.Mode == "" {

@@ -1,0 +1,341 @@
+package cms
+
+// ページの木構造に関わるハンドラ。新規作成・子ページ一覧・親の付け替えと、
+// その妥当性検証（実在・循環・権限）をまとめています。
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"w-cms/internal/auth"
+	"w-cms/internal/cms/editlock"
+	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
+)
+
+// PageSummary は一覧表示用の簡素化されたメタデータ構造体です。
+type PageSummary struct {
+	ID       string
+	Title    string
+	FilePath string
+}
+
+// reserveNewPageID は pages テーブルへ最小限の行を原子的に INSERT し、SQLite の自動採番で
+// 確定した新しいページID（6桁ゼロ埋め）を返します。`MAX(id)+1` と異なり同時実行でも一意な
+// IDが得られ、ID衝突（[docs/【考察】同時編集の競合対策.md] シナリオE）を防ぎます。
+// parent は親ページID（トップレベルは無効値 sql.NullInt64{}）。属性の正本はサイドカーです。
+func reserveNewPageID(parent sql.NullInt64) (string, error) {
+	result, err := database.DB.Exec(
+		`INSERT INTO pages (title, parent_id, file_path) VALUES (?, ?, '')`,
+		"新しいページ", parent,
+	)
+	if err != nil {
+		return "", err
+	}
+	idInt, _ := result.LastInsertId()
+	return fmt.Sprintf("%0*d", page.IDLength, idInt), nil
+}
+
+// ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。
+func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
+	parentID := r.URL.Query().Get("parent_id")
+	if parentID == "" {
+		http.Error(w, "Missing parent_id", http.StatusBadRequest)
+		return
+	}
+
+	parentIDInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		http.Error(w, "Invalid parent_id format", http.StatusBadRequest)
+		return
+	}
+	// 一覧表示には親ページの read 権限を要求する（Unixの「ディレクトリの読み取り」に相当）。
+	// 匿名でも親が実効公開なら許可する（認証認可設計.md 10.5）。
+	if !page.RequirePageReadOrPublic(w, r, parentID) {
+		return
+	}
+	user := auth.CurrentUser(r)
+
+	rows, err := database.DB.Query("SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC", parentIDInt)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	// 各子ページのうち、閲覧者が見られるものだけを返す。
+	// 認証済みは read 権限、匿名は実効公開（page.EffectivePublic）で判定する。
+	pages := make([]PageSummary, 0)
+	for rows.Next() {
+		var p PageSummary
+		var idInt int
+		if err := rows.Scan(&idInt, &p.Title); err == nil {
+			visible := false
+			if user != nil {
+				visible = page.GetPerms(idInt).CanRead(user)
+			} else {
+				visible = page.EffectivePublic(idInt)
+			}
+			if visible {
+				p.ID = fmt.Sprintf("%0*d", page.IDLength, idInt)
+				pages = append(pages, p)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pages)
+}
+
+// NewPageAPIHandler はサーバー側で新しいページを作成し、そのページへリダイレクトします。
+func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
+	// 1. 親ページIDの取得
+	parentIDStr := r.URL.Query().Get("parent")
+	var parentID sql.NullInt64
+	if parentIDStr != "" {
+		pid, err := strconv.Atoi(parentIDStr)
+		if err != nil {
+			http.Error(w, "Invalid parent ID", http.StatusBadRequest)
+			return
+		}
+		parentID = sql.NullInt64{Int64: int64(pid), Valid: true}
+		// 子ページの作成には親ページの write 権限を要求する
+		if !page.RequirePageWrite(w, r, parentIDStr) {
+			return
+		}
+	} else {
+		// 親なし（トップレベル）のページが許されるのはトップページ（000000）のみで、
+		// それは初回起動時に自動生成済み。新規作成は常に親が必要。
+		http.Error(w, "親ページを指定してください（トップページは作成済みのため新規作成できません）", http.StatusBadRequest)
+		return
+	}
+	creator := auth.CurrentUser(r)
+
+	// 2. ページレコードを原子的にINSERTしてIDを採番する（reserveNewPageID）。
+	newID, err := reserveNewPageID(parentID)
+	if err != nil {
+		http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 親ページIDはゼロ詰め文字列に正規化（サイドカーへ記録する）。空＝トップレベル。
+	parentStr := ""
+	if parentID.Valid {
+		parentStr = fmt.Sprintf("%0*d", page.IDLength, parentID.Int64)
+	}
+
+	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
+	//    子ページ一覧は左サイドパネル（クローム）が担うため、本文には埋め込まない
+	//    （必要なら <m-child-list> を本文に手動で追加できる）。
+	var htmlBuilder strings.Builder
+	htmlBuilder.WriteString("<h1>新しいページ</h1>\n")
+	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>")
+	html := htmlBuilder.String()
+
+	// 4. HTMLファイルを物理保存
+	pageDir := page.GetPageDir(newID)
+	os.MkdirAll(pageDir, 0755)
+	htmlPath := filepath.Join(pageDir, newID+".html")
+	if err := os.WriteFile(htmlPath, []byte(html), 0644); err != nil {
+		http.Error(w, "Failed to write file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 4-2. 属性サイドカーを作成（作成者が所有者＝created_by。親ページIDも記録）。
+	//      作成日時・更新日時はサイドカーが刻む。SyncIndexより前に作る。
+	//      group / mode は親ページから継承する（setgid 相当・認証認可設計.md 10.4）。
+	//      owner は作成者、public は常に false（page.EnsureSidecar は public を設定しない）。
+	owner := page.DefaultOwner
+	if creator != nil {
+		owner = creator.Username
+	}
+	inheritGroup, inheritMode := "", ""
+	if parentID.Valid {
+		pp := page.GetPerms(int(parentID.Int64))
+		inheritGroup, inheritMode = pp.Group, pp.Mode
+	}
+	// サイドカーは権限・親の正本。失敗すると作成者が自分のページを触れなくなるため
+	// （page.GetPerms が admin 所有の既定へフェイルクローズする）、原因追跡用にログへ残す。
+	if err := page.EnsureSidecar(newID, owner, inheritGroup, inheritMode, parentStr); err != nil {
+		log.Printf("サイドカーの作成に失敗しました page=%s: %v", newID, err)
+	}
+
+	// 5. DB同期（タグなどのインデックス更新。親・作成情報はサイドカーから読まれる）
+	if err := SyncIndex(newID, html); err != nil {
+		log.Printf("SyncIndex failed for new page %s: %v\n", newID, err)
+	}
+
+	// 6. 新しいページへリダイレクト
+	http.Redirect(w, r, "/"+newID+"?edit=true", http.StatusFound)
+}
+
+// parentChanged は、DB上の現在の親（old）と新しい親文字列（newStr）が異なるかを返します。
+// 親が変わらない通常の保存では検証をスキップするための判定です。
+func parentChanged(old sql.NullInt64, newStr string) bool {
+	newNorm := -1 // 親なし
+	if newStr != "" {
+		if v, err := strconv.Atoi(newStr); err == nil {
+			newNorm = v
+		} else {
+			newNorm = -2 // 数値でない不正値。必ず検証を走らせて弾く
+		}
+	}
+	oldNorm := -1
+	if old.Valid {
+		oldNorm = int(old.Int64)
+	}
+	return newNorm != oldNorm
+}
+
+// parentCreatesCycle は、ページ childID の親を newParentID にすると木に循環が生じるかを返します。
+// newParentID から parent_id チェーンを上にたどり、childID に到達すれば循環です。
+// 既存データの破損による無限ループに備え、探索回数に上限を設けます。
+func parentCreatesCycle(childID, newParentID int) bool {
+	cur := newParentID
+	for i := 0; i < 10000; i++ {
+		if cur == childID {
+			return true
+		}
+		var parent sql.NullInt64
+		if err := database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", cur).Scan(&parent); err != nil || !parent.Valid {
+			return false
+		}
+		cur = int(parent.Int64)
+	}
+	return false
+}
+
+// validateParentChange は、ページ childID の親を newParentStr に変更する操作の妥当性を検証します。
+// 呼び出し側は「親が実際に変わるとき」だけ呼ぶこと（不変の保存では検証しない）。
+// 妥当なら ("", 0)、不正なら (ユーザー向けメッセージ, HTTPステータス) を返します。
+//
+// ルール（子ページ作成 NewPageAPIHandler と同じポリシー）:
+//   - 親を空（トップレベル）にするには admin 権限が必要
+//   - 親IDは数値かつ実在するページであること
+//   - 自分自身や自分の子孫を親に指定できない（循環防止）
+//   - 新しい親ページへの write 権限が必要
+func validateParentChange(user *auth.User, childID int, newParentStr string) (string, int) {
+	if user == nil {
+		return "認証が必要です", http.StatusUnauthorized
+	}
+	if newParentStr == "" {
+		// 親なし（トップレベル）が許されるのはトップページ（ID 0 ＝ "000000"）のみ。
+		if childID != 0 {
+			return "親なし（トップレベル）にできるのはトップページのみです", http.StatusForbidden
+		}
+		return "", 0
+	}
+	parentID, err := strconv.Atoi(newParentStr)
+	if err != nil {
+		return "親ページIDが不正です", http.StatusBadRequest
+	}
+	var exists bool
+	database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM pages WHERE id = ?)", parentID).Scan(&exists)
+	if !exists {
+		return "指定された親ページが存在しません", http.StatusBadRequest
+	}
+	if parentID == childID {
+		return "自分自身を親ページに指定できません", http.StatusBadRequest
+	}
+	if parentCreatesCycle(childID, parentID) {
+		return "自分の子孫ページを親に指定できません（循環します）", http.StatusBadRequest
+	}
+	if !page.GetPerms(parentID).CanWrite(user) {
+		return "新しい親ページへの書き込み権限がありません", http.StatusForbidden
+	}
+	return "", 0
+}
+
+// ValidateParentAPIHandler は、編集中ページの親ページ変更が妥当かを返します（クライアントの即時検証用）。
+// 権威的な検証は保存API側でも行われます。対象ページのwrite権限を前提とします。
+func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if !page.RequirePageWrite(w, r, id) {
+		return
+	}
+	childID, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
+
+	w.Header().Set("Content-Type", "application/json")
+	if msg, code := validateParentChange(auth.CurrentUser(r), childID, newParent); code != 0 {
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": msg})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+}
+
+// SetParentAPIHandler は編集中ページの親ページを付け替えます（親はサイドカーが正本）。
+// 対象ページの write 権限に加え、変更先の妥当性（実在・循環・新しい親への write、
+// トップレベル化は admin）を検証してからサイドカーへ反映し、pages インデックスを更新します。
+func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if !page.RequirePageWrite(w, r, id) {
+		return
+	}
+	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+	if !editlock.RequireEditLock(w, r, id) {
+		return
+	}
+	childID, err := strconv.Atoi(id)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
+
+	// 親が実際に変わるときだけ検証する。
+	var oldParent sql.NullInt64
+	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", childID).Scan(&oldParent)
+	if parentChanged(oldParent, newParent) {
+		if msg, code := validateParentChange(auth.CurrentUser(r), childID, newParent); code != 0 {
+			http.Error(w, msg, code)
+			return
+		}
+	}
+
+	// 親IDをゼロ詰めに正規化してサイドカーへ反映（更新日時も進む）。
+	parentStore := ""
+	if newParent != "" {
+		if pid, e := strconv.Atoi(newParent); e == nil {
+			parentStore = fmt.Sprintf("%0*d", page.IDLength, pid)
+		}
+	}
+	updatedAt, err := page.SetSidecarParent(id, parentStore)
+	if err != nil {
+		http.Error(w, "親ページの保存に失敗しました: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// pages インデックスの親ページ・更新日時を更新する（本文の再同期は不要）。
+	var parentDB sql.NullInt64
+	if parentStore != "" {
+		if pid, e := strconv.Atoi(parentStore); e == nil {
+			parentDB = sql.NullInt64{Int64: int64(pid), Valid: true}
+		}
+	}
+	if _, err := database.DB.Exec("UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?", parentDB, updatedAt, childID); err != nil {
+		http.Error(w, "インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if u := auth.CurrentUser(r); u != nil {
+		auth.Audit(u.Username, "set-parent", id+"->"+parentStore)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "parent_id": parentStore, "updated_at": updatedAt})
+}

@@ -1,4 +1,4 @@
-package cms
+package page
 
 import (
 	"path/filepath"

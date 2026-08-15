@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -117,7 +118,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 集計対象ページの read 権限を要求する
-	if !RequirePageRead(w, r, pageID) {
+	if !page.RequirePageRead(w, r, pageID) {
 		return
 	}
 

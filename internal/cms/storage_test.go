@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 
 	"golang.org/x/net/html"
@@ -43,9 +44,9 @@ func TestGetPageDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GetPageDir(tt.id)
+			got := page.GetPageDir(tt.id)
 			if got != tt.want {
-				t.Errorf("GetPageDir(%q) = %q, want %q", tt.id, got, tt.want)
+				t.Errorf("page.GetPageDir(%q) = %q, want %q", tt.id, got, tt.want)
 			}
 		})
 	}
@@ -72,7 +73,7 @@ func TestReserveNewPageID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reserveNewPageIDエラー: %v", err)
 	}
-	if len(id) != IDLength {
+	if len(id) != page.IDLength {
 		t.Errorf("IDの桁数が違います: %q", id)
 	}
 
@@ -232,12 +233,12 @@ func TestSidecarAttributesSync(t *testing.T) {
 	}
 
 	// サイドカーに属性を書いてから同期する（サイドカーが正本）。
-	if err := WriteSidecar("000002", PageMeta{
-		Owner: "admin", Mode: DefaultMode,
+	if err := page.WriteSidecar("000002", page.PageMeta{
+		Owner: "admin", Mode: page.DefaultMode,
 		ParentID: "000001", CreatedAt: "2026-05-01T10:00:00Z", CreatedBy: "admin",
 		UpdatedAt: "2026-06-20T19:03:00Z",
 	}); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 	if err := SyncIndex("000002", "<h1>テストページ</h1>"); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
@@ -278,7 +279,7 @@ func TestSidecarAttributesSync(t *testing.T) {
 	}
 }
 
-// TestSidecarMutators は BumpUpdatedAt / SetSidecarParent が、所有権・作成情報を
+// TestSidecarMutators は page.BumpUpdatedAt / page.SetSidecarParent が、所有権・作成情報を
 // 保持したまま更新日時・親ページIDだけを変更することを確認します（改竄防止の規律）。
 func TestSidecarMutators(t *testing.T) {
 	origWd, _ := os.Getwd()
@@ -287,37 +288,37 @@ func TestSidecarMutators(t *testing.T) {
 	}
 	defer os.Chdir(origWd)
 
-	orig := PageMeta{
+	orig := page.PageMeta{
 		Owner: "alice", Group: "sales", Mode: "330",
 		CreatedAt: "2026-01-01T00:00:00Z", CreatedBy: "alice", UpdatedAt: "2026-01-01T00:00:00Z",
 	}
-	if err := WriteSidecar("000003", orig); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar("000003", orig); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 
-	// BumpUpdatedAt：更新日時だけ進み、所有権・作成情報は保持される。
-	newUpdated, err := BumpUpdatedAt("000003")
+	// page.BumpUpdatedAt：更新日時だけ進み、所有権・作成情報は保持される。
+	newUpdated, err := page.BumpUpdatedAt("000003")
 	if err != nil {
-		t.Fatalf("BumpUpdatedAtエラー: %v", err)
+		t.Fatalf("page.BumpUpdatedAtエラー: %v", err)
 	}
-	got, _ := ReadSidecar("000003")
+	got, _ := page.ReadSidecar("000003")
 	if got.Owner != "alice" || got.CreatedAt != "2026-01-01T00:00:00Z" || got.CreatedBy != "alice" {
-		t.Errorf("BumpUpdatedAtが所有権/作成情報を変更しました: %+v", got)
+		t.Errorf("page.BumpUpdatedAtが所有権/作成情報を変更しました: %+v", got)
 	}
 	if got.UpdatedAt != newUpdated || got.UpdatedAt == "2026-01-01T00:00:00Z" {
 		t.Errorf("更新日時が進んでいません: %q", got.UpdatedAt)
 	}
 
-	// SetSidecarParent：親ページIDを設定。所有権・作成者は保持される。
-	if _, err := SetSidecarParent("000003", "000001"); err != nil {
-		t.Fatalf("SetSidecarParentエラー: %v", err)
+	// page.SetSidecarParent：親ページIDを設定。所有権・作成者は保持される。
+	if _, err := page.SetSidecarParent("000003", "000001"); err != nil {
+		t.Fatalf("page.SetSidecarParentエラー: %v", err)
 	}
-	got, _ = ReadSidecar("000003")
+	got, _ = page.ReadSidecar("000003")
 	if got.ParentID != "000001" {
 		t.Errorf("親ページIDが設定されていません: %q", got.ParentID)
 	}
 	if got.Owner != "alice" || got.CreatedBy != "alice" {
-		t.Errorf("SetSidecarParentが所有権/作成者を変更しました: %+v", got)
+		t.Errorf("page.SetSidecarParentが所有権/作成者を変更しました: %+v", got)
 	}
 }
 
@@ -513,7 +514,7 @@ func TestRebuildDatabase(t *testing.T) {
 	}
 
 	// (c) data/master に実ファイルを1つ作成する（顧客の発注書を含む）
-	pageDir := GetPageDir("000001")
+	pageDir := page.GetPageDir("000001")
 	if err := os.MkdirAll(pageDir, 0755); err != nil {
 		t.Fatalf("ディレクトリ作成エラー: %v", err)
 	}
@@ -583,7 +584,7 @@ func TestRebuildIfEmpty(t *testing.T) {
 	}
 
 	// data/master にファイルを用意するが、DBは空のまま
-	pageDir := GetPageDir("000002")
+	pageDir := page.GetPageDir("000002")
 	if err := os.MkdirAll(pageDir, 0755); err != nil {
 		t.Fatalf("ディレクトリ作成エラー: %v", err)
 	}
