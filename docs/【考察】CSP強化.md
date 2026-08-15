@@ -80,12 +80,17 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; 
 
 strict化には、以下の全インラインの除去／外部化が前提。素でstrictを入れると編集機能が全停止する。
 
-| 箇所 | 種別 | 実測 |
+**2026-08-06 更新**: 下表の「実測」は棚卸し時点（strict格上げ前）の数。第1段の外部化を
+実施した現在の残りは §4 のチェックリストを参照（`on*=` は**全ファイルでゼロ**になり、
+残るのは `templates/*.html` と `web-components.js` の `style=`、および FOUC head スクリプト）。
+
+| 箇所 | 種別 | 実測（2026-08-06 の外部化より前） |
 | --- | --- | --- |
 | `assets/index.html` | インライン `<script>` | 2つ（FOUC用 head 13–26／本体 922–2363） |
 | `assets/index.html` | `<style>` ブロック | 1つ（27–724） |
 | `assets/index.html` | `on*=` ハンドラ | 11個 |
 | `assets/index.html` | `style=` 属性 | 12個 |
+| `assets/admin.html` | インライン `<script>`／`<style>`／`on*=`／`style=` | 各1つ／1つ／8個／10個 |
 | `assets/web-components.js` | `innerHTML` 描画＋動的 `style=` 生成 | `style=`/`innerHTML` 系 43箇所 |
 | `assets/templates/*.html`（12ファイル） | `on*=`／`style=`（**保存本文としてレンダされる**） | 各ファイルに多数 |
 
@@ -99,9 +104,12 @@ strict CSP は **`innerHTML` 経由で挿入した `on*=` 属性ハンドラも�
 
 ## 4. strict格上げの前提リファクタ・チェックリスト（次回作業）
 
-- [ ] **(1) 本体スクリプトの外部化**: `index.html` 本体 `<script>`（922–2363）を
-      `/assets/` 配下の外部 `.js`（＝self）へ移設。グローバル関数参照（`on*=` から呼ばれる
-      関数）は (3) の addEventListener 化とセットで解消。
+- [x] **(1) 本体スクリプトの外部化**（2026-08-06 完了）: `index.html` 本体 `<script>` を
+      [assets/app.js](../assets/app.js) へ、`admin.html` の `<script>` を
+      [assets/admin.js](../assets/admin.js) へ移設。`index.html` は 2768行 → 198行、
+      `admin.html` は 196行 → 76行（どちらも markup だけになった）。
+      **`defer` は付けない**——付けると `web-components.js`（head・defer）より後に実行され、
+      インライン時代の順序（本文スクリプトが先）が変わるため。
 - [ ] **(2) FOUC head スクリプトを per-request nonce で残す**: head の
       `<script>`（13–26、サイドパネル開閉状態を描画前に確定）はチラつき防止のため
       外部化せず `<script nonce=...>` で残す。
@@ -109,14 +117,25 @@ strict CSP は **`innerHTML` 経由で挿入した `on*=` 属性ハンドラも�
       `script-src` に `'nonce-…'` を追加 → `RootHandler`（[handler.go](../internal/cms/handler.go)）が
       `context` からnonceを読み、`index.html` のプレースホルダへ注入。
       （nonce方式は**属性ハンドラ `on*=` を救えない**ので、(3) は別途必須。）
-- [ ] **(3) `on*=` の除去**: `index.html` 11個＋テンプレート12ファイルの `on*=`
-      （`oninput`/`onchange`/`onclick`/`onmouseover`/`onfocus`/`onblur` 等）を
-      addEventListener／イベント委譲へ置換。テンプレートは `innerHTML` 後に
-      `querySelector` で配線する方式へ寄せる。
-- [ ] **(4) `style=` / `<style>` の除去**: `<style>` ブロック（27–724）→外部 `.css`。
-      `style=` 属性（index.html 12＋web-components/テンプレート多数）を除去。
-      静的装飾はCSSクラス、動的値は描画後に `element.style.x = y`（CSSOM経由なら
-      strict CSPでもブロックされない）。
+- [x] **(3) `on*=` の除去**（2026-08-06 完了・**リポジトリ全体でゼロ**）:
+      `index.html` の11個は `data-rail` 等＋`bindChromeActions()` の addEventListener へ、
+      `admin.html` の8個は id＋`bindActions()` へ置換した。ユーザー表の行ボタンは
+      **tbody へのイベント委譲＋`data-action`/`data-username`** にした（`onclick="resetPw('…')"`
+      と文字列でJSを組み立てていたため、ユーザー名に `'` が入ると壊れる作りでもあった）。
+      テンプレート側は 2026-08-05 の Light DOM 統一で `data-attr`／`data-remove` へ移行済みで、
+      最後に残っていた `m-required-materials-edit.html` の3個も今回置換した
+      （[エディタ仕様.md](エディタ仕様.md) §0.1 の作法に合流）。
+- [~] **(4) `style=` / `<style>` の除去**（2026-08-06 に殻ぶんを完了。**テンプレートが残り**）:
+      `index.html` の `<style>` は [assets/app.css](../assets/app.css)、`admin.html` の分は
+      [assets/admin.css](../assets/admin.css) へ移設し、両ファイルの `style=` 属性も
+      CSSクラスへ移した。
+      **残り**: `templates/*.html` 10ファイルの `style=`（計75個）と `web-components.js` が
+      文字列で組み立てる `style=`（手配状況テーブルの8行）。これが (5) と地続きの最後の塊。
+      > **落とし穴**: markup の `style="display:none"` を CSS へ移すときは、JS 側の
+      > `el.style.display = ''` も同時に潰すこと。CSS に規則が残ると `''` では**二度と表示できない**。
+      > 今回は `.is-hidden` クラス＋`setHidden()` に統一して入口を1つにした
+      > （対象: `#admin-link`・`#pp-chown`・`#pp-view-hint`・`#pp-public-row`・`#denied`・`#console`）。
+      > 動的な値（色・座標）は従来どおり `element.style.x = y`（CSSOM経由）でよい。
 - [ ] **(5) web-components.js の描画方式変更**（最大の工数）: 「HTML文字列＋`innerHTML`」を
       「クラス付与＋CSSOMワイヤリング」へ。ステータス色分け等は `data-status` 属性＋CSSで表現。
 - [ ] **(6) strict適用と確認**: `cspPolicy` から `script-src`/`style-src` の
