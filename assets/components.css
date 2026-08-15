@@ -81,13 +81,15 @@
 
 .pdf-drop-zone.is-dragover { background: #e2e8f0; }
 
-/* ── 必要部材 <m-material> ──────────────────────────────────────────
+/* ── 編集UIの共通パーツ ────────────────────────────────────────────
  * カード自体のレイアウトはテンプレートのインライン style のまま（CSP強化で移行予定）。
  * ここにあるのは、インラインの on*= を外したぶんを引き取った状態変化ぶんだけ。
  */
 .material-card-edit input:focus { border-color: #3b82f6; }
 
-.m-material-remove {
+/* 要素そのものを本文から取り除くボタン（data-remove）。<m-material> と
+ * <m-required-materials> が共用する。 */
+.m-remove-btn {
     background: #ef4444;
     color: #fff;
     border: none;
@@ -99,7 +101,7 @@
     transition: background 0.2s;
 }
 
-.m-material-remove:hover { background: #dc2626; }
+.m-remove-btn:hover { background: #dc2626; }
 
 /* ── 子ページ一覧 <m-child-list> ─────────────────────────────────────
  * 唯一 Shadow DOM で描画していた要素。Light DOM へ揃えたため、要素内に複製していた

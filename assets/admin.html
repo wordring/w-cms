@@ -4,42 +4,27 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>w-cms 管理コンソール</title>
-<style>
-  body { font-family: sans-serif; background: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; }
-  h1 { font-size: 1.4rem; }
-  h2 { font-size: 1.1rem; margin-top: 28px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
-  .card { background: #fff; border-radius: 8px; padding: 16px; margin-top: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eef2f7; }
-  th { color: #64748b; font-weight: 600; }
-  input, select { padding: 5px 7px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
-  button { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; background: #2563eb; color: #fff; }
-  button.sub { background: #e2e8f0; color: #334155; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-  .msg { font-size: 12px; margin-left: 8px; }
-  a.back { font-size: 13px; color: #2563eb; text-decoration: none; }
-  .denied { color: #b91c1c; font-weight: bold; }
-  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
-</style>
+<!-- スタイル・スクリプトは外部ファイル（＝CSPの self）。2026-08-06 にインラインから切り出し -->
+<link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body>
   <a class="back" href="/">← エディタに戻る</a>
   <h1>⚙ w-cms 管理コンソール</h1>
-  <div id="whoami" style="font-size: 13px; color: #475569;"></div>
-  <div id="denied" class="denied" style="display:none;">このページは管理者のみ利用できます。</div>
+  <div id="whoami"></div>
+  <div id="denied" class="denied is-hidden">このページは管理者のみ利用できます。</div>
 
-  <div id="console" style="display:none;">
+  <div id="console" class="is-hidden">
     <!-- ユーザー -->
     <h2>ユーザー</h2>
     <div class="card">
       <table id="users-table"><thead><tr><th>ユーザー名</th><th>管理者</th><th>主グループ</th><th>状態</th><th>操作</th></tr></thead><tbody></tbody></table>
-      <div class="row" style="margin-top: 14px;">
+      <div class="row row--gap-lg">
         <strong>新規作成:</strong>
         <input id="nu-name" placeholder="ユーザー名">
         <input id="nu-pass" placeholder="パスワード" type="password">
         <input id="nu-group" placeholder="主グループ(任意)">
         <label><input id="nu-admin" type="checkbox"> 管理者</label>
-        <button onclick="createUser()">作成</button>
+        <button id="nu-create">作成</button>
         <span id="nu-msg" class="msg"></span>
       </div>
     </div>
@@ -47,19 +32,19 @@
     <!-- グループ -->
     <h2>グループ</h2>
     <div class="card">
-      <div id="groups-list" style="font-size: 13px;"></div>
-      <div class="row" style="margin-top: 12px;">
+      <div id="groups-list"></div>
+      <div class="row row--gap-md">
         <strong>グループ作成:</strong>
         <input id="ng-name" placeholder="グループ名">
-        <button onclick="createGroup()">作成</button>
+        <button id="ng-create">作成</button>
         <span id="ng-msg" class="msg"></span>
       </div>
-      <div class="row" style="margin-top: 10px;">
+      <div class="row row--gap-sm">
         <strong>メンバー操作:</strong>
         <input id="gm-user" placeholder="ユーザー名">
         <input id="gm-group" placeholder="グループ名">
-        <button onclick="groupMember('add')">追加</button>
-        <button class="sub" onclick="groupMember('remove')">削除</button>
+        <button id="gm-add">追加</button>
+        <button class="sub" id="gm-remove">削除</button>
         <span id="gm-msg" class="msg"></span>
       </div>
     </div>
@@ -68,8 +53,8 @@
     <h2>メンテナンス</h2>
     <div class="card">
       <div class="row">
-        <button onclick="rebuildDatabase()" style="background:#ef4444;">🔄 データベース再構築</button>
-        <span style="font-size:12px; color:#64748b;">HTMLファイル（<code>data/master</code>）を正としてDBインデックスを完全に作り直します。</span>
+        <button id="rebuild-btn" class="danger-btn">🔄 データベース再構築</button>
+        <span class="hint">HTMLファイル（<code>data/master</code>）を正としてDBインデックスを完全に作り直します。</span>
         <span id="rebuild-msg" class="msg"></span>
       </div>
     </div>
@@ -77,119 +62,11 @@
     <!-- 監査ログ -->
     <h2>監査ログ（最近200件）</h2>
     <div class="card">
-      <button class="sub" onclick="loadAudit()">再読み込み</button>
-      <table id="audit-table" style="margin-top: 10px;"><thead><tr><th>日時(UTC)</th><th>ユーザー</th><th>操作</th><th>対象</th></tr></thead><tbody></tbody></table>
+      <button class="sub" id="audit-reload">再読み込み</button>
+      <table id="audit-table"><thead><tr><th>日時(UTC)</th><th>ユーザー</th><th>操作</th><th>対象</th></tr></thead><tbody></tbody></table>
     </div>
   </div>
 
-<script>
-const J = { 'Content-Type': 'application/json' };
-
-async function api(method, path, body) {
-  const opt = { method };
-  if (body) { opt.headers = J; opt.body = JSON.stringify(body); }
-  return fetch(path, opt);
-}
-
-async function init() {
-  let me;
-  try { const r = await fetch('/api/me'); if (r.ok) me = await r.json(); } catch (e) {}
-  if (!me) { window.location.href = '/login'; return; }
-  document.getElementById('whoami').textContent = 'ログイン中: ' + me.username + (me.is_admin ? '（管理者）' : '');
-  if (!me.is_admin) { document.getElementById('denied').style.display = 'block'; return; }
-  document.getElementById('console').style.display = 'block';
-  loadUsers(); loadGroups(); loadAudit();
-}
-
-async function loadUsers() {
-  const res = await fetch('/api/admin/users');
-  if (!res.ok) return;
-  const users = await res.json() || [];
-  const tb = document.querySelector('#users-table tbody');
-  tb.innerHTML = '';
-  users.forEach(u => {
-    const tr = document.createElement('tr');
-    tr.innerHTML =
-      `<td>${esc(u.username)}</td><td>${u.is_admin ? '✓' : ''}</td><td>${esc(u.primary_group || '')}</td>` +
-      `<td>${u.disabled ? '<span style="color:#b91c1c">無効</span>' : '有効'}</td>` +
-      `<td>
-        <button class="sub" onclick="resetPw('${esc(u.username)}')">パスワード再設定</button>
-        <button class="sub" onclick="toggleDisable('${esc(u.username)}', ${u.disabled ? 'false' : 'true'})">${u.disabled ? '有効化' : '無効化'}</button>
-      </td>`;
-    tb.appendChild(tr);
-  });
-}
-
-async function createUser() {
-  const body = {
-    username: val('nu-name'), password: val('nu-pass'),
-    primary_group: val('nu-group'), is_admin: document.getElementById('nu-admin').checked
-  };
-  const res = await api('POST', '/api/admin/users', body);
-  msg('nu-msg', res); if (res.ok) { document.getElementById('nu-name').value=''; document.getElementById('nu-pass').value=''; loadUsers(); loadGroups(); }
-}
-
-async function resetPw(username) {
-  const pw = prompt(`${username} の新しいパスワード:`);
-  if (!pw) return;
-  const res = await api('POST', '/api/admin/users/password', { username, password: pw });
-  alert(res.ok ? '再設定しました' : '失敗: ' + await res.text());
-}
-
-async function toggleDisable(username, disabled) {
-  const res = await api('POST', '/api/admin/users/disable', { username, disabled });
-  if (res.ok) loadUsers(); else alert('失敗: ' + await res.text());
-}
-
-async function loadGroups() {
-  const res = await fetch('/api/admin/groups');
-  if (!res.ok) return;
-  const groups = await res.json() || [];
-  document.getElementById('groups-list').innerHTML =
-    groups.length ? groups.map(g => `<code>${esc(g)}</code>`).join(' ') : '(グループなし)';
-}
-
-async function createGroup() {
-  const res = await api('POST', '/api/admin/groups', { name: val('ng-name') });
-  msg('ng-msg', res); if (res.ok) { document.getElementById('ng-name').value=''; loadGroups(); }
-}
-
-async function groupMember(action) {
-  const res = await api('POST', '/api/admin/groups/members', { username: val('gm-user'), group: val('gm-group'), action });
-  msg('gm-msg', res); if (res.ok) loadGroups();
-}
-
-async function loadAudit() {
-  const res = await fetch('/api/admin/audit');
-  if (!res.ok) return;
-  const rows = await res.json() || [];
-  const tb = document.querySelector('#audit-table tbody');
-  tb.innerHTML = '';
-  rows.forEach(e => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${esc(e.ts)}</td><td>${esc(e.username)}</td><td>${esc(e.action)}</td><td>${esc(e.target)}</td>`;
-    tb.appendChild(tr);
-  });
-}
-
-async function rebuildDatabase() {
-  if (!confirm('HTMLファイルからデータベースのインデックスを完全に再構築します。よろしいですか？')) return;
-  const el = document.getElementById('rebuild-msg');
-  el.style.color = '#64748b'; el.textContent = '再構築中...';
-  const res = await api('POST', '/api/rebuild-db');
-  if (res.ok) { el.style.color = '#16a34a'; el.textContent = '再構築が完了しました。'; loadAudit(); }
-  else { el.style.color = '#dc2626'; el.textContent = '失敗: ' + await res.text(); }
-}
-
-function val(id) { return document.getElementById(id).value.trim(); }
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-async function msg(id, res) {
-  const el = document.getElementById(id);
-  if (res.ok) { el.style.color = '#16a34a'; el.textContent = 'OK'; }
-  else { el.style.color = '#dc2626'; el.textContent = '失敗: ' + await res.text(); }
-}
-
-init();
-</script>
+<script src="/assets/admin.js"></script>
 </body>
 </html>

@@ -463,6 +463,7 @@ class MRequiredMaterials extends MElement {
         const templateName = isEdit ? 'm-required-materials-edit' : 'm-required-materials-view';
         let html = await fetchTemplate(templateName);
         this.innerHTML = html;
+        this.bindEditFields(); // 編集テンプレートの削除ボタン（data-remove）を配線する
 
         if (isEdit) return; // 編集モード時はプレースホルダー表示のみ
 
