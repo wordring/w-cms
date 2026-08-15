@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/editlock"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -28,7 +30,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cur := GetPerms(pageID)
+	cur := page.GetPerms(pageID)
 
 	// GET: 現在の権限を返す（read権限が必要）
 	if r.Method == http.MethodGet {
@@ -43,7 +45,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 			"can_chmod": canPublish, "can_chown": u.IsAdmin,
 			// 匿名公開（認証認可設計.md 10章）。public はこのページ自身のフラグ、
 			// effective_public は親チェーンとの AND による実際の公開状態。
-			"public": cur.Public, "effective_public": EffectivePublic(pageID),
+			"public": cur.Public, "effective_public": page.EffectivePublic(pageID),
 			"can_publish": canPublish, "can_write": cur.CanWrite(u),
 		})
 		return
@@ -58,7 +60,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
-	if !RequireEditLock(w, r, id) {
+	if !editlock.RequireEditLock(w, r, id) {
 		return
 	}
 
@@ -73,14 +75,14 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 現在のサイドカー（無ければ現在の実効権限）を起点に変更する
-	p, ok := ReadSidecar(id)
+	p, ok := page.ReadSidecar(id)
 	if !ok {
-		p = PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode, Public: cur.Public}
+		p = page.PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode, Public: cur.Public}
 	}
 
 	action := ""
 	if req.Mode != nil {
-		if !ValidMode(*req.Mode) {
+		if !page.ValidMode(*req.Mode) {
 			http.Error(w, "mode は3桁・各桁0〜3で指定してください（例: 330）", http.StatusBadRequest)
 			return
 		}
@@ -114,11 +116,11 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := WriteSidecar(id, p); err != nil {
+	if err := page.WriteSidecar(id, p); err != nil {
 		http.Error(w, "サイドカーの書き込みに失敗しました: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := RefreshPerms(id); err != nil {
+	if err := page.RefreshPerms(id); err != nil {
 		http.Error(w, "権限インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -127,12 +129,12 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true, "owner": p.Owner, "group": p.Group, "mode": p.Mode,
-		"public": p.Public, "effective_public": EffectivePublic(pageID),
+		"public": p.Public, "effective_public": page.EffectivePublic(pageID),
 	})
 }
 
 // parentIsPublishable は、ページ pageID を匿名公開してよいか（親チェーンが許すか）を返します。
-// ルート（ID 0）は親なしで公開可。それ以外は親が実効公開（EffectivePublic）である必要があります
+// ルート（ID 0）は親なしで公開可。それ以外は親が実効公開（page.EffectivePublic）である必要があります
 // （認証認可設計.md 10.2 のパスゲートを公開操作時に強制する）。
 func parentIsPublishable(pageID int) bool {
 	if pageID == 0 {
@@ -145,12 +147,12 @@ func parentIsPublishable(pageID int) bool {
 	if !parent.Valid {
 		return false // ルート以外で親なしは異常。安全側に倒す
 	}
-	return EffectivePublic(int(parent.Int64))
+	return page.EffectivePublic(int(parent.Int64))
 }
 
 // PageChownHandler は所有者を変更します（chown）。権限: admin のみ。
 func PageChownHandler(w http.ResponseWriter, r *http.Request) {
-	if !RequireAdmin(w, r) {
+	if !page.RequireAdmin(w, r) {
 		return
 	}
 	id := r.URL.Query().Get("id")
@@ -160,7 +162,7 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
-	if !RequireEditLock(w, r, id) {
+	if !editlock.RequireEditLock(w, r, id) {
 		return
 	}
 
@@ -176,18 +178,18 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cur := GetPerms(pageID)
-	p, ok := ReadSidecar(id)
+	cur := page.GetPerms(pageID)
+	p, ok := page.ReadSidecar(id)
 	if !ok {
-		p = PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
+		p = page.PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
 	}
 	p.Owner = req.Owner
 
-	if err := WriteSidecar(id, p); err != nil {
+	if err := page.WriteSidecar(id, p); err != nil {
 		http.Error(w, "サイドカーの書き込みに失敗しました: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := RefreshPerms(id); err != nil {
+	if err := page.RefreshPerms(id); err != nil {
 		http.Error(w, "権限インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

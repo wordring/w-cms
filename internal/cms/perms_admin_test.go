@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/editlock"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 
 	_ "modernc.org/sqlite"
@@ -16,7 +18,7 @@ import (
 
 // setupPermsDB は data/master を一時ディレクトリにし、cms.db を用意して
 // 指定ページのサイドカー＋page_perms を作ります。
-func setupPermsDB(t *testing.T, id string, p PageMeta) {
+func setupPermsDB(t *testing.T, id string, p page.PageMeta) {
 	t.Helper()
 	origWd, _ := os.Getwd()
 	if err := os.Chdir(t.TempDir()); err != nil {
@@ -37,8 +39,8 @@ func setupPermsDB(t *testing.T, id string, p PageMeta) {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
-	if err := WriteSidecar(id, p); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar(id, p); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 	if err := SyncIndex(id, "<h1>権限管理テスト</h1>"); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
@@ -56,14 +58,14 @@ func postPerms(handler http.HandlerFunc, path, body string, u *auth.User) *httpt
 }
 
 func TestPagePermsHandler_chmod(t *testing.T) {
-	setupPermsDB(t, "000005", PageMeta{Owner: "alice", Group: "", Mode: "300"})
+	setupPermsDB(t, "000005", page.PageMeta{Owner: "alice", Group: "", Mode: "300"})
 
 	// 所有者 alice が chmod 300 -> 320
 	rr := postPerms(PagePermsHandler, "/api/page-perms?id=000005", `{"mode":"320"}`, &auth.User{Username: "alice"})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("所有者のchmodが失敗: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if got := GetPerms(5).Mode; got != "320" {
+	if got := page.GetPerms(5).Mode; got != "320" {
 		t.Errorf("modeが更新されていません: %s", got)
 	}
 
@@ -95,14 +97,14 @@ func postPermsTok(handler http.HandlerFunc, path, body, token string, u *auth.Us
 }
 
 // TestEditLockVerification は、エディタ内の変更操作（chmod/chown/set-parent）が
-// 編集ロック（RequireEditLock）で直列化され、他者保持中は 409 になることを確認する。
+// 編集ロック（editlock.RequireEditLock）で直列化され、他者保持中は 409 になることを確認する。
 func TestEditLockVerification(t *testing.T) {
-	setupPermsDB(t, "000005", PageMeta{Owner: "alice", Group: "", Mode: "300"})
-	pageLocks.ForceRelease(5)
-	t.Cleanup(func() { pageLocks.ForceRelease(5) })
+	setupPermsDB(t, "000005", page.PageMeta{Owner: "alice", Group: "", Mode: "300"})
+	editlock.Locks.ForceRelease(5)
+	t.Cleanup(func() { editlock.Locks.ForceRelease(5) })
 
 	// 別の編集者 bob がロックを保持している状況をつくる。
-	if !pageLocks.TryAcquire(5, "bob", "").Acquired {
+	if !editlock.Locks.TryAcquire(5, "bob", "").Acquired {
 		t.Fatal("bob のロック取得に失敗")
 	}
 
@@ -111,8 +113,8 @@ func TestEditLockVerification(t *testing.T) {
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("他者ロック中の chmod が 409 になりません: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if GetPerms(5).Mode != "300" {
-		t.Errorf("409 なのに mode が変わっています: %s", GetPerms(5).Mode)
+	if page.GetPerms(5).Mode != "300" {
+		t.Errorf("409 なのに mode が変わっています: %s", page.GetPerms(5).Mode)
 	}
 
 	// admin の chown も他者ロック中は 409。
@@ -128,8 +130,8 @@ func TestEditLockVerification(t *testing.T) {
 	}
 
 	// alice が編集権を取り直し、正しいトークンを X-Lock-Token で提示すれば chmod 成功。
-	pageLocks.ForceRelease(5)
-	a := pageLocks.TryAcquire(5, "alice", "")
+	editlock.Locks.ForceRelease(5)
+	a := editlock.Locks.TryAcquire(5, "alice", "")
 	if !a.Acquired {
 		t.Fatal("alice のロック取得に失敗")
 	}
@@ -137,20 +139,20 @@ func TestEditLockVerification(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("保持者 alice の chmod が失敗: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if GetPerms(5).Mode != "320" {
-		t.Errorf("mode が更新されていません: %s", GetPerms(5).Mode)
+	if page.GetPerms(5).Mode != "320" {
+		t.Errorf("mode が更新されていません: %s", page.GetPerms(5).Mode)
 	}
 }
 
 func TestPageChownHandler(t *testing.T) {
-	setupPermsDB(t, "000005", PageMeta{Owner: "alice", Group: "", Mode: "300"})
+	setupPermsDB(t, "000005", page.PageMeta{Owner: "alice", Group: "", Mode: "300"})
 
 	// admin が chown alice -> bob
 	rr := postPerms(PageChownHandler, "/api/page-chown?id=000005", `{"owner":"bob"}`, &auth.User{Username: "root", IsAdmin: true})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("adminのchownが失敗: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if got := GetPerms(5).Owner; got != "bob" {
+	if got := page.GetPerms(5).Owner; got != "bob" {
 		t.Errorf("ownerが更新されていません: %s", got)
 	}
 

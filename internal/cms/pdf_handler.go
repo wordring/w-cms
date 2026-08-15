@@ -1,6 +1,8 @@
 package cms
 
 import (
+	"w-cms/internal/cms/page"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -35,7 +37,7 @@ const maxUploadBytes = 32 << 20
 //     完全に迂回でき、中間版CSPの script-src 'unsafe-inline' はインラインを許すため
 //     スクリプトが動く。
 //
-// 配信側（DataFileHandler）にも多層防御を入れてあるが、そもそも置かせないのが第一。
+// 配信側（page.DataFileHandler）にも多層防御を入れてあるが、そもそも置かせないのが第一。
 var allowedAttachmentExts = map[string]bool{".pdf": true}
 
 // attachmentFileName は受け取ったファイル名を、ページのディレクトリ内へ安全に置ける
@@ -86,7 +88,7 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// PDFの追加はページ内容の変更なので write 権限を要求する
-	if !RequirePageWrite(w, r, pageID) {
+	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
 
@@ -117,7 +119,7 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pageDir := GetPageDir(pageID)
+	pageDir := page.GetPageDir(pageID)
 	os.MkdirAll(pageDir, 0755)
 
 	savePath := filepath.Join(pageDir, fileName)
@@ -162,11 +164,11 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// PDF解析→明細挿入はページ内容の変更につながるため write 権限を要求する
-	if !RequirePageWrite(w, r, req.PageID) {
+	if !page.RequirePageWrite(w, r, req.PageID) {
 		return
 	}
 
-	pageDir := GetPageDir(req.PageID)
+	pageDir := page.GetPageDir(req.PageID)
 	pdfPath := filepath.Join(pageDir, filepath.Base(req.FileName))
 
 	if _, err := os.Stat(pdfPath); os.IsNotExist(err) {

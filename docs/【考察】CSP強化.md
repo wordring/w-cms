@@ -114,7 +114,7 @@ strict CSP は **`innerHTML` 経由で挿入した `on*=` 属性ハンドラも�
       `<script>`（13–26、サイドパネル開閉状態を描画前に確定）はチラつき防止のため
       外部化せず `<script nonce=...>` で残す。
       **nonce配線**: `CSPProtect` が乱数nonceを生成 → `context` へ格納し、ヘッダの
-      `script-src` に `'nonce-…'` を追加 → `RootHandler`（[handler.go](../internal/cms/handler.go)）が
+      `script-src` に `'nonce-…'` を追加 → `RootHandler`（[handler_view.go](../internal/cms/handler_view.go)）が
       `context` からnonceを読み、`index.html` のプレースホルダへ注入。
       （nonce方式は**属性ハンドラ `on*=` を救えない**ので、(3) は別途必須。）
 - [x] **(3) `on*=` の除去**（2026-08-06 完了・**リポジトリ全体でゼロ**）:

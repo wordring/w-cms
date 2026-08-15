@@ -1,4 +1,4 @@
-package cms
+package editlock
 
 import (
 	"encoding/json"
@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/page"
 )
 
 // readPageHTML はページの本文HTMLをファイルから読み込みます。
 func readPageHTML(id string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(GetPageDir(id), id+".html"))
+	b, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
 	if err != nil {
 		return "", err
 	}
@@ -24,11 +25,11 @@ func readPageHTML(id string) (string, error) {
 // 本文保存・権限変更・親付け替え・将来のリソース操作（画像/PDF等）を、本文編集と同じロックで
 // 直列化するための共通ゲートです。トークンは `X-Lock-Token` ヘッダ（無ければ `token` クエリ）で受けます。
 //
-// 検証規約は SaveAPIHandler と同一です（`pageLocks.Validate`）:
+// 検証規約は SaveAPIHandler と同一です（`Locks.Validate`）:
 //   - ロックが無ければ許可（無競合。フロント未対応でも従来どおり動く）。
 //   - 自分が保持者でトークン一致なら許可。
 //   - 他者が保持中／トークン失効なら 409 Conflict を書いて false を返す。
-// 許可なら true。呼び出し側は権限チェック（RequirePageWrite 等）の後にこれを通します。
+// 許可なら true。呼び出し側は権限チェック（page.RequirePageWrite 等）の後にこれを通します。
 func RequireEditLock(w http.ResponseWriter, r *http.Request, idStr string) bool {
 	u := auth.CurrentUser(r)
 	if u == nil {
@@ -44,7 +45,7 @@ func RequireEditLock(w http.ResponseWriter, r *http.Request, idStr string) bool 
 	if token == "" {
 		token = r.URL.Query().Get("token")
 	}
-	if !pageLocks.Validate(pageID, u.Username, token) {
+	if !Locks.Validate(pageID, u.Username, token) {
 		http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
 		return false
 	}
@@ -60,7 +61,7 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.URL.Query().Get("id")
-	if !RequirePageWrite(w, r, id) {
+	if !page.RequirePageWrite(w, r, id) {
 		return
 	}
 	idInt, err := strconv.Atoi(id)
@@ -75,7 +76,7 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// token は再取得（同一エディタ）の検証用。新規取得時は空。
-	res := pageLocks.TryAcquire(idInt, user.Username, r.URL.Query().Get("token"))
+	res := Locks.TryAcquire(idInt, user.Username, r.URL.Query().Get("token"))
 	w.Header().Set("Content-Type", "application/json")
 	if !res.Acquired {
 		w.WriteHeader(http.StatusLocked)
@@ -100,7 +101,7 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 接続中＝presence とみなし、保持者の切断は即明け渡し、待機者の切断は猶予キャンセルに使います。
 func LockEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
-	if !RequirePageWrite(w, r, id) {
+	if !page.RequirePageWrite(w, r, id) {
 		return
 	}
 	idInt, err := strconv.Atoi(id)
@@ -130,8 +131,8 @@ func LockEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // リバースプロキシのバッファリング抑止
 
-	s := pageLocks.subscribe(idInt, role, user.Username, token)
-	defer pageLocks.unsubscribe(idInt, s)
+	s := Locks.subscribe(idInt, role, user.Username, token)
+	defer Locks.unsubscribe(idInt, s)
 
 	w.Write([]byte(": connected\n\n")) // 初期コメント（接続確立）
 	flusher.Flush()
@@ -173,7 +174,7 @@ func UnlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
-	pageLocks.Release(idInt, user.Username, r.URL.Query().Get("token"))
+	Locks.Release(idInt, user.Username, r.URL.Query().Get("token"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -184,7 +185,7 @@ func LockForceAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !RequireAdmin(w, r) {
+	if !page.RequireAdmin(w, r) {
 		return
 	}
 	id := r.URL.Query().Get("id")
@@ -193,7 +194,7 @@ func LockForceAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
-	pageLocks.ForceRelease(idInt)
+	Locks.ForceRelease(idInt)
 	if u := auth.CurrentUser(r); u != nil {
 		auth.Audit(u.Username, "lock.force", id)
 	}

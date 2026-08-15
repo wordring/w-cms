@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 
 	_ "modernc.org/sqlite"
@@ -72,8 +73,8 @@ func TestSaveSanitizesAndEchoesBack(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000042"
-	if err := WriteSidecar(id, PageMeta{Owner: "tester", Mode: DefaultMode}); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar(id, page.PageMeta{Owner: "tester", Mode: page.DefaultMode}); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 
 	dangerous := `<h1>見出し</h1><script>alert(1)</script><p onclick="alert(2)">本文</p>`
@@ -93,7 +94,7 @@ func TestSaveSanitizesAndEchoesBack(t *testing.T) {
 	}
 
 	// 正本ファイルの中身がサニタイズ済みで、返却内容と一致すること
-	saved, err := os.ReadFile(filepath.Join(GetPageDir(id), id+".html"))
+	saved, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
 	if err != nil {
 		t.Fatalf("保存ファイルの読み取りに失敗: %v", err)
 	}
@@ -115,8 +116,8 @@ func TestSaveKeepsEstimateAttributes(t *testing.T) {
 	db := setupSaveTest(t)
 
 	const id = "000044"
-	if err := WriteSidecar(id, PageMeta{Owner: "tester", Mode: DefaultMode}); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar(id, page.PageMeta{Owner: "tester", Mode: page.DefaultMode}); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 
 	// 業務要素は容器 <m-file> の中身。pdf_path は容器側から拾われる。
@@ -160,8 +161,8 @@ func TestSaveKeepsNormalContentIntact(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000043"
-	if err := WriteSidecar(id, PageMeta{Owner: "tester", Mode: DefaultMode}); err != nil {
-		t.Fatalf("WriteSidecarエラー: %v", err)
+	if err := page.WriteSidecar(id, page.PageMeta{Owner: "tester", Mode: page.DefaultMode}); err != nil {
+		t.Fatalf("page.WriteSidecarエラー: %v", err)
 	}
 
 	// updateHtmlPreview が実際に出力する形（改行・インデント込み）を模した本文
