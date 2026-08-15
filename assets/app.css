@@ -1,0 +1,776 @@
+/* エディタの殻（assets/index.html）のスタイル。
+ *
+ * 2026-08-06 に index.html のインライン <style> から切り出した。外部スタイルシートに
+ * することで Content-Security-Policy から style-src 'unsafe-inline' を外せる
+ * （docs/【考察】CSP強化.md §4）。カスタム要素の外観は components.css が持つ。
+ */
+
+/* デザイントークン（色・角丸）。色のリテラル重複をここへ集約する。
+   まずはトップレベルのレイアウト用途で使用。コンポーネント内部の細かな
+   配色は段階的に移行する。 */
+:root {
+    --bg-app: #f1f5f9;
+    --bg-paper: #ffffff;
+    --bg-subtle: #f8fafc;
+    --text: #1e293b;
+    --text-strong: #0f172a;
+    --text-muted: #475569;
+    --text-faint: #64748b;
+    --text-dim: #94a3b8;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --accent: #3b82f6;
+    --accent-strong: #2563eb;
+    --success: #10b981;
+    --danger: #ef4444;
+    --radius: 8px;
+    --radius-lg: 12px;
+}
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--bg-app);
+    color: var(--text);
+    margin: 0;
+    padding: 20px;
+}
+.container {
+    max-width: 1280px;
+    margin: 0 auto;
+    background: var(--bg-paper);
+    padding: 30px;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    /* 注: 以前は container-type: inline-size でカード幅基準のコンテナクエリにしていたが、
+       狭幅時にサイドパネルを position:fixed のドロワーにするため外した（container-type は
+       contain:layout により fixed の包含ブロックになり、ビューポート基準の固定を妨げるため）。
+       レイアウト切替はビューポート基準の @media (max-width: 760px) で行う。 */
+}
+
+/* 作業領域：左ナビ｜文書｜右情報パネルの3ペイン（flex）。
+   各レールはトグルで開閉でき、状態は localStorage に保存される（FOUC防止は
+   <head> のインラインスクリプト参照）。狭いときはコンテナクエリで縦積みにする。 */
+.work-area {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+.doc-column { flex: 1 1 auto; min-width: 0; }
+
+/* サイドパネル（クローム側。ファイルには保存されない） */
+.rail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: sticky;
+    top: 20px;
+}
+.rail-left { flex: 0 0 220px; }
+.rail-toc { flex: 0 0 200px; }
+.rail-right { flex: 0 0 300px; }
+
+/* 開閉：localStorage 由来のクラスを <html> に付けてレールを畳む */
+html.left-collapsed .rail-left { display: none; }
+html.toc-collapsed .rail-toc { display: none; }
+html.right-collapsed .rail-right { display: none; }
+
+/* ページ最下部の帯（フッター）。現状は仮表示のみだが、将来サイトリンク等を
+   置く場所として container と同じ幅・スタイルの帯を確保しておく。 */
+.site-footer {
+    max-width: 1280px;
+    margin: 24px auto 0;
+    padding: 16px 30px;
+    background: var(--bg-subtle);
+    border-radius: var(--radius-lg);
+    color: var(--text-faint);
+    font-size: 13px;
+    text-align: center;
+}
+
+/* レール開閉トグル：各レール脇の画面端に固定した“つまみ”。
+   グループ（rail-toggle-group）ごと position:fixed にして縦に並べ、
+   同じ側に複数レールがあっても重ならないようにする（左側＝ページ階層＋目次）。
+   ページをスクロールしても常に見え、ページ操作バーに依存しない。
+   縦書きラベル＋アイコンのコンパクトなタブ。is-on（開いている）でアクセント色。 */
+.rail-toggle-group {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 60; /* 本文より上・ドロワーのバックドロップ(150)より下 */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.rail-toggle-group-left { left: 0; }
+.rail-toggle-group-right { right: 0; }
+.rail-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 12px 6px;
+    background: var(--bg-subtle);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1.2;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.rail-toggle:hover { background: var(--border); }
+.rail-toggle.is-on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.rail-toggle .rt-label { writing-mode: vertical-rl; letter-spacing: 1px; }
+.rail-toggle-group-left .rail-toggle { border-left: none; border-radius: 0 8px 8px 0; }
+.rail-toggle-group-right .rail-toggle { border-right: none; border-radius: 8px 0 0 8px; }
+@media (prefers-reduced-motion: reduce) { .rail-toggle { transition: none; } }
+.spacer { flex: 1 1 auto; }
+
+/* 子ページナビ（左レール） */
+ul.child-nav { list-style: none; margin: 0; padding: 0; }
+ul.child-nav li { margin: 2px 0; }
+.child-nav-link {
+    display: block;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: var(--accent-strong);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.child-nav-link:hover { background: var(--border); }
+.child-nav-empty { color: var(--text-dim); font-style: italic; }
+
+/* 目次（本文の見出しへのリンク。フロントのみで構築） */
+ul.toc-nav { list-style: none; margin: 0; padding: 0; }
+ul.toc-nav li { margin: 2px 0; }
+.toc-nav-link {
+    display: block;
+    width: 100%;
+    border: none;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: var(--accent-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.toc-nav-link:hover { background: var(--border); }
+.toc-nav-link[data-level="2"] { padding-left: 18px; }
+.toc-nav-link[data-level="3"] { padding-left: 30px; }
+.toc-nav-link[data-level="4"] { padding-left: 42px; }
+.toc-nav-link[data-level="5"] { padding-left: 54px; }
+.toc-nav-link[data-level="6"] { padding-left: 66px; }
+.toc-nav-empty { color: var(--text-dim); font-style: italic; }
+.child-nav-parent:empty { display: none; } /* トップページ等、親が無いときは何も出さない */
+.child-nav-parent a {
+    display: block;
+    padding: 6px 10px;
+    color: var(--text-muted);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+    font-size: 13px;
+}
+.child-nav-parent a:hover { background: var(--border); }
+.rail-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-subtle);
+    font-size: 13px;
+}
+.rail-card summary {
+    cursor: pointer;
+    padding: 10px 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+}
+.rail-card summary::-webkit-details-marker { display: none; }
+.rail-card summary::before {
+    content: "▸";
+    font-size: 11px;
+    color: var(--text-dim);
+    transition: transform .15s;
+}
+.rail-card details[open] > summary::before { transform: rotate(90deg); }
+.rail-card .card-body { padding: 0 14px 14px; }
+
+/* ページ情報の定義リスト */
+dl.pi { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 10px; align-items: baseline; }
+dl.pi dt { color: var(--text-faint); font-weight: 600; white-space: nowrap; }
+dl.pi dd { margin: 0; color: var(--text); word-break: break-all; }
+.pi-parent-input {
+    width: 110px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 13px;
+    outline: none;
+}
+.pi-parent-input.invalid { border-color: var(--danger); background: #fef2f2; }
+.pi-err { color: var(--danger); font-size: 12px; margin-top: 4px; }
+/* 編集モードの有無で親ページIDの表示／編集を切り替える */
+.pi-parent-edit { display: none; }
+body[edit-mode] .pi-parent-view { display: none; }
+body[edit-mode] .pi-parent-edit { display: inline-block; }
+
+/* 編集モード（＝ロック保持中）でのみ操作させたい要素の汎用クラス。
+   将来のエディタ内操作（画像/PDF等の保存・削除ボタンなど）は、UIゲートとして
+   .edit-only を付けるだけでよい（送信は lockedFetch、サーバーは RequireEditLock で検証）。
+   能力フラグ（owner/admin 等）にも依存する権限カードは JS の refreshPermsEditable で別途制御。 */
+.edit-only { display: none; }
+body[edit-mode] .edit-only { display: revert; }
+body[edit-mode] .view-only { display: none; }
+
+/* 匿名（未ログイン）で公開ページを閲覧している状態。編集クロームを隠し、
+   純粋な読み取り専用ビューにする（認証認可設計.md 10.5）。右サイドパネル（属性・権限・
+   編集操作）・編集スイッチ・ログアウト/管理リンク等の認証前提UIを非表示にする。
+   左サイドパネルの子ページナビは実効公開の子だけをサーバー側で絞って返すため、
+   匿名でも表示する（子ページ作成ボタンのみ書き込み操作なので個別に隠す）。 */
+body.anonymous .rail-right,
+body.anonymous #toggle-right,
+body.anonymous .page-action-btn,
+body.anonymous #admin-link,
+body.anonymous #save-status,
+body.anonymous #mode-text,
+body.anonymous .switch,
+body.anonymous .switch-container button,
+body.anonymous .tip,
+body.anonymous .preview-section { display: none !important; }
+
+/* サイドパネル内の入力・ボタン */
+.rail-card input[type="text"], .rail-card input:not([type]) {
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 13px;
+}
+.rail-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+}
+.rail-btn:hover { background: var(--accent-strong); }
+.rail-btn.secondary { background: var(--border); color: var(--text-muted); }
+.rail-row { margin-top: 8px; }
+.rail-hint { color: var(--text-dim); font-size: 11px; }
+
+/* バックドロップ（ドロワー表示時の背景。広い画面では非表示）。 */
+.drawer-backdrop { display: none; }
+
+/* 共通のドロワー化スタイル（fixed・全高・スクロール可・スライド）。
+   どのレールに適用するかはブレークポイントごとの @media 内で指定する
+   （右レールを先に、次に左側2レールをドロワー化する段階式。JSの
+   railNarrow の閾値と一致させること）。 */
+
+/* 段階1（中程度に狭い）：右レール（ページ情報）だけをドロワー化する。
+   文書と左側のレールは横並びのまま（右レール分だけ文書が広がる）。 */
+@media (max-width: 1100px) {
+    .rail-right {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        width: 280px;
+        max-width: 85vw;
+        margin: 0;
+        padding: 16px;
+        background: var(--bg-paper);
+        box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
+        z-index: 200;
+        overflow-y: auto;
+        overscroll-behavior: contain; /* 末端で背景へスクロールが連鎖しないよう隔離 */
+        transition: transform 0.25s ease;
+        right: 0;
+        transform: translateX(100%);
+    }
+    /* ドロワーを開いている間は背景（window）のスクロールをロックする（モーダル相当）。 */
+    html.right-drawer-open { overflow: hidden; }
+    /* 狭幅では「畳む（collapsed）」設定は無視し、常にドロワーで開閉する */
+    html.right-collapsed .rail-right { display: flex; }
+    /* 開けばスライドイン */
+    html.right-drawer-open .rail-right { transform: translateX(0); }
+    /* バックドロップ（開いているとき表示） */
+    .drawer-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 150;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+    }
+    html.right-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+}
+
+/* 段階2（さらに狭い）：左側の2レール（ページ階層／目次）もドロワー化し、
+   文書は1カラム全幅にする。右レールは段階1で既にドロワー化済み（このクエリも
+   1100px以下を含むため、段階1のルールは引き続き有効）。 */
+@media (max-width: 760px) {
+    .work-area { flex-direction: column; }
+    .rail-left, .rail-toc {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        width: 280px;
+        max-width: 85vw;
+        margin: 0;
+        padding: 16px;
+        background: var(--bg-paper);
+        box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
+        z-index: 200;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        transition: transform 0.25s ease;
+        left: 0;
+        transform: translateX(-100%);
+    }
+    html.left-drawer-open, html.toc-drawer-open { overflow: hidden; }
+    html.left-collapsed .rail-left,
+    html.toc-collapsed .rail-toc { display: flex; }
+    html.left-drawer-open .rail-left { transform: translateX(0); }
+    html.toc-drawer-open .rail-toc { transform: translateX(0); }
+    html.left-drawer-open .drawer-backdrop,
+    html.toc-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .rail, .drawer-backdrop { transition: none; }
+}
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* 狭い画面では右側コントロール群を下段へ折り返す（横スクロール防止） */
+    flex-wrap: wrap;
+    row-gap: 8px;
+    border-bottom: 2px solid var(--bg-app);
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+    /* sticky で上部に追従しつつ、スクロール方向に応じて出し入れする（headroom 型）。
+       下スクロールで隠して本文を広く、上スクロールで再表示する。隠してもレイアウトは
+       ガタつかない（sticky 要素は元の流れ上の領域を保持するため）。編集モードの気付きは
+       トグル常駐ではなく「編集権を取得しました」等の緑トーストで補う（initHeadroom 参照）。 */
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--bg-paper);
+    padding-top: 8px;
+    transition: transform 0.25s ease;
+    will-change: transform;
+}
+.header.header--hidden { transform: translateY(-100%); }
+@media (prefers-reduced-motion: reduce) { .header { transition: none; } }
+
+/* アプリ内通知（トースト）エリア。画面右下に固定。 */
+.toast-host {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 340px;
+}
+.toast {
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.toast.warn { background: #92400e; }
+.toast.error { background: #991b1b; }
+.toast.success { background: #065f46; }
+.toast button {
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.toast .toast-close { background: transparent; opacity: 0.7; padding: 0 4px; }
+.title {
+    margin: 0;
+    font-size: 24px;
+    color: var(--text-strong);
+}
+/* モード切り替えスイッチのデザイン */
+.switch-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;          /* 狭い画面で各コントロールが折り返せるように */
+    justify-content: flex-end;
+}
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+}
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #cbd5e1;
+    transition: .4s;
+    border-radius: 34px;
+}
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+input:checked + .slider {
+    background-color: #10b981;
+}
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+.mode-label {
+    font-weight: bold;
+    font-size: 14px;
+    color: #475569;
+}
+
+/* モバイル（狭幅）対策：余白を詰めて表示幅を取り戻し、ヘッダーのはみ出しを防ぐ。
+   各コントロールは上の flex-wrap で下段へ折り返る。 */
+@media (max-width: 480px) {
+    body { padding: 10px; }
+    .container { padding: 16px; }
+    .title { font-size: 18px; }
+    /* 保存ステータスの固定幅（min-width:92px・右寄せ）を解除して窮屈さを緩和 */
+    #save-status { min-width: 0 !important; text-align: left !important; }
+}
+
+/* 「＋ 子ページを作成」：左レール最上部（親ページリンクの下）に置く、階層への操作。
+   レール幅いっぱいの主ボタン。 */
+.page-action-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+}
+.page-action-btn:hover {
+    background: var(--accent-strong);
+}
+
+/* エディタ領域 */
+#editor-content {
+    border: 1px solid var(--border);
+    padding: 20px;
+    border-radius: var(--radius);
+    background: #fafafa;
+    min-height: 250px;
+    margin-bottom: 30px;
+}
+
+/* リアルタイムHTMLプレビュー表示領域 */
+.preview-section {
+    background-color: var(--text);
+    color: var(--bg-subtle);
+    padding: 20px;
+    border-radius: var(--radius);
+    font-family: "Fira Code", Consolas, Monaco, monospace;
+    font-size: 13px;
+}
+.preview-title {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 14px;
+    color: var(--text-dim);
+    border-bottom: 1px solid #334155;
+    padding-bottom: 8px;
+}
+#html-preview {
+    width: 100%;
+    height: 250px;
+    background: transparent;
+    color: #38bdf8;
+    border: none;
+    outline: none;
+    resize: vertical;
+    font-family: inherit;
+    font-size: inherit;
+}
+.tip {
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-top: -15px;
+    margin-bottom: 20px;
+}
+/* エディタツールバー */
+.editor-toolbar {
+    display: none !important;
+}
+body[edit-mode] .editor-toolbar {
+    display: flex !important;
+}
+body[edit-mode] #editor-content {
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+}
+
+/* Notion-like Block Editor Styles */
+.editor-block {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 2px;
+    position: relative;
+}
+
+.block-controls {
+    display: none;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+    margin-right: 8px;
+    padding-top: 4px; /* Align with text */
+    user-select: none;
+}
+
+body[edit-mode] .block-controls {
+    display: flex;
+}
+
+body[edit-mode] .editor-block:hover .block-controls {
+    opacity: 1;
+}
+
+.block-controls button, .block-controls .drag-handle {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.block-controls button:hover, .block-controls .drag-handle:hover {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.drag-handle {
+    cursor: grab !important;
+}
+
+.drag-handle:active {
+    cursor: grabbing !important;
+}
+
+.block-content {
+    flex-grow: 1;
+    min-width: 0;
+    position: relative;
+}
+
+.block-content > * {
+    margin: 0 !important;
+    padding: 4px 2px;
+    outline: none; /* remove contenteditable border */
+}
+
+body[edit-mode] .block-content p:empty::before {
+    content: "「/」でコマンドを入力...";
+    color: #cbd5e1;
+    pointer-events: none;
+    display: block;
+}
+
+.editor-block.dragging {
+    opacity: 0.5;
+}
+
+.editor-block.drag-over {
+    border-top: 2px solid #38bdf8;
+}
+
+/* Slash Menu Styles */
+.slash-menu {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    padding: 8px;
+    display: none;
+    z-index: 1000;
+    width: 250px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.slash-menu.active {
+    display: block;
+}
+
+.slash-menu-item {
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #334155;
+}
+
+.slash-menu-item:hover, .slash-menu-item.selected {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+/* Context Toolbar Styles */
+.context-toolbar {
+    position: absolute;
+    background: #1e293b;
+    color: #fff;
+    border-radius: 6px;
+    padding: 4px;
+    display: none;
+    z-index: 999;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    align-items: center;
+    gap: 4px;
+}
+
+.context-toolbar.active {
+    display: flex;
+}
+
+.context-toolbar button {
+    background: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.context-toolbar button:hover {
+    background: #334155;
+}
+
+/* ── ヘッダー右側とパネル内の小物 ─────────────────────────────────────
+ * 2026-08-06 に index.html のインライン style= から移設した分。
+ * 表示/非表示は .is-hidden（下記）で切り替える。JS から style.display を書くと、
+ * ここの規則と綱引きになって「一度隠すと二度と出せない」状態になるため。
+ */
+.is-hidden { display: none !important; }
+
+#user-bar {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-right: 10px;
+}
+
+.admin-link {
+    margin-right: 8px;
+    padding: 5px 10px;
+    background: #7c3aed;
+    color: #fff;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 12px;
+}
+
+.logout-btn {
+    margin-right: 12px;
+    padding: 5px 10px;
+    background: var(--border);
+    color: #334155;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+#save-status {
+    font-size: 12px;
+    font-weight: bold;
+    margin-right: 12px;
+    color: var(--text-dim);
+    display: inline-block;
+    min-width: 92px;
+    text-align: right;
+}
+
+#pp-mode {
+    width: 50px;
+    font-family: monospace;
+}
+
+#pp-msg {
+    margin-left: 8px;
+    font-size: 12px;
+}
+
+.pp-public-row {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.pp-public-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+/* 匿名のときヘッダーに出すログイン導線（app.js が #user-bar へ差し込む）。 */
+.login-link {
+    color: var(--accent-strong);
+    text-decoration: none;
+}

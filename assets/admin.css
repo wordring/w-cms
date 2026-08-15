@@ -1,0 +1,40 @@
+/* 管理コンソール（assets/admin.html）のスタイル。
+ *
+ * 2026-08-06 に admin.html のインライン <style> から切り出した。外部スタイルシートに
+ * することで Content-Security-Policy から style-src 'unsafe-inline' を外せる
+ * （docs/【考察】CSP強化.md §4）。
+ */
+
+body { font-family: sans-serif; background: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; }
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.1rem; margin-top: 28px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
+.card { background: #fff; border-radius: 8px; padding: 16px; margin-top: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eef2f7; }
+th { color: #64748b; font-weight: 600; }
+input, select { padding: 5px 7px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+button { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; background: #2563eb; color: #fff; }
+button.sub { background: #e2e8f0; color: #334155; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.msg { font-size: 12px; margin-left: 8px; }
+a.back { font-size: 13px; color: #2563eb; text-decoration: none; }
+.denied { color: #b91c1c; font-weight: bold; }
+code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
+
+/* ── ここから下は 2026-08-06 にインライン style= から移設した分 ──────────── */
+
+/* 表示/非表示は class で切り替える（JS が style.display を書くと CSS と綱引きになる）。 */
+.is-hidden { display: none !important; }
+
+#whoami { font-size: 13px; color: #475569; }
+#groups-list { font-size: 13px; }
+
+.row--gap-lg { margin-top: 14px; }
+.row--gap-md { margin-top: 12px; }
+.row--gap-sm { margin-top: 10px; }
+
+.danger-btn { background: #ef4444; }
+.hint { font-size: 12px; color: #64748b; }
+.disabled-mark { color: #b91c1c; }
+
+#audit-table { margin-top: 10px; }

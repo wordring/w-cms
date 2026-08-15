@@ -75,8 +75,12 @@ w-cms/
 │       ├── sync.go         # コア同期＋プラグイン走査（SyncIndex / RebuildDatabase）
 │       └── *_test.go       # 単体テスト
 ├── assets/                 # フロントエンド用静的ファイル
-│   ├── index.html          # エディタのメインUIと操作ロジック
+│   ├── index.html          # エディタの殻（markup のみ。本文はサーバーが合成）
+│   ├── app.css             # 殻のスタイル
+│   ├── app.js              # 殻の操作ロジック（エディタ本体）
 │   ├── admin.html          # 管理コンソール（ユーザー・グループ・監査ログ）
+│   ├── admin.css           # 管理コンソールのスタイル
+│   ├── admin.js            # 管理コンソールの操作ロジック
 │   ├── components.css      # カスタム要素の共通スタイル
 │   ├── web-components.js   # カスタムWebコンポーネント定義
 │   └── templates/          # Web Componentsの閲覧用/編集用HTMLテンプレート
