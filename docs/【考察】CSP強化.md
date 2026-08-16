@@ -33,9 +33,11 @@ w-cms へ Content-Security-Policy（CSP）を全レスポンスに付与し、�
 - **CSP**: 漏れや将来の別経路に対する網。strict 化（`'unsafe-inline'` 除去）が完了すれば、
   インラインスクリプトはCSPでも止まるようになる。
 
-なお `/api/load` は今も `text/html; charset=utf-8` を返す（text/plain 化は未実施）。ただし
-これは初期表示には使われず、編集ロック起点の載せ替え専用になっている。保存時サニタイズにより
-正本自体が清書済みのため、返る内容もサニタイズ済みと一致する。
+なお `/api/load` は **`text/plain; charset=utf-8` ＋ `X-Content-Type-Options: nosniff`** を返す
+（text/plain 化は実施済み。[handler_view.go](../internal/cms/handler_view.go) の `LoadAPIHandler`）。
+エディタは `fetch().text()` で受けて自前で `DOMParser` にかけるため text/html である必要がなく、
+このURLを直接ブラウザで開いてもHTMLとして実行されない。これは初期表示には使われず、編集ロック
+起点の載せ替え専用。保存時サニタイズにより正本自体が清書済みのため、返る内容もサニタイズ済みと一致する。
 
 サニタイザが `on*` と `style` を常に落とす方針は、**strict 化の前提（インラインを増やさない）と
 一致している**。
@@ -70,8 +72,11 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; 
 
 ### 2.3 なぜ `default-src 'self'` で壊れないか（実測）
 
-`assets/` 配下に外部リソース参照・`data:`/`blob:` URI・web fonts・`<link>`・`@import` は
-**皆無**（実測）。PDFは `<embed src="/data/master/...">` の同一オリジン配信で
+`assets/` 配下に**外部オリジンへの参照**・`data:`/`blob:` URI・web fonts・`@import` は
+**皆無**（実測。`https?://` のヒットもゼロ）。2026-08-06 の外部化で増えた
+`<link rel="stylesheet">`（`index.html` に2本・`admin.html` に1本）と `<script src>` は
+すべて `/assets/` 配下＝同一オリジンなので `'self'` で通る。
+PDFは `<embed src="/data/master/...">` の同一オリジン配信で
 `object-src 'self'` を通る。よって `default-src 'self'` はインライン以外を一切壊さない。
 
 ---
@@ -106,8 +111,8 @@ strict CSP は **`innerHTML` 経由で挿入した `on*=` 属性ハンドラも�
 
 - [x] **(1) 本体スクリプトの外部化**（2026-08-06 完了）: `index.html` 本体 `<script>` を
       [assets/app.js](../assets/app.js) へ、`admin.html` の `<script>` を
-      [assets/admin.js](../assets/admin.js) へ移設。`index.html` は 2768行 → 198行、
-      `admin.html` は 196行 → 76行（どちらも markup だけになった）。
+      [assets/admin.js](../assets/admin.js) へ移設。`index.html` は 3015行 → 215行、
+      `admin.html` は 195行 → 72行（どちらも markup だけになった）。
       **`defer` は付けない**——付けると `web-components.js`（head・defer）より後に実行され、
       インライン時代の順序（本文スクリプトが先）が変わるため。
 - [ ] **(2) FOUC head スクリプトを per-request nonce で残す**: head の
