@@ -68,7 +68,8 @@ w-cms/
 │       ├── handler_tree.go  # ページの木構造（新規作成・子一覧・親の付け替え）
 │       ├── handler_meta.go  # ページ属性・本文の語彙・DB再構築
 │       ├── shell.go         # ページ本文とindex.htmlのサーバー合成
-│       ├── sanitize.go      # 本文HTMLの許可リスト方式サニタイズ＋語彙の正本
+│       ├── sanitize.go      # サニタイザの合成ラッパ（プラグイン語彙を htmldoc へ注入）
+│       ├── htmldoc/         # 本文HTMLの許可リスト方式サニタイズ（純粋なHTML部品）
 │       ├── block.go         # ブロック単位保存（data-id での差し替え）
 │       ├── perms_admin.go   # 権限・所有者・公開の変更API（chmod/chown/publish）
 │       ├── pdf_handler.go   # PDFアップロード・Gemini解析API

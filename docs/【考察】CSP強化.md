@@ -24,7 +24,7 @@ w-cms へ Content-Security-Policy（CSP）を全レスポンスに付与し、�
 サーバー合成（`RootHandler` が本文を `assets/index.html` へ埋め込んで返す方式）の導入に伴い、
 本文中の `<script>`・`on*=` が実行されうる状態になったため、許可リスト方式のサニタイザを
 **保存時と描画時の二層**で通すようにしている。正本は [本文サニタイズ設計.md](本文サニタイズ設計.md)、
-実装は [internal/cms/sanitize.go](../internal/cms/sanitize.go)。
+実装は [internal/cms/htmldoc/sanitize.go](../internal/cms/htmldoc/sanitize.go)（2026-08-17 に切り出し）。
 
 現時点の役割分担は次のとおり:
 
