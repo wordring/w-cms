@@ -94,9 +94,15 @@ func OptionalAuth(next http.Handler) http.Handler {
 // default-src/object-src/base-uri/frame-ancestors は目標とする strict 版と同値で、
 // 外部オリジンへのデータ送信の遮断とクリックジャッキング防止（frame-ancestors）の
 // 実利を、段階移行の中間段階でも確保します。script-src/style-src のみ暫定で
-// 'unsafe-inline' を許可し、現行フロントの多数のインライン script/style/on* を
-// 生かしています。インラインを外部化・addEventListener 化するリファクタが完了したら
-// 'unsafe-inline' を外して strict 版へ格上げします（docs/【考察】CSP強化.md）。
+// 'unsafe-inline' を許可し、フロントに残るインラインを生かしています。
+//
+// 残りは 2026-08-06 時点で次の3つだけです（外部化の第1段が完了したため）:
+//   - script: assets/index.html の <head> にある FOUC 防止スクリプト1本
+//     （strict 化では外部化せず per-request nonce で残す方針）
+//   - style=: assets/templates/*.html の75個（10ファイル）
+//   - style=: assets/web-components.js が文字列で組み立てる8行（手配状況テーブル）
+// on*= 属性ハンドラはリポジトリ全体でゼロになっています。上記を片付けたら
+// 'unsafe-inline' を外して strict 版へ格上げします（docs/【考察】CSP強化.md §4）。
 //
 // アプリは外部リソース（CDN・web fonts・data:/blob: 等）を一切使わず、PDFは
 // 同一オリジンの <embed src="/data/..."> のため、default-src 'self' と

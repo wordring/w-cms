@@ -60,7 +60,7 @@ async function fetchTemplate(name) {
 //
 // **描画先は Light DOM（this.innerHTML）に統一する。Shadow DOM は使わない。**
 // 理由は本文（正本）の扱いにある:
-//   - 保存はエディタが**DOMを辿って**行う（index.html の serializeCustomElement）。Shadow に
+//   - 保存はエディタが**DOMを辿って**行う（assets/app.js の serializeCustomElement）。Shadow に
 //     隠すと入れ子の <m-item> が走査から外れ、保存される本文とサーバーの語彙がずれる。
 //   - 配色は assets/components.css（外部スタイルシート）に置ける。Shadow だと要素ごとに
 //     <style> を複製することになり、CSPのstrict化（docs/【考察】CSP強化.md）とも噛み合わない。
@@ -400,7 +400,7 @@ customElements.define('m-file', MFile);
 // しか書き出さないので、ここで作った <ul> が本文に混ざることはない。
 class MChildList extends MElement {
     async render() {
-        // currentPageId is defined globally in index.html
+        // currentPageId は assets/app.js が window へ載せるグローバル
         const pageId = window.currentPageId || "000000";
         const res = await fetch(`/api/children?parent_id=${pageId}`);
         let pages = [];

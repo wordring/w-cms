@@ -37,7 +37,8 @@ func (n noDirListing) Open(name string) (http.File, error) {
 
 // main はアプリケーションの起動とルーティングの設定を行います。
 func main() {
-	// データベースを初期化（コアテーブル: pages / page_tags）
+	// データベースを初期化（コアテーブル: pages / page_perms）
+	// page_tags は <m-tag> を所有する plugin_page_tags.go 側のテーブルでコアではない。
 	if err := database.InitDB(); err != nil {
 		log.Fatalf("DB初期化エラー: %v", err)
 	}
