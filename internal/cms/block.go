@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"w-cms/internal/cms/htmldoc"
 )
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -22,6 +24,16 @@ import (
 
 // ErrBlockNotFound は指定IDのブロックが本文に1つも無い場合に返されます。
 var ErrBlockNotFound = errors.New("指定されたブロックが見つかりません")
+
+// attrValue は属性値を返します（無ければ空文字列）。
+func attrValue(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if strings.EqualFold(a.Key, key) {
+			return a.Val
+		}
+	}
+	return ""
+}
 
 // trimEdgeWhitespace はノード列の前後にある空白だけのテキストノードを取り除きます。
 func trimEdgeWhitespace(nodes []*html.Node) []*html.Node {
@@ -52,7 +64,7 @@ func ReplaceBlock(pageHTML, blockID, blockHTML string) (string, error) {
 		return "", ErrBlockNotFound
 	}
 
-	nodes, err := parseFragment(pageHTML)
+	nodes, err := htmldoc.ParseFragment(pageHTML)
 	if err != nil {
 		return "", err
 	}
@@ -61,7 +73,7 @@ func ReplaceBlock(pageHTML, blockID, blockHTML string) (string, error) {
 	// 親ブロックごと送られてくるため、ここで探すのは最上位だけでよい）。
 	idx := -1
 	for i, n := range nodes {
-		if n.Type != html.ElementNode || attrValue(n, BlockIDAttr) != blockID {
+		if n.Type != html.ElementNode || attrValue(n, htmldoc.BlockIDAttr) != blockID {
 			continue
 		}
 		if idx >= 0 {
@@ -73,7 +85,7 @@ func ReplaceBlock(pageHTML, blockID, blockHTML string) (string, error) {
 		return "", ErrBlockNotFound
 	}
 
-	replacement, err := parseFragment(blockHTML)
+	replacement, err := htmldoc.ParseFragment(blockHTML)
 	if err != nil {
 		return "", err
 	}
