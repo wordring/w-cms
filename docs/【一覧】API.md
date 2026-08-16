@@ -48,13 +48,20 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
 | POST | `/api/lock` | 要認証（write） | ロック取得。成功時は**最新の生HTML**を同梱して返す（編集はここから始まる） |
-| GET | `/api/lock-events` | 要認証 | ロック状態の **SSE** 購読（保持者・待機者で共用） |
-| POST | `/api/unlock` | 要認証 | ロック解放。タブを閉じるときは `navigator.sendBeacon` で送る |
-| POST | `/api/lock/force` | 要認証（owner/admin） | ロックの強制解放 |
+| GET | `/api/lock-events` | 要認証（write） | ロック状態の **SSE** 購読（保持者・待機者で共用） |
+| POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
+| POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
 
 書き込み系API（`/api/save`・`/api/save-block`・`/api/set-parent`・`/api/page-perms`・
-`/api/page-chown`）は共通ゲート `RequireEditLock` を通り、**同じロックで直列化**される。
-フロントは `lockedFetch` でトークンを添えて送る。
+`/api/page-chown`）は**同じロックで直列化**される。ただし入口は2種類ある。
+
+- **保存2本**（`/api/save`・`/api/save-block`）は `editlock.Locks.Validate` を直接呼び、
+  トークンは**JSONボディの `token`** で受ける。
+- **残り3本**（`/api/set-parent`・`/api/page-perms`・`/api/page-chown`）は共通ゲート
+  `editlock.RequireEditLock` を通り、トークンは **`X-Lock-Token` ヘッダ**（無ければ `token` クエリ）
+  で受ける。フロントはこの3本を `lockedFetch` で送る。
+
+検証規約はどちらも同じ（ロック無し＝許可／保持者本人でトークン一致なら許可／それ以外は409）。
 
 ## 4. 権限・所有者
 
@@ -62,14 +69,14 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 |---|---|---|---|---|
 | GET | `/api/page-perms` | 要認証（read） | — | 現在の権限と `can_write`・`can_publish` を返す |
 | POST | `/api/page-perms` | 要認証（owner/admin） | 要 | mode（owner/group/other の rw）と `public` フラグの変更 |
-| POST | `/api/page-chown` | 要認証（owner/admin） | 要 | 所有者・所有グループの変更 |
+| POST | `/api/page-chown` | **admin のみ** | 要 | 所有者（`owner`）の変更。所有グループの変更は `/api/page-perms` の `group` 側 |
 
 ## 5. 認証
 
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
 | GET | `/login` | 認証不要 | ログイン画面 |
-| POST | `/api/login` | 認証不要 | ログイン。argon2id 検証（同時実行はセマフォで4件まで）。失敗は `login_attempts` に記録しバックオフ |
+| POST | `/api/login` | 認証不要 | ログイン。argon2id 検証（同時実行はセマフォで4件まで）。失敗は `login_attempts` に記録し、**5回連続で15分ロックアウト** |
 | POST | `/api/logout` | 要認証 | ログアウト（セッション行を削除） |
 | GET | `/api/me` | 任意認証 | 認証状態。未認証は `{authenticated:false}` |
 
@@ -83,7 +90,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/admin/users/password` | パスワード再設定 |
 | POST | `/api/admin/users/disable` | 有効・無効の切り替え |
 | GET/POST | `/api/admin/groups` | グループの一覧・作成 |
-| GET/POST | `/api/admin/groups/members` | グループ所属の参照・変更 |
+| POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
 | GET | `/api/admin/audit` | 監査ログの参照（書き込み・権限変更を記録） |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え） |
 
@@ -92,9 +99,9 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
 | GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML ∪ カスタム要素 → 許可属性）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
-| POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<id>/` へ保存）。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
-| POST | `/api/parse-pdf` | 要認証 | PDFから明細をAI抽出（Gemini） |
-| GET | `/api/required-materials` | 要認証 | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`） |
+| POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<先頭2桁>/<id>/` へ保存）。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
+| POST | `/api/parse-pdf` | 要認証（対象ページの write） | PDFから明細をAI抽出（Gemini） |
+| GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`） |
 
 プラグインは `RouteProvider` を実装するとルートを追加できる。`main.go` は
 `cms.PluginRoutes()` をループして登録するだけで、コア側の変更は要らない
