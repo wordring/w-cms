@@ -135,7 +135,13 @@ strict CSP は **`innerHTML` 経由で挿入した `on*=` 属性ハンドラも�
       [assets/admin.css](../assets/admin.css) へ移設し、両ファイルの `style=` 属性も
       CSSクラスへ移した。
       **残り**: `templates/*.html` 10ファイルの `style=`（計75個）と `web-components.js` が
-      文字列で組み立てる `style=`（手配状況テーブルの8行）。これが (5) と地続きの最後の塊。
+      文字列で組み立てる `style=`（手配状況テーブルの8行）。ただし**75個の大半は語彙モデル移行
+      （[【考察】語彙モデル.md](【考察】語彙モデル.md) §8）で消滅する要素**（`m-tag`・`m-item`・
+      `m-material`・受発注4種）のテンプレートにあるため、**そこには手を入れない**（移行＝
+      標準HTML化でテンプレートごと消え、作業が無駄になる）。先行して除去するのは**残存する
+      要素**（`m-file`・`m-child-list`・`m-required-materials`）のテンプレートと
+      `web-components.js` の8行だけとし、strict 格上げの完了は移行第2段（`m-tag`・`m-material`
+      が片付く段）に相乗りさせる。
       > **落とし穴**: markup の `style="display:none"` を CSS へ移すときは、JS 側の
       > `el.style.display = ''` も同時に潰すこと。CSS に規則が残ると `''` では**二度と表示できない**。
       > 今回は `.is-hidden` クラス＋`setHidden()` に統一して入口を1つにした
