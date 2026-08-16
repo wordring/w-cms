@@ -8,6 +8,8 @@ import (
 	"strconv"
 
 	"golang.org/x/net/html"
+
+	"w-cms/internal/cms/htmldoc"
 )
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -55,16 +57,16 @@ type Plugin interface {
 // <m-required-materials> の page-id など）も1つの宣言で扱えるようにするためです。
 //
 // この単一の宣言が3つの用途を賄います:
-//   - サニタイズの許可リスト（internal/cms/sanitize.go）
+//   - サニタイズの許可リスト（internal/cms/htmldoc へ注入。internal/cms/sanitize.go 参照）
 //   - /api/tag-schema（エディタのシリアライザが参照する）
 //   - ドキュメント（docs/【一覧】カスタムタグ.md）の材料
 //
 // ここに載せ忘れた属性は保存のたびに黙って除去されるため、
 // プラグインが読む属性は必ず含めてください。
-type TagSpec struct {
-	Element    string   // 要素名（例: "m-client-order"）
-	Attributes []string // この要素に許される属性
-}
+//
+// 型の実体は htmldoc.TagSpec（サニタイザへの注入形式）。エイリアスにしているのは、
+// 各プラグインが修飾なしで TagSpec を書けるようにするため。
+type TagSpec = htmldoc.TagSpec
 
 // RouteProvider は集計APIなどのHTTPエンドポイントを提供したいプラグインが
 // 追加で実装する任意インターフェースです（Tier 2: コードプラグイン）。

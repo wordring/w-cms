@@ -3,6 +3,8 @@ package cms
 import (
 	"strings"
 	"testing"
+
+	"w-cms/internal/cms/htmldoc"
 )
 
 // findSpec は要素名で TagSpec を探します。
@@ -89,7 +91,7 @@ func TestPluginTagsIsSorted(t *testing.T) {
 // プラグインの宣言から組み上がっていることを検証します。
 // サニタイザ自身はカスタム要素の語彙を持ちません。
 func TestSanitizerAllowlistComesFromPlugins(t *testing.T) {
-	allowed := allowedElements()
+	allowed := AllowedVocabulary()
 
 	for _, spec := range PluginTags() {
 		attrs, ok := allowed[spec.Element]
@@ -98,7 +100,7 @@ func TestSanitizerAllowlistComesFromPlugins(t *testing.T) {
 			continue
 		}
 		for _, a := range spec.Attributes {
-			if !attrs[a] {
+			if !contains(attrs, a) {
 				t.Errorf("プラグインが宣言した属性 %s[%s] が許可リストにありません", spec.Element, a)
 			}
 		}
@@ -112,11 +114,12 @@ func TestSanitizerAllowlistComesFromPlugins(t *testing.T) {
 	}
 }
 
-// TestSanitizerHasNoCustomVocabulary は、サニタイザのコア定義（structuralElements）に
-// カスタム要素が1つも直書きされていないことを検証します。
+// TestSanitizerHasNoCustomVocabulary は、サニタイザのコア定義（htmldoc の
+// structuralElements）にカスタム要素が1つも直書きされていないことを検証します。
 // 「カスタムタグはすべてプラグインが所有する」という線引きを回帰から守ります。
+// htmldoc.New(nil) は注入なし＝構造HTMLだけの語彙を返すので、それを検査します。
 func TestSanitizerHasNoCustomVocabulary(t *testing.T) {
-	for el := range structuralElements {
+	for el := range htmldoc.New(nil).AllowedVocabulary() {
 		if strings.HasPrefix(el, "m-") {
 			t.Errorf("カスタム要素 %q がサニタイザに直書きされています（プラグインの Tags() で宣言してください）", el)
 		}
