@@ -702,6 +702,81 @@ body[edit-mode] .block-content p:empty::before {
     background: #334155;
 }
 
+/* ── 汎用表エディタ v1（docs/【考察】語彙モデル.md §5.2） ─────────────────
+ * 行操作ツールバーは context-toolbar と同じ流儀の編集クローム。
+ * 本文DOMの外（シェル直下）に置き、位置は app.js がキャレットの行から決める。
+ */
+.table-toolbar {
+    position: absolute;
+    background: #1e293b;
+    color: #fff;
+    border-radius: 6px;
+    padding: 4px;
+    display: none;
+    z-index: 999;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    align-items: center;
+    gap: 4px;
+}
+
+.table-toolbar.active {
+    display: flex;
+}
+
+.table-toolbar button {
+    background: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.table-toolbar button:hover {
+    background: #334155;
+}
+
+/* 本文の表の基本スタイル。ブラウザ既定の表は枠が無く、挿入直後の空セルが
+ * 見えず編集もできないため、文書としての最小の体裁をここで与える（閲覧・編集共通）。 */
+#editor-content table {
+    border-collapse: collapse;
+    margin: 8px 0;
+}
+
+#editor-content th,
+#editor-content td {
+    border: 1px solid #cbd5e1;
+    padding: 4px 10px;
+    min-width: 3em;
+    text-align: left;
+}
+
+#editor-content th {
+    background: #f1f5f9;
+    font-weight: 600;
+}
+
+/* マーカー付き標準HTML（table/dl[data-type]）の編集モード時の視覚ヒント。
+ * 枠で「形式ブロック」であることを示す（閲覧・公開ページには出さない）。 */
+body[edit-mode] #editor-content table[data-type],
+body[edit-mode] #editor-content dl[data-type] {
+    outline: 1px dashed #93c5fd;
+    outline-offset: 2px;
+}
+
+/* 機械属性のハイライト（語彙モデル §5.1・決定ログ）:
+ * data-field / th[data-type] が付いた見出し・値は、見えている文字が鍵・型として
+ * 使われていない（属性が優先している）ことを編集モードで示す。
+ * 属性セレクタなので、上書きを起こす属性自体が印のトリガーになり表示と実態がずれない。 */
+body[edit-mode] #editor-content th[data-field],
+body[edit-mode] #editor-content th[data-type],
+body[edit-mode] #editor-content dd[data-field] {
+    background: #fef3c7;
+}
+
 /* ── ヘッダー右側とパネル内の小物 ─────────────────────────────────────
  * 2026-08-06 に index.html のインライン style= から移設した分。
  * 表示/非表示は .is-hidden（下記）で切り替える。JS から style.display を書くと、

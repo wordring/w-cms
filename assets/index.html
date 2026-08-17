@@ -70,6 +70,16 @@
     <!-- 動的にボタンが追加されます -->
 </div>
 
+<!-- 表の行操作ツールバー（汎用表エディタv1の編集クローム）。
+     ボタンを表の中へ挿すとシリアライザが中身を本文として拾ってしまうため、
+     クロームは必ず本文DOMの外に置く。表示位置は app.js がキャレット位置から決める。 -->
+<div id="table-toolbar" class="table-toolbar">
+    <button type="button" id="tt-add" title="行を下に追加">＋行</button>
+    <button type="button" id="tt-up" title="行を上へ移動">↑</button>
+    <button type="button" id="tt-down" title="行を下へ移動">↓</button>
+    <button type="button" id="tt-del" title="行を削除">✕行</button>
+</div>
+
 <!-- アプリ内通知（トースト）エリア。ロック関連・保存エラー等をここへ集約する。 -->
 <div id="toast-host" class="toast-host" aria-live="polite"></div>
 
