@@ -108,8 +108,11 @@ var structuralElements = map[string]map[string]bool{
 	"q":          {"cite": true},
 	"cite":       {},
 
-	// リスト
-	"ul": {}, "li": {}, "dl": {}, "dt": {}, "dd": {},
+	// リスト（dl の data-type / dd の data-field は語彙モデルのマーカー。下記「表」の注記を参照）
+	"ul": {}, "li": {},
+	"dl": {"data-type": true},
+	"dt": {},
+	"dd": {"data-field": true},
 	"ol": {"start": true, "reversed": true, "type": true},
 
 	// 文字装飾（b/i は strong/em へ正規化せず、貼り付けた表現をそのまま保つ）
@@ -143,11 +146,15 @@ var structuralElements = map[string]map[string]bool{
 	"ins": {"cite": true, "datetime": true},
 	"del": {"cite": true, "datetime": true},
 
-	// 表（生の table は貼り付けた資料としての表。業務明細は将来の <m-table> が担う）
-	"table": {}, "caption": {}, "colgroup": {},
+	// 表。data-type / data-field は「マーカー付き標準HTML」（docs/【考察】語彙モデル.md）の
+	// 役割マーカーで、**属性名だけを要素限定で許可**し、値は不活性な文字列として検査しない。
+	// 許可範囲は決定ログ（同書 §9）どおり data-type→table・dl・th、data-field→th・dd に限る。
+	// レジストリ（cms パッケージの語彙レジストリ）は編集支援と索引の語彙であって
+	// 安全性の門ではない——未知の data-type も通す（保存時に告知するのは cms 側の責務）。
+	"table": {"data-type": true}, "caption": {}, "colgroup": {},
 	"thead": {}, "tbody": {}, "tfoot": {}, "tr": {},
 	"col": {"span": true},
-	"th":  {"colspan": true, "rowspan": true, "scope": true, "abbr": true, "headers": true},
+	"th":  {"colspan": true, "rowspan": true, "scope": true, "abbr": true, "headers": true, "data-field": true, "data-type": true},
 	"td":  {"colspan": true, "rowspan": true, "headers": true},
 
 	// リンク（target/rel は許可しない。同一タブなら reverse tabnabbing の心配がない）

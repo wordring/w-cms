@@ -512,6 +512,15 @@
             { type: 'warn', duration: 8000, id: 'sanitized' });
     }
 
+    // notifyUnknownTypes はレジストリ未定義の data-type の**告知**（拒否ではない）。
+    // 未知の種別も保存され索引にも載る（語彙モデル §9 の決定。エコーバックの流儀）。
+    function notifyUnknownTypes(types) {
+        if (!Array.isArray(types) || !types.length) return;
+        notify('未定義の種別 ' + types.map(t => '「' + t + '」').join('・') +
+            ' の表・リストがあります（そのまま保存し、検索の索引にも載ります）。',
+            { type: 'info', duration: 8000, id: 'unknown-vocab' });
+    }
+
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
         // 語彙が未取得のまま保存すると、カスタム要素が丸ごと欠落した本文を書いてしまう。
@@ -554,6 +563,7 @@
                 // 除去後の状態を積み直す。積まないと「除去された危険な内容」へアンドゥで戻れてしまう。
                 pushSnapshot(document.getElementById('html-preview').value);
             }
+            notifyUnknownTypes(data.unknown_types);
             // 保存できた状態を記録する（次回の差分判定の基準）
             lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
             setSaveStatus("✅ 保存済", "#10b981");
@@ -600,6 +610,7 @@
                 // 送ったブロックだけ記録を更新する
                 lastSavedBlocks = blocks.map(b => ({ id: b.id, html: b.html }));
             }
+            notifyUnknownTypes(data.unknown_types);
             setSaveStatus("✅ 保存済", "#10b981");
         })
         .catch(onSaveFailed);
@@ -844,6 +855,7 @@
             modeText.style.color = "#475569";
             hideSlashMenu();
             hideContextToolbar();
+            hideTableToolbar();
         }
 
         // 編集できるのは構造HTMLのブロック（見出し・段落・リスト・表・引用…）。
@@ -1121,6 +1133,10 @@
     // プラグインを追加すれば新しい要素もそのまま保存されるようになる。
     let tagSchema = null;              // { "p": [], "m-item": ["cost", "item-id", ...], ... }
     let voidTags = new Set();          // 終了タグを書かない要素（br・img 等）
+    // 語彙レジストリ（①）の形式定義。スラッシュメニューの項目と挿入骨格
+    // （<table data-type> / <dl data-type>）はここから生成する（語彙モデル §7 の原則1:
+    // エディタに手書きの形式リストを置かない）。
+    let vocabDefs = [];                // [{ type, display_name, icon, element, columns: [...] }, ...]
 
     async function loadTagSchema() {
         try {
@@ -1129,10 +1145,12 @@
             const d = await res.json();
             tagSchema = (d && d.elements) || {};
             voidTags = new Set((d && d.void) || []);
+            vocabDefs = (d && d.vocab) || [];
         } catch (e) {
             console.error('本文の語彙を取得できませんでした:', e);
             tagSchema = {};
             voidTags = new Set();
+            vocabDefs = [];
         }
     }
 
@@ -1356,9 +1374,65 @@
         document.getElementById('html-preview').value = joinBlocks(serializeBlocks());
     }
 
+    // ── 語彙レジストリ駆動の挿入骨格（汎用表エディタv1） ──────────────────
+    // レジストリの列定義から <table data-type>（見出し行＋空のデータ行1行）または
+    // <dl data-type>（dt/dd の組）を機械的に生成する。DOM生成は createElement ＋
+    // textContent 代入（DOMが自動エスケープする）で行い、文字列置換＋innerHTML の
+    // テンプレート機構は持ち込まない（Web Components 廃止決定・語彙モデル §7）。
+    function buildVocabSkeleton(def) {
+        if (def.element === 'dl') {
+            const dl = document.createElement('dl');
+            dl.setAttribute('data-type', def.type);
+            (def.columns || []).forEach(col => {
+                const dt = document.createElement('dt');
+                dt.textContent = col.label;
+                const dd = document.createElement('dd');
+                if (col.field) dd.setAttribute('data-field', col.field);
+                dl.appendChild(dt);
+                dl.appendChild(dd);
+            });
+            return dl;
+        }
+        // table: 最初の tr が見出し行（列の鍵と型を運ぶ。文書自身がスキーマを携帯する）
+        const table = document.createElement('table');
+        table.setAttribute('data-type', def.type);
+        const tbody = document.createElement('tbody');
+        const head = document.createElement('tr');
+        const row = document.createElement('tr');
+        (def.columns || []).forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col.label;
+            // data-field は③計算形式だけが持つ（レジストリ宣言があるときのみ自動付与。
+            // 記録だけの形式は「見える文字が既定」で機械属性を書かない）
+            if (col.field) th.setAttribute('data-field', col.field);
+            head.appendChild(th);
+            row.appendChild(document.createElement('td'));
+        });
+        tbody.appendChild(head);
+        tbody.appendChild(row);
+        table.appendChild(tbody);
+        return table;
+    }
+
+    // focusFirstCell は挿入直後の骨格の最初の入力先（td / dd）へキャレットを置く。
+    function focusFirstCell(el) {
+        const cell = el.querySelector('td, dd');
+        if (!cell) { if (el.focus) el.focus(); return; }
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
     function createComponentElement(type, isEdit, ...args) {
         let newEl;
-        if (type === 'h1') {
+        if (type && type.indexOf('vocab:') === 0) {
+            const def = vocabDefs.find(v => v.type === type.slice(6));
+            if (!def) return null;
+            newEl = buildVocabSkeleton(def);
+        } else if (type === 'h1') {
             newEl = document.createElement('h1');
             newEl.innerText = '';
         } else if (type === 'p') {
@@ -1424,8 +1498,11 @@
         } else if (type === 'm-child-list') {
             newEl = document.createElement('m-child-list');
         }
+        if (!newEl) return null;
 
-        if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
+        // 編集モードで挿すなら、構造HTML（見出し・段落・表・定義リスト…）は編集可能にする。
+        // カスタム要素は自前のUIで編集するので対象外（applyMode と同じ規則）。
+        if (isEdit && !isCustomTag(newEl.tagName.toLowerCase())) {
             newEl.setAttribute('contenteditable', 'true');
             newEl.oninput = updateHtmlPreview;
         }
@@ -1473,6 +1550,8 @@
 
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
             newEl.focus();
+        } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL')) {
+            focusFirstCell(newEl); // 挿入した骨格の最初のセルから入力を始められるように
         }
 
         return newEl;
@@ -1494,6 +1573,8 @@
         
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'P')) {
             newEl.focus();
+        } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL')) {
+            focusFirstCell(newEl);
         }
         return newEl;
     }
@@ -1599,6 +1680,154 @@
         });
     }
 
+    // ── 汎用表エディタ v1: 行操作ツールバー（docs/【考察】語彙モデル.md §5.2） ──
+    // セルの値はブロックの contenteditable がそのまま担い（値＝中身＝表示される文字）、
+    // 行の追加・削除・並べ替えだけをこのツールバーで補う。ボタンを表の中へ挿すと
+    // シリアライザが中身を本文として拾ってしまうため、クロームは本文DOMの外
+    // （#table-toolbar・シェル直下）に置き、キャレットのある行に追従させる。
+    let currentTableRow = null;
+
+    // insideCustomElement は el がカスタム要素の描画内（m-required-materials の
+    // 集計表など）にあるかを返す。カスタム要素内の表は自前UIの領分なので触らない。
+    function insideCustomElement(el) {
+        for (let p = el; p && p.id !== 'editor-content'; p = p.parentElement) {
+            if (p.tagName && p.tagName.indexOf('-') !== -1) return true;
+        }
+        return false;
+    }
+
+    function hideTableToolbar() {
+        const bar = document.getElementById('table-toolbar');
+        if (bar) bar.classList.remove('active');
+        currentTableRow = null;
+    }
+
+    // updateTableToolbar はキャレットが本文中の表の行にあるときだけツールバーを出す。
+    function updateTableToolbar() {
+        const bar = document.getElementById('table-toolbar');
+        if (!bar) return;
+        if (!document.body.hasAttribute('edit-mode')) { hideTableToolbar(); return; }
+
+        const sel = window.getSelection();
+        const node = sel && sel.anchorNode;
+        const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
+        const row = el && el.closest ? el.closest('#editor-content tr') : null;
+        if (!row || insideCustomElement(row)) { hideTableToolbar(); return; }
+
+        currentTableRow = row;
+        bar.classList.add('active');
+
+        // 行の右横へ。入りきらなければ行の左上へ退避する。
+        const rect = row.getBoundingClientRect();
+        let top = rect.top + window.scrollY + (rect.height - bar.offsetHeight) / 2;
+        let left = rect.right + window.scrollX + 8;
+        if (rect.right + 8 + bar.offsetWidth > document.documentElement.clientWidth) {
+            top = rect.top + window.scrollY - bar.offsetHeight - 4;
+            left = rect.left + window.scrollX;
+        }
+        bar.style.top = top + 'px';
+        bar.style.left = left + 'px';
+    }
+
+    // rowCellCount は行の直接の子セル（th / td）の数を返す。
+    function rowCellCount(row) {
+        let n = 0;
+        Array.from(row.children).forEach(c => {
+            if (c.tagName === 'TH' || c.tagName === 'TD') n++;
+        });
+        return n;
+    }
+
+    // tableRowAdd は現在行の下へ空のデータ行（td）を追加する。
+    // 見出し行（th）の上から使えば最初のデータ行になる。
+    function tableRowAdd() {
+        const row = currentTableRow;
+        if (!row) return;
+        const cells = rowCellCount(row) || 1;
+        const tr = document.createElement('tr');
+        for (let i = 0; i < cells; i++) tr.appendChild(document.createElement('td'));
+        row.parentNode.insertBefore(tr, row.nextSibling);
+        focusFirstCell(tr);
+        updateHtmlPreview();
+    }
+
+    // tableRowDelete は現在行を削除する。最初の行（見出し行＝列の鍵と型を運ぶ）は
+    // 消さない——形式のスキーマは文書自身が携帯するため（語彙モデル §5.1）。
+    function tableRowDelete() {
+        const row = currentTableRow;
+        if (!row) return;
+        const table = row.closest('table');
+        if (!table || row === table.querySelector('tr')) return;
+        const neighbor = row.previousElementSibling || row.nextElementSibling;
+        row.remove();
+        if (neighbor && neighbor.tagName === 'TR') focusFirstCell(neighbor);
+        else hideTableToolbar();
+        updateHtmlPreview();
+    }
+
+    // placeCaretAtEnd はセル（td / th）の末尾へキャレットを置く。
+    function placeCaretAtEnd(cell) {
+        if (!cell) return;
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    // tableRowMove は現在行を上下の行と入れ替える。見出し行は動かさず、
+    // データ行が見出しより上へ出ることも許さない。
+    function tableRowMove(dir) {
+        const row = currentTableRow;
+        if (!row) return;
+        const table = row.closest('table');
+        if (!table) return;
+        const first = table.querySelector('tr');
+        if (row === first) return; // 見出し行は動かさない
+
+        // insertBefore でノードを動かすとブラウザがキャレットを失い、直後の
+        // selectionchange でツールバーまで消えてしまう。移動前にキャレットのある
+        // セルを覚えておき、移動後に同じセルへ戻す。
+        const sel = window.getSelection();
+        const anchorEl = sel && sel.anchorNode
+            ? (sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode)
+            : null;
+        const cell = anchorEl && anchorEl.closest ? anchorEl.closest('td, th') : null;
+
+        if (dir < 0) {
+            const prev = row.previousElementSibling;
+            if (!prev || prev.tagName !== 'TR' || prev === first) return;
+            row.parentNode.insertBefore(row, prev);
+        } else {
+            const next = row.nextElementSibling;
+            if (!next || next.tagName !== 'TR') return;
+            row.parentNode.insertBefore(next, row);
+        }
+        placeCaretAtEnd(cell && row.contains(cell) ? cell : row.querySelector('td, th'));
+        updateTableToolbar(); // 移動後の位置へ追従させる
+        updateHtmlPreview();
+    }
+
+    // ── スラッシュメニューのレジストリ駆動項目 ──────────────────────────
+    // 語彙レジストリ（①）の形式定義から項目を生成して静的項目の後ろへ足す。
+    // メニュー全体の再設計（絞り込み・分類・頻度順）は別課題（エディタ仕様 §3）で、
+    // ここは「殻の markup を手で足さずに語彙を増やせる」ことだけを実現する。
+    function populateSlashMenuVocab() {
+        const menu = document.getElementById('slash-menu');
+        if (!menu) return;
+        vocabDefs.forEach(def => {
+            const item = document.createElement('div');
+            item.className = 'slash-menu-item';
+            item.setAttribute('data-type', 'vocab:' + def.type);
+            const icon = document.createElement('b');
+            icon.textContent = def.icon || '📄';
+            item.appendChild(icon);
+            item.appendChild(document.createTextNode(' ' + (def.display_name || def.type)));
+            menu.appendChild(item);
+        });
+    }
+
     // Slash Menu Logic
     function showSlashMenu(targetElement) {
         slashMenuVisible = true;
@@ -1657,7 +1886,21 @@
 
     function setupEditorEvents() {
         const editor = document.getElementById('editor-content');
-        
+
+        // レジストリ由来の項目は、下の項目バインド（click / mouseenter）より前に足す。
+        populateSlashMenuVocab();
+
+        // 行操作ツールバーのボタン。mousedown を止めないとクリックで選択が崩れ、
+        // どの行への操作か（currentTableRow）が失われる。
+        const tbar = document.getElementById('table-toolbar');
+        if (tbar) {
+            tbar.addEventListener('mousedown', e => e.preventDefault());
+            document.getElementById('tt-add').addEventListener('click', tableRowAdd);
+            document.getElementById('tt-del').addEventListener('click', tableRowDelete);
+            document.getElementById('tt-up').addEventListener('click', () => tableRowMove(-1));
+            document.getElementById('tt-down').addEventListener('click', () => tableRowMove(1));
+        }
+
         editor.addEventListener('input', (e) => {
             if (!document.body.hasAttribute('edit-mode')) return;
             const target = e.target;
@@ -1745,12 +1988,16 @@
         document.addEventListener('selectionchange', () => {
             if (slashMenuVisible) return;
             updateContextToolbar();
+            updateTableToolbar();
         });
 
         // Hide toolbar when clicking outside editor
         document.addEventListener('mousedown', (e) => {
             if (!e.target.closest('#editor-content') && !e.target.closest('#context-toolbar')) {
                 hideContextToolbar();
+            }
+            if (!e.target.closest('#editor-content') && !e.target.closest('#table-toolbar')) {
+                hideTableToolbar();
             }
         });
 
