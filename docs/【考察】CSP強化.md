@@ -135,20 +135,20 @@ strict CSP は **`innerHTML` 経由で挿入した `on*=` 属性ハンドラも�
       [assets/admin.css](../assets/admin.css) へ移設し、両ファイルの `style=` 属性も
       CSSクラスへ移した。
       **残り**: `templates/*.html` 10ファイルの `style=`（計75個）と `web-components.js` が
-      文字列で組み立てる `style=`（手配状況テーブルの8行）。ただし**75個の大半は語彙モデル移行
-      （[【考察】語彙モデル.md](【考察】語彙モデル.md) §8）で消滅する要素**（`m-tag`・`m-item`・
-      `m-material`・受発注4種）のテンプレートにあるため、**そこには手を入れない**（移行＝
-      標準HTML化でテンプレートごと消え、作業が無駄になる）。先行して除去するのは**残存する
-      要素**（`m-file`・`m-child-list`・`m-required-materials`）のテンプレートと
-      `web-components.js` の8行だけとし、strict 格上げの完了は移行第2段（`m-tag`・`m-material`
-      が片付く段）に相乗りさせる。
+      文字列で組み立てる `style=`（手配状況テーブルの8行）。ただし **Web Components の
+      全廃決定（2026-08-17・[【考察】語彙モデル.md](【考察】語彙モデル.md) §9）により、
+      `templates/` と `web-components.js` は語彙モデル移行で**ファイルごと撤去**される。
+      したがって `style=` の個別除去は**一切行わず**、strict 格上げの完了は移行第4段
+      （Web Components 機構の撤去。語彙モデル §8.4）に相乗りさせる。
       > **落とし穴**: markup の `style="display:none"` を CSS へ移すときは、JS 側の
       > `el.style.display = ''` も同時に潰すこと。CSS に規則が残ると `''` では**二度と表示できない**。
       > 今回は `.is-hidden` クラス＋`setHidden()` に統一して入口を1つにした
       > （対象: `#admin-link`・`#pp-chown`・`#pp-view-hint`・`#pp-public-row`・`#denied`・`#console`）。
       > 動的な値（色・座標）は従来どおり `element.style.x = y`（CSSOM経由）でよい。
-- [ ] **(5) web-components.js の描画方式変更**（最大の工数）: 「HTML文字列＋`innerHTML`」を
-      「クラス付与＋CSSOMワイヤリング」へ。ステータス色分け等は `data-status` 属性＋CSSで表現。
+- ~~**(5) web-components.js の描画方式変更**（最大の工数）~~ → **不要になった（2026-08-17）**:
+      Web Components の全廃決定により、描画方式の変更ではなく**ファイルの撤去**になる
+      （語彙モデル §8.4 の第4段）。後継のエンハンサは殻の `<template>`＋`cloneNode`＋
+      `textContent` 代入で DOM を組み、インライン `style=` を生成しない。
 - [ ] **(6) strict適用と確認**: `cspPolicy` から `script-src`/`style-src` の
       `'unsafe-inline'` を外す（nonce方式なら `script-src 'self' 'nonce-…'`）。
       `<embed>` PDF・`/data/` 配信・`/assets/` が self で通ることを確認。
