@@ -32,8 +32,8 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 |---|---|---|---|---|
 | GET | `/{id}` | 任意認証 | — | **ページ本体**。`assets/index.html` に本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成・`RenderPageShell`）。権限無し=403／匿名×非公開=`/login` へ302／不存在=404 |
 | GET | `/api/load` | 任意認証（read） | — | ページ本文の**生HTML**（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用** |
-| POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized` を返す |
-| POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック） |
+| POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types` を返す |
+| POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types` は当該ブロック分のみ） |
 | GET | `/api/page-meta` | 任意認証（read） | — | ページ属性（親ページID・親ページ名・更新日時など）。匿名には実効公開のときだけ返す |
 | GET | `/api/children` | 任意認証（親のread） | — | 子ページ一覧。匿名には**実効公開の子だけ**を絞って返す |
 | GET/POST | `/api/new-page` | 要認証（親のwrite） | — | 子ページを作成し `/{新ID}?edit=true` へ302。**親の指定は必須**（親なしにできるのはトップページ `000000` のみ） |
@@ -98,7 +98,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
-| GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML ∪ カスタム要素 → 許可属性）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
+| GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML ∪ カスタム要素 → 許可属性）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）・`vocab`（語彙レジストリの形式定義。スラッシュメニューと挿入骨格の生成元）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
 | POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<先頭2桁>/<id>/` へ保存）。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
 | POST | `/api/parse-pdf` | 要認証（対象ページの write） | PDFから明細をAI抽出（Gemini） |
 | GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`） |
