@@ -63,6 +63,8 @@ w-cms/
 │       ├── plugin_our_order.go    # ユースケース: 弊社の発注書
 │       ├── plugin_estimates.go    # ユースケース: 見積もり（弊社／業者）
 │       ├── plugin_materials.go    # ユースケース: 部材BOM＋部材手配計算API
+│       ├── vocab.go               # 語彙レジストリ（3層モデルの①。形式定義・型推論・正規化）
+│       ├── vocab_index.go         # 汎用索引（3層モデルの②。table/dl[data-type] → vocab_index）
 │       ├── handler_save.go  # 保存API（全文・ブロック単位）
 │       ├── handler_view.go  # 画面（サーバー合成）とページ本文API
 │       ├── handler_tree.go  # ページの木構造（新規作成・子一覧・親の付け替え）
