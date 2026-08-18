@@ -32,7 +32,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 |---|---|---|---|---|
 | GET | `/{id}` | 任意認証 | — | **ページ本体**。`assets/index.html` に本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成・`RenderPageShell`）。権限無し=403／匿名×非公開=`/login` へ302／不存在=404 |
 | GET | `/api/load` | 任意認証（read） | — | ページ本文の**生HTML**（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用** |
-| POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types` を返す |
+| POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types` を返す。JSONボディは**8MiB上限**（超過は413。JSONを受けるAPIは共通） |
 | POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types` は当該ブロック分のみ） |
 | GET | `/api/page-meta` | 任意認証（read） | — | ページ属性（親ページID・親ページ名・更新日時など）。匿名には実効公開のときだけ返す |
 | GET | `/api/children` | 任意認証（親のread） | — | 子ページ一覧。匿名には**実効公開の子だけ**を絞って返す |
