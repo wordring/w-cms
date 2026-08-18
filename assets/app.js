@@ -1393,7 +1393,8 @@
             (def.columns || []).forEach(col => {
                 const dt = document.createElement('dt');
                 dt.textContent = col.label;
-                const dd = document.createElement('dd');
+                // 空の dd には <br> の足場が要る（emptyEditable のコメント参照）
+                const dd = emptyEditable('dd');
                 if (col.field) dd.setAttribute('data-field', col.field);
                 dl.appendChild(dt);
                 dl.appendChild(dd);
@@ -2012,12 +2013,23 @@
         return { dt, dds, nodes: [dt].concat(dds) };
     }
 
+    // emptyEditable は空の dt/dd を作る。<br> はキャレットの足場（contenteditable の定石）——
+    // 空の dt/dd にはキャレットが実際には入れず、Chrome は**次の要素の先頭**へ文字を挿入して
+    // しまう（「＋項目」直後に打った名前が隣の項目へ混入する実バグをE2Eで検出した）。
+    // 表のセル（td/th）はブラウザがキャレット容器として特別扱いするため足場は不要。
+    // <br> は入力を始めるとブラウザが取り除き、未入力のまま保存されても無害（許可要素）。
+    function emptyEditable(tag) {
+        const el = document.createElement(tag);
+        el.appendChild(document.createElement('br'));
+        return el;
+    }
+
     // dlItemAdd は現在の項目の下へ新しい項目（dt＋dd）を追加する。
     function dlItemAdd() {
         const group = currentDlNode && dlGroupOf(currentDlNode);
         if (!group) return;
-        const dt = document.createElement('dt');
-        const dd = document.createElement('dd');
+        const dt = emptyEditable('dt');
+        const dd = emptyEditable('dd');
         const last = group.nodes[group.nodes.length - 1];
         last.after(dt, dd);
         placeCaretAtEnd(dt); // 名前から入力させる
@@ -2029,7 +2041,7 @@
     function dlValueAdd() {
         const group = currentDlNode && dlGroupOf(currentDlNode);
         if (!group) return;
-        const dd = document.createElement('dd');
+        const dd = emptyEditable('dd');
         group.nodes[group.nodes.length - 1].after(dd);
         placeCaretAtEnd(dd);
         updateDlToolbar();
