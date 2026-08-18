@@ -148,6 +148,17 @@ func InferColumnType(label string) ColumnType {
 	return ColText
 }
 
+// TypeInferenceDict は語→型の推論辞書の写しを返します。
+// エディタは /api/tag-schema 経由でこれを受け取り、**同じ辞書**で入力を検証・通知します
+// （形式知識の3原則の1: エディタに手書きの語彙を置かない——語彙モデル §7）。
+func TypeInferenceDict() map[string]ColumnType {
+	out := make(map[string]ColumnType, len(typeInference))
+	for k, v := range typeInference {
+		out[k] = v
+	}
+	return out
+}
+
 // NormalizeValue は列型に応じて値の正規化値を返します。
 // 解釈できないときは ok=false（正規化値は**併記**であり、生テキストが常に正本）。
 func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {

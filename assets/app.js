@@ -736,6 +736,7 @@
         applyMode();
         restoreCaret(snap.caret);
         updateHtmlPreview();
+        validateTypedTables(); // 復元でDOMが入れ替わり実行時の印（.cell-invalid）が消えるため
         suppressSnapshot = false;
         triggerAutoSave(); // 戻した内容を正本へ反映する
     }
@@ -916,6 +917,7 @@
         // アンドゥ履歴はこの編集セッションのもの。開始時の状態を起点として積む。
         updateHtmlPreview();
         resetHistory(document.getElementById('html-preview').value);
+        validateTypedTables(); // 既存本文の型不一致を編集開始時に可視化する
         // ヘッダー（モードトグル）はスクロールで隠れるため、モード移行は緑トーストで明示する。
         // 待機後に available で自動入室した場合もここを通るので「権限が回ってきた」気付きにもなる。
         notify('編集権を取得しました。編集モードです。', { type: 'success', duration: 3000, id: 'mode' });
@@ -1137,6 +1139,9 @@
     // （<table data-type> / <dl data-type>）はここから生成する（語彙モデル §7 の原則1:
     // エディタに手書きの形式リストを置かない）。
     let vocabDefs = [];                // [{ type, display_name, icon, element, columns: [...] }, ...]
+    // 語→型の推論辞書。手書きせず /api/tag-schema から受け取る（サーバーの
+    // resolveColumnType と同じ辞書＝検証と索引の型判定が食い違わない）。
+    let typeInferenceDict = {};        // { "数量": "number", "検査日": "date", ... }
 
     async function loadTagSchema() {
         try {
@@ -1146,11 +1151,13 @@
             tagSchema = (d && d.elements) || {};
             voidTags = new Set((d && d.void) || []);
             vocabDefs = (d && d.vocab) || [];
+            typeInferenceDict = (d && d.type_inference) || {};
         } catch (e) {
             console.error('本文の語彙を取得できませんでした:', e);
             tagSchema = {};
             voidTags = new Set();
             vocabDefs = [];
+            typeInferenceDict = {};
         }
     }
 
@@ -1680,12 +1687,13 @@
         });
     }
 
-    // ── 汎用表エディタ v1: 行操作ツールバー（docs/【考察】語彙モデル.md §5.2） ──
+    // ── 汎用表エディタ: 行・列操作ツールバー（docs/【考察】語彙モデル.md §5.2） ──
     // セルの値はブロックの contenteditable がそのまま担い（値＝中身＝表示される文字）、
-    // 行の追加・削除・並べ替えだけをこのツールバーで補う。ボタンを表の中へ挿すと
+    // 行・列の追加・削除・並べ替えをこのツールバーで補う。ボタンを表の中へ挿すと
     // シリアライザが中身を本文として拾ってしまうため、クロームは本文DOMの外
     // （#table-toolbar・シェル直下）に置き、キャレットのある行に追従させる。
     let currentTableRow = null;
+    let currentTableCell = null; // 列操作・列設定の対象列は「キャレットのあるセル」から決める
 
     // insideCustomElement は el がカスタム要素の描画内（m-required-materials の
     // 集計表など）にあるかを返す。カスタム要素内の表は自前UIの領分なので触らない。
@@ -1700,6 +1708,8 @@
         const bar = document.getElementById('table-toolbar');
         if (bar) bar.classList.remove('active');
         currentTableRow = null;
+        currentTableCell = null;
+        hideColPopover();
     }
 
     // updateTableToolbar はキャレットが本文中の表の行にあるときだけツールバーを出す。
@@ -1715,6 +1725,7 @@
         if (!row || insideCustomElement(row)) { hideTableToolbar(); return; }
 
         currentTableRow = row;
+        currentTableCell = el && el.closest ? el.closest('td, th') : null;
         bar.classList.add('active');
 
         // 行の右横へ。入りきらなければ行の左上へ退避する。
@@ -1809,6 +1820,373 @@
         updateHtmlPreview();
     }
 
+    // ── 列操作（追加・削除・左右移動）─────────────────────────────────
+    // 列は全行（見出し行＋データ行）に同時に効く。対象列はキャレットのあるセルの位置。
+    // colspan は骨格生成が作らないため考慮しない（セル数が足りない行はその行だけスキップ）。
+
+    // colIndexOf はセルが行の何番目（th/td だけを数えた位置）かを返す。
+    function colIndexOf(cell) {
+        if (!cell) return -1;
+        let i = 0;
+        for (let c = cell.previousElementSibling; c; c = c.previousElementSibling) {
+            if (c.tagName === 'TH' || c.tagName === 'TD') i++;
+        }
+        return i;
+    }
+
+    // cellAt は行の idx 番目のセル（th/td）を返す。
+    function cellAt(row, idx) {
+        let i = 0;
+        for (const c of row.children) {
+            if (c.tagName !== 'TH' && c.tagName !== 'TD') continue;
+            if (i === idx) return c;
+            i++;
+        }
+        return null;
+    }
+
+    // tableColAdd は現在列の右へ空の列を追加する（見出し行は th、データ行は td）。
+    function tableColAdd() {
+        const cell = currentTableCell;
+        const table = cell && cell.closest('table');
+        if (!table) return;
+        const idx = colIndexOf(cell);
+        const headerRow = table.rows[0];
+        Array.from(table.rows).forEach(row => {
+            const at = cellAt(row, idx);
+            if (!at) return;
+            const el = document.createElement(row === headerRow ? 'th' : 'td');
+            at.after(el);
+        });
+        placeCaretAtEnd(cellAt(headerRow, idx + 1)); // 追加した列の見出しから入力させる
+        updateTableToolbar();
+        updateHtmlPreview();
+    }
+
+    // tableColDelete は現在列を全行から削除する。最後の1列は消さない
+    // （表の骨格を保つ。行側の「見出し行は消さない」と同じ理由）。
+    function tableColDelete() {
+        const cell = currentTableCell;
+        const table = cell && cell.closest('table');
+        if (!table) return;
+        if (rowCellCount(table.rows[0]) <= 1) return;
+        const idx = colIndexOf(cell);
+        Array.from(table.rows).forEach(row => {
+            const at = cellAt(row, idx);
+            if (at) at.remove();
+        });
+        const fallback = cellAt(currentTableRow || table.rows[0], Math.max(0, idx - 1));
+        placeCaretAtEnd(fallback || table.querySelector('td, th'));
+        updateTableToolbar();
+        updateHtmlPreview();
+    }
+
+    // tableColMove は現在列を左右の列と入れ替える（全行で）。
+    function tableColMove(dir) {
+        const cell = currentTableCell;
+        const table = cell && cell.closest('table');
+        if (!table) return;
+        const idx = colIndexOf(cell);
+        const dst = idx + dir;
+        if (dst < 0 || dst >= rowCellCount(table.rows[0])) return;
+        Array.from(table.rows).forEach(row => {
+            const a = cellAt(row, idx);
+            const b = cellAt(row, dst);
+            if (!a || !b) return;
+            if (dir < 0) b.before(a);
+            else b.after(a);
+        });
+        placeCaretAtEnd(cell); // 動かした列のセルへキャレットを戻す（行移動と同じ理由）
+        updateTableToolbar();
+        updateHtmlPreview();
+    }
+
+    // ── 列設定ポップオーバ（属性側の編集口。語彙モデル §5.2「編集の2面」）──────
+    // 値（中身・表示される）はセルの contenteditable で、役割・型（属性・表示されない）は
+    // ここで編集する。contenteditable はテキストしか触れないため、属性の編集口は別に要る。
+    // v1 で編集できるのは列型の明示（th の data-type）だけ。data-field（機械キー）は
+    // ③計算形式の骨格生成が自動付与するもので、手編集の口は設けない（壊すと Sync が読めなくなる）。
+    let colPopoverTh = null; // 設定対象の見出しセル
+
+    function hideColPopover() {
+        const pop = document.getElementById('col-popover');
+        if (pop) pop.classList.remove('active');
+        colPopoverTh = null;
+    }
+
+    // openColPopover は現在列の見出し（th）に対する設定を開く。
+    function openColPopover() {
+        const pop = document.getElementById('col-popover');
+        const cell = currentTableCell;
+        const table = cell && cell.closest('table');
+        if (!pop || !table) return;
+        const th = cellAt(table.rows[0], colIndexOf(cell));
+        if (!th) return;
+        colPopoverTh = th;
+
+        // 鍵（data-field 優先・無ければ見出しテキスト）と現在の型を表示する
+        const key = th.getAttribute('data-field') || th.textContent.trim() || '（見出し未入力）';
+        document.getElementById('cp-key').textContent = key;
+        const sel = document.getElementById('cp-type');
+        sel.value = th.getAttribute('data-type') || '';
+        refreshColPopoverNote(th, key);
+
+        pop.classList.add('active');
+        const rect = th.getBoundingClientRect();
+        pop.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        pop.style.left = (rect.left + window.scrollX) + 'px';
+    }
+
+    // refreshColPopoverNote は「明示しない場合に効く型」（レジストリ宣言 or 推論辞書）を示す。
+    function refreshColPopoverNote(th, key) {
+        const note = document.getElementById('cp-note');
+        const table = th.closest('table');
+        const def = vocabDefs.find(v => v.type === (table && table.getAttribute('data-type')));
+        const col = def && (def.columns || []).find(c => (c.field && c.field === key) || c.label === key);
+        if (col) note.textContent = '未指定ならレジストリ宣言: ' + col.type;
+        else if (typeInferenceDict[key]) note.textContent = '未指定なら推論: ' + typeInferenceDict[key];
+        else note.textContent = '未指定なら text 扱い';
+    }
+
+    // applyColType は選択された型を th の data-type へ反映する（空＝属性を外し推論に戻す）。
+    // 属性の変更は MutationObserver の attributeFilter に載っていないため、保存は明示的に蹴る。
+    function applyColType() {
+        const th = colPopoverTh;
+        if (!th) return;
+        const v = document.getElementById('cp-type').value;
+        if (v) th.setAttribute('data-type', v);
+        else th.removeAttribute('data-type');
+        validateTypedTables();
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
+    // ── 定義リスト（dl data-type）の項目操作 ─────────────────────────────
+    // 「項目」＝ dt と、次の dt までの dd の組（多値＝複数 dd。語彙モデル §5.3）。
+    let currentDlNode = null; // キャレットのある dt / dd
+
+    function hideDlToolbar() {
+        const bar = document.getElementById('dl-toolbar');
+        if (bar) bar.classList.remove('active');
+        currentDlNode = null;
+    }
+
+    // updateDlToolbar はキャレットが本文中の <dl data-type> の dt/dd にあるときだけ出す。
+    function updateDlToolbar() {
+        const bar = document.getElementById('dl-toolbar');
+        if (!bar) return;
+        if (!document.body.hasAttribute('edit-mode')) { hideDlToolbar(); return; }
+
+        const sel = window.getSelection();
+        const node = sel && sel.anchorNode;
+        const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
+        const item = el && el.closest ? el.closest('#editor-content dl[data-type] > dt, #editor-content dl[data-type] > dd') : null;
+        if (!item || insideCustomElement(item)) { hideDlToolbar(); return; }
+
+        currentDlNode = item;
+        bar.classList.add('active');
+        const rect = item.getBoundingClientRect();
+        let top = rect.top + window.scrollY + (rect.height - bar.offsetHeight) / 2;
+        let left = rect.right + window.scrollX + 8;
+        if (rect.right + 8 + bar.offsetWidth > document.documentElement.clientWidth) {
+            top = rect.top + window.scrollY - bar.offsetHeight - 4;
+            left = rect.left + window.scrollX;
+        }
+        bar.style.top = top + 'px';
+        bar.style.left = left + 'px';
+    }
+
+    // dlGroupOf は dt/dd が属する項目（dt ＋ 後続の dd 列）を返す。
+    function dlGroupOf(node) {
+        let dt = node.tagName === 'DT' ? node : null;
+        if (!dt) {
+            for (let p = node.previousElementSibling; p; p = p.previousElementSibling) {
+                if (p.tagName === 'DT') { dt = p; break; }
+            }
+        }
+        if (!dt) return null;
+        const dds = [];
+        for (let n = dt.nextElementSibling; n && n.tagName === 'DD'; n = n.nextElementSibling) {
+            dds.push(n);
+        }
+        return { dt, dds, nodes: [dt].concat(dds) };
+    }
+
+    // dlItemAdd は現在の項目の下へ新しい項目（dt＋dd）を追加する。
+    function dlItemAdd() {
+        const group = currentDlNode && dlGroupOf(currentDlNode);
+        if (!group) return;
+        const dt = document.createElement('dt');
+        const dd = document.createElement('dd');
+        const last = group.nodes[group.nodes.length - 1];
+        last.after(dt, dd);
+        placeCaretAtEnd(dt); // 名前から入力させる
+        updateDlToolbar();
+        updateHtmlPreview();
+    }
+
+    // dlValueAdd は現在の項目へ値（dd）をもう1つ足す（多値。語彙モデル §5.3）。
+    function dlValueAdd() {
+        const group = currentDlNode && dlGroupOf(currentDlNode);
+        if (!group) return;
+        const dd = document.createElement('dd');
+        group.nodes[group.nodes.length - 1].after(dd);
+        placeCaretAtEnd(dd);
+        updateDlToolbar();
+        updateHtmlPreview();
+    }
+
+    // dlItemMove は現在の項目を上下の項目と入れ替える。
+    function dlItemMove(dir) {
+        const group = currentDlNode && dlGroupOf(currentDlNode);
+        if (!group) return;
+        const caretNode = currentDlNode;
+        if (dir < 0) {
+            // 直前の兄弟（前の項目の dd か dt）から、その項目のグループを引く
+            const prevSibling = group.dt.previousElementSibling;
+            if (!prevSibling) return;
+            const prev = dlGroupOf(prevSibling);
+            if (!prev || prev.dt === group.dt) return;
+            prev.dt.before(...group.nodes);
+        } else {
+            const nextDt = group.nodes[group.nodes.length - 1].nextElementSibling;
+            if (!nextDt || nextDt.tagName !== 'DT') return;
+            const next = dlGroupOf(nextDt);
+            next.nodes[next.nodes.length - 1].after(...group.nodes);
+        }
+        placeCaretAtEnd(caretNode); // 行移動と同じ理由（キャレット喪失→ツールバー消失）
+        updateDlToolbar();
+        updateHtmlPreview();
+    }
+
+    // dlItemDelete は現在の項目（dt＋dd）を削除する。最後の1項目は消さない
+    // （空の dl はキャレットの置き場が無く項目を足せなくなる＝骨格を保つ）。
+    function dlItemDelete() {
+        const group = currentDlNode && dlGroupOf(currentDlNode);
+        if (!group) return;
+        const dl = group.dt.parentElement;
+        if (dl.querySelectorAll(':scope > dt').length <= 1) return;
+        const neighbor = group.dt.previousElementSibling || group.nodes[group.nodes.length - 1].nextElementSibling;
+        group.nodes.forEach(n => n.remove());
+        if (neighbor && (neighbor.tagName === 'DT' || neighbor.tagName === 'DD')) placeCaretAtEnd(neighbor);
+        else hideDlToolbar();
+        updateHtmlPreview();
+    }
+
+    // ── 型検証（通知のみ・拒否しない）と enum の入力補助（語彙モデル §5.1・§5.2）──
+    // 列型の決定順序はサーバー（vocab_index.go の resolveColumnType）と同じ:
+    // th の data-type 明示 > レジストリ宣言 > 推論辞書（/api/tag-schema） > text。
+    const VALID_COL_TYPES = ['text', 'number', 'date', 'enum', 'image'];
+
+    // resolveCellColumn はセルの属する列の {type, enum} を解決する（データ行の td 用）。
+    function resolveCellColumn(cell) {
+        const table = cell.closest('table[data-type]');
+        if (!table || !table.rows.length) return null;
+        const th = cellAt(table.rows[0], colIndexOf(cell));
+        if (!th) return null;
+        const key = th.getAttribute('data-field') || th.textContent.trim();
+        const explicit = th.getAttribute('data-type');
+        const def = vocabDefs.find(v => v.type === table.getAttribute('data-type'));
+        const col = def && (def.columns || []).find(c => (c.field && c.field === key) || c.label === key);
+        let type = 'text';
+        if (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) type = explicit;
+        else if (col) type = col.type;
+        else if (typeInferenceDict[key]) type = typeInferenceDict[key];
+        return { type, enum: (col && col.enum) || [] };
+    }
+
+    // 値の解釈可否。サーバーの NormalizeValue と同じ規則（全角→半角・通貨記号と
+    // 桁区切りの除去・YYYY-M-D／YYYY/M/D／YYYY年M月D日）で判定する。
+    function toHalfWidthJS(s) {
+        return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - '０'.charCodeAt(0) + '0'.charCodeAt(0)))
+            .replace(/．/g, '.').replace(/／/g, '/').replace(/[－ー−]/g, '-');
+    }
+
+    function isValidNumberText(raw) {
+        let s = toHalfWidthJS(raw.trim()).replace(/[¥￥$,，\s　]/g, '');
+        s = s.replace(/円$/, '');
+        return /^-?[0-9]+(\.[0-9]+)?$/.test(s);
+    }
+
+    function isValidDateText(raw) {
+        const m = toHalfWidthJS(raw.trim()).match(/^([0-9]{4})[-/年]([0-9]{1,2})[-/月]([0-9]{1,2})日?$/);
+        if (!m) return false;
+        const y = +m[1], mo = +m[2], d = +m[3];
+        const dt = new Date(y, mo - 1, d);
+        return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+    }
+
+    // validateCell は number / date 列のセルが解釈できない値のとき .cell-invalid を付ける。
+    // class はシリアライザが書き出さないので、印は実行時だけ（保存されない）。
+    function validateCell(cell) {
+        const col = resolveCellColumn(cell);
+        const text = cell.textContent.trim();
+        let bad = false;
+        if (col && text !== '') {
+            if (col.type === 'number') bad = !isValidNumberText(text);
+            else if (col.type === 'date') bad = !isValidDateText(text);
+        }
+        cell.classList.toggle('cell-invalid', bad);
+    }
+
+    // validateTypedTables は本文中の全 <table data-type> のデータセルを検証し直す。
+    // 編集モード入り・列型の変更・サニタイズ反映のあとに呼ぶ。
+    function validateTypedTables() {
+        document.querySelectorAll('#editor-content table[data-type]').forEach(table => {
+            if (insideCustomElement(table)) return;
+            Array.from(table.rows).slice(1).forEach(row => {
+                Array.from(row.children).forEach(c => {
+                    if (c.tagName === 'TD') validateCell(c);
+                });
+            });
+        });
+    }
+
+    // ── enum 列の入力補助（選択肢メニュー）────────────────────────────────
+    // 選択肢はレジストリ宣言から取る（原則3: レジストリがあれば向上・無くても編集可能）。
+    let enumMenuCell = null;
+
+    function hideEnumMenu() {
+        const menu = document.getElementById('enum-menu');
+        if (menu) menu.classList.remove('active');
+        enumMenuCell = null;
+    }
+
+    // updateEnumMenu はキャレットが enum 列のデータセルにあるとき選択肢を出す。
+    function updateEnumMenu() {
+        const menu = document.getElementById('enum-menu');
+        if (!menu) return;
+        if (!document.body.hasAttribute('edit-mode')) { hideEnumMenu(); return; }
+
+        const sel = window.getSelection();
+        const node = sel && sel.anchorNode;
+        const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
+        const cell = el && el.closest ? el.closest('#editor-content table[data-type] td') : null;
+        if (!cell || insideCustomElement(cell)) { hideEnumMenu(); return; }
+        const col = resolveCellColumn(cell);
+        if (!col || col.type !== 'enum' || !col.enum.length) { hideEnumMenu(); return; }
+        if (cell === enumMenuCell) return; // 同じセル内のキャレット移動では作り直さない
+
+        enumMenuCell = cell;
+        menu.textContent = ''; // 前のセルの選択肢を消す
+        col.enum.forEach(v => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = v;
+            b.addEventListener('click', () => {
+                cell.textContent = v;      // childList の変化で MutationObserver → 自動保存が走る
+                validateCell(cell);
+                placeCaretAtEnd(cell);
+                hideEnumMenu();
+            });
+            menu.appendChild(b);
+        });
+        menu.classList.add('active');
+        const rect = cell.getBoundingClientRect();
+        menu.style.top = (rect.bottom + window.scrollY + 2) + 'px';
+        menu.style.left = (rect.left + window.scrollX) + 'px';
+    }
+
     // ── スラッシュメニューのレジストリ駆動項目 ──────────────────────────
     // 語彙レジストリ（①）の形式定義から項目を生成して静的項目の後ろへ足す。
     // メニュー全体の再設計（絞り込み・分類・頻度順）は別課題（エディタ仕様 §3）で、
@@ -1899,7 +2277,32 @@
             document.getElementById('tt-del').addEventListener('click', tableRowDelete);
             document.getElementById('tt-up').addEventListener('click', () => tableRowMove(-1));
             document.getElementById('tt-down').addEventListener('click', () => tableRowMove(1));
+            document.getElementById('tt-col-add').addEventListener('click', tableColAdd);
+            document.getElementById('tt-col-del').addEventListener('click', tableColDelete);
+            document.getElementById('tt-col-left').addEventListener('click', () => tableColMove(-1));
+            document.getElementById('tt-col-right').addEventListener('click', () => tableColMove(1));
+            document.getElementById('tt-col-cfg').addEventListener('click', openColPopover);
         }
+
+        // dl の項目操作ツールバー（表と同じく mousedown を止めて選択を守る）
+        const dbar = document.getElementById('dl-toolbar');
+        if (dbar) {
+            dbar.addEventListener('mousedown', e => e.preventDefault());
+            document.getElementById('dt-add').addEventListener('click', dlItemAdd);
+            document.getElementById('dt-val').addEventListener('click', dlValueAdd);
+            document.getElementById('dt-up').addEventListener('click', () => dlItemMove(-1));
+            document.getElementById('dt-down').addEventListener('click', () => dlItemMove(1));
+            document.getElementById('dt-del').addEventListener('click', dlItemDelete);
+        }
+
+        // 列設定ポップオーバ。select の操作にはフォーカスが要るため mousedown は止めない
+        // （かわりに selectionchange 側でポップオーバ操作中の消灯を抑止する）。
+        const cpType = document.getElementById('cp-type');
+        if (cpType) cpType.addEventListener('change', applyColType);
+
+        // enum の選択肢メニュー。クリックで選択が飛ぶと対象セルを見失うため mousedown を止める。
+        const emenu = document.getElementById('enum-menu');
+        if (emenu) emenu.addEventListener('mousedown', e => e.preventDefault());
 
         editor.addEventListener('input', (e) => {
             if (!document.body.hasAttribute('edit-mode')) return;
@@ -1909,6 +2312,13 @@
             } else {
                 hideSlashMenu();
             }
+
+            // 型検証（通知のみ）。編集中のセルだけを見る（全表の再検証は入力ごとには重い）。
+            const sel = window.getSelection();
+            const node = sel && sel.anchorNode;
+            const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
+            const cell = el && el.closest ? el.closest('#editor-content table[data-type] td') : null;
+            if (cell && !insideCustomElement(cell)) validateCell(cell);
         });
 
         editor.addEventListener('keydown', (e) => {
@@ -1987,8 +2397,14 @@
 
         document.addEventListener('selectionchange', () => {
             if (slashMenuVisible) return;
+            // 列設定ポップオーバの操作中（select へのフォーカス移動）は、キャレットが
+            // 表から出たと誤認してツールバーごと消してしまうため更新しない。
+            if (document.activeElement && document.activeElement.closest &&
+                document.activeElement.closest('#col-popover')) return;
             updateContextToolbar();
             updateTableToolbar();
+            updateDlToolbar();
+            updateEnumMenu();
         });
 
         // Hide toolbar when clicking outside editor
@@ -1996,8 +2412,18 @@
             if (!e.target.closest('#editor-content') && !e.target.closest('#context-toolbar')) {
                 hideContextToolbar();
             }
-            if (!e.target.closest('#editor-content') && !e.target.closest('#table-toolbar')) {
+            if (!e.target.closest('#editor-content') && !e.target.closest('#table-toolbar') &&
+                !e.target.closest('#col-popover')) {
                 hideTableToolbar();
+            }
+            if (!e.target.closest('#table-toolbar') && !e.target.closest('#col-popover')) {
+                hideColPopover();
+            }
+            if (!e.target.closest('#editor-content') && !e.target.closest('#dl-toolbar')) {
+                hideDlToolbar();
+            }
+            if (!e.target.closest('#editor-content') && !e.target.closest('#enum-menu')) {
+                hideEnumMenu();
             }
         });
 

@@ -70,7 +70,7 @@
     <!-- 動的にボタンが追加されます -->
 </div>
 
-<!-- 表の行操作ツールバー（汎用表エディタv1の編集クローム）。
+<!-- 表の行・列操作ツールバー（汎用表エディタの編集クローム）。
      ボタンを表の中へ挿すとシリアライザが中身を本文として拾ってしまうため、
      クロームは必ず本文DOMの外に置く。表示位置は app.js がキャレット位置から決める。 -->
 <div id="table-toolbar" class="table-toolbar">
@@ -78,7 +78,42 @@
     <button type="button" id="tt-up" title="行を上へ移動">↑</button>
     <button type="button" id="tt-down" title="行を下へ移動">↓</button>
     <button type="button" id="tt-del" title="行を削除">✕行</button>
+    <span class="table-toolbar-sep"></span>
+    <button type="button" id="tt-col-add" title="列を右に追加">＋列</button>
+    <button type="button" id="tt-col-left" title="列を左へ移動">←</button>
+    <button type="button" id="tt-col-right" title="列を右へ移動">→</button>
+    <button type="button" id="tt-col-del" title="列を削除">✕列</button>
+    <button type="button" id="tt-col-cfg" title="列の設定（型）">⚙</button>
 </div>
+
+<!-- 定義リスト（dl data-type）の項目操作ツールバー。項目＝dt と後続の dd の組。 -->
+<div id="dl-toolbar" class="table-toolbar">
+    <button type="button" id="dt-add" title="項目を下に追加">＋項目</button>
+    <button type="button" id="dt-val" title="値（dd）を追加（多値）">＋値</button>
+    <button type="button" id="dt-up" title="項目を上へ移動">↑</button>
+    <button type="button" id="dt-down" title="項目を下へ移動">↓</button>
+    <button type="button" id="dt-del" title="項目を削除">✕項目</button>
+</div>
+
+<!-- 列設定ポップオーバ（編集の2面のうち「属性側」の編集口。語彙モデル §5.2）。
+     値はセルの contenteditable（インライン）、役割・型はここで編集する。 -->
+<div id="col-popover" class="col-popover">
+    <div class="col-popover-key">鍵: <span id="cp-key"></span></div>
+    <label class="col-popover-row">型
+        <select id="cp-type">
+            <option value="">（推論に任せる）</option>
+            <option value="text">text（文字）</option>
+            <option value="number">number（数値・通貨）</option>
+            <option value="date">date（日付）</option>
+            <option value="enum">enum（選択肢）</option>
+            <option value="image">image（画像）</option>
+        </select>
+    </label>
+    <div class="col-popover-note" id="cp-note"></div>
+</div>
+
+<!-- enum 列の入力補助（選択肢メニュー）。項目は app.js がレジストリ定義から生成する。 -->
+<div id="enum-menu" class="enum-menu"></div>
 
 <!-- アプリ内通知（トースト）エリア。ロック関連・保存エラー等をここへ集約する。 -->
 <div id="toast-host" class="toast-host" aria-live="polite"></div>

@@ -45,6 +45,11 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 原則1: 新規挿入時の列定義はレジストリからAPI経由で受け取り、手書きの
 		// 形式リストをエディタに置かない）。
 		"vocab": VocabDefs(),
+		// 語→型の推論辞書。エディタは列型の解決（th の data-type 明示 > レジストリ >
+		// この辞書 > text）と型不一致の通知（赤ハイライト・拒否はしない）に使う。
+		// サーバー側（vocab_index の resolveColumnType）と同じ辞書を配ることで、
+		// 検証と索引の型判定が食い違わない。
+		"type_inference": TypeInferenceDict(),
 	})
 }
 
