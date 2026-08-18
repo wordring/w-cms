@@ -215,3 +215,30 @@ func TestTagSchemaIncludesVocab(t *testing.T) {
 		t.Error("サンプル語彙 inspection-record が応答にありません")
 	}
 }
+
+// TestTagSchemaIncludesTypeInference は /api/tag-schema が語→型の推論辞書を返すことを
+// 検証します。エディタは手書きの辞書を持たず、これで型不一致を通知します（語彙モデル §7）。
+func TestTagSchemaIncludesTypeInference(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/tag-schema", nil)
+	rr := httptest.NewRecorder()
+	TagSchemaAPIHandler(rr, req)
+
+	var got struct {
+		TypeInference map[string]ColumnType `json:"type_inference"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("JSONの解析に失敗: %v", err)
+	}
+	if len(got.TypeInference) == 0 {
+		t.Fatal("type_inference が空です（推論辞書が応答に含まれていません）")
+	}
+	// サーバー側の辞書（InferColumnType）と応答が一致すること
+	for k, v := range got.TypeInference {
+		if InferColumnType(k) != v {
+			t.Errorf("推論辞書の不一致: %q → 応答=%s / サーバー=%s", k, v, InferColumnType(k))
+		}
+	}
+	if got.TypeInference["数量"] != ColNumber || got.TypeInference["検査日"] != ColDate {
+		t.Errorf("代表語の型が期待と違います: %+v", got.TypeInference)
+	}
+}

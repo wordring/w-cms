@@ -739,6 +739,83 @@ body[edit-mode] .block-content p:empty::before {
     background: #334155;
 }
 
+/* 行操作と列操作の区切り */
+.table-toolbar-sep {
+    width: 1px;
+    align-self: stretch;
+    background: #475569;
+    margin: 0 2px;
+}
+
+/* 列設定ポップオーバ（属性側の編集口。語彙モデル §5.2「編集の2面」）。
+ * ツールバーと同じくシェル直下のクロームで、位置は app.js が列の見出しから決める。 */
+.col-popover {
+    position: absolute;
+    background: #fff;
+    color: #1e293b;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: none;
+    z-index: 1000;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.15);
+    font-size: 12px;
+    min-width: 220px;
+}
+
+.col-popover.active { display: block; }
+
+.col-popover-key {
+    font-weight: 600;
+    margin-bottom: 6px;
+    word-break: break-all;
+}
+
+.col-popover-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.col-popover-row select {
+    flex: 1;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+
+.col-popover-note {
+    margin-top: 6px;
+    color: #64748b;
+}
+
+/* enum 列の入力補助（選択肢メニュー）。選択肢は app.js がレジストリ定義から生成する。 */
+.enum-menu {
+    position: absolute;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 4px;
+    display: none;
+    z-index: 1000;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.15);
+}
+
+.enum-menu.active { display: block; }
+
+.enum-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.enum-menu button:hover { background: #eff6ff; }
+
 /* 本文の表の基本スタイル。ブラウザ既定の表は枠が無く、挿入直後の空セルが
  * 見えず編集もできないため、文書としての最小の体裁をここで与える（閲覧・編集共通）。 */
 #editor-content table {
@@ -775,6 +852,14 @@ body[edit-mode] #editor-content th[data-field],
 body[edit-mode] #editor-content th[data-type],
 body[edit-mode] #editor-content dd[data-field] {
     background: #fef3c7;
+}
+
+/* 型不一致の通知（語彙モデル §5.1: 検証して通知する。**拒否はしない**）。
+ * number / date 列のセルが解釈できない値のとき、編集モードでだけ赤くする。
+ * class はサニタイザ・シリアライザとも通さないため保存されない（実行時だけの印）。 */
+body[edit-mode] #editor-content td.cell-invalid {
+    background: #fef2f2;
+    box-shadow: inset 0 0 0 1px #fca5a5;
 }
 
 /* ── ヘッダー右側とパネル内の小物 ─────────────────────────────────────
