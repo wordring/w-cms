@@ -111,7 +111,15 @@ func main() {
 
 	// 公開ルート（認証不要）とトップレベルのルーティング。
 	root := http.NewServeMux()
-	root.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(noDirListing{http.Dir("assets")})))
+	// /assets/ は Cache-Control 無指定だとブラウザのヒューリスティックキャッシュが効き、
+	// デプロイ後も古いフロント（app.js 等）が残りうる（2026-08-05 監査の指摘）。
+	// no-cache は「使う前に毎回再検証」——FileServer が Last-Modified を返すので、
+	// 変わっていなければ 304 で済み、変わっていれば即座に新しい版が届く。
+	assets := http.StripPrefix("/assets/", http.FileServer(noDirListing{http.Dir("assets")}))
+	root.Handle("/assets/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		assets.ServeHTTP(w, r)
+	}))
 	root.HandleFunc("/login", auth.LoginPageHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 

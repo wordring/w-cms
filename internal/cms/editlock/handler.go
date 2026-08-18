@@ -60,7 +60,12 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	id := r.URL.Query().Get("id")
+	// 本文の読み込み（readPageHTML）のパスに使うためゼロ詰め6桁へ正規化する。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	if !page.RequirePageWrite(w, r, id) {
 		return
 	}
