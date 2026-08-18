@@ -87,6 +87,12 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "page_id is required", http.StatusBadRequest)
 		return
 	}
+	// 保存先のパスに使う前にゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
+	pageID, ok := page.NormalizeID(pageID)
+	if !ok {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	// PDFの追加はページ内容の変更なので write 権限を要求する
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
@@ -158,11 +164,17 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		PageID   string `json:"page_id"`
 		FileName string `json:"file_name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Invalid request body"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	// パスに使う前にゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
+	normID, ok := page.NormalizeID(req.PageID)
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "ページIDが不正です"})
+		return
+	}
+	req.PageID = normID
 	// PDF解析→明細挿入はページ内容の変更につながるため write 権限を要求する
 	if !page.RequirePageWrite(w, r, req.PageID) {
 		return

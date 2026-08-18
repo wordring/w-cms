@@ -23,7 +23,12 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "認証が必要です", http.StatusUnauthorized)
 		return
 	}
-	id := r.URL.Query().Get("id")
+	// サイドカーのパスに使うためゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	pageID, err := strconv.Atoi(id)
 	if err != nil {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
@@ -69,8 +74,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		Group  *string `json:"group"`
 		Public *bool   `json:"public"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "リクエストの形式が不正です", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -155,7 +159,12 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequireAdmin(w, r) {
 		return
 	}
-	id := r.URL.Query().Get("id")
+	// サイドカーのパスに使うためゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	pageID, err := strconv.Atoi(id)
 	if err != nil {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
@@ -169,8 +178,7 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Owner string `json:"owner"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "リクエストの形式が不正です", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Owner == "" {

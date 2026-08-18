@@ -8,11 +8,17 @@ import (
 // 管理API（すべて admin 限定）。フェーズ3。
 // ユーザー・グループ・監査ログを操作します。
 
+// maxAdminJSONBodyBytes は管理APIの本文サイズ上限です。要求はユーザー名・グループ名
+// 程度の小さなJSONしか無いので 1MiB で十分（上限が無いとメモリを圧迫できる——
+// 2026-08-05 監査の指摘。本文保存側の上限は internal/cms の maxJSONBodyBytes）。
+const maxAdminJSONBodyBytes = 1 << 20
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return false
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAdminJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
 		http.Error(w, "リクエストの形式が不正です", http.StatusBadRequest)
 		return false

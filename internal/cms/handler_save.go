@@ -17,6 +17,27 @@ import (
 	"w-cms/internal/cms/page"
 )
 
+// maxJSONBodyBytes はJSONを受けるAPIの本文サイズ上限です。
+// 上限が無いと認証済み利用者が巨大なボディでメモリを圧迫できる（2026-08-05 監査の指摘）。
+// 本文HTMLはテキストなので 8MiB あれば実用上十分（添付の32MiBとは別系統の上限）。
+const maxJSONBodyBytes = 8 << 20
+
+// decodeJSONBody は本文サイズを制限したうえでJSONを読み取ります。
+// 上限超過は 413、それ以外の不正は 400 を書いて false を返します。
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "リクエスト本文が大きすぎます（上限8MiB）", http.StatusRequestEntityTooLarge)
+			return false
+		}
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 // SaveRequest はオートセーブで送られてくるJSON構造体です。
 type SaveRequest struct {
 	PageID string `json:"page_id"`
@@ -32,8 +53,7 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SaveRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -50,6 +70,14 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 許さない）を迂回する穴だった。新規作成は必ず親を指定する /api/new-page を通す。
 		// フロントは常に currentPageId を送る（空なら 000000 へ落とす）ので実害はない。
 		http.Error(w, "ページIDが指定されていません。新規ページは /api/new-page で作成してください。", http.StatusBadRequest)
+		return
+	}
+
+	// パスとサイドカーに使う前にゼロ詰め6桁へ正規化する（"0012" のような表記揺れで
+	// 正本が別ディレクトリへ書かれるのを防ぐ。page.NormalizeID のコメント参照）。
+	id, ok := page.NormalizeID(id)
+	if !ok {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
 
@@ -137,14 +165,20 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SaveBlockRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.PageID == "" || req.BlockID == "" {
 		http.Error(w, "page_id と block_id が必要です", http.StatusBadRequest)
 		return
 	}
+	// パスに使う前にゼロ詰め6桁へ正規化する（全文保存と同じ）。
+	normID, ok := page.NormalizeID(req.PageID)
+	if !ok {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	req.PageID = normID
 
 	// 全文保存と同じ認可・ロック検証を通す（権限とロックの扱いを分岐させない）。
 	if !page.RequirePageWrite(w, r, req.PageID) {
