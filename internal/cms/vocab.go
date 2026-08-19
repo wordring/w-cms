@@ -76,6 +76,37 @@ type VocabDef struct {
 // サンプル語彙「検査記録」は縦切り第1段（語彙モデル §8.4）の実証用で、
 // 既存のカスタム要素9種とは独立しています（記録だけの形式なので Field は持たない）。
 var vocabRegistry = []VocabDef{
+	// 移行第2段（語彙モデル §8.4-2）の移行先形式。
+	// "tags" は <m-tag>（ページ横断メタ）の後継——名前は自由語で、dt の表示文字が
+	// そのまま鍵になる（§5.3）。骨格は1項目だけ生成し、項目操作UIで増やす。
+	{
+		Type:        "tags",
+		DisplayName: "可変タグ",
+		Category:    "メタ",
+		Icon:        "🏷️",
+		Element:     "dl",
+		Columns: []VocabColumn{
+			{Label: "新規タグ", Type: ColText},
+		},
+	},
+	// "part-materials" は <m-material>（部品の構成部材）の後継。部材手配計算
+	// （plugin_materials.go の Sync / /api/required-materials）が読む③計算形式なので、
+	// 列は data-field（機械キー）を持ち、骨格生成時にエディタが自動付与する。
+	// ③の語彙宣言をプラグイン側へ移す（①と③の合成）のは将来課題で、v1 は
+	// コード内の単一テーブルに同居させる。
+	{
+		Type:        "part-materials",
+		DisplayName: "部材定義",
+		Category:    "業務",
+		Icon:        "🔩",
+		Element:     "table",
+		Columns: []VocabColumn{
+			{Field: "item-name", Label: "部材名", Type: ColText},
+			{Field: "cost", Label: "単価", Type: ColNumber},
+			{Field: "supplier-name", Label: "仕入先", Type: ColText},
+			{Field: "quantity", Label: "数量", Type: ColNumber},
+		},
+	},
 	{
 		Type:        "inspection-record",
 		DisplayName: "検査記録",

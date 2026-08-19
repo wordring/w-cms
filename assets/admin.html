@@ -57,6 +57,11 @@
         <span class="hint">HTMLファイル（<code>data/master</code>）を正としてDBインデックスを完全に作り直します。</span>
         <span id="rebuild-msg" class="msg"></span>
       </div>
+      <div class="row">
+        <button id="migrate-vocab-btn" class="danger-btn">🏷️ 語彙モデルへの一括変換</button>
+        <span class="hint">旧タグ（<code>&lt;m-tag&gt;</code>・<code>&lt;m-material&gt;</code>）を標準HTML（<code>data-type</code> 付きの dl・表）へ変換します。実行前に <code>data/master</code> を自動バックアップします。</span>
+        <span id="migrate-vocab-msg" class="msg"></span>
+      </div>
     </div>
 
     <!-- 監査ログ -->
