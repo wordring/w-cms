@@ -9,17 +9,17 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（ヘッダ・明細構造）: 顧客の発注書
 //
-//   <m-file src="PO-A100.pdf" name="顧客発注書.pdf">      ← 任意の容器（PDF原本）
-//     <m-client-order order-no=".." client-name=".." ordered-at="..">
-//       <m-item item-id=".." item-name=".." price=".." quantity=".." status="..">
-//     </m-client-order>
-//   </m-file>
+//   <section data-type="file" data-src="PO-A100.pdf">     ← 任意の容器（PDF原本）
+//     <section data-type="client-order">
+//       <dl>…<dd data-field="order-no">PO-A100</dd>…</dl>  ← ヘッダ（論点A・案1）
+//       <table data-type="client-order-items">…</table>    ← 明細
+//     </section>
+//   </section>
 //
 //   → client_orders（ヘッダ） 1 : N client_order_items（明細）
 //
-// 意味は要素そのものが持つ（旧: <m-file tag="顧客の発注書">）。tag 文字列による
-// 分岐は廃止した。<m-file> は任意なので、ファイルの無い受注は業務要素だけ置ける。
-// PDFのパスは容器側にあるため ClosestAttr で親の m-file から取る。
+// 意味は data-type が持つ。容器は任意なので、ファイルの無い受注は業務ブロック
+// だけ置ける。PDFのパスは容器側にあるため ClosestFileSrc で祖先から取る。
 // ─────────────────────────────────────────────────────────────────────────
 
 func init() {
@@ -108,24 +108,7 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 			return
 		}
 		switch {
-		case n.Data == "m-client-order": // 旧形式（変換完了までの短期保険）
-			orderNo := Attr(n, "order-no")
-			if err := insertHeader(orderNo, Attr(n, "client-name"), ClosestFileSrc(n), Attr(n, "ordered-at")); err != nil {
-				firstErr = err
-				return
-			}
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if c.Type != html.ElementNode || c.Data != "m-item" {
-					continue
-				}
-				if err := insertItem(orderNo, Attr(c, "item-id"), Attr(c, "item-name"),
-					AtoiSafe(Attr(c, "price")), Quantity(c), Attr(c, "status")); err != nil {
-					firstErr = err
-					return
-				}
-			}
-
-		case n.Data == "section" && Attr(n, "data-type") == "client-order": // 新形式（論点A・案1）
+		case n.Data == "section" && Attr(n, "data-type") == "client-order": // 論点A・案1
 			def, _ := VocabDefByType("client-order")
 			itemsDef, _ := VocabDefByType("client-order-items")
 			header := VocabDLFields(FirstVocabChild(n, "dl", ""), def)

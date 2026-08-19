@@ -91,10 +91,7 @@ func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		if firstErr != nil {
 			return
 		}
-		switch {
-		case n.Data == "m-material": // 旧形式（短期の保険）
-			firstErr = insert(Attr(n, "item-name"), AtoiSafe(Attr(n, "cost")), Attr(n, "supplier-name"), Quantity(n))
-		case n.Data == "table" && Attr(n, "data-type") == "part-materials": // 新形式
+		if n.Data == "table" && Attr(n, "data-type") == "part-materials" {
 			firstErr = syncMaterialsTable(n, insert)
 		}
 	})

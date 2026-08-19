@@ -9,9 +9,9 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（1プラグインで複数テーブルを所有）: 見積もり
 //
-//   <m-our-estimate item-id=".." client-name=".." price=".." estimated-at="..">
+//   <dl data-type="our-estimate">…<dd data-field="item-id">SHAFT-01</dd>…</dl>
 //       → our_estimates（売上予定）
-//   <m-supplier-estimate item-name=".." supplier-name=".." cost=".." estimated-at="..">
+//   <dl data-type="supplier-estimate">…<dd data-field="item-name">丸鋼材</dd>…</dl>
 //       → supplier_estimates（原価予定）
 //
 // どちらも明細を持たないフラットな1行データなので、1つのプラグインで両方を扱います。
@@ -95,15 +95,9 @@ func (estimatesPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		if firstErr != nil {
 			return
 		}
-		// PDFのパスは容器（新: section[data-type="file"]・旧: <m-file>）が持つ。
+		// PDFのパスは容器 section[data-type="file"] が持つ。
 		switch {
-		case n.Data == "m-our-estimate": // 旧形式（変換完了までの短期保険）
-			firstErr = insertOur(Attr(n, "item-id"), Attr(n, "client-name"),
-				AtoiSafe(Attr(n, "price")), ClosestFileSrc(n), Attr(n, "estimated-at"))
-		case n.Data == "m-supplier-estimate":
-			firstErr = insertSupplier(Attr(n, "item-name"), Attr(n, "supplier-name"),
-				AtoiSafe(Attr(n, "cost")), ClosestFileSrc(n), Attr(n, "estimated-at"))
-		case n.Data == "dl" && Attr(n, "data-type") == "our-estimate": // 新形式
+		case n.Data == "dl" && Attr(n, "data-type") == "our-estimate":
 			def, _ := VocabDefByType("our-estimate")
 			f := VocabDLFields(n, def)
 			firstErr = insertOur(f["item-id"], f["client-name"], vocabNumber(f["price"]), ClosestFileSrc(n), f["estimated-at"])

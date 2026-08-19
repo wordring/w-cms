@@ -6,21 +6,23 @@ import (
 	"w-cms/internal/database"
 )
 
-// TestDuplicateTagNamesAreAllowed は、同じ name の <m-tag> を同一ページに複数置いても
+// TestDuplicateTagNamesAreAllowed は、同じ名前のタグを同一ページに複数置いても
 // 保存（SyncIndex）が成功し、すべて page_tags に入ることを検証します。
 //
-// m-tag の name は自由語であり、担当者が2人・関連部品番号が複数といった多値属性は
-// 正当な使い方です。以前は page_tags の主キーが (page_id, name) だったため、同名タグを
-// 2つ置くと UNIQUE 制約違反で保存そのものが 500 エラーになっていました（本文が保存されず、
-// 原因も分かりにくい壊れ方）。その回帰防止テストです。
+// タグの名前は自由語であり、担当者が2人・関連部品番号が複数といった多値属性は
+// 正当な使い方です（dt の繰り返し／複数 dd。語彙モデル §5.3）。以前は page_tags の
+// 主キーが (page_id, name) だったため、同名タグを2つ置くと UNIQUE 制約違反で保存
+// そのものが 500 エラーになっていました（本文が保存されず、原因も分かりにくい
+// 壊れ方）。その回帰防止テストです。
 func TestDuplicateTagNamesAreAllowed(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000020"
 	body := `<h1>多値タグのページ</h1>` +
-		`<m-tag name="担当者" value="紀平"></m-tag>` +
-		`<m-tag name="担当者" value="田中"></m-tag>` +
-		`<m-tag name="希望納期" value="2026-07-10"></m-tag>`
+		`<dl data-type="tags">` +
+		`<dt>担当者</dt><dd>紀平</dd><dd>田中</dd>` + // 多値＝複数 dd
+		`<dt>希望納期</dt><dd>2026-07-10</dd>` +
+		`</dl>`
 
 	if err := SyncIndex(id, body); err != nil {
 		t.Fatalf("同名タグがあると同期に失敗します: %v", err)
@@ -59,18 +61,21 @@ func TestDuplicateTagNamesAreAllowed(t *testing.T) {
 	}
 }
 
-// TestSyncSkipsLegacyParentTag は、旧形式の <m-tag name="親ページID"> が page_tags へ
+// TestSyncSkipsLegacyParentTag は、dt に「親ページID」と書かれても page_tags へ
 // 取り込まれないことを検証します。ページ属性はサイドカー <id>.meta.json が正本のためです。
 //
-// この規則は以前サニタイザ側にありましたが、m-tag の意味を知るのは所有プラグインだけ、
+// この規則は旧 <m-tag name="親ページID">（サイドカー移行前の遺物）に由来し、
+// 以前はサニタイザ側にありましたが、タグの意味を知るのは所有プラグインだけ、
 // という線引きに合わせて plugin_page_tags.go へ移しました。
 func TestSyncSkipsLegacyParentTag(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000022"
-	body := `<h1>旧形式タグ</h1>` +
-		`<m-tag name="親ページID" value="000000"></m-tag>` +
-		`<m-tag name="発注元" value="X"></m-tag>`
+	body := `<h1>タグの除外</h1>` +
+		`<dl data-type="tags">` +
+		`<dt>親ページID</dt><dd>000000</dd>` +
+		`<dt>発注元</dt><dd>X</dd>` +
+		`</dl>`
 
 	if err := SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
@@ -82,7 +87,7 @@ func TestSyncSkipsLegacyParentTag(t *testing.T) {
 		t.Fatalf("クエリでエラー: %v", err)
 	}
 	if legacy != 0 {
-		t.Errorf("旧形式の親ページIDタグが取り込まれています: %d件", legacy)
+		t.Errorf("親ページIDタグが取り込まれています: %d件", legacy)
 	}
 
 	var normal int
@@ -102,8 +107,10 @@ func TestResyncReplacesTags(t *testing.T) {
 
 	const id = "000021"
 	body := `<h1>再同期</h1>` +
-		`<m-tag name="担当者" value="紀平"></m-tag>` +
-		`<m-tag name="担当者" value="田中"></m-tag>`
+		`<dl data-type="tags">` +
+		`<dt>担当者</dt><dd>紀平</dd>` + // 多値＝dt の繰り返し
+		`<dt>担当者</dt><dd>田中</dd>` +
+		`</dl>`
 
 	for i := 0; i < 3; i++ {
 		if err := SyncIndex(id, body); err != nil {

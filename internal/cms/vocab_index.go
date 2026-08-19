@@ -324,8 +324,8 @@ func FirstVocabChild(root *html.Node, element, dataType string) *html.Node {
 	return found
 }
 
-// ClosestFileSrc は祖先のファイル容器から PDF パスを返します。
-// 新形式 <section data-type="file" data-src> と旧 <m-file src> の両対応。
+// ClosestFileSrc は祖先のファイル容器 <section data-type="file" data-src> から
+// PDF パスを返します（旧 <m-file src> の読み取りは一括変換完了後に除去した）。
 func ClosestFileSrc(n *html.Node) string {
 	for p := n.Parent; p != nil; p = p.Parent {
 		if p.Type != html.ElementNode {
@@ -333,9 +333,6 @@ func ClosestFileSrc(n *html.Node) string {
 		}
 		if p.Data == "section" && Attr(p, "data-type") == "file" {
 			return Attr(p, "data-src")
-		}
-		if p.Data == "m-file" {
-			return Attr(p, "src")
 		}
 	}
 	return ""
