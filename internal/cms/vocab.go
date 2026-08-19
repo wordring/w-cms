@@ -74,6 +74,12 @@ type VocabDef struct {
 	Items     string `json:"items,omitempty"`     // 明細表の形式名（section 直下の table[data-type]）
 	Container string `json:"container,omitempty"` // 挿入骨格を包む容器の形式名（例: "file"）
 	Hidden    bool   `json:"hidden,omitempty"`    // スラッシュメニューに出さない（明細表など、単独で挿入しない形式）
+
+	// View は計算ビュー（表示専用）。本文には空のマーカー <section data-type> だけを
+	// 保存し、中身はサーバーがページ合成時に埋める（view_render.go。ユーザー決定
+	// 2026-08-19: サーバー事前描画）。エディタは骨格＝空 section を挿し、
+	// 中身（.vocab-chrome）は保存しない。
+	View bool `json:"view,omitempty"`
 }
 
 // vocabRegistry が宣言テーブルの本体です。語彙を増やすときはここへ1件足します。
@@ -218,6 +224,26 @@ var vocabRegistry = []VocabDef{
 			{Label: "検査写真", Type: ColImage},
 			{Label: "検査日", Type: ColDate},
 		},
+	},
+
+	// ── 移行第4段（語彙モデル §8.4-4）: 表示専用の計算ビュー ──
+	// <m-child-list>・<m-required-materials> の後継。列を持たず、
+	// 中身はサーバー事前描画（RenderComputedViews）。
+	{
+		Type:        "child-list",
+		DisplayName: "子ページ一覧",
+		Category:    "ビュー",
+		Icon:        "📂",
+		Element:     "section",
+		View:        true,
+	},
+	{
+		Type:        "required-materials",
+		DisplayName: "手配状況リスト",
+		Category:    "ビュー",
+		Icon:        "📊",
+		Element:     "section",
+		View:        true,
 	},
 }
 

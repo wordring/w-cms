@@ -1,0 +1,11 @@
+/* ログイン画面（auth.LoginPageHandler が返すHTML）の外観。
+ * かつてはログインHTML内のインライン <style> だったが、CSP strict 化
+ * （'unsafe-inline' 除去）に伴い外部ファイル（/assets＝CSPの self）へ移した。
+ * /assets/ は認証不要で配信されるため、未ログインのログイン画面からも読める。 */
+body { font-family: sans-serif; background:#f5f5f5; display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; }
+.card { background:#fff; padding:2rem; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.1); width:320px; }
+h1 { font-size:1.2rem; margin:0 0 1rem; }
+label { display:block; font-size:.85rem; margin:.6rem 0 .2rem; color:#444; }
+input { width:100%; padding:.5rem; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; }
+button { width:100%; margin-top:1.2rem; padding:.6rem; background:#2563eb; color:#fff; border:0; border-radius:4px; cursor:pointer; font-size:1rem; }
+.error { color:#b91c1c; font-size:.85rem; margin-top:.8rem; }

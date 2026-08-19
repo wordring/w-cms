@@ -1,12 +1,10 @@
 // エディタの殻（assets/index.html）の本体スクリプト。
 //
 // 2026-08-06 に index.html のインライン <script> から切り出した。外部ファイルにすることで
-// Content-Security-Policy から script-src 'unsafe-inline' を外せる（docs/【考察】CSP強化.md §4）。
-// <head> の FOUC 防止スクリプトだけは、描画前に走る必要があるためインラインのまま残している
-// （strict 化の際は per-request nonce を付ける）。
+// Content-Security-Policy から script-src 'unsafe-inline' を外せる（2026-08-19 の
+// 移行第4段で strict 化を完了）。<head> の FOUC 防止スクリプトは /assets/boot.js。
 //
-// 読み込み位置は </body> の直前で defer なし。web-components.js（head・defer）より先に
-// 実行される従来の順序をそのまま保つため。
+// 読み込み位置は </body> の直前で defer なし（本文DOMが揃ってから走る従来の順序）。
 
     // ── 表示/非表示の切り替え ────────────────────────────────────────────────
     // 初期状態を markup の class（.is-hidden）で持ち、切り替えも同じ class で行う。
@@ -78,8 +76,6 @@
     if (pathId === '' || pathId === 'index.html') {
         pathId = '000000';
     }
-    window.currentPageId = pathId; // global access for web components
-    
     let currentPageId = pathId;
     let saveTimeout = null;
 
@@ -498,7 +494,6 @@
     function applySavedMeta(data) {
         if (data.page_id && currentPageId !== data.page_id) {
             currentPageId = data.page_id;
-            window.currentPageId = data.page_id;
             window.history.pushState({}, '', '?id=' + currentPageId); // ページリロードなし
             document.getElementById('pi-id').textContent = currentPageId;
         }
@@ -864,18 +859,10 @@
         // 見出しや段落を名指ししていたころは、許可されている h4〜h6・ul・table が
         // 表示されるだけで編集できなかった。
         const standardElements = Array.from(editor.querySelectorAll('.block-content > *'))
-            .filter(el => !isCustomTag(el.tagName.toLowerCase()));
+            .filter(el => !isCustomTag(el.tagName.toLowerCase()) && !isViewSection(el));
         standardElements.forEach(el => {
             if (toggle.checked) { el.setAttribute('contenteditable', 'true'); el.oninput = updateHtmlPreview; }
             else { el.removeAttribute('contenteditable'); el.oninput = null; }
-        });
-
-        // カスタム要素は表示/編集を自分で描き分けるので、モードが変わったら描き直させる。
-        // 要素名を並べて指定していたころは、あとから増えた業務要素（m-client-order 等）が
-        // 対象から漏れ、編集モードにしても閲覧用の見た目のままだった。DOM にある
-        // カスタム要素すべてに委ねれば、プラグインが増えてもここは変更不要になる。
-        editor.querySelectorAll('*').forEach(el => {
-            if (isCustomTag(el.tagName.toLowerCase()) && typeof el.render === 'function') el.render();
         });
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
@@ -1168,6 +1155,17 @@
     // ここに一覧を持たなくても構造HTMLと区別できる。
     // 両者はシリアライズの仕方が根本的に違う（下記 serializeCustomElement のコメント参照）。
     function isCustomTag(name) { return name.indexOf('-') !== -1; }
+
+    // isViewSection は計算ビューのマーカー（子ページ一覧・手配集計）かを返す。
+    // 中身はサーバー事前描画（vocab-chrome）が所有するので、編集モードでも
+    // contenteditable にしない（view_render.go 参照）。
+    function isViewSection(el) {
+        if (!el.tagName || el.tagName !== 'SECTION') return false;
+        const t = el.getAttribute('data-type');
+        if (!t) return false;
+        const def = vocabDefs.find(v => v.type === t);
+        return !!(def && def.view);
+    }
 
     // 値が空のときに補う既定値（数値項目のみ。従来の挙動を維持する）。
     const CUSTOM_ATTR_DEFAULTS = { price: '0', cost: '0', quantity: '1' };
@@ -1493,17 +1491,12 @@
         } else if (type === 'p') {
             newEl = document.createElement('p');
             newEl.innerText = '';
-        } else if (type === 'm-required-materials') {
-            newEl = document.createElement('m-required-materials');
-            newEl.setAttribute('page-id', currentPageId);
-        } else if (type === 'm-child-list') {
-            newEl = document.createElement('m-child-list');
         }
         if (!newEl) return null;
 
         // 編集モードで挿すなら、構造HTML（見出し・段落・表・定義リスト…）は編集可能にする。
-        // カスタム要素は自前のUIで編集するので対象外（applyMode と同じ規則）。
-        if (isEdit && !isCustomTag(newEl.tagName.toLowerCase())) {
+        // カスタム要素と計算ビューのマーカーは対象外（applyMode と同じ規則）。
+        if (isEdit && !isCustomTag(newEl.tagName.toLowerCase()) && !isViewSection(newEl)) {
             newEl.setAttribute('contenteditable', 'true');
             newEl.oninput = updateHtmlPreview;
         }

@@ -10,22 +10,16 @@ import (
 // argon2idは1回あたり約64MiBを使うため、ピークメモリを抑える（認証認可設計.md 2.1節）。
 var loginSem = make(chan struct{}, 4)
 
-// loginPageHTML は依存のない自己完結のログインフォームです。
+// loginPageHTML はログインフォームです。スタイルは /assets/login.css（認証不要で
+// 配信される self のCSS）。かつてはインラインstyleの自己完結だったが、
+// CSP strict 化（'unsafe-inline' 除去）に伴い外部化した。
 const loginPageHTML = `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>w-cms ログイン</title>
-<style>
-  body { font-family: sans-serif; background:#f5f5f5; display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; }
-  .card { background:#fff; padding:2rem; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.1); width:320px; }
-  h1 { font-size:1.2rem; margin:0 0 1rem; }
-  label { display:block; font-size:.85rem; margin:.6rem 0 .2rem; color:#444; }
-  input { width:100%; padding:.5rem; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; }
-  button { width:100%; margin-top:1.2rem; padding:.6rem; background:#2563eb; color:#fff; border:0; border-radius:4px; cursor:pointer; font-size:1rem; }
-  .error { color:#b91c1c; font-size:.85rem; margin-top:.8rem; }
-</style>
+<link rel="stylesheet" href="/assets/login.css">
 </head>
 <body>
   <form class="card" method="POST" action="/api/login">
