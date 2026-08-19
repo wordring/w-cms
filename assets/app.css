@@ -345,6 +345,26 @@ body.anonymous .preview-section { display: none !important; }
     html.toc-drawer-open .rail-toc { transform: translateX(0); }
     html.left-drawer-open .drawer-backdrop,
     html.toc-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+
+    /* 文書列は親幅いっぱいに固定する。縦積み＋align-items:flex-start では
+       flex アイテムの横幅が fit-content になり、その**下限は min-content**——
+       つまり縮められない表が1つあるだけで文書列ごと押し広がり、ページ全体が
+       横スクロールになる（スマホ幅の表示崩れの正体）。 */
+    .doc-column { align-self: stretch; }
+
+    /* 幅の広い表・整形済みテキストは、要素自身の中で横スクロールさせる
+       （ページ本体は横スクロールさせない）。table への display:block は
+       行内容を無名テーブルボックスが包む標準的なレスポンシブ対処で、
+       セルの罫線・編集（contenteditable・行操作ツールバー）には影響しない。 */
+    #editor-content table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    #editor-content pre {
+        max-width: 100%;
+        overflow-x: auto;
+    }
 }
 @media (prefers-reduced-motion: reduce) {
     .rail, .drawer-backdrop { transition: none; }
