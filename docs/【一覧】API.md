@@ -93,6 +93,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
 | GET | `/api/admin/audit` | 監査ログの参照（書き込み・権限変更を記録） |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え） |
+| POST | `/api/migrate-vocab` | **語彙モデルへの一度きり変換**（`<m-tag>`→dl・`<m-material>`→表）。実行前に `data/master` を自動バックアップし、変換ページを再同期する（[【考察】語彙モデル.md](【考察】語彙モデル.md) §8.3） |
 
 ## 7. 語彙・PDF・プラグイン
 

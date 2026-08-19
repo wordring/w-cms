@@ -50,7 +50,9 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     *   `updated_at` (DATETIME): 更新日時。サイドカーの値を採用し、無ければ同期時刻（`CURRENT_TIMESTAMP`）にフォールバックする。
     *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` のみHTML本文由来。`page_tags` はプラグインが同期）。
     *   `created_at` / `created_by` 列は `CREATE TABLE` に加え、既存DB向けに冪等な `ALTER TABLE ADD COLUMN` マイグレーション（`database/sqlite.go` の `coreMigrations`）でも追加される。
-*   **`page_tags`**: `<m-tag name="..." value="...">` から抽出された可変タグ。
+*   **`page_tags`**: 可変タグ（ページ横断メタ）。移行第2段（2026-08-19）から
+    `<dl data-type="tags">`（dt=名前・dd=値）が同期元で、旧 `<m-tag name value>` の
+    読み取りは変換完了までの短期保険。
     *   `page_id` (FK), `name`, `value`
     *   **コアテーブルではない**。`<m-tag>` を所有する `plugin_page_tags.go` が
         `Schema()` で定義する（「カスタムタグはすべてプラグインが所有する」方針）。
@@ -92,9 +94,9 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     *   `id`, `item_name`, `supplier_name`, `cost`, `pdf_path`, `page_id`, `estimated_at`
 
 ### マスタ・構成情報テーブル
-*   **`part_materials`** (部品の構成部材 - `<m-material>`タグから抽出)
+*   **`part_materials`** (部品の構成部材。移行第2段から `<table data-type="part-materials">` が同期元で、旧 `<m-material>` の読み取りは短期保険)
     *   `id`, `part_id` (対象となる親の部品ID), `material_name` (必要な部材), `cost`, `supplier_name`, `quantity` (1部品あたりの必要数), `page_id`
-    *   `part_id` は `<m-material>` 自体の属性ではなく、同一ページ内に記述された `<m-tag name="部品番号" value="...">` の値が、ページ内の全 `<m-material>` 行に一括で付与されます（`plugin_materials.go` の `Sync` が `cms.TagValue` で先頭値を採る。かつては `parser.go` が担っていたが、カスタム要素の抽出は所有プラグインへ移譲済み）。
+    *   `part_id` は部材行自体の値ではなく、同一ページ内の可変タグ `部品番号` の値が、ページ内の全部材行に一括で付与されます（`plugin_materials.go` の `Sync` が `cms.TagValue` で先頭値を採る——新形式 `<dl data-type="tags">` と旧 `<m-tag>` の両対応。かつては `parser.go` が担っていたが、カスタム要素の抽出は所有プラグインへ移譲済み）。
 
 ---
 
