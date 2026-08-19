@@ -96,9 +96,10 @@ func TestEstimatesFromDL(t *testing.T) {
 	}
 }
 
-// TestMigrateStage3Equivalence は受発注・見積・容器を含むページの変換で、
-// 変換前後の Sync() 抽出結果（4テーブル）が一致することを検証します（§8.3 の方針）。
-func TestMigrateStage3Equivalence(t *testing.T) {
+// TestMigrateStage3Conversion は受発注・見積・容器を含む旧形式ページの一括変換を
+// 検証します——旧要素は変換されるまで索引に乗らず（読み取りの保険は除去済み）、
+// 変換後は旧 Sync と同じ抽出結果が4テーブルに入り、正本は新形式の外形になる。
+func TestMigrateStage3Conversion(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000052"
@@ -116,46 +117,11 @@ func TestMigrateStage3Equivalence(t *testing.T) {
 
 	postSave(t, id, body)
 
-	snapshot := func() string {
-		var sb strings.Builder
-		for _, q := range []string{
-			`SELECT order_no, client_name, pdf_path, ordered_at FROM client_orders WHERE page_id = 52 ORDER BY order_no`,
-			`SELECT order_no, item_id, item_name, price, quantity, status FROM client_order_items ORDER BY order_no, item_id`,
-			`SELECT order_no, supplier_name, ordered_at FROM our_orders WHERE page_id = 52`,
-			`SELECT order_no, item_name, cost, quantity, status FROM our_order_items ORDER BY item_name`,
-			`SELECT item_id, client_name, price FROM our_estimates WHERE page_id = 52`,
-			`SELECT item_name, supplier_name, cost FROM supplier_estimates WHERE page_id = 52`,
-		} {
-			rows, err := database.DB.Query(q)
-			if err != nil {
-				t.Fatalf("クエリエラー: %v", err)
-			}
-			cols, _ := rows.Columns()
-			vals := make([]interface{}, len(cols))
-			ptrs := make([]interface{}, len(cols))
-			for i := range vals {
-				ptrs[i] = &vals[i]
-			}
-			for rows.Next() {
-				rows.Scan(ptrs...)
-				for _, v := range vals {
-					if b, ok := v.([]byte); ok {
-						sb.WriteString(string(b))
-					} else if v != nil {
-						sb.WriteString(itoaAny(v))
-					}
-					sb.WriteString("|")
-				}
-				sb.WriteString("\n")
-			}
-			rows.Close()
-		}
-		return sb.String()
-	}
-
-	before := snapshot()
-	if !strings.Contains(before, "PO-B200") {
-		t.Fatalf("前提の同期結果が不完全です:\n%s", before)
+	// 旧要素は索引に乗らない（保険の除去を固定）
+	var before int
+	database.DB.QueryRow(`SELECT COUNT(*) FROM client_orders WHERE page_id = 52`).Scan(&before)
+	if before != 0 {
+		t.Fatalf("変換前の旧要素が索引に乗っています: %d件", before)
 	}
 
 	converted, _, err := MigrateVocab()
@@ -165,8 +131,54 @@ func TestMigrateStage3Equivalence(t *testing.T) {
 	if converted != 1 {
 		t.Errorf("変換ページ数: got %d want 1", converted)
 	}
-	if after := snapshot(); after != before {
-		t.Errorf("変換前後で抽出結果が一致しません:\nbefore:\n%s\nafter:\n%s", before, after)
+
+	// 変換後の抽出結果（旧 Sync が返していた値と同じ）
+	var clientName, pdfPath string
+	if err := database.DB.QueryRow(
+		`SELECT client_name, pdf_path FROM client_orders WHERE order_no = 'PO-B200'`).
+		Scan(&clientName, &pdfPath); err != nil {
+		t.Fatalf("client_orders に入っていません: %v", err)
+	}
+	if clientName != "トーア" || pdfPath != "po.pdf" {
+		t.Errorf("受注ヘッダが期待と異なります: %q %q", clientName, pdfPath)
+	}
+	rows, _ := database.DB.Query(
+		`SELECT item_id, price, quantity FROM client_order_items WHERE order_no = 'PO-B200' ORDER BY item_id`)
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var itemID string
+		var price, qty int
+		rows.Scan(&itemID, &price, &qty)
+		items = append(items, itemID+"|"+itoa(price)+"|"+itoa(qty))
+	}
+	// quantity 省略は旧既定の 1
+	if want := "GEAR-2|500|1\nSHAFT-01|8000|10"; strings.Join(items, "\n") != want {
+		t.Errorf("受注明細が期待と異なります:\ngot  %v\nwant %v", items, want)
+	}
+	var cost, qty int
+	if err := database.DB.QueryRow(
+		`SELECT cost, quantity FROM our_order_items WHERE order_no = 'PO-OUR-1'`).Scan(&cost, &qty); err != nil {
+		t.Fatalf("our_order_items に入っていません: %v", err)
+	}
+	if cost != 3000 || qty != 5 {
+		t.Errorf("発注明細が期待と異なります: cost=%d qty=%d", cost, qty)
+	}
+	var price int
+	if err := database.DB.QueryRow(
+		`SELECT price FROM our_estimates WHERE page_id = 52`).Scan(&price); err != nil {
+		t.Fatalf("our_estimates に入っていません: %v", err)
+	}
+	if price != 12000 {
+		t.Errorf("見積金額が期待と異なります: %d", price)
+	}
+	var sCost int
+	if err := database.DB.QueryRow(
+		`SELECT cost FROM supplier_estimates WHERE page_id = 52`).Scan(&sCost); err != nil {
+		t.Fatalf("supplier_estimates に入っていません: %v", err)
+	}
+	if sCost != 3000 {
+		t.Errorf("原価が期待と異なります: %d", sCost)
 	}
 
 	// 変換後の正本の形（容器→リンク・受発注→section・見積→dl）
@@ -189,13 +201,3 @@ func TestMigrateStage3Equivalence(t *testing.T) {
 	}
 }
 
-func itoaAny(v interface{}) string {
-	switch x := v.(type) {
-	case int64:
-		return itoa(int(x))
-	case string:
-		return x
-	default:
-		return ""
-	}
-}

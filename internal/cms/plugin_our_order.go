@@ -9,10 +9,12 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（ヘッダ・明細構造）: 弊社の発注書（材料購入・外注加工）
 //
-//   <m-supplier-order order-no=".." supplier-name=".." ordered-at="..">
-//   （容器 <m-file> の中に置いてもよい。PDFのパスは容器から ClosestAttr で拾う）
-//       <m-item item-name=".." cost=".." quantity=".." status="..">
-//   </m-file>
+//   <section data-type="our-order">
+//     <dl>…<dd data-field="order-no">PO-OUR-1</dd>…</dl>  ← ヘッダ（論点A・案1）
+//     <table data-type="our-order-items">…</table>        ← 明細
+//   </section>
+//   （容器 section[data-type="file"] の中に置いてもよい。
+//     PDFのパスは容器から ClosestFileSrc で拾う）
 //
 //   → our_orders（ヘッダ） 1 : N our_order_items（明細）
 // ─────────────────────────────────────────────────────────────────────────
@@ -100,23 +102,7 @@ func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 			return
 		}
 		switch {
-		case n.Data == "m-supplier-order": // 旧形式（変換完了までの短期保険）
-			orderNo := Attr(n, "order-no")
-			if err := insertHeader(orderNo, Attr(n, "supplier-name"), ClosestFileSrc(n), Attr(n, "ordered-at")); err != nil {
-				firstErr = err
-				return
-			}
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if c.Type != html.ElementNode || c.Data != "m-item" {
-					continue
-				}
-				if err := insertItem(orderNo, Attr(c, "item-name"), AtoiSafe(Attr(c, "cost")), Quantity(c), Attr(c, "status")); err != nil {
-					firstErr = err
-					return
-				}
-			}
-
-		case n.Data == "section" && Attr(n, "data-type") == "our-order": // 新形式（論点A・案1）
+		case n.Data == "section" && Attr(n, "data-type") == "our-order": // 論点A・案1
 			def, _ := VocabDefByType("our-order")
 			itemsDef, _ := VocabDefByType("our-order-items")
 			header := VocabDLFields(FirstVocabChild(n, "dl", ""), def)

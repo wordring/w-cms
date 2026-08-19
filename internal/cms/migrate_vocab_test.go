@@ -53,22 +53,27 @@ func TestPageTagsFromDL(t *testing.T) {
 	}
 }
 
-// TestTagValueReadsBothForms は TagValue が新旧どちらの形式からも値を引けることを
-// 検証します（部材手配計算の part_id 注入が移行中も壊れないための要）。
-func TestTagValueReadsBothForms(t *testing.T) {
+// TestTagValueFromDL は TagValue が <dl data-type="tags"> から値を引けることを
+// 検証します（部材手配計算の part_id 注入の要）。旧 <m-tag> の読み取り（短期の保険）は
+// 実データの一括変換完了後に除去したため、読めないことも固定します。
+func TestTagValueFromDL(t *testing.T) {
 	cases := []struct {
 		name string
 		body string
 	}{
-		{"旧形式", `<m-tag name="部品番号" value="SHAFT-01"></m-tag>`},
-		{"新形式", `<dl data-type="tags"><dt>部品番号</dt><dd>SHAFT-01</dd></dl>`},
-		{"新形式・data-field優先", `<dl data-type="tags"><dt>品番</dt><dd data-field="部品番号">SHAFT-01</dd></dl>`},
+		{"dt の表示文字", `<dl data-type="tags"><dt>部品番号</dt><dd>SHAFT-01</dd></dl>`},
+		{"data-field優先", `<dl data-type="tags"><dt>品番</dt><dd data-field="部品番号">SHAFT-01</dd></dl>`},
 	}
 	for _, c := range cases {
 		root := mustParse(t, c.body)
 		if got := TagValue(root, "部品番号"); got != "SHAFT-01" {
 			t.Errorf("%s: TagValue = %q, want SHAFT-01", c.name, got)
 		}
+	}
+
+	legacy := mustParse(t, `<m-tag name="部品番号" value="SHAFT-01"></m-tag>`)
+	if got := TagValue(legacy, "部品番号"); got != "" {
+		t.Errorf("旧 <m-tag> が読めてしまいます（除去済みのはず）: %q", got)
 	}
 }
 
@@ -101,9 +106,11 @@ func TestPartMaterialsFromTable(t *testing.T) {
 	}
 }
 
-// TestPartMaterialsLegacyStillWorks は旧形式 <m-material> の読み取り（短期の保険）が
-// 引き続き効くことを検証します。
-func TestPartMaterialsLegacyStillWorks(t *testing.T) {
+// TestLegacyElementsNoLongerSynced は旧形式（<m-tag>・<m-material>）の読み取り
+// （短期の保険）が除去済みであることを固定します。旧要素はサニタイズ・表示は
+// できても（語彙宣言は第4段まで残る）、索引には乗りません——実データは一括変換
+// （MigrateVocab）を通す前提です。
+func TestLegacyElementsNoLongerSynced(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000042"
@@ -113,10 +120,11 @@ func TestPartMaterialsLegacyStillWorks(t *testing.T) {
 	if err := SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
-	rows := queryPartMaterials(t, 42)
-	want := []string{"GEAR-9|丸鋼材|8000|大同特殊鋼|2"}
-	if strings.Join(rows, "\n") != strings.Join(want, "\n") {
-		t.Errorf("旧形式の同期が壊れています:\ngot  %v\nwant %v", rows, want)
+	if tags := queryPageTags(t, 42); len(tags) != 0 {
+		t.Errorf("旧 <m-tag> が同期されています（除去済みのはず）: %v", tags)
+	}
+	if mats := queryPartMaterials(t, 42); len(mats) != 0 {
+		t.Errorf("旧 <m-material> が同期されています（除去済みのはず）: %v", mats)
 	}
 }
 
@@ -175,10 +183,11 @@ func TestConvertVocabHTMLKeepsExcluded(t *testing.T) {
 	}
 }
 
-// TestMigrateVocabEquivalence は §8.3 の検証方針そのもの——
-// **変換前後で Sync() の抽出結果（page_tags / part_materials）が一致する**ことを
-// 全ページ走査の実行経路（MigrateVocab）ごと検証します。バックアップの作成も見る。
-func TestMigrateVocabEquivalence(t *testing.T) {
+// TestMigrateVocabConversion は一度きり変換ツールの実行経路（MigrateVocab）を
+// 全ページ走査ごと検証します——旧要素のページは変換されるまで索引に乗らず
+// （読み取りの保険は除去済み）、変換後は旧形式と同じ抽出結果が得られる
+// （期待値は旧 Sync の仕様: quantity 省略→1 など）。バックアップの作成も見る。
+func TestMigrateVocabConversion(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000043"
@@ -188,12 +197,10 @@ func TestMigrateVocabEquivalence(t *testing.T) {
 		`<m-material item-name="丸鋼材" cost="8000" supplier-name="大同特殊鋼" quantity="2"></m-material>` +
 		`<m-material item-name="ベアリング" cost="500" supplier-name="NSK"></m-material>`
 
-	// 保存経路でページを作る（正本ファイル＋同期）
+	// 保存経路でページを作る（正本ファイル＋同期）。旧要素は索引に乗らない。
 	postSave(t, id, body)
-	tagsBefore := queryPageTags(t, 43)
-	matsBefore := queryPartMaterials(t, 43)
-	if len(tagsBefore) == 0 || len(matsBefore) == 0 {
-		t.Fatalf("前提の同期結果が空です: tags=%v mats=%v", tagsBefore, matsBefore)
+	if tags := queryPageTags(t, 43); len(tags) != 0 {
+		t.Fatalf("変換前の旧要素が索引に乗っています: %v", tags)
 	}
 
 	converted, backupDir, err := MigrateVocab()
@@ -213,12 +220,17 @@ func TestMigrateVocabEquivalence(t *testing.T) {
 		t.Errorf("変換後の正本に旧要素が残っています:\n%s", content)
 	}
 
-	// 抽出結果の同値性
-	if got := queryPageTags(t, 43); strings.Join(got, "\n") != strings.Join(tagsBefore, "\n") {
-		t.Errorf("page_tags が変換前後で一致しません:\nbefore %v\nafter  %v", tagsBefore, got)
+	// 変換後の抽出結果（旧 Sync が返していた値と同じ）
+	wantTags := []string{"担当者=紀平", "部品番号=SHAFT-01"}
+	if got := queryPageTags(t, 43); strings.Join(got, "\n") != strings.Join(wantTags, "\n") {
+		t.Errorf("page_tags が期待と異なります:\ngot  %v\nwant %v", got, wantTags)
 	}
-	if got := queryPartMaterials(t, 43); strings.Join(got, "\n") != strings.Join(matsBefore, "\n") {
-		t.Errorf("part_materials が変換前後で一致しません:\nbefore %v\nafter  %v", matsBefore, got)
+	wantMats := []string{
+		"SHAFT-01|ベアリング|500|NSK|1", // quantity 省略 → 旧既定の 1
+		"SHAFT-01|丸鋼材|8000|大同特殊鋼|2",
+	}
+	if got := queryPartMaterials(t, 43); strings.Join(got, "\n") != strings.Join(wantMats, "\n") {
+		t.Errorf("part_materials が期待と異なります:\ngot  %v\nwant %v", got, wantMats)
 	}
 
 	// 再実行しても変化しない（冪等）

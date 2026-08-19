@@ -131,26 +131,37 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
-	// 2. パース対象のテストHTML
+	// 2. パース対象のテストHTML（整形・入れ子つきの実物に近い形）
 	htmlContent := `
 	<!DOCTYPE html>
 	<html>
 	<body>
 		<h1>試作受注の記録</h1>
-		<m-tag name="親ページ" value="00001"></m-tag>
-		<m-tag name="担当者" value="山田"></m-tag>
+		<dl data-type="tags">
+			<dt>親ページ</dt><dd>00001</dd>
+			<dt>担当者</dt><dd>山田</dd>
+		</dl>
 
-		<m-file src="attachments/po_test.pdf" name="発注書.pdf">
-			<m-client-order order-no="PO-T100" client-name="トーア" ordered-at="2026-06-18">
-				<m-item item-id="SHAFT-01" item-name="シャフトA" price="8000" quantity="10" status="未着手"></m-item>
-				<m-item item-id="SHAFT-02" item-name="シャフトB" price="12000" quantity="5" status="加工中"></m-item>
-			</m-client-order>
-		</m-file>
+		<section data-type="file" data-src="attachments/po_test.pdf">
+			<p>📎 <a href="/data/master/00/00002/attachments/po_test.pdf">発注書.pdf</a></p>
+			<section data-type="client-order">
+				<dl>
+					<dt>発注書番号</dt><dd data-field="order-no">PO-T100</dd>
+					<dt>発注元</dt><dd data-field="client-name">トーア</dd>
+					<dt>発注日</dt><dd data-field="ordered-at">2026-06-18</dd>
+				</dl>
+				<table data-type="client-order-items"><tbody>
+					<tr><th data-field="item-id">品番</th><th data-field="item-name">品名</th><th data-field="price">単価</th><th data-field="quantity">数量</th><th data-field="status">状態</th></tr>
+					<tr><td>SHAFT-01</td><td>シャフトA</td><td>8000</td><td>10</td><td>未着手</td></tr>
+					<tr><td>SHAFT-02</td><td>シャフトB</td><td>12000</td><td>5</td><td>加工中</td></tr>
+				</tbody></table>
+			</section>
+		</section>
 	</body>
 	</html>
 	`
 
-	// 3. コア情報のパーステスト（タイトルのみ。<m-tag> の抽出は plugin_page_tags.go が担うため、
+	// 3. コア情報のパーステスト（タイトルのみ。タグの抽出は plugin_page_tags.go が担うため、
 	//    タグは下の page_tags の件数確認で検証する）
 	root, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
@@ -519,9 +530,13 @@ func TestRebuildDatabase(t *testing.T) {
 		t.Fatalf("ディレクトリ作成エラー: %v", err)
 	}
 	htmlContent := `<h1>受注ページ</h1>
-<m-client-order order-no="PO-RB1" client-name="トーア">
-	<m-item item-id="SHAFT-01" item-name="シャフトA" price="8000" quantity="3" status="未着手"></m-item>
-</m-client-order>`
+<section data-type="client-order">
+	<dl><dt>発注書番号</dt><dd data-field="order-no">PO-RB1</dd><dt>発注元</dt><dd data-field="client-name">トーア</dd></dl>
+	<table data-type="client-order-items"><tbody>
+		<tr><th data-field="item-id">品番</th><th data-field="item-name">品名</th><th data-field="price">単価</th><th data-field="quantity">数量</th><th data-field="status">状態</th></tr>
+		<tr><td>SHAFT-01</td><td>シャフトA</td><td>8000</td><td>3</td><td>未着手</td></tr>
+	</tbody></table>
+</section>`
 	if err := os.WriteFile(filepath.Join(pageDir, "000001.html"), []byte(htmlContent), 0644); err != nil {
 		t.Fatalf("HTMLファイル作成エラー: %v", err)
 	}

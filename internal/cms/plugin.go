@@ -172,32 +172,10 @@ func Attr(n *html.Node, key string) string {
 	return ""
 }
 
-// ClosestAttr は n から祖先方向へ element を探し、見つかった要素の attr の値を返します。
-// 見つからなければ空文字列。
-//
-// 業務要素（<m-client-order> 等）が容器である <m-file> の src を参照するのに使います
-// （【考察】通信記録処理.md §4.5 の責務分離により、ファイルのパスは容器側が持つため）。
-func ClosestAttr(n *html.Node, element, attr string) string {
-	for p := n.Parent; p != nil; p = p.Parent {
-		if p.Type == html.ElementNode && p.Data == element {
-			return Attr(p, attr)
-		}
-	}
-	return ""
-}
-
 // AtoiSafe は文字列を整数に変換します。変換できない場合は 0 を返します。
 func AtoiSafe(s string) int {
 	v, _ := strconv.Atoi(s)
 	return v
-}
-
-// Quantity は数量属性を返します。未指定・変換不能の場合はデフォルトの 1 を返します。
-func Quantity(n *html.Node) int {
-	if v := Attr(n, "quantity"); v != "" {
-		return AtoiSafe(v)
-	}
-	return 1
 }
 
 // WalkElements はノード木 root を先行順（document order）で走査し、
@@ -213,20 +191,15 @@ func WalkElements(root *html.Node, fn func(*html.Node)) {
 
 // TagValue はページ横断メタ（可変タグ）から名前 tagName の値を返します。
 // 同名タグが複数ある場合は最初の1つ。見つからなければ空文字列。
-//
-// 読む形式は2つ（移行第2段・語彙モデル §8.4-2 の両対応）:
-//   - 新形式: <dl data-type="tags"><dt>{tagName}</dt><dd>値</dd></dl>
-//   - 旧形式: <m-tag name="{tagName}" value="値">（変換ツールが安定するまでの短期の保険）
+// 読む形式は <dl data-type="tags"><dt>{tagName}</dt><dd>値</dd></dl>
+// （旧 <m-tag> の読み取りは実データの一括変換完了後に除去した）。
 func TagValue(root *html.Node, tagName string) string {
 	var found string
 	WalkElements(root, func(n *html.Node) {
 		if found != "" {
 			return
 		}
-		switch {
-		case n.Data == "m-tag" && Attr(n, "name") == tagName:
-			found = Attr(n, "value")
-		case n.Data == "dl" && Attr(n, "data-type") == "tags":
+		if n.Data == "dl" && Attr(n, "data-type") == "tags" {
 			found = dlTagValue(n, tagName)
 		}
 	})

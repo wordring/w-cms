@@ -10,27 +10,26 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン: ページ横断メタ（可変タグ）
 //
-//   新形式: <dl data-type="tags"><dt>発注元</dt><dd>株式会社トーア</dd></dl>
-//   旧形式: <m-tag name="発注元" value="株式会社トーア">
+//   <dl data-type="tags"><dt>発注元</dt><dd>株式会社トーア</dd></dl>
 //
 //   → page_tags（page_id, name, value）
 //
 // 特定のブロックに属さない「ページ全体のメタ情報」を担う。name は自由語で、
 // **同じ name を同一ページに複数置いてよい**（担当者が2人、関連部品番号が複数など。
-// 新形式では dt の繰り返し／複数 dd）。
+// dt の繰り返し／複数 dd で表す）。
 //
-// 移行第2段（語彙モデル §8.4-2）で同期元を <dl data-type="tags"> へ切り替えた。
-// 旧 <m-tag> の読み取りは**変換ツールが安定するまでの短期の保険**（同書 §8.3。
-// 恒久両対応は語彙の単一正本に反するため、移行完了後に除去する）。
+// 移行第2段（語彙モデル §8.4-2）で同期元を <dl data-type="tags"> へ切り替え、
+// 旧 <m-tag> の読み取り（短期の保険）は実データの一括変換完了後に除去した。
+// 旧要素の表示・変換は移行完了（第4段）まで残る（語彙宣言 Tags() と変換ツール）。
 //
 // かつてコアの parser.go / sync.go / database.CoreTables が直接扱っていたが、
 // 「カスタムタグはすべてプラグインが所有する」方針に合わせてここへ移設した。
 // コアが知るのはタイトル抽出だけになっている。
 // ─────────────────────────────────────────────────────────────────────────
 
-// legacyParentTagName は旧方式の親ページID指定タグの名前です。
-// ページ属性はサイドカー <id>.meta.json が正本へ移行済みのため、本文由来のタグとしては
-// 取り込みません（m-tag の意味を知るのはこのプラグインだけ）。
+// legacyParentTagName は旧方式で親ページIDの指定に使われていたタグ名です。
+// ページ属性はサイドカー <id>.meta.json が正本へ移行済みのため、dt にこの名前が
+// 書かれてもユーザータグとしては取り込みません。
 const legacyParentTagName = "親ページID"
 
 func init() {
@@ -71,8 +70,7 @@ func (pageTagsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	}
 
 	insert := func(name, value string) error {
-		// 旧方式の「親ページID」タグはサイドカーへ移行済みのため、ユーザータグとしては扱わない
-		// （新形式の dt に書かれた場合も同じ扱い）。
+		// 「親ページID」はサイドカーへ移行済みのため、dt に書かれても取り込まない。
 		if name == "" || name == legacyParentTagName {
 			return nil
 		}
@@ -87,10 +85,7 @@ func (pageTagsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		if firstErr != nil {
 			return
 		}
-		switch {
-		case n.Data == "m-tag": // 旧形式（短期の保険）
-			firstErr = insert(Attr(n, "name"), Attr(n, "value"))
-		case n.Data == "dl" && Attr(n, "data-type") == "tags": // 新形式
+		if n.Data == "dl" && Attr(n, "data-type") == "tags" {
 			firstErr = syncTagsDL(n, insert)
 		}
 	})
