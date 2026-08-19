@@ -24,14 +24,27 @@ func TestVocabRegistryIsWellFormed(t *testing.T) {
 		}
 		seen[d.Type] = true
 
-		if d.Element != "table" && d.Element != "dl" {
-			t.Errorf("%s: element %q は table / dl のどちらかにしてください", d.Type, d.Element)
+		if d.Element != "table" && d.Element != "dl" && d.Element != "section" {
+			t.Errorf("%s: element %q は table / dl / section のいずれかにしてください", d.Type, d.Element)
 		}
 		if d.DisplayName == "" {
 			t.Errorf("%s: 表示名がありません", d.Type)
 		}
-		if len(d.Columns) == 0 {
+		// 列は table / dl では必須。section（業務文書ブロック・ファイル容器）は
+		// ヘッダ項目を持たない形式（file）もあるため任意。
+		if len(d.Columns) == 0 && d.Element != "section" {
 			t.Errorf("%s: 列が1つもありません", d.Type)
+		}
+		// Items / Container はレジストリ内の実在する形式を指すこと
+		if d.Items != "" {
+			if ref, ok := VocabDefByType(d.Items); !ok || ref.Element != "table" {
+				t.Errorf("%s: items %q が table 形式として定義されていません", d.Type, d.Items)
+			}
+		}
+		if d.Container != "" {
+			if ref, ok := VocabDefByType(d.Container); !ok || ref.Element != "section" {
+				t.Errorf("%s: container %q が section 形式として定義されていません", d.Type, d.Container)
+			}
 		}
 
 		fields := map[string]bool{}
@@ -147,7 +160,8 @@ func TestSanitizeKeepsVocabMarkers(t *testing.T) {
 // data-type / data-field が除去されることを検証します（「属性は厳格」の維持。
 // 全要素共通の例外は data-id のみ）。
 func TestSanitizeDropsVocabMarkersOnOtherElements(t *testing.T) {
-	in := `<div data-type="x">a</div><td data-field="f">b</td><p data-type="y">c</p><section data-type="z">d</section>`
+	// section は論点A採用（2026-08-19）で data-type の許可範囲に入ったため対象外
+	in := `<div data-type="x">a</div><td data-field="f">b</td><p data-type="y">c</p><blockquote data-type="z">d</blockquote>`
 	out := Sanitize(in)
 
 	if strings.Contains(out, "data-type") {

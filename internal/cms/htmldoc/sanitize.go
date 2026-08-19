@@ -73,7 +73,10 @@ var linkURLAttributes = map[string]bool{"href": true, "cite": true}
 // 外部URLは閲覧するだけで自動取得され、閲覧者のIPと閲覧時刻を第三者へ渡す
 // （トラッキングビーコン）ため許可しない。CSP `default-src 'self'` でも遮断されるので、
 // 許可しても壊れた表示になるだけで利益がない（docs/本文サニタイズ設計.md §5.5）。
-var embedURLAttributes = map[string]bool{"src": true, "srcset": true, "poster": true}
+var embedURLAttributes = map[string]bool{"src": true, "srcset": true, "poster": true,
+	// data-src はファイル容器（section[data-type="file"]）の配線。エンハンサが
+	// プレビューのURLに使うため、埋め込みと同じく相対URLに限る（多層防御）。
+	"data-src": true}
 
 // BlockIDAttr はブロック単位保存で使う識別子の属性名です。
 //
@@ -133,8 +136,9 @@ var structuralElements = map[string]map[string]bool{
 	"bdi": {},
 	"bdo": {"dir": true},
 
-	// 区分（貼り付けた文書の構造を保つ）
-	"section": {}, "article": {}, "header": {}, "footer": {},
+	// 区分（貼り付けた文書の構造を保つ）。section の data-type は業務文書ブロックの
+	// 外形（語彙モデル §8.2 論点A・案1）、data-src はファイル容器の配線（PDFパス）。
+	"section": {"data-type": true, "data-src": true}, "article": {}, "header": {}, "footer": {},
 	"aside": {}, "nav": {}, "address": {},
 	"figure": {}, "figcaption": {},
 

@@ -132,7 +132,7 @@ func TestConvertVocabHTML(t *testing.T) {
 		`<m-material item-name="丸鋼材" cost="8000" supplier-name="大同" quantity="2" data-id="bb22"></m-material>` +
 		`<m-material item-name="軸受" cost="500" supplier-name="NSK"></m-material>`
 
-	out, changed := ConvertVocabHTML(in)
+	out, changed := ConvertVocabHTML("000099", in)
 	if !changed {
 		t.Fatal("変換が起きていません")
 	}
@@ -153,7 +153,7 @@ func TestConvertVocabHTML(t *testing.T) {
 	}
 
 	// 冪等性: 変換後をもう一度通しても変化しない
-	if _, changed2 := ConvertVocabHTML(out); changed2 {
+	if _, changed2 := ConvertVocabHTML("000099", out); changed2 {
 		t.Error("変換が冪等ではありません（2回目でも変化した）")
 	}
 }
@@ -165,12 +165,12 @@ func TestConvertVocabHTMLKeepsExcluded(t *testing.T) {
 		`<m-tag name="前版" value="000122"></m-tag>` +
 		`<m-tag name="親ページID" value="000000"></m-tag>` +
 		`<m-tag name="" value="x"></m-tag>`
-	out, changed := ConvertVocabHTML(in)
+	out, changed := ConvertVocabHTML("000099", in)
 	if changed {
 		t.Errorf("除外対象が変換されています:\n%s", out)
 	}
 
-	if _, changed := ConvertVocabHTML(`<h1>普通のページ</h1><p>本文</p>`); changed {
+	if _, changed := ConvertVocabHTML("000099", `<h1>普通のページ</h1><p>本文</p>`); changed {
 		t.Error("旧要素の無い本文で changed=true になっています")
 	}
 }
