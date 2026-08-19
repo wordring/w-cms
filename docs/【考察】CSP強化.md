@@ -4,9 +4,13 @@ w-cms へ Content-Security-Policy（CSP）を全レスポンスに付与し、�
 多層防御、クリックジャッキング（`frame-ancestors`）防止、外部オリジンへのデータ送信の
 遮断を得るための設計・実装計画の**正本**です。着手前に必ず本ファイルを読むこと。
 
-> 状態: **段階移行の第1段（中間版CSP）を実装・反映済み**。strict 版（`'unsafe-inline'` なし）への
-> 格上げは前提リファクタが必要で未着手（`【考察】` 接頭辞は strict 到達まで維持）。
-> 最終更新: 2026-07-04
+> 状態: **strict 版（`'unsafe-inline'` なし）へ格上げ完了（2026-08-19・移行第4段）**。
+> インラインの script/style はリポジトリ全体でゼロ——FOUC 防止は `/assets/boot.js` へ外部化
+> （§4 の per-request nonce 案から変更: head の同期外部スクリプトで同じ順序が保て、nonce 機構が
+> 不要で静的配信とも両立するため）、templates/*.html と web-components.js は第4段でファイルごと
+> 撤去、ログイン画面の `<style>` は `/assets/login.css` へ外部化。後戻りは
+> [csp_test.go](../internal/auth/csp_test.go) が検出する。
+> 最終更新: 2026-08-19
 
 ---
 
