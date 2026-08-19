@@ -7,6 +7,13 @@ package cms
 //
 //   <m-tag name value>（連続する並び）    → <dl data-type="tags"> 1つ（dt/dd の組）
 //   <m-material ...>（連続する並び）      → <table data-type="part-materials"> 1つ
+//   <m-our-estimate ...> / <m-supplier-estimate ...>
+//                                        → それぞれ独立した <dl data-type>（1要素＝1レコード。
+//                                          まとめると別々の見積が混ざるため**連結しない**）
+//   <m-client-order>＋子<m-item>          → <section data-type="client-order">（ヘッダ dl＋明細表）
+//   <m-supplier-order>＋子<m-item>        → <section data-type="our-order">（同上）
+//   <m-file src name>                     → <section data-type="file" data-src>＋可視のファイル名リンク
+//                                          （中身は再帰的に変換して収める。ext 属性は廃止＝src の拡張子で足りる）
 //
 // 方式は「サーバー側で全ページを走査し、変換 → SyncIndex 再同期」（DB再構築と
 // 同じ流儀）。実行前に data/master 全体をバックアップします。検証は
@@ -57,13 +64,14 @@ func isElementNamed(n *html.Node, name string) bool {
 }
 
 // ConvertVocabHTML は本文HTML中の旧要素を新形式へ変換します。
+// pageID はファイル容器の可視リンク（/data/master/... への href）の組み立てに使います。
 // 変換が起きなければ入力をそのまま返します（changed=false）。
-func ConvertVocabHTML(htmlStr string) (out string, changed bool) {
+func ConvertVocabHTML(pageID, htmlStr string) (out string, changed bool) {
 	nodes, err := htmldoc.ParseFragment(htmlStr)
 	if err != nil {
 		return htmlStr, false
 	}
-	converted := convertNodeList(nodes, &changed)
+	converted := convertNodeList(pageID, nodes, &changed)
 	if !changed {
 		return htmlStr, false
 	}
@@ -79,7 +87,7 @@ func ConvertVocabHTML(htmlStr string) (out string, changed bool) {
 // convertNodeList は兄弟ノード列を変換した新しい列を返します。
 // **連続する**変換対象（間の空白テキストは無視）を1つの dl / table へまとめるため、
 // 個々のノードではなく列に対して働きます。対象以外の要素は子リストだけ再帰します。
-func convertNodeList(nodes []*html.Node, changed *bool) []*html.Node {
+func convertNodeList(pageID string, nodes []*html.Node, changed *bool) []*html.Node {
 	var out []*html.Node
 	i := 0
 	for i < len(nodes) {
@@ -97,15 +105,47 @@ func convertNodeList(nodes []*html.Node, changed *bool) []*html.Node {
 			*changed = true
 			continue
 		}
+		// 見積は1要素＝1レコードなので、連続していても**連結しない**。
+		if isElementNamed(n, "m-our-estimate") {
+			out = append(out, buildRecordDL("our-estimate", n))
+			*changed = true
+			i++
+			continue
+		}
+		if isElementNamed(n, "m-supplier-estimate") {
+			out = append(out, buildRecordDL("supplier-estimate", n))
+			*changed = true
+			i++
+			continue
+		}
+		// 受発注は1要素＝1文書ブロック（section）。子の <m-item> は明細表の行になる。
+		if isElementNamed(n, "m-client-order") {
+			out = append(out, buildOrderSection("client-order", n))
+			*changed = true
+			i++
+			continue
+		}
+		if isElementNamed(n, "m-supplier-order") {
+			out = append(out, buildOrderSection("our-order", n))
+			*changed = true
+			i++
+			continue
+		}
+		// ファイル容器: 中身を先に変換してから新しい容器へ収める。
+		if isElementNamed(n, "m-file") {
+			out = append(out, buildFileSection(pageID, n, changed))
+			*changed = true
+			i++
+			continue
+		}
 
-		// それ以外の要素は子リストを再帰的に変換して差し替える
-		// （m-file の中の m-material など、入れ子でも同じ規則が効く）。
+		// それ以外の要素は子リストを再帰的に変換して差し替える。
 		if n.Type == html.ElementNode && n.FirstChild != nil {
 			kids := childNodesOf(n)
 			for _, c := range kids {
 				n.RemoveChild(c)
 			}
-			for _, c := range convertNodeList(kids, changed) {
+			for _, c := range convertNodeList(pageID, kids, changed) {
 				n.AppendChild(c)
 			}
 		}
@@ -113,6 +153,111 @@ func convertNodeList(nodes []*html.Node, changed *bool) []*html.Node {
 		i++
 	}
 	return out
+}
+
+// buildRecordDL は1レコード＝1要素（見積など）をレジストリの列定義に沿った
+// <dl data-type> へ変換します（dt=ラベル・dd data-field=属性の生の値）。
+func buildRecordDL(defType string, m *html.Node) *html.Node {
+	def, _ := VocabDefByType(defType)
+	dl := newElement("dl", html.Attribute{Key: "data-type", Val: defType})
+	carryBlockID(dl, []*html.Node{m})
+	for _, col := range def.Columns {
+		dt := newElement("dt")
+		dt.AppendChild(newText(col.Label))
+		dd := newElement("dd", html.Attribute{Key: "data-field", Val: col.Field})
+		if v := Attr(m, col.Field); v != "" {
+			dd.AppendChild(newText(v))
+		}
+		dl.AppendChild(dt)
+		dl.AppendChild(dd)
+	}
+	return dl
+}
+
+// buildOrderSection は受発注1件を <section data-type>（ヘッダ dl＋明細表）へ変換します
+// （論点A・案1。ヘッダ dl は data-type 無し・dd に data-field 自動付与）。
+func buildOrderSection(defType string, m *html.Node) *html.Node {
+	def, _ := VocabDefByType(defType)
+	itemsDef, _ := VocabDefByType(def.Items)
+
+	sec := newElement("section", html.Attribute{Key: "data-type", Val: defType})
+	carryBlockID(sec, []*html.Node{m})
+
+	dl := newElement("dl")
+	for _, col := range def.Columns {
+		dt := newElement("dt")
+		dt.AppendChild(newText(col.Label))
+		dd := newElement("dd", html.Attribute{Key: "data-field", Val: col.Field})
+		if v := Attr(m, col.Field); v != "" {
+			dd.AppendChild(newText(v))
+		}
+		dl.AppendChild(dt)
+		dl.AppendChild(dd)
+	}
+	sec.AppendChild(dl)
+
+	table := newElement("table", html.Attribute{Key: "data-type", Val: def.Items})
+	tbody := newElement("tbody")
+	table.AppendChild(tbody)
+	head := newElement("tr")
+	for _, col := range itemsDef.Columns {
+		th := newElement("th", html.Attribute{Key: "data-field", Val: col.Field})
+		th.AppendChild(newText(col.Label))
+		head.AppendChild(th)
+	}
+	tbody.AppendChild(head)
+	for c := m.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || c.Data != "m-item" {
+			continue
+		}
+		tr := newElement("tr")
+		for _, col := range itemsDef.Columns {
+			td := newElement("td")
+			if v := Attr(c, col.Field); v != "" {
+				td.AppendChild(newText(v))
+			}
+			tr.AppendChild(td)
+		}
+		tbody.AppendChild(tr)
+	}
+	sec.AppendChild(table)
+	return sec
+}
+
+// buildFileSection は <m-file> を <section data-type="file" data-src>＋可視の
+// ファイル名リンクへ変換します。中身は再帰的に変換して収める（閲覧ゼロJSでも
+// リンクからPDFを開ける。プレビューはエンハンサが担う——語彙モデル §10 の解）。
+func buildFileSection(pageID string, m *html.Node, changed *bool) *html.Node {
+	src := Attr(m, "src")
+	name := Attr(m, "name")
+	if name == "" {
+		name = src
+	}
+
+	attrs := []html.Attribute{{Key: "data-type", Val: "file"}}
+	if src != "" {
+		attrs = append(attrs, html.Attribute{Key: "data-src", Val: src})
+	}
+	sec := newElement("section", attrs...)
+	carryBlockID(sec, []*html.Node{m})
+
+	if src != "" && len(pageID) >= 2 {
+		a := newElement("a", html.Attribute{Key: "href", Val: "/data/master/" + pageID[:2] + "/" + pageID + "/" + src})
+		a.AppendChild(newText(name))
+		p := newElement("p")
+		p.AppendChild(newText("📎 "))
+		p.AppendChild(a)
+		sec.AppendChild(p)
+	}
+
+	kids := childNodesOf(m)
+	for _, c := range kids {
+		m.RemoveChild(c)
+	}
+	for _, c := range convertNodeList(pageID, kids, changed) {
+		sec.AppendChild(c)
+	}
+	return sec
 }
 
 // collectRun は nodes[*i] から始まる「match が続く並び」を集めて返します。
@@ -231,7 +376,8 @@ func MigrateVocab() (converted int, backupDir string, err error) {
 		if err != nil {
 			return err
 		}
-		out, changed := ConvertVocabHTML(string(content))
+		id := strings.TrimSuffix(info.Name(), ".html")
+		out, changed := ConvertVocabHTML(id, string(content))
 		if !changed {
 			return nil
 		}
@@ -241,7 +387,6 @@ func MigrateVocab() (converted int, backupDir string, err error) {
 		if err := os.WriteFile(path, []byte(out), 0644); err != nil {
 			return err
 		}
-		id := strings.TrimSuffix(info.Name(), ".html")
 		if err := SyncIndex(id, out); err != nil {
 			return err
 		}

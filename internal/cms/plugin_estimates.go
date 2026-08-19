@@ -75,29 +75,42 @@ func (estimatesPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		return err
 	}
 
+	insertOur := func(itemID, clientName string, price int, pdfPath, estimatedAt string) error {
+		_, err := tx.Exec(`
+			INSERT INTO our_estimates (item_id, client_name, price, pdf_path, page_id, estimated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, itemID, clientName, price, pdfPath, pageID, NullableString(estimatedAt))
+		return err
+	}
+	insertSupplier := func(itemName, supplierName string, cost int, pdfPath, estimatedAt string) error {
+		_, err := tx.Exec(`
+			INSERT INTO supplier_estimates (item_name, supplier_name, cost, pdf_path, page_id, estimated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, itemName, supplierName, cost, pdfPath, pageID, NullableString(estimatedAt))
+		return err
+	}
+
 	var firstErr error
 	WalkElements(root, func(n *html.Node) {
 		if firstErr != nil {
 			return
 		}
-		// PDFのパスは容器である <m-file> が持つ（業務要素は単独でも置ける）。
-		switch n.Data {
-		case "m-our-estimate":
-			if _, err := tx.Exec(`
-				INSERT INTO our_estimates (item_id, client_name, price, pdf_path, page_id, estimated_at)
-				VALUES (?, ?, ?, ?, ?, ?)
-			`, Attr(n, "item-id"), Attr(n, "client-name"), AtoiSafe(Attr(n, "price")),
-				ClosestAttr(n, "m-file", "src"), pageID, NullableString(Attr(n, "estimated-at"))); err != nil {
-				firstErr = err
-			}
-		case "m-supplier-estimate":
-			if _, err := tx.Exec(`
-				INSERT INTO supplier_estimates (item_name, supplier_name, cost, pdf_path, page_id, estimated_at)
-				VALUES (?, ?, ?, ?, ?, ?)
-			`, Attr(n, "item-name"), Attr(n, "supplier-name"), AtoiSafe(Attr(n, "cost")),
-				ClosestAttr(n, "m-file", "src"), pageID, NullableString(Attr(n, "estimated-at"))); err != nil {
-				firstErr = err
-			}
+		// PDFのパスは容器（新: section[data-type="file"]・旧: <m-file>）が持つ。
+		switch {
+		case n.Data == "m-our-estimate": // 旧形式（変換完了までの短期保険）
+			firstErr = insertOur(Attr(n, "item-id"), Attr(n, "client-name"),
+				AtoiSafe(Attr(n, "price")), ClosestFileSrc(n), Attr(n, "estimated-at"))
+		case n.Data == "m-supplier-estimate":
+			firstErr = insertSupplier(Attr(n, "item-name"), Attr(n, "supplier-name"),
+				AtoiSafe(Attr(n, "cost")), ClosestFileSrc(n), Attr(n, "estimated-at"))
+		case n.Data == "dl" && Attr(n, "data-type") == "our-estimate": // 新形式
+			def, _ := VocabDefByType("our-estimate")
+			f := VocabDLFields(n, def)
+			firstErr = insertOur(f["item-id"], f["client-name"], vocabNumber(f["price"]), ClosestFileSrc(n), f["estimated-at"])
+		case n.Data == "dl" && Attr(n, "data-type") == "supplier-estimate":
+			def, _ := VocabDefByType("supplier-estimate")
+			f := VocabDLFields(n, def)
+			firstErr = insertSupplier(f["item-name"], f["supplier-name"], vocabNumber(f["cost"]), ClosestFileSrc(n), f["estimated-at"])
 		}
 	})
 	return firstErr

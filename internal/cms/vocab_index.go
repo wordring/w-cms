@@ -238,6 +238,109 @@ func walkSkippingNested(root *html.Node, skip map[string]bool, fn func(*html.Nod
 	}
 }
 
+// ── ③計算プラグイン向けの汎用読み取りヘルパ（移行第3段） ──────────────
+// 文書自身が携帯するスキーマ（見出し行・dt）を機械キーへ解決して値を取り出す。
+// 鍵の決定は②と同じ規則（data-field 優先→表示文字→レジストリの Label 経由で Field へ）。
+
+// VocabDLFields は dl の項目を機械キー→値の表として返します。
+func VocabDLFields(dl *html.Node, def VocabDef) map[string]string {
+	out := map[string]string{}
+	if dl == nil {
+		return out
+	}
+	currentKey := ""
+	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true, "section": true}, func(n *html.Node) {
+		switch n.Data {
+		case "dt":
+			currentKey = strings.TrimSpace(nodeText(n))
+		case "dd":
+			key := Attr(n, "data-field")
+			if key == "" {
+				key = currentKey
+			}
+			if col, ok := def.columnFor(key); ok && col.Field != "" {
+				key = col.Field
+			}
+			if key != "" {
+				if _, dup := out[key]; !dup { // 多値は先頭を採る（TagValue と同じ）
+					out[key] = strings.TrimSpace(nodeText(n))
+				}
+			}
+		}
+	})
+	return out
+}
+
+// VocabTableRows は表のデータ行を機械キー→値の表の列として返します。
+func VocabTableRows(table *html.Node, def VocabDef) []map[string]string {
+	if table == nil {
+		return nil
+	}
+	rows := tableRows(table)
+	if len(rows) < 2 {
+		return nil
+	}
+	fields := make([]string, 0, 8)
+	for _, cell := range rowCells(rows[0]) {
+		key := Attr(cell, "data-field")
+		if key == "" {
+			key = strings.TrimSpace(nodeText(cell))
+		}
+		field := ""
+		if col, ok := def.columnFor(key); ok {
+			field = col.Field
+		}
+		fields = append(fields, field)
+	}
+	var out []map[string]string
+	for _, row := range rows[1:] {
+		values := map[string]string{}
+		for i, cell := range rowCells(row) {
+			if i < len(fields) && fields[i] != "" {
+				values[fields[i]] = strings.TrimSpace(nodeText(cell))
+			}
+		}
+		out = append(out, values)
+	}
+	return out
+}
+
+// FirstVocabChild は root 配下から最初の element[data-type==dataType]（dataType が
+// 空なら data-type を問わない element）を返します。入れ子の section へは降りません
+// （入れ子の業務ブロックは独立して読まれるため）。
+func FirstVocabChild(root *html.Node, element, dataType string) *html.Node {
+	if root == nil {
+		return nil
+	}
+	var found *html.Node
+	walkSkippingNested(root, map[string]bool{"section": true}, func(n *html.Node) {
+		if found != nil || n.Data != element {
+			return
+		}
+		if dataType == "" || Attr(n, "data-type") == dataType {
+			found = n
+		}
+	})
+	return found
+}
+
+// ClosestFileSrc は祖先のファイル容器から PDF パスを返します。
+// 新形式 <section data-type="file" data-src> と旧 <m-file src> の両対応。
+func ClosestFileSrc(n *html.Node) string {
+	for p := n.Parent; p != nil; p = p.Parent {
+		if p.Type != html.ElementNode {
+			continue
+		}
+		if p.Data == "section" && Attr(p, "data-type") == "file" {
+			return Attr(p, "data-src")
+		}
+		if p.Data == "m-file" {
+			return Attr(p, "src")
+		}
+	}
+	return ""
+}
+
 // nodeText は要素配下のテキストを連結して返します（表示文字＝値。語彙モデル §2）。
 func nodeText(n *html.Node) string {
 	var sb strings.Builder

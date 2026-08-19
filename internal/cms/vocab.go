@@ -67,8 +67,13 @@ type VocabDef struct {
 	DisplayName string        `json:"display_name"` // スラッシュメニュー等の表示名
 	Category    string        `json:"category"`     // 分類（メニューのグルーピング用）
 	Icon        string        `json:"icon"`         // メニューのアイコン（絵文字）
-	Element     string        `json:"element"`      // "table"（繰り返し明細）| "dl"（名前:値）
-	Columns     []VocabColumn `json:"columns"`      // 列（dl では項目）の並び
+	Element     string        `json:"element"`      // "table"（繰り返し明細）| "dl"（名前:値）| "section"（業務文書ブロック・論点A案1）
+	Columns     []VocabColumn `json:"columns"`      // 列（dl では項目、section ではヘッダ dl の項目）の並び
+
+	// 以下は業務文書ブロック（Element=="section"・語彙モデル §8.2 論点A）用。
+	Items     string `json:"items,omitempty"`     // 明細表の形式名（section 直下の table[data-type]）
+	Container string `json:"container,omitempty"` // 挿入骨格を包む容器の形式名（例: "file"）
+	Hidden    bool   `json:"hidden,omitempty"`    // スラッシュメニューに出さない（明細表など、単独で挿入しない形式）
 }
 
 // vocabRegistry が宣言テーブルの本体です。語彙を増やすときはここへ1件足します。
@@ -105,6 +110,100 @@ var vocabRegistry = []VocabDef{
 			{Field: "cost", Label: "単価", Type: ColNumber},
 			{Field: "supplier-name", Label: "仕入先", Type: ColText},
 			{Field: "quantity", Label: "数量", Type: ColNumber},
+		},
+	},
+	// ── 移行第3段（受発注4種＋容器。語彙モデル §8.1・§8.2 論点A=案1） ──
+	// 業務文書ブロックは <section data-type> がヘッダ <dl>（data-type 無し・dd に
+	// data-field 自動付与）と明細 <table data-type> を包む。PDF容器は
+	// <section data-type="file" data-src>（配線＝属性）＋可視のファイル名リンク（中身）。
+	{
+		Type:        "file",
+		DisplayName: "ファイル（PDF）",
+		Category:    "業務",
+		Icon:        "📎",
+		Element:     "section",
+	},
+	{
+		Type:        "client-order",
+		DisplayName: "顧客の発注書",
+		Category:    "業務",
+		Icon:        "📩",
+		Element:     "section",
+		Items:       "client-order-items",
+		Container:   "file",
+		Columns: []VocabColumn{
+			{Field: "order-no", Label: "発注書番号", Type: ColText},
+			{Field: "client-name", Label: "発注元", Type: ColText},
+			{Field: "ordered-at", Label: "発注日", Type: ColDate},
+		},
+	},
+	{
+		Type:    "client-order-items",
+		DisplayName: "受注明細",
+		Category:    "業務",
+		Icon:        "📩",
+		Element: "table",
+		Hidden:  true,
+		Columns: []VocabColumn{
+			{Field: "item-id", Label: "品番", Type: ColText},
+			{Field: "item-name", Label: "品名", Type: ColText},
+			{Field: "price", Label: "単価", Type: ColNumber},
+			{Field: "quantity", Label: "数量", Type: ColNumber},
+			{Field: "status", Label: "状態", Type: ColEnum, Enum: []string{"未着手", "加工中", "検査中", "納品済"}},
+		},
+	},
+	{
+		Type:        "our-order",
+		DisplayName: "自社の発注書",
+		Category:    "業務",
+		Icon:        "📤",
+		Element:     "section",
+		Items:       "our-order-items",
+		Container:   "file",
+		Columns: []VocabColumn{
+			{Field: "order-no", Label: "発注書番号", Type: ColText},
+			{Field: "supplier-name", Label: "発注先", Type: ColText},
+			{Field: "ordered-at", Label: "発注日", Type: ColDate},
+		},
+	},
+	{
+		Type:    "our-order-items",
+		DisplayName: "発注明細",
+		Category:    "業務",
+		Icon:        "📤",
+		Element: "table",
+		Hidden:  true,
+		Columns: []VocabColumn{
+			{Field: "item-name", Label: "品名", Type: ColText},
+			{Field: "cost", Label: "単価", Type: ColNumber},
+			{Field: "quantity", Label: "数量", Type: ColNumber},
+			{Field: "status", Label: "状態", Type: ColEnum, Enum: []string{"未納品", "納品済"}},
+		},
+	},
+	{
+		Type:        "our-estimate",
+		DisplayName: "弊社の見積もり",
+		Category:    "業務",
+		Icon:        "💴",
+		Element:     "dl",
+		Columns: []VocabColumn{
+			{Field: "item-id", Label: "品番", Type: ColText},
+			{Field: "client-name", Label: "顧客", Type: ColText},
+			{Field: "price", Label: "見積金額", Type: ColNumber},
+			{Field: "estimated-at", Label: "見積日", Type: ColDate},
+		},
+	},
+	{
+		Type:        "supplier-estimate",
+		DisplayName: "材料屋の見積もり",
+		Category:    "業務",
+		Icon:        "🏭",
+		Element:     "dl",
+		Columns: []VocabColumn{
+			{Field: "item-name", Label: "部材名", Type: ColText},
+			{Field: "supplier-name", Label: "仕入先", Type: ColText},
+			{Field: "cost", Label: "見積金額", Type: ColNumber},
+			{Field: "estimated-at", Label: "見積日", Type: ColDate},
 		},
 	},
 	{

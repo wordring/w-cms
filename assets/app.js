@@ -878,6 +878,7 @@
             if (isCustomTag(el.tagName.toLowerCase()) && typeof el.render === 'function') el.render();
         });
 
+        enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         updateHtmlPreview();
         refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
     }
@@ -939,6 +940,7 @@
         });
         initBlocks();
         buildToc();
+        enhanceFileSections();
     }
 
     // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
@@ -1328,6 +1330,8 @@
         const pretty = WHITESPACE_INSENSITIVE.has(el.tagName.toLowerCase());
         let out = '';
         el.childNodes.forEach(node => {
+            // エンハンサが挿す編集クローム（PDFドロップゾーン・プレビュー等）は本文ではない
+            if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('vocab-chrome')) return;
             if (node.nodeType === Node.TEXT_NODE) {
                 // 字下げする要素の中の空白だけのテキストは整形由来なので捨てる
                 if (pretty && !node.nodeValue.trim()) return;
@@ -1386,7 +1390,42 @@
     // <dl data-type>（dt/dd の組）を機械的に生成する。DOM生成は createElement ＋
     // textContent 代入（DOMが自動エスケープする）で行い、文字列置換＋innerHTML の
     // テンプレート機構は持ち込まない（Web Components 廃止決定・語彙モデル §7）。
+    // defaultFieldValue は骨格生成時に埋める既定値。日付は今日、発注書番号は
+    // 一意な仮番号（order_no は UNIQUE 制約があり、空のまま複数保存すると衝突するため。
+    // 旧 createComponentElement の 'PO-' 採番と同じ理由）。
+    function defaultFieldValue(col) {
+        if (col.type === 'date') return new Date().toISOString().split('T')[0];
+        if (col.field === 'order-no') return 'PO-' + Date.now().toString().slice(-6);
+        return '';
+    }
+
     function buildVocabSkeleton(def) {
+        if (def.element === 'section') {
+            // 業務文書ブロック（論点A・案1）: section が ヘッダ dl（data-type 無し・
+            // dd に data-field 自動付与）と明細表を包む。file 容器は列を持たない。
+            const sec = document.createElement('section');
+            sec.setAttribute('data-type', def.type);
+            if (def.columns && def.columns.length) {
+                const dl = document.createElement('dl');
+                def.columns.forEach(col => {
+                    const dt = document.createElement('dt');
+                    dt.textContent = col.label;
+                    const dd = document.createElement('dd');
+                    if (col.field) dd.setAttribute('data-field', col.field);
+                    const v = defaultFieldValue(col);
+                    if (v) dd.textContent = v;
+                    else dd.appendChild(document.createElement('br')); // 空 dd のキャレット足場（emptyEditable 参照）
+                    dl.appendChild(dt);
+                    dl.appendChild(dd);
+                });
+                sec.appendChild(dl);
+            }
+            if (def.items) {
+                const itemsDef = vocabDefs.find(v => v.type === def.items);
+                if (itemsDef) sec.appendChild(buildVocabSkeleton(itemsDef));
+            }
+            return sec;
+        }
         if (def.element === 'dl') {
             const dl = document.createElement('dl');
             dl.setAttribute('data-type', def.type);
@@ -1440,56 +1479,20 @@
             const def = vocabDefs.find(v => v.type === type.slice(6));
             if (!def) return null;
             newEl = buildVocabSkeleton(def);
+            if (def.container) { // 容器つきの形式（受発注は file 容器の中に生まれる）
+                const cdef = vocabDefs.find(v => v.type === def.container);
+                if (cdef) {
+                    const wrap = buildVocabSkeleton(cdef);
+                    wrap.appendChild(newEl);
+                    newEl = wrap;
+                }
+            }
         } else if (type === 'h1') {
             newEl = document.createElement('h1');
             newEl.innerText = '';
         } else if (type === 'p') {
             newEl = document.createElement('p');
             newEl.innerText = '';
-        } else if (type === 'm-file-client') {
-            // <m-file>（容器）の中に業務要素を入れる。意味は要素そのものが持つ。
-            newEl = document.createElement('m-file');
-            newEl.setAttribute('src', 'sample_po.pdf');
-            newEl.setAttribute('name', '顧客発注書.pdf');
-            const order = document.createElement('m-client-order');
-            order.setAttribute('order-no', 'PO-' + Date.now().toString().slice(-4));
-            order.setAttribute('client-name', '新規顧客');
-            order.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
-            const item = document.createElement('m-item');
-            item.setAttribute('item-id', 'NEW-ITEM');
-            item.setAttribute('item-name', '新規部品');
-            item.setAttribute('price', '1000');
-            item.setAttribute('quantity', '1');
-            item.setAttribute('status', '未着手');
-            order.appendChild(item);
-            newEl.appendChild(order);
-        } else if (type === 'm-file-our') {
-            newEl = document.createElement('m-file');
-            newEl.setAttribute('src', 'sample_order.pdf');
-            newEl.setAttribute('name', '自社発注書.pdf');
-            const order = document.createElement('m-supplier-order');
-            order.setAttribute('order-no', 'PO-OUR-' + Date.now().toString().slice(-4));
-            order.setAttribute('supplier-name', '新規仕入先');
-            order.setAttribute('ordered-at', new Date().toISOString().split('T')[0]);
-            const item = document.createElement('m-item');
-            item.setAttribute('item-name', '新規品目');
-            item.setAttribute('cost', '500');
-            item.setAttribute('quantity', '1');
-            item.setAttribute('status', '未納品');
-            order.appendChild(item);
-            newEl.appendChild(order);
-        } else if (type === 'm-our-estimate') {
-            newEl = document.createElement('m-our-estimate');
-            newEl.setAttribute('item-id', 'NEW-ITEM');
-            newEl.setAttribute('client-name', '新規顧客');
-            newEl.setAttribute('price', '1000');
-            newEl.setAttribute('estimated-at', new Date().toISOString().split('T')[0]);
-        } else if (type === 'm-supplier-estimate') {
-            newEl = document.createElement('m-supplier-estimate');
-            newEl.setAttribute('item-name', '新規部材');
-            newEl.setAttribute('supplier-name', '新規仕入先');
-            newEl.setAttribute('cost', '500');
-            newEl.setAttribute('estimated-at', new Date().toISOString().split('T')[0]);
         } else if (type === 'm-required-materials') {
             newEl = document.createElement('m-required-materials');
             newEl.setAttribute('page-id', currentPageId);
@@ -1544,11 +1547,12 @@
         if (typeof newEl.render === 'function') {
             newEl.render();
         }
+        enhanceFileSections();
         updateHtmlPreview();
 
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
             newEl.focus();
-        } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL')) {
+        } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL' || newEl.tagName === 'SECTION')) {
             focusFirstCell(newEl); // 挿入した骨格の最初のセルから入力を始められるように
         }
 
@@ -1567,11 +1571,12 @@
         if (typeof newEl.render === 'function') {
             newEl.render();
         }
+        enhanceFileSections();
         updateHtmlPreview();
         
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'P')) {
             newEl.focus();
-        } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL')) {
+        } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL' || newEl.tagName === 'SECTION')) {
             focusFirstCell(newEl);
         }
         return newEl;
@@ -2189,6 +2194,123 @@
         menu.style.left = (rect.left + window.scrollX) + 'px';
     }
 
+    // ── ファイル容器のエンハンサ（語彙モデル §3: マーカー要素へ振る舞いを配線） ──
+    // <section data-type="file"> に PDF プレビュー（閲覧・編集）と、編集モードの
+    // ドロップゾーン・明細AI解析ボタンを付ける。挿すのはすべて .vocab-chrome
+    // （シリアライザが保存しない編集クローム）。呼び出しは applyMode・populateEditor・
+    // 挿入直後の3点（エンハンスパスの規律。作り直し方式なので冪等）。
+    function enhanceFileSections() {
+        document.querySelectorAll('#editor-content section[data-type="file"]').forEach(sec => {
+            sec.querySelectorAll(':scope > .vocab-chrome').forEach(el => el.remove());
+            const src = sec.getAttribute('data-src') || '';
+            const isEdit = document.body.hasAttribute('edit-mode');
+
+            if (src && src.toLowerCase().endsWith('.pdf') && currentPageId) {
+                const embed = document.createElement('embed');
+                embed.className = 'vocab-chrome file-preview';
+                embed.src = '/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + src;
+                embed.type = 'application/pdf';
+                sec.appendChild(embed);
+            }
+            if (!isEdit) return;
+
+            const zone = document.createElement('div');
+            zone.className = 'vocab-chrome pdf-drop-zone';
+            zone.contentEditable = 'false';
+            zone.textContent = src ? '📎 PDFを差し替えるにはここへドロップ' : '📎 PDFをここへドロップして添付';
+            zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('is-dragover'); });
+            zone.addEventListener('dragleave', () => zone.classList.remove('is-dragover'));
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('is-dragover');
+                const f = e.dataTransfer.files[0];
+                const isPDF = f && (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+                if (!isPDF) { notify('PDFファイルをドロップしてください。', { type: 'warn', duration: 5000 }); return; }
+                uploadPDFToSection(sec, f);
+            });
+            sec.appendChild(zone);
+
+            if (src && sec.querySelector('section[data-type="client-order"], section[data-type="our-order"]')) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'vocab-chrome parse-pdf-btn';
+                btn.textContent = '🤖 PDFから明細を解析';
+                btn.addEventListener('click', () => parsePDFIntoSection(sec, src));
+                sec.appendChild(btn);
+            }
+        });
+    }
+
+    // uploadPDFToSection はPDFを添付し、配線（data-src）と可視のファイル名リンクを更新する。
+    async function uploadPDFToSection(sec, file) {
+        if (!currentPageId) { notify('先にページを保存してください。', { type: 'warn', duration: 5000 }); return; }
+        const fd = new FormData();
+        fd.append('page_id', currentPageId);
+        fd.append('pdf_file', file);
+        try {
+            const res = await fetch('/api/upload-pdf', { method: 'POST', body: fd });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) throw new Error(d.message || res.status);
+            sec.setAttribute('data-src', d.src);
+            // 可視のファイル名リンク（中身＝正本に保存される）を先頭に置き直す
+            let p = sec.querySelector(':scope > p');
+            if (!p || !p.querySelector('a')) {
+                p = document.createElement('p');
+                sec.insertBefore(p, sec.firstChild);
+            }
+            p.textContent = '📎 ';
+            const a = document.createElement('a');
+            a.href = '/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + d.src;
+            a.textContent = file.name;
+            p.appendChild(a);
+            enhanceFileSections();
+            updateHtmlPreview();
+            notify('PDFを添付しました。', { type: 'success', duration: 3000 });
+        } catch (e) {
+            notify('PDFのアップロードに失敗しました: ' + e.message, { type: 'warn', duration: 8000 });
+        }
+    }
+
+    // parsePDFIntoSection はPDFをAI解析し、容器内の受発注ブロックの明細表へ行を足す。
+    async function parsePDFIntoSection(sec, src) {
+        notify('PDFを解析しています…', { type: 'info', duration: 0, id: 'parse-pdf' });
+        try {
+            const res = await fetch('/api/parse-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_id: currentPageId, file_name: src })
+            });
+            const d = await res.json().catch(() => ({}));
+            dismissToast('parse-pdf');
+            if (!d.success || !Array.isArray(d.items)) {
+                notify('解析に失敗しました: ' + (d.message || res.status), { type: 'warn', duration: 10000 });
+                return;
+            }
+            const order = sec.querySelector('section[data-type="client-order"], section[data-type="our-order"]');
+            const table = order && order.querySelector('table[data-type]');
+            if (!table) return;
+            const fields = Array.from(table.querySelectorAll('tr:first-child th'))
+                .map(th => th.getAttribute('data-field') || th.textContent.trim());
+            const tbody = table.querySelector('tbody') || table;
+            d.items.forEach(it => {
+                const tr = document.createElement('tr');
+                fields.forEach(f => {
+                    const td = document.createElement('td');
+                    if (f === 'item-name') td.textContent = it.item_name || '';
+                    else if (f === 'price' || f === 'cost') td.textContent = it.price || '';
+                    else if (f === 'quantity') td.textContent = it.quantity || '';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            updateHtmlPreview();
+            notify(d.items.length + ' 件の明細を追加しました。内容を確認してください。', { type: 'success', duration: 5000 });
+        } catch (e) {
+            dismissToast('parse-pdf');
+            notify('解析に失敗しました: ' + e.message, { type: 'warn', duration: 10000 });
+        }
+    }
+
     // ── スラッシュメニューのレジストリ駆動項目 ──────────────────────────
     // 語彙レジストリ（①）の形式定義から項目を生成して静的項目の後ろへ足す。
     // メニュー全体の再設計（絞り込み・分類・頻度順）は別課題（エディタ仕様 §3）で、
@@ -2197,6 +2319,7 @@
         const menu = document.getElementById('slash-menu');
         if (!menu) return;
         vocabDefs.forEach(def => {
+            if (def.hidden) return; // 明細表など、単独では挿入しない形式
             const item = document.createElement('div');
             item.className = 'slash-menu-item';
             item.setAttribute('data-type', 'vocab:' + def.type);

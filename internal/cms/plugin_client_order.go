@@ -82,13 +82,8 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		return err
 	}
 
-	var firstErr error
-	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil || n.Data != "m-client-order" {
-			return
-		}
-		orderNo := Attr(n, "order-no")
-		if _, err := tx.Exec(`
+	insertHeader := func(orderNo, clientName, pdfPath, orderedAt string) error {
+		_, err := tx.Exec(`
 			INSERT INTO client_orders (order_no, client_name, pdf_path, page_id, ordered_at)
 			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT(order_no) DO UPDATE SET
@@ -96,21 +91,59 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 				pdf_path    = excluded.pdf_path,
 				page_id     = excluded.page_id,
 				ordered_at  = excluded.ordered_at
-		`, orderNo, Attr(n, "client-name"), ClosestAttr(n, "m-file", "src"), pageID, NullableString(Attr(n, "ordered-at"))); err != nil {
-			firstErr = err
+		`, orderNo, clientName, pdfPath, pageID, NullableString(orderedAt))
+		return err
+	}
+	insertItem := func(orderNo, itemID, itemName string, price, quantity int, status string) error {
+		_, err := tx.Exec(`
+			INSERT INTO client_order_items (order_no, item_id, item_name, price, quantity, status)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, orderNo, itemID, itemName, price, quantity, status)
+		return err
+	}
+
+	var firstErr error
+	WalkElements(root, func(n *html.Node) {
+		if firstErr != nil {
 			return
 		}
-		// 明細（直下の <m-item>）を挿入
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type != html.ElementNode || c.Data != "m-item" {
-				continue
-			}
-			if _, err := tx.Exec(`
-				INSERT INTO client_order_items (order_no, item_id, item_name, price, quantity, status)
-				VALUES (?, ?, ?, ?, ?, ?)
-			`, orderNo, Attr(c, "item-id"), Attr(c, "item-name"), AtoiSafe(Attr(c, "price")), Quantity(c), Attr(c, "status")); err != nil {
+		switch {
+		case n.Data == "m-client-order": // 旧形式（変換完了までの短期保険）
+			orderNo := Attr(n, "order-no")
+			if err := insertHeader(orderNo, Attr(n, "client-name"), ClosestFileSrc(n), Attr(n, "ordered-at")); err != nil {
 				firstErr = err
 				return
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if c.Type != html.ElementNode || c.Data != "m-item" {
+					continue
+				}
+				if err := insertItem(orderNo, Attr(c, "item-id"), Attr(c, "item-name"),
+					AtoiSafe(Attr(c, "price")), Quantity(c), Attr(c, "status")); err != nil {
+					firstErr = err
+					return
+				}
+			}
+
+		case n.Data == "section" && Attr(n, "data-type") == "client-order": // 新形式（論点A・案1）
+			def, _ := VocabDefByType("client-order")
+			itemsDef, _ := VocabDefByType("client-order-items")
+			header := VocabDLFields(FirstVocabChild(n, "dl", ""), def)
+			orderNo := header["order-no"]
+			if err := insertHeader(orderNo, header["client-name"], ClosestFileSrc(n), header["ordered-at"]); err != nil {
+				firstErr = err
+				return
+			}
+			for _, row := range VocabTableRows(FirstVocabChild(n, "table", "client-order-items"), itemsDef) {
+				quantity := 1 // 空セルの既定（旧 Quantity() と同じ）
+				if v := row["quantity"]; v != "" {
+					quantity = vocabNumber(v)
+				}
+				if err := insertItem(orderNo, row["item-id"], row["item-name"],
+					vocabNumber(row["price"]), quantity, row["status"]); err != nil {
+					firstErr = err
+					return
+				}
 			}
 		}
 	})
