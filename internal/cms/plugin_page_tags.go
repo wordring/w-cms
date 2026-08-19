@@ -2,6 +2,7 @@ package cms
 
 import (
 	"database/sql"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -9,12 +10,18 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン: ページ横断メタ（可変タグ）
 //
-//   <m-tag name="発注元" value="株式会社トーア">
+//   新形式: <dl data-type="tags"><dt>発注元</dt><dd>株式会社トーア</dd></dl>
+//   旧形式: <m-tag name="発注元" value="株式会社トーア">
 //
 //   → page_tags（page_id, name, value）
 //
 // 特定のブロックに属さない「ページ全体のメタ情報」を担う。name は自由語で、
-// **同じ name を同一ページに複数置いてよい**（担当者が2人、関連部品番号が複数など）。
+// **同じ name を同一ページに複数置いてよい**（担当者が2人、関連部品番号が複数など。
+// 新形式では dt の繰り返し／複数 dd）。
+//
+// 移行第2段（語彙モデル §8.4-2）で同期元を <dl data-type="tags"> へ切り替えた。
+// 旧 <m-tag> の読み取りは**変換ツールが安定するまでの短期の保険**（同書 §8.3。
+// 恒久両対応は語彙の単一正本に反するため、移行完了後に除去する）。
 //
 // かつてコアの parser.go / sync.go / database.CoreTables が直接扱っていたが、
 // 「カスタムタグはすべてプラグインが所有する」方針に合わせてここへ移設した。
@@ -63,20 +70,51 @@ func (pageTagsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		return err
 	}
 
+	insert := func(name, value string) error {
+		// 旧方式の「親ページID」タグはサイドカーへ移行済みのため、ユーザータグとしては扱わない
+		// （新形式の dt に書かれた場合も同じ扱い）。
+		if name == "" || name == legacyParentTagName {
+			return nil
+		}
+		_, err := tx.Exec(
+			`INSERT INTO page_tags (page_id, name, value) VALUES (?, ?, ?)`,
+			pageID, name, value)
+		return err
+	}
+
 	var firstErr error
 	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil || n.Data != "m-tag" {
+		if firstErr != nil {
 			return
 		}
-		name := Attr(n, "name")
-		// 旧方式の「親ページID」タグはサイドカーへ移行済みのため、ユーザータグとしては扱わない。
-		if name == "" || name == legacyParentTagName {
+		switch {
+		case n.Data == "m-tag": // 旧形式（短期の保険）
+			firstErr = insert(Attr(n, "name"), Attr(n, "value"))
+		case n.Data == "dl" && Attr(n, "data-type") == "tags": // 新形式
+			firstErr = syncTagsDL(n, insert)
+		}
+	})
+	return firstErr
+}
+
+// syncTagsDL は <dl data-type="tags"> の dt/dd を insert へ流し込みます。
+// 鍵は dt の表示文字（trim後）。多値は dt の繰り返し／複数 dd で表す（語彙モデル §5.3）。
+func syncTagsDL(dl *html.Node, insert func(name, value string) error) error {
+	currentKey := ""
+	var firstErr error
+	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true}, func(n *html.Node) {
+		if firstErr != nil {
 			return
 		}
-		if _, err := tx.Exec(
-			`INSERT INTO page_tags (page_id, name, value) VALUES (?, ?, ?)`,
-			pageID, name, Attr(n, "value")); err != nil {
-			firstErr = err
+		switch n.Data {
+		case "dt":
+			currentKey = strings.TrimSpace(nodeText(n))
+		case "dd":
+			key := Attr(n, "data-field") // ③計算形式の機械キーがあれば優先（②と同じ規則）
+			if key == "" {
+				key = currentKey
+			}
+			firstErr = insert(key, strings.TrimSpace(nodeText(n)))
 		}
 	})
 	return firstErr

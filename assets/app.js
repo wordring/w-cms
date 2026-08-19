@@ -1446,10 +1446,6 @@
         } else if (type === 'p') {
             newEl = document.createElement('p');
             newEl.innerText = '';
-        } else if (type === 'm-tag') {
-            newEl = document.createElement('m-tag');
-            newEl.setAttribute('name', '新規タグ');
-            newEl.setAttribute('value', '値');
         } else if (type === 'm-file-client') {
             // <m-file>（容器）の中に業務要素を入れる。意味は要素そのものが持つ。
             newEl = document.createElement('m-file');
@@ -1494,12 +1490,6 @@
             newEl.setAttribute('supplier-name', '新規仕入先');
             newEl.setAttribute('cost', '500');
             newEl.setAttribute('estimated-at', new Date().toISOString().split('T')[0]);
-        } else if (type === 'm-material') {
-            newEl = document.createElement('m-material');
-            newEl.setAttribute('item-name', '新規部材');
-            newEl.setAttribute('cost', '100');
-            newEl.setAttribute('supplier-name', '新規仕入先');
-            newEl.setAttribute('quantity', '1');
         } else if (type === 'm-required-materials') {
             newEl = document.createElement('m-required-materials');
             newEl.setAttribute('page-id', currentPageId);

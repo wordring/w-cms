@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"golang.org/x/net/html"
 
@@ -15,10 +16,15 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（特殊な値の注入 ＋ 集計API付き）: 部品の構成部材（BOM）
 //
-//   <m-tag name="部品番号" value="SHAFT-01">      ← ページ全体に効く「部品番号」
-//   <m-material item-name=".." cost=".." supplier-name=".." quantity="..">
+//   新形式: <table data-type="part-materials"> の行（③計算形式。列は data-field
+//           item-name / cost / supplier-name / quantity。語彙モデル §8.1）
+//   旧形式: <m-material item-name=".." cost=".." supplier-name=".." quantity="..">
+//   部品番号はページ横断メタ（可変タグ）から TagValue で取得（新旧どちらの形式でも効く）
 //
 //   → part_materials（part_id はページの「部品番号」タグから全行に注入）
+//
+// 移行第2段（語彙モデル §8.4-2）で読み先を新形式の表へ切り替えた。旧 <m-material> の
+// 読み取りは**変換ツールが安定するまでの短期の保険**（同書 §8.3）。
 //
 // さらに RouteProvider を実装し、GET /api/required-materials（部材手配計算API）を
 // 提供します（Tier 2: 集計ロジックはコードプラグインとして持つ）。
@@ -68,23 +74,87 @@ func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		return err
 	}
 
-	// part_id は <m-material> 自身の属性ではなく、ページ全体の「部品番号」タグから取得し、
-	// ページ内のすべての部材行に一括で付与する。
+	// part_id は部材行自身の値ではなく、ページ全体の「部品番号」タグ（可変タグ）から
+	// 取得し、ページ内のすべての部材行に一括で付与する。
 	partID := TagValue(root, "部品番号")
+
+	insert := func(itemName string, cost int, supplierName string, quantity int) error {
+		_, err := tx.Exec(`
+			INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, partID, itemName, cost, supplierName, quantity, pageID)
+		return err
+	}
 
 	var firstErr error
 	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil || n.Data != "m-material" {
+		if firstErr != nil {
 			return
 		}
-		if _, err := tx.Exec(`
-			INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, partID, Attr(n, "item-name"), AtoiSafe(Attr(n, "cost")), Attr(n, "supplier-name"), Quantity(n), pageID); err != nil {
-			firstErr = err
+		switch {
+		case n.Data == "m-material": // 旧形式（短期の保険）
+			firstErr = insert(Attr(n, "item-name"), AtoiSafe(Attr(n, "cost")), Attr(n, "supplier-name"), Quantity(n))
+		case n.Data == "table" && Attr(n, "data-type") == "part-materials": // 新形式
+			firstErr = syncMaterialsTable(n, insert)
 		}
 	})
 	return firstErr
+}
+
+// syncMaterialsTable は <table data-type="part-materials"> のデータ行を insert へ流し込みます。
+//
+// 列の対応は文書自身の見出し行から解決する（語彙モデル §5.1）: 鍵は th の data-field
+// 優先・無ければ見出しテキストで、どちらもレジストリ宣言（part-materials の
+// Field／Label）を通じて機械キーへ正規化される——見出しを「単価（税抜）」等へ
+// 改名しても data-field があれば壊れない。
+// 数値（cost / quantity）は語彙の正規化（¥・桁区切り・全角の吸収）を通して読む。
+// quantity の空セルは旧 <m-material> の既定と同じく 1 として扱う。
+func syncMaterialsTable(table *html.Node, insert func(string, int, string, int) error) error {
+	def, _ := VocabDefByType("part-materials")
+	rows := tableRows(table)
+	if len(rows) < 2 {
+		return nil // 見出しだけ（またはデータ行なし）
+	}
+
+	// 見出し行 → 各列の機械キー（解決できない列は空のまま＝読まない）
+	fields := make([]string, 0, 4)
+	for _, cell := range rowCells(rows[0]) {
+		key := Attr(cell, "data-field")
+		if key == "" {
+			key = strings.TrimSpace(nodeText(cell))
+		}
+		field := ""
+		if col, ok := def.columnFor(key); ok {
+			field = col.Field
+		}
+		fields = append(fields, field)
+	}
+
+	for _, row := range rows[1:] {
+		values := map[string]string{}
+		for i, cell := range rowCells(row) {
+			if i < len(fields) && fields[i] != "" {
+				values[fields[i]] = strings.TrimSpace(nodeText(cell))
+			}
+		}
+		quantity := 1 // 空セルの既定（旧 Quantity() と同じ）
+		if v := values["quantity"]; v != "" {
+			quantity = vocabNumber(v)
+		}
+		if err := insert(values["item-name"], vocabNumber(values["cost"]), values["supplier-name"], quantity); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// vocabNumber はセルの数値を語彙の正規化（¥8,000 → 8000 等）を通して整数で返します。
+// 解釈できなければ 0（旧 AtoiSafe と同じ安全側）。
+func vocabNumber(raw string) int {
+	if norm, ok := NormalizeValue(ColNumber, raw); ok {
+		return AtoiSafe(norm)
+	}
+	return AtoiSafe(raw)
 }
 
 // Routes は部材手配計算APIのエンドポイントを提供します（RouteProvider実装）。

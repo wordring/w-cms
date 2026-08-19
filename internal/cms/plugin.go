@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"golang.org/x/net/html"
 
@@ -210,13 +211,49 @@ func WalkElements(root *html.Node, fn func(*html.Node)) {
 	}
 }
 
-// TagValue は <m-tag name="{tagName}" value="..."> の value を返します。
+// TagValue はページ横断メタ（可変タグ）から名前 tagName の値を返します。
 // 同名タグが複数ある場合は最初の1つ。見つからなければ空文字列。
+//
+// 読む形式は2つ（移行第2段・語彙モデル §8.4-2 の両対応）:
+//   - 新形式: <dl data-type="tags"><dt>{tagName}</dt><dd>値</dd></dl>
+//   - 旧形式: <m-tag name="{tagName}" value="値">（変換ツールが安定するまでの短期の保険）
 func TagValue(root *html.Node, tagName string) string {
 	var found string
 	WalkElements(root, func(n *html.Node) {
-		if found == "" && n.Data == "m-tag" && Attr(n, "name") == tagName {
+		if found != "" {
+			return
+		}
+		switch {
+		case n.Data == "m-tag" && Attr(n, "name") == tagName:
 			found = Attr(n, "value")
+		case n.Data == "dl" && Attr(n, "data-type") == "tags":
+			found = dlTagValue(n, tagName)
+		}
+	})
+	return found
+}
+
+// dlTagValue は <dl data-type="tags"> の中から名前 tagName の最初の値を返します。
+// 鍵は dt の表示文字（自由語）で、dd の data-field があればそちらが優先します
+// （②汎用索引と同じ規則）。
+func dlTagValue(dl *html.Node, tagName string) string {
+	currentKey := ""
+	found := ""
+	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true}, func(n *html.Node) {
+		if found != "" {
+			return
+		}
+		switch n.Data {
+		case "dt":
+			currentKey = strings.TrimSpace(nodeText(n))
+		case "dd":
+			key := Attr(n, "data-field")
+			if key == "" {
+				key = currentKey
+			}
+			if key == tagName {
+				found = strings.TrimSpace(nodeText(n))
+			}
 		}
 	})
 	return found

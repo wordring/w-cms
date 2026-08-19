@@ -89,6 +89,7 @@ func main() {
 	protected.HandleFunc("/api/lock/force", editlock.LockForceAPIHandler)
 
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
+	protected.HandleFunc("/api/migrate-vocab", cms.MigrateVocabAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 
 	// 権限管理（owner/admin）
