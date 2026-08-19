@@ -61,17 +61,26 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageReadOrPublic(w, r, parentID) {
 		return
 	}
-	user := auth.CurrentUser(r)
-
-	rows, err := database.DB.Query("SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC", parentIDInt)
+	pages, err := visibleChildren(auth.CurrentUser(r), parentIDInt)
 	if err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pages)
+}
+
+// visibleChildren は親 parentIDInt の子ページのうち、閲覧者 user が見られるものだけを
+// 返します。認証済みは read 権限、匿名（user==nil）は実効公開（page.EffectivePublic）で
+// 判定する。/api/children と計算ビューのサーバー事前描画（view_render.go）が共用する。
+func visibleChildren(user *auth.User, parentIDInt int) ([]PageSummary, error) {
+	rows, err := database.DB.Query("SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC", parentIDInt)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
-	// 各子ページのうち、閲覧者が見られるものだけを返す。
-	// 認証済みは read 権限、匿名は実効公開（page.EffectivePublic）で判定する。
 	pages := make([]PageSummary, 0)
 	for rows.Next() {
 		var p PageSummary
@@ -89,9 +98,7 @@ func ChildPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pages)
+	return pages, nil
 }
 
 // NewPageAPIHandler はサーバー側で新しいページを作成し、そのページへリダイレクトします。

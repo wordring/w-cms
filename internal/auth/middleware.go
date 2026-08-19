@@ -89,27 +89,23 @@ func OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
-// cspPolicy は全レスポンスへ付与する Content-Security-Policy（中間版）です。
+// cspPolicy は全レスポンスへ付与する Content-Security-Policy（strict 版）です。
 //
-// default-src/object-src/base-uri/frame-ancestors は目標とする strict 版と同値で、
-// 外部オリジンへのデータ送信の遮断とクリックジャッキング防止（frame-ancestors）の
-// 実利を、段階移行の中間段階でも確保します。script-src/style-src のみ暫定で
-// 'unsafe-inline' を許可し、フロントに残るインラインを生かしています。
-//
-// 残りは 2026-08-06 時点で次の3つだけです（外部化の第1段が完了したため）:
-//   - script: assets/index.html の <head> にある FOUC 防止スクリプト1本
-//     （strict 化では外部化せず per-request nonce で残す方針）
-//   - style=: assets/templates/*.html の75個（10ファイル）
-//   - style=: assets/web-components.js が文字列で組み立てる8行（手配状況テーブル）
-// on*= 属性ハンドラはリポジトリ全体でゼロになっています。上記を片付けたら
-// 'unsafe-inline' を外して strict 版へ格上げします（docs/【考察】CSP強化.md §4）。
+// 2026-08-19 の移行第4段（Web Components 全廃）で 'unsafe-inline' を外しました。
+// インラインの script/style はリポジトリ全体でゼロです:
+//   - FOUC 防止スクリプトは /assets/boot.js へ外部化（head の同期読み込み。
+//     当初の per-request nonce 案より単純で、静的配信とも両立するため）
+//   - templates/*.html の style=（75個）と web-components.js の生成 style=（8行）は
+//     ファイルごと撤去（計算ビューはサーバー事前描画 view_render.go へ）
+//   - ログイン画面の <style> は /assets/login.css へ外部化
+// on*= 属性ハンドラも従来どおりゼロ。経緯は docs/【考察】CSP強化.md。
 //
 // アプリは外部リソース（CDN・web fonts・data:/blob: 等）を一切使わず、PDFは
 // 同一オリジンの <embed src="/data/..."> のため、default-src 'self' と
 // object-src 'self' でインライン以外は何も壊れません。
 const cspPolicy = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
-	"style-src 'self' 'unsafe-inline'; " +
+	"script-src 'self'; " +
+	"style-src 'self'; " +
 	"object-src 'self'; " +
 	"base-uri 'self'; " +
 	"frame-ancestors 'self'"

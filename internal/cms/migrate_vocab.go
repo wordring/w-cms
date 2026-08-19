@@ -138,6 +138,24 @@ func convertNodeList(pageID string, nodes []*html.Node, changed *bool) []*html.N
 			i++
 			continue
 		}
+		// 計算ビュー（表示専用）: 中身はサーバー事前描画が埋めるため、空のマーカーだけを置く。
+		// 旧要素の中身（描画残骸）と page-id 属性（現ページの意味しかなかった）は捨てる。
+		if isElementNamed(n, "m-child-list") {
+			sec := newElement("section", html.Attribute{Key: "data-type", Val: "child-list"})
+			carryBlockID(sec, []*html.Node{n})
+			out = append(out, sec)
+			*changed = true
+			i++
+			continue
+		}
+		if isElementNamed(n, "m-required-materials") {
+			sec := newElement("section", html.Attribute{Key: "data-type", Val: "required-materials"})
+			carryBlockID(sec, []*html.Node{n})
+			out = append(out, sec)
+			*changed = true
+			i++
+			continue
+		}
 
 		// それ以外の要素は子リストを再帰的に変換して差し替える。
 		if n.Type == html.ElementNode && n.FirstChild != nil {

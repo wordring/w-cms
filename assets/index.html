@@ -4,28 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>w-cms エディタ</title>
-    <!-- カスタム要素の外観（外部CSS＝CSPの self。新規分はインライン style を使わない） -->
-    <link rel="stylesheet" href="/assets/components.css">
-    <!-- 自作のWeb Componentsをロード -->
-    <script src="/assets/web-components.js" defer></script>
     <!-- サイドパネルの開閉状態を body 描画前に確定（チラつき防止）。
-         状態は UI 設定ストア（localStorage の単一キー `wcms.ui`）に保存する（クッキー不要）。
-         本体スクリプト読込前なので、ここでは UI ヘルパに依らず localStorage を直接読む
-         （旧 `wcms.rails` キーは fallback。本体側 UI.migrate が後で正式に取り込む）。 -->
-    <script>
-        try {
-            var ui = JSON.parse(localStorage.getItem('wcms.ui') || 'null');
-            var rails = (ui && ui.rails) || JSON.parse(localStorage.getItem('wcms.rails') || '{}');
-            // 左側の2レール（ページ階層／目次）は同時に開かない。どちらも明示的に
-            // 畳まれていなければページ階層を優先し、目次を畳んだ状態で描画する。
-            var leftCollapsed = rails.left === false;
-            var tocCollapsed = rails.toc === false;
-            if (!leftCollapsed && !tocCollapsed) tocCollapsed = true;
-            if (leftCollapsed) document.documentElement.classList.add('left-collapsed');
-            if (tocCollapsed) document.documentElement.classList.add('toc-collapsed');
-            if (rails.right === false) document.documentElement.classList.add('right-collapsed');
-        } catch (e) { /* localStorage 不可時は既定（ページ階層のみ開く） */ }
-    </script>
+         head の同期スクリプトだが外部ファイル（/assets/boot.js＝CSPの self）。
+         CSP strict 化（'unsafe-inline' 除去）に伴いインラインから移した
+         （per-request nonce 案より単純で、静的配信とも両立する）。 -->
+    <script src="/assets/boot.js"></script>
     <!-- 殻のスタイル（外部CSS＝CSPの self）。2026-08-06 にインラインのスタイルブロックから切り出し -->
     <link rel="stylesheet" href="/assets/app.css">
 </head>
@@ -55,8 +38,6 @@
 <div id="slash-menu" class="slash-menu">
     <div class="slash-menu-item" data-type="h1"><b>H1</b> 見出し</div>
     <div class="slash-menu-item" data-type="p"><b>P</b> 段落</div>
-    <div class="slash-menu-item" data-type="m-required-materials">📊 手配状況リスト</div>
-    <div class="slash-menu-item" data-type="m-child-list">📂 子ページ一覧</div>
 </div>
 
 <!-- コンテキストツールバー -->
@@ -247,7 +228,7 @@
 <footer class="site-footer">w-cms</footer>
 
 <!-- 殻の本体スクリプト（外部JS＝CSPの self）。2026-08-06 にインラインのスクリプトブロックから切り出し。
-     defer を付けないのは、web-components.js より先に実行される従来の順序を保つため。 -->
+     defer なし＝本文DOMが揃ってから同期実行される従来の順序を保つ。 -->
 <script src="/assets/app.js"></script>
 
 </body>

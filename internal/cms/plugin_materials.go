@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -195,6 +196,20 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	list, err := RequiredMaterials(pageIDInt)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+// RequiredMaterials は指定ページ（受注ページ）に紐づく部材の要手配数・発注済数を
+// 集計します。/api/required-materials と計算ビューのサーバー事前描画
+// （view_render.go）が共用する。
+func RequiredMaterials(pageIDInt int) ([]RequiredMaterialResponse, error) {
 	// 1. そのページ内の受注 client_orders の明細を取得する
 	rows, err := database.DB.Query(`
 		SELECT item_id, quantity
@@ -204,8 +219,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		)
 	`, pageIDInt)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -231,8 +245,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 			WHERE part_id = ?
 		`, item.ItemID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return nil, err
 		}
 		for matRows.Next() {
 			var matName, supplierName string
@@ -263,8 +276,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		WHERE oo.page_id = ?
 	`, pageIDInt)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	defer ourRows.Close()
 
@@ -296,6 +308,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		list = append(list, *m)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(list)
+	// 表示・応答が呼び出しごとに変わらないよう部材名順に揃える（map の走査順は不定）。
+	sort.Slice(list, func(i, j int) bool { return list[i].MaterialName < list[j].MaterialName })
+	return list, nil
 }

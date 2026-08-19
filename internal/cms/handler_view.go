@@ -56,9 +56,13 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 直接ブラウザで開いてもHTMLとして実行されない（多層防御）。保存時サニタイズ導入前の
 	// 既存ファイルなど、万一スクリプトを含む本文が残っていても直接ナビゲーションでの
 	// 実行を封じられる。詳細は docs/本文サニタイズ設計.md。
+	// 計算ビューのマーカーには、編集モードの載せ替えでも表示が出るよう中身
+	// （vocab-chrome）を埋めて返す。シリアライザが保存時に落とすので正本には混ざらない。
+	body := RenderComputedViews(r, idInt, string(content))
+
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Write(content)
+	w.Write([]byte(body))
 }
 
 // RootHandler はWiki型のルーティングを担当します。
@@ -140,7 +144,10 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 保存経路を通っていない本文（既存データ・バックアップ復元・手動配置）に備え、
 	// 描画時にもサニタイズする（docs/本文サニタイズ設計.md の二層目）。
-	page, err := RenderPageShell(Sanitize(string(content)), title)
+	// サニタイズ後に計算ビュー（子ページ一覧・手配集計）の中身をサーバーが埋める
+	// （view_render.go。埋めた中身は class を持つためサニタイズより後に行う）。
+	body := RenderComputedViews(r, pageID, Sanitize(string(content)))
+	shellHTML, err := RenderPageShell(body, title)
 	if err != nil {
 		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)
 		return
@@ -149,7 +156,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// 認可結果に依存する内容なのでキャッシュさせない。
 	w.Header().Set("Cache-Control", "no-store")
-	w.Write([]byte(page))
+	w.Write([]byte(shellHTML))
 }
 
 // requirePageViewable は画面表示のための read 認可を行います。
