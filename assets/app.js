@@ -200,6 +200,9 @@
         if (!list) return;
         const container = document.getElementById('w-editor-content');
         const headings = Array.from(container.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+            // サーバーが埋めた計算ビューの中身やエンハンサのクローム（.vocab-chrome）は
+            // 本文の見出しではないので目次に載せない（保存もされない表示専用の飾り）。
+            .filter(el => !el.closest('.vocab-chrome'))
             .map(el => ({ el, text: el.textContent.trim() }))
             .filter(h => h.text);
         list.innerHTML = '';

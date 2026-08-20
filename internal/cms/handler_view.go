@@ -53,12 +53,20 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 本文はHTMLだが、エディタは fetch().text() で受けて自前で DOMParser にかけるため、
 	// text/html で返す必要がない。text/plain ＋ nosniff で返すことで、この URL を
-	// 直接ブラウザで開いてもHTMLとして実行されない（多層防御）。保存時サニタイズ導入前の
-	// 既存ファイルなど、万一スクリプトを含む本文が残っていても直接ナビゲーションでの
-	// 実行を封じられる。詳細は docs/本文サニタイズ設計.md。
+	// 直接ブラウザで開いてもHTMLとして実行されない（多層防御）。
+	//
+	// **描画時と同じくサニタイズを通す**（サニタイズ二層目。docs/本文サニタイズ設計.md）。
+	// かつては「正本をそのまま返す」方針だったが、この応答は populateEditor が
+	// **属性を濾さずDOMへ入れる**ため、保存経路を通っていない本文（手動配置・バックアップ復元・
+	// 取り込みAPIが直接書いたページ）に仕込まれた id="w-…" が殻の要素を乗っ取れてしまう
+	// （getElementById は文書順で最初を返し、本文の挿入点より後ろに権限UIの入力欄がある）。
+	// RootHandler には二層目があるのにここだけ抜けていた（2026-08-20 に塞いだ）。
+	//
 	// 計算ビューのマーカーには、編集モードの載せ替えでも表示が出るよう中身
 	// （vocab-chrome）を埋めて返す。シリアライザが保存時に落とすので正本には混ざらない。
-	body := RenderComputedViews(r, idInt, string(content))
+	// **ページ内アンカー（RenderAnchors）はここでは足さない**——合成した id が
+	// エディタのDOMへ入ると、シリアライザが本文として保存してしまう（anchor.go の冒頭）。
+	body := RenderComputedViews(r, idInt, Sanitize(string(content)))
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
