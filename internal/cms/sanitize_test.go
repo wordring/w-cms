@@ -112,8 +112,8 @@ func TestSanitizeDropsLegacyCustomElements(t *testing.T) {
 
 // TestSanitizeDropsUnknownAttributes は許可リストに無い属性が落ちることを検証します。
 func TestSanitizeDropsUnknownAttributes(t *testing.T) {
-	got := Sanitize(`<dl data-type="tags" data-evil="x" class="y" id="z"><dt>A</dt><dd>B</dd></dl>`)
-	for _, notWant := range []string{"data-evil", "class", "id="} {
+	got := Sanitize(`<dl data-type="tags" data-evil="x" class="y"><dt>A</dt><dd>B</dd></dl>`)
+	for _, notWant := range []string{"data-evil", "class"} {
 		if strings.Contains(got, notWant) {
 			t.Errorf("許可されていない属性 %q が残っている: %s", notWant, got)
 		}

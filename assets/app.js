@@ -171,7 +171,7 @@
 
     // 左レール：子ページナビを /api/children から描画する。
     async function loadChildNav() {
-        const list = document.getElementById('child-nav-list');
+        const list = document.getElementById('w-child-nav-list');
         if (!list) return;
         list.innerHTML = '';
         try {
@@ -193,12 +193,12 @@
     }
 
     // 左レール：目次を本文中の見出し(h1〜h6)から構築する。サーバーには一切依存せず、
-    // 表示中の #editor-content を走査するだけ（クリックで scrollIntoView）。
+    // 表示中の #w-editor-content を走査するだけ（クリックで scrollIntoView）。
     // 本文が変わるたび（初回ロード・編集中）に呼び直して最新化する。
     function buildToc() {
-        const list = document.getElementById('toc-list');
+        const list = document.getElementById('w-toc-list');
         if (!list) return;
-        const container = document.getElementById('editor-content');
+        const container = document.getElementById('w-editor-content');
         const headings = Array.from(container.querySelectorAll('h1, h2, h3, h4, h5, h6'))
             .map(el => ({ el, text: el.textContent.trim() }))
             .filter(h => h.text);
@@ -233,14 +233,14 @@
             if (!me.authenticated) {
                 // 匿名: 編集UI・権限カード・レール操作を隠し（CSS body.anonymous）、ログイン導線を出す。
                 document.body.classList.add('anonymous');
-                const ub = document.getElementById('user-bar');
+                const ub = document.getElementById('w-user-bar');
                 if (ub) ub.innerHTML = '<a href="/login" class="login-link">ログイン</a>';
                 return;
             }
             currentUserIsAdmin = !!me.is_admin;
-            document.getElementById('user-bar').textContent =
+            document.getElementById('w-user-bar').textContent =
                 '👤 ' + me.username + (me.is_admin ? '（管理者）' : '');
-            if (me.is_admin) setHidden(document.getElementById('admin-link'), false);
+            if (me.is_admin) setHidden(document.getElementById('w-admin-link'), false);
         } catch (e) { /* 通信エラー等は無視（編集UIは権限取得時に再判定） */ }
     }
 
@@ -256,17 +256,17 @@
     function refreshPermsEditable() {
         const editMode = document.body.hasAttribute('edit-mode');
         const canEditMeta = editMode && permCanChmod;
-        document.getElementById('pp-group').disabled = !canEditMeta;
-        document.getElementById('pp-mode').disabled = !canEditMeta;
-        setHidden(document.getElementById('pp-chown'), !(editMode && permCanChown));
-        setHidden(document.getElementById('pp-save'), !canEditMeta);
-        setHidden(document.getElementById('pp-mode-hint'), !canEditMeta);
+        document.getElementById('w-pp-group').disabled = !canEditMeta;
+        document.getElementById('w-pp-mode').disabled = !canEditMeta;
+        setHidden(document.getElementById('w-pp-chown'), !(editMode && permCanChown));
+        setHidden(document.getElementById('w-pp-save'), !canEditMeta);
+        setHidden(document.getElementById('w-pp-mode-hint'), !canEditMeta);
         // 権限はあるが閲覧モードのとき、「編集モードへ」の誘導を出す。
-        setHidden(document.getElementById('pp-view-hint'),
+        setHidden(document.getElementById('w-pp-view-hint'),
             !(!editMode && (permCanChmod || permCanChown || permCanPublish)));
         // 匿名公開トグル：owner/admin にのみ行を見せ、編集モードでのみ操作可（chmod と同じ規律）。
-        setHidden(document.getElementById('pp-public-row'), !permCanPublish);
-        const pub = document.getElementById('pp-public');
+        setHidden(document.getElementById('w-pp-public-row'), !permCanPublish);
+        const pub = document.getElementById('w-pp-public');
         if (pub) pub.disabled = !(editMode && permCanPublish);
     }
 
@@ -274,26 +274,26 @@
     // 匿名は body.anonymous の CSS で隠れるため、ここでは認証済みユーザーの can_write を反映する。
     function applyEditToggleVisibility(canWrite) {
         setHidden(document.querySelector('.switch-container .switch'), !canWrite);
-        setHidden(document.getElementById('mode-text'), !canWrite);
+        setHidden(document.getElementById('w-mode-text'), !canWrite);
     }
 
     // 権限はサイドパネルの「🔒 権限」カードに常設。読み込み時に取得し、カードを開けば見える。
     async function loadPerms() {
-        const msg = document.getElementById('pp-msg');
+        const msg = document.getElementById('w-pp-msg');
         msg.textContent = '';
         try {
             const res = await fetch('/api/page-perms?id=' + currentPageId);
             if (!res.ok) { msg.style.color = '#dc2626'; msg.textContent = '権限を取得できません'; return; }
             const p = await res.json();
-            document.getElementById('pp-owner').textContent = p.owner || '(なし)';
-            document.getElementById('pp-group').value = p.group || '';
-            document.getElementById('pp-mode').value = p.mode || '';
+            document.getElementById('w-pp-owner').textContent = p.owner || '(なし)';
+            document.getElementById('w-pp-group').value = p.group || '';
+            document.getElementById('w-pp-mode').value = p.mode || '';
             // chown は admin のみ、chmod/chgrp は owner か admin。さらに編集モード（＝ロック保持）の
             // ときだけ編集可能にする（refreshPermsEditable）。権限フラグは保持して再評価に使う。
             permCanChmod = !!p.can_chmod;
             permCanChown = !!p.can_chown;
             permCanPublish = !!p.can_publish;
-            if (permCanChown) document.getElementById('pp-owner-input').value = p.owner || '';
+            if (permCanChown) document.getElementById('w-pp-owner-input').value = p.owner || '';
             // 匿名公開の現在状態をトグルとヒントに反映する（認証認可設計.md 10章）。
             applyPublicState(!!p.public, !!p.effective_public);
             // 編集権の無いユーザーからは右上の編集スイッチを隠す（サーバーも RequireEditLock で防御）。
@@ -305,9 +305,9 @@
     // applyPublicState は匿名公開トグルの状態と説明文を更新する。
     // pub=このページ自身の公開フラグ、eff=親チェーンとのANDによる実際の公開状態。
     function applyPublicState(pub, eff) {
-        const cb = document.getElementById('pp-public');
+        const cb = document.getElementById('w-pp-public');
         if (cb) cb.checked = pub;
-        const hint = document.getElementById('pp-public-hint');
+        const hint = document.getElementById('w-pp-public-hint');
         if (!hint) return;
         if (pub && eff) {
             hint.textContent = '現在インターネットに公開されています（ログイン不要で閲覧可）。';
@@ -321,8 +321,8 @@
     // setPublic は匿名公開フラグを切り替える（owner/admin、編集モード中のみ）。
     // 親が非公開のまま公開しようとするとサーバーが 403 を返すので、その旨を表示して元へ戻す。
     async function setPublic() {
-        const cb = document.getElementById('pp-public');
-        const msg = document.getElementById('pp-msg');
+        const cb = document.getElementById('w-pp-public');
+        const msg = document.getElementById('w-pp-msg');
         const want = cb.checked;
         try {
             const res = await lockedFetch('/api/page-perms?id=' + currentPageId, {
@@ -363,19 +363,19 @@
 
     // ページ属性をサーバーから取得してサイドパネルに反映する。
     async function loadPageMeta() {
-        document.getElementById('pi-id').textContent = currentPageId;
+        document.getElementById('w-pi-id').textContent = currentPageId;
         try {
             const res = await fetch('/api/page-meta?id=' + currentPageId);
             if (!res.ok) return;
             const m = await res.json();
             const parent = m.parent_id || '';
-            document.getElementById('pi-parent').textContent = parent || '（トップレベル）';
-            document.getElementById('pi-parent-input').value = parent;
+            document.getElementById('w-pi-parent').textContent = parent || '（トップレベル）';
+            document.getElementById('w-pi-parent-input').value = parent;
             // 左ナビの「親ページへ」リンク
             // 左ナビの「↑ 親ページへ」リンク：矢印＋親ページの見出し（h1）を表示する。
             // 見出しはユーザー入力なので、テンプレート文字列＋innerHTML ではなく
             // textContent で組み立てる（見出しに含まれる記号でHTMLが壊れないように）。
-            const parentBox = document.getElementById('child-nav-parent');
+            const parentBox = document.getElementById('w-child-nav-parent');
             if (parentBox) {
                 parentBox.innerHTML = '';
                 if (parent) {
@@ -385,16 +385,16 @@
                     parentBox.appendChild(a);
                 }
             }
-            document.getElementById('pi-created-at').textContent = formatDateTime(m.created_at);
-            document.getElementById('pi-created-by').textContent = m.created_by || '—';
-            document.getElementById('pi-updated-at').textContent = formatDateTime(m.updated_at);
+            document.getElementById('w-pi-created-at').textContent = formatDateTime(m.created_at);
+            document.getElementById('w-pi-created-by').textContent = m.created_by || '—';
+            document.getElementById('w-pi-updated-at').textContent = formatDateTime(m.updated_at);
         } catch (e) { /* 取得失敗時は既定表示のまま */ }
     }
 
     // 親ページIDの付け替え。検証はサーバー（/api/set-parent）が権威。
     async function applyParent() {
-        const input = document.getElementById('pi-parent-input');
-        const errEl = document.getElementById('pi-parent-err');
+        const input = document.getElementById('w-pi-parent-input');
+        const errEl = document.getElementById('w-pi-parent-err');
         const parent = input.value.trim();
         errEl.textContent = '';
         input.classList.remove('invalid');
@@ -406,9 +406,9 @@
                 return;
             }
             const data = await res.json();
-            document.getElementById('pi-parent').textContent = data.parent_id || '（トップレベル）';
-            document.getElementById('pi-parent-input').value = data.parent_id || '';
-            if (data.updated_at) document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
+            document.getElementById('w-pi-parent').textContent = data.parent_id || '（トップレベル）';
+            document.getElementById('w-pi-parent-input').value = data.parent_id || '';
+            if (data.updated_at) document.getElementById('w-pi-updated-at').textContent = formatDateTime(data.updated_at);
         } catch (e) {
             if (e && e.message === 'lock-lost') return; // 編集権喪失は handleLockLost が処理済み
             input.classList.add('invalid');
@@ -417,9 +417,9 @@
     }
 
     async function savePerms() {
-        const mode = document.getElementById('pp-mode').value.trim();
-        const group = document.getElementById('pp-group').value;
-        const msg = document.getElementById('pp-msg');
+        const mode = document.getElementById('w-pp-mode').value.trim();
+        const group = document.getElementById('w-pp-group').value;
+        const msg = document.getElementById('w-pp-msg');
         try {
             const res = await lockedFetch('/api/page-perms?id=' + currentPageId, {
                 method: 'POST',
@@ -435,8 +435,8 @@
     }
 
     async function chownPage() {
-        const owner = document.getElementById('pp-owner-input').value.trim();
-        const msg = document.getElementById('pp-msg');
+        const owner = document.getElementById('w-pp-owner-input').value.trim();
+        const msg = document.getElementById('w-pp-msg');
         if (!owner) { msg.style.color = '#dc2626'; msg.textContent = '所有者を入力してください'; return; }
         try {
             const res = await lockedFetch('/api/page-chown?id=' + currentPageId, {
@@ -445,7 +445,7 @@
                 body: JSON.stringify({ owner: owner })
             });
             if (res.ok) {
-                document.getElementById('pp-owner').textContent = owner;
+                document.getElementById('w-pp-owner').textContent = owner;
                 msg.style.color = '#16a34a'; msg.textContent = '所有者を変更しました。';
             } else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
         } catch (e) {
@@ -480,7 +480,7 @@
     }
 
     function setSaveStatus(text, color) {
-        const el = document.getElementById('save-status');
+        const el = document.getElementById('w-save-status');
         el.innerText = text;
         el.style.color = color;
     }
@@ -495,10 +495,10 @@
         if (data.page_id && currentPageId !== data.page_id) {
             currentPageId = data.page_id;
             window.history.pushState({}, '', '?id=' + currentPageId); // ページリロードなし
-            document.getElementById('pi-id').textContent = currentPageId;
+            document.getElementById('w-pi-id').textContent = currentPageId;
         }
         if (data.updated_at) {
-            document.getElementById('pi-updated-at').textContent = formatDateTime(data.updated_at);
+            document.getElementById('w-pi-updated-at').textContent = formatDateTime(data.updated_at);
         }
     }
 
@@ -526,6 +526,15 @@
             { type: 'warn', duration: 10000, id: 'unresolved-fields' });
     }
 
+    // notifyStrippedIDs は「殻が独占する接頭辞つきの id を剥がした」ことの告知。
+    // 本文の id は自由だが、この接頭辞だけは画面側（シェル）の名前空間なので侵させない。
+    function notifyStrippedIDs(ids) {
+        if (!Array.isArray(ids) || !ids.length) return;
+        notify('id の接頭辞は画面側の予約です。' + ids.map(v => '「' + v + '」').join('・') +
+            ' から接頭辞を外して保存しました。',
+            { type: 'warn', duration: 10000, id: 'stripped-ids' });
+    }
+
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
         // 語彙が未取得のまま保存すると、カスタム要素が丸ごと欠落した本文を書いてしまう。
@@ -533,13 +542,13 @@
 
         ensureBlockIds(); // 新しく作られたブロックにIDを振る（構造変更なので全文保存になる）
         const blocks = serializeBlocks();
-        document.getElementById('html-preview').value = joinBlocks(blocks);
+        document.getElementById('w-html-preview').value = joinBlocks(blocks);
 
         const plan = decideSaveStrategy(blocks);
         if (plan.kind === 'none') return; // 変更なし。無駄な保存・DB同期・書き込みをしない
 
         // 変更が確定したこの時点をアンドゥ履歴へ積む（保存と同じ粒度）
-        pushSnapshot(document.getElementById('html-preview').value);
+        pushSnapshot(document.getElementById('w-html-preview').value);
 
         if (plan.kind === 'block') { saveBlockToServer(plan.block, blocks); return; }
         saveFullToServer(blocks);
@@ -566,10 +575,11 @@
                 if (applySanitizedHtml(data.html)) { updateHtmlPreview(); buildToc(); }
                 notifySanitized();
                 // 除去後の状態を積み直す。積まないと「除去された危険な内容」へアンドゥで戻れてしまう。
-                pushSnapshot(document.getElementById('html-preview').value);
+                pushSnapshot(document.getElementById('w-html-preview').value);
             }
             notifyUnknownTypes(data.unknown_types);
             notifyUnresolvedFields(data.unresolved_fields);
+            notifyStrippedIDs(data.stripped_ids);
             // 保存できた状態を記録する（次回の差分判定の基準）
             lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
             setSaveStatus("✅ 保存済", "#10b981");
@@ -610,7 +620,7 @@
                 buildToc();
                 notifySanitized();
                 // 除去後の状態を積み直す（アンドゥで危険な内容へ戻らないように）
-                pushSnapshot(document.getElementById('html-preview').value);
+                pushSnapshot(document.getElementById('w-html-preview').value);
                 lastSavedBlocks = serializeBlocks();
             } else {
                 // 送ったブロックだけ記録を更新する
@@ -618,6 +628,7 @@
             }
             notifyUnknownTypes(data.unknown_types);
             notifyUnresolvedFields(data.unresolved_fields);
+            notifyStrippedIDs(data.stripped_ids);
             setSaveStatus("✅ 保存済", "#10b981");
         })
         .catch(onSaveFailed);
@@ -767,7 +778,7 @@
 
     function triggerAutoSave() {
         if (!document.body.hasAttribute('edit-mode')) return;
-        const statusEl = document.getElementById('save-status');
+        const statusEl = document.getElementById('w-save-status');
         statusEl.innerText = "未保存";
         statusEl.style.color = "#94a3b8";
 
@@ -782,7 +793,7 @@
             triggerAutoSave();
             buildToc(); // 見出しの追加・削除・移動を目次に反映
         });
-        observer.observe(document.getElementById('editor-content'), {
+        observer.observe(document.getElementById('w-editor-content'), {
             childList: true,
             subtree: true,
             characterData: true,
@@ -790,7 +801,7 @@
             attributeFilter: ['value', 'order-no', 'client-name', 'ordered-at', 'supplier-name', 'item-id', 'item-name', 'price', 'quantity', 'cost', 'status', 'tag']
         });
 
-        document.getElementById('editor-content').addEventListener('input', () => {
+        document.getElementById('w-editor-content').addEventListener('input', () => {
             triggerAutoSave();
             buildToc(); // 見出しテキストの編集を目次に反映
         });
@@ -799,7 +810,7 @@
         // サーバーはサニタイズ結果を返すので、除去が起きた場合はその変化がすぐ画面に出る
         // （docs/本文サニタイズ設計.md のエコーバック方式）。デバウンス保存は、ひとつの
         // ブロックを編集し続けている間の保険として引き続き効く。
-        document.getElementById('editor-content').addEventListener('focusout', () => {
+        document.getElementById('w-editor-content').addEventListener('focusout', () => {
             if (!document.body.hasAttribute('edit-mode')) return;
             if (saveTimeout) clearTimeout(saveTimeout);
             saveToServer();
@@ -810,7 +821,7 @@
     // 差分のあったトップレベルのブロックだけを差し替え、フォーカス中のブロックは
     // キャレットが飛ばないよう据え置く（そのブロックは離脱時の保存で反映される）。
     function applySanitizedHtml(htmlStr) {
-        const container = document.getElementById('editor-content');
+        const container = document.getElementById('w-editor-content');
         const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
         const incoming = Array.from(doc.body.children);
         // 現在のトップレベル要素（wrapInBlock により .editor-block > .block-content > 実体）
@@ -849,9 +860,9 @@
 
     // applyMode は表示/編集の DOM 切り替えのみを行う（ロックの取得・解放は onModeToggle が担う）。
     function applyMode() {
-        const toggle = document.getElementById('mode-toggle');
-        const modeText = document.getElementById('mode-text');
-        const editor = document.getElementById('editor-content');
+        const toggle = document.getElementById('w-mode-toggle');
+        const modeText = document.getElementById('w-mode-text');
+        const editor = document.getElementById('w-editor-content');
 
         if (toggle.checked) {
             document.body.setAttribute('edit-mode', '');
@@ -886,7 +897,7 @@
     // onModeToggle は編集モード切替の入口。編集に入るときはロックを取得してから、
     // 抜けるときはロックを解放してから DOM を切り替える。
     async function onModeToggle() {
-        const toggle = document.getElementById('mode-toggle');
+        const toggle = document.getElementById('w-mode-toggle');
         if (toggle.checked) {
             await enterEditMode();
         } else {
@@ -903,7 +914,7 @@
     // busy なら閲覧モードに留め、待機者として購読しつつ「待機をやめる」トーストを表示する
     // （空き次第サーバーからの available で自動的に編集へ入る。available 経路からも呼ばれる）。
     async function enterEditMode() {
-        const toggle = document.getElementById('mode-toggle');
+        const toggle = document.getElementById('w-mode-toggle');
         const ok = await acquireLock();
         if (!ok) { toggle.checked = false; applyMode(); return false; }
         toggle.checked = true;
@@ -917,7 +928,7 @@
 
         // アンドゥ履歴はこの編集セッションのもの。開始時の状態を起点として積む。
         updateHtmlPreview();
-        resetHistory(document.getElementById('html-preview').value);
+        resetHistory(document.getElementById('w-html-preview').value);
         validateTypedTables(); // 既存本文の型不一致を編集開始時に可視化する
         // ヘッダー（モードトグル）はスクロールで隠れるため、モード移行は緑トーストで明示する。
         // 待機後に available で自動入室した場合もここを通るので「権限が回ってきた」気付きにもなる。
@@ -930,7 +941,7 @@
     function populateEditor(htmlStr) {
         lastSavedBlocks = null;
         const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
-        const editorContent = document.getElementById('editor-content');
+        const editorContent = document.getElementById('w-editor-content');
         editorContent.innerHTML = '';
         Array.from(doc.body.children).forEach(child => {
             if (child.tagName.toLowerCase() === 'script') return;
@@ -1062,10 +1073,10 @@
         lockToken = null;
         let saved = false;
         try {
-            const html = document.getElementById('html-preview').value;
+            const html = document.getElementById('w-html-preview').value;
             if (navigator.clipboard && html) { await navigator.clipboard.writeText(html); saved = true; }
         } catch (e) { saved = false; }
-        const toggle = document.getElementById('mode-toggle');
+        const toggle = document.getElementById('w-mode-toggle');
         toggle.checked = false;
         applyMode();
         // 本文がサーバーの最新版に置き換わり、手元の編集は失われている（上で退避済み）。
@@ -1090,7 +1101,7 @@
 
     // leaveEditMode は編集モードを抜ける（トグルOFF相当）。
     async function leaveEditMode() {
-        const toggle = document.getElementById('mode-toggle');
+        const toggle = document.getElementById('w-mode-toggle');
         if (!toggle.checked) return;
         toggle.checked = false;
         resetHistory(); // 編集セッションの終わり。アンドゥ履歴は持ち越さない
@@ -1104,7 +1115,7 @@
     //   action: {label, onClick}
     function notify(message, opts) {
         opts = opts || {};
-        const host = document.getElementById('toast-host');
+        const host = document.getElementById('w-toast-host');
         if (!host) return;
         if (opts.id) dismissToast(opts.id);
         const el = document.createElement('div');
@@ -1132,7 +1143,7 @@
     }
     function dismissEl(el) { if (el && el.parentNode) el.parentNode.removeChild(el); }
     function dismissToast(id) {
-        const host = document.getElementById('toast-host');
+        const host = document.getElementById('w-toast-host');
         if (host) host.querySelectorAll(`[data-toast-id="${id}"]`).forEach(dismissEl);
     }
 
@@ -1226,9 +1237,9 @@
 
     // topLevelBlocks は保存対象になるトップレベル要素を文書順で返す。
     function topLevelBlocks() {
-        const container = document.getElementById('editor-content');
+        const container = document.getElementById('w-editor-content');
         return Array.from(container.querySelectorAll(
-            '.editor-block > .block-content > *, #editor-content > :not(.editor-block)'
+            '.editor-block > .block-content > *, #w-editor-content > :not(.editor-block)'
         )).filter(el => el && isSerializableBlock(el));
     }
 
@@ -1261,11 +1272,6 @@
             changed++;
         });
         return changed;
-    }
-
-    function blockIdAttrOf(el) {
-        const id = el.getAttribute(BLOCK_ID_ATTR);
-        return id ? ` ${BLOCK_ID_ATTR}="${esc(id)}"` : '';
     }
 
     // ── 本文のシリアライズ ──────────────────────────────────────────────────
@@ -1329,10 +1335,11 @@
     // serializeBlock は1つのトップレベルブロックを保存用HTMLへ変換する。
     function serializeBlock(el) {
         const name = el.tagName.toLowerCase();
-        const idAttr = blockIdAttrOf(el);
         const allowed = tagSchema && tagSchema[name];
         if (!allowed) return '';
-        const open = `<${name}${serializeAttrs(el, allowed, idAttr)}>`;
+        // data-id は全要素共通の属性として語彙（/api/tag-schema）に含まれるので、
+        // serializeAttrs が書き出す。ここで足すと二重出力になる。
+        const open = `<${name}${serializeAttrs(el, allowed)}>`;
         if (voidTags.has(name)) return open + '\n';
         return `${open}${serializeChildren(el, '')}</${name}>\n`;
     }
@@ -1352,7 +1359,7 @@
     }
 
     function updateHtmlPreview() {
-        document.getElementById('html-preview').value = joinBlocks(serializeBlocks());
+        document.getElementById('w-html-preview').value = joinBlocks(serializeBlocks());
     }
 
     // ── 語彙レジストリ駆動の挿入骨格（汎用表エディタv1） ──────────────────
@@ -1474,7 +1481,7 @@
     }
 
     function insertComponent(type, refBlock = null, position = 'after', ...args) {
-        const editor = document.getElementById('editor-content');
+        const editor = document.getElementById('w-editor-content');
         const isEdit = document.body.hasAttribute('edit-mode');
         
         const newEl = createComponentElement(type, isEdit, ...args);
@@ -1636,7 +1643,7 @@
     }
 
     function initBlocks() {
-        const container = document.getElementById('editor-content');
+        const container = document.getElementById('w-editor-content');
         const children = Array.from(container.children);
         children.forEach(child => {
             if (!child.classList.contains('editor-block') && child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE') {
@@ -1649,7 +1656,7 @@
     // セルの値はブロックの contenteditable がそのまま担い（値＝中身＝表示される文字）、
     // 行・列の追加・削除・並べ替えをこのツールバーで補う。ボタンを表の中へ挿すと
     // シリアライザが中身を本文として拾ってしまうため、クロームは本文DOMの外
-    // （#table-toolbar・シェル直下）に置き、キャレットのある行に追従させる。
+    // （#w-table-toolbar・シェル直下）に置き、キャレットのある行に追従させる。
     let currentTableRow = null;
     let currentTableCell = null; // 列操作・列設定の対象列は「キャレットのあるセル」から決める
 
@@ -1663,7 +1670,7 @@
     }
 
     function hideTableToolbar() {
-        const bar = document.getElementById('table-toolbar');
+        const bar = document.getElementById('w-table-toolbar');
         if (bar) bar.classList.remove('active');
         currentTableRow = null;
         currentTableCell = null;
@@ -1672,14 +1679,14 @@
 
     // updateTableToolbar はキャレットが本文中の表の行にあるときだけツールバーを出す。
     function updateTableToolbar() {
-        const bar = document.getElementById('table-toolbar');
+        const bar = document.getElementById('w-table-toolbar');
         if (!bar) return;
         if (!document.body.hasAttribute('edit-mode')) { hideTableToolbar(); return; }
 
         const sel = window.getSelection();
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
-        const row = el && el.closest ? el.closest('#editor-content tr') : null;
+        const row = el && el.closest ? el.closest('#w-editor-content tr') : null;
         if (!row || insideCustomElement(row)) { hideTableToolbar(); return; }
 
         currentTableRow = row;
@@ -1867,14 +1874,14 @@
     let colPopoverTh = null; // 設定対象の見出しセル
 
     function hideColPopover() {
-        const pop = document.getElementById('col-popover');
+        const pop = document.getElementById('w-col-popover');
         if (pop) pop.classList.remove('active');
         colPopoverTh = null;
     }
 
     // openColPopover は現在列の見出し（th）に対する設定を開く。
     function openColPopover() {
-        const pop = document.getElementById('col-popover');
+        const pop = document.getElementById('w-col-popover');
         const cell = currentTableCell;
         const table = cell && cell.closest('table');
         if (!pop || !table) return;
@@ -1884,8 +1891,8 @@
 
         // 鍵（＝見出しの表示文字）と現在の型を表示する
         const key = th.textContent.trim() || '（見出し未入力）';
-        document.getElementById('cp-key').textContent = key;
-        const sel = document.getElementById('cp-type');
+        document.getElementById('w-cp-key').textContent = key;
+        const sel = document.getElementById('w-cp-type');
         sel.value = th.getAttribute('data-type') || '';
         refreshColPopoverNote(th, key);
 
@@ -1897,7 +1904,7 @@
 
     // refreshColPopoverNote は「明示しない場合に効く型」（レジストリ宣言 or 推論辞書）を示す。
     function refreshColPopoverNote(th, key) {
-        const note = document.getElementById('cp-note');
+        const note = document.getElementById('w-cp-note');
         const table = th.closest('table');
         const def = vocabDefs.find(v => v.type === (table && table.getAttribute('data-type')));
         const col = def && (def.columns || []).find(c => (c.field && c.field === key) || c.label === key);
@@ -1911,7 +1918,7 @@
     function applyColType() {
         const th = colPopoverTh;
         if (!th) return;
-        const v = document.getElementById('cp-type').value;
+        const v = document.getElementById('w-cp-type').value;
         if (v) th.setAttribute('data-type', v);
         else th.removeAttribute('data-type');
         validateTypedTables();
@@ -1924,21 +1931,21 @@
     let currentDlNode = null; // キャレットのある dt / dd
 
     function hideDlToolbar() {
-        const bar = document.getElementById('dl-toolbar');
+        const bar = document.getElementById('w-dl-toolbar');
         if (bar) bar.classList.remove('active');
         currentDlNode = null;
     }
 
     // updateDlToolbar はキャレットが本文中の <dl data-type> の dt/dd にあるときだけ出す。
     function updateDlToolbar() {
-        const bar = document.getElementById('dl-toolbar');
+        const bar = document.getElementById('w-dl-toolbar');
         if (!bar) return;
         if (!document.body.hasAttribute('edit-mode')) { hideDlToolbar(); return; }
 
         const sel = window.getSelection();
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
-        const item = el && el.closest ? el.closest('#editor-content dl[data-type] > dt, #editor-content dl[data-type] > dd') : null;
+        const item = el && el.closest ? el.closest('#w-editor-content dl[data-type] > dt, #w-editor-content dl[data-type] > dd') : null;
         if (!item || insideCustomElement(item)) { hideDlToolbar(); return; }
 
         currentDlNode = item;
@@ -2110,7 +2117,7 @@
     // validateTypedTables は本文中の全 <table data-type> のデータセルを検証し直す。
     // 編集モード入り・列型の変更・サニタイズ反映のあとに呼ぶ。
     function validateTypedTables() {
-        document.querySelectorAll('#editor-content table[data-type]').forEach(table => {
+        document.querySelectorAll('#w-editor-content table[data-type]').forEach(table => {
             if (insideCustomElement(table)) return;
             Array.from(table.rows).slice(1).forEach(row => {
                 Array.from(row.children).forEach(c => {
@@ -2125,21 +2132,21 @@
     let enumMenuCell = null;
 
     function hideEnumMenu() {
-        const menu = document.getElementById('enum-menu');
+        const menu = document.getElementById('w-enum-menu');
         if (menu) menu.classList.remove('active');
         enumMenuCell = null;
     }
 
     // updateEnumMenu はキャレットが enum 列のデータセルにあるとき選択肢を出す。
     function updateEnumMenu() {
-        const menu = document.getElementById('enum-menu');
+        const menu = document.getElementById('w-enum-menu');
         if (!menu) return;
         if (!document.body.hasAttribute('edit-mode')) { hideEnumMenu(); return; }
 
         const sel = window.getSelection();
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
-        const cell = el && el.closest ? el.closest('#editor-content table[data-type] td') : null;
+        const cell = el && el.closest ? el.closest('#w-editor-content table[data-type] td') : null;
         if (!cell || insideCustomElement(cell)) { hideEnumMenu(); return; }
         const col = resolveCellColumn(cell);
         if (!col || col.type !== 'enum' || !col.enum.length) { hideEnumMenu(); return; }
@@ -2171,7 +2178,7 @@
     // （シリアライザが保存しない編集クローム）。呼び出しは applyMode・populateEditor・
     // 挿入直後の3点（エンハンスパスの規律。作り直し方式なので冪等）。
     function enhanceFileSections() {
-        document.querySelectorAll('#editor-content section[data-type="file"]').forEach(sec => {
+        document.querySelectorAll('#w-editor-content section[data-type="file"]').forEach(sec => {
             sec.querySelectorAll(':scope > .vocab-chrome').forEach(el => el.remove());
             const src = sec.getAttribute('data-src') || '';
             const isEdit = document.body.hasAttribute('edit-mode');
@@ -2289,7 +2296,7 @@
     // メニュー全体の再設計（絞り込み・分類・頻度順）は別課題（エディタ仕様 §3）で、
     // ここは「殻の markup を手で足さずに語彙を増やせる」ことだけを実現する。
     function populateSlashMenuVocab() {
-        const menu = document.getElementById('slash-menu');
+        const menu = document.getElementById('w-slash-menu');
         if (!menu) return;
         vocabDefs.forEach(def => {
             if (def.hidden) return; // 明細表など、単独では挿入しない形式
@@ -2307,7 +2314,7 @@
     // Slash Menu Logic
     function showSlashMenu(targetElement) {
         slashMenuVisible = true;
-        const menu = document.getElementById('slash-menu');
+        const menu = document.getElementById('w-slash-menu');
         currentSlashBlock = targetElement.closest('.editor-block');
         menu.classList.add('active');
         
@@ -2321,13 +2328,13 @@
 
     function hideSlashMenu() {
         slashMenuVisible = false;
-        const menu = document.getElementById('slash-menu');
+        const menu = document.getElementById('w-slash-menu');
         if (menu) menu.classList.remove('active');
         currentSlashBlock = null;
     }
 
     function updateSlashMenuSelection() {
-        const items = document.querySelectorAll('#slash-menu .slash-menu-item');
+        const items = document.querySelectorAll('#w-slash-menu .slash-menu-item');
         items.forEach((item, idx) => {
             if (idx === slashSelectedIndex) {
                 item.classList.add('selected');
@@ -2339,7 +2346,7 @@
     }
 
     function handleSlashMenuKey(e) {
-        const items = document.querySelectorAll('#slash-menu .slash-menu-item');
+        const items = document.querySelectorAll('#w-slash-menu .slash-menu-item');
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             slashSelectedIndex = (slashSelectedIndex + 1) % items.length;
@@ -2361,45 +2368,45 @@
     }
 
     function setupEditorEvents() {
-        const editor = document.getElementById('editor-content');
+        const editor = document.getElementById('w-editor-content');
 
         // レジストリ由来の項目は、下の項目バインド（click / mouseenter）より前に足す。
         populateSlashMenuVocab();
 
         // 行操作ツールバーのボタン。mousedown を止めないとクリックで選択が崩れ、
         // どの行への操作か（currentTableRow）が失われる。
-        const tbar = document.getElementById('table-toolbar');
+        const tbar = document.getElementById('w-table-toolbar');
         if (tbar) {
             tbar.addEventListener('mousedown', e => e.preventDefault());
-            document.getElementById('tt-add').addEventListener('click', tableRowAdd);
-            document.getElementById('tt-del').addEventListener('click', tableRowDelete);
-            document.getElementById('tt-up').addEventListener('click', () => tableRowMove(-1));
-            document.getElementById('tt-down').addEventListener('click', () => tableRowMove(1));
-            document.getElementById('tt-col-add').addEventListener('click', tableColAdd);
-            document.getElementById('tt-col-del').addEventListener('click', tableColDelete);
-            document.getElementById('tt-col-left').addEventListener('click', () => tableColMove(-1));
-            document.getElementById('tt-col-right').addEventListener('click', () => tableColMove(1));
-            document.getElementById('tt-col-cfg').addEventListener('click', openColPopover);
+            document.getElementById('w-tt-add').addEventListener('click', tableRowAdd);
+            document.getElementById('w-tt-del').addEventListener('click', tableRowDelete);
+            document.getElementById('w-tt-up').addEventListener('click', () => tableRowMove(-1));
+            document.getElementById('w-tt-down').addEventListener('click', () => tableRowMove(1));
+            document.getElementById('w-tt-col-add').addEventListener('click', tableColAdd);
+            document.getElementById('w-tt-col-del').addEventListener('click', tableColDelete);
+            document.getElementById('w-tt-col-left').addEventListener('click', () => tableColMove(-1));
+            document.getElementById('w-tt-col-right').addEventListener('click', () => tableColMove(1));
+            document.getElementById('w-tt-col-cfg').addEventListener('click', openColPopover);
         }
 
         // dl の項目操作ツールバー（表と同じく mousedown を止めて選択を守る）
-        const dbar = document.getElementById('dl-toolbar');
+        const dbar = document.getElementById('w-dl-toolbar');
         if (dbar) {
             dbar.addEventListener('mousedown', e => e.preventDefault());
-            document.getElementById('dt-add').addEventListener('click', dlItemAdd);
-            document.getElementById('dt-val').addEventListener('click', dlValueAdd);
-            document.getElementById('dt-up').addEventListener('click', () => dlItemMove(-1));
-            document.getElementById('dt-down').addEventListener('click', () => dlItemMove(1));
-            document.getElementById('dt-del').addEventListener('click', dlItemDelete);
+            document.getElementById('w-dt-add').addEventListener('click', dlItemAdd);
+            document.getElementById('w-dt-val').addEventListener('click', dlValueAdd);
+            document.getElementById('w-dt-up').addEventListener('click', () => dlItemMove(-1));
+            document.getElementById('w-dt-down').addEventListener('click', () => dlItemMove(1));
+            document.getElementById('w-dt-del').addEventListener('click', dlItemDelete);
         }
 
         // 列設定ポップオーバ。select の操作にはフォーカスが要るため mousedown は止めない
         // （かわりに selectionchange 側でポップオーバ操作中の消灯を抑止する）。
-        const cpType = document.getElementById('cp-type');
+        const cpType = document.getElementById('w-cp-type');
         if (cpType) cpType.addEventListener('change', applyColType);
 
         // enum の選択肢メニュー。クリックで選択が飛ぶと対象セルを見失うため mousedown を止める。
-        const emenu = document.getElementById('enum-menu');
+        const emenu = document.getElementById('w-enum-menu');
         if (emenu) emenu.addEventListener('mousedown', e => e.preventDefault());
 
         editor.addEventListener('input', (e) => {
@@ -2415,7 +2422,7 @@
             const sel = window.getSelection();
             const node = sel && sel.anchorNode;
             const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
-            const cell = el && el.closest ? el.closest('#editor-content table[data-type] td') : null;
+            const cell = el && el.closest ? el.closest('#w-editor-content table[data-type] td') : null;
             if (cell && !insideCustomElement(cell)) validateCell(cell);
         });
 
@@ -2488,7 +2495,7 @@
         });
 
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('#slash-menu') && !e.target.closest('.editor-block')) {
+            if (!e.target.closest('#w-slash-menu') && !e.target.closest('.editor-block')) {
                 hideSlashMenu();
             }
         });
@@ -2498,7 +2505,7 @@
             // 列設定ポップオーバの操作中（select へのフォーカス移動）は、キャレットが
             // 表から出たと誤認してツールバーごと消してしまうため更新しない。
             if (document.activeElement && document.activeElement.closest &&
-                document.activeElement.closest('#col-popover')) return;
+                document.activeElement.closest('#w-col-popover')) return;
             updateContextToolbar();
             updateTableToolbar();
             updateDlToolbar();
@@ -2507,25 +2514,25 @@
 
         // Hide toolbar when clicking outside editor
         document.addEventListener('mousedown', (e) => {
-            if (!e.target.closest('#editor-content') && !e.target.closest('#context-toolbar')) {
+            if (!e.target.closest('#w-editor-content') && !e.target.closest('#w-context-toolbar')) {
                 hideContextToolbar();
             }
-            if (!e.target.closest('#editor-content') && !e.target.closest('#table-toolbar') &&
-                !e.target.closest('#col-popover')) {
+            if (!e.target.closest('#w-editor-content') && !e.target.closest('#w-table-toolbar') &&
+                !e.target.closest('#w-col-popover')) {
                 hideTableToolbar();
             }
-            if (!e.target.closest('#table-toolbar') && !e.target.closest('#col-popover')) {
+            if (!e.target.closest('#w-table-toolbar') && !e.target.closest('#w-col-popover')) {
                 hideColPopover();
             }
-            if (!e.target.closest('#editor-content') && !e.target.closest('#dl-toolbar')) {
+            if (!e.target.closest('#w-editor-content') && !e.target.closest('#w-dl-toolbar')) {
                 hideDlToolbar();
             }
-            if (!e.target.closest('#editor-content') && !e.target.closest('#enum-menu')) {
+            if (!e.target.closest('#w-editor-content') && !e.target.closest('#w-enum-menu')) {
                 hideEnumMenu();
             }
         });
 
-        const items = document.querySelectorAll('#slash-menu .slash-menu-item');
+        const items = document.querySelectorAll('#w-slash-menu .slash-menu-item');
         items.forEach((item, idx) => {
             item.addEventListener('click', () => {
                 const type = item.getAttribute('data-type');
@@ -2743,7 +2750,7 @@
     }
 
     function showContextToolbarForBlock(block) {
-        const toolbar = document.getElementById('context-toolbar');
+        const toolbar = document.getElementById('w-context-toolbar');
         toolbar.innerHTML = '';
         let hasButtons = false;
 
@@ -2752,7 +2759,7 @@
         const tagName = content.tagName.toLowerCase();
 
         // 装飾ボタンは構造HTMLのブロックにだけ出す。
-        // （明細行の追加は、表そのものを編集する #table-toolbar が担う。かつては
+        // （明細行の追加は、表そのものを編集する #w-table-toolbar が担う。かつては
         //  発注書のカスタム要素に「＋ 部品を追加」を出していたが、移行完了で不要になった）
         if (!isCustomTag(tagName)) {
             // 見出し・段落だけでなく、リストや引用の中の文字も装飾できる。
@@ -2783,7 +2790,7 @@
     }
 
     function hideContextToolbar() {
-        const toolbar = document.getElementById('context-toolbar');
+        const toolbar = document.getElementById('w-context-toolbar');
         if(toolbar) toolbar.classList.remove('active');
         activeBlock = null;
     }
@@ -2831,18 +2838,18 @@
             if (el) el.addEventListener(event, handler);
         };
 
-        on('#drawer-backdrop', 'click', closeDrawers);
+        on('#w-drawer-backdrop', 'click', closeDrawers);
         document.querySelectorAll('.rail-toggle[data-rail]').forEach(btn => {
             btn.addEventListener('click', () => toggleRail(btn.dataset.rail));
         });
 
-        on('#logout-btn', 'click', logout);
-        on('#mode-toggle', 'change', onModeToggle);
-        on('#create-subpage-btn', 'click', createSubpage);
-        on('#pi-parent-apply', 'click', applyParent);
-        on('#pp-chown-btn', 'click', chownPage);
-        on('#pp-save', 'click', savePerms);
-        on('#pp-public', 'change', setPublic);
+        on('#w-logout-btn', 'click', logout);
+        on('#w-mode-toggle', 'change', onModeToggle);
+        on('#w-create-subpage-btn', 'click', createSubpage);
+        on('#w-pi-parent-apply', 'click', applyParent);
+        on('#w-pp-chown-btn', 'click', chownPage);
+        on('#w-pp-save', 'click', savePerms);
+        on('#w-pp-public', 'change', setPublic);
     }
 
     bindChromeActions();
@@ -2860,11 +2867,11 @@
         // 編集モード自動判定（?editパラメータがあるか）。匿名は編集できないので無視する。
         // 実際の編集モード適用とロック取得はロード完了後の onModeToggle() が行う。
         if (!anon && urlParams.has('edit')) {
-            const toggle = document.getElementById('mode-toggle');
+            const toggle = document.getElementById('w-mode-toggle');
             if (toggle) toggle.checked = true;
         }
 
-        // 本文はサーバーが #editor-content へ埋め込み済み（合成方式）。fetch はせず、
+        // 本文はサーバーが #w-editor-content へ埋め込み済み（合成方式）。fetch はせず、
         // 既にあるDOMをそのまま初期コンテンツとしてブロック化する。認可・404・
         // 匿名のログイン誘導はサーバー側で解決済みなので、ここでは扱わない。
         initBlocks();

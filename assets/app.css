@@ -237,11 +237,11 @@ body[edit-mode] .view-only { display: none; }
    左サイドパネルの子ページナビは実効公開の子だけをサーバー側で絞って返すため、
    匿名でも表示する（子ページ作成ボタンのみ書き込み操作なので個別に隠す）。 */
 body.anonymous .rail-right,
-body.anonymous #toggle-right,
+body.anonymous #w-toggle-right,
 body.anonymous .page-action-btn,
-body.anonymous #admin-link,
-body.anonymous #save-status,
-body.anonymous #mode-text,
+body.anonymous #w-admin-link,
+body.anonymous #w-save-status,
+body.anonymous #w-mode-text,
 body.anonymous .switch,
 body.anonymous .switch-container button,
 body.anonymous .tip,
@@ -356,12 +356,12 @@ body.anonymous .preview-section { display: none !important; }
        （ページ本体は横スクロールさせない）。table への display:block は
        行内容を無名テーブルボックスが包む標準的なレスポンシブ対処で、
        セルの罫線・編集（contenteditable・行操作ツールバー）には影響しない。 */
-    #editor-content table {
+    #w-editor-content table {
         display: block;
         max-width: 100%;
         overflow-x: auto;
     }
-    #editor-content pre {
+    #w-editor-content pre {
         max-width: 100%;
         overflow-x: auto;
     }
@@ -496,7 +496,7 @@ input:checked + .slider:before {
     .container { padding: 16px; }
     .title { font-size: 18px; }
     /* 保存ステータスの固定幅（min-width:92px・右寄せ）を解除して窮屈さを緩和 */
-    #save-status { min-width: 0 !important; text-align: left !important; }
+    #w-save-status { min-width: 0 !important; text-align: left !important; }
 }
 
 /* 「＋ 子ページを作成」：左レール最上部（親ページリンクの下）に置く、階層への操作。
@@ -519,7 +519,7 @@ input:checked + .slider:before {
 }
 
 /* エディタ領域 */
-#editor-content {
+#w-editor-content {
     border: 1px solid var(--border);
     padding: 20px;
     border-radius: var(--radius);
@@ -545,7 +545,7 @@ input:checked + .slider:before {
     border-bottom: 1px solid #334155;
     padding-bottom: 8px;
 }
-#html-preview {
+#w-html-preview {
     width: 100%;
     height: 250px;
     background: transparent;
@@ -569,7 +569,7 @@ input:checked + .slider:before {
 body[edit-mode] .editor-toolbar {
     display: flex !important;
 }
-body[edit-mode] #editor-content {
+body[edit-mode] #w-editor-content {
     border-top-left-radius: 0 !important;
     border-top-right-radius: 0 !important;
 }
@@ -838,28 +838,28 @@ body[edit-mode] .block-content p:empty::before {
 
 /* 本文の表の基本スタイル。ブラウザ既定の表は枠が無く、挿入直後の空セルが
  * 見えず編集もできないため、文書としての最小の体裁をここで与える（閲覧・編集共通）。 */
-#editor-content table {
+#w-editor-content table {
     border-collapse: collapse;
     margin: 8px 0;
 }
 
-#editor-content th,
-#editor-content td {
+#w-editor-content th,
+#w-editor-content td {
     border: 1px solid #cbd5e1;
     padding: 4px 10px;
     min-width: 3em;
     text-align: left;
 }
 
-#editor-content th {
+#w-editor-content th {
     background: #f1f5f9;
     font-weight: 600;
 }
 
 /* マーカー付き標準HTML（table/dl[data-type]）の編集モード時の視覚ヒント。
  * 枠で「形式ブロック」であることを示す（閲覧・公開ページには出さない）。 */
-body[edit-mode] #editor-content table[data-type],
-body[edit-mode] #editor-content dl[data-type] {
+body[edit-mode] #w-editor-content table[data-type],
+body[edit-mode] #w-editor-content dl[data-type] {
     outline: 1px dashed #93c5fd;
     outline-offset: 2px;
 }
@@ -869,55 +869,55 @@ body[edit-mode] #editor-content dl[data-type] {
  * 属性の型が使われていることを編集モードで示す。
  * 属性セレクタなので、上書きを起こす属性自体が印のトリガーになり表示と実態がずれない。
  * 鍵を上書きする属性（data-field）は 2026-08-20 に撤去したので、残るのは型だけ。 */
-body[edit-mode] #editor-content th[data-type] {
+body[edit-mode] #w-editor-content th[data-type] {
     background: #fef3c7;
 }
 
 /* 型不一致の通知（語彙モデル §5.1: 検証して通知する。**拒否はしない**）。
  * number / date 列のセルが解釈できない値のとき、編集モードでだけ赤くする。
  * class はサニタイザ・シリアライザとも通さないため保存されない（実行時だけの印）。 */
-body[edit-mode] #editor-content td.cell-invalid {
+body[edit-mode] #w-editor-content td.cell-invalid {
     background: #fef2f2;
     box-shadow: inset 0 0 0 1px #fca5a5;
 }
 
 /* ── 計算ビュー（section[data-type=child-list|required-materials]）──
    中身はサーバー事前描画（view_render.go）が .vocab-chrome として埋める。 */
-#editor-content ul.child-list {
+#w-editor-content ul.child-list {
     list-style: none;
     padding: 8px 0;
     margin: 4px 0;
 }
 
-#editor-content ul.child-list li {
+#w-editor-content ul.child-list li {
     padding: 4px 0;
 }
 
-#editor-content .child-list-empty,
-#editor-content .materials-empty,
-#editor-content .view-error {
+#w-editor-content .child-list-empty,
+#w-editor-content .materials-empty,
+#w-editor-content .view-error {
     color: var(--text-muted);
     font-size: 13px;
     padding: 8px 0;
 }
 
-#editor-content .view-error { color: #ef4444; }
+#w-editor-content .view-error { color: #ef4444; }
 
-#editor-content .materials-title {
+#w-editor-content .materials-title {
     font-size: 16px;
     margin: 8px 0 12px;
     padding-bottom: 8px;
     border-bottom: 2px solid #f1f5f9;
 }
 
-#editor-content table.materials-table {
+#w-editor-content table.materials-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
     text-align: left;
 }
 
-#editor-content table.materials-table th {
+#w-editor-content table.materials-table th {
     background: #f8fafc;
     color: #475569;
     font-weight: 600;
@@ -925,15 +925,15 @@ body[edit-mode] #editor-content td.cell-invalid {
     border-bottom: 1px solid #e2e8f0;
 }
 
-#editor-content table.materials-table td {
+#w-editor-content table.materials-table td {
     padding: 10px;
     border-bottom: 1px solid #f1f5f9;
 }
 
-#editor-content table.materials-table .num { text-align: right; }
-#editor-content table.materials-table .status { text-align: center; }
+#w-editor-content table.materials-table .num { text-align: right; }
+#w-editor-content table.materials-table .status { text-align: center; }
 
-#editor-content .badge {
+#w-editor-content .badge {
     padding: 4px 8px;
     border-radius: 4px;
     font-weight: bold;
@@ -941,12 +941,12 @@ body[edit-mode] #editor-content td.cell-invalid {
     white-space: nowrap;
 }
 
-#editor-content .badge.ok { background: #ecfdf5; color: #10b981; }
-#editor-content .badge.ng { background: #fef2f2; color: #ef4444; }
+#w-editor-content .badge.ok { background: #ecfdf5; color: #10b981; }
+#w-editor-content .badge.ng { background: #fef2f2; color: #ef4444; }
 
 /* 挿入直後（サーバー描画前）の空マーカーには案内を出す（編集モードのみ）。 */
-body[edit-mode] #editor-content section[data-type="child-list"]:empty::before,
-body[edit-mode] #editor-content section[data-type="required-materials"]:empty::before {
+body[edit-mode] #w-editor-content section[data-type="child-list"]:empty::before,
+body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty::before {
     content: "（このビューの中身は保存後の再読み込みで表示されます）";
     color: var(--text-muted);
     font-size: 12px;
@@ -954,12 +954,12 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
 }
 
 /* ── ファイル容器（section[data-type=file]）のエンハンサが挿す編集クローム ── */
-#editor-content section[data-type] {
+#w-editor-content section[data-type] {
     margin: 12px 0;
     padding: 4px 0;
 }
 
-#editor-content .file-preview {
+#w-editor-content .file-preview {
     display: block;
     width: 100%;
     height: 420px;
@@ -968,7 +968,7 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
     border-radius: var(--radius);
 }
 
-#editor-content .pdf-drop-zone {
+#w-editor-content .pdf-drop-zone {
     margin: 8px 0;
     padding: 12px;
     border: 2px dashed #cbd5e1;
@@ -978,12 +978,12 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
     text-align: center;
 }
 
-#editor-content .pdf-drop-zone.is-dragover {
+#w-editor-content .pdf-drop-zone.is-dragover {
     border-color: var(--accent);
     background: #eef2ff;
 }
 
-#editor-content .parse-pdf-btn {
+#w-editor-content .parse-pdf-btn {
     margin: 4px 0 8px;
     padding: 6px 12px;
     border: 1px solid var(--border);
@@ -993,7 +993,7 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
     font-size: 13px;
 }
 
-#editor-content .parse-pdf-btn:hover { background: var(--border); }
+#w-editor-content .parse-pdf-btn:hover { background: var(--border); }
 
 /* ── ヘッダー右側とパネル内の小物 ─────────────────────────────────────
  * 2026-08-06 に index.html のインライン style= から移設した分。
@@ -1002,7 +1002,7 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
  */
 .is-hidden { display: none !important; }
 
-#user-bar {
+#w-user-bar {
     font-size: 12px;
     color: var(--text-muted);
     margin-right: 10px;
@@ -1029,7 +1029,7 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
     font-size: 12px;
 }
 
-#save-status {
+#w-save-status {
     font-size: 12px;
     font-weight: bold;
     margin-right: 12px;
@@ -1039,12 +1039,12 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
     text-align: right;
 }
 
-#pp-mode {
+#w-pp-mode {
     width: 50px;
     font-family: monospace;
 }
 
-#pp-msg {
+#w-pp-msg {
     margin-left: 8px;
     font-size: 12px;
 }
@@ -1062,7 +1062,7 @@ body[edit-mode] #editor-content section[data-type="required-materials"]:empty::b
     cursor: pointer;
 }
 
-/* 匿名のときヘッダーに出すログイン導線（app.js が #user-bar へ差し込む）。 */
+/* 匿名のときヘッダーに出すログイン導線（app.js が #w-user-bar へ差し込む）。 */
 .login-link {
     color: var(--accent-strong);
     text-decoration: none;

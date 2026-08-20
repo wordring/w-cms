@@ -141,6 +141,9 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 見出しの改名で③計算プラグインが読めなくなった列の告知（同じくエコーバックの流儀）。
 		// 鍵は見出しの表示文字なので、改名は同期を**黙って**止めてしまう。
 		"unresolved_fields": UnresolvedVocabFields(safeHTML),
+		// 殻が独占する接頭辞つきの id は剥がして保存する。書き手が気づけるよう告知する
+		// （走査は**サニタイズ前**の入力。後では接頭辞が消えていて分からない）。
+		"stripped_ids": ShellPrefixedIDs(req.HTML),
 	})
 }
 
@@ -250,5 +253,6 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 告知の対象は送られてきたブロックだけ（エコーバックと同じ粒度）。
 		"unknown_types":     UnknownVocabTypes(safeBlock),
 		"unresolved_fields": UnresolvedVocabFields(safeBlock),
+		"stripped_ids":      ShellPrefixedIDs(req.HTML),
 	})
 }

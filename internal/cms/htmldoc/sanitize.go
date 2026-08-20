@@ -82,9 +82,35 @@ var embedURLAttributes = map[string]bool{"src": true, "srcset": true, "poster": 
 // （getElementById は文書順で最初の要素を返す）、保存や権限UIが壊れる経路が開く。
 const BlockIDAttr = "data-id"
 
+// ShellIDPrefix は**殻（assets/index.html）が独占する id の接頭辞**です。
+//
+// 本文は殻と同じDOMへ合成されるため、id の名前空間を共有します。getElementById は
+// 文書順で最初の要素を返すので、本文に殻と同じ id を書かれると権限UIの入力欄などを
+// 乗っ取れます（本文の挿入点より後ろに pp-mode・pp-owner-input 等が並ぶ）。
+// これが 2026-08-02 に id を全面拒否した理由でした。
+//
+// 2026-08-20 に分担を**反転**させました——**殻の側が接頭辞を独占し、本文の id は自由**。
+// 守るべき規律が「無数の書き手」から「1つの殻」へ移り、本文ではページ内リンクが普通に書けます。
+// 本文に接頭辞つきの id が現れたら、名前空間を侵さないよう**接頭辞を剥がして**通します
+// （拒否ではなく告知の流儀）。殻の側の後戻りは internal/cms/shell_id_test.go が検出します。
+const ShellIDPrefix = "w-"
+
+// stripShellIDPrefix は本文の id から殻の接頭辞を剥がします。
+//
+// **無くなるまで繰り返す**のは冪等性のためです。1回だけだと "w-w-x" が
+// 1回目のサニタイズで "w-x"、2回目で "x" となり、
+// Sanitize(Sanitize(v)) == Sanitize(v) が崩れて保存時エコーバックが収束しません。
+func stripShellIDPrefix(v string) string {
+	for strings.HasPrefix(v, ShellIDPrefix) {
+		v = v[len(ShellIDPrefix):]
+	}
+	return v
+}
+
 // globalAttributes はどの許可要素にも共通で通す属性です。
-// 要素ごとの許可リスト（構造HTML＋注入された語彙）に加えて評価されます。
-var globalAttributes = map[string]bool{BlockIDAttr: true}
+// 要素ごとの許可リスト（構造HTML＋`data-*` マーカー）に加えて評価されます。
+// id は値を検査（接頭辞を剥がす）してから通します。
+var globalAttributes = map[string]bool{BlockIDAttr: true, "id": true}
 
 // structuralElements は「要素名 → 許可する属性の集合」のうち、**構造HTML**の分です。
 // サニタイザはHTMLの安全性だけを知り、ドメインの語彙（どの `data-type` がどんな形式か）は
@@ -204,9 +230,17 @@ func New() *Sanitizer {
 func (s *Sanitizer) AllowedVocabulary() map[string][]string {
 	out := make(map[string][]string, len(s.allowed))
 	for el, attrs := range s.allowed {
-		list := make([]string, 0, len(attrs))
+		list := make([]string, 0, len(attrs)+len(globalAttributes))
 		for a := range attrs {
 			list = append(list, a)
+		}
+		// 全要素共通の属性（data-id・id）も含める。エディタのシリアライザは
+		// これを語彙として使うので、含めないと「サーバーは通すのにエディタが落とす」
+		// 非対称が生まれ、保存のたびに id が消える。
+		for a := range globalAttributes {
+			if !attrs[a] {
+				list = append(list, a)
+			}
 		}
 		sort.Strings(list)
 		out[el] = list
@@ -332,6 +366,15 @@ func filterAttrs(attrs []html.Attribute, allowed map[string]bool) []html.Attribu
 			continue
 		}
 		if !allowed[key] && !globalAttributes[key] {
+			continue
+		}
+		// 本文の id は自由だが、殻が独占する接頭辞だけは侵させない（ShellIDPrefix）。
+		if key == "id" {
+			v := stripShellIDPrefix(a.Val)
+			if v == "" {
+				continue // 接頭辞だけの id は指し先の名前が残らないので落とす
+			}
+			out = append(out, html.Attribute{Key: key, Val: v})
 			continue
 		}
 		// URLは用途で基準が違う。リンクは外部可、埋め込みは相対のみ（§5.5）。

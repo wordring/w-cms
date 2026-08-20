@@ -11,6 +11,11 @@ package cms
 // 依存は `cms → htmldoc` の一方向のまま。**htmldoc から cms を import しないこと。**
 
 import (
+	"sort"
+	"strings"
+
+	"golang.org/x/net/html"
+
 	"w-cms/internal/cms/htmldoc"
 )
 
@@ -41,4 +46,35 @@ func AllowedVocabulary() map[string][]string {
 // VoidElementNames は子を持てない要素名（ソート済み）を返します。
 func VoidElementNames() []string {
 	return htmldoc.VoidElementNames()
+}
+
+// ShellPrefixedIDs は本文中の `id` のうち、**殻が独占する接頭辞**
+// （htmldoc.ShellIDPrefix）が付いているものを重複なくソートして返します。
+//
+// サニタイズは接頭辞を剥がして保存を通す（拒否しない）ので、書き手が
+// 「意図した id と違う名前になった」ことに気づけるよう、**保存時の告知**に使います
+// （UnknownVocabTypes・UnresolvedVocabFields と同じエコーバックの流儀）。
+// 走査するのはサニタイズ**前**のHTMLです——後では接頭辞が消えていて分かりません。
+func ShellPrefixedIDs(htmlStr string) []string {
+	nodes, err := htmldoc.ParseFragment(htmlStr)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, root := range nodes {
+		WalkElements(root, func(n *html.Node) {
+			if v := Attr(n, "id"); v != "" && strings.HasPrefix(v, htmldoc.ShellIDPrefix) {
+				seen[v] = true
+			}
+		})
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for v := range seen {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }
