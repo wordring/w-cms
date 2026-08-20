@@ -88,8 +88,8 @@ func seedSecretMaterial(t *testing.T, orderPageID int, orderPagePublic bool, ord
 		t.Fatalf("client_orders投入エラー: %v", err)
 	}
 	if _, err := database.DB.Exec(`
-		INSERT INTO client_order_items (order_no, item_id, item_name, price, quantity, status)
-		VALUES ('PO-1', 'SECRET-PART', '部品', 100, 3, '')`); err != nil {
+		INSERT INTO client_order_items (page_id, order_no, item_id, item_name, price, quantity, status)
+		VALUES (?, 'PO-1', 'SECRET-PART', '部品', 100, 3, '')`, orderPageID); err != nil {
 		t.Fatalf("client_order_items投入エラー: %v", err)
 	}
 }

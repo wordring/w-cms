@@ -29,23 +29,26 @@ func (ourOrderPlugin) Name() string { return "our_order" }
 
 func (ourOrderPlugin) Schema() []string {
 	return []string{
+		// 発注書番号はページ内の識別子（client_orders と同じ理由。設計総点検③）。
 		`CREATE TABLE IF NOT EXISTS our_orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
+			order_no TEXT,
 			supplier_name TEXT,
 			pdf_path TEXT,
 			page_id INTEGER,
 			ordered_at DATE,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+			UNIQUE (page_id, order_no)
 		);`,
 		`CREATE TABLE IF NOT EXISTS our_order_items (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			page_id INTEGER,
 			order_no TEXT,
 			item_name TEXT,
 			cost INTEGER,
 			quantity INTEGER,
 			status TEXT,
-			FOREIGN KEY (order_no) REFERENCES our_orders(order_no) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 	}
 }
@@ -55,9 +58,10 @@ func (ourOrderPlugin) Tables() []string {
 }
 
 func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
+	// 明細も page_id を持つので直接消す（order_no のサブクエリだと、番号が重複した
+	// ときに他ページの明細まで巻き込む）。
 	if _, err := tx.Exec(
-		`DELETE FROM our_order_items WHERE order_no IN (SELECT order_no FROM our_orders WHERE page_id = ?)`,
-		pageID); err != nil {
+		`DELETE FROM our_order_items WHERE page_id = ?`, pageID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM our_orders WHERE page_id = ?`, pageID); err != nil {
@@ -68,19 +72,18 @@ func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		_, err := tx.Exec(`
 			INSERT INTO our_orders (order_no, supplier_name, pdf_path, page_id, ordered_at)
 			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(order_no) DO UPDATE SET
+			ON CONFLICT(page_id, order_no) DO UPDATE SET
 				supplier_name = excluded.supplier_name,
 				pdf_path      = excluded.pdf_path,
-				page_id       = excluded.page_id,
 				ordered_at    = excluded.ordered_at
 		`, orderNo, supplierName, pdfPath, pageID, NullableString(orderedAt))
 		return err
 	}
 	insertItem := func(orderNo, itemName string, cost, quantity int, status string) error {
 		_, err := tx.Exec(`
-			INSERT INTO our_order_items (order_no, item_name, cost, quantity, status)
-			VALUES (?, ?, ?, ?, ?)
-		`, orderNo, itemName, cost, quantity, status)
+			INSERT INTO our_order_items (page_id, order_no, item_name, cost, quantity, status)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, pageID, orderNo, itemName, cost, quantity, status)
 		return err
 	}
 

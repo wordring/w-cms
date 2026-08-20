@@ -31,11 +31,11 @@ func TestRenderComputedViews(t *testing.T) {
 	mustExec(`INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
 		VALUES ('SHAFT-01', '鋼材', 2500, '東邦', 1, 3)`)
 	mustExec(`INSERT INTO client_orders (order_no, client_name, page_id) VALUES ('PO-V1', 'トーア', 60)`)
-	mustExec(`INSERT INTO client_order_items (order_no, item_id, item_name, price, quantity, status)
-		VALUES ('PO-V1', 'SHAFT-01', 'シャフト', 8000, 10, '加工中')`)
+	mustExec(`INSERT INTO client_order_items (page_id, order_no, item_id, item_name, price, quantity, status)
+		VALUES (60, 'PO-V1', 'SHAFT-01', 'シャフト', 8000, 10, '加工中')`)
 	mustExec(`INSERT INTO our_orders (order_no, supplier_name, page_id) VALUES ('PO-OUR-V1', '東邦', 60)`)
-	mustExec(`INSERT INTO our_order_items (order_no, item_name, cost, quantity, status)
-		VALUES ('PO-OUR-V1', '鋼材', 2500, 4, '未納品')`)
+	mustExec(`INSERT INTO our_order_items (page_id, order_no, item_name, cost, quantity, status)
+		VALUES (60, 'PO-OUR-V1', '鋼材', 2500, 4, '未納品')`)
 
 	body := `<h1>受注</h1>` +
 		`<section data-type="child-list" data-id="v1"><p>紛れ込んだ内容</p></section>` +
