@@ -125,6 +125,14 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	creator := auth.CurrentUser(r)
 
+	// 1-2. テンプレート指定があれば**IDを採番する前に**検証して本文を読む
+	//      （docs/【考察】ページテンプレート.md §4）。採番の後に失敗すると、
+	//      ファイルの無いページ行が pages に残ってしまうため順序が重要。
+	templateBody, ok := loadTemplateBody(w, r, r.URL.Query().Get("template"))
+	if !ok {
+		return // loadTemplateBody が応答済み
+	}
+
 	// 2. ページレコードを原子的にINSERTしてIDを採番する（reserveNewPageID）。
 	newID, err := reserveNewPageID(parentID)
 	if err != nil {
@@ -141,10 +149,13 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
 	//    子ページ一覧は左サイドパネル（クローム）が担うため、本文には埋め込まない
 	//    （必要なら子ページ一覧のビュー section[data-type="child-list"] を後から挿せる）。
-	var htmlBuilder strings.Builder
-	htmlBuilder.WriteString("<h1>新しいページ</h1>\n")
-	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>")
-	html := htmlBuilder.String()
+	//
+	//    テンプレート指定があれば、読んだ本文の空欄を列型の既定値で埋める（新規化パス）。
+	//    採番済みの newID を発注書番号に使うので、ここまで来てから行う。
+	html := "<h1>新しいページ</h1>\n<p>ここから編集を始めてください。</p>"
+	if templateBody != "" {
+		html = FreshenTemplateBody(templateBody, newID)
+	}
 
 	// 4. HTMLファイルを物理保存
 	pageDir := page.GetPageDir(newID)
