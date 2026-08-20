@@ -188,8 +188,20 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 送る前に名前を検証する。ここが filepath.Base だけだったころ、ページ
+	// ディレクトリ内の任意のファイル——**本文 <id>.html と権限サイドカー
+	// <id>.meta.json を含む**——を「PDFとして」外部（Gemini）へ送れた。
+	// 置く側（UploadPDFHandler）と同じ関門を通し、拡張子の許可リストと
+	// 本文・サイドカーの名指し拒否をそのまま効かせる。
+	fileName, err := attachmentFileName(req.PageID, req.FileName)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": err.Error()})
+		return
+	}
+
 	pageDir := page.GetPageDir(req.PageID)
-	pdfPath := filepath.Join(pageDir, filepath.Base(req.FileName))
+	pdfPath := filepath.Join(pageDir, fileName)
 
 	if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
 		w.WriteHeader(http.StatusNotFound)
