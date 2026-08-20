@@ -33,3 +33,5 @@ go.work.sum
 
 # ローカルのデータベースおよびアップロードデータ
 data/
+# E2E の依存（playwright。数千ファイルなので追跡しない）
+e2e/node_modules/
