@@ -87,9 +87,27 @@ func SyncIndex(id string, htmlContent string) error {
 		return err
 	}
 
-	// 手順5: 各プラグインがユースケース固有テーブルを洗い替え
+	// 手順5: 各プラグインがユースケース固有テーブルを洗い替え。
+	//
+	// ただし**テンプレート配下のページは②索引・③計算へ載せません**
+	// （docs/【考察】ページテンプレート.md §6）。載せると、テンプレートに書かれた
+	// 仮の発注書が client_orders に入り、手配集計・利益計算に出てきてしまいます。
+	//
+	// 除外は「飛ばす」のではなく**空の本文を渡す**形で行います。全プラグインの Sync は
+	// 冒頭で当該ページの行を DELETE する洗い替えなので、空を渡せば
+	// 「古い行は消える・新しい行は入らない」となり、**普通のページをテンプレートフォルダへ
+	// 移したときに古い行が残りません**（飛ばすと残る）。冪等で自己修復もします。
+	//
+	// コア（pages / page_perms）は従来どおり同期します——テンプレートページも
+	// 普通に存在し、閲覧も権限判定もページ階層への表示も従来どおり動く必要があるため。
+	pluginRoot := root
+	if IsTemplateArea(id) {
+		if pluginRoot, err = html.Parse(strings.NewReader("")); err != nil {
+			return err
+		}
+	}
 	for _, p := range Plugins() {
-		if err = p.Sync(tx, pageIDInt, root); err != nil {
+		if err = p.Sync(tx, pageIDInt, pluginRoot); err != nil {
 			return fmt.Errorf("プラグイン %q の同期に失敗: %w", p.Name(), err)
 		}
 	}
