@@ -516,6 +516,16 @@
             { type: 'info', duration: 8000, id: 'unknown-vocab' });
     }
 
+    // notifyUnresolvedFields は「見出しの改名で計算に読まれなくなった項目」の告知。
+    // 項目の鍵は見出しの表示文字なので、改名すると集計・型付きテーブルへの同期が
+    // 黙って止まる。保存は通す（拒否ではない）が、気づけるように警告を出す。
+    function notifyUnresolvedFields(fields) {
+        if (!Array.isArray(fields) || !fields.length) return;
+        notify('見出しが合わないため ' + fields.map(f => '「' + f + '」').join('・') +
+            ' が計算に読まれません（見出しの文字が項目名になります）。',
+            { type: 'warn', duration: 10000, id: 'unresolved-fields' });
+    }
+
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
         // 語彙が未取得のまま保存すると、カスタム要素が丸ごと欠落した本文を書いてしまう。
@@ -559,6 +569,7 @@
                 pushSnapshot(document.getElementById('html-preview').value);
             }
             notifyUnknownTypes(data.unknown_types);
+            notifyUnresolvedFields(data.unresolved_fields);
             // 保存できた状態を記録する（次回の差分判定の基準）
             lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
             setSaveStatus("✅ 保存済", "#10b981");
@@ -606,6 +617,7 @@
                 lastSavedBlocks = blocks.map(b => ({ id: b.id, html: b.html }));
             }
             notifyUnknownTypes(data.unknown_types);
+            notifyUnresolvedFields(data.unresolved_fields);
             setSaveStatus("✅ 保存済", "#10b981");
         })
         .catch(onSaveFailed);
