@@ -22,13 +22,16 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // TemplateRootTitle はテンプレートルートを見分けるタイトルです（§3.3 の約束）。
@@ -108,6 +111,71 @@ func isTemplateRoot(id string) bool {
 		return false
 	}
 	return pageTitleFromDisk(id) == TemplateRootTitle
+}
+
+// IsTemplatePage は、そのページが**テンプレートとして選べる**かを返します。
+// 条件は「テンプレートルートの配下」かつ「葉（子を持たない）」です（同書 §3.2）。
+// 子を持つページは分類のためだけに存在し、コピーの対象になりません。
+//
+// 葉の判定だけはDBを見ます——**呼ばれるのはリクエスト時（メニュー表示・コピー実行）だけ**で、
+// そのときDBは揃っているため、§6.1 の再構築順序の罠は及びません。
+func IsTemplatePage(id string) bool {
+	norm, ok := page.NormalizeID(id)
+	if !ok || !IsUnderTemplateRoot(norm) {
+		return false
+	}
+	return isLeafPage(norm)
+}
+
+// isLeafPage は子を持たないページかを返します。
+func isLeafPage(id string) bool {
+	n, err := strconv.Atoi(id)
+	if err != nil {
+		return false
+	}
+	var children int
+	if err := database.DB.QueryRow(
+		`SELECT COUNT(*) FROM pages WHERE parent_id = ?`, n).Scan(&children); err != nil {
+		return false
+	}
+	return children == 0
+}
+
+// loadTemplateBody は template= で指定されたページの本文を検証して読みます。
+// 指定が無ければ ("", true) を返します（テンプレートを使わない通常の新規作成）。
+// 失敗時は応答を書いて ok=false を返します。
+//
+// 本文は**サニタイザを通してから**返します。テンプレートページは保存経路を通って
+// いるとは限らない（手動配置・バックアップ復元）ため、新しいページへ写す前に濾します。
+func loadTemplateBody(w http.ResponseWriter, r *http.Request, tmplID string) (string, bool) {
+	if strings.TrimSpace(tmplID) == "" {
+		return "", true
+	}
+	norm, okID := page.NormalizeID(tmplID)
+	if !okID {
+		http.Error(w, "テンプレートのページIDが不正です", http.StatusBadRequest)
+		return "", false
+	}
+	// テンプレートの中身を読むので read 権限が要る（RequirePageRead が応答を書く）。
+	if !page.RequirePageRead(w, r, norm) {
+		return "", false
+	}
+	if !IsUnderTemplateRoot(norm) {
+		http.Error(w, "指定されたページはテンプレートではありません（「"+
+			TemplateRootTitle+"」フォルダの配下にありません）", http.StatusBadRequest)
+		return "", false
+	}
+	if !isLeafPage(norm) {
+		http.Error(w, "指定されたページは分類フォルダです（子ページを持つページは"+
+			"テンプレートとして使えません）", http.StatusBadRequest)
+		return "", false
+	}
+	data, err := os.ReadFile(filepath.Join(page.GetPageDir(norm), norm+".html"))
+	if err != nil {
+		http.Error(w, "テンプレートの本文を読めませんでした", http.StatusInternalServerError)
+		return "", false
+	}
+	return Sanitize(string(data)), true
 }
 
 // pageTitleFromDisk はページ本文をディスクから読んでタイトル（最初の h1）を返します。
