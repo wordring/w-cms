@@ -48,7 +48,7 @@ type Plugin interface {
 
 // RouteProvider は集計APIなどのHTTPエンドポイントを提供したいプラグインが
 // 追加で実装する任意インターフェースです（Tier 2: コードプラグイン）。
-// Tags と違い、実装しなくてもプラグインは成立するため任意のままにしています。
+// 実装しなくてもプラグインは成立するため、Plugin の必須メソッドにはしていません。
 type RouteProvider interface {
 	Routes() []Route
 }

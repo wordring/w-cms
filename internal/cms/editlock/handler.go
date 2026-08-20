@@ -3,23 +3,12 @@ package editlock
 import (
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 )
-
-// readPageHTML はページの本文HTMLをファイルから読み込みます。
-func readPageHTML(id string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
 
 // RequireEditLock は、エディタ内の変更操作が現在の編集ロック保持者から来ていることを要求します。
 // 本文保存・権限変更・親付け替え・将来のリソース操作（画像/PDF等）を、本文編集と同じロックで
@@ -60,7 +49,7 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// 本文の読み込み（readPageHTML）のパスに使うためゼロ詰め6桁へ正規化する。
+	// 認可（page.RequirePageWrite）のためゼロ詰め6桁へ正規化する。
 	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
 	if !okID {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
@@ -93,11 +82,12 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	html, _ := readPageHTML(id) // 取得成功 → 最新HTMLを同梱（読めなければ空）
+	// 本文は同梱しない。ロック取得後にフロントが GET /api/load を読む
+	// （そちらは計算ビューのサーバー事前描画を通るため。生のファイルを返すと
+	// 編集モードへ入った瞬間にビューの中身が消える）。
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":    true,
 		"token": res.Token,
-		"html":  html,
 	})
 }
 

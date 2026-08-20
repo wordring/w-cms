@@ -146,7 +146,8 @@ var structuralElements = map[string]map[string]bool{
 
 	// 表。data-type / data-field は「マーカー付き標準HTML」（docs/【考察】語彙モデル.md）の
 	// 役割マーカーで、**属性名だけを要素限定で許可**し、値は不活性な文字列として検査しない。
-	// 許可範囲は決定ログ（同書 §9）どおり data-type→table・dl・th、data-field→th・dd に限る。
+	// 許可範囲は data-type→table・dl・section・th、data-field→th・dd、data-src→section に限る
+	// （決定ログ＝同書 §9 と、論点A採用＝§8.2 の section 追加）。
 	// レジストリ（cms パッケージの語彙レジストリ）は編集支援と索引の語彙であって
 	// 安全性の門ではない——未知の data-type も通す（保存時に告知するのは cms 側の責務）。
 	"table": {"data-type": true}, "caption": {}, "colgroup": {},
