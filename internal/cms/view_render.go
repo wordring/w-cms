@@ -63,7 +63,7 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 		if Attr(el, "data-type") == "child-list" {
 			inner = childListViewHTML(auth.CurrentUser(r), pageIDInt)
 		} else {
-			inner = requiredMaterialsViewHTML(pageIDInt)
+			inner = requiredMaterialsViewHTML(auth.CurrentUser(r), pageIDInt)
 		}
 		fillViewMarker(el, inner)
 	}
@@ -113,9 +113,13 @@ func childListViewHTML(user *auth.User, parentIDInt int) string {
 
 // requiredMaterialsViewHTML は部材手配・発注進捗の集計表を組み立てます
 // （/api/required-materials と同じ集計。見出しは旧テンプレートを踏襲）。
-func requiredMaterialsViewHTML(pageIDInt int) string {
+//
+// 子ページ一覧と同じく閲覧者を受け取る。部材の定義元ページを読めない相手には
+// その行を出さないため（RequiredMaterials 側で絞る）。この経路は匿名にも描画される
+// ので、渡し忘れると非公開ページ由来の部材名・仕入先が公開ページへ出る。
+func requiredMaterialsViewHTML(user *auth.User, pageIDInt int) string {
 	head := `<h3 class="materials-title">📊 部材手配・発注進捗状況</h3>`
-	list, err := RequiredMaterials(pageIDInt)
+	list, err := RequiredMaterials(user, pageIDInt)
 	if err != nil {
 		return head + `<p class="view-error">集計データの取得に失敗しました。</p>`
 	}

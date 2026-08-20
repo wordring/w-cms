@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -177,7 +178,7 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := RequiredMaterials(pageIDInt)
+	list, err := RequiredMaterials(auth.CurrentUser(r), pageIDInt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -190,7 +191,13 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 // RequiredMaterials は指定ページ（受注ページ）に紐づく部材の要手配数・発注済数を
 // 集計します。/api/required-materials と計算ビューのサーバー事前描画
 // （view_render.go）が共用する。
-func RequiredMaterials(pageIDInt int) ([]RequiredMaterialResponse, error) {
+//
+// user は閲覧者（匿名は nil）。**部材の定義元ページを読めない相手には、その定義を
+// 集計へ混ぜない**。集計対象ページ（受注ページ）の read だけでは足りないため:
+// 品番は本文へ自由に書けるので、自分のページに任意の品番を1行置けば、読めない
+// 部品定義ページの部材名・仕入先・原価を引けてしまっていた（設計総点検）。
+// 判定は page.CanView に集約し、一覧の絞り込みと同じ規則を使う。
+func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialResponse, error) {
 	// 1. そのページ内の受注 client_orders の明細を取得する
 	rows, err := database.DB.Query(`
 		SELECT item_id, quantity
@@ -219,9 +226,30 @@ func RequiredMaterials(pageIDInt int) ([]RequiredMaterialResponse, error) {
 	// 2. 各受注部品に対し、必要な部材の定義 part_materials を取得し、総必要数を集計する
 	materialsMap := make(map[string]*RequiredMaterialResponse)
 
+	// 定義元ページの可視判定は1ページにつき1度だけ引く（品番ごとに何度も辿らない）。
+	visible := map[int]bool{}
+	canView := func(defPageID int) bool {
+		if v, ok := visible[defPageID]; ok {
+			return v
+		}
+		v := page.CanView(user, defPageID)
+		visible[defPageID] = v
+		return v
+	}
+
 	for _, item := range clientItems {
+		// 行を回しながら権限を引くと、入れ子のクエリが別接続を掴んで
+		// フェイルクローズしうる。先に読み切ってから絞る。
+		type materialRow struct {
+			Name      string
+			Supplier  string
+			Cost      int
+			UnitQty   int
+			DefPageID int
+		}
+		var mats []materialRow
 		matRows, err := database.DB.Query(`
-			SELECT material_name, cost, supplier_name, quantity
+			SELECT material_name, cost, supplier_name, quantity, COALESCE(page_id, 0)
 			FROM part_materials
 			WHERE part_id = ?
 		`, item.ItemID)
@@ -229,24 +257,30 @@ func RequiredMaterials(pageIDInt int) ([]RequiredMaterialResponse, error) {
 			return nil, err
 		}
 		for matRows.Next() {
-			var matName, supplierName string
-			var cost, unitQty int
-			if err := matRows.Scan(&matName, &cost, &supplierName, &unitQty); err == nil {
-				totalReq := unitQty * item.Quantity
-				if existing, ok := materialsMap[matName]; ok {
-					existing.TotalRequired += totalReq
-				} else {
-					materialsMap[matName] = &RequiredMaterialResponse{
-						MaterialName:  matName,
-						SupplierName:  supplierName,
-						Cost:          cost,
-						TotalRequired: totalReq,
-						Ordered:       0,
-					}
-				}
+			var m materialRow
+			if err := matRows.Scan(&m.Name, &m.Cost, &m.Supplier, &m.UnitQty, &m.DefPageID); err == nil {
+				mats = append(mats, m)
 			}
 		}
 		matRows.Close()
+
+		for _, m := range mats {
+			if !canView(m.DefPageID) {
+				continue // 定義元ページを読めない相手には見せない
+			}
+			totalReq := m.UnitQty * item.Quantity
+			if existing, ok := materialsMap[m.Name]; ok {
+				existing.TotalRequired += totalReq
+			} else {
+				materialsMap[m.Name] = &RequiredMaterialResponse{
+					MaterialName:  m.Name,
+					SupplierName:  m.Supplier,
+					Cost:          m.Cost,
+					TotalRequired: totalReq,
+					Ordered:       0,
+				}
+			}
+		}
 	}
 
 	// 3. 同じ page_id に紐づく弊社の発注実績 our_orders の明細を取得し、発注済数を集計する

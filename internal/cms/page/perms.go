@@ -246,6 +246,20 @@ func EffectivePublic(pageID int) bool {
 	return false
 }
 
+// CanView は「この閲覧者にそのページの内容を見せてよいか」を1箇所で判定します。
+// 認証済みなら read 権限（admin は無条件）、匿名なら実効公開。どちらもフェイルクローズ。
+//
+// 一覧の絞り込み（visibleChildren）と派生索引の集計（RequiredMaterials）が同じ
+// 判定を別々に持っていたため、派生索引側だけが判定を持たず越境していた
+// （設計総点検の「派生索引にページ単位認可が及んでいない」）。判定を増やすときは
+// ここへ足し、呼び手を増やさないこと。
+func CanView(user *auth.User, pageID int) bool {
+	if user != nil {
+		return GetPerms(pageID).CanRead(user)
+	}
+	return EffectivePublic(pageID)
+}
+
 // --- mode のビット判定 ---
 
 // classDigit は mode の class（0=owner,1=group,2=other）の数字を返します。
