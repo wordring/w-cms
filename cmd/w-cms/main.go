@@ -79,6 +79,8 @@ func main() {
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
+	// テンプレート選択メニューの中身（「テンプレート」フォルダ配下のツリー）
+	protected.HandleFunc("/api/templates", cms.TemplatesAPIHandler)
 	protected.HandleFunc("/api/validate-parent", cms.ValidateParentAPIHandler)
 	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
 	// 削除は物理削除でなく data/trash への移動（取り消せることが要件。handler_delete.go）
