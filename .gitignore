@@ -35,3 +35,7 @@ go.work.sum
 data/
 # E2E の依存（playwright。数千ファイルなので追跡しない）
 e2e/node_modules/
+
+# ビルド成果物（拡張子なしの実行ファイル。*.exe では拾えない）
+/w-cms
+/w-cms.exe

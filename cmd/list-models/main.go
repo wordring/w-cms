@@ -1,3 +1,11 @@
+// list-models は Gemini で使えるモデル名を一覧するだけの診断ツールです。
+// 発注書PDFの明細抽出（internal/cms/pdf_handler.go）でモデル名を選ぶときに使います。
+//
+//	GEMINI_API_KEY=... go run ./cmd/list-models
+//
+// もとはリポジトリ直下に package main で置いてあり、ルートに main が2つある状態を
+// 作っていました（そのせいで「一時パッケージはサブdirで実行」という回避策が
+// 引き継ぎへ恒久手順として書かれていた）。2026-08-21 にここへ移設。
 package main
 
 import (
