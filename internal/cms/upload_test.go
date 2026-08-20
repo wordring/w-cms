@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"database/sql"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 
@@ -57,7 +60,23 @@ func setupUploadTest(t *testing.T, id string, p page.PageMeta) {
 }
 
 // postUpload は multipart で UploadPDFHandler を叩きます。
+// 添付の追加は本文編集と同じ編集ロックで直列化されるので、その利用者で
+// ロックを取り直してから送ります（ロックを持たない場合の挙動は
+// TestUploadRequiresEditLock が別に固定する）。
 func postUpload(t *testing.T, pageID, fileName string, content []byte, u *auth.User) *httptest.ResponseRecorder {
+	t.Helper()
+	idInt, _ := strconv.Atoi(pageID)
+	editlock.Locks.ForceRelease(idInt)
+	t.Cleanup(func() { editlock.Locks.ForceRelease(idInt) })
+	a := editlock.Locks.TryAcquire(idInt, u.Username, "")
+	if !a.Acquired {
+		t.Fatalf("%s のロック取得に失敗", u.Username)
+	}
+	return postUploadTok(t, pageID, fileName, content, u, a.Token)
+}
+
+// postUploadTok は編集ロックトークンを明示して UploadPDFHandler を叩きます。
+func postUploadTok(t *testing.T, pageID, fileName string, content []byte, u *auth.User, token string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var body bytes.Buffer
@@ -72,6 +91,9 @@ func postUpload(t *testing.T, pageID, fileName string, content []byte, u *auth.U
 
 	req := httptest.NewRequest("POST", "/api/upload-pdf", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("X-Lock-Token", token)
+	}
 	req = auth.WithUser(req, u)
 
 	rr := httptest.NewRecorder()
@@ -222,5 +244,48 @@ func TestDataFileHandlerDoesNotServeExecutableTypes(t *testing.T) {
 		if rr := getData(t, base+name, user); rr.Code != 404 {
 			t.Errorf("%s が配信されました: status=%d", name, rr.Code)
 		}
+	}
+}
+
+// TestUploadRequiresEditLock は、添付の追加が本文編集と同じ編集ロックで
+// 直列化されることを固定します。
+//
+// upload-pdf は同名ファイルを無条件で上書きし、添付にはリビジョンもゴミ箱も
+// 無いため、ロックを通さないと「他人が編集中のページの発注書PDFが黙って
+// すり替わり、復元できない」という不可逆のデータ破壊になる。
+// editlock/handler.go は「将来のリソース操作（画像/PDF等）も同じロックで
+// 直列化する」と宣言しているのに、この経路だけ実装が追いついていなかった。
+func TestUploadRequiresEditLock(t *testing.T) {
+	const id = "000009"
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Group: "team", Mode: "330"})
+	editlock.Locks.ForceRelease(9)
+	t.Cleanup(func() { editlock.Locks.ForceRelease(9) })
+
+	pdf := []byte("%PDF-1.4\n元の発注書")
+	alice := &auth.User{Username: "alice"}
+
+	// alice が保持者として正規にアップロードする。
+	a := editlock.Locks.TryAcquire(9, "alice", "")
+	if !a.Acquired {
+		t.Fatal("alice のロック取得に失敗")
+	}
+	if rr := postUploadTok(t, id, "発注書.pdf", pdf, alice, a.Token); rr.Code != 200 {
+		t.Fatalf("保持者のアップロードが失敗: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// bob は同じ group で write を持つが、ロックは alice が保持している。
+	bob := &auth.User{Username: "bob", Groups: []string{"team"}}
+	rr := postUploadTok(t, id, "発注書.pdf", []byte("%PDF-1.4\nすり替え"), bob, "")
+	if rr.Code != http.StatusConflict {
+		t.Errorf("他者ロック中のアップロードが 409 になりません: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// 正本が書き換わっていないこと（これが守りたいもの）。
+	got, err := os.ReadFile(filepath.Join(page.GetPageDir(id), "発注書.pdf"))
+	if err != nil {
+		t.Fatalf("添付を読めません: %v", err)
+	}
+	if string(got) != string(pdf) {
+		t.Errorf("409 なのに添付が上書きされています: %q", string(got))
 	}
 }

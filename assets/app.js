@@ -2374,7 +2374,8 @@
         fd.append('page_id', currentPageId);
         fd.append('pdf_file', file);
         try {
-            const res = await fetch('/api/upload-pdf', { method: 'POST', body: fd });
+            // 添付の追加は本文編集と同じ編集ロックで直列化する（サーバーは他者保持中なら409）。
+            const res = await lockedFetch('/api/upload-pdf', { method: 'POST', body: fd });
             const d = await res.json().catch(() => ({}));
             if (!res.ok || !d.success) throw new Error(d.message || res.status);
             sec.setAttribute('data-src', d.src);
