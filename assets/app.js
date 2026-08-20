@@ -268,6 +268,10 @@
         setHidden(document.getElementById('w-pp-public-row'), !permCanPublish);
         const pub = document.getElementById('w-pp-public');
         if (pub) pub.disabled = !(editMode && permCanPublish);
+        // 削除は破壊的なので、編集モード（＝ロック保持）で write 権限があるときだけ出す。
+        // トップページは消せないので、そこでは出さない（サーバーも 400 で拒否する）。
+        setHidden(document.getElementById('w-delete-page-btn'),
+            !(editMode && currentPageId && currentPageId !== '000000'));
     }
 
     // applyEditToggleVisibility は、編集権が無いユーザー（および匿名）から右上の編集スイッチを隠す。
@@ -533,6 +537,29 @@
         notify('id の接頭辞は画面側の予約です。' + ids.map(v => '「' + v + '」').join('・') +
             ' から接頭辞を外して保存しました。',
             { type: 'warn', duration: 10000, id: 'stripped-ids' });
+    }
+
+    // deletePage はページをゴミ箱（data/trash）へ移す。物理削除ではないので取り消せるが、
+    // 画面からは消えるので確認を挟む。ロックが要るので編集モードでのみ押せる
+    // （ボタン自体も applyMode が編集モードでだけ表示する）。
+    async function deletePage() {
+        if (!currentPageId) return;
+        if (!confirm('このページをゴミ箱（data/trash）へ移します。よろしいですか。')) return;
+        try {
+            const res = await fetch('/api/delete-page?id=' + currentPageId, {
+                method: 'POST',
+                headers: lockToken ? { 'X-Lock-Token': lockToken } : {}
+            });
+            if (!res.ok) {
+                notify('削除できませんでした: ' + (await res.text()).trim(), { type: 'warn', duration: 10000 });
+                return;
+            }
+            // 消えたページに留まらせない。親があれば親へ、無ければトップへ。
+            const parent = document.getElementById('w-pi-parent-input').value.trim();
+            location.href = '/' + (parent || '000000');
+        } catch (e) {
+            notify('削除できませんでした: ' + e.message, { type: 'warn', duration: 10000 });
+        }
     }
 
     function saveToServer() {
@@ -2853,6 +2880,7 @@
         on('#w-logout-btn', 'click', logout);
         on('#w-mode-toggle', 'change', onModeToggle);
         on('#w-create-subpage-btn', 'click', createSubpage);
+        on('#w-delete-page-btn', 'click', deletePage);
         on('#w-pi-parent-apply', 'click', applyParent);
         on('#w-pp-chown-btn', 'click', chownPage);
         on('#w-pp-save', 'click', savePerms);

@@ -209,3 +209,24 @@ func resyncAllPages() error {
 		return nil
 	})
 }
+
+// PurgePageIndex はページの索引を消します（正本ファイルには触れません）。
+//
+// プラグインの Sync はどれも「page_id の行を削除してから入れ直す」形なので、
+// **空の本文で同期を走らせる**と型付きテーブルの行が洗い流されます。
+// そのあとコアテーブル（pages / page_perms）の行を消します
+// （SyncIndex は pages を upsert するため、順序はこの通りでなければなりません）。
+func PurgePageIndex(id string) error {
+	if err := SyncIndex(id, ""); err != nil {
+		return err
+	}
+	pageID, err := strconv.Atoi(id)
+	if err != nil {
+		return err
+	}
+	if _, err := database.DB.Exec(`DELETE FROM page_perms WHERE page_id = ?`, pageID); err != nil {
+		return err
+	}
+	_, err = database.DB.Exec(`DELETE FROM pages WHERE id = ?`, pageID)
+	return err
+}

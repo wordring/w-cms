@@ -869,6 +869,15 @@ body[edit-mode] #w-editor-content dl[data-type] {
  * 属性の型が使われていることを編集モードで示す。
  * 属性セレクタなので、上書きを起こす属性自体が印のトリガーになり表示と実態がずれない。
  * 鍵を上書きする属性（data-field）は 2026-08-20 に撤去したので、残るのは型だけ。 */
+/* 破壊的な操作のボタン（削除）。押し間違いを減らすため通常の操作と色を変える。 */
+.page-action-danger {
+    color: #b91c1c;
+    border-color: #fca5a5;
+}
+.page-action-danger:hover {
+    background: #fef2f2;
+}
+
 body[edit-mode] #w-editor-content th[data-type] {
     background: #fef3c7;
 }

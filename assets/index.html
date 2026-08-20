@@ -127,6 +127,8 @@
             </section>
             <!-- 子ページ作成：試験的に最下部へ -->
             <button class="page-action-btn" id="w-create-subpage-btn">＋ 子ページを作成</button>
+            <!-- 削除はゴミ箱への移動（data/trash）。編集モードで write 権限があるときだけ出す -->
+            <button class="page-action-btn page-action-danger is-hidden" id="w-delete-page-btn">🗑 このページを削除</button>
         </aside>
 
         <!-- 目次レール：本文の見出し(h1〜h6)へのリンク集。サーバーには依存せず、

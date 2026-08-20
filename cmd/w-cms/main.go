@@ -81,6 +81,8 @@ func main() {
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	protected.HandleFunc("/api/validate-parent", cms.ValidateParentAPIHandler)
 	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
+	// 削除は物理削除でなく data/trash への移動（取り消せることが要件。handler_delete.go）
+	protected.HandleFunc("/api/delete-page", cms.DeletePageAPIHandler)
 
 	// 同時編集の悲観ロック（ページ単位・競合トリガー方式・SSEプッシュ）
 	protected.HandleFunc("/api/lock", editlock.LockAPIHandler)
