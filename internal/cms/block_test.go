@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"w-cms/internal/cms/htmldoc"
 )
 
 // TestReplaceBlockUpdatesOnlyTarget は、指定したブロックだけが差し替わり、
@@ -139,22 +141,47 @@ func TestSanitizeKeepsBlockID(t *testing.T) {
 	}
 }
 
-// TestSanitizeDropsIDAttribute は、本文の `id` 属性が除去されることを検証します。
+// TestSanitizeStripsShellIDPrefix は、本文の `id` の扱いを固定します。
 //
-// 本文はシェル（assets/index.html）と同じDOMへ合成されるため、`id` を許すと
-// 本文から `html-preview` などシェル側の要素を乗っ取れてしまう
-// （getElementById は文書順で最初の要素を返し、これらは #editor-content より後ろにある）。
-// 保存や権限UIが壊れる経路になるので、ブロック識別子には data-id を使い `id` は通さない。
-func TestSanitizeDropsIDAttribute(t *testing.T) {
-	got := Sanitize(`<p id="html-preview" data-id="ab12">乗っ取りを狙う本文</p>`)
-	if strings.Contains(got, "html-preview") || strings.Contains(got, "id=\"") && !strings.Contains(got, "data-id=\"ab12\"") {
-		t.Errorf("id 属性が残っています: %s", got)
+// 本文はシェル（assets/index.html）と同じDOMへ合成されるため id の名前空間を共有し、
+// getElementById は文書順で最初の要素を返す。かつては `id` を全面拒否していたが、
+// 2026-08-20 に分担を反転させた——**殻の側が接頭辞（htmldoc.ShellIDPrefix）を独占し、
+// 本文の id は自由**。本文に接頭辞つきの id が来たら、名前空間を侵さないよう剥がして通す。
+func TestSanitizeStripsShellIDPrefix(t *testing.T) {
+	// 接頭辞の無い id はそのまま通る（ページ内リンクが書けるようになった）。
+	got := Sanitize(`<p id="anchor-1" data-id="ab12">節</p>`)
+	if !strings.Contains(got, `id="anchor-1"`) {
+		t.Errorf("本文の id が落ちています: %s", got)
 	}
 	if !strings.Contains(got, `data-id="ab12"`) {
 		t.Errorf("ブロック識別子まで落ちています: %s", got)
 	}
-	if strings.Contains(got, `id="html-preview"`) {
-		t.Errorf("シェルの要素を乗っ取れる id が残っています: %s", got)
+
+	// 殻の接頭辞つきは剥がして通す。剥がした結果が空なら属性ごと落とす。
+	for _, c := range []struct{ in, want string }{
+		{`<p id="w-html-preview">x</p>`, `id="html-preview"`},
+		{`<p id="w-w-html-preview">x</p>`, `id="html-preview"`}, // 繰り返し剥がす（冪等性のため）
+		{`<p id="w-">x</p>`, ""},                                // 接頭辞だけ → 属性を落とす
+	} {
+		got := Sanitize(c.in)
+		if c.want == "" {
+			if strings.Contains(got, "id=") {
+				t.Errorf("接頭辞だけの id が残っています: %s", got)
+			}
+			continue
+		}
+		if !strings.Contains(got, c.want) {
+			t.Errorf("接頭辞の剥がしが期待どおりでない: got=%s want に %s", got, c.want)
+		}
+		if strings.Contains(got, "id="+`"`+htmldoc.ShellIDPrefix) {
+			t.Errorf("殻の接頭辞が残っています: %s", got)
+		}
+	}
+
+	// 冪等性: 2度通しても同じ結果（保存時エコーバックが収束する前提）。
+	once := Sanitize(`<p id="w-w-html-preview">x</p>`)
+	if twice := Sanitize(once); twice != once {
+		t.Errorf("冪等でない: 1回目=%s 2回目=%s", once, twice)
 	}
 }
 

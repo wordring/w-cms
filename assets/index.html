@@ -15,67 +15,67 @@
 <body>
 
 <!-- ドロワー（狭幅時の左右パネル）の背景。クリックで閉じる。広い画面では非表示。 -->
-<div id="drawer-backdrop" class="drawer-backdrop"></div>
+<div id="w-drawer-backdrop" class="drawer-backdrop"></div>
 
 <!-- レール開閉トグル：各レール脇の画面端に固定。スクロールしても常に見える。
      広い画面ではインライン折り畳み、狭い画面ではドロワーの開閉を行う（toggleRail）。
      左側は「ページ階層」「目次」の2レール分をグループ化して縦に並べる。 -->
 <div class="rail-toggle-group rail-toggle-group-left">
-    <button class="rail-toggle" id="toggle-left" data-rail="left" aria-pressed="true" title="左パネル（ページ階層）の表示/非表示">
+    <button class="rail-toggle" id="w-toggle-left" data-rail="left" aria-pressed="true" title="左パネル（ページ階層）の表示/非表示">
         <span aria-hidden="true">☰</span><span class="rt-label">ページ階層</span>
     </button>
-    <button class="rail-toggle" id="toggle-toc" data-rail="toc" aria-pressed="true" title="左パネル（目次）の表示/非表示">
+    <button class="rail-toggle" id="w-toggle-toc" data-rail="toc" aria-pressed="true" title="左パネル（目次）の表示/非表示">
         <span aria-hidden="true">📑</span><span class="rt-label">目次</span>
     </button>
 </div>
 <div class="rail-toggle-group rail-toggle-group-right">
-    <button class="rail-toggle" id="toggle-right" data-rail="right" aria-pressed="true" title="右パネル（ページ情報）の表示/非表示">
+    <button class="rail-toggle" id="w-toggle-right" data-rail="right" aria-pressed="true" title="右パネル（ページ情報）の表示/非表示">
         <span aria-hidden="true">ⓘ</span><span class="rt-label">ページ情報</span>
     </button>
 </div>
 
 <!-- スラッシュコマンドメニュー -->
-<div id="slash-menu" class="slash-menu">
+<div id="w-slash-menu" class="slash-menu">
     <div class="slash-menu-item" data-type="h1"><b>H1</b> 見出し</div>
     <div class="slash-menu-item" data-type="p"><b>P</b> 段落</div>
 </div>
 
 <!-- コンテキストツールバー -->
-<div id="context-toolbar" class="context-toolbar">
+<div id="w-context-toolbar" class="context-toolbar">
     <!-- 動的にボタンが追加されます -->
 </div>
 
 <!-- 表の行・列操作ツールバー（汎用表エディタの編集クローム）。
      ボタンを表の中へ挿すとシリアライザが中身を本文として拾ってしまうため、
      クロームは必ず本文DOMの外に置く。表示位置は app.js がキャレット位置から決める。 -->
-<div id="table-toolbar" class="table-toolbar">
-    <button type="button" id="tt-add" title="行を下に追加">＋行</button>
-    <button type="button" id="tt-up" title="行を上へ移動">↑</button>
-    <button type="button" id="tt-down" title="行を下へ移動">↓</button>
-    <button type="button" id="tt-del" title="行を削除">✕行</button>
+<div id="w-table-toolbar" class="table-toolbar">
+    <button type="button" id="w-tt-add" title="行を下に追加">＋行</button>
+    <button type="button" id="w-tt-up" title="行を上へ移動">↑</button>
+    <button type="button" id="w-tt-down" title="行を下へ移動">↓</button>
+    <button type="button" id="w-tt-del" title="行を削除">✕行</button>
     <span class="table-toolbar-sep"></span>
-    <button type="button" id="tt-col-add" title="列を右に追加">＋列</button>
-    <button type="button" id="tt-col-left" title="列を左へ移動">←</button>
-    <button type="button" id="tt-col-right" title="列を右へ移動">→</button>
-    <button type="button" id="tt-col-del" title="列を削除">✕列</button>
-    <button type="button" id="tt-col-cfg" title="列の設定（型）">⚙</button>
+    <button type="button" id="w-tt-col-add" title="列を右に追加">＋列</button>
+    <button type="button" id="w-tt-col-left" title="列を左へ移動">←</button>
+    <button type="button" id="w-tt-col-right" title="列を右へ移動">→</button>
+    <button type="button" id="w-tt-col-del" title="列を削除">✕列</button>
+    <button type="button" id="w-tt-col-cfg" title="列の設定（型）">⚙</button>
 </div>
 
 <!-- 定義リスト（dl data-type）の項目操作ツールバー。項目＝dt と後続の dd の組。 -->
-<div id="dl-toolbar" class="table-toolbar">
-    <button type="button" id="dt-add" title="項目を下に追加">＋項目</button>
-    <button type="button" id="dt-val" title="値（dd）を追加（多値）">＋値</button>
-    <button type="button" id="dt-up" title="項目を上へ移動">↑</button>
-    <button type="button" id="dt-down" title="項目を下へ移動">↓</button>
-    <button type="button" id="dt-del" title="項目を削除">✕項目</button>
+<div id="w-dl-toolbar" class="table-toolbar">
+    <button type="button" id="w-dt-add" title="項目を下に追加">＋項目</button>
+    <button type="button" id="w-dt-val" title="値（dd）を追加（多値）">＋値</button>
+    <button type="button" id="w-dt-up" title="項目を上へ移動">↑</button>
+    <button type="button" id="w-dt-down" title="項目を下へ移動">↓</button>
+    <button type="button" id="w-dt-del" title="項目を削除">✕項目</button>
 </div>
 
 <!-- 列設定ポップオーバ（編集の2面のうち「属性側」の編集口。語彙モデル §5.2）。
      値はセルの contenteditable（インライン）、役割・型はここで編集する。 -->
-<div id="col-popover" class="col-popover">
-    <div class="col-popover-key">鍵: <span id="cp-key"></span></div>
+<div id="w-col-popover" class="col-popover">
+    <div class="col-popover-key">鍵: <span id="w-cp-key"></span></div>
     <label class="col-popover-row">型
-        <select id="cp-type">
+        <select id="w-cp-type">
             <option value="">（推論に任せる）</option>
             <option value="text">text（文字）</option>
             <option value="number">number（数値・通貨）</option>
@@ -84,14 +84,14 @@
             <option value="image">image（画像）</option>
         </select>
     </label>
-    <div class="col-popover-note" id="cp-note"></div>
+    <div class="col-popover-note" id="w-cp-note"></div>
 </div>
 
 <!-- enum 列の入力補助（選択肢メニュー）。項目は app.js がレジストリ定義から生成する。 -->
-<div id="enum-menu" class="enum-menu"></div>
+<div id="w-enum-menu" class="enum-menu"></div>
 
 <!-- アプリ内通知（トースト）エリア。ロック関連・保存エラー等をここへ集約する。 -->
-<div id="toast-host" class="toast-host" aria-live="polite"></div>
+<div id="w-toast-host" class="toast-host" aria-live="polite"></div>
 
 <main class="container">
     <header class="header">
@@ -99,13 +99,13 @@
             <h1 class="title">w-cms Wiki Editor</h1>
         </div>
         <div class="switch-container">
-            <span id="user-bar"></span>
-            <a id="admin-link" class="admin-link is-hidden" href="/assets/admin.html">⚙ 管理</a>
-            <button id="logout-btn" class="logout-btn">ログアウト</button>
-            <span id="save-status"></span>
-            <span class="mode-label" id="mode-text">閲覧モード</span>
+            <span id="w-user-bar"></span>
+            <a id="w-admin-link" class="admin-link is-hidden" href="/assets/admin.html">⚙ 管理</a>
+            <button id="w-logout-btn" class="logout-btn">ログアウト</button>
+            <span id="w-save-status"></span>
+            <span class="mode-label" id="w-mode-text">閲覧モード</span>
             <label class="switch">
-                <input type="checkbox" id="mode-toggle">
+                <input type="checkbox" id="w-mode-toggle">
                 <span class="slider"></span>
             </label>
         </div>
@@ -116,17 +116,17 @@
         <aside class="rail rail-left" aria-label="ページ階層">
             <!-- 親ページへのリンク（「親=上／子=下」の階層感に合わせる。
                  子ページカードを畳んでも常に見える） -->
-            <div class="child-nav-parent" id="child-nav-parent"></div>
+            <div class="child-nav-parent" id="w-child-nav-parent"></div>
             <section class="rail-card">
                 <details open>
                     <summary>子ページ</summary>
                     <div class="card-body">
-                        <ul class="child-nav" id="child-nav-list"></ul>
+                        <ul class="child-nav" id="w-child-nav-list"></ul>
                     </div>
                 </details>
             </section>
             <!-- 子ページ作成：試験的に最下部へ -->
-            <button class="page-action-btn" id="create-subpage-btn">＋ 子ページを作成</button>
+            <button class="page-action-btn" id="w-create-subpage-btn">＋ 子ページを作成</button>
         </aside>
 
         <!-- 目次レール：本文の見出し(h1〜h6)へのリンク集。サーバーには依存せず、
@@ -137,7 +137,7 @@
                 <details open>
                     <summary>目次</summary>
                     <div class="card-body">
-                        <ul class="toc-nav" id="toc-list"></ul>
+                        <ul class="toc-nav" id="w-toc-list"></ul>
                     </div>
                 </details>
             </section>
@@ -148,12 +148,12 @@
 
             <!-- エディタコンテンツ領域（ここが保存対象のHTML本文＝ページの「内容」になります。
                  ページの「属性」はサイドカーが正本で、右のサイドパネルで扱います） -->
-            <div id="editor-content"><!--WCMS_CONTENT--></div>
+            <div id="w-editor-content"><!--WCMS_CONTENT--></div>
 
             <!-- リアルタイムに生成されるHTMLデータの表示（真のデータ） -->
             <div class="preview-section">
                 <div class="preview-title">💾 リアルタイムで書き換わるHTMLソース（真のデータとしてファイルに保存される内容）</div>
-                <textarea id="html-preview" readonly></textarea>
+                <textarea id="w-html-preview" readonly></textarea>
             </div>
         </div>
 
@@ -165,19 +165,19 @@
                     <summary>ページ情報</summary>
                     <div class="card-body">
                         <dl class="pi">
-                            <dt>ページID</dt><dd id="pi-id">—</dd>
+                            <dt>ページID</dt><dd id="w-pi-id">—</dd>
                             <dt>親ページID</dt>
                             <dd>
-                                <span class="pi-parent-view" id="pi-parent">—</span>
+                                <span class="pi-parent-view" id="w-pi-parent">—</span>
                                 <span class="pi-parent-edit">
-                                    <input class="pi-parent-input" id="pi-parent-input" placeholder="（トップレベル）">
-                                    <button class="rail-btn" id="pi-parent-apply">適用</button>
-                                    <div class="pi-err" id="pi-parent-err"></div>
+                                    <input class="pi-parent-input" id="w-pi-parent-input" placeholder="（トップレベル）">
+                                    <button class="rail-btn" id="w-pi-parent-apply">適用</button>
+                                    <div class="pi-err" id="w-pi-parent-err"></div>
                                 </span>
                             </dd>
-                            <dt>作成日時</dt><dd id="pi-created-at">—</dd>
-                            <dt>作成者</dt><dd id="pi-created-by">—</dd>
-                            <dt>更新日時</dt><dd id="pi-updated-at">—</dd>
+                            <dt>作成日時</dt><dd id="w-pi-created-at">—</dd>
+                            <dt>作成者</dt><dd id="w-pi-created-by">—</dd>
+                            <dt>更新日時</dt><dd id="w-pi-updated-at">—</dd>
                         </dl>
                     </div>
                 </details>
@@ -185,37 +185,37 @@
 
             <!-- 権限パネル（owner/group/mode。chmod/chown） -->
             <section class="rail-card">
-                <details id="perms-details">
+                <details id="w-perms-details">
                     <summary>🔒 権限</summary>
                     <div class="card-body">
                         <dl class="pi">
                             <dt>所有者</dt>
                             <dd>
-                                <strong id="pp-owner"></strong>
-                                <span id="pp-chown" class="is-hidden">
+                                <strong id="w-pp-owner"></strong>
+                                <span id="w-pp-chown" class="is-hidden">
                                     <div class="rail-row">
-                                        <input id="pp-owner-input" placeholder="新しい所有者">
-                                        <button class="rail-btn" id="pp-chown-btn">変更</button>
+                                        <input id="w-pp-owner-input" placeholder="新しい所有者">
+                                        <button class="rail-btn" id="w-pp-chown-btn">変更</button>
                                     </div>
                                 </span>
                             </dd>
-                            <dt>グループ</dt><dd><input id="pp-group"></dd>
-                            <dt>mode</dt><dd><input id="pp-mode" maxlength="3"></dd>
+                            <dt>グループ</dt><dd><input id="w-pp-group"></dd>
+                            <dt>mode</dt><dd><input id="w-pp-mode" maxlength="3"></dd>
                         </dl>
-                        <div class="rail-hint" id="pp-mode-hint">mode は3桁（owner/group/other、各桁 r=2・w=1・rw=3・なし=0）例: 330, 302</div>
-                        <div class="rail-hint is-hidden" id="pp-view-hint">変更するには編集モード（右上スイッチ）に切り替えてください。</div>
+                        <div class="rail-hint" id="w-pp-mode-hint">mode は3桁（owner/group/other、各桁 r=2・w=1・rw=3・なし=0）例: 330, 302</div>
+                        <div class="rail-hint is-hidden" id="w-pp-view-hint">変更するには編集モード（右上スイッチ）に切り替えてください。</div>
                         <div class="rail-row">
-                            <button class="rail-btn" id="pp-save">保存</button>
-                            <span id="pp-msg"></span>
+                            <button class="rail-btn" id="w-pp-save">保存</button>
+                            <span id="w-pp-msg"></span>
                         </div>
 
                         <!-- 匿名公開（ログイン不要の閲覧）。owner/admin のみ操作可（認証認可設計.md 10章）。 -->
-                        <div class="pp-public-row is-hidden" id="pp-public-row">
+                        <div class="pp-public-row is-hidden" id="w-pp-public-row">
                             <label class="pp-public-label">
-                                <input type="checkbox" id="pp-public">
+                                <input type="checkbox" id="w-pp-public">
                                 <span>🌐 インターネットに公開（ログイン不要で閲覧可）</span>
                             </label>
-                            <div class="rail-hint" id="pp-public-hint"></div>
+                            <div class="rail-hint" id="w-pp-public-hint"></div>
                         </div>
                     </div>
                 </details>
