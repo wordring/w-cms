@@ -1,6 +1,14 @@
 # アーキテクチャとDBスキーマ仕様
 
-w-cms は、フロントエンドのエディタが生成するHTMLドキュメント（カスタム要素と、マーカー付き標準HTML `<table data-type>`／`<dl data-type>`）と、バックエンドのGoが管理するSQLiteデータベースを連携させることで動作します。このドキュメントでは、そのバックエンド側の詳細な構造とデータの持ち方について解説します。
+w-cms は、フロントエンドのエディタが生成するHTMLドキュメント（**マーカー付き標準HTML** ＝ `<table|dl|section data-type>`・`<th|dd data-field>`）と、バックエンドのGoが管理するSQLiteデータベースを連携させることで動作します。このドキュメントでは、そのバックエンド側の詳細な構造とデータの持ち方について解説します。
+
+> **カスタム要素（`<m-*>`）は全廃**（2026-08-20 に移行完了）。本文で扱える語彙は
+> [cms/htmldoc/sanitize.go](../internal/cms/htmldoc/sanitize.go) の `structuralElements`＋
+> `data-*` マーカー**だけ**で、形式（`data-type` の値）の宣言は①語彙レジストリ
+> [cms/vocab.go](../internal/cms/vocab.go)（現在12形式）が持ちます。移行の経緯は
+> [【考察】語彙モデル.md](【考察】語彙モデル.md) §8、記録は [変更履歴.md](変更履歴.md)
+> 2026-08-19〜08-20 の各節。本書に残る `<m-*>` の表記は、後継形式を示すための
+> **歴史的な言及**です。
 
 ## 1. 全体アーキテクチャ
 
@@ -9,9 +17,12 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 ### Goバックエンドの構成（`internal/`）
 *   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
 *   **`cms/editlock/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/editlock/handler.go`（4.3 参照）。
-*   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、語彙集約（`PluginTags`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。
-*   **`cms/plugin_*.go`**: 1ファイル＝1ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・**カスタム要素の語彙（`Tags`）**・同期処理（`Sync`）を持ち、`init()` で自己登録します。新しいユースケースはここにファイルを足すだけで追加できます（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。
-*   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルのみ**を抽出します（`ParseCore`）。カスタム要素（`<m-*>`）はコアが知らず、所有プラグインの `Sync` が抽出します。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
+*   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース（`Name` / `Schema` / `Tables` / `Sync` の4メソッド）、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。**語彙集約（必須メソッド `Tags` と `PluginTags`）は 2026-08-20 に撤去**——全プラグインが nil を返す状態になったため機構ごと外しました（下の「語彙の正本」参照）。
+*   **`cms/plugin_*.go`**: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・同期処理（`Sync`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。
+*   **`cms/htmldoc/sanitize.go`**: 本文サニタイザ（純粋なHTML部品。import は `x/net/html`＋標準のみ）で、**本文で扱えるHTMLの語彙の唯一の正本**（`structuralElements`＋`data-*` マーカー）。`cms/sanitize.go` は薄いラッパで、`htmldoc.New()` の結果をパッケージ変数として持ちます。依存は `cms → htmldoc` の一方向（**逆向きに import しないこと**）。
+*   **`cms/vocab.go` / `cms/vocab_index.go`**: 語彙モデル3層の①と②。`vocab.go` が形式定義の宣言テーブル（`vocabRegistry`。編集支援・型推論・正規化の語彙であって**安全性の門ではない**）、`vocab_index.go` が全 `table[data-type]` / `dl[data-type]` を縦持ちで索引する汎用同期（プラグイン機構へ相乗り）。
+*   **`cms/view_render.go`**: 計算ビュー（表示専用）の**サーバー事前描画**。本文中の空マーカーへ中身を埋めます（4.4 参照）。
+*   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルのみ**を抽出します（`ParseCore`）。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
 *   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_perms）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
 *   **`cms/handler_*.go`**: コアのHTTPハンドラ。関心ごとに `handler_save.go`（保存）・`handler_view.go`（画面とページ本文API）・`handler_tree.go`（木構造：新規作成・子一覧・親の付け替え）・`handler_meta.go`（属性・語彙・DB再構築）へ分けています。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
 *   **`cms/page/`**: ページの実体を扱うパッケージ。保存ディレクトリの決定（`GetPageDir`）、属性サイドカーの読み書き、Unix風の認可（`RequirePageWrite` 等）、`/data/` 配下の添付配信ゲート（`DataFileHandler`）。**ハンドラ層（`cms`）と編集ロック（`cms/editlock`）の両方がここに依存し、逆向きの依存はありません。**
@@ -24,7 +35,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 
 > [!NOTE]
 > **コアテーブルは `pages` / `page_perms` の2つだけ**（`database/sqlite.go` が作成）です。
-> カスタム要素（`<m-*>`）由来のテーブルは、`page_tags` を含めてすべて対応する**プラグイン**
+> ユースケース固有のテーブルは、`page_tags` を含めてすべて対応する**プラグイン**
 > （`cms/plugin_*.go`）が `Schema()` で定義し、起動時に `cms.ApplySchema()` で作成されます。
 >
 > 語彙モデルの**汎用索引テーブル `vocab_index`**（全 `table[data-type]`/`dl[data-type]` の
@@ -33,11 +44,29 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 > [cms/vocab_index.go](../internal/cms/vocab_index.go) の `Schema()` が担う
 > （`CreateCoreTables` は従来どおり `pages` / `page_perms` のみ）。
 > **「コアはドメイン語彙を知らない」原則はそのまま**——コアにとって `data-type` の値は
-> 不透明な文字列であり、`<m-*>` を知らないのと同じ構図。特定の型の意味を知るのは
-> 従来どおり計算プラグインだけ。[【考察】語彙モデル.md](【考察】語彙モデル.md) §4 参照。
+> 不透明な文字列で、未知の値もそのまま索引に載る。特定の形式の意味を知るのは
+> 計算プラグインだけ。[【考察】語彙モデル.md](【考察】語彙モデル.md) §4 参照。
 >
-> どのプラグインがどの要素・テーブルを所有するかは
-> [【一覧】カスタムタグ.md](【一覧】カスタムタグ.md) §1 を参照してください。
+> どの形式がどのプラグイン・テーブルへ流れるかは
+> [【一覧】語彙.md](【一覧】語彙.md) を参照してください。
+
+### 語彙の正本（プラグインは語彙を持たない）
+本文で扱えるHTMLの語彙は **`cms/htmldoc/sanitize.go` の1箇所**が正本です。`structuralElements`
+（構造HTML → 許可属性）が `GET /api/tag-schema` の `elements` としてそのままエディタへ配られ、
+同時にサニタイザの許可リストにもなります（[本文サニタイズ設計.md](本文サニタイズ設計.md)
+§5・§7）。`data-*` マーカーはこの表の中に**要素を限った属性**として書かれています——
+`data-type` は `table`/`dl`/`section`/`th`、`data-field` は `th`/`dd`、`data-src` は
+`section`（値は埋め込みと同じ**相対URL限定**）。ブロック識別子 `data-id` だけは
+`globalAttributes` として要素を問わず通る別枠で、`elements` には現れず `block_id` として配られます。
+
+かつては「各プラグインが必須メソッド `Tags()` でカスタム要素を宣言し、`PluginTags()` で集約して
+`htmldoc.New(custom)` へ注入する」構造でしたが、移行完了でカスタム要素がゼロになり、
+**機構ごと撤去しました**（2026-08-20）。副産物として、プラグインの `init()` 登録を待つ
+遅延初期化（`sync.Once`）が不要になり、**暗黙の初期化順序への依存も消えています**。
+
+**新しい形式を足すときはカスタム要素を作らず**、`cms/vocab.go` の `vocabRegistry` へ
+`data-type` の宣言を1件足します（サニタイザ側は要素・属性が既に許可済みなので変更不要）。
+未知の `data-type` も保存は通り、`unknown_types` として告知されるだけです。
 
 ### ドキュメント管理テーブル
 *   **`pages`**: すべてのドキュメントの基本情報。
@@ -50,19 +79,20 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     *   `updated_at` (DATETIME): 更新日時。サイドカーの値を採用し、無ければ同期時刻（`CURRENT_TIMESTAMP`）にフォールバックする。
     *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` のみHTML本文由来。`page_tags` はプラグインが同期）。
     *   `created_at` / `created_by` 列は `CREATE TABLE` に加え、既存DB向けに冪等な `ALTER TABLE ADD COLUMN` マイグレーション（`database/sqlite.go` の `coreMigrations`）でも追加される。
-*   **`page_tags`**: 可変タグ（ページ横断メタ）。移行第2段（2026-08-19）から
-    `<dl data-type="tags">`（dt=名前・dd=値）が同期元で、旧 `<m-tag name value>` の
-    読み取りは変換完了までの短期保険。
+*   **`page_tags`**: 可変タグ（ページ横断メタ）。同期元は
+    `<dl data-type="tags">`（dt=名前・dd=値。`dd` に `data-field` があればそちらが鍵）
+    **のみ**——旧 `<m-tag name value>` の読み取りは短期保険として残していたが 2026-08-19 に除去済み。
     *   `page_id` (FK), `name`, `value`
-    *   **コアテーブルではない**。`<m-tag>` を所有する `plugin_page_tags.go` が
-        `Schema()` で定義する（「カスタムタグはすべてプラグインが所有する」方針）。
+    *   **コアテーブルではない**。`plugin_page_tags.go` が `Schema()` で定義する
+        （「ユースケース固有のテーブルはプラグインが所有する」方針）。
     *   **主キーは持たない**。`name` は自由語であり、**同じ `name` が同一ページに複数あってよい**
         （担当者が2人、関連部品番号が複数、といった多値属性を表現できる）。検索用に
         非一意インデックス `idx_page_tags_page_name (page_id, name)` を張る。
     *   かつては `PRIMARY KEY (page_id, name)` だったため、同名タグを2つ置くと保存が
         UNIQUE 制約違反となり **本文ごと保存できない**（500）状態になっていた。
-    *   単一値として扱いたい用途（例: `<m-tag name="部品番号">`）は、HTML木から先頭を採る
-        ヘルパ `cms.TagValue` が担う。この表は現状クエリされていない検索用インデックス。
+    *   単一値として扱いたい用途（例: 「部品番号」）は、HTML木から先頭を採る
+        ヘルパ `cms.TagValue` が担う（`<dl data-type="tags">` を走査する）。
+        この表は現状クエリされていない検索用インデックス。
 *   **`vocab_index`**: 語彙モデルの**汎用索引**（3層モデルの②。`page_tags` の一般化）。
     全 `<table data-type>` / `<dl data-type>` の値を**縦持ち**で同期する
     （[cms/vocab_index.go](../internal/cms/vocab_index.go)。2026-08-17・縦切り第1段）。
@@ -76,7 +106,12 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
         レジストリは安全性の門ではない——[【考察】語彙モデル.md](【考察】語彙モデル.md) §4・§9）。
 
 ### 受発注トランザクションテーブル（ヘッダ・明細構造）
-発注書は `<m-client-order>` / `<m-supplier-order>` をヘッダとし、その中に複数の `<m-item>`（明細）を持つ 1:N の関係です（`<m-file>` は任意の容器で、PDFのパスだけを持ちます）。
+発注書は **`<section data-type="client-order">` / `<section data-type="our-order">`**（業務文書ブロック。
+[【考察】語彙モデル.md](【考察】語彙モデル.md) §8.2 論点A・案1）で表します。section が
+**ヘッダ `<dl>`**（`data-type` を持たず、`dd` の `data-field` が鍵）と
+**明細 `<table data-type="…-items">`** を包む 1:N の構造です。PDF原本は
+**任意の容器 `<section data-type="file" data-src="…">`** が持ち、プラグインは
+`ClosestFileSrc` で祖先から拾います（容器が無い＝ファイルの無い受注も表現できる）。
 
 *   **`client_orders`** (顧客の発注書 - ヘッダ)
     *   `id`, `order_no` (UNIQUE), `client_name`, `ordered_at`, `pdf_path`, `page_id`
@@ -88,22 +123,33 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     *   `id`, `order_no` (FK), `item_name` (品目), `cost`, `quantity`, `status`
 
 ### 見積もりテーブル（[【ユースケース】原価と利益.md](【ユースケース】原価と利益.md)参照）
-*   **`our_estimates`** (弊社の見積もり - `<m-our-estimate>` から抽出)
+見積は明細を持たないため、業務文書ブロックではなく **`<dl data-type>` 1つ**で表します
+（1要素＝1見積・連結しない）。PDF原本は受発注と同じく容器 `section[data-type="file"]` が持ちます。
+
+*   **`our_estimates`** (弊社の見積もり - `<dl data-type="our-estimate">` から抽出)
     *   `id`, `item_id`, `client_name`, `price`, `pdf_path`, `page_id`, `estimated_at`
-*   **`supplier_estimates`** (材料屋・加工業者の見積もり - `<m-supplier-estimate>` から抽出)
+*   **`supplier_estimates`** (材料屋・加工業者の見積もり - `<dl data-type="supplier-estimate">` から抽出)
     *   `id`, `item_name`, `supplier_name`, `cost`, `pdf_path`, `page_id`, `estimated_at`
 
 ### マスタ・構成情報テーブル
-*   **`part_materials`** (部品の構成部材。移行第2段から `<table data-type="part-materials">` が同期元で、旧 `<m-material>` の読み取りは短期保険)
+*   **`part_materials`** (部品の構成部材。同期元は `<table data-type="part-materials">` **のみ**——旧 `<m-material>` の読み取りは 2026-08-19 に除去済み)
     *   `id`, `part_id` (対象となる親の部品ID), `material_name` (必要な部材), `cost`, `supplier_name`, `quantity` (1部品あたりの必要数), `page_id`
-    *   `part_id` は部材行自体の値ではなく、同一ページ内の可変タグ `部品番号` の値が、ページ内の全部材行に一括で付与されます（`plugin_materials.go` の `Sync` が `cms.TagValue` で先頭値を採る——新形式 `<dl data-type="tags">` と旧 `<m-tag>` の両対応。かつては `parser.go` が担っていたが、カスタム要素の抽出は所有プラグインへ移譲済み）。
+    *   `part_id` は部材行自体の値ではなく、同一ページ内の可変タグ `部品番号` の値が、ページ内の全部材行に一括で付与されます（`plugin_materials.go` の `Sync` が `cms.TagValue` で `<dl data-type="tags">` から先頭値を採る。かつては `parser.go` が担っていたが、抽出は所有プラグインへ移譲済み）。
+    *   数値セルは語彙の正規化（`¥8,000`→`8000`）を通します（`vocabNumber`）。`quantity` の空セルは **1** として扱います（旧 `<m-material>` の既定を引き継いだ値）。
 
 ---
 
 ## 3. 部材手配計算APIの仕様
 
-動的に必要な部材数を計算するロジックは、`GET /api/required-materials?page_id={page_id}` エンドポイントで提供されます。
-フロントエンドの `<m-required-materials page-id="...">` コンポーネントがこのAPIを叩きます（属性名は `page-id`。部品単位ではなく、対象ページ単位で計算します）。
+動的に必要な部材数を計算するロジックは `RequiredMaterials(pageID)`（`plugin_materials.go`）にあり、
+**2つの出口**から使われます（部品単位ではなく、対象ページ単位で計算します）。
+
+1.  **`GET /api/required-materials?page_id={page_id}`**（プラグイン提供API）。
+2.  **計算ビューのサーバー事前描画**——本文の `<section data-type="required-materials">` へ
+    集計表を埋める（4.4）。**現在のフロントはこちらだけを使い、APIは呼んでいません**
+    （かつては `<m-required-materials page-id="...">` がAPIを叩いて描画していた）。
+
+集計結果は map の走査順に依らないよう **`material_name` の昇順**に整列してから返します。
 
 ### 計算ロジック概要
 1.  **対象ページの受注明細を取得**: 指定された `page_id` に紐づく `client_orders` の `order_no` を経由して、`client_order_items`（受注した部品とその数量）を取得します。
@@ -197,13 +243,16 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 
 *   **使われる場面**:
     1.  編集権を失ったときの再読込（`reloadContent()`）。編集モードへ入るときは
-        `POST /api/lock` の応答に同梱される最新HTMLを使います（4.3）。
+        ロック取得後に `GET /api/load` で読み直した最新HTMLを使います（4.3）。
 *   **リクエストパラメータ**: `id` (例: `00001`)
 *   **バックエンド処理フロー**:
     1.  `pages` テーブルから対象IDの `file_path` を取得します。
     2.  物理ストレージ上の該当HTMLファイルを読み込みます。
 *   **レスポンス**: HTML文字列を **`text/plain; charset=utf-8` ＋ `X-Content-Type-Options: nosniff`** で返却します（エディタは `fetch().text()` で受けて自前で `DOMParser` にかけるため text/html である必要がなく、この URL を直接ブラウザで開いてもHTMLとして実行されない＝多層防御）。**サニタイズはしません**
     （編集は生HTMLから始める必要があるため。ただし保存時サニタイズにより正本自体が清書済み）。
+    ただし**計算ビューのマーカーには中身を埋めて返します**（`RenderComputedViews`。4.4）——
+    編集モードの載せ替えでもビューが表示されるようにするため。埋めた `.vocab-chrome` は
+    シリアライザが保存時に落とすので、正本には混ざりません。
 *   **認可**: `RequirePageReadOrPublic`。匿名でも実効公開なら200、非公開は401。
 
 ### 4.2.1. ページ本文のサーバー合成 (`GET /{page_id}`)
@@ -220,6 +269,8 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     恩恵が無いため（当初の理由だった殻の巨大なインラインJSは 2026-08-06 に外部化済み）。
 *   **サニタイズ**: 埋め込む本文は必ず `Sanitize` を通します（保存経路を通っていない
     既存データ・バックアップ復元・手動配置への防壁。[本文サニタイズ設計.md](本文サニタイズ設計.md)）。
+*   **計算ビュー**: サニタイズの**後**に `RenderComputedViews` が子ページ一覧・手配集計の
+    中身を埋めます（4.4）。順序が逆だと、埋めた `class` 付きのクロームがサニタイザに落とされます。
 *   **認可（画面の作法。APIの401とは分ける）**: 認証済みで read 権限が無ければ **403**、
     匿名で実効公開でなければ **`/login` へ302**、存在しないIDは **404**。
 *   **キャッシュ**: 認可結果に依存する内容のため `Cache-Control: no-store`。
@@ -229,7 +280,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 同一ページの同時編集による lost update を防ぐため、**ページ単位の悲観ロック**を提供します（競合トリガー方式・**SSEプッシュ**）。設計の全体像と決定の経緯は [【考察】同時編集の競合対策.md](【考察】同時編集の競合対策.md) を参照。ロックは **プロセス内 mutex 付き map** に保持する揮発的なランタイム状態で、サイドカーにもDBにも永続化しません（単一プロセス前提。再起動で全ロックが消えるのは許容＝ロックは元々揮発的）。**presence（死活）は SSE 接続の有無で判定**します（ポーリングしない）。実装は `internal/cms/editlock/lock.go`（コア）と `editlock/handler.go`（HTTP/SSE）。
 
 *   **`POST /api/lock?id=&token=`**（要 write 権限）: 編集モード移行時の**ロック取得**（および待機者が空き＝`available` を受けたときの自動取得）。保持者は**ユーザーではなくエディタ個体（トークン）**で識別します（同じユーザーが別タブ/別ウィンドウで開いた場合も競合として検知）。
-    *   空き、または現在の保持トークンを `token` で提示した同一エディタの再取得なら取得し、`{"ok": true, "token": "...", "html": "..."}`（**最新HTML同梱**。古い版で上書きしないよう再ロードさせる）を返す。
+    *   空き、または現在の保持トークンを `token` で提示した同一エディタの再取得なら取得し、`{"ok": true, "token": "..."}` を返す。**本文は同梱しない**——フロントが続けて `GET /api/load` を読み、古い版で上書きしないよう載せ替える（そちらは計算ビューのサーバー事前描画を通る。2026-08-20 変更）。
     *   別のエディタが保持中なら **423 Locked** ＋ `{"holder", "same_user", "grace_remaining_sec"}` を返す。
 *   **`GET /api/lock-events?id=&role=holder|waiter&token=`**（要 write 権限・**SSE** `text/event-stream`）: ロック状態の変化をサーバーから push する。**この接続の生存＝presence**。
     *   保持者（role=holder）へ: `waiter`（待機者あり＋残り秒）／`holding`（待機者なし）／`lost`（明け渡し済み）。
@@ -240,6 +291,33 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 **エディタ内の変更操作の直列化（`RequireEditLock`）**: 本文保存だけでなく、**権限変更 `POST /api/page-perms`・所有者変更 `POST /api/page-chown`・親付け替え `POST /api/set-parent`** も、本文編集と同じ編集ロックで直列化します。共通ゲート `editlock.RequireEditLock(w, r, id)`（`editlock/handler.go`）が `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `editlock.Locks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは共通ラッパ `lockedFetch()` がトークンを自動同梱し、409 を `handleLockLost` に集約します。将来の画像/PDF等のリソース操作も、サーバーは `RequireEditLock`、フロントは `lockedFetch` を通すことで同じロックを共有できます。admin がスタックしたページを直すときは `/api/lock/force` で解除してから操作します。
 
 **有効期間（競合トリガー方式）**: 無競合なら無期限保持。待機者（別エディタ）の SSE 接続から **2分**の猶予で強制明け渡し（満了後は早い者勝ち）。**保持者の SSE 切断**で待機者がいれば即解放、**待機者の SSE 切断**で猶予キャンセル（取得直後〜SSE接続までは `holderConnectGrace`＝約10秒の猶予で present とみなす）。猶予満了の評価は `StartLockReaper` の1秒ティッカーが行い、状態変化は全購読者へ broadcast されます。
+
+### 4.4. 計算ビューのサーバー事前描画（`RenderComputedViews`）
+
+子ページ一覧・部材手配集計のような**表示専用のビュー**は、本文に結果を持たず、
+本文を返すたびにサーバーが中身を埋めます（実装は [cms/view_render.go](../internal/cms/view_render.go)。
+2026-08-19・移行第4段。旧 `<m-child-list>` / `<m-required-materials>` の後継）。
+
+*   **保存形式は空のマーカーだけ**: `<section data-type="child-list">`・
+    `<section data-type="required-materials">`。正本HTMLにはこれ以上入りません。
+*   **埋める入口は2つ**: 画面の `RootHandler`（`GET /{id}`）と `LoadAPIHandler`（`GET /api/load`）。
+    どちらも `RenderComputedViews(r, pageID, body)` を通します。画面側は**サニタイズの後**に
+    呼びます（埋める中身は `class` を持つため、先に埋めるとサニタイザに落とされる）。
+    マーカーを含まない本文はパースせず素通しするので、通常ページに追加コストは掛かりません。
+*   **埋める中身**: `<div class="vocab-chrome" contenteditable="false">…</div>`。
+    マーカーの中に書かれていた内容は捨てて置き換えます（ビューの中身はサーバーが所有する）。
+    エディタのシリアライザは `.vocab-chrome` を保存しないため（エンハンサのクロームと同じ規則。
+    [エディタ仕様.md](エディタ仕様.md) §6.1.1）、**保存往復してもマーカーだけが残ります**。
+*   **中身は閲覧者で変わる**: 子ページ一覧は `/api/children` と同じ絞り込み
+    （`visibleChildren`。認証済みは read 権限・匿名は実効公開）。手配集計は
+    `/api/required-materials` と同じ集計（`RequiredMaterials`）。**APIと画面で同じ関数**を
+    使うので結果が食い違いません。タイトル等の利用者入力は `html.EscapeString` を通します。
+*   **更新は再読み込み**: 編集中に子ページを作る・発注を変えても表示は自動更新されません
+    （描画ロジックを Go と JS の2箇所に持たないための割り切り）。挿入直後の空マーカーには
+    CSS `::before` で案内を出します。
+*   **効果**: 閲覧はゼロJSで完結し、JSを実行しないクローラにも中身が読めます
+    （公開ページのSEO要件——[要件定義書.md](要件定義書.md) §4.4——と整合。
+    ユーザー決定 2026-08-19・[【考察】語彙モデル.md](【考察】語彙モデル.md) §9）。
 
 ---
 
@@ -347,7 +425,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 フロントエンド（`assets/app.js` の `createSubpage`）で「＋ 子ページを作成」ボタンが押された際のフローは、`NewPageAPIHandler` がサーバー側で完結させます（DOM構造・イベント面の詳細は [エディタ仕様.md](エディタ仕様.md) 6.2参照）。
 1. フロントエンドは `/api/new-page?parent={現在のページID}` を呼び出します。`parent` は必須です（**親なし＝トップレベルのページが許されるのはトップページ（`000000`）のみ**で、それは初回起動時に自動生成済みのため、新規作成では `parent` を省略できません。admin でも例外はありません）。
 2. バックエンドは `reserveNewPageID()`（6.1）で `pages` への `INSERT` 自動採番により新しいページIDを原子的に確定します。
-3. 初期HTMLは「内容」のみ（`<h1>新しいページ</h1>` と `<p>`。子ページ一覧は左サイドパネルが担うため本文には埋め込まない——必要なら `<m-child-list>` を手動で置ける）を生成して物理ファイルへ書き込みます。親ページID・作成者・作成日時などの属性は `EnsureSidecar()` でサイドカー `<id>.meta.json` に記録し（作成者＝所有者、作成日時・更新日時はサイドカーが刻む）、続けて `SyncIndex` でDBへ同期します（親・作成情報はサイドカーから読まれます）。
+3. 初期HTMLは「内容」のみ（`<h1>新しいページ</h1>` と `<p>`。子ページ一覧は左サイドパネルが担うため本文には埋め込まない——必要ならスラッシュメニューから `<section data-type="child-list">` を後から挿せる）を生成して物理ファイルへ書き込みます。親ページID・作成者・作成日時などの属性は `EnsureSidecar()` でサイドカー `<id>.meta.json` に記録し（作成者＝所有者、作成日時・更新日時はサイドカーが刻む）、続けて `SyncIndex` でDBへ同期します（親・作成情報はサイドカーから読まれます）。
 4. レスポンスとして `/{新しいID}?edit=true` へ302リダイレクトします。ID発番・ファイル生成・DB同期・リダイレクトが単一のリクエストでアトミックに完結するため、フロントエンドが後から個別に `saveToServer()` を呼ぶ必要はありません。
 
 ### 6.3. 過去に発生したトラブルと、現在の設計に至った経緯（履歴）
@@ -383,6 +461,11 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 2.  **価格・コストはマスタに置かない**: 単価・原価は常に変動するため製品マスタの属性ではなく、`client_order_items.price` や `our_order_items.cost` のように**取引明細テーブル側に都度記録**する（既存スキーマで既にこの方針が採用されている）。マスタの内容が変動するのは価格のような時間変化する値ではなく、種類名・規格・発注時の必須項目ルールなど低頻度にしか変わらない情報のみであるため、過去の明細内容が事後的に変化する問題も発生しない。
 
 ### 採用する設計
+> **記法の追随（2026-08-20）**: 本節は 2026-06-20 の決定をそのまま残しています。可変タグの記法は
+> 語彙モデルへの移行で `<m-tag name="X" value="Y">` から
+> **`<dl data-type="tags"><dt>X</dt><dd>Y</dd></dl>`** へ変わりました（決定の内容は不変）。
+> 以下の `<m-tag …>` は新記法に読み替えてください。
+
 1.  **マスタページ自体に編集可能なルールを埋め込む**: 例えば鋼材ページに `<m-tag name="必須項目" value="径,材質,長さ">` のようなタグを記述し、これを「発注時に必要な項目」のルール定義として扱う。固定DBスキーマではなく、ページ内容がそのまま型定義になる。
 2.  **マスタの保存は通常のUPSERTでよい**: マスタページが保存される際、既存の `SyncIndex` の同期対象にマスタテーブルを追加し、`page_id` をキーとした通常のUPSERT（バージョニングなし）で同期する。
 3.  **廃版の表現**: マスタページに `<m-tag name="状態" value="廃版">` のようなタグを記述することで、新規発注時の選択肢からは除外しつつ、過去の発注明細からの参照（`item_id`/`item_name` 等のキー）は引き続き有効なまま残す。
@@ -394,13 +477,13 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 ### 8.1. 正本はファイル、DBは派生インデックス
 w-cms では **`data/master/` 配下のファイル群が唯一の正データ**であり、**`data/cms.db`（SQLite）は検索・集計のための派生インデックス**にすぎません。各ページのファイルは次の2種類で、UNIX流に「内容」と「属性」を分けます。
 
-*   **HTML本体（`<id>.html`）＝ページの内容**: タイトル・本文・`<m-tag>`・受発注タグなど。
+*   **HTML本体（`<id>.html`）＝ページの内容**: タイトル・本文・マーカー付き標準HTML（可変タグ `<dl data-type="tags">`・受発注の業務文書ブロックなど）。計算ビューは**空のマーカー**だけが保存され、中身は毎回サーバーが描きます（4.4）。
 *   **サイドカー（`<id>.meta.json`）＝ページの属性**: 所有権・権限（owner/group/mode）に加え、親ページID・作成日時・作成者・更新日時。
 
 DBの全カラムは `SyncIndex` によって **HTML本体とサイドカーから** 再生成できます（アップロードPDF等の添付も `data/master` 配下に置かれます）。
 
 > [!IMPORTANT]
-> **不変条件**: データベースには「ファイルから再生成できないデータ」を一切持たせないこと。新しいプラグインを追加する際も、そのテーブルの全データが `data/master` のファイル（HTMLのカスタムタグ、またはサイドカー）から `Sync()` で再生成可能であることを保証してください。この不変条件により、`cms.db` はいつでも破棄して作り直せる「使い捨て可能なキャッシュ」として扱え、バックアップはファイルのみで完結します（運用手順は [【ガイド】デプロイ・運用.md](【ガイド】デプロイ・運用.md) の「4. バックアップと復元」参照）。
+> **不変条件**: データベースには「ファイルから再生成できないデータ」を一切持たせないこと。新しいプラグインを追加する際も、そのテーブルの全データが `data/master` のファイル（HTMLのマーカー付き標準HTML、またはサイドカー）から `Sync()` で再生成可能であることを保証してください。汎用索引 `vocab_index` にも同じ不変条件が適用されます（DELETE→INSERT の洗い替えのみ）。この不変条件により、`cms.db` はいつでも破棄して作り直せる「使い捨て可能なキャッシュ」として扱え、バックアップはファイルのみで完結します（運用手順は [【ガイド】デプロイ・運用.md](【ガイド】デプロイ・運用.md) の「4. バックアップと復元」参照）。
 
 ### 8.2. 全再構築の方式（全テーブルDROP）
 `RebuildDatabase`（`POST /api/rebuild-db`）は次の手順でDBを完全に作り直します。

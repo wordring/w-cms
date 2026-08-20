@@ -24,22 +24,34 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 さらに横断で2つのミドルウェアが最外周に掛かる（`main.go`）。
 
 - **`CSRFProtect`**: GET/HEAD/OPTIONS 以外は Origin（無ければ Referer）とホストの一致を要求。
-- **`CSPProtect`**: 全レスポンスに Content-Security-Policy を付与（[【考察】CSP強化.md](【考察】CSP強化.md)）。
+- **`CSPProtect`**: 全レスポンスに Content-Security-Policy を付与。2026-08-19 の移行第4段で
+  **strict 版**（`script-src 'self'; style-src 'self'`＝`'unsafe-inline'` なし）へ格上げ済み
+  （[【考察】CSP強化.md](【考察】CSP強化.md)）。
 
 ## 2. ページ本文・属性
 
 | メソッド | パス | 認可 | 編集ロック | 概要 |
 |---|---|---|---|---|
-| GET | `/{id}` | 任意認証 | — | **ページ本体**。`assets/index.html` に本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成・`RenderPageShell`）。権限無し=403／匿名×非公開=`/login` へ302／不存在=404 |
-| GET | `/api/load` | 任意認証（read） | — | ページ本文の**生HTML**（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用** |
+| GET | `/{id}` | 任意認証 | — | **ページ本体**。`assets/index.html` に本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成・`RenderPageShell`）。本文はサニタイズ後に**計算ビューの中身が埋められる**（`RenderComputedViews`。下記の注記）。権限無し=403／匿名×非公開=`/login` へ302／不存在=404 |
+| GET | `/api/load` | 任意認証（read） | — | ページ本文の**生HTML**（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用**。正本はサニタイズしないが、**計算ビューの中身だけは埋めて返す**（下記の注記） |
 | POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types` を返す。JSONボディは**8MiB上限**（超過は413。JSONを受けるAPIは共通） |
 | POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types` は当該ブロック分のみ） |
 | GET | `/api/page-meta` | 任意認証（read） | — | ページ属性（親ページID・親ページ名・更新日時など）。匿名には実効公開のときだけ返す |
-| GET | `/api/children` | 任意認証（親のread） | — | 子ページ一覧。匿名には**実効公開の子だけ**を絞って返す |
+| GET | `/api/children` | 任意認証（親のread） | — | 子ページ一覧（ID昇順）。認証済みには read 権限のある子、匿名には**実効公開の子だけ**を絞って返す（`visibleChildren`。計算ビューのサーバー事前描画と共用） |
 | GET/POST | `/api/new-page` | 要認証（親のwrite） | — | 子ページを作成し `/{新ID}?edit=true` へ302。**親の指定は必須**（親なしにできるのはトップページ `000000` のみ） |
-| GET | `/api/validate-parent` | 要認証（write） | — | 親付け替えの事前検証（循環・自己参照・存在チェック） |
+| GET | `/api/validate-parent` | 要認証（write） | — | 親付け替えの事前検証（循環・自己参照・存在チェック）。`/api/set-parent` と同じ `validateParentChange` を共有する。**現在フロントからは呼ばれていない**（`applyParent()` は `/api/set-parent` の応答だけで判定する） |
 | POST | `/api/set-parent` | 要認証（write） | 要 | 親ページの付け替え |
 | GET | `/data/...` | 任意認証（read） | — | 添付ファイル配信（PDF原本など）。ページのread権限を要求する保護ハンドラ |
+
+> **計算ビューのサーバー事前描画**（`internal/cms/view_render.go` の `RenderComputedViews`）:
+> 本文に保存されているのは空のマーカー `<section data-type="child-list">`・
+> `<section data-type="required-materials">` だけで、中身は本文を返す**2つの入口**
+> （`/{id}` の `RootHandler` と `/api/load` の `LoadAPIHandler`）が毎回埋めます。
+> 埋めた中身は `<div class="vocab-chrome" contenteditable="false">` に包まれ、エディタの
+> シリアライザは `.vocab-chrome` を保存しないので、往復しても正本にはマーカーだけが残ります。
+> 子ページ一覧は `/api/children` と、手配集計は `/api/required-materials` と**同じ関数**
+> （`visibleChildren` / `RequiredMaterials`）を共用するため、APIと画面で結果が食い違いません。
+> 詳細は [アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) 4.4。
 
 ## 3. 編集ロック（同時編集の競合対策）
 
@@ -47,7 +59,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
-| POST | `/api/lock` | 要認証（write） | ロック取得。成功時は**最新の生HTML**を同梱して返す（編集はここから始まる） |
+| POST | `/api/lock` | 要認証（write） | ロック取得（`{ok, token}`）。**本文は返さない**——取得後にフロントが `GET /api/load` を読む（そちらは計算ビューのSSRを通るため。2026-08-20 変更） |
 | GET | `/api/lock-events` | 要認証（write） | ロック状態の **SSE** 購読（保持者・待機者で共用） |
 | POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
 | POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
@@ -93,16 +105,19 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
 | GET | `/api/admin/audit` | 監査ログの参照（書き込み・権限変更を記録） |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え） |
-| POST | `/api/migrate-vocab` | **語彙モデルへの一度きり変換**（`<m-tag>`→dl・`<m-material>`→表）。実行前に `data/master` を自動バックアップし、変換ページを再同期する（[【考察】語彙モデル.md](【考察】語彙モデル.md) §8.3） |
+
+> 移行期にあった `POST /api/migrate-vocab`（旧カスタム要素→語彙モデルの一括変換）は
+> **撤去済み**（2026-08-20。両環境の変換完了を確認したうえで `migrate_vocab.go` ごと削除。
+> 管理コンソールのボタンも無い）。経緯は [変更履歴.md](変更履歴.md) 2026-08-20 の節。
 
 ## 7. 語彙・PDF・プラグイン
 
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
-| GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML ∪ カスタム要素 → 許可属性）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）・`vocab`（語彙レジストリの形式定義。スラッシュメニューと挿入骨格の生成元）・`type_inference`（語→型の推論辞書。エディタの型検証がサーバーの索引と同じ辞書を使うための配布）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
+| GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML → 許可属性。`data-*` マーカーもここに属性として現れる。**カスタム要素はゼロ**）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）・`vocab`（語彙レジストリ12形式の定義を `type` 順で。スラッシュメニューと挿入骨格の生成元）・`type_inference`（語→型の推論辞書。エディタの型検証がサーバーの索引と同じ辞書を使うための配布）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
 | POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<先頭2桁>/<id>/` へ保存）。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
 | POST | `/api/parse-pdf` | 要認証（対象ページの write） | PDFから明細をAI抽出（Gemini） |
-| GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`） |
+| GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`）。集計本体は `RequiredMaterials(pageID)` で、計算ビューのサーバー事前描画と共用する（応答が呼び出しごとに変わらないよう**部材名順**にソート） |
 
 プラグインは `RouteProvider` を実装するとルートを追加できる。`main.go` は
 `cms.PluginRoutes()` をループして登録するだけで、コア側の変更は要らない
@@ -112,6 +127,6 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 
 | パス | 認可 | 概要 |
 |---|---|---|
-| `/assets/...` | 認証不要 | CSS・JS・テンプレート。**ディレクトリ一覧は無効**（`noDirListing`） |
+| `/assets/...` | 認証不要 | 殻の markup・CSS・JS（`index.html`・`app.css`/`app.js`・`boot.js`・`admin.*`・`login.css`）。**ディレクトリ一覧は無効**（`noDirListing`）。`Cache-Control: no-cache`＝毎回再検証（変わっていなければ304）。CSP strict 化（`'unsafe-inline'` 無し）により、スクリプト・スタイルはすべてここに置く |
 
 `/data/...` は静的配信ではなく認可付きハンドラ（§2）。
