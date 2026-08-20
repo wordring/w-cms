@@ -545,7 +545,14 @@
         document.getElementById('w-html-preview').value = joinBlocks(blocks);
 
         const plan = decideSaveStrategy(blocks);
-        if (plan.kind === 'none') return; // 変更なし。無駄な保存・DB同期・書き込みをしない
+        if (plan.kind === 'none') {
+            // 変更なし。保存要求は出さない（無駄なDB同期・書き込みをしない）が、
+            // 内容は保存済みと一致しているので表示は「保存済」へ戻す。
+            // エコーバック（sanitized）でDOMが変わると MutationObserver が「未保存」を
+            // 立て、その後の保存が 'none' で早期returnして表示が戻らない経路があった。
+            setSaveStatus("✅ 保存済", "#10b981");
+            return;
+        }
 
         // 変更が確定したこの時点をアンドゥ履歴へ積む（保存と同じ粒度）
         pushSnapshot(document.getElementById('w-html-preview').value);
