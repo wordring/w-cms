@@ -34,3 +34,19 @@ func GetPageDir(id string) string {
 	prefix := id[:2]
 	return filepath.Join(MasterDir, prefix, id)
 }
+
+// TrashDir は削除したページの退避先です。
+//
+// 削除は**物理削除ではなくゴミ箱への移動**にします（2026-08-20 決定）。
+// 自動判定で作ったページを取り消せることが要件なら、その取り消し自体も
+// 取り返しがつく必要があるからです（docs/【考察】通信記録処理.md §2.7④「常に柔軟性」）。
+// DB再構築（RebuildDatabase）は data/master だけを走査するので、移すだけで索引からも消えます。
+const TrashDir = "data/trash"
+
+// GetTrashDir は削除したページの移動先パスを返します（GetPageDir と同じ階層化）。
+func GetTrashDir(id string) string {
+	if len(id) < 2 {
+		return filepath.Join(TrashDir, "00", id)
+	}
+	return filepath.Join(TrashDir, id[:2], id)
+}
