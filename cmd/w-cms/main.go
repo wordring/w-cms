@@ -67,6 +67,24 @@ func main() {
 	// 編集ロックの猶予満了などを定期評価するバックグラウンド処理を起動する。
 	editlock.StartLockReaper()
 
+	handler := buildHandler()
+
+	// サーバーの起動
+	log.Println("w-cms 起動: http://localhost:8080")
+	if err := http.ListenAndServe(":8080", handler); err != nil {
+		log.Fatalf("サーバー終了: %v", err)
+	}
+}
+
+// buildHandler はルート表を組み立て、CSRF と CSP のミドルウェアで包んだ最終的な
+// ハンドラを返します。
+//
+// main から切り出してあるのは、**ルートごとの保護レベルをテストで固定するため**です
+// （route_guard_test.go）。ここは「黙って壊れる」層で、ハンドラを protected から root へ
+// 移す・OptionalAuth を付け忘れる・ミドルウェアの入れ子を外す、といった退行が起きても
+// 既存のテストは全部 green のまま実害だけが出ます。CSP はポリシー文字列を csp_test.go が
+// 固定していますが、それは**配線されていること**までは見ていません。
+func buildHandler() http.Handler {
 	// --- ルーティング ---
 	// 保護対象のAPI（要認証）。/api/ 配下にまとめ、RequireAuth でまとめて包む。
 	// 匿名でも閲覧しうるルート（ページ本文・添付配信・/api/me・ページの殻）は別扱い（後述の OptionalAuth）。
@@ -155,9 +173,5 @@ func main() {
 	// 全体に適用する。CSP は最外周に置き、全レスポンスへヘッダを付与する。
 	handler := auth.CSPProtect(auth.CSRFProtect(root))
 
-	// サーバーの起動
-	log.Println("w-cms 起動: http://localhost:8080")
-	if err := http.ListenAndServe(":8080", handler); err != nil {
-		log.Fatalf("サーバー終了: %v", err)
-	}
+	return handler
 }
