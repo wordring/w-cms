@@ -62,7 +62,10 @@ func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 
 	// part_id は部材行自身の値ではなく、ページ全体の「部品番号」タグ（可変タグ）から
 	// 取得し、ページ内のすべての部材行に一括で付与する。
-	partID := TagValue(root, "部品番号")
+	// 鍵の名前はレジストリ宣言（part-materials の RequiresTag）が持つ——ここへ直書き
+	// すると、見出しを改名したときに告知する側と読む側がずれる（設計総点検⑤）。
+	materialsDef, _ := VocabDefByType("part-materials")
+	partID := TagValue(root, materialsDef.RequiresTag)
 
 	insert := func(itemName string, cost int, supplierName string, quantity int) error {
 		_, err := tx.Exec(`

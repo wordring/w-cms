@@ -2,6 +2,7 @@ package cms
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -102,5 +103,61 @@ func TestUnresolvedVocabFields(t *testing.T) {
 				t.Errorf("UnresolvedVocabFields() = %#v, want %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+// ── 部品番号タグの改名の告知 ───────────────────────────────────────────
+// 部材手配計算は「部品番号」タグ（<dl data-type="tags"> の dt）を鍵に部材定義と
+// 受注明細を突き合わせる。この見出しを改名すると part_id が空になり、集計が
+// 丸ごと空になるのに告知はゼロだった（設計総点検⑤）。
+//
+// 「Field を持たない列は改名しても壊れない」という設計判断は、この1点でだけ
+// 成り立たない。tags は自由語なので列宣言を足すと**全ページで誤検知**が出る
+// （担当者しか書いていないページでも「部品番号が無い」と言い出す）ため、
+// 「部材表があるのに部品番号が解決できないとき」に限って告知する。
+
+// TestUnresolvedReportsRenamedPartIDTag は部品番号の改名が告知されることを固定します。
+func TestUnresolvedReportsRenamedPartIDTag(t *testing.T) {
+	const materials = `<table data-type="part-materials"><tbody>` +
+		`<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>` +
+		`<tr><td>鋼板</td><td>800</td><td>A商事</td><td>2</td></tr></tbody></table>`
+
+	// 改名前: 部品番号があるので告知しない
+	ok := `<dl data-type="tags"><dt>部品番号</dt><dd>SHAFT-01</dd></dl>` + materials
+	if got := UnresolvedVocabFields(ok); len(got) != 0 {
+		t.Errorf("正しい本文で告知が出ました: %v", got)
+	}
+
+	// 改名後: 部材表はあるのに部品番号が解決できない → 告知する
+	renamed := `<dl data-type="tags"><dt>部品No</dt><dd>SHAFT-01</dd></dl>` + materials
+	got := UnresolvedVocabFields(renamed)
+	joined := strings.Join(got, " / ")
+	if !strings.Contains(joined, "部品番号") {
+		t.Errorf("部品番号の改名が告知されません: %v", got)
+	}
+
+	// タグごと消した場合も、部材表がある以上は集計に載らないので告知する
+	missing := `<dl data-type="tags"><dt>担当者</dt><dd>山田</dd></dl>` + materials
+	if got := UnresolvedVocabFields(missing); !strings.Contains(strings.Join(got, " / "), "部品番号") {
+		t.Errorf("部品番号の欠落が告知されません: %v", got)
+	}
+}
+
+// TestUnresolvedDoesNotReportPartIDWithoutMaterials は誤検知が出ないことを固定します。
+// tags は自由語なので、部材表の無いページで「部品番号が無い」と言ってはいけない
+// （毎ページ鳴る告知は読まれなくなり、本当の改名を隠してしまう）。
+func TestUnresolvedDoesNotReportPartIDWithoutMaterials(t *testing.T) {
+	cases := map[string]string{
+		"自由語のタグだけ":   `<dl data-type="tags"><dt>担当者</dt><dd>山田</dd></dl>`,
+		"タグが空":       `<dl data-type="tags"></dl>`,
+		"部材表の無い普通の本文": `<h1>ふつうのページ</h1><p>本文</p>`,
+		"受注明細はあるが部材表は無い": `<dl data-type="tags"><dt>担当者</dt><dd>山田</dd></dl>` +
+			`<table data-type="client-order-items"><tbody><tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
+			`<tr><td>A</td><td>B</td><td>1</td><td>1</td><td></td></tr></tbody></table>`,
+	}
+	for name, in := range cases {
+		if got := UnresolvedVocabFields(in); strings.Contains(strings.Join(got, " / "), "部品番号") {
+			t.Errorf("%s: 部材表が無いのに部品番号を告知しました: %v", name, got)
+		}
 	}
 }
