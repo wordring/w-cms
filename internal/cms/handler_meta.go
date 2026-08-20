@@ -13,7 +13,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// TagSchemaAPIHandler は、登録済み全プラグインが宣言したカスタム要素の属性契約を返します。
+// TagSchemaAPIHandler は、本文で扱えるHTMLの語彙（許可要素と属性）を返します。
 //
 // エディタはこれを使って本文をシリアライズします（要素ごとの手書き分岐を持たないため、
 // プラグインを追加しただけで新しい要素が正しく保存されるようになる）。サーバー側の
@@ -28,9 +28,9 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// {"elements": {"p": [...], "m-item": ["cost", "item-id", ...], ...}}
+	// {"elements": {"p": [...], "table": ["data-type", "data-id"], ...}}
 	//
-	// 構造HTML（h1・ul・table 等）とカスタム要素の**両方**を返す。エディタはこれを
+	// 構造HTML（h1・ul・table 等）と `data-*` マーカーを返す。エディタはこれを
 	// シリアライザの語彙として使うので、サニタイザが通す要素は必ず保存できる。
 	// 片方だけ返すと「画面には出るが保存すると消える」要素が生まれる。
 	elements := AllowedVocabulary()

@@ -1,17 +1,16 @@
 package cms
 
 // 本文サニタイズの入口。実装は internal/cms/htmldoc（純粋なHTML部品）にあり、
-// ここは**語彙の合成**だけを担います——各プラグインが Tags() で宣言したカスタム要素を
-// PluginTags() で集め、htmldoc.New() へ**注入**してサニタイザを組み立てる。
+// ここは薄いラッパです。
 //
-// かつて sanitize.go は PluginTags() を直接呼んでおり、そのまま別パッケージへ出すと
-// `cms → htmldoc → cms` の循環参照になるため切り出せなかった（docs/変更履歴.md
-// 2026-08-06「やらなかったこと」）。語彙を注入する形へ依存を反転させたことで、
-// 依存は `cms → htmldoc` の一方向になっている。**htmldoc から cms を import しないこと。**
+// かつては「各プラグインが Tags() で宣言したカスタム要素を PluginTags() で集めて
+// htmldoc.New() へ注入する」語彙の合成を担っていました（`cms → htmldoc → cms` の
+// 循環を避けるための依存反転。docs/変更履歴.md 2026-08-06）。語彙モデルへの移行完了
+// （2026-08-20）でカスタム要素がゼロになり、注入も、プラグインの init() 登録を待つ
+// 遅延初期化（sync.Once）も不要になりました——**暗黙の初期化順序への依存が消えています**。
+// 依存は `cms → htmldoc` の一方向のまま。**htmldoc から cms を import しないこと。**
 
 import (
-	"sync"
-
 	"w-cms/internal/cms/htmldoc"
 )
 
@@ -19,39 +18,24 @@ import (
 // 定義と経緯は htmldoc.BlockIDAttr を参照。
 const BlockIDAttr = htmldoc.BlockIDAttr
 
-// sanitizer は合成済みのサニタイザです。プラグインは init() で登録され実行中に
-// 増減しないため、初回利用時に一度だけ組み立てて使い回します
-// （「全プラグインの init() 登録 → 最初のサニタイズ」という順序への依存は従来どおり）。
-var (
-	sanitizerOnce sync.Once
-	sanitizer     *htmldoc.Sanitizer
-)
+// sanitizer は本文サニタイザです。語彙は構造HTML（htmldoc）に固定なので、
+// パッケージ変数として一度だけ組み立てて使い回します。
+var sanitizer = htmldoc.New()
 
-// activeSanitizer は「構造HTML ∪ 全プラグインが宣言したカスタム要素」の
-// サニタイザを返します。
-func activeSanitizer() *htmldoc.Sanitizer {
-	sanitizerOnce.Do(func() {
-		sanitizer = htmldoc.New(PluginTags())
-	})
-	return sanitizer
-}
-
-// Sanitize は本文HTMLを許可リストに従って安全な形へ整えて返します
-// （htmldoc.Sanitizer.Sanitize の語彙合成済みラッパ）。
+// Sanitize は本文HTMLを許可リストに従って安全な形へ整えて返します。
 func Sanitize(s string) string {
-	return activeSanitizer().Sanitize(s)
+	return sanitizer.Sanitize(s)
 }
 
-// SanitizeReport はサニタイズ結果と、内容が変化したか（＝何かを除去したか）を返します
-// （htmldoc.Sanitizer.SanitizeReport の語彙合成済みラッパ）。
+// SanitizeReport はサニタイズ結果と、内容が変化したか（＝何かを除去したか）を返します。
 func SanitizeReport(s string) (out string, changed bool) {
-	return activeSanitizer().SanitizeReport(s)
+	return sanitizer.SanitizeReport(s)
 }
 
 // AllowedVocabulary は「要素名 → 許可属性（ソート済み）」を返します。
 // /api/tag-schema がエディタのシリアライザへ渡す語彙の実体です。
 func AllowedVocabulary() map[string][]string {
-	return activeSanitizer().AllowedVocabulary()
+	return sanitizer.AllowedVocabulary()
 }
 
 // VoidElementNames は子を持てない要素名（ソート済み）を返します。

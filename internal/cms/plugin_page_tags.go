@@ -18,12 +18,11 @@ import (
 // **同じ name を同一ページに複数置いてよい**（担当者が2人、関連部品番号が複数など。
 // dt の繰り返し／複数 dd で表す）。
 //
-// 移行第2段（語彙モデル §8.4-2）で同期元を <dl data-type="tags"> へ切り替え、
-// 旧 <m-tag> の読み取り（短期の保険）は実データの一括変換完了後に除去した。
-// 旧要素の表示・変換は移行完了（第4段）まで残る（語彙宣言 Tags() と変換ツール）。
+// 移行第2段（語彙モデル §8.4-2）で同期元を旧 <m-tag> から <dl data-type="tags"> へ
+// 切り替え、移行完了（2026-08-20）で旧要素の読み取り・変換ツールごと撤去した。
 //
 // かつてコアの parser.go / sync.go / database.CoreTables が直接扱っていたが、
-// 「カスタムタグはすべてプラグインが所有する」方針に合わせてここへ移設した。
+// 「語彙の解釈はプラグインが持つ」方針に合わせてここへ移設した。
 // コアが知るのはタイトル抽出だけになっている。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -56,12 +55,6 @@ func (pageTagsPlugin) Schema() []string {
 
 func (pageTagsPlugin) Tables() []string {
 	return []string{"page_tags"}
-}
-
-func (pageTagsPlugin) Tags() []TagSpec {
-	return []TagSpec{
-		{Element: "m-tag", Attributes: []string{"name", "value"}},
-	}
 }
 
 func (pageTagsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {

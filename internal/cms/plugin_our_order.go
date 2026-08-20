@@ -54,18 +54,6 @@ func (ourOrderPlugin) Tables() []string {
 	return []string{"our_order_items", "our_orders"}
 }
 
-// Tags は扱うカスタム要素の属性契約。Sync が読む属性は必ず含めること。
-func (ourOrderPlugin) Tags() []TagSpec {
-	return []TagSpec{
-		{Element: "m-supplier-order", Attributes: []string{
-			"order-no", "supplier-name", "ordered-at",
-		}},
-		{Element: "m-item", Attributes: []string{
-			"item-name", "cost", "quantity", "status",
-		}},
-	}
-}
-
 func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	if _, err := tx.Exec(
 		`DELETE FROM our_order_items WHERE order_no IN (SELECT order_no FROM our_orders WHERE page_id = ?)`,

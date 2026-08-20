@@ -62,9 +62,6 @@ func (vocabIndexPlugin) Schema() []string {
 func (vocabIndexPlugin) Tables() []string { return []string{"vocab_index"} }
 
 // Tags は nil を返します。②汎用索引はマーカー付き**標準HTML**だけを読み、
-// カスタム要素を所有しません（語彙は htmldoc の構造HTML側で許可済み）。
-func (vocabIndexPlugin) Tags() []TagSpec { return nil }
-
 func (vocabIndexPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	if _, err := tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, pageID); err != nil {
 		return err

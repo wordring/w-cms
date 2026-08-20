@@ -59,18 +59,6 @@ func (clientOrderPlugin) Tables() []string {
 	return []string{"client_order_items", "client_orders"}
 }
 
-// Tags は扱うカスタム要素の属性契約。Sync が読む属性は必ず含めること。
-func (clientOrderPlugin) Tags() []TagSpec {
-	return []TagSpec{
-		{Element: "m-client-order", Attributes: []string{
-			"order-no", "client-name", "ordered-at",
-		}},
-		{Element: "m-item", Attributes: []string{
-			"item-id", "item-name", "price", "quantity", "status",
-		}},
-	}
-}
-
 func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	// 洗い替え: 当該ページの明細→ヘッダの順で削除（明細にはpage_idが無いためサブクエリ）。
 	if _, err := tx.Exec(
