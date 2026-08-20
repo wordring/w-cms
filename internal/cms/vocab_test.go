@@ -275,3 +275,36 @@ func TestTagSchemaIncludesTypeInference(t *testing.T) {
 		t.Errorf("代表語の型が期待と違います: %+v", got.TypeInference)
 	}
 }
+
+// TestUnknownVocabTypesCoversSection は section のタイポが告知されることを固定します。
+//
+// 業務文書ブロック（受発注・ファイル容器・計算ビュー）の担い手は section なので、
+// ここが告知対象外だと <section data-type="cliet-order"> のような綴り違いが
+// 完全に無症状になる——サニタイズは値を検査せず通し、明細表は正しいので画面は
+// 普通に見え、それでいて ③計算テーブルからは受注が丸ごと消える。
+// 「見える文字がすべて」の代償を告知で補う、という語彙モデルの前提が崩れる箇所。
+func TestUnknownVocabTypesCoversSection(t *testing.T) {
+	// section だけ綴り違い（明細表は正しい）＝最も自然なタイポの形
+	in := `<section data-type="cliet-order"><dl><dt>発注書番号</dt><dd>PO-1</dd></dl>` +
+		`<table data-type="client-order-items"><tr><th>品番</th></tr><tr><td>A</td></tr></table></section>`
+
+	got := UnknownVocabTypes(in)
+	found := false
+	for _, g := range got {
+		if g == "cliet-order" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("section の未知 data-type が告知されません: got %v", got)
+	}
+
+	// 定義済みの section は告知しない（誤検知が出ると告知が信用されなくなる）
+	if types := UnknownVocabTypes(`<section data-type="client-order"></section>`); len(types) != 0 {
+		t.Errorf("定義済みの section を未知として告知しました: %v", types)
+	}
+	// data-type の無い素の section は対象外（貼り付けた文書の構造を保つため許可されている）
+	if types := UnknownVocabTypes(`<section><p>ただの節</p></section>`); len(types) != 0 {
+		t.Errorf("素の section を未知として告知しました: %v", types)
+	}
+}

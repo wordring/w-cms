@@ -399,7 +399,10 @@ func UnknownVocabTypes(htmlStr string) []string {
 	seen := map[string]bool{}
 	for _, root := range nodes {
 		WalkElements(root, func(n *html.Node) {
-			if n.Data != "table" && n.Data != "dl" {
+			// マーカーの担い手は table / dl / section の3つ（サニタイザの許可と揃える）。
+			// section を落としていたため、業務文書ブロックの綴り違いが完全に無症状だった
+			// ——③計算からは受注が消えるのに、画面も告知も何も変わらない。
+			if n.Data != "table" && n.Data != "dl" && n.Data != "section" {
 				return
 			}
 			dt := Attr(n, "data-type")
