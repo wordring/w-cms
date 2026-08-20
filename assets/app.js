@@ -82,10 +82,27 @@
     // ── 子ページの作成（テンプレート選択つき） ──────────────────────────
     // テンプレートは「テンプレート」フォルダ配下の**葉**（docs/【考察】ページテンプレート.md §3.2）。
     // 使えるテンプレートが1つも無ければ従来どおり即作成する。
+    // ページ作成は状態を変える操作なので POST で送る。GET のままだと CSRFProtect が
+    // 素通しするうえ、本文へ <img src="/api/new-page?parent=..."> を保存しておくだけで
+    // 閲覧者にページを作らせられる（保存型CSRF）。別タブで開く挙動は form の target で保つ
+    // （CSP strict なのでインラインの on* は使わず、DOM APIで組み立てて submit する）。
     function openNewPage(templateId) {
-        let url = `/api/new-page?parent=${currentPageId}`;
-        if (templateId) url += `&template=${encodeURIComponent(templateId)}`;
-        window.open(url, '_blank');
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/new-page';
+        form.target = '_blank';
+        const addField = (name, value) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+        };
+        addField('parent', currentPageId);
+        if (templateId) addField('template', templateId);
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
     }
 
     // hasTemplateLeaf はツリーに葉（＝コピーできるテンプレート）があるかを返す。

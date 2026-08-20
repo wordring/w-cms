@@ -96,9 +96,19 @@ func visibleChildren(user *auth.User, parentIDInt int) ([]PageSummary, error) {
 }
 
 // NewPageAPIHandler はサーバー側で新しいページを作成し、そのページへリダイレクトします。
+//
+// POST 限定です。CSRFProtect は GET を検証しない（middleware.go）ので、GET のままだと
+// 本文へ <img src="/api/new-page?parent=..."> を保存するだけで、そのページを開いた
+// 全ログインユーザーにページを作らせられます（同一オリジンなので SameSite も CSP も
+// 止めない）。フロントは form の POST ＋ target=_blank で従来どおり別タブに開きます。
+// 引数は r.FormValue で読むので、POSTボディでもクエリでも受け取れます。
 func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	// 1. 親ページIDの取得
-	parentIDStr := r.URL.Query().Get("parent")
+	parentIDStr := r.FormValue("parent")
 	var parentID sql.NullInt64
 	if parentIDStr != "" {
 		pid, err := strconv.Atoi(parentIDStr)
@@ -122,7 +132,7 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 1-2. テンプレート指定があれば**IDを採番する前に**検証して本文を読む
 	//      （docs/【考察】ページテンプレート.md §4）。採番の後に失敗すると、
 	//      ファイルの無いページ行が pages に残ってしまうため順序が重要。
-	templateBody, ok := loadTemplateBody(w, r, r.URL.Query().Get("template"))
+	templateBody, ok := loadTemplateBody(w, r, r.FormValue("template"))
 	if !ok {
 		return // loadTemplateBody が応答済み
 	}

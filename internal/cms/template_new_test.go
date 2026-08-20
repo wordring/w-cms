@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,13 +32,16 @@ const templateOrderBody = `<h1>受注ページ</h1>` +
 	`</tbody></table></section>`
 
 // newPageWithTemplate は /api/new-page をテンプレート付きで呼びます。
+// POST 限定（保存型CSRF対策。method_guard_test.go 参照）なので、引数はフォームで送ります。
 func newPageWithTemplate(t *testing.T, parent, tmpl string, u *auth.User) *httptest.ResponseRecorder {
 	t.Helper()
-	url := "/api/new-page?parent=" + parent
+	form := neturl.Values{}
+	form.Set("parent", parent)
 	if tmpl != "" {
-		url += "&template=" + tmpl
+		form.Set("template", tmpl)
 	}
-	req := httptest.NewRequest("GET", url, nil)
+	req := httptest.NewRequest("POST", "/api/new-page", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if u != nil {
 		req = auth.WithUser(req, u)
 	}
