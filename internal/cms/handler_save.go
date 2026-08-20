@@ -138,6 +138,9 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// レジストリ未定義の data-type の**告知**（拒否ではない。語彙モデル §9 の決定:
 		// 未知の data-type は通し、保存時に「未定義の種別」と通知する）。
 		"unknown_types": UnknownVocabTypes(safeHTML),
+		// 見出しの改名で③計算プラグインが読めなくなった列の告知（同じくエコーバックの流儀）。
+		// 鍵は見出しの表示文字なので、改名は同期を**黙って**止めてしまう。
+		"unresolved_fields": UnresolvedVocabFields(safeHTML),
 	})
 }
 
@@ -245,6 +248,7 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"html":      safeBlock,
 		"sanitized": sanitized,
 		// 告知の対象は送られてきたブロックだけ（エコーバックと同じ粒度）。
-		"unknown_types": UnknownVocabTypes(safeBlock),
+		"unknown_types":     UnknownVocabTypes(safeBlock),
+		"unresolved_fields": UnresolvedVocabFields(safeBlock),
 	})
 }

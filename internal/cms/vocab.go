@@ -415,3 +415,130 @@ func UnknownVocabTypes(htmlStr string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// UnresolvedVocabFields は「見出しの改名によって③計算プラグインが読めなくなった列」を
+// 告知用に返します。返す形は "表示名: ラベル"（例: "顧客の発注書: 発注元"）です。
+//
+// 鍵は **見出しの表示文字**で解決されます（columnFor は Field でも Label でも引ける）。
+// そのため見出しを「単価」→「単価（税抜）」のように改名すると宣言列に当たらなくなり、
+// 型付きテーブルへの同期が**黙って**止まります。それを保存時に気づけるようにするのが
+// この関数の役割です——拒否ではなく告知（エコーバックの流儀。UnknownVocabTypes と同じ）。
+//
+// 報告するのは **機械キー（Field）を持つ列だけ**です。Field を持たない列
+// （tags の自由語・inspection-record の記録列）は表示文字がそのまま鍵なので、
+// 改名しても「別の鍵になる」だけで壊れません。
+//
+// 誤検知を避けるため、**改名の徴候があるときだけ**報告します——すなわち
+// 「宣言列のうち解決されなかったものがある」**かつ**「どの宣言列にも当たらない見出しがある」。
+// 列を消しただけ（見出しごと削除）や、独自の列を足しただけでは報告しません。
+func UnresolvedVocabFields(htmlStr string) []string {
+	nodes, err := htmldoc.ParseFragment(htmlStr)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, root := range nodes {
+		WalkElements(root, func(n *html.Node) {
+			def, ok := VocabDefByType(Attr(n, "data-type"))
+			if !ok || n.Data != def.Element {
+				return
+			}
+			for _, label := range unresolvedFieldsIn(n, def) {
+				seen[def.DisplayName+": "+label] = true
+			}
+		})
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// unresolvedFieldsIn は1つの形式インスタンスについて、解決できなかった宣言列のラベルを返します。
+func unresolvedFieldsIn(n *html.Node, def VocabDef) []string {
+	// 機械キーを持つ列が無い形式（自由語・記録用）は対象外。
+	typed := false
+	for _, c := range def.Columns {
+		if c.Field != "" {
+			typed = true
+			break
+		}
+	}
+	if !typed {
+		return nil
+	}
+
+	resolved := map[string]bool{}
+	stray := false
+	for _, key := range vocabHeadingKeys(n, def) {
+		if col, ok := def.columnFor(key); ok {
+			resolved[col.Field] = true
+		} else if key != "" {
+			stray = true // どの宣言列にも当たらない見出し＝改名の徴候
+		}
+	}
+	if !stray {
+		return nil // 列の削除・独自列の追加だけなら報告しない
+	}
+	var out []string
+	for _, c := range def.Columns {
+		if c.Field != "" && !resolved[c.Field] {
+			out = append(out, c.Label)
+		}
+	}
+	return out
+}
+
+// vocabHeadingKeys は形式インスタンスが携帯するスキーマ（表の見出し行・dl の dt）から
+// 鍵を取り出します。鍵の決め方は読み取り経路（VocabTableRows / VocabDLFields）と同じ。
+func vocabHeadingKeys(n *html.Node, def VocabDef) []string {
+	var out []string
+	switch def.Element {
+	case "table":
+		rows := tableRows(n)
+		if len(rows) == 0 {
+			return nil
+		}
+		for _, cell := range rowCells(rows[0]) {
+			key := Attr(cell, "data-field")
+			if key == "" {
+				key = strings.TrimSpace(nodeText(cell))
+			}
+			out = append(out, key)
+		}
+	case "dl":
+		out = dlHeadingKeys(n)
+	case "section":
+		// 業務文書ブロックのヘッダは data-type を持たない直下の <dl>（論点A・案1）。
+		// 明細表は table 形式として別途走査されるのでここでは見ない。
+		out = dlHeadingKeys(FirstVocabChild(n, "dl", ""))
+	}
+	return out
+}
+
+// dlHeadingKeys は dl の項目の鍵（dd の data-field 優先・無ければ dt の表示文字）を返します。
+func dlHeadingKeys(dl *html.Node) []string {
+	if dl == nil {
+		return nil
+	}
+	var out []string
+	currentKey := ""
+	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true, "section": true}, func(n *html.Node) {
+		switch n.Data {
+		case "dt":
+			currentKey = strings.TrimSpace(nodeText(n))
+		case "dd":
+			key := Attr(n, "data-field")
+			if key == "" {
+				key = currentKey
+			}
+			out = append(out, key)
+		}
+	})
+	return out
+}
