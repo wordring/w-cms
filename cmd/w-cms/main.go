@@ -44,9 +44,22 @@ func main() {
 	}
 	defer database.DB.Close()
 
+	// 既存DBの定義が現在の宣言とずれていないか先に見る。ApplySchema は
+	// CREATE TABLE IF NOT EXISTS を流すだけで、**既に在るテーブルの定義変更は
+	// 反映されない**ため、放っておくと起動は成功して保存だけが 500 になる。
+	// cms.db は data/master から再生成できる派生索引なので、作り直すのが正しい。
+	drifted := cms.DriftedSchemaTables(database.DB)
+
 	// プラグインのテーブルを作成する（各ユースケース固有のテーブル）
 	if err := cms.ApplySchema(database.DB); err != nil {
 		log.Fatalf("プラグインスキーマ作成エラー: %v", err)
+	}
+
+	if len(drifted) > 0 {
+		log.Printf("テーブル定義の変更を検出しました（%v）。派生索引を再構築します。", drifted)
+		if err := cms.RebuildDatabase(); err != nil {
+			log.Fatalf("スキーマ変更に伴う再構築でエラー: %v", err)
+		}
 	}
 
 	// DBが空でファイル（data/master）が存在する場合は自動再構築する。

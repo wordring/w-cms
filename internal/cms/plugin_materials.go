@@ -202,12 +202,12 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 判定は page.CanView に集約し、一覧の絞り込みと同じ規則を使う。
 func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialResponse, error) {
 	// 1. そのページ内の受注 client_orders の明細を取得する
+	//    明細が page_id を持つので直接引く。order_no のサブクエリだったころは、
+	//    同じ番号を別ページで使うと他ページの明細まで拾っていた（設計総点検③）。
 	rows, err := database.DB.Query(`
 		SELECT item_id, quantity
 		FROM client_order_items
-		WHERE order_no IN (
-			SELECT order_no FROM client_orders WHERE page_id = ?
-		)
+		WHERE page_id = ?
 	`, pageIDInt)
 	if err != nil {
 		return nil, err
@@ -287,11 +287,13 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	}
 
 	// 3. 同じ page_id に紐づく弊社の発注実績 our_orders の明細を取得し、発注済数を集計する
+	//    JOIN の条件に page_id も入れる。番号だけで結ぶと、同じ番号を使う別ページの
+	//    ヘッダと結合して仕入先が入れ替わりうる（設計総点検③）。
 	ourRows, err := database.DB.Query(`
 		SELECT ooi.item_name, ooi.quantity, oo.supplier_name
 		FROM our_order_items ooi
-		JOIN our_orders oo ON ooi.order_no = oo.order_no
-		WHERE oo.page_id = ?
+		JOIN our_orders oo ON ooi.order_no = oo.order_no AND ooi.page_id = oo.page_id
+		WHERE ooi.page_id = ?
 	`, pageIDInt)
 	if err != nil {
 		return nil, err

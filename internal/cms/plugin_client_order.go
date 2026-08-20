@@ -32,24 +32,31 @@ func (clientOrderPlugin) Name() string { return "client_order" }
 
 func (clientOrderPlugin) Schema() []string {
 	return []string{
+		// 発注書番号はページ内の識別子であって、サイト全体の主キーではない。
+		// 横断UNIQUE だと、同じ番号を使った後勝ちのページが先のページの受注を奪う
+		// （番号が空のときは '' 同士が衝突して、空番号の発注書が全域で1件しか持てない）。
 		`CREATE TABLE IF NOT EXISTS client_orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			order_no TEXT UNIQUE,
+			order_no TEXT,
 			client_name TEXT,
 			pdf_path TEXT,
 			page_id INTEGER,
 			ordered_at DATE,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+			UNIQUE (page_id, order_no)
 		);`,
+		// 明細も page_id を持つ。order_no だけで親と結ぶと、番号が重複したときに
+		// 洗い替えの DELETE が取りこぼし、両ページの明細が同じ番号の下に混ざる。
 		`CREATE TABLE IF NOT EXISTS client_order_items (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			page_id INTEGER,
 			order_no TEXT,
 			item_id TEXT,
 			item_name TEXT,
 			price INTEGER,
 			quantity INTEGER,
 			status TEXT,
-			FOREIGN KEY (order_no) REFERENCES client_orders(order_no) ON DELETE CASCADE
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 	}
 }
@@ -60,10 +67,10 @@ func (clientOrderPlugin) Tables() []string {
 }
 
 func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
-	// 洗い替え: 当該ページの明細→ヘッダの順で削除（明細にはpage_idが無いためサブクエリ）。
+	// 洗い替え: 当該ページの明細→ヘッダの順で削除。明細も page_id を持つので直接消せる
+	// （order_no のサブクエリだと、番号が重複したときに他ページの明細まで巻き込む）。
 	if _, err := tx.Exec(
-		`DELETE FROM client_order_items WHERE order_no IN (SELECT order_no FROM client_orders WHERE page_id = ?)`,
-		pageID); err != nil {
+		`DELETE FROM client_order_items WHERE page_id = ?`, pageID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM client_orders WHERE page_id = ?`, pageID); err != nil {
@@ -74,19 +81,18 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		_, err := tx.Exec(`
 			INSERT INTO client_orders (order_no, client_name, pdf_path, page_id, ordered_at)
 			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(order_no) DO UPDATE SET
+			ON CONFLICT(page_id, order_no) DO UPDATE SET
 				client_name = excluded.client_name,
 				pdf_path    = excluded.pdf_path,
-				page_id     = excluded.page_id,
 				ordered_at  = excluded.ordered_at
 		`, orderNo, clientName, pdfPath, pageID, NullableString(orderedAt))
 		return err
 	}
 	insertItem := func(orderNo, itemID, itemName string, price, quantity int, status string) error {
 		_, err := tx.Exec(`
-			INSERT INTO client_order_items (order_no, item_id, item_name, price, quantity, status)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, orderNo, itemID, itemName, price, quantity, status)
+			INSERT INTO client_order_items (page_id, order_no, item_id, item_name, price, quantity, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, pageID, orderNo, itemID, itemName, price, quantity, status)
 		return err
 	}
 

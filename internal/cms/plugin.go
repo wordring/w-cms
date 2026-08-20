@@ -85,6 +85,56 @@ func ApplySchema(db *sql.DB) error {
 	return nil
 }
 
+// DriftedSchemaTables は、既存DBの定義が現在の宣言とずれているプラグインテーブルを返します。
+//
+// ApplySchema は CREATE TABLE IF NOT EXISTS を流すだけなので、**既に在るテーブルの
+// 定義変更は一切反映されません**（列の追加・UNIQUE の変更など）。放っておくと、
+// 起動は成功して保存だけが "no such column" で 500 になる、という気づきにくい壊れ方を
+// します（設計総点検で「プラグインテーブルにマイグレーション機構が無い」と指摘された点）。
+//
+// cms.db は data/master から再生成できる派生索引なので、ずれを見つけたら作り直すのが
+// 正しい対処です。判定は sqlite_master に保存された CREATE 文と宣言の文字列比較で、
+// 空白の差は吸収します（宣言そのものが元のテーブルを作った文なので、版が同じなら一致する）。
+func DriftedSchemaTables(db *sql.DB) []string {
+	var drifted []string
+	for _, p := range registry {
+		for _, q := range p.Schema() {
+			name := createdTableName(q)
+			if name == "" {
+				continue
+			}
+			var stored string
+			err := db.QueryRow(
+				`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`, name).Scan(&stored)
+			if err != nil {
+				continue // 未作成なら ApplySchema がこれから作る＝ずれではない
+			}
+			if normalizeSQL(stored) != normalizeSQL(q) {
+				drifted = append(drifted, name)
+			}
+		}
+	}
+	return drifted
+}
+
+// createdTableName は CREATE TABLE 文からテーブル名を取り出します。
+func createdTableName(q string) string {
+	f := strings.Fields(strings.ReplaceAll(q, "(", " ("))
+	for i, w := range f {
+		if strings.EqualFold(w, "EXISTS") && i+1 < len(f) {
+			return strings.Trim(f[i+1], "(`\"")
+		}
+	}
+	return ""
+}
+
+// normalizeSQL は空白の差と末尾のセミコロン・IF NOT EXISTS を落として比較可能にします。
+func normalizeSQL(q string) string {
+	q = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(q), ";"))
+	q = strings.ReplaceAll(q, "IF NOT EXISTS ", "")
+	return strings.Join(strings.Fields(q), " ")
+}
+
 // PluginRoutes は RouteProvider を実装する全プラグインのルートを集約して返します。
 // main がこれを走査して mux に登録します。
 func PluginRoutes() []Route {

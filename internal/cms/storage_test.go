@@ -373,8 +373,8 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		t.Fatalf("受注ヘッダー登録エラー: %v", err)
 	}
 	_, err = db.Exec(`
-		INSERT INTO client_order_items (order_no, item_id, item_name, price, quantity, status)
-		VALUES ('PO-A100', 'SHAFT-01', 'シャフトA', 8000, 10, '加工中')
+		INSERT INTO client_order_items (page_id, order_no, item_id, item_name, price, quantity, status)
+		VALUES (2, 'PO-A100', 'SHAFT-01', 'シャフトA', 8000, 10, '加工中')
 	`)
 	if err != nil {
 		t.Fatalf("受注明細登録エラー: %v", err)
@@ -388,8 +388,8 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		t.Fatalf("自社発注ヘッダー登録エラー: %v", err)
 	}
 	_, err = db.Exec(`
-		INSERT INTO our_order_items (order_no, item_name, cost, quantity, status)
-		VALUES ('PO-OUR-001', 'シャフト用鋼材 (S45C)', 2500, 10, '未納品')
+		INSERT INTO our_order_items (page_id, order_no, item_name, cost, quantity, status)
+		VALUES (2, 'PO-OUR-001', 'シャフト用鋼材 (S45C)', 2500, 10, '未納品')
 	`)
 	if err != nil {
 		t.Fatalf("自社発注明細登録エラー: %v", err)
