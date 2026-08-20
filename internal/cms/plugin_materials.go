@@ -17,15 +17,11 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（特殊な値の注入 ＋ 集計API付き）: 部品の構成部材（BOM）
 //
-//   新形式: <table data-type="part-materials"> の行（③計算形式。列は data-field
-//           item-name / cost / supplier-name / quantity。語彙モデル §8.1）
-//   旧形式: <m-material item-name=".." cost=".." supplier-name=".." quantity="..">
-//   部品番号はページ横断メタ（可変タグ）から TagValue で取得（新旧どちらの形式でも効く）
+//   <table data-type="part-materials"> の行（③計算形式。列は data-field
+//   item-name / cost / supplier-name / quantity。語彙モデル §8.1）
+//   部品番号はページ横断メタ（可変タグ）から TagValue で取得
 //
 //   → part_materials（part_id はページの「部品番号」タグから全行に注入）
-//
-// 移行第2段（語彙モデル §8.4-2）で読み先を新形式の表へ切り替えた。旧 <m-material> の
-// 読み取りは**変換ツールが安定するまでの短期の保険**（同書 §8.3）。
 //
 // さらに RouteProvider を実装し、GET /api/required-materials（部材手配計算API）を
 // 提供します（Tier 2: 集計ロジックはコードプラグインとして持つ）。
@@ -56,18 +52,6 @@ func (materialsPlugin) Schema() []string {
 
 func (materialsPlugin) Tables() []string {
 	return []string{"part_materials"}
-}
-
-// Tags は扱うカスタム要素の属性契約。
-// m-required-materials は同期先テーブルを持たない表示専用要素だが、page-id は
-// フロントが集計APIを呼ぶのに必要なので保存されなければならない（属性契約に含める）。
-func (materialsPlugin) Tags() []TagSpec {
-	return []TagSpec{
-		{Element: "m-material", Attributes: []string{
-			"item-name", "cost", "supplier-name", "quantity",
-		}},
-		{Element: "m-required-materials", Attributes: []string{"page-id"}},
-	}
 }
 
 func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
@@ -106,7 +90,7 @@ func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 // Field／Label）を通じて機械キーへ正規化される——見出しを「単価（税抜）」等へ
 // 改名しても data-field があれば壊れない。
 // 数値（cost / quantity）は語彙の正規化（¥・桁区切り・全角の吸収）を通して読む。
-// quantity の空セルは旧 <m-material> の既定と同じく 1 として扱う。
+// quantity の空セルは 1 として扱う（旧 <m-material> の既定を引き継いだ値）。
 func syncMaterialsTable(table *html.Node, insert func(string, int, string, int) error) error {
 	def, _ := VocabDefByType("part-materials")
 	rows := tableRows(table)

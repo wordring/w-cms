@@ -127,7 +127,7 @@ func TestReplaceBlockAmbiguous(t *testing.T) {
 // TestSanitizeKeepsBlockID は、ブロックIDがサニタイズで落ちないことを検証します。
 // 落ちるとブロックの同一性が静かに失われ、以後ずっと全文保存に戻ってしまいます。
 func TestSanitizeKeepsBlockID(t *testing.T) {
-	got := Sanitize(`<p data-id="abc123">本文</p><m-tag data-id="def456" name="n" value="v"></m-tag>`)
+	got := Sanitize(`<p data-id="abc123">本文</p><dl data-id="def456" data-type="tags"><dt>n</dt><dd>v</dd></dl>`)
 	for _, want := range []string{`data-id="abc123"`, `data-id="def456"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("ブロックIDが除去されました（%q）: %s", want, got)

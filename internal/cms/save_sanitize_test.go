@@ -171,14 +171,21 @@ func TestSaveKeepsNormalContentIntact(t *testing.T) {
 	}
 
 	// updateHtmlPreview が実際に出力する形（改行・インデント込み）を模した本文
-	normal := "<m-tag name=\"発注元\" value=\"株式会社テスト\"></m-tag>\n" +
+	normal := "<dl data-type=\"tags\">\n" +
+		"    <dt>発注元</dt>\n" +
+		"    <dd>株式会社テスト</dd>\n" +
+		"</dl>\n" +
 		"<h1>各マシーン用部品の調達</h1>\n" +
 		"<p>以下の通り発注しました。</p>\n" +
-		"<m-file src=\"po.pdf\" name=\"発注書.pdf\">\n" +
-		"    <m-client-order order-no=\"PO-1\" client-name=\"得意先\" ordered-at=\"2026-06-18\">\n" +
-		"        <m-item item-id=\"A-1\" item-name=\"側板\" quantity=\"20\" status=\"未着手\" price=\"1200\"></m-item>\n" +
-		"    </m-client-order>\n" +
-		"</m-file>"
+		"<section data-type=\"file\" data-src=\"po.pdf\">\n" +
+		"    <p>📎 <a href=\"/data/master/00/000043/po.pdf\">発注書.pdf</a></p>\n" +
+		"    <section data-type=\"client-order\">\n" +
+		"        <dl>\n" +
+		"            <dt>発注書番号</dt>\n" +
+		"            <dd data-field=\"order-no\">PO-1</dd>\n" +
+		"        </dl>\n" +
+		"    </section>\n" +
+		"</section>"
 
 	resp := postSave(t, id, normal)
 

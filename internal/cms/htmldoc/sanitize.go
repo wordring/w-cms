@@ -1,11 +1,13 @@
 // Package htmldoc は、本文HTMLを許可リスト方式でサニタイズする純粋なHTML部品です。
 //
 // このパッケージは**アプリのドメイン（プラグイン・レジストリ）を一切知りません**。
-// 構造HTML（structuralElements）の安全性だけを自分で持ち、カスタム要素の語彙は
-// 利用側が New() の引数（[]TagSpec）として**注入**します。依存は
-// `cms → htmldoc` の一方向で、逆向きはありません（かつて sanitize.go が
-// cms 内で PluginTags() を直接呼んでいた循環はこの注入で解消した。
-// docs/変更履歴.md 2026-08-06「やらなかったこと」の選択肢(b)）。
+// 本文で扱えるHTMLの語彙（structuralElements＋`data-*` マーカー）はここが唯一の正本で、
+// 依存は `cms → htmldoc` の一方向、逆向きはありません。
+//
+// かつては各プラグインが宣言したカスタム要素 <m-*> の語彙を New() の引数として
+// 注入していました（cms 内で PluginTags() を呼ぶ循環を解くための反転。変更履歴
+// 2026-08-06 の選択肢(b)）。語彙モデルへの移行完了（2026-08-20）でカスタム要素が
+// ゼロになり、注入そのものが不要になっています。
 package htmldoc
 
 import (
@@ -32,17 +34,8 @@ import (
 // 冪等性（Sanitize(Sanitize(x)) == Sanitize(x)）を満たすことが、保存時エコーバックが
 // 収束するための前提条件です（cms パッケージの sanitize_test.go で検証）。
 //
-// 許可リストは docs/【一覧】カスタムタグ.md（現行実装の鏡）と同期させること。
-// カスタム要素・属性を増減したら本ファイルと当該ドキュメントを同時に更新します。
+// 許可リストを増減したら docs/本文サニタイズ設計.md §5 を同時に更新すること。
 // ─────────────────────────────────────────────────────────────────────────
-
-// TagSpec は1つの要素の「属性契約」です（要素名と、その要素に許される属性の全体）。
-// カスタム要素の語彙はこの形で New() へ注入されます。アプリ側での宣言の意味づけは
-// cms パッケージの TagSpec（本型のエイリアス）のコメントを参照。
-type TagSpec struct {
-	Element    string   // 要素名（例: "m-client-order"）
-	Attributes []string // この要素に許される属性
-}
 
 // dangerousElements は部分木ごと削除する要素です（中身のテキストも残しません）。
 // 理由は docs/本文サニタイズ設計.md §5.1 に要素ごとに記載。
@@ -94,8 +87,9 @@ const BlockIDAttr = "data-id"
 var globalAttributes = map[string]bool{BlockIDAttr: true}
 
 // structuralElements は「要素名 → 許可する属性の集合」のうち、**構造HTML**の分です。
-// サニタイザはHTMLの安全性だけを知り、ドメインの語彙（カスタム要素 <m-*>）は持ちません。
-// カスタム要素はすべてプラグインが Tags() で宣言し、New() が注入を受けて合成します。
+// サニタイザはHTMLの安全性だけを知り、ドメインの語彙（どの `data-type` がどんな形式か）は
+// 持ちません。形式の宣言は①語彙レジストリ（cms/vocab.go）の担当で、ここは
+// 「マーカー属性を不活性な値として通す」ところまでを受け持ちます。
 //
 // 方針は「**タグは寛容・属性は厳格**」。要素は文書として意味を持つ標準HTMLを危険でない限り
 // 許可し、属性は必要なものだけ許可する（docs/本文サニタイズ設計.md §5.0）。
@@ -173,7 +167,7 @@ var structuralElements = map[string]map[string]bool{
 	"track":   {"src": true, "kind": true, "srclang": true, "label": true},
 }
 
-// 注: 旧方式の <m-tag name="親ページID"> を取り込まない規則は、m-tag を所有する
+// 注: 「親ページID」というタグ名を取り込まない規則は、その語彙を所有する
 // plugin_page_tags.go（cms パッケージ）が持ちます。サニタイザはHTMLの安全性だけを見て、
 // カスタム要素の意味には立ち入りません。
 
@@ -183,26 +177,19 @@ type Sanitizer struct {
 	allowed map[string]map[string]bool
 }
 
-// New は「構造HTML ∪ 注入されたカスタム要素の語彙」を合成したサニタイザを返します。
-// custom には各プラグインが宣言した TagSpec を渡します（nil なら構造HTMLのみ）。
-// 属性を「読む側」が「許可」も宣言する構図は変わらず、「読むのに許可し忘れる」不整合は
-// 起きません（宣言の集約は利用側＝cms パッケージの責務）。
-func New(custom []TagSpec) *Sanitizer {
-	merged := make(map[string]map[string]bool, len(structuralElements)+len(custom))
+// New は構造HTMLの語彙を持つサニタイザを返します。
+//
+// かつては各プラグインが宣言したカスタム要素の語彙を引数で**注入**していましたが、
+// 語彙モデルへの移行完了（2026-08-20）でカスタム要素はゼロになり、本文の語彙は
+// この structuralElements ＋ `data-*` マーカーだけになりました。
+func New() *Sanitizer {
+	merged := make(map[string]map[string]bool, len(structuralElements))
 	for el, attrs := range structuralElements {
 		set := make(map[string]bool, len(attrs))
 		for a := range attrs {
 			set[a] = true
 		}
 		merged[el] = set
-	}
-	for _, spec := range custom {
-		if merged[spec.Element] == nil {
-			merged[spec.Element] = map[string]bool{}
-		}
-		for _, a := range spec.Attributes {
-			merged[spec.Element][a] = true
-		}
 	}
 	return &Sanitizer{allowed: merged}
 }

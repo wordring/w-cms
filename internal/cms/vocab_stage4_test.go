@@ -2,13 +2,10 @@ package cms
 
 import (
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
-	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -97,42 +94,5 @@ func TestRenderComputedViewsNoMarker(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000060", nil)
 	if out := RenderComputedViews(req, 60, body); out != body {
 		t.Errorf("マーカーの無い本文が変化しました:\ngot  %q\nwant %q", out, body)
-	}
-}
-
-// TestMigrateViewMarkers は一括変換が旧 <m-child-list>・<m-required-materials> を
-// 空のビューマーカーへ変換することを検証します（data-id 引き継ぎ・page-id 属性の破棄）。
-func TestMigrateViewMarkers(t *testing.T) {
-	setupSaveTest(t)
-
-	const id = "000063"
-	body := `<h1>ビューのページ</h1>` +
-		`<m-child-list data-id="cl01"></m-child-list>` +
-		`<m-required-materials page-id="000063"></m-required-materials>`
-	postSave(t, id, body)
-
-	converted, _, err := MigrateVocab()
-	if err != nil {
-		t.Fatalf("MigrateVocabエラー: %v", err)
-	}
-	if converted != 1 {
-		t.Errorf("変換ページ数: got %d want 1", converted)
-	}
-
-	raw, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
-	if err != nil {
-		t.Fatalf("正本の読み込みエラー: %v", err)
-	}
-	content := string(raw)
-	for _, want := range []string{
-		`<section data-type="child-list" data-id="cl01"></section>`,
-		`<section data-type="required-materials"></section>`,
-	} {
-		if !strings.Contains(content, want) {
-			t.Errorf("変換後の正本に %q がありません:\n%s", want, content)
-		}
-	}
-	if strings.Contains(content, "<m-") {
-		t.Errorf("旧要素が残っています:\n%s", content)
 	}
 }

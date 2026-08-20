@@ -113,19 +113,6 @@ async function rebuildDatabase() {
   else { el.style.color = '#dc2626'; el.textContent = '失敗: ' + await res.text(); }
 }
 
-async function migrateVocab() {
-  if (!confirm('旧タグ（m-tag・m-material）を標準HTML（data-type 付きの dl・表）へ一括変換します。実行前に data/master をバックアップします。よろしいですか？')) return;
-  const el = document.getElementById('migrate-vocab-msg');
-  el.style.color = '#64748b'; el.textContent = '変換中...';
-  const res = await api('POST', '/api/migrate-vocab');
-  if (res.ok) {
-    const d = await res.json();
-    el.style.color = '#16a34a';
-    el.textContent = `${d.converted} ページを変換しました（バックアップ: ${d.backup}）。`;
-    loadAudit();
-  } else { el.style.color = '#dc2626'; el.textContent = '失敗: ' + await res.text(); }
-}
-
 function val(id) { return document.getElementById(id).value.trim(); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function msg(id, res) {
@@ -142,7 +129,6 @@ function bindActions() {
   document.getElementById('gm-add').addEventListener('click', () => groupMember('add'));
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
-  document.getElementById('migrate-vocab-btn').addEventListener('click', migrateVocab);
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
 
   document.querySelector('#users-table tbody').addEventListener('click', e => {

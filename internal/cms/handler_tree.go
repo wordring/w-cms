@@ -140,7 +140,7 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
 	//    子ページ一覧は左サイドパネル（クローム）が担うため、本文には埋め込まない
-	//    （必要なら <m-child-list> を本文に手動で追加できる）。
+	//    （必要なら子ページ一覧のビュー section[data-type="child-list"] を後から挿せる）。
 	var htmlBuilder strings.Builder
 	htmlBuilder.WriteString("<h1>新しいページ</h1>\n")
 	htmlBuilder.WriteString("<p>ここから編集を始めてください。</p>")

@@ -921,8 +921,6 @@
         editorContent.innerHTML = '';
         Array.from(doc.body.children).forEach(child => {
             if (child.tagName.toLowerCase() === 'script') return;
-            // 旧形式の親ページIDタグ（本文中の m-tag）はサイドカーへ移行済みのため取り込まない。
-            if (child.tagName.toLowerCase() === 'm-tag' && child.getAttribute('name') === '親ページID') return;
             editorContent.appendChild(child);
         });
         initBlocks();
