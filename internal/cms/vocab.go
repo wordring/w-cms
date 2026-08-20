@@ -82,6 +82,16 @@ type VocabDef struct {
 	// 2026-08-19: サーバー事前描画）。エディタは骨格＝空 section を挿し、
 	// 中身（.vocab-chrome）は保存しない。
 	View bool `json:"view,omitempty"`
+
+	// RequiresTag は「この形式が③計算で使う、ページ横断メタ（<dl data-type="tags"）の
+	// 見出し」です。部材定義が部品番号を鍵に受注明細と突き合わせるように、形式の外に
+	// 鍵がある場合に宣言します。
+	//
+	// これが無かったころ、鍵は plugin_materials.go に直書きされた日本語の魔法文字列
+	// でした。見出しを改名すると集計が丸ごと空になるのに告知はゼロ——「Field を持たない
+	// 列は改名しても壊れない」という UnresolvedVocabFields の前提が、ここだけ破れていた。
+	// 宣言にすることで、読み取りと告知が同じ1箇所を見る。
+	RequiresTag string `json:"requires_tag,omitempty"`
 }
 
 // vocabRegistry が宣言テーブルの本体です。語彙を増やすときはここへ1件足します。
@@ -113,6 +123,9 @@ var vocabRegistry = []VocabDef{
 		Category:    "業務",
 		Icon:        "🔩",
 		Element:     "table",
+		// 部材の行そのものには部品番号が無く、ページ横断メタの「部品番号」タグが
+		// ページ全体の鍵になる（plugin_materials.go の Sync が全行へ注入する）。
+		RequiresTag: "部品番号",
 		Columns: []VocabColumn{
 			{Field: "item-name", Label: "部材名", Type: ColText},
 			{Field: "cost", Label: "単価", Type: ColNumber},
@@ -443,6 +456,9 @@ func UnresolvedVocabFields(htmlStr string) []string {
 		return nil
 	}
 	seen := map[string]bool{}
+	// 形式の外にある鍵（RequiresTag）を使う形式が本文にあるか。あるなら、その鍵が
+	// 実際に引けることまで確かめる。
+	needsTag := map[string]VocabDef{}
 	for _, root := range nodes {
 		WalkElements(root, func(n *html.Node) {
 			def, ok := VocabDefByType(Attr(n, "data-type"))
@@ -452,7 +468,30 @@ func UnresolvedVocabFields(htmlStr string) []string {
 			for _, label := range unresolvedFieldsIn(n, def) {
 				seen[def.DisplayName+": "+label] = true
 			}
+			if def.RequiresTag != "" {
+				needsTag[def.Type] = def
+			}
 		})
+	}
+	// tags は自由語なので、鍵を列として宣言すると全ページで誤検知になる
+	// （担当者しか書いていないページでも「部品番号が無い」と鳴ってしまう）。
+	// 報告するのは、宣言列と同じく**改名の徴候があるとき**だけ——すなわち
+	// 「その形式が本文にあり」「タグを実際に使っており」「それでも鍵が引けない」場合。
+	// タグをまだ1つも書いていない書きかけのページでは黙る（列を消しただけなら
+	// 報告しない、というこの関数の流儀に合わせる）。
+	if len(needsTag) > 0 && hasTagsList(nodes) {
+		for _, def := range needsTag {
+			found := false
+			for _, root := range nodes {
+				if TagValue(root, def.RequiresTag) != "" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				seen[def.DisplayName+": "+def.RequiresTag] = true
+			}
+		}
 	}
 	if len(seen) == 0 {
 		return nil
@@ -463,6 +502,23 @@ func UnresolvedVocabFields(htmlStr string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// hasTagsList は本文にページ横断メタ（<dl data-type="tags">）が1つでもあるかを返します。
+// RequiresTag の告知を「タグを使っているのに鍵が引けない」場合に限るための徴候判定。
+func hasTagsList(nodes []*html.Node) bool {
+	found := false
+	for _, root := range nodes {
+		WalkElements(root, func(n *html.Node) {
+			if n.Data == "dl" && Attr(n, "data-type") == "tags" {
+				found = true
+			}
+		})
+		if found {
+			return true
+		}
+	}
+	return false
 }
 
 // unresolvedFieldsIn は1つの形式インスタンスについて、解決できなかった宣言列のラベルを返します。
