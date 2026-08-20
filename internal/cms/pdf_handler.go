@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 
 	"bytes"
@@ -95,6 +96,13 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// PDFの追加はページ内容の変更なので write 権限を要求する
 	if !page.RequirePageWrite(w, r, pageID) {
+		return
+	}
+	// 添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）。
+	// 本文編集と同じ編集ロックで直列化する（editlock/handler.go の宣言どおり）。
+	// 解析（parse-pdf）は永続状態を変えない（結果はDOMへ足すだけで、保存は
+	// /api/save がロック検証する）ので、そちらは通さない。
+	if !editlock.RequireEditLock(w, r, pageID) {
 		return
 	}
 
