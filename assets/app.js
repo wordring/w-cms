@@ -630,7 +630,7 @@
     function notifyUnknownTypes(types) {
         if (!Array.isArray(types) || !types.length) return;
         notify('未定義の種別 ' + types.map(t => '「' + t + '」').join('・') +
-            ' の表・リストがあります（そのまま保存し、検索の索引にも載ります）。',
+            ' の表・リスト・ブロックがあります（そのまま保存しますが、計算には使われません）。',
             { type: 'info', duration: 8000, id: 'unknown-vocab' });
     }
 
