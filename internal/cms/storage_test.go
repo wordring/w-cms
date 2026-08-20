@@ -146,12 +146,12 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 			<p>📎 <a href="/data/master/00/00002/attachments/po_test.pdf">発注書.pdf</a></p>
 			<section data-type="client-order">
 				<dl>
-					<dt>発注書番号</dt><dd data-field="order-no">PO-T100</dd>
-					<dt>発注元</dt><dd data-field="client-name">トーア</dd>
-					<dt>発注日</dt><dd data-field="ordered-at">2026-06-18</dd>
+					<dt>発注書番号</dt><dd>PO-T100</dd>
+					<dt>発注元</dt><dd>トーア</dd>
+					<dt>発注日</dt><dd>2026-06-18</dd>
 				</dl>
 				<table data-type="client-order-items"><tbody>
-					<tr><th data-field="item-id">品番</th><th data-field="item-name">品名</th><th data-field="price">単価</th><th data-field="quantity">数量</th><th data-field="status">状態</th></tr>
+					<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>
 					<tr><td>SHAFT-01</td><td>シャフトA</td><td>8000</td><td>10</td><td>未着手</td></tr>
 					<tr><td>SHAFT-02</td><td>シャフトB</td><td>12000</td><td>5</td><td>加工中</td></tr>
 				</tbody></table>
@@ -531,9 +531,9 @@ func TestRebuildDatabase(t *testing.T) {
 	}
 	htmlContent := `<h1>受注ページ</h1>
 <section data-type="client-order">
-	<dl><dt>発注書番号</dt><dd data-field="order-no">PO-RB1</dd><dt>発注元</dt><dd data-field="client-name">トーア</dd></dl>
+	<dl><dt>発注書番号</dt><dd>PO-RB1</dd><dt>発注元</dt><dd>トーア</dd></dl>
 	<table data-type="client-order-items"><tbody>
-		<tr><th data-field="item-id">品番</th><th data-field="item-name">品名</th><th data-field="price">単価</th><th data-field="quantity">数量</th><th data-field="status">状態</th></tr>
+		<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>
 		<tr><td>SHAFT-01</td><td>シャフトA</td><td>8000</td><td>3</td><td>未着手</td></tr>
 	</tbody></table>
 </section>`

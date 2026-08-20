@@ -11,7 +11,7 @@ import (
 // （docs/【考察】語彙モデル.md §9 決定ログ）を満たすことを検証します。
 //   - data-type はレジストリ全体で一意・kebab-case
 //   - element は table / dl のどちらか
-//   - 列は1つ以上・表示ラベル必須・(data-type, data-field) のセットで一意
+//   - 列は1つ以上・表示ラベル必須・(data-type, 機械キー Field) のセットで一意
 //   - enum 列は選択肢を持つ
 func TestVocabRegistryIsWellFormed(t *testing.T) {
 	seen := map[string]bool{}
@@ -60,10 +60,10 @@ func TestVocabRegistryIsWellFormed(t *testing.T) {
 			}
 			if c.Field != "" {
 				if !kebabCaseRe.MatchString(c.Field) {
-					t.Errorf("%s: data-field %q が kebab-case ではありません", d.Type, c.Field)
+					t.Errorf("%s: 機械キー %q が kebab-case ではありません", d.Type, c.Field)
 				}
 				if fields[c.Field] {
-					t.Errorf("%s: data-field %q が形式内で重複しています", d.Type, c.Field)
+					t.Errorf("%s: 機械キー %q が形式内で重複しています", d.Type, c.Field)
 				}
 				fields[c.Field] = true
 			}
@@ -137,18 +137,18 @@ func TestNormalizeValue(t *testing.T) {
 	}
 }
 
-// TestSanitizeKeepsVocabMarkers は data-type / data-field が決定ログの許可範囲
-// （data-type→table・dl・th、data-field→th・dd）で保存されることを検証します。
+// TestSanitizeKeepsVocabMarkers は data-type が決定ログの許可範囲
+// （data-type→table・dl・section・th）で保存されることを検証します。
 func TestSanitizeKeepsVocabMarkers(t *testing.T) {
-	in := `<table data-type="inspection-record"><tr><th data-field="item-id" data-type="date">納期</th></tr><tr><td>x</td></tr></table>` +
-		`<dl data-type="tags"><dt>希望納期</dt><dd data-field="due">2026-07-10</dd></dl>`
+	in := `<table data-type="inspection-record"><tr><th data-type="date">納期</th></tr><tr><td>x</td></tr></table>` +
+		`<dl data-type="tags"><dt>希望納期</dt><dd>2026-07-10</dd></dl>`
 	out := Sanitize(in)
 
 	for _, want := range []string{
 		`<table data-type="inspection-record">`,
-		`<th data-field="item-id" data-type="date">`,
+		`<th data-type="date">`,
 		`<dl data-type="tags">`,
-		`<dd data-field="due">`,
+		`<dd>2026-07-10</dd>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("マーカー属性が失われています: %q が見つかりません\nout=%s", want, out)
@@ -156,8 +156,27 @@ func TestSanitizeKeepsVocabMarkers(t *testing.T) {
 	}
 }
 
+// TestSanitizeDropsDataField は撤去した機械キーの属性が**どの要素からも**除去される
+// ことを検証します。かつては th・dd で許可していたが、項目の鍵は見出しの表示文字が
+// 運ぶ（語彙モデル §5.1「見える文字がすべて」）ため 2026-08-20 に撤去した。
+func TestSanitizeDropsDataField(t *testing.T) {
+	in := `<table data-type="part-materials"><tr><th data-field="cost">単価</th></tr></table>` +
+		`<dl data-type="tags"><dt>担当</dt><dd data-field="owner">田中</dd></dl>`
+	out := Sanitize(in)
+
+	if strings.Contains(out, "data-field") {
+		t.Errorf("撤去した data-field が残っています: %s", out)
+	}
+	// 属性だけが落ち、見える文字（＝鍵と値）は残る
+	for _, want := range []string{`<th>単価</th>`, `<dd>田中</dd>`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("表示文字が失われています: %q / out=%s", want, out)
+		}
+	}
+}
+
 // TestSanitizeDropsVocabMarkersOnOtherElements は許可範囲**外**の要素に付いた
-// data-type / data-field が除去されることを検証します（「属性は厳格」の維持。
+// data-type が除去されることを検証します（「属性は厳格」の維持。
 // 全要素共通の例外は data-id のみ）。
 func TestSanitizeDropsVocabMarkersOnOtherElements(t *testing.T) {
 	// section は論点A採用（2026-08-19）で data-type の許可範囲に入ったため対象外

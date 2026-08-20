@@ -59,13 +59,18 @@ func TestTagValueFromDL(t *testing.T) {
 		body string
 	}{
 		{"dt の表示文字", `<dl data-type="tags"><dt>部品番号</dt><dd>SHAFT-01</dd></dl>`},
-		{"data-field優先", `<dl data-type="tags"><dt>品番</dt><dd data-field="部品番号">SHAFT-01</dd></dl>`},
 	}
 	for _, c := range cases {
 		root := mustParse(t, c.body)
 		if got := TagValue(root, "部品番号"); got != "SHAFT-01" {
 			t.Errorf("%s: TagValue = %q, want SHAFT-01", c.name, got)
 		}
+	}
+
+	// 機械キーの属性は撤去済み。残っていても鍵にはならず、dt の表示文字だけを見る。
+	stale := mustParse(t, `<dl data-type="tags"><dt>品番</dt><dd data-field="部品番号">SHAFT-01</dd></dl>`)
+	if got := TagValue(stale, "部品番号"); got != "" {
+		t.Errorf("撤去した data-field が鍵として読まれています: %q", got)
 	}
 
 	legacy := mustParse(t, `<m-tag name="部品番号" value="SHAFT-01"></m-tag>`)
@@ -75,7 +80,7 @@ func TestTagValueFromDL(t *testing.T) {
 }
 
 // TestPartMaterialsFromTable は新形式 <table data-type="part-materials"> が
-// part_materials へ同期されることを検証します（data-field と見出しラベルの両解決・
+// part_materials へ同期されることを検証します（見出しラベルからの解決・
 // 数値の正規化・quantity 空セルの既定値 1）。
 func TestPartMaterialsFromTable(t *testing.T) {
 	setupSaveTest(t)
@@ -83,8 +88,8 @@ func TestPartMaterialsFromTable(t *testing.T) {
 	const id = "000041"
 	body := `<dl data-type="tags"><dt>部品番号</dt><dd>SHAFT-01</dd></dl>` +
 		`<table data-type="part-materials"><tbody>` +
-		// 1〜2列目は data-field、3〜4列目は見出しラベルで解決（レジストリの Label 経由）
-		`<tr><th data-field="item-name">部材名</th><th data-field="cost">単価（税抜）</th><th>仕入先</th><th>数量</th></tr>` +
+		// 列は見出しの表示文字からレジストリの Label 経由で機械キーへ解決される
+		`<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>` +
 		`<tr><td>丸鋼材</td><td>¥8,000</td><td>大同特殊鋼</td><td>2</td></tr>` +
 		`<tr><td>ベアリング</td><td>500</td><td>NSK</td><td></td></tr>` + // quantity 空 → 1
 		`</tbody></table>`

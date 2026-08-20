@@ -865,12 +865,11 @@ body[edit-mode] #editor-content dl[data-type] {
 }
 
 /* 機械属性のハイライト（語彙モデル §5.1・決定ログ）:
- * data-field / th[data-type] が付いた見出し・値は、見えている文字が鍵・型として
- * 使われていない（属性が優先している）ことを編集モードで示す。
- * 属性セレクタなので、上書きを起こす属性自体が印のトリガーになり表示と実態がずれない。 */
-body[edit-mode] #editor-content th[data-field],
-body[edit-mode] #editor-content th[data-type],
-body[edit-mode] #editor-content dd[data-field] {
+ * th[data-type]（列型の明示）が付いた見出しは、見えている文字から推論した型ではなく
+ * 属性の型が使われていることを編集モードで示す。
+ * 属性セレクタなので、上書きを起こす属性自体が印のトリガーになり表示と実態がずれない。
+ * 鍵を上書きする属性（data-field）は 2026-08-20 に撤去したので、残るのは型だけ。 */
+body[edit-mode] #editor-content th[data-type] {
     background: #fef3c7;
 }
 

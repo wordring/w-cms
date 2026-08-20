@@ -98,11 +98,8 @@ func syncTagsDL(dl *html.Node, insert func(name, value string) error) error {
 		case "dt":
 			currentKey = strings.TrimSpace(nodeText(n))
 		case "dd":
-			key := Attr(n, "data-field") // ③計算形式の機械キーがあれば優先（②と同じ規則）
-			if key == "" {
-				key = currentKey
-			}
-			firstErr = insert(key, strings.TrimSpace(nodeText(n)))
+			// 鍵は直前の dt の表示文字（自由語）。
+			firstErr = insert(currentKey, strings.TrimSpace(nodeText(n)))
 		}
 	})
 	return firstErr

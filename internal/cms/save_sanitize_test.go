@@ -112,7 +112,7 @@ func TestSaveSanitizesAndEchoesBack(t *testing.T) {
 //
 // かつて item-name がサニタイズ許可リストから漏れており、保存のたびに消えて
 // supplier_estimates.item_name が空になっていた。その回帰防止（現形式では
-// data-type / data-field / data-src の許可が同じ役割を担う）。
+// data-type / data-src の許可が同じ役割を担う）。
 func TestSaveKeepsEstimateAttributes(t *testing.T) {
 	db := setupSaveTest(t)
 
@@ -124,10 +124,10 @@ func TestSaveKeepsEstimateAttributes(t *testing.T) {
 	// 業務ブロックは容器 section[data-type="file"] の中身。pdf_path は容器側から拾われる。
 	body := `<section data-type="file" data-src="m.pdf"><p>📎 <a href="/data/master/00/000044/m.pdf">見積書.pdf</a></p>` +
 		`<dl data-type="supplier-estimate">` +
-		`<dt>部材名</dt><dd data-field="item-name">側板用鋼材</dd>` +
-		`<dt>仕入先</dt><dd data-field="supplier-name">東邦金属工業</dd>` +
-		`<dt>見積金額</dt><dd data-field="cost">500</dd>` +
-		`<dt>見積日</dt><dd data-field="estimated-at">2026-06-16</dd>` +
+		`<dt>部材名</dt><dd>側板用鋼材</dd>` +
+		`<dt>仕入先</dt><dd>東邦金属工業</dd>` +
+		`<dt>見積金額</dt><dd>500</dd>` +
+		`<dt>見積日</dt><dd>2026-06-16</dd>` +
 		`</dl></section>`
 	resp := postSave(t, id, body)
 
@@ -182,7 +182,7 @@ func TestSaveKeepsNormalContentIntact(t *testing.T) {
 		"    <section data-type=\"client-order\">\n" +
 		"        <dl>\n" +
 		"            <dt>発注書番号</dt>\n" +
-		"            <dd data-field=\"order-no\">PO-1</dd>\n" +
+		"            <dd>PO-1</dd>\n" +
 		"        </dl>\n" +
 		"    </section>\n" +
 		"</section>"

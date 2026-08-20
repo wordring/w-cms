@@ -11,18 +11,18 @@ import (
 
 // TestClientOrderFromSection は新形式 <section data-type="client-order"> が
 // client_orders / client_order_items へ同期されることを検証します
-// （ヘッダ dl の data-field・明細表・容器からの pdf_path・数値の正規化）。
+// （ヘッダ dl の項目・明細表・容器からの pdf_path・数値の正規化）。
 func TestClientOrderFromSection(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000050"
 	body := `<section data-type="file" data-src="po.pdf"><p>📎 <a href="/data/master/00/000050/po.pdf">発注書.pdf</a></p>` +
 		`<section data-type="client-order">` +
-		`<dl><dt>発注書番号</dt><dd data-field="order-no">PO-A100</dd>` +
-		`<dt>発注元</dt><dd data-field="client-name">トーア</dd>` +
-		`<dt>発注日</dt><dd data-field="ordered-at">2026-06-18</dd></dl>` +
+		`<dl><dt>発注書番号</dt><dd>PO-A100</dd>` +
+		`<dt>発注元</dt><dd>トーア</dd>` +
+		`<dt>発注日</dt><dd>2026-06-18</dd></dl>` +
 		`<table data-type="client-order-items"><tbody>` +
-		`<tr><th data-field="item-id">品番</th><th data-field="item-name">品名</th><th data-field="price">単価</th><th data-field="quantity">数量</th><th data-field="status">状態</th></tr>` +
+		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
 		`<tr><td>SHAFT-01</td><td>シャフト</td><td>¥8,000</td><td>10</td><td>未着手</td></tr>` +
 		`<tr><td>GEAR-2</td><td>ギア</td><td>500</td><td></td><td>加工中</td></tr>` +
 		`</tbody></table></section></section>`
@@ -63,13 +63,13 @@ func TestEstimatesFromDL(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000051"
-	body := `<dl data-type="our-estimate"><dt>品番</dt><dd data-field="item-id">SHAFT-01</dd>` +
-		`<dt>顧客</dt><dd data-field="client-name">トーア</dd>` +
-		`<dt>見積金額</dt><dd data-field="price">¥12,000</dd>` +
-		`<dt>見積日</dt><dd data-field="estimated-at">2026-06-01</dd></dl>` +
-		`<dl data-type="supplier-estimate"><dt>部材名</dt><dd data-field="item-name">丸鋼材</dd>` +
-		`<dt>仕入先</dt><dd data-field="supplier-name">大同</dd>` +
-		`<dt>見積金額</dt><dd data-field="cost">3000</dd></dl>`
+	body := `<dl data-type="our-estimate"><dt>品番</dt><dd>SHAFT-01</dd>` +
+		`<dt>顧客</dt><dd>トーア</dd>` +
+		`<dt>見積金額</dt><dd>¥12,000</dd>` +
+		`<dt>見積日</dt><dd>2026-06-01</dd></dl>` +
+		`<dl data-type="supplier-estimate"><dt>部材名</dt><dd>丸鋼材</dd>` +
+		`<dt>仕入先</dt><dd>大同</dd>` +
+		`<dt>見積金額</dt><dd>3000</dd></dl>`
 
 	if err := SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)

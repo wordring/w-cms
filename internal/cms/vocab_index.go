@@ -20,7 +20,7 @@ import (
 // 本文の語彙も所有しません（読むのはマーカー付きの標準HTMLだけ）。
 //
 // 鍵と型の決定は文書自身が携帯するスキーマ（見出し行）に従います（同書 §5.1）:
-//   - 鍵 = data-field があればその値、無ければ見出し（th / dt）のテキスト
+//   - 鍵 = 見出し（th / dt）の表示文字
 //   - 型 = th の data-type 明示 > レジストリ宣言 > 語→型推論辞書 > text
 // 正規化値（norm_value）は解釈できた値だけ**併記**し、生テキスト（value）が
 // 常に正本です。未知の data-type もそのまま索引に載ります（オプトインの規約は
@@ -115,10 +115,7 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, def Vo
 	// 見出し行 → 列スキーマ（鍵と型）を解決する
 	var cols []vocabColumn
 	for _, cell := range rowCells(rows[0]) {
-		key := Attr(cell, "data-field")
-		if key == "" {
-			key = strings.TrimSpace(nodeText(cell))
-		}
+		key := strings.TrimSpace(nodeText(cell))
 		cols = append(cols, vocabColumn{key: key, typ: resolveColumnType(cell, def, key)})
 	}
 
@@ -151,10 +148,7 @@ func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, def Vocab
 		case "dt":
 			currentKey = strings.TrimSpace(nodeText(n))
 		case "dd":
-			key := Attr(n, "data-field") // ③計算形式の機械キー（骨格生成時に自動付与）が優先
-			if key == "" {
-				key = currentKey
-			}
+			key := currentKey // 鍵は直前の dt の表示文字
 			if key == "" {
 				return // dt より前の dd は鍵が決まらない
 			}
@@ -238,7 +232,7 @@ func walkSkippingNested(root *html.Node, skip map[string]bool, fn func(*html.Nod
 
 // ── ③計算プラグイン向けの汎用読み取りヘルパ（移行第3段） ──────────────
 // 文書自身が携帯するスキーマ（見出し行・dt）を機械キーへ解決して値を取り出す。
-// 鍵の決定は②と同じ規則（data-field 優先→表示文字→レジストリの Label 経由で Field へ）。
+// 鍵の決定は②と同じ規則（見出しの表示文字→レジストリの Label 経由で Field へ）。
 
 // VocabDLFields は dl の項目を機械キー→値の表として返します。
 func VocabDLFields(dl *html.Node, def VocabDef) map[string]string {
@@ -252,10 +246,7 @@ func VocabDLFields(dl *html.Node, def VocabDef) map[string]string {
 		case "dt":
 			currentKey = strings.TrimSpace(nodeText(n))
 		case "dd":
-			key := Attr(n, "data-field")
-			if key == "" {
-				key = currentKey
-			}
+			key := currentKey
 			if col, ok := def.columnFor(key); ok && col.Field != "" {
 				key = col.Field
 			}
@@ -280,10 +271,7 @@ func VocabTableRows(table *html.Node, def VocabDef) []map[string]string {
 	}
 	fields := make([]string, 0, 8)
 	for _, cell := range rowCells(rows[0]) {
-		key := Attr(cell, "data-field")
-		if key == "" {
-			key = strings.TrimSpace(nodeText(cell))
-		}
+		key := strings.TrimSpace(nodeText(cell))
 		field := ""
 		if col, ok := def.columnFor(key); ok {
 			field = col.Field

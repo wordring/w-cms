@@ -10,7 +10,7 @@ import (
 // プラグイン例（ヘッダ・明細構造）: 弊社の発注書（材料購入・外注加工）
 //
 //   <section data-type="our-order">
-//     <dl>…<dd data-field="order-no">PO-OUR-1</dd>…</dl>  ← ヘッダ（論点A・案1）
+//     <dl>…<dt>発注書番号</dt><dd>PO-OUR-1</dd>…</dl>  ← ヘッダ（論点A・案1）
 //     <table data-type="our-order-items">…</table>        ← 明細
 //   </section>
 //   （容器 section[data-type="file"] の中に置いてもよい。

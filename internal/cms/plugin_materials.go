@@ -17,8 +17,8 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（特殊な値の注入 ＋ 集計API付き）: 部品の構成部材（BOM）
 //
-//   <table data-type="part-materials"> の行（③計算形式。列は data-field
-//   item-name / cost / supplier-name / quantity。語彙モデル §8.1）
+//   <table data-type="part-materials"> の行（③計算形式。見出しから機械キー
+//   item-name / cost / supplier-name / quantity へ解決。語彙モデル §8.1）
 //   部品番号はページ横断メタ（可変タグ）から TagValue で取得
 //
 //   → part_materials（part_id はページの「部品番号」タグから全行に注入）
@@ -85,10 +85,10 @@ func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 
 // syncMaterialsTable は <table data-type="part-materials"> のデータ行を insert へ流し込みます。
 //
-// 列の対応は文書自身の見出し行から解決する（語彙モデル §5.1）: 鍵は th の data-field
-// 優先・無ければ見出しテキストで、どちらもレジストリ宣言（part-materials の
-// Field／Label）を通じて機械キーへ正規化される——見出しを「単価（税抜）」等へ
-// 改名しても data-field があれば壊れない。
+// 列の対応は文書自身の見出し行から解決する（語彙モデル §5.1）: 鍵は見出しの表示文字で、
+// レジストリ宣言（part-materials の Label）を通じて機械キーへ正規化される。
+// 見出しを「単価（税抜）」等へ改名すると解決できなくなり、その列は読まれない
+// （保存時に UnresolvedVocabFields が告知する）。
 // 数値（cost / quantity）は語彙の正規化（¥・桁区切り・全角の吸収）を通して読む。
 // quantity の空セルは 1 として扱う（旧 <m-material> の既定を引き継いだ値）。
 func syncMaterialsTable(table *html.Node, insert func(string, int, string, int) error) error {
@@ -101,10 +101,7 @@ func syncMaterialsTable(table *html.Node, insert func(string, int, string, int) 
 	// 見出し行 → 各列の機械キー（解決できない列は空のまま＝読まない）
 	fields := make([]string, 0, 4)
 	for _, cell := range rowCells(rows[0]) {
-		key := Attr(cell, "data-field")
-		if key == "" {
-			key = strings.TrimSpace(nodeText(cell))
-		}
+		key := strings.TrimSpace(nodeText(cell))
 		field := ""
 		if col, ok := def.columnFor(key); ok {
 			field = col.Field

@@ -98,13 +98,13 @@ func TestVocabIndexTable(t *testing.T) {
 }
 
 // TestVocabIndexFieldAndTypeOverride は鍵と型の決定順序を検証します:
-// 鍵＝data-field 優先、型＝th の data-type 明示 > 推論辞書。
+// 鍵＝見出しの表示文字（機械キーの属性は撤去済み）、型＝th の data-type 明示 > 推論辞書。
 func TestVocabIndexFieldAndTypeOverride(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000031"
 	body := `<table data-type="delivery-note">` + // レジストリ未定義の形式でも索引される
-		`<tr><th data-field="item-id">品番</th><th>単価</th><th data-type="date">出荷</th></tr>` +
+		`<tr><th>品番</th><th>単価</th><th data-type="date">出荷</th></tr>` +
 		`<tr><td>GEAR-9</td><td>¥8,000</td><td>2026年8月1日</td></tr>` +
 		`</table>`
 
@@ -114,12 +114,9 @@ func TestVocabIndexFieldAndTypeOverride(t *testing.T) {
 
 	rows := queryVocabRows(t, 31)
 
-	// 鍵: data-field があればその値（見出しテキスト「品番」ではなく item-id）
-	if _, ok := findVocabRow(rows, 0, "item-id"); !ok {
-		t.Errorf("data-field の鍵が使われていません: %+v", rows)
-	}
-	if _, ok := findVocabRow(rows, 0, "品番"); ok {
-		t.Errorf("data-field があるのに見出しテキストが鍵になっています: %+v", rows)
+	// 鍵: 見出しの表示文字がそのまま鍵になる
+	if _, ok := findVocabRow(rows, 0, "品番"); !ok {
+		t.Errorf("見出しの表示文字が鍵になっていません: %+v", rows)
 	}
 
 	// 型: 「単価」は推論辞書で number → 正規化値 8000

@@ -9,9 +9,9 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（1プラグインで複数テーブルを所有）: 見積もり
 //
-//   <dl data-type="our-estimate">…<dd data-field="item-id">SHAFT-01</dd>…</dl>
+//   <dl data-type="our-estimate">…<dt>品番</dt><dd>SHAFT-01</dd>…</dl>
 //       → our_estimates（売上予定）
-//   <dl data-type="supplier-estimate">…<dd data-field="item-name">丸鋼材</dd>…</dl>
+//   <dl data-type="supplier-estimate">…<dt>部材名</dt><dd>丸鋼材</dd>…</dl>
 //       → supplier_estimates（原価予定）
 //
 // どちらも明細を持たないフラットな1行データなので、1つのプラグインで両方を扱います。
