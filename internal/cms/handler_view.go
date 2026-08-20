@@ -146,7 +146,10 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// 描画時にもサニタイズする（docs/本文サニタイズ設計.md の二層目）。
 	// サニタイズ後に計算ビュー（子ページ一覧・手配集計）の中身をサーバーが埋める
 	// （view_render.go。埋めた中身は class を持つためサニタイズより後に行う）。
-	body := RenderComputedViews(r, pageID, Sanitize(string(content)))
+	// さらにページ内アンカー（見出し・ブロックの id）を合成する。**この経路だけ**で行う
+	// ——エディタが編集モードで読み直す GET /api/load へ入れると、合成した id が
+	// シリアライザを通って本文として保存されてしまう（anchor.go の冒頭）。
+	body := RenderAnchors(RenderComputedViews(r, pageID, Sanitize(string(content))))
 	shellHTML, err := RenderPageShell(body, title)
 	if err != nil {
 		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)

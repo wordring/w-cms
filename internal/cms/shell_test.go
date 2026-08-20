@@ -75,7 +75,8 @@ func TestRootHandlerComposesBody(t *testing.T) {
 	}
 	body := rr.Body.String()
 
-	if !strings.Contains(body, "<h1>合成テスト</h1>") || !strings.Contains(body, "<p>本文です</p>") {
+	// 見出しには描画時にページ内アンカー（id）が合成される（anchor.go）。
+	if !strings.Contains(body, `<h1 id="合成テスト">合成テスト</h1>`) || !strings.Contains(body, "<p>本文です</p>") {
 		t.Errorf("本文が埋め込まれていません:\n%s", body)
 	}
 	if strings.Contains(body, "WCMS_CONTENT") {
@@ -103,7 +104,7 @@ func TestRootHandlerSanitizesOnRender(t *testing.T) {
 	if strings.Contains(body, "alert(1)") || strings.Contains(body, "onclick") {
 		t.Errorf("危険な記述が配信HTMLに残っています:\n%s", body)
 	}
-	if !strings.Contains(body, "<h1>題名</h1>") || !strings.Contains(body, "<p>本文</p>") {
+	if !strings.Contains(body, `<h1 id="題名">題名</h1>`) || !strings.Contains(body, "<p>本文</p>") {
 		t.Errorf("正常な本文まで失われています:\n%s", body)
 	}
 }
