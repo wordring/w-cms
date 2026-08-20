@@ -24,6 +24,8 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 *   **`cms/view_render.go`**: 計算ビュー（表示専用）の**サーバー事前描画**。本文中の空マーカーへ中身を埋めます（4.4 参照）。
 *   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルのみ**を抽出します（`ParseCore`）。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。ユースケース固有の抽出は各プラグインが担当します。
 *   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_perms）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
+
+> **削除は `data/trash` への移動**（物理削除ではない。取り消せることが要件——[【考察】通信記録処理.md](【考察】通信記録処理.md) §2.7④）。`RebuildDatabase` が走査するのは `data/master` だけなので、フォルダを移すだけで索引からも消えます。逆に、ゴミ箱から `data/master` へ戻して再構築すれば復元できます（復元UIは未実装）。
 *   **`cms/handler_*.go`**: コアのHTTPハンドラ。関心ごとに `handler_save.go`（保存）・`handler_view.go`（画面とページ本文API）・`handler_tree.go`（木構造：新規作成・子一覧・親の付け替え）・`handler_meta.go`（属性・語彙・DB再構築）へ分けています。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
 *   **`cms/page/`**: ページの実体を扱うパッケージ。保存ディレクトリの決定（`GetPageDir`）、属性サイドカーの読み書き、Unix風の認可（`RequirePageWrite` 等）、`/data/` 配下の添付配信ゲート（`DataFileHandler`）。**ハンドラ層（`cms`）と編集ロック（`cms/editlock`）の両方がここに依存し、逆向きの依存はありません。**
 
