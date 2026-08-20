@@ -76,7 +76,16 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // LogoutAPIHandler はセッションを破棄します（POST /api/logout）。
+//
+// POST 限定です。CSRFProtect は GET を検証しない（middleware.go）ので、GET でも
+// 破棄できると、本文へ <img src="/api/logout"> を1つ保存するだけで、そのページを
+// 開いた全ログインユーザーを無音で追い出せます（同一オリジンなので SameSite も
+// CSP も止めない）。フロントは元から POST で呼んでいます。
 func LogoutAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if c, err := r.Cookie(sessionCookieName); err == nil {
 		DeleteSession(c.Value)
 	}
