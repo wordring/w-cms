@@ -1371,8 +1371,8 @@
 
     function buildVocabSkeleton(def) {
         if (def.element === 'section') {
-            // 業務文書ブロック（論点A・案1）: section が ヘッダ dl（data-type 無し・
-            // dd に data-field 自動付与）と明細表を包む。file 容器は列を持たない。
+            // 業務文書ブロック（論点A・案1）: section が ヘッダ dl（data-type 無し）と
+            // 明細表を包む。項目の鍵は dt の表示文字が運ぶ。file 容器は列を持たない。
             const sec = document.createElement('section');
             sec.setAttribute('data-type', def.type);
             if (def.columns && def.columns.length) {
@@ -1381,7 +1381,6 @@
                     const dt = document.createElement('dt');
                     dt.textContent = col.label;
                     const dd = document.createElement('dd');
-                    if (col.field) dd.setAttribute('data-field', col.field);
                     const v = defaultFieldValue(col);
                     if (v) dd.textContent = v;
                     else dd.appendChild(document.createElement('br')); // 空 dd のキャレット足場（emptyEditable 参照）
@@ -1404,7 +1403,6 @@
                 dt.textContent = col.label;
                 // 空の dd には <br> の足場が要る（emptyEditable のコメント参照）
                 const dd = emptyEditable('dd');
-                if (col.field) dd.setAttribute('data-field', col.field);
                 dl.appendChild(dt);
                 dl.appendChild(dd);
             });
@@ -1418,10 +1416,9 @@
         const row = document.createElement('tr');
         (def.columns || []).forEach(col => {
             const th = document.createElement('th');
+            // 見出しの表示文字が列の鍵になる（機械キーはレジストリの Label 経由で解決され、
+            // 本文には書き出さない。語彙モデル §5.1「見える文字がすべて」）
             th.textContent = col.label;
-            // data-field は③計算形式だけが持つ（レジストリ宣言があるときのみ自動付与。
-            // 記録だけの形式は「見える文字が既定」で機械属性を書かない）
-            if (col.field) th.setAttribute('data-field', col.field);
             head.appendChild(th);
             row.appendChild(document.createElement('td'));
         });
@@ -1865,8 +1862,8 @@
     // ── 列設定ポップオーバ（属性側の編集口。語彙モデル §5.2「編集の2面」）──────
     // 値（中身・表示される）はセルの contenteditable で、役割・型（属性・表示されない）は
     // ここで編集する。contenteditable はテキストしか触れないため、属性の編集口は別に要る。
-    // v1 で編集できるのは列型の明示（th の data-type）だけ。data-field（機械キー）は
-    // ③計算形式の骨格生成が自動付与するもので、手編集の口は設けない（壊すと Sync が読めなくなる）。
+    // v1 で編集できるのは列型の明示（th の data-type）だけ。列の鍵は見出しの表示文字
+    // そのものなので、鍵の編集口は要らない（見出しを書き換えることが鍵の変更にあたる）。
     let colPopoverTh = null; // 設定対象の見出しセル
 
     function hideColPopover() {
@@ -1885,8 +1882,8 @@
         if (!th) return;
         colPopoverTh = th;
 
-        // 鍵（data-field 優先・無ければ見出しテキスト）と現在の型を表示する
-        const key = th.getAttribute('data-field') || th.textContent.trim() || '（見出し未入力）';
+        // 鍵（＝見出しの表示文字）と現在の型を表示する
+        const key = th.textContent.trim() || '（見出し未入力）';
         document.getElementById('cp-key').textContent = key;
         const sel = document.getElementById('cp-type');
         sel.value = th.getAttribute('data-type') || '';
@@ -2047,6 +2044,15 @@
 
     // ── 型検証（通知のみ・拒否しない）と enum の入力補助（語彙モデル §5.1・§5.2）──
     // 列型の決定順序はサーバー（vocab_index.go の resolveColumnType）と同じ:
+    // findVocabColumn は形式定義から鍵に対応する列を探す。サーバー側の columnFor
+    // （internal/cms/vocab.go）と**同じ規則**で、Label でも Field でも引ける
+    // （本文が運ぶ鍵は見出しの表示文字＝Label 側だが、レジストリ由来の機械キーでも
+    // 引けるようにしておくと、AI応答など機械キー起点の照合が同じ関数で済む）。
+    function findVocabColumn(def, key) {
+        if (!def || !key) return null;
+        return (def.columns || []).find(c => (c.field && c.field === key) || c.label === key) || null;
+    }
+
     // th の data-type 明示 > レジストリ宣言 > 推論辞書（/api/tag-schema） > text。
     const VALID_COL_TYPES = ['text', 'number', 'date', 'enum', 'image'];
 
@@ -2056,10 +2062,10 @@
         if (!table || !table.rows.length) return null;
         const th = cellAt(table.rows[0], colIndexOf(cell));
         if (!th) return null;
-        const key = th.getAttribute('data-field') || th.textContent.trim();
+        const key = th.textContent.trim();
         const explicit = th.getAttribute('data-type');
         const def = vocabDefs.find(v => v.type === table.getAttribute('data-type'));
-        const col = def && (def.columns || []).find(c => (c.field && c.field === key) || c.label === key);
+        const col = findVocabColumn(def, key);
         let type = 'text';
         if (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) type = explicit;
         else if (col) type = col.type;
@@ -2254,8 +2260,10 @@
             const order = sec.querySelector('section[data-type="client-order"], section[data-type="our-order"]');
             const table = order && order.querySelector('table[data-type]');
             if (!table) return;
+            // 見出しの表示文字をレジストリ経由で機械キーへ解決する（AI応答の鍵は機械キー）。
+            const itemsDef = vocabDefs.find(v => v.type === table.getAttribute('data-type'));
             const fields = Array.from(table.querySelectorAll('tr:first-child th'))
-                .map(th => th.getAttribute('data-field') || th.textContent.trim());
+                .map(th => (findVocabColumn(itemsDef, th.textContent.trim()) || {}).field || '');
             const tbody = table.querySelector('tbody') || table;
             d.items.forEach(it => {
                 const tr = document.createElement('tr');

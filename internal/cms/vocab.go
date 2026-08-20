@@ -52,9 +52,11 @@ var validColumnTypes = map[ColumnType]bool{
 
 // VocabColumn は形式の1列（dl では1項目）の定義です。
 type VocabColumn struct {
-	// Field は data-field（機械キー）。**③計算形式だけ**が持ち、骨格生成時に
-	// エディタが自動付与します。空なら見出しテキストがそのまま鍵になります
-	// （「見える文字が既定・機械属性は例外」——語彙モデル §5.1）。
+	// Field は③計算プラグインが使う機械キーです。**本文には現れません**——
+	// 本文の鍵は常に見出しの表示文字（th / dt）で、Label を通じてこの Field へ解決されます
+	// （「見える文字がすべて」——語彙モデル §5.1。かつては dd/th の data-field として
+	// 本文へ書き出していましたが 2026-08-20 に撤去しました）。
+	// 空なら機械キーを持たない列＝表示文字がそのまま鍵になります。
 	Field string     `json:"field,omitempty"`
 	Label string     `json:"label"`          // 見出しの表示文字（dt の文字）
 	Type  ColumnType `json:"type"`           // 列型
@@ -102,7 +104,7 @@ var vocabRegistry = []VocabDef{
 	},
 	// "part-materials" は <m-material>（部品の構成部材）の後継。部材手配計算
 	// （plugin_materials.go の Sync / /api/required-materials）が読む③計算形式なので、
-	// 列は data-field（機械キー）を持ち、骨格生成時にエディタが自動付与する。
+	// 列は機械キー（Field）を持ち、見出しの表示文字（Label）から解決される。
 	// ③の語彙宣言をプラグイン側へ移す（①と③の合成）のは将来課題で、v1 は
 	// コード内の単一テーブルに同居させる。
 	{
@@ -119,8 +121,8 @@ var vocabRegistry = []VocabDef{
 		},
 	},
 	// ── 移行第3段（受発注4種＋容器。語彙モデル §8.1・§8.2 論点A=案1） ──
-	// 業務文書ブロックは <section data-type> がヘッダ <dl>（data-type 無し・dd に
-	// data-field 自動付与）と明細 <table data-type> を包む。PDF容器は
+	// 業務文書ブロックは <section data-type> がヘッダ <dl>（data-type 無し・鍵は
+	// dt の表示文字）と明細 <table data-type> を包む。PDF容器は
 	// <section data-type="file" data-src>（配線＝属性）＋可視のファイル名リンク（中身）。
 	{
 		Type:        "file",
@@ -266,7 +268,8 @@ func VocabDefByType(t string) (VocabDef, bool) {
 	return VocabDef{}, false
 }
 
-// columnFor は形式定義から鍵（data-field の値または見出しテキスト）に対応する列を探します。
+// columnFor は形式定義から鍵（見出しの表示文字＝Label。機械キー Field でも引ける）に
+// 対応する列を探します。
 func (d VocabDef) columnFor(key string) (VocabColumn, bool) {
 	for _, c := range d.Columns {
 		if (c.Field != "" && c.Field == key) || c.Label == key {
@@ -505,11 +508,7 @@ func vocabHeadingKeys(n *html.Node, def VocabDef) []string {
 			return nil
 		}
 		for _, cell := range rowCells(rows[0]) {
-			key := Attr(cell, "data-field")
-			if key == "" {
-				key = strings.TrimSpace(nodeText(cell))
-			}
-			out = append(out, key)
+			out = append(out, strings.TrimSpace(nodeText(cell)))
 		}
 	case "dl":
 		out = dlHeadingKeys(n)
@@ -521,7 +520,7 @@ func vocabHeadingKeys(n *html.Node, def VocabDef) []string {
 	return out
 }
 
-// dlHeadingKeys は dl の項目の鍵（dd の data-field 優先・無ければ dt の表示文字）を返します。
+// dlHeadingKeys は dl の項目の鍵（直前の dt の表示文字）を返します。
 func dlHeadingKeys(dl *html.Node) []string {
 	if dl == nil {
 		return nil
@@ -533,11 +532,7 @@ func dlHeadingKeys(dl *html.Node) []string {
 		case "dt":
 			currentKey = strings.TrimSpace(nodeText(n))
 		case "dd":
-			key := Attr(n, "data-field")
-			if key == "" {
-				key = currentKey
-			}
-			out = append(out, key)
+			out = append(out, currentKey)
 		}
 	})
 	return out

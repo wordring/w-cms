@@ -131,7 +131,7 @@ func WalkElements(root *html.Node, fn func(*html.Node)) {
 // TagValue はページ横断メタ（可変タグ）から名前 tagName の値を返します。
 // 同名タグが複数ある場合は最初の1つ。見つからなければ空文字列。
 // 読む形式は <dl data-type="tags"><dt>{tagName}</dt><dd>値</dd></dl>
-// （鍵は dt の表示文字。dd の data-field があればそちらが優先）。
+// （鍵は dt の表示文字）。
 func TagValue(root *html.Node, tagName string) string {
 	var found string
 	WalkElements(root, func(n *html.Node) {
@@ -146,8 +146,7 @@ func TagValue(root *html.Node, tagName string) string {
 }
 
 // dlTagValue は <dl data-type="tags"> の中から名前 tagName の最初の値を返します。
-// 鍵は dt の表示文字（自由語）で、dd の data-field があればそちらが優先します
-// （②汎用索引と同じ規則）。
+// 鍵は dt の表示文字（自由語）です（②汎用索引と同じ規則）。
 func dlTagValue(dl *html.Node, tagName string) string {
 	currentKey := ""
 	found := ""
@@ -159,11 +158,7 @@ func dlTagValue(dl *html.Node, tagName string) string {
 		case "dt":
 			currentKey = strings.TrimSpace(nodeText(n))
 		case "dd":
-			key := Attr(n, "data-field")
-			if key == "" {
-				key = currentKey
-			}
-			if key == tagName {
+			if currentKey == tagName {
 				found = strings.TrimSpace(nodeText(n))
 			}
 		}

@@ -6,7 +6,7 @@ import (
 )
 
 // TestUnresolvedVocabFields は「見出しの改名で③計算プラグインが読めなくなった列」の
-// 告知を固定します。data-field（機械キー）を撤去すると鍵は見出しの表示文字だけになるため、
+// 告知を固定します。鍵は見出しの表示文字だけなので（機械キーの属性は撤去済み）、
 // 改名が**黙って**同期を止めないことがこの告知の存在意義です。
 func TestUnresolvedVocabFields(t *testing.T) {
 	tests := []struct {
@@ -31,11 +31,11 @@ func TestUnresolvedVocabFields(t *testing.T) {
 			want: []string{"部材定義: 単価"},
 		},
 		{
-			name: "data-field が残っていれば改名しても報告しない",
+			name: "撤去した機械キーの属性が残っていても改名は報告する",
 			html: `<table data-type="part-materials"><tbody>
 <tr><th>部材名</th><th data-field="cost">単価（税抜）</th><th>仕入先</th><th>数量</th></tr>
 </tbody></table>`,
-			want: nil,
+			want: []string{"部材定義: 単価"},
 		},
 		{
 			name: "列を消しただけでは報告しない",

@@ -11,7 +11,7 @@ import (
 //
 //   <section data-type="file" data-src="PO-A100.pdf">     ← 任意の容器（PDF原本）
 //     <section data-type="client-order">
-//       <dl>…<dd data-field="order-no">PO-A100</dd>…</dl>  ← ヘッダ（論点A・案1）
+//       <dl>…<dt>発注書番号</dt><dd>PO-A100</dd>…</dl>  ← ヘッダ（論点A・案1）
 //       <table data-type="client-order-items">…</table>    ← 明細
 //     </section>
 //   </section>

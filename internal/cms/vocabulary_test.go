@@ -25,8 +25,9 @@ func TestNoCustomElementVocabulary(t *testing.T) {
 
 // TestVocabularyKeepsStructuralAndMarkers は、語彙が構造HTMLと `data-*` マーカーで
 // 成り立っていることを検証します。マーカー属性はレジストリ駆動の形式
-// （table/dl/section[data-type]・th/dd[data-field]・section[data-src]）の要で、
-// ここが落ちると保存のたびに形式が壊れます。
+// （table/dl/section/th[data-type]・section[data-src]）の要で、
+// ここが落ちると保存のたびに形式が壊れます。機械キーの属性（data-field）は
+// 2026-08-20 に撤去済み——項目の鍵は見出しの表示文字が運びます。
 func TestVocabularyKeepsStructuralAndMarkers(t *testing.T) {
 	allowed := AllowedVocabulary()
 
@@ -38,12 +39,18 @@ func TestVocabularyKeepsStructuralAndMarkers(t *testing.T) {
 
 	cases := []struct{ element, attr string }{
 		{"table", "data-type"}, {"dl", "data-type"}, {"section", "data-type"},
-		{"th", "data-type"}, {"th", "data-field"}, {"dd", "data-field"},
-		{"section", "data-src"},
+		{"th", "data-type"}, {"section", "data-src"},
 	}
 	for _, c := range cases {
 		if !contains(allowed[c.element], c.attr) {
 			t.Errorf("マーカー属性 %s[%s] が語彙にありません: %v", c.element, c.attr, allowed[c.element])
+		}
+	}
+
+	// 撤去した機械キーの属性が**どの要素にも**戻っていないこと。
+	for el, attrs := range allowed {
+		if contains(attrs, "data-field") {
+			t.Errorf("撤去した data-field が %q の語彙に残っています: %v", el, attrs)
 		}
 	}
 }
