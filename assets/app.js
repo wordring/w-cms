@@ -195,7 +195,27 @@
     // 左レール：目次を本文中の見出し(h1〜h6)から構築する。サーバーには一切依存せず、
     // 表示中の #w-editor-content を走査するだけ（クリックで scrollIntoView）。
     // 本文が変わるたび（初回ロード・編集中）に呼び直して最新化する。
+    // markPageTitleHeading は「このページのタイトルになる見出し」へ実行時の印を付ける。
+    //
+    // タイトルはサーバーが**文書順で最初の h1** から採る（parser.go の ParseCore）。
+    // 属性で持たせると並べ替え・挿入でずれるので、**位置から毎回計算し直す**。
+    // class はサニタイザもシリアライザも通さないため保存には漏れない
+    // （型不一致の .cell-invalid と同じ流儀）。
+    function markPageTitleHeading() {
+        const container = document.getElementById('w-editor-content');
+        if (!container) return;
+        container.querySelectorAll('h1.is-page-title')
+            .forEach(el => el.classList.remove('is-page-title'));
+        // クロームはサーバー／エンハンサが挿す表示専用の飾りで本文ではない（保存もされない）。
+        const first = Array.from(container.querySelectorAll('h1'))
+            .find(el => !el.closest('.vocab-chrome'));
+        if (first) first.classList.add('is-page-title');
+    }
+
     function buildToc() {
+        // タイトルの印は本文DOMが変わるたびに付け直す必要があり、契機が目次とまったく同じ
+        // （populateEditor・エコーバック・保存後）なのでここに相乗りする。
+        markPageTitleHeading();
         const list = document.getElementById('w-toc-list');
         if (!list) return;
         const container = document.getElementById('w-editor-content');
