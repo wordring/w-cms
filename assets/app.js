@@ -79,9 +79,100 @@
     let currentPageId = pathId;
     let saveTimeout = null;
 
-    function createSubpage() {
-        // 表示中のページの下に子ページを作成する
-        window.open(`/api/new-page?parent=${currentPageId}`, '_blank');
+    // ── 子ページの作成（テンプレート選択つき） ──────────────────────────
+    // テンプレートは「テンプレート」フォルダ配下の**葉**（docs/【考察】ページテンプレート.md §3.2）。
+    // 使えるテンプレートが1つも無ければ従来どおり即作成する。
+    function openNewPage(templateId) {
+        let url = `/api/new-page?parent=${currentPageId}`;
+        if (templateId) url += `&template=${encodeURIComponent(templateId)}`;
+        window.open(url, '_blank');
+    }
+
+    // hasTemplateLeaf はツリーに葉（＝コピーできるテンプレート）があるかを返す。
+    function hasTemplateLeaf(nodes) {
+        return (nodes || []).some(n => !n.children || !n.children.length || hasTemplateLeaf(n.children));
+    }
+
+    async function createSubpage() {
+        let tree = [];
+        try {
+            const res = await fetch('/api/templates');
+            if (res.ok) tree = await res.json();
+        } catch (e) {
+            // テンプレート一覧が取れなくても新規作成そのものは行えるようにする
+        }
+        if (!hasTemplateLeaf(tree)) { openNewPage(''); return; }
+        showTemplateMenu(tree);
+    }
+
+    // appendTemplateNodes はツリーをメニューへ描く。
+    // 枝（子を持つ）は分類の見出し、葉はコピーできるテンプレート。
+    // 階層は左パディングで表す（CSSクラスではなく段数が可変のため CSSOM で当てる）。
+    function appendTemplateNodes(host, nodes, depth) {
+        (nodes || []).forEach(n => {
+            const isLeaf = !n.children || !n.children.length;
+            if (isLeaf) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = n.title;
+                b.style.paddingLeft = (10 + depth * 12) + 'px';
+                b.addEventListener('click', () => { hideTemplateMenu(); openNewPage(n.id); });
+                host.appendChild(b);
+            } else {
+                const g = document.createElement('div');
+                g.className = 'template-menu-group';
+                g.textContent = n.title;
+                g.style.paddingLeft = (10 + depth * 12) + 'px';
+                host.appendChild(g);
+                appendTemplateNodes(host, n.children, depth + 1);
+            }
+        });
+    }
+
+    function hideTemplateMenu() {
+        const menu = document.getElementById('w-template-menu');
+        if (menu) menu.classList.remove('active');
+        document.removeEventListener('click', onTemplateMenuOutside, true);
+        document.removeEventListener('keydown', onTemplateMenuKey, true);
+    }
+
+    function onTemplateMenuOutside(e) {
+        if (!e.target.closest('#w-template-menu') && !e.target.closest('#w-create-subpage-btn')) {
+            hideTemplateMenu();
+        }
+    }
+
+    function onTemplateMenuKey(e) {
+        if (e.key === 'Escape') hideTemplateMenu();
+    }
+
+    function showTemplateMenu(tree) {
+        const menu = document.getElementById('w-template-menu');
+        const btn = document.getElementById('w-create-subpage-btn');
+        if (!menu || !btn) { openNewPage(''); return; }
+
+        menu.textContent = ''; // 前回の項目を消す
+        const blank = document.createElement('button');
+        blank.type = 'button';
+        blank.textContent = '空のページ';
+        blank.addEventListener('click', () => { hideTemplateMenu(); openNewPage(''); });
+        menu.appendChild(blank);
+
+        const sep = document.createElement('div');
+        sep.className = 'template-menu-group';
+        sep.textContent = 'テンプレートから';
+        menu.appendChild(sep);
+
+        appendTemplateNodes(menu, tree, 0);
+
+        menu.classList.add('active');
+        const rect = btn.getBoundingClientRect();
+        menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        menu.style.left = (rect.left + window.scrollX) + 'px';
+        menu.style.minWidth = rect.width + 'px';
+        // 開いた直後の click がそのまま外側判定に入らないよう capture で次から拾う
+        document.addEventListener('click', onTemplateMenuOutside, true);
+        document.addEventListener('keydown', onTemplateMenuKey, true);
     }
 
     // --- サイドパネルの開閉（UI ストア `wcms.ui.rails` に永続化。FOUC防止は <head> のインラインscript） ---

@@ -836,6 +836,18 @@ body[edit-mode] .block-content p:empty::before {
 
 .enum-menu button:hover { background: #eff6ff; }
 
+/* テンプレート選択メニュー（子ページ作成）。.enum-menu の見た目を借り、
+ * 分類の見出し（枝）だけを足す。階層の字下げは段数が可変なので app.js が
+ * paddingLeft を当てる（CSSOM 経由。インライン style 属性は CSP で書けない）。 */
+.template-menu { max-height: 60vh; overflow-y: auto; }
+
+.template-menu-group {
+    padding: 6px 10px 2px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+}
+
 /* 本文の表の基本スタイル。ブラウザ既定の表は枠が無く、挿入直後の空セルが
  * 見えず編集もできないため、文書としての最小の体裁をここで与える（閲覧・編集共通）。 */
 #w-editor-content table {

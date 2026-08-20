@@ -1,6 +1,8 @@
 package cms
 
 import (
+	"database/sql"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -192,5 +194,91 @@ func TestFailedTemplateLeavesNoOrphanPage(t *testing.T) {
 	database.DB.QueryRow(`SELECT COUNT(*) FROM pages`).Scan(&after)
 	if after != before {
 		t.Errorf("ファイルの無いページ行が残りました: %d → %d", before, after)
+	}
+}
+
+// ── 第3段: 一覧の読み口 ────────────────────────────────────────────
+
+// setupTemplateAPITest は **ファイルDB** でテスト環境を用意します。
+//
+// setupSaveTest の ":memory:" が使えないのは visibleChildren が
+// 「行を回しながら1件ずつ page.GetPerms を引く」形だからです——入れ子のクエリは
+// プールの別接続で走り、":memory:" では接続ごとに**別の空DB**になるため、
+// 権限がフェイルクローズして子ページが1件も見えなくなります。
+// 本番（data/cms.db）はファイルなので同じ問題は起きません。
+func setupTemplateAPITest(t *testing.T) {
+	t.Helper()
+	origWd, _ := os.Getwd()
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdirエラー: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(origWd) })
+
+	dsn := filepath.ToSlash(filepath.Join(dir, "t.db")) +
+		"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("DB接続エラー: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	database.DB = db
+	if err := database.CreateCoreTables(db); err != nil {
+		t.Fatalf("コアテーブル作成エラー: %v", err)
+	}
+	if err := ApplySchema(db); err != nil {
+		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
+	}
+}
+
+// getTemplates は GET /api/templates を呼びます。
+func getTemplates(t *testing.T, u *auth.User) []TemplateNode {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/templates", nil)
+	if u != nil {
+		req = auth.WithUser(req, u)
+	}
+	rr := httptest.NewRecorder()
+	TemplatesAPIHandler(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("/api/templates が失敗: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var out []TemplateNode
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("JSONを解釈できません: %v (%s)", err, rr.Body.String())
+	}
+	return out
+}
+
+// TestTemplatesAPIReturnsTree は、テンプレート一覧が階層のまま返ること
+// （枝＝分類・葉＝テンプレート）を検証します。
+func TestTemplatesAPIReturnsTree(t *testing.T) {
+	setupTemplateAPITest(t)
+	classify := newTemplateTree(t) // トップ → テンプレート(000010) → 業務(000011)
+	newPage(t, "000012", "<h1>受注ページ</h1>", page.PageMeta{
+		Owner: "alice", Mode: page.DefaultMode, ParentID: classify})
+
+	tree := getTemplates(t, &auth.User{Username: "alice"})
+	if len(tree) != 1 || tree[0].Title != "業務" {
+		t.Fatalf("分類が返っていません: %+v", tree)
+	}
+	if len(tree[0].Children) != 1 || tree[0].Children[0].Title != "受注ページ" {
+		t.Fatalf("葉が返っていません: %+v", tree[0].Children)
+	}
+	if tree[0].Children[0].ID != "000012" {
+		t.Errorf("IDが期待と異なります: %q", tree[0].Children[0].ID)
+	}
+}
+
+// TestTemplatesAPIEmptyWithoutRoot は、テンプレートルートが無ければ空配列を返すことを
+// 検証します（従来どおり「空のページ」だけが作られる）。
+func TestTemplatesAPIEmptyWithoutRoot(t *testing.T) {
+	setupTemplateAPITest(t)
+	newPage(t, TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
+	newPage(t, "000020", "<h1>普通のページ</h1>", page.PageMeta{
+		Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
+
+	if tree := getTemplates(t, &auth.User{Username: "alice"}); len(tree) != 0 {
+		t.Errorf("ルートが無いのにテンプレートが返りました: %+v", tree)
 	}
 }
