@@ -38,7 +38,7 @@ func (n noDirListing) Open(name string) (http.File, error) {
 // main はアプリケーションの起動とルーティングの設定を行います。
 func main() {
 	// データベースを初期化（コアテーブル: pages / page_perms）
-	// page_tags は <m-tag> を所有する plugin_page_tags.go 側のテーブルでコアではない。
+	// page_tags は plugin_page_tags.go 側のテーブルでコアではない。
 	if err := database.InitDB(); err != nil {
 		log.Fatalf("DB初期化エラー: %v", err)
 	}
@@ -123,7 +123,7 @@ func main() {
 	root.HandleFunc("/login", auth.LoginPageHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 
-	// カスタム要素の語彙（各プラグインの Tags() の集約）。エディタが本文の
+	// 本文で扱えるHTMLの語彙（構造HTML＋data-* マーカー＋レジストリの形式宣言）。エディタが本文の
 	// シリアライズに使う。語彙は秘密ではないので認証不要。
 	root.HandleFunc("/api/tag-schema", cms.TagSchemaAPIHandler)
 

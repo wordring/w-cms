@@ -943,7 +943,16 @@
             if (!res.ok) { notify('編集ロックを取得できませんでした。', { type: 'error' }); return false; }
             const d = await res.json();
             lockToken = d.token;
-            if (typeof d.html === 'string' && d.html.length) populateEditor(d.html);
+            // ロックを取ったら最新の本文へ載せ替える。ロック応答ではなく /api/load を読むのは、
+            // そちらが計算ビューのサーバー事前描画を通るため（生のHTMLだとビューの中身が消える）。
+            // ロック保持中は他者が保存できないので、この2手の間に内容は変わらない。
+            try {
+                const body = await fetch('/api/load?id=' + currentPageId);
+                if (body.ok) {
+                    const html = await body.text();
+                    if (html.length) populateEditor(html);
+                }
+            } catch (e) { /* 読めなければ画面の内容のまま編集を続ける */ }
             dismissToast('lock');
             return true;
         } catch (e) {
@@ -1120,7 +1129,7 @@
     // 各プラグインの Tags() が唯一の正本で、サニタイズ許可リストも同じ宣言から作られるため、
     // 「保存する属性」と「許可される属性」が食い違いようがない。ここに手書きの表を持たないので、
     // プラグインを追加すれば新しい要素もそのまま保存されるようになる。
-    let tagSchema = null;              // { "p": [], "m-item": ["cost", "item-id", ...], ... }
+    let tagSchema = null;              // { "p": ["data-id"], "table": ["data-id", "data-type"], ... }
     let voidTags = new Set();          // 終了タグを書かない要素（br・img 等）
     // 語彙レジストリ（①）の形式定義。スラッシュメニューの項目と挿入骨格
     // （<table data-type> / <dl data-type>）はここから生成する（語彙モデル §7 の原則1:
@@ -1148,10 +1157,10 @@
         }
     }
 
-    // isCustomTag はカスタム要素（<m-*>）かどうかを返す。
-    // HTMLの仕様上、名前にハイフンを含む要素は必ずカスタム要素なので、
-    // ここに一覧を持たなくても構造HTMLと区別できる。
-    // 両者はシリアライズの仕方が根本的に違う（下記 serializeCustomElement のコメント参照）。
+    // isCustomTag は名前にハイフンを含む要素（＝HTMLの仕様上かならずカスタム要素）かを返す。
+    // 語彙モデルへの移行完了（2026-08-20）で本文の語彙からカスタム要素は無くなったので、
+    // 通常は常に false。貼り付け等で紛れ込んだ未知のカスタム要素を編集可能にしない
+    // ための防御として残している（保存時はサニタイザ同様アンラップされる）。
     function isCustomTag(name) { return name.indexOf('-') !== -1; }
 
     // isViewSection は計算ビューのマーカー（子ページ一覧・手配集計）かを返す。
@@ -1165,9 +1174,6 @@
         return !!(def && def.view);
     }
 
-    // 値が空のときに補う既定値（数値項目のみ。従来の挙動を維持する）。
-    const CUSTOM_ATTR_DEFAULTS = { price: '0', cost: '0', quantity: '1' };
-
     // esc は属性値・テキストをHTMLとして安全な形にエスケープする。
     // これが無いと、タグの値に " や < を入力しただけで生成HTMLが壊れ、値が欠けたり
     // 意図しない属性が生まれたりする（サーバーのサニタイザがそれを除去してしまう）。
@@ -1177,14 +1183,6 @@
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
-    }
-
-    // customSelector は語彙に含まれる全カスタム要素にマッチするセレクタ。
-    // 構造HTML（p・div 等）は含めない。ここは「入れ子のカスタム要素を拾う」ための
-    // セレクタなので、構造HTMLまで混ぜると明細の親子関係の判定が壊れる。
-    function customSelector() {
-        const names = Object.keys(tagSchema || {}).filter(isCustomTag);
-        return names.length ? names.join(',') : null;
     }
 
     // ── ブロック単位保存のための識別子 ──────────────────────────────────
@@ -1257,47 +1255,12 @@
         return id ? ` ${BLOCK_ID_ATTR}="${esc(id)}"` : '';
     }
 
-    // serializeCustomElement はカスタム要素を語彙（/api/tag-schema）に従って書き出す。
-    // 要素ごとの手書き分岐を持たないので、プラグインが増えてもここは変更不要。
-    // extraAttrs はトップレベルのブロックにだけ付ける追加属性（data-id）。
-    // 入れ子の明細などには付けない（ブロック単位保存が扱うのは最上位だけ）。
-    function serializeCustomElement(el, indent, extraAttrs) {
-        const name = el.tagName.toLowerCase();
-        const allowed = tagSchema[name];
-        if (!allowed) return ''; // 語彙に無い要素は保存しない
-
-        // **その要素が実際に持っている属性だけ**を書き出す。
-        // 語彙は全プラグインの和集合なので（m-file の price と cost など）、
-        // 持っていない属性まで既定値で埋めると、意味のない値を発明してしまう。
-        let attrs = extraAttrs || '';
-        allowed.forEach(a => {
-            if (!el.hasAttribute(a)) return;
-            const v = el.getAttribute(a);
-            const filled = (v === '' && CUSTOM_ATTR_DEFAULTS[a]) ? CUSTOM_ATTR_DEFAULTS[a] : v;
-            attrs += ` ${a}="${esc(filled)}"`;
-        });
-
-        // 子孫のカスタム要素（明細など）を再帰で書き出す。
-        // コンポーネントは描画時に <div> 等のクロームを挟むため直下とは限らないので、
-        // 「直近のカスタム要素の祖先が自分」であるものだけを拾う（孫要素の二重出力を防ぐ）。
-        let inner = '';
-        const sel = customSelector();
-        if (sel) {
-            el.querySelectorAll(sel).forEach(c => {
-                if (!c.parentElement || c.parentElement.closest(sel) !== el) return;
-                inner += serializeCustomElement(c, indent + '    ');
-            });
-        }
-
-        if (inner === '') return `${indent}<${name}${attrs}></${name}>\n`;
-        return `${indent}<${name}${attrs}>\n${inner}${indent}</${name}>\n`;
-    }
-
-    // ── 構造HTMLのシリアライズ ──────────────────────────────────────────────
-    // カスタム要素と違い、構造HTML（p・ul・table・strong …）は**中身そのものが値**なので、
-    // 属性だけ書き出す serializeCustomElement では表現できない。DOMをそのまま辿って
-    // 「語彙にある要素と属性だけを残す」形で書き出す。判定基準はサニタイザと同じ語彙なので、
-    // ここを通ったものはサーバーでも落ちない。
+    // ── 本文のシリアライズ ──────────────────────────────────────────────────
+    // 本文（p・ul・table・dl・section・strong …）は**中身そのものが値**なので、DOMを
+    // そのまま辿って「語彙にある要素と属性だけを残す」形で書き出す。判定基準はサニタイザと
+    // 同じ語彙（/api/tag-schema）なので、ここを通ったものはサーバーでも落ちない。
+    // かつては属性へ値を持つカスタム要素だけ別経路（serializeCustomElement）で書き出して
+    // いたが、移行完了（2026-08-20）で経路は1本になった。
     //
     // el.innerHTML をそのまま使わないのは、ブラウザが編集中に挿す一時的な属性
     // （contenteditable・spellcheck 等）や、貼り付けで紛れ込んだ未許可の要素・style を
@@ -1343,7 +1306,6 @@
 
     function serializeNode(el, indent) {
         const name = el.tagName.toLowerCase();
-        if (isCustomTag(name)) return serializeCustomElement(el, indent).replace(/\n$/, '');
         const allowed = tagSchema && tagSchema[name];
         if (!allowed) return serializeChildren(el, indent); // 未知の要素はアンラップ
         const open = `${indent}<${name}${serializeAttrs(el, allowed)}>`;
@@ -1357,7 +1319,6 @@
         const idAttr = blockIdAttrOf(el);
         const allowed = tagSchema && tagSchema[name];
         if (!allowed) return '';
-        if (isCustomTag(name)) return serializeCustomElement(el, '', idAttr);
         const open = `<${name}${serializeAttrs(el, allowed, idAttr)}>`;
         if (voidTags.has(name)) return open + '\n';
         return `${open}${serializeChildren(el, '')}</${name}>\n`;
@@ -2769,38 +2730,11 @@
         if (!content) return hideContextToolbar();
         const tagName = content.tagName.toLowerCase();
 
-        // 明細を追加できるのは業務要素（発注書）。容器の <m-file> が挟まっていても、
-        // 中の業務要素を拾ってそこへ追加する。意味は要素そのものが持つので tag は見ない。
-        const orderEl = content.matches('m-client-order, m-supplier-order')
-            ? content
-            : content.querySelector('m-client-order, m-supplier-order');
-
-        if (orderEl) {
-            const isClient = orderEl.tagName.toLowerCase() === 'm-client-order';
-            const btn = document.createElement('button');
-            btn.innerText = isClient ? '＋ 部品を追加' : '＋ 品目を追加';
-            btn.onclick = () => {
-                const item = document.createElement('m-item');
-                item.setAttribute('item-name', isClient ? '新規部品' : '新規品目');
-                item.setAttribute('quantity', '1');
-                if (isClient) {
-                    item.setAttribute('item-id', 'NEW-ITEM');
-                    item.setAttribute('price', '0');
-                    item.setAttribute('status', '未着手');
-                } else {
-                    item.setAttribute('cost', '0');
-                    item.setAttribute('status', '未納品');
-                }
-                const container = orderEl.querySelector('.m-block-items') || orderEl;
-                container.appendChild(item);
-                if (typeof orderEl.render === 'function') orderEl.render();
-                updateHtmlPreview();
-            };
-            toolbar.appendChild(btn);
-            hasButtons = true;
-        } else if (!isCustomTag(tagName)) {
-            // 構造HTMLのブロックなら装飾ボタンを出す（見出し・段落だけでなく
-            // リストや引用の中の文字も装飾できる）。
+        // 装飾ボタンは構造HTMLのブロックにだけ出す。
+        // （明細行の追加は、表そのものを編集する #table-toolbar が担う。かつては
+        //  発注書のカスタム要素に「＋ 部品を追加」を出していたが、移行完了で不要になった）
+        if (!isCustomTag(tagName)) {
+            // 見出し・段落だけでなく、リストや引用の中の文字も装飾できる。
             [['B', 'bold'], ['I', 'italic'], ['U', 'underline']].forEach(([label, kind]) => {
                 const btn = document.createElement('button');
                 btn.innerText = label;
@@ -2893,7 +2827,7 @@
     bindChromeActions();
 
     window.onload = async function() {
-        // 認証状態とカスタム要素の語彙を先に確定させる。
+        // 認証状態と本文の語彙を先に確定させる。
         // 語彙（/api/tag-schema）はシリアライズに必須なので、保存が走りうる状態になる前に読む。
         await Promise.all([loadMe(), loadTagSchema()]);
         const anon = document.body.classList.contains('anonymous');

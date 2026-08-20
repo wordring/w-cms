@@ -44,8 +44,9 @@ func InitDB() error {
 // pages は全ドキュメントの基本情報、page_perms は権限の検索インデックス。
 // これらは外部キーの参照先となるため、プラグインのテーブルより先に作成する必要があります。
 //
-// カスタム要素（<m-*>）に対応するテーブルはここには置きません。<m-tag> → page_tags も
-// 「カスタムタグはすべてプラグインが所有する」方針に従い plugin_page_tags.go が持ちます。
+// 本文の形式（data-type）に対応するテーブルはここには置きません。
+// dl[data-type="tags"] → page_tags も「語彙の解釈はプラグインが持つ」方針に従い
+// plugin_page_tags.go が持ちます。
 var CoreTables = []string{
 	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）。
 	//    parent_id / created_at / created_by / updated_at はサイドカー

@@ -17,7 +17,7 @@ import (
 //
 // 同期の駆動には既存のプラグイン機構（Register / Sync）へ相乗りしますが、
 // これはドメインのユースケースプラグイン（③計算プラグイン）ではありません。
-// カスタム要素も所有しません（Tags は nil）。
+// 本文の語彙も所有しません（読むのはマーカー付きの標準HTMLだけ）。
 //
 // 鍵と型の決定は文書自身が携帯するスキーマ（見出し行）に従います（同書 §5.1）:
 //   - 鍵 = data-field があればその値、無ければ見出し（th / dt）のテキスト
@@ -61,7 +61,8 @@ func (vocabIndexPlugin) Schema() []string {
 
 func (vocabIndexPlugin) Tables() []string { return []string{"vocab_index"} }
 
-// Tags は nil を返します。②汎用索引はマーカー付き**標準HTML**だけを読み、
+// Sync はマーカー付き標準HTML（table / dl / section の data-type）を走査して
+// vocab_index を当該ページ分だけ洗い替えします。
 func (vocabIndexPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	if _, err := tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, pageID); err != nil {
 		return err
