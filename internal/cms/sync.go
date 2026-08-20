@@ -39,12 +39,25 @@ func SyncIndex(id string, htmlContent string) error {
 	// ページ属性（親ページID・作成日時・作成者・更新日時）はサイドカー（正本）から読み取る。
 	// サイドカーが無い場合は親なし・作成情報なしとして扱い、更新日時は CURRENT_TIMESTAMP に
 	// フォールバックする。サイドカーが正本なのでDB再構築でも属性が失われない。
-	meta, _ := page.ReadSidecar(id)
+	meta, metaOK := page.ReadSidecar(id)
 
 	var parentIDInt sql.NullInt64
 	if meta.ParentID != "" {
 		if pid, e := strconv.Atoi(meta.ParentID); e == nil {
 			parentIDInt = sql.NullInt64{Int64: int64(pid), Valid: true}
+		}
+	} else if !metaOK {
+		// サイドカーが読めない＝親が「無い」のではなく「分からない」。
+		// created_at / created_by は COALESCE で守られているのに parent_id だけ
+		// 無条件上書きだったため、ここで索引に残る最後の1コピーを潰していた
+		// （ページがツリーから消え、DB再構築でも戻らない）。
+		//
+		// 一方、サイドカーが**読めたうえで**親が空なのは admin による
+		// トップレベルへの付け替えなので、そちらは従来どおり NULL を書く。
+		var cur sql.NullInt64
+		if e := database.DB.QueryRow(
+			`SELECT parent_id FROM pages WHERE id = ?`, pageIDInt).Scan(&cur); e == nil {
+			parentIDInt = cur
 		}
 	}
 

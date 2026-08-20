@@ -3,6 +3,7 @@ package page
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -118,9 +119,38 @@ func readMetaOrPerms(id string) PageMeta {
 		return meta
 	}
 	if idInt, err := strconv.Atoi(id); err == nil {
-		return GetPerms(idInt)
+		meta := GetPerms(idInt)
+		// GetPerms が返すのは owner/group/mode/public だけ。ここで止めると、
+		// 続く WriteSidecar が**親も作成情報も持たないサイドカーを新造**し、
+		// 見た目は健全なのに復元できない欠損を作る（ページがツリーから消える）。
+		// DB に残っている分は書き戻す前に拾い直す。
+		fillFromIndex(&meta, idInt)
+		return meta
 	}
 	return PageMeta{Owner: DefaultOwner, Mode: DefaultMode}
+}
+
+// fillFromIndex は派生索引（pages）に残っている親・作成情報を meta の空欄へ補います。
+// サイドカーが読めなくなったときの最後の頼みで、あくまで欠損の緩和です
+// （索引は派生なので、ここで拾えなければその情報は失われています）。
+func fillFromIndex(meta *PageMeta, idInt int) {
+	var parent sql.NullInt64
+	var createdAt, createdBy sql.NullString
+	err := database.DB.QueryRow(
+		`SELECT parent_id, created_at, created_by FROM pages WHERE id = ?`, idInt,
+	).Scan(&parent, &createdAt, &createdBy)
+	if err != nil {
+		return
+	}
+	if meta.ParentID == "" && parent.Valid {
+		meta.ParentID = fmt.Sprintf("%0*d", IDLength, parent.Int64)
+	}
+	if meta.CreatedAt == "" && createdAt.Valid {
+		meta.CreatedAt = createdAt.String
+	}
+	if meta.CreatedBy == "" && createdBy.Valid {
+		meta.CreatedBy = createdBy.String
+	}
 }
 
 // BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。
