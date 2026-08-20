@@ -289,3 +289,39 @@ func TestUploadRequiresEditLock(t *testing.T) {
 		t.Errorf("409 なのに添付が上書きされています: %q", string(got))
 	}
 }
+
+// TestParsePDFRejectsNonPDFName は、AI解析（外部LLMへの送信）が
+// PDF以外のファイルを掴めないことを固定します。
+//
+// parse-pdf は file_name を filepath.Base で切るだけで拡張子を見ていなかったため、
+// ページディレクトリ内の任意のファイル——**本文 <id>.html と権限サイドカー
+// <id>.meta.json を含む**——を「PDFとして」外部（Gemini）へ送れた。
+// アップロード側は allowedAttachmentExts と名指し拒否で守られているのに、
+// 送信側だけが素通しという非対称だった。
+func TestParsePDFRejectsNonPDFName(t *testing.T) {
+	const id = "000012"
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
+
+	// 本文とサイドカーは実在する（setupUploadTest が作る）。ここが狙われる。
+	dir := page.GetPageDir(id)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, id+".html"), []byte("<h1>秘密</h1>"), 0644)
+
+	for _, name := range []string{
+		id + ".meta.json", // 権限サイドカー
+		id + ".html",      // 本文
+		"../../../etc/passwd",
+		"notes.txt",
+	} {
+		body := `{"page_id":"` + id + `","file_name":"` + name + `"}`
+		req := httptest.NewRequest("POST", "/api/parse-pdf", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = auth.WithUser(req, &auth.User{Username: "alice"})
+		rr := httptest.NewRecorder()
+		ParsePDFHandler(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("%s の解析が拒否されていません: code=%d body=%s", name, rr.Code, rr.Body.String())
+		}
+	}
+}
