@@ -856,19 +856,23 @@ body[edit-mode] .block-content p:empty::before {
     font-weight: 600;
 }
 
-/* マーカー付き標準HTML（table/dl[data-type]）の編集モード時の視覚ヒント。
- * 枠で「形式ブロック」であることを示す（閲覧・公開ページには出さない）。 */
+/* 「w-cms がこの要素を見る」ことを枠で示す編集モード時の視覚ヒント
+ * （閲覧・公開ページには出さない）。印の規則は data-type の有無ただ1つ
+ * ——形式ブロック（DBへ入る）・ファイル容器（配線）・計算ビュー（表示専用）は
+ * どれも data-type を持ち、素の文書は持たない。
+ *
+ * 例外はページタイトルになる h1 で、これだけは data-type を持たない。
+ * タイトルは**文書順で最初の h1** という**位置**で決まる（parser.go の ParseCore）ので、
+ * 属性にすると並べ替えや挿入でずれる。実行時クラスで印だけ付ける
+ * （class はサニタイザもシリアライザも通さないので保存に漏れない）。 */
 body[edit-mode] #w-editor-content table[data-type],
-body[edit-mode] #w-editor-content dl[data-type] {
+body[edit-mode] #w-editor-content dl[data-type],
+body[edit-mode] #w-editor-content section[data-type],
+body[edit-mode] #w-editor-content h1.is-page-title {
     outline: 1px dashed #93c5fd;
     outline-offset: 2px;
 }
 
-/* 機械属性のハイライト（語彙モデル §5.1・決定ログ）:
- * th[data-type]（列型の明示）が付いた見出しは、見えている文字から推論した型ではなく
- * 属性の型が使われていることを編集モードで示す。
- * 属性セレクタなので、上書きを起こす属性自体が印のトリガーになり表示と実態がずれない。
- * 鍵を上書きする属性（data-field）は 2026-08-20 に撤去したので、残るのは型だけ。 */
 /* 破壊的な操作のボタン（削除）。押し間違いを減らすため通常の操作と色を変える。 */
 .page-action-danger {
     color: #b91c1c;
@@ -878,6 +882,11 @@ body[edit-mode] #w-editor-content dl[data-type] {
     background: #fef2f2;
 }
 
+/* 機械属性のハイライト（語彙モデル §5.1・決定ログ）:
+ * th[data-type]（列型の明示）が付いた見出しは、見えている文字から推論した型ではなく
+ * 属性の型が使われていることを編集モードで示す。
+ * 属性セレクタなので、上書きを起こす属性自体が印のトリガーになり表示と実態がずれない。
+ * 鍵を上書きする属性（data-field）は 2026-08-20 に撤去したので、残るのは型だけ。 */
 body[edit-mode] #w-editor-content th[data-type] {
     background: #fef3c7;
 }
