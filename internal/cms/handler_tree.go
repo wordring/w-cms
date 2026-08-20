@@ -86,13 +86,7 @@ func visibleChildren(user *auth.User, parentIDInt int) ([]PageSummary, error) {
 		var p PageSummary
 		var idInt int
 		if err := rows.Scan(&idInt, &p.Title); err == nil {
-			visible := false
-			if user != nil {
-				visible = page.GetPerms(idInt).CanRead(user)
-			} else {
-				visible = page.EffectivePublic(idInt)
-			}
-			if visible {
+			if page.CanView(user, idInt) {
 				p.ID = fmt.Sprintf("%0*d", page.IDLength, idInt)
 				pages = append(pages, p)
 			}
