@@ -1,6 +1,6 @@
 # アーキテクチャとDBスキーマ仕様
 
-w-cms は、フロントエンドのエディタが生成するHTMLドキュメント（**マーカー付き標準HTML** ＝ `<table|dl|section data-type>`・`<th|dd data-field>`）と、バックエンドのGoが管理するSQLiteデータベースを連携させることで動作します。このドキュメントでは、そのバックエンド側の詳細な構造とデータの持ち方について解説します。
+w-cms は、フロントエンドのエディタが生成するHTMLドキュメント（**マーカー付き標準HTML** ＝ `<table|dl|section data-type>`。項目の鍵は見出しの表示文字が運ぶ）と、バックエンドのGoが管理するSQLiteデータベースを連携させることで動作します。このドキュメントでは、そのバックエンド側の詳細な構造とデータの持ち方について解説します。
 
 > **カスタム要素（`<m-*>`）は全廃**（2026-08-20 に移行完了）。本文で扱える語彙は
 > [cms/htmldoc/sanitize.go](../internal/cms/htmldoc/sanitize.go) の `structuralElements`＋
@@ -55,8 +55,9 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 （構造HTML → 許可属性）が `GET /api/tag-schema` の `elements` としてそのままエディタへ配られ、
 同時にサニタイザの許可リストにもなります（[本文サニタイズ設計.md](本文サニタイズ設計.md)
 §5・§7）。`data-*` マーカーはこの表の中に**要素を限った属性**として書かれています——
-`data-type` は `table`/`dl`/`section`/`th`、`data-field` は `th`/`dd`、`data-src` は
-`section`（値は埋め込みと同じ**相対URL限定**）。ブロック識別子 `data-id` だけは
+`data-type` は `table`/`dl`/`section`/`th`、`data-src` は
+`section`（値は埋め込みと同じ**相対URL限定**）。機械キーの属性（`data-field`）は 2026-08-20 に撤去され、
+項目の鍵は見出し（`th`／`dt`）の表示文字が運びます。ブロック識別子 `data-id` だけは
 `globalAttributes` として要素を問わず通る別枠で、`elements` には現れず `block_id` として配られます。
 
 かつては「各プラグインが必須メソッド `Tags()` でカスタム要素を宣言し、`PluginTags()` で集約して
@@ -80,7 +81,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` のみHTML本文由来。`page_tags` はプラグインが同期）。
     *   `created_at` / `created_by` 列は `CREATE TABLE` に加え、既存DB向けに冪等な `ALTER TABLE ADD COLUMN` マイグレーション（`database/sqlite.go` の `coreMigrations`）でも追加される。
 *   **`page_tags`**: 可変タグ（ページ横断メタ）。同期元は
-    `<dl data-type="tags">`（dt=名前・dd=値。`dd` に `data-field` があればそちらが鍵）
+    `<dl data-type="tags">`（dt=名前・dd=値。鍵は `dt` の表示文字）
     **のみ**——旧 `<m-tag name value>` の読み取りは短期保険として残していたが 2026-08-19 に除去済み。
     *   `page_id` (FK), `name`, `value`
     *   **コアテーブルではない**。`plugin_page_tags.go` が `Schema()` で定義する
@@ -98,7 +99,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     （[cms/vocab_index.go](../internal/cms/vocab_index.go)。2026-08-17・縦切り第1段）。
     *   `page_id` (FK), `data_type`（形式）, `block_no`（同形式ブロックの文書順連番）,
         `block_id`（ブロックの `data-id`・無ければ空）, `row_no`（データ行の連番）,
-        `field`（鍵＝`data-field` 優先・無ければ見出しテキスト）, `value`（生テキスト＝正本）,
+        `field`（鍵＝見出し／`dt` の表示文字）, `value`（生テキスト＝正本）,
         `norm_value`（正規化値。解釈できた値だけ併記・NULL可）
     *   主キーは持たない（1セル＝1行の完全正規化。形式の定義変更がDBスキーマ変更を
         要求しない）。検索用に `(page_id)` と `(data_type, field)` の非一意インデックス。
@@ -108,7 +109,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 ### 受発注トランザクションテーブル（ヘッダ・明細構造）
 発注書は **`<section data-type="client-order">` / `<section data-type="our-order">`**（業務文書ブロック。
 [【考察】語彙モデル.md](【考察】語彙モデル.md) §8.2 論点A・案1）で表します。section が
-**ヘッダ `<dl>`**（`data-type` を持たず、`dd` の `data-field` が鍵）と
+**ヘッダ `<dl>`**（`data-type` を持たず、`dt` の表示文字が鍵）と
 **明細 `<table data-type="…-items">`** を包む 1:N の構造です。PDF原本は
 **任意の容器 `<section data-type="file" data-src="…">`** が持ち、プラグインは
 `ClosestFileSrc` で祖先から拾います（容器が無い＝ファイルの無い受注も表現できる）。
