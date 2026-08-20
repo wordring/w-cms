@@ -59,7 +59,7 @@ func RenderAnchors(bodyHTML string) string {
 	changed := false
 	for _, n := range nodes {
 		WalkElements(n, func(el *html.Node) {
-			if Attr(el, "id") != "" {
+			if Attr(el, "id") != "" || inVocabChrome(el) {
 				return
 			}
 			base := anchorBase(el)
@@ -81,6 +81,26 @@ func RenderAnchors(bodyHTML string) string {
 		html.Render(&sb, n)
 	}
 	return sb.String()
+}
+
+// inVocabChrome は要素がサーバー描画の編集クローム（.vocab-chrome）の中にあるかを返します。
+//
+// クロームは本文ではない（シリアライザが保存しない）ので、アンカーを付けても無駄なうえ、
+// **本文の見出しが使いたいアンカー名を先に消費してしまいます**。
+// 本文の class はサニタイザが必ず落とすので、`vocab-chrome` はサーバー／エンハンサが
+// 挿したクロームにしか現れません——この判定は誤爆しません。
+func inVocabChrome(n *html.Node) bool {
+	for p := n; p != nil; p = p.Parent {
+		if p.Type != html.ElementNode {
+			continue
+		}
+		for _, c := range strings.Fields(Attr(p, "class")) {
+			if c == "vocab-chrome" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // anchorBase は要素のアンカー名の元を返します（作れなければ空）。

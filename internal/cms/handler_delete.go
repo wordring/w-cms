@@ -100,7 +100,11 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 同じIDが既にゴミ箱にある（削除→復元→再削除）場合は連番を付けて上書きを避けます。
 func moveToTrash(id string) (string, error) {
 	src := page.GetPageDir(id)
-	if _, err := os.Stat(src); err != nil {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		// フォルダが失われている（手動削除・過去の中断など）。ここで止めると
+		// DBに残ったページを画面から永久に消せなくなるので、索引の掃除だけ進める。
+		return "", nil
+	} else if err != nil {
 		return "", err
 	}
 	dst := page.GetTrashDir(id)
