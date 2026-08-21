@@ -28,6 +28,12 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
   **strict 版**（`script-src 'self'; style-src 'self'`＝`'unsafe-inline'` なし）へ格上げ済み
   （[【考察】CSP強化.md](【考察】CSP強化.md)）。
 
+ここは**黙って壊れる層**です——ハンドラを `protected` から `root` へ移す・`OptionalAuth` を
+付け忘れる・ミドルウェアの入れ子を外す、といった退行が起きても既存のテストは green のまま
+実害だけが出ます。そのため `buildHandler()` を `main` から切り出し、ルートごとの保護レベルと
+上記2つの配線を [route_guard_test.go](../cmd/w-cms/route_guard_test.go) が固定しています
+（`csp_test.go` はポリシー文字列を見るだけで、配線までは見ていない）。
+
 ## 2. ページ本文・属性
 
 | メソッド | パス | 認可 | 編集ロック | 概要 |
@@ -39,21 +45,15 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | GET | `/api/page-meta` | 任意認証（read） | — | ページ属性（親ページID・親ページ名・更新日時など）。匿名には実効公開のときだけ返す |
 | GET | `/api/children` | 任意認証（親のread） | — | 子ページ一覧（ID昇順）。認証済みには read 権限のある子、匿名には**実効公開の子だけ**を絞って返す（`visibleChildren`。計算ビューのサーバー事前描画と共用） |
 | POST | `/api/delete-page` | 要認証（write） | 要 | ページを**ゴミ箱（`data/trash`）へ移し**、索引から取り除く。物理削除ではない（取り消せることが要件）。**トップページは400**／**子ページを持つと409**（件数つき）／他者ロック中は409。応答は `{success, page_id, trash_path}` |
-| GET/POST | `/api/new-page` | 要認証（親のwrite） | — | 子ページを作成し `/{新ID}?edit=true` へ302。**親の指定は必須**（親なしにできるのはトップページ `000000` のみ）。`template=<ページID>` を付けるとそのテンプレートの本文を写して**新規化**する（空欄を列型の既定値で埋める。日付は今日・`order-no` は再採番）。テンプレートに使えるのは「テンプレート」フォルダ配下の**葉**だけで、分類フォルダとルートは400。テンプレートの**read権限が要る**。検証は**採番より前**に行う（ファイルの無いページ行を残さないため） |
+| POST | `/api/new-page` | 要認証（親のwrite） | — | 子ページを作成し `/{新ID}?edit=true` へ302。**POST限定**（GETは405）——GETで通ると本文へ `<img src="/api/new-page?parent=…">` を1つ保存するだけで、開いた全ログインユーザーにページを作らせられる（同一オリジンなので SameSite も CSP も止めない。`method_guard_test.go` が固定）。引数は `r.FormValue` なのでPOSTボディでもクエリでも受ける。**親の指定は必須**（親なしにできるのはトップページ `000000` のみ）。`template=<ページID>` を付けるとそのテンプレートの本文を写して**新規化**する（空欄を列型の既定値で埋める。日付は今日・`order-no` は再採番）。テンプレートに使えるのは「テンプレート」フォルダ配下の**葉**だけで、分類フォルダとルートは400。テンプレートの**read権限が要る**。検証は**採番より前**に行う（ファイルの無いページ行を残さないため） |
 | GET | `/api/templates` | 要認証 | — | テンプレート選択メニューの中身。「テンプレート」フォルダ（トップ直下・同名）配下のツリーを `[{id,title,children}]` で返す。**枝は分類・葉がテンプレート**。ルートが無ければ `[]`（従来どおり空のページだけが作られる）。read 権限で絞られる（`visibleChildren`） |
 | GET | `/api/validate-parent` | 要認証（write） | — | 親付け替えの事前検証（循環・自己参照・存在チェック）。`/api/set-parent` と同じ `validateParentChange` を共有する。**現在フロントからは呼ばれていない**（`applyParent()` は `/api/set-parent` の応答だけで判定する） |
 | POST | `/api/set-parent` | 要認証（write） | 要 | 親ページの付け替え |
 | GET | `/data/...` | 任意認証（read） | — | 添付ファイル配信（PDF原本など）。ページのread権限を要求する保護ハンドラ |
 
-> **計算ビューのサーバー事前描画**（`internal/cms/view_render.go` の `RenderComputedViews`）:
-> 本文に保存されているのは空のマーカー `<section data-type="child-list">`・
-> `<section data-type="required-materials">` だけで、中身は本文を返す**2つの入口**
-> （`/{id}` の `RootHandler` と `/api/load` の `LoadAPIHandler`）が毎回埋めます。
-> 埋めた中身は `<div class="vocab-chrome" contenteditable="false">` に包まれ、エディタの
-> シリアライザは `.vocab-chrome` を保存しないので、往復しても正本にはマーカーだけが残ります。
-> 子ページ一覧は `/api/children` と、手配集計は `/api/required-materials` と**同じ関数**
-> （`visibleChildren` / `RequiredMaterials`）を共用するため、APIと画面で結果が食い違いません。
-> 詳細は [アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) 4.4。
+> **計算ビューのサーバー事前描画**: 本文を返す入口は `/{id}`（`RootHandler`）と `/api/load`
+> （`LoadAPIHandler`）の**2つだけ**で、どちらも `RenderComputedViews` を通します。
+> 正本は [アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) 4.4。
 
 > **保存応答の3つの告知**（いずれも**拒否ではなく告知**——エコーバックの流儀）
 >
@@ -77,19 +77,19 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
-| POST | `/api/lock` | 要認証（write） | ロック取得（`{ok, token}`）。**本文は返さない**——取得後にフロントが `GET /api/load` を読む（そちらは計算ビューのSSRを通るため。2026-08-20 変更） |
+| POST | `/api/lock` | 要認証（write） | ロック取得（`{ok, token}`）。取れなければ **423 Locked** ＋ `{ok:false, holder, same_user, grace_remaining_sec}`。**本文は返さない**——取得後にフロントが `GET /api/load` を読む（そちらは計算ビューのSSRを通るため。2026-08-20 変更） |
 | GET | `/api/lock-events` | 要認証（write） | ロック状態の **SSE** 購読（保持者・待機者で共用） |
 | POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
 | POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
 
-書き込み系API（`/api/save`・`/api/save-block`・`/api/set-parent`・`/api/page-perms`・
-`/api/page-chown`）は**同じロックで直列化**される。ただし入口は2種類ある。
+ページの状態を変えるAPIは**同じロックで直列化**される（計7本）。ただし入口は2種類ある。
 
 - **保存2本**（`/api/save`・`/api/save-block`）は `editlock.Locks.Validate` を直接呼び、
   トークンは**JSONボディの `token`** で受ける。
-- **残り3本**（`/api/set-parent`・`/api/page-perms`・`/api/page-chown`）は共通ゲート
-  `editlock.RequireEditLock` を通り、トークンは **`X-Lock-Token` ヘッダ**（無ければ `token` クエリ）
-  で受ける。フロントはこの3本を `lockedFetch` で送る。
+- **残り5本**（`/api/set-parent`・`/api/page-perms`・`/api/page-chown`・`/api/delete-page`・
+  `/api/upload-pdf`）は共通ゲート `editlock.RequireEditLock` を通り、トークンは
+  **`X-Lock-Token` ヘッダ**（無ければ `token` クエリ）で受ける。フロントはこの5本を
+  `lockedFetch`（または同じヘッダを手で付けた `fetch`）で送る。
 
 検証規約はどちらも同じ（ロック無し＝許可／保持者本人でトークン一致なら許可／それ以外は409）。
 
@@ -107,7 +107,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 |---|---|---|---|
 | GET | `/login` | 認証不要 | ログイン画面 |
 | POST | `/api/login` | 認証不要 | ログイン。argon2id 検証（同時実行はセマフォで4件まで）。失敗は `login_attempts` に記録し、**5回連続で15分ロックアウト** |
-| POST | `/api/logout` | 要認証 | ログアウト（セッション行を削除） |
+| POST | `/api/logout` | 要認証 | ログアウト（セッション行を削除）。**POST限定**（GETは405）——`/api/new-page` と同じ保存型CSRFで、本文の `<img src="/api/logout">` 1つで開いた全員を無音で追い出せた |
 | GET | `/api/me` | 任意認証 | 認証状態。未認証は `{authenticated:false}` |
 
 ## 6. 管理（admin限定）
@@ -121,7 +121,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/admin/users/disable` | 有効・無効の切り替え |
 | GET/POST | `/api/admin/groups` | グループの一覧・作成 |
 | POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
-| GET | `/api/admin/audit` | 監査ログの参照（書き込み・権限変更を記録） |
+| GET | `/api/admin/audit` | 監査ログの参照（書き込み・権限変更を記録）。直近200件 |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え） |
 
 > 移行期にあった `POST /api/migrate-vocab`（旧カスタム要素→語彙モデルの一括変換）は
@@ -133,9 +133,9 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
 | GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML → 許可属性。`data-*` マーカーもここに属性として現れる。**カスタム要素はゼロ**）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）・`vocab`（語彙レジストリ12形式の定義を `type` 順で。スラッシュメニューと挿入骨格の生成元）・`type_inference`（語→型の推論辞書。エディタの型検証がサーバーの索引と同じ辞書を使うための配布）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
-| POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<先頭2桁>/<id>/` へ保存）。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
-| POST | `/api/parse-pdf` | 要認証（対象ページの write） | PDFから明細をAI抽出（Gemini） |
-| GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`）。集計本体は `RequiredMaterials(pageID)` で、計算ビューのサーバー事前描画と共用する（応答が呼び出しごとに変わらないよう**部材名順**にソート） |
+| POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<先頭2桁>/<id>/` へ保存）。**編集ロックが要る**——添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）ため本文編集と同じロックで直列化する。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
+| POST | `/api/parse-pdf` | 要認証（対象ページの write） | PDFから明細をAI抽出（Gemini）。**ロックは要らない**——永続状態を変えず、結果はDOMへ足すだけ（保存する `/api/save` 側が検証する）。ファイル名は置く側と**同じ関門**（`attachmentFileName`）を通す——ここが `filepath.Base` だけだったころ、本文 `<id>.html` と権限サイドカー `<id>.meta.json` を「PDFとして」外部へ送れた |
+| GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`）。集計本体は `RequiredMaterials(user, pageID)` で、計算ビューのサーバー事前描画と共用する（応答が呼び出しごとに変わらないよう**部材名順**にソート）。集計対象ページの read だけでは足りず、**部材の定義元ページを読めない相手にはその定義を混ぜない**——品番は本文へ自由に書けるので、自分のページに1行置くだけで読めない部品定義ページの部材名・仕入先・原価を引けていた（2026-08-21 修正） |
 
 プラグインは `RouteProvider` を実装するとルートを追加できる。`main.go` は
 `cms.PluginRoutes()` をループして登録するだけで、コア側の変更は要らない

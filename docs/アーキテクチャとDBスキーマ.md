@@ -17,7 +17,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 ### Goバックエンドの構成（`internal/`）
 *   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。ユースケース固有のテーブルは各プラグインが定義します。
 *   **`cms/editlock/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/editlock/handler.go`（4.3 参照）。
-*   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース（`Name` / `Schema` / `Tables` / `Sync` の4メソッド）、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。**語彙集約（必須メソッド `Tags` と `PluginTags`）は 2026-08-20 に撤去**——全プラグインが nil を返す状態になったため機構ごと外しました（下の「語彙の正本」参照）。
+*   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース（`Name` / `Schema` / `Tables` / `Sync` の4メソッド）、レジストリ（`Register` / `Plugins`）、スキーマ一括適用（`ApplySchema`）と**既存DBとのずれ検出**（`DriftedSchemaTables`。8.3）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。**語彙集約（必須メソッド `Tags` と `PluginTags`）は 2026-08-20 に撤去**——全プラグインが nil を返す状態になったため機構ごと外しました（下の「語彙の正本」参照）。
 *   **`cms/plugin_*.go`**: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）・同期処理（`Sync`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。
 *   **`cms/htmldoc/sanitize.go`**: 本文サニタイザ（純粋なHTML部品。import は `x/net/html`＋標準のみ）で、**本文で扱えるHTMLの語彙の唯一の正本**（`structuralElements`＋`data-*` マーカー）。`cms/sanitize.go` は薄いラッパで、`htmldoc.New()` の結果をパッケージ変数として持ちます。依存は `cms → htmldoc` の一方向（**逆向きに import しないこと**）。
 *   **`cms/vocab.go` / `cms/vocab_index.go`**: 語彙モデル3層の①と②。`vocab.go` が形式定義の宣言テーブル（`vocabRegistry`。編集支援・型推論・正規化の語彙であって**安全性の門ではない**）、`vocab_index.go` が全 `table[data-type]` / `dl[data-type]` を縦持ちで索引する汎用同期（プラグイン機構へ相乗り）。
@@ -26,7 +26,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 *   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_perms）を同期した後、登録済みの全プラグインの `Sync` を1トランザクション内で呼び出します。各プラグインは「当該ページ分を `DELETE` → `INSERT`」で洗い替えします。`RebuildDatabase` は全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
 
 > **削除は `data/trash` への移動**（物理削除ではない。取り消せることが要件——[【考察】通信記録処理.md](【考察】通信記録処理.md) §2.7④）。`RebuildDatabase` が走査するのは `data/master` だけなので、フォルダを移すだけで索引からも消えます。逆に、ゴミ箱から `data/master` へ戻して再構築すれば復元できます（復元UIは未実装）。
-*   **`cms/handler_*.go`**: コアのHTTPハンドラ。関心ごとに `handler_save.go`（保存）・`handler_view.go`（画面とページ本文API）・`handler_tree.go`（木構造：新規作成・子一覧・親の付け替え）・`handler_meta.go`（属性・語彙・DB再構築）へ分けています。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
+*   **`cms/handler_*.go`**: コアのHTTPハンドラ。関心ごとに `handler_save.go`（保存）・`handler_view.go`（画面とページ本文API）・`handler_tree.go`（木構造：新規作成・子一覧・親の付け替え）・`handler_meta.go`（属性・語彙・DB再構築）・`handler_delete.go`（ゴミ箱への削除）・`handler_template.go`（テンプレート一覧）へ分けています。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
 *   **`cms/page/`**: ページの実体を扱うパッケージ。保存ディレクトリの決定（`GetPageDir`）、属性サイドカーの読み書き、Unix風の認可（`RequirePageWrite` 等）、`/data/` 配下の添付配信ゲート（`DataFileHandler`）。**ハンドラ層（`cms`）と編集ロック（`cms/editlock`）の両方がここに依存し、逆向きの依存はありません。**
 
 ---
@@ -40,36 +40,27 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 > ユースケース固有のテーブルは、`page_tags` を含めてすべて対応する**プラグイン**
 > （`cms/plugin_*.go`）が `Schema()` で定義し、起動時に `cms.ApplySchema()` で作成されます。
 >
-> 語彙モデルの**汎用索引テーブル `vocab_index`**（全 `table[data-type]`/`dl[data-type]` の
-> 縦持ち同期先。完全正規化）は実装済み（2026-08-17・縦切り第1段）。3層モデルの②＝
-> コアの1実装だが、同期の駆動は既存プラグイン機構へ相乗りしており、テーブル作成も
-> [cms/vocab_index.go](../internal/cms/vocab_index.go) の `Schema()` が担う
+> 汎用索引 `vocab_index` も例外ではなく、テーブル作成は
+> [cms/vocab_index.go](../internal/cms/vocab_index.go) の `Schema()` が担います
 > （`CreateCoreTables` は従来どおり `pages` / `page_perms` のみ）。
-> **「コアはドメイン語彙を知らない」原則はそのまま**——コアにとって `data-type` の値は
-> 不透明な文字列で、未知の値もそのまま索引に載る。特定の形式の意味を知るのは
-> 計算プラグインだけ。[【考察】語彙モデル.md](【考察】語彙モデル.md) §4 参照。
 >
-> どの形式がどのプラグイン・テーブルへ流れるかは
-> [【一覧】語彙.md](【一覧】語彙.md) を参照してください。
+> **「コアはドメイン語彙を知らない」原則はそのまま**——コアにとって `data-type` の値は
+> 不透明な文字列で、未知の値もそのまま索引に載り、特定の形式の意味を知るのは計算プラグイン
+> だけです。語彙の3層モデル（①レジストリ／②汎用索引／③計算プラグイン）は
+> [【考察】語彙モデル.md](【考察】語彙モデル.md) §4、どの形式がどのプラグイン・テーブルへ
+> 流れるかは [【一覧】語彙.md](【一覧】語彙.md) §3 を参照してください。
 
 ### 語彙の正本（プラグインは語彙を持たない）
-本文で扱えるHTMLの語彙は **`cms/htmldoc/sanitize.go` の1箇所**が正本です。`structuralElements`
-（構造HTML → 許可属性）が `GET /api/tag-schema` の `elements` としてそのままエディタへ配られ、
-同時にサニタイザの許可リストにもなります（[本文サニタイズ設計.md](本文サニタイズ設計.md)
-§5・§7）。`data-*` マーカーはこの表の中に**要素を限った属性**として書かれています——
-`data-type` は `table`/`dl`/`section`/`th`、`data-src` は
-`section`（値は埋め込みと同じ**相対URL限定**）。機械キーの属性（`data-field`）は 2026-08-20 に撤去され、
-項目の鍵は見出し（`th`／`dt`）の表示文字が運びます。ブロック識別子 `data-id` だけは
-`globalAttributes` として要素を問わず通る別枠で、`elements` には現れず `block_id` として配られます。
+本文で扱えるHTMLの語彙——許可要素と **`data-*` マーカーの許可範囲**——は
+[cms/htmldoc/sanitize.go](../internal/cms/htmldoc/sanitize.go) の1箇所が正本で、文書側の正本は
+[本文サニタイズ設計.md](本文サニタイズ設計.md) §5.2・§5.4 です（同じ表が `GET /api/tag-schema` の
+`elements` としてエディタへも配られます）。
 
-かつては「各プラグインが必須メソッド `Tags()` でカスタム要素を宣言し、`PluginTags()` で集約して
-`htmldoc.New(custom)` へ注入する」構造でしたが、移行完了でカスタム要素がゼロになり、
-**機構ごと撤去しました**（2026-08-20）。副産物として、プラグインの `init()` 登録を待つ
-遅延初期化（`sync.Once`）が不要になり、**暗黙の初期化順序への依存も消えています**。
-
-**新しい形式を足すときはカスタム要素を作らず**、`cms/vocab.go` の `vocabRegistry` へ
-`data-type` の宣言を1件足します（サニタイザ側は要素・属性が既に許可済みなので変更不要）。
-未知の `data-type` も保存は通り、`unknown_types` として告知されるだけです。
+**プラグインは語彙を宣言しません**——カスタム要素を作らない理由は
+[【考察】語彙モデル.md](【考察】語彙モデル.md) §9 の決定ログ、`Tags()` / `PluginTags()` による
+注入機構を撤去した経緯は [変更履歴.md](変更履歴.md) 2026-08-20 の節にあります。**新しい形式は
+`cms/vocab.go` の `vocabRegistry` へ宣言を1件足す**だけで済みます（サニタイザ側は要素・属性が
+既に許可済みなので変更不要。未知の `data-type` も保存は通り `unknown_types` として告知される）。
 
 ### ドキュメント管理テーブル
 *   **`pages`**: すべてのドキュメントの基本情報。
