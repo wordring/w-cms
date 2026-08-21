@@ -446,5 +446,26 @@ func safeEmbedURL(v string) bool {
 	if s == "" {
 		return true
 	}
-	return isRelativeURL(s)
+	if !isRelativeURL(s) {
+		return false
+	}
+	// **絶対パスの宛先は添付置き場（/data/）に限る**（2026-08-21 ユーザー決定）。
+	//
+	// 相対URLというだけで通していたころ、本文へ `<img src="/api/logout">` を1つ保存すると
+	// そのページを開いた全員が無音でログアウトさせられた（保存型CSRF）。個々の口は
+	// メソッドを絞って塞いだが、**本文からアプリのアドレスを叩けること自体**が残っていた。
+	// 宛先を限れば、GETで何かが起きる口を将来足しても本文からは届かない——
+	// 「存在するか」の検査では止められない（/api/logout は実在する正規の口だから）。
+	//
+	// ページからの相対パス（`a.png`・`img/a.png`）は従来どおり通す。添付は
+	// ページのフォルダに置かれ、配信は /data/ 配下の認可付きハンドラが担う
+	// （page.DataFileHandler）。リンク（a[href]）は別扱いで制限しない——
+	// 押さないと何も起きず、埋め込みのように自動取得されないため。
+	if strings.HasPrefix(s, "/") {
+		return strings.HasPrefix(s, dataDirPrefix) && !strings.Contains(s, "..")
+	}
+	return true
 }
+
+// dataDirPrefix は埋め込みに許す絶対パスの接頭辞です（添付の配信口）。
+const dataDirPrefix = "/data/"
