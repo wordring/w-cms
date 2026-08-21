@@ -7,6 +7,20 @@ try { ({ chromium } = createRequire(path.join(process.cwd(), 'noop.js'))('playwr
 catch (e) { console.error('node_modules のあるディレクトリ（~/tools/wcms-e2e）から実行してください'); process.exit(2); }
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
+
+// gotoNewPage は子ページを作ってそのページへ遷移する。
+// /api/new-page は保存型CSRF対策で **POST 限定**（2026-08-21・beb98a1）なので、
+// ブラウザの GET 遷移では作れない。POST してから Location へ遷移する。
+async function gotoNewPage(page, parent, template) {
+    let url = BASE + "/api/new-page?parent=" + parent;
+    if (template) url += "&template=" + encodeURIComponent(template);
+    const res = await page.request.post(url, { headers: { "Origin": BASE }, maxRedirects: 0 });
+    const loc = res.headers()["location"];
+    if (!loc) throw new Error("new-page failed: " + res.status() + " " + (await res.text()));
+    await page.goto(BASE + loc);
+    return loc.replace(/^\//, "").replace(/\?.*$/, "");
+}
+
 const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 }); }
@@ -45,7 +59,7 @@ async function openSlashMenu(page) {
         }
 
         // 4. 新規ページで計算ビューを挿す
-        await page.goto(BASE + '/api/new-page?parent=000000');
+        await gotoNewPage(page, '000000');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         const pageURL = page.url().replace(/\?edit.*$/, '');
 
@@ -76,7 +90,7 @@ async function openSlashMenu(page) {
 
         // 6. 子ページを作ると一覧に載る
         const pageId = pageURL.split('/').pop();
-        await page.request.get(BASE + '/api/new-page?parent=' + pageId);
+        await page.request.post(BASE + '/api/new-page?parent=' + pageId, { headers: { 'Origin': BASE } });
         await page.goto(pageURL);
         await page.locator('#w-editor-content section[data-type="child-list"] .vocab-chrome').waitFor({ timeout: 8000 });
         check('作成した子ページがSSRの一覧に出る', await page.locator('#w-editor-content section[data-type="child-list"] .vocab-chrome a').count() >= 1);

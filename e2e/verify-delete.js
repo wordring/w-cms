@@ -6,6 +6,20 @@ try { ({ chromium } = createRequire(path.join(process.cwd(), 'noop.js'))('playwr
 catch (e) { console.error('node_modules のあるディレクトリ（~/tools/wcms-e2e）から実行してください'); process.exit(2); }
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
+
+// gotoNewPage は子ページを作ってそのページへ遷移する。
+// /api/new-page は保存型CSRF対策で **POST 限定**（2026-08-21・beb98a1）なので、
+// ブラウザの GET 遷移では作れない。POST してから Location へ遷移する。
+async function gotoNewPage(page, parent, template) {
+    let url = BASE + "/api/new-page?parent=" + parent;
+    if (template) url += "&template=" + encodeURIComponent(template);
+    const res = await page.request.post(url, { headers: { "Origin": BASE }, maxRedirects: 0 });
+    const loc = res.headers()["location"];
+    if (!loc) throw new Error("new-page failed: " + res.status() + " " + (await res.text()));
+    await page.goto(BASE + loc);
+    return loc.replace(/^\//, "").replace(/\?.*$/, "");
+}
+
 const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 
@@ -30,13 +44,13 @@ function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); 
         await page.evaluate(() => document.getElementById('w-mode-toggle').click());
 
         // 2. 親と子を作る → 親は子がいるので削除できない
-        await page.goto(BASE + '/api/new-page?parent=000000');
+        await gotoNewPage(page, '000000');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         const parentURL = page.url().replace(/\?edit.*$/, '');
         const parentId = parentURL.split('/').pop();
         check('編集モードで削除ボタンが出る', await page.locator('#w-delete-page-btn:visible').count() === 1);
 
-        await page.request.get(BASE + '/api/new-page?parent=' + parentId);
+        await page.request.post(BASE + '/api/new-page?parent=' + parentId, { headers: { 'Origin': BASE } });
         await page.goto(parentURL + '?edit=true');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         await page.waitForTimeout(500);
