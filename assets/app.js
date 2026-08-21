@@ -695,8 +695,17 @@
 
     function saveToServer() {
         if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
-        // 語彙が未取得のまま保存すると、カスタム要素が丸ごと欠落した本文を書いてしまう。
-        if (!tagSchema) { console.warn('カスタム要素の語彙が未取得のため保存を見送りました'); return; }
+        // 語彙が未取得のまま保存すると、本文が丸ごと欠落したものを書いてしまう。
+        // **黙って見送ってはいけない**——打った内容が保存されないまま「保存済」が
+        // 出続け、その回の入力がまるごと失われる（2026-08-21 修正）。
+        if (!tagSchema) {
+            console.warn('本文の語彙が未取得のため保存を見送りました');
+            setSaveStatus("⚠ 保存できません", "#ef4444");
+            notify('本文の語彙を取得できていないため保存できません。ページを再読み込みしてください。' +
+                '（書きかけは失われます——先に内容をコピーしてください）',
+                { type: 'warn', duration: 0, id: 'no-vocab' });
+            return;
+        }
 
         ensureBlockIds(); // 新しく作られたブロックにIDを振る（構造変更なので全文保存になる）
         const blocks = serializeBlocks();
@@ -1006,12 +1015,24 @@
         let replaced = false;
         holders.forEach((h, i) => {
             if (!h.el || !h.content) return;
-            if (h.el.outerHTML === incoming[i].outerHTML) return;
+            // 比較は**保存される形**で行う（両辺を同じシリアライザに通す）。
+            // outerHTML を直接比べると、編集モードの contenteditable と
+            // サーバー事前描画のクローム（.vocab-chrome）は**現在のDOMにしか無い**ため
+            // 必ず不一致になり、安全化のたびに全ブロックが差し替えられていた
+            // ——差し替え後の要素は保存形なので contenteditable を持たず、
+            // ページ全体が黙って編集不能になっていた（2026-08-21 修正）。
+            if (serializeBlock(h.el) === serializeBlock(incoming[i])) return;
             // 編集中のブロックは触らない（離脱時の保存で反映される）
             if (h.block.contains(document.activeElement)) return;
+            // 計算ビューの中身はサーバーが所有しており、ここで差し替えると
+            // 再読込まで戻せない。マーカー自体は空なので据え置いて実害は無い。
+            if (isViewSection(h.el)) return;
             h.content.replaceChild(incoming[i], h.el);
             replaced = true;
         });
+        // 差し替えた要素は保存形＝contenteditable もエンハンサのクロームも持たない。
+        // モードを当て直さないと、その場で編集できなくなる。
+        if (replaced) applyMode();
         return replaced;
     }
 
@@ -1339,7 +1360,10 @@
             typeInferenceDict = (d && d.type_inference) || {};
         } catch (e) {
             console.error('本文の語彙を取得できませんでした:', e);
-            tagSchema = {};
+            // **null のままにする。** 空オブジェクトを入れるとガード `if (!tagSchema)` が
+            // 素通りし、語彙が空＝全要素が保存対象外になって、打った内容が1文字も
+            // 保存されないのに「保存済」と出続けた（2026-08-21 修正）。
+            tagSchema = null;
             voidTags = new Set();
             vocabDefs = [];
             typeInferenceDict = {};
