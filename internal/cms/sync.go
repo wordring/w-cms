@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 
@@ -136,6 +137,13 @@ func SyncIndex(id string, htmlContent string) error {
 // 削除せず、接続を開いたまま実行することで、Windowsでのファイルロックや
 // リビルド中の他リクエストとの競合を避けています。処理は冪等です。
 func RebuildDatabase() error {
+	// 0. 「これから再構築する」印を残す。途中で止まったら次の起動でやり直すため
+	//    （印が無いと、途中まで入ったDBは再構築済みと見分けが付かない）。
+	started := time.Now()
+	if err := markRebuildStarted(); err != nil {
+		return err
+	}
+
 	// 1. 現在DBに存在する全テーブルを sqlite_master から列挙してDROPする。
 	if err := dropAllTables(database.DB); err != nil {
 		return err
@@ -150,12 +158,105 @@ func RebuildDatabase() error {
 	}
 
 	// 3. data/master 以下のすべての .html ファイルを探索して SyncIndex を実行する。
-	return resyncAllPages()
+	pages, err := resyncAllPages()
+	if err != nil {
+		return err // 印は残したまま＝次の起動でやり直す
+	}
+
+	// 4. 終わった印を、件数と所要時間つきで残す。
+	ms := time.Since(started).Milliseconds()
+	if err := markRebuildFinished(pages, ms); err != nil {
+		return err
+	}
+	log.Printf("索引を再構築しました: %dページ / %dミリ秒", pages, ms)
+	return nil
+}
+
+// rebuildStateTable は再構築の進行状況を残す1行テーブルです。
+//
+// 再構築は data/master を1ページずつ読み直す長い処理で、途中で止まると（強制終了・停電）
+// **次の起動は何事もなく成功し、取り込めなかったページは開いても「ありません」のまま**に
+// なります。pages が空かどうかだけでは、途中まで入ったDBと再構築済みのDBを見分けられません。
+// そこで「始めた印」を残し、印が残ったまま起動したら必ずやり直します。
+//
+// このテーブルだけは dropAllTables の対象外です（再構築の最中に自分を消せない）。
+const rebuildStateTable = "rebuild_state"
+
+// ensureRebuildStateTable は進行状況テーブルを用意します。
+func ensureRebuildStateTable(db *sql.DB) error {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS ` + rebuildStateTable + ` (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		started_at TEXT,
+		finished_at TEXT,
+		pages INTEGER,
+		duration_ms INTEGER
+	);`)
+	return err
+}
+
+// markRebuildStarted は「これから再構築する」印を残します（終了時刻は空のまま）。
+func markRebuildStarted() error {
+	if err := ensureRebuildStateTable(database.DB); err != nil {
+		return err
+	}
+	_, err := database.DB.Exec(`
+		INSERT INTO `+rebuildStateTable+` (id, started_at, finished_at, pages, duration_ms)
+		VALUES (1, ?, NULL, NULL, NULL)
+		ON CONFLICT(id) DO UPDATE SET
+			started_at = excluded.started_at, finished_at = NULL,
+			pages = NULL, duration_ms = NULL
+	`, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// markRebuildFinished は再構築の完了を、件数と所要時間つきで記録します。
+func markRebuildFinished(pages int, durationMS int64) error {
+	if err := ensureRebuildStateTable(database.DB); err != nil {
+		return err
+	}
+	_, err := database.DB.Exec(`
+		UPDATE `+rebuildStateTable+`
+		SET finished_at = ?, pages = ?, duration_ms = ?
+		WHERE id = 1
+	`, time.Now().UTC().Format(time.RFC3339), pages, durationMS)
+	return err
+}
+
+// rebuildUnfinished は「始めた印はあるが終わっていない」状態かを返します。
+func rebuildUnfinished() (bool, error) {
+	if err := ensureRebuildStateTable(database.DB); err != nil {
+		return false, err
+	}
+	var started sql.NullString
+	var finished sql.NullString
+	err := database.DB.QueryRow(
+		`SELECT started_at, finished_at FROM ` + rebuildStateTable + ` WHERE id = 1`).
+		Scan(&started, &finished)
+	if err != nil {
+		return false, nil // 行が無い＝再構築を始めたことがない
+	}
+	return started.Valid && started.String != "" && !finished.Valid, nil
+}
+
+// lastRebuildResult は直近の再構築の件数と所要時間（ミリ秒）を返します。
+func lastRebuildResult() (pages int, durationMS int64, ok bool) {
+	if err := ensureRebuildStateTable(database.DB); err != nil {
+		return 0, 0, false
+	}
+	var p, d sql.NullInt64
+	err := database.DB.QueryRow(
+		`SELECT pages, duration_ms FROM ` + rebuildStateTable + ` WHERE id = 1`).Scan(&p, &d)
+	if err != nil || !p.Valid {
+		return 0, 0, false
+	}
+	return int(p.Int64), d.Int64, true
 }
 
 // dropAllTables は sqlite_master を列挙して、ユーザー定義の全テーブルをDROPします。
+// 進行状況テーブル（rebuild_state）だけは残します——再構築の最中に「始めた印」を
+// 自分で消してしまうと、途中で止まったことを次の起動で知る手段が無くなるためです。
 func dropAllTables(db *sql.DB) error {
-	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != '` + rebuildStateTable + `'`)
 	if err != nil {
 		return err
 	}
@@ -184,18 +285,32 @@ func dropAllTables(db *sql.DB) error {
 	return nil
 }
 
-// RebuildIfEmpty は、pages テーブルが空でかつ data/master にHTMLファイルが存在する場合に、
+// RebuildIfNeeded は、次のいずれかのときにデータベースを全再構築します。
+//   - 前回の再構築が完了していない（中断の印が残っている）
+//   - pages テーブルが空でかつ data/master にHTMLファイルが存在する場合に、
 // データベースを全再構築します。バックアップからファイル（data/master）だけを復元した状態で
 // アプリを起動するだけでDBが自動再生成されるようにするための、起動時フックです。
-func RebuildIfEmpty() error {
+func RebuildIfNeeded() error {
+	if !hasHTMLFiles(page.MasterDir) {
+		return nil // 元になるファイルが無いなら再構築のしようがない
+	}
+
+	// 中断の検出を先に見る。pages が空でなくても、途中まで入っただけかもしれない
+	// ——取り込めなかったページは開いても「ありません」のままで、記録も残らない。
+	unfinished, err := rebuildUnfinished()
+	if err != nil {
+		return err
+	}
+	if unfinished {
+		log.Println("前回の索引再構築が完了していません: やり直します")
+		return RebuildDatabase()
+	}
+
 	var count int
 	if err := database.DB.QueryRow("SELECT COUNT(*) FROM pages").Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
-		return nil
-	}
-	if !hasHTMLFiles(page.MasterDir) {
 		return nil
 	}
 	log.Println("空のDBとHTMLファイルを検出: データベースを自動再構築します")
@@ -220,8 +335,10 @@ func hasHTMLFiles(dir string) bool {
 
 // resyncAllPages は data/master 配下の全 .html を走査して SyncIndex を実行します。
 // 個々のファイルのエラーは握り潰して他ファイルの処理を継続します（冪等な再実行で回復可能）。
-func resyncAllPages() error {
-	return filepath.Walk(page.MasterDir, func(path string, info os.FileInfo, err error) error {
+// 取り込んだページ数を返します（完了の記録に使う）。
+func resyncAllPages() (int, error) {
+	count := 0
+	err := filepath.Walk(page.MasterDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// data/master が存在しない場合などは、再構築対象なしとして正常終了する。
 			if os.IsNotExist(err) {
@@ -236,9 +353,11 @@ func resyncAllPages() error {
 			}
 			id := strings.TrimSuffix(info.Name(), ".html")
 			_ = SyncIndex(id, string(content))
+			count++
 		}
 		return nil
 	})
+	return count, err
 }
 
 // PurgePageIndex はページの索引を消します（正本ファイルには触れません）。

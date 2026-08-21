@@ -114,6 +114,14 @@ func RebuildDBAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 件数と所要時間を返す。「取り込めなかったページがある」ことに後から気づける
+	// 手掛かりになるので、成功したという事実だけでは足りない。
+	pages, ms, ok := lastRebuildResult()
+	resp := map[string]interface{}{"success": true}
+	if ok {
+		resp["pages"] = pages
+		resp["duration_ms"] = ms
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+	json.NewEncoder(w).Encode(resp)
 }

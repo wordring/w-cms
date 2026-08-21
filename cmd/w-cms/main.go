@@ -64,7 +64,7 @@ func main() {
 
 	// DBが空でファイル（data/master）が存在する場合は自動再構築する。
 	// バックアップからファイルだけ復元して起動した場合の復旧フック。
-	if err := cms.RebuildIfEmpty(); err != nil {
+	if err := cms.RebuildIfNeeded(); err != nil {
 		log.Printf("起動時の自動再構築でエラー: %v", err)
 	}
 
