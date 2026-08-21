@@ -120,13 +120,15 @@ func TestRootHandlerAuthorization(t *testing.T) {
 	// 実効公開のページ
 	newPage(t, "000013", "<h1>公開ページ</h1>", page.PageMeta{Owner: "alice", Mode: "300", Public: true})
 
-	t.Run("匿名×非公開は /login へリダイレクト", func(t *testing.T) {
+	// 匿名には「読めない」と「存在しない」を区別させない（要件定義書 §2.1）。
+	// 入口が失われないよう、トップページだけは従来どおり /login へ誘導する。
+	t.Run("匿名×非公開は404（不存在と区別しない）", func(t *testing.T) {
 		rr := getPage(t, "/000012", nil)
-		if rr.Code != 302 {
-			t.Fatalf("302ではありません: %d", rr.Code)
+		if rr.Code != 404 {
+			t.Fatalf("404ではありません: %d", rr.Code)
 		}
-		if loc := rr.Header().Get("Location"); loc != "/login" {
-			t.Errorf("リダイレクト先が /login ではありません: %q", loc)
+		if !strings.Contains(rr.Body.String(), "/login?next=") {
+			t.Error("ログインへの戻り先つき入口がありません")
 		}
 		if strings.Contains(rr.Body.String(), "秘密") {
 			t.Error("非公開ページの本文が漏れています")
