@@ -572,9 +572,9 @@ func TestRebuildDatabase(t *testing.T) {
 	}
 }
 
-// TestRebuildIfEmpty は、DBが空でファイルが存在するとき自動再構築が走り、
+// TestRebuildIfNeeded は、DBが空でファイルが存在するとき自動再構築が走り、
 // DBに既存データがあるときは何もしないことを検証します。
-func TestRebuildIfEmpty(t *testing.T) {
+func TestRebuildIfNeeded(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("カレントディレクトリ取得エラー: %v", err)
@@ -608,8 +608,8 @@ func TestRebuildIfEmpty(t *testing.T) {
 	}
 
 	// 空DB＋ファイルあり → 自動再構築が走る
-	if err := RebuildIfEmpty(); err != nil {
-		t.Fatalf("RebuildIfEmptyでエラー: %v", err)
+	if err := RebuildIfNeeded(); err != nil {
+		t.Fatalf("RebuildIfNeededでエラー: %v", err)
 	}
 	var count int
 	db.QueryRow(`SELECT COUNT(*) FROM pages WHERE id = 2`).Scan(&count)
@@ -619,8 +619,8 @@ func TestRebuildIfEmpty(t *testing.T) {
 
 	// 既存データあり → 何もしない（タイトルが書き換わらないことで確認）
 	db.Exec(`UPDATE pages SET title = '手動編集' WHERE id = 2`)
-	if err := RebuildIfEmpty(); err != nil {
-		t.Fatalf("RebuildIfEmpty(2回目)でエラー: %v", err)
+	if err := RebuildIfNeeded(); err != nil {
+		t.Fatalf("RebuildIfNeeded(2回目)でエラー: %v", err)
 	}
 	var title string
 	db.QueryRow(`SELECT title FROM pages WHERE id = 2`).Scan(&title)

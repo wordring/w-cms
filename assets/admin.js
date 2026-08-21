@@ -109,7 +109,15 @@ async function rebuildDatabase() {
   const el = document.getElementById('rebuild-msg');
   el.style.color = '#64748b'; el.textContent = '再構築中...';
   const res = await api('POST', '/api/rebuild-db');
-  if (res.ok) { el.style.color = '#16a34a'; el.textContent = '再構築が完了しました。'; loadAudit(); }
+  if (res.ok) {
+    // 件数まで見せる。「完了しました」だけだと、途中で取りこぼしていても気づけない。
+    const d = await res.json().catch(() => ({}));
+    el.style.color = '#16a34a';
+    el.textContent = d.pages != null
+      ? `再構築が完了しました（${d.pages}ページ / ${d.duration_ms}ミリ秒）。`
+      : '再構築が完了しました。';
+    loadAudit();
+  }
   else { el.style.color = '#dc2626'; el.textContent = '失敗: ' + await res.text(); }
 }
 
