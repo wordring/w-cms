@@ -46,6 +46,19 @@ func setupSaveTest(t *testing.T) *sql.DB {
 func postSave(t *testing.T, id, htmlBody string) map[string]interface{} {
 	t.Helper()
 
+	// 実在するページはかならず属性サイドカーを持つ（新規作成時に EnsureSidecar が作る）。
+	// サイドカーが読めないページは保存できない仕様なので、ここでも用意しておく
+	// （2026-08-21 決定「派生から正本へ書き戻さない」。sidecar_loss_test.go 参照）。
+	// id は保存経路と同じくゼロ詰め6桁へ正規化してから使う（揺れた表記のまま
+	// ディレクトリを作らない。TestSaveNormalizesPageID が見ている）。
+	if norm, okID := page.NormalizeID(id); okID {
+		if _, ok := page.ReadSidecar(norm); !ok {
+			if err := page.EnsureSidecar(norm, "tester", "", "", ""); err != nil {
+				t.Fatalf("EnsureSidecarエラー: %v", err)
+			}
+		}
+	}
+
 	payload, _ := json.Marshal(map[string]string{"page_id": id, "html": htmlBody})
 	req := httptest.NewRequest("POST", "/api/save", strings.NewReader(string(payload)))
 	req = auth.WithUser(req, &auth.User{Username: "tester", IsAdmin: true})

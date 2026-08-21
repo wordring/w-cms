@@ -78,10 +78,14 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 現在のサイドカー（無ければ現在の実効権限）を起点に変更する
+	// 現在のサイドカー（正本）を起点に変更する。読めなければ**書かずに止める**
+	// ——派生（page_perms）から組み立て直して書き戻すと、親も作成情報も失ったまま
+	// 「見た目は健全なサイドカー」を新造してしまう（2026-08-21 決定）。
 	p, ok := page.ReadSidecar(id)
 	if !ok {
-		p = page.PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode, Public: cur.Public}
+		http.Error(w, "ページ属性ファイルを読めないため権限を変更できません。管理者が手作業で修復してください。",
+			http.StatusConflict)
+		return
 	}
 
 	action := ""
@@ -165,8 +169,7 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
-	pageID, err := strconv.Atoi(id)
-	if err != nil {
+	if _, err := strconv.Atoi(id); err != nil {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
@@ -186,10 +189,11 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cur := page.GetPerms(pageID)
 	p, ok := page.ReadSidecar(id)
 	if !ok {
-		p = page.PageMeta{Owner: cur.Owner, Group: cur.Group, Mode: cur.Mode}
+		http.Error(w, "ページ属性ファイルを読めないため所有者を変更できません。管理者が手作業で修復してください。",
+			http.StatusConflict)
+		return
 	}
 	p.Owner = req.Owner
 

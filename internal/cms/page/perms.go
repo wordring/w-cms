@@ -111,53 +111,32 @@ func EnsureSidecar(id, owner, group, mode, parent string) error {
 	})
 }
 
-// readMetaOrPerms はサイドカーを読み、無ければDBの実効権限で最低限を補います。
-// 本文保存・親付け替えなど、既存ページの属性を一部だけ更新する操作の起点に使います
-// （所有権を空で上書きしてしまわないため）。
-func readMetaOrPerms(id string) PageMeta {
+// requireSidecar はサイドカー（属性の正本）を読みます。読めなければエラーです。
+//
+// **読めないときに派生（cms.db）から組み立て直して書き戻すことはしません**（2026-08-21 決定）。
+// 派生から正本を書くと、正本の欠損が派生の内容で上書きされ「見た目は健全なのに中身が
+// 変わっている」状態を作ります。壊れたときは壊れたままにしておくほうが気づけるので、
+// ここでは**運用者に知らせて止めます**——修復は手作業で、というのが決定です
+// （[アーキテクチャとDBスキーマ.md] の決定ログ「派生（DB）から正本（ファイル）へ書き戻さない」）。
+//
+// 本文保存・親付け替えなど、既存ページの属性を一部だけ更新する操作の起点に使います。
+func requireSidecar(id string) (PageMeta, error) {
 	if meta, ok := ReadSidecar(id); ok {
-		return meta
+		return meta, nil
 	}
-	if idInt, err := strconv.Atoi(id); err == nil {
-		meta := GetPerms(idInt)
-		// GetPerms が返すのは owner/group/mode/public だけ。ここで止めると、
-		// 続く WriteSidecar が**親も作成情報も持たないサイドカーを新造**し、
-		// 見た目は健全なのに復元できない欠損を作る（ページがツリーから消える）。
-		// DB に残っている分は書き戻す前に拾い直す。
-		fillFromIndex(&meta, idInt)
-		return meta
-	}
-	return PageMeta{Owner: DefaultOwner, Mode: DefaultMode}
-}
-
-// fillFromIndex は派生索引（pages）に残っている親・作成情報を meta の空欄へ補います。
-// サイドカーが読めなくなったときの最後の頼みで、あくまで欠損の緩和です
-// （索引は派生なので、ここで拾えなければその情報は失われています）。
-func fillFromIndex(meta *PageMeta, idInt int) {
-	var parent sql.NullInt64
-	var createdAt, createdBy sql.NullString
-	err := database.DB.QueryRow(
-		`SELECT parent_id, created_at, created_by FROM pages WHERE id = ?`, idInt,
-	).Scan(&parent, &createdAt, &createdBy)
-	if err != nil {
-		return
-	}
-	if meta.ParentID == "" && parent.Valid {
-		meta.ParentID = fmt.Sprintf("%0*d", IDLength, parent.Int64)
-	}
-	if meta.CreatedAt == "" && createdAt.Valid {
-		meta.CreatedAt = createdAt.String
-	}
-	if meta.CreatedBy == "" && createdBy.Valid {
-		meta.CreatedBy = createdBy.String
-	}
+	return PageMeta{}, fmt.Errorf(
+		"ページ属性ファイルを読めません: %s（管理者が手作業で修復してください。"+
+			"内容＝%s.html は無事です）", sidecarPath(id), id)
 }
 
 // BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。
 // 進めた更新日時(RFC3339)を返します。
 func BumpUpdatedAt(id string) (string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	meta := readMetaOrPerms(id)
+	meta, err := requireSidecar(id)
+	if err != nil {
+		return "", err // 読めないなら書かない（保存は失敗させて運用者に知らせる）
+	}
 	meta.UpdatedAt = now
 	if err := WriteSidecar(id, meta); err != nil {
 		return "", err
@@ -169,7 +148,10 @@ func BumpUpdatedAt(id string) (string, error) {
 // parent はゼロ詰めのページID文字列（空＝トップレベル）。進めた更新日時を返します。
 func SetSidecarParent(id, parent string) (string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	meta := readMetaOrPerms(id)
+	meta, err := requireSidecar(id)
+	if err != nil {
+		return "", err // 読めないなら書かない
+	}
 	meta.ParentID = parent
 	meta.UpdatedAt = now
 	if err := WriteSidecar(id, meta); err != nil {
