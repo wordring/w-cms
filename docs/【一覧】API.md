@@ -26,7 +26,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 - **`CSRFProtect`**: GET/HEAD/OPTIONS 以外は Origin（無ければ Referer）とホストの一致を要求。
 - **`CSPProtect`**: 全レスポンスに Content-Security-Policy を付与。2026-08-19 の移行第4段で
   **strict 版**（`script-src 'self'; style-src 'self'`＝`'unsafe-inline'` なし）へ格上げ済み
-  （[【考察】CSP強化.md](【考察】CSP強化.md)）。
+  （[本文サニタイズ設計.md §6](本文サニタイズ設計.md)）。
 
 ここは**黙って壊れる層**です——ハンドラを `protected` から `root` へ移す・`OptionalAuth` を
 付け忘れる・ミドルウェアの入れ子を外す、といった退行が起きても既存のテストは green のまま
