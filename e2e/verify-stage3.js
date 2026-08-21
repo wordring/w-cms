@@ -7,6 +7,20 @@ try { ({ chromium } = createRequire(path.join(process.cwd(), 'noop.js'))('playwr
 catch (e) { console.error('node_modules のあるディレクトリ（~/tools/wcms-e2e）から実行してください'); process.exit(2); }
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
+
+// gotoNewPage は子ページを作ってそのページへ遷移する。
+// /api/new-page は保存型CSRF対策で **POST 限定**（2026-08-21・beb98a1）なので、
+// ブラウザの GET 遷移では作れない。POST してから Location へ遷移する。
+async function gotoNewPage(page, parent, template) {
+    let url = BASE + "/api/new-page?parent=" + parent;
+    if (template) url += "&template=" + encodeURIComponent(template);
+    const res = await page.request.post(url, { headers: { "Origin": BASE }, maxRedirects: 0 });
+    const loc = res.headers()["location"];
+    if (!loc) throw new Error("new-page failed: " + res.status() + " " + (await res.text()));
+    await page.goto(BASE + loc);
+    return loc.replace(/^\//, "").replace(/\?.*$/, "");
+}
+
 const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 async function caretInto(page, h) { await h.click(); await h.evaluate(el => { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }); }
@@ -27,7 +41,7 @@ async function openSlashMenu(page) {
         await page.fill('#username', 'a'); await page.fill('#password', 'a');
         await page.click('button[type=submit]');
         await page.waitForURL('**/000000**', { timeout: 8000 });
-        await page.goto(BASE + '/api/new-page?parent=000000');
+        await gotoNewPage(page, '000000');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
 
         // 1. メニュー: 旧4項目が消え、後継がある

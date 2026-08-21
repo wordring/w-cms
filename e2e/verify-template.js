@@ -35,7 +35,7 @@ async function saveBody(page, id, html) {
 async function newPage(page, parent, template) {
     let url = BASE + '/api/new-page?parent=' + parent;
     if (template) url += '&template=' + template;
-    const res = await page.request.get(url, { maxRedirects: 0 });
+    const res = await page.request.post(url, { headers: { 'Origin': BASE }, maxRedirects: 0 });
     const loc = res.headers()['location'];
     if (!loc) throw new Error(`new-page failed: ${res.status()} ${await res.text()}`);
     return loc.replace(/^\//, '').replace(/\?.*$/, '');
@@ -114,8 +114,9 @@ const TEMPLATE_BODY =
 
         // ── 拒否: 分類フォルダとルートはテンプレートに使えない ──
         for (const [label, id] of [['分類フォルダ', classifyId], ['ルート', rootId]]) {
-            const res = await page.request.get(
-                BASE + '/api/new-page?parent=' + hostId + '&template=' + id, { maxRedirects: 0 });
+            const res = await page.request.post(
+                BASE + '/api/new-page?parent=' + hostId + '&template=' + id,
+                { headers: { 'Origin': BASE }, maxRedirects: 0 });
             check(`${label}はテンプレートに使えない`, res.status() === 400);
         }
 

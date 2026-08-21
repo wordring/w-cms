@@ -30,6 +30,20 @@ try {
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const HEADED = process.argv.includes('--headed');
 
+
+// gotoNewPage は子ページを作ってそのページへ遷移する。
+// /api/new-page は保存型CSRF対策で **POST 限定**（2026-08-21・beb98a1）なので、
+// ブラウザの GET 遷移では作れない。POST してから Location へ遷移する。
+async function gotoNewPage(page, parent, template) {
+    let url = BASE + "/api/new-page?parent=" + parent;
+    if (template) url += "&template=" + encodeURIComponent(template);
+    const res = await page.request.post(url, { headers: { "Origin": BASE }, maxRedirects: 0 });
+    const loc = res.headers()["location"];
+    if (!loc) throw new Error("new-page failed: " + res.status() + " " + (await res.text()));
+    await page.goto(BASE + loc);
+    return loc.replace(/^\//, "").replace(/\?.*$/, "");
+}
+
 const results = [];
 let failCount = 0;
 function check(name, cond) {
@@ -83,7 +97,7 @@ async function waitSaved(page) {
         check('ログインしてトップページへ', true);
 
         // ── 新規ページ（?edit=true で自動的に編集モード） ──
-        await page.goto(BASE + '/api/new-page?parent=000000');
+        await gotoNewPage(page, '000000');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         const pageURL = page.url();
         check('新規ページが編集モードで開く', /\?edit=true/.test(pageURL));
