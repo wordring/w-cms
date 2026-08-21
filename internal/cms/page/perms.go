@@ -363,11 +363,13 @@ func RequirePageReadOrPublic(w http.ResponseWriter, r *http.Request, idStr strin
 		}
 		return true
 	}
-	// 匿名アクセス: 実効公開なら許可、そうでなければ認証を要求する。
+	// 匿名アクセス: 実効公開なら許可。そうでなければ**不存在と同じ404**を返す
+	// （2026-08-16 決定・要件定義書 §2.1）。画面側だけ404へ揃えても、APIが401を
+	// 返せば「無いのか読めないのか」が分かってしまうため、ここも揃える。
 	if EffectivePublic(pageID) {
 		return true
 	}
-	http.Error(w, "認証が必要です", http.StatusUnauthorized)
+	http.Error(w, "ページがありません", http.StatusNotFound)
 	return false
 }
 

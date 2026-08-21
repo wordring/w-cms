@@ -4,8 +4,10 @@ package cms
 // 編集モードの載せ替えに使う本文API を扱います。
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -117,7 +119,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// id が英数字ハイフンのみか簡易チェック
 	for _, c := range id {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
-			http.NotFound(w, r)
+			pageNotFound(w, r)
 			return
 		}
 	}
@@ -125,7 +127,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// ページの実体（本文・タイトル）を取り出し、認可のうえで殻へ埋め込んで返す。
 	pageID, err := strconv.Atoi(id)
 	if err != nil {
-		http.NotFound(w, r)
+		pageNotFound(w, r)
 		return
 	}
 
@@ -134,7 +136,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		"SELECT file_path, COALESCE(title, '') FROM pages WHERE id = ?", pageID,
 	).Scan(&filePath, &title)
 	if err != nil {
-		http.NotFound(w, r)
+		pageNotFound(w, r)
 		return
 	}
 
@@ -146,7 +148,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		http.NotFound(w, r)
+		pageNotFound(w, r)
 		return
 	}
 
@@ -174,6 +176,8 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 // 認証済みで権限が無ければ403、匿名で実効公開でなければ /login へリダイレクトします。
 func requirePageViewable(w http.ResponseWriter, r *http.Request, pageID int) bool {
 	if u := auth.CurrentUser(r); u != nil {
+		// 認証済み×read不可は 403 のまま。「存在は分かるが読めない」という
+		// Unix の作法で、社内では相手が誰かも分かっているので隠す意味が薄い。
 		if !page.GetPerms(pageID).CanRead(u) {
 			http.Error(w, "このページを閲覧する権限がありません", http.StatusForbidden)
 			return false
@@ -183,6 +187,59 @@ func requirePageViewable(w http.ResponseWriter, r *http.Request, pageID int) boo
 	if page.EffectivePublic(pageID) {
 		return true
 	}
-	http.Redirect(w, r, "/login", http.StatusFound)
+	// 匿名×非公開は**不存在と同じ404**にする。権限の無いアドレスを開いた社員には
+	// ログイン画面より「ありません」のほうが迷わない、というのが決定
+	// （列挙対策が動機ではない。要件定義書 §2.1）。
+	//
+	// 例外はトップページだけ——ここまで404にすると、サイトを閉じたときに
+	// 誰も入口へ辿り着けなくなる。
+	if pageID == 0 {
+		http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.Path), http.StatusFound)
+		return false
+	}
+	notFoundWithLogin(w, r)
 	return false
+}
+
+// notFoundWithLogin は匿名向けの「ありません」画面を返します。
+//
+// ただの 404 で終わらせないのは、**社員どうしでページのアドレスを共有する使い方**が
+// 行き止まりになるからです（404統一と戻り先の復元を同時に入れる、という決定の片割れ）。
+// ログインへの入口に戻り先を積んでおけば、ログインしたその足で目的のページへ着きます。
+//
+// 存在しないページでも同じ画面を返すので、これで存在が分かることはありません。
+func notFoundWithLogin(w http.ResponseWriter, r *http.Request) {
+	next := url.QueryEscape(r.URL.Path)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNotFound)
+	// CSP strict のためインラインの style/script は書けない（/assets/ の外部ファイルのみ）。
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ページがありません - w-cms</title>
+<link rel="stylesheet" href="/assets/login.css"></head>
+<body class="notfound-page">
+<main class="notfound-card">
+<h1>ページがありません</h1>
+<p>アドレスが違うか、閲覧する権限が無いページです。</p>
+<p><a href="/login?next=%s">ログインする</a></p>
+</main>
+</body>
+</html>
+`, next)
+}
+
+// pageNotFound は画面の「ありません」応答です。
+//
+// 匿名にはログインへの入口つきの画面を返します——**匿名×非公開もここへ来る**ので、
+// 不存在と同じ体裁でなければ「無いのか読めないのか」が応答で分かってしまいます。
+// 認証済みには素の404で足ります（読めないページには 403 を返しており、
+// 存在を隠していないため）。
+func pageNotFound(w http.ResponseWriter, r *http.Request) {
+	if auth.CurrentUser(r) == nil {
+		notFoundWithLogin(w, r)
+		return
+	}
+	http.NotFound(w, r)
 }

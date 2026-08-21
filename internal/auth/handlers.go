@@ -2,7 +2,9 @@ package auth
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -28,6 +30,7 @@ const loginPageHTML = `<!DOCTYPE html>
     <input id="username" name="username" autocomplete="username" autofocus required>
     <label for="password">パスワード</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <input type="hidden" name="next" value="%next%">
     <button type="submit">ログイン</button>
     %s
   </form>
@@ -40,8 +43,34 @@ func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("error") != "" {
 		errMsg = `<div class="error">ユーザー名またはパスワードが違います。</div>`
 	}
+	// 戻り先を持ち回る。匿名の404画面から来た人を、ログインしたその足で
+	// 目的のページへ返すため（要件定義書 §2.1 の「404統一」と対になる決定）。
+	next := safeNextPath(r.URL.Query().Get("next"))
+	body := strings.Replace(loginPageHTML, "%next%", html.EscapeString(next), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(strings.Replace(loginPageHTML, "%s", errMsg, 1)))
+	w.Write([]byte(strings.Replace(body, "%s", errMsg, 1)))
+}
+
+// safeNextPath はログイン後の戻り先を検証します。**同一サイト内の絶対パスだけ**を
+// 通し、それ以外はトップ（"/"）へ倒します。
+//
+// 戻り先は外から与えられるので、素通しすると**開かれたリダイレクト**になります
+// （`https://evil.example/` へ飛ばして偽のログイン画面を見せる、など）。
+// `//host` はプロトコル相対URL、`/\host` はブラウザによって同じ扱いになるため
+// どちらも弾きます。制御文字はヘッダ分割を防ぐために弾きます。
+func safeNextPath(next string) string {
+	if next == "" || !strings.HasPrefix(next, "/") {
+		return "/"
+	}
+	if strings.HasPrefix(next, "//") || strings.HasPrefix(next, `/\`) {
+		return "/"
+	}
+	for _, c := range next {
+		if c < 0x20 || c == 0x7f {
+			return "/"
+		}
+	}
+	return next
 }
 
 // LoginAPIHandler は認証してセッションを発行します（POST /api/login、認証不要）。
@@ -61,8 +90,10 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 	loginSem <- struct{}{}
 	user, err := Authenticate(username, password)
 	<-loginSem
+	// 失敗しても戻り先は保つ（打ち間違いのたびに目的地を見失わないため）。
+	next := safeNextPath(r.FormValue("next"))
 	if err != nil {
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, "/login?error=1&next="+url.QueryEscape(next), http.StatusFound)
 		return
 	}
 
@@ -72,7 +103,9 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, token)
-	http.Redirect(w, r, "/", http.StatusFound)
+	// 元のページへ戻す。匿名の404から来た人がログインしたその足で目的地へ着く
+	// ——これが無いと、社員どうしのアドレス共有が行き止まりになる。
+	http.Redirect(w, r, next, http.StatusFound)
 }
 
 // LogoutAPIHandler はセッションを破棄します（POST /api/logout）。

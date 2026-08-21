@@ -289,7 +289,8 @@ func TestRequirePageReadOrPublic(t *testing.T) {
 
 	stranger := &auth.User{Username: "x"} // owner/group いずれでもない
 	check("匿名×公開ページ→可", "1", nil, true, 0)
-	check("匿名×非公開ページ→401", "2", nil, false, http.StatusUnauthorized)
+	// 匿名には「読めない」と「存在しない」を区別させない（2026-08-16 決定・要件定義書 §2.1）。
+	check("匿名×非公開ページ→404", "2", nil, false, http.StatusNotFound)
 	check("認証×other不可ページ→403", "1", stranger, false, http.StatusForbidden) // 1は mode 300（other なし）
 	check("認証×other可ページ→可", "0", stranger, true, 0)                        // 0は mode 302（other read）
 }
