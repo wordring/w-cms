@@ -160,7 +160,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// ——エディタが編集モードで読み直す GET /api/load へ入れると、合成した id が
 	// シリアライザを通って本文として保存されてしまう（anchor.go の冒頭）。
 	body := RenderAnchors(RenderComputedViews(r, pageID, Sanitize(string(content))))
-	shellHTML, err := RenderPageShell(body, title)
+	shellHTML, err := RenderPageShell(body, title, auth.CurrentUser(r) == nil)
 	if err != nil {
 		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)
 		return

@@ -162,3 +162,34 @@ func TestRootHandlerAuthorization(t *testing.T) {
 		}
 	})
 }
+
+// TestShellMarksAnonymousBeforeFirstPaint は、匿名で公開ページを開いたとき
+// **サーバーが返すHTMLの時点で** body に anonymous 印が付いていることを検証します。
+//
+// 印が付くまで編集スイッチ・ログアウトボタン・「保存されるHTML」欄が一瞬映って
+// 消える（中身は空なので情報は漏れないが、見た目が壊れる）。従来は /api/me の
+// 応答を待って JS が付けていたため、最初の描画には間に合っていませんでした。
+func TestShellMarksAnonymousBeforeFirstPaint(t *testing.T) {
+	setupSaveTest(t)
+	writeTestShell(t)
+
+	newPage(t, "000020", "<h1>公開ページ</h1>",
+		page.PageMeta{Owner: "alice", Mode: "300", Public: true})
+
+	t.Run("匿名は最初のHTMLで印が付く", func(t *testing.T) {
+		rr := getPage(t, "/000020", nil)
+		if rr.Code != 200 {
+			t.Fatalf("200ではありません: %d (%s)", rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), `<body class="anonymous">`) {
+			t.Errorf("匿名の印がHTMLにありません:\n%s", rr.Body.String())
+		}
+	})
+
+	t.Run("認証済みには印を付けない", func(t *testing.T) {
+		rr := getPage(t, "/000020", &auth.User{Username: "alice"})
+		if strings.Contains(rr.Body.String(), `class="anonymous"`) {
+			t.Errorf("認証済みなのに匿名の印が付いています:\n%s", rr.Body.String())
+		}
+	})
+}
