@@ -1722,6 +1722,18 @@
         return newEl;
     }
 
+    // applySlashChoice はスラッシュメニューの選択を実行します。
+    // 大半は「そのブロックを別の形式へ置き換える」ですが、画像だけは
+    // **ファイルを選んでアップロードしてから挿す**非同期の操作なので分けます。
+    // クリックと Enter の両方から呼ぶので、分岐はここ1箇所に置きます。
+    function applySlashChoice(type, block) {
+        if (type === 'image') {
+            pickImageFiles(files => { if (files.length) insertImagesAfter(files, block); });
+            return;
+        }
+        replaceBlockWithComponent(type, block);
+    }
+
     function replaceBlockWithComponent(type, block) {
         const isEdit = document.body.hasAttribute('edit-mode');
         const newEl = createComponentElement(type, isEdit);
@@ -2343,7 +2355,11 @@
         enumMenuCell = null;
     }
 
-    // updateEnumMenu はキャレットが enum 列のデータセルにあるとき選択肢を出す。
+    // updateEnumMenu はキャレットが入力補助のある列のデータセルにあるとき、
+    // セルの下に補助メニューを出す。対象は2種類:
+    //   - enum 列 … 選択肢のボタンを並べる
+    //   - image 列 … 画像を選ぶボタン1つ（ファイル選択。モバイルではカメラも選べる）
+    // 器（#w-enum-menu）は共通で、中身だけ列型で作り分ける。
     function updateEnumMenu() {
         const menu = document.getElementById('w-enum-menu');
         if (!menu) return;
@@ -2355,12 +2371,24 @@
         const cell = el && el.closest ? el.closest('#w-editor-content table[data-type] td') : null;
         if (!cell || isServerOwned(cell)) { hideEnumMenu(); return; }
         const col = resolveCellColumn(cell);
-        if (!col || col.type !== 'enum' || !col.enum.length) { hideEnumMenu(); return; }
+        const isEnum = col && col.type === 'enum' && col.enum.length > 0;
+        const isImage = col && col.type === 'image';
+        if (!isEnum && !isImage) { hideEnumMenu(); return; }
         if (cell === enumMenuCell) return; // 同じセル内のキャレット移動では作り直さない
 
         enumMenuCell = cell;
-        menu.textContent = ''; // 前のセルの選択肢を消す
-        col.enum.forEach(v => {
+        menu.textContent = ''; // 前のセルの中身を消す
+        if (isImage) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = '🖼 画像を選ぶ';
+            b.addEventListener('click', () => {
+                hideEnumMenu();
+                pickImageFiles(files => { if (files.length) insertImageIntoCell(cell, files[0]); });
+            });
+            menu.appendChild(b);
+        }
+        if (isEnum) col.enum.forEach(v => {
             const b = document.createElement('button');
             b.type = 'button';
             b.textContent = v;
@@ -2454,6 +2482,91 @@
         } catch (e) {
             notify('PDFのアップロードに失敗しました: ' + e.message, { type: 'warn', duration: 8000 });
         }
+    }
+
+    // ── 画像の添付と挿入（要件定義書 §2.6） ──────────────────────────────
+    // 入口は3つ（スラッシュメニュー／本文へのドロップ／image 列のセル）だが、
+    // 送る先も挿す形も同じなので、この2関数に集約する。
+    //
+    // 検査（中身のマジックナンバー・拡張子との一致・SVGの危険な記述）と EXIF の除去は
+    // **すべてサーバー側**（/api/upload-image）が行う。ここで種類を絞り込みすぎると
+    // 「なぜ入らないのか」が分からなくなるので、選ばせるのは image/* に留め、
+    // 拒否の理由はサーバーの文言をそのまま見せる（HEIC は撮り直し方まで返る）。
+
+    // pickImageFiles は OS のファイル選択を開きます。
+    // accept="image/*" にしておくと、モバイルでは OS 標準のカメラUI（「写真を撮る」）が
+    // 選べます——独自のカメラ画面は持ちません（要件 §2.6）。
+    function pickImageFiles(onPick) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.multiple = true;
+        input.addEventListener('change', () => onPick(Array.from(input.files || [])));
+        input.click();
+    }
+
+    // uploadImageFile は画像を添付し、本文の <img src> へ入れる絶対パスを返します。
+    // 失敗したら理由を告知して null を返します。
+    async function uploadImageFile(file) {
+        if (!currentPageId) {
+            notify('先にページを保存してください。', { type: 'warn', duration: 5000 });
+            return null;
+        }
+        const fd = new FormData();
+        fd.append('page_id', currentPageId);
+        fd.append('image_file', file);
+        try {
+            // 添付の追加は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+            const res = await lockedFetch('/api/upload-image', { method: 'POST', body: fd });
+            if (!res.ok) {
+                const msg = (await res.text().catch(() => '')).trim();
+                notify(msg || ('画像を保存できませんでした（' + res.status + '）'),
+                    { type: 'alert', duration: 0, id: 'image-upload' });
+                return null;
+            }
+            const d = await res.json();
+            return d.src || null;
+        } catch (e) {
+            notify('画像のアップロードに失敗しました: ' + e.message, { type: 'warn', duration: 8000 });
+            return null;
+        }
+    }
+
+    // insertImagesAfter は選ばれた画像を順に添付し、refBlock の後ろへ1枚ずつ挿します。
+    // alt にはファイル名を入れる（読み上げと、画像が出ないときの手掛かり）。
+    async function insertImagesAfter(files, refBlock) {
+        let last = refBlock;
+        for (const f of files) {
+            const src = await uploadImageFile(f);
+            if (!src) continue;
+            const p = document.createElement('p');
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = f.name;
+            p.appendChild(img);
+            const block = wrapInBlock(p);
+            if (last && last.parentNode) {
+                last.parentNode.insertBefore(block, last.nextSibling);
+            } else {
+                document.getElementById('w-editor-content').appendChild(block);
+            }
+            last = block;
+        }
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
+    // insertImageIntoCell は image 列のセルへ画像を1枚入れます（差し替えは上書き）。
+    async function insertImageIntoCell(cell, file) {
+        const src = await uploadImageFile(file);
+        if (!src) return;
+        cell.textContent = '';
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = file.name;
+        cell.appendChild(img);
+        updateHtmlPreview();
+        triggerAutoSave();
     }
 
     // parsePDFIntoSection はPDFをAI解析し、容器内の受発注ブロックの明細表へ行を足す。
@@ -2566,7 +2679,7 @@
             e.preventDefault();
             const type = items[slashSelectedIndex].getAttribute('data-type');
             if (currentSlashBlock) {
-                replaceBlockWithComponent(type, currentSlashBlock);
+                applySlashChoice(type, currentSlashBlock);
             }
             hideSlashMenu();
         } else if (e.key === 'Escape') {
@@ -2739,12 +2852,37 @@
             }
         });
 
+        // 本文へ画像ファイルをドロップしたら添付して挿す（要件 §2.6 の入口の1つ）。
+        // ファイル容器のドロップゾーン（PDF）はそちらが処理するので手を出さない。
+        editor.addEventListener('dragover', e => {
+            if (!document.body.hasAttribute('edit-mode')) return;
+            if (e.target.closest && e.target.closest('.pdf-drop-zone')) return;
+            if (!Array.from(e.dataTransfer.types || []).includes('Files')) return;
+            e.preventDefault();
+        });
+        editor.addEventListener('drop', e => {
+            if (!document.body.hasAttribute('edit-mode')) return;
+            if (e.target.closest && e.target.closest('.pdf-drop-zone')) return;
+            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || [])
+                .filter(f => f.type.indexOf('image/') === 0);
+            if (!files.length) return;
+            e.preventDefault();
+            const cell = e.target.closest && e.target.closest('#w-editor-content td');
+            const col = cell && resolveCellColumn(cell);
+            if (cell && col && col.type === 'image' && !isServerOwned(cell)) {
+                insertImageIntoCell(cell, files[0]); // 表のセルへは1枚だけ
+                return;
+            }
+            const block = e.target.closest ? e.target.closest('.editor-block') : null;
+            insertImagesAfter(files, block);
+        });
+
         const items = document.querySelectorAll('#w-slash-menu .slash-menu-item');
         items.forEach((item, idx) => {
             item.addEventListener('click', () => {
                 const type = item.getAttribute('data-type');
                 if (currentSlashBlock) {
-                    replaceBlockWithComponent(type, currentSlashBlock);
+                    applySlashChoice(type, currentSlashBlock);
                 }
                 hideSlashMenu();
             });

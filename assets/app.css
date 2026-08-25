@@ -1008,6 +1008,22 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border-radius: var(--radius);
 }
 
+/* 本文の画像（要件 §2.6）。原寸のまま出すと横スクロールが起きるので枠に収める。
+   高さは縦横比を保つため auto にする。 */
+#w-editor-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius);
+}
+
+/* 表のセルに入れた画像（image 列）は行が伸びすぎないよう小さく出す。
+   原寸で見たいときは画像を直接開く。 */
+#w-editor-content td img {
+    max-height: 96px;
+    width: auto;
+    vertical-align: middle;
+}
+
 #w-editor-content .pdf-drop-zone {
     margin: 8px 0;
     padding: 12px;

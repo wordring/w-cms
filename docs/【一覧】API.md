@@ -49,7 +49,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | GET | `/api/templates` | 要認証 | — | テンプレート選択メニューの中身。「テンプレート」フォルダ（トップ直下・同名）配下のツリーを `[{id,title,children}]` で返す。**枝は分類・葉がテンプレート**。ルートが無ければ `[]`（従来どおり空のページだけが作られる）。read 権限で絞られる（`visibleChildren`） |
 | GET | `/api/validate-parent` | 要認証（write） | — | 親付け替えの事前検証（循環・自己参照・存在チェック）。`/api/set-parent` と同じ `validateParentChange` を共有する。**現在フロントからは呼ばれていない**（`applyParent()` は `/api/set-parent` の応答だけで判定する） |
 | POST | `/api/set-parent` | 要認証（write） | 要 | 親ページの付け替え |
-| GET | `/data/...` | 任意認証（read） | — | 添付ファイル配信（PDF原本など）。ページのread権限を要求する保護ハンドラ |
+| GET | `/data/...` | 任意認証（read） | — | 添付ファイル配信（PDF原本・画像など）。ページのread権限を要求する保護ハンドラ。`nosniff` 付き。**PDFとラスタ画像（png/jpeg/webp/gif）はインライン**、**SVG は不活性化**（`image/svg+xml` ＋ `Content-Disposition: attachment` ＋ この応答限定の `Content-Security-Policy: sandbox; default-src 'none'`）、**それ以外はダウンロード扱い**。本文とサイドカーは配らない |
 
 > **計算ビューのサーバー事前描画**: 本文を返す入口は `/{id}`（`RootHandler`）と `/api/load`
 > （`LoadAPIHandler`）の**2つだけ**で、どちらも `RenderComputedViews` を通します。
@@ -86,13 +86,13 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
 | POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
 
-ページの状態を変えるAPIは**同じロックで直列化**される（計7本）。ただし入口は2種類ある。
+ページの状態を変えるAPIは**同じロックで直列化**される（計8本）。ただし入口は2種類ある。
 
 - **保存2本**（`/api/save`・`/api/save-block`）は `editlock.Locks.Validate` を直接呼び、
   トークンは**JSONボディの `token`** で受ける。
-- **残り5本**（`/api/set-parent`・`/api/page-perms`・`/api/page-chown`・`/api/delete-page`・
-  `/api/upload-pdf`）は共通ゲート `editlock.RequireEditLock` を通り、トークンは
-  **`X-Lock-Token` ヘッダ**（無ければ `token` クエリ）で受ける。フロントはこの5本を
+- **残り6本**（`/api/set-parent`・`/api/page-perms`・`/api/page-chown`・`/api/delete-page`・
+  `/api/upload-pdf`・`/api/upload-image`）は共通ゲート `editlock.RequireEditLock` を通り、トークンは
+  **`X-Lock-Token` ヘッダ**（無ければ `token` クエリ）で受ける。フロントはこの6本を
   `lockedFetch`（または同じヘッダを手で付けた `fetch`）で送る。
 
 検証規約はどちらも同じ（ロック無し＝許可／保持者本人でトークン一致なら許可／それ以外は409）。
@@ -125,7 +125,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/admin/users/disable` | 有効・無効の切り替え |
 | GET/POST | `/api/admin/groups` | グループの一覧・作成 |
 | POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
-| GET | `/api/admin/audit` | 監査ログの参照（書き込み・権限変更を記録）。直近200件 |
+| GET | `/api/admin/audit` | 監査ログの参照。直近200件。記録対象は認証イベント（`login`/`login.fail`/`logout`）・保存・ページ作成／削除・添付（`attach`/`attach.overwrite`）・親の付け替え・権限変更・ロック強制解除・索引の全再構築・ユーザー／グループ管理（[認証認可設計.md](認証認可設計.md) §9.4） |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え） |
 
 > 移行期にあった `POST /api/migrate-vocab`（旧カスタム要素→語彙モデルの一括変換）は
@@ -138,6 +138,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 |---|---|---|---|
 | GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML → 許可属性。`data-*` マーカーもここに属性として現れる。**カスタム要素はゼロ**）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）・`vocab`（語彙レジストリ12形式の定義を `type` 順で。スラッシュメニューと挿入骨格の生成元）・`type_inference`（語→型の推論辞書。エディタの型検証がサーバーの索引と同じ辞書を使うための配布）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
 | POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（`data/master/<先頭2桁>/<id>/` へ保存）。**編集ロックが要る**——添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）ため本文編集と同じロックで直列化する。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・32MiB上限・パス要素と本文/サイドカー同名は拒否**（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
+| POST | `/api/upload-image` | 要認証（対象ページの write） | **画像のアップロード**（2026-08-26。`png`/`jpeg`/`webp`/`gif`/`svg`）。保存先・ロック・サイズ上限・名前の規則は `/api/upload-pdf` と共通（名前の検査は `safeAttachmentName` の1箇所）。加えて**中身のマジックナンバーで種別を判定**し、拡張子と食い違うものは拒否。**EXIF等のメタデータは保存前に除去**する（JPEGは向きを画素へ反映してから再符号化）。SVG は整形式・ルートが `svg`・`<script>`/`<foreignObject>`/`on*=`/`javascript:` 無しを確認。HEIC/AVIF/TIFF/BMP は**形式ごとの理由**を返して拒否。応答は `{success, file_name, kind, src}` で、`src` はそのまま `<img src>` に入れる絶対パス（要件定義書 §2.6） |
 | POST | `/api/parse-pdf` | 要認証（対象ページの write） | PDFから明細をAI抽出（Gemini）。**ロックは要らない**——永続状態を変えず、結果はDOMへ足すだけ（保存する `/api/save` 側が検証する）。ファイル名は置く側と**同じ関門**（`attachmentFileName`）を通す——ここが `filepath.Base` だけだったころ、本文 `<id>.html` と権限サイドカー `<id>.meta.json` を「PDFとして」外部へ送れた |
 | GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`）。集計本体は `RequiredMaterials(user, pageID)` で、計算ビューのサーバー事前描画と共用する（応答が呼び出しごとに変わらないよう**部材名順**にソート）。集計対象ページの read だけでは足りず、**部材の定義元ページを読めない相手にはその定義を混ぜない**——品番は本文へ自由に書けるので、自分のページに1行置くだけで読めない部品定義ページの部材名・仕入先・原価を引けていた（2026-08-21 修正） |
 

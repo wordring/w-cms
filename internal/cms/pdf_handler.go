@@ -43,8 +43,17 @@ const maxUploadBytes = 32 << 20
 var allowedAttachmentExts = map[string]bool{".pdf": true}
 
 // attachmentFileName は受け取ったファイル名を、ページのディレクトリ内へ安全に置ける
-// 名前へ正規化します。使えない名前なら理由つきのエラーを返します。
+// 名前へ正規化します（PDF の口はこちら）。使えない名前なら理由つきのエラーを返します。
 func attachmentFileName(pageID, raw string) (string, error) {
+	return safeAttachmentName(pageID, raw, allowedAttachmentExts,
+		"PDFファイル（.pdf）のみアップロードできます")
+}
+
+// safeAttachmentName はファイル名の正規化と検査の本体です。許可する拡張子の集合を
+// 受け取るので、PDF の口（allowedAttachmentExts）と画像の口（allowedImageExts）で
+// 共有できます。**名前の守りは1箇所**にしておかないと、口を増やすたびに
+// 「サイドカーを上書きできる穴」が復活します。
+func safeAttachmentName(pageID, raw string, allowed map[string]bool, extError string) (string, error) {
 	// パス要素を落とす。filepath.Base は実行中のOSの区切りしか見ないため、
 	// Linux上での "..\\..\\evil.pdf" のような名前に備えて両方の区切りで切る。
 	name := raw
@@ -64,8 +73,8 @@ func attachmentFileName(pageID, raw string) (string, error) {
 			return "", errors.New("ファイル名に制御文字は使用できません")
 		}
 	}
-	if !allowedAttachmentExts[strings.ToLower(filepath.Ext(name))] {
-		return "", errors.New("PDFファイル（.pdf）のみアップロードできます")
+	if !allowed[strings.ToLower(filepath.Ext(name))] {
+		return "", errors.New(extError)
 	}
 	// 本文と属性サイドカーは添付として上書きさせない。拡張子の許可リストを将来
 	// 広げたときにも効くよう、ここで名指しで守る。

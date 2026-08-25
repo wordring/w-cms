@@ -16,8 +16,9 @@ git 管理外に置いていたころは、レビューも引き継ぎもでき�
 | `verify-delete.js` | ページ削除（ゴミ箱への移動）と拒否条件 | 9 |
 | `verify-template.js` | ページテンプレートの選択と新規化パス | 15 |
 | `verify-editor-loss.js` | 編集画面で入力が消える経路（貼り付け・保存済表示）の回帰 | 11 |
+| `verify-image.js` | 画像の添付（挿入・EXIF除去の入口・HEIC拒否・SVGの不活性配信） | 21 |
 
-（件数は 2026-08-25 の実測。合計135項目）
+（件数は 2026-08-26 の実測。合計156項目）
 
 `assets/` を変更したら `node --check` に続けて**一式を回帰として流してください**。
 `verify-stage1.js`（第1段）と `verify-migration2.js`（一括変換）は役目を終えて
@@ -42,6 +43,7 @@ node verify-stage4.js
 node verify-delete.js
 node verify-template.js
 node verify-editor-loss.js
+node verify-image.js
 ```
 
 スクリプトは playwright を**カレントディレクトリから**解決します（`createRequire`）。

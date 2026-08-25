@@ -36,7 +36,8 @@ func TestRoutesRequireAuth(t *testing.T) {
 		// 要認証（/api/ 配下・RequireAuth）。未認証は一律 401。
 		{"/api/save", "POST", 401, "本文保存"},
 		{"/api/save-block", "POST", 401, "ブロック保存"},
-		{"/api/upload-pdf", "POST", 401, "添付アップロード"},
+		{"/api/upload-pdf", "POST", 401, "添付アップロード（PDF）"},
+		{"/api/upload-image", "POST", 401, "添付アップロード（画像）"},
 		{"/api/parse-pdf", "POST", 401, "PDF解析（外部LLMへ送る）"},
 		{"/api/new-page", "POST", 401, "ページ作成"},
 		{"/api/delete-page", "POST", 401, "ページ削除"},
@@ -135,6 +136,7 @@ func TestStateChangingRoutesRejectGET(t *testing.T) {
 		"/api/unlock",
 		"/api/lock/force",
 		"/api/upload-pdf",
+		"/api/upload-image",
 		"/api/parse-pdf",
 		"/api/login",
 	} {
