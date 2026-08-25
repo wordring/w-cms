@@ -420,6 +420,16 @@ body.anonymous .preview-section { display: none !important; }
 .toast.warn { background: #92400e; }
 .toast.error { background: #991b1b; }
 .toast.success { background: #065f46; }
+/* alert は「見落とすと黙って壊れる」ことの告知（未定義の種別など）。
+   他のトーストに紛れないよう、赤地・太字・縁取りで一段強くする。
+   時間では消さない（notify の duration: 0）ので、閉じるまで残る。 */
+.toast.alert {
+    background: #b91c1c;
+    border: 2px solid #fca5a5;
+    font-weight: 700;
+    font-size: 14px;
+    box-shadow: 0 8px 22px rgba(185, 28, 28, 0.45);
+}
 .toast button {
     background: rgba(255, 255, 255, 0.18);
     color: #fff;

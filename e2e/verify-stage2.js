@@ -254,6 +254,17 @@ async function waitSaved(page) {
             () => document.getElementById('w-toast-host').innerText.includes('未定義の種別'),
             null, { timeout: 8000 });
         check('未知種別: 保存時にトーストで告知（拒否しない）', true);
+        // 告知は**目立つ**こと（ユーザー要望「赤色背景などで告知してください」・2026-08-25）。
+        // 綴り違いは黙って計算から外れるので、他の控えめなトーストに紛れてはいけない。
+        const alertToast = page.locator('[data-toast-id="unknown-vocab"]');
+        check('未知種別: 告知は目立つ赤（alert）',
+            (await alertToast.getAttribute('class') || '').includes('alert'));
+        check('未知種別: 背景が赤い',
+            /^rgb\(1[0-9]{2}, [0-9]{1,2}, [0-9]{1,2}\)$/.test(
+                await alertToast.evaluate(el => getComputedStyle(el).backgroundColor)));
+        // 見落とすと綴り違いに気づけないので、勝手に消えないこと。
+        await page.waitForTimeout(9000);
+        check('未知種別: 時間で勝手に消えない', await alertToast.count() === 1);
 
         // ── ページタイトルの印（位置で決まる＝属性にしない） ──
         check('最初の h1 に印が付く', await page.evaluate(() => {
