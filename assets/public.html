@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- title・description・OGP・canonical はサーバーが差し込む（shell_public.go の buildHeadTags）。
+         値は利用者が本文へ書いた文字なので、必ずエスケープを通してから来る。 -->
+    <!--WCMS_HEAD-->
+    <link rel="stylesheet" href="/assets/public.css">
+</head>
+<body class="public">
+
+<!-- 公開専用ビュー。**JavaScript は読み込みません**——閲覧はゼロJSで完結する
+     （本文は標準HTML、計算ビューもサーバー事前描画）ので、訪問者にもクローラにも
+     これだけで本文が読めます。編集用の殻（index.html）とは別ファイルで、
+     編集用クロームは配信そのものをしません。
+
+     殻の id は接頭辞 `w-` を独占します（本文の id と衝突させないため。
+     shell_id_test.go が後戻りを検出）。 -->
+<main id="w-public-content" class="public-content"><!--WCMS_CONTENT--></main>
+
+<footer class="public-footer">
+    <a href="/login">ログイン</a>
+</footer>
+
+</body>
+</html>

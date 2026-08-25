@@ -1,0 +1,124 @@
+/* 公開専用ビューのスタイル（要件定義書 §4.4）。
+   編集用の app.css とは独立させています——編集用クロームの分岐や状態クラスを
+   持ち込まないことが、この体裁の目的そのものだからです。
+   本文に出てくる要素（見出し・段落・表・定義リスト・画像・計算ビュー）だけを整えます。 */
+
+:root {
+    --pub-text: #1f2937;
+    --pub-muted: #6b7280;
+    --pub-border: #e5e7eb;
+    --pub-link: #1d4ed8;
+    --pub-bg: #ffffff;
+    --pub-radius: 6px;
+}
+
+* { box-sizing: border-box; }
+
+body.public {
+    margin: 0;
+    background: var(--pub-bg);
+    color: var(--pub-text);
+    font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+    line-height: 1.8;
+    font-size: 16px;
+}
+
+.public-content {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+}
+
+.public-content h1 {
+    font-size: 1.9rem;
+    line-height: 1.35;
+    margin: 0 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--pub-border);
+}
+.public-content h2 { font-size: 1.45rem; margin: 40px 0 12px; }
+.public-content h3 { font-size: 1.2rem; margin: 32px 0 10px; }
+
+.public-content p { margin: 0 0 16px; }
+.public-content ul,
+.public-content ol { margin: 0 0 16px; padding-left: 1.5em; }
+.public-content li { margin: 4px 0; }
+
+.public-content a { color: var(--pub-link); }
+
+/* 画像は原寸のまま出すと横スクロールが起きるので枠に収める（縦横比は保つ）。 */
+.public-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--pub-radius);
+}
+
+/* 表は狭い画面で溢れるので、表だけを横スクロールさせる（ページ全体は揺らさない）。 */
+.public-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 20px;
+    display: block;
+    overflow-x: auto;
+}
+.public-content th,
+.public-content td {
+    border: 1px solid var(--pub-border);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+.public-content th { background: #f9fafb; font-weight: 600; }
+
+.public-content dl { margin: 0 0 20px; }
+.public-content dt { font-weight: 600; color: var(--pub-muted); margin-top: 10px; }
+.public-content dd { margin: 0 0 4px 1em; }
+
+/* 業務ブロック（発注書など）の枠。編集モードの破線枠は出さない（読む人には無関係）。 */
+.public-content section[data-type] {
+    margin: 0 0 24px;
+}
+
+/* サーバー事前描画の計算ビュー（子ページ一覧・手配集計）。
+   contenteditable="false" が付いたまま届くが、公開側では意味を持たない。 */
+.public-content .vocab-chrome { margin: 0 0 20px; }
+.public-content .child-list { list-style: none; padding-left: 0; }
+.public-content .child-list li { margin: 6px 0; }
+.public-content .child-list-empty,
+.public-content .materials-empty,
+.public-content .view-error { color: var(--pub-muted); }
+
+.public-content blockquote {
+    margin: 0 0 16px;
+    padding: 4px 0 4px 16px;
+    border-left: 3px solid var(--pub-border);
+    color: var(--pub-muted);
+}
+
+.public-content pre,
+.public-content code {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 0.92em;
+}
+.public-content pre {
+    background: #f9fafb;
+    border: 1px solid var(--pub-border);
+    border-radius: var(--pub-radius);
+    padding: 12px;
+    overflow-x: auto;
+}
+
+.public-footer {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 16px 20px 40px;
+    border-top: 1px solid var(--pub-border);
+    color: var(--pub-muted);
+    font-size: 0.85rem;
+}
+.public-footer a { color: var(--pub-muted); }
+
+/* 一般の訪問者にも意味の分かるエラー画面（要件 §4.4）。 */
+.public-error { text-align: center; padding: 48px 0; }
+.public-error h1 { border: none; font-size: 1.5rem; }
+.public-error p { color: var(--pub-muted); }

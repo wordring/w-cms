@@ -160,6 +160,13 @@ func buildHandler() http.Handler {
 	root.HandleFunc("/login", auth.LoginPageHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 
+	// クローラ向けの2本（要件定義書 §4.4）。載せるのは実効公開のページだけで、
+	// サイト全体が非公開なら robots.txt が全面拒否を返す（業務インスタンスは
+	// 匿名に何も見せない運用なので、クローラにも入らせない）。
+	// 認証は要らない——中身は公開情報しか含まないため。
+	root.HandleFunc("/sitemap.xml", cms.SitemapHandler)
+	root.HandleFunc("/robots.txt", cms.RobotsHandler)
+
 	// 本文で扱えるHTMLの語彙（構造HTML＋data-* マーカー＋レジストリの形式宣言）。エディタが本文の
 	// シリアライズに使う。語彙は秘密ではないので認証不要。
 	root.HandleFunc("/api/tag-schema", cms.TagSchemaAPIHandler)

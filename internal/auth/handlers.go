@@ -142,6 +142,10 @@ func LogoutAPIHandler(w http.ResponseWriter, r *http.Request) {
 func MeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	u := CurrentUser(r)
 	w.Header().Set("Content-Type", "application/json")
+	// 誰であるかの答えは絶対にキャッシュさせない。この口は OptionalAuth 配下で
+	// RequireAuth の一律 no-store が掛からないため、ここで自前で付ける
+	// （共用パソコンで前の人の名前が出る、という形で表に出る）。
+	w.Header().Set("Cache-Control", "no-store")
 	if u == nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"authenticated": false})
 		return
@@ -182,6 +186,19 @@ func clientIP(r *http.Request) string {
 		return host
 	}
 	return last
+}
+
+// IsFromTrustedProxy は、そのリクエストが前段のプロキシ経由で来たかを返します。
+//
+// `X-Forwarded-*` を採るかどうかの判定はこの1関数に集約します——監査記録の接続元
+// （clientIP）と公開ビューの基底URL（scheme / host）で規則がずれると、片方だけ
+// 詐称できる穴になるためです。
+func IsFromTrustedProxy(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return isTrustedProxy(host)
 }
 
 // isTrustedProxy は、そのアドレスを「前段のプロキシ」とみなすかを返します。

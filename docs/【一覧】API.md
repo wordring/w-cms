@@ -38,7 +38,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 
 | メソッド | パス | 認可 | 編集ロック | 概要 |
 |---|---|---|---|---|
-| GET | `/{id}` | 任意認証 | — | **ページ本体**。`assets/index.html` に本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成・`RenderPageShell`）。本文はサニタイズ後に**計算ビューの中身が埋められる**（`RenderComputedViews`。下記の注記）。権限無し=403／匿名×非公開=`/login` へ302／不存在=404 |
+| GET | `/{id}` | 任意認証 | — | **ページ本体**。本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成）。**殻は相手で分かれる**（2026-08-26）——認証済みは編集用 `assets/index.html`（`RenderPageShell`・`Cache-Control: no-store`）、匿名は**公開専用** `assets/public.html`（`RenderPublicShell`・スクリプト無し・`description`/OGP/canonical つき・`public, max-age=600` ＋ `Vary: Cookie` ＋ `ETag`）。本文はサニタイズ後に**計算ビューの中身が埋められる**（`RenderComputedViews`。下記の注記）。権限無し=403（体裁つきのHTML）／匿名×非公開=404（トップだけ `/login` へ302）／不存在=404 |
 | GET | `/api/load` | 任意認証（read） | — | ページ本文（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用**。**描画時と同じくサニタイズを通し**、計算ビューの中身を埋めて返す。**ページ内アンカーの合成（`RenderAnchors`）は通さない**——合成 id がエディタのDOMへ入ると本文として保存されるため（下記の注記） |
 | POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types`、見出しの改名で計算に読まれなくなった項目の告知 `unresolved_fields`、殻の接頭辞を剥がした id の告知 `stripped_ids` を返す（下記の注記）。JSONボディは**8MiB上限**（超過は413。JSONを受けるAPIは共通） |
 | POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types`・`unresolved_fields`・`stripped_ids` は当該ブロック分のみ） |
@@ -150,6 +150,18 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 
 | パス | 認可 | 概要 |
 |---|---|---|
-| `/assets/...` | 認証不要 | 殻の markup・CSS・JS（`index.html`・`app.css`/`app.js`・`boot.js`・`admin.*`・`login.css`）。**ディレクトリ一覧は無効**（`noDirListing`）。`Cache-Control: no-cache`＝毎回再検証（変わっていなければ304）。CSP strict 化（`'unsafe-inline'` 無し）により、スクリプト・スタイルはすべてここに置く |
+| `/assets/...` | 認証不要 | 殻の markup・CSS・JS（`index.html`・`app.css`/`app.js`・`boot.js`・`admin.*`・`login.css`・**`public.html`/`public.css`**）。**ディレクトリ一覧は無効**（`noDirListing`）。`Cache-Control: no-cache`＝毎回再検証（変わっていなければ304）。CSP strict 化（`'unsafe-inline'` 無し）により、スクリプト・スタイルはすべてここに置く |
 
 `/data/...` は静的配信ではなく認可付きハンドラ（§2）。
+
+## 9. クローラ向け（2026-08-26）
+
+| メソッド | パス | 認可 | 概要 |
+|---|---|---|---|
+| GET | `/sitemap.xml` | 認証不要 | **実効公開のページだけ**を載せた sitemap（`<loc>` は絶対URL・`<lastmod>` は W3C Datetime）。判定は認可と同じ `page.EffectivePublic` を通す——独自の判定を書くと、認可とずれた瞬間に非公開ページのアドレスを外へ配ることになる。`public, max-age=600` |
+| GET | `/robots.txt` | 認証不要 | **サイト全体が非公開なら `Disallow: /`**（トップの実効公開で判定。パスゲートにより「サイトが閉じているか」と同義。索引が使えないときも閉じている扱い＝フェイルクローズ）。公開サイトでは `/api/` と `/login` を閉じ、`Sitemap:` 行で sitemap を案内する。添付（`/data/`）は本文の画像がここから配られるので閉じない |
+
+絶対URLの基底は `WCMS_BASE_URL`（[要件定義書.md](要件定義書.md) §4.3）を最優先し、無ければ
+リクエストから組み立てる（`X-Forwarded-Proto`/`-Host` は**前段がプロキシのときだけ**採用——
+無条件に信じると外から表記を操作できる。監査記録の接続元と同じ規則で、判定は
+`auth.IsFromTrustedProxy` の1関数）。

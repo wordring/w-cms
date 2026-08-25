@@ -173,3 +173,40 @@ func TestCSPIsWired(t *testing.T) {
 		}
 	}
 }
+
+// TestPublicSurfaceIsWired は、クローラ向けの2本が**認証なしで**到達できることを
+// 固定します（要件定義書 §4.4）。protected へ入れてしまうと 401 になり、
+// 検索エンジンからはサイトが存在しないのと同じになります。
+func TestPublicSurfaceIsWired(t *testing.T) {
+	h := buildHandler()
+
+	for _, path := range []string{"/robots.txt", "/sitemap.xml"} {
+		req := httptest.NewRequest("GET", path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != 200 {
+			t.Errorf("%s が認証なしで返りません: code=%d body=%s", path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+// TestAuthenticatedAPIsAreNotCacheable は、要認証APIの応答がキャッシュされない
+// ことを固定します。
+//
+// 公開ページをキャッシュ可能にした以上（要件 §4.4）、**認証済みの応答を絶対に
+// キャッシュさせない**のは前提条件です。Cache-Control が無いと、ブラウザや
+// 中間キャッシュがヒューリスティックに保存してよいことになり、共用パソコンで
+// 前の人の応答が出うる状態が残ります。
+func TestAuthenticatedAPIsAreNotCacheable(t *testing.T) {
+	h := buildHandler()
+
+	// 未認証でも 401 を返す時点でヘッダは付いている（付ける場所が入口だから）。
+	for _, path := range []string{"/api/page-perms", "/api/admin/users", "/api/save"} {
+		req := httptest.NewRequest("GET", path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if cc := rr.Header().Get("Cache-Control"); cc != "no-store" {
+			t.Errorf("%s の応答が no-store ではありません: %q", path, cc)
+		}
+	}
+}
