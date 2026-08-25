@@ -18,8 +18,9 @@ git 管理外に置いていたころは、レビューも引き継ぎもでき�
 | `verify-editor-loss.js` | 編集画面で入力が消える経路（貼り付け・保存済表示）の回帰 | 11 |
 | `verify-image.js` | 画像の添付（挿入・EXIF除去の入口・HEIC拒否・SVGの不活性配信） | 21 |
 | `verify-public.js` | 公開専用ビュー（クローム無し・SEO/OGP・キャッシュの切り分け・sitemap/robots） | 29 |
+| `verify-version.js` | 版の履歴（コアレッシング・ロック解放時の記録・リバート・版IDの検証） | 17 |
 
-（件数は 2026-08-26 の実測。合計185項目）
+（件数は 2026-08-26 の実測。合計202項目）
 
 `assets/` を変更したら `node --check` に続けて**一式を回帰として流してください**。
 `verify-stage1.js`（第1段）と `verify-migration2.js`（一括変換）は役目を終えて
@@ -46,6 +47,7 @@ node verify-template.js
 node verify-editor-loss.js
 node verify-image.js
 node verify-public.js
+node verify-version.js
 ```
 
 スクリプトは playwright を**カレントディレクトリから**解決します（`createRequire`）。
@@ -67,6 +69,9 @@ node verify-public.js
 - **`verify-public.js` は実データの公開フラグを立てる**。必ず `finally` で戻す作りにしてある
   ——途中で中断すると**ローカルのトップページが公開のまま残る**ので、`curl localhost:8080/robots.txt`
   が `Disallow: /` を返すか確認すること
+- **編集ロックは前のスクリプトから残ることがある**。一式を続けて流すと、トップページの
+  権限変更（`verify-public.js` の `setPublic`）が 409 になって落ちた。ロックを要するAPIを
+  叩くヘルパーは**409 なら少し待って取り直す**作りにしておくこと
 
 ## 注意
 

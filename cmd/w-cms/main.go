@@ -125,6 +125,12 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/unlock", editlock.UnlockAPIHandler)
 	protected.HandleFunc("/api/lock/force", editlock.LockForceAPIHandler)
 
+	// 保存済み文書の版管理（リビジョン／リバート。version.go）。
+	// 版は本文そのものなので、一覧・取得は本文と同じ read、書き戻しは write ＋編集ロック。
+	protected.HandleFunc("/api/versions", cms.VersionsAPIHandler)
+	protected.HandleFunc("/api/version", cms.VersionAPIHandler)
+	protected.HandleFunc("/api/revert", cms.RevertAPIHandler)
+
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 

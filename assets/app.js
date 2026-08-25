@@ -526,6 +526,86 @@
         } catch (e) { /* 取得失敗時は既定表示のまま */ }
     }
 
+    // ── 版の履歴（リビジョン／リバート。internal/cms/version.go） ────────────
+    // 対象は**本文HTMLだけ**なので、戻しても権限・所有者・親は変わらない
+    // （設計 docs/【考察】アンドゥ・リドゥ.md §5）。UIもその前提で「本文を戻す」とだけ言う。
+
+    // loadVersions は版の一覧を右レールへ描き直す。
+    async function loadVersions() {
+        const list = document.getElementById('w-vh-list');
+        if (!list || !currentPageId) return;
+        const isEdit = document.body.hasAttribute('edit-mode');
+        setHidden(document.getElementById('w-vh-view-hint'), isEdit);
+        try {
+            const res = await fetch('/api/versions?id=' + encodeURIComponent(currentPageId));
+            if (!res.ok) return;
+            const versions = await res.json();
+            list.textContent = '';
+            if (!versions.length) {
+                const li = document.createElement('li');
+                li.className = 'version-empty';
+                li.textContent = 'まだ履歴がありません。';
+                list.appendChild(li);
+                return;
+            }
+            versions.forEach((v, idx) => {
+                const li = document.createElement('li');
+                li.className = 'version-item';
+                li.dataset.version = v.id;
+
+                const when = document.createElement('span');
+                when.className = 'version-when';
+                when.textContent = formatDateTime(v.at);
+                li.appendChild(when);
+
+                const who = document.createElement('span');
+                who.className = 'version-who';
+                who.textContent = v.by || '—';
+                li.appendChild(who);
+
+                // 先頭（＝いまの内容）に戻すボタンは出さない。押しても何も起きず、
+                // 「戻せなかった」ように見えるだけなので。
+                if (isEdit && idx > 0) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'rail-btn version-revert';
+                    btn.textContent = 'この版に戻す';
+                    btn.addEventListener('click', () => revertToVersion(v));
+                    li.appendChild(btn);
+                }
+                list.appendChild(li);
+            });
+        } catch (e) { /* 取得失敗時は前の表示のまま（履歴が出ないだけ） */ }
+    }
+
+    // revertToVersion は選んだ版を本文へ書き戻す。
+    // 取り消せる操作（戻す前の内容も版として残る）だが、本文が丸ごと入れ替わるので確認する。
+    async function revertToVersion(v) {
+        const msg = document.getElementById('w-vh-msg');
+        if (!confirm(formatDateTime(v.at) + ' の版に本文を戻します。よろしいですか？\n'
+            + '（いまの内容も履歴に残るので、戻すことができます）')) return;
+        msg.textContent = '戻しています…';
+        try {
+            const res = await lockedFetch('/api/revert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_id: currentPageId, version: v.id }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) throw new Error(d.message || (await res.text().catch(() => '')) || res.status);
+            msg.textContent = '';
+            // 本文を載せ替える。サーバーが返すのは戻した本文そのもの。
+            populateEditor(d.html);
+            loadVersions();
+            loadPageMeta();
+            notify('本文を ' + formatDateTime(v.at) + ' の版に戻しました。', { type: 'success', duration: 6000 });
+        } catch (e) {
+            msg.textContent = '';
+            if (e.message === 'lock-lost') return; // 明け渡しの案内は handleLockLost が出す
+            notify('版を戻せませんでした: ' + e.message, { type: 'warn', duration: 8000 });
+        }
+    }
+
     // 親ページIDの付け替え。検証はサーバー（/api/set-parent）が権威。
     async function applyParent() {
         const input = document.getElementById('w-pi-parent-input');
@@ -1083,6 +1163,10 @@
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         updateHtmlPreview();
         refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
+        // 版の履歴は「戻す」ボタンの出し分けがモードに依るので描き直す。
+        // 閲覧モードへ戻った直後はサーバー側でロック解放のチェックポイントが打たれて
+        // いるので、一覧そのものも取り直す価値がある。
+        loadVersions();
     }
 
     // onModeToggle は編集モード切替の入口。編集に入るときはロックを取得してから、
@@ -3196,6 +3280,9 @@
         on('#w-pp-chown-btn', 'click', chownPage);
         on('#w-pp-save', 'click', savePerms);
         on('#w-pp-public', 'change', setPublic);
+        // 版の履歴は**開いたときに取り直す**。オートセーブのたびに取りに行くと
+        // 1〜2秒ごとの余計な往復になるので、見に来た瞬間だけ最新にする。
+        on('#w-vh-details', 'toggle', e => { if (e.target.open) loadVersions(); });
     }
 
     bindChromeActions();
@@ -3243,4 +3330,5 @@
         loadPageMeta();
         loadPerms();
         loadChildNav();
+        loadVersions();
     };

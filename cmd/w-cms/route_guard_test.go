@@ -45,6 +45,9 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/page-perms", "POST", 401, "権限変更"},
 		{"/api/page-chown", "POST", 401, "所有者変更（admin）"},
 		{"/api/rebuild-db", "POST", 401, "DB再構築（admin）"},
+		{"/api/versions", "GET", 401, "版の一覧"},
+		{"/api/version", "GET", 401, "版の本文"},
+		{"/api/revert", "POST", 401, "版の書き戻し"},
 		{"/api/templates", "GET", 401, "テンプレート一覧"},
 		{"/api/lock", "POST", 401, "編集ロック取得"},
 		{"/api/unlock", "POST", 401, "編集ロック解放"},
@@ -137,6 +140,7 @@ func TestStateChangingRoutesRejectGET(t *testing.T) {
 		"/api/lock/force",
 		"/api/upload-pdf",
 		"/api/upload-image",
+		"/api/revert",
 		"/api/parse-pdf",
 		"/api/login",
 	} {

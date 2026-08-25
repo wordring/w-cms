@@ -346,6 +346,12 @@ func resyncAllPages() (int, error) {
 			}
 			return err
 		}
+		// 版置き場は本文ではないので降りない（version.go）。いまの版は `.html.gz` なので
+		// 下の `.html` 判定には掛からないが、**ここで明示的に閉じておく**——手で置かれた
+		// `versions/foo.html` が「ページ」として索引に載るのを防ぐため。
+		if info.IsDir() && info.Name() == versionsDirName {
+			return filepath.SkipDir
+		}
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".html") {
 			content, err := os.ReadFile(path)
 			if err != nil {

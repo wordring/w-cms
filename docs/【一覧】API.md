@@ -49,6 +49,9 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | GET | `/api/templates` | 要認証 | — | テンプレート選択メニューの中身。「テンプレート」フォルダ（トップ直下・同名）配下のツリーを `[{id,title,children}]` で返す。**枝は分類・葉がテンプレート**。ルートが無ければ `[]`（従来どおり空のページだけが作られる）。read 権限で絞られる（`visibleChildren`） |
 | GET | `/api/validate-parent` | 要認証（write） | — | 親付け替えの事前検証（循環・自己参照・存在チェック）。`/api/set-parent` と同じ `validateParentChange` を共有する。**現在フロントからは呼ばれていない**（`applyParent()` は `/api/set-parent` の応答だけで判定する） |
 | POST | `/api/set-parent` | 要認証（write） | 要 | 親ページの付け替え |
+| GET | `/api/versions` | 要認証（read） | — | **版の一覧**を新しい順で返す（`[{id, at, by, size, hash}]`。2026-08-26）。版は本文そのものなので本文と同じ read を要求する |
+| GET | `/api/version` | 要認証（read） | — | 指定した版の本文（`?id=&v=`）。`text/plain` ＋ `nosniff` ＋**描画時と同じサニタイズ**（`/api/load` と同じ扱い）。版IDは時刻由来の形しか受け付けない＝ページのフォルダの外は指せない |
+| POST | `/api/revert` | 要認証（write） | 要 | 選んだ版を**本文として書き戻す**。戻すのは本文HTMLだけで、サイドカー（親・所有者・権限・公開）は触らない＝**リバートが権限昇格の抜け道にならない**。書き戻す前に「いまの内容」を版として残すので、リバート自体も取り消せる。監査記録は `revert` |
 | GET | `/data/...` | 任意認証（read） | — | 添付ファイル配信（PDF原本・画像など）。ページのread権限を要求する保護ハンドラ。`nosniff` 付き。**PDFとラスタ画像（png/jpeg/webp/gif）はインライン**、**SVG は不活性化**（`image/svg+xml` ＋ `Content-Disposition: attachment` ＋ この応答限定の `Content-Security-Policy: sandbox; default-src 'none'`）、**それ以外はダウンロード扱い**。本文とサイドカーは配らない |
 
 > **計算ビューのサーバー事前描画**: 本文を返す入口は `/{id}`（`RootHandler`）と `/api/load`
@@ -86,13 +89,13 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
 | POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
 
-ページの状態を変えるAPIは**同じロックで直列化**される（計8本）。ただし入口は2種類ある。
+ページの状態を変えるAPIは**同じロックで直列化**される（計9本）。ただし入口は2種類ある。
 
 - **保存2本**（`/api/save`・`/api/save-block`）は `editlock.Locks.Validate` を直接呼び、
   トークンは**JSONボディの `token`** で受ける。
-- **残り6本**（`/api/set-parent`・`/api/page-perms`・`/api/page-chown`・`/api/delete-page`・
+- **残り7本**（`/api/set-parent`・`/api/page-perms`・`/api/page-chown`・`/api/delete-page`・`/api/revert`・
   `/api/upload-pdf`・`/api/upload-image`）は共通ゲート `editlock.RequireEditLock` を通り、トークンは
-  **`X-Lock-Token` ヘッダ**（無ければ `token` クエリ）で受ける。フロントはこの6本を
+  **`X-Lock-Token` ヘッダ**（無ければ `token` クエリ）で受ける。フロントはこの7本を
   `lockedFetch`（または同じヘッダを手で付けた `fetch`）で送る。
 
 検証規約はどちらも同じ（ロック無し＝許可／保持者本人でトークン一致なら許可／それ以外は409）。
