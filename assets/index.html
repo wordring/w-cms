@@ -38,6 +38,10 @@
 <div id="w-slash-menu" class="slash-menu">
     <div class="slash-menu-item" data-type="h1"><b>H1</b> 見出し</div>
     <div class="slash-menu-item" data-type="p"><b>P</b> 段落</div>
+    <!-- 画像はレジストリの形式ではなく、添付＋<img> の挿入という操作なので殻に置く。
+         選ぶとファイル選択が開き（モバイルではカメラも選べる）、アップロード後に
+         <img> のブロックが入る（app.js の insertImagesAfter）。 -->
+    <div class="slash-menu-item" data-type="image"><b>🖼</b> 画像</div>
 </div>
 
 <!-- コンテキストツールバー -->

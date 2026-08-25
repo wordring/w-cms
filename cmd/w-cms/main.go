@@ -108,6 +108,8 @@ func buildHandler() http.Handler {
 	// クライアントは 409 等で /api/save（全文保存）へフォールバックする。
 	protected.HandleFunc("/api/save-block", cms.SaveBlockAPIHandler)
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
+	// 画像の添付（png/jpeg/webp/gif/svg。中身の検証とEXIF除去はハンドラ内。要件 §2.6）
+	protected.HandleFunc("/api/upload-image", cms.UploadImageHandler)
 	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	// テンプレート選択メニューの中身（「テンプレート」フォルダ配下のツリー）

@@ -104,7 +104,12 @@ const TEMPLATE_BODY =
         const madeHTML = await (await page.request.get(BASE + '/api/load?id=' + madeId)).text();
         check('テンプレートの本文が写る', madeHTML.includes('受注ページ') && madeHTML.includes('得意先A'));
         check('発注書番号が新ページIDで採番される', madeHTML.includes('PO-' + madeId));
-        const today = new Date().toISOString().split('T')[0];
+        // サーバーは**現地時刻**の日付を入れる（Go の time.Now()）。toISOString() は
+        // UTC へ寄せてしまい、日本時間の 00:00〜09:00 に走らせると前日になって落ちる。
+        const now = new Date();
+        const today = now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0');
         check('発注日が今日で埋まる', madeHTML.includes(today));
         check('明細もコピーされる', madeHTML.includes('SAMPLE-1'));
 

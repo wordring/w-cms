@@ -437,13 +437,54 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// 宣言した型以外に解釈させない。http.ServeFile は Content-Type が未設定のときだけ
 	// 推定するので、先に設定しておけばそれが使われる。
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if strings.EqualFold(path.Ext(name), ".pdf") {
+	ext := strings.ToLower(path.Ext(name))
+	switch {
+	case ext == ".pdf":
 		// PDFは <embed> でページ内に表示するのでインラインのまま。
 		w.Header().Set("Content-Type", "application/pdf")
-	} else {
+	case ext == ".svg":
+		// SVG は「不活性な画像」として配る（要件定義書 §2.6）。
+		// 本文からの表示は <img src> 経由だけで、画像コンテキストでは
+		// ブラウザ仕様としてスクリプトが動かない。危ないのは**直接開かれた**とき
+		// なので、この応答に限って次の2枚を掛ける:
+		//   - Content-Disposition: attachment → 直接開くと描画せずダウンロード
+		//   - CSP sandbox + default-src 'none' → 万一描画されても別オリジン扱い・全実行禁止
+		// <img> のサブリソース読み込みはどちらのヘッダも無視するので、本文での表示は
+		// 影響を受けない。
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Content-Disposition", "attachment")
+		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	case inlineImageTypes[ext] != "":
+		// ラスタ画像は実際の種別を明示してインライン配信する（本文の <img> から見える）。
+		// 入口（UploadImageHandler）で中身のマジックナンバーを検証済み。
+		w.Header().Set("Content-Type", inlineImageTypes[ext])
+	default:
 		// 由来の分からないファイルは、表示させずダウンロードさせる。
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", "attachment")
 	}
 	http.ServeFile(w, r, filepath.Join(".", filepath.FromSlash(clean)))
+}
+
+// inlineImageTypes はインライン配信を許すラスタ画像の拡張子と Content-Type です。
+// SVG はここに入れません（上の分岐で不活性化して配るため）。
+var inlineImageTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".webp": "image/webp",
+	".gif":  "image/gif",
+}
+
+// DataURLFor はページの添付ファイルを配信するアドレスを返します。
+// 本文の `<img src>` や `<embed src>` へ入れる形（絶対パス）です。
+//
+// **絶対パスなのは、ページのアドレス（`/000012`）からの相対名がページの隣ではなく
+// サイトのルートを指してしまうため**です。サニタイザは埋め込みの絶対パスを
+// `/data/` 配下に限って許可しており、この形はその許可範囲そのものです。
+func DataURLFor(pageID, fileName string) string {
+	if len(pageID) < 2 {
+		return ""
+	}
+	return "/data/master/" + pageID[:2] + "/" + pageID + "/" + fileName
 }
