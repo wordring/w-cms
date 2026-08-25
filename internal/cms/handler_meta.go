@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -117,6 +118,15 @@ func RebuildDBAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 件数と所要時間を返す。「取り込めなかったページがある」ことに後から気づける
 	// 手掛かりになるので、成功したという事実だけでは足りない。
 	pages, ms, ok := lastRebuildResult()
+	// 監査記録（要件定義書 §2.3）。派生索引の作り直しは途中で失敗すると集計が
+	// 静かに欠けるので、いつ・誰が回して何ページ取り込めたのかを残す。
+	if u := auth.CurrentUser(r); u != nil {
+		target := "全再構築"
+		if ok {
+			target = strconv.Itoa(pages) + "ページ / " + strconv.FormatInt(ms, 10) + "ミリ秒"
+		}
+		auth.Audit(u.Username, "rebuild-db", target)
+	}
 	resp := map[string]interface{}{"success": true}
 	if ok {
 		resp["pages"] = pages
