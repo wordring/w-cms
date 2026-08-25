@@ -34,6 +34,11 @@ const (
 	// titlePlaceholder は差し替える既定のタイトル要素です。
 	// index.html を単体で開いても壊れないよう、実在するタイトルをそのまま目印にします。
 	titlePlaceholder = "<title>w-cms エディタ</title>"
+
+	// bodyPlaceholder は匿名の印を付ける位置の目印です。
+	// タイトルと同じく「実在する記述をそのまま目印にする」流儀で、殻を単体で
+	// 開いても壊れません。
+	bodyPlaceholder = "<body>"
 )
 
 // shellCache は殻の内容をメモリに保持します。mtime を見て変化時だけ読み直すため、
@@ -69,7 +74,14 @@ func loadShell() (string, error) {
 
 // RenderPageShell は本文HTML（サニタイズ済みであること）とページタイトルを殻へ埋め込み、
 // ブラウザへ返す完成HTMLを組み立てます。
-func RenderPageShell(bodyHTML, title string) (string, error) {
+//
+// anonymous が真なら body へ `class="anonymous"` を刻みます。編集スイッチ・ログアウト
+// ボタン・「保存されるHTML」欄を隠すのは CSS（`body.anonymous`）の仕事ですが、印を
+// JS（/api/me の応答後）で付けていたころは**最初の描画に間に合わず**、それらが一瞬
+// 映って消えていました（中身は空なので情報は漏れないが、見た目が壊れる）。
+// 印はサーバーが知っている情報なので、ここで刻むのが正しい置き場です。
+// なお JS 側も従来どおり印を付けます（冪等。通信で状態が変わる場合に備える）。
+func RenderPageShell(bodyHTML, title string, anonymous bool) (string, error) {
 	shell, err := loadShell()
 	if err != nil {
 		return "", err
@@ -80,6 +92,9 @@ func RenderPageShell(bodyHTML, title string) (string, error) {
 	if t := strings.TrimSpace(title); t != "" {
 		out = strings.Replace(out, titlePlaceholder,
 			"<title>"+html.EscapeString(t)+" - w-cms</title>", 1)
+	}
+	if anonymous {
+		out = strings.Replace(out, bodyPlaceholder, `<body class="anonymous">`, 1)
 	}
 	return out, nil
 }
