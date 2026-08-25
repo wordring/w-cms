@@ -644,11 +644,16 @@
 
     // notifyUnknownTypes はレジストリ未定義の data-type の**告知**（拒否ではない）。
     // 未知の種別も保存され索引にも載る（語彙モデル §9 の決定。エコーバックの流儀）。
+    // 告知は**目立つ赤**（type: 'alert'）で、時間では消えない（duration: 0）。
+    // 綴り違い（<section data-type="cliet-order"> のような打ち間違い）は保存こそ通るが、
+    // その塊は計算から静かに外れる。控えめなトーストで流れると気づけないため
+    // （ユーザー要望「赤色背景などで告知してください」・2026-08-25）。
     function notifyUnknownTypes(types) {
         if (!Array.isArray(types) || !types.length) return;
         notify('未定義の種別 ' + types.map(t => '「' + t + '」').join('・') +
-            ' の表・リスト・ブロックがあります（そのまま保存しますが、計算には使われません）。',
-            { type: 'info', duration: 8000, id: 'unknown-vocab' });
+            ' の表・リスト・ブロックがあります。そのまま保存しますが、' +
+            '計算には使われません（綴りを確かめてください）。',
+            { type: 'alert', duration: 0, id: 'unknown-vocab' });
     }
 
     // notifyUnresolvedFields は「見出しの改名で計算に読まれなくなった項目」の告知。
