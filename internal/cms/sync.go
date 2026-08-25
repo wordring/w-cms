@@ -101,28 +101,55 @@ func SyncIndex(id string, htmlContent string) error {
 		return err
 	}
 
-	// 手順5: 各プラグインがユースケース固有テーブルを洗い替え。
+	// 手順5: 回覧（観察係の段）——各プラグインがユースケース固有テーブルを洗い替え。
+	//
+	// 走査はコアの配送係が**1回だけ**行い、引き金（`data-type`）に当たった要素を
+	// 担当へ届けます（walk.go）。かつては各プラグインが木を丸ごと受け取って自前で
+	// 歩いていました。
 	//
 	// ただし**テンプレート配下のページは②索引・③計算へ載せません**
 	// （docs/【考察】ページテンプレート.md §6）。載せると、テンプレートに書かれた
 	// 仮の発注書が client_orders に入り、手配集計・利益計算に出てきてしまいます。
 	//
-	// 除外は「飛ばす」のではなく**空の本文を渡す**形で行います。全プラグインの Sync は
-	// 冒頭で当該ページの行を DELETE する洗い替えなので、空を渡せば
-	// 「古い行は消える・新しい行は入らない」となり、**普通のページをテンプレートフォルダへ
-	// 移したときに古い行が残りません**（飛ばすと残る）。冪等で自己修復もします。
+	// 除外は「飛ばす」のではなく**要素イベントを1つも発火しない**形で行います。
+	// OnPageStart（＝当該ページ分の DELETE）は呼ぶので「古い行は消える・新しい行は
+	// 入らない」となり、**普通のページをテンプレートフォルダへ移したときに古い行が
+	// 残りません**（飛ばすと残る）。冪等で自己修復もします。
 	//
 	// コア（pages / page_perms）は従来どおり同期します——テンプレートページも
 	// 普通に存在し、閲覧も権限判定もページ階層への表示も従来どおり動く必要があるため。
-	pluginRoot := root
-	if IsTemplateArea(id) {
-		if pluginRoot, err = html.Parse(strings.NewReader("")); err != nil {
-			return err
+	obsCtx := &ObserveContext{
+		Tx:     tx,
+		PageID: pageIDInt,
+		Meta: func() (page.PageMeta, error) {
+			m, ok := page.ReadSidecar(id)
+			if !ok {
+				return page.PageMeta{}, fmt.Errorf("ページ属性ファイルを読めません: %s", id)
+			}
+			return m, nil
+		},
+		// ページ横断メタは文書順では拾えない（タグが表より後ろにあってもよい）ので、
+		// コアが木から1度だけ引く口を用意する。
+		Tag: func(name string) string { return TagValue(root, name) },
+	}
+
+	for _, o := range Observers() {
+		if err = o.OnPageStart(obsCtx); err != nil {
+			return fmt.Errorf("プラグイン %q の洗い替えに失敗: %w", o.Name(), err)
 		}
 	}
-	for _, p := range Plugins() {
-		if err = p.Sync(tx, pageIDInt, pluginRoot); err != nil {
-			return fmt.Errorf("プラグイン %q の同期に失敗: %w", p.Name(), err)
+	if !IsTemplateArea(id) {
+		if err = walkers.walkObserve(obsCtx, []*html.Node{root}); err != nil {
+			return err // 失敗したプラグイン名は observerAdapter が包んでいる
+		}
+	}
+	for _, o := range Observers() {
+		f, ok := o.(PageFinisher)
+		if !ok {
+			continue
+		}
+		if err = f.OnPageEnd(obsCtx); err != nil {
+			return fmt.Errorf("プラグイン %q の確定に失敗: %w", o.Name(), err)
 		}
 	}
 

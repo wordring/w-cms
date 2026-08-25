@@ -1,7 +1,6 @@
 package cms
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"sort"
@@ -54,36 +53,39 @@ func (materialsPlugin) Tables() []string {
 	return []string{"part_materials"}
 }
 
-func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
-	if _, err := tx.Exec(`DELETE FROM part_materials WHERE page_id = ?`, pageID); err != nil {
-		return err
-	}
+// Triggers は部材表だけを担当することを宣言します。
+func (materialsPlugin) Triggers() []string { return []string{"part-materials"} }
 
+// OnPageStart は当該ページ分を洗い流します。
+func (materialsPlugin) OnPageStart(ctx *ObserveContext) error {
+	_, err := ctx.Tx.Exec(`DELETE FROM part_materials WHERE page_id = ?`, ctx.PageID)
+	return err
+}
+
+// OnElement は1つの部材表を読み、行を書き込みます。
+func (materialsPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	if el.Data != "table" {
+		return true, nil
+	}
 	// part_id は部材行自身の値ではなく、ページ全体の「部品番号」タグ（可変タグ）から
-	// 取得し、ページ内のすべての部材行に一括で付与する。
+	// 取得し、ページ内のすべての部材行に一括で付与する。**文書順では拾えない**
+	// （タグが表より後ろにあってもよい）ので、コアが用意する ctx.Tag から引く。
 	// 鍵の名前はレジストリ宣言（part-materials の RequiresTag）が持つ——ここへ直書き
 	// すると、見出しを改名したときに告知する側と読む側がずれる（設計総点検⑤）。
 	materialsDef, _ := VocabDefByType("part-materials")
-	partID := TagValue(root, materialsDef.RequiresTag)
-
-	insert := func(itemName string, cost int, supplierName string, quantity int) error {
-		_, err := tx.Exec(`
-			INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, partID, itemName, cost, supplierName, quantity, pageID)
-		return err
+	partID := ""
+	if ctx.Tag != nil {
+		partID = ctx.Tag(materialsDef.RequiresTag)
 	}
 
-	var firstErr error
-	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil {
-			return
-		}
-		if n.Data == "table" && Attr(n, "data-type") == "part-materials" {
-			firstErr = syncMaterialsTable(n, insert)
-		}
-	})
-	return firstErr
+	insert := func(itemName string, cost int, supplierName string, quantity int) error {
+		_, err := ctx.Tx.Exec(`
+			INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, partID, itemName, cost, supplierName, quantity, ctx.PageID)
+		return err
+	}
+	return false, syncMaterialsTable(el, insert)
 }
 
 // syncMaterialsTable は <table data-type="part-materials"> のデータ行を insert へ流し込みます。

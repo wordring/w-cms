@@ -1,7 +1,6 @@
 package cms
 
 import (
-	"database/sql"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -57,32 +56,31 @@ func (pageTagsPlugin) Tables() []string {
 	return []string{"page_tags"}
 }
 
-func (pageTagsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
-	if _, err := tx.Exec(`DELETE FROM page_tags WHERE page_id = ?`, pageID); err != nil {
-		return err
-	}
+// Triggers は可変タグの定義リストだけを担当することを宣言します。
+func (pageTagsPlugin) Triggers() []string { return []string{"tags"} }
 
+// OnPageStart は当該ページ分を洗い流します。
+func (pageTagsPlugin) OnPageStart(ctx *ObserveContext) error {
+	_, err := ctx.Tx.Exec(`DELETE FROM page_tags WHERE page_id = ?`, ctx.PageID)
+	return err
+}
+
+func (pageTagsPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	if el.Data != "dl" {
+		return true, nil
+	}
 	insert := func(name, value string) error {
 		// 「親ページID」はサイドカーへ移行済みのため、dt に書かれても取り込まない。
 		if name == "" || name == legacyParentTagName {
 			return nil
 		}
-		_, err := tx.Exec(
+		_, err := ctx.Tx.Exec(
 			`INSERT INTO page_tags (page_id, name, value) VALUES (?, ?, ?)`,
-			pageID, name, value)
+			ctx.PageID, name, value)
 		return err
 	}
-
-	var firstErr error
-	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil {
-			return
-		}
-		if n.Data == "dl" && Attr(n, "data-type") == "tags" {
-			firstErr = syncTagsDL(n, insert)
-		}
-	})
-	return firstErr
+	// タグの中に入れ子の形式は来ない（dt/dd だけ）ので、子孫へは降りない。
+	return false, syncTagsDL(el, insert)
 }
 
 // syncTagsDL は <dl data-type="tags"> の dt/dd を insert へ流し込みます。

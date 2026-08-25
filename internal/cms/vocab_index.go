@@ -61,15 +61,40 @@ func (vocabIndexPlugin) Schema() []string {
 
 func (vocabIndexPlugin) Tables() []string { return []string{"vocab_index"} }
 
-// Sync はマーカー付き標準HTML（table / dl / section の data-type）を走査して
-// vocab_index を当該ページ分だけ洗い替えします。
-func (vocabIndexPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
+// Triggers はマーカーのある要素**すべて**を受け取ることを宣言します。
+// 未知の `data-type` もそのまま索引に載る、という現行仕様がそのままこの1行になります。
+func (vocabIndexPlugin) Triggers() []string { return []string{TriggerAll} }
+
+// OnPageStart は当該ページ分を洗い流します（洗い替えの前半）。
+func (vocabIndexPlugin) OnPageStart(ctx *ObserveContext) error {
+	_, err := ctx.Tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, ctx.PageID)
+	return err
+}
+
+// OnElement はマーカー付きの table / dl を索引します。
+// `section` は入れ物なので自分では索引せず、中の table / dl を配ってもらいます
+// （＝ descend は常に true）。
+func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	if el.Data != "table" && el.Data != "dl" {
+		return true, nil // 素の table / dl は配送係が弾く。ここへ来るのは section 等
+	}
+	dataType := Attr(el, "data-type")
+	// block_no は同一 data-type のブロックの文書順連番（同じ形式の表が
+	// ページに複数あっても行を区別できるようにする）。
+	no := ctx.Counter("vocab_index:" + dataType)
+	def, _ := VocabDefByType(dataType) // 未定義でもゼロ値の def で続行（推論辞書だけ効く）
+
+	if el.Data == "table" {
+		return true, syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, def, el)
+	}
+	return true, syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, def, el)
+}
+
+// syncVocabAll は旧 Sync 相当の走査です（同値テストの比較対象として残します）。
+func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
 	if _, err := tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, pageID); err != nil {
 		return err
 	}
-
-	// block_no は同一 data-type のブロックの文書順連番（同じ形式の表が
-	// ページに複数あっても行を区別できるようにする）。
 	blockNo := map[string]int{}
 	var firstErr error
 	WalkElements(root, func(n *html.Node) {
@@ -82,7 +107,7 @@ func (vocabIndexPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		}
 		no := blockNo[dataType]
 		blockNo[dataType]++
-		def, _ := VocabDefByType(dataType) // 未定義でもゼロ値の def で続行（推論辞書だけ効く）
+		def, _ := VocabDefByType(dataType)
 
 		var err error
 		if n.Data == "table" {

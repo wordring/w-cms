@@ -1,10 +1,6 @@
 package cms
 
-import (
-	"database/sql"
-
-	"golang.org/x/net/html"
-)
+import "golang.org/x/net/html"
 
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（ヘッダ・明細構造）: 弊社の発注書（材料購入・外注加工）
@@ -57,16 +53,27 @@ func (ourOrderPlugin) Tables() []string {
 	return []string{"our_order_items", "our_orders"}
 }
 
-func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
-	// 明細も page_id を持つので直接消す（order_no のサブクエリだと、番号が重複した
-	// ときに他ページの明細まで巻き込む）。
-	if _, err := tx.Exec(
-		`DELETE FROM our_order_items WHERE page_id = ?`, pageID); err != nil {
+// Triggers は自社の発注書セクションだけを担当することを宣言します。
+func (ourOrderPlugin) Triggers() []string { return []string{"our-order"} }
+
+// OnPageStart は当該ページ分を洗い流します。
+// 明細も page_id を持つので直接消せます（order_no のサブクエリだと、番号が重複した
+// ときに他ページの明細まで巻き込む）。
+func (ourOrderPlugin) OnPageStart(ctx *ObserveContext) error {
+	if _, err := ctx.Tx.Exec(
+		`DELETE FROM our_order_items WHERE page_id = ?`, ctx.PageID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM our_orders WHERE page_id = ?`, pageID); err != nil {
-		return err
+	_, err := ctx.Tx.Exec(`DELETE FROM our_orders WHERE page_id = ?`, ctx.PageID)
+	return err
+}
+
+// OnElement は1つの発注書セクションを読み、ヘッダと明細を書き込みます。
+func (ourOrderPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	if el.Data != "section" { // 論点A・案1: 業務ブロックは section が包む
+		return true, nil
 	}
+	tx, pageID := ctx.Tx, ctx.PageID
 
 	insertHeader := func(orderNo, supplierName, pdfPath, orderedAt string) error {
 		_, err := tx.Exec(`
@@ -87,32 +94,22 @@ func (ourOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		return err
 	}
 
-	var firstErr error
-	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil {
-			return
+	def, _ := VocabDefByType("our-order")
+	itemsDef, _ := VocabDefByType("our-order-items")
+	header := VocabDLFields(FirstVocabChild(el, "dl", ""), def)
+	orderNo := header["order-no"]
+	// PDFのパスは容器 section[data-type="file"] が持つ（祖先から拾う）。
+	if err := insertHeader(orderNo, header["supplier-name"], ClosestFileSrc(el), header["ordered-at"]); err != nil {
+		return false, err
+	}
+	for _, row := range VocabTableRows(FirstVocabChild(el, "table", "our-order-items"), itemsDef) {
+		quantity := 1
+		if v := row["quantity"]; v != "" {
+			quantity = vocabNumber(v)
 		}
-		switch {
-		case n.Data == "section" && Attr(n, "data-type") == "our-order": // 論点A・案1
-			def, _ := VocabDefByType("our-order")
-			itemsDef, _ := VocabDefByType("our-order-items")
-			header := VocabDLFields(FirstVocabChild(n, "dl", ""), def)
-			orderNo := header["order-no"]
-			if err := insertHeader(orderNo, header["supplier-name"], ClosestFileSrc(n), header["ordered-at"]); err != nil {
-				firstErr = err
-				return
-			}
-			for _, row := range VocabTableRows(FirstVocabChild(n, "table", "our-order-items"), itemsDef) {
-				quantity := 1
-				if v := row["quantity"]; v != "" {
-					quantity = vocabNumber(v)
-				}
-				if err := insertItem(orderNo, row["item-name"], vocabNumber(row["cost"]), quantity, row["status"]); err != nil {
-					firstErr = err
-					return
-				}
-			}
+		if err := insertItem(orderNo, row["item-name"], vocabNumber(row["cost"]), quantity, row["status"]); err != nil {
+			return false, err
 		}
-	})
-	return firstErr
+	}
+	return false, nil
 }

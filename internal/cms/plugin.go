@@ -26,7 +26,13 @@ import (
 // 新しいユースケースの追加手順は docs/【ガイド】プラグイン開発.md を参照してください。
 // ─────────────────────────────────────────────────────────────────────────
 
-// Plugin は1つのユースケース（タグ→テーブルの抽出・同期）を自己完結で表す拡張単位です。
+// Plugin は1つのユースケース（マーカー付き標準HTML→テーブルの抽出・同期）を
+// 自己完結で表す拡張単位です。**テーブルの所有だけ**を宣言します。
+//
+// 本文の読み取りは Observer（下）が担います。かつては `Sync(tx, pageID, root)` で
+// **木を丸ごと受け取って各自が走査**していましたが、同じ木をプラグインの数だけ歩くうえ、
+// 除外規則（`.vocab-chrome` の中を読まない等）を各自が覚えている必要がありました。
+// 2026-08-26 に回覧機構（walk.go）へ移し、走査はコアの配送係1つになりました。
 type Plugin interface {
 	// Name は識別子（ログ・デバッグ用）。テーブル名やタグ名と重複しても構いません。
 	Name() string
@@ -40,10 +46,34 @@ type Plugin interface {
 	// このリストの記載漏れが再構築バグを引き起こすことはありません。ただし Schema() で
 	// 定義したテーブルはここにも列挙してください（テストで両者の整合性を検証します）。
 	Tables() []string
+}
 
-	// Sync は1ページ分のHTMLノード木を走査し、自分のテーブルを当該ページ分だけ
-	// 洗い替え（DELETE → INSERT）します。トランザクション tx の中で呼ばれます。
-	Sync(tx *sql.Tx, pageID int, root *html.Node) error
+// Observer は保存時に本文を読んで自分のテーブルを洗い替えるプラグインです（観察係）。
+//
+// 走査はしません——コアの配送係が、宣言した引き金に当たった要素だけを OnElement へ
+// 届けます。洗い替えの DELETE は OnPageStart で行います。**この分担のおかげで、
+// テンプレート領域の除外が「要素イベントを1つも発火しない」だけで成立します**
+// （OnPageStart は呼ばれるので古い行は消え、新しい行は入らない）。
+type Observer interface {
+	Plugin
+
+	// Triggers は担当する引き金（`data-type` の値）を返します。
+	// TriggerAll（"*"）を返すと、マーカーのある要素すべてを受け取ります。
+	Triggers() []string
+
+	// OnPageStart は要素を配る前に呼ばれます。ここで自テーブルの当該ページ分を
+	// DELETE してください（洗い替えの前半）。
+	OnPageStart(ctx *ObserveContext) error
+
+	// OnElement は担当の要素ごとに呼ばれます。el の部分木は自由に読んで構いません。
+	// descend=false を返すと、配送係は el の子孫へ降りません（担当済みの意思表示）。
+	OnElement(ctx *ObserveContext, el *html.Node) (descend bool, err error)
+}
+
+// PageFinisher は「要素を配り終えたあと」の処理が要る観察係が追加で実装します
+// （集計の確定など）。RouteProvider と同じく任意インターフェースです。
+type PageFinisher interface {
+	OnPageEnd(ctx *ObserveContext) error
 }
 
 // RouteProvider は集計APIなどのHTTPエンドポイントを提供したいプラグインが
@@ -63,8 +93,35 @@ type Route struct {
 var registry []Plugin
 
 // Register はプラグインを登録します。各プラグインの init() から呼び出してください。
+// Observer を実装していれば、宣言した引き金で回覧機構へも自動的に登録します
+// （登録の口を2つ覚える必要がないように）。
 func Register(p Plugin) {
 	registry = append(registry, p)
+	if o, ok := p.(Observer); ok {
+		observers = append(observers, o)
+		for _, t := range o.Triggers() {
+			walkers.observe(t, observerAdapter{o})
+		}
+	}
+}
+
+// observers は Observer を実装したプラグイン（ページ単位のフックを呼ぶ相手）。
+var observers []Observer
+
+// Observers は登録済みの観察係を返します（SyncIndex がページ単位のフックを回す）。
+func Observers() []Observer { return observers }
+
+// observerAdapter は Observer を配送係の受け口（ObserveHandler）へ橋渡しします。
+type observerAdapter struct{ o Observer }
+
+func (a observerAdapter) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	descend, err := a.o.OnElement(ctx, el)
+	if err != nil {
+		// どのプラグインで失敗したかが分からないと原因に辿り着けない
+		// （旧 SyncIndex の "プラグイン %q の同期に失敗" と同じ情報量を保つ）。
+		return false, fmt.Errorf("プラグイン %q の同期に失敗: %w", a.o.Name(), err)
+	}
+	return descend, nil
 }
 
 // Plugins は登録済みの全プラグインを返します。
