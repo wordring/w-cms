@@ -266,6 +266,48 @@ async function waitSaved(page) {
         await page.waitForTimeout(9000);
         check('未知種別: 時間で勝手に消えない', await alertToast.count() === 1);
 
+        // ── 形式ごとの視覚的区別（語彙モデル §10・§9 の改名許可の前提条件） ──
+        // 「data-type の改名を許す」決定は**見た目で形式を区別できること**が前提だった。
+        // 未定義の形式（＝改名した直後の姿）が、既知の形式と違って見えることを見る。
+        const unknownTable = page.locator('#w-editor-content table[data-type="mystery-form"]');
+        const unknownLabel = page.locator('#w-editor-content .vocab-label.is-unknown');
+        check('未定義の形式に警告の札が出る', (await unknownLabel.count()) >= 1);
+        check('札に形式名が出る', (await unknownLabel.first().innerText()).includes('mystery-form'));
+        check('未定義の形式の枠は既知と違う色',
+            await unknownTable.evaluate(el => getComputedStyle(el).outlineColor) !== 'rgb(147, 197, 253)');
+        // 札は保存されない（.vocab-chrome なのでシリアライザが落とす）。
+        const previewNow = await page.locator('#w-html-preview').inputValue();
+        check('札は保存に漏れない', !previewNow.includes('vocab-label'));
+
+        // 既知の形式には形式名（レジストリの表示名）が出る。
+        await page.evaluate(() => {
+            const t = document.createElement('table');
+            t.setAttribute('data-type', 'part-materials');
+            const tr = document.createElement('tr');
+            ['部材名', '単価', '仕入先', '数量'].forEach(h => {
+                const th = document.createElement('th'); th.textContent = h; tr.appendChild(th);
+            });
+            t.appendChild(tr);
+            document.getElementById('w-editor-content').appendChild(t);
+            wrapInBlock(t);
+        });
+        await page.waitForTimeout(500);
+        const knownLabel = page.locator('#w-editor-content .vocab-label:not(.is-unknown)');
+        check('既知の形式に表示名の札が出る',
+            (await knownLabel.count()) >= 1 &&
+            (await knownLabel.last().innerText()).includes('部材'));
+        check('閲覧モードでは札を出さない',
+            await page.evaluate(() => {
+                document.getElementById('w-mode-toggle').checked = false;
+                document.body.removeAttribute('edit-mode');
+                const el = document.querySelector('#w-editor-content .vocab-label');
+                return !el || getComputedStyle(el).display === 'none';
+            }));
+        await page.evaluate(() => {
+            document.getElementById('w-mode-toggle').checked = true;
+            document.body.setAttribute('edit-mode', '');
+        });
+
         // ── ページタイトルの印（位置で決まる＝属性にしない） ──
         check('最初の h1 に印が付く', await page.evaluate(() => {
             const hs = document.querySelectorAll('#w-editor-content h1');

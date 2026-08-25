@@ -919,6 +919,43 @@ body[edit-mode] #w-editor-content h1.is-page-title {
     outline-offset: 2px;
 }
 
+/* 形式ごとの視覚的区別（語彙モデル §10・§9 の「改名を許す」決定の前提条件）。
+ *
+ * 一律の破線枠だけでは、`data-type` を改名しても見た目が変わらず「壊れたこと」に
+ * 気づけない。そこで各形式ブロックの直前に**形式名の札**を出す（app.js の
+ * decorateVocabBlocks がレジストリから引く）。改名すると札が赤い「未定義の形式」へ
+ * 変わり、枠の色も変わる——その場で分かるのが狙い。
+ *
+ * 札は .vocab-chrome なのでシリアライザが保存しない。出すのは編集モードだけ。 */
+#w-editor-content .vocab-label { display: none; }
+body[edit-mode] #w-editor-content .vocab-label {
+    display: inline-block;
+    margin: 6px 0 2px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+    font-size: 11px;
+    line-height: 1.7;
+    user-select: none;
+}
+body[edit-mode] #w-editor-content .vocab-label.is-unknown {
+    background: #fef2f2;
+    color: #b91c1c;
+    border-color: #fca5a5;
+    font-weight: 700;
+}
+/* 未定義の形式は枠も変える（既知の青い破線と見分けが付くように）。
+ * 上の `table[data-type]` 等と**同じ詳細度**になるよう要素名まで書く
+ * （`.is-vocab-unknown` だけだと詳細度が1つ低く、青い破線に負ける）。
+ * 同点なら後勝ちなので、必ずこの位置（上の規則より後ろ）に置くこと。 */
+body[edit-mode] #w-editor-content table.is-vocab-unknown,
+body[edit-mode] #w-editor-content dl.is-vocab-unknown,
+body[edit-mode] #w-editor-content section.is-vocab-unknown {
+    outline: 1px dashed #ef4444;
+}
+
 /* 破壊的な操作のボタン（削除）。押し間違いを減らすため通常の操作と色を変える。 */
 .page-action-danger {
     color: #b91c1c;
