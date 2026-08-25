@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -160,16 +161,73 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// ——エディタが編集モードで読み直す GET /api/load へ入れると、合成した id が
 	// シリアライザを通って本文として保存されてしまう（anchor.go の冒頭）。
 	body := RenderAnchors(RenderComputedViews(r, pageID, Sanitize(string(content))))
-	shellHTML, err := RenderPageShell(body, title, auth.CurrentUser(r) == nil)
+
+	// 体裁は**相手で分ける**（要件定義書 §4.4）。匿名の訪問者へは編集用クロームを
+	// 一切含まない公開専用ビューを返し、認証済みには従来どおり編集できる殻を返す。
+	// ここまで来ている時点で認可（requirePageViewable）は通っているので、
+	// 匿名＝実効公開のページを見に来た訪問者である。
+	if auth.CurrentUser(r) == nil {
+		servePublicPage(w, r, body, title)
+		return
+	}
+
+	shellHTML, err := RenderPageShell(body, title)
 	if err != nil {
 		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// 認可結果に依存する内容なのでキャッシュさせない。
+	// 認証済みの応答は**絶対にキャッシュさせない**（要件 §4.4）。
+	// 認可結果に依存する内容なので、共有キャッシュが他人へ配ると事故になる。
 	w.Header().Set("Cache-Control", "no-store")
 	w.Write([]byte(shellHTML))
+}
+
+// servePublicPage は匿名の訪問者へ公開専用ビューを返します。
+//
+// キャッシュ可能にしてよいのは**この経路だけ**です（匿名 × 実効公開）。
+// 認証済みの応答と、匿名が読めないページの応答（404）は `no-store` のままにします。
+// `Vary: Cookie` を付けるのは、共有キャッシュが「Cookie 付きの応答」と
+// 「Cookie 無しの応答」を取り違えないようにするためです。
+func servePublicPage(w http.ResponseWriter, r *http.Request, body, title string) {
+	shellHTML, err := RenderPublicShell(body, PageSEO{
+		Title:        title,
+		Description:  ExtractDescription(body),
+		CanonicalURL: requestBaseURL(r) + r.URL.EscapedPath(),
+	})
+	if err != nil {
+		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	etag := etagOf(shellHTML)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", publicCacheSeconds))
+	w.Header().Set("Vary", "Cookie")
+	w.Header().Set("ETag", etag)
+
+	// 中身が変わっていなければ本文を送らない（再検証の節約）。
+	if match := r.Header.Get("If-None-Match"); match != "" && etagMatches(match, etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Write([]byte(shellHTML))
+}
+
+// etagMatches は If-None-Match の値（カンマ区切り・弱い比較の W/ 接頭辞つきも来る）と
+// 現在の ETag を比べます。
+func etagMatches(header, etag string) bool {
+	for _, cand := range strings.Split(header, ",") {
+		cand = strings.TrimSpace(cand)
+		if cand == "*" {
+			return true
+		}
+		if strings.TrimPrefix(cand, "W/") == etag {
+			return true
+		}
+	}
+	return false
 }
 
 // requirePageViewable は画面表示のための read 認可を行います。
@@ -179,7 +237,7 @@ func requirePageViewable(w http.ResponseWriter, r *http.Request, pageID int) boo
 		// 認証済み×read不可は 403 のまま。「存在は分かるが読めない」という
 		// Unix の作法で、社内では相手が誰かも分かっているので隠す意味が薄い。
 		if !page.GetPerms(pageID).CanRead(u) {
-			http.Error(w, "このページを閲覧する権限がありません", http.StatusForbidden)
+			forbiddenPage(w)
 			return false
 		}
 		return true
@@ -228,6 +286,32 @@ func notFoundWithLogin(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>
 `, next)
+}
+
+// forbiddenPage は「読む権限が無い」応答です（認証済み向け・403）。
+//
+// これを見るのは**ログイン済みの社員だけ**です（匿名は 404 に統一されている）。
+// 素のテキストだと何が起きたか分からないので、404 と同じ体裁で理由と次の手を出します
+// ——「存在は分かるが読めない」という Unix の作法をそのまま画面の言葉にしたもの。
+func forbiddenPage(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusForbidden)
+	// CSP strict のためインラインの style/script は書けない（/assets/ の外部ファイルのみ）。
+	fmt.Fprint(w, `<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>閲覧できません - w-cms</title>
+<link rel="stylesheet" href="/assets/login.css"></head>
+<body class="notfound-page">
+<main class="notfound-card">
+<h1>閲覧できません</h1>
+<p>このページはありますが、いまのアカウントには読む権限がありません。</p>
+<p>必要であれば、ページの所有者か管理者に権限の追加を依頼してください。</p>
+</main>
+</body>
+</html>
+`)
 }
 
 // pageNotFound は画面の「ありません」応答です。

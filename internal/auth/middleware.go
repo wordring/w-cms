@@ -59,6 +59,14 @@ func RequireAuth(next http.Handler) http.Handler {
 				}
 			}
 		}
+		// **認証が要る経路の応答は、絶対にキャッシュさせない**（要件定義書 §4.4）。
+		// 公開ページをキャッシュ可能にした以上（2026-08-26）、この切り分けが前提条件です。
+		// Cache-Control が無いと、ブラウザや中間キャッシュがヒューリスティックに保存して
+		// よいことになり、共用パソコンで前の人の応答が出うる状態が残ります。
+		// ハンドラごとに付けるとどれか1本が漏れるので、**入口で一律に**付けます
+		// （401 で止まる場合も含めて必ず付く）。
+		w.Header().Set("Cache-Control", "no-store")
+
 		if user == nil {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				http.Error(w, "認証が必要です", http.StatusUnauthorized)
