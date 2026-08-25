@@ -21,6 +21,21 @@ async function gotoNewPage(page, parent, template) {
     return loc.replace(/^\//, "").replace(/\?.*$/, "");
 }
 
+// newPageWithBody は子ページを作り、本文を1回だけ保存して閉じる。
+// 保存は編集ロックの保持者しか通らない（handler_save.go）ので、取ってから返す。
+async function newPageWithBody(page, parent, html) {
+    const res = await page.request.post(BASE + '/api/new-page?parent=' + parent, { headers: { 'Origin': BASE }, maxRedirects: 0 });
+    const loc = res.headers()['location'];
+    if (!loc) throw new Error('new-page failed: ' + res.status());
+    const id = loc.replace(/^\//, '').replace(/\?.*$/, '');
+    const lock = await page.request.post(BASE + '/api/lock?id=' + id, { headers: { 'Origin': BASE } });
+    const token = (await lock.json()).token;
+    const saved = await page.request.post(BASE + '/api/save', { headers: { 'Origin': BASE }, data: { page_id: id, html, token } });
+    if (saved.status() !== 200) throw new Error('save failed: ' + saved.status() + ' ' + (await saved.text()));
+    await page.request.post(BASE + '/api/unlock?id=' + id + '&token=' + token, { headers: { 'Origin': BASE } });
+    return id;
+}
+
 const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 }); }
@@ -139,6 +154,59 @@ async function openSlashMenu(page) {
                 const h = document.querySelector('.vocab-chrome h3');
                 return !h || !h.getAttribute('id');
             }));
+
+        // 10. 自動集計の表は触れない（a案・2026-08-25）
+        //     開くたびにサーバーが作り直す表なので、行・列を足しても保存されず、
+        //     再読込で黙って消える。だから「そもそもボタンが出ない」ようにした。
+        //     中身のある手配集計表を作るには受注と部材定義の両方が要るので、
+        //     ここで仕込む（空の集計表には <tr> が無く、退行を突けないため）。
+        const partId = await newPageWithBody(page, '000000',
+            '<h1>部品X1</h1>' +
+            '<dl data-type="tags"><dt>部品番号</dt><dd>X1</dd></dl>' +
+            '<table data-type="part-materials"><tbody>' +
+            '<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>' +
+            '<tr><td>SS400 t3.2</td><td>500</td><td>鋼材商会</td><td>2</td></tr>' +
+            '</tbody></table>');
+        const orderId = await newPageWithBody(page, '000000',
+            '<h1>受注A</h1>' +
+            '<section data-type="client-order"><dl><dt>発注書番号</dt><dd>PO-E2E</dd>' +
+            '<dt>発注元</dt><dd>得意先A</dd><dt>発注日</dt><dd>2026-08-25</dd></dl>' +
+            '<table data-type="client-order-items"><tbody>' +
+            '<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
+            '<tr><td>X1</td><td>部品X1</td><td>1000</td><td>3</td><td>未着手</td></tr>' +
+            '</tbody></table></section>' +
+            '<section data-type="required-materials"></section>');
+        void partId;
+
+        await page.goto(BASE + '/' + orderId);
+        await page.locator('#w-editor-content section[data-type="required-materials"] .vocab-chrome').waitFor({ timeout: 8000 });
+        check('手配集計のSSRに行が出る',
+            (await page.locator('#w-editor-content .materials-table tbody tr').count()) >= 1);
+
+        // 10-1. SSR の中身は編集できない（contenteditable="false"）
+        check('SSRの中身は contenteditable=false',
+            await page.locator('#w-editor-content section[data-type="required-materials"] .vocab-chrome')
+                .first().getAttribute('contenteditable') === 'false');
+
+        // 10-2. 集計表のセルにキャレットを置いても行操作ツールバーが出ない。
+        //       ガードを外すと、ここは実測で active になる（＝退行を突ける）。
+        await page.evaluate(() => document.getElementById('w-mode-toggle').click());
+        await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+        await page.waitForTimeout(700);
+        await page.locator('#w-editor-content .materials-table tbody td').first().click();
+        await page.waitForTimeout(400);
+        check('SSRの集計表では行操作ツールバーが出ない',
+            !(await page.locator('#w-table-toolbar.active').count()));
+
+        // 10-3. 本文の表では従来どおり出る（塞ぎすぎていないことの対照）。
+        //       直前のクリックで文字装飾ツールバーが出たままだと、次のセルの上に
+        //       覆いかぶさってクリックが届かない。見出しへ寄って引っ込めてから狙う。
+        await page.locator('#w-editor-content h1').first().click();
+        await page.waitForTimeout(400);
+        await page.locator('#w-editor-content table[data-type="client-order-items"] td').first().click();
+        await page.waitForTimeout(400);
+        check('本文の表では行操作ツールバーが出る',
+            (await page.locator('#w-table-toolbar.active').count()) === 1);
 
         check('CSP違反なし', cspViolations.length === 0);
         check('ページエラーなし', errs.length === 0);

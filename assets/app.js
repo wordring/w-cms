@@ -1849,10 +1849,22 @@
     let currentTableRow = null;
     let currentTableCell = null; // 列操作・列設定の対象列は「キャレットのあるセル」から決める
 
-    // insideCustomElement は el がカスタム要素の描画内（m-required-materials の
-    // 集計表など）にあるかを返す。カスタム要素内の表は自前UIの領分なので触らない。
-    function insideCustomElement(el) {
-        for (let p = el; p && p.id !== 'editor-content'; p = p.parentElement) {
+    // isServerOwned は el が「サーバー（または描画側）が中身を所有する領域」の中に
+    // あるかを返す。中身が .vocab-chrome に包まれているもの——計算ビューの集計表・
+    // 子ページ一覧・エンハンサのクローム——が該当する。
+    //
+    // ここが true の要素へ編集の手掛かり（行・列の操作、項目の操作、列型の検証）を
+    // 出してはいけない。**シリアライザが .vocab-chrome を保存しない**ので、
+    // 入れた内容は保存されず、再読み込みで黙って消えるからです（実測で再現。
+    // ユーザー決定 a案「そもそもボタンが出ず、触れない」）。
+    //
+    // 併せてカスタム要素の中も除外する。語彙モデル移行（2026-08-20）でカスタム要素は
+    // 0種になったが、貼り付け等で紛れ込んだものを編集可能にしないための防御として残す
+    // （isCustomTag と同じ趣旨）。
+    function isServerOwned(el) {
+        if (!el) return false;
+        if (el.closest && el.closest('.vocab-chrome')) return true;
+        for (let p = el; p && p.id !== 'w-editor-content' && p.id !== 'editor-content'; p = p.parentElement) {
             if (p.tagName && p.tagName.indexOf('-') !== -1) return true;
         }
         return false;
@@ -1876,7 +1888,7 @@
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
         const row = el && el.closest ? el.closest('#w-editor-content tr') : null;
-        if (!row || insideCustomElement(row)) { hideTableToolbar(); return; }
+        if (!row || isServerOwned(row)) { hideTableToolbar(); return; }
 
         currentTableRow = row;
         currentTableCell = el && el.closest ? el.closest('td, th') : null;
@@ -2135,7 +2147,7 @@
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
         const item = el && el.closest ? el.closest('#w-editor-content dl[data-type] > dt, #w-editor-content dl[data-type] > dd') : null;
-        if (!item || insideCustomElement(item)) { hideDlToolbar(); return; }
+        if (!item || isServerOwned(item)) { hideDlToolbar(); return; }
 
         currentDlNode = item;
         bar.classList.add('active');
@@ -2307,7 +2319,7 @@
     // 編集モード入り・列型の変更・サニタイズ反映のあとに呼ぶ。
     function validateTypedTables() {
         document.querySelectorAll('#w-editor-content table[data-type]').forEach(table => {
-            if (insideCustomElement(table)) return;
+            if (isServerOwned(table)) return;
             Array.from(table.rows).slice(1).forEach(row => {
                 Array.from(row.children).forEach(c => {
                     if (c.tagName === 'TD') validateCell(c);
@@ -2336,7 +2348,7 @@
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
         const cell = el && el.closest ? el.closest('#w-editor-content table[data-type] td') : null;
-        if (!cell || insideCustomElement(cell)) { hideEnumMenu(); return; }
+        if (!cell || isServerOwned(cell)) { hideEnumMenu(); return; }
         const col = resolveCellColumn(cell);
         if (!col || col.type !== 'enum' || !col.enum.length) { hideEnumMenu(); return; }
         if (cell === enumMenuCell) return; // 同じセル内のキャレット移動では作り直さない
@@ -2613,7 +2625,7 @@
             const node = sel && sel.anchorNode;
             const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
             const cell = el && el.closest ? el.closest('#w-editor-content table[data-type] td') : null;
-            if (cell && !insideCustomElement(cell)) validateCell(cell);
+            if (cell && !isServerOwned(cell)) validateCell(cell);
         });
 
         editor.addEventListener('keydown', (e) => {
