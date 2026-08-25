@@ -30,12 +30,44 @@ import (
 	"w-cms/internal/cms/htmldoc"
 )
 
+// viewRenderers は計算ビューの形式ごとの描画処理です。
+//
+// **振り分けはレジストリの `View: true` 宣言**（vocab.go）で決まり、実際に中身を
+// 作る処理をここで引きます。名指しのリストを持たないのは、レジストリへビューを
+// 足して描画側を足し忘れたときに**無言の空白**にしないため——引けなければ
+// missingViewHTML が理由を画面に出します（足し忘れは必ず目に見える）。
+var viewRenderers = map[string]func(user *auth.User, pageIDInt int) string{
+	"child-list":         childListViewHTML,
+	"required-materials": requiredMaterialsViewHTML,
+}
+
+// missingViewHTML は「ビューと宣言されているのに描画処理が無い」ことの表示です。
+// 形式名を出すのは、直す人がどの宣言を足せばよいか分かるようにするため。
+func missingViewHTML(vocabType string) string {
+	return `<p class="view-error">この形式（` + stdhtml.EscapeString(vocabType) +
+		`）の中身を作る処理がまだ用意されていません。</p>`
+}
+
 // RenderComputedViews は本文HTML中の計算ビューのマーカーへ中身を埋めて返します。
 // 中身は閲覧者によって変わる（子ページ一覧は read 権限で絞る）ため、リクエストを受け取る。
 // マーカーが無い本文はパースせずそのまま返す（通常ページに追加コストを掛けない）。
 func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string {
-	if !strings.Contains(bodyHTML, `data-type="child-list"`) &&
-		!strings.Contains(bodyHTML, `data-type="required-materials"`) {
+	// 早期リターンの判定もレジストリから作る（名指しにすると、ビューを足したのに
+	// ここだけ古いままで「パースされず素通り」する形の足し忘れが起きる）。
+	viewTypes := map[string]bool{}
+	for _, def := range VocabDefs() {
+		if def.View {
+			viewTypes[def.Type] = true
+		}
+	}
+	found := false
+	for t := range viewTypes {
+		if strings.Contains(bodyHTML, `data-type="`+t+`"`) {
+			found = true
+			break
+		}
+	}
+	if !found {
 		return bodyHTML
 	}
 	nodes, err := htmldoc.ParseFragment(bodyHTML)
@@ -47,10 +79,8 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 	var targets []*html.Node
 	for _, n := range nodes {
 		WalkElements(n, func(el *html.Node) {
-			if el.Data == "section" {
-				if t := Attr(el, "data-type"); t == "child-list" || t == "required-materials" {
-					targets = append(targets, el)
-				}
+			if el.Data == "section" && viewTypes[Attr(el, "data-type")] {
+				targets = append(targets, el)
 			}
 		})
 	}
@@ -59,11 +89,10 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 	}
 
 	for _, el := range targets {
-		var inner string
-		if Attr(el, "data-type") == "child-list" {
-			inner = childListViewHTML(auth.CurrentUser(r), pageIDInt)
-		} else {
-			inner = requiredMaterialsViewHTML(auth.CurrentUser(r), pageIDInt)
+		vocabType := Attr(el, "data-type")
+		inner := missingViewHTML(vocabType)
+		if render, ok := viewRenderers[vocabType]; ok {
+			inner = render(auth.CurrentUser(r), pageIDInt)
 		}
 		fillViewMarker(el, inner)
 	}

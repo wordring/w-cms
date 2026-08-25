@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 
 	"golang.org/x/net/html"
 
@@ -97,29 +96,10 @@ func (materialsPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 // quantity の空セルは 1 として扱う（旧 <m-material> の既定を引き継いだ値）。
 func syncMaterialsTable(table *html.Node, insert func(string, int, string, int) error) error {
 	def, _ := VocabDefByType("part-materials")
-	rows := tableRows(table)
-	if len(rows) < 2 {
-		return nil // 見出しだけ（またはデータ行なし）
-	}
-
-	// 見出し行 → 各列の機械キー（解決できない列は空のまま＝読まない）
-	fields := make([]string, 0, 4)
-	for _, cell := range rowCells(rows[0]) {
-		key := strings.TrimSpace(nodeText(cell))
-		field := ""
-		if col, ok := def.columnFor(key); ok {
-			field = col.Field
-		}
-		fields = append(fields, field)
-	}
-
-	for _, row := range rows[1:] {
-		values := map[string]string{}
-		for i, cell := range rowCells(row) {
-			if i < len(fields) && fields[i] != "" {
-				values[fields[i]] = strings.TrimSpace(nodeText(cell))
-			}
-		}
+	// 見出し行から機械キーへの解決は共有部品（VocabTableRows）に任せる。
+	// ここには同じ処理の逐語コピーがあったが、鍵の決め方が変わったときに
+	// **片方だけ直る**危険があるので寄せた（受発注の明細も同じ関数を通る）。
+	for _, values := range VocabTableRows(table, def) {
 		quantity := 1 // 空セルの既定（旧 Quantity() と同じ）
 		if v := values["quantity"]; v != "" {
 			quantity = vocabNumber(v)
