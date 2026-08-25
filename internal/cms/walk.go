@@ -66,6 +66,21 @@ type ReadOnlyDB interface {
 type walkState struct {
 	ancestors []*html.Node
 	replaced  map[*html.Node]bool
+	counters  map[string]int
+}
+
+// Counter は同じ鍵で呼ぶたびに 0, 1, 2 … を返します（1周のあいだの通し番号）。
+// 同じ形式のブロックが複数あるとき、行や採番を区別するのに使います。
+//
+// 状態を**コンテキスト側**に置くのが要点です——ハンドラは登録時に1つだけ作られる
+// singleton なので、そちらに持たせるとページ間で番号が漏れます。
+func (w *walkState) Counter(key string) int {
+	if w.counters == nil {
+		w.counters = map[string]int{}
+	}
+	n := w.counters[key]
+	w.counters[key] = n + 1
+	return n
 }
 
 // Ancestors は現在の要素の祖先を、根に近い順で返します。
@@ -304,6 +319,20 @@ func isChrome(el *html.Node) bool {
 
 // chromeClass は表示専用クロームの印です（シリアライザ・サニタイザと同じ言葉）。
 const chromeClass = "vocab-chrome"
+
+// mayContainMirrorTrigger は、鏡型の段で歩く価値があるかを文字列だけで判定します。
+// 計算ビューのマーカーが1つも無い普通のページに、パースの費用を掛けないための早道です。
+func (r *walkRegistry) mayContainMirrorTrigger(bodyHTML string) bool {
+	if r.mirrors[TriggerAll] != nil {
+		return strings.Contains(bodyHTML, "data-type=")
+	}
+	for t := range r.mirrors {
+		if strings.Contains(bodyHTML, `data-type="`+t+`"`) {
+			return true
+		}
+	}
+	return false
+}
 
 // mayContainTrigger は、その本文を歩く価値があるかを文字列だけで判定します（早道）。
 // 登録済みの引き金が1つも現れなければ、パースも走査もしません。

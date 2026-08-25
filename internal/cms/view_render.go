@@ -20,6 +20,7 @@ package cms
 
 import (
 	stdhtml "html"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/database"
 )
 
 // viewRenderers は計算ビューの形式ごとの描画処理です。
@@ -48,26 +50,59 @@ func missingViewHTML(vocabType string) string {
 		`）の中身を作る処理がまだ用意されていません。</p>`
 }
 
+// init は計算ビューを**鏡型**としてコアの回覧機構へ登録します（walk.go）。
+//
+// 引き金はレジストリの `View: true` 宣言から作ります——名指しのリストを持たないので、
+// ビューを足して登録を足し忘れる形の事故が起きません。描画処理が無い形式は
+// `missingViewHTML` が理由を画面に出します（無言の空白を作らない）。
+func init() {
+	// 引き金は TriggerAll（マーカーのある要素すべて）で受け、**レジストリの
+	// `View: true` 宣言で自分の担当かを判定**します。形式名ごとに登録しないのは、
+	// 判定の正本をレジストリ1箇所に保つため——形式を足したとき、ここへ書き足す
+	// 必要がありません（足し忘れが起きない）。
+	RegisterMirror(TriggerAll, MirrorHandlerFunc(
+		func(ctx *MirrorContext, el *html.Node) (bool, error) {
+			if el.Data != "section" {
+				return true, nil
+			}
+			vocabType := Attr(el, "data-type")
+			def, ok := VocabDefByType(vocabType)
+			if !ok || !def.View {
+				return true, nil // 計算ビューではない（普通の業務ブロック）
+			}
+			inner := missingViewHTML(vocabType)
+			if render, ok := viewRenderers[vocabType]; ok {
+				inner = render(ctx.Viewer, ctx.PageID)
+			}
+			fillViewMarker(el, inner)
+			// 中身はサーバーの所有物なので、その先へは配らない
+			// （埋めた中身は .vocab-chrome なので、どのみち配送係が歩かない）。
+			return false, nil
+		}))
+}
+
+// hasViewMarker は本文に計算ビューのマーカーがあるかを文字列だけで判定します（早道）。
+//
+// 判定は**レジストリの `View: true` 宣言**から作ります。名指しのリストを持たないので、
+// ビューを足したのにここだけ古いままで「パースされず素通り」する形の足し忘れが
+// 起きません。マーカーが無い普通のページには、パースの費用を掛けません。
+func hasViewMarker(bodyHTML string) bool {
+	for _, def := range VocabDefs() {
+		if def.View && strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {
+			return true
+		}
+	}
+	return false
+}
+
 // RenderComputedViews は本文HTML中の計算ビューのマーカーへ中身を埋めて返します。
 // 中身は閲覧者によって変わる（子ページ一覧は read 権限で絞る）ため、リクエストを受け取る。
 // マーカーが無い本文はパースせずそのまま返す（通常ページに追加コストを掛けない）。
+//
+// 走査そのものはコアの配送係（walk.go）が行い、ここは**段の入口**だけを担います。
 func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string {
-	// 早期リターンの判定もレジストリから作る（名指しにすると、ビューを足したのに
-	// ここだけ古いままで「パースされず素通り」する形の足し忘れが起きる）。
-	viewTypes := map[string]bool{}
-	for _, def := range VocabDefs() {
-		if def.View {
-			viewTypes[def.Type] = true
-		}
-	}
-	found := false
-	for t := range viewTypes {
-		if strings.Contains(bodyHTML, `data-type="`+t+`"`) {
-			found = true
-			break
-		}
-	}
-	if !found {
+	// 早道: 登録済みの引き金が本文に1つも無ければパースも走査もしない。
+	if !hasViewMarker(bodyHTML) {
 		return bodyHTML
 	}
 	nodes, err := htmldoc.ParseFragment(bodyHTML)
@@ -75,26 +110,16 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 		return bodyHTML
 	}
 
-	// 走査中の書き換えを避けるため、先に対象を集めてから埋める。
-	var targets []*html.Node
-	for _, n := range nodes {
-		WalkElements(n, func(el *html.Node) {
-			if el.Data == "section" && viewTypes[Attr(el, "data-type")] {
-				targets = append(targets, el)
-			}
-		})
+	ctx := &MirrorContext{
+		DB:     database.DB,
+		Viewer: auth.CurrentUser(r),
+		PageID: pageIDInt,
 	}
-	if len(targets) == 0 {
-		return bodyHTML
-	}
-
-	for _, el := range targets {
-		vocabType := Attr(el, "data-type")
-		inner := missingViewHTML(vocabType)
-		if render, ok := viewRenderers[vocabType]; ok {
-			inner = render(auth.CurrentUser(r), pageIDInt)
-		}
-		fillViewMarker(el, inner)
+	nodes, err = walkers.walkMirror(ctx, nodes)
+	if err != nil {
+		// 鏡型のエラーはページ全体を道連れにしない（設計 §7）。
+		// 各ビューは自分の中へ理由を描いて続行する作りなので、ここへは通常来ない。
+		log.Printf("計算ビューの描画でエラー page=%d: %v", pageIDInt, err)
 	}
 
 	var sb strings.Builder

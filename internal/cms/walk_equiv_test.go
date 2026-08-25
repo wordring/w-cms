@@ -18,6 +18,40 @@ import (
 // 移植そのものはテストが緑になるだけでは足りず、**行が一致すること**まで見ないと、
 // 「動いてはいるが中身が違う」形の退行を見逃します。
 
+// syncVocabAll は**移植前の走査**（旧 `vocabIndexPlugin.Sync`）です。
+// 比較対象としてテスト側に置いています——本番のコードに「使われない古い実装」を
+// 残さないためで、ここが本文なのはこのファイルが同値性テストだからです。
+func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
+	if _, err := tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, pageID); err != nil {
+		return err
+	}
+	blockNo := map[string]int{}
+	var firstErr error
+	WalkElements(root, func(n *html.Node) {
+		if firstErr != nil || (n.Data != "table" && n.Data != "dl") {
+			return
+		}
+		dataType := Attr(n, "data-type")
+		if dataType == "" {
+			return // 素の table / dl は文書中の普通の表・定義リスト（オプトイン規約）
+		}
+		no := blockNo[dataType]
+		blockNo[dataType]++
+		def, _ := VocabDefByType(dataType)
+
+		var err error
+		if n.Data == "table" {
+			err = syncVocabTable(tx, pageID, dataType, no, def, n)
+		} else {
+			err = syncVocabDL(tx, pageID, dataType, no, def, n)
+		}
+		if err != nil {
+			firstErr = err
+		}
+	})
+	return firstErr
+}
+
 // indexRows は vocab_index の全行を比較しやすい文字列にして返します。
 func indexRows(t *testing.T, db *sql.DB, pageID int) []string {
 	t.Helper()
