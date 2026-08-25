@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"html"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -93,6 +94,9 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 失敗しても戻り先は保つ（打ち間違いのたびに目的地を見失わないため）。
 	next := safeNextPath(r.FormValue("next"))
 	if err != nil {
+		// 失敗も記録する。総当たりや、辞めた人の試行が見えるのはここだけ。
+		// 入力されたパスワードは記録しない（記録そのものが漏洩経路になる）。
+		Audit(username, "login.fail", clientIP(r))
 		http.Redirect(w, r, "/login?error=1&next="+url.QueryEscape(next), http.StatusFound)
 		return
 	}
@@ -103,6 +107,8 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, token)
+	// 誰が・いつ・どこから入ってきたかを残す（要件定義書 §2.3）。
+	Audit(user.Username, "login", clientIP(r))
 	// 元のページへ戻す。匿名の404から来た人がログインしたその足で目的地へ着く
 	// ——これが無いと、社員どうしのアドレス共有が行き止まりになる。
 	http.Redirect(w, r, next, http.StatusFound)
@@ -120,6 +126,10 @@ func LogoutAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c, err := r.Cookie(sessionCookieName); err == nil {
+		// 誰のセッションを閉じたのかは、破棄する前にしか分からない。
+		if username, ok := ResolveSession(c.Value); ok {
+			Audit(username, "logout", clientIP(r))
+		}
 		DeleteSession(c.Value)
 	}
 	clearSessionCookie(w)
@@ -143,4 +153,42 @@ func MeAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"primary_group": u.PrimaryGroup,
 		"groups":        u.Groups,
 	})
+}
+
+// clientIP はリクエストの接続元アドレスを返します（監査記録用）。
+//
+// 本番はリバースプロキシの背後で動く（[【ガイド】デプロイ・運用.md] §6.2）ため、
+// RemoteAddr は常にプロキシ自身になり「誰が事務所の外から入ってきたか」が分かりません。
+// そこで X-Forwarded-For を見ますが、**無条件に信じると接続元を利用者が詐称できる**
+// （記録が意味を失う）ので、リクエスト自体がループバック／私設アドレスから来たとき
+// ＝前段にプロキシが居るときだけ採用します。
+// 値は末尾を採ります——直近のプロキシが足した1つで、利用者が先頭へ何を書いても
+// その後ろに真の接続元が積まれるためです。
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if !isTrustedProxy(host) {
+		return host
+	}
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return host
+	}
+	parts := strings.Split(xff, ",")
+	last := strings.TrimSpace(parts[len(parts)-1])
+	if last == "" {
+		return host
+	}
+	return last
+}
+
+// isTrustedProxy は、そのアドレスを「前段のプロキシ」とみなすかを返します。
+func isTrustedProxy(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }

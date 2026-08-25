@@ -194,6 +194,16 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("SyncIndex failed for new page %s: %v\n", newID, err)
 	}
 
+	// 監査記録（要件定義書 §2.3）。作成は「増えた」ことしか残らない操作なので、
+	// 誰がどこへ足したのかをここで残す。テンプレート由来かどうかも手掛かりになる。
+	if creator != nil {
+		target := newID + " under " + parentStr
+		if templateBody != "" {
+			target += " (template " + r.FormValue("template") + ")"
+		}
+		auth.Audit(creator.Username, "new-page", target)
+	}
+
 	// 6. 新しいページへリダイレクト
 	http.Redirect(w, r, "/"+newID+"?edit=true", http.StatusFound)
 }

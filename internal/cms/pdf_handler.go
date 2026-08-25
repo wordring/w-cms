@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 
@@ -138,9 +139,25 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 
 	savePath := filepath.Join(pageDir, fileName)
 
+	// 上書きかどうかは書く前にしか分からない。添付はリビジョンもゴミ箱も無く
+	// 上書きが復元できないので、「増えた」のか「消えた」のかを記録で区別する
+	// （要件定義書 §2.3）。
+	overwrote := false
+	if _, err := os.Stat(savePath); err == nil {
+		overwrote = true
+	}
+
 	if err := os.WriteFile(savePath, content, 0644); err != nil {
 		http.Error(w, "Failed to save PDF", http.StatusInternalServerError)
 		return
+	}
+
+	action := "attach"
+	if overwrote {
+		action = "attach.overwrite"
+	}
+	if u := auth.CurrentUser(r); u != nil {
+		auth.Audit(u.Username, action, pageID+"/"+fileName)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
