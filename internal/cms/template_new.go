@@ -21,12 +21,14 @@ package cms
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/database"
 )
 
 // orderNoField は再採番の対象になる機械キーです（UNIQUE 制約を持つ列）。
@@ -43,26 +45,20 @@ func FreshenTemplateBody(bodyHTML, newPageID string) string {
 	if err != nil {
 		return bodyHTML
 	}
-	f := &templateFreshener{pageID: newPageID, today: time.Now().Format("2006-01-02")}
-	for _, root := range nodes {
-		WalkElements(root, func(n *html.Node) {
-			def, ok := VocabDefByType(Attr(n, "data-type"))
-			if !ok || n.Data != def.Element {
-				return
-			}
-			switch def.Element {
-			case "table":
-				f.freshenTable(n, def)
-			case "dl":
-				f.freshenDL(n, def)
-			case "section":
-				// 業務文書ブロックのヘッダは data-type を持たない直下の <dl>。
-				// 明細表は table 形式として別途走査されるのでここでは見ない
-				// （vocabHeadingKeys と同じ切り分け）。
-				f.freshenDL(FirstVocabChild(n, "dl", ""), def)
-			}
-		})
+	// 走査はコアの配送係（walk.go）が行い、ここは**段の入口**だけを担います。
+	// 種まきの担当はコア備え付けの1つ（レジストリの列型駆動）で、プラグイン化は
+	// 口だけ用意してあります（設計 §3）。
+	ctx := &SeedContext{
+		DB:        database.DB,
+		NewPageID: newPageID,
+		Now:       time.Now(),
 	}
+	nodes, err = walkers.walkSeed(ctx, nodes)
+	if err != nil {
+		// 種まきの失敗は新規作成を止めるほどではない（設計 §7）。素のコピーで続行する。
+		log.Printf("テンプレートの新規化でエラー page=%s: %v", newPageID, err)
+	}
+
 	var sb strings.Builder
 	for _, n := range nodes {
 		html.Render(&sb, n)
@@ -70,7 +66,41 @@ func FreshenTemplateBody(bodyHTML, newPageID string) string {
 	return sb.String()
 }
 
-// templateFreshener は1回の新規化で共有する状態です。
+// init はテンプレート新規化を**種まき**としてコアの回覧機構へ登録します（walk.go）。
+//
+// 引き金は TriggerAll で受け、レジストリ宣言（形式と要素の組）で自分の担当かを
+// 判定します。判定の正本をレジストリ1箇所に保つためで、形式を足したときに
+// ここへ書き足す必要はありません。
+func init() {
+	RegisterSeeder(TriggerAll, SeedHandlerFunc(
+		func(ctx *SeedContext, el *html.Node) (bool, error) {
+			def, ok := VocabDefByType(Attr(el, "data-type"))
+			if !ok || el.Data != def.Element {
+				return true, nil
+			}
+			f := &templateFreshener{
+				pageID: ctx.NewPageID,
+				today:  ctx.Now.Format("2006-01-02"),
+				seq:    ctx.Counter("freshen"),
+			}
+			switch def.Element {
+			case "table":
+				f.freshenTable(el, def)
+			case "dl":
+				f.freshenDL(el, def)
+			case "section":
+				// 業務文書ブロックのヘッダは data-type を持たない直下の <dl>。
+				// 明細表は table 形式として**別途配られる**のでここでは見ない
+				// （vocabHeadingKeys と同じ切り分け）。だから子孫へは降りる。
+				f.freshenDL(FirstVocabChild(el, "dl", ""), def)
+			}
+			return true, nil
+		}))
+}
+
+// templateFreshener は1つのブロックを新規化するあいだの状態です。
+// 連番（seq）は**コンテキストの Counter** から受け取ります——ページ内で通し番号に
+// なる必要があり、ハンドラは登録時に1つだけ作られる singleton だからです。
 type templateFreshener struct {
 	pageID string
 	today  string

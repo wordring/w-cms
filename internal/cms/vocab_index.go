@@ -15,7 +15,9 @@ import (
 // 増えてもこのコードとDBスキーマは変わりません（完全正規化・縦持ちを選んだのは
 // 検索の速さより定義変更への強さを優先する決定——同書 §9）。
 //
-// 同期の駆動には既存のプラグイン機構（Register / Sync）へ相乗りしますが、
+// 駆動は既存のプラグイン機構（Register）へ相乗りし、**観察係**として引き金
+// TriggerAll（マーカーのある要素すべて）を受け取ります（walk.go）。走査は自分では
+// しません——コアの配送係が1回だけ歩き、当たった要素を届けます。
 // これはドメインのユースケースプラグイン（③計算プラグイン）ではありません。
 // 本文の語彙も所有しません（読むのはマーカー付きの標準HTMLだけ）。
 //
@@ -88,38 +90,6 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 		return true, syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, def, el)
 	}
 	return true, syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, def, el)
-}
-
-// syncVocabAll は旧 Sync 相当の走査です（同値テストの比較対象として残します）。
-func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
-	if _, err := tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, pageID); err != nil {
-		return err
-	}
-	blockNo := map[string]int{}
-	var firstErr error
-	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil || (n.Data != "table" && n.Data != "dl") {
-			return
-		}
-		dataType := Attr(n, "data-type")
-		if dataType == "" {
-			return // 素の table / dl は文書中の普通の表・定義リスト（オプトイン規約）
-		}
-		no := blockNo[dataType]
-		blockNo[dataType]++
-		def, _ := VocabDefByType(dataType)
-
-		var err error
-		if n.Data == "table" {
-			err = syncVocabTable(tx, pageID, dataType, no, def, n)
-		} else {
-			err = syncVocabDL(tx, pageID, dataType, no, def, n)
-		}
-		if err != nil {
-			firstErr = err
-		}
-	})
-	return firstErr
 }
 
 // vocabColumn は表の1列ぶんの解決済みスキーマ（文書の見出し行から読む）です。
