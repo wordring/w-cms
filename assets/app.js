@@ -324,6 +324,9 @@
         // タイトルの印は本文DOMが変わるたびに付け直す必要があり、契機が目次とまったく同じ
         // （populateEditor・エコーバック・保存後）なのでここに相乗りする。
         markPageTitleHeading();
+        // 形式名の札も同じ契機（本文DOMの変化）で付け直す。**変化が無ければDOMを触らない**
+        // 作りなので、ここから呼んでも「変える→観測→また変える」の輪にはならない。
+        decorateVocabBlocks();
         const list = document.getElementById('w-toc-list');
         if (!list) return;
         const container = document.getElementById('w-editor-content');
@@ -1161,6 +1164,7 @@
         });
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
+        decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
         refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
         // 版の履歴は「戻す」ボタンの出し分けがモードに依るので描き直す。
@@ -1225,6 +1229,7 @@
         initBlocks();
         buildToc();
         enhanceFileSections();
+        decorateVocabBlocks();
     }
 
     // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
@@ -1795,6 +1800,7 @@
             newEl.render();
         }
         enhanceFileSections();
+        decorateVocabBlocks();
         updateHtmlPreview();
 
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
@@ -1831,6 +1837,7 @@
             newEl.render();
         }
         enhanceFileSections();
+        decorateVocabBlocks();
         updateHtmlPreview();
         
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'P')) {
@@ -2535,6 +2542,77 @@
                 sec.appendChild(btn);
             }
         });
+    }
+
+    // ── 形式ごとの視覚的区別（語彙モデル §10） ──────────────────────────────
+    // 「`data-type` の改名を許す」という決定（§9）は、**見た目で形式を区別できること**を
+    // 前提条件にしていた——「区別できるなら、変更者は壊れることを理解できる」（ユーザー）。
+    // 一律の破線枠だけでは、改名しても見た目が変わらず、壊れたことに気づけない。
+    //
+    // そこで各形式ブロックの直前へ**形式名の札**を出す。札はレジストリ（vocabDefs）から
+    // 引くので、**改名すると「未定義の形式」の赤い札に変わる**——その場で分かる。
+    //
+    // 札は `.vocab-chrome`（シリアライザが保存しない編集クローム）で、`contenteditable=false`。
+    // 出すのは**編集モードだけ**（閲覧・公開ページには出さない。既存の視覚ヒントと同じ規律）。
+    // **DOMを変えるのは必要なときだけ**（作り直し方式にしない）。本文DOMの変化は
+    // MutationObserver → 自動保存 → buildToc → ここ、と巡ってくるので、毎回消して
+    // 付け直すと変化が止まらず保存が回り続ける。既に正しい札はそのまま残す。
+    function decorateVocabBlocks() {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        const isEdit = document.body.hasAttribute('edit-mode');
+
+        // 対象＝本文の形式ブロック。クロームの中と、列型の明示（th/td の data-type）は除く。
+        const targets = isEdit ? Array.from(editor.querySelectorAll('[data-type]')).filter(el =>
+            !el.closest('.vocab-chrome') && el.tagName !== 'TH' && el.tagName !== 'TD') : [];
+
+        const keep = new Set();
+        targets.forEach(el => {
+            const type = el.getAttribute('data-type');
+            const def = vocabDefs.find(v => v.type === type);
+            const unknown = !def;
+            const text = def
+                ? (def.icon || '📄') + ' ' + (def.display_name || def.type)
+                // 改名した直後・綴り違いはここへ来る。保存時の赤いトーストと同じ事実を、
+                // **その場所で**示すのが札の役目。
+                : '⚠ 未定義の形式「' + type + '」';
+
+            // 札の置き場は2通り。
+            //   トップレベルのブロック … `.editor-block` の中・`.block-content` の**外**。
+            //   入れ子の形式（section の中の表など） … その要素の直前。
+            //
+            // トップレベルで `.block-content` の中へ入れてはいけない——安全化の
+            // エコーバック（applySanitizedHtml）が `content.firstElementChild` を
+            // 「そのブロックの実体」とみなすので、札が先頭に来ると**札を本文と取り違えて
+            // 差し替え、ページ全体が編集不能になる**（2026-08-21 に直した不具合の再来。
+            // verify-editor-loss.js が検出した）。
+            const inBlockContent = el.parentNode.classList
+                && el.parentNode.classList.contains('block-content');
+            const anchor = inBlockContent ? el.parentNode : el;
+            let label = anchor.previousElementSibling;
+            if (!label || !label.classList.contains('vocab-label')) {
+                label = document.createElement('div');
+                label.className = 'vocab-chrome vocab-label';
+                label.contentEditable = 'false';
+                anchor.parentNode.insertBefore(label, anchor);
+            }
+            if (label.textContent !== text) label.textContent = text;
+            label.title = unknown
+                ? 'この形式はレジストリに宣言がありません。保存はされますが、計算には使われません。'
+                : '形式: ' + type;
+            // class はサニタイザ・シリアライザとも通さない実行時の印（保存に漏れない）。
+            label.classList.toggle('is-unknown', unknown);
+            el.classList.toggle('is-vocab-unknown', unknown);
+            keep.add(label);
+        });
+
+        // 対象でなくなった札（閲覧モードへ移った・形式を外した・ブロックを消した）を片付ける。
+        editor.querySelectorAll('.vocab-label').forEach(el => {
+            if (!keep.has(el)) el.remove();
+        });
+        if (!isEdit) {
+            editor.querySelectorAll('.is-vocab-unknown').forEach(el => el.classList.remove('is-vocab-unknown'));
+        }
     }
 
     // uploadPDFToSection はPDFを添付し、配線（data-src）と可視のファイル名リンクを更新する。
