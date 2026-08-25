@@ -199,14 +199,31 @@ func (m *lockManager) Validate(pageID int, user, token string) bool {
 }
 
 // Release は保持者本人による明示解放です（トークン一致時のみ）。
+// OnRelease は**保持者本人が**ロックを手放したときに呼ばれます（nil なら何もしない）。
+//
+// 版管理のチェックポイントを打つための口です。編集の区切りは「ロックを手放したとき」
+// なので、そこで最後の状態を残さないと、コアレッシングの窓（10分）の内側で編集を
+// 終えた人の最終形が履歴に残りません。
+//
+// **editlock は cms を import できない**（cms → editlock の一方向依存を保つ）ので、
+// 関数変数で受けます。設定するのは cms 側の init です。
+var OnRelease func(pageID int, username string)
+
 func (m *lockManager) Release(pageID int, user, token string) {
 	now := time.Now()
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	l := m.locks[pageID]
-	if l != nil && l.holder == user && l.token == token {
+	released := l != nil && l.holder == user && l.token == token
+	if released {
 		delete(m.locks, pageID)
 		m.broadcast(pageID, now)
+	}
+	m.mu.Unlock()
+
+	// ロックを持たないまま呼ばれた場合は何もしない——別人の名前でチェックポイントを
+	// 打つと、履歴の編集者が間違って記録される。
+	if released && OnRelease != nil {
+		OnRelease(pageID, user)
 	}
 }
 

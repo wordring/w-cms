@@ -230,6 +230,20 @@
                     </div>
                 </details>
             </section>
+
+            <!-- 版の履歴（リビジョン／リバート。version.go）。
+                 対象は**本文HTMLだけ**なので、戻しても権限・所有者・親は変わらない。 -->
+            <section class="rail-card">
+                <details id="w-vh-details">
+                    <summary>🕘 版の履歴</summary>
+                    <div class="card-body">
+                        <div class="rail-hint">保存の区切りごとに本文を残しています（5年保持）。戻しても権限・所有者・親は変わりません。</div>
+                        <ul class="version-list" id="w-vh-list"></ul>
+                        <div class="rail-hint is-hidden" id="w-vh-view-hint">戻すには編集モード（右上スイッチ）に切り替えてください。</div>
+                        <span id="w-vh-msg"></span>
+                    </div>
+                </details>
+            </section>
         </aside>
     </div>
 </main>

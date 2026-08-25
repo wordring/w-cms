@@ -116,6 +116,15 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 版として残す（コアレッシングが効くので、オートセーブの連打では増えない。
+	// version.go 参照）。**保存そのものは止めない**——履歴が取れないことを理由に
+	// 書けなくするほうが害が大きい（監査記録と同じ判断）。
+	if u := auth.CurrentUser(r); u != nil {
+		if err := RecordVersion(id, u.Username, safeHTML, false); err != nil {
+			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
+		}
+	}
+
 	if err := SyncIndex(id, safeHTML); err != nil {
 		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
 		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)

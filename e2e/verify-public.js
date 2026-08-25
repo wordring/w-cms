@@ -18,15 +18,25 @@ const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 
 // setPublic はページの公開フラグを切り替える（編集ロックが要る）。
+//
+// 直前まで誰かがトップページのロックを持っていると 409 が返る。他のスクリプトと
+// 続けて流すと実際に起きるので、少し待って取り直す（本番の挙動ではなく段取りの問題）。
 async function setPublic(page, id, value) {
-    const lock = await page.request.post(BASE + '/api/lock?id=' + id, { headers: H });
-    const token = (await lock.json()).token;
-    const res = await page.request.post(BASE + '/api/page-perms?id=' + id, {
-        headers: { ...H, 'X-Lock-Token': token, 'Content-Type': 'application/json' },
-        data: { public: value },
-    });
-    await page.request.post(BASE + '/api/unlock?id=' + id + '&token=' + token, { headers: H });
-    if (res.status() !== 200) throw new Error('page-perms failed: ' + res.status() + ' ' + (await res.text()));
+    let last = '';
+    for (let attempt = 0; attempt < 4; attempt++) {
+        const lock = await page.request.post(BASE + '/api/lock?id=' + id, { headers: H });
+        const token = (await lock.json()).token || '';
+        const res = await page.request.post(BASE + '/api/page-perms?id=' + id, {
+            headers: { ...H, 'X-Lock-Token': token, 'Content-Type': 'application/json' },
+            data: { public: value },
+        });
+        await page.request.post(BASE + '/api/unlock?id=' + id + '&token=' + token, { headers: H });
+        if (res.status() === 200) return;
+        last = res.status() + ' ' + (await res.text());
+        if (res.status() !== 409) break; // 409 以外は待っても変わらない
+        await page.waitForTimeout(1500);
+    }
+    throw new Error('page-perms failed: ' + last);
 }
 
 async function newPageWithBody(page, parent, html) {
