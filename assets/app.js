@@ -2773,24 +2773,149 @@
         }
     }
 
-    // ── スラッシュメニューのレジストリ駆動項目 ──────────────────────────
-    // 語彙レジストリ（①）の形式定義から項目を生成して静的項目の後ろへ足す。
-    // メニュー全体の再設計（絞り込み・分類・頻度順）は別課題（エディタ仕様 §3）で、
-    // ここは「殻の markup を手で足さずに語彙を増やせる」ことだけを実現する。
-    function populateSlashMenuVocab() {
+    // ── スラッシュメニュー（絞り込み・分類・頻度順。エディタ仕様 §3.1） ──────
+    //
+    // 語彙は最終的に100種規模になる（要件定義書 §1.2）ので、全項目を1列に並べる形では
+    // 選べません。到達性のために3つを効かせます:
+    //
+    //   絞り込み … `/` に続けて打った文字で候補を絞る（表示名・形式名・分類を見る）
+    //   分類     … レジストリの `category` で束ね、見出しを出す
+    //   頻度順   … 使った回数の多い項目を**その分類の先頭**へ寄せる
+    //
+    // 絞り込みの入力欄は**置きません**。`/` を打ったブロックの文字がそのまま検索語に
+    // なります（`/部材` のように打つ）——入力欄へフォーカスを移すと contenteditable の
+    // キャレットが失われ、選んだあとの挿入先が分からなくなるためです。
+    //
+    // 分類の並びは固定（宣言順）で、**動くのは分類の中だけ**にしています。分類ごと
+    // 動かすと「昨日と場所が違う」状態になり、覚えて選ぶ使い方ができなくなるためです。
+
+    // slashItems はメニューの項目一覧（描画のもとになるデータ）。
+    // 殻に手書きされている h1・p は「基本」分類として最初に取り込みます
+    // （手書きが残るのはこの2つだけ、というエディタ仕様 §3.1 の分担を保つため）。
+    let slashItems = [];
+    let slashQuery = '';
+
+    function buildSlashItems() {
         const menu = document.getElementById('w-slash-menu');
         if (!menu) return;
+        const items = [];
+        menu.querySelectorAll('.slash-menu-item').forEach(el => {
+            items.push({
+                type: el.getAttribute('data-type'),
+                icon: (el.querySelector('b') || {}).textContent || '📄',
+                label: el.textContent.replace(/^\s*\S+\s*/, '').trim() || el.textContent.trim(),
+                category: '基本',
+            });
+        });
         vocabDefs.forEach(def => {
             if (def.hidden) return; // 明細表など、単独では挿入しない形式
-            const item = document.createElement('div');
-            item.className = 'slash-menu-item';
-            item.setAttribute('data-type', 'vocab:' + def.type);
-            const icon = document.createElement('b');
-            icon.textContent = def.icon || '📄';
-            item.appendChild(icon);
-            item.appendChild(document.createTextNode(' ' + (def.display_name || def.type)));
-            menu.appendChild(item);
+            items.push({
+                type: 'vocab:' + def.type,
+                icon: def.icon || '📄',
+                label: def.display_name || def.type,
+                category: def.category || 'その他',
+                // 形式名（kebab-case）でも引けるようにする。日本語入力に切り替える前に
+                // ローマ字で打ち始める使い方を拾うため。
+                alt: def.type,
+            });
         });
+        slashItems = items;
+    }
+
+    // slashUseCount は使った回数（UI ストアに永続化）。
+    function slashUseCount(type) {
+        const uses = UI.get('slashUse', {});
+        return uses[type] || 0;
+    }
+    function noteSlashUse(type) {
+        const uses = UI.get('slashUse', {});
+        uses[type] = (uses[type] || 0) + 1;
+        UI.set('slashUse', uses);
+    }
+
+    // slashMatches は絞り込み語に当たるかを返します。表示名・形式名・分類のどれかに
+    // 含まれていれば当たり（部分一致・英字は大小を無視）。
+    function slashMatches(item, q) {
+        if (!q) return true;
+        const hay = (item.label + ' ' + (item.alt || '') + ' ' + item.category + ' ' + item.type).toLowerCase();
+        return hay.indexOf(q.toLowerCase()) !== -1;
+    }
+
+    // renderSlashMenu はメニューを組み直します（分類の見出し＋項目）。
+    function renderSlashMenu() {
+        const menu = document.getElementById('w-slash-menu');
+        if (!menu) return;
+        menu.textContent = '';
+
+        const q = slashQuery.trim();
+        // 分類の並びは宣言順（＝安定）。中身だけを頻度順に並べ替える。
+        const order = [];
+        const groups = {};
+        slashItems.forEach(item => {
+            if (!slashMatches(item, q)) return;
+            if (!groups[item.category]) { groups[item.category] = []; order.push(item.category); }
+            groups[item.category].push(item);
+        });
+
+        if (order.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'slash-menu-empty';
+            empty.textContent = '「' + q + '」に当たる形式はありません';
+            menu.appendChild(empty);
+            return;
+        }
+
+        order.forEach(cat => {
+            const head = document.createElement('div');
+            head.className = 'slash-menu-group';
+            head.textContent = cat;
+            menu.appendChild(head);
+
+            groups[cat]
+                .slice()
+                .sort((a, b) => slashUseCount(b.type) - slashUseCount(a.type))
+                .forEach(item => {
+                    const el = document.createElement('div');
+                    el.className = 'slash-menu-item';
+                    el.setAttribute('data-type', item.type);
+                    const icon = document.createElement('b');
+                    icon.textContent = item.icon;
+                    el.appendChild(icon);
+                    el.appendChild(document.createTextNode(' ' + item.label));
+                    el.addEventListener('click', () => chooseSlashItem(item.type));
+                    el.addEventListener('mouseenter', () => {
+                        slashSelectedIndex = visibleSlashItems().indexOf(el);
+                        updateSlashMenuSelection();
+                    });
+                    menu.appendChild(el);
+                });
+        });
+    }
+
+    // visibleSlashItems はいま並んでいる項目（分類見出しを除く）を返します。
+    function visibleSlashItems() {
+        return Array.from(document.querySelectorAll('#w-slash-menu .slash-menu-item'));
+    }
+
+    // chooseSlashItem は項目を選んだときの共通処理です。
+    // **絞り込みに打った文字（`/部材` 等）を本文へ残さない**のがここの仕事——
+    // 置き換え型の項目では消えますが、画像のように「後ろへ挿す」項目では残ってしまいます。
+    function chooseSlashItem(type) {
+        const block = currentSlashBlock;
+        noteSlashUse(type);
+        hideSlashMenu();
+        if (!block) return;
+        const content = block.querySelector('.block-content');
+        const el = content && content.firstElementChild;
+        if (el && /^\/.*/.test(el.textContent || '')) el.textContent = '';
+        applySlashChoice(type, block);
+    }
+
+    // populateSlashMenuVocab は語彙レジストリから項目を作り、メニューを組み立てます。
+    // 名前は従来のまま（呼び出し側の意味は「メニューを用意する」）。
+    function populateSlashMenuVocab() {
+        buildSlashItems();
+        renderSlashMenu();
     }
 
     // Slash Menu Logic
@@ -2798,8 +2923,11 @@
         slashMenuVisible = true;
         const menu = document.getElementById('w-slash-menu');
         currentSlashBlock = targetElement.closest('.editor-block');
+        // 開くたびに絞り込みは白紙へ戻し、頻度順も取り直す。
+        slashQuery = '';
+        renderSlashMenu();
         menu.classList.add('active');
-        
+
         const rect = targetElement.getBoundingClientRect();
         menu.style.top = (rect.bottom + window.scrollY + 5) + 'px';
         menu.style.left = (rect.left + window.scrollX) + 'px';
@@ -2808,16 +2936,24 @@
         updateSlashMenuSelection();
     }
 
+    // filterSlashMenu は `/` に続けて打たれた文字で候補を絞ります。
+    function filterSlashMenu(query) {
+        slashQuery = query;
+        renderSlashMenu();
+        slashSelectedIndex = 0;
+        updateSlashMenuSelection();
+    }
+
     function hideSlashMenu() {
         slashMenuVisible = false;
+        slashQuery = '';
         const menu = document.getElementById('w-slash-menu');
         if (menu) menu.classList.remove('active');
         currentSlashBlock = null;
     }
 
     function updateSlashMenuSelection() {
-        const items = document.querySelectorAll('#w-slash-menu .slash-menu-item');
-        items.forEach((item, idx) => {
+        visibleSlashItems().forEach((item, idx) => {
             if (idx === slashSelectedIndex) {
                 item.classList.add('selected');
                 item.scrollIntoView({ block: 'nearest' });
@@ -2828,22 +2964,21 @@
     }
 
     function handleSlashMenuKey(e) {
-        const items = document.querySelectorAll('#w-slash-menu .slash-menu-item');
+        const items = visibleSlashItems();
         if (e.key === 'ArrowDown') {
             e.preventDefault();
+            if (!items.length) return;
             slashSelectedIndex = (slashSelectedIndex + 1) % items.length;
             updateSlashMenuSelection();
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
+            if (!items.length) return;
             slashSelectedIndex = (slashSelectedIndex - 1 + items.length) % items.length;
             updateSlashMenuSelection();
         } else if (e.key === 'Enter') {
             e.preventDefault();
-            const type = items[slashSelectedIndex].getAttribute('data-type');
-            if (currentSlashBlock) {
-                applySlashChoice(type, currentSlashBlock);
-            }
-            hideSlashMenu();
+            if (!items[slashSelectedIndex]) return;
+            chooseSlashItem(items[slashSelectedIndex].getAttribute('data-type'));
         } else if (e.key === 'Escape') {
             hideSlashMenu();
         }
@@ -2894,8 +3029,12 @@
         editor.addEventListener('input', (e) => {
             if (!document.body.hasAttribute('edit-mode')) return;
             const target = e.target;
-            if (target.tagName === 'P' && target.innerText === '/') {
-                showSlashMenu(target);
+            // `/` で開き、**続けて打った文字はそのまま絞り込み語**になる
+            // （入力欄を置かないのは、フォーカスを移すとキャレットを失うため）。
+            const text = target.tagName === 'P' ? (target.innerText || '') : '';
+            if (text.charAt(0) === '/') {
+                if (!slashMenuVisible) showSlashMenu(target);
+                filterSlashMenu(text.slice(1));
             } else {
                 hideSlashMenu();
             }
@@ -3039,20 +3178,13 @@
             insertImagesAfter(files, block);
         });
 
-        const items = document.querySelectorAll('#w-slash-menu .slash-menu-item');
-        items.forEach((item, idx) => {
-            item.addEventListener('click', () => {
-                const type = item.getAttribute('data-type');
-                if (currentSlashBlock) {
-                    applySlashChoice(type, currentSlashBlock);
-                }
-                hideSlashMenu();
-            });
-            item.addEventListener('mouseenter', () => {
-                slashSelectedIndex = idx;
-                updateSlashMenuSelection();
-            });
-        });
+        // 項目の click / mouseenter は renderSlashMenu が項目を作るたびに配線する
+        // （絞り込みのたびに作り直すので、ここで一度だけ配線すると外れてしまう）。
+        //
+        // メニュー自体の mousedown は止める。クリックでキャレットが飛ぶと、
+        // どのブロックへ挿すのか（currentSlashBlock）を見失うため。
+        const smenu = document.getElementById('w-slash-menu');
+        if (smenu) smenu.addEventListener('mousedown', e => e.preventDefault());
     }
 
     function updateContextToolbar() {

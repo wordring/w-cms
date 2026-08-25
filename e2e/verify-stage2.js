@@ -377,6 +377,63 @@ async function waitSaved(page) {
             !document.getElementById('w-col-popover').classList.contains('active'));
         check('閲覧モード: 編集クロームは非表示', barsHidden);
 
+        // ── スラッシュメニューの到達性（絞り込み・分類・頻度順。エディタ仕様 §3.1） ──
+        // 語彙100種規模では全項目を1列に並べても選べない。ここで見るのは
+        // 「打った文字で絞れる」「分類で束ねられる」「よく使うものが上へ来る」の3点。
+        await page.evaluate(() => document.getElementById('w-mode-toggle').click());
+        await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+        await page.waitForTimeout(600);
+
+        const sp = page.locator('#w-editor-content p').last();
+        await sp.click();
+        await selectContents(page, sp);
+        await page.keyboard.type('/');
+        await page.waitForSelector('#w-slash-menu.active', { timeout: 4000 });
+        check('メニューに分類の見出しが出る',
+            (await page.locator('#w-slash-menu .slash-menu-group').count()) >= 2);
+        const allItems = await page.locator('#w-slash-menu .slash-menu-item:visible').count();
+        check('前提: 項目が並んでいる', allItems >= 3);
+
+        // `/` に続けて打つと、メニューは開いたまま絞り込まれる。
+        await page.keyboard.type('部材');
+        await page.waitForTimeout(300);
+        check('絞り込み中もメニューは開いたまま',
+            await page.locator('#w-slash-menu.active').count() === 1);
+        const filtered = await page.locator('#w-slash-menu .slash-menu-item:visible').count();
+        check('打った文字で絞り込まれる', filtered > 0 && filtered < allItems);
+        check('一致した項目が残る',
+            (await page.locator('#w-slash-menu .slash-menu-item:visible').first().innerText()).includes('部材'));
+
+        // 矢印＋Enter で選べる（絞り込み後も操作は同じ）。
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(600);
+        check('絞り込んだ項目を Enter で挿せる',
+            (await page.locator('#w-editor-content table[data-type="part-materials"]').count()) >= 1);
+        check('絞り込みの文字が本文に残らない',
+            !(await page.locator('#w-editor-content').innerText()).includes('/部材'));
+
+        // よく使う項目は分類の先頭へ来る（1回使ったので、次に開くと先頭）。
+        const sp2 = page.locator('#w-editor-content p').last();
+        await sp2.click();
+        await selectContents(page, sp2);
+        await page.keyboard.type('/');
+        await page.waitForSelector('#w-slash-menu.active', { timeout: 4000 });
+        await page.waitForTimeout(300);
+        const firstInCategory = await page.evaluate(() => {
+            const menu = document.getElementById('w-slash-menu');
+            const nodes = Array.from(menu.children);
+            const gi = nodes.findIndex(n => n.classList.contains('slash-menu-group') &&
+                n.textContent.includes('業務'));
+            if (gi < 0) return null;
+            for (let i = gi + 1; i < nodes.length; i++) {
+                if (nodes[i].classList.contains('slash-menu-group')) break;
+                if (nodes[i].classList.contains('slash-menu-item')) return nodes[i].getAttribute('data-type');
+            }
+            return null;
+        });
+        check('よく使う項目が分類の先頭へ来る', firstInCategory === 'vocab:part-materials');
+        await page.keyboard.press('Escape');
+
         check('JSエラーなし（pageerror ゼロ）', pageErrors.length === 0);
         if (pageErrors.length) console.error('pageerrors:', pageErrors);
     } catch (e) {

@@ -723,6 +723,25 @@ body[edit-mode] .block-content p:empty::before {
     color: #0f172a;
 }
 
+/* 分類の見出し（エディタ仕様 §3.1）。語彙100種規模では1列に並べても選べないので、
+   レジストリの category で束ねる。並びは宣言順で固定し、動くのは分類の中だけ
+   （分類ごと動くと「昨日と場所が違う」状態になり、覚えて選ぶ使い方ができなくなる）。 */
+.slash-menu-group {
+    padding: 8px 12px 2px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    user-select: none;
+}
+.slash-menu-group:first-child { padding-top: 2px; }
+
+.slash-menu-empty {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
 /* Context Toolbar Styles */
 .context-toolbar {
     position: absolute;
