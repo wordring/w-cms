@@ -66,9 +66,20 @@ func (clientOrderPlugin) Tables() []string {
 	return []string{"client_order_items", "client_orders"}
 }
 
-func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
-	// 洗い替え: 当該ページの明細→ヘッダの順で削除。明細も page_id を持つので直接消せる
-	// （order_no のサブクエリだと、番号が重複したときに他ページの明細まで巻き込む）。
+// Triggers は顧客の発注書セクションだけを担当することを宣言します。
+// 明細表（`client-order-items`）は自分で読むので、引き金には挙げません
+// （OnElement が descend=false を返して丸ごと担当する）。
+func (clientOrderPlugin) Triggers() []string { return []string{"client-order"} }
+
+// OnPageStart は当該ページ分を洗い流します（洗い替えの前半）。
+func (clientOrderPlugin) OnPageStart(ctx *ObserveContext) error {
+	return clientOrderPurge(ctx.Tx, ctx.PageID)
+}
+
+// clientOrderPurge は当該ページの明細→ヘッダの順で削除します。明細も page_id を
+// 持つので直接消せます（order_no のサブクエリだと、番号が重複したときに
+// 他ページの明細まで巻き込む）。
+func clientOrderPurge(tx *sql.Tx, pageID int) error {
 	if _, err := tx.Exec(
 		`DELETE FROM client_order_items WHERE page_id = ?`, pageID); err != nil {
 		return err
@@ -76,6 +87,17 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 	if _, err := tx.Exec(`DELETE FROM client_orders WHERE page_id = ?`, pageID); err != nil {
 		return err
 	}
+	return nil
+}
+
+// OnElement は1つの発注書セクションを読み、ヘッダと明細を書き込みます。
+// 明細表もこのセクションの中から自分で読むので、**子孫へは降りません**
+// （降りると ②汎用索引 以外の担当が二重に読むことになる）。
+func (clientOrderPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	if el.Data != "section" { // 論点A・案1: 業務ブロックは section が包む
+		return true, nil
+	}
+	tx, pageID := ctx.Tx, ctx.PageID
 
 	insertHeader := func(orderNo, clientName, pdfPath, orderedAt string) error {
 		_, err := tx.Exec(`
@@ -96,33 +118,23 @@ func (clientOrderPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		return err
 	}
 
-	var firstErr error
-	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil {
-			return
+	def, _ := VocabDefByType("client-order")
+	itemsDef, _ := VocabDefByType("client-order-items")
+	header := VocabDLFields(FirstVocabChild(el, "dl", ""), def)
+	orderNo := header["order-no"]
+	// PDFのパスは容器 section[data-type="file"] が持つ（祖先から拾う）。
+	if err := insertHeader(orderNo, header["client-name"], ClosestFileSrc(el), header["ordered-at"]); err != nil {
+		return false, err
+	}
+	for _, row := range VocabTableRows(FirstVocabChild(el, "table", "client-order-items"), itemsDef) {
+		quantity := 1 // 空セルの既定（旧 Quantity() と同じ）
+		if v := row["quantity"]; v != "" {
+			quantity = vocabNumber(v)
 		}
-		switch {
-		case n.Data == "section" && Attr(n, "data-type") == "client-order": // 論点A・案1
-			def, _ := VocabDefByType("client-order")
-			itemsDef, _ := VocabDefByType("client-order-items")
-			header := VocabDLFields(FirstVocabChild(n, "dl", ""), def)
-			orderNo := header["order-no"]
-			if err := insertHeader(orderNo, header["client-name"], ClosestFileSrc(n), header["ordered-at"]); err != nil {
-				firstErr = err
-				return
-			}
-			for _, row := range VocabTableRows(FirstVocabChild(n, "table", "client-order-items"), itemsDef) {
-				quantity := 1 // 空セルの既定（旧 Quantity() と同じ）
-				if v := row["quantity"]; v != "" {
-					quantity = vocabNumber(v)
-				}
-				if err := insertItem(orderNo, row["item-id"], row["item-name"],
-					vocabNumber(row["price"]), quantity, row["status"]); err != nil {
-					firstErr = err
-					return
-				}
-			}
+		if err := insertItem(orderNo, row["item-id"], row["item-name"],
+			vocabNumber(row["price"]), quantity, row["status"]); err != nil {
+			return false, err
 		}
-	})
-	return firstErr
+	}
+	return false, nil
 }

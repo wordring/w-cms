@@ -1,10 +1,6 @@
 package cms
 
-import (
-	"database/sql"
-
-	"golang.org/x/net/html"
-)
+import "golang.org/x/net/html"
 
 // ─────────────────────────────────────────────────────────────────────────
 // プラグイン例（1プラグインで複数テーブルを所有）: 見積もり
@@ -54,13 +50,28 @@ func (estimatesPlugin) Tables() []string {
 	return []string{"our_estimates", "supplier_estimates"}
 }
 
-func (estimatesPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
-	if _, err := tx.Exec(`DELETE FROM our_estimates WHERE page_id = ?`, pageID); err != nil {
+// Triggers は販売見積・購入見積の2つを担当することを宣言します
+// （1つの観察係が複数の引き金を持つ例）。
+func (estimatesPlugin) Triggers() []string {
+	return []string{"our-estimate", "supplier-estimate"}
+}
+
+// OnPageStart は当該ページ分を洗い流します。
+func (estimatesPlugin) OnPageStart(ctx *ObserveContext) error {
+	if _, err := ctx.Tx.Exec(`DELETE FROM our_estimates WHERE page_id = ?`, ctx.PageID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM supplier_estimates WHERE page_id = ?`, pageID); err != nil {
-		return err
+	_, err := ctx.Tx.Exec(`DELETE FROM supplier_estimates WHERE page_id = ?`, ctx.PageID)
+	return err
+}
+
+// OnElement は見積もりの定義リストを読みます。
+// PDFのパスは容器 section[data-type="file"] が持つので祖先から拾います。
+func (estimatesPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	if el.Data != "dl" {
+		return true, nil
 	}
+	tx, pageID := ctx.Tx, ctx.PageID
 
 	insertOur := func(itemID, clientName string, price int, pdfPath, estimatedAt string) error {
 		_, err := tx.Exec(`
@@ -77,22 +88,17 @@ func (estimatesPlugin) Sync(tx *sql.Tx, pageID int, root *html.Node) error {
 		return err
 	}
 
-	var firstErr error
-	WalkElements(root, func(n *html.Node) {
-		if firstErr != nil {
-			return
-		}
-		// PDFのパスは容器 section[data-type="file"] が持つ。
-		switch {
-		case n.Data == "dl" && Attr(n, "data-type") == "our-estimate":
-			def, _ := VocabDefByType("our-estimate")
-			f := VocabDLFields(n, def)
-			firstErr = insertOur(f["item-id"], f["client-name"], vocabNumber(f["price"]), ClosestFileSrc(n), f["estimated-at"])
-		case n.Data == "dl" && Attr(n, "data-type") == "supplier-estimate":
-			def, _ := VocabDefByType("supplier-estimate")
-			f := VocabDLFields(n, def)
-			firstErr = insertSupplier(f["item-name"], f["supplier-name"], vocabNumber(f["cost"]), ClosestFileSrc(n), f["estimated-at"])
-		}
-	})
-	return firstErr
+	switch Attr(el, "data-type") {
+	case "our-estimate":
+		def, _ := VocabDefByType("our-estimate")
+		f := VocabDLFields(el, def)
+		return false, insertOur(f["item-id"], f["client-name"], vocabNumber(f["price"]),
+			ClosestFileSrc(el), f["estimated-at"])
+	case "supplier-estimate":
+		def, _ := VocabDefByType("supplier-estimate")
+		f := VocabDLFields(el, def)
+		return false, insertSupplier(f["item-name"], f["supplier-name"], vocabNumber(f["cost"]),
+			ClosestFileSrc(el), f["estimated-at"])
+	}
+	return true, nil
 }
