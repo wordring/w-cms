@@ -74,6 +74,32 @@ body.public {
 .public-content dt { font-weight: 600; color: var(--pub-muted); margin-top: 10px; }
 .public-content dd { margin: 0 0 4px 1em; }
 
+/* 可変タグはチップ表示（編集側 app.css と同じ見え方。名前：値で1つのタグ） */
+.public-content dl[data-type="tags"] {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 6px;
+}
+.public-content dl[data-type="tags"] dt,
+.public-content dl[data-type="tags"] dd {
+    margin: 0;
+    padding: 2px 10px;
+    border: 1px solid var(--pub-border);
+    line-height: 1.6;
+}
+.public-content dl[data-type="tags"] dt {
+    background: #f3f4f6;
+    color: var(--pub-muted);
+    border-radius: var(--pub-radius) 0 0 var(--pub-radius);
+    border-right: none;
+    font-weight: normal;
+}
+.public-content dl[data-type="tags"] dd {
+    background: var(--pub-bg);
+    border-radius: 0 var(--pub-radius) var(--pub-radius) 0;
+    margin-right: 8px;
+}
+
 /* 業務ブロック（発注書など）の枠。編集モードの破線枠は出さない（読む人には無関係）。 */
 .public-content section[data-type] {
     margin: 0 0 24px;

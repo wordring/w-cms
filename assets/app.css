@@ -980,6 +980,41 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
     outline: 1px dashed #ef4444;
 }
 
+/* 可変タグ（dl[data-type="tags"]）のチップ表示（2026-08-26 ユーザー要望）。
+ * 「定義リストそのまま」ではなく**名前：値の1つのタグ**として見せる——
+ * 左に名前・右に値で、角丸四角形で囲う。マークアップは dt/dd のまま
+ * （見える文字＝鍵の原則・サニタイザ・索引すべて無変更。見た目だけの変換）。
+ * dt と dd は隣接する別要素なので、dt の右角と dd の左角を殺して1つの
+ * チップに見せる。対の区切りは dd の右マージンで作る（flex の gap は
+ * dt|dd の間にも入ってチップが割れるため使わない）。
+ * 見積もり系（our-estimate 等）も dl だが、このスタイルは tags 専用。 */
+#w-editor-content dl[data-type="tags"] {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    margin: 8px 0;
+}
+#w-editor-content dl[data-type="tags"] dt,
+#w-editor-content dl[data-type="tags"] dd {
+    margin: 0;
+    padding: 2px 10px;
+    border: 1px solid var(--border-strong);
+    min-width: 1.5em; /* 空でもクリックできる幅を残す（編集モードで値を書き込むため） */
+    line-height: 1.6;
+}
+#w-editor-content dl[data-type="tags"] dt {
+    background: var(--bg-app);
+    color: var(--text-muted);
+    border-radius: 6px 0 0 6px;
+    border-right: none;
+    font-weight: normal;
+}
+#w-editor-content dl[data-type="tags"] dd {
+    background: var(--bg-paper);
+    border-radius: 0 6px 6px 0;
+    margin-right: 8px; /* 次のタグとの間隔 */
+}
+
 /* 破壊的な操作のボタン（削除）。押し間違いを減らすため通常の操作と色を変える。 */
 .page-action-danger {
     color: #b91c1c;
