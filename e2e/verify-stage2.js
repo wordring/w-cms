@@ -357,6 +357,21 @@ async function waitSaved(page) {
         check('id: 殻の要素は奪われていない',
             await page.evaluate(() => document.getElementById('w-html-preview').tagName) === 'TEXTAREA');
 
+        // ── ブロック削除（🗑 ボタン。2026-08-26 追加） ──
+        // ＋で1つ増やし（"/" の空段落・メニューは Escape で閉じる）、🗑 で消して元の数へ戻す。
+        const blocksBefore = await page.locator('#w-editor-content .editor-block').count();
+        const lastBlock = page.locator('#w-editor-content .editor-block').last();
+        await lastBlock.hover();
+        await lastBlock.locator('.add-btn').click();
+        await page.keyboard.press('Escape');
+        check('ブロック追加（＋）: 1つ増える',
+            await page.locator('#w-editor-content .editor-block').count() === blocksBefore + 1);
+        const newBlock = page.locator('#w-editor-content .editor-block').last();
+        await newBlock.hover();
+        await newBlock.locator('.delete-btn').click();
+        check('ブロック削除（🗑）: 1つ減って元の数へ戻る',
+            await page.locator('#w-editor-content .editor-block').count() === blocksBefore);
+
         // ── 保存往復（リロードして残っているか・実行時の印が残っていないか） ──
         await waitSaved(page);
         await page.goto(pageURL.replace('?edit=true', ''));

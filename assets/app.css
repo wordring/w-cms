@@ -634,6 +634,11 @@ body[edit-mode] .editor-block:hover .block-controls {
     opacity: 1;
 }
 
+/* 削除は破壊的な操作なので、ホバーで赤く変えて他のボタンと区別する */
+.block-controls .delete-btn:hover {
+    color: #ef4444;
+}
+
 .block-controls button, .block-controls .drag-handle {
     background: transparent;
     border: none;
