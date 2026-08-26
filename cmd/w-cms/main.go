@@ -1,3 +1,19 @@
+// w-cms は、Notion のように自由に書いたページと PDF 原本から、
+// **見える文字（階層・ページ名・見出し・タグ）を手掛かりに**データベースが集計する CMS です。
+//
+//	WCMS_SECURE_COOKIES=0 go run ./cmd/w-cms   # ローカル検証（既定 :8080）
+//
+// 起動時にやることは4つ:
+//
+//	1. cms.db と auth.db を開き、コアテーブルとプラグインのテーブルを作る
+//	2. プラグインのスキーマのずれを検出したら派生索引を作り直す（DriftedSchemaTables）
+//	3. 中断した索引再構築があればやり直す（RebuildIfNeeded）
+//	4. ルート表を組んで待ち受ける（buildHandler）
+//
+// ルート表は [buildHandler] が返します。main から切り出してあるのは**テストのため**で、
+// ルートごとの保護レベル（RequireAuth / OptionalAuth / 認証不要）とミドルウェアの
+// 入れ子は route_guard_test.go が固定しています——ここは「黙って壊れる層」で、
+// ハンドラを protected から root へ移しても既存のテストは緑のまま実害だけが出ます。
 package main
 
 import (
