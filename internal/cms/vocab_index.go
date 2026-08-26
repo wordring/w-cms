@@ -129,7 +129,9 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, def Vo
 }
 
 // syncVocabDL は1つの <dl data-type> を索引へ書き込みます。
-// dt が鍵（自由語）、後続の dd が値です（多値は dt の繰り返し／複数 dd）。
+// dt が鍵（自由語）、後続の dd が値です。タグの形式は**名前：値の1対**が正
+// （2026-08-26 決定・plugin_page_tags.go 冒頭）で、多値は対の繰り返しで表す。
+// 1 dt に複数 dd の形は形式外だが、来ても鍵の繰り返しとして寛容に読む。
 func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, def VocabDef, dl *html.Node) error {
 	blockID := Attr(dl, "data-id")
 	currentKey := ""
