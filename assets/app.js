@@ -1890,6 +1890,23 @@
         });
     }
 
+    // deleteBlock はブロックを丸ごと削除する。確認ダイアログは出さない——
+    // 行削除（tableRowDelete）と同じ流儀で、編集中のアンドゥ（Ctrl+Z）で戻せるため。
+    // 保存は本文DOMの変化を setupAutoSave の MutationObserver が拾って走る。
+    // 削除で本文が空になったら空の段落を1つ補い、書き続けられる場所を残す。
+    function deleteBlock(block) {
+        const neighbor = block.previousElementSibling || block.nextElementSibling;
+        block.remove();
+        if (topLevelBlocks().length === 0) {
+            const p = insertComponent('p');
+            if (p && p.focus) p.focus();
+        } else if (neighbor && neighbor.classList && neighbor.classList.contains('editor-block')) {
+            const content = neighbor.querySelector('.block-content > *');
+            if (content && content.focus) content.focus({ preventScroll: true });
+        }
+        updateHtmlPreview();
+    }
+
     function wrapInBlock(element) {
         if (element.classList && element.classList.contains('editor-block')) return element;
         
@@ -1920,9 +1937,16 @@
         dragHandle.innerHTML = '⠿';
         dragHandle.draggable = true;
         dragHandle.title = 'ドラッグして移動';
-        
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-btn';
+        delBtn.textContent = '🗑';
+        delBtn.title = 'ブロックを削除';
+        delBtn.onclick = () => deleteBlock(block);
+
         controls.appendChild(addBtn);
         controls.appendChild(dragHandle);
+        controls.appendChild(delBtn);
         
         const contentWrapper = document.createElement('div');
         contentWrapper.className = 'block-content';
