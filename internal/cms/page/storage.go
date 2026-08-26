@@ -1,3 +1,25 @@
+// Package page はページの**置き場所と属性**を担います。
+//
+// UNIX に倣って「ファイルの内容＝本文HTML」「ファイルの属性＝サイドカー」を分けます。
+//
+//   - 本文 …… data/master/<先頭2桁>/<id>/<id>.html
+//   - 属性 …… 同じフォルダの <id>.meta.json（[PageMeta]。所有者・グループ・mode・
+//     公開フラグ・親ページID・作成/更新情報）
+//   - 版   …… 同じフォルダの versions/（cms パッケージが書く）
+//   - 添付 …… 同じフォルダに直接（PDF・画像）
+//
+// **サイドカーが権限の正本**で、cms.db の page_perms はそこから再生成される派生です。
+// 本文保存APIは権限に一切触れません——「本文を編集できる人が自分の権限を昇格させる」
+// 経路を構造的に断つためで、サイドカーを書き換えるのは権限変更APIとページ新規作成だけです。
+//
+// 認可の関門（[RequirePageRead]・[RequirePageWrite]・[RequirePageReadOrPublic]・
+// [RequireAdmin]）と、添付の配信（[DataFileHandler]）もここにあります。
+// 判定そのものは mode の3桁（owner/group/other × read/write）と、匿名公開の
+// パスゲート（[EffectivePublic]＝自分と全先祖が public）で決まります。
+//
+// ⚠ **読み口は正本ではなく派生**です——[GetPerms] も [EffectivePublic] も cms.db を
+// 読みます。サイドカーと索引がずれると**認可は索引に従う**ので、parent_id の喪失は
+// そのまま公開範囲の問題になります。
 package page
 
 import (
