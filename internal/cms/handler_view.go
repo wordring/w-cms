@@ -105,7 +105,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 			pageDir := page.GetPageDir("000000")
 			os.MkdirAll(pageDir, 0755)
 			htmlPath := filepath.Join(pageDir, "000000.html")
-			os.WriteFile(htmlPath, []byte(defaultHTML), 0644)
+			page.WriteFileAtomic(htmlPath, []byte(defaultHTML), 0644)
 			// トップページは全員が閲覧できるよう other に read を付与（owner rw / other r）。
 			// 書き込みは admin（owner）のみ。
 			if err := page.WriteSidecar("000000", page.PageMeta{Owner: page.DefaultOwner, Mode: "302"}); err != nil {

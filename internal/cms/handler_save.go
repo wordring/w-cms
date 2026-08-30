@@ -111,7 +111,7 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(pageDir, 0755)
 
 	htmlPath := filepath.Join(pageDir, id+".html")
-	if err := os.WriteFile(htmlPath, []byte(safeHTML), 0644); err != nil {
+	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
@@ -236,7 +236,7 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.WriteFile(htmlPath, []byte(merged), 0644); err != nil {
+	if err := page.WriteFileAtomic(htmlPath, []byte(merged), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}

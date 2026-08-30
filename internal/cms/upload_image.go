@@ -110,7 +110,7 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 		overwrote = true
 	}
 
-	if err := os.WriteFile(savePath, content, 0644); err != nil {
+	if err := page.WriteFileAtomic(savePath, content, 0644); err != nil {
 		http.Error(w, "画像を保存できませんでした", http.StatusInternalServerError)
 		return
 	}

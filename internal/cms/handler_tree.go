@@ -165,7 +165,7 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	pageDir := page.GetPageDir(newID)
 	os.MkdirAll(pageDir, 0755)
 	htmlPath := filepath.Join(pageDir, newID+".html")
-	if err := os.WriteFile(htmlPath, []byte(html), 0644); err != nil {
+	if err := page.WriteFileAtomic(htmlPath, []byte(html), 0644); err != nil {
 		http.Error(w, "Failed to write file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

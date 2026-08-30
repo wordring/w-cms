@@ -33,6 +33,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"w-cms/internal/cms/page"
 )
 
 // SettingsPath は設定ファイルの位置です（正本）。
@@ -112,7 +114,7 @@ func (s Settings) validate(path string) error {
 	return nil
 }
 
-// writeSettings は設定ファイルを書きます。**一時ファイル＋rename** で、
+// writeSettings は設定ファイルを書きます。原子的書き込み（page.WriteFileAtomic）で、
 // 書きかけの切り詰めが正本に残らないようにします。
 func writeSettings(path string, s *Settings) error {
 	if dir := filepath.Dir(path); dir != "." {
@@ -124,23 +126,7 @@ func writeSettings(path string, s *Settings) error {
 	if err != nil {
 		return err
 	}
-	body = append(body, '\n')
-
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".settings-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // rename が成功していれば消えているので実害なし
-
-	if _, err := tmp.Write(body); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return page.WriteFileAtomic(path, append(body, "\n"...), 0o644)
 }
 
 // defaultSettings はコード内の既定値です（ファイルが無いときの初期内容）。

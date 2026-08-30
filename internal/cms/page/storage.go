@@ -24,6 +24,7 @@ package page
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 )
@@ -71,4 +72,39 @@ func GetTrashDir(id string) string {
 		return filepath.Join(TrashDir, "00", id)
 	}
 	return filepath.Join(TrashDir, id[:2], id)
+}
+
+// WriteFileAtomic は「同じフォルダの一時ファイルへ書いて rename」でファイルを
+// 置き換えます。書き込み中にプロセスが落ちても、path には**元の内容がそのまま残る**
+// （半分だけ書けた切り詰めファイルにならない）ことが保証です。
+//
+// 正本（本文HTML・サイドカー・添付・版・設定）を書く経路は必ずこれを使うこと。
+// 「サイドカーが読めないときは自動で治さない」（2026-08-22 決定）は「読めない＝
+// 運用者が見るべき異常」という前提であり、書き込み自身が切り詰め破損を作れる
+// os.WriteFile（O_TRUNC）のままでは、その前提を自分で壊してしまいます。
+//
+// rename は同一ボリューム内で原子的です（Windows でも MoveFileEx の置き換え）。
+// 一時ファイルを同じフォルダに作るのは、フォルダをまたぐ rename が原子性を
+// 失うため。エラー時は一時ファイルを消して path に触れません。
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // rename 成功後は何もしない（もう存在しない）
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// CreateTemp は 0600 で作るため、意図した権限へ揃えてから公開する。
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
