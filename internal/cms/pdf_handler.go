@@ -156,7 +156,7 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		overwrote = true
 	}
 
-	if err := os.WriteFile(savePath, content, 0644); err != nil {
+	if err := page.WriteFileAtomic(savePath, content, 0644); err != nil {
 		http.Error(w, "Failed to save PDF", http.StatusInternalServerError)
 		return
 	}

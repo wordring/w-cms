@@ -29,6 +29,7 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -83,11 +84,11 @@ func init() {
 
 // VersionInfo は版1つ分の情報です（`<版ID>.json` の中身がそのまま届きます）。
 type VersionInfo struct {
-	ID   string `json:"id"`     // 版ID（= ファイル名の幹。時刻由来）
-	At   string `json:"at"`     // その内容が正本になった時刻（RFC3339・UTC）
-	By   string `json:"by"`     // 保存した利用者
-	Size int    `json:"size"`   // 本文のバイト数（圧縮前）
-	Hash string `json:"hash"`   // 本文の SHA-256（重複を作らないための判定に使う）
+	ID   string `json:"id"`   // 版ID（= ファイル名の幹。時刻由来）
+	At   string `json:"at"`   // その内容が正本になった時刻（RFC3339・UTC）
+	By   string `json:"by"`   // 保存した利用者
+	Size int    `json:"size"` // 本文のバイト数（圧縮前）
+	Hash string `json:"hash"` // 本文の SHA-256（重複を作らないための判定に使う）
 }
 
 // versionsDir はページの版置き場を返します。
@@ -194,25 +195,19 @@ func writeVersionFiles(dir, id string, info VersionInfo, body []byte) error {
 		info.Size = len(body)
 	}
 
-	gzPath := filepath.Join(dir, id+".html.gz")
-	f, err := os.Create(gzPath)
-	if err != nil {
-		return err
-	}
-	zw := gzip.NewWriter(f)
+	// 版は書き直さない一度きりのファイルだが、書き込み中に落ちると壊れた
+	// アーカイブが「ある」ことになってしまうため、原子的に置く。
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
 	if _, err := zw.Write(body); err != nil {
 		zw.Close()
-		f.Close()
-		os.Remove(gzPath)
 		return err
 	}
 	if err := zw.Close(); err != nil {
-		f.Close()
-		os.Remove(gzPath)
 		return err
 	}
-	if err := f.Close(); err != nil {
-		os.Remove(gzPath)
+	gzPath := filepath.Join(dir, id+".html.gz")
+	if err := page.WriteFileAtomic(gzPath, buf.Bytes(), 0644); err != nil {
 		return err
 	}
 
@@ -221,7 +216,7 @@ func writeVersionFiles(dir, id string, info VersionInfo, body []byte) error {
 		os.Remove(gzPath)
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, id+".json"), meta, 0644); err != nil {
+	if err := page.WriteFileAtomic(filepath.Join(dir, id+".json"), meta, 0644); err != nil {
 		os.Remove(gzPath)
 		return err
 	}
@@ -341,7 +336,7 @@ func RevertToVersion(pageID, version, author string) error {
 	// 書き戻す本文もサニタイズを通す。過去の版は当時の許可リストで通ったもので、
 	// 許可が狭まっていれば**いまの規則で**濾すのが正しい（保存経路と同じ扱い）。
 	safeHTML := Sanitize(string(body))
-	if err := os.WriteFile(htmlPath, []byte(safeHTML), 0644); err != nil {
+	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
 		return err
 	}
 	// 更新日時は「今」前進する（サイドカーが正本。リバートも内容の変更なので）。

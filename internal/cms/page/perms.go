@@ -91,7 +91,9 @@ func WriteSidecar(id string, p PageMeta) error {
 	if err := os.MkdirAll(GetPageDir(id), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(sidecarPath(id), data, 0644)
+	// 一時ファイル＋rename。サイドカーは読めなくなっても自動修復しない決定
+	// （運用者が手で直す）なので、書き込み自身が切り詰め破損を作ってはいけない。
+	return WriteFileAtomic(sidecarPath(id), data, 0644)
 }
 
 // EnsureSidecar はサイドカーが無ければ作成します（新規ページ作成時に呼ぶ）。
