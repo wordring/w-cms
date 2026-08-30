@@ -13,8 +13,9 @@ import (
 
 // ── マーカー付き標準HTMLからの同期（dl・表） ──────────────────────────
 
-// TestPageTagsFromDL は新形式 <dl data-type="tags"> が page_tags へ同期されることを
-// 検証します（多値・trim・親ページID除外・従来テストと同じ観点）。
+// TestPageTagsFromDL は <dl data-type="tags"> が②汎用索引へ同期されることを
+// 検証します（多値・trim・素の dl の除外）。専用テーブル page_tags は 2026-08-30 に
+// 吸収済みで、タグの行き先はこの索引だけです。
 func TestPageTagsFromDL(t *testing.T) {
 	setupSaveTest(t)
 
@@ -22,7 +23,6 @@ func TestPageTagsFromDL(t *testing.T) {
 	body := `<h1>新形式タグ</h1>` +
 		`<dl data-type="tags">` +
 		`<dt>担当者</dt><dd> 紀平 </dd><dd>田中</dd>` + // 多値＝複数 dd・値は trim
-		`<dt>親ページID</dt><dd>000000</dd>` + // 遺物の名前は新形式でも除外
 		`<dt>希望納期</dt><dd>2026-07-10</dd>` +
 		`</dl>` +
 		`<dl><dt>用語</dt><dd>説明</dd></dl>` // data-type 無しの素の dl は対象外
@@ -31,9 +31,9 @@ func TestPageTagsFromDL(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	rows, err := database.DB.Query(`SELECT name, value FROM page_tags WHERE page_id = ? ORDER BY name, value`, 40)
+	rows, err := database.DB.Query(`SELECT field, value FROM vocab_index WHERE page_id = ? AND data_type = 'tags' ORDER BY field, value`, 40)
 	if err != nil {
-		t.Fatalf("page_tagsのクエリでエラー: %v", err)
+		t.Fatalf("vocab_indexのクエリでエラー: %v", err)
 	}
 	defer rows.Close()
 	var got []string
@@ -46,7 +46,7 @@ func TestPageTagsFromDL(t *testing.T) {
 	sort.Strings(got)
 	sort.Strings(want)
 	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("page_tags の内容が期待と異なります:\ngot  %v\nwant %v", got, want)
+		t.Errorf("可変タグの索引の内容が期待と異なります:\ngot  %v\nwant %v", got, want)
 	}
 }
 

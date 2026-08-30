@@ -161,8 +161,8 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	</html>
 	`
 
-	// 3. コア情報のパーステスト（タイトルのみ。タグの抽出は plugin_page_tags.go が担うため、
-	//    タグは下の page_tags の件数確認で検証する）
+	// 3. コア情報のパーステスト（タイトルのみ。タグは②汎用索引が拾うため、
+	//    下の vocab_index の件数確認で検証する）
 	root, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		t.Fatalf("HTMLパースエラー: %v", err)
@@ -188,14 +188,14 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 		t.Errorf("データベースのページタイトルが違います: %s", title)
 	}
 
-	// page_tags が2件同期されていることを確認
+	// 可変タグが2件索引されていることを確認（行き先は②汎用索引）
 	var tagCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM page_tags WHERE page_id = ?", pageID).Scan(&tagCount)
+	err = db.QueryRow("SELECT COUNT(*) FROM vocab_index WHERE page_id = ? AND data_type = 'tags'", pageID).Scan(&tagCount)
 	if err != nil {
-		t.Fatalf("page_tagsのクエリでエラー: %v", err)
+		t.Fatalf("vocab_indexのクエリでエラー: %v", err)
 	}
 	if tagCount != 2 {
-		t.Errorf("page_tagsの件数が違います: %d", tagCount)
+		t.Errorf("可変タグの件数が違います: %d", tagCount)
 	}
 
 	// client_orders / client_order_items の確認
@@ -282,11 +282,9 @@ func TestSidecarAttributesSync(t *testing.T) {
 	if !parent.Valid || parent.Int64 != 1 {
 		t.Errorf("HTMLの親IDタグがサイドカーの親を上書きしました: %+v", parent)
 	}
-	var tagCount int
-	db.QueryRow(`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = '親ページID'`, "000002").Scan(&tagCount)
-	if tagCount != 0 {
-		t.Errorf("親ページIDタグがユーザータグとして混入しています: %d", tagCount)
-	}
+	// 「親ページID」タグは索引には載る（普通のタグ・不活性）が、**親の決定には
+	// 使われない**——それがこのテストの本旨（サイドカーが正本）。旧 page_tags の
+	// 取り込みガードは吸収時に撤去した（page_tags_test.go 参照）。
 }
 
 // TestSidecarMutators は page.BumpUpdatedAt / page.SetSidecarParent が、所有権・作成情報を

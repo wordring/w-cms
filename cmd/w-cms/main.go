@@ -62,7 +62,6 @@ func main() {
 	}
 
 	// データベースを初期化（コアテーブル: pages / page_perms）
-	// page_tags は plugin_page_tags.go 側のテーブルでコアではない。
 	if err := database.InitDB(); err != nil {
 		log.Fatalf("DB初期化エラー: %v", err)
 	}

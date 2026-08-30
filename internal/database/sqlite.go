@@ -61,8 +61,8 @@ func InitDB() error {
 // これらは外部キーの参照先となるため、プラグインのテーブルより先に作成する必要があります。
 //
 // 本文の形式（data-type）に対応するテーブルはここには置きません。
-// dl[data-type="tags"] → page_tags も「語彙の解釈はプラグインが持つ」方針に従い
-// plugin_page_tags.go が持ちます。
+// dl[data-type="tags"]（可変タグ）も専用テーブルを持ちません——②汎用索引
+// （cms/vocab_index.go）が他の形式と同じ縦持ちで索引します（2026-08-30・D-1）。
 var CoreTables = []string{
 	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）。
 	//    parent_id / created_at / created_by / updated_at はサイドカー
@@ -100,7 +100,7 @@ var coreMigrations = []string{
 	`ALTER TABLE page_perms ADD COLUMN public INTEGER NOT NULL DEFAULT 0`,
 }
 
-// CreateCoreTables はコアテーブル（pages / page_tags）を作成します。
+// CreateCoreTables はコアテーブル（pages / page_perms）を作成します。
 // 本番では InitDB から、テストでは各テストのセットアップから呼び出します。
 func CreateCoreTables(db *sql.DB) error {
 	for _, q := range CoreTables {
