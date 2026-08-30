@@ -2,6 +2,7 @@ package cms
 
 import (
 	"database/sql"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,7 +44,7 @@ func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
 		if n.Data == "table" {
 			err = syncVocabTable(tx, pageID, dataType, no, def, n)
 		} else {
-			err = syncVocabDL(tx, pageID, dataType, no, def, n)
+			err = syncVocabDL(tx, pageID, dataType, no, Attr(n, "data-id"), def, n)
 		}
 		if err != nil {
 			firstErr = err
@@ -110,10 +111,17 @@ var equivBodies = []struct {
 // TestVocabIndexObserverMatchesLegacyWalk は、②汎用索引の観察係が旧走査と
 // **同じ行**を書くことを検証します。
 //
-// 1点だけ意図的に違うのはクロームの扱いです——旧走査は `.vocab-chrome` の中も
-// 索引していました（各自が除外を覚える方式だったので、②は覚えていなかった）。
-// 新方式では配送係が歩かないので索引されません。**これは修正であって退行ではない**
-// ので、その本文だけ期待を分けて確かめます。
+// 意図的に違うのは2点で、**どちらも修正であって退行ではない**ので、
+// その本文だけ期待を分けて確かめます。
+//
+//  1. クロームの扱い——旧走査は `.vocab-chrome` の中も索引していました
+//     （各自が除外を覚える方式だったので、②は覚えていなかった）。新方式では
+//     配送係が歩かないので索引されません。
+//  2. 業務文書ブロックのヘッダ——旧走査は data-type のある table / dl しか見ず、
+//     ヘッダの素の <dl> を落としていました。硬いドメイン表があったころは各
+//     プラグインが自分で読んでいたので気づきませんでしたが、テーブルを廃して
+//     索引へ一本化する（D-1）と発注元・発注日がどこにも残りません。
+//     新方式は section の側から拾います（TestSectionHeaderIsIndexed）。
 func TestVocabIndexObserverMatchesLegacyWalk(t *testing.T) {
 	db := setupSaveTest(t)
 
@@ -166,6 +174,20 @@ func TestVocabIndexObserverMatchesLegacyWalk(t *testing.T) {
 				}
 				return
 			}
+			if strings.Contains(c.name, "受発注") {
+				// 新方式はヘッダ（素の dl）も拾うので、旧走査の行は新方式の
+				// 部分集合になる。**旧に無い行が増えている**ことを確かめる。
+				for _, row := range legacy {
+					if !slices.Contains(modern, row) {
+						t.Errorf("旧走査の行が新方式で消えました: %s", row)
+					}
+				}
+				if len(modern) <= len(legacy) {
+					t.Errorf("ヘッダが索引されていません:\n旧:\n%s\n新:\n%s",
+						strings.Join(legacy, "\n"), strings.Join(modern, "\n"))
+				}
+				return
+			}
 			if strings.Join(legacy, "\n") != strings.Join(modern, "\n") {
 				t.Errorf("索引行が一致しません:\n旧:\n%s\n新:\n%s",
 					strings.Join(legacy, "\n"), strings.Join(modern, "\n"))
@@ -204,9 +226,9 @@ func TestObserversSeeNestedItemsTable(t *testing.T) {
 		t.Error("明細表が②汎用索引に載っていません（受注の観察係が担当したせいで消えた）")
 	}
 
-	// 受注そのものも③計算テーブルへ入っていること。
+	// 受注ヘッダ（素の dl）も索引へ入っていること。
 	var orders int
-	db.QueryRow(`SELECT COUNT(*) FROM client_orders WHERE page_id = ?`, 910).Scan(&orders)
+	db.QueryRow(`SELECT COUNT(DISTINCT block_no) FROM vocab_index WHERE page_id = ? AND data_type = ?`, 910, "client-order").Scan(&orders)
 	if orders != 1 {
 		t.Errorf("受注ヘッダが入っていません: %d", orders)
 	}

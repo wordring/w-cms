@@ -13,7 +13,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// 手配集計（RequiredMaterials）は part_materials を part_id だけで引くため、
+// 手配集計（RequiredMaterials）は部材の定義を部品番号だけで引くため、
 // 「読めないページで定義された部材」まで集計に混ぜてしまっていた。
 // 集計対象ページの read があれば通ってしまうので、
 //   - 匿名は実効公開ページの受注ページを開くだけで、非公開ページ由来の部材名・仕入先が見える

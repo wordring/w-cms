@@ -6,7 +6,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
 
 // 発注書番号（order_no）はページ内の識別子であって、サイト全体の主キーではありません。
@@ -31,18 +30,13 @@ func clientOrderHTML(orderNo, client, itemID string) string {
 		`</tbody></table></section>`
 }
 
-// countOrders は指定ページの受注ヘッダ・明細の行数を返します。
+// countOrdersOf は指定ページの受注ヘッダ・明細の件数を索引から返します。
+// ヘッダは <section data-type="client-order"> のブロック数、明細は
+// <table data-type="client-order-items"> のデータ行数です。
 func countOrdersOf(t *testing.T, pageID int) (headers, items int) {
 	t.Helper()
-	if err := database.DB.QueryRow(
-		`SELECT COUNT(*) FROM client_orders WHERE page_id = ?`, pageID).Scan(&headers); err != nil {
-		t.Fatalf("client_orders を数えられません: %v", err)
-	}
-	if err := database.DB.QueryRow(
-		`SELECT COUNT(*) FROM client_order_items WHERE page_id = ?`, pageID).Scan(&items); err != nil {
-		t.Fatalf("client_order_items を数えられません: %v", err)
-	}
-	return
+	return countVocabBlocks(t, pageID, "client-order"),
+		countVocabDataRows(t, pageID, "client-order-items")
 }
 
 // seedOrderPages は受注ページ2枚分のサイドカーとDB行を用意します。
@@ -160,14 +154,18 @@ func TestRequiredMaterialsDoesNotMixPages(t *testing.T) {
 func TestDriftedSchemaTablesDetectsOldSchema(t *testing.T) {
 	db := freshDB(t)
 
-	// 旧定義（order_no が横断UNIQUE・明細に page_id 無し）で作る
-	if _, err := db.Exec(`CREATE TABLE client_orders (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		order_no TEXT UNIQUE,
-		client_name TEXT,
-		pdf_path TEXT,
+	// 旧定義（norm_num を持たないころの汎用索引）で作る。
+	// 硬いドメイン表はもう無いので（D-1）、いま宣言されているテーブルで試す。
+	if _, err := db.Exec(`CREATE TABLE vocab_index (
 		page_id INTEGER,
-		ordered_at DATE
+		data_type TEXT,
+		block_no INTEGER,
+		block_id TEXT,
+		row_no INTEGER,
+		field TEXT,
+		value TEXT,
+		norm_value TEXT,
+		FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 	);`); err != nil {
 		t.Fatalf("旧テーブル作成エラー: %v", err)
 	}
@@ -175,16 +173,16 @@ func TestDriftedSchemaTablesDetectsOldSchema(t *testing.T) {
 	drifted := DriftedSchemaTables(db)
 	found := false
 	for _, name := range drifted {
-		if name == "client_orders" {
+		if name == "vocab_index" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("旧定義の client_orders を検出できません: %v", drifted)
+		t.Errorf("旧定義の vocab_index を検出できません: %v", drifted)
 	}
 
 	// 現在の宣言で作り直したら検出しないこと（毎起動で再構築が走らない）
-	if _, err := db.Exec(`DROP TABLE client_orders`); err != nil {
+	if _, err := db.Exec(`DROP TABLE vocab_index`); err != nil {
 		t.Fatalf("DROPエラー: %v", err)
 	}
 	if err := ApplySchema(db); err != nil {

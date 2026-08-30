@@ -6,24 +6,21 @@ import (
 	"sort"
 	"strconv"
 
-	"golang.org/x/net/html"
-
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
 // ─────────────────────────────────────────────────────────────────────────
-// プラグイン例（特殊な値の注入 ＋ 集計API付き）: 部品の構成部材（BOM）
+// プラグイン例（集計のみ）: 部品の構成部材（BOM）の手配計算
 //
-//   <table data-type="part-materials"> の行（③計算形式。見出しから機械キー
-//   item-name / cost / supplier-name / quantity へ解決。語彙モデル §8.1）
-//   部品番号はページ横断メタ（可変タグ）から TagValue で取得
+// **このプラグインはもうテーブルを持ちません**（D-1・2026-08-31）。部材表
+// <table data-type="part-materials"> の中身は汎用索引 vocab_index が受け持ち、
+// ここに残るのは③計算——GET /api/required-materials（部材手配計算API）と、
+// 計算ビューのサーバー事前描画が共用する RequiredMaterials だけです。
 //
-//   → part_materials（part_id はページの「部品番号」タグから全行に注入）
-//
-// さらに RouteProvider を実装し、GET /api/required-materials（部材手配計算API）を
-// 提供します（Tier 2: 集計ロジックはコードプラグインとして持つ）。
+// 「語彙とプラグインは運用者のもの」（要件定義書 §1.1・§4.5）の形に近づいた、
+// というのがこの引き算の意味です。コアのスキーマから板金部の語彙が消えました。
 // ─────────────────────────────────────────────────────────────────────────
 
 func init() {
@@ -34,87 +31,13 @@ type materialsPlugin struct{}
 
 func (materialsPlugin) Name() string { return "materials" }
 
-func (materialsPlugin) Schema() []string {
-	return []string{
-		`CREATE TABLE IF NOT EXISTS part_materials (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			part_id TEXT,
-			material_name TEXT,
-			cost INTEGER,
-			supplier_name TEXT,
-			quantity INTEGER,
-			page_id INTEGER,
-			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-		);`,
-	}
-}
+// Schema / Tables は空です。専用テーブルを持たない③計算だけのプラグインで、
+// 読む先は汎用索引（vocab_index プラグインが所有）です。
+func (materialsPlugin) Schema() []string { return nil }
 
-func (materialsPlugin) Tables() []string {
-	return []string{"part_materials"}
-}
+func (materialsPlugin) Tables() []string { return nil }
 
-// Triggers は部材表だけを担当することを宣言します。
-func (materialsPlugin) Triggers() []string { return []string{"part-materials"} }
-
-// OnPageStart は当該ページ分を洗い流します。
-func (materialsPlugin) OnPageStart(ctx *ObserveContext) error {
-	_, err := ctx.Tx.Exec(`DELETE FROM part_materials WHERE page_id = ?`, ctx.PageID)
-	return err
-}
-
-// OnElement は1つの部材表を読み、行を書き込みます。
-func (materialsPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
-	if el.Data != "table" {
-		return true, nil
-	}
-	// part_id は部材行自身の値ではなく、ページ全体の「部品番号」タグ（可変タグ）から
-	// 取得し、ページ内のすべての部材行に一括で付与する。**文書順では拾えない**
-	// （タグが表より後ろにあってもよい）ので、コアが用意する ctx.Tag から引く。
-	// 鍵の名前はレジストリ宣言（part-materials の RequiresTag）が持つ——ここへ直書き
-	// すると、見出しを改名したときに告知する側と読む側がずれる（設計総点検⑤）。
-	materialsDef, _ := VocabDefByType("part-materials")
-	partID := ""
-	if ctx.Tag != nil {
-		partID = ctx.Tag(materialsDef.RequiresTag)
-	}
-
-	insert := func(itemName string, cost int, supplierName string, quantity int) error {
-		_, err := ctx.Tx.Exec(`
-			INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, partID, itemName, cost, supplierName, quantity, ctx.PageID)
-		return err
-	}
-	return false, syncMaterialsTable(el, insert)
-}
-
-// syncMaterialsTable は <table data-type="part-materials"> のデータ行を insert へ流し込みます。
-//
-// 列の対応は文書自身の見出し行から解決する（語彙モデル §5.1）: 鍵は見出しの表示文字で、
-// レジストリ宣言（part-materials の Label）を通じて機械キーへ正規化される。
-// 見出しを「単価（税抜）」等へ改名すると解決できなくなり、その列は読まれない
-// （保存時に UnresolvedVocabFields が告知する）。
-// 数値（cost / quantity）は語彙の正規化（¥・桁区切り・全角の吸収）を通して読む。
-// quantity の空セルは 1 として扱う（旧 <m-material> の既定を引き継いだ値）。
-func syncMaterialsTable(table *html.Node, insert func(string, int, string, int) error) error {
-	def, _ := VocabDefByType("part-materials")
-	// 見出し行から機械キーへの解決は共有部品（VocabTableRows）に任せる。
-	// ここには同じ処理の逐語コピーがあったが、鍵の決め方が変わったときに
-	// **片方だけ直る**危険があるので寄せた（受発注の明細も同じ関数を通る）。
-	for _, values := range VocabTableRows(table, def) {
-		quantity := 1 // 空セルの既定（旧 Quantity() と同じ）
-		if v := values["quantity"]; v != "" {
-			quantity = vocabNumber(v)
-		}
-		if err := insert(values["item-name"], vocabNumber(values["cost"]), values["supplier-name"], quantity); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// vocabNumber はセルの数値を語彙の正規化（¥8,000 → 8000 等）を通して整数で返します。
-// 解釈できなければ 0（旧 AtoiSafe と同じ安全側）。
+// vocabNumber は表の値を数として読みます（¥・桁区切り・全角を吸収）。
 func vocabNumber(raw string) int {
 	if norm, ok := NormalizeValue(ColNumber, raw); ok {
 		return AtoiSafe(norm)
