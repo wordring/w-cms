@@ -124,11 +124,6 @@ func (a observerAdapter) OnElement(ctx *ObserveContext, el *html.Node) (bool, er
 	return descend, nil
 }
 
-// Plugins は登録済みの全プラグインを返します。
-func Plugins() []Plugin {
-	return registry
-}
-
 // ApplySchema は登録済みの全プラグインのテーブルを作成します。
 // 本番では database.InitDB() でコアテーブルを作成した後、main から呼び出します。
 func ApplySchema(db *sql.DB) error {
@@ -255,20 +250,13 @@ func TagValue(root *html.Node, tagName string) string {
 // dlTagValue は <dl data-type="tags"> の中から名前 tagName の最初の値を返します。
 // 鍵は dt の表示文字（自由語）です（②汎用索引と同じ規則）。
 func dlTagValue(dl *html.Node, tagName string) string {
-	currentKey := ""
 	found := ""
-	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true}, func(n *html.Node) {
-		if found != "" {
-			return
+	eachDLPair(dl, false, func(key string, dd *html.Node) bool {
+		if key == tagName {
+			found = strings.TrimSpace(nodeText(dd))
+			return false
 		}
-		switch n.Data {
-		case "dt":
-			currentKey = strings.TrimSpace(nodeText(n))
-		case "dd":
-			if currentKey == tagName {
-				found = strings.TrimSpace(nodeText(n))
-			}
-		}
+		return true
 	})
 	return found
 }

@@ -159,12 +159,12 @@ var vocabRegistry = []VocabDef{
 		},
 	},
 	{
-		Type:    "client-order-items",
+		Type:        "client-order-items",
 		DisplayName: "受注明細",
 		Category:    "業務",
 		Icon:        "📩",
-		Element: "table",
-		Hidden:  true,
+		Element:     "table",
+		Hidden:      true,
 		Columns: []VocabColumn{
 			{Field: "item-id", Label: "品番", Type: ColText},
 			{Field: "item-name", Label: "品名", Type: ColText},
@@ -188,12 +188,12 @@ var vocabRegistry = []VocabDef{
 		},
 	},
 	{
-		Type:    "our-order-items",
+		Type:        "our-order-items",
 		DisplayName: "発注明細",
 		Category:    "業務",
 		Icon:        "📤",
-		Element: "table",
-		Hidden:  true,
+		Element:     "table",
+		Hidden:      true,
 		Columns: []VocabColumn{
 			{Field: "item-name", Label: "品名", Type: ColText},
 			{Field: "cost", Label: "単価", Type: ColNumber},
@@ -592,14 +592,9 @@ func dlHeadingKeys(dl *html.Node) []string {
 		return nil
 	}
 	var out []string
-	currentKey := ""
-	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true, "section": true}, func(n *html.Node) {
-		switch n.Data {
-		case "dt":
-			currentKey = strings.TrimSpace(nodeText(n))
-		case "dd":
-			out = append(out, currentKey)
-		}
+	eachDLPair(dl, true, func(key string, dd *html.Node) bool {
+		out = append(out, key)
+		return true
 	})
 	return out
 }

@@ -2,6 +2,8 @@ package cms
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -15,6 +17,20 @@ import (
 // 拡張子は名乗りにすぎないので中身のマジックナンバーで判定し、EXIF は保存時に
 // 除去する（カメラ写真の GPS が公開サイトに載ると撮影者の所在が漏れる）。
 // SVG はスクリプトを内包できるので、入口でも拒否条件を掛ける（本体の守りは配信側）。
+
+// pngChunk は型とデータから PNG のチャンク（長さ・型・データ・CRC）を組み立てます。
+// テストが素材を作るのに使います（CRC-32/ISO-HDLC は crc32.ChecksumIEEE と同じもの）。
+func pngChunk(typ string, data []byte) []byte {
+	buf := make([]byte, 0, 12+len(data))
+	var l [4]byte
+	binary.BigEndian.PutUint32(l[:], uint32(len(data)))
+	buf = append(buf, l[:]...)
+	buf = append(buf, typ...)
+	buf = append(buf, data...)
+	var c [4]byte
+	binary.BigEndian.PutUint32(c[:], crc32.ChecksumIEEE(append([]byte(typ), data...)))
+	return append(buf, c[:]...)
+}
 
 // pngBytes は w×h の PNG を作ります。
 func pngBytes(t *testing.T, w, h int) []byte {
@@ -113,12 +129,12 @@ func TestValidateSVG(t *testing.T) {
 	}
 
 	bad := map[string]string{
-		"script":       `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
+		"script":        `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
 		"foreignObject": `<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><b>x</b></foreignObject></svg>`,
-		"onイベント":       `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect/></svg>`,
+		"onイベント":        `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect/></svg>`,
 		"javascriptURL": `<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><rect/></a></svg>`,
-		"ルートがsvgでない": `<html><body/></html>`,
-		"整形式でない":      `<svg><rect>`,
+		"ルートがsvgでない":    `<html><body/></html>`,
+		"整形式でない":        `<svg><rect>`,
 	}
 	for name, src := range bad {
 		t.Run(name, func(t *testing.T) {

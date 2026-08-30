@@ -352,41 +352,6 @@ func stripPNGChunks(content []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// pngChunk は型とデータから PNG のチャンク（長さ・型・データ・CRC）を組み立てます。
-// テストが素材を作るのに使います。
-func pngChunk(typ string, data []byte) []byte {
-	buf := make([]byte, 0, 12+len(data))
-	var l [4]byte
-	binary.BigEndian.PutUint32(l[:], uint32(len(data)))
-	buf = append(buf, l[:]...)
-	buf = append(buf, typ...)
-	buf = append(buf, data...)
-	var c [4]byte
-	binary.BigEndian.PutUint32(c[:], pngCRC(append([]byte(typ), data...)))
-	return append(buf, c[:]...)
-}
-
-// pngCRC は PNG のチャンクCRC（CRC-32/ISO-HDLC）を返します。
-func pngCRC(b []byte) uint32 {
-	var table [256]uint32
-	for n := 0; n < 256; n++ {
-		c := uint32(n)
-		for k := 0; k < 8; k++ {
-			if c&1 != 0 {
-				c = 0xEDB88320 ^ (c >> 1)
-			} else {
-				c >>= 1
-			}
-		}
-		table[n] = c
-	}
-	crc := uint32(0xFFFFFFFF)
-	for _, x := range b {
-		crc = table[(crc^uint32(x))&0xFF] ^ (crc >> 8)
-	}
-	return crc ^ 0xFFFFFFFF
-}
-
 // webpMetaChunks は落とす WebP のチャンクです（拡張形式 VP8X のみが持ちうる）。
 var webpMetaChunks = map[string]bool{"EXIF": true, "XMP ": true}
 

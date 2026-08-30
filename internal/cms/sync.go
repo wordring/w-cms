@@ -31,8 +31,8 @@ func SyncIndex(id string, htmlContent string) error {
 		return err
 	}
 
-	// 手順2: HTML本文（内容）からタイトル・タグを抽出する
-	core := ParseCore(root)
+	// 手順2: HTML本文（内容）からタイトルを抽出する
+	title := PageTitle(root)
 
 	// 手順3: 物理ファイルの保存先パスを構築
 	filePath := filepath.Join(page.GetPageDir(id), id+".html")
@@ -91,7 +91,7 @@ func SyncIndex(id string, htmlContent string) error {
 			created_at = COALESCE(excluded.created_at, pages.created_at),
 			created_by = COALESCE(excluded.created_by, pages.created_by),
 			updated_at = COALESCE(excluded.updated_at, CURRENT_TIMESTAMP)
-	`, pageIDInt, core.Title, parentIDInt, filePath, createdAt, createdBy, updatedAt); err != nil {
+	`, pageIDInt, title, parentIDInt, filePath, createdAt, createdBy, updatedAt); err != nil {
 		return err
 	}
 

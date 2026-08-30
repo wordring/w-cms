@@ -25,16 +25,6 @@ import (
 // ErrBlockNotFound は指定IDのブロックが本文に1つも無い場合に返されます。
 var ErrBlockNotFound = errors.New("指定されたブロックが見つかりません")
 
-// attrValue は属性値を返します（無ければ空文字列）。
-func attrValue(n *html.Node, key string) string {
-	for _, a := range n.Attr {
-		if strings.EqualFold(a.Key, key) {
-			return a.Val
-		}
-	}
-	return ""
-}
-
 // trimEdgeWhitespace はノード列の前後にある空白だけのテキストノードを取り除きます。
 func trimEdgeWhitespace(nodes []*html.Node) []*html.Node {
 	isBlank := func(n *html.Node) bool {
@@ -73,7 +63,7 @@ func ReplaceBlock(pageHTML, blockID, blockHTML string) (string, error) {
 	// 親ブロックごと送られてくるため、ここで探すのは最上位だけでよい）。
 	idx := -1
 	for i, n := range nodes {
-		if n.Type != html.ElementNode || attrValue(n, htmldoc.BlockIDAttr) != blockID {
+		if n.Type != html.ElementNode || Attr(n, htmldoc.BlockIDAttr) != blockID {
 			continue
 		}
 		if idx >= 0 {

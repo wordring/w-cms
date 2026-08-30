@@ -6,37 +6,19 @@ import (
 	"golang.org/x/net/html"
 )
 
-// CorePage はHTML本文（＝ページの内容）から抽出される基本インデックス情報です。
-// ページの属性（親ページID・作成/更新情報・権限）はHTMLではなくサイドカーが正本で、
-// ここには含めません。マーカー付き標準HTML（`data-type` 付きの table/dl/section）
-// 由来のデータは、各プラグインの Sync と汎用索引が抽出します。
-type CorePage struct {
-	Title string
-}
-
-// ParseCore はHTMLノード木から、ページ内容由来の基本情報（タイトル）を抽出します。
-// 親ページID等の属性はサイドカー（<id>.meta.json）が正本のため、ここでは扱いません。
-func ParseCore(root *html.Node) CorePage {
-	core := CorePage{Title: "No Title"}
-
+// PageTitle はHTML本文から表題（最初の <h1> の表示文字）を返します。無ければ "No Title"。
+//
+// ページ内容から抽出する基本情報はこれだけです——親ページID・作成/更新情報・権限は
+// サイドカーが正本（page パッケージ）、マーカー付き標準HTML（data-type 付きの
+// table/dl/section）由来のデータは各プラグインと汎用索引が抽出します。
+// かつては CorePage 構造体で複数フィールドを運んでいましたが、正本の分担が
+// 進んでタイトルだけが残ったため関数1つに畳みました（2026-08-30）。
+func PageTitle(root *html.Node) string {
+	title := "No Title"
 	WalkElements(root, func(n *html.Node) {
-		// 最初の <h1> をタイトルとして採用する
-		if n.Data == "h1" && core.Title == "No Title" {
-			core.Title = extractText(n)
+		if n.Data == "h1" && title == "No Title" {
+			title = strings.TrimSpace(nodeText(n))
 		}
 	})
-
-	return core
-}
-
-// extractText は指定されたHTMLノード配下にあるテキストをすべて抽出し、結合して返します。
-func extractText(n *html.Node) string {
-	if n.Type == html.TextNode {
-		return n.Data
-	}
-	var result string
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		result += extractText(c)
-	}
-	return strings.TrimSpace(result)
+	return title
 }

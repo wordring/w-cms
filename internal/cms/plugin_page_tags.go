@@ -89,19 +89,10 @@ func (pageTagsPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error
 // syncTagsDL は <dl data-type="tags"> の dt/dd を insert へ流し込みます。
 // 鍵は dt の表示文字（trim後）。多値は dt の繰り返し／複数 dd で表す（語彙モデル §5.3）。
 func syncTagsDL(dl *html.Node, insert func(name, value string) error) error {
-	currentKey := ""
 	var firstErr error
-	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true}, func(n *html.Node) {
-		if firstErr != nil {
-			return
-		}
-		switch n.Data {
-		case "dt":
-			currentKey = strings.TrimSpace(nodeText(n))
-		case "dd":
-			// 鍵は直前の dt の表示文字（自由語）。
-			firstErr = insert(currentKey, strings.TrimSpace(nodeText(n)))
-		}
+	eachDLPair(dl, false, func(key string, dd *html.Node) bool {
+		firstErr = insert(key, strings.TrimSpace(nodeText(dd)))
+		return firstErr == nil
 	})
 	return firstErr
 }

@@ -32,6 +32,14 @@ func parseFrag(t *testing.T, s string) []*html.Node {
 }
 
 // collectFunc は訪問した要素の data-type を順に記録するハンドラを作ります。
+// ObserveHandlerFunc は関数を ObserveHandler にします（テスト専用のアダプタ。
+// 本番の観察係は Register（plugin.go）経由でしか登録されないため、ここに置く）。
+type ObserveHandlerFunc func(ctx *ObserveContext, el *html.Node) (bool, error)
+
+func (f ObserveHandlerFunc) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	return f(ctx, el)
+}
+
 func collectFunc(seen *[]string, descend bool) ObserveHandlerFunc {
 	return func(ctx *ObserveContext, el *html.Node) (bool, error) {
 		*seen = append(*seen, Attr(el, "data-type"))
@@ -191,24 +199,6 @@ func TestWalkAncestors(t *testing.T) {
 	}
 	if len(got) == 0 || got[len(got)-1] != "section[file]" {
 		t.Errorf("直近の祖先が辿れません: %v", got)
-	}
-}
-
-// TestWalkFastPath は、引き金が本文に1つも無ければ木を歩かないことを検証します。
-func TestWalkFastPath(t *testing.T) {
-	reg := newWalkRegistry()
-	reg.observe("client-order", collectFunc(&[]string{}, true))
-
-	if reg.mayContainTrigger(`<h1>題</h1><p>ただの文章</p>`) {
-		t.Error("引き金が無いのに歩こうとしています")
-	}
-	if !reg.mayContainTrigger(`<section data-type="client-order"></section>`) {
-		t.Error("引き金があるのに早道で落としています")
-	}
-	// "*" の観察係が居るときは、data-type が1つでもあれば歩く。
-	reg.observe("*", collectFunc(&[]string{}, true))
-	if !reg.mayContainTrigger(`<dl data-type="なぞ"><dt>a</dt></dl>`) {
-		t.Error("*の担当が居るのに早道で落としています")
 	}
 }
 

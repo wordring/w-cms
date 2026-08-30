@@ -138,18 +138,13 @@ func (f *templateFreshener) freshenDL(dl *html.Node, def VocabDef) {
 	if dl == nil {
 		return
 	}
-	currentKey := ""
-	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true, "section": true}, func(n *html.Node) {
-		switch n.Data {
-		case "dt":
-			currentKey = strings.TrimSpace(nodeText(n))
-		case "dd":
-			col, ok := def.columnFor(currentKey)
-			if !ok {
-				col = VocabColumn{Label: currentKey, Type: InferColumnType(currentKey)}
-			}
-			f.fillCell(n, col)
+	eachDLPair(dl, true, func(key string, dd *html.Node) bool {
+		col, ok := def.columnFor(key)
+		if !ok {
+			col = VocabColumn{Label: key, Type: InferColumnType(key)}
 		}
+		f.fillCell(dd, col)
+		return true
 	})
 }
 

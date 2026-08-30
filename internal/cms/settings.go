@@ -71,16 +71,6 @@ func LoadSettings() error {
 	return nil
 }
 
-// CurrentSettings は読み込み済みの設定を返します（未読込なら既定値）。
-func CurrentSettings() Settings {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return *defaultSettings()
-	}
-	return *settings
-}
-
 // readOrCreateSettings は設定ファイルを読みます。無ければ既定値で作ります。
 func readOrCreateSettings(path string) (*Settings, error) {
 	raw, err := os.ReadFile(path)
