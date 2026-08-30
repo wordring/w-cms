@@ -110,22 +110,6 @@ func TestPartMaterialsFromTable(t *testing.T) {
 
 // ── ヘルパ ───────────────────────────────────────────────────────────
 
-func queryPageTags(t *testing.T, pageID int) []string {
-	t.Helper()
-	rows, err := database.DB.Query(`SELECT name, value FROM page_tags WHERE page_id = ? ORDER BY name, value`, pageID)
-	if err != nil {
-		t.Fatalf("page_tagsのクエリでエラー: %v", err)
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var n, v string
-		rows.Scan(&n, &v)
-		out = append(out, n+"="+v)
-	}
-	return out
-}
-
 func queryPartMaterials(t *testing.T, pageID int) []string {
 	t.Helper()
 	rows, err := database.DB.Query(

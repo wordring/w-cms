@@ -69,13 +69,6 @@ func (s *shellFile) load() (string, error) {
 	return s.body, nil
 }
 
-// reset はキャッシュを空にします（テストが殻を差し替えたあとに使う）。
-func (s *shellFile) reset() {
-	s.mu.Lock()
-	s.body, s.modTime = "", 0
-	s.mu.Unlock()
-}
-
 // shellCache は編集用の殻です。
 var shellCache = &shellFile{path: shellPath}
 
