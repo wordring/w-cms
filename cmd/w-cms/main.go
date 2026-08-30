@@ -3,8 +3,9 @@
 //
 //	WCMS_SECURE_COOKIES=0 go run ./cmd/w-cms   # ローカル検証（既定 :8080）
 //
-// 起動時にやることは4つ:
+// 起動時にやることは5つ:
 //
+//	0. 設定ファイル data/settings.json を読む（無ければ既定値で作る）
 //	1. cms.db と auth.db を開き、コアテーブルとプラグインのテーブルを作る
 //	2. プラグインのスキーマのずれを検出したら派生索引を作り直す（DriftedSchemaTables）
 //	3. 中断した索引再構築があればやり直す（RebuildIfNeeded）
@@ -53,6 +54,13 @@ func (n noDirListing) Open(name string) (http.File, error) {
 
 // main はアプリケーションの起動とルーティングの設定を行います。
 func main() {
+	// 設定ファイル（data/settings.json）を読む。**DBより先**に読むのは、この後の
+	// 再構築が語→型の推論辞書を使うため。無ければ既定値で作られ、壊れていれば
+	// ここで止まる（既定値で黙って上書きすると運用者が足した語が消えるため）。
+	if err := cms.LoadSettings(); err != nil {
+		log.Fatalf("設定の読み込みエラー: %v", err)
+	}
+
 	// データベースを初期化（コアテーブル: pages / page_perms）
 	// page_tags は plugin_page_tags.go 側のテーブルでコアではない。
 	if err := database.InitDB(); err != nil {

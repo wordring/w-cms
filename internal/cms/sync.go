@@ -164,7 +164,14 @@ func SyncIndex(id string, htmlContent string) error {
 // 削除せず、接続を開いたまま実行することで、Windowsでのファイルロックや
 // リビルド中の他リクエストとの競合を避けています。処理は冪等です。
 func RebuildDatabase() error {
-	// 0. 「これから再構築する」印を残す。途中で止まったら次の起動でやり直すため
+	// 0. 設定を読み直す。**語→型の推論辞書がここに入っている**ので、先に読まないと
+	//    「辞書へ語を足してDB再構築」（ユーザー決定 2026-08-30）が効かない
+	//    ——再起動なしで反映されるのは、この1行のおかげ。
+	if err := LoadSettings(); err != nil {
+		return err
+	}
+
+	// 0b. 「これから再構築する」印を残す。途中で止まったら次の起動でやり直すため
 	//    （印が無いと、途中まで入ったDBは再構築済みと見分けが付かない）。
 	started := time.Now()
 	if err := markRebuildStarted(); err != nil {
