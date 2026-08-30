@@ -305,8 +305,14 @@ var kebabCaseRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // 辞書の初期内容とパース規則は未決事項（同書 §10）——現状はサンプルの種。
 // ─────────────────────────────────────────────────────────────────────────
 
-// typeInference は見出し語（trim後の完全一致）から列型を推論する辞書です。
-var typeInference = map[string]ColumnType{
+// defaultTypeInference は見出し語（trim後の完全一致）から列型を推論する辞書の**既定値**です。
+//
+// **実際に効くのは data/settings.json の `type_inference`**（settings.go）で、このマップは
+// ファイルが無いときの初期内容として書き出されます。運用者が語を足すのはファイル側で、
+// **DB再構築で読み直されます**（ユーザー決定 2026-08-30:「運用中に増やしてDB再構築します」）。
+// ここに並ぶのは板金部の語彙——**同梱の既定セットであって、コアの語彙ではありません**
+// （「語彙とプラグインは運用者のもの」——要件定義書 §4.5）。
+var defaultTypeInference = map[string]ColumnType{
 	"金額": ColNumber, "単価": ColNumber, "価格": ColNumber, "数量": ColNumber,
 	"納期": ColDate, "日付": ColDate, "検査日": ColDate, "発注日": ColDate, "納品日": ColDate,
 	"写真": ColImage, "画像": ColImage,
@@ -314,7 +320,7 @@ var typeInference = map[string]ColumnType{
 
 // InferColumnType は見出し語から列型を推論します。辞書に無ければ text です。
 func InferColumnType(label string) ColumnType {
-	if t, ok := typeInference[strings.TrimSpace(label)]; ok {
+	if t, ok := activeTypeInference()[strings.TrimSpace(label)]; ok {
 		return t
 	}
 	return ColText
@@ -324,8 +330,9 @@ func InferColumnType(label string) ColumnType {
 // エディタは /api/tag-schema 経由でこれを受け取り、**同じ辞書**で入力を検証・通知します
 // （形式知識の3原則の1: エディタに手書きの語彙を置かない——語彙モデル §7）。
 func TypeInferenceDict() map[string]ColumnType {
-	out := make(map[string]ColumnType, len(typeInference))
-	for k, v := range typeInference {
+	dict := activeTypeInference()
+	out := make(map[string]ColumnType, len(dict))
+	for k, v := range dict {
 		out[k] = v
 	}
 	return out
