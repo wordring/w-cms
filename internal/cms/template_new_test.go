@@ -132,7 +132,7 @@ func TestNewPageFromTemplate(t *testing.T) {
 
 	// コピー先はテンプレート領域の外なので、③計算テーブルへ載る。
 	if n := countOrders(t); n != 1 {
-		t.Errorf("コピー先が索引に載っていません: client_orders に %d 行", n)
+		t.Errorf("コピー先が索引に載っていません: 受注ヘッダ %d 件", n)
 	}
 }
 

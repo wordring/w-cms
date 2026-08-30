@@ -85,10 +85,13 @@ func (vocabIndexPlugin) OnPageStart(ctx *ObserveContext) error {
 	return err
 }
 
-// OnElement はマーカー付きの table / dl を索引します。
-// `section` は入れ物なので自分では索引せず、中の table / dl を配ってもらいます
+// OnElement はマーカー付きの table / dl と、業務文書ブロックのヘッダを索引します。
+// `section` の中の table / dl は配送係が別に届けてくれるので、ここでは降ります
 // （＝ descend は常に true）。
 func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
+	if el.Data == "section" {
+		return true, syncVocabSectionHeader(ctx, el)
+	}
 	if el.Data != "table" && el.Data != "dl" {
 		return true, nil // 素の table / dl は配送係が弾く。ここへ来るのは section 等
 	}
@@ -101,7 +104,48 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 	if el.Data == "table" {
 		return true, syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, def, el)
 	}
-	return true, syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, def, el)
+	return true, syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, Attr(el, "data-id"), def, el)
+}
+
+// syncVocabSectionHeader は業務文書ブロック（<section data-type>）のヘッダを索引します。
+//
+// **ヘッダの <dl> は data-type を持ちません**（役割は包む section が宣言し、鍵は dt の
+// 表示文字。語彙モデル §8.2）。配送係は引き金のある要素しか届けないので、素の dl は
+// 誰の手にも渡りません——section の側から拾うのがここです。
+//
+// 硬いドメイン表があったころは各プラグインが section を受け取って自分で子の dl を
+// 読んでいたため、この穴は見えていませんでした。テーブルを廃して索引へ一本化する
+// （D-1）と、拾わない限り**発注元・発注日・発注先がどこにも残りません**。
+// 明細表だけが載ってヘッダが黙って消える形の欠落なので、
+// TestSectionHeaderIsIndexed が固定しています。
+//
+// block_no は section の data-type の連番です。明細表は自分の data-type
+// （client-order-items 等）で別に数えられるため、1つの section がヘッダ1つと
+// 明細表1つを持つ限り、**同じ番号どうしが対**になります（集計はこれで両者を結ぶ）。
+func syncVocabSectionHeader(ctx *ObserveContext, section *html.Node) error {
+	dl := sectionHeaderDL(section)
+	if dl == nil {
+		return nil // ヘッダを持たない section（ファイル容器・計算ビュー等）
+	}
+	dataType := Attr(section, "data-type")
+	no := ctx.Counter("vocab_index:" + dataType)
+	def, _ := VocabDefByType(dataType)
+	// ブロックIDは section が持つ（素の dl には振られない）。
+	return syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, Attr(section, "data-id"), def, dl)
+}
+
+// sectionHeaderDL は section 直下のヘッダ dl（data-type を持たない素の dl）を返します。
+// data-type を持つ dl（可変タグなど）は独立した形式として配送係が別に届けるので、
+// ここでは選びません——選ぶと同じ値が二重に索引されます。
+// 入れ子の section へは降りません（入れ子の業務ブロックは独立して読まれる）。
+func sectionHeaderDL(section *html.Node) *html.Node {
+	var found *html.Node
+	walkSkippingNested(section, map[string]bool{"section": true}, func(n *html.Node) {
+		if found == nil && n.Data == "dl" && Attr(n, "data-type") == "" {
+			found = n
+		}
+	})
+	return found
 }
 
 // vocabColumn は表の1列ぶんの解決済みスキーマ（文書の見出し行から読む）です。
@@ -153,8 +197,7 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, def Vo
 // **読む者が1人もいなかった**ため 2026-08-30（D-1）で吸収した。「親ページID」を
 // 取り込まない旧ガードも同時に消えた——親はサイドカーが正本で、この語を親として
 // 解釈するコードはもう無い（書けば普通のタグとして索引に載るだけ・不活性）。
-func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, def VocabDef, dl *html.Node) error {
-	blockID := Attr(dl, "data-id")
+func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, blockID string, def VocabDef, dl *html.Node) error {
 	rowNo := 0
 	var firstErr error
 	eachDLPair(dl, false, func(key string, dd *html.Node) bool {

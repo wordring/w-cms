@@ -198,21 +198,21 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 		t.Errorf("可変タグの件数が違います: %d", tagCount)
 	}
 
-	// client_orders / client_order_items の確認
-	var clientName, pdfPath string
-	err = db.QueryRow("SELECT client_name, pdf_path FROM client_orders WHERE order_no = ?", "PO-T100").Scan(&clientName, &pdfPath)
-	if err != nil {
-		t.Fatalf("client_ordersのクエリでエラー: %v", err)
+	// 受注ヘッダ（section の data-type の下に載る）。**pdf_path は索引しません**
+	// ——容器の data-src は配線＝属性で、表示される値ではないため（D-1）。
+	if v := vocabValueOf(t, 2, "client-order", "発注書番号"); v != "PO-T100" {
+		t.Errorf("発注書番号が索引に入っていません: %q", v)
 	}
-	if clientName != "トーア" || pdfPath != "attachments/po_test.pdf" {
-		t.Errorf("発注ヘッダーの値が違います: client=%s, pdf=%s", clientName, pdfPath)
+	if v := vocabValueOf(t, 2, "client-order", "発注元"); v != "トーア" {
+		t.Errorf("発注元が索引に入っていません: %q", v)
 	}
 
-	// 部品点数の集計確認
+	// 部品点数の集計確認（明細の数量を合計する）
 	var totalQty int
-	err = db.QueryRow("SELECT SUM(quantity) FROM client_order_items WHERE order_no = ?", "PO-T100").Scan(&totalQty)
+	err = db.QueryRow(`SELECT COALESCE(SUM(norm_num), 0) FROM vocab_index
+		WHERE page_id = ? AND data_type = 'client-order-items' AND field = '数量'`, 2).Scan(&totalQty)
 	if err != nil {
-		t.Fatalf("client_order_itemsのクエリでエラー: %v", err)
+		t.Fatalf("client-order-items のクエリでエラー: %v", err)
 	}
 	if totalQty != 15 {
 		t.Errorf("合計数量が違います: %d", totalQty)
@@ -544,7 +544,7 @@ func TestRebuildDatabase(t *testing.T) {
 
 	// (3) 発注書明細がファイルから再同期されていること
 	var qty int
-	db.QueryRow(`SELECT quantity FROM client_order_items WHERE order_no = 'PO-RB1'`).Scan(&qty)
+	db.QueryRow(`SELECT norm_num FROM vocab_index WHERE data_type = 'client-order-items' AND field = '数量'`).Scan(&qty)
 	if qty != 3 {
 		t.Errorf("発注明細が再同期されていません: quantity=%d", qty)
 	}

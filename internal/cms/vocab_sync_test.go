@@ -80,8 +80,9 @@ func TestTagValueFromDL(t *testing.T) {
 }
 
 // TestPartMaterialsFromTable は新形式 <table data-type="part-materials"> が
-// part_materials へ同期されることを検証します（見出しラベルからの解決・
-// 数値の正規化・quantity 空セルの既定値 1）。
+// 汎用索引へ載ることを検証します（見出しラベルからの解決・数値の正規化・
+// quantity 空セルの既定値 1）。専用テーブル part_materials は D-1 で廃止し、
+// 部品番号はページのタグから逆引きします（pagesByTag）。
 func TestPartMaterialsFromTable(t *testing.T) {
 	setupSaveTest(t)
 
@@ -98,33 +99,42 @@ func TestPartMaterialsFromTable(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
+	// 部品番号はタグからの逆引きで解決される（部材行そのものには無い）
+	pages, err := pagesByTag(database.DB, "部品番号", "SHAFT-01")
+	if err != nil {
+		t.Fatalf("pagesByTagエラー: %v", err)
+	}
+	if len(pages) != 1 || pages[0] != 41 {
+		t.Fatalf("部品番号タグの逆引きが期待と異なります: %v", pages)
+	}
+
 	rows := queryPartMaterials(t, 41)
 	want := []string{
-		"SHAFT-01|ベアリング|500|NSK|1",
-		"SHAFT-01|丸鋼材|8000|大同特殊鋼|2",
+		"丸鋼材|8000|大同特殊鋼|2",
+		"ベアリング|500|NSK|1",
 	}
 	if strings.Join(rows, "\n") != strings.Join(want, "\n") {
-		t.Errorf("part_materials の内容が期待と異なります:\ngot  %v\nwant %v", rows, want)
+		t.Errorf("部材表の索引内容が期待と異なります:\ngot  %v\nwant %v", rows, want)
 	}
 }
 
 // ── ヘルパ ───────────────────────────────────────────────────────────
 
+// queryPartMaterials は部材表の索引行を「部材名|単価|仕入先|数量」の文書順で返します。
 func queryPartMaterials(t *testing.T, pageID int) []string {
 	t.Helper()
-	rows, err := database.DB.Query(
-		`SELECT part_id, material_name, cost, supplier_name, quantity
-		 FROM part_materials WHERE page_id = ? ORDER BY material_name`, pageID)
+	rows, err := vocabTableRowsOf(database.DB, pageID, "part-materials")
 	if err != nil {
-		t.Fatalf("part_materialsのクエリでエラー: %v", err)
+		t.Fatalf("部材表の索引の読み出しエラー: %v", err)
 	}
-	defer rows.Close()
 	var out []string
-	for rows.Next() {
-		var partID, name, supplier string
-		var cost, qty int
-		rows.Scan(&partID, &name, &cost, &supplier, &qty)
-		out = append(out, strings.Join([]string{partID, name, itoa(cost), supplier, itoa(qty)}, "|"))
+	for _, r := range rows {
+		out = append(out, strings.Join([]string{
+			r.Values["item-name"],
+			itoa(r.Num("cost")),
+			r.Values["supplier-name"],
+			itoa(vocabQuantity(r)),
+		}, "|"))
 	}
 	return out
 }

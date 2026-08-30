@@ -11,7 +11,7 @@ import (
 // 正本は docs/【考察】ページテンプレート.md §3・§6。
 
 // clientOrderBody は「仮の発注書」を含むテンプレート的な本文です。
-// テンプレート配下に置かれたときに **client_orders へ入ってはいけない** ことを
+// テンプレート配下に置かれたときに **索引へ入ってはいけない** ことを
 // 各テストで確かめます。
 func clientOrderBody(title, orderNo string) string {
 	return `<h1>` + title + `</h1>` +
@@ -25,12 +25,15 @@ func clientOrderBody(title, orderNo string) string {
 		`</tbody></table></section>`
 }
 
-// countOrders は client_orders の行数を返します。
+// countOrders はサイト全体の受注ヘッダ（<section data-type="client-order">）の
+// ブロック数を索引から返します。
 func countOrders(t *testing.T) int {
 	t.Helper()
 	var n int
-	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM client_orders`).Scan(&n); err != nil {
-		t.Fatalf("client_orders の集計に失敗: %v", err)
+	if err := database.DB.QueryRow(
+		`SELECT COUNT(*) FROM (SELECT DISTINCT page_id, block_no FROM vocab_index
+		 WHERE data_type = 'client-order')`).Scan(&n); err != nil {
+		t.Fatalf("受注ヘッダの集計に失敗: %v", err)
 	}
 	return n
 }
@@ -66,14 +69,14 @@ func TestTemplateSubtreeIsNotIndexed(t *testing.T) {
 	}
 
 	if n := countOrders(t); n != 0 {
-		t.Fatalf("テンプレート領域が索引に載っています: client_orders に %d 行", n)
+		t.Fatalf("テンプレート領域が索引に載っています: 受注ヘッダ %d 件", n)
 	}
 
 	// 回帰: テンプレート領域の外にある普通のページは従来どおり載る。
 	newPage(t, "000020", clientOrderBody("本物の受注", "PO-REAL"), page.PageMeta{
 		Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
 	if n := countOrders(t); n != 1 {
-		t.Fatalf("普通のページが索引に載っていません: client_orders に %d 行", n)
+		t.Fatalf("普通のページが索引に載っていません: 受注ヘッダ %d 件", n)
 	}
 }
 
@@ -117,7 +120,7 @@ func TestTemplateRootMustBeChildOfTop(t *testing.T) {
 		t.Error("トップ直下でない「テンプレート」がルートとして効いています")
 	}
 	if n := countOrders(t); n != 1 {
-		t.Fatalf("普通のページが索引に載っていません: client_orders に %d 行", n)
+		t.Fatalf("普通のページが索引に載っていません: 受注ヘッダ %d 件", n)
 	}
 }
 
@@ -140,7 +143,7 @@ func TestTemplateExclusionSurvivesRebuildOrder(t *testing.T) {
 		t.Fatalf("RebuildDatabaseエラー: %v", err)
 	}
 	if n := countOrders(t); n != 0 {
-		t.Fatalf("再構築の順序で除外が漏れました: client_orders に %d 行", n)
+		t.Fatalf("再構築の順序で除外が漏れました: 受注ヘッダ %d 件", n)
 	}
 	// 再構築後もページ自体は階層に残っている（コアは同期し続ける）。
 	var title string
@@ -165,7 +168,7 @@ func TestMovingPageIntoTemplateAreaClearsRows(t *testing.T) {
 	newPage(t, "000040", body, page.PageMeta{
 		Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
 	if n := countOrders(t); n != 1 {
-		t.Fatalf("前提が崩れています: client_orders に %d 行", n)
+		t.Fatalf("前提が崩れています: 受注ヘッダ %d 件", n)
 	}
 
 	// テンプレートフォルダの下へ移す（サイドカーが親の正本）。
@@ -176,7 +179,7 @@ func TestMovingPageIntoTemplateAreaClearsRows(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 	if n := countOrders(t); n != 0 {
-		t.Fatalf("テンプレートへ移したのに古い行が残っています: client_orders に %d 行", n)
+		t.Fatalf("テンプレートへ移したのに古い行が残っています: 受注ヘッダ %d 件", n)
 	}
 
 	// 外へ戻せば再び載る（可逆であること）。
@@ -187,6 +190,6 @@ func TestMovingPageIntoTemplateAreaClearsRows(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 	if n := countOrders(t); n != 1 {
-		t.Fatalf("テンプレートから戻したのに載りません: client_orders に %d 行", n)
+		t.Fatalf("テンプレートから戻したのに載りません: 受注ヘッダ %d 件", n)
 	}
 }

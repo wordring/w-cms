@@ -126,14 +126,14 @@ func TestSaveSanitizesAndEchoesBack(t *testing.T) {
 }
 
 // TestSaveKeepsEstimateAttributes は、見積もりの m-file を保存したときに、
-// プラグインが読むマーカー・値が生き残って集計テーブルへ入ることを検証します
-// （保存 → サニタイズ → ファイル → SyncIndex → supplier_estimates の一気通貫）。
+// マーカー・値が生き残って②汎用索引へ入ることを検証します
+// （保存 → サニタイズ → ファイル → SyncIndex → vocab_index の一気通貫）。
 //
 // かつて item-name がサニタイズ許可リストから漏れており、保存のたびに消えて
-// supplier_estimates.item_name が空になっていた。その回帰防止（現形式では
+// 索引の部材名が空になっていた。その回帰防止（現形式では
 // data-type / data-src の許可が同じ役割を担う）。
 func TestSaveKeepsEstimateAttributes(t *testing.T) {
-	db := setupSaveTest(t)
+	setupSaveTest(t)
 
 	const id = "000044"
 	if err := page.WriteSidecar(id, page.PageMeta{Owner: "tester", Mode: page.DefaultMode}); err != nil {
@@ -154,26 +154,22 @@ func TestSaveKeepsEstimateAttributes(t *testing.T) {
 		t.Errorf("見積もりの属性がサニタイズで除去されました: %v", resp["html"])
 	}
 
-	var itemName, supplierName, pdfPath string
-	var cost int
-	err := db.QueryRow(
-		`SELECT item_name, supplier_name, cost, pdf_path FROM supplier_estimates WHERE page_id = ?`, 44,
-	).Scan(&itemName, &supplierName, &cost, &pdfPath)
-	if err != nil {
-		t.Fatalf("supplier_estimates のクエリでエラー: %v", err)
+	// 索引に載った値を見る。**容器の data-src（pdf_path）はもう索引しません**
+	// ——配線＝属性であって表示される値ではなく、読む者もいなかったため
+	// （D-1 でドメイン表を廃したときに一緒に落ちた）。属性がサニタイズを
+	// 生き延びたことは上の sanitized==false が既に押さえています
+	// （落ちていればエコーバックで差し替えが起きる）。
+	if v := vocabValueOf(t, 44, "supplier-estimate", "部材名"); v != "側板用鋼材" {
+		t.Errorf("部材名が索引に入っていません: %q", v)
 	}
-	// pdf_path は業務ブロックではなく容器の data-src から拾われる（ClosestFileSrc）
-	if pdfPath != "m.pdf" {
-		t.Errorf("容器の data-src が pdf_path に反映されていません: %q", pdfPath)
+	if v := vocabValueOf(t, 44, "supplier-estimate", "仕入先"); v != "東邦金属工業" {
+		t.Errorf("仕入先が索引に入っていません: %q", v)
 	}
-	if itemName != "側板用鋼材" {
-		t.Errorf("item_name が保存されていません: %q", itemName)
+	if v := vocabValueOf(t, 44, "supplier-estimate", "見積金額"); v != "500" {
+		t.Errorf("見積金額が索引に入っていません: %q", v)
 	}
-	if supplierName != "東邦金属工業" {
-		t.Errorf("supplier_name が保存されていません: %q", supplierName)
-	}
-	if cost != 500 {
-		t.Errorf("cost が保存されていません: %d", cost)
+	if v := vocabValueOf(t, 44, "supplier-estimate", "見積日"); v != "2026-06-16" {
+		t.Errorf("見積日が索引に入っていません: %q", v)
 	}
 }
 

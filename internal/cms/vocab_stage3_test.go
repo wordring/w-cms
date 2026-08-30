@@ -10,8 +10,11 @@ import (
 // ── 移行第3段: 受発注・見積・容器（論点A=案1） ─────────────────────────
 
 // TestClientOrderFromSection は新形式 <section data-type="client-order"> が
-// client_orders / client_order_items へ同期されることを検証します
-// （ヘッダ dl の項目・明細表・容器からの pdf_path・数値の正規化）。
+// 汎用索引へ載ることを検証します（ヘッダ dl の項目・明細表・数値の正規化）。
+//
+// 硬いドメイン表（client_orders / client_order_items）は D-1 で廃したので、
+// 行き先は vocab_index だけです。**容器の data-src（旧 pdf_path）は索引しません**
+// ——配線＝属性であって表示される値ではなく、読む者もいませんでした。
 func TestClientOrderFromSection(t *testing.T) {
 	setupSaveTest(t)
 
@@ -31,34 +34,40 @@ func TestClientOrderFromSection(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	var clientName, pdfPath string
-	if err := database.DB.QueryRow(
-		`SELECT client_name, pdf_path FROM client_orders WHERE order_no = 'PO-A100'`).
-		Scan(&clientName, &pdfPath); err != nil {
-		t.Fatalf("client_orders に入っていません: %v", err)
+	// ヘッダ（包む section の data-type の下に載る）
+	if v := vocabValueOf(t, 50, "client-order", "発注書番号"); v != "PO-A100" {
+		t.Errorf("発注書番号が索引と異なります: %q", v)
 	}
-	if clientName != "トーア" || pdfPath != "po.pdf" {
-		t.Errorf("ヘッダの値が期待と異なります: %q %q", clientName, pdfPath)
+	if v := vocabValueOf(t, 50, "client-order", "発注元"); v != "トーア" {
+		t.Errorf("発注元が索引と異なります: %q", v)
 	}
 
-	rows, _ := database.DB.Query(
-		`SELECT item_id, price, quantity FROM client_order_items WHERE order_no = 'PO-A100' ORDER BY item_id`)
-	defer rows.Close()
-	var got []string
-	for rows.Next() {
-		var itemID string
-		var price, qty int
-		rows.Scan(&itemID, &price, &qty)
-		got = append(got, itemID+"|"+itoa(price)+"|"+itoa(qty))
+	// 明細（生テキストが正本。¥・桁区切りの吸収は norm_num 側で見る）
+	if got := strings.Join(vocabValuesOf(t, 50, "client-order-items", "品番"), ","); got != "SHAFT-01,GEAR-2" {
+		t.Errorf("明細の品番が文書順と異なります: %q", got)
 	}
-	want := "GEAR-2|500|1\nSHAFT-01|8000|10" // ¥8,000→8000・数量空→1
-	if strings.Join(got, "\n") != want {
-		t.Errorf("明細が期待と異なります:\ngot  %v\nwant %v", got, want)
+
+	rows, err := vocabTableRowsOf(database.DB, 50, "client-order-items")
+	if err != nil {
+		t.Fatalf("索引の読み出しエラー: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("明細の行数が違います: %d (期待 2)", len(rows))
+	}
+	// ¥8,000 → 8000（正規化）／数量が空のときは 1（読み取り側の既定）
+	if got := rows[0].Num("price"); got != 8000 {
+		t.Errorf("単価の正規化が効いていません: %d", got)
+	}
+	if got := vocabQuantity(rows[0]); got != 10 {
+		t.Errorf("数量が期待と異なります: %d", got)
+	}
+	if got := vocabQuantity(rows[1]); got != 1 {
+		t.Errorf("空の数量が既定の1になりません: %d", got)
 	}
 }
 
 // TestEstimatesFromDL は新形式 <dl data-type="our-estimate"> 等が
-// 見積テーブルへ同期されることを検証します。
+// 汎用索引へ載ることを検証します（見積専用テーブルは D-1 で廃止）。
 func TestEstimatesFromDL(t *testing.T) {
 	setupSaveTest(t)
 
@@ -75,20 +84,27 @@ func TestEstimatesFromDL(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	var price int
+	if v := vocabValueOf(t, 51, "our-estimate", "品番"); v != "SHAFT-01" {
+		t.Errorf("品番が索引に入っていません: %q", v)
+	}
+	// ¥12,000 → 12000（正規化値は併記され、生テキストはそのまま残る）
+	var norm float64
 	if err := database.DB.QueryRow(
-		`SELECT price FROM our_estimates WHERE item_id = 'SHAFT-01' AND page_id = 51`).Scan(&price); err != nil {
-		t.Fatalf("our_estimates に入っていません: %v", err)
+		`SELECT norm_num FROM vocab_index
+		 WHERE page_id = 51 AND data_type = 'our-estimate' AND field = '見積金額'`).Scan(&norm); err != nil {
+		t.Fatalf("見積金額の正規化値が引けません: %v", err)
 	}
-	if price != 12000 {
-		t.Errorf("見積金額の正規化が効いていません: %d", price)
+	if norm != 12000 {
+		t.Errorf("見積金額の正規化が効いていません: %v", norm)
 	}
-	var cost int
-	if err := database.DB.QueryRow(
-		`SELECT cost FROM supplier_estimates WHERE item_name = '丸鋼材' AND page_id = 51`).Scan(&cost); err != nil {
-		t.Fatalf("supplier_estimates に入っていません: %v", err)
+	if v := vocabValueOf(t, 51, "our-estimate", "見積金額"); v != "¥12,000" {
+		t.Errorf("生テキストが書き換えられています: %q", v)
 	}
-	if cost != 3000 {
-		t.Errorf("原価が期待と異なります: %d", cost)
+
+	if v := vocabValueOf(t, 51, "supplier-estimate", "部材名"); v != "丸鋼材" {
+		t.Errorf("部材名が索引に入っていません: %q", v)
+	}
+	if v := vocabValueOf(t, 51, "supplier-estimate", "見積金額"); v != "3000" {
+		t.Errorf("見積金額が索引に入っていません: %q", v)
 	}
 }
