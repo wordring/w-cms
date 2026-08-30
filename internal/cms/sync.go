@@ -38,8 +38,11 @@ func SyncIndex(id string, htmlContent string) error {
 	filePath := filepath.Join(page.GetPageDir(id), id+".html")
 
 	// ページ属性（親ページID・作成日時・作成者・更新日時）はサイドカー（正本）から読み取る。
-	// サイドカーが無い場合は親なし・作成情報なしとして扱い、更新日時は CURRENT_TIMESTAMP に
+	// サイドカーが無い場合は親なし・作成情報なしとして扱い、更新日時は「今」（RFC3339 UTC）に
 	// フォールバックする。サイドカーが正本なのでDB再構築でも属性が失われない。
+	// かつては SQLite の CURRENT_TIMESTAMP（空白区切り＝ISO 8601 ではない）だったが、
+	// 「日時は ISO 8601 を全域の正とする」（2026-08-30・要件定義書 §3）に合わせ、
+	// サイドカー由来の値と同じ T 区切りへ揃えた。
 	meta, metaOK := page.ReadSidecar(id)
 
 	var parentIDInt sql.NullInt64
@@ -71,6 +74,8 @@ func SyncIndex(id string, htmlContent string) error {
 	}
 	if meta.UpdatedAt != "" {
 		updatedAt = sql.NullString{String: meta.UpdatedAt, Valid: true}
+	} else {
+		updatedAt = sql.NullString{String: time.Now().UTC().Format(time.RFC3339), Valid: true}
 	}
 
 	// 手順4: トランザクション開始
@@ -83,14 +88,14 @@ func SyncIndex(id string, htmlContent string) error {
 	// コア1: pages テーブルへの upsert
 	if _, err = tx.Exec(`
 		INSERT INTO pages (id, title, parent_id, file_path, created_at, created_by, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title = excluded.title,
 			parent_id = excluded.parent_id,
 			file_path = excluded.file_path,
 			created_at = COALESCE(excluded.created_at, pages.created_at),
 			created_by = COALESCE(excluded.created_by, pages.created_by),
-			updated_at = COALESCE(excluded.updated_at, CURRENT_TIMESTAMP)
+			updated_at = excluded.updated_at
 	`, pageIDInt, title, parentIDInt, filePath, createdAt, createdBy, updatedAt); err != nil {
 		return err
 	}
@@ -264,7 +269,7 @@ func rebuildUnfinished() (bool, error) {
 	var started sql.NullString
 	var finished sql.NullString
 	err := database.DB.QueryRow(
-		`SELECT started_at, finished_at FROM ` + rebuildStateTable + ` WHERE id = 1`).
+		`SELECT started_at, finished_at FROM `+rebuildStateTable+` WHERE id = 1`).
 		Scan(&started, &finished)
 	if err != nil {
 		return false, nil // 行が無い＝再構築を始めたことがない
@@ -279,7 +284,7 @@ func lastRebuildResult() (pages int, durationMS int64, ok bool) {
 	}
 	var p, d sql.NullInt64
 	err := database.DB.QueryRow(
-		`SELECT pages, duration_ms FROM ` + rebuildStateTable + ` WHERE id = 1`).Scan(&p, &d)
+		`SELECT pages, duration_ms FROM `+rebuildStateTable+` WHERE id = 1`).Scan(&p, &d)
 	if err != nil || !p.Valid {
 		return 0, 0, false
 	}
@@ -322,6 +327,7 @@ func dropAllTables(db *sql.DB) error {
 // RebuildIfNeeded は、次のいずれかのときにデータベースを全再構築します。
 //   - 前回の再構築が完了していない（中断の印が残っている）
 //   - pages テーブルが空でかつ data/master にHTMLファイルが存在する場合に、
+//
 // データベースを全再構築します。バックアップからファイル（data/master）だけを復元した状態で
 // アプリを起動するだけでDBが自動再生成されるようにするための、起動時フックです。
 func RebuildIfNeeded() error {

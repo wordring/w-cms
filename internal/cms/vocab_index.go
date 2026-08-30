@@ -2,6 +2,7 @@ package cms
 
 import (
 	"database/sql"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -45,6 +46,10 @@ func (vocabIndexPlugin) Schema() []string {
 		// 縦持ち1テーブル。行/フィールドの2テーブル分割は未決事項（語彙モデル §10）で、
 		// v1 は最小の1テーブルから始める（(page_id, data_type, block_no, row_no, field) で
 		// 1セルが1行になる）。
+		// norm_num は number 型の値の**数値としての**正規化値。SQLite は TEXT 同士を
+		// 文字列比較する（"8000" < "900"）ため、数の大小・範囲で絞る列は数値の
+		// 格納クラスに分ける（【一覧】日付形式と数詞.md §5。2026-08-30 決定）。
+		// norm_value（TEXT）は date の時系列比較と表示用にそのまま残る。
 		`CREATE TABLE IF NOT EXISTS vocab_index (
 			page_id INTEGER,
 			data_type TEXT,
@@ -54,10 +59,16 @@ func (vocabIndexPlugin) Schema() []string {
 			field TEXT,
 			value TEXT,
 			norm_value TEXT,
+			norm_num REAL,
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_vocab_index_page ON vocab_index(page_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_vocab_index_type_field ON vocab_index(data_type, field);`,
+		// 値の逆引き（「発注書番号が X のページ」「000002-12 を参照しているページ」）。
+		// 生テキスト（value）が正本なので索引も生テキストに張る。norm_value 側は
+		// date の範囲検索（納期 BETWEEN）用（アーキテクチャとDBスキーマ.md §9.1）。
+		`CREATE INDEX IF NOT EXISTS idx_vocab_index_field_value ON vocab_index(field, value);`,
+		`CREATE INDEX IF NOT EXISTS idx_vocab_index_field_norm ON vocab_index(field, norm_value);`,
 	}
 }
 
@@ -156,15 +167,22 @@ func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, def Vocab
 }
 
 // insertVocabEntry は1セル（1値）を索引へ書き込みます。正規化値は解釈できたときだけ併記します。
+// number 型はさらに norm_num（REAL）へも入れ、大小・範囲の比較を数値で行えるようにします。
 func insertVocabEntry(tx *sql.Tx, pageID int, dataType string, blockNo int, blockID string, rowNo int, field string, typ ColumnType, value string) error {
 	var norm sql.NullString
+	var normNum sql.NullFloat64
 	if v, ok := NormalizeValue(typ, value); ok {
 		norm = sql.NullString{String: v, Valid: true}
+		if typ == ColNumber {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				normNum = sql.NullFloat64{Float64: f, Valid: true}
+			}
+		}
 	}
 	_, err := tx.Exec(
-		`INSERT INTO vocab_index (page_id, data_type, block_no, block_id, row_no, field, value, norm_value)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		pageID, dataType, blockNo, blockID, rowNo, field, value, norm)
+		`INSERT INTO vocab_index (page_id, data_type, block_no, block_id, row_no, field, value, norm_value, norm_num)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		pageID, dataType, blockNo, blockID, rowNo, field, value, norm, normNum)
 	return err
 }
 
