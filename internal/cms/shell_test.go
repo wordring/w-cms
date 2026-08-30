@@ -29,10 +29,7 @@ func writeTestShell(t *testing.T) {
 	}
 	writeTestPublicShell(t)
 	// mtimeキャッシュが他テストの内容を持ち越さないようにする
-	shellCache.Lock()
-	shellCache.body = ""
-	shellCache.modTime = 0
-	shellCache.Unlock()
+	shellCache.reset()
 }
 
 // newPage はテスト用のページ（本文ファイル＋サイドカー＋DB同期）を作ります。
