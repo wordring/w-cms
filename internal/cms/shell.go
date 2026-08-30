@@ -36,36 +36,48 @@ const (
 	titlePlaceholder = "<title>w-cms エディタ</title>"
 )
 
-// shellCache は殻の内容をメモリに保持します。mtime を見て変化時だけ読み直すため、
-// 開発中に index.html を編集しても再起動なしで反映されます。
-var shellCache struct {
-	sync.Mutex
+// shellFile は殻HTMLの読み込み口です。mtime を見て変化時だけ読み直すため、
+// 開発中に殻を編集しても再起動なしで反映されます。編集用と公開用の2枚
+// （shellCache・publicShellCache）で同じ機構が要るので、型として1つに持ちます。
+type shellFile struct {
+	path    string
+	mu      sync.Mutex
 	body    string
 	modTime int64
 }
 
-// loadShell は殻のHTMLを返します（mtimeキャッシュ付き）。
-func loadShell() (string, error) {
-	info, err := os.Stat(shellPath)
+// load は殻のHTMLを返します（mtimeキャッシュ付き）。
+func (s *shellFile) load() (string, error) {
+	info, err := os.Stat(s.path)
 	if err != nil {
 		return "", err
 	}
 	mod := info.ModTime().UnixNano()
 
-	shellCache.Lock()
-	defer shellCache.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if shellCache.body != "" && shellCache.modTime == mod {
-		return shellCache.body, nil
+	if s.body != "" && s.modTime == mod {
+		return s.body, nil
 	}
-	data, err := os.ReadFile(shellPath)
+	data, err := os.ReadFile(s.path)
 	if err != nil {
 		return "", err
 	}
-	shellCache.body = string(data)
-	shellCache.modTime = mod
-	return shellCache.body, nil
+	s.body = string(data)
+	s.modTime = mod
+	return s.body, nil
 }
+
+// reset はキャッシュを空にします（テストが殻を差し替えたあとに使う）。
+func (s *shellFile) reset() {
+	s.mu.Lock()
+	s.body, s.modTime = "", 0
+	s.mu.Unlock()
+}
+
+// shellCache は編集用の殻です。
+var shellCache = &shellFile{path: shellPath}
 
 // RenderPageShell は本文HTML（サニタイズ済みであること）とページタイトルを殻へ埋め込み、
 // ブラウザへ返す完成HTMLを組み立てます。
@@ -77,7 +89,7 @@ func loadShell() (string, error) {
 // JS 側の `body.anonymous` 付与は残してあります: 編集中にセッションが切れると
 // /api/me が未認証を返すので、その場合の見せ方はまだ要るからです。
 func RenderPageShell(bodyHTML, title string) (string, error) {
-	shell, err := loadShell()
+	shell, err := shellCache.load()
 	if err != nil {
 		return "", err
 	}

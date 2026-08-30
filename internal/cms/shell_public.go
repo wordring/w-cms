@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 
 	stdhtml "golang.org/x/net/html"
 
@@ -45,50 +44,22 @@ const (
 	descriptionMaxRunes = 120
 )
 
-// publicShellCache は公開シェルの内容をメモリに保持します（編集用の殻と同じ流儀。
-// mtime を見て変化時だけ読み直すので、開発中の編集が再起動なしで反映されます）。
-var publicShellCache struct {
-	sync.Mutex
-	body    string
-	modTime int64
-}
-
-// loadPublicShell は公開シェルのHTMLを返します（mtimeキャッシュ付き）。
-func loadPublicShell() (string, error) {
-	info, err := os.Stat(publicShellPath)
-	if err != nil {
-		return "", err
-	}
-	mod := info.ModTime().UnixNano()
-
-	publicShellCache.Lock()
-	defer publicShellCache.Unlock()
-
-	if publicShellCache.body != "" && publicShellCache.modTime == mod {
-		return publicShellCache.body, nil
-	}
-	data, err := os.ReadFile(publicShellPath)
-	if err != nil {
-		return "", err
-	}
-	publicShellCache.body = string(data)
-	publicShellCache.modTime = mod
-	return publicShellCache.body, nil
-}
+// publicShellCache は公開用の殻です（読み込み機構は shellFile＝編集用と共通）。
+var publicShellCache = &shellFile{path: publicShellPath}
 
 // PageSEO は公開ページの見出し情報です。値は**未エスケープの生テキスト**で渡し、
 // エスケープは RenderPublicShell が一手に引き受けます（呼び出し側ごとの
 // 「掛け忘れ」を作らないため）。
 type PageSEO struct {
-	Title       string // ページ名（本文の h1 由来）
-	Description string // 本文の最初の段落から作った要約
+	Title        string // ページ名（本文の h1 由来）
+	Description  string // 本文の最初の段落から作った要約
 	CanonicalURL string // 正規URL（絶対）
 }
 
 // RenderPublicShell は公開専用ビューの完成HTMLを組み立てます。
 // bodyHTML はサニタイズ済みであること。
 func RenderPublicShell(bodyHTML string, seo PageSEO) (string, error) {
-	shell, err := loadPublicShell()
+	shell, err := publicShellCache.load()
 	if err != nil {
 		return "", err
 	}

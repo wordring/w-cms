@@ -29,10 +29,7 @@ func writeTestPublicShell(t *testing.T) {
 	if err := os.WriteFile(filepath.Join("assets", "public.html"), []byte(shell), 0644); err != nil {
 		t.Fatalf("公開シェル作成エラー: %v", err)
 	}
-	publicShellCache.Lock()
-	publicShellCache.body = ""
-	publicShellCache.modTime = 0
-	publicShellCache.Unlock()
+	publicShellCache.reset()
 }
 
 // setupPublicTest はページ本文の殻2種とDBを用意します。
