@@ -28,14 +28,22 @@ func TestRenderComputedViews(t *testing.T) {
 	mustExec(`INSERT INTO pages (id, title, file_path, parent_id) VALUES (61, '<加工>記録', '', 60)`)
 
 	// 手配集計の材料: SHAFT-01 は鋼材1本が要る。受注10本・発注済み4本 → 残6
-	mustExec(`INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
-		VALUES ('SHAFT-01', '鋼材', 2500, '東邦', 1, 3)`)
-	mustExec(`INSERT INTO client_orders (order_no, client_name, page_id) VALUES ('PO-V1', 'トーア', 60)`)
-	mustExec(`INSERT INTO client_order_items (page_id, order_no, item_id, item_name, price, quantity, status)
-		VALUES (60, 'PO-V1', 'SHAFT-01', 'シャフト', 8000, 10, '加工中')`)
-	mustExec(`INSERT INTO our_orders (order_no, supplier_name, page_id) VALUES ('PO-OUR-V1', '東邦', 60)`)
-	mustExec(`INSERT INTO our_order_items (page_id, order_no, item_name, cost, quantity, status)
-		VALUES (60, 'PO-OUR-V1', '鋼材', 2500, 4, '未納品')`)
+	seedPageTag(t, 3, "部品番号", "SHAFT-01")
+	seedVocabTable(t, 3, "part-materials", 0, map[string]string{
+		"部材名": "鋼材", "単価": "2500", "仕入先": "東邦", "数量": "1",
+	})
+	seedVocabBlock(t, 60, "client-order", 0, map[string]string{
+		"発注書番号": "PO-V1", "発注元": "トーア",
+	})
+	seedVocabTable(t, 60, "client-order-items", 0, map[string]string{
+		"品番": "SHAFT-01", "品名": "シャフト", "単価": "8000", "数量": "10", "状態": "加工中",
+	})
+	seedVocabBlock(t, 60, "our-order", 0, map[string]string{
+		"発注書番号": "PO-OUR-V1", "発注先": "東邦",
+	})
+	seedVocabTable(t, 60, "our-order-items", 0, map[string]string{
+		"品名": "鋼材", "単価": "2500", "数量": "4", "状態": "未納品",
+	})
 
 	body := `<h1>受注</h1>` +
 		`<section data-type="child-list" data-id="v1"><p>紛れ込んだ内容</p></section>` +

@@ -177,38 +177,27 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 集計します。/api/required-materials と計算ビューのサーバー事前描画
 // （view_render.go）が共用する。
 //
+// **読む先は汎用索引 vocab_index だけです**（D-1・2026-08-31）。かつては
+// client_order_items / part_materials / our_order_items+our_orders という
+// 硬いドメイン表4つを引いていましたが、テーブルごと廃しました。鍵の変換
+// （見出しの表示文字 → 機械キー）は vocab_query.go が引き受けます。
+//
 // user は閲覧者（匿名は nil）。**部材の定義元ページを読めない相手には、その定義を
 // 集計へ混ぜない**。集計対象ページ（受注ページ）の read だけでは足りないため:
 // 品番は本文へ自由に書けるので、自分のページに任意の品番を1行置けば、読めない
 // 部品定義ページの部材名・仕入先・原価を引けてしまっていた（設計総点検）。
 // 判定は page.CanView に集約し、一覧の絞り込みと同じ規則を使う。
 func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialResponse, error) {
-	// 1. そのページ内の受注 client_orders の明細を取得する
-	//    明細が page_id を持つので直接引く。order_no のサブクエリだったころは、
-	//    同じ番号を別ページで使うと他ページの明細まで拾っていた（設計総点検③）。
-	rows, err := database.DB.Query(`
-		SELECT item_id, quantity
-		FROM client_order_items
-		WHERE page_id = ?
-	`, pageIDInt)
+	db := database.DB
+
+	// 1. そのページの受注明細（品番・数量）を索引から読む。
+	//    ページで絞るので、同じ発注書番号を別ページで使っても混ざらない
+	//    （硬い表のころ order_no のサブクエリで他ページの明細まで拾った・設計総点検③）。
+	orderItems, err := vocabTableRowsOf(db, pageIDInt, "client-order-items")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	type orderItem struct {
-		ItemID   string
-		Quantity int
-	}
-	var clientItems []orderItem
-	for rows.Next() {
-		var item orderItem
-		if err := rows.Scan(&item.ItemID, &item.Quantity); err == nil {
-			clientItems = append(clientItems, item)
-		}
-	}
-
-	// 2. 各受注部品に対し、必要な部材の定義 part_materials を取得し、総必要数を集計する
 	materialsMap := make(map[string]*RequiredMaterialResponse)
 
 	// 定義元ページの可視判定は1ページにつき1度だけ引く（品番ごとに何度も辿らない）。
@@ -222,45 +211,54 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		return v
 	}
 
-	for _, item := range clientItems {
-		// 行を回しながら権限を引くと、入れ子のクエリが別接続を掴んで
-		// フェイルクローズしうる。先に読み切ってから絞る。
-		type materialRow struct {
-			Name      string
-			Supplier  string
-			Cost      int
-			UnitQty   int
-			DefPageID int
+	// 2. 各受注部品に対し、必要な部材の定義を集めて総必要数を積む。
+	//
+	//    部品番号は部材表の中ではなく**ページ全体のタグ**にあるので、
+	//    「そのタグを持つページ」を逆引きしてから、そのページの部材表を読みます。
+	//    鍵の名前はレジストリ宣言（part-materials の RequiresTag）が持つ——ここへ
+	//    直書きすると、見出しを改名したときに告知する側と読む側がずれる（設計総点検⑤）。
+	materialsDef, _ := VocabDefByType("part-materials")
+	tagName := materialsDef.RequiresTag
+
+	// 同じ品番が明細に何度出ても、定義の引き直しは1度だけ。
+	defsFor := map[string][]VocabRow{}
+
+	for _, item := range orderItems {
+		partID := item.Values["item-id"]
+		if partID == "" {
+			continue // 品番の無い行は突き合わせようがない
 		}
-		var mats []materialRow
-		matRows, err := database.DB.Query(`
-			SELECT material_name, cost, supplier_name, quantity, COALESCE(page_id, 0)
-			FROM part_materials
-			WHERE part_id = ?
-		`, item.ItemID)
-		if err != nil {
-			return nil, err
-		}
-		for matRows.Next() {
-			var m materialRow
-			if err := matRows.Scan(&m.Name, &m.Cost, &m.Supplier, &m.UnitQty, &m.DefPageID); err == nil {
-				mats = append(mats, m)
+		orderQty := vocabQuantity(item)
+
+		mats, ok := defsFor[partID]
+		if !ok {
+			pageIDs, err := pagesByTag(db, tagName, partID)
+			if err != nil {
+				return nil, err
 			}
+			for _, defPageID := range pageIDs {
+				rows, err := vocabTableRowsOf(db, defPageID, "part-materials")
+				if err != nil {
+					return nil, err
+				}
+				mats = append(mats, rows...)
+			}
+			defsFor[partID] = mats
 		}
-		matRows.Close()
 
 		for _, m := range mats {
-			if !canView(m.DefPageID) {
+			if !canView(m.PageID) {
 				continue // 定義元ページを読めない相手には見せない
 			}
-			totalReq := m.UnitQty * item.Quantity
-			if existing, ok := materialsMap[m.Name]; ok {
+			name := m.Values["item-name"]
+			totalReq := vocabQuantity(m) * orderQty
+			if existing, ok := materialsMap[name]; ok {
 				existing.TotalRequired += totalReq
 			} else {
-				materialsMap[m.Name] = &RequiredMaterialResponse{
-					MaterialName:  m.Name,
-					SupplierName:  m.Supplier,
-					Cost:          m.Cost,
+				materialsMap[name] = &RequiredMaterialResponse{
+					MaterialName:  name,
+					SupplierName:  m.Values["supplier-name"],
+					Cost:          m.Num("cost"),
 					TotalRequired: totalReq,
 					Ordered:       0,
 				}
@@ -268,34 +266,38 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		}
 	}
 
-	// 3. 同じ page_id に紐づく弊社の発注実績 our_orders の明細を取得し、発注済数を集計する
-	//    JOIN の条件に page_id も入れる。番号だけで結ぶと、同じ番号を使う別ページの
-	//    ヘッダと結合して仕入先が入れ替わりうる（設計総点検③）。
-	ourRows, err := database.DB.Query(`
-		SELECT ooi.item_name, ooi.quantity, oo.supplier_name
-		FROM our_order_items ooi
-		JOIN our_orders oo ON ooi.order_no = oo.order_no AND ooi.page_id = oo.page_id
-		WHERE ooi.page_id = ?
-	`, pageIDInt)
+	// 3. 同じページの発注実績から発注済数を積む。
+	//    仕入先は明細ではなくヘッダ（名前：値）にあるので、同じページの
+	//    our-order ブロックから引きます。**対応づけは block_no**——索引の
+	//    ブロック番号は形式ごとの文書順連番なので、1つの発注書セクションが
+	//    ヘッダ1つと明細表1つを持つ限り、同じ番号どうしが対になります。
+	//    （硬い表のころは発注書番号で結んでいたが、番号が重複すると仕入先が
+	//    入れ替わりえた・設計総点検③。文書順なら重複しても取り違えない）
+	headers, err := vocabBlocksOf(db, pageIDInt, "our-order")
 	if err != nil {
 		return nil, err
 	}
-	defer ourRows.Close()
+	supplierOf := map[int]string{}
+	for _, h := range headers {
+		supplierOf[h.BlockNo] = h.Values["supplier-name"]
+	}
 
-	for ourRows.Next() {
-		var itemName, supplierName string
-		var quantity int
-		if err := ourRows.Scan(&itemName, &quantity, &supplierName); err == nil {
-			if existing, ok := materialsMap[itemName]; ok {
-				existing.Ordered += quantity
-			} else {
-				materialsMap[itemName] = &RequiredMaterialResponse{
-					MaterialName:  itemName,
-					SupplierName:  supplierName,
-					Cost:          0,
-					TotalRequired: 0,
-					Ordered:       quantity,
-				}
+	ourItems, err := vocabTableRowsOf(db, pageIDInt, "our-order-items")
+	if err != nil {
+		return nil, err
+	}
+	for _, oi := range ourItems {
+		name := oi.Values["item-name"]
+		quantity := vocabQuantity(oi)
+		if existing, ok := materialsMap[name]; ok {
+			existing.Ordered += quantity
+		} else {
+			materialsMap[name] = &RequiredMaterialResponse{
+				MaterialName:  name,
+				SupplierName:  supplierOf[oi.BlockNo],
+				Cost:          0,
+				TotalRequired: 0,
+				Ordered:       quantity,
 			}
 		}
 	}
@@ -313,4 +315,13 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	// 表示・応答が呼び出しごとに変わらないよう部材名順に揃える（map の走査順は不定）。
 	sort.Slice(list, func(i, j int) bool { return list[i].MaterialName < list[j].MaterialName })
 	return list, nil
+}
+
+// vocabQuantity は数量列を読みます。**空セルは 1**（旧 <m-material> の既定を
+// 引き継いだ値で、硬い表のころは索引を書く側が同じ既定を当てていた）。
+func vocabQuantity(row VocabRow) int {
+	if row.Values["quantity"] == "" {
+		return 1
+	}
+	return row.Num("quantity")
 }

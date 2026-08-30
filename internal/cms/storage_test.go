@@ -349,48 +349,29 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
-	// 2. 部品ページ(材料マスタ)の登録をシミュレート
+	// 2. 部品ページ(00003)の材料マスタ
 	// SHAFT-01 という部品は、鋼材(S45C)が1本、高周波焼入れが1個必要
-	_, err = db.Exec(`
-		INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
-		VALUES 
-		('SHAFT-01', 'シャフト用鋼材 (S45C)', 2500, '東邦金属工業', 1, '00003'),
-		('SHAFT-01', '外注高周波焼入れ', 1500, '山下熱処理', 1, '00003')
-	`)
-	if err != nil {
-		t.Fatalf("部材マスタ登録エラー: %v", err)
-	}
+	seedPageTag(t, 3, "部品番号", "SHAFT-01")
+	seedVocabTable(t, 3, "part-materials", 0,
+		map[string]string{"部材名": "シャフト用鋼材 (S45C)", "単価": "2500", "仕入先": "東邦金属工業", "数量": "1"},
+		map[string]string{"部材名": "外注高周波焼入れ", "単価": "1500", "仕入先": "山下熱処理", "数量": "1"},
+	)
 
-	// 3. 受注ページ(00002)の登録をシミュレート
-	// 受注：SHAFT-01 を 10本
-	_, err = db.Exec(`
-		INSERT INTO client_orders (order_no, client_name, page_id) VALUES ('PO-A100', 'トーア', 2)
-	`)
-	if err != nil {
-		t.Fatalf("受注ヘッダー登録エラー: %v", err)
-	}
-	_, err = db.Exec(`
-		INSERT INTO client_order_items (page_id, order_no, item_id, item_name, price, quantity, status)
-		VALUES (2, 'PO-A100', 'SHAFT-01', 'シャフトA', 8000, 10, '加工中')
-	`)
-	if err != nil {
-		t.Fatalf("受注明細登録エラー: %v", err)
-	}
+	// 3. 受注ページ(00002)：SHAFT-01 を 10本
+	seedVocabBlock(t, 2, "client-order", 0, map[string]string{
+		"発注書番号": "PO-A100", "発注元": "トーア",
+	})
+	seedVocabTable(t, 2, "client-order-items", 0, map[string]string{
+		"品番": "SHAFT-01", "品名": "シャフトA", "単価": "8000", "数量": "10", "状態": "加工中",
+	})
 
 	// 自社発注実績：鋼材をすでに10本発注済み
-	_, err = db.Exec(`
-		INSERT INTO our_orders (order_no, supplier_name, page_id) VALUES ('PO-OUR-001', '東邦金属工業', 2)
-	`)
-	if err != nil {
-		t.Fatalf("自社発注ヘッダー登録エラー: %v", err)
-	}
-	_, err = db.Exec(`
-		INSERT INTO our_order_items (page_id, order_no, item_name, cost, quantity, status)
-		VALUES (2, 'PO-OUR-001', 'シャフト用鋼材 (S45C)', 2500, 10, '未納品')
-	`)
-	if err != nil {
-		t.Fatalf("自社発注明細登録エラー: %v", err)
-	}
+	seedVocabBlock(t, 2, "our-order", 0, map[string]string{
+		"発注書番号": "PO-OUR-001", "発注先": "東邦金属工業",
+	})
+	seedVocabTable(t, 2, "our-order-items", 0, map[string]string{
+		"品名": "シャフト用鋼材 (S45C)", "単価": "2500", "数量": "10", "状態": "未納品",
+	})
 
 	// 4. APIハンドラーにHTTPリクエストを送ってテスト（adminユーザーで権限チェックを通す）
 	req, err := http.NewRequest("GET", "/api/required-materials?page_id=00002", nil)
