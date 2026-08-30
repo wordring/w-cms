@@ -77,21 +77,17 @@ func seedSecretMaterial(t *testing.T, orderPageID int, orderPagePublic bool, ord
 	addPage(t, 2, 0, "部品定義", "alice", "300", false)
 	addPage(t, orderPageID, 0, "受注", orderOwner, "302", orderPagePublic)
 
-	if _, err := database.DB.Exec(`
-		INSERT INTO part_materials (part_id, material_name, cost, supplier_name, quantity, page_id)
-		VALUES ('SECRET-PART', '極秘部材', 99999, '㊙商社', 2, 2)`); err != nil {
-		t.Fatalf("part_materials投入エラー: %v", err)
-	}
-	if _, err := database.DB.Exec(`
-		INSERT INTO client_orders (page_id, order_no, client_name, ordered_at, pdf_path)
-		VALUES (?, 'PO-1', '得意先', '2026-08-20', '')`, orderPageID); err != nil {
-		t.Fatalf("client_orders投入エラー: %v", err)
-	}
-	if _, err := database.DB.Exec(`
-		INSERT INTO client_order_items (page_id, order_no, item_id, item_name, price, quantity, status)
-		VALUES (?, 'PO-1', 'SECRET-PART', '部品', 100, 3, '')`, orderPageID); err != nil {
-		t.Fatalf("client_order_items投入エラー: %v", err)
-	}
+	// 部材定義はページ2。部品番号タグ SECRET-PART が受注明細の品番と結ぶ。
+	seedPageTag(t, 2, "部品番号", "SECRET-PART")
+	seedVocabTable(t, 2, "part-materials", 0, map[string]string{
+		"部材名": "極秘部材", "単価": "99999", "仕入先": "㊙商社", "数量": "2",
+	})
+	seedVocabBlock(t, orderPageID, "client-order", 0, map[string]string{
+		"発注書番号": "PO-1", "発注元": "得意先", "発注日": "2026-08-20",
+	})
+	seedVocabTable(t, orderPageID, "client-order-items", 0, map[string]string{
+		"品番": "SECRET-PART", "品名": "部品", "単価": "100", "数量": "3",
+	})
 }
 
 // TestRequiredMaterialsHidesUnreadableDefinitions は、定義元ページを読めない
