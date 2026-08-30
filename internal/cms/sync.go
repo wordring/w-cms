@@ -101,7 +101,7 @@ func SyncIndex(id string, htmlContent string) error {
 	}
 
 	// コア2: ページ権限インデックス（サイドカー <id>.meta.json → page_perms）の同期
-	// （dl[data-type="tags"] → page_tags はコアではなく plugin_page_tags.go が担う）
+	// （dl[data-type="tags"] も含め、マーカーの索引は②汎用索引 vocab_index が担う）
 	if err = page.SyncPageMeta(tx, pageIDInt, id); err != nil {
 		return err
 	}

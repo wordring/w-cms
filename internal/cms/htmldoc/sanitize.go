@@ -196,7 +196,7 @@ var structuralElements = map[string]map[string]bool{
 }
 
 // 注: 「親ページID」というタグ名を取り込まない規則は、その語彙を所有する
-// plugin_page_tags.go（cms パッケージ）が持ちます。サニタイザはHTMLの安全性だけを見て、
+// 語彙レジストリと汎用索引（cms パッケージ）が持ちます。サニタイザはHTMLの安全性だけを見て、
 // カスタム要素の意味には立ち入りません。
 
 // Sanitizer は合成済みの許可リストを持つサニタイザです。New() で構築します。

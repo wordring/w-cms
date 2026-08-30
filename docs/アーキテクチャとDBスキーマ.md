@@ -70,32 +70,26 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     *   `file_path` (TEXT): 物理ファイルの保存先パス。
     *   `created_at` (DATETIME): 作成日時。サイドカーから同期される。
     *   `created_by` (TEXT): 作成者。サイドカーから同期される。
-    *   `updated_at` (DATETIME): 更新日時。サイドカーの値を採用し、無ければ同期時刻（`CURRENT_TIMESTAMP`）にフォールバックする。
-    *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` のみHTML本文由来。`page_tags` はプラグインが同期）。
+    *   `updated_at` (DATETIME): 更新日時。サイドカーの値を採用し、無ければ同期時刻（Go 側で RFC3339 UTC・`T` 区切り。2026-08-30 に SQLite の `CURRENT_TIMESTAMP`＝空白区切りから揃えた）にフォールバックする。
+    *   `parent_id` を含むこれらページ属性は **サイドカー `<id>.meta.json` が正本**で、`pages` はそこから再生成される派生インデックス（後述 4.1・[エディタ仕様.md](エディタ仕様.md) 9章）。UNIX流に「内容＝HTML / 属性＝サイドカー」を分離するため、DB再構築（8章）でも親ページ・作成日時・作成者・真の更新日時が失われない（`title` のみHTML本文由来）。
     *   `created_at` / `created_by` 列は `CREATE TABLE` に加え、既存DB向けに冪等な `ALTER TABLE ADD COLUMN` マイグレーション（`database/sqlite.go` の `coreMigrations`）でも追加される。
-*   **`page_tags`**: 可変タグ（ページ横断メタ）。同期元は
-    `<dl data-type="tags">`（dt=名前・dd=値。鍵は `dt` の表示文字）
-    **のみ**——旧 `<m-tag name value>` の読み取りは短期保険として残していたが 2026-08-19 に除去済み。
-    *   `page_id` (FK), `name`, `value`
-    *   **コアテーブルではない**。`plugin_page_tags.go` が `Schema()` で定義する
-        （「ユースケース固有のテーブルはプラグインが所有する」方針）。
-    *   **主キーは持たない**。`name` は自由語であり、**同じ `name` が同一ページに複数あってよい**
-        （担当者が2人、関連部品番号が複数、といった多値属性を表現できる）。検索用に
-        非一意インデックス `idx_page_tags_page_name (page_id, name)` を張る。
-    *   かつては `PRIMARY KEY (page_id, name)` だったため、同名タグを2つ置くと保存が
-        UNIQUE 制約違反となり **本文ごと保存できない**（500）状態になっていた。
-    *   単一値として扱いたい用途（例: 「部品番号」）は、HTML木から先頭を採る
-        ヘルパ `cms.TagValue` が担う（`<dl data-type="tags">` を走査する）。
-        この表は現状クエリされていない検索用インデックス。
-*   **`vocab_index`**: 語彙モデルの**汎用索引**（3層モデルの②。`page_tags` の一般化）。
+*   **`page_tags` は廃止**（2026-08-30・D-1 の第一歩）——可変タグの行き先は `vocab_index`
+    **だけ**になった。専用テーブルは中身が索引と完全に重複し、**読むコードが1行も無かった**
+    （単一値の読み口 `cms.TagValue` は昔からHTML木を直接走査する）。同名タグの多値・
+    「親ページID」旧ガードの経緯は [変更履歴.md](変更履歴.md) を参照。既存DBに残る
+    `page_tags` テーブルは次の全再構築（§8.2 の全テーブルDROP）で消える。
+*   **`vocab_index`**: 語彙モデルの**汎用索引**（3層モデルの②。可変タグを含む全マーカーの行き先）。
     全 `<table data-type>` / `<dl data-type>` の値を**縦持ち**で同期する
     （[cms/vocab_index.go](../internal/cms/vocab_index.go)。2026-08-17・縦切り第1段）。
     *   `page_id` (FK), `data_type`（形式）, `block_no`（同形式ブロックの文書順連番）,
         `block_id`（ブロックの `data-id`・無ければ空）, `row_no`（データ行の連番）,
         `field`（鍵＝見出し／`dt` の表示文字）, `value`（生テキスト＝正本）,
-        `norm_value`（正規化値。解釈できた値だけ併記・NULL可）
+        `norm_value`（正規化値。解釈できた値だけ併記・NULL可）,
+        `norm_num`（number 型の数値としての正規化値・REAL・NULL可。TEXT の文字列比較
+        `"8000" < "900"` を避けるための数値格納クラス。2026-08-30）
     *   主キーは持たない（1セル＝1行の完全正規化。形式の定義変更がDBスキーマ変更を
-        要求しない）。検索用に `(page_id)` と `(data_type, field)` の非一意インデックス。
+        要求しない）。検索用に `(page_id)`・`(data_type, field)`・`(field, value)`・
+        `(field, norm_value)` の非一意インデックス（後2者は値の逆引きと日付範囲用。2026-08-30）。
     *   **未知の `data-type` もそのまま載る**（オプトインの規約は `data-type` の有無だけ。
         レジストリは安全性の門ではない——[【考察】語彙モデル.md](【考察】語彙モデル.md) §4・§9）。
 
