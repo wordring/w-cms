@@ -11,6 +11,14 @@ import (
 	"w-cms/internal/cms/page"
 )
 
+// reset はキャッシュを空にします（テストが殻を差し替えたあとに使う。
+// 本番に使い手が無いのでテスト側で定義する——同一パッケージなのでメソッドを足せる）。
+func (s *shellFile) reset() {
+	s.mu.Lock()
+	s.body, s.modTime = "", 0
+	s.mu.Unlock()
+}
+
 // writeTestShell はテスト用の最小シェルを作業ディレクトリへ用意します。
 // 本物と同じプレースホルダを持たせ、合成のロジックだけを検証します。
 //
