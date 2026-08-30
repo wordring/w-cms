@@ -95,7 +95,7 @@ func IsUnderTemplateRoot(id string) bool {
 // 判定は「トップページの直下」かつ「タイトルが TemplateRootTitle」です。
 //
 // タイトルはサイドカーに無い（PageMeta は owner/group/mode/parent/日時のみ）ため、
-// 本文HTMLをディスクから読んで ParseCore で取ります。**先に親を見て弾く**ので、
+// 本文HTMLをディスクから読んで PageTitle で取ります。**先に親を見て弾く**ので、
 // 1回の親チェーン辿りでファイルを読むのは高々1ページ分です
 // （トップの直下という条件を満たす先祖は鎖の中にただ1つしか無い）。
 func isTemplateRoot(id string) bool {
@@ -111,20 +111,6 @@ func isTemplateRoot(id string) bool {
 		return false
 	}
 	return pageTitleFromDisk(id) == TemplateRootTitle
-}
-
-// IsTemplatePage は、そのページが**テンプレートとして選べる**かを返します。
-// 条件は「テンプレートルートの配下」かつ「葉（子を持たない）」です（同書 §3.2）。
-// 子を持つページは分類のためだけに存在し、コピーの対象になりません。
-//
-// 葉の判定だけはDBを見ます——**呼ばれるのはリクエスト時（メニュー表示・コピー実行）だけ**で、
-// そのときDBは揃っているため、§6.1 の再構築順序の罠は及びません。
-func IsTemplatePage(id string) bool {
-	norm, ok := page.NormalizeID(id)
-	if !ok || !IsUnderTemplateRoot(norm) {
-		return false
-	}
-	return isLeafPage(norm)
 }
 
 // isLeafPage は子を持たないページかを返します。
@@ -189,5 +175,5 @@ func pageTitleFromDisk(id string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(ParseCore(root).Title)
+	return PageTitle(root)
 }

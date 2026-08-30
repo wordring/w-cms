@@ -134,32 +134,23 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, def Vo
 // 1 dt に複数 dd の形は形式外だが、来ても鍵の繰り返しとして寛容に読む。
 func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, def VocabDef, dl *html.Node) error {
 	blockID := Attr(dl, "data-id")
-	currentKey := ""
 	rowNo := 0
 	var firstErr error
-	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true}, func(n *html.Node) {
-		if firstErr != nil {
-			return
+	eachDLPair(dl, false, func(key string, dd *html.Node) bool {
+		if key == "" {
+			return true // dt より前の dd は鍵が決まらない
 		}
-		switch n.Data {
-		case "dt":
-			currentKey = strings.TrimSpace(nodeText(n))
-		case "dd":
-			key := currentKey // 鍵は直前の dt の表示文字
-			if key == "" {
-				return // dt より前の dd は鍵が決まらない
-			}
-			typ := InferColumnType(key)
-			if col, ok := def.columnFor(key); ok {
-				typ = col.Type
-			}
-			value := strings.TrimSpace(nodeText(n))
-			if err := insertVocabEntry(tx, pageID, dataType, blockNo, blockID, rowNo, key, typ, value); err != nil {
-				firstErr = err
-				return
-			}
-			rowNo++
+		typ := InferColumnType(key)
+		if col, ok := def.columnFor(key); ok {
+			typ = col.Type
 		}
+		value := strings.TrimSpace(nodeText(dd))
+		if err := insertVocabEntry(tx, pageID, dataType, blockNo, blockID, rowNo, key, typ, value); err != nil {
+			firstErr = err
+			return false
+		}
+		rowNo++
+		return true
 	})
 	return firstErr
 }
@@ -212,6 +203,40 @@ func rowCells(row *html.Node) []*html.Node {
 	return cells
 }
 
+// eachDLPair は dl の「名前：値」の対を文書順で fn へ渡します。鍵（key）は
+// **直前の dt の表示文字**（trim後）で、dt より前の dd は key="" のまま渡します
+// （拾うか捨てるかは呼び出し側の責任）。fn が false を返すと打ち切ります。
+//
+// dt/dd を読む処理はすべてこの1関数を通ります（②索引・タグ・雛形の穴埋め・
+// 改名告知の鍵集め）。かつては6箇所に同じ状態機械が写されており、「鍵は直前の
+// dt」という規則を変えるとき全部を探して回る必要がありました。
+//
+// skipSection は入れ子の <section> の中へ降りるかです。形式の読み取り
+// （VocabDLFields・dlHeadingKeys・freshenDL）は「入れ子の業務ブロックは独立して
+// 読まれる」ため降りません（true）。タグと②索引の書き込みは従来どおり降ります
+// （false・sanitize後の本文で dl の中に section が来ることは実際には無い）。
+func eachDLPair(dl *html.Node, skipSection bool, fn func(key string, dd *html.Node) bool) {
+	skip := map[string]bool{"dl": true, "table": true}
+	if skipSection {
+		skip["section"] = true
+	}
+	currentKey := ""
+	stopped := false
+	walkSkippingNested(dl, skip, func(n *html.Node) {
+		if stopped {
+			return
+		}
+		switch n.Data {
+		case "dt":
+			currentKey = strings.TrimSpace(nodeText(n))
+		case "dd":
+			if !fn(currentKey, n) {
+				stopped = true
+			}
+		}
+	})
+}
+
 // walkSkippingNested は root の子孫要素を文書順で走査します。ただし skip に挙げた
 // 要素の**内側へは降りません**（root 自身は走査対象外）。
 func walkSkippingNested(root *html.Node, skip map[string]bool, fn func(*html.Node)) {
@@ -237,22 +262,16 @@ func VocabDLFields(dl *html.Node, def VocabDef) map[string]string {
 	if dl == nil {
 		return out
 	}
-	currentKey := ""
-	walkSkippingNested(dl, map[string]bool{"dl": true, "table": true, "section": true}, func(n *html.Node) {
-		switch n.Data {
-		case "dt":
-			currentKey = strings.TrimSpace(nodeText(n))
-		case "dd":
-			key := currentKey
-			if col, ok := def.columnFor(key); ok && col.Field != "" {
-				key = col.Field
-			}
-			if key != "" {
-				if _, dup := out[key]; !dup { // 多値は先頭を採る（TagValue と同じ）
-					out[key] = strings.TrimSpace(nodeText(n))
-				}
+	eachDLPair(dl, true, func(key string, dd *html.Node) bool {
+		if col, ok := def.columnFor(key); ok && col.Field != "" {
+			key = col.Field
+		}
+		if key != "" {
+			if _, dup := out[key]; !dup { // 多値は先頭を採る（TagValue と同じ）
+				out[key] = strings.TrimSpace(nodeText(dd))
 			}
 		}
+		return true
 	})
 	return out
 }

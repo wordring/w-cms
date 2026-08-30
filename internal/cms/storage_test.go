@@ -167,9 +167,8 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTMLパースエラー: %v", err)
 	}
-	core := ParseCore(root)
-	if core.Title != "試作受注の記録" {
-		t.Errorf("期待値と異なるタイトル: %s", core.Title)
+	if got := PageTitle(root); got != "試作受注の記録" {
+		t.Errorf("期待値と異なるタイトル: %s", got)
 	}
 
 	// 4. 同期処理のテスト（プラグイン経由でDBに反映される）
@@ -475,7 +474,7 @@ func TestPluginTablesConsistency(t *testing.T) {
 	}
 	rows.Close()
 
-	for _, p := range Plugins() {
+	for _, p := range registry {
 		for _, tbl := range p.Tables() {
 			if !existing[tbl] {
 				t.Errorf("プラグイン %q の Tables() が宣言する %q が Schema() で作成されていません", p.Name(), tbl)

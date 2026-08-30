@@ -230,13 +230,6 @@ type SeedHandler interface {
 	OnElement(ctx *SeedContext, el *html.Node) (descend bool, err error)
 }
 
-// ObserveHandlerFunc は関数を ObserveHandler にします。
-type ObserveHandlerFunc func(ctx *ObserveContext, el *html.Node) (bool, error)
-
-func (f ObserveHandlerFunc) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
-	return f(ctx, el)
-}
-
 // MirrorHandlerFunc は関数を MirrorHandler にします。
 type MirrorHandlerFunc func(ctx *MirrorContext, el *html.Node) (bool, error)
 
@@ -270,9 +263,10 @@ func newWalkRegistry() *walkRegistry {
 // walkers はコアが1つだけ持つ登録表です（`init()` から登録する現行の流儀に合わせる）。
 var walkers = newWalkRegistry()
 
-// RegisterObserver は観察係（保存時）を登録します。**同じ引き金に何人でも**——
-// 同じ要素を複数の索引が読んで構いません（読むだけで、書く先は各自の所有テーブル）。
-func RegisterObserver(trigger string, h ObserveHandler) { walkers.observe(trigger, h) }
+// 観察係（保存時）の登録口は Register（plugin.go）だけです——観察係は Schema/Tables を
+// 持つプラグインとして登録され、observerAdapter が walkers.observe へ配線します。
+// 引き金ごとの人数制限は無く、同じ要素を複数の索引が読んで構いません
+// （読むだけで、書く先は各自の所有テーブル）。
 
 // RegisterMirror は鏡型（表示時）を登録します。**引き金ごとに1人**——
 // 「順番」に意味を持たせないための構造的な保証で、重複は起動時に落とします。
@@ -319,45 +313,6 @@ func isChrome(el *html.Node) bool {
 
 // chromeClass は表示専用クロームの印です（シリアライザ・サニタイザと同じ言葉）。
 const chromeClass = "vocab-chrome"
-
-// mayContainMirrorTrigger は、鏡型の段で歩く価値があるかを文字列だけで判定します。
-// 計算ビューのマーカーが1つも無い普通のページに、パースの費用を掛けないための早道です。
-func (r *walkRegistry) mayContainMirrorTrigger(bodyHTML string) bool {
-	if r.mirrors[TriggerAll] != nil {
-		return strings.Contains(bodyHTML, "data-type=")
-	}
-	for t := range r.mirrors {
-		if strings.Contains(bodyHTML, `data-type="`+t+`"`) {
-			return true
-		}
-	}
-	return false
-}
-
-// mayContainTrigger は、その本文を歩く価値があるかを文字列だけで判定します（早道）。
-// 登録済みの引き金が1つも現れなければ、パースも走査もしません。
-func (r *walkRegistry) mayContainTrigger(bodyHTML string) bool {
-	// 「マーカーのある要素すべて」を待つ担当が居るなら、data-type の有無だけで足りる。
-	if len(r.observers[TriggerAll]) > 0 || r.mirrors[TriggerAll] != nil || r.seeders[TriggerAll] != nil {
-		return strings.Contains(bodyHTML, "data-type=")
-	}
-	for t := range r.observers {
-		if t != TriggerAll && strings.Contains(bodyHTML, `data-type="`+t+`"`) {
-			return true
-		}
-	}
-	for t := range r.mirrors {
-		if t != TriggerAll && strings.Contains(bodyHTML, `data-type="`+t+`"`) {
-			return true
-		}
-	}
-	for t := range r.seeders {
-		if t != TriggerAll && strings.Contains(bodyHTML, `data-type="`+t+`"`) {
-			return true
-		}
-	}
-	return false
-}
 
 // ── 走査 ─────────────────────────────────────────────────────────────────
 
