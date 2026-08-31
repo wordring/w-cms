@@ -2,8 +2,12 @@ package cms
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"w-cms/internal/cms/page"
 
 	"w-cms/internal/database"
 )
@@ -141,5 +145,66 @@ func TestConvertHeadingSkipsConflictingHeading(t *testing.T) {
 	}
 	if changed && !strings.Contains(out, `data-type="client-order"`) {
 		t.Errorf("見出しが食い違うのに data-type が外されました:\n%s", out)
+	}
+}
+
+// TestMigrateAttachmentsInDir は、添付の移動と本文の書き換えを検証します。
+// 正本2ファイルと versions/ files/ は触らず、添付だけが files/ へ移り、
+// 本文の配信アドレス（生のUTF-8・パーセント符号化の両方）が追随する。
+func TestMigrateAttachmentsInDir(t *testing.T) {
+	setupSaveTest(t)
+	const id = "000071"
+	dir := page.GetPageDir(id)
+	os.MkdirAll(filepath.Join(dir, "versions"), 0755)
+	os.WriteFile(filepath.Join(dir, id+".html"), []byte("x"), 0644)
+	os.WriteFile(filepath.Join(dir, id+".meta.json"), []byte("{}"), 0644)
+	os.WriteFile(filepath.Join(dir, "見積書.pdf"), []byte("%PDF-"), 0644)
+	os.WriteFile(filepath.Join(dir, "photo.png"), []byte("png"), 0644)
+	os.WriteFile(filepath.Join(dir, "versions", "20260101T000000Z.json"), []byte("{}"), 0644)
+
+	moved, err := migrateAttachmentsInDir(dir, id)
+	if err != nil {
+		t.Fatalf("移行エラー: %v", err)
+	}
+	if len(moved) != 2 {
+		t.Fatalf("移動した数が違います: %v", moved)
+	}
+	for _, name := range []string{"見積書.pdf", "photo.png"} {
+		if _, err := os.Stat(filepath.Join(dir, "files", name)); err != nil {
+			t.Errorf("%s が files/ に居ません: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("%s が直下に残っています", name)
+		}
+	}
+	// 正本と versions/ は無傷。
+	for _, keep := range []string{id + ".html", id + ".meta.json"} {
+		if _, err := os.Stat(filepath.Join(dir, keep)); err != nil {
+			t.Errorf("正本 %s が動かされました: %v", keep, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "versions", "20260101T000000Z.json")); err != nil {
+		t.Errorf("versions/ が動かされました: %v", err)
+	}
+
+	// 本文の書き換え（生UTF-8とパーセント符号化の両方）。
+	body := `<p><a href="/data/master/00/000071/見積書.pdf">見積書</a></p>` +
+		`<p><img src="/data/master/00/000071/photo.png"></p>` +
+		`<p><a href="/data/master/00/000071/%E8%A6%8B%E7%A9%8D%E6%9B%B8.pdf">符号化リンク</a></p>`
+	out := rewriteAttachmentURLs(body, id, moved)
+	for _, want := range []string{
+		`/data/master/00/000071/files/見積書.pdf`,
+		`/data/master/00/000071/files/photo.png`,
+		`/data/master/00/000071/files/%E8%A6%8B%E7%A9%8D%E6%9B%B8.pdf`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("書き換え後に %s がありません:\n%s", want, out)
+		}
+	}
+
+	// 冪等: もう一度動かしても何も起きない。
+	again, err := migrateAttachmentsInDir(dir, id)
+	if err != nil || len(again) != 0 {
+		t.Errorf("再実行で変化しました: moved=%v err=%v", again, err)
 	}
 }

@@ -156,6 +156,7 @@ func buildHandler() http.Handler {
 
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/migrate-headings", cms.MigrateHeadingsAPIHandler)
+	protected.HandleFunc("/api/migrate-attachments", cms.MigrateAttachmentsAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 
 	// 権限管理（owner/admin）
