@@ -93,9 +93,11 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 		return true, syncVocabSection(ctx, el)
 	}
 	if el.Data != "table" && el.Data != "dl" {
-		return true, nil // 素の table / dl は配送係が弾く。ここへ来るのは section 等
+		return true, nil // 形式の無い要素は配送係が弾く。ここへ来るのは section 等
 	}
-	dataType := Attr(el, "data-type")
+	// 形式の解決は配送係と同じ vocabTypeOf——属性が正、無ければ位置の規則
+	// （セクション外の素の dl＝タグ）。
+	dataType := vocabTypeOf(el)
 	// block_no は同一 data-type のブロックの文書順連番（同じ形式の表が
 	// ページに複数あっても行を区別できるようにする）。
 	no := ctx.Counter("vocab_index:" + dataType)

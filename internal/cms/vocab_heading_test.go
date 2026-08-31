@@ -191,10 +191,10 @@ func TestHeadingMirrorRendersAndKeepsContent(t *testing.T) {
 	out := RenderComputedViews(req, 60, body)
 
 	for _, want := range []string{
-		`<h2>子ページ一覧</h2>`,     // 見出しは残る
-		`この一覧は自動で更新されます。`,        // 注記も残る
-		`class="vocab-chrome"`,  // 鏡の中身はその下に描かれる
-		`href="/000061"`,        // 実際に子が並ぶ
+		`<h2>子ページ一覧</h2>`,      // 見出しは残る
+		`この一覧は自動で更新されます。`,      // 注記も残る
+		`class="vocab-chrome"`, // 鏡の中身はその下に描かれる
+		`href="/000061"`,       // 実際に子が並ぶ
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("描画結果に %q がありません:\n%s", want, out)

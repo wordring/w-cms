@@ -157,13 +157,14 @@ func UnresolvedVocabFields(htmlStr string) []string {
 	return out
 }
 
-// hasTagsList は本文にページ横断メタ（<dl data-type="tags">）が1つでもあるかを返します。
+// hasTagsList は本文にページのタグ（セクション外の素の dl。属性でも可）が
+// 1つでもあるかを返します。
 // RequiresTag の告知を「タグを使っているのに鍵が引けない」場合に限るための徴候判定。
 func hasTagsList(nodes []*html.Node) bool {
 	found := false
 	for _, root := range nodes {
 		WalkElements(root, func(n *html.Node) {
-			if n.Data == "dl" && Attr(n, "data-type") == "tags" {
+			if n.Data == "dl" && vocabTypeOf(n) == "tags" {
 				found = true
 			}
 		})
