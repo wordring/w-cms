@@ -201,3 +201,83 @@ func TestHeadingMirrorRendersAndKeepsContent(t *testing.T) {
 		}
 	}
 }
+
+// TestHeadingSectionItemsTable は、機能見出しのセクション内の**素の明細表**が
+// Items 宣言の形式として索引されることを検証します（2026-08-31 ユーザー:
+// 「発注書などの表はTableで組みましょう。THに表示される文字列が、すなわち列の
+// データを表します。人に対しても機械に対しても有効」）。
+//
+// <section><h2>顧客の発注書</h2><dl>ヘッダ</dl><table>明細</table></section> という
+// **属性ゼロの受注ブロック**が、従来のマーカー付きとまったく同じ形（ヘッダ＝
+// client-order・明細＝client-order-items・block_no の対・列型の解決）で索引に載る。
+// 集計（vocab_query）は両者を区別しないので、部材手配・進捗の計算がそのまま効く。
+func TestHeadingSectionItemsTable(t *testing.T) {
+	setupSaveTest(t)
+
+	body := `<h1>受注ページ</h1>` +
+		`<section data-id="ord1">` +
+		`<h2>顧客の発注書</h2>` +
+		`<dl><dt>発注書番号</dt><dd>PO-PLAIN</dd><dt>発注元</dt><dd>トーア</dd></dl>` +
+		`<table>` +
+		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
+		`<tr><td>SHAFT-01</td><td>シャフト</td><td>¥8,000</td><td>10</td><td>加工中</td></tr>` +
+		`</table>` +
+		`</section>`
+	if err := SyncIndex("000055", body); err != nil {
+		t.Fatalf("SyncIndexエラー: %v", err)
+	}
+
+	// ヘッダは client-order、明細は client-order-items——マーカー付きと同じ形式名。
+	if got := queryIndex(t, 55, "client-order"); len(got) != 2 {
+		t.Errorf("ヘッダの索引が期待と異なります: %v", got)
+	}
+	items := queryIndex(t, 55, "client-order-items")
+	if len(items) != 5 {
+		t.Fatalf("明細の索引が期待と異なります: %v", items)
+	}
+
+	// 列型は Items 宣言（client-order-items の Columns）から解決される——
+	// 単価が number として norm_num に入る（¥・桁区切りも吸収）。
+	var normNum float64
+	if err := database.DB.QueryRow(
+		`SELECT norm_num FROM vocab_index WHERE page_id = 55 AND field = '単価'`).Scan(&normNum); err != nil {
+		t.Fatalf("クエリエラー: %v", err)
+	}
+	if normNum != 8000 {
+		t.Errorf("明細の列型が Items 宣言から解決されていません: norm_num=%v", normNum)
+	}
+
+	// ヘッダと明細の block_no は対（どちらも最初のブロック＝0）。
+	var hdrNo, itemNo int
+	database.DB.QueryRow(`SELECT block_no FROM vocab_index WHERE page_id = 55 AND data_type = 'client-order' LIMIT 1`).Scan(&hdrNo)
+	database.DB.QueryRow(`SELECT block_no FROM vocab_index WHERE page_id = 55 AND data_type = 'client-order-items' LIMIT 1`).Scan(&itemNo)
+	if hdrNo != 0 || itemNo != 0 {
+		t.Errorf("ヘッダと明細の block_no が対になっていません: hdr=%d item=%d", hdrNo, itemNo)
+	}
+}
+
+// TestHeadingRenameIsNotified は、見出し駆動のブロックでも改名告知が働くことを検証します。
+// エディタが機能見出しで挿す形へ切り替わると、新規ブロックはすべてこの経路を通る——
+// ここが黙ると「改名で計算が読めなくなったのに告知ゼロ」という D-2 前の穴が再来する。
+func TestHeadingRenameIsNotified(t *testing.T) {
+	body := `<section>` +
+		`<h2>顧客の発注書</h2>` +
+		`<dl><dt>発注書番号</dt><dd>PO-1</dd><dt>得意先</dt><dd>X</dd></dl>` + // 発注元→得意先
+		`<table><tr><th>品番</th><th>品名（変更）</th><th>単価</th><th>数量</th><th>状態</th></tr>` + // 品名→品名（変更）
+		`<tr><td>A</td><td>B</td><td>1</td><td>2</td><td>未着手</td></tr></table>` +
+		`</section>`
+
+	got := UnresolvedVocabFields(body)
+	wantHits := []string{"顧客の発注書: 発注元", "受注明細: 品名"}
+	for _, w := range wantHits {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("改名告知に %q がありません: %v", w, got)
+		}
+	}
+}

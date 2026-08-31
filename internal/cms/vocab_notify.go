@@ -87,12 +87,39 @@ func UnresolvedVocabFields(htmlStr string) []string {
 	needsTag := map[string]VocabDef{}
 	for _, root := range nodes {
 		WalkElements(root, func(n *html.Node) {
-			def, ok := VocabDefByType(Attr(n, "data-type"))
-			if !ok || n.Data != def.Element {
+			// 形式の解決は索引と同じ vocabTypeOf——data-type が正、無ければ機能見出し
+			// （D-2）。ここが索引側とずれると「索引には載るのに告知されない」ズレになる。
+			def, ok := VocabDefByType(vocabTypeOf(n))
+			if !ok {
 				return
 			}
-			for _, label := range unresolvedFieldsIn(n, def) {
-				seen[def.DisplayName+": "+label] = true
+			if n.Data == "section" {
+				// section は素の中身から鍵を集める（syncVocabSection と同じ切り分け）。
+				// 素の dl はヘッダ＝形式自身の列、素の table は明細＝ Items 宣言の列。
+				itemsDef := def
+				if def.Items != "" {
+					if idef, ok := VocabDefByType(def.Items); ok {
+						itemsDef = idef
+					}
+				}
+				eachPlainVocabChild(n, func(c *html.Node) {
+					switch c.Data {
+					case "dl":
+						for _, label := range unresolvedKeys(dlHeadingKeys(c), def) {
+							seen[def.DisplayName+": "+label] = true
+						}
+					case "table":
+						for _, label := range unresolvedKeys(tableHeadingKeys(c), itemsDef) {
+							seen[itemsDef.DisplayName+": "+label] = true
+						}
+					}
+				})
+			} else if n.Data == def.Element {
+				for _, label := range unresolvedKeys(vocabHeadingKeys(n, def), def) {
+					seen[def.DisplayName+": "+label] = true
+				}
+			} else {
+				return // 要素と形式が合わない（table に dl の形式名など）は対象外
 			}
 			if def.RequiresTag != "" {
 				needsTag[def.Type] = def
@@ -147,8 +174,8 @@ func hasTagsList(nodes []*html.Node) bool {
 	return false
 }
 
-// unresolvedFieldsIn は1つの形式インスタンスについて、解決できなかった宣言列のラベルを返します。
-func unresolvedFieldsIn(n *html.Node, def VocabDef) []string {
+// unresolvedKeys は鍵の列を宣言（def）と突き合わせ、解決できなかった宣言列のラベルを返します。
+func unresolvedKeys(keys []string, def VocabDef) []string {
 	// 機械キーを持つ列が無い形式（自由語・記録用）は対象外。
 	typed := false
 	for _, c := range def.Columns {
@@ -163,7 +190,7 @@ func unresolvedFieldsIn(n *html.Node, def VocabDef) []string {
 
 	resolved := map[string]bool{}
 	stray := false
-	for _, key := range vocabHeadingKeys(n, def) {
+	for _, key := range keys {
 		if col, ok := def.columnFor(key); ok {
 			resolved[col.Field] = true
 		} else if key != "" {
@@ -182,27 +209,30 @@ func unresolvedFieldsIn(n *html.Node, def VocabDef) []string {
 	return out
 }
 
-// vocabHeadingKeys は形式インスタンスが携帯するスキーマ（表の見出し行・dl の dt）から
-// 鍵を取り出します。鍵の決め方は読み取り経路（VocabTableRows / VocabDLFields）と同じ。
-func vocabHeadingKeys(n *html.Node, def VocabDef) []string {
+// tableHeadingKeys は表の見出し行（最初の tr）の表示文字を返します。
+func tableHeadingKeys(table *html.Node) []string {
+	rows := tableRows(table)
+	if len(rows) == 0 {
+		return nil
+	}
 	var out []string
-	switch def.Element {
-	case "table":
-		rows := tableRows(n)
-		if len(rows) == 0 {
-			return nil
-		}
-		for _, cell := range rowCells(rows[0]) {
-			out = append(out, strings.TrimSpace(nodeText(cell)))
-		}
-	case "dl":
-		out = dlHeadingKeys(n)
-	case "section":
-		// 業務文書ブロックのヘッダは data-type を持たない直下の <dl>（論点A・案1）。
-		// 明細表は table 形式として別途走査されるのでここでは見ない。
-		out = dlHeadingKeys(FirstVocabChild(n, "dl", ""))
+	for _, cell := range rowCells(rows[0]) {
+		out = append(out, strings.TrimSpace(nodeText(cell)))
 	}
 	return out
+}
+
+// vocabHeadingKeys は形式インスタンスが携帯するスキーマ（表の見出し行・dl の dt）から
+// 鍵を取り出します。鍵の決め方は読み取り経路（VocabTableRows / VocabDLFields）と同じ。
+// section は呼び出し側（UnresolvedVocabFields）が素の中身ごとに分けて扱うため、ここへは来ません。
+func vocabHeadingKeys(n *html.Node, def VocabDef) []string {
+	switch def.Element {
+	case "table":
+		return tableHeadingKeys(n)
+	case "dl":
+		return dlHeadingKeys(n)
+	}
+	return nil
 }
 
 // dlHeadingKeys は dl の項目の鍵（直前の dt の表示文字）を返します。
