@@ -1917,10 +1917,15 @@
         controls.className = 'block-controls';
         controls.contentEditable = 'false';
         
+        // ＋はブロックの**下端の境界線上**に出す（2026-08-31 ユーザー要望「上ぞろえだと
+        // 離れた位置にブロックが出来るように感じる」）。挿入されるのはこのブロックの
+        // 直後なので、ボタンの出る場所＝新しいブロックが生まれる場所になる。
+        // コントロール帯（⠿ 🗑）はブロック自身への操作なので上ぞろえのまま分ける。
         const addBtn = document.createElement('button');
         addBtn.className = 'add-btn';
-        addBtn.innerHTML = '＋';
-        addBtn.title = 'ブロックを下に追加';
+        addBtn.contentEditable = 'false';
+        addBtn.textContent = '＋';
+        addBtn.title = 'ここにブロックを追加';
         addBtn.onclick = () => {
             const newP = insertComponent('p', block, 'after');
             if (newP) {
@@ -1944,9 +1949,9 @@
         delBtn.title = 'ブロックを削除';
         delBtn.onclick = () => deleteBlock(block);
 
-        controls.appendChild(addBtn);
         controls.appendChild(dragHandle);
         controls.appendChild(delBtn);
+        block.appendChild(addBtn); // 境界の住人（.block-content の外＝保存対象外）
         
         const contentWrapper = document.createElement('div');
         contentWrapper.className = 'block-content';
