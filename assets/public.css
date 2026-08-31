@@ -72,26 +72,29 @@ body.public {
 
 .public-content dl { margin: 0 0 20px; }
 
-/* 業務ブロックのヘッダ（section 内の素の dl）は名前：値の対を横に並べる
-   （エディタ側と同じ見た目。2026-08-31）。 */
-.public-content section dl:not([data-type]) {
-    display: flex;
-    flex-wrap: wrap;
+/* 素の dl（名前：値）は対ごとに1行・名前と値は横並び（エディタ側と同じ見た目。2026-08-31）。 */
+.public-content dl:not([data-type]) {
+    display: grid;
+    grid-template-columns: max-content auto;
+    column-gap: 4px;
+    row-gap: 4px;
     align-items: baseline;
-    row-gap: 6px;
     margin: 8px 0 20px;
 }
-.public-content section dl:not([data-type]) dt {
+.public-content dl:not([data-type]) dt {
+    grid-column: 1;
     margin: 0;
     color: #64748b;
     font-weight: normal;
     font-size: 13px;
 }
-.public-content section dl:not([data-type]) dt::after {
+.public-content dl:not([data-type]) dt::after {
     content: '：';
 }
-.public-content section dl:not([data-type]) dd {
-    margin: 0 24px 0 2px;
+.public-content dl:not([data-type]) dd {
+    grid-column: 2;
+    justify-self: start;
+    margin: 0;
 }
 .public-content dt { font-weight: 600; color: var(--pub-muted); margin-top: 10px; }
 .public-content dd { margin: 0 0 4px 1em; }
