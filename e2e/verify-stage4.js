@@ -65,7 +65,10 @@ async function openSlashMenu(page) {
         await page.waitForURL('**/000000**', { timeout: 8000 });
 
         // 2. boot.js（FOUC防止の外部化）が実行されている
-        check('boot.js がレール状態を確定', await page.evaluate(() => document.documentElement.classList.contains('toc-collapsed') || document.documentElement.classList.contains('left-collapsed')));
+        // 目次は右レールのカードへ移った（2026-08-31）。boot.js は左右レールの
+        // 畳み状態だけを扱う——既定はどちらも開きなので、クラスが**無い**ことを見る。
+        check('boot.js がレール状態を確定', await page.evaluate(() =>
+            !document.documentElement.classList.contains('toc-collapsed')));
 
         // 3. 撤去したファイルが配信されない
         for (const p of ['/assets/web-components.js', '/assets/components.css', '/assets/templates/m-tag-view.html']) {

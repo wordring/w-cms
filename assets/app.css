@@ -65,12 +65,10 @@ body {
     top: 20px;
 }
 .rail-left { flex: 0 0 220px; }
-.rail-toc { flex: 0 0 200px; }
 .rail-right { flex: 0 0 300px; }
 
 /* 開閉：localStorage 由来のクラスを <html> に付けてレールを畳む */
 html.left-collapsed .rail-left { display: none; }
-html.toc-collapsed .rail-toc { display: none; }
 html.right-collapsed .rail-right { display: none; }
 
 /* ページ最下部の帯（フッター）。現状は仮表示のみだが、将来サイトリンク等を
@@ -345,7 +343,7 @@ body.anonymous .preview-section { display: none !important; }
    1100px以下を含むため、段階1のルールは引き続き有効）。 */
 @media (max-width: 760px) {
     .work-area { flex-direction: column; }
-    .rail-left, .rail-toc {
+    .rail-left {
         position: fixed;
         top: 0;
         bottom: 0;
@@ -362,13 +360,10 @@ body.anonymous .preview-section { display: none !important; }
         left: 0;
         transform: translateX(-100%);
     }
-    html.left-drawer-open, html.toc-drawer-open { overflow: hidden; }
-    html.left-collapsed .rail-left,
-    html.toc-collapsed .rail-toc { display: flex; }
+    html.left-drawer-open { overflow: hidden; }
+    html.left-collapsed .rail-left { display: flex; }
     html.left-drawer-open .rail-left { transform: translateX(0); }
-    html.toc-drawer-open .rail-toc { transform: translateX(0); }
-    html.left-drawer-open .drawer-backdrop,
-    html.toc-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+    html.left-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
 
     /* 文書列は親幅いっぱいに固定する。縦積み＋align-items:flex-start では
        flex アイテムの横幅が fit-content になり、その**下限は min-content**——

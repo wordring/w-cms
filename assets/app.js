@@ -196,8 +196,9 @@
     // レールは3枚（left=ページ階層／toc=目次／right=ページ情報）。
     // 左側の2枚（left・toc）は同じグループとして扱い、同時には開かない
     // （片方を開くともう片方は自動で畳む）。right は独立。
-    const RAIL_IDS = ['left', 'toc', 'right'];
-    const RAIL_GROUPS = [['left', 'toc'], ['right']];
+    // 目次は右レールのカードへ移した（2026-08-31）。独立レールは left / right の2本。
+    const RAIL_IDS = ['left', 'right'];
+    const RAIL_GROUPS = [['left'], ['right']];
     function railGroupOf(side) {
         return RAIL_GROUPS.find(g => g.includes(side)) || [side];
     }
@@ -406,6 +407,10 @@
         // トップページは消せないので、そこでは出さない（サーバーも 400 で拒否する）。
         setHidden(document.getElementById('w-delete-page-btn'),
             !(editMode && currentPageId && currentPageId !== '000000'));
+        // 子ページ作成も「書く系」なので編集モードだけに出す（2026-08-31 ユーザー:
+        // 「閲覧モードで子ページ作成ボタンが出ているのは不思議」——読む画面に作る
+        // ボタンが混ざらないよう、削除と同じ規律に揃えた）。
+        setHidden(document.getElementById('w-create-subpage-btn'), !editMode);
     }
 
     // applyEditToggleVisibility は、編集権が無いユーザー（および匿名）から右上の編集スイッチを隠す。
