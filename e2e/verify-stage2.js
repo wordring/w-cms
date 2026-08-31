@@ -275,42 +275,29 @@ async function waitSaved(page) {
         await page.waitForTimeout(9000);
         check('未知種別: 時間で勝手に消えない', await alertToast.count() === 1);
 
-        // ── 形式ごとの視覚的区別（語彙モデル §10・§9 の改名許可の前提条件） ──
-        // 「data-type の改名を許す」決定は**見た目で形式を区別できること**が前提だった。
-        // 未定義の形式（＝改名した直後の姿）が、既知の形式と違って見えることを見る。
+        // ── 形式の識別＝背景色（2026-08-31。札は全廃） ──
+        //   薄い青 … 機械が読む（見出し語・タグの名前側）
+        //   薄い赤 … 属性はあるのに未定義（保存はされるが解釈されない）
         const unknownTable = page.locator('#w-editor-content table[data-type="mystery-form"]');
-        const unknownLabel = page.locator('#w-editor-content .vocab-label.is-unknown');
-        check('未定義の形式に警告の札が出る', (await unknownLabel.count()) >= 1);
-        check('札に形式名が出る', (await unknownLabel.first().innerText()).includes('mystery-form'));
+        check('未定義の形式は薄い赤の背景',
+            await unknownTable.evaluate(el => getComputedStyle(el).backgroundColor) === 'rgb(254, 242, 242)');
         check('未定義の形式の枠は既知と違う色',
             await unknownTable.evaluate(el => getComputedStyle(el).outlineColor) !== 'rgb(147, 197, 253)');
-        // 札は保存されない（.vocab-chrome なのでシリアライザが落とす）。
+        check('未定義の理由はツールチップで読める',
+            ((await unknownTable.getAttribute('title')) || '').includes('mystery-form'));
+        // 印は保存されない（class・title とも語彙に無いのでシリアライザが落とす）。
         const previewNow = await page.locator('#w-html-preview').inputValue();
-        check('札は保存に漏れない', !previewNow.includes('vocab-label'));
-
-        // 既知の形式には形式名（レジストリの表示名）が出る。
-        await page.evaluate(() => {
-            const t = document.createElement('table');
-            t.setAttribute('data-type', 'part-materials');
-            const tr = document.createElement('tr');
-            ['部材名', '単価', '仕入先', '数量'].forEach(h => {
-                const th = document.createElement('th'); th.textContent = h; tr.appendChild(th);
-            });
-            t.appendChild(tr);
-            document.getElementById('w-editor-content').appendChild(t);
-            wrapInBlock(t);
-        });
-        await page.waitForTimeout(500);
-        const knownLabel = page.locator('#w-editor-content .vocab-label:not(.is-unknown)');
-        check('既知の形式に表示名の札が出る',
-            (await knownLabel.count()) >= 1 &&
-            (await knownLabel.last().innerText()).includes('部材'));
-        check('閲覧モードでは札を出さない',
+        check('印は保存に漏れない', !previewNow.includes('is-vocab-unknown') && !previewNow.includes('未定義の形式'));
+        check('札はもう存在しない', (await page.locator('#w-editor-content .vocab-label').count()) === 0);
+        check('タグの名前側は薄い青（機械が読む印）',
+            await page.locator('#w-editor-content dl[data-type="tags"] dt').first()
+                .evaluate(el => getComputedStyle(el).backgroundColor) === 'rgb(219, 234, 254)');
+        check('閲覧モードでは印を出さない',
             await page.evaluate(() => {
                 document.getElementById('w-mode-toggle').checked = false;
                 document.body.removeAttribute('edit-mode');
-                const el = document.querySelector('#w-editor-content .vocab-label');
-                return !el || getComputedStyle(el).display === 'none';
+                const t = document.querySelector('#w-editor-content table[data-type="mystery-form"]');
+                return getComputedStyle(t).backgroundColor === 'rgba(0, 0, 0, 0)';
             }));
         await page.evaluate(() => {
             document.getElementById('w-mode-toggle').checked = true;
@@ -433,7 +420,7 @@ async function waitSaved(page) {
         await page.keyboard.press('Enter');
         await page.waitForTimeout(600);
         check('絞り込んだ項目を Enter で挿せる',
-            (await page.locator('#w-editor-content table[data-type="part-materials"]').count()) >= 1);
+            (await page.locator('#w-editor-content section').filter({ hasText: '部材定義' }).locator('table').count()) >= 1);
         check('絞り込みの文字が本文に残らない',
             !(await page.locator('#w-editor-content').innerText()).includes('/部材'));
 

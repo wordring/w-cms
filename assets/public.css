@@ -113,7 +113,7 @@ body.public {
     line-height: 1.6;
 }
 .public-content dl[data-type="tags"] dt {
-    background: #f3f4f6;
+    background: #dbeafe;
     color: var(--pub-muted);
     border-radius: var(--pub-radius) 0 0 var(--pub-radius);
     border-right: none;

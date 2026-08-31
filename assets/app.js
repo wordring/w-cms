@@ -2768,7 +2768,6 @@
             .filter(x => x.def)
             .map(x => ({ el: x.el, type: x.def.type })) : [];
 
-        const keep = new Set();
         const headingMarked = new Set();
         // 見出し駆動のセクションに**札は出さない**（2026-08-31 ユーザー:「sectionの横に
         // 自社の発注書とタグを出すのはどのような理由ですか？」——理由が無かった）。
@@ -2783,43 +2782,30 @@
                 if (/^H[1-6]$/.test(c.tagName)) { c.classList.add('vocab-word'); break; }
             }
         });
+        // **札は出さない**（2026-08-31 ユーザー2件:「そんなものを出さなくても
+        // 見分けがつく」「薄青にならないものはデータベースに入らないという程度の
+        // 認識で良い」）。識別はすべて**背景色**へ一本化した:
+        //   薄い青 … 機械が読む（見出し語のハイライト・可変タグのチップの名前側）
+        //   薄い赤 … 属性はあるのに未定義（保存はされるが解釈されない。改名・綴り違い）
+        //   無印   … ただの文書（機械は解釈しない）
+        // 既知の属性形式（可変タグ・添付）は姿そのもの（チップ・PDFクローム）が識別。
         attrTargets.forEach(({ el, type }) => {
-            const def = vocabDefs.find(v => v.type === type);
-            const unknown = !def;
-            const text = def
-                ? (def.icon || '📄') + ' ' + (def.display_name || def.type)
-                // 改名した直後・綴り違いはここへ来る。保存時の赤いトーストと同じ事実を、
-                // **その場所で**示すのが札の役目。
-                : '⚠ 未定義の形式「' + type + '」';
-
-            // 札の置き場は2通り。
-            //   トップレベルのブロック … `.editor-block` の中・`.block-content` の**外**。
-            //   入れ子の形式（section の中の表など） … その要素の直前。
-            //
-            // トップレベルで `.block-content` の中へ入れてはいけない——安全化の
-            // エコーバック（applySanitizedHtml）が `content.firstElementChild` を
-            // 「そのブロックの実体」とみなすので、札が先頭に来ると**札を本文と取り違えて
-            // 差し替え、ページ全体が編集不能になる**（2026-08-21 に直した不具合の再来。
-            // verify-editor-loss.js が検出した）。
-            const inBlockContent = el.parentNode.classList
-                && el.parentNode.classList.contains('block-content');
-            const anchor = inBlockContent ? el.parentNode : el;
-            let label = anchor.previousElementSibling;
-            if (!label || !label.classList.contains('vocab-label')) {
-                label = document.createElement('div');
-                label.className = 'vocab-chrome vocab-label';
-                label.contentEditable = 'false';
-                anchor.parentNode.insertBefore(label, anchor);
-            }
-            if (label.textContent !== text) label.textContent = text;
-            label.title = unknown
-                ? 'この形式はレジストリに宣言がありません。保存はされますが、計算には使われません。'
-                : '形式: ' + type;
-            // class はサニタイザ・シリアライザとも通さない実行時の印（保存に漏れない）。
-            label.classList.toggle('is-unknown', unknown);
+            const unknown = !vocabDefs.find(v => v.type === type);
             el.classList.toggle('is-vocab-unknown', unknown);
-            keep.add(label);
+            if (unknown) {
+                el.title = '未定義の形式「' + type + '」——保存はされますが、計算には使われません。';
+            } else if (el.title && el.title.indexOf('未定義の形式') === 0) {
+                el.removeAttribute('title');
+            }
         });
+
+        // 対象でなくなった赤い印を片付ける（形式を外した・宣言を足した）。
+        const attrSet = new Set(attrTargets.map(x => x.el));
+        editor.querySelectorAll('.is-vocab-unknown').forEach(el => {
+            if (!attrSet.has(el)) el.classList.remove('is-vocab-unknown');
+        });
+        // 旧仕様の札が残っていれば片付ける（この関数が唯一の作り手だった）。
+        editor.querySelectorAll('.vocab-label').forEach(el => el.remove());
 
         // 見出しを消した・別の言葉へ変えたセクションの印を片付ける。
         editor.querySelectorAll('.vocab-word').forEach(el => {
@@ -2827,10 +2813,6 @@
             if (!sec || !headingMarked.has(sec)) el.classList.remove('vocab-word');
         });
 
-        // 対象でなくなった札（閲覧モードへ移った・形式を外した・ブロックを消した）を片付ける。
-        editor.querySelectorAll('.vocab-label').forEach(el => {
-            if (!keep.has(el)) el.remove();
-        });
         if (!isEdit) {
             editor.querySelectorAll('.is-vocab-unknown').forEach(el => el.classList.remove('is-vocab-unknown'));
         }
