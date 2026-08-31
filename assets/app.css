@@ -979,6 +979,7 @@ body[edit-mode] .block-content p:empty::before {
 body[edit-mode] #w-editor-content table[data-type],
 body[edit-mode] #w-editor-content dl[data-type],
 body[edit-mode] #w-editor-content section[data-type],
+body[edit-mode] #w-editor-content section.is-vocab-heading,
 body[edit-mode] #w-editor-content h1.is-page-title {
     outline: 1px dashed #93c5fd;
     outline-offset: 2px;

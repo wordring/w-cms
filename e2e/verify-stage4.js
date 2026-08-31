@@ -83,32 +83,36 @@ async function openSlashMenu(page) {
         check('旧 m-required-materials 項目が無い', await page.locator('#w-slash-menu [data-type="m-required-materials"]').count() === 0);
         check('後継: 子ページ一覧がある', await page.locator('#w-slash-menu [data-type="vocab:child-list"]').count() === 1);
         await page.click('#w-slash-menu [data-type="vocab:child-list"]');
-        const clMarker = page.locator('#w-editor-content section[data-type="child-list"]');
+        // 見出し形（D-2）: 計算ビューも <section><h2>子ページ一覧</h2></section> で挿さる。
+        // 見出しと注記は人の書き込みとして編集でき、鏡の中身はその下へ毎回描かれる。
+        const clMarker = page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first();
         await clMarker.waitFor({ timeout: 4000 });
-        check('マーカーは contenteditable にならない', await clMarker.getAttribute('contenteditable') === null);
-        check('挿入直後の空マーカーに案内（::before）', await clMarker.evaluate(el => getComputedStyle(el, '::before').content.includes('再読み込み')));
+        check('見出しが鏡を宣言する', (await clMarker.locator('h2').first().innerText()).trim() === '子ページ一覧');
+        check('マーカーに data-type は無い', await clMarker.getAttribute('data-type') === null);
 
         await openSlashMenu(page);
         await page.click('#w-slash-menu [data-type="vocab:required-materials"]');
-        await page.locator('#w-editor-content section[data-type="required-materials"]').waitFor({ timeout: 4000 });
+        await page.locator('#w-editor-content section').filter({ hasText: '手配状況リスト' }).first().waitFor({ timeout: 4000 });
         await settleSaved(page);
         const preview1 = await page.locator('#w-html-preview').inputValue();
-        check('保存は空のマーカーのみ', preview1.includes('data-type="child-list"') && preview1.includes('data-type="required-materials"') && !preview1.includes('vocab-chrome'));
+        check('保存は見出しのセクションのみ', preview1.includes('<h2>子ページ一覧</h2>') && preview1.includes('<h2>手配状況リスト</h2>') && !preview1.includes('vocab-chrome'));
 
-        // 5. 再読込 → サーバー事前描画が中身を埋める
+        // 5. 再読込 → サーバー事前描画が中身を埋める（見出しは残り、中身はその下）
         await page.goto(pageURL);
-        const clFilled = page.locator('#w-editor-content section[data-type="child-list"] .vocab-chrome');
+        const clSec = page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first();
+        const clFilled = clSec.locator('.vocab-chrome');
         await clFilled.waitFor({ timeout: 8000 });
         check('子ページ一覧のSSR（空表示）', (await clFilled.innerText()).includes('子ページはありません'));
-        const rmFilled = page.locator('#w-editor-content section[data-type="required-materials"] .vocab-chrome');
+        check('SSR後も見出しが残る', (await clSec.locator('h2').first().innerText()).trim() === '子ページ一覧');
+        const rmFilled = page.locator('#w-editor-content section').filter({ hasText: '手配状況リスト' }).first().locator('.vocab-chrome');
         check('手配集計のSSR（見出し）', (await rmFilled.innerText()).includes('部材手配・発注進捗状況'));
 
         // 6. 子ページを作ると一覧に載る
         const pageId = pageURL.split('/').pop();
         await page.request.post(BASE + '/api/new-page?parent=' + pageId, { headers: { 'Origin': BASE } });
         await page.goto(pageURL);
-        await page.locator('#w-editor-content section[data-type="child-list"] .vocab-chrome').waitFor({ timeout: 8000 });
-        check('作成した子ページがSSRの一覧に出る', await page.locator('#w-editor-content section[data-type="child-list"] .vocab-chrome a').count() >= 1);
+        await page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first().locator('.vocab-chrome').waitFor({ timeout: 8000 });
+        check('作成した子ページがSSRの一覧に出る', await page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first().locator('.vocab-chrome a').count() >= 1);
 
         // 7. SSRの中身は保存に漏れない（編集→保存の往復）。再読込後は閲覧モードなので
         // トグルで編集モードへ入る（ロック取得を待つ）。
@@ -118,13 +122,13 @@ async function openSlashMenu(page) {
         // SSR 済みの /api/load を読むので、ビューの中身が消えないこと（退行の固定）。
         await page.waitForTimeout(500);
         check('編集モードでもSSRの中身が残る',
-            (await page.locator('#w-editor-content section[data-type="child-list"] .vocab-chrome').count()) >= 1);
+            (await page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first().locator('.vocab-chrome').count()) >= 1);
         await page.locator('#w-editor-content h1').first().click();
         await page.keyboard.type('X');
         await settleSaved(page);
         const preview2 = await page.locator('#w-html-preview').inputValue();
         check('SSRの中身が保存に漏れない', !preview2.includes('vocab-chrome') && !preview2.includes('子ページはありません'));
-        check('マーカーは保存に残る', preview2.includes('data-type="child-list"'));
+        check('マーカー（見出しのセクション）は保存に残る', preview2.includes('<h2>子ページ一覧</h2>'));
 
         // 8. ページ内アンカー（描画時合成）: 見出しに id が付き、保存には漏れない
         await page.goto(pageURL);
@@ -179,6 +183,7 @@ async function openSlashMenu(page) {
         void partId;
 
         await page.goto(BASE + '/' + orderId);
+        // ここは**旧形式の空マーカー**を生HTMLで仕込んだページ（属性マーカーの互換確認を兼ねる）
         await page.locator('#w-editor-content section[data-type="required-materials"] .vocab-chrome').waitFor({ timeout: 8000 });
         check('手配集計のSSRに行が出る',
             (await page.locator('#w-editor-content .materials-table tbody tr').count()) >= 1);

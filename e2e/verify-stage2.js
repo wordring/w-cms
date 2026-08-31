@@ -112,7 +112,13 @@ async function waitSaved(page) {
         const vocabItem = page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:inspection-record"]');
         check('レジストリ由来の項目がある', await vocabItem.count() === 1);
         await vocabItem.click();
-        const table = page.locator('#w-editor-content table[data-type="inspection-record"]');
+        // 見出し形（D-2）: <section><h2>検査記録</h2><table>…</table></section>。
+        // data-type は書かれない——見える言葉（見出しと th）が人にも機械にも宣言になる。
+        const insSection = page.locator('#w-editor-content section').filter({ hasText: '検査記録' }).first();
+        await insSection.waitFor({ timeout: 4000 });
+        check('骨格: 見出しが機能を宣言する', (await insSection.locator('h2').first().innerText()).trim() === '検査記録');
+        check('骨格: data-type は書かれない', await insSection.getAttribute('data-type') === null);
+        const table = insSection.locator('table');
         await table.waitFor({ timeout: 4000 });
         const headers = await table.locator('tr').first().locator('th').allInnerTexts();
         check('骨格: 見出しがレジストリの列定義どおり', headers.join(',') === '品番,判定,検査写真,検査日');
@@ -375,9 +381,10 @@ async function waitSaved(page) {
         // ── 保存往復（リロードして残っているか・実行時の印が残っていないか） ──
         await waitSaved(page);
         await page.goto(pageURL.replace('?edit=true', ''));
-        await page.waitForSelector('#w-editor-content table[data-type="inspection-record"]', { timeout: 8000 });
+        // 見出し形（D-2）: 検査記録は data-type ではなく <h2>検査記録</h2>＋素の表で保存される
+        await page.waitForSelector('#w-editor-content section h2', { timeout: 8000 });
         const savedHTML = await page.locator('#w-editor-content').innerHTML();
-        check('保存往復: 表が残る', savedHTML.includes('data-type="inspection-record"'));
+        check('保存往復: 見出し形の表が残る', savedHTML.includes('検査記録') && /<section[^>]*>\s*<h2/.test(savedHTML));
         check('保存往復: dl が残る', savedHTML.includes('data-type="tags"'));
         check('保存往復: 未知種別も保存される', savedHTML.includes('data-type="mystery-form"'));
         check('保存往復: enum で入れた値が残る', savedHTML.includes('合格'));
