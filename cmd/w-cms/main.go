@@ -5,11 +5,11 @@
 //
 // 起動時にやることは5つ:
 //
-//	0. 設定ファイル data/settings.json を読む（無ければ既定値で作る）
-//	1. cms.db と auth.db を開き、コアテーブルとプラグインのテーブルを作る
-//	2. プラグインのスキーマのずれを検出したら派生索引を作り直す（DriftedSchemaTables）
-//	3. 中断した索引再構築があればやり直す（RebuildIfNeeded）
-//	4. ルート表を組んで待ち受ける（buildHandler）
+//  0. 設定ファイル data/settings.json を読む（無ければ既定値で作る）
+//  1. cms.db と auth.db を開き、コアテーブルとプラグインのテーブルを作る
+//  2. プラグインのスキーマのずれを検出したら派生索引を作り直す（DriftedSchemaTables）
+//  3. 中断した索引再構築があればやり直す（RebuildIfNeeded）
+//  4. ルート表を組んで待ち受ける（buildHandler）
 //
 // ルート表は [buildHandler] が返します。main から切り出してあるのは**テストのため**で、
 // ルートごとの保護レベル（RequireAuth / OptionalAuth / 認証不要）とミドルウェアの
@@ -155,6 +155,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/revert", cms.RevertAPIHandler)
 
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
+	protected.HandleFunc("/api/migrate-headings", cms.MigrateHeadingsAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 
 	// 権限管理（owner/admin）
