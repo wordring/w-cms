@@ -642,13 +642,16 @@ body[edit-mode] .editor-block:hover .block-controls {
 /* 挿入ボタン（＋）はブロックの下端＝**挿入位置の境界**に出す。
    上ぞろえのコントロール帯に置くと、背の高いブロックでは「押した場所」と
    「ブロックが生まれる場所」が離れて見えるため（2026-08-31）。
-   translateY で境界線をまたがせ、次のブロックとの間に浮かぶチップにする。 */
+   translateY で境界線をまたがせ、次のブロックとの間に浮かぶチップにする。
+   横位置は**境界線の中央**——左の帯に置くと、1行だけの低いブロックで
+   🗑 と縦に重なる（同日の指摘で移動）。中央なら高さに依らず重ならず、
+   「ブロックとブロックの区切りに挿す」という意味も見た目から読める。 */
 .editor-block > .add-btn {
     display: none;
     position: absolute;
-    left: 14px;
+    left: 50%;
     bottom: 0;
-    transform: translateY(55%);
+    transform: translate(-50%, 55%);
     z-index: 5;
     width: 22px;
     height: 22px;
