@@ -10,12 +10,7 @@
 try {
     var ui = JSON.parse(localStorage.getItem('wcms.ui') || 'null');
     var rails = (ui && ui.rails) || JSON.parse(localStorage.getItem('wcms.rails') || '{}');
-    // 左側の2レール（ページ階層／目次）は同時に開かない。どちらも明示的に
-    // 畳まれていなければページ階層を優先し、目次を畳んだ状態で描画する。
-    var leftCollapsed = rails.left === false;
-    var tocCollapsed = rails.toc === false;
-    if (!leftCollapsed && !tocCollapsed) tocCollapsed = true;
-    if (leftCollapsed) document.documentElement.classList.add('left-collapsed');
-    if (tocCollapsed) document.documentElement.classList.add('toc-collapsed');
+    // 目次は右レールのカードになった（2026-08-31）ので、独立レールは左右の2本。
+    if (rails.left === false) document.documentElement.classList.add('left-collapsed');
     if (rails.right === false) document.documentElement.classList.add('right-collapsed');
 } catch (e) { /* localStorage 不可時は既定（ページ階層のみ開く） */ }
