@@ -2744,7 +2744,7 @@
         // 対象＝本文の形式ブロック。クロームの中と、列型の明示（th/td の data-type）は除く。
         const attrTargets = isEdit ? Array.from(editor.querySelectorAll('[data-type]')).filter(el =>
             !el.closest('.vocab-chrome') && el.tagName !== 'TH' && el.tagName !== 'TD')
-            .map(el => ({ el, type: el.getAttribute('data-type'), viaHeading: false })) : [];
+            .map(el => ({ el, type: el.getAttribute('data-type') })) : [];
 
         // 見出し駆動のセクション（D-2）——data-type 無しでも、最初の見出し（直接の子の
         // h1〜h6）が表示名と一致すれば形式を持つ。未登録の見出し語は**ただのセクション**
@@ -2753,11 +2753,24 @@
             .filter(el => !el.closest('.vocab-chrome'))
             .map(el => ({ el, def: headingDefOf(el) }))
             .filter(x => x.def)
-            .map(x => ({ el: x.el, type: x.def.type, viaHeading: true })) : [];
+            .map(x => ({ el: x.el, type: x.def.type })) : [];
 
         const keep = new Set();
         const headingMarked = new Set();
-        attrTargets.concat(headingTargets).forEach(({ el, type, viaHeading }) => {
+        // 見出し駆動のセクションに**札は出さない**（2026-08-31 ユーザー:「sectionの横に
+        // 自社の発注書とタグを出すのはどのような理由ですか？」——理由が無かった）。
+        // 札の存在理由は「属性は見えないから、見える札で形式を示す」（改名すると赤に
+        // 変わって気づける）。見出し形では**見出し自身が宣言**なので、
+        // **一致した言葉そのものへ薄い青の背景**を付けて「機械が認識した」を示す
+        // （同日ユーザー提案。D-3「認識できた形式は背景色で示す」の機能見出し版）。
+        // 改名すると背景が消える——それが「形式でなくなった」の合図。
+        headingTargets.forEach(({ el }) => {
+            headingMarked.add(el);
+            for (const c of el.children) {
+                if (/^H[1-6]$/.test(c.tagName)) { c.classList.add('vocab-word'); break; }
+            }
+        });
+        attrTargets.forEach(({ el, type }) => {
             const def = vocabDefs.find(v => v.type === type);
             const unknown = !def;
             const text = def
@@ -2788,18 +2801,17 @@
             if (label.textContent !== text) label.textContent = text;
             label.title = unknown
                 ? 'この形式はレジストリに宣言がありません。保存はされますが、計算には使われません。'
-                : (viaHeading ? '形式: ' + type + '（見出しが宣言）' : '形式: ' + type);
+                : '形式: ' + type;
             // class はサニタイザ・シリアライザとも通さない実行時の印（保存に漏れない）。
             label.classList.toggle('is-unknown', unknown);
             el.classList.toggle('is-vocab-unknown', unknown);
-            el.classList.toggle('is-vocab-heading', viaHeading);
-            if (viaHeading) headingMarked.add(el);
             keep.add(label);
         });
 
         // 見出しを消した・別の言葉へ変えたセクションの印を片付ける。
-        editor.querySelectorAll('.is-vocab-heading').forEach(el => {
-            if (!headingMarked.has(el)) el.classList.remove('is-vocab-heading');
+        editor.querySelectorAll('.vocab-word').forEach(el => {
+            const sec = el.closest('section');
+            if (!sec || !headingMarked.has(sec)) el.classList.remove('vocab-word');
         });
 
         // 対象でなくなった札（閲覧モードへ移った・形式を外した・ブロックを消した）を片付ける。

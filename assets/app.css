@@ -979,7 +979,6 @@ body[edit-mode] .block-content p:empty::before {
 body[edit-mode] #w-editor-content table[data-type],
 body[edit-mode] #w-editor-content dl[data-type],
 body[edit-mode] #w-editor-content section[data-type],
-body[edit-mode] #w-editor-content section.is-vocab-heading,
 body[edit-mode] #w-editor-content h1.is-page-title {
     outline: 1px dashed #93c5fd;
     outline-offset: 2px;
@@ -1006,6 +1005,19 @@ body[edit-mode] #w-editor-content .vocab-label {
     line-height: 1.7;
     user-select: none;
 }
+/* 機能見出し（D-2）: レジストリと一致した**言葉そのもの**へ薄い青の背景
+ * （2026-08-31 ユーザー提案「ボキャブラリと一致する言葉の背景を薄い青などにして
+ * 識別できるようにしてはどうでしょう」。D-3「認識できた形式は背景色で示す」の
+ * 機能見出し版）。札や枠でなく言葉が光るので、**どの言葉が機械を動かしているか**が
+ * そのまま見える。改名すると背景が消える＝形式でなくなった合図。
+ * class は実行時だけの印（サニタイザ・シリアライザとも通さないので保存に漏れない）。 */
+body[edit-mode] #w-editor-content .vocab-word {
+    background: #dbeafe;
+    border-radius: 4px;
+    padding: 0 6px;
+    margin-left: -6px; /* 背景ぶんの視覚的な字下がりを打ち消す */
+}
+
 body[edit-mode] #w-editor-content .vocab-label.is-unknown {
     background: #fef2f2;
     color: #b91c1c;
