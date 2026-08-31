@@ -2699,7 +2699,12 @@
             if (src && src.toLowerCase().endsWith('.pdf') && currentPageId) {
                 const embed = document.createElement('embed');
                 embed.className = 'vocab-chrome file-preview';
-                embed.src = '/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + src;
+                // リンクがあればその href（新旧どちらの置き場でも正しい）。
+                // 無ければ旧data-src互換（ページフォルダ直下）。
+                const link = sec.querySelector('a[href]');
+                embed.src = (link && /[.]pdf$/i.test(link.getAttribute('href')))
+                    ? link.getAttribute('href')
+                    : '/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + src;
                 embed.type = 'application/pdf';
                 sec.appendChild(embed);
             }
@@ -2840,7 +2845,8 @@
             }
             p.textContent = '📎 ';
             const a = document.createElement('a');
-            a.href = '/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + d.src;
+            // 置き場の知識はサーバーが持つ（新しい添付は files/ 配下——構造で塞ぐ）。
+            a.href = d.href || ('/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + d.src);
             a.textContent = file.name;
             p.appendChild(a);
             enhanceFileSections();

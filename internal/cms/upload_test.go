@@ -136,7 +136,7 @@ func TestUploadRejectsNonPDFName(t *testing.T) {
 		if rr.Code != 400 {
 			t.Errorf("%s のアップロードが拒否されていません: status=%d", name, rr.Code)
 		}
-		if _, err := os.Stat(filepath.Join(page.GetPageDir(id), name)); err == nil {
+		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), name)); err == nil {
 			t.Errorf("%s がページディレクトリに保存されました", name)
 		}
 	}
@@ -165,7 +165,7 @@ func TestUploadStripsPathComponents(t *testing.T) {
 		if rr.Code != 200 {
 			t.Fatalf("%s のアップロードが失敗しました: status=%d body=%s", name, rr.Code, rr.Body.String())
 		}
-		if _, err := os.Stat(filepath.Join(page.GetPageDir(id), "escape.pdf")); err != nil {
+		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "escape.pdf")); err != nil {
 			t.Errorf("%s がページディレクトリに保存されていません: %v", name, err)
 		}
 		if _, err := os.Stat(filepath.Join("data", "escape.pdf")); err == nil {
@@ -186,7 +186,7 @@ func TestUploadAcceptsPDF(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "見積書.pdf") {
 		t.Errorf("レスポンスにファイル名が含まれていません: %s", rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(page.GetPageDir(id), "見積書.pdf")); err != nil {
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "見積書.pdf")); err != nil {
 		t.Errorf("PDFが保存されていません: %v", err)
 	}
 }
@@ -281,7 +281,7 @@ func TestUploadRequiresEditLock(t *testing.T) {
 	}
 
 	// 正本が書き換わっていないこと（これが守りたいもの）。
-	got, err := os.ReadFile(filepath.Join(page.GetPageDir(id), "発注書.pdf"))
+	got, err := os.ReadFile(filepath.Join(page.AttachmentDir(id), "発注書.pdf"))
 	if err != nil {
 		t.Fatalf("添付を読めません: %v", err)
 	}

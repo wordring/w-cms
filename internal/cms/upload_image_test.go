@@ -65,7 +65,7 @@ func TestUploadImageAcceptsAllowedKinds(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "/data/master/00/000012/") {
 		t.Errorf("本文から参照できるURLが返っていません: %s", rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(page.GetPageDir(id), "写真.png")); err != nil {
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "写真.png")); err != nil {
 		t.Errorf("PNGが保存されていません: %v", err)
 	}
 }
@@ -97,7 +97,7 @@ func TestUploadImageRejectsExtensionLie(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("名乗りと中身の食い違いが通ってしまいました: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(page.GetPageDir(id), "うそ.png")); err == nil {
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "うそ.png")); err == nil {
 		t.Error("拒否したのにファイルが残っています")
 	}
 }
@@ -126,7 +126,7 @@ func TestUploadImageStripsEXIF(t *testing.T) {
 	if rr := postImage(t, id, "撮影.jpg", src, &auth.User{Username: "alice"}); rr.Code != 200 {
 		t.Fatalf("JPEGのアップロードに失敗: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	saved, err := os.ReadFile(filepath.Join(page.GetPageDir(id), "撮影.jpg"))
+	saved, err := os.ReadFile(filepath.Join(page.AttachmentDir(id), "撮影.jpg"))
 	if err != nil {
 		t.Fatalf("保存されたJPEGを読めません: %v", err)
 	}
@@ -178,10 +178,10 @@ func TestUploadImageCannotEscapePageDir(t *testing.T) {
 	if rr := postImage(t, id, "../evil.png", pngBytes(t, 2, 2), alice); rr.Code != 200 {
 		t.Fatalf("正規化されるはずの名前が拒否されました: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(page.GetPageDir(id), "evil.png")); err != nil {
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "evil.png")); err != nil {
 		t.Errorf("正規化した名前でページのフォルダへ保存されていません: %v", err)
 	}
-	outside := filepath.Join(filepath.Dir(page.GetPageDir(id)), "evil.png")
+	outside := filepath.Join(filepath.Dir(page.AttachmentDir(id)), "evil.png")
 	if _, err := os.Stat(outside); err == nil {
 		t.Errorf("ページのフォルダの外へ書かれています: %s", outside)
 	}
