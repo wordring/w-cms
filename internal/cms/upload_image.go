@@ -41,7 +41,7 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// フォームを読む前に本文サイズを制限する（FormValue が内部でパースするため）。
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes())
 
 	pageID, ok := page.NormalizeID(r.FormValue("page_id"))
 	if !ok {

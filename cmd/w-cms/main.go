@@ -130,6 +130,7 @@ func buildHandler() http.Handler {
 	// 1ブロックだけの保存。data-id が無い本文や構造変更では使えないため、
 	// クライアントは 409 等で /api/save（全文保存）へフォールバックする。
 	protected.HandleFunc("/api/save-block", cms.SaveBlockAPIHandler)
+	protected.HandleFunc("/api/upload-file", cms.UploadFileHandler)
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	// 画像の添付（png/jpeg/webp/gif/svg。中身の検証とEXIF除去はハンドラ内。要件 §2.6）
 	protected.HandleFunc("/api/upload-image", cms.UploadImageHandler)

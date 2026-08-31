@@ -14,16 +14,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )
 
-// maxUploadBytes は添付1件あたりの上限（32MiB）です。
+// 添付1件あたりの上限は設定 max_upload_mib（既定32MiB・cms.MaxUploadBytes）。
 // 上限が無いとリクエストボディを丸ごとメモリへ読み込んでしまい、認証済みの
 // 利用者がメモリを枯渇させられます。
-const maxUploadBytes = 32 << 20
 
 // allowedAttachmentExts は添付として保存を許す拡張子です。
 //
@@ -91,7 +91,7 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// フォームを読む前に本文サイズを制限する（FormValue が内部でパースするため）。
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes())
 
 	pageID := r.FormValue("page_id")
 	if pageID == "" {
@@ -118,7 +118,8 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 
 	file, header, err := r.FormFile("pdf_file")
 	if err != nil {
-		http.Error(w, "ファイルを受け取れませんでした（サイズ上限は32MiBです）", http.StatusBadRequest)
+		http.Error(w, "ファイルを受け取れませんでした（サイズ上限は "+
+			strconv.FormatInt(MaxUploadBytes()>>20, 10)+"MiB です）", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()

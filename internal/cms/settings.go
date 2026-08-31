@@ -44,10 +44,21 @@ const SettingsPath = "data/settings.json"
 //
 // 項目を増やすときは、**既存のファイルを読めなくしないこと**——読み込みは
 // 未知のキーを弾く（打ち間違いを黙って無視しないため）ので、新しいキーは
-// 「無ければゼロ値」で動くように書きます。
+// 「無ければ既定値」で動くように書きます。
 type Settings struct {
 	// TypeInference は見出し語→列型の推論辞書です（vocab.go の決定順序の3番目）。
 	TypeInference map[string]ColumnType `json:"type_inference"`
+
+	// MaxUploadMiB は添付1件あたりの上限（MiB）です。0（未指定）なら既定の32
+	// （「サイズ上限32MiBは設定で変えられるように」——2026-08-31 ユーザー決定）。
+	MaxUploadMiB int `json:"max_upload_mib,omitempty"`
+
+	// AttachmentExtensions は汎用の添付として受ける拡張子です（ドットつき小文字）。
+	// 未指定なら既定＝ワンノート実データの15種（【考察】ワンノート移行.md §3-4）。
+	// 画像と .pdf は専用の口（中身検査つき）があるため、ここに書いても汎用の口は
+	// 受けません。**.json は書けません**——添付の置き場は files/ に分離済みで
+	// 構造上は無害だが、正本と同じ拡張子を添付に混ぜる運用そのものを断つ。
+	AttachmentExtensions []string `json:"attachment_extensions,omitempty"`
 }
 
 // settings は読み込み済みの設定です。nil のあいだはコード内の既定値が使われます
@@ -111,6 +122,18 @@ func (s Settings) validate(path string) error {
 			return fmt.Errorf("%s: type_inference の %q に未知の列型 %q があります（使えるのは text / number / date / enum / image）", path, word, typ)
 		}
 	}
+	if s.MaxUploadMiB < 0 {
+		return fmt.Errorf("%s: max_upload_mib が負です", path)
+	}
+	for _, ext := range s.AttachmentExtensions {
+		e := strings.ToLower(strings.TrimSpace(ext))
+		if !strings.HasPrefix(e, ".") || len(e) < 2 {
+			return fmt.Errorf("%s: attachment_extensions の %q はドットつき拡張子（例 .dxf）で書いてください", path, ext)
+		}
+		if e == ".json" {
+			return fmt.Errorf("%s: attachment_extensions に .json は書けません（正本と同じ拡張子を添付に混ぜない）", path)
+		}
+	}
 	return nil
 }
 
@@ -135,7 +158,11 @@ func defaultSettings() *Settings {
 	for k, v := range defaultTypeInference {
 		dict[k] = v
 	}
-	return &Settings{TypeInference: dict}
+	return &Settings{
+		TypeInference:        dict,
+		MaxUploadMiB:         32,
+		AttachmentExtensions: append([]string{}, defaultAttachmentExtensions...),
+	}
 }
 
 // activeTypeInference はいま効いている推論辞書を返します。
@@ -147,4 +174,37 @@ func activeTypeInference() map[string]ColumnType {
 		return settings.TypeInference
 	}
 	return defaultTypeInference
+}
+
+// defaultAttachmentExtensions は汎用添付の既定の拡張子です（ワンノート実データの15種から
+// 専用の口を持つ .pdf を除いたもの＋.eml。「.eml の扱いは添付から始めましょう」
+// ——2026-08-31 ユーザー決定）。
+var defaultAttachmentExtensions = []string{
+	".dxf", ".rpcd", ".xlsx", ".zip", ".docx", ".dwg", ".step", ".x_t",
+	".slddrw", ".igs", ".eml", ".pub", ".lbx", ".mp4",
+}
+
+// MaxUploadBytes はいま効いている添付1件あたりの上限（バイト）を返します。
+func MaxUploadBytes() int64 {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings != nil && settings.MaxUploadMiB > 0 {
+		return int64(settings.MaxUploadMiB) << 20
+	}
+	return 32 << 20
+}
+
+// GenericAttachmentExts はいま効いている汎用添付の拡張子集合を返します。
+func GenericAttachmentExts() map[string]bool {
+	settingsMu.RLock()
+	list := defaultAttachmentExtensions
+	if settings != nil && len(settings.AttachmentExtensions) > 0 {
+		list = settings.AttachmentExtensions
+	}
+	settingsMu.RUnlock()
+	out := make(map[string]bool, len(list))
+	for _, e := range list {
+		out[strings.ToLower(strings.TrimSpace(e))] = true
+	}
+	return out
 }
