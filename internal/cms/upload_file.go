@@ -91,6 +91,10 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	attachDir := page.AttachmentDir(pageID)
 	os.MkdirAll(attachDir, 0755)
+	// 保存名はサーバーが生成する（元の名前はURLに出さない。表示は本文のリンク文字が担う）。
+	// 生成IDはリンクブロックの data-id と一致させる（storage.go の3役）。
+	attachID := page.GeneratedAttachmentID(pageID, strings.ToLower(filepath.Ext(fileName)))
+	fileName = attachID + strings.ToLower(filepath.Ext(fileName))
 	savePath := filepath.Join(attachDir, fileName)
 
 	overwrote := false
@@ -114,6 +118,7 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"success":   true,
 		"file_name": fileName,
+		"id":        attachID, // リンクブロックの data-id に使う（ファイル名と一致）
 		"href":      page.AttachmentURLFor(pageID, fileName),
 	})
 }

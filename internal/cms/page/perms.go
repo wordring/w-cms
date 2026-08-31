@@ -436,6 +436,15 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAttachmentHeaders(w, name)
+	http.ServeFile(w, r, filepath.Join(".", filepath.FromSlash(clean)))
+}
+
+// setAttachmentHeaders は添付の応答ヘッダを種別で決めます。
+// **ブラウザに解釈させない**のが仕事の芯——ページのディレクトリにHTMLやSVGがあると、
+// 同一オリジンの文書として配信された時点で保存型XSSになります（本文のサニタイズを
+// 通らない経路）。旧配信口（DataFileHandler）ときれいなURL（ServeCleanAttachment）が共有します。
+func setAttachmentHeaders(w http.ResponseWriter, name string) {
 	// 宣言した型以外に解釈させない。http.ServeFile は Content-Type が未設定のときだけ
 	// 推定するので、先に設定しておけばそれが使われる。
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -461,11 +470,35 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 		// 入口（UploadImageHandler）で中身のマジックナンバーを検証済み。
 		w.Header().Set("Content-Type", inlineImageTypes[ext])
 	default:
-		// 由来の分からないファイルは、表示させずダウンロードさせる。
+		// 由来の分からないファイルは、表示させずダウンロードさせる。保存名の既定は
+		// リンクの download 属性が運ぶ（filename を付けない素の attachment なら
+		// ブラウザは download 属性を優先できる）。
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", "attachment")
 	}
-	http.ServeFile(w, r, filepath.Join(".", filepath.FromSlash(clean)))
+}
+
+// ServeCleanAttachment はきれいなURL（/<ページID>/<ファイル名>）の配信口です
+// （2026-08-31 ユーザー決定「実際に保存される場所を推測されたくない」）。
+// RootHandler がページURLの下の2区画パスをここへ回す。読むのは files/ だけ
+// （旧置き場の直下は旧URLの互換配信 DataFileHandler が担う）。
+// 認可は旧口と同じ——ページの read（実効公開なら匿名も可）。無ければ404で、
+// 「読めない」と「存在しない」は匿名に区別させない（既存の流儀）。
+func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name string, notFound http.HandlerFunc) {
+	if strings.ContainsAny(name, "/\\") || name == "" || strings.HasPrefix(name, ".") {
+		notFound(w, r)
+		return
+	}
+	if !RequirePageReadOrPublic(w, r, pageID) {
+		return
+	}
+	fp := filepath.Join(AttachmentDir(pageID), name)
+	if _, err := os.Stat(fp); err != nil {
+		notFound(w, r)
+		return
+	}
+	setAttachmentHeaders(w, name)
+	http.ServeFile(w, r, fp)
 }
 
 // inlineImageTypes はインライン配信を許すラスタ画像の拡張子と Content-Type です。

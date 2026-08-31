@@ -193,13 +193,15 @@ func TestMigrateAttachmentsInDir(t *testing.T) {
 		`<p><a href="/data/master/00/000071/%E8%A6%8B%E7%A9%8D%E6%9B%B8.pdf">符号化リンク</a></p>`
 	out := rewriteAttachmentURLs(body, id, moved)
 	for _, want := range []string{
-		`/data/master/00/000071/files/見積書.pdf`,
-		`/data/master/00/000071/files/photo.png`,
-		`/data/master/00/000071/files/%E8%A6%8B%E7%A9%8D%E6%9B%B8.pdf`,
+		`/000071/見積書.pdf`,
+		`/000071/photo.png`,
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("書き換え後に %s がありません:\n%s", want, out)
+			t.Errorf("書き換え後に %s がありません: %s", want, out)
 		}
+	}
+	if strings.Contains(out, "/data/master/") {
+		t.Errorf("物理配置のURLが残っています: %s", out)
 	}
 
 	// 冪等: もう一度動かしても何も起きない。

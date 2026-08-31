@@ -3,6 +3,8 @@ package cms
 import (
 	"database/sql"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -81,31 +83,41 @@ func TestNewPageIsAudited(t *testing.T) {
 	}
 }
 
-// TestAttachmentSaveAndOverwriteAreAudited は添付の保存と上書きが、
-// **区別できる形で**記録されることを検証します。
-// 上書きは元に戻せないので、「増えた」のか「消えた」のかが読み取れる必要があります。
-func TestAttachmentSaveAndOverwriteAreAudited(t *testing.T) {
+// TestAttachmentUploadsAreAuditedAndNeverDestroy は添付の保存が記録され、
+// **同じ元名の再アップロードが既存の添付を壊さない**ことを検証します。
+// 保存名はサーバー生成（2026-08-31）なので、かつての「同名上書き＝不可逆の
+// データ破壊」は設計ごと消えた——2回目は別のファイルとして増える。
+func TestAttachmentUploadsAreAuditedAndNeverDestroy(t *testing.T) {
 	const id = "000012"
 	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
 	setupAuditDB(t)
 	alice := &auth.User{Username: "alice"}
 
-	if rr := postUpload(t, id, "発注書.pdf", []byte("%PDF-1.4\n初版"), alice); rr.Code != 200 {
-		t.Fatalf("1回目のアップロードに失敗: code=%d body=%s", rr.Code, rr.Body.String())
+	rr1 := postUpload(t, id, "発注書.pdf", []byte("%PDF-1.4\n初版"), alice)
+	if rr1.Code != 200 {
+		t.Fatalf("1回目のアップロードに失敗: code=%d body=%s", rr1.Code, rr1.Body.String())
 	}
+	name1 := savedNameOf(t, rr1)
 	e, ok := findAudit(t, "attach")
 	if !ok {
 		t.Fatal("添付の保存が監査記録に残っていません")
 	}
-	if !strings.Contains(e.Target, "発注書.pdf") || !strings.Contains(e.Target, id) {
-		t.Errorf("ページIDとファイル名が記録されていません: %q", e.Target)
+	if !strings.Contains(e.Target, name1) || !strings.Contains(e.Target, id) {
+		t.Errorf("ページIDと保存名が記録されていません: %q", e.Target)
 	}
 
-	if rr := postUpload(t, id, "発注書.pdf", []byte("%PDF-1.4\n差替"), alice); rr.Code != 200 {
-		t.Fatalf("2回目のアップロードに失敗: code=%d body=%s", rr.Code, rr.Body.String())
+	rr2 := postUpload(t, id, "発注書.pdf", []byte("%PDF-1.4\n差替"), alice)
+	if rr2.Code != 200 {
+		t.Fatalf("2回目のアップロードに失敗: code=%d body=%s", rr2.Code, rr2.Body.String())
 	}
-	if _, ok := findAudit(t, "attach.overwrite"); !ok {
-		t.Fatal("添付の上書きが、保存と区別できる形で記録されていません")
+	name2 := savedNameOf(t, rr2)
+	if name1 == name2 {
+		t.Fatal("同じ保存名が再利用されました（既存の添付が上書きされうる）")
+	}
+	// 初版が無傷で残っていること——これが生成名の利得。
+	got, err := os.ReadFile(filepath.Join(page.AttachmentDir(id), name1))
+	if err != nil || !strings.Contains(string(got), "初版") {
+		t.Errorf("1回目の添付が壊れています: %v %q", err, got)
 	}
 }
 

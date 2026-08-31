@@ -94,7 +94,7 @@ func TestUploadNormalizesPageID(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("アップロードが失敗しました: status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join("data", "master", "00", "000012", "files", "spec.pdf")); err != nil {
+	if _, err := os.Stat(filepath.Join("data", "master", "00", "000012", "files", savedNameOf(t, rr))); err != nil {
 		t.Errorf("正規のディレクトリに添付がありません: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join("data", "master", "00", "0012")); !os.IsNotExist(err) {

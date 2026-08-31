@@ -3,6 +3,7 @@ package cms
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -165,8 +166,9 @@ func TestUploadStripsPathComponents(t *testing.T) {
 		if rr.Code != 200 {
 			t.Fatalf("%s のアップロードが失敗しました: status=%d body=%s", name, rr.Code, rr.Body.String())
 		}
-		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "escape.pdf")); err != nil {
-			t.Errorf("%s がページディレクトリに保存されていません: %v", name, err)
+		saved := savedNameOf(t, rr)
+		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), saved)); err != nil {
+			t.Errorf("%s が files/ に保存されていません: %v", name, err)
 		}
 		if _, err := os.Stat(filepath.Join("data", "escape.pdf")); err == nil {
 			t.Errorf("%s がページディレクトリの外へ保存されました", name)
@@ -183,12 +185,41 @@ func TestUploadAcceptsPDF(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("PDFのアップロードが失敗しました: status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "見積書.pdf") {
-		t.Errorf("レスポンスにファイル名が含まれていません: %s", rr.Body.String())
+	saved := savedNameOf(t, rr)
+	if !strings.HasSuffix(saved, ".pdf") {
+		t.Errorf("拡張子が保たれていません: %s", saved)
 	}
-	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "見積書.pdf")); err != nil {
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), saved)); err != nil {
 		t.Errorf("PDFが保存されていません: %v", err)
 	}
+	// 元の名前では保存されない（URLから元名を推測させない——2026-08-31 決定）。
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "見積書.pdf")); err == nil {
+		t.Error("元の名前で保存されています")
+	}
+}
+
+
+// savedNameOf は応答JSONから生成されたファイル名を取り出します。
+// 保存名はサーバー生成（時刻base36＋拡張子）で、元の名前はURLに出ない
+// （2026-08-31 決定）。テストは「元の名前で保存される」ではなく
+// 「応答の名前で保存され、元の名前では保存されない」を見る。
+func savedNameOf(t *testing.T, rr *httptest.ResponseRecorder) string {
+	t.Helper()
+	var d struct {
+		FileName string `json:"file_name"`
+		ID       string `json:"id"`
+		Href     string `json:"href"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &d); err != nil {
+		t.Fatalf("応答を読めません: %v: %s", err, rr.Body.String())
+	}
+	if d.FileName == "" || d.ID == "" {
+		t.Fatalf("応答に file_name / id がありません: %s", rr.Body.String())
+	}
+	if !strings.HasPrefix(d.FileName, d.ID) {
+		t.Errorf("ファイル名とIDが一致していません: name=%s id=%s", d.FileName, d.ID)
+	}
+	return d.FileName
 }
 
 // getData は page.DataFileHandler へ GET します。
@@ -269,9 +300,11 @@ func TestUploadRequiresEditLock(t *testing.T) {
 	if !a.Acquired {
 		t.Fatal("alice のロック取得に失敗")
 	}
-	if rr := postUploadTok(t, id, "発注書.pdf", pdf, alice, a.Token); rr.Code != 200 {
-		t.Fatalf("保持者のアップロードが失敗: code=%d body=%s", rr.Code, rr.Body.String())
+	rrOK := postUploadTok(t, id, "発注書.pdf", pdf, alice, a.Token)
+	if rrOK.Code != 200 {
+		t.Fatalf("保持者のアップロードが失敗: code=%d body=%s", rrOK.Code, rrOK.Body.String())
 	}
+	firstName := savedNameOf(t, rrOK)
 
 	// bob は同じ group で write を持つが、ロックは alice が保持している。
 	bob := &auth.User{Username: "bob", Groups: []string{"team"}}
@@ -281,7 +314,7 @@ func TestUploadRequiresEditLock(t *testing.T) {
 	}
 
 	// 正本が書き換わっていないこと（これが守りたいもの）。
-	got, err := os.ReadFile(filepath.Join(page.AttachmentDir(id), "発注書.pdf"))
+	got, err := os.ReadFile(filepath.Join(page.AttachmentDir(id), firstName))
 	if err != nil {
 		t.Fatalf("添付を読めません: %v", err)
 	}
@@ -357,11 +390,13 @@ func TestGenericUploadAcceptsListedExtensions(t *testing.T) {
 			t.Errorf("%s が受け付けられません: status=%d body=%s", name, rr.Code, rr.Body.String())
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), name)); err != nil {
+		saved := savedNameOf(t, rr)
+		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), saved)); err != nil {
 			t.Errorf("%s が files/ に保存されていません: %v", name, err)
 		}
-		if !strings.Contains(rr.Body.String(), "/files/") {
-			t.Errorf("%s の応答 href が files/ を指していません: %s", name, rr.Body.String())
+		// href はきれいなURL（/<ページID>/<生成名>）——物理配置を出さない。
+		if !strings.Contains(rr.Body.String(), `"/`+id+`/`+saved+`"`) {
+			t.Errorf("%s の応答 href がきれいなURLではありません: %s", name, rr.Body.String())
 		}
 	}
 }

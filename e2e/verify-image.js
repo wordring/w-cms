@@ -67,7 +67,8 @@ const HEIC_HEAD = Buffer.concat([
         await img.waitFor({ timeout: 8000 });
         const src = await img.getAttribute('src');
         check('本文に img が入る', !!src);
-        check('src は添付の配信口を指す', !!src && src.startsWith('/data/master/'));
+        // きれいなURL（/<ページID>/<生成名>）——物理配置はURLに出ない（2026-08-31）
+        check('src は添付の配信口を指す', !!src && /^\/[0-9]{6}\/[0-9a-z]+\.png$/.test(src));
         check('alt にファイル名が入る', (await img.getAttribute('alt')) === 'テスト画像.png');
 
         // 3. 実際に読み込めている（配信が Content-Type を正しく返している）
@@ -77,7 +78,8 @@ const HEIC_HEAD = Buffer.concat([
         // 4. 保存往復で残る（サニタイザが /data/ の絶対パスを落とさない）
         await settleSaved(page);
         const preview = await page.locator('#w-html-preview').inputValue();
-        check('保存されるHTMLに img が乗る', preview.includes('<img') && preview.includes('/data/master/'));
+        // きれいなURLはサニタイザの許可（/<6桁>/<名前>）に乗る（2026-08-31）
+        check('保存されるHTMLに img が乗る', preview.includes('<img') && /src="\/[0-9]{6}\//.test(preview));
         await page.goto(pageURL);
         await page.locator('#w-editor-content img').first().waitFor({ timeout: 8000 });
         check('再読込しても img が残る', await page.locator('#w-editor-content img').count() >= 1);

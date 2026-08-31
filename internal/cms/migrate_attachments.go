@@ -73,16 +73,18 @@ func migrateAttachmentsInDir(pageDir, id string) (moved []string, err error) {
 	return moved, nil
 }
 
-// rewriteAttachmentURLs は本文中の旧置き場のアドレスを files/ 配下へ書き換えます。
+// rewriteAttachmentURLs は本文中の添付アドレスを**きれいなURL**（/<ページID>/<名前>）へ
+// 書き換えます。旧形2つ——直下（/data/master/xx/<id>/<名前>）と files/ 形——の両方を受け、
 // 日本語ファイル名はエディタ経由なら生のUTF-8で書かれるが、手書き・外部ツール由来の
 // パーセント符号化にも備えて両方の形を置き換える。
 func rewriteAttachmentURLs(body, pageID string, names []string) string {
-	oldBase := "/data/master/" + pageID[:2] + "/" + pageID + "/"
-	newBase := oldBase + page.AttachmentsDirName + "/"
+	oldRoot := "/data/master/" + pageID[:2] + "/" + pageID + "/"
+	oldFiles := oldRoot + page.AttachmentsDirName + "/"
 	for _, name := range names {
-		body = strings.ReplaceAll(body, oldBase+name, newBase+name)
-		if esc := url.PathEscape(name); esc != name {
-			body = strings.ReplaceAll(body, oldBase+esc, newBase+esc)
+		clean := page.AttachmentURLFor(pageID, name)
+		for _, n := range []string{name, url.PathEscape(name)} {
+			body = strings.ReplaceAll(body, oldFiles+n, clean)
+			body = strings.ReplaceAll(body, oldRoot+n, clean)
 		}
 	}
 	return body
@@ -121,9 +123,21 @@ func MigrateAttachments() (movedTotal, pages int, backupDir string, err error) {
 		if err != nil {
 			return movedTotal, pages, backupDir, err
 		}
-		if len(moved) == 0 {
+		// URLの書き換えは、いま動かしたものに限らず files/ に居る**全部**が対象
+		// ——前回の移行で長い形（/data/master/…/files/…）になったリンクも
+		// きれいなURLへ揃える（冪等）。
+		names := append([]string{}, moved...)
+		if entries, err := os.ReadDir(filepath.Join(filepath.Dir(tg.htmlPath), page.AttachmentsDirName)); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() {
+					names = append(names, e.Name())
+				}
+			}
+		}
+		if len(names) == 0 {
 			continue
 		}
+		moved = names
 		content, err := os.ReadFile(tg.htmlPath)
 		if err != nil {
 			return movedTotal, pages, backupDir, err

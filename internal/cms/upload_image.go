@@ -102,6 +102,10 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 
 	attachDir := page.AttachmentDir(pageID)
 	os.MkdirAll(attachDir, 0755)
+	// 保存名はサーバーが生成する（元の名前はURLに出さない。表示は本文のリンク文字が担う）。
+	// 生成IDはリンクブロックの data-id と一致させる（storage.go の3役）。
+	attachID := page.GeneratedAttachmentID(pageID, strings.ToLower(filepath.Ext(fileName)))
+	fileName = attachID + strings.ToLower(filepath.Ext(fileName))
 	savePath := filepath.Join(attachDir, fileName)
 
 	// 上書きかどうかは書く前にしか分からない（監査記録で区別するため）。
@@ -130,6 +134,7 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 		"kind":      kind,
 		// 本文の <img src> へそのまま入れる絶対パス。
 		"src": page.AttachmentURLFor(pageID, fileName),
+		"id":  attachID,
 	})
 }
 
