@@ -1128,6 +1128,19 @@ body[edit-mode] #w-editor-content td.cell-invalid {
     box-shadow: inset 0 0 0 1px #fca5a5;
 }
 
+/* 認識できた形式の背景色（D-3・2026-08-30 ユーザー:「表の中で認識できる形式は
+ * 背景色で示します」）。上の赤の**裏返し**で、number / date 列の読めた値に付く。
+ *
+ * 赤は「読めなかった」しか言わないので、書き手には**読めたことを確かめる術が
+ * 無かった**——空欄と「読めているが印が無い」が同じ見え方だった。
+ * 色は全体の規約どおり薄い青＝機械が読む（見出し語の .vocab-word と同じ）。
+ *
+ * **枠線は付けない。** 警告（赤）より静かであるべきで、正常な状態のほうが
+ * 数は多い。文字列の列に付けないのは validateCell 側の判断（そちらのコメント）。 */
+body[edit-mode] #w-editor-content td.cell-known {
+    background: #eff6ff;
+}
+
 /* ── 計算ビュー（section[data-type=child-list|required-materials]）──
    中身はサーバー事前描画（view_render.go）が .vocab-chrome として埋める。 */
 #w-editor-content ul.child-list {

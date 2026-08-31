@@ -187,6 +187,24 @@ async function waitSaved(page) {
         check('型検証: 和暦風の表記でも実在日付なら無印',
             !(await cell(1, 4).evaluate(el => el.classList.contains('cell-invalid'))));
 
+        // ── 認識できた形式の背景色（D-3・肯定側の印） ──
+        // 赤い .cell-invalid の裏返し。**型のある列で読めた値**にだけ付く
+        // ——文字列の列は「認識できた形式」ではないので付かない（付けると
+        // 表が丸ごと青くなって何も伝わらない）。
+        check('認識の印: 日付として読めたセルに付く',
+            await cell(1, 4).evaluate(el => el.classList.contains('cell-known')));
+        check('認識の印: 数値として読めたセルに付く',
+            await cell(1, 2).evaluate(el => el.classList.contains('cell-known')));
+        check('認識の印: 文字列の列には付かない',
+            !(await cell(1, 0).evaluate(el => el.classList.contains('cell-known'))));
+        await selectContents(page, cell(1, 4));
+        await page.keyboard.type('あした');
+        check('認識の印: 読めない値からは消える（赤と排他）',
+            await cell(1, 4).evaluate(el =>
+                !el.classList.contains('cell-known') && el.classList.contains('cell-invalid')));
+        await selectContents(page, cell(1, 4));
+        await page.keyboard.type('2026年8月19日');
+
         // ── 列移動・列削除（第2段） ──
         await caretInto(page, cell(0, 2)); // 「数量」
         await page.click('#w-tt-col-left');
@@ -379,6 +397,7 @@ async function waitSaved(page) {
         check('保存往復: 未知種別も保存される', savedHTML.includes('data-type="mystery-form"'));
         check('保存往復: enum で入れた値が残る', savedHTML.includes('合格'));
         check('保存往復: 実行時の印（cell-invalid）が漏れていない', !savedHTML.includes('cell-invalid'));
+        check('保存往復: 実行時の印（cell-known）が漏れていない', !savedHTML.includes('cell-known'));
         check('保存往復: 編集クロームが漏れていない',
             !savedHTML.includes('table-toolbar') && !savedHTML.includes('enum-menu'));
 
