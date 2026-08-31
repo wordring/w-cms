@@ -210,3 +210,47 @@ func TestMigrateAttachmentsInDir(t *testing.T) {
 		t.Errorf("再実行で変化しました: moved=%v err=%v", again, err)
 	}
 }
+
+// TestMigrateAttachmentsReportsActualMoves は、報告される件数が**実際に動かした数**で
+// あることを固定します。
+//
+// 一度きりの移行ツールは「2回目に何もしないこと」を数字で示せないと信用できません。
+// 実際、URL書き換えの対象（files/ に居る全部）を移動数として数え直していたため、
+// 何も動かない2回目でも「20ファイル移行」と報告していました——ディスクは無変更なのに
+// **移行が繰り返し走っているように見える**、という形の誤報です（2026-09-01 実測）。
+func TestMigrateAttachmentsReportsActualMoves(t *testing.T) {
+	setupSaveTest(t)
+
+	const id = "000072"
+	if err := page.WriteSidecar(id, page.PageMeta{Owner: "tester", Mode: page.DefaultMode}); err != nil {
+		t.Fatalf("サイドカー作成エラー: %v", err)
+	}
+	dir := page.GetPageDir(id)
+	body := `<p><a href="/data/master/00/000072/見積書.pdf">見積書</a></p>`
+	if err := os.WriteFile(filepath.Join(dir, id+".html"), []byte(body), 0644); err != nil {
+		t.Fatalf("本文作成エラー: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "見積書.pdf"), []byte("%PDF-"), 0644); err != nil {
+		t.Fatalf("添付作成エラー: %v", err)
+	}
+
+	moved, pages, _, err := MigrateAttachments()
+	if err != nil {
+		t.Fatalf("移行エラー: %v", err)
+	}
+	if moved != 1 || pages != 1 {
+		t.Fatalf("初回の報告が違います: moved=%d pages=%d (期待 1/1)", moved, pages)
+	}
+
+	// 2回目は**何も動かない**。ディスクも報告も変わらないこと。
+	moved, pages, _, err = MigrateAttachments()
+	if err != nil {
+		t.Fatalf("再実行エラー: %v", err)
+	}
+	if moved != 0 || pages != 0 {
+		t.Errorf("再実行が「移行した」と報告しました: moved=%d pages=%d (期待 0/0)", moved, pages)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "files", "見積書.pdf")); err != nil {
+		t.Errorf("添付が files/ に居ません: %v", err)
+	}
+}

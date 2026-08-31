@@ -123,10 +123,17 @@ func MigrateAttachments() (movedTotal, pages int, backupDir string, err error) {
 		if err != nil {
 			return movedTotal, pages, backupDir, err
 		}
+		// 数えるのは**実際に動かした数**だけ。書き換えの対象（下の names）で数え直すと、
+		// 何も動かない2回目でも「N件移行」と報告してしまう——ディスクは無変更なのに
+		// 移行が繰り返し走っているように見える誤報になる。一度きりの移行ツールは
+		// 「2回目に何もしないこと」を数字で示せないと信用できない
+		// （TestMigrateAttachmentsReportsActualMoves が固定）。
+		movedTotal += len(moved)
+
 		// URLの書き換えは、いま動かしたものに限らず files/ に居る**全部**が対象
 		// ——前回の移行で長い形（/data/master/…/files/…）になったリンクも
-		// きれいなURLへ揃える（冪等）。
-		names := append([]string{}, moved...)
+		// きれいなURLへ揃える（冪等）。移動済みの分もここに含まれる。
+		var names []string
 		if entries, err := os.ReadDir(filepath.Join(filepath.Dir(tg.htmlPath), page.AttachmentsDirName)); err == nil {
 			for _, e := range entries {
 				if !e.IsDir() {
@@ -137,12 +144,11 @@ func MigrateAttachments() (movedTotal, pages int, backupDir string, err error) {
 		if len(names) == 0 {
 			continue
 		}
-		moved = names
 		content, err := os.ReadFile(tg.htmlPath)
 		if err != nil {
 			return movedTotal, pages, backupDir, err
 		}
-		out := rewriteAttachmentURLs(string(content), tg.id, moved)
+		out := rewriteAttachmentURLs(string(content), tg.id, names)
 		if out != string(content) {
 			if err := page.WriteFileAtomic(tg.htmlPath, []byte(out), 0644); err != nil {
 				return movedTotal, pages, backupDir, err
@@ -150,9 +156,8 @@ func MigrateAttachments() (movedTotal, pages int, backupDir string, err error) {
 			if err := SyncIndex(tg.id, out); err != nil {
 				return movedTotal, pages, backupDir, err
 			}
+			pages++ // 本文が実際に変わったページだけ数える
 		}
-		movedTotal += len(moved)
-		pages++
 	}
 	return movedTotal, pages, backupDir, nil
 }
