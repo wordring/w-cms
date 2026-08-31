@@ -86,18 +86,21 @@ func init() {
 				seq:    ctx.Counter("freshen"),
 			}
 			// 機能見出しのセクション（data-type 無し・見出し語で解決）は、索引と同じ
-			// 切り分けで**素の中身**を温める——素の dl / table がその形式の実体
-			// （syncVocabSection と同じ規則。マーカー付きは別途配られる）。
+			// 切り分けで**素の中身**を温める——素の dl はヘッダ（形式自身の列）、
+			// 素の table は明細（Items 宣言があればその列）。syncVocabSection と同じ規則。
 			if el.Data == "section" && Attr(el, "data-type") == "" {
-				walkSkippingNested(el, map[string]bool{"section": true}, func(n *html.Node) {
-					if Attr(n, "data-type") != "" {
-						return
+				itemsDef := def
+				if def.Items != "" {
+					if idef, ok := VocabDefByType(def.Items); ok {
+						itemsDef = idef
 					}
+				}
+				eachPlainVocabChild(el, func(n *html.Node) {
 					switch n.Data {
 					case "dl":
 						f.freshenDL(n, def)
 					case "table":
-						f.freshenTable(n, def)
+						f.freshenTable(n, itemsDef)
 					}
 				})
 				return true, nil

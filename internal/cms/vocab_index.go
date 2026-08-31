@@ -137,23 +137,53 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 	def, _ := VocabDefByType(dataType)
 	sectionBlockID := Attr(section, "data-id")
 
+	// 素の表の読み方: 形式が明細（Items）を宣言していれば、素の表は**明細**である
+	// ——「顧客の発注書」セクションの素の表は受注明細（2026-08-31 ユーザー:
+	// 「発注書などの表はTableで組みましょう。THに表示される文字列が、すなわち
+	// 列のデータを表します。人に対しても機械に対しても有効」）。
+	// th の表示文字が列を、見出しの言葉が表の役割を宣言し、本文から機械語が消える。
+	// 索引上は従来のマーカー付き明細と**同じ形式名**で載るので、集計は区別しない。
+	itemsType, itemsDef := dataType, def
+	if def.Items != "" {
+		if idef, ok := VocabDefByType(def.Items); ok {
+			itemsType, itemsDef = def.Items, idef
+		}
+	}
+
 	var firstErr error
-	walkSkippingNested(section, map[string]bool{"section": true}, func(n *html.Node) {
-		if firstErr != nil || Attr(n, "data-type") != "" {
-			return // マーカー付きは独立した形式（配送係が別に届ける）
+	eachPlainVocabChild(section, func(n *html.Node) {
+		if firstErr != nil {
+			return
 		}
 		switch n.Data {
 		case "dl":
 			no := ctx.Counter("vocab_index:" + dataType)
 			firstErr = syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, sectionBlockID, def, n)
 		case "table":
-			no := ctx.Counter("vocab_index:" + dataType)
+			no := ctx.Counter("vocab_index:" + itemsType)
 			// 素の表はブロックIDを持たない（振られるのはトップレベルだけ）ので、
 			// 由来としては包んでいる section のIDを刻む。
-			firstErr = syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, sectionBlockID, def, n)
+			firstErr = syncVocabTable(ctx.Tx, ctx.PageID, itemsType, no, sectionBlockID, itemsDef, n)
 		}
 	})
 	return firstErr
+}
+
+// eachPlainVocabChild は section の**素の中身**（data-type を持たない dl / table）を
+// 文書順で fn へ渡します。マーカー付きは独立した形式（配送係が別に届ける）、
+// 入れ子の section は独立した業務ブロックなので、どちらも渡しません。
+// 索引（syncVocabSection）・種まき（template_new.go）・改名告知（vocab_notify.go）が
+// 同じ切り分けを共有します——ここが割れると「索引には載るのに告知されない」形の
+// ずれが生まれるため、巡回は1箇所に持ちます。
+func eachPlainVocabChild(section *html.Node, fn func(n *html.Node)) {
+	walkSkippingNested(section, map[string]bool{"section": true}, func(n *html.Node) {
+		if Attr(n, "data-type") != "" {
+			return
+		}
+		if n.Data == "dl" || n.Data == "table" {
+			fn(n)
+		}
+	})
 }
 
 // vocabColumn は表の1列ぶんの解決済みスキーマ（文書の見出し行から読む）です。
