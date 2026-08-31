@@ -159,7 +159,7 @@ async function waitSaved(page) {
             (await cell(0, 2).getAttribute('data-type')) === 'date');
         // ポップオーバは列見出しの直下＝データセルに重なるため、実利用と同じく
         // 外をクリックして閉じてから下のセルを操作する。
-        await page.locator('#w-editor-content h1').click();
+        await page.locator('#w-editor-content h1').first().click();
         check('列設定: 外クリックで閉じる',
             !(await page.locator('#w-col-popover').evaluate(el => el.classList.contains('active'))));
         // ── 型検証（明示が推論に優先） ──
@@ -172,7 +172,7 @@ async function waitSaved(page) {
         await page.waitForSelector('#w-col-popover.active', { timeout: 4000 });
         await page.selectOption('#w-cp-type', '');
         check('列設定: 空で属性が外れる', (await cell(0, 2).getAttribute('data-type')) === null);
-        await page.locator('#w-editor-content h1').click();
+        await page.locator('#w-editor-content h1').first().click();
         await selectContents(page, cell(1, 2));
         await page.keyboard.type('1,234円');
         check('型検証: 推論（数量→number）で通貨表記は無印',
@@ -464,6 +464,57 @@ async function waitSaved(page) {
         });
         check('よく使う項目が分類の先頭へ来る', firstInCategory === 'vocab:part-materials');
         await page.keyboard.press('Escape');
+        // ── リンクの挿入とプロパティ欄（【考察】添付ファイルの表示と操作 §4） ──
+        // 「編集するのにダイアログが出るのは使いにくかった。プロパティ欄があるものが
+        // 使いやすかった」（ユーザー・2026-08-31）。列設定ポップオーバと同じ形。
+        await page.locator('#w-editor-content h1').first().click();
+        await page.keyboard.press('Escape');
+        // 段落を1つ用意して文字を打ち、その全体を選んでリンクにする。
+        // 直前のスラッシュメニュー検査で '/' が残っているので、選んでから打ち替える。
+        const para = page.locator('#w-editor-content p').last();
+        await caretInto(page, para);
+        await selectContents(page, para);
+        await page.keyboard.type('参考資料');
+        await selectContents(page, para);
+        await page.waitForSelector('#w-context-toolbar.active', { timeout: 4000 });
+        check('ツールバーにリンクのボタンが出る',
+            await page.locator('#w-ctx-link').count() > 0);
+        await page.locator('#w-ctx-link').click();
+        check('選択した文字がリンクになる',
+            await para.evaluate(el => !!el.querySelector('a')));
+        check('プロパティ欄が開く',
+            await page.locator('#w-link-popover').evaluate(el => el.classList.contains('active')));
+        check('プロパティ欄はダイアログでない（本文の外のクローム）',
+            await page.evaluate(() => !document.querySelector('#w-editor-content #w-link-popover')));
+
+        // href を打つと本文のリンクへ即時に反映される
+        await page.fill('#w-lp-href', '/000000');
+        await page.waitForTimeout(300);
+        check('href がリンクへ反映される',
+            (await para.evaluate(el => el.querySelector('a').getAttribute('href'))) === '/000000');
+        await waitSaved(page);
+        const linkSaved = await page.locator('#w-html-preview').inputValue();
+        check('保存HTMLにリンクが残る', /<a href="\/000000">参考資料<\/a>/.test(linkSaved));
+        check('保存HTMLにクロームが漏れない', !linkSaved.includes('w-link-popover'));
+
+        // キャレットを既存リンクへ置くとプロパティ欄が開き直す
+        await page.locator('#w-editor-content h1').first().click();
+        check('リンクの外ではプロパティ欄が閉じる',
+            !(await page.locator('#w-link-popover').evaluate(el => el.classList.contains('active'))));
+        await caretInto(page, para.locator('a'));
+        await page.waitForTimeout(300);
+        check('既存リンクにキャレットを置くと開く',
+            await page.locator('#w-link-popover').evaluate(el => el.classList.contains('active')));
+        check('いまの href が欄に入る',
+            (await page.locator('#w-lp-href').inputValue()) === '/000000');
+
+        // リンクを外す（文字は残る）
+        await page.locator('#w-lp-unlink').click();
+        check('リンクを外すと a が消える',
+            await para.evaluate(el => !el.querySelector('a')));
+        check('リンクを外しても文字は残る',
+            (await para.innerText()).includes('参考資料'));
+
 
         check('JSエラーなし（pageerror ゼロ）', pageErrors.length === 0);
         if (pageErrors.length) console.error('pageerrors:', pageErrors);

@@ -2391,6 +2391,109 @@
         triggerAutoSave();
     }
 
+    // ── リンクの挿入とプロパティ欄 ───────────────────────────────────────
+    // 設計は [【考察】添付ファイルの表示と操作.md] §4。ユーザーの経験則
+    // 「編集するのにダイアログが出るのは使いにくかった。プロパティ欄があるものが
+    // 使いやすかった」（2026-08-31）——**モーダルを出さず、リンクの近傍に欄を出す**。
+    // 列設定ポップオーバとまったく同じ形で、値（表示される文字）は contenteditable、
+    // 配線（href・表示されない）はこの欄が担う。
+    //
+    // 宛先は**制限しない**（サニタイザの既定どおり。2026-08-21 決定——埋め込みの
+    // `/data/` 制限はリンクには掛けない）。
+    let linkPopoverAnchor = null; // 編集対象の <a>
+
+    function hideLinkPopover() {
+        const pop = document.getElementById('w-link-popover');
+        if (pop) pop.classList.remove('active');
+        linkPopoverAnchor = null;
+    }
+
+    // openLinkPopover は対象のリンクの直下へプロパティ欄を出す。
+    function openLinkPopover(anchor) {
+        const pop = document.getElementById('w-link-popover');
+        if (!pop || !anchor) return;
+        linkPopoverAnchor = anchor;
+        document.getElementById('w-lp-href').value = anchor.getAttribute('href') || '';
+        pop.classList.add('active');
+        const rect = anchor.getBoundingClientRect();
+        pop.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        pop.style.left = (rect.left + window.scrollX) + 'px';
+    }
+
+    // anchorAtCaret はキャレット位置の <a>（本文の中のもの）を返す。
+    function anchorAtCaret() {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return null;
+        const node = sel.getRangeAt(0).startContainer;
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        if (!el || !el.closest) return null;
+        const a = el.closest('a');
+        if (!a || !a.closest('#w-editor-content')) return null;
+        // サーバーが埋めた計算ビューやクロームの中のリンクは本文ではない。
+        return isServerOwned(a) ? null : a;
+    }
+
+    // updateLinkPopover はキャレットがリンク上にあるときだけ欄を出す（selectionchange から）。
+    function updateLinkPopover() {
+        if (!document.body.hasAttribute('edit-mode')) return hideLinkPopover();
+        const a = anchorAtCaret();
+        if (!a) return hideLinkPopover();
+        if (a !== linkPopoverAnchor) openLinkPopover(a);
+    }
+
+    // linkSelection は選択された文字を <a> で包む。既にリンクの中なら包み直さず、
+    // その場で編集させる（入れ子の a は HTML として不正）。
+    function linkSelection() {
+        const existing = anchorAtCaret();
+        if (existing) { openLinkPopover(existing); return; }
+
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 未選択なら何もしない
+        const range = sel.getRangeAt(0);
+        const host = editableHostOf(range.commonAncestorContainer);
+        if (!host) return;
+
+        const a = document.createElement('a');
+        a.setAttribute('href', '');
+        // surroundContents は範囲が要素境界をまたぐと投げる。またぐ選択は
+        // 抜き出して包み直す（装飾ボタンと違い、リンクは1つの a に畳んでよい）。
+        try {
+            range.surroundContents(a);
+        } catch (e) {
+            a.appendChild(range.extractContents());
+            range.insertNode(a);
+        }
+        if (!a.textContent) { a.remove(); return; }
+
+        updateHtmlPreview();
+        triggerAutoSave();
+        openLinkPopover(a);
+        document.getElementById('w-lp-href').focus();
+    }
+
+    // applyLinkHref は欄の値をリンクへ書き戻す。属性の変更は MutationObserver の
+    // attributeFilter に載らないので、保存は明示的に蹴る（applyColType と同じ）。
+    function applyLinkHref() {
+        const a = linkPopoverAnchor;
+        if (!a || !a.isConnected) return;
+        a.setAttribute('href', document.getElementById('w-lp-href').value);
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
+    // unlinkCurrent はリンクを外して**文字だけ残す**。
+    function unlinkCurrent() {
+        const a = linkPopoverAnchor;
+        if (!a || !a.isConnected) { hideLinkPopover(); return; }
+        const parent = a.parentNode;
+        while (a.firstChild) parent.insertBefore(a.firstChild, a);
+        a.remove();
+        if (parent.normalize) parent.normalize();
+        hideLinkPopover();
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
     // ── 定義リスト（dl data-type）の項目操作 ─────────────────────────────
     // 「項目」＝ dt と、次の dt までの dd の組（多値＝複数 dd。語彙モデル §5.3）。
     let currentDlNode = null; // キャレットのある dt / dd
@@ -3306,6 +3409,17 @@
         const cpType = document.getElementById('w-cp-type');
         if (cpType) cpType.addEventListener('change', applyColType);
 
+        // リンクのプロパティ欄。打つそばから本文のリンクへ反映する（列型と同じ流儀で、
+        // 「適用」ボタンは置かない）。
+        const lpHref = document.getElementById('w-lp-href');
+        if (lpHref) lpHref.addEventListener('input', applyLinkHref);
+        const lpUnlink = document.getElementById('w-lp-unlink');
+        if (lpUnlink) {
+            // 押した瞬間に選択が飛ぶと対象を見失うため、装飾ボタンと同じく mousedown を止める。
+            lpUnlink.addEventListener('mousedown', e => e.preventDefault());
+            lpUnlink.addEventListener('click', e => { e.preventDefault(); unlinkCurrent(); });
+        }
+
         // enum の選択肢メニュー。クリックで選択が飛ぶと対象セルを見失うため mousedown を止める。
         const emenu = document.getElementById('w-enum-menu');
         if (emenu) emenu.addEventListener('mousedown', e => e.preventDefault());
@@ -3412,10 +3526,15 @@
             // 表から出たと誤認してツールバーごと消してしまうため更新しない。
             if (document.activeElement && document.activeElement.closest &&
                 document.activeElement.closest('#w-col-popover')) return;
+            // リンクのプロパティ欄も同じ理由で、欄へフォーカスがある間は更新しない
+            // （href を打っている最中にキャレットが本文から出たと誤認して閉じる）。
+            if (document.activeElement && document.activeElement.closest &&
+                document.activeElement.closest('#w-link-popover')) return;
             updateContextToolbar();
             updateTableToolbar();
             updateDlToolbar();
             updateEnumMenu();
+            updateLinkPopover();
         });
 
         // Hide toolbar when clicking outside editor
@@ -3435,6 +3554,13 @@
             }
             if (!e.target.closest('#w-editor-content') && !e.target.closest('#w-enum-menu')) {
                 hideEnumMenu();
+            }
+            // リンクのプロパティ欄は「リンク以外を押したら閉じる」。**本文の中を押した
+            // ときも閉じる**必要がある——href の欄にフォーカスがある間 selectionchange は
+            // 早期 return するので、キャレットが本文へ戻ったことに気づけない。
+            if (!e.target.closest('#w-link-popover') && !e.target.closest('#w-context-toolbar') &&
+                !e.target.closest('a')) {
+                hideLinkPopover();
             }
         });
 
@@ -3705,6 +3831,17 @@
                 });
                 toolbar.appendChild(btn);
             });
+            // リンクも「選択した文字への操作」なので装飾と同じ並びに置く。
+            // スラッシュメニューには載せない——あちらは `/` で始まる段落を
+            // **ブロックごと**差し替える口で、文中のリンクは入らない。
+            const link = document.createElement('button');
+            link.id = 'w-ctx-link';
+            link.innerText = '🔗';
+            link.title = '選択した文字をリンクにする';
+            link.style.minWidth = '24px';
+            link.addEventListener('mousedown', e => e.preventDefault());
+            link.addEventListener('click', e => { e.preventDefault(); linkSelection(); });
+            toolbar.appendChild(link);
             hasButtons = true;
         }
 

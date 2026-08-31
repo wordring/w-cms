@@ -88,6 +88,21 @@
     <div class="col-popover-note" id="w-cp-note"></div>
 </div>
 
+<!-- リンクのプロパティ欄（【考察】添付ファイルの表示と操作 §4）。ユーザーの経験則
+     「編集するのにダイアログが出るのは使いにくかった。プロパティ欄があるものが
+     使いやすかった」（2026-08-31）に従い、モーダルではなく**リンクの近傍に出る欄**。
+     列設定ポップオーバ（上）とまったく同じ形——値は中身、配線（href）は属性の編集口で。
+     本文DOMの外に置くこと（中へ入れるとシリアライザが本文として拾う）。 -->
+<div id="w-link-popover" class="col-popover">
+    <div class="col-popover-key">リンク</div>
+    <label class="col-popover-row">宛先
+        <input type="text" id="w-lp-href" placeholder="/000123 や https://…">
+    </label>
+    <div class="col-popover-row">
+        <button type="button" id="w-lp-unlink">リンクを外す</button>
+    </div>
+</div>
+
 <!-- 子ページ作成のテンプレート選択メニュー。項目は app.js が /api/templates から生成する
      （「テンプレート」フォルダ配下のツリー。枝は分類の見出し・葉はテンプレート）。 -->
 <div id="w-template-menu" class="enum-menu template-menu"></div>
