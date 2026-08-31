@@ -2406,11 +2406,19 @@
         currentDlNode = item;
         bar.classList.add('active');
         const rect = item.getBoundingClientRect();
-        let top = rect.top + window.scrollY + (rect.height - bar.offsetHeight) / 2;
-        let left = rect.right + window.scrollX + 8;
-        if (rect.right + 8 + bar.offsetWidth > document.documentElement.clientWidth) {
-            top = rect.top + window.scrollY - bar.offsetHeight - 4;
+        let top, left;
+        if (getComputedStyle(item.parentElement).display === 'flex') {
+            // 横並びの dl（業務ブロックのヘッダ・可変タグ）では、右横に出すと
+            // **隣の対の上に被さって**その対を編集できなくなる。項目の下へ出す。
+            top = rect.bottom + window.scrollY + 4;
             left = rect.left + window.scrollX;
+        } else {
+            top = rect.top + window.scrollY + (rect.height - bar.offsetHeight) / 2;
+            left = rect.right + window.scrollX + 8;
+            if (rect.right + 8 + bar.offsetWidth > document.documentElement.clientWidth) {
+                top = rect.top + window.scrollY - bar.offsetHeight - 4;
+                left = rect.left + window.scrollX;
+            }
         }
         bar.style.top = top + 'px';
         bar.style.left = left + 'px';

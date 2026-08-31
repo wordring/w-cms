@@ -71,6 +71,28 @@ body.public {
 .public-content th { background: #f9fafb; font-weight: 600; }
 
 .public-content dl { margin: 0 0 20px; }
+
+/* 業務ブロックのヘッダ（section 内の素の dl）は名前：値の対を横に並べる
+   （エディタ側と同じ見た目。2026-08-31）。 */
+.public-content section dl:not([data-type]) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    row-gap: 6px;
+    margin: 8px 0 20px;
+}
+.public-content section dl:not([data-type]) dt {
+    margin: 0;
+    color: #64748b;
+    font-weight: normal;
+    font-size: 13px;
+}
+.public-content section dl:not([data-type]) dt::after {
+    content: '：';
+}
+.public-content section dl:not([data-type]) dd {
+    margin: 0 24px 0 2px;
+}
 .public-content dt { font-weight: 600; color: var(--pub-muted); margin-top: 10px; }
 .public-content dd { margin: 0 0 4px 1em; }
 

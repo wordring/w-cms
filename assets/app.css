@@ -1057,6 +1057,35 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
     margin-right: 8px; /* 次のタグとの間隔 */
 }
 
+
+/* 業務ブロックのヘッダ（section 内の素の dl）は名前：値の対を**横に並べる**
+ * （2026-08-31 ユーザー要望「発注書番号、発注日などは横に並ぶようにしては？」）。
+ * 発注書番号・発注元・発注日のような少数の短い項目が縦に積まれると場所を食うだけ
+ * なので、対を1行に流し、入りきらなければ折り返す。
+ * 見出し形（D-2）の素のヘッダにも、旧形式（section[data-type] 内の dl）にも
+ * 同じセレクタが当たる。名前と値の区切りの「：」は CSS の ::after で描く
+ * ——本文の文字ではなく見た目なので、鍵（dt の表示文字）を汚さない。 */
+#w-editor-content section dl:not([data-type]) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    row-gap: 6px;
+    margin: 8px 0;
+}
+#w-editor-content section dl:not([data-type]) dt {
+    margin: 0;
+    color: var(--text-muted);
+    font-weight: normal;
+    font-size: 13px;
+}
+#w-editor-content section dl:not([data-type]) dt::after {
+    content: '：';
+}
+#w-editor-content section dl:not([data-type]) dd {
+    margin: 0 24px 0 2px; /* 値の後ろで次の対と区切る */
+    min-width: 1.5em;     /* 空でもクリックできる幅（編集モードで値を書くため） */
+}
+
 /* 破壊的な操作のボタン（削除）。押し間違いを減らすため通常の操作と色を変える。 */
 .page-action-danger {
     color: #b91c1c;
