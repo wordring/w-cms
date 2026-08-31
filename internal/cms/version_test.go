@@ -55,15 +55,68 @@ func TestVersionRecordedOnSave(t *testing.T) {
 	}
 }
 
-// TestVersionsAreCoalesced は、連続保存が1つの版へまとめられることを検証します。
-// これが効かないと、オートセーブ（1〜2秒ごと）で版が無限に増えます。
+// TestVersionsAreCoalesced は、連続保存が1つの版へまとめられ、その版が**最後の内容**を
+// 持つことを検証します。かつては「窓の内側は捨てる」方式で、版に残るのが**最初の保存**
+// （ほぼ編集前の内容）だった——1セッションがほぼ同じ2版（最初の保存＋終了時
+// チェックポイント）を残し「版の履歴が細かすぎる」（2026-08-31 ユーザー指摘）。
+// 置き換え方式では版が常に最新を持ち、チェックポイントは同内容で自然に消える。
 func TestVersionsAreCoalesced(t *testing.T) {
 	setupSaveTest(t)
 	for i := 0; i < 5; i++ {
 		postSave(t, "000040", "<h1>連打</h1><p>"+strings.Repeat("あ", i+1)+"</p>")
 	}
-	if list := versionsOf(t, "000040"); len(list) != 1 {
-		t.Errorf("連続保存が %d 版になりました（1版にまとまるはず）", len(list))
+	list := versionsOf(t, "000040")
+	if len(list) != 1 {
+		t.Fatalf("連続保存が %d 版になりました（1版にまとまるはず）", len(list))
+	}
+	body, err := ReadVersion("000040", list[0].ID)
+	if err != nil {
+		t.Fatalf("ReadVersionエラー: %v", err)
+	}
+	if !strings.Contains(string(body), strings.Repeat("あ", 5)) {
+		t.Errorf("版が最後の内容を持っていません（最初の保存のまま）: %s", body)
+	}
+
+	// 窓の内側のチェックポイント（ロック解放）は同内容なので版を増やさない。
+	if err := RecordVersion("000040", "a", "<h1>連打</h1><p>"+strings.Repeat("あ", 5)+"</p>", true); err != nil {
+		t.Fatalf("RecordVersionエラー: %v", err)
+	}
+	if got := len(versionsOf(t, "000040")); got != 1 {
+		t.Errorf("チェックポイントが版を増やしました: %d", got)
+	}
+}
+
+// TestRevertKeepsBackupDistinct は、リバートの「直前の退避」と「戻した記録」が
+// **別の版**として残ることを検証します。置き換え方式のコアレッシングがここまで
+// 畳んでしまうと、戻す直前の状態が失われる——force はこの区切りのためにある。
+func TestRevertKeepsBackupDistinct(t *testing.T) {
+	setupSaveTest(t)
+	const id = "000040"
+	postSave(t, id, "<h1>初版</h1>")
+	old := versionsOf(t, id)[0].ID
+
+	// 別の内容へ進める（同じ窓の中）
+	postSave(t, id, "<h1>二版</h1>")
+
+	if err := RevertToVersion(id, old, "a"); err != nil {
+		t.Fatalf("RevertToVersionエラー: %v", err)
+	}
+	list := versionsOf(t, id)
+	// 期待: 初版（戻し先）・退避（二版の内容）・戻した記録（初版と同内容）… ただし
+	// 戻した記録は直近の退避と内容が違うので新しい版になる。少なくとも
+	// **退避（二版）がどこかの版に残っている**ことが本旨。
+	foundBackup := false
+	for _, v := range list {
+		body, err := ReadVersion(id, v.ID)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(body), "二版") {
+			foundBackup = true
+		}
+	}
+	if !foundBackup {
+		t.Errorf("リバート直前の状態が版に残っていません（コアレッシングに畳まれた）: %d版", len(list))
 	}
 }
 
@@ -127,17 +180,20 @@ func TestVersionForcedCheckpointRecordsChange(t *testing.T) {
 func TestRevertRestoresBodyOnly(t *testing.T) {
 	setupSaveTest(t)
 	const id = "000040"
-	postSave(t, id, "<h1>初版</h1><p>もとの本文</p>")
+	postSaveAs(t, id, "<h1>初版</h1><p>もとの本文</p>", "alice")
 	old := versionsOf(t, id)[0].ID
 
-	// 権限と所有者を変えてから、本文も書き換える。
+	// 権限と所有者を変えてから、本文も書き換える。**別の編集者で**——同じ編集者だと
+	// 置き換え方式のコアレッシングが old の版そのものを第2版の内容へ進めてしまい、
+	// 「初版へ戻す」というこのテストの前提が消える（実運用では一覧から選んだ時点の
+	// 内容へ戻るので問題にならない）。
 	meta, _ := page.ReadSidecar(id)
 	meta.Owner = "bob"
 	meta.Mode = "700"
 	if err := page.WriteSidecar(id, meta); err != nil {
 		t.Fatalf("WriteSidecarエラー: %v", err)
 	}
-	postSave(t, id, "<h1>第2版</h1><p>書き換えた</p>")
+	postSaveAs(t, id, "<h1>第2版</h1><p>書き換えた</p>", "bob")
 
 	if err := RevertToVersion(id, old, "tester"); err != nil {
 		t.Fatalf("RevertToVersionエラー: %v", err)

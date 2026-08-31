@@ -19,9 +19,15 @@ package cms
 // 3つの約束:
 //
 //  1. **毎回の保存で版を作らない**（コアレッシング）。オートセーブは1〜2秒ごとに飛ぶので、
-//     同じ編集者の連続保存は versionCoalesceWindow の間ひとまとめにします。編集者が
-//     変わったときは必ず切ります——誰の書いたものかが混ざると後から辿れないからです。
-//     窓の内側で編集を終えた人の最後の状態は、**ロック解放時の明示チェックポイント**が拾います。
+//     同じ編集者の連続保存は versionCoalesceWindow の間**最新の内容へ置き換え**て
+//     ひとまとめにします（窓の起点は版ID＝作成時刻。窓を超えたら次の版が始まる）。
+//     編集者が変わったときは必ず切ります——誰の書いたものかが混ざると後から辿れないからです。
+//
+//     かつては「窓の内側の保存は**捨てる**」方式で、1セッションが〈最初の保存＝
+//     ほぼ編集前の内容〉と〈ロック解放時のチェックポイント＝最終状態〉の**ほぼ同じ2版**を
+//     残していました（「版の履歴が細かすぎます」——2026-08-31 ユーザー指摘）。
+//     置き換え方式なら窓の版が常に最新を持つため、チェックポイントは同内容で自然に
+//     スキップされ、**1セッション＝1版**になります。
 //  2. **5年は消さない**（日本の帳票保持義務。2026-08-21 ユーザー決定）。年限で切るので、
 //     世代数の上限は設けません。
 //  3. **各版は自己完結**（gzip フル圧縮・差分チェーンなし）。復元にチェーンが要らず、
@@ -121,10 +127,12 @@ func safeVersionID(v string) (string, error) {
 
 // RecordVersion は本文を版として残します。
 //
-// force が false のときはコアレッシングが効きます（同じ編集者の直近の版が
-// versionCoalesceWindow 以内なら何もしない）。true のときは窓を無視して残しますが、
-// **中身が最新の版と同じなら残しません**——ロック解放時のチェックポイントが
-// 無駄な版を積まないようにするためです。
+// force が false のときはコアレッシングが効きます——同じ編集者の直近の版が
+// versionCoalesceWindow 以内（起点は版ID＝作成時刻）なら、**その版を最新の内容へ
+// 置き換え**ます。true は必ず新しい版を切る**区切り**で、リバート（直前の退避と
+// 戻した記録が別の版であるべき）だけが使います。どちらの場合も、
+// **中身が最新の版と同じなら何もしません**——ロック解放時のチェックポイントは
+// 置き換え方式では常に同内容になるため、これで自然に消えます。
 func RecordVersion(pageID, author, html string, force bool) error {
 	pageID, ok := page.NormalizeID(pageID)
 	if !ok {
@@ -146,9 +154,18 @@ func RecordVersion(pageID, author, html string, force bool) error {
 			return nil
 		}
 		if !force && newest.By == author {
-			if at, err := time.Parse(time.RFC3339, newest.At); err == nil &&
+			// 窓の起点は**版ID（作成時刻）**。At を起点にすると置き換えのたびに
+			// 窓が滑り、書き続ける限り永遠に1版へ畳まれてしまう。IDなら
+			// 「10分ごとに次の版」という粒度が保たれる。
+			if at, err := time.Parse(versionTimeLayout, newest.ID); err == nil &&
 				time.Since(at) < versionCoalesceWindow {
-				return nil // 連続保存はひとまとめ
+				// 連続保存はひとまとめ＝この版を最新の内容へ置き換える。
+				// At は実際の内容の時刻へ進める（IDは窓の起点として据え置き）。
+				info := newest
+				info.At = time.Now().UTC().Format(time.RFC3339)
+				info.Size = len(html)
+				info.Hash = hash
+				return writeVersionFiles(dir, newest.ID, info, []byte(html))
 			}
 		}
 	}
