@@ -12,6 +12,7 @@ package htmldoc
 
 import (
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -184,7 +185,10 @@ var structuralElements = map[string]map[string]bool{
 	"td":  {"colspan": true, "rowspan": true, "headers": true},
 
 	// リンク（target/rel は許可しない。同一タブなら reverse tabnabbing の心配がない）
-	"a": {"href": true, "title": true},
+	// download はダウンロード時の保存名（添付のURLは生成IDなので、元の名前は
+	// リンクが運ぶ——2026-08-31「一致させるとダウンロードで困るでしょうか？」への答え）。
+	// 値はブラウザが保存名の既定に使うだけの不活性なテキスト。
+	"a": {"href": true, "title": true, "download": true},
 
 	// 画像・音声・動画（URLはいずれも相対のみ。autoplay は許可しない）
 	"img":     {"src": true, "alt": true, "title": true, "width": true, "height": true},
@@ -462,10 +466,20 @@ func safeEmbedURL(v string) bool {
 	// （page.DataFileHandler）。リンク（a[href]）は別扱いで制限しない——
 	// 押さないと何も起きず、埋め込みのように自動取得されないため。
 	if strings.HasPrefix(s, "/") {
-		return strings.HasPrefix(s, dataDirPrefix) && !strings.Contains(s, "..")
+		if strings.Contains(s, "..") {
+			return false
+		}
+		// 添付の配信口は2つ——旧形（/data/ 配下・互換）と、きれいなURL
+		// （/<ページID6桁>/<ファイル名>。2026-08-31「実際に保存される場所を
+		// 推測されたくない」）。どちらも認可つきのハンドラが配る。
+		return strings.HasPrefix(s, dataDirPrefix) || attachmentURLRe.MatchString(s)
 	}
 	return true
 }
 
-// dataDirPrefix は埋め込みに許す絶対パスの接頭辞です（添付の配信口）。
+// dataDirPrefix は埋め込みに許す絶対パスの接頭辞です（添付の旧配信口）。
 const dataDirPrefix = "/data/"
+
+// attachmentURLRe は添付のきれいなURL（/<ページID6桁>/<ファイル名>）です。
+// ファイル名に / は含まれない（深い階層はアプリの口を指しうるので許さない）。
+var attachmentURLRe = regexp.MustCompile(`^/[0-9]{6}/[^/]+$`)

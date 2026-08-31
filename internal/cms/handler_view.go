@@ -117,6 +117,18 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 添付のきれいなURL: /<ページID>/<ファイル名>（2026-08-31）。
+	// ページURLの下の名前空間で、物理配置（data/master/…/files/）はURLに出ない。
+	if slash := strings.IndexByte(id, '/'); slash > 0 {
+		pid, name := id[:slash], id[slash+1:]
+		if norm, ok := page.NormalizeID(pid); ok && len(pid) == 6 {
+			page.ServeCleanAttachment(w, r, norm, name, pageNotFound)
+			return
+		}
+		pageNotFound(w, r)
+		return
+	}
+
 	// id が英数字ハイフンのみか簡易チェック
 	for _, c := range id {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {

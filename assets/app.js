@@ -2845,8 +2845,9 @@
             }
             p.textContent = '📎 ';
             const a = document.createElement('a');
-            // 置き場の知識はサーバーが持つ（新しい添付は files/ 配下——構造で塞ぐ）。
+            // 置き場の知識はサーバーが持つ（href は /<ページID>/<生成名>）。
             a.href = d.href || ('/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + d.src);
+            a.download = file.name; // 保存名の既定は元の名前
             a.textContent = file.name;
             p.appendChild(a);
             enhanceFileSections();
@@ -2898,7 +2899,7 @@
                 return null;
             }
             const d = await res.json();
-            return d.src || null;
+            return d.src ? d : null;
         } catch (e) {
             notify('画像のアップロードに失敗しました: ' + e.message, { type: 'warn', duration: 8000 });
             return null;
@@ -2929,9 +2930,11 @@
                     continue;
                 }
                 const p = document.createElement('p');
+                if (d.id) p.setAttribute('data-id', d.id); // 添付ID＝ブロックID（3役の一致）
                 p.textContent = '📎 ';
                 const a = document.createElement('a');
                 a.href = d.href || '';
+                a.download = f.name; // 保存名の既定は元の名前（URLは生成IDのまま）
                 a.textContent = f.name;
                 p.appendChild(a);
                 const block = wrapInBlock(p);
@@ -2954,11 +2957,12 @@
     async function insertImagesAfter(files, refBlock) {
         let last = refBlock;
         for (const f of files) {
-            const src = await uploadImageFile(f);
-            if (!src) continue;
+            const up = await uploadImageFile(f);
+            if (!up) continue;
             const p = document.createElement('p');
+            if (up.id) p.setAttribute('data-id', up.id); // 添付ID＝ブロックID
             const img = document.createElement('img');
-            img.src = src;
+            img.src = up.src;
             img.alt = f.name;
             p.appendChild(img);
             const block = wrapInBlock(p);
@@ -2975,7 +2979,8 @@
 
     // insertImageIntoCell は image 列のセルへ画像を1枚入れます（差し替えは上書き）。
     async function insertImageIntoCell(cell, file) {
-        const src = await uploadImageFile(file);
+        const up = await uploadImageFile(file);
+        const src = up && up.src;
         if (!src) return;
         cell.textContent = '';
         const img = document.createElement('img');

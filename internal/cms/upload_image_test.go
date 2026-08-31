@@ -62,10 +62,12 @@ func TestUploadImageAcceptsAllowedKinds(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("PNGのアップロードに失敗: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "/data/master/00/000012/") {
-		t.Errorf("本文から参照できるURLが返っていません: %s", rr.Body.String())
+	saved := savedNameOf(t, rr)
+	// URLはきれいな形（/<ページID>/<生成名>）——物理配置も元名も出さない。
+	if !strings.Contains(rr.Body.String(), `"/`+id+`/`+saved+`"`) {
+		t.Errorf("本文から参照できるきれいなURLが返っていません: %s", rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "写真.png")); err != nil {
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), saved)); err != nil {
 		t.Errorf("PNGが保存されていません: %v", err)
 	}
 }
@@ -123,10 +125,11 @@ func TestUploadImageStripsEXIF(t *testing.T) {
 	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
 
 	src := jpegWithEXIF(t, jpegBytes(t, 8, 4), 6)
-	if rr := postImage(t, id, "撮影.jpg", src, &auth.User{Username: "alice"}); rr.Code != 200 {
+	rr := postImage(t, id, "撮影.jpg", src, &auth.User{Username: "alice"})
+	if rr.Code != 200 {
 		t.Fatalf("JPEGのアップロードに失敗: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	saved, err := os.ReadFile(filepath.Join(page.AttachmentDir(id), "撮影.jpg"))
+	saved, err := os.ReadFile(filepath.Join(page.AttachmentDir(id), savedNameOf(t, rr)))
 	if err != nil {
 		t.Fatalf("保存されたJPEGを読めません: %v", err)
 	}
@@ -175,12 +178,14 @@ func TestUploadImageCannotEscapePageDir(t *testing.T) {
 
 	// パス要素は「拒否」ではなく「落として正規化」する（PDF の口と同じ）。
 	// 守りたいのは**ページのフォルダの外に書けないこと**なので、そこを見る。
-	if rr := postImage(t, id, "../evil.png", pngBytes(t, 2, 2), alice); rr.Code != 200 {
+	rr := postImage(t, id, "../evil.png", pngBytes(t, 2, 2), alice)
+	if rr.Code != 200 {
 		t.Fatalf("正規化されるはずの名前が拒否されました: code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), "evil.png")); err != nil {
-		t.Errorf("正規化した名前でページのフォルダへ保存されていません: %v", err)
+	if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), savedNameOf(t, rr))); err != nil {
+		t.Errorf("ページの files/ へ保存されていません: %v", err)
 	}
+	// 元の名前でも外の場所でも書かれていないこと（生成名なので evil.png は存在しない）。
 	outside := filepath.Join(filepath.Dir(page.AttachmentDir(id)), "evil.png")
 	if _, err := os.Stat(outside); err == nil {
 		t.Errorf("ページのフォルダの外へ書かれています: %s", outside)

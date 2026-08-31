@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 const IDLength = 6
@@ -124,11 +125,36 @@ func AttachmentDir(id string) string {
 	return filepath.Join(GetPageDir(id), AttachmentsDirName)
 }
 
-// AttachmentURLFor は**新しい**添付の配信アドレスを返します（files/ 配下）。
-// 既存の本文には直下形（DataURLFor）のリンクが残っており、配信は両方を受けます。
+// AttachmentURLFor は添付の配信アドレスを返します。
+//
+// 形は **`/<ページID>/<ファイル名>`**（2026-08-31 ユーザー決定「実際に保存される場所を
+// 推測されたくないですし、見た目もすっきりさせたい」）。物理配置（data/master/…/files/）は
+// URLに現れない——配信は RootHandler がページURLの下の名前空間として受け、
+// 認可（read／実効公開）を通して files/ から返す。
+// 旧形（/data/master/…）のリンクは互換として DataFileHandler が配信し続ける。
 func AttachmentURLFor(pageID, fileName string) string {
-	if len(pageID) < 2 {
-		return ""
+	return "/" + pageID + "/" + fileName
+}
+
+// GeneratedAttachmentID は添付の識別子を生成します（時刻ミリ秒の base36。
+// 「ファイル名も元のファイル名ではなく、生成したものを使いたい」
+// 「ファイル名とdata-id、IDを一致させるアイデアはどうですか？」——2026-08-31）。
+//
+// **この識別子は3役を兼ねます**: 保存名（<id>.<拡張子>）・配信URLの名前
+// （/<ページID>/<id>.<拡張子>）・本文のリンクブロックの data-id。同じ文字列に
+// なることで、参照 `ページID-ID` が**ブロックとしても添付としても同じものに届く**
+// （アーキテクチャとDBスキーマ.md §9.3）。文字種は data-id と同じ base36 小文字で、
+// 時刻由来なので一覧が時系列に並ぶ。元の名前はURLに出ず、リンクの表示文字として
+// 本文に残る。衝突したら1ミリ秒ずつ進めて逃がす。
+func GeneratedAttachmentID(pageID, ext string) string {
+	dir := AttachmentDir(pageID)
+	ms := time.Now().UnixMilli()
+	for i := 0; i < 1000; i++ {
+		id := strconv.FormatInt(ms, 36)
+		if _, err := os.Stat(filepath.Join(dir, id+ext)); os.IsNotExist(err) {
+			return id
+		}
+		ms++
 	}
-	return "/data/master/" + pageID[:2] + "/" + pageID + "/" + AttachmentsDirName + "/" + fileName
+	return strconv.FormatInt(ms, 36)
 }
