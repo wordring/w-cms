@@ -178,6 +178,10 @@ var vocabRegistry = []VocabDef{
 			{Field: "status", Label: "状態", Type: ColEnum, Enum: []string{"未着手", "加工中", "検査中", "納品済"}},
 		},
 	},
+	// 自社の発注書に File 宣言は**付けない**（2026-08-31 ユーザー訂正:「自社の発注書に
+	// PDFをドロップして添付とありますが、表を基にw-cmsがPDFを作るのです」）。
+	// 受け取る側（client-order）と発行する側（our-order）でPDFの向きが逆——
+	// こちらは将来「表からPDFを書き出す」機能が付く（要件定義書 §5）。
 	{
 		Type:        "our-order",
 		DisplayName: "自社の発注書",
@@ -185,7 +189,6 @@ var vocabRegistry = []VocabDef{
 		Icon:        "📤",
 		Element:     "section",
 		Items:       "our-order-items",
-		File:        true,
 		Columns: []VocabColumn{
 			{Field: "order-no", Label: "発注書番号", Type: ColText},
 			{Field: "supplier-name", Label: "発注先", Type: ColText},
