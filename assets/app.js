@@ -2408,8 +2408,9 @@
         const rect = item.getBoundingClientRect();
         let top, left;
         if (getComputedStyle(item.parentElement).display === 'flex') {
-            // 横並びの dl（業務ブロックのヘッダ・可変タグ）では、右横に出すと
+            // 対まで横に流れる dl（可変タグのチップ）では、右横に出すと
             // **隣の対の上に被さって**その対を編集できなくなる。項目の下へ出す。
+            // 素の dl はグリッド（対ごとに1行・値の幅は中身なり）なので右横で良い。
             top = rect.bottom + window.scrollY + 4;
             left = rect.left + window.scrollX;
         } else {
