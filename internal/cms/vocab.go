@@ -69,9 +69,18 @@ type VocabDef struct {
 	Columns     []VocabColumn `json:"columns"`      // 列（dl では項目、section ではヘッダ dl の項目）の並び
 
 	// 以下は業務文書ブロック（Element=="section"・語彙モデル §8.2 論点A）用。
-	Items     string `json:"items,omitempty"`     // 明細表の形式名（section 直下の table[data-type]）
-	Container string `json:"container,omitempty"` // 挿入骨格を包む容器の形式名（例: "file"）
-	Hidden    bool   `json:"hidden,omitempty"`    // スラッシュメニューに出さない（明細表など、単独で挿入しない形式）
+	Items  string `json:"items,omitempty"`  // 明細表の形式名（素の表をこの形式として読む。D-2）
+	Hidden bool   `json:"hidden,omitempty"` // スラッシュメニューに出さない（明細表など、単独で挿入しない形式）
+
+	// File は「この形式はPDF原本を伴う」宣言です。エディタがドロップゾーン・
+	// プレビュー・明細AI解析をこのセクション自身へ配線します（PDFの所在は
+	// 本文の可視のファイル名リンクが運ぶ——見える文字がデータの手掛かり）。
+	// かつては専用の file 容器（section[data-type="file" data-src]）で受発注を
+	// 包んでいたが、D-1 で容器を読むGoコードが消え、取り付け台としての仕事しか
+	// 残らなかったため 2026-08-31 に廃止した（「data-typeがfileのsectionは
+	// 必要ないのでは？」——ユーザー指摘）。既存本文の file 容器は互換のため
+	// 引き続き動く（レジストリの file 宣言と data-src の許可は残る）。
+	File bool `json:"file,omitempty"`
 
 	// View は計算ビュー（表示専用）。本文には空のマーカー <section data-type> だけを
 	// 保存し、中身はサーバーがページ合成時に埋める（view_render.go。ユーザー決定
@@ -147,7 +156,7 @@ var vocabRegistry = []VocabDef{
 		Icon:        "📩",
 		Element:     "section",
 		Items:       "client-order-items",
-		Container:   "file",
+		File:        true,
 		Columns: []VocabColumn{
 			{Field: "order-no", Label: "発注書番号", Type: ColText},
 			{Field: "client-name", Label: "発注元", Type: ColText},
@@ -176,7 +185,7 @@ var vocabRegistry = []VocabDef{
 		Icon:        "📤",
 		Element:     "section",
 		Items:       "our-order-items",
-		Container:   "file",
+		File:        true,
 		Columns: []VocabColumn{
 			{Field: "order-no", Label: "発注書番号", Type: ColText},
 			{Field: "supplier-name", Label: "発注先", Type: ColText},

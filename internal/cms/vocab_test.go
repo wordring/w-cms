@@ -35,15 +35,10 @@ func TestVocabRegistryIsWellFormed(t *testing.T) {
 		if len(d.Columns) == 0 && d.Element != "section" {
 			t.Errorf("%s: 列が1つもありません", d.Type)
 		}
-		// Items / Container はレジストリ内の実在する形式を指すこと
+		// Items はレジストリ内の実在する table 形式を指すこと
 		if d.Items != "" {
 			if ref, ok := VocabDefByType(d.Items); !ok || ref.Element != "table" {
 				t.Errorf("%s: items %q が table 形式として定義されていません", d.Type, d.Items)
-			}
-		}
-		if d.Container != "" {
-			if ref, ok := VocabDefByType(d.Container); !ok || ref.Element != "section" {
-				t.Errorf("%s: container %q が section 形式として定義されていません", d.Type, d.Container)
 			}
 		}
 

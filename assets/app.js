@@ -1699,13 +1699,13 @@
 
     // usesHeadingForm は「見出しが機能を宣言する形」で挿す形式かを返す（D-2・2026-08-31）。
     // 例外は3つだけ——親の中に埋め込まれる明細（hidden）・ページ横断メタの可変タグ
-    // （専用のチップUIが data-type="tags" を前提にする）・配線の容器（file。data-src の
-    // 置き場でありユーザーの文書ではない）。それ以外は data-type を書かず、
+    // （専用のチップUIが data-type="tags" を前提にする）・単独のPDF添付ブロック
+    // （file。data-src の配線を持つ）。それ以外は data-type を書かず、
     // **表示名の見出し＋素の中身**で挿す——見える文字が人にも機械にも同じ宣言になる。
     function usesHeadingForm(def) {
         if (def.hidden) return false;
         if (def.type === 'tags') return false;
-        if (vocabDefs.some(v => v.container === def.type)) return false;
+        if (def.type === 'file') return false;
         return true;
     }
 
@@ -1842,14 +1842,8 @@
             const def = vocabDefs.find(v => v.type === type.slice(6));
             if (!def) return null;
             newEl = buildVocabSkeleton(def);
-            if (def.container) { // 容器つきの形式（受発注は file 容器の中に生まれる）
-                const cdef = vocabDefs.find(v => v.type === def.container);
-                if (cdef) {
-                    const wrap = buildVocabSkeleton(cdef);
-                    wrap.appendChild(newEl);
-                    newEl = wrap;
-                }
-            }
+            // かつて受発注は file 容器で包んで挿していたが、容器は廃止した
+            // （PDFの取り付け台は形式自身の File 宣言が担う。2026-08-31）。
         } else if (type === 'h1') {
             newEl = document.createElement('h1');
             newEl.innerText = '';
@@ -2657,15 +2651,36 @@
         menu.style.left = (rect.left + window.scrollX) + 'px';
     }
 
-    // ── ファイル容器のエンハンサ（語彙モデル §3: マーカー要素へ振る舞いを配線） ──
-    // <section data-type="file"> に PDF プレビュー（閲覧・編集）と、編集モードの
-    // ドロップゾーン・明細AI解析ボタンを付ける。挿すのはすべて .vocab-chrome
-    // （シリアライザが保存しない編集クローム）。呼び出しは applyMode・populateEditor・
-    // 挿入直後の3点（エンハンスパスの規律。作り直し方式なので冪等）。
+    // ── PDF付きブロックのエンハンサ（語彙モデル §3: マーカー要素へ振る舞いを配線） ──
+    // PDF プレビュー（閲覧・編集）と、編集モードのドロップゾーン・明細AI解析ボタンを
+    // 付ける。挿すのはすべて .vocab-chrome（シリアライザが保存しない編集クローム）。
+    // 呼び出しは applyMode・populateEditor・挿入直後の3点（作り直し方式なので冪等）。
+    //
+    // 取り付け先は2種類:
+    //   - **File 宣言の形式ブロック自身**（受発注。見出し形・属性形とも）——PDFの所在は
+    //     本文の可視のファイル名リンクが運ぶ（見える文字がデータの手掛かり）
+    //   - **file 容器**（互換・単独のPDF添付ブロック）——所在は data-src の配線
+    // かつては file 容器だけが取り付け台で、受発注は必ず容器に包まれていた
+    // （「data-typeがfileのsectionは必要ないのでは？」——2026-08-31 に廃止）。
+    function pdfSrcOf(sec) {
+        if (sec.getAttribute('data-type') === 'file') return sec.getAttribute('data-src') || '';
+        const a = sec.querySelector('a[href]');
+        if (a && /[.]pdf$/i.test(a.getAttribute('href'))) {
+            const parts = a.getAttribute('href').split('/');
+            return decodeURIComponent(parts[parts.length - 1]);
+        }
+        return '';
+    }
+
     function enhanceFileSections() {
-        document.querySelectorAll('#w-editor-content section[data-type="file"]').forEach(sec => {
+        const targets = Array.from(document.querySelectorAll('#w-editor-content section')).filter(sec => {
+            if (sec.getAttribute('data-type') === 'file') return true;
+            const def = sectionDefOf(sec);
+            return !!(def && def.file);
+        });
+        targets.forEach(sec => {
             sec.querySelectorAll(':scope > .vocab-chrome').forEach(el => el.remove());
-            const src = sec.getAttribute('data-src') || '';
+            const src = pdfSrcOf(sec);
             const isEdit = document.body.hasAttribute('edit-mode');
 
             if (src && src.toLowerCase().endsWith('.pdf') && currentPageId) {
@@ -2693,7 +2708,11 @@
             });
             sec.appendChild(zone);
 
-            if (src && sec.querySelector('section[data-type="client-order"], section[data-type="our-order"]')) {
+            // 明細AI解析: PDF があり、このブロック自身（または容器の中身）が
+            // 受発注（File 宣言の形式）なら出す。
+            const isOrderSec = s2 => { const d = sectionDefOf(s2); return !!(d && d.file); };
+            const hasOrder = isOrderSec(sec) || Array.from(sec.querySelectorAll('section')).some(isOrderSec);
+            if (src && hasOrder) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'vocab-chrome parse-pdf-btn';
@@ -2803,7 +2822,9 @@
             const res = await lockedFetch('/api/upload-pdf', { method: 'POST', body: fd });
             const d = await res.json().catch(() => ({}));
             if (!res.ok || !d.success) throw new Error(d.message || res.status);
-            sec.setAttribute('data-src', d.src);
+            // 配線（data-src）を持つのは互換の file 容器だけ。File 宣言の形式ブロックでは
+            // 可視のファイル名リンクが唯一の所在（見える文字がデータの手掛かり）。
+            if (sec.getAttribute('data-type') === 'file') sec.setAttribute('data-src', d.src);
             // 可視のファイル名リンク（中身＝正本に保存される）を先頭に置き直す
             let p = sec.querySelector(':scope > p');
             if (!p || !p.querySelector('a')) {
@@ -2923,11 +2944,11 @@
                 notify('解析に失敗しました: ' + (d.message || res.status), { type: 'warn', duration: 10000 });
                 return;
             }
-            // 受発注ブロックは属性でも見出し（D-2）でも書けるので、形式の解決で探す。
-            const order = Array.from(sec.querySelectorAll('section')).find(s => {
-                const d = sectionDefOf(s);
-                return d && (d.type === 'client-order' || d.type === 'our-order');
-            });
+            // 受発注ブロックは属性でも見出し（D-2）でも書ける。容器廃止後は sec 自身が
+            // 受発注ブロックのことがあるので、自分→中の順で形式の解決で探す。
+            const isOrderSec = s2 => { const d = sectionDefOf(s2); return !!(d && d.file); };
+            const order = isOrderSec(sec) ? sec
+                : Array.from(sec.querySelectorAll('section')).find(isOrderSec);
             const table = order && Array.from(order.querySelectorAll('table')).find(t => tableDefOf(t));
             if (!table) return;
             // 見出しの表示文字をレジストリ経由で機械キーへ解決する（AI応答の鍵は機械キー）。

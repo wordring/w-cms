@@ -51,14 +51,14 @@ async function openSlashMenu(page) {
         check('明細表（hidden）はメニューに出ない', await page.locator('#w-slash-menu [data-type="vocab:client-order-items"]').count() === 0);
         check('後継: 顧客の発注書がある', await page.locator('#w-slash-menu [data-type="vocab:client-order"]').count() === 1);
 
-        // 2. 顧客の発注書の挿入 = file容器＋**見出し形**のsection骨格（D-2・2026-08-31）。
-        //    容器（配線）だけが data-type を持ち、受注ブロック自体は
+        // 2. 顧客の発注書の挿入 = **見出し形のsection骨格だけ**（D-2・2026-08-31）。
+        //    file 容器は廃止（PDFの取り付け台は形式自身の File 宣言が担い、
+        //    所在は可視のファイル名リンクが運ぶ）。本文は
         //    <section><h2>顧客の発注書</h2>＋素のヘッダdl＋素の明細表。
         await page.click('#w-slash-menu [data-type="vocab:client-order"]');
-        const file = page.locator('#w-editor-content section[data-type="file"]');
-        await file.waitFor({ timeout: 4000 });
-        const order = file.locator('section');
-        check('file容器の中に受注ブロック', await order.count() === 1);
+        const order = page.locator('#w-editor-content section').filter({ hasText: '顧客の発注書' }).first();
+        await order.waitFor({ timeout: 4000 });
+        check('file容器なしで受注ブロックが挿さる', await page.locator('#w-editor-content section[data-type="file"]').count() === 0);
         check('受注ブロックは見出しが機能を宣言', (await order.locator('h2').first().innerText()).trim() === '顧客の発注書');
         check('受注ブロックに data-type は無い', await order.getAttribute('data-type') === null);
         // 鍵は dt の表示文字が運ぶ（機械キーの属性は 2026-08-20 に撤去）。
@@ -70,12 +70,9 @@ async function openSlashMenu(page) {
         const items = order.locator('table');
         check('明細表の骨格（5列・素の表）', await items.locator('tr').first().locator('th').count() === 5);
         check('明細表にも data-type は無い', await items.getAttribute('data-type') === null);
-        check('ドロップゾーンのクローム', await file.locator('.pdf-drop-zone').count() === 1);
-        // 「w-cms がこの要素を見る」印は data-type の有無で決まる（section も対象）
+        check('ドロップゾーンは受注ブロック自身に付く', await order.locator('.pdf-drop-zone').count() === 1);
         check('業務文書ブロックにも形式の枠が出る',
             await order.evaluate(el => getComputedStyle(el).outlineStyle) === 'dashed');
-        check('ファイル容器にも形式の枠が出る',
-            await file.evaluate(el => getComputedStyle(el).outlineStyle) === 'dashed');
 
         // 3. 編集と保存往復（クロームが漏れないこと）
         await caretInto(page, hdr.locator('dd').nth(1)); // 発注元
@@ -86,8 +83,8 @@ async function openSlashMenu(page) {
         await waitSaved(page);
         check('sanitized 警告なし', await page.locator('[data-toast-id="sanitized"]').count() === 0);
         const preview = await page.locator('#w-html-preview').inputValue();
-        check('保存に見出し形とfile容器が乗る', preview.includes('<h2>顧客の発注書</h2>') && preview.includes('data-type="file"'));
-        check('本文から受注の機械語が消えた', !preview.includes('data-type="client-order'));
+        check('保存に見出し形が乗る', preview.includes('<h2>顧客の発注書</h2>'));
+        check('本文から機械語が消えた（file容器も無い）', !preview.includes('data-type="client-order') && !preview.includes('data-type="file"'));
         check('編集クロームが保存に漏れない', !preview.includes('vocab-chrome') && !preview.includes('pdf-drop-zone'));
 
         // 4. 見積の挿入（見出し形: section + h2 + 素の dl）

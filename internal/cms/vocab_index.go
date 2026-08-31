@@ -434,20 +434,6 @@ func FirstVocabChild(root *html.Node, element, dataType string) *html.Node {
 	return found
 }
 
-// ClosestFileSrc は祖先のファイル容器 <section data-type="file" data-src> から
-// PDF パスを返します（旧 <m-file src> の読み取りは一括変換完了後に除去した）。
-func ClosestFileSrc(n *html.Node) string {
-	for p := n.Parent; p != nil; p = p.Parent {
-		if p.Type != html.ElementNode {
-			continue
-		}
-		if p.Data == "section" && Attr(p, "data-type") == "file" {
-			return Attr(p, "data-src")
-		}
-	}
-	return ""
-}
-
 // nodeText は要素配下のテキストを連結して返します（表示文字＝値。語彙モデル §2）。
 func nodeText(n *html.Node) string {
 	var sb strings.Builder
