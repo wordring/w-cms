@@ -2905,6 +2905,50 @@
         }
     }
 
+    // insertAttachmentsAfter は画像以外のファイルを順に添付し、refBlock の後ろへ
+    // 📎 リンクの段落として挿します。PDF は PDF口（%PDF- 検査つき）、それ以外は
+    // 汎用口（/api/upload-file）へ送る。リンクの href はサーバーが返す（files/ 配下）。
+    async function insertAttachmentsAfter(files, refBlock) {
+        if (!currentPageId) {
+            notify('先にページを保存してください。', { type: 'warn', duration: 5000 });
+            return;
+        }
+        let last = refBlock;
+        for (const f of files) {
+            const isPDF = f.type === 'application/pdf' || /[.]pdf$/i.test(f.name);
+            const fd = new FormData();
+            fd.append('page_id', currentPageId);
+            fd.append(isPDF ? 'pdf_file' : 'file', f);
+            try {
+                const res = await lockedFetch(isPDF ? '/api/upload-pdf' : '/api/upload-file',
+                    { method: 'POST', body: fd });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || !d.success) {
+                    notify(f.name + ' を添付できませんでした: ' + (d.message || (await Promise.resolve(''))
+                        || res.statusText || res.status), { type: 'alert', duration: 0, id: 'file-upload' });
+                    continue;
+                }
+                const p = document.createElement('p');
+                p.textContent = '📎 ';
+                const a = document.createElement('a');
+                a.href = d.href || '';
+                a.textContent = f.name;
+                p.appendChild(a);
+                const block = wrapInBlock(p);
+                if (last && last.parentNode) {
+                    last.parentNode.insertBefore(block, last.nextSibling);
+                } else {
+                    document.getElementById('w-editor-content').appendChild(block);
+                }
+                last = block;
+            } catch (err) {
+                notify(f.name + ' の添付に失敗しました: ' + err.message, { type: 'warn', duration: 8000 });
+            }
+        }
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
     // insertImagesAfter は選ばれた画像を順に添付し、refBlock の後ろへ1枚ずつ挿します。
     // alt にはファイル名を入れる（読み上げと、画像が出ないときの手掛かり）。
     async function insertImagesAfter(files, refBlock) {
@@ -3383,18 +3427,23 @@
         editor.addEventListener('drop', e => {
             if (!document.body.hasAttribute('edit-mode')) return;
             if (e.target.closest && e.target.closest('.pdf-drop-zone')) return;
-            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || [])
-                .filter(f => f.type.indexOf('image/') === 0);
-            if (!files.length) return;
+            const all = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+            if (!all.length) return;
             e.preventDefault();
+            // 種類で口を分ける——画像は画像口（EXIF除去・中身検査）、PDFはPDF口
+            // （%PDF-検査）、それ以外は汎用口（拡張子は設定・中身は配信側が守る）。
+            // 「添付はドラッグアンドドロップに耐えられた方が良い」（2026-08-31）。
+            const images = all.filter(f => f.type.indexOf('image/') === 0);
+            const others = all.filter(f => f.type.indexOf('image/') !== 0);
             const cell = e.target.closest && e.target.closest('#w-editor-content td');
             const col = cell && resolveCellColumn(cell);
-            if (cell && col && col.type === 'image' && !isServerOwned(cell)) {
-                insertImageIntoCell(cell, files[0]); // 表のセルへは1枚だけ
-                return;
+            if (images.length && cell && col && col.type === 'image' && !isServerOwned(cell)) {
+                insertImageIntoCell(cell, images[0]); // 表のセルへは1枚だけ
+                if (!others.length) return;
             }
             const block = e.target.closest ? e.target.closest('.editor-block') : null;
-            insertImagesAfter(files, block);
+            if (images.length) insertImagesAfter(images, block);
+            if (others.length) insertAttachmentsAfter(others, block);
         });
 
         // 項目の click / mouseenter は renderSlashMenu が項目を作るたびに配線する

@@ -325,3 +325,81 @@ func TestParsePDFRejectsNonPDFName(t *testing.T) {
 		}
 	}
 }
+
+// 汎用の添付口（/api/upload-file）のテスト（2026-08-31 決定3件）。
+// 拡張子は設定の許可リスト・専用口のある画像とPDFは迂回不可・保存先は files/。
+func postGenericUpload(t *testing.T, pageID, filename string, content []byte, user *auth.User) *httptest.ResponseRecorder {
+	t.Helper()
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	mw.WriteField("page_id", pageID)
+	fw, _ := mw.CreateFormFile("file", filename)
+	fw.Write(content)
+	mw.Close()
+	req := httptest.NewRequest("POST", "/api/upload-file", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if user != nil {
+		req = auth.WithUser(req, user)
+	}
+	rr := httptest.NewRecorder()
+	UploadFileHandler(rr, req)
+	return rr
+}
+
+func TestGenericUploadAcceptsListedExtensions(t *testing.T) {
+	const id = "000012"
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
+	user := &auth.User{Username: "alice"}
+
+	for _, name := range []string{"図面.dxf", "打合せ.eml", "資料.zip"} {
+		rr := postGenericUpload(t, id, name, []byte("binary"), user)
+		if rr.Code != 200 {
+			t.Errorf("%s が受け付けられません: status=%d body=%s", name, rr.Code, rr.Body.String())
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), name)); err != nil {
+			t.Errorf("%s が files/ に保存されていません: %v", name, err)
+		}
+		if !strings.Contains(rr.Body.String(), "/files/") {
+			t.Errorf("%s の応答 href が files/ を指していません: %s", name, rr.Body.String())
+		}
+	}
+}
+
+func TestGenericUploadRejectsSpecialized(t *testing.T) {
+	const id = "000012"
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
+	user := &auth.User{Username: "alice"}
+
+	// 専用口のある種類（中身検査を迂回させない）と、方針として書けない .json。
+	for _, name := range []string{"逃げ.pdf", "逃げ.png", "設定.json", "台帳.html"} {
+		rr := postGenericUpload(t, id, name, []byte("x"), user)
+		if rr.Code != 400 {
+			t.Errorf("%s が拒否されていません: status=%d", name, rr.Code)
+		}
+		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), name)); err == nil {
+			t.Errorf("%s が保存されています", name)
+		}
+	}
+}
+
+// TestUploadLimitFromSettings は、サイズ上限が設定から効くことを検証します
+// （「サイズ上限32MiBは設定で変えられるように」）。
+func TestUploadLimitFromSettings(t *testing.T) {
+	const id = "000012"
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})
+	restoreSettings(t)
+	writeTestSettings(t, `{"max_upload_mib": 1}`)
+	if err := LoadSettings(); err != nil {
+		t.Fatalf("LoadSettingsエラー: %v", err)
+	}
+	if got := MaxUploadBytes(); got != 1<<20 {
+		t.Fatalf("設定の上限が効いていません: %d", got)
+	}
+
+	big := bytes.Repeat([]byte("a"), (1<<20)+4096)
+	rr := postGenericUpload(t, id, "大きい.zip", big, &auth.User{Username: "alice"})
+	if rr.Code == 200 {
+		t.Errorf("上限超えが通ってしまいました: status=%d", rr.Code)
+	}
+}
