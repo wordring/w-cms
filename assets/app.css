@@ -984,32 +984,20 @@ body[edit-mode] #w-editor-content h1.is-page-title {
     outline-offset: 2px;
 }
 
-/* 形式ごとの視覚的区別（語彙モデル §10・§9 の「改名を許す」決定の前提条件）。
+/* 形式の識別は**背景色**へ一本化（2026-08-31 ユーザー:「薄青にならないものは
+ * データベースに入らないという程度の認識で良い」）:
  *
- * 一律の破線枠だけでは、`data-type` を改名しても見た目が変わらず「壊れたこと」に
- * 気づけない。そこで各形式ブロックの直前に**形式名の札**を出す（app.js の
- * decorateVocabBlocks がレジストリから引く）。改名すると札が赤い「未定義の形式」へ
- * 変わり、枠の色も変わる——その場で分かるのが狙い。
+ *   薄い青 … 機械が読む（見出し語のハイライト・可変タグのチップの名前側）
+ *   薄い赤 … 属性はあるのに未定義（保存はされるが解釈されない。改名・綴り違い）
+ *   無印   … ただの文書
  *
- * 札は .vocab-chrome なのでシリアライザが保存しない。出すのは編集モードだけ。 */
-#w-editor-content .vocab-label { display: none; }
-body[edit-mode] #w-editor-content .vocab-label {
-    display: inline-block;
-    margin: 6px 0 2px;
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: #eff6ff;
-    color: #1d4ed8;
-    border: 1px solid #bfdbfe;
-    font-size: 11px;
-    line-height: 1.7;
-    user-select: none;
-}
-/* 機能見出し（D-2）: レジストリと一致した**言葉そのもの**へ薄い青の背景
- * （2026-08-31 ユーザー提案「ボキャブラリと一致する言葉の背景を薄い青などにして
- * 識別できるようにしてはどうでしょう」。D-3「認識できた形式は背景色で示す」の
- * 機能見出し版）。札や枠でなく言葉が光るので、**どの言葉が機械を動かしているか**が
- * そのまま見える。改名すると背景が消える＝形式でなくなった合図。
+ * かつては形式名の札（.vocab-label）を各ブロックの直前に出していたが、
+ * 見出し形では見出し自身が宣言・可変タグはチップ・添付はPDFクロームと、
+ * **姿そのものが識別**になったため廃止した（同日のユーザー指摘2件）。 */
+
+/* 機能見出し（D-2）: レジストリと一致した**言葉そのもの**へ薄い青の背景。
+ * 札や枠でなく言葉が光るので、**どの言葉が機械を動かしているか**がそのまま見える。
+ * 改名すると背景が消える＝形式でなくなった合図。
  * class は実行時だけの印（サニタイザ・シリアライザとも通さないので保存に漏れない）。 */
 body[edit-mode] #w-editor-content .vocab-word {
     background: #dbeafe;
@@ -1018,22 +1006,15 @@ body[edit-mode] #w-editor-content .vocab-word {
     margin-left: -6px; /* 背景ぶんの視覚的な字下がりを打ち消す */
 }
 
-body[edit-mode] #w-editor-content .vocab-label.is-unknown {
-    background: #fef2f2;
-    color: #b91c1c;
-    border-color: #fca5a5;
-    font-weight: 700;
-}
-/* 未定義の形式は枠も変える（既知の青い破線と見分けが付くように）。
- * 上の `table[data-type]` 等と**同じ詳細度**になるよう要素名まで書く
- * （`.is-vocab-unknown` だけだと詳細度が1つ低く、青い破線に負ける）。
- * 同点なら後勝ちなので、必ずこの位置（上の規則より後ろ）に置くこと。 */
+/* 未定義の形式は薄い赤の背景＋赤い破線。青い破線（既知の属性マーカー）と
+ * **同じ詳細度**になるよう要素名まで書く（同点なら後勝ちなので、
+ * 必ず上の [data-type] の規則より後ろに置くこと）。 */
 body[edit-mode] #w-editor-content table.is-vocab-unknown,
 body[edit-mode] #w-editor-content dl.is-vocab-unknown,
 body[edit-mode] #w-editor-content section.is-vocab-unknown {
     outline: 1px dashed #ef4444;
+    background: #fef2f2;
 }
-
 /* 可変タグ（dl[data-type="tags"]）のチップ表示（2026-08-26 ユーザー要望）。
  * 「定義リストそのまま」ではなく**名前：値の1つのタグ**として見せる——
  * 左に名前・右に値で、角丸四角形で囲う。マークアップは dt/dd のまま
@@ -1057,7 +1038,9 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
     line-height: 1.6;
 }
 #w-editor-content dl[data-type="tags"] dt {
-    background: var(--bg-app);
+    /* 名前側は**薄い青**——「薄青＝機械が読む（DBに入る）」の印
+       （見出し語のハイライトと同じ意味論。2026-08-31） */
+    background: #dbeafe;
     color: var(--text-muted);
     border-radius: 6px 0 0 6px;
     border-right: none;
