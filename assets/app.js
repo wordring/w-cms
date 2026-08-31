@@ -2578,17 +2578,29 @@
         return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
     }
 
-    // validateCell は number / date 列のセルが解釈できない値のとき .cell-invalid を付ける。
-    // class はシリアライザが書き出さないので、印は実行時だけ（保存されない）。
+    // validateCell はセルへ2つの印を付け直す。どちらも class なのでシリアライザが
+    // 書き出さず、**実行時だけ**の印（保存されない）。
+    //
+    //   .cell-invalid … number / date 列で値が解釈できない（薄い赤）
+    //   .cell-known   … number / date 列で値が**読めた**（薄い青）
+    //
+    // 後者が D-3 の「表の中で認識できる形式は背景色で示します」（2026-08-30 ユーザー）。
+    // 赤が「読めなかった」しか言わないので、書き手には**読めたことを確かめる術が
+    // 無かった**——空欄と「読めているが印が無い」が同じ見え方だった。
+    //
+    // **文字列の列には付けない。** text は「認識できた形式」ではなく、型が決まらな
+    // かったときの落ち着き先で、付けると表が丸ごと青くなって何も伝えなくなる。
+    // 薄い青は全体で「機械が読む」の色（見出し語の .vocab-word と同じ）。
     function validateCell(cell) {
         const col = resolveCellColumn(cell);
         const text = cell.textContent.trim();
+        const typed = !!col && (col.type === 'number' || col.type === 'date');
         let bad = false;
-        if (col && text !== '') {
-            if (col.type === 'number') bad = !isValidNumberText(text);
-            else if (col.type === 'date') bad = !isValidDateText(text);
+        if (typed && text !== '') {
+            bad = col.type === 'number' ? !isValidNumberText(text) : !isValidDateText(text);
         }
         cell.classList.toggle('cell-invalid', bad);
+        cell.classList.toggle('cell-known', typed && text !== '' && !bad);
     }
 
     // validateTypedTables は本文中の**機械に読まれる表**のデータセルを検証し直す。
