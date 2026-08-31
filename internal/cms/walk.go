@@ -295,13 +295,60 @@ func (r *walkRegistry) seed(trigger string, h SeedHandler) {
 
 // ── 引き金の解決（差し替え点） ───────────────────────────────────────────
 
-// triggerOf は要素から引き金の鍵を求めます。**将来の差し替え点はここ1つ**です
-// ——機能見出し（語彙モデル §11.1）が採用されたら、この関数だけが変わります。
+// triggerOf は要素から引き金の鍵を求めます。設計時（回覧化・2026-08-26）から
+// 予告されていた差し替え点で、機能見出しの採用（D-2・2026-08-30）で差し替わりました。
+// 解決の実体は vocabTypeOf です。
 func triggerOf(el *html.Node) string {
+	return vocabTypeOf(el)
+}
+
+// vocabTypeOf は要素の「形式」を解決します（機能見出し・D-2）。
+//
+//  1. `data-type` 属性があればそれが正（明示は推測に勝つ。既存データはすべてこちら）
+//  2. 無くても **section の機能見出し**——直接の子である最初の h1〜h6 の表示文字——が
+//     レジストリの表示名と一致すれば、その形式（語彙モデル §11.1・§11.5-1）
+//  3. どちらも無ければ形式なし（ただの要素）
+//
+// 2 が「見える文字がデータの手掛かり」のセクションへの適用です:
+//
+//	<section>
+//	  <h2>検査記録</h2>   ← この言葉が機能を宣言する。data-type は書かない
+//	  <table>…</table>
+//	</section>
+//
+// 見出しの言葉が**登録されているときだけ**形式になります。data-type は属性を書いた
+// 時点で意図が明白（未知でも索引に載せ告知する）ですが、見出しは全セクションが
+// 普通に持つものなので、未登録語は静かにただのセクションに留まります——
+// 壊れ方まで画面に見える、という機能見出しの利点（§11.1）はここから来ます。
+func vocabTypeOf(el *html.Node) string {
 	if el.Type != html.ElementNode {
 		return ""
 	}
-	return Attr(el, "data-type")
+	if dt := Attr(el, "data-type"); dt != "" {
+		return dt
+	}
+	if el.Data == "section" {
+		if def, ok := VocabDefByHeading(functionHeading(el)); ok {
+			return def.Type
+		}
+	}
+	return ""
+}
+
+// functionHeading はセクションの機能見出し（**直接の子**である最初の h1〜h6 の
+// 表示文字・trim後）を返します。見出しの無いセクションは空文字列＝ただの区切り。
+// 入れ子のセクションの見出しは、その入れ子自身の機能なので拾いません（§11.5-1）。
+func functionHeading(section *html.Node) string {
+	for c := section.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode {
+			continue
+		}
+		switch c.Data {
+		case "h1", "h2", "h3", "h4", "h5", "h6":
+			return strings.TrimSpace(nodeText(c))
+		}
+	}
+	return ""
 }
 
 // isChrome は「サーバー／エンハンサが挿した表示専用の飾り」かを返します。

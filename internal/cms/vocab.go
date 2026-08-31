@@ -277,6 +277,24 @@ func VocabDefByType(t string) (VocabDef, bool) {
 	return VocabDef{}, false
 }
 
+// VocabDefByHeading は**機能見出しの言葉**で形式定義を探します（D-2・2026-08-30 決定）。
+// 言葉の正は**レジストリの表示名**です（語彙モデル §11.5-6。th の鍵が Label で引けるのと
+// 同じ規律——見える文字とメニューに出る文字が同じ1つの宣言を指す）。
+// 一致しない言葉は「形式なし」＝ただのセクションで、告知はしません——見出しは
+// data-type と違って**全セクションが普通に持つもの**なので、未登録語への告知は
+// 「作業メモ」のような普通の見出しへの誤検知の洪水になります（エージェント判断）。
+func VocabDefByHeading(word string) (VocabDef, bool) {
+	if word == "" {
+		return VocabDef{}, false
+	}
+	for _, d := range vocabRegistry {
+		if d.DisplayName == word {
+			return d, true
+		}
+	}
+	return VocabDef{}, false
+}
+
 // columnFor は形式定義から鍵（見出しの表示文字＝Label。機械キー Field でも引ける）に
 // 対応する列を探します。
 func (d VocabDef) columnFor(key string) (VocabColumn, bool) {

@@ -85,12 +85,12 @@ func (vocabIndexPlugin) OnPageStart(ctx *ObserveContext) error {
 	return err
 }
 
-// OnElement はマーカー付きの table / dl と、業務文書ブロックのヘッダを索引します。
-// `section` の中の table / dl は配送係が別に届けてくれるので、ここでは降ります
+// OnElement はマーカー付きの table / dl と、形式を持つ section の素の中身を索引します。
+// `section` の中のマーカー付き table / dl は配送係が別に届けてくれるので、ここでは降ります
 // （＝ descend は常に true）。
 func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
 	if el.Data == "section" {
-		return true, syncVocabSectionHeader(ctx, el)
+		return true, syncVocabSection(ctx, el)
 	}
 	if el.Data != "table" && el.Data != "dl" {
 		return true, nil // 素の table / dl は配送係が弾く。ここへ来るのは section 等
@@ -102,50 +102,58 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 	def, _ := VocabDefByType(dataType) // 未定義でもゼロ値の def で続行（推論辞書だけ効く）
 
 	if el.Data == "table" {
-		return true, syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, def, el)
+		return true, syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, Attr(el, "data-id"), def, el)
 	}
 	return true, syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, Attr(el, "data-id"), def, el)
 }
 
-// syncVocabSectionHeader は業務文書ブロック（<section data-type>）のヘッダを索引します。
+// syncVocabSection は形式を持つ section の**素の中身**（data-type を持たない dl と table）を
+// その形式で索引します。
 //
-// **ヘッダの <dl> は data-type を持ちません**（役割は包む section が宣言し、鍵は dt の
-// 表示文字。語彙モデル §8.2）。配送係は引き金のある要素しか届けないので、素の dl は
-// 誰の手にも渡りません——section の側から拾うのがここです。
+// **素の dl / table は data-type を持ちません**（役割は包む section が宣言し、鍵は
+// 見出しの表示文字。語彙モデル §8.2・§11.5-4）。配送係は引き金のある要素しか届けない
+// ので、素の要素は誰の手にも渡りません——section の側から拾うのがここです。
 //
-// 硬いドメイン表があったころは各プラグインが section を受け取って自分で子の dl を
-// 読んでいたため、この穴は見えていませんでした。テーブルを廃して索引へ一本化する
-// （D-1）と、拾わない限り**発注元・発注日・発注先がどこにも残りません**。
-// 明細表だけが載ってヘッダが黙って消える形の欠落なので、
-// TestSectionHeaderIsIndexed が固定しています。
+// 拾う範囲は2段で広がった経緯があります:
+//  1. D-1（2026-08-31）: ヘッダの素の dl。硬いドメイン表があったころは各プラグインが
+//     自分で読んでいたため穴が見えず、索引へ一本化すると**発注元・発注日がどこにも
+//     残らなくなる**欠落だった（TestSectionHeaderIsIndexed が固定）。
+//  2. D-2（同日）: 素の table にも広げ、機能見出しのセクションを全部受けられる形に
+//     した——`<section><h2>検査記録</h2><table>…` が属性ゼロで索引に載る。
+//     ワンノートの「■見出しの下に表」がそのまま w-cms の形式宣言になる
+//     （【考察】ワンノート移行.md §2.5）。
 //
-// block_no は section の data-type の連番です。明細表は自分の data-type
-// （client-order-items 等）で別に数えられるため、1つの section がヘッダ1つと
-// 明細表1つを持つ限り、**同じ番号どうしが対**になります（集計はこれで両者を結ぶ）。
-func syncVocabSectionHeader(ctx *ObserveContext, section *html.Node) error {
-	dl := sectionHeaderDL(section)
-	if dl == nil {
-		return nil // ヘッダを持たない section（ファイル容器・計算ビュー等）
-	}
-	dataType := Attr(section, "data-type")
-	no := ctx.Counter("vocab_index:" + dataType)
+// 形式は vocabTypeOf で解決します——data-type 属性が正、無ければ機能見出し。
+// マーカー付きの table / dl（可変タグ・明細表）は独立した形式として配送係が別に
+// 届けるので、ここでは拾いません（拾うと同じ値が二重に索引されます）。
+// 入れ子の section へは降りません（入れ子の業務ブロックは独立して読まれます）。
+//
+// block_no は形式の連番で、ヘッダ dl と素の表がそれぞれ1つずつ番号を取ります。
+// マーカー付き明細表（client-order-items 等）は自分の data-type で別に数えられる
+// ため、1つの section がヘッダ1つと明細表1つを持つ限り**同じ番号どうしが対**に
+// なります（集計はこれで両者を結ぶ）。
+func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
+	dataType := vocabTypeOf(section)
 	def, _ := VocabDefByType(dataType)
-	// ブロックIDは section が持つ（素の dl には振られない）。
-	return syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, Attr(section, "data-id"), def, dl)
-}
+	sectionBlockID := Attr(section, "data-id")
 
-// sectionHeaderDL は section 直下のヘッダ dl（data-type を持たない素の dl）を返します。
-// data-type を持つ dl（可変タグなど）は独立した形式として配送係が別に届けるので、
-// ここでは選びません——選ぶと同じ値が二重に索引されます。
-// 入れ子の section へは降りません（入れ子の業務ブロックは独立して読まれる）。
-func sectionHeaderDL(section *html.Node) *html.Node {
-	var found *html.Node
+	var firstErr error
 	walkSkippingNested(section, map[string]bool{"section": true}, func(n *html.Node) {
-		if found == nil && n.Data == "dl" && Attr(n, "data-type") == "" {
-			found = n
+		if firstErr != nil || Attr(n, "data-type") != "" {
+			return // マーカー付きは独立した形式（配送係が別に届ける）
+		}
+		switch n.Data {
+		case "dl":
+			no := ctx.Counter("vocab_index:" + dataType)
+			firstErr = syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, sectionBlockID, def, n)
+		case "table":
+			no := ctx.Counter("vocab_index:" + dataType)
+			// 素の表はブロックIDを持たない（振られるのはトップレベルだけ）ので、
+			// 由来としては包んでいる section のIDを刻む。
+			firstErr = syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, sectionBlockID, def, n)
 		}
 	})
-	return found
+	return firstErr
 }
 
 // vocabColumn は表の1列ぶんの解決済みスキーマ（文書の見出し行から読む）です。
@@ -154,10 +162,9 @@ type vocabColumn struct {
 	typ ColumnType
 }
 
-// syncVocabTable は1つの <table data-type> を索引へ書き込みます。
+// syncVocabTable は1つの表を索引へ書き込みます。
 // 最初の tr が見出し行（列の鍵と型を運ぶ）、以降がデータ行です。
-func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, def VocabDef, table *html.Node) error {
-	blockID := Attr(table, "data-id")
+func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, blockID string, def VocabDef, table *html.Node) error {
 	rows := tableRows(table)
 	if len(rows) < 2 {
 		return nil // 見出しだけ（またはデータ行なし）の表は索引に載せる値が無い
