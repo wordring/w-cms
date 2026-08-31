@@ -57,12 +57,22 @@ body {
 .doc-column { flex: 1 1 auto; min-width: 0; }
 
 /* サイドパネル（クローム側。ファイルには保存されない） */
+/* レール自身が画面より高くなったら、レールの中でスクロールさせる。
+   sticky は上端を top:20px に貼り付けるので、**背が高いと下端は永久に画面外**
+   に残る——ページをいくらスクロールしても届かない。左レールには「子ページを
+   作成」「このページを削除」が入っているので、これは情報が見えないだけでなく
+   **操作に届かない**という壊れ方になる（目次を左レールへ入れた 2026-09-01 に、
+   見出し43個で 1491px ＞ 画面800px を実測して判明）。
+   狭い画面ではドロワー化した側で overflow-y を持っているので、ここは
+   デスクトップの sticky レールだけの手当て。 */
 .rail {
     display: flex;
     flex-direction: column;
     gap: 16px;
     position: sticky;
     top: 20px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
 }
 .rail-left { flex: 0 0 220px; }
 .rail-right { flex: 0 0 300px; }

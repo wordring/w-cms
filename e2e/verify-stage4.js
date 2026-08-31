@@ -156,6 +156,49 @@ async function openSlashMenu(page) {
         // 9. 計算ビューのクローム見出しは目次に載らない（2026-08-20 の修正）
         const toc = await page.evaluate(() => document.getElementById('w-toc-list').innerText);
         check('目次にクロームの見出しが載らない', !toc.includes('部材手配・発注進捗状況'));
+
+        // 9b. 目次は左レールの先頭にあり、レールが画面より高くなっても
+        //     下端の操作（子ページ作成・削除）に届く（2026-09-01）。
+        //     .rail は position:sticky なので、**背が高いと下端は永久に画面外**
+        //     に残る——目次を左へ入れて背が伸びた分、操作に届かなくなる形の
+        //     壊れ方が実際に起きた（見出し43個で 1491px ＞ 画面800px を実測）。
+        check('目次は左レールの中にある',
+            await page.evaluate(() => !!document.querySelector('.rail-left #w-toc-list')));
+
+        // 見出しを増やして目次をあふれさせる。目次の作り直しは本文DOMを見る
+        // MutationObserver 経由で**非同期**なので、足すのと測るのは分ける。
+        await page.evaluate(() => {
+            const content = document.getElementById('w-editor-content');
+            for (let i = 1; i <= 40; i++) {
+                const h = document.createElement('h2');
+                h.textContent = '目次あふれ' + i;
+                content.appendChild(h);
+            }
+        });
+        await page.waitForFunction(
+            () => document.querySelectorAll('#w-toc-list li').length > 40, null, { timeout: 8000 });
+        await page.evaluate(() => window.scrollTo(0, 400));
+        await page.waitForTimeout(200);
+        const railReach = await page.evaluate(() => {
+            const rail = document.querySelector('.rail-left');
+            const r = rail.getBoundingClientRect();
+            rail.scrollTop = rail.scrollHeight;
+            const btn = document.getElementById('w-create-subpage-btn');
+            const shown = btn && getComputedStyle(btn).display !== 'none';
+            const bottom = shown ? btn.getBoundingClientRect().bottom : null;
+            return {
+                inViewport: r.top >= 0 && r.bottom <= window.innerHeight,
+                scrollable: rail.scrollHeight > rail.clientHeight,
+                reachable: !shown || (bottom > 0 && bottom <= window.innerHeight),
+                shown: !!shown,
+            };
+        });
+        check('レールが画面内に収まる', railReach.inViewport);
+        check('あふれたらレールの中でスクロールできる', railReach.scrollable);
+        check('レールの下端の操作に届く', railReach.reachable && railReach.shown);
+        // 足した見出しは保存しない。読み直して元の本文へ戻す。
+        await page.reload();
+        await page.waitForTimeout(700);
         check('クローム見出しにアンカーを合成しない',
             await page.evaluate(() => {
                 const h = document.querySelector('.vocab-chrome h3');

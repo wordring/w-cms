@@ -119,6 +119,20 @@
     <div class="work-area">
         <!-- 左サイドパネル（クローム）：ページ階層への情報と操作。/api/children で描画。保存対象外。 -->
         <aside class="rail rail-left" aria-label="ページ階層">
+            <!-- 目次：本文の見出し(h1〜h6)へのリンク集。サーバーには依存せず、
+                 表示中のDOMを走査して作る（クリックで scrollIntoView）。
+                 置き場は 2026-08-31 に左の独立レール → 右レールの先頭、
+                 2026-09-01 に左レールの先頭カードへ（ユーザー要望）。
+                 **独立レールへは戻していません**——独立させると「左の2枚は同時に
+                 開かない」既定で畳まれ、実質見えなくなるのが移した理由でした。 -->
+            <section class="rail-card">
+                <details open>
+                    <summary>目次</summary>
+                    <div class="card-body">
+                        <ul class="toc-nav" id="w-toc-list"></ul>
+                    </div>
+                </details>
+            </section>
             <!-- 親ページへのリンク（「親=上／子=下」の階層感に合わせる。
                  子ページカードを畳んでも常に見える） -->
             <div class="child-nav-parent" id="w-child-nav-parent"></div>
@@ -153,18 +167,6 @@
 
         <!-- 右サイドパネル（クローム）：ページの属性表示・操作を集約。保存対象外。 -->
         <aside class="rail rail-right" aria-label="ページ情報と操作">
-            <!-- 目次：本文の見出し(h1〜h6)へのリンク集。サーバーには依存せず、
-                 表示中のDOMを走査して作る（クリックで scrollIntoView）。
-                 2026-08-31 ユーザー要望で右レールの先頭へ（従来は左側の独立レールで
-                 既定が畳まれており、実質見えていなかった）。 -->
-            <section class="rail-card">
-                <details open>
-                    <summary>目次</summary>
-                    <div class="card-body">
-                        <ul class="toc-nav" id="w-toc-list"></ul>
-                    </div>
-                </details>
-            </section>
             <!-- ページ情報パネル（属性はサイドカーが正本。/api/page-meta で取得） -->
             <section class="rail-card">
                 <details open>
