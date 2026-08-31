@@ -160,7 +160,10 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// さらにページ内アンカー（見出し・ブロックの id）を合成する。**この経路だけ**で行う
 	// ——エディタが編集モードで読み直す GET /api/load へ入れると、合成した id が
 	// シリアライザを通って本文として保存されてしまう（anchor.go の冒頭）。
-	body := RenderAnchors(RenderComputedViews(r, pageID, Sanitize(string(content))))
+	// 参照タグ（名前：値の `ページID-ブロックID`）はリンクへ合成し、指す先の無いものへ
+	// 印を付ける（ref_render.go）。アンカー合成と同じく**この経路だけ**——/api/load へ
+	// 入れると合成した <a> が本文として保存される。
+	body := RenderAnchors(RenderReferenceLinks(RenderComputedViews(r, pageID, Sanitize(string(content)))))
 
 	// 体裁は**相手で分ける**（要件定義書 §4.4）。匿名の訪問者へは編集用クロームを
 	// 一切含まない公開専用ビューを返し、認証済みには従来どおり編集できる殻を返す。

@@ -1,0 +1,143 @@
+package cms
+
+// ─────────────────────────────────────────────────────────────────────────
+// 参照タグのリンク描画と宙ぶらりんの印（D-4・D-10。2026-08-31 実装）
+//
+// 参照は本文の「名前：値」タグで表し、値は **`ページID-ブロックID`**——
+// 「URLのリンクみたいな感じ」（docs/アーキテクチャとDBスキーマ.md §9.1〜§9.2）。
+//
+//	原発注書 : 000002-12   →  <dd><a href="/000002#12">000002-12</a></dd>
+//
+// この描画は **ページを返すときだけ** 行います（RenderAnchors と同じ規律。
+// GET /api/load へ入れると、合成した <a> がシリアライザを通って本文として
+// 保存されてしまう）。判定も**読むたび**——「先に参照を書いて、あとから参照元を
+// 作る場合もあるので、ページを読むたびに背景の更新が必要」（D-10 ユーザー決定）。
+// 保存時に焼くと、あとからページを作っても宙ぶらりんの印が残り続けます。
+//
+// 値の解釈は正規化ではなく**構文解析**です（D-7 決定）:
+//   - ページIDは**ゼロ埋め6桁ちょうど**。桁を緩めると「123-45」のような普通の
+//     型番・図面番号が参照に化けて、宙ぶらりんの赤が誤爆します。
+//   - 区切りのハイフンは種類を畳みます（- ‐ − － ー ｰ。議論で示された実例が
+//     半角カタカナの長音記号だったため——§9.1）。先頭のゼロは畳みません。
+//   - ブロックIDは英数字（エディタの採番は base36）。
+//
+// 指す先の判定は**ページの存在だけ**です。ブロックの存在は本文を開かないと
+// 分からず（段落など索引に載らないブロックがある）、読むたびに全参照先の本文を
+// 開くのは釣り合いません。ページがあればリンク（ブロックが無ければ先頭に着地）、
+// 無ければ `ref-missing` の印——「黙って切れるのが一番困る」（D-10）。
+//
+// サニタイズの**後**にHTMLを足す関数の1つです（RenderComputedViews・RenderAnchors・
+// RenderPageShell と同じエスケープ責任）。ノードを組んで html.Render に任せるので、
+// テキストも属性値も自動でエスケープされます。
+// ─────────────────────────────────────────────────────────────────────────
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+
+	"golang.org/x/net/html"
+
+	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/database"
+)
+
+// refValueRe は参照値の文法です（6桁のページID・ハイフン類・英数字のブロックID）。
+var refValueRe = regexp.MustCompile(`^([0-9]{6})[-‐−－ーｰ]([0-9A-Za-z]+)$`)
+
+// parseRefValue は参照値を（ページID, ブロックID）へ分解します。文法外は ok=false。
+func parseRefValue(s string) (pageID, blockID string, ok bool) {
+	m := refValueRe.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return "", "", false
+	}
+	return m[1], m[2], true
+}
+
+// RenderReferenceLinks は本文中の dl（名前：値）の値のうち、参照の文法に
+// 一致するものをリンクへ合成して返します。指す先のページが無ければ
+// `ref-missing` の印を付けます（見た目は assets の CSS が担う）。
+func RenderReferenceLinks(bodyHTML string) string {
+	// 早道: dl が無ければ参照タグも無い（普通のページにパースの費用を掛けない）。
+	if !strings.Contains(bodyHTML, "<dl") {
+		return bodyHTML
+	}
+	nodes, err := htmldoc.ParseFragment(bodyHTML)
+	if err != nil {
+		return bodyHTML
+	}
+
+	changed := false
+	for _, root := range nodes {
+		WalkElements(root, func(n *html.Node) {
+			if n.Data != "dl" || inVocabChrome(n) {
+				return
+			}
+			eachDLPair(n, false, func(key string, dd *html.Node) bool {
+				pageID, blockID, ok := parseRefValue(nodeText(dd))
+				if !ok {
+					return true
+				}
+				if pageExists(pageID) {
+					linkRefDD(dd, pageID, blockID)
+				} else {
+					// 宙ぶらりん——打ち間違いか、参照先をまだ作っていない。
+					// 「先に参照を書く」運用があるので拒否はせず、背景で知らせる。
+					setAttr(dd, "class", "ref-missing")
+					setAttr(dd, "title", "参照先のページ "+pageID+" が見つかりません")
+				}
+				changed = true
+				return true
+			})
+		})
+	}
+	if !changed {
+		return bodyHTML
+	}
+	var sb strings.Builder
+	for _, n := range nodes {
+		html.Render(&sb, n)
+	}
+	return sb.String()
+}
+
+// linkRefDD は dd の中身を参照リンクへ置き換えます（表示文字は元の値のまま）。
+func linkRefDD(dd *html.Node, pageID, blockID string) {
+	text := strings.TrimSpace(nodeText(dd))
+	for dd.FirstChild != nil {
+		dd.RemoveChild(dd.FirstChild)
+	}
+	a := &html.Node{Type: html.ElementNode, Data: "a"}
+	a.Attr = []html.Attribute{
+		{Key: "href", Val: "/" + pageID + "#" + blockID},
+		{Key: "class", Val: "ref-link"},
+	}
+	a.AppendChild(&html.Node{Type: html.TextNode, Data: text})
+	dd.AppendChild(a)
+}
+
+// pageExists は派生索引でページの存在を引きます（描画のたびに呼ぶので索引で足りる。
+// 認可はしない——リンクを踏んだ先で通常の関門が判定する。存在の秘匿は匿名にだけ
+// 意味があり、匿名へ返る公開ページに書かれた参照はどのみち書き手が可視化している）。
+func pageExists(pageID string) bool {
+	idInt, err := strconv.Atoi(pageID)
+	if err != nil {
+		return false
+	}
+	var n int
+	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM pages WHERE id = ?`, idInt).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
+}
+
+// setAttr は属性を上書きまたは追加します。
+func setAttr(n *html.Node, key, val string) {
+	for i := range n.Attr {
+		if n.Attr[i].Key == key {
+			n.Attr[i].Val = val
+			return
+		}
+	}
+	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: val})
+}

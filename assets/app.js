@@ -1584,14 +1584,27 @@
     function ensureBlockIds() {
         const used = new Set();
         let changed = 0;
-        topLevelBlocks().forEach(el => {
+        const assign = el => {
             const id = el.getAttribute(BLOCK_ID_ATTR);
             if (id && !used.has(id)) { used.add(id); return; } // 一意なのでそのまま
             const fresh = newBlockId(used);                     // 未採番 or 重複 → 振り直す
             el.setAttribute(BLOCK_ID_ATTR, fresh);
             used.add(fresh);
             changed++;
-        });
+        };
+        topLevelBlocks().forEach(assign);
+        // 入れ子の表・定義リスト・セクションにも振る（2026-08-31・§9.3）。
+        // 参照の宛先は「ページID-ブロックID」なので、セクションの中の明細表も
+        // 単独で指せる必要がある（「PDFや表を文書に貼り付けると、IDが付く必要が
+        // あるのかもしれません」——ユーザー）。クロームの中は保存されないので振らない。
+        const editor = document.getElementById('w-editor-content');
+        if (editor) {
+            editor.querySelectorAll('.block-content table, .block-content dl, .block-content section')
+                .forEach(el => {
+                    if (el.closest('.vocab-chrome')) return;
+                    assign(el);
+                });
+        }
         return changed;
     }
 
