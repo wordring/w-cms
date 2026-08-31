@@ -71,8 +71,18 @@ async function openSlashMenu(page) {
         check('明細表の骨格（5列・素の表）', await items.locator('tr').first().locator('th').count() === 5);
         check('明細表にも data-type は無い', await items.getAttribute('data-type') === null);
         check('ドロップゾーンは受注ブロック自身に付く', await order.locator('.pdf-drop-zone').count() === 1);
-        check('業務文書ブロックにも形式の枠が出る',
-            await order.evaluate(el => getComputedStyle(el).outlineStyle) === 'dashed');
+        // 認識の印は**一致した言葉そのものの薄青の背景**（枠や札ではなく）
+        check('見出し語に認識の背景が付く',
+            await order.locator('h2').first().evaluate(el =>
+                el.classList.contains('vocab-word') &&
+                getComputedStyle(el).backgroundColor === 'rgb(219, 234, 254)'));
+        check('形式名の札は出ない（見出し自身が宣言）',
+            await order.evaluate(el => {
+                const prev = el.closest('.editor-block');
+                return !prev || !prev.parentElement.querySelector(':scope > .vocab-label') ||
+                    prev.previousElementSibling === null || !prev.previousElementSibling.classList ||
+                    !prev.previousElementSibling.classList.contains('vocab-label');
+            }));
 
         // 3. 編集と保存往復（クロームが漏れないこと）
         await caretInto(page, hdr.locator('dd').nth(1)); // 発注元

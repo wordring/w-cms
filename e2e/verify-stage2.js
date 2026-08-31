@@ -209,6 +209,9 @@ async function waitSaved(page) {
             !(await page.locator('#w-enum-menu').evaluate(el => el.classList.contains('active'))));
 
         // ── dl の項目操作（第2段。レジストリに dl 形式が無いため DOM で用意し UI を検証） ──
+        // enum セルにキャレットが残っていると入力補助メニューが開き直して
+        // 新しい dl に被さるので、先にキャレットを外す（実操作と同じ動き）。
+        await page.locator('#w-editor-content h1').first().click();
         await page.evaluate(() => {
             const dl = document.createElement('dl');
             dl.setAttribute('data-type', 'tags');
