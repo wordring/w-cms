@@ -100,9 +100,9 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pageDir := page.GetPageDir(pageID)
-	os.MkdirAll(pageDir, 0755)
-	savePath := filepath.Join(pageDir, fileName)
+	attachDir := page.AttachmentDir(pageID)
+	os.MkdirAll(attachDir, 0755)
+	savePath := filepath.Join(attachDir, fileName)
 
 	// 上書きかどうかは書く前にしか分からない（監査記録で区別するため）。
 	overwrote := false
@@ -129,7 +129,7 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 		"file_name": fileName,
 		"kind":      kind,
 		// 本文の <img src> へそのまま入れる絶対パス。
-		"src": page.DataURLFor(pageID, fileName),
+		"src": page.AttachmentURLFor(pageID, fileName),
 	})
 }
 

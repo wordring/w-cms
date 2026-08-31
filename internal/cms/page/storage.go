@@ -108,3 +108,27 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 	return os.Rename(tmpName, path)
 }
+
+// AttachmentsDirName は添付ファイルの置き場（ページフォルダ内のサブフォルダ）です。
+//
+// **正本（<id>.html・<id>.meta.json・versions/）と添付を同じフォルダに置かない**
+// のが構造の要です（2026-08-31 ユーザー指摘「.json禁止は、アップロードファイルと
+// jsonが同じフォルダにあることが原因では？」——そのとおりで、同居をやめれば
+// 「添付の名前がサイドカーを上書きする」穴は**名前の検査に頼らず**塞がる）。
+// 拡張子の許可リストは以後、安全の門ではなく運用の方針になる。
+// 既存の添付（ページフォルダ直下）は動かさない——配信は両方の場所を受ける。
+const AttachmentsDirName = "files"
+
+// AttachmentDir は添付の保存先ディレクトリを返します。
+func AttachmentDir(id string) string {
+	return filepath.Join(GetPageDir(id), AttachmentsDirName)
+}
+
+// AttachmentURLFor は**新しい**添付の配信アドレスを返します（files/ 配下）。
+// 既存の本文には直下形（DataURLFor）のリンクが残っており、配信は両方を受けます。
+func AttachmentURLFor(pageID, fileName string) string {
+	if len(pageID) < 2 {
+		return ""
+	}
+	return "/data/master/" + pageID[:2] + "/" + pageID + "/" + AttachmentsDirName + "/" + fileName
+}

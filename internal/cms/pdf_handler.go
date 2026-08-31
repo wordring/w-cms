@@ -143,10 +143,11 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pageDir := page.GetPageDir(pageID)
-	os.MkdirAll(pageDir, 0755)
+	// 添付は files/ サブフォルダへ（正本と同居させない——構造で塞ぐ。storage.go）。
+	attachDir := page.AttachmentDir(pageID)
+	os.MkdirAll(attachDir, 0755)
 
-	savePath := filepath.Join(pageDir, fileName)
+	savePath := filepath.Join(attachDir, fileName)
 
 	// 上書きかどうかは書く前にしか分からない。添付はリビジョンもゴミ箱も無く
 	// 上書きが復元できないので、「増えた」のか「消えた」のかを記録で区別する
@@ -174,6 +175,9 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		"success":   true,
 		"file_name": fileName,
 		"src":       fileName,
+		// 新しい置き場（files/）の配信アドレス。クライアントはこれをリンクへ使う
+		// （自前でパスを組むと置き場の知識が二重になる）。
+		"href": page.AttachmentURLFor(pageID, fileName),
 	})
 }
 
@@ -226,8 +230,11 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pageDir := page.GetPageDir(req.PageID)
-	pdfPath := filepath.Join(pageDir, fileName)
+	// 新しい置き場（files/）→ 旧（ページフォルダ直下）の順で探す。
+	pdfPath := filepath.Join(page.AttachmentDir(req.PageID), fileName)
+	if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
+		pdfPath = filepath.Join(page.GetPageDir(req.PageID), fileName)
+	}
 
 	if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
 		w.WriteHeader(http.StatusNotFound)
