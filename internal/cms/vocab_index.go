@@ -150,6 +150,15 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 		}
 	}
 
+	// 由来（block_id）は素の要素自身の data-id が最優先（2026-08-31 から入れ子にも
+	// 採番される——参照 `ページID-ブロックID` で明細表そのものを指せる）。
+	// 無ければ包んでいる section のIDを刻む（旧データ・手書きの本文）。
+	blockIDOr := func(n *html.Node) string {
+		if id := Attr(n, "data-id"); id != "" {
+			return id
+		}
+		return sectionBlockID
+	}
 	var firstErr error
 	eachPlainVocabChild(section, func(n *html.Node) {
 		if firstErr != nil {
@@ -158,12 +167,10 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 		switch n.Data {
 		case "dl":
 			no := ctx.Counter("vocab_index:" + dataType)
-			firstErr = syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, sectionBlockID, def, n)
+			firstErr = syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, blockIDOr(n), def, n)
 		case "table":
 			no := ctx.Counter("vocab_index:" + itemsType)
-			// 素の表はブロックIDを持たない（振られるのはトップレベルだけ）ので、
-			// 由来としては包んでいる section のIDを刻む。
-			firstErr = syncVocabTable(ctx.Tx, ctx.PageID, itemsType, no, sectionBlockID, itemsDef, n)
+			firstErr = syncVocabTable(ctx.Tx, ctx.PageID, itemsType, no, blockIDOr(n), itemsDef, n)
 		}
 	})
 	return firstErr

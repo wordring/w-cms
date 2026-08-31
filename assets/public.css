@@ -173,3 +173,10 @@ body.public {
 .public-error { text-align: center; padding: 48px 0; }
 .public-error h1 { border: none; font-size: 1.5rem; }
 .public-error p { color: var(--pub-muted); }
+
+/* 参照タグ: 指す先の無い参照は薄い赤の背景（エディタ側と同じ意味。2026-08-31） */
+.public-content .ref-missing {
+    background: #fee2e2;
+    border-radius: 4px;
+    padding: 0 4px;
+}
