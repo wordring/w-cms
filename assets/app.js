@@ -1473,6 +1473,44 @@
     // isViewSection は計算ビューのマーカー（子ページ一覧・手配集計）かを返す。
     // 中身はサーバー事前描画（vocab-chrome）が所有するので、編集モードでも
     // contenteditable にしない（view_render.go 参照）。
+    // sectionDefOf はセクションの形式を解決する——data-type 属性が正、無ければ機能見出し
+    // （サーバーの vocabTypeOf と同じ規則。walk.go）。
+    function sectionDefOf(section) {
+        const t = section.getAttribute && section.getAttribute('data-type');
+        if (t) return vocabDefs.find(v => v.type === t) || null;
+        return headingDefOf(section);
+    }
+
+    // tableDefOf は表の列宣言を解決する——自分の data-type が正、無ければ**一番近い**
+    // 包んでいる section の形式。その形式が明細（items）を宣言していれば素の表は明細
+    // （サーバーの syncVocabSection と同じ規則）。どれにも当たらなければ null＝
+    // 機械に読まれない素の表（型検証も掛けない——読まれないものに赤印は出さない）。
+    function tableDefOf(table) {
+        const t = table.getAttribute('data-type');
+        if (t) return vocabDefs.find(v => v.type === t) || null;
+        const sec = table.closest('section');
+        if (!sec) return null;
+        const sdef = sectionDefOf(sec);
+        if (!sdef) return null;
+        if (sdef.items) {
+            const idef = vocabDefs.find(v => v.type === sdef.items);
+            if (idef) return idef;
+        }
+        return sdef;
+    }
+
+    // headingDefOf はセクションの機能見出し（直接の子の最初の h1〜h6）を表示名と
+    // 突き合わせる（サーバーの vocabTypeOf と同じ規則。walk.go）。
+    function headingDefOf(section) {
+        for (const c of section.children) {
+            if (/^H[1-6]$/.test(c.tagName)) {
+                const w = c.textContent.trim();
+                return vocabDefs.find(v => v.display_name === w) || null;
+            }
+        }
+        return null;
+    }
+
     function isViewSection(el) {
         if (!el.tagName || el.tagName !== 'SECTION') return false;
         const t = el.getAttribute('data-type');
@@ -1659,7 +1697,75 @@
         return '';
     }
 
+    // usesHeadingForm は「見出しが機能を宣言する形」で挿す形式かを返す（D-2・2026-08-31）。
+    // 例外は3つだけ——親の中に埋め込まれる明細（hidden）・ページ横断メタの可変タグ
+    // （専用のチップUIが data-type="tags" を前提にする）・配線の容器（file。data-src の
+    // 置き場でありユーザーの文書ではない）。それ以外は data-type を書かず、
+    // **表示名の見出し＋素の中身**で挿す——見える文字が人にも機械にも同じ宣言になる。
+    function usesHeadingForm(def) {
+        if (def.hidden) return false;
+        if (def.type === 'tags') return false;
+        if (vocabDefs.some(v => v.container === def.type)) return false;
+        return true;
+    }
+
+    // buildPlainDl は素の dl（ヘッダ）を組む。鍵は dt の表示文字。
+    function buildPlainDl(columns) {
+        const dl = document.createElement('dl');
+        (columns || []).forEach(col => {
+            const dt = document.createElement('dt');
+            dt.textContent = col.label;
+            const dd = document.createElement('dd');
+            const v = defaultFieldValue(col);
+            if (v) dd.textContent = v;
+            else dd.appendChild(document.createElement('br')); // 空 dd のキャレット足場
+            dl.appendChild(dt);
+            dl.appendChild(dd);
+        });
+        return dl;
+    }
+
+    // buildPlainTable は素の表を組む。最初の tr の th が列を宣言する
+    // （「THに表示される文字列が、すなわち列のデータを表します」——2026-08-31 ユーザー）。
+    function buildPlainTable(columns) {
+        const table = document.createElement('table');
+        const tbody = document.createElement('tbody');
+        const head = document.createElement('tr');
+        const row = document.createElement('tr');
+        (columns || []).forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col.label;
+            head.appendChild(th);
+            row.appendChild(document.createElement('td'));
+        });
+        tbody.appendChild(head);
+        tbody.appendChild(row);
+        table.appendChild(tbody);
+        return table;
+    }
+
     function buildVocabSkeleton(def) {
+        if (usesHeadingForm(def)) {
+            // 見出し形（D-2）: <section><h2>表示名</h2>…素の中身…</section>。
+            // 機械語は本文に書かない——section の役割は見出しの言葉が、列は th / dt の
+            // 表示文字が宣言し、サーバーはレジストリ（表示名・Items）で解釈する。
+            const sec = document.createElement('section');
+            const h = document.createElement('h2');
+            h.textContent = def.display_name || def.type;
+            sec.appendChild(h);
+            if (def.element === 'table') {
+                sec.appendChild(buildPlainTable(def.columns));
+            } else if (def.element === 'dl') {
+                sec.appendChild(buildPlainDl(def.columns));
+            } else { // section: ヘッダ dl ＋（Items 宣言があれば）素の明細表
+                if (def.columns && def.columns.length) sec.appendChild(buildPlainDl(def.columns));
+                if (def.items) {
+                    const itemsDef = vocabDefs.find(v => v.type === def.items);
+                    if (itemsDef) sec.appendChild(buildPlainTable(itemsDef.columns));
+                }
+            }
+            return sec;
+        }
         if (def.element === 'section') {
             // 業務文書ブロック（論点A・案1）: section が ヘッダ dl（data-type 無し）と
             // 明細表を包む。項目の鍵は dt の表示文字が運ぶ。file 容器は列を持たない。
@@ -1750,6 +1856,15 @@
         } else if (type === 'p') {
             newEl = document.createElement('p');
             newEl.innerText = '';
+        } else if (type === 'table') {
+            // 汎用の素の表（D-2 の帰結。2026-08-31 ユーザー:「見出しが型を表すとすると、
+            // エディタのメニューは単なる表挿入に変わるのでは？」）——そのとおりで、
+            // 型は見える言葉が担う。素の表を挿し、見出しに登録済みの言葉を書けば
+            // 定型項目とまったく同じに認識される。定型項目は列名を覚えなくて済む
+            // **下書き**として残る。
+            newEl = buildPlainTable([{ label: '' }, { label: '' }]);
+        } else if (type === 'dl') {
+            newEl = buildPlainDl([{ label: '' }]);
         }
         if (!newEl) return null;
 
@@ -2244,7 +2359,7 @@
     function refreshColPopoverNote(th, key) {
         const note = document.getElementById('w-cp-note');
         const table = th.closest('table');
-        const def = vocabDefs.find(v => v.type === (table && table.getAttribute('data-type')));
+        const def = table && tableDefOf(table);
         const col = def && (def.columns || []).find(c => (c.field && c.field === key) || c.label === key);
         if (col) note.textContent = '未指定ならレジストリ宣言: ' + col.type;
         else if (typeInferenceDict[key]) note.textContent = '未指定なら推論: ' + typeInferenceDict[key];
@@ -2274,7 +2389,9 @@
         currentDlNode = null;
     }
 
-    // updateDlToolbar はキャレットが本文中の <dl data-type> の dt/dd にあるときだけ出す。
+    // updateDlToolbar はキャレットが本文中の dl の dt/dd にあるときだけ出す。
+    // かつては dl[data-type] に限っていたが、見出し形（D-2）ではヘッダも見積も
+    // **素の dl** なので、対の追加・削除はすべての dl で使えるようにした。
     function updateDlToolbar() {
         const bar = document.getElementById('w-dl-toolbar');
         if (!bar) return;
@@ -2283,7 +2400,7 @@
         const sel = window.getSelection();
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
-        const item = el && el.closest ? el.closest('#w-editor-content dl[data-type] > dt, #w-editor-content dl[data-type] > dd') : null;
+        const item = el && el.closest ? el.closest('#w-editor-content dl > dt, #w-editor-content dl > dd') : null;
         if (!item || isServerOwned(item)) { hideDlToolbar(); return; }
 
         currentDlNode = item;
@@ -2403,13 +2520,14 @@
 
     // resolveCellColumn はセルの属する列の {type, enum} を解決する（データ行の td 用）。
     function resolveCellColumn(cell) {
-        const table = cell.closest('table[data-type]');
+        const table = cell.closest('table');
         if (!table || !table.rows.length) return null;
+        const def = tableDefOf(table);
+        if (!def && !table.hasAttribute('data-type')) return null; // 機械に読まれない素の表
         const th = cellAt(table.rows[0], colIndexOf(cell));
         if (!th) return null;
         const key = th.textContent.trim();
         const explicit = th.getAttribute('data-type');
-        const def = vocabDefs.find(v => v.type === table.getAttribute('data-type'));
         const col = findVocabColumn(def, key);
         let type = 'text';
         if (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) type = explicit;
@@ -2452,11 +2570,13 @@
         cell.classList.toggle('cell-invalid', bad);
     }
 
-    // validateTypedTables は本文中の全 <table data-type> のデータセルを検証し直す。
+    // validateTypedTables は本文中の**機械に読まれる表**のデータセルを検証し直す。
+    // 対象は data-type 付きと、形式が文脈から解決できる素の表（見出し形・D-2）。
     // 編集モード入り・列型の変更・サニタイズ反映のあとに呼ぶ。
     function validateTypedTables() {
-        document.querySelectorAll('#w-editor-content table[data-type]').forEach(table => {
+        document.querySelectorAll('#w-editor-content table').forEach(table => {
             if (isServerOwned(table)) return;
+            if (!table.hasAttribute('data-type') && !tableDefOf(table)) return;
             Array.from(table.rows).slice(1).forEach(row => {
                 Array.from(row.children).forEach(c => {
                     if (c.tagName === 'TD') validateCell(c);
@@ -2488,7 +2608,9 @@
         const sel = window.getSelection();
         const node = sel && sel.anchorNode;
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
-        const cell = el && el.closest ? el.closest('#w-editor-content table[data-type] td') : null;
+        // 対象は data-type 付きに限らない——見出し形（D-2）の素の表も、文脈で列宣言が
+        // 解決できれば補助を出す（resolveCellColumn が読まれない表では null を返す）。
+        const cell = el && el.closest ? el.closest('#w-editor-content table td') : null;
         if (!cell || isServerOwned(cell)) { hideEnumMenu(); return; }
         const col = resolveCellColumn(cell);
         const isEnum = col && col.type === 'enum' && col.enum.length > 0;
@@ -2592,12 +2714,22 @@
         const isEdit = document.body.hasAttribute('edit-mode');
 
         // 対象＝本文の形式ブロック。クロームの中と、列型の明示（th/td の data-type）は除く。
-        const targets = isEdit ? Array.from(editor.querySelectorAll('[data-type]')).filter(el =>
-            !el.closest('.vocab-chrome') && el.tagName !== 'TH' && el.tagName !== 'TD') : [];
+        const attrTargets = isEdit ? Array.from(editor.querySelectorAll('[data-type]')).filter(el =>
+            !el.closest('.vocab-chrome') && el.tagName !== 'TH' && el.tagName !== 'TD')
+            .map(el => ({ el, type: el.getAttribute('data-type'), viaHeading: false })) : [];
+
+        // 見出し駆動のセクション（D-2）——data-type 無しでも、最初の見出し（直接の子の
+        // h1〜h6）が表示名と一致すれば形式を持つ。未登録の見出し語は**ただのセクション**
+        // なので対象外（赤い札も出さない——静かに何もしないのが決定）。
+        const headingTargets = isEdit ? Array.from(editor.querySelectorAll('section:not([data-type])'))
+            .filter(el => !el.closest('.vocab-chrome'))
+            .map(el => ({ el, def: headingDefOf(el) }))
+            .filter(x => x.def)
+            .map(x => ({ el: x.el, type: x.def.type, viaHeading: true })) : [];
 
         const keep = new Set();
-        targets.forEach(el => {
-            const type = el.getAttribute('data-type');
+        const headingMarked = new Set();
+        attrTargets.concat(headingTargets).forEach(({ el, type, viaHeading }) => {
             const def = vocabDefs.find(v => v.type === type);
             const unknown = !def;
             const text = def
@@ -2628,11 +2760,18 @@
             if (label.textContent !== text) label.textContent = text;
             label.title = unknown
                 ? 'この形式はレジストリに宣言がありません。保存はされますが、計算には使われません。'
-                : '形式: ' + type;
+                : (viaHeading ? '形式: ' + type + '（見出しが宣言）' : '形式: ' + type);
             // class はサニタイザ・シリアライザとも通さない実行時の印（保存に漏れない）。
             label.classList.toggle('is-unknown', unknown);
             el.classList.toggle('is-vocab-unknown', unknown);
+            el.classList.toggle('is-vocab-heading', viaHeading);
+            if (viaHeading) headingMarked.add(el);
             keep.add(label);
+        });
+
+        // 見出しを消した・別の言葉へ変えたセクションの印を片付ける。
+        editor.querySelectorAll('.is-vocab-heading').forEach(el => {
+            if (!headingMarked.has(el)) el.classList.remove('is-vocab-heading');
         });
 
         // 対象でなくなった札（閲覧モードへ移った・形式を外した・ブロックを消した）を片付ける。
@@ -2775,11 +2914,15 @@
                 notify('解析に失敗しました: ' + (d.message || res.status), { type: 'warn', duration: 10000 });
                 return;
             }
-            const order = sec.querySelector('section[data-type="client-order"], section[data-type="our-order"]');
-            const table = order && order.querySelector('table[data-type]');
+            // 受発注ブロックは属性でも見出し（D-2）でも書けるので、形式の解決で探す。
+            const order = Array.from(sec.querySelectorAll('section')).find(s => {
+                const d = sectionDefOf(s);
+                return d && (d.type === 'client-order' || d.type === 'our-order');
+            });
+            const table = order && Array.from(order.querySelectorAll('table')).find(t => tableDefOf(t));
             if (!table) return;
             // 見出しの表示文字をレジストリ経由で機械キーへ解決する（AI応答の鍵は機械キー）。
-            const itemsDef = vocabDefs.find(v => v.type === table.getAttribute('data-type'));
+            const itemsDef = tableDefOf(table);
             const fields = Array.from(table.querySelectorAll('tr:first-child th'))
                 .map(th => (findVocabColumn(itemsDef, th.textContent.trim()) || {}).field || '');
             const tbody = table.querySelector('tbody') || table;
@@ -2836,6 +2979,9 @@
                 category: '基本',
             });
         });
+        // 汎用の表・定義リスト（機械語ゼロの骨組み。型は見出しと th の言葉が担う）
+        items.push({ type: 'table', icon: '▦', label: '表', category: '基本', alt: 'table' });
+        items.push({ type: 'dl', icon: '≡', label: '定義リスト（名前：値）', category: '基本', alt: 'dl' });
         vocabDefs.forEach(def => {
             if (def.hidden) return; // 明細表など、単独では挿入しない形式
             items.push({
@@ -3069,10 +3215,11 @@
             }
 
             // 型検証（通知のみ）。編集中のセルだけを見る（全表の再検証は入力ごとには重い）。
+            // 見出し形（D-2）の素の表も対象——列の解決は resolveCellColumn が文脈から行う。
             const sel = window.getSelection();
             const node = sel && sel.anchorNode;
             const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
-            const cell = el && el.closest ? el.closest('#w-editor-content table[data-type] td') : null;
+            const cell = el && el.closest ? el.closest('#w-editor-content table td') : null;
             if (cell && !isServerOwned(cell)) validateCell(cell);
         });
 

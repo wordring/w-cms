@@ -51,20 +51,25 @@ async function openSlashMenu(page) {
         check('明細表（hidden）はメニューに出ない', await page.locator('#w-slash-menu [data-type="vocab:client-order-items"]').count() === 0);
         check('後継: 顧客の発注書がある', await page.locator('#w-slash-menu [data-type="vocab:client-order"]').count() === 1);
 
-        // 2. 顧客の発注書の挿入 = file容器＋section骨格＋エンハンサのクローム
+        // 2. 顧客の発注書の挿入 = file容器＋**見出し形**のsection骨格（D-2・2026-08-31）。
+        //    容器（配線）だけが data-type を持ち、受注ブロック自体は
+        //    <section><h2>顧客の発注書</h2>＋素のヘッダdl＋素の明細表。
         await page.click('#w-slash-menu [data-type="vocab:client-order"]');
         const file = page.locator('#w-editor-content section[data-type="file"]');
         await file.waitFor({ timeout: 4000 });
-        const order = file.locator('section[data-type="client-order"]');
+        const order = file.locator('section');
         check('file容器の中に受注ブロック', await order.count() === 1);
+        check('受注ブロックは見出しが機能を宣言', (await order.locator('h2').first().innerText()).trim() === '顧客の発注書');
+        check('受注ブロックに data-type は無い', await order.getAttribute('data-type') === null);
         // 鍵は dt の表示文字が運ぶ（機械キーの属性は 2026-08-20 に撤去）。
         const hdr = order.locator('dl').first();
         check('ヘッダdlの見出しが鍵', (await hdr.locator('dt').allInnerTexts()).map(t => t.trim())
             .join('/') === '発注書番号/発注元/発注日');
         check('機械キーの属性は書き出さない', await order.locator('[data-field]').count() === 0);
         check('発注日に今日が入る', /^\d{4}-\d{2}-\d{2}$/.test((await hdr.locator('dd').nth(2).innerText()).trim()));
-        const items = order.locator('table[data-type="client-order-items"]');
-        check('明細表の骨格（5列）', await items.locator('tr').first().locator('th').count() === 5);
+        const items = order.locator('table');
+        check('明細表の骨格（5列・素の表）', await items.locator('tr').first().locator('th').count() === 5);
+        check('明細表にも data-type は無い', await items.getAttribute('data-type') === null);
         check('ドロップゾーンのクローム', await file.locator('.pdf-drop-zone').count() === 1);
         // 「w-cms がこの要素を見る」印は data-type の有無で決まる（section も対象）
         check('業務文書ブロックにも形式の枠が出る',
@@ -81,20 +86,24 @@ async function openSlashMenu(page) {
         await waitSaved(page);
         check('sanitized 警告なし', await page.locator('[data-toast-id="sanitized"]').count() === 0);
         const preview = await page.locator('#w-html-preview').inputValue();
-        check('保存に section/data-src 構造が乗る', preview.includes('data-type="client-order"') && preview.includes('data-type="file"'));
+        check('保存に見出し形とfile容器が乗る', preview.includes('<h2>顧客の発注書</h2>') && preview.includes('data-type="file"'));
+        check('本文から受注の機械語が消えた', !preview.includes('data-type="client-order'));
         check('編集クロームが保存に漏れない', !preview.includes('vocab-chrome') && !preview.includes('pdf-drop-zone'));
 
-        // 4. 見積（dl）の挿入
+        // 4. 見積の挿入（見出し形: section + h2 + 素の dl）
         await openSlashMenu(page);
         await page.click('#w-slash-menu [data-type="vocab:our-estimate"]');
-        const est = page.locator('#w-editor-content dl[data-type="our-estimate"]');
-        await est.waitFor({ timeout: 4000 });
+        const estSec = page.locator('#w-editor-content section').filter({ hasText: '弊社の見積もり' }).first();
+        await estSec.waitFor({ timeout: 4000 });
+        const est = estSec.locator('dl');
         check('見積dlの骨格（4項目）', await est.locator('dt').count() === 4);
 
         // 5. 見出しの改名は「計算に読まれなくなった項目」として告知される（拒否はしない）。
         //    鍵は見出しの表示文字が運ぶので、改名すると③計算プラグインが読めなくなる。
         await page.evaluate(() => {
-            const dt = document.querySelector('#w-editor-content section[data-type="client-order"] dl dt:nth-of-type(2)');
+            const h = Array.from(document.querySelectorAll('#w-editor-content section > h2'))
+                .find(x => x.textContent.trim() === '顧客の発注書');
+            const dt = h.parentElement.querySelectorAll('dl dt')[1];
             dt.textContent = '得意先';
             triggerAutoSave();
         });
