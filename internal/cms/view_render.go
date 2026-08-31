@@ -65,7 +65,9 @@ func init() {
 			if el.Data != "section" {
 				return true, nil
 			}
-			vocabType := Attr(el, "data-type")
+			// data-type が正、無ければ機能見出し（D-2）——
+			// <section><h2>子ページ一覧</h2></section> だけで鏡が動く。
+			vocabType := vocabTypeOf(el)
 			def, ok := VocabDefByType(vocabType)
 			if !ok || !def.View {
 				return true, nil // 計算ビューではない（普通の業務ブロック）
@@ -88,7 +90,16 @@ func init() {
 // 起きません。マーカーが無い普通のページには、パースの費用を掛けません。
 func hasViewMarker(bodyHTML string) bool {
 	for _, def := range VocabDefs() {
-		if def.View && strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {
+		if !def.View {
+			continue
+		}
+		if strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {
+			return true
+		}
+		// 機能見出し（D-2）: 表示名が本文に現れたら歩く価値がある。
+		// 早道は「無ければ確実に無い」ことだけ保証すればよく、
+		// 偽陽性（表示名が地の文に出てくる）はパース1回の費用で済む。
+		if strings.Contains(bodyHTML, def.DisplayName) {
 			return true
 		}
 	}
@@ -132,8 +143,21 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 // fillViewMarker はマーカー要素の中身を描画結果（vocab-chrome）へ置き換えます。
 // マーカーの中へ誤って書かれた内容は表示に乗せない（ビューの中身はサーバーが所有する）。
 func fillViewMarker(el *html.Node, innerHTML string) {
-	for el.FirstChild != nil {
-		el.RemoveChild(el.FirstChild)
+	// 何を消すかはマーカーの流儀で分かれる（D-2・2026-08-31）:
+	//
+	//   - **data-type の空マーカー**……中身はサーバーの所有物。全部消して描き直す
+	//     （紛れ込んだ内容は表示に乗せない——保存内容は無傷のまま。従来どおり）。
+	//   - **機能見出しのセクション**……見出しや注記が本文としてここに住んでいる。
+	//     消すのは前回描いたクロームだけで、「見出しが鏡を呼び、人の書き込みは
+	//     保存されて残り、鏡の中身はその下へ毎回描かれる」（語彙モデル §11.5-7）。
+	var stale []*html.Node
+	for c := el.FirstChild; c != nil; c = c.NextSibling {
+		if Attr(el, "data-type") != "" || isChrome(c) {
+			stale = append(stale, c)
+		}
+	}
+	for _, n := range stale {
+		el.RemoveChild(n)
 	}
 	chrome := `<div class="vocab-chrome" contenteditable="false">` + innerHTML + `</div>`
 	nodes, err := htmldoc.ParseFragment(chrome)

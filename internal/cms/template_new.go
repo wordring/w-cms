@@ -75,14 +75,35 @@ func FreshenTemplateBody(bodyHTML, newPageID string) string {
 func init() {
 	RegisterSeeder(TriggerAll, SeedHandlerFunc(
 		func(ctx *SeedContext, el *html.Node) (bool, error) {
-			def, ok := VocabDefByType(Attr(el, "data-type"))
-			if !ok || el.Data != def.Element {
+			// data-type が正、無ければ機能見出し（D-2）。
+			def, ok := VocabDefByType(vocabTypeOf(el))
+			if !ok {
 				return true, nil
 			}
 			f := &templateFreshener{
 				pageID: ctx.NewPageID,
 				today:  ctx.Now.Format("2006-01-02"),
 				seq:    ctx.Counter("freshen"),
+			}
+			// 機能見出しのセクション（data-type 無し・見出し語で解決）は、索引と同じ
+			// 切り分けで**素の中身**を温める——素の dl / table がその形式の実体
+			// （syncVocabSection と同じ規則。マーカー付きは別途配られる）。
+			if el.Data == "section" && Attr(el, "data-type") == "" {
+				walkSkippingNested(el, map[string]bool{"section": true}, func(n *html.Node) {
+					if Attr(n, "data-type") != "" {
+						return
+					}
+					switch n.Data {
+					case "dl":
+						f.freshenDL(n, def)
+					case "table":
+						f.freshenTable(n, def)
+					}
+				})
+				return true, nil
+			}
+			if el.Data != def.Element {
+				return true, nil
 			}
 			switch def.Element {
 			case "table":

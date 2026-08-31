@@ -42,7 +42,7 @@ func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
 
 		var err error
 		if n.Data == "table" {
-			err = syncVocabTable(tx, pageID, dataType, no, def, n)
+			err = syncVocabTable(tx, pageID, dataType, no, Attr(n, "data-id"), def, n)
 		} else {
 			err = syncVocabDL(tx, pageID, dataType, no, Attr(n, "data-id"), def, n)
 		}
