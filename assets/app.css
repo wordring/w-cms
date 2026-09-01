@@ -1054,12 +1054,17 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
  * 左に名前・右に値で、角丸四角形で囲う。マークアップは dt/dd のまま
  * （見える文字＝鍵の原則・サニタイザ・索引すべて無変更。見た目だけの変換）。
  * dt と dd は隣接する別要素なので、dt の右角と dd の左角を殺して1つの
- * チップに見せる。対の区切りは dd の右マージンで作る（flex の gap は
- * dt|dd の間にも入ってチップが割れるため使わない）。
+ * チップに見せる。
+ * **対ごとに縦に並べる**（2026-09-01 ユーザー要望「差出人、宛先などのTAGSは
+ * 項目ごとに縦並びが見やすいです」——当初は横に流していた）。素の dl と同じく
+ * グリッドで、名前の列幅は最長のラベルに揃う（帳票のような整列）。
+ * 値の列は max-content だが dd 自身は justify-self で内容幅に縮む
+ * ——チップの右端が値の長さで終わる。
  * 見積もり系（our-estimate 等）も dl だが、このスタイルは tags 専用。 */
 #w-editor-content dl[data-type="tags"] {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: max-content max-content;
+    justify-content: start;
     row-gap: 6px;
     margin: 8px 0;
 }
@@ -1083,7 +1088,7 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
 #w-editor-content dl[data-type="tags"] dd {
     background: var(--bg-paper);
     border-radius: 0 6px 6px 0;
-    margin-right: 8px; /* 次のタグとの間隔 */
+    justify-self: start; /* 列幅（最長の値）に引き伸ばさず、自分の値の幅で終わる */
 }
 
 
