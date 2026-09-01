@@ -3059,6 +3059,13 @@
                 const res = await lockedFetch(isPDF ? '/api/upload-pdf' : '/api/upload-file',
                     { method: 'POST', body: fd });
                 const d = await res.json().catch(() => ({}));
+                if (d && d.intake) {
+                    // 受信箱への取り込み——添付ではなく子ページが生まれた。
+                    // 本文にリンクは挿さず、行き先を知らせる（一覧は子ページ一覧の鏡が担う）。
+                    notify('受信箱に取り込みました: ' + (d.title || d.page_id) +
+                        '（/' + d.page_id + '）', { type: 'success', duration: 8000 });
+                    continue;
+                }
                 if (!res.ok || !d.success) {
                     notify(f.name + ' を添付できませんでした: ' + (d.message || (await Promise.resolve(''))
                         || res.statusText || res.status), { type: 'alert', duration: 0, id: 'file-upload' });
