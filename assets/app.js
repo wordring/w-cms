@@ -3853,8 +3853,8 @@
             // 選択位置の近くにしか出ないので、下端なら場所を取り合わない。
             if (window.matchMedia('(pointer: coarse)').matches) {
                 toolbar.classList.add('is-docked');
-                toolbar.style.top = '';
                 toolbar.style.left = '';
+                positionDockedToolbar(); // キーボードに合わせて「見えている下端」へ
             } else {
                 toolbar.classList.remove('is-docked');
                 const rect = block.getBoundingClientRect();
@@ -3868,8 +3868,29 @@
 
     function hideContextToolbar() {
         const toolbar = document.getElementById('w-context-toolbar');
-        if(toolbar) toolbar.classList.remove('active');
+        if (toolbar) {
+            toolbar.classList.remove('active');
+            toolbar.style.top = '';
+        }
         activeBlock = null;
+    }
+
+    // positionDockedToolbar はドック（タッチ端末のコンテキストツールバー）を
+    // **見えている領域**（visualViewport）の下端へ置く。固定 bottom はレイアウト
+    // ビューポート基準なので、ソフトキーボードが出ると隠れる（2026-09-01 実機確認
+    // 「画面下の固定ドックでは、ソフトキーボードに隠されるようです」）。
+    // visualViewport はキーボードで縮むため、その下端に合わせれば常に見える。
+    function positionDockedToolbar() {
+        const toolbar = document.getElementById('w-context-toolbar');
+        if (!toolbar || !toolbar.classList.contains('is-docked') ||
+            !toolbar.classList.contains('active')) return;
+        const vv = window.visualViewport;
+        if (!vv) return; // 古いブラウザは CSS の bottom 固定にフォールバック
+        toolbar.style.top = (vv.offsetTop + vv.height - toolbar.offsetHeight - 12) + 'px';
+    }
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', positionDockedToolbar);
+        window.visualViewport.addEventListener('scroll', positionDockedToolbar);
     }
 
     // 初回読み込み時の初期表示
