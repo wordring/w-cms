@@ -1271,6 +1271,53 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border-radius: var(--radius);
 }
 
+/* 添付のクリック展開（閲覧モードのクローム。app.js refreshAttachmentPreviews）。
+ * ▶ボタンはリンクの直後に小さく、展開部はブロックの下に出る。 */
+#w-editor-content .attach-expand {
+    margin-left: 8px;
+    padding: 1px 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-paper);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+}
+#w-editor-content .attach-expand:hover {
+    background: var(--border);
+}
+#w-editor-content .attach-preview {
+    margin: 8px 0;
+}
+#w-editor-content .attach-preview-pdf {
+    display: block;
+    width: 100%;
+    height: 480px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+#w-editor-content .attach-zip-list {
+    margin: 0;
+    padding: 8px 12px;
+    list-style: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-paper);
+    max-height: 320px;
+    overflow-y: auto;
+}
+#w-editor-content .attach-zip-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 2px 0;
+    font-size: 13px;
+}
+#w-editor-content .attach-zip-size {
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 /* 本文の画像（要件 §2.6）。原寸のまま出すと横スクロールが起きるので枠に収める。
    高さは縦横比を保つため auto にする。 */
 #w-editor-content img {
