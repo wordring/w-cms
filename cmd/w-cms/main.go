@@ -214,6 +214,8 @@ func buildHandler() http.Handler {
 	root.Handle("/api/me", auth.OptionalAuth(http.HandlerFunc(auth.MeAPIHandler)))
 	root.Handle("/api/children", auth.OptionalAuth(http.HandlerFunc(cms.ChildPagesAPIHandler)))
 	root.Handle("/api/page-meta", auth.OptionalAuth(http.HandlerFunc(cms.PageMetaAPIHandler)))
+	// ZIP添付の目録（閲覧の一部。認可は添付配信と同じ実効公開の個別判定）
+	root.Handle("/api/zip-list", auth.OptionalAuth(http.HandlerFunc(cms.ZipListAPIHandler)))
 
 	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）。
 	root.Handle("/api/", auth.RequireAuth(protected))

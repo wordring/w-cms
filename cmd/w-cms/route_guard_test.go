@@ -60,6 +60,9 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/login", "GET", 200, "ログイン画面"},
 		{"/api/tag-schema", "GET", 200, "本文の語彙（秘密ではない）"},
 		{"/api/me", "GET", 200, "認証状態（未認証は authenticated:false）"},
+		// OptionalAuth（実効公開なら匿名でも読める。認可はハンドラ内の個別判定）。
+		// パラメータ無しは 400 ——401 でないことが「匿名に閉じていない」の固定。
+		{"/api/zip-list", "GET", 400, "ZIP添付の目録（添付配信と同じ閲覧関門）"},
 	}
 
 	for _, tt := range tests {
