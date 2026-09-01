@@ -2704,6 +2704,15 @@
         }
         cell.classList.toggle('cell-invalid', bad);
         cell.classList.toggle('cell-known', typed && text !== '' && !bad);
+        // 折り返し制御（2026-09-01 ユーザー:「単価や品名などは折り返さないほうが
+        // 見やすい」「テキストでも、図番や品名などは折り返さないほうが良いです」）。
+        // 型では足りない（図番・品名は text）ので、**長さ**で判定する——短い値は
+        // 名前・番号・金額のような原子的なもので途中で折ると読みにくく、長い文は
+        // 文章なので折り返す。列の幅が競ったときは表自身が横スクロールする（CSS側）。
+        // class は実行時だけの印（保存されない）。
+        const ATOMIC_MAX = 40; // 全角20字相当。図番・品名は収まり、備考の文は超える
+        cell.classList.toggle('cell-atomic',
+            text !== '' && text.length <= ATOMIC_MAX && !text.includes('\n'));
     }
 
     // validateTypedTables は本文中の**機械に読まれる表**のデータセルを検証し直す。

@@ -180,3 +180,15 @@ body.public {
     border-radius: 4px;
     padding: 0 4px;
 }
+
+/* 見出し（th）は短いラベルなので折らない（エディタ側と同じ方針。2026-09-01） */
+.public-content table th { white-space: nowrap; }
+
+/* 狭い画面では表が自分の中で横スクロールする（エディタ側と同じ方針。2026-09-01） */
+@media (max-width: 760px) {
+    .public-content table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+}

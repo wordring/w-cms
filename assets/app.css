@@ -353,6 +353,13 @@ body.anonymous .preview-section { display: none !important; }
    1100px以下を含むため、段階1のルールは引き続き有効）。 */
 @media (max-width: 760px) {
     .work-area { flex-direction: column; }
+    /* 表は自分の中で横スクロール——原子列（nowrap）が場所を取っても、
+       text 列を極端に潰さない。ページ全体は横スクロールさせない。 */
+    #w-editor-content table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+    }
     .rail-left {
         position: fixed;
         top: 0;
@@ -1159,6 +1166,15 @@ body[edit-mode] #w-editor-content td.cell-invalid {
  *
  * **枠線は付けない。** 警告（赤）より静かであるべきで、正常な状態のほうが
  * 数は多い。文字列の列に付けないのは validateCell 側の判断（そちらのコメント）。 */
+/* 折り返し制御: 短い値（図番・品名・単価など＝原子的）は折らず、長い文は折り返す。
+ * 判定は長さ（validateCell の ATOMIC_MAX）。見出し（th）は常に短いラベルなので折らない。
+ * 編集・閲覧の両モードで効かせる（読みやすさはモードに依らない）。
+ * 幅が競ったときのために、狭い画面では表が自分の中で横スクロールする（下の @media）。 */
+#w-editor-content td.cell-atomic,
+#w-editor-content table th {
+    white-space: nowrap;
+}
+
 body[edit-mode] #w-editor-content td.cell-known {
     background: #eff6ff;
 }
