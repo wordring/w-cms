@@ -155,6 +155,20 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 	}
 }
 
+// TestIntakeContextLeastPrivilege は、取り込みの道具が「この取り込みで作った
+// ページ」以外へ書けないことを検証します（既存ページの改変口にならない・検査で効く線）。
+func TestIntakeContextLeastPrivilege(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	if err := ctx.UpdatePage("000001", "<h1>乗っ取り</h1>"); err == nil {
+		t.Error("作っていないページを書き直せてしまいました")
+	}
+	if _, _, err := ctx.SaveAttachment("000001", ".txt", []byte("x")); err == nil {
+		t.Error("作っていないページへ添付できてしまいました")
+	}
+}
+
 // TestEmlIntakeRejectsBroken は、メールとして読めないファイルがエラーになる
 // （中途半端に取り込まない）ことを検証します。
 func TestEmlIntakeRejectsBroken(t *testing.T) {
