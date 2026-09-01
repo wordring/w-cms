@@ -154,6 +154,33 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID string) bool {
 	if u := auth.CurrentUser(r); u != nil {
 		uploader = u.Username
 	}
+	// 重複検知は**取り込み係を呼ぶ前**に行う（【考察】通信記録処理.md §8）。
+	// 同じメールの再ドロップは普通に起きる（送り直し・取りこぼしの確認）が、
+	// 黙って2枚できるとどちらが正かを人が見分けられない——しかも参照タグ
+	// `受信元` の指す先が2つに割れる。**作ってから消す**のではなく、
+	// 作らずに既存を指すのが正しい（可逆性は §2.7 の決定）。
+	if f, ok := h.(SourceRefFinder); ok {
+		if name, value, found := f.SourceRef(header.Filename, content); found {
+			if existing, dup := ExistingIntakePage(name, value); dup {
+				auth.Audit(uploader, "intake.duplicate", existing+" ("+name+"="+value+")")
+				w.Header().Set("Content-Type", "application/json")
+				resp := map[string]any{
+					"success": true, "intake": true, "duplicate": true,
+					"title": header.Filename,
+				}
+				// 読めない相手へ存在を教えない（匿名の404統一と同じ規律）。
+				// 取り込み済みという事実だけは返す——でないと「なぜ入らないのか」が
+				// 分からなくなる。
+				if n, err := strconv.Atoi(existing); err == nil &&
+					page.CanView(auth.CurrentUser(r), n) {
+					resp["page_id"] = existing
+				}
+				json.NewEncoder(w).Encode(resp)
+				return true
+			}
+		}
+	}
+
 	ctx := &IntakeContext{InboxID: inboxID, Uploader: uploader}
 	pageID, title, err := h.OnFile(ctx, header.Filename, content)
 	if err != nil {

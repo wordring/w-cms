@@ -73,6 +73,32 @@ type emlPart struct {
 	body      []byte
 }
 
+// MessageIDTag は重複検知の鍵を置くタグの名前です。
+//
+// **専用テーブルは持ちません**（D-1 でドメイン表は全廃）。鍵の置き場は可変タグ、
+// つまり**見える文字**しかありません——「見える文字がデータの手掛かり」
+// （コンセプト §2）がここでも効いて、`vocab_index` の逆引き（`pagesByTag`）が
+// そのまま重複判定になります。新しい仕組みは1つも要りません。
+const MessageIDTag = "メッセージID"
+
+// SourceRef は重複検知の鍵（Message-ID）を返します。**鍵の取り出しは形式を知る
+// 取り込み係の仕事**で、照合の仕組みはコアが持ちます（intake.go）。
+//
+// Message-ID が無いメールは珍しくない（手で組んだもの・一部のFAXゲートウェイ）。
+// **鍵が無いことは異常ではない**ので ok=false を返すだけで、取り込みは止めません
+// ——重複検知が効かないより、記録が残らないほうが困ります。
+func (emlIntake) SourceRef(fileName string, content []byte) (string, string, bool) {
+	msg, err := mail.ReadMessage(strings.NewReader(string(content)))
+	if err != nil {
+		return "", "", false // 壊れたメールは OnFile が理由つきで断る
+	}
+	id := strings.TrimSpace(msg.Header.Get("Message-ID"))
+	if id == "" {
+		return "", "", false
+	}
+	return MessageIDTag, id, true
+}
+
 // OnFile は .eml を通信記録ページにします。
 func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (string, string, error) {
 	msg, err := mail.ReadMessage(strings.NewReader(string(content)))
@@ -113,6 +139,10 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	writeTag(&b, "差出人", from)
 	writeTag(&b, "宛先", to)
 	writeTag(&b, "受信日時", dateISO)
+	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
+	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
+	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
+	writeTag(&b, MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
 	b.WriteString("</dl>")
 
 	bodyWritten := false

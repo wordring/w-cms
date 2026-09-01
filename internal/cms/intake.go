@@ -65,6 +65,45 @@ type IntakeHandler interface {
 	OnFile(ctx *IntakeContext, fileName string, content []byte) (pageID string, title string, err error)
 }
 
+// SourceRefFinder は「このファイルは取り込み済みか」を判定する鍵を出せる
+// 取り込み係が**任意で**実装する追加の口です（【考察】通信記録処理.md §8）。
+//
+// **鍵の取り出しは形式を知る取り込み係、照合の仕組みはコア**という分担です。
+// メールなら Message-ID、FAX なら受信機の通番——どれが鍵かは形式ごとに違い、
+// コアには決められません。逆に「その鍵を持つページが既にあるか」は索引の
+// 逆引き1回で、形式に依りません。
+//
+// 実装しなければ重複検知が効かないだけで、取り込みは従来どおり動きます。
+type SourceRefFinder interface {
+	// SourceRef は鍵のタグ名と値を返します。鍵を持たないファイル
+	// （Message-ID の無いメール等）は ok=false——**異常ではありません**。
+	SourceRef(fileName string, content []byte) (name, value string, ok bool)
+}
+
+// ExistingIntakePage は鍵（名前：値）を持つページを索引から逆引きします。
+//
+// **判定に使うのは通信記録ページの存在だけ**です（§2.7 の決定）。「このメールから
+// 受注ページを作ったか」は使いません——使うと、受注ページを取り消したあとに
+// 再実行できなくなり、可逆性が失われます。
+//
+// 専用テーブルは持たないので（D-1）、鍵は本文の可変タグにあり、逆引きは
+// `vocab_index` の値索引がそのまま効きます。生テキストで引くのは、
+// 生が正本だからです（アーキテクチャとDBスキーマ §9.1）。
+func ExistingIntakePage(tagName, value string) (string, bool) {
+	if tagName == "" || value == "" {
+		return "", false
+	}
+	ids, err := pagesByTag(database.DB, tagName, value)
+	if err != nil || len(ids) == 0 {
+		return "", false
+	}
+	norm, ok := page.NormalizeID(strconv.Itoa(ids[0]))
+	if !ok {
+		return "", false
+	}
+	return norm, true
+}
+
 // intakeRegistry は取り込み係の登録表です（拡張子ごとに1人・表引き）。
 var intakeRegistry = map[string]IntakeHandler{}
 
