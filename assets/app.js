@@ -1169,6 +1169,7 @@
         });
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
+        refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
         refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
@@ -2876,6 +2877,142 @@
         });
     }
 
+    // ── 添付のクリック展開（PDFのインライン表示・ZIPの目録）──────────────────
+    // 「clickで展開でお願いします」（2026-09-01 ユーザー決定）。
+    // 埋め込みは本文マークアップでは書けない（サニタイザが embed/iframe を落とす
+    // ——書き手にデータとしての実行力を渡さない線）ので、**閲覧モードのクローム**
+    // としてここが差し込む。宛先はリンクの href から**導出**し、きれいなURL
+    // （/<6桁ページID>/<生成ID>.pdf|.zip）の形に一致するものだけを扱う——
+    // リンク（a[href]）はサニタイザが宛先を制限していないため、任意の href を
+    // そのまま embed.src に流してはならない。
+    // PDFの中身が悪意を持つ危険は埋め込み方によらず同じなので、開くかどうかの
+    // 判断を人に残す（自動では開かない）。ZIPは目録だけ（/api/zip-list・展開はしない）。
+    const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
+
+    function refreshAttachmentPreviews() {
+        document.querySelectorAll('#w-editor-content .attach-expand, #w-editor-content .attach-preview')
+            .forEach(el => el.remove());
+        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        document.querySelectorAll('#w-editor-content a[href]').forEach(a => {
+            if (a.closest('.vocab-chrome')) return; // クローム内のリンクは対象外
+            const m = ATTACH_PREVIEW_RE.exec(a.getAttribute('href') || '');
+            if (!m) return;
+            const kind = m[3];
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'vocab-chrome attach-expand';
+            btn.textContent = kind === 'pdf' ? '▶ 表示' : '▶ 中身';
+            btn.addEventListener('click', () => toggleAttachPreview(a, btn, m));
+            a.insertAdjacentElement('afterend', btn);
+            if (kind === 'pdf') {
+                // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
+                a.parentElement && btn.insertAdjacentElement('afterend',
+                    makeAnalyzeButton(m[1], m[2] + '.pdf', ''));
+            }
+        });
+    }
+
+    // makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付・ZIP内PDFで共用）。
+    // 押すと /api/analyze-attachment が Gemini で判定し、発注書なら受注ページを
+    // このページの子として作る。結果は通知で知らせる（本文は変えない）。
+    function makeAnalyzeButton(pageId, file, entry) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'vocab-chrome attach-expand attach-analyze';
+        btn.textContent = '🤖 解析';
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = '🤖 解析中…';
+            try {
+                const res = await fetch('/api/analyze-attachment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page_id: pageId, file: file, entry: entry }),
+                });
+                const d = await res.json();
+                if (!d.success) {
+                    notify('解析できませんでした: ' + (d.message || res.status), { type: 'alert', duration: 0, id: 'analyze-pdf' });
+                } else if (!d.is_client_order) {
+                    notify('発注書ではないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
+                } else {
+                    notify('受注ページを作りました: ' + (d.title || d.page_id) +
+                        '（/' + d.page_id + '）', { type: 'success', duration: 0, id: 'analyze-pdf' });
+                }
+            } catch (e) {
+                notify('解析できませんでした: ' + e, { type: 'alert', duration: 0, id: 'analyze-pdf' });
+            }
+            btn.disabled = false;
+            btn.textContent = '🤖 解析';
+        });
+        return btn;
+    }
+
+    function toggleAttachPreview(anchor, btn, m) {
+        const kind = m[3];
+        const host = anchor.closest('p, li, td, dd') || anchor;
+        const next = host.nextElementSibling;
+        if (next && next.classList && next.classList.contains('attach-preview')) {
+            next.remove();
+            btn.textContent = kind === 'pdf' ? '▶ 表示' : '▶ 中身';
+            return;
+        }
+        const wrap = document.createElement('div');
+        wrap.className = 'vocab-chrome attach-preview';
+        if (kind === 'pdf') {
+            const embed = document.createElement('embed');
+            embed.src = m[0]; // 正規表現に一致した href そのもの（導出の規律）
+            embed.type = 'application/pdf';
+            embed.className = 'attach-preview-pdf';
+            wrap.appendChild(embed);
+        } else {
+            wrap.textContent = '読み込み中…';
+            loadZipListInto(wrap, m[1], m[2] + '.zip');
+        }
+        host.insertAdjacentElement('afterend', wrap);
+        btn.textContent = '▼ 閉じる';
+    }
+
+    async function loadZipListInto(wrap, pageId, file) {
+        try {
+            const res = await fetch('/api/zip-list?page_id=' + pageId + '&file=' + encodeURIComponent(file));
+            const d = res.ok ? await res.json() : null;
+            if (!d || !d.success) throw new Error('zip-list failed');
+            wrap.textContent = '';
+            if (!d.entries.length) { wrap.textContent = '（空のZIPです）'; return; }
+            const ul = document.createElement('ul');
+            ul.className = 'attach-zip-list';
+            for (const e of d.entries) {
+                const li = document.createElement('li');
+                const name = document.createElement('span');
+                name.textContent = e.name;
+                const size = document.createElement('span');
+                size.className = 'attach-zip-size';
+                size.textContent = fmtBytes(e.size);
+                li.appendChild(name);
+                // ZIPの中のPDFは、その1件だけを取り出して解析できる。
+                if (/\.pdf$/i.test(e.name)) {
+                    li.appendChild(makeAnalyzeButton(pageId, file, e.name));
+                }
+                li.appendChild(size);
+                ul.appendChild(li);
+            }
+            if (d.truncated) {
+                const li = document.createElement('li');
+                li.textContent = '…他 ' + (d.total - d.entries.length) + ' 件';
+                ul.appendChild(li);
+            }
+            wrap.appendChild(ul);
+        } catch {
+            wrap.textContent = 'ZIPの中身を読めませんでした。';
+        }
+    }
+
+    function fmtBytes(n) {
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+        return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
     // ── 形式ごとの視覚的区別（語彙モデル §10） ──────────────────────────────
     // 「`data-type` の改名を許す」という決定（§9）は、**見た目で形式を区別できること**を
     // 前提条件にしていた——「区別できるなら、変更者は壊れることを理解できる」（ユーザー）。
@@ -3062,6 +3199,8 @@
                 if (d && d.intake) {
                     // 受信箱への取り込み——添付ではなく子ページが生まれた。
                     // 本文にリンクは挿さず、行き先を知らせる（一覧は子ページ一覧の鏡が担う）。
+                    // PDFの解釈（発注書→受注ページ）は自動では走らない——記録ページの
+                    // 📎に出る「🤖 解析」ボタンから（人間ゲート型・2026-09-01）。
                     notify('受信箱に取り込みました: ' + (d.title || d.page_id) +
                         '（/' + d.page_id + '）', { type: 'success', duration: 8000 });
                     continue;
