@@ -816,12 +816,17 @@ body[edit-mode] .block-content p:empty::before {
  * ボタンも指のあたり判定に合わせて大きくする。 */
 .context-toolbar.is-docked {
     position: fixed;
-    top: auto;
     left: 50%;
     transform: translateX(-50%);
+    /* 縦位置は JS（positionDockedToolbar）が visualViewport の下端に合わせて
+       top を設定する——ソフトキーボードが出ても隠れない。ここは
+       visualViewport の無い古いブラウザ向けのフォールバックだけ。 */
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     padding: 6px;
     gap: 8px;
+}
+.context-toolbar.is-docked[style*="top"] {
+    bottom: auto; /* JS が top を決めたら bottom は使わない（両方効くと箱が伸びる） */
 }
 .context-toolbar.is-docked button {
     padding: 10px 14px;
