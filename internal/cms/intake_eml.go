@@ -6,7 +6,7 @@ package cms
 // メール（RFC 5322 / MIME）を**通信記録ページ**へ変換します。
 //
 //	<h1>件名</h1>
-//	<dl data-type="tags">差出人・宛先・受信日時（ISO 8601）</dl>
+//	<dl data-type="tags">差出人・宛先・受信日時（ISO 8601・ローカル時刻＋オフセット）</dl>
 //	本文（text/plain を段落へ）
 //	📎 添付（files/ へ保存・リンクは生成ID・download 属性が元名を運ぶ）
 //
@@ -88,7 +88,10 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	to := decodeHeader(msg.Header.Get("To"))
 	dateISO := ""
 	if t, err := msg.Header.Date(); err == nil {
-		dateISO = t.UTC().Format(time.RFC3339) // 日時は ISO 8601 が全域の正（要件 §3）
+		// 日時は ISO 8601 が全域の正（要件 §3）。表記は**運用者のローカル時刻＋
+		// オフセット**（例: 2026-09-01T10:30:00+09:00）——UTC の Z 表記は人が
+		// 読み違えるため（2026-09-01 ユーザー要望「ISO表記の範囲内でローカル時刻に」）。
+		dateISO = t.In(time.Local).Format(time.RFC3339)
 	}
 
 	parts, err := collectParts(msg.Header.Get("Content-Type"),
