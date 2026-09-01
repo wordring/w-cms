@@ -811,6 +811,23 @@ body[edit-mode] .block-content p:empty::before {
     display: flex;
 }
 
+/* タッチ端末では画面下のドックに出す（ネイティブの選択メニューは選択位置の
+ * 近くに出るため、選択の上に重ねると隠される——2026-09-01 スマホ実機確認）。
+ * ボタンも指のあたり判定に合わせて大きくする。 */
+.context-toolbar.is-docked {
+    position: fixed;
+    top: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    padding: 6px;
+    gap: 8px;
+}
+.context-toolbar.is-docked button {
+    padding: 10px 14px;
+    font-size: 16px;
+}
+
 .context-toolbar button {
     background: transparent;
     border: none;

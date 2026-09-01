@@ -3847,9 +3847,20 @@
 
         if (hasButtons) {
             toolbar.classList.add('active');
-            const rect = block.getBoundingClientRect();
-            toolbar.style.top = (rect.top + window.scrollY - 35) + 'px';
-            toolbar.style.left = (rect.left + window.scrollX + 20) + 'px';
+            // タッチ端末では**画面下のドック**に出す（2026-09-01 スマホ実機確認:
+            // 「文字列を選択すると、切り取り、コピーなどのコンテキストメニューが出て、
+            // w-cmsのコンテキストメニューが隠れます」）。ネイティブの選択メニューは
+            // 選択位置の近くにしか出ないので、下端なら場所を取り合わない。
+            if (window.matchMedia('(pointer: coarse)').matches) {
+                toolbar.classList.add('is-docked');
+                toolbar.style.top = '';
+                toolbar.style.left = '';
+            } else {
+                toolbar.classList.remove('is-docked');
+                const rect = block.getBoundingClientRect();
+                toolbar.style.top = (rect.top + window.scrollY - 35) + 'px';
+                toolbar.style.left = (rect.left + window.scrollX + 20) + 'px';
+            }
         } else {
             hideContextToolbar();
         }
