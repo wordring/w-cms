@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
@@ -102,13 +103,18 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("作られたページを読めません: %v", err)
 	}
+	// 受信日時は ISO 8601 の**ローカル時刻＋オフセット**表記（2026-09-01 ユーザー要望。
+	// 期待値はテスト実行機のタイムゾーンで組む——表記が変わっても指す時刻は同じ）。
+	wantDate := time.Date(2026, 9, 1, 10, 30, 0, 0, time.FixedZone("JST", 9*3600)).
+		In(time.Local).Format(time.RFC3339)
+
 	html := string(body)
 	for _, want := range []string{
 		"<h1>発注書送付の件</h1>",
-		"トーアスポーツ",                    // 差出人の復号
-		"<dd>2026-09-01T01:30:00Z</dd>", // 受信日時は ISO 8601（UTC）
-		"発注書を送付いたします。",              // 本文の復号
-		`download="chumon.pdf"`,        // 元名はリンクが運ぶ
+		"トーアスポーツ",                  // 差出人の復号
+		"<dd>" + wantDate + "</dd>", // 受信日時
+		"発注書を送付いたします。",            // 本文の復号
+		`download="chumon.pdf"`,      // 元名はリンクが運ぶ
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("ページに %q がありません:\n%s", want, html)
@@ -133,7 +139,7 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 	database.DB.QueryRow(`SELECT id FROM pages WHERE title = ?`, "発注書送付の件").Scan(&idInt)
 	rows := queryTags(t, idInt)
 	joined := strings.Join(rows, "|")
-	for _, want := range []string{"差出人=", "宛先=order@example.co.jp", "受信日時=2026-09-01T01:30:00Z"} {
+	for _, want := range []string{"差出人=", "宛先=order@example.co.jp", "受信日時=" + wantDate} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("タグ索引に %q がありません: %v", want, rows)
 		}
