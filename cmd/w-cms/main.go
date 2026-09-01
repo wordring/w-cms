@@ -135,6 +135,7 @@ func buildHandler() http.Handler {
 	// 画像の添付（png/jpeg/webp/gif/svg。中身の検証とEXIF除去はハンドラ内。要件 §2.6）
 	protected.HandleFunc("/api/upload-image", cms.UploadImageHandler)
 	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
+	protected.HandleFunc("/api/analyze-attachment", cms.AnalyzeAttachmentAPIHandler)
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	// テンプレート選択メニューの中身（「テンプレート」フォルダ配下のツリー）
 	protected.HandleFunc("/api/templates", cms.TemplatesAPIHandler)

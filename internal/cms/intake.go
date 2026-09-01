@@ -24,6 +24,7 @@ package cms
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -86,13 +87,52 @@ func intakeHandlerFor(ext string) IntakeHandler {
 type IntakeContext struct {
 	InboxID  string // 受信箱のページID（作るページの親）
 	Uploader string // 操作した人（新ページの所有者になる）
+
+	// created はこの取り込みで作ったページのID（作成順）。SaveAttachment と
+	// UpdatePage の対象をここに限ることで、「既存ページの改変は渡さない」の線を
+	// 運用ではなく型と検査で守ります。
+	created []string
+}
+
+// isCreated はこの取り込みで作ったページかを返します。
+func (c *IntakeContext) isCreated(pageID string) bool {
+	for _, id := range c.created {
+		if id == pageID {
+			return true
+		}
+	}
+	return false
+}
+
+// Created はこの取り込みで作ったページのID一覧（作成順）を返します。
+// 応答で「何が生まれたか」を知らせるために使います。
+func (c *IntakeContext) Created() []string {
+	return append([]string(nil), c.created...)
 }
 
 // CreatePage は受信箱の下へページを作ります。本文は保存経路と同じくサニタイズされ、
 // 権限は受信箱から継承します（子ページ作成と同じ規則——受信箱の権限設定が
 // 「受信物を誰が読めるか」をそのまま決める）。
 func (c *IntakeContext) CreatePage(bodyHTML string) (string, error) {
-	parentInt, err := strconv.Atoi(c.InboxID)
+	return c.createUnder(c.InboxID, bodyHTML)
+}
+
+// createUnder はページ作成の取り込み側の入口です（作成の芯＋監査＋作成済みの記録）。
+func (c *IntakeContext) createUnder(parentID, bodyHTML string) (string, error) {
+	newID, err := createChildPageOf(parentID, c.Uploader, bodyHTML)
+	if err != nil {
+		return "", err
+	}
+	auth.Audit(c.Uploader, "intake.create", newID+" under "+parentID)
+	c.created = append(c.created, newID)
+	return newID, nil
+}
+
+// createChildPageOf はページ作成の芯です（権限は親から継承・サニタイズ・索引まで。
+// 監査は呼び手が録る——取り込みと解析で行為名が違うため）。
+// 取り込み（IntakeContext）とPDF解析ボタン（analyze_pdf.go）が共用します。
+func createChildPageOf(parentID, owner, bodyHTML string) (string, error) {
+	parentInt, err := strconv.Atoi(parentID)
 	if err != nil {
 		return "", err
 	}
@@ -111,19 +151,21 @@ func (c *IntakeContext) CreatePage(bodyHTML string) (string, error) {
 	}
 
 	pp := page.GetPerms(parentInt)
-	if err := page.EnsureSidecar(newID, c.Uploader, pp.Group, pp.Mode, c.InboxID); err != nil {
+	if err := page.EnsureSidecar(newID, owner, pp.Group, pp.Mode, parentID); err != nil {
 		log.Printf("取り込みページのサイドカー作成に失敗 page=%s: %v", newID, err)
 	}
 	if err := SyncIndex(newID, safeHTML); err != nil {
 		return "", err
 	}
-	auth.Audit(c.Uploader, "intake.create", newID+" under "+c.InboxID)
 	return newID, nil
 }
 
 // SaveAttachment は作ったページへ添付を置き、（生成ID, 配信アドレス）を返します。
 // 生成IDは保存名＝URL＝リンクブロックの data-id の3役（storage.go）。
 func (c *IntakeContext) SaveAttachment(pageID, ext string, content []byte) (id, href string, err error) {
+	if !c.isCreated(pageID) {
+		return "", "", fmt.Errorf("この取り込みで作ったページにしか添付できません: %s", pageID)
+	}
 	ext = strings.ToLower(ext)
 	attachDir := page.AttachmentDir(pageID)
 	if err := os.MkdirAll(attachDir, 0755); err != nil {
@@ -140,8 +182,11 @@ func (c *IntakeContext) SaveAttachment(pageID, ext string, content []byte) (id, 
 
 // UpdatePage は CreatePage で作った直後のページの本文を書き直します
 // （添付を先に置いてからリンク入りの本文で確定する、という2段のため）。
-// 対象は**この取り込みで作ったページ**に限る運用で、既存ページの改変には使いません。
+// 対象は**この取り込みで作ったページ**に限ります（検査で強制。既存ページの改変口にしない）。
 func (c *IntakeContext) UpdatePage(pageID, bodyHTML string) error {
+	if !c.isCreated(pageID) {
+		return fmt.Errorf("この取り込みで作ったページしか書き直せません: %s", pageID)
+	}
 	safeHTML := Sanitize(bodyHTML)
 	htmlPath := filepath.Join(page.GetPageDir(pageID), pageID+".html")
 	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {

@@ -6,7 +6,6 @@ import (
 	"w-cms/internal/cms/page"
 
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
 )
 
 // 添付1件あたりの上限は設定 max_upload_mib（既定32MiB・cms.MaxUploadBytes）。
@@ -248,33 +246,13 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"message": "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/",
-		})
-		return
-	}
-
-	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Geminiクライアントの作成に失敗しました: " + err.Error()})
-		return
-	}
-	defer client.Close()
-
 	pdfBytes, err := os.ReadFile(pdfPath)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "PDFファイルの読み込みに失敗しました"})
 		return
 	}
 
-	model := client.GenerativeModel("gemini-3.5-flash")
-
-	prompt := genai.Text(`このPDFは発注書または見積書です。
+	prompt := `このPDFは発注書または見積書です。
 記載されているすべての部品明細（品名、単価、数量）を抽出し、以下の形式のJSON配列のみを出力してください。
 キーは必ず "item_name", "price", "quantity" にしてください。
 単価はカンマを除いた数値文字列にしてください。
@@ -282,15 +260,18 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 
 [
   {"item_name": "部品A", "price": "1000", "quantity": "2"}
-]`)
+]`
 
-	pdfBlob := genai.Blob{
-		MIMEType: "application/pdf",
-		Data:     pdfBytes,
-	}
-
-	resp, err := model.GenerateContent(ctx, pdfBlob, prompt)
+	respText, err := geminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdfBytes})
 	if err != nil {
+		if errors.Is(err, errNoGeminiKey) {
+			// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"message": "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/",
+			})
+			return
+		}
 		log.Printf("[Gemini API Error] %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
@@ -299,24 +280,8 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var respText string
-	if len(resp.Candidates) > 0 {
-		for _, part := range resp.Candidates[0].Content.Parts {
-			if t, ok := part.(genai.Text); ok {
-				respText += string(t)
-			}
-		}
-	}
-
-	cleanJson := strings.TrimSpace(respText)
-	if strings.HasPrefix(cleanJson, "```json") {
-		cleanJson = strings.TrimPrefix(cleanJson, "```json")
-		cleanJson = strings.TrimSuffix(cleanJson, "```")
-		cleanJson = strings.TrimSpace(cleanJson)
-	}
-
 	var items []ParsedItem
-	err = json.Unmarshal([]byte(cleanJson), &items)
+	err = json.Unmarshal([]byte(stripJSONFence(respText)), &items)
 	if err != nil {
 		// パース失敗時はエラーではなく空配列を返す（フロント側でダミー追加ロジックが走るため）
 		json.NewEncoder(w).Encode(map[string]interface{}{

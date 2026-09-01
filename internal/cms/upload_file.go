@@ -160,6 +160,9 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID string) bool {
 		http.Error(w, "取り込めませんでした: "+err.Error(), http.StatusBadRequest)
 		return true
 	}
+	// 添付PDFの解釈（発注書なら受注ページ生成）はここでは**しない**——
+	// 「自動ではなくボタンのclickなどで解析が始まると良い」（2026-09-01 ユーザー決定・
+	// §3 人間ゲート型）。記録ページの📎に出る「🤖 解析」ボタン（analyze_pdf.go）が担う。
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "intake": true, "page_id": pageID, "title": title,
