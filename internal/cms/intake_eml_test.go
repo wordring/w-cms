@@ -179,3 +179,102 @@ func TestEmlIntakeRejectsBroken(t *testing.T) {
 		t.Error("壊れたファイルが取り込まれました")
 	}
 }
+
+// ── 重複検知（source_ref・【考察】通信記録処理.md §8・§10-2） ────────────
+
+// buildEml は Message-ID つきの最小のメールを組み立てます。
+func buildEml(messageID, subject string) string {
+	s := "From: sender@example.jp\r\n" +
+		"To: order@example.co.jp\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"Date: Mon, 01 Sep 2026 10:30:00 +0900\r\n"
+	if messageID != "" {
+		s += "Message-ID: " + messageID + "\r\n"
+	}
+	return s + "\r\nhonbun\r\n"
+}
+
+// TestEmlIntakeWritesMessageID は、重複検知の鍵が**見える文字として**本文に
+// 書かれ、索引から引けることを固定します。専用テーブルは持たない（D-1）ので、
+// 鍵の置き場は可変タグ以外にありません。
+func TestEmlIntakeWritesMessageID(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	pageID, _, err := emlIntake{}.OnFile(ctx, "m.eml", []byte(buildEml("<abc123@example.jp>", "件名")))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		t.Fatalf("作られたページを読めません: %v", err)
+	}
+	if !strings.Contains(string(body), "<dt>メッセージID</dt><dd>&lt;abc123@example.jp&gt;</dd>") {
+		t.Errorf("メッセージIDのタグがありません:\n%s", body)
+	}
+	// 索引から引ける（逆引きは生テキスト・pagesByTag）
+	ids, err := pagesByTag(database.DB, "メッセージID", "<abc123@example.jp>")
+	if err != nil {
+		t.Fatalf("逆引きエラー: %v", err)
+	}
+	if len(ids) != 1 {
+		t.Errorf("索引から引けません: %v", ids)
+	}
+}
+
+// TestEmlIntakeDetectsDuplicate は、同じメールを2度落としても記録が二重に
+// ならないことを固定します。
+//
+// 受信箱へ同じ .eml をもう一度ドロップするのは**普通に起きる**（送り直し・
+// 取りこぼしの確認）。黙って2枚できると、どちらが正かを人が見分けられない
+// ——しかも参照タグ `受信元` の指す先が2つに割れる。
+//
+// 判定は**通信記録ページの存在だけ**で行う（§2.7）。「このメールから受注ページを
+// 作ったか」は使わない——使うと、受注ページを消したあとに再実行できなくなる。
+func TestEmlIntakeDetectsDuplicate(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+
+	eml := []byte(buildEml("<dup@example.jp>", "同じメール"))
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	first, _, err := emlIntake{}.OnFile(ctx, "m.eml", eml)
+	if err != nil {
+		t.Fatalf("1回目の取り込みエラー: %v", err)
+	}
+
+	// 2回目: 取り込み係を呼ぶ前に、コアが鍵で既存ページを見つける
+	name, value, ok := emlIntake{}.SourceRef("m.eml", eml)
+	if !ok || name != "メッセージID" || value != "<dup@example.jp>" {
+		t.Fatalf("鍵の取り出しが違います: %q %q ok=%v", name, value, ok)
+	}
+	existing, dup := ExistingIntakePage(name, value)
+	if !dup {
+		t.Fatal("2回目が重複として検出されません")
+	}
+	if existing != first {
+		t.Errorf("重複の指す先が違います: got %q want %q", existing, first)
+	}
+}
+
+// TestEmlIntakeWithoutMessageIDStillWorks は、Message-ID の無いメールでも
+// 取り込みが止まらないことを固定します。**鍵が無いことは異常ではない**
+// （手で組んだメール・一部のFAXゲートウェイ）——重複検知が効かないだけで、
+// 記録が残らないほうが困ります。
+func TestEmlIntakeWithoutMessageIDStillWorks(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+
+	eml := []byte(buildEml("", "鍵なし"))
+	if _, _, ok := (emlIntake{}).SourceRef("m.eml", eml); ok {
+		t.Error("Message-ID が無いのに鍵があると答えました")
+	}
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	pageID, title, err := emlIntake{}.OnFile(ctx, "m.eml", eml)
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	if pageID == "" || title != "鍵なし" {
+		t.Errorf("鍵が無くても取り込めるべきです: %q %q", pageID, title)
+	}
+}
