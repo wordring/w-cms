@@ -425,7 +425,7 @@ DBスキーマは変わりません**。
 ### 5.3. 添付の判定→受注ページ生成 API (`POST /api/analyze-attachment`)
 
 添付PDF（またはZIP添付の中のPDF）を Gemini で「顧客が発行した発注書か」判定し、発注書なら
-**受注ページをそのページの子として生成**します（[analyze_pdf.go](../internal/cms/analyze_pdf.go)。
+**受注ページをそのページの子として生成**します（[ext/sheetmetal/analyze_pdf.go](../ext/sheetmetal/analyze_pdf.go)。
 2026-09-01・板金部の既定セット＝他社デプロイでは外す・差し替える前提）。エディタの
 「🤖 解析」ボタンから呼ばれ、**自動では走りません**（人間ゲート型——「自動ではなくボタンの
 clickなどで解析が始まると良い」。正本は [【考察】通信記録処理.md](【考察】通信記録処理.md) §3）。
