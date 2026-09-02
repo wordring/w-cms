@@ -31,16 +31,17 @@
 // # サニタイズしてから足す
 //
 // 本文は保存時と描画時の**二層**でサニタイズします（実体は
-// [w-cms/internal/cms/htmldoc]）。サニタイズの**後**にHTMLを足す関数が4つあり
-// （[RenderComputedViews]・[RenderAnchors]・[RenderPageShell]・[RenderPublicShell]）、
-// それぞれが自前でエスケープ責任を負います——この規律が破れると保存型XSSになります。
+// [w-cms/internal/cms/htmldoc]）。サニタイズの**後**にHTMLを足す関数が5つあり
+// （[RenderComputedViews]・[RenderReferenceLinks]・[RenderAnchors]・[RenderPageShell]・
+// [RenderPublicShell]）、それぞれが自前でエスケープ責任を負います——この規律が
+// 破れると保存型XSSになります。
 package cms
 
 // ─────────────────────────────────────────────────────────────────────────
 // ページ内アンカーのサーバー合成
 //
 // 本文の `id` は書き手が自由に書けますが（殻が接頭辞 w- を独占する分担。
-// docs/本文サニタイズ設計.md 5.3）、**何も書かなくてもリンクできる**ように、
+// docs/本文サニタイズ設計.md 5.4）、**何も書かなくてもリンクできる**ように、
 // ページを返すときだけ見出しとブロックへ id を合成します。
 //
 //   <h2 data-id="a7k2m9">発注書A</h2>  →  <h2 data-id="a7k2m9" id="発注書A">発注書A</h2>

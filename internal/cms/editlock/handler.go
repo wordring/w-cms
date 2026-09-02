@@ -43,7 +43,7 @@ func RequireEditLock(w http.ResponseWriter, r *http.Request, idStr string) bool 
 
 // LockAPIHandler は編集ロックの取得を処理します。
 // POST /api/lock?id=&token= 。対象ページの write 権限を要求します。
-// 取得成功時は最新HTMLも返し、クライアントが古い版で上書きしないよう再ロードさせます。
+// 本文は返しません（取得口は GET /api/load の1つ。クライアントは取得後に読み直す）。
 func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

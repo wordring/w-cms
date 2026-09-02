@@ -176,9 +176,9 @@ func activeTypeInference() map[string]ColumnType {
 	return defaultTypeInference
 }
 
-// defaultAttachmentExtensions は汎用添付の既定の拡張子です（ワンノート実データの15種から
-// 専用の口を持つ .pdf を除いたもの＋.eml。「.eml の扱いは添付から始めましょう」
-// ——2026-08-31 ユーザー決定）。
+// defaultAttachmentExtensions は汎用添付の既定の拡張子です（ワンノート実データの15種
+// ——.eml を含む——から、専用の口を持つ .pdf を除いた14種。「.eml の扱いは添付から
+// 始めましょう」——2026-08-31 ユーザー決定）。
 var defaultAttachmentExtensions = []string{
 	".dxf", ".rpcd", ".xlsx", ".zip", ".docx", ".dwg", ".step", ".x_t",
 	".slddrw", ".igs", ".eml", ".pub", ".lbx", ".mp4",

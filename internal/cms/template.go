@@ -94,7 +94,7 @@ func IsUnderTemplateRoot(id string) bool {
 // isTemplateRoot は、そのページがテンプレートルートかを返します。
 // 判定は「トップページの直下」かつ「タイトルが TemplateRootTitle」です。
 //
-// タイトルはサイドカーに無い（PageMeta は owner/group/mode/parent/日時のみ）ため、
+// タイトルはサイドカーに無い（PageMeta は owner/group/mode/public/parent/日時のみ）ため、
 // 本文HTMLをディスクから読んで PageTitle で取ります。**先に親を見て弾く**ので、
 // 1回の親チェーン辿りでファイルを読むのは高々1ページ分です
 // （トップの直下という条件を満たす先祖は鎖の中にただ1つしか無い）。

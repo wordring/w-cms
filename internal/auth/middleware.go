@@ -106,11 +106,11 @@ func OptionalAuth(next http.Handler) http.Handler {
 //   - templates/*.html の style=（75個）と web-components.js の生成 style=（8行）は
 //     ファイルごと撤去（計算ビューはサーバー事前描画 view_render.go へ）
 //   - ログイン画面の <style> は /assets/login.css へ外部化
-// on*= 属性ハンドラも従来どおりゼロ。経緯は docs/【考察】CSP強化.md。
+// on*= 属性ハンドラも従来どおりゼロ。経緯は docs/本文サニタイズ設計.md §6。
 //
 // アプリは外部リソース（CDN・web fonts・data:/blob: 等）を一切使わず、PDFは
-// 同一オリジンの <embed src="/data/..."> のため、default-src 'self' と
-// object-src 'self' でインライン以外は何も壊れません。
+// 同一オリジンの <embed>（きれいなURL /<ページID>/<生成ID>.pdf）のため、
+// default-src 'self' と object-src 'self' でインライン以外は何も壊れません。
 const cspPolicy = "default-src 'self'; " +
 	"script-src 'self'; " +
 	"style-src 'self'; " +

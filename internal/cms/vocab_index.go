@@ -298,7 +298,7 @@ func resolveColumnType(headerCell *html.Node, def VocabDef, key string) ColumnTy
 }
 
 // tableRows は表の tr を文書順で返します。入れ子の表の tr は含めません
-// （入れ子の <table data-type> は WalkElements が独立したブロックとして索引します）。
+// （入れ子の表は配送係が独立したブロックとして届け、別に索引されます）。
 func tableRows(table *html.Node) []*html.Node {
 	var rows []*html.Node
 	walkSkippingNested(table, map[string]bool{"table": true}, func(n *html.Node) {
@@ -329,7 +329,7 @@ func rowCells(row *html.Node) []*html.Node {
 // dt」という規則を変えるとき全部を探して回る必要がありました。
 //
 // skipSection は入れ子の <section> の中へ降りるかです。形式の読み取り
-// （VocabDLFields・dlHeadingKeys・freshenDL）は「入れ子の業務ブロックは独立して
+// （dlHeadingKeys・freshenDL）は「入れ子の業務ブロックは独立して
 // 読まれる」ため降りません（true）。タグと②索引の書き込みは従来どおり降ります
 // （false・sanitize後の本文で dl の中に section が来ることは実際には無い）。
 func eachDLPair(dl *html.Node, skipSection bool, fn func(key string, dd *html.Node) bool) {
@@ -367,61 +367,6 @@ func walkSkippingNested(root *html.Node, skip map[string]bool, fn func(*html.Nod
 		fn(c)
 		walkSkippingNested(c, skip, fn)
 	}
-}
-
-// ── ③計算プラグイン向けの汎用読み取りヘルパ（移行第3段） ──────────────
-// 文書自身が携帯するスキーマ（見出し行・dt）を機械キーへ解決して値を取り出す。
-// 鍵の決定は②と同じ規則（見出しの表示文字→レジストリの Label 経由で Field へ）。
-
-// VocabDLFields は dl の項目を機械キー→値の表として返します。
-func VocabDLFields(dl *html.Node, def VocabDef) map[string]string {
-	out := map[string]string{}
-	if dl == nil {
-		return out
-	}
-	eachDLPair(dl, true, func(key string, dd *html.Node) bool {
-		if col, ok := def.columnFor(key); ok && col.Field != "" {
-			key = col.Field
-		}
-		if key != "" {
-			if _, dup := out[key]; !dup { // 多値は先頭を採る（TagValue と同じ）
-				out[key] = strings.TrimSpace(nodeText(dd))
-			}
-		}
-		return true
-	})
-	return out
-}
-
-// VocabTableRows は表のデータ行を機械キー→値の表の列として返します。
-func VocabTableRows(table *html.Node, def VocabDef) []map[string]string {
-	if table == nil {
-		return nil
-	}
-	rows := tableRows(table)
-	if len(rows) < 2 {
-		return nil
-	}
-	fields := make([]string, 0, 8)
-	for _, cell := range rowCells(rows[0]) {
-		key := strings.TrimSpace(nodeText(cell))
-		field := ""
-		if col, ok := def.columnFor(key); ok {
-			field = col.Field
-		}
-		fields = append(fields, field)
-	}
-	var out []map[string]string
-	for _, row := range rows[1:] {
-		values := map[string]string{}
-		for i, cell := range rowCells(row) {
-			if i < len(fields) && fields[i] != "" {
-				values[fields[i]] = strings.TrimSpace(nodeText(cell))
-			}
-		}
-		out = append(out, values)
-	}
-	return out
 }
 
 // FirstVocabChild は root 配下から最初の element[data-type==dataType]（dataType が

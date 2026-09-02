@@ -157,8 +157,6 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/revert", cms.RevertAPIHandler)
 
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
-	protected.HandleFunc("/api/migrate-headings", cms.MigrateHeadingsAPIHandler)
-	protected.HandleFunc("/api/migrate-attachments", cms.MigrateAttachmentsAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 
 	// 権限管理（owner/admin）
@@ -205,7 +203,7 @@ func buildHandler() http.Handler {
 	root.HandleFunc("/api/tag-schema", cms.TagSchemaAPIHandler)
 
 	// 匿名でも閲覧しうるルート（OptionalAuth）。認可は各ハンドラが実効公開で個別判定する。
-	//   - /api/load     : ページ本文（匿名でも実効公開なら200、非公開は401）
+	//   - /api/load     : ページ本文（匿名でも実効公開なら200、非公開は404＝不存在と同じ体裁）
 	//   - /data/        : 添付（PDF原本など。同上）
 	//   - /api/me       : 認証状態（未認証は {authenticated:false}）
 	//   - /api/children : 子ページ一覧（匿名には実効公開の子だけを絞って返す）
@@ -223,7 +221,8 @@ func buildHandler() http.Handler {
 
 	// ページ本体。RootHandler が assets/index.html へ本文とタイトルを埋め込んだ
 	// 完成HTMLを返す（サーバー合成。初期表示で /api/load は叩かない）。
-	// 認可はハンドラ内で行い、権限無し=403・匿名×非公開=/login へ302・不存在=404 を返す。
+	// 認可はハンドラ内で行い、権限無し=403・匿名×非公開=404（不存在と同じ体裁。
+	// トップページだけ /login へ302）を返す。
 	root.Handle("/", auth.OptionalAuth(http.HandlerFunc(cms.RootHandler)))
 
 	// CSRF対策（状態変更系のオリジン検証）と CSP（Content-Security-Policy）を

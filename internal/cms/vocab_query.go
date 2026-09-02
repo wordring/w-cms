@@ -29,7 +29,7 @@ import (
 type VocabRow struct {
 	PageID  int
 	BlockNo int    // 同じ形式のブロックの文書順連番
-	BlockID string // 本文のブロックID（data-id）。入れ子の要素では空
+	BlockID string // 本文のブロックID（data-id）。無ければ空
 	RowNo   int
 	Values  map[string]string
 	nums    map[string]float64 // norm_num が入った列だけ

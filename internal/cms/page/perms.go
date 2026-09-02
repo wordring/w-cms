@@ -350,7 +350,7 @@ func RequirePageRead(w http.ResponseWriter, r *http.Request, idStr string) bool 
 // 実効公開（EffectivePublic）なら閲覧を許可します（認証認可設計.md 10.5）。
 // 公開ページの本文・添付ファイル配信に使います。書き込み系には使いません。
 //   - 認証済み: 通常の read 判定（不可なら403）。
-//   - 匿名: 実効公開なら許可、そうでなければ401（ログインを促す）。
+//   - 匿名: 実効公開なら許可、そうでなければ404（「読めない」と「存在しない」を区別させない）。
 func RequirePageReadOrPublic(w http.ResponseWriter, r *http.Request, idStr string) bool {
 	pageID, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -411,8 +411,8 @@ func RequireAdmin(w http.ResponseWriter, r *http.Request) bool {
 //
 // ここは**ブラウザに解釈させない**ことも仕事です。ページのディレクトリにHTMLやSVGが
 // あると、同一オリジンの文書として配信された時点で保存型XSSになります（本文の
-// サニタイズを通らない経路）。添付は .pdf のみ受け付ける（attachmentFileName）ように
-// してありますが、過去に置かれたファイルやバックアップ復元に備えて配信側でも守ります。
+// サニタイズを通らない経路）。入口は拡張子で絞ってあります（safeAttachmentName）が、
+// 過去に置かれたファイルやバックアップ復元に備えて配信側でも守ります。
 func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// path.Clean で ".." を解決し、ディレクトリトラバーサルを防ぐ。
 	clean := path.Clean(r.URL.Path) // 例: /data/master/00/000001/foo.pdf
@@ -509,17 +509,4 @@ var inlineImageTypes = map[string]string{
 	".jpeg": "image/jpeg",
 	".webp": "image/webp",
 	".gif":  "image/gif",
-}
-
-// DataURLFor はページの添付ファイルを配信するアドレスを返します。
-// 本文の `<img src>` や `<embed src>` へ入れる形（絶対パス）です。
-//
-// **絶対パスなのは、ページのアドレス（`/000012`）からの相対名がページの隣ではなく
-// サイトのルートを指してしまうため**です。サニタイザは埋め込みの絶対パスを
-// `/data/` 配下に限って許可しており、この形はその許可範囲そのものです。
-func DataURLFor(pageID, fileName string) string {
-	if len(pageID) < 2 {
-		return ""
-	}
-	return "/data/master/" + pageID[:2] + "/" + pageID + "/" + fileName
 }

@@ -26,7 +26,7 @@ package cms
 // 開くのは釣り合いません。ページがあればリンク（ブロックが無ければ先頭に着地）、
 // 無ければ `ref-missing` の印——「黙って切れるのが一番困る」（D-10）。
 //
-// サニタイズの**後**にHTMLを足す関数の1つです（RenderComputedViews・RenderAnchors・
+// サニタイズの**後**にHTMLを足す関数の1つです（RenderComputedViews・RenderAnchors・RenderPublicShell・
 // RenderPageShell と同じエスケープ責任）。ノードを組んで html.Render に任せるので、
 // テキストも属性値も自動でエスケープされます。
 // ─────────────────────────────────────────────────────────────────────────

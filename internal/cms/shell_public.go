@@ -15,7 +15,7 @@ package cms
 // SEO/SNS共有のメタ情報（`description`・OGP・canonical）はここで組み立てます。
 // **サニタイズを通ったあとに文字列を連結する経路**なので、埋める値は必ず
 // `html.EscapeString` を通すこと（この規律が破れると保存型XSSになります——
-// RenderComputedViews・RenderAnchors・RenderPageShell と同じ責任）。
+// RenderComputedViews・RenderReferenceLinks・RenderAnchors・RenderPageShell と同じ責任）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (

@@ -118,8 +118,8 @@ var vocabRegistry = []VocabDef{
 		},
 	},
 	// "part-materials" は <m-material>（部品の構成部材）の後継。部材手配計算
-	// （plugin_materials.go の Sync / /api/required-materials）が読む③計算形式なので、
-	// 列は機械キー（Field）を持ち、見出しの表示文字（Label）から解決される。
+	// （plugin_materials.go / /api/required-materials）が汎用索引から読む③計算形式
+	// なので、列は機械キー（Field）を持ち、見出しの表示文字（Label）から解決される。
 	// ③の語彙宣言をプラグイン側へ移す（①と③の合成）のは将来課題で、v1 は
 	// コード内の単一テーブルに同居させる。
 	{
@@ -129,7 +129,7 @@ var vocabRegistry = []VocabDef{
 		Icon:        "🔩",
 		Element:     "table",
 		// 部材の行そのものには部品番号が無く、ページ横断メタの「部品番号」タグが
-		// ページ全体の鍵になる（plugin_materials.go の Sync が全行へ注入する）。
+		// ページ全体の鍵になる（集計は pagesByTag の逆引きでページを引き当てる）。
 		RequiresTag: "部品番号",
 		Columns: []VocabColumn{
 			{Field: "item-name", Label: "部材名", Type: ColText},

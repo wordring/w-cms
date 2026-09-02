@@ -6,7 +6,7 @@
 //   - 属性 …… 同じフォルダの <id>.meta.json（[PageMeta]。所有者・グループ・mode・
 //     公開フラグ・親ページID・作成/更新情報）
 //   - 版   …… 同じフォルダの versions/（cms パッケージが書く）
-//   - 添付 …… 同じフォルダに直接（PDF・画像）
+//   - 添付 …… files/ サブフォルダ（PDF・画像・汎用添付。2026-08-31 以前の添付は直下に残る）
 //
 // **サイドカーが権限の正本**で、cms.db の page_perms はそこから再生成される派生です。
 // 本文保存APIは権限に一切触れません——「本文を編集できる人が自分の権限を昇格させる」
@@ -123,6 +123,19 @@ const AttachmentsDirName = "files"
 // AttachmentDir は添付の保存先ディレクトリを返します。
 func AttachmentDir(id string) string {
 	return filepath.Join(GetPageDir(id), AttachmentsDirName)
+}
+
+// AttachmentPath は添付の実ファイルの場所を返します。新しい置き場（files/）を先に、
+// 無ければ旧（ページフォルダ直下）を見ます。どちらにも無ければ ok=false。
+// 読む側（PDF解析・ZIP目録）が共用し、「files/ → 直下」の順序をここ1箇所で持ちます。
+func AttachmentPath(id, fileName string) (path string, ok bool) {
+	for _, dir := range []string{AttachmentDir(id), GetPageDir(id)} {
+		p := filepath.Join(dir, fileName)
+		if _, err := os.Stat(p); err == nil {
+			return p, true
+		}
+	}
+	return "", false
 }
 
 // AttachmentURLFor は添付の配信アドレスを返します。
