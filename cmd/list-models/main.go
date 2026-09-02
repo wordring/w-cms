@@ -1,5 +1,6 @@
 // list-models は Gemini で使えるモデル名を一覧するだけの診断ツールです。
-// 発注書PDFの明細抽出（internal/cms/pdf_handler.go）でモデル名を選ぶときに使います。
+// 発注書PDFの明細抽出でモデル名を選ぶときに使います
+// （実際に使うモデル名は internal/cms/gemini.go の geminiModelName）。
 //
 //	GEMINI_API_KEY=... go run ./cmd/list-models
 //
