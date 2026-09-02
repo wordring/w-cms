@@ -74,7 +74,7 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 保存する名前を先に確定させる（種類が許可されないなら読み込むまでもない）。
-	fileName, err := safeAttachmentName(pageID, header.Filename, allowedImageExts,
+	fileName, err := SafeAttachmentName(pageID, header.Filename, allowedImageExts,
 		"画像ファイル（png / jpeg / webp / gif / svg）のみアップロードできます")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

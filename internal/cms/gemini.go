@@ -32,9 +32,9 @@ var errNoGeminiKey = errors.New("GEMINI_API_KEY が設定されていません")
 // geminiModelName は全呼び出しで共有するモデル名です。
 const geminiModelName = "gemini-3.5-flash"
 
-// geminiGenerate はプロンプトと添付データ（PDF等）を Gemini へ渡し、
+// GeminiGenerate はプロンプトと添付データ（PDF等）を Gemini へ渡し、
 // 応答テキストを返します。
-func geminiGenerate(prompt string, blob genai.Blob) (string, error) {
+func GeminiGenerate(prompt string, blob genai.Blob) (string, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		return "", errNoGeminiKey

@@ -74,7 +74,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		Group  *string `json:"group"`
 		Public *bool   `json:"public"`
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -181,7 +181,7 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Owner string `json:"owner"`
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Owner == "" {

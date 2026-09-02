@@ -22,9 +22,9 @@ import (
 // 本文HTMLはテキストなので 8MiB あれば実用上十分（添付の32MiBとは別系統の上限）。
 const maxJSONBodyBytes = 8 << 20
 
-// decodeJSONBody は本文サイズを制限したうえでJSONを読み取ります。
+// DecodeJSONBody は本文サイズを制限したうえでJSONを読み取ります。
 // 上限超過は 413、それ以外の不正は 400 を書いて false を返します。
-func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
+func DecodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
 		var tooLarge *http.MaxBytesError
@@ -38,10 +38,10 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) boo
 	return true
 }
 
-// jsonFail は JSON で答えるAPIの失敗応答 {"success": false, "message": …} を書きます。
+// JSONFail は JSON で答えるAPIの失敗応答 {"success": false, "message": …} を書きます。
 // status が 0 なら状態行は 200 のまま（フロントが本文の success を見て分岐する
 // 旧来の口——PDF解析——との互換）。
-func jsonFail(w http.ResponseWriter, status int, message string) {
+func JSONFail(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	if status != 0 {
 		w.WriteHeader(status)
@@ -64,7 +64,7 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SaveRequest
-	if !decodeJSONBody(w, r, &req) {
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -191,7 +191,7 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SaveBlockRequest
-	if !decodeJSONBody(w, r, &req) {
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.PageID == "" || req.BlockID == "" {

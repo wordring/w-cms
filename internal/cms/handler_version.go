@@ -81,7 +81,7 @@ func RevertAPIHandler(w http.ResponseWriter, r *http.Request) {
 		PageID  string `json:"page_id"`
 		Version string `json:"version"`
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 	id, ok := page.NormalizeID(req.PageID)

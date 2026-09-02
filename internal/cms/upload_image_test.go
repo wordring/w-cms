@@ -164,7 +164,7 @@ func TestUploadImageRejectsDangerousSVG(t *testing.T) {
 
 // TestUploadImageCannotEscapePageDir は、画像の口からも本文・サイドカーを
 // 上書きできず、ページのフォルダの外へも書けないことを検証します
-// （PDF の口と同じ守り。名前の検査は safeAttachmentName が1箇所で担う）。
+// （PDF の口と同じ守り。名前の検査は SafeAttachmentName が1箇所で担う）。
 func TestUploadImageCannotEscapePageDir(t *testing.T) {
 	const id = "000012"
 	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "333"})

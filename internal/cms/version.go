@@ -110,7 +110,7 @@ func versionID(at time.Time) string {
 // safeVersionID は利用者から届いた版IDを検証します。
 //
 // 版IDはAPIの引数として外から来るので、**ページのフォルダの外を指させない**ことが
-// ここの仕事です（添付の `safeAttachmentName` と同じ役目）。時刻由来の形しか
+// ここの仕事です（添付の `SafeAttachmentName` と同じ役目）。時刻由来の形しか
 // 受け付けないので、パス要素も拡張子も混ざりようがありません。
 func safeVersionID(v string) (string, error) {
 	if v == "" {

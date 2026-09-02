@@ -25,6 +25,8 @@ import (
 
 func init() {
 	Register(materialsPlugin{})
+	// 計算ビューの描画も自分で登録する（形式の宣言と対）。
+	RegisterView("required-materials", requiredMaterialsViewHTML)
 }
 
 type materialsPlugin struct{}
@@ -37,8 +39,8 @@ func (materialsPlugin) Schema() []string { return nil }
 
 func (materialsPlugin) Tables() []string { return nil }
 
-// vocabNumber は表の値を数として読みます（¥・桁区切り・全角を吸収）。
-func vocabNumber(raw string) int {
+// VocabNumber は表の値を数として読みます（¥・桁区切り・全角を吸収）。
+func VocabNumber(raw string) int {
 	if norm, ok := NormalizeValue(ColNumber, raw); ok {
 		return AtoiSafe(norm)
 	}
@@ -116,7 +118,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	// 1. そのページの受注明細（品番・数量）を索引から読む。
 	//    ページで絞るので、同じ発注書番号を別ページで使っても混ざらない
 	//    （硬い表のころ order_no のサブクエリで他ページの明細まで拾った・設計総点検③）。
-	orderItems, err := vocabTableRowsOf(db, pageIDInt, "client-order-items")
+	orderItems, err := VocabTableRowsOf(db, pageIDInt, "client-order-items")
 	if err != nil {
 		return nil, err
 	}
@@ -155,12 +157,12 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 
 		mats, ok := defsFor[partID]
 		if !ok {
-			pageIDs, err := pagesByTag(db, tagName, partID)
+			pageIDs, err := PagesByTag(db, tagName, partID)
 			if err != nil {
 				return nil, err
 			}
 			for _, defPageID := range pageIDs {
-				rows, err := vocabTableRowsOf(db, defPageID, "part-materials")
+				rows, err := VocabTableRowsOf(db, defPageID, "part-materials")
 				if err != nil {
 					return nil, err
 				}
@@ -196,7 +198,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    ヘッダ1つと明細表1つを持つ限り、同じ番号どうしが対になります。
 	//    （硬い表のころは発注書番号で結んでいたが、番号が重複すると仕入先が
 	//    入れ替わりえた・設計総点検③。文書順なら重複しても取り違えない）
-	headers, err := vocabBlocksOf(db, pageIDInt, "our-order")
+	headers, err := VocabBlocksOf(db, pageIDInt, "our-order")
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +207,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		supplierOf[h.BlockNo] = h.Values["supplier-name"]
 	}
 
-	ourItems, err := vocabTableRowsOf(db, pageIDInt, "our-order-items")
+	ourItems, err := VocabTableRowsOf(db, pageIDInt, "our-order-items")
 	if err != nil {
 		return nil, err
 	}

@@ -70,7 +70,7 @@ var judgeOrderPDF = judgeOrderPDFWithGemini
 func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		jsonFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req struct {
@@ -78,12 +78,12 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		File   string `json:"file"`
 		Entry  string `json:"entry"`
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 	pageID, ok := page.NormalizeID(req.PageID)
 	if !ok {
-		jsonFail(w, http.StatusBadRequest, "ページIDが不正です")
+		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	// 子ページを作る操作なので write 権限を要求する（本文は変えないので編集ロックは不要
@@ -91,26 +91,26 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
-	fileName, err := safeAttachmentName(pageID, req.File,
+	fileName, err := SafeAttachmentName(pageID, req.File,
 		map[string]bool{".pdf": true, ".zip": true}, "解析できるのは .pdf と .zip の中のPDFだけです")
 	if err != nil {
-		jsonFail(w, http.StatusBadRequest, err.Error())
+		JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	pdf, srcEntry, err := loadPDFForAnalysis(pageID, fileName, req.Entry)
 	if err != nil {
-		jsonFail(w, http.StatusBadRequest, err.Error())
+		JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	j, err := judgeOrderPDF(pdf)
 	if err != nil {
 		if errors.Is(err, errNoGeminiKey) {
-			jsonFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
+			JSONFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
 			return
 		}
-		jsonFail(w, 0, "解析に失敗しました: "+err.Error())
+		JSONFail(w, 0, "解析に失敗しました: "+err.Error())
 		return
 	}
 	if !j.IsClientOrder {
@@ -120,10 +120,10 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	attachID := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	newID, err := createChildPageOf(pageID, auth.CurrentUser(r).Username,
+	newID, err := CreateChildPage(pageID, auth.CurrentUser(r).Username,
 		buildOrderPageHTML(pageID, attachID, srcEntry, j))
 	if err != nil {
-		jsonFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
+		JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
 		return
 	}
 	auth.Audit(auth.CurrentUser(r).Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName+srcEntrySuffix(srcEntry))
@@ -217,7 +217,7 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
 }
 発注書でない場合は is_client_order を false にし、他の項目は空でかまいません。`
 
-	respText, err := geminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
+	respText, err := GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
 	if err != nil {
 		return nil, err
 	}

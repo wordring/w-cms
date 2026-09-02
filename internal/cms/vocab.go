@@ -129,7 +129,7 @@ var vocabRegistry = []VocabDef{
 		Icon:        "🔩",
 		Element:     "table",
 		// 部材の行そのものには部品番号が無く、ページ横断メタの「部品番号」タグが
-		// ページ全体の鍵になる（集計は pagesByTag の逆引きでページを引き当てる）。
+		// ページ全体の鍵になる（集計は PagesByTag の逆引きでページを引き当てる）。
 		RequiresTag: "部品番号",
 		Columns: []VocabColumn{
 			{Field: "item-name", Label: "部材名", Type: ColText},
@@ -268,6 +268,27 @@ var vocabRegistry = []VocabDef{
 		Element:     "section",
 		View:        true,
 	},
+}
+
+// RegisterVocab は形式の宣言を①語彙レジストリへ足します。**拡張の `init()` から
+// 呼びます**（`Register`／`RegisterIntake` と同じ流儀）。
+//
+// コアが持つのは器と汎用の語彙（`tags`・`file`・計算ビュー・サンプルの検査記録）だけで、
+// **業務の語彙は拡張が持ち込みます**——「語彙とプラグインは運用者のもの」
+// （[要件定義書.md](../../docs/要件定義書.md) §1.1・§4.5）を、置き場でも成立させる形です。
+// 板金部の受発注・部材・見積は `ext/sheetmetal` が登録します。
+//
+// 同じ `Type` の二重登録は**その場で落とします**。黙って後勝ちにすると、どちらの
+// 宣言が効いているのか画面からは分からず、列の型だけが静かに変わります。
+func RegisterVocab(defs ...VocabDef) {
+	for _, d := range defs {
+		for _, existing := range vocabRegistry {
+			if existing.Type == d.Type {
+				panic("語彙の形式名が重複しています: " + d.Type)
+			}
+		}
+		vocabRegistry = append(vocabRegistry, d)
+	}
 }
 
 // VocabDefs は登録済みの全形式定義を Type 順で返します（/api/tag-schema の応答が

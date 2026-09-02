@@ -36,15 +36,15 @@ var allowedAttachmentExts = map[string]bool{".pdf": true}
 // attachmentFileName は受け取ったファイル名を、ページのディレクトリ内へ安全に置ける
 // 名前へ正規化します（PDF の口はこちら）。使えない名前なら理由つきのエラーを返します。
 func attachmentFileName(pageID, raw string) (string, error) {
-	return safeAttachmentName(pageID, raw, allowedAttachmentExts,
+	return SafeAttachmentName(pageID, raw, allowedAttachmentExts,
 		"PDFファイル（.pdf）のみアップロードできます")
 }
 
-// safeAttachmentName はファイル名の正規化と検査の本体です。許可する拡張子の集合を
+// SafeAttachmentName はファイル名の正規化と検査の本体です。許可する拡張子の集合を
 // 受け取るので、PDF の口（allowedAttachmentExts）と画像の口（allowedImageExts）で
 // 共有できます。**名前の守りは1箇所**にしておかないと、口を増やすたびに
 // 「サイドカーを上書きできる穴」が復活します。
-func safeAttachmentName(pageID, raw string, allowed map[string]bool, extError string) (string, error) {
+func SafeAttachmentName(pageID, raw string, allowed map[string]bool, extError string) (string, error) {
 	// パス要素を落とす。filepath.Base は実行中のOSの区切りしか見ないため、
 	// Linux上での "..\\..\\evil.pdf" のような名前に備えて両方の区切りで切る。
 	name := raw
@@ -190,7 +190,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if r.Method != http.MethodPost {
-		jsonFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
@@ -198,13 +198,13 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		PageID   string `json:"page_id"`
 		FileName string `json:"file_name"`
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 	// パスに使う前にゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
 	normID, ok := page.NormalizeID(req.PageID)
 	if !ok {
-		jsonFail(w, http.StatusBadRequest, "ページIDが不正です")
+		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	req.PageID = normID
@@ -220,18 +220,18 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	// 本文・サイドカーの名指し拒否をそのまま効かせる。
 	fileName, err := attachmentFileName(req.PageID, req.FileName)
 	if err != nil {
-		jsonFail(w, http.StatusBadRequest, err.Error())
+		JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	pdfPath, found := page.AttachmentPath(req.PageID, fileName)
 	if !found {
-		jsonFail(w, http.StatusNotFound, "PDF file not found on server")
+		JSONFail(w, http.StatusNotFound, "PDF file not found on server")
 		return
 	}
 	pdfBytes, err := os.ReadFile(pdfPath)
 	if err != nil {
-		jsonFail(w, 0, "PDFファイルの読み込みに失敗しました")
+		JSONFail(w, 0, "PDFファイルの読み込みに失敗しました")
 		return
 	}
 
@@ -245,15 +245,15 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
   {"item_name": "部品A", "price": "1000", "quantity": "2"}
 ]`
 
-	respText, err := geminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdfBytes})
+	respText, err := GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdfBytes})
 	if err != nil {
 		if errors.Is(err, errNoGeminiKey) {
 			// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
-			jsonFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/")
+			JSONFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/")
 			return
 		}
 		log.Printf("[Gemini API Error] %v", err)
-		jsonFail(w, 0, "Gemini APIの呼び出しに失敗しました: "+err.Error())
+		JSONFail(w, 0, "Gemini APIの呼び出しに失敗しました: "+err.Error())
 		return
 	}
 

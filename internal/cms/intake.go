@@ -93,7 +93,7 @@ func ExistingIntakePage(tagName, value string) (string, bool) {
 	if tagName == "" || value == "" {
 		return "", false
 	}
-	ids, err := pagesByTag(database.DB, tagName, value)
+	ids, err := PagesByTag(database.DB, tagName, value)
 	if err != nil || len(ids) == 0 {
 		return "", false
 	}
@@ -152,7 +152,7 @@ func (c *IntakeContext) CreatePage(bodyHTML string) (string, error) {
 
 // createUnder はページ作成の取り込み側の入口です（作成の芯＋監査＋作成済みの記録）。
 func (c *IntakeContext) createUnder(parentID, bodyHTML string) (string, error) {
-	newID, err := createChildPageOf(parentID, c.Uploader, bodyHTML)
+	newID, err := CreateChildPage(parentID, c.Uploader, bodyHTML)
 	if err != nil {
 		return "", err
 	}
@@ -161,10 +161,10 @@ func (c *IntakeContext) createUnder(parentID, bodyHTML string) (string, error) {
 	return newID, nil
 }
 
-// createChildPageOf はページ作成の芯です（権限は親から継承・サニタイズ・索引まで。
+// CreateChildPage はページ作成の芯です（権限は親から継承・サニタイズ・索引まで。
 // 監査は呼び手が録る——取り込みと解析で行為名が違うため）。
 // 取り込み（IntakeContext）とPDF解析ボタン（analyze_pdf.go）が共用します。
-func createChildPageOf(parentID, owner, bodyHTML string) (string, error) {
+func CreateChildPage(parentID, owner, bodyHTML string) (string, error) {
 	parentInt, err := strconv.Atoi(parentID)
 	if err != nil {
 		return "", err
