@@ -2,16 +2,12 @@ package cms
 
 import (
 	"database/sql"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
-	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 
@@ -327,100 +323,6 @@ func TestSidecarMutators(t *testing.T) {
 	}
 	if got.Owner != "alice" || got.CreatedBy != "alice" {
 		t.Errorf("page.SetSidecarParentが所有権/作成者を変更しました: %+v", got)
-	}
-}
-
-func TestRequiredMaterialsCalculation(t *testing.T) {
-	// 1. テスト用のインメモリDB初期化
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("DB接続エラー: %v", err)
-	}
-	defer db.Close()
-
-	// アプリ全体のグローバル DB 接続を一時差し替え
-	database.DB = db
-
-	// テーブル初期化（本番と同じスキーマ: コア + 全プラグイン）
-	if err := database.CreateCoreTables(db); err != nil {
-		t.Fatalf("コアテーブル作成エラー: %v", err)
-	}
-	if err := ApplySchema(db); err != nil {
-		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
-	}
-
-	// 2. 部品ページ(00003)の材料マスタ
-	// SHAFT-01 という部品は、鋼材(S45C)が1本、高周波焼入れが1個必要
-	seedPageTag(t, 3, "部品番号", "SHAFT-01")
-	seedVocabTable(t, 3, "part-materials", 0,
-		map[string]string{"部材名": "シャフト用鋼材 (S45C)", "単価": "2500", "仕入先": "東邦金属工業", "数量": "1"},
-		map[string]string{"部材名": "外注高周波焼入れ", "単価": "1500", "仕入先": "山下熱処理", "数量": "1"},
-	)
-
-	// 3. 受注ページ(00002)：SHAFT-01 を 10本
-	seedVocabBlock(t, 2, "client-order", 0, map[string]string{
-		"発注書番号": "PO-A100", "発注元": "トーア",
-	})
-	seedVocabTable(t, 2, "client-order-items", 0, map[string]string{
-		"品番": "SHAFT-01", "品名": "シャフトA", "単価": "8000", "数量": "10", "状態": "加工中",
-	})
-
-	// 自社発注実績：鋼材をすでに10本発注済み
-	seedVocabBlock(t, 2, "our-order", 0, map[string]string{
-		"発注書番号": "PO-OUR-001", "発注先": "東邦金属工業",
-	})
-	seedVocabTable(t, 2, "our-order-items", 0, map[string]string{
-		"品名": "シャフト用鋼材 (S45C)", "単価": "2500", "数量": "10", "状態": "未納品",
-	})
-
-	// 4. APIハンドラーにHTTPリクエストを送ってテスト（adminユーザーで権限チェックを通す）
-	req, err := http.NewRequest("GET", "/api/required-materials?page_id=00002", nil)
-	if err != nil {
-		t.Fatalf("リクエスト作成エラー: %v", err)
-	}
-	req = auth.WithUser(req, &auth.User{Username: "tester", IsAdmin: true})
-
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(RequiredMaterialsAPIHandler)
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("ステータスコードが期待と異なります: got %v want %v", status, http.StatusOK)
-	}
-
-	var results []RequiredMaterialResponse
-	if err := json.Unmarshal(rr.Body.Bytes(), &results); err != nil {
-		t.Fatalf("JSONのパースに失敗しました: %v", err)
-	}
-
-	if len(results) != 2 {
-		t.Fatalf("結果の部材数が異なります: got %d want 2", len(results))
-	}
-
-	// 結果の検証
-	// 'シャフト用鋼材 (S45C)': 必要数10, 発注済10 -> 残0
-	// '外注高周波焼入れ': 必要数10, 発注済0 -> 残10
-	var foundSteel, foundHeat bool
-	for _, res := range results {
-		if res.MaterialName == "シャフト用鋼材 (S45C)" {
-			foundSteel = true
-			if res.TotalRequired != 10 || res.Ordered != 10 || res.Remaining != 0 {
-				t.Errorf("シャフト用鋼材の計算結果が不正です: %+v", res)
-			}
-		}
-		if res.MaterialName == "外注高周波焼入れ" {
-			foundHeat = true
-			if res.TotalRequired != 10 || res.Ordered != 0 || res.Remaining != 10 {
-				t.Errorf("外注高周波焼入れの計算結果が不正です: %+v", res)
-			}
-		}
-	}
-
-	if !foundSteel {
-		t.Error("シャフト用鋼材 (S45C) の結果が見つかりません")
-	}
-	if !foundHeat {
-		t.Error("外注高周波焼入れ の結果が見つかりません")
 	}
 }
 

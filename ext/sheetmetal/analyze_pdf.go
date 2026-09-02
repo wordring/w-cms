@@ -1,4 +1,4 @@
-package cms
+package sheetmetal
 
 // ─────────────────────────────────────────────────────────────────────────
 // PDFの判定→受注ページ生成——ボタン起動（板金部の既定セット・2026-09-01）
@@ -40,6 +40,7 @@ import (
 	"github.com/google/generative-ai-go/genai"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -70,7 +71,7 @@ var judgeOrderPDF = judgeOrderPDFWithGemini
 func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req struct {
@@ -78,12 +79,12 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		File   string `json:"file"`
 		Entry  string `json:"entry"`
 	}
-	if !DecodeJSONBody(w, r, &req) {
+	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
 	pageID, ok := page.NormalizeID(req.PageID)
 	if !ok {
-		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	// 子ページを作る操作なので write 権限を要求する（本文は変えないので編集ロックは不要
@@ -91,26 +92,26 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
-	fileName, err := SafeAttachmentName(pageID, req.File,
+	fileName, err := cms.SafeAttachmentName(pageID, req.File,
 		map[string]bool{".pdf": true, ".zip": true}, "解析できるのは .pdf と .zip の中のPDFだけです")
 	if err != nil {
-		JSONFail(w, http.StatusBadRequest, err.Error())
+		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	pdf, srcEntry, err := loadPDFForAnalysis(pageID, fileName, req.Entry)
 	if err != nil {
-		JSONFail(w, http.StatusBadRequest, err.Error())
+		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	j, err := judgeOrderPDF(pdf)
 	if err != nil {
-		if errors.Is(err, errNoGeminiKey) {
-			JSONFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
+		if errors.Is(err, cms.ErrNoGeminiKey) {
+			cms.JSONFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
 			return
 		}
-		JSONFail(w, 0, "解析に失敗しました: "+err.Error())
+		cms.JSONFail(w, 0, "解析に失敗しました: "+err.Error())
 		return
 	}
 	if !j.IsClientOrder {
@@ -120,10 +121,10 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	attachID := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	newID, err := CreateChildPage(pageID, auth.CurrentUser(r).Username,
+	newID, err := cms.CreateChildPage(pageID, auth.CurrentUser(r).Username,
 		buildOrderPageHTML(pageID, attachID, srcEntry, j))
 	if err != nil {
-		JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
 		return
 	}
 	auth.Audit(auth.CurrentUser(r).Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName+srcEntrySuffix(srcEntry))
@@ -176,9 +177,9 @@ func loadPDFForAnalysis(pageID, fileName, entry string) (pdf []byte, srcEntry st
 		return nil, "", errors.New("ZIPとして読めません")
 	}
 	defer zr.Close()
-	limit := MaxUploadBytes()
+	limit := cms.MaxUploadBytes()
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() || decodeZipName(f.Name, f.NonUTF8) != entry {
+		if f.FileInfo().IsDir() || cms.DecodeZipName(f.Name, f.NonUTF8) != entry {
 			continue
 		}
 		if f.UncompressedSize64 > uint64(limit) {
@@ -217,12 +218,12 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
 }
 発注書でない場合は is_client_order を false にし、他の項目は空でかまいません。`
 
-	respText, err := GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
+	respText, err := cms.GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
 	if err != nil {
 		return nil, err
 	}
 	var j orderJudgment
-	if err := json.Unmarshal([]byte(stripJSONFence(respText)), &j); err != nil {
+	if err := json.Unmarshal([]byte(cms.StripJSONFence(respText)), &j); err != nil {
 		return nil, errors.New("応答をJSONとして読めません: " + err.Error())
 	}
 	return &j, nil

@@ -58,10 +58,10 @@ func TestClientOrderFromSection(t *testing.T) {
 	if got := rows[0].Num("price"); got != 8000 {
 		t.Errorf("単価の正規化が効いていません: %d", got)
 	}
-	if got := vocabQuantity(rows[0]); got != 10 {
+	if got := VocabQuantity(rows[0]); got != 10 {
 		t.Errorf("数量が期待と異なります: %d", got)
 	}
-	if got := vocabQuantity(rows[1]); got != 1 {
+	if got := VocabQuantity(rows[1]); got != 1 {
 		t.Errorf("空の数量が既定の1になりません: %d", got)
 	}
 }

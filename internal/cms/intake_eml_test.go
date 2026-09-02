@@ -111,10 +111,10 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 	html := string(body)
 	for _, want := range []string{
 		"<h1>発注書送付の件</h1>",
-		"トーアスポーツ",                  // 差出人の復号
+		"トーアスポーツ",                   // 差出人の復号
 		"<dd>" + wantDate + "</dd>", // 受信日時
-		"発注書を送付いたします。",            // 本文の復号
-		`download="chumon.pdf"`,      // 元名はリンクが運ぶ
+		"発注書を送付いたします。",              // 本文の復号
+		`download="chumon.pdf"`,     // 元名はリンクが運ぶ
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("ページに %q がありません:\n%s", want, html)

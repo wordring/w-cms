@@ -27,27 +27,8 @@ func TestRenderComputedViews(t *testing.T) {
 	mustExec(`INSERT INTO pages (id, title, file_path, parent_id) VALUES (60, '受注ページ', '', NULL)`)
 	mustExec(`INSERT INTO pages (id, title, file_path, parent_id) VALUES (61, '<加工>記録', '', 60)`)
 
-	// 手配集計の材料: SHAFT-01 は鋼材1本が要る。受注10本・発注済み4本 → 残6
-	seedPageTag(t, 3, "部品番号", "SHAFT-01")
-	seedVocabTable(t, 3, "part-materials", 0, map[string]string{
-		"部材名": "鋼材", "単価": "2500", "仕入先": "東邦", "数量": "1",
-	})
-	seedVocabBlock(t, 60, "client-order", 0, map[string]string{
-		"発注書番号": "PO-V1", "発注元": "トーア",
-	})
-	seedVocabTable(t, 60, "client-order-items", 0, map[string]string{
-		"品番": "SHAFT-01", "品名": "シャフト", "単価": "8000", "数量": "10", "状態": "加工中",
-	})
-	seedVocabBlock(t, 60, "our-order", 0, map[string]string{
-		"発注書番号": "PO-OUR-V1", "発注先": "東邦",
-	})
-	seedVocabTable(t, 60, "our-order-items", 0, map[string]string{
-		"品名": "鋼材", "単価": "2500", "数量": "4", "状態": "未納品",
-	})
-
 	body := `<h1>受注</h1>` +
-		`<section data-type="child-list" data-id="v1"><p>紛れ込んだ内容</p></section>` +
-		`<section data-type="required-materials" data-id="v2"></section>`
+		`<section data-type="child-list" data-id="v1"><p>紛れ込んだ内容</p></section>`
 
 	req := httptest.NewRequest("GET", "/000060", nil)
 	req = auth.WithUser(req, &auth.User{Username: "tester", IsAdmin: true})
@@ -57,10 +38,6 @@ func TestRenderComputedViews(t *testing.T) {
 		`data-type="child-list"`, `data-id="v1"`, // マーカーと data-id は保存内容のまま
 		`class="vocab-chrome"`, `contenteditable="false"`,
 		`href="/000061"`, `&lt;加工&gt;記録`, // 子リンク＋タイトルのエスケープ
-		`data-type="required-materials"`,
-		`部材手配・発注進捗状況`, `鋼材`, `東邦`,
-		`<td class="num">10</td>`, `<td class="num">4</td>`, `<td class="num">6</td>`,
-		`要手配 (6)`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("描画結果に %q がありません:\n%s", want, out)

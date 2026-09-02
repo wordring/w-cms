@@ -133,7 +133,7 @@ func queryPartMaterials(t *testing.T, pageID int) []string {
 			r.Values["item-name"],
 			itoa(r.Num("cost")),
 			r.Values["supplier-name"],
-			itoa(vocabQuantity(r)),
+			itoa(VocabQuantity(r)),
 		}, "|"))
 	}
 	return out

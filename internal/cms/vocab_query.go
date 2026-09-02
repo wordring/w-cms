@@ -145,3 +145,22 @@ func PagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
 	}
 	return ids, rows.Err()
 }
+
+// VocabNumber は表の値を数として読みます（¥・桁区切り・全角を吸収）。
+// 索引の読み出し（VocabRow.Num）と、拡張の集計が共有します。
+func VocabNumber(raw string) int {
+	if norm, ok := NormalizeValue(ColNumber, raw); ok {
+		return AtoiSafe(norm)
+	}
+	return AtoiSafe(raw)
+}
+
+// VocabQuantity は数量列を読みます。**空セルは 1**（旧 <m-material> の既定を
+// 引き継いだ値で、硬い表のころは索引を書く側が同じ既定を当てていた）。
+// 語彙の一般規則なのでコアが持ちます（【一覧】語彙.md §2.2）。
+func VocabQuantity(row VocabRow) int {
+	if row.Values["quantity"] == "" {
+		return 1
+	}
+	return row.Num("quantity")
+}

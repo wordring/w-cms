@@ -198,7 +198,6 @@ func TestUploadAcceptsPDF(t *testing.T) {
 	}
 }
 
-
 // savedNameOf は応答JSONから生成されたファイル名を取り出します。
 // 保存名はサーバー生成（時刻base36＋拡張子）で、元の名前はURLに出ない
 // （2026-08-31 決定）。テストは「元の名前で保存される」ではなく
