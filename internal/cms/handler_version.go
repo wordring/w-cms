@@ -10,6 +10,7 @@ package cms
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -62,9 +63,12 @@ func VersionAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	// 本文を読む経路はすべて同じ扱い（サニタイズ二層目＋計算ビューの事前描画。
+	// docs/本文サニタイズ設計.md §4）——ここだけ素通しだと、版を開いた鏡の中身が空になる。
+	idInt, _ := strconv.Atoi(id)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Write([]byte(Sanitize(string(body))))
+	w.Write([]byte(RenderComputedViews(r, idInt, Sanitize(string(body)))))
 }
 
 // RevertAPIHandler は選んだ版を現在の本文として書き戻します（POST /api/revert）。
@@ -112,12 +116,14 @@ func RevertAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	idInt, _ := strconv.Atoi(id)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"page_id": id,
 		"version": req.Version,
-		// エディタが載せ替えられるよう、戻した本文をそのまま返す。
-		"html": Sanitize(string(body)),
+		// エディタが載せ替えられるよう、戻した本文を返す（/api/load と同じく
+		// 計算ビューの中身を埋めて——載せ替え直後に鏡が空にならないように）。
+		"html": RenderComputedViews(r, idInt, Sanitize(string(body))),
 	})
 }
