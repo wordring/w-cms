@@ -17,7 +17,7 @@ package cms
 // 迂回させないため。エディタ側も種類で振り分ける。
 //
 // 保存先は files/ サブフォルダ（正本と同居しない——構造で塞ぐ。storage.go）。
-// 名前の検査は safeAttachmentName の1箇所を全アップロード口が共有する。
+// 名前の検査は SafeAttachmentName の1箇所を全アップロード口が共有する。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -86,7 +86,7 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "この種類は専用のアップロード口を使ってください（画像・PDF）", http.StatusBadRequest)
 		return
 	}
-	fileName, err := safeAttachmentName(pageID, header.Filename, GenericAttachmentExts(),
+	fileName, err := SafeAttachmentName(pageID, header.Filename, GenericAttachmentExts(),
 		"この拡張子は添付として受け付けていません（許可リストは data/settings.json の attachment_extensions）")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

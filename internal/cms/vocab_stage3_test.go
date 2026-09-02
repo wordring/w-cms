@@ -47,7 +47,7 @@ func TestClientOrderFromSection(t *testing.T) {
 		t.Errorf("明細の品番が文書順と異なります: %q", got)
 	}
 
-	rows, err := vocabTableRowsOf(database.DB, 50, "client-order-items")
+	rows, err := VocabTableRowsOf(database.DB, 50, "client-order-items")
 	if err != nil {
 		t.Fatalf("索引の読み出しエラー: %v", err)
 	}

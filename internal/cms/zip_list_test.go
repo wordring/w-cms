@@ -106,7 +106,7 @@ func TestZipListRejectsBadNames(t *testing.T) {
 			t.Errorf("%s が拒否されません: code=%d", file, rr.Code)
 		}
 	}
-	// トラバーサルは拒否ではなく**正規化で無害化**される（safeAttachmentName の仕様。
+	// トラバーサルは拒否ではなく**正規化で無害化**される（SafeAttachmentName の仕様。
 	// base 名に畳まれ、そのファイルは無いので 422）。200 にならないことだけ固定する。
 	if rr := getZipList(t, id, "..%2F..%2Fx.zip", u); rr.Code == 200 {
 		t.Errorf("トラバーサル名が通っています: code=%d", rr.Code)

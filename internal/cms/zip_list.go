@@ -54,7 +54,7 @@ func ZipListAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 名前の検査は全アップロード口と同じ関門を通す（本文・サイドカーの名指し拒否と
 	// トラバーサルの正規化。拡張子は .zip だけ）。
-	fileName, err := safeAttachmentName(pageID, r.URL.Query().Get("file"),
+	fileName, err := SafeAttachmentName(pageID, r.URL.Query().Get("file"),
 		map[string]bool{".zip": true}, "ZIP以外の目録は返せません")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

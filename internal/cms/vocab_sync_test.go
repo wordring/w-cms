@@ -100,7 +100,7 @@ func TestPartMaterialsFromTable(t *testing.T) {
 	}
 
 	// 部品番号はタグからの逆引きで解決される（部材行そのものには無い）
-	pages, err := pagesByTag(database.DB, "部品番号", "SHAFT-01")
+	pages, err := PagesByTag(database.DB, "部品番号", "SHAFT-01")
 	if err != nil {
 		t.Fatalf("pagesByTagエラー: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestPartMaterialsFromTable(t *testing.T) {
 // queryPartMaterials は部材表の索引行を「部材名|単価|仕入先|数量」の文書順で返します。
 func queryPartMaterials(t *testing.T, pageID int) []string {
 	t.Helper()
-	rows, err := vocabTableRowsOf(database.DB, pageID, "part-materials")
+	rows, err := VocabTableRowsOf(database.DB, pageID, "part-materials")
 	if err != nil {
 		t.Fatalf("部材表の索引の読み出しエラー: %v", err)
 	}

@@ -214,7 +214,7 @@ func TestEmlIntakeWritesMessageID(t *testing.T) {
 		t.Errorf("メッセージIDのタグがありません:\n%s", body)
 	}
 	// 索引から引ける（逆引きは生テキスト・pagesByTag）
-	ids, err := pagesByTag(database.DB, "メッセージID", "<abc123@example.jp>")
+	ids, err := PagesByTag(database.DB, "メッセージID", "<abc123@example.jp>")
 	if err != nil {
 		t.Fatalf("逆引きエラー: %v", err)
 	}

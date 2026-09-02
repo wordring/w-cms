@@ -39,8 +39,20 @@ import (
 // 足して描画側を足し忘れたときに**無言の空白**にしないため——引けなければ
 // missingViewHTML が理由を画面に出します（足し忘れは必ず目に見える）。
 var viewRenderers = map[string]func(user *auth.User, pageIDInt int) string{
-	"child-list":         childListViewHTML,
-	"required-materials": requiredMaterialsViewHTML,
+	"child-list": childListViewHTML,
+}
+
+// RegisterView は計算ビューの描画処理を足します。**拡張の `init()` から**
+// 形式の宣言（`RegisterVocab`）と対で呼びます——`View: true` を宣言したのに
+// 描画を足し忘れると `missingViewHTML` が画面に理由を出すので、**足し忘れは
+// 必ず目に見えます**（無言の空白にはならない）。
+//
+// 二重登録はその場で落とします（どちらが描いているか分からなくなるため）。
+func RegisterView(vocabType string, render func(user *auth.User, pageIDInt int) string) {
+	if _, dup := viewRenderers[vocabType]; dup {
+		panic("計算ビューの描画が重複しています: " + vocabType)
+	}
+	viewRenderers[vocabType] = render
 }
 
 // missingViewHTML は「ビューと宣言されているのに描画処理が無い」ことの表示です。

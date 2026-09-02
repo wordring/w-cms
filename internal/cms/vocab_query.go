@@ -36,12 +36,12 @@ type VocabRow struct {
 }
 
 // Num は列を数値として読みます。索引が数として解釈できていればその値を、
-// できていなければ生テキストからの変換（vocabNumber と同じ規則）を返します。
+// できていなければ生テキストからの変換（VocabNumber と同じ規則）を返します。
 func (r VocabRow) Num(key string) int {
 	if f, ok := r.nums[key]; ok {
 		return int(f)
 	}
-	return vocabNumber(r.Values[key])
+	return VocabNumber(r.Values[key])
 }
 
 // vocabRows は1ページ分の指定形式を、行ごとの値の組へ畳み直して返します。
@@ -103,17 +103,17 @@ func vocabRows(db ReadOnlyDB, pageID int, dataType string, perBlock bool) ([]Voc
 	return out, rows.Err()
 }
 
-// vocabTableRowsOf は表形式（1データ行＝1件）を読みます。
-func vocabTableRowsOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, error) {
+// VocabTableRowsOf は表形式（1データ行＝1件）を読みます。
+func VocabTableRowsOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, error) {
 	return vocabRows(db, pageID, dataType, false)
 }
 
-// vocabBlocksOf は名前：値形式（1ブロック＝1件）を読みます。
-func vocabBlocksOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, error) {
+// VocabBlocksOf は名前：値形式（1ブロック＝1件）を読みます。
+func VocabBlocksOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, error) {
 	return vocabRows(db, pageID, dataType, true)
 }
 
-// pagesByTag は「可変タグ `name` の値が `value` のページ」を返します。
+// PagesByTag は「可変タグ `name` の値が `value` のページ」を返します。
 //
 // 硬いドメイン表を廃したことで、**ページ横断の突き合わせはこの逆引きになります**。
 // 部材定義が部品番号でつながるように、鍵が形式の外（ページ全体のタグ）にある
@@ -121,7 +121,7 @@ func vocabBlocksOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, erro
 //
 // 生テキスト（value）に対して引きます——正規化値ではなく生が正本だからです
 // （docs/アーキテクチャとDBスキーマ.md §9.1）。
-func pagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
+func PagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
 	if name == "" || value == "" {
 		return nil, nil // 空の鍵で全ページを引き当てない
 	}
