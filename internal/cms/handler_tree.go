@@ -310,6 +310,36 @@ func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 // SetParentAPIHandler は編集中ページの親ページを付け替えます（親はサイドカーが正本）。
 // 対象ページの write 権限に加え、変更先の妥当性（実在・循環・新しい親への write、
 // トップレベル化は admin）を検証してからサイドカーへ反映し、pages インデックスを更新します。
+// resyncSubtree はページとその配下すべての索引を本文から同期し直します
+// （親の付け替えでテンプレート領域へ出入りしたときに使う）。
+func resyncSubtree(rootID string) {
+	queue := []string{rootID}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if content, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html")); err == nil {
+			if err := SyncIndex(id, string(content)); err != nil {
+				log.Printf("親の付け替え後の再同期に失敗 page=%s: %v", id, err)
+			}
+		}
+		idInt, err := strconv.Atoi(id)
+		if err != nil {
+			continue
+		}
+		rows, err := database.DB.Query(`SELECT id FROM pages WHERE parent_id = ?`, idInt)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var child int
+			if rows.Scan(&child) == nil {
+				queue = append(queue, fmt.Sprintf("%0*d", page.IDLength, child))
+			}
+		}
+		rows.Close()
+	}
+}
+
 func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -358,7 +388,7 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// pages インデックスの親ページ・更新日時を更新する（本文の再同期は不要）。
+	// pages インデックスの親ページ・更新日時を更新する。
 	var parentDB sql.NullInt64
 	if parentStore != "" {
 		if pid, e := strconv.Atoi(parentStore); e == nil {
@@ -368,6 +398,12 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := database.DB.Exec("UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?", parentDB, updatedAt, childID); err != nil {
 		http.Error(w, "インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// 親が変わると、テンプレート領域への出入り（②索引・③計算に載るか）も変わる。
+	// 判定は先祖辿り（サイドカー）なので、動かしたページと**その配下**を本文から
+	// 同期し直す（次の保存やDB再構築まで反映されない、を避ける）。
+	if parentChanged(oldParent, newParent) {
+		resyncSubtree(id)
 	}
 	if u := auth.CurrentUser(r); u != nil {
 		auth.Audit(u.Username, "set-parent", id+"->"+parentStore)
