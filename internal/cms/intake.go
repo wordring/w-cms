@@ -143,12 +143,6 @@ func (c *IntakeContext) isCreated(pageID string) bool {
 	return false
 }
 
-// Created はこの取り込みで作ったページのID一覧（作成順）を返します。
-// 応答で「何が生まれたか」を知らせるために使います。
-func (c *IntakeContext) Created() []string {
-	return append([]string(nil), c.created...)
-}
-
 // CreatePage は受信箱の下へページを作ります。本文は保存経路と同じくサニタイズされ、
 // 権限は受信箱から継承します（子ページ作成と同じ規則——受信箱の権限設定が
 // 「受信物を誰が読めるか」をそのまま決める）。

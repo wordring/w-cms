@@ -127,7 +127,7 @@ var structuralElements = map[string]map[string]bool{
 	// 段落・区切り（div/span は属性を失ってもブロック/インラインの境界として意味がある）
 	"p": {}, "br": {}, "wbr": {}, "hr": {}, "pre": {}, "div": {}, "span": {},
 
-	// 引用（他ページ参照は <m-quote> の役割。こちらはテキストの引用）
+	// 引用（他ページ参照は「名前：値」の参照タグの役割。こちらはテキストの引用）
 	"blockquote": {"cite": true},
 	"q":          {"cite": true},
 	"cite":       {},

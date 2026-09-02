@@ -51,8 +51,8 @@ func InitDB() error {
 	}
 
 	// 手順3: コアテーブル（pages / page_perms）を作成する。
-	// カスタム要素由来のテーブル（可変タグ・発注書・見積もり・部材など）は、
-	// internal/cms の各プラグインが Schema() で定義し、main から cms.ApplySchema() で作成する。
+	// 汎用索引（vocab_index）は internal/cms の観察係が Schema() で定義し、
+	// main から cms.ApplySchema() で作成する（ドメインごとのテーブルは無い・D-1）。
 	return CreateCoreTables(DB)
 }
 

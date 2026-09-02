@@ -38,6 +38,17 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) boo
 	return true
 }
 
+// jsonFail は JSON で答えるAPIの失敗応答 {"success": false, "message": …} を書きます。
+// status が 0 なら状態行は 200 のまま（フロントが本文の success を見て分岐する
+// 旧来の口——PDF解析——との互換）。
+func jsonFail(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	if status != 0 {
+		w.WriteHeader(status)
+	}
+	json.NewEncoder(w).Encode(map[string]any{"success": false, "message": message})
+}
+
 // SaveRequest はオートセーブで送られてくるJSON構造体です。
 type SaveRequest struct {
 	PageID string `json:"page_id"`

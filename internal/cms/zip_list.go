@@ -21,8 +21,6 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
@@ -63,10 +61,10 @@ func ZipListAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 新しい置き場（files/）→ 旧（ページフォルダ直下）の順で探す（PDF解析と同じ）。
-	zipPath := filepath.Join(page.AttachmentDir(pageID), fileName)
-	if _, err := os.Stat(zipPath); os.IsNotExist(err) {
-		zipPath = filepath.Join(page.GetPageDir(pageID), fileName)
+	zipPath, found := page.AttachmentPath(pageID, fileName)
+	if !found {
+		http.Error(w, "添付が見つかりません", http.StatusNotFound)
+		return
 	}
 
 	entries, total, err := listZipEntries(zipPath)

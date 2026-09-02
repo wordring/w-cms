@@ -17,8 +17,8 @@ import (
 )
 
 // SyncIndex はHTMLファイルを解析し、その結果をSQLiteのインデックス用テーブルに保存します。
-// コア（pages / page_perms）を同期したあと、登録済みの全プラグインを走査して
-// プラグインのテーブル（可変タグ・発注書・部材など）を同期します。
+// コア（pages / page_perms）を同期したあと、配送係（walk.go）が本文を1回歩いて
+// 観察係（汎用索引 vocab_index）へ要素を届けます。
 func SyncIndex(id string, htmlContent string) error {
 	// 手順1: HTMLをノード木にパースする
 	root, err := html.Parse(strings.NewReader(htmlContent))
@@ -408,8 +408,8 @@ func resyncAllPages() (int, error) {
 
 // PurgePageIndex はページの索引を消します（正本ファイルには触れません）。
 //
-// プラグインの Sync はどれも「page_id の行を削除してから入れ直す」形なので、
-// **空の本文で同期を走らせる**と型付きテーブルの行が洗い流されます。
+// 観察係は「page_id の行を削除してから入れ直す」形なので、
+// **空の本文で同期を走らせる**と索引の行が洗い流されます。
 // そのあとコアテーブル（pages / page_perms）の行を消します
 // （SyncIndex は pages を upsert するため、順序はこの通りでなければなりません）。
 func PurgePageIndex(id string) error {

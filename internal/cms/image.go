@@ -40,17 +40,6 @@ var allowedImageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true, ".svg": true,
 }
 
-// imageContentTypes は検証済みの種別に対して配信する Content-Type です。
-// 配信側（page.DataFileHandler）は拡張子から引くので、そちらと同じ表を
-// page パッケージにも持たせず、拡張子→種別→Content-Type の順で辿ります。
-var imageContentTypes = map[string]string{
-	"png":  "image/png",
-	"jpeg": "image/jpeg",
-	"webp": "image/webp",
-	"gif":  "image/gif",
-	"svg":  "image/svg+xml",
-}
-
 // extKinds は拡張子から期待される種別です。
 var extKinds = map[string]string{
 	".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg",

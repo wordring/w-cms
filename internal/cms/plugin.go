@@ -261,11 +261,3 @@ func dlTagValue(dl *html.Node, tagName string) string {
 	})
 	return found
 }
-
-// NullableString は空文字列を SQL の NULL に変換します（日付列などで使用）。
-func NullableString(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: s, Valid: true}
-}

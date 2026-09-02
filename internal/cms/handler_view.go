@@ -153,8 +153,8 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 画面の認可。API（401を返す page.RequirePageReadOrPublic）とは扱いを変え、匿名は
-	// ログイン画面へ誘導する（RequireAuth の「APIは401・画面は/login」に合わせる）。
+	// 画面の認可。匿名には「読めない」と「存在しない」を区別させない（どちらも404）。
+	// 例外はトップページだけで、そこは /login へ誘導する（requirePageViewable）。
 	if !requirePageViewable(w, r, pageID) {
 		return
 	}

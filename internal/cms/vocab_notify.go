@@ -224,7 +224,7 @@ func tableHeadingKeys(table *html.Node) []string {
 }
 
 // vocabHeadingKeys は形式インスタンスが携帯するスキーマ（表の見出し行・dl の dt）から
-// 鍵を取り出します。鍵の決め方は読み取り経路（VocabTableRows / VocabDLFields）と同じ。
+// 鍵を取り出します。鍵の決め方は②索引の書き込み側と同じ。
 // section は呼び出し側（UnresolvedVocabFields）が素の中身ごとに分けて扱うため、ここへは来ません。
 func vocabHeadingKeys(n *html.Node, def VocabDef) []string {
 	switch def.Element {

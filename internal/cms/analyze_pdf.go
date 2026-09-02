@@ -20,8 +20,8 @@ package cms
 // 誤生成の取り消しはページ削除（§2.7④ 可逆性——通信記録は不変で残っている）。
 //
 // このファイルは他社デプロイでは外す・差し替える前提の既定セットです
-// （docs/【考察】通信記録処理.md 2026-09-01 追記②。Gemini はコア側インフラ
-// gemini.go、プロンプト＝解釈はこのセットの持ち物）。
+// （docs/【考察】通信記録処理.md §3.2。Gemini はコア側インフラ gemini.go、
+// プロンプト＝解釈はこのセットの持ち物）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -70,8 +70,7 @@ var judgeOrderPDF = judgeOrderPDFWithGemini
 func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "Method not allowed"})
+		jsonFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req struct {
@@ -84,8 +83,7 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pageID, ok := page.NormalizeID(req.PageID)
 	if !ok {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "ページIDが不正です"})
+		jsonFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	// 子ページを作る操作なので write 権限を要求する（本文は変えないので編集ロックは不要
@@ -96,26 +94,23 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	fileName, err := safeAttachmentName(pageID, req.File,
 		map[string]bool{".pdf": true, ".zip": true}, "解析できるのは .pdf と .zip の中のPDFだけです")
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{"success": false, "message": err.Error()})
+		jsonFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	pdf, srcEntry, err := loadPDFForAnalysis(pageID, fileName, req.Entry)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{"success": false, "message": err.Error()})
+		jsonFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	j, err := judgeOrderPDF(pdf)
 	if err != nil {
 		if errors.Is(err, errNoGeminiKey) {
-			json.NewEncoder(w).Encode(map[string]any{"success": false,
-				"message": "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。"})
+			jsonFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "解析に失敗しました: " + err.Error()})
+		jsonFail(w, 0, "解析に失敗しました: "+err.Error())
 		return
 	}
 	if !j.IsClientOrder {
@@ -128,8 +123,7 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	newID, err := createChildPageOf(pageID, auth.CurrentUser(r).Username,
 		buildOrderPageHTML(pageID, attachID, srcEntry, j))
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "受注ページを作れません: " + err.Error()})
+		jsonFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
 		return
 	}
 	auth.Audit(auth.CurrentUser(r).Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName+srcEntrySuffix(srcEntry))
@@ -160,10 +154,9 @@ func srcEntrySuffix(entry string) string {
 // 取り出しには上限を掛ける——ZIPの申告サイズは自己申告なので、実読みも打ち切る
 // （小さな入力が巨大に膨らむ細工＝ZIP爆弾への備え）。
 func loadPDFForAnalysis(pageID, fileName, entry string) (pdf []byte, srcEntry string, err error) {
-	// 新しい置き場（files/）→ 旧（ページフォルダ直下）の順で探す（PDF解析と同じ）。
-	path := filepath.Join(page.AttachmentDir(pageID), fileName)
-	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
-		path = filepath.Join(page.GetPageDir(pageID), fileName)
+	path, found := page.AttachmentPath(pageID, fileName)
+	if !found {
+		return nil, "", errors.New("添付が見つかりません")
 	}
 
 	if strings.ToLower(filepath.Ext(fileName)) == ".pdf" {

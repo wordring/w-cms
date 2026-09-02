@@ -60,7 +60,7 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 
 	file, header, err := r.FormFile("image_file")
 	if err != nil {
-		http.Error(w, "ファイルを受け取れませんでした（サイズ上限は32MiBです）", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("ファイルを受け取れませんでした（サイズ上限は %dMiB です）", MaxUploadBytes()>>20), http.StatusBadRequest)
 		return
 	}
 	defer file.Close()

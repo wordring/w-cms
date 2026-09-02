@@ -25,19 +25,12 @@ import (
 
 // allowedAttachmentExts は添付として保存を許す拡張子です。
 //
-// **拡張子を絞ることが要です。** ページのディレクトリ（data/master/xx/<id>/）には
-// 本文 <id>.html と属性サイドカー <id>.meta.json が同居しているため、任意の名前・
-// 種類で書き込めると次の2つが成立してしまいます:
-//
-//   - **権限昇格**: <id>.meta.json を上書きして owner / mode / public を書き換える。
-//     サイドカーは権限の正本であり、次の同期で page_perms へ反映される。write 権限
-//     しか持たない利用者が、本来 admin だけの chown や所有者だけの公開操作を行えてしまう。
-//   - **保存型XSS**: .html や .svg を置き、/data/master/... 経由で**同一オリジンの
-//     HTMLとして**配信させる。本文の保存時サニタイズ（docs/本文サニタイズ設計.md）を
-//     完全に迂回でき、中間版CSPの script-src 'unsafe-inline' はインラインを許すため
-//     スクリプトが動く。
-//
-// 配信側（page.DataFileHandler）にも多層防御を入れてあるが、そもそも置かせないのが第一。
+// かつて添付は正本（<id>.html・<id>.meta.json）と同じフォルダに置かれ、拡張子の
+// 許可リストだけが「サイドカーを上書きして権限を書き換える」「.html/.svg を同一
+// オリジンで配信させる」を防いでいた。2026-08-31 に添付を files/ サブフォルダへ
+// 分けてからは、その穴は**構造で**塞がっている（page/storage.go AttachmentsDirName）。
+// 拡張子の絞り込みは以後、安全の門ではなく運用の方針——この口は PDF 専用。
+// 配信側（setAttachmentHeaders）にも多層防御があり、未知の種別は解釈させない。
 var allowedAttachmentExts = map[string]bool{".pdf": true}
 
 // attachmentFileName は受け取ったファイル名を、ページのディレクトリ内へ安全に置ける
@@ -197,8 +190,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Method not allowed"})
+		jsonFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
@@ -212,8 +204,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	// パスに使う前にゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
 	normID, ok := page.NormalizeID(req.PageID)
 	if !ok {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "ページIDが不正です"})
+		jsonFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	req.PageID = normID
@@ -229,26 +220,18 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	// 本文・サイドカーの名指し拒否をそのまま効かせる。
 	fileName, err := attachmentFileName(req.PageID, req.FileName)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": err.Error()})
+		jsonFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// 新しい置き場（files/）→ 旧（ページフォルダ直下）の順で探す。
-	pdfPath := filepath.Join(page.AttachmentDir(req.PageID), fileName)
-	if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
-		pdfPath = filepath.Join(page.GetPageDir(req.PageID), fileName)
-	}
-
-	if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "PDF file not found on server"})
+	pdfPath, found := page.AttachmentPath(req.PageID, fileName)
+	if !found {
+		jsonFail(w, http.StatusNotFound, "PDF file not found on server")
 		return
 	}
-
 	pdfBytes, err := os.ReadFile(pdfPath)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "PDFファイルの読み込みに失敗しました"})
+		jsonFail(w, 0, "PDFファイルの読み込みに失敗しました")
 		return
 	}
 
@@ -266,17 +249,11 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, errNoGeminiKey) {
 			// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"success": false,
-				"message": "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/",
-			})
+			jsonFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/")
 			return
 		}
 		log.Printf("[Gemini API Error] %v", err)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"message": "Gemini APIの呼び出しに失敗しました: " + err.Error(),
-		})
+		jsonFail(w, 0, "Gemini APIの呼び出しに失敗しました: "+err.Error())
 		return
 	}
 
