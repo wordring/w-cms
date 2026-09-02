@@ -247,7 +247,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 
 	respText, err := GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdfBytes})
 	if err != nil {
-		if errors.Is(err, errNoGeminiKey) {
+		if errors.Is(err, ErrNoGeminiKey) {
 			// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
 			JSONFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/")
 			return
@@ -258,7 +258,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var items []ParsedItem
-	err = json.Unmarshal([]byte(stripJSONFence(respText)), &items)
+	err = json.Unmarshal([]byte(StripJSONFence(respText)), &items)
 	if err != nil {
 		// パース失敗時はエラーではなく空配列を返す（フロント側でダミー追加ロジックが走るため）
 		json.NewEncoder(w).Encode(map[string]interface{}{

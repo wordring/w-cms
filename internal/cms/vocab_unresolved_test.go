@@ -148,8 +148,8 @@ func TestUnresolvedReportsRenamedPartIDTag(t *testing.T) {
 // （毎ページ鳴る告知は読まれなくなり、本当の改名を隠してしまう）。
 func TestUnresolvedDoesNotReportPartIDWithoutMaterials(t *testing.T) {
 	cases := map[string]string{
-		"自由語のタグだけ":   `<dl data-type="tags"><dt>担当者</dt><dd>山田</dd></dl>`,
-		"タグが空":       `<dl data-type="tags"></dl>`,
+		"自由語のタグだけ":    `<dl data-type="tags"><dt>担当者</dt><dd>山田</dd></dl>`,
+		"タグが空":        `<dl data-type="tags"></dl>`,
 		"部材表の無い普通の本文": `<h1>ふつうのページ</h1><p>本文</p>`,
 		"受注明細はあるが部材表は無い": `<dl data-type="tags"><dt>担当者</dt><dd>山田</dd></dl>` +
 			`<table data-type="client-order-items"><tbody><tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"testing"
 
-	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 )
 
@@ -78,15 +77,10 @@ func TestOrderNoIsScopedToPage(t *testing.T) {
 		t.Errorf("ページ31の再保存でページ32の受注が消えました: ヘッダ=%d 明細=%d", h, i)
 	}
 
-	// 集計もページごとに閉じていること（他ページの明細が混ざらない）
-	admin := &auth.User{Username: "root", IsAdmin: true}
-	if _, err := RequiredMaterials(admin, 31); err != nil {
-		t.Fatalf("RequiredMaterialsエラー: %v", err)
-	}
 }
 
 // TestEmptyOrderNoDoesNotCollide は、番号が空でもページ同士が衝突しないことを固定します。
-// SQLite の UNIQUE は '' を重複扱いするので、横断UNIQUE のままだと
+// SQLite の UNIQUE は ” を重複扱いするので、横断UNIQUE のままだと
 // 「番号を書き忘れた発注書」がサイト全体で1件しか持てませんでした。
 func TestEmptyOrderNoDoesNotCollide(t *testing.T) {
 	seedOrderPages(t, "000041", "000042")
@@ -103,45 +97,6 @@ func TestEmptyOrderNoDoesNotCollide(t *testing.T) {
 	}
 	if h, _ := countOrdersOf(t, 42); h != 1 {
 		t.Errorf("番号が空のページ42の受注が入っていません: ヘッダ=%d", h)
-	}
-}
-
-// TestRequiredMaterialsDoesNotMixPages は、同じ番号を使う2ページの明細が
-// 手配集計で混ざらないことを固定します（漏洩ではなく数字の誤り）。
-func TestRequiredMaterialsDoesNotMixPages(t *testing.T) {
-	seedOrderPages(t, "000051", "000052", "000053")
-
-	// 部品定義ページ53: PART-A に部材が1つ紐づく
-	materials := `<dl data-type="tags"><dt>部品番号</dt><dd>PART-A</dd></dl>` +
-		`<table data-type="part-materials"><tbody>` +
-		`<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>` +
-		`<tr><td>鋼板</td><td>800</td><td>A商事</td><td>2</td></tr></tbody></table>`
-	if err := SyncIndex("000053", materials); err != nil {
-		t.Fatalf("SyncIndex(53)エラー: %v", err)
-	}
-
-	// 51と52が同じ番号 PO-9 で、どちらも PART-A を1個ずつ受注している。
-	if err := SyncIndex("000051", clientOrderHTML("PO-9", "得意先A", "PART-A")); err != nil {
-		t.Fatalf("SyncIndex(51)エラー: %v", err)
-	}
-	if err := SyncIndex("000052", clientOrderHTML("PO-9", "得意先B", "PART-A")); err != nil {
-		t.Fatalf("SyncIndex(52)エラー: %v", err)
-	}
-
-	admin := &auth.User{Username: "root", IsAdmin: true}
-	for _, pid := range []int{51, 52} {
-		list, err := RequiredMaterials(admin, pid)
-		if err != nil {
-			t.Fatalf("RequiredMaterials(%d)エラー: %v", pid, err)
-		}
-		if len(list) != 1 {
-			t.Fatalf("ページ%d の集計行数が想定と違います: %d (期待 1)", pid, len(list))
-		}
-		// 明細1行 × 数量1 × 部材数量2 ＝ 2。他ページが混ざれば 4 になる。
-		if list[0].TotalRequired != 2 {
-			t.Errorf("ページ%d の必要総数に他ページが混ざりました: %d (期待 2)",
-				pid, list[0].TotalRequired)
-		}
 	}
 }
 

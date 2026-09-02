@@ -88,7 +88,7 @@ func TestInferColumnType(t *testing.T) {
 		{"納期", ColDate},
 		{"検査日", ColDate},
 		{"写真", ColImage},
-		{"品番", ColText},   // 辞書に無い語は text
+		{"品番", ColText},     // 辞書に無い語は text
 		{" 数量 ", ColNumber}, // trim してから引く
 	}
 	for _, c := range cases {
@@ -120,7 +120,7 @@ func TestNormalizeValue(t *testing.T) {
 		{ColDate, "２０２６／０８／１０", "2026-08-10", true},
 		{ColDate, "2026-13-01", "", false}, // 実在しない日付
 		{ColDate, "来週", "", false},
-		{ColText, "8000", "", false},  // text は正規化しない
+		{ColText, "8000", "", false}, // text は正規化しない
 		{ColEnum, "合格", "", false},   // enum も正規化しない
 		{ColImage, "p.jpg", "", false},
 	}

@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -53,6 +54,14 @@ func (n noDirListing) Open(name string) (http.File, error) {
 }
 
 // main はアプリケーションの起動とルーティングの設定を行います。
+// loadedExtensions はコンパイル時に組み込まれた拡張セットの名前です
+// （`cmd/w-cms/ext_*.go` の `init()` が自分を足す）。
+//
+// **起動ログに出すのが目的**です。ビルドタグの付け外しは目に見えないので、
+// 「入っているつもりで入っていない」を画面から確かめられるようにしておきます
+// ——タグを忘れたビルドは、受注ページ生成も部材計算も無いまま普通に起動します。
+var loadedExtensions []string
+
 func main() {
 	// 設定ファイル（data/settings.json）を読む。**DBより先**に読むのは、この後の
 	// 再構築が語→型の推論辞書を使うため。無ければ既定値で作られ、壊れていれば
@@ -106,6 +115,11 @@ func main() {
 	handler := buildHandler()
 
 	// サーバーの起動
+	if len(loadedExtensions) == 0 {
+		log.Println("拡張セット: なし（素の w-cms）")
+	} else {
+		log.Println("拡張セット: " + strings.Join(loadedExtensions, ", "))
+	}
 	log.Println("w-cms 起動: http://localhost:8080")
 	if err := http.ListenAndServe(":8080", handler); err != nil {
 		log.Fatalf("サーバー終了: %v", err)
@@ -135,7 +149,6 @@ func buildHandler() http.Handler {
 	// 画像の添付（png/jpeg/webp/gif/svg。中身の検証とEXIF除去はハンドラ内。要件 §2.6）
 	protected.HandleFunc("/api/upload-image", cms.UploadImageHandler)
 	protected.HandleFunc("/api/parse-pdf", cms.ParsePDFHandler)
-	protected.HandleFunc("/api/analyze-attachment", cms.AnalyzeAttachmentAPIHandler)
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	// テンプレート選択メニューの中身（「テンプレート」フォルダ配下のツリー）
 	protected.HandleFunc("/api/templates", cms.TemplatesAPIHandler)

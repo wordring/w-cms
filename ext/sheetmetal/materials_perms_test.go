@@ -1,7 +1,8 @@
-package cms
+package sheetmetal
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -43,7 +45,7 @@ func setupMaterialsPermsTest(t *testing.T) {
 	if err := database.CreateCoreTables(db); err != nil {
 		t.Fatalf("コアテーブル作成エラー: %v", err)
 	}
-	if err := ApplySchema(db); err != nil {
+	if err := cms.ApplySchema(db); err != nil {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 }
@@ -66,6 +68,17 @@ func addPage(t *testing.T, id, parentID int, title, owner, mode string, public b
 		id, owner, mode, public); err != nil {
 		t.Fatalf("page_perms投入エラー: %v", err)
 	}
+	// 正本（サイドカー）も書く——SyncIndex は権限をサイドカーから引き直すので、
+	// これが無いと種まきの本文同期で権限が消える（派生だけ入れても本番と違う形）。
+	parentStr := ""
+	if parentID >= 0 {
+		parentStr = fmt.Sprintf("%06d", parentID)
+	}
+	if err := page.WriteSidecar(fmt.Sprintf("%06d", id), page.PageMeta{
+		Owner: owner, Mode: mode, Public: public, ParentID: parentStr,
+	}); err != nil {
+		t.Fatalf("サイドカー作成エラー: %v", err)
+	}
 }
 
 // seedSecretMaterial は「非公開の部品定義ページ2」と「受注ページ」を用意します。
@@ -77,17 +90,29 @@ func seedSecretMaterial(t *testing.T, orderPageID int, orderPagePublic bool, ord
 	addPage(t, 2, 0, "部品定義", "alice", "300", false)
 	addPage(t, orderPageID, 0, "受注", orderOwner, "302", orderPagePublic)
 
+	// 種まきは**実本文を SyncIndex に通す**——索引へ直接書くより経路が長いが、
+	// 見出し行の解決・タグの索引まで本番と同じ道を通る（拡張パッケージからは
+	// コアの索引ヘルパが見えない、という事情もある）。
+	sync := func(id int, body string) {
+		t.Helper()
+		pid := fmt.Sprintf("%06d", id)
+		if err := cms.SyncIndex(pid, body); err != nil {
+			t.Fatalf("SyncIndex(%d)エラー: %v", id, err)
+		}
+	}
 	// 部材定義はページ2。部品番号タグ SECRET-PART が受注明細の品番と結ぶ。
-	seedPageTag(t, 2, "部品番号", "SECRET-PART")
-	seedVocabTable(t, 2, "part-materials", 0, map[string]string{
-		"部材名": "極秘部材", "単価": "99999", "仕入先": "㊙商社", "数量": "2",
-	})
-	seedVocabBlock(t, orderPageID, "client-order", 0, map[string]string{
-		"発注書番号": "PO-1", "発注元": "得意先", "発注日": "2026-08-20",
-	})
-	seedVocabTable(t, orderPageID, "client-order-items", 0, map[string]string{
-		"品番": "SECRET-PART", "品名": "部品", "単価": "100", "数量": "3",
-	})
+	sync(2, `<h1>部品定義</h1>`+
+		`<dl data-type="tags"><dt>部品番号</dt><dd>SECRET-PART</dd></dl>`+
+		`<table data-type="part-materials"><tbody>`+
+		`<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>`+
+		`<tr><td>極秘部材</td><td>99999</td><td>㊙商社</td><td>2</td></tr></tbody></table>`)
+	sync(orderPageID, `<h1>受注</h1>`+
+		`<section data-type="client-order"><dl>`+
+		`<dt>発注書番号</dt><dd>PO-1</dd><dt>発注元</dt><dd>得意先</dd>`+
+		`<dt>発注日</dt><dd>2026-08-20</dd></dl>`+
+		`<table data-type="client-order-items"><tbody>`+
+		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th></tr>`+
+		`<tr><td>SECRET-PART</td><td>部品</td><td>100</td><td>3</td></tr></tbody></table></section>`)
 }
 
 // TestRequiredMaterialsHidesUnreadableDefinitions は、定義元ページを読めない
@@ -153,7 +178,7 @@ func TestRequiredMaterialsViewHidesFromAnonymous(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/1", nil) // Cookieなし＝匿名
-	out := RenderComputedViews(req, 1, `<section data-type="required-materials"></section>`)
+	out := cms.RenderComputedViews(req, 1, `<section data-type="required-materials"></section>`)
 
 	if strings.Contains(out, "極秘部材") || strings.Contains(out, "㊙商社") {
 		t.Errorf("非公開ページ由来の部材が匿名へ描画されました:\n%s", out)

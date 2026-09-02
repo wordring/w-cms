@@ -1,4 +1,4 @@
-package cms
+package sheetmetal
 
 import (
 	"archive/zip"
@@ -70,7 +70,7 @@ var sampleJudgment = &orderJudgment{
 // （機能見出し形＋受信元タグ・子ページ・権限継承・索引）が生まれることを検証します。
 func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	putAttachment(t, id, "abc123.pdf", []byte("%PDF-1.4 fake"))
 	stubJudge(t, func(pdf []byte) (*orderJudgment, error) {
 		if !strings.HasPrefix(string(pdf), "%PDF") {
@@ -140,7 +140,7 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 // 元ファイル タグが添えられることを検証します。
 func TestAnalyzeZipEntry(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -188,7 +188,7 @@ func TestAnalyzeZipEntry(t *testing.T) {
 // （ページは作らない・エラーでもない）。
 func TestAnalyzeNonOrderCreatesNothing(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
 	putAttachment(t, id, "abc123.pdf", []byte("%PDF-1.4 fake"))
 	stubJudge(t, func([]byte) (*orderJudgment, error) {
 		return &orderJudgment{IsClientOrder: false}, nil
@@ -212,7 +212,7 @@ func TestAnalyzeNonOrderCreatesNothing(t *testing.T) {
 // エラー応答になることを検証します。
 func TestAnalyzeSurvivesJudgeError(t *testing.T) {
 	const id = "000012"
-	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
 	putAttachment(t, id, "abc123.pdf", []byte("%PDF-1.4 fake"))
 	stubJudge(t, func([]byte) (*orderJudgment, error) {
 		return nil, errors.New("模擬API障害")
@@ -229,7 +229,7 @@ func TestAnalyzeSurvivesJudgeError(t *testing.T) {
 func TestAnalyzeRequiresWrite(t *testing.T) {
 	const id = "000012"
 	// mode 330: owner/group のみ書ける。部外者 bob は read も write も無い。
-	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	putAttachment(t, id, "abc123.pdf", []byte("%PDF-1.4 fake"))
 	stubJudge(t, func([]byte) (*orderJudgment, error) { return sampleJudgment, nil })
 	rr := postAnalyze(t, &auth.User{Username: "bob"},

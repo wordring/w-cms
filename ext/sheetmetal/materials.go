@@ -1,4 +1,4 @@
-package cms
+package sheetmetal
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -24,9 +25,9 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 
 func init() {
-	Register(materialsPlugin{})
+	cms.Register(materialsPlugin{})
 	// 計算ビューの描画も自分で登録する（形式の宣言と対）。
-	RegisterView("required-materials", requiredMaterialsViewHTML)
+	cms.RegisterView("required-materials", requiredMaterialsViewHTML)
 }
 
 type materialsPlugin struct{}
@@ -39,18 +40,13 @@ func (materialsPlugin) Schema() []string { return nil }
 
 func (materialsPlugin) Tables() []string { return nil }
 
-// VocabNumber は表の値を数として読みます（¥・桁区切り・全角を吸収）。
-func VocabNumber(raw string) int {
-	if norm, ok := NormalizeValue(ColNumber, raw); ok {
-		return AtoiSafe(norm)
-	}
-	return AtoiSafe(raw)
-}
-
 // Routes は部材手配計算APIのエンドポイントを提供します（RouteProvider実装）。
-func (materialsPlugin) Routes() []Route {
-	return []Route{
+func (materialsPlugin) Routes() []cms.Route {
+	return []cms.Route{
 		{Pattern: "/api/required-materials", Handler: RequiredMaterialsAPIHandler},
+		// PDF解析（板金部の既定セット）。main.go への直書きをやめてここへ寄せた
+		// ——ルートも拡張と一緒に外れる（`-tags minimal` で消える）。
+		{Pattern: "/api/analyze-attachment", Handler: AnalyzeAttachmentAPIHandler},
 	}
 }
 
@@ -118,7 +114,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	// 1. そのページの受注明細（品番・数量）を索引から読む。
 	//    ページで絞るので、同じ発注書番号を別ページで使っても混ざらない
 	//    （硬い表のころ order_no のサブクエリで他ページの明細まで拾った・設計総点検③）。
-	orderItems, err := VocabTableRowsOf(db, pageIDInt, "client-order-items")
+	orderItems, err := cms.VocabTableRowsOf(db, pageIDInt, "client-order-items")
 	if err != nil {
 		return nil, err
 	}
@@ -142,27 +138,27 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    「そのタグを持つページ」を逆引きしてから、そのページの部材表を読みます。
 	//    鍵の名前はレジストリ宣言（part-materials の RequiresTag）が持つ——ここへ
 	//    直書きすると、見出しを改名したときに告知する側と読む側がずれる（設計総点検⑤）。
-	materialsDef, _ := VocabDefByType("part-materials")
+	materialsDef, _ := cms.VocabDefByType("part-materials")
 	tagName := materialsDef.RequiresTag
 
 	// 同じ品番が明細に何度出ても、定義の引き直しは1度だけ。
-	defsFor := map[string][]VocabRow{}
+	defsFor := map[string][]cms.VocabRow{}
 
 	for _, item := range orderItems {
 		partID := item.Values["item-id"]
 		if partID == "" {
 			continue // 品番の無い行は突き合わせようがない
 		}
-		orderQty := vocabQuantity(item)
+		orderQty := cms.VocabQuantity(item)
 
 		mats, ok := defsFor[partID]
 		if !ok {
-			pageIDs, err := PagesByTag(db, tagName, partID)
+			pageIDs, err := cms.PagesByTag(db, tagName, partID)
 			if err != nil {
 				return nil, err
 			}
 			for _, defPageID := range pageIDs {
-				rows, err := VocabTableRowsOf(db, defPageID, "part-materials")
+				rows, err := cms.VocabTableRowsOf(db, defPageID, "part-materials")
 				if err != nil {
 					return nil, err
 				}
@@ -176,7 +172,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 				continue // 定義元ページを読めない相手には見せない
 			}
 			name := m.Values["item-name"]
-			totalReq := vocabQuantity(m) * orderQty
+			totalReq := cms.VocabQuantity(m) * orderQty
 			if existing, ok := materialsMap[name]; ok {
 				existing.TotalRequired += totalReq
 			} else {
@@ -198,7 +194,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    ヘッダ1つと明細表1つを持つ限り、同じ番号どうしが対になります。
 	//    （硬い表のころは発注書番号で結んでいたが、番号が重複すると仕入先が
 	//    入れ替わりえた・設計総点検③。文書順なら重複しても取り違えない）
-	headers, err := VocabBlocksOf(db, pageIDInt, "our-order")
+	headers, err := cms.VocabBlocksOf(db, pageIDInt, "our-order")
 	if err != nil {
 		return nil, err
 	}
@@ -207,13 +203,13 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		supplierOf[h.BlockNo] = h.Values["supplier-name"]
 	}
 
-	ourItems, err := VocabTableRowsOf(db, pageIDInt, "our-order-items")
+	ourItems, err := cms.VocabTableRowsOf(db, pageIDInt, "our-order-items")
 	if err != nil {
 		return nil, err
 	}
 	for _, oi := range ourItems {
 		name := oi.Values["item-name"]
-		quantity := vocabQuantity(oi)
+		quantity := cms.VocabQuantity(oi)
 		if existing, ok := materialsMap[name]; ok {
 			existing.Ordered += quantity
 		} else {
@@ -240,13 +236,4 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	// 表示・応答が呼び出しごとに変わらないよう部材名順に揃える（map の走査順は不定）。
 	sort.Slice(list, func(i, j int) bool { return list[i].MaterialName < list[j].MaterialName })
 	return list, nil
-}
-
-// vocabQuantity は数量列を読みます。**空セルは 1**（旧 <m-material> の既定を
-// 引き継いだ値で、硬い表のころは索引を書く側が同じ既定を当てていた）。
-func vocabQuantity(row VocabRow) int {
-	if row.Values["quantity"] == "" {
-		return 1
-	}
-	return row.Num("quantity")
 }

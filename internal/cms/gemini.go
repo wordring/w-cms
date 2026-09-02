@@ -25,9 +25,9 @@ import (
 	"google.golang.org/api/option"
 )
 
-// errNoGeminiKey は GEMINI_API_KEY 未設定の印です。呼ぶ側が API の失敗と区別して
+// ErrNoGeminiKey は GEMINI_API_KEY 未設定の印です。呼ぶ側が API の失敗と区別して
 // 「設定を促す」応答を返せるよう、独立したエラー値にしてあります。
-var errNoGeminiKey = errors.New("GEMINI_API_KEY が設定されていません")
+var ErrNoGeminiKey = errors.New("GEMINI_API_KEY が設定されていません")
 
 // geminiModelName は全呼び出しで共有するモデル名です。
 const geminiModelName = "gemini-3.5-flash"
@@ -37,7 +37,7 @@ const geminiModelName = "gemini-3.5-flash"
 func GeminiGenerate(prompt string, blob genai.Blob) (string, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		return "", errNoGeminiKey
+		return "", ErrNoGeminiKey
 	}
 	// アップロード応答の中から同期で呼ぶ経路があるため、無限に待たない。
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -63,9 +63,9 @@ func GeminiGenerate(prompt string, blob genai.Blob) (string, error) {
 	return out.String(), nil
 }
 
-// stripJSONFence は「JSONのみを出力」と指示しても付いてくることがある
+// StripJSONFence は「JSONのみを出力」と指示しても付いてくることがある
 // マークダウンのコードブロック修飾（```json … ```）を剥がします。
-func stripJSONFence(s string) string {
+func StripJSONFence(s string) string {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {
 		s = strings.TrimPrefix(s, "```json")

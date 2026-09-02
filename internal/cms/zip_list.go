@@ -99,14 +99,14 @@ func listZipEntries(path string) ([]zipEntry, int, error) {
 		if len(entries) >= zipListMaxEntries {
 			continue
 		}
-		entries = append(entries, zipEntry{Name: decodeZipName(f.Name, f.NonUTF8), Size: f.UncompressedSize64})
+		entries = append(entries, zipEntry{Name: DecodeZipName(f.Name, f.NonUTF8), Size: f.UncompressedSize64})
 	}
 	return entries, total, nil
 }
 
-// decodeZipName はエントリ名を UTF-8 へ直します。UTF-8フラグの無い名前は
+// DecodeZipName はエントリ名を UTF-8 へ直します。UTF-8フラグの無い名前は
 // Shift_JIS とみなす（Windows の右クリック圧縮の実情）。復号できなければ原文のまま。
-func decodeZipName(name string, nonUTF8 bool) string {
+func DecodeZipName(name string, nonUTF8 bool) string {
 	if !nonUTF8 {
 		return name
 	}
