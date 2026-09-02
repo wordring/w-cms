@@ -13,4 +13,4 @@ try {
     // 目次は右レールのカードになった（2026-08-31）ので、独立レールは左右の2本。
     if (rails.left === false) document.documentElement.classList.add('left-collapsed');
     if (rails.right === false) document.documentElement.classList.add('right-collapsed');
-} catch (e) { /* localStorage 不可時は既定（ページ階層のみ開く） */ }
+} catch (e) { /* localStorage 不可時は既定（両レールとも開く） */ }

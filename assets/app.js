@@ -192,25 +192,20 @@
         document.addEventListener('keydown', onTemplateMenuKey, true);
     }
 
-    // --- サイドパネルの開閉（UI ストア `wcms.ui.rails` に永続化。FOUC防止は <head> のインラインscript） ---
-    // レールは3枚（left=ページ階層／toc=目次／right=ページ情報）。
-    // 左側の2枚（left・toc）は同じグループとして扱い、同時には開かない
-    // （片方を開くともう片方は自動で畳む）。right は独立。
-    // 目次は右レールのカードへ移した（2026-08-31）。独立レールは left / right の2本。
+    // --- サイドパネルの開閉（UI ストア `wcms.ui.rails` に永続化。FOUC防止は boot.js） ---
+    // レールは2枚（left=ページ階層・目次／right=ページ情報）。目次は左レールの先頭カード
+    // （2026-09-01）。グループは将来「同時に開かない」レールが増えたときのための器で、
+    // いまは各レール単独。
     const RAIL_IDS = ['left', 'right'];
     const RAIL_GROUPS = [['left'], ['right']];
     function railGroupOf(side) {
         return RAIL_GROUPS.find(g => g.includes(side)) || [side];
     }
 
-    function railState() {
-        return UI.get('rails', {});
-    }
-
     // 狭幅（ドロワーモード）かどうか。レールごとに異なる閾値を持つ（CSS の @media と
-    // 一致させること）。右レールを先に、次に左側2レール（left・toc）の順にドロワー化する
-    // 段階式で、本文（doc-column）の幅が狭くなりすぎないようにする。
-    const RAIL_BREAKPOINTS = { left: 760, toc: 760, right: 1100 };
+    // 一致させること）。右レールを先に、次に左レールの順にドロワー化する段階式で、
+    // 本文（doc-column）の幅が狭くなりすぎないようにする。
+    const RAIL_BREAKPOINTS = { left: 760, right: 1100 };
     const railNarrow = (side) => window.matchMedia(`(max-width: ${RAIL_BREAKPOINTS[side]}px)`).matches;
 
     function toggleRail(side) {
@@ -251,7 +246,7 @@
     // レールごとに、狭幅ならドロワーの開閉、広い画面では折り畳み状態を反映する。
     function syncRailToggleButtons() {
         RAIL_IDS.forEach(side => {
-            const btn = document.getElementById('toggle-' + side);
+            const btn = document.getElementById('w-toggle-' + side);
             if (!btn) return;
             const open = railNarrow(side)
                 ? document.documentElement.classList.contains(side + '-drawer-open')
@@ -1065,7 +1060,8 @@
             subtree: true,
             characterData: true,
             attributes: true,
-            attributeFilter: ['value', 'order-no', 'client-name', 'ordered-at', 'supplier-name', 'item-id', 'item-name', 'price', 'quantity', 'cost', 'status', 'tag']
+            // 本文が持つ属性のうち、編集で変わりうるもの（リンク先・埋め込み先・形式の印）。
+            attributeFilter: ['href', 'src', 'download', 'data-type', 'data-src']
         });
 
         document.getElementById('w-editor-content').addEventListener('input', () => {
@@ -1435,10 +1431,10 @@
 
     // HTMLソースコードのリアルタイムプレビューを生成する処理
     //
-    // カスタム要素の語彙（要素名 → 保存する属性）は **サーバーの /api/tag-schema** から取得する。
-    // 各プラグインの Tags() が唯一の正本で、サニタイズ許可リストも同じ宣言から作られるため、
-    // 「保存する属性」と「許可される属性」が食い違いようがない。ここに手書きの表を持たないので、
-    // プラグインを追加すれば新しい要素もそのまま保存されるようになる。
+    // 本文の語彙（要素名 → 保存する属性）は **サーバーの /api/tag-schema** から取得する。
+    // サニタイザの許可リストと語彙レジストリが唯一の正本で、サニタイズ許可リストも同じ
+    // 宣言から作られるため、「保存する属性」と「許可される属性」が食い違いようがない。
+    // ここに手書きの表を持たない。
     let tagSchema = null;              // { "p": ["data-id"], "table": ["data-id", "data-type"], ... }
     let voidTags = new Set();          // 終了タグを書かない要素（br・img 等）
     // 語彙レジストリ（①）の形式定義。スラッシュメニューの項目と挿入骨格
@@ -1708,7 +1704,7 @@
     // textContent 代入（DOMが自動エスケープする）で行い、文字列置換＋innerHTML の
     // テンプレート機構は持ち込まない（Web Components 廃止決定・語彙モデル §7）。
     // defaultFieldValue は骨格生成時に埋める既定値。日付は今日、発注書番号は
-    // 一意な仮番号（order_no は UNIQUE 制約があり、空のまま複数保存すると衝突するため。
+    // 一意な仮番号（空のまま複数の発注書を作ると見分けが付かないため。
     // 旧 createComponentElement の 'PO-' 採番と同じ理由）。
     function defaultFieldValue(col) {
         if (col.type === 'date') return new Date().toISOString().split('T')[0];
@@ -2129,7 +2125,7 @@
     function isServerOwned(el) {
         if (!el) return false;
         if (el.closest && el.closest('.vocab-chrome')) return true;
-        for (let p = el; p && p.id !== 'w-editor-content' && p.id !== 'editor-content'; p = p.parentElement) {
+        for (let p = el; p && p.id !== 'w-editor-content'; p = p.parentElement) {
             if (p.tagName && p.tagName.indexOf('-') !== -1) return true;
         }
         return false;
@@ -4086,8 +4082,7 @@
     //
     // かつては markup のインライン on*= から関数を直接呼んでいた。外部ファイルへ移して
     // addEventListener で結ぶことで、Content-Security-Policy から script-src 'unsafe-inline'
-    // を外せるようにする（docs/【考察】CSP強化.md §4）。カスタム要素側の data-attr /
-    // data-remove（エディタ仕様.md §0.1）と同じ考え方で、markup は「何を押したか」だけを
+    // を外せるようにする（docs/本文サニタイズ設計.md §6）。markup は「何を押したか」だけを
     // data 属性で示し、振る舞いはこちらが持つ。
     //
     // このスクリプトは </body> の直前で読まれるので、ここに出てくる要素はすべて存在する。
