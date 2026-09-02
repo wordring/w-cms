@@ -84,7 +84,8 @@ func (w *walkState) Counter(key string) int {
 }
 
 // Ancestors は現在の要素の祖先を、根に近い順で返します。
-// ファイル容器の `data-src` を親から拾う、といった用途に使います。
+// 「親の側にある値を子の処理で使う」用途のための口です（ファイル容器の廃止で
+// 現在の使い手はテストだけ。配送係の道具として残してあります）。
 func (w *walkState) Ancestors() []*html.Node { return w.ancestors }
 
 // Closest は祖先のうち、fn が真を返す最も近いものを返します（無ければ nil）。

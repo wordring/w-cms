@@ -240,7 +240,7 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, blockI
 //
 // 可変タグ（data_type="tags"）の行き先も**この索引だけ**です。かつては専用の
 // page_tags テーブル（plugin_page_tags.go）が並走していたが、中身が完全に重複し
-// **読む者が1人もいなかった**ため 2026-08-30（D-1）で吸収した。「親ページID」を
+// **読む者が1人もいなかった**ため 2026-08-30（D-1 の第一歩）で吸収した。「親ページID」を
 // 取り込まない旧ガードも同時に消えた——親はサイドカーが正本で、この語を親として
 // 解釈するコードはもう無い（書けば普通のタグとして索引に載るだけ・不活性）。
 func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, blockID string, def VocabDef, dl *html.Node) error {

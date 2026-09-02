@@ -62,7 +62,7 @@ func InitDB() error {
 //
 // 本文の形式（data-type）に対応するテーブルはここには置きません。
 // dl[data-type="tags"]（可変タグ）も専用テーブルを持ちません——②汎用索引
-// （cms/vocab_index.go）が他の形式と同じ縦持ちで索引します（2026-08-30・D-1）。
+// （cms/vocab_index.go）が他の形式と同じ縦持ちで索引します（2026-08-30・D-1 の第一歩。ドメイン表7つの全廃は 08-31）。
 var CoreTables = []string{
 	// 1. ドキュメントの基本インデックス情報（本文はファイル保存）。
 	//    parent_id / created_at / created_by / updated_at はサイドカー
