@@ -2987,8 +2987,17 @@
                 const d = await res.json();
                 if (!d.success) {
                     notify('解析できませんでした: ' + (d.message || res.status), { type: 'alert', duration: 0, id: 'analyze-pdf' });
+                } else if (d.doc_type === 'drawing' && d.page_id) {
+                    // 図面と判定された枝。同じページのDXFと図面番号で突き合わせた
+                    // 結果も知らせる（0件も普通——PDFだけの図面はよくある）。
+                    var msg = '部品ページを作りました: ' + (d.title || d.page_id) +
+                        '（/' + d.page_id + '）';
+                    if (d.matched_dxf > 0) {
+                        msg += ' — 図面番号の一致したDXF ' + d.matched_dxf + '件と結びました。';
+                    }
+                    notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
                 } else if (!d.is_client_order) {
-                    notify('発注書ではないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
+                    notify('発注書でも図面でもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
                 } else {
                     notify('受注ページを作りました: ' + (d.title || d.page_id) +
                         '（/' + d.page_id + '）', { type: 'success', duration: 0, id: 'analyze-pdf' });
