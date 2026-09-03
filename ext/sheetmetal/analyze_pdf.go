@@ -47,11 +47,16 @@ import (
 
 // orderJudgment は Gemini の判定＋抽出結果です（プロンプトと同じ形）。
 type orderJudgment struct {
-	IsClientOrder bool           `json:"is_client_order"`
-	OrderNo       string         `json:"order_no"`
-	Customer      string         `json:"customer"`
-	OrderDate     string         `json:"order_date"`
-	Items         []orderPDFItem `json:"items"`
+	IsClientOrder bool `json:"is_client_order"`
+	// **図面PDFの枝**（2026-09-03）——添付DXFとの突き合わせに使う。
+	// PDFが図面なら DocType が "drawing" になり、図面番号・図面名称が入る。
+	DocType     string         `json:"doc_type"`
+	DrawingNo   string         `json:"drawing_no"`
+	DrawingName string         `json:"drawing_name"`
+	OrderNo     string         `json:"order_no"`
+	Customer    string         `json:"customer"`
+	OrderDate   string         `json:"order_date"`
+	Items       []orderPDFItem `json:"items"`
 }
 
 type orderPDFItem struct {
@@ -114,6 +119,27 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, 0, "解析に失敗しました: "+err.Error())
 		return
 	}
+	attachIDOf := func() string { return strings.TrimSuffix(fileName, filepath.Ext(fileName)) }
+
+	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
+	// 同じ部品の図面として1枚の部品ページにまとめる（drawing_match.go）。
+	if !j.IsClientOrder && j.DocType == "drawing" {
+		matches := MatchDXFAttachments(pageID, j.DrawingNo)
+		newID, err := cms.CreateChildPage(pageID, auth.CurrentUser(r).Username,
+			buildPartPageHTML(pageID, attachIDOf(), srcEntry, j, matches))
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "部品ページを作れません: "+err.Error())
+			return
+		}
+		auth.Audit(auth.CurrentUser(r).Username, "analyze-drawing",
+			newID+" from "+pageID+"/"+fileName+srcEntrySuffix(srcEntry))
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true, "is_client_order": false, "doc_type": "drawing",
+			"page_id": newID, "title": pageTitleOf(newID),
+			"matched_dxf": len(matches),
+		})
+		return
+	}
 	if !j.IsClientOrder {
 		// 生成しないのも正常な結果——人が押した問いに「発注書ではない」と答える。
 		json.NewEncoder(w).Encode(map[string]any{"success": true, "is_client_order": false})
@@ -129,17 +155,23 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(auth.CurrentUser(r).Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName+srcEntrySuffix(srcEntry))
 
-	title := newID
-	if idInt, err := strconv.Atoi(newID); err == nil {
-		var t string
-		if err := database.DB.QueryRow(`SELECT title FROM pages WHERE id = ?`, idInt).Scan(&t); err == nil && t != "" {
-			title = t
-		}
-	}
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "is_client_order": true,
-		"page_id": newID, "title": title,
+		"page_id": newID, "title": pageTitleOf(newID),
 	})
+}
+
+// pageTitleOf は索引から題を引きます（引けなければIDをそのまま返す）。
+func pageTitleOf(pageID string) string {
+	idInt, err := strconv.Atoi(pageID)
+	if err != nil {
+		return pageID
+	}
+	var t string
+	if err := database.DB.QueryRow(`SELECT title FROM pages WHERE id = ?`, idInt).Scan(&t); err == nil && t != "" {
+		return t
+	}
+	return pageID
 }
 
 // srcEntrySuffix は監査の対象表記にZIP内パスを添えます。
@@ -206,17 +238,24 @@ func loadPDFForAnalysis(pageID, fileName, entry string) (pdf []byte, srcEntry st
 // プロンプト（＝解釈）は本セットの持ち物、呼び出しの型（キー・クライアント・
 // フェンス剥がし）はコア（gemini.go）。
 func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
-	prompt := `このPDFが「顧客（取引先）が当社宛てに発行した発注書（注文書）」かどうかを判定してください。
-見積書・請求書・納品書・図面・カタログ・その他の文書は発注書ではありません。
+	prompt := `このPDFが何の文書かを判定し、種類に応じた項目を抽出してください。
+判定する種類は次の3つです:
+  - "order"   : 顧客（取引先）が当社宛てに発行した発注書（注文書）
+  - "drawing" : 部品や製品の図面（表題欄に図面番号・図面名称があるもの）
+  - "other"   : 上記以外（見積書・請求書・納品書・カタログ・案内など）
 次の形式のJSONオブジェクトのみを出力してください（マークダウンのコードブロック修飾は付けない）:
 {
-  "is_client_order": true または false,
-  "order_no": "発注書番号（記載が無ければ空文字）",
+  "doc_type": "order" または "drawing" または "other",
+  "is_client_order": doc_type が "order" のとき true、それ以外は false,
+  "order_no": "発注書番号（発注書のとき。記載が無ければ空文字）",
   "customer": "発行元（顧客）の会社名（記載が無ければ空文字）",
   "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
-  "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）"}]
+  "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）"}],
+  "drawing_no": "図面番号（図面のとき。表題欄に記載された文字列をそのまま。記載が無ければ空文字）",
+  "drawing_name": "図面名称（図面のとき。記載が無ければ空文字）"
 }
-発注書でない場合は is_client_order を false にし、他の項目は空でかまいません。`
+図面番号は突き合わせに使うので、**表題欄に書かれている文字列をそのまま**返してください
+（ハイフンや記号を補ったり省いたりしない）。該当しない項目は空でかまいません。`
 
 	respText, err := cms.GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
 	if err != nil {
@@ -278,4 +317,44 @@ func writeHeaderPair(b *strings.Builder, name, value string) {
 	} else {
 		b.WriteString("<dd>" + html.EscapeString(value) + "</dd>")
 	}
+}
+
+// buildPartPageHTML は部品ページの本文を組みます（機能見出し形・D-2）。
+//
+//	<h1>X008-135-4 架台Assy</h1>
+//	<section><h2>図面</h2><dl> 図面番号・図面名称 </dl></section>
+//	<dl data-type="tags"> 受信元: <ページID>-<PDFの添付ID>
+//	                      対応DXF: <ページID>-<DXFの添付ID>（一致した数だけ繰り返す）
+//
+// **1通のメールの中でPDFとDXFを対応づけた結果**がこのページです。過去のページを
+// 図面番号で探して束ねることはしません——番号は別製品で衝突しうるので、
+// 同一性を担うのは常にページID（drawing_match.go 冒頭）。
+func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, matches []matchedDXF) string {
+	no, name := strings.TrimSpace(j.DrawingNo), strings.TrimSpace(j.DrawingName)
+	// 題は「図面番号 図面名称」——**図面名称は重複しうる**ので番号を先に置く。
+	title := strings.TrimSpace(no + " " + name)
+	if title == "" {
+		title = "図面（番号不明）"
+	}
+
+	var b strings.Builder
+	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
+	b.WriteString("<section><h2>図面</h2><dl>")
+	writeHeaderPair(&b, "図面番号", no)
+	writeHeaderPair(&b, "図面名称", name)
+	b.WriteString("</dl></section>")
+
+	b.WriteString(`<dl data-type="tags"><dt>受信元</dt><dd>` +
+		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
+	if srcEntry != "" {
+		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(srcEntry) + "</dd>")
+	}
+	// 一致したDXFを参照タグで指す（押すと元の通信記録ページの該当添付へ飛ぶ）。
+	// 一致が無ければ何も書かない——**DXFが無いのも普通**（PDFだけの図面）。
+	for _, m := range matches {
+		b.WriteString("<dt>対応DXF</dt><dd>" +
+			html.EscapeString(hostPageID+"-"+m.AttachID) + "</dd>")
+	}
+	b.WriteString("</dl>")
+	return b.String()
 }

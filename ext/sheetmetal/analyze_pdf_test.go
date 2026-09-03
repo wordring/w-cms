@@ -252,3 +252,128 @@ func TestBuildOrderPageHTMLEscapes(t *testing.T) {
 		t.Errorf("エスケープされていません:\n%s", html)
 	}
 }
+
+// 図面PDFとDXFの突き合わせのテスト（2026-09-03）。
+//
+// ユーザー:「PDFにプラスしてDXFがある場合が大部分です。そのため、DXFの図面名称と
+// 図面番号をPDFと付き合わせて同じ部品の図面と認識するために解析が必要」。
+// 固定するのは、Gemini が返した図面番号で**同じページのDXF添付が選ばれる**ことと、
+// **選び過ぎない**こと（番号違い・番号なし）。
+
+// putDXF は表題欄つきのDXF添付を置きます。
+func putDXF(t *testing.T, pageID, name, drawingNo, drawingName string) {
+	t.Helper()
+	body := dxfEntity("TEXT", sjisBytes(t, "図面番号"), 100, 50, 2.5) +
+		dxfEntity("TEXT", drawingNo, 100, 45, 2.5) +
+		dxfEntity("TEXT", sjisBytes(t, "図面名称"), 100, 40, 2.5) +
+		dxfEntity("TEXT", sjisBytes(t, drawingName), 100, 35, 2.5)
+	putAttachment(t, pageID, name, []byte(body))
+}
+
+var sampleDrawing = &orderJudgment{
+	DocType:     "drawing",
+	DrawingNo:   "X008-135-4",
+	DrawingName: "架台Assy",
+}
+
+// TestAnalyzeDrawingMatchesDXF は、図面PDFの解析で部品ページが生まれ、
+// 図面番号の一致したDXFだけが参照タグで結ばれることを検証します。
+func TestAnalyzeDrawingMatchesDXF(t *testing.T) {
+	const id = "000031"
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	putAttachment(t, id, "pdf001.pdf", []byte("%PDF-1.4 fake"))
+	putDXF(t, id, "dxf001.dxf", "X008-135-4", "架台Assy") // 一致
+	putDXF(t, id, "dxf002.dxf", "W240-001", "本体(前）")    // 別の部品——選ばれてはいけない
+	stubJudge(t, func([]byte) (*orderJudgment, error) { return sampleDrawing, nil })
+
+	rr := postAnalyze(t, &auth.User{Username: "alice", IsAdmin: true},
+		map[string]string{"page_id": id, "file": "pdf001.pdf"})
+	if rr.Code != 200 {
+		t.Fatalf("解析が失敗しました: %d %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		PageID     string `json:"page_id"`
+		Title      string `json:"title"`
+		MatchedDXF int    `json:"matched_dxf"`
+		DocType    string `json:"doc_type"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.DocType != "drawing" {
+		t.Errorf("図面として扱われていません: %+v", resp)
+	}
+	if resp.MatchedDXF != 1 {
+		t.Errorf("一致したDXFの数が違います: %d（別部品まで拾っていないか）", resp.MatchedDXF)
+	}
+	if resp.Title != "X008-135-4 架台Assy" {
+		t.Errorf("部品ページの題が違います: %q", resp.Title)
+	}
+
+	body := readPageBody(t, resp.PageID)
+	if !strings.Contains(body, "<dt>対応DXF</dt><dd>"+id+"-dxf001</dd>") {
+		t.Errorf("一致したDXFへの参照タグがありません: %s", body)
+	}
+	if strings.Contains(body, "dxf002") {
+		t.Errorf("番号の違うDXFまで結ばれています: %s", body)
+	}
+	if !strings.Contains(body, "<dt>受信元</dt><dd>"+id+"-pdf001</dd>") {
+		t.Errorf("由来（PDF）への参照タグがありません: %s", body)
+	}
+}
+
+// TestAnalyzeDrawingWithoutNumberMatchesNothing は、図面番号が読めなかったときに
+// **何とも結ばない**ことを固定します。
+//
+// 空文字どうしを一致とみなすと、表題欄が未記入のDXF（構想図など）が無関係な図面へ
+// 全部ぶら下がります——実データに未記入の構想図が実在します。
+func TestAnalyzeDrawingWithoutNumberMatchesNothing(t *testing.T) {
+	const id = "000032"
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	putAttachment(t, id, "pdf001.pdf", []byte("%PDF-1.4 fake"))
+	putDXF(t, id, "dxf001.dxf", "", "") // 表題欄が未記入
+	stubJudge(t, func([]byte) (*orderJudgment, error) {
+		return &orderJudgment{DocType: "drawing", DrawingName: "構想図"}, nil
+	})
+
+	rr := postAnalyze(t, &auth.User{Username: "alice", IsAdmin: true},
+		map[string]string{"page_id": id, "file": "pdf001.pdf"})
+	if rr.Code != 200 {
+		t.Fatalf("解析が失敗しました: %d %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		MatchedDXF int `json:"matched_dxf"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.MatchedDXF != 0 {
+		t.Errorf("番号が無いのに結んでいます: %d件", resp.MatchedDXF)
+	}
+}
+
+// TestNormalizeDrawingNoFoldsOnlyForComparison は、突き合わせのときだけ揺れを畳むこと、
+// **表示は畳まない**ことを固定します（タグの値は見た目のままDBへ入る、が原則）。
+func TestNormalizeDrawingNoFoldsOnlyForComparison(t *testing.T) {
+	same := [][2]string{
+		{"X008-135-4", "x008-135-4"},           // 英字の大小
+		{"X008-135-4", "X008ー135ー4"},           // 全角ハイフン・長音
+		{"X008-135-4", "X008-135-4 "},          // 前後の空白
+		{"X008-135-4", "Ｘ００８-135-4"},           // 全角英数
+		{"W470-L090-01-09", "W470_L090-01-09"}, // アンダースコア
+	}
+	for _, p := range same {
+		if normalizeDrawingNo(p[0]) != normalizeDrawingNo(p[1]) {
+			t.Errorf("同じ番号が一致しません: %q と %q", p[0], p[1])
+		}
+	}
+	if normalizeDrawingNo("X008-135-4") == normalizeDrawingNo("X008-135-5") {
+		t.Errorf("違う番号が一致しています")
+	}
+}
+
+// readPageBody はページの本文HTMLを読みます。
+func readPageBody(t *testing.T, pageID string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		t.Fatalf("ページを読めません: %v", err)
+	}
+	return string(b)
+}
