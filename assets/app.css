@@ -1557,3 +1557,19 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     text-decoration: line-through;
     text-decoration-color: var(--w-danger, #c0392b);
 }
+
+/* 左レールの並べ替え——ドラッグ中の見え方。落とした結果は並び順キーとして
+   保存される（サイドカーが正本）。 */
+#w-child-nav-list li[data-page-id] {
+    cursor: grab;
+}
+
+#w-child-nav-list li.child-nav-dragging {
+    opacity: 0.4;
+}
+
+#w-child-nav-list li.child-nav-over {
+    outline: 2px solid var(--w-accent, #3b82f6);
+    outline-offset: -2px;
+    border-radius: 4px;
+}
