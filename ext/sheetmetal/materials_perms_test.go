@@ -104,8 +104,8 @@ func seedSecretMaterial(t *testing.T, orderPageID int, orderPagePublic bool, ord
 	sync(2, `<h1>部品定義</h1>`+
 		`<dl data-type="tags"><dt>部品番号</dt><dd>SECRET-PART</dd></dl>`+
 		`<table data-type="part-materials"><tbody>`+
-		`<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>`+
-		`<tr><td>極秘部材</td><td>99999</td><td>㊙商社</td><td>2</td></tr></tbody></table>`)
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
+		`<tr><td>極秘部材</td><td></td><td></td><td>2</td></tr></tbody></table>`)
 	sync(orderPageID, `<h1>受注</h1>`+
 		`<section data-type="client-order"><dl>`+
 		`<dt>発注書番号</dt><dd>PO-1</dd><dt>発注元</dt><dd>得意先</dd>`+

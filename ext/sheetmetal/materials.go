@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -175,15 +176,16 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 			if !canView(m.PageID) {
 				continue // 定義元ページを読めない相手には見せない
 			}
-			name := m.Values["item-name"]
+			name := materialNameOf(m)
 			totalReq := cms.VocabQuantity(m) * orderQty
 			if existing, ok := materialsMap[name]; ok {
 				existing.TotalRequired += totalReq
 			} else {
+				// **仕入先と単価は定義側から採りません**（2026-09-03 ユーザー:
+				// 「仕入れ先は複数あります」「単価は外してよいと思います」）。
+				// 埋まるのは発注実績が付いたとき——発注書のヘッダから仕入先が来ます。
 				materialsMap[name] = &RequiredMaterialResponse{
 					MaterialName:  name,
-					SupplierName:  m.Values["supplier-name"],
-					Cost:          m.Num("cost"),
 					TotalRequired: totalReq,
 					Ordered:       0,
 				}
@@ -240,4 +242,25 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	// 表示・応答が呼び出しごとに変わらないよう部材名順に揃える（map の走査順は不定）。
 	sort.Slice(list, func(i, j int) bool { return list[i].MaterialName < list[j].MaterialName })
 	return list, nil
+}
+
+// materialNameOf は材料の行から**名前にあたるもの**を作ります。
+//
+// 材料に単独の「名前」の列はありません——ユーザーの実務では
+// **材質・形状・寸法の3つで決まります**（`SS400 板 t3.2 1000×500`）。
+// ③計算は発注明細の品名と突き合わせるので、ここで1つの文字列に繋ぎます。
+//
+// 古い形（部材名の1列だけ）で書かれた行も読めるようにしてあります
+// ——列を変える前に作られたページを黙って落とさないため。
+func materialNameOf(row cms.VocabRow) string {
+	if n := strings.TrimSpace(row.Values["item-name"]); n != "" {
+		return n
+	}
+	parts := make([]string, 0, 3)
+	for _, f := range []string{"material", "shape", "size"} {
+		if v := strings.TrimSpace(row.Values[f]); v != "" {
+			parts = append(parts, v)
+		}
+	}
+	return strings.Join(parts, " ")
 }

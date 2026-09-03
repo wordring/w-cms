@@ -89,7 +89,7 @@ func init() {
 	// 廃版の構成部品を薄く見せる（表示のときだけ）。**行は消しません**
 	// ——外注加工に出した紙に社内コードが載っているので、消すと指し先が消えます
 	// （ユーザー:「構成部品は図面の改定に伴って廃版になる場合があります」）。
-	for _, t := range []string{"part-materials", "part-outsourcing", "part-purchased"} {
+	for _, t := range []string{"part-materials", "part-outsourcing", "part-purchased", "part-supplied"} {
 		cms.RegisterMirror(t, cms.MirrorHandlerFunc(markObsoleteRows))
 	}
 }
@@ -108,7 +108,12 @@ func markObsoleteRows(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	return true, nil
 }
 
-// statusColumnIndex は見出し行から「状態」列の位置を返します（無ければ -1）。
+// statusColumnIndex は見出し行から「区分」列の位置を返します（無ければ -1）。
+//
+// **「状態」ではなく「区分」**——受注明細の「状態」（未着手／加工中／納品済）は
+// **受注ごとの進捗**で、こちらは**定義そのものの現行／廃版**です。同じ語にすると
+// 混同されます（2026-09-03 ユーザーが実際に取り違えた）。進捗は部品ページではなく
+// 受注ページで見るもの、という線引きがここに現れています。
 // **見出しの表示文字が鍵**——機械キーを本文へ書く属性はありません。
 func statusColumnIndex(table *html.Node) int {
 	for _, tr := range rowsOf(table) {
@@ -117,7 +122,7 @@ func statusColumnIndex(table *html.Node) int {
 			if c.Type != html.ElementNode {
 				continue
 			}
-			if c.Data == "th" && strings.TrimSpace(textOf(c)) == "状態" {
+			if c.Data == "th" && strings.TrimSpace(textOf(c)) == "区分" {
 				return i
 			}
 			if c.Data == "th" || c.Data == "td" {
