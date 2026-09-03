@@ -426,22 +426,25 @@ async function waitSaved(page) {
         check('前提: 項目が並んでいる', allItems >= 3);
 
         // `/` に続けて打つと、メニューは開いたまま絞り込まれる。
-        await page.keyboard.type('部材');
+        // 絞り込みの語は**語彙に実在するもの**を使う。かつては「部材」だったが、
+        // 2026-09-03 に「部材定義」を「材料」へ改名したときに何も当たらなくなった
+        // （語彙の改名でE2Eが落ちる、という正しい落ち方をした）。
+        await page.keyboard.type('発注');
         await page.waitForTimeout(300);
         check('絞り込み中もメニューは開いたまま',
             await page.locator('#w-slash-menu.active').count() === 1);
         const filtered = await page.locator('#w-slash-menu .slash-menu-item:visible').count();
         check('打った文字で絞り込まれる', filtered > 0 && filtered < allItems);
         check('一致した項目が残る',
-            (await page.locator('#w-slash-menu .slash-menu-item:visible').first().innerText()).includes('部材'));
+            (await page.locator('#w-slash-menu .slash-menu-item:visible').first().innerText()).includes('発注'));
 
         // 矢印＋Enter で選べる（絞り込み後も操作は同じ）。
         await page.keyboard.press('Enter');
         await page.waitForTimeout(600);
         check('絞り込んだ項目を Enter で挿せる',
-            (await page.locator('#w-editor-content section').filter({ hasText: '部材定義' }).locator('table').count()) >= 1);
+            (await page.locator('#w-editor-content section').filter({ hasText: '発注' }).locator('table').count()) >= 1);
         check('絞り込みの文字が本文に残らない',
-            !(await page.locator('#w-editor-content').innerText()).includes('/部材'));
+            !(await page.locator('#w-editor-content').innerText()).includes('/発注'));
 
         // よく使う項目は分類の先頭へ来る（1回使ったので、次に開くと先頭）。
         const sp2 = page.locator('#w-editor-content p').last();
@@ -462,7 +465,9 @@ async function waitSaved(page) {
             }
             return null;
         });
-        check('よく使う項目が分類の先頭へ来る', firstInCategory === 'vocab:part-materials');
+        // 直前に挿した項目が先頭へ来る（絞り込みの語を 発注 にしたので
+        // 挿さるのは 顧客の発注書）。
+        check('よく使う項目が分類の先頭へ来る', firstInCategory === 'vocab:client-order');
         await page.keyboard.press('Escape');
         // ── リンクの挿入とプロパティ欄（【考察】添付ファイルの表示と操作 §4） ──
         // 「編集するのにダイアログが出るのは使いにくかった。プロパティ欄があるものが
