@@ -40,6 +40,8 @@ func (mailPlugin) Routes() []cms.Route {
 	return []cms.Route{
 		{Pattern: "/api/mail/status", Handler: MailStatusAPIHandler},
 		{Pattern: "/api/mail/signin", Handler: MailSignInAPIHandler},
+		// 取り込みは**人が押したときだけ**走ります（自動で回し続けない）。
+		{Pattern: "/api/mail/import", Handler: MailImportAPIHandler},
 	}
 }
 

@@ -251,3 +251,41 @@ func (c *IntakeContext) UpdatePage(pageID, bodyHTML string) error {
 	}
 	return SyncIndex(pageID, safeHTML)
 }
+
+// IntakeResult は取り込み1件の結果です。
+type IntakeResult struct {
+	PageID    string // 生まれた（または既にあった）ページ
+	Title     string
+	Duplicate bool // 既に取り込み済みだった
+}
+
+// IntakeFile は受信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
+//
+// HTTPの口（serveIntake）と、メールの取り込み（ext/mailgraph）が共有します
+// ——メールをGraphから取ってきたときも、人が .eml をドロップしたときと**同じ道**を
+// 通す必要があるからです。封筒タグ・スレッドの繋ぎ・添付の展開・重複検知は
+// すべて取り込み係が持っているので、経路ごとに書き直すと必ず片方が古くなります。
+//
+// **中身の検査は呼ぶ側の責任**です（HTTPの口は checkIntakeContent を通す）。
+// 担当が居ない拡張子なら ok=false を返します。
+func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResult, bool, error) {
+	h := intakeHandlerFor(strings.ToLower(filepath.Ext(fileName)))
+	if h == nil {
+		return IntakeResult{}, false, nil // 担当なし＝ただの添付
+	}
+	// 重複検知は**取り込み係を呼ぶ前**に行う（作ってから消すのではなく、作らない）。
+	if f, ok := h.(SourceRefFinder); ok {
+		if name, value, found := f.SourceRef(fileName, content); found {
+			if existing, dup := ExistingIntakePage(name, value); dup {
+				auth.Audit(uploader, "intake.duplicate", existing+" ("+name+"="+value+")")
+				return IntakeResult{PageID: existing, Title: fileName, Duplicate: true}, true, nil
+			}
+		}
+	}
+	ctx := &IntakeContext{InboxID: inboxID, Uploader: uploader}
+	pageID, title, err := h.OnFile(ctx, fileName, content)
+	if err != nil {
+		return IntakeResult{}, true, err
+	}
+	return IntakeResult{PageID: pageID, Title: title}, true, nil
+}
