@@ -153,6 +153,18 @@ var vocabRegistry = []VocabDef{
 		Element:     "section",
 		View:        true,
 	},
+	{
+		// 未処理の受信——まだ手を付けていない通信記録（view_unhandled.go）。
+		// ユーザー:「未処理のメールやFAXを一覧できる方法が必要かも」（2026-09-03）。
+		// 判定に新しい入力を求めず、**子ページが在ること自体を「手を付けた」の印**
+		// として使います。
+		Type:        "unhandled-intake",
+		DisplayName: "未処理の受信",
+		Category:    "ビュー",
+		Icon:        "📥",
+		Element:     "section",
+		View:        true,
+	},
 }
 
 // RegisterVocab は形式の宣言を①語彙レジストリへ足します。**拡張の `init()` から
