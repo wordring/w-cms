@@ -50,9 +50,13 @@ type orderJudgment struct {
 	IsClientOrder bool `json:"is_client_order"`
 	// **図面PDFの枝**（2026-09-03）——添付DXFとの突き合わせに使う。
 	// PDFが図面なら DocType が "drawing" になり、図面番号・図面名称が入る。
-	DocType     string         `json:"doc_type"`
-	DrawingNo   string         `json:"drawing_no"`
-	DrawingName string         `json:"drawing_name"`
+	DocType     string `json:"doc_type"`
+	DrawingNo   string `json:"drawing_no"`
+	DrawingName string `json:"drawing_name"`
+	// 装置名称は**ページの置き場所**に効く——ワンノートの製造部品ページは
+	// 「顧客名／装置名称／図面名称」の階層で作られている（2026-09-03 ユーザー）。
+	// 顧客名は Customer を共用する（発注書の発行元と同じ「相手の会社名」）。
+	MachineName string         `json:"machine_name"`
 	OrderNo     string         `json:"order_no"`
 	Customer    string         `json:"customer"`
 	OrderDate   string         `json:"order_date"`
@@ -252,8 +256,10 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
   "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
   "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）"}],
   "drawing_no": "図面番号（図面のとき。表題欄に記載された文字列をそのまま。記載が無ければ空文字）",
-  "drawing_name": "図面名称（図面のとき。記載が無ければ空文字）"
+  "drawing_name": "図面名称（図面のとき。記載が無ければ空文字）",
+  "machine_name": "装置名称（図面のとき。その部品が使われる装置・機械の名前。記載が無ければ空文字）"
 }
+図面のときは customer に「客先」（この図面の発注元の会社名。記載が無ければ空文字）を入れてください。
 図面番号は突き合わせに使うので、**表題欄に書かれている文字列をそのまま**返してください
 （ハイフンや記号を補ったり省いたりしない）。該当しない項目は空でかまいません。`
 
@@ -342,6 +348,10 @@ func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, 
 	b.WriteString("<section><h2>図面</h2><dl>")
 	writeHeaderPair(&b, "図面番号", no)
 	writeHeaderPair(&b, "図面名称", name)
+	// 装置名称・客先は置き場所（顧客名／装置名称／図面名称）に効く項目。
+	// 空でも欄は出す——**あとから人が埋められる**（writeHeaderPair の作り）。
+	writeHeaderPair(&b, "装置名称", j.MachineName)
+	writeHeaderPair(&b, "客先", j.Customer)
 	b.WriteString("</dl></section>")
 
 	b.WriteString(`<dl data-type="tags"><dt>受信元</dt><dd>` +
