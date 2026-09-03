@@ -176,6 +176,55 @@ function buildZip(files) { // files: [{name, data}]
         check('本文に embed が保存されていない', !/attach-preview|<embed/.test(loadedHTML));
         check('本文にリンクは保存されている', loadedHTML.includes(pdfName));
 
+        // ── 機械に向けたタグを「詳細」へ畳む（2026-09-03）──────────────────
+        // 畳むのは**見た目だけ**——本文にも索引にも対はそのまま在る、が肝。
+        await setEditMode(page, true);
+        await page.evaluate(() => {
+            const dl = document.createElement('dl');
+            dl.setAttribute('data-type', 'tags');
+            const pair = (n, v) => {
+                const dt = document.createElement('dt'); dt.textContent = n;
+                const dd = document.createElement('dd'); dd.textContent = v;
+                dl.append(dt, dd);
+            };
+            pair('差出人', '潮崎 光俊');
+            pair('差出人アドレス', 'shiozaki@example.co.jp');
+            pair('受信日時', '2026-09-01T19:46:19+09:00');
+            pair('メッセージID', '<abc@example.jp>');
+            document.getElementById('w-editor-content').appendChild(dl);
+            wrapInBlock(dl);
+            applyMode();
+        });
+        await page.evaluate(() => document.querySelector('#w-editor-content [contenteditable]')
+            .dispatchEvent(new InputEvent('input', { bubbles: true })));
+        await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 });
+
+        check('編集モードでは畳まない', await page.locator('#w-editor-content .tag-detail-toggle').count() === 0);
+
+        await setEditMode(page, false);
+        const visibleTagNames = () => page.evaluate(() => Array.from(
+            document.querySelectorAll('#w-editor-content dl[data-type="tags"] dt'))
+            .filter(el => getComputedStyle(el).display !== 'none')
+            .map(el => el.textContent.trim()));
+        check('閲覧モードで機械向けのタグが畳まれる',
+            JSON.stringify(await visibleTagNames()) === JSON.stringify(['差出人', '受信日時']));
+        const detail = page.locator('.tag-detail-toggle');
+        check('チップに件数が出る', (await detail.textContent()).includes('2件'));
+        await detail.click();
+        check('開くと両方見える',
+            JSON.stringify(await visibleTagNames()) ===
+            JSON.stringify(['差出人', '差出人アドレス', '受信日時', 'メッセージID']));
+        await detail.click();
+        check('もう一度押すと畳まれる', (await visibleTagNames()).length === 2);
+
+        // **見た目のままDBに入る**——畳んでも本文の対は消えていない。
+        const tagsHTML = await (await page.request.get(BASE + '/api/load?id=' + pageId)).text();
+        // 保存時に整形（改行とインデント）が入るので、空白に寛容な形で見る。
+        check('畳んでも本文には対が残っている',
+            /<dt>差出人アドレス<\/dt>\s*<dd>shiozaki@example\.co\.jp<\/dd>/.test(tagsHTML) &&
+            /<dt>メッセージID<\/dt>\s*<dd>&lt;abc@example\.jp&gt;<\/dd>/.test(tagsHTML));
+        check('クロームは本文に漏れない', !tagsHTML.includes('tag-detail-toggle') && !tagsHTML.includes('tag-folded'));
+
         check('CSP違反なし', cspViolations.length === 0);
         check('ページエラーなし', errs.length === 0);
     } catch (e) {
