@@ -43,14 +43,26 @@ const (
 	envTenantID = "WCMS_MAIL_TENANT_ID"
 )
 
-// scopes は要求する権限です。offline_access が無いと、一度サインインしても
-// アクセストークンの期限（およそ1時間）で切れて毎回サインインし直しになります。
-var scopes = []string{
+// graphScopes と smtpScopes——**混ぜて要求できません。**
+//
+// Microsoft の v2 エンドポイントは**1回の要求につき1つのリソース**しかトークンを
+// 出しません。Graph（`graph.microsoft.com`）と Exchange（`outlook.office.com`）を
+// 1つの `scope` に並べると `AADSTS70011` で弾かれます。
+//
+// なので**サインインは Graph の権限で行い**（リフレッシュトークンはリソースに
+// 依らない）、SMTP のトークンはそのリフレッシュトークンから別途取り直します。
+// どちらの権限も Entra 側で同意済みである必要があります。
+//
+// `offline_access` が無いと、一度サインインしてもアクセストークンの期限
+// （およそ1時間）で切れて毎回サインインし直しになります。
+var graphScopes = []string{
 	"https://graph.microsoft.com/Mail.Read",
-	"https://graph.microsoft.com/Mail.Send",
 	"https://graph.microsoft.com/User.Read",
 	"offline_access",
 }
+
+// smtpScopes は投函だけの権限です（Exchange Online 側。smtp.go）。
+var smtpScopes = []string{smtpScope, "offline_access"}
 
 // ErrNotConfigured は環境変数が未設定の印です。
 var ErrNotConfigured = errors.New(
@@ -107,7 +119,7 @@ func StartDeviceCode(ctx context.Context) (*DeviceCode, error) {
 	}
 	form := url.Values{}
 	form.Set("client_id", clientID)
-	form.Set("scope", strings.Join(scopes, " "))
+	form.Set("scope", strings.Join(graphScopes, " "))
 
 	var d deviceCodeResponse
 	if err := postForm(ctx,
@@ -197,7 +209,7 @@ func PollForToken(ctx context.Context, username string, dc *DeviceCode) (string,
 
 // accessCache はアクセストークンの一時保管です（期限つき・ファイルには書きません）。
 // **ディスクへ置くのはリフレッシュトークンだけ**にして、漏れる面を狭くします。
-var accessCache sync.Map // username -> cachedAccess
+var accessCache sync.Map // username|scopes -> cachedAccess
 
 type cachedAccess struct {
 	token     string
@@ -205,19 +217,39 @@ type cachedAccess struct {
 }
 
 func cacheAccess(username, token string, expiresIn int) {
+	cacheAccessKey(username+"|"+strings.Join(graphScopes, " "), token, expiresIn)
+}
+
+// cacheAccessKey はスコープまで含めた鍵で保管します。
+func cacheAccessKey(key, token string, expiresIn int) {
 	if token == "" || expiresIn <= 0 {
 		return
 	}
-	accessCache.Store(username, cachedAccess{
+	accessCache.Store(key, cachedAccess{
 		token: token,
 		// 期限ぎりぎりで使うと送信の途中で切れるので、1分手前で切り上げます。
 		expiresAt: time.Now().Add(time.Duration(expiresIn-60) * time.Second),
 	})
 }
 
-// accessToken は user のアクセストークンを返します（必要なら更新します）。
+// accessToken は Graph 用のアクセストークンを返します。
 func accessToken(ctx context.Context, username string) (string, error) {
-	if v, ok := accessCache.Load(username); ok {
+	return accessTokenFor(ctx, username, graphScopes)
+}
+
+// smtpAccessToken は SMTP 投函用のアクセストークンを返します。
+func smtpAccessToken(ctx context.Context, username string) (string, error) {
+	return accessTokenFor(ctx, username, smtpScopes)
+}
+
+// accessTokenFor は指定した権限のアクセストークンを返します（必要なら更新します）。
+//
+// **保管はスコープごと**です——Graph 用のトークンで SMTP へは投函できません
+// （リソースが違う）。取り違えると「認証は通るのに送れない」という分かりにくい
+// 失敗になります。
+func accessTokenFor(ctx context.Context, username string, scopes []string) (string, error) {
+	key := username + "|" + strings.Join(scopes, " ")
+	if v, ok := accessCache.Load(key); ok {
 		if c := v.(cachedAccess); time.Now().Before(c.expiresAt) {
 			return c.token, nil
 		}
@@ -243,17 +275,22 @@ func accessToken(ctx context.Context, username string) (string, error) {
 		return "", err
 	}
 	if t.Error != "" {
-		// 更新に失敗したら**保存を捨てます**——期限切れ・取り消し済みのトークンを
-		// 抱えたままにすると、毎回同じ失敗を繰り返して原因が見えなくなります。
-		deleteToken(username)
-		return "", errNotSignedIn
+		// **権限が足りないだけのときに保管を捨てない。** 捨ててしまうと、
+		// SMTP の同意漏れでサインインごと失われ、原因が見えなくなります。
+		if t.Error == "invalid_grant" {
+			deleteToken(username)
+			return "", errNotSignedIn
+		}
+		return "", errors.New("トークンを取得できません: " + t.ErrorDesc)
 	}
+	// **リフレッシュトークンは共有**です（リソースに依らない）。新しいものが
+	// 返ってきたら差し替えます。
 	if t.RefreshToken != "" && t.RefreshToken != st.RefreshToken {
 		st.RefreshToken = t.RefreshToken
 		st.UpdatedAt = time.Now().In(time.Local).Format(time.RFC3339)
 		saveToken(username, st)
 	}
-	cacheAccess(username, t.AccessToken, t.ExpiresIn)
+	cacheAccessKey(key, t.AccessToken, t.ExpiresIn)
 	return t.AccessToken, nil
 }
 

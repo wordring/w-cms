@@ -131,3 +131,19 @@ func graphGetJSON(ctx context.Context, token, endpoint string, out any) error {
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
+
+// graphErrorMessage は Graph のエラー本文から人が読む部分だけ取り出します。
+// **理由をそのまま伝える**ため——「権限が足りない」のか「見つからない」のかが
+// 分からないと運用側が直しようがありません（トークンは含めません）。
+func graphErrorMessage(body []byte) string {
+	var e struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &e); err == nil && e.Error.Message != "" {
+		return e.Error.Code + " " + e.Error.Message
+	}
+	return strings.TrimSpace(string(body))
+}

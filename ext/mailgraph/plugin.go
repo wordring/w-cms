@@ -61,17 +61,29 @@ func (graphMailer) Ready(user *auth.User) bool {
 }
 
 // Send は user の名前で1通送ります。
+//
+// **投函は SMTP（OAuth2）です**——Graph の sendMail では `In-Reply-To` を立てられず、
+// 添付も3MiBまでだったため（smtp.go 冒頭に経緯）。認証は同じトークンを使います。
 func (graphMailer) Send(user *auth.User, msg cms.OutgoingMail) error {
-	if user == nil {
-		return cms.ErrMailNotSignedIn
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	err := sendViaGraph(ctx, user.Username, msg)
-	if err == errNotSignedIn {
-		return cms.ErrMailNotSignedIn
-	}
+	_, err := SendAndReturnID(user, msg)
 	return err
+}
+
+// SendAndReturnID は送信して、立てた Message-ID を返します。
+//
+// 送信箱の記録に Message-ID を残しておくと、**相手からの返信が取り込まれたときに
+// 既存のスレッドの仕組みでそのまま繋がります**（返信の In-Reply-To がこれを指す）。
+func SendAndReturnID(user *auth.User, msg cms.OutgoingMail) (string, error) {
+	if user == nil {
+		return "", cms.ErrMailNotSignedIn
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	id, err := sendViaSMTP(ctx, user.Username, msg)
+	if err == errNotSignedIn {
+		return "", cms.ErrMailNotSignedIn
+	}
+	return id, err
 }
 
 // MailStatusAPIHandler は GET /api/mail/status です。
