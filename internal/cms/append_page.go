@@ -71,3 +71,43 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 	}
 	return SyncIndex(pageID, safeHTML)
 }
+
+// SetPageH1 はページの見出し（h1）を書き換えます。**題はページ名**なので、
+// 整理の画面で図面名称を直したらページの題も揃える必要があります。
+func SetPageH1(pageID, author, title string) error {
+	return rewritePageBody(pageID, author, func(current string) string {
+		open := strings.Index(current, "<h1>")
+		if open < 0 {
+			return "<h1>" + title + "</h1>" + current
+		}
+		close := strings.Index(current[open:], "</h1>")
+		if close < 0 {
+			return "<h1>" + title + "</h1>" + current
+		}
+		return current[:open] + "<h1>" + title + "</h1>" + current[open+close+len("</h1>"):]
+	})
+}
+
+// FirstBlockHTML は本文から最初の <section>…</section> を取り出します
+// （無ければ空）。改定図面の合流で「新しい図面ブロックだけ」を運ぶために使います。
+func FirstBlockHTML(bodyHTML string) string {
+	open := strings.Index(bodyHTML, "<section")
+	if open < 0 {
+		return ""
+	}
+	close := strings.Index(bodyHTML[open:], "</section>")
+	if close < 0 {
+		return ""
+	}
+	return bodyHTML[open : open+close+len("</section>")]
+}
+
+// ReadPageBody はページ本文（保存されている生のHTML）を読みます。
+// 表示用の合成（計算ビュー・参照リンク・アンカー）は掛かっていません。
+func ReadPageBody(pageID string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}

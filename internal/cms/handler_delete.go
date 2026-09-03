@@ -15,6 +15,7 @@ package cms
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -121,4 +122,30 @@ func moveToTrash(id string) (string, error) {
 		return "", err
 	}
 	return dst, nil
+}
+
+// DeletePageToTrash はページ削除の**芯**です（ゴミ箱へ移動・索引の掃除・ロック解放）。
+//
+// HTTPの口（DeletePageAPIHandler）と、部品ページの整理（ext/sheetmetal/filing.go）が
+// 共有します——整理は改定図面を既存ページへ合流させたあと、空になった仮のページを
+// 片付ける必要があり、**作法を2箇所に持つと必ず片方が古くなる**ため。
+//
+// **物理削除ではありません**（data/trash へ移すだけ）。復元UIは未実装なので、
+// 戻すときは手で data/master へ返してDB再構築します。
+// 権限・子ページの確認は呼ぶ側の責任です。
+func DeletePageToTrash(id string) (string, error) {
+	pageID, err := strconv.Atoi(id)
+	if err != nil {
+		return "", errors.New("ページIDが不正です")
+	}
+	trashPath, err := moveToTrash(id)
+	if err != nil {
+		return "", err
+	}
+	if err := PurgePageIndex(id); err != nil {
+		// 正本は既にゴミ箱にあるので、索引だけが残った状態。DB再構築で解消できる。
+		return trashPath, err
+	}
+	editlock.Locks.ForceRelease(pageID) // 消えたページのロックは残さない
+	return trashPath, nil
 }

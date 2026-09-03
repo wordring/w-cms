@@ -522,3 +522,13 @@ func (r *walkRegistry) walkSeed(ctx *SeedContext, nodes []*html.Node) ([]*html.N
 		return h.OnElement(ctx, el)
 	})
 }
+
+// HasMirror は形式 t に鏡型の担当が登録されているかを返します。
+//
+// 表示前の走査を「歩く価値があるか」で早道するために要ります（view_render.go）。
+// **登録の有無が正**——名指しのリストを持つと、鏡を足したのに走査されない
+// という無言の不発が起きます。
+func HasMirror(t string) bool {
+	_, ok := walkers.mirrors[t]
+	return ok
+}

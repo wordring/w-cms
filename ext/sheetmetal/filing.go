@@ -1,0 +1,319 @@
+package sheetmetal
+
+// ─────────────────────────────────────────────────────────────────────────
+// 部品ページの整理——機械が提案し、人が直して実行する（2026-09-03）
+//
+// ユーザー:「各図面の行き場所について、解析から得られた推奨値を提示して、
+// ユーザーがそれを書き直して実行ボタンを押す形はどうですか？」
+// 「顧客名を書く欄に推奨値を入れてユーザーが修正してはどうでしょう」
+//
+// **なぜ解析の場で決めないのか**——ユーザー:「人間が見てもなにを言っているのか
+// 判断に困る場合も結構多いです。**なぜなら顧客は適当だからです**」。機械にも人にも
+// 「いま」決められないなら、決めさせない。解析は部品ページを通信記録ページの子として
+// 作るところまでで、**受信箱がそのまま「まだ分からないものの置き場」**になります。
+// 整理は分かったとき（たいてい後続のメールや電話）に、この操作で行います。
+//
+// 行き先は「顧客名／装置名称／図面名称」——ワンノートの製造部品ページの形を
+// そのまま持ってきたもの。**顧客名ページはトップ直下**（受信箱・テンプレートと同階層）。
+//
+// 見積だけ・試作のときは装置名称から新しく作ります（`【試作】装置名称` の形）。
+// ユーザー:「これは、メールの内容から判断するしかありません」——**機械には
+// 決められない**ので、人が欄を打ち替える前提です。
+//
+// 移した先に同名の部品ページが在れば、その図面は**改定図面**です（ユーザー）。
+// 顧客名／装置名称の下では図面名称が一意なので、**ページが在ること自体が改定の合図**。
+// 新しい図面ブロックを既存ページの**先頭**へ差し込みます——「新しいものが上」という
+// 並びそのものが最新を表すので、どれが古いかを別に持たなくて済みます。
+// 古い図面に赤枠を出すのは表示側の仕事（`class` はサニタイズで落ちるため保存しない）。
+// ─────────────────────────────────────────────────────────────────────────
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	stdhtml "html"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"w-cms/internal/auth"
+	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
+)
+
+// filingRow は1枚の部品ページと、その行き先の推奨値です。
+type filingRow struct {
+	PageID      string `json:"page_id"`
+	Title       string `json:"title"`
+	DrawingNo   string `json:"drawing_no"`
+	DrawingName string `json:"drawing_name"`
+	Customer    string `json:"customer"`     // 推奨値（客先）。人が直す
+	MachineName string `json:"machine_name"` // 推奨値（装置名称）。人が直す
+}
+
+// FilingProposalAPIHandler は GET /api/filing-proposal?page_id=X です。
+// 通信記録ページ X から生まれた部品ページの一覧と、行き先の推奨値を返します。
+func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	pageID, ok := page.NormalizeID(r.URL.Query().Get("page_id"))
+	if !ok {
+		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		return
+	}
+	user := auth.CurrentUser(r)
+	idInt, err := strconv.Atoi(pageID)
+	if err != nil || !page.CanView(user, idInt) {
+		// 読めない相手には「無い」と同じ顔を見せる（匿名の404統一と同じ規律）。
+		cms.JSONFail(w, http.StatusNotFound, "ページが見つかりません")
+		return
+	}
+
+	rows, err := drawingChildrenOf(user, idInt)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "一覧を作れません: "+err.Error())
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"success": true, "rows": rows})
+}
+
+// drawingChildrenOf は、そのページの子のうち**図面ブロックを持つもの**を集めます。
+// 推奨値は索引から読みます（解析が入れた値がそのまま初期値になる）。
+func drawingChildrenOf(user *auth.User, parentIDInt int) ([]filingRow, error) {
+	dbRows, err := database.DB.Query(
+		`SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC`, parentIDInt)
+	if err != nil {
+		return nil, err
+	}
+	defer dbRows.Close()
+
+	type child struct {
+		id    int
+		title string
+	}
+	var children []child
+	for dbRows.Next() {
+		var c child
+		if err := dbRows.Scan(&c.id, &c.title); err != nil {
+			return nil, err
+		}
+		children = append(children, c)
+	}
+	if err := dbRows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := []filingRow{}
+	for _, c := range children {
+		if !page.CanView(user, c.id) {
+			continue // 見せ分け（C案）——読めないものは黙って落ちる
+		}
+		blocks, err := cms.VocabBlocksOf(database.DB, c.id, "drawing")
+		if err != nil || len(blocks) == 0 {
+			continue // 図面ページではない（受注ページなど）
+		}
+		// 図面が複数あるページ（既に改定を重ねたもの）は**先頭が最新**。
+		v := blocks[0].Values
+		out = append(out, filingRow{
+			PageID:      formatID(c.id),
+			Title:       c.title,
+			DrawingNo:   v["drawing-no"],
+			DrawingName: v["drawing-name"],
+			Customer:    v["client-name"],
+			MachineName: v["machine-name"],
+		})
+	}
+	return out, nil
+}
+
+// filingRequest は「実行」で送られてくる1行です。
+type filingRequest struct {
+	PageID      string `json:"page_id"`
+	Customer    string `json:"customer"`
+	MachineName string `json:"machine_name"`
+	DrawingName string `json:"drawing_name"`
+}
+
+// filingResult は1行の結果です。何が起きたかを人へ返します
+// （黙って動かすのではなく、**どこへ入ったか・改定になったか**を必ず見せる）。
+type filingResult struct {
+	PageID   string `json:"page_id"`
+	Outcome  string `json:"outcome"` // "moved" / "revision" / "skipped"
+	Message  string `json:"message"`
+	TargetID string `json:"target_id,omitempty"` // 改定のときは合流先
+}
+
+// FileDrawingsAPIHandler は POST /api/file-drawings です。
+// 入力: {rows: [{page_id, customer, machine_name, drawing_name}, ...]}
+func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	var req struct {
+		Rows []filingRequest `json:"rows"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	user := auth.CurrentUser(r)
+	if user == nil {
+		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		return
+	}
+
+	results := make([]filingResult, 0, len(req.Rows))
+	for _, row := range req.Rows {
+		results = append(results, fileOneDrawing(user, row))
+	}
+	json.NewEncoder(w).Encode(map[string]any{"success": true, "results": results})
+}
+
+// fileOneDrawing は1枚の部品ページを行き先へ収めます。
+func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
+	pageID, ok := page.NormalizeID(row.PageID)
+	if !ok {
+		return filingResult{PageID: row.PageID, Outcome: "skipped", Message: "ページIDが不正です"}
+	}
+	customer := strings.TrimSpace(row.Customer)
+	machine := strings.TrimSpace(row.MachineName)
+	name := strings.TrimSpace(row.DrawingName)
+
+	// **空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
+	// （受信箱が保留の置き場。空の顧客ページを増やさない）。
+	if customer == "" || machine == "" || name == "" {
+		return filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "顧客名・装置名称・図面名称のどれかが空なので、そのままにしました"}
+	}
+
+	idInt, err := strconv.Atoi(pageID)
+	if err != nil || !canWritePage(user, idInt) {
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}
+	}
+
+	customerID, err := ensureChildPage(user, cms.TopPageID, customer)
+	if err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "顧客名ページを用意できません: " + err.Error()}
+	}
+	machineID, err := ensureChildPage(user, customerID, machine)
+	if err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "装置名称ページを用意できません: " + err.Error()}
+	}
+
+	// **既にあれば改定図面**（ユーザー決定）。顧客名／装置名称の下では図面名称が
+	// 一意なので、ページが在ること自体が改定の合図。
+	if existing, found := findChildByTitle(machineID, name); found && existing != pageID {
+		if err := mergeAsRevision(user, pageID, existing); err != nil {
+			return filingResult{PageID: pageID, Outcome: "skipped",
+				Message: "改定として合流できません: " + err.Error()}
+		}
+		auth.Audit(user.Username, "file-drawing.revision", pageID+" -> "+existing)
+		return filingResult{PageID: pageID, Outcome: "revision", TargetID: existing,
+			Message: customer + "／" + machine + "／" + name + " の改定図面として合流しました"}
+	}
+
+	if err := movePage(user, pageID, machineID, name); err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
+	}
+	auth.Audit(user.Username, "file-drawing.move", pageID+" -> "+machineID)
+	return filingResult{PageID: pageID, Outcome: "moved",
+		Message: customer + "／" + machine + "／" + name + " へ収めました"}
+}
+
+// findChildByTitle は親の子から題が完全一致するものを1つ探します。
+// **完全一致だけ**にするのは、揺れを機械が吸収すると別の顧客が1つに潰れるため
+// ——名寄せは人の仕事です（欄を直せば済む）。
+func findChildByTitle(parentID, title string) (string, bool) {
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return "", false
+	}
+	var id int
+	err = database.DB.QueryRow(
+		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
+		parentInt, title).Scan(&id)
+	if err != nil {
+		return "", false
+	}
+	return formatID(id), true
+}
+
+// ensureChildPage は題の一致する子を返し、無ければ作ります。
+func ensureChildPage(user *auth.User, parentID, title string) (string, error) {
+	if id, found := findChildByTitle(parentID, title); found {
+		return id, nil
+	}
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return "", err
+	}
+	if !canWritePage(user, parentInt) {
+		return "", errors.New("親ページへ書き込む権限がありません")
+	}
+	return cms.CreateChildPage(parentID, user.Username, "<h1>"+htmlEscape(title)+"</h1>")
+}
+
+// canWritePage は書き込み権限の素の判定です（HTTPの口を通さない版）。
+func canWritePage(user *auth.User, pageIDInt int) bool {
+	return page.GetPerms(pageIDInt).CanWrite(user)
+}
+
+// formatID はページIDをゼロ詰め6桁へ整えます。
+func formatID(idInt int) string {
+	return fmt.Sprintf("%0*d", page.IDLength, idInt)
+}
+
+// htmlEscape は本文へ入れる前の逃がしです（サニタイザは安全の網で、
+// エスケープの肩代わりはしません——サニタイズ後にHTMLを足す関数と同じ責任）。
+func htmlEscape(s string) string { return stdhtml.EscapeString(s) }
+
+// movePage は部品ページを行き先の下へ移し、題を図面名称に揃えます。
+//
+// 題を揃えるのは、**題がページ名だから**——整理の画面で図面名称を直したのに
+// ページの題が古いままだと、次に同じ部品が来たとき「既にある」の判定
+// （＝改定図面の合図）が効きません。
+func movePage(user *auth.User, pageID, newParent, title string) error {
+	if err := cms.SetPageH1(pageID, user.Username, htmlEscape(title)); err != nil {
+		return err
+	}
+	_, _, err := cms.SetPageParent(user, pageID, newParent)
+	return err
+}
+
+// mergeAsRevision は改定図面を既存の部品ページへ合流させます。
+//
+// 新しい図面ブロックを既存ページの**先頭**（見出しの直後）へ差し込み、空になった
+// 仮のページをゴミ箱へ移します。「新しいものが上」という並びそのものが最新を表すので、
+// どれが古いかを別に持つ必要がありません（古い図面の赤枠は表示側の仕事）。
+//
+// 仮のページを消すのは**物理削除ではなくゴミ箱への移動**です。図面ブロックは
+// 合流先へ運ばれており、由来（受信元タグ）もブロックの中に付いて行くので、
+// 消えて困る情報は残りません。
+func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
+	srcBody, err := cms.ReadPageBody(srcPageID)
+	if err != nil {
+		return err
+	}
+	block := cms.FirstBlockHTML(srcBody)
+	if strings.TrimSpace(block) == "" {
+		return errors.New("移す図面ブロックが見つかりません")
+	}
+	dstInt, err := strconv.Atoi(dstPageID)
+	if err != nil || !canWritePage(user, dstInt) {
+		return errors.New("合流先へ書き込む権限がありません")
+	}
+	if err := cms.InsertAfterH1(dstPageID, user.Username, block); err != nil {
+		return err
+	}
+	// 合流し終えてから仮のページを片付ける（順序が逆だと、失敗したときに
+	// 図面がどこにも無い状態が生まれる）。
+	if _, err := cms.DeletePageToTrash(srcPageID); err != nil {
+		return err
+	}
+	return nil
+}
