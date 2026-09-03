@@ -3,8 +3,11 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"log"
 	"time"
 
 	"w-cms/internal/database"
@@ -57,6 +60,14 @@ func ResolveSession(token string) (username string, ok bool) {
 		`SELECT username, expires_at, last_seen FROM sessions WHERE token_hash = ?`, th,
 	).Scan(&username, &expiresAt, &lastSeen)
 	if err != nil {
+		// **拒否は変えません**（認証はフェイルクローズが正しい）。ただし
+		// 「そんなセッションは無い」と「DBが読めなかった」を**ログでは区別**します
+		// ——後者は利用者から見ると**理由の分からない突然のログアウト**で、
+		// 黙って起きると原因に辿り着けません（2026-09-03。auth.db に
+		// busy_timeout が無く SQLITE_BUSY がここへ落ちていた実例がある）。
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("セッションの照会に失敗しました（認証は拒否・DBの状態を確認してください）: %v", err)
+		}
 		return "", false
 	}
 
