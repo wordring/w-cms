@@ -42,6 +42,8 @@ func (mailPlugin) Routes() []cms.Route {
 		{Pattern: "/api/mail/signin", Handler: MailSignInAPIHandler},
 		// 取り込みは**人が押したときだけ**走ります（自動で回し続けない）。
 		{Pattern: "/api/mail/import", Handler: MailImportAPIHandler},
+		// 送信——本体は送信箱、返信元へは参照タグで繋ぐ（reply.go）。
+		{Pattern: "/api/mail/send", Handler: MailSendAPIHandler},
 	}
 }
 

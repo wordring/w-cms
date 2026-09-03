@@ -328,39 +328,10 @@ func (c *IntakeContext) CreateDatedPage(t time.Time, bodyHTML string) (string, e
 
 // ensureDateFolder は「年／月」のページを必要なだけ作り、月フォルダのIDを返します。
 func (c *IntakeContext) ensureDateFolder(t time.Time) (string, error) {
-	local := t.In(time.Local)
-	year, err := c.ensureFolder(c.InboxID, local.Format("2006年"))
-	if err != nil {
-		return "", err
-	}
-	// 月は**ゼロ詰め**にします（`09月`）。名前で並べたときに順序が狂わないため。
-	return c.ensureFolder(year, local.Format("01月"))
-}
-
-// ensureFolder は親の下に題の一致する子を探し、無ければ作ります。
-//
-// **一致は完全一致だけ**です。取り込みは無人で何度も走るので、揺れを吸収すると
-// 気づかないうちに似た名前のフォルダが増えます。
-func (c *IntakeContext) ensureFolder(parentID, title string) (string, error) {
-	parentInt, err := strconv.Atoi(parentID)
-	if err != nil {
-		return "", err
-	}
-	var id int
-	err = database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
-		parentInt, title).Scan(&id)
-	if err == nil {
-		return fmt.Sprintf("%0*d", page.IDLength, id), nil
-	}
-	// **フォルダは created へ入れません**——SaveAttachment / UpdatePage の対象は
-	// 「この取り込みで作った記録ページ」に限るという線を崩さないためです。
-	newID, err := CreateChildPage(parentID, c.Uploader, "<h1>"+html.EscapeString(title)+"</h1>")
-	if err != nil {
-		return "", err
-	}
-	auth.Audit(c.Uploader, "intake.folder", newID+" under "+parentID+" ("+title+")")
-	return newID, nil
+	// 置き場の作法は送信箱と共有します（ensureDateFolderUnder）——受信と送信で
+	// フォルダの作り方が違うと、片方だけ直したときに気づけません。
+	// 月は**ゼロ詰め**（`09月`）——名前で並べたときに順序が狂わないため。
+	return ensureDateFolderUnder(c.InboxID, c.Uploader, t)
 }
 
 // setSortKey は作ったページの並び順キーをサイドカーへ書きます。
@@ -380,4 +351,93 @@ func setSortKey(pageID, key string) {
 	if err := page.WriteSidecar(pageID, meta); err != nil {
 		log.Printf("並び順キーを書けませんでした page=%s: %v", pageID, err)
 	}
+}
+
+// SentBoxTitle は送信箱ページの名前です。受信箱と対等に置きます
+// （2026-09-03 ユーザー:「返信の本体は送信箱にあるのはどうでしょう？」）。
+//
+// **返信を返信元の子にしない**理由がここにあります——返信元を持たない新規の
+// メールが行き場を失うのと、送った記録が受け取った記録に従属して見えるためです。
+// 送受信は対等な出来事で、繋がりは所有ではなく**参照**（返信元タグ）で表します。
+const SentBoxTitle = "送信箱"
+
+// SentBoxPageID はトップ直下の送信箱ページを返します（無ければ ok=false）。
+func SentBoxPageID() (string, bool) {
+	return topLevelPageByTitle(SentBoxTitle)
+}
+
+// topLevelPageByTitle はトップ直下の題一致ページを返します
+// （受信箱・送信箱が共有する——「名前が機能」という同じ仕様）。
+func topLevelPageByTitle(title string) (string, bool) {
+	var id int
+	err := database.DB.QueryRow(
+		`SELECT id FROM pages WHERE parent_id = 0 AND title = ? LIMIT 1`, title).Scan(&id)
+	if err != nil {
+		return "", false
+	}
+	return page.NormalizeID(strconv.Itoa(id))
+}
+
+// ReplyToTag は「この記録はどの記録への返信か」を指す参照タグです。
+// 値は返信元のページID——参照タグの文法（ref_render.go）に乗るのでリンクになり、
+// **逆引き**（PagesByTag）で「この記録への返信」も引けます。
+const ReplySourceTag = "返信元"
+
+// CreateRecordPage は年フォルダ／月フォルダの下へ記録ページを1枚作ります。
+//
+// 受信箱の取り込み（IntakeContext.CreateDatedPage）と、送信の記録（ext/mailgraph）
+// が共有します——**受信箱と送信箱で置き場の作法を変えない**ため。
+func CreateRecordPage(rootID, owner string, t time.Time, bodyHTML string) (string, error) {
+	parent := rootID
+	if !t.IsZero() {
+		var err error
+		if parent, err = ensureDateFolderUnder(rootID, owner, t); err != nil {
+			return "", err
+		}
+	}
+	newID, err := CreateChildPage(parent, owner, bodyHTML)
+	if err != nil {
+		return "", err
+	}
+	if !t.IsZero() {
+		setSortKey(newID, t.In(time.Local).Format(time.RFC3339))
+	}
+	return newID, nil
+}
+
+// ensureDateFolderUnder は root の下に「年／月」を必要なだけ作ります。
+func ensureDateFolderUnder(rootID, owner string, t time.Time) (string, error) {
+	local := t.In(time.Local)
+	year, err := ensureFolderUnder(rootID, owner, local.Format("2006年"))
+	if err != nil {
+		return "", err
+	}
+	return ensureFolderUnder(year, owner, local.Format("01月"))
+}
+
+// ensureFolderUnder は親の下に題の一致する子を探し、無ければ作ります。
+//
+// **一致は完全一致だけ**です。取り込みは無人で何度も走るので、揺れを吸収すると
+// 気づかないうちに似た名前のフォルダが増えます。
+//
+// フォルダは IntakeContext の created へ入りません——SaveAttachment / UpdatePage
+// の対象は「この取り込みで作った記録ページ」に限る、という最小権限の線を崩さない
+// ためです（そもそもここは IntakeContext を通らない）。
+func ensureFolderUnder(parentID, owner, title string) (string, error) {
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return "", err
+	}
+	var id int
+	if err := database.DB.QueryRow(
+		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
+		parentInt, title).Scan(&id); err == nil {
+		return fmt.Sprintf("%0*d", page.IDLength, id), nil
+	}
+	newID, err := CreateChildPage(parentID, owner, "<h1>"+html.EscapeString(title)+"</h1>")
+	if err != nil {
+		return "", err
+	}
+	auth.Audit(owner, "intake.folder", newID+" under "+parentID+" ("+title+")")
+	return newID, nil
 }

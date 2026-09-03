@@ -1573,3 +1573,81 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     outline-offset: -2px;
     border-radius: 4px;
 }
+
+/* メールの返信と「この記録への返信」——閲覧モードのクローム。
+   返信の本体は送信箱にあり、ここは参照で見えるだけ（返信元の本文は変わらない）。 */
+.mail-chrome {
+    margin: 1.5rem 0 0.5rem;
+}
+
+.mail-reply-open {
+    padding: 0.35rem 1rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mail-reply-form {
+    border: 1px solid var(--w-border, #ccc);
+    border-radius: 6px;
+    padding: 0.75rem 1rem 1rem;
+    margin: 0.5rem 0 1rem;
+    background: var(--w-surface-alt, #fafafa);
+}
+
+.mail-reply-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.mail-reply-row label {
+    flex: 0 0 3.5rem;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+.mail-reply-row input {
+    flex: 1 1 auto;
+    padding: 0.3rem 0.4rem;
+    font: inherit;
+}
+
+.mail-reply-body {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.4rem;
+    font: inherit;
+    margin-top: 0.3rem;
+}
+
+.mail-reply-send {
+    margin-top: 0.5rem;
+    padding: 0.4rem 1.2rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mail-replies {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--w-accent, #3b82f6);
+    background: var(--w-surface-alt, #fafafa);
+}
+
+.mail-replies-head {
+    margin: 0 0 0.3rem;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.mail-replies ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.mail-replies-when,
+.mail-replies-to {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
