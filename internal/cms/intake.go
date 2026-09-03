@@ -314,7 +314,16 @@ func (c *IntakeContext) CreateDatedPage(t time.Time, bodyHTML string) (string, e
 			return "", err
 		}
 	}
-	return c.createUnder(parent, bodyHTML)
+	newID, err := c.createUnder(parent, bodyHTML)
+	if err != nil {
+		return "", err
+	}
+	// 並び順は**届いた時刻**（取り込んだ順ではない）。ISO表記なので文字列のまま
+	// 正しく並びます。
+	if !t.IsZero() {
+		setSortKey(newID, t.In(time.Local).Format(time.RFC3339))
+	}
+	return newID, nil
 }
 
 // ensureDateFolder は「年／月」のページを必要なだけ作り、月フォルダのIDを返します。
@@ -352,4 +361,23 @@ func (c *IntakeContext) ensureFolder(parentID, title string) (string, error) {
 	}
 	auth.Audit(c.Uploader, "intake.folder", newID+" under "+parentID+" ("+title+")")
 	return newID, nil
+}
+
+// setSortKey は作ったページの並び順キーをサイドカーへ書きます。
+//
+// **取り込みは順序を知っています**（メールなら受信日時）。それを入れておけば、
+// 月フォルダの中が届いた順に並びます——取り込んだ順ではなく。
+// 人があとでドラッグで並べ替えれば、同じ欄が上書きされるだけです。
+func setSortKey(pageID, key string) {
+	if key == "" {
+		return
+	}
+	meta, ok := page.ReadSidecar(pageID)
+	if !ok {
+		return
+	}
+	meta.SortKey = key
+	if err := page.WriteSidecar(pageID, meta); err != nil {
+		log.Printf("並び順キーを書けませんでした page=%s: %v", pageID, err)
+	}
 }
