@@ -55,7 +55,7 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 	want := []string{
 		"part-materials", "client-order", "client-order-items",
 		"our-order", "our-order-items", "our-estimate", "supplier-estimate",
-		"required-materials", "drawing",
+		"required-materials", "drawing", "drawing-revisions", "drawing-revision-items",
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))

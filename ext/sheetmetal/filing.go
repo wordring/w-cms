@@ -320,6 +320,14 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	if err := cms.InsertAfterH1(dstPageID, user.Username, block); err != nil {
 		return err
 	}
+	// **改訂履歴に1行足す**——社内コードの指し先はこの行です（vocab.go の
+	// drawing-revisions）。図面ブロックは「赤枠で残して人が消す」決まりなので、
+	// 消せるものを指し先にすると紙に出たコードが宙ぶらりんになります。
+	if err := cms.RewriteBody(dstPageID, user.Username, func(body string) string {
+		return InsertRevisionRow(body, drawingNoOf(block))
+	}); err != nil {
+		return err
+	}
 	// 合流し終えてから仮のページを片付ける（順序が逆だと、失敗したときに
 	// 図面がどこにも無い状態が生まれる）。
 	if _, err := cms.DeletePageToTrash(srcPageID); err != nil {
@@ -344,4 +352,15 @@ func reassignBlockIDIfTaken(block, dstBody string) string {
 	}
 	return strings.Replace(block,
 		`data-id="`+m[1]+`"`, `data-id="`+cms.NewBlockID(dstBody)+`"`, 1)
+}
+
+// drawingNoRe は図面ブロックから図面番号を拾います（改訂履歴の行に載せる）。
+var drawingNoRe = regexp.MustCompile(`<dt>図面番号</dt><dd>([^<]*)</dd>`)
+
+// drawingNoOf は図面ブロックの図面番号を返します（無ければ空）。
+func drawingNoOf(block string) string {
+	if m := drawingNoRe.FindStringSubmatch(block); m != nil {
+		return m[1]
+	}
+	return ""
 }

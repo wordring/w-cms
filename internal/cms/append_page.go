@@ -52,6 +52,13 @@ func AppendToPageBody(pageID, author, fragmentHTML string) error {
 	})
 }
 
+// RewriteBody は本文を書き換えます（作法つき）。拡張から使う口です
+// ——改訂履歴へ1行足す、のような「読んで・変えて・書く」を、保存経路と同じ
+// 順序（サニタイズ・更新日時・版・索引）で通すため。
+func RewriteBody(pageID, author string, rewrite func(current string) string) error {
+	return rewritePageBody(pageID, author, rewrite)
+}
+
 // rewritePageBody は本文の読み書きの**作法**（サニタイズ・更新日時・版・索引の順序）を
 // 1箇所に持ちます。どこを書き換えるかだけが rewrite で変わります。
 func rewritePageBody(pageID, author string, rewrite func(current string) string) error {
