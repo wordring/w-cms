@@ -33,6 +33,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -307,6 +308,15 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	if err != nil || !canWritePage(user, dstInt) {
 		return errors.New("合流先へ書き込む権限がありません")
 	}
+
+	// **ブロックIDが合流先と衝突しないようにする**——`ページID-ブロックID` は
+	// その改定の社内コードなので、1つのページの中で重複したら指し先が定まりません
+	// （4桁 base36 なので確率は低いが、低いことと起きないことは違う）。
+	dstBody, err := cms.ReadPageBody(dstPageID)
+	if err != nil {
+		return err
+	}
+	block = reassignBlockIDIfTaken(block, dstBody)
 	if err := cms.InsertAfterH1(dstPageID, user.Username, block); err != nil {
 		return err
 	}
@@ -316,4 +326,22 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		return err
 	}
 	return nil
+}
+
+// blockIDRe は section の先頭に付いたブロックIDを拾います。
+var blockIDRe = regexp.MustCompile(`^<section data-id="([0-9a-z]+)"`)
+
+// reassignBlockIDIfTaken は、運ぶブロックのIDが合流先で既に使われていたら振り直します。
+// 使われていなければ**そのまま**——既にどこかで社内コードとして書き留められて
+// いるかもしれないので、必要のない振り直しはしません。
+func reassignBlockIDIfTaken(block, dstBody string) string {
+	m := blockIDRe.FindStringSubmatch(block)
+	if m == nil {
+		return block
+	}
+	if !strings.Contains(dstBody, `data-id="`+m[1]+`"`) {
+		return block
+	}
+	return strings.Replace(block,
+		`data-id="`+m[1]+`"`, `data-id="`+cms.NewBlockID(dstBody)+`"`, 1)
 }

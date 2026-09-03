@@ -15,9 +15,13 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"crypto/rand"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"w-cms/internal/cms/page"
 )
@@ -110,4 +114,41 @@ func ReadPageBody(pageID string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// blockIDAttrRe は本文の中の data-id を拾う正規表現です（採番の重複避けに使う）。
+var blockIDAttrRe = regexp.MustCompile(`data-id="([0-9a-z]+)"`)
+
+// NewBlockID は bodyHTML の中で未使用のブロックIDを1つ返します。
+//
+// **ブロックIDは社内コードの後半になります**——参照値 `ページID-ブロックID` は
+// 押せばそのブロックへ飛ぶので（ref_render.go）、部品ページの図面ブロックに
+// 付ければ「その改定の社内コード」がそのまま出来上がります（2026-09-03 ユーザー:
+// 「部品の社内コードは部品ページのページ番号と改定番号を足したものになるのでは？
+// 改定番号等は、改定を記す項目のdata-idとなるのではないでしょうか？」）。
+//
+// 形はエディタの採番（app.js の newBlockId）に合わせた4桁の base36 です
+// ——**同じ本文に2種類の採番規則を混ぜない**ため。短さで衝突しうる分は、
+// エディタと同じく使用済みとの突き合わせで潰します。
+func NewBlockID(bodyHTML string) string {
+	used := map[string]bool{}
+	for _, m := range blockIDAttrRe.FindAllStringSubmatch(bodyHTML, -1) {
+		used[m[1]] = true
+	}
+	const chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+	buf := make([]byte, 4)
+	for attempt := 0; attempt < 50; attempt++ {
+		if _, err := rand.Read(buf); err != nil {
+			break
+		}
+		id := make([]byte, 4)
+		for i, b := range buf {
+			id[i] = chars[int(b)%len(chars)]
+		}
+		if !used[string(id)] {
+			return string(id)
+		}
+	}
+	// 乱数が尽きる状況は想定していないが、無言で衝突させるよりは長い値を返す。
+	return strconv.FormatInt(time.Now().UnixNano(), 36)
 }
