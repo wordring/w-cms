@@ -21,7 +21,9 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -81,7 +83,8 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	// 専用の口があるものは迂回させない（画像＝マジックナンバー検証・EXIF除去、
-	// PDF＝%PDF- 検証）。
+	// PDF＝%PDF- 検証）。**受信箱宛てだけは例外**で、上の取り込み分岐が
+	// 種類ごとの検査を通したうえで引き受ける（1つの口で全部受ける・2026-09-03）。
 	if ext == ".pdf" || allowedImageExts[ext] {
 		http.Error(w, "この種類は専用のアップロード口を使ってください（画像・PDF）", http.StatusBadRequest)
 		return
@@ -133,6 +136,32 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// checkIntakeContent は受信箱へ着いたファイルを種類ごとに検査します。
+// 画像は EXIF を落とした中身を返すので、**戻り値のほうを保存すること**。
+//
+// 受信箱は「何かが届いた」の1つの口で全部を受けます（メール・PDF・画像・図面…）。
+// そのぶん、**専用の口が持っていた守りをここで引き受けます**——
+// PDF はマジックナンバー、画像は種別の一致とメタデータ除去。
+// それ以外（DXF・Office・ZIP 等）は中身を検査しません——CAD/Office の検証は
+// 現実的でなく、安全の本体は配信側（未知の種別は `attachment`＋nosniff）にあります。
+func checkIntakeContent(fileName string, content []byte) ([]byte, error) {
+	switch ext := strings.ToLower(filepath.Ext(fileName)); {
+	case ext == ".pdf":
+		if !bytes.HasPrefix(content, []byte("%PDF-")) {
+			return nil, errors.New("PDFファイルではありません（先頭が %PDF- ではありません）")
+		}
+		return content, nil
+	case allowedImageExts[ext]:
+		kind, err := checkImageContent(fileName, content)
+		if err != nil {
+			return nil, err
+		}
+		// カメラ写真のGPSが載ったまま保存されないよう、正本を無害化してから渡す。
+		return StripImageMetadata(kind, content)
+	}
+	return content, nil
+}
+
 // serveIntake は受信箱へのアップロードを取り込み係に回します。
 // 担当が居なければ false（通常の添付経路へ戻す）。
 // formField はファイルが入っているフォーム欄の名前です（汎用の口は "file"、
@@ -151,6 +180,14 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 	content, err := io.ReadAll(file)
 	if err != nil {
 		http.Error(w, "File read error", http.StatusInternalServerError)
+		return true
+	}
+	// **種類ごとの検査はここで通す**——受信箱は1つの口で全部を受けるので、
+	// 専用の口が持っていた守り（PDFのマジックナンバー・画像の種別検証とEXIF除去）を
+	// 迂回させない（2026-09-03「受け口の一本化」）。
+	content, err = checkIntakeContent(header.Filename, content)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return true
 	}
 	uploader := "system"

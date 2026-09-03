@@ -1,9 +1,10 @@
 package cms
 
 // ─────────────────────────────────────────────────────────────────────────
-// FAX（スキャンPDF）の取り込み係——汎用寄りの同梱拡張（2026-09-03）
+// ファイルの取り込み係——解釈しないが記録は残す（2026-09-03）
 //
-// 受信箱へ置かれた PDF を**通信記録ページ**へ変換します。
+// 受信箱へ置かれたファイル（PDF・画像・図面・Office…）を**通信記録ページ**へ
+// 変換します。**中身は解釈しません**——それは人が「🤖 解析」を押したときの仕事。
 //
 //	<h1>（ファイル名から）</h1>
 //	<dl data-type="tags">チャネル・取り込み日時・内容ハッシュ</dl>
@@ -37,13 +38,28 @@ import (
 )
 
 func init() {
-	RegisterIntake(faxIntake{})
+	// PDF と画像は**FAXの道**（複合機の scan-to-PDF／FAXサーバの出力）。
+	// §2 のチャネル表がこの2つを FAX の入口と定めている。
+	RegisterIntake(fileIntake{channel: "FAX"}, ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif")
+	// それ以外（DXF・Office・ZIP…）は**既定の担当**へ。届いた事実は記録するが、
+	// どの経路で来たかは分からないので `チャネル` は書かない（分かることだけ書く）。
+	RegisterIntakeFallback(fileIntake{})
 }
 
-type faxIntake struct{}
+// fileIntake は「解釈しないファイル」の取り込み係です。
+// channel が空でなければ `チャネル` タグを書きます。
+type fileIntake struct{ channel string }
 
-func (faxIntake) Name() string         { return "fax" }
-func (faxIntake) Extensions() []string { return []string{".pdf"} }
+func (f fileIntake) Name() string {
+	if f.channel != "" {
+		return "file:" + f.channel
+	}
+	return "file"
+}
+
+// Extensions は RegisterIntake の引数で渡すので、ここでは空を返します
+// （既定の担当としても登録されるため、自分では拡張子を宣言しない）。
+func (fileIntake) Extensions() []string { return nil }
 
 // ContentHashTag は中身から作る重複検知の鍵です。
 //
@@ -58,13 +74,13 @@ const ContentHashTag = "内容ハッシュ"
 const ChannelTag = "チャネル"
 
 // SourceRef は重複検知の鍵（中身のSHA-256）を返します。
-func (faxIntake) SourceRef(fileName string, content []byte) (string, string, bool) {
+func (fileIntake) SourceRef(fileName string, content []byte) (string, string, bool) {
 	sum := sha256.Sum256(content)
 	return ContentHashTag, hex.EncodeToString(sum[:]), true
 }
 
 // OnFile は PDF を通信記録ページにします。
-func (faxIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (string, string, error) {
+func (f fileIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (string, string, error) {
 	// 題はファイル名から採る——FAXサーバは `20260903_1430_0312345678.pdf` のように
 	// 受信時刻や発信番号を名前へ入れることが多く、**人が見て分かる唯一の手掛かり**
 	// になっている。中身から推測はしない（それは 🤖 解析の仕事）。
@@ -86,7 +102,7 @@ func (faxIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	writeTag(&b, ChannelTag, "FAX")
+	writeTag(&b, ChannelTag, f.channel) // 空なら書かれない
 	// **取り込み日時であって受信日時ではない**——PDF は受け取った時刻を持たない。
 	// 名前を正確にしておけば、あとで `受信日時` を足したときに矛盾しない。
 	writeTag(&b, "取り込み日時", time.Now().In(time.Local).Format(time.RFC3339))
