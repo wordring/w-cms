@@ -192,3 +192,25 @@ func TestImagesTakeTheFaxPath(t *testing.T) {
 		t.Errorf(".eml の担当が置き換わっています: %q", h.Name())
 	}
 }
+
+// TestIntakeKeepsExtension は、保存名の拡張子が**受け取った名前から採られる**ことを
+// 検証します。決め打ちにすると中身と種別が食い違い、配信の Content-Type も
+// 解析ボタンの判定も狂う（実データのDXFが .pdf として保存されて発覚・2026-09-03）。
+func TestIntakeKeepsExtension(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+
+	// 大文字の拡張子も小文字へ揃える（URLと配信の判定が揺れないように）。
+	pageID, _, err := intakeHandlerFor(".dxf").OnFile(ctx, "X008-135-4_架台Assy.DXF", []byte("0\nSECTION\n"))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	entries, err := os.ReadDir(page.AttachmentDir(pageID))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("添付が保存されていません: %v %v", entries, err)
+	}
+	if got := filepath.Ext(entries[0].Name()); got != ".dxf" {
+		t.Errorf("拡張子が受け取った名前から採られていません: %q（保存名 %q）", got, entries[0].Name())
+	}
+}
