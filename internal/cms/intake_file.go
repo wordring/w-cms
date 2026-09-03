@@ -94,7 +94,15 @@ func (f fileIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) 
 		return "", "", err
 	}
 
-	id, href, err := ctx.SaveAttachment(pageID, ".pdf", content)
+	// 拡張子は**受け取った名前から採る**。ここを決め打ちにすると中身と種別が
+	// 食い違い、配信の Content-Type も解析ボタンの判定も狂う（FAX専用だったころの
+	// `.pdf` 決め打ちが、汎用化のときに取り残されていた——実データのDXFが
+	// `.pdf` として保存されて発覚。2026-09-03）。
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if ext == "" {
+		ext = ".bin"
+	}
+	id, href, err := ctx.SaveAttachment(pageID, ext, content)
 	if err != nil {
 		return "", "", err
 	}
