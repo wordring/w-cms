@@ -1540,3 +1540,11 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     padding: 0.5rem;
     margin: 0.5rem 0;
 }
+
+/* 「改定として合流」の確認——実行が確認を求めたときだけ現れる。
+   最初から見せると「押せば通る」と学習され、偽の改定を止める意味が薄れる。 */
+.filing-confirm {
+    white-space: nowrap;
+    font-size: 0.85em;
+    color: var(--w-danger, #c0392b);
+}

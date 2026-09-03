@@ -3032,7 +3032,7 @@
         const table = document.createElement('table');
         table.className = 'filing-table';
         const trh = document.createElement('tr');
-        ['図面番号', '顧客名', '装置名称', '図面名称'].forEach(t => {
+        ['図面番号', '顧客名', '装置名称', '図面名称', ''].forEach(t => {
             const th = document.createElement('th');
             th.textContent = t;
             trh.appendChild(th);
@@ -3059,7 +3059,21 @@
                 tr.appendChild(td);
                 fields[key] = input;
             });
-            inputs.push({ page_id: row.page_id, fields: fields });
+            // 「改定として合流」の確認——**既定は隠しておき、実行が確認を求めた
+            // ときだけ出します**。最初から出すと「押せば通る」と学習されてしまい、
+            // 偽の改定を止める意味が薄れます。
+            const tdConfirm = document.createElement('td');
+            const confirm = document.createElement('label');
+            confirm.className = 'filing-confirm';
+            confirm.hidden = true;
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            confirm.appendChild(box);
+            confirm.appendChild(document.createTextNode(' 改定として合流'));
+            tdConfirm.appendChild(confirm);
+            tr.appendChild(tdConfirm);
+
+            inputs.push({ page_id: row.page_id, fields: fields, confirm: confirm, box: box });
             table.appendChild(tr);
         });
         panel.appendChild(table);
@@ -3081,6 +3095,7 @@
             customer: i.fields.customer.value,
             machine_name: i.fields.machine_name.value,
             drawing_name: i.fields.drawing_name.value,
+            confirm_revision: i.box.checked,
         }));
         try {
             const res = await fetch('/api/file-drawings', {
@@ -3091,10 +3106,16 @@
             const d = await res.json();
             if (!d.success) throw new Error(d.message || res.status);
             // 何が起きたかを必ず見せる（黙って動かさない）。
-            const lines = (d.results || []).map(r => r.message).filter(Boolean);
+            const results = d.results || [];
+            const lines = results.map(r => r.message).filter(Boolean);
+            // **確認待ちの行は表を閉じない**——チェックを出して、人が判断してから
+            // もう一度実行してもらう（偽の改定を黙って作らないための関門）。
+            const pending = new Set(results
+                .filter(r => r.outcome === 'needs_confirm').map(r => r.page_id));
+            inputs.forEach(i => { i.confirm.hidden = !pending.has(i.page_id); });
             notify(lines.join('\n') || '対象がありませんでした。',
-                { type: 'success', duration: 0, id: 'filing' });
-            panel.remove();
+                { type: pending.size ? 'warn' : 'success', duration: 0, id: 'filing' });
+            if (!pending.size) panel.remove();
         } catch (e) {
             notify('整理を実行できませんでした: ' + e, { type: 'alert', duration: 0, id: 'filing' });
         }

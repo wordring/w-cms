@@ -137,13 +137,18 @@ type filingRequest struct {
 	Customer    string `json:"customer"`
 	MachineName string `json:"machine_name"`
 	DrawingName string `json:"drawing_name"`
+	// ConfirmRevision は「図面番号が同じでも改定として合流してよい」の確認です。
+	// 既定は false——**偽の改定を黙って作らない**ため（2026-09-03 ユーザー:
+	// 「同じ図面名称を2回整理すると改定になるのはちょっとマズいと思います」）。
+	ConfirmRevision bool `json:"confirm_revision"`
 }
 
 // filingResult は1行の結果です。何が起きたかを人へ返します
 // （黙って動かすのではなく、**どこへ入ったか・改定になったか**を必ず見せる）。
 type filingResult struct {
-	PageID   string `json:"page_id"`
-	Outcome  string `json:"outcome"` // "moved" / "revision" / "skipped"
+	PageID string `json:"page_id"`
+	// "moved" / "revision" / "skipped" / "needs_confirm"（人の確認待ち）
+	Outcome  string `json:"outcome"`
 	Message  string `json:"message"`
 	TargetID string `json:"target_id,omitempty"` // 改定のときは合流先
 }
@@ -209,6 +214,18 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// **既にあれば改定図面**（ユーザー決定）。顧客名／装置名称の下では図面名称が
 	// 一意なので、ページが在ること自体が改定の合図。
 	if existing, found := findChildByTitle(machineID, name); found && existing != pageID {
+		// **偽の改定を作らない**——同じ添付から作られたものは重複、図面番号が
+		// 同じものは人に確認する（duplicateReason）。
+		if reason, needsConfirm, err := checkRevision(pageID, existing, row.ConfirmRevision); err != nil {
+			return filingResult{PageID: pageID, Outcome: "skipped",
+				Message: "合流先を調べられません: " + err.Error()}
+		} else if reason != "" {
+			outcome := "skipped"
+			if needsConfirm {
+				outcome = "needs_confirm"
+			}
+			return filingResult{PageID: pageID, Outcome: outcome, TargetID: existing, Message: reason}
+		}
 		if err := mergeAsRevision(user, pageID, existing); err != nil {
 			return filingResult{PageID: pageID, Outcome: "skipped",
 				Message: "改定として合流できません: " + err.Error()}
@@ -363,4 +380,64 @@ func drawingNoOf(block string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// ── 偽の改定を作らないための検査（2026-09-03）──────────────────────────
+//
+// ユーザー:「同じ図面名称を2回整理すると改定になるのはちょっとマズいと思います」。
+// 同じPDFを解析し直して整理に流すと、**中身は同じなのに版が増えます**。
+// 履歴が嘘になり、社内コードが増え、赤枠の古い図面が意味も無く積み上がります。
+//
+// 判定は2段に分けます:
+//
+//	確実な重複  = 由来（受信元）が既存の図面ブロックと同じ。**同じ添付から作った**
+//	              ものなので、改定ではありえない。黙って止める
+//	疑わしい    = 図面番号が既存の版と同じ。改定なら普通は番号か改訂記号が変わる。
+//	              **機械には決められない**ので人に尋ねる（確認して再実行）
+
+// sourceRefRe は図面ブロックの由来（受信元）を拾います。
+var sourceRefRe = regexp.MustCompile(`<dt>受信元</dt><dd>([^<]*)</dd>`)
+
+// revNumberRe は改訂履歴の行から図面番号を拾います。
+var revNumberRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>[0-9]+</td><td>([^<]*)</td>`)
+
+// duplicateReason は合流させてよいかを調べ、止める理由を返します
+// （空なら合流してよい）。needsConfirm は「人が確認すれば通してよい」の印です。
+func duplicateReason(block, dstBody string, confirmed bool) (reason string, needsConfirm bool) {
+	// 確実な重複——同じ添付から作られている。確認しても通しません。
+	if m := sourceRefRe.FindStringSubmatch(block); m != nil && strings.TrimSpace(m[1]) != "" {
+		if strings.Contains(dstBody, "<dd>"+m[1]+"</dd>") {
+			return "同じ添付から作られた図面が既にあります（重複なので合流しません）", false
+		}
+	}
+	if confirmed {
+		return "", false
+	}
+	// 疑わしい——図面番号が既存の版と同じ。改定なら普通は番号が変わります。
+	no := strings.TrimSpace(drawingNoOf(block))
+	if no == "" {
+		return "", false
+	}
+	for _, m := range revNumberRe.FindAllStringSubmatch(dstBody, -1) {
+		if strings.TrimSpace(m[1]) == no {
+			return "図面番号「" + no + "」の版が既にあります。" +
+				"改定なら普通は図面番号か改訂記号が変わります。" +
+				"本当に改定として合流させるなら「改定として合流」にチェックして実行してください", true
+		}
+	}
+	return "", false
+}
+
+// checkRevision は合流させてよいかを、運ぶブロックと合流先の本文から調べます。
+func checkRevision(srcPageID, dstPageID string, confirmed bool) (reason string, needsConfirm bool, err error) {
+	srcBody, err := cms.ReadPageBody(srcPageID)
+	if err != nil {
+		return "", false, err
+	}
+	dstBody, err := cms.ReadPageBody(dstPageID)
+	if err != nil {
+		return "", false, err
+	}
+	r, c := duplicateReason(cms.FirstBlockHTML(srcBody), dstBody, confirmed)
+	return r, c, nil
 }
