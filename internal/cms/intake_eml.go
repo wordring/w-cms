@@ -6,8 +6,9 @@ package cms
 // メール（RFC 5322 / MIME）を**通信記録ページ**へ変換します。
 //
 //	<h1>件名</h1>
-//	<dl data-type="tags">差出人・宛先・CC（表示名とアドレスを別のタグに分ける）・
-//	                     受信日時（ISO 8601・ローカル時刻＋オフセット）・メッセージID</dl>
+//	<dl data-type="tags">差出人・宛先・CC・返信先（表示名とアドレスを別のタグに分ける）・
+//	                     受信日時（ISO 8601・ローカル時刻＋オフセット）・
+//	                     メッセージID・返信元メッセージID（スレッドの親）</dl>
 //	本文（text/plain を段落へ）
 //	📎 添付（files/ へ保存・リンクは生成ID・download 属性が元名を運ぶ）
 //
@@ -82,6 +83,18 @@ type emlPart struct {
 // そのまま重複判定になります。新しい仕組みは1つも要りません。
 const MessageIDTag = "メッセージID"
 
+// InReplyToTag は**スレッドの親**を指す鍵です（`In-Reply-To` ヘッダ。返信元メールの
+// Message-ID が入る）。
+//
+// 名前が紛らわしいので注記します——**`Reply-To` とは別のヘッダ**です。
+// `Reply-To` は「返信の宛先アドレス」（差出人と違う窓口に返させたいときに使う）で、
+// 親子関係は作りません。作るのは `In-Reply-To` のほうです。
+//
+// **新しい仕組みは要りません**——値は Message-ID なので、親の記録ページは
+// 重複検知と同じ逆引き（`PagesByTag(MessageIDTag, 値)`）1回で引けます。
+// 取り込みの順にも依存しません（返信を先に落としても、あとで親が入れば繋がる）。
+const InReplyToTag = "返信元メッセージID"
+
 // SourceRef は重複検知の鍵（Message-ID）を返します。**鍵の取り出しは形式を知る
 // 取り込み係の仕事**で、照合の仕組みはコアが持ちます（intake.go）。
 //
@@ -138,11 +151,16 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	writeAddressTags(&b, "差出人", msg.Header.Get("From"))
 	writeAddressTags(&b, "宛先", msg.Header.Get("To"))
 	writeAddressTags(&b, "CC", msg.Header.Get("Cc"))
+	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
+	writeAddressTags(&b, "返信先", msg.Header.Get("Reply-To"))
 	writeTag(&b, "受信日時", dateISO)
 	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
 	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
 	writeTag(&b, MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
+	// スレッドの親（In-Reply-To）。値は親メールの Message-ID なので、
+	// PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
+	writeTag(&b, InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
 	b.WriteString("</dl>")
 
 	bodyWritten := false

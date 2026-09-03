@@ -2879,9 +2879,10 @@
     // （2026-09-03 ユーザー要望。`差出人`と`差出人アドレス`の重複が発端）。
     //
     // 畳む対象は**機械に向けた値**——人は普段読まないが、機械には要る値:
-    //   - `◯◯アドレス` … 完全一致で検索するために原子化したメールアドレス
-    //   - `メッセージID` … 取り込みの重複検知の鍵
-    // 対ごとに開閉ボタンを付ける案より、**開閉が1つで済み・メッセージIDも一緒に
+    //   - `◯◯アドレス`     … 完全一致で検索するために原子化したメールアドレス
+    //   - `◯◯メッセージID` … 取り込みの重複検知の鍵（`メッセージID`）と
+    //                          スレッドの親（`返信元メッセージID`）
+    // 対ごとに開閉ボタンを付ける案より、**開閉が1つで済み・IDの類も一緒に
     // 片付く**。「誰のアドレスか」はタグの名前が持っているので、まとめて開いても
     // 対応は崩れない（宛先が複数なら `宛先アドレス` が本文の順に並ぶ）。
     //
@@ -2892,8 +2893,7 @@
     //	 実際にそうである必要があります」（ユーザー・2026-09-03）
     //
     // だから**編集モードでは畳まない**（編集する対象は本物でなければならない）。
-    const MACHINE_TAG_SUFFIX = /アドレス$/;
-    const MACHINE_TAG_NAMES = new Set(['メッセージID']);
+    const MACHINE_TAG_SUFFIX = /(アドレス|メッセージID)$/;
 
     function foldMachineTags() {
         document.querySelectorAll('#w-editor-content .tag-detail-toggle').forEach(el => el.remove());
@@ -2909,10 +2909,7 @@
                 if (el.tagName === 'DT') dt = el;
                 else if (el.tagName === 'DD' && dt) { pairs.push({ dt, dd: el }); dt = null; }
             }
-            const folded = pairs.filter(p => {
-                const n = p.dt.textContent.trim();
-                return MACHINE_TAG_SUFFIX.test(n) || MACHINE_TAG_NAMES.has(n);
-            });
+            const folded = pairs.filter(p => MACHINE_TAG_SUFFIX.test(p.dt.textContent.trim()));
             // 畳む対象が無い、または**全部が対象**なら何もしない
             // （空のタグ欄と「詳細」だけが残るのは、隠しているようで気味が悪い）。
             if (!folded.length || folded.length === pairs.length) return;
