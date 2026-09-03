@@ -169,6 +169,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/version", cms.VersionAPIHandler)
 	protected.HandleFunc("/api/revert", cms.RevertAPIHandler)
 
+	protected.HandleFunc("/api/reorder", cms.ReorderAPIHandler)
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 

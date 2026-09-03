@@ -285,6 +285,9 @@
             if (items.length === 0) { list.innerHTML = '<li class="child-nav-empty">子ページはありません</li>'; return; }
             items.forEach(p => {
                 const li = document.createElement('li');
+                li.dataset.pageId = p.ID;
+                // ドラッグで並べ替えられる（結果は並び順キーとして保存される）。
+                li.draggable = true;
                 const a = document.createElement('a');
                 a.className = 'child-nav-link';
                 a.href = '/' + p.ID;
@@ -293,7 +296,69 @@
                 li.appendChild(a);
                 list.appendChild(li);
             });
+            wireChildDrag(list);
         } catch (e) { list.innerHTML = '<li class="child-nav-empty">通信エラー</li>'; }
+    }
+
+    // ── 左レールの並べ替え（2026-09-03）────────────────────────────────
+    //
+    // ユーザー:「左レールの子ページ一覧をドラッグで順番を変えることを考えたうえで
+    // 判断してください」。落とした結果の**並び全部**をサーバーへ送ります
+    // ——「どこへ落としたか」を送ると、サーバーが前後関係を推測することになるため。
+    //
+    // 失敗したら描き直して元に戻します（画面だけ並び替わったまま、を作らない）。
+    let dragSrc = null;
+
+    function wireChildDrag(list) {
+        list.querySelectorAll('li[data-page-id]').forEach(li => {
+            li.addEventListener('dragstart', e => {
+                dragSrc = li;
+                li.classList.add('child-nav-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                // Firefox はデータを載せないとドラッグが始まらない。
+                e.dataTransfer.setData('text/plain', li.dataset.pageId);
+            });
+            li.addEventListener('dragend', () => {
+                li.classList.remove('child-nav-dragging');
+                list.querySelectorAll('.child-nav-over')
+                    .forEach(el => el.classList.remove('child-nav-over'));
+                dragSrc = null;
+            });
+            li.addEventListener('dragover', e => {
+                if (!dragSrc || dragSrc === li) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                li.classList.add('child-nav-over');
+            });
+            li.addEventListener('dragleave', () => li.classList.remove('child-nav-over'));
+            li.addEventListener('drop', e => {
+                e.preventDefault();
+                li.classList.remove('child-nav-over');
+                if (!dragSrc || dragSrc === li) return;
+                // 上半分に落としたら手前、下半分なら後ろへ。
+                const box = li.getBoundingClientRect();
+                const before = (e.clientY - box.top) < box.height / 2;
+                list.insertBefore(dragSrc, before ? li : li.nextSibling);
+                saveChildOrder(list);
+            });
+        });
+    }
+
+    async function saveChildOrder(list) {
+        const order = Array.from(list.querySelectorAll('li[data-page-id]'))
+            .map(li => li.dataset.pageId);
+        try {
+            const res = await fetch('/api/reorder?parent=' + encodeURIComponent(currentPageId), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order: order }),
+            });
+            const d = await res.json();
+            if (!d.success) throw new Error(d.message || res.status);
+        } catch (e) {
+            notify('並び順を保存できませんでした: ' + e, { type: 'alert', duration: 0, id: 'reorder' });
+            loadChildNav(); // 画面だけ並び替わったまま、にしない
+        }
     }
 
     // 左レール：目次を本文中の見出し(h1〜h6)から構築する。サーバーには一切依存せず、
