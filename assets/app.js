@@ -1221,6 +1221,7 @@
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
         refreshFilingButton();       // 部品ページの整理（閲覧モード限定）
+        refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
@@ -3018,6 +3019,7 @@
     // そのまま embed.src に流してはならない。
     // PDFの中身が悪意を持つ危険は埋め込み方によらず同じなので、開くかどうかの
     // 判断を人に残す（自動では開かない）。ZIPは目録だけ（/api/zip-list・展開はしない）。
+    const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
 
     function refreshAttachmentPreviews() {
@@ -3043,6 +3045,190 @@
         });
     }
 
+
+
+    // ── メールの返信と「この記録への返信」ののぞき見（2026-09-03）──────────
+    //
+    // ユーザー:「返信の本体は送信箱にあるのはどうでしょう？そして、返信元のメールから
+    // ものぞき見できるのが良いかと」——返信の本体は送信箱に立ち、ここは**参照で
+    // 見えるだけ**です。返信元の本文は一切変わりません（通信記録は届いたときのまま）。
+    //
+    // DOM生成は createElement + textContent（innerHTML へ文字列を入れない）。
+
+    // tagValue は本文のタグ（<dt>名前</dt><dd>値</dd>）から値を1つ読みます。
+    function tagValue(name) {
+        const host = document.getElementById('w-editor-content');
+        if (!host) return '';
+        const dts = host.querySelectorAll('dl[data-type="tags"] > dt');
+        for (const dt of dts) {
+            if (dt.textContent.trim() !== name) continue;
+            const dd = dt.nextElementSibling;
+            if (dd && dd.tagName === 'DD') return dd.textContent.trim();
+        }
+        return '';
+    }
+
+    function refreshMailChrome() {
+        document.querySelectorAll('#w-editor-content .mail-chrome').forEach(el => el.remove());
+        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        const host = document.getElementById('w-editor-content');
+        if (!host || !currentPageId) return;
+        // 通信記録かどうかは「チャネル」のタグで判る（受信も送信も持つ）。
+        if (!tagValue(CHANNEL_TAG)) return;
+
+        const box = document.createElement('div');
+        box.className = 'vocab-chrome mail-chrome';
+        box.setAttribute('contenteditable', 'false');
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mail-reply-open';
+        btn.textContent = '✉️ 返信';
+        btn.addEventListener('click', () => toggleReplyForm(box, btn));
+        box.appendChild(btn);
+        host.appendChild(box);
+
+        loadReplies(box);
+    }
+
+    // loadReplies は「この記録への返信」を逆引きして並べます（送信箱にある本体への案内）。
+    async function loadReplies(box) {
+        let replies = [];
+        try {
+            const res = await fetch('/api/replies?page_id=' + encodeURIComponent(currentPageId));
+            const d = await res.json();
+            if (!d.success) return;
+            replies = d.replies || [];
+        } catch (e) { return; }
+        if (!replies.length) return;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'mail-replies';
+        const head = document.createElement('p');
+        head.className = 'mail-replies-head';
+        head.textContent = '📨 この記録への返信（本体は送信箱にあります）';
+        wrap.appendChild(head);
+        const ul = document.createElement('ul');
+        replies.forEach(r => {
+            const li = document.createElement('li');
+            const when = document.createElement('span');
+            when.className = 'mail-replies-when';
+            when.textContent = (r.sent_at || '').slice(0, 16) + ' ';
+            const a = document.createElement('a');
+            a.href = '/' + r.page_id;
+            a.textContent = r.title || r.page_id;
+            li.appendChild(when);
+            li.appendChild(a);
+            if (r.to) {
+                const to = document.createElement('span');
+                to.className = 'mail-replies-to';
+                to.textContent = ' → ' + r.to;
+                li.appendChild(to);
+            }
+            ul.appendChild(li);
+        });
+        wrap.appendChild(ul);
+        box.appendChild(wrap);
+    }
+
+    // toggleReplyForm は返信の入力欄を出し入れします。宛先と件名は元のメールから
+    // 埋めますが、**全部書き直せます**（機械が決めるのは初期値まで）。
+    function toggleReplyForm(box, btn) {
+        const existing = box.querySelector('.mail-reply-form');
+        if (existing) { existing.remove(); return; }
+
+        const form = document.createElement('div');
+        form.className = 'mail-reply-form';
+
+        const fields = {};
+        [['to', '宛先', tagValue('差出人アドレス')],
+         ['cc', 'CC', ''],
+         ['subject', '件名', replySubject()]].forEach(([key, label, value]) => {
+            const row = document.createElement('div');
+            row.className = 'mail-reply-row';
+            const lb = document.createElement('label');
+            lb.textContent = label;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = value;
+            row.appendChild(lb);
+            row.appendChild(input);
+            form.appendChild(row);
+            fields[key] = input;
+        });
+
+        const body = document.createElement('textarea');
+        body.className = 'mail-reply-body';
+        body.rows = 10;
+        body.value = quotedBody();
+        form.appendChild(body);
+
+        const send = document.createElement('button');
+        send.type = 'button';
+        send.className = 'mail-reply-send';
+        send.textContent = '送信';
+        send.addEventListener('click', () => sendReply(fields, body, send, form));
+        form.appendChild(send);
+
+        btn.insertAdjacentElement('afterend', form);
+        fields.to.focus();
+    }
+
+    // replySubject は元の件名へ RE: を1つだけ付けます（RE: RE: を重ねない）。
+    function replySubject() {
+        const host = document.getElementById('w-editor-content');
+        const h1 = host && host.querySelector('h1:not(.vocab-chrome h1)');
+        const subj = h1 ? h1.textContent.trim() : '';
+        return /^\s*re\s*:/i.test(subj) ? subj : 'RE: ' + subj;
+    }
+
+    // quotedBody は元の本文を引用にします（差出人の1行を添えて `> ` を付ける）。
+    function quotedBody() {
+        const host = document.getElementById('w-editor-content');
+        if (!host) return '\n\n';
+        const lines = [];
+        host.querySelectorAll('p').forEach(p => {
+            if (p.closest('.vocab-chrome')) return;
+            const t = p.textContent.trim();
+            if (t) lines.push('> ' + t);
+        });
+        const from = tagValue('差出人') || tagValue('差出人アドレス');
+        const head = from ? '\n\n' + from + ' さんは書きました:\n' : '\n\n';
+        return head + lines.slice(0, 40).join('\n') + '\n';
+    }
+
+    async function sendReply(fields, body, send, form) {
+        send.disabled = true;
+        send.textContent = '送信中…';
+        try {
+            const res = await fetch('/api/mail/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_page_id: currentPageId,
+                    to: [fields.to.value],
+                    cc: [fields.cc.value],
+                    subject: fields.subject.value,
+                    body: body.value,
+                }),
+            });
+            const d = await res.json();
+            if (!d.success) throw new Error(d.message || res.status);
+            // **送れたが記録できなかった**ときも、送れた事実は必ず伝える。
+            if (d.record_error) {
+                notify(d.record_error, { type: 'warn', duration: 0, id: 'mail-send' });
+            } else {
+                notify('送信しました。控えは送信箱にあります（/' + d.page_id + '）',
+                    { type: 'success', duration: 0, id: 'mail-send' });
+            }
+            form.remove();
+            refreshMailChrome(); // 「この記録への返信」を出し直す
+        } catch (e) {
+            notify('送信できませんでした: ' + e, { type: 'alert', duration: 0, id: 'mail-send' });
+        }
+        send.disabled = false;
+        send.textContent = '送信';
+    }
 
     // ── 部品ページの整理（提案→人が直す→実行）───────────────────────────
     //
