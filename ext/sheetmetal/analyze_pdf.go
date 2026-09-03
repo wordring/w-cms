@@ -336,23 +336,42 @@ func writeHeaderPair(b *strings.Builder, name, value string) {
 // 図面番号で探して束ねることはしません——番号は別製品で衝突しうるので、
 // 同一性を担うのは常にページID（drawing_match.go 冒頭）。
 func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, matches []matchedDXF) string {
-	no, name := strings.TrimSpace(j.DrawingNo), strings.TrimSpace(j.DrawingName)
 	// 題は「図面番号 図面名称」——**図面名称は重複しうる**ので番号を先に置く。
-	title := strings.TrimSpace(no + " " + name)
+	title := strings.TrimSpace(strings.TrimSpace(j.DrawingNo) + " " + strings.TrimSpace(j.DrawingName))
 	if title == "" {
 		title = "図面（番号不明）"
 	}
 
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
-	b.WriteString("<section><h2>図面</h2><dl>")
+	b.WriteString(drawingSectionHTML(j, hostPageID, attachID, srcEntry, matches, ""))
+	return b.String()
+}
+
+// drawingSectionHTML は図面ブロック1つ分を組みます。
+//
+// **ブロックIDを付けるのが肝**——参照値 `ページID-ブロックID` は押せばこの
+// ブロックへ飛ぶので、これが**その改定の社内コード**になります（2026-09-03 ユーザー:
+// 「部品の社内コードは部品ページのページ番号と改定番号を足したものになるのでは？
+// …すると、社内コードでその項目へ飛べることになります」）。
+// 図面番号が別製品と衝突しても、この番号は構造上一意です。
+//
+// existingBody は採番の重複を避けるための既存本文です（改定で差し込むとき）。
+// 由来（受信元・対応DXF）を**ブロックの中**に置くのは、改定で合流させるときに
+// ブロックごと運べば出所も一緒に付いて行くようにするためです。
+func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
+	matches []matchedDXF, existingBody string) string {
+	no, name := strings.TrimSpace(j.DrawingNo), strings.TrimSpace(j.DrawingName)
+
+	var b strings.Builder
+	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>図面</h2><dl>`)
 	writeHeaderPair(&b, "図面番号", no)
 	writeHeaderPair(&b, "図面名称", name)
 	// 装置名称・客先は置き場所（顧客名／装置名称／図面名称）に効く項目。
 	// 空でも欄は出す——**あとから人が埋められる**（writeHeaderPair の作り）。
 	writeHeaderPair(&b, "装置名称", j.MachineName)
 	writeHeaderPair(&b, "客先", j.Customer)
-	b.WriteString("</dl></section>")
+	b.WriteString("</dl>")
 
 	b.WriteString(`<dl data-type="tags"><dt>受信元</dt><dd>` +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
@@ -365,6 +384,6 @@ func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, 
 		b.WriteString("<dt>対応DXF</dt><dd>" +
 			html.EscapeString(hostPageID+"-"+m.AttachID) + "</dd>")
 	}
-	b.WriteString("</dl>")
+	b.WriteString("</dl></section>")
 	return b.String()
 }

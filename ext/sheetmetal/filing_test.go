@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -237,6 +238,22 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 		t.Errorf("新しい図面が先頭にありません（改定の並びが逆）:\n%s", html)
 	}
 
+	// **社内コードが成立していること**——ユーザー:「部品の社内コードは部品ページの
+	// ページ番号と改定番号を足したものになるのでは？改定番号等は、改定を記す項目の
+	// data-idとなるのではないでしょうか？…すると、社内コードでその項目へ飛べる」。
+	// 図面ブロックに data-id が付いていて、**改定ごとに別のID**であること。
+	// 同じIDが2つあると `ページID-ブロックID` の指し先が定まらない。
+	found := map[string]bool{}
+	for _, m := range sectionIDRe.FindAllStringSubmatch(html, -1) {
+		if found[m[1]] {
+			t.Errorf("ブロックIDが重複しています（社内コードが一意になりません）: %s", m[1])
+		}
+		found[m[1]] = true
+	}
+	if len(found) != 2 {
+		t.Errorf("図面ブロックのIDが2つありません: %+v\n%s", found, html)
+	}
+
 	// 仮のページは片付いている（ゴミ箱へ——物理削除ではない）。
 	if _, ok := page.ReadSidecar(second); ok {
 		t.Errorf("合流後も仮のページが残っています: %s", second)
@@ -245,3 +262,6 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 		t.Errorf("仮のページがゴミ箱にありません: %v", err)
 	}
 }
+
+// sectionIDRe は本文の中の図面ブロックのIDを拾います（社内コードの後半）。
+var sectionIDRe = regexp.MustCompile(`<section data-id="([0-9a-z]+)"`)
