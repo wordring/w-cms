@@ -3240,41 +3240,40 @@
     // 「見積もりや試作の場合があるので、フォルダ名はユーザーが確認したほうが良い」ため。
     // DOM生成は createElement + textContent（innerHTML へ文字列を入れない）。
 
-    function refreshFilingButton() {
+    async function refreshFilingButton() {
         document.querySelectorAll('#w-editor-content .filing-chrome').forEach(el => el.remove());
         if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
         if (!currentPageId) return;
         const host = document.getElementById('w-editor-content');
         if (!host) return;
+        // **整理が意味を持つのは通信記録だけ**——解析で図面ページが生まれた元のページ。
+        // 年フォルダや部品ページに出しても行き場がない（2026-09-03 ユーザー指摘。
+        // それまでは閲覧モードの全ページに出ていた）。
+        if (!tagValue(CHANNEL_TAG)) return;
+
+        // **整理するものが実際にあるときだけ出します。** 押してから「ありません」と
+        // 言うより、出さないほうが親切です。
+        let rows = [];
+        try {
+            const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(currentPageId));
+            const d = await res.json();
+            if (!d.success) return;
+            rows = d.rows || [];
+        } catch (e) { return; }
+        if (!rows.length) return;
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'vocab-chrome filing-chrome filing-open';
-        btn.textContent = '📁 整理';
-        btn.addEventListener('click', () => openFilingPanel(currentPageId, btn));
+        btn.textContent = '📁 整理（' + rows.length + '件）';
+        btn.addEventListener('click', () => toggleFilingPanel(btn, rows));
         host.appendChild(btn);
     }
 
-    async function openFilingPanel(pageId, btn) {
+    // toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
+    function toggleFilingPanel(btn, rows) {
         const existing = document.querySelector('.filing-panel');
         if (existing) { existing.remove(); return; }
-        btn.disabled = true;
-        let rows = [];
-        try {
-            const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(pageId));
-            const d = await res.json();
-            if (!d.success) throw new Error(d.message || res.status);
-            rows = d.rows || [];
-        } catch (e) {
-            notify('整理の候補を取れませんでした: ' + e, { type: 'alert', duration: 0, id: 'filing' });
-            btn.disabled = false;
-            return;
-        }
-        btn.disabled = false;
-        if (!rows.length) {
-            notify('この記録から生まれた図面のページがありません。', { type: 'warn', duration: 6000 });
-            return;
-        }
         btn.insertAdjacentElement('afterend', buildFilingPanel(rows));
     }
 

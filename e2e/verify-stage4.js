@@ -214,8 +214,10 @@ async function openSlashMenu(page) {
             '<h1>部品X1</h1>' +
             '<dl data-type="tags"><dt>部品番号</dt><dd>X1</dd></dl>' +
             '<table data-type="part-materials"><tbody>' +
-            '<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>' +
-            '<tr><td>SS400 t3.2</td><td>500</td><td>鋼材商会</td><td>2</td></tr>' +
+            // 2026-09-03 に材料の列を実務どおりに変えた（材質・形状・寸法・個数）。
+            // 名前にあたるものは3つを繋いだもの（materials.go の materialNameOf）。
+            '<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
+            '<tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td></tr>' +
             '</tbody></table>');
         const orderId = await newPageWithBody(page, '000000',
             '<h1>受注A</h1>' +
