@@ -148,9 +148,6 @@
                     </div>
                 </details>
             </section>
-            <!-- 親ページへのリンク（「親=上／子=下」の階層感に合わせる。
-                 子ページカードを畳んでも常に見える） -->
-            <div class="child-nav-parent" id="w-child-nav-parent"></div>
             <section class="rail-card">
                 <details open>
                     <summary>子ページ</summary>
@@ -167,6 +164,14 @@
 
 
         <div class="doc-column">
+            <!-- パンくず（本文の上の帯）：先祖の道を根に近い順で出す。**サーバーが組む**
+                 （internal/cms/breadcrumb.go）——JSで1段ずつ辿ると往復が先祖の数だけ
+                 要り、描いたあとに増える。現在のページは入れない（真下の h1 と重なる）。
+                 先祖が無いページ（トップ）では中身が空になり、CSS の :empty で畳まれる。
+                 2026-09-03 に左レールの「↑ 親ページへ」を置き換えた（一段しか上がれず、
+                 狭い画面ではドロワーを開くまで見えなかった）。 -->
+            <nav class="breadcrumb" aria-label="ページの階層"><!--WCMS_BREADCRUMB--></nav>
+
             <p class="tip">💡 スイッチをONにすると「編集モード」に切り替わり、テキストボックスが出現して値を直接編集できるようになります。値を変えると下の「保存されるHTML」がリアルタイムに書き換わります。</p>
 
             <!-- エディタコンテンツ領域（ここが保存対象のHTML本文＝ページの「内容」になります。

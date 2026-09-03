@@ -119,6 +119,31 @@ async function openSlashMenu(page) {
             null, { timeout: 8000 });
         check('見出しの改名を保存時に告知する', true);
 
+        // ── パンくず（本文の上の帯・2026-09-03）──────────────────────────
+        // 左レールの「↑ 親ページへ」を置き換えた。サーバーが組むので、
+        // ページを開いた時点で既にHTMLに入っている（JSの往復は無い）。
+        // 親を作る。gotoNewPage は作成後に ?edit=true へ遷移して編集ロックを取るため、
+        // その直後に次の POST を撃つと稀に 401 が返る（既知の揺れ——前の操作の
+        // ロック残り）。ここでは作成と遷移を分け、閲覧モードで開いてから次へ進む。
+        const mkRes = await page.request.post(BASE + '/api/new-page?parent=000000',
+            { headers: { Origin: BASE }, maxRedirects: 0 });
+        const parentId = (mkRes.headers()['location'] || '').replace(/^\//, '').replace(/\?.*$/, '');
+        await page.goto(BASE + '/' + parentId);
+        const childId = await gotoNewPage(page, parentId);    // その子
+        const crumbs = () => page.evaluate(() => Array.from(
+            document.querySelectorAll('.breadcrumb .crumb')).map(a => a.getAttribute('href')));
+        check('パンくずに先祖の道が出る',
+            JSON.stringify(await crumbs()) === JSON.stringify(['/000000', '/' + parentId]));
+        check('現在のページは入らない', !(await crumbs()).includes('/' + childId));
+        check('左レールの親リンクは無くなった',
+            await page.locator('#w-child-nav-parent').count() === 0);
+
+        await page.goto(BASE + '/000000');
+        // 帯は :empty で display:none になるので、既定の「可視待ち」では止まる。
+        await page.waitForSelector('.breadcrumb', { state: 'attached', timeout: 8000 });
+        check('トップでは帯が畳まれる',
+            await page.locator('.breadcrumb').evaluate(el => getComputedStyle(el).display) === 'none');
+
         check('ページエラーなし', errs.length === 0);
     } catch (e) { check('実行が最後まで到達', false); console.error(e); }
     finally { await browser.close(); }
