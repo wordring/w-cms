@@ -81,3 +81,31 @@ func TestRenderReferenceLinksNotInLoadAPI(t *testing.T) {
 		t.Error("描画経路でリンクが合成されていません")
 	}
 }
+
+// TestRenderReferenceLinksPageRefTag は、**名前で宣言されたタグ**の値が
+// ページ全体への参照になることを固定します（2026-09-03 ユーザーの問い
+// 「このリンクを付けるのは誰か？」への答え——付けるのは表示のときのコアで、
+// どの値が参照かは値の形か、タグの名前で決まる）。
+//
+// 同時に、**宣言していないタグの6桁の値は素通りする**ことも固定します。
+// ここが緩むと発注書番号や図番がリンクに化けます。
+func TestRenderReferenceLinksPageRefTag(t *testing.T) {
+	setupSaveTest(t)
+	if _, err := database.DB.Exec(
+		`INSERT INTO pages (id, title, file_path) VALUES (2, '返信元', '')`); err != nil {
+		t.Fatalf("ページ作成エラー: %v", err)
+	}
+
+	body := `<dl data-type="tags">` +
+		`<dt>` + ReplySourceTag + `</dt><dd>000002</dd>` + // 宣言済み → ページへのリンク
+		`<dt>発注書番号</dt><dd>000002</dd>` + // 宣言していない → 素通り
+		`</dl>`
+	out := RenderReferenceLinks(body)
+
+	if !strings.Contains(out, `<a href="/000002" class="ref-link">000002</a>`) {
+		t.Errorf("宣言したタグがページへのリンクになっていません:\n%s", out)
+	}
+	if !strings.Contains(out, `<dt>発注書番号</dt><dd>000002</dd>`) {
+		t.Errorf("宣言していないタグの6桁の値がリンクに化けています:\n%s", out)
+	}
+}
