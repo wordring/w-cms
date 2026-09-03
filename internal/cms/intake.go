@@ -25,11 +25,13 @@ package cms
 import (
 	"database/sql"
 	"fmt"
+	"html"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -288,4 +290,66 @@ func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResul
 		return IntakeResult{}, true, err
 	}
 	return IntakeResult{PageID: pageID, Title: title}, true, nil
+}
+
+// CreateDatedPage は受信箱の下の「年フォルダ／月フォルダ」へページを作ります。
+//
+// ユーザー:「メールは年フォルダと月フォルダで分類してはどうでしょうか」（2026-09-03）。
+// 実測で年435通あり、過去分を入れると受信箱直下が数千枚になります——**受信箱が
+// 「まだ分からないものの置き場」として機能しなくなる**ので、届いた時期で分けます。
+//
+//	受信箱
+//	└ 2026年
+//	  └ 09月
+//	    └ お見積り依頼
+//
+// **時刻は「届いた時刻」を渡すこと**（取り込んだ時刻ではない）。2024年のメールを
+// 今日取り込んでも2024年に入る必要があります。ゼロがゼロでない時刻を渡すのは
+// 呼ぶ側の責任で、ゼロ値なら受信箱直下へ作ります（分からない時期を捏造しない）。
+func (c *IntakeContext) CreateDatedPage(t time.Time, bodyHTML string) (string, error) {
+	parent := c.InboxID
+	if !t.IsZero() {
+		var err error
+		if parent, err = c.ensureDateFolder(t); err != nil {
+			return "", err
+		}
+	}
+	return c.createUnder(parent, bodyHTML)
+}
+
+// ensureDateFolder は「年／月」のページを必要なだけ作り、月フォルダのIDを返します。
+func (c *IntakeContext) ensureDateFolder(t time.Time) (string, error) {
+	local := t.In(time.Local)
+	year, err := c.ensureFolder(c.InboxID, local.Format("2006年"))
+	if err != nil {
+		return "", err
+	}
+	// 月は**ゼロ詰め**にします（`09月`）。名前で並べたときに順序が狂わないため。
+	return c.ensureFolder(year, local.Format("01月"))
+}
+
+// ensureFolder は親の下に題の一致する子を探し、無ければ作ります。
+//
+// **一致は完全一致だけ**です。取り込みは無人で何度も走るので、揺れを吸収すると
+// 気づかないうちに似た名前のフォルダが増えます。
+func (c *IntakeContext) ensureFolder(parentID, title string) (string, error) {
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return "", err
+	}
+	var id int
+	err = database.DB.QueryRow(
+		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
+		parentInt, title).Scan(&id)
+	if err == nil {
+		return fmt.Sprintf("%0*d", page.IDLength, id), nil
+	}
+	// **フォルダは created へ入れません**——SaveAttachment / UpdatePage の対象は
+	// 「この取り込みで作った記録ページ」に限るという線を崩さないためです。
+	newID, err := CreateChildPage(parentID, c.Uploader, "<h1>"+html.EscapeString(title)+"</h1>")
+	if err != nil {
+		return "", err
+	}
+	auth.Audit(c.Uploader, "intake.folder", newID+" under "+parentID+" ("+title+")")
+	return newID, nil
 }
