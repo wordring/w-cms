@@ -89,7 +89,10 @@ func (f fileIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) 
 		title = "受信文書"
 	}
 
-	pageID, err := ctx.CreatePage("<h1>" + html.EscapeString(title) + "</h1>")
+	// **届いた時刻が分からないので取り込んだ時刻で分けます**——FAXやPDFは封筒メタを
+	// 持たないため（メールと違い受信日時が読めない）。分からないことを捏造せず、
+	// タグの名前も「取り込み日時」のままにしてあります。
+	pageID, err := ctx.CreateDatedPage(time.Now(), "<h1>"+html.EscapeString(title)+"</h1>")
 	if err != nil {
 		return "", "", err
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -163,10 +164,29 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 		}
 	}
 
-	// 親は受信箱（サイドカーが正本）。
+	// 置き場所は「受信箱／年フォルダ／月フォルダ」（2026-09-03 ユーザー提案）。
+	// **年月は届いた時刻から決まります**——取り込んだ時刻ではないので、
+	// 古いメールを今日取り込んでも当時の月へ入ります。
 	meta, ok := page.ReadSidecar(pageID)
-	if !ok || meta.ParentID != inbox {
-		t.Errorf("親が受信箱ではありません: %+v", meta)
+	if !ok {
+		t.Fatalf("サイドカーが読めません")
+	}
+	month, ok := page.ReadSidecar(meta.ParentID)
+	if !ok {
+		t.Fatalf("月フォルダのサイドカーが読めません: %q", meta.ParentID)
+	}
+	year, ok := page.ReadSidecar(month.ParentID)
+	if !ok {
+		t.Fatalf("年フォルダのサイドカーが読めません: %q", month.ParentID)
+	}
+	if year.ParentID != inbox {
+		t.Errorf("年フォルダの親が受信箱ではありません: %+v", year)
+	}
+	if got := titleOfPage(t, meta.ParentID); got != "09月" {
+		t.Errorf("月フォルダの名前が届いた月と違います: %q", got)
+	}
+	if got := titleOfPage(t, month.ParentID); got != "2026年" {
+		t.Errorf("年フォルダの名前が届いた年と違います: %q", got)
 	}
 	if meta.Owner != "alice" || meta.Group != "team" {
 		t.Errorf("所有者・グループの継承が違います: %+v", meta)
@@ -441,4 +461,18 @@ func TestEmlIntakeWithoutMessageIDStillWorks(t *testing.T) {
 	if pageID == "" || title != "鍵なし" {
 		t.Errorf("鍵が無くても取り込めるべきです: %q %q", pageID, title)
 	}
+}
+
+// titleOfPage は本文の h1 を読みます（ページの題＝h1 が正）。
+func titleOfPage(t *testing.T, pageID string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		t.Fatalf("ページを読めません %s: %v", pageID, err)
+	}
+	m := regexp.MustCompile(`<h1>([^<]*)</h1>`).FindStringSubmatch(string(b))
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }

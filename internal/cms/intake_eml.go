@@ -126,7 +126,11 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 		subject = "（件名なし）"
 	}
 	dateISO := ""
+	var received time.Time
 	if t, err := msg.Header.Date(); err == nil {
+		// **届いた時刻**は置き場所（年フォルダ／月フォルダ）にも効きます
+		// ——2024年のメールを今日取り込んでも2024年へ入るように。
+		received = t
 		// 日時は ISO 8601 が全域の正（要件 §3）。表記は**運用者のローカル時刻＋
 		// オフセット**（例: 2026-09-01T10:30:00+09:00）——UTC の Z 表記は人が
 		// 読み違えるため（2026-09-01 ユーザー要望「ISO表記の範囲内でローカル時刻に」）。
@@ -141,7 +145,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 
 	// 先にページを作り（添付の置き場＝新ページのIDが要る）、添付を置いてから
 	// リンク入りの本文で確定する。
-	pageID, err := ctx.CreatePage("<h1>" + html.EscapeString(subject) + "</h1>")
+	pageID, err := ctx.CreateDatedPage(received, "<h1>"+html.EscapeString(subject)+"</h1>")
 	if err != nil {
 		return "", "", err
 	}
