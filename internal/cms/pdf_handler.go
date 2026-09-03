@@ -99,6 +99,16 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
+	// **受信箱への到着は取り込み係へ回覧する**（汎用の口と同じ扱い・intake.go）。
+	// FAXのスキャンPDFはここから入る——人がドロップしても、オンプレのFAXサーバの
+	// 橋渡しがPOSTしても、**同じ口・同じ取り込み係**を通る（§3.1）。
+	// 受信箱の本文は変わらない（子ページが生まれるだけ）ので編集ロックは要らない。
+	if inboxID, ok := InboxPageID(); ok && inboxID == pageID {
+		if served := serveIntake(w, r, inboxID, "pdf_file"); served {
+			return
+		}
+	}
+
 	// 添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）。
 	// 本文編集と同じ編集ロックで直列化する（editlock/handler.go の宣言どおり）。
 	// 解析（parse-pdf）は永続状態を変えない（結果はDOMへ足すだけで、保存は

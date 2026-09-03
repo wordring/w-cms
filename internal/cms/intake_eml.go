@@ -149,6 +149,8 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
+	// どの経路で届いたか——メール・FAX・電話を横断して引くための軸（§6）。
+	writeTag(&b, ChannelTag, "メール")
 	writeAddressTags(&b, "差出人", msg.Header.Get("From"))
 	writeAddressTags(&b, "宛先", msg.Header.Get("To"))
 	writeAddressTags(&b, "CC", msg.Header.Get("Cc"))
