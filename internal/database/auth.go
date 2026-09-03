@@ -12,14 +12,29 @@ var AuthDB *sql.DB
 
 // InitAuthDB は data/auth.db への接続を開き、認証用テーブルを作成します。
 // data ディレクトリは InitDB が先に作成している前提です。
+// 接続ごとに効く設定は cms.db と**同じく DSN の _pragma で**指定します
+// （2026-09-03。それまでは素のパスで開き、foreign_keys だけを Exec で立てていた）。
+//
+// 直した実害は2つ:
+//
+//   - **busy_timeout が無く、競合が即 SQLITE_BUSY になっていた。** auth.db は
+//     読むだけの器ではありません——[ResolveSession] が**認証のたびに** last_seen を
+//     UPDATE し、監査記録も書き込みます。同時アクセスで衝突すると
+//     `database is locked` が返り、ResolveSession はそれを「セッション無効」と
+//     区別できないので **401**——つまり**利用者が黙ってログアウトさせられていた**
+//     （E2Eの間欠的な 401 として観測。実測で SQLITE_BUSY を確認）。
+//   - **`PRAGMA foreign_keys` を Exec で立てていた。** Exec はプールの
+//     1接続にしか効かないので、他の接続では外部キーが**静かに効いていません**
+//     でした（cms.db 側が同じ罠を先に踏んで DSN 方式へ直してある）。
+//
+// journal_mode(WAL) は読み取りと書き込みの並行性を上げます（DB全体の永続設定）。
 func InitAuthDB() error {
 	dbPath := filepath.Join("data", "auth.db")
+	dsn := filepath.ToSlash(dbPath) +
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	var err error
-	AuthDB, err = sql.Open("sqlite", dbPath)
+	AuthDB, err = sql.Open("sqlite", dsn)
 	if err != nil {
-		return err
-	}
-	if _, err = AuthDB.Exec("PRAGMA foreign_keys = ON;"); err != nil {
 		return err
 	}
 	return CreateAuthTables(AuthDB)
