@@ -38,7 +38,8 @@ import (
 // 足して描画側を足し忘れたときに**無言の空白**にしないため——引けなければ
 // missingViewHTML が理由を画面に出します（足し忘れは必ず目に見える）。
 var viewRenderers = map[string]func(user *auth.User, pageIDInt int) string{
-	"child-list": childListViewHTML,
+	"child-list":       childListViewHTML,
+	"unhandled-intake": unhandledViewHTML,
 }
 
 // RegisterView は計算ビューの描画処理を足します。**拡張の `init()` から**
