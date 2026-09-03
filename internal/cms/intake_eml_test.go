@@ -139,7 +139,11 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 	database.DB.QueryRow(`SELECT id FROM pages WHERE title = ?`, "発注書送付の件").Scan(&idInt)
 	rows := queryTags(t, idInt)
 	joined := strings.Join(rows, "|")
-	for _, want := range []string{"差出人=", "宛先=order@example.co.jp", "受信日時=" + wantDate} {
+	for _, want := range []string{
+		"差出人=トーアスポーツ", "差出人アドレス=toa@example.jp",
+		"宛先アドレス=order@example.co.jp", // 表示名の無い宛先はアドレスのタグだけ
+		"受信日時=" + wantDate,
+	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("タグ索引に %q がありません: %v", want, rows)
 		}
@@ -177,6 +181,93 @@ func TestEmlIntakeRejectsBroken(t *testing.T) {
 	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
 	if _, _, err := (emlIntake{}).OnFile(ctx, "x.eml", []byte("これはメールではない")); err == nil {
 		t.Error("壊れたファイルが取り込まれました")
+	}
+}
+
+// ── アドレスの分離（検索漏れを無くす・2026-09-03） ────────────────────────
+
+// TestEmlIntakeSplitsAddresses は、差出人・宛先・CC が**表示名とアドレスの
+// 別々のタグ**になり、アドレス単体で索引から引けることを固定します。
+//
+// 索引の逆引き（PagesByTag）は完全一致なので、ヘッダ全体を1つの値にすると
+// アドレスで検索しても1件も出ません。実データの宛先は表示名の中にもアドレスが
+// 紛れる形（`… 南　様 (minami@example.jp) <minami@example.jp>`）で、
+// 部分一致に頼るのは筋が悪い——値を原子的にするのが正しい直し方です。
+func TestEmlIntakeSplitsAddresses(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+
+	eml := "From: " + "=?ISO-2022-JP?B?" +
+		base64.StdEncoding.EncodeToString([]byte(iso2022jp(t, "潮崎 光俊"))) +
+		"?= <shiozaki@example.co.jp>\r\n" +
+		// 宛先は2人（多値は対の繰り返し）。1人目は表示名つき、2人目は素のアドレス。
+		"To: \"南 様\" <minami@i-toho.co.jp>, order@example.co.jp\r\n" +
+		"Cc: cc@example.co.jp\r\n" +
+		"Subject: address split\r\n" +
+		"Date: Mon, 01 Sep 2026 10:30:00 +0900\r\n" +
+		"Message-ID: <split@example.jp>\r\n" +
+		"\r\nhonbun\r\n"
+
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	pageID, _, err := emlIntake{}.OnFile(ctx, "m.eml", []byte(eml))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		t.Fatalf("作られたページを読めません: %v", err)
+	}
+	html := string(body)
+	for _, want := range []string{
+		"<dt>差出人</dt><dd>潮崎 光俊</dd>",
+		"<dt>差出人アドレス</dt><dd>shiozaki@example.co.jp</dd>",
+		"<dt>宛先</dt><dd>南 様</dd>",
+		"<dt>宛先アドレス</dt><dd>minami@i-toho.co.jp</dd>",
+		"<dt>宛先アドレス</dt><dd>order@example.co.jp</dd>", // 2人目・表示名なし
+		"<dt>CCアドレス</dt><dd>cc@example.co.jp</dd>",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("本文に %q がありません:\n%s", want, html)
+		}
+	}
+
+	// 肝心なのはここ——**アドレス単体で索引から引ける**（完全一致の逆引き）。
+	for _, pair := range [][2]string{
+		{"差出人アドレス", "shiozaki@example.co.jp"},
+		{"宛先アドレス", "minami@i-toho.co.jp"},
+		{"宛先アドレス", "order@example.co.jp"},
+		{"CCアドレス", "cc@example.co.jp"},
+	} {
+		ids, err := PagesByTag(database.DB, pair[0], pair[1])
+		if err != nil {
+			t.Fatalf("逆引きエラー: %v", err)
+		}
+		if len(ids) != 1 {
+			t.Errorf("%s=%s で引けません: %v", pair[0], pair[1], ids)
+		}
+	}
+}
+
+// TestEmlIntakeKeepsUnparsableAddressHeader は、解析できないヘッダを
+// 原文のまま残すことを固定します（記録を落とすより検索しにくい形でも残す）。
+func TestEmlIntakeKeepsUnparsableAddressHeader(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+
+	eml := "From: 差出人不明（システム）\r\n" +
+		"To: order@example.co.jp\r\n" +
+		"Subject: broken from\r\n" +
+		"Date: Mon, 01 Sep 2026 10:30:00 +0900\r\n" +
+		"\r\nhonbun\r\n"
+
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	pageID, _, err := emlIntake{}.OnFile(ctx, "m.eml", []byte(eml))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if !strings.Contains(string(body), "差出人不明（システム）") {
+		t.Errorf("解析できない差出人が落ちています:\n%s", body)
 	}
 }
 

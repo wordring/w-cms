@@ -6,7 +6,8 @@ package cms
 // メール（RFC 5322 / MIME）を**通信記録ページ**へ変換します。
 //
 //	<h1>件名</h1>
-//	<dl data-type="tags">差出人・宛先・受信日時（ISO 8601・ローカル時刻＋オフセット）</dl>
+//	<dl data-type="tags">差出人・宛先・CC（表示名とアドレスを別のタグに分ける）・
+//	                     受信日時（ISO 8601・ローカル時刻＋オフセット）・メッセージID</dl>
 //	本文（text/plain を段落へ）
 //	📎 添付（files/ へ保存・リンクは生成ID・download 属性が元名を運ぶ）
 //
@@ -110,8 +111,6 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	if subject == "" {
 		subject = "（件名なし）"
 	}
-	from := decodeHeader(msg.Header.Get("From"))
-	to := decodeHeader(msg.Header.Get("To"))
 	dateISO := ""
 	if t, err := msg.Header.Date(); err == nil {
 		// 日時は ISO 8601 が全域の正（要件 §3）。表記は**運用者のローカル時刻＋
@@ -136,8 +135,9 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	writeTag(&b, "差出人", from)
-	writeTag(&b, "宛先", to)
+	writeAddressTags(&b, "差出人", msg.Header.Get("From"))
+	writeAddressTags(&b, "宛先", msg.Header.Get("To"))
+	writeAddressTags(&b, "CC", msg.Header.Get("Cc"))
 	writeTag(&b, "受信日時", dateISO)
 	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
 	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
@@ -179,6 +179,39 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 		return "", "", err
 	}
 	return pageID, subject, nil
+}
+
+// addressParser は差出人・宛先の解析器です（表示名の =?ISO-2022-JP?B?…?= も復号する）。
+var addressParser = mail.AddressParser{WordDecoder: &wordDecoder}
+
+// writeAddressTags はアドレス欄を**表示名とアドレスの2つのタグ**に分けて書きます。
+//
+//	差出人：潮崎 光俊
+//	差出人アドレス：shiozaki@example.co.jp
+//
+// **アドレスを単体の値にするのは、索引の逆引きが完全一致だから**です（PagesByTag）。
+// ヘッダ全体（`潮崎 光俊 <shiozaki@example.co.jp>`）を1つの値にしていたころは、
+// アドレスで検索しても1件も出ませんでした——実データの宛先は
+// `㈱東邦金属工業所 南　様 (minami@i-toho.co.jp) <minami@i-toho.co.jp>` のように
+// 表示名の中にもアドレスが紛れる形で、部分一致に頼るのは筋が悪い
+// （2026-09-03 ユーザー指摘「メールアドレス単体でDBに入れるほうが検索漏れが無くなる」）。
+//
+// 宛先が複数あれば**対を繰り返します**（多値は対の繰り返し・[【一覧】語彙.md] §4）。
+// 解析できないヘッダは原文のまま1つのタグに落とします——**記録を落とすより、
+// 検索しにくい形でも残すほうがよい**（受信箱は不変アーカイブ）。
+func writeAddressTags(b *strings.Builder, name, raw string) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	list, err := addressParser.ParseList(raw)
+	if err != nil || len(list) == 0 {
+		writeTag(b, name, decodeHeader(raw))
+		return
+	}
+	for _, a := range list {
+		writeTag(b, name, a.Name) // 表示名の無いアドレスでは書かれない
+		writeTag(b, name+"アドレス", a.Address)
+	}
 }
 
 // writeTag は値のあるタグだけを書きます。

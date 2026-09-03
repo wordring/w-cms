@@ -117,3 +117,55 @@ func TestResyncReplacesTags(t *testing.T) {
 		t.Errorf("再同期でタグが重複蓄積しています: got %v want 2件", got)
 	}
 }
+
+// TestTagValueIsIndexedExactlyAsDisplayed は、**見た目のままDBに入る**ことを固定します。
+//
+//	「利用者が、『名前：値』のタグは見た目のままにDBに入れられると信じるためには、
+//	 実際にそうである必要があります」（ユーザー・2026-09-03）
+//
+// これは索引の設計原則（生テキストが正本・正規化値は norm_value へ併記）を、
+// **利用者から見た約束の側から**述べ直したものです。だから検証も利用者の視点で行う
+// ——画面に出る文字（dd の表示文字）と `vocab_index.value` を突き合わせます。
+//
+// 並べた値は、どれも「気を利かせて書き換えたくなる」もの: メールアドレスを含む
+// ヘッダ形（分解したくなる）・緩い日付（揃えたくなる）・単位と桁区切りつきの数
+// （数値にしたくなる）・全角や ㈱（正規化したくなる）・HTMLエスケープが要る記号。
+// **どれも書き換えてはいけません**——書き換えた瞬間、利用者は「自分が書いた文字が
+// 何になるか」を予測できなくなり、タグを信頼できなくなります。
+func TestTagValueIsIndexedExactlyAsDisplayed(t *testing.T) {
+	setupSaveTest(t)
+
+	// 表示文字（＝索引に入るべき値）と、本文に書くHTML。
+	cases := []struct{ name, shown, html string }{
+		{"差出人", "潮崎 光俊 <shiozaki@example.co.jp>", "潮崎 光俊 &lt;shiozaki@example.co.jp&gt;"},
+		{"希望納期", "2026/8/10", "2026/8/10"},
+		{"単価", "1,200円", "1,200円"},
+		{"発注元", "㈱東邦金属工業所　南　様", "㈱東邦金属工業所　南　様"},
+		{"記号", "A&B <c>", "A&amp;B &lt;c&gt;"},
+	}
+
+	var body string
+	body = `<h1>タグの正本性</h1><dl data-type="tags">`
+	for _, c := range cases {
+		body += "<dt>" + c.name + "</dt><dd>" + c.html + "</dd>"
+	}
+	body += "</dl>"
+
+	if err := SyncIndex("000060", body); err != nil {
+		t.Fatalf("SyncIndexエラー: %v", err)
+	}
+
+	for _, c := range cases {
+		var got string
+		err := database.DB.QueryRow(
+			`SELECT value FROM vocab_index WHERE page_id = 60 AND data_type = 'tags' AND field = ?`,
+			c.name).Scan(&got)
+		if err != nil {
+			t.Errorf("タグ %q が索引にありません: %v", c.name, err)
+			continue
+		}
+		if got != c.shown {
+			t.Errorf("見た目のままではありません: %s は画面で %q、DBでは %q", c.name, c.shown, got)
+		}
+	}
+}
