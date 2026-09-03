@@ -45,14 +45,16 @@ func TestLiveSendToSelf(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	err := sendViaGraph(ctx, username, cms.OutgoingMail{
+	_, err := sendViaSMTP(ctx, username, cms.OutgoingMail{
 		To:      []string{addr},
 		Subject: "w-cms 送信テスト",
 		BodyText: "w-cms からの送信テストです。\n\n" +
 			"このメールが届いていれば、Microsoft Graph 経由の送信が動いています。\n" +
 			"送信時刻: " + time.Now().In(time.Local).Format(time.RFC3339) + "\n",
+		// **In-Reply-To が立つことが SMTP へ変えた理由**なので実物でも載せます。
+		InReplyTo: "<probe-thread-check@w-cms.local>",
 		Attachments: []cms.MailAttachment{{
-			Name:     "test.txt",
+			Name:     "添付の確認.txt",
 			MIMEType: "text/plain",
 			Content:  []byte("添付の確認用です。\n"),
 		}},

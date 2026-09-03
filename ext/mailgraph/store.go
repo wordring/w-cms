@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	"w-cms/internal/cms/page"
@@ -98,7 +99,13 @@ func deleteToken(username string) {
 	storeMu.Lock()
 	defer storeMu.Unlock()
 	os.Remove(path)
-	accessCache.Delete(username)
+	// 保管はスコープごとなので、その利用者ぶんを全部落とします。
+	accessCache.Range(func(k, _ any) bool {
+		if s, ok := k.(string); ok && strings.HasPrefix(s, username+"|") {
+			accessCache.Delete(k)
+		}
+		return true
+	})
 }
 
 // SignedInAddress は、その利用者がどのアドレスでサインインしているかを返します

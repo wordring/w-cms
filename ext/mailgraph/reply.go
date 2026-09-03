@@ -31,6 +31,7 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // ReplyRequest は返信1通ぶんの入力です。
@@ -83,9 +84,14 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. 送る。ここで失敗したら記録は作りません（出ていないので）。
-	err := cms.SendMail(user, cms.OutgoingMail{
+	//
+	// **返信元のメッセージIDを In-Reply-To に載せます**——これが相手のメールソフトで
+	// 元のスレッドに並ぶ条件です（Graph の sendMail では立てられず、SMTP へ変えた
+	// 理由そのもの）。返信元が無い新規メールでは空のまま。
+	sentID, err := SendAndReturnID(user, cms.OutgoingMail{
 		To: cleanAddrs(req.To), Cc: cleanAddrs(req.Cc),
 		Subject: req.Subject, BodyText: req.Body,
+		InReplyTo: sourceMessageID(source),
 	})
 	if err != nil {
 		switch err {
@@ -101,19 +107,19 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "mail.send", strings.Join(cleanAddrs(req.To), ",")+" "+req.Subject)
 
 	// 2. 記録する。**ここで失敗しても送信は成功のまま返します**——出た事実を隠さない。
-	sentID, recErr := recordSentMail(user, source, req)
+	pageID, recErr := recordSentMail(user, source, sentID, req)
 	resp := map[string]any{"success": true, "sent": true}
 	if recErr != nil {
 		log.Printf("送信記録を作れませんでした user=%s: %v", user.Username, recErr)
 		resp["record_error"] = "メールは送信しましたが、送信箱への記録を作れませんでした: " + recErr.Error()
 	} else {
-		resp["page_id"] = sentID
+		resp["page_id"] = pageID
 	}
 	json.NewEncoder(w).Encode(resp)
 }
 
 // recordSentMail は送信箱の下へ記録ページを作ります。
-func recordSentMail(user *auth.User, sourcePageID string, req ReplyRequest) (string, error) {
+func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRequest) (string, error) {
 	rootID, ok := cms.SentBoxPageID()
 	if !ok {
 		return "", errNoSentBox
@@ -136,6 +142,13 @@ func recordSentMail(user *auth.User, sourcePageID string, req ReplyRequest) (str
 		writeTag(&b, "CCアドレス", a)
 	}
 	writeTag(&b, "送信日時", now.In(time.Local).Format(time.RFC3339))
+	// **自分が立てた Message-ID を残します。** 相手がこれに返信すると、その
+	// In-Reply-To がここを指すので、**受信の取り込みだけでスレッドが繋がります**
+	// （返信元メッセージID の逆引き——既にある仕組みがそのまま効く）。
+	writeTag(&b, cms.MessageIDTag, messageID)
+	if src := sourceMessageID(sourcePageID); src != "" {
+		writeTag(&b, "返信元メッセージID", src)
+	}
 	// **返信元は参照タグ**（`ページID`）——押せば飛び、逆引きで「この記録への返信」も
 	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
 	writeTag(&b, cms.ReplySourceTag, sourcePageID)
@@ -177,4 +190,23 @@ type errNoSentBoxErr struct{}
 
 func (errNoSentBoxErr) Error() string {
 	return "送信箱ページがありません（トップ直下に「" + cms.SentBoxTitle + "」という名前のページを作ってください）"
+}
+
+// sourceMessageID は返信元ページの「メッセージID」タグを読みます（無ければ空）。
+//
+// **索引から直接読みます**——本文を解釈し直さないため。取り込みが書いた値が正本で、
+// 受信メールの Message-ID がそのまま入っています。
+func sourceMessageID(sourcePageID string) string {
+	if sourcePageID == "" {
+		return ""
+	}
+	idInt, err := strconv.Atoi(sourcePageID)
+	if err != nil {
+		return ""
+	}
+	var v string
+	database.DB.QueryRow(
+		`SELECT value FROM vocab_index WHERE page_id = ? AND field = ? LIMIT 1`,
+		idInt, cms.MessageIDTag).Scan(&v)
+	return strings.TrimSpace(v)
 }
