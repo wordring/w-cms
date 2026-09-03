@@ -101,7 +101,10 @@ func init() {
 // 起きません。マーカーが無い普通のページには、パースの費用を掛けません。
 func hasViewMarker(bodyHTML string) bool {
 	for _, def := range VocabDefs() {
-		if !def.View {
+		// ビューだけでなく、**鏡型の担当が付いている形式**も歩く価値があります
+		// ——登録したのに走査されない、という無言の不発を避けるため
+		// （古い図面の赤枠は View ではない鏡です。drawing_mirror.go）。
+		if !def.View && !HasMirror(def.Type) {
 			continue
 		}
 		if strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {

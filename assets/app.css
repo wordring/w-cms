@@ -1468,3 +1468,75 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     color: var(--accent-strong);
     text-decoration: none;
 }
+
+/* 部品ページの整理（提案→人が直す→実行）——閲覧モードのクローム。
+   機械は推奨値を入れるだけで、決めるのは人（「顧客は適当」なので、
+   名前が全部読めていても確認が要る）。 */
+.filing-open {
+    display: block;
+    margin: 1.5rem 0 0.5rem;
+}
+
+.filing-panel {
+    border: 1px solid var(--w-border, #ccc);
+    border-radius: 6px;
+    padding: 0.75rem 1rem 1rem;
+    margin: 0.5rem 0 1.5rem;
+    background: var(--w-surface-alt, #fafafa);
+}
+
+.filing-head {
+    margin: 0 0 0.5rem;
+    font-size: 0.9em;
+    opacity: 0.85;
+}
+
+.filing-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.filing-table th {
+    text-align: left;
+    font-size: 0.85em;
+    font-weight: 600;
+    padding: 0.2rem 0.4rem;
+    opacity: 0.7;
+}
+
+.filing-table td {
+    padding: 0.2rem 0.4rem;
+    vertical-align: middle;
+}
+
+.filing-table input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.3rem 0.4rem;
+    font: inherit;
+}
+
+.filing-no {
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.filing-run {
+    margin-top: 0.75rem;
+    padding: 0.4rem 1.2rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+/* 改定図面で置き換わった古い図面の赤枠。**先頭以外が古い**——「新しいものが上」と
+   いう並びそのものが最新を表す（状態を別に持たない）。印は表示のときだけ付く
+   （class はサニタイズで落ちるので保存されない）。消すかどうかは人の判断で、
+   古い図面は旧版にも残っている。 */
+#w-editor-content .drawing-superseded {
+    border: 2px solid var(--w-danger, #c0392b);
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin: 0.5rem 0;
+}

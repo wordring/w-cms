@@ -6,6 +6,7 @@ package cms
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -358,57 +359,67 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !editlock.RequireEditLock(w, r, id) {
 		return
 	}
-	childID, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
 	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
 
-	// 親が実際に変わるときだけ検証する。
+	// 付け替えの作法は芯（SetPageParent）が1箇所で持つ——部品ページの整理
+	// （ext/sheetmetal/filing.go）も同じ芯を通るので、片方だけ古くなることがない。
+	parentStore, updatedAt, err := SetPageParent(auth.CurrentUser(r), id, newParent)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "parent_id": parentStore, "updated_at": updatedAt})
+}
+
+// SetPageParent は親の付け替えの**芯**です（検証・サイドカー・索引・配下の同期）。
+//
+// HTTPの口（SetParentAPIHandler）と、部品ページの整理（ext/sheetmetal/filing.go）が
+// 共有します——整理は「解析で生まれたページを顧客名／装置名称の下へ移す」ために
+// 同じことをする必要があり、**作法を2箇所に持つと必ず片方が古くなる**ため。
+//
+// 権限と編集ロックの確認は**呼ぶ側の責任**です（AppendToPageBody と同じ線引き。
+// エディタからの操作はロックが要り、整理は作った直後のページを動かすので要らない）。
+func SetPageParent(user *auth.User, id, newParent string) (parentStore, updatedAt string, err error) {
+	childID, err := strconv.Atoi(id)
+	if err != nil {
+		return "", "", errors.New("ページIDが不正です")
+	}
 	var oldParent sql.NullInt64
 	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", childID).Scan(&oldParent)
 	if parentChanged(oldParent, newParent) {
-		if msg, code := validateParentChange(auth.CurrentUser(r), childID, newParent); code != 0 {
-			http.Error(w, msg, code)
-			return
+		if msg, code := validateParentChange(user, childID, newParent); code != 0 {
+			return "", "", errors.New(msg)
 		}
 	}
 
-	// 親IDをゼロ詰めに正規化してサイドカーへ反映（更新日時も進む）。
-	parentStore := ""
 	if newParent != "" {
 		if pid, e := strconv.Atoi(newParent); e == nil {
 			parentStore = fmt.Sprintf("%0*d", page.IDLength, pid)
 		}
 	}
-	updatedAt, err := page.SetSidecarParent(id, parentStore)
+	updatedAt, err = page.SetSidecarParent(id, parentStore)
 	if err != nil {
-		http.Error(w, "親ページの保存に失敗しました: "+err.Error(), http.StatusInternalServerError)
-		return
+		return "", "", errors.New("親ページの保存に失敗しました: " + err.Error())
 	}
-
-	// pages インデックスの親ページ・更新日時を更新する。
 	var parentDB sql.NullInt64
 	if parentStore != "" {
 		if pid, e := strconv.Atoi(parentStore); e == nil {
 			parentDB = sql.NullInt64{Int64: int64(pid), Valid: true}
 		}
 	}
-	if _, err := database.DB.Exec("UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?", parentDB, updatedAt, childID); err != nil {
-		http.Error(w, "インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
-		return
+	if _, err := database.DB.Exec("UPDATE pages SET parent_id = ?, updated_at = ? WHERE id = ?",
+		parentDB, updatedAt, childID); err != nil {
+		return "", "", errors.New("インデックスの更新に失敗しました: " + err.Error())
 	}
 	// 親が変わると、テンプレート領域への出入り（②索引・③計算に載るか）も変わる。
-	// 判定は先祖辿り（サイドカー）なので、動かしたページと**その配下**を本文から
-	// 同期し直す（次の保存やDB再構築まで反映されない、を避ける）。
+	// 判定は先祖辿り（サイドカー）なので、動かしたページとその配下を同期し直す。
 	if parentChanged(oldParent, newParent) {
 		resyncSubtree(id)
 	}
-	if u := auth.CurrentUser(r); u != nil {
-		auth.Audit(u.Username, "set-parent", id+"->"+parentStore)
+	if user != nil {
+		auth.Audit(user.Username, "set-parent", id+"->"+parentStore)
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "parent_id": parentStore, "updated_at": updatedAt})
+	return parentStore, updatedAt, nil
 }

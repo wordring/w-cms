@@ -47,6 +47,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		// PDF解析（板金部の既定セット）。main.go への直書きをやめてここへ寄せた
 		// ——ルートも拡張と一緒に外れる（`-tags minimal` で消える）。
 		{Pattern: "/api/analyze-attachment", Handler: AnalyzeAttachmentAPIHandler},
+		// 部品ページの整理（提案を出す口と、実行する口）。**提案は何も作りません**
+		// ——顧客名・装置名称のページが生まれるのは実行のときだけ（filing.go）。
+		{Pattern: "/api/filing-proposal", Handler: FilingProposalAPIHandler},
+		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
 	}
 }
 

@@ -1155,6 +1155,7 @@
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
+        refreshFilingButton();       // 部品ページの整理（閲覧モード限定）
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
@@ -2965,6 +2966,140 @@
                     makeAnalyzeButton(m[1], m[2] + '.pdf', ''));
             }
         });
+    }
+
+
+    // ── 部品ページの整理（提案→人が直す→実行）───────────────────────────
+    //
+    // ユーザー:「各図面の行き場所について、解析から得られた推奨値を提示して、
+    // ユーザーがそれを書き直して実行ボタンを押す形はどうですか？」
+    // 「顧客名を書く欄に推奨値を入れてユーザーが修正してはどうでしょう」
+    //
+    // **提案は何も作りません**——顧客名・装置名称のページが生まれるのは実行のときだけ。
+    // 「見積もりや試作の場合があるので、フォルダ名はユーザーが確認したほうが良い」ため。
+    // DOM生成は createElement + textContent（innerHTML へ文字列を入れない）。
+
+    function refreshFilingButton() {
+        document.querySelectorAll('#w-editor-content .filing-chrome').forEach(el => el.remove());
+        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        if (!currentPageId) return;
+        const host = document.getElementById('w-editor-content');
+        if (!host) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'vocab-chrome filing-chrome filing-open';
+        btn.textContent = '📁 整理';
+        btn.addEventListener('click', () => openFilingPanel(currentPageId, btn));
+        host.appendChild(btn);
+    }
+
+    async function openFilingPanel(pageId, btn) {
+        const existing = document.querySelector('.filing-panel');
+        if (existing) { existing.remove(); return; }
+        btn.disabled = true;
+        let rows = [];
+        try {
+            const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(pageId));
+            const d = await res.json();
+            if (!d.success) throw new Error(d.message || res.status);
+            rows = d.rows || [];
+        } catch (e) {
+            notify('整理の候補を取れませんでした: ' + e, { type: 'alert', duration: 0, id: 'filing' });
+            btn.disabled = false;
+            return;
+        }
+        btn.disabled = false;
+        if (!rows.length) {
+            notify('この記録から生まれた図面のページがありません。', { type: 'warn', duration: 6000 });
+            return;
+        }
+        btn.insertAdjacentElement('afterend', buildFilingPanel(rows));
+    }
+
+    // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
+    // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます。
+    function buildFilingPanel(rows) {
+        const panel = document.createElement('div');
+        panel.className = 'vocab-chrome filing-chrome filing-panel';
+        panel.setAttribute('contenteditable', 'false');
+
+        const head = document.createElement('p');
+        head.className = 'filing-head';
+        head.textContent = '行き先を決めてください（顧客名／装置名称／図面名称）。空欄の行は動かしません。';
+        panel.appendChild(head);
+
+        const table = document.createElement('table');
+        table.className = 'filing-table';
+        const trh = document.createElement('tr');
+        ['図面番号', '顧客名', '装置名称', '図面名称'].forEach(t => {
+            const th = document.createElement('th');
+            th.textContent = t;
+            trh.appendChild(th);
+        });
+        table.appendChild(trh);
+
+        const inputs = [];
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            const tdNo = document.createElement('td');
+            tdNo.className = 'filing-no';
+            tdNo.textContent = row.drawing_no || '（番号なし）';
+            tr.appendChild(tdNo);
+
+            const fields = {};
+            [['customer', row.customer], ['machine_name', row.machine_name],
+             ['drawing_name', row.drawing_name]].forEach(([key, value]) => {
+                const td = document.createElement('td');
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = value || '';
+                input.setAttribute('aria-label', key);
+                td.appendChild(input);
+                tr.appendChild(td);
+                fields[key] = input;
+            });
+            inputs.push({ page_id: row.page_id, fields: fields });
+            table.appendChild(tr);
+        });
+        panel.appendChild(table);
+
+        const run = document.createElement('button');
+        run.type = 'button';
+        run.className = 'filing-run';
+        run.textContent = '実行';
+        run.addEventListener('click', () => runFiling(inputs, run, panel));
+        panel.appendChild(run);
+        return panel;
+    }
+
+    async function runFiling(inputs, run, panel) {
+        run.disabled = true;
+        run.textContent = '実行中…';
+        const payload = inputs.map(i => ({
+            page_id: i.page_id,
+            customer: i.fields.customer.value,
+            machine_name: i.fields.machine_name.value,
+            drawing_name: i.fields.drawing_name.value,
+        }));
+        try {
+            const res = await fetch('/api/file-drawings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rows: payload }),
+            });
+            const d = await res.json();
+            if (!d.success) throw new Error(d.message || res.status);
+            // 何が起きたかを必ず見せる（黙って動かさない）。
+            const lines = (d.results || []).map(r => r.message).filter(Boolean);
+            notify(lines.join('\n') || '対象がありませんでした。',
+                { type: 'success', duration: 0, id: 'filing' });
+            panel.remove();
+        } catch (e) {
+            notify('整理を実行できませんでした: ' + e, { type: 'alert', duration: 0, id: 'filing' });
+        }
+        run.disabled = false;
+        run.textContent = '実行';
     }
 
     // makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付・ZIP内PDFで共用）。
