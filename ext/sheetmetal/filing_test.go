@@ -42,12 +42,18 @@ func setupFilingTest(t *testing.T, inboxID string) {
 
 // makeDrawingPage は解析が作るのと同じ形の部品ページを inbox の子として作ります。
 func makeDrawingPage(t *testing.T, inboxID, no, name, machine, customer string) string {
+	return makeDrawingPageFrom(t, inboxID, "pdf001", no, name, machine, customer)
+}
+
+// makeDrawingPageFrom は由来の添付を指定して作ります。**由来が同じなら重複**と
+// みなされるので、改定を作るテストでは別の添付にすること（実際の改定は別のメールで届く）。
+func makeDrawingPageFrom(t *testing.T, inboxID, attachID, no, name, machine, customer string) string {
 	t.Helper()
 	j := &orderJudgment{
 		DocType: "drawing", DrawingNo: no, DrawingName: name,
 		MachineName: machine, Customer: customer,
 	}
-	id, err := cms.CreateChildPage(inboxID, "alice", buildPartPageHTML(inboxID, "pdf001", "", j, nil))
+	id, err := cms.CreateChildPage(inboxID, "alice", buildPartPageHTML(inboxID, attachID, "", j, nil))
 	if err != nil {
 		t.Fatalf("部品ページを作れません: %v", err)
 	}
@@ -214,7 +220,7 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 		MachineName: "オールラウンド2輪", DrawingName: "脚取付台"}})
 
 	// 改定図面が届いた（図面番号に改訂記号が付く形）。
-	second := makeDrawingPage(t, inbox, "Y050-1A", "脚取付台", "オールラウンド2輪", "トーアスポーツ")
+	second := makeDrawingPageFrom(t, inbox, "pdf002", "Y050-1A", "脚取付台", "オールラウンド2輪", "トーアスポーツ")
 	results := postFiling(t, u, []filingRequest{{PageID: second, Customer: "トーアスポーツ",
 		MachineName: "オールラウンド2輪", DrawingName: "脚取付台"}})
 	if len(results) != 1 || results[0].Outcome != "revision" {
@@ -279,3 +285,72 @@ var anyIDRe = regexp.MustCompile(`data-id="([0-9a-z]+)"`)
 
 // revRowRe は改訂履歴の行（ID と 版番号）を拾います。
 var revRowRe = regexp.MustCompile(`<tr data-id="([0-9a-z]+)"><td>([0-9]+)</td>`)
+
+// TestFileDrawingsRejectsSameAttachment は、**同じ添付から作られた図面**を
+// 改定にしないことを固定します。
+//
+// ユーザー:「同じ図面名称を2回整理すると改定になるのはちょっとマズいと思います」。
+// 同じPDFを解析し直して整理に流すと、中身は同じなのに版が増えてしまいます
+// ——履歴が嘘になり、社内コードも赤枠の古い図面も意味なく積み上がります。
+// 由来が同じなら改定ではありえないので、確認を挟まず止めます。
+func TestFileDrawingsRejectsSameAttachment(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	u := &auth.User{Username: "alice"}
+	row := func(id string) filingRequest {
+		return filingRequest{PageID: id, Customer: "トーアスポーツ",
+			MachineName: "オールラウンド2輪", DrawingName: "脚取付台"}
+	}
+
+	first := makeDrawingPage(t, inbox, "Y050-1", "脚取付台", "オールラウンド2輪", "トーアスポーツ")
+	postFiling(t, u, []filingRequest{row(first)})
+
+	// 同じPDFをもう一度解析してしまった（由来が同じ）。
+	again := makeDrawingPage(t, inbox, "Y050-1", "脚取付台", "オールラウンド2輪", "トーアスポーツ")
+	results := postFiling(t, u, []filingRequest{row(again)})
+	if len(results) != 1 || results[0].Outcome != "skipped" {
+		t.Fatalf("同じ添付なのに合流しています: %+v", results)
+	}
+
+	// 合流先の履歴は1版のまま。
+	body := readPageBody(t, first)
+	if n := len(revRowRe.FindAllString(body, -1)); n != 1 {
+		t.Errorf("版が増えています: %d版 %s", n, body)
+	}
+}
+
+// TestFileDrawingsAsksWhenSameDrawingNo は、**図面番号が同じ**ときに人へ尋ねる
+// ことを固定します。改定なら普通は番号か改訂記号が変わるので疑わしいものの、
+// 番号を変えない客先もありうる——**機械には決められない**ので確認を求めます。
+func TestFileDrawingsAsksWhenSameDrawingNo(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	u := &auth.User{Username: "alice"}
+
+	first := makeDrawingPage(t, inbox, "Y050-1", "脚取付台", "オールラウンド2輪", "トーアスポーツ")
+	postFiling(t, u, []filingRequest{{PageID: first, Customer: "トーアスポーツ",
+		MachineName: "オールラウンド2輪", DrawingName: "脚取付台"}})
+
+	// 別のメールで届いたが、図面番号は同じ。
+	second := makeDrawingPageFrom(t, inbox, "pdf002", "Y050-1", "脚取付台", "オールラウンド2輪", "トーアスポーツ")
+	req := filingRequest{PageID: second, Customer: "トーアスポーツ",
+		MachineName: "オールラウンド2輪", DrawingName: "脚取付台"}
+
+	results := postFiling(t, u, []filingRequest{req})
+	if len(results) != 1 || results[0].Outcome != "needs_confirm" {
+		t.Fatalf("確認を求めていません: %+v", results)
+	}
+	if n := len(revRowRe.FindAllString(readPageBody(t, first), -1)); n != 1 {
+		t.Errorf("確認前なのに版が増えています: %d版", n)
+	}
+
+	// 人が確認した（同じ番号のまま改定する客先だった）。
+	req.ConfirmRevision = true
+	results = postFiling(t, u, []filingRequest{req})
+	if len(results) != 1 || results[0].Outcome != "revision" {
+		t.Fatalf("確認しても合流しません: %+v", results)
+	}
+	if n := len(revRowRe.FindAllString(readPageBody(t, first), -1)); n != 2 {
+		t.Errorf("確認後に版が増えていません: %d版", n)
+	}
+}
