@@ -61,7 +61,7 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	// 受信箱の本文は変更しない（子ページが生まれるだけ）ので編集ロックは要らない。
 	// 取り込み係が居ない拡張子は、通常の添付として下の経路へ流れる。
 	if inboxID, ok := InboxPageID(); ok && inboxID == pageID {
-		if served := serveIntake(w, r, inboxID); served {
+		if served := serveIntake(w, r, inboxID, "file"); served {
 			return
 		}
 	}
@@ -135,8 +135,11 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 
 // serveIntake は受信箱へのアップロードを取り込み係に回します。
 // 担当が居なければ false（通常の添付経路へ戻す）。
-func serveIntake(w http.ResponseWriter, r *http.Request, inboxID string) bool {
-	file, header, err := r.FormFile("file")
+// formField はファイルが入っているフォーム欄の名前です（汎用の口は "file"、
+// PDF専用の口は "pdf_file"）——**受信箱への到着はどちらの口からも同じ取り込み係へ
+// 回す**ため、口ごとの違いはこの引数だけに閉じ込めます。
+func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField string) bool {
+	file, header, err := r.FormFile(formField)
 	if err != nil {
 		return false
 	}
