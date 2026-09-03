@@ -76,7 +76,12 @@ func RenderReferenceLinks(bodyHTML string) string {
 			eachDLPair(n, false, func(key string, dd *html.Node) bool {
 				pageID, blockID, ok := parseRefValue(nodeText(dd))
 				if !ok {
-					return true
+					// 形が合わなくても、**名前で宣言されたタグ**ならページ全体への
+					// 参照として扱います（返信元など）。
+					if pageID, ok = parsePageRef(key, nodeText(dd)); !ok {
+						return true
+					}
+					blockID = ""
 				}
 				if pageExists(pageID) {
 					linkRefDD(dd, pageID, blockID)
@@ -108,8 +113,13 @@ func linkRefDD(dd *html.Node, pageID, blockID string) {
 		dd.RemoveChild(dd.FirstChild)
 	}
 	a := &html.Node{Type: html.ElementNode, Data: "a"}
+	// **ブロックIDが無ければページの先頭へ**（名前で宣言された参照＝ページ全体を指す）。
+	href := "/" + pageID
+	if blockID != "" {
+		href += "#" + blockID
+	}
 	a.Attr = []html.Attribute{
-		{Key: "href", Val: "/" + pageID + "#" + blockID},
+		{Key: "href", Val: href},
 		{Key: "class", Val: "ref-link"},
 	}
 	a.AppendChild(&html.Node{Type: html.TextNode, Data: text})
@@ -140,4 +150,44 @@ func setAttr(n *html.Node, key, val string) {
 		}
 	}
 	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: val})
+}
+
+// pageRefTags は「値がページ全体を指す」と宣言されたタグの名前です。
+//
+// **桁を緩めない代わりに、名前で宣言します。** 参照の文法は
+// `ページID-ブロックID` の形しか認めません——6桁の数字だけでリンクにすると、
+// 発注書番号や図番のような普通の値まで拾ってしまうためです
+// （`TestRenderReferenceLinks` がその誤爆を固定しています）。
+//
+// けれど**ページ全体を指したいこともあります**（返信元＝どの記録への返信か）。
+// そこだけは「このタグはページを指す」と名前で宣言してもらいます。宣言があれば
+// 誤爆の余地はありません——他のタグの6桁の値は今までどおり素通りします。
+//
+// 2026-09-03 ユーザー:「このリンクを付けるのは誰か？という所から始めて下さい」
+// ——付けるのは**表示のときのコア**（本文には書かない）。どの値が参照かは、
+// 値の形（文法）か、タグの名前（この宣言）で決まります。
+var pageRefTags = map[string]bool{
+	ReplySourceTag: true, // 返信元——送信記録がどの受信記録への返信かを指す
+}
+
+// RegisterPageRefTag は「値がページ全体を指す」タグを足します（拡張の init から）。
+func RegisterPageRefTag(name string) {
+	if name != "" {
+		pageRefTags[name] = true
+	}
+}
+
+// pageIDOnlyRe はページIDだけの参照値です（宣言されたタグでのみ使います）。
+var pageIDOnlyRe = regexp.MustCompile(`^([0-9]{6})$`)
+
+// parsePageRef は宣言されたタグの値をページIDへ分解します。
+func parsePageRef(tagName, value string) (pageID string, ok bool) {
+	if !pageRefTags[tagName] {
+		return "", false
+	}
+	m := pageIDOnlyRe.FindStringSubmatch(strings.TrimSpace(value))
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
 }
