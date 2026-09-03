@@ -74,6 +74,39 @@ var businessVocab = []cms.VocabDef{
 		},
 	},
 	{
+		// 改訂履歴——**社内コードの指し先**（2026-09-03 ユーザー:「改訂履歴の項目を
+		// 作り版にdata-idを割り当てれば良いのでは？」）。
+		//
+		// 図面ブロックそのものを指すと困ることがあります。古い図面は「赤枠で残し、
+		// ユーザーの判断で消す」決まりなので、**消せるものを指し先にすると、
+		// 紙に出た社内コード（作業指示・ラベル）が宙ぶらりんになります**。
+		// 履歴の行は小さく、消す理由がありません——ここを指し先にすれば、
+		// かさばる図面ブロックは自由に消せます。
+		//
+		// 1行が1つの版で、行の `data-id` が改定番号。`ページID-行ID` で飛べます
+		// （アンカー合成は data-id を持つあらゆる要素に効く。anchor.go）。
+		Type:        "drawing-revisions",
+		DisplayName: "改訂履歴",
+		Category:    "業務",
+		Icon:        "🕐",
+		Element:     "section",
+		Items:       "drawing-revision-items",
+		Columns:     []cms.VocabColumn{},
+	},
+	{
+		Type:        "drawing-revision-items",
+		DisplayName: "改訂明細",
+		Category:    "業務",
+		Icon:        "🕐",
+		Element:     "table",
+		Hidden:      true,
+		Columns: []cms.VocabColumn{
+			{Field: "revision", Label: "版", Type: cms.ColText},
+			{Field: "drawing-no", Label: "図面番号", Type: cms.ColText},
+			{Field: "received-at", Label: "受領日", Type: cms.ColDate},
+		},
+	},
+	{
 		Type:        "client-order-items",
 		DisplayName: "受注明細",
 		Category:    "業務",

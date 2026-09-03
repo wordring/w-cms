@@ -34,8 +34,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 
@@ -344,7 +346,10 @@ func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, 
 
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
-	b.WriteString(drawingSectionHTML(j, hostPageID, attachID, srcEntry, matches, ""))
+	sec := drawingSectionHTML(j, hostPageID, attachID, srcEntry, matches, "")
+	b.WriteString(sec)
+	// 改訂履歴は**下に**置く（図面は新しいものが上に積まれるので、位置が競合しない）。
+	b.WriteString(revisionsSectionHTML(j, sec))
 	return b.String()
 }
 
@@ -386,4 +391,47 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 	}
 	b.WriteString("</dl></section>")
 	return b.String()
+}
+
+// revisionsSectionHTML は改訂履歴のブロックを組みます（1版目）。
+//
+// **行が社内コードの指し先です**——`ページID-行ID` で押せばその版へ飛びます
+// （2026-09-03 ユーザー:「改訂履歴の項目を作り版にdata-idを割り当てれば良いのでは？」）。
+// 図面ブロックは消せる決まりなので指し先にせず、消す理由の無い小さな行を指します。
+func revisionsSectionHTML(j *orderJudgment, existingBody string) string {
+	var b strings.Builder
+	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>改訂履歴</h2>`)
+	b.WriteString(`<table data-type="drawing-revision-items"><tbody>`)
+	b.WriteString("<tr><th>版</th><th>図面番号</th><th>受領日</th></tr>")
+	b.WriteString(revisionRowHTML(1, j.DrawingNo, existingBody))
+	b.WriteString("</tbody></table></section>")
+	return b.String()
+}
+
+// revisionRowHTML は改訂履歴の1行です。行の data-id が改定番号になります。
+func revisionRowHTML(rev int, drawingNo, existingBody string) string {
+	return `<tr data-id="` + cms.NewBlockID(existingBody) + `"><td>` +
+		strconv.Itoa(rev) + "</td><td>" + html.EscapeString(strings.TrimSpace(drawingNo)) +
+		"</td><td>" + time.Now().In(time.Local).Format("2006-01-02") + "</td></tr>"
+}
+
+// revisionRowRe は改訂履歴の行（見出し行を除く）を数えるための正規表現です。
+var revisionRowRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>`)
+
+// InsertRevisionRow は改訂履歴の**先頭**（見出し行の直後）へ1行足し、
+// 版番号を1つ進めた本文を返します。履歴が無い本文はそのまま返します
+// （手で消した・古い形のページ——黙って作り直すと版番号が狂うため）。
+func InsertRevisionRow(bodyHTML, drawingNo string) string {
+	at := strings.Index(bodyHTML, `<table data-type="drawing-revision-items">`)
+	if at < 0 {
+		return bodyHTML
+	}
+	// 見出し行の終わりを探し、その直後へ差し込む（新しい版が上）。
+	head := strings.Index(bodyHTML[at:], "</tr>")
+	if head < 0 {
+		return bodyHTML
+	}
+	insertAt := at + head + len("</tr>")
+	rev := len(revisionRowRe.FindAllString(bodyHTML, -1)) + 1
+	return bodyHTML[:insertAt] + revisionRowHTML(rev, drawingNo, bodyHTML) + bodyHTML[insertAt:]
 }

@@ -244,14 +244,25 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 	// 図面ブロックに data-id が付いていて、**改定ごとに別のID**であること。
 	// 同じIDが2つあると `ページID-ブロックID` の指し先が定まらない。
 	found := map[string]bool{}
-	for _, m := range sectionIDRe.FindAllStringSubmatch(html, -1) {
+	for _, m := range anyIDRe.FindAllStringSubmatch(html, -1) {
 		if found[m[1]] {
 			t.Errorf("ブロックIDが重複しています（社内コードが一意になりません）: %s", m[1])
 		}
 		found[m[1]] = true
 	}
-	if len(found) != 2 {
-		t.Errorf("図面ブロックのIDが2つありません: %+v\n%s", found, html)
+
+	// **改訂履歴の行が指し先**——図面ブロックは人が消せる決まりなので、消す理由の
+	// 無い小さな行を社内コードの指し先にする（2026-09-03 ユーザー:「改訂履歴の項目を
+	// 作り版にdata-idを割り当てれば良いのでは？」）。版ごとに別のIDであること。
+	rows := revRowRe.FindAllStringSubmatch(html, -1)
+	if len(rows) != 2 {
+		t.Fatalf("改訂履歴が2版になっていません: %+v\n%s", rows, html)
+	}
+	if rows[0][1] == rows[1][1] {
+		t.Errorf("版のIDが同じです（社内コードで版を区別できません）")
+	}
+	if rows[0][2] != "2" || rows[1][2] != "1" {
+		t.Errorf("版番号の並びが違います（新しい版が上のはず）: %q %q", rows[0][2], rows[1][2])
 	}
 
 	// 仮のページは片付いている（ゴミ箱へ——物理削除ではない）。
@@ -263,5 +274,8 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 	}
 }
 
-// sectionIDRe は本文の中の図面ブロックのIDを拾います（社内コードの後半）。
-var sectionIDRe = regexp.MustCompile(`<section data-id="([0-9a-z]+)"`)
+// anyIDRe は本文の中のブロックIDをすべて拾います（社内コードの後半）。
+var anyIDRe = regexp.MustCompile(`data-id="([0-9a-z]+)"`)
+
+// revRowRe は改訂履歴の行（ID と 版番号）を拾います。
+var revRowRe = regexp.MustCompile(`<tr data-id="([0-9a-z]+)"><td>([0-9]+)</td>`)
