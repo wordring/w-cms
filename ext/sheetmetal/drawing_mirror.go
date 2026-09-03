@@ -17,6 +17,8 @@ package sheetmetal
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"strings"
+
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms"
@@ -81,4 +83,83 @@ func addClass(el *html.Node, name string) {
 		}
 	}
 	el.Attr = append(el.Attr, html.Attribute{Key: "class", Val: name})
+}
+
+func init() {
+	// 廃版の構成部品を薄く見せる（表示のときだけ）。**行は消しません**
+	// ——外注加工に出した紙に社内コードが載っているので、消すと指し先が消えます
+	// （ユーザー:「構成部品は図面の改定に伴って廃版になる場合があります」）。
+	for _, t := range []string{"part-materials", "part-outsourcing", "part-purchased"} {
+		cms.RegisterMirror(t, cms.MirrorHandlerFunc(markObsoleteRows))
+	}
+}
+
+// markObsoleteRows は 状態＝廃版 の行へ印を付けます（見た目は CSS が担う）。
+func markObsoleteRows(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
+	col := statusColumnIndex(el)
+	if col < 0 {
+		return true, nil
+	}
+	for _, tr := range rowsOf(el) {
+		if cellText(tr, col) == "廃版" {
+			addClass(tr, "row-obsolete")
+		}
+	}
+	return true, nil
+}
+
+// statusColumnIndex は見出し行から「状態」列の位置を返します（無ければ -1）。
+// **見出しの表示文字が鍵**——機械キーを本文へ書く属性はありません。
+func statusColumnIndex(table *html.Node) int {
+	for _, tr := range rowsOf(table) {
+		i := 0
+		for c := tr.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type != html.ElementNode {
+				continue
+			}
+			if c.Data == "th" && strings.TrimSpace(textOf(c)) == "状態" {
+				return i
+			}
+			if c.Data == "th" || c.Data == "td" {
+				i++
+			}
+		}
+		return -1 // 最初の行が見出し行（語彙モデル §5.1）。無ければ諦める
+	}
+	return -1
+}
+
+// rowsOf は表の行を（tbody を挟んでいても）集めます。
+func rowsOf(table *html.Node) []*html.Node {
+	var out []*html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type != html.ElementNode {
+				continue
+			}
+			if c.Data == "tr" {
+				out = append(out, c)
+				continue
+			}
+			walk(c)
+		}
+	}
+	walk(table)
+	return out
+}
+
+// cellText は行の i 番目のセルの文字を返します。
+func cellText(tr *html.Node, i int) string {
+	n := 0
+	for c := tr.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || (c.Data != "td" && c.Data != "th") {
+			continue
+		}
+		if n == i {
+			return strings.TrimSpace(textOf(c))
+		}
+		n++
+	}
+	return ""
 }

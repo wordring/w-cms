@@ -1597,6 +1597,16 @@
                     if (el.closest('.vocab-chrome')) return;
                     assign(el);
                 });
+            // **語彙の表のデータ行にもIDを振る**（2026-09-03）。
+            // 構成部品の行の `data-id` が社内コードの後半になり、外注加工に出す紙に
+            // 載ります（ユーザー:「外注加工の時に構成部品の番号が効いてきます」）。
+            // 見出し行（th だけの行）は飛び先にならないので振りません。
+            editor.querySelectorAll('.block-content table[data-type] tr')
+                .forEach(tr => {
+                    if (tr.closest('.vocab-chrome')) return;
+                    if (!tr.querySelector('td')) return; // 見出し行
+                    assign(tr);
+                });
         }
         return changed;
     }
