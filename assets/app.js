@@ -509,20 +509,9 @@
             const parent = m.parent_id || '';
             document.getElementById('w-pi-parent').textContent = parent || '（トップレベル）';
             document.getElementById('w-pi-parent-input').value = parent;
-            // 左ナビの「親ページへ」リンク
-            // 左ナビの「↑ 親ページへ」リンク：矢印＋親ページの見出し（h1）を表示する。
-            // 見出しはユーザー入力なので、テンプレート文字列＋innerHTML ではなく
-            // textContent で組み立てる（見出しに含まれる記号でHTMLが壊れないように）。
-            const parentBox = document.getElementById('w-child-nav-parent');
-            if (parentBox) {
-                parentBox.innerHTML = '';
-                if (parent) {
-                    const a = document.createElement('a');
-                    a.href = '/' + parent;
-                    a.textContent = '↑ ' + (m.parent_title || parent);
-                    parentBox.appendChild(a);
-                }
-            }
+            // 左レールの「↑ 親ページへ」は 2026-09-03 に**パンくず**へ置き換えた
+            // （本文の上の帯・サーバーが組む。internal/cms/breadcrumb.go）。
+            // 一段しか上がれず、狭い画面ではドロワーを開くまで見えなかったため。
             document.getElementById('w-pi-created-at').textContent = formatDateTime(m.created_at);
             document.getElementById('w-pi-created-by').textContent = m.created_by || '—';
             document.getElementById('w-pi-updated-at').textContent = formatDateTime(m.updated_at);

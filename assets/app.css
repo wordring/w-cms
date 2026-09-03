@@ -173,18 +173,30 @@ ul.toc-nav li { margin: 2px 0; }
 .toc-nav-link[data-level="5"] { padding-left: 54px; }
 .toc-nav-link[data-level="6"] { padding-left: 66px; }
 .toc-nav-empty { color: var(--text-dim); font-style: italic; }
-.child-nav-parent:empty { display: none; } /* トップページ等、親が無いときは何も出さない */
-.child-nav-parent a {
-    display: block;
+/* パンくず（本文の上の帯。サーバーが組む＝internal/cms/breadcrumb.go）。
+ * 2026-09-03 に左レールの「↑ 親ページへ」を置き換えた。
+ * 深い木・長い題でも**折り返さず横スクロール**する（モバイルの表と同じ流儀）
+ * ——折り返すと帯が2行3行に伸び、本文が下がってしまう。 */
+.breadcrumb:empty { display: none; } /* トップページ等、先祖が無いときは帯ごと畳む */
+.breadcrumb {
+    margin: 0 0 10px;
     padding: 6px 10px;
-    color: var(--text-muted);
-    text-decoration: none;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg-subtle);
     font-size: 13px;
+    white-space: nowrap;
+    overflow-x: auto;
 }
-.child-nav-parent a:hover { background: var(--border); }
+.breadcrumb .crumb {
+    color: var(--text-muted);
+    text-decoration: none;
+}
+.breadcrumb .crumb:hover { text-decoration: underline; }
+.breadcrumb .crumb-sep { margin: 0 6px; color: var(--text-dim); }
+/* 読む権限の無い先祖は題を伏せる（リンクにもしない）。匿名では起きない
+ * ——実効公開は親チェーンの AND なので、見えるページの先祖は必ず見える。 */
+.breadcrumb .crumb-hidden { color: var(--text-dim); cursor: help; }
 .rail-card {
     border: 1px solid var(--border);
     border-radius: var(--radius);

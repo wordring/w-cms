@@ -31,6 +31,9 @@ const (
 	// contentPlaceholder は本文を差し込む位置の目印（#editor-content の中身）。
 	contentPlaceholder = "<!--WCMS_CONTENT-->"
 
+	// breadcrumbPlaceholder はパンくず（本文の上の帯）を差し込む位置の目印。
+	breadcrumbPlaceholder = "<!--WCMS_BREADCRUMB-->"
+
 	// titlePlaceholder は差し替える既定のタイトル要素です。
 	// index.html を単体で開いても壊れないよう、実在するタイトルをそのまま目印にします。
 	titlePlaceholder = "<title>w-cms エディタ</title>"
@@ -81,13 +84,16 @@ var shellCache = &shellFile{path: shellPath}
 // 外しました——本筋（クローム自体を配信しない）が入ったため。
 // JS 側の `body.anonymous` 付与は残してあります: 編集中にセッションが切れると
 // /api/me が未認証を返すので、その場合の見せ方はまだ要るからです。
-func RenderPageShell(bodyHTML, title string) (string, error) {
+// breadcrumbHTML は先祖の道（[RenderBreadcrumb] が組む・空なら帯は CSS の :empty で
+// 畳まれる）。本文と同じく、渡す側が既にエスケープ済みであること。
+func RenderPageShell(bodyHTML, breadcrumbHTML, title string) (string, error) {
 	shell, err := shellCache.load()
 	if err != nil {
 		return "", err
 	}
 
 	out := strings.Replace(shell, contentPlaceholder, bodyHTML, 1)
+	out = strings.Replace(out, breadcrumbPlaceholder, breadcrumbHTML, 1)
 
 	if t := strings.TrimSpace(title); t != "" {
 		out = strings.Replace(out, titlePlaceholder,

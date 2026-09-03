@@ -186,7 +186,9 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shellHTML, err := RenderPageShell(body, title)
+	// パンくず（本文の上の帯）はサーバーで組む——JSで1段ずつ辿ると先祖の数だけ
+	// 往復が要り、描いたあとに増える。読めない先祖は題を伏せる（breadcrumb.go）。
+	shellHTML, err := RenderPageShell(body, RenderBreadcrumb(auth.CurrentUser(r), pageID), title)
 	if err != nil {
 		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)
 		return
