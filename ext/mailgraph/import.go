@@ -41,6 +41,12 @@ type ImportSummary struct {
 // 1回の要求が長く居座らないようにします（過去分は繰り返し押せば追いつく）。
 const importMax = 50
 
+// listAllMax は一覧で見る上限です。**取り込む上限とは別**——一覧は封筒の見出し
+// だけなので安く、範囲を全部見てから「まだ入っていないもの」を選ぶほうが、
+// 押し直したときに確実に前へ進みます。実測の流量は年435通なので、
+// これで10年分を一度に見渡せます。
+const listAllMax = 5000
+
 // ImportMessages は未取り込みのメールを受信箱へ取り込みます。
 func ImportMessages(ctx context.Context, username string, opt ListOptions) (ImportSummary, error) {
 	var sum ImportSummary
@@ -49,10 +55,17 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 	if !ok {
 		return sum, errNoInbox
 	}
-	if opt.Max <= 0 || opt.Max > importMax {
-		opt.Max = importMax
+	// **Max は「取り込む上限」であって「見る上限」ではありません。**
+	// 見るほうを絞ると、押し直しても同じ新しい50件を見て「全部重複」で止まり、
+	// 古いほうへ進めません（実際にそう作ってしまい、進まないことで気づいた）。
+	// 一覧は封筒の見出しだけなので、範囲を全部見ても安いのです。
+	limit := opt.Max
+	if limit <= 0 || limit > importMax {
+		limit = importMax
 	}
-	refs, err := ListMessages(ctx, username, opt)
+	listOpt := opt
+	listOpt.Max = listAllMax
+	refs, err := ListMessages(ctx, username, listOpt)
 	if err != nil {
 		return sum, err
 	}
@@ -61,6 +74,9 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 	// 古いものから取り込みます——**スレッドの親が先に来る**ほうが、
 	// 返信元メッセージIDの逆引きが最初から繋がります。
 	for i := len(refs) - 1; i >= 0; i-- {
+		if sum.Imported >= limit {
+			break // 続きは次に押したときへ（1回の要求が長く居座らない）
+		}
 		r := refs[i]
 		if err := ctx.Err(); err != nil {
 			return sum, err

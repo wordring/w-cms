@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -26,6 +27,7 @@ type PageSummary struct {
 	ID       string
 	Title    string
 	FilePath string
+	SortKey  string `json:",omitempty"` // 兄弟の中での並び順（サイドカーが正本）
 }
 
 // reserveNewPageID は pages テーブルへ最小限の行を原子的に INSERT し、SQLite の自動採番で
@@ -89,11 +91,43 @@ func visibleChildren(user *auth.User, parentIDInt int) ([]PageSummary, error) {
 		if err := rows.Scan(&idInt, &p.Title); err == nil {
 			if page.CanView(user, idInt) {
 				p.ID = fmt.Sprintf("%0*d", page.IDLength, idInt)
+				// 並び順キーはサイドカーが正本です（派生のDBへは持たせない）。
+				// 子の数は多くても数百なので、ここで読んで並べれば足ります。
+				if meta, ok := page.ReadSidecar(p.ID); ok {
+					p.SortKey = meta.SortKey
+				}
 				pages = append(pages, p)
 			}
 		}
 	}
+	sortChildren(pages)
 	return pages, nil
+}
+
+// sortChildren は子ページを **並び順キー → 題 → ID** で並べます。
+//
+// ユーザー:「子ページの一覧が良い順番に並んでいないという問題があります」
+// （2026-09-03）。それまでは作成順（ID順）で、これは「いつ作ったか」であって
+// 「どう並んでほしいか」ではありませんでした——実際、メールを2回に分けて
+// 取り込んだだけで `2026年 → 2024年 → 2025年` という並びになりました。
+//
+// **キーが空でも題で正しく並びます**（`2024年 < 2025年`・`01月 < 09月`）。
+// キーを持つものと持たないものが混ざったときは、**キーを持つほうが先**です
+// ——人が明示的に位置を決めたものを、既定の並びより後ろへ追いやらないため。
+func sortChildren(pages []PageSummary) {
+	sort.SliceStable(pages, func(i, j int) bool {
+		a, b := pages[i], pages[j]
+		if (a.SortKey == "") != (b.SortKey == "") {
+			return a.SortKey != "" // キーのあるほうが先
+		}
+		if a.SortKey != b.SortKey {
+			return a.SortKey < b.SortKey
+		}
+		if a.Title != b.Title {
+			return a.Title < b.Title
+		}
+		return a.ID < b.ID
+	})
 }
 
 // NewPageAPIHandler はサーバー側で新しいページを作成し、そのページへリダイレクトします。

@@ -46,6 +46,16 @@ type PageMeta struct {
 	CreatedAt string `json:"created_at,omitempty"`
 	CreatedBy string `json:"created_by,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+
+	// SortKey は兄弟ページの中での並び順です（空なら題で並ぶ）。
+	//
+	// **1つの欄が自動の順序と手動の順序を兼ねます**——取り込みは受信日時を入れ、
+	// 人がドラッグで並べ替えたときは隣どうしの中間の値を入れます。前ページを指す
+	// 連結リストにしないのは、ドラッグ1回で2ページ書く必要があり、途中で失敗すると
+	// 以降の順序が全部失われ、ページを消すと鎖が切れるためです（2026-09-03 検討）。
+	//
+	// 空でも困りません——年・月フォルダは題（`2024年`・`01月`）で正しく並びます。
+	SortKey string `json:"sort_key,omitempty"`
 }
 
 // sidecarPath は <id>.meta.json の物理パスを返します。
