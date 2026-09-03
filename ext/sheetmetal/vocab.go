@@ -18,20 +18,67 @@ func init() {
 }
 
 var businessVocab = []cms.VocabDef{
+	// ── 構成部品（図面から人が抽出する）──────────────────────────────
+	//
+	// ユーザー:「構成部品は私たちが図面から抽出します。材料も抽出しますし、
+	// 外注加工、購入部品も抽出します。**外注加工の時に構成部品の番号が効いてきます**」
+	// （2026-09-03）。種別ごとに表を分けるのはユーザーの選択——種別で必要な列が
+	// 違うため（材料は材質・仕様、外注加工は支給品の有無）。
+	//
+	// **行の `data-id` が構成部品の番号**です。`ページID-行ID` が社内コードになり、
+	// 外注加工に出す紙に載ります。だから**行は消しません**——廃版は `状態` の列で
+	// 表します（ユーザー:「構成部品は図面の改定に伴って廃版になる場合があります」）。
+	// 消すと、相手先に渡した紙の番号が指す先が無くなります。
 	{
 		Type:        "part-materials",
-		DisplayName: "部材定義",
+		DisplayName: "材料",
 		Category:    "業務",
 		Icon:        "🔩",
-		Element:     "table",
 		// 部材の行そのものには部品番号が無く、ページ横断メタの「部品番号」タグが
 		// ページ全体の鍵になる（集計は PagesByTag の逆引きでページを引き当てる）。
+		// **この鍵は将来「参照追従JOIN」へ移す予定**（作業引き継ぎ）——部品ページは
+		// ページIDで同一性を持つので、部品番号タグは本来要りません。
+		Element:     "table",
 		RequiresTag: "部品番号",
 		Columns: []cms.VocabColumn{
 			{Field: "item-name", Label: "部材名", Type: cms.ColText},
-			{Field: "cost", Label: "単価", Type: cms.ColNumber},
-			{Field: "supplier-name", Label: "仕入先", Type: cms.ColText},
+			{Field: "spec", Label: "材質・仕様", Type: cms.ColText},
 			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+			{Field: "supplier-name", Label: "仕入先", Type: cms.ColText},
+			{Field: "cost", Label: "単価", Type: cms.ColNumber},
+			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"有効", "廃版"}},
+		},
+	},
+	{
+		// 外注加工——**番号がいちばん効く表**。加工先へ渡す紙に社内コードを載せ、
+		// 相手からの問い合わせもその番号で受けられます。
+		Type:        "part-outsourcing",
+		DisplayName: "外注加工",
+		Category:    "業務",
+		Icon:        "🏭",
+		Element:     "table",
+		Columns: []cms.VocabColumn{
+			{Field: "work", Label: "加工内容", Type: cms.ColText},
+			{Field: "supplied", Label: "支給品", Type: cms.ColText},
+			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+			{Field: "supplier-name", Label: "加工先", Type: cms.ColText},
+			{Field: "cost", Label: "単価", Type: cms.ColNumber},
+			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"有効", "廃版"}},
+		},
+	},
+	{
+		Type:        "part-purchased",
+		DisplayName: "購入部品",
+		Category:    "業務",
+		Icon:        "📦",
+		Element:     "table",
+		Columns: []cms.VocabColumn{
+			{Field: "item-name", Label: "品名", Type: cms.ColText},
+			{Field: "spec", Label: "仕様", Type: cms.ColText},
+			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+			{Field: "supplier-name", Label: "仕入先", Type: cms.ColText},
+			{Field: "cost", Label: "単価", Type: cms.ColNumber},
+			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"有効", "廃版"}},
 		},
 	},
 	{
