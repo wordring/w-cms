@@ -388,6 +388,11 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 	for _, m := range matches {
 		b.WriteString("<dt>対応DXF</dt><dd>" +
 			html.EscapeString(hostPageID+"-"+m.AttachID) + "</dd>")
+		// ZIPの中のDXFは、参照がZIPのリンクブロックを指すので**中のパスを添える**
+		// （ZIP内のファイルには本文のブロックが無い。発注書解析の 元ファイル と同じ考え）。
+		if m.Entry != "" {
+			b.WriteString("<dt>対応DXFファイル</dt><dd>" + html.EscapeString(m.Entry) + "</dd>")
+		}
 	}
 	b.WriteString("</dl></section>")
 	return b.String()
