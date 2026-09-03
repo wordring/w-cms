@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -268,6 +269,65 @@ func TestEmlIntakeKeepsUnparsableAddressHeader(t *testing.T) {
 	body, _ := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
 	if !strings.Contains(string(body), "差出人不明（システム）") {
 		t.Errorf("解析できない差出人が落ちています:\n%s", body)
+	}
+}
+
+// TestEmlIntakeWritesThreadAndReplyTo は、返信の親子関係（In-Reply-To）と
+// 返信先（Reply-To）がタグに入り、**親の記録ページを既存の逆引きで辿れる**ことを
+// 固定します。
+//
+// `Reply-To` と `In-Reply-To` は別のヘッダです——前者は「返信の宛先アドレス」、
+// 親子関係を作るのは後者（値は親メールの Message-ID）。取り込みは既に
+// `メッセージID` を書いているので、親は PagesByTag 1回で引けます——
+// **新しい仕組みは足していません**。
+func TestEmlIntakeWritesThreadAndReplyTo(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+
+	// 親のメールを先に取り込む。
+	parentID, _, err := emlIntake{}.OnFile(ctx, "1.eml",
+		[]byte(buildEml("<parent@example.jp>", "元のメール")))
+	if err != nil {
+		t.Fatalf("親の取り込みエラー: %v", err)
+	}
+
+	// 返信（In-Reply-To で親を指し、Reply-To は別の窓口）。
+	reply := "From: sender@example.jp\r\n" +
+		"To: order@example.co.jp\r\n" +
+		"Reply-To: \"営業窓口\" <sales@example.jp>\r\n" +
+		"Subject: Re: 元のメール\r\n" +
+		"Date: Mon, 01 Sep 2026 11:00:00 +0900\r\n" +
+		"Message-ID: <child@example.jp>\r\n" +
+		"In-Reply-To: <parent@example.jp>\r\n" +
+		"\r\nhonbun\r\n"
+	replyID, _, err := emlIntake{}.OnFile(ctx, "2.eml", []byte(reply))
+	if err != nil {
+		t.Fatalf("返信の取り込みエラー: %v", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(page.GetPageDir(replyID), replyID+".html"))
+	if err != nil {
+		t.Fatalf("返信のページを読めません: %v", err)
+	}
+	for _, want := range []string{
+		"<dt>返信元メッセージID</dt><dd>&lt;parent@example.jp&gt;</dd>",
+		"<dt>返信先</dt><dd>営業窓口</dd>",
+		"<dt>返信先アドレス</dt><dd>sales@example.jp</dd>",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("返信のページに %q がありません:\n%s", want, body)
+		}
+	}
+
+	// 肝心なのはここ——返信元メッセージIDから**親の記録ページが引ける**。
+	ids, err := PagesByTag(database.DB, MessageIDTag, "<parent@example.jp>")
+	if err != nil {
+		t.Fatalf("逆引きエラー: %v", err)
+	}
+	want, _ := strconv.Atoi(parentID)
+	if len(ids) != 1 || ids[0] != want {
+		t.Errorf("返信から親を辿れません: got %v want [%d]", ids, want)
 	}
 }
 
