@@ -108,8 +108,13 @@ func ExistingIntakePage(tagName, value string) (string, bool) {
 var intakeRegistry = map[string]IntakeHandler{}
 
 // RegisterIntake は取り込み係を登録します（init から呼ぶ・回覧機構と同じ流儀）。
-func RegisterIntake(h IntakeHandler) {
-	for _, ext := range h.Extensions() {
+// 担当する拡張子は h.Extensions() が宣言しますが、**引数でも渡せます**——
+// 1つの実装を設定違いで複数の拡張子へ登録する場合に使います（intake_file.go）。
+func RegisterIntake(h IntakeHandler, exts ...string) {
+	if len(exts) == 0 {
+		exts = h.Extensions()
+	}
+	for _, ext := range exts {
 		if prev, dup := intakeRegistry[ext]; dup {
 			panic("取り込み係の拡張子が重複しています: " + ext + " (" + prev.Name() + " と " + h.Name() + ")")
 		}
@@ -117,9 +122,28 @@ func RegisterIntake(h IntakeHandler) {
 	}
 }
 
-// intakeHandlerFor は拡張子の担当を返します（居なければ nil）。
+// intakeFallback は拡張子の担当が居ないときの既定の担当です。
+//
+// 受信箱は「**何かが届いた**」という1つの事実を受ける場所なので、種類が何であれ
+// 記録は残るべきです（2026-09-03 ユーザー:「その受け口ではメールや、PDF、DXFも
+// 受け付け」）。拡張子ごとの担当は「その形式を**解釈できる**者」で、
+// 既定の担当は「解釈しないが記録は残す」者。
+var intakeFallback IntakeHandler
+
+// RegisterIntakeFallback は既定の担当を登録します（init から呼ぶ・1人だけ）。
+func RegisterIntakeFallback(h IntakeHandler) {
+	if intakeFallback != nil {
+		panic("取り込みの既定の担当が二重に登録されています: " + intakeFallback.Name() + " と " + h.Name())
+	}
+	intakeFallback = h
+}
+
+// intakeHandlerFor は拡張子の担当を返します（居なければ既定の担当・それも無ければ nil）。
 func intakeHandlerFor(ext string) IntakeHandler {
-	return intakeRegistry[strings.ToLower(ext)]
+	if h, ok := intakeRegistry[strings.ToLower(ext)]; ok {
+		return h
+	}
+	return intakeFallback
 }
 
 // IntakeContext は取り込み係に渡す最小権限の道具です。
