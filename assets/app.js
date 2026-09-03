@@ -1166,6 +1166,7 @@
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
+        foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
         refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
@@ -2871,6 +2872,77 @@
                 sec.appendChild(btn);
             }
         });
+    }
+
+    // ── 機械に向けたタグを1つの引き出しへ畳む（閲覧モード限定）─────────────
+    // 「優先度の低いヘッダをまとめてクリックすると開く場所に入れるのはどうでしょうか」
+    // （2026-09-03 ユーザー要望。`差出人`と`差出人アドレス`の重複が発端）。
+    //
+    // 畳む対象は**機械に向けた値**——人は普段読まないが、機械には要る値:
+    //   - `◯◯アドレス` … 完全一致で検索するために原子化したメールアドレス
+    //   - `メッセージID` … 取り込みの重複検知の鍵
+    // 対ごとに開閉ボタンを付ける案より、**開閉が1つで済み・メッセージIDも一緒に
+    // 片付く**。「誰のアドレスか」はタグの名前が持っているので、まとめて開いても
+    // 対応は崩れない（宛先が複数なら `宛先アドレス` が本文の順に並ぶ）。
+    //
+    // **畳むのは見た目だけ**——本文には対がそのまま在り、索引にも入る。開けば
+    // すぐ見えるので、利用者は「自分が書いた文字がDBに入っている」ことを確かめられる:
+    //
+    //	「利用者が、『名前：値』のタグは見た目のままにDBに入れられると信じるためには、
+    //	 実際にそうである必要があります」（ユーザー・2026-09-03）
+    //
+    // だから**編集モードでは畳まない**（編集する対象は本物でなければならない）。
+    const MACHINE_TAG_SUFFIX = /アドレス$/;
+    const MACHINE_TAG_NAMES = new Set(['メッセージID']);
+
+    function foldMachineTags() {
+        document.querySelectorAll('#w-editor-content .tag-detail-toggle').forEach(el => el.remove());
+        document.querySelectorAll('#w-editor-content .tag-folded')
+            .forEach(el => el.classList.remove('tag-folded'));
+        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+
+        document.querySelectorAll('#w-editor-content dl[data-type="tags"]').forEach(dl => {
+            // dt/dd の対を文書順で拾う（本文の形は「名前：値」の並び）。
+            const pairs = [];
+            let dt = null;
+            for (const el of dl.children) {
+                if (el.tagName === 'DT') dt = el;
+                else if (el.tagName === 'DD' && dt) { pairs.push({ dt, dd: el }); dt = null; }
+            }
+            const folded = pairs.filter(p => {
+                const n = p.dt.textContent.trim();
+                return MACHINE_TAG_SUFFIX.test(n) || MACHINE_TAG_NAMES.has(n);
+            });
+            // 畳む対象が無い、または**全部が対象**なら何もしない
+            // （空のタグ欄と「詳細」だけが残るのは、隠しているようで気味が悪い）。
+            if (!folded.length || folded.length === pairs.length) return;
+            addDetailToggle(dl, folded);
+        });
+    }
+
+    // addDetailToggle は対象の対を畳み、開閉チップを dl の末尾へ置きます。
+    function addDetailToggle(dl, folded) {
+        const setFolded = on => folded.forEach(p => {
+            p.dt.classList.toggle('tag-folded', on);
+            p.dd.classList.toggle('tag-folded', on);
+        });
+        setFolded(true);
+
+        let open = false;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'vocab-chrome tag-detail-toggle';
+        btn.title = folded.map(p => p.dt.textContent.trim()).join('・');
+        const label = () => open ? '▾ 隠す' : '▸ 詳細（' + folded.length + '件）';
+        btn.textContent = label();
+        btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', () => {
+            open = !open;
+            setFolded(!open);
+            btn.textContent = label();
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        dl.appendChild(btn);
     }
 
     // ── 添付のクリック展開（PDFのインライン表示・ZIPの目録）──────────────────
