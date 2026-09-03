@@ -22,36 +22,59 @@ var businessVocab = []cms.VocabDef{
 	//
 	// ユーザー:「構成部品は私たちが図面から抽出します。材料も抽出しますし、
 	// 外注加工、購入部品も抽出します。**外注加工の時に構成部品の番号が効いてきます**」
-	// （2026-09-03）。種別ごとに表を分けるのはユーザーの選択——種別で必要な列が
-	// 違うため（材料は材質・仕様、外注加工は支給品の有無）。
+	// 「ほかに支給部品という項目もあります」（2026-09-03）。種別ごとに表を分けるのは
+	// ユーザーの選択——種別で要る列が違うため。
 	//
 	// **行の `data-id` が構成部品の番号**です。`ページID-行ID` が社内コードになり、
-	// 外注加工に出す紙に載ります。だから**行は消しません**——廃版は `状態` の列で
+	// 外注加工に出す紙に載ります。だから**行は消しません**——廃版は `区分` の列で
 	// 表します（ユーザー:「構成部品は図面の改定に伴って廃版になる場合があります」）。
 	// 消すと、相手先に渡した紙の番号が指す先が無くなります。
+	//
+	// **単価と仕入先はここに持ちません**（2026-09-03 ユーザー:「仕入れ先は複数あります」
+	// 「単価は外してよいと思います」）。1列では複数の仕入先を表せず、価格は都度変わる
+	// ため——仕入先と価格の正本は「材料屋の見積もり」（何件でも作れる）と
+	// 「自社の発注書」（実際に発注したもの）です。
+	// ユーザー:「ただし、**最新の単価や価格推移を知りたいことはあります。この情報は
+	// DBに入っているべきです。そして必要な時に提示されるべきです**」——見積もりと
+	// 発注書が既にその履歴を持っているので、**提示する側**（計算ビュー）が残件です。
+	//
+	// **進捗（発注済・納品済）もここには置きません**。ユーザー:「これは部品のページ
+	// ではなく、受注ページで進捗の一部として見られると良い」——部品ページは
+	// 「何が要るか」の定義、進捗は受注ごとの実績です。列名を `状態` ではなく `区分`
+	// にしてあるのは、受注明細の `状態`（未着手／加工中／納品済）と取り違えないため。
 	{
 		Type:        "part-materials",
 		DisplayName: "材料",
 		Category:    "業務",
 		Icon:        "🔩",
+		// 列はユーザーの実務どおり——**材料に「名前」は無く、材質・形状・寸法の
+		// 3つで決まります**（`SS400／板 t3.2／1000×500`）。③計算はこの3つを
+		// 繋いだものを名前として扱います（materials.go の materialNameOf）。
+		// 個数は**一台当たり**です（受注数を掛けるのは③計算の仕事）。
+		//
 		// 部材の行そのものには部品番号が無く、ページ横断メタの「部品番号」タグが
-		// ページ全体の鍵になる（集計は PagesByTag の逆引きでページを引き当てる）。
-		// **この鍵は将来「参照追従JOIN」へ移す予定**（作業引き継ぎ）——部品ページは
-		// ページIDで同一性を持つので、部品番号タグは本来要りません。
+		// ページ全体の鍵になる。**この鍵は参照追従JOINへ移す予定**（作業引き継ぎ）
+		// ——部品ページはページIDで同一性を持つので、本来このタグは要りません。
 		Element:     "table",
 		RequiresTag: "部品番号",
 		Columns: []cms.VocabColumn{
-			{Field: "item-name", Label: "部材名", Type: cms.ColText},
-			{Field: "spec", Label: "材質・仕様", Type: cms.ColText},
-			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
-			{Field: "supplier-name", Label: "仕入先", Type: cms.ColText},
-			{Field: "cost", Label: "単価", Type: cms.ColNumber},
-			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"有効", "廃版"}},
+			{Field: "material", Label: "材質", Type: cms.ColText},
+			{Field: "shape", Label: "形状", Type: cms.ColText},
+			{Field: "size", Label: "寸法", Type: cms.ColText},
+			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
+			{Field: "note", Label: "備考", Type: cms.ColText},
+			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},
 	},
 	{
 		// 外注加工——**番号がいちばん効く表**。加工先へ渡す紙に社内コードを載せ、
 		// 相手からの問い合わせもその番号で受けられます。
+		//
+		// `資料` はユーザーの要望（「外注加工の場合、**加工業者に渡す資料を入れる
+		// 場所も必要**です」）。値は同じページに貼った添付への参照
+		// （`ページID-ブロックID`）を書きます——**表のセルの参照はまだリンクになりません**
+		// （参照リンクの描画はタグの dl だけが対象。ref_render.go）。押して飛べる
+		// ようにするのは残件です。
 		Type:        "part-outsourcing",
 		DisplayName: "外注加工",
 		Category:    "業務",
@@ -59,14 +82,16 @@ var businessVocab = []cms.VocabDef{
 		Element:     "table",
 		Columns: []cms.VocabColumn{
 			{Field: "work", Label: "加工内容", Type: cms.ColText},
-			{Field: "supplied", Label: "支給品", Type: cms.ColText},
-			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
-			{Field: "supplier-name", Label: "加工先", Type: cms.ColText},
-			{Field: "cost", Label: "単価", Type: cms.ColNumber},
-			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"有効", "廃版"}},
+			{Field: "supplied", Label: "支給", Type: cms.ColText},
+			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
+			{Field: "doc", Label: "資料", Type: cms.ColText},
+			{Field: "note", Label: "備考", Type: cms.ColText},
+			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},
 	},
 	{
+		// 購入部品——**列は暫定**です。ユーザー:「購入品の項目はいまのところ
+		// はっきりしません」（2026-09-03）。実物を入れてみて決まったら直します。
 		Type:        "part-purchased",
 		DisplayName: "購入部品",
 		Category:    "業務",
@@ -75,10 +100,26 @@ var businessVocab = []cms.VocabDef{
 		Columns: []cms.VocabColumn{
 			{Field: "item-name", Label: "品名", Type: cms.ColText},
 			{Field: "spec", Label: "仕様", Type: cms.ColText},
-			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
-			{Field: "supplier-name", Label: "仕入先", Type: cms.ColText},
-			{Field: "cost", Label: "単価", Type: cms.ColNumber},
-			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"有効", "廃版"}},
+			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
+			{Field: "note", Label: "備考", Type: cms.ColText},
+			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
+		},
+	},
+	{
+		// 支給部品——**客先から支給されるもの**（ユーザー:「ほかに支給部品という
+		// 項目もあります」）。買わないので手配の対象ではありませんが、構成には要り、
+		// 番号でも指せる必要があります。
+		Type:        "part-supplied",
+		DisplayName: "支給部品",
+		Category:    "業務",
+		Icon:        "🎁",
+		Element:     "table",
+		Columns: []cms.VocabColumn{
+			{Field: "item-name", Label: "品名", Type: cms.ColText},
+			{Field: "spec", Label: "仕様", Type: cms.ColText},
+			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
+			{Field: "note", Label: "備考", Type: cms.ColText},
+			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},
 	},
 	{

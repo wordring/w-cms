@@ -68,8 +68,8 @@ func TestRequiredMaterialsDoesNotMixPages(t *testing.T) {
 	// 部品定義ページ53: PART-A に部材が1つ紐づく
 	materials := `<dl data-type="tags"><dt>部品番号</dt><dd>PART-A</dd></dl>` +
 		`<table data-type="part-materials"><tbody>` +
-		`<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>` +
-		`<tr><td>鋼板</td><td>800</td><td>A商事</td><td>2</td></tr></tbody></table>`
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>` +
+		`<tr><td>鋼板</td><td></td><td></td><td>2</td></tr></tbody></table>`
 	if err := cms.SyncIndex("000053", materials); err != nil {
 		t.Fatalf("cms.SyncIndex(53)エラー: %v", err)
 	}
@@ -136,9 +136,9 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 	sync(3, `<h1>部品</h1>`+
 		`<dl data-type="tags"><dt>部品番号</dt><dd>SHAFT-01</dd></dl>`+
 		`<table data-type="part-materials"><tbody>`+
-		`<tr><th>部材名</th><th>単価</th><th>仕入先</th><th>数量</th></tr>`+
-		`<tr><td>シャフト用鋼材 (S45C)</td><td>2500</td><td>東邦金属工業</td><td>1</td></tr>`+
-		`<tr><td>外注高周波焼入れ</td><td>1500</td><td>山下熱処理</td><td>1</td></tr>`+
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
+		`<tr><td>シャフト用鋼材 (S45C)</td><td></td><td></td><td>1</td></tr>`+
+		`<tr><td>外注高周波焼入れ</td><td></td><td></td><td>1</td></tr>`+
 		`</tbody></table>`)
 
 	// 3. 受注ページ(000002)：SHAFT-01 を 10本。自社発注で鋼材を10本発注済み。

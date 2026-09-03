@@ -27,8 +27,12 @@ func TestRequiredMaterialsViewRenders(t *testing.T) {
 		`data-type="required-materials"`, // マーカーは保存内容のまま
 		`class="vocab-chrome"`,           // 中身はクローム（保存されない）
 		`部材手配・発注進捗状況`,
-		`極秘部材`, `㊙商社`,
+		`極秘部材`,
 		`<td class="num">6</td>`, // 1個あたり2 × 受注3個
+		// **仕入先はここには出ません**——構成部品の表から仕入先を外したため
+		// （2026-09-03 ユーザー:「仕入れ先は複数あります」）。埋まるのは発注実績が
+		// 付いたときで、仕入先の正本は発注書のヘッダと材料屋の見積もりです。
+		`<td>-</td>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("描画結果に %q がありません:\n%s", want, out)

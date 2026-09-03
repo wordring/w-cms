@@ -24,9 +24,9 @@ import (
 
 const componentsBody = `<h1>脚取付台</h1>` +
 	`<table data-type="part-outsourcing" data-id="t001"><tbody>` +
-	`<tr><th>加工内容</th><th>支給品</th><th>数量</th><th>加工先</th><th>単価</th><th>状態</th></tr>` +
-	`<tr data-id="k3x9"><td>曲げ加工</td><td>有</td><td>1</td><td>加工屋B</td><td>3000</td><td>有効</td></tr>` +
-	`<tr data-id="p7m1"><td>旧・溶接</td><td>有</td><td>1</td><td>加工屋C</td><td>5000</td><td>廃版</td></tr>` +
+	`<tr><th>加工内容</th><th>支給</th><th>個数</th><th>資料</th><th>備考</th><th>区分</th></tr>` +
+	`<tr data-id="k3x9"><td>曲げ加工</td><td>有</td><td>1</td><td>000012-a1b2</td><td>外周のみ</td><td>現行</td></tr>` +
+	`<tr data-id="p7m1"><td>旧・溶接</td><td>有</td><td>1</td><td></td><td></td><td>廃版</td></tr>` +
 	`</tbody></table>`
 
 // TestComponentRowsAreIndexed は、構成部品の行が索引に載り、**行のIDが社内コードの
@@ -47,7 +47,7 @@ func TestComponentRowsAreIndexed(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("外注加工の行が2つありません: %+v", rows)
 	}
-	if rows[0].Values["work"] != "曲げ加工" || rows[0].Values["supplier-name"] != "加工屋B" {
+	if rows[0].Values["work"] != "曲げ加工" || rows[0].Values["doc"] != "000012-a1b2" {
 		t.Errorf("列が読めていません: %+v", rows[0].Values)
 	}
 	if rows[1].Values["status"] != "廃版" {
