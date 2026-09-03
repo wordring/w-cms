@@ -122,17 +122,30 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 		}
 	}
 
-	// 添付は生成IDで files/ に居る。
+	// 添付と**受信原本**が生成IDで files/ に居る（原本は §8.1 の証跡）。
 	entries, err := os.ReadDir(page.AttachmentDir(pageID))
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("添付が保存されていません: %v %v", entries, err)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("添付と受信原本が保存されていません: %v %v", entries, err)
 	}
-	saved, _ := os.ReadFile(filepath.Join(page.AttachmentDir(pageID), entries[0].Name()))
-	if string(saved) != string(pdf) {
-		t.Errorf("添付の中身が違います: %q", saved)
+	var gotPDF, gotEML string
+	for _, e := range entries {
+		body, _ := os.ReadFile(filepath.Join(page.AttachmentDir(pageID), e.Name()))
+		switch filepath.Ext(e.Name()) {
+		case ".pdf":
+			gotPDF = string(body)
+		case ".eml":
+			gotEML = string(body)
+		}
 	}
-	if !strings.HasSuffix(entries[0].Name(), ".pdf") {
-		t.Errorf("拡張子が保たれていません: %s", entries[0].Name())
+	if gotPDF != string(pdf) {
+		t.Errorf("添付の中身が違います（拡張子ごと保たれていない可能性）: %q", gotPDF)
+	}
+	// 原本は**1バイトも変えずに**残す（改変したら証跡にならない）。
+	if gotEML != eml {
+		t.Errorf("受信原本が原文のまま保存されていません:\n%q", gotEML)
+	}
+	if !strings.Contains(html, "📧 受信原本") || !strings.Contains(html, `download="mail.eml"`) {
+		t.Errorf("受信原本へのリンクがありません:\n%s", html)
 	}
 
 	// タグは②汎用索引へ載る（差出人・宛先・受信日時で検索できる）。

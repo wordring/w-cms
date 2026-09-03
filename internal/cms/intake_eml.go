@@ -11,6 +11,7 @@ package cms
 //	                     メッセージID・返信元メッセージID（スレッドの親）</dl>
 //	本文（text/plain を段落へ）
 //	📎 添付（files/ へ保存・リンクは生成ID・download 属性が元名を運ぶ）
+//	📧 受信原本（生の .eml。解釈で落ちるものがあるので原本を残す＝やり直せる）
 //
 // メタはすべて**可変タグ**で持つ——名前：値なら索引に載り、検索も参照も
 // 既存の仕組みがそのまま効く（発注書としての解釈は次の段＝板金部の既定セットの
@@ -192,6 +193,25 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 			html.EscapeString(href) + `" download="` + html.EscapeString(p.fileName) + `">` +
 			html.EscapeString(p.fileName) + `</a></p>`)
 	}
+
+	// **受信原本（生の .eml）も保存する**（2026-09-03 ユーザー提案
+	// 「マスタデータとしてEMLも保存してはどうでしょう」）。
+	//
+	// 上で作った本文は**解釈の産物**で、落ちているものがある——HTMLメールの見た目、
+	// 拾っていないヘッダ、復号前の文字コード、署名。原本は全部を持っている
+	// （添付も base64 で内包した完全アーカイブ）。**あとからやり直せる**ことが
+	// 要件（§2.7④）なので、解釈を改良したときに読み直せる元が要る。
+	//
+	// 実ファイルと二重に持つことになるが、**役割が違うので有害な複製ではない**
+	// （§8.1）——原本は証跡（不変・触らない）、添付は業務が使う作業用コピー。
+	// 配信は `application/octet-stream`＋`attachment` なのでブラウザは解釈しない。
+	rawID, rawHref, err := ctx.SaveAttachment(pageID, ".eml", content)
+	if err != nil {
+		return "", "", err // 原本が残せないなら取り込まない（証跡の無い記録は作らない）
+	}
+	b.WriteString(`<p data-id="` + html.EscapeString(rawID) + `">📧 受信原本 <a href="` +
+		html.EscapeString(rawHref) + `" download="` + html.EscapeString(fileName) + `">` +
+		html.EscapeString(fileName) + `</a></p>`)
 
 	if err := ctx.UpdatePage(pageID, b.String()); err != nil {
 		return "", "", err
