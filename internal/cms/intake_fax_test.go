@@ -55,7 +55,8 @@ func TestFaxIntakeCreatesRecordPage(t *testing.T) {
 	}
 	// 📎 リンクの宛先が**きれいなURL**であること——閲覧モードのクロームは
 	// この形（/<6桁ページID>/<生成ID>.pdf）に一致するときだけ「▶ 表示」と
-	// **「🤖 解析」**を付ける。FAXで来た発注書がそのまま受注ページになる道。
+	// 「🤖 解析」を付ける。**PDFが発注書とは限らない**ので、これは「人が尋ねられる
+	// 状態にある」ことの検査であって、発注書だと決めつける検査ではない。
 	// （属性の並びはサニタイザが決めるので、順序には依存しない検査にする。）
 	if !strings.Contains(html, "📎 ") ||
 		!regexp.MustCompile(`href="/`+pageID+`/[0-9a-z]+\.pdf"`).MatchString(html) {

@@ -94,7 +94,11 @@ func (faxIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	writeTag(&b, ContentHashTag, hex.EncodeToString(sum[:]))
 	b.WriteString("</dl>")
 	// 📎 の形にするのは意味がある——閲覧モードのクロームが「▶ 表示」と
-	// **「🤖 解析」**を付けるので、FAXで来た発注書がそのまま受注ページになる。
+	// 「🤖 解析」を付ける。**PDFが発注書とは限らない**（図面・見積書・納品書・
+	// 案内・DM…）ので、解析は「発注書か？」と**人が尋ねる手段**であって、
+	// 押せば必ず何かが生まれる分類器ではない——発注書でなければ何も作らず
+	// そう答えるだけで、記録ページは資料として残る（§4.1「既定は資料として
+	// 保存・表示、抽出は高価値・低コストなものに限定する」）。
 	b.WriteString(`<p data-id="` + html.EscapeString(id) + `">📎 <a href="` +
 		html.EscapeString(href) + `" download="` + html.EscapeString(fileName) + `">` +
 		html.EscapeString(fileName) + `</a></p>`)
