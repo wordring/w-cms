@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -317,6 +318,41 @@ func TestAnalyzeDrawingMatchesDXF(t *testing.T) {
 	}
 	if !strings.Contains(body, "<dt>受信元</dt><dd>"+id+"-pdf001</dd>") {
 		t.Errorf("由来（PDF）への参照タグがありません: %s", body)
+	}
+
+	// **図面番号で検索できること**が要件（ユーザー:「図面番号、図面名称など様々な
+	// タグがあります。のちのち、これらを検索できるようにしたいです」）。語彙に
+	// 登録して初めて vocab_index に載るので、載っていることを固定する
+	// ——登録を外すと検索は無言で効かなくなる。
+	idInt, _ := strconv.Atoi(resp.PageID)
+	rows, err := cms.VocabBlocksOf(database.DB, idInt, "drawing")
+	if err != nil {
+		t.Fatalf("索引を読めません: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("図面ブロックが索引に載っていません: %+v", rows)
+	}
+	// VocabBlocksOf は**機械キー**で返す（索引そのものは見出しの表示文字で持つ）。
+	if rows[0].Values["drawing-no"] != "X008-135-4" {
+		t.Errorf("図面番号が索引に入っていません: %+v", rows[0].Values)
+	}
+	if rows[0].Values["drawing-name"] != "架台Assy" {
+		t.Errorf("図面名称が索引に入っていません: %+v", rows[0].Values)
+	}
+	// 空欄も欄としては在る（捏造しないが、あとから人が埋められる）。
+	if _, ok := rows[0].Values["machine-name"]; !ok {
+		t.Errorf("装置名称の欄がありません: %+v", rows[0].Values)
+	}
+
+	// 表示文字での引き当ても効くこと——**検索は見出しの言葉で行う**
+	// （ユーザー:「図面番号、図面名称など様々なタグ…これらを検索できるように
+	// したいです」）。
+	var n int
+	if err := database.DB.QueryRow(
+		`SELECT COUNT(*) FROM vocab_index
+		 WHERE page_id = ? AND data_type = 'drawing' AND field = '図面番号' AND value = 'X008-135-4'`,
+		idInt).Scan(&n); err != nil || n != 1 {
+		t.Errorf("図面番号で引けません (n=%d err=%v)", n, err)
 	}
 }
 

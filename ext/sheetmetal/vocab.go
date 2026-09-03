@@ -49,6 +49,31 @@ var businessVocab = []cms.VocabDef{
 		},
 	},
 	{
+		// 図面ブロック——1つの図面の表題欄です。**部品ページには複数並びます**
+		// （改定図面が来たら新しいものを先頭に足す。古いものは赤枠で残し、
+		// 消すのは人の判断——2026-09-03 ユーザー決定）。
+		//
+		// **図面番号で検索できることが要件**（ユーザー:「図面番号、図面名称など
+		// 様々なタグがあります。のちのち、これらを検索できるようにしたいです」）。
+		// 語彙に登録して初めて `vocab_index` に載るので、ここが検索の前提。
+		//
+		// 装置名称と客先を持つのは、**置き場所（顧客名／装置名称／図面名称）の
+		// 推奨値**になるから。ただし置き場所を決めるのは人で、機械は提案するだけ
+		// ——「顧客は適当」なので、いま決められないことがある（作業引き継ぎ）。
+		Type:        "drawing",
+		DisplayName: "図面",
+		Category:    "業務",
+		Icon:        "📐",
+		Element:     "section",
+		File:        true,
+		Columns: []cms.VocabColumn{
+			{Field: "drawing-no", Label: "図面番号", Type: cms.ColText},
+			{Field: "drawing-name", Label: "図面名称", Type: cms.ColText},
+			{Field: "machine-name", Label: "装置名称", Type: cms.ColText},
+			{Field: "client-name", Label: "客先", Type: cms.ColText},
+		},
+	},
+	{
 		Type:        "client-order-items",
 		DisplayName: "受注明細",
 		Category:    "業務",
