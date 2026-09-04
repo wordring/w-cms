@@ -1075,7 +1075,9 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
  * 見積もり系（our-estimate 等）も dl だが、このスタイルは tags 専用。 */
 #w-editor-content dl[data-type="tags"] {
     display: grid;
-    grid-template-columns: max-content max-content;
+    /* 値の列は minmax(0, …)。素の max-content は「縮まない」意味なので、
+       折り返せない長い値（メッセージID）が列幅を押し広げて親をはみ出す。 */
+    grid-template-columns: minmax(0, max-content) minmax(0, max-content);
     justify-content: start;
     row-gap: 6px;
     margin: 8px 0;
@@ -1083,6 +1085,7 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
 #w-editor-content dl[data-type="tags"] dt,
 #w-editor-content dl[data-type="tags"] dd {
     margin: 0;
+    max-width: 100%; /* 升目からはみ出させない（狭い画面では名前側も折り返す） */
     padding: 2px 10px;
     border: 1px solid var(--border-strong);
     min-width: 1.5em; /* 空でもクリックできる幅を残す（編集モードで値を書き込むため） */
@@ -1101,6 +1104,37 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
     background: var(--bg-paper);
     border-radius: 0 6px 6px 0;
     justify-self: start; /* 列幅（最長の値）に引き伸ばさず、自分の値の幅で終わる */
+}
+
+/* 本文の中の**折り返せない長い連なり**（メール署名の罫線・URL・英数字の羅列）も、
+ * 幅が足りなければ途中で折る。狭い画面（スマホ）でだけ効く保険で、通常の日本語の
+ * 折り返しには影響しない（`anywhere` は「他に手が無いとき」の意味）。 */
+#w-editor-content .block-content {
+    overflow-wrap: anywhere;
+}
+
+/* 折り返せない長い値（メッセージID・アドレス）がチップからはみ出す件
+ * （2026-09-04 ユーザー指摘「はみ出る時は『・・・』などで省略表示できませんか」）。
+ *
+ *   閲覧モード … 1行に収め、あふれた分は末尾を `…` にする。
+ *                **マウスを載せているあいだだけ**折り返して全部見せる。
+ *   編集モード … 常に折り返して全部見せる——直す値を隠したら直せない。
+ *
+ * 畳むのは**見た目だけ**で、本文の文字も索引も変わらない（チップ表示と同じ流儀）。 */
+#w-editor-content dl[data-type="tags"] dd {
+    min-width: 0;
+    /* `justify-self: start` の升目は**中身なりに伸びる**ので、列を minmax(0,…) に
+       しただけでは足りない。max-width で升目の幅に頭を押さえる。 */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+body[edit-mode] #w-editor-content dl[data-type="tags"] dd,
+#w-editor-content dl[data-type="tags"] dd:hover {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere; /* 単語の途中でも折る（英数字の長い連なりのため） */
 }
 
 /* 機械に向けたタグ（◯◯アドレス・メッセージID）は閲覧モードで「詳細」へ畳む
@@ -1138,7 +1172,8 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
  * チップ表示（上の専用スタイル）のまま。 */
 #w-editor-content dl:not([data-type]) {
     display: grid;
-    grid-template-columns: max-content auto;
+    /* 値の列は minmax(0, …)（理由は可変タグ側と同じ） */
+    grid-template-columns: max-content minmax(0, auto);
     column-gap: 4px;
     row-gap: 4px;
     align-items: baseline;
@@ -1159,6 +1194,17 @@ body[edit-mode] #w-editor-content section.is-vocab-unknown {
     justify-self: start; /* 値の幅は中身なり（右横の項目ツールバーが値のすぐ隣に出る） */
     margin: 0;
     min-width: 1.5em;    /* 空でもクリックできる幅（編集モードで値を書くため） */
+    /* 長い値の扱いは可変タグと同じ（閲覧は `…`・編集は折り返し） */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+body[edit-mode] #w-editor-content dl:not([data-type]) dd,
+#w-editor-content dl:not([data-type]) dd:hover {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* 参照タグ（名前：値の ページID-ブロックID）の描画。リンクは通常色、
