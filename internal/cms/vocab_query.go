@@ -155,8 +155,8 @@ func VocabNumber(raw string) int {
 	return AtoiSafe(raw)
 }
 
-// VocabQuantity は数量列を読みます。**空セルは 1**（旧 <m-material> の既定を
-// 引き継いだ値で、硬い表のころは索引を書く側が同じ既定を当てていた）。
+// VocabQuantity は数量列を読みます。**空セルは 1**——手で書く表で「1個」を
+// いちいち書かせないためで、硬い表のころは索引を書く側が同じ既定を当てていた。
 // 語彙の一般規則なのでコアが持ちます（【一覧】語彙.md §2.2）。
 func VocabQuantity(row VocabRow) int {
 	if row.Values["quantity"] == "" {
