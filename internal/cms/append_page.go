@@ -43,15 +43,6 @@ func InsertAfterH1(pageID, author, fragmentHTML string) error {
 	})
 }
 
-// AppendToPageBody はページ本文の末尾へ fragmentHTML を足します。
-// fragment は**呼ぶ側がエスケープ済み**であること（サニタイザは安全性の網で、
-// エスケープの肩代わりはしません）。
-func AppendToPageBody(pageID, author, fragmentHTML string) error {
-	return rewritePageBody(pageID, author, func(current string) string {
-		return current + fragmentHTML
-	})
-}
-
 // RewriteBody は本文を書き換えます（作法つき）。拡張から使う口です
 // ——改訂履歴へ1行足す、のような「読んで・変えて・書く」を、保存経路と同じ
 // 順序（サニタイズ・更新日時・版・索引）で通すため。

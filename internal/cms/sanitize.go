@@ -43,11 +43,6 @@ func AllowedVocabulary() map[string][]string {
 	return sanitizer.AllowedVocabulary()
 }
 
-// VoidElementNames は子を持てない要素名（ソート済み）を返します。
-func VoidElementNames() []string {
-	return htmldoc.VoidElementNames()
-}
-
 // ShellPrefixedIDs は本文中の `id` のうち、**殻が独占する接頭辞**
 // （htmldoc.ShellIDPrefix）が付いているものを重複なくソートして返します。
 //

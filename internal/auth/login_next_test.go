@@ -24,13 +24,13 @@ func TestSafeNextPath(t *testing.T) {
 
 	// 外部サイトへ飛ばせてはいけない（開かれたリダイレクト）
 	bad := []string{
-		"https://evil.example/",   // 絶対URL
-		"//evil.example/",         // プロトコル相対
-		"/\\evil.example",         // バックスラッシュ経由
-		"http://evil.example",     // スキーム付き
-		"javascript:alert(1)",     // スキーム
-		"evil",                    // 相対（先頭が / でない）
-		"",                        // 空
+		"https://evil.example/",    // 絶対URL
+		"//evil.example/",          // プロトコル相対
+		"/\\evil.example",          // バックスラッシュ経由
+		"http://evil.example",      // スキーム付き
+		"javascript:alert(1)",      // スキーム
+		"evil",                     // 相対（先頭が / でない）
+		"",                         // 空
 		"/000123\nSet-Cookie: x=1", // ヘッダ分割
 	}
 	for _, s := range bad {

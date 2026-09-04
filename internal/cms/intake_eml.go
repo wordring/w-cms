@@ -154,20 +154,20 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
 	// どの経路で届いたか——メール・FAX・電話を横断して引くための軸（§6）。
-	writeTag(&b, ChannelTag, "メール")
+	WriteTag(&b, ChannelTag, "メール")
 	writeAddressTags(&b, "差出人", msg.Header.Get("From"))
 	writeAddressTags(&b, "宛先", msg.Header.Get("To"))
 	writeAddressTags(&b, "CC", msg.Header.Get("Cc"))
 	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
 	writeAddressTags(&b, "返信先", msg.Header.Get("Reply-To"))
-	writeTag(&b, "受信日時", dateISO)
+	WriteTag(&b, "受信日時", dateISO)
 	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
 	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
-	writeTag(&b, MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
+	WriteTag(&b, MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
 	// スレッドの親（In-Reply-To）。値は親メールの Message-ID なので、
 	// PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
-	writeTag(&b, InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
+	WriteTag(&b, InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
 	b.WriteString("</dl>")
 
 	bodyWritten := false
@@ -249,18 +249,27 @@ func writeAddressTags(b *strings.Builder, name, raw string) {
 	}
 	list, err := addressParser.ParseList(raw)
 	if err != nil || len(list) == 0 {
-		writeTag(b, name, decodeHeader(raw))
+		WriteTag(b, name, decodeHeader(raw))
 		return
 	}
 	for _, a := range list {
-		writeTag(b, name, a.Name) // 表示名の無いアドレスでは書かれない
-		writeTag(b, name+"アドレス", a.Address)
+		WriteTag(b, name, a.Name) // 表示名の無いアドレスでは書かれない
+		WriteTag(b, name+"アドレス", a.Address)
 	}
 }
 
-// writeTag は値のあるタグだけを書きます。
-func writeTag(b *strings.Builder, name, value string) {
-	if strings.TrimSpace(value) == "" {
+// WriteTag は「名前：値」のタグを1対書きます（値が空なら書かない）。
+//
+// **値は前後の空白を落としてから書きます。** 取り込んだメールのヘッダには
+// 余分な空白が普通に混ざっており、そのまま入れると索引の値が空白付きになって
+// 逆引き（PagesByTag は生テキストで引く）が外れます。
+//
+// かつては取り込み係と mailgraph が同名の関数を別々に持ち、**trim の有無だけが
+// 違って**いました——どちらの経路で作られたページかで値が変わる、という形の
+// 静かな食い違いだったので、コアの1つに寄せました（2026-09-05）。
+func WriteTag(b *strings.Builder, name, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return
 	}
 	b.WriteString("<dt>" + html.EscapeString(name) + "</dt><dd>" + html.EscapeString(value) + "</dd>")

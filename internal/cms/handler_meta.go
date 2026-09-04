@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -40,8 +41,8 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"elements": elements,
-		"void":     VoidElementNames(), // 終了タグを書かない要素（br・img 等）
-		"block_id": BlockIDAttr,        // ブロック単位保存の識別子（data-id）
+		"void":     htmldoc.VoidElementNames(), // 終了タグを書かない要素（br・img 等）
+		"block_id": BlockIDAttr,                // ブロック単位保存の識別子（data-id）
 		// 語彙レジストリ（①）の形式定義。エディタはこれからスラッシュメニューの項目と
 		// 挿入骨格（<table data-type> / <dl data-type>）を生成する（語彙モデル §7 の
 		// 原則1: 新規挿入時の列定義はレジストリからAPI経由で受け取り、手書きの

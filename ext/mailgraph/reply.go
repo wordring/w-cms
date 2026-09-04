@@ -88,7 +88,10 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **返信元のメッセージIDを In-Reply-To に載せます**——これが相手のメールソフトで
 	// 元のスレッドに並ぶ条件です（Graph の sendMail では立てられず、SMTP へ変えた
 	// 理由そのもの）。返信元が無い新規メールでは空のまま。
-	sentID, err := SendAndReturnID(user, cms.OutgoingMail{
+	// **送信はコアの口を通します**（cms.SendMail）。実装を直に呼ばないのは、
+	// 「使う側はコアに尋ねる」という mail.go の設計そのもの——この経路が
+	// mailgraph の中にあるのは偶然で、他の拡張から送るときも同じ口を使います。
+	sentID, err := cms.SendMail(user, cms.OutgoingMail{
 		To: cleanAddrs(req.To), Cc: cleanAddrs(req.Cc),
 		Subject: req.Subject, BodyText: req.Body,
 		InReplyTo: sourceMessageID(source),
@@ -133,25 +136,25 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	writeTag(&b, cms.ChannelTag, "メール")
-	writeTag(&b, "差出人アドレス", SignedInAddress(user.Username))
+	cms.WriteTag(&b, cms.ChannelTag, "メール")
+	cms.WriteTag(&b, "差出人アドレス", SignedInAddress(user.Username))
 	for _, a := range cleanAddrs(req.To) {
-		writeTag(&b, "宛先アドレス", a)
+		cms.WriteTag(&b, "宛先アドレス", a)
 	}
 	for _, a := range cleanAddrs(req.Cc) {
-		writeTag(&b, "CCアドレス", a)
+		cms.WriteTag(&b, "CCアドレス", a)
 	}
-	writeTag(&b, "送信日時", now.In(time.Local).Format(time.RFC3339))
+	cms.WriteTag(&b, "送信日時", now.In(time.Local).Format(time.RFC3339))
 	// **自分が立てた Message-ID を残します。** 相手がこれに返信すると、その
 	// In-Reply-To がここを指すので、**受信の取り込みだけでスレッドが繋がります**
 	// （返信元メッセージID の逆引き——既にある仕組みがそのまま効く）。
-	writeTag(&b, cms.MessageIDTag, messageID)
+	cms.WriteTag(&b, cms.MessageIDTag, messageID)
 	if src := sourceMessageID(sourcePageID); src != "" {
-		writeTag(&b, "返信元メッセージID", src)
+		cms.WriteTag(&b, "返信元メッセージID", src)
 	}
 	// **返信元は参照タグ**（`ページID`）——押せば飛び、逆引きで「この記録への返信」も
 	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
-	writeTag(&b, cms.ReplySourceTag, sourcePageID)
+	cms.WriteTag(&b, cms.ReplySourceTag, sourcePageID)
 	b.WriteString("</dl>")
 	// 本文は平文のまま段落へ。HTMLメールは作らないので、見たままが送った中身です。
 	for _, line := range strings.Split(req.Body, "\n") {
@@ -159,15 +162,6 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	}
 
 	return cms.CreateRecordPage(rootID, user.Username, now, b.String())
-}
-
-// writeTag は値のあるタグだけを書きます（空欄は書かない）。
-func writeTag(b *strings.Builder, name, value string) {
-	if strings.TrimSpace(value) == "" {
-		return
-	}
-	b.WriteString("<dt>" + html.EscapeString(name) + "</dt><dd>" +
-		html.EscapeString(strings.TrimSpace(value)) + "</dd>")
 }
 
 // cleanAddrs は空白を落とし、空の要素を除きます。
