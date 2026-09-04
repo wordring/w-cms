@@ -146,6 +146,45 @@ func PagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
 	return ids, rows.Err()
 }
 
+// PagesByTagLoose は「可変タグ `name` の値が、**畳んで一致する**ページ」を返します。
+//
+// `PagesByTag`（生の完全一致）と**別の関数にしています**。1つにまとめて
+// 「生で引いて、駄目なら畳んで引く」と2段にすると、**打った通りに在るのに
+// 別のページも一緒に返る**ことが起きます（`W470-L090` と `W470_L090` が
+// 別の部品だったとき）。どちらで引くかは**呼ぶ側が選ぶ**——探す（多めに出して
+// 人が選ぶ）のと、突き合わせる（1つに決める）のは別の仕事だからです。
+//
+// 畳み方は書き込み側と同じ（NormalizeForLookup）。図面番号のように
+// `code` 型と宣言された語では、空白・ハイフン類・英字の大小が畳まれます。
+func PagesByTagLoose(db ReadOnlyDB, name, value string) ([]int, error) {
+	if name == "" || value == "" {
+		return nil, nil
+	}
+	norm, ok := NormalizeForLookup(name, value)
+	if !ok {
+		return nil, nil
+	}
+	rows, err := db.Query(`
+		SELECT DISTINCT page_id FROM vocab_index
+		WHERE data_type = 'tags' AND field = ? AND norm_value = ?
+		ORDER BY page_id
+	`, name, norm)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // VocabNumber は表の値を数として読みます（¥・桁区切り・全角を吸収）。
 // 索引の読み出し（VocabRow.Num）と、拡張の集計が共有します。
 func VocabNumber(raw string) int {

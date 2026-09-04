@@ -39,11 +39,19 @@ const (
 	ColDate   ColumnType = "date"
 	ColEnum   ColumnType = "enum"
 	ColImage  ColumnType = "image"
+	// ColCode は図面番号・発注書番号のような**符牒**です。text との違いは
+	// **畳む強さだけ**——見た目も入力補助も text と同じで、索引の併記値
+	// （norm_value）で空白・ハイフン類・英字の大小を畳みます。
+	// 「畳んでよい値」を名指しするための型で、それ以外の日本語（会社名・
+	// 図面名称）は長音を壊さないよう text のままにします。
+	// 設計は docs/【考察】テキストの正規化.md（2026-09-04 決定・案2）。
+	ColCode ColumnType = "code"
 )
 
 // validColumnTypes は th の data-type 属性（列型の明示）として受け付ける値です。
 var validColumnTypes = map[ColumnType]bool{
 	ColText: true, ColNumber: true, ColDate: true, ColEnum: true, ColImage: true,
+	ColCode: true,
 }
 
 // VocabColumn は形式の1列（dl では1項目）の定義です。
@@ -259,6 +267,10 @@ var defaultTypeInference = map[string]ColumnType{
 	"金額": ColNumber, "単価": ColNumber, "価格": ColNumber, "数量": ColNumber,
 	"納期": ColDate, "日付": ColDate, "検査日": ColDate, "発注日": ColDate, "納品日": ColDate,
 	"写真": ColImage, "画像": ColImage,
+	// code はユーザーが名指しで「検索できる必要がある」と言った2語だけを種にします。
+	// ユーザー:「運用前のいまは（どの語が code か）わかりません」（2026-09-04）——
+	// **出てきたら data/settings.json へ足してDB再構築**すれば効きます。
+	"図面番号": ColCode, "発注書番号": ColCode,
 }
 
 // InferColumnType は見出し語から列型を推論します。辞書に無ければ text です。
@@ -284,18 +296,34 @@ func TypeInferenceDict() map[string]ColumnType {
 // NormalizeValue は列型に応じて値の正規化値を返します。
 // 解釈できないときは ok=false（正規化値は**併記**であり、生テキストが常に正本）。
 func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {
-	s := toHalfWidth(strings.TrimSpace(raw))
 	switch t {
 	case ColNumber:
-		return normalizeNumber(s)
+		return normalizeNumber(toHalfWidth(strings.TrimSpace(raw)))
 	case ColDate:
-		return normalizeDate(s)
+		return normalizeDate(toHalfWidth(strings.TrimSpace(raw)))
+	case ColText:
+		return normalizedOrNot(NormalizeText(raw))
+	case ColCode:
+		return normalizedOrNot(NormalizeCode(raw))
 	default:
-		return "", false // text / enum / image は正規化しない
+		return "", false // enum / image は正規化しない
 	}
 }
 
-// toHalfWidth は全角の数字・記号を半角へ寄せます（正規化の前処理）。
+// normalizedOrNot は畳んだ値を返します。**空なら併記しません**——空セルの
+// norm_value を埋めても引く手掛かりにならず、索引が太るだけだからです。
+func normalizedOrNot(s string) (string, bool) {
+	if s == "" {
+		return "", false
+	}
+	return s, true
+}
+
+// toHalfWidth は全角の数字・記号を半角へ寄せます（number / date の前処理）。
+//
+// **`ー` を `-` にします。** 数値と日付にしか掛からないので実害はありませんが、
+// **一般のテキストへ広げてはいけません**（`レーザー`→`レ-ザ-`）。text / code の
+// 正規化は normalize_text.go の側にあります。
 func toHalfWidth(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {

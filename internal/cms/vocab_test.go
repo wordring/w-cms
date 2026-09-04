@@ -120,9 +120,27 @@ func TestNormalizeValue(t *testing.T) {
 		{ColDate, "２０２６／０８／１０", "2026-08-10", true},
 		{ColDate, "2026-13-01", "", false}, // 実在しない日付
 		{ColDate, "来週", "", false},
-		{ColText, "8000", "", false}, // text は正規化しない
-		{ColEnum, "合格", "", false},   // enum も正規化しない
+		{ColEnum, "合格", "", false}, // enum は正規化しない
 		{ColImage, "p.jpg", "", false},
+
+		// text は**軽く**畳む（全角英数→半角・半角カナ→全角・濁点の合成・前後の空白）。
+		// **長音には触らない**——`レーザー` を `レ-ザ-` にしてはいけない。
+		{ColText, "8000", "8000", true},
+		{ColText, "  架台Assy  ", "架台Assy", true},
+		{ColText, "Ｙ０５０", "Y050", true},
+		{ColText, "ﾊﾟｲﾌﾟ", "パイプ", true},
+		{ColText, "レーザーマックス", "レーザーマックス", true},
+		{ColText, "", "", false},
+
+		// code は**強く**畳む（空白の除去・ハイフン類/長音/`_`→`-`・英字は大文字）。
+		{ColCode, "P200-911-03a", "P200-911-03A", true},
+		{ColCode, "PW050_167", "PW050-167", true},
+		{ColCode, "X008-135-4_ 架台Assy", "X008-135-4-架台ASSY", true},
+		{ColCode, "Ｘ００８ー１３５", "X008-135", true},
+		{ColCode, "X008－135", "X008-135", true},
+		// 区切りの有無は畳まない（別の部品を1つにしないため）。
+		{ColCode, "W470L090", "W470L090", true},
+		{ColCode, "", "", false},
 	}
 	for _, c := range cases {
 		got, ok := NormalizeValue(c.typ, c.raw)

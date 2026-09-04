@@ -2704,7 +2704,9 @@
     }
 
     // th の data-type 明示 > レジストリ宣言 > 推論辞書（/api/tag-schema） > text。
-    const VALID_COL_TYPES = ['text', 'number', 'date', 'enum', 'image'];
+    // code は「畳んで比較する文字」（図面番号・発注書番号）。見た目も入力補助も
+    // text と同じで、違うのはサーバー側の索引の畳み方だけ——だから検証は要らない。
+    const VALID_COL_TYPES = ['text', 'code', 'number', 'date', 'enum', 'image'];
 
     // resolveCellColumn はセルの属する列の {type, enum} を解決する（データ行の td 用）。
     function resolveCellColumn(cell) {
