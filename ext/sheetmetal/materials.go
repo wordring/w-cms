@@ -99,6 +99,20 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(list)
 }
 
+// filterVisible は読めないページをスコープから落とします。
+//
+// **欠けたことは知らせません**（C案の決定）——読めないページ由来の行は黙って
+// 落ちます。全員 admin か同一グループの運用では発動しません。
+func filterVisible(ids []int, canView func(int) bool) []int {
+	out := ids[:0:0]
+	for _, id := range ids {
+		if canView(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // RequiredMaterials は指定ページ（受注ページ）に紐づく部材の要手配数・発注済数を
 // 集計します。/api/required-materials と計算ビューのサーバー事前描画
 // （view_render.go）が共用する。
@@ -116,14 +130,6 @@ func RequiredMaterialsAPIHandler(w http.ResponseWriter, r *http.Request) {
 func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialResponse, error) {
 	db := database.DB
 
-	// 1. そのページの受注明細（品番・数量）を索引から読む。
-	//    ページで絞るので、同じ発注書番号を別ページで使っても混ざらない
-	//    （硬い表のころ order_no のサブクエリで他ページの明細まで拾った・設計総点検③）。
-	orderItems, err := cms.VocabTableRowsOf(db, pageIDInt, "client-order-items")
-	if err != nil {
-		return nil, err
-	}
-
 	materialsMap := make(map[string]*RequiredMaterialResponse)
 
 	// 定義元ページの可視判定は1ページにつき1度だけ引く（品番ごとに何度も辿らない）。
@@ -135,6 +141,29 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		v := page.CanView(user, defPageID)
 		visible[defPageID] = v
 		return v
+	}
+
+	// 0. 集計のスコープ＝**このページと、参照で直接つながっているページ**
+	//    （`cms.RelatedPages`・2026-09-04 の参照追従化）。取り込みで生まれた
+	//    受注ページは通信記録ページを `受信元` で指しているので、通信記録の上で
+	//    集計しても明細が見えるようになります。読めないページは混ぜません。
+	scope, err := cms.RelatedPages(db, pageIDInt)
+	if err != nil {
+		return nil, err
+	}
+	scope = filterVisible(scope, canView)
+
+	// 1. スコープの受注明細（品番・数量）を索引から読む。
+	//    **ページで絞る**のは変わりません——同じ発注書番号を別ページで使っても
+	//    混ざらない（硬い表のころ order_no のサブクエリで他ページの明細まで
+	//    拾った・設計総点検③）。広がったのは「どのページを見るか」だけです。
+	var orderItems []cms.VocabRow
+	for _, id := range scope {
+		rows, err := cms.VocabTableRowsOf(db, id, "client-order-items")
+		if err != nil {
+			return nil, err
+		}
+		orderItems = append(orderItems, rows...)
 	}
 
 	// 2. 各受注部品に対し、必要な部材の定義を集めて総必要数を積む。
@@ -200,18 +229,24 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    ヘッダ1つと明細表1つを持つ限り、同じ番号どうしが対になります。
 	//    （硬い表のころは発注書番号で結んでいたが、番号が重複すると仕入先が
 	//    入れ替わりえた・設計総点検③。文書順なら重複しても取り違えない）
-	headers, err := cms.VocabBlocksOf(db, pageIDInt, "our-order")
-	if err != nil {
-		return nil, err
-	}
-	supplierOf := map[int]string{}
-	for _, h := range headers {
-		supplierOf[h.BlockNo] = h.Values["supplier-name"]
-	}
-
-	ourItems, err := cms.VocabTableRowsOf(db, pageIDInt, "our-order-items")
-	if err != nil {
-		return nil, err
+	//    スコープは受注明細と同じ（発注書が別ページに在っても拾う）。
+	//    **仕入先の対応づけはページごとに閉じます**——block_no は1ページの中の
+	//    文書順連番なので、ページをまたいで同じ番号を突き合わせると取り違えます。
+	var ourItems []cms.VocabRow
+	supplierOf := map[[2]int]string{} // (ページ, ブロック番号) → 仕入先
+	for _, id := range scope {
+		headers, err := cms.VocabBlocksOf(db, id, "our-order")
+		if err != nil {
+			return nil, err
+		}
+		for _, h := range headers {
+			supplierOf[[2]int{id, h.BlockNo}] = h.Values["supplier-name"]
+		}
+		rows, err := cms.VocabTableRowsOf(db, id, "our-order-items")
+		if err != nil {
+			return nil, err
+		}
+		ourItems = append(ourItems, rows...)
 	}
 	for _, oi := range ourItems {
 		name := oi.Values["item-name"]
@@ -221,7 +256,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		} else {
 			materialsMap[name] = &RequiredMaterialResponse{
 				MaterialName:  name,
-				SupplierName:  supplierOf[oi.BlockNo],
+				SupplierName:  supplierOf[[2]int{oi.PageID, oi.BlockNo}],
 				Cost:          0,
 				TotalRequired: 0,
 				Ordered:       quantity,

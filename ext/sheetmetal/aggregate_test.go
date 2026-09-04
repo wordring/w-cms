@@ -209,3 +209,97 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 
 // TestPluginTablesConsistency は、各プラグインの Tables() が宣言するテーブルが
 // すべて Schema() で実際に作成されることを検証します（Schema/Tablesのdrift防止）。
+
+// TestRequiredMaterialsFollowsReferences は**参照追従集計**を固定します
+// （2026-09-04・[docs/【考察】通信記録処理.md] §2.5）。
+//
+// 取り込みで生まれた受注ページは通信記録ページの子で、`受信元` タグで親を指します。
+// **通信記録ページの上で集計しても明細が見える**ことが、この改修の目的です。
+func TestRequiredMaterialsFollowsReferences(t *testing.T) {
+	seedOrderPages(t, "000061", "000062", "000063")
+
+	// 63: 部品定義（PART-A に部材が2個）
+	if err := cms.SyncIndex("000063",
+		`<dl data-type="tags"><dt>部品番号</dt><dd>PART-A</dd></dl>`+
+			`<table data-type="part-materials"><tbody>`+
+			`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
+			`<tr><td>鋼板</td><td></td><td></td><td>2</td></tr></tbody></table>`); err != nil {
+		t.Fatalf("cms.SyncIndex(63)エラー: %v", err)
+	}
+
+	// 61: 通信記録ページ（明細は持たない）
+	if err := cms.SyncIndex("000061",
+		`<h1>【発注書添付】リピート品</h1>`+
+			`<dl data-type="tags"><dt>チャネル</dt><dd>メール</dd></dl>`); err != nil {
+		t.Fatalf("cms.SyncIndex(61)エラー: %v", err)
+	}
+
+	// 62: 🤖解析が作った受注ページ。`受信元` で 61 を指す。
+	if err := cms.SyncIndex("000062",
+		clientOrderHTML("PO-1", "得意先A", "PART-A")+
+			`<dl data-type="tags"><dt>受信元</dt><dd>000061-mt3b</dd></dl>`); err != nil {
+		t.Fatalf("cms.SyncIndex(62)エラー: %v", err)
+	}
+
+	admin := &auth.User{Username: "root", IsAdmin: true}
+
+	// 通信記録ページ（61）の上でも、参照を辿って受注明細が見える。
+	list, err := RequiredMaterials(admin, 61)
+	if err != nil {
+		t.Fatalf("RequiredMaterials(61)エラー: %v", err)
+	}
+	if len(list) != 1 || list[0].TotalRequired != 2 {
+		t.Fatalf("通信記録ページで参照先の明細を拾えていません: %+v", list)
+	}
+
+	// 受注ページ（62）の側から見ても同じ数（参照は双方向に辿る）。
+	list, err = RequiredMaterials(admin, 62)
+	if err != nil {
+		t.Fatalf("RequiredMaterials(62)エラー: %v", err)
+	}
+	if len(list) != 1 || list[0].TotalRequired != 2 {
+		t.Fatalf("受注ページの集計が想定と違います: %+v", list)
+	}
+
+	// **無関係なページは巻き込まない**——部品定義ページ（63）は誰も参照していない。
+	if list, err := RequiredMaterials(admin, 63); err != nil || len(list) != 0 {
+		t.Errorf("無関係なページで集計が出ました: %+v (%v)", list, err)
+	}
+}
+
+// TestRelatedPagesScope は参照追従のスコープそのものを固定します。
+// **深さは1**——辿り続けると、どこまでが1つの案件なのかが人に見えなくなります。
+func TestRelatedPagesScope(t *testing.T) {
+	seedOrderPages(t, "000071", "000072", "000073")
+
+	// 71 ◀── 受信元 ── 72 ◀── 受信元 ── 73（鎖）
+	if err := cms.SyncIndex("000071", `<h1>記録</h1>`); err != nil {
+		t.Fatal(err)
+	}
+	if err := cms.SyncIndex("000072",
+		`<dl data-type="tags"><dt>受信元</dt><dd>000071-aaaa</dd></dl>`); err != nil {
+		t.Fatal(err)
+	}
+	if err := cms.SyncIndex("000073",
+		`<dl data-type="tags"><dt>受信元</dt><dd>000072-bbbb</dd></dl>`); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := cms.RelatedPages(database.DB, 72)
+	if err != nil {
+		t.Fatalf("RelatedPagesエラー: %v", err)
+	}
+	want := []int{71, 72, 73} // 自分・指している先・指してくる側
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("スコープが想定と違います: %v (期待 %v)", got, want)
+	}
+
+	// 71 から見て 73 は**2段先なので入らない**。
+	got, err = cms.RelatedPages(database.DB, 71)
+	if err != nil {
+		t.Fatalf("RelatedPagesエラー: %v", err)
+	}
+	if fmt.Sprint(got) != fmt.Sprint([]int{71, 72}) {
+		t.Errorf("深さ1を越えて辿っています: %v", got)
+	}
+}
