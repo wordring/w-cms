@@ -75,7 +75,9 @@ body.public {
 /* 素の dl（名前：値）は対ごとに1行・名前と値は横並び（エディタ側と同じ見た目。2026-08-31）。 */
 .public-content dl:not([data-type]) {
     display: grid;
-    grid-template-columns: max-content auto;
+    /* 値の列は minmax(0, …)（素の max-content/auto は縮まないので、折り返せない
+       長い値が親をはみ出す。編集側 app.css と同じ手当て） */
+    grid-template-columns: max-content minmax(0, auto);
     column-gap: 4px;
     row-gap: 4px;
     align-items: baseline;
@@ -95,6 +97,15 @@ body.public {
     grid-column: 2;
     justify-self: start;
     margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.public-content dl:not([data-type]) dd:hover {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .public-content dt { font-weight: 600; color: var(--pub-muted); margin-top: 10px; }
 .public-content dd { margin: 0 0 4px 1em; }
@@ -123,6 +134,18 @@ body.public {
     background: var(--pub-bg);
     border-radius: 0 var(--pub-radius) var(--pub-radius) 0;
     margin-right: 8px;
+    /* 折り返せない長い値（メッセージID）は1行に収めて末尾を `…` にする。
+       マウスを載せているあいだだけ折り返して全部見せる（2026-09-04）。 */
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.public-content dl[data-type="tags"] dd:hover {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* 業務ブロック（発注書など）の枠。編集モードの破線枠は出さない（読む人には無関係）。 */
