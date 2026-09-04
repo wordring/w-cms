@@ -105,7 +105,7 @@ type VocabDef struct {
 // 移行前から独立した形式です（記録だけの形式なので Field は持たない）。
 var vocabRegistry = []VocabDef{
 	// 移行第2段（語彙モデル §8.4-2）の移行先形式。
-	// "tags" は <m-tag>（ページ横断メタ）の後継——名前は自由語で、dt の表示文字が
+	// "tags" はページ横断メタ——名前は自由語で、dt の表示文字が
 	// そのまま鍵になる（§5.3）。骨格は1項目だけ生成し、項目操作UIで増やす。
 	{
 		Type:        "tags",
@@ -143,8 +143,7 @@ var vocabRegistry = []VocabDef{
 	},
 
 	// ── 移行第4段（語彙モデル §8.4-4）: 表示専用の計算ビュー ──
-	// <m-child-list>・<m-required-materials> の後継。列を持たず、
-	// 中身はサーバー事前描画（RenderComputedViews）。
+	// 列を持たず、中身はサーバー事前描画（RenderComputedViews）。
 	{
 		Type:        "child-list",
 		DisplayName: "子ページ一覧",
