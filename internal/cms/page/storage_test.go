@@ -53,3 +53,52 @@ func TestWriteFileAtomicKeepsOldOnError(t *testing.T) {
 		t.Errorf("失敗したのにファイルができています: %v", err)
 	}
 }
+
+// TestGeneratedAttachmentIDIsBlockShaped は、添付の識別子が**ブロックIDと同じ形**
+// （4桁の base36）で、かつ**同じページの中で衝突しない**ことを固定します。
+//
+// 参照 `ページID-ID` が飛ぶ先は常に本文のブロックなので、添付だけ別の採番規則に
+// する理由がありません（2026-09-04 ユーザー:「ファイル名とブロックのidを一緒にしては？」）。
+// 揃えた結果、**一意でなければならない範囲が2つ**になりました——`files/` の中と、
+// 本文の data-id です。
+func TestGeneratedAttachmentIDIsBlockShaped(t *testing.T) {
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdirエラー: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(origWd) })
+
+	const pageID = "000123"
+	if err := os.MkdirAll(AttachmentDir(pageID), 0o755); err != nil {
+		t.Fatalf("MkdirAllエラー: %v", err)
+	}
+
+	id := GeneratedAttachmentID(pageID, ".pdf")
+	if len(id) != 4 {
+		t.Errorf("識別子がブロックIDと同じ4桁ではありません: %q", id)
+	}
+	for _, r := range id {
+		if !('0' <= r && r <= '9') && !('a' <= r && r <= 'z') {
+			t.Errorf("base36 小文字ではない文字が入っています: %q", id)
+		}
+	}
+
+	// **拡張子が違っても同じ識別子は使えない**——同居すると本文に同じ data-id が
+	// 2つ生まれる（`a7k2.pdf` と `a7k2.dxf`）。
+	if err := os.WriteFile(filepath.Join(AttachmentDir(pageID), id+".dxf"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFileエラー: %v", err)
+	}
+	if got := GeneratedAttachmentID(pageID, ".pdf"); got == id {
+		t.Errorf("拡張子違いの既存ファイルと衝突しました: %q", got)
+	}
+
+	// **本文の data-id とも衝突しない**（ブロックの採番と同じ名前空間に入ったため）。
+	os.Remove(filepath.Join(AttachmentDir(pageID), id+".dxf"))
+	body := `<p data-id="` + id + `">既存のブロック</p>`
+	if err := os.WriteFile(filepath.Join(GetPageDir(pageID), pageID+".html"), []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFileエラー: %v", err)
+	}
+	if got := GeneratedAttachmentID(pageID, ".pdf"); got == id {
+		t.Errorf("本文のブロックIDと衝突しました: %q", got)
+	}
+}
