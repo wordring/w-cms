@@ -119,7 +119,7 @@ func (s Settings) validate(path string) error {
 			return fmt.Errorf("%s: type_inference に空の見出し語があります", path)
 		}
 		if !validColumnTypes[typ] {
-			return fmt.Errorf("%s: type_inference の %q に未知の列型 %q があります（使えるのは text / number / date / enum / image）", path, word, typ)
+			return fmt.Errorf("%s: type_inference の %q に未知の列型 %q があります（使えるのは text / code / number / date / enum / image）", path, word, typ)
 		}
 	}
 	if s.MaxUploadMiB < 0 {
