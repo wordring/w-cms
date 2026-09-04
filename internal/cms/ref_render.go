@@ -70,7 +70,19 @@ func RenderReferenceLinks(bodyHTML string) string {
 	changed := false
 	for _, root := range nodes {
 		WalkElements(root, func(n *html.Node) {
-			if n.Data != "dl" || inVocabChrome(n) {
+			// **可変タグ（dl[data-type="tags"]）だけを見ます。**
+			//
+			// 参照は「名前：値」の**タグ**で表す、というのが D-4 の決定でした
+			// （書く側もそこへ書きます——analyze_pdf.go・intake_eml.go）。
+			// 業務文書ブロックのヘッダ（`data-type` を持たない素の dl）まで見ると、
+			// **発注書番号が参照に化けます**——実データの `260602-102`
+			// （26年06月02日＋連番）は「6桁＋ハイフン＋英数字」にそのまま当てはまり、
+			// 「参照先のページ 260602 が見つかりません」の薄赤が全件に出ました
+			// （2026-09-04・実メールの取り込みで発覚）。
+			//
+			// 桁を6に絞っても足りなかった、というのがここの学びです。**値の形だけでは
+			// 参照と番号を見分けられない**ので、置き場所（可変タグかどうか）も条件にします。
+			if n.Data != "dl" || Attr(n, "data-type") != "tags" || inVocabChrome(n) {
 				return
 			}
 			eachDLPair(n, false, func(key string, dd *html.Node) bool {

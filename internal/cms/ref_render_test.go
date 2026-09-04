@@ -109,3 +109,35 @@ func TestRenderReferenceLinksPageRefTag(t *testing.T) {
 		t.Errorf("宣言していないタグの6桁の値がリンクに化けています:\n%s", out)
 	}
 }
+
+// TestOrderNumberIsNotMistakenForReference は、**業務文書ブロックのヘッダに書かれた
+// 発注書番号を参照と読み違えない**ことを固定します。
+//
+// 実データで踏んだ誤爆（2026-09-04）: 顧客の発注書番号 `260602-102`
+// （26年06月02日＋連番）は「6桁＋ハイフン＋英数字」という参照値の文法に
+// **そのまま当てはまり**、「参照先のページ 260602 が見つかりません」の薄赤が
+// 全件に出ました。桁を6に絞っても足りなかった——**値の形だけでは参照と番号を
+// 見分けられない**ので、置き場所（可変タグかどうか）も条件にしています。
+func TestOrderNumberIsNotMistakenForReference(t *testing.T) {
+	setupSaveTest(t)
+
+	// 業務文書ブロックのヘッダ（data-type を持たない素の dl）＋ 可変タグの参照。
+	body := `<section data-type="client-order">` +
+		`<dl><dt>発注書番号</dt><dd>260602-102</dd></dl>` +
+		`</section>` +
+		`<dl data-type="tags"><dt>受信元</dt><dd>000002-12</dd></dl>`
+
+	got := RenderReferenceLinks(body)
+	// 発注書番号の升目は**素のまま**（印もリンクも付かない）。
+	if !strings.Contains(got, "<dd>260602-102</dd>") {
+		t.Errorf("発注書番号が参照として扱われました:\n%s", got)
+	}
+	if strings.Contains(got, "参照先のページ 260602") {
+		t.Errorf("発注書番号に宙ぶらりんの印が付きました:\n%s", got)
+	}
+	// 可変タグの側は、これまでどおり参照として扱われる（指す先が無いので薄赤ではなく…
+	// このテストDBにページ 000002 は無いので、印が付くのは正しい振る舞い）。
+	if !strings.Contains(got, "参照先のページ 000002") {
+		t.Errorf("可変タグの参照が扱われていません:\n%s", got)
+	}
+}
