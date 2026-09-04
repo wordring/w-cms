@@ -298,10 +298,12 @@ func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment)
 	b.WriteString("</dl><table><tbody>")
 	b.WriteString("<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>")
 	for _, it := range j.Items {
+		// 日付と数値は**正規形で書き起こす**（D-3「正規化は取り込み時に行う」）。
+		// 読めなければ生のまま入ります——取り込みは情報を捨てない。
 		b.WriteString("<tr><td>" + html.EscapeString(it.ItemNo) + "</td>" +
 			"<td>" + html.EscapeString(it.ItemName) + "</td>" +
-			"<td>" + html.EscapeString(it.Price) + "</td>" +
-			"<td>" + html.EscapeString(it.Quantity) + "</td>" +
+			"<td>" + html.EscapeString(cms.CanonicalForIngest("単価", it.Price)) + "</td>" +
+			"<td>" + html.EscapeString(cms.CanonicalForIngest("数量", it.Quantity)) + "</td>" +
 			"<td>未着手</td></tr>")
 	}
 	b.WriteString("</tbody></table></section>")
@@ -318,12 +320,16 @@ func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment)
 }
 
 // writeHeaderPair はヘッダ dl の1対を書きます（空値は空欄＝あとから人が埋める）。
+//
+// 日付・数値の見出し語（発注日 等）は**正規形へ揃えてから**書きます
+// （D-3・`cms.CanonicalForIngest`）。図面番号や客先名は揃えません——
+// 機械が畳んで書き換えると、原本と見比べたときに食い違うためです。
 func writeHeaderPair(b *strings.Builder, name, value string) {
 	b.WriteString("<dt>" + html.EscapeString(name) + "</dt>")
 	if strings.TrimSpace(value) == "" {
 		b.WriteString("<dd><br/></dd>")
 	} else {
-		b.WriteString("<dd>" + html.EscapeString(value) + "</dd>")
+		b.WriteString("<dd>" + html.EscapeString(cms.CanonicalForIngest(name, value)) + "</dd>")
 	}
 }
 
