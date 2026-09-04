@@ -23,10 +23,13 @@
 package page
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -149,25 +152,71 @@ func AttachmentURLFor(pageID, fileName string) string {
 	return "/" + pageID + "/" + fileName
 }
 
-// GeneratedAttachmentID は添付の識別子を生成します（時刻ミリ秒の base36。
-// 「ファイル名も元のファイル名ではなく、生成したものを使いたい」
-// 「ファイル名とdata-id、IDを一致させるアイデアはどうですか？」——2026-08-31）。
+// GeneratedAttachmentID は添付の識別子を生成します。
 //
 // **この識別子は3役を兼ねます**: 保存名（<id>.<拡張子>）・配信URLの名前
-// （/<ページID>/<id>.<拡張子>）・本文のリンクブロックの data-id。同じ文字列に
-// なることで、参照 `ページID-ID` が**ブロックとしても添付としても同じものに届く**
-// （アーキテクチャとDBスキーマ.md §9.3）。文字種は data-id と同じ base36 小文字で、
-// 時刻由来なので一覧が時系列に並ぶ。元の名前はURLに出ず、リンクの表示文字として
-// 本文に残る。衝突したら1ミリ秒ずつ進めて逃がす。
+// （/<ページID>/<id>.<拡張子>）・本文のリンクブロックの data-id。
+// 「ファイル名も元のファイル名ではなく、生成したものを使いたい」
+// 「ファイル名とdata-id、IDを一致させるアイデアはどうですか？」（2026-08-31 ユーザー）。
+//
+// **形はブロックIDと同じ4桁の base36 です**（2026-09-04 変更。それまでは時刻ミリ秒の
+// base36 で8桁だった）。参照 `ページID-ID` が飛ぶ先は**常に本文のブロック**なので
+// （`#<data-id>` のアンカー。添付そのものを指す経路はどこにも無い）、
+// **添付だけ別の採番規則にしておく理由がありませんでした**——ユーザー:
+// 「添付IDに対してジャンプする先はブロックですから、添付IDでは無く、最初から
+// ブロックへジャンプしては？」「ファイル名とブロックのidを一緒にしては？」。
+// これで受信元タグも社内コードも同じ見た目（`010678-a7k2`）になります。
+//
+// **一意でなければならない範囲が2つある**ので、両方を避けます:
+//
+//   - `files/` の中（**拡張子を問わず**。`a7k2.pdf` と `a7k2.dxf` が同居すると
+//     本文に同じ data-id が2つ生まれる）
+//   - **本文の data-id**（ブロックの採番と同じ名前空間に入ったため）
+//
+// 尽きたときは時刻ミリ秒の長い形へ逃がします——**衝突させるより長いほうがまし**。
+// なお**既存の8桁の添付はそのまま**です。ファイル名はURLでもあるので、
+// 改名すると本文のリンクが全部切れます。
 func GeneratedAttachmentID(pageID, ext string) string {
-	dir := AttachmentDir(pageID)
-	ms := time.Now().UnixMilli()
-	for i := 0; i < 1000; i++ {
-		id := strconv.FormatInt(ms, 36)
-		if _, err := os.Stat(filepath.Join(dir, id+ext)); os.IsNotExist(err) {
-			return id
+	taken := takenAttachmentIDs(pageID)
+	const chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+	buf := make([]byte, 4)
+	for attempt := 0; attempt < 50; attempt++ {
+		if _, err := rand.Read(buf); err != nil {
+			break
 		}
-		ms++
+		id := make([]byte, 4)
+		for i, b := range buf {
+			id[i] = chars[int(b)%len(chars)]
+		}
+		if !taken[string(id)] {
+			return string(id)
+		}
 	}
-	return strconv.FormatInt(ms, 36)
+	return strconv.FormatInt(time.Now().UnixMilli(), 36)
 }
+
+// takenAttachmentIDs は、そのページで既に使われている識別子を集めます
+// （files/ の名前＝拡張子を落としたもの と、本文の data-id）。
+func takenAttachmentIDs(pageID string) map[string]bool {
+	taken := map[string]bool{}
+	if entries, err := os.ReadDir(AttachmentDir(pageID)); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			taken[strings.TrimSuffix(name, filepath.Ext(name))] = true
+		}
+	}
+	// 本文は読めなくても止めません——添付の採番は本文保存とは別の操作なので、
+	// ここで失敗させると「本文が壊れていると添付もできない」になります。
+	body, err := os.ReadFile(filepath.Join(GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		return taken
+	}
+	for _, m := range blockIDAttrRe.FindAllSubmatch(body, -1) {
+		taken[string(m[1])] = true
+	}
+	return taken
+}
+
+// blockIDAttrRe は本文の data-id を拾います（cms.NewBlockID と同じ形。
+// **同じ名前空間を2箇所で採番する**ので、拾い方も揃えておくこと）。
+var blockIDAttrRe = regexp.MustCompile(`data-id="([0-9a-z]+)"`)
