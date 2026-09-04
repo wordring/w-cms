@@ -24,6 +24,7 @@ package cms
 import (
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -343,22 +344,73 @@ func toHalfWidth(s string) string {
 // numberRe は正規化後に数値として受け付ける形です。
 var numberRe = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
 
-// normalizeNumber は通貨記号・桁区切り・単位（円）を取り除いた数値文字列を返します。
-func normalizeNumber(s string) (string, bool) {
-	s = strings.NewReplacer("¥", "", "￥", "", "$", "", ",", "", "，", "", " ", "", "　", "").Replace(s)
-	s = strings.TrimSuffix(s, "円")
-	if s == "" || !numberRe.MatchString(s) {
-		return "", false
-	}
-	return s, true
+// unitSuffixRe は「数値＋末尾の単位・助数詞」を切り分けます。
+//
+// **助数詞は列挙しません**——実データに `170球` が在り（[docs/【一覧】日付形式と数詞.md] §3.1）、
+// **運用者固有の助数詞は無限にある**と分かっているためです。数として読める頭が在れば、
+// 後ろに何が付いていても数として読みます。
+var unitSuffixRe = regexp.MustCompile(`^(-?[0-9]+(?:\.[0-9]+)?)([^0-9.]+)$`)
+
+// scaleSuffixes は**桁を変える**接尾辞です。ここだけは列挙が要ります——
+// `1.2万円` を 1.2 と読むと**1万分の1の見積**になり、黙って通ると害が大きい。
+var scaleSuffixes = []struct {
+	suffix string
+	scale  float64
+}{
+	{"万円", 10000}, {"千円", 1000}, {"万", 10000}, {"千", 1000},
 }
 
-// dateRe は年月日の区切りを許容する形です（YYYY-M-D / YYYY/M/D / YYYY年M月D日）。
-var dateRe = regexp.MustCompile(`^([0-9]{4})[-/年]([0-9]{1,2})[-/月]([0-9]{1,2})日?$`)
+// normalizeNumber は通貨記号・桁区切り・単位（円・助数詞）を取り除いた数値文字列を返します。
+func normalizeNumber(s string) (string, bool) {
+	s = strings.NewReplacer("¥", "", "￥", "", "$", "", ",", "", "，", "", " ", "", "　", "").Replace(s)
+	if s == "" {
+		return "", false
+	}
+	if numberRe.MatchString(s) {
+		return s, true
+	}
+	// 桁を変える接尾辞（万円・千円）は掛けてから返す。
+	for _, sc := range scaleSuffixes {
+		head, ok := strings.CutSuffix(s, sc.suffix)
+		if !ok || !numberRe.MatchString(head) {
+			continue
+		}
+		f, err := strconv.ParseFloat(head, 64)
+		if err != nil {
+			continue
+		}
+		return strconv.FormatFloat(f*sc.scale, 'f', -1, 64), true
+	}
+	// それ以外の単位・助数詞（円・個・本・枚・mm・rpm…）は落とすだけ。
+	if m := unitSuffixRe.FindStringSubmatch(s); m != nil {
+		return m[1], true
+	}
+	return "", false
+}
+
+// dateRe は年月日の区切りを許容する形です
+// （YYYY-M-D / YYYY/M/D / YYYY.M.D / YYYY年M月D日）。
+var dateRe = regexp.MustCompile(`^([0-9]{4})[-/.年]([0-9]{1,2})[-/.月]([0-9]{1,2})日?$`)
+
+// eraRe は和暦です（`令和8年6月15日`・`R8.6.15`・`令和元年…`）。
+// **役所と帳票にはいまも出ます**（[docs/【一覧】日付形式と数詞.md] §2）。
+var eraRe = regexp.MustCompile(`^(令和|平成|昭和|大正|明治|R|H|S|T|M)(元|[0-9]{1,2})[-/.年]([0-9]{1,2})[-/.月]([0-9]{1,2})日?$`)
+
+// eraBase は元号の「1年 = 西暦何年」の1つ前です（令和1年＝2019年）。
+var eraBase = map[string]int{
+	"令和": 2018, "R": 2018,
+	"平成": 1988, "H": 1988,
+	"昭和": 1925, "S": 1925,
+	"大正": 1911, "T": 1911,
+	"明治": 1867, "M": 1867,
+}
 
 // normalizeDate は日付表記を YYYY-MM-DD へ揃えます（実在しない日付は ok=false）。
 func normalizeDate(s string) (string, bool) {
 	m := dateRe.FindStringSubmatch(s)
+	if m == nil {
+		m = eraToWestern(s)
+	}
 	if m == nil {
 		return "", false
 	}
@@ -367,6 +419,27 @@ func normalizeDate(s string) (string, bool) {
 		return "", false
 	}
 	return norm, true
+}
+
+// eraToWestern は和暦を dateRe と同じ形（[全体, 年, 月, 日]）へ直します。
+func eraToWestern(s string) []string {
+	m := eraRe.FindStringSubmatch(s)
+	if m == nil {
+		return nil
+	}
+	base, ok := eraBase[m[1]]
+	if !ok {
+		return nil
+	}
+	year := 1
+	if m[2] != "元" {
+		n, err := strconv.Atoi(m[2])
+		if err != nil || n < 1 {
+			return nil
+		}
+		year = n
+	}
+	return []string{s, strconv.Itoa(base + year), m[3], m[4]}
 }
 
 func pad2(s string) string {

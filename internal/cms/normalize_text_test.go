@@ -73,3 +73,78 @@ func TestTextTagKeepsLongVowel(t *testing.T) {
 		t.Errorf("長音が壊れています: %q", norm)
 	}
 }
+
+// TestNormalizeDateWidened は、D-3 の一覧（【一覧】日付形式と数詞 §4）が挙げた
+// 「読めない形」のうち、和暦とドット区切りを埋めたことを固定します。
+func TestNormalizeDateWidened(t *testing.T) {
+	cases := map[string]string{
+		"2026.06.15": "2026-06-15",
+		"2026.6.15":  "2026-06-15",
+		"令和8年6月15日":  "2026-06-15",
+		"R8.6.15":    "2026-06-15",
+		"令和元年5月1日":   "2019-05-01",
+		"平成31年4月30日": "2019-04-30",
+	}
+	for raw, want := range cases {
+		got, ok := NormalizeValue(ColDate, raw)
+		if !ok || got != want {
+			t.Errorf("NormalizeValue(date, %q) = (%q, %v), want %q", raw, got, ok, want)
+		}
+	}
+	// 読めない形は ok=false のまま（生が残る）。
+	for _, raw := range []string{"9月末", "6/15", "2024-09", "来週"} {
+		if _, ok := NormalizeValue(ColDate, raw); ok {
+			t.Errorf("%q が読めてしまいます", raw)
+		}
+	}
+}
+
+// TestNormalizeNumberUnits は助数詞・単位の扱いを固定します。
+//
+// **助数詞は列挙しません**（`170球` のような運用者固有の語が実在する）。一方で
+// **桁を変える接尾辞（万円・千円）だけは列挙が要ります**——`1.2万円` を 1.2 と
+// 読むと1万分の1の見積になり、黙って通ると害が大きいためです。
+func TestNormalizeNumberUnits(t *testing.T) {
+	cases := map[string]string{
+		"5個":     "5",
+		"170球":   "170",
+		"12.5mm": "12.5",
+		"892rpm": "892",
+		"3500円":  "3500",
+		"1.2万円":  "12000",
+		"3千円":    "3000",
+		"¥8,000": "8000",
+	}
+	for raw, want := range cases {
+		got, ok := NormalizeValue(ColNumber, raw)
+		if !ok || got != want {
+			t.Errorf("NormalizeValue(number, %q) = (%q, %v), want %q", raw, got, ok, want)
+		}
+	}
+	// 頭が数でないものは読まない（`一式`・`約8000`）。
+	for _, raw := range []string{"一式", "約8000", "Φ410"} {
+		if _, ok := NormalizeValue(ColNumber, raw); ok {
+			t.Errorf("%q が読めてしまいます", raw)
+		}
+	}
+}
+
+// TestCanonicalForIngest は「機械が本文を書き起こすときは正規形で書く」（D-3）を
+// 固定します。**text / code は書かれたまま**——機械が畳んで書き換えると、
+// 原本と見比べたときに食い違います。
+func TestCanonicalForIngest(t *testing.T) {
+	cases := []struct{ field, raw, want string }{
+		{"発注日", "令和8年6月15日", "2026-06-15"},
+		{"発注日", "2026/6/15", "2026-06-15"},
+		{"単価", "¥8,000", "8000"},
+		{"数量", "5個", "5"},
+		{"発注日", "9月末", "9月末"},                    // 読めなければ生のまま
+		{"図面番号", "p200_911_03a", "p200_911_03a"}, // code は畳まない
+		{"発注元", "レーザーマックス", "レーザーマックス"},          // text も畳まない
+	}
+	for _, c := range cases {
+		if got := CanonicalForIngest(c.field, c.raw); got != c.want {
+			t.Errorf("CanonicalForIngest(%q, %q) = %q, want %q", c.field, c.raw, got, c.want)
+		}
+	}
+}
