@@ -63,8 +63,13 @@ type Mailer interface {
 	// 画面が「返信」を出すかどうかの判断に使います。
 	Ready(user *auth.User) bool
 
-	// Send は user の名前で1通送ります。
-	Send(user *auth.User, msg OutgoingMail) error
+	// Send は user の名前で1通送り、**立てた Message-ID を返します**。
+	//
+	// Message-ID を返すのは飾りではありません——送信箱の記録に残しておくと、
+	// 相手からの返信が取り込まれたときに、その `In-Reply-To` がこれを指して
+	// **既存のスレッドの仕組みでそのまま繋がります**。返せない実装は空文字を
+	// 返してよい（記録が繋がらないだけで、送信そのものは成功）。
+	Send(user *auth.User, msg OutgoingMail) (messageID string, err error)
 }
 
 // ErrNoMailer はメールのプラグインが入っていない印です。
@@ -92,14 +97,24 @@ func CurrentMailer() (Mailer, bool) {
 	return mailer, mailer != nil
 }
 
-// SendMail は登録された実装へ送信を委ねます。実装が無ければ ErrNoMailer。
-func SendMail(user *auth.User, msg OutgoingMail) error {
+// SendMail は登録された実装へ送信を委ね、**立てた Message-ID を返します**。
+// 実装が無ければ ErrNoMailer、サインインしていなければ ErrMailNotSignedIn。
+//
+// **メールを送りたい側はここだけを見ます。** 送信の実装（ext/mailgraph）を
+// import しないので、`-tags minimal` で外しても使う側はビルドできます
+// ——それが「コアが口だけを持つ」ことの実利です。
+//
+// かつて `error` だけを返していたころ、`In-Reply-To` のために Message-ID が
+// 要ることが分かり、mailgraph が自前の口（SendAndReturnID）を作って**この関数を
+// 迂回していました**。抽象の形が用途に合っていなかっただけなので、形のほうを
+// 直しました（2026-09-05）。
+func SendMail(user *auth.User, msg OutgoingMail) (string, error) {
 	m, ok := CurrentMailer()
 	if !ok {
-		return ErrNoMailer
+		return "", ErrNoMailer
 	}
 	if !m.Ready(user) {
-		return ErrMailNotSignedIn
+		return "", ErrMailNotSignedIn
 	}
 	return m.Send(user, msg)
 }

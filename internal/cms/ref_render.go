@@ -182,13 +182,6 @@ var pageRefTags = map[string]bool{
 	ReplySourceTag: true, // 返信元——送信記録がどの受信記録への返信かを指す
 }
 
-// RegisterPageRefTag は「値がページ全体を指す」タグを足します（拡張の init から）。
-func RegisterPageRefTag(name string) {
-	if name != "" {
-		pageRefTags[name] = true
-	}
-}
-
 // pageIDOnlyRe はページIDだけの参照値です（宣言されたタグでのみ使います）。
 var pageIDOnlyRe = regexp.MustCompile(`^([0-9]{6})$`)
 

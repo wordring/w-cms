@@ -113,12 +113,12 @@ func (f fileIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) 
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	writeTag(&b, ChannelTag, f.channel) // 空なら書かれない
+	WriteTag(&b, ChannelTag, f.channel) // 空なら書かれない
 	// **取り込み日時であって受信日時ではない**——PDF は受け取った時刻を持たない。
 	// 名前を正確にしておけば、あとで `受信日時` を足したときに矛盾しない。
-	writeTag(&b, "取り込み日時", time.Now().In(time.Local).Format(time.RFC3339))
+	WriteTag(&b, "取り込み日時", time.Now().In(time.Local).Format(time.RFC3339))
 	sum := sha256.Sum256(content)
-	writeTag(&b, ContentHashTag, hex.EncodeToString(sum[:]))
+	WriteTag(&b, ContentHashTag, hex.EncodeToString(sum[:]))
 	b.WriteString("</dl>")
 	// 📎 の形にするのは意味がある——閲覧モードのクロームが「▶ 表示」と
 	// 「🤖 解析」を付ける。**PDFが発注書とは限らない**（図面・見積書・納品書・

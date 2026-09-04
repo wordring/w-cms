@@ -60,20 +60,16 @@ func (graphMailer) Ready(user *auth.User) bool {
 	return SignedInAddress(user.Username) != ""
 }
 
-// Send は user の名前で1通送ります。
+// Send は user の名前で1通送り、立てた Message-ID を返します（cms.Mailer の実装）。
 //
 // **投函は SMTP（OAuth2）です**——Graph の sendMail では `In-Reply-To` を立てられず、
 // 添付も3MiBまでだったため（smtp.go 冒頭に経緯）。認証は同じトークンを使います。
-func (graphMailer) Send(user *auth.User, msg cms.OutgoingMail) error {
-	_, err := SendAndReturnID(user, msg)
-	return err
-}
-
-// SendAndReturnID は送信して、立てた Message-ID を返します。
 //
-// 送信箱の記録に Message-ID を残しておくと、**相手からの返信が取り込まれたときに
-// 既存のスレッドの仕組みでそのまま繋がります**（返信の In-Reply-To がこれを指す）。
-func SendAndReturnID(user *auth.User, msg cms.OutgoingMail) (string, error) {
+// Message-ID を返すのは、送信箱の記録に残しておくと**相手からの返信が取り込まれた
+// ときに既存のスレッドの仕組みでそのまま繋がる**ため（返信の In-Reply-To がこれを指す）。
+// かつては SendAndReturnID という別口を並べていたが、コアの Mailer が Message-ID を
+// 返す形になった（2026-09-05）ので1本に畳んだ。
+func (graphMailer) Send(user *auth.User, msg cms.OutgoingMail) (string, error) {
 	if user == nil {
 		return "", cms.ErrMailNotSignedIn
 	}

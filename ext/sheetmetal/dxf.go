@@ -238,6 +238,3 @@ var labelSet = func() map[string]bool {
 	}
 	return m
 }()
-
-// KnownTitleBlockLabels は辞書に載っているラベルを返します（調査・テスト用）。
-func KnownTitleBlockLabels() []string { return append([]string(nil), titleBlockLabels...) }
