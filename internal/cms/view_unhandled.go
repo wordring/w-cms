@@ -224,8 +224,14 @@ func newRecordChromeHTML() string {
 	// 電話と、かけた電話は別の出来事。メモには向きが無いので、画面側で伏せます。
 	sb.WriteString(`<select id="w-memo-direction" title="受けたのか、出したのか">`)
 	for _, d := range MemoDirections() {
+		// **選択肢では矢印を使いません。** 一覧の記号は「メールの絵＋矢印」で
+		// 向きを読ませますが、狭い選択肢に矢印だけを置くとどちら向きか迷います。
+		hint := "届いた"
+		if d == DirectionOut {
+			hint = "出した"
+		}
 		sb.WriteString(`<option value="` + stdhtml.EscapeString(d) + `">` +
-			directionIcon(d) + ` ` + stdhtml.EscapeString(d) + `</option>`)
+			stdhtml.EscapeString(d) + `（` + hint + `）</option>`)
 	}
 	sb.WriteString(`</select>`)
 	sb.WriteString(`<input type="text" id="w-memo-title" placeholder="用件（省略可）" maxlength="120">`)
@@ -234,15 +240,26 @@ func newRecordChromeHTML() string {
 	return sb.String()
 }
 
-// directionIcon は向きを矢印で表します（受けた／出したが一目で分かる）。
-func directionIcon(direction string) string {
+// channelWithDirection はチャネルの記号に向きの矢印を添えます。
+//
+// **矢印の向きではなく、置く側で読ませます**（2026-09-05 ユーザー:「通信箱の受信
+// アイコンですが、送信しているように見えます。メールアイコンの右側に右矢印を付けては
+// どうでしょうか。送信アイコンはメールアイコンの左側に左矢印です」）:
+//
+//	受信 …… ✉→   届いて、こちらへ来る
+//	送信 …… ←✉   こちらから出ていく
+//
+// 矢印だけを左に置いていたころは、**受信が送信に見えていました**——記号は「どちらを
+// 向いているか」より「**どちらへ動いているか**」で読まれます。
+func channelWithDirection(channel, direction string) string {
+	icon := channelIcon(channel)
 	switch direction {
 	case DirectionIn:
-		return "←"
+		return icon + "→"
 	case DirectionOut:
-		return "→"
+		return "←" + icon
 	}
-	return ""
+	return icon
 }
 
 // channelIcon はチャネルを1文字の記号にします（列を細くするため）。
@@ -328,7 +345,7 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 		sb.WriteString(`<td class="vocab-chrome unhandled-pick">` +
 			`<input type="checkbox" class="unhandled-check" data-page-id="` + id + `"></td>`)
 		sb.WriteString(`<td class="unhandled-channel">` +
-			directionIcon(r.Direction) + channelIcon(r.Channel) + `</td>`)
+			channelWithDirection(r.Channel, r.Direction) + `</td>`)
 		sb.WriteString(`<td class="unhandled-when">` +
 			stdhtml.EscapeString(shortTime(r.Received)) + `</td>`)
 		sb.WriteString(`<td class="unhandled-from">` + stdhtml.EscapeString(r.From) + `</td>`)
