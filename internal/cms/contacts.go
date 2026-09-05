@@ -326,10 +326,10 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		sb.WriteString(`<td class="unhandled-clip">` + fmt.Sprint(c.Count) + `件</td>`)
 		sb.WriteString(`<td class="vocab-chrome unhandled-act">`)
 		for _, rel := range Relations() {
-			sb.WriteString(`<button type="button" class="unhandled-mark contact-register"` +
+			sb.WriteString(`<button type="button" class="chip-btn contact-register"` +
 				` data-relation="` + stdhtml.EscapeString(rel) + `"` +
 				` data-addresses="` + stdhtml.EscapeString(strings.Join(c.Addresses, ",")) + `"` +
-				` title="この相手をトップ直下のページにします（取引：` +
+				` title="この相手を「` + PartnerBoxTitle + `」の下のページにします（取引：` +
 				stdhtml.EscapeString(rel) + `）">` + stdhtml.EscapeString(rel) + `</button>`)
 		}
 		sb.WriteString(`</td></tr>`)

@@ -1716,7 +1716,7 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
 #w-editor-content .unhandled-from    { color: var(--text-muted); max-width: 12em; }
 #w-editor-content .unhandled-subject { overflow-wrap: anywhere; }
 #w-editor-content .unhandled-clip    { color: var(--text-muted); }
-#w-editor-content .unhandled-mark {
+#w-editor-content .chip-btn {
     padding: 1px 10px;
     font-size: 12px;
     color: var(--text-muted);
@@ -1725,9 +1725,9 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border-radius: 10px;
     cursor: pointer;
 }
-#w-editor-content .unhandled-mark:hover:not(:disabled) { background: var(--border); }
-#w-editor-content .unhandled-mark:disabled { opacity: .4; cursor: default; }
-#w-editor-content .unhandled-mark + .unhandled-mark { margin-left: 4px; }
+#w-editor-content .chip-btn:hover:not(:disabled) { background: var(--border); }
+#w-editor-content .chip-btn:disabled { opacity: .4; cursor: default; }
+#w-editor-content .chip-btn + .chip-btn { margin-left: 4px; }
 #w-editor-content .unhandled-bulk { margin: 8px 0 0; }
 #w-editor-content #w-unhandled-bulk-done,
 #w-editor-content #w-unhandled-bulk-skip {
