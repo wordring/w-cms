@@ -131,9 +131,9 @@ go mod tidy
 ```bash
 # ローカル検証（HTTP）では Secure Cookie を無効化する
 WCMS_ADMIN_USER=admin WCMS_ADMIN_PASSWORD='強いパスワード' WCMS_SECURE_COOKIES=0 \
-  go run cmd/w-cms/main.go
+  go run ./cmd/w-cms
 ```
-2回目以降は環境変数なしで `go run cmd/w-cms/main.go` で起動できます（管理者は `data/auth.db` に保存済み）。
+2回目以降は環境変数なしで `go run ./cmd/w-cms` で起動できます（管理者は `data/auth.db` に保存済み）。
 
 起動すると `http://localhost:8080` で立ち上がります。ブラウザでアクセスするとログイン画面（`/login`）にリダイレクトされるので、上で設定した管理者でログインしてください。
 
