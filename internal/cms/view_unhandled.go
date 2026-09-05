@@ -356,10 +356,10 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 		}
 		sb.WriteString(`<td class="unhandled-clip">` + clip + `</td>`)
 		sb.WriteString(`<td class="vocab-chrome unhandled-act">` +
-			`<button type="button" class="unhandled-mark" data-page-id="` + id +
+			`<button type="button" class="chip-btn unhandled-mark" data-page-id="` + id +
 			`" data-value="` + HandledDone +
 			`" title="次の作業へ割り振ったので済み。責任はそちらへ移ります">済</button>` +
-			`<button type="button" class="unhandled-mark unhandled-skip" data-page-id="` + id +
+			`<button type="button" class="chip-btn unhandled-mark unhandled-skip" data-page-id="` + id +
 			`" data-value="` + HandledNotNeeded +
 			`" title="何も生まれない記録（案内・お礼など）。ここで終わりです">不要</button></td>`)
 		sb.WriteString(`</tr>`)

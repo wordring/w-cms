@@ -3700,6 +3700,10 @@
     // （何も生まれない）。**行を消すのは見た目だけ**で、正本は本文のタグです。
     // 次にページを開けばサーバーが描き直すので、ここでの見せ方がずれても壊れません。
     async function markHandled(pageIds, btn, value) {
+        // **空のIDは送りません。** 配列に undefined が混じると、サーバーは
+        // 「権限がありません」と数えるしかなく、押した人には理由が分かりません
+        // （実際にボタンのクラス取り違えでこれが出ました・2026-09-05）。
+        pageIds = (pageIds || []).filter(id => id);
         if (!pageIds.length) return;
         btn.disabled = true;
         try {
