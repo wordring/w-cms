@@ -1,7 +1,7 @@
-package mailgraph
+package mail
 
 // ─────────────────────────────────────────────────────────────────────────
-// メールを受信箱へ取り込む（2026-09-03）
+// メールを通信箱へ取り込む（2026-09-03）
 //
 // 取ってきた生のMIMEを**既存の取り込み係へそのまま渡します**（cms.IntakeFile）。
 // 人が `.eml` をドロップしたときと同じ道なので、封筒タグ・スレッドの繋ぎ・
@@ -47,11 +47,11 @@ const importMax = 50
 // これで10年分を一度に見渡せます。
 const listAllMax = 5000
 
-// ImportMessages は未取り込みのメールを受信箱へ取り込みます。
+// ImportMessages は未取り込みのメールを通信箱へ取り込みます。
 func ImportMessages(ctx context.Context, username string, opt ListOptions) (ImportSummary, error) {
 	var sum ImportSummary
 
-	inboxID, ok := cms.InboxPageID()
+	inboxID, ok := cms.MailBoxPageID()
 	if !ok {
 		return sum, errNoInbox
 	}
@@ -65,7 +65,16 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 	}
 	listOpt := opt
 	listOpt.Max = listAllMax
-	refs, err := ListMessages(ctx, username, listOpt)
+
+	// **接続は1本で通します。** IMAP は状態を持つ（認証・開いた箱）ので、
+	// 1通ごとに繋ぎ直すのは無駄です。
+	sess, err := openIMAP(ctx, username)
+	if err != nil {
+		return sum, err
+	}
+	defer sess.Close()
+
+	refs, err := sess.list(listOpt)
 	if err != nil {
 		return sum, err
 	}
@@ -82,13 +91,13 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 			return sum, err
 		}
 		// **落とす前に重複を確かめる**（本体は数百KBある）。
-		if id := strings.TrimSpace(r.InternetMessageID); id != "" {
+		if id := strings.TrimSpace(r.MessageID); id != "" {
 			if _, dup := cms.ExistingIntakePage(cms.MessageIDTag, id); dup {
 				sum.Duplicate++
 				continue
 			}
 		}
-		raw, err := FetchRawMIME(ctx, username, r.ID)
+		raw, err := sess.fetchRaw(r.UID)
 		if err != nil {
 			log.Printf("メールを取得できませんでした subject=%q: %v", r.Subject, err)
 			sum.Failed++
@@ -116,13 +125,13 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 	return sum, nil
 }
 
-// errNoInbox は受信箱ページが無い印です（トップ直下に「受信箱」という名前のページ）。
+// errNoInbox は通信箱ページが無い印です（トップ直下に「通信箱」という名前のページ）。
 var errNoInbox = errNoInboxErr{}
 
 type errNoInboxErr struct{}
 
 func (errNoInboxErr) Error() string {
-	return "受信箱ページがありません（トップ直下に「受信箱」という名前のページを作ってください）"
+	return "通信箱ページがありません（トップ直下に「" + cms.MailBoxTitle + "」という名前のページを作ってください）"
 }
 
 // MailImportAPIHandler は POST /api/mail/import です。
@@ -143,7 +152,7 @@ func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Max    int    `json:"max"`
 		Since  string `json:"since"`
 	}
-	// 本体が空でも既定で動きます（受信箱・50件）。
+	// 本体が空でも既定で動きます（50件）。
 	json.NewDecoder(r.Body).Decode(&req)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)

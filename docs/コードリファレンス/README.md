@@ -6,7 +6,7 @@
 「いま何がどうなっているか」だけを扱います。
 
 この版は **`ext/` の登場（2026-09-03）と、その上に乗ったもの**——メール送受信
-（`ext/mailgraph`。受信は Graph・送信は SMTP＋OAuth2）・板金部の既定セット
+（`ext/mail`。受信は IMAP・送信は SMTP、どちらも OAuth2）・板金部の既定セット
 （`ext/sheetmetal`。解析／整理／DXF突き合わせ／構成部品）・並び順とドラッグ・
 未処理の受信・返信の逆引き・**参照追従集計**（2026-09-04）・列型 `code` と
 取り込み時の正規化——を反映して**実際のコードから測り直した**ものです。
@@ -25,9 +25,9 @@ go doc ./internal/database         # cms.db（派生）と auth.db（正本）
 
 go doc ./internal/cms Observer       # 型・関数を1つだけ
 go doc ./internal/cms IntakeHandler  # 取り込み係の受け口
-go doc ./internal/cms Mailer         # メールの口（実装は ext/mailgraph）
+go doc ./internal/cms Mailer         # メールの口（実装は ext/mail）
 go doc ./ext/sheetmetal              # 板金部の既定セット
-go doc ./ext/mailgraph               # メール送受信
+go doc ./ext/mail                    # メール送受信（IMAP／SMTP）
 go doc -all ./internal/cms/page      # そのパッケージの全公開APIをコメントごと
 go doc -src ./internal/cms Sanitize  # 実装も見る
 ```

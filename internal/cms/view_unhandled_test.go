@@ -29,6 +29,7 @@ func putIntakeRecord(t *testing.T, id, parent, subject, received string, extraTa
 	}
 	body := "<h1>" + subject + "</h1>" +
 		`<dl data-type="tags">` +
+		"<dt>" + DirectionTag + "</dt><dd>" + DirectionIn + "</dd>" +
 		"<dt>" + ChannelTag + "</dt><dd>メール</dd>" +
 		"<dt>受信日時</dt><dd>" + received + "</dd>" +
 		"<dt>差出人</dt><dd>潮崎 光俊</dd>" +
@@ -130,7 +131,7 @@ func TestUnhandledExcludesOutsideInbox(t *testing.T) {
 
 // setupIntakeTest は一時ディレクトリ＋インメモリDBに、トップページと受信箱を
 // 用意します。受信箱は**トップ直下で題が「受信箱」**というだけで決まります
-// （InboxPageID——名前が機能、という仕様）。
+// （MailBoxPageID——名前が機能、という仕様）。
 func setupIntakeTest(t *testing.T) {
 	t.Helper()
 
@@ -157,7 +158,7 @@ func setupIntakeTest(t *testing.T) {
 	}
 	for _, p := range []struct{ id, parent, title string }{
 		{"000000", "", "トップ"},
-		{"000100", "000000", InboxTitle},
+		{"000100", "000000", MailBoxTitle},
 	} {
 		if err := page.WriteSidecar(p.id, page.PageMeta{
 			Owner: "alice", Mode: "330", ParentID: p.parent,

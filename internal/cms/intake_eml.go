@@ -32,6 +32,7 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -153,7 +154,9 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	// どの経路で届いたか——メール・FAX・電話を横断して引くための軸（§6）。
+	// **向きとチャネルは直交する2軸**（2026-09-05）。向き＝受信／送信、
+	// チャネル＝メール／FAX／電話。「送信 × FAX」が実際に要るので混ぜません。
+	WriteTag(&b, DirectionTag, DirectionIn)
 	WriteTag(&b, ChannelTag, "メール")
 	writeAddressTags(&b, "差出人", msg.Header.Get("From"))
 	writeAddressTags(&b, "宛先", msg.Header.Get("To"))
@@ -168,6 +171,11 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// スレッドの親（In-Reply-To）。値は親メールの Message-ID なので、
 	// PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
 	WriteTag(&b, InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
+	// 添付の数。**一覧で「発注書が付いているか」を見るため**に索引へ載せます
+	// （2026-09-05）——本文を開かないと分からない値だと、100件の一覧を出すたびに
+	// 100個の本文を読むことになります。**受信原本（.eml）は数えません**
+	// （必ず在るので、数えると全件が 1 から始まって手掛かりになりません）。
+	WriteTag(&b, AttachmentCountTag, countAttachments(parts))
 	b.WriteString("</dl>")
 
 	bodyWritten := false
@@ -242,7 +250,7 @@ var addressParser = mail.AddressParser{WordDecoder: &wordDecoder}
 //
 // 宛先が複数あれば**対を繰り返します**（多値は対の繰り返し・[【一覧】語彙.md] §4）。
 // 解析できないヘッダは原文のまま1つのタグに落とします——**記録を落とすより、
-// 検索しにくい形でも残すほうがよい**（受信箱は不変アーカイブ）。
+// 検索しにくい形でも残すほうがよい**（通信箱は不変アーカイブ）。
 func writeAddressTags(b *strings.Builder, name, raw string) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -258,13 +266,29 @@ func writeAddressTags(b *strings.Builder, name, raw string) {
 	}
 }
 
+// countAttachments は添付（本文でない部品）の数を文字列で返します。
+// **0 なら空を返します**——WriteTag が空を書かないので、添付の無い記録には
+// タグが付きません（「分かることだけ書く」の流儀）。
+func countAttachments(parts []emlPart) string {
+	n := 0
+	for _, p := range parts {
+		if p.fileName != "" {
+			n++
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
 // WriteTag は「名前：値」のタグを1対書きます（値が空なら書かない）。
 //
 // **値は前後の空白を落としてから書きます。** 取り込んだメールのヘッダには
 // 余分な空白が普通に混ざっており、そのまま入れると索引の値が空白付きになって
 // 逆引き（PagesByTag は生テキストで引く）が外れます。
 //
-// かつては取り込み係と mailgraph が同名の関数を別々に持ち、**trim の有無だけが
+// かつては取り込み係とメール拡張が同名の関数を別々に持ち、**trim の有無だけが
 // 違って**いました——どちらの経路で作られたページかで値が変わる、という形の
 // 静かな食い違いだったので、コアの1つに寄せました（2026-09-05）。
 func WriteTag(b *strings.Builder, name, value string) {

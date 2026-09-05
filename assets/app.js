@@ -1222,6 +1222,7 @@
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
         refreshFilingButton();       // 部品ページの整理（閲覧モード限定）
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
+        wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
@@ -3383,6 +3384,78 @@
         }
         run.disabled = false;
         run.textContent = '実行';
+    }
+
+    // ── 未処理の一覧の操作（2026-09-05）────────────────────────────────
+    //
+    // サーバーが描いた表（view_unhandled.go）に、click を配線するだけの役です。
+    // **CSP strict なのでインラインの `onclick` は書けません**——サーバーが出せるのは
+    // 印（`.vocab-chrome` と `data-page-id`）までで、動きはここが与えます。
+    //
+    // ボタンは**閲覧モードだけ**に出します。編集モードで本文をいじっている最中に
+    // 行が消えると、何が起きたのか分かりません。
+    function wireUnhandledActions() {
+        const host = document.getElementById('w-editor-content');
+        if (!host) return;
+        const editMode = document.body.hasAttribute('edit-mode');
+        host.querySelectorAll('.unhandled-skip').forEach(btn => {
+            btn.disabled = editMode;
+            if (btn.dataset.wired) return;
+            btn.dataset.wired = '1';
+            btn.addEventListener('click', () => markHandled([btn.dataset.pageId], btn));
+        });
+        const bulk = host.querySelector('#w-unhandled-bulk');
+        if (bulk) {
+            bulk.disabled = editMode;
+            if (!bulk.dataset.wired) {
+                bulk.dataset.wired = '1';
+                bulk.addEventListener('click', () => {
+                    const picked = Array.from(
+                        host.querySelectorAll('.unhandled-check:checked')
+                    ).map(c => c.dataset.pageId);
+                    if (!picked.length) {
+                        notify('片付けるものを選んでください', { type: 'warn' });
+                        return;
+                    }
+                    markHandled(picked, bulk);
+                });
+            }
+        }
+    }
+
+    // markHandled は「対応：不要」を付け、片付いた行をその場で消します。
+    //
+    // **行を消すのは見た目だけ**で、正本は本文のタグです。次にページを開けば
+    // サーバーが描き直すので、ここでの見せ方がずれても壊れません。
+    async function markHandled(pageIds, btn) {
+        if (!pageIds.length) return;
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/intake/handled', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_ids: pageIds }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                notify(data.message || '片付けられませんでした', { type: 'warn' });
+                return;
+            }
+            const host = document.getElementById('w-editor-content');
+            pageIds.forEach(id => {
+                const row = host && host.querySelector('tr[data-page-id="' + id + '"]');
+                if (row) row.remove();
+            });
+            if (data.failed) {
+                notify(data.handled + '件を片付けました（' + data.failed + '件は権限がありません）', { type: 'warn' });
+            } else {
+                notify(data.handled + '件を片付けました', { type: 'success', duration: 4000 });
+            }
+        } catch (e) {
+            notify('片付けられませんでした: ' + e.message, { type: 'warn' });
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     // makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付・ZIP内PDFで共用）。

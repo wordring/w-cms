@@ -1,22 +1,22 @@
-package mailgraph
+package mail
 
 // ─────────────────────────────────────────────────────────────────────────
 // SMTP でメールを送る（OAuth2・2026-09-03）
 //
-// **送信だけ SMTP、受信は Graph** です。ユーザーの選択（2026-09-03）で、理由は2つ:
+// **受信の IMAP と対**です（imap.go）。どちらも古くからある平のプロトコルなので、
+// メールサーバーがレンタルへ移っても骨格は変わりません——差し替わるのは接続先と
+// 認証方式だけです。
 //
-//   - **`In-Reply-To` を立てられる**。Graph の `sendMail` は独自ヘッダ（`x-` 始まり）
-//     しか受け付けず、実物で確かめると `InvalidInternetMessageHeader` で 400 になります。
-//     返信が相手のメールソフトで元のスレッドに並ぶには、このヘッダが要ります。
-//   - **添付の上限が大きい**。Graph の簡易送信は3MiB、SMTP なら M365 で約35MB。
-//     図面PDFを何枚か添えると3MiBは簡単に超えます。
+// **`In-Reply-To` を立てられること**が SMTP を選んだ理由です。返信が相手のメール
+// ソフトで元のスレッドに並ぶには、このヘッダが要ります。添付の上限も大きく、
+// M365 で約35MB——図面PDFを何枚か添えると数MiBは簡単に超えます。
 //
 // **引き換えに失うもの**: Exchange Online は**SMTPで投函されたメールを
 // 「送信済みアイテム」へ保存しません**。Outlook から見ると送った形跡が残らないので、
 // **控えは w-cms の送信箱が担います**（それを承知でこちらを選んだ・reply.go）。
 //
-// 認証は XOAUTH2——**パスワードは使いません**。Graph と同じデバイスコードで得た
-// トークンをそのまま使います（要求する権限に `SMTP.Send` が要る）。
+// 認証は XOAUTH2——**パスワードは使いません**（移設までは。移設後はパスワードに
+// なります）。受信と同じトークンをそのまま使います。
 //
 // MIME は自分で組みます（`mime/multipart`・`mime`・`net/smtp` はすべて標準ライブラリ）。
 // 件名は RFC 2047 の符号化語、本文は UTF-8 の base64——和文をそのまま置くと
@@ -36,20 +36,40 @@ import (
 	"net"
 	"net/smtp"
 	"net/textproto"
+	"os"
 	"strings"
 	"time"
 
 	"w-cms/internal/cms"
 )
 
-// smtpHost は Exchange Online の投函口です。
+// 投函先は Exchange Online が既定です。
+//
+// **接続先は差し替えられます**（imap.go の「継ぎ目」と対）。メールサーバーは
+// レンタルへ移ることが決まっているので、既定は M365、環境変数で上書きします。
 const (
-	smtpHost = "smtp.office365.com"
-	smtpPort = "587"
+	envSMTPHost     = "WCMS_MAIL_SMTP_HOST"
+	defaultSMTPHost = "smtp.office365.com"
+	defaultSMTPPort = "587"
 )
 
-// smtpScope は SMTP 投函のための権限です。**Graph ではなく Exchange Online の側**に
-// あるので、Entra のアクセス許可も「所属する組織で使用している API」から足します。
+// smtpAddr はいまの投函先を返します（`ホスト:ポート`）。
+func smtpAddr() (host, addr string) {
+	h := strings.TrimSpace(os.Getenv(envSMTPHost))
+	if h == "" {
+		return defaultSMTPHost, defaultSMTPHost + ":" + defaultSMTPPort
+	}
+	if strings.Contains(h, ":") {
+		name, _, err := net.SplitHostPort(h)
+		if err == nil {
+			return name, h
+		}
+	}
+	return h, h + ":" + defaultSMTPPort
+}
+
+// smtpScope は SMTP 投函のための権限です（Exchange Online 側。受信の IMAP と
+// **同じリソース**なので、トークンは1つで足ります・auth.go の mailScopes）。
 const smtpScope = "https://outlook.office.com/SMTP.Send"
 
 // xoauth2Auth は SMTP の XOAUTH2 認証です（net/smtp は PLAIN と CRAM-MD5 しか
@@ -84,7 +104,7 @@ func (a *xoauth2Auth) Next(fromServer []byte, more bool) ([]byte, error) {
 // 返信（`In-Reply-To` にこれが入る）が取り込まれたときに、既存のスレッドの仕組みで
 // そのまま繋がります。
 func sendViaSMTP(ctx context.Context, username string, msg cms.OutgoingMail) (string, error) {
-	token, err := smtpAccessToken(ctx, username)
+	token, err := mailAccessToken(ctx, username)
 	if err != nil {
 		return "", err
 	}
@@ -109,18 +129,19 @@ func sendViaSMTP(ctx context.Context, username string, msg cms.OutgoingMail) (st
 // smtpDeliver は投函の会話だけを持ちます（組み立てとは分けておく）。
 func smtpDeliver(ctx context.Context, from, token string, rcpt []string, body []byte) error {
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", smtpHost+":"+smtpPort)
+	serverName, addr := smtpAddr()
+	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return errors.New("SMTPへ接続できません: " + err.Error())
 	}
-	c, err := smtp.NewClient(conn, smtpHost)
+	c, err := smtp.NewClient(conn, serverName)
 	if err != nil {
 		conn.Close()
 		return errors.New("SMTPの開始に失敗しました: " + err.Error())
 	}
 	defer c.Close()
 
-	if err := c.StartTLS(&tls.Config{ServerName: smtpHost, MinVersion: tls.VersionTLS12}); err != nil {
+	if err := c.StartTLS(&tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS12}); err != nil {
 		return errors.New("SMTPのTLSに失敗しました: " + err.Error())
 	}
 	if err := c.Auth(&xoauth2Auth{user: from, token: token}); err != nil {
@@ -164,7 +185,7 @@ func buildMIME(from, messageID string, msg cms.OutgoingMail) ([]byte, error) {
 	head("Subject", mime.BEncoding.Encode("UTF-8", msg.Subject))
 	head("Date", time.Now().Format(time.RFC1123Z))
 	head("Message-ID", messageID)
-	// **ここが SMTP にした理由**——Graph では立てられなかったヘッダ。
+	// **ここが SMTP を選んだ理由**——返信が元のスレッドに並ぶ条件。
 	// References にも同じものを入れます（メールソフトはどちらも見ます）。
 	head("In-Reply-To", msg.InReplyTo)
 	head("References", msg.InReplyTo)

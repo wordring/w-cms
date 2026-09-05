@@ -171,6 +171,8 @@ func buildHandler() http.Handler {
 
 	protected.HandleFunc("/api/reorder", cms.ReorderAPIHandler)
 	protected.HandleFunc("/api/replies", cms.RepliesAPIHandler)
+	// 未処理の一覧から「対応：不要」を付ける（まとめて押せる）。
+	protected.HandleFunc("/api/intake/handled", cms.MarkHandledAPIHandler)
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 

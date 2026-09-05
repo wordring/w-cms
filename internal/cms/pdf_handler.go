@@ -99,11 +99,11 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
-	// **受信箱への到着は取り込み係へ回覧する**（汎用の口と同じ扱い・intake.go）。
+	// **通信箱への到着は取り込み係へ回覧する**（汎用の口と同じ扱い・intake.go）。
 	// FAXのスキャンPDFはここから入る——人がドロップしても、オンプレのFAXサーバの
 	// 橋渡しがPOSTしても、**同じ口・同じ取り込み係**を通る（§3.1）。
-	// 受信箱の本文は変わらない（子ページが生まれるだけ）ので編集ロックは要らない。
-	if inboxID, ok := InboxPageID(); ok && inboxID == pageID {
+	// 通信箱の本文は変わらない（子ページが生まれるだけ）ので編集ロックは要らない。
+	if inboxID, ok := MailBoxPageID(); ok && inboxID == pageID {
 		if served := serveIntake(w, r, inboxID, "pdf_file"); served {
 			return
 		}

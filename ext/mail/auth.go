@@ -1,4 +1,4 @@
-package mailgraph
+package mail
 
 // ─────────────────────────────────────────────────────────────────────────
 // Microsoft 365 への認証——デバイスコードフロー（2026-09-03）
@@ -12,11 +12,10 @@ package mailgraph
 // localhost → VPS → オンプレと引っ越しても Entra 側の設定を変えずに済みます。
 // クライアントシークレットも不要で、鍵の保管・更新という仕事が発生しません。
 //
-// **なぜ IMAP/SMTP ではなく Graph か**——実物の受信メールのヘッダから、御社の
-// メールボックスが Exchange Online にあると分かりました（2026-09-03 に確認）。
-// M365 は IMAP/SMTP の基本認証を廃止済みなので**どちらにせよ OAuth2 が要り**、
-// それなら Graph のほうが外部依存ゼロ（net/http と encoding/json だけ）で済みます。
-// 他社サーバー向けの IMAP 実装は、別のプラグインとして後から足せます。
+// **このファイルは M365 のあいだだけの持ち物です**（2026-09-05）。メールサーバーは
+// レンタルへ移ることが決まっており、移設後の認証はパスワード（TLS の上）になります。
+// 通信の骨格（IMAP／SMTP）はそのままで、差し替わるのは接続先とここだけです
+// （imap.go の「継ぎ目」）。
 //
 // **委任のみで動きます。** アプリに与えるのは「委任されたアクセス許可」だけなので、
 // w-cms が触れるのは**サインインした本人のメール**に限られます。アプリケーション
@@ -25,6 +24,7 @@ package mailgraph
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -43,26 +43,29 @@ const (
 	envTenantID = "WCMS_MAIL_TENANT_ID"
 )
 
-// graphScopes と smtpScopes——**混ぜて要求できません。**
+// mailScopes は受信（IMAP）と送信（SMTP）の権限です。
 //
-// Microsoft の v2 エンドポイントは**1回の要求につき1つのリソース**しかトークンを
-// 出しません。Graph（`graph.microsoft.com`）と Exchange（`outlook.office.com`）を
-// 1つの `scope` に並べると `AADSTS70011` で弾かれます。
-//
-// なので**サインインは Graph の権限で行い**（リフレッシュトークンはリソースに
-// 依らない）、SMTP のトークンはそのリフレッシュトークンから別途取り直します。
-// どちらの権限も Entra 側で同意済みである必要があります。
+// **1つにまとめられます。** Microsoft の v2 エンドポイントは1回の要求につき
+// 1つのリソースにしかトークンを出しませんが、IMAP も SMTP も**同じ Exchange Online**
+// （`outlook.office.com`）なので同じ札で足ります。**リソースが2つに割れていると
+// 混ぜられず**（`AADSTS70011`）、スコープごとにトークンを取り分ける必要が出ます
+// ——受信と送信が同じリソースなら、その面倒が最初から起きません。
 //
 // `offline_access` が無いと、一度サインインしてもアクセストークンの期限
 // （およそ1時間）で切れて毎回サインインし直しになります。
-var graphScopes = []string{
-	"https://graph.microsoft.com/Mail.Read",
-	"https://graph.microsoft.com/User.Read",
+//
+// `openid`/`profile`/`email` は**自分のメールアドレスを知るため**だけに要ります
+// （id_token の claim から読む・idTokenAddress）。IMAP も SMTP も「あなたは誰か」を
+// 教えてくれないのに、SMTP の差出人としてアドレスが要るためです。
+var mailScopes = []string{
+	imapScope,
+	smtpScope,
 	"offline_access",
+	"openid", "profile", "email",
 }
 
-// smtpScopes は投函だけの権限です（Exchange Online 側。smtp.go）。
-var smtpScopes = []string{smtpScope, "offline_access"}
+// imapScope は受信の権限です（Exchange Online 側。imap.go）。
+const imapScope = "https://outlook.office.com/IMAP.AccessAsUser.All"
 
 // ErrNotConfigured は環境変数が未設定の印です。
 var ErrNotConfigured = errors.New(
@@ -119,7 +122,7 @@ func StartDeviceCode(ctx context.Context) (*DeviceCode, error) {
 	}
 	form := url.Values{}
 	form.Set("client_id", clientID)
-	form.Set("scope", strings.Join(graphScopes, " "))
+	form.Set("scope", strings.Join(mailScopes, " "))
 
 	var d deviceCodeResponse
 	if err := postForm(ctx,
@@ -147,6 +150,7 @@ func StartDeviceCode(ctx context.Context) (*DeviceCode, error) {
 type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"` // 自分のアドレスはここから読む（idTokenAddress）
 	ExpiresIn    int    `json:"expires_in"`
 	Error        string `json:"error"`
 	ErrorDesc    string `json:"error_description"`
@@ -181,7 +185,7 @@ func PollForToken(ctx context.Context, username string, dc *DeviceCode) (string,
 		}
 		switch t.Error {
 		case "":
-			addr, err := meAddress(ctx, t.AccessToken)
+			addr, err := idTokenAddress(t.IDToken)
 			if err != nil {
 				return "", err
 			}
@@ -217,7 +221,7 @@ type cachedAccess struct {
 }
 
 func cacheAccess(username, token string, expiresIn int) {
-	cacheAccessKey(username+"|"+strings.Join(graphScopes, " "), token, expiresIn)
+	cacheAccessKey(username+"|"+strings.Join(mailScopes, " "), token, expiresIn)
 }
 
 // cacheAccessKey はスコープまで含めた鍵で保管します。
@@ -232,21 +236,16 @@ func cacheAccessKey(key, token string, expiresIn int) {
 	})
 }
 
-// accessToken は Graph 用のアクセストークンを返します。
-func accessToken(ctx context.Context, username string) (string, error) {
-	return accessTokenFor(ctx, username, graphScopes)
-}
-
-// smtpAccessToken は SMTP 投函用のアクセストークンを返します。
-func smtpAccessToken(ctx context.Context, username string) (string, error) {
-	return accessTokenFor(ctx, username, smtpScopes)
+// mailAccessToken は受信・送信の両方に使えるアクセストークンを返します。
+// **IMAP と SMTP は同じリソース**（Exchange Online）なので1つで足ります。
+func mailAccessToken(ctx context.Context, username string) (string, error) {
+	return accessTokenFor(ctx, username, mailScopes)
 }
 
 // accessTokenFor は指定した権限のアクセストークンを返します（必要なら更新します）。
 //
-// **保管はスコープごと**です——Graph 用のトークンで SMTP へは投函できません
-// （リソースが違う）。取り違えると「認証は通るのに送れない」という分かりにくい
-// 失敗になります。
+// **保管はスコープごと**です。いまは1組しか使いませんが、リソースをまたぐ札は
+// 共有できない（別リソースのトークンでは通らない）ので、鍵は残してあります。
 func accessTokenFor(ctx context.Context, username string, scopes []string) (string, error) {
 	key := username + "|" + strings.Join(scopes, " ")
 	if v, ok := accessCache.Load(key); ok {
@@ -275,13 +274,26 @@ func accessTokenFor(ctx context.Context, username string, scopes []string) (stri
 		return "", err
 	}
 	if t.Error != "" {
-		// **権限が足りないだけのときに保管を捨てない。** 捨ててしまうと、
-		// SMTP の同意漏れでサインインごと失われ、原因が見えなくなります。
-		if t.Error == "invalid_grant" {
-			deleteToken(username)
-			return "", errNotSignedIn
+		// **保管は自動で捨てません**（2026-09-05 に方針を変えました）。
+		//
+		// 以前は `invalid_grant` を「失効した」とみなして捨てていましたが、
+		// **同意が足りないときも `invalid_grant` で返ってきます**（`AADSTS65001`）。
+		// 受信を IMAP へ移して要求する権限が増えた日、既存のサインインが
+		// **その場で消えました**——原因も残らないので、何が起きたか分からなくなります。
+		//
+		// 捨てても得はありません。古いトークンは無害で、サインインし直せば
+		// 上書きされます。**理由をそのまま見せて、人に判断させる**ほうが安全です。
+		if strings.Contains(t.ErrorDesc, "AADSTS65001") {
+			return "", errors.New(
+				"この操作に必要な同意がありません。設定からサインインし直してください（" +
+					firstLine(t.ErrorDesc) + "）")
 		}
-		return "", errors.New("トークンを取得できません: " + t.ErrorDesc)
+		if t.Error == "invalid_grant" {
+			return "", errors.New(
+				"サインインが期限切れか取り消されています。サインインし直してください（" +
+					firstLine(t.ErrorDesc) + "）")
+		}
+		return "", errors.New("トークンを取得できません: " + firstLine(t.ErrorDesc))
 	}
 	// **リフレッシュトークンは共有**です（リソースに依らない）。新しいものが
 	// 返ってきたら差し替えます。
@@ -294,34 +306,57 @@ func accessTokenFor(ctx context.Context, username string, scopes []string) (stri
 	return t.AccessToken, nil
 }
 
+// firstLine は Microsoft の長い説明から先頭の1行だけを取ります
+// （相関IDやタイムスタンプまで画面へ出すと、肝心の理由が埋もれます）。
+func firstLine(s string) string {
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
+}
+
 // errNotSignedIn はこのパッケージの内部用です（コア側の ErrMailNotSignedIn へ翻訳）。
 var errNotSignedIn = errors.New("メールアカウントにサインインしていません")
 
-// meAddress はサインインした本人のメールアドレスを返します。
-func meAddress(ctx context.Context, accessToken string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName", nil)
+// idTokenAddress はサインインした本人のメールアドレスを id_token から読みます。
+//
+// **IMAP も SMTP も「あなたは誰か」を教えてくれません。** それでも SMTP の差出人と
+// XOAUTH2 の `user=` にアドレスが要るので、サインインの応答に付いてくる `id_token`
+// （OpenID Connect の身元トークン）の claim から採ります。
+//
+// **署名は検証しません。** Microsoft のトークン発行口から TLS の上で直接受け取った
+// ものを、そのまま表示と差出人に使うだけだからです——第三者から渡された JWT を
+// 信用するのとは話が違います。もし中身が嘘なら、そのアドレスでは投函が通りません
+// （SMTP 側が本人確認をします）。
+func idTokenAddress(idToken string) (string, error) {
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return "", errNoAddress
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", err
+		return "", errNoAddress
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
+	var c struct {
+		PreferredUsername string `json:"preferred_username"`
+		Email             string `json:"email"`
+		UPN               string `json:"upn"`
 	}
-	defer resp.Body.Close()
-	var me struct {
-		Mail string `json:"mail"`
-		UPN  string `json:"userPrincipalName"`
+	if err := json.Unmarshal(payload, &c); err != nil {
+		return "", errNoAddress
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
-		return "", err
+	for _, v := range []string{c.PreferredUsername, c.Email, c.UPN} {
+		if strings.Contains(v, "@") {
+			return v, nil
+		}
 	}
-	if me.Mail != "" {
-		return me.Mail, nil
-	}
-	return me.UPN, nil
+	return "", errNoAddress
 }
+
+// errNoAddress はアドレスが分からなかった印です。**黙って空で進めません**
+// ——差出人が空のまま送ろうとすると、原因の分からない投函失敗になります。
+var errNoAddress = errors.New(
+	"サインインした本人のメールアドレスが分かりませんでした（openid / email の同意が要ります）")
 
 // postForm はフォームを投げて JSON を読みます。
 func postForm(ctx context.Context, endpoint string, form url.Values, out any) error {

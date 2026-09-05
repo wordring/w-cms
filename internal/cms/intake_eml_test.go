@@ -27,14 +27,14 @@ import (
 func setupInbox(t *testing.T) string {
 	t.Helper()
 	if _, err := database.DB.Exec(
-		`INSERT INTO pages (id, title, parent_id, file_path) VALUES (90, ?, 0, '')`, InboxTitle); err != nil {
+		`INSERT INTO pages (id, title, parent_id, file_path) VALUES (90, ?, 0, '')`, MailBoxTitle); err != nil {
 		t.Fatalf("受信箱の作成エラー: %v", err)
 	}
 	if err := page.WriteSidecar("000090", page.PageMeta{Owner: "alice", Group: "team", Mode: "330", ParentID: "000000"}); err != nil {
 		t.Fatalf("サイドカー作成エラー: %v", err)
 	}
 	// 実運用と同じく索引まで通す（権限の読み口は派生＝page_perms。継承はそこから引く）。
-	if err := SyncIndex("000090", "<h1>"+InboxTitle+"</h1>"); err != nil {
+	if err := SyncIndex("000090", "<h1>"+MailBoxTitle+"</h1>"); err != nil {
 		t.Fatalf("受信箱の同期エラー: %v", err)
 	}
 	return "000090"
@@ -50,14 +50,14 @@ func iso2022jp(t *testing.T, s string) string {
 	return out
 }
 
-// TestInboxPageID は受信箱の解決（トップ直下・名前が正）を検証します。
-func TestInboxPageID(t *testing.T) {
+// TestMailBoxPageID は受信箱の解決（トップ直下・名前が正）を検証します。
+func TestMailBoxPageID(t *testing.T) {
 	setupSaveTest(t)
-	if _, ok := InboxPageID(); ok {
-		t.Fatal("受信箱が無いのに見つかりました")
+	if _, ok := MailBoxPageID(); ok {
+		t.Fatal("通信箱が無いのに見つかりました")
 	}
 	want := setupInbox(t)
-	got, ok := InboxPageID()
+	got, ok := MailBoxPageID()
 	if !ok || got != want {
 		t.Errorf("受信箱を解決できません: got %q ok=%v", got, ok)
 	}

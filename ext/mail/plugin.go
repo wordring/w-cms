@@ -1,7 +1,7 @@
-package mailgraph
+package mail
 
 // ─────────────────────────────────────────────────────────────────────────
-// メール送受信プラグイン（Microsoft Graph）の登録口
+// メール送受信プラグイン（IMAP／SMTP）の登録口
 //
 // コアが宣言した `cms.Mailer` の中身をここが持ちます（internal/cms/mail.go）。
 // 使う側はコアに尋ねるだけなので、**このパッケージを外してもビルドは通ります**
@@ -20,10 +20,10 @@ import (
 )
 
 func init() {
-	cms.RegisterMailer(graphMailer{})
+	cms.RegisterMailer(oauthMailer{})
 	cms.Register(mailPlugin{})
 	if Configured() {
-		log.Printf("メール送受信: 有効（Microsoft Graph）")
+		log.Printf("メール送受信: 有効（IMAP %s／SMTP %s）", imapHost(), func() string { _, a := smtpAddr(); return a }())
 	} else {
 		log.Printf("メール送受信: 設定待ち（%s と %s が未設定）", envClientID, envTenantID)
 	}
@@ -32,7 +32,7 @@ func init() {
 // mailPlugin はルートを提供するだけのプラグインです（専用テーブルは持ちません）。
 type mailPlugin struct{}
 
-func (mailPlugin) Name() string     { return "mailgraph" }
+func (mailPlugin) Name() string     { return "mail" }
 func (mailPlugin) Schema() []string { return nil }
 func (mailPlugin) Tables() []string { return nil }
 
@@ -47,13 +47,13 @@ func (mailPlugin) Routes() []cms.Route {
 	}
 }
 
-// graphMailer は cms.Mailer の実装です。
-type graphMailer struct{}
+// oauthMailer は cms.Mailer の実装です（IMAP／SMTP＋OAuth2）。
+type oauthMailer struct{}
 
-func (graphMailer) Name() string { return "Microsoft Graph" }
+func (oauthMailer) Name() string { return "IMAP／SMTP" }
 
 // Ready は、その利用者が送れる状態か（設定済み＋サインイン済み）を返します。
-func (graphMailer) Ready(user *auth.User) bool {
+func (oauthMailer) Ready(user *auth.User) bool {
 	if user == nil || !Configured() {
 		return false
 	}
@@ -62,14 +62,13 @@ func (graphMailer) Ready(user *auth.User) bool {
 
 // Send は user の名前で1通送り、立てた Message-ID を返します（cms.Mailer の実装）。
 //
-// **投函は SMTP（OAuth2）です**——Graph の sendMail では `In-Reply-To` を立てられず、
-// 添付も3MiBまでだったため（smtp.go 冒頭に経緯）。認証は同じトークンを使います。
+// **投函は SMTP（OAuth2）です**（smtp.go）。受信の IMAP と同じトークンを使います。
 //
 // Message-ID を返すのは、送信箱の記録に残しておくと**相手からの返信が取り込まれた
 // ときに既存のスレッドの仕組みでそのまま繋がる**ため（返信の In-Reply-To がこれを指す）。
 // かつては SendAndReturnID という別口を並べていたが、コアの Mailer が Message-ID を
 // 返す形になった（2026-09-05）ので1本に畳んだ。
-func (graphMailer) Send(user *auth.User, msg cms.OutgoingMail) (string, error) {
+func (oauthMailer) Send(user *auth.User, msg cms.OutgoingMail) (string, error) {
 	if user == nil {
 		return "", cms.ErrMailNotSignedIn
 	}

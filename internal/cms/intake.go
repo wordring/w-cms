@@ -5,19 +5,19 @@ package cms
 //
 // 既存の3段（観察係＝保存時・鏡型＝表示時・種まき＝新規作成時）に、
 // **ファイル到着時**の段を足します。コアが知っているのは
-// 「**受信箱にファイルが着いた**」という事実だけで、そのファイルが何を意味するか
+// 「**通信箱にファイルが着いた**」という事実だけで、そのファイルが何を意味するか
 // （メールなのか・発注書なのか）は取り込み係＝拡張の解釈です。
 //
 //	「発注書がやってきて物語が始まるのは当社の仕組みであって、汎用的なものでは
 //	 ありません。w-cmsは他社にも使っていただきたいので、できればプラグインなどを
 //	 使い、拡張として存在するものという立て付けにしたいです」（ユーザー・2026-09-01）
 //
-// 受信箱は**トップ直下の「受信箱」という名前のページ**です（テンプレート置き場と
+// 通信箱は**トップ直下の「通信箱」という名前のページ**です（テンプレート置き場と
 // 同じ「名前が機能を決める」型——表示されている言葉が機能を表す。改名すると
 // 機械が入れなくなるのも同じ受け入れ済みのリスク）。受信一覧は子ページ一覧の鏡が
 // そのまま担い、整理は親の付け替えで行う——参照はページIDなので移動しても切れない。
 //
-// IntakeContext は**最小権限**です: 受信箱の下へページを作る・そのページへ添付を
+// IntakeContext は**最小権限**です: 通信箱の下へページを作る・そのページへ添付を
 // 置く、の2つだけ。既存ページの改変・索引への直接書き込みは渡しません
 // （観察係に Replace が無いのと同じ、型で効く線）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -38,31 +38,29 @@ import (
 	"w-cms/internal/database"
 )
 
-// InboxTitle は受信箱ページの名前です。テンプレート置き場（TemplateRootTitle）と
+// MailBoxTitle は通信箱ページの名前です。テンプレート置き場（TemplateRootTitle）と
 // 同じく h1（ページ名）が正で、「設定で変えられるようにするか」も同じ未決を共有します
-// （作業引き継ぎの未決1番。settings.json へ2つまとめて、が自然）。
-const InboxTitle = "受信箱"
+// （作業引き継ぎの未決1番。settings.json へまとめて、が自然）。
+//
+// **受信箱と送信箱は 2026-09-05 に1つへ統合しました。** ユーザー:「受信と送信を
+// 一つのフォルダに収めるのはどう思いますか？　一つのフォルダに時系列に並んでいて…」。
+// 受信と送信は同じ案件のあいだを行き来するので、分けると**1件の経緯が2か所に散ります**。
+// 向きは置き場所ではなく **`向き` のタグ**（DirectionTag）が表します。
+const MailBoxTitle = "通信箱"
 
-// InboxPageID はトップ直下の受信箱ページを返します（無ければ ok=false）。
+// MailBoxPageID はトップ直下の通信箱ページを返します（無ければ ok=false）。
 // リクエスト時にしか呼ばれないためDBで足ります（テンプレートの isLeafPage と同じ理由）。
-func InboxPageID() (string, bool) {
-	var id int
-	err := database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = 0 AND title = ? LIMIT 1`, InboxTitle).Scan(&id)
-	if err != nil {
-		return "", false
-	}
-	norm, ok := page.NormalizeID(strconv.Itoa(id))
-	return norm, ok
+func MailBoxPageID() (string, bool) {
+	return topLevelPageByTitle(MailBoxTitle)
 }
 
-// IntakeHandler は取り込み係の受け口です。宣言した拡張子のファイルが受信箱へ
+// IntakeHandler は取り込み係の受け口です。宣言した拡張子のファイルが通信箱へ
 // 着いたときに呼ばれ、ページを作って返します。
 type IntakeHandler interface {
 	Name() string
 	Extensions() []string // 例: [".eml"]。小文字・ドットつき
 	// OnFile はファイル1つを解釈してページを作ります。作れないファイル
-	// （壊れている等）はエラーを返す——受信箱への素の添付にはしない
+	// （壊れている等）はエラーを返す——通信箱への素の添付にはしない
 	// （中途半端に取り込むより、入らなかった事実が見えるほうがよい）。
 	OnFile(ctx *IntakeContext, fileName string, content []byte) (pageID string, title string, err error)
 }
@@ -126,7 +124,7 @@ func RegisterIntake(h IntakeHandler, exts ...string) {
 
 // intakeFallback は拡張子の担当が居ないときの既定の担当です。
 //
-// 受信箱は「**何かが届いた**」という1つの事実を受ける場所なので、種類が何であれ
+// 通信箱は「**何かが届いた**」という1つの事実を受ける場所なので、種類が何であれ
 // 記録は残るべきです（2026-09-03 ユーザー:「その受け口ではメールや、PDF、DXFも
 // 受け付け」）。拡張子ごとの担当は「その形式を**解釈できる**者」で、
 // 既定の担当は「解釈しないが記録は残す」者。
@@ -150,7 +148,7 @@ func intakeHandlerFor(ext string) IntakeHandler {
 
 // IntakeContext は取り込み係に渡す最小権限の道具です。
 type IntakeContext struct {
-	InboxID  string // 受信箱のページID（作るページの親）
+	InboxID  string // 通信箱のページID（作るページの親）
 	Uploader string // 操作した人（新ページの所有者になる）
 
 	// created はこの取り込みで作ったページのID（作成順）。SaveAttachment と
@@ -169,8 +167,8 @@ func (c *IntakeContext) isCreated(pageID string) bool {
 	return false
 }
 
-// CreatePage は受信箱の下へページを作ります。本文は保存経路と同じくサニタイズされ、
-// 権限は受信箱から継承します（子ページ作成と同じ規則——受信箱の権限設定が
+// CreatePage は通信箱の下へページを作ります。本文は保存経路と同じくサニタイズされ、
+// 権限は通信箱から継承します（子ページ作成と同じ規則——通信箱の権限設定が
 // 「受信物を誰が読めるか」をそのまま決める）。
 func (c *IntakeContext) CreatePage(bodyHTML string) (string, error) {
 	return c.createUnder(c.InboxID, bodyHTML)
@@ -261,10 +259,10 @@ type IntakeResult struct {
 	Duplicate bool // 既に取り込み済みだった
 }
 
-// IntakeFile は受信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
+// IntakeFile は通信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
 //
-// HTTPの口（serveIntake）と、メールの取り込み（ext/mailgraph）が共有します
-// ——メールをGraphから取ってきたときも、人が .eml をドロップしたときと**同じ道**を
+// HTTPの口（serveIntake）と、メールの取り込み（ext/mail）が共有します
+// ——メールをIMAPで取ってきたときも、人が .eml をドロップしたときと**同じ道**を
 // 通す必要があるからです。封筒タグ・スレッドの繋ぎ・添付の展開・重複検知は
 // すべて取り込み係が持っているので、経路ごとに書き直すと必ず片方が古くなります。
 //
@@ -292,20 +290,20 @@ func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResul
 	return IntakeResult{PageID: pageID, Title: title}, true, nil
 }
 
-// CreateDatedPage は受信箱の下の「年フォルダ／月フォルダ」へページを作ります。
+// CreateDatedPage は通信箱の下の「年フォルダ／月フォルダ」へページを作ります。
 //
 // ユーザー:「メールは年フォルダと月フォルダで分類してはどうでしょうか」（2026-09-03）。
-// 実測で年435通あり、過去分を入れると受信箱直下が数千枚になります——**受信箱が
+// 実測で年435通あり、過去分を入れると通信箱直下が数千枚になります——**通信箱が
 // 「まだ分からないものの置き場」として機能しなくなる**ので、届いた時期で分けます。
 //
-//	受信箱
+//	通信箱
 //	└ 2026年
 //	  └ 09月
 //	    └ お見積り依頼
 //
 // **時刻は「届いた時刻」を渡すこと**（取り込んだ時刻ではない）。2024年のメールを
 // 今日取り込んでも2024年に入る必要があります。ゼロがゼロでない時刻を渡すのは
-// 呼ぶ側の責任で、ゼロ値なら受信箱直下へ作ります（分からない時期を捏造しない）。
+// 呼ぶ側の責任で、ゼロ値なら通信箱直下へ作ります（分からない時期を捏造しない）。
 func (c *IntakeContext) CreateDatedPage(t time.Time, bodyHTML string) (string, error) {
 	parent := c.InboxID
 	if !t.IsZero() {
@@ -353,21 +351,26 @@ func setSortKey(pageID, key string) {
 	}
 }
 
-// SentBoxTitle は送信箱ページの名前です。受信箱と対等に置きます
-// （2026-09-03 ユーザー:「返信の本体は送信箱にあるのはどうでしょう？」）。
+// DirectionTag は記録の向きです（値は DirectionIn / DirectionOut）。
 //
-// **返信を返信元の子にしない**理由がここにあります——返信元を持たない新規の
-// メールが行き場を失うのと、送った記録が受け取った記録に従属して見えるためです。
-// 送受信は対等な出来事で、繋がりは所有ではなく**参照**（返信元タグ）で表します。
-const SentBoxTitle = "送信箱"
+// **置き場所ではなくタグで表します**（2026-09-05 ユーザー:「受信、送信、FAX、
+// メール、電話などのタグを付けては？」）。`チャネル`（メール／FAX／電話）とは
+// **直交する別の軸**なので、1つのタグに混ぜません——「送信 × FAX」（作った発注書を
+// 業者へFAXする）が実際に要るためです。
+//
+// 向きが見える文字になったことで、**送信箱という置き場そのものが要らなくなりました**。
+// 返信を返信元の子にしないのも同じ理由です——送受信は対等な出来事で、繋がりは
+// 所有ではなく**参照**（返信元タグ）で表します。
+const DirectionTag = "向き"
 
-// SentBoxPageID はトップ直下の送信箱ページを返します（無ければ ok=false）。
-func SentBoxPageID() (string, bool) {
-	return topLevelPageByTitle(SentBoxTitle)
-}
+// DirectionIn / DirectionOut は向きの値です。
+const (
+	DirectionIn  = "受信"
+	DirectionOut = "送信"
+)
 
 // topLevelPageByTitle はトップ直下の題一致ページを返します
-// （受信箱・送信箱が共有する——「名前が機能」という同じ仕様）。
+// （通信箱・テンプレート置き場が共有する——「名前が機能」という同じ仕様）。
 func topLevelPageByTitle(title string) (string, bool) {
 	var id int
 	err := database.DB.QueryRow(
@@ -385,8 +388,8 @@ const ReplySourceTag = "返信元"
 
 // CreateRecordPage は年フォルダ／月フォルダの下へ記録ページを1枚作ります。
 //
-// 受信箱の取り込み（IntakeContext.CreateDatedPage）と、送信の記録（ext/mailgraph）
-// が共有します——**受信箱と送信箱で置き場の作法を変えない**ため。
+// 通信箱の取り込み（IntakeContext.CreateDatedPage）と、送信の記録（ext/mail）
+// が共有します——**受信と送信で置き場の作法を変えない**ため。
 func CreateRecordPage(rootID, owner string, t time.Time, bodyHTML string) (string, error) {
 	parent := rootID
 	if !t.IsZero() {

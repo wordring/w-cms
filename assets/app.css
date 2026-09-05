@@ -1697,3 +1697,44 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     font-size: 0.85em;
     opacity: 0.7;
 }
+
+/* 未処理の一覧を「作業面」にする（2026-09-05）。1行1件・新しい順で、
+ * チャネルは記号・添付は 📎n・行の右端に「不要」。**この表は読むためでなく
+ * 片付けるためのもの**なので、行の高さを詰めて件数が視野に入るようにする。 */
+#w-editor-content .unhandled-table td {
+    padding: 4px 8px;
+    vertical-align: middle;
+}
+#w-editor-content .unhandled-pick,
+#w-editor-content .unhandled-channel,
+#w-editor-content .unhandled-clip,
+#w-editor-content .unhandled-act {
+    width: 1%;
+    white-space: nowrap;
+}
+#w-editor-content .unhandled-channel { font-size: 15px; text-align: center; }
+#w-editor-content .unhandled-when    { white-space: nowrap; color: var(--text-muted); }
+#w-editor-content .unhandled-from    { color: var(--text-muted); max-width: 12em; }
+#w-editor-content .unhandled-subject { overflow-wrap: anywhere; }
+#w-editor-content .unhandled-clip    { color: var(--text-muted); }
+#w-editor-content .unhandled-skip {
+    padding: 1px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-paper);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+}
+#w-editor-content .unhandled-skip:hover:not(:disabled) { background: var(--border); }
+#w-editor-content .unhandled-skip:disabled { opacity: .4; cursor: default; }
+#w-editor-content .unhandled-bulk { margin: 8px 0 0; }
+#w-editor-content #w-unhandled-bulk {
+    padding: 3px 12px;
+    font-size: 13px;
+    background: var(--bg-paper);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+}
+#w-editor-content #w-unhandled-bulk:disabled { opacity: .4; cursor: default; }

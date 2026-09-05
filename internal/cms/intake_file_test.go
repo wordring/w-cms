@@ -142,7 +142,7 @@ func TestChannelTagOnBothIntakes(t *testing.T) {
 // TestIntakeFallbackTakesAnyFile は、担当の居ない拡張子（DXF・Office など）でも
 // **既定の担当**が記録ページを作ることを検証します。
 //
-// 受信箱は「何かが届いた」という1つの事実を受ける場所なので、種類が何であれ
+// 通信箱は「何かが届いた」という1つの事実を受ける場所なので、種類が何であれ
 // 記録は残るべき——「その受け口ではメールや、PDF、DXFも受け付け」（2026-09-03）。
 func TestIntakeFallbackTakesAnyFile(t *testing.T) {
 	setupSaveTest(t)
