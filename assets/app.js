@@ -3245,11 +3245,16 @@
         body.value = quotedBody();
         form.appendChild(body);
 
+        // **添付はこのページにあるものから選びます**（2026-09-05）。図面PDFを業者へ
+        // 回す、見積書を顧客へ返す——実際に起きるのはこの形で、手元のディスクから
+        // 選び直す必要がありません（同じファイルが2つに増えるのも防げます）。
+        const picks = attachmentPickers(form);
+
         const send = document.createElement('button');
         send.type = 'button';
         send.className = 'mail-reply-send';
         send.textContent = '送信';
-        send.addEventListener('click', () => sendReply(fields, body, send, form));
+        send.addEventListener('click', () => sendReply(fields, body, send, form, picks));
         form.appendChild(send);
 
         btn.insertAdjacentElement('afterend', form);
@@ -3265,21 +3270,63 @@
     }
 
     // quotedBody は元の本文を引用にします（差出人の1行を添えて `> ` を付ける）。
+    //
+    // **本文は `<pre>` 1つ**です（2026-09-05 の取り込み変更）。段落だけを集める
+    // 書き方のままだと**引用が空になります**——`pre` へ移した日に一緒に直すべきでした。
+    // 添付のリンク段落（📎・📧）は引用に混ぜません。
     function quotedBody() {
         const host = document.getElementById('w-editor-content');
         if (!host) return '\n\n';
         const lines = [];
-        host.querySelectorAll('p').forEach(p => {
-            if (p.closest('.vocab-chrome')) return;
-            const t = p.textContent.trim();
-            if (t) lines.push('> ' + t);
+        host.querySelectorAll('pre, p').forEach(el => {
+            if (el.closest('.vocab-chrome')) return;
+            const t = el.textContent.replace(/\r\n/g, '\n').trimEnd();
+            if (!t.trim()) return;
+            if (/^(📎|📧)/.test(t.trim())) return; // 添付のリンク行
+            t.split('\n').forEach(line => lines.push('> ' + line));
         });
         const from = tagValue('差出人') || tagValue('差出人アドレス');
         const head = from ? '\n\n' + from + ' さんは書きました:\n' : '\n\n';
-        return head + lines.slice(0, 40).join('\n') + '\n';
+        return head + lines.slice(0, 60).join('\n') + '\n';
     }
 
-    async function sendReply(fields, body, send, form) {
+    // attachmentPickers はこのページの添付を選べるようにします（無ければ何も出さない）。
+    //
+    // 一覧は**本文のリンクから作ります**——📎（添付）と 📧（受信原本）の段落は
+    // きれいなURL（`/<6桁>/<生成ID>.<拡張子>`）を持つので、そこから採れます。
+    // **形を必ず検査する**のは、クロームがリンクから何かを導出するときの決まりです
+    // （`refreshAttachmentPreviews` と同じ流儀）。
+    function attachmentPickers(form) {
+        const host = document.getElementById('w-editor-content');
+        if (!host) return [];
+        const picks = [];
+        const box = document.createElement('div');
+        box.className = 'mail-reply-attach';
+
+        host.querySelectorAll('p[data-id] > a[href]').forEach(a => {
+            if (a.closest('.vocab-chrome')) return;
+            const m = a.getAttribute('href').match(/^\/(\d{6})\/([0-9a-z]+\.[0-9a-z]+)$/i);
+            if (!m) return;
+            const shown = a.getAttribute('download') || m[2];
+            const label = document.createElement('label');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            label.appendChild(cb);
+            label.appendChild(document.createTextNode(' ' + shown));
+            box.appendChild(label);
+            picks.push({ cb, ref: { page_id: m[1], file: m[2], name: shown } });
+        });
+        if (!picks.length) return [];
+
+        const head = document.createElement('p');
+        head.className = 'mail-reply-attach-head';
+        head.textContent = '📎 添付を付ける';
+        form.appendChild(head);
+        form.appendChild(box);
+        return picks;
+    }
+
+    async function sendReply(fields, body, send, form, picks) {
         send.disabled = true;
         send.textContent = '送信中…';
         try {
@@ -3292,6 +3339,7 @@
                     cc: [fields.cc.value],
                     subject: fields.subject.value,
                     body: body.value,
+                    attachments: (picks || []).filter(p => p.cb.checked).map(p => p.ref),
                 }),
             });
             const d = await res.json();

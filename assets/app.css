@@ -1838,3 +1838,22 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
 #w-editor-content .block-content > section { padding-top: 10px; padding-bottom: 10px; }
 /* 📎 添付・📧 原本のリンク行。**本文から離す**が、添付どうしは近くまとめる。 */
 #w-editor-content .block-content > p { padding-top: 5px; padding-bottom: 5px; }
+
+/* 返信に付ける添付の選択（2026-09-05）。**このページにあるものから選ぶ**ので、
+ * 手元のディスクを開く必要がない。添付が無いページでは丸ごと出ない。 */
+#w-editor-content .mail-reply-attach-head {
+    margin: 10px 0 2px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+#w-editor-content .mail-reply-attach {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 8px;
+}
+#w-editor-content .mail-reply-attach label {
+    font-size: 13px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
