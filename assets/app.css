@@ -1717,7 +1717,7 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
 #w-editor-content .unhandled-from    { color: var(--text-muted); max-width: 12em; }
 #w-editor-content .unhandled-subject { overflow-wrap: anywhere; }
 #w-editor-content .unhandled-clip    { color: var(--text-muted); }
-#w-editor-content .unhandled-skip {
+#w-editor-content .unhandled-mark {
     padding: 1px 10px;
     font-size: 12px;
     color: var(--text-muted);
@@ -1726,10 +1726,12 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border-radius: 10px;
     cursor: pointer;
 }
-#w-editor-content .unhandled-skip:hover:not(:disabled) { background: var(--border); }
-#w-editor-content .unhandled-skip:disabled { opacity: .4; cursor: default; }
+#w-editor-content .unhandled-mark:hover:not(:disabled) { background: var(--border); }
+#w-editor-content .unhandled-mark:disabled { opacity: .4; cursor: default; }
+#w-editor-content .unhandled-mark + .unhandled-mark { margin-left: 4px; }
 #w-editor-content .unhandled-bulk { margin: 8px 0 0; }
-#w-editor-content #w-unhandled-bulk {
+#w-editor-content #w-unhandled-bulk-done,
+#w-editor-content #w-unhandled-bulk-skip {
     padding: 3px 12px;
     font-size: 13px;
     background: var(--bg-paper);
@@ -1737,7 +1739,8 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border-radius: 6px;
     cursor: pointer;
 }
-#w-editor-content #w-unhandled-bulk:disabled { opacity: .4; cursor: default; }
+#w-editor-content #w-unhandled-bulk-done:disabled,
+#w-editor-content #w-unhandled-bulk-skip:disabled { opacity: .4; cursor: default; }
 
 /* 手で記録を作る一行（電話・FAX・メール・メモ）。**一覧が空でも出る**——片付いた日に
  * ボタンごと消えると、電話が鳴ったときに置き場所が見つからない。 */

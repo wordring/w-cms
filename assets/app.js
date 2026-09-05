@@ -3477,29 +3477,28 @@
         const host = document.getElementById('w-editor-content');
         if (!host) return;
         const editMode = document.body.hasAttribute('edit-mode');
-        host.querySelectorAll('.unhandled-skip').forEach(btn => {
+        host.querySelectorAll('.unhandled-mark').forEach(btn => {
             btn.disabled = editMode;
             if (btn.dataset.wired) return;
             btn.dataset.wired = '1';
-            btn.addEventListener('click', () => markHandled([btn.dataset.pageId], btn));
+            btn.addEventListener('click',
+                () => markHandled([btn.dataset.pageId], btn, btn.dataset.value));
         });
-        const bulk = host.querySelector('#w-unhandled-bulk');
-        if (bulk) {
+        host.querySelectorAll('#w-unhandled-bulk-done, #w-unhandled-bulk-skip').forEach(bulk => {
             bulk.disabled = editMode;
-            if (!bulk.dataset.wired) {
-                bulk.dataset.wired = '1';
-                bulk.addEventListener('click', () => {
-                    const picked = Array.from(
-                        host.querySelectorAll('.unhandled-check:checked')
-                    ).map(c => c.dataset.pageId);
-                    if (!picked.length) {
-                        notify('片付けるものを選んでください', { type: 'warn' });
-                        return;
-                    }
-                    markHandled(picked, bulk);
-                });
-            }
-        }
+            if (bulk.dataset.wired) return;
+            bulk.dataset.wired = '1';
+            bulk.addEventListener('click', () => {
+                const picked = Array.from(
+                    host.querySelectorAll('.unhandled-check:checked')
+                ).map(c => c.dataset.pageId);
+                if (!picked.length) {
+                    notify('片付けるものを選んでください', { type: 'warn' });
+                    return;
+                }
+                markHandled(picked, bulk, bulk.dataset.value);
+            });
+        });
     }
 
     // wireNewRecord は「＋ 記録する」を配線します（電話・FAX・メール・メモ）。
@@ -3564,18 +3563,19 @@
         }
     }
 
-    // markHandled は「対応：不要」を付け、片付いた行をその場で消します。
+    // markHandled は `対応` の印を付け、片付いた行をその場で消します。
     //
-    // **行を消すのは見た目だけ**で、正本は本文のタグです。次にページを開けば
-    // サーバーが描き直すので、ここでの見せ方がずれても壊れません。
-    async function markHandled(pageIds, btn) {
+    // 値は「済」（次の作業へ割り振った——**責任はそちらへ移る**）か「不要」
+    // （何も生まれない）。**行を消すのは見た目だけ**で、正本は本文のタグです。
+    // 次にページを開けばサーバーが描き直すので、ここでの見せ方がずれても壊れません。
+    async function markHandled(pageIds, btn, value) {
         if (!pageIds.length) return;
         btn.disabled = true;
         try {
             const res = await fetch('/api/intake/handled', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_ids: pageIds }),
+                body: JSON.stringify({ page_ids: pageIds, value: value || '済' }),
             });
             const data = await res.json();
             if (!data.success) {
@@ -3588,9 +3588,11 @@
                 if (row) row.remove();
             });
             if (data.failed) {
-                notify(data.handled + '件を片付けました（' + data.failed + '件は権限がありません）', { type: 'warn' });
+                notify(data.handled + '件を「' + (value || '済') + '」にしました（' +
+                    data.failed + '件は権限がありません）', { type: 'warn' });
             } else {
-                notify(data.handled + '件を片付けました', { type: 'success', duration: 4000 });
+                notify(data.handled + '件を「' + (value || '済') + '」にしました',
+                    { type: 'success', duration: 4000 });
             }
         } catch (e) {
             notify('片付けられませんでした: ' + e.message, { type: 'warn' });
