@@ -3385,11 +3385,15 @@
         // **整理するものが実際にあるときだけ出します。** 押してから「ありません」と
         // 言うより、出さないほうが親切です。
         let rows = [];
+        let stages = [];
         try {
             const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(currentPageId));
             const d = await res.json();
             if (!d.success) return;
             rows = d.rows || [];
+            // **段の選択肢はサーバーが持ちます**（設定 machine_stages）。
+            // 画面に書き写すと、語を足した日に片方だけ古くなります。
+            stages = d.stages || [];
         } catch (e) { return; }
         if (!rows.length) return;
 
@@ -3397,33 +3401,33 @@
         btn.type = 'button';
         btn.className = 'vocab-chrome filing-chrome filing-open';
         btn.textContent = '📁 整理（' + rows.length + '件）';
-        btn.addEventListener('click', () => toggleFilingPanel(btn, rows));
+        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, stages));
         host.appendChild(btn);
     }
 
     // toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
-    function toggleFilingPanel(btn, rows) {
+    function toggleFilingPanel(btn, rows, stages) {
         const existing = document.querySelector('.filing-panel');
         if (existing) { existing.remove(); return; }
-        btn.insertAdjacentElement('afterend', buildFilingPanel(rows));
+        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, stages));
     }
 
     // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
     // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます。
-    function buildFilingPanel(rows) {
+    function buildFilingPanel(rows, stages) {
         const panel = document.createElement('div');
         panel.className = 'vocab-chrome filing-chrome filing-panel';
         panel.setAttribute('contenteditable', 'false');
 
         const head = document.createElement('p');
         head.className = 'filing-head';
-        head.textContent = '行き先を決めてください（顧客名／装置名称／図面名称）。空欄の行は動かしません。';
+        head.textContent = '行き先を決めてください（社名／段／装置名称／図面名称）。空欄の行は動かしません。';
         panel.appendChild(head);
 
         const table = document.createElement('table');
         table.className = 'filing-table';
         const trh = document.createElement('tr');
-        ['図面番号', '顧客名', '装置名称', '図面名称', ''].forEach(t => {
+        ['図面番号', '顧客名', '段', '装置名称', '図面名称', ''].forEach(t => {
             const th = document.createElement('th');
             th.textContent = t;
             trh.appendChild(th);
@@ -3439,8 +3443,9 @@
             tr.appendChild(tdNo);
 
             const fields = {};
-            [['customer', row.customer], ['machine_name', row.machine_name],
-             ['drawing_name', row.drawing_name]].forEach(([key, value]) => {
+            // 顧客名は自由入力、段は選択、その先はまた自由入力——**列の順に組みます**
+            // （表の見出しと並びが1対1でないと、打つ人が迷います）。
+            const addText = (key, value) => {
                 const td = document.createElement('td');
                 const input = document.createElement('input');
                 input.type = 'text';
@@ -3449,7 +3454,27 @@
                 td.appendChild(input);
                 tr.appendChild(td);
                 fields[key] = input;
+            };
+            addText('customer', row.customer);
+
+            // **段は選ぶだけ**——打てるようにすると「現行」と「現行品」が混ざり、
+            // 探すときに静かに取りこぼします（サーバーも表引きで断ります）。
+            const tdStage = document.createElement('td');
+            const sel = document.createElement('select');
+            sel.setAttribute('aria-label', 'stage');
+            (stages || []).forEach(st => {
+                const op = document.createElement('option');
+                op.value = st;
+                op.textContent = st;
+                if (st === row.stage) op.selected = true;
+                sel.appendChild(op);
             });
+            tdStage.appendChild(sel);
+            tr.appendChild(tdStage);
+            fields.stage = sel;
+
+            addText('machine_name', row.machine_name);
+            addText('drawing_name', row.drawing_name);
             // 「改定として合流」の確認——**既定は隠しておき、実行が確認を求めた
             // ときだけ出します**。最初から出すと「押せば通る」と学習されてしまい、
             // 偽の改定を止める意味が薄れます。
@@ -3484,6 +3509,7 @@
         const payload = inputs.map(i => ({
             page_id: i.page_id,
             customer: i.fields.customer.value,
+            stage: i.fields.stage.value,
             machine_name: i.fields.machine_name.value,
             drawing_name: i.fields.drawing_name.value,
             confirm_revision: i.box.checked,

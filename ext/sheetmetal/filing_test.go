@@ -147,28 +147,38 @@ func TestFilingProposalSkipsNonDrawings(t *testing.T) {
 }
 
 // TestFileDrawingsUsesEditedValues は、**人が直した値がそのまま使われる**ことを
-// 固定します。試作の `【試作】…` は機械には決められないので、ここが効かないと
-// 機能そのものが無意味になります。
+// 固定します。顧客名の打ち替えと、**段の選択**（試作か現行か）は機械には決められない
+// ——メールを読むしかない——ので、ここが効かないと機能そのものが無意味になります。
 func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	const inbox = "000012"
 	setupFilingTest(t, inbox)
 	partID := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
 
-	// 人が装置名称を打ち替えた（メールを読んで試作と分かった）。
+	// 人が顧客名を打ち替え、段に「試作」を選んだ（メールを読んで試作と分かった）。
 	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械",
-		MachineName: "【試作】標準2輪", DrawingName: "取付ベース",
+		PageID: partID, Customer: "南北スポーツ機械", Stage: "試作",
+		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
 		t.Fatalf("移動になっていません: %+v", results)
 	}
 
-	// トップ直下に顧客名、その下に装置名称、その下に部品ページ。
-	custID, ok := findChildByTitle(cms.TopPageID, "南北スポーツ機械")
+	// 「取引先」の下に顧客名、その下に装置名称、その下に部品ページ
+	// （2026-09-05 ユーザー決定。トップ直下が名簿になるのを避けた）。
+	boxID, ok := findChildByTitle(cms.TopPageID, cms.PartnerBoxTitle)
 	if !ok {
-		t.Fatalf("顧客名ページがトップ直下に作られていません")
+		t.Fatalf("「%s」ページが作られていません", cms.PartnerBoxTitle)
 	}
-	machID, ok := findChildByTitle(custID, "【試作】標準2輪")
+	custID, ok := findChildByTitle(boxID, "南北スポーツ機械")
+	if !ok {
+		t.Fatalf("顧客名ページが「%s」の下に作られていません", cms.PartnerBoxTitle)
+	}
+	// 装置の上に段が1枚入る（2026-09-05 ユーザー決定）。
+	stageID, ok := findChildByTitle(custID, "試作")
+	if !ok {
+		t.Fatalf("段のページ（試作）が作られていません")
+	}
+	machID, ok := findChildByTitle(stageID, "標準2輪")
 	if !ok {
 		t.Fatalf("人が打ち替えた装置名称が使われていません（推奨値のままになっている疑い）")
 	}
@@ -216,12 +226,12 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 	u := &auth.User{Username: "alice"}
 
 	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
-	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ",
+	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ", Stage: "現行",
 		MachineName: "標準2輪", DrawingName: "取付ベース"}})
 
 	// 改定図面が届いた（図面番号に改訂記号が付く形）。
 	second := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1A", "取付ベース", "標準2輪", "南北スポーツ")
-	results := postFiling(t, u, []filingRequest{{PageID: second, Customer: "南北スポーツ",
+	results := postFiling(t, u, []filingRequest{{PageID: second, Customer: "南北スポーツ", Stage: "現行",
 		MachineName: "標準2輪", DrawingName: "取付ベース"}})
 	if len(results) != 1 || results[0].Outcome != "revision" {
 		t.Fatalf("改定として扱われていません: %+v", results)
@@ -328,12 +338,12 @@ func TestFileDrawingsAsksWhenSameDrawingNo(t *testing.T) {
 	u := &auth.User{Username: "alice"}
 
 	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
-	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ",
+	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ", Stage: "現行",
 		MachineName: "標準2輪", DrawingName: "取付ベース"}})
 
 	// 別のメールで届いたが、図面番号は同じ。
 	second := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
-	req := filingRequest{PageID: second, Customer: "南北スポーツ",
+	req := filingRequest{PageID: second, Customer: "南北スポーツ", Stage: "現行",
 		MachineName: "標準2輪", DrawingName: "取付ベース"}
 
 	results := postFiling(t, u, []filingRequest{req})
