@@ -61,8 +61,22 @@ import (
 // HandledTag は「対応」の印です。値が `不要` なら未処理の一覧から外れます。
 const HandledTag = "対応"
 
-// HandledNotNeeded は「対応：不要」の値です。
-const HandledNotNeeded = "不要"
+// HandledDone / HandledNotNeeded は `対応` の値です。
+//
+// **印は「済んだ」の宣言であり、責任が次へ移った印**です（2026-09-05 ユーザー:
+// 「通信箱は受注処理など次の作業に割り振った時点で処理済みとし、**処理の責任は
+// 次の作業に移ります**」）。だから2つ要ります:
+//
+//	済    …… 次の作業へ割り振った（受注ページを作った、部品へ落とした…）。
+//	          **責任はそちらへ移り**、移った先が印を付けるまで作業待ちに残る。
+//	不要  …… 何も生まれない（案内・お礼・広告）。ここで終わり。
+//
+// **一覧は値を見ません**（どちらでも外れます）。区別が要るのは、あとから
+// 「何件が不要だったか」を数えたくなったときのためです。
+const (
+	HandledDone      = "済"
+	HandledNotNeeded = "不要"
+)
 
 // unhandledLimit は一覧に出す上限です。**全部は出しません**——過去メールを
 // 取り込むと数百件が一度に「未処理」になり、作業待ちの列としては読めなくなります。
@@ -303,8 +317,8 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 	}
 	if total > len(rows) {
 		sb.WriteString(`<p class="unhandled-note">新しい` + strconv.Itoa(len(rows)) +
-			`件を表示しています。手を付ける（受注ページや部品ページを作る）か、` +
-			`「不要」を押すと消えます。</p>`)
+			`件を表示しています。**次の作業へ割り振ったら「済」**、何も生まれないなら「不要」。` +
+			`印を付けるまで残ります。</p>`)
 	}
 	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
 	for _, r := range rows {
@@ -326,12 +340,19 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 		}
 		sb.WriteString(`<td class="unhandled-clip">` + clip + `</td>`)
 		sb.WriteString(`<td class="vocab-chrome unhandled-act">` +
-			`<button type="button" class="unhandled-skip" data-page-id="` + id +
-			`" title="この記録に「対応：不要」を付けて一覧から外します">不要</button></td>`)
+			`<button type="button" class="unhandled-mark" data-page-id="` + id +
+			`" data-value="` + HandledDone +
+			`" title="次の作業へ割り振ったので済み。責任はそちらへ移ります">済</button>` +
+			`<button type="button" class="unhandled-mark unhandled-skip" data-page-id="` + id +
+			`" data-value="` + HandledNotNeeded +
+			`" title="何も生まれない記録（案内・お礼など）。ここで終わりです">不要</button></td>`)
 		sb.WriteString(`</tr>`)
 	}
 	sb.WriteString(`</tbody></table>`)
 	sb.WriteString(`<p class="vocab-chrome unhandled-bulk">` +
-		`<button type="button" id="w-unhandled-bulk">選んだものを「不要」にする</button></p>`)
+		`<button type="button" id="w-unhandled-bulk-done" data-value="` + HandledDone +
+		`">選んだものを「済」にする</button> ` +
+		`<button type="button" id="w-unhandled-bulk-skip" data-value="` + HandledNotNeeded +
+		`">「不要」にする</button></p>`)
 	return sb.String()
 }
