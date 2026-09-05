@@ -476,3 +476,40 @@ func titleOfPage(t *testing.T, pageID string) string {
 	}
 	return m[1]
 }
+
+// TestPlainTextBlockKeepsShape は、平文の本文が**書かれた形のまま**入ることを固定します。
+//
+// ユーザー:「テキストメールは、一行ごとに段落とするのではなく、preタグにしては
+// どうでしょう」（2026-09-05）。段落に割ると**空行・字下げ・引用の `>` の位置**が
+// 落ちます——見積の桁揃えや署名の罫線は、崩すと読めません。
+func TestPlainTextBlockKeepsShape(t *testing.T) {
+	src := "お世話になっております。\r\n" +
+		"\r\n" +
+		"  品番    数量   単価\r\n" +
+		"  A-100      5   1,200\r\n" +
+		"\r\n" +
+		"> 前のメールの引用\r\n" +
+		"\r\n\r\n"
+
+	got := PlainTextBlockHTML(src)
+	if !strings.HasPrefix(got, "<pre>") || !strings.HasSuffix(got, "</pre>") {
+		t.Fatalf("pre で包まれていません: %q", got)
+	}
+	for _, want := range []string{
+		"お世話になっております。\n\n",  // 空行が残る
+		"  品番    数量   単価\n", // 字下げと桁揃えが残る
+		"&gt; 前のメールの引用",     // 引用記号が（逃がされたうえで）残る
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q がありません: %q", want, got)
+		}
+	}
+	// **末尾の空行は落とす**（メールソフトが付ける余白で、意味を持たない）。
+	if strings.HasSuffix(got, "\n</pre>") {
+		t.Errorf("末尾の空行が残っています: %q", got)
+	}
+	// 空の本文はブロックごと作らない。
+	if PlainTextBlockHTML("  \n\n ") != "" {
+		t.Errorf("空の本文でブロックを作りました")
+	}
+}
