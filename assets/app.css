@@ -264,7 +264,6 @@ body.anonymous #w-save-status,
 body.anonymous #w-mode-text,
 body.anonymous .switch,
 body.anonymous .switch-container button,
-body.anonymous .tip,
 body.anonymous .preview-section { display: none !important; }
 
 /* サイドパネル内の入力・ボタン */
@@ -614,12 +613,6 @@ input:checked + .slider:before {
     font-family: inherit;
     font-size: inherit;
 }
-.tip {
-    font-size: 12px;
-    color: var(--text-faint);
-    margin-top: -15px;
-    margin-bottom: 20px;
-}
 /* エディタツールバー */
 .editor-toolbar {
     display: none !important;
@@ -636,7 +629,7 @@ body[edit-mode] #w-editor-content {
 .editor-block {
     display: flex;
     align-items: flex-start;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
     position: relative;
 }
 
@@ -1701,10 +1694,16 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
 /* 未処理の一覧を「作業面」にする（2026-09-05）。1行1件・新しい順で、
  * チャネルは記号・添付は 📎n・行の右端に「不要」。**この表は読むためでなく
  * 片付けるためのもの**なので、行の高さを詰めて件数が視野に入るようにする。 */
-#w-editor-content .unhandled-table td {
-    padding: 4px 8px;
+/* **詳細度に注意**——`#w-editor-content table.materials-table td` が padding:10px を
+ * 持っているので、`table` を含めないと勝てません（`.unhandled-table td` だけでは
+ * 効かず、行が広いままでした・2026-09-05）。 */
+#w-editor-content table.unhandled-table td {
+    padding: 2px 8px;
+    line-height: 1.5;
     vertical-align: middle;
+    border-bottom: none; /* 1行1件の列なので、罫線より詰まりのほうが読みやすい */
 }
+#w-editor-content table.unhandled-table tr:hover td { background: #f8fafc; }
 #w-editor-content .unhandled-pick,
 #w-editor-content .unhandled-channel,
 #w-editor-content .unhandled-clip,
@@ -1797,3 +1796,45 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     color: var(--text-muted);
     cursor: pointer;
 }
+
+
+/* 平文メールの本文は `<pre>` 1つで入ります（2026-09-05）——空行・字下げ・引用の
+ * `>` の位置に意味があるためです。**折り返しはここが受け持ちます**——横スクロールに
+ * すると、メールを読むのに横へ動かすことになって使えません。
+ * 折り返せない長い連なり（URL・罫線）は途中で折ります。
+ *
+ * **上下の罫線で「タグ｜本文｜添付」に分かれます**（2026-09-05 ユーザー:「メール
+ * ページのタグ、本文、添付ファイルの間に水平線が入っていると見やすいです」）。
+ * 本文の上下に1本ずつ引くだけで両方の境目になるので、**本文へ `<hr>` を書き足しません**
+ * ——見た目のために内容を変えないという線です（既存の記録にも同じに効きます）。 */
+#w-editor-content pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: Consolas, Menlo, monospace;
+    font-size: 0.94em;
+    margin: 8px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+
+
+/* ── 縦のリズム（2026-09-05 ユーザー:「見出し、本文と添付ファイル等の間隔が
+ * 詰まりすぎです」）───────────────────────────────────────────────
+ *
+ * **余白は padding で作ります。** `.block-content > *` が margin を `!important` で
+ * 0 に固定しているためで、ここを緩めるとブロックの当たり判定（ドラッグ・ホバーで出る
+ * 操作ボタン）がずれます。**見た目のためにブロックの仕組みへ触らない**、という線です。
+ *
+ * 間隔の付け方は「**まとまりの前を空ける**」——見出しの前は大きく、見出しと直後の
+ * 本文は近く。通信記録なら「件名／タグ／本文／添付」が4つのまとまりに見えます。 */
+#w-editor-content .block-content > h1 { padding-bottom: 14px; }
+#w-editor-content .block-content > h2 { padding-top: 22px; padding-bottom: 4px; }
+#w-editor-content .block-content > h3,
+#w-editor-content .block-content > h4 { padding-top: 16px; padding-bottom: 2px; }
+/* タグの帯・本文・表・添付は、上下に息を入れる。 */
+#w-editor-content .block-content > dl { padding-top: 8px; padding-bottom: 8px; }
+#w-editor-content .block-content > pre { padding-top: 12px; padding-bottom: 12px; }
+#w-editor-content .block-content > table { padding-top: 8px; padding-bottom: 8px; }
+#w-editor-content .block-content > section { padding-top: 10px; padding-bottom: 10px; }
+/* 📎 添付・📧 原本のリンク行。**本文から離す**が、添付どうしは近くまとめる。 */
+#w-editor-content .block-content > p { padding-top: 5px; padding-bottom: 5px; }

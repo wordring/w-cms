@@ -179,7 +179,10 @@ body.public {
     border: 1px solid var(--pub-border);
     border-radius: var(--pub-radius);
     padding: 12px;
-    overflow-x: auto;
+    /* 平文メールの本文が pre で入るので、**折り返す**（横スクロールにしない）。
+       公開側は元から枠で囲んであるので、タグ・本文・添付の境目はこれで足ります。 */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .public-footer {

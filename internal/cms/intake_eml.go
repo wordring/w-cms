@@ -181,13 +181,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	bodyWritten := false
 	for _, p := range parts {
 		if p.fileName == "" && !bodyWritten && strings.HasPrefix(p.mediaType, "text/plain") {
-			for _, para := range strings.Split(strings.ReplaceAll(string(p.body), "\r\n", "\n"), "\n") {
-				para = strings.TrimRight(para, " \t")
-				if strings.TrimSpace(para) == "" {
-					continue
-				}
-				b.WriteString("<p>" + html.EscapeString(para) + "</p>")
-			}
+			b.WriteString(PlainTextBlockHTML(string(p.body)))
 			bodyWritten = true
 		}
 	}
@@ -264,6 +258,26 @@ func writeAddressTags(b *strings.Builder, name, raw string) {
 		WriteTag(b, name, a.Name) // 表示名の無いアドレスでは書かれない
 		WriteTag(b, name+"アドレス", a.Address)
 	}
+}
+
+// PlainTextBlockHTML は平文の本文を `<pre>` 1つにします。
+//
+// **1行1段落にしていたのをやめました**（2026-09-05 ユーザー:「テキストメールは、
+// 一行ごとに段落とするのではなく、preタグにしてはどうでしょう」）。段落に割ると
+// **空行・字下げ・引用の `>` の位置が落ちます**——メールの平文は「そう書かれた形」に
+// 意味があり、見積の桁揃えや署名の罫線は、崩すと読めません。
+//
+// `pre` はサニタイザの許可要素なので、保存も表示もそのまま通ります。折り返しは
+// CSS（`white-space: pre-wrap`）が受け持ちます——**横スクロールにはしません**。
+//
+// 末尾の空行だけ落とします（メールソフトが付ける余白で、意味を持たないため）。
+func PlainTextBlockHTML(text string) string {
+	t := strings.ReplaceAll(text, "\r\n", "\n")
+	t = strings.TrimRight(t, " \t\n")
+	if strings.TrimSpace(t) == "" {
+		return ""
+	}
+	return "<pre>" + html.EscapeString(t) + "</pre>"
 }
 
 // countAttachments は添付（本文でない部品）の数を文字列で返します。
