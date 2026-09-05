@@ -100,9 +100,10 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// **通信箱への到着は取り込み係へ回覧する**（汎用の口と同じ扱い・intake.go）。
-	// FAXのスキャンPDFはここから入る——人がドロップしても、オンプレのFAXサーバの
-	// 橋渡しがPOSTしても、**同じ口・同じ取り込み係**を通る（§3.1）。
-	// 通信箱の本文は変わらない（子ページが生まれるだけ）ので編集ロックは要らない。
+	// いま担当が居るのは `.eml` だけなので、**PDF はここを素通りして普通の添付**に
+	// なります（2026-09-05。ユーザー:「通信箱のPDF、DXF取り込みはやめましょう。
+	// メモに添付するようにしましょう」）。通信箱の本文は変わらない（子ページが
+	// 生まれるだけ）ので編集ロックは要らない。
 	if inboxID, ok := MailBoxPageID(); ok && inboxID == pageID {
 		if served := serveIntake(w, r, inboxID, "pdf_file"); served {
 			return
