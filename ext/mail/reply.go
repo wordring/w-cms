@@ -141,6 +141,10 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	b.WriteString(`<dl data-type="tags">`)
 	cms.WriteTag(&b, cms.DirectionTag, cms.DirectionOut)
 	cms.WriteTag(&b, cms.ChannelTag, "メール")
+	// **送るという仕事はその場で終わっています。** 控えを作業待ちに並べても
+	// 押すことが無いので、ここで印を付けます（2026-09-05）。返信を待つ必要が
+	// あるなら、人がこのタグを消せば一覧へ戻ります。
+	cms.WriteTag(&b, cms.HandledTag, cms.HandledNotNeeded)
 	cms.WriteTag(&b, "差出人アドレス", SignedInAddress(user.Username))
 	for _, a := range cleanAddrs(req.To) {
 		cms.WriteTag(&b, "宛先アドレス", a)

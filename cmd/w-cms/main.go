@@ -173,6 +173,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/replies", cms.RepliesAPIHandler)
 	// 未処理の一覧から「対応：不要」を付ける（まとめて押せる）。
 	protected.HandleFunc("/api/intake/handled", cms.MarkHandledAPIHandler)
+	// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
+	protected.HandleFunc("/api/intake/memo", cms.NewMemoAPIHandler)
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 

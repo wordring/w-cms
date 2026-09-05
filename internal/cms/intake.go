@@ -418,6 +418,23 @@ func ensureDateFolderUnder(rootID, owner string, t time.Time) (string, error) {
 	return ensureFolderUnder(year, owner, local.Format("01月"))
 }
 
+// IsDateFolderTitle は年・月フォルダの題かを返します（`2026年` / `09月`）。
+//
+// **ここに置くのは、作る側（ensureDateFolderUnder）の隣だから**です。形を変えるなら
+// 両方を同時に直すことになり、片方だけずれません。未処理の一覧が「フォルダは仕事
+// ではない」と判断するのに使います（view_unhandled.go）。
+//
+// 題で見るのは割り切りです——人が「2026年」という名前のページを作れば、それも
+// フォルダとみなされます。**そういうページは実際フォルダ**なので、実害はありません。
+func IsDateFolderTitle(title string) bool {
+	t := strings.TrimSpace(title)
+	if _, err := time.Parse("2006年", t); err == nil {
+		return true
+	}
+	_, err := time.Parse("01月", t)
+	return err == nil
+}
+
 // ensureFolderUnder は親の下に題の一致する子を探し、無ければ作ります。
 //
 // **一致は完全一致だけ**です。取り込みは無人で何度も走るので、揺れを吸収すると
