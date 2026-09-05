@@ -13,12 +13,22 @@ package sheetmetal
 // 作るところまでで、**通信箱がそのまま「まだ分からないものの置き場」**になります。
 // 整理は分かったとき（たいてい後続のメールや電話）に、この操作で行います。
 //
-// 行き先は「顧客名／装置名称／図面名称」——ワンノートの製造部品ページの形を
-// そのまま持ってきたもの。**顧客名ページはトップ直下**（受信箱・テンプレートと同階層）。
+// 行き先は **`取引先／社名／段／装置名称／図面名称`** です。ワンノートの製造部品
+// ページの形に、2026-09-05 の2つの決定を足したもの:
 //
-// 見積だけ・試作のときは装置名称から新しく作ります（`【試作】装置名称` の形）。
-// ユーザー:「これは、メールの内容から判断するしかありません」——**機械には
-// 決められない**ので、人が欄を打ち替える前提です。
+//   - **顧客名ページは `取引先` の下**（トップ直下をやめた。cms.EnsurePartnerBox）
+//   - **装置名称の上に段**（現行・旧型・試作…）。ユーザー:「装置名の上の段として、
+//     旧型、現行、試作などがあったほうが探しやすいです」。段の名前は設定が持ちます
+//     （`machine_stages`）——「など」と付いたので増える前提です。
+//
+// **段は人が毎回選びます**（同日ユーザー決定）。機械が入れるのは初期値だけで、
+// 既にその装置が在ればその段、無ければ一覧の先頭（現行）。試作か現行かは
+// メールを読まないと分からないので、**機械には決められない**ためです。
+//
+// 見積だけ・試作のときは装置名称から新しく作ります。ユーザー:「これは、メールの
+// 内容から判断するしかありません」——人が欄を打ち替える前提です。
+// なお `【試作】装置名称` という題の付け方（2026-09-03）は、**段ができたので
+// 要らなくなりました**——題と段の両方に「試作」と書くと二重になります。
 //
 // 移した先に同名の部品ページが在れば、その図面は**改定図面**です（ユーザー）。
 // 顧客名／装置名称の下では図面名称が一意なので、**ページが在ること自体が改定の合図**。
@@ -51,6 +61,43 @@ type filingRow struct {
 	DrawingName string `json:"drawing_name"`
 	Customer    string `json:"customer"`     // 推奨値（客先）。人が直す
 	MachineName string `json:"machine_name"` // 推奨値（装置名称）。人が直す
+	// Stage は装置の段（現行・旧型・試作…）の推奨値です。**既にその装置が在れば
+	// その段**、無ければ一覧の先頭。ユーザー決定は「人が毎回選ぶ」なので、
+	// これは初期値であって決定ではありません（2026-09-05）。
+	Stage string `json:"stage"`
+}
+
+// suggestStage はその装置がいま居る段を探します（無ければ一覧の先頭）。
+//
+// **人が毎回選ぶ**のが決定ですが、既にある装置を別の段へ入れてしまう事故は
+// 初期値で防げます——`取引先／社名／段／装置名称` を段ごとに当たります。
+func suggestStage(customer, machine string) string {
+	stages := cms.MachineStages()
+	fallback := ""
+	if len(stages) > 0 {
+		fallback = stages[0]
+	}
+	if customer == "" || machine == "" {
+		return fallback
+	}
+	boxID, ok := cms.PartnerBoxPageID()
+	if !ok {
+		return fallback
+	}
+	custID, ok := findChildByTitle(boxID, customer)
+	if !ok {
+		return fallback
+	}
+	for _, st := range stages {
+		stageID, ok := findChildByTitle(custID, st)
+		if !ok {
+			continue
+		}
+		if _, ok := findChildByTitle(stageID, machine); ok {
+			return st
+		}
+	}
+	return fallback
 }
 
 // FilingProposalAPIHandler は GET /api/filing-proposal?page_id=X です。
@@ -79,7 +126,10 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "一覧を作れません: "+err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "rows": rows})
+	// 段の一覧も返します——**選べる値は設定が持つ**ので、画面に書き写しません
+	// （語が2箇所にあると必ず片方が古くなる）。
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": true, "rows": rows, "stages": cms.MachineStages()})
 }
 
 // drawingChildrenOf は、そのページの子のうち**図面ブロックを持つもの**を集めます。
@@ -126,6 +176,7 @@ func drawingChildrenOf(user *auth.User, parentIDInt int) ([]filingRow, error) {
 			DrawingName: v["drawing-name"],
 			Customer:    v["client-name"],
 			MachineName: v["machine-name"],
+			Stage:       suggestStage(v["client-name"], v["machine-name"]),
 		})
 	}
 	return out, nil
@@ -137,6 +188,8 @@ type filingRequest struct {
 	Customer    string `json:"customer"`
 	MachineName string `json:"machine_name"`
 	DrawingName string `json:"drawing_name"`
+	// Stage は装置の段です（現行・旧型・試作…）。**人が選びます**。
+	Stage string `json:"stage"`
 	// ConfirmRevision は「図面番号が同じでも改定として合流してよい」の確認です。
 	// 既定は false——**偽の改定を黙って作らない**ため（2026-09-03 ユーザー:
 	// 「同じ図面名称を2回整理すると改定になるのはちょっとマズいと思います」）。
@@ -189,6 +242,7 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	customer := strings.TrimSpace(row.Customer)
 	machine := strings.TrimSpace(row.MachineName)
 	name := strings.TrimSpace(row.DrawingName)
+	stage := strings.TrimSpace(row.Stage)
 
 	// **空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
 	// （通信箱が保留の置き場。空の顧客ページを増やさない）。
@@ -196,17 +250,37 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped",
 			Message: "顧客名・装置名称・図面名称のどれかが空なので、そのままにしました"}
 	}
+	// **段は表引きで閉じます**——「現行」と「現行品」が混ざると、探すときに
+	// 静かに取りこぼします（設定 machine_stages が正本）。
+	if !cms.ValidMachineStage(stage) {
+		return filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "段（" + strings.Join(cms.MachineStages(), "・") + "）を選んでください"}
+	}
 
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil || !canWritePage(user, idInt) {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}
 	}
 
-	customerID, err := ensureChildPage(user, cms.TopPageID, customer)
+	// **顧客名ページは「取引先」の下**です（2026-09-05 ユーザー決定）。アドレス帳が
+	// 作る相手ページと**同じ場所・同じ1枚**——連絡先を見るページと部品を見るページを
+	// 分けないため（cms.EnsurePartnerBox の説明が正本）。
+	boxID, err := cms.EnsurePartnerBox(user)
+	if err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "「" + cms.PartnerBoxTitle + "」ページを用意できません: " + err.Error()}
+	}
+	customerID, err := ensureChildPage(user, boxID, customer)
 	if err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "顧客名ページを用意できません: " + err.Error()}
 	}
-	machineID, err := ensureChildPage(user, customerID, machine)
+	// **装置の上に段を1枚**（2026-09-05 ユーザー:「装置名の上の段として、旧型、現行、
+	// 試作などがあったほうが探しやすいです」）。装置が別の段へ移るときは、
+	// この段ページのあいだで付け替えるだけ——配下の図面もついていきます。
+	stageID, err := ensureChildPage(user, customerID, stage)
+	if err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "段のページを用意できません: " + err.Error()}
+	}
+	machineID, err := ensureChildPage(user, stageID, machine)
 	if err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "装置名称ページを用意できません: " + err.Error()}
 	}

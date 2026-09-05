@@ -59,6 +59,14 @@ type Settings struct {
 	// 受けません。**.json は書けません**——添付の置き場は files/ に分離済みで
 	// 構造上は無害だが、正本と同じ拡張子を添付に混ぜる運用そのものを断つ。
 	AttachmentExtensions []string `json:"attachment_extensions,omitempty"`
+
+	// MachineStages は装置名称の**上の段**の名前です（`取引先／社名／段／装置名称`）。
+	// ユーザー:「装置名の上の段として、旧型、現行、試作などがあったほうが探しやすい」
+	// （2026-09-05）。「など」と付いたので**運用中に増える前提**——語彙・推論辞書と
+	// 同じくここに置きます。未指定なら既定＝現行・旧型・試作。
+	//
+	// **並び順に意味があります**——先頭が整理の画面の初期値（＝いちばん多い行き先）。
+	MachineStages []string `json:"machine_stages,omitempty"`
 }
 
 // settings は読み込み済みの設定です。nil のあいだはコード内の既定値が使われます
@@ -125,6 +133,22 @@ func (s Settings) validate(path string) error {
 	if s.MaxUploadMiB < 0 {
 		return fmt.Errorf("%s: max_upload_mib が負です", path)
 	}
+	seenStage := map[string]bool{}
+	for _, st := range s.MachineStages {
+		v := strings.TrimSpace(st)
+		if v == "" {
+			return fmt.Errorf("%s: machine_stages に空の段があります", path)
+		}
+		// **段はページの題になります。** 題に使えない文字が混じると、整理の実行が
+		// 全件そこで止まります——書いた時点で気づけるよう、ここで断ります。
+		if strings.ContainsAny(v, "/\\") {
+			return fmt.Errorf("%s: machine_stages の %q に区切り文字は使えません（ページの題になります）", path, st)
+		}
+		if seenStage[v] {
+			return fmt.Errorf("%s: machine_stages に %q が2回あります", path, v)
+		}
+		seenStage[v] = true
+	}
 	for _, ext := range s.AttachmentExtensions {
 		e := strings.ToLower(strings.TrimSpace(ext))
 		if !strings.HasPrefix(e, ".") || len(e) < 2 {
@@ -162,7 +186,34 @@ func defaultSettings() *Settings {
 		TypeInference:        dict,
 		MaxUploadMiB:         32,
 		AttachmentExtensions: append([]string{}, defaultAttachmentExtensions...),
+		MachineStages:        append([]string{}, defaultMachineStages...),
 	}
+}
+
+// defaultMachineStages は装置の段の既定値です。**先頭が整理の初期値**なので、
+// いちばん多い行き先である「現行」を先に置きます。
+var defaultMachineStages = []string{"現行", "旧型", "試作"}
+
+// MachineStages はいま効いている段の一覧を返します（並び順つき）。
+// 返した配列は書き換えないこと（参照側が共有しています）。
+func MachineStages() []string {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings != nil && len(settings.MachineStages) > 0 {
+		return settings.MachineStages
+	}
+	return defaultMachineStages
+}
+
+// ValidMachineStage は段が一覧にあるかを**表引きで**確かめます。
+// 「現行」と「現行品」が混ざると、探すときに静かに取りこぼすためです。
+func ValidMachineStage(v string) bool {
+	for _, st := range MachineStages() {
+		if st == v {
+			return true
+		}
+	}
+	return false
 }
 
 // activeTypeInference はいま効いている推論辞書を返します。

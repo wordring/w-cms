@@ -28,11 +28,31 @@ package cms
 // ユーザー:「顧客であり、仕入れ先である場合もあります」——置き場所で分けると、
 // そのとき1枚に保てません。同じページに両方書けます（タグは同じ名前を何度でも置ける）。
 //
-// **相手ページはトップ直下**です（顧客名ページの決定・2026-09-03 と同じ場所）。
-// 会社ページを別に作ると「株式会社トーアスポーツマシーン」が2枚になります。
+// **相手ページは「取引先」の下**です（2026-09-05 ユーザー:「トップページの直接の子が
+// 個人名や社名はちょっと具合が悪い」）。もとは 2026-09-03 の決定でトップ直下でしたが、
+// 相手が増えるほどトップが名簿になってしまうため、**箱を1枚かませました**。
 //
-// **個人のお客様なら、そのページが本人**です。人物ページは「窓口が複数のときだけ」
-// 子として作ります——本人の名前のページを2枚重ねる意味がないためです。
+// **箱は1枚だけ**です。`顧客` `仕入先` `自社` で箱を分けないのは、ユーザーの
+// 「顧客であり、仕入れ先である場合もあります」がそのまま効くため——置き場所で
+// 分けると、その相手を**どちらか一方にしか置けません**。役割はタグの仕事です。
+//
+// **顧客名／装置名称／図面名称の「顧客名」も同じページ**です（同日ユーザー決定）。
+// 会社ページを別に作ると「株式会社トーアスポーツマシーン」が2枚になり、
+// 連絡先を見るページと部品を見るページが分かれてしまいます。
+//
+// **個人のお客様なら、そのページが本人**です。人物ページを別に作りません
+// ——本人の名前のページを2枚重ねる意味がないためです。
+//
+// **窓口の人は `社名／担当者／名前`**（2026-09-05 ユーザー決定）。社名ページの子には
+// 既に**装置名称**が並ぶので、人を直接ぶら下げると**人と装置が兄弟になり**、装置が
+// 増えるほど人が埋もれます。`担当者` を1枚かませて分けます:
+//
+//	取引先／株式会社トーアスポーツマシーン／担当者／潮崎 光俊
+//	取引先／株式会社トーアスポーツマシーン／オールラウンド2輪／脚取付台
+//
+// **人のページは要るときだけ**です。連絡先そのもの（メールアドレス・電話番号）は
+// 社名ページにタグとして何個でも置けるので、**その人に添付や記録を紐づけたく
+// なったとき**に初めてページにします。**作る操作は未実装**。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -47,6 +67,34 @@ import (
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
+
+// ContactPersonBoxTitle は社名ページの下の、窓口の人を集める箱の名前です
+// （`取引先／社名／担当者／名前`）。**装置名称と人を兄弟にしない**ための1枚。
+// 語を1箇所に閉じておくのは「担当」と「担当者」が混ざるのを防ぐためです。
+const ContactPersonBoxTitle = "担当者"
+
+// PartnerBoxTitle は相手ページの置き場（トップ直下）の名前です。通信箱
+// （MailBoxTitle）・テンプレート置き場と同じく **h1（ページ名）が正**。
+const PartnerBoxTitle = "取引先"
+
+// PartnerBoxPageID はトップ直下の取引先ページを返します（無ければ ok=false）。
+func PartnerBoxPageID() (string, bool) { return topLevelPageByTitle(PartnerBoxTitle) }
+
+// EnsurePartnerBox は取引先ページを返し、**無ければ作ります**。
+//
+// **通信箱と違って自動で作ります。** 通信箱は「そこへ落とすと取り込みが走る」という
+// 機能の入口なので、人が意図して置くものです。取引先はただの置き場——無いからと
+// 登録ボタンを行き止まりにする理由がありません。名前を変えられたら次の登録で
+// また作られますが、**取り込みのように静かに壊れることはありません**。
+//
+// 権限は呼ぶ側が見ます（作るときはトップへの書き込み、あるときは箱への書き込み）。
+func EnsurePartnerBox(user *auth.User) (string, error) {
+	if id, ok := PartnerBoxPageID(); ok {
+		return id, nil
+	}
+	return CreateChildPage(TopPageID, user.Username,
+		"<h1>"+stdhtml.EscapeString(PartnerBoxTitle)+"</h1><p><br/></p>")
+}
 
 // EmailTag は連絡先のメールアドレスです。**1ページに何個でも置けます**
 // （会社の窓口が複数、同じ人が複数のアドレスを持つ、どちらも起きる）。
@@ -257,8 +305,9 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		return sb.String()
 	}
 	sb.WriteString(`<p class="unhandled-note">` +
-		`同じドメインはまとめてあります——**会社を1枚に保つ**ため。` +
-		`名前を直してから、どの取引かを押してください（顧客と仕入先はあとから足せます）。</p>`)
+		`同じドメインはまとめてあります——会社を1枚に保つためです。` +
+		`名前を直してから、どの取引かを押してください（顧客と仕入先はあとから足せます）。` +
+		`ページは「` + PartnerBoxTitle + `」の下にできます。</p>`)
 
 	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
 	for _, c := range list {
@@ -330,8 +379,18 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// **相手ページはトップ直下**（顧客名ページと同じ場所——会社を2枚にしない）。
-	if !page.RequirePageWrite(w, r, TopPageID) {
+	// **相手ページは「取引先」の下**（顧客名ページと同じ場所——会社を2枚にしない）。
+	// 箱がまだ無いときはトップへ1枚足すので、**トップへの書き込み**が要ります。
+	needParent := TopPageID
+	if id, ok := PartnerBoxPageID(); ok {
+		needParent = id
+	}
+	if !page.RequirePageWrite(w, r, needParent) {
+		return
+	}
+	boxID, err := EnsurePartnerBox(user)
+	if err != nil {
+		JSONFail(w, http.StatusInternalServerError, "「"+PartnerBoxTitle+"」ページを作れません: "+err.Error())
 		return
 	}
 
@@ -347,7 +406,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// （タグがあれば ☎ 発信のボタンも出ます・app.js）。
 	b.WriteString(`<p><br/></p>`)
 
-	pageID, err := CreateChildPage(TopPageID, user.Username, b.String())
+	pageID, err := CreateChildPage(boxID, user.Username, b.String())
 	if err != nil {
 		JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
 		return
