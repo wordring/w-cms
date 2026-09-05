@@ -59,10 +59,10 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// **受信箱への到着は取り込み係へ回覧する**（intake.go・2026-09-01）。
-	// 受信箱の本文は変更しない（子ページが生まれるだけ）ので編集ロックは要らない。
+	// **通信箱への到着は取り込み係へ回覧する**（intake.go・2026-09-01）。
+	// 通信箱の本文は変更しない（子ページが生まれるだけ）ので編集ロックは要らない。
 	// 取り込み係が居ない拡張子は、通常の添付として下の経路へ流れる。
-	if inboxID, ok := InboxPageID(); ok && inboxID == pageID {
+	if inboxID, ok := MailBoxPageID(); ok && inboxID == pageID {
 		if served := serveIntake(w, r, inboxID, "file"); served {
 			return
 		}
@@ -83,7 +83,7 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	// 専用の口があるものは迂回させない（画像＝マジックナンバー検証・EXIF除去、
-	// PDF＝%PDF- 検証）。**受信箱宛てだけは例外**で、上の取り込み分岐が
+	// PDF＝%PDF- 検証）。**通信箱宛てだけは例外**で、上の取り込み分岐が
 	// 種類ごとの検査を通したうえで引き受ける（1つの口で全部受ける・2026-09-03）。
 	if ext == ".pdf" || allowedImageExts[ext] {
 		http.Error(w, "この種類は専用のアップロード口を使ってください（画像・PDF）", http.StatusBadRequest)
@@ -136,10 +136,10 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// checkIntakeContent は受信箱へ着いたファイルを種類ごとに検査します。
+// checkIntakeContent は通信箱へ着いたファイルを種類ごとに検査します。
 // 画像は EXIF を落とした中身を返すので、**戻り値のほうを保存すること**。
 //
-// 受信箱は「何かが届いた」の1つの口で全部を受けます（メール・PDF・画像・図面…）。
+// 通信箱は「何かが届いた」の1つの口で全部を受けます（メール・PDF・画像・図面…）。
 // そのぶん、**専用の口が持っていた守りをここで引き受けます**——
 // PDF はマジックナンバー、画像は種別の一致とメタデータ除去。
 // それ以外（DXF・Office・ZIP 等）は中身を検査しません——CAD/Office の検証は
@@ -162,10 +162,10 @@ func checkIntakeContent(fileName string, content []byte) ([]byte, error) {
 	return content, nil
 }
 
-// serveIntake は受信箱へのアップロードを取り込み係に回します。
+// serveIntake は通信箱へのアップロードを取り込み係に回します。
 // 担当が居なければ false（通常の添付経路へ戻す）。
 // formField はファイルが入っているフォーム欄の名前です（汎用の口は "file"、
-// PDF専用の口は "pdf_file"）——**受信箱への到着はどちらの口からも同じ取り込み係へ
+// PDF専用の口は "pdf_file"）——**通信箱への到着はどちらの口からも同じ取り込み係へ
 // 回す**ため、口ごとの違いはこの引数だけに閉じ込めます。
 func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField string) bool {
 	file, header, err := r.FormFile(formField)
@@ -182,7 +182,7 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 		http.Error(w, "File read error", http.StatusInternalServerError)
 		return true
 	}
-	// **種類ごとの検査はここで通す**——受信箱は1つの口で全部を受けるので、
+	// **種類ごとの検査はここで通す**——通信箱は1つの口で全部を受けるので、
 	// 専用の口が持っていた守り（PDFのマジックナンバー・画像の種別検証とEXIF除去）を
 	// 迂回させない（2026-09-03「受け口の一本化」）。
 	content, err = checkIntakeContent(header.Filename, content)

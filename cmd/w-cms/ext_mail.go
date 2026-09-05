@@ -3,7 +3,7 @@
 package main
 
 // ─────────────────────────────────────────────────────────────────────────
-// メール送受信（Microsoft Graph）——コンパイル時に選ぶ拡張（2026-09-03）
+// メール送受信（IMAP／SMTP）——コンパイル時に選ぶ拡張（2026-09-03）
 //
 //	go build ./cmd/w-cms                  … メール入り（既定）
 //	go build -tags nomail ./cmd/w-cms     … メールだけ外す
@@ -18,8 +18,8 @@ package main
 // 入っているかどうかは起動ログに出ます（有効／設定待ちも含めて）。
 // ─────────────────────────────────────────────────────────────────────────
 
-import _ "w-cms/ext/mailgraph"
+import _ "w-cms/ext/mail"
 
 func init() {
-	loadedExtensions = append(loadedExtensions, "mailgraph（メール送受信・Microsoft Graph）")
+	loadedExtensions = append(loadedExtensions, "mail（メール送受信・IMAP／SMTP）")
 }

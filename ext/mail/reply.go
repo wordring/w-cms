@@ -1,4 +1,4 @@
-package mailgraph
+package mail
 
 // ─────────────────────────────────────────────────────────────────────────
 // メールを送り、送信箱へ記録する（2026-09-03）
@@ -6,7 +6,7 @@ package mailgraph
 // ユーザー:「返信の本体は送信箱にあるのはどうでしょう？そして、返信元のメールから
 // ものぞき見できるのが良いかと」
 //
-// **送った記録は送信箱の下に立ちます**（受信箱と同じ年月フォルダ）。返信元の子には
+// **送った記録は通信箱の下に立ちます**（受信と同じ年月フォルダ）。返信元の子には
 // しません——返信元を持たない新規のメールが行き場を失いますし、送った記録が
 // 受け取った記録に従属して見えるためです。繋がりは所有ではなく**参照**で表します:
 //
@@ -86,11 +86,11 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. 送る。ここで失敗したら記録は作りません（出ていないので）。
 	//
 	// **返信元のメッセージIDを In-Reply-To に載せます**——これが相手のメールソフトで
-	// 元のスレッドに並ぶ条件です（Graph の sendMail では立てられず、SMTP へ変えた
+	// 元のスレッドに並ぶ条件です（SMTP を選んだ
 	// 理由そのもの）。返信元が無い新規メールでは空のまま。
 	// **送信はコアの口を通します**（cms.SendMail）。実装を直に呼ばないのは、
 	// 「使う側はコアに尋ねる」という mail.go の設計そのもの——この経路が
-	// mailgraph の中にあるのは偶然で、他の拡張から送るときも同じ口を使います。
+	// この拡張の中にあるのは偶然で、他の拡張から送るときも同じ口を使います。
 	sentID, err := cms.SendMail(user, cms.OutgoingMail{
 		To: cleanAddrs(req.To), Cc: cleanAddrs(req.Cc),
 		Subject: req.Subject, BodyText: req.Body,
@@ -121,11 +121,14 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// recordSentMail は送信箱の下へ記録ページを作ります。
+// recordSentMail は通信箱の下へ送信の記録ページを作ります。
+//
+// **受信と同じ箱・同じ年月フォルダ**です（2026-09-05 の統合）。向きは置き場所ではなく
+// `向き：送信` のタグが表します。
 func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRequest) (string, error) {
-	rootID, ok := cms.SentBoxPageID()
+	rootID, ok := cms.MailBoxPageID()
 	if !ok {
-		return "", errNoSentBox
+		return "", errNoMailBox
 	}
 	now := time.Now()
 	subject := strings.TrimSpace(req.Subject)
@@ -136,6 +139,7 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
+	cms.WriteTag(&b, cms.DirectionTag, cms.DirectionOut)
 	cms.WriteTag(&b, cms.ChannelTag, "メール")
 	cms.WriteTag(&b, "差出人アドレス", SignedInAddress(user.Username))
 	for _, a := range cleanAddrs(req.To) {
@@ -177,13 +181,13 @@ func cleanAddrs(in []string) []string {
 	return out
 }
 
-// errNoSentBox は送信箱ページが無い印です。
-var errNoSentBox = errNoSentBoxErr{}
+// errNoMailBox は通信箱ページが無い印です。
+var errNoMailBox = errNoMailBoxErr{}
 
-type errNoSentBoxErr struct{}
+type errNoMailBoxErr struct{}
 
-func (errNoSentBoxErr) Error() string {
-	return "送信箱ページがありません（トップ直下に「" + cms.SentBoxTitle + "」という名前のページを作ってください）"
+func (errNoMailBoxErr) Error() string {
+	return "通信箱ページがありません（トップ直下に「" + cms.MailBoxTitle + "」という名前のページを作ってください）"
 }
 
 // sourceMessageID は返信元ページの「メッセージID」タグを読みます（無ければ空）。

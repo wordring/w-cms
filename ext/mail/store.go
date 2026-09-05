@@ -1,4 +1,4 @@
-package mailgraph
+package mail
 
 // ─────────────────────────────────────────────────────────────────────────
 // トークンの保管——**ここだけが秘密を持ちます**（2026-09-03）
@@ -90,7 +90,12 @@ func loadToken(username string) (storedToken, bool) {
 	return st, true
 }
 
-// deleteToken は保存を捨てます（サインアウト・更新に失敗したとき）。
+// deleteToken は保存を捨てます。
+//
+// **自動では呼びません**（2026-09-05）。更新に失敗しただけで捨てると、
+// 同意が足りないとき（`AADSTS65001`）にサインインごと消えます——実際に、
+// 受信を IMAP へ移して権限が増えた日にそれで消しました。捨てても得は無く、
+// サインインし直せば上書きされます。将来サインアウトの口を作るときの土台として残します。
 func deleteToken(username string) {
 	path := tokenPath(username)
 	if path == "" {

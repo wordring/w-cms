@@ -3,7 +3,7 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 // ファイルの取り込み係——解釈しないが記録は残す（2026-09-03）
 //
-// 受信箱へ置かれたファイル（PDF・画像・図面・Office…）を**通信記録ページ**へ
+// 通信箱へ置かれたファイル（PDF・画像・図面・Office…）を**通信記録ページ**へ
 // 変換します。**中身は解釈しません**——それは人が「🤖 解析」を押したときの仕事。
 //
 //	<h1>（ファイル名から）</h1>
@@ -14,7 +14,7 @@ package cms
 // CMSとFAXサーバを運用しようと思います。しかし、最初はVPSを借りて始めるので、
 // FAXのPDFをはる形かもしれません」）:
 //
-//   - **VPS期**: 人が受信箱へPDFをドロップする
+//   - **VPS期**: 人が通信箱へPDFをドロップする
 //   - **オンプレ期**: FAXサーバの橋渡しが同じ口（`/api/upload-pdf` または
 //     `/api/upload-file`）へ POST する
 //
@@ -73,6 +73,13 @@ const ContentHashTag = "内容ハッシュ"
 // 「取引先Aからの受信」を引けるようにするための軸（§6）。
 const ChannelTag = "チャネル"
 
+// AttachmentCountTag は添付の数です（0 なら書きません）。
+//
+// **一覧で「発注書が付いているか」を見るため**に索引へ載せます（2026-09-05）。
+// 本文を開かないと分からない値だと、100件の一覧を出すたびに100個の本文を
+// 読むことになります。受信原本（.eml）は数えません。
+const AttachmentCountTag = "添付"
+
 // SourceRef は重複検知の鍵（中身のSHA-256）を返します。
 func (fileIntake) SourceRef(fileName string, content []byte) (string, string, bool) {
 	sum := sha256.Sum256(content)
@@ -113,7 +120,11 @@ func (f fileIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) 
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	WriteTag(&b, ChannelTag, f.channel) // 空なら書かれない
+	// 向きはチャネルと直交する軸（2026-09-05）。ドロップで着くものは受信です
+	// ——自分が出したものを通信箱へ置く経路はいまありません。
+	WriteTag(&b, DirectionTag, DirectionIn)
+	WriteTag(&b, ChannelTag, f.channel)   // 空なら書かれない
+	WriteTag(&b, AttachmentCountTag, "1") // このファイル自身が1件
 	// **取り込み日時であって受信日時ではない**——PDF は受け取った時刻を持たない。
 	// 名前を正確にしておけば、あとで `受信日時` を足したときに矛盾しない。
 	WriteTag(&b, "取り込み日時", time.Now().In(time.Local).Format(time.RFC3339))

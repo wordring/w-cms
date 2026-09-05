@@ -25,7 +25,7 @@ import (
 //     ほうが良いでしょう。実行ボタンを押してからページ作成です」
 //   - **人が直した値がそのまま使われる**（`【試作】…` は機械には決められない）
 //   - **既にあれば改定図面**として合流し、仮のページは片付く
-//   - **空欄はそのまま**（「まだ決められない」の意思表示。受信箱が保留の置き場）
+//   - **空欄はそのまま**（「まだ決められない」の意思表示。通信箱が保留の置き場）
 
 // setupFilingTest は受信箱役のページとトップページを用意します。
 func setupFilingTest(t *testing.T, inboxID string) {
@@ -182,7 +182,7 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 }
 
 // TestFileDrawingsSkipsEmptyFields は、空欄の行を**動かさない**ことを固定します。
-// 空欄は「まだ決められない」の意思表示で、受信箱が保留の置き場です
+// 空欄は「まだ決められない」の意思表示で、通信箱が保留の置き場です
 // ——空の顧客ページを増やさないためでもあります。
 func TestFileDrawingsSkipsEmptyFields(t *testing.T) {
 	const inbox = "000012"

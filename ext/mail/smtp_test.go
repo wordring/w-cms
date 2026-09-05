@@ -1,4 +1,4 @@
-package mailgraph
+package mail
 
 import (
 	"encoding/base64"
@@ -11,9 +11,8 @@ import (
 
 // SMTP へ渡すMIMEの組み立てのテスト（2026-09-03）。
 //
-// **In-Reply-To が立つことが SMTP へ変えた理由そのもの**なので、そこを固定します。
-// Graph の sendMail は独自ヘッダ（`x-` 始まり）しか受け付けず、実物で確かめると
-// `InvalidInternetMessageHeader` で 400 になりました。
+// **In-Reply-To が立つことが SMTP を選んだ理由そのもの**なので、そこを固定します。
+// これが無いと、返信が相手のメールソフトで元のスレッドに並びません。
 
 func TestBuildMIMESetsInReplyTo(t *testing.T) {
 	out, err := buildMIME("me@example.com", "<mine@example.com>", cms.OutgoingMail{
@@ -91,8 +90,7 @@ func TestBuildMIMEBodyIsBase64(t *testing.T) {
 }
 
 // TestBuildMIMEAttachesFiles は、添付が multipart で載ることを固定します。
-// **SMTP にした利点の1つが添付の上限**（Graph の簡易送信は3MiB、SMTP は約35MB）
-// なので、ここが動かないと変えた意味が薄れます。
+// **SMTP の利点の1つが添付の上限**（M365 で約35MB）なので、ここは固定しておきます。
 func TestBuildMIMEAttachesFiles(t *testing.T) {
 	out, err := buildMIME("me@example.com", "<m@x>", cms.OutgoingMail{
 		To: []string{"you@example.com"}, Subject: "x", BodyText: "本文",

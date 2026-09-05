@@ -11,7 +11,7 @@ package cms
 // 採るのは既存の回覧機構と同じ形です:
 //
 //	コアが口を宣言   … このファイル（Mailer・RegisterMailer）
-//	プラグインが中身 … ext/mailgraph（Microsoft Graph 実装）
+//	プラグインが中身 … ext/mail（IMAP／SMTP＋OAuth2 の実装）
 //	使う側はコアに尋ねる … CurrentMailer()。無ければ「送れません」と答えるだけ
 //
 // `RegisterIntake`・`RegisterView`・`RegisterMirror` と同じ規律なので、
@@ -100,12 +100,12 @@ func CurrentMailer() (Mailer, bool) {
 // SendMail は登録された実装へ送信を委ね、**立てた Message-ID を返します**。
 // 実装が無ければ ErrNoMailer、サインインしていなければ ErrMailNotSignedIn。
 //
-// **メールを送りたい側はここだけを見ます。** 送信の実装（ext/mailgraph）を
+// **メールを送りたい側はここだけを見ます。** 送信の実装（ext/mail）を
 // import しないので、`-tags minimal` で外しても使う側はビルドできます
 // ——それが「コアが口だけを持つ」ことの実利です。
 //
 // かつて `error` だけを返していたころ、`In-Reply-To` のために Message-ID が
-// 要ることが分かり、mailgraph が自前の口（SendAndReturnID）を作って**この関数を
+// 要ることが分かり、メール拡張が自前の口（SendAndReturnID）を作って**この関数を
 // 迂回していました**。抽象の形が用途に合っていなかっただけなので、形のほうを
 // 直しました（2026-09-05）。
 func SendMail(user *auth.User, msg OutgoingMail) (string, error) {
