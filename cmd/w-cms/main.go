@@ -175,6 +175,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/intake/handled", cms.MarkHandledAPIHandler)
 	// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
 	protected.HandleFunc("/api/intake/memo", cms.NewMemoAPIHandler)
+	// メールから拾った相手をページにする（アドレス帳）。
+	protected.HandleFunc("/api/contacts/register", cms.RegisterContactAPIHandler)
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 

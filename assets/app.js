@@ -1225,6 +1225,7 @@
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
         wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
+        wireContactRegister();       // 未登録の連絡先の［顧客］［仕入先］［自社］
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
@@ -3606,6 +3607,62 @@
             location.href = '/' + data.page_id + '?edit=true';
         } catch (e) {
             notify('記録を作れませんでした: ' + e.message, { type: 'warn' });
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ── 未登録の連絡先を相手ページにする（2026-09-05）─────────────────────
+    //
+    // ユーザー:「アドレス帳のようなものを作って、メールから人物や電話番号、
+    // メールアドレスを収集しましょう」。集めるのは取り込みが既にやっているので、
+    // ここは**人が名前を直して、どの取引かを押す**だけです。
+    //
+    // **顧客と仕入先は両方ありえます**（「顧客であり、仕入れ先である場合もあります」）
+    // ——押した順に `取引` のタグが増えるので、あとから足せます。
+    function wireContactRegister() {
+        const host = document.getElementById('w-editor-content');
+        if (!host) return;
+        const editMode = document.body.hasAttribute('edit-mode');
+        host.querySelectorAll('.contact-register').forEach(btn => {
+            btn.disabled = editMode;
+            if (btn.dataset.wired) return;
+            btn.dataset.wired = '1';
+            btn.addEventListener('click', () => registerContact(btn));
+        });
+    }
+
+    async function registerContact(btn) {
+        const row = btn.closest('tr');
+        const input = row && row.querySelector('.contact-name-input');
+        const name = input ? input.value.trim() : '';
+        if (!name) {
+            notify('名前を入れてください', { type: 'warn' });
+            if (input) input.focus();
+            return;
+        }
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/contacts/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    relation: btn.dataset.relation,
+                    addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
+                }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                notify(data.message || '相手ページを作れませんでした', { type: 'warn' });
+                return;
+            }
+            // 行を消すのは見た目だけ。正本はページ側のタグで、次に開けば描き直される。
+            if (row) row.remove();
+            notify('「' + data.title + '」を' + btn.dataset.relation + 'として登録しました',
+                { type: 'success', duration: 6000 });
+        } catch (e) {
+            notify('相手ページを作れませんでした: ' + e.message, { type: 'warn' });
         } finally {
             btn.disabled = false;
         }

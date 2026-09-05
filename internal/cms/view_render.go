@@ -40,6 +40,7 @@ import (
 var viewRenderers = map[string]func(user *auth.User, pageIDInt int) string{
 	"child-list":       childListViewHTML,
 	"unhandled-intake": unhandledViewHTML,
+	"unknown-contacts": contactsViewHTML,
 }
 
 // RegisterView は計算ビューの描画処理を足します。**拡張の `init()` から**

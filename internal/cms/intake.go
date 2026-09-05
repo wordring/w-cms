@@ -123,27 +123,21 @@ func RegisterIntake(h IntakeHandler, exts ...string) {
 }
 
 // intakeFallback は拡張子の担当が居ないときの既定の担当です。
+// intakeHandlerFor は拡張子の担当を返します（居なければ nil）。
 //
-// 通信箱は「**何かが届いた**」という1つの事実を受ける場所なので、種類が何であれ
-// 記録は残るべきです（2026-09-03 ユーザー:「その受け口ではメールや、PDF、DXFも
-// 受け付け」）。拡張子ごとの担当は「その形式を**解釈できる**者」で、
-// 既定の担当は「解釈しないが記録は残す」者。
-var intakeFallback IntakeHandler
-
-// RegisterIntakeFallback は既定の担当を登録します（init から呼ぶ・1人だけ）。
-func RegisterIntakeFallback(h IntakeHandler) {
-	if intakeFallback != nil {
-		panic("取り込みの既定の担当が二重に登録されています: " + intakeFallback.Name() + " と " + h.Name())
-	}
-	intakeFallback = h
-}
-
-// intakeHandlerFor は拡張子の担当を返します（居なければ既定の担当・それも無ければ nil）。
+// **既定の担当（何でも受ける係）は 2026-09-05 に取り止めました。** ユーザー:
+// 「通信箱のPDF、DXF取り込みはやめましょう。メモに添付するようにしましょう」
+// ——落ちてきた PDF を機械が `チャネル：FAX` と決めつけていたためです。PDF は
+// スキャンからもダウンロードからも来るので、**経路は届いた本人しか知りません**。
+//
+// いまは人が「＋ 記録する」でチャネルと向きを選び、そのページへファイルを
+// 落とします。**FAXサーバーを繋ぐときは機械専用の口を作ること**——人の手ドロップと
+// 機械の投函を同じ口で受けると、また決めつけが戻ります。
 func intakeHandlerFor(ext string) IntakeHandler {
 	if h, ok := intakeRegistry[strings.ToLower(ext)]; ok {
 		return h
 	}
-	return intakeFallback
+	return nil
 }
 
 // IntakeContext は取り込み係に渡す最小権限の道具です。
@@ -350,6 +344,21 @@ func setSortKey(pageID, key string) {
 		log.Printf("並び順キーを書けませんでした page=%s: %v", pageID, err)
 	}
 }
+
+// ChannelTag はどの経路で届いた（送った）かです。メール・FAX・電話・メモを
+// **横断して**「取引先Aとのやりとり」を引けるようにするための軸。
+//
+// **人が選びます**（handler_memo.go）。2026-09-05 まではドロップされた PDF を
+// 機械が `FAX` と決めつけていましたが、**取り止めました**——PDF はスキャンからも
+// ダウンロードからも来るので、経路は届いた本人しか知りません。
+const ChannelTag = "チャネル"
+
+// AttachmentCountTag は添付の数です（0 なら書きません）。
+//
+// **一覧で「発注書が付いているか」を見るため**に索引へ載せます（2026-09-05）。
+// 本文を開かないと分からない値だと、100件の一覧を出すたびに100個の本文を
+// 読むことになります。受信原本（.eml）は数えません。
+const AttachmentCountTag = "添付"
 
 // DirectionTag は記録の向きです（値は DirectionIn / DirectionOut）。
 //

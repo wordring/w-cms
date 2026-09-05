@@ -1857,3 +1857,21 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     cursor: pointer;
     overflow-wrap: anywhere;
 }
+
+/* 未登録の連絡先（2026-09-05）。名前は直してから押すので、入力欄を行に置く。 */
+#w-editor-content .contact-name-input {
+    width: 100%;
+    min-width: 8em;
+    padding: 2px 6px;
+    font-size: 13px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg-paper);
+    color: var(--text);
+}
+#w-editor-content table.unhandled-table td.contact-name { width: 30%; }
+#w-editor-content .contact-addrs {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
