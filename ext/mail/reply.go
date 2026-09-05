@@ -41,6 +41,9 @@ type ReplyRequest struct {
 	Cc           []string `json:"cc"`
 	Subject      string   `json:"subject"`
 	Body         string   `json:"body"`
+	// 添付は **w-cms の中にあるもの**を指します（attach.go）。手元のディスクから
+	// 選び直さないので、同じファイルが2つに増えません。
+	Attachments []AttachRef `json:"attachments"`
 }
 
 // MailSendAPIHandler は POST /api/mail/send です。
@@ -91,10 +94,19 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **送信はコアの口を通します**（cms.SendMail）。実装を直に呼ばないのは、
 	// 「使う側はコアに尋ねる」という mail.go の設計そのもの——この経路が
 	// この拡張の中にあるのは偶然で、他の拡張から送るときも同じ口を使います。
+	//
+	// **添付は送る前に読み切ります。** 途中で足りないと分かると「送ったつもりで
+	// 届いていない」になるので、揃わなければ1通も送りません。
+	files, err := collectAttachments(user, req.Attachments)
+	if err != nil {
+		cms.JSONFail(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sentID, err := cms.SendMail(user, cms.OutgoingMail{
 		To: cleanAddrs(req.To), Cc: cleanAddrs(req.Cc),
 		Subject: req.Subject, BodyText: req.Body,
-		InReplyTo: sourceMessageID(source),
+		InReplyTo:   sourceMessageID(source),
+		Attachments: files,
 	})
 	if err != nil {
 		switch err {
@@ -157,6 +169,10 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	// In-Reply-To がここを指すので、**受信の取り込みだけでスレッドが繋がります**
 	// （返信元メッセージID の逆引き——既にある仕組みがそのまま効く）。
 	cms.WriteTag(&b, cms.MessageIDTag, messageID)
+	// 何件添えたか。**受信側と同じタグ**なので、一覧の 📎 もそのまま出ます。
+	if n := len(req.Attachments); n > 0 {
+		cms.WriteTag(&b, cms.AttachmentCountTag, strconv.Itoa(n))
+	}
 	if src := sourceMessageID(sourcePageID); src != "" {
 		cms.WriteTag(&b, "返信元メッセージID", src)
 	}
@@ -164,9 +180,26 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
 	cms.WriteTag(&b, cms.ReplySourceTag, sourcePageID)
 	b.WriteString("</dl>")
-	// 本文は平文のまま段落へ。HTMLメールは作らないので、見たままが送った中身です。
-	for _, line := range strings.Split(req.Body, "\n") {
-		b.WriteString("<p>" + html.EscapeString(line) + "</p>")
+	// 本文は平文のまま `<pre>` へ。HTMLメールは作らないので、**見たままが送った中身**です
+	// ——段落に割ると空行と字下げが落ち、控えが「送ったもの」と違う形になります
+	// （受信側と同じ扱い・2026-09-05）。
+	b.WriteString(cms.PlainTextBlockHTML(req.Body))
+
+	// **何を添えたかも控えに残します。** リンクは**元のページのファイルを指します**
+	// ——同じものを2つ持たないためで、控えの仕事は「送った事実」を記録することです。
+	for _, ref := range req.Attachments {
+		pageID, ok := page.NormalizeID(strings.TrimSpace(ref.PageID))
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(ref.Name)
+		if name == "" {
+			name = ref.File
+		}
+		b.WriteString(`<p>📎 <a href="` +
+			html.EscapeString(page.AttachmentURLFor(pageID, ref.File)) +
+			`" download="` + html.EscapeString(name) + `">` +
+			html.EscapeString(name) + `</a></p>`)
 	}
 
 	return cms.CreateRecordPage(rootID, user.Username, now, b.String())
