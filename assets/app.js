@@ -1223,6 +1223,8 @@
         refreshFilingButton();       // 部品ページの整理（閲覧モード限定）
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
+        wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
+        refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
@@ -3071,6 +3073,83 @@
         return '';
     }
 
+    // ── 電話をかける（tel: リンク・2026-09-05）───────────────────────────
+    //
+    // ユーザー:「CMSから電話をかける時にページを作るかチェックボックスがあっても
+    // 良いと思います」。**発信はもともと人が意図してする操作**なので、そこに
+    // チェック1つを足すのがいちばん安い歯止めになります（着信のように歯止めを
+    // あとから足す必要がない）。
+    //
+    // 発信の記録は `向き：送信` なので、**作業待ちには並びません**——かけた電話は
+    // 済んだ出来事です。特別扱いのコードは1行も要りません。
+    //
+    // `tel:` はサニタイザが元から許すスキームなので、**ソフトフォンがあれば今日から
+    // 押せます**。CTI の発信APIへ変えるときも、記録の形は変わりません。
+    const PHONE_TAG = '電話番号';
+
+    function refreshPhoneChrome() {
+        document.querySelectorAll('#w-editor-content .phone-chrome').forEach(el => el.remove());
+        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        const host = document.getElementById('w-editor-content');
+        if (!host || !currentPageId) return;
+        const number = tagValue(PHONE_TAG);
+        if (!number) return;
+
+        const box = document.createElement('div');
+        box.className = 'vocab-chrome phone-chrome';
+        box.setAttribute('contenteditable', 'false');
+
+        // 発信そのものはブラウザ任せ（素の <a href="tel:">）。JSで横取りすると、
+        // ソフトフォンへの受け渡しを壊しかねない。
+        const call = document.createElement('a');
+        call.className = 'phone-call';
+        call.href = 'tel:' + number.replace(/[^0-9+]/g, '');
+        call.textContent = '☎ ' + number + ' へかける';
+        box.appendChild(call);
+
+        const label = document.createElement('label');
+        label.className = 'phone-record';
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.checked = true; // **既定はオン**——「かけたのに記録が無い」ほうが後で困る
+        label.appendChild(check);
+        label.appendChild(document.createTextNode(' 記録を作る'));
+        box.appendChild(label);
+
+        call.addEventListener('click', () => {
+            if (!check.checked) return;
+            createCallRecord(number);
+        });
+        host.appendChild(box);
+    }
+
+    // createCallRecord は発信の記録を作り、書けるように開きます。
+    async function createCallRecord(number) {
+        try {
+            const res = await fetch('/api/intake/memo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: '電話',
+                    direction: '送信',
+                    phone: number,
+                    counterpart: currentPageId,
+                    title: (document.querySelector('#w-editor-content h1') || {}).textContent || '',
+                }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                notify(data.message || '発信の記録を作れませんでした', { type: 'warn' });
+                return;
+            }
+            notify('発信の記録を作りました。開いて内容を書けます。',
+                { type: 'success', duration: 8000 });
+            location.href = '/' + data.page_id + '?edit=true';
+        } catch (e) {
+            notify('発信の記録を作れませんでした: ' + e.message, { type: 'warn' });
+        }
+    }
+
     function refreshMailChrome() {
         document.querySelectorAll('#w-editor-content .mail-chrome').forEach(el => el.remove());
         if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
@@ -3420,6 +3499,68 @@
                     markHandled(picked, bulk);
                 });
             }
+        }
+    }
+
+    // wireNewRecord は「＋ 記録する」を配線します（電話・FAX・メール・メモ）。
+    //
+    // ユーザー:「いずれFAXサーバーを接続したら、自動的にチャネルがFAXになります」
+    // ——手で作る道と機械が作る道が**同じ形のページ**に落ちるので、ここは
+    // 「チャネルを選んで作る」以上のことをしません。作ったら開いて書き始められる
+    // ように、そのページへ移ります。
+    function wireNewRecord() {
+        const btn = document.getElementById('w-memo-create');
+        if (!btn || btn.dataset.wired) return;
+        btn.dataset.wired = '1';
+        const title = document.getElementById('w-memo-title');
+        const dir = document.getElementById('w-memo-direction');
+        const sel = document.getElementById('w-memo-channel');
+        // **メモには向きがありません。** 選べてしまうと「どちらでもない」を
+        // どちらかで書くことになるので、伏せます。
+        const syncDirection = () => {
+            if (!dir || !sel) return;
+            const off = sel.value === 'メモ';
+            dir.disabled = off;
+            dir.style.opacity = off ? '0.4' : '';
+        };
+        if (sel) sel.addEventListener('change', syncDirection);
+        syncDirection();
+        btn.addEventListener('click', () => createRecord(btn));
+        // 用件を打って Enter でも作れる（電話中に押す操作なので、手数を減らす）。
+        if (title) {
+            title.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); createRecord(btn); }
+            });
+        }
+    }
+
+    async function createRecord(btn) {
+        const sel = document.getElementById('w-memo-channel');
+        const dir = document.getElementById('w-memo-direction');
+        const title = document.getElementById('w-memo-title');
+        if (!sel) return;
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/intake/memo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: sel.value,
+                    direction: (dir && !dir.disabled) ? dir.value : '',
+                    title: title ? title.value : '',
+                }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                notify(data.message || '記録を作れませんでした', { type: 'warn' });
+                return;
+            }
+            // **作ったら開く。** 記録は書くために作るので、一覧に戻す意味がない。
+            location.href = '/' + data.page_id + '?edit=true';
+        } catch (e) {
+            notify('記録を作れませんでした: ' + e.message, { type: 'warn' });
+        } finally {
+            btn.disabled = false;
         }
     }
 

@@ -1738,3 +1738,59 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     cursor: pointer;
 }
 #w-editor-content #w-unhandled-bulk:disabled { opacity: .4; cursor: default; }
+
+/* 手で記録を作る一行（電話・FAX・メール・メモ）。**一覧が空でも出る**——片付いた日に
+ * ボタンごと消えると、電話が鳴ったときに置き場所が見つからない。 */
+#w-editor-content .unhandled-new {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 6px 0 10px;
+}
+#w-editor-content .unhandled-new select,
+#w-editor-content .unhandled-new input {
+    padding: 3px 8px;
+    font-size: 13px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg-paper);
+    color: var(--text);
+}
+#w-editor-content .unhandled-new input { flex: 1 1 auto; min-width: 0; max-width: 24em; }
+#w-editor-content #w-memo-create {
+    padding: 3px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+    background: var(--bg-paper);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+}
+#w-editor-content #w-memo-create:hover:not(:disabled) { background: var(--border); }
+#w-editor-content #w-memo-create:disabled { opacity: .4; cursor: default; }
+
+/* ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）。返信のクロームと同じ
+ * 「本文の外に出す帯」で、記録を作るかはチェック1つで決める。 */
+#w-editor-content .phone-chrome {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+#w-editor-content .phone-call {
+    padding: 3px 12px;
+    font-size: 13px;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--bg-paper);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+#w-editor-content .phone-call:hover { background: var(--border); }
+#w-editor-content .phone-record {
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
