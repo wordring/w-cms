@@ -122,7 +122,10 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		       COALESCE(p.title, ''),
 		       COALESCE((SELECT c.value FROM vocab_index c
 		                  WHERE c.page_id = p.id AND c.field = ? LIMIT 1), ''),
-		       COALESCE((SELECT r.value FROM vocab_index r
+		       -- 並べ替えの鍵は畳んだ値（UTC）。生の値で並べると、+09:00 と +02:00 が
+		       -- 混ざった日に辞書順が時刻の順とずれます（2026-09-06。いま全件が
+		       -- +09:00 なので壊れていないだけでした）。表示は呼ぶ側が土地の時刻へ直します。
+		       COALESCE((SELECT COALESCE(r.norm_value, r.value) FROM vocab_index r
 		                  WHERE r.page_id = p.id AND r.field = '受信日時' LIMIT 1),
 		                COALESCE(p.updated_at, '')),
 		       COALESCE((SELECT f.value FROM vocab_index f

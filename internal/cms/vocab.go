@@ -47,12 +47,28 @@ const (
 	// 図面名称）は長音を壊さないよう text のままにします。
 	// 設計は docs/【考察】テキストの正規化.md（2026-09-04 決定・案2）。
 	ColCode ColumnType = "code"
+	// ColDateTime は**時刻を含む日時**です（date は日付だけ）。正は ISO 8601 で、
+	// 索引の併記値は **UTC へ揃えます**——並べ替えが辞書順で行われるため、
+	// タイムゾーンの違う値が混ざると静かに順序が狂います（実データはいま全件
+	// `+09:00` なので**壊れていないだけ**でした・2026-09-06）。
+	ColDateTime ColumnType = "datetime"
+	// ColRef は**他のページ（またはその中のブロック）を指す参照**です。
+	//
+	// 値は `ページID-ブロックID`（`010173-skr1`）か、ページIDだけ（`010173`）。
+	// 参照タグは押せば飛び、③計算の集計範囲を決め、指す先が無ければ薄赤になる
+	// ——**もともと参照型として働いていたものに、型の名前を与えた**ものです。
+	//
+	// **どのタグが参照かは名前で決まります**（推論辞書）。値の形だけで決めると
+	// 発注書番号 `260602-102`（26年06月02日＋連番）まで参照に化けます
+	// （2026-09-04 に実データで発覚）。宣言は Goコードではなく辞書に置くので、
+	// **運用者が自分の参照タグを足せます**（`検査依頼元: ref` のように）。
+	ColRef ColumnType = "ref"
 )
 
 // validColumnTypes は th の data-type 属性（列型の明示）として受け付ける値です。
 var validColumnTypes = map[ColumnType]bool{
 	ColText: true, ColNumber: true, ColDate: true, ColEnum: true, ColImage: true,
-	ColCode: true,
+	ColCode: true, ColDateTime: true, ColRef: true,
 }
 
 // VocabColumn は形式の1列（dl では1項目）の定義です。
@@ -270,23 +286,6 @@ var kebabCaseRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // 辞書の初期内容とパース規則は未決事項（同書 §10）——現状はサンプルの種。
 // ─────────────────────────────────────────────────────────────────────────
 
-// defaultTypeInference は見出し語（trim後の完全一致）から列型を推論する辞書の**既定値**です。
-//
-// **実際に効くのは data/settings.json の `type_inference`**（settings.go）で、このマップは
-// ファイルが無いときの初期内容として書き出されます。運用者が語を足すのはファイル側で、
-// **DB再構築で読み直されます**（ユーザー決定 2026-08-30:「運用中に増やしてDB再構築します」）。
-// ここに並ぶのは板金部の語彙——**同梱の既定セットであって、コアの語彙ではありません**
-// （「語彙とプラグインは運用者のもの」——要件定義書 §4.5）。
-var defaultTypeInference = map[string]ColumnType{
-	"金額": ColNumber, "単価": ColNumber, "価格": ColNumber, "数量": ColNumber,
-	"納期": ColDate, "日付": ColDate, "検査日": ColDate, "発注日": ColDate, "納品日": ColDate,
-	"写真": ColImage, "画像": ColImage,
-	// code はユーザーが名指しで「検索できる必要がある」と言った2語だけを種にします。
-	// ユーザー:「運用前のいまは（どの語が code か）わかりません」（2026-09-04）——
-	// **出てきたら data/settings.json へ足してDB再構築**すれば効きます。
-	"図面番号": ColCode, "発注書番号": ColCode,
-}
-
 // InferColumnType は見出し語から列型を推論します。辞書に無ければ text です。
 func InferColumnType(label string) ColumnType {
 	if t, ok := activeTypeInference()[strings.TrimSpace(label)]; ok {
@@ -319,9 +318,60 @@ func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {
 		return normalizedOrNot(NormalizeText(raw))
 	case ColCode:
 		return normalizedOrNot(NormalizeCode(raw))
+	case ColDateTime:
+		return normalizeDateTime(toHalfWidth(strings.TrimSpace(raw)))
+	case ColRef:
+		return normalizeRef(raw)
 	default:
 		return "", false // enum / image は正規化しない
 	}
+}
+
+// normalizeDateTime は日時を **UTC の RFC 3339** へ揃えます。
+//
+// **タイムゾーンの無い書き方は、この機械のいる場所の時刻とみなします**
+// （`2026-09-06 14:30` と打った人は、目の前の時計を見て打っている）。
+// 読めなければ ok=false——生の値はそのまま残り、併記だけが空になります。
+func normalizeDateTime(s string) (string, bool) {
+	if s == "" {
+		return "", false
+	}
+	// 帯（オフセット）つき——そのまま解釈できる
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04Z07:00"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC().Format(time.RFC3339), true
+		}
+	}
+	// 帯なし——手で打った形。土地の時刻として読む
+	for _, layout := range []string{
+		"2006-01-02T15:04:05", "2006-01-02T15:04",
+		"2006-01-02 15:04:05", "2006-01-02 15:04",
+		"2006/01/02 15:04:05", "2006/01/02 15:04",
+	} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t.UTC().Format(time.RFC3339), true
+		}
+	}
+	return "", false
+}
+
+// normalizeRef は参照値を正規形（`ページID-ブロックID` または `ページID`）へ揃えます。
+//
+// 文法は描画側（ref_render.go）と**同じ関数**を使います——ここを別に持つと、
+// 「画面ではリンクなのに索引では参照でない」という、いちばん説明しづらい
+// 食い違いが生まれます。
+//
+// 読めなければ ok=false。**それが役に立ちます**——`norm_value IS NULL` の参照タグを
+// 数えれば、**形の壊れた参照**がSQL1本で出ます。
+func normalizeRef(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if pageID, blockID, ok := parseRefValue(s); ok {
+		return pageID + "-" + blockID, true
+	}
+	if m := pageIDOnlyRe.FindStringSubmatch(s); m != nil {
+		return m[1], true
+	}
+	return "", false
 }
 
 // normalizedOrNot は畳んだ値を返します。**空なら併記しません**——空セルの
