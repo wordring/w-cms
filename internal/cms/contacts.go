@@ -61,6 +61,7 @@ import (
 	stdhtml "html"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"w-cms/internal/auth"
@@ -309,6 +310,8 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		`名前を直してから、どの取引かを押してください（顧客と仕入先はあとから足せます）。` +
 		`ページは「` + PartnerBoxTitle + `」の下にできます。</p>`)
 
+	partners := existingPartners(user)
+
 	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
 	for _, c := range list {
 		sb.WriteString(`<tr data-domain="` + stdhtml.EscapeString(c.Domain) + `">`)
@@ -324,13 +327,30 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		}
 		sb.WriteString(`</td>`)
 		sb.WriteString(`<td class="unhandled-clip">` + fmt.Sprint(c.Count) + `件</td>`)
+		addrAttr := stdhtml.EscapeString(strings.Join(c.Addresses, ","))
 		sb.WriteString(`<td class="vocab-chrome unhandled-act">`)
 		for _, rel := range Relations() {
 			sb.WriteString(`<button type="button" class="chip-btn contact-register"` +
 				` data-relation="` + stdhtml.EscapeString(rel) + `"` +
-				` data-addresses="` + stdhtml.EscapeString(strings.Join(c.Addresses, ",")) + `"` +
+				` data-addresses="` + addrAttr + `"` +
 				` title="この相手を「` + PartnerBoxTitle + `」の下のページにします（取引：` +
 				stdhtml.EscapeString(rel) + `）">` + stdhtml.EscapeString(rel) + `</button>`)
+		}
+		// **既にある相手へ足す口**（2026-09-06）。同じ会社が2つ目のドメインから
+		// 送ってくると、ここに新しい行として現れます——押して新しいページを作ると
+		// **会社ページが2枚**になり、ドメインの逆引きで社名の揺れを消した意味が
+		// 無くなります。選ぶのは人です（同じ会社かどうかは機械には決められない）。
+		if len(partners) > 0 {
+			sb.WriteString(`<select class="contact-merge-target" aria-label="既にある相手へ足す">`)
+			sb.WriteString(`<option value="">既にある相手へ足す…</option>`)
+			for _, p := range partners {
+				sb.WriteString(`<option value="` + stdhtml.EscapeString(p.ID) + `">` +
+					stdhtml.EscapeString(p.Title) + `</option>`)
+			}
+			sb.WriteString(`</select>`)
+			sb.WriteString(`<button type="button" class="chip-btn contact-merge"` +
+				` data-addresses="` + addrAttr + `"` +
+				` title="選んだ相手ページへ、このドメインのアドレスを足します">足す</button>`)
 		}
 		sb.WriteString(`</td></tr>`)
 	}
@@ -355,17 +375,12 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Name      string   `json:"name"`
 		Relation  string   `json:"relation"`
 		Addresses []string `json:"addresses"`
+		// PageID があれば**既存の相手ページへ足します**（2026-09-06）。同じ会社が
+		// 2つ目のドメインから送ってくると、アドレス帳には新しい行として現れます
+		// ——そこで新しいページを作ると、会社ページが2枚になります。
+		PageID string `json:"page_id"`
 	}
 	if !DecodeJSONBody(w, r, &req) {
-		return
-	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		JSONFail(w, http.StatusBadRequest, "名前を入れてください")
-		return
-	}
-	if !validRelation(req.Relation) {
-		JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
 		return
 	}
 	var addrs []string
@@ -376,6 +391,49 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(addrs) == 0 {
 		JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
+		return
+	}
+
+	// ── 既存の相手へ足す ──
+	if raw := strings.TrimSpace(req.PageID); raw != "" {
+		target, ok := page.NormalizeID(raw)
+		if !ok {
+			JSONFail(w, http.StatusBadRequest, "相手ページのIDが不正です")
+			return
+		}
+		idInt, err := strconv.Atoi(target)
+		if err != nil || !isPartnerPage(idInt) {
+			// **箱の外へは足しません**（ドメインの逆引きが別物を拾うため）。
+			JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページを選んでください")
+			return
+		}
+		if !page.RequirePageWrite(w, r, target) {
+			return
+		}
+		added, err := AddContactAddresses(target, user.Username, addrs)
+		if err != nil {
+			JSONFail(w, http.StatusInternalServerError, "相手ページへ足せません: "+err.Error())
+			return
+		}
+		auth.Audit(user.Username, "contact.add-addresses",
+			target+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ","))
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true, "page_id": target, "title": partnerTitleOf(idInt),
+			"added": added, "merged": true,
+		})
+		return
+	}
+
+	// ── 新しい相手ページを作る ──
+	// **相手ページの題も早期に正規化します**（2026-09-06）。部品階層の顧客名と
+	// **同じページ**なので、こちらだけ畳まないと題が食い違って2枚に分かれます。
+	name := NormalizeNameForIngest(req.Name)
+	if name == "" {
+		JSONFail(w, http.StatusBadRequest, "名前を入れてください")
+		return
+	}
+	if !validRelation(req.Relation) {
+		JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
 		return
 	}
 
@@ -425,4 +483,202 @@ func validRelation(v string) bool {
 		}
 	}
 	return false
+}
+
+// PartnerTitleForAddress は差出人アドレスから、取引先ページの**題**を引きます。
+//
+// **社名の揺れを消すための鍵**です（2026-09-06 ユーザー:「社名の揺れは、エイリアスの
+// 表かAIでなくせませんか？」）。実データの初回で「トーアスポーツマシーン」と
+// 「株式会社トーアスポーツマシーン」が同じ会社で2枚になりました——機械が読んだ名前を
+// 人が打ち写したためです。**推測をやめて、既にあるページを名指しで引きます。**
+//
+// 引き方は2段:
+//
+//  1. **アドレスの完全一致**。ドメインより先に見ます——実データに「自社の工場長だけ
+//     別プロバイダのアドレス」という例があり、ドメインを先に見ると取り違えます。
+//  2. **ドメインの一致**。会社の窓口は増えるので、新しい人からのメールでも当たります。
+//
+// **`取引：自社` のページは返しません。** 顧客名の推奨値として自社が出ることは
+// ありえず、出ると人がそのまま押してしまいます。
+//
+// 見つからなければ ok=false——**呼ぶ側は読めた名前へ戻ります**。新しい顧客の1通目は
+// ここに無いのが正常で、そのときは人が打ちます。
+func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
+	mail := normalizeEmail(addr)
+	if mail == "" {
+		return "", false
+	}
+	boxID, ok := PartnerBoxPageID()
+	if !ok {
+		return "", false
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return "", false
+	}
+	domain := mail[strings.LastIndex(mail, "@"):] // "@example.co.jp"
+
+	rows, err := database.DB.Query(
+		`SELECT v.page_id, COALESCE(p.title, ''), v.value
+		   FROM vocab_index v JOIN pages p ON p.id = v.page_id
+		  WHERE v.field = ? AND p.parent_id = ?`, EmailTag, boxInt)
+	if err != nil {
+		return "", false
+	}
+	type hit struct {
+		id    int
+		title string
+		value string
+	}
+	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.id, &h.title, &h.value); err != nil {
+			rows.Close()
+			return "", false
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+
+	byDomain := ""
+	for _, h := range found {
+		v := normalizeEmail(h.value)
+		if v == "" || h.title == "" || !page.CanView(user, h.id) {
+			continue
+		}
+		if isSelfPartner(h.id) {
+			continue
+		}
+		if v == mail {
+			return h.title, true // 完全一致が最優先
+		}
+		if byDomain == "" && strings.HasSuffix(v, domain) {
+			byDomain = h.title
+		}
+	}
+	if byDomain != "" {
+		return byDomain, true
+	}
+	return "", false
+}
+
+// isSelfPartner はそのページが `取引：自社` かを返します。
+func isSelfPartner(pageIDInt int) bool {
+	var n int
+	database.DB.QueryRow(
+		`SELECT COUNT(*) FROM vocab_index WHERE page_id = ? AND field = ? AND value = ?`,
+		pageIDInt, RelationTag, RelationSelf).Scan(&n)
+	return n > 0
+}
+
+// AddContactAddresses は既存の相手ページへ `メールアドレス` のタグを足します。
+//
+// **2つ目のドメインのため**です（2026-09-06）。同じ会社が別のドメインからも
+// メールを送ってくると、アドレス帳には新しい行として現れます。押すたびに新しい
+// ページができると、**会社ページが2枚**になり、社名の揺れを消した意味が無くなります。
+//
+// 既に載っているアドレスは足しません——二度押しでタグが並ぶのを防ぐだけの判定なので、
+// `MarkHandled` と同じく**文字列で見ます**（取りこぼしても害は同じタグが2つ）。
+func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
+	added := 0
+	err := RewriteBody(pageID, author, func(current string) string {
+		added = 0 // 呼び直されても数が増えないように
+		var pairs strings.Builder
+		for _, a := range addrs {
+			dd := `<dd>` + stdhtml.EscapeString(a) + `</dd>`
+			if strings.Contains(current, dd) {
+				continue
+			}
+			pairs.WriteString(`<dt>` + stdhtml.EscapeString(EmailTag) + `</dt>` + dd)
+			added++
+		}
+		if pairs.Len() == 0 {
+			return current
+		}
+		if at := endOfFirstTagList(current); at >= 0 {
+			return current[:at] + pairs.String() + current[at:]
+		}
+		return insertAfterH1(current, `<dl data-type="tags">`+pairs.String()+`</dl>`)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return added, nil
+}
+
+// partnerTitleOf は索引からページの題を引きます（引けなければ空）。
+func partnerTitleOf(pageIDInt int) string {
+	var t string
+	database.DB.QueryRow(`SELECT COALESCE(title, '') FROM pages WHERE id = ?`, pageIDInt).Scan(&t)
+	return t
+}
+
+// isPartnerPage はそのページが「取引先」の直下にあるかを返します。
+//
+// **足す先を箱の中に限ります。** 画面から来たIDをそのまま信じると、通信記録や
+// 図面ページに `メールアドレス` のタグが付き、ドメインの逆引きが別物を拾います。
+func isPartnerPage(pageIDInt int) bool {
+	boxID, ok := PartnerBoxPageID()
+	if !ok {
+		return false
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return false
+	}
+	var parent int
+	if err := database.DB.QueryRow(
+		`SELECT COALESCE(parent_id, 0) FROM pages WHERE id = ?`, pageIDInt).Scan(&parent); err != nil {
+		return false
+	}
+	return parent == boxInt
+}
+
+// PartnerRef は既にある相手ページ1枚（画面の選択肢に使います）。
+type PartnerRef struct {
+	ID    string
+	Title string
+}
+
+// existingPartners は「取引先」の下にある相手ページを題の順で並べます（読めるものだけ）。
+func existingPartners(user *auth.User) []PartnerRef {
+	boxID, ok := PartnerBoxPageID()
+	if !ok {
+		return nil
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return nil
+	}
+	rows, err := database.DB.Query(
+		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY title ASC`, boxInt)
+	if err != nil {
+		return nil
+	}
+	type hit struct {
+		id    int
+		title string
+	}
+	// **先に読み切ってから絞ります**（page.CanView が別のクエリを投げるため）。
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.id, &h.title); err != nil {
+			rows.Close()
+			return nil
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+
+	var out []PartnerRef
+	for _, h := range found {
+		if h.title == "" || !page.CanView(user, h.id) {
+			continue
+		}
+		out = append(out, PartnerRef{ID: fmt.Sprintf("%0*d", page.IDLength, h.id), Title: h.title})
+	}
+	return out
 }

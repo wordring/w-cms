@@ -126,10 +126,113 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "一覧を作れません: "+err.Error())
 		return
 	}
+	// **受注ページも同じ画面で扱います**（2026-09-06）。行き先の決め方は違いますが
+	// （部品は人が打ち、受注は発注日で決まる）、人がやることは同じ「解析で生まれた
+	// ものを片付ける」なので、ボタンを2つに分ける理由がありません。
+	orders, err := orderChildrenOf(user, idInt)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "受注の一覧を作れません: "+err.Error())
+		return
+	}
 	// 段の一覧も返します——**選べる値は設定が持つ**ので、画面に書き写しません
 	// （語が2箇所にあると必ず片方が古くなる）。
+	//
+	// **既にある取引先の名前も返します**（2026-09-06）。初回の実データで
+	// 「トーアスポーツマシーン」（アドレス帳が作った）と「株式会社トーアスポーツ
+	// マシーン」（整理で人が打った）が**同じ会社で2枚**になりました。題の一致は
+	// 完全一致のまま（名寄せを機械がやると別の顧客が1つに潰れる）で、
+	// **人の目の前に既にある名前を出す**ことで解きます。
 	json.NewEncoder(w).Encode(map[string]any{
-		"success": true, "rows": rows, "stages": cms.MachineStages()})
+		"success": true, "rows": rows, "orders": orders,
+		"stages": cms.MachineStages(), "partners": partnerNames(user)})
+}
+
+// suggestCustomer は顧客名の推奨値を返します。
+//
+// **読んだ名前ではなく、既にある取引先ページの題を第一にします**（2026-09-06
+// ユーザー:「社名の揺れは、エイリアスの表かAIでなくせませんか？」）。揺れは
+// 「機械が読んだ名前を人が打ち写す」ところで生まれるので、**打ち写す元を変えます**:
+//
+//	部品ページ → `受信元` タグ → 通信記録 → `差出人アドレス` → 取引先ページ → その題
+//
+// この鎖は**全部が完全一致**で、推測が1つも入りません。エイリアスの表もAIも
+// 要らないのは、**同一性を名前で決めていない**からです。
+//
+// 引けなければ読めた名前（Geminiが図面から読んだ客先）へ戻ります——新しい顧客の
+// 1通目はまだ取引先に居ないのが正常で、そのときは人が打ちます。
+func suggestCustomer(user *auth.User, partPageID int, read string) string {
+	if addr := senderAddressOf(partPageID); addr != "" {
+		if title, ok := cms.PartnerTitleForAddress(user, addr); ok {
+			return title
+		}
+	}
+	return read
+}
+
+// senderAddressOf は部品ページの由来（`受信元`）をたどり、通信記録の差出人アドレスを返します。
+//
+// **由来のタグを見ます**（親ではなく）——部品ページは整理で動きますが、`受信元` は
+// 動きません。値は「ページID-添付ID」なので、ハイフンの前だけ使います。
+func senderAddressOf(partPageID int) string {
+	var ref string
+	database.DB.QueryRow(
+		`SELECT value FROM vocab_index WHERE page_id = ? AND field = '受信元' LIMIT 1`,
+		partPageID).Scan(&ref)
+	ref = strings.TrimSpace(ref)
+	if i := strings.Index(ref, "-"); i > 0 {
+		ref = ref[:i]
+	}
+	srcID, err := strconv.Atoi(ref)
+	if err != nil {
+		return ""
+	}
+	var addr string
+	database.DB.QueryRow(
+		`SELECT value FROM vocab_index WHERE page_id = ? AND field = '差出人アドレス' LIMIT 1`,
+		srcID).Scan(&addr)
+	return strings.TrimSpace(addr)
+}
+
+// partnerNames は「取引先」の下にある相手ページの題を並べます（読めるものだけ）。
+//
+// 整理の画面の入力補助です。**選ばせるのではなく、候補として見せる**だけ——
+// 新しい顧客の1枚目はここに無いので、打てなくしてはいけません。
+func partnerNames(user *auth.User) []string {
+	boxID, ok := cms.PartnerBoxPageID()
+	if !ok {
+		return []string{}
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return []string{}
+	}
+	dbRows, err := database.DB.Query(
+		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY title ASC`, boxInt)
+	if err != nil {
+		return []string{}
+	}
+	type row struct {
+		id    int
+		title string
+	}
+	var found []row
+	for dbRows.Next() {
+		var r row
+		if err := dbRows.Scan(&r.id, &r.title); err != nil {
+			dbRows.Close()
+			return []string{}
+		}
+		found = append(found, r)
+	}
+	dbRows.Close()
+
+	out := []string{}
+	for _, r := range found {
+		if r.title != "" && page.CanView(user, r.id) {
+			out = append(out, r.title)
+		}
+	}
+	return out
 }
 
 // drawingChildrenOf は、そのページの子のうち**図面ブロックを持つもの**を集めます。
@@ -174,7 +277,7 @@ func drawingChildrenOf(user *auth.User, parentIDInt int) ([]filingRow, error) {
 			Title:       c.title,
 			DrawingNo:   v["drawing-no"],
 			DrawingName: v["drawing-name"],
-			Customer:    v["client-name"],
+			Customer:    suggestCustomer(user, c.id, v["client-name"]),
 			MachineName: v["machine-name"],
 			Stage:       suggestStage(v["client-name"], v["machine-name"]),
 		})
@@ -216,6 +319,9 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Rows []filingRequest `json:"rows"`
+		// Orders は受注ページのIDだけ。直す欄が無いので、送るのは「押した」という
+		// 事実だけです（行き先は発注日から決まる）。
+		Orders []string `json:"orders"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -226,9 +332,12 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]filingResult, 0, len(req.Rows))
+	results := make([]filingResult, 0, len(req.Rows)+len(req.Orders))
 	for _, row := range req.Rows {
 		results = append(results, fileOneDrawing(user, row))
+	}
+	for _, id := range req.Orders {
+		results = append(results, fileOneOrder(user, id))
 	}
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "results": results})
 }
@@ -384,13 +493,24 @@ func movePage(user *auth.User, pageID, newParent, title string) error {
 
 // mergeAsRevision は改定図面を既存の部品ページへ合流させます。
 //
-// 新しい図面ブロックを既存ページの**先頭**（見出しの直後）へ差し込み、空になった
-// 仮のページをゴミ箱へ移します。「新しいものが上」という並びそのものが最新を表すので、
-// どれが古いかを別に持つ必要がありません（古い図面の赤枠は表示側の仕事）。
+// **旧版は最新版の子ページになります**（2026-09-06 ユーザー:「図面が改定された場合、
+// 旧版を最も新しい版の子にしてはどうでしょう。ワンノートではページが子を持てなかった
+// ので、出来ませんでしたが、CMSでは可能では？」）。もとは同じページに図面ブロックを
+// 積み上げ、古いものに赤枠を付けて見分ける形でした——**ワンノートの制約を写した形**で、
+// ページが子を持てるいまは写す理由がありません。
 //
-// 仮のページを消すのは**物理削除ではなくゴミ箱への移動**です。図面ブロックは
-// 合流先へ運ばれており、由来（受信元タグ）もブロックの中に付いて行くので、
-// 消えて困る情報は残りません。
+// 変わったこと:
+//
+//   - 部品ページに載るのは**最新の図面1つだけ**。積み上がらないので赤枠も要らない。
+//   - 旧版は `旧版 <図面番号> <図面名称>` という子ページへ、**ブロックごと**移る
+//     （由来の `受信元` はブロックの中にあるので、出所も一緒に付いて行く）。
+//   - 改訂履歴は最新版に載ったまま。その版の行の図面番号が**旧版ページへのリンク**
+//     になります（本文の `a[href]` は制限が無いので、参照タグの文法は要りません）。
+//
+// 仮のページを消すのは**物理削除ではなくゴミ箱への移動**です。
+//
+// **順序に意味があります**——旧版ページを先に作り、次に部品ページを書き換え、
+// 最後に仮のページを片付けます。途中で失敗しても、図面がどこにも無い状態は生まれません。
 func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	srcBody, err := cms.ReadPageBody(srcPageID)
 	if err != nil {

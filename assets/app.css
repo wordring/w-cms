@@ -1875,3 +1875,28 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     color: var(--text-muted);
     overflow-wrap: anywhere;
 }
+/* 「既にある相手へ足す」の選択。3つの取引ボタンとは行を分けて、
+   ［顧客］を押すつもりで足してしまう取り違えを防ぐ。 */
+/* 解析済みの印。ボタンの隣に並ぶが**押すと飛ぶリンク**なので、
+   ボタンと見分けが付くよう枠を持たせず色で示す。 */
+#w-editor-content .attach-analyzed {
+    margin-left: 4px;
+    padding: 1px 6px;
+    font-size: 12px;
+    color: var(--accent, #2a6);
+    text-decoration: none;
+    white-space: nowrap;
+}
+#w-editor-content .attach-analyzed:hover { text-decoration: underline; }
+
+#w-editor-content .contact-merge-target {
+    display: block;
+    margin: 6px 0 4px;
+    max-width: 14em;
+    padding: 1px 4px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-paper);
+    color: var(--text);
+}

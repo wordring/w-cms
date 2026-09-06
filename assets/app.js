@@ -3385,36 +3385,42 @@
         // **整理するものが実際にあるときだけ出します。** 押してから「ありません」と
         // 言うより、出さないほうが親切です。
         let rows = [];
+        let orders = [];
         let stages = [];
+        let partners = [];
         try {
             const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(currentPageId));
             const d = await res.json();
             if (!d.success) return;
             rows = d.rows || [];
+            // 受注ページも同じ画面で片付けます（行き先は発注日で決まるので欄は無い）。
+            orders = d.orders || [];
             // **段の選択肢はサーバーが持ちます**（設定 machine_stages）。
             // 画面に書き写すと、語を足した日に片方だけ古くなります。
             stages = d.stages || [];
+            // 既にある取引先の名前——顧客名の入力候補に出します。
+            partners = d.partners || [];
         } catch (e) { return; }
-        if (!rows.length) return;
+        if (!rows.length && !orders.length) return;
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'vocab-chrome filing-chrome filing-open';
-        btn.textContent = '📁 整理（' + rows.length + '件）';
-        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, stages));
+        btn.textContent = '📁 整理（' + (rows.length + orders.length) + '件）';
+        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, stages, partners));
         host.appendChild(btn);
     }
 
     // toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
-    function toggleFilingPanel(btn, rows, stages) {
+    function toggleFilingPanel(btn, rows, orders, stages, partners) {
         const existing = document.querySelector('.filing-panel');
         if (existing) { existing.remove(); return; }
-        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, stages));
+        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, stages, partners));
     }
 
     // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
     // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます。
-    function buildFilingPanel(rows, stages) {
+    function buildFilingPanel(rows, orders, stages, partners) {
         const panel = document.createElement('div');
         panel.className = 'vocab-chrome filing-chrome filing-panel';
         panel.setAttribute('contenteditable', 'false');
@@ -3422,7 +3428,23 @@
         const head = document.createElement('p');
         head.className = 'filing-head';
         head.textContent = '行き先を決めてください（社名／段／装置名称／図面名称）。空欄の行は動かしません。';
-        panel.appendChild(head);
+        if (rows.length) panel.appendChild(head);
+
+        // **既にある取引先を候補に出します。** 実データの初回で、アドレス帳が作った
+        // 「トーアスポーツマシーン」と、整理で打った「株式会社トーアスポーツマシーン」が
+        // 同じ会社で2枚になりました。題の一致は完全一致のままにして（機械が名寄せすると
+        // 別の顧客が1つに潰れる）、**人が既にある名前を選べる**ようにして解きます。
+        const listID = 'w-filing-partners';
+        if ((partners || []).length) {
+            const dl = document.createElement('datalist');
+            dl.id = listID;
+            partners.forEach(name => {
+                const op = document.createElement('option');
+                op.value = name;
+                dl.appendChild(op);
+            });
+            panel.appendChild(dl);
+        }
 
         const table = document.createElement('table');
         table.className = 'filing-table';
@@ -3456,6 +3478,9 @@
                 fields[key] = input;
             };
             addText('customer', row.customer);
+            if ((partners || []).length) {
+                fields.customer.setAttribute('list', listID);
+            }
 
             // **段は選ぶだけ**——打てるようにすると「現行」と「現行品」が混ざり、
             // 探すときに静かに取りこぼします（サーバーも表引きで断ります）。
@@ -3492,18 +3517,58 @@
             inputs.push({ page_id: row.page_id, fields: fields, confirm: confirm, box: box });
             table.appendChild(tr);
         });
-        panel.appendChild(table);
+        if (rows.length) panel.appendChild(table);
+
+        // **受注ページは別の表**です。直す欄が無い（行き先は発注日で決まる）ので、
+        // 図面と同じ列に並べると空欄ばかりの行になります。
+        const pickedOrders = [];
+        if (orders.length) {
+            const oHead = document.createElement('p');
+            oHead.className = 'filing-head';
+            oHead.textContent = '受注ページは「受注」の年月へ収めます。外す行はチェックを消してください。';
+            panel.appendChild(oHead);
+
+            const oTable = document.createElement('table');
+            oTable.className = 'filing-table filing-orders';
+            const oTrh = document.createElement('tr');
+            ['', '発注書番号', '発注元', '発注日', '行き先'].forEach(t => {
+                const th = document.createElement('th');
+                th.textContent = t;
+                oTrh.appendChild(th);
+            });
+            oTable.appendChild(oTrh);
+
+            orders.forEach(o => {
+                const tr = document.createElement('tr');
+                const tdBox = document.createElement('td');
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.checked = true;
+                box.setAttribute('aria-label', '収める');
+                tdBox.appendChild(box);
+                tr.appendChild(tdBox);
+                [o.order_no || '（番号なし）', o.client_name || '', o.ordered_at || '（日付なし）',
+                 o.destination || ''].forEach(v => {
+                    const td = document.createElement('td');
+                    td.textContent = v;
+                    tr.appendChild(td);
+                });
+                pickedOrders.push({ page_id: o.page_id, box: box });
+                oTable.appendChild(tr);
+            });
+            panel.appendChild(oTable);
+        }
 
         const run = document.createElement('button');
         run.type = 'button';
         run.className = 'filing-run';
         run.textContent = '実行';
-        run.addEventListener('click', () => runFiling(inputs, run, panel));
+        run.addEventListener('click', () => runFiling(inputs, pickedOrders, run, panel));
         panel.appendChild(run);
         return panel;
     }
 
-    async function runFiling(inputs, run, panel) {
+    async function runFiling(inputs, pickedOrders, run, panel) {
         run.disabled = true;
         run.textContent = '実行中…';
         const payload = inputs.map(i => ({
@@ -3518,7 +3583,10 @@
             const res = await fetch('/api/file-drawings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rows: payload }),
+                body: JSON.stringify({
+                    rows: payload,
+                    orders: (pickedOrders || []).filter(o => o.box.checked).map(o => o.page_id),
+                }),
             });
             const d = await res.json();
             if (!d.success) throw new Error(d.message || res.status);
@@ -3656,6 +3724,53 @@
             btn.dataset.wired = '1';
             btn.addEventListener('click', () => registerContact(btn));
         });
+        // 「既にある相手へ足す」——2つ目のドメインで会社ページを2枚にしないための口。
+        host.querySelectorAll('.contact-merge').forEach(btn => {
+            btn.disabled = editMode;
+            if (btn.dataset.wired) return;
+            btn.dataset.wired = '1';
+            btn.addEventListener('click', () => mergeContact(btn));
+        });
+    }
+
+    // mergeContact は選ばれた相手ページへ、この行のアドレスを足します。
+    //
+    // **同じ会社かどうかは人が決めます。** ドメインが違えば機械には分かりません
+    // （同じ会社の別ドメインなのか、別会社なのか、名前からは判じられない）。
+    async function mergeContact(btn) {
+        const row = btn.closest('tr');
+        const sel = row && row.querySelector('.contact-merge-target');
+        const target = sel ? sel.value : '';
+        if (!target) {
+            notify('足す相手を選んでください', { type: 'warn' });
+            if (sel) sel.focus();
+            return;
+        }
+        const title = sel.options[sel.selectedIndex].textContent;
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/contacts/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    page_id: target,
+                    addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
+                }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                notify(data.message || '足せませんでした', { type: 'warn' });
+                return;
+            }
+            // 行を消すのは見た目だけ。正本は相手ページのタグで、次に開けば描き直される。
+            if (row) row.remove();
+            notify('「' + (data.title || title) + '」へ' + (data.added || 0) + '件足しました',
+                { type: 'success', duration: 6000 });
+        } catch (e) {
+            notify('足せませんでした: ' + e.message, { type: 'warn' });
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     async function registerContact(btn) {

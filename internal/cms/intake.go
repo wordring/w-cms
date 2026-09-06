@@ -470,3 +470,24 @@ func ensureFolderUnder(parentID, owner, title string) (string, error) {
 	auth.Audit(owner, "intake.folder", newID+" under "+parentID+" ("+title+")")
 	return newID, nil
 }
+
+// EnsureTopLevelBox は題の一致するトップ直下のページを返し、無ければ作ります。
+//
+// **箱を作るのはコア、名前を決めるのは使う側**です。通信箱（MailBoxTitle）は
+// 「そこへ落とすと取り込みが走る」機能の入口なので人が意図して置きますが、
+// **ただの置き場（取引先・受注など）は行き止まりにする理由がありません**。
+// 業務の言葉（「受注」）を持つのは拡張の側で、ここには置きません。
+func EnsureTopLevelBox(title, owner string) (string, error) {
+	if id, ok := topLevelPageByTitle(title); ok {
+		return id, nil
+	}
+	return CreateChildPage(TopPageID, owner, "<h1>"+html.EscapeString(title)+"</h1>")
+}
+
+// EnsureDateFolders は root の下に年フォルダ・月フォルダを用意し、月フォルダを返します。
+//
+// 通信箱の取り込みが使う ensureDateFolderUnder と**同じ芯**です——受注の置き場も
+// 年月で並べる（2026-09-06 ユーザー決定）ので、作法を2つ持たないよう口を開けました。
+func EnsureDateFolders(rootID, owner string, t time.Time) (string, error) {
+	return ensureDateFolderUnder(rootID, owner, t)
+}
