@@ -52,6 +52,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ——顧客名・装置名称のページが生まれるのは実行のときだけ（filing.go）。
 		{Pattern: "/api/filing-proposal", Handler: FilingProposalAPIHandler},
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
+		// 解析済みの印（添付ID → 生まれたページ）。読むだけで何も作りません。
+		{Pattern: "/api/analyzed", Handler: AnalyzedAPIHandler},
 	}
 }
 

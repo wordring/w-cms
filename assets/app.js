@@ -1220,6 +1220,8 @@
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
+        refreshAnalyzedMarks();      // 解析済みの印（取得できたら描き直す）
+        refreshDrawingPreviews();    // 部品ページの図面をそのまま出す（閲覧モード限定）
         refreshFilingButton();       // 部品ページの整理（閲覧モード限定）
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
@@ -3028,6 +3030,38 @@
     const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
 
+    // analyzedMap は「添付ID → 解析で生まれたページ」。印を出すために持ちます。
+    //
+    // **印そのものは保存していません**——解析が書いた `受信元` の逆引きです。
+    // だから、間違った解析をゴミ箱へ入れれば印も消え、もう一度解析できます。
+    let analyzedMap = {};
+
+    // refreshAnalyzedMarks は解析済みの一覧を取り直し、印を描き直します。
+    async function refreshAnalyzedMarks() {
+        if (!currentPageId) return;
+        try {
+            const res = await fetch('/api/analyzed?page_id=' + encodeURIComponent(currentPageId));
+            const d = await res.json();
+            analyzedMap = (d && d.success && d.analyzed) ? d.analyzed : {};
+        } catch (e) {
+            analyzedMap = {}; // 印が出ないだけ——解析そのものは押せる
+        }
+        refreshAttachmentPreviews();
+    }
+
+    // makeAnalyzedMark は「✓ 図面」の印を作ります（押すと生まれたページへ飛ぶ）。
+    //
+    // ユーザー:「一度解析したファイルには解析済みの印と『図面』などの解析結果を
+    // 付けては？」「添付ファイルのボタンの横あたりで良いのでは？」（2026-09-06）。
+    function makeAnalyzedMark(r) {
+        const mark = document.createElement('a');
+        mark.className = 'vocab-chrome attach-expand attach-analyzed';
+        mark.href = '/' + r.page_id;
+        mark.textContent = '✓ ' + r.kind;
+        mark.title = (r.title || r.page_id) + ' を作りました（押すと開きます）';
+        return mark;
+    }
+
     function refreshAttachmentPreviews() {
         document.querySelectorAll('#w-editor-content .attach-expand, #w-editor-content .attach-preview')
             .forEach(el => el.remove());
@@ -3045,8 +3079,17 @@
             a.insertAdjacentElement('afterend', btn);
             if (kind === 'pdf') {
                 // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
-                a.parentElement && btn.insertAdjacentElement('afterend',
-                    makeAnalyzeButton(m[1], m[2] + '.pdf', ''));
+                if (a.parentElement) {
+                    const ab = makeAnalyzeButton(m[1], m[2] + '.pdf', '');
+                    btn.insertAdjacentElement('afterend', ab);
+                    // **解析済みなら、その隣に結果の印**（2026-09-06）。
+                    // ボタンは消しません——読み違いはあるので、押し直せる余地を残します。
+                    const done = analyzedMap[m[2]];
+                    if (done) {
+                        ab.textContent = '🤖 再解析';
+                        ab.insertAdjacentElement('afterend', makeAnalyzedMark(done));
+                    }
+                }
             }
         });
     }
@@ -3880,11 +3923,13 @@
                         msg += ' — 図面番号の一致したDXF ' + d.matched_dxf + '件と結びました。';
                     }
                     notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
+                    refreshAnalyzedMarks(); // 押した直後に印を出す
                 } else if (!d.is_client_order) {
                     notify('発注書でも図面でもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
                 } else {
                     notify('受注ページを作りました: ' + (d.title || d.page_id) +
                         '（/' + d.page_id + '）', { type: 'success', duration: 0, id: 'analyze-pdf' });
+                    refreshAnalyzedMarks(); // 押した直後に印を出す
                 }
             } catch (e) {
                 notify('解析できませんでした: ' + e, { type: 'alert', duration: 0, id: 'analyze-pdf' });
@@ -3893,6 +3938,58 @@
             btn.textContent = '🤖 解析';
         });
         return btn;
+    }
+
+    // ── 部品ページの図面をそのまま出す（2026-09-06）────────────────────
+    //
+    // ユーザー:「各部品ページの図面の項目に図面をインライン表示したいです」。
+    //
+    // **図面PDFは部品ページには無い**——実体は通信記録ページの添付で、部品ページが
+    // 持っているのは由来の参照 `受信元：<通信記録ID>-<添付ID>` だけです。同じものを
+    // 2つに増やさない設計なので、**出すときに参照から導きます**。
+    //
+    // URLは参照リンクの href（`/010242#19ux`）から組み立てます——**リンクから
+    // 埋め込みを導出するときは形を必ず検査する**という app.js の規律に従い、
+    // 正規表現で確かめてから使います（refreshAttachmentPreviews と同じ作法）。
+    //
+    // **クロームなので保存されません**（`.vocab-chrome`）。本文には参照が1つ
+    // 残るだけで、ページを移しても図面は付いて行きます。
+    const REF_LINK_RE = /^\/(\d{6})#([0-9a-z]+)$/;
+
+    async function refreshDrawingPreviews() {
+        document.querySelectorAll('#w-editor-content .drawing-inline').forEach(el => el.remove());
+        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        const secs = Array.from(document.querySelectorAll('#w-editor-content section'))
+            .filter(sec => {
+                const h2 = sec.querySelector(':scope > h2');
+                return h2 && h2.textContent.trim() === '図面';
+            });
+        for (const sec of secs) {
+            // ZIPの中のPDFは直接出せません（添付の実体はZIPのほう）。
+            if (Array.from(sec.querySelectorAll('dt')).some(dt => dt.textContent.trim() === '元ファイル')) {
+                continue;
+            }
+            const link = sec.querySelector('dl[data-type="tags"] a.ref-link');
+            if (!link) continue;
+            const m = REF_LINK_RE.exec(link.getAttribute('href') || '');
+            if (!m) continue;
+            const url = '/' + m[1] + '/' + m[2] + '.pdf';
+            // **在ることを確かめてから出します**——添付がPDFでない・消された場合に
+            // 壊れた枠を見せないため。
+            try {
+                const head = await fetch(url, { method: 'HEAD' });
+                if (!head.ok) continue;
+            } catch (e) { continue; }
+
+            const wrap = document.createElement('div');
+            wrap.className = 'vocab-chrome drawing-inline';
+            const embed = document.createElement('embed');
+            embed.src = url;
+            embed.type = 'application/pdf';
+            embed.className = 'drawing-inline-pdf';
+            wrap.appendChild(embed);
+            sec.appendChild(wrap);
+        }
     }
 
     function toggleAttachPreview(anchor, btn, m) {

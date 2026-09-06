@@ -1370,6 +1370,19 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border: 1px solid var(--border);
     border-radius: var(--radius);
 }
+/* 部品ページの図面。**添付のプレビューより高く**——ここは「ついでに覗く」場所では
+   なく、そのページの主題そのものなので、図面枠が読める高さを取る。 */
+#w-editor-content .drawing-inline {
+    margin-top: 8px;
+}
+#w-editor-content .drawing-inline-pdf {
+    display: block;
+    width: 100%;
+    height: 70vh;
+    min-height: 420px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
 #w-editor-content .attach-zip-list {
     margin: 0;
     padding: 8px 12px;
