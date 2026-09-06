@@ -345,7 +345,11 @@ func writeHeaderPair(b *strings.Builder, name, value string) {
 // 同一性を担うのは常にページID（drawing_match.go 冒頭）。
 func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, matches []matchedDXF) string {
 	// 題は「図面番号 図面名称」——**図面名称は重複しうる**ので番号を先に置く。
-	title := strings.TrimSpace(strings.TrimSpace(j.DrawingNo) + " " + strings.TrimSpace(j.DrawingName))
+	//
+	// **ブロックと同じ正規化を通します。** 通さないと、題が `シュート先Ｔ金具` で
+	// ブロックが `シュート先T金具` という食い違いが出ます（実データで出しました）。
+	title := strings.TrimSpace(cms.NormalizeNameForIngest(j.DrawingNo) + " " +
+		cms.NormalizeNameForIngest(j.DrawingName))
 	if title == "" {
 		title = "図面（番号不明）"
 	}

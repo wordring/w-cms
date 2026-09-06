@@ -1,27 +1,38 @@
 package cms
 
 // ─────────────────────────────────────────────────────────────────────────
-// 設定ファイル（data/settings.json）
+// 設定ファイル（config/settings.json）
 //
 // **正本はファイル。DBには置きません。** `cms.db` は全再構築で全テーブルが消える
 // 派生索引なので、設定をDBにだけ置くと設定も消えます（docs/アーキテクチャとDBスキーマ.md
 // §8.2 と §9 の決定ログ D-5）。「文書（ファイル）が主」の原則の、設定への適用です。
 //
-// 最初の住人は**語→型の推論辞書**です。ユーザーの決定（2026-08-30）:
-// 「**運用中に増やしてDB再構築します**」——Goコード内の map のままだと語を増やすたびに
-// 再ビルドが要るため、ここへ移しました。増やしたら **DB再構築**（`POST /api/rebuild-db`）
-// で読み直され、既存ページの索引にも反映されます（[RebuildDatabase] が先頭で読み直す）。
+// 住人は**語→型の推論辞書**・添付の上限と拡張子・装置の段・文字の置き換え表。
+// ユーザーの決定（2026-08-30）:「**運用中に増やしてDB再構築します**」——語を増やす
+// たびに再ビルドが要らないよう、ファイルに置きます。増やしたら **DB再構築**
+// （`POST /api/rebuild-db`）で読み直され、既存ページの索引にも反映されます。
 //
-// 壊れたときの流儀は、正本まわりの既存の決定に揃えてあります:
+// ── 2026-09-07 の変更: 既定値をコードから無くし、ファイルを必須にしました ──
 //
-//   - **ファイルが無ければ、コード内の既定値で作る**——失うものが無く、運用者が
-//     中身を見て編集できるようになるため。
-//   - **有るのに読めない・値が不正なら、起動を止める**——既定値で黙って上書きすると
-//     運用者が足した語が消え、**集計の内容が黙って変わります**。壊れたときは壊れたままに
-//     しておくほうが気づける（§8.4「派生から正本へ書き戻さない」と同じ流儀）。
+// ユーザー:「コードに埋め込まれる規定を無くし、Settings.jsonを必須にし、Githubに
+// 入れてはどうでしょう？」。それまでは Goコードの map が既定値を持ち、ファイルが
+// 無ければそれを書き出す作りでした。やめた理由は2つです。
 //
-// ファイルの中身は既定値を**置き換えます**（足すのではありません）。既定値を書き出した
-// 状態から始まるので、要らない語は消せます。
+//  1. **同じことを2か所が言っていた。** コードに語を足しても、**既にファイルのある
+//     環境には届きません**（ファイルの中身が既定を置き換えるため）。2026-09-06 に
+//     `ref`・`datetime` を足したとき、実際にこれで参照リンクが消えかけました。
+//  2. **不揃いだった。** `type_inference` だけが「置き換え」、他の3つは「未指定なら
+//     既定」——どちらか分からない設定が4つ並んでいました。
+//
+// いまは**ファイルが唯一の正本**です。置き場所も `data/`（環境ごとの状態）から
+// `config/`（製品の構成）へ移しました——ページ・DB・トークンとは種類が違うものです。
+// **Git管理**なので、語を足せば `git pull` で全環境へ届きます。
+//
+// **秘密は入れません。** 鍵・トークンの類は環境変数（`~/OneDrive/デスクトップ/w-cms.env`）
+// が持ちます。このファイルは公開リポジトリに入るので、**秘密を書けば公開されます**。
+//
+// 壊れたとき・無いときは**起動を止めます**。既定値で黙って埋めると、運用者が足した語が
+// 消えて**集計の内容が黙って変わります**（§8.4「派生から正本へ書き戻さない」と同じ流儀）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -29,19 +40,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-
-	"w-cms/internal/cms/page"
 )
 
 // SettingsPath は設定ファイルの位置です（正本）。
-const SettingsPath = "data/settings.json"
+const SettingsPath = "config/settings.json"
 
-// Settings は data/settings.json の中身です。
+// Settings は config/settings.json の中身です。
 //
 // 項目を増やすときは、**既存のファイルを読めなくしないこと**——読み込みは
 // 未知のキーを弾く（打ち間違いを黙って無視しないため）ので、新しいキーは
@@ -97,7 +106,36 @@ var (
 // LoadSettings は設定ファイルを読み込み、以後の参照先にします。
 // ファイルが無ければ既定値で作成します。
 func LoadSettings() error {
-	s, err := readOrCreateSettings(SettingsPath)
+	s, err := readSettings(SettingsPath)
+	if err != nil {
+		// **起動時は止めます**（settings がまだ nil）。
+		//
+		// **読み直しのときは、いま持っているものを守ります。** DB再構築は運用中に
+		// 走るので、そこでファイルが見当たらないからと語彙を空にすると、**索引が
+		// 静かに痩せます**——設定を消したことより、集計が黙って変わるほうが害が大きい。
+		settingsMu.RLock()
+		loaded := settings != nil
+		settingsMu.RUnlock()
+		if loaded && errors.Is(err, os.ErrNotExist) {
+			log.Printf("設定ファイル %s が見当たりません。読み込み済みの設定のまま続けます", SettingsPath)
+			return nil
+		}
+		return err
+	}
+	settingsMu.Lock()
+	settings = s
+	charFolder = newCharFolder(s.CharFolding)
+	settingsMu.Unlock()
+	return nil
+}
+
+// LoadSettingsFrom は指定した場所から設定を読み込みます。
+//
+// **作業ディレクトリに依らずに読む**ための口です。`LoadSettings` は
+// `config/settings.json` を相対で読むので、一時ディレクトリへ移る経路（テスト）や、
+// 別の場所に設定を置く運用では、こちらを使います。
+func LoadSettingsFrom(path string) error {
+	s, err := readSettings(path)
 	if err != nil {
 		return err
 	}
@@ -108,15 +146,19 @@ func LoadSettings() error {
 	return nil
 }
 
-// readOrCreateSettings は設定ファイルを読みます。無ければ既定値で作ります。
-func readOrCreateSettings(path string) (*Settings, error) {
+// readSettings は設定ファイルを読みます。**無ければ止めます**（2026-09-07）。
+//
+// 既定値で作り直す作りをやめたのは、コードとファイルが同じことを2か所で言うのを
+// 断つためです。ファイルはGit管理なので、クローンすれば必ず在ります——**無いのは
+// 異常**（消した・別の場所から起動した）で、黙って埋めるより止めるほうが親切です。
+func readSettings(path string) (*Settings, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		s := defaultSettings()
-		if err := writeSettings(path, s); err != nil {
-			return nil, fmt.Errorf("設定ファイル %s を作成できません: %w", path, err)
-		}
-		return s, nil
+		// **`%w` で包みます**——呼ぶ側（LoadSettings）が「無い」と「壊れている」を
+		// `errors.Is` で見分けます。包み忘れると読み直しの守りが効きません。
+		return nil, fmt.Errorf("設定ファイル %s がありません（Git管理の必須ファイルです。"+
+			"リポジトリの根から起動しているか確かめ、消したなら git checkout で戻してください）: %w",
+			path, err)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("設定ファイル %s を読めません: %w", path, err)
@@ -190,61 +232,43 @@ func (s Settings) validate(path string) error {
 	return nil
 }
 
-// writeSettings は設定ファイルを書きます。原子的書き込み（page.WriteFileAtomic）で、
-// 書きかけの切り詰めが正本に残らないようにします。
-func writeSettings(path string, s *Settings) error {
-	if dir := filepath.Dir(path); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
+// activeTypeInference はいま効いている推論辞書を返します。
+// 返したマップは書き換えないこと（参照側が共有しています）。
+func activeTypeInference() map[string]ColumnType {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings == nil {
+		return nil
 	}
-	body, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return page.WriteFileAtomic(path, append(body, "\n"...), 0o644)
+	return settings.TypeInference
 }
 
-// defaultSettings はコード内の既定値です（ファイルが無いときの初期内容）。
-func defaultSettings() *Settings {
-	dict := make(map[string]ColumnType, len(defaultTypeInference))
-	for k, v := range defaultTypeInference {
-		dict[k] = v
+// MaxUploadBytes は設定の添付1件あたりの上限（バイト）を返します。
+//
+// **ここだけコードに数を持ちます。** 設定を読む前でも上限ゼロで受けてしまわないため
+// ——上限は語彙ではなく安全の柵で、「無ければ無制限」が最悪の既定になります。
+func MaxUploadBytes() int64 {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings != nil && settings.MaxUploadMiB > 0 {
+		return int64(settings.MaxUploadMiB) << 20
 	}
-	return &Settings{
-		TypeInference:        dict,
-		MaxUploadMiB:         32,
-		AttachmentExtensions: append([]string{}, defaultAttachmentExtensions...),
-		MachineStages:        append([]string{}, defaultMachineStages...),
-		CharFolding:          cloneStrMap(defaultCharFolding),
-	}
+	return 32 << 20
 }
 
-// cloneStrMap は既定値をコピーします（返した先で書き換えられても既定が汚れないように）。
-func cloneStrMap(m map[string]string) map[string]string {
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = v
+// GenericAttachmentExts は設定の汎用添付の拡張子集合を返します。
+func GenericAttachmentExts() map[string]bool {
+	settingsMu.RLock()
+	var list []string
+	if settings != nil {
+		list = settings.AttachmentExtensions
+	}
+	settingsMu.RUnlock()
+	out := make(map[string]bool, len(list))
+	for _, e := range list {
+		out[strings.ToLower(strings.TrimSpace(e))] = true
 	}
 	return out
-}
-
-// defaultCharFolding は既定の置き換え表です。
-//
-// **直径記号のまわりだけ**入れてあります——実データで実際にぶつかっているのがここで、
-// 憶測で広げると別の意味の文字まで畳んで戻せなくなります。増やすのは運用者の仕事。
-//
-//	Φ ϕ Ⲫ …… ギリシャ文字ファイの大文字・記号形（NFKCは大小を変換しない）
-//	Ø ø ⌀ …… 直径記号として使われる別系統の文字
-//	Ф ф …… キリル文字のエフ（見た目が同じで、実際に混ざる）
-var defaultCharFolding = map[string]string{
-	"Φ": "φ", // U+03A6 → U+03C6
-	"ϕ": "φ", // U+03D5 GREEK PHI SYMBOL
-	"⌀": "φ", // U+2300 DIAMETER SIGN
-	"Ø": "φ", // U+00D8
-	"ø": "φ", // U+00F8
-	"Ф": "φ", // U+0424 CYRILLIC CAPITAL LETTER EF
-	"ф": "φ", // U+0444 CYRILLIC SMALL LETTER EF
 }
 
 // charFolder はいま効いている置き換え表の Replacer です。
@@ -253,25 +277,12 @@ var defaultCharFolding = map[string]string{
 // 正規化のたびに作るのは無駄）。settings と同じロックで守ります。
 var charFolder *strings.Replacer
 
-// activeCharFolder は置き換え用の Replacer を返します。
-//
-// **未指定なら既定値**です（他の設定と同じ流儀）——鍵の無い古い settings.json でも
-// 畳みが効くように。設定を読んでいない経路（テストなど）も既定で畳みます。
+// activeCharFolder は置き換え用の Replacer を返します（設定が無ければ nil＝畳まない）。
 func activeCharFolder() *strings.Replacer {
 	settingsMu.RLock()
-	r := charFolder
-	settingsMu.RUnlock()
-	if r != nil {
-		return r
-	}
-	defaultFolderOnce.Do(func() { defaultFolder = newCharFolder(defaultCharFolding) })
-	return defaultFolder
+	defer settingsMu.RUnlock()
+	return charFolder
 }
-
-var (
-	defaultFolderOnce sync.Once
-	defaultFolder     *strings.Replacer
-)
 
 // newCharFolder は表から Replacer を作ります（空なら nil）。
 func newCharFolder(m map[string]string) *strings.Replacer {
@@ -292,19 +303,15 @@ func newCharFolder(m map[string]string) *strings.Replacer {
 	return strings.NewReplacer(pairs...)
 }
 
-// defaultMachineStages は装置の段の既定値です。**先頭が整理の初期値**なので、
-// いちばん多い行き先である「現行」を先に置きます。
-var defaultMachineStages = []string{"現行", "旧型", "試作"}
-
-// MachineStages はいま効いている段の一覧を返します（並び順つき）。
+// MachineStages は設定の段の一覧を返します（並び順つき。**先頭が整理の初期値**）。
 // 返した配列は書き換えないこと（参照側が共有しています）。
 func MachineStages() []string {
 	settingsMu.RLock()
 	defer settingsMu.RUnlock()
-	if settings != nil && len(settings.MachineStages) > 0 {
-		return settings.MachineStages
+	if settings == nil {
+		return nil
 	}
-	return defaultMachineStages
+	return settings.MachineStages
 }
 
 // ValidMachineStage は段が一覧にあるかを**表引きで**確かめます。
@@ -316,48 +323,4 @@ func ValidMachineStage(v string) bool {
 		}
 	}
 	return false
-}
-
-// activeTypeInference はいま効いている推論辞書を返します。
-// 返したマップは書き換えないこと（参照側が共有しています）。
-func activeTypeInference() map[string]ColumnType {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings != nil && settings.TypeInference != nil {
-		return settings.TypeInference
-	}
-	return defaultTypeInference
-}
-
-// defaultAttachmentExtensions は汎用添付の既定の拡張子です（ワンノート実データの15種
-// ——.eml を含む——から、専用の口を持つ .pdf を除いた14種。「.eml の扱いは添付から
-// 始めましょう」——2026-08-31 ユーザー決定）。
-var defaultAttachmentExtensions = []string{
-	".dxf", ".rpcd", ".xlsx", ".zip", ".docx", ".dwg", ".step", ".x_t",
-	".slddrw", ".igs", ".eml", ".pub", ".lbx", ".mp4",
-}
-
-// MaxUploadBytes はいま効いている添付1件あたりの上限（バイト）を返します。
-func MaxUploadBytes() int64 {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings != nil && settings.MaxUploadMiB > 0 {
-		return int64(settings.MaxUploadMiB) << 20
-	}
-	return 32 << 20
-}
-
-// GenericAttachmentExts はいま効いている汎用添付の拡張子集合を返します。
-func GenericAttachmentExts() map[string]bool {
-	settingsMu.RLock()
-	list := defaultAttachmentExtensions
-	if settings != nil && len(settings.AttachmentExtensions) > 0 {
-		list = settings.AttachmentExtensions
-	}
-	settingsMu.RUnlock()
-	out := make(map[string]bool, len(list))
-	for _, e := range list {
-		out[strings.ToLower(strings.TrimSpace(e))] = true
-	}
-	return out
 }

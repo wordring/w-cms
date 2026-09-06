@@ -1,0 +1,55 @@
+{
+  "type_inference": {
+    "価格": "number",
+    "写真": "image",
+    "単価": "number",
+    "数量": "number",
+    "日付": "date",
+    "検査日": "date",
+    "画像": "image",
+    "発注日": "date",
+    "納品日": "date",
+    "納期": "date",
+    "金額": "number",
+    "図面番号": "code",
+    "発注書番号": "code",
+    "受信元": "ref",
+    "返信元": "ref",
+    "相手": "ref",
+    "受信日時": "datetime",
+    "発信日時": "datetime",
+    "送信日時": "datetime",
+    "添付": "number"
+  },
+  "max_upload_mib": 32,
+  "attachment_extensions": [
+    ".dxf",
+    ".rpcd",
+    ".xlsx",
+    ".zip",
+    ".docx",
+    ".dwg",
+    ".step",
+    ".x_t",
+    ".slddrw",
+    ".igs",
+    ".eml",
+    ".pub",
+    ".lbx",
+    ".mp4"
+  ],
+  "machine_stages": [
+    "現行",
+    "旧型",
+    "試作"
+  ],
+  "char_folding": {
+    "Φ": "φ",
+    "ϕ": "φ",
+    "⌀": "φ",
+    "Ø": "φ",
+    "ø": "φ",
+    "Ф": "φ",
+    "ф": "φ"
+  }
+}
