@@ -239,9 +239,14 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	if !ok {
 		return filingResult{PageID: row.PageID, Outcome: "skipped", Message: "ページIDが不正です"}
 	}
-	customer := strings.TrimSpace(row.Customer)
-	machine := strings.TrimSpace(row.MachineName)
-	name := strings.TrimSpace(row.DrawingName)
+	// **人が打った値もここで正規化します**（2026-09-06 ユーザー:「顧客名、装置名称、
+	// 図面名称の値を早期に正規化したいです」）。この3つはそのままページの題になり、
+	// **題の完全一致が階層の同一性**なので、揃えないと同じ装置のページが2枚できます。
+	// 「人が打った値は見た目のまま」（normalize_text.go）の例外はここだけ——
+	// 本文の中身ではなく、木の鍵だからです。
+	customer := cms.NormalizeNameForIngest(row.Customer)
+	machine := cms.NormalizeNameForIngest(row.MachineName)
+	name := cms.NormalizeNameForIngest(row.DrawingName)
 	stage := strings.TrimSpace(row.Stage)
 
 	// **空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
