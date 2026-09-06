@@ -42,7 +42,7 @@ func NormalizeText(s string) string {
 	// **設定の置き換え表を掛けます**（`Φ`→`φ` など・2026-09-06）。NFKC は大小を
 	// 変換しないので `Φ` と `φ` は別の文字のままで、直径記号にいたっては `⌀`・`Ø`・`φ`
 	// と系統からして違います。**どれを同じとみなすかは業種の知識**なので、
-	// コードではなく `data/settings.json` の `char_folding` に置きました。
+	// コードではなく `config/settings.json` の `char_folding` に置きました。
 	//
 	// ここに置くのは、**畳む入口が1つ**だからです——NormalizeCode も
 	// NormalizeNameForIngest もこの関数を通るので、索引の比較値と、機械が書き起こす

@@ -5,7 +5,7 @@
 //
 // 起動時にやることは5つ:
 //
-//  0. 設定ファイル data/settings.json を読む（無ければ既定値で作る）
+//  0. 設定ファイル config/settings.json を読む（無ければ既定値で作る）
 //  1. cms.db と auth.db を開き、コアテーブルとプラグインのテーブルを作る
 //  2. プラグインのスキーマのずれを検出したら派生索引を作り直す（DriftedSchemaTables）
 //  3. 中断した索引再構築があればやり直す（RebuildIfNeeded）

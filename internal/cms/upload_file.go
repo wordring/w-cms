@@ -90,7 +90,7 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fileName, err := SafeAttachmentName(pageID, header.Filename, GenericAttachmentExts(),
-		"この拡張子は添付として受け付けていません（許可リストは data/settings.json の attachment_extensions）")
+		"この拡張子は添付として受け付けていません（許可リストは config/settings.json の attachment_extensions）")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
