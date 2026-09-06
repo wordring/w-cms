@@ -178,9 +178,13 @@ func setAttr(n *html.Node, key, val string) {
 // 2026-09-03 ユーザー:「このリンクを付けるのは誰か？という所から始めて下さい」
 // ——付けるのは**表示のときのコア**（本文には書かない）。どの値が参照かは、
 // 値の形（文法）か、タグの名前（この宣言）で決まります。
-var pageRefTags = map[string]bool{
-	ReplySourceTag: true, // 返信元——送信記録がどの受信記録への返信かを指す
-	CounterpartTag: true, // 相手——通話の記録が、かけた先のページを指す
+// **宣言の置き場所は推論辞書です**（2026-09-06 に Goコードの表から移しました）。
+// ユーザー:「名前が『受信元』であれば値は『参照』」——型を名前で決めるのは
+// この仕組みの根幹（「項目の鍵は見出しの表示文字」）で、参照だけ別の原理
+// （属性で明示）にする理由がありません。辞書にあることで**運用者が自分の
+// 参照タグを足せます**。既定は `受信元`・`返信元`・`相手`（vocab.go）。
+func isPageRefTag(tagName string) bool {
+	return InferColumnType(strings.TrimSpace(tagName)) == ColRef
 }
 
 // pageIDOnlyRe はページIDだけの参照値です（宣言されたタグでのみ使います）。
@@ -188,7 +192,7 @@ var pageIDOnlyRe = regexp.MustCompile(`^([0-9]{6})$`)
 
 // parsePageRef は宣言されたタグの値をページIDへ分解します。
 func parsePageRef(tagName, value string) (pageID string, ok bool) {
-	if !pageRefTags[tagName] {
+	if !isPageRefTag(tagName) {
 		return "", false
 	}
 	m := pageIDOnlyRe.FindStringSubmatch(strings.TrimSpace(value))
