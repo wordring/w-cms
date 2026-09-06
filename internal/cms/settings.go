@@ -91,6 +91,13 @@ type Settings struct {
 	// 未指定なら既定（`defaultCharFolding`）。**足したらDB再構築で効きます**
 	// ——語→型の推論辞書と同じ流儀。
 	CharFolding map[string]string `json:"char_folding,omitempty"`
+
+	// WebDAVHidden は WebDAV に見せないページの題です（トップ直下でなくても効きます）。
+	//
+	// ユーザー:「設定で見せないとするもの以外は見せて良いのでは？」（2026-09-07）。
+	// **コアは業務の言葉を知りません**——`通信箱` を名前で特別扱いするコードを書くと、
+	// 仕組みの側に語彙が漏れます。未指定なら**全部見せます**。
+	WebDAVHidden []string `json:"webdav_hidden,omitempty"`
 }
 
 // settings は読み込み済みの設定です。nil のあいだはコード内の既定値が使われます
@@ -323,4 +330,33 @@ func ValidMachineStage(v string) bool {
 		}
 	}
 	return false
+}
+
+// WebDAVHidden は WebDAV に見せないページの題です（設定 `webdav_hidden`）。
+//
+// ユーザー:「通信箱も取引先もプラグインの領域ですが、クリックして開くは w-cms 本体の
+// 機能なので、**設定で見せないとするもの以外は見せて良いのでは？**」（2026-09-07）。
+//
+// **コアは業務の言葉を知りません。** `通信箱` を特別扱いするコードを書くと、
+// 仕組みの側に語彙が漏れます——見せる／見せないは運用者が名前で指定します。
+// 既定は**空**（全部見せる）。
+func WebDAVHidden() []string {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings == nil {
+		return nil
+	}
+	return settings.WebDAVHidden
+}
+
+// hiddenWebDAVTitles は引きやすい形（集合）で返します。
+func hiddenWebDAVTitles() map[string]bool {
+	list := WebDAVHidden()
+	out := make(map[string]bool, len(list))
+	for _, t := range list {
+		if v := strings.TrimSpace(t); v != "" {
+			out[v] = true
+		}
+	}
+	return out
 }

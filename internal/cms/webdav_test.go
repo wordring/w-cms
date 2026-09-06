@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +16,19 @@ import (
 )
 
 // davRequest は WebDAV の要求を1つ投げます（合言葉は任意）。
-func davRequest(t *testing.T, method, path, user, pass string) *httptest.ResponseRecorder {
+//
+// パスは**日本語を含みます**（ページの題がそのままフォルダ名）。実際のクライアントと
+// 同じになるよう、区画ごとにURLエンコードして組み立てます。
+func davRequest(t *testing.T, method string, segments []string, user, pass string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	p := DavPrefix
+	for i, s := range segments {
+		if i > 0 {
+			p += "/"
+		}
+		p += url.PathEscape(s)
+	}
+	req := httptest.NewRequest(method, p, nil)
 	if user != "" {
 		req.Header.Set("Authorization", "Basic "+
 			base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
@@ -27,35 +38,55 @@ func davRequest(t *testing.T, method, path, user, pass string) *httptest.Respons
 	return rr
 }
 
-// setupDavTest は添付を1つ持つページを作り、WebDAV を開けた状態にします。
+// davPage はページを1枚作り、添付を1つ置きます（添付名が空なら置きません）。
+func davPage(t *testing.T, id, title, owner, mode, parent, attach string) {
+	t.Helper()
+	newPage(t, id, "<h1>"+title+"</h1>", page.PageMeta{
+		Owner: owner, Mode: mode, ParentID: parent})
+	if attach == "" {
+		return
+	}
+	dir := page.AttachmentDir(id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("添付フォルダを作れません: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, attach), []byte("0\nSECTION\n"), 0o644); err != nil {
+		t.Fatalf("添付を作れません: %v", err)
+	}
+}
+
+// setupDavTest は木を1つ組み、WebDAV を開けた状態にします。
+//
+//	トップ
+//	├ 部品A       （添付 a1b2.dxf）
+//	├ RE: 見積り   （題に Windows で使えない文字）
+//	└ 秘密        （alice だけ・bob からは見えない）
+//
+// **ファイルDBを使います**——`visibleChildren` は `:memory:` では動きません
+// （行を読みながら別のクエリを投げると別の空DBに当たる。引き継ぎの罠）。
 //
 // **認証DBも用意します**——WebDAV は Cookie ではなく HTTP Basic を通るので、
-// 利用者を注入する（auth.WithUser）他のテストと違い、**本物の照合が走ります**。
-func setupDavTest(t *testing.T, pageID string, meta page.PageMeta) string {
+// 利用者を注入する他のテストと違い、本物の照合が走ります。
+func setupDavTest(t *testing.T) {
 	t.Helper()
-	setupUploadTest(t, pageID, meta)
+	setupTemplateAPITest(t)
 	t.Setenv("WCMS_DAV", "1")
+	restoreSettings(t)
+
+	newPage(t, TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: "333"})
+	davPage(t, "000101", "部品A", "alice", "333", TopPageID, "a1b2.dxf")
+	davPage(t, "000102", "RE: 見積り", "alice", "333", TopPageID, "")
+	davPage(t, "000103", "秘密", "alice", "300", TopPageID, "")
 
 	if err := database.InitAuthDB(); err != nil {
 		t.Fatalf("認証DBを用意できません: %v", err)
 	}
 	t.Cleanup(func() { database.AuthDB.Close() })
-	if err := auth.CreateUser("alice", "pw", false, ""); err != nil {
-		t.Fatalf("利用者を作れません: %v", err)
+	for _, u := range []string{"alice", "bob"} {
+		if err := auth.CreateUser(u, "pw", false, ""); err != nil {
+			t.Fatalf("利用者を作れません: %v", err)
+		}
 	}
-	if err := auth.CreateUser("bob", "pw", false, ""); err != nil {
-		t.Fatalf("利用者を作れません: %v", err)
-	}
-
-	dir := page.AttachmentDir(pageID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("添付フォルダを作れません: %v", err)
-	}
-	name := "a1b2.dxf"
-	if err := os.WriteFile(filepath.Join(dir, name), []byte("0\nSECTION\n"), 0o644); err != nil {
-		t.Fatalf("添付を作れません: %v", err)
-	}
-	return name
 }
 
 // TestDavClosedByDefault は、**環境変数を置くまで口が開かない**ことを固定します。
@@ -63,10 +94,10 @@ func setupDavTest(t *testing.T, pageID string, meta page.PageMeta) string {
 // 平文HTTPでの Basic 認証は要求のたびに合言葉を流すので、「気づかないうちに開いて
 // いた」が起きない形にしてあります（2026-09-07）。
 func TestDavClosedByDefault(t *testing.T) {
-	setupDavTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "330"})
+	setupDavTest(t)
 	t.Setenv("WCMS_DAV", "")
 
-	rr := davRequest(t, "GET", "/dav/000001/a1b2.dxf", "alice", "pw")
+	rr := davRequest(t, "GET", []string{"部品A", "a1b2.dxf"}, "alice", "pw")
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("既定で開いています: %d", rr.Code)
 	}
@@ -75,9 +106,9 @@ func TestDavClosedByDefault(t *testing.T) {
 // TestDavRequiresAuth は、合言葉が無ければ 401 と認証の要求を返すことを固定します。
 // エクスプローラはこの返事を見て合言葉を尋ねます——無いと黙って失敗します。
 func TestDavRequiresAuth(t *testing.T) {
-	setupDavTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "330"})
+	setupDavTest(t)
 
-	rr := davRequest(t, "PROPFIND", "/dav/000001/", "", "")
+	rr := davRequest(t, "PROPFIND", nil, "", "")
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("認証を求めていません: %d", rr.Code)
 	}
@@ -91,60 +122,92 @@ func TestDavRequiresAuth(t *testing.T) {
 // 書き込みを許す前に決めることが2つ残っています（添付の版・同時編集）。ここが緩むと、
 // **決める前に上書きが起きます**——CADファイルは戻せません。
 func TestDavRejectsWrites(t *testing.T) {
-	setupDavTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "330"})
+	setupDavTest(t)
 
 	for _, m := range []string{"PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH", "LOCK", "UNLOCK"} {
-		rr := davRequest(t, m, "/dav/000001/a1b2.dxf", "alice", "pw")
+		rr := davRequest(t, m, []string{"部品A", "a1b2.dxf"}, "alice", "pw")
 		if rr.Code != http.StatusForbidden {
 			t.Errorf("%s を断っていません: %d", m, rr.Code)
 		}
 	}
 }
 
-// TestDavRootListsNothing は、**入口そのものが何も出さない**ことを固定します。
-// ページの一覧を出すと、読めないページの存在を数えられる形になります。
-func TestDavRootListsNothing(t *testing.T) {
-	setupDavTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "330"})
+// TestDavServesTree は、**ページの木がフォルダとして見える**ことを固定します
+// （2026-09-07 にページID1枚ずつから変更）。
+func TestDavServesTree(t *testing.T) {
+	setupDavTest(t)
 
-	for _, p := range []string{"/dav/", "/dav/notanid/"} {
-		rr := davRequest(t, "PROPFIND", p, "alice", "pw")
-		if rr.Code != http.StatusNotFound {
-			t.Errorf("%s が何かを返しています: %d", p, rr.Code)
-		}
+	rr := davRequest(t, "PROPFIND", nil, "alice", "pw")
+	if rr.Code != http.StatusMultiStatus {
+		t.Fatalf("入口の一覧が返りません: %d %s", rr.Code, rr.Body.String())
 	}
-}
-
-// TestDavHidesUnreadablePage は、**読めないページを「無い」と同じ顔で返す**ことを
-// 固定します（匿名の404統一と同じ規律）。403 を返すと、そこにページが在ることが漏れます。
-func TestDavHidesUnreadablePage(t *testing.T) {
-	setupDavTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "300"})
-
-	rr := davRequest(t, "GET", "/dav/000001/a1b2.dxf", "bob", "pw")
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("読めないページの存在が漏れています: %d", rr.Code)
+	if !strings.Contains(rr.Body.String(), url.PathEscape("部品A")) {
+		t.Errorf("入口に部品Aが出ていません: %s", rr.Body.String())
 	}
-}
 
-// TestDavServesFileAndListing は、**読める人には実際に配る**ことを固定します。
-// 断る側だけを固めると、「全部断っているから通る」テストになってしまいます。
-func TestDavServesFileAndListing(t *testing.T) {
-	name := setupDavTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "330"})
-
-	// ファイルそのもの
-	rr := davRequest(t, "GET", "/dav/000001/"+name, "alice", "pw")
+	// 題をたどって添付が読める。
+	rr = davRequest(t, "GET", []string{"部品A", "a1b2.dxf"}, "alice", "pw")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("添付を配れていません: %d %s", rr.Code, rr.Body.String())
 	}
 	if !strings.Contains(rr.Body.String(), "SECTION") {
 		t.Errorf("中身が違います: %q", rr.Body.String())
 	}
+}
 
-	// フォルダの一覧（エクスプローラが最初に投げるのがこれ）
-	rr = davRequest(t, "PROPFIND", "/dav/000001/", "alice", "pw")
+// TestDavHidesUnreadablePage は、**読めないページが木に出ない**ことを固定します。
+// 見えてしまうと、題（＝業務の情報）がそのまま漏れます。
+func TestDavHidesUnreadablePage(t *testing.T) {
+	setupDavTest(t)
+
+	rr := davRequest(t, "PROPFIND", nil, "bob", "pw")
 	if rr.Code != http.StatusMultiStatus {
-		t.Fatalf("一覧を返していません: %d %s", rr.Code, rr.Body.String())
+		t.Fatalf("一覧が返りません: %d %s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), name) {
-		t.Errorf("一覧に添付が出ていません: %s", rr.Body.String())
+	if strings.Contains(rr.Body.String(), url.PathEscape("秘密")) {
+		t.Errorf("読めないページが見えています: %s", rr.Body.String())
+	}
+	if rr := davRequest(t, "PROPFIND", []string{"秘密"}, "bob", "pw"); rr.Code != http.StatusNotFound {
+		t.Errorf("読めないページへ直接たどれています: %d", rr.Code)
+	}
+}
+
+// TestDavHiddenBySettings は、**設定で見せないと言ったページが消える**ことを固定します
+// （2026-09-07 ユーザー:「設定で見せないとするもの以外は見せて良いのでは？」）。
+//
+// ここが効かないと、コアが `通信箱` を名前で特別扱いする——**仕組みの側に語彙が漏れる**
+// 形へ戻ってしまいます。
+func TestDavHiddenBySettings(t *testing.T) {
+	setupDavTest(t)
+	settingsMu.Lock()
+	settings.WebDAVHidden = []string{"部品A"}
+	settingsMu.Unlock()
+
+	rr := davRequest(t, "PROPFIND", nil, "alice", "pw")
+	if strings.Contains(rr.Body.String(), url.PathEscape("部品A")) {
+		t.Errorf("設定で隠したページが見えています: %s", rr.Body.String())
+	}
+	if rr := davRequest(t, "GET", []string{"部品A", "a1b2.dxf"}, "alice", "pw"); rr.Code == http.StatusOK {
+		t.Error("隠したページの添付が読めています")
+	}
+}
+
+// TestSafeFolderName は、**題をフォルダ名へ付け替える規則**を固定します。
+//
+// 実データで50件がWindowsの使えない文字を含み（`RE: …` のコロン）、14件が同じ親の下で
+// 重複しています。潰し方を変えると、**割り当て済みのドライブのパスが全部変わります**。
+func TestSafeFolderName(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"RE: 見積り", "RE： 見積り"}, // コロンは全角へ
+		{"A/B", "A／B"},          // スラッシュも
+		{"  余白  ", "余白"},       // 前後の空白
+		{"末尾のドット...", "末尾のドット"}, // Windows が黙って落とすので先に落とす
+		{"CON", "CON_"},         // 予約語
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := safeFolderName(c.in); got != c.want {
+			t.Errorf("safeFolderName(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
