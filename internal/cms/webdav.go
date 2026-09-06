@@ -76,12 +76,20 @@ var davWriteMethods = map[string]bool{
 	"COPY": true, "PROPPATCH": true, "LOCK": true, "UNLOCK": true,
 }
 
-// DavHandler は `/dav/<ページID>/…` を、そのページの添付フォルダとして配ります。
+// DavHandler は `/dav/` 以下に**ページの木をそのまま**見せます。
 //
-// **1ページ＝1フォルダ**です。ページの木をそのまま辿らせる案もありますが、
-// 木を歩かせると**読めないページの存在が形として漏れます**（子の数・名前）。
-// 添付は必ずページに属するので、ページIDで入口を1つに絞るほうが安全で、
-// エクスプローラからも「割り当てたい部品ページ」を直接指せます。
+// もとは `/dav/<ページID>/` の1ページずつでした。変えた理由は2つです（2026-09-07）:
+//
+//  1. **フォルダ名がページID**（`010267`）で、どの部品か分からない。1ページ＝1割り当て
+//     なので、20部品なら20文字のドライブレターが要る。
+//  2. **「読めないページが漏れる」という避けた理由が成り立たなかった。** ブラウザの
+//     子ページ一覧が既に権限で絞った木を見せているので、同じ絞り方をすれば
+//     新しく漏れるものはありません（`visibleChildren`）。
+//
+// **見せないものは設定が決めます**（`webdav_hidden`）。ユーザー:「通信箱も取引先も
+// プラグインの領域ですが、クリックして開くは w-cms 本体の機能なので、設定で見せないと
+// するもの以外は見せて良いのでは？」——コアが `通信箱` を名前で特別扱いすると、
+// **仕組みの側に語彙が漏れます**。
 func DavHandler(w http.ResponseWriter, r *http.Request) {
 	if !DavEnabled() {
 		http.NotFound(w, r)
@@ -104,28 +112,17 @@ func DavHandler(w http.ResponseWriter, r *http.Request) {
 		return // davAuthenticate が 401 を返しています
 	}
 
-	pageID, ok := davSplitPath(r.URL.Path)
-	if !ok {
-		// 入口そのもの（`/dav/`）には何も置きません——**ページの一覧は出しません**。
-		// 読めないページを数えられる形にしないためです。
-		http.NotFound(w, r)
-		return
-	}
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil || !page.GetPerms(idInt).CanRead(user) {
-		// **読めないページは「無い」と同じ顔**（匿名の404統一と同じ規律）。
-		http.NotFound(w, r)
-		return
-	}
-	dir := page.AttachmentDir(pageID)
-	if _, err := os.Stat(dir); err != nil {
+	// **トップを読めない人には何も見せません。** 木の入口が読めないなら、
+	// その先も辿れません（各段でも `visibleChildren` が絞ります）。
+	topInt, err := strconv.Atoi(TopPageID)
+	if err != nil || !page.GetPerms(topInt).CanRead(user) {
 		http.NotFound(w, r)
 		return
 	}
 
 	h := &webdav.Handler{
-		Prefix:     DavPrefix + pageID,
-		FileSystem: webdav.Dir(dir),
+		Prefix:     strings.TrimSuffix(DavPrefix, "/"),
+		FileSystem: davFS{user: user},
 		LockSystem: davLockSystem(),
 		Logger: func(req *http.Request, err error) {
 			if err != nil {
@@ -134,19 +131,6 @@ func DavHandler(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	h.ServeHTTP(w, r)
-}
-
-// davSplitPath は `/dav/<ページID>/…` からページIDを取り出します。
-func davSplitPath(p string) (pageID string, ok bool) {
-	trimmed := strings.TrimPrefix(p, DavPrefix)
-	if trimmed == p || trimmed == "" {
-		return "", false
-	}
-	first := trimmed
-	if i := strings.IndexByte(trimmed, '/'); i >= 0 {
-		first = trimmed[:i]
-	}
-	return page.NormalizeID(first)
 }
 
 // davAuthenticate は HTTP Basic で利用者を確かめます。
