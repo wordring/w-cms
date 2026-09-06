@@ -63,9 +63,19 @@ func (n noDirListing) Open(name string) (http.File, error) {
 var loadedExtensions []string
 
 func main() {
-	// 設定ファイル（data/settings.json）を読む。**DBより先**に読むのは、この後の
-	// 再構築が語→型の推論辞書を使うため。無ければ既定値で作られ、壊れていれば
-	// ここで止まる（既定値で黙って上書きすると運用者が足した語が消えるため）。
+	// **証明書を作るだけの用**（サーバーは起動しない）。設定もDBも要らないので先に処理する。
+	if len(os.Args) > 1 && os.Args[1] == "-gencert" {
+		certFile, keyFile, err := generateSelfSignedCert(defaultCertDir)
+		if err != nil {
+			log.Fatalf("証明書を作れません: %v", err)
+		}
+		printCertInstructions(certFile, keyFile)
+		return
+	}
+
+	// 設定ファイル（config/settings.json）を読む。**DBより先**に読むのは、この後の
+	// 再構築が語→型の推論辞書を使うため。**無ければここで止まる**
+	// （Git管理の必須ファイル。既定値をコードに持たないのが 2026-09-07 の決定）。
 	if err := cms.LoadSettings(); err != nil {
 		log.Fatalf("設定の読み込みエラー: %v", err)
 	}
@@ -120,9 +130,23 @@ func main() {
 	} else {
 		log.Println("拡張セット: " + strings.Join(loadedExtensions, ", "))
 	}
-	log.Println("w-cms 起動: http://localhost:8080")
-	if err := http.ListenAndServe(":8080", handler); err != nil {
-		log.Fatalf("サーバー終了: %v", err)
+	// **HTTPS は証明書と鍵がそろったときだけ**。片方だけ置かれていたら設定の
+	// 書きかけなので止める——黙って平文へ落ちると「HTTPSのつもりで平文だった」が
+	// 起きます（Cookie と Basic の合言葉が素で流れる）。
+	cert, key := tlsCertPath(), tlsKeyPath()
+	switch {
+	case cert != "" && key != "":
+		log.Println("w-cms 起動: https://localhost:8443")
+		if err := http.ListenAndServeTLS(":8443", cert, key, handler); err != nil {
+			log.Fatalf("サーバー終了: %v", err)
+		}
+	case cert != "" || key != "":
+		log.Fatal("HTTPS の設定が片方だけです（WCMS_TLS_CERT と WCMS_TLS_KEY は両方要ります）")
+	default:
+		log.Println("w-cms 起動: http://localhost:8080")
+		if err := http.ListenAndServe(":8080", handler); err != nil {
+			log.Fatalf("サーバー終了: %v", err)
+		}
 	}
 }
 
