@@ -280,10 +280,10 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
 // 形はページテンプレートの受注ページと同じ: ヘッダ dl（発注書番号・発注元・発注日）＋
 // 明細 table（品番・品名・単価・数量・状態）。状態は「未着手」で始まる（進捗の起点）。
 func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment) string {
-	title := "受注 " + strings.TrimSpace(j.OrderNo)
-	if strings.TrimSpace(j.OrderNo) == "" {
-		if strings.TrimSpace(j.Customer) != "" {
-			title = "受注（" + strings.TrimSpace(j.Customer) + "）"
+	title := "受注 " + cms.NormalizeNameForIngest(j.OrderNo)
+	if cms.NormalizeNameForIngest(j.OrderNo) == "" {
+		if cms.NormalizeNameForIngest(j.Customer) != "" {
+			title = "受注（" + cms.NormalizeNameForIngest(j.Customer) + "）"
 		} else {
 			title = "受注（番号不明）"
 		}
@@ -292,8 +292,8 @@ func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment)
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
 	b.WriteString("<section><h2>顧客の発注書</h2><dl>")
-	writeHeaderPair(&b, "発注書番号", j.OrderNo)
-	writeHeaderPair(&b, "発注元", j.Customer)
+	writeHeaderPair(&b, "発注書番号", cms.NormalizeNameForIngest(j.OrderNo))
+	writeHeaderPair(&b, "発注元", cms.NormalizeNameForIngest(j.Customer))
 	writeHeaderPair(&b, "発注日", j.OrderDate)
 	b.WriteString("</dl><table><tbody>")
 	b.WriteString("<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>")
@@ -372,7 +372,14 @@ func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, 
 // ブロックごと運べば出所も一緒に付いて行くようにするためです。
 func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 	matches []matchedDXF, existingBody string) string {
-	no, name := strings.TrimSpace(j.DrawingNo), strings.TrimSpace(j.DrawingName)
+	// 図面番号も同じ扱いです（2026-09-06）——**人がいちばんコピペする値**なので、
+	// 揃わないまま置くと揺れがそこから増えます。畳むのは NFKC までで、
+	// `NormalizeCode` は使いません（ハイフンと長音を潰すと読めなくなる）。
+	no := cms.NormalizeNameForIngest(j.DrawingNo)
+	// **顧客名・装置名称・図面名称は早期に正規化します**（2026-09-06 ユーザー）。
+	// この3つはそのままページの題になり、題の完全一致が階層の同一性を決めるので、
+	// 畳まずに入れると `φ３２０　三輪共通` が別の装置ページになります。
+	name := cms.NormalizeNameForIngest(j.DrawingName)
 
 	var b strings.Builder
 	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>図面</h2><dl>`)
@@ -380,8 +387,8 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 	writeHeaderPair(&b, "図面名称", name)
 	// 装置名称・客先は置き場所（顧客名／装置名称／図面名称）に効く項目。
 	// 空でも欄は出す——**あとから人が埋められる**（writeHeaderPair の作り）。
-	writeHeaderPair(&b, "装置名称", j.MachineName)
-	writeHeaderPair(&b, "客先", j.Customer)
+	writeHeaderPair(&b, "装置名称", cms.NormalizeNameForIngest(j.MachineName))
+	writeHeaderPair(&b, "客先", cms.NormalizeNameForIngest(j.Customer))
 	b.WriteString("</dl>")
 
 	b.WriteString(`<dl data-type="tags"><dt>受信元</dt><dd>` +

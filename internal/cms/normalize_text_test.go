@@ -147,3 +147,24 @@ func TestCanonicalForIngest(t *testing.T) {
 		}
 	}
 }
+
+// TestNormalizeNameForIngest は、**ページの題になる名前**の早期正規化を固定します
+// （2026-09-06 ユーザー:「顧客名、装置名称、図面名称の値を早期に正規化したいです」）。
+//
+// 実データが `φ３２０　三輪共通` の形で届きました——畳まないと `φ320 三輪共通` と
+// 別の装置ページになり、同じ装置の図面が2か所に散ります。
+func TestNormalizeNameForIngest(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"φ３２０　三輪共通", "φ320 三輪共通"}, // 全角数字・全角空白（実データ）
+		{"  脚取付台  ", "脚取付台"},         // 前後の空白
+		{"X011  002", "X011 002"},      // 連続する空白は1つに
+		{"ﾊﾟｲﾌﾟ架台", "パイプ架台"},          // 半角カナ
+		{"レーザーマックス", "レーザーマックス"},    // **長音には触らない**（NormalizeCode と違う）
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := NormalizeNameForIngest(c.in); got != c.want {
+			t.Errorf("NormalizeNameForIngest(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
