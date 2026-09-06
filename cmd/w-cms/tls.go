@@ -144,6 +144,13 @@ func writePEM(path, blockType string, der []byte, mode os.FileMode) error {
 // **ここを出さないと詰みます**——自己署名は「作っただけ」では誰も信じないので、
 // 各PCで信頼させる一手が要ることを、作った直後のいちばん見る場所で伝えます。
 func printCertInstructions(certFile, keyFile string) {
+	// **絶対パスで出します。** 管理者で開いた PowerShell は System32 から始まるので、
+	// 相対パスを貼っても「ファイルが見つかりません」になります——1回きりの操作で
+	// つまずかせないための一手間です。
+	absCert := certFile
+	if a, err := filepath.Abs(certFile); err == nil {
+		absCert = a
+	}
 	fmt.Printf(`自己署名の証明書を作りました:
   証明書: %s
   鍵:     %s
@@ -153,12 +160,11 @@ func printCertInstructions(certFile, keyFile string) {
   → https://localhost:8443/
 
 ⚠ このままではブラウザもWindowsも信じません。使う各PCで1度だけ信頼させます
-  （PowerShell を管理者で）:
+  （PowerShell を「管理者として実行」して、**この1行を貼る**）:
 
-  Import-Certificate -FilePath "%s" ^
-    -CertStoreLocation Cert:\LocalMachine\Root
+  Import-Certificate -FilePath "%s" -CertStoreLocation Cert:\LocalMachine\Root
 
   信頼させると、WebDAV の割り当ても通るようになります（平文HTTPで Basic を送らない
   という Windows の既定は、HTTPS なら当てはまらないため）。
-`, certFile, keyFile, certFile, keyFile, certFile)
+`, certFile, keyFile, certFile, keyFile, absCert)
 }
