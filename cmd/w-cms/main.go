@@ -248,7 +248,22 @@ func buildHandler() http.Handler {
 
 	// CSRF対策（状態変更系のオリジン検証）と CSP（Content-Security-Policy）を
 	// 全体に適用する。CSP は最外周に置き、全レスポンスへヘッダを付与する。
-	handler := auth.CSPProtect(auth.CSRFProtect(root))
+	//
+	// **WebDAV（/dav/）だけは CSRF の外側**に出します（2026-09-07）。CSRFProtect は
+	// GET/HEAD/OPTIONS 以外に同一オリジンを要求しますが、**WebDAV の PROPFIND は
+	// その他のメソッド**で、エクスプローラは Origin も Referer も送りません——通すと
+	// フォルダの一覧すら開けません。
+	//
+	// 外して安全なのは、この口が**Cookieを使わない**（HTTP Basic）ためです。CSRF が
+	// 守るのは「ブラウザが持っている認証情報を、別サイトに勝手に使わせない」ことなので、
+	// Cookie を見ない口には効きません。
+	//
+	// ⚠ **書き込みを許すときは、ここを考え直すこと。** ブラウザが Basic の合言葉を
+	// 覚えていると、別サイトのページから PUT を撃たせる余地が生まれます。読み取り
+	// 専用のいまは、撃たれても読めるだけ（それも合言葉が要る）です。
+	outer := http.NewServeMux()
+	outer.Handle(cms.DavPrefix, http.HandlerFunc(cms.DavHandler))
+	outer.Handle("/", auth.CSRFProtect(root))
 
-	return handler
+	return auth.CSPProtect(outer)
 }
