@@ -122,9 +122,13 @@ func TestFilingProposalCreatesNothing(t *testing.T) {
 		t.Fatalf("提案の行数が違います: %+v", rows)
 	}
 	// 推奨値が索引から入っていること（人はこれを直す）。
+	//
+	// **`Φ` は `φ` に畳まれます**（2026-09-06 ユーザー:「材料や図面にΦという記号が
+	// 多く出てきます。大小の揺れを正規化しましょう」）。NFKC は大小を変換しないので、
+	// 設定の置き換え表（`char_folding`）が効いた形です。
 	got := rows[0]
 	if got.Customer != "トーアスポーツマシーン" || got.MachineName != "オールラウンド2輪" ||
-		got.DrawingName != "Φ32パイプ脚取付台" || got.DrawingNo != "Y050-W01-0040-03" {
+		got.DrawingName != "φ32パイプ脚取付台" || got.DrawingNo != "Y050-W01-0040-03" {
 		t.Errorf("推奨値が違います: %+v", got)
 	}
 }

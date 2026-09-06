@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -67,6 +68,20 @@ type Settings struct {
 	//
 	// **並び順に意味があります**——先頭が整理の画面の初期値（＝いちばん多い行き先）。
 	MachineStages []string `json:"machine_stages,omitempty"`
+
+	// CharFolding は**比較の前に置き換える文字**です（`Φ`→`φ` など）。
+	//
+	// ユーザー:「材料や図面にΦという記号が多く出てきます。大文字小文字などの揺れを
+	// 正規化しましょう。こういった文字は、設定できた方が良いかも」（2026-09-06）。
+	//
+	// **NFKC では畳めません**——`Φ`（U+03A6）と `φ`（U+03C6）は大小の違いで、
+	// Unicode の正規化は大小を変換しないためです。直径記号にいたっては
+	// `⌀`・`Ø`・`φ` と**別系統の文字**が同じ意味で使われます。どれを同じとみなすかは
+	// **業種の知識**なので、コードではなく設定に置きます。
+	//
+	// 未指定なら既定（`defaultCharFolding`）。**足したらDB再構築で効きます**
+	// ——語→型の推論辞書と同じ流儀。
+	CharFolding map[string]string `json:"char_folding,omitempty"`
 }
 
 // settings は読み込み済みの設定です。nil のあいだはコード内の既定値が使われます
@@ -88,6 +103,7 @@ func LoadSettings() error {
 	}
 	settingsMu.Lock()
 	settings = s
+	charFolder = newCharFolder(s.CharFolding)
 	settingsMu.Unlock()
 	return nil
 }
@@ -132,6 +148,19 @@ func (s Settings) validate(path string) error {
 	}
 	if s.MaxUploadMiB < 0 {
 		return fmt.Errorf("%s: max_upload_mib が負です", path)
+	}
+	for from, to := range s.CharFolding {
+		if strings.TrimSpace(from) == "" {
+			return fmt.Errorf("%s: char_folding に空の置き換え元があります", path)
+		}
+		if from == to {
+			return fmt.Errorf("%s: char_folding の %q が自分自身への置き換えになっています", path, from)
+		}
+		// **置き換え先が別の置き換え元だと、順序で結果が変わります**（`Φ`→`φ`→`f` の類）。
+		// 書いた時点で断るほうが、あとで「なぜか畳まれない」を追うより安いです。
+		if _, chained := s.CharFolding[to]; chained {
+			return fmt.Errorf("%s: char_folding の %q → %q は、さらに置き換えられる文字を指しています", path, from, to)
+		}
 	}
 	seenStage := map[string]bool{}
 	for _, st := range s.MachineStages {
@@ -187,7 +216,80 @@ func defaultSettings() *Settings {
 		MaxUploadMiB:         32,
 		AttachmentExtensions: append([]string{}, defaultAttachmentExtensions...),
 		MachineStages:        append([]string{}, defaultMachineStages...),
+		CharFolding:          cloneStrMap(defaultCharFolding),
 	}
+}
+
+// cloneStrMap は既定値をコピーします（返した先で書き換えられても既定が汚れないように）。
+func cloneStrMap(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// defaultCharFolding は既定の置き換え表です。
+//
+// **直径記号のまわりだけ**入れてあります——実データで実際にぶつかっているのがここで、
+// 憶測で広げると別の意味の文字まで畳んで戻せなくなります。増やすのは運用者の仕事。
+//
+//	Φ ϕ Ⲫ …… ギリシャ文字ファイの大文字・記号形（NFKCは大小を変換しない）
+//	Ø ø ⌀ …… 直径記号として使われる別系統の文字
+//	Ф ф …… キリル文字のエフ（見た目が同じで、実際に混ざる）
+var defaultCharFolding = map[string]string{
+	"Φ": "φ", // U+03A6 → U+03C6
+	"ϕ": "φ", // U+03D5 GREEK PHI SYMBOL
+	"⌀": "φ", // U+2300 DIAMETER SIGN
+	"Ø": "φ", // U+00D8
+	"ø": "φ", // U+00F8
+	"Ф": "φ", // U+0424 CYRILLIC CAPITAL LETTER EF
+	"ф": "φ", // U+0444 CYRILLIC SMALL LETTER EF
+}
+
+// charFolder はいま効いている置き換え表の Replacer です。
+//
+// **設定が差し替わったときだけ作り直します**（Replacer の生成は安くないので、
+// 正規化のたびに作るのは無駄）。settings と同じロックで守ります。
+var charFolder *strings.Replacer
+
+// activeCharFolder は置き換え用の Replacer を返します。
+//
+// **未指定なら既定値**です（他の設定と同じ流儀）——鍵の無い古い settings.json でも
+// 畳みが効くように。設定を読んでいない経路（テストなど）も既定で畳みます。
+func activeCharFolder() *strings.Replacer {
+	settingsMu.RLock()
+	r := charFolder
+	settingsMu.RUnlock()
+	if r != nil {
+		return r
+	}
+	defaultFolderOnce.Do(func() { defaultFolder = newCharFolder(defaultCharFolding) })
+	return defaultFolder
+}
+
+var (
+	defaultFolderOnce sync.Once
+	defaultFolder     *strings.Replacer
+)
+
+// newCharFolder は表から Replacer を作ります（空なら nil）。
+func newCharFolder(m map[string]string) *strings.Replacer {
+	if len(m) == 0 {
+		return nil
+	}
+	// **並びを固定します**——map の走査順は毎回変わるので、そのまま渡すと
+	// 同じ設定でも実行ごとに置き換えの優先順位が変わりえます。
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(m)*2)
+	for _, k := range keys {
+		pairs = append(pairs, k, m[k])
+	}
+	return strings.NewReplacer(pairs...)
 }
 
 // defaultMachineStages は装置の段の既定値です。**先頭が整理の初期値**なので、

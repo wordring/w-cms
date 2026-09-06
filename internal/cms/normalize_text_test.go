@@ -168,3 +168,21 @@ func TestNormalizeNameForIngest(t *testing.T) {
 		}
 	}
 }
+
+// TestCharFoldingFoldsDiameterMarks は、**直径記号まわりの揺れが畳まれる**ことを
+// 固定します（2026-09-06 ユーザー:「材料や図面にΦという記号が多く出てきます。
+// 大文字小文字などの揺れを正規化しましょう」）。
+//
+// NFKC は大小を変換しないので `Φ`(U+03A6) と `φ`(U+03C6) は別のままです。
+// 直径記号は `⌀`・`Ø`・キリル文字の `Ф` まで混ざるので、設定の置き換え表で解きます。
+func TestCharFoldingFoldsDiameterMarks(t *testing.T) {
+	for _, in := range []string{"Φ320", "ϕ320", "⌀320", "Ø320", "ø320", "Ф320", "ф320"} {
+		if got := NormalizeText(in); got != "φ320" {
+			t.Errorf("NormalizeText(%q) = %q, want %q", in, got, "φ320")
+		}
+	}
+	// 全角数字と重ねても効く（NFKC のあとに置き換える順序）。
+	if got := NormalizeNameForIngest("Φ３２０　三輪共通"); got != "φ320 三輪共通" {
+		t.Errorf("NormalizeNameForIngest = %q", got)
+	}
+}

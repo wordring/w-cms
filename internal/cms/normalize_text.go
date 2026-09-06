@@ -38,7 +38,19 @@ import (
 // NFKC は `㈱`→`(株)`・`①`→`1` のような踏み込んだ変換も行いますが、
 // **比較のためだけの値**なので、同じものとみなせて困りません。
 func NormalizeText(s string) string {
-	return strings.TrimSpace(norm.NFKC.String(s))
+	v := strings.TrimSpace(norm.NFKC.String(s))
+	// **設定の置き換え表を掛けます**（`Φ`→`φ` など・2026-09-06）。NFKC は大小を
+	// 変換しないので `Φ` と `φ` は別の文字のままで、直径記号にいたっては `⌀`・`Ø`・`φ`
+	// と系統からして違います。**どれを同じとみなすかは業種の知識**なので、
+	// コードではなく `data/settings.json` の `char_folding` に置きました。
+	//
+	// ここに置くのは、**畳む入口が1つ**だからです——NormalizeCode も
+	// NormalizeNameForIngest もこの関数を通るので、索引の比較値と、機械が書き起こす
+	// 名前の両方に同じ表が効きます。
+	if r := activeCharFolder(); r != nil {
+		v = r.Replace(v)
+	}
+	return v
 }
 
 // NormalizeCode は図面番号・発注書番号のような**符牒**を強く畳みます。
