@@ -218,8 +218,9 @@ func TestFileDrawingsSkipsEmptyFields(t *testing.T) {
 // TestFileDrawingsSecondBecomesRevision は、同じ行き先に同名のページが既にあるとき
 // **改定図面として合流**し、仮のページが片付くことを固定します。
 //
-// ユーザー:「その部品のページが既に存在するとしたら、その図面は改定図面です」
-// 「既存ページの図面の項目の先頭に配置してはどうでしょう？」
+// ユーザー:「その部品のページが既に存在するとしたら、その図面は改定図面です」。
+// **旧版は最新版の子ページ**になります（2026-09-06 ユーザー:「旧版を最も新しい版の
+// 子にしてはどうでしょう」）——もとは同じページに積み上げる形でした。
 func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 	const inbox = "000012"
 	setupFilingTest(t, inbox)
@@ -240,18 +241,40 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 		t.Errorf("合流先が違います: %+v", results[0])
 	}
 
-	// 合流先に図面が2つ並び、**新しいほうが先頭**であること。
+	// 合流先に載るのは**最新の図面だけ**——旧版は子ページへ出ている。
 	body, err := os.ReadFile(filepath.Join(page.GetPageDir(first), first+".html"))
 	if err != nil {
 		t.Fatalf("合流先を読めません: %v", err)
 	}
 	html := string(body)
-	newAt, oldAt := strings.Index(html, "Y050-1A"), strings.Index(html, "<dd>Y050-1</dd>")
-	if newAt < 0 || oldAt < 0 {
-		t.Fatalf("図面が2つ揃っていません:\n%s", html)
+	if !strings.Contains(html, "<dd>Y050-1A</dd>") {
+		t.Fatalf("最新の図面が載っていません:\n%s", html)
 	}
-	if newAt > oldAt {
-		t.Errorf("新しい図面が先頭にありません（改定の並びが逆）:\n%s", html)
+	if strings.Contains(html, "<dd>Y050-1</dd>") {
+		t.Errorf("旧版が最新版のページに残っています（子へ移っていない）:\n%s", html)
+	}
+	if n := strings.Count(html, "<h2>図面</h2>"); n != 1 {
+		t.Errorf("図面ブロックが%d個あります（最新の1つだけのはず）:\n%s", n, html)
+	}
+
+	// 旧版が**子ページ**になっていて、そこに旧版の図面ブロックがあること。
+	oldID, ok := findChildByTitle(first, "旧版 Y050-1 脚取付台")
+	if !ok {
+		t.Fatalf("旧版の子ページがありません")
+	}
+	oldBody, err := os.ReadFile(filepath.Join(page.GetPageDir(oldID), oldID+".html"))
+	if err != nil {
+		t.Fatalf("旧版ページを読めません: %v", err)
+	}
+	// 由来（受信元）もブロックごと付いて行く——出所を失わない。
+	if !strings.Contains(string(oldBody), "<dd>Y050-1</dd>") ||
+		!strings.Contains(string(oldBody), "000012-pdf001") {
+		t.Errorf("旧版ページに図面と由来が移っていません:\n%s", oldBody)
+	}
+
+	// 改訂履歴の旧版の行が、その子ページへのリンクになっていること。
+	if !strings.Contains(html, `<a href="/`+oldID+`">Y050-1</a>`) {
+		t.Errorf("改訂履歴から旧版ページへ飛べません:\n%s", html)
 	}
 
 	// **社内コードが成立していること**——ユーザー:「部品の社内コードは部品ページの

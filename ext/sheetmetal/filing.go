@@ -32,9 +32,16 @@ package sheetmetal
 //
 // 移した先に同名の部品ページが在れば、その図面は**改定図面**です（ユーザー）。
 // 顧客名／装置名称の下では図面名称が一意なので、**ページが在ること自体が改定の合図**。
-// 新しい図面ブロックを既存ページの**先頭**へ差し込みます——「新しいものが上」という
-// 並びそのものが最新を表すので、どれが古いかを別に持たなくて済みます。
-// 古い図面に赤枠を出すのは表示側の仕事（`class` はサニタイズで落ちるため保存しない）。
+// **旧版は最新版の子ページになります**（2026-09-06 ユーザー:「旧版を最も新しい版の
+// 子にしてはどうでしょう。ワンノートではページが子を持てなかったので、出来ません
+// でしたが、CMSでは可能では？」）。もとは同じページに積み上げて古いものに赤枠を
+// 付ける形でしたが、**それはワンノートの制約を写しただけ**でした。詳しくは
+// mergeAsRevision。
+//
+// **顧客名・装置名称・図面名称は早期に正規化します**（2026-09-06 ユーザー）。
+// この3つはそのままページの題になり、題の完全一致が階層の同一性を決めるので、
+// 畳まずに入れると `φ３２０　三輪共通` が別の装置ページになります
+// （`cms.NormalizeNameForIngest`）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -46,6 +53,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -428,7 +436,7 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	}
 	auth.Audit(user.Username, "file-drawing.move", pageID+" -> "+machineID)
 	return filingResult{PageID: pageID, Outcome: "moved",
-		Message: customer + "／" + machine + "／" + name + " へ収めました"}
+		Message: customer + "／" + stage + "／" + machine + "／" + name + " へ収めました"}
 }
 
 // findChildByTitle は親の子から題が完全一致するものを1つ探します。
@@ -524,32 +532,131 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	if err != nil || !canWritePage(user, dstInt) {
 		return errors.New("合流先へ書き込む権限がありません")
 	}
-
-	// **ブロックIDが合流先と衝突しないようにする**——`ページID-ブロックID` は
-	// その改定の社内コードなので、1つのページの中で重複したら指し先が定まりません
-	// （4桁 base36 なので確率は低いが、低いことと起きないことは違う）。
 	dstBody, err := cms.ReadPageBody(dstPageID)
 	if err != nil {
 		return err
 	}
-	block = reassignBlockIDIfTaken(block, dstBody)
-	if err := cms.InsertAfterH1(dstPageID, user.Username, block); err != nil {
-		return err
+
+	// 1. いま載っている図面ブロックを外し、旧版ページへ移す。
+	oldBlocks, rest := extractDrawingSections(dstBody)
+	oldPageID, oldNo := "", ""
+	if len(oldBlocks) > 0 {
+		oldNo = drawingNoOf(oldBlocks[0])
+		oldPageID, err = createOldVersionPage(user, dstPageID, oldNo, oldBlocks)
+		if err != nil {
+			return err
+		}
+		dstBody = rest
 	}
-	// **改訂履歴に1行足す**——社内コードの指し先はこの行です（vocab.go の
-	// drawing-revisions）。図面ブロックは「赤枠で残して人が消す」決まりなので、
-	// 消せるものを指し先にすると紙に出たコードが宙ぶらりんになります。
-	if err := cms.RewriteBody(dstPageID, user.Username, func(body string) string {
-		return InsertRevisionRow(body, drawingNoOf(block))
+
+	// 2. 新しい図面ブロックを見出しの直後へ。
+	//
+	// **ブロックIDが衝突しないようにする**——`ページID-ブロックID` はその改定の
+	// 社内コードなので、1つのページの中で重複したら指し先が定まりません
+	// （4桁 base36 なので確率は低いが、低いことと起きないことは違う）。
+	block = reassignBlockIDIfTaken(block, dstBody)
+	newNo := drawingNoOf(block)
+	if err := cms.RewriteBody(dstPageID, user.Username, func(string) string {
+		body := insertAfterH1String(dstBody, block)
+		// **改訂履歴に1行足す**——社内コードの指し先はこの行です（vocab.go の
+		// drawing-revisions）。図面ブロックは人が消せる決まりなので、消せるものを
+		// 指し先にすると紙に出たコードが宙ぶらりんになります。
+		body = InsertRevisionRow(body, newNo)
+		if oldPageID != "" {
+			body = linkRevisionRow(body, oldNo, oldPageID)
+		}
+		return body
 	}); err != nil {
 		return err
 	}
-	// 合流し終えてから仮のページを片付ける（順序が逆だと、失敗したときに
-	// 図面がどこにも無い状態が生まれる）。
+
+	// 3. 合流し終えてから仮のページを片付ける。
 	if _, err := cms.DeletePageToTrash(srcPageID); err != nil {
 		return err
 	}
 	return nil
+}
+
+// createOldVersionPage は旧版の子ページを作り、そのIDを返します。
+//
+// 題は `旧版 <図面番号> <図面名称>`（2026-09-06 ユーザー決定）。同じ題の兄弟が
+// 既に居れば受領日を添えます——**図面番号が変わらない改定**が実際にあるためです。
+func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []string) (string, error) {
+	name := pageTitleOf(dstPageID)
+	title := strings.TrimSpace("旧版 " + strings.TrimSpace(oldNo) + " " + strings.TrimSpace(name))
+	if _, taken := findChildByTitle(dstPageID, title); taken {
+		title += "（" + time.Now().In(time.Local).Format("2006-01-02") + "）"
+	}
+	body := "<h1>" + htmlEscape(title) + "</h1>" + strings.Join(blocks, "")
+	return cms.CreateChildPage(dstPageID, user.Username, body)
+}
+
+// extractDrawingSections は本文から図面ブロックを取り出し、残りの本文と一緒に返します。
+//
+// **`section` が入れ子にならない前提**です——業務ブロックは機能見出し形で平らに並ぶ
+// （入れ子にする書き方が無い）。見出しの文字で見分けるのは、機能見出し形そのもの
+// ——機械キーを本文へ書く属性はありません。
+func extractDrawingSections(body string) (blocks []string, rest string) {
+	var out strings.Builder
+	i := 0
+	for {
+		open := strings.Index(body[i:], "<section")
+		if open < 0 {
+			break
+		}
+		open += i
+		close := strings.Index(body[open:], "</section>")
+		if close < 0 {
+			break
+		}
+		end := open + close + len("</section>")
+		sec := body[open:end]
+		if strings.Contains(sec, "<h2>図面</h2>") {
+			blocks = append(blocks, sec)
+			out.WriteString(body[i:open]) // ブロックは落とし、間の本文は残す
+		} else {
+			out.WriteString(body[i:end])
+		}
+		i = end
+	}
+	out.WriteString(body[i:])
+	return blocks, out.String()
+}
+
+// insertAfterH1String は h1 の直後へ差し込みます（文字列版）。
+//
+// コアの `InsertAfterH1` はページを読み書きしますが、ここでは**1回の書き換えで
+// 全部やる**必要があります——外して・足して・履歴を直すのを別々に保存すると、
+// 途中で失敗したときに図面の無いページが残ります。
+func insertAfterH1String(body, fragment string) string {
+	if i := strings.Index(body, "</h1>"); i >= 0 {
+		at := i + len("</h1>")
+		return body[:at] + fragment + body[at:]
+	}
+	return fragment + body
+}
+
+// linkRevisionRow は改訂履歴の中で図面番号が no の行を、旧版ページへのリンクにします。
+//
+// **見つからなければ何もしません**（手で消した履歴・古い形のページ）。旧版へは
+// 子ページの一覧からも行けるので、ここが効かなくても行き止まりにはなりません。
+func linkRevisionRow(body, no, oldPageID string) string {
+	no = strings.TrimSpace(no)
+	if no == "" || oldPageID == "" {
+		return body
+	}
+	at := strings.Index(body, `<table data-type="drawing-revision-items">`)
+	if at < 0 {
+		return body
+	}
+	cell := "<td>" + htmlEscape(no) + "</td>"
+	rel := strings.Index(body[at:], cell)
+	if rel < 0 {
+		return body
+	}
+	i := at + rel
+	linked := `<td><a href="/` + htmlEscape(oldPageID) + `">` + htmlEscape(no) + `</a></td>`
+	return body[:i] + linked + body[i+len(cell):]
 }
 
 // blockIDRe は section の先頭に付いたブロックIDを拾います。
