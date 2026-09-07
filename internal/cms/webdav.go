@@ -70,10 +70,20 @@ func davLockSystem() webdav.LockSystem {
 	return davLocks
 }
 
-// davWriteMethods は本文を変える要求です。**読み取り専用の間は全部断ります。**
-var davWriteMethods = map[string]bool{
-	"PUT": true, "DELETE": true, "MKCOL": true, "MOVE": true,
-	"COPY": true, "PROPPATCH": true, "LOCK": true, "UNLOCK": true,
+// davBlockedMethods は**通さない要求**です（2026-09-07 に PUT・LOCK・UNLOCK を外しました）。
+//
+// 通すもの:
+//
+//   - `PUT`……上書き。**書ける範囲かどうかはファイルシステム側が決めます**
+//     （権限・`webdav_readonly`・既存かどうか）。ここで一律に断ると、
+//     「どこなら書けるか」の判断が2箇所に散ります。
+//   - `LOCK`/`UNLOCK`……送ってくるアプリには本来の守りが効きます。送らないアプリでは
+//     効きませんが、**効かないことを理由に塞ぐ**と、送るアプリの守りまで失います。
+//
+// 通さないもの: **消す・作る・動かす**。Ctrl+S の輪に要らず、事故のとき取り返しが
+// つきにくいためです（`DELETE` はページの添付を消し、`MOVE` は行方を分からなくします）。
+var davBlockedMethods = map[string]bool{
+	"DELETE": true, "MKCOL": true, "MOVE": true, "COPY": true, "PROPPATCH": true,
 }
 
 // DavHandler は `/dav/` 以下に**ページの木をそのまま**見せます。
@@ -100,10 +110,10 @@ func DavHandler(w http.ResponseWriter, r *http.Request) {
 	// 何も切り分けられません（届かない＝OSが手前で断った、届いた＝こちらの返事の問題）。
 	log.Printf("WebDAV %s %s auth=%v", r.Method, r.URL.Path, r.Header.Get("Authorization") != "")
 
-	// **書き込みは全部断ります**（読み取り専用の期間）。405 ではなく 403 なのは、
+	// **消す・作る・動かすは通しません。** 405 ではなく 403 なのは、
 	// 「その要求は理解したが、許していない」を伝えるためです。
-	if davWriteMethods[strings.ToUpper(r.Method)] {
-		http.Error(w, "いまは読み取り専用です", http.StatusForbidden)
+	if davBlockedMethods[strings.ToUpper(r.Method)] {
+		http.Error(w, "この操作は許していません（読み・上書きだけ）", http.StatusForbidden)
 		return
 	}
 

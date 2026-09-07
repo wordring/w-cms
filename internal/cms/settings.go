@@ -98,6 +98,13 @@ type Settings struct {
 	// **コアは業務の言葉を知りません**——`通信箱` を名前で特別扱いするコードを書くと、
 	// 仕組みの側に語彙が漏れます。未指定なら**全部見せます**。
 	WebDAVHidden []string `json:"webdav_hidden,omitempty"`
+
+	// WebDAVReadOnly は WebDAV から**書き換えられない**ページの題です（祖先まで効きます）。
+	//
+	// ユーザー:「編集するCADファイルは弊社の物です。メール由来のものではありません」
+	// （2026-09-07）——届いた添付は**届いた事実の証拠**なので書き換えさせません。
+	// コアが `通信箱` を名前で知ってはいけないので、**題を設定に書いてもらいます**。
+	WebDAVReadOnly []string `json:"webdav_readonly,omitempty"`
 }
 
 // settings は読み込み済みの設定です。nil のあいだはコード内の既定値が使われます
@@ -352,6 +359,28 @@ func WebDAVHidden() []string {
 // hiddenWebDAVTitles は引きやすい形（集合）で返します。
 func hiddenWebDAVTitles() map[string]bool {
 	list := WebDAVHidden()
+	out := make(map[string]bool, len(list))
+	for _, t := range list {
+		if v := strings.TrimSpace(t); v != "" {
+			out[v] = true
+		}
+	}
+	return out
+}
+
+// WebDAVReadOnly は WebDAV から書き換えられないページの題です（設定 `webdav_readonly`）。
+func WebDAVReadOnly() []string {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings == nil {
+		return nil
+	}
+	return settings.WebDAVReadOnly
+}
+
+// readOnlyWebDAVTitles は引きやすい形（集合）で返します。
+func readOnlyWebDAVTitles() map[string]bool {
+	list := WebDAVReadOnly()
 	out := make(map[string]bool, len(list))
 	for _, t := range list {
 		if v := strings.TrimSpace(t); v != "" {
