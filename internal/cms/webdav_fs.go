@@ -40,6 +40,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -156,26 +157,50 @@ func (f davFS) Stat(ctx context.Context, name string) (fs.FileInfo, error) {
 }
 
 func (f davFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
-	// **書き込みで開こうとしたら断ります**（読み取り専用の期間）。
-	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0 {
-		return nil, errReadOnly
-	}
+	writing := flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0
+
 	pageID, fileName, err := f.resolve(name)
 	if err != nil {
+		// **新しいファイルは作れません。** 作れるようにすると拡張子の許可リストと
+		// 大きさの上限を素通りするので、そこは別に決めます（webdav_write.go）。
+		if writing {
+			return nil, errDavNoCreate
+		}
 		return nil, err
 	}
 	if fileName == "" {
+		if writing {
+			return nil, errReadOnly // フォルダ（＝ページ）そのものは書けません
+		}
 		return &davDir{fs: f, pageID: pageID, name: path.Base(name)}, nil
 	}
 	fp, ok := page.AttachmentPath(pageID, fileName)
 	if !ok {
 		return nil, os.ErrNotExist
 	}
+	if writing {
+		return f.openForWrite(pageID, fileName, fp)
+	}
 	file, err := os.Open(fp)
 	if err != nil {
 		return nil, err
 	}
 	return davFile{File: file}, nil
+}
+
+// openForWrite は上書き用に開きます（**書き終わってから差し替え**ます）。
+func (f davFS) openForWrite(pageID, fileName, realPath string) (webdav.File, error) {
+	if err := f.canWriteAttachment(pageID); err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(realPath), "."+fileName+".dav-*")
+	if err != nil {
+		return nil, err
+	}
+	return &davWriteFile{
+		File: tmp, tmpPath: tmp.Name(), realPath: realPath,
+		pageID: pageID, name: fileName, user: f.user.Username,
+	}, nil
 }
 
 // ── フォルダ（ページ）──

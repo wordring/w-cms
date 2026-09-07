@@ -20,6 +20,11 @@ import (
 // パスは**日本語を含みます**（ページの題がそのままフォルダ名）。実際のクライアントと
 // 同じになるよう、区画ごとにURLエンコードして組み立てます。
 func davRequest(t *testing.T, method string, segments []string, user, pass string) *httptest.ResponseRecorder {
+	return davRequestBody(t, method, segments, user, pass, "")
+}
+
+// davRequestBody は本文つきで投げます（PUT の確認用）。
+func davRequestBody(t *testing.T, method string, segments []string, user, pass, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	p := DavPrefix
 	for i, s := range segments {
@@ -28,7 +33,12 @@ func davRequest(t *testing.T, method string, segments []string, user, pass strin
 		}
 		p += url.PathEscape(s)
 	}
-	req := httptest.NewRequest(method, p, nil)
+	var req *http.Request
+	if body == "" {
+		req = httptest.NewRequest(method, p, nil)
+	} else {
+		req = httptest.NewRequest(method, p, strings.NewReader(body))
+	}
 	if user != "" {
 		req.Header.Set("Authorization", "Basic "+
 			base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
@@ -77,6 +87,7 @@ func setupDavTest(t *testing.T) {
 	davPage(t, "000101", "部品A", "alice", "333", TopPageID, "a1b2.dxf")
 	davPage(t, "000102", "RE: 見積り", "alice", "333", TopPageID, "")
 	davPage(t, "000103", "秘密", "alice", "300", TopPageID, "")
+	davPage(t, "000104", "読むだけ", "alice", "332", TopPageID, "c3d4.dxf")
 
 	if err := database.InitAuthDB(); err != nil {
 		t.Fatalf("認証DBを用意できません: %v", err)
@@ -117,18 +128,117 @@ func TestDavRequiresAuth(t *testing.T) {
 	}
 }
 
-// TestDavRejectsWrites は、**書き込む要求を全部断る**ことを固定します（読み取り専用の期間）。
+// TestDavBlocksDestructiveMethods は、**消す・作る・動かすを通さない**ことを固定します。
 //
-// 書き込みを許す前に決めることが2つ残っています（添付の版・同時編集）。ここが緩むと、
-// **決める前に上書きが起きます**——CADファイルは戻せません。
-func TestDavRejectsWrites(t *testing.T) {
+// Ctrl+S の輪に要らず、事故のとき取り返しがつきにくいためです（`DELETE` は添付を消し、
+// `MOVE` は行方を分からなくします）。**上書き（PUT）と LOCK は通します**。
+func TestDavBlocksDestructiveMethods(t *testing.T) {
 	setupDavTest(t)
 
-	for _, m := range []string{"PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH", "LOCK", "UNLOCK"} {
+	for _, m := range []string{"DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"} {
 		rr := davRequest(t, m, []string{"部品A", "a1b2.dxf"}, "alice", "pw")
 		if rr.Code != http.StatusForbidden {
 			t.Errorf("%s を断っていません: %d", m, rr.Code)
 		}
+	}
+}
+
+// TestDavOverwriteKeepsVersion は、**上書きすると前の中身が版として残る**ことを
+// 固定します（2026-09-07 の決定1）。
+//
+// ページ本文には版があるのに添付に無いと、編集ミスも「間違ったファイルを開いた」も
+// 取り返せません。**ここが効かないまま書き込みを許すのがいちばん危ない状態**です。
+func TestDavOverwriteKeepsVersion(t *testing.T) {
+	setupDavTest(t)
+
+	// **更新時刻はRFC3339（秒まで）**なので、同じ秒に書くと変化が見えません。
+	// 古い値を置いてから確かめます（時間に依らない形にする）。
+	meta, _ := page.ReadSidecar("000101")
+	meta.UpdatedAt = "2000-01-01T00:00:00Z"
+	if err := page.WriteSidecar("000101", meta); err != nil {
+		t.Fatalf("前提を作れません: %v", err)
+	}
+
+	rr := davRequestBody(t, "PUT", []string{"部品A", "a1b2.dxf"}, "alice", "pw", "0 NEW ")
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusNoContent {
+		t.Fatalf("上書きできていません: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// 新しい中身になっている。
+	fp, _ := page.AttachmentPath("000101", "a1b2.dxf")
+	got, _ := os.ReadFile(fp)
+	if !strings.Contains(string(got), "NEW") {
+		t.Errorf("中身が変わっていません: %q", got)
+	}
+	// **前の中身が版として残っている。**
+	vers := AttachmentVersions("000101", "a1b2.dxf")
+	if len(vers) != 1 {
+		t.Fatalf("版が積まれていません: %+v", vers)
+	}
+	old, _ := os.ReadFile(filepath.Join(
+		page.AttachmentDir("000101"), davVersionsDir, "a1b2.dxf", vers[0]))
+	if !strings.Contains(string(old), "SECTION") {
+		t.Errorf("版の中身が前のものではありません: %q", old)
+	}
+	// **ページを触ったことになっている**（添付を直しても本文は変わらないため）。
+	after, _ := page.ReadSidecar("000101")
+	if after.UpdatedAt == "2000-01-01T00:00:00Z" {
+		t.Error("更新時刻が進んでいません（いつ直したか分からなくなる）")
+	}
+	// **版は WebDAV の一覧に出さない。**
+	rr = davRequest(t, "PROPFIND", []string{"部品A"}, "alice", "pw")
+	if strings.Contains(rr.Body.String(), davVersionsDir) {
+		t.Errorf("版の置き場が一覧に出ています: %s", rr.Body.String())
+	}
+}
+
+// TestDavReadOnlyArea は、**設定で読み取り専用にした範囲は書けない**ことを固定します
+// （2026-09-07 ユーザー:「編集するCADファイルは弊社の物です。メール由来のものでは
+// ありません」）。届いた添付は届いた事実の証拠なので、書き換えさせません。
+func TestDavReadOnlyArea(t *testing.T) {
+	setupDavTest(t)
+	settingsMu.Lock()
+	settings.WebDAVReadOnly = []string{"部品A"}
+	settingsMu.Unlock()
+
+	rr := davRequestBody(t, "PUT", []string{"部品A", "a1b2.dxf"}, "alice", "pw", "x")
+	if rr.Code == http.StatusCreated || rr.Code == http.StatusNoContent {
+		t.Fatalf("読み取り専用の範囲に書けています: %d", rr.Code)
+	}
+	fp, _ := page.AttachmentPath("000101", "a1b2.dxf")
+	got, _ := os.ReadFile(fp)
+	if !strings.Contains(string(got), "SECTION") {
+		t.Errorf("中身が変わっています: %q", got)
+	}
+}
+
+// TestDavWriteNeedsPermission は、**読めるだけでは書けない**ことを固定します。
+func TestDavWriteNeedsPermission(t *testing.T) {
+	setupDavTest(t)
+
+	// bob は「読むだけ」を読める（other=2）が、書けない。
+	if rr := davRequest(t, "GET", []string{"読むだけ", "c3d4.dxf"}, "bob", "pw"); rr.Code != http.StatusOK {
+		t.Fatalf("前提が崩れています: bob は読めるはず: %d", rr.Code)
+	}
+	rr := davRequestBody(t, "PUT", []string{"読むだけ", "c3d4.dxf"}, "bob", "pw", "x")
+	if rr.Code == http.StatusCreated || rr.Code == http.StatusNoContent {
+		t.Errorf("書き込み権限が無いのに書けています: %d", rr.Code)
+	}
+}
+
+// TestDavCannotCreateNewFile は、**新しいファイルを作らせない**ことを固定します。
+//
+// 作れるようにすると、拡張子の許可リストと大きさの上限を素通りします——そこは
+// 別に決めることで、いまの輪（Ctrl+S）には要りません。
+func TestDavCannotCreateNewFile(t *testing.T) {
+	setupDavTest(t)
+
+	rr := davRequestBody(t, "PUT", []string{"部品A", "新しい.dxf"}, "alice", "pw", "x")
+	if rr.Code == http.StatusCreated || rr.Code == http.StatusNoContent {
+		t.Errorf("新しいファイルが作れています: %d", rr.Code)
+	}
+	if _, ok := page.AttachmentPath("000101", "新しい.dxf"); ok {
+		t.Error("新しいファイルが置かれています")
 	}
 }
 
