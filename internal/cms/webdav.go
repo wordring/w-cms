@@ -105,6 +105,22 @@ func DavHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// **プロキシを通ってきた要求は断ります**（2026-09-07）。
+	//
+	// 「WebDAV は公開しない」は決定ですが（[docs/【考察】社外公開とHTTPSの構成.md] §3）、
+	// **プロキシの設定だけに頼りません**——`location /dav/` の1行を書き忘れた日、
+	// あるいは設定を作り直した日に、**Basic 認証の口が黙って世界に開きます**。
+	// アプリ側でも断れば、設定が緩んでも守りが残ります。
+	//
+	// 判定は転送のヘッダの有無です。社内から直に来た要求には付きません。
+	// **社内の誰かが偽って付けても、自分がWebDAVを使えなくなるだけ**で害はありません。
+	if davForwarded(r) && os.Getenv("WCMS_DAV_ALLOW_FORWARDED") != "1" {
+		// **404 にします**——「そこにあるが断った」より「無い」ほうが、
+		// 外から探る相手に手掛かりを与えません。
+		http.NotFound(w, r)
+		return
+	}
+
 	// **試用のあいだは全部記録します。** Windows のクライアントは失敗しても画面に
 	// 「システムエラー 67」としか出さないので、**要求が届いたのかどうか**が分からないと
 	// 何も切り分けられません（届かない＝OSが手前で断った、届いた＝こちらの返事の問題）。
@@ -162,6 +178,19 @@ func davAuthenticate(w http.ResponseWriter, r *http.Request) *auth.User {
 		return nil
 	}
 	return user
+}
+
+// davForwarded は、その要求がプロキシを通ってきたかを返します。
+//
+// **入口を1つに絞るための判定**です。社内から直に来た要求にはこれらのヘッダが
+// 付きません——リバースプロキシ（nginx・Caddy・Cloudflare など）が必ず足します。
+func davForwarded(r *http.Request) bool {
+	for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Proto", "X-Real-IP", "Forwarded"} {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // davChallenge は 401 と認証の要求を返します。
