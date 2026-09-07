@@ -163,6 +163,26 @@
         if (e.key === 'Escape') hideTemplateMenu();
     }
 
+    // placeFloating は浮くパネル（メニュー・ポップオーバ）を要素の下へ置きます。
+    //
+    // **画面の右端からはみ出さないよう寄せます**（2026-09-07）。それまでは押した要素の
+    // 左端に合わせるだけで、**スマホ幅では 206px はみ出していました**——リンクの
+    // プロパティ欄は実寸 246px、画面は 320〜390px なので、右寄りのリンクで開くと
+    // 画面外へ出て触れません（Playwright で実測）。
+    //
+    // **呼ぶ前に表示状態にしておくこと**——寸法を測るので、`display:none` のままだと
+    // 0 になって寄せが効きません（測り方を1度間違えた箇所です）。
+    function placeFloating(el, rect, gap) {
+        const pad = 8;
+        el.style.top = (rect.bottom + window.scrollY + (gap || 4)) + 'px';
+        const view = document.documentElement.clientWidth;
+        const w = el.getBoundingClientRect().width || el.offsetWidth || 0;
+        let left = rect.left;
+        if (left + w > view - pad) left = view - w - pad; // 右へはみ出す→左へ寄せる
+        if (left < pad) left = pad;                        // それでも入らない→左端
+        el.style.left = (left + window.scrollX) + 'px';
+    }
+
     function showTemplateMenu(tree) {
         const menu = document.getElementById('w-template-menu');
         const btn = document.getElementById('w-create-subpage-btn');
@@ -184,9 +204,8 @@
 
         menu.classList.add('active');
         const rect = btn.getBoundingClientRect();
-        menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
-        menu.style.left = (rect.left + window.scrollX) + 'px';
         menu.style.minWidth = rect.width + 'px';
+        placeFloating(menu, rect);
         // 開いた直後の click がそのまま外側判定に入らないよう capture で次から拾う
         document.addEventListener('click', onTemplateMenuOutside, true);
         document.addEventListener('keydown', onTemplateMenuKey, true);
@@ -2433,8 +2452,7 @@
 
         pop.classList.add('active');
         const rect = th.getBoundingClientRect();
-        pop.style.top = (rect.bottom + window.scrollY + 4) + 'px';
-        pop.style.left = (rect.left + window.scrollX) + 'px';
+        placeFloating(pop, rect);
     }
 
     // refreshColPopoverNote は「明示しない場合に効く型」（レジストリ宣言 or 推論辞書）を示す。
@@ -2486,8 +2504,7 @@
         document.getElementById('w-lp-href').value = anchor.getAttribute('href') || '';
         pop.classList.add('active');
         const rect = anchor.getBoundingClientRect();
-        pop.style.top = (rect.bottom + window.scrollY + 4) + 'px';
-        pop.style.left = (rect.left + window.scrollX) + 'px';
+        placeFloating(pop, rect);
     }
 
     // anchorAtCaret はキャレット位置の <a>（本文の中のもの）を返す。
@@ -2867,8 +2884,7 @@
         });
         menu.classList.add('active');
         const rect = cell.getBoundingClientRect();
-        menu.style.top = (rect.bottom + window.scrollY + 2) + 'px';
-        menu.style.left = (rect.left + window.scrollX) + 'px';
+        placeFloating(menu, rect, 2);
     }
 
     // ── PDF付きブロックのエンハンサ（語彙モデル §3: マーカー要素へ振る舞いを配線） ──
@@ -4522,8 +4538,7 @@
         menu.classList.add('active');
 
         const rect = targetElement.getBoundingClientRect();
-        menu.style.top = (rect.bottom + window.scrollY + 5) + 'px';
-        menu.style.left = (rect.left + window.scrollX) + 'px';
+        placeFloating(menu, rect, 5);
 
         slashSelectedIndex = 0;
         updateSlashMenuSelection();
