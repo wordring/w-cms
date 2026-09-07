@@ -100,6 +100,21 @@ func setupDavTest(t *testing.T) {
 	}
 }
 
+// withSettings は設定を**写しごと差し替えて**変更を当てます。
+//
+// **中身を直に書き換えてはいけません**——`settings` は共有され、`restoreSettings` が
+// 戻すのは**ポインタだけ**なので、フィールドを直接いじると後続のテストへ漏れます
+// （実際に漏らして、単独では通るのに並べると落ちるテストを作りました）。
+// settings.go 自身が「差し替えは常にポインタごと」と書いている規律そのものです。
+func withSettings(t *testing.T, apply func(*Settings)) {
+	t.Helper()
+	settingsMu.Lock()
+	cp := *settings
+	apply(&cp)
+	settings = &cp
+	settingsMu.Unlock()
+}
+
 // TestDavClosedByDefault は、**環境変数を置くまで口が開かない**ことを固定します。
 //
 // 平文HTTPでの Basic 認証は要求のたびに合言葉を流すので、「気づかないうちに開いて
@@ -197,9 +212,7 @@ func TestDavOverwriteKeepsVersion(t *testing.T) {
 // ありません」）。届いた添付は届いた事実の証拠なので、書き換えさせません。
 func TestDavReadOnlyArea(t *testing.T) {
 	setupDavTest(t)
-	settingsMu.Lock()
-	settings.WebDAVReadOnly = []string{"部品A"}
-	settingsMu.Unlock()
+	withSettings(t, func(s *Settings) { s.WebDAVReadOnly = []string{"部品A"} })
 
 	rr := davRequestBody(t, "PUT", []string{"部品A", "a1b2.dxf"}, "alice", "pw", "x")
 	if rr.Code == http.StatusCreated || rr.Code == http.StatusNoContent {
@@ -289,9 +302,7 @@ func TestDavHidesUnreadablePage(t *testing.T) {
 // 形へ戻ってしまいます。
 func TestDavHiddenBySettings(t *testing.T) {
 	setupDavTest(t)
-	settingsMu.Lock()
-	settings.WebDAVHidden = []string{"部品A"}
-	settingsMu.Unlock()
+	withSettings(t, func(s *Settings) { s.WebDAVHidden = []string{"部品A"} })
 
 	rr := davRequest(t, "PROPFIND", nil, "alice", "pw")
 	if strings.Contains(rr.Body.String(), url.PathEscape("部品A")) {
@@ -308,9 +319,9 @@ func TestDavHiddenBySettings(t *testing.T) {
 // 重複しています。潰し方を変えると、**割り当て済みのドライブのパスが全部変わります**。
 func TestSafeFolderName(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"RE: 見積り", "RE： 見積り"}, // コロンは全角へ
+		{"RE: 見積り", "RE： 見積り"},  // コロンは全角へ
 		{"A/B", "A／B"},          // スラッシュも
-		{"  余白  ", "余白"},       // 前後の空白
+		{"  余白  ", "余白"},        // 前後の空白
 		{"末尾のドット...", "末尾のドット"}, // Windows が黙って落とすので先に落とす
 		{"CON", "CON_"},         // 予約語
 		{"", ""},
@@ -319,5 +330,38 @@ func TestSafeFolderName(t *testing.T) {
 		if got := safeFolderName(c.in); got != c.want {
 			t.Errorf("safeFolderName(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// TestDavRefusesForwarded は、**プロキシを通ってきた要求を断る**ことを固定します
+// （2026-09-07。VPS＋リバースプロキシで公開する構成に決まった日）。
+//
+// 「WebDAV は公開しない」はプロキシの設定で実現しますが、**設定だけに頼りません**
+// ——`location /dav/` を書き忘れた日に、Basic 認証の口が黙って世界に開きます。
+func TestDavRefusesForwarded(t *testing.T) {
+	setupDavTest(t)
+
+	for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Proto", "X-Real-IP", "Forwarded"} {
+		req := httptest.NewRequest("GET", DavPrefix+url.PathEscape("部品A")+"/a1b2.dxf", nil)
+		req.Header.Set("Authorization", "Basic "+
+			base64.StdEncoding.EncodeToString([]byte("alice:pw")))
+		req.Header.Set(h, "203.0.113.9")
+		rr := httptest.NewRecorder()
+		DavHandler(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("%s が付いた要求を通しています: %d", h, rr.Code)
+		}
+	}
+
+	// **逃げ道は残します**——プロキシ経由でしか届かない構成にしたくなったとき用。
+	t.Setenv("WCMS_DAV_ALLOW_FORWARDED", "1")
+	req := httptest.NewRequest("GET", DavPrefix+url.PathEscape("部品A")+"/a1b2.dxf", nil)
+	req.Header.Set("Authorization", "Basic "+
+		base64.StdEncoding.EncodeToString([]byte("alice:pw")))
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	rr := httptest.NewRecorder()
+	DavHandler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("逃げ道が効いていません: %d", rr.Code)
 	}
 }
