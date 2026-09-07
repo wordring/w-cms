@@ -371,6 +371,22 @@ body.anonymous .preview-section { display: none !important; }
         max-width: 100%;
         overflow-x: auto;
     }
+    /* **列を潰さない。** ユーザー:「テーブルは横スクロールできるようにして、
+       横幅を確保するほうが見やすいのでは？」（2026-09-07）。
+       `overflow-x` だけだと、表は**収まるまで列を細らせてから**スクロールに入ります
+       ——実測では320px幅で件名の列が56pxまで潰れ、ほとんど読めませんでした。
+       **幅は表ではなくセルに与えます**——表そのものは `display:block` で
+       スクロール枠を兼ねているので、そこへ min-width を置くと枠ごと広がって
+       **ページが横スクロール**になります（1度これで間違えました）。 */
+    #w-editor-content th,
+    #w-editor-content td {
+        min-width: 4em;
+    }
+    /* 読むための列は広めに。ここが潰れると一覧の用を成しません。 */
+    #w-editor-content .unhandled-subject,
+    #w-editor-content .contact-addrs {
+        min-width: 14em;
+    }
     .rail-left {
         position: fixed;
         top: 0;
@@ -1761,6 +1777,15 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     gap: 6px;
     align-items: center;
     margin: 6px 0 10px;
+    /* **折り返す。** 選択2つ＋題の欄＋ボタンで、スマホ幅（320px）には収まりません
+       ——折り返さないと**ページ全体が横スクロール**になります（2026-09-07 に実測。
+       文書は401px、画面は320px でした）。 */
+    flex-wrap: wrap;
+}
+#w-editor-content .unhandled-new input {
+    /* 題の欄は残り幅を使い、無理なら折り返した行の幅いっぱいに。 */
+    flex: 1 1 12em;
+    min-width: 0;
 }
 #w-editor-content .unhandled-new select,
 #w-editor-content .unhandled-new input {

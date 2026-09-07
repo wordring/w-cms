@@ -95,12 +95,15 @@ function simulate(rgb, kind) {
     if (!pop.ok) {
       console.log('  ポップオーバ:', pop.why);
     } else {
-      // いまの実装は「押した要素の左端に合わせる」だけ。右寄りの要素で開くと…
-      const anchorLeft = pop.win - 40; // 画面右端近くのリンクを押した場合
+      // **これは「寄せが無かったら」の計算**です（2026-09-07 に placeFloating を入れて
+      // 直しました。実際の動きは verify-clamp のほうで測っています）。
+      // ここに残すのは、**パネルが画面より広い**という事実が変わっていないかを見るため
+      // ——広いままなら、寄せが外れた瞬間にまた画面外へ出ます。
+      const anchorLeft = pop.win - 40;
       const over = anchorLeft + pop.width - pop.win;
       console.log('  ポップオーバの実寸: ' + pop.width + 'px（画面 ' + pop.win + 'px）');
-      console.log('  右端近くで開くと:',
-        over > 0 ? '⚠ ' + over + 'px はみ出す' : '収まる');
+      console.log('  寄せが無かった場合: ' +
+        (over > 0 ? over + 'px はみ出す（だから placeFloating で寄せている）' : '収まる'));
     }
 
     // ── ② 薄青・薄赤の見分け（ΔE と 色覚シミュレーション）
