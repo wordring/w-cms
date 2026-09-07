@@ -111,7 +111,7 @@ var (
 )
 
 // LoadSettings は設定ファイルを読み込み、以後の参照先にします。
-// ファイルが無ければ既定値で作成します。
+// **起動時に無ければ止めます**（既定値をコードに持たないため。2026-09-07）。
 func LoadSettings() error {
 	s, err := readSettings(SettingsPath)
 	if err != nil {
