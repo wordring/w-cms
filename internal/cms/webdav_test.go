@@ -365,3 +365,57 @@ func TestDavRefusesForwarded(t *testing.T) {
 		t.Errorf("逃げ道が効いていません: %d", rr.Code)
 	}
 }
+
+// TestDavRefusalsAreForbiddenNotMissing は、**書き込みを断るときの返事が 403 である**
+// ことを固定します。
+//
+// GET で読めるファイルへ PUT して 404 が返ると、利用者には「**ファイルが見つかりません**」
+// と見えます——CAD で開いて Ctrl+S したときに出るのがこれです。読めているものが
+// 「無い」と言われるので嘘であり、しかも**設定を直せばよいと気づけません**。
+//
+// `x/net/webdav` の handlePut は「存在しない」以外のエラーを全部 404 に潰すので、
+// ライブラリへ渡す前にこちらで断ります（DELETE を 403 で止めているのと同じ場所・
+// 同じ流儀——「その要求は理解したが、許していない」）。
+func TestDavRefusalsAreForbiddenNotMissing(t *testing.T) {
+	setupDavTest(t)
+
+	t.Run("読み取り専用の範囲", func(t *testing.T) {
+		withSettings(t, func(s *Settings) { s.WebDAVReadOnly = []string{"部品A"} })
+		// 前提: 同じパスを GET では読める（だからこそ 404 が嘘になる）。
+		if rr := davRequest(t, "GET", []string{"部品A", "a1b2.dxf"}, "alice", "pw"); rr.Code != http.StatusOK {
+			t.Fatalf("前提が崩れています: GET で読めるはず: %d", rr.Code)
+		}
+		rr := davRequestBody(t, "PUT", []string{"部品A", "a1b2.dxf"}, "alice", "pw", "x")
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("読み取り専用の拒否が 403 ではありません: %d（本文 %q）", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("書き込み権限が無い", func(t *testing.T) {
+		if rr := davRequest(t, "GET", []string{"読むだけ", "c3d4.dxf"}, "bob", "pw"); rr.Code != http.StatusOK {
+			t.Fatalf("前提が崩れています: bob は読めるはず: %d", rr.Code)
+		}
+		rr := davRequestBody(t, "PUT", []string{"読むだけ", "c3d4.dxf"}, "bob", "pw", "x")
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("権限不足の拒否が 403 ではありません: %d", rr.Code)
+		}
+	})
+
+	t.Run("新しいファイルは作らない", func(t *testing.T) {
+		rr := davRequestBody(t, "PUT", []string{"部品A", "新しい.dxf"}, "alice", "pw", "x")
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("新規作成の拒否が 403 ではありません: %d", rr.Code)
+		}
+	})
+
+	// 断り方を変えても**書けるものは書ける**こと（403 を返しすぎていない）。
+	// **設定を戻してから試します**——withSettings は後始末をしないので、
+	// 上のサブテストで置いた読み取り専用がそのまま残ります。
+	t.Run("書ける範囲は従来どおり通る", func(t *testing.T) {
+		withSettings(t, func(s *Settings) { s.WebDAVReadOnly = nil })
+		rr := davRequestBody(t, "PUT", []string{"部品A", "a1b2.dxf"}, "alice", "pw", "書き換え")
+		if rr.Code != http.StatusCreated && rr.Code != http.StatusNoContent {
+			t.Errorf("上書きが通りません: %d", rr.Code)
+		}
+	})
+}

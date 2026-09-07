@@ -146,6 +146,17 @@ func DavHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// **PUT の断りはここで返します。** ライブラリの handlePut は「存在しない」以外の
+	// エラーを全部 404 に潰すので、そのままだと**読めているファイルへ書こうとして
+	// 「見つかりません」**と出ます（理由は refuseDavPut のコメント）。
+	if strings.EqualFold(r.Method, "PUT") {
+		if err := refuseDavPut(user, strings.TrimPrefix(r.URL.Path,
+			strings.TrimSuffix(DavPrefix, "/"))); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+
 	h := &webdav.Handler{
 		Prefix:     strings.TrimSuffix(DavPrefix, "/"),
 		FileSystem: davFS{user: user},
