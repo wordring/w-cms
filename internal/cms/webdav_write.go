@@ -65,6 +65,36 @@ var errDavReadOnlyArea = errors.New("この範囲は読み取り専用です（�
 // errDavNoCreate は「新しいファイルは作れない」の印です。
 var errDavNoCreate = errors.New("新しいファイルは作れません（既存の添付の上書きだけ）")
 
+// refuseDavPut は PUT を断る理由を返します（断らないなら nil）。
+//
+// **なぜハンドラ側で先に見るのか。** `x/net/webdav` の `handlePut` は、
+// `OpenFile` が返したエラーを「存在しない」以外**すべて 404 に潰します**
+// （`os.IsPermission` を見ていません）。そのため断り方が「ファイルが無い」に
+// なり、**GET では読めているのに**書こうとすると「見つかりません」と出ます
+// ——CAD で開いて Ctrl+S したときに利用者が見るのがこれで、嘘なうえに
+// 「設定を直せばよい」と気づけません（2026-09-07 実測）。
+//
+// そこで**ライブラリへ渡す前に**同じ判定をして 403 を返します。DELETE 等を
+// `davBlockedMethods` が 403 で止めているのと同じ場所・同じ流儀です
+// ——「その要求は理解したが、許していない」。
+//
+// 判定そのものは `OpenFile` にも残します（二重ですが、**こちらは体裁の層**で、
+// あちらが安全の層。ハンドラを迂回する経路が将来できても守りが残ります）。
+func refuseDavPut(user *auth.User, name string) error {
+	f := davFS{user: user}
+	pageID, fileName, err := f.resolve(name)
+	if err != nil {
+		return errDavNoCreate // 解決できない＝まだ無いファイル
+	}
+	if fileName == "" {
+		return errReadOnly // フォルダ（＝ページ）そのものは書けない
+	}
+	if _, ok := page.AttachmentPath(pageID, fileName); !ok {
+		return errDavNoCreate
+	}
+	return f.canWriteAttachment(pageID)
+}
+
 // canWriteAttachment は、そのページの添付を書き換えてよいかを返します。
 //
 // 3つ揃って初めて書けます:
