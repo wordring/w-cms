@@ -1388,14 +1388,23 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
 }
 /* 部品ページの図面。**添付のプレビューより高く**——ここは「ついでに覗く」場所では
    なく、そのページの主題そのものなので、図面枠が読める高さを取る。 */
+/* 図面枠は**見る人が大きさを変えられます**（2026-09-10）。右下をつまんで縦に伸縮し、
+   決めた高さはその端末に憶えます（app.js の wireDrawingResize）。
+   `resize` は `overflow: visible` では効かないので hidden を置きます。
+   **下に 12px 空けているのはつまみの居場所**です——PDFで隅まで覆うとつまめません。 */
 #w-editor-content .drawing-inline {
     margin-top: 8px;
+    box-sizing: border-box;
+    height: 70vh;
+    min-height: 200px;
+    padding-bottom: 12px;
+    overflow: hidden;
+    resize: vertical;
 }
 #w-editor-content .drawing-inline-pdf {
     display: block;
     width: 100%;
-    height: 70vh;
-    min-height: 420px;
+    height: 100%;
     border: 1px solid var(--border);
     border-radius: var(--radius);
 }
@@ -1937,4 +1946,26 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border-radius: 4px;
     background: var(--bg-paper);
     color: var(--text);
+}
+
+/* ページ情報カードのQR（2026-09-10）。**スマホで開くための橋**なので、
+   指で狙える大きさ（実測で読める下限より十分上）を確保します。
+   白地はSVGが自前で塗るので、暗い配色でも読み取り機が困りません。 */
+.pi-qr {
+    margin-top: 10px;
+    text-align: center;
+}
+.pi-qr img {
+    width: 100%;
+    max-width: 160px;
+    height: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: #fff;
+}
+.pi-qr-url {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    word-break: break-all;
 }
