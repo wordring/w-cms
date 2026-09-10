@@ -599,7 +599,32 @@
             document.getElementById('w-pi-created-at').textContent = formatDateTime(m.created_at);
             document.getElementById('w-pi-created-by').textContent = m.created_by || '—';
             document.getElementById('w-pi-updated-at').textContent = formatDateTime(m.updated_at);
+            showPageQR();
         } catch (e) { /* 取得失敗時は既定表示のまま */ }
+    }
+
+    // showPageQR はページ情報カードにこのページのURLのQRを出します（2026-09-10
+    // ユーザー:「右レールのページ情報にそのページのURLを表すQRコードを入れられますか？」）。
+    //
+    // **URLはサーバーが組みます**（`/api/qr?page_id=…`）。ここで `location.href` を
+    // 送って絵にしてもらう形にすると、任意の文字列をQRにする口になるためです
+    // （internal/cms/qr_handler.go の説明）。読めないページなら404が返るので、
+    // そのときは**黙って出しません**——「読めない」と「存在しない」を区別させない規律。
+    //
+    // 下に出す文字は**目で確かめるため**です。QRは中身が見えないので、
+    // 「社内のホスト名のまま社外の人に見せていた」に後から気づけません。
+    function showPageQR() {
+        const img = document.getElementById('w-pi-qr');
+        const label = document.getElementById('w-pi-qr-url');
+        if (!img || !currentPageId) return;
+        img.hidden = true;
+        label.textContent = '';
+        img.onload = () => {
+            img.hidden = false;
+            label.textContent = window.location.origin + '/' + currentPageId;
+        };
+        img.onerror = () => { img.hidden = true; label.textContent = ''; };
+        img.src = '/api/qr?page_id=' + encodeURIComponent(currentPageId);
     }
 
     // ── 版の履歴（リビジョン／リバート。internal/cms/version.go） ────────────
@@ -4000,12 +4025,65 @@
             const wrap = document.createElement('div');
             wrap.className = 'vocab-chrome drawing-inline';
             const embed = document.createElement('embed');
-            embed.src = url;
+            // **サムネイル欄を閉じ、幅に合わせて開きます**（2026-09-10）。既定では
+            // 23%で開き、左のサムネイル欄と黒い余白が枠の3/4を占めていました
+            // ——図面を見に来た人が見るものではありません。
+            //
+            // **ツールバーは残します**（`toolbar=0` にしない）。ユーザー:「印刷ボタン
+            // などが無くなったのですが、べんりなのでふっかつしたいです」——印刷・
+            // ダウンロード・回転はここにしかなく、図面を扱う人がいちばん使う口です。
+            //
+            // 断片（`#`）はサーバーへ送られないので、**存在確認の HEAD は素のURLのまま**
+            // でよい。効かないブラウザでは黙って無視されるだけで、壊れません。
+            embed.src = url + '#navpanes=0&view=FitH';
             embed.type = 'application/pdf';
             embed.className = 'drawing-inline-pdf';
+            wrap.title = '右下をつまむと大きさを変えられます';
             wrap.appendChild(embed);
+            wireDrawingResize(wrap, embed);
             sec.appendChild(wrap);
         }
+    }
+
+    // 図面枠の大きさは**見る人が決めます**（2026-09-10 ユーザー:「PDFインライン表示の
+    // 大きさを変えられるように出来ますか？」）。枠の右下をつまんで縦に伸ばすと、
+    // **次に開いたときも同じ高さ**です。
+    //
+    // 置き場は UI設定（`wcms.ui` の `drawing.height`・この端末のブラウザ）です。
+    // **本文にもサーバーにも残しません**——枠はクロームで、A3の図面を大きく見たいか
+    // 一覧しやすく小さくしたいかは**見る人と画面の都合**だからです。他の人の画面を
+    // 動かしてしまわない、という意味でもあります。
+    const DRAWING_H_KEY = 'drawing.height';
+    const DRAWING_H_MIN = 200;   // これ以下だと図面が判別できない
+    const DRAWING_H_MAX = 4000;  // 壊れた値でページを埋めない柵
+    const DRAWING_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
+
+    function wireDrawingResize(wrap, embed) {
+        const saved = parseInt(UI.get(DRAWING_H_KEY, 0), 10);
+        // 未設定（0・NaN）ならCSSの既定（70vh）に任せます。
+        if (saved) {
+            wrap.style.height =
+                Math.min(DRAWING_H_MAX, Math.max(DRAWING_H_MIN, saved)) + 'px';
+        }
+
+        let dragging = false;
+        wrap.addEventListener('pointerdown', (e) => {
+            // **つまみの上で押したときだけ**反応します。PDFの中の操作（スクロール・
+            // 拡大）を横取りしないためで、隅から離れた押下はそのまま通します。
+            const r = wrap.getBoundingClientRect();
+            if (e.clientX < r.right - DRAWING_GRIP || e.clientY < r.bottom - DRAWING_GRIP) return;
+            dragging = true;
+            // **引いているあいだ PDF へマウスを渡しません**——プラグインが受け取ると、
+            // ポインタが枠の中へ入った瞬間にドラッグが切れます。
+            embed.style.pointerEvents = 'none';
+        });
+        document.addEventListener('pointerup', () => {
+            embed.style.pointerEvents = '';
+            if (!dragging) return;
+            dragging = false;
+            const px = Math.round(wrap.getBoundingClientRect().height);
+            if (px >= DRAWING_H_MIN && px <= DRAWING_H_MAX) UI.set(DRAWING_H_KEY, px);
+        });
     }
 
     function toggleAttachPreview(anchor, btn, m) {
