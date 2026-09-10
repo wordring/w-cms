@@ -258,6 +258,9 @@ func buildHandler() http.Handler {
 	root.Handle("/api/me", auth.OptionalAuth(http.HandlerFunc(auth.MeAPIHandler)))
 	root.Handle("/api/children", auth.OptionalAuth(http.HandlerFunc(cms.ChildPagesAPIHandler)))
 	root.Handle("/api/page-meta", auth.OptionalAuth(http.HandlerFunc(cms.PageMetaAPIHandler)))
+	// ページのURLのQR（右レールのページ情報カード）。**読めない相手には404**なので
+	// 匿名も通す口（OptionalAuth）で構いません。
+	root.Handle("/api/qr", auth.OptionalAuth(http.HandlerFunc(cms.QRAPIHandler)))
 	// ZIP添付の目録（閲覧の一部。認可は添付配信と同じ実効公開の個別判定）
 	root.Handle("/api/zip-list", auth.OptionalAuth(http.HandlerFunc(cms.ZipListAPIHandler)))
 

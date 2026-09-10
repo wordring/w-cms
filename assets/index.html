@@ -206,6 +206,12 @@
                             <dt>作成者</dt><dd id="w-pi-created-by">—</dd>
                             <dt>更新日時</dt><dd id="w-pi-updated-at">—</dd>
                         </dl>
+                        <!-- このページのURLのQR（/api/qr が返すSVG）。スマホで開くための橋。
+                             src は app.js が入れます——ページIDが決まるまで空撃ちしないため。 -->
+                        <div class="pi-qr">
+                            <img id="w-pi-qr" alt="このページのURLのQRコード" hidden>
+                            <div class="pi-qr-url" id="w-pi-qr-url"></div>
+                        </div>
                     </div>
                 </details>
             </section>
