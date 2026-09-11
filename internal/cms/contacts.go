@@ -93,8 +93,23 @@ func EnsurePartnerBox(user *auth.User) (string, error) {
 	if id, ok := PartnerBoxPageID(); ok {
 		return id, nil
 	}
-	return CreateChildPage(TopPageID, user.Username,
-		"<h1>"+stdhtml.EscapeString(PartnerBoxTitle)+"</h1><p><br/></p>")
+	return CreateChildPage(TopPageID, user.Username, partnerBoxBody())
+}
+
+// partnerBoxBody は取引先ページの初期の本文です。
+//
+// **「未登録の連絡先」の作業面を最初から載せます**（2026-09-11）。ここを空の見出し
+// だけで作っていたために、**アドレス帳の作業面がどこにも存在しませんでした**
+// ——誰も一覧を見たことがないまま実メール100通が過ぎ、11ドメインのうち登録済みは
+// 1件だけ（しかもそれは整理が作った側で、識別子を持っていなかった）。
+//
+// 通信箱は**人が意図して置くページ**なので、作業面も人が入れます。取引先は
+// **機械が作る**ので、**行き止まりのページを作らない責任はこちらにあります**。
+func partnerBoxBody() string {
+	return "<h1>" + stdhtml.EscapeString(PartnerBoxTitle) + "</h1>" +
+		"<p>取引の相手（会社・個人）を集めます。製造部品の階層もこの下です" +
+		"（社名／段／装置名称／図面名称）。</p>" +
+		`<section data-type="unknown-contacts"></section>`
 }
 
 // EmailTag は連絡先のメールアドレスです。**1ページに何個でも置けます**
