@@ -3472,6 +3472,7 @@
         let orders = [];
         let stages = [];
         let partners = [];
+        let machines = {};
         try {
             const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(currentPageId));
             const d = await res.json();
@@ -3484,6 +3485,8 @@
             stages = d.stages || [];
             // 既にある取引先の名前——顧客名の入力候補に出します。
             partners = d.partners || [];
+            // 既にある装置名称（顧客ごと）——装置名称の入力候補に出します。
+            machines = d.machines || {};
         } catch (e) { return; }
         if (!rows.length && !orders.length) return;
 
@@ -3491,20 +3494,20 @@
         btn.type = 'button';
         btn.className = 'vocab-chrome filing-chrome filing-open';
         btn.textContent = '📁 整理（' + (rows.length + orders.length) + '件）';
-        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, stages, partners));
+        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, stages, partners, machines));
         host.appendChild(btn);
     }
 
     // toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
-    function toggleFilingPanel(btn, rows, orders, stages, partners) {
+    function toggleFilingPanel(btn, rows, orders, stages, partners, machines) {
         const existing = document.querySelector('.filing-panel');
         if (existing) { existing.remove(); return; }
-        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, stages, partners));
+        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, stages, partners, machines));
     }
 
     // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
     // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます。
-    function buildFilingPanel(rows, orders, stages, partners) {
+    function buildFilingPanel(rows, orders, stages, partners, machines) {
         const panel = document.createElement('div');
         panel.className = 'vocab-chrome filing-chrome filing-panel';
         panel.setAttribute('contenteditable', 'false');
@@ -3541,7 +3544,7 @@
         table.appendChild(trh);
 
         const inputs = [];
-        rows.forEach(row => {
+        rows.forEach((row, rowIndex) => {
             const tr = document.createElement('tr');
             const tdNo = document.createElement('td');
             tdNo.className = 'filing-no';
@@ -3583,6 +3586,30 @@
             fields.stage = sel;
 
             addText('machine_name', row.machine_name);
+            // **装置名称の候補は、その行の顧客のぶんだけ**（2026-09-11）。
+            // 顧客名で解いたのと同じ問題が一段下に残っていました——1通のメールの
+            // 5枚が `φ410 2輪` / `2輪シュート改良` / `φ410-2輪` / `2軸シュート改良`
+            // （輪→軸の誤読）に割れ、そのまま流すと1台の装置が4フォルダに散ります。
+            //
+            // **行ごとに作り直します**——顧客名の欄は人がその場で打ち替えるので、
+            // パネルを開いた時点の顧客で固定すると、打ち替えたあと候補が嘘になります。
+            const machineListID = 'w-filing-machines-' + rowIndex;
+            const machineList = document.createElement('datalist');
+            machineList.id = machineListID;
+            panel.appendChild(machineList);
+            fields.machine_name.setAttribute('list', machineListID);
+            const fillMachines = () => {
+                machineList.replaceChildren();
+                const names = (machines || {})[fields.customer.value.trim()] || [];
+                names.forEach(name => {
+                    const op = document.createElement('option');
+                    op.value = name;
+                    machineList.appendChild(op);
+                });
+            };
+            fillMachines();
+            fields.customer.addEventListener('input', fillMachines);
+            fields.customer.addEventListener('change', fillMachines);
             addText('drawing_name', row.drawing_name);
             // 「改定として合流」の確認——**既定は隠しておき、実行が確認を求めた
             // ときだけ出します**。最初から出すと「押せば通る」と学習されてしまい、

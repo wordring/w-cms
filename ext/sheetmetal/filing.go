@@ -150,9 +150,18 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// マシーン」（整理で人が打った）が**同じ会社で2枚**になりました。題の一致は
 	// 完全一致のまま（名寄せを機械がやると別の顧客が1つに潰れる）で、
 	// **人の目の前に既にある名前を出す**ことで解きます。
+	// **装置名称の候補も返します**（2026-09-11 ユーザー:「装置名称の候補表示は
+	// あると良いと思います」）。顧客名を `partners` で解いたのと同じ形で、
+	// **一段下に同じ問題が残っていました**——実データでは1通のメールの5枚が
+	// `φ410 2輪` / `2輪シュート改良` / `φ410-2輪` / `2軸シュート改良`（輪→軸の
+	// 誤読）に割れ、そのまま流せば1台の装置が4フォルダに散ります。
+	//
+	// **顧客ごとに分けて返します**——装置名称は顧客の中でしか意味を持たないので、
+	// 全部混ぜると他社の装置名が候補に出ます。
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "rows": rows, "orders": orders,
-		"stages": cms.MachineStages(), "partners": partnerNames(user)})
+		"stages": cms.MachineStages(), "partners": partnerNames(user),
+		"machines": machineNames(user)})
 }
 
 // suggestCustomer は顧客名の推奨値を返します。
@@ -239,6 +248,76 @@ func partnerNames(user *auth.User) []string {
 		if r.title != "" && page.CanView(user, r.id) {
 			out = append(out, r.title)
 		}
+	}
+	return out
+}
+
+// machineNames は、既にある装置名称を**顧客ごと**に返します（画面の候補用）。
+//
+// 木は `取引先／社名／段／装置名称` なので、装置は顧客の**孫**です。
+// **段はまたいで集めます**——人が知りたいのは「この装置はもう在るか」で、
+// それがどの段に在るかは `suggestStage` が別に答えるためです（現行に在る装置を
+// 試作へ入れ直すこともあり、段で絞ると既存が見えなくなります）。
+//
+// **候補を出すだけで、合わせるのは人**です。完全一致でしか階層は繋がらないので
+// （findChildByTitle）、揺れを機械が吸収すると別の装置が1つに潰れます。
+func machineNames(user *auth.User) map[string][]string {
+	out := map[string][]string{}
+	boxID, ok := cms.PartnerBoxPageID()
+	if !ok {
+		return out
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return out
+	}
+	// **3世代を1回のクエリで取ります**。行を読みながら別のクエリを投げると
+	// `:memory:` DBでカーソルが接続を握ったままになり、**絞り込みが静かに全部落ちます**
+	// （2026-09-03 に本番コードで踏んだ罠）。
+	rows, err := database.DB.Query(`
+		SELECT cust.id, COALESCE(cust.title, ''), mach.id, COALESCE(mach.title, '')
+		  FROM pages cust
+		  JOIN pages stage ON stage.parent_id = cust.id
+		  JOIN pages mach  ON mach.parent_id  = stage.id
+		 WHERE cust.parent_id = ?
+		 ORDER BY cust.title ASC, mach.title ASC`, boxInt)
+	if err != nil {
+		return out
+	}
+	type hit struct {
+		custID int
+		cust   string
+		machID int
+		mach   string
+	}
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.custID, &h.cust, &h.machID, &h.mach); err != nil {
+			rows.Close()
+			return out
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+
+	seen := map[string]map[string]bool{}
+	for _, h := range found {
+		if h.cust == "" || h.mach == "" {
+			continue
+		}
+		// **読めないページの装置は数えません**（見せ分けC案——黙って落ちる）。
+		if !page.CanView(user, h.custID) || !page.CanView(user, h.machID) {
+			continue
+		}
+		if seen[h.cust] == nil {
+			seen[h.cust] = map[string]bool{}
+		}
+		if seen[h.cust][h.mach] {
+			continue // 同じ装置名が複数の段に在ることがある
+		}
+		seen[h.cust][h.mach] = true
+		out[h.cust] = append(out[h.cust], h.mach)
 	}
 	return out
 }
