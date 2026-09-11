@@ -384,6 +384,21 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}
 	}
 
+	// **人が直した値を、図面ブロックにも書き戻します**（2026-09-11 ユーザー:「整理で
+	// 治した客先名は図面ブロックの索引にも反映させます。検索するときに困るからです」）。
+	//
+	// 解析が書いた `客先`・`装置名称` は**読み違いを含みます**（実データで
+	// 『株式会社トーアス**ス**ポーツマシーン』が出た）。木の階層だけ直しても
+	// **索引は誤読を持ったまま**なので、`客先` で探しても出てきません
+	// ——索引が見るのは見出しの表示文字＝本文の値だからです（D-1）。
+	//
+	// 移す前に直すのは、**移動に失敗しても値は正しくなっている**ほうが害が小さい
+	// ためです（値が正しくて場所が古いのは探せば見つかる。逆は見つからない）。
+	if err := syncDrawingFields(user, pageID, customer, machine, name); err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "図面ブロックの値を直せません: " + err.Error()}
+	}
+
 	// **顧客名ページは「取引先」の下**です（2026-09-05 ユーザー決定）。アドレス帳が
 	// 作る相手ページと**同じ場所・同じ1枚**——連絡先を見るページと部品を見るページを
 	// 分けないため（cms.EnsurePartnerBox の説明が正本）。
@@ -437,6 +452,92 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	auth.Audit(user.Username, "file-drawing.move", pageID+" -> "+machineID)
 	return filingResult{PageID: pageID, Outcome: "moved",
 		Message: customer + "／" + stage + "／" + machine + "／" + name + " へ収めました"}
+}
+
+// syncDrawingFields は図面ブロックの `客先`・`装置名称`・`図面名称` を、整理の画面で
+// 人が決めた値に揃えます。
+//
+// **索引のためです。** ③計算も将来の検索も `vocab_index` の `field`＝見出しの表示文字で
+// 引くので（D-1）、本文が誤読のままだと階層をいくら直しても引けません。
+//
+// **書き換えるのは最初の図面ブロックだけ**です。改定で合流した古い図面は子ページへ
+// 移っており（mergeAsRevision）、このページに残る図面は最新の1つ——`装置名称` と
+// `客先` はそこにしか現れません。
+//
+// **値に印が付いていたら触りません**（`[^<]*` に当たらない＝人がリンクや強調を
+// 書いた）。機械が人の手入れを踏み潰さないための線引きで、そのときは黙って
+// そのままにします——階層は直るので、探せなくなるのは1件だけです。
+func syncDrawingFields(user *auth.User, pageID, customer, machine, name string) error {
+	body, err := cms.ReadPageBody(pageID)
+	if err != nil {
+		return err
+	}
+	fixed := body
+	for _, f := range []struct{ field, value string }{
+		{"客先", customer},
+		{"装置名称", machine},
+		{"図面名称", name},
+	} {
+		fixed = setDrawingField(fixed, f.field, f.value)
+	}
+	if fixed == body {
+		return nil // **変わらないなら書きません**——版と更新日時を無駄に進めない
+	}
+	return cms.RewriteBody(pageID, user.Username, func(string) string { return fixed })
+}
+
+// setDrawingField は図面ブロックの項目を書き換えます。**無ければ足します**。
+//
+// 足すのは、解析が**読めなかった項目を書かない**ためです——実データでは7枚のうち
+// 3枚に `客先` の行がありませんでした。値を直すだけだと、その3枚は今後も
+// `客先` で引けません（無い行は索引にも無い）。`客先` は図面ブロックの正式な列
+// （vocab.go の drawing）なので、埋めるのは形を壊しません。
+//
+// 足す位置は**ヘッダの `dl` の末尾**です。`客先` は列の並びでも最後なので、
+// たいてい定義どおりの順になります（`装置名称` が欠けていた場合だけ後ろへ付きますが、
+// 並びは見た目だけの話で、索引も③計算も見出しの文字で引きます）。
+func setDrawingField(body, field, value string) string {
+	if fixed := replaceFirstFieldValue(body, field, value); fixed != body {
+		return fixed
+	}
+	if strings.Contains(body, "<dt>"+field+"</dt>") {
+		return body // 在るが差し替えなかった（同じ値・または人が印を書いている）
+	}
+	// 図面ブロックのヘッダの `dl` を探します。**属性の無い `<dl>`** がヘッダで、
+	// `<dl data-type="tags">` は可変タグ（`受信元` などが入る別のもの）です。
+	h2 := strings.Index(body, "<h2>図面</h2>")
+	if h2 < 0 {
+		return body
+	}
+	open := strings.Index(body[h2:], "<dl>")
+	if open < 0 {
+		return body
+	}
+	open += h2
+	close := strings.Index(body[open:], "</dl>")
+	if close < 0 {
+		return body
+	}
+	close += open
+	return body[:close] + "<dt>" + field + "</dt><dd>" + htmlEscape(value) + "</dd>" + body[close:]
+}
+
+// replaceFirstFieldValue は最初の `<dt>名前</dt><dd>値</dd>` の値を差し替えます。
+//
+// この形の正規表現はこのファイルの既定の作法です（`drawingNoRe`・`sourceRefRe`）
+// ——図面ブロックは機械が書くので形が決まっており、DOMへ通して組み直すと
+// **本文の他の場所まで書式が変わります**（正本なので、触っていない所は1バイトも
+// 変えたくない）。
+func replaceFirstFieldValue(body, field, value string) string {
+	// **空欄は `<br/>` です**（サニタイズが空の `dd` に入れる）。実データの7枚のうち
+	// 3枚の `客先` がこの形で、`[^<]*` だけで見ていたときは**素通りしていました**
+	// ——行は在るのに値が無く、索引にも入らないので `客先` で永久に引けません。
+	re := regexp.MustCompile(`<dt>` + regexp.QuoteMeta(field) + `</dt><dd>(<br\s*/?>|[^<]*)</dd>`)
+	loc := re.FindStringSubmatchIndex(body)
+	if loc == nil {
+		return body
+	}
+	return body[:loc[2]] + htmlEscape(value) + body[loc[3]:]
 }
 
 // findChildByTitle は親の子から題が完全一致するものを1つ探します。
