@@ -186,7 +186,7 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 
 	// 可変タグが2件索引されていることを確認（行き先は②汎用索引）
 	var tagCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM vocab_index WHERE page_id = ? AND data_type = 'tags'", pageID).Scan(&tagCount)
+	err = db.QueryRow("SELECT COUNT(*) FROM page_tags WHERE page_id = ?", pageID).Scan(&tagCount)
 	if err != nil {
 		t.Fatalf("vocab_indexのクエリでエラー: %v", err)
 	}

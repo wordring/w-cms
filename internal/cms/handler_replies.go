@@ -46,10 +46,10 @@ func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
 		r := ReplyRef{PageID: fmt.Sprintf("%0*d", page.IDLength, idInt)}
 		database.DB.QueryRow(`SELECT COALESCE(title,'') FROM pages WHERE id = ?`, idInt).Scan(&r.Title)
 		database.DB.QueryRow(
-			`SELECT value FROM vocab_index WHERE page_id = ? AND field = '送信日時' LIMIT 1`,
+			`SELECT value FROM page_tags WHERE page_id = ? AND field = '送信日時' LIMIT 1`,
 			idInt).Scan(&r.SentAt)
 		database.DB.QueryRow(
-			`SELECT value FROM vocab_index WHERE page_id = ? AND field = '宛先アドレス' LIMIT 1`,
+			`SELECT value FROM page_tags WHERE page_id = ? AND field = '宛先アドレス' LIMIT 1`,
 			idInt).Scan(&r.To)
 		out = append(out, r)
 	}

@@ -9,7 +9,8 @@ import (
 //
 // 書き込みは vocab_index.go、読み出しはここ。D-1（硬いドメイン表を全廃して
 // 汎用索引へ一本化・docs/アーキテクチャとDBスキーマ.md §9）で、③計算は
-// 専用テーブルではなく**この層を通して** vocab_index を読みます。
+// 専用テーブルではなく**この層を通して**索引を読みます（業務ブロックは vocab_index、
+// 可変タグは page_tags。2026-09-13 に分離）。
 //
 // **鍵の変換がこの層の仕事です。** 索引の `field` に入っているのは本文の
 // 見出しの表示文字（`品番`・`数量`）で、③計算が使いたいのは機械キー
@@ -117,7 +118,7 @@ func VocabBlocksOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, erro
 //
 // 硬いドメイン表を廃したことで、**ページ横断の突き合わせはこの逆引きになります**。
 // 部材定義が部品番号でつながるように、鍵が形式の外（ページ全体のタグ）にある
-// 形式で使います。索引 idx_vocab_index_field_value が効きます。
+// 形式で使います。索引 idx_page_tags_field_value が効きます。
 //
 // 生テキスト（value）に対して引きます——正規化値ではなく生が正本だからです
 // （docs/アーキテクチャとDBスキーマ.md §9.1）。
@@ -126,8 +127,8 @@ func PagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
 		return nil, nil // 空の鍵で全ページを引き当てない
 	}
 	rows, err := db.Query(`
-		SELECT DISTINCT page_id FROM vocab_index
-		WHERE data_type = 'tags' AND field = ? AND value = ?
+		SELECT DISTINCT page_id FROM page_tags
+		WHERE field = ? AND value = ?
 		ORDER BY page_id
 	`, name, value)
 	if err != nil {
@@ -165,8 +166,8 @@ func PagesByTagLoose(db ReadOnlyDB, name, value string) ([]int, error) {
 		return nil, nil
 	}
 	rows, err := db.Query(`
-		SELECT DISTINCT page_id FROM vocab_index
-		WHERE data_type = 'tags' AND field = ? AND norm_value = ?
+		SELECT DISTINCT page_id FROM page_tags
+		WHERE field = ? AND norm_value = ?
 		ORDER BY page_id
 	`, name, norm)
 	if err != nil {

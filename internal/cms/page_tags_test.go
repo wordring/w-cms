@@ -8,8 +8,10 @@ import (
 
 // 可変タグ（<dl data-type="tags">）の索引のテスト。
 //
-// 行き先は②汎用索引 vocab_index だけです——専用の page_tags テーブルは中身が
-// 完全に重複し読む者がいなかったため、2026-08-30（D-1 の第一歩）で吸収しました。
+// 行き先は `page_tags` です。**一度吸収して、戻しました**——2026-08-30（D-1 の
+// 第一歩）に「中身が完全に重複し読む者がいない」として vocab_index へ畳みましたが、
+// 2026-09-13 にユーザー決定で分け直しました（タグが業務データの本体になり、
+// 読む側で `data_type='tags'` を足す規律が守られなかったため。page_tags_split_test.go）。
 // このファイルのテストが固定するのは吸収後も変わらない3つの約束:
 // 多値（同名タグの繰り返し）が保存できること・洗い替えで蓄積しないこと・
 // 「親ページID」も普通のタグとして載ること（旧ガードの撤去）。
@@ -18,10 +20,10 @@ import (
 func queryTags(t *testing.T, pageID int) []string {
 	t.Helper()
 	rows, err := database.DB.Query(
-		`SELECT field, value FROM vocab_index
-		 WHERE page_id = ? AND data_type = 'tags' ORDER BY field, value`, pageID)
+		`SELECT field, value FROM page_tags
+		 WHERE page_id = ? ORDER BY field, value`, pageID)
 	if err != nil {
-		t.Fatalf("vocab_indexのクエリでエラー: %v", err)
+		t.Fatalf("page_tagsのクエリでエラー: %v", err)
 	}
 	defer rows.Close()
 	var out []string
@@ -158,7 +160,7 @@ func TestTagValueIsIndexedExactlyAsDisplayed(t *testing.T) {
 	for _, c := range cases {
 		var got string
 		err := database.DB.QueryRow(
-			`SELECT value FROM vocab_index WHERE page_id = 60 AND data_type = 'tags' AND field = ?`,
+			`SELECT value FROM page_tags WHERE page_id = 60 AND field = ?`,
 			c.name).Scan(&got)
 		if err != nil {
 			t.Errorf("タグ %q が索引にありません: %v", c.name, err)

@@ -65,7 +65,7 @@ func TestTextTagKeepsLongVowel(t *testing.T) {
 	}
 	var norm string
 	err := database.DB.QueryRow(
-		`SELECT norm_value FROM vocab_index WHERE page_id = 62 AND field = '差出人'`).Scan(&norm)
+		`SELECT norm_value FROM page_tags WHERE page_id = 62 AND field = '差出人'`).Scan(&norm)
 	if err != nil {
 		t.Fatalf("索引の読み出しエラー: %v", err)
 	}

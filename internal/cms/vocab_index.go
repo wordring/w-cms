@@ -44,13 +44,13 @@ func (vocabIndexPlugin) Name() string { return "vocab_index" }
 
 func (vocabIndexPlugin) Schema() []string {
 	return []string{
-		// 縦持ち1テーブル。行/フィールドの2テーブル分割は未決事項（語彙モデル §10）で、
-		// v1 は最小の1テーブルから始める（(page_id, data_type, block_no, row_no, field) で
-		// 1セルが1行になる）。
+		// 縦持ち。1セルが1行（`(page_id, data_type, block_no, row_no, field)`）。
 		// norm_num は number 型の値の**数値としての**正規化値。SQLite は TEXT 同士を
 		// 文字列比較する（"8000" < "900"）ため、数の大小・範囲で絞る列は数値の
 		// 格納クラスに分ける（【一覧】日付形式と数詞.md §5。2026-08-30 決定）。
 		// norm_value（TEXT）は date の時系列比較と表示用にそのまま残る。
+		//
+		// **タグはここに入りません**（2026-09-13 にユーザー決定で分けた。下の page_tags）。
 		`CREATE TABLE IF NOT EXISTS vocab_index (
 			page_id INTEGER,
 			data_type TEXT,
@@ -70,10 +70,50 @@ func (vocabIndexPlugin) Schema() []string {
 		// date の範囲検索（納期 BETWEEN）用（アーキテクチャとDBスキーマ.md §9.1）。
 		`CREATE INDEX IF NOT EXISTS idx_vocab_index_field_value ON vocab_index(field, value);`,
 		`CREATE INDEX IF NOT EXISTS idx_vocab_index_field_norm ON vocab_index(field, norm_value);`,
+
+		// ── 可変タグ（`dl[data-type="tags"]`）の索引 ───────────────────────
+		//
+		// **2026-09-13 にユーザー決定で分けました**（「HTMLのTableとタグはDBのTableを
+		// 分けたいと思います」）。2026-09-06 の考察では「分けない」と結論しましたが、
+		// そのときの根拠3つのうち**2つが崩れていました**（実測）:
+		//
+		//   - 「タグは付箋であってブロックではない」→ **アドレス帳がタグになりました**。
+		//     連絡先・担当者の実体は `メールアドレス`・`電話番号`・`役職` のタグで、
+		//     いまやタグは業務データの本体です。
+		//   - 「C-1（読む側で `data_type='tags'` を足す）で足りる」→ **足りませんでした**。
+		//     決定から1週間、13箇所が絞り込み無しのまま残り、2026-09-13 には**3箇所
+		//     増えました**（連絡先の実装で、書いた本人が規律を3回忘れた）。
+		//     表が分かれていれば、間違った問いはそもそも書けません。
+		//
+		// 数でも別物です（実測・212ページ）: タグ1172行に対し業務ブロックは全部で230行。
+		// **索引の84%がタグ**で、`block_id` が埋まるのは2.5%だけ（タグはたいていページ単位）。
+		//
+		// `data_type` 列はありません——ここに入るものは全部タグだからです。
+		// それ以外の列は同じ形にしてあります（`row_no` は `dt`/`dd` の対の順番で、
+		// 「差出人アドレスの表示名は1つ手前」のような位置の対応づけに要る）。
+		//
+		// **名前は一度使って消したもの**です（`page_tags` は 2026-08-30 に vocab_index へ
+		// 吸収されました）。同じ名前で戻したのは、これが**そのとき畳んだものを畳み直す**
+		// 話ではなく、**タグが業務データの本体になった**という別の理由だからです。
+		`CREATE TABLE IF NOT EXISTS page_tags (
+			page_id INTEGER,
+			block_no INTEGER,
+			block_id TEXT,
+			row_no INTEGER,
+			field TEXT,
+			value TEXT,
+			norm_value TEXT,
+			norm_num REAL,
+			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_page_tags_page ON page_tags(page_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_page_tags_field ON page_tags(field);`,
+		`CREATE INDEX IF NOT EXISTS idx_page_tags_field_value ON page_tags(field, value);`,
+		`CREATE INDEX IF NOT EXISTS idx_page_tags_field_norm ON page_tags(field, norm_value);`,
 	}
 }
 
-func (vocabIndexPlugin) Tables() []string { return []string{"vocab_index"} }
+func (vocabIndexPlugin) Tables() []string { return []string{"vocab_index", "page_tags"} }
 
 // Triggers はマーカーのある要素**すべて**を受け取ることを宣言します。
 // 未知の `data-type` もそのまま索引に載る、という現行仕様がそのままこの1行になります。
@@ -81,7 +121,12 @@ func (vocabIndexPlugin) Triggers() []string { return []string{TriggerAll} }
 
 // OnPageStart は当該ページ分を洗い流します（洗い替えの前半）。
 func (vocabIndexPlugin) OnPageStart(ctx *ObserveContext) error {
-	_, err := ctx.Tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, ctx.PageID)
+	if _, err := ctx.Tx.Exec(`DELETE FROM vocab_index WHERE page_id = ?`, ctx.PageID); err != nil {
+		return err
+	}
+	// **タグの表も一緒に洗い流します**（2026-09-13 に分離）。片方だけ消すと、
+	// 本文から消したタグが索引に居残り、逆引きが幽霊を返します。
+	_, err := ctx.Tx.Exec(`DELETE FROM page_tags WHERE page_id = ?`, ctx.PageID)
 	return err
 }
 
@@ -277,6 +322,17 @@ func insertVocabEntry(tx *sql.Tx, pageID int, dataType string, blockNo int, bloc
 				normNum = sql.NullFloat64{Float64: f, Valid: true}
 			}
 		}
+	}
+	// **振り分けはここ1か所**（2026-09-13 の分離）。書き手が1本なので、タグが
+	// 業務ブロックの表へ紛れることも、その逆も起きません——読む側で毎回
+	// `data_type='tags'` を思い出す必要が消えました（それを1週間で3回忘れたのが
+	// 分けた理由です）。
+	if dataType == TagsDataType {
+		_, err := tx.Exec(
+			`INSERT INTO page_tags (page_id, block_no, block_id, row_no, field, value, norm_value, norm_num)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			pageID, blockNo, blockID, rowNo, field, value, norm, normNum)
+		return err
 	}
 	_, err := tx.Exec(
 		`INSERT INTO vocab_index (page_id, data_type, block_no, block_id, row_no, field, value, norm_value, norm_num)

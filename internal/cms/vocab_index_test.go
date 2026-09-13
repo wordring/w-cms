@@ -18,13 +18,23 @@ type vocabRow struct {
 	norm     sql.NullString
 }
 
+// queryVocabRows はそのページの索引を**両方の表から**読みます。
+//
+// 2026-09-13 にタグを `page_tags` へ分けました（ユーザー決定）。このヘルパーは
+// 「本文がどう索引されたか」を見るためのものなので、**書き込み先が分かれても
+// 1つの目で見えるほう**が試験の意図に合います（どちらの表に入ったかを確かめたい
+// 試験は、下の `queryTagRows` を使います）。
 func queryVocabRows(t *testing.T, pageID int) []vocabRow {
 	t.Helper()
 	rows, err := database.DB.Query(
 		`SELECT data_type, block_no, block_id, row_no, field, value, norm_value
-		 FROM vocab_index WHERE page_id = ? ORDER BY data_type, block_no, row_no, field`, pageID)
+		   FROM vocab_index WHERE page_id = ?
+		 UNION ALL
+		 SELECT 'tags', block_no, block_id, row_no, field, value, norm_value
+		   FROM page_tags WHERE page_id = ?
+		 ORDER BY 1, 2, 4, 5`, pageID, pageID)
 	if err != nil {
-		t.Fatalf("vocab_indexのクエリでエラー: %v", err)
+		t.Fatalf("索引のクエリでエラー: %v", err)
 	}
 	defer rows.Close()
 	var out []vocabRow

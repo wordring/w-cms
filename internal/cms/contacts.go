@@ -206,8 +206,8 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	}
 
 	rows, err := database.DB.Query(
-		`SELECT page_id, field, row_no, value FROM vocab_index
-		  WHERE data_type = 'tags' AND field IN (`+sqlPlaceholders(len(addressFields))+`)`,
+		`SELECT page_id, field, row_no, value FROM page_tags
+		  WHERE field IN (`+sqlPlaceholders(len(addressFields))+`)`,
 		toAnySlice(addressFields)...)
 	if err != nil {
 		return nil, err
@@ -319,7 +319,7 @@ func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 	// 限りません（`取引先／社名／担当者／氏名`）。2026-09-13 に連絡先を人ごとの
 	// ページへ分けたときからの決まりです。
 	rows, err := database.DB.Query(
-		`SELECT v.page_id, v.value FROM vocab_index v WHERE v.field = ?`, EmailTag)
+		`SELECT v.page_id, v.value FROM page_tags v WHERE v.field = ?`, EmailTag)
 	if err != nil {
 		return out
 	}
@@ -412,7 +412,7 @@ func looksLikeCompany(name string) bool {
 // 入れ直せばまた消えます。人が間違えて動かしても、画面がそれを教えます。
 func knownEmails() (map[string]bool, error) {
 	rows, err := database.DB.Query(
-		`SELECT page_id, value FROM vocab_index WHERE field = ?`, EmailTag)
+		`SELECT page_id, value FROM page_tags WHERE field = ?`, EmailTag)
 	if err != nil {
 		return nil, err
 	}
@@ -489,8 +489,8 @@ func addressDisplayNames() (map[nameKey]string, error) {
 		fields = append(fields, n)
 	}
 	rows, err := database.DB.Query(
-		`SELECT page_id, field, row_no, value FROM vocab_index
-		  WHERE data_type = 'tags' AND field IN (`+sqlPlaceholders(len(fields))+`)`,
+		`SELECT page_id, field, row_no, value FROM page_tags
+		  WHERE field IN (`+sqlPlaceholders(len(fields))+`)`,
 		toAnySlice(fields)...)
 	if err != nil {
 		return nil, err
@@ -870,7 +870,7 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 残りを数えて、**空になったことだけ伝えます**（消すのは人の判断）。
 	var left int
 	database.DB.QueryRow(
-		`SELECT COUNT(*) FROM vocab_index WHERE page_id = ? AND field = ?`,
+		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND field = ?`,
 		idInt, EmailTag).Scan(&left)
 	var children int
 	database.DB.QueryRow(`SELECT COUNT(*) FROM pages WHERE parent_id = ?`, idInt).Scan(&children)
@@ -941,7 +941,7 @@ func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
 	// （`取引先／社名／担当者／氏名`）。見つけた先を `PartnerOfPage` で**会社へ丸めて**
 	// から返します——整理が欲しいのは会社の名前だからです。
 	rows, err := database.DB.Query(
-		`SELECT v.page_id, v.value FROM vocab_index v WHERE v.field = ?`, EmailTag)
+		`SELECT v.page_id, v.value FROM page_tags v WHERE v.field = ?`, EmailTag)
 	if err != nil {
 		return "", false
 	}
@@ -993,7 +993,7 @@ func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
 func isSelfPartner(pageIDInt int) bool {
 	var n int
 	database.DB.QueryRow(
-		`SELECT COUNT(*) FROM vocab_index WHERE page_id = ? AND field = ? AND value = ?`,
+		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND field = ? AND value = ?`,
 		pageIDInt, RelationTag, RelationSelf).Scan(&n)
 	return n > 0
 }
