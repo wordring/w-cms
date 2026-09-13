@@ -3851,13 +3851,18 @@
     async function mergeContact(btn) {
         const row = btn.closest('tr');
         const sel = row && row.querySelector('.contact-merge-target');
-        const target = sel ? sel.value : '';
+        // **ボタンが相手を持っていればそれが優先**（2026-09-13）。推薦の
+        // 「『○○』へ足す」は、ドメインが既にある取引先と一致した行に出ます
+        // ——選ばせる前に正しい行き先を見せるための口なので、プルダウンは要りません。
+        const target = btn.dataset.target || (sel ? sel.value : '');
         if (!target) {
             notify('足す相手を選んでください', { type: 'warn' });
             if (sel) sel.focus();
             return;
         }
-        const title = sel.options[sel.selectedIndex].textContent;
+        const title = btn.dataset.target
+            ? btn.textContent
+            : sel.options[sel.selectedIndex].textContent;
         btn.disabled = true;
         try {
             const res = await fetch('/api/contacts/register', {

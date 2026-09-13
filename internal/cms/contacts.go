@@ -143,100 +143,263 @@ var nameOfAddressField = map[string]string{
 	"返信先アドレス": "返信先",
 }
 
-// UnknownContact は「まだページになっていない相手」1件（ドメイン単位）です。
+// UnknownContact は「まだページになっていない相手」**1アドレス1件**です。
 //
-// **ドメインでまとめるのは、会社が1枚に収まるようにするため**です。4人のアドレスを
-// 別々に登録すると相手ページが4枚になり、あとから1枚へまとめ直すことになります。
+// **もとはドメインでまとめていました**（2026-09-05〜09-13）。会社が1枚に収まるように、
+// という意図でしたが、実データで**使えないことが分かりました**（2026-09-13 ユーザー:
+// 「ドメイン別に分けるのはやめて、ドメインから社名が推測できる場合は、社名を推薦する
+// 程度にします」）:
+//
+//   - **3人が1行に入り、表示名は多数決で1つ**になりました。`toa-sports-machine.co.jp` の
+//     行は平井・潮崎・吉原の3人ぶんで、登録の初期値が**人名の「平井　成志」**。
+//     そのまま押すと、人の名前の会社ページができます。
+//   - **1人ずつ扱えません**。担当者を1人だけページにしたいときに行を割れない。
+//   - 同じ人が2つのドメインを使うと**別の行に散ります**（実データに実例あり）。
+//
+// 会社を1枚に保つ仕事は、**まとめることではなく推薦がやります**（`Suggest`）——
+// 既にある取引先のドメインと一致すれば、**その相手へ足す**のが初期の提案になります。
 type UnknownContact struct {
-	Domain    string   // toa-sports-machine.co.jp
-	Name      string   // いちばんよく出た表示名（登録の初期値）
-	Addresses []string // そのドメインのアドレス（昇順）
-	Count     int      // 索引に出てきた延べ回数（多い順に並べるため）
+	Address string // hirai@toa-sports-machine.co.jp
+	Domain  string // toa-sports-machine.co.jp（推薦の手掛かり・表示にも使う）
+	Name    string // このアドレスの表示名（無ければアドレス）
+	Count   int    // 索引に出てきた回数（多い順に並べるため）
+
+	// SuggestPageID は「既にある相手へ足す」の初期選択です（空なら新規登録）。
+	// **同じドメインのアドレスが既に取引先ページに載っているとき**に埋まります。
+	SuggestPageID string
+	// SuggestTitle はその相手の題（画面が「○○へ足す」と書けるように）。
+	SuggestTitle string
+	// SuggestName は新規登録するときの社名の推薦です。**同じドメインの表示名のうち
+	// 社名らしいもの**を採り、無ければこのアドレスの表示名。
+	SuggestName string
 }
 
-// UnknownContacts は、索引にあってページになっていない相手をドメインごとに返します。
+// UnknownContacts は、索引にあってページになっていない相手を**1アドレス1件**で返します。
 func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	known, err := knownEmails()
 	if err != nil {
 		return nil, err
 	}
 
+	// アドレスごとに数え、**推薦の材料としてドメインも見ます**（まとめはしません）。
 	type acc struct {
-		addrs map[string]int
-		names map[string]int
+		names map[string]int // このアドレスの表示名（揺れることがあるので多数決）
 		count int
 	}
-	byDomain := map[string]*acc{}
+	byAddr := map[string]*acc{}
+	namesByDomain := map[string]map[string]int{} // 社名の推薦用
 
-	for _, field := range addressFields {
-		rows, err := database.DB.Query(`
-			SELECT page_id, value FROM vocab_index WHERE field = ?
-		`, field)
-		if err != nil {
+	// アドレスと表示名を**位置で対応づけます**（2026-09-13）。
+	//
+	// もとはページと項目名だけで引いていました（`LIMIT 1`）。1通に CC が2人いると
+	// **2人とも先頭の名前になります**——実データで `shiozaki@toa-sports-machine.co.jp`
+	// の表示名が「南 公一」（自社）になっていました。ドメインでまとめていたころは
+	// 多数決に埋もれて見えず、1アドレス1行にして初めて表に出たものです。
+	//
+	// 取り込みは `<dt>CC</dt><dd>名前</dd><dt>CCアドレス</dd><dd>…</dd>` の順に書き、
+	// 索引の `row_no` が1つずつ増えます。つまり**名前はアドレスの1つ手前**です。
+	names, err := addressDisplayNames()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := database.DB.Query(
+		`SELECT page_id, field, row_no, value FROM vocab_index
+		  WHERE data_type = 'tags' AND field IN (`+sqlPlaceholders(len(addressFields))+`)`,
+		toAnySlice(addressFields)...)
+	if err != nil {
+		return nil, err
+	}
+	// **先に読み切ってから解釈します**（行を読みながら別のクエリを投げない）。
+	type hit struct {
+		pageID int
+		field  string
+		rowNo  int
+		value  string
+	}
+	var hits []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.pageID, &h.field, &h.rowNo, &h.value); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		// **先に読み切ってから解釈します**（行を読みながら別のクエリを投げない）。
-		type hit struct {
-			pageID int
-			value  string
-		}
-		var hits []hit
-		for rows.Next() {
-			var h hit
-			if err := rows.Scan(&h.pageID, &h.value); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			hits = append(hits, h)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+		hits = append(hits, h)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-		for _, h := range hits {
-			addr := normalizeEmail(h.value)
-			if addr == "" || known[addr] {
-				continue
-			}
-			// **読めないページの相手は数えません**（見せ分けC案——黙って落ちる）。
-			if !page.CanView(user, h.pageID) {
-				continue
-			}
+	for _, h := range hits {
+		addr := normalizeEmail(h.value)
+		if addr == "" || known[addr] {
+			continue
+		}
+		// **読めないページの相手は数えません**（見せ分けC案——黙って落ちる）。
+		if !page.CanView(user, h.pageID) {
+			continue
+		}
+		a := byAddr[addr]
+		if a == nil {
+			a = &acc{names: map[string]int{}}
+			byAddr[addr] = a
+		}
+		a.count++
+		if n := names[nameKey{h.pageID, nameOfAddressField[h.field], h.rowNo - 1}]; n != "" {
+			a.names[n]++
 			d := domainOf(addr)
-			a := byDomain[d]
-			if a == nil {
-				a = &acc{addrs: map[string]int{}, names: map[string]int{}}
-				byDomain[d] = a
+			if namesByDomain[d] == nil {
+				namesByDomain[d] = map[string]int{}
 			}
-			a.addrs[addr]++
-			a.count++
-			if n := displayNameFor(h.pageID, nameOfAddressField[field]); n != "" {
-				a.names[n]++
-			}
+			namesByDomain[d][n]++
 		}
 	}
 
-	out := make([]UnknownContact, 0, len(byDomain))
-	for d, a := range byDomain {
-		c := UnknownContact{Domain: d, Count: a.count, Name: mostCommon(a.names)}
-		for addr := range a.addrs {
-			c.Addresses = append(c.Addresses, addr)
+	// **推薦の材料**——既にある取引先のドメイン（そのドメインのアドレスが載っている相手）。
+	byPartnerDomain := partnersByDomain(user)
+
+	out := make([]UnknownContact, 0, len(byAddr))
+	for addr, a := range byAddr {
+		d := domainOf(addr)
+		c := UnknownContact{
+			Address: addr,
+			Domain:  d,
+			Count:   a.count,
+			Name:    mostCommon(a.names),
 		}
-		sort.Strings(c.Addresses)
 		if c.Name == "" {
-			c.Name = c.Addresses[0] // 表示名が無ければアドレスを初期値にする
+			c.Name = addr // 表示名が無ければアドレスそのもの
+		}
+		// ① **既にある相手が最優先**。同じドメインのアドレスが取引先ページに載って
+		//    いれば、新しくページを作るのではなく**そこへ足す**のが正しい操作です。
+		//    実データで、トーアスポーツマシーンの3アドレスが「未登録」として並び、
+		//    目立つのが新規作成のボタンだったせいで**会社が2枚になりかけました**。
+		if p, ok := byPartnerDomain[d]; ok {
+			c.SuggestPageID, c.SuggestTitle = p.PageID, p.Title
+		}
+		// ② 新規のときの社名の推薦——**同じドメインの表示名のうち社名らしいもの**。
+		//    人名しか無ければ諦めてこのアドレスの表示名（人の名前で会社ページを作るのは
+		//    人が決めることで、機械が勝手に「株式会社」を付けたりはしません）。
+		c.SuggestName = companyLikeName(namesByDomain[d])
+		if c.SuggestName == "" {
+			c.SuggestName = c.Name
 		}
 		out = append(out, c)
 	}
-	// 多い順（よく来る相手から登録できるように）。同数はドメイン順で安定させる。
+	// 多い順（よく来る相手から片付けられるように）。同数は**ドメイン→アドレス**順で、
+	// 同じ会社の人が隣り合うようにします（まとめるのはやめましたが、並べはします）。
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Count != out[j].Count {
 			return out[i].Count > out[j].Count
 		}
-		return out[i].Domain < out[j].Domain
+		if out[i].Domain != out[j].Domain {
+			return out[i].Domain < out[j].Domain
+		}
+		return out[i].Address < out[j].Address
 	})
 	return out, nil
+}
+
+// partnerRefByDomain は取引先ページ1件の参照です（推薦に使う）。
+type partnerRefByDomain struct{ PageID, Title string }
+
+// partnersByDomain は「そのドメインのアドレスが載っている取引先」をドメインごとに返します。
+//
+// **ドメインは手掛かりであって決定ではありません**——自社の工場長だけ別プロバイダの
+// アドレスを使っている実例があるので、ここで返すのは**初期の提案**だけです。
+// 人が別の相手を選び直せます。
+//
+// `取引：自社` は外します（差出人が自社でも「自社へ足す」を勧めない）。
+func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
+	out := map[string]partnerRefByDomain{}
+	boxID, ok := PartnerBoxPageID()
+	if !ok {
+		return out
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return out
+	}
+	rows, err := database.DB.Query(
+		`SELECT v.page_id, COALESCE(p.title, ''), v.value
+		   FROM vocab_index v JOIN pages p ON p.id = v.page_id
+		  WHERE v.field = ? AND p.parent_id = ?`, EmailTag, boxInt)
+	if err != nil {
+		return out
+	}
+	type hit struct {
+		id    int
+		title string
+		value string
+	}
+	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.id, &h.title, &h.value); err != nil {
+			rows.Close()
+			return out
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+
+	for _, h := range found {
+		v := normalizeEmail(h.value)
+		if v == "" || h.title == "" || !page.CanView(user, h.id) {
+			continue
+		}
+		if isSelfPartner(h.id) {
+			continue
+		}
+		d := domainOf(v)
+		if d == "" {
+			continue
+		}
+		if _, dup := out[d]; dup {
+			continue // 先に見つかったほうを採る（同じドメインに2社は稀）
+		}
+		out[d] = partnerRefByDomain{PageID: fmt.Sprintf("%06d", h.id), Title: h.title}
+	}
+	return out
+}
+
+// companyLikeSuffixes は「社名らしさ」の手掛かりです。
+//
+// **表引きで閉じます**——機械に社名と人名を見分けさせる一般解はありません。
+// 実データに出てくる形だけを並べ、当たらなければ**推薦しない**（人が打つ）。
+var companyLikeSuffixes = []string{
+	"株式会社", "有限会社", "合同会社", "(株)", "（株）", "(有)", "（有）",
+	"製作所", "工業", "工業所", "商会", "商店", "センター", "工房", "鉄工所", "産業",
+	"Co.", "Corp", "Inc", "Ltd", "LLC", "GmbH",
+}
+
+// companyLikeName は表示名の中から**社名らしいもの**を1つ選びます（無ければ空）。
+//
+// 同じドメインに「平井　成志」「潮崎 光俊」「トーアスポーツマシーン」が混ざるとき、
+// 会社ページの題にふさわしいのは最後のものです。**多数決では人名が勝ちます**
+// （人は会社より数が多い）——2026-09-13 に実データでそうなりました。
+func companyLikeName(names map[string]int) string {
+	best, bestN := "", 0
+	for n, c := range names {
+		if !looksLikeCompany(n) {
+			continue
+		}
+		if c > bestN || (c == bestN && n < best) {
+			best, bestN = n, c
+		}
+	}
+	return best
+}
+
+func looksLikeCompany(name string) bool {
+	for _, s := range companyLikeSuffixes {
+		if strings.Contains(name, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // knownEmails は既にページに登録済みのアドレスを集めます。
@@ -260,19 +423,62 @@ func knownEmails() (map[string]bool, error) {
 }
 
 // displayNameFor は同じページの表示名タグを1つ読みます（無ければ空）。
-func displayNameFor(pageID int, field string) string {
-	if field == "" {
-		return ""
+// sqlPlaceholders は `?, ?, ?` を作ります（`IN (…)` に使う）。
+//
+// **項目の数を決め打ちにしないため**です。`?` を4つ書いて配列の添字を直に渡す形は、
+// 項目が1つ増えた日に panic します（`Bcc` を足す、など）。
+func sqlPlaceholders(n int) string {
+	if n <= 0 {
+		return "NULL"
 	}
-	var v string
-	err := database.DB.QueryRow(
-		`SELECT value FROM vocab_index WHERE page_id = ? AND field = ? LIMIT 1`,
-		pageID, field).Scan(&v)
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
+}
+
+// toAnySlice は文字列の並びをクエリの引数へ渡せる形にします。
+func toAnySlice(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}
+
+// nameKey は表示名を位置で引くための鍵です（ページ・項目名・索引の行番号）。
+type nameKey struct {
+	pageID int
+	field  string
+	rowNo  int
+}
+
+// addressDisplayNames は `差出人`・`宛先`・`CC`・`返信先` の値を**位置つき**で集めます。
+//
+// **1通に同じ項目が何度も出ます**（CCが2人なら `CC` が2件）。ページと項目名だけで
+// 引くと先頭しか取れず、2人目以降に他人の名前が付きます——だから `row_no` ごと持ちます。
+// 対になるアドレスは**次の行**（`row_no + 1`）です。
+func addressDisplayNames() (map[nameKey]string, error) {
+	out := map[nameKey]string{}
+	fields := make([]string, 0, len(nameOfAddressField))
+	for _, n := range nameOfAddressField {
+		fields = append(fields, n)
+	}
+	rows, err := database.DB.Query(
+		`SELECT page_id, field, row_no, value FROM vocab_index
+		  WHERE data_type = 'tags' AND field IN (`+sqlPlaceholders(len(fields))+`)`,
+		toAnySlice(fields)...)
 	if err != nil {
-		return ""
+		return nil, err
 	}
-	// 取り込みが引用符ごと拾うことがある（`'南 公一'`）。表示のためだけなので落とす。
-	return strings.Trim(strings.TrimSpace(v), `'"`)
+	defer rows.Close()
+	for rows.Next() {
+		var k nameKey
+		var v string
+		if err := rows.Scan(&k.pageID, &k.field, &k.rowNo, &v); err != nil {
+			return nil, err
+		}
+		// 取り込みが引用符ごと拾うことがある（`'南 公一'`）。表示のためだけなので落とす。
+		out[k] = strings.Trim(strings.TrimSpace(v), `'"`)
+	}
+	return out, rows.Err()
 }
 
 // normalizeEmail はアドレスを突き合わせ用に畳みます。
@@ -321,29 +527,61 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		return sb.String()
 	}
 	sb.WriteString(`<p class="unhandled-note">` +
-		`同じドメインはまとめてあります——会社を1枚に保つためです。` +
-		`名前を直してから、どの取引かを押してください（顧客と仕入先はあとから足せます）。` +
-		`ページは「` + PartnerBoxTitle + `」の下にできます。</p>`)
+		`1行が1アドレスです。` +
+		`<strong>既にある相手が見つかった行は、そこへ足すのが初期の提案</strong>です` +
+		`——押せば相手ページにアドレスが増えます（会社ページは1枚のまま）。` +
+		`新しい相手なら、名前を直してから取引の種類を押してください` +
+		`（顧客と仕入先はあとから足せます）。</p>`)
 
 	partners := existingPartners(user)
 
 	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
 	for _, c := range list {
-		sb.WriteString(`<tr data-domain="` + stdhtml.EscapeString(c.Domain) + `">`)
-		sb.WriteString(`<td class="vocab-chrome contact-name">` +
-			`<input type="text" class="contact-name-input" maxlength="120" value="` +
-			stdhtml.EscapeString(c.Name) + `"></td>`)
-		sb.WriteString(`<td class="contact-addrs">`)
-		for i, a := range c.Addresses {
-			if i > 0 {
-				sb.WriteString(`<br>`)
-			}
-			sb.WriteString(stdhtml.EscapeString(a))
-		}
-		sb.WriteString(`</td>`)
+		sb.WriteString(`<tr data-domain="` + stdhtml.EscapeString(c.Domain) + `"` +
+			` data-address="` + stdhtml.EscapeString(c.Address) + `">`)
+
+		// 表示名とアドレス（**1行1アドレス**なので並べても崩れません）。
+		sb.WriteString(`<td class="contact-who"><span class="contact-display">` +
+			stdhtml.EscapeString(c.Name) + `</span><br>` +
+			`<span class="contact-addr">` + stdhtml.EscapeString(c.Address) + `</span></td>`)
 		sb.WriteString(`<td class="unhandled-clip">` + fmt.Sprint(c.Count) + `件</td>`)
-		addrAttr := stdhtml.EscapeString(strings.Join(c.Addresses, ","))
+
+		addrAttr := stdhtml.EscapeString(c.Address)
 		sb.WriteString(`<td class="vocab-chrome unhandled-act">`)
+
+		// ── ① 既にある相手が見つかったなら、それを先に出します ──
+		//
+		// **順序が効きます**。以前は新規作成の［顧客］［仕入先］［自社］が先頭にあり、
+		// 「既にある相手へ足す…」は選んでいない状態でその後ろでした。実データで
+		// トーアスポーツマシーンの3アドレスがこの形で並び、**押せば会社が2枚**に
+		// なるところでした（2026-09-13）。
+		if c.SuggestPageID != "" {
+			sb.WriteString(`<button type="button" class="chip-btn chip-primary contact-merge"` +
+				` data-addresses="` + addrAttr + `"` +
+				` data-target="` + stdhtml.EscapeString(c.SuggestPageID) + `"` +
+				` title="このアドレスを既にある相手ページへ足します（会社ページは1枚のまま）">` +
+				`「` + stdhtml.EscapeString(c.SuggestTitle) + `」へ足す</button>`)
+		}
+
+		// ── ②③ その他の行き先 ──
+		//
+		// **推薦がある行では畳みます**（`details`）。推薦どおりで済むのがほとんどなので、
+		// 全部を横に並べると幅が足りず、実際に［顧客］が画面外へ出ていました
+		// （2026-09-13 に実データで確認）。**JSは使いません**——`details` は素のHTMLで
+		// 開閉でき、CSP strict の下でも動きます。
+		//
+		// 推薦が無い行では畳みません。その行の主役は新規登録だからです。
+		folded := c.SuggestPageID != ""
+		if folded {
+			sb.WriteString(`<details class="contact-more"><summary>ほかの行き先…</summary>`)
+		}
+
+		// ② 新しい相手として登録する。名前の初期値は**社名らしい表示名**
+		//    （`companyLikeName`）。人名しか無ければそのアドレスの表示名が入るので、
+		//    **人が直してから押す**のは変わりません。
+		sb.WriteString(`<span class="contact-new">`)
+		sb.WriteString(`<input type="text" class="contact-name-input" maxlength="120" value="` +
+			stdhtml.EscapeString(c.SuggestName) + `" aria-label="新しい相手の名前">`)
 		for _, rel := range Relations() {
 			sb.WriteString(`<button type="button" class="chip-btn contact-register"` +
 				` data-relation="` + stdhtml.EscapeString(rel) + `"` +
@@ -351,13 +589,15 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 				` title="この相手を「` + PartnerBoxTitle + `」の下のページにします（取引：` +
 				stdhtml.EscapeString(rel) + `）">` + stdhtml.EscapeString(rel) + `</button>`)
 		}
-		// **既にある相手へ足す口**（2026-09-06）。同じ会社が2つ目のドメインから
-		// 送ってくると、ここに新しい行として現れます——押して新しいページを作ると
-		// **会社ページが2枚**になり、ドメインの逆引きで社名の揺れを消した意味が
-		// 無くなります。選ぶのは人です（同じ会社かどうかは機械には決められない）。
+		sb.WriteString(`</span>`)
+
+		// ③ 別の相手を選んで足す。推薦が外れるとき（同じ会社が2つ目のドメインから
+		//    送ってくる、逆に同じドメインに別の会社が居る）に人が選び直す口です。
+		//    **同じ会社かどうかは機械には決められません**。
 		if len(partners) > 0 {
-			sb.WriteString(`<select class="contact-merge-target" aria-label="既にある相手へ足す">`)
-			sb.WriteString(`<option value="">既にある相手へ足す…</option>`)
+			sb.WriteString(`<span class="contact-other">`)
+			sb.WriteString(`<select class="contact-merge-target" aria-label="別の相手へ足す">`)
+			sb.WriteString(`<option value="">別の相手へ足す…</option>`)
 			for _, p := range partners {
 				sb.WriteString(`<option value="` + stdhtml.EscapeString(p.ID) + `">` +
 					stdhtml.EscapeString(p.Title) + `</option>`)
@@ -365,7 +605,11 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 			sb.WriteString(`</select>`)
 			sb.WriteString(`<button type="button" class="chip-btn contact-merge"` +
 				` data-addresses="` + addrAttr + `"` +
-				` title="選んだ相手ページへ、このドメインのアドレスを足します">足す</button>`)
+				` title="選んだ相手ページへ、このアドレスを足します">足す</button>`)
+			sb.WriteString(`</span>`)
+		}
+		if folded {
+			sb.WriteString(`</details>`)
 		}
 		sb.WriteString(`</td></tr>`)
 	}
