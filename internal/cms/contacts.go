@@ -57,6 +57,7 @@ package cms
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	stdhtml "html"
 	"net/http"
@@ -313,31 +314,23 @@ type partnerRefByDomain struct{ PageID, Title string }
 // `取引：自社` は外します（差出人が自社でも「自社へ足す」を勧めない）。
 func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 	out := map[string]partnerRefByDomain{}
-	boxID, ok := PartnerBoxPageID()
-	if !ok {
-		return out
-	}
-	boxInt, err := strconv.Atoi(boxID)
-	if err != nil {
-		return out
-	}
+	// **木ぜんたいから引き、会社へ丸めます**——アドレスが載っているのは社名ページとは
+	// 限りません（`取引先／社名／担当者／氏名`）。2026-09-13 に連絡先を人ごとの
+	// ページへ分けたときからの決まりです。
 	rows, err := database.DB.Query(
-		`SELECT v.page_id, COALESCE(p.title, ''), v.value
-		   FROM vocab_index v JOIN pages p ON p.id = v.page_id
-		  WHERE v.field = ? AND p.parent_id = ?`, EmailTag, boxInt)
+		`SELECT v.page_id, v.value FROM vocab_index v WHERE v.field = ?`, EmailTag)
 	if err != nil {
 		return out
 	}
 	type hit struct {
 		id    int
-		title string
 		value string
 	}
 	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
 	var found []hit
 	for rows.Next() {
 		var h hit
-		if err := rows.Scan(&h.id, &h.title, &h.value); err != nil {
+		if err := rows.Scan(&h.id, &h.value); err != nil {
 			rows.Close()
 			return out
 		}
@@ -347,10 +340,14 @@ func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 
 	for _, h := range found {
 		v := normalizeEmail(h.value)
-		if v == "" || h.title == "" || !page.CanView(user, h.id) {
+		if v == "" || !page.CanView(user, h.id) {
 			continue
 		}
-		if isSelfPartner(h.id) {
+		companyID, title, ok := PartnerOfPage(h.id)
+		if !ok || title == "" {
+			continue
+		}
+		if isSelfPartner(companyID) {
 			continue
 		}
 		d := domainOf(v)
@@ -360,7 +357,7 @@ func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 		if _, dup := out[d]; dup {
 			continue // 先に見つかったほうを採る（同じドメインに2社は稀）
 		}
-		out[d] = partnerRefByDomain{PageID: fmt.Sprintf("%06d", h.id), Title: h.title}
+		out[d] = partnerRefByDomain{PageID: fmt.Sprintf("%06d", companyID), Title: title}
 	}
 	return out
 }
@@ -556,10 +553,28 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		// 南北スポーツ機械の3アドレスがこの形で並び、**押せば会社が2枚**に
 		// なるところでした（2026-09-13）。
 		if c.SuggestPageID != "" {
-			sb.WriteString(`<button type="button" class="chip-btn chip-primary contact-merge"` +
+			// **人だと分かるなら、担当者ページを作るのが既定**（2026-09-13 ユーザー:
+			// 「連絡先にはメールアドレス、電話番号、名前など様々なタグが必要なので、
+			// ページに分割する必要があります」）。1人にタグが何個もぶら下がるので、
+			// 社名ページに平らに積むと**誰のものか分からなくなります**。
+			//
+			// 人か会社の口かは**表示名で見分けます**（`order@…` は「コニック金型センター」、
+			// 人は「山田 太郎」）。機械には決め切れないので、**両方出して人が選びます**。
+			if !looksLikeCompany(c.Name) && c.Name != c.Address {
+				sb.WriteString(`<button type="button" class="chip-btn chip-primary contact-merge"` +
+					` data-addresses="` + addrAttr + `"` +
+					` data-target="` + stdhtml.EscapeString(c.SuggestPageID) + `"` +
+					` data-person="` + stdhtml.EscapeString(c.Name) + `"` +
+					` title="「` + stdhtml.EscapeString(c.SuggestTitle) + `／` +
+					ContactPersonBoxTitle + `／` + stdhtml.EscapeString(c.Name) +
+					`」のページを作り、このアドレスをそこへ入れます">` +
+					stdhtml.EscapeString(c.Name) + ` を担当者にする</button>`)
+			}
+			sb.WriteString(`<button type="button" class="chip-btn contact-merge"` +
 				` data-addresses="` + addrAttr + `"` +
 				` data-target="` + stdhtml.EscapeString(c.SuggestPageID) + `"` +
-				` title="このアドレスを既にある相手ページへ足します（会社ページは1枚のまま）">` +
+				` title="会社の口として「` + stdhtml.EscapeString(c.SuggestTitle) +
+				`」へ足します（受注窓口など、人ではないアドレス）">` +
 				`「` + stdhtml.EscapeString(c.SuggestTitle) + `」へ足す</button>`)
 		}
 
@@ -638,6 +653,11 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 2つ目のドメインから送ってくると、アドレス帳には新しい行として現れます
 		// ——そこで新しいページを作ると、会社ページが2枚になります。
 		PageID string `json:"page_id"`
+		// PersonName があれば、その会社の**担当者ページ**へ入れます
+		// （`取引先／社名／担当者／氏名`・2026-09-13）。連絡先は1人にタグが何個も
+		// ぶら下がるので（メール・電話・役職）、**人ごとの器**が要ります。
+		// 空なら会社の口として社名ページへ（`order@…` のような人でないもの）。
+		PersonName string `json:"person_name"`
 	}
 	if !DecodeJSONBody(w, r, &req) {
 		return
@@ -669,15 +689,28 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if !page.RequirePageWrite(w, r, target) {
 			return
 		}
-		added, err := AddContactAddresses(target, user.Username, addrs)
+		// **人の名前が来たら、その人のページへ入れます**（2026-09-13）。
+		// 社名ページにアドレスを平らに積むと、6つ並んだ `メールアドレス` が誰のものか
+		// 分からなくなり、電話番号を足す先もありません。
+		dest, destTitle := target, partnerTitleOf(idInt)
+		if person := strings.TrimSpace(req.PersonName); person != "" {
+			pid, err := EnsureContactPerson(user, target, person)
+			if err != nil {
+				JSONFail(w, http.StatusInternalServerError, "担当者ページを作れません: "+err.Error())
+				return
+			}
+			dest = pid
+			destTitle = destTitle + "／" + NormalizeNameForIngest(person)
+		}
+		added, err := AddContactAddresses(dest, user.Username, addrs)
 		if err != nil {
 			JSONFail(w, http.StatusInternalServerError, "相手ページへ足せません: "+err.Error())
 			return
 		}
 		auth.Audit(user.Username, "contact.add-addresses",
-			target+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ","))
+			dest+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ","))
 		json.NewEncoder(w).Encode(map[string]any{
-			"success": true, "page_id": target, "title": partnerTitleOf(idInt),
+			"success": true, "page_id": dest, "title": destTitle,
 			"added": added, "merged": true,
 		})
 		return
@@ -767,33 +800,26 @@ func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
 	if mail == "" {
 		return "", false
 	}
-	boxID, ok := PartnerBoxPageID()
-	if !ok {
-		return "", false
-	}
-	boxInt, err := strconv.Atoi(boxID)
-	if err != nil {
-		return "", false
-	}
 	domain := mail[strings.LastIndex(mail, "@"):] // "@example.co.jp"
 
+	// **取引先の木ぜんたいから引きます**（2026-09-13）。連絡先を人ごとのページへ
+	// 分けたので、アドジスが載っているのは社名ページとは限りません
+	// （`取引先／社名／担当者／氏名`）。見つけた先を `PartnerOfPage` で**会社へ丸めて**
+	// から返します——整理が欲しいのは会社の名前だからです。
 	rows, err := database.DB.Query(
-		`SELECT v.page_id, COALESCE(p.title, ''), v.value
-		   FROM vocab_index v JOIN pages p ON p.id = v.page_id
-		  WHERE v.field = ? AND p.parent_id = ?`, EmailTag, boxInt)
+		`SELECT v.page_id, v.value FROM vocab_index v WHERE v.field = ?`, EmailTag)
 	if err != nil {
 		return "", false
 	}
 	type hit struct {
 		id    int
-		title string
 		value string
 	}
 	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
 	var found []hit
 	for rows.Next() {
 		var h hit
-		if err := rows.Scan(&h.id, &h.title, &h.value); err != nil {
+		if err := rows.Scan(&h.id, &h.value); err != nil {
 			rows.Close()
 			return "", false
 		}
@@ -804,17 +830,23 @@ func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
 	byDomain := ""
 	for _, h := range found {
 		v := normalizeEmail(h.value)
-		if v == "" || h.title == "" || !page.CanView(user, h.id) {
+		if v == "" || !page.CanView(user, h.id) {
 			continue
 		}
-		if isSelfPartner(h.id) {
+		// 載っているのが担当者ページでも、**答えるのは会社の名前**です。
+		companyID, title, ok := PartnerOfPage(h.id)
+		if !ok || title == "" {
+			continue // 取引先の外のページに書かれたアドレスは相手ではない
+		}
+		// `取引：自社` は推奨値にしません（社名ページに付きます）。
+		if isSelfPartner(companyID) {
 			continue
 		}
 		if v == mail {
-			return h.title, true // 完全一致が最優先
+			return title, true // 完全一致が最優先
 		}
 		if byDomain == "" && strings.HasSuffix(v, domain) {
-			byDomain = h.title
+			byDomain = title
 		}
 	}
 	if byDomain != "" {
@@ -893,6 +925,91 @@ func isPartnerPage(pageIDInt int) bool {
 		return false
 	}
 	return parent == boxInt
+}
+
+// PartnerOfPage は、そのページが属する**相手（社名ページ）**を返します。
+//
+// 担当者ページ（`取引先／社名／担当者／氏名`）や、その下のページから
+// **会社へ戻る**ための道です。連絡先を人ごとのページに分けた結果、
+// 「このアドレスは誰の会社のものか」を答えるのに祖先を辿る必要が出ました
+// （2026-09-13 ユーザー:「連絡先にはメールアドレス、電話番号、名前など様々なタグが
+// 必要なので、ページに分割する必要があります」）。
+//
+// 社名ページ自身を渡せばそれ自身が返ります。取引先の外なら ok=false。
+// 壊れたデータで無限に辿らないよう回数に上限を置きます（`isDescendantOf` と同じ用心）。
+func PartnerOfPage(pageIDInt int) (id int, title string, ok bool) {
+	boxID, found := PartnerBoxPageID()
+	if !found {
+		return 0, "", false
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return 0, "", false
+	}
+	cur := pageIDInt
+	for i := 0; i < 100; i++ {
+		var parent int
+		var t string
+		if err := database.DB.QueryRow(
+			`SELECT COALESCE(parent_id, 0), COALESCE(title, '') FROM pages WHERE id = ?`,
+			cur).Scan(&parent, &t); err != nil {
+			return 0, "", false
+		}
+		if parent == boxInt {
+			return cur, t, true
+		}
+		if parent == 0 {
+			return 0, "", false
+		}
+		cur = parent
+	}
+	return 0, "", false
+}
+
+// EnsureContactPerson は `取引先／社名／担当者／氏名` のページを返し、無ければ作ります。
+//
+// **なぜページに分けるのか**（2026-09-13 ユーザー決定）。連絡先は
+// メールアドレス・電話番号・氏名・役職…と**複数のタグが1人にぶら下がります**。
+// 社名ページにタグを平らに積むと、6つ並んだ `メールアドレス` が**誰のものか
+// 分からなくなり**（実データでそうなりました）、電話番号を足すこともできません。
+// **まとめる器が要る**——w-cms の器はページです。
+//
+// **会社の口は社名ページのまま**です（`order@…`・`info@…` のように人ではないもの）。
+// 人だと分かったものだけを分けます——分からないものを人のページにすると、
+// 存在しない担当者が名簿に並びます。
+func EnsureContactPerson(user *auth.User, companyID, name string) (string, error) {
+	name = NormalizeNameForIngest(name)
+	if name == "" {
+		return "", errors.New("担当者の名前が空です")
+	}
+	boxID, err := ensureChildByTitle(user, companyID, ContactPersonBoxTitle)
+	if err != nil {
+		return "", err
+	}
+	return ensureChildByTitle(user, boxID, name)
+}
+
+// ensureChildByTitle は題の一致する子を返し、無ければ作ります。
+//
+// **完全一致だけ**です（`findChildByTitle` と同じ規律）——揺れを機械が吸収すると
+// 別人が1人に潰れます。
+func ensureChildByTitle(user *auth.User, parentID, title string) (string, error) {
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return "", err
+	}
+	var id int
+	err = database.DB.QueryRow(
+		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
+		parentInt, title).Scan(&id)
+	if err == nil {
+		return fmt.Sprintf("%06d", id), nil
+	}
+	if !page.GetPerms(parentInt).CanWrite(user) {
+		return "", errors.New("親ページへ書き込む権限がありません")
+	}
+	return CreateChildPage(parentID, user.Username,
+		"<h1>"+stdhtml.EscapeString(title)+"</h1><p><br/></p>")
 }
 
 // PartnerRef は既にある相手ページ1枚（画面の選択肢に使います）。
