@@ -84,6 +84,22 @@ var validColumnTypes = map[ColumnType]bool{
 	ColCode: true, ColDateTime: true, ColRef: true, ColEmail: true,
 }
 
+// validColumnTypeNames は使える列型を並べて返します（知らせに書くため）。
+//
+// **一覧を文字列で持ちません**——型を足した日に、宣言と知らせの片方だけが古くなります。
+// 並びは決まった順にします（map の走査順は毎回変わるので、知らせが揺れる）。
+func validColumnTypeNames() []string {
+	order := []ColumnType{ColText, ColCode, ColNumber, ColDate, ColDateTime,
+		ColEnum, ColImage, ColRef, ColEmail}
+	out := make([]string, 0, len(validColumnTypes))
+	for _, t := range order {
+		if validColumnTypes[t] {
+			out = append(out, string(t))
+		}
+	}
+	return out
+}
+
 // VocabColumn は形式の1列（dl では1項目）の定義です。
 type VocabColumn struct {
 	// Field は③計算プラグインが使う機械キーです。**本文には現れません**——

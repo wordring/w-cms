@@ -213,7 +213,10 @@ func (s Settings) validate(path string) error {
 			return fmt.Errorf("%s: type_inference に空の見出し語があります", path)
 		}
 		if !validColumnTypes[typ] {
-			return fmt.Errorf("%s: type_inference の %q に未知の列型 %q があります（使えるのは text / code / number / date / enum / image）", path, word, typ)
+			// **使える型はここに書き写しません**——写すと型を足した日に片方が古くなります
+			// （2026-09-13 に `datetime`・`ref`・`email` が抜けたまま残っていました）。
+			return fmt.Errorf("%s: type_inference の %q に未知の列型 %q があります（使えるのは %s）",
+				path, word, typ, strings.Join(validColumnTypeNames(), " / "))
 		}
 	}
 	for word, values := range s.TagEnums {
