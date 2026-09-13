@@ -59,6 +59,20 @@ type Settings struct {
 	// TypeInference は見出し語→列型の推論辞書です（vocab.go の決定順序の3番目）。
 	TypeInference map[string]ColumnType `json:"type_inference"`
 
+	// TagEnums は見出し語→選択肢です（`在籍` → 在籍・休職・退社）。
+	//
+	// **縛りではなく、見分けるための表**です（2026-09-13 ユーザー:「語彙に無いものは
+	// 背景色で区別すればよいのでは？」）。ここに無い値も**そのまま書けます**——
+	// 画面が色で「見慣れない値」と知らせるだけで、拒否はしません。本文は人が書くもので、
+	// 編集モードで何でも打てる以上、拒否は入口でしか効かない見せかけの守りだからです。
+	//
+	// 既にある規律と同じ形です:「型不一致の通知（語彙モデル §5.1: **検証して通知する。
+	// 拒否はしない**）」。色の言葉も揃えます——薄青＝表にある値、薄黄＝表に無い値。
+	//
+	// **値で機械が分岐するものはここに置きません**（`段` はフォルダ名になり、
+	// `取引：自社` は照合から外す判断に使うので、いまどおり表引きで閉じます）。
+	TagEnums map[string][]string `json:"tag_enums,omitempty"`
+
 	// MaxUploadMiB は添付1件あたりの上限（MiB）です。0（未指定）なら既定の32
 	// （「サイズ上限32MiBは設定で変えられるように」——2026-08-31 ユーザー決定）。
 	MaxUploadMiB int `json:"max_upload_mib,omitempty"`
@@ -202,6 +216,24 @@ func (s Settings) validate(path string) error {
 			return fmt.Errorf("%s: type_inference の %q に未知の列型 %q があります（使えるのは text / code / number / date / enum / image）", path, word, typ)
 		}
 	}
+	for word, values := range s.TagEnums {
+		if strings.TrimSpace(word) == "" {
+			return fmt.Errorf("%s: tag_enums に空の見出し語があります", path)
+		}
+		if len(values) == 0 {
+			return fmt.Errorf("%s: tag_enums の %q に選択肢がありません", path, word)
+		}
+		seen := map[string]bool{}
+		for _, v := range values {
+			if strings.TrimSpace(v) == "" {
+				return fmt.Errorf("%s: tag_enums の %q に空の選択肢があります", path, word)
+			}
+			if seen[v] {
+				return fmt.Errorf("%s: tag_enums の %q に選択肢 %q が重複しています", path, word, v)
+			}
+			seen[v] = true
+		}
+	}
 	if s.MaxUploadMiB < 0 {
 		return fmt.Errorf("%s: max_upload_mib が負です", path)
 	}
@@ -255,6 +287,23 @@ func activeTypeInference() map[string]ColumnType {
 		return nil
 	}
 	return settings.TypeInference
+}
+
+// TagEnumDict は見出し語→選択肢の写しを返します（`/api/tag-schema` が配ります）。
+//
+// **エディタに語彙を手書きしない**——推論辞書と同じ扱いです（語彙モデル §7）。
+// 表と画面が同じ設定を見るので、語を足せば両方が同時に知ります。
+func TagEnumDict() map[string][]string {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings == nil {
+		return map[string][]string{}
+	}
+	out := make(map[string][]string, len(settings.TagEnums))
+	for k, v := range settings.TagEnums {
+		out[k] = append([]string(nil), v...)
+	}
+	return out
 }
 
 // MaxUploadBytes は設定の添付1件あたりの上限（バイト）を返します。

@@ -1272,6 +1272,7 @@
         wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
+        markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         wireContactRegister();       // 未登録の連絡先の［顧客］［仕入先］［自社］
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
@@ -1552,6 +1553,7 @@
     // 語→型の推論辞書。手書きせず /api/tag-schema から受け取る（サーバーの
     // resolveColumnType と同じ辞書＝検証と索引の型判定が食い違わない）。
     let typeInferenceDict = {};        // { "数量": "number", "検査日": "date", ... }
+    let tagEnumDict = {};              // { "在籍": ["在籍","休職","出向","退社"], ... }
 
     async function loadTagSchema() {
         try {
@@ -1562,6 +1564,7 @@
             voidTags = new Set((d && d.void) || []);
             vocabDefs = (d && d.vocab) || [];
             typeInferenceDict = (d && d.type_inference) || {};
+            tagEnumDict = (d && d.tag_enums) || {};
         } catch (e) {
             console.error('本文の語彙を取得できませんでした:', e);
             // **null のままにする。** 空オブジェクトを入れるとガード `if (!tagSchema)` が
@@ -1571,7 +1574,78 @@
             voidTags = new Set();
             vocabDefs = [];
             typeInferenceDict = {};
+            tagEnumDict = {};
         }
+    }
+
+    // ── タグの値を、表にあるかどうかで色分けする（2026-09-13）────────────
+    //
+    // ユーザー:「語彙に無いものは背景色で区別すればよいのでは？」。
+    //
+    // **すでにこの方針が書いてありました**——「型不一致の通知（語彙モデル §5.1:
+    // 検証して通知する。**拒否はしない**）」。表のセルには効いていて、タグには
+    // 効いていなかっただけです。色の言葉も揃えます:
+    //
+    //   薄青 … 表にある値（機械が読める・`.cell-known` と同じ）
+    //   薄黄 … 表に無い値（書けるが、見慣れない・`th[data-type]` と同じ黄）
+    //
+    // **拒否しないのは、拒否が見せかけだから**です。本文は人が書くもので、編集モードで
+    // 何でも打てる以上、入口で弾いても本文には入ります。**見えるほうが直せます**
+    // ——`仕入先` と `仕入れ先` の揺れは、弾かれるのではなく**目に付く**ことで消えます。
+    //
+    // 印は class なのでサニタイズもシリアライズも通りません（保存されない・実行時だけ）。
+    // ── 名前のほう: 辞書が知っている語か（2026-09-13）────────────────────
+    //
+    // ユーザー:「タグの標準機能として語彙にあれば色付けしてはどうでしょう？
+    // 汎用的な機能と思います」。
+    //
+    // タグの名前は**いつも薄青**でした（「薄青＝機械が読む」——どのタグも索引に
+    // 入るので、これ自体は本当です）。足りなかったのは**辞書がその語を知っているか**
+    // ——型や選択肢が決まっているかどうかで、そこが同じ見た目でした。
+    //
+    // **機能見出しの `.vocab-word` と同じ作り**にします: 編集モードでだけ、
+    // 辞書に無い名前を静かな灰色にする。書き手は自分の言葉が効いているかを
+    // その場で確かめられ、打ち間違い（`受信日時` を `受信時刻`）が目に見えます。
+    // 閲覧モードで変えないのは、読む人には「索引に入っている」で十分だからです。
+    //
+    // **灰色は間違いの印ではありません。** 知らない語も書けて索引にも入ります
+    // （語彙モデル §5.1: 検証して通知する。拒否はしない）。
+    function markTagVocabulary() {
+        const host = document.getElementById('w-editor-content');
+        if (!host) return;
+        host.querySelectorAll('dl[data-type="tags"] > dd').forEach(dd => {
+            dd.classList.remove('tag-known', 'tag-unlisted');
+        });
+        host.querySelectorAll('dl[data-type="tags"] > dt').forEach(dt => {
+            dt.classList.remove('tag-name-known');
+            const name = dt.textContent.trim();
+            const type = typeInferenceDict[name];
+            const values = tagEnumDict[name];
+
+            // ① 名前——辞書（型 or 選択肢）が知っている語か。
+            //
+            // **薄青は取り上げません**（どのタグも索引に入るので、あれは全部に付く
+            // 「DBに入る」の印）。足すのは別の軸で、点線の下線＝型や選択肢が決まっている語。
+            // `受信日時` と `受信時刻` はどちらも索引に入りますが、後者は型が決まらず
+            // 参照にも日時にもなりません——下線が出ないことがその場での合図です。
+            if (type || values) {
+                dt.classList.add('tag-name-known');
+                dt.title = values ? ('辞書にある語／選択肢: ' + values.join('・'))
+                    : ('辞書にある語／型: ' + type);
+            } else {
+                dt.title = '辞書にない語です（書けますし索引にも入りますが、'
+                    + '型は決まりません。決めるなら config/settings.json へ）';
+            }
+
+            // ② 値——選択肢が決まっている名前なら、その中にあるか。
+            if (!values || !values.length) return;
+            const dd = dt.nextElementSibling;
+            if (!dd || dd.tagName.toLowerCase() !== 'dd') return;
+            const text = dd.textContent.trim();
+            if (text === '') return; // 空欄は「まだ書いていない」で、間違いではない
+            dd.classList.toggle('tag-known', values.indexOf(text) >= 0);
+            dd.classList.toggle('tag-unlisted', values.indexOf(text) < 0);
+        });
     }
 
     // isCustomTag は名前にハイフンを含む要素（＝HTMLの仕様上かならずカスタム要素）かを返す。

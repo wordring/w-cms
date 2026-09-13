@@ -2041,3 +2041,42 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     font-size: 11px;
     color: var(--text-muted);
 }
+
+/* タグの値が表にあるか（2026-09-13 ユーザー:「語彙に無いものは背景色で区別すれば
+   よいのでは？」）。**表のセルと同じ色の言葉**を使う——薄青＝機械が読める値
+   （.cell-known と同じ #eff6ff）、薄黄＝表に無い値（th[data-type] と同じ #fef3c7）。
+
+   **薄黄は警告ではありません。** 赤（.cell-invalid）は「読めなかった」で、こちらは
+   「書けているが、表には無い」。休職・出向のような新しい言葉は、まずここに現れて
+   から設定へ入ります——**画面が語彙の育つ場所**になります。
+
+   閲覧モードでも出します（表のセルは編集モード限定ですが、タグの値は
+   読む人にとっても「決まった言葉かどうか」が意味を持つため）。 */
+#w-editor-content dl[data-type="tags"] > dd.tag-known {
+    background: #eff6ff;
+    border-radius: 4px;
+    padding: 0 4px;
+}
+#w-editor-content dl[data-type="tags"] > dd.tag-unlisted {
+    background: #fef3c7;
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
+/* 辞書が知っている語（2026-09-13 ユーザー:「タグの標準機能として語彙にあれば
+   色付けしてはどうでしょう？汎用的な機能と思います」）。
+
+   **薄青は取り上げません。** 名前側の薄青は「DBに入る」の印で、辞書に無い語
+   （`希望納期` など）も索引には入るので、そこは全部に付いたままが本当です
+   （verify-stage2 がこの不変条件を守っています。1度これを壊しかけました）。
+
+   足すのは**別の軸**——辞書が型や選択肢を知っている語かどうか。点線の下線で示します。
+   これが要るのは、**打ち間違いが同じ見た目になる**からです: `受信日時` と `受信時刻` は
+   どちらも索引に入りますが、後者は型が決まらず、参照にも日時にもなりません。
+   下線が出ないことが、その場での合図になります。
+
+   編集モード限定なのは `.vocab-word` と同じ理由で、**書き手のための印**だからです。 */
+body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
+    text-decoration: underline dotted var(--border-strong);
+    text-underline-offset: 3px;
+}

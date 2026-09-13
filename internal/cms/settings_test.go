@@ -82,6 +82,10 @@ func TestSettingsRejectsBrokenFile(t *testing.T) {
 		{"打ち間違えたキー", `{"type_inferrence": {"加工日": "date"}}`},
 		{"置き換えの連鎖", `{"char_folding": {"Φ": "φ", "φ": "f"}}`},
 		{"段の重複", `{"machine_stages": ["現行", "現行"]}`},
+		{"選択肢が空", `{"tag_enums": {"在籍": []}}`},
+		{"選択肢に空の値", `{"tag_enums": {"在籍": ["在籍", "  "]}}`},
+		{"選択肢の重複", `{"tag_enums": {"在籍": ["在籍", "在籍"]}}`},
+		{"選択肢の見出し語が空", `{"tag_enums": {"  ": ["在籍"]}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -191,5 +195,36 @@ func TestRebuildReloadsSettings(t *testing.T) {
 	}
 	if norm != "2026-06-15" {
 		t.Errorf("再構築が設定を読み直していません: norm_value=%q (期待 \"2026-06-15\")", norm)
+	}
+}
+
+// TestTagEnumsAreSuggestionsNotRules は、選択肢の表が**縛りではない**ことを固定します。
+//
+// 2026-09-13 ユーザー:「語彙に無いものは背景色で区別すればよいのでは？」。
+// 表に無い値も書けます——画面が色で知らせるだけで、**読み込みも保存も拒否しません**。
+// 既にある規律と同じです（語彙モデル §5.1: 検証して通知する。拒否はしない）。
+//
+// **拒否が見せかけだから**でもあります。本文は人が書くもので、編集モードで何でも
+// 打てる以上、入口で弾いても本文には入ります。見えるほうが直せます。
+func TestTagEnumsAreSuggestionsNotRules(t *testing.T) {
+	useTempSettings(t)
+	writeTestSettings(t, `{"tag_enums": {"在籍": ["在籍", "休職", "出向", "退社"]}}`)
+	if err := LoadSettings(); err != nil {
+		t.Fatalf("正しい設定が読めません: %v", err)
+	}
+	dict := TagEnumDict()
+	if len(dict["在籍"]) != 4 {
+		t.Fatalf("選択肢が読めていません: %v", dict)
+	}
+
+	// **写しであること**——呼び出し側が書き換えても設定は壊れない。
+	dict["在籍"][0] = "書き換え"
+	if again := TagEnumDict(); again["在籍"][0] != "在籍" {
+		t.Errorf("返した配列が設定の実体でした（写しを返すべき）: %v", again["在籍"])
+	}
+
+	// 表に無い語を含む本文も、**そのまま索引に入る**（拒否しない）。
+	if got := InferColumnType("在籍"); got != ColText {
+		t.Errorf("選択肢があるだけで型が変わっています: %v", got)
 	}
 }

@@ -19,7 +19,27 @@
     "受信日時": "datetime",
     "発信日時": "datetime",
     "送信日時": "datetime",
-    "添付": "number"
+    "添付": "number",
+    "メールアドレス": "text",
+    "電話番号": "text",
+    "FAX番号": "text",
+    "住所": "text",
+    "役職": "text",
+    "部署": "text",
+    "氏名": "text"
+  },
+  "tag_enums": {
+    "在籍": [
+      "在籍",
+      "休職",
+      "出向",
+      "退社"
+    ],
+    "取引": [
+      "顧客",
+      "仕入先",
+      "自社"
+    ]
   },
   "max_upload_mib": 32,
   "attachment_extensions": [
