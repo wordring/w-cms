@@ -53,6 +53,10 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// サーバー側（vocab_index の resolveColumnType）と同じ辞書を配ることで、
 		// 検証と索引の型判定が食い違わない。
 		"type_inference": TypeInferenceDict(),
+		// 見出し語→選択肢（`在籍` → 在籍・休職・退社）。**縛りではなく見分けるため**で、
+		// 表に無い値も書けます——画面が薄黄で「見慣れない値」と知らせるだけ
+		// （語彙モデル §5.1: 検証して通知する。拒否はしない）。
+		"tag_enums": TagEnumDict(),
 	})
 }
 
