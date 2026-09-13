@@ -47,6 +47,19 @@ const (
 	// 図面名称）は長音を壊さないよう text のままにします。
 	// 設計は docs/【考察】テキストの正規化.md（2026-09-04 決定・案2）。
 	ColCode ColumnType = "code"
+	// ColEmail は**メールの相手**です。値は `名前 <アドレス>`（メールヘッダと同じ形）で、
+	// 畳んだ値（norm_value）は**アドレスだけ**を小文字にしたもの。
+	//
+	// **アドレスが正で、名前は飾り**です（2026-09-13 ユーザー:「メールについては、
+	// メールアドレスを正規のコンポーネントとして扱えば良いのでは？名前などを変えても、
+	// アドレスが同じなら届くのですから」）。実データでも裏づけがありました——
+	// 11アドレス中、表示名が2通りになったものはゼロ（contacts.go の冒頭）。
+	//
+	// **もとは2つのタグでした**（`差出人` と `差出人アドレス`）。1人を2行で表すので
+	// タグの27%（実データで319行）が重複し、しかも**隣接で対応づける**必要が
+	// 生まれていました——CCが3人いると名前がずれる不具合を同日に踏んでいます。
+	// 1行にすれば、その形の間違いは構造的に起きません。
+	ColEmail ColumnType = "email"
 	// ColDateTime は**時刻を含む日時**です（date は日付だけ）。正は ISO 8601 で、
 	// 索引の併記値は **UTC へ揃えます**——並べ替えが辞書順で行われるため、
 	// タイムゾーンの違う値が混ざると静かに順序が狂います（実データはいま全件
@@ -68,7 +81,7 @@ const (
 // validColumnTypes は th の data-type 属性（列型の明示）として受け付ける値です。
 var validColumnTypes = map[ColumnType]bool{
 	ColText: true, ColNumber: true, ColDate: true, ColEnum: true, ColImage: true,
-	ColCode: true, ColDateTime: true, ColRef: true,
+	ColCode: true, ColDateTime: true, ColRef: true, ColEmail: true,
 }
 
 // VocabColumn は形式の1列（dl では1項目）の定義です。
@@ -329,9 +342,33 @@ func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {
 		return normalizeDateTime(toHalfWidth(strings.TrimSpace(raw)))
 	case ColRef:
 		return normalizeRef(raw)
+	case ColEmail:
+		return normalizeEmailTag(raw)
 	default:
 		return "", false // enum / image は正規化しない
 	}
+}
+
+// normalizeEmailTag は `名前 <アドレス>` からアドレスだけを取り出して小文字にします。
+//
+// **アドレスが正で、名前は飾り**です。引くときに使うのはこちらで、表示は生の値
+// （`value`）がそのまま出ます——「生テキストが常に正本、畳んだ値は併記」の形。
+//
+// 山括弧が無ければ、全体をアドレスとみなします（`suzuki@example.jp` だけの書き方）。
+// `@` が無いものは畳めません（ok=false）——名前しか書かれていないときで、
+// そのときは生の値だけが残ります（拒否はしない）。
+func normalizeEmailTag(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if i := strings.LastIndex(s, "<"); i >= 0 {
+		if j := strings.Index(s[i:], ">"); j > 0 {
+			s = s[i+1 : i+j]
+		}
+	}
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" || !strings.Contains(s, "@") {
+		return "", false
+	}
+	return s, true
 }
 
 // normalizeDateTime は日時を **UTC の RFC 3339** へ揃えます。

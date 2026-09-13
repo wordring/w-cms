@@ -155,8 +155,9 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 	rows := queryTags(t, idInt)
 	joined := strings.Join(rows, "|")
 	for _, want := range []string{
-		"差出人=南北スポーツ", "差出人アドレス=toa@example.jp",
-		"宛先アドレス=order@example.co.jp", // 表示名の無い宛先はアドレスのタグだけ
+		// **1人1タグ**（2026-09-13）。値はメールヘッダと同じ形。
+		"差出人=南北スポーツ <toa@example.jp>",
+		"宛先=order@example.co.jp", // 表示名が無ければアドレスだけ
 		"受信日時=" + wantDate,
 	} {
 		if !strings.Contains(joined, want) {
@@ -220,13 +221,22 @@ func TestEmlIntakeRejectsBroken(t *testing.T) {
 
 // ── アドレスの分離（検索漏れを無くす・2026-09-03） ────────────────────────
 
-// TestEmlIntakeSplitsAddresses は、差出人・宛先・CC が**表示名とアドレスの
-// 別々のタグ**になり、アドレス単体で索引から引けることを固定します。
+// TestEmlIntakeSplitsAddresses は、差出人・宛先・CC が**1人1タグ**になり、
+// **アドレスで**索引から引けることを固定します。
 //
-// 索引の逆引き（PagesByTag）は完全一致なので、ヘッダ全体を1つの値にすると
-// アドレスで検索しても1件も出ません。実データの宛先は表示名の中にもアドレスが
-// 紛れる形（`… 南　様 (admin@example.jp) <admin@example.jp>`）で、
-// 部分一致に頼るのは筋が悪い——値を原子的にするのが正しい直し方です。
+// 形は `名前 <アドレス>`（メールヘッダそのまま）で、引く鍵は畳んだ値＝アドレスだけ
+// （`ColEmail`）。**アドレスが正で、名前は飾り**です——2026-09-13 ユーザー:
+// 「メールアドレスを正規のコンポーネントとして扱えば良いのでは？名前などを変えても、
+// アドレスが同じなら届くのですから」。
+//
+// もとは `差出人` と `差出人アドレス` の2つに割っていました（2026-09-03）。
+// 値を原子的にする意図は正しかったのですが、**1人を2行で表す**ので:
+//
+//   - タグの27%が重複し（実データ1172行のうち319行）
+//   - `CCアドレス` の持ち主を**1つ手前の `CC`**で当てる必要が生まれ、
+//     CCが3人いると名前がずれました（2026-09-13 に実データで発見）
+//
+// 1行にすれば、その形の間違いは構造的に起きません。
 func TestEmlIntakeSplitsAddresses(t *testing.T) {
 	setupSaveTest(t)
 	inbox := setupInbox(t)
@@ -252,13 +262,14 @@ func TestEmlIntakeSplitsAddresses(t *testing.T) {
 		t.Fatalf("作られたページを読めません: %v", err)
 	}
 	html := string(body)
+	// **1人1タグ**（2026-09-13）。値はメールヘッダと同じ `名前 <アドレス>` で、
+	// 引く鍵は畳んだ値＝アドレスだけ（`ColEmail`）。もとは `差出人` と
+	// `差出人アドレス` の2つに割っていて、**隣接で対応づける**必要がありました。
 	for _, want := range []string{
-		"<dt>差出人</dt><dd>山田 太郎</dd>",
-		"<dt>差出人アドレス</dt><dd>yamada@example.co.jp</dd>",
-		"<dt>宛先</dt><dd>南 様</dd>",
-		"<dt>宛先アドレス</dt><dd>admin@example-works.co.jp</dd>",
-		"<dt>宛先アドレス</dt><dd>order@example.co.jp</dd>", // 2人目・表示名なし
-		"<dt>CCアドレス</dt><dd>cc@example.co.jp</dd>",
+		"<dt>差出人</dt><dd>山田 太郎 &lt;yamada@example.co.jp&gt;</dd>",
+		"<dt>宛先</dt><dd>南 様 &lt;admin@example-works.co.jp&gt;</dd>",
+		"<dt>宛先</dt><dd>order@example.co.jp</dd>", // 2人目・表示名なしはアドレスだけ
+		"<dt>CC</dt><dd>cc@example.co.jp</dd>",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("本文に %q がありません:\n%s", want, html)
@@ -267,12 +278,14 @@ func TestEmlIntakeSplitsAddresses(t *testing.T) {
 
 	// 肝心なのはここ——**アドレス単体で索引から引ける**（完全一致の逆引き）。
 	for _, pair := range [][2]string{
-		{"差出人アドレス", "yamada@example.co.jp"},
-		{"宛先アドレス", "admin@example-works.co.jp"},
-		{"宛先アドレス", "order@example.co.jp"},
-		{"CCアドレス", "cc@example.co.jp"},
+		{"差出人", "yamada@example.co.jp"},
+		{"宛先", "admin@example-works.co.jp"},
+		{"宛先", "order@example.co.jp"},
+		{"CC", "cc@example.co.jp"},
 	} {
-		ids, err := PagesByTag(database.DB, pair[0], pair[1])
+		// **アドレスで引きます**——生の値は `名前 <アドレス>` なので、鍵は畳んだ値。
+		// `ColEmail` の畳み方がアドレスの取り出しそのものです（vocab.go）。
+		ids, err := PagesByTagLoose(database.DB, pair[0], pair[1])
 		if err != nil {
 			t.Fatalf("逆引きエラー: %v", err)
 		}
@@ -345,8 +358,7 @@ func TestEmlIntakeWritesThreadAndReplyTo(t *testing.T) {
 	}
 	for _, want := range []string{
 		"<dt>返信元メッセージID</dt><dd>&lt;parent@example.jp&gt;</dd>",
-		"<dt>返信先</dt><dd>営業窓口</dd>",
-		"<dt>返信先アドレス</dt><dd>sales@example.jp</dd>",
+		"<dt>返信先</dt><dd>営業窓口 &lt;sales@example.jp&gt;</dd>",
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("返信のページに %q がありません:\n%s", want, body)

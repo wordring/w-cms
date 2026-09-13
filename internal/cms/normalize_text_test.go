@@ -59,13 +59,13 @@ func TestTextTagKeepsLongVowel(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000062"
-	body := `<dl data-type="tags"><dt>差出人</dt><dd>ひかり加工</dd></dl>`
+	body := `<dl data-type="tags"><dt>備考</dt><dd>ひかり加工</dd></dl>`
 	if err := SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 	var norm string
 	err := database.DB.QueryRow(
-		`SELECT norm_value FROM page_tags WHERE page_id = 62 AND name = '差出人'`).Scan(&norm)
+		`SELECT norm_value FROM page_tags WHERE page_id = 62 AND name = '備考'`).Scan(&norm)
 	if err != nil {
 		t.Fatalf("索引の読み出しエラー: %v", err)
 	}

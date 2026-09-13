@@ -153,8 +153,7 @@ func TestUnknownContactsSkipsPersonPageAddresses(t *testing.T) {
 	// **索引に載せます**——未登録の一覧は索引を引くので、本文を置くだけでは出てきません。
 	const recID = "009001"
 	recBody := "<h1>受信</h1><dl data-type=\"tags\">" +
-		"<dt>差出人</dt><dd>山田 太郎</dd>" +
-		"<dt>差出人アドレス</dt><dd>" + addr + "</dd></dl>"
+		"<dt>差出人</dt><dd>山田 太郎 &lt;" + addr + "&gt;</dd></dl>"
 	newPage(t, recID, recBody,
 		page.PageMeta{ParentID: TopPageID, Owner: "alice", Mode: page.DefaultMode})
 	if err := SyncIndex(recID, recBody); err != nil {
@@ -201,8 +200,7 @@ func TestUnknownContactsFollowsPageMove(t *testing.T) {
 	// 索引に「まだページになっていないアドレス」の材料を置く（通信記録らしいページ）。
 	const recID = "009002"
 	recBody := "<h1>受信</h1><dl data-type=\"tags\">" +
-		"<dt>差出人</dt><dd>山田 太郎</dd>" +
-		"<dt>差出人アドレス</dt><dd>" + addr + "</dd></dl>"
+		"<dt>差出人</dt><dd>山田 太郎 &lt;" + addr + "&gt;</dd></dl>"
 	newPage(t, recID, recBody,
 		page.PageMeta{ParentID: TopPageID, Owner: "alice", Mode: page.DefaultMode})
 	if err := SyncIndex(recID, recBody); err != nil {
@@ -255,4 +253,45 @@ func mustAtoiT(t *testing.T, s string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+// TestEmailTagLinksToContactPage は、**登録済みのアドレスが連絡先ページへのリンクに
+// なる**ことを固定します（2026-09-13 ユーザー:「表示するときにメールアドレスから
+// アドレス帳のページへリンクがあると良いと思います」）。
+//
+// **本文は書き換えません**——値は届いたままの `名前 <アドレス>` で、描画のときだけ
+// リンクを被せます。登録していない相手は素のまま出ます（壊れない）。
+func TestEmailTagLinksToContactPage(t *testing.T) {
+	user, companyID := setupPartnerTree(t)
+	personID, err := EnsureContactPerson(user, companyID, "山田 太郎")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const addr = "yamada@example-sports.co.jp"
+	if _, err := AddContactAddresses(personID, user.Username, []string{addr}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `<dl data-type="tags">` +
+		`<dt>差出人</dt><dd>山田 太郎 &lt;` + addr + `&gt;</dd>` +
+		`<dt>宛先</dt><dd>知らない人 &lt;nobody@example.invalid&gt;</dd></dl>`
+	got := RenderReferenceLinks(body)
+
+	// ① 登録済み——アドレスだけがリンクになり、名前はそのまま残る。
+	if !strings.Contains(got, `href="/`+personID+`"`) {
+		t.Errorf("連絡先ページへのリンクがありません: %s", got)
+	}
+	if !strings.Contains(got, "山田 太郎 &lt;") {
+		t.Errorf("表示名が消えています（見える文字を変えない約束）: %s", got)
+	}
+	if !strings.Contains(got, `>`+addr+`</a>`) {
+		t.Errorf("押せるのがアドレスの部分になっていません: %s", got)
+	}
+	// ② 未登録——素のまま（壊さない・薄赤にもしない）。
+	if strings.Contains(got, "nobody@example.invalid</a>") {
+		t.Errorf("登録していない相手までリンクになっています: %s", got)
+	}
+	if !strings.Contains(got, "知らない人 &lt;nobody@example.invalid&gt;") {
+		t.Errorf("未登録の値が壊れています: %s", got)
+	}
 }

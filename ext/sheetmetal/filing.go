@@ -205,7 +205,9 @@ func senderAddressOf(partPageID int) string {
 	}
 	var addr string
 	database.DB.QueryRow(
-		`SELECT value FROM page_tags WHERE page_id = ? AND name = '差出人アドレス' LIMIT 1`,
+		// **畳んだ値がアドレス**（生の値は `名前 <アドレス>`）。2026-09-13 に1人1タグへ。
+		`SELECT COALESCE(norm_value, value) FROM page_tags
+		  WHERE page_id = ? AND name = '差出人' LIMIT 1`,
 		srcID).Scan(&addr)
 	return strings.TrimSpace(addr)
 }

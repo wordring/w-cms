@@ -86,6 +86,19 @@ func RenderReferenceLinks(bodyHTML string) string {
 				return
 			}
 			eachDLPair(n, false, func(key string, dd *html.Node) bool {
+				// **メールの相手は、登録してあれば連絡先ページへのリンクにします**
+				// （2026-09-13 ユーザー:「表示するときにメールアドレスからアドレス帳の
+				// ページへリンクがあると良いと思います」）。
+				//
+				// **本文は書き換えません**——値は届いたままの `名前 <アドレス>` で、
+				// 描画のときだけリンクを被せます。登録・解除がその場で効き、
+				// 登録していない相手は素のまま出ます（壊れない）。
+				if InferColumnType(key) == ColEmail {
+					if linkEmailDD(dd) {
+						changed = true
+					}
+					return true
+				}
 				pageID, blockID, ok := parseRefValue(nodeText(dd))
 				if !ok {
 					// 形が合わなくても、**名前で宣言されたタグ**ならページ全体への
@@ -136,6 +149,54 @@ func linkRefDD(dd *html.Node, pageID, blockID string) {
 	}
 	a.AppendChild(&html.Node{Type: html.TextNode, Data: text})
 	dd.AppendChild(a)
+}
+
+// linkEmailDD は `名前 <アドレス>` のアドレス部分を、登録済みの連絡先ページへの
+// リンクにします（登録されていなければ何もしません）。
+//
+// **見える文字は変えません。** `小澤 美智子 <suzuki@…>` の `suzuki@…` だけが押せる
+// ようになり、名前はそのまま残ります——届いたままの値が見えていることが、
+// 「利用者が、書いた通りに入っていると信じられる」ための条件だからです。
+//
+// 認可は `ContactPageForAddress` の中で見ます（読めない相手は見つからない扱い）。
+// ここは**匿名でも通る描画経路**なので、利用者はまだ分かりません——
+// リンクを踏んだ先で通常の関門が判定します（`linkRefDD` と同じ考え方）。
+func linkEmailDD(dd *html.Node) bool {
+	text := strings.TrimSpace(nodeText(dd))
+	addr, ok := normalizeEmailTag(text)
+	if !ok {
+		return false // アドレスが無い（名前だけのヘッダ）
+	}
+	pageID, title, found := ContactPageForAddress(nil, addr)
+	if !found {
+		return false // まだアドレス帳に無い——素のまま出す
+	}
+
+	// 生の値の中で、アドレスの部分だけを差し替えます。
+	at := strings.LastIndex(strings.ToLower(text), addr)
+	if at < 0 {
+		return false
+	}
+	before, after := text[:at], text[at+len(addr):]
+
+	for dd.FirstChild != nil {
+		dd.RemoveChild(dd.FirstChild)
+	}
+	if before != "" {
+		dd.AppendChild(&html.Node{Type: html.TextNode, Data: before})
+	}
+	a := &html.Node{Type: html.ElementNode, Data: "a"}
+	a.Attr = []html.Attribute{
+		{Key: "href", Val: "/" + pageID},
+		{Key: "class", Val: "ref-link"},
+		{Key: "title", Val: title + " のページへ"},
+	}
+	a.AppendChild(&html.Node{Type: html.TextNode, Data: text[at : at+len(addr)]})
+	dd.AppendChild(a)
+	if after != "" {
+		dd.AppendChild(&html.Node{Type: html.TextNode, Data: after})
+	}
+	return true
 }
 
 // pageExists は派生索引でページの存在を引きます（描画のたびに呼ぶので索引で足りる。

@@ -255,9 +255,34 @@ func writeAddressTags(b *strings.Builder, name, raw string) {
 		return
 	}
 	for _, a := range list {
-		WriteTag(b, name, a.Name) // 表示名の無いアドレスでは書かれない
-		WriteTag(b, name+"アドレス", a.Address)
+		WriteTag(b, name, formatAddress(a.Name, a.Address))
 	}
+}
+
+// formatAddress は `名前 <アドレス>` を組み立てます（名前が無ければアドレスだけ）。
+//
+// **1人1タグです**（2026-09-13 ユーザー:「メールについては、メールアドレスを正規の
+// コンポーネントとして扱えば良いのでは？名前などを変えても、アドレスが同じなら
+// 届くのですから」）。もとは `差出人` と `差出人アドレス` の2つに割っていました:
+//
+//   - タグの**27%が重複**でした（実データ1172行のうち319行）
+//   - **隣接で対応づける**必要がありました——`CCアドレス` の持ち主は1つ手前の `CC`。
+//     CCが3人いると名前がずれる不具合を同日に踏んでいます（3人とも先頭の名前になった）
+//   - 索引の鍵が**名前**になっていました。揺れるのは名前のほうなのに
+//
+// 形はメールヘッダそのもの（RFC 5322）です。`.eml` に書いてある形と同じなので、
+// 取り込みは分解して組み直すのではなく**写すだけ**になりました。
+// 引くときの鍵は畳んだ値＝アドレスだけ（`ColEmail`・vocab.go）。
+func formatAddress(name, address string) string {
+	name = strings.TrimSpace(name)
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return name
+	}
+	if name == "" {
+		return address
+	}
+	return name + " <" + address + ">"
 }
 
 // PlainTextBlockHTML は平文の本文を `<pre>` 1つにします。

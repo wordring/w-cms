@@ -66,12 +66,29 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   ok(after.rows === before.rows - 1, '押した行が一覧から消える', before.rows + ' → ' + after.rows);
   ok(!after.still, target.addr + ' の行が消えた');
 
-  // 相手ページに載ったか（正本の確認）
+  // 取引先の木のどこかに載ったか（正本の確認）。
+  //
+  // **ページIDを決め打ちにしません**——押すボタンによって行き先が変わります
+  // （「○○を担当者にする」なら `社名／担当者／氏名`、「○○へ足す」なら社名ページ）。
+  // データを入れ直すとIDも変わるので、**木を辿って確かめます**。
   const landed = await page.evaluate(async (a) => {
-    const body = await (await fetch('/api/load?id=010264')).text();
-    return body.includes(a);
+    const seen = new Set();
+    const walk = async (id, depth) => {
+      if (depth > 5 || seen.has(id)) return false;
+      seen.add(id);
+      const body = await (await fetch('/api/load?id=' + id)).text();
+      if (body.includes(a)) return true;
+      const res = await fetch('/api/children?parent_id=' + id);
+      if (!res.ok) return false;
+      const kids = await res.json();
+      for (const k of (kids || [])) {
+        if (await walk(k.ID, depth + 1)) return true;
+      }
+      return false;
+    };
+    return walk('010263', 0);
   }, target.addr);
-  ok(landed, '相手ページ（010264）にアドレスが載った', target.label);
+  ok(landed, '取引先の木にアドレスが載った', target.label);
   ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
 
   await browser.close();
