@@ -128,7 +128,7 @@ func PagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
 	}
 	rows, err := db.Query(`
 		SELECT DISTINCT page_id FROM page_tags
-		WHERE field = ? AND value = ?
+		WHERE name = ? AND value = ?
 		ORDER BY page_id
 	`, name, value)
 	if err != nil {
@@ -167,7 +167,7 @@ func PagesByTagLoose(db ReadOnlyDB, name, value string) ([]int, error) {
 	}
 	rows, err := db.Query(`
 		SELECT DISTINCT page_id FROM page_tags
-		WHERE field = ? AND norm_value = ?
+		WHERE name = ? AND norm_value = ?
 		ORDER BY page_id
 	`, name, norm)
 	if err != nil {

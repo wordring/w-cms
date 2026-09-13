@@ -44,7 +44,7 @@ func TestTagsAndBlocksGoToDifferentTables(t *testing.T) {
 
 	var tagValue string
 	if err := database.DB.QueryRow(
-		`SELECT value FROM page_tags WHERE page_id = 70 AND field = '図面番号'`,
+		`SELECT value FROM page_tags WHERE page_id = 70 AND name = '図面番号'`,
 	).Scan(&tagValue); err != nil {
 		t.Fatalf("page_tags から読めません: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestNewTableTriggersRebuild(t *testing.T) {
 // 再構築が走ります**（2026-09-13 にログで気づきました）。
 func TestIndexStatementsAreNotTables(t *testing.T) {
 	if got := createdTableName(
-		"CREATE INDEX IF NOT EXISTS idx_page_tags_field ON page_tags(field);"); got != "" {
+		"CREATE INDEX IF NOT EXISTS idx_page_tags_field ON page_tags(name);"); got != "" {
 		t.Errorf("CREATE INDEX を表として拾っています: %q", got)
 	}
 	if got := createdTableName(

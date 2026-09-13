@@ -28,6 +28,7 @@ func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
 	}
 	blockNo := map[string]int{}
 	var firstErr error
+	tagSeq := 0
 	WalkElements(root, func(n *html.Node) {
 		if firstErr != nil || (n.Data != "table" && n.Data != "dl") {
 			return
@@ -44,7 +45,13 @@ func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
 		if n.Data == "table" {
 			err = syncVocabTable(tx, pageID, dataType, no, Attr(n, "data-id"), def, n)
 		} else {
-			err = syncVocabDL(tx, pageID, dataType, no, Attr(n, "data-id"), def, n)
+			// **タグはページ通しの番号**（本体と同じ規則）。`dl` ごとに 0 へ戻すと
+			// `page_tags` の主鍵が衝突します——この比較用コードで実際に踏みました。
+			var seq seqCounter
+			if dataType == TagsDataType {
+				seq = func() int { tagSeq++; return tagSeq - 1 }
+			}
+			err = syncVocabDL(tx, pageID, dataType, no, Attr(n, "data-id"), def, n, seq)
 		}
 		if err != nil {
 			firstErr = err
@@ -136,6 +143,19 @@ func TestVocabIndexObserverMatchesLegacyWalk(t *testing.T) {
 			tx, err := db.Begin()
 			if err != nil {
 				t.Fatalf("Beginエラー: %v", err)
+			}
+			// **前の subtest の行を洗い流します。** 新方式は OnPageStart がこれを
+			// やりますが、旧走査にはその段がありません——同じページ番号へ書き足す形
+			// だったので、`page_tags` に主鍵を付けた 2026-09-13 に初めて衝突しました
+			// （それまでは重複して積み上がっていたのが見えていなかった）。
+			for _, q := range []string{
+				`DELETE FROM vocab_index WHERE page_id = 900`,
+				`DELETE FROM page_tags WHERE page_id = 900`,
+			} {
+				if _, err := tx.Exec(q); err != nil {
+					tx.Rollback()
+					t.Fatalf("洗い流しエラー: %v", err)
+				}
 			}
 			if err := syncVocabAll(tx, 900, root); err != nil {
 				tx.Rollback()
