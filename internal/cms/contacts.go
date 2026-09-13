@@ -135,15 +135,12 @@ func Relations() []string { return []string{RelationCustomer, RelationSupplier, 
 
 // addressFields は索引からアドレスを拾う項目です。取り込みが書いている名前
 // （intake_eml.go の writeAddressTags）とそろえること。
-var addressFields = []string{"差出人アドレス", "宛先アドレス", "CCアドレス", "返信先アドレス"}
-
-// nameOfAddressField は、そのアドレス項目と対になる表示名の項目です。
-var nameOfAddressField = map[string]string{
-	"差出人アドレス": "差出人",
-	"宛先アドレス":  "宛先",
-	"CCアドレス":  "CC",
-	"返信先アドレス": "返信先",
-}
+//
+// **1人1タグになりました**（2026-09-13）。値は `名前 <アドレス>` で、畳んだ値
+// （`norm_value`）がアドレスだけ——引くのはそちらです。もとは `差出人` と
+// `差出人アドレス` の2つで、**位置で対応づけて**いました（`CCアドレス` の持ち主は
+// 1つ手前の `CC`）。その仕掛けはまるごと要らなくなりました。
+var addressFields = []string{"差出人", "宛先", "CC", "返信先"}
 
 // UnknownContact は「まだページになっていない相手」**1アドレス1件**です。
 //
@@ -191,22 +188,14 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	byAddr := map[string]*acc{}
 	namesByDomain := map[string]map[string]int{} // 社名の推薦用
 
-	// アドレスと表示名を**位置で対応づけます**（2026-09-13）。
+	// **位置合わせは要らなくなりました**（2026-09-13）。1タグが1人を表し、
+	// 畳んだ値（`norm_value`）がアドレス、生の値（`value`）が `名前 <アドレス>` です
+	// ——同じ行に両方あるので、対応づけそのものが消えました。
 	//
-	// もとはページと項目名だけで引いていました（`LIMIT 1`）。1通に CC が2人いると
-	// **2人とも先頭の名前になります**——実データで `shiozaki@toa-sports-machine.co.jp`
-	// の表示名が「南 公一」（自社）になっていました。ドメインでまとめていたころは
-	// 多数決に埋もれて見えず、1アドレス1行にして初めて表に出たものです。
-	//
-	// 取り込みは `<dt>CC</dt><dd>名前</dd><dt>CCアドレス</dd><dd>…</dd>` の順に書き、
-	// 索引の `row_no` が1つずつ増えます。つまり**名前はアドレスの1つ手前**です。
-	names, err := addressDisplayNames()
-	if err != nil {
-		return nil, err
-	}
-
+	// もとは `差出人` と `差出人アドレス` を**隣接で対応づけて**いて、CCが3人いると
+	// 名前がずれていました（3人とも先頭の名前になる。同日に実データで発見）。
 	rows, err := database.DB.Query(
-		`SELECT page_id, name, seq, value FROM page_tags
+		`SELECT page_id, value, COALESCE(norm_value, '') FROM page_tags
 		  WHERE name IN (`+sqlPlaceholders(len(addressFields))+`)`,
 		toAnySlice(addressFields)...)
 	if err != nil {
@@ -215,14 +204,13 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	// **先に読み切ってから解釈します**（行を読みながら別のクエリを投げない）。
 	type hit struct {
 		pageID int
-		field  string
-		rowNo  int
 		value  string
+		norm   string
 	}
 	var hits []hit
 	for rows.Next() {
 		var h hit
-		if err := rows.Scan(&h.pageID, &h.field, &h.rowNo, &h.value); err != nil {
+		if err := rows.Scan(&h.pageID, &h.value, &h.norm); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -234,7 +222,7 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	}
 
 	for _, h := range hits {
-		addr := normalizeEmail(h.value)
+		addr := normalizeEmail(h.norm)
 		if addr == "" || known[addr] {
 			continue
 		}
@@ -248,7 +236,8 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 			byAddr[addr] = a
 		}
 		a.count++
-		if n := names[nameKey{h.pageID, nameOfAddressField[h.field], h.rowNo - 1}]; n != "" {
+		// 表示名は**同じ行の生の値**から取れます（`名前 <アドレス>` の前半）。
+		if n := displayNameOf(h.value); n != "" {
 			a.names[n]++
 			d := domainOf(addr)
 			if namesByDomain[d] == nil {
@@ -470,42 +459,22 @@ func toAnySlice(ss []string) []any {
 	return out
 }
 
-// nameKey は表示名を位置で引くための鍵です（ページ・項目名・索引の行番号）。
-type nameKey struct {
-	pageID int
-	field  string
-	rowNo  int
-}
-
-// addressDisplayNames は `差出人`・`宛先`・`CC`・`返信先` の値を**位置つき**で集めます。
+// displayNameOf は `名前 <アドレス>` の前半（表示名）を返します（無ければ空）。
 //
-// **1通に同じ項目が何度も出ます**（CCが2人なら `CC` が2件）。ページと項目名だけで
-// 引くと先頭しか取れず、2人目以降に他人の名前が付きます——だから `row_no` ごと持ちます。
-// 対になるアドレスは**次の行**（`row_no + 1`）です。
-func addressDisplayNames() (map[nameKey]string, error) {
-	out := map[nameKey]string{}
-	fields := make([]string, 0, len(nameOfAddressField))
-	for _, n := range nameOfAddressField {
-		fields = append(fields, n)
+// **飾りのほうです**——引くのに使うのは畳んだ値（アドレス）で、これは人が
+// 「誰のことか」を見分けるためだけに出します。名前しか書かれていないヘッダ
+// （アドレス無し）では、その名前がそのまま返ります。
+func displayNameOf(raw string) string {
+	s := strings.TrimSpace(raw)
+	if i := strings.LastIndex(s, "<"); i >= 0 {
+		s = strings.TrimSpace(s[:i])
 	}
-	rows, err := database.DB.Query(
-		`SELECT page_id, name, seq, value FROM page_tags
-		  WHERE name IN (`+sqlPlaceholders(len(fields))+`)`,
-		toAnySlice(fields)...)
-	if err != nil {
-		return nil, err
+	// 取り込みが引用符ごと拾うことがある（`'南 公一'`）。表示のためだけなので落とす。
+	s = strings.Trim(s, `'"`)
+	if strings.Contains(s, "@") {
+		return "" // アドレスしか無い＝表示名は無い
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var k nameKey
-		var v string
-		if err := rows.Scan(&k.pageID, &k.field, &k.rowNo, &v); err != nil {
-			return nil, err
-		}
-		// 取り込みが引用符ごと拾うことがある（`'南 公一'`）。表示のためだけなので落とす。
-		out[k] = strings.Trim(strings.TrimSpace(v), `'"`)
-	}
-	return out, rows.Err()
+	return s
 }
 
 // normalizeEmail はアドレスを突き合わせ用に畳みます。
@@ -929,6 +898,60 @@ func validRelation(v string) bool {
 //
 // 見つからなければ ok=false——**呼ぶ側は読めた名前へ戻ります**。新しい顧客の1通目は
 // ここに無いのが正常で、そのときは人が打ちます。
+// ContactPageForAddress は、そのアドレスが載っている**連絡先ページ**を返します。
+//
+// 返すのは**アドレスが書いてあるページそのもの**（担当者ページがあればその人、
+// 無ければ社名ページ）です。`PartnerTitleForAddress` が「会社の名前」を答えるのに対し、
+// こちらは「この人のページ」を答えます——2026-09-13 ユーザー:「表示するときに
+// メールアドレスからアドレス帳のページへリンクがあると良いと思います」。
+//
+// **完全一致だけ**です。ドメインが同じでも別人なので、飛び先は決められません。
+//
+// **`user` が nil なら認可を見ません**——描画から呼ぶときの形です。
+// リンクを作るだけで中身は見せないので、`pageExists`（参照リンクの存在確認）と
+// 同じ規律にしています: 踏んだ先で通常の関門が判定します。
+// 存在の秘匿は匿名にだけ意味があり、そこは本文の公開設定が受け持ちます。
+func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, ok bool) {
+	mail := normalizeEmail(addr)
+	if mail == "" {
+		return "", "", false
+	}
+	rows, err := database.DB.Query(
+		`SELECT page_id, value FROM page_tags WHERE name = ?`, EmailTag)
+	if err != nil {
+		return "", "", false
+	}
+	type hit struct {
+		id    int
+		value string
+	}
+	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.id, &h.value); err != nil {
+			rows.Close()
+			return "", "", false
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+
+	for _, h := range found {
+		if normalizeEmail(h.value) != mail {
+			continue
+		}
+		if user != nil && !page.CanView(user, h.id) {
+			continue
+		}
+		if _, _, inPartner := PartnerOfPage(h.id); !inPartner {
+			continue // 取引先の外に書かれたアドレスは連絡先ではない
+		}
+		return fmt.Sprintf("%06d", h.id), pageTitleByID(h.id), true
+	}
+	return "", "", false
+}
+
 func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
 	mail := normalizeEmail(addr)
 	if mail == "" {

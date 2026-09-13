@@ -26,7 +26,11 @@
     "住所": "text",
     "役職": "text",
     "部署": "text",
-    "氏名": "text"
+    "氏名": "text",
+    "差出人": "email",
+    "宛先": "email",
+    "CC": "email",
+    "返信先": "email"
   },
   "tag_enums": {
     "在籍": [
