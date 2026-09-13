@@ -181,6 +181,70 @@ func TestUnknownContactsSkipsPersonPageAddresses(t *testing.T) {
 	}
 }
 
+// TestUnknownContactsFollowsPageMove は、**ページを動かすと一覧が追従する**ことを
+// 固定します（2026-09-13 ユーザー:「間違えたときに、アドレスに対応するページを移動したら、
+// DBも追従しますか？これはアドレスに限らず重要な特性と思います」）。
+//
+// もとは `メールアドレス` タグを持つページがどこかに在れば登録済みと数えていました。
+// すると連絡先ページを取引先の外へ動かしたとき、**未登録にも出てこないのに照合もできない**
+// という行方不明の状態になります——片付いた顔をして効かない、いちばん気づきにくい形です。
+func TestUnknownContactsFollowsPageMove(t *testing.T) {
+	user, companyID := setupPartnerTree(t)
+	personID, err := EnsureContactPerson(user, companyID, "山田 太郎")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const addr = "yamada@example-sports.co.jp"
+	if _, err := AddContactAddresses(personID, user.Username, []string{addr}); err != nil {
+		t.Fatal(err)
+	}
+	// 索引に「まだページになっていないアドレス」の材料を置く（通信記録らしいページ）。
+	const recID = "009002"
+	recBody := "<h1>受信</h1><dl data-type=\"tags\">" +
+		"<dt>差出人</dt><dd>山田 太郎</dd>" +
+		"<dt>差出人アドレス</dt><dd>" + addr + "</dd></dl>"
+	newPage(t, recID, recBody,
+		page.PageMeta{ParentID: TopPageID, Owner: "alice", Mode: page.DefaultMode})
+	if err := SyncIndex(recID, recBody); err != nil {
+		t.Fatal(err)
+	}
+
+	inList := func() bool {
+		list, err := UnknownContacts(user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range list {
+			if c.Address == addr {
+				return true
+			}
+		}
+		return false
+	}
+
+	if inList() {
+		t.Fatal("取引先の下に在るのに未登録へ出ています")
+	}
+	// **取引先の外へ動かす**——間違えて動かしたときの形。
+	if _, _, err := SetPageParent(user, personID, TopPageID); err != nil {
+		t.Fatalf("移動できません: %v", err)
+	}
+	if !inList() {
+		t.Error("取引先の外へ動かしたのに未登録へ戻ってきません（行方不明の状態）")
+	}
+	// 戻せば、また消える。
+	box, err := ensureChildByTitle(user, companyID, ContactPersonBoxTitle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := SetPageParent(user, personID, box); err != nil {
+		t.Fatalf("戻せません: %v", err)
+	}
+	if inList() {
+		t.Error("取引先の下へ戻したのに未登録に残っています")
+	}
+}
+
 func mustAtoiT(t *testing.T, s string) int {
 	t.Helper()
 	n := 0

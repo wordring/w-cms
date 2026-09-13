@@ -401,23 +401,52 @@ func looksLikeCompany(name string) bool {
 }
 
 // knownEmails は既にページに登録済みのアドレスを集めます。
+//
+// **「取引先の下に在る」ことまで見ます**（2026-09-13）。もとは `メールアドレス` タグを
+// 持つページがどこかに在れば登録済みと数えていました。すると**連絡先ページを取引先の
+// 外へ動かしたとき、アドレスが行方不明になります**——未登録の一覧には出てこないのに、
+// 照合（`PartnerTitleForAddress`）は会社へ丸められないので答えられない。
+// **片付いた顔をして効かない**、いちばん気づきにくい壊れ方です（同日に実測）。
+//
+// 木で判定するので、**動かせば一覧が追従します**——外へ出せば戻ってきて、
+// 入れ直せばまた消えます。人が間違えて動かしても、画面がそれを教えます。
 func knownEmails() (map[string]bool, error) {
-	rows, err := database.DB.Query(`SELECT value FROM vocab_index WHERE field = ?`, EmailTag)
+	rows, err := database.DB.Query(
+		`SELECT page_id, value FROM vocab_index WHERE field = ?`, EmailTag)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	known := map[string]bool{}
+	type hit struct {
+		id    int
+		value string
+	}
+	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
+	var found []hit
 	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
+		var h hit
+		if err := rows.Scan(&h.id, &h.value); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		if a := normalizeEmail(v); a != "" {
-			known[a] = true
-		}
+		found = append(found, h)
 	}
-	return known, rows.Err()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	known := map[string]bool{}
+	for _, h := range found {
+		a := normalizeEmail(h.value)
+		if a == "" {
+			continue
+		}
+		if _, _, ok := PartnerOfPage(h.id); !ok {
+			continue // 取引先の外に書かれたアドレスは「登録済み」ではない
+		}
+		known[a] = true
+	}
+	return known, nil
 }
 
 // displayNameFor は同じページの表示名タグを1つ読みます（無ければ空）。
