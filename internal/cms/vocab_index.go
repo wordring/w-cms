@@ -88,28 +88,47 @@ func (vocabIndexPlugin) Schema() []string {
 		// 数でも別物です（実測・212ページ）: タグ1172行に対し業務ブロックは全部で230行。
 		// **索引の84%がタグ**で、`block_id` が埋まるのは2.5%だけ（タグはたいていページ単位）。
 		//
+		// **列はタグのために選び直しました**（2026-09-13 ユーザー:「なんだかすっきり
+		// しませんね」）。最初は `vocab_index` から `data_type` を抜いただけの借り物で、
+		// **8列のうち3列が誰にも読まれていませんでした**（実測・タグ1172行）:
+		//
+		//	block_no   全行が 0（情報量ゼロ）        → 落とした
+		//	block_id   2.5%しか埋まらず、読む所ゼロ   → 落とした
+		//	           （参照の指し先8個も、すべて添付の要素でタグの dl ではなかった）
+		//	norm_num   4.9%しか入らず、読む所ゼロ     → 落とした
+		//
+		// 残した5列は全部働いています:
+		//
+		//	page_id    どのページか
+		//	seq        **ページの中の通し番号**。`dt`/`dd` の対の順で、
+		//	           「`CCアドレス` の表示名は1つ手前の `CC`」の対応づけに要る
+		//	           （これが無いと、CCが2人のとき両方が先頭の名前になります）
+		//	name       名前（`dt` の表示文字）。**これが鍵**——機械キーは持たない
+		//	value      値（`dd` の表示文字）。**これが正本**
+		//	norm_value 比較用に畳んだ値（`受信日時` の UTC 化など・9%で value と異なる）
+		//
+		// `seq` は**ページ通し**です（`dl` ごとに 0 へ戻していた `row_no` を改めました）。
+		// 1ページに `dl` を2つ置けるので、`dl` ごとの番号では鍵になりません
+		// ——いまの実データでは衝突ゼロですが、それは1つしか無いからで、構造の保証では
+		// ありません。主鍵にしたことで、同じ位置の二重書き込みも起こせなくなりました。
+		//
 		// `data_type` 列はありません——ここに入るものは全部タグだからです。
-		// それ以外の列は同じ形にしてあります（`row_no` は `dt`/`dd` の対の順番で、
-		// 「差出人アドレスの表示名は1つ手前」のような位置の対応づけに要る）。
 		//
 		// **名前は一度使って消したもの**です（`page_tags` は 2026-08-30 に vocab_index へ
 		// 吸収されました）。同じ名前で戻したのは、これが**そのとき畳んだものを畳み直す**
 		// 話ではなく、**タグが業務データの本体になった**という別の理由だからです。
 		`CREATE TABLE IF NOT EXISTS page_tags (
-			page_id INTEGER,
-			block_no INTEGER,
-			block_id TEXT,
-			row_no INTEGER,
-			field TEXT,
-			value TEXT,
+			page_id INTEGER NOT NULL,
+			seq INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			value TEXT NOT NULL,
 			norm_value TEXT,
-			norm_num REAL,
+			PRIMARY KEY (page_id, seq),
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
-		`CREATE INDEX IF NOT EXISTS idx_page_tags_page ON page_tags(page_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_page_tags_field ON page_tags(field);`,
-		`CREATE INDEX IF NOT EXISTS idx_page_tags_field_value ON page_tags(field, value);`,
-		`CREATE INDEX IF NOT EXISTS idx_page_tags_field_norm ON page_tags(field, norm_value);`,
+		// ページ単位の引きは主鍵の先頭列で足りるので、`page_id` 単独の索引は要りません。
+		`CREATE INDEX IF NOT EXISTS idx_page_tags_name_value ON page_tags(name, value);`,
+		`CREATE INDEX IF NOT EXISTS idx_page_tags_name_norm ON page_tags(name, norm_value);`,
 	}
 }
 
@@ -151,7 +170,9 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 	if el.Data == "table" {
 		return true, syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, Attr(el, "data-id"), def, el)
 	}
-	return true, syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, Attr(el, "data-id"), def, el)
+	// **タグはページ通しの番号**（主鍵にするため。`dl` が2つあっても衝突しない）。
+	return true, syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, Attr(el, "data-id"), def, el,
+		tagSeqOf(ctx, dataType))
 }
 
 // syncVocabSection は形式を持つ section の**素の中身**（data-type を持たない dl と table）を
@@ -214,7 +235,8 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 		switch n.Data {
 		case "dl":
 			no := ctx.Counter("vocab_index:" + dataType)
-			firstErr = syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, blockIDOr(n), def, n)
+			firstErr = syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, blockIDOr(n), def, n,
+				tagSeqOf(ctx, dataType))
 		case "table":
 			no := ctx.Counter("vocab_index:" + itemsType)
 			firstErr = syncVocabTable(ctx.Tx, ctx.PageID, itemsType, no, blockIDOr(n), itemsDef, n)
@@ -288,12 +310,33 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, blockI
 // **読む者が1人もいなかった**ため 2026-08-30（D-1 の第一歩）で吸収した。「親ページID」を
 // 取り込まない旧ガードも同時に消えた——親はサイドカーが正本で、この語を親として
 // 解釈するコードはもう無い（書けば普通のタグとして索引に載るだけ・不活性）。
-func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, blockID string, def VocabDef, dl *html.Node) error {
+// tagSeqOf は、タグならページ通しの番号を配る関数を、そうでなければ nil を返します。
+//
+// 数えるのは `ObserveContext` です——観察係はページ間で使い回される singleton なので、
+// そちらに持たせると番号がページをまたいで漏れます（walk.go の Counter の説明）。
+func tagSeqOf(ctx *ObserveContext, dataType string) seqCounter {
+	if dataType != TagsDataType {
+		return nil
+	}
+	return func() int { return ctx.Counter("page_tags:seq") }
+}
+
+// seqCounter は次の通し番号を返す関数です（タグのときだけ渡します）。
+//
+// **タグの番号はページ通し**にします（2026-09-13）。`dl` ごとに 0 へ戻すと、
+// 1ページに `dl` が2つあったとき番号が衝突し、主鍵にできません。
+// nil なら `dl` ごとの連番（業務ブロックはこれまでどおり `block_no` と対で使う）。
+type seqCounter func() int
+
+func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, blockID string, def VocabDef, dl *html.Node, nextSeq seqCounter) error {
 	rowNo := 0
 	var firstErr error
 	eachDLPair(dl, false, func(key string, dd *html.Node) bool {
 		if key == "" {
 			return true // dt より前の dd は鍵が決まらない
+		}
+		if nextSeq != nil {
+			rowNo = nextSeq()
 		}
 		typ := InferColumnType(key)
 		if col, ok := def.columnFor(key); ok {
@@ -328,10 +371,13 @@ func insertVocabEntry(tx *sql.Tx, pageID int, dataType string, blockNo int, bloc
 	// `data_type='tags'` を思い出す必要が消えました（それを1週間で3回忘れたのが
 	// 分けた理由です）。
 	if dataType == TagsDataType {
+		// タグの表は列がタグのために選んであります（block_no / block_id / norm_num は
+		// 誰も読まなかったので持ちません。上の Schema の説明）。`rowNo` はここでは
+		// **ページ通しの `seq`** です（呼ぶ側が ctx.Counter で採る）。
 		_, err := tx.Exec(
-			`INSERT INTO page_tags (page_id, block_no, block_id, row_no, field, value, norm_value, norm_num)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			pageID, blockNo, blockID, rowNo, field, value, norm, normNum)
+			`INSERT INTO page_tags (page_id, seq, name, value, norm_value)
+			 VALUES (?, ?, ?, ?, ?)`,
+			pageID, rowNo, field, value, norm)
 		return err
 	}
 	_, err := tx.Exec(

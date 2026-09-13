@@ -20,8 +20,8 @@ import (
 func queryTags(t *testing.T, pageID int) []string {
 	t.Helper()
 	rows, err := database.DB.Query(
-		`SELECT field, value FROM page_tags
-		 WHERE page_id = ? ORDER BY field, value`, pageID)
+		`SELECT name, value FROM page_tags
+		 WHERE page_id = ? ORDER BY name, value`, pageID)
 	if err != nil {
 		t.Fatalf("page_tagsのクエリでエラー: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestTagValueIsIndexedExactlyAsDisplayed(t *testing.T) {
 	for _, c := range cases {
 		var got string
 		err := database.DB.QueryRow(
-			`SELECT value FROM page_tags WHERE page_id = 60 AND field = ?`,
+			`SELECT value FROM page_tags WHERE page_id = 60 AND name = ?`,
 			c.name).Scan(&got)
 		if err != nil {
 			t.Errorf("タグ %q が索引にありません: %v", c.name, err)

@@ -68,7 +68,7 @@ func AnalyzedAPIHandler(w http.ResponseWriter, r *http.Request) {
 // analyzedAttachments は「添付ID → 生まれたページ」を返します。
 func analyzedAttachments(user *auth.User, pageID string) (map[string]analyzedResult, error) {
 	rows, err := database.DB.Query(
-		`SELECT page_id, value FROM page_tags WHERE field = ? AND value LIKE ?`,
+		`SELECT page_id, value FROM page_tags WHERE name = ? AND value LIKE ?`,
 		SourceRefTag, pageID+"-%")
 	if err != nil {
 		return nil, err

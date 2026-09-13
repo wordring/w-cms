@@ -45,7 +45,7 @@ func RelatedPages(db ReadOnlyDB, pageID int) ([]int, error) {
 
 	// ── 外向き: このページのタグが指しているページ ──
 	rows, err := db.Query(`
-		SELECT field, value FROM page_tags
+		SELECT name, value FROM page_tags
 		WHERE page_id = ?
 	`, pageID)
 	if err != nil {
@@ -90,7 +90,7 @@ func RelatedPages(db ReadOnlyDB, pageID int) ([]int, error) {
 		return sortedKeys(found), nil
 	}
 	back, err := db.Query(`
-		SELECT page_id, field, value FROM page_tags
+		SELECT page_id, name, value FROM page_tags
 		WHERE value LIKE ?
 	`, self+"%")
 	if err != nil {

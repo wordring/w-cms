@@ -31,7 +31,7 @@ func TestPageTagsFromDL(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	rows, err := database.DB.Query(`SELECT field, value FROM page_tags WHERE page_id = ? ORDER BY field, value`, 40)
+	rows, err := database.DB.Query(`SELECT name, value FROM page_tags WHERE page_id = ? ORDER BY name, value`, 40)
 	if err != nil {
 		t.Fatalf("vocab_indexのクエリでエラー: %v", err)
 	}

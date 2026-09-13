@@ -92,16 +92,24 @@ func main() {
 	// cms.db は data/master から再生成できる派生索引なので、作り直すのが正しい。
 	drifted := cms.DriftedSchemaTables(database.DB)
 
-	// プラグインのテーブルを作成する（各ユースケース固有のテーブル）
-	if err := cms.ApplySchema(database.DB); err != nil {
-		log.Fatalf("プラグインスキーマ作成エラー: %v", err)
-	}
-
+	// **ずれていたら、作り直しが先です**（2026-09-13）。もとは ApplySchema を先に
+	// 流していましたが、**列を変えた表に新しい索引を張ろうとして起動が落ちます**
+	// ——`page_tags` の列を選び直した日に踏みました:
+	//
+	//	プラグインスキーマ作成エラー: SQL logic error: no such column: name
+	//
+	// 作り直し（RebuildDatabase）は表を落として作り直すので、そのあとで
+	// ApplySchema を流せば、索引は新しい表に張られます。
 	if len(drifted) > 0 {
 		log.Printf("テーブル定義の変更を検出しました（%v）。派生索引を再構築します。", drifted)
 		if err := cms.RebuildDatabase(); err != nil {
 			log.Fatalf("スキーマ変更に伴う再構築でエラー: %v", err)
 		}
+	}
+
+	// プラグインのテーブルを作成する（各ユースケース固有のテーブル）
+	if err := cms.ApplySchema(database.DB); err != nil {
+		log.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 
 	// DBが空でファイル（data/master）が存在する場合は自動再構築する。

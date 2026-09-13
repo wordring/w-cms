@@ -26,11 +26,13 @@ type vocabRow struct {
 // 試験は、下の `queryTagRows` を使います）。
 func queryVocabRows(t *testing.T, pageID int) []vocabRow {
 	t.Helper()
+	// **列の形が違うので、タグ側は足りないものを埋めて揃えます**
+	// （`page_tags` は block_no / block_id を持ちません——誰も読まないので落としました）。
 	rows, err := database.DB.Query(
 		`SELECT data_type, block_no, block_id, row_no, field, value, norm_value
 		   FROM vocab_index WHERE page_id = ?
 		 UNION ALL
-		 SELECT 'tags', block_no, block_id, row_no, field, value, norm_value
+		 SELECT 'tags', 0, '', seq, name, value, norm_value
 		   FROM page_tags WHERE page_id = ?
 		 ORDER BY 1, 2, 4, 5`, pageID, pageID)
 	if err != nil {
