@@ -201,6 +201,9 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/intake/memo", cms.NewMemoAPIHandler)
 	// メールから拾った相手をページにする（アドレス帳）。
 	protected.HandleFunc("/api/contacts/register", cms.RegisterContactAPIHandler)
+	// 分類の取り消し（未分類へ戻す）。**ページは消しません**——押し間違いの取り消しが
+	// 別の押し間違いでページを消すことになっては割に合わないためです。
+	protected.HandleFunc("/api/contacts/unfile", cms.UnfileContactAPIHandler)
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 

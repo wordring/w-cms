@@ -61,6 +61,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -765,6 +766,110 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "page_id": pageID, "title": name,
 	})
+}
+
+// UnfileContactAPIHandler は POST /api/contacts/unfile です。
+// 入力: {"page_id":"010274", "address":"ms-noreply@microsoft.com"}
+//
+// **分類を取り消して未分類へ戻します**（2026-09-13 ユーザー:「間違えてアドレスを
+// 分類した場合、どうやって未分類に戻しますか？」）。
+//
+// やることは**タグを1つ外すだけ**です。未登録の一覧は「どこにも
+// `メールアドレス` タグが無いアドレス」という**索引からの派生**なので、
+// 外せば自動的に戻ります（解析済みの印と同じ形——状態を別に持たない）。
+//
+// **ページは消しません。** 間違えて作った相手ページが空になることはありますが、
+// 消すかどうかは人が決めます——押し間違いの取り消しが、**別の押し間違いで
+// ページを消す**ことになっては割に合いません。空になったことは返り値で伝えます。
+func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	user := auth.CurrentUser(r)
+	if user == nil {
+		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		return
+	}
+	var req struct {
+		PageID  string `json:"page_id"`
+		Address string `json:"address"`
+	}
+	if !DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, ok := page.NormalizeID(strings.TrimSpace(req.PageID))
+	if !ok {
+		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		return
+	}
+	addr := normalizeEmail(req.Address)
+	if addr == "" {
+		JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
+		return
+	}
+	idInt, err := strconv.Atoi(pageID)
+	if err != nil {
+		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		return
+	}
+	// **取引先の下だけ**（ここは連絡先の分類を取り消す口で、本文の一般的な編集口では
+	// ありません。よそのページのタグを消せる道を増やさない）。
+	if _, _, inPartner := PartnerOfPage(idInt); !inPartner {
+		JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページではありません")
+		return
+	}
+	if !page.RequirePageWrite(w, r, pageID) {
+		return
+	}
+
+	removed := 0
+	if err := RewriteBody(pageID, user.Username, func(current string) string {
+		removed = 0
+		return removeEmailTag(current, addr, &removed)
+	}); err != nil {
+		JSONFail(w, http.StatusInternalServerError, "外せません: "+err.Error())
+		return
+	}
+	if removed == 0 {
+		JSONFail(w, http.StatusNotFound, "そのアドレスはこのページにありません")
+		return
+	}
+	auth.Audit(user.Username, "contact.unfile", pageID+" -"+addr)
+
+	// 残りを数えて、**空になったことだけ伝えます**（消すのは人の判断）。
+	var left int
+	database.DB.QueryRow(
+		`SELECT COUNT(*) FROM vocab_index WHERE page_id = ? AND field = ?`,
+		idInt, EmailTag).Scan(&left)
+	var children int
+	database.DB.QueryRow(`SELECT COUNT(*) FROM pages WHERE parent_id = ?`, idInt).Scan(&children)
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": true, "page_id": pageID, "address": addr,
+		"remaining": left, "children": children,
+		"empty": left == 0 && children == 0,
+	})
+}
+
+// removeEmailTag は本文から `<dt>メールアドレス</dt><dd>そのアドレス</dd>` を外します。
+//
+// **畳んだ一致で探します**——本文には大文字混じりで書かれていることがあるためです
+// （`normalizeEmail` は小文字化と前後の空白落としだけ）。
+// 空になった可変タグの `dl` も畳みます（空の箱を残さない）。
+func removeEmailTag(body, addr string, removed *int) string {
+	re := regexp.MustCompile(`<dt>` + regexp.QuoteMeta(EmailTag) + `</dt><dd>([^<]*)</dd>`)
+	out := re.ReplaceAllStringFunc(body, func(m string) string {
+		sub := re.FindStringSubmatch(m)
+		if sub != nil && normalizeEmail(sub[1]) == addr {
+			*removed++
+			return ""
+		}
+		return m
+	})
+	// `<dl data-type="tags"></dl>` が残ったら外す。
+	return regexp.MustCompile(`<dl data-type="tags">\s*</dl>`).ReplaceAllString(out, "")
 }
 
 // validRelation は取引の値を表引きで確かめます。
