@@ -228,3 +228,26 @@ func TestTagEnumsAreSuggestionsNotRules(t *testing.T) {
 		t.Errorf("選択肢があるだけで型が変わっています: %v", got)
 	}
 }
+
+// TestValidColumnTypeNamesCoversAll は、**知らせが型の一覧を取りこぼさない**ことを
+// 固定します。
+//
+// 2026-09-13 に `datetime`・`ref`・`email` が抜けたまま残っていました——エラー文へ
+// 手で書き写していたためです。型を足した日に片方だけ古くなる形は、このプロジェクトが
+// 何度も踏んでいます（設定とコードの二重管理）。
+func TestValidColumnTypeNamesCoversAll(t *testing.T) {
+	got := validColumnTypeNames()
+	if len(got) != len(validColumnTypes) {
+		t.Errorf("知らせに出る型が %d 個、使える型は %d 個——並び順の表から漏れています: %v",
+			len(got), len(validColumnTypes), got)
+	}
+	seen := map[string]bool{}
+	for _, n := range got {
+		seen[n] = true
+	}
+	for typ := range validColumnTypes {
+		if !seen[string(typ)] {
+			t.Errorf("型 %q が知らせに出ません", typ)
+		}
+	}
+}
