@@ -3870,6 +3870,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     page_id: target,
+                    // **人の名前があれば担当者ページへ**（2026-09-13）。無ければ会社の口として
+                    // 社名ページへ入ります（`order@…` のような人でないアドレス）。
+                    person_name: btn.dataset.person || '',
                     addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
                 }),
             });
