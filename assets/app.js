@@ -1271,6 +1271,7 @@
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
         wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
+        refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
         wireContactRegister();       // 未登録の連絡先の［顧客］［仕入先］［自社］
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
@@ -3025,7 +3026,25 @@
                 if (el.tagName === 'DT') dt = el;
                 else if (el.tagName === 'DD' && dt) { pairs.push({ dt, dd: el }); dt = null; }
             }
-            const folded = pairs.filter(p => MACHINE_TAG_SUFFIX.test(p.dt.textContent.trim()));
+            // **対になる人間向けの名前があるときだけ畳みます**（2026-09-13）。
+            //
+            // この規則は「`差出人` と `差出人アドレス` の重複」が発端でした。ところが
+            // `〜アドレス` で終わる名前をすべて畳むと、**連絡先ページの
+            // `メールアドレス` まで隠れます**——そこには対になる名前が無く、
+            // アドレスこそがそのページの中身です。実際、担当者ページを開いても
+            // アドレスが「詳細」の中で、何も書いていないページに見えていました。
+            //
+            // `メッセージID`・`ハッシュ` は対の有無に関わらず機械専用なので畳みます。
+            const names = new Set(
+                Array.from(dl.children)
+                    .filter(el => el.tagName === 'DT')
+                    .map(el => el.textContent.trim()));
+            const folded = pairs.filter(p => {
+                const name = p.dt.textContent.trim();
+                if (!MACHINE_TAG_SUFFIX.test(name)) return false;
+                if (!name.endsWith('アドレス')) return true; // ID・ハッシュは常に畳む
+                return names.has(name.slice(0, -'アドレス'.length));
+            });
             // 畳む対象が無い、または**全部が対象**なら何もしない
             // （空のタグ欄と「詳細」だけが残るのは、隠しているようで気味が悪い）。
             if (!folded.length || folded.length === pairs.length) return;
@@ -3171,6 +3190,73 @@
     // `tel:` はサニタイザが元から許すスキームなので、**ソフトフォンがあれば今日から
     // 押せます**。CTI の発信APIへ変えるときも、記録の形は変わりません。
     const PHONE_TAG = '電話番号';
+
+    // ── 分類の取り消し（2026-09-13）─────────────────────────────────────
+    //
+    // ユーザー:「間違えてアドレスを分類した場合、どうやって未分類に戻しますか？」。
+    //
+    // **仕組みとしては前からできました**——未登録の一覧は「どこにも `メールアドレス`
+    // タグが無いアドレス」という索引からの派生なので、タグを外せば戻ります。
+    // ただし**手数が非対称**でした: 分類は1クリック、取り消しは編集モードに入って
+    // タグの組を消して保存。**押し間違いの取り消しが、いちばん面倒**という形です。
+    //
+    // そこで、取引先の下のページでは `メールアドレス` の隣に小さな口を出します。
+    // 押すとそのタグだけ外れ、未登録の一覧へ戻ります。**ページは消しません**
+    // （空になったら、そう伝えるだけ）。
+    const EMAIL_TAG = 'メールアドレス';
+
+    function refreshContactUnfile() {
+        document.querySelectorAll('#w-editor-content .contact-unfile').forEach(el => el.remove());
+        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        const host = document.getElementById('w-editor-content');
+        if (!host || !currentPageId) return;
+
+        host.querySelectorAll('dl[data-type="tags"] > dt').forEach(dt => {
+            if (dt.textContent.trim() !== EMAIL_TAG) return;
+            const dd = dt.nextElementSibling;
+            if (!dd || dd.tagName.toLowerCase() !== 'dd') return;
+            const addr = dd.textContent.trim();
+            if (!addr) return;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'vocab-chrome chip-btn contact-unfile';
+            btn.textContent = '未分類へ戻す';
+            btn.title = addr + ' をこのページから外し、「未登録の連絡先」へ戻します'
+                + '（ページは消しません）';
+            btn.addEventListener('click', () => unfileContact(btn, addr, dt, dd));
+            dd.appendChild(btn);
+        });
+    }
+
+    async function unfileContact(btn, addr, dt, dd) {
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/contacts/unfile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_id: currentPageId, address: addr }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                notify(data.message || '戻せませんでした', { type: 'warn' });
+                return;
+            }
+            // 見た目だけ先に消します。正本は本文で、次に開けば描き直されます。
+            dd.remove();
+            dt.remove();
+            if (data.empty) {
+                // **消しません**——空になったことだけ伝えます（消すかは人が決める）。
+                notify(addr + ' を未分類へ戻しました。このページは空になりました'
+                    + '（要らなければ削除してください）。', { type: 'info', duration: 8000 });
+            } else {
+                notify(addr + ' を未分類へ戻しました', { type: 'success', duration: 5000 });
+            }
+        } catch (e) {
+            notify('戻せませんでした: ' + e.message, { type: 'warn' });
+        } finally {
+            btn.disabled = false;
+        }
+    }
 
     function refreshPhoneChrome() {
         document.querySelectorAll('#w-editor-content .phone-chrome').forEach(el => el.remove());

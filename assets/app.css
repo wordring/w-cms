@@ -2032,3 +2032,12 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     color: var(--muted);
     word-break: break-all;
 }
+
+/* 「未分類へ戻す」（2026-09-13）。タグの値の隣に小さく置く——**押し間違いの
+   取り消し**なので、目立たせすぎると今度はこちらを誤爆する。 */
+#w-editor-content .chip-btn.contact-unfile {
+    margin-left: 8px;
+    padding: 0 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
