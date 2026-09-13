@@ -159,7 +159,19 @@ func DriftedSchemaTables(db *sql.DB) []string {
 			err := db.QueryRow(
 				`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`, name).Scan(&stored)
 			if err != nil {
-				continue // 未作成なら ApplySchema がこれから作る＝ずれではない
+				// **表がまだ無い**。作るのは ApplySchema ですが、**中身は空のまま**です
+				// ——既に索引済みのページは、本文を読み直さないと新しい表へ入りません。
+				//
+				// 索引そのものが空（初回起動）なら、このあと通常の初期構築が走るので
+				// 何もしません。**索引に中身があるのに表だけ新しい**なら、それは
+				// 「索引の形が変わった」——ずれとして扱い、作り直させます。
+				//
+				// 2026-09-13 に `page_tags` を足したとき、ここが `continue` だったために
+				// **タグ88行が古い表に取り残されました**（画面は無言で空になる）。
+				if indexHasRows(db) {
+					drifted = append(drifted, name)
+				}
+				continue
 			}
 			if normalizeSQL(stored) != normalizeSQL(q) {
 				drifted = append(drifted, name)
@@ -169,9 +181,32 @@ func DriftedSchemaTables(db *sql.DB) []string {
 	return drifted
 }
 
+// indexHasRows は、索引に既に中身があるかを返します（1行でもあれば true）。
+//
+// **「初回起動」と「表が増えた」を見分けるため**だけの判定です。前者はこのあと
+// 通常の初期構築が走るので何もしなくてよく、後者は作り直しが要ります。
+//
+// 見るのは `pages` です——索引の表そのものを見ると、まさにいま増えた空の表を
+// 「中身が無い＝初回」と読んでしまいます。
+func indexHasRows(db *sql.DB) bool {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pages`).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
+}
+
 // createdTableName は CREATE TABLE 文からテーブル名を取り出します。
+//
+// **`CREATE INDEX` は対象外**です（空を返します）。`EXISTS` の次の語を採るだけだと
+// 索引の名前まで拾ってしまい、`sqlite_master` を `type='table'` で引いて見つからず、
+// **毎回「表が無い」と判定して起動のたびに再構築が走ります**
+// （2026-09-13 に `page_tags` を足したとき、ログで気づきました）。
 func createdTableName(q string) string {
 	f := strings.Fields(strings.ReplaceAll(q, "(", " ("))
+	if len(f) < 2 || !strings.EqualFold(f[0], "CREATE") || !strings.EqualFold(f[1], "TABLE") {
+		return ""
+	}
 	for i, w := range f {
 		if strings.EqualFold(w, "EXISTS") && i+1 < len(f) {
 			return strings.Trim(f[i+1], "(`\"")

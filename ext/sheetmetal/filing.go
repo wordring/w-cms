@@ -193,7 +193,7 @@ func suggestCustomer(user *auth.User, partPageID int, read string) string {
 func senderAddressOf(partPageID int) string {
 	var ref string
 	database.DB.QueryRow(
-		`SELECT value FROM vocab_index WHERE page_id = ? AND field = '受信元' LIMIT 1`,
+		`SELECT value FROM page_tags WHERE page_id = ? AND field = '受信元' LIMIT 1`,
 		partPageID).Scan(&ref)
 	ref = strings.TrimSpace(ref)
 	if i := strings.Index(ref, "-"); i > 0 {
@@ -205,7 +205,7 @@ func senderAddressOf(partPageID int) string {
 	}
 	var addr string
 	database.DB.QueryRow(
-		`SELECT value FROM vocab_index WHERE page_id = ? AND field = '差出人アドレス' LIMIT 1`,
+		`SELECT value FROM page_tags WHERE page_id = ? AND field = '差出人アドレス' LIMIT 1`,
 		srcID).Scan(&addr)
 	return strings.TrimSpace(addr)
 }

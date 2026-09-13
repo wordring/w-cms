@@ -241,7 +241,7 @@ func sourceMessageID(sourcePageID string) string {
 	}
 	var v string
 	database.DB.QueryRow(
-		`SELECT value FROM vocab_index WHERE page_id = ? AND field = ? LIMIT 1`,
+		`SELECT value FROM page_tags WHERE page_id = ? AND field = ? LIMIT 1`,
 		idInt, cms.MessageIDTag).Scan(&v)
 	return strings.TrimSpace(v)
 }

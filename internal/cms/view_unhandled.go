@@ -120,22 +120,22 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 	const q = `
 		SELECT p.id,
 		       COALESCE(p.title, ''),
-		       COALESCE((SELECT c.value FROM vocab_index c
+		       COALESCE((SELECT c.value FROM page_tags c
 		                  WHERE c.page_id = p.id AND c.field = ? LIMIT 1), ''),
 		       -- 並べ替えの鍵は畳んだ値（UTC）。生の値で並べると、+09:00 と +02:00 が
 		       -- 混ざった日に辞書順が時刻の順とずれます（2026-09-06。いま全件が
 		       -- +09:00 なので壊れていないだけでした）。表示は呼ぶ側が土地の時刻へ直します。
-		       COALESCE((SELECT COALESCE(r.norm_value, r.value) FROM vocab_index r
+		       COALESCE((SELECT COALESCE(r.norm_value, r.value) FROM page_tags r
 		                  WHERE r.page_id = p.id AND r.field = '受信日時' LIMIT 1),
 		                COALESCE(p.updated_at, '')),
-		       COALESCE((SELECT f.value FROM vocab_index f
+		       COALESCE((SELECT f.value FROM page_tags f
 		                  WHERE f.page_id = p.id AND f.field = '差出人' LIMIT 1), ''),
-		       COALESCE((SELECT a.value FROM vocab_index a
+		       COALESCE((SELECT a.value FROM page_tags a
 		                  WHERE a.page_id = p.id AND a.field = ? LIMIT 1), ''),
-		       COALESCE((SELECT d.value FROM vocab_index d
+		       COALESCE((SELECT d.value FROM page_tags d
 		                  WHERE d.page_id = p.id AND d.field = ? LIMIT 1), '')
 		  FROM pages p
-		 WHERE NOT EXISTS (SELECT 1 FROM vocab_index h
+		 WHERE NOT EXISTS (SELECT 1 FROM page_tags h
 		                    WHERE h.page_id = p.id AND h.field = ?)
 		 ORDER BY 4 DESC, p.id DESC`
 

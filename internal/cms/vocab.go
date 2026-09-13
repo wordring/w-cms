@@ -127,6 +127,13 @@ type VocabDef struct {
 // vocabRegistry が宣言テーブルの本体です。語彙を増やすときはここへ1件足します。
 //
 // サンプル語彙「検査記録」は縦切り第1段（語彙モデル §8.4）の実証用で、
+// TagsDataType は可変タグの形式名です（`<dl data-type="tags">`）。
+//
+// **索引の行き先を分ける鍵**でもあります（2026-09-13）——この形式だけが `page_tags` へ、
+// ほかは `vocab_index` へ入ります（vocab_index.go の insertVocabEntry）。
+// 語を1箇所に閉じておくのは、振り分けの条件が文字列リテラルで散らばらないためです。
+const TagsDataType = "tags"
+
 // 移行前から独立した形式です（記録だけの形式なので Field は持たない）。
 var vocabRegistry = []VocabDef{
 	// 移行第2段（語彙モデル §8.4-2）の移行先形式。
