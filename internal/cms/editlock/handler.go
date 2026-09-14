@@ -41,6 +41,34 @@ func RequireEditLock(w http.ResponseWriter, r *http.Request, idStr string) bool 
 	return true
 }
 
+// RefuseWhileEditing は、**誰かがそのページを開いていたら 409 で断ります**（2026-09-14）。
+//
+// **機械が本文を書き換える口のための関門**です。一覧画面のボタン（連絡先の登録・
+// 「対応：不要」・整理の実行）は**エディタを開いていない**ので編集トークンを持たず、
+// `RequireEditLock` を通すと必ず断られます。かといって素通しにすると、
+// **`RewriteBody` は読んで・変えて・書く**ので、誰かがエディタを開いていると
+// オートセーブと機械の書き込みが黙って上書きし合います。
+//
+// **自分が開いている場合も断ります。** 手元のエディタは書き換え前の本文を持って
+// いるので、そのまま保存すれば機械の変更が消えます——「自分だから安全」ではありません。
+//
+// 断るのは**いま開いている人が居るとき**だけです（`EditorOpen`）。ブラウザを
+// 閉じただけの人のロックで永久に止まらないようにするため。
+func RefuseWhileEditing(w http.ResponseWriter, idStr string) bool {
+	pageID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return false
+	}
+	if holder, open := Locks.EditorOpen(pageID); open {
+		http.Error(w,
+			"このページは編集中です（"+holder+"）。閉じてからもう一度お試しください。",
+			http.StatusConflict)
+		return false
+	}
+	return true
+}
+
 // LockAPIHandler は編集ロックの取得を処理します。
 // POST /api/lock?id=&token= 。対象ページの write 権限を要求します。
 // 本文は返しません（取得口は GET /api/load の1つ。クライアントは取得後に読み直す）。

@@ -67,6 +67,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -688,6 +689,11 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if !page.RequirePageWrite(w, r, target) {
 			return
 		}
+		// **開いている人が居たら断ります**（2026-09-14）。本文を読んで・変えて・書くので、
+		// エディタが開いているとオートセーブと上書きし合います。
+		if !editlock.RefuseWhileEditing(w, target) {
+			return
+		}
 		// **人の名前が来たら、その人のページへ入れます**（2026-09-13）。
 		// 社名ページにアドレスを平らに積むと、6つ並んだ `メールアドレス` が誰のものか
 		// 分からなくなり、電話番号を足す先もありません。
@@ -819,6 +825,9 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !page.RequirePageWrite(w, r, pageID) {
+		return
+	}
+	if !editlock.RefuseWhileEditing(w, pageID) {
 		return
 	}
 
