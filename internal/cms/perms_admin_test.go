@@ -1,17 +1,14 @@
 package cms
 
 import (
-	"database/sql"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 
 	_ "modernc.org/sqlite"
 )
@@ -20,24 +17,7 @@ import (
 // 指定ページのサイドカー＋page_perms を作ります。
 func setupPermsDB(t *testing.T, id string, p page.PageMeta) {
 	t.Helper()
-	origWd, _ := os.Getwd()
-	if err := os.Chdir(t.TempDir()); err != nil {
-		t.Fatalf("Chdirエラー: %v", err)
-	}
-	t.Cleanup(func() { os.Chdir(origWd) })
-
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("DB接続エラー: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	database.DB = db
-	if err := database.CreateCoreTables(db); err != nil {
-		t.Fatalf("コアテーブル作成エラー: %v", err)
-	}
-	if err := ApplySchema(db); err != nil {
-		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
-	}
+	newTestDB(t)
 
 	if err := page.WriteSidecar(id, p); err != nil {
 		t.Fatalf("page.WriteSidecarエラー: %v", err)
