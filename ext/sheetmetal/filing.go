@@ -756,7 +756,7 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	block = reassignBlockIDIfTaken(block, dstBody)
 	newNo := drawingNoOf(block)
 	if err := cms.RewriteBody(dstPageID, user.Username, func(string) string {
-		body := insertAfterH1String(dstBody, block)
+		body := cms.InsertAfterH1(dstBody, block)
 		// **改訂履歴に1行足す**——社内コードの指し先はこの行です（vocab.go の
 		// drawing-revisions）。図面ブロックは人が消せる決まりなので、消せるものを
 		// 指し先にすると紙に出たコードが宙ぶらりんになります。
@@ -820,19 +820,6 @@ func extractDrawingSections(body string) (blocks []string, rest string) {
 	}
 	out.WriteString(body[i:])
 	return blocks, out.String()
-}
-
-// insertAfterH1String は h1 の直後へ差し込みます（文字列版）。
-//
-// コアの `InsertAfterH1` はページを読み書きしますが、ここでは**1回の書き換えで
-// 全部やる**必要があります——外して・足して・履歴を直すのを別々に保存すると、
-// 途中で失敗したときに図面の無いページが残ります。
-func insertAfterH1String(body, fragment string) string {
-	if i := strings.Index(body, "</h1>"); i >= 0 {
-		at := i + len("</h1>")
-		return body[:at] + fragment + body[at:]
-	}
-	return fragment + body
 }
 
 // linkRevisionRow は改訂履歴の中で図面番号が no の行を、旧版ページへのリンクにします。

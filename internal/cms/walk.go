@@ -89,6 +89,8 @@ func (w *walkState) Counter(key string) int {
 func (w *walkState) Ancestors() []*html.Node { return w.ancestors }
 
 // Closest は祖先のうち、fn が真を返す最も近いものを返します（無ければ nil）。
+// **現在の使い手はいません**——`Ancestors` と同じく配送係の道具として残してあります
+// （プラグインの指南に載っている口です。【ガイド】プラグイン開発.md の「段別コンテキスト」）。
 func (w *walkState) Closest(fn func(*html.Node) bool) *html.Node {
 	for i := len(w.ancestors) - 1; i >= 0; i-- {
 		if fn(w.ancestors[i]) {
@@ -163,19 +165,9 @@ func (c *SeedContext) Replace(el *html.Node, nodes ...*html.Node) {
 	c.walkState.replaceNodes(el, nodes...)
 }
 
-// ReplaceChildren は el の中身だけを nodes で置き換えます（枠は残す）。
-// 計算ビューのように「マーカーは本文に残し、中身だけサーバーが所有する」形で使います。
-func (c *MirrorContext) ReplaceChildren(el *html.Node, nodes ...*html.Node) {
-	for el.FirstChild != nil {
-		el.RemoveChild(el.FirstChild)
-	}
-	for _, n := range nodes {
-		el.AppendChild(n)
-	}
-	c.walkState.markReplaced(el)
-}
-
 // SetText は要素の中身をテキスト1つで置き換えます（種まきのセル埋め）。
+// **現在の使い手はいません**——種まきの道具として残してあります
+// （パーサとプラグイン.md が「セルへの SetText で行う」と指している口です）。
 func (c *SeedContext) SetText(el *html.Node, s string) {
 	for el.FirstChild != nil {
 		el.RemoveChild(el.FirstChild)

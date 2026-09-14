@@ -1048,7 +1048,7 @@ func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
 		if at := endOfFirstTagList(current); at >= 0 {
 			return current[:at] + pairs.String() + current[at:]
 		}
-		return insertAfterH1(current, `<dl data-type="tags">`+pairs.String()+`</dl>`)
+		return InsertAfterH1(current, `<dl data-type="tags">`+pairs.String()+`</dl>`)
 	})
 	if err != nil {
 		return 0, err

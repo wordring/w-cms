@@ -26,21 +26,29 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// InsertAfterH1 はページ本文の**見出しの直後**へ fragmentHTML を差し込みます
-// （h1 が無ければ先頭）。
+// InsertAfterH1 は本文HTMLの**見出しの直後**へ fragment を差し込んで返します
+// （h1 が無ければ先頭）。**ファイルは読み書きしません**——文字列を返すだけです。
 //
 // 改定図面のために要ります——ユーザー:「既存ページの図面の項目の先頭に配置しては
 // どうでしょう？既存の図面は古いとわかるように赤枠で囲み、ユーザーの判断で消します。
 // （古い図面は旧版に残っています）」（2026-09-03）。**新しいものが上**という
 // 並びそのものが「どれが最新か」を表すので、状態を別に持たずに済みます。
-func InsertAfterH1(pageID, author, fragmentHTML string) error {
-	return rewritePageBody(pageID, author, func(current string) string {
-		if i := strings.Index(current, "</h1>"); i >= 0 {
-			at := i + len("</h1>")
-			return current[:at] + fragmentHTML + current[at:]
-		}
-		return fragmentHTML + current
-	})
+//
+// ⚠ **ページを読み書きする版は置きません**（2026-09-14 に撤去）。呼び手はどちらも
+// **1回の書き換えで全部やる**必要があったためです——外して・足して・履歴を直すのを
+// 別々に保存すると、途中で失敗したときに図面の無いページが残ります。だから
+// `RewriteBody` の中でこれを呼ぶ形にして、保存は1回に畳みます。
+//
+// ⚠ **`</h1>` を生の文字列で探します。** `<h1 class="…">` のように属性が付いていても
+// 終了タグは同じなので当たりますが、本文に `</h1>` が文字として現れると誤ります
+// （サニタイズを通った本文では起きません）。直すときはここ1箇所です——
+// **2026-09-14 まで同じ7行が3箇所に写されていました**（うち1つは呼び手ゼロ）。
+func InsertAfterH1(body, fragment string) string {
+	if i := strings.Index(body, "</h1>"); i >= 0 {
+		at := i + len("</h1>")
+		return body[:at] + fragment + body[at:]
+	}
+	return fragment + body
 }
 
 // RewriteBody は本文を書き換えます（作法つき）。拡張から使う口です

@@ -111,7 +111,7 @@ func MarkHandled(pageID, author, value string) error {
 		if at := endOfFirstTagList(current); at >= 0 {
 			return current[:at] + pair + current[at:]
 		}
-		return insertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
+		return InsertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
 	})
 }
 
@@ -138,11 +138,3 @@ func endOfFirstTagList(body string) int {
 	return i + end
 }
 
-// insertAfterH1 は h1 の直後へ差し込みます（h1 が無ければ先頭）。
-func insertAfterH1(body, fragment string) string {
-	if i := strings.Index(body, "</h1>"); i >= 0 {
-		at := i + len("</h1>")
-		return body[:at] + fragment + body[at:]
-	}
-	return fragment + body
-}
