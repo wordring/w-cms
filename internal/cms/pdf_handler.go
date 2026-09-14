@@ -146,35 +146,15 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 添付は files/ サブフォルダへ（正本と同居させない——構造で塞ぐ。storage.go）。
-	attachDir := page.AttachmentDir(pageID)
-	os.MkdirAll(attachDir, 0755)
-
-	// 保存名はサーバーが生成する（元の名前はURLに出さない。表示は本文のリンク文字が担う）。
-	// 生成IDはリンクブロックの data-id と一致させる（storage.go の3役）。
-	attachID := page.GeneratedAttachmentID(pageID, strings.ToLower(filepath.Ext(fileName)))
-	fileName = attachID + strings.ToLower(filepath.Ext(fileName))
-	savePath := filepath.Join(attachDir, fileName)
-
-	// 上書きかどうかは書く前にしか分からない。添付はリビジョンもゴミ箱も無く
-	// 上書きが復元できないので、「増えた」のか「消えた」のかを記録で区別する
-	// （要件定義書 §2.3）。
-	overwrote := false
-	if _, err := os.Stat(savePath); err == nil {
-		overwrote = true
-	}
-
-	if err := page.WriteFileAtomic(savePath, content, 0644); err != nil {
-		http.Error(w, "Failed to save PDF", http.StatusInternalServerError)
-		return
-	}
-
-	action := "attach"
-	if overwrote {
-		action = "attach.overwrite"
-	}
+	// 保存の作法は1箇所（attachment_save.go）。生成名・上書きの監査まで含む。
+	username := ""
 	if u := auth.CurrentUser(r); u != nil {
-		auth.Audit(u.Username, action, pageID+"/"+fileName)
+		username = u.Username
+	}
+	attachID, fileName, saveErr := SaveAttachment(pageID, username, fileName, content)
+	if saveErr != nil {
+		JSONFail(w, http.StatusInternalServerError, "Failed to save PDF")
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
