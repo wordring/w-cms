@@ -692,8 +692,8 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ page_id: currentPageId, version: v.id }),
             });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) throw new Error(d.message || (await res.text().catch(() => '')) || res.status);
+            const d = await readResult(res);
+            if (!res.ok || !d.success) throw new Error(failMessage(res, d));
             msg.textContent = '';
             // 本文を載せ替える。サーバーが返すのは戻した本文そのもの。
             populateEditor(d.html);
@@ -816,6 +816,35 @@
         if (data.updated_at) {
             document.getElementById('w-pi-updated-at').textContent = formatDateTime(data.updated_at);
         }
+    }
+
+    // ── 失敗の理由を、利用者に届ける（2026-09-14）──────────────────────────
+    //
+    // **サーバーは丁寧に説明しているのに、画面には数字しか出ていませんでした。**
+    // 実測: 許可していない拡張子を落とすと、サーバーは 400 で
+    // 「この拡張子は添付として受け付けていません（許可リストは…）」と返します。
+    // ところが応答は `text/plain` なので `res.json()` が落ち、`catch(()=>({}))` が
+    // 空オブジェクトを返し、画面には「400」だけが出ていました。
+    //
+    // ⚠ **`res.json()` のあとの `res.text()` は永久に空です**——本体は一度しか
+    // 読めないので、退避のつもりで書いた `|| await res.text()` は効いていませんでした。
+    //
+    // だから**本文を1回だけ文字列として読み**、JSONなら解釈します。認可
+    // （`RequireAuth` の「認証が必要です」）のように、共通の関門が返す
+    // `text/plain` にも同じように効きます。
+    async function readResult(res) {
+        let text = '';
+        try { text = await res.text(); } catch (e) { text = ''; }
+        try {
+            const d = JSON.parse(text);
+            if (d && typeof d === 'object') return d;
+        } catch (e) { /* JSONではない——本文をそのまま理由にする */ }
+        return { message: String(text || '').trim() };
+    }
+
+    // failMessage は「なぜ失敗したか」の1行を作ります。**数字は最後の手段**です。
+    function failMessage(res, d) {
+        return (d && d.message) || res.statusText || String(res.status);
     }
 
     function notifySanitized() {
@@ -1350,7 +1379,7 @@
         try {
             const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' });
             if (res.status === 423) {
-                const d = await res.json().catch(() => ({}));
+                const d = await readResult(res);
                 showBusyToast(d);
                 openWaiterEvents(); // 空き通知を待つ（プッシュ）
                 return false;
@@ -4596,8 +4625,8 @@
         try {
             // 添付の追加は本文編集と同じ編集ロックで直列化する（サーバーは他者保持中なら409）。
             const res = await lockedFetch('/api/upload-pdf', { method: 'POST', body: fd });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) throw new Error(d.message || res.status);
+            const d = await readResult(res);
+            if (!res.ok || !d.success) throw new Error(failMessage(res, d));
             // 配線（data-src）を持つのは互換の file 容器だけ。File 宣言の形式ブロックでは
             // 可視のファイル名リンクが唯一の所在（見える文字がデータの手掛かり）。
             if (sec.getAttribute('data-type') === 'file') sec.setAttribute('data-src', d.src);
@@ -4687,7 +4716,7 @@
             try {
                 const res = await lockedFetch(isPDF ? '/api/upload-pdf' : '/api/upload-file',
                     { method: 'POST', body: fd });
-                const d = await res.json().catch(() => ({}));
+                const d = await readResult(res);
                 if (d && d.intake) {
                     // 受信箱への取り込み——添付ではなく子ページが生まれた。
                     // 本文にリンクは挿さず、行き先を知らせる（一覧は子ページ一覧の鏡が担う）。
@@ -4704,8 +4733,8 @@
                     continue;
                 }
                 if (!res.ok || !d.success) {
-                    notify(f.name + ' を添付できませんでした: ' + (d.message || (await Promise.resolve(''))
-                        || res.statusText || res.status), { type: 'alert', duration: 0, id: 'file-upload' });
+                    notify(f.name + ' を添付できませんでした: ' + failMessage(res, d),
+                        { type: 'alert', duration: 0, id: 'file-upload' });
                     continue;
                 }
                 const p = document.createElement('p');
@@ -4779,10 +4808,10 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ page_id: currentPageId, file_name: src })
             });
-            const d = await res.json().catch(() => ({}));
+            const d = await readResult(res);
             dismissToast('parse-pdf');
             if (!d.success || !Array.isArray(d.items)) {
-                notify('解析に失敗しました: ' + (d.message || res.status), { type: 'warn', duration: 10000 });
+                notify('解析に失敗しました: ' + failMessage(res, d), { type: 'warn', duration: 10000 });
                 return;
             }
             // 受発注ブロックは属性でも見出し（D-2）でも書ける。容器廃止後は sec 自身が
