@@ -369,7 +369,9 @@ func tagNormBind(typ ColumnType, norm string) any {
 }
 
 // tagLookupBind は「その名前のタグを引くときの値」を、型ごと返します。
-// 引く側の入口で、`NormalizeForLookup` と `tagNormBind` を1つに束ねたものです。
+// 引く側の入口です——名前から型を決め、その型で畳み、その型で束ねる、を1つに
+// 束ねています（畳んだ文字列だけ返していた旧 `NormalizeForLookup` の後継。
+// 文字列で返すと number のタグが静かに引けなくなるので、分けて持ちません）。
 func tagLookupBind(name, value string) (any, bool) {
 	typ := InferColumnType(name)
 	norm, ok := NormalizeValue(typ, value)
