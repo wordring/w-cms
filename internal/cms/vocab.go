@@ -350,6 +350,45 @@ func InferColumnType(label string) ColumnType {
 	return ColText
 }
 
+// tagNormBind は畳んだ値を、`page_tags.norm_value` へ束ねる形へ直します。
+//
+// この列は**宣言型を持ちません**（vocab_index.go の Schema）。SQLite は値ごとの
+// 格納クラスを保つので、number のタグは数として入り、`"8000" < "900"` という
+// 辞書順の事故が起きません。
+//
+// **書き手（insertVocabEntry）と読み手（PagesByTagLoose）は必ずここを通ります。**
+// 片方が文字列で束ねた瞬間、number のタグは**エラーにならず0件**になります
+// ——SQLite は型の違う値を等しいと見ないだけで、何も言いません。このプロジェクトが
+// 何度も踏んだ「片付いた顔をして効かない」形なので、判断を1か所に閉じます。
+//
+// 整数は**整数の格納クラス**へ入れます。数としての比較はどちらでも同じですが、
+// REAL にすると文字へ直したとき `3` が `3.0` になり、`COALESCE(norm_value, value)`
+// で読んでいる箇所の見た目が変わるためです。
+func tagNormBind(typ ColumnType, norm string) any {
+	if typ != ColNumber {
+		return norm
+	}
+	f, err := strconv.ParseFloat(norm, 64)
+	if err != nil {
+		return norm // 数として読めない（正規化を通っていれば来ない）
+	}
+	if i := int64(f); float64(i) == f {
+		return i
+	}
+	return f
+}
+
+// tagLookupBind は「その名前のタグを引くときの値」を、型ごと返します。
+// 引く側の入口で、`NormalizeForLookup` と `tagNormBind` を1つに束ねたものです。
+func tagLookupBind(name, value string) (any, bool) {
+	typ := InferColumnType(name)
+	norm, ok := NormalizeValue(typ, value)
+	if !ok {
+		return nil, false
+	}
+	return tagNormBind(typ, norm), true
+}
+
 // NormalizeValue は列型に応じて値の正規化値を返します。
 // 解釈できないときは ok=false（正規化値は**併記**であり、生テキストが常に正本）。
 func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {

@@ -155,13 +155,19 @@ func PagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
 // 別の部品だったとき）。どちらで引くかは**呼ぶ側が選ぶ**——探す（多めに出して
 // 人が選ぶ）のと、突き合わせる（1つに決める）のは別の仕事だからです。
 //
-// 畳み方は書き込み側と同じ（NormalizeForLookup）。図面番号のように
+// 畳み方は書き込み側と同じ（tagLookupBind）。図面番号のように
 // `code` 型と宣言された語では、空白・ハイフン類・英字の大小が畳まれます。
+//
+// **`page_tags.norm_value` を述語に使うのは、いまここだけです。** この列は
+// 宣言型を持たないので、束ねる値の格納クラスが書いたときと違うと**エラーにも
+// ならず0件**になります——だから裸の文字列を渡さず `tagLookupBind` を通します
+// （`number` のタグなら数として束ねる）。範囲で引く口を足すときも、同じ関数を
+// 通してください。
 func PagesByTagLoose(db ReadOnlyDB, name, value string) ([]int, error) {
 	if name == "" || value == "" {
 		return nil, nil
 	}
-	norm, ok := NormalizeForLookup(name, value)
+	norm, ok := tagLookupBind(name, value)
 	if !ok {
 		return nil, nil
 	}

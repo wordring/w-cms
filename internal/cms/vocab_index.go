@@ -105,6 +105,7 @@ func (vocabIndexPlugin) Schema() []string {
 		//	name       名前（`dt` の表示文字）。**これが鍵**——機械キーは持たない
 		//	value      値（`dd` の表示文字）。**これが正本**
 		//	norm_value 比較用に畳んだ値（`受信日時` の UTC 化など・9%で value と異なる）
+		//	           **宣言型を持ちません**（2026-09-15。下の「型は値が持つ」）
 		//
 		// `seq` は**ページ通し**です（`dl` ごとに 0 へ戻していた `row_no` を改めました）。
 		// 1ページに `dl` を2つ置けるので、`dl` ごとの番号では鍵になりません
@@ -116,12 +117,35 @@ func (vocabIndexPlugin) Schema() []string {
 		// **名前は一度使って消したもの**です（`page_tags` は 2026-08-30 に vocab_index へ
 		// 吸収されました）。同じ名前で戻したのは、これが**そのとき畳んだものを畳み直す**
 		// 話ではなく、**タグが業務データの本体になった**という別の理由だからです。
+		//
+		// ── `norm_value` に宣言型が無いのは、型を**値**に持たせるため ──────
+		//
+		// 2026-09-15 にユーザー決定で外しました（「norm_value は文字列、数値、時刻の
+		// ような種類が考えられます」）。**SQLite は宣言の無い列で、値ごとの格納クラスを
+		// そのまま保ちます**。`TEXT` と宣言すると数まで文字列に化け、辞書順で
+		// **`"8000" < "900"`** になります（実測）:
+		//
+		//	宣言 TEXT   → 12.5, 8000.0, 900.0, abc   ← 並びが壊れている
+		//	宣言なし    → 12.5, 900, 8000, abc       ← 数は数として並ぶ
+		//
+		// **混ざっても平気な理由は2つ**: ①SQLite の並びは格納クラスのグループが先
+		// （NULL < 数値 < 文字列 < BLOB）なので**範囲が重ならない** ②問いは必ず
+		// `name` で絞り、**名前が型を決める**ので1つの問いの中では型が揃う。
+		// 索引もそのまま効きます（`SEARCH page_tags USING INDEX … (name=? AND norm_value>?)`）。
+		//
+		// ⚠ **代償は「型を取り違えると、エラーにならず0件」**（実測）。SQLite は型の
+		// 違う値を等しいと見ないだけで、何も言いません。だから束ねる形の判断は
+		// `tagNormBind` 1か所に閉じ、**書き手と読み手が同じ関数を通ります**——
+		// 割れた瞬間、number のタグは「書いたのに引けない」になります。
+		//
+		// `vocab_index` 側は **`norm_num`（REAL）を持ったまま**です（統合は別途・
+		// あちらは読み手が実在します——`vocabRows` の集計）。
 		`CREATE TABLE IF NOT EXISTS page_tags (
 			page_id INTEGER NOT NULL,
 			seq INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			value TEXT NOT NULL,
-			norm_value TEXT,
+			norm_value,
 			PRIMARY KEY (page_id, seq),
 			FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
 		);`,
@@ -381,10 +405,17 @@ func insertVocabEntry(tx *sql.Tx, pageID int, dataType string, blockNo int, bloc
 		// タグの表は列がタグのために選んであります（block_no / block_id / norm_num は
 		// 誰も読まなかったので持ちません。上の Schema の説明）。`rowNo` はここでは
 		// **ページ通しの `seq`** です（呼ぶ側が ctx.Counter で採る）。
+		//
+		// **畳んだ値は格納クラスごと入れます**（`norm_value` に宣言型が無いため）。
+		// 畳めなかったものは nil のまま＝NULL で、併記しません。
+		var normBind any
+		if norm.Valid {
+			normBind = tagNormBind(typ, norm.String)
+		}
 		_, err := tx.Exec(
 			`INSERT INTO page_tags (page_id, seq, name, value, norm_value)
 			 VALUES (?, ?, ?, ?, ?)`,
-			pageID, rowNo, field, value, norm)
+			pageID, rowNo, field, value, normBind)
 		return err
 	}
 	_, err := tx.Exec(
