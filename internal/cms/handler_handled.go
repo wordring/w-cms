@@ -119,7 +119,7 @@ func MarkHandled(pageID, author, value string) error {
 		if hasHandledTag(current) {
 			return current
 		}
-		if at := endOfFirstTagList(current); at >= 0 {
+		if at := EndOfFirstTagList(current); at >= 0 {
 			return current[:at] + pair + current[at:]
 		}
 		return InsertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
@@ -135,9 +135,9 @@ func hasHandledTag(body string) bool {
 	return strings.Contains(body, `<dt>`+html.EscapeString(HandledTag)+`</dt>`)
 }
 
-// endOfFirstTagList は最初の可変タグの並びの終わり（`</dl>` の位置）を返します。
+// EndOfFirstTagList は最初の可変タグの並びの終わり（`</dl>` の位置）を返します。
 // 見つからなければ -1。
-func endOfFirstTagList(body string) int {
+func EndOfFirstTagList(body string) int {
 	i := strings.Index(body, `<dl data-type="tags">`)
 	if i < 0 {
 		return -1

@@ -245,19 +245,9 @@ var vocabRegistry = []VocabDef{
 		Element:     "section",
 		View:        true,
 	},
-	{
-		// 未登録の連絡先——索引にあってページになっていない相手（contacts.go）。
-		// ユーザー:「アドレス帳のようなものを作って、メールから人物や電話番号、
-		// メールアドレスを収集しましょう」（2026-09-05）。**集める仕掛けは要りません**
-		// ——取り込みが既にアドレスをタグへ書いているので、足りないのは
-		// 「まだページになっていないもの」を並べて人が確定する口だけです。
-		Type:        "unknown-contacts",
-		DisplayName: "未登録の連絡先",
-		Category:    "ビュー",
-		Icon:        "📇",
-		Element:     "section",
-		View:        true,
-	},
+	// `unknown-contacts`（未登録の連絡先）は**ここにありません**——アドレス帳が
+	// `RegisterVocab` で自分から持ち込みます（2026-09-15。contacts.go の init。
+	// 行き先は `ext/contacts`・[docs/【考察】アドレス帳の作り直し.md] §5b 案B）。
 }
 
 // RegisterVocab は形式の宣言を①語彙レジストリへ足します。**拡張の `init()` から

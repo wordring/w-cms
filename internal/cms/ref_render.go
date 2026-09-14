@@ -151,6 +151,33 @@ func linkRefDD(dd *html.Node, pageID, blockID string) {
 	dd.AppendChild(a)
 }
 
+// ContactResolver は「このアドレスは誰のページか」に答える口です。
+// 返すのは（ページID・題・見つかったか）。
+type ContactResolver func(addr string) (pageID, title string, ok bool)
+
+// contactResolver は登録された解決係です（未登録なら nil）。
+var contactResolver ContactResolver
+
+// RegisterContactResolver はアドレス→連絡先ページの解決係を登録します。
+//
+// **コアはアドレス帳を知りません。** `email` 型のタグを描くとき「このアドレスの
+// ページはどれか」を知る必要がありますが、それに答えられるのは**業務側**です
+// ——アドレス帳は板金にもメールにも依らない業務の持ち物、という判定が出ています
+// （[docs/【考察】アドレス帳の作り直し.md] §5b）。
+//
+// **登録が無ければリンクにしません**（素のテキストのまま）。`-tags minimal` の
+// 素の w-cms は `email` 型のタグを普通に表示するだけで、壊れません。
+//
+// `RegisterVocab` / `RegisterView` / `RegisterIntake` / `RegisterMailer` と同じ形の
+// フックです。**重複登録は panic**——2つの解決係が別々の答えを返すと、同じアドレスが
+// 描くたびに違うページへ飛ぶ、という説明のつかない壊れ方をするためです。
+func RegisterContactResolver(r ContactResolver) {
+	if contactResolver != nil {
+		panic("連絡先の解決係が重複しています")
+	}
+	contactResolver = r
+}
+
 // linkEmailDD は `名前 <アドレス>` のアドレス部分を、登録済みの連絡先ページへの
 // リンクにします（登録されていなければ何もしません）。
 //
@@ -158,16 +185,19 @@ func linkRefDD(dd *html.Node, pageID, blockID string) {
 // ようになり、名前はそのまま残ります——届いたままの値が見えていることが、
 // 「利用者が、書いた通りに入っていると信じられる」ための条件だからです。
 //
-// 認可は `ContactPageForAddress` の中で見ます（読めない相手は見つからない扱い）。
+// 認可は解決係の中で見ます（読めない相手は見つからない扱い）。
 // ここは**匿名でも通る描画経路**なので、利用者はまだ分かりません——
 // リンクを踏んだ先で通常の関門が判定します（`linkRefDD` と同じ考え方）。
 func linkEmailDD(dd *html.Node) bool {
+	if contactResolver == nil {
+		return false // アドレス帳を持たない構成——素のまま出す
+	}
 	text := strings.TrimSpace(nodeText(dd))
 	addr, ok := normalizeEmailTag(text)
 	if !ok {
 		return false // アドレスが無い（名前だけのヘッダ）
 	}
-	pageID, title, found := ContactPageForAddress(nil, addr)
+	pageID, title, found := contactResolver(addr)
 	if !found {
 		return false // まだアドレス帳に無い——素のまま出す
 	}
