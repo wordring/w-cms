@@ -1550,10 +1550,11 @@
     // （<table data-type> / <dl data-type>）はここから生成する（語彙モデル §7 の原則1:
     // エディタに手書きの形式リストを置かない）。
     let vocabDefs = [];                // [{ type, display_name, icon, element, columns: [...] }, ...]
-    // 語→型の推論辞書。手書きせず /api/tag-schema から受け取る（サーバーの
+    // 見出し語の辞書。手書きせず /api/tag-schema から受け取る（サーバーの
     // resolveColumnType と同じ辞書＝検証と索引の型判定が食い違わない）。
-    let typeInferenceDict = {};        // { "数量": "number", "検査日": "date", ... }
-    let tagEnumDict = {};              // { "在籍": ["在籍","休職","出向","退社"], ... }
+    // **1語につき1件で、型と選択肢を一緒に持ちます**（2026-09-14 に
+    // type_inference と tag_enums の2本を畳んだ）。
+    let vocabWords = {};               // { "数量": {type:"number"}, "在籍": {type:"enum", values:[...]}, ... }
 
     async function loadTagSchema() {
         try {
@@ -1563,8 +1564,14 @@
             tagSchema = (d && d.elements) || {};
             voidTags = new Set((d && d.void) || []);
             vocabDefs = (d && d.vocab) || [];
-            typeInferenceDict = (d && d.type_inference) || {};
-            tagEnumDict = (d && d.tag_enums) || {};
+            vocabWords = (d && d.vocabulary) || {};
+            // **列型の一覧はサーバーが持ちます**（手書きだと型を足した日に古くなる）。
+            // 空で返ってきたら初期値を守ります——「明示した型が全部無視される」より、
+            // 一手前の一覧で動いているほうが害が小さいためです。
+            if (d && Array.isArray(d.column_types) && d.column_types.length) {
+                VALID_COL_TYPES = d.column_types;
+            }
+            fillColTypeOptions();
         } catch (e) {
             console.error('本文の語彙を取得できませんでした:', e);
             // **null のままにする。** 空オブジェクトを入れるとガード `if (!tagSchema)` が
@@ -1573,8 +1580,7 @@
             tagSchema = null;
             voidTags = new Set();
             vocabDefs = [];
-            typeInferenceDict = {};
-            tagEnumDict = {};
+            vocabWords = {};
         }
     }
 
@@ -1619,8 +1625,9 @@
         host.querySelectorAll('dl[data-type="tags"] > dt').forEach(dt => {
             dt.classList.remove('tag-name-known');
             const name = dt.textContent.trim();
-            const type = typeInferenceDict[name];
-            const values = tagEnumDict[name];
+            const word = vocabWords[name];
+            const type = word && word.type;
+            const values = word && word.values;
 
             // ① 名前——辞書（型 or 選択肢）が知っている語か。
             //
@@ -2562,7 +2569,7 @@
         const def = table && tableDefOf(table);
         const col = def && (def.columns || []).find(c => (c.field && c.field === key) || c.label === key);
         if (col) note.textContent = '未指定ならレジストリ宣言: ' + col.type;
-        else if (typeInferenceDict[key]) note.textContent = '未指定なら推論: ' + typeInferenceDict[key];
+        else if (vocabWords[key]) note.textContent = '未指定なら推論: ' + vocabWords[key].type;
         else note.textContent = '未指定なら text 扱い';
     }
 
@@ -2826,10 +2833,53 @@
         return (def.columns || []).find(c => (c.field && c.field === key) || c.label === key) || null;
     }
 
-    // th の data-type 明示 > レジストリ宣言 > 推論辞書（/api/tag-schema） > text。
+    // th の data-type 明示 > レジストリ宣言 > 見出し語の辞書（/api/tag-schema） > text。
     // code は「畳んで比較する文字」（図面番号・発注書番号）。見た目も入力補助も
     // text と同じで、違うのはサーバー側の索引の畳み方だけ——だから検証は要らない。
-    const VALID_COL_TYPES = ['text', 'code', 'number', 'date', 'enum', 'image'];
+    //
+    // **一覧は手書きしません**（語彙モデル §7 の原則1・2026-09-14）。`/api/tag-schema`
+    // の `column_types` を受け取ります——**手で持っていたときは3つ古いままでした**
+    // （`datetime`・`ref`・`email` を足した日から。`<th data-type="email">` と書いても
+    // エディタが黙って無視し、索引だけが `email` として扱う、というずれが出ていた）。
+    //
+    // 取得前に使われても壊れないよう、空配列ではなく**サーバーと同じ並び**を初期値に
+    // 置きます——空だと「明示した型が全部無視される」ほうへ倒れるためです。
+    let VALID_COL_TYPES = ['text', 'code', 'number', 'date', 'datetime',
+        'enum', 'image', 'ref', 'email'];
+
+    // 列型の日本語の説明。**一覧の正本ではありません**——ここに無い型も
+    // 選べます（名前だけが出ます）。言葉は画面の持ち物、型の一覧はサーバーの持ち物。
+    const COL_TYPE_LABELS = {
+        text: 'text（文字）',
+        code: 'code（番号・符牒。揺れを畳んで検索）',
+        number: 'number（数値・通貨）',
+        date: 'date（日付）',
+        datetime: 'datetime（日時）',
+        enum: 'enum（選択肢）',
+        image: 'image（画像）',
+        ref: 'ref（参照。ページID-ブロックID）',
+        email: 'email（メールの相手。名前 <アドレス>）',
+    };
+
+    // fillColTypeOptions は列設定ポップオーバの選択肢を作り直します。
+    // **HTMLに書き並べません**——書くと、型を足した日にそこだけ古くなります。
+    function fillColTypeOptions() {
+        const sel = document.getElementById('w-cp-type');
+        if (!sel) return;
+        const keep = sel.value;
+        sel.textContent = '';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = '（推論に任せる）';
+        sel.appendChild(none);
+        VALID_COL_TYPES.forEach(t => {
+            const o = document.createElement('option');
+            o.value = t;
+            o.textContent = COL_TYPE_LABELS[t] || t;
+            sel.appendChild(o);
+        });
+        sel.value = keep; // 開いたまま取得が終わっても、選んでいた型を保つ
+    }
 
     // resolveCellColumn はセルの属する列の {type, enum} を解決する（データ行の td 用）。
     function resolveCellColumn(cell) {
@@ -2845,7 +2895,7 @@
         let type = 'text';
         if (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) type = explicit;
         else if (col) type = col.type;
-        else if (typeInferenceDict[key]) type = typeInferenceDict[key];
+        else if (vocabWords[key]) type = vocabWords[key].type;
         return { type, enum: (col && col.enum) || [] };
     }
 
@@ -3211,6 +3261,13 @@
             btn.textContent = kind === 'pdf' ? '▶ 表示' : '▶ 中身';
             btn.addEventListener('click', () => toggleAttachPreview(a, btn, m));
             a.insertAdjacentElement('afterend', btn);
+            // **参照を写せるようにします**（2026-09-14）。ユーザー:「PDFがほかの部品の
+            // 一部で、部品ページを作らず、ほかのページに埋め込む場合はどうしますか？」
+            //
+            // 埋め込み自体は前からできました（`section[data-type="file-view"]` に
+            // 参照を1つ書くだけ）。無かったのは**入口**です——`010272-c3p7` という
+            // 値は添付IDを手で調べないと書けませんでした。
+            btn.insertAdjacentElement('afterend', makeCopyRefButton(m[1], m[2]));
             if (kind === 'pdf') {
                 // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
                 if (a.parentElement) {
@@ -3229,6 +3286,34 @@
     }
 
 
+
+    // makeCopyRefButton は添付の参照（`ページID-添付ID`）を写すボタンを作ります。
+    //
+    // **これが「ほかのページに出す」の入口**です。写した値を、行き先のページで
+    // 📄 ファイル表示 の欄へ貼れば、そこにファイルが開きます——**タグの名前は
+    // 書く人が決めます**（`参考図`・`構成部品`・`資料` など。コアは名前を知りません）。
+    //
+    // 同じ値は `受信元` タグの中身でもあるので、参照を手で書きたい場面すべてに効きます。
+    function makeCopyRefButton(pageID, attachID) {
+        const ref = pageID + '-' + attachID;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'vocab-chrome attach-expand attach-copyref';
+        btn.textContent = '🔗 参照';
+        btn.title = ref + ' を写します（別のページの「ファイル表示」へ貼ると、そこに開きます）';
+        btn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(ref);
+                notify(ref + ' を写しました。別のページの 📄 ファイル表示 の欄へ貼ってください。',
+                    { type: 'success', duration: 6000, id: 'copyref' });
+            } catch (e) {
+                // **写せない環境でも詰ませません**——値そのものを見せて、手で選べるように。
+                notify('写せませんでした。この値を手で控えてください: ' + ref,
+                    { type: 'warn', duration: 0, id: 'copyref' });
+            }
+        });
+        return btn;
+    }
 
     // ── メールの返信と「この記録への返信」ののぞき見（2026-09-03）──────────
     //
@@ -3415,7 +3500,65 @@
         box.appendChild(btn);
         host.appendChild(box);
 
+        loadThread(box);
         loadReplies(box);
+    }
+
+    // ── スレッドの前後へ移る（2026-09-14）──────────────────────────────
+    //
+    // ユーザー:「メールですが、In-reply-to をみて前後のメールにも移動できると便利です」。
+    //
+    // 鎖はメールヘッダの `In-Reply-To` で、辿るのはサーバー（`/api/thread`）。
+    // **`📨 この記録への返信` とは別の鎖**です——あちらは w-cms 自身が送った返信、
+    // こちらはメールヘッダの親子なので、**受信どうしの返り**も繋がります。
+    //
+    // **前後が無ければ何も出しません**（1通で終わる記録のほうが多い）。
+    async function loadThread(box) {
+        let prev = null, next = [];
+        try {
+            const res = await fetch('/api/thread?page_id=' + encodeURIComponent(currentPageId));
+            const d = await res.json();
+            if (!d.success) return;
+            prev = d.prev || null;
+            next = d.next || [];
+        } catch (e) { return; }
+        if (!prev && !next.length) return;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'mail-thread';
+        const head = document.createElement('p');
+        head.className = 'mail-thread-head';
+        head.textContent = '🧵 やりとりの前後';
+        wrap.appendChild(head);
+
+        const ul = document.createElement('ul');
+        if (prev) ul.appendChild(threadItem('↑ 返信元', prev));
+        // 次は複数ありえます（同じメールに2人が別々に返信した、など）。
+        next.forEach(n => ul.appendChild(threadItem('↓ この記録への返り', n)));
+        wrap.appendChild(ul);
+        box.appendChild(wrap);
+    }
+
+    // threadItem はスレッド1件ぶんの行を作ります（矢印つきの札＋題＋日時）。
+    function threadItem(label, r) {
+        const li = document.createElement('li');
+        const tag = document.createElement('span');
+        tag.className = 'mail-thread-dir';
+        // 向きの記号は通信箱の一覧と同じ流儀（←受信 / →送信）。
+        tag.textContent = label + (r.direction === '送信' ? '（送信）' : r.direction === '受信' ? '（受信）' : '');
+        li.appendChild(tag);
+        const a = document.createElement('a');
+        a.href = '/' + r.page_id;
+        a.textContent = r.title || r.page_id;
+        a.title = r.title || r.page_id;
+        li.appendChild(a);
+        if (r.when) {
+            const when = document.createElement('span');
+            when.className = 'mail-thread-when';
+            when.textContent = ' ' + String(r.when).slice(0, 16).replace('T', ' ');
+            li.appendChild(when);
+        }
+        return li;
     }
 
     // loadReplies は「この記録への返信」を逆引きして並べます（送信箱にある本体への案内）。
@@ -3458,6 +3601,34 @@
         box.appendChild(wrap);
     }
 
+    // bareAddress は `名前 <アドレス>` からアドレスだけを取り出します。
+    //
+    // **投函の宛先には素のアドレスしか置けません。** SMTP の `RCPT TO:` へは
+    // この値がそのまま渡るので（`ext/mail/smtp.go` の `c.Rcpt`）、飾りの名前が
+    // 付いていると断られます。サーバー側の `normalizeEmailTag` と同じ規則です
+    // ——山括弧があれば中身、無ければ全体。
+    function bareAddress(raw) {
+        const s = String(raw || '').trim();
+        const i = s.lastIndexOf('<');
+        if (i >= 0) {
+            const j = s.indexOf('>', i);
+            if (j > i) return s.slice(i + 1, j).trim();
+        }
+        return s;
+    }
+
+    // replyTo は返信の宛先の初期値です。
+    //
+    // **`返信先`（Reply-To）が先**——差出人と違う窓口に返させたいときに付くヘッダで、
+    // 付いているなら相手はそちらで受けたいのです（付いていないほうが普通）。
+    //
+    // ⚠ **2026-09-13 から `差出人アドレス` タグはありません**（1人1タグにした日に
+    // `差出人` が `名前 <アドレス>` を持つ形へ変わった）。ここが古いままだったので、
+    // **返信の宛先が空のまま出ていました**（2026-09-14 に実測して気づいた）。
+    function replyTo() {
+        return bareAddress(tagValue('返信先') || tagValue('差出人'));
+    }
+
     // toggleReplyForm は返信の入力欄を出し入れします。宛先と件名は元のメールから
     // 埋めますが、**全部書き直せます**（機械が決めるのは初期値まで）。
     function toggleReplyForm(box, btn) {
@@ -3468,7 +3639,7 @@
         form.className = 'mail-reply-form';
 
         const fields = {};
-        [['to', '宛先', tagValue('差出人アドレス')],
+        [['to', '宛先', replyTo()],
          ['cc', 'CC', ''],
          ['subject', '件名', replySubject()]].forEach(([key, label, value]) => {
             const row = document.createElement('div');
@@ -3530,7 +3701,8 @@
             if (/^(📎|📧)/.test(t.trim())) return; // 添付のリンク行
             t.split('\n').forEach(line => lines.push('> ' + line));
         });
-        const from = tagValue('差出人') || tagValue('差出人アドレス');
+        // 引用の頭は**飾りの名前ごと**でよい（読む人に見せる文字で、投函には使わない）。
+        const from = tagValue('差出人');
         const head = from ? '\n\n' + from + ' さんは書きました:\n' : '\n\n';
         return head + lines.slice(0, 60).join('\n') + '\n';
     }
@@ -4141,6 +4313,8 @@
         btn.addEventListener('click', async () => {
             btn.disabled = true;
             btn.textContent = '🤖 解析中…';
+            // **ページが生まれたか**。生まれたときだけ画面を取り直します（下）。
+            let born = false;
             try {
                 const res = await fetch('/api/analyze-attachment', {
                     method: 'POST',
@@ -4159,85 +4333,69 @@
                         msg += ' — 図面番号の一致したDXF ' + d.matched_dxf + '件と結びました。';
                     }
                     notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
-                    refreshAnalyzedMarks(); // 押した直後に印を出す
+                    born = true;
                 } else if (!d.is_client_order) {
                     notify('発注書でも図面でもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
                 } else {
                     notify('受注ページを作りました: ' + (d.title || d.page_id) +
                         '（/' + d.page_id + '）', { type: 'success', duration: 0, id: 'analyze-pdf' });
-                    refreshAnalyzedMarks(); // 押した直後に印を出す
+                    born = true;
                 }
             } catch (e) {
                 notify('解析できませんでした: ' + e, { type: 'alert', duration: 0, id: 'analyze-pdf' });
             }
             btn.disabled = false;
             btn.textContent = '🤖 解析';
+
+            // **生まれた子ページを画面へ出す**（2026-09-14 ユーザー:「解析終了後に、
+            // 部品ページが子ページになりますが、ページに反映されない」）。
+            //
+            // 古くなるのは**2か所**です——左レールの子ページ一覧と、本文の
+            // 「子ページ一覧の鏡」（`section[data-type="child-list"]`・サーバーが
+            // 中身を埋める計算ビュー）。通知だけでは、押した人は自分で読み込み直す
+            // ことになります。
+            //
+            // **丸ごとの再読み込みにはしません**——`reloadContent()` は本文を
+            // 取り直すだけなので、通知・巻き上げ位置・開いているPDFの外側は残ります。
+            // 書きかけを失う心配も要りません: このボタンは**閲覧モードにしか出ない**
+            // ためです（`refreshAttachmentPreviews` が編集モードで早々に戻ります）。
+            if (born) {
+                await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
+                loadChildNav();        // 左レールの子ページ一覧
+            }
         });
         return btn;
     }
 
-    // ── 部品ページの図面をそのまま出す（2026-09-06）────────────────────
+    // ── サーバーが描いた「ファイル表示」の枠に、大きさの記憶を配線する ──────
     //
-    // ユーザー:「各部品ページの図面の項目に図面をインライン表示したいです」。
+    // **枠を作るのはサーバーです**（`internal/cms/file_view.go`・
+    // `section[data-type="file-view"]` の鏡型）。ここがするのは、右下をつまんで
+    // 大きさを変えられるようにすることだけ——高さは**この端末の持ち物**で、
+    // 本文にもサーバーにも残さないためです。
     //
-    // **図面PDFは部品ページには無い**——実体は通信記録ページの添付で、部品ページが
-    // 持っているのは由来の参照 `受信元：<通信記録ID>-<添付ID>` だけです。同じものを
-    // 2つに増やさない設計なので、**出すときに参照から導きます**。
+    // ⚠ **2026-09-14 にサーバー側へ移しました。** それまではここが参照リンクから
+    // `<embed>` を組み立てていましたが、2つ困りごとがありました:
     //
-    // URLは参照リンクの href（`/010242#19ux`）から組み立てます——**リンクから
-    // 埋め込みを導出するときは形を必ず検査する**という app.js の規律に従い、
-    // 正規表現で確かめてから使います（refreshAttachmentPreviews と同じ作法）。
+    //  1. **`a.ref-link` はページ描画のときしか作られません**（`RenderReferenceLinks`
+    //     は `/api/load` を通らない）。だから編集モードを出入りしたり
+    //     `reloadContent()` が走ったりすると、**図面が黙って消えていました**。
+    //     計算ビューの鏡は `/api/load` でも走るので、この穴ごと塞がります。
+    //  2. **JSが要りました**——公開ページ（匿名の閲覧）では出ませんでした。
     //
-    // **クロームなので保存されません**（`.vocab-chrome`）。本文には参照が1つ
-    // 残るだけで、ページを移しても図面は付いて行きます。
-    const REF_LINK_RE = /^\/(\d{6})#([0-9a-z]+)$/;
-
-    async function refreshDrawingPreviews() {
-        document.querySelectorAll('#w-editor-content .drawing-inline').forEach(el => el.remove());
-        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
-        const secs = Array.from(document.querySelectorAll('#w-editor-content section'))
-            .filter(sec => {
-                const h2 = sec.querySelector(':scope > h2');
-                return h2 && h2.textContent.trim() === '図面';
-            });
-        for (const sec of secs) {
-            // ZIPの中のPDFは直接出せません（添付の実体はZIPのほう）。
-            if (Array.from(sec.querySelectorAll('dt')).some(dt => dt.textContent.trim() === '元ファイル')) {
-                continue;
-            }
-            const link = sec.querySelector('dl[data-type="tags"] a.ref-link');
-            if (!link) continue;
-            const m = REF_LINK_RE.exec(link.getAttribute('href') || '');
-            if (!m) continue;
-            const url = '/' + m[1] + '/' + m[2] + '.pdf';
-            // **在ることを確かめてから出します**——添付がPDFでない・消された場合に
-            // 壊れた枠を見せないため。
-            try {
-                const head = await fetch(url, { method: 'HEAD' });
-                if (!head.ok) continue;
-            } catch (e) { continue; }
-
-            const wrap = document.createElement('div');
-            wrap.className = 'vocab-chrome drawing-inline';
-            const embed = document.createElement('embed');
-            // **サムネイル欄を閉じ、幅に合わせて開きます**（2026-09-10）。既定では
-            // 23%で開き、左のサムネイル欄と黒い余白が枠の3/4を占めていました
-            // ——図面を見に来た人が見るものではありません。
-            //
-            // **ツールバーは残します**（`toolbar=0` にしない）。ユーザー:「印刷ボタン
-            // などが無くなったのですが、べんりなのでふっかつしたいです」——印刷・
-            // ダウンロード・回転はここにしかなく、図面を扱う人がいちばん使う口です。
-            //
-            // 断片（`#`）はサーバーへ送られないので、**存在確認の HEAD は素のURLのまま**
-            // でよい。効かないブラウザでは黙って無視されるだけで、壊れません。
-            embed.src = url + '#navpanes=0&view=FitH';
-            embed.type = 'application/pdf';
-            embed.className = 'drawing-inline-pdf';
-            wrap.title = '右下をつまむと大きさを変えられます';
-            wrap.appendChild(embed);
-            wireDrawingResize(wrap, embed);
-            sec.appendChild(wrap);
-        }
+    // ユーザー:「PDFを表示するタグが必要に思います」「表示するという意図を伝える
+    // 名前が良いと思います」（2026-09-14）。
+    function refreshDrawingPreviews() {
+        document.querySelectorAll('#w-editor-content .file-view').forEach(wrap => {
+            // **同じ枠へ二度配線しません**——`applyMode()` はモードを切り替えるたびに
+            // 走りますが、サーバーが描いた枠はDOMに残ったままなので、印を付けないと
+            // つまむたびに聞き手が増えます（作り直していた頃は起きませんでした）。
+            if (wrap.dataset.wResize === '1') return;
+            const body = wrap.querySelector('.file-view-body');
+            if (!body) return;
+            wrap.dataset.wResize = '1';
+            wireDrawingResize(wrap, body);
+        });
     }
 
     // 図面枠の大きさは**見る人が決めます**（2026-09-10 ユーザー:「PDFインライン表示の
@@ -4537,6 +4695,12 @@
                     // 📎に出る「🤖 解析」ボタンから（人間ゲート型・2026-09-01）。
                     notify('受信箱に取り込みました: ' + (d.title || d.page_id) +
                         '（/' + d.page_id + '）', { type: 'success', duration: 8000 });
+                    // **生まれた子ページを左レールへ出す**（2026-09-14）。解析と同じ穴で、
+                    // 通知だけでは押した人が自分で読み込み直すことになります。
+                    // **本文は取り直しません**——落とすのは編集モードなので、
+                    // `reloadContent()` を呼ぶと書きかけを消します（本文の鏡は次に
+                    // 閲覧モードへ戻ったときに揃います）。
+                    loadChildNav();
                     continue;
                 }
                 if (!res.ok || !d.success) {
