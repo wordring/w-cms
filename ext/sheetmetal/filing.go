@@ -57,6 +57,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -476,10 +477,18 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped",
 			Message: "段（" + strings.Join(cms.MachineStages(), "・") + "）を選んでください"}
 	}
-
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil || !canWritePage(user, idInt) {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}
+	}
+	// **開いている人が居たら、その行は飛ばします**（2026-09-14）。整理は本文を
+	// 読んで・変えて・書くので、誰かがエディタを開いていると**オートセーブと
+	// 上書きし合います**。関門をハンドラではなく行ごとに置くのは、整理が
+	// **複数のページへ書く**ためです（部品ページ・合流先）——1枚が編集中でも、
+	// 残りは片付けられるほうがよい。
+	if holder, open := editlock.Locks.EditorOpen(idInt); open {
+		return filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "このページは編集中です（" + holder + "）。閉じてからもう一度お試しください"}
 	}
 
 	// **人が直した値を、図面ブロックにも書き戻します**（2026-09-11 ユーザー:「整理で

@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 )
 
@@ -84,6 +85,13 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 			failed++
 			continue
 		}
+		// **開いている人が居たら飛ばします**（2026-09-14）。`MarkHandled` は本文を
+		// 読んで・変えて・書くので、エディタが開いていると上書きし合います。
+		// ここも1件ずつ——押せたものは押せたままにするのがこの口の流儀です。
+		if _, open := editlock.Locks.EditorOpen(idInt); open {
+			failed++
+			continue
+		}
 		if err := MarkHandled(pageID, user.Username, value); err != nil {
 			failed++
 			continue
@@ -101,6 +109,9 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 // **既に付いていれば何もしません**（二重に押しても増えない）。付ける先は最初の
 // 可変タグの並びで、無ければ h1 の直後に新しく作ります——参照タグの描画が
 // 可変タグの中だけを見るのと同じで、**タグは可変タグの中に居るのが本来**です。
+// ⚠ **呼ぶ前に `editlock.RefuseWhileEditing` を通すこと。** ここは本文を読んで・
+// 変えて・書くので、誰かがエディタを開いていると上書きし合います
+// （`append_page.go` の「ロックは呼ぶ側が取ります」の一件）。
 func MarkHandled(pageID, author, value string) error {
 	pair := `<dt>` + html.EscapeString(HandledTag) + `</dt><dd>` +
 		html.EscapeString(value) + `</dd>`
@@ -137,4 +148,3 @@ func endOfFirstTagList(body string) int {
 	}
 	return i + end
 }
-

@@ -201,6 +201,29 @@ func (m *lockManager) TryAcquire(pageID int, user, token string) AcquireResult {
 	return AcquireResult{Acquired: false, Holder: l.holder, SameUser: l.holder == user, GraceRemaining: rem}
 }
 
+// EditorOpen は、そのページを**いま誰かが開いている**かを返します（機械の書き込み用）。
+//
+// **`Validate` とは用途が違います。** あちらは「自分がトークンを持っているか」を見る
+// 保存の関門で、**エディタから来た要求**のためのものです。こちらが要るのは、
+// 一覧画面のボタンなど**エディタを開いていない口**から本文を書き換えるときです
+// ——トークンを持っていないので `Validate` を通すと必ず断られます。
+//
+// **保持者が居なくなったロックは「開いていない」とみなします。** `tick` が
+// ロックを消すのは**待機者が居るとき**だけなので、ブラウザを閉じただけの人の
+// ロックは残り続けます。それを「開いている」と数えると、**機械の書き込みが
+// 永久に止まります**（誰も待っていないので自然には消えない）。
+// 判定は編集の明け渡しと同じ `holderPresent`——接続が生きているか、取得直後の猶予内か。
+func (m *lockManager) EditorOpen(pageID int) (holder string, open bool) {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l := m.locks[pageID]
+	if !m.holderPresent(l, now) {
+		return "", false
+	}
+	return l.holder, true
+}
+
 // Validate は保存時のロックトークン検証です。ロックが無ければ許可（無競合）、
 // 他者保持／トークン失効なら拒否します。
 func (m *lockManager) Validate(pageID int, user, token string) bool {
