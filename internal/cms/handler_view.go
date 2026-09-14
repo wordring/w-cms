@@ -25,9 +25,11 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := r.URL.Query().Get("id")
-	if id == "" {
-		http.Error(w, "Missing id", http.StatusBadRequest)
+	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。空も不正も同じ扱いで、
+	// 「ページIDが不正です」に寄せます——区別しても呼ぶ側にできることは同じです。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
 	// ページ本文の取得は read 権限を要求する（匿名でも実効公開なら閲覧可）。

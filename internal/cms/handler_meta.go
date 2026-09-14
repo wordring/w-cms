@@ -74,7 +74,15 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 対象ページの read 権限を要求しますが、匿名でも実効公開（page.EffectivePublic）なら許可します
 // （子ナビと同様の扱い。認証認可設計.md 10.5）。
 func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
+	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
+	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
+	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	if !page.RequirePageReadOrPublic(w, r, id) {
 		return
 	}

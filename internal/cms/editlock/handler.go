@@ -18,6 +18,7 @@ import (
 //   - ロックが無ければ許可（無競合。フロント未対応でも従来どおり動く）。
 //   - 自分が保持者でトークン一致なら許可。
 //   - 他者が保持中／トークン失効なら 409 Conflict を書いて false を返す。
+//
 // 許可なら true。呼び出し側は権限チェック（page.RequirePageWrite 等）の後にこれを通します。
 func RequireEditLock(w http.ResponseWriter, r *http.Request, idStr string) bool {
 	u := auth.CurrentUser(r)
@@ -123,7 +124,15 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 // GET /api/lock-events?id=&role=holder|waiter&token= 。対象ページの write 権限を要求します。
 // 接続中＝presence とみなし、保持者の切断は即明け渡し、待機者の切断は猶予キャンセルに使います。
 func LockEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
+	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
+	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
+	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	if !page.RequirePageWrite(w, r, id) {
 		return
 	}
@@ -211,7 +220,15 @@ func LockForceAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequireAdmin(w, r) {
 		return
 	}
-	id := r.URL.Query().Get("id")
+	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
+	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
+	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
+	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)

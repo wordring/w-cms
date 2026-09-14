@@ -323,7 +323,15 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 // ValidateParentAPIHandler は、編集中ページの親ページ変更が妥当かを返します（クライアントの即時検証用）。
 // 権威的な検証は保存API側でも行われます。対象ページのwrite権限を前提とします。
 func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
+	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
+	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
+	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
 	if !page.RequirePageWrite(w, r, id) {
 		return
 	}
