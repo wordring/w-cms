@@ -1387,25 +1387,39 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border: 1px solid var(--border);
     border-radius: var(--radius);
 }
-/* 部品ページの図面。**添付のプレビューより高く**——ここは「ついでに覗く」場所では
-   なく、そのページの主題そのものなので、図面枠が読める高さを取る。 */
-/* 図面枠は**見る人が大きさを変えられます**（2026-09-10）。右下をつまんで縦に伸縮し、
+/* ファイル表示の枠（`section[data-type="file-view"]` にサーバーが描く・2026-09-14）。
+   **添付のプレビューより高く**——ここは「ついでに覗く」場所ではなく、そのページの
+   主題そのものなので、図面が読める高さを取る。
+   **見る人が大きさを変えられます**（2026-09-10）。右下をつまんで縦に伸縮し、
    決めた高さはその端末に憶えます（app.js の wireDrawingResize）。
    `resize` は `overflow: visible` では効かないので hidden を置きます。
-   **下に 12px 空けているのはつまみの居場所**です——PDFで隅まで覆うとつまめません。 */
-#w-editor-content .drawing-inline {
+   **下に 12px 空けているのはつまみの居場所**です——PDFで隅まで覆うとつまめません。
+   **縦積みにします**——枠の上に出どころの1行が入るので、中身に `height: 100%` を
+   与えると見出しのぶんだけ溢れます。見出しは自然高、中身が残りを取る形
+   （`min-height: 0` が無いと flex 子は縮みません）。 */
+#w-editor-content .file-view {
     margin-top: 8px;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
     height: 70vh;
     min-height: 200px;
     padding-bottom: 12px;
     overflow: hidden;
     resize: vertical;
 }
-#w-editor-content .drawing-inline-pdf {
+/* 出どころの1行。**本文に在るのはタグのほうで、枠はその描画**だと読めるように
+   （ユーザー:「HTMLに無いものが表示されるのは極力避けたい」2026-09-14）。 */
+#w-editor-content .file-view-head {
+    margin: 0 0 4px;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+#w-editor-content .file-view-body {
     display: block;
     width: 100%;
-    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius);
 }
@@ -1726,6 +1740,38 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
 
 .mail-replies-when,
 .mail-replies-to {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* やりとりの前後（In-Reply-To の鎖・2026-09-14）。
+ * 「この記録への返信」と**隣り合って出る**ので、同じ寸法にそろえたうえで
+ * 帯の色だけ変えます——別の鎖であることが、読まなくても分かるように。 */
+.mail-thread {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--w-accent-2, #a855f7);
+    background: var(--w-surface-alt, #fafafa);
+}
+
+.mail-thread-head {
+    margin: 0 0 0.3rem;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.mail-thread ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.mail-thread-dir {
+    font-size: 0.85em;
+    opacity: 0.8;
+    margin-right: 0.4em;
+}
+
+.mail-thread-when {
     font-size: 0.85em;
     opacity: 0.7;
 }
