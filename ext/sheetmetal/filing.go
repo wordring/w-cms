@@ -261,6 +261,13 @@ func partnerNames(user *auth.User) []string {
 // それがどの段に在るかは `suggestStage` が別に答えるためです（現行に在る装置を
 // 試作へ入れ直すこともあり、段で絞ると既存が見えなくなります）。
 //
+// ⚠ **ただし「顧客の孫」だけでは広すぎます。** 社名ページの子は段だけではなく、
+// `担当者`（窓口の人を集める箱）も並びます——そこの孫は**人の名前**なので、
+// 絞らないと `小澤 美智子` が装置の候補に出ます（2026-09-14 に実データで発見）。
+// **真ん中の世代は段の一覧（設定の `machine_stages`）に限ります**——段は閉じた
+// 集合なので、表引きで断てます。`担当者` を名指しで除くやり方は採りません
+// （箱が増えるたびに除外が増え、いつか漏れます）。
+//
 // **候補を出すだけで、合わせるのは人**です。完全一致でしか階層は繋がらないので
 // （findChildByTitle）、揺れを機械が吸収すると別の装置が1つに潰れます。
 func machineNames(user *auth.User) map[string][]string {
@@ -273,6 +280,16 @@ func machineNames(user *auth.User) map[string][]string {
 	if err != nil {
 		return out
 	}
+	// 段が1つも設定されていなければ、装置の置き場そのものが決まりません。
+	stages := cms.MachineStages()
+	if len(stages) == 0 {
+		return out
+	}
+	ph := strings.TrimSuffix(strings.Repeat("?,", len(stages)), ",")
+	args := []any{boxInt}
+	for _, st := range stages {
+		args = append(args, st)
+	}
 	// **3世代を1回のクエリで取ります**。行を読みながら別のクエリを投げると
 	// `:memory:` DBでカーソルが接続を握ったままになり、**絞り込みが静かに全部落ちます**
 	// （2026-09-03 に本番コードで踏んだ罠）。
@@ -281,8 +298,8 @@ func machineNames(user *auth.User) map[string][]string {
 		  FROM pages cust
 		  JOIN pages stage ON stage.parent_id = cust.id
 		  JOIN pages mach  ON mach.parent_id  = stage.id
-		 WHERE cust.parent_id = ?
-		 ORDER BY cust.title ASC, mach.title ASC`, boxInt)
+		 WHERE cust.parent_id = ? AND stage.title IN (`+ph+`)
+		 ORDER BY cust.title ASC, mach.title ASC`, args...)
 	if err != nil {
 		return out
 	}

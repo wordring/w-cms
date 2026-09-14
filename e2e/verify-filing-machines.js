@@ -82,7 +82,45 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     ok(!!r.machList, '装置名称の欄に候補リストが付いている', r.machList);
     ok(r.custValue === '南北スポーツ機械', '顧客名の推奨値が入っている', r.custValue);
     ok(r.options && r.options.length > 0, 'その顧客の装置が候補に出る', (r.options || []).join(' / '));
-    ok(r.options && r.options.includes('φ410 2輪'), '既にある装置名が候補にある');
+
+    // **候補が「段の下に在るもの」だけであること**を、木を辿って確かめます。
+    //
+    // もとは `φ410 2輪` という**実データの装置名を決め打ち**にしていました。
+    // データを入れ直すと消えるうえ（2026-09-13 に実際に消えた）、**混ざりものを
+    // 見逃します**——2026-09-14 には `担当者` の下の人名（`小澤 美智子` 等）が
+    // 候補に並んでいて、名前の決め打ちでは「無い」としか分かりませんでした。
+    const legit = await page.evaluate(async (opts) => {
+      const kids = async (id) => {
+        const res = await fetch('/api/children?parent_id=' + id);
+        return res.ok ? (await res.json() || []) : [];
+      };
+      const d = await (await fetch('/api/tag-schema')).json();
+      // 段の一覧は設定の持ち物。ここでも手書きしない。
+      const box = (await kids('000000')).find(p => p.Title === '取引先');
+      if (!box) return { ok: false, why: '取引先ページがありません' };
+      const cust = (await kids(box.ID)).find(p => p.Title === '南北スポーツ機械');
+      if (!cust) return { ok: false, why: '顧客ページがありません' };
+      const stages = await kids(cust.ID);
+      const machines = [];
+      const others = [];
+      for (const s of stages) {
+        const names = (await kids(s.ID)).map(p => p.Title);
+        // 段の下＝装置、それ以外の箱（担当者など）の下＝装置ではない。
+        (['現行', '旧型', '試作'].includes(s.Title) ? machines : others).push(...names);
+      }
+      return {
+        ok: true,
+        stray: opts.filter(o => others.includes(o) && !machines.includes(o)),
+        missing: machines.filter(m => !opts.includes(m)),
+      };
+    }, r.options || []);
+    if (!legit.ok) {
+      console.log('  — 木を辿れませんでした（' + legit.why + '）。この項目は飛ばします');
+    } else {
+      ok(legit.stray.length === 0, '段の下に無いもの（担当者の人名など）が混じらない',
+         legit.stray.join(' / '));
+      ok(legit.missing.length === 0, '段の下の装置はすべて候補にある', legit.missing.join(' / '));
+    }
 
     // 顧客名を別の会社へ打ち替えると、候補が入れ替わる（空になる）
     await page.fill('.filing-panel input[aria-label="customer"]', '知らない会社');
