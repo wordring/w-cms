@@ -242,7 +242,7 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pdfBytes, err := os.ReadFile(pdfPath)
 	if err != nil {
-		JSONFail(w, 0, "PDFファイルの読み込みに失敗しました")
+		JSONFail(w, http.StatusBadRequest, "PDFファイルの読み込みに失敗しました")
 		return
 	}
 
@@ -260,11 +260,11 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrNoGeminiKey) {
 			// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
-			JSONFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/")
+			JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/")
 			return
 		}
 		log.Printf("[Gemini API Error] %v", err)
-		JSONFail(w, 0, "Gemini APIの呼び出しに失敗しました: "+err.Error())
+		JSONFail(w, http.StatusBadGateway, "Gemini APIの呼び出しに失敗しました: "+err.Error())
 		return
 	}
 

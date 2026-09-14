@@ -111,11 +111,11 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch err {
 		case cms.ErrNoMailer:
-			cms.JSONFail(w, 0, "メール送信のプラグインが入っていません")
+			cms.JSONFail(w, http.StatusNotImplemented, "メール送信のプラグインが入っていません")
 		case cms.ErrMailNotSignedIn:
-			cms.JSONFail(w, 0, "メールアカウントにサインインしていません（設定からサインインしてください）")
+			cms.JSONFail(w, http.StatusConflict, "メールアカウントにサインインしていません（設定からサインインしてください）")
 		default:
-			cms.JSONFail(w, 0, "送信できませんでした: "+err.Error())
+			cms.JSONFail(w, http.StatusBadGateway, "送信できませんでした: "+err.Error())
 		}
 		return
 	}

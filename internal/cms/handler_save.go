@@ -39,13 +39,20 @@ func DecodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) boo
 }
 
 // JSONFail は JSON で答えるAPIの失敗応答 {"success": false, "message": …} を書きます。
-// status が 0 なら状態行は 200 のまま（フロントが本文の success を見て分岐する
-// 旧来の口——PDF解析——との互換）。
+//
+// ⚠ **status に 0 を渡さないこと**（2026-09-14 に受け付けるのをやめました）。
+// もとは「状態行は 200 のまま・フロントが本文の `success` を見て分岐する」という
+// 旧来の口（PDF解析）との互換のために在りましたが、**13箇所へ広がり**、コアにも
+// 入っていました。`res.ok` を見る受け手（app.js に8箇所）からは**失敗が成功に見えます**。
+//
+// 0 を渡すと Go の `net/http` が 200 を書くので、ここでは弾かずに 500 へ倒します
+// ——「黙って成功に見える」より「明らかに壊れている」ほうが直せます。
 func JSONFail(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	if status != 0 {
-		w.WriteHeader(status)
+	if status == 0 {
+		status = http.StatusInternalServerError
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]any{"success": false, "message": message})
 }
 

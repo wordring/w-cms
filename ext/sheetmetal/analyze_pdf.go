@@ -119,10 +119,10 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	j, err := judgeOrderPDF(pdf)
 	if err != nil {
 		if errors.Is(err, cms.ErrNoGeminiKey) {
-			cms.JSONFail(w, 0, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
+			cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
 			return
 		}
-		cms.JSONFail(w, 0, "解析に失敗しました: "+err.Error())
+		cms.JSONFail(w, http.StatusBadGateway, "解析に失敗しました: "+err.Error())
 		return
 	}
 	attachIDOf := func() string { return strings.TrimSuffix(fileName, filepath.Ext(fileName)) }
