@@ -28,7 +28,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -115,17 +114,10 @@ func ThreadOf(user *auth.User, idInt int) (prev *ThreadRef, next []ThreadRef, er
 
 // ThreadAPIHandler は GET /api/thread?page_id=X です。
 func ThreadAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	pageID, ok := page.NormalizeID(r.URL.Query().Get("page_id"))
+	// **メソッド確認もここに入りました**——写していたころは、この2つの口だけ
+	// 抜けていました（GET専用のつもりで書いて、書き忘れに誰も気づかない形）。
+	_, idInt, user, ok := GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
 	if !ok {
-		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
-	user := auth.CurrentUser(r)
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil || !page.CanView(user, idInt) {
-		// 読めない相手には「無い」と同じ顔を見せる（匿名の404統一と同じ規律）。
-		JSONFail(w, http.StatusNotFound, "ページが見つかりません")
 		return
 	}
 	prev, next, err := ThreadOf(user, idInt)
