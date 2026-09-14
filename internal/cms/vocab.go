@@ -165,8 +165,9 @@ type VocabDef struct {
 	// 見出し」です。部材定義が部品番号を鍵に受注明細と突き合わせるように、形式の外に
 	// 鍵がある場合に宣言します。
 	//
-	// これが無かったころ、鍵は plugin_materials.go に直書きされた日本語の魔法文字列
-	// でした。見出しを改名すると集計が丸ごと空になるのに告知はゼロ——「Field を持たない
+	// これが無かったころ、鍵は③計算の側（いまの ext/sheetmetal/materials.go）に
+	// 直書きされた日本語の魔法文字列でした。見出しを改名すると集計が丸ごと空に
+	// なるのに告知はゼロ——「Field を持たない
 	// 列は改名しても壊れない」という UnresolvedVocabFields の前提が、ここだけ破れていた。
 	// 宣言にすることで、読み取りと告知が同じ1箇所を見る。
 	RequiresTag string `json:"requires_tag,omitempty"`
