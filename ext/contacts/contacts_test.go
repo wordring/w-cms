@@ -1,10 +1,11 @@
-package cms
+package contacts
 
 import (
 	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 )
 
@@ -21,14 +22,14 @@ import (
 func TestPartnerBoxHasWorkSurface(t *testing.T) {
 	setupTemplateAPITest(t)
 	user := &auth.User{Username: "alice", IsAdmin: true}
-	newPage(t, TopPageID, "<h1>トップ</h1>",
+	newPage(t, cms.TopPageID, "<h1>トップ</h1>",
 		page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 
 	boxID, err := EnsurePartnerBox(user)
 	if err != nil {
 		t.Fatalf("EnsurePartnerBox: %v", err)
 	}
-	body, err := ReadPageBody(boxID)
+	body, err := cms.ReadPageBody(boxID)
 	if err != nil {
 		t.Fatal(err)
 	}

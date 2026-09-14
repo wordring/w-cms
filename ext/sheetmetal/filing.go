@@ -55,6 +55,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
+	"w-cms/ext/contacts"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
@@ -88,7 +89,7 @@ func suggestStage(customer, machine string) string {
 	if customer == "" || machine == "" {
 		return fallback
 	}
-	boxID, ok := cms.PartnerBoxPageID()
+	boxID, ok := contacts.PartnerBoxPageID()
 	if !ok {
 		return fallback
 	}
@@ -166,7 +167,7 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 1通目はまだ取引先に居ないのが正常で、そのときは人が打ちます。
 func suggestCustomer(user *auth.User, partPageID int, read string) string {
 	if addr := senderAddressOf(partPageID); addr != "" {
-		if title, ok := cms.PartnerTitleForAddress(user, addr); ok {
+		if title, ok := contacts.PartnerTitleForAddress(user, addr); ok {
 			return title
 		}
 	}
@@ -204,7 +205,7 @@ func senderAddressOf(partPageID int) string {
 // 整理の画面の入力補助です。**選ばせるのではなく、候補として見せる**だけ——
 // 新しい顧客の1枚目はここに無いので、打てなくしてはいけません。
 func partnerNames(user *auth.User) []string {
-	boxID, ok := cms.PartnerBoxPageID()
+	boxID, ok := contacts.PartnerBoxPageID()
 	if !ok {
 		return []string{}
 	}
@@ -259,7 +260,7 @@ func partnerNames(user *auth.User) []string {
 // （findChildByTitle）、揺れを機械が吸収すると別の装置が1つに潰れます。
 func machineNames(user *auth.User) map[string][]string {
 	out := map[string][]string{}
-	boxID, ok := cms.PartnerBoxPageID()
+	boxID, ok := contacts.PartnerBoxPageID()
 	if !ok {
 		return out
 	}
@@ -494,10 +495,10 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 
 	// **顧客名ページは「取引先」の下**です（2026-09-05 ユーザー決定）。アドレス帳が
 	// 作る相手ページと**同じ場所・同じ1枚**——連絡先を見るページと部品を見るページを
-	// 分けないため（cms.EnsurePartnerBox の説明が正本）。
-	boxID, err := cms.EnsurePartnerBox(user)
+	// 分けないため（contacts.EnsurePartnerBox の説明が正本）。
+	boxID, err := contacts.EnsurePartnerBox(user)
 	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "「" + cms.PartnerBoxTitle + "」ページを用意できません: " + err.Error()}
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "「" + contacts.PartnerBoxTitle + "」ページを用意できません: " + err.Error()}
 	}
 	customerID, err := ensureChildPage(user, boxID, customer)
 	if err != nil {

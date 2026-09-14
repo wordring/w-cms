@@ -49,8 +49,8 @@ func TestStateChangingHandlersRejectGET(t *testing.T) {
 		{"添付（PDF）", "/api/upload-pdf", UploadPDFHandler},
 		{"対応：不要を付ける", "/api/intake/handled", MarkHandledAPIHandler},
 		{"手で記録を作る", "/api/intake/memo", NewMemoAPIHandler},
-		{"連絡先の登録", "/api/contacts/register", RegisterContactAPIHandler},
-		{"連絡先を未分類へ戻す", "/api/contacts/unfile", UnfileContactAPIHandler},
+		// 連絡先の口（`/api/contacts/…`）は `ext/contacts` の試験が見ます
+		// （2026-09-15 に移設。ハンドラがこのパッケージから出たため）。
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

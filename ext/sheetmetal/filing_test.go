@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/ext/contacts"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -169,13 +170,13 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 
 	// 「取引先」の下に顧客名、その下に装置名称、その下に部品ページ
 	// （2026-09-05 ユーザー決定。トップ直下が名簿になるのを避けた）。
-	boxID, ok := findChildByTitle(cms.TopPageID, cms.PartnerBoxTitle)
+	boxID, ok := findChildByTitle(cms.TopPageID, contacts.PartnerBoxTitle)
 	if !ok {
-		t.Fatalf("「%s」ページが作られていません", cms.PartnerBoxTitle)
+		t.Fatalf("「%s」ページが作られていません", contacts.PartnerBoxTitle)
 	}
 	custID, ok := findChildByTitle(boxID, "南北スポーツ機械")
 	if !ok {
-		t.Fatalf("顧客名ページが「%s」の下に作られていません", cms.PartnerBoxTitle)
+		t.Fatalf("顧客名ページが「%s」の下に作られていません", contacts.PartnerBoxTitle)
 	}
 	// 装置の上に段が1枚入る（2026-09-05 ユーザー決定）。
 	stageID, ok := findChildByTitle(custID, "試作")
