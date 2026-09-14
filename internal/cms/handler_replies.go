@@ -14,7 +14,6 @@ package cms
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"w-cms/internal/auth"
@@ -42,8 +41,7 @@ func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
 		if !page.CanView(user, idInt) {
 			continue
 		}
-		r := ReplyRef{PageID: fmt.Sprintf("%0*d", page.IDLength, idInt)}
-		database.DB.QueryRow(`SELECT COALESCE(title,'') FROM pages WHERE id = ?`, idInt).Scan(&r.Title)
+		r := ReplyRef{PageID: page.FormatID(idInt), Title: PageTitleByID(idInt)}
 		database.DB.QueryRow(
 			`SELECT value FROM page_tags WHERE page_id = ? AND name = '送信日時' LIMIT 1`,
 			idInt).Scan(&r.SentAt)

@@ -375,17 +375,8 @@ const (
 	DirectionOut = "送信"
 )
 
-// TopLevelPageByTitle はトップ直下の題一致ページを返します
-// （通信箱・テンプレート置き場が共有する——「名前が機能」という同じ仕様）。
-func TopLevelPageByTitle(title string) (string, bool) {
-	var id int
-	err := database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = 0 AND title = ? LIMIT 1`, title).Scan(&id)
-	if err != nil {
-		return "", false
-	}
-	return page.NormalizeID(strconv.Itoa(id))
-}
+// TopLevelPageByTitle は page_lookup.go にあります（通信箱・テンプレート置き場・
+// 取引先が共有する「名前が機能」の引き方）。
 
 // ReplyToTag は「この記録はどの記録への返信か」を指す参照タグです。
 // 値は返信元のページID——参照タグの文法（ref_render.go）に乗るのでリンクになり、
@@ -458,7 +449,7 @@ func ensureFolderUnder(parentID, owner, title string) (string, error) {
 	if err := database.DB.QueryRow(
 		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
 		parentInt, title).Scan(&id); err == nil {
-		return fmt.Sprintf("%0*d", page.IDLength, id), nil
+		return page.FormatID(id), nil
 	}
 	newID, err := CreateChildPage(parentID, owner, "<h1>"+html.EscapeString(title)+"</h1>")
 	if err != nil {

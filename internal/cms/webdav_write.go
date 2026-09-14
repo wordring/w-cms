@@ -51,7 +51,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
 
 // davVersionsDir は添付の版の置き場です（`files/.versions/`）。
@@ -142,13 +141,6 @@ func (f davFS) inReadOnlyArea(pageID string) bool {
 		cur = meta.ParentID
 	}
 	return false
-}
-
-// PageTitleByID は索引からページの題を引きます（引けなければ空）。
-func PageTitleByID(idInt int) string {
-	var t string
-	database.DB.QueryRow(`SELECT COALESCE(title, '') FROM pages WHERE id = ?`, idInt).Scan(&t)
-	return t
 }
 
 // davWriteFile は上書き中の添付です。

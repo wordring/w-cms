@@ -13,7 +13,6 @@ package contacts
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -236,7 +235,7 @@ func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 		if _, dup := out[d]; dup {
 			continue // 先に見つかったほうを採る（同じドメインに2社は稀）
 		}
-		out[d] = partnerRefByDomain{PageID: fmt.Sprintf("%06d", companyID), Title: title}
+		out[d] = partnerRefByDomain{PageID: page.FormatID(companyID), Title: title}
 	}
 	return out
 }

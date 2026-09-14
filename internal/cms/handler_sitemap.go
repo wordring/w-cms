@@ -133,7 +133,7 @@ func publicPages() []publicPageEntry {
 			continue
 		}
 		out = append(out, publicPageEntry{
-			ID:      fmt.Sprintf("%0*d", page.IDLength, rw.id),
+			ID:      page.FormatID(rw.id),
 			LastMod: normalizeLastMod(rw.updatedAt),
 		})
 	}

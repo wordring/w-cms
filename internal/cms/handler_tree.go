@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -43,7 +42,7 @@ func reserveNewPageID(parent sql.NullInt64) (string, error) {
 		return "", err
 	}
 	idInt, _ := result.LastInsertId()
-	return fmt.Sprintf("%0*d", page.IDLength, idInt), nil
+	return page.FormatID(int(idInt)), nil
 }
 
 // ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。
@@ -90,7 +89,7 @@ func visibleChildren(user *auth.User, parentIDInt int) ([]PageSummary, error) {
 		var idInt int
 		if err := rows.Scan(&idInt, &p.Title); err == nil {
 			if page.CanView(user, idInt) {
-				p.ID = fmt.Sprintf("%0*d", page.IDLength, idInt)
+				p.ID = page.FormatID(idInt)
 				// 並び順キーはサイドカーが正本です（派生のDBへは持たせない）。
 				// 子の数は多くても数百なので、ここで読んで並べれば足ります。
 				if meta, ok := page.ReadSidecar(p.ID); ok {
@@ -182,7 +181,7 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 親ページIDはゼロ詰め文字列に正規化（サイドカーへ記録する）。空＝トップレベル。
 	parentStr := ""
 	if parentID.Valid {
-		parentStr = fmt.Sprintf("%0*d", page.IDLength, parentID.Int64)
+		parentStr = page.FormatID(int(parentID.Int64))
 	}
 
 	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
@@ -376,7 +375,7 @@ func resyncSubtree(rootID string) {
 		for rows.Next() {
 			var child int
 			if rows.Scan(&child) == nil {
-				queue = append(queue, fmt.Sprintf("%0*d", page.IDLength, child))
+				queue = append(queue, page.FormatID(child))
 			}
 		}
 		rows.Close()
@@ -438,7 +437,7 @@ func SetPageParent(user *auth.User, id, newParent string) (parentStore, updatedA
 
 	if newParent != "" {
 		if pid, e := strconv.Atoi(newParent); e == nil {
-			parentStore = fmt.Sprintf("%0*d", page.IDLength, pid)
+			parentStore = page.FormatID(pid)
 		}
 	}
 	updatedAt, err = page.SetSidecarParent(id, parentStore)

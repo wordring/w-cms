@@ -94,7 +94,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// **人の名前が来たら、その人のページへ入れます**（2026-09-13）。
 		// 社名ページにアドレスを平らに積むと、6つ並んだ `メールアドレス` が誰のものか
 		// 分からなくなり、電話番号を足す先もありません。
-		dest, destTitle := target, partnerTitleOf(idInt)
+		dest, destTitle := target, cms.PageTitleByID(idInt)
 		if person := strings.TrimSpace(req.PersonName); person != "" {
 			pid, err := EnsureContactPerson(user, target, person)
 			if err != nil {

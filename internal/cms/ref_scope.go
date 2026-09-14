@@ -29,9 +29,10 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
+
+	"w-cms/internal/cms/page"
 )
 
 // RelatedPages は集計のスコープを返します——**自ページ＋参照で直接つながる
@@ -126,7 +127,7 @@ func page6(id int) (string, bool) {
 	if id < 0 || id > 999999 {
 		return "", false
 	}
-	return fmt.Sprintf("%06d", id), true
+	return page.FormatID(id), true
 }
 
 func sortedKeys(set map[int]bool) []int {
