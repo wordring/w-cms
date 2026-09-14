@@ -160,6 +160,17 @@ func parentIsPublishable(pageID int) bool {
 
 // PageChownHandler は所有者を変更します（chown）。権限: admin のみ。
 func PageChownHandler(w http.ResponseWriter, r *http.Request) {
+	// **状態を変える口は POST 固定**（要件定義書 §4.1）。
+	//
+	// ⚠ **2026-09-14 まで、ここだけメソッドを見ていませんでした**——状態を変える
+	// ハンドラの中で唯一の例外です。GET で状態が変わらないのは `DecodeJSONBody` が
+	// 空ボディで落ちるという**偶然**に依っていました。CSRF の守り（CSRFProtect）は
+	// GET を素通しするので、クエリパラメータの読み取りを1つ足した瞬間に
+	// **admin を狙った `<img src>` の CSRF** になります。
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if !page.RequireAdmin(w, r) {
 		return
 	}

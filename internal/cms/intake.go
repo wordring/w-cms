@@ -161,14 +161,11 @@ func (c *IntakeContext) isCreated(pageID string) bool {
 	return false
 }
 
-// CreatePage は通信箱の下へページを作ります。本文は保存経路と同じくサニタイズされ、
-// 権限は通信箱から継承します（子ページ作成と同じ規則——通信箱の権限設定が
-// 「受信物を誰が読めるか」をそのまま決める）。
-func (c *IntakeContext) CreatePage(bodyHTML string) (string, error) {
-	return c.createUnder(c.InboxID, bodyHTML)
-}
-
 // createUnder はページ作成の取り込み側の入口です（作成の芯＋監査＋作成済みの記録）。
+//
+// ⚠ **通信箱の直下へ作る口（`CreatePage`）は 2026-09-14 に撤去しました**——2026-09-05 に
+// 記録が `通信箱／年／月` へ入る形になり、`CreateDatedPage` に取って代わられて
+// 呼び手がゼロになっていたためです。直下へ作りたくなったら `createUnder(c.InboxID, …)`。
 func (c *IntakeContext) createUnder(parentID, bodyHTML string) (string, error) {
 	newID, err := CreateChildPage(parentID, c.Uploader, bodyHTML)
 	if err != nil {
