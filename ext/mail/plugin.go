@@ -113,7 +113,7 @@ func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !Configured() {
-		cms.JSONFail(w, 0, "サーバーに "+envClientID+" と "+envTenantID+" が設定されていません")
+		cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに "+envClientID+" と "+envTenantID+" が設定されていません")
 		return
 	}
 
@@ -121,7 +121,7 @@ func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	dc, err := StartDeviceCode(ctx)
 	if err != nil {
-		cms.JSONFail(w, 0, err.Error())
+		cms.JSONFail(w, http.StatusBadGateway, err.Error())
 		return
 	}
 

@@ -163,10 +163,10 @@ func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if err == errNotSignedIn {
-			cms.JSONFail(w, 0, "メールアカウントにサインインしていません")
+			cms.JSONFail(w, http.StatusConflict, "メールアカウントにサインインしていません")
 			return
 		}
-		cms.JSONFail(w, 0, err.Error())
+		cms.JSONFail(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	auth.Audit(user.Username, "mail.import",

@@ -99,7 +99,7 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	boxID, ok := MailBoxPageID()
 	if !ok {
-		JSONFail(w, 0, "通信箱ページがありません（トップ直下に「"+MailBoxTitle+"」という名前のページを作ってください）")
+		JSONFail(w, http.StatusConflict, "通信箱ページがありません（トップ直下に「"+MailBoxTitle+"」という名前のページを作ってください）")
 		return
 	}
 	// **通信箱への write を要求します**（取り込みと同じ関門）。
