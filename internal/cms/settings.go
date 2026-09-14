@@ -7,7 +7,9 @@ package cms
 // 派生索引なので、設定をDBにだけ置くと設定も消えます（docs/アーキテクチャとDBスキーマ.md
 // §8.2 と §9 の決定ログ D-5）。「文書（ファイル）が主」の原則の、設定への適用です。
 //
-// 住人は**語→型の推論辞書**・添付の上限と拡張子・装置の段・文字の置き換え表。
+// 住人は**7つ**——見出し語の辞書（`vocabulary`）・添付の上限と拡張子・装置の段・
+// 文字の置き換え表・WebDAV に見せない題・WebDAV で書ける題
+// （**足したらこの数も直すこと**。WebDAV の2つが抜けたまま残っていました）。
 // ユーザーの決定（2026-08-30）:「**運用中に増やしてDB再構築します**」——語を増やす
 // たびに再ビルドが要らないよう、ファイルに置きます。増やしたら **DB再構築**
 // （`POST /api/rebuild-db`）で読み直され、既存ページの索引にも反映されます。
@@ -56,29 +58,34 @@ const SettingsPath = "config/settings.json"
 // 未知のキーを弾く（打ち間違いを黙って無視しないため）ので、新しいキーは
 // 「無ければ既定値」で動くように書きます。
 type Settings struct {
-	// TypeInference は見出し語→列型の推論辞書です（vocab.go の決定順序の3番目）。
-	TypeInference map[string]ColumnType `json:"type_inference"`
-
-	// TagEnums は見出し語→選択肢です（`在籍` → 在籍・休職・退社）。
+	// Vocabulary は**見出し語の辞書**です。1語につき1件で、型と選択肢を一緒に持ちます。
 	//
-	// **縛りではなく、見分けるための表**です（2026-09-13 ユーザー:「語彙に無いものは
-	// 背景色で区別すればよいのでは？」）。ここに無い値も**そのまま書けます**——
-	// 画面が色で「見慣れない値」と知らせるだけで、拒否はしません。本文は人が書くもので、
-	// 編集モードで何でも打てる以上、拒否は入口でしか効かない見せかけの守りだからです。
+	// **もとは2つの表に割れていました**（`type_inference` と `tag_enums`。
+	// 2026-09-14 ユーザー:「語彙の設定に名前と型をセットで登録しては？」）。
+	// 割れていたせいで **`在籍` と `取引` は選択肢だけあって型が無く**、既定の `text`
+	// 扱いのままでした——選択肢を持つなら `enum` のはずなのに、そう書く場所が
+	// どちらの表にも無かったのです。
 	//
-	// 既にある規律と同じ形です:「型不一致の通知（語彙モデル §5.1: **検証して通知する。
-	// 拒否はしない**）」。色の言葉も揃えます——薄青＝表にある値、薄黄＝表に無い値。
+	// **業務ブロックの列は最初からこの形**でした（`VocabColumn` は `Label`＋`Type`＋
+	// `Enum` を1件で持つ）。タグだけが2つの表に散っていたので、揃えました。
+	//
+	// 選択肢は**縛りではなく、見分けるための表**です（2026-09-13 ユーザー:「語彙に
+	// 無いものは背景色で区別すればよいのでは？」）。ここに無い値も**そのまま書けます**
+	// ——画面が色で「見慣れない値」と知らせるだけで、拒否はしません。本文は人が書くもので、
+	// 編集モードで何でも打てる以上、拒否は入口でしか効かない見せかけの守りだからです
+	// （語彙モデル §5.1: **検証して通知する。拒否はしない**）。
 	//
 	// **値で機械が分岐するものはここに置きません**（`段` はフォルダ名になり、
-	// `取引：自社` は照合から外す判断に使うので、いまどおり表引きで閉じます）。
-	TagEnums map[string][]string `json:"tag_enums,omitempty"`
+	// `取引：自社` は照合から外す判断に使うので、そちらは表引きで閉じます）。
+	Vocabulary map[string]VocabWord `json:"vocabulary"`
 
 	// MaxUploadMiB は添付1件あたりの上限（MiB）です。0（未指定）なら既定の32
 	// （「サイズ上限32MiBは設定で変えられるように」——2026-08-31 ユーザー決定）。
 	MaxUploadMiB int `json:"max_upload_mib,omitempty"`
 
 	// AttachmentExtensions は汎用の添付として受ける拡張子です（ドットつき小文字）。
-	// 未指定なら既定＝ワンノート実データの15種（【考察】ワンノート移行.md §3-4）。
+	// **未指定なら1つも受けません**（既定の一覧はありません——設定が唯一の正本）。
+	// いま `config/settings.json` に書いてあるのは14種です（【考察】ワンノート移行.md §3-4）。
 	// 画像と .pdf は専用の口（中身検査つき）があるため、ここに書いても汎用の口は
 	// 受けません。**.json は書けません**——添付の置き場は files/ に分離済みで
 	// 構造上は無害だが、正本と同じ拡張子を添付に混ぜる運用そのものを断つ。
@@ -87,7 +94,8 @@ type Settings struct {
 	// MachineStages は装置名称の**上の段**の名前です（`取引先／社名／段／装置名称`）。
 	// ユーザー:「装置名の上の段として、旧型、現行、試作などがあったほうが探しやすい」
 	// （2026-09-05）。「など」と付いたので**運用中に増える前提**——語彙・推論辞書と
-	// 同じくここに置きます。未指定なら既定＝現行・旧型・試作。
+	// 同じくここに置きます。**未指定なら段を1つも出しません**（既定の一覧はありません）。
+	// いま `config/settings.json` に書いてあるのは 現行・旧型・試作 の3つです。
 	//
 	// **並び順に意味があります**——先頭が整理の画面の初期値（＝いちばん多い行き先）。
 	MachineStages []string `json:"machine_stages,omitempty"`
@@ -102,8 +110,10 @@ type Settings struct {
 	// `⌀`・`Ø`・`φ` と**別系統の文字**が同じ意味で使われます。どれを同じとみなすかは
 	// **業種の知識**なので、コードではなく設定に置きます。
 	//
-	// 未指定なら既定（`defaultCharFolding`）。**足したらDB再構築で効きます**
-	// ——語→型の推論辞書と同じ流儀。
+	// **未指定なら畳みません**（既定の表はありません——2026-09-07 に既定値をコードから
+	// 無くしたときに `defaultCharFolding` も消えました。ここのコメントだけが
+	// 「未指定なら既定」と言い続けていたので、2026-09-14 に直しています）。
+	// **足したらDB再構築で効きます**——見出し語の辞書と同じ流儀。
 	CharFolding map[string]string `json:"char_folding,omitempty"`
 
 	// WebDAVHidden は WebDAV に見せないページの題です（トップ直下でなくても効きます）。
@@ -121,8 +131,10 @@ type Settings struct {
 	WebDAVReadOnly []string `json:"webdav_readonly,omitempty"`
 }
 
-// settings は読み込み済みの設定です。nil のあいだはコード内の既定値が使われます
-// （テストや、LoadSettings を呼ばない経路のため）。
+// settings は読み込み済みの設定です。**nil のあいだは設定が空のものとして振る舞います**
+// ——辞書も拡張子も段も無い状態で、コード内の既定値は `MaxUploadBytes` の32MiBだけです
+// （テストや、LoadSettings を呼ばない経路のため。2026-09-07 に既定値をコードから
+// 無くしたとき、このコメントだけが「既定値が使われる」と言い続けていました）。
 //
 // 中身のマップは読み込み後**書き換えません**。差し替えは常にポインタごと行うので、
 // 参照側はロックの外でマップを読んで構いません。
@@ -194,7 +206,7 @@ func readSettings(path string) (*Settings, error) {
 
 	var s Settings
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	// 打ち間違えたキー（type_inferrence など）を黙って無視しない。
+	// 打ち間違えたキー（vocabulaly など）を黙って無視しない。
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&s); err != nil {
 		return nil, fmt.Errorf("設定ファイル %s の書式が不正です（手で直してください）: %w", path, err)
@@ -208,31 +220,32 @@ func readSettings(path string) (*Settings, error) {
 // validate は設定の中身を検査します。**不正なら止めます**——読み飛ばすと、
 // 書いたつもりの語が効かないまま集計だけが変わります。
 func (s Settings) validate(path string) error {
-	for word, typ := range s.TypeInference {
+	for word, w := range s.Vocabulary {
 		if strings.TrimSpace(word) == "" {
-			return fmt.Errorf("%s: type_inference に空の見出し語があります", path)
+			return fmt.Errorf("%s: vocabulary に空の見出し語があります", path)
 		}
-		if !validColumnTypes[typ] {
+		if !validColumnTypes[w.Type] {
 			// **使える型はここに書き写しません**——写すと型を足した日に片方が古くなります
 			// （2026-09-13 に `datetime`・`ref`・`email` が抜けたまま残っていました）。
-			return fmt.Errorf("%s: type_inference の %q に未知の列型 %q があります（使えるのは %s）",
-				path, word, typ, strings.Join(validColumnTypeNames(), " / "))
+			return fmt.Errorf("%s: vocabulary の %q に未知の列型 %q があります（使えるのは %s）",
+				path, word, w.Type, strings.Join(validColumnTypeNames(), " / "))
 		}
-	}
-	for word, values := range s.TagEnums {
-		if strings.TrimSpace(word) == "" {
-			return fmt.Errorf("%s: tag_enums に空の見出し語があります", path)
+		// **選択肢を持てるのは enum だけ**です。ほかの型に書いてあったら、書いた人は
+		// 効くつもりでいます——黙って無視すると、画面の色分けが出ないことに気づけません。
+		if len(w.Values) > 0 && w.Type != ColEnum {
+			return fmt.Errorf("%s: vocabulary の %q は型が %q なのに選択肢があります"+
+				"（選択肢を持てるのは %q だけです）", path, word, w.Type, ColEnum)
 		}
-		if len(values) == 0 {
-			return fmt.Errorf("%s: tag_enums の %q に選択肢がありません", path, word)
+		if w.Type == ColEnum && len(w.Values) == 0 {
+			return fmt.Errorf("%s: vocabulary の %q が %q なのに選択肢がありません", path, word, ColEnum)
 		}
 		seen := map[string]bool{}
-		for _, v := range values {
+		for _, v := range w.Values {
 			if strings.TrimSpace(v) == "" {
-				return fmt.Errorf("%s: tag_enums の %q に空の選択肢があります", path, word)
+				return fmt.Errorf("%s: vocabulary の %q に空の選択肢があります", path, word)
 			}
 			if seen[v] {
-				return fmt.Errorf("%s: tag_enums の %q に選択肢 %q が重複しています", path, word, v)
+				return fmt.Errorf("%s: vocabulary の %q に選択肢 %q が重複しています", path, word, v)
 			}
 			seen[v] = true
 		}
@@ -289,22 +302,28 @@ func activeTypeInference() map[string]ColumnType {
 	if settings == nil {
 		return nil
 	}
-	return settings.TypeInference
+	out := make(map[string]ColumnType, len(settings.Vocabulary))
+	for word, w := range settings.Vocabulary {
+		out[word] = w.Type
+	}
+	return out
 }
 
-// TagEnumDict は見出し語→選択肢の写しを返します（`/api/tag-schema` が配ります）。
+// VocabularyDict は見出し語の辞書の写しを返します（`/api/tag-schema` が配ります）。
+// エディタは**サーバーと同じ1つの辞書**で型を解決し、選択肢の外の値を薄黄で知らせます
+// （形式知識の3原則の1: エディタに手書きの語彙を置かない——語彙モデル §7）。
 //
-// **エディタに語彙を手書きしない**——推論辞書と同じ扱いです（語彙モデル §7）。
-// 表と画面が同じ設定を見るので、語を足せば両方が同時に知ります。
-func TagEnumDict() map[string][]string {
+// **写しを返します**——`Values` まで複製するので、受け取った側が書き換えても
+// 設定は壊れません。
+func VocabularyDict() map[string]VocabWord {
 	settingsMu.RLock()
 	defer settingsMu.RUnlock()
+	out := map[string]VocabWord{}
 	if settings == nil {
-		return map[string][]string{}
+		return out
 	}
-	out := make(map[string][]string, len(settings.TagEnums))
-	for k, v := range settings.TagEnums {
-		out[k] = append([]string(nil), v...)
+	for word, w := range settings.Vocabulary {
+		out[word] = VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...)}
 	}
 	return out
 }

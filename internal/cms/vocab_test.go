@@ -120,7 +120,11 @@ func TestNormalizeValue(t *testing.T) {
 		{ColDate, "２０２６／０８／１０", "2026-08-10", true},
 		{ColDate, "2026-13-01", "", false}, // 実在しない日付
 		{ColDate, "来週", "", false},
-		{ColEnum, "合格", "", false}, // enum は正規化しない
+		// enum は text と同じに畳みます（2026-09-14）。選択肢から選んだ値でも
+		// 末尾の空白や全角は混ざるので、畳んでおかないと `退社 ` で引けません。
+		{ColEnum, "合格", "合格", true},
+		// `text` と同じなので、**中の空白は畳みません**（畳むのは `code` だけ）。
+		{ColEnum, " 合格 ", "合格", true},
 		{ColImage, "p.jpg", "", false},
 
 		// text は**軽く**畳む（全角英数→半角・半角カナ→全角・濁点の合成・前後の空白）。
@@ -262,30 +266,38 @@ func TestTagSchemaIncludesVocab(t *testing.T) {
 	}
 }
 
-// TestTagSchemaIncludesTypeInference は /api/tag-schema が語→型の推論辞書を返すことを
+// TestTagSchemaIncludesTypeInference は /api/tag-schema が見出し語の辞書を返すことを
 // 検証します。エディタは手書きの辞書を持たず、これで型不一致を通知します（語彙モデル §7）。
+//
+// **2026-09-14 に応答を1つの `vocabulary` へ畳みました**（もとは `type_inference` と
+// `tag_enums` の2本）。だから型と選択肢は**同じ1件から**読めます。
 func TestTagSchemaIncludesTypeInference(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/tag-schema", nil)
 	rr := httptest.NewRecorder()
 	TagSchemaAPIHandler(rr, req)
 
 	var got struct {
-		TypeInference map[string]ColumnType `json:"type_inference"`
+		Vocabulary map[string]VocabWord `json:"vocabulary"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("JSONの解析に失敗: %v", err)
 	}
-	if len(got.TypeInference) == 0 {
-		t.Fatal("type_inference が空です（推論辞書が応答に含まれていません）")
+	if len(got.Vocabulary) == 0 {
+		t.Fatal("vocabulary が空です（見出し語の辞書が応答に含まれていません）")
 	}
 	// サーバー側の辞書（InferColumnType）と応答が一致すること
-	for k, v := range got.TypeInference {
-		if InferColumnType(k) != v {
-			t.Errorf("推論辞書の不一致: %q → 応答=%s / サーバー=%s", k, v, InferColumnType(k))
+	for k, w := range got.Vocabulary {
+		if InferColumnType(k) != w.Type {
+			t.Errorf("推論辞書の不一致: %q → 応答=%s / サーバー=%s", k, w.Type, InferColumnType(k))
 		}
 	}
-	if got.TypeInference["数量"] != ColNumber || got.TypeInference["検査日"] != ColDate {
-		t.Errorf("代表語の型が期待と違います: %+v", got.TypeInference)
+	if got.Vocabulary["数量"].Type != ColNumber || got.Vocabulary["検査日"].Type != ColDate {
+		t.Errorf("代表語の型が期待と違います: %+v", got.Vocabulary)
+	}
+	// **選択肢も同じ1件に載ること**——ここが割れていると、画面は型だけを知って
+	// 選択肢を知らない（薄黄が出ない）状態に戻ります。
+	if vals := got.Vocabulary["在籍"].Values; len(vals) == 0 {
+		t.Errorf("選択肢が応答に載っていません: %+v", got.Vocabulary["在籍"])
 	}
 }
 

@@ -84,6 +84,14 @@ var validColumnTypes = map[ColumnType]bool{
 	ColCode: true, ColDateTime: true, ColRef: true, ColEmail: true,
 }
 
+// ColumnTypeNames は使える列型を決まった順で返します（`/api/tag-schema` が配ります）。
+//
+// **エディタに手書きの一覧を置かないため**です（語彙モデル §7 の原則1）。
+// 2026-09-14 まで `assets/app.js` が6つを手で持っていて、**サーバーが9つに
+// なったあとも古いまま**でした——`<th data-type="email">` と書いてもエディタが
+// 黙って無視し、索引だけが `email` として扱う、というずれが出ていました。
+func ColumnTypeNames() []string { return validColumnTypeNames() }
+
 // validColumnTypeNames は使える列型を並べて返します（知らせに書くため）。
 //
 // **一覧を文字列で持ちません**——型を足した日に、宣言と知らせの片方だけが古くなります。
@@ -111,6 +119,17 @@ type VocabColumn struct {
 	Label string     `json:"label"`          // 見出しの表示文字（dt の文字）
 	Type  ColumnType `json:"type"`           // 列型
 	Enum  []string   `json:"enum,omitempty"` // Type==ColEnum のときの選択肢
+}
+
+// VocabWord は辞書の1語です（`config/settings.json` の `vocabulary`）。
+//
+// **名前と型がセット**です（2026-09-14 ユーザー決定）。`VocabColumn` が業務ブロックの
+// 1列について持つのと同じ形で、違いは「名前が鍵そのもの」なので `Label` が要らないこと。
+type VocabWord struct {
+	Type ColumnType `json:"type"`
+	// Values は `enum` のときの選択肢です。**縛りではなく見分けるための表**で、
+	// ここに無い値も書けます（画面が薄黄で知らせるだけ）。
+	Values []string `json:"values,omitempty"`
 }
 
 // VocabDef は1つの形式（data-type）の定義です。
@@ -330,18 +349,6 @@ func InferColumnType(label string) ColumnType {
 	return ColText
 }
 
-// TypeInferenceDict は語→型の推論辞書の写しを返します。
-// エディタは /api/tag-schema 経由でこれを受け取り、**同じ辞書**で入力を検証・通知します
-// （形式知識の3原則の1: エディタに手書きの語彙を置かない——語彙モデル §7）。
-func TypeInferenceDict() map[string]ColumnType {
-	dict := activeTypeInference()
-	out := make(map[string]ColumnType, len(dict))
-	for k, v := range dict {
-		out[k] = v
-	}
-	return out
-}
-
 // NormalizeValue は列型に応じて値の正規化値を返します。
 // 解釈できないときは ok=false（正規化値は**併記**であり、生テキストが常に正本）。
 func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {
@@ -350,7 +357,13 @@ func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {
 		return normalizeNumber(toHalfWidth(strings.TrimSpace(raw)))
 	case ColDate:
 		return normalizeDate(toHalfWidth(strings.TrimSpace(raw)))
-	case ColText:
+	case ColText, ColEnum:
+		// **`enum` は `text` と同じに畳みます。** 選択肢の中から選んだ値でも、
+		// 打てば末尾の空白や全角が混ざります——畳んでおけば `退社 ` でも引けます。
+		//
+		// **2026-09-14 に足しました。** それまで `在籍` は「選択肢だけあって型が無い」
+		// ので text 扱いで畳まれていました。型と選択肢を1件にまとめたとき、ここを
+		// 直さないと `在籍` の畳んだ値が黙って空になります（索引の後退）。
 		return normalizedOrNot(NormalizeText(raw))
 	case ColCode:
 		return normalizedOrNot(NormalizeCode(raw))
@@ -361,7 +374,7 @@ func NormalizeValue(t ColumnType, raw string) (norm string, ok bool) {
 	case ColEmail:
 		return normalizeEmailTag(raw)
 	default:
-		return "", false // enum / image は正規化しない
+		return "", false // image は正規化しない
 	}
 }
 

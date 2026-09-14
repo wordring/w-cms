@@ -74,18 +74,21 @@ func TestSettingsRejectsBrokenFile(t *testing.T) {
 		name string
 		body string
 	}{
-		{"JSONとして壊れている", `{"type_inference": {`},
+		{"JSONとして壊れている", `{"vocabulary": {`},
 		// `datetime` は 2026-09-06 に**実在の型になった**ので、例を差し替えた
 		// （SQL にある名前を借りると、いつか実装されて例でなくなる）。
-		{"未知の列型", `{"type_inference": {"加工日": "timestamptz"}}`},
-		{"空の見出し語", `{"type_inference": {"  ": "date"}}`},
-		{"打ち間違えたキー", `{"type_inferrence": {"加工日": "date"}}`},
+		{"未知の列型", `{"vocabulary": {"加工日": {"type": "timestamptz"}}}`},
+		{"空の見出し語", `{"vocabulary": {"  ": {"type": "date"}}}`},
+		{"打ち間違えたキー", `{"vocabularly": {"加工日": {"type": "date"}}}`},
 		{"置き換えの連鎖", `{"char_folding": {"Φ": "φ", "φ": "f"}}`},
 		{"段の重複", `{"machine_stages": ["現行", "現行"]}`},
-		{"選択肢が空", `{"tag_enums": {"在籍": []}}`},
-		{"選択肢に空の値", `{"tag_enums": {"在籍": ["在籍", "  "]}}`},
-		{"選択肢の重複", `{"tag_enums": {"在籍": ["在籍", "在籍"]}}`},
-		{"選択肢の見出し語が空", `{"tag_enums": {"  ": ["在籍"]}}`},
+		{"選択肢が空", `{"vocabulary": {"在籍": {"type": "enum"}}}`},
+		{"選択肢に空の値", `{"vocabulary": {"在籍": {"type": "enum", "values": ["在籍", "  "]}}}`},
+		{"選択肢の重複", `{"vocabulary": {"在籍": {"type": "enum", "values": ["在籍", "在籍"]}}}`},
+		// **型と選択肢が1件になったので、新しく起こりうる食い違い**——選択肢を
+		// 書いたのに型が enum でないとき。黙って無視すると、書いた人は色分けが
+		// 出ない理由に気づけません。
+		{"enum でないのに選択肢がある", `{"vocabulary": {"在籍": {"type": "text", "values": ["在籍"]}}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,7 +185,7 @@ func TestRebuildReloadsSettings(t *testing.T) {
 	}
 
 	// 運用者が辞書へ語を足して、DB再構築を回す。
-	writeTestSettings(t, `{"type_inference": {"加工日": "date"}}`)
+	writeTestSettings(t, `{"vocabulary": {"加工日": {"type": "date"}}}`)
 	if err := RebuildDatabase(); err != nil {
 		t.Fatalf("RebuildDatabaseエラー: %v", err)
 	}
@@ -208,24 +211,33 @@ func TestRebuildReloadsSettings(t *testing.T) {
 // 打てる以上、入口で弾いても本文には入ります。見えるほうが直せます。
 func TestTagEnumsAreSuggestionsNotRules(t *testing.T) {
 	useTempSettings(t)
-	writeTestSettings(t, `{"tag_enums": {"在籍": ["在籍", "休職", "出向", "退社"]}}`)
+	writeTestSettings(t, `{"vocabulary": {`+
+		`"在籍": {"type": "enum", "values": ["在籍", "休職", "出向", "退社"]}}}`)
 	if err := LoadSettings(); err != nil {
 		t.Fatalf("正しい設定が読めません: %v", err)
 	}
-	dict := TagEnumDict()
-	if len(dict["在籍"]) != 4 {
+	dict := VocabularyDict()
+	if len(dict["在籍"].Values) != 4 {
 		t.Fatalf("選択肢が読めていません: %v", dict)
 	}
 
 	// **写しであること**——呼び出し側が書き換えても設定は壊れない。
-	dict["在籍"][0] = "書き換え"
-	if again := TagEnumDict(); again["在籍"][0] != "在籍" {
-		t.Errorf("返した配列が設定の実体でした（写しを返すべき）: %v", again["在籍"])
+	dict["在籍"].Values[0] = "書き換え"
+	if again := VocabularyDict(); again["在籍"].Values[0] != "在籍" {
+		t.Errorf("返した配列が設定の実体でした（写しを返すべき）: %v", again["在籍"].Values)
 	}
 
-	// 表に無い語を含む本文も、**そのまま索引に入る**（拒否しない）。
-	if got := InferColumnType("在籍"); got != ColText {
-		t.Errorf("選択肢があるだけで型が変わっています: %v", got)
+	// **型と選択肢は1件で登録します**（2026-09-14 に統合）。前は選択肢だけが
+	// 書けたので `在籍` は既定の text 扱いでした——1語の情報が2つの表に割れていた
+	// ためで、いまは型を書かないと読み込みが止まります。
+	if got := InferColumnType("在籍"); got != ColEnum {
+		t.Errorf("選択肢を持つ語の型が enum になっていません: %v", got)
+	}
+
+	// それでも**表に無い値は拒否しません**——索引には生の値がそのまま入り、
+	// 画面が薄黄で知らせるだけです（語彙モデル §5.1）。
+	if norm, ok := NormalizeValue(ColEnum, "育休"); !ok || norm != "育休" {
+		t.Errorf("選択肢の外の値を弾いています: norm=%q ok=%v", norm, ok)
 	}
 }
 

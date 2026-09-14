@@ -102,10 +102,13 @@ func TestVocabIndexTable(t *testing.T) {
 		t.Errorf("検査日の正規化値が併記されていません: %+v", r.norm)
 	}
 
-	// 判定（enum）は正規化しない
+	// 判定（enum）は text と同じに畳む（2026-09-14 に変更）。
+	// **もとは畳んでいませんでした**——型と選択肢を1件にまとめたとき、
+	// それまで text 扱いだった `在籍` のような語が enum になり、畳んだ値が
+	// 黙って空になるところでした。選んだ値でも打てば空白は混ざります。
 	r, _ = findVocabRow(rows, 1, "判定")
-	if r.norm.Valid {
-		t.Errorf("enum 列に正規化値が入っています: %+v", r.norm)
+	if !r.norm.Valid || r.norm.String != "不合格" {
+		t.Errorf("enum 列の正規化値が併記されていません: %+v", r.norm)
 	}
 }
 
