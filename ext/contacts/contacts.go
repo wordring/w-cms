@@ -1,4 +1,4 @@
-package cms
+package contacts
 
 // ─────────────────────────────────────────────────────────────────────────
 // アドレス帳——メールから相手を拾い、ページにする（2026-09-05）
@@ -63,6 +63,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -77,16 +78,16 @@ import (
 // 裏返したのは2本です:
 //
 //   - **計算ビュー**——`view_render.go` の表に `unknown-contacts` が名指しで
-//     書かれていました。`RegisterView` で自分から名乗ります。
+//     書かれていました。`cms.RegisterView` で自分から名乗ります。
 //   - **アドレス→ページの解決**——`ref_render.go` が `ContactPageForAddress` を
-//     直接呼んでいました。`RegisterContactResolver` で解決係を預けます。
+//     直接呼んでいました。`cms.RegisterContactResolver` で解決係を預けます。
 //
 // 語彙（`unknown-contacts` の宣言）も `vocab.go` の表から引き取ります。
 func init() {
-	RegisterVocab(contactsVocab...)
-	RegisterView("unknown-contacts", contactsViewHTML)
+	cms.RegisterVocab(contactsVocab...)
+	cms.RegisterView("unknown-contacts", contactsViewHTML)
 	// 描画は匿名でも通る経路なので `user` は nil——認可は解決の中で見ます。
-	RegisterContactResolver(func(addr string) (string, string, bool) {
+	cms.RegisterContactResolver(func(addr string) (string, string, bool) {
 		return ContactPageForAddress(nil, addr)
 	})
 }
@@ -95,7 +96,7 @@ func init() {
 //
 // **`vocab.go` から引き取りました**（2026-09-15）。素の w-cms が `未登録の連絡先`
 // を知っている必要はありません——業務側の語です。
-var contactsVocab = []VocabDef{{
+var contactsVocab = []cms.VocabDef{{
 	// ユーザー:「アドレス帳のようなものを作って、メールから人物や電話番号、
 	// メールアドレスを収集しましょう」（2026-09-05）。**集める仕掛けは要りません**
 	// ——取り込みが既にアドレスをタグへ書いているので、足りないのは
@@ -118,7 +119,7 @@ const ContactPersonBoxTitle = "担当者"
 const PartnerBoxTitle = "取引先"
 
 // PartnerBoxPageID はトップ直下の取引先ページを返します（無ければ ok=false）。
-func PartnerBoxPageID() (string, bool) { return TopLevelPageByTitle(PartnerBoxTitle) }
+func PartnerBoxPageID() (string, bool) { return cms.TopLevelPageByTitle(PartnerBoxTitle) }
 
 // EnsurePartnerBox は取引先ページを返し、**無ければ作ります**。
 //
@@ -132,7 +133,7 @@ func EnsurePartnerBox(user *auth.User) (string, error) {
 	if id, ok := PartnerBoxPageID(); ok {
 		return id, nil
 	}
-	return CreateChildPage(TopPageID, user.Username, partnerBoxBody())
+	return cms.CreateChildPage(cms.TopPageID, user.Username, partnerBoxBody())
 }
 
 // partnerBoxBody は取引先ページの初期の本文です。
@@ -237,7 +238,7 @@ func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, 
 		if _, _, inPartner := PartnerOfPage(h.id); !inPartner {
 			continue // 取引先の外に書かれたアドレスは連絡先ではない
 		}
-		return fmt.Sprintf("%06d", h.id), PageTitleByID(h.id), true
+		return fmt.Sprintf("%06d", h.id), cms.PageTitleByID(h.id), true
 	}
 	return "", "", false
 }
@@ -321,7 +322,7 @@ func isSelfPartner(pageIDInt int) bool {
 // `MarkHandled` と同じく**文字列で見ます**（取りこぼしても害は同じタグが2つ）。
 func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
 	added := 0
-	err := RewriteBody(pageID, author, func(current string) string {
+	err := cms.RewriteBody(pageID, author, func(current string) string {
 		added = 0 // 呼び直されても数が増えないように
 		var pairs strings.Builder
 		for _, a := range addrs {
@@ -335,10 +336,10 @@ func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
 		if pairs.Len() == 0 {
 			return current
 		}
-		if at := EndOfFirstTagList(current); at >= 0 {
+		if at := cms.EndOfFirstTagList(current); at >= 0 {
 			return current[:at] + pairs.String() + current[at:]
 		}
-		return InsertAfterH1(current, `<dl data-type="tags">`+pairs.String()+`</dl>`)
+		return cms.InsertAfterH1(current, `<dl data-type="tags">`+pairs.String()+`</dl>`)
 	})
 	if err != nil {
 		return 0, err
@@ -425,7 +426,7 @@ func PartnerOfPage(pageIDInt int) (id int, title string, ok bool) {
 // 人だと分かったものだけを分けます——分からないものを人のページにすると、
 // 存在しない担当者が名簿に並びます。
 func EnsureContactPerson(user *auth.User, companyID, name string) (string, error) {
-	name = NormalizeNameForIngest(name)
+	name = cms.NormalizeNameForIngest(name)
 	if name == "" {
 		return "", errors.New("担当者の名前が空です")
 	}
@@ -455,7 +456,7 @@ func ensureChildByTitle(user *auth.User, parentID, title string) (string, error)
 	if !page.GetPerms(parentInt).CanWrite(user) {
 		return "", errors.New("親ページへ書き込む権限がありません")
 	}
-	return CreateChildPage(parentID, user.Username,
+	return cms.CreateChildPage(parentID, user.Username,
 		"<h1>"+stdhtml.EscapeString(title)+"</h1><p><br/></p>")
 }
 

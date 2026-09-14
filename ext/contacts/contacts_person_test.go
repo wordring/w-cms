@@ -1,4 +1,4 @@
-package cms
+package contacts
 
 // 連絡先を人ごとのページへ分けたときの振る舞い（2026-09-13）。
 //
@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 )
 
@@ -23,7 +24,7 @@ func setupPartnerTree(t *testing.T) (user *auth.User, companyID string) {
 	t.Helper()
 	setupTemplateAPITest(t)
 	user = &auth.User{Username: "alice", IsAdmin: true}
-	newPage(t, TopPageID, "<h1>トップ</h1>",
+	newPage(t, cms.TopPageID, "<h1>トップ</h1>",
 		page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 	boxID, err := EnsurePartnerBox(user)
 	if err != nil {
@@ -56,7 +57,7 @@ func TestEnsureContactPersonBuildsTree(t *testing.T) {
 	if !ok {
 		t.Fatal("担当者の箱が読めません")
 	}
-	if got := PageTitleByID(mustAtoiT(t, meta.ParentID)); got != ContactPersonBoxTitle {
+	if got := cms.PageTitleByID(mustAtoiT(t, meta.ParentID)); got != ContactPersonBoxTitle {
 		t.Errorf("担当者の箱を挟んでいません: 親の題=%q", got)
 	}
 	if boxMeta.ParentID != companyID {
@@ -97,7 +98,7 @@ func TestPartnerOfPageWalksUpToCompany(t *testing.T) {
 		t.Errorf("社名ページ自身が返りません: id=%d ok=%v", id, ok)
 	}
 	// 取引先の外は false。
-	if _, _, ok := PartnerOfPage(mustAtoiT(t, TopPageID)); ok {
+	if _, _, ok := PartnerOfPage(mustAtoiT(t, cms.TopPageID)); ok {
 		t.Error("取引先の外のページで ok=true になりました")
 	}
 }
@@ -155,8 +156,8 @@ func TestUnknownContactsSkipsPersonPageAddresses(t *testing.T) {
 	recBody := "<h1>受信</h1><dl data-type=\"tags\">" +
 		"<dt>差出人</dt><dd>潮崎 光俊 &lt;" + addr + "&gt;</dd></dl>"
 	newPage(t, recID, recBody,
-		page.PageMeta{ParentID: TopPageID, Owner: "alice", Mode: page.DefaultMode})
-	if err := SyncIndex(recID, recBody); err != nil {
+		page.PageMeta{ParentID: cms.TopPageID, Owner: "alice", Mode: page.DefaultMode})
+	if err := cms.SyncIndex(recID, recBody); err != nil {
 		t.Fatal(err)
 	}
 
@@ -171,7 +172,7 @@ func TestUnknownContactsSkipsPersonPageAddresses(t *testing.T) {
 	}
 
 	// 念のため、担当者ページに本当に載っていること（試験の前提の確認）。
-	body, err := ReadPageBody(personID)
+	body, err := cms.ReadPageBody(personID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,8 +203,8 @@ func TestUnknownContactsFollowsPageMove(t *testing.T) {
 	recBody := "<h1>受信</h1><dl data-type=\"tags\">" +
 		"<dt>差出人</dt><dd>潮崎 光俊 &lt;" + addr + "&gt;</dd></dl>"
 	newPage(t, recID, recBody,
-		page.PageMeta{ParentID: TopPageID, Owner: "alice", Mode: page.DefaultMode})
-	if err := SyncIndex(recID, recBody); err != nil {
+		page.PageMeta{ParentID: cms.TopPageID, Owner: "alice", Mode: page.DefaultMode})
+	if err := cms.SyncIndex(recID, recBody); err != nil {
 		t.Fatal(err)
 	}
 
@@ -224,7 +225,7 @@ func TestUnknownContactsFollowsPageMove(t *testing.T) {
 		t.Fatal("取引先の下に在るのに未登録へ出ています")
 	}
 	// **取引先の外へ動かす**——間違えて動かしたときの形。
-	if _, _, err := SetPageParent(user, personID, TopPageID); err != nil {
+	if _, _, err := cms.SetPageParent(user, personID, cms.TopPageID); err != nil {
 		t.Fatalf("移動できません: %v", err)
 	}
 	if !inList() {
@@ -235,7 +236,7 @@ func TestUnknownContactsFollowsPageMove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := SetPageParent(user, personID, box); err != nil {
+	if _, _, err := cms.SetPageParent(user, personID, box); err != nil {
 		t.Fatalf("戻せません: %v", err)
 	}
 	if inList() {
@@ -275,7 +276,7 @@ func TestEmailTagLinksToContactPage(t *testing.T) {
 	body := `<dl data-type="tags">` +
 		`<dt>差出人</dt><dd>潮崎 光俊 &lt;` + addr + `&gt;</dd>` +
 		`<dt>宛先</dt><dd>知らない人 &lt;nobody@example.invalid&gt;</dd></dl>`
-	got := RenderReferenceLinks(body)
+	got := cms.RenderReferenceLinks(body)
 
 	// ① 登録済み——アドレスだけがリンクになり、名前はそのまま残る。
 	if !strings.Contains(got, `href="/`+personID+`"`) {

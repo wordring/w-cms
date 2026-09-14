@@ -1,4 +1,4 @@
-package cms
+package contacts
 
 // ─────────────────────────────────────────────────────────────────────────
 // アドレス帳の口（contacts.go から分離）
@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -33,12 +34,12 @@ import (
 func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	user := auth.CurrentUser(r)
 	if user == nil {
-		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
 		return
 	}
 	var req struct {
@@ -55,7 +56,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 空なら会社の口として社名ページへ（`order@…` のような人でないもの）。
 		PersonName string `json:"person_name"`
 	}
-	if !DecodeJSONBody(w, r, &req) {
+	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
 	var addrs []string
@@ -65,7 +66,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(addrs) == 0 {
-		JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
+		cms.JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
 		return
 	}
 
@@ -73,13 +74,13 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if raw := strings.TrimSpace(req.PageID); raw != "" {
 		target, ok := page.NormalizeID(raw)
 		if !ok {
-			JSONFail(w, http.StatusBadRequest, "相手ページのIDが不正です")
+			cms.JSONFail(w, http.StatusBadRequest, "相手ページのIDが不正です")
 			return
 		}
 		idInt, err := strconv.Atoi(target)
 		if err != nil || !isPartnerPage(idInt) {
 			// **箱の外へは足しません**（ドメインの逆引きが別物を拾うため）。
-			JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページを選んでください")
+			cms.JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページを選んでください")
 			return
 		}
 		if !page.RequirePageWrite(w, r, target) {
@@ -97,15 +98,15 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if person := strings.TrimSpace(req.PersonName); person != "" {
 			pid, err := EnsureContactPerson(user, target, person)
 			if err != nil {
-				JSONFail(w, http.StatusInternalServerError, "担当者ページを作れません: "+err.Error())
+				cms.JSONFail(w, http.StatusInternalServerError, "担当者ページを作れません: "+err.Error())
 				return
 			}
 			dest = pid
-			destTitle = destTitle + "／" + NormalizeNameForIngest(person)
+			destTitle = destTitle + "／" + cms.NormalizeNameForIngest(person)
 		}
 		added, err := AddContactAddresses(dest, user.Username, addrs)
 		if err != nil {
-			JSONFail(w, http.StatusInternalServerError, "相手ページへ足せません: "+err.Error())
+			cms.JSONFail(w, http.StatusInternalServerError, "相手ページへ足せません: "+err.Error())
 			return
 		}
 		auth.Audit(user.Username, "contact.add-addresses",
@@ -120,19 +121,19 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// ── 新しい相手ページを作る ──
 	// **相手ページの題も早期に正規化します**（2026-09-06）。部品階層の顧客名と
 	// **同じページ**なので、こちらだけ畳まないと題が食い違って2枚に分かれます。
-	name := NormalizeNameForIngest(req.Name)
+	name := cms.NormalizeNameForIngest(req.Name)
 	if name == "" {
-		JSONFail(w, http.StatusBadRequest, "名前を入れてください")
+		cms.JSONFail(w, http.StatusBadRequest, "名前を入れてください")
 		return
 	}
 	if !validRelation(req.Relation) {
-		JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
+		cms.JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
 		return
 	}
 
 	// **相手ページは「取引先」の下**（顧客名ページと同じ場所——会社を2枚にしない）。
 	// 箱がまだ無いときはトップへ1枚足すので、**トップへの書き込み**が要ります。
-	needParent := TopPageID
+	needParent := cms.TopPageID
 	if id, ok := PartnerBoxPageID(); ok {
 		needParent = id
 	}
@@ -141,25 +142,25 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	boxID, err := EnsurePartnerBox(user)
 	if err != nil {
-		JSONFail(w, http.StatusInternalServerError, "「"+PartnerBoxTitle+"」ページを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "「"+PartnerBoxTitle+"」ページを作れません: "+err.Error())
 		return
 	}
 
 	var b strings.Builder
 	b.WriteString("<h1>" + stdhtml.EscapeString(name) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	WriteTag(&b, RelationTag, req.Relation)
+	cms.WriteTag(&b, RelationTag, req.Relation)
 	for _, a := range addrs {
-		WriteTag(&b, EmailTag, a)
+		cms.WriteTag(&b, EmailTag, a)
 	}
 	b.WriteString("</dl>")
 	// 電話番号は空で置きます——**書く場所が見えていれば、人は書きます**
 	// （タグがあれば ☎ 発信のボタンも出ます・app.js）。
 	b.WriteString(`<p><br/></p>`)
 
-	pageID, err := CreateChildPage(boxID, user.Username, b.String())
+	pageID, err := cms.CreateChildPage(boxID, user.Username, b.String())
 	if err != nil {
-		JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
 		return
 	}
 	auth.Audit(user.Username, "contact.register", pageID+" ("+req.Relation+") "+strings.Join(addrs, ","))
@@ -184,40 +185,40 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	user := auth.CurrentUser(r)
 	if user == nil {
-		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
 		return
 	}
 	var req struct {
 		PageID  string `json:"page_id"`
 		Address string `json:"address"`
 	}
-	if !DecodeJSONBody(w, r, &req) {
+	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
 	pageID, ok := page.NormalizeID(strings.TrimSpace(req.PageID))
 	if !ok {
-		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	addr := normalizeEmail(req.Address)
 	if addr == "" {
-		JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
+		cms.JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
 		return
 	}
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil {
-		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	// **取引先の下だけ**（ここは連絡先の分類を取り消す口で、本文の一般的な編集口では
 	// ありません。よそのページのタグを消せる道を増やさない）。
 	if _, _, inPartner := PartnerOfPage(idInt); !inPartner {
-		JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページではありません")
+		cms.JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページではありません")
 		return
 	}
 	if !page.RequirePageWrite(w, r, pageID) {
@@ -228,15 +229,15 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	removed := 0
-	if err := RewriteBody(pageID, user.Username, func(current string) string {
+	if err := cms.RewriteBody(pageID, user.Username, func(current string) string {
 		removed = 0
 		return removeEmailTag(current, addr, &removed)
 	}); err != nil {
-		JSONFail(w, http.StatusInternalServerError, "外せません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "外せません: "+err.Error())
 		return
 	}
 	if removed == 0 {
-		JSONFail(w, http.StatusNotFound, "そのアドレスはこのページにありません")
+		cms.JSONFail(w, http.StatusNotFound, "そのアドレスはこのページにありません")
 		return
 	}
 	auth.Audit(user.Username, "contact.unfile", pageID+" -"+addr)

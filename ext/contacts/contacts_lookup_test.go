@@ -1,10 +1,11 @@
-package cms
+package contacts
 
 import (
 	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 )
 
@@ -13,9 +14,9 @@ func partnerPage(t *testing.T, id, boxID, title, relation string, addrs ...strin
 	t.Helper()
 	var b strings.Builder
 	b.WriteString("<h1>" + title + "</h1><dl data-type=\"tags\">")
-	WriteTag(&b, RelationTag, relation)
+	cms.WriteTag(&b, RelationTag, relation)
 	for _, a := range addrs {
-		WriteTag(&b, EmailTag, a)
+		cms.WriteTag(&b, EmailTag, a)
 	}
 	b.WriteString("</dl>")
 	newPage(t, id, b.String(), page.PageMeta{
@@ -26,10 +27,10 @@ func partnerPage(t *testing.T, id, boxID, title, relation string, addrs ...strin
 func setupPartnerBox(t *testing.T) string {
 	t.Helper()
 	setupTemplateAPITest(t)
-	newPage(t, TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
+	newPage(t, cms.TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 	const boxID = "000200"
 	newPage(t, boxID, "<h1>"+PartnerBoxTitle+"</h1>", page.PageMeta{
-		Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
+		Owner: "alice", Mode: page.DefaultMode, ParentID: cms.TopPageID})
 	return boxID
 }
 

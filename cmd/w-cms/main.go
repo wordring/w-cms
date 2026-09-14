@@ -210,11 +210,9 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/intake/handled", cms.MarkHandledAPIHandler)
 	// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
 	protected.HandleFunc("/api/intake/memo", cms.NewMemoAPIHandler)
-	// メールから拾った相手をページにする（アドレス帳）。
-	protected.HandleFunc("/api/contacts/register", cms.RegisterContactAPIHandler)
-	// 分類の取り消し（未分類へ戻す）。**ページは消しません**——押し間違いの取り消しが
-	// 別の押し間違いでページを消すことになっては割に合わないためです。
-	protected.HandleFunc("/api/contacts/unfile", cms.UnfileContactAPIHandler)
+	// アドレス帳の口（`/api/contacts/…`）は**ここにありません**——`ext/contacts` が
+	// プラグインの `Routes()` で持ち込みます（2026-09-15）。ルートも拡張と一緒に
+	// 出入りする、という `/api/required-materials` 等と同じ形です。
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 
