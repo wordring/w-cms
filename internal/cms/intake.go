@@ -51,7 +51,7 @@ const MailBoxTitle = "通信箱"
 // MailBoxPageID はトップ直下の通信箱ページを返します（無ければ ok=false）。
 // リクエスト時にしか呼ばれないためDBで足ります（テンプレートの isLeafPage と同じ理由）。
 func MailBoxPageID() (string, bool) {
-	return topLevelPageByTitle(MailBoxTitle)
+	return TopLevelPageByTitle(MailBoxTitle)
 }
 
 // IntakeHandler は取り込み係の受け口です。宣言した拡張子のファイルが通信箱へ
@@ -375,9 +375,9 @@ const (
 	DirectionOut = "送信"
 )
 
-// topLevelPageByTitle はトップ直下の題一致ページを返します
+// TopLevelPageByTitle はトップ直下の題一致ページを返します
 // （通信箱・テンプレート置き場が共有する——「名前が機能」という同じ仕様）。
-func topLevelPageByTitle(title string) (string, bool) {
+func TopLevelPageByTitle(title string) (string, bool) {
 	var id int
 	err := database.DB.QueryRow(
 		`SELECT id FROM pages WHERE parent_id = 0 AND title = ? LIMIT 1`, title).Scan(&id)
@@ -475,7 +475,7 @@ func ensureFolderUnder(parentID, owner, title string) (string, error) {
 // **ただの置き場（取引先・受注など）は行き止まりにする理由がありません**。
 // 業務の言葉（「受注」）を持つのは拡張の側で、ここには置きません。
 func EnsureTopLevelBox(title, owner string) (string, error) {
-	if id, ok := topLevelPageByTitle(title); ok {
+	if id, ok := TopLevelPageByTitle(title); ok {
 		return id, nil
 	}
 	return CreateChildPage(TopPageID, owner, "<h1>"+html.EscapeString(title)+"</h1>")

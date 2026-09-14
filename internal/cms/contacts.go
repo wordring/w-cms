@@ -67,6 +67,47 @@ import (
 	"w-cms/internal/database"
 )
 
+// init はアドレス帳を**フック経由で**コアへ差し込みます。
+//
+// **まだ `internal/cms` の中に居ますが、外から差せる形にしました**（2026-09-15）。
+// 行き先は `ext/contacts` と決まっており（§5b 案B）、移設の本体はファイルを動かす
+// ことではなく**依存の向きを裏返すこと**だからです。ここが済んでいれば、移動は
+// `package` 行と `cms.` の前置きだけになります。
+//
+// 裏返したのは2本です:
+//
+//   - **計算ビュー**——`view_render.go` の表に `unknown-contacts` が名指しで
+//     書かれていました。`RegisterView` で自分から名乗ります。
+//   - **アドレス→ページの解決**——`ref_render.go` が `ContactPageForAddress` を
+//     直接呼んでいました。`RegisterContactResolver` で解決係を預けます。
+//
+// 語彙（`unknown-contacts` の宣言）も `vocab.go` の表から引き取ります。
+func init() {
+	RegisterVocab(contactsVocab...)
+	RegisterView("unknown-contacts", contactsViewHTML)
+	// 描画は匿名でも通る経路なので `user` は nil——認可は解決の中で見ます。
+	RegisterContactResolver(func(addr string) (string, string, bool) {
+		return ContactPageForAddress(nil, addr)
+	})
+}
+
+// contactsVocab はアドレス帳が持ち込む語彙です（いまは作業面1つ）。
+//
+// **`vocab.go` から引き取りました**（2026-09-15）。素の w-cms が `未登録の連絡先`
+// を知っている必要はありません——業務側の語です。
+var contactsVocab = []VocabDef{{
+	// ユーザー:「アドレス帳のようなものを作って、メールから人物や電話番号、
+	// メールアドレスを収集しましょう」（2026-09-05）。**集める仕掛けは要りません**
+	// ——取り込みが既にアドレスをタグへ書いているので、足りないのは
+	// 「まだページになっていないもの」を並べて人が確定する口だけです。
+	Type:        "unknown-contacts",
+	DisplayName: "未登録の連絡先",
+	Category:    "ビュー",
+	Icon:        "📇",
+	Element:     "section",
+	View:        true,
+}}
+
 // ContactPersonBoxTitle は社名ページの下の、窓口の人を集める箱の名前です
 // （`取引先／社名／担当者／名前`）。**装置名称と人を兄弟にしない**ための1枚。
 // 語を1箇所に閉じておくのは「担当」と「担当者」が混ざるのを防ぐためです。
@@ -77,7 +118,7 @@ const ContactPersonBoxTitle = "担当者"
 const PartnerBoxTitle = "取引先"
 
 // PartnerBoxPageID はトップ直下の取引先ページを返します（無ければ ok=false）。
-func PartnerBoxPageID() (string, bool) { return topLevelPageByTitle(PartnerBoxTitle) }
+func PartnerBoxPageID() (string, bool) { return TopLevelPageByTitle(PartnerBoxTitle) }
 
 // EnsurePartnerBox は取引先ページを返し、**無ければ作ります**。
 //
@@ -196,7 +237,7 @@ func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, 
 		if _, _, inPartner := PartnerOfPage(h.id); !inPartner {
 			continue // 取引先の外に書かれたアドレスは連絡先ではない
 		}
-		return fmt.Sprintf("%06d", h.id), pageTitleByID(h.id), true
+		return fmt.Sprintf("%06d", h.id), PageTitleByID(h.id), true
 	}
 	return "", "", false
 }
@@ -294,7 +335,7 @@ func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
 		if pairs.Len() == 0 {
 			return current
 		}
-		if at := endOfFirstTagList(current); at >= 0 {
+		if at := EndOfFirstTagList(current); at >= 0 {
 			return current[:at] + pairs.String() + current[at:]
 		}
 		return InsertAfterH1(current, `<dl data-type="tags">`+pairs.String()+`</dl>`)

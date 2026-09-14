@@ -56,7 +56,7 @@ func TestEnsureContactPersonBuildsTree(t *testing.T) {
 	if !ok {
 		t.Fatal("担当者の箱が読めません")
 	}
-	if got := pageTitleByID(mustAtoiT(t, meta.ParentID)); got != ContactPersonBoxTitle {
+	if got := PageTitleByID(mustAtoiT(t, meta.ParentID)); got != ContactPersonBoxTitle {
 		t.Errorf("担当者の箱を挟んでいません: 親の題=%q", got)
 	}
 	if boxMeta.ParentID != companyID {

@@ -132,7 +132,7 @@ func (f davFS) inReadOnlyArea(pageID string) bool {
 		if err != nil {
 			return false
 		}
-		if titles[strings.TrimSpace(pageTitleByID(idInt))] {
+		if titles[strings.TrimSpace(PageTitleByID(idInt))] {
 			return true
 		}
 		meta, ok := page.ReadSidecar(cur)
@@ -144,8 +144,8 @@ func (f davFS) inReadOnlyArea(pageID string) bool {
 	return false
 }
 
-// pageTitleByID は索引からページの題を引きます（引けなければ空）。
-func pageTitleByID(idInt int) string {
+// PageTitleByID は索引からページの題を引きます（引けなければ空）。
+func PageTitleByID(idInt int) string {
 	var t string
 	database.DB.QueryRow(`SELECT COALESCE(title, '') FROM pages WHERE id = ?`, idInt).Scan(&t)
 	return t
