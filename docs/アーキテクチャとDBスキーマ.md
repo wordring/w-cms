@@ -18,9 +18,9 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 *   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。それ以外のテーブル（現在は `vocab_index` だけ）はプラグイン機構の `Schema()` が定義します。
 *   **`cms/editlock/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/editlock/handler.go`（4.3 参照）。
 *   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース（`Name` / `Schema` / `Tables` の3メソッド＝テーブルの所有）と、本文を読む観察係 `Observer`（`Plugin`＋`Triggers` / `OnPageStart` / `OnElement`。旧 `Sync(tx, pageID, root)` は 2026-08-26 の回覧化で廃止）、レジストリ（`Register` / `Observers`）、スキーマ一括適用（`ApplySchema`）と**既存DBとのずれ検出**（`DriftedSchemaTables`。8.3）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。走査そのものはコアの配送係 `cms/walk.go` が担います（[パーサとプラグイン.md](パーサとプラグイン.md)）。**語彙集約（必須メソッド `Tags` と `PluginTags`）は 2026-08-20 に撤去**——全プラグインが nil を返す状態になったため機構ごと外しました（下の「語彙の正本」参照）。
-*   **`cms/plugin_*.go`**: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）と、観察係なら引き金（`Triggers`）・洗い替え（`OnPageStart`）・要素ごとの読み取り（`OnElement`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。**現在残るのは `plugin_materials.go` だけ**（テーブルを持たず `vocab_index` を読む③計算。D-1・§2）。
+*   **`cms/plugin_*.go`**: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）と、観察係なら引き金（`Triggers`）・洗い替え（`OnPageStart`）・要素ごとの読み取り（`OnElement`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。**コアに計算プラグインはもう1つも残っていません**——③計算は拡張へ移りました（[ext/sheetmetal/materials.go](../ext/sheetmetal/materials.go)。テーブルを持たず `vocab_index` を読む。D-1・§2）。
 *   **`cms/htmldoc/sanitize.go`**: 本文サニタイザ（純粋なHTML部品。import は `x/net/html`＋標準のみ）で、**本文で扱えるHTMLの語彙の唯一の正本**（`structuralElements`＋`data-*` マーカー）。`cms/sanitize.go` は薄いラッパで、`htmldoc.New()` の結果をパッケージ変数として持ちます。依存は `cms → htmldoc` の一方向（**逆向きに import しないこと**）。
-*   **`cms/vocab.go` / `cms/vocab_index.go`**: 語彙モデル3層の①と②。`vocab.go` が形式定義の宣言テーブル（`vocabRegistry`。編集支援・型推論・正規化の語彙であって**安全性の門ではない**）、`vocab_index.go` が全 `table[data-type]` / `dl[data-type]` と、形式を持つ `section` の素の `dl`／`table`（`syncVocabSection`。機能見出し形・D-2）を縦持ちで索引する汎用同期（プラグイン機構へ相乗り）。読む側の入口は `cms/vocab_query.go`（`vocabTableRowsOf` / `vocabBlocksOf` / `pagesByTag`）。
+*   **`cms/vocab.go` / `cms/vocab_index.go`**: 語彙モデル3層の①と②。`vocab.go` が形式定義の宣言テーブル（`vocabRegistry`。編集支援・型推論・正規化の語彙であって**安全性の門ではない**）、`vocab_index.go` が全 `table[data-type]` / `dl[data-type]` と、形式を持つ `section` の素の `dl`／`table`（`syncVocabSection`。機能見出し形・D-2）を縦持ちで索引する汎用同期（プラグイン機構へ相乗り）。読む側の入口は `cms/vocab_query.go`（`VocabTableRowsOf` / `VocabBlocksOf` / `PagesByTag`）。
 *   **`cms/view_render.go`**: 計算ビュー（表示専用）の**サーバー事前描画**。本文中の空マーカーへ中身を埋めます（4.4 参照）。
 *   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルのみ**を抽出します（`PageTitle`。旧 `ParseCore`／`CorePage` は 2026-08-30 に関数1つへ畳んだ）。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。マーカー由来のデータの抽出は②汎用索引（`vocab_index.go`）が担当します。
 *   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_perms）を同期した後、同じトランザクション内で登録済みの全観察係の `OnPageStart`（当該ページ分の `DELETE`）を呼び、配送係（`walkers.walkObserve`）が本文を1回歩いて引き金に当たった要素を `OnElement` へ届け（`INSERT`）、最後に `PageFinisher` を実装する観察係の `OnPageEnd` を呼びます。テンプレート領域（`IsTemplateArea`）のページでは要素イベントを1つも発火しないので、古い行は消え新しい行は入りません。`RebuildDatabase` は設定ファイルを読み直したうえで全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
@@ -40,7 +40,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 > それ以外のテーブルは**プラグイン機構**の `Schema()` で定義し、起動時に `cms.ApplySchema()` で
 > 作成されます——現在それを持つのは汎用索引のプラグイン（`vocabIndexPlugin`）だけで、
 > **`vocab_index` と `page_tags` の2つ**を宣言します（`Tables()`）。ドメイン表は
-> D-1（§9）で全廃されました（`cms/plugin_*.go` に残る `plugin_materials.go` はテーブルを持ちません）。
+> D-1（§9）で全廃されました（③計算は `ext/sheetmetal/materials.go` へ移り、テーブルを持ちません）。
 >
 > 汎用索引も例外ではなく、テーブル作成は
 > [cms/vocab_index.go](../internal/cms/vocab_index.go) の `Schema()` が担います
@@ -118,7 +118,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 | `<table data-type="client-order-items">` | `data_type='client-order-items'`・1データ行が1 `row_no` |
 | `<section data-type="our-order">` ／ `<table data-type="our-order-items">` | 同上（`発注先` ほか） |
 | `<dl data-type="our-estimate">` ／ `<dl data-type="supplier-estimate">` | `data_type` はその値・1ブロック1件 |
-| `<table data-type="part-materials">` | `data_type='part-materials'`。**部品番号は行に無く**、同じページの可変タグ `部品番号` が鍵（`pagesByTag` で逆引き） |
+| `<table data-type="part-materials">` | `data_type='part-materials'`。**部品番号は行に無く**、同じページの可変タグ `部品番号` が鍵（`PagesByTag` で逆引き） |
 | `<dl data-type="tags">` | **`page_tags` のほうへ**（`vocab_index` ではない・2026-09-13）。`name` は自由語 |
 
 **ヘッダの `<dl>` は `data-type` を持ちません**（役割は包む `section` が宣言し、鍵は `dt` の
@@ -142,7 +142,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 
 ## 3. 部材手配計算APIの仕様
 
-動的に必要な部材数を計算するロジックは `RequiredMaterials(user, pageID)`（`plugin_materials.go`）に
+動的に必要な部材数を計算するロジックは `RequiredMaterials(user, pageID)`（`ext/sheetmetal/materials.go`）に
 あり、**2つの出口**から使われます（部品単位ではなく、対象ページ単位で計算します）。
 
 1.  **`GET /api/required-materials?page_id={page_id}`**（プラグイン提供API）。
@@ -162,7 +162,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 1.  **対象ページの受注明細を取得**: `data_type='client-order-items'` の行を `page_id` で引き、
     品番（`item-id`）と数量を読みます。ページで絞るので、同じ発注書番号を別ページで
     使っても混ざりません。
-2.  **必要部材の特定**: 品番をキーに**可変タグ `部品番号` の逆引き**（`pagesByTag`）で
+2.  **必要部材の特定**: 品番をキーに**可変タグ `部品番号` の逆引き**（`PagesByTag`）で
     部材定義ページを見つけ、そのページの `data_type='part-materials'` を読みます。
     「受注数 × 1個あたり必要数」を部材名ごとに積算し、総必要数（`TotalRequired`）とします。
     鍵の名前はレジストリ宣言（`part-materials` の `RequiresTag`）が持ちます。

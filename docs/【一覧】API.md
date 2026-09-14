@@ -30,12 +30,72 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 上記2つの配線を [route_guard_test.go](../cmd/w-cms/route_guard_test.go) が固定しています
 （`csp_test.go` はポリシー文字列を見るだけで、配線までは見ていない）。
 
+### 1.1. メソッドの関門（状態を変える口は POST 固定）
+
+`CSRFProtect` は GET/HEAD/OPTIONS を検証しません。**状態を変える口は、ハンドラ自身が
+メソッドを絞ります**——GET で通ると本文へ `<img src="/api/…">` を1つ保存するだけで、
+開いた全ログインユーザーに同じ操作をさせられます（同一オリジンなので SameSite も CSP も
+止めない。実例は `/api/logout` と `/api/new-page`——理屈は
+[セキュリティ設計.md](セキュリティ設計.md) §1）。
+
+固定しているのは [method_guard_test.go](../internal/cms/method_guard_test.go)（2026-09-14 新設）で、
+**状態を変えるハンドラ16本を直接呼んで 405 を期待**します。加えて JSON で答える読み取り口が
+POST を**JSONで**断ることも見ます。
+
+⚠ **`route_guard_test.go` の `TestStateChangingRoutesRejectGET` では足りません**——
+`buildHandler()` へ流すので `RequireAuth` が先に 401 を返し、**ハンドラ自身のメソッド確認が
+一度も走りません**（「401 か 405 なら合格」だったので、確認を丸ごと外しても緑でした）。
+この穴で `/api/page-chown` のメソッド関門の欠落を 2026-09-14 まで見逃しています
+——GETで状態が変わらなかったのは `DecodeJSONBody` が空ボディで落ちるという**偶然**でした。
+
+### 1.2. 失敗応答の形
+
+JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
+`{"success": false, "message": …}` を書きます。**必ず意味のある状態行が付きます**
+——2026-09-14 まで「HTTP 200 のまま `success:false` を返す」口が**13箇所**あり、
+`res.ok` を見る受け手からは失敗が成功に見えていました。いまは `status == 0` の分岐そのものが
+畳まれています（0 が来たら 500 へ倒す）。
+
+| 状態行 | 意味 | 例 |
+|---|---|---|
+| **400** | 入力が不正 | ページIDが不正・宛先が空・PDFの読み込みに失敗 |
+| **401 / 403** | 認証・認可（`page.Require*` が返す） | 未ログイン／権限なし |
+| **404** | 読めない・存在しない（**区別させない**） | JSON読み取り口の共通の関門 `GateJSONPageRead` |
+| **405** | メソッドが違う（上の §1.1） | 状態を変える口への GET |
+| **409** | システムの状態が整っていない | 通信箱のページが無い・メール未サインイン・編集ロック・**編集中のページへの機械の書き込み**（§3） |
+| **413** | JSONボディが 8MiB 超 | `DecodeJSONBody` |
+| **423** | ロックが他者保持中 | `POST /api/lock` |
+| **501** | プラグインが入っていない | メール送信（`cms.ErrNoMailer`。`RegisterMailer` を通った実装が無い——いまは防御的な枝で、`ext/mail` が載っていれば起きない） |
+| **502** | 上流が失敗した | Gemini・SMTP |
+| **503** | 機能が構成されていない | `GEMINI_API_KEY` 未設定・メールの設定が無い |
+
+受け取る側（`assets/app.js`）は `readResult(res)` で**本体を1回だけ**読み、JSONにならなければ
+本文をそのまま理由にします。`failMessage(res, d)` が `message` → `statusText` → 状態行の順で
+1行を作ります——**数字は最後の手段**です。
+
+### 1.3. ページIDは入口で6桁へ畳む
+
+対象ページの `id` / `page_id` を受けるハンドラは、最初に `page.NormalizeID` を通します
+（不正・空は 400「ページIDが不正です」）。2026-09-14 に**畳んでいなかった5つ**を揃えました
+——`/api/page-meta`・`/api/validate-parent`・`/api/load`・`/api/lock-events`・`/api/lock/force`。
+`strconv.Atoi` した数値しか使っていないので実害はありませんでしたが、
+`page.GetPageDir(id)` / `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が
+`"1"` を渡すと `data/1/1.html` を探しに行きます。**理由の書いていない例外は、次の人には
+区別が付きません。**
+
+実測: `id=10272` → `010272` として引ける／`id=-1`・`id=abc` → 400（前は `Atoi` が
+`-1` を通して404になっていた）。
+
+⚠ **まだ畳んでいない口が3種類あります**（2026-09-14 時点・いずれも数値としてしか使わない）:
+`/api/unlock` の `id`（`Locks.Release` に渡すだけ）、`/api/required-materials` の `page_id`、
+そして**親を指す `parent`**（`/api/new-page`・`/api/set-parent`・`/api/validate-parent`）。
+
 ## 2. ページ本文・属性
 
 | メソッド | パス | 認可 | 編集ロック | 概要 |
 |---|---|---|---|---|
 | GET | `/{id}` | 任意認証 | — | **ページ本体**。本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成）。**殻は相手で分かれる**（2026-08-26）——認証済みは編集用 `assets/index.html`（`RenderPageShell`・`Cache-Control: no-store`）、匿名は**公開専用** `assets/public.html`（`RenderPublicShell`・スクリプト無し・`description`/OGP/canonical つき・`public, max-age=600` ＋ `Vary: Cookie` ＋ `ETag`）。本文はサニタイズ後に**計算ビューの中身が埋められる**（`RenderComputedViews`。下記の注記）。権限無し=403（体裁つきのHTML）／匿名×非公開=404（トップだけ `/login` へ302）／不存在=404 |
-| GET | `/api/load` | 任意認証（read） | — | ページ本文（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用**。**描画時と同じくサニタイズを通し**、計算ビューの中身を埋めて返す。**ページ内アンカーの合成（`RenderAnchors`）と参照リンクの合成（`RenderReferenceLinks`）は通さない**——合成した id や `<a>` がエディタのDOMへ入ると本文として保存されるため（下記の注記） |
+| GET | `/api/load` | 任意認証（read） | — | ページ本文（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用**。`id` は入口で6桁へ畳み、**空も不正も400「ページIDが不正です」**（2026-09-14。前は空だけ `Missing id` で分けていたが、呼ぶ側にできることは同じ）。**描画時と同じくサニタイズを通し**、計算ビューの中身を埋めて返す。**ページ内アンカーの合成（`RenderAnchors`）と参照リンクの合成（`RenderReferenceLinks`）は通さない**——合成した id や `<a>` がエディタのDOMへ入ると本文として保存されるため（下記の注記） |
 | POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types`、見出しの改名で計算に読まれなくなった項目の告知 `unresolved_fields`、殻の接頭辞を剥がした id の告知 `stripped_ids` を返す（下記の注記）。JSONボディは**8MiB上限**（超過は413。JSONを受けるAPIは共通） |
 | POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types`・`unresolved_fields`・`stripped_ids` は当該ブロック分のみ） |
 | GET | `/api/page-meta` | 任意認証（read） | — | ページ属性（親ページID・親ページ名・更新日時など）。匿名には実効公開のときだけ返す |
@@ -99,6 +159,23 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 
 検証規約はどちらも同じ（ロック無し＝許可／保持者本人でトークン一致なら許可／それ以外は409）。
 
+**機械が既存ページの本文を書き換える口には、3本目の関門があります**（`editlock.RefuseWhileEditing`・
+2026-09-14）。連絡先の登録（`/api/contacts/register`）・未分類へ戻す（`/api/contacts/unfile`）・
+「対応」タグ（`/api/intake/handled`）・整理の実行（`/api/file-drawings`）がそれで、いずれも
+**一覧画面のボタン**です——エディタを開いていないので編集トークンを持てず、`RequireEditLock` を
+通すと必ず409になります。かといって素通しにすると、`RewriteBody` は**読んで・変えて・書く**ので
+オートセーブと上書きし合います。
+
+- **誰かが開いていれば断ります。自分が開いていても断ります**（手元のエディタは書き換え前の
+  本文を持っているので、保存すれば機械の変更が消える）。
+- **保持者が居なくなったロックは無視します**（判定は明け渡しと同じ `holderPresent`）。
+- **断り方は口の流儀に合わせてあります**——1ページだけ触る口（連絡先の2本）は**409**、
+  まとめ押し（`/api/intake/handled`）は**1件ずつ `failed` に数えて飛ばす**、
+  整理は**行ごとに `outcome: "skipped"`**（複数のページへ書くので、1枚が編集中でも残りは
+  片付けられるほうがよい）。
+
+決定の経緯は [【考察】同時編集の競合対策.md](【考察】同時編集の競合対策.md) §9（2026-09-14）。
+
 ## 4. 権限・所有者
 
 | メソッド | パス | 認可 | 編集ロック | 概要 |
@@ -129,7 +206,7 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
 | GET | `/api/admin/audit` | 監査ログの参照。直近200件。記録対象は認証イベント（`login`/`login.fail`/`logout`）・保存・ページ作成／削除・添付（`attach`/`attach.overwrite`）・親の付け替え・権限変更（公開切替 `publish`/`unpublish` を含む）・ロック強制解除・索引の全再構築・ユーザー／グループ管理・取り込み（`intake.create`/`intake.duplicate`）・PDF判定（`analyze-pdf`）（[認証認可設計.md](認証認可設計.md) §9.4） |
 | POST | `/api/intake/memo` | **手で記録を作る**（2026-09-05。`{channel, direction?, title?, phone?, counterpart?}`）。通信箱／年／月の下に記録ページを1枚作る。チャネルは表引きで閉じる（メール／FAX／電話／メモ——自由記入だと `電話` と `TEL` が混ざる）。**向きは電話・FAX・メールが持ち、メモは持たない**。日時は向きに応じて `受信日時` か `発信日時` の**片方だけ**。`phone`・`counterpart` は発信（`tel:` の発信ボタン）から来る。認可は**通信箱への write**。監査記録は `intake.memo` |
-| POST | `/api/intake/handled` | 通信記録に**`対応` のタグを付ける**（2026-09-05。`{page_ids:[…], value}`。値は `済`（次の作業へ割り振った——**責任はそちらへ移る**）か `不要`（何も生まれない）。省略時は `済`）。**これが「済んだ」を決める唯一の印**——向きでも子ページの有無でも決めない（§未処理は人が決める）。未処理の一覧から1クリックで片付けるための口——付けるのは**コアの語彙だけ**で、「見積依頼にする」「受注にする」は業種の語彙なので拡張の仕事。**編集ロックは要らない**（人が編集中の本文を奪わず、タグを1つ足すだけ）。**1件の権限不足で全体を止めない**（応答は `{success, handled, failed}`）。監査記録は `intake.handled` |
+| POST | `/api/intake/handled` | 通信記録に**`対応` のタグを付ける**（2026-09-05。`{page_ids:[…], value}`。値は `済`（次の作業へ割り振った——**責任はそちらへ移る**）か `不要`（何も生まれない）。省略時は `済`）。**これが「済んだ」を決める唯一の印**——向きでも子ページの有無でも決めない（§未処理は人が決める）。未処理の一覧から1クリックで片付けるための口——付けるのは**コアの語彙だけ**で、「見積依頼にする」「受注にする」は業種の語彙なので拡張の仕事。**編集トークンは要らない**（一覧画面のボタンなので持てない）が、**編集中のページは飛ばす**——`MarkHandled` は本文を読んで・変えて・書くので、エディタが開いているとオートセーブと上書きし合う（2026-09-14。判定は `editlock.Locks.EditorOpen`）。**1件の権限不足で全体を止めない**（応答は `{success, handled, failed}`。飛ばした分は `failed` に数える）。監査記録は `intake.handled` |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え）。先頭で `config/settings.json` を読み直す |
 
 > **撤去済みの一括移行API**: `POST /api/migrate-vocab`（旧カスタム要素→語彙モデル。2026-08-20 撤去）、
@@ -144,11 +221,11 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | GET | `/api/tag-schema` | 認証不要 | **本文の語彙**。`elements`（構造HTML → 許可属性。`data-*` マーカーもここに属性として現れる。**カスタム要素はゼロ**）・`void`（終了タグを書かない要素）・`block_id`（`data-id`）・`vocab`（語彙レジストリの形式定義を `type` 順で。既定のビルドで**21形式**——コア7＋`ext/sheetmetal` 14。スラッシュメニューと挿入骨格の生成元）・`vocabulary`（見出し語の辞書。1語につき `{"type": …, "values": [...]}` の1件で型と選択肢を持つ。エディタの型検証と選択肢の色分けがサーバーの索引と同じ辞書を使うための配布。**2026-09-14 に `type_inference` と `tag_enums` の2キーを畳んだもの**）・`column_types`（`th[data-type]` に書ける列型の一覧＝`ColumnTypeNames()`。**2026-09-14 追加**——エディタが手書きで持っていて `datetime`・`ref`・`email` の3つぶん古かったため）を返す。エディタのシリアライザが従う正本（[本文サニタイズ設計.md](本文サニタイズ設計.md) §7） |
 | POST | `/api/upload-pdf` | 要認証（対象ページの write） | PDFのアップロード（フォーム欄 `pdf_file`。ページフォルダの **`files/` サブフォルダ**へ、サーバー生成の名前 `<生成ID>.pdf` で保存——正本と同居させない。2026-08-31）。**編集ロックが要る**——添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）ため本文編集と同じロックで直列化する。**受け入れは `.pdf` のみ・先頭 `%PDF-` 必須・パス要素と本文/サイドカー同名は拒否**。上限は設定 `max_upload_mib`（`config/settings.json`・既定32MiB・`MaxUploadBytes`）。応答は `{success, file_name, src, id, href}`（`id` は生成ID＝リンクブロックの `data-id`、`href` はきれいなURL）（[アーキテクチャとDBスキーマ.md](アーキテクチャとDBスキーマ.md) §5.1） |
 | POST | `/api/upload-image` | 要認証（対象ページの write） | **画像のアップロード**（2026-08-26。フォーム欄 `image_file`。`png`/`jpeg`/`webp`/`gif`/`svg`）。保存先・ロック・サイズ上限・名前の規則は `/api/upload-pdf` と共通（名前の検査は `safeAttachmentName` の1箇所）。加えて**中身のマジックナンバーで種別を判定**し、拡張子と食い違うものは拒否。**EXIF等のメタデータは保存前に除去**する（JPEGは向きを画素へ反映してから再符号化）。SVG は整形式・ルートが `svg`・`<script>`/`<foreignObject>`/`on*=`/`javascript:` 無しを確認。HEIC/AVIF/TIFF/BMP は**形式ごとの理由**を返して拒否。応答は `{success, file_name, kind, src, id}` で、`src` はそのまま `<img src>` に入れる絶対パス（きれいなURL）（要件定義書 §2.6） |
-| POST | `/api/upload-file` | 要認証（対象ページの write） | **汎用の添付**（2026-08-31。フォーム欄 `file`）。受ける拡張子は設定 `attachment_extensions`（既定は `settings.go` の14種——`.dxf`・`.xlsx`・`.zip`・`.eml`・`.mp4` 等。`.json` は書けない）。**中身は検査しない**——安全の本体は配信側（未知の種別は `attachment`＋`nosniff` で返す）。画像と `.pdf` はこの口では受けない（専用の口を迂回させないため・400）。保存先・ロック・上限・名前の規則は `/api/upload-pdf` と共通。応答は `{success, file_name, id, href}`。**対象が通信箱（トップ直下の「通信箱」ページ）なら取り込み係へ回す**（`serveIntake`・`intake.go`）——拡張子の担当（現在は `.eml` の1人）が居れば、添付ではなく通信箱の子ページ（通信記録）を作って `{success, intake:true, page_id, title}` を返す。このときは編集ロックを見ない（通信箱の本文は変わらない）。**重複検知**（2026-09-02）: 取り込み係が鍵を出せれば（`.eml` は `メッセージID`＝Message-ID）、同じ鍵を持つページを索引から逆引きし（`ExistingIntakePage`→`pagesByTag`）、あれば**作らずに** `{success, intake:true, duplicate:true, title, page_id?}` を返す（`page_id` は読める相手にだけ。監査記録 `intake.duplicate`）。担当が居ない拡張子は通常の添付になる。取り込みでは Gemini を呼ばない（下の `/api/analyze-attachment`） |
+| POST | `/api/upload-file` | 要認証（対象ページの write） | **汎用の添付**（2026-08-31。フォーム欄 `file`）。受ける拡張子は設定 `attachment_extensions`（既定は `settings.go` の14種——`.dxf`・`.xlsx`・`.zip`・`.eml`・`.mp4` 等。`.json` は書けない）。**中身は検査しない**——安全の本体は配信側（未知の種別は `attachment`＋`nosniff` で返す）。画像と `.pdf` はこの口では受けない（専用の口を迂回させないため・400）。保存先・ロック・上限・名前の規則は `/api/upload-pdf` と共通。応答は `{success, file_name, id, href}`。**対象が通信箱（トップ直下の「通信箱」ページ）なら取り込み係へ回す**（`serveIntake`・`intake.go`）——拡張子の担当（現在は `.eml` の1人）が居れば、添付ではなく通信箱の子ページ（通信記録）を作って `{success, intake:true, page_id, title}` を返す。このときは編集ロックを見ない（通信箱の本文は変わらない）。**重複検知**（2026-09-02）: 取り込み係が鍵を出せれば（`.eml` は `メッセージID`＝Message-ID）、同じ鍵を持つページを索引から逆引きし（`ExistingIntakePage`→`PagesByTag`）、あれば**作らずに** `{success, intake:true, duplicate:true, title, page_id?}` を返す（`page_id` は読める相手にだけ。監査記録 `intake.duplicate`）。担当が居ない拡張子は通常の添付になる。取り込みでは Gemini を呼ばない（下の `/api/analyze-attachment`） |
 | POST | `/api/parse-pdf` | 要認証（対象ページの write） | PDFから明細をAI抽出（Gemini。呼び出しの型は `gemini.go` の `geminiGenerate` に1本化・プロンプトは呼ぶ側の持ち物）。**ロックは要らない**——永続状態を変えず、結果はDOMへ足すだけ（保存する `/api/save` 側が検証する）。ファイル名は置く側と**同じ関門**（`attachmentFileName`）を通す——ここが `filepath.Base` だけだったころ、本文 `<id>.html` と権限サイドカー `<id>.meta.json` を「PDFとして」外部へ送れた。ファイルは `files/`→旧置き場（直下）の順で探す |
 | POST | `/api/analyze-attachment` | 要認証（対象ページの write） | **PDFの判定→受注ページ／部品ページ生成**（2026-09-01。板金部の既定セット [ext/sheetmetal/analyze_pdf.go](../ext/sheetmetal/analyze_pdf.go)——**`-tags minimal` で外れる**（2026-09-03。ルートもプラグインの `Routes()` 経由なので一緒に消える））。`{page_id, file, entry?}` で添付の `.pdf`（または `.zip` の中の `entry`＝目録の表示名）を Gemini に **3分類**させる（`doc_type` が `order` / `drawing` / `other`）。**枝は3つ**——①**発注書**（`is_client_order:true`）なら受注ページを対象ページの子として生成（`cms.CreateChildPage`。ヘッダ dl＋明細 table＋参照タグ `受信元: <ページID>-<添付ID>`、ZIP経由なら `元ファイル` も）。応答 `{success, is_client_order:true, page_id, title}`・監査記録 `analyze-pdf` ②**図面**なら部品ページを生成（`<h2>図面</h2>` のヘッダ dl＋参照タグ＋**`<section data-type="file-view">`**＝図面をその場で開くマーカー。同じページのDXF添付と図面番号で突き合わせる `MatchDXFAttachments`）。応答 `{success, is_client_order:false, doc_type:"drawing", page_id, title, matched_dxf}`・監査記録 `analyze-drawing` ③**それ以外**は `{success:true, is_client_order:false}` で何も作らない（人が押した問いに「発注書ではない」と答えるのも正常な結果）。**起動は人の操作だけ**（📎の「🤖 解析」ボタン・人間ゲート型）。**ロックは要らない**（対象ページの本文は変えない）。ZIP内の取り出しは `max_upload_mib` を上限に打ち切る（ZIP爆弾対策）。**取り消しはページ削除**（ゴミ箱） |
 | GET | `/api/filing-proposal` | 要認証（対象ページの read） | **整理の候補**（2026-09-03。板金部の既定セット [ext/sheetmetal/filing.go](../ext/sheetmetal/filing.go)——`-tags minimal` で外れる）。`?page_id=X` で通信記録ページ X の子のうち、**図面ブロックを持つもの**（部品ページ）と**発注書ブロックを持つもの**（受注ページ・2026-09-06）を集めて返す。応答は `{success, rows, orders, stages}`——`rows` は部品（`page_id, title, drawing_no, drawing_name, customer, machine_name, stage`。値は索引から読んだ**推奨値**で、人が直す）、`orders` は受注（`page_id, title, order_no, client_name, ordered_at, destination`。**直す欄は無い**——行き先は発注日で決まる）、`stages` は段の選択肢（設定 `machine_stages`）。読めないページは黙って落ちる（見せ分けC案） |
-| POST | `/api/file-drawings` | 要認証（各ページの write） | **整理の実行**（2026-09-03。同上）。`{rows:[{page_id, customer, stage, machine_name, drawing_name, confirm_revision}], orders:[page_id,…]}`。**部品**は `取引先／社名／段／装置名称` の下へ移し、題を図面名称に揃える（`cms.SetPageParent`＋`SetPageH1`。途中のページは無ければ作る）。空欄の行と、段が `machine_stages` に無い行は動かさない。移した先に同名の部品ページが在れば**改定図面**として先頭へ合流（`confirm_revision` が要る場合は `needs_confirm` を返す）。**受注**は `受注／年／月` の下へ移す（年月は**発注日**・2026-09-06）——受注ページでないIDは動かさない。応答は `{success, results:[{page_id, outcome, message, target_id?}]}`（`outcome` は `moved` / `revision` / `skipped` / `needs_confirm`）。監査記録は `file-drawing.move`・`file-drawing.revision`・`file-order.move` |
+| POST | `/api/file-drawings` | 要認証（各ページの write） | **整理の実行**（2026-09-03。同上）。`{rows:[{page_id, customer, stage, machine_name, drawing_name, confirm_revision}], orders:[page_id,…]}`。**部品**は `取引先／社名／段／装置名称` の下へ移し、題を図面名称に揃える（`cms.SetPageParent`＋`SetPageH1`。途中のページは無ければ作る）。空欄の行と、段が `machine_stages` に無い行は動かさない。移した先に同名の部品ページが在れば**改定図面**として先頭へ合流（`confirm_revision` が要る場合は `needs_confirm` を返す）。**受注**は `受注／年／月` の下へ移す（年月は**発注日**・2026-09-06）——受注ページでないIDは動かさない。応答は `{success, results:[{page_id, outcome, message, target_id?}]}`（`outcome` は `moved` / `revision` / `skipped` / `needs_confirm`）。**権限も「編集中か」も行ごとに見ます**——駄目な行は `skipped` に載るだけで、残りは片付く（**複数のページへ書く**ので、関門はハンドラではなく行ごと・2026-09-14）。監査記録は `file-drawing.move`・`file-drawing.revision`・`file-order.move` |
 | GET | `/api/zip-list` | 任意認証（read） | **ZIP添付の目録**（2026-09-01。`?page_id=&file=`。`OptionalAuth` 配下）。標準の `archive/zip` でセントラルディレクトリだけ読み、**展開はしない**（ZIP爆弾対策）。UTF-8フラグの無いエントリ名は Shift_JIS として復号。最大500件（超過は `truncated:true`）。認可は添付配信と同じ閲覧側の関門（`RequirePageReadOrPublic`——読めるページの添付は目録も読める）。応答は `{success, entries:[{name,size}], total, truncated}` |
 | GET | `/api/mail/status` | 要認証 | メールの設定とサインイン状態（`{configured, address}`）。**トークンは返しません**——出すのは「誰としてサインインしているか」だけ |
 | POST | `/api/mail/signin` | 要認証 | **デバイスコードのサインインを始める**（`{user_code, verification_uri, expires_in}`）。完了待ちは背後で回り、結果は `/api/mail/status` で確かめる（ここで待つと画面が固まる） |
@@ -156,7 +233,10 @@ w-cms が提供するHTTPエンドポイントの**実装済みリファレン�
 | POST | `/api/mail/send` | 要認証 | **返信・新規送信**（SMTP＋OAuth2）。`{source_page_id?, to, cc, subject, body, attachments?}`。**添付は w-cms の中にあるものを指す**（`{page_id, file, name}`。手元のディスクから選び直さない）——**読めるページのものだけ**（`page.CanView`）・名前は `SafeAttachmentName` の関門を共用・**合計25MBで断る**（途中で切れて「送ったつもりで届いていない」になるより、送る前に断る）。返信元があればその `メッセージID` を `In-Reply-To` と `References` に載せる（相手のメールソフトで元のスレッドに並ぶ条件）。**送ってから記録する**——記録に失敗しても `{success, sent:true, record_error}` を返す（送ったものは取り消せないので、出た事実を隠さない）。控えは通信箱へ `向き：送信`・`対応：不要` で立つ |
 | GET | `/api/replies` | 要認証 | **この記録への返信を逆引きする**（2026-09-03。`?page_id=X`）。`PagesByTag("返信元", X)`——送信記録に書かれた**参照タグ**を引くので、**w-cms 自身が送った返信**だけが出る。応答は `{success, replies:[{page_id, title, sent_at, to}]}`（`to` は `宛先` タグの**畳んだ値＝素のアドレス**。畳めていなければ生の値）。読めないページは黙って落ちる（見せ分けC案）。対象ページを読めなければ**404**（読めないと存在しないを区別させない） |
 | GET | `/api/thread` | 要認証 | **やりとりの前後へ移る**（2026-09-14。`?page_id=X`）。鎖は**メールヘッダの `In-Reply-To`** で、索引の逆引き2回だけ（新しいテーブルも仕掛けも無い）——前（親）＝`メッセージID` が X の `返信元メッセージID` と一致するページ、次（子）＝`返信元メッセージID` が X の `メッセージID` と一致するページ。応答は `{success, prev, next}`——`prev` は1件か `null`、`next` は配列（空でも返る）。各件は `{page_id, title, when, direction}`（`when` は `受信日時`・`送信日時`・`発信日時` のうち**そのページに先に現れたもの**1つ——向きに応じて片方しか書かれないので、どれでも構わない。`direction` は `向き` タグ）。**前は高々1件**（`In-Reply-To` は親を1つしか指さない）。**`/api/replies` とは別の鎖**——あちらは w-cms を通った返信だけだが、こちらはヘッダの鎖なので**受信どうしの返り**（お客様が自分の前のメールに返信した等）も繋がる。送信の記録にも `返信元メッセージID` は書かれる（`ext/mail/reply.go`）ので両方が同じ鎖に乗る。認可と404の扱いは `/api/replies` と同じ。正本は [handler_thread.go](../internal/cms/handler_thread.go) |
-| GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（`plugin_materials.go` の `RouteProvider`）。集計本体は `RequiredMaterials(user, pageID)` で、計算ビューのサーバー事前描画と共用する（応答が呼び出しごとに変わらないよう**部材名順**にソート）。集計対象ページの read だけでは足りず、**部材の定義元ページを読めない相手にはその定義を混ぜない**——品番は本文へ自由に書けるので、自分のページに1行置くだけで読めない部品定義ページの部材名・仕入先・原価を引けていた（2026-08-21 修正） |
+| GET | `/api/qr` | **認証不要**（`OptionalAuth`。ただし対象ページを読めなければ404） | **そのページのURLのQRを返す**（2026-09-10。`?page_id=X`・**SVG**）。エンコーダは自前で[qr.go](../internal/cms/qr.go)、**外部依存ゼロ**。URLは要求のホストから組むので、社内（ホスト名）と社外（公開名）で**中身が変わります**——だから `Cache-Control: no-store`。取り違えると「社外の人に社内URLのQRを見せる」が起きます。SVGは中でスクリプトが動けるので、添付と同じく**この応答だけ何も動かせなく**します（`default-src 'none'; sandbox` ＋ `nosniff`）。⚠ **QRは他所のライブラリと同じ絵になりません**（詰め草とマスク選択が実装ごとに違う。3つとも違う絵を出してどれも読める）。**絵の一致を正しさの尺度にしないこと**——見るのは実際に読めるかで、`python tools/qr_verify.py` が OpenCV で復号して確かめます |
+| GET | `/api/analyzed` | 要認証（対象ページの read） | **解析済みの印を逆引きする**（2026-09-06。`?page_id=X`・拡張 `ext/sheetmetal`）。応答は `{success, analyzed:{<添付ID>:{page_id, title, kind}}}`。**印は保存していません**——解析が書いた `受信元` タグの逆引きです。だから**間違った解析をゴミ箱へ入れれば印も消え**、押し直せます（状態を別に持たない）。認可と404の扱いは `/api/replies` と同じ |
+| POST | `/api/reorder` | 要認証（**親ページ**の write） | **子ページの並べ替え**（2026-09-03。`?parent=P`・本文 `{"order":["000123","000456",…]}`）。送るのは**その親の子の並び全部**です——「どこへ落としたか」を送ると、サーバーが前後関係を推測することになるため。並び順キーはサイドカーの `sort_key` が正本で、値は**ゼロ詰め10桁**（`ReorderKey`）。桁を固定するのは、文字列として比べても数の順になるようにするためです（固定しないと 9 と 10 が逆になる）。応答は `{success, changed}`。⚠ 子ページの並びは「並び順キー → 題 → ID」（`sortChildren`）なので、**キーが空でも題で並びます**——年・月フォルダは何もしなくても正しい |
+| GET | `/api/required-materials` | 要認証（対象ページの read） | **プラグイン提供API**。部材手配計算（[ext/sheetmetal/materials.go](../ext/sheetmetal/materials.go) の `RouteProvider`）。集計本体は `RequiredMaterials(user, pageID)` で、計算ビューのサーバー事前描画と共用する（応答が呼び出しごとに変わらないよう**部材名順**にソート）。集計対象ページの read だけでは足りず、**部材の定義元ページを読めない相手にはその定義を混ぜない**——品番は本文へ自由に書けるので、自分のページに1行置くだけで読めない部品定義ページの部材名・仕入先・原価を引けていた（2026-08-21 修正） |
 
 プラグインは `RouteProvider` を実装するとルートを追加できる。`main.go` は
 `cms.PluginRoutes()` をループして登録するだけで、コア側の変更は要らない
