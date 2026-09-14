@@ -86,11 +86,8 @@ func NormalizeCode(s string) string {
 	return b.String()
 }
 
-// NormalizeForLookup は「その見出し語の列型で畳んだ値」を返します。
-//
-// **索引へ書くときと同じ規則で引くため**の入口です。書き込み側
-// （insertVocabEntry）と別々に畳むと、書いた値と引く値が食い違って
-// 静かに引けなくなります。
-func NormalizeForLookup(field, value string) (string, bool) {
-	return NormalizeValue(InferColumnType(field), value)
-}
+// 「その見出し語の列型で畳んだ値」を返す `NormalizeForLookup` は **2026-09-15 に
+// 撤去しました**。`page_tags.norm_value` が宣言型を持たなくなった日から、畳んだ
+// **文字列**だけ返す口は罠になります——number のタグを文字列で引くとエラーに
+// ならず0件です。引くときは `tagLookupBind`（vocab.go・型ごと束ねる）か、
+// その上の `PagesByTagLoose` を通してください。
