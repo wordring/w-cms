@@ -48,15 +48,25 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 原則1: 新規挿入時の列定義はレジストリからAPI経由で受け取り、手書きの
 		// 形式リストをエディタに置かない）。
 		"vocab": VocabDefs(),
-		// 語→型の推論辞書。エディタは列型の解決（th の data-type 明示 > レジストリ >
-		// この辞書 > text）と型不一致の通知（赤ハイライト・拒否はしない）に使う。
-		// サーバー側（vocab_index の resolveColumnType）と同じ辞書を配ることで、
-		// 検証と索引の型判定が食い違わない。
-		"type_inference": TypeInferenceDict(),
-		// 見出し語→選択肢（`在籍` → 在籍・休職・退社）。**縛りではなく見分けるため**で、
+		// **見出し語の辞書**（`config/settings.json` の `vocabulary`）。1語につき
+		// `{"type": …, "values": […]}` の1件で、型と選択肢を一緒に持ちます。
+		//
+		// 型は列型の解決（th の data-type 明示 > レジストリ > この辞書 > text）と
+		// 型不一致の通知（薄赤・拒否はしない）に使います。サーバー側
+		// （vocab_index の resolveColumnType）と同じ辞書を配ることで、検証と索引の
+		// 型判定が食い違いません。
+		//
+		// 選択肢（`在籍` → 在籍・休職・退社）は**縛りではなく見分けるため**で、
 		// 表に無い値も書けます——画面が薄黄で「見慣れない値」と知らせるだけ
 		// （語彙モデル §5.1: 検証して通知する。拒否はしない）。
-		"tag_enums": TagEnumDict(),
+		//
+		// **2026-09-14 に `type_inference` と `tag_enums` の2本を1本へ畳みました**
+		// ——`在籍` が「選択肢だけあって型が無い」状態になっていたためです。
+		"vocabulary": VocabularyDict(),
+		// `th[data-type]` として書ける列型。**エディタは手書きの一覧を持ちません**
+		// （語彙モデル §7 の原則1）——2026-09-14 まで持っていて、`datetime`・`ref`・
+		// `email` を足した日から**3つ古いまま**でした。
+		"column_types": ColumnTypeNames(),
 	})
 }
 
