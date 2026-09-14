@@ -111,21 +111,8 @@ func suggestStage(customer, machine string) string {
 // FilingProposalAPIHandler は GET /api/filing-proposal?page_id=X です。
 // 通信記録ページ X から生まれた部品ページの一覧と、行き先の推奨値を返します。
 func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	pageID, ok := page.NormalizeID(r.URL.Query().Get("page_id"))
+	_, idInt, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
 	if !ok {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
-	user := auth.CurrentUser(r)
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil || !page.CanView(user, idInt) {
-		// 読めない相手には「無い」と同じ顔を見せる（匿名の404統一と同じ規律）。
-		cms.JSONFail(w, http.StatusNotFound, "ページが見つかりません")
 		return
 	}
 

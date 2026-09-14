@@ -18,7 +18,6 @@ package sheetmetal
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"w-cms/internal/auth"
@@ -41,20 +40,8 @@ type analyzedResult struct {
 // AnalyzedAPIHandler は GET /api/analyzed?page_id=X です。
 // そのページの添付のうち、**解析済みのもの**を「添付ID → 結果」で返します。
 func AnalyzedAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	pageID, ok := page.NormalizeID(r.URL.Query().Get("page_id"))
+	pageID, _, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
 	if !ok {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
-	user := auth.CurrentUser(r)
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil || !page.CanView(user, idInt) {
-		cms.JSONFail(w, http.StatusNotFound, "ページが見つかりません")
 		return
 	}
 	out, err := analyzedAttachments(user, pageID)
