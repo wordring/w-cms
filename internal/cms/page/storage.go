@@ -48,7 +48,16 @@ func NormalizeID(id string) (string, bool) {
 	if err != nil || n < 0 {
 		return "", false
 	}
-	return fmt.Sprintf("%0*d", IDLength, n), true
+	return FormatID(n), true
+}
+
+// FormatID は数値のページIDをゼロ詰め6桁の正規形にします（`NormalizeID` の
+// 数値版）。**索引の `id` 列から読んだ値を文字列にする所は、必ずここを通す**こと
+// ——`%06d` の直書きが4箇所、`%0*d, IDLength` が15箇所に散っていました
+// （2026-09-15 に寄せた）。桁を変える日にどちらかを取りこぼすと、同じページに
+// 2つのIDが生まれます。
+func FormatID(n int) string {
+	return fmt.Sprintf("%0*d", IDLength, n)
 }
 
 // GetPageDir は ID (例: "00A1B") を受け取り、階層化された保存先パス (例: "data/master/00/00A1B") を返します。

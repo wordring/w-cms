@@ -5,7 +5,6 @@ package cms
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -105,9 +104,9 @@ func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
 	parentStr := ""
 	parentTitle := ""
 	if parent.Valid {
-		parentStr = fmt.Sprintf("%0*d", page.IDLength, parent.Int64)
+		parentStr = page.FormatID(int(parent.Int64))
 		// 親ページの見出し（h1）。左レールの「↑ 親ページへ」リンクに表示する。
-		database.DB.QueryRow("SELECT title FROM pages WHERE id = ?", parent.Int64).Scan(&parentTitle)
+		parentTitle = PageTitleByID(int(parent.Int64))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

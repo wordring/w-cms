@@ -44,7 +44,6 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
 
 // orderJudgment は Gemini の判定＋抽出結果です（プロンプトと同じ形）。
@@ -173,8 +172,7 @@ func pageTitleOf(pageID string) string {
 	if err != nil {
 		return pageID
 	}
-	var t string
-	if err := database.DB.QueryRow(`SELECT title FROM pages WHERE id = ?`, idInt).Scan(&t); err == nil && t != "" {
+	if t := cms.PageTitleByID(idInt); t != "" {
 		return t
 	}
 	return pageID

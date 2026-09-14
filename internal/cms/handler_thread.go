@@ -26,7 +26,6 @@ package cms
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"w-cms/internal/auth"
@@ -48,8 +47,7 @@ func threadRefOf(user *auth.User, idInt int) (ThreadRef, bool) {
 	if !page.CanView(user, idInt) {
 		return ThreadRef{}, false
 	}
-	r := ThreadRef{PageID: fmt.Sprintf("%0*d", page.IDLength, idInt)}
-	database.DB.QueryRow(`SELECT COALESCE(title,'') FROM pages WHERE id = ?`, idInt).Scan(&r.Title)
+	r := ThreadRef{PageID: page.FormatID(idInt), Title: PageTitleByID(idInt)}
 	// **受信と送信で欄の名前が違います**（向きに応じて片方だけ書かれる）。
 	// 並べるのは時刻そのものではなく「いつの記録か」の手掛かりなので、どちらでも構いません。
 	database.DB.QueryRow(

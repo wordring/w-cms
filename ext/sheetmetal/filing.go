@@ -47,7 +47,6 @@ package sheetmetal
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	stdhtml "html"
 	"net/http"
 	"regexp"
@@ -674,7 +673,7 @@ func canWritePage(user *auth.User, pageIDInt int) bool {
 
 // formatID はページIDをゼロ詰め6桁へ整えます。
 func formatID(idInt int) string {
-	return fmt.Sprintf("%0*d", page.IDLength, idInt)
+	return page.FormatID(idInt)
 }
 
 // htmlEscape は本文へ入れる前の逃がしです（サニタイザは安全の網で、

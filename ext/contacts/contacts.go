@@ -57,7 +57,6 @@ package contacts
 
 import (
 	"errors"
-	"fmt"
 	stdhtml "html"
 	"strconv"
 	"strings"
@@ -70,10 +69,9 @@ import (
 
 // init はアドレス帳を**フック経由で**コアへ差し込みます。
 //
-// **まだ `internal/cms` の中に居ますが、外から差せる形にしました**（2026-09-15）。
-// 行き先は `ext/contacts` と決まっており（§5b 案B）、移設の本体はファイルを動かす
-// ことではなく**依存の向きを裏返すこと**だからです。ここが済んでいれば、移動は
-// `package` 行と `cms.` の前置きだけになります。
+// **コアはアドレス帳を知りません**（2026-09-15 に `internal/cms` から移設・§5b 案B）。
+// 移設の本体はファイルを動かすことではなく**依存の向きを裏返すこと**で、
+// それが済んだあとの移動は `package` 行と `cms.` の前置きだけでした。
 //
 // 裏返したのは2本です:
 //
@@ -238,7 +236,7 @@ func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, 
 		if _, _, inPartner := PartnerOfPage(h.id); !inPartner {
 			continue // 取引先の外に書かれたアドレスは連絡先ではない
 		}
-		return fmt.Sprintf("%06d", h.id), cms.PageTitleByID(h.id), true
+		return page.FormatID(h.id), cms.PageTitleByID(h.id), true
 	}
 	return "", "", false
 }
@@ -347,13 +345,6 @@ func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
 	return added, nil
 }
 
-// partnerTitleOf は索引からページの題を引きます（引けなければ空）。
-func partnerTitleOf(pageIDInt int) string {
-	var t string
-	database.DB.QueryRow(`SELECT COALESCE(title, '') FROM pages WHERE id = ?`, pageIDInt).Scan(&t)
-	return t
-}
-
 // isPartnerPage はそのページが「取引先」の直下にあるかを返します。
 //
 // **足す先を箱の中に限ります。** 画面から来たIDをそのまま信じると、通信記録や
@@ -451,7 +442,7 @@ func ensureChildByTitle(user *auth.User, parentID, title string) (string, error)
 		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
 		parentInt, title).Scan(&id)
 	if err == nil {
-		return fmt.Sprintf("%06d", id), nil
+		return page.FormatID(id), nil
 	}
 	if !page.GetPerms(parentInt).CanWrite(user) {
 		return "", errors.New("親ページへ書き込む権限がありません")
@@ -502,7 +493,7 @@ func existingPartners(user *auth.User) []PartnerRef {
 		if h.title == "" || !page.CanView(user, h.id) {
 			continue
 		}
-		out = append(out, PartnerRef{ID: fmt.Sprintf("%0*d", page.IDLength, h.id), Title: h.title})
+		out = append(out, PartnerRef{ID: page.FormatID(h.id), Title: h.title})
 	}
 	return out
 }

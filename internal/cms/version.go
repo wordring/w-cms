@@ -77,7 +77,7 @@ func init() {
 	// コアレッシングの窓（10分）の内側で編集を終えた人の最終形を残すための契機で、
 	// 中身が最新の版と同じなら何も起きない（RecordVersion が重複を作らない）。
 	editlock.OnRelease = func(pageIDInt int, username string) {
-		id := fmt.Sprintf("%0*d", page.IDLength, pageIDInt)
+		id := page.FormatID(pageIDInt)
 		body, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
 		if err != nil {
 			return // 本文が無いページ（削除直後など）は放っておく

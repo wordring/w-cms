@@ -47,7 +47,6 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"fmt"
 	stdhtml "html"
 	"strconv"
 	"strings"
@@ -179,7 +178,7 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		}
 		total++
 		if limit <= 0 || len(rows) < limit {
-			c.row.PageID = fmt.Sprintf("%0*d", page.IDLength, c.id)
+			c.row.PageID = page.FormatID(c.id)
 			rows = append(rows, c.row)
 		}
 	}

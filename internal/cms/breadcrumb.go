@@ -28,7 +28,6 @@ package cms
 
 import (
 	"database/sql"
-	"fmt"
 	"html"
 	"strings"
 
@@ -91,12 +90,14 @@ func ancestorCrumbs(user *auth.User, pageID int) []crumb {
 		}
 		seen[pid] = true
 
+		// **`PageTitleByID` は使いません**——あれは「行が無い」も「題が空」も空文字に
+		// 潰します。ここは**行が無ければ道を打ち切る**必要があるので、生のまま。
 		var title string
 		if err := database.DB.QueryRow(
 			`SELECT title FROM pages WHERE id = ?`, pid).Scan(&title); err != nil {
 			break // 親の行が無い（索引の欠け）——道が途切れるので、そこで止める
 		}
-		c := crumb{id: fmt.Sprintf("%0*d", page.IDLength, pid), canSee: page.CanView(user, pid)}
+		c := crumb{id: page.FormatID(pid), canSee: page.CanView(user, pid)}
 		if c.canSee {
 			c.title = title
 		}
