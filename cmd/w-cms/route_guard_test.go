@@ -51,6 +51,7 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/mail/import", "POST", 401, "メールの取り込み"},
 		{"/api/mail/send", "POST", 401, "メール送信"},
 		{"/api/replies", "GET", 401, "この記録への返信の逆引き"},
+		{"/api/thread", "GET", 401, "スレッドの前後（In-Reply-To の鎖）"},
 		{"/api/page-perms", "POST", 401, "権限変更"},
 		{"/api/page-chown", "POST", 401, "所有者変更（admin）"},
 		{"/api/rebuild-db", "POST", 401, "DB再構築（admin）"},

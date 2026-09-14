@@ -203,6 +203,9 @@ func buildHandler() http.Handler {
 
 	protected.HandleFunc("/api/reorder", cms.ReorderAPIHandler)
 	protected.HandleFunc("/api/replies", cms.RepliesAPIHandler)
+	// スレッドの前後（In-Reply-To の鎖）。`/api/replies` とは別の鎖で、
+	// **受信どうしの返り**も繋がる（handler_thread.go の冒頭に違いを書いた）。
+	protected.HandleFunc("/api/thread", cms.ThreadAPIHandler)
 	// 未処理の一覧から「対応：不要」を付ける（まとめて押せる）。
 	protected.HandleFunc("/api/intake/handled", cms.MarkHandledAPIHandler)
 	// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
