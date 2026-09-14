@@ -411,7 +411,17 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 			b.WriteString("<dt>対応DXFファイル</dt><dd>" + html.EscapeString(m.Entry) + "</dd>")
 		}
 	}
-	b.WriteString("</dl></section>")
+	b.WriteString("</dl>")
+	// **図面をここに開く、と本文に書きます**（2026-09-14）。ユーザー:「HTMLに無いものが
+	// 表示されるのは極力避けたい」「表示するという意図を伝える名前が良いと思います」。
+	//
+	// 中身はコアが描きます（`internal/cms/file_view.go`）——**この拡張はPDFの出し方を
+	// 知りません**。開くのはコアの機能で、拡張は「ここに開く」と書くだけです。
+	// **人が消せます**——消せば図面は出なくなり、参照タグ（出所の記録）は残ります。
+	b.WriteString(`<section data-type="` + cms.FileViewType + `">` +
+		`<dl data-type="tags"><dt>受信元</dt><dd>` +
+		html.EscapeString(hostPageID+"-"+attachID) + `</dd></dl></section>`)
+	b.WriteString("</section>")
 	return b.String()
 }
 

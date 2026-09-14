@@ -75,16 +75,11 @@
      値はセルの contenteditable（インライン）、役割・型はここで編集する。 -->
 <div id="w-col-popover" class="col-popover">
     <div class="col-popover-key">鍵: <span id="w-cp-key"></span></div>
+    <!-- 選択肢は app.js が `/api/tag-schema` の `column_types` から作ります
+         （`fillColTypeOptions`）。**ここに書き並べません**——2026-09-14 まで
+         書き並べていて、`datetime`・`ref`・`email` を足した日から3つ古いままでした。 -->
     <label class="col-popover-row">型
-        <select id="w-cp-type">
-            <option value="">（推論に任せる）</option>
-            <option value="text">text（文字）</option>
-            <option value="code">code（番号・符牒。揺れを畳んで検索）</option>
-            <option value="number">number（数値・通貨）</option>
-            <option value="date">date（日付）</option>
-            <option value="enum">enum（選択肢）</option>
-            <option value="image">image（画像）</option>
-        </select>
+        <select id="w-cp-type"></select>
     </label>
     <div class="col-popover-note" id="w-cp-note"></div>
 </div>
