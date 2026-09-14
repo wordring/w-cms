@@ -230,19 +230,23 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 // addressParser は差出人・宛先の解析器です（表示名の =?ISO-2022-JP?B?…?= も復号する）。
 var addressParser = mail.AddressParser{WordDecoder: &wordDecoder}
 
-// writeAddressTags はアドレス欄を**表示名とアドレスの2つのタグ**に分けて書きます。
+// writeAddressTags はアドレス欄を**相手1人につき1つのタグ**として書きます。
 //
-//	差出人：山田 太郎
-//	差出人アドレス：yamada@example.co.jp
+//	差出人：山田 太郎 <yamada@example.co.jp>
 //
-// **アドレスを単体の値にするのは、索引の逆引きが完全一致だから**です（PagesByTag）。
-// ヘッダ全体（`山田 太郎 <yamada@example.co.jp>`）を1つの値にしていたころは、
-// アドレスで検索しても1件も出ませんでした——実データの宛先は
+// 値の形は `formatAddress` が決め、**畳んだ値がアドレスだけ**になります
+// （列型 `email`・`normalizeEmailTag`）。だから索引の逆引きは**アドレスの完全一致**で
+// 効きます（`PagesByTag`）——揺れるのは名前のほうなので、鍵はアドレスに置きます。
+// 実データの宛先は
 // `㈱東邦金属工業所 南　様 (admin@example-works.co.jp) <admin@example-works.co.jp>` のように
 // 表示名の中にもアドレスが紛れる形で、部分一致に頼るのは筋が悪い
 // （2026-09-03 ユーザー指摘「メールアドレス単体でDBに入れるほうが検索漏れが無くなる」）。
 //
-// 宛先が複数あれば**対を繰り返します**（多値は対の繰り返し・[【一覧】語彙.md] §4）。
+// ⚠ **2026-09-13 まで `差出人` と `差出人アドレス` の2つに割っていました**。
+// 覆した理由は `formatAddress` のコメントにあります（このコメントも、そのとき
+// 直し忘れて2表の形を説明したまま残っていました——2026-09-14 に直した）。
+//
+// 宛先が複数あれば**タグを繰り返します**（多値は繰り返し・[【一覧】語彙.md] §4）。
 // 解析できないヘッダは原文のまま1つのタグに落とします——**記録を落とすより、
 // 検索しにくい形でも残すほうがよい**（通信箱は不変アーカイブ）。
 func writeAddressTags(b *strings.Builder, name, raw string) {
