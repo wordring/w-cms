@@ -403,7 +403,7 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
 
 	// 付け替えの作法は芯（SetPageParent）が1箇所で持つ——部品ページの整理
-	// （ext/sheetmetal/filing.go）も同じ芯を通るので、片方だけ古くなることがない。
+	// （ext/subcon/filing.go）も同じ芯を通るので、片方だけ古くなることがない。
 	parentStore, updatedAt, err := SetPageParent(auth.CurrentUser(r), id, newParent)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -416,7 +416,7 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // SetPageParent は親の付け替えの**芯**です（検証・サイドカー・索引・配下の同期）。
 //
-// HTTPの口（SetParentAPIHandler）と、部品ページの整理（ext/sheetmetal/filing.go）が
+// HTTPの口（SetParentAPIHandler）と、部品ページの整理（ext/subcon/filing.go）が
 // 共有します——整理は「解析で生まれたページを顧客名／装置名称の下へ移す」ために
 // 同じことをする必要があり、**作法を2箇所に持つと必ず片方が古くなる**ため。
 //

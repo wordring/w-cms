@@ -1,4 +1,4 @@
-package sheetmetal
+package subcon
 
 import (
 	"encoding/json"
@@ -45,7 +45,7 @@ func (materialsPlugin) Tables() []string { return nil }
 func (materialsPlugin) Routes() []cms.Route {
 	return []cms.Route{
 		{Pattern: "/api/required-materials", Handler: RequiredMaterialsAPIHandler},
-		// PDF解析（板金部の既定セット）。main.go への直書きをやめてここへ寄せた
+		// PDF解析（下請け業務）。main.go への直書きをやめてここへ寄せた
 		// ——ルートも拡張と一緒に外れる（`-tags minimal` で消える）。
 		{Pattern: "/api/analyze-attachment", Handler: AnalyzeAttachmentAPIHandler},
 		// 部品ページの整理（提案を出す口と、実行する口）。**提案は何も作りません**

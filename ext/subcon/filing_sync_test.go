@@ -1,4 +1,4 @@
-package sheetmetal
+package subcon
 
 // 整理が図面ブロックの値を索引へ揃える、その振る舞いの試験（2026-09-11）。
 //

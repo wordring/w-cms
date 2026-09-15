@@ -4,12 +4,12 @@ package contacts
 //
 // `internal/cms` のテストヘルパはパッケージ境界を越えないので、必要な分だけ
 // ここに持ちます（コアへ「テストのためだけの公開関数」を足さないための割り切り。
-// `ext/sheetmetal/setup_test.go` と同じ流儀です）。
+// `ext/subcon/setup_test.go` と同じ流儀です）。
 //
 // ⚠ **ファイルDBを使います。** アドレス帳は `visibleChildren`・`page.CanView` を
 // 通るので、`:memory:` では動きません——接続ごとに別のDBになり、行を読みながら
 // 中で別のクエリを投げると**空の別DBに当たって絞り込みが静かに全部落ちます**
-// （2026-09-03 に本番コードで踏んだ罠）。`ext/sheetmetal` の `setupExtTest` が
+// （2026-09-03 に本番コードで踏んだ罠）。`ext/subcon` の `setupExtTest` が
 // インメモリなのは、あちらがその経路を通らないからです。
 
 import (

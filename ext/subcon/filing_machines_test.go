@@ -1,4 +1,4 @@
-package sheetmetal
+package subcon
 
 // 整理パネルの「装置名称の候補」（2026-09-11）。
 //

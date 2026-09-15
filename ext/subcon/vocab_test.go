@@ -1,4 +1,4 @@
-package sheetmetal
+package subcon
 
 import (
 	"regexp"
