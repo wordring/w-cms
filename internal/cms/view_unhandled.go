@@ -304,6 +304,27 @@ func shortTime(iso string) string {
 	return iso
 }
 
+// UnhandledViewType は「未処理の受信」の形式名です。
+const UnhandledViewType = "unhandled-intake"
+
+func init() {
+	// **形式の宣言と描画は、ここで対にして登録します**（2026-09-15 にコアの登録簿と
+	// view_render.go の表から移した——通信の語彙を ext/comm へ出す下ごしらえ）。
+	RegisterVocab(VocabDef{
+		// 未処理の受信——まだ手を付けていない通信記録。
+		// ユーザー:「未処理のメールやFAXを一覧できる方法が必要かも」（2026-09-03）。
+		// 判定に新しい入力を求めず、**子ページが在ること自体を「手を付けた」の印**
+		// として使います。
+		Type:        UnhandledViewType,
+		DisplayName: "未処理の受信",
+		Category:    "ビュー",
+		Icon:        "📥",
+		Element:     "section",
+		View:        true,
+	})
+	RegisterView(UnhandledViewType, unhandledViewHTML)
+}
+
 // unhandledViewHTML は「未処理の受信」の作業面を組み立てます。
 //
 // **1行1件・新しい順**で、チャネルは記号、添付の数は 📎n。行の右端に「不要」の

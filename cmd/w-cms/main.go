@@ -202,14 +202,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/revert", cms.RevertAPIHandler)
 
 	protected.HandleFunc("/api/reorder", cms.ReorderAPIHandler)
-	protected.HandleFunc("/api/replies", cms.RepliesAPIHandler)
-	// スレッドの前後（In-Reply-To の鎖）。`/api/replies` とは別の鎖で、
-	// **受信どうしの返り**も繋がる（handler_thread.go の冒頭に違いを書いた）。
-	protected.HandleFunc("/api/thread", cms.ThreadAPIHandler)
-	// 未処理の一覧から「対応：不要」を付ける（まとめて押せる）。
-	protected.HandleFunc("/api/intake/handled", cms.MarkHandledAPIHandler)
-	// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
-	protected.HandleFunc("/api/intake/memo", cms.NewMemoAPIHandler)
+	// 通信の口（`/api/replies`・`/api/thread`・`/api/intake/…`）も**ここにありません**
+	// ——通信のプラグインが `Routes()` で持ち込みます（2026-09-15・comm_routes.go）。
 	// アドレス帳の口（`/api/contacts/…`）は**ここにありません**——`ext/comm/contacts` が
 	// プラグインの `Routes()` で持ち込みます（2026-09-15）。ルートも拡張と一緒に
 	// 出入りする、という `/api/required-materials` 等と同じ形です。

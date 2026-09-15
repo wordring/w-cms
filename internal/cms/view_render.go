@@ -38,10 +38,10 @@ import (
 // 足して描画側を足し忘れたときに**無言の空白**にしないため——引けなければ
 // missingViewHTML が理由を画面に出します（足し忘れは必ず目に見える）。
 var viewRenderers = map[string]func(user *auth.User, pageIDInt int) string{
-	"child-list":       childListViewHTML,
-	"unhandled-intake": unhandledViewHTML,
-	// `unknown-contacts` はここに**書きません**——アドレス帳が `RegisterView` で
-	// 自分から名乗ります（2026-09-15。行き先は `ext/comm/contacts`・§5b 案B）。
+	"child-list": childListViewHTML,
+	// `unhandled-intake`（未処理の受信）と `unknown-contacts`（未登録の連絡先）はここに
+	// **書きません**——通信（view_unhandled.go の init）とアドレス帳が `RegisterView` で
+	// 自分から名乗ります（2026-09-15）。
 }
 
 // RegisterView は計算ビューの描画処理を足します。**拡張の `init()` から**
