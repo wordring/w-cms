@@ -58,13 +58,11 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// **通信箱への到着は取り込み係へ回覧する**（intake.go・2026-09-01）。
-	// 通信箱の本文は変更しない（子ページが生まれるだけ）ので編集ロックは要らない。
-	// 取り込み係が居ない拡張子は、通常の添付として下の経路へ流れる。
-	if inboxID, ok := MailBoxPageID(); ok && inboxID == pageID {
-		if served := serveIntake(w, r, inboxID, "file"); served {
-			return
-		}
+	// **先に引き受ける口があれば回す**（upload_intercept.go・2026-09-15）。
+	// いまは通信箱への到着を取り込み係へ回す口だけ（intake.go）——コアは通信箱を
+	// 名指ししない。引き受けなければ、通常の添付として下の経路へ流れる。
+	if interceptUpload(w, r, pageID, "file") {
+		return
 	}
 
 	// 添付は同名を無条件で上書きし、リビジョンも無い——本文編集と同じ編集ロックで直列化。
@@ -121,15 +119,18 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// checkIntakeContent は通信箱へ着いたファイルを種類ごとに検査します。
-// 画像は EXIF を落とした中身を返すので、**戻り値のほうを保存すること**。
+// GuardUploadContent は、1つの口で何でも受ける経路のために、**専用の口が持っていた守り**を
+// 種類ごとに当てます。画像は EXIF を落とした中身を返すので、**戻り値のほうを保存すること**。
 //
-// 通信箱は「何かが届いた」の1つの口で全部を受けます（メール・PDF・画像・図面…）。
+// （2026-09-15 に `checkIntakeContent` から改名して公開。使い手の通信箱は「何かが届いた」の
+// 1つの口で全部を受けます（メール・PDF・画像・図面…）。守りそのものは通信の語彙ではなく
+// 画像とPDFの検査なので、コアに残しています。）
+//
 // そのぶん、**専用の口が持っていた守りをここで引き受けます**——
 // PDF はマジックナンバー、画像は種別の一致とメタデータ除去。
 // それ以外（DXF・Office・ZIP 等）は中身を検査しません——CAD/Office の検証は
 // 現実的でなく、安全の本体は配信側（未知の種別は `attachment`＋nosniff）にあります。
-func checkIntakeContent(fileName string, content []byte) ([]byte, error) {
+func GuardUploadContent(fileName string, content []byte) ([]byte, error) {
 	switch ext := strings.ToLower(filepath.Ext(fileName)); {
 	case ext == ".pdf":
 		if !bytes.HasPrefix(content, []byte("%PDF-")) {
@@ -145,79 +146,4 @@ func checkIntakeContent(fileName string, content []byte) ([]byte, error) {
 		return StripImageMetadata(kind, content)
 	}
 	return content, nil
-}
-
-// serveIntake は通信箱へのアップロードを取り込み係に回します。
-// 担当が居なければ false（通常の添付経路へ戻す）。
-// formField はファイルが入っているフォーム欄の名前です（汎用の口は "file"、
-// PDF専用の口は "pdf_file"）——**通信箱への到着はどちらの口からも同じ取り込み係へ
-// 回す**ため、口ごとの違いはこの引数だけに閉じ込めます。
-func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField string) bool {
-	file, header, err := r.FormFile(formField)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	h := intakeHandlerFor(strings.ToLower(filepath.Ext(header.Filename)))
-	if h == nil {
-		return false // 担当なし＝ただの添付
-	}
-	content, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "File read error", http.StatusInternalServerError)
-		return true
-	}
-	// **種類ごとの検査はここで通す**——通信箱は1つの口で全部を受けるので、
-	// 専用の口が持っていた守り（PDFのマジックナンバー・画像の種別検証とEXIF除去）を
-	// 迂回させない（2026-09-03「受け口の一本化」）。
-	content, err = checkIntakeContent(header.Filename, content)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return true
-	}
-	uploader := "system"
-	if u := auth.CurrentUser(r); u != nil {
-		uploader = u.Username
-	}
-	// 重複検知は**取り込み係を呼ぶ前**に行う（【考察】通信記録処理.md §8）。
-	// 同じメールの再ドロップは普通に起きる（送り直し・取りこぼしの確認）が、
-	// 黙って2枚できるとどちらが正かを人が見分けられない——しかも参照タグ
-	// `受信元` の指す先が2つに割れる。**作ってから消す**のではなく、
-	// 作らずに既存を指すのが正しい（可逆性は §2.7 の決定）。
-	if f, ok := h.(SourceRefFinder); ok {
-		if name, value, found := f.SourceRef(header.Filename, content); found {
-			if existing, dup := ExistingIntakePage(name, value); dup {
-				auth.Audit(uploader, "intake.duplicate", existing+" ("+name+"="+value+")")
-				w.Header().Set("Content-Type", "application/json")
-				resp := map[string]any{
-					"success": true, "intake": true, "duplicate": true,
-					"title": header.Filename,
-				}
-				// 読めない相手へ存在を教えない（匿名の404統一と同じ規律）。
-				// 取り込み済みという事実だけは返す——でないと「なぜ入らないのか」が
-				// 分からなくなる。
-				if n, err := strconv.Atoi(existing); err == nil &&
-					page.CanView(auth.CurrentUser(r), n) {
-					resp["page_id"] = existing
-				}
-				json.NewEncoder(w).Encode(resp)
-				return true
-			}
-		}
-	}
-
-	ctx := &IntakeContext{InboxID: inboxID, Uploader: uploader}
-	pageID, title, err := h.OnFile(ctx, header.Filename, content)
-	if err != nil {
-		http.Error(w, "取り込めませんでした: "+err.Error(), http.StatusBadRequest)
-		return true
-	}
-	// 添付PDFの解釈（発注書なら受注ページ生成）はここでは**しない**——
-	// 「自動ではなくボタンのclickなどで解析が始まると良い」（2026-09-01 ユーザー決定・
-	// §3 人間ゲート型）。記録ページの📎に出る「🤖 解析」ボタン（analyze_pdf.go）が担う。
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"success": true, "intake": true, "page_id": pageID, "title": title,
-	})
-	return true
 }

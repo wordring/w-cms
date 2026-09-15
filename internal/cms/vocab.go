@@ -233,18 +233,8 @@ var vocabRegistry = []VocabDef{
 		Element:     "section",
 		View:        true,
 	},
-	{
-		// 未処理の受信——まだ手を付けていない通信記録（view_unhandled.go）。
-		// ユーザー:「未処理のメールやFAXを一覧できる方法が必要かも」（2026-09-03）。
-		// 判定に新しい入力を求めず、**子ページが在ること自体を「手を付けた」の印**
-		// として使います。
-		Type:        "unhandled-intake",
-		DisplayName: "未処理の受信",
-		Category:    "ビュー",
-		Icon:        "📥",
-		Element:     "section",
-		View:        true,
-	},
+	// `unhandled-intake`（未処理の受信）は**ここにありません**——通信が `RegisterVocab` で
+	// 自分から持ち込みます（2026-09-15。view_unhandled.go の init）。
 	// `unknown-contacts`（未登録の連絡先）は**ここにありません**——アドレス帳が
 	// `RegisterVocab` で自分から持ち込みます（2026-09-15。contacts.go の init。
 	// 行き先は `ext/comm/contacts`・[docs/【考察】アドレス帳の作り直し.md] §5b 案B）。

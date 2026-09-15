@@ -23,7 +23,10 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,6 +37,99 @@ import (
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
+
+func init() {
+	// **通信箱への到着を取り込み係へ回す受け口**（2026-09-15 にアップロード口から裏返した）。
+	RegisterUploadInterceptor(intakeUpload)
+}
+
+// intakeUpload は、アップロード先が通信箱なら取り込み係へ回します。
+//
+// **通信箱への到着は取り込み係へ回覧する**（2026-09-01）。通信箱の本文は変更しない
+// （子ページが生まれるだけ）ので編集ロックは要らない。取り込み係が居ない拡張子は
+// false を返し、通常の添付として保存される。
+func intakeUpload(w http.ResponseWriter, r *http.Request, pageID, formField string) bool {
+	inboxID, ok := MailBoxPageID()
+	if !ok || inboxID != pageID {
+		return false
+	}
+	return serveIntake(w, r, inboxID, formField)
+}
+
+// serveIntake は通信箱へのアップロードを取り込み係に回します。
+// 担当が居なければ false（通常の添付経路へ戻す）。
+// formField はファイルが入っているフォーム欄の名前です（汎用の口は "file"、
+// PDF専用の口は "pdf_file"）——**通信箱への到着はどちらの口からも同じ取り込み係へ
+// 回す**ため、口ごとの違いはこの引数だけに閉じ込めます。
+func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField string) bool {
+	file, header, err := r.FormFile(formField)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	h := intakeHandlerFor(strings.ToLower(filepath.Ext(header.Filename)))
+	if h == nil {
+		return false // 担当なし＝ただの添付
+	}
+	content, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "File read error", http.StatusInternalServerError)
+		return true
+	}
+	// **種類ごとの検査はここで通す**——通信箱は1つの口で全部を受けるので、
+	// 専用の口が持っていた守り（PDFのマジックナンバー・画像の種別検証とEXIF除去）を
+	// 迂回させない（2026-09-03「受け口の一本化」）。
+	content, err = GuardUploadContent(header.Filename, content)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return true
+	}
+	uploader := "system"
+	if u := auth.CurrentUser(r); u != nil {
+		uploader = u.Username
+	}
+	// 重複検知は**取り込み係を呼ぶ前**に行う（【考察】通信記録処理.md §8）。
+	// 同じメールの再ドロップは普通に起きる（送り直し・取りこぼしの確認）が、
+	// 黙って2枚できるとどちらが正かを人が見分けられない——しかも参照タグ
+	// `受信元` の指す先が2つに割れる。**作ってから消す**のではなく、
+	// 作らずに既存を指すのが正しい（可逆性は §2.7 の決定）。
+	if f, ok := h.(SourceRefFinder); ok {
+		if name, value, found := f.SourceRef(header.Filename, content); found {
+			if existing, dup := ExistingIntakePage(name, value); dup {
+				auth.Audit(uploader, "intake.duplicate", existing+" ("+name+"="+value+")")
+				w.Header().Set("Content-Type", "application/json")
+				resp := map[string]any{
+					"success": true, "intake": true, "duplicate": true,
+					"title": header.Filename,
+				}
+				// 読めない相手へ存在を教えない（匿名の404統一と同じ規律）。
+				// 取り込み済みという事実だけは返す——でないと「なぜ入らないのか」が
+				// 分からなくなる。
+				if n, err := strconv.Atoi(existing); err == nil &&
+					page.CanView(auth.CurrentUser(r), n) {
+					resp["page_id"] = existing
+				}
+				json.NewEncoder(w).Encode(resp)
+				return true
+			}
+		}
+	}
+
+	ctx := &IntakeContext{InboxID: inboxID, Uploader: uploader}
+	pageID, title, err := h.OnFile(ctx, header.Filename, content)
+	if err != nil {
+		http.Error(w, "取り込めませんでした: "+err.Error(), http.StatusBadRequest)
+		return true
+	}
+	// 添付PDFの解釈（発注書なら受注ページ生成）はここでは**しない**——
+	// 「自動ではなくボタンのclickなどで解析が始まると良い」（2026-09-01 ユーザー決定・
+	// §3 人間ゲート型）。記録ページの📎に出る「🤖 解析」ボタン（analyze_pdf.go）が担う。
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": true, "intake": true, "page_id": pageID, "title": title,
+	})
+	return true
+}
 
 // MailBoxTitle は通信箱ページの名前です。テンプレート置き場（TemplateRootTitle）と
 // 同じく h1（ページ名）が正で、「設定で変えられるようにするか」も同じ未決を共有します

@@ -99,15 +99,12 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
-	// **通信箱への到着は取り込み係へ回覧する**（汎用の口と同じ扱い・intake.go）。
-	// いま担当が居るのは `.eml` だけなので、**PDF はここを素通りして普通の添付**に
-	// なります（2026-09-05。ユーザー:「通信箱のPDF、DXF取り込みはやめましょう。
-	// メモに添付するようにしましょう」）。通信箱の本文は変わらない（子ページが
-	// 生まれるだけ）ので編集ロックは要らない。
-	if inboxID, ok := MailBoxPageID(); ok && inboxID == pageID {
-		if served := serveIntake(w, r, inboxID, "pdf_file"); served {
-			return
-		}
+	// **先に引き受ける口があれば回す**（汎用の口と同じ扱い・upload_intercept.go）。
+	// 通信箱の取り込み係に担当が居るのは `.eml` だけなので、**PDF はここを素通りして
+	// 普通の添付**になります（2026-09-05。ユーザー:「通信箱のPDF、DXF取り込みはやめましょう。
+	// メモに添付するようにしましょう」）。
+	if interceptUpload(w, r, pageID, "pdf_file") {
+		return
 	}
 
 	// 添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）。
