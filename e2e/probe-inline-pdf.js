@@ -42,11 +42,10 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     const saved = await page.evaluate(async (arg) => {
       const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
       const lj = await lr.json().catch(() => ({}));
+      // **配線は属性1つ**（2026-09-15）。中の参照タグで指す形はやめました。
       const body = '<h1>しるし</h1>'
         + '<p>ここから編集を始めてください。</p>'
-        + '<section data-type="file-view">'
-        + '<dl data-type="tags"><dt>受信元</dt><dd>' + arg.host + '-' + arg.attach + '</dd></dl>'
-        + '</section>';
+        + '<section data-type="file-view" data-ref="' + arg.host + '-' + arg.attach + '"></section>';
       const res = await fetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,13 +62,12 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     const r = await page.evaluate(() => {
       const sec = document.querySelector('#w-editor-content section[data-type="file-view"]');
       const w = sec && sec.querySelector('.file-view');
-      const dl = sec && sec.querySelector('dl[data-type="tags"]');
       return {
         marker: !!sec,
         shown: !!w,
-        // **人が書いた参照タグが消えていないこと**——計算ビューは中身を全消しするので、
-        // 鏡型にした意味がここに出ます（HTMLに在るものが見えている、が保てる）。
-        tagKept: !!dl,
+        // **配線が本文に残っていること**——属性が落ちると、マーカーは残るのに
+        // 何を開くか分からなくなり、図面が黙って消えます。
+        ref: sec ? sec.getAttribute('data-ref') : '',
         head: w ? (w.querySelector('.file-view-head') || {}).textContent : '',
         src: w ? (w.querySelector('embed') || {}).getAttribute('src') : '',
         fits: (() => {
@@ -84,11 +82,11 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     });
     ok(r.marker, 'マーカー（section[data-type="file-view"]）が本文に在る');
     ok(r.shown, '「図面」の語が無くてもPDFが開く（＝マーカー駆動）');
-    ok(r.tagKept, '人が書いた参照タグが消えていない');
-    ok(/受信元/.test(r.head || ''), '出どころがタグ名つきで書いてある', (r.head || '').trim());
+    ok(r.ref === HOST + '-' + ATTACH, '配線（data-ref）が本文に残っている', r.ref);
     ok((r.src || '').indexOf('/' + HOST + '/' + ATTACH + '.pdf') === 0, 'PDFのURLが参照から導かれている', r.src);
     ok(r.fits, 'PDFが枠に収まっている（見出しのぶんで溢れない）');
     ok(/data-type="file-view"/.test(r.preview), '本文にはマーカーが残る');
+    ok(/data-ref="/.test(r.preview), '本文に配線の属性が保存される');
     ok(!/<embed|file-view-body/.test(r.preview), '本文に埋め込みは残らない（クロームなので保存されない）');
     ok(!r.overflow, '横にはみ出さない');
 
@@ -101,11 +99,19 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     await page.waitForTimeout(1500);
     await page.evaluate(() => document.getElementById('w-mode-toggle').click());
     await page.waitForTimeout(1800);
-    const after = await page.evaluate(() => ({
-      shown: !!document.querySelector('#w-editor-content .file-view'),
-      listeners: document.querySelectorAll('#w-editor-content .file-view[data-w-resize="1"]').length,
-    }));
+    const after = await page.evaluate(() => {
+      const sec = document.querySelector('#w-editor-content section[data-type="file-view"]');
+      return {
+        shown: !!document.querySelector('#w-editor-content .file-view'),
+        listeners: document.querySelectorAll('#w-editor-content .file-view[data-w-resize="1"]').length,
+        // **シリアライザが配線を落としていないこと。** 属性の許可リストは
+        // `/api/tag-schema` 由来なので、サーバーで許しても語彙に載せ忘れると
+        // 編集モードを1往復しただけで data-ref が消え、図面が黙って落ちます。
+        ref: sec ? sec.getAttribute('data-ref') : '',
+      };
+    });
     ok(after.shown, '編集モードを出入りしても枠が残る');
+    ok(after.ref === HOST + '-' + ATTACH, '出入りしても配線が残る（シリアライザが落とさない）', after.ref);
     ok(after.listeners === 1, 'つまみの配線が二重にならない', String(after.listeners));
 
     ok(errs.length === 0, 'JSエラーなし', errs[0] || '');

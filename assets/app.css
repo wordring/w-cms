@@ -1423,6 +1423,39 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     border: 1px solid var(--border);
     border-radius: var(--radius);
 }
+/* 描けない形式（DXF・Excel・ZIP など）の枠。**開く口だけ**なので、
+   PDFや画像のように高さを取らない（2026-09-15）。 */
+#w-editor-content .file-view-plain {
+    height: auto;
+    min-height: 0;
+    resize: none;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+#w-editor-content .file-view-note {
+    margin: 4px 0 0;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+/* ファイル表示の配線の札（編集モードだけ）。押すとプロパティ欄が開く。
+   **空のときは薄赤**——「属性はあるのに解釈されない」の既存の合図と揃える。 */
+#w-editor-content .fv-wire {
+    display: block;
+    margin: 0 0 4px;
+    padding: 2px 8px;
+    font: inherit;
+    font-size: 0.85em;
+    text-align: left;
+    color: inherit;
+    background: var(--vocab-bg, #eef4ff);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+#w-editor-content .fv-wire-empty {
+    background: #fdeaea;
+}
 #w-editor-content .attach-zip-list {
     margin: 0;
     padding: 8px 12px;

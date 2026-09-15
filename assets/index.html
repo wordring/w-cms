@@ -99,6 +99,17 @@
     </div>
 </div>
 
+<!-- ファイル表示の配線（data-ref）を編集する欄。リンクのプロパティ欄と同じ形で、
+     **見えない配線は欄が担う**（本文には属性1つしか残らない）。
+     値は添付の隣の「🔗 参照」ボタンで写せる。 -->
+<div id="w-fv-popover" class="col-popover">
+    <div class="col-popover-key">ファイル表示</div>
+    <label class="col-popover-row">参照
+        <input type="text" id="w-fv-ref" placeholder="010272-c3p7">
+    </label>
+    <div class="col-popover-note">添付の隣の「🔗 参照」で写した値を貼ってください。</div>
+</div>
+
 <!-- 子ページ作成のテンプレート選択メニュー。項目は app.js が /api/templates から生成する
      （「テンプレート」フォルダ配下のツリー。枝は分類の見出し・葉はテンプレート）。 -->
 <div id="w-template-menu" class="enum-menu template-menu"></div>
