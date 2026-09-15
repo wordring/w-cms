@@ -97,6 +97,23 @@ const MessageIDTag = "メッセージID"
 // 取り込みの順にも依存しません（返信を先に落としても、あとで親が入れば繋がる）。
 const InReplyToTag = "返信元メッセージID"
 
+// 通信記録の相手と日時のタグ名です（2026-09-15 に定数へ）。
+//
+// **受信の取り込み（ここ）と送信の控え（ext/mail の reply.go）が同じ名前で書く**ための
+// 定数です。生の文字列で書いていたころ、2026-09-13 に `差出人アドレス` 等を廃止して
+// 1人1タグへ移したとき、**受信側だけが追随し、送信の控えは廃止した名前で書き続けて**
+// いました——読む側（返信の一覧・スレッド・未登録の連絡先）は送信の控えの相手を
+// 黙って空で受け取ります。値は `名前 <アドレス>` かアドレスだけで、型（email）は
+// `config/settings.json` の `vocabulary` が決めます。
+const (
+	FromTag       = "差出人"
+	ToTag         = "宛先"
+	CcTag         = "CC"
+	ReplyToTag    = "返信先" // `Reply-To` ヘッダ。`InReplyToTag`（スレッドの親）とは別物
+	ReceivedAtTag = "受信日時"
+	SentAtTag     = "送信日時"
+)
+
 // SourceRef は重複検知の鍵（Message-ID）を返します。**鍵の取り出しは形式を知る
 // 取り込み係の仕事**で、照合の仕組みはコアが持ちます（intake.go）。
 //
@@ -158,12 +175,12 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// チャネル＝メール／FAX／電話。「送信 × FAX」が実際に要るので混ぜません。
 	WriteTag(&b, DirectionTag, DirectionIn)
 	WriteTag(&b, ChannelTag, "メール")
-	writeAddressTags(&b, "差出人", msg.Header.Get("From"))
-	writeAddressTags(&b, "宛先", msg.Header.Get("To"))
-	writeAddressTags(&b, "CC", msg.Header.Get("Cc"))
+	writeAddressTags(&b, FromTag, msg.Header.Get("From"))
+	writeAddressTags(&b, ToTag, msg.Header.Get("To"))
+	writeAddressTags(&b, CcTag, msg.Header.Get("Cc"))
 	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
-	writeAddressTags(&b, "返信先", msg.Header.Get("Reply-To"))
-	WriteTag(&b, "受信日時", dateISO)
+	writeAddressTags(&b, ReplyToTag, msg.Header.Get("Reply-To"))
+	WriteTag(&b, ReceivedAtTag, dateISO)
 	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
 	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。

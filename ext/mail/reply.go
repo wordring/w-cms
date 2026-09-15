@@ -142,7 +142,18 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	if !ok {
 		return "", errNoMailBox
 	}
+	// 時刻は1回だけ取ります——年月フォルダと `送信日時` が、日付の変わり目で食い違わないように。
 	now := time.Now()
+	body := sentRecordBody(SignedInAddress(user.Username), sourcePageID,
+		sourceMessageID(sourcePageID), messageID, now, req)
+	return cms.CreateRecordPage(rootID, user.Username, now, body)
+}
+
+// sentRecordBody は送信の控えの本文を組みます。**DBにもファイルにも触りません**
+// ——試験で「受信の取り込みと同じ名前で書いているか」を直接確かめるために
+// recordSentMail から切り出しました（2026-09-15。廃止した名前で書き続けていた不具合の
+// 再発を止めるため）。
+func sentRecordBody(from, sourcePageID, sourceMsgID, messageID string, now time.Time, req ReplyRequest) string {
 	subject := strings.TrimSpace(req.Subject)
 	if subject == "" {
 		subject = "（件名なし）"
@@ -157,14 +168,17 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	// 押すことが無いので、ここで印を付けます（2026-09-05）。返信を待つ必要が
 	// あるなら、人がこのタグを消せば一覧へ戻ります。
 	cms.WriteTag(&b, cms.HandledTag, cms.HandledNotNeeded)
-	cms.WriteTag(&b, "差出人アドレス", SignedInAddress(user.Username))
+	// **相手のタグは受信の取り込みと同じ名前**（`cms.FromTag` 等）。2026-09-13 の
+	// 1人1タグへの移行で受信側だけが追随し、ここは `差出人アドレス` 等の廃止した
+	// 名前で書き続けていました（2026-09-15 に発見）。
+	cms.WriteTag(&b, cms.FromTag, from)
 	for _, a := range cleanAddrs(req.To) {
-		cms.WriteTag(&b, "宛先アドレス", a)
+		cms.WriteTag(&b, cms.ToTag, a)
 	}
 	for _, a := range cleanAddrs(req.Cc) {
-		cms.WriteTag(&b, "CCアドレス", a)
+		cms.WriteTag(&b, cms.CcTag, a)
 	}
-	cms.WriteTag(&b, "送信日時", now.In(time.Local).Format(time.RFC3339))
+	cms.WriteTag(&b, cms.SentAtTag, now.In(time.Local).Format(time.RFC3339))
 	// **自分が立てた Message-ID を残します。** 相手がこれに返信すると、その
 	// In-Reply-To がここを指すので、**受信の取り込みだけでスレッドが繋がります**
 	// （返信元メッセージID の逆引き——既にある仕組みがそのまま効く）。
@@ -173,8 +187,8 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	if n := len(req.Attachments); n > 0 {
 		cms.WriteTag(&b, cms.AttachmentCountTag, strconv.Itoa(n))
 	}
-	if src := sourceMessageID(sourcePageID); src != "" {
-		cms.WriteTag(&b, "返信元メッセージID", src)
+	if sourceMsgID != "" {
+		cms.WriteTag(&b, cms.InReplyToTag, sourceMsgID)
 	}
 	// **返信元は参照タグ**（`ページID`）——押せば飛び、逆引きで「この記録への返信」も
 	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
@@ -201,8 +215,7 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 			`" download="` + html.EscapeString(name) + `">` +
 			html.EscapeString(name) + `</a></p>`)
 	}
-
-	return cms.CreateRecordPage(rootID, user.Username, now, b.String())
+	return b.String()
 }
 
 // cleanAddrs は空白を落とし、空の要素を除きます。
