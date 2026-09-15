@@ -11,15 +11,15 @@ package main
 // 運用者はアドレス帳が効いているかどうかをログから判断できなくなります
 // （このプロジェクトは「忘れて機能が静かに消える」ほうを重く見ています）。
 //
-// **`ext/contacts` の側にビルドタグはありません。** タグを付けると
+// **`ext/comm/contacts` の側にビルドタグはありません。** タグを付けると
 // 「板金は入れたがアドレス帳は外した」という組み合わせが作れてしまい、整理が
 // 取引先ページを作れずに黙って壊れます。依存は import で表し、ここは表示だけを
 // 足す形にしています——だから**このファイルを消しても機能は消えません**
 // （消えるのはログの1語だけ）。
 // ─────────────────────────────────────────────────────────────────────────
 
-import _ "w-cms/ext/contacts"
+import _ "w-cms/ext/comm/contacts"
 
 func init() {
-	loadedExtensions = append(loadedExtensions, "contacts（アドレス帳）")
+	loadedExtensions = append(loadedExtensions, "comm/contacts（アドレス帳）")
 }

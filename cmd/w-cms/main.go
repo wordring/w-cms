@@ -210,7 +210,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/intake/handled", cms.MarkHandledAPIHandler)
 	// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
 	protected.HandleFunc("/api/intake/memo", cms.NewMemoAPIHandler)
-	// アドレス帳の口（`/api/contacts/…`）は**ここにありません**——`ext/contacts` が
+	// アドレス帳の口（`/api/contacts/…`）は**ここにありません**——`ext/comm/contacts` が
 	// プラグインの `Routes()` で持ち込みます（2026-09-15）。ルートも拡張と一緒に
 	// 出入りする、という `/api/required-materials` 等と同じ形です。
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
