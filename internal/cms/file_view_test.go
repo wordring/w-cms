@@ -92,7 +92,9 @@ func TestFileViewOpensAnyKind(t *testing.T) {
 		{"c3p8.png", `<img class="file-view-body"`},
 		{"c3p9.mp4", `<video class="file-view-body"`},
 		{"c3pa.mp3", `<audio class="file-view-body"`},
-		{"c3pb.csv", `<embed class="file-view-body"`},
+		// **テキストは「描ける」に入れません**（2026-09-15 のコードレビュー #1）。
+		// 配信が octet-stream＋attachment なので `<embed>` は描けず、開く口を出すのが正。
+		{"c3pb.csv", `<a href="/000001/c3pb.csv">`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {

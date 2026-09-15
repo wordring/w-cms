@@ -2745,14 +2745,18 @@
         fileViewAnchor = null;
     }
 
-    // openFileViewPopover は対象ブロックの直下へ欄を出す。
-    function openFileViewPopover(sec) {
+    // openFileViewPopover は**札の直下**へ欄を出す。
+    //
+    // ⚠ section の矩形に付けてはいけません（2026-09-15 コードレビュー #3）——配線済みだと
+    // 中に 70vh の枠があるので、下端は画面の外。そこへ `focus()` すると画面が700px飛びます。
+    // リンクの欄が小さな `<a>` に付いているのと同じ理由で、小さいものに付けます。
+    function openFileViewPopover(sec, bar) {
         const pop = document.getElementById('w-fv-popover');
         if (!pop || !sec) return;
         fileViewAnchor = sec;
         document.getElementById('w-fv-ref').value = sec.getAttribute(FILE_REF_ATTR) || '';
         pop.classList.add('active');
-        placeFloating(pop, sec.getBoundingClientRect());
+        placeFloating(pop, (bar || sec).getBoundingClientRect());
         document.getElementById('w-fv-ref').focus();
     }
 
@@ -2760,7 +2764,7 @@
     // attributeFilter に載らないので、保存は明示的に蹴る（applyLinkHref と同じ）。
     function applyFileViewRef() {
         const sec = fileViewAnchor;
-        if (!sec || !sec.isConnected) return;
+        if (!sec || !sec.isConnected) { hideFileViewPopover(); return; }
         const v = document.getElementById('w-fv-ref').value.trim();
         if (v) sec.setAttribute(FILE_REF_ATTR, v);
         else sec.removeAttribute(FILE_REF_ATTR);
@@ -2774,10 +2778,23 @@
     // **必要なときだけDOMを変えます**（decorateVocabBlocks と同じ理由——本文DOMの変化は
     // 自動保存へ巡ってくるので、毎回付け直すと保存が回り続けます）。
     function decorateFileViews() {
+        // **前の参照で描いた枠は消します**（コードレビュー #4）。サーバーが描いたクロームは
+        // 保存の往復で作り直されないので、残すと札は新しい値・枠は古いPDF、という
+        // 食い違いが編集モードを出るまで続きます。消せば「配線した。枠は次に開いたとき」と
+        // 読めます（札が残るので空白にはならない）。
+        sec.querySelectorAll(':scope > .vocab-chrome:not(.fv-wire)').forEach(n => n.remove());
         const editor = document.getElementById('w-editor-content');
         if (!editor) return;
         const isEdit = document.body.hasAttribute('edit-mode');
-        editor.querySelectorAll('section[data-type="' + FILE_VIEW_TYPE + '"]').forEach(sec => {
+        // **欄の相手が居なくなっていたら閉じる**（コードレビュー #6）。閲覧モードへ戻った・
+        // 本文が丸ごと差し替わった（解析の取り直し・ロック喪失）とき、欄だけが浮いたまま残ると、
+        // 打ったキーが `!sec.isConnected` で黙って捨てられます。
+        if (fileViewAnchor && (!isEdit || !fileViewAnchor.isConnected)) hideFileViewPopover();
+        // **見出し形も拾います**（コードレビュー #2）。`<section><h2>ファイル表示</h2>` と
+        // 人が打った・貼ったものも、サーバーは file-view と解釈して鏡を立てます
+        // （`vocabTypeOf`）。`data-type` だけ見ていると、そこに「欄へ貼って」と出るのに
+        // 欄を開く札が無い——スラッシュメニューを直したあとも、この経路で同じ壊れ方が残っていました。
+        editor.querySelectorAll('section').forEach(sec => {
             if (sec.closest('.vocab-chrome')) return;
             let bar = sec.querySelector(':scope > .fv-wire');
             if (!isEdit) { if (bar) bar.remove(); return; }
@@ -2789,7 +2806,9 @@
                 bar.addEventListener('mousedown', e => e.preventDefault());
                 bar.addEventListener('click', e => {
                     e.preventDefault();
-                    openFileViewPopover(sec);
+            const def = sectionDefOf(sec);
+            if (!def || def.type !== FILE_VIEW_TYPE) return;
+                    openFileViewPopover(sec, bar);
                 });
                 // **先頭へ置きます**——サーバーが描く枠は末尾に足されるので、
                 // 札が下へ流れて見失われないように。

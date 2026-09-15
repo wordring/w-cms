@@ -165,7 +165,6 @@ const (
 	kindImage fileViewKind = "image"
 	kindVideo fileViewKind = "video"
 	kindAudio fileViewKind = "audio"
-	kindText  fileViewKind = "text"
 	// kindOther は**ブラウザでは描けないもの**です。枠の代わりに開く口を出します。
 	kindOther fileViewKind = "other"
 )
@@ -173,8 +172,17 @@ const (
 // fileViewKinds は拡張子 → 開き方です。
 //
 // **ここに無い形式も受けます**（`kindOther`）——CADもExcelもZIPも、開く口は出します。
-// この表に足すのは「ブラウザが**素で**その場に描けるか」だけが基準です——外部の
-// 描画ライブラリを連れてくると、開発方針 §1（外部依存の最小化）に触れます。
+//
+// ⚠ **この表は配信側（page.setAttachmentHeaders）の帰結であって、独立した判断ではありません。**
+// 配信が `inline` で返す形式（PDF・ラスタ画像・SVG）だけが、その場に描けます。
+// それ以外は `application/octet-stream`＋`Content-Disposition: attachment`＋`nosniff` で
+// 配られるので、ここで「描ける」と宣言しても**ブラウザは描きません**——2026-09-15 に
+// `.txt/.csv/.log/.md` を `<embed>` で出す枝を足して、そうなりました（しかもその拡張子は
+// 添付として保存できる一覧に無く、届きようもなかった）。**足すときは配信側を先に**。
+// 動画・音声はメディア要素が `Content-Disposition` を無視するので鳴る見込みですが、
+// 配信側は octet-stream のままで、**実測はしていません**（コードレビュー §2.6）。
+//
+// 外部の描画ライブラリを連れてくるのは、開発方針 §1（外部依存の最小化）に触れます。
 var fileViewKinds = map[string]fileViewKind{
 	".pdf":  kindPDF,
 	".png":  kindImage,
@@ -182,20 +190,10 @@ var fileViewKinds = map[string]fileViewKind{
 	".jpeg": kindImage,
 	".webp": kindImage,
 	".gif":  kindImage,
-	".svg":  kindImage,
+	".svg":  kindImage, // `<img>` で出す。`<embed>` だと同一オリジンのスクリプトとして動く余地が生まれる
 	".mp4":  kindVideo,
-	".webm": kindVideo,
 	".m4a":  kindAudio,
 	".mp3":  kindAudio,
-	".wav":  kindAudio,
-	// テキストは `<embed>` で素直に出ます（`type` を与えないとブラウザが判じます）。
-	// **`.svg` をここへ入れてはいけません**——画像として `<img>` で出すのが正で、
-	// `<embed>` だと同一オリジンのスクリプトとして動く余地が生まれます
-	// （配信側が `attachment`＋sandbox で守っていますが、二重に効かせます）。
-	".txt": kindText,
-	".csv": kindText,
-	".log": kindText,
-	".md":  kindText,
 }
 
 // attachmentURLFor は参照の指す添付のURL・ファイル名・開き方を返します。
@@ -269,8 +267,6 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 		body = `<video class="file-view-body" src="` + src + `" controls preload="metadata"></video>`
 	case kindAudio:
 		body = `<audio class="file-view-body" src="` + src + `" controls preload="metadata"></audio>`
-	case kindText:
-		body = `<embed class="file-view-body" src="` + src + `">`
 	}
 	return `<div class="file-view" title="右下をつまむと大きさを変えられます">` + head + body + `</div>`
 }
