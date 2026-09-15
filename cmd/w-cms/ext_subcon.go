@@ -21,7 +21,3 @@ package main
 // ─────────────────────────────────────────────────────────────────────────
 
 import _ "w-cms/ext/subcon"
-
-func init() {
-	loadedExtensions = append(loadedExtensions, "subcon（下請け業務）")
-}

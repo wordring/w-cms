@@ -19,7 +19,3 @@ package main
 // ─────────────────────────────────────────────────────────────────────────
 
 import _ "w-cms/ext/comm/mail"
-
-func init() {
-	loadedExtensions = append(loadedExtensions, "comm/mail（メール送受信・IMAP／SMTP）")
-}

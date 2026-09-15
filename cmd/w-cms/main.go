@@ -54,14 +54,6 @@ func (n noDirListing) Open(name string) (http.File, error) {
 }
 
 // main はアプリケーションの起動とルーティングの設定を行います。
-// loadedExtensions はコンパイル時に組み込まれた拡張セットの名前です
-// （`cmd/w-cms/ext_*.go` の `init()` が自分を足す）。
-//
-// **起動ログに出すのが目的**です。ビルドタグの付け外しは目に見えないので、
-// 「入っているつもりで入っていない」を画面から確かめられるようにしておきます
-// ——タグを忘れたビルドは、受注ページ生成も部材計算も無いまま普通に起動します。
-var loadedExtensions []string
-
 func main() {
 	// **証明書を作るだけの用**（サーバーは起動しない）。設定もDBも要らないので先に処理する。
 	if len(os.Args) > 1 && os.Args[1] == "-gencert" {
@@ -133,10 +125,18 @@ func main() {
 	handler := buildHandler()
 
 	// サーバーの起動
-	if len(loadedExtensions) == 0 {
+	// **載っている拡張の名簿は拡張が自分で名乗ります**（cms.RegisterExtension・2026-09-15）。
+	// ビルドタグの付け外しは目に見えないので、「入っているつもりで入っていない」を起動時に
+	// 確かめられるようにしておきます——タグを忘れたビルドは、受注ページ生成も部材計算も
+	// 無いまま普通に起動します。同じ名簿が /api/tag-schema で画面にも渡ります。
+	if exts := cms.Extensions(); len(exts) == 0 {
 		log.Println("拡張セット: なし（素の w-cms）")
 	} else {
-		log.Println("拡張セット: " + strings.Join(loadedExtensions, ", "))
+		names := make([]string, 0, len(exts))
+		for _, e := range exts {
+			names = append(names, e.ID+"（"+e.Name+"）")
+		}
+		log.Println("拡張セット: " + strings.Join(names, ", "))
 	}
 	// **HTTPS は証明書と鍵がそろったときだけ**。片方だけ置かれていたら設定の
 	// 書きかけなので止める——黙って平文へ落ちると「HTTPSのつもりで平文だった」が

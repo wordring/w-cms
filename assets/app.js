@@ -1594,6 +1594,17 @@
     // **1語につき1件で、型と選択肢を一緒に持ちます**（2026-09-14 に
     // type_inference と tag_enums の2本を畳んだ）。
     let vocabWords = {};               // { "数量": {type:"number"}, "在籍": {type:"enum", values:[...]}, ... }
+    // **載っている拡張**（/api/tag-schema の `extensions`・2026-09-15）。拡張の画面はこの
+    // ファイルに居るので、サーバーからビルドタグで外しても**ボタンは残り、押すと404が
+    // エラーの通知になっていました**（「🤖 解析」「✉️ 返信」「未分類へ戻す」）。
+    // **null は「知らされていない」**——取得に失敗したときは出し分けをせず、従来どおり
+    // 全部出します（出ないより、押して断られるほうが原因に気づけるため）。
+    let loadedExtensions = null;
+
+    // hasExtension は拡張が載っているかを返します（知らされていなければ true）。
+    function hasExtension(id) {
+        return loadedExtensions === null || loadedExtensions.has(id);
+    }
 
     async function loadTagSchema() {
         try {
@@ -1604,6 +1615,7 @@
             voidTags = new Set((d && d.void) || []);
             vocabDefs = (d && d.vocab) || [];
             vocabWords = (d && d.vocabulary) || {};
+            loadedExtensions = (d && Array.isArray(d.extensions)) ? new Set(d.extensions) : null;
             // **列型の一覧はサーバーが持ちます**（手書きだと型を足した日に古くなる）。
             // 空で返ってきたら初期値を守ります——「明示した型が全部無視される」より、
             // 一手前の一覧で動いているほうが害が小さいためです。
@@ -1620,6 +1632,7 @@
             voidTags = new Set();
             vocabDefs = [];
             vocabWords = {};
+            loadedExtensions = null;
         }
     }
 
@@ -3366,6 +3379,7 @@
     // refreshAnalyzedMarks は解析済みの一覧を取り直し、印を描き直します。
     async function refreshAnalyzedMarks() {
         if (!currentPageId) return;
+        if (!hasExtension('subcon')) { analyzedMap = {}; return; } // 下請けが無ければ問わない（404を出さない）
         try {
             const res = await fetch('/api/analyzed?page_id=' + encodeURIComponent(currentPageId));
             const d = await res.json();
@@ -3411,8 +3425,9 @@
             // 参照を1つ書くだけ）。無かったのは**入口**です——`010272-c3p7` という
             // 値は添付IDを手で調べないと書けませんでした。
             btn.insertAdjacentElement('afterend', makeCopyRefButton(m[1], m[2]));
-            if (kind === 'pdf') {
+            if (kind === 'pdf' && hasExtension('subcon')) {
                 // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
+                // **解析は下請けの持ち物**——載っていなければボタンを出さない（2026-09-15）。
                 if (a.parentElement) {
                     const ab = makeAnalyzeButton(m[1], m[2] + '.pdf', '');
                     btn.insertAdjacentElement('afterend', ab);
@@ -3511,6 +3526,7 @@
     function refreshContactUnfile() {
         document.querySelectorAll('#w-editor-content .contact-unfile').forEach(el => el.remove());
         if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        if (!hasExtension('comm/contacts')) return; // アドレス帳の持ち物（2026-09-15）
         const host = document.getElementById('w-editor-content');
         if (!host || !currentPageId) return;
 
@@ -3636,12 +3652,16 @@
         box.className = 'vocab-chrome mail-chrome';
         box.setAttribute('contenteditable', 'false');
 
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'mail-reply-open';
-        btn.textContent = '✉️ 返信';
-        btn.addEventListener('click', () => toggleReplyForm(box, btn));
-        box.appendChild(btn);
+        // **「✉️ 返信」だけがメール拡張の持ち物**です（2026-09-15）。同じ箱の「🧵 やりとりの
+        // 前後」と「📨 この記録への返信」は記録を読むだけなので、メールを外しても出します。
+        if (hasExtension('comm/mail')) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mail-reply-open';
+            btn.textContent = '✉️ 返信';
+            btn.addEventListener('click', () => toggleReplyForm(box, btn));
+            box.appendChild(btn);
+        }
         host.appendChild(box);
 
         loadThread(box);
@@ -3937,6 +3957,7 @@
         if (!currentPageId) return;
         const host = document.getElementById('w-editor-content');
         if (!host) return;
+        if (!hasExtension('subcon')) return; // 整理は下請けの持ち物（2026-09-15）
         // **整理が意味を持つのは通信記録だけ**——解析で図面ページが生まれた元のページ。
         // 年フォルダや部品ページに出しても行き場がない（2026-09-03 ユーザー指摘。
         // それまでは閲覧モードの全ページに出ていた）。
@@ -4626,7 +4647,7 @@
                 size.textContent = fmtBytes(e.size);
                 li.appendChild(name);
                 // ZIPの中のPDFは、その1件だけを取り出して解析できる。
-                if (/\.pdf$/i.test(e.name)) {
+                if (/\.pdf$/i.test(e.name) && hasExtension('subcon')) {
                     li.appendChild(makeAnalyzeButton(pageId, file, e.name));
                 }
                 li.appendChild(size);
