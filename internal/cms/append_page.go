@@ -16,6 +16,7 @@ package cms
 
 import (
 	"crypto/rand"
+	"html"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -157,4 +158,39 @@ func NewBlockID(bodyHTML string) string {
 	}
 	// 乱数が尽きる状況は想定していないが、無言で衝突させるよりは長い値を返す。
 	return strconv.FormatInt(time.Now().UnixNano(), 36)
+}
+
+// ── 可変タグの読み書き（2026-09-15 に intake_eml.go・handler_handled.go から寄せた）──
+//
+// どちらも通信箱に限らず、アドレス帳（連絡先の追記）・メール（送信の控え）が使います。
+
+// WriteTag は「名前：値」のタグを1対書きます（値が空なら書かない）。
+//
+// **値は前後の空白を落としてから書きます。** 取り込んだメールのヘッダには
+// 余分な空白が普通に混ざっており、そのまま入れると索引の値が空白付きになって
+// 逆引き（PagesByTag は生テキストで引く）が外れます。
+//
+// かつては取り込み係とメール拡張が同名の関数を別々に持ち、**trim の有無だけが
+// 違って**いました——どちらの経路で作られたページかで値が変わる、という形の
+// 静かな食い違いだったので、コアの1つに寄せました（2026-09-05）。
+func WriteTag(b *strings.Builder, name, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	b.WriteString("<dt>" + html.EscapeString(name) + "</dt><dd>" + html.EscapeString(value) + "</dd>")
+}
+
+// EndOfFirstTagList は最初の可変タグの並びの終わり（`</dl>` の位置）を返します。
+// 見つからなければ -1。
+func EndOfFirstTagList(body string) int {
+	i := strings.Index(body, `<dl data-type="tags">`)
+	if i < 0 {
+		return -1
+	}
+	end := strings.Index(body[i:], "</dl>")
+	if end < 0 {
+		return -1
+	}
+	return i + end
 }
