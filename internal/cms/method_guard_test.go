@@ -49,7 +49,7 @@ func TestStateChangingHandlersRejectGET(t *testing.T) {
 		{"添付（PDF）", "/api/upload-pdf", UploadPDFHandler},
 		{"対応：不要を付ける", "/api/intake/handled", MarkHandledAPIHandler},
 		{"手で記録を作る", "/api/intake/memo", NewMemoAPIHandler},
-		// 連絡先の口（`/api/contacts/…`）は `ext/contacts` の試験が見ます
+		// 連絡先の口（`/api/contacts/…`）は `ext/comm/contacts` の試験が見ます
 		// （2026-09-15 に移設。ハンドラがこのパッケージから出たため）。
 	}
 	for _, c := range cases {

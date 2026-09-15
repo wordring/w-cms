@@ -252,7 +252,7 @@ type IntakeResult struct {
 
 // IntakeFile は通信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
 //
-// HTTPの口（serveIntake）と、メールの取り込み（ext/mail）が共有します
+// HTTPの口（serveIntake）と、メールの取り込み（ext/comm/mail）が共有します
 // ——メールをIMAPで取ってきたときも、人が .eml をドロップしたときと**同じ道**を
 // 通す必要があるからです。封筒タグ・スレッドの繋ぎ・添付の展開・重複検知は
 // すべて取り込み係が持っているので、経路ごとに書き直すと必ず片方が古くなります。
@@ -385,7 +385,7 @@ const ReplySourceTag = "返信元"
 
 // CreateRecordPage は年フォルダ／月フォルダの下へ記録ページを1枚作ります。
 //
-// 通信箱の取り込み（IntakeContext.CreateDatedPage）と、送信の記録（ext/mail）
+// 通信箱の取り込み（IntakeContext.CreateDatedPage）と、送信の記録（ext/comm/mail）
 // が共有します——**受信と送信で置き場の作法を変えない**ため。
 func CreateRecordPage(rootID, owner string, t time.Time, bodyHTML string) (string, error) {
 	parent := rootID

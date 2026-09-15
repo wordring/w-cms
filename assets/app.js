@@ -3748,7 +3748,7 @@
     // bareAddress は `名前 <アドレス>` からアドレスだけを取り出します。
     //
     // **投函の宛先には素のアドレスしか置けません。** SMTP の `RCPT TO:` へは
-    // この値がそのまま渡るので（`ext/mail/smtp.go` の `c.Rcpt`）、飾りの名前が
+    // この値がそのまま渡るので（`ext/comm/mail/smtp.go` の `c.Rcpt`）、飾りの名前が
     // 付いていると断られます。サーバー側の `normalizeEmailTag` と同じ規則です
     // ——山括弧があれば中身、無ければ全体。
     function bareAddress(raw) {

@@ -5,7 +5,7 @@ package mail
 //
 //	WCMS_MAIL_LIVE_TEST=1 \
 //	WCMS_MAIL_CLIENT_ID=... WCMS_MAIL_TENANT_ID=... \
-//	go test ./ext/mail/ -run Live -v
+//	go test ./ext/comm/mail/ -run Live -v
 //
 // 宛先は**サインインした本人**です（外へは出ません）。走らせる前に
 // `/api/mail/signin` でサインインを済ませておくこと（保存先は data/mail/）。
@@ -27,7 +27,7 @@ func TestLiveSendToSelf(t *testing.T) {
 	// トークンの保管先は `data/mail/` の**相対パス**（サーバーはリポジトリ直下で
 	// 動く）。テストはパッケージのフォルダで走るので、そこへ揃えます。
 	origWd, _ := os.Getwd()
-	if err := os.Chdir("../.."); err != nil {
+	if err := os.Chdir("../../.."); err != nil {
 		t.Fatalf("Chdirエラー: %v", err)
 	}
 	t.Cleanup(func() { os.Chdir(origWd) })

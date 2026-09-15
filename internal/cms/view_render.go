@@ -41,7 +41,7 @@ var viewRenderers = map[string]func(user *auth.User, pageIDInt int) string{
 	"child-list":       childListViewHTML,
 	"unhandled-intake": unhandledViewHTML,
 	// `unknown-contacts` はここに**書きません**——アドレス帳が `RegisterView` で
-	// 自分から名乗ります（2026-09-15。行き先は `ext/contacts`・§5b 案B）。
+	// 自分から名乗ります（2026-09-15。行き先は `ext/comm/contacts`・§5b 案B）。
 }
 
 // RegisterView は計算ビューの描画処理を足します。**拡張の `init()` から**

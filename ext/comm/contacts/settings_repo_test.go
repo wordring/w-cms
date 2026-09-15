@@ -19,7 +19,7 @@ import (
 // 移るため、相対パスでは見つかりません（`ext/subcon` と同じ流儀）。
 func TestMain(m *testing.M) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "config", "settings.json")
+	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "config", "settings.json")
 	if err := cms.LoadSettingsFrom(path); err != nil {
 		panic("テストの設定を読み込めません: " + err.Error())
 	}

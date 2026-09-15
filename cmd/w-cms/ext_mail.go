@@ -18,8 +18,8 @@ package main
 // 入っているかどうかは起動ログに出ます（有効／設定待ちも含めて）。
 // ─────────────────────────────────────────────────────────────────────────
 
-import _ "w-cms/ext/mail"
+import _ "w-cms/ext/comm/mail"
 
 func init() {
-	loadedExtensions = append(loadedExtensions, "mail（メール送受信・IMAP／SMTP）")
+	loadedExtensions = append(loadedExtensions, "comm/mail（メール送受信・IMAP／SMTP）")
 }

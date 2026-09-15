@@ -54,7 +54,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
-	"w-cms/ext/contacts"
+	"w-cms/ext/comm/contacts"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"

@@ -247,7 +247,7 @@ var vocabRegistry = []VocabDef{
 	},
 	// `unknown-contacts`（未登録の連絡先）は**ここにありません**——アドレス帳が
 	// `RegisterVocab` で自分から持ち込みます（2026-09-15。contacts.go の init。
-	// 行き先は `ext/contacts`・[docs/【考察】アドレス帳の作り直し.md] §5b 案B）。
+	// 行き先は `ext/comm/contacts`・[docs/【考察】アドレス帳の作り直し.md] §5b 案B）。
 }
 
 // RegisterVocab は形式の宣言を①語彙レジストリへ足します。**拡張の `init()` から
