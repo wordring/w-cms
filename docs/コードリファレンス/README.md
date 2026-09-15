@@ -5,9 +5,9 @@
 実装の**現状**を写した文書群です。設計の「なぜ」は各設計書が正本で、ここは
 「いま何がどうなっているか」だけを扱います。
 
-この版は **アドレス帳の `ext/contacts` への移設（2026-09-15）**——コアは3つの
+この版は **アドレス帳の `ext/comm/contacts` への移設（2026-09-15）**——コアは3つの
 フック（`RegisterVocab`・`RegisterView`・`RegisterContactResolver`）で受けるだけになり、
-**拡張どうしの最初の import**（`ext/subcon` → `ext/contacts`）が生まれた——と、
+**拡張どうしの最初の import**（`ext/subcon` → `ext/comm/contacts`）が生まれた——と、
 **`page_tags.norm_value` の宣言型の撤去**（型は値が持つ。束ねる形は `tagNormBind`
 1か所）・題の引き方の集約（`page_lookup.go`・`page.FormatID`）・`NormalizeForLookup` の
 撤去を反映して**実際のコードから測り直した**ものです。
@@ -26,10 +26,10 @@ go doc ./internal/database         # cms.db（派生）と auth.db（正本）
 
 go doc ./internal/cms Observer       # 型・関数を1つだけ
 go doc ./internal/cms IntakeHandler  # 取り込み係の受け口
-go doc ./internal/cms Mailer         # メールの口（実装は ext/mail）
+go doc ./internal/cms Mailer         # メールの口（実装は ext/comm/mail）
 go doc ./ext/subcon              # 下請け業務
-go doc ./ext/mail                    # メール送受信（IMAP／SMTP）
-go doc ./ext/contacts                # アドレス帳（なぜ独立した拡張か・コアとの境目）
+go doc ./ext/comm/mail                    # メール送受信（IMAP／SMTP）
+go doc ./ext/comm/contacts                # アドレス帳（なぜ独立した拡張か・コアとの境目）
 go doc -all ./internal/cms/page      # そのパッケージの全公開APIをコメントごと
 go doc -src ./internal/cms Sanitize  # 実装も見る
 ```
@@ -57,7 +57,7 @@ go run golang.org/x/pkgsite/cmd/pkgsite@latest -open .
 という理由で全部消しています。2026-08-27 に作り直し、2026-08-30 に測り直し、
 D-1 以降の大改造で再び古くなったため 2026-09-02 に作り直し、`ext/` の登場と
 参照追従集計を受けて 2026-09-04 に、リファクタリング（逐語コピーの併合・分割）を
-受けて 2026-09-14 に測り直し、**アドレス帳の `ext/contacts` への移設と
+受けて 2026-09-14 に測り直し、**アドレス帳の `ext/comm/contacts` への移設と
 `norm_value` の宣言型撤去を受けて 2026-09-15 に測り直した**のがこの版です。
 
 同じ轍を踏まないための決め事:
