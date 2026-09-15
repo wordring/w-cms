@@ -100,8 +100,11 @@ func init() {
 		Icon:        "📄",
 		Element:     "section",
 		// **列はありません**——配線は属性で、中に書くものがないためです。
-		// スラッシュメニューが挿すのは空の `<section>` で、エディタがその場に
-		// 「参照を設定する」欄を出します（assets/app.js の fileViewPopover）。
+		// スラッシュメニューが挿すのは空の `<section data-type="file-view">` で、
+		// エディタがその場に配線の札を出します（assets/app.js の `decorateFileViews`。
+		// 札を押すと `openFileViewPopover` が欄を開き、`applyFileViewRef` が書き戻す）。
+		// ⚠ エディタ側では `usesHeadingForm` の例外に入れておくこと——見出し形で挿すと
+		// `data-type` が付かず、札の絞り込みから外れます。
 	})
 	RegisterMirror(FileViewType, MirrorHandlerFunc(renderFileView))
 }

@@ -125,6 +125,52 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     ok(wired.open, '札を押すとプロパティ欄が開く');
     ok(wired.value === HOST + '-' + ATTACH, '欄に今の配線が入っている', wired.value);
 
+    // ⑤ **スラッシュメニューから挿したものも配線できること。**
+    //    2026-09-15 にここが抜けていました——`usesHeadingForm` の例外に入れ忘れて
+    //    「見出し形」（`<section><h2>ファイル表示</h2>`・**data-type 無し**）で挿さり、
+    //    札の絞り込み（`section[data-type="file-view"]`）から外れていました。
+    //    鏡は機能見出しでも立つので「参照がありません」とだけ出て、**その欄を開く
+    //    手段が画面に無い**という気づきにくい壊れ方をします。
+    await page.evaluate(() => {
+      const pop = document.getElementById('w-fv-popover');
+      if (pop) pop.classList.remove('active');
+    });
+    // ⚠ **本物の段落から始めること。** メニューの対象は `.editor-block` 単位
+    // （`currentSlashBlock = targetElement.closest('.editor-block')`）なので、
+    // 手で `<p>` を足してキャレットを置いても `null` になり、選んでも何も挿さりません。
+    await page.click('#w-editor-content p');
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await page.keyboard.type('/');
+    await page.waitForTimeout(700);
+    const menuOpen = await page.evaluate(() =>
+      !!document.querySelector('#w-slash-menu.active'));
+    ok(menuOpen, 'スラッシュメニューが開く');
+    const item = await page.$('#w-slash-menu .slash-menu-item[data-type="vocab:file-view"]');
+    ok(!!item, 'スラッシュメニューに 📄 ファイル表示 が出る');
+    if (item && menuOpen) {
+      await item.click();
+      await page.waitForTimeout(900);
+      const inserted = await page.evaluate(() => {
+        const all = document.querySelectorAll('#w-editor-content section[data-type="file-view"]');
+        // ⚠ 挿さるのは**押した段落の直後**で、末尾ではありません（既にある枠より前）。
+        // 新しいほうは「まだ配線が無い」で見分けます。
+        const last = Array.from(all).find(s => !s.getAttribute('data-ref'));
+        return {
+          count: all.length,
+          bars: document.querySelectorAll('#w-editor-content .fv-wire').length,
+          // 見出し形で挿さっていないこと（`<h2>ファイル表示</h2>` が本文に残らない）。
+          heading: !!document.querySelector('#w-editor-content section:not([data-type]) > h2'),
+          barText: last ? (last.querySelector('.fv-wire') || {}).textContent : '',
+        };
+      });
+      ok(inserted.count === 2, '挿したものに data-type が付く', String(inserted.count));
+      ok(!inserted.heading, '見出し形（<h2>ファイル表示</h2>）では挿さらない');
+      ok(inserted.bars === 2, '挿した直後から配線の札が出る', String(inserted.bars));
+      ok(/参照を設定/.test(inserted.barText || ''), '未設定と分かる札が出る', inserted.barText);
+    }
+
     ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
   } finally {
     const del = await page.evaluate(async (i) => {
