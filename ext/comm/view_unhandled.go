@@ -1,4 +1,4 @@
-package cms
+package comm
 
 // ─────────────────────────────────────────────────────────────────────────
 // 未処理——まだ何も生まれていない記録の一覧（2026-09-03。規則は 2026-09-05 に拡張）
@@ -51,6 +51,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -173,7 +174,7 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		if !isDescendantOf(c.id, inboxInt) {
 			continue // 通信箱の外の記録は対象外
 		}
-		if IsDateFolderTitle(c.row.Title) {
+		if cms.IsDateFolderTitle(c.row.Title) {
 			continue // 年・月フォルダは仕事ではない（入れ物）
 		}
 		total++
@@ -310,7 +311,7 @@ const UnhandledViewType = "unhandled-intake"
 func init() {
 	// **形式の宣言と描画は、ここで対にして登録します**（2026-09-15 にコアの登録簿と
 	// view_render.go の表から移した——通信の語彙を ext/comm へ出す下ごしらえ）。
-	RegisterVocab(VocabDef{
+	cms.RegisterVocab(cms.VocabDef{
 		// 未処理の受信——まだ手を付けていない通信記録。
 		// ユーザー:「未処理のメールやFAXを一覧できる方法が必要かも」（2026-09-03）。
 		// 判定に新しい入力を求めず、**子ページが在ること自体を「手を付けた」の印**
@@ -322,7 +323,7 @@ func init() {
 		Element:     "section",
 		View:        true,
 	})
-	RegisterView(UnhandledViewType, unhandledViewHTML)
+	cms.RegisterView(UnhandledViewType, unhandledViewHTML)
 }
 
 // unhandledViewHTML は「未処理の受信」の作業面を組み立てます。

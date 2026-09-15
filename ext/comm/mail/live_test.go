@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"w-cms/internal/cms"
+	"w-cms/ext/comm"
 )
 
 // TestLiveSendToSelf は、保存済みのトークンで実際に1通送れることを確かめます。
@@ -45,7 +45,7 @@ func TestLiveSendToSelf(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	_, err := sendViaSMTP(ctx, username, cms.OutgoingMail{
+	_, err := sendViaSMTP(ctx, username, comm.OutgoingMail{
 		To:      []string{addr},
 		Subject: "w-cms 送信テスト",
 		BodyText: "w-cms からの送信テストです。\n\n" +
@@ -53,7 +53,7 @@ func TestLiveSendToSelf(t *testing.T) {
 			"送信時刻: " + time.Now().In(time.Local).Format(time.RFC3339) + "\n",
 		// **In-Reply-To が立つことが SMTP へ変えた理由**なので実物でも載せます。
 		InReplyTo: "<probe-thread-check@w-cms.local>",
-		Attachments: []cms.MailAttachment{{
+		Attachments: []comm.MailAttachment{{
 			Name:     "添付の確認.txt",
 			MIMEType: "text/plain",
 			Content:  []byte("添付の確認用です。\n"),

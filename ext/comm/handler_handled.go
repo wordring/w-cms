@@ -1,4 +1,4 @@
-package cms
+package comm
 
 // ─────────────────────────────────────────────────────────────────────────
 // 「対応：不要」を付ける口（2026-09-05）
@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -45,23 +46,23 @@ import (
 func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	user := auth.CurrentUser(r)
 	if user == nil {
-		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
 		return
 	}
 	var req struct {
 		PageIDs []string `json:"page_ids"`
 		Value   string   `json:"value"` // 済 / 不要（省略時は 済）
 	}
-	if !DecodeJSONBody(w, r, &req) {
+	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
 	if len(req.PageIDs) == 0 {
-		JSONFail(w, http.StatusBadRequest, "対象がありません")
+		cms.JSONFail(w, http.StatusBadRequest, "対象がありません")
 		return
 	}
 	// **値は表引きで閉じます**——自由に書けると `済` と `完了` が混ざり、
@@ -115,14 +116,14 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 func MarkHandled(pageID, author, value string) error {
 	pair := `<dt>` + html.EscapeString(HandledTag) + `</dt><dd>` +
 		html.EscapeString(value) + `</dd>`
-	return RewriteBody(pageID, author, func(current string) string {
+	return cms.RewriteBody(pageID, author, func(current string) string {
 		if hasHandledTag(current) {
 			return current
 		}
-		if at := EndOfFirstTagList(current); at >= 0 {
+		if at := cms.EndOfFirstTagList(current); at >= 0 {
 			return current[:at] + pair + current[at:]
 		}
-		return InsertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
+		return cms.InsertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
 	})
 }
 

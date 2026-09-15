@@ -47,10 +47,9 @@ func TestStateChangingHandlersRejectGET(t *testing.T) {
 		{"添付（汎用）", "/api/upload-file", UploadFileHandler},
 		{"添付（画像）", "/api/upload-image", UploadImageHandler},
 		{"添付（PDF）", "/api/upload-pdf", UploadPDFHandler},
-		{"対応：不要を付ける", "/api/intake/handled", MarkHandledAPIHandler},
-		{"手で記録を作る", "/api/intake/memo", NewMemoAPIHandler},
-		// 連絡先の口（`/api/contacts/…`）は `ext/comm/contacts` の試験が見ます
-		// （2026-09-15 に移設。ハンドラがこのパッケージから出たため）。
+		// 連絡先の口（`/api/contacts/…`）は `ext/comm/contacts` の、通信の口
+		// （`/api/intake/…`）は `ext/comm` の試験が見ます（2026-09-15 に移設。
+		// ハンドラがこのパッケージから出たため）。
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -86,35 +85,6 @@ func TestPagePermsHandlerChecksAuthFirst(t *testing.T) {
 	}
 }
 
-// TestJSONReadHandlersRejectNonGET は、JSONで答える読み取り口が GET 以外を
-// 断ることを固定します。
-//
-// ⚠ **`handler_replies` と `handler_thread` は、2026-09-14 までメソッド確認が
-// 抜けていました**——同じ16行の前置きを7箇所に写していて、写し損ねたぶんです。
-// 共通の関門（`GateJSONPageRead`）へ寄せたので、いまは抜けようがありません
-// ——が、誰かが関門を通さない口を新しく書いたら、ここへ足しても落ちます。
-//
-// **JSONで断ることも見ます。** `text/plain` で返すと、受ける側は `res.json()` に
-// 失敗して理由を落とします（2026-09-14 に実際に起きていた形）。
-func TestJSONReadHandlersRejectNonGET(t *testing.T) {
-	cases := []struct {
-		name string
-		path string
-		fn   http.HandlerFunc
-	}{
-		{"この記録への返信", "/api/replies?page_id=000001", RepliesAPIHandler},
-		{"やりとりの前後", "/api/thread?page_id=000001", ThreadAPIHandler},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			rr := httptest.NewRecorder()
-			c.fn(rr, httptest.NewRequest("POST", c.path, nil))
-			if rr.Code != http.StatusMethodNotAllowed {
-				t.Errorf("POST %s を断っていません: code=%d body=%s", c.path, rr.Code, rr.Body.String())
-			}
-			if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
-				t.Errorf("JSONで断っていません: Content-Type=%q（受ける側が理由を落とします）", ct)
-			}
-		})
-	}
-}
+// JSONで答える読み取り口が GET 以外を断ることの固定（TestJSONReadHandlersRejectNonGET）は、
+// 2026-09-15 に `ext/comm` へ移しました——表の中身（`/api/replies`・`/api/thread`）が
+// 通信の口で、ハンドラがこのパッケージから出たためです。

@@ -1,4 +1,4 @@
-package cms
+package comm
 
 // ─────────────────────────────────────────────────────────────────────────
 // 「この記録への返信」を引く（2026-09-03）
@@ -15,6 +15,7 @@ package cms
 import (
 	"encoding/json"
 	"net/http"
+	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -31,7 +32,7 @@ type ReplyRef struct {
 
 // RepliesTo は pageID を返信元とする記録を、送った順に返します。
 func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
-	ids, err := PagesByTag(database.DB, ReplySourceTag, pageID)
+	ids, err := cms.PagesByTag(database.DB, ReplySourceTag, pageID)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
 		if !page.CanView(user, idInt) {
 			continue
 		}
-		r := ReplyRef{PageID: page.FormatID(idInt), Title: PageTitleByID(idInt)}
+		r := ReplyRef{PageID: page.FormatID(idInt), Title: cms.PageTitleByID(idInt)}
 		database.DB.QueryRow(
 			`SELECT value FROM page_tags WHERE page_id = ? AND name = '送信日時' LIMIT 1`,
 			idInt).Scan(&r.SentAt)
@@ -59,13 +60,13 @@ func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
 func RepliesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **メソッド確認もここに入りました**——写していたころは、この2つの口だけ
 	// 抜けていました（GET専用のつもりで書いて、書き忘れに誰も気づかない形）。
-	pageID, _, user, ok := GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
+	pageID, _, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
 	if !ok {
 		return
 	}
 	replies, err := RepliesTo(user, pageID)
 	if err != nil {
-		JSONFail(w, http.StatusInternalServerError, "返信を引けません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "返信を引けません: "+err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "replies": replies})

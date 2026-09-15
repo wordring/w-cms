@@ -3,7 +3,7 @@ package mail
 // ─────────────────────────────────────────────────────────────────────────
 // メールを通信箱へ取り込む（2026-09-03）
 //
-// 取ってきた生のMIMEを**既存の取り込み係へそのまま渡します**（cms.IntakeFile）。
+// 取ってきた生のMIMEを**既存の取り込み係へそのまま渡します**（comm.IntakeFile）。
 // 人が `.eml` をドロップしたときと同じ道なので、封筒タグ・スレッドの繋ぎ・
 // 添付の展開・重複検知が丸ごと効きます。
 //
@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 )
@@ -51,7 +52,7 @@ const listAllMax = 5000
 func ImportMessages(ctx context.Context, username string, opt ListOptions) (ImportSummary, error) {
 	var sum ImportSummary
 
-	inboxID, ok := cms.MailBoxPageID()
+	inboxID, ok := comm.MailBoxPageID()
 	if !ok {
 		return sum, errNoInbox
 	}
@@ -92,7 +93,7 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 		}
 		// **落とす前に重複を確かめる**（本体は数百KBある）。
 		if id := strings.TrimSpace(r.MessageID); id != "" {
-			if _, dup := cms.ExistingIntakePage(cms.MessageIDTag, id); dup {
+			if _, dup := comm.ExistingIntakePage(comm.MessageIDTag, id); dup {
 				sum.Duplicate++
 				continue
 			}
@@ -105,7 +106,7 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 		}
 		// ファイル名は取り込み係が拡張子で担当を決めるためのもの。
 		// 題は本文（件名）から作られるので、ここは形だけで足ります。
-		res, handled, err := cms.IntakeFile(inboxID, username, "mail.eml", raw)
+		res, handled, err := comm.IntakeFile(inboxID, username, "mail.eml", raw)
 		if err != nil || !handled {
 			if err != nil {
 				log.Printf("メールを取り込めませんでした subject=%q: %v", r.Subject, err)
@@ -131,7 +132,7 @@ var errNoInbox = errNoInboxErr{}
 type errNoInboxErr struct{}
 
 func (errNoInboxErr) Error() string {
-	return "通信箱ページがありません（トップ直下に「" + cms.MailBoxTitle + "」という名前のページを作ってください）"
+	return "通信箱ページがありません（トップ直下に「" + comm.MailBoxTitle + "」という名前のページを作ってください）"
 }
 
 // MailImportAPIHandler は POST /api/mail/import です。

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -40,12 +41,12 @@ type AttachRef struct {
 const maxTotalAttachBytes = 25 << 20
 
 // collectAttachments は指定された添付を読み、送信用に組み立てます。
-func collectAttachments(user *auth.User, refs []AttachRef) ([]cms.MailAttachment, error) {
+func collectAttachments(user *auth.User, refs []AttachRef) ([]comm.MailAttachment, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}
 	allowed := sendableExts()
-	var out []cms.MailAttachment
+	var out []comm.MailAttachment
 	var total int64
 
 	for _, ref := range refs {
@@ -79,7 +80,7 @@ func collectAttachments(user *auth.User, refs []AttachRef) ([]cms.MailAttachment
 		if err != nil {
 			return nil, errors.New("添付を読めません: " + fileName)
 		}
-		out = append(out, cms.MailAttachment{
+		out = append(out, comm.MailAttachment{
 			Name:     sendName(ref.Name, fileName),
 			MIMEType: mimeTypeOf(fileName),
 			Content:  content,

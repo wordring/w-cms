@@ -1,4 +1,4 @@
-package cms
+package comm
 
 // ─────────────────────────────────────────────────────────────────────────
 // .eml の取り込み係——汎用寄りの同梱拡張（2026-09-01）
@@ -35,6 +35,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"w-cms/internal/cms"
 
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/transform"
@@ -173,26 +174,26 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	b.WriteString(`<dl data-type="tags">`)
 	// **向きとチャネルは直交する2軸**（2026-09-05）。向き＝受信／送信、
 	// チャネル＝メール／FAX／電話。「送信 × FAX」が実際に要るので混ぜません。
-	WriteTag(&b, DirectionTag, DirectionIn)
-	WriteTag(&b, ChannelTag, "メール")
+	cms.WriteTag(&b, DirectionTag, DirectionIn)
+	cms.WriteTag(&b, ChannelTag, "メール")
 	writeAddressTags(&b, FromTag, msg.Header.Get("From"))
 	writeAddressTags(&b, ToTag, msg.Header.Get("To"))
 	writeAddressTags(&b, CcTag, msg.Header.Get("Cc"))
 	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
 	writeAddressTags(&b, ReplyToTag, msg.Header.Get("Reply-To"))
-	WriteTag(&b, ReceivedAtTag, dateISO)
+	cms.WriteTag(&b, ReceivedAtTag, dateISO)
 	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
 	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
-	WriteTag(&b, MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
+	cms.WriteTag(&b, MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
 	// スレッドの親（In-Reply-To）。値は親メールの Message-ID なので、
 	// PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
-	WriteTag(&b, InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
+	cms.WriteTag(&b, InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
 	// 添付の数。**一覧で「発注書が付いているか」を見るため**に索引へ載せます
 	// （2026-09-05）——本文を開かないと分からない値だと、100件の一覧を出すたびに
 	// 100個の本文を読むことになります。**受信原本（.eml）は数えません**
 	// （必ず在るので、数えると全件が 1 から始まって手掛かりになりません）。
-	WriteTag(&b, AttachmentCountTag, countAttachments(parts))
+	cms.WriteTag(&b, AttachmentCountTag, countAttachments(parts))
 	b.WriteString("</dl>")
 
 	bodyWritten := false
@@ -272,11 +273,11 @@ func writeAddressTags(b *strings.Builder, name, raw string) {
 	}
 	list, err := addressParser.ParseList(raw)
 	if err != nil || len(list) == 0 {
-		WriteTag(b, name, decodeHeader(raw))
+		cms.WriteTag(b, name, decodeHeader(raw))
 		return
 	}
 	for _, a := range list {
-		WriteTag(b, name, formatAddress(a.Name, a.Address))
+		cms.WriteTag(b, name, formatAddress(a.Name, a.Address))
 	}
 }
 

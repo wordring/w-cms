@@ -55,12 +55,12 @@ func CreateChildPage(parentID, owner, bodyHTML string) (string, error) {
 	return newID, nil
 }
 
-// setSortKey は作ったページの並び順キーをサイドカーへ書きます。
+// SetSortKey は作ったページの並び順キーをサイドカーへ書きます。
 //
 // **取り込みは順序を知っています**（メールなら受信日時）。それを入れておけば、
 // 月フォルダの中が届いた順に並びます——取り込んだ順ではなく。
 // 人があとでドラッグで並べ替えれば、同じ欄が上書きされるだけです。
-func setSortKey(pageID, key string) {
+func SetSortKey(pageID, key string) {
 	if key == "" {
 		return
 	}
