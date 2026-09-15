@@ -416,9 +416,12 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 	// 中身はコアが描きます（`internal/cms/file_view.go`）——**この拡張はPDFの出し方を
 	// 知りません**。開くのはコアの機能で、拡張は「ここに開く」と書くだけです。
 	// **人が消せます**——消せば図面は出なくなり、参照タグ（出所の記録）は残ります。
-	b.WriteString(`<section data-type="` + cms.FileViewType + `">` +
-		`<dl data-type="tags"><dt>受信元</dt><dd>` +
-		html.EscapeString(hostPageID+"-"+attachID) + `</dd></dl></section>`)
+	// **配線は属性1つです**（2026-09-15 に中の参照タグから移した）。もとは中へ
+	// `受信元` のタグを書いていましたが、それは**すぐ上の図面ブロックにも在る**ので、
+	// 同じ値が2つの意味（届いた記録／表示先の指定）で並んでいました。
+	b.WriteString(`<section data-type="` + cms.FileViewType + `" ` +
+		cms.FileRefAttr + `="` + html.EscapeString(hostPageID+"-"+attachID) +
+		`"></section>`)
 	b.WriteString("</section>")
 	return b.String()
 }

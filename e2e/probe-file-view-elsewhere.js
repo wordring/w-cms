@@ -41,15 +41,22 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   }
   ok(copied === HOST + '-' + ATTACH, '参照が写せた', copied);
 
-  // ② 📄 ファイル表示 の骨格に、貼る場所があるか（レジストリの宣言から）
+  // ② 📄 ファイル表示 がレジストリに在り、**配線の属性が語彙に載っているか**。
+  //    列は持ちません（2026-09-15 に配線を属性へ移したので、中に書くものが無い）。
+  //    載っていないとシリアライザが data-ref を落とし、図面が黙って消えます。
   const skeleton = await page.evaluate(async () => {
     const d = await (await fetch('/api/tag-schema')).json();
     const def = (d.vocab || []).find(v => v.type === 'file-view');
-    return def ? { name: def.display_name, cols: (def.columns || []).map(c => c.label + ':' + c.type) } : null;
+    return {
+      def: def ? { name: def.display_name, cols: (def.columns || []).length } : null,
+      sectionAttrs: (d.elements && d.elements.section) || [],
+    };
   });
-  ok(!!skeleton, '📄 ファイル表示 がレジストリに在る', skeleton ? skeleton.name : '');
-  ok(skeleton && skeleton.cols.length === 1 && /:ref$/.test(skeleton.cols[0]),
-     '貼る場所（ref の欄）が1つある', skeleton ? skeleton.cols.join(',') : '');
+  ok(!!skeleton.def, '📄 ファイル表示 がレジストリに在る', skeleton.def ? skeleton.def.name : '');
+  ok(skeleton.def && skeleton.def.cols === 0, '列は持たない（配線は属性）',
+     skeleton.def ? String(skeleton.def.cols) : '');
+  ok(skeleton.sectionAttrs.indexOf('data-ref') >= 0,
+     'section[data-ref] がエディタの語彙に載っている', skeleton.sectionAttrs.join(','));
 
   // ③ 無関係なページへ、宣言していないタグ名で貼る
   const made = await page.evaluate(async () => {
@@ -67,10 +74,9 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     const saved = await page.evaluate(async (arg) => {
       const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
       const lj = await lr.json().catch(() => ({}));
-      // **`参考図` は語彙に宣言していません**——名前は書く人が決めます。
+      // **配線は属性1つ**——どのページでも、部品ページでなくても開きます。
       const body = '<h1>装置まるごと</h1><p>子部品の図面をここに出します。</p>'
-        + '<section data-type="file-view">'
-        + '<dl><dt>参考図</dt><dd>' + arg.ref + '</dd></dl></section>';
+        + '<section data-type="file-view" data-ref="' + arg.ref + '"></section>';
       const res = await fetch('/api/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ page_id: arg.id, html: body, token: lj.token || '' }),
@@ -87,13 +93,38 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
         shown: !!w,
         head: w ? (w.querySelector('.file-view-head') || {}).textContent : '',
         src: w ? (w.querySelector('embed') || {}).getAttribute('src') : '',
-        tagKept: !!document.querySelector('section[data-type="file-view"] dl'),
       };
     });
     ok(r.shown, '部品ページでなくてもPDFが開く');
-    ok(/参考図/.test(r.head || ''), '宣言していないタグ名でも出どころに出る', (r.head || '').trim());
     ok((r.src || '').indexOf('/' + HOST + '/' + ATTACH + '.pdf') === 0, 'URLが参照から導かれている', r.src);
-    ok(r.tagKept, '書いたタグが消えていない');
+
+    // ④ **編集モードで配線を触れること。** 空の section はクリックもキャレット移動も
+    //    できないので、札と欄が無いと人は参照を設定できません（属性へ移した代償）。
+    // ⚠ **先にロックを外します。** 上の保存で `/api/lock` を通しているので、
+    // そのままだと編集モードへ入れません——別の口から握ったロックは同じ利用者でも
+    // `/api/lock` で取り直せず（`ok:false, same_user:true`）、モードが閲覧のまま
+    // 静かに戻ります。**札が出ないのではなく、編集モードに入っていない**という
+    // 落ち方をします（実測で一度これに騙されました）。
+    await page.evaluate(async (i) => {
+      await fetch('/api/lock/force?id=' + i, { method: 'POST' });
+    }, id);
+    await page.evaluate(() => document.getElementById('w-mode-toggle').click());
+    // 切り替えはロック取得（ネットワーク）を挟むので、札の描き直しまで待つ。
+    await page.waitForTimeout(2500);
+    const wired = await page.evaluate(() => {
+      const bar = document.querySelector('#w-editor-content .fv-wire');
+      if (bar) bar.click();
+      const pop = document.getElementById('w-fv-popover');
+      return {
+        bar: bar ? bar.textContent : '',
+        open: !!(pop && pop.classList.contains('active')),
+        value: pop ? document.getElementById('w-fv-ref').value : '',
+      };
+    });
+    ok(/ファイル表示/.test(wired.bar), '編集モードに配線の札が出る', wired.bar);
+    ok(wired.open, '札を押すとプロパティ欄が開く');
+    ok(wired.value === HOST + '-' + ATTACH, '欄に今の配線が入っている', wired.value);
+
     ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
   } finally {
     const del = await page.evaluate(async (i) => {

@@ -2717,6 +2717,82 @@
         triggerAutoSave();
     }
 
+    // ── ファイル表示（section[data-type="file-view"]）の配線 ─────────────
+    //
+    // 本文に残るのは `<section data-type="file-view" data-ref="010272-c3p7">` の1つだけで、
+    // **中身はサーバーが描きます**。だから編集モードでは、そのままだと何も掴めません
+    // ——空の section はクリックもキャレット移動もできないためです。
+    //
+    // そこで**配線の札**を1つ出し、押すとプロパティ欄が開くようにします。
+    // リンクのプロパティ欄とまったく同じ流儀（ユーザー 2026-08-31:「編集するのに
+    // ダイアログが出るのは使いにくかった。プロパティ欄があるものが使いやすかった」）。
+    const FILE_VIEW_TYPE = 'file-view';
+    const FILE_REF_ATTR = 'data-ref'; // internal/cms/file_view.go の FileRefAttr と対
+    let fileViewAnchor = null;        // 編集対象の section
+
+    function hideFileViewPopover() {
+        const pop = document.getElementById('w-fv-popover');
+        if (pop) pop.classList.remove('active');
+        fileViewAnchor = null;
+    }
+
+    // openFileViewPopover は対象ブロックの直下へ欄を出す。
+    function openFileViewPopover(sec) {
+        const pop = document.getElementById('w-fv-popover');
+        if (!pop || !sec) return;
+        fileViewAnchor = sec;
+        document.getElementById('w-fv-ref').value = sec.getAttribute(FILE_REF_ATTR) || '';
+        pop.classList.add('active');
+        placeFloating(pop, sec.getBoundingClientRect());
+        document.getElementById('w-fv-ref').focus();
+    }
+
+    // applyFileViewRef は欄の値をブロックへ書き戻す。属性の変更は MutationObserver の
+    // attributeFilter に載らないので、保存は明示的に蹴る（applyLinkHref と同じ）。
+    function applyFileViewRef() {
+        const sec = fileViewAnchor;
+        if (!sec || !sec.isConnected) return;
+        const v = document.getElementById('w-fv-ref').value.trim();
+        if (v) sec.setAttribute(FILE_REF_ATTR, v);
+        else sec.removeAttribute(FILE_REF_ATTR);
+        decorateFileViews();
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
+    // decorateFileViews は編集モードで各ファイル表示ブロックへ配線の札を出します。
+    //
+    // **必要なときだけDOMを変えます**（decorateVocabBlocks と同じ理由——本文DOMの変化は
+    // 自動保存へ巡ってくるので、毎回付け直すと保存が回り続けます）。
+    function decorateFileViews() {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        const isEdit = document.body.hasAttribute('edit-mode');
+        editor.querySelectorAll('section[data-type="' + FILE_VIEW_TYPE + '"]').forEach(sec => {
+            if (sec.closest('.vocab-chrome')) return;
+            let bar = sec.querySelector(':scope > .fv-wire');
+            if (!isEdit) { if (bar) bar.remove(); return; }
+            if (!bar) {
+                bar = document.createElement('button');
+                bar.type = 'button';
+                bar.className = 'vocab-chrome fv-wire';
+                bar.contentEditable = 'false';
+                bar.addEventListener('mousedown', e => e.preventDefault());
+                bar.addEventListener('click', e => {
+                    e.preventDefault();
+                    openFileViewPopover(sec);
+                });
+                // **先頭へ置きます**——サーバーが描く枠は末尾に足されるので、
+                // 札が下へ流れて見失われないように。
+                sec.insertBefore(bar, sec.firstChild);
+            }
+            const ref = sec.getAttribute(FILE_REF_ATTR) || '';
+            const want = ref ? '📄 ファイル表示：' + ref : '📄 ファイル表示：参照を設定してください';
+            if (bar.textContent !== want) bar.textContent = want;
+            bar.classList.toggle('fv-wire-empty', !ref);
+        });
+    }
+
     // ── 定義リスト（dl data-type）の項目操作 ─────────────────────────────
     // 「項目」＝ dt と、次の dt までの dd の組（多値＝複数 dd。語彙モデル §5.3）。
     let currentDlNode = null; // キャレットのある dt / dd
@@ -3319,8 +3395,9 @@
     // makeCopyRefButton は添付の参照（`ページID-添付ID`）を写すボタンを作ります。
     //
     // **これが「ほかのページに出す」の入口**です。写した値を、行き先のページで
-    // 📄 ファイル表示 の欄へ貼れば、そこにファイルが開きます——**タグの名前は
-    // 書く人が決めます**（`参考図`・`構成部品`・`資料` など。コアは名前を知りません）。
+    // 📄 ファイル表示 を挿し、その札を押して開く**プロパティ欄へ貼れば**、
+    // そこにファイルが開きます（2026-09-15 に配線を属性へ移したので、本文へ
+    // タグを書く手順ではなくなりました）。
     //
     // 同じ値は `受信元` タグの中身でもあるので、参照を手で書きたい場面すべてに効きます。
     function makeCopyRefButton(pageID, attachID) {
@@ -3329,7 +3406,7 @@
         btn.type = 'button';
         btn.className = 'vocab-chrome attach-expand attach-copyref';
         btn.textContent = '🔗 参照';
-        btn.title = ref + ' を写します（別のページの「ファイル表示」へ貼ると、そこに開きます）';
+        btn.title = ref + ' を写します（別のページで 📄 ファイル表示 を挿し、その札を押して貼ると開きます）';
         btn.addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(ref);
@@ -4614,6 +4691,9 @@
         if (!isEdit) {
             editor.querySelectorAll('.is-vocab-unknown').forEach(el => el.classList.remove('is-vocab-unknown'));
         }
+
+        // ファイル表示の配線の札も同じ巡りで面倒を見る（呼び出し口を増やさない）。
+        decorateFileViews();
     }
 
     // uploadPDFToSection はPDFを添付し、配線（data-src）と可視のファイル名リンクを更新する。
@@ -5107,6 +5187,10 @@
             lpUnlink.addEventListener('click', e => { e.preventDefault(); unlinkCurrent(); });
         }
 
+        // ファイル表示の参照欄。打つそばからブロックの配線へ反映する（リンクと同じ流儀）。
+        const fvRef = document.getElementById('w-fv-ref');
+        if (fvRef) fvRef.addEventListener('input', applyFileViewRef);
+
         // enum の選択肢メニュー。クリックで選択が飛ぶと対象セルを見失うため mousedown を止める。
         const emenu = document.getElementById('w-enum-menu');
         if (emenu) emenu.addEventListener('mousedown', e => e.preventDefault());
@@ -5217,6 +5301,9 @@
             // （href を打っている最中にキャレットが本文から出たと誤認して閉じる）。
             if (document.activeElement && document.activeElement.closest &&
                 document.activeElement.closest('#w-link-popover')) return;
+            // ファイル表示の参照を打っている最中も同じ（欄はキャレットを本文から奪う）。
+            if (document.activeElement && document.activeElement.closest &&
+                document.activeElement.closest('#w-fv-popover')) return;
             updateContextToolbar();
             updateTableToolbar();
             updateDlToolbar();
@@ -5248,6 +5335,10 @@
             if (!e.target.closest('#w-link-popover') && !e.target.closest('#w-context-toolbar') &&
                 !e.target.closest('a')) {
                 hideLinkPopover();
+            }
+            // ファイル表示の欄も同じ規律（札か欄の外を押したら閉じる）。
+            if (!e.target.closest('#w-fv-popover') && !e.target.closest('.fv-wire')) {
+                hideFileViewPopover();
             }
         });
 

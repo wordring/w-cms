@@ -158,8 +158,15 @@ var structuralElements = map[string]map[string]bool{
 	"bdo": {"dir": true},
 
 	// 区分（貼り付けた文書の構造を保つ）。section の data-type は業務文書ブロックの
-	// 外形（語彙モデル §8.2 論点A・案1）、data-src はファイル容器の配線（PDFパス）。
-	"section": {"data-type": true, "data-src": true}, "article": {}, "header": {}, "footer": {},
+	// 外形（語彙モデル §8.2 論点A・案1）、data-src はファイル容器の配線（PDFパス）、
+	// data-ref はファイル表示・編集の配線（`ページID-添付ID`。2026-09-15）。
+	//
+	// **data-ref は URL ではありません**ので safeEmbedURL を通しません——通す意味が
+	// ないからです。値は w-cms 自身の参照（6桁-英数字）で、そこからURLを組むのは
+	// サーバー（internal/cms/file_view.go）です。**書く人が宛先を選べない**という
+	// 性質は、ここで値を検査するからではなく、URLを機械が組むことで守られます
+	// （docs/セキュリティ設計.md §4）。だから他の data-* と同じく不活性な文字列として通します。
+	"section": {"data-type": true, "data-src": true, "data-ref": true}, "article": {}, "header": {}, "footer": {},
 	"aside": {}, "nav": {}, "address": {},
 	"figure": {}, "figcaption": {},
 
@@ -173,9 +180,11 @@ var structuralElements = map[string]map[string]bool{
 
 	// 表。data-type は「マーカー付き標準HTML」（docs/【考察】語彙モデル.md）の
 	// 役割マーカーで、**属性名だけを要素限定で許可**し、値は不活性な文字列として検査しない。
-	// 許可範囲は data-type→table・dl・section・th、data-src→section に限る
+	// 許可範囲は data-type→table・dl・section・th、data-src・data-ref→section に限る
 	// （決定ログ＝同書 §9、論点A採用＝§8.2 の section 追加、data-field 撤去＝2026-08-20）。
 	// **項目の鍵は見出しの表示文字が運ぶ**ので、機械キーを本文へ書き出す属性は持たない。
+	// data-ref はこの原則の外です——指すのは**項目**ではなく**ファイル1つ**で、
+	// 改名で壊れる「見出しと集計の対応」が存在しません（2026-09-15 の決定ログ）。
 	// レジストリ（cms パッケージの語彙レジストリ）は編集支援と索引の語彙であって
 	// 安全性の門ではない——未知の data-type も通す（保存時に告知するのは cms 側の責務）。
 	"table": {"data-type": true}, "caption": {}, "colgroup": {},

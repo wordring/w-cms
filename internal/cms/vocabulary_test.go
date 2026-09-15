@@ -40,10 +40,24 @@ func TestVocabularyKeepsStructuralAndMarkers(t *testing.T) {
 	cases := []struct{ element, attr string }{
 		{"table", "data-type"}, {"dl", "data-type"}, {"section", "data-type"},
 		{"th", "data-type"}, {"section", "data-src"},
+		// ファイル表示の配線（2026-09-15）。**ここが落ちると、保存のたびに
+		// 図面が黙って消えます**——マーカーは残るのに何を開くか分からなくなるため。
+		{"section", FileRefAttr},
 	}
 	for _, c := range cases {
 		if !contains(allowed[c.element], c.attr) {
 			t.Errorf("マーカー属性 %s[%s] が語彙にありません: %v", c.element, c.attr, allowed[c.element])
+		}
+	}
+
+	// **配線の属性は section だけ**。ほかの要素へ広がると、本文のどこにでも
+	// 「機械が読む隠れた値」を書けるようになります（見える文字が鍵、の原則）。
+	for el, attrs := range allowed {
+		if el == "section" {
+			continue
+		}
+		if contains(attrs, FileRefAttr) {
+			t.Errorf("%s[%s] が許可されています（section だけのはず）", el, FileRefAttr)
 		}
 	}
 
