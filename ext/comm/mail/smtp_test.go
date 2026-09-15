@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"w-cms/internal/cms"
+	"w-cms/ext/comm"
 )
 
 // SMTP へ渡すMIMEの組み立てのテスト（2026-09-03）。
@@ -15,7 +15,7 @@ import (
 // これが無いと、返信が相手のメールソフトで元のスレッドに並びません。
 
 func TestBuildMIMESetsInReplyTo(t *testing.T) {
-	out, err := buildMIME("me@example.com", "<mine@example.com>", cms.OutgoingMail{
+	out, err := buildMIME("me@example.com", "<mine@example.com>", comm.OutgoingMail{
 		To:        []string{"you@example.com"},
 		Subject:   "RE: お見積り依頼",
 		BodyText:  "本文です。",
@@ -42,7 +42,7 @@ func TestBuildMIMESetsInReplyTo(t *testing.T) {
 // TestBuildMIMEEncodesJapaneseSubject は、和文の件名が符号化語になることを
 // 固定します。生のまま置くと経路によっては壊れます。
 func TestBuildMIMEEncodesJapaneseSubject(t *testing.T) {
-	out, _ := buildMIME("me@example.com", "<m@x>", cms.OutgoingMail{
+	out, _ := buildMIME("me@example.com", "<m@x>", comm.OutgoingMail{
 		To: []string{"you@example.com"}, Subject: "お見積り依頼", BodyText: "x",
 	})
 	s := string(out)
@@ -68,7 +68,7 @@ func TestBuildMIMEEncodesJapaneseSubject(t *testing.T) {
 // （和文を 8bit のまま流さない）。
 func TestBuildMIMEBodyIsBase64(t *testing.T) {
 	body := "こんにちは。\n改行もあります。"
-	out, _ := buildMIME("me@example.com", "<m@x>", cms.OutgoingMail{
+	out, _ := buildMIME("me@example.com", "<m@x>", comm.OutgoingMail{
 		To: []string{"you@example.com"}, Subject: "x", BodyText: body,
 	})
 	s := string(out)
@@ -92,9 +92,9 @@ func TestBuildMIMEBodyIsBase64(t *testing.T) {
 // TestBuildMIMEAttachesFiles は、添付が multipart で載ることを固定します。
 // **SMTP の利点の1つが添付の上限**（M365 で約35MB）なので、ここは固定しておきます。
 func TestBuildMIMEAttachesFiles(t *testing.T) {
-	out, err := buildMIME("me@example.com", "<m@x>", cms.OutgoingMail{
+	out, err := buildMIME("me@example.com", "<m@x>", comm.OutgoingMail{
 		To: []string{"you@example.com"}, Subject: "x", BodyText: "本文",
-		Attachments: []cms.MailAttachment{{
+		Attachments: []comm.MailAttachment{{
 			Name: "図面.pdf", MIMEType: "application/pdf", Content: []byte("%PDF-1.4 test"),
 		}},
 	})

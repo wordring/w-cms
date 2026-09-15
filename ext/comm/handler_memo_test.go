@@ -1,4 +1,4 @@
-package cms
+package comm
 
 import (
 	"strings"

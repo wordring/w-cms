@@ -1,4 +1,4 @@
-package cms
+package comm
 
 import (
 	"encoding/base64"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"w-cms/internal/cms"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
@@ -34,7 +35,7 @@ func setupInbox(t *testing.T) string {
 		t.Fatalf("サイドカー作成エラー: %v", err)
 	}
 	// 実運用と同じく索引まで通す（権限の読み口は派生＝page_perms。継承はそこから引く）。
-	if err := SyncIndex("000090", "<h1>"+MailBoxTitle+"</h1>"); err != nil {
+	if err := cms.SyncIndex("000090", "<h1>"+MailBoxTitle+"</h1>"); err != nil {
 		t.Fatalf("受信箱の同期エラー: %v", err)
 	}
 	return "000090"
@@ -285,7 +286,7 @@ func TestEmlIntakeSplitsAddresses(t *testing.T) {
 	} {
 		// **アドレスで引きます**——生の値は `名前 <アドレス>` なので、鍵は畳んだ値。
 		// `ColEmail` の畳み方がアドレスの取り出しそのものです（vocab.go）。
-		ids, err := PagesByTagLoose(database.DB, pair[0], pair[1])
+		ids, err := cms.PagesByTagLoose(database.DB, pair[0], pair[1])
 		if err != nil {
 			t.Fatalf("逆引きエラー: %v", err)
 		}
@@ -366,7 +367,7 @@ func TestEmlIntakeWritesThreadAndReplyTo(t *testing.T) {
 	}
 
 	// 肝心なのはここ——返信元メッセージIDから**親の記録ページが引ける**。
-	ids, err := PagesByTag(database.DB, MessageIDTag, "<parent@example.jp>")
+	ids, err := cms.PagesByTag(database.DB, MessageIDTag, "<parent@example.jp>")
 	if err != nil {
 		t.Fatalf("逆引きエラー: %v", err)
 	}
@@ -410,7 +411,7 @@ func TestEmlIntakeWritesMessageID(t *testing.T) {
 		t.Errorf("メッセージIDのタグがありません:\n%s", body)
 	}
 	// 索引から引ける（逆引きは生テキスト・pagesByTag）
-	ids, err := PagesByTag(database.DB, "メッセージID", "<abc123@example.jp>")
+	ids, err := cms.PagesByTag(database.DB, "メッセージID", "<abc123@example.jp>")
 	if err != nil {
 		t.Fatalf("逆引きエラー: %v", err)
 	}

@@ -1,4 +1,4 @@
-package cms
+package comm
 
 import (
 	"database/sql"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"w-cms/internal/cms"
 
 	_ "modernc.org/sqlite"
 
@@ -36,7 +37,7 @@ func putIntakeRecord(t *testing.T, id, parent, subject, received string, extraTa
 		"<dt>差出人</dt><dd>山田 太郎</dd>" +
 		extraTags +
 		"</dl>"
-	if err := SyncIndex(id, body); err != nil {
+	if err := cms.SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 }
@@ -92,7 +93,7 @@ func TestUnhandledExcludesDateFolders(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("サイドカーの作成エラー: %v", err)
 		}
-		if err := SyncIndex(f.id, "<h1>"+f.title+"</h1>"); err != nil {
+		if err := cms.SyncIndex(f.id, "<h1>"+f.title+"</h1>"); err != nil {
 			t.Fatalf("SyncIndexエラー: %v", err)
 		}
 	}
@@ -190,7 +191,7 @@ func setupIntakeTest(t *testing.T) {
 	if err := database.CreateCoreTables(db); err != nil {
 		t.Fatalf("コアテーブル作成エラー: %v", err)
 	}
-	if err := ApplySchema(db); err != nil {
+	if err := cms.ApplySchema(db); err != nil {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
 	for _, p := range []struct{ id, parent, title string }{
@@ -202,7 +203,7 @@ func setupIntakeTest(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("サイドカーの作成エラー: %v", err)
 		}
-		if err := SyncIndex(p.id, "<h1>"+p.title+"</h1>"); err != nil {
+		if err := cms.SyncIndex(p.id, "<h1>"+p.title+"</h1>"); err != nil {
 			t.Fatalf("SyncIndexエラー: %v", err)
 		}
 	}
@@ -224,7 +225,7 @@ func TestUnhandledIncludesInternalJob(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("サイドカーの作成エラー: %v", err)
 	}
-	if err := SyncIndex(id, "<h1>作業台を作る</h1><p>板金部の3号機の横に置く。</p>"); err != nil {
+	if err := cms.SyncIndex(id, "<h1>作業台を作る</h1><p>板金部の3号機の横に置く。</p>"); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
@@ -266,7 +267,7 @@ func TestUnhandledExcludesSentMailCopy(t *testing.T) {
 		"<dt>" + DirectionTag + "</dt><dd>" + DirectionOut + "</dd>" +
 		"<dt>" + ChannelTag + "</dt><dd>メール</dd>" +
 		"<dt>" + HandledTag + "</dt><dd>" + HandledNotNeeded + "</dd></dl>"
-	if err := SyncIndex(id, body); err != nil {
+	if err := cms.SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
@@ -300,7 +301,7 @@ func TestUnhandledIncludesOutgoingCall(t *testing.T) {
 	body := `<h1>株式会社南北スポーツ機械</h1><dl data-type="tags">` +
 		"<dt>" + DirectionTag + "</dt><dd>" + DirectionOut + "</dd>" +
 		"<dt>" + ChannelTag + "</dt><dd>電話</dd></dl>"
-	if err := SyncIndex(id, body); err != nil {
+	if err := cms.SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 

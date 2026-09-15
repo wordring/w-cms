@@ -17,6 +17,39 @@ import (
 //   - **他人の親の子でないページは触れない**——ここを緩めると、並べ替えの口が
 //     「任意のページのサイドカーを書き換える口」になります
 
+// setupReorderTree は `トップ／箱` の木とファイルDBを用意します。
+//
+// 2026-09-15 までは通信の試験の下ごしらえ（setupIntakeTest・putIntakeRecord）を借りて
+// いましたが、通信を ext/comm へ出したので自前にしました。**並べ替えは通信の機能では
+// ない**ので、通信のタグは書きません（引数の受信日時と余分なタグは、借りていたころの
+// 呼び方を変えないために残してあります）。ファイルDBなのは、並べ替えが権限を引くため。
+func setupReorderTree(t *testing.T) {
+	t.Helper()
+	newTestFileDB(t)
+	for _, p := range []struct{ id, parent, title string }{
+		{"000000", "", "トップ"},
+		{"000100", "000000", "箱"},
+	} {
+		if err := page.WriteSidecar(p.id, page.PageMeta{Owner: "alice", Mode: "330", ParentID: p.parent}); err != nil {
+			t.Fatalf("サイドカーの作成エラー: %v", err)
+		}
+		if err := SyncIndex(p.id, "<h1>"+p.title+"</h1>"); err != nil {
+			t.Fatalf("SyncIndexエラー: %v", err)
+		}
+	}
+}
+
+// putReorderChild は親の下へ子ページを1枚置きます。
+func putReorderChild(t *testing.T, id, parent, title, _ string, _ string) {
+	t.Helper()
+	if err := page.WriteSidecar(id, page.PageMeta{Owner: "alice", Mode: "330", ParentID: parent}); err != nil {
+		t.Fatalf("サイドカーの作成エラー: %v", err)
+	}
+	if err := SyncIndex(id, "<h1>"+title+"</h1>"); err != nil {
+		t.Fatalf("SyncIndexエラー: %v", err)
+	}
+}
+
 func postReorder(t *testing.T, u *auth.User, parent string, order []string) *httptest.ResponseRecorder {
 	t.Helper()
 	b, _ := json.Marshal(map[string]any{"order": order})
@@ -32,10 +65,10 @@ func postReorder(t *testing.T, u *auth.User, parent string, order []string) *htt
 
 // TestReorderWritesKeysInOrder は、送った並びがそのままキーになることを固定します。
 func TestReorderWritesKeysInOrder(t *testing.T) {
-	setupIntakeTest(t)
-	putIntakeRecord(t, "000201", "000100", "あ", "2026-09-01T10:00:00+09:00", "")
-	putIntakeRecord(t, "000202", "000100", "い", "2026-09-02T10:00:00+09:00", "")
-	putIntakeRecord(t, "000203", "000100", "う", "2026-09-03T10:00:00+09:00", "")
+	setupReorderTree(t)
+	putReorderChild(t, "000201", "000100", "あ", "2026-09-01T10:00:00+09:00", "")
+	putReorderChild(t, "000202", "000100", "い", "2026-09-02T10:00:00+09:00", "")
+	putReorderChild(t, "000203", "000100", "う", "2026-09-03T10:00:00+09:00", "")
 
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	rr := postReorder(t, u, "000100", []string{"000203", "000201", "000202"})
@@ -81,9 +114,9 @@ func TestReorderKeysSortAsNumbers(t *testing.T) {
 // 固定します。ここを緩めると、並べ替えが任意のページのサイドカーを書き換える口に
 // なります。
 func TestReorderRejectsForeignChild(t *testing.T) {
-	setupIntakeTest(t)
-	putIntakeRecord(t, "000201", "000100", "受信箱の子", "2026-09-01T10:00:00+09:00", "")
-	putIntakeRecord(t, "000301", "000000", "よその子", "2026-09-02T10:00:00+09:00", "")
+	setupReorderTree(t)
+	putReorderChild(t, "000201", "000100", "受信箱の子", "2026-09-01T10:00:00+09:00", "")
+	putReorderChild(t, "000301", "000000", "よその子", "2026-09-02T10:00:00+09:00", "")
 
 	before, _ := page.ReadSidecar("000301")
 	rr := postReorder(t, &auth.User{Username: "alice", IsAdmin: true},

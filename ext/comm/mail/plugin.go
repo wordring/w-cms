@@ -3,7 +3,7 @@ package mail
 // ─────────────────────────────────────────────────────────────────────────
 // メール送受信プラグイン（IMAP／SMTP）の登録口
 //
-// コアが宣言した `cms.Mailer` の中身をここが持ちます（internal/cms/mail.go）。
+// コアが宣言した `comm.Mailer` の中身をここが持ちます（internal/cms/mail.go）。
 // 使う側はコアに尋ねるだけなので、**このパッケージを外してもビルドは通ります**
 // ——`-tags minimal` で丸ごと消え、画面から返信ボタンが消えるだけです。
 // ─────────────────────────────────────────────────────────────────────────
@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"time"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 )
@@ -22,7 +23,7 @@ import (
 func init() {
 	// **名簿に載る**（起動ログと画面の出し分け——「✉️ 返信」はこの名前を見て出る）。
 	cms.RegisterExtension("comm/mail", "メール送受信・IMAP／SMTP")
-	cms.RegisterMailer(oauthMailer{})
+	comm.RegisterMailer(oauthMailer{})
 	cms.Register(mailPlugin{})
 	if Configured() {
 		log.Printf("メール送受信: 有効（IMAP %s／SMTP %s）", imapHost(), func() string { _, a := smtpAddr(); return a }())
@@ -49,7 +50,7 @@ func (mailPlugin) Routes() []cms.Route {
 	}
 }
 
-// oauthMailer は cms.Mailer の実装です（IMAP／SMTP＋OAuth2）。
+// oauthMailer は comm.Mailer の実装です（IMAP／SMTP＋OAuth2）。
 type oauthMailer struct{}
 
 func (oauthMailer) Name() string { return "IMAP／SMTP" }
@@ -62,7 +63,7 @@ func (oauthMailer) Ready(user *auth.User) bool {
 	return SignedInAddress(user.Username) != ""
 }
 
-// Send は user の名前で1通送り、立てた Message-ID を返します（cms.Mailer の実装）。
+// Send は user の名前で1通送り、立てた Message-ID を返します（comm.Mailer の実装）。
 //
 // **投函は SMTP（OAuth2）です**（smtp.go）。受信の IMAP と同じトークンを使います。
 //
@@ -70,15 +71,15 @@ func (oauthMailer) Ready(user *auth.User) bool {
 // ときに既存のスレッドの仕組みでそのまま繋がる**ため（返信の In-Reply-To がこれを指す）。
 // かつては SendAndReturnID という別口を並べていたが、コアの Mailer が Message-ID を
 // 返す形になった（2026-09-05）ので1本に畳んだ。
-func (oauthMailer) Send(user *auth.User, msg cms.OutgoingMail) (string, error) {
+func (oauthMailer) Send(user *auth.User, msg comm.OutgoingMail) (string, error) {
 	if user == nil {
-		return "", cms.ErrMailNotSignedIn
+		return "", comm.ErrMailNotSignedIn
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	id, err := sendViaSMTP(ctx, user.Username, msg)
 	if err == errNotSignedIn {
-		return "", cms.ErrMailNotSignedIn
+		return "", comm.ErrMailNotSignedIn
 	}
 	return id, err
 }

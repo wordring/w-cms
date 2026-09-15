@@ -40,7 +40,7 @@ import (
 	"strings"
 	"time"
 
-	"w-cms/internal/cms"
+	"w-cms/ext/comm"
 )
 
 // 投函先は Exchange Online が既定です。
@@ -103,7 +103,7 @@ func (a *xoauth2Auth) Next(fromServer []byte, more bool) ([]byte, error) {
 // **Message-ID を返すのは意味があります**——送信箱の記録に残しておけば、相手からの
 // 返信（`In-Reply-To` にこれが入る）が取り込まれたときに、既存のスレッドの仕組みで
 // そのまま繋がります。
-func sendViaSMTP(ctx context.Context, username string, msg cms.OutgoingMail) (string, error) {
+func sendViaSMTP(ctx context.Context, username string, msg comm.OutgoingMail) (string, error) {
 	token, err := mailAccessToken(ctx, username)
 	if err != nil {
 		return "", err
@@ -170,7 +170,7 @@ func smtpDeliver(ctx context.Context, from, token string, rcpt []string, body []
 }
 
 // buildMIME は1通ぶんのMIMEを組みます。
-func buildMIME(from, messageID string, msg cms.OutgoingMail) ([]byte, error) {
+func buildMIME(from, messageID string, msg comm.OutgoingMail) ([]byte, error) {
 	var b strings.Builder
 	head := func(name, value string) {
 		if strings.TrimSpace(value) == "" {

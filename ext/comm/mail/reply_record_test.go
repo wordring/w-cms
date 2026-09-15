@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"w-cms/internal/cms"
+	"w-cms/ext/comm"
 )
 
 // TestSentRecordUsesIntakeTagNames は、**送信の控えが受信の取り込みと同じタグ名で書く**
@@ -28,13 +28,13 @@ func TestSentRecordUsesIntakeTagNames(t *testing.T) {
 		})
 
 	for _, want := range []string{
-		"<dt>" + cms.FromTag + "</dt><dd>admin@example.jp</dd>",
-		"<dt>" + cms.ToTag + "</dt><dd>suzuki@example.jp</dd>",
-		"<dt>" + cms.ToTag + "</dt>",
-		"<dt>" + cms.CcTag + "</dt><dd>cc@example.jp</dd>",
-		"<dt>" + cms.SentAtTag + "</dt>",
-		"<dt>" + cms.InReplyToTag + "</dt>",
-		"<dt>" + cms.ReplySourceTag + "</dt><dd>010272</dd>",
+		"<dt>" + comm.FromTag + "</dt><dd>admin@example.jp</dd>",
+		"<dt>" + comm.ToTag + "</dt><dd>suzuki@example.jp</dd>",
+		"<dt>" + comm.ToTag + "</dt>",
+		"<dt>" + comm.CcTag + "</dt><dd>cc@example.jp</dd>",
+		"<dt>" + comm.SentAtTag + "</dt>",
+		"<dt>" + comm.InReplyToTag + "</dt>",
+		"<dt>" + comm.ReplySourceTag + "</dt><dd>010272</dd>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("控えに %q がありません:\n%s", want, body)
@@ -47,7 +47,7 @@ func TestSentRecordUsesIntakeTagNames(t *testing.T) {
 		}
 	}
 	// 宛先は1人1タグ（カンマで並べても2つに割れる）。
-	if n := strings.Count(body, "<dt>"+cms.ToTag+"</dt>"); n != 2 {
+	if n := strings.Count(body, "<dt>"+comm.ToTag+"</dt>"); n != 2 {
 		t.Errorf("宛先が1人1タグになっていません: %d 個", n)
 	}
 }

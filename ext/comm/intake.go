@@ -1,4 +1,4 @@
-package cms
+package comm
 
 // ─────────────────────────────────────────────────────────────────────────
 // 取り込み係——回覧機構の4人目の段（2026-09-01）
@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -40,7 +41,7 @@ import (
 
 func init() {
 	// **通信箱への到着を取り込み係へ回す受け口**（2026-09-15 にアップロード口から裏返した）。
-	RegisterUploadInterceptor(intakeUpload)
+	cms.RegisterUploadInterceptor(intakeUpload)
 }
 
 // intakeUpload は、アップロード先が通信箱なら取り込み係へ回します。
@@ -79,7 +80,7 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 	// **種類ごとの検査はここで通す**——通信箱は1つの口で全部を受けるので、
 	// 専用の口が持っていた守り（PDFのマジックナンバー・画像の種別検証とEXIF除去）を
 	// 迂回させない（2026-09-03「受け口の一本化」）。
-	content, err = GuardUploadContent(header.Filename, content)
+	content, err = cms.GuardUploadContent(header.Filename, content)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return true
@@ -144,7 +145,7 @@ const MailBoxTitle = "通信箱"
 // MailBoxPageID はトップ直下の通信箱ページを返します（無ければ ok=false）。
 // リクエスト時にしか呼ばれないためDBで足ります（テンプレートの isLeafPage と同じ理由）。
 func MailBoxPageID() (string, bool) {
-	return TopLevelPageByTitle(MailBoxTitle)
+	return cms.TopLevelPageByTitle(MailBoxTitle)
 }
 
 // IntakeHandler は取り込み係の受け口です。宣言した拡張子のファイルが通信箱へ
@@ -186,7 +187,7 @@ func ExistingIntakePage(tagName, value string) (string, bool) {
 	if tagName == "" || value == "" {
 		return "", false
 	}
-	ids, err := PagesByTag(database.DB, tagName, value)
+	ids, err := cms.PagesByTag(database.DB, tagName, value)
 	if err != nil || len(ids) == 0 {
 		return "", false
 	}
@@ -260,7 +261,7 @@ func (c *IntakeContext) isCreated(pageID string) bool {
 // 記録が `通信箱／年／月` へ入る形になり、`CreateDatedPage` に取って代わられて
 // 呼び手がゼロになっていたためです。直下へ作りたくなったら `createUnder(c.InboxID, …)`。
 func (c *IntakeContext) createUnder(parentID, bodyHTML string) (string, error) {
-	newID, err := CreateChildPage(parentID, c.Uploader, bodyHTML)
+	newID, err := cms.CreateChildPage(parentID, c.Uploader, bodyHTML)
 	if err != nil {
 		return "", err
 	}
@@ -296,12 +297,12 @@ func (c *IntakeContext) UpdatePage(pageID, bodyHTML string) error {
 	if !c.isCreated(pageID) {
 		return fmt.Errorf("この取り込みで作ったページしか書き直せません: %s", pageID)
 	}
-	safeHTML := Sanitize(bodyHTML)
+	safeHTML := cms.Sanitize(bodyHTML)
 	htmlPath := filepath.Join(page.GetPageDir(pageID), pageID+".html")
 	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
 		return err
 	}
-	return SyncIndex(pageID, safeHTML)
+	return cms.SyncIndex(pageID, safeHTML)
 }
 
 // IntakeResult は取り込み1件の結果です。
@@ -371,7 +372,7 @@ func (c *IntakeContext) CreateDatedPage(t time.Time, bodyHTML string) (string, e
 	// 並び順は**届いた時刻**（取り込んだ順ではない）。ISO表記なので文字列のまま
 	// 正しく並びます。
 	if !t.IsZero() {
-		setSortKey(newID, t.In(time.Local).Format(time.RFC3339))
+		cms.SetSortKey(newID, t.In(time.Local).Format(time.RFC3339))
 	}
 	return newID, nil
 }
@@ -381,7 +382,7 @@ func (c *IntakeContext) ensureDateFolder(t time.Time) (string, error) {
 	// 置き場の作法は送信箱と共有します（ensureDateFolderUnder）——受信と送信で
 	// フォルダの作り方が違うと、片方だけ直したときに気づけません。
 	// 月は**ゼロ詰め**（`09月`）——名前で並べたときに順序が狂わないため。
-	return ensureDateFolderUnder(c.InboxID, c.Uploader, t)
+	return cms.EnsureDateFolders(c.InboxID, c.Uploader, t)
 }
 
 // ChannelTag はどの経路で届いた（送った）かです。メール・FAX・電話・メモを
@@ -433,16 +434,16 @@ func CreateRecordPage(rootID, owner string, t time.Time, bodyHTML string) (strin
 	parent := rootID
 	if !t.IsZero() {
 		var err error
-		if parent, err = ensureDateFolderUnder(rootID, owner, t); err != nil {
+		if parent, err = cms.EnsureDateFolders(rootID, owner, t); err != nil {
 			return "", err
 		}
 	}
-	newID, err := CreateChildPage(parent, owner, bodyHTML)
+	newID, err := cms.CreateChildPage(parent, owner, bodyHTML)
 	if err != nil {
 		return "", err
 	}
 	if !t.IsZero() {
-		setSortKey(newID, t.In(time.Local).Format(time.RFC3339))
+		cms.SetSortKey(newID, t.In(time.Local).Format(time.RFC3339))
 	}
 	return newID, nil
 }

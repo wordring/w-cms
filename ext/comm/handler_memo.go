@@ -1,4 +1,4 @@
-package cms
+package comm
 
 // ─────────────────────────────────────────────────────────────────────────
 // 手で記録を作る口（2026-09-05）
@@ -34,6 +34,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -73,12 +74,12 @@ func HasDirection(channel string) bool { return !directionless[channel] }
 func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	user := auth.CurrentUser(r)
 	if user == nil {
-		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
 		return
 	}
 	var req struct {
@@ -89,17 +90,17 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Phone       string `json:"phone"`       // かけた番号
 		Counterpart string `json:"counterpart"` // 相手ページのID（6桁）
 	}
-	if !DecodeJSONBody(w, r, &req) {
+	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
 	channel := strings.TrimSpace(req.Channel)
 	if !memoChannels[channel] {
-		JSONFail(w, http.StatusBadRequest, "チャネルが不正です")
+		cms.JSONFail(w, http.StatusBadRequest, "チャネルが不正です")
 		return
 	}
 	boxID, ok := MailBoxPageID()
 	if !ok {
-		JSONFail(w, http.StatusConflict, "通信箱ページがありません（トップ直下に「"+MailBoxTitle+"」という名前のページを作ってください）")
+		cms.JSONFail(w, http.StatusConflict, "通信箱ページがありません（トップ直下に「"+MailBoxTitle+"」という名前のページを作ってください）")
 		return
 	}
 	// **通信箱への write を要求します**（取り込みと同じ関門）。
@@ -126,7 +127,7 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	pageID, err := CreateRecordPage(boxID, user.Username, now, body)
 	if err != nil {
-		JSONFail(w, http.StatusInternalServerError, "記録を作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "記録を作れません: "+err.Error())
 		return
 	}
 	auth.Audit(user.Username, "intake.memo", pageID+" ("+channel+")")
@@ -143,20 +144,20 @@ func memoBodyHTML(channel, title, direction string, phone, counterpart string, n
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	WriteTag(&b, DirectionTag, direction) // 空なら書かれない（メモ）
-	WriteTag(&b, ChannelTag, channel)
+	cms.WriteTag(&b, DirectionTag, direction) // 空なら書かれない（メモ）
+	cms.WriteTag(&b, ChannelTag, channel)
 	// **日時は向きに応じて片方だけ。** 両方書くと「どちらが本当か」が生まれます。
 	switch direction {
 	case DirectionOut:
-		WriteTag(&b, "発信日時", now.In(time.Local).Format(time.RFC3339))
+		cms.WriteTag(&b, "発信日時", now.In(time.Local).Format(time.RFC3339))
 	case DirectionIn:
-		WriteTag(&b, "受信日時", now.In(time.Local).Format(time.RFC3339))
+		cms.WriteTag(&b, "受信日時", now.In(time.Local).Format(time.RFC3339))
 	}
-	WriteTag(&b, PhoneTag, phone)
+	cms.WriteTag(&b, PhoneTag, phone)
 	// 相手はページ参照（6桁）。**正規化を通すのは、パスに使う前と同じ規律**で、
 	// 揺れた表記がそのままタグへ入るのを防ぎます。
 	if cp, ok := page.NormalizeID(counterpart); ok {
-		WriteTag(&b, CounterpartTag, cp)
+		cms.WriteTag(&b, CounterpartTag, cp)
 	}
 	b.WriteString("</dl>")
 	// 本文は空の段落を1つ。**開いてすぐ書き始められる**ようにするためで、

@@ -1,4 +1,6 @@
-package cms
+package comm
+
+import "w-cms/internal/cms"
 
 // ─────────────────────────────────────────────────────────────────────────
 // 通信の口（2026-09-15 に cmd/w-cms/main.go の直書きから移した）
@@ -11,15 +13,19 @@ package cms
 // commPlugin はルートを持ち込むためのプラグインです（表もスキーマも持たない）。
 type commPlugin struct{}
 
-func init() { Register(commPlugin{}) }
+func init() {
+	// **名簿に載る**（起動ログと画面の出し分け・internal/cms/extensions.go）。
+	cms.RegisterExtension("comm", "通信")
+	cms.Register(commPlugin{})
+}
 
 func (commPlugin) Name() string     { return "comm" }
 func (commPlugin) Schema() []string { return nil }
 func (commPlugin) Tables() []string { return nil }
 
 // Routes は通信の口です。
-func (commPlugin) Routes() []Route {
-	return []Route{
+func (commPlugin) Routes() []cms.Route {
+	return []cms.Route{
 		// この記録への返信（w-cms が送った返信の一覧）。
 		{Pattern: "/api/replies", Handler: RepliesAPIHandler},
 		// スレッドの前後（In-Reply-To の鎖）。`/api/replies` とは別の鎖で、

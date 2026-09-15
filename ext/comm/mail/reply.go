@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -91,7 +92,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **返信元のメッセージIDを In-Reply-To に載せます**——これが相手のメールソフトで
 	// 元のスレッドに並ぶ条件です（SMTP を選んだ
 	// 理由そのもの）。返信元が無い新規メールでは空のまま。
-	// **送信はコアの口を通します**（cms.SendMail）。実装を直に呼ばないのは、
+	// **送信はコアの口を通します**（comm.SendMail）。実装を直に呼ばないのは、
 	// 「使う側はコアに尋ねる」という mail.go の設計そのもの——この経路が
 	// この拡張の中にあるのは偶然で、他の拡張から送るときも同じ口を使います。
 	//
@@ -102,7 +103,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sentID, err := cms.SendMail(user, cms.OutgoingMail{
+	sentID, err := comm.SendMail(user, comm.OutgoingMail{
 		To: cleanAddrs(req.To), Cc: cleanAddrs(req.Cc),
 		Subject: req.Subject, BodyText: req.Body,
 		InReplyTo:   sourceMessageID(source),
@@ -110,9 +111,9 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		switch err {
-		case cms.ErrNoMailer:
+		case comm.ErrNoMailer:
 			cms.JSONFail(w, http.StatusNotImplemented, "メール送信のプラグインが入っていません")
-		case cms.ErrMailNotSignedIn:
+		case comm.ErrMailNotSignedIn:
 			cms.JSONFail(w, http.StatusConflict, "メールアカウントにサインインしていません（設定からサインインしてください）")
 		default:
 			cms.JSONFail(w, http.StatusBadGateway, "送信できませんでした: "+err.Error())
@@ -138,7 +139,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 // **受信と同じ箱・同じ年月フォルダ**です（2026-09-05 の統合）。向きは置き場所ではなく
 // `向き：送信` のタグが表します。
 func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRequest) (string, error) {
-	rootID, ok := cms.MailBoxPageID()
+	rootID, ok := comm.MailBoxPageID()
 	if !ok {
 		return "", errNoMailBox
 	}
@@ -146,7 +147,7 @@ func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRe
 	now := time.Now()
 	body := sentRecordBody(SignedInAddress(user.Username), sourcePageID,
 		sourceMessageID(sourcePageID), messageID, now, req)
-	return cms.CreateRecordPage(rootID, user.Username, now, body)
+	return comm.CreateRecordPage(rootID, user.Username, now, body)
 }
 
 // sentRecordBody は送信の控えの本文を組みます。**DBにもファイルにも触りません**
@@ -162,42 +163,42 @@ func sentRecordBody(from, sourcePageID, sourceMsgID, messageID string, now time.
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
-	cms.WriteTag(&b, cms.DirectionTag, cms.DirectionOut)
-	cms.WriteTag(&b, cms.ChannelTag, "メール")
+	cms.WriteTag(&b, comm.DirectionTag, comm.DirectionOut)
+	cms.WriteTag(&b, comm.ChannelTag, "メール")
 	// **送るという仕事はその場で終わっています。** 控えを作業待ちに並べても
 	// 押すことが無いので、ここで印を付けます（2026-09-05）。返信を待つ必要が
 	// あるなら、人がこのタグを消せば一覧へ戻ります。
-	cms.WriteTag(&b, cms.HandledTag, cms.HandledNotNeeded)
-	// **相手のタグは受信の取り込みと同じ名前**（`cms.FromTag` 等）。2026-09-13 の
+	cms.WriteTag(&b, comm.HandledTag, comm.HandledNotNeeded)
+	// **相手のタグは受信の取り込みと同じ名前**（`comm.FromTag` 等）。2026-09-13 の
 	// 1人1タグへの移行で受信側だけが追随し、ここは `差出人アドレス` 等の廃止した
 	// 名前で書き続けていました（2026-09-15 に発見）。
-	cms.WriteTag(&b, cms.FromTag, from)
+	cms.WriteTag(&b, comm.FromTag, from)
 	for _, a := range cleanAddrs(req.To) {
-		cms.WriteTag(&b, cms.ToTag, a)
+		cms.WriteTag(&b, comm.ToTag, a)
 	}
 	for _, a := range cleanAddrs(req.Cc) {
-		cms.WriteTag(&b, cms.CcTag, a)
+		cms.WriteTag(&b, comm.CcTag, a)
 	}
-	cms.WriteTag(&b, cms.SentAtTag, now.In(time.Local).Format(time.RFC3339))
+	cms.WriteTag(&b, comm.SentAtTag, now.In(time.Local).Format(time.RFC3339))
 	// **自分が立てた Message-ID を残します。** 相手がこれに返信すると、その
 	// In-Reply-To がここを指すので、**受信の取り込みだけでスレッドが繋がります**
 	// （返信元メッセージID の逆引き——既にある仕組みがそのまま効く）。
-	cms.WriteTag(&b, cms.MessageIDTag, messageID)
+	cms.WriteTag(&b, comm.MessageIDTag, messageID)
 	// 何件添えたか。**受信側と同じタグ**なので、一覧の 📎 もそのまま出ます。
 	if n := len(req.Attachments); n > 0 {
-		cms.WriteTag(&b, cms.AttachmentCountTag, strconv.Itoa(n))
+		cms.WriteTag(&b, comm.AttachmentCountTag, strconv.Itoa(n))
 	}
 	if sourceMsgID != "" {
-		cms.WriteTag(&b, cms.InReplyToTag, sourceMsgID)
+		cms.WriteTag(&b, comm.InReplyToTag, sourceMsgID)
 	}
 	// **返信元は参照タグ**（`ページID`）——押せば飛び、逆引きで「この記録への返信」も
 	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
-	cms.WriteTag(&b, cms.ReplySourceTag, sourcePageID)
+	cms.WriteTag(&b, comm.ReplySourceTag, sourcePageID)
 	b.WriteString("</dl>")
 	// 本文は平文のまま `<pre>` へ。HTMLメールは作らないので、**見たままが送った中身**です
 	// ——段落に割ると空行と字下げが落ち、控えが「送ったもの」と違う形になります
 	// （受信側と同じ扱い・2026-09-05）。
-	b.WriteString(cms.PlainTextBlockHTML(req.Body))
+	b.WriteString(comm.PlainTextBlockHTML(req.Body))
 
 	// **何を添えたかも控えに残します。** リンクは**元のページのファイルを指します**
 	// ——同じものを2つ持たないためで、控えの仕事は「送った事実」を記録することです。
@@ -237,7 +238,7 @@ var errNoMailBox = errNoMailBoxErr{}
 type errNoMailBoxErr struct{}
 
 func (errNoMailBoxErr) Error() string {
-	return "通信箱ページがありません（トップ直下に「" + cms.MailBoxTitle + "」という名前のページを作ってください）"
+	return "通信箱ページがありません（トップ直下に「" + comm.MailBoxTitle + "」という名前のページを作ってください）"
 }
 
 // sourceMessageID は返信元ページの「メッセージID」タグを読みます（無ければ空）。
@@ -255,6 +256,6 @@ func sourceMessageID(sourcePageID string) string {
 	var v string
 	database.DB.QueryRow(
 		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
-		idInt, cms.MessageIDTag).Scan(&v)
+		idInt, comm.MessageIDTag).Scan(&v)
 	return strings.TrimSpace(v)
 }

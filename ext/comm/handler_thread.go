@@ -1,4 +1,4 @@
-package cms
+package comm
 
 // ─────────────────────────────────────────────────────────────────────────
 // スレッドの前後へ移る（2026-09-14）
@@ -27,6 +27,7 @@ package cms
 import (
 	"encoding/json"
 	"net/http"
+	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -47,7 +48,7 @@ func threadRefOf(user *auth.User, idInt int) (ThreadRef, bool) {
 	if !page.CanView(user, idInt) {
 		return ThreadRef{}, false
 	}
-	r := ThreadRef{PageID: page.FormatID(idInt), Title: PageTitleByID(idInt)}
+	r := ThreadRef{PageID: page.FormatID(idInt), Title: cms.PageTitleByID(idInt)}
 	// **受信と送信で欄の名前が違います**（向きに応じて片方だけ書かれる）。
 	// 並べるのは時刻そのものではなく「いつの記録か」の手掛かりなので、どちらでも構いません。
 	database.DB.QueryRow(
@@ -78,7 +79,7 @@ func ThreadOf(user *auth.User, idInt int) (prev *ThreadRef, next []ThreadRef, er
 	next = []ThreadRef{}
 
 	if parentMsgID := tagOfPage(idInt, InReplyToTag); parentMsgID != "" {
-		ids, e := PagesByTag(database.DB, MessageIDTag, parentMsgID)
+		ids, e := cms.PagesByTag(database.DB, MessageIDTag, parentMsgID)
 		if e != nil {
 			return nil, nil, e
 		}
@@ -94,7 +95,7 @@ func ThreadOf(user *auth.User, idInt int) (prev *ThreadRef, next []ThreadRef, er
 	}
 
 	if myMsgID := tagOfPage(idInt, MessageIDTag); myMsgID != "" {
-		ids, e := PagesByTag(database.DB, InReplyToTag, myMsgID)
+		ids, e := cms.PagesByTag(database.DB, InReplyToTag, myMsgID)
 		if e != nil {
 			return nil, nil, e
 		}
@@ -114,13 +115,13 @@ func ThreadOf(user *auth.User, idInt int) (prev *ThreadRef, next []ThreadRef, er
 func ThreadAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **メソッド確認もここに入りました**——写していたころは、この2つの口だけ
 	// 抜けていました（GET専用のつもりで書いて、書き忘れに誰も気づかない形）。
-	_, idInt, user, ok := GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
+	_, idInt, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
 	if !ok {
 		return
 	}
 	prev, next, err := ThreadOf(user, idInt)
 	if err != nil {
-		JSONFail(w, http.StatusInternalServerError, "スレッドを引けません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "スレッドを引けません: "+err.Error())
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "prev": prev, "next": next})
