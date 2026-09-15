@@ -1941,14 +1941,23 @@
     }
 
     // usesHeadingForm は「見出しが機能を宣言する形」で挿す形式かを返す（D-2・2026-08-31）。
-    // 例外は3つだけ——親の中に埋め込まれる明細（hidden）・ページ横断メタの可変タグ
+    // 例外は4つだけ——親の中に埋め込まれる明細（hidden）・ページ横断メタの可変タグ
     // （専用のチップUIが data-type="tags" を前提にする）・単独のPDF添付ブロック
-    // （file。data-src の配線を持つ）。それ以外は data-type を書かず、
-    // **表示名の見出し＋素の中身**で挿す——見える文字が人にも機械にも同じ宣言になる。
+    // （file。data-src の配線を持つ）・ファイル表示（file-view。data-ref の配線を持つ）。
+    // それ以外は data-type を書かず、**表示名の見出し＋素の中身**で挿す
+    // ——見える文字が人にも機械にも同じ宣言になる。
+    //
+    // ⚠ **配線を属性に持つ形式は、この例外に入れること。** 見出し形で挿すと
+    // `data-type` が付かず、属性を編集するUIの絞り込み（`section[data-type=…]`）から
+    // 外れます——2026-09-15 に file-view を足したとき、ここへ入れ忘れて
+    // **スラッシュメニューから挿すと配線できない**状態になりました。鏡は機能見出しでも
+    // 引き金が立つので「参照がありません」とだけ出て、**その欄を開く手段が画面に無い**
+    // という気づきにくい形で壊れます。
     function usesHeadingForm(def) {
         if (def.hidden) return false;
         if (def.type === 'tags') return false;
         if (def.type === 'file') return false;
+        if (def.type === 'file-view') return false;
         return true;
     }
 
