@@ -3,14 +3,20 @@
 // ユーザー:「PDFがほかの部品の一部で、部品ページを作らず、ほかのページに
 // 埋め込む場合はどうしますか？」
 //
-// 確かめるのは3つです:
+// 確かめるのは8つです（2026-09-15 に配線を属性へ移し、同日のコードレビューで4つ足した）:
 //   ① 添付の隣に「🔗 参照」が出て、`ページID-添付ID` を写せる
-//   ② スラッシュメニューの 📄 ファイル表示 が、**貼る場所のある**骨格を挿す
-//   ③ 無関係なページに、**宣言していないタグ名**で貼っても開く
+//   ② 📄 ファイル表示 は列を持たず、`section[data-ref]` がエディタの語彙に載っている
+//   ③ 無関係なページに、属性1つで貼っても開く
+//   ④ 編集モードに配線の札が出て、押すと欄が開く
+//   ⑤ スラッシュメニューから挿したものも配線できる（見出し形で挿さらない）
+//   ⑥ 欄は札の直下に開き、貼り替えたら古い枠が消える
+//   ⑦ 見出し形（`<h2>ファイル表示</h2>`）にも札が出る
+//   ⑧ 描けない形式は開く口（`.file-view-plain`）で出る
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 const HOST = process.env.WCMS_HOST_PAGE || '010272';
 const ATTACH = process.env.WCMS_ATTACH || 'c3p7';
+const NONVIEW = process.env.WCMS_NONVIEW || 'yc0x';   // 同じページの .eml（描けない形式）
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -170,6 +176,65 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
       ok(inserted.bars === 2, '挿した直後から配線の札が出る', String(inserted.bars));
       ok(/参照を設定/.test(inserted.barText || ''), '未設定と分かる札が出る', inserted.barText);
     }
+
+    // ⑥ **貼り替え。** 欄は札の直下に開き（section の下端ではない）、貼り替えたら
+    //    古い枠は消える（2026-09-15 コードレビュー #3・#4）。`yc0x.eml` は描けない形式。
+    const re = await page.evaluate((next) => {
+      const sec = Array.from(document.querySelectorAll('#w-editor-content section[data-type="file-view"]'))
+        .find(s => s.getAttribute('data-ref'));
+      const bar = sec.querySelector('.fv-wire');
+      bar.click();
+      const pop = document.getElementById('w-fv-popover');
+      const pr = pop.getBoundingClientRect(), br = bar.getBoundingClientRect(), sr = sec.getBoundingClientRect();
+      const before = !!sec.querySelector('.file-view');
+      const input = document.getElementById('w-fv-ref');
+      input.value = next;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return {
+        gap: Math.round(pr.top - br.bottom), secH: Math.round(sr.height),
+        before, after: !!sec.querySelector('.file-view'),
+        ref: sec.getAttribute('data-ref'), bar: bar.textContent,
+      };
+    }, HOST + '-' + NONVIEW);
+    ok(re.gap >= 0 && re.gap < 40, '欄は札の直下に開く（section の下端ではない）', 'gap=' + re.gap + 'px / section=' + re.secH + 'px');
+    ok(re.before && !re.after, '貼り替えたら古い枠が消える');
+    ok(re.ref === HOST + '-' + NONVIEW, '配線が新しい値になる', re.ref);
+
+    // ⑦ **見出し形にも札が出る。** `<section><h2>ファイル表示</h2>` と人が打ったものも
+    //    サーバーは file-view と解釈する（`vocabTypeOf`）ので、札が無いと「欄へ貼って」と
+    //    出るのに欄を開けない（コードレビュー #2）。
+    const hf = await page.evaluate(async () => {
+      const ed = document.getElementById('w-editor-content');
+      const sec = document.createElement('section');
+      const h = document.createElement('h2'); h.textContent = 'ファイル表示';
+      sec.appendChild(h); ed.appendChild(sec);
+      await new Promise(r => setTimeout(r, 600));
+      return { bar: !!sec.querySelector(':scope > .fv-wire'), dataType: sec.getAttribute('data-type') };
+    });
+    ok(hf.bar, '見出し形（data-type なし）にも配線の札が出る');
+    ok(hf.dataType === null, '見出し形のまま（属性を勝手に足さない）');
+
+    // ⑧ **描けない形式は開く口。** 閲覧へ戻して開き直すと、⑥で貼り替えた `.eml` が
+    //    `.file-view-plain`（リンク）で出る——「枠は次に開いたとき」の約束の確認。
+    //    ⚠ **貼り替えの直後（1.5秒以内）に閲覧へ戻します**——自動保存のデバウンスが残った
+    //    まま退出すると、その分が消えていました（2026-09-15 に実測。退出時に流すよう直した）。
+    //    ここが落ちたら、まず「保存後の本文」に新しい配線が入っているかを見ること。
+    await page.evaluate(() => document.getElementById('w-mode-toggle').click());
+    await page.waitForTimeout(2000);
+    const persisted = await page.evaluate(async (a) =>
+      (await (await fetch('/api/load?id=' + a.id)).text()).indexOf('data-ref="' + a.ref + '"') >= 0,
+      { id, ref: HOST + '-' + NONVIEW }).catch(() => false);
+    ok(persisted, '退出の直前の貼り替えが保存されている（デバウンス待ちを流す）');
+    await page.goto(BASE + '/' + id);
+    await page.waitForSelector('#w-editor-content .file-view-plain', { timeout: 8000 }).catch(() => {});
+    const plain = await page.evaluate((h) => {
+      const p = document.querySelector('#w-editor-content .file-view-plain');
+      const a = p && p.querySelector('.file-view-head a');
+      return { shown: !!p, href: a ? a.getAttribute('href') : '', tall: p ? p.getBoundingClientRect().height : 0 };
+    }, HOST);
+    ok(plain.shown, '描けない形式（.eml）は開く口が出る');
+    ok(plain.href === '/' + HOST + '/' + NONVIEW + '.eml', 'その口は添付そのものを指す', plain.href);
+    ok(plain.tall > 0 && plain.tall < 200, '口は枠の高さ（70vh）を取らない', Math.round(plain.tall) + 'px');
 
     ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
   } finally {
