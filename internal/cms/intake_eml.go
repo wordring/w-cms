@@ -342,23 +342,6 @@ func countAttachments(parts []emlPart) string {
 	return strconv.Itoa(n)
 }
 
-// WriteTag は「名前：値」のタグを1対書きます（値が空なら書かない）。
-//
-// **値は前後の空白を落としてから書きます。** 取り込んだメールのヘッダには
-// 余分な空白が普通に混ざっており、そのまま入れると索引の値が空白付きになって
-// 逆引き（PagesByTag は生テキストで引く）が外れます。
-//
-// かつては取り込み係とメール拡張が同名の関数を別々に持ち、**trim の有無だけが
-// 違って**いました——どちらの経路で作られたページかで値が変わる、という形の
-// 静かな食い違いだったので、コアの1つに寄せました（2026-09-05）。
-func WriteTag(b *strings.Builder, name, value string) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return
-	}
-	b.WriteString("<dt>" + html.EscapeString(name) + "</dt><dd>" + html.EscapeString(value) + "</dd>")
-}
-
 // collectParts は MIME を展開して（本文候補と添付の）平らな一覧にします。
 // multipart は入れ子ごと辿り、text/* は宣言された文字コードから UTF-8 へ復号します。
 func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {

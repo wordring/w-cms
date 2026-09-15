@@ -134,17 +134,3 @@ func MarkHandled(pageID, author, value string) error {
 func hasHandledTag(body string) bool {
 	return strings.Contains(body, `<dt>`+html.EscapeString(HandledTag)+`</dt>`)
 }
-
-// EndOfFirstTagList は最初の可変タグの並びの終わり（`</dl>` の位置）を返します。
-// 見つからなければ -1。
-func EndOfFirstTagList(body string) int {
-	i := strings.Index(body, `<dl data-type="tags">`)
-	if i < 0 {
-		return -1
-	}
-	end := strings.Index(body[i:], "</dl>")
-	if end < 0 {
-		return -1
-	}
-	return i + end
-}
