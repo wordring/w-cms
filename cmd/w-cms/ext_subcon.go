@@ -3,13 +3,13 @@
 package main
 
 // ─────────────────────────────────────────────────────────────────────────
-// 板金部の既定セット（コンパイル時に選ぶ拡張・2026-09-03）
+// 下請け業務（コンパイル時に選ぶ拡張・2026-09-03。2026-09-15 に `sheetmetal` から改名）
 //
 // この1ファイルが**唯一の取り付け口**です。blank import で `init()` を走らせ、
 // 拡張が自分で語彙・プラグイン・計算ビュー・ルートを登録します
 // （database/sql のドライバと同じ流儀）。
 //
-//	go build ./cmd/w-cms                 … 板金部の既定セット入り（既定）
+//	go build ./cmd/w-cms                 … 下請け業務入り（既定）
 //	go build -tags minimal ./cmd/w-cms   … 素の w-cms（他社へ配る形）
 //
 // **既定を「入り」にしたのは、忘れて機能が静かに消えるほうが危ないから**です。
@@ -20,8 +20,8 @@ package main
 // 何が入っているかは起動ログに出ます（main.go の拡張セットの行）。
 // ─────────────────────────────────────────────────────────────────────────
 
-import _ "w-cms/ext/sheetmetal"
+import _ "w-cms/ext/subcon"
 
 func init() {
-	loadedExtensions = append(loadedExtensions, "sheetmetal（板金部の既定セット）")
+	loadedExtensions = append(loadedExtensions, "subcon（下請け業務）")
 }

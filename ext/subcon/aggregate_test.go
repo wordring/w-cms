@@ -1,4 +1,4 @@
-package sheetmetal
+package subcon
 
 // 手配集計（RequiredMaterials）のテスト。コアから移してきたもので、
 // 集計そのものが拡張の持ち物になったため置き場もここへ移った。

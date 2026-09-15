@@ -1,4 +1,4 @@
-package sheetmetal
+package subcon
 
 import (
 	"archive/zip"
@@ -18,7 +18,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// PDF解析ボタン（判定→受注ページ生成・板金部の既定セット）のテスト。
+// PDF解析ボタン（判定→受注ページ生成・下請け業務）のテスト。
 //
 // Gemini はネットワークと課金を伴うため呼ばず、判定の入口 judgeOrderPDF を
 // 偽物へ差し替える（seam）。固定するのは判定の後ろ側すべて——

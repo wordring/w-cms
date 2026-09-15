@@ -126,7 +126,7 @@ func moveToTrash(id string) (string, error) {
 
 // DeletePageToTrash はページ削除の**芯**です（ゴミ箱へ移動・索引の掃除・ロック解放）。
 //
-// HTTPの口（DeletePageAPIHandler）と、部品ページの整理（ext/sheetmetal/filing.go）が
+// HTTPの口（DeletePageAPIHandler）と、部品ページの整理（ext/subcon/filing.go）が
 // 共有します——整理は改定図面を既存ページへ合流させたあと、空になった仮のページを
 // 片付ける必要があり、**作法を2箇所に持つと必ず片方が古くなる**ため。
 //

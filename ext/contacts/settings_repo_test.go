@@ -16,7 +16,7 @@ import (
 // 作られません——アドレスでの逆引きが全部空振りします。
 //
 // 場所は `runtime.Caller` で解決します——テストは `os.Chdir` で一時ディレクトリへ
-// 移るため、相対パスでは見つかりません（`ext/sheetmetal` と同じ流儀）。
+// 移るため、相対パスでは見つかりません（`ext/subcon` と同じ流儀）。
 func TestMain(m *testing.M) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "config", "settings.json")

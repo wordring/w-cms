@@ -56,7 +56,7 @@ func NormalizeText(s string) string {
 // NormalizeCode は図面番号・発注書番号のような**符牒**を強く畳みます。
 //
 // 畳むのは、実データで実際にぶつかった揺れだけです（拡張の図面番号突き合わせが
-// 先に見つけていたもの——`ext/sheetmetal/drawing_match.go`）:
+// 先に見つけていたもの——`ext/subcon/drawing_match.go`）:
 //
 //	空白が混ざる          X008-135-4_ 架台Assy
 //	`_` がハイフンの位置に  PW050_167-ソレノイド補助具

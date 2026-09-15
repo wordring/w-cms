@@ -1,4 +1,4 @@
-package sheetmetal
+package subcon
 
 // 拡張パッケージのテスト土台。
 //
