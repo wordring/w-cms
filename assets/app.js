@@ -933,20 +933,22 @@
             // エコーバック（sanitized）でDOMが変わると MutationObserver が「未保存」を
             // 立て、その後の保存が 'none' で早期returnして表示が戻らない経路があった。
             setSaveStatus("✅ 保存済", "#10b981");
-            return;
+            return Promise.resolve();
         }
 
         // 変更が確定したこの時点をアンドゥ履歴へ積む（保存と同じ粒度）
         pushSnapshot(document.getElementById('w-html-preview').value);
 
-        if (plan.kind === 'block') { saveBlockToServer(plan.block, blocks); return; }
-        saveFullToServer(blocks);
+        // **約束を返します**（2026-09-15）。閲覧モードへ戻る側が「書きかけを流し終えるまで
+        // ロックを放さない」ために要ります——放してから届いた保存は 409 で捨てられます。
+        if (plan.kind === 'block') return saveBlockToServer(plan.block, blocks);
+        return saveFullToServer(blocks);
     }
 
     // saveFullToServer は本文全体を保存する（従来の方式）。
     function saveFullToServer(blocks) {
         setSaveStatus("保存中...", "#f59e0b");
-        fetch('/api/save', {
+        return fetch('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ page_id: currentPageId, html: joinBlocks(blocks), token: lockToken })
@@ -980,7 +982,7 @@
     // サーバー側でブロックが見つからない／重複する場合は 409 が返るので、全文保存へ切り替える。
     function saveBlockToServer(block, blocks) {
         setSaveStatus("保存中...", "#f59e0b");
-        fetch('/api/save-block', {
+        return fetch('/api/save-block', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -993,8 +995,7 @@
                 return res.text().then(text => {
                     if (text.indexOf('編集権') >= 0) { handleLockLost(); return null; }
                     lastSavedBlocks = null; // 次は全文で送り直す
-                    saveFullToServer(blocks);
-                    return null;
+                    return saveFullToServer(blocks).then(() => null);
                 });
             }
             return res.json();
@@ -1322,6 +1323,15 @@
         } else {
             closeLockEvents();
             dismissToast('waiter'); // 自分が編集をやめたら「待機者あり」トーストも消す
+            // **書きかけを先に流します**（2026-09-15）。自動保存は1.5秒のデバウンスなので、
+            // 最後の入力から1.5秒以内に閲覧へ戻ると、その分がまだ送られていません。
+            // 以前はそのままロックを放していたので、**直前の1.5秒の編集が黙って消えていました**
+            // （ファイル表示の参照を貼り替えてすぐ戻る、で実測。プロパティ欄の値は
+            // 打つそばから反映するので、この窓に入りやすい）。
+            if (saveTimeout) {
+                clearTimeout(saveTimeout); saveTimeout = null;
+                try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
+            }
             await releaseLock();
             applyMode();
             // 自分の操作での退出もモードを明示（ヘッダーが隠れるため）。id:'mode' で取得トーストと置換。
@@ -2768,6 +2778,11 @@
         const v = document.getElementById('w-fv-ref').value.trim();
         if (v) sec.setAttribute(FILE_REF_ATTR, v);
         else sec.removeAttribute(FILE_REF_ATTR);
+        // **前の参照で描いた枠は消します**（コードレビュー #4）。サーバーが描いたクロームは
+        // 保存の往復で作り直されないので、残すと札は新しい値・枠は古いPDF、という
+        // 食い違いが編集モードを出るまで続きます。消せば「配線した。枠は次に開いたとき」と
+        // 読めます（札が残るので空白にはならない）。
+        sec.querySelectorAll(':scope > .vocab-chrome:not(.fv-wire)').forEach(n => n.remove());
         decorateFileViews();
         updateHtmlPreview();
         triggerAutoSave();
@@ -2778,11 +2793,6 @@
     // **必要なときだけDOMを変えます**（decorateVocabBlocks と同じ理由——本文DOMの変化は
     // 自動保存へ巡ってくるので、毎回付け直すと保存が回り続けます）。
     function decorateFileViews() {
-        // **前の参照で描いた枠は消します**（コードレビュー #4）。サーバーが描いたクロームは
-        // 保存の往復で作り直されないので、残すと札は新しい値・枠は古いPDF、という
-        // 食い違いが編集モードを出るまで続きます。消せば「配線した。枠は次に開いたとき」と
-        // 読めます（札が残るので空白にはならない）。
-        sec.querySelectorAll(':scope > .vocab-chrome:not(.fv-wire)').forEach(n => n.remove());
         const editor = document.getElementById('w-editor-content');
         if (!editor) return;
         const isEdit = document.body.hasAttribute('edit-mode');
@@ -2796,6 +2806,8 @@
         // 欄を開く札が無い——スラッシュメニューを直したあとも、この経路で同じ壊れ方が残っていました。
         editor.querySelectorAll('section').forEach(sec => {
             if (sec.closest('.vocab-chrome')) return;
+            const def = sectionDefOf(sec);
+            if (!def || def.type !== FILE_VIEW_TYPE) return;
             let bar = sec.querySelector(':scope > .fv-wire');
             if (!isEdit) { if (bar) bar.remove(); return; }
             if (!bar) {
@@ -2806,8 +2818,6 @@
                 bar.addEventListener('mousedown', e => e.preventDefault());
                 bar.addEventListener('click', e => {
                     e.preventDefault();
-            const def = sectionDefOf(sec);
-            if (!def || def.type !== FILE_VIEW_TYPE) return;
                     openFileViewPopover(sec, bar);
                 });
                 // **先頭へ置きます**——サーバーが描く枠は末尾に足されるので、
