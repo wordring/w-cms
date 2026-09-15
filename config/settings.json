@@ -51,11 +51,6 @@
     ".lbx",
     ".mp4"
   ],
-  "machine_stages": [
-    "現行",
-    "旧型",
-    "試作"
-  ],
   "char_folding": {
     "Φ": "φ",
     "ϕ": "φ",
@@ -67,5 +62,14 @@
   },
   "webdav_readonly": [
     "通信箱"
-  ]
+  ],
+  "extensions": {
+    "subcon": {
+      "machine_stages": [
+        "現行",
+        "旧型",
+        "試作"
+      ]
+    }
+  }
 }

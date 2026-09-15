@@ -91,14 +91,19 @@ type Settings struct {
 	// 構造上は無害だが、正本と同じ拡張子を添付に混ぜる運用そのものを断つ。
 	AttachmentExtensions []string `json:"attachment_extensions,omitempty"`
 
-	// MachineStages は装置名称の**上の段**の名前です（`取引先／社名／段／装置名称`）。
-	// ユーザー:「装置名の上の段として、旧型、現行、試作などがあったほうが探しやすい」
-	// （2026-09-05）。「など」と付いたので**運用中に増える前提**——語彙・推論辞書と
-	// 同じくここに置きます。**未指定なら段を1つも出しません**（既定の一覧はありません）。
-	// いま `config/settings.json` に書いてあるのは 現行・旧型・試作 の3つです。
+	// Extensions は**拡張が持ち込む設定の節**です（節の名前 → 中身）。
 	//
-	// **並び順に意味があります**——先頭が整理の画面の初期値（＝いちばん多い行き先）。
-	MachineStages []string `json:"machine_stages,omitempty"`
+	// 2026-09-15 ユーザー決定（拡張の組み替え §4.2）:「拡張が自分の節を登録」。
+	// それまで `machine_stages` は下請け（ext/subcon）だけが使うのに**型がコアにありました**
+	// ——`DisallowUnknownFields` があるので、型をコアから外すだけで起動が止まります。
+	// 中身の読み方と検査は**拡張が持ちます**（RegisterSettingsSection）。コアが知るのは
+	// 「節がある」ことだけです。**語彙（vocabulary）は分けません**——型は名前で決まり、
+	// 辞書は1つのほうが衝突に気づけます。
+	Extensions map[string]json.RawMessage `json:"extensions,omitempty"`
+
+	// applies は、全部の節の検査が通ったあとに効かせる反映です（読み込みの差し替えと同時）。
+	// **1つでも壊れていたら何も変えない**ための2段構え（検査 → 反映）。
+	applies []func()
 
 	// CharFolding は**比較の前に置き換える文字**です（`Φ`→`φ` など）。
 	//
@@ -166,6 +171,7 @@ func LoadSettings() error {
 	settings = s
 	charFolder = newCharFolder(s.CharFolding)
 	settingsMu.Unlock()
+	s.applySections()
 	return nil
 }
 
@@ -183,6 +189,7 @@ func LoadSettingsFrom(path string) error {
 	settings = s
 	charFolder = newCharFolder(s.CharFolding)
 	settingsMu.Unlock()
+	s.applySections()
 	return nil
 }
 
@@ -214,7 +221,68 @@ func readSettings(path string) (*Settings, error) {
 	if err := s.validate(path); err != nil {
 		return nil, err
 	}
+	if err := s.parseSections(path); err != nil {
+		return nil, err
+	}
 	return &s, nil
+}
+
+// SettingsSectionParser は拡張の設定の節を読んで検査し、**効かせる関数**を返します。
+//
+// raw は `extensions.<名前>` の中身で、**節が無ければ nil** が来ます（そのときは空の設定を
+// 効かせてください——読み直しで節を消した運用者の意図どおりにするため）。
+// エラーを返すと**起動を止め、読み直しなら何も変えません**。返した関数は、ファイル全体の
+// 検査が通ったあとで呼ばれます。
+type SettingsSectionParser func(raw json.RawMessage) (apply func(), err error)
+
+// settingsSections は拡張が登録した設定の節です。**`init()` の中からだけ**登録します
+// （LoadSettings より前に揃っている前提なので、ロックを持ちません）。
+var settingsSections = map[string]SettingsSectionParser{}
+
+// RegisterSettingsSection は拡張の設定の節を登録します（拡張の `init()` から呼ぶ）。
+//
+// 節の名前は拡張の名前にします（`subcon`・`comm` など）。同じ名前を2度登録するのは
+// 取り付けの誤りなので止めます。
+func RegisterSettingsSection(name string, parse SettingsSectionParser) {
+	if _, dup := settingsSections[name]; dup {
+		panic("設定の節 " + name + " が2度登録されました")
+	}
+	settingsSections[name] = parse
+}
+
+// parseSections は登録された節を全部検査し、反映を集めます。
+//
+// **載っていない拡張の節は止めずに読み飛ばします**——同じ `config/settings.json` を
+// `-tags minimal`（素の w-cms）でも使えるようにするためです。打ち間違えた節の名前も
+// ここへ落ちるので、黙らずにログへ出します。
+func (s *Settings) parseSections(path string) error {
+	for name := range s.Extensions {
+		if _, ok := settingsSections[name]; !ok {
+			log.Printf("設定 %s の extensions.%s を読み飛ばします（この名前の拡張は、このビルドに入っていません）", path, name)
+		}
+	}
+	names := make([]string, 0, len(settingsSections))
+	for name := range settingsSections {
+		names = append(names, name)
+	}
+	sort.Strings(names) // エラーの出る順を毎回同じにする
+	for _, name := range names {
+		apply, err := settingsSections[name](s.Extensions[name])
+		if err != nil {
+			return fmt.Errorf("%s: extensions.%s: %w", path, name, err)
+		}
+		if apply != nil {
+			s.applies = append(s.applies, apply)
+		}
+	}
+	return nil
+}
+
+// applySections は拡張の節を効かせます（設定の差し替えの直後に呼ぶ）。
+func (s *Settings) applySections() {
+	for _, apply := range s.applies {
+		apply()
+	}
 }
 
 // validate は設定の中身を検査します。**不正なら止めます**——読み飛ばすと、
@@ -265,22 +333,6 @@ func (s Settings) validate(path string) error {
 		if _, chained := s.CharFolding[to]; chained {
 			return fmt.Errorf("%s: char_folding の %q → %q は、さらに置き換えられる文字を指しています", path, from, to)
 		}
-	}
-	seenStage := map[string]bool{}
-	for _, st := range s.MachineStages {
-		v := strings.TrimSpace(st)
-		if v == "" {
-			return fmt.Errorf("%s: machine_stages に空の段があります", path)
-		}
-		// **段はページの題になります。** 題に使えない文字が混じると、整理の実行が
-		// 全件そこで止まります——書いた時点で気づけるよう、ここで断ります。
-		if strings.ContainsAny(v, "/\\") {
-			return fmt.Errorf("%s: machine_stages の %q に区切り文字は使えません（ページの題になります）", path, st)
-		}
-		if seenStage[v] {
-			return fmt.Errorf("%s: machine_stages に %q が2回あります", path, v)
-		}
-		seenStage[v] = true
 	}
 	for _, ext := range s.AttachmentExtensions {
 		e := strings.ToLower(strings.TrimSpace(ext))
@@ -386,28 +438,6 @@ func newCharFolder(m map[string]string) *strings.Replacer {
 		pairs = append(pairs, k, m[k])
 	}
 	return strings.NewReplacer(pairs...)
-}
-
-// MachineStages は設定の段の一覧を返します（並び順つき。**先頭が整理の初期値**）。
-// 返した配列は書き換えないこと（参照側が共有しています）。
-func MachineStages() []string {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return nil
-	}
-	return settings.MachineStages
-}
-
-// ValidMachineStage は段が一覧にあるかを**表引きで**確かめます。
-// 「現行」と「現行品」が混ざると、探すときに静かに取りこぼすためです。
-func ValidMachineStage(v string) bool {
-	for _, st := range MachineStages() {
-		if st == v {
-			return true
-		}
-	}
-	return false
 }
 
 // WebDAVHidden は WebDAV に見せないページの題です（設定 `webdav_hidden`）。

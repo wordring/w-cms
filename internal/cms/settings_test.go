@@ -1,6 +1,8 @@
 package cms
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,7 +83,9 @@ func TestSettingsRejectsBrokenFile(t *testing.T) {
 		{"空の見出し語", `{"vocabulary": {"  ": {"type": "date"}}}`},
 		{"打ち間違えたキー", `{"vocabularly": {"加工日": {"type": "date"}}}`},
 		{"置き換えの連鎖", `{"char_folding": {"Φ": "φ", "φ": "f"}}`},
-		{"段の重複", `{"machine_stages": ["現行", "現行"]}`},
+		// 段（machine_stages）の検査は 2026-09-15 に下請け（ext/subcon）の節へ移った。
+		// **コアの型から外したので、トップに書くと「知らないキー」で止まる**のが正しい。
+		{"段をトップに書いた（09-15 に extensions.subcon へ移した）", `{"machine_stages": ["現行"]}`},
 		{"選択肢が空", `{"vocabulary": {"在籍": {"type": "enum"}}}`},
 		{"選択肢に空の値", `{"vocabulary": {"在籍": {"type": "enum", "values": ["在籍", "  "]}}}`},
 		{"選択肢の重複", `{"vocabulary": {"在籍": {"type": "enum", "values": ["在籍", "在籍"]}}}`},
@@ -144,8 +148,8 @@ func TestSettingsLoadsRepoFile(t *testing.T) {
 			t.Errorf("config/settings.json に %q の宣言がありません: %q（期待 %q）", word, got, want)
 		}
 	}
-	if len(MachineStages()) == 0 {
-		t.Error("machine_stages が空です")
+	if _, ok := settingsSnapshot().Extensions["subcon"]; !ok {
+		t.Error("extensions.subcon の節がありません（段はそこへ移した）")
 	}
 	if NormalizeText("Φ320") != "φ320" {
 		t.Error("char_folding が効いていません")
@@ -261,5 +265,94 @@ func TestValidColumnTypeNamesCoversAll(t *testing.T) {
 		if !seen[string(typ)] {
 			t.Errorf("型 %q が知らせに出ません", typ)
 		}
+	}
+}
+
+// settingsSnapshot はいま効いている設定を返します（試験用）。
+func settingsSnapshot() *Settings {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings == nil {
+		return &Settings{}
+	}
+	return settings
+}
+
+// withSection は試験のあいだだけ設定の節を登録します。
+func withSection(t *testing.T, name string, parse SettingsSectionParser) {
+	t.Helper()
+	if _, dup := settingsSections[name]; dup {
+		t.Fatalf("節 %s は既に登録されています", name)
+	}
+	settingsSections[name] = parse
+	t.Cleanup(func() { delete(settingsSections, name) })
+}
+
+// TestSettingsSectionsApplyOnlyWhenAllValid は、**拡張の節は全部の検査が通ってから効く**
+// ことを固定します（2026-09-15・拡張の組み替え §4.2）。
+//
+// 節の1つが壊れているのに、先に読んだ節だけ効いてしまうと、設定が半端な状態で動きます。
+// 起動なら止まるので害は無いが、**DB再構築の読み直しでは、半端なまま走り続けます**。
+func TestSettingsSectionsApplyOnlyWhenAllValid(t *testing.T) {
+	useTempSettings(t)
+	var got string
+	withSection(t, "aaa", func(raw json.RawMessage) (func(), error) {
+		v := string(raw)
+		return func() { got = v }, nil
+	})
+	withSection(t, "zzz", func(raw json.RawMessage) (func(), error) {
+		if string(raw) == `"壊れ"` {
+			return nil, errors.New("壊れています")
+		}
+		return nil, nil
+	})
+
+	writeTestSettings(t, `{"extensions": {"aaa": "一回目", "zzz": "良い"}}`)
+	if err := LoadSettings(); err != nil {
+		t.Fatalf("正しい設定が読めません: %v", err)
+	}
+	if got != `"一回目"` {
+		t.Fatalf("節が効いていません: %q", got)
+	}
+
+	// **aaa は正しく、zzz が壊れている**——aaa を先に読んでも、効かせてはいけない。
+	writeTestSettings(t, `{"extensions": {"aaa": "二回目", "zzz": "壊れ"}}`)
+	err := LoadSettings()
+	if err == nil {
+		t.Fatal("壊れた節が受け入れられました")
+	}
+	if !strings.Contains(err.Error(), "extensions.zzz") {
+		t.Errorf("どの節が壊れているのか分からない知らせです: %v", err)
+	}
+	if got != `"一回目"` {
+		t.Errorf("壊れた設定の一部だけが効いています: %q（一回目のままのはず）", got)
+	}
+}
+
+// TestSettingsUnknownSectionIsSkipped は、**載っていない拡張の節では止めない**ことを
+// 固定します。同じ `config/settings.json` を `-tags minimal` でも使うためです。
+func TestSettingsUnknownSectionIsSkipped(t *testing.T) {
+	useTempSettings(t)
+	writeTestSettings(t, `{"extensions": {"このビルドに無い拡張": {"何でも": 1}}}`)
+	if err := LoadSettings(); err != nil {
+		t.Fatalf("載っていない拡張の節で止まりました: %v", err)
+	}
+}
+
+// TestSettingsAbsentSectionGetsNil は、**節が無ければ nil を渡す**ことを固定します。
+// 拡張は nil を「空の設定」として効かせます——読み直しで節を消したとき、古い値が残らないように。
+func TestSettingsAbsentSectionGetsNil(t *testing.T) {
+	useTempSettings(t)
+	called, gotNil := false, false
+	withSection(t, "absent", func(raw json.RawMessage) (func(), error) {
+		called, gotNil = true, raw == nil
+		return nil, nil
+	})
+	writeTestSettings(t, `{}`)
+	if err := LoadSettings(); err != nil {
+		t.Fatalf("設定が読めません: %v", err)
+	}
+	if !called || !gotNil {
+		t.Errorf("節が無いときに nil で呼ばれていません: called=%v nil=%v", called, gotNil)
 	}
 }

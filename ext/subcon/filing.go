@@ -53,8 +53,8 @@ import (
 	"strconv"
 	"strings"
 
-	"w-cms/internal/auth"
 	"w-cms/ext/comm/contacts"
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
@@ -80,7 +80,7 @@ type filingRow struct {
 // **人が毎回選ぶ**のが決定ですが、既にある装置を別の段へ入れてしまう事故は
 // 初期値で防げます——`取引先／社名／段／装置名称` を段ごとに当たります。
 func suggestStage(customer, machine string) string {
-	stages := cms.MachineStages()
+	stages := MachineStages()
 	fallback := ""
 	if len(stages) > 0 {
 		fallback = stages[0]
@@ -147,7 +147,7 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 全部混ぜると他社の装置名が候補に出ます。
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "rows": rows, "orders": orders,
-		"stages": cms.MachineStages(), "partners": partnerNames(user),
+		"stages": MachineStages(), "partners": partnerNames(user),
 		"machines": machineNames(user)})
 }
 
@@ -268,7 +268,7 @@ func machineNames(user *auth.User) map[string][]string {
 		return out
 	}
 	// 段が1つも設定されていなければ、装置の置き場そのものが決まりません。
-	stages := cms.MachineStages()
+	stages := MachineStages()
 	if len(stages) == 0 {
 		return out
 	}
@@ -459,9 +459,9 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	}
 	// **段は表引きで閉じます**——「現行」と「現行品」が混ざると、探すときに
 	// 静かに取りこぼします（設定 machine_stages が正本）。
-	if !cms.ValidMachineStage(stage) {
+	if !ValidMachineStage(stage) {
 		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "段（" + strings.Join(cms.MachineStages(), "・") + "）を選んでください"}
+			Message: "段（" + strings.Join(MachineStages(), "・") + "）を選んでください"}
 	}
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil || !canWritePage(user, idInt) {
