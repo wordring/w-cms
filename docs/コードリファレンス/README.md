@@ -7,7 +7,7 @@
 
 この版は **アドレス帳の `ext/contacts` への移設（2026-09-15）**——コアは3つの
 フック（`RegisterVocab`・`RegisterView`・`RegisterContactResolver`）で受けるだけになり、
-**拡張どうしの最初の import**（`ext/sheetmetal` → `ext/contacts`）が生まれた——と、
+**拡張どうしの最初の import**（`ext/subcon` → `ext/contacts`）が生まれた——と、
 **`page_tags.norm_value` の宣言型の撤去**（型は値が持つ。束ねる形は `tagNormBind`
 1か所）・題の引き方の集約（`page_lookup.go`・`page.FormatID`）・`NormalizeForLookup` の
 撤去を反映して**実際のコードから測り直した**ものです。
@@ -27,7 +27,7 @@ go doc ./internal/database         # cms.db（派生）と auth.db（正本）
 go doc ./internal/cms Observer       # 型・関数を1つだけ
 go doc ./internal/cms IntakeHandler  # 取り込み係の受け口
 go doc ./internal/cms Mailer         # メールの口（実装は ext/mail）
-go doc ./ext/sheetmetal              # 板金部の既定セット
+go doc ./ext/subcon              # 下請け業務
 go doc ./ext/mail                    # メール送受信（IMAP／SMTP）
 go doc ./ext/contacts                # アドレス帳（なぜ独立した拡張か・コアとの境目）
 go doc -all ./internal/cms/page      # そのパッケージの全公開APIをコメントごと

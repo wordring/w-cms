@@ -18,7 +18,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 *   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。それ以外のテーブル（現在は `vocab_index` だけ）はプラグイン機構の `Schema()` が定義します。
 *   **`cms/editlock/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/editlock/handler.go`（4.3 参照）。
 *   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース（`Name` / `Schema` / `Tables` の3メソッド＝テーブルの所有）と、本文を読む観察係 `Observer`（`Plugin`＋`Triggers` / `OnPageStart` / `OnElement`。旧 `Sync(tx, pageID, root)` は 2026-08-26 の回覧化で廃止）、レジストリ（`Register` / `Observers`）、スキーマ一括適用（`ApplySchema`）と**既存DBとのずれ検出**（`DriftedSchemaTables`。8.3）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。走査そのものはコアの配送係 `cms/walk.go` が担います（[パーサとプラグイン.md](パーサとプラグイン.md)）。**語彙集約（必須メソッド `Tags` と `PluginTags`）は 2026-08-20 に撤去**——全プラグインが nil を返す状態になったため機構ごと外しました（下の「語彙の正本」参照）。
-*   **`cms/plugin_*.go`**: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）と、観察係なら引き金（`Triggers`）・洗い替え（`OnPageStart`）・要素ごとの読み取り（`OnElement`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。**コアに計算プラグインはもう1つも残っていません**——③計算は拡張へ移りました（[ext/sheetmetal/materials.go](../ext/sheetmetal/materials.go)。テーブルを持たず `vocab_index` を読む。D-1・§2）。
+*   **`cms/plugin_*.go`**: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）と、観察係なら引き金（`Triggers`）・洗い替え（`OnPageStart`）・要素ごとの読み取り（`OnElement`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](【ガイド】プラグイン開発.md) 参照）。**コアに計算プラグインはもう1つも残っていません**——③計算は拡張へ移りました（[ext/subcon/materials.go](../ext/subcon/materials.go)。テーブルを持たず `vocab_index` を読む。D-1・§2）。
 *   **`cms/htmldoc/sanitize.go`**: 本文サニタイザ（純粋なHTML部品。import は `x/net/html`＋標準のみ）で、**本文で扱えるHTMLの語彙の唯一の正本**（`structuralElements`＋`data-*` マーカー）。`cms/sanitize.go` は薄いラッパで、`htmldoc.New()` の結果をパッケージ変数として持ちます。依存は `cms → htmldoc` の一方向（**逆向きに import しないこと**）。
 *   **`cms/vocab.go` / `cms/vocab_index.go`**: 語彙モデル3層の①と②。`vocab.go` が形式定義の宣言テーブル（`vocabRegistry`。編集支援・型推論・正規化の語彙であって**安全性の門ではない**）、`vocab_index.go` が全 `table[data-type]` / `dl[data-type]` と、形式を持つ `section` の素の `dl`／`table`（`syncVocabSection`。機能見出し形・D-2）を縦持ちで索引する汎用同期（プラグイン機構へ相乗り）。読む側の入口は `cms/vocab_query.go`（`VocabTableRowsOf` / `VocabBlocksOf` / `PagesByTag`）。
 *   **`cms/view_render.go`**: 計算ビュー（表示専用）の**サーバー事前描画**。本文中の空マーカーへ中身を埋めます（4.4 参照）。
@@ -40,7 +40,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 > それ以外のテーブルは**プラグイン機構**の `Schema()` で定義し、起動時に `cms.ApplySchema()` で
 > 作成されます——現在それを持つのは汎用索引のプラグイン（`vocabIndexPlugin`）だけで、
 > **`vocab_index` と `page_tags` の2つ**を宣言します（`Tables()`）。ドメイン表は
-> D-1（§9）で全廃されました（③計算は `ext/sheetmetal/materials.go` へ移り、テーブルを持ちません）。
+> D-1（§9）で全廃されました（③計算は `ext/subcon/materials.go` へ移り、テーブルを持ちません）。
 >
 > 汎用索引も例外ではなく、テーブル作成は
 > [cms/vocab_index.go](../internal/cms/vocab_index.go) の `Schema()` が担います
@@ -142,7 +142,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 
 ## 3. 部材手配計算APIの仕様
 
-動的に必要な部材数を計算するロジックは `RequiredMaterials(user, pageID)`（`ext/sheetmetal/materials.go`）に
+動的に必要な部材数を計算するロジックは `RequiredMaterials(user, pageID)`（`ext/subcon/materials.go`）に
 あり、**2つの出口**から使われます（部品単位ではなく、対象ページ単位で計算します）。
 
 1.  **`GET /api/required-materials?page_id={page_id}`**（プラグイン提供API）。
@@ -356,7 +356,7 @@ DBスキーマは変わりません**。
 > |---|---|---|---|
 > | 計算ビュー | `TriggerAll`（`View: true` で自分の担当か判定） | **全部消して描き直す** | [view_render.go](../internal/cms/view_render.go) |
 > | **ファイル表示** | `file-view` | **残す**。`data-ref` の指すファイルを開く枠を**下へ足す** | [file_view.go](../internal/cms/file_view.go) |
-> | 図面の赤枠・廃版行 | `drawing`／`part-materials` ほか3形式 | **残す**。`class` を足すだけ | [ext/sheetmetal/drawing_mirror.go](../ext/sheetmetal/drawing_mirror.go) |
+> | 図面の赤枠・廃版行 | `drawing`／`part-materials` ほか3形式 | **残す**。`class` を足すだけ | [ext/subcon/drawing_mirror.go](../ext/subcon/drawing_mirror.go) |
 >
 > ファイル表示を計算ビューにしなかったのは、**計算ビューが要素を見ずページIDだけで描く**ため
 > です（2026-09-15 に理由が変わりました）——開く先は要素ごとに違う `data-ref` なので、
@@ -456,8 +456,8 @@ DBスキーマは変わりません**。
 ### 5.3. 添付の判定→受注ページ生成 API (`POST /api/analyze-attachment`)
 
 添付PDF（またはZIP添付の中のPDF）を Gemini で「顧客が発行した発注書か」判定し、発注書なら
-**受注ページをそのページの子として生成**します（[ext/sheetmetal/analyze_pdf.go](../ext/sheetmetal/analyze_pdf.go)。
-2026-09-01・板金部の既定セット＝他社デプロイでは外す・差し替える前提）。エディタの
+**受注ページをそのページの子として生成**します（[ext/subcon/analyze_pdf.go](../ext/subcon/analyze_pdf.go)。
+2026-09-01・下請け業務＝他社デプロイでは外す・差し替える前提）。エディタの
 「🤖 解析」ボタンから呼ばれ、**自動では走りません**（人間ゲート型——「自動ではなくボタンの
 clickなどで解析が始まると良い」。正本は [【考察】通信記録処理.md](【考察】通信記録処理.md) §3）。
 
