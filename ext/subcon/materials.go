@@ -26,6 +26,8 @@ import (
 // ─────────────────────────────────────────────────────────────────────────
 
 func init() {
+	// **名簿に載る**（起動ログと画面の出し分け。internal/cms/extensions.go）。
+	cms.RegisterExtension("subcon", "下請け業務")
 	cms.Register(materialsPlugin{})
 	// 計算ビューの描画も自分で登録する（形式の宣言と対）。
 	cms.RegisterView("required-materials", requiredMaterialsViewHTML)

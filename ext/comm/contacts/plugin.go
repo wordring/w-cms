@@ -48,7 +48,12 @@ import (
 // タグで、行き先は `page_tags` です（D-1: 専用テーブルは作らない）。
 type contactsPlugin struct{}
 
-func init() { cms.Register(contactsPlugin{}) }
+func init() {
+	// **名簿に載る**（起動ログと画面の出し分け——「未分類へ戻す」はこの名前を見て出る）。
+	// subcon の import で連れてこられた場合も、ここで名乗るので名簿から漏れません。
+	cms.RegisterExtension("comm/contacts", "アドレス帳")
+	cms.Register(contactsPlugin{})
+}
 
 func (contactsPlugin) Name() string     { return "contacts" }
 func (contactsPlugin) Schema() []string { return nil }

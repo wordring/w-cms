@@ -66,6 +66,11 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// （語彙モデル §7 の原則1）——2026-09-14 まで持っていて、`datetime`・`ref`・
 		// `email` を足した日から**3つ古いまま**でした。
 		"column_types": ColumnTypeNames(),
+		// **載っている拡張**（2026-09-15・組み替え §4.1 案A）。拡張の画面はコアの app.js に
+		// 居るので、これを見て出し分けます——ビルドタグでサーバーから外しても、ボタンが
+		// 残って押すと404になっていました。**空でも `[]`**（`null` は「知らされていない」と
+		// みなされ、出し分けが効かない）。
+		"extensions": ExtensionIDs(),
 	})
 }
 

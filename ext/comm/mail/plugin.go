@@ -20,6 +20,8 @@ import (
 )
 
 func init() {
+	// **名簿に載る**（起動ログと画面の出し分け——「✉️ 返信」はこの名前を見て出る）。
+	cms.RegisterExtension("comm/mail", "メール送受信・IMAP／SMTP")
 	cms.RegisterMailer(oauthMailer{})
 	cms.Register(mailPlugin{})
 	if Configured() {
