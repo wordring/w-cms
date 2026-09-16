@@ -25,6 +25,7 @@ package comm
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
@@ -42,6 +43,29 @@ import (
 func init() {
 	// **通信箱への到着を取り込み係へ回す受け口**（2026-09-15 にアップロード口から裏返した）。
 	cms.RegisterUploadInterceptor(intakeUpload)
+
+	// **通信箱は管理画面のボタンで作れます**（2026-09-16）。ユーザー:「拡張プラグインが
+	// 必要とするフォルダなどは、管理画面でボタンを押して作成する仕組みにしては
+	// どうでしょう？」——**人が押すので「意図して置く」という 09-05 の決定は
+	// そのまま**で、「どこに何を作ればいいのか分からない」だけが消えます。
+	cms.RegisterRequiredPage(cms.RequiredPage{
+		Title:     MailBoxTitle,
+		Extension: "comm",
+		Why:       "ここへ .eml を落とすと通信記録ページが作られ、未処理の一覧もこの上に出ます。メールの取り込みもここへ着地します。",
+		Body:      mailBoxBody,
+	})
+}
+
+// mailBoxBody は通信箱の初期の本文です。
+//
+// **作業面（未処理の受信）を最初から載せます。** 見出しだけで作ると、取り込んだ
+// 記録がどこにも並ばず、**箱はあるのに仕事が見えない**状態になります
+// （2026-09-11 に取引先で実際に起きた形）。
+func mailBoxBody() string {
+	return "<h1>" + html.EscapeString(MailBoxTitle) + "</h1>" +
+		"<p>ここへ .eml・PDF・図面をドロップすると、通信記録ページが子ページとして" +
+		"作られます。送信の控えも同じ箱に立ちます（向きはタグで表します）。</p>" +
+		`<section data-type="` + UnhandledViewType + `"></section>`
 }
 
 // intakeUpload は、アップロード先が通信箱なら取り込み係へ回します。

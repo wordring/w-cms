@@ -88,6 +88,20 @@ func init() {
 	cms.RegisterContactResolver(func(addr string) (string, string, bool) {
 		return ContactPageForAddress(nil, addr)
 	})
+
+	// **取引先は管理画面のボタンで作れます**（2026-09-16）。
+	//
+	// ⚠ **ここが行き止まりでした。** 取引先ページを作るのは `EnsurePartnerBox` で、
+	// その呼び手は**連絡先の登録の口と整理の2つだけ**。ところが登録の画面
+	// （未登録の連絡先）は**取引先ページの上に載っている**ので、
+	// **登録しないと作業面が出ず、作業面が無いと登録できない**——2026-09-16 に
+	// データを一掃したとき、実際にそうなりました（手で1枚作って抜けた）。
+	cms.RegisterRequiredPage(cms.RequiredPage{
+		Title:     PartnerBoxTitle,
+		Extension: "comm/contacts",
+		Why:       "取引の相手（会社・個人）を集める箱です。メールから拾った「未登録の連絡先」の作業面がこのページに出ます。製造部品の階層もこの下です。",
+		Body:      partnerBoxBody,
+	})
 }
 
 // ContactsViewType は「未登録の連絡先」の形式名です。

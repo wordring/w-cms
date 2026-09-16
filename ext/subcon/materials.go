@@ -31,6 +31,17 @@ func init() {
 	cms.Register(materialsPlugin{})
 	// 計算ビューの描画も自分で登録する（形式の宣言と対）。
 	cms.RegisterView("required-materials", requiredMaterialsViewHTML)
+
+	// **受注の置き場は管理画面のボタンで作れます**（2026-09-16）。
+	// 整理のときにも自動で作られます（`cms.EnsureTopLevelBox`）——先に作れるように
+	// したのは、**整理する前に「どこへ行くのか」を人が見られるようにする**ためです。
+	// ⚠ **作業面はまだありません**（納期・受注残を見るビューが未実装）。見出しだけの
+	// 箱なので、ビューができたらここの本文に足すこと。
+	cms.RegisterRequiredPage(cms.RequiredPage{
+		Title:     OrderBoxTitle,
+		Extension: "subcon",
+		Why:       "受注ページの置き場です（受注／年／月。年月は発注日）。整理を実行すると通信箱からここへ移ります。",
+	})
 }
 
 type materialsPlugin struct{}
