@@ -9,14 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/google/generative-ai-go/genai"
 )
 
 // 添付1件あたりの上限は設定 max_upload_mib（既定32MiB・cms.MaxUploadBytes）。
@@ -166,100 +162,8 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ParsedItem はPDFから抽出された品目データです
-type ParsedItem struct {
-	ItemName string `json:"item_name"`
-	Price    string `json:"price"`
-	Quantity string `json:"quantity"`
-}
-
-// ParsePDFHandler は保存されたPDFをGemini APIに渡し、JSONとして明細を抽出します
-func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
-		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	var req struct {
-		PageID   string `json:"page_id"`
-		FileName string `json:"file_name"`
-	}
-	if !DecodeJSONBody(w, r, &req) {
-		return
-	}
-	// パスに使う前にゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
-	normID, ok := page.NormalizeID(req.PageID)
-	if !ok {
-		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
-	req.PageID = normID
-	// PDF解析→明細挿入はページ内容の変更につながるため write 権限を要求する
-	if !page.RequirePageWrite(w, r, req.PageID) {
-		return
-	}
-
-	// 送る前に名前を検証する。ここが filepath.Base だけだったころ、ページ
-	// ディレクトリ内の任意のファイル——**本文 <id>.html と権限サイドカー
-	// <id>.meta.json を含む**——を「PDFとして」外部（Gemini）へ送れた。
-	// 置く側（UploadPDFHandler）と同じ関門を通し、拡張子の許可リストと
-	// 本文・サイドカーの名指し拒否をそのまま効かせる。
-	fileName, err := attachmentFileName(req.PageID, req.FileName)
-	if err != nil {
-		JSONFail(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	pdfPath, found := page.AttachmentPath(req.PageID, fileName)
-	if !found {
-		JSONFail(w, http.StatusNotFound, "PDF file not found on server")
-		return
-	}
-	pdfBytes, err := os.ReadFile(pdfPath)
-	if err != nil {
-		JSONFail(w, http.StatusBadRequest, "PDFファイルの読み込みに失敗しました")
-		return
-	}
-
-	prompt := `このPDFは発注書または見積書です。
-記載されているすべての部品明細（品名、単価、数量）を抽出し、以下の形式のJSON配列のみを出力してください。
-キーは必ず "item_name", "price", "quantity" にしてください。
-単価はカンマを除いた数値文字列にしてください。
-マークダウンのコードブロック修飾 (例: ` + "```json" + ` ) は付けず、純粋なJSON配列から出力してください。
-
-[
-  {"item_name": "部品A", "price": "1000", "quantity": "2"}
-]`
-
-	respText, err := GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdfBytes})
-	if err != nil {
-		if errors.Is(err, ErrNoGeminiKey) {
-			// APIキーがない場合はフロント側に分かりやすいエラーメッセージを返す
-			JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。\nターミナルで設定してから起動してください。\n\n例(Windows): \nset GEMINI_API_KEY=AIzaSy...\ngo run ./cmd/w-cms/")
-			return
-		}
-		log.Printf("[Gemini API Error] %v", err)
-		JSONFail(w, http.StatusBadGateway, "Gemini APIの呼び出しに失敗しました: "+err.Error())
-		return
-	}
-
-	var items []ParsedItem
-	err = json.Unmarshal([]byte(StripJSONFence(respText)), &items)
-	if err != nil {
-		// パース失敗時はエラーではなく空配列を返す（フロント側でダミー追加ロジックが走るため）
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"items":   []ParsedItem{},
-			"raw":     respText,
-		})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"items":   items,
-		"raw":     respText,
-	})
-}
+// PDF解析の口（ParsePDFHandler・ParsedItem）は 2026-09-16 に `ext/subcon` へ
+// 移しました（ext/subcon/parse_pdf.go）。ユーザー:「PDF解析は業務に密着せざるを
+// 得ないので、ext/subcon ではないでしょうか？」——プロンプトが「発注書または
+// 見積書」と業務を語る口が、コアに残っていた最後の1本でした。
+// ここに残るのは**添付としてPDFを置く**口だけです（業務を知りません）。
