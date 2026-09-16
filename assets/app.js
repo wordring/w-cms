@@ -4430,6 +4430,13 @@
                     name: name,
                     relation: btn.dataset.relation,
                     addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
+                    // **組織のドメイン**（2026-09-16）。チェックが入っていれば、この行の
+                    // ドメインを組織の連絡先として書きます——同じドメインの**新しい人**
+                    // からの初メールも、その組織に結びつくようになります。
+                    // ⚠ 共有ドメイン（yahoo・gmail）では外すこと。**決めるのは編集者**です。
+                    domains: (row && row.querySelector('.contact-add-domain')
+                        && row.querySelector('.contact-add-domain').checked
+                        && row.dataset.domain) ? [row.dataset.domain] : [],
                 }),
             });
             const data = await res.json();

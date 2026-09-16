@@ -55,6 +55,13 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// ぶら下がるので（メール・電話・役職）、**人ごとの器**が要ります。
 		// 空なら会社の口として社名ページへ（`order@…` のような人でないもの）。
 		PersonName string `json:"person_name"`
+		// Domains は**この組織のドメイン**です（`ドメイン` タグ・2026-09-16）。
+		// 画面のチェックが入っていれば、そのアドレスのドメインが1つ入ります。
+		//
+		// **決めるのは編集者**です（ユーザー:「これは編集者がなんとかする問題だと
+		// 思います」）——専用ドメインなら付け、共有のドメイン（yahoo・gmail）なら
+		// 付けない。機械は材料（同じドメインの別アドレスの数）を出すだけ。
+		Domains []string `json:"domains"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -153,6 +160,12 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	for _, a := range addrs {
 		cms.WriteTag(&b, EmailTag, a)
 	}
+	// **組織の連絡先**（2026-09-16）。これがあると、同じドメインの**新しい人**からの
+	// 初メールも、この組織に結びつきます。⚠ 共有ドメインに付けると、そのドメインの
+	// 他人まで引き寄せます——だから既定で付けるかは**人が見て決めます**。
+	for _, d := range normalizeDomains(req.Domains) {
+		cms.WriteTag(&b, DomainTag, d)
+	}
 	b.WriteString("</dl>")
 	// 電話番号は空で置きます——**書く場所が見えていれば、人は書きます**
 	// （タグがあれば ☎ 発信のボタンも出ます・app.js）。
@@ -163,7 +176,9 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
 		return
 	}
-	auth.Audit(user.Username, "contact.register", pageID+" ("+req.Relation+") "+strings.Join(addrs, ","))
+	auth.Audit(user.Username, "contact.register",
+		pageID+" ("+req.Relation+") "+strings.Join(addrs, ",")+
+			domainsForAudit(normalizeDomains(req.Domains)))
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "page_id": pageID, "title": name,
 	})
@@ -284,4 +299,30 @@ func validRelation(v string) bool {
 		}
 	}
 	return false
+}
+
+// normalizeDomains は受け取ったドメインを畳み、重複と空を落とします。
+func normalizeDomains(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, d := range in {
+		n := normalizeDomain(d)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
+}
+
+// domainsForAudit は監査記録へ添えるドメインの並びです（無ければ空文字）。
+//
+// **記録に残すのは、あとから「なぜこのドメインが付いたのか」を辿れるように**です
+// ——共有ドメインを付けてしまうと、そのドメインの他人まで引き寄せます。
+func domainsForAudit(domains []string) string {
+	if len(domains) == 0 {
+		return ""
+	}
+	return " domains=" + strings.Join(domains, ",")
 }

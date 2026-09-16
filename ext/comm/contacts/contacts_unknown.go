@@ -67,6 +67,22 @@ type UnknownContact struct {
 	// SuggestName は新規登録するときの社名の推薦です。**同じドメインの表示名のうち
 	// 社名らしいもの**を採り、無ければこのアドレスの表示名。
 	SuggestName string
+
+	// DomainOwners は**このドメインを既に持っている組織**です（`ドメイン` タグ・
+	// 2026-09-16）。普通は0件か1件で、**2件以上なら共有ドメイン**——ドメインから
+	// 組織を決められないので、画面は候補として選ばせます
+	// （ユーザー:「コンボボックスで選択できる候補が複数あるということでどうでしょう」）。
+	DomainOwners []PartnerRef
+	// DomainTruncated は候補を打ち切ったかです。⚠ **ヤフーのようなドメインでは
+	// 候補が1万件になりえます**——選べない長さの一覧は選択肢ではないので、
+	// 打ち切ったことを画面が言います。
+	DomainTruncated bool
+	// DomainPeers は**索引にある、同じドメインの別アドレスの数**です（自分を除く）。
+	//
+	// 「このドメインはこの組織専用か」を人が判断する材料です——専用ドメインなら
+	// 数人、フリーメールなら他人が混ざります。⚠ **機械は決めません**
+	// （ユーザー:「これは編集者がなんとかする問題だと思います」）。
+	DomainPeers int
 }
 
 // UnknownContacts は、索引にあってページになっていない相手を**1アドレス1件**で返します。
@@ -143,12 +159,26 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 		}
 	}
 
-	// **推薦の材料**——既にある取引先のドメイン（そのドメインのアドレスが載っている相手）。
+	// **推薦の材料**は2つ。**宣言が先、推測はあと**です:
+	//   ① `ドメイン` タグの持ち主（人が「このドメインはこの組織のものだ」と書いた）
+	//   ② 登録済みアドレスから推したドメイン（2026-09-16 より前からある推測）
+	byDomainTag := ownersByDomainTag(user)
 	byPartnerDomain := partnersByDomain(user)
+	// **社内のアドレスは並べません**（上の selfDomains）。
+	mine := selfDomains(user)
+
+	// 同じドメインの**別のアドレスが索引に何件あるか**（判断の材料）。
+	peers := map[string]int{}
+	for a := range byAddr {
+		peers[domainOf(a)]++
+	}
 
 	out := make([]UnknownContact, 0, len(byAddr))
 	for addr, a := range byAddr {
 		d := domainOf(addr)
+		if mine[d] {
+			continue // 同僚は取引の相手ではない（片付けようのない行を並べない）
+		}
 		c := UnknownContact{
 			Address: addr,
 			Domain:  d,
@@ -162,8 +192,23 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 		//    いれば、新しくページを作るのではなく**そこへ足す**のが正しい操作です。
 		//    実データで、南北スポーツ機械の3アドレスが「未登録」として並び、
 		//    目立つのが新規作成のボタンだったせいで**会社が2枚になりかけました**。
-		if p, ok := byPartnerDomain[d]; ok {
+		// **ドメインタグの持ち主が先**（宣言 > 推測・2026-09-16）。
+		if owners := byDomainTag[d]; len(owners) > 0 {
+			if len(owners) > domainOwnerLimit {
+				c.DomainOwners, c.DomainTruncated = owners[:domainOwnerLimit], true
+			} else {
+				c.DomainOwners = owners
+			}
+			// **1つに決まるときだけ初期の提案にします。** 共有ドメインで候補が
+			// 複数なら、機械は選びません——画面が選ばせます。
+			if len(owners) == 1 {
+				c.SuggestPageID, c.SuggestTitle = owners[0].ID, owners[0].Title
+			}
+		} else if p, ok := byPartnerDomain[d]; ok {
 			c.SuggestPageID, c.SuggestTitle = p.PageID, p.Title
+		}
+		if n := peers[d]; n > 1 {
+			c.DomainPeers = n - 1 // 自分を除く
 		}
 		// ② 新規のときの社名の推薦——**同じドメインの表示名のうち社名らしいもの**。
 		//    人名しか無ければ諦めてこのアドレスの表示名（人の名前で会社ページを作るのは
@@ -186,6 +231,121 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 		return out[i].Address < out[j].Address
 	})
 	return out, nil
+}
+
+// selfDomains は `取引：自社` の組織が持つ `ドメイン` タグを集めます（2026-09-16）。
+//
+// **社内のアドレスは「未登録の連絡先」に出しません。** 同僚は取引の相手ではないので、
+// 一覧に並べても片付けようがなく、**片付かない行が残り続けると一覧が信用されなく
+// なります**（未処理一覧で学んだこと）。
+//
+// 自社を1度登録すれば、**社内の全員が一度に静かになります**——アドレスを1つずつ
+// 登録させないために、判定はドメインで行います（§5.4:「登録して `取引：自社` を
+// 付けると、未登録の一覧から自社の4アドレスが消え」）。
+//
+// ⚠ **自社が複数のドメインを持つことがあります**（実データで `example-works.co.jp` と
+// `itohocorp.onmicrosoft.com` の2つ）。2つ目は「既にある相手へ足す」で足せます。
+func selfDomains(user *auth.User) map[string]bool {
+	out := map[string]bool{}
+	rows, err := database.DB.Query(
+		`SELECT page_id, value FROM page_tags WHERE name = ?`, DomainTag)
+	if err != nil {
+		return out
+	}
+	type hit struct {
+		id    int
+		value string
+	}
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.id, &h.value); err != nil {
+			rows.Close()
+			return out
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+
+	for _, h := range found {
+		d := normalizeDomain(h.value)
+		if d == "" || !page.CanView(user, h.id) {
+			continue
+		}
+		companyID, _, ok := PartnerOfPage(h.id)
+		if ok && isSelfPartner(companyID) {
+			out[d] = true
+		}
+	}
+	return out
+}
+
+// domainOwnerLimit は候補として出すドメインの持ち主の上限です。
+//
+// ⚠ **選べない長さの一覧は選択肢ではありません**（2026-09-16 ユーザー:「ヤフーの
+// ようなドメインでは、候補が1万件ということもあり得ます…あまりに多い場合、
+// コンボボックスにはすべての候補は出せませんから、自分で入力するしかないのです」）。
+const domainOwnerLimit = 20
+
+// ownersByDomainTag は `ドメイン` タグの持ち主をドメインごとに返します（2026-09-16）。
+//
+// **こちらは宣言です**——`partnersByDomain`（登録済みアドレスからドメインを推す）が
+// **推測**なのに対して、人が「このドメインはこの組織のものだ」と書いた結果です。
+// だから推薦も照合も、こちらを先に見ます。
+//
+// **1つのドメインに複数の組織がありえます**（共有ドメイン）。そのときは決められない
+// ので、全部返して人に選ばせます。
+func ownersByDomainTag(user *auth.User) map[string][]PartnerRef {
+	out := map[string][]PartnerRef{}
+	rows, err := database.DB.Query(
+		`SELECT page_id, value FROM page_tags WHERE name = ?`, DomainTag)
+	if err != nil {
+		return out
+	}
+	type hit struct {
+		id    int
+		value string
+	}
+	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.id, &h.value); err != nil {
+			rows.Close()
+			return out
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+
+	for _, h := range found {
+		d := normalizeDomain(h.value)
+		if d == "" || !page.CanView(user, h.id) {
+			continue
+		}
+		companyID, title, ok := PartnerOfPage(h.id)
+		if !ok || title == "" {
+			continue
+		}
+		if isSelfPartner(companyID) {
+			continue // 自社は推薦しない（顧客名の推奨値として出ることはありえない）
+		}
+		id := page.FormatID(companyID)
+		dup := false
+		for _, p := range out[d] {
+			if p.ID == id {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out[d] = append(out[d], PartnerRef{ID: id, Title: title})
+		}
+	}
+	for d := range out {
+		sort.Slice(out[d], func(i, j int) bool { return out[d][i].Title < out[d][j].Title })
+	}
+	return out
 }
 
 // partnerRefByDomain は取引先ページ1件の参照です（推薦に使う）。
