@@ -1,16 +1,17 @@
 # コードリファレンス
 
-**対象コミット: `f29bc0b`（2026-09-15 測り直し）**
+**対象コミット: `ce995b5`（2026-09-16 測り直し）**
 
 実装の**現状**を写した文書群です。設計の「なぜ」は各設計書が正本で、ここは
 「いま何がどうなっているか」だけを扱います。
 
-この版は **アドレス帳の `ext/comm/contacts` への移設（2026-09-15）**——コアは3つの
-フック（`RegisterVocab`・`RegisterView`・`RegisterContactResolver`）で受けるだけになり、
-**拡張どうしの最初の import**（`ext/subcon` → `ext/comm/contacts`）が生まれた——と、
-**`page_tags.norm_value` の宣言型の撤去**（型は値が持つ。束ねる形は `tagNormBind`
-1か所）・題の引き方の集約（`page_lookup.go`・`page.FormatID`）・`NormalizeForLookup` の
-撤去を反映して**実際のコードから測り直した**ものです。
+この版は **拡張を「通信（`ext/comm`）」と「下請け業務（`ext/subcon`）」へ組み替えた
+2026-09-15〜16 の一連の変更**を反映して、実際のコードから測り直したものです。
+いちばん大きいのは**コアから業務の語彙が出たこと**——通信箱・取り込み係・未処理一覧・
+スレッド・記録する・返信の一覧・メールの口が `internal/cms` から `ext/comm` へ移り、
+コアが拡張を名指ししていた箇所はフックへ裏返りました（アップロードの受け口・
+設定の節・拡張の名簿）。**拡張どうしの import が解禁**され、向きは
+**拡張 → 通信の一方通行**になっています。
 
 ## まず `go doc`
 
@@ -24,12 +25,19 @@ go doc ./internal/cms/editlock     # 悲観ロック
 go doc ./internal/cms/htmldoc      # 本文サニタイズ
 go doc ./internal/database         # cms.db（派生）と auth.db（正本）
 
-go doc ./internal/cms Observer       # 型・関数を1つだけ
-go doc ./internal/cms IntakeHandler  # 取り込み係の受け口
-go doc ./internal/cms Mailer         # メールの口（実装は ext/comm/mail）
-go doc ./ext/subcon              # 下請け業務
-go doc ./ext/comm/mail                    # メール送受信（IMAP／SMTP）
-go doc ./ext/comm/contacts                # アドレス帳（なぜ独立した拡張か・コアとの境目）
+go doc ./internal/cms Observer                  # 型・関数を1つだけ
+go doc ./internal/cms RegisterUploadInterceptor # コアが通信箱を知らないための受け口
+go doc ./internal/cms RegisterContactResolver   # アドレス→連絡先ページ
+go doc ./internal/cms RegisterSettingsSection   # 拡張の設定の節
+go doc ./internal/cms RegisterExtension         # 載っている拡張の名簿
+
+go doc ./ext/comm                  # 通信（通信箱・取り込み係・メールの口）
+go doc ./ext/comm IntakeHandler    # 取り込み係の受け口
+go doc ./ext/comm Mailer           # メールの口（実装は ext/comm/mail）
+go doc ./ext/comm/contacts         # アドレス帳（なぜ独立した拡張か・コアとの境目）
+go doc ./ext/comm/mail             # メール送受信（IMAP／SMTP）
+go doc ./ext/subcon                # 下請け業務
+
 go doc -all ./internal/cms/page      # そのパッケージの全公開APIをコメントごと
 go doc -src ./internal/cms Sanitize  # 実装も見る
 ```
@@ -50,15 +58,28 @@ go run golang.org/x/pkgsite/cmd/pkgsite@latest -open .
 | [【一覧】関数リファレンス.md](【一覧】関数リファレンス.md) | 主要関数と**呼び出し元**の対応表 | 関数の追加・移動・改名のたび |
 | [シナリオ別の呼び出し追跡.md](シナリオ別の呼び出し追跡.md) | 操作ごとの呼び出しの連鎖と分岐（403／404／409／423 の条件） | 経路が変わったら |
 
+## いまの形をひとことで
+
+```
+cmd/w-cms  ── ext_*.go のブランク import（ビルドタグはここだけ）
+   ├→ ext/subcon        ── ext/comm, ext/comm/contacts を import
+   ├→ ext/comm/contacts ── ext/comm を import
+   ├→ ext/comm/mail     ── ext/comm を import
+   └→ ext/comm          ── **ext/ を1つも import しない**
+                ↓（全部が）
+           internal/cms（コアは ext/ を知らない。受けるのは9つの登録の口だけ）
+```
+
+作れる組は3つ——**通常**・**`-tags nomail`**（メールだけ外す）・**`-tags minimal`**
+（素の w-cms）。何が載っているかは起動ログ（「拡張セット: …」）と
+`/api/tag-schema` の `extensions` に出ます。
+
 ## ⚠ この文書群は一度畳まれています（2026-08-21）
 
 手書きの「現状の写像」は実装と同じ速度で陳腐化し、**行数主張30件中16件が誤り・
 一部は内容が逆**という状態になりました——読んだ人が正しい実装をバグと誤認しかねない、
-という理由で全部消しています。2026-08-27 に作り直し、2026-08-30 に測り直し、
-D-1 以降の大改造で再び古くなったため 2026-09-02 に作り直し、`ext/` の登場と
-参照追従集計を受けて 2026-09-04 に、リファクタリング（逐語コピーの併合・分割）を
-受けて 2026-09-14 に測り直し、**アドレス帳の `ext/comm/contacts` への移設と
-`norm_value` の宣言型撤去を受けて 2026-09-15 に測り直した**のがこの版です。
+という理由で全部消しています。2026-08-27 に作り直し、以後 2026-08-30・09-02・09-04・
+09-14・09-15 に測り直し、**拡張の組み替えを受けて 2026-09-16 に作り直した**のがこの版です。
 
 同じ轍を踏まないための決め事:
 
