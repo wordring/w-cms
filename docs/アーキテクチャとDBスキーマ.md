@@ -317,7 +317,7 @@ DBスキーマは変わりません**。
 *   **状態の置き場**: プロセス内 mutex 付き map の揮発的なランタイム状態（サイドカーにもDBにも永続化しない。再起動で消えるのは許容）。実装は `internal/cms/editlock/lock.go`（コア）と `editlock/handler.go`（HTTP/SSE）。
 *   **保持者の識別**はユーザーではなく**エディタ個体（トークン）**——同じユーザーの別タブも競合として検知する。**presence は SSE 接続の生存**で判定する（ポーリングしない）。
 *   **ロック応答に本文は同梱しない**——取得後にフロントが `GET /api/load` を読んで載せ替える（計算ビューのサーバー事前描画を通すため。2026-08-20 変更。4.2）。
-*   **直列化の共通ゲート `RequireEditLock`**: 本文保存以外の状態変更（権限・所有者・親付け替え・削除・リバート・添付追加）は `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `editlock.Locks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは `lockedFetch()` が同梱し、409 を `handleLockLost` に集約する。通信箱への到着だけは取り込み係へ回り本文を変えないのでロックを通さない（`upload_file.go`）。
+*   **直列化の共通ゲート `RequireEditLock`**: 本文保存以外の状態変更（権限・所有者・親付け替え・削除・リバート・添付追加）は `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `editlock.Locks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは `lockedFetch()` が同梱し、409 を `handleLockLost` に集約する。通信箱への到着だけは取り込み係へ回り本文を変えないのでロックを通さない——**コアは通信箱を名指しせず**、write を確かめたあと・ロックを確かめる前に `interceptUpload` が登録済みの受け口へ尋ねる（[upload_intercept.go](../internal/cms/upload_intercept.go)・`upload_file.go`／`pdf_handler.go`。受け口を積むのは `ext/comm`・2026-09-15）。
 *   **有効期間**: 無競合なら無期限。待機者の SSE 接続から **2分**の猶予で強制明け渡し（満了後は早い者勝ち）。保持者の SSE 切断で待機者がいれば即解放、待機者の切断で猶予キャンセル（取得直後〜SSE接続までは `holderConnectGrace`≈10秒で present 扱い）。猶予満了の評価は `StartLockReaper` の1秒ティッカー。
 
 ### 4.4. 計算ビューのサーバー事前描画（`RenderComputedViews`）
@@ -466,8 +466,11 @@ clickなどで解析が始まると良い」。正本は [【考察】通信記�
 *   **処理**: 名前は `safeAttachmentName` で検査 → `files/` から読む（ZIPは目録の1件だけを
     `max_upload_mib` の上限つきで取り出す＝ZIP爆弾対策）→ `judgeOrderPDF`（`geminiGenerate` に
     判定＋抽出のプロンプト）→ 発注書なら `buildOrderPageHTML` が**機能見出し形**（`<section><h2>顧客の
-    発注書</h2>` ＋ヘッダ `dl` ＋明細 `table`。状態は「未着手」）の本文を組み、`createChildPageOf`
-    （[intake.go](../internal/cms/intake.go)。取り込み係と共用のページ作成の芯）で子ページを作ります。
+    発注書</h2>` ＋ヘッダ `dl` ＋明細 `table`。状態は「未着手」）の本文を組み、**`cms.CreateChildPage`**
+    （[page_folders.go](../internal/cms/page_folders.go)。取り込み係と共用のページ作成の芯。
+    非公開の `createChildPageOf` から公開名になったのは 2026-09-03〔`6267d53`〕、`intake.go` から
+    この汎用ファイルへ割ったのは 2026-09-15〔`03a5a3d`〕。**通信が `ext/comm` へ出たあともコアに
+    残る**——解析（`ext/subcon`）・アドレス帳・整理も使う芯だからです）で子ページを作ります。
     本文末尾に**由来参照**の可変タグ `受信元: <元ページID>-<添付ID>`（ZIP経由なら `元ファイル` も）が入り、
     参照タグの文法（§9.3）に一致するのでリンクとして描画されます。監査記録は `analyze-pdf`。
 *   **レスポンス**: 発注書なら `{"success": true, "is_client_order": true, "page_id", "title"}`、
@@ -492,7 +495,7 @@ clickなどで解析が始まると良い」。正本は [【考察】通信記�
 > 以前は `SELECT MAX(id)+1`（`GenerateNextID`）で採番していましたが、同時実行でID衝突が起こりうる非原子的な方式でした（[【考察】同時編集の競合対策.md](【考察】同時編集の競合対策.md) シナリオE）。`reserveNewPageID` による `INSERT` 自動採番への統一でこれを解消し、`GenerateNextID` は廃止しました。
 
 > [!NOTE]
-> `reserveNewPageID` は専用のAPIエンドポイントを持たない内部関数で、`NewPageAPIHandler` と、取り込み係・PDF解析が共用するページ作成の芯 `createChildPageOf`（[intake.go](../internal/cms/intake.go)）から呼び出されます（`SaveAPIHandler` の空 `page_id` 経路と `UploadHandler` は廃止済み）。
+> `reserveNewPageID` は専用のAPIエンドポイントを持たない内部関数で、`NewPageAPIHandler` と、取り込み係・PDF解析が共用するページ作成の芯 **`CreateChildPage`**（[page_folders.go](../internal/cms/page_folders.go)。2026-09-16 に実測した呼び手はこの2つだけ）から呼び出されます（`SaveAPIHandler` の空 `page_id` 経路と `UploadHandler` は廃止済み）。
 
 ### 6.2. 子ページ作成 (`POST /api/new-page?parent={親ページID}`)
 フロントエンド（`assets/app.js` の `createSubpage`）で「＋ 子ページを作成」ボタンが押された際のフローは、`NewPageAPIHandler` がサーバー側で完結させます（DOM構造・イベント面の詳細は [エディタ仕様.md](エディタ仕様.md) 6.2参照）。
