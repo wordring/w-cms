@@ -116,11 +116,32 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusInternalServerError, "相手ページへ足せません: "+err.Error())
 			return
 		}
+		// **ドメインは組織のページへ**（2026-09-16）。人のページには付けません
+		// ——組織の連絡先だからです（ユーザー:「南北スポーツ機械は専用の
+		// ドメインを持ちますから、組織のページにドメインタグがあり、担当者の
+		// ページにはドメインタグは必要在りません」）。
+		//
+		// **2つ目のドメインはここで足ります**——実データの自社が `example-works.co.jp` と
+		// `itohocorp.onmicrosoft.com` の2つを持っています。新規登録の口だけで
+		// 書けると、2つ目を足すのにページを2枚作ることになりました。
+		domainsAdded := 0
+		if doms := normalizeDomains(req.Domains); len(doms) > 0 {
+			// 組織が編集中なら足しません（人のページと別なので、改めて確かめます）。
+			if !editlock.RefuseWhileEditing(w, target) {
+				return
+			}
+			domainsAdded, err = AddContactDomains(target, user.Username, doms)
+			if err != nil {
+				cms.JSONFail(w, http.StatusInternalServerError, "ドメインを足せません: "+err.Error())
+				return
+			}
+		}
 		auth.Audit(user.Username, "contact.add-addresses",
-			dest+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ","))
+			dest+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ",")+
+				domainsForAudit(normalizeDomains(req.Domains)))
 		json.NewEncoder(w).Encode(map[string]any{
 			"success": true, "page_id": dest, "title": destTitle,
-			"added": added, "merged": true,
+			"added": added, "domains_added": domainsAdded, "merged": true,
 		})
 		return
 	}

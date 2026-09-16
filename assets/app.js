@@ -4364,6 +4364,17 @@
         });
     }
 
+    // rowDomains は、その行の「ドメインもその組織のものにする」チェックを読みます。
+    //
+    // **新規登録にも「既にある相手へ足す」にも効きます**（2026-09-16）——チェックは
+    // 行の先頭にあり、押したボタンがどちらでも同じ答えを返します。
+    // ⚠ 共有ドメイン（yahoo・gmail）では外すこと。**決めるのは編集者**です。
+    function rowDomains(row) {
+        if (!row || !row.dataset.domain) return [];
+        const chk = row.querySelector('.contact-add-domain');
+        return (chk && chk.checked) ? [row.dataset.domain] : [];
+    }
+
     // mergeContact は選ばれた相手ページへ、この行のアドレスを足します。
     //
     // **同じ会社かどうかは人が決めます。** ドメインが違えば機械には分かりません
@@ -4394,6 +4405,10 @@
                     // 社名ページへ入ります（`order@…` のような人でないアドレス）。
                     person_name: btn.dataset.person || '',
                     addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
+                    // **ドメインは組織のページへ**（2026-09-16）。人のページには付きません
+                    // ——組織の連絡先だからです。2つ目のドメインを足す道はここです
+                    // （実データの自社が example-works.co.jp と itohocorp.onmicrosoft.com の2つ）。
+                    domains: rowDomains(row),
                 }),
             });
             const data = await res.json();
@@ -4430,13 +4445,9 @@
                     name: name,
                     relation: btn.dataset.relation,
                     addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
-                    // **組織のドメイン**（2026-09-16）。チェックが入っていれば、この行の
-                    // ドメインを組織の連絡先として書きます——同じドメインの**新しい人**
-                    // からの初メールも、その組織に結びつくようになります。
-                    // ⚠ 共有ドメイン（yahoo・gmail）では外すこと。**決めるのは編集者**です。
-                    domains: (row && row.querySelector('.contact-add-domain')
-                        && row.querySelector('.contact-add-domain').checked
-                        && row.dataset.domain) ? [row.dataset.domain] : [],
+                    // **組織のドメイン**（2026-09-16）。同じドメインの**新しい人**からの
+                    // 初メールも、その組織に結びつくようになります（rowDomains）。
+                    domains: rowDomains(row),
                 }),
             });
             const data = await res.json();

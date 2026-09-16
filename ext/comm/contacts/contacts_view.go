@@ -56,6 +56,26 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		addrAttr := stdhtml.EscapeString(c.Address)
 		sb.WriteString(`<td class="vocab-chrome unhandled-act">`)
 
+		// **このドメインもその組織のものにするか**（2026-09-16）。
+		//
+		// **行の先頭に置きます**——新規登録にも「既にある相手へ足す」にも効くためです。
+		// 2つ目のドメインを足す道（自社の `itohocorp.onmicrosoft.com` が実例）が、
+		// 新規登録の中にしか無いと**ページを2枚作ることになります**。
+		//
+		// 肝心なのは「フリーメールかどうか」ではなく「**ドメインから組織を割り出せるか**」
+		// です（ユーザー）。**決めるのは編集者**なので、機械は**材料だけ**出します:
+		// 同じドメインの別アドレスが索引に何件あるか。
+		if c.Domain != "" {
+			peers := ""
+			if c.DomainPeers > 0 {
+				peers = `（同じドメインの別アドレスが索引に` + fmt.Sprint(c.DomainPeers) + `件）`
+			}
+			sb.WriteString(`<label class="contact-domain-opt">` +
+				`<input type="checkbox" class="contact-add-domain" checked>` +
+				` ドメイン <code>` + stdhtml.EscapeString(c.Domain) + `</code> もその組織のものにする` +
+				stdhtml.EscapeString(peers) + `</label>`)
+		}
+
 		// ── ⓪ **同じドメインを複数の組織が持っているとき**は、先に選ばせます ──
 		//
 		// ドメインから組織が1つに決まらない形です（2026-09-16 ユーザー:「同じドメインを
@@ -131,22 +151,6 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		sb.WriteString(`<span class="contact-new">`)
 		sb.WriteString(`<input type="text" class="contact-name-input" maxlength="120" value="` +
 			stdhtml.EscapeString(c.SuggestName) + `" aria-label="新しい相手の名前">`)
-		// **このドメインもこの組織のものにするか**（2026-09-16）。
-		//
-		// 肝心なのは「フリーメールかどうか」ではなく「**ドメインから組織を割り出せるか**」
-		// です（ユーザー）。専用ドメインなら付ける、共有のドメイン（yahoo・gmail など）
-		// なら付けない——**決めるのは編集者**なので、機械は**材料だけ**出します:
-		// 同じドメインの別アドレスが索引に何件あるか。
-		if c.Domain != "" {
-			peers := ""
-			if c.DomainPeers > 0 {
-				peers = `（同じドメインの別アドレスが索引に` + fmt.Sprint(c.DomainPeers) + `件）`
-			}
-			sb.WriteString(`<label class="contact-domain-opt">` +
-				`<input type="checkbox" class="contact-add-domain" checked>` +
-				` ドメイン <code>` + stdhtml.EscapeString(c.Domain) + `</code> もこの組織のものにする` +
-				stdhtml.EscapeString(peers) + `</label>`)
-		}
 		for _, rel := range Relations() {
 			sb.WriteString(`<button type="button" class="chip-btn contact-register"` +
 				` data-relation="` + stdhtml.EscapeString(rel) + `"` +
