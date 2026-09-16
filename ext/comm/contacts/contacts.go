@@ -83,12 +83,19 @@ import (
 // 語彙（`unknown-contacts` の宣言）も `vocab.go` の表から引き取ります。
 func init() {
 	cms.RegisterVocab(contactsVocab...)
-	cms.RegisterView("unknown-contacts", contactsViewHTML)
+	cms.RegisterView(ContactsViewType, contactsViewHTML)
 	// 描画は匿名でも通る経路なので `user` は nil——認可は解決の中で見ます。
 	cms.RegisterContactResolver(func(addr string) (string, string, bool) {
 		return ContactPageForAddress(nil, addr)
 	})
 }
+
+// ContactsViewType は「未登録の連絡先」の形式名です。
+//
+// **3か所（語彙の宣言・描画の登録・取引先ページの本文）が同じ文字で結ばれます**
+// ——1つだけ書き換えると、ビューは登録されているのに本文が別の名前を名乗る形になり、
+// **枠だけが出て中身が空**になります（通信の `UnhandledViewType` と同じ扱い・2026-09-16）。
+const ContactsViewType = "unknown-contacts"
 
 // contactsVocab はアドレス帳が持ち込む語彙です（いまは作業面1つ）。
 //
@@ -99,7 +106,7 @@ var contactsVocab = []cms.VocabDef{{
 	// メールアドレスを収集しましょう」（2026-09-05）。**集める仕掛けは要りません**
 	// ——取り込みが既にアドレスをタグへ書いているので、足りないのは
 	// 「まだページになっていないもの」を並べて人が確定する口だけです。
-	Type:        "unknown-contacts",
+	Type:        ContactsViewType,
 	DisplayName: "未登録の連絡先",
 	Category:    "ビュー",
 	Icon:        "📇",
@@ -147,7 +154,7 @@ func partnerBoxBody() string {
 	return "<h1>" + stdhtml.EscapeString(PartnerBoxTitle) + "</h1>" +
 		"<p>取引の相手（会社・個人）を集めます。製造部品の階層もこの下です" +
 		"（社名／段／装置名称／図面名称）。</p>" +
-		`<section data-type="unknown-contacts"></section>`
+		`<section data-type="` + ContactsViewType + `"></section>`
 }
 
 // EmailTag は連絡先のメールアドレスです。**1ページに何個でも置けます**

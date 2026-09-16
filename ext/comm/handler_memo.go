@@ -50,18 +50,29 @@ const PhoneTag = "電話番号"
 // 6桁の値は描画時にリンクへ合成されます（人の名前を書いてもよく、その場合はただの文字）。
 const CounterpartTag = "相手"
 
+// SentOutAtTag は**人が発信した時刻**です（電話をかけた・FAXを流した）。
+//
+// **`SentAtTag`（`送信日時`）とは別の欄です**——あちらは w-cms が投函したメールの
+// 控えが書きます。読む側（`handler_thread.go`）は3つとも見るので、どちらでも
+// 困りませんが、**書く側で取り違えると `config/settings.json` の型が付かず**
+// （どちらも `datetime` なので今は等価ですが、語を消したときに静かに text へ落ちる）、
+// 何より「人が発信した」と「機械が投函した」の区別が消えます。
+const SentOutAtTag = "発信日時"
+
 // memoChannels は手で作れるチャネルです。**表引きで閉じます**——自由に書けると
 // `電話` と `TEL` が混ざり、チャネルで絞る一覧が静かに取りこぼします。
 var memoChannels = map[string]bool{
-	"メール": true, "FAX": true, "電話": true, "メモ": true,
+	ChannelMail: true, ChannelFax: true, ChannelPhone: true, ChannelMemo: true,
 }
 
 // MemoChannels は選択肢を並び順つきで返します（画面が使います）。
-func MemoChannels() []string { return []string{"電話", "FAX", "メール", "メモ"} }
+func MemoChannels() []string {
+	return []string{ChannelPhone, ChannelFax, ChannelMail, ChannelMemo}
+}
 
 // directionless は向きを持たないチャネルです。**メモは届きも出もしません**
 // ——自分のための覚え書きなので、向きを聞くこと自体が意味を持ちません。
-var directionless = map[string]bool{"メモ": true}
+var directionless = map[string]bool{ChannelMemo: true}
 
 // MemoDirections は向きの選択肢です（画面が使います）。
 func MemoDirections() []string { return []string{DirectionIn, DirectionOut} }
@@ -149,9 +160,9 @@ func memoBodyHTML(channel, title, direction string, phone, counterpart string, n
 	// **日時は向きに応じて片方だけ。** 両方書くと「どちらが本当か」が生まれます。
 	switch direction {
 	case DirectionOut:
-		cms.WriteTag(&b, "発信日時", now.In(time.Local).Format(time.RFC3339))
+		cms.WriteTag(&b, SentOutAtTag, now.In(time.Local).Format(time.RFC3339))
 	case DirectionIn:
-		cms.WriteTag(&b, "受信日時", now.In(time.Local).Format(time.RFC3339))
+		cms.WriteTag(&b, ReceivedAtTag, now.In(time.Local).Format(time.RFC3339))
 	}
 	cms.WriteTag(&b, PhoneTag, phone)
 	// 相手はページ参照（6桁）。**正規化を通すのは、パスに使う前と同じ規律**で、

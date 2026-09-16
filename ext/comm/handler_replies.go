@@ -44,13 +44,13 @@ func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
 		}
 		r := ReplyRef{PageID: page.FormatID(idInt), Title: cms.PageTitleByID(idInt)}
 		database.DB.QueryRow(
-			`SELECT value FROM page_tags WHERE page_id = ? AND name = '送信日時' LIMIT 1`,
-			idInt).Scan(&r.SentAt)
+			`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
+			idInt, SentAtTag).Scan(&r.SentAt)
 		database.DB.QueryRow(
 			// **畳んだ値がアドレス**（生の値は `名前 <アドレス>`）。2026-09-13 に1人1タグへ。
 			`SELECT COALESCE(norm_value, value) FROM page_tags
-			  WHERE page_id = ? AND name = '宛先' LIMIT 1`,
-			idInt).Scan(&r.To)
+			  WHERE page_id = ? AND name = ? LIMIT 1`,
+			idInt, ToTag).Scan(&r.To)
 		out = append(out, r)
 	}
 	return out, nil

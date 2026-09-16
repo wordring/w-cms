@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/ext/comm"
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -390,5 +391,60 @@ func TestFileDrawingsAsksWhenSameDrawingNo(t *testing.T) {
 	}
 	if n := len(revRowRe.FindAllString(readPageBody(t, first), -1)); n != 2 {
 		t.Errorf("確認後に版が増えていません: %d版", n)
+	}
+}
+
+// TestSenderAddressOfFollowsSourceRef は、**下請けが通信記録から差出人を引く鎖**を
+// 固定します（2026-09-16）。
+//
+// この鎖は顧客名の推奨の土台です:
+//
+//	部品ページ → `受信元` タグ → 通信記録 → `差出人` → 取引先ページ → その題
+//
+// 2026-09-16 まで**試験がありませんでした**。タグ名は生の文字列で書かれていて
+// （`name = '差出人'`）、通信側が欄の名前を変えても**エラーにならず、顧客名の
+// 推奨がただ空になる**——空欄は「まだ読めていない」に見えるので、誰も気づきません
+// （実際 2026-09-13 に `差出人アドレス` を廃止したとき、送信の控えが同じ壊れ方を
+// しました）。名前は定数（`comm.FromTag`）を通しましたが、**畳んだ値がアドレスで
+// あること**は定数では表せないので、ここで確かめます。
+func TestSenderAddressOfFollowsSourceRef(t *testing.T) {
+	setupFilingTest(t, "000100")
+
+	// ① 通信記録——`差出人` は `名前 <アドレス>`。畳んだ値がアドレスだけになる
+	//    （列型 email。`config/settings.json` の `vocabulary` が決めます）。
+	if err := page.WriteSidecar("000110", page.PageMeta{
+		Owner: "alice", Mode: "330", ParentID: "000100",
+	}); err != nil {
+		t.Fatalf("通信記録のサイドカー: %v", err)
+	}
+	record := "<h1>見積もりのお願い</h1>" +
+		`<dl data-type="tags">` +
+		"<dt>" + comm.FromTag + "</dt><dd>山田 太郎 &lt;yamada@example.co.jp&gt;</dd>" +
+		"</dl>"
+	if err := cms.SyncIndex("000110", record); err != nil {
+		t.Fatalf("通信記録の索引: %v", err)
+	}
+
+	// ② 部品ページ——由来は「ページID-添付ID」。ハイフンの前だけが元ページ。
+	if err := page.WriteSidecar("000111", page.PageMeta{
+		Owner: "alice", Mode: "330", ParentID: "000110",
+	}); err != nil {
+		t.Fatalf("部品ページのサイドカー: %v", err)
+	}
+	part := "<h1>ブラケット</h1>" +
+		`<dl data-type="tags">` +
+		"<dt>" + SourceRefTag + "</dt><dd>000110-c3p7</dd>" +
+		"</dl>"
+	if err := cms.SyncIndex("000111", part); err != nil {
+		t.Fatalf("部品ページの索引: %v", err)
+	}
+
+	if got := senderAddressOf(111); got != "yamada@example.co.jp" {
+		t.Errorf("由来をたどって差出人アドレスを引けません: %q", got)
+	}
+	// 由来が無ければ空（新しい顧客の1通目や、手で作った部品ページ）。
+	// **空を返すのは正常**です——呼ぶ側は読めた名前へ戻ります。
+	if got := senderAddressOf(110); got != "" {
+		t.Errorf("由来の無いページで空を返していません: %q", got)
 	}
 }

@@ -53,8 +53,9 @@ func threadRefOf(user *auth.User, idInt int) (ThreadRef, bool) {
 	// 並べるのは時刻そのものではなく「いつの記録か」の手掛かりなので、どちらでも構いません。
 	database.DB.QueryRow(
 		`SELECT value FROM page_tags
-		  WHERE page_id = ? AND name IN ('受信日時','送信日時','発信日時')
-		  ORDER BY seq LIMIT 1`, idInt).Scan(&r.When)
+		  WHERE page_id = ? AND name IN (?,?,?)
+		  ORDER BY seq LIMIT 1`,
+		idInt, ReceivedAtTag, SentAtTag, SentOutAtTag).Scan(&r.When)
 	database.DB.QueryRow(
 		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
 		idInt, DirectionTag).Scan(&r.Direction)

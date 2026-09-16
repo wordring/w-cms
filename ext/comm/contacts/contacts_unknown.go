@@ -16,19 +16,27 @@ import (
 	"sort"
 	"strings"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
-// addressFields は索引からアドレスを拾う項目です。取り込みが書いている名前
-// （intake_eml.go の writeAddressTags）とそろえること。
+// addressFields は索引からアドレスを拾う項目です。**書き手の定数をそのまま
+// 使います**（`ext/comm` の `intake_eml.go`・`writeAddressTags`）——2026-09-16 まで
+// 生の文字列を並べて「そろえること」と注意書きするだけでした。名前が食い違っても
+// SQL は通り、**未登録の連絡先が静かに減る**だけで誰も気づきません（2026-09-13 に
+// `差出人アドレス` を廃止したとき、送信の控えが実際にそうなりました）。
+//
+// 依存の向きは **アドレス帳 → 通信**（2026-09-15 の組み替えで拡張どうしの import が
+// 解禁されています）。通信はアドレス帳を import しません——`RegisterContactResolver`
+// でコアが繋ぎます。
 //
 // **1人1タグになりました**（2026-09-13）。値は `名前 <アドレス>` で、畳んだ値
 // （`norm_value`）がアドレスだけ——引くのはそちらです。もとは `差出人` と
 // `差出人アドレス` の2つで、**位置で対応づけて**いました（`CCアドレス` の持ち主は
 // 1つ手前の `CC`）。その仕掛けはまるごと要らなくなりました。
-var addressFields = []string{"差出人", "宛先", "CC", "返信先"}
+var addressFields = []string{comm.FromTag, comm.ToTag, comm.CcTag, comm.ReplyToTag}
 
 // UnknownContact は「まだページになっていない相手」**1アドレス1件**です。
 //

@@ -126,10 +126,10 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		       -- 混ざった日に辞書順が時刻の順とずれます（2026-09-06。いま全件が
 		       -- +09:00 なので壊れていないだけでした）。表示は呼ぶ側が土地の時刻へ直します。
 		       COALESCE((SELECT COALESCE(r.norm_value, r.value) FROM page_tags r
-		                  WHERE r.page_id = p.id AND r.name = '受信日時' LIMIT 1),
+		                  WHERE r.page_id = p.id AND r.name = ? LIMIT 1),
 		                COALESCE(p.updated_at, '')),
 		       COALESCE((SELECT f.value FROM page_tags f
-		                  WHERE f.page_id = p.id AND f.name = '差出人' LIMIT 1), ''),
+		                  WHERE f.page_id = p.id AND f.name = ? LIMIT 1), ''),
 		       COALESCE((SELECT a.value FROM page_tags a
 		                  WHERE a.page_id = p.id AND a.name = ? LIMIT 1), ''),
 		       COALESCE((SELECT d.value FROM page_tags d
@@ -139,7 +139,10 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		                    WHERE h.page_id = p.id AND h.name = ?)
 		 ORDER BY 4 DESC, p.id DESC`
 
-	dbRows, err := database.DB.Query(q, ChannelTag, AttachmentCountTag, DirectionTag, HandledTag)
+	// ⚠ **`?` は現れた順に対応します**——SELECT の途中に欄を足したら、ここへ同じ
+	// 位置で足すこと。名前が1つずれても SQL は通り、**その欄だけ静かに空**になります。
+	dbRows, err := database.DB.Query(q,
+		ChannelTag, ReceivedAtTag, FromTag, AttachmentCountTag, DirectionTag, HandledTag)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -269,13 +272,13 @@ func channelWithDirection(channel, direction string) string {
 // 見慣れない語がそのまま出るほうが直せます。
 func channelIcon(channel string) string {
 	switch channel {
-	case "メール":
+	case ChannelMail:
 		return "✉"
-	case "FAX":
+	case ChannelFax:
 		return "📠"
-	case "電話":
+	case ChannelPhone:
 		return "☎"
-	case "メモ":
+	case ChannelMemo:
 		return "📝"
 	case "":
 		return "・"

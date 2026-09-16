@@ -308,7 +308,7 @@ func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment)
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
 	// ZIP経由なら中のパスも添える（こちらはただのタグ——参照文法には乗らない）。
-	b.WriteString(`<dl data-type="tags"><dt>受信元</dt><dd>` +
+	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
 	if srcEntry != "" {
 		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(srcEntry) + "</dd>")
@@ -393,7 +393,7 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 	writeHeaderPair(&b, "客先", cms.NormalizeNameForIngest(j.Customer))
 	b.WriteString("</dl>")
 
-	b.WriteString(`<dl data-type="tags"><dt>受信元</dt><dd>` +
+	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
 	if srcEntry != "" {
 		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(srcEntry) + "</dd>")

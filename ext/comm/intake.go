@@ -393,6 +393,21 @@ func (c *IntakeContext) ensureDateFolder(t time.Time) (string, error) {
 // ダウンロードからも来るので、経路は届いた本人しか知りません。
 const ChannelTag = "チャネル"
 
+// ChannelMail / ChannelFax / ChannelPhone / ChannelMemo はチャネルの値です。
+//
+// **書き手と読み手が別のパッケージに散っています**——書くのは `intake_eml.go`
+// （受信メール）・`ext/comm/mail/reply.go`（送信の控え）・`handler_memo.go`
+// （人が選ぶ）で、読むのは `view_unhandled.go` の記号と画面の出し分け。
+// 2026-09-16 まで**4か所に生の文字列で散っていました**。FAX サーバーと CTI を
+// 足すときに必ず触る場所なので、名前を1か所に集めます（`差出人` を定数へ通した
+// ときと同じ理由——揃っていないことが、エラーではなく「静かな空欄」として出る）。
+const (
+	ChannelMail  = "メール"
+	ChannelFax   = "FAX"
+	ChannelPhone = "電話"
+	ChannelMemo  = "メモ"
+)
+
 // AttachmentCountTag は添付の数です（0 なら書きません）。
 //
 // **一覧で「発注書が付いているか」を見るため**に索引へ載せます（2026-09-05）。

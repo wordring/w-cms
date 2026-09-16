@@ -164,7 +164,7 @@ func sentRecordBody(from, sourcePageID, sourceMsgID, messageID string, now time.
 	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
 	b.WriteString(`<dl data-type="tags">`)
 	cms.WriteTag(&b, comm.DirectionTag, comm.DirectionOut)
-	cms.WriteTag(&b, comm.ChannelTag, "メール")
+	cms.WriteTag(&b, comm.ChannelTag, comm.ChannelMail)
 	// **送るという仕事はその場で終わっています。** 控えを作業待ちに並べても
 	// 押すことが無いので、ここで印を付けます（2026-09-05）。返信を待つ必要が
 	// あるなら、人がこのタグを消せば一覧へ戻ります。

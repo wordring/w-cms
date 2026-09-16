@@ -175,7 +175,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// **向きとチャネルは直交する2軸**（2026-09-05）。向き＝受信／送信、
 	// チャネル＝メール／FAX／電話。「送信 × FAX」が実際に要るので混ぜません。
 	cms.WriteTag(&b, DirectionTag, DirectionIn)
-	cms.WriteTag(&b, ChannelTag, "メール")
+	cms.WriteTag(&b, ChannelTag, ChannelMail)
 	writeAddressTags(&b, FromTag, msg.Header.Get("From"))
 	writeAddressTags(&b, ToTag, msg.Header.Get("To"))
 	writeAddressTags(&b, CcTag, msg.Header.Get("Cc"))

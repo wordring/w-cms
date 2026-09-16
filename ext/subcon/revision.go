@@ -220,7 +220,12 @@ func drawingNoOf(block string) string {
 //	              **機械には決められない**ので人に尋ねる（確認して再実行）
 
 // sourceRefRe は図面ブロックの由来（受信元）を拾います。
-var sourceRefRe = regexp.MustCompile(`<dt>受信元</dt><dd>([^<]*)</dd>`)
+//
+// **書き手（analyze_pdf.go）と同じ定数から組みます**（2026-09-16）——正規表現に
+// 名前を焼き込むと、書き手を直しても**合流の重複検知だけが静かに素通り**します。
+// `regexp.QuoteMeta` を通すのは、タグ名に将来メタ文字が入っても壊れないため。
+var sourceRefRe = regexp.MustCompile(
+	`<dt>` + regexp.QuoteMeta(SourceRefTag) + `</dt><dd>([^<]*)</dd>`)
 
 // revNumberRe は改訂履歴の行から図面番号を拾います。
 var revNumberRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>[0-9]+</td><td>([^<]*)</td>`)

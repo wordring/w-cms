@@ -339,3 +339,66 @@ func TestShortTimeConvertsToLocal(t *testing.T) {
 		t.Errorf("読めない値を書き換えました: %q", got)
 	}
 }
+
+// TestUnhandledColumnsMatchTheirTags は、一覧の**欄とタグの対応**を固定します。
+//
+// 一覧の SQL は `?` を6つ持ち、**現れた順**にタグ名が当たります（`ChannelTag`・
+// `ReceivedAtTag`・`FromTag`・`AttachmentCountTag`・`DirectionTag`・`HandledTag`）。
+// 2026-09-16 に生の文字列を定数へ通したとき、**2つを入れ替えても全試験が緑のまま**
+// でした——順序を間違えても SQL は通り、欄の中身が入れ替わるだけだからです
+// （画面には「差出人の欄に日時が出る」形で現れますが、誰も見ていない一覧では
+// 気づきません）。
+//
+// そこで**1件に全部違う値**を入れ、欄ごとに確かめます。入れ替えると必ず落ちます。
+func TestUnhandledColumnsMatchTheirTags(t *testing.T) {
+	setupIntakeTest(t)
+	if err := page.WriteSidecar("000260", page.PageMeta{
+		Owner: "alice", Mode: "330", ParentID: "000100",
+	}); err != nil {
+		t.Fatalf("サイドカーの作成エラー: %v", err)
+	}
+	body := "<h1>欄の対応を見る記録</h1>" +
+		`<dl data-type="tags">` +
+		"<dt>" + DirectionTag + "</dt><dd>" + DirectionIn + "</dd>" +
+		"<dt>" + ChannelTag + "</dt><dd>" + ChannelFax + "</dd>" +
+		"<dt>" + ReceivedAtTag + "</dt><dd>2026-09-07T08:09:10+09:00</dd>" +
+		"<dt>" + FromTag + "</dt><dd>山田 太郎 &lt;yamada@example.co.jp&gt;</dd>" +
+		"<dt>" + AttachmentCountTag + "</dt><dd>3</dd>" +
+		"</dl>"
+	if err := cms.SyncIndex("000260", body); err != nil {
+		t.Fatalf("SyncIndexエラー: %v", err)
+	}
+
+	rows, _, err := UnhandledIntakes(&auth.User{Username: "alice", IsAdmin: true}, 0)
+	if err != nil {
+		t.Fatalf("一覧を作れません: %v", err)
+	}
+	var got *unhandledRow
+	for i := range rows {
+		if rows[i].PageID == "000260" {
+			got = &rows[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("記録が一覧に出ていません: %+v", rows)
+	}
+	if got.Channel != ChannelFax {
+		t.Errorf("チャネルの欄が違います: %q（%q を期待）", got.Channel, ChannelFax)
+	}
+	if got.Direction != DirectionIn {
+		t.Errorf("向きの欄が違います: %q（%q を期待）", got.Direction, DirectionIn)
+	}
+	if got.Attachments != "3" {
+		t.Errorf("添付の欄が違います: %q（\"3\" を期待）", got.Attachments)
+	}
+	// 差出人は**生の値**（`名前 <アドレス>`）。畳んだ値はアドレスだけなので、
+	// どちらが来ても名前で見分けられるように名前で確かめます。
+	if !strings.Contains(got.From, "山田") {
+		t.Errorf("差出人の欄が違います: %q", got.From)
+	}
+	// 受信日時は**畳んだ値**（UTC）のことがあるので、日付の形だけを見ます。
+	// 大事なのは「ここに日時が来ていること」——名前や添付の数が来たら入れ替わりです。
+	if !strings.HasPrefix(got.Received, "2026-09-0") || !strings.Contains(got.Received, "T") {
+		t.Errorf("受信日時の欄が違います: %q", got.Received)
+	}
+}

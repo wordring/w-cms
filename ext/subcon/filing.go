@@ -53,6 +53,7 @@ import (
 	"strconv"
 	"strings"
 
+	"w-cms/ext/comm"
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -180,8 +181,8 @@ func suggestCustomer(user *auth.User, partPageID int, read string) string {
 func senderAddressOf(partPageID int) string {
 	var ref string
 	database.DB.QueryRow(
-		`SELECT value FROM page_tags WHERE page_id = ? AND name = '受信元' LIMIT 1`,
-		partPageID).Scan(&ref)
+		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
+		partPageID, SourceRefTag).Scan(&ref)
 	ref = strings.TrimSpace(ref)
 	if i := strings.Index(ref, "-"); i > 0 {
 		ref = ref[:i]
@@ -193,9 +194,12 @@ func senderAddressOf(partPageID int) string {
 	var addr string
 	database.DB.QueryRow(
 		// **畳んだ値がアドレス**（生の値は `名前 <アドレス>`）。2026-09-13 に1人1タグへ。
+		// 名前は**書き手の定数**を通します（2026-09-16）——下請けは通信記録の
+		// 中身を直接読んでいるので、通信側で欄の名前が変わると**顧客名の推奨が
+		// 黙って空になります**（エラーにはならない）。
 		`SELECT COALESCE(norm_value, value) FROM page_tags
-		  WHERE page_id = ? AND name = '差出人' LIMIT 1`,
-		srcID).Scan(&addr)
+		  WHERE page_id = ? AND name = ? LIMIT 1`,
+		srcID, comm.FromTag).Scan(&addr)
 	return strings.TrimSpace(addr)
 }
 
