@@ -1,5 +1,8 @@
 // 分類の取り消し（2026-09-13）——「間違えてアドレスを分類した場合、どうやって未分類に戻しますか？」
 const { chromium } = require('playwright');
+const lib = require('./lib');
+// **取引先ページは走るときに探します**（2026-09-16）——データを入れ直すと
+// ページIDが変わるため（詳しくは lib.js の冒頭）。
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
@@ -13,6 +16,9 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   await page.goto(BASE + '/login');
   await page.fill('#username', 'a'); await page.fill('#password', 'a');
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  const BOX = process.env.WCMS_PARTNER_BOX ||
+    ((await lib.childrenOf(page, '000000')).find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
+  if (!BOX) { console.log('取引先ページがありません（連絡先を1件登録すると作られます）'); await browser.close(); process.exit(1); }
 
   // ── 下ごしらえ: わざと間違えて分類する
   const addr = 'cloud-noreply@google.com';
@@ -25,10 +31,10 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   }, addr);
   ok(made.success, '間違えて分類した（下ごしらえ）', made.page_id);
 
-  const gone = await page.evaluate(async (a) => {
-    const b = await (await fetch('/api/load?id=010263')).text();
+  const gone = await page.evaluate(async ({ a, box }) => {
+    const b = await (await fetch('/api/load?id=' + box)).text();
     return !b.includes(a);
-  }, addr);
+  }, { a: addr, box: BOX });
   ok(gone, '未登録の一覧から消えている');
 
   // ── 取り消す
@@ -42,11 +48,11 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     await page.waitForTimeout(1200);
   }
 
-  const back = await page.evaluate(async (a) => {
-    const b = await (await fetch('/api/load?id=010263')).text();
+  const back = await page.evaluate(async ({ a, box }) => {
+    const b = await (await fetch('/api/load?id=' + box)).text();
     const own = await (await fetch('/api/load?id=' + location.pathname.slice(1))).text();
     return { inList: b.includes(a), stillOnPage: own.includes(a) };
-  }, addr);
+  }, { a: addr, box: BOX });
   ok(back.inList, '未登録の一覧へ戻った');
   ok(!back.stillOnPage, '分類先のページから消えた');
 

@@ -1,4 +1,7 @@
 // 添付のクリック展開のE2E（2026-09-01 ユーザー決定「clickで展開でお願いします」）。
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 // PDFの ▶表示（embed 差し込み・閉じる）、ZIPの ▶中身（/api/zip-list の目録）、
 // そして**正本を汚さないこと**（クロームは保存されない）を突く。
 const { createRequire } = require('module');
@@ -71,7 +74,7 @@ function buildZip(files) { // files: [{name, data}]
 
 (async () => {
     const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const errs = []; const cspViolations = [];
     page.on('pageerror', e => errs.push(String(e)));
     page.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });
@@ -136,14 +139,23 @@ function buildZip(files) { // files: [{name, data}]
         // 編集モードでは展開ボタンが出ない。
         check('編集モードに展開ボタンは無い', await page.locator('.attach-expand').count() === 0);
 
-        // 閲覧モードで ▶ が2つ出る。
+        // 閲覧モードでボタンが出る。
+        //
+        // ⚠ **総数で数えてはいけません**（2026-09-16 に直した）。`.attach-expand` は
+        // **4種類が共有するクラス**です——▶展開・🔗参照・🤖解析・解析済みの印。
+        // 「3つ」という決め打ちは 2026-09-14 に「🔗 参照」が増えた日に古くなり、
+        // **2日間だれも気づきませんでした**（このスクリプトが :8080 前提で、
+        // :8443 のサーバーに当てられなかったため）。**種類ごとに数えます。**
         await setEditMode(page, false);
-        check('閲覧モードで展開・解析ボタンが3つ出る', await page.locator('.attach-expand').count() === 3);
+        check('添付2つに ▶ が出る',
+            await page.locator('.attach-expand:not(.attach-analyze):not(.attach-copyref):not(.attach-analyzed)').count() === 2);
+        check('添付2つに 🔗 参照 が出る', await page.locator('.attach-copyref').count() === 2);
 
         // PDF: ▶表示 → embed が差し込まれ、▼閉じる → 消える。
         // クリックでボタン文字が「閉じる」へ変わるので、文字ではなく位置で掴む
         // （PDFリンクを先・ZIPを後に挿しているのでDOM順が固定）。
-        const pdfBtn = page.locator('.attach-expand:not(.attach-analyze)').nth(0);
+        const expandOnly = '.attach-expand:not(.attach-analyze):not(.attach-copyref):not(.attach-analyzed)';
+        const pdfBtn = page.locator(expandOnly).nth(0);
         await pdfBtn.click();
         await page.waitForSelector('embed.attach-preview-pdf', { timeout: 4000 });
         const embedSrc = await page.locator('embed.attach-preview-pdf').getAttribute('src');
@@ -153,7 +165,7 @@ function buildZip(files) { // files: [{name, data}]
         check('閉じると embed が消える', await page.locator('embed.attach-preview-pdf').count() === 0);
 
         // ZIP: ▶中身 → 目録が出る（サブフォルダのパスとサイズ）。
-        await page.locator('.attach-expand:not(.attach-analyze)').nth(1).click();
+        await page.locator(expandOnly).nth(1).click();
         await page.waitForSelector('.attach-zip-list', { timeout: 4000 });
         const listText = await page.locator('.attach-zip-list').innerText();
         check('ZIPの目録にサブフォルダのパスが出る', listText.includes('drawings/A-100.dxf'));

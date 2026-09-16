@@ -7,7 +7,7 @@
 // 子ページは**本物を作ります**（サーバーが実際に返すものを見るため）。
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const PAGE = process.env.WCMS_PAGE || '010272';
+const PAGE = process.env.WCMS_PAGE || '000021';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 

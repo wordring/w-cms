@@ -7,7 +7,7 @@
 // **検証用に作ったページは最後に片付けます**（実データに残骸を積まない）。
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
-const MAILBOX = process.env.WCMS_MAILBOX || '010153';
+const MAILBOX = process.env.WCMS_MAILBOX || '000001';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -81,7 +81,21 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     });
     ok(!!r.machList, '装置名称の欄に候補リストが付いている', r.machList);
     ok(r.custValue === '南北スポーツ機械', '顧客名の推奨値が入っている', r.custValue);
-    ok(r.options && r.options.length > 0, 'その顧客の装置が候補に出る', (r.options || []).join(' / '));
+    // ⚠ **候補はその顧客のページが在って初めて出ます**（推奨値は解析が読んだ名前でも
+    // 入りますが、装置は木を辿って集めるため）。連絡先を1件も登録していない環境では
+    // 顧客ページが無いので、**壊れたのではなく前提が無い**——飛ばします（2026-09-16）。
+    const hasCustomerPage = await page.evaluate(async (name) => {
+      const top = await (await fetch('/api/children?parent_id=000000')).json().catch(() => []);
+      const box = (top || []).find(c => (c.Title || '').trim() === '取引先');
+      if (!box) return false;
+      const kids = await (await fetch('/api/children?parent_id=' + box.ID)).json().catch(() => []);
+      return (kids || []).some(c => (c.Title || '').trim() === name);
+    }, r.custValue);
+    if (hasCustomerPage) {
+      ok(r.options && r.options.length > 0, 'その顧客の装置が候補に出る', (r.options || []).join(' / '));
+    } else {
+      console.log('  — 顧客ページ（' + r.custValue + '）がまだありません。装置の候補はこの環境では出ないので飛ばします');
+    }
 
     // **候補が「段の下に在るもの」だけであること**を、木を辿って確かめます。
     //
@@ -139,7 +153,11 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
       const mach = document.querySelector('.filing-panel input[aria-label="machine_name"]');
       return Array.from(document.getElementById(mach.getAttribute('list')).options).map(o => o.value);
     });
-    ok(back.length > 0, '顧客を戻すと候補も戻る', back.join(' / '));
+    if (hasCustomerPage) {
+      ok(back.length > 0, '顧客を戻すと候補も戻る', back.join(' / '));
+    } else {
+      console.log('  — 同上（顧客ページが無いので候補は空のまま）');
+    }
     ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
   } finally {
     // ── 片付け（子から先に消す。子持ちは削除できない）

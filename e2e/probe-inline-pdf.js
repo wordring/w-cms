@@ -8,8 +8,11 @@
 // 語に頼った実装へ戻ったら、ここが落ちます。
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const HOST = process.env.WCMS_HOST_PAGE || '010272';   // PDFを持つ通信記録
-const ATTACH = process.env.WCMS_ATTACH || 'c3p7';
+const lib = require('./lib');
+// **当て先は走るときに探します**（2026-09-16）——ページIDも添付IDもデータを入れ直す
+// たびに変わるため（詳しくは lib.js の冒頭）。環境変数を渡せば探索を飛ばします。
+let HOST = process.env.WCMS_HOST_PAGE || '';
+let ATTACH = process.env.WCMS_ATTACH || '';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -19,9 +22,13 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  await lib.login(page, BASE);
+  if (!HOST || !ATTACH) {
+    const rec = await lib.findRecordWithPDF(page);
+    HOST = HOST || rec.pageID; ATTACH = ATTACH || rec.attachID;
+  }
+  ok(!!HOST && !!ATTACH, '当て先を見つけた（PDFを持つ通信記録）', HOST + '-' + ATTACH);
+  if (!HOST || !ATTACH) { console.log('通信箱にPDF付きの記録がありません'); await browser.close(); process.exit(1); }
 
   // 参照タグを1つだけ持つページを作ります。**見出しは業務語ではありません。**
   const made = await page.evaluate(async (host) => {

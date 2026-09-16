@@ -7,7 +7,7 @@
 // ③実際に取り出せる ④許可していない拡張子は理由つきで断られる。
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const PAGE = process.env.WCMS_HOST_PAGE || '010272';
+const PAGE = process.env.WCMS_HOST_PAGE || '000021';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 

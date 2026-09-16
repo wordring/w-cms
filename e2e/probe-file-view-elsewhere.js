@@ -14,9 +14,12 @@
 //   ⑧ 描けない形式は開く口（`.file-view-plain`）で出る
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const HOST = process.env.WCMS_HOST_PAGE || '010272';
-const ATTACH = process.env.WCMS_ATTACH || 'c3p7';
-const NONVIEW = process.env.WCMS_NONVIEW || 'yc0x';   // 同じページの .eml（描けない形式）
+const lib = require('./lib');
+// **当て先は走るときに探します**（2026-09-16）——ページIDも添付IDもデータを
+// 入れ直すたびに変わるため（詳しくは lib.js の冒頭）。環境変数を渡せば探索を飛ばします。
+let HOST = process.env.WCMS_HOST_PAGE || '';
+let ATTACH = process.env.WCMS_ATTACH || '';
+let NONVIEW = process.env.WCMS_NONVIEW || '';   // 同じページの .eml（描けない形式）
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -29,9 +32,20 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  await lib.login(page, BASE);
+  if (!HOST || !ATTACH) {
+    const rec = await lib.findRecordWithPDF(page);
+    HOST = HOST || rec.pageID; ATTACH = ATTACH || rec.attachID;
+  }
+  if (HOST && !NONVIEW) {
+    // 描けない形式は同じページの受信原本（.eml）で見ます。取り込みが必ず1つ置くので、
+    // **通信記録なら必ず在ります**。無ければその項目だけ飛ばします。
+    const body = await lib.bodyOf(page, HOST);
+    const m = body.match(/href="\/\d{6}\/([a-z0-9]+)\.eml"/);
+    NONVIEW = m ? m[1] : '';
+  }
+  ok(!!HOST && !!ATTACH, '当て先を見つけた（PDFを持つ通信記録）', HOST + '-' + ATTACH);
+  if (!HOST || !ATTACH) { console.log('通信箱にPDF付きの記録がありません'); await browser.close(); process.exit(1); }
 
   // ① 添付の隣の「🔗 参照」
   await page.goto(BASE + '/' + HOST);

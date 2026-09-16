@@ -5,6 +5,7 @@
 // サーバーが9つになったあとも古いままでした——`<th data-type="email">` と書いても
 // エディタが黙って無視し、索引だけが `email` として扱う、というずれが出ていました。
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
@@ -15,10 +16,10 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
-  await page.goto(BASE + '/010272');
+  await lib.login(page, BASE);
+  // **どのページでも構いません**——列設定の欄は殻（index.html）の持ち物で、
+  // 本文には依りません。当て先を焼き込まないよう、必ず在るページを使います。
+  await page.goto(BASE + '/' + (await lib.findMailbox(page) || '000000'));
   await page.waitForTimeout(1800);
 
   const got = await page.evaluate(async () => {

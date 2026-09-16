@@ -1,4 +1,7 @@
 // w-cms ページテンプレートの自動E2E検証
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 //
 // 正本の設計は docs/【考察】ページテンプレート.md。確かめるのは3点:
 //   ① 「テンプレート」フォルダの**葉**だけがメニューに出る（枝は分類の見出し）
@@ -55,7 +58,7 @@ const TEMPLATE_BODY =
 
 (async () => {
     const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const errs = [];
     page.on('pageerror', e => errs.push(String(e)));
     try {

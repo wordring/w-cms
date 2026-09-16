@@ -1,4 +1,7 @@
 // 画像添付のE2E（要件定義書 §2.6）。
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 // 入口（スラッシュメニュー・ドロップ・image 列）と出口（配信）の両方を突く。
 const { createRequire } = require('module');
 const path = require('path');
@@ -37,7 +40,7 @@ const HEIC_HEAD = Buffer.concat([
 
 (async () => {
     const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const errs = []; const cspViolations = [];
     page.on('pageerror', e => errs.push(String(e)));
     page.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });

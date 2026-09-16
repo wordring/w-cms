@@ -1,4 +1,7 @@
 // 公開専用ビューのE2E（要件定義書 §4.4・認証認可設計 §10.5）。
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 //
 // 匿名の訪問者に**編集用クロームを含まない体裁**が届くこと、SEO/SNS共有のメタ情報が
 // 付くこと、キャッシュの切り分け（公開＝可・認証済み＝不可）が効くこと、
@@ -54,7 +57,7 @@ async function newPageWithBody(page, parent, html) {
 
 (async () => {
     const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
-    const admin = await browser.newPage();
+    const admin = await browser.newPage({ ignoreHTTPSErrors: true });
     const errs = []; const cspViolations = [];
     let pageId = null;
     let published = false;
@@ -70,7 +73,7 @@ async function newPageWithBody(page, parent, html) {
             '<p>2つめの段落は description に使われない。</p>');
 
         // ── 公開する前: 匿名には 404（不存在と区別しない） ──
-        const anon = await browser.newContext();
+        const anon = await browser.newContext({ ignoreHTTPSErrors: true });
         const visitor = await anon.newPage();
         visitor.on('pageerror', e => errs.push(String(e)));
         visitor.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });

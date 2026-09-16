@@ -8,12 +8,24 @@
 // **期待値はサーバーの名簿から導きます**——同じスクリプトを、通常・`-tags nomail`・
 // `-tags minimal` のどのビルドに当てても通るように。3つとも流して初めて確かめたことになります。
 //
-//   WCMS_HOST_PAGE … PDF の添付と `チャネル` タグを持つ通信記録（既定 010272）
-//   WCMS_EMAIL_PAGE … `メールアドレス` タグを持つページ（既定 010273）
+//   WCMS_HOST_PAGE … PDF の添付と `チャネル` タグを持つ通信記録（既定は探索）
+//   WCMS_EMAIL_PAGE … `メールアドレス` タグを持つページ＝取引先ページ（既定は探索）
+//
+// ⚠ **当て先はデータを入れ直すたびに変わります**（2026-09-16 の一掃で 010272→000021・
+// 010153→000001 と総入れ替えになりました。前回 09-13 の入れ直しでも同じことが起き、
+// `verify-drawing-size` が落ちた理由の半分がこれでした）。**本当の直し方は、当て先を
+// 走るときに探すこと**です（通信箱は「トップ直下の題が『通信箱』のページ」、
+// 通信記録は「`チャネル` タグと .pdf の添付を持つページ」で引ける）——
+// 共通のヘルパは [【考察】ファイル表示のコードレビュー.md] §3 の #15〜#17 が行き先。
+//
+// ⚠ **`WCMS_EMAIL_PAGE` は「連絡先を登録したあと」に決まります**。一掃直後は
+// 取引先ページが1枚も無いので、この2項目は「前提」から落ちます——**壊れたのでは
+// なく、まだ登録していないだけ**です。
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const HOST = process.env.WCMS_HOST_PAGE || '010272';
-const EMAIL = process.env.WCMS_EMAIL_PAGE || '010273';
+let HOST = process.env.WCMS_HOST_PAGE || '';
+let EMAIL = process.env.WCMS_EMAIL_PAGE || '';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -26,9 +38,9 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   page.on('pageerror', e => errs.push(String(e)));
   page.on('response', r => { if (r.status() === 404 && r.url().includes('/api/')) notFound.push(r.url()); });
 
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  await lib.login(page, BASE);
+  if (!HOST) HOST = (await lib.findRecordWithPDF(page)).pageID;
+  if (!EMAIL) EMAIL = await lib.findPageWithTag(page, 'メールアドレス');
 
   const exts = await page.evaluate(async () => (await (await fetch('/api/tag-schema')).json()).extensions);
   ok(Array.isArray(exts), '/api/tag-schema が載っている拡張を知らせる（null ではない）', JSON.stringify(exts));
@@ -67,17 +79,25 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   }
 
   // ── メールアドレスのタグがあるページ ──
-  await page.goto(BASE + '/' + EMAIL);
-  await page.waitForTimeout(1800);
-  const email = await page.evaluate(() => ({
-    tag: Array.from(document.querySelectorAll('#w-editor-content dl[data-type="tags"] > dt'))
-      .some(dt => dt.textContent.trim() === 'メールアドレス'),
-    unfile: document.querySelectorAll('#w-editor-content .contact-unfile').length,
-  }));
-  ok(email.tag, '前提: メールアドレスのタグがある', EMAIL);
-  ok((email.unfile > 0) === has('comm/contacts'),
-     has('comm/contacts') ? 'アドレス帳が載っている → 「未分類へ戻す」が出る' : 'アドレス帳が無い → 「未分類へ戻す」は出ない',
-     email.unfile + '個');
+  //
+  // ⚠ **連絡先を1件も登録していない環境では、この当て先が在りません**（取引先ページは
+  // 登録のときに作られるため）。**壊れているのではなく、まだ登録していないだけ**なので、
+  // 失敗にせず飛ばします——一掃した直後が必ずこの状態になります（2026-09-16）。
+  if (!EMAIL) {
+    console.log('  -- 取引先ページがまだありません（連絡先を登録すると当て先ができます）。この2項目は飛ばします');
+  } else {
+    await page.goto(BASE + '/' + EMAIL);
+    await page.waitForTimeout(1800);
+    const email = await page.evaluate(() => ({
+      tag: Array.from(document.querySelectorAll('#w-editor-content dl[data-type="tags"] > dt'))
+        .some(dt => dt.textContent.trim() === 'メールアドレス'),
+      unfile: document.querySelectorAll('#w-editor-content .contact-unfile').length,
+    }));
+    ok(email.tag, '前提: メールアドレスのタグがある', EMAIL);
+    ok((email.unfile > 0) === has('comm/contacts'),
+       has('comm/contacts') ? 'アドレス帳が載っている → 「未分類へ戻す」が出る' : 'アドレス帳が無い → 「未分類へ戻す」は出ない',
+       email.unfile + '個');
+  }
 
   // ── 載っていない拡張の API を叩いていないこと ──
   ok(notFound.length === 0, '拡張の API を404で叩いていない（載っていないものを問わない）', notFound.join(' '));

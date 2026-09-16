@@ -12,7 +12,7 @@
 //   WCMS_MAILBOX … 通信箱のページID（既定 010153）
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const MAILBOX = process.env.WCMS_MAILBOX || '010153';
+const MAILBOX = process.env.WCMS_MAILBOX || '000001';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 

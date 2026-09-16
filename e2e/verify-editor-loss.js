@@ -1,4 +1,7 @@
 // w-cms 「黙って入力が消える」2件の自動E2E検証
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 //
 // docs/判断待ち.md E-1／E-2。どちらも画面には「編集モード」「✅保存済」が出たまま、
 // 実際には入力が保存されない（＝利用者が気づけない）種類の欠陥。
@@ -60,7 +63,7 @@ const countEditable = page => page.evaluate(() =>
 
 (async () => {
     const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const errs = [];
     page.on('pageerror', e => errs.push(String(e)));
     try {
@@ -123,7 +126,7 @@ const countEditable = page => page.evaluate(() =>
         const id2 = await newPage(page, '000000');
         await saveBody(page, id2, '<h1>語彙の取得失敗</h1><p>もとの本文</p>');
 
-        const page2 = await browser.newPage();
+        const page2 = await browser.newPage({ ignoreHTTPSErrors: true });
         const errs2 = [];
         page2.on('pageerror', e => errs2.push(String(e)));
         await login(page2);

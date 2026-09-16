@@ -1,19 +1,24 @@
 // 右レールのページ情報カードのQR（2026-09-10）
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
 (async () => {
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, ignoreHTTPSErrors: true });
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
-  await page.goto(BASE + '/010268'); await page.waitForTimeout(1500);
+  await lib.login(page, BASE);
+  // **当て先は走るときに探します**（2026-09-16）——QRはどのページでも出るので、
+  // 「必ず在る2枚」で足ります。トップと通信箱を使い、ページIDを焼き込みません。
+  const MB = await lib.findMailbox(page) || '000000';
+  await page.goto(BASE + '/' + MB); await page.waitForTimeout(1500);
 
   const r = await page.evaluate(() => {
     const img = document.getElementById('w-pi-qr');
@@ -31,16 +36,19 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   ok(!!r, 'QRの枠がある');
   ok(r && !r.hidden, '表示されている');
   ok(r && r.inPageInfo, '右レールの中にある');
-  ok(r && /^\/api\/qr\?page_id=010268$/.test(r.src || ''), 'このページのIDで取っている', r && r.src);
+  ok(r && r.src === '/api/qr?page_id=' + MB, 'このページのIDで取っている', r && r.src);
   ok(r && r.w >= 100 && Math.abs(r.w - r.h) <= 2, '正方形で十分な大きさ', r && (r.w + 'x' + r.h));
-  ok(r && r.label === BASE + '/010268', 'URLが文字でも出る（目で確かめられる）', r && r.label);
+  ok(r && r.label === BASE + '/' + MB, 'URLが文字でも出る（目で確かめられる）', r && r.label);
   ok(r && (r.alt || '').length > 0, '代替テキストがある');
   ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
 
   // 別のページへ移ると、そのページのQRになるか
-  await page.goto(BASE + '/010153'); await page.waitForTimeout(1500);
-  const s = await page.evaluate(() => document.getElementById('w-pi-qr').getAttribute('src'));
-  ok(/page_id=010153$/.test(s || ''), 'ページを移ると追随する', s);
+  await page.goto(BASE + '/000000'); await page.waitForTimeout(1500);
+  const s = await page.evaluate(() => {
+    const el = document.getElementById('w-pi-qr');
+    return el ? el.getAttribute('src') : '';
+  });
+  ok((s || '').endsWith('page_id=000000'), 'ページを移ると追随する', s);
 
   await browser.close();
   console.log(fail ? '\n' + fail + ' 件失敗' : '\n全項目OK');

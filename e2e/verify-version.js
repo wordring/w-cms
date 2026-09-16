@@ -1,4 +1,7 @@
 // 保存済み文書の版管理（リビジョン／リバート）のE2E。
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 // 設計は docs/【考察】アンドゥ・リドゥ.md §4・§5、実装は internal/cms/version.go。
 //
 // ここで守りたいのは「**履歴が使い物になる**」こと——オートセーブの連打で版が
@@ -42,7 +45,7 @@ async function versionsOf(page, id) {
 
 (async () => {
     const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const errs = []; const cspViolations = [];
     page.on('pageerror', e => errs.push(String(e)));
     page.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });

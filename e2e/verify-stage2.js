@@ -1,4 +1,7 @@
 // w-cms 汎用表エディタの自動E2E検証（第2段: 列操作・列設定・dl項目操作・型検証・enum補助）
+// ⚠ 2026-09-16: 自己署名の証明書を許すようにしました（`ignoreHTTPSErrors`）。
+// それまで古い verify-* は :8080 前提で、`WCMS_BASE=https://…` を渡しても
+// **証明書で弾かれて一式を流せません**でした（引き継ぎの「見る先が2つに割れている」）。
 //
 // 会社側の verify-stage1.js（31項目・第1段の範囲）と同じ流儀の独立スクリプト。
 // 第1段の主要動作（骨格挿入・セル編集・行操作・保存往復・未知種別トースト・閲覧モード・
@@ -83,7 +86,7 @@ async function waitSaved(page) {
 
 (async () => {
     const browser = await chromium.launch({ headless: !HEADED });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const pageErrors = [];
     page.on('pageerror', e => pageErrors.push(String(e)));
 

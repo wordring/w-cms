@@ -1,5 +1,8 @@
 // 未登録の連絡先——1アドレス1行・推薦・足す（2026-09-13）
 const { chromium } = require('playwright');
+const lib = require('./lib');
+// **取引先ページは走るときに探します**（2026-09-16）——データを入れ直すと
+// ページIDが変わるため（詳しくは lib.js の冒頭）。
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
@@ -13,7 +16,10 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   await page.goto(BASE + '/login');
   await page.fill('#username', 'a'); await page.fill('#password', 'a');
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
-  await page.goto(BASE + '/010263'); await page.waitForTimeout(1500);
+  const BOX = process.env.WCMS_PARTNER_BOX ||
+    ((await lib.childrenOf(page, '000000')).find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
+  if (!BOX) { console.log('取引先ページがありません（連絡先を1件登録すると作られます）'); await browser.close(); process.exit(1); }
+  await page.goto(BASE + '/' + BOX); await page.waitForTimeout(1500);
 
   const before = await page.evaluate(() => ({
     rows: document.querySelectorAll('#w-editor-content tr[data-address]').length,
@@ -28,16 +34,16 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   // **データに依存しない形で確かめます**。推薦は「既にある取引先とドメインが一致する行」
   // にだけ出るので、件数を決め打ちにすると片付けた翌日に落ちます。
   // ここでは「推薦が出ている行は、確かに登録済みドメインである」ことを見ます。
-  const check = await page.evaluate(async () => {
+  const check = await page.evaluate(async (box) => {
     const rows = Array.from(document.querySelectorAll('#w-editor-content tr[data-address]'));
-    const known = await (await fetch('/api/load?id=010263')).text();
+    const known = await (await fetch('/api/load?id=' + box)).text();
     return rows.map(r => ({
       domain: r.dataset.domain,
       suggested: !!r.querySelector('.chip-primary'),
       folded: !!r.querySelector('details.contact-more'),
       hasNew: !!r.querySelector('.contact-register'),
     }));
-  });
+  }, BOX);
   ok(check.every(r => r.hasNew), 'どの行からも新規登録できる');
   ok(check.filter(r => r.suggested).every(r => r.folded),
      '推薦のある行は、ほかの行き先を畳んでいる');
@@ -71,7 +77,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   // **ページIDを決め打ちにしません**——押すボタンによって行き先が変わります
   // （「○○を担当者にする」なら `社名／担当者／氏名`、「○○へ足す」なら社名ページ）。
   // データを入れ直すとIDも変わるので、**木を辿って確かめます**。
-  const landed = await page.evaluate(async (a) => {
+  const landed = await page.evaluate(async ({ a, box }) => {
     const seen = new Set();
     const walk = async (id, depth) => {
       if (depth > 5 || seen.has(id)) return false;
@@ -86,8 +92,8 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
       }
       return false;
     };
-    return walk('010263', 0);
-  }, target.addr);
+    return walk(box, 0);
+  }, { a: target.addr, box: BOX });
   ok(landed, '取引先の木にアドレスが載った', target.label);
   ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
 
