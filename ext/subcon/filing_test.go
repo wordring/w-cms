@@ -538,3 +538,115 @@ func TestFilingWithoutContactsBookEntry(t *testing.T) {
 		t.Errorf("居ない相手へ参照を書きました: %s", body)
 	}
 }
+
+// TestUnlinkedCustomersOnlyShowsFixable は、警告が**直せるものだけ**を出すことを
+// 固定します（2026-09-16・§5.3）。
+//
+// **全部を警告にすると狼少年になります**——FAXだけ・電話だけの客先は正当に
+// 連絡先ゼロで、それは異常ではありません。直しようのないものを並べると、
+// 人は一覧ごと信用しなくなります（未処理一覧で一度学んだこと）。
+//
+// ⚠ 設計文書（§5.3）の条件は、**そのままでは一度も発火しませんでした**——
+// 「アドレスから題に解決できるのに連絡先が無い」は、解決に連絡先のタグが要るので
+// 自分を打ち消します。ここで使うのは整理が辿る鎖（`受信元` → 通信記録 → `差出人`）です。
+func TestUnlinkedCustomersOnlyShowsFixable(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+
+	// ⚠ **ページIDは機械が採ります**（明示しないこと）。最初はここで `009201` の
+	// ように書いていて、**自動採番の部品ページを上書き**していました——`板` が
+	// 9202、`軸` が 9203 になり、`受信元` の鎖が切れて**番人が一度も効きません**
+	// でした（2026-09-16 に変異試験で発覚）。
+	recBody := "<h1>受信</h1><dl data-type=\"tags\">" +
+		"<dt>チャネル</dt><dd>メール</dd>" +
+		"<dt>差出人</dt><dd>山田 太郎 &lt;yamada@example.co.jp&gt;</dd></dl>"
+	faxBody := "<h1>FAX</h1><dl data-type=\"tags\">" +
+		"<dt>チャネル</dt><dd>FAX</dd></dl>"
+
+	// ① メール由来の部品（`受信元` → 通信記録に `差出人` がある）。
+	mailPart := makeDrawingPage(t, inbox, "K140-1", "腕", "メール機", "メールの客先")
+	mailRec := newRecordForTest(t, recBody, inbox)
+	// ② FAX由来の部品（通信記録に `差出人` が無い）。
+	faxPart := makeDrawingPage(t, inbox, "K150-1", "板", "FAX機", "FAXの客先")
+	faxRec := newRecordForTest(t, faxBody, inbox)
+	// ③ **メールも来ていて、連絡帳にも居る相手**——警告してはいけない側の本命。
+	linkedPart := makeDrawingPage(t, inbox, "K160-1", "軸", "済機", "結びつく客先")
+	linkedRec := newRecordForTest(t, recBody, inbox)
+	bookID, err := contacts.EnsureContactsBox(user)
+	if err != nil {
+		t.Fatalf("連絡帳: %v", err)
+	}
+	if _, err := cms.CreateChildPage(bookID, "alice",
+		"<h1>結びつく客先</h1><dl data-type=\"tags\"><dt>取引</dt><dd>顧客</dd></dl>"); err != nil {
+		t.Fatalf("組織ページ: %v", err)
+	}
+
+	setSourceRef(t, mailPart, mailRec)
+	setSourceRef(t, faxPart, faxRec)
+	setSourceRef(t, linkedPart, linkedRec)
+
+	for _, f := range []struct{ part, customer, machine, drawing string }{
+		{mailPart, "メールの客先", "メール機", "腕"},
+		{faxPart, "FAXの客先", "FAX機", "板"},
+		{linkedPart, "結びつく客先", "済機", "軸"},
+	} {
+		if r := postFiling(t, user, []filingRequest{{
+			PageID: f.part, Customer: f.customer, Stage: "現行",
+			MachineName: f.machine, DrawingName: f.drawing,
+		}}); len(r) != 1 || r[0].Outcome != "moved" {
+			t.Fatalf("整理できません（%s）: %+v", f.customer, r)
+		}
+	}
+
+	list := UnlinkedCustomers(user)
+	titles := map[string]string{}
+	for _, c := range list {
+		titles[c.Title] = c.Address
+	}
+	if addr, ok := titles["メールの客先"]; !ok {
+		t.Errorf("メールが来ている相手が出ていません: %+v", list)
+	} else if addr != "yamada@example.co.jp" {
+		t.Errorf("証拠のアドレスが違います: %q", addr)
+	}
+	// **ここが本丸**——FAXだけの客先は静かなまま。
+	if _, ok := titles["FAXの客先"]; ok {
+		t.Errorf("FAXだけの客先を警告しました（狼少年になります）: %+v", list)
+	}
+	// **もう1つの本丸**——結びついている相手も静かなまま。片付けたものが翌日も
+	// 並んでいると、一覧そのものが信用されなくなります。
+	if _, ok := titles["結びつく客先"]; ok {
+		t.Errorf("連絡帳と結びついている相手を警告しました: %+v", list)
+	}
+}
+
+// newRecordForTest は通信記録らしいページを1枚作り、そのIDを返します。
+//
+// ⚠ **IDは機械に採らせます**——明示すると、自動採番のページと衝突して
+// **静かに上書き**します（この試験で実際に起きました）。
+func newRecordForTest(t *testing.T, body, parentID string) string {
+	t.Helper()
+	id, err := cms.CreateChildPage(parentID, "alice", body)
+	if err != nil {
+		t.Fatalf("記録ページを作れません: %v", err)
+	}
+	return id
+}
+
+// setSourceRef は部品ページの `受信元` を書き替えます（どの記録から来たかを差し替える）。
+func setSourceRef(t *testing.T, partID, recID string) {
+	t.Helper()
+	body, err := cms.ReadPageBody(partID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`<dt>` + SourceRefTag + `</dt><dd>[^<]*</dd>`)
+	body = re.ReplaceAllString(body, "<dt>"+SourceRefTag+"</dt><dd>"+recID+"-a1b2</dd>")
+	if err := os.WriteFile(
+		filepath.Join(page.GetPageDir(partID), partID+".html"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cms.SyncIndex(partID, body); err != nil {
+		t.Fatal(err)
+	}
+}

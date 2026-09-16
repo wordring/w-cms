@@ -52,13 +52,14 @@ func EnsureCustomerBox(user *auth.User) (string, error) {
 
 // customerBoxBody は取引先ページの初期の本文です。
 //
-// ⚠ **作業面はまだありません。** 「どの会社にどれだけ部品があるか」を見るビューが
-// 未実装なので、いまは見出しと道案内だけです——**見出しだけの箱は行き止まりになる**
-// ので、ビューができたらここへ足すこと（`required_pages.go` の約束）。
+// **作業面は「連絡帳と未接続の相手」**（2026-09-16・unlinked.go）。メールは来ている
+// のに連絡帳と結びついていない社名ページを並べます——2026-09-10 の事故がその形でした。
+// ⚠ 見出しだけの箱を作ると行き止まりになります（`required_pages.go` の約束）。
 func customerBoxBody() string {
 	return "<h1>" + stdhtml.EscapeString(CustomerBoxTitle) + "</h1>" +
 		"<p>製造部品の階層です（社名／段／装置名称／図面名称）。" +
 		"整理を実行すると、通信記録の下にできた部品ページがここへ移ります。</p>" +
 		"<p>相手の連絡先（メールアドレス・ドメイン・電話番号）は「連絡帳」にあります" +
-		"——こちらは部品の置き場です。</p>"
+		"——こちらは部品の置き場です。</p>" +
+		`<section data-type="` + UnlinkedViewType + `"></section>`
 }
