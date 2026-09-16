@@ -3597,17 +3597,25 @@
         call.textContent = '☎ ' + number + ' へかける';
         box.appendChild(call);
 
-        const label = document.createElement('label');
-        label.className = 'phone-record';
-        const check = document.createElement('input');
-        check.type = 'checkbox';
-        check.checked = true; // **既定はオン**——「かけたのに記録が無い」ほうが後で困る
-        label.appendChild(check);
-        label.appendChild(document.createTextNode(' 記録を作る'));
-        box.appendChild(label);
+        // **かけること自体は通信拡張の持ち物ではありません**（2026-09-16）。
+        // `tel:` はただのリンクなので、通信を外した組でも掛けられます。外れるのは
+        // 「記録を作る」だけ——こちらは `/api/intake/memo` を叩くので、通信が無いと
+        // **押した瞬間に「発信の記録を作れませんでした」の通知**が出ます
+        // （チェックは既定でオンなので、掛けるたびに必ず出る）。
+        let check = null;
+        if (hasExtension('comm')) {
+            const label = document.createElement('label');
+            label.className = 'phone-record';
+            check = document.createElement('input');
+            check.type = 'checkbox';
+            check.checked = true; // **既定はオン**——「かけたのに記録が無い」ほうが後で困る
+            label.appendChild(check);
+            label.appendChild(document.createTextNode(' 記録を作る'));
+            box.appendChild(label);
+        }
 
         call.addEventListener('click', () => {
-            if (!check.checked) return;
+            if (!check || !check.checked) return;
             createCallRecord(number);
         });
         host.appendChild(box);
@@ -3643,6 +3651,13 @@
     function refreshMailChrome() {
         document.querySelectorAll('#w-editor-content .mail-chrome').forEach(el => el.remove());
         if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        // **箱ごと通信の持ち物**です（2026-09-16）。中の「🧵 やりとりの前後」と
+        // 「📨 この記録への返信」は `/api/thread`・`/api/replies` を叩くので、通信が
+        // 無いと**通信記録ページを開くたびに 404 を2本**出します（どちらも失敗を
+        // 黙って飲むので、画面には何も出ないまま要求だけが飛ぶ）。
+        // ⚠ メール（`comm/mail`）だけを外した組では、この箱は**出ます**——読むだけの
+        // 2つは通信の口で、外れるのは中の「✉️ 返信」だけ。
+        if (!hasExtension('comm')) return;
         const host = document.getElementById('w-editor-content');
         if (!host || !currentPageId) return;
         // 通信記録かどうかは「チャネル」のタグで判る（受信も送信も持つ）。
@@ -4224,6 +4239,14 @@
     //
     // ボタンは**閲覧モードだけ**に出します。編集モードで本文をいじっている最中に
     // 行が消えると、何が起きたのか分かりません。
+    // ⚠ **ここに `hasExtension('comm')` は要りません**（2026-09-16 に確かめた）。
+    // 押す相手（`.unhandled-mark`・まとめて片付け）は**サーバーが描いたもの**で、
+    // 通信が無ければ `unhandled-intake` は語彙レジストリに載らず、鏡の引き金自体が
+    // 立ちません——本文に `<section data-type="unhandled-intake">` が書いてあっても
+    // 空のまま出るので、この関数は何も見つけずに帰ります。**同じ理由で `wireNewRecord`
+    // にも要りません**（「＋ 記録する」も同じビューが描いています）。
+    // 出し分けが要るのは「JSが自分で作るクローム」だけ——`refreshMailChrome` と
+    // 電話の「記録を作る」がそれです。
     function wireUnhandledActions() {
         const host = document.getElementById('w-editor-content');
         if (!host) return;

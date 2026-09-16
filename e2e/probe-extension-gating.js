@@ -43,12 +43,28 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     analyze: document.querySelectorAll('#w-editor-content .attach-analyze').length,
     reply: document.querySelectorAll('#w-editor-content .mail-reply-open').length,
     copyref: document.querySelectorAll('#w-editor-content .attach-copyref').length,
+    chrome: document.querySelectorAll('#w-editor-content .mail-chrome').length,
+    phoneCall: document.querySelectorAll('#w-editor-content .phone-call').length,
+    phoneRec: document.querySelectorAll('#w-editor-content .phone-record').length,
   }));
   ok(host.copyref > 0, '前提: 添付が描かれている（コアの「🔗 参照」）', host.copyref + '個');
   ok((host.analyze > 0) === has('subcon'),
      has('subcon') ? '下請けが載っている → 「🤖 解析」が出る' : '下請けが無い → 「🤖 解析」は出ない', host.analyze + '個');
   ok((host.reply > 0) === has('comm/mail'),
      has('comm/mail') ? 'メールが載っている → 「✉️ 返信」が出る' : 'メールが無い → 「✉️ 返信」は出ない', host.reply + '個');
+  // **箱ごと通信の持ち物**（2026-09-16）。中の2つ（やりとりの前後・この記録への返信）は
+  // 通信の口を叩くので、通信が無いのに箱を作ると 404 が2本飛びます
+  // ——下の「404で叩いていない」がその現れを見ます。
+  ok((host.chrome > 0) === has('comm'),
+     has('comm') ? '通信が載っている → 通信記録のクロームが出る' : '通信が無い → 通信記録のクロームは出ない',
+     host.chrome + '個');
+  // 電話は**掛けることと記録することが別**。`tel:` はただのリンクなので通信が無くても出し、
+  // 「記録を作る」だけを外します。⚠ この当て先に電話番号のタグが無ければ、この行は飛ばします。
+  if (host.phoneCall > 0) {
+    ok((host.phoneRec > 0) === has('comm'),
+       has('comm') ? '通信が載っている → ☎の「記録を作る」が出る' : '通信が無い → ☎は出るが「記録を作る」は出ない',
+       host.phoneRec + '個');
+  }
 
   // ── メールアドレスのタグがあるページ ──
   await page.goto(BASE + '/' + EMAIL);
