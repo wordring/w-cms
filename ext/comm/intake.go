@@ -224,7 +224,6 @@ func RegisterIntake(h IntakeHandler, exts ...string) {
 	}
 }
 
-// intakeFallback は拡張子の担当が居ないときの既定の担当です。
 // intakeHandlerFor は拡張子の担当を返します（居なければ nil）。
 //
 // **既定の担当（何でも受ける係）は 2026-09-05 に取り止めました。** ユーザー:
@@ -298,7 +297,7 @@ func (c *IntakeContext) SaveAttachment(pageID, ext string, content []byte) (id, 
 	return attachID, page.AttachmentURLFor(pageID, name), nil
 }
 
-// UpdatePage は CreatePage で作った直後のページの本文を書き直します
+// UpdatePage は CreateDatedPage で作った直後のページの本文を書き直します
 // （添付を先に置いてからリンク入りの本文で確定する、という2段のため）。
 // 対象は**この取り込みで作ったページ**に限ります（検査で強制。既存ページの改変口にしない）。
 func (c *IntakeContext) UpdatePage(pageID, bodyHTML string) error {
@@ -327,7 +326,8 @@ type IntakeResult struct {
 // 通す必要があるからです。封筒タグ・スレッドの繋ぎ・添付の展開・重複検知は
 // すべて取り込み係が持っているので、経路ごとに書き直すと必ず片方が古くなります。
 //
-// **中身の検査は呼ぶ側の責任**です（HTTPの口は checkIntakeContent を通す）。
+// **中身の検査は呼ぶ側の責任**です（HTTPの口は cms.GuardUploadContent を通す。
+// 2026-09-15 まで checkIntakeContent という名前でコアの非公開関数でした）。
 // 担当が居ない拡張子なら ok=false を返します。
 func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResult, bool, error) {
 	h := intakeHandlerFor(strings.ToLower(filepath.Ext(fileName)))

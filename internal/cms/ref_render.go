@@ -168,8 +168,9 @@ var contactResolver ContactResolver
 // **登録が無ければリンクにしません**（素のテキストのまま）。`-tags minimal` の
 // 素の w-cms は `email` 型のタグを普通に表示するだけで、壊れません。
 //
-// `RegisterVocab` / `RegisterView` / `RegisterIntake` / `RegisterMailer` と同じ形の
-// フックです。**重複登録は panic**——2つの解決係が別々の答えを返すと、同じアドレスが
+// `RegisterVocab` / `RegisterView` / `RegisterMirror` と同じ形のフックです
+// （`RegisterIntake` と `RegisterMailer` も同じ形ですが、2026-09-15 に
+// **コアから `ext/comm` へ出ました**——コアのフックの並びには居ません）。**重複登録は panic**——2つの解決係が別々の答えを返すと、同じアドレスが
 // 描くたびに違うページへ飛ぶ、という説明のつかない壊れ方をするためです。
 func RegisterContactResolver(r ContactResolver) {
 	if contactResolver != nil {
