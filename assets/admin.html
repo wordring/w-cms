@@ -73,6 +73,18 @@
         <span class="hint">HTMLファイル（<code>data/master</code>）を正としてDBインデックスを完全に作り直します。</span>
         <span id="rebuild-msg" class="msg"></span>
       </div>
+      <hr>
+      <div class="row row--gap-lg">
+        <input id="reset-word" placeholder="合言葉" aria-label="初期化の合言葉">
+        <button id="reset-btn" class="danger-btn">🧹 データの初期化</button>
+        <span id="reset-msg" class="msg"></span>
+      </div>
+      <p class="hint">
+        <strong>ページを全部消します</strong>（開発中の入れ直し用）。消す前に
+        <code>data/_reset-&lt;日時&gt;/</code> へ丸ごと移すので<strong>取り消せます</strong>。
+        メールのトークン・利用者・証明書は残ります。
+        実行するには合言葉 <code>初期化</code> を入力してください。
+      </p>
     </div>
 
     <!-- 監査ログ -->

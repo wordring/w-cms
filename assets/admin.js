@@ -182,6 +182,41 @@ async function createRequiredPages() {
   loadRequiredPages();
 }
 
+// ── データの初期化（2026-09-16）────────────────────────────────────────
+//
+// ユーザー:「管理ページにデータの初期化ボタンが欲しいくらいです」（開発中の
+// 入れ直し用）。正本は internal/cms/reset_data.go。
+//
+// **歯止めは3つ**——admin・合言葉・確認ダイアログ。⚠ 合言葉は**サーバーでも
+// 見ています**（画面だけで守ると口を直に叩けば素通りする）。
+async function resetData() {
+  const el = document.getElementById('reset-msg');
+  const word = val('reset-word');
+  if (!word) {
+    el.style.color = '#dc2626';
+    el.textContent = '合言葉を入力してください';
+    return;
+  }
+  if (!confirm('ページを全部消します（控えは data/_reset-<日時>/ に残ります）。よろしいですか？')) return;
+  el.style.color = '#64748b'; el.textContent = '初期化中...';
+  const res = await api('POST', '/api/admin/reset', { confirm: word });
+  const d = await res.json().catch(() => ({}));
+  const s = d.summary || {};
+  if (d.success) {
+    el.style.color = '#16a34a';
+    // **控えの場所を必ず出します**——「消えた」だけを伝えると、間違えて押した人が
+    // 戻せると気づけません。
+    el.textContent = s.pages + 'ページを控えへ移しました（' + (s.backup_dir || '') + '）。'
+      + (s.kept_notice || '');
+    document.getElementById('reset-word').value = '';
+    loadRequiredPages(); loadAudit();
+  } else {
+    el.style.color = '#dc2626';
+    el.textContent = (d.message || '初期化できませんでした')
+      + (s.backup_dir ? '（控え: ' + s.backup_dir + '）' : '');
+  }
+}
+
 async function rebuildDatabase() {
   if (!confirm('HTMLファイルからデータベースのインデックスを完全に再構築します。よろしいですか？')) return;
   const el = document.getElementById('rebuild-msg');
@@ -215,6 +250,7 @@ function bindActions() {
   document.getElementById('gm-add').addEventListener('click', () => groupMember('add'));
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
+  document.getElementById('reset-btn').addEventListener('click', resetData);
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
   document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
   document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);
