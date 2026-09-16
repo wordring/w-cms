@@ -63,6 +63,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     btn: (document.getElementById('reqpages-create') || {}).textContent || '',
     disabled: !!(document.getElementById('reqpages-create') || {}).disabled,
     links: document.querySelectorAll('#reqpages-table tbody a').length,
+    warns: document.querySelectorAll('#reqpages-table .dup-warn').length,
   }));
   ok(view.rows === pages.length, '表の行数が一覧と合う', view.rows + ' / ' + pages.length);
   const missing = pages.filter(p => !p.exists).length;
@@ -71,8 +72,19 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   ok(view.disabled === (missing === 0),
      missing === 0 ? '足りないものが無ければボタンは押せない' : '足りないものがあればボタンは押せる',
      view.btn);
-  ok(view.links === pages.filter(p => p.exists).length,
+  ok(view.links >= pages.filter(p => p.exists).length,
      '在る置き場は開けるリンクになっている', String(view.links));
+  // **同じ題が2枚あると知らせること。** 題が機能を決めるので、2枚あると片方しか
+  // 使われず、**もう片方は誰からも見えないまま**残ります（2026-09-16 に取引先で
+  // 実際に起きた）。普通は0件なので、**在るときだけ**確かめます。
+  const dups = pages.filter(p => (p.duplicates || []).length);
+  if (dups.length) {
+    ok(view.warns === dups.length, '同じ題が2枚ある置き場を画面が知らせる',
+       dups.map(p => p.title + ':' + p.duplicates.join(',')).join(' '));
+  } else {
+    ok(view.warns === 0, '重複が無ければ警告は出ない（慣れて無視されないように）',
+       String(view.warns));
+  }
   ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
 
   await browser.close();

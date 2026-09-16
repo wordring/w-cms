@@ -84,3 +84,51 @@ func TestRequiredPageBodiesCarryWorkSurface(t *testing.T) {
 		}
 	}
 }
+
+// TestRequiredPageStatusReportsDuplicates は、**同じ題が2枚あることを知らせる**ことを
+// 固定します（2026-09-16）。
+//
+// 題が機能を決めるので、2枚あると `TopLevelPageByTitle` は片方しか返さず、
+// **もう片方は誰からも見えないまま残ります**——取引先で実際に起きました
+// （E2Eが作った1枚と手で作った1枚）。**防げない**（題は人が自由に付けられる）ので、
+// 知らせるしかありません。
+//
+// あわせて「**使われるのはいちばん古いほう**」も固定します。2026-09-16 まで
+// `LIMIT 1` に `ORDER BY` が無く、**どちらが返るかは決まっていませんでした**。
+func TestRequiredPageStatusReportsDuplicates(t *testing.T) {
+	db := newTestFileDB(t)
+	// トップと、同じ題のページを2枚（新しいほうを先に入れて、並びで拾わないことも見る）。
+	for _, p := range []struct {
+		id    int
+		title string
+	}{{0, "トップ"}, {900, "テンプレート"}, {800, "テンプレート"}} {
+		if _, err := db.Exec(
+			`INSERT INTO pages (id, title, parent_id, file_path) VALUES (?, ?, 0, '')`,
+			p.id, p.title); err != nil {
+			t.Fatalf("下ごしらえの挿入エラー: %v", err)
+		}
+	}
+
+	var st RequiredPageStatus
+	for _, s := range RequiredPageStatuses() {
+		if s.Title == TemplateRootTitle {
+			st = s
+		}
+	}
+	if st.PageID != "000800" {
+		t.Errorf("使われるのはいちばん古いページのはずです: %q（000800 を期待）", st.PageID)
+	}
+	if len(st.Duplicates) != 1 || st.Duplicates[0] != "000900" {
+		t.Errorf("余りのページを知らせていません: %v（[000900] を期待）", st.Duplicates)
+	}
+
+	// 1枚だけなら知らせない（普通の状態で警告が出ると、見る人が慣れて無視します）。
+	if _, err := db.Exec(`DELETE FROM pages WHERE id = 900`); err != nil {
+		t.Fatalf("片付けエラー: %v", err)
+	}
+	for _, s := range RequiredPageStatuses() {
+		if s.Title == TemplateRootTitle && len(s.Duplicates) != 0 {
+			t.Errorf("1枚だけなのに警告が出ています: %v", s.Duplicates)
+		}
+	}
+}

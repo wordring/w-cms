@@ -38,3 +38,14 @@ code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
 .disabled-mark { color: #b91c1c; }
 
 #audit-table { margin-top: 10px; }
+
+/* 置き場の重複の警告（2026-09-16）。
+   同じ題のトップ直下ページが2枚以上あると、使われるのは1枚だけで、
+   残りは誰からも見えないまま残ります——**目立たせないと気づけません**。 */
+.dup-warn {
+  margin-top: 4px;
+  color: #b45309;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.dup-warn a { color: #b45309; }

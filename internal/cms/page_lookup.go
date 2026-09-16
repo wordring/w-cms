@@ -33,12 +33,39 @@ func PageTitleByID(idInt int) string {
 
 // TopLevelPageByTitle はトップ直下の題一致ページを返します
 // （通信箱・テンプレート置き場・取引先が共有する——「名前が機能」という同じ仕様）。
+//
+// **2枚あったら、いちばん古いものを返します**（2026-09-16 に `ORDER BY id` を足した）。
+// それまで `LIMIT 1` だけだったので、**どちらが返るかは決まっていませんでした**
+// ——同じ題のページが2枚できると、原理上は問い合わせのたびに別のページが
+// 「通信箱」になりえます。⚠ **2枚あること自体は防げません**（題は人が自由に
+// 付けられる）。**管理画面の「置き場」が知らせます**（`RequiredPageStatus.Duplicates`）
+// ——2026-09-16 に取引先が実際に2枚になり、**片方が見えないまま残りました**。
 func TopLevelPageByTitle(title string) (string, bool) {
-	var id int
-	err := database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = 0 AND title = ? LIMIT 1`, title).Scan(&id)
-	if err != nil {
+	ids := TopLevelPagesByTitle(title)
+	if len(ids) == 0 {
 		return "", false
 	}
-	return page.FormatID(id), true
+	return ids[0], true
+}
+
+// TopLevelPagesByTitle は題の一致するトップ直下のページを**全部**古い順に返します。
+//
+// 分けてあるのは、「どれを使うか」（上）と「いくつあるか」（ここ）が別の問いだからです
+// ——使う側は1枚として扱ってよく、**重複に気づく仕事は画面の側**が持ちます。
+func TopLevelPagesByTitle(title string) []string {
+	rows, err := database.DB.Query(
+		`SELECT id FROM pages WHERE parent_id = 0 AND title = ? ORDER BY id`, title)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return out
+		}
+		out = append(out, page.FormatID(id))
+	}
+	return out
 }

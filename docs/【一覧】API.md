@@ -218,7 +218,7 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 | POST | `/api/admin/users/disable` | 有効・無効の切り替え |
 | GET/POST | `/api/admin/groups` | グループの一覧・作成 |
 | POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
-| GET/POST | `/api/admin/pages` | **拡張が要る置き場**（2026-09-16。トップ直下の通信箱・取引先・受注・テンプレート置き場）。GET は `{success, pages}` で `{title, extension, why, page_id, exists}` の並び——**載っている拡張のぶんだけ**出る（`-tags minimal` ではコアの1件）。POST は**足りないものだけ**作り、`{success, created, pages}` を返す（**冪等**。何度押しても増えない）。⚠ **起動時には作りません**——人が押したことが、そのページを置く意図（通信箱の 2026-09-05 の決定を保つ）。⚠ **本文は宣言した拡張が持ちます**（作業面込み。見出しだけの箱は行き止まりになる）。監査記録は `required-page.create`。正本は [required_pages.go](../internal/cms/required_pages.go) |
+| GET/POST | `/api/admin/pages` | **拡張が要る置き場**（2026-09-16。トップ直下の通信箱・取引先・受注・テンプレート置き場）。GET は `{success, pages}` で `{title, extension, why, page_id, exists, duplicates?}` の並び（`duplicates` は**同じ題の余りのページ**。普通は空で、在るときだけ画面が ⚠ を出す——`page_id` は**いちばん古いもの**で、余りは誰からも使われない）——**載っている拡張のぶんだけ**出る（`-tags minimal` ではコアの1件）。POST は**足りないものだけ**作り、`{success, created, pages}` を返す（**冪等**。何度押しても増えない）。⚠ **起動時には作りません**——人が押したことが、そのページを置く意図（通信箱の 2026-09-05 の決定を保つ）。⚠ **本文は宣言した拡張が持ちます**（作業面込み。見出しだけの箱は行き止まりになる）。監査記録は `required-page.create`。正本は [required_pages.go](../internal/cms/required_pages.go) |
 | GET | `/api/admin/audit` | 監査ログの参照。直近200件。記録対象は認証イベント（`login`/`login.fail`/`logout`）・保存・ページ作成／削除・添付（`attach`/`attach.overwrite`）・親の付け替え・権限変更（公開切替 `publish`/`unpublish` を含む）・ロック強制解除・索引の全再構築・ユーザー／グループ管理・取り込み（`intake.create`/`intake.duplicate`）・PDF判定（`analyze-pdf`）（[認証認可設計.md](認証認可設計.md) §9.4） |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え）。先頭で `config/settings.json` を読み直す |
 

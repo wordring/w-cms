@@ -132,6 +132,24 @@ async function loadRequiredPages() {
         a.href = '/' + p.page_id;
         a.textContent = '✓ ' + p.page_id;
         c.appendChild(a);
+        // ⚠ **同じ題が2枚以上あると、使われるのは1枚だけ**（いちばん古いもの）。
+        // 残りは**誰からも見えないまま**残り、そちらに書いた内容は行方不明になります。
+        // 防げない（題は人が自由に付けられる）ので、**ここで知らせます**。
+        if (p.duplicates && p.duplicates.length) {
+          const warn = document.createElement('div');
+          warn.className = 'dup-warn';
+          warn.appendChild(document.createTextNode('⚠ 同じ題がほかに' + p.duplicates.length + '枚: '));
+          p.duplicates.forEach((d, i) => {
+            if (i) warn.appendChild(document.createTextNode('、'));
+            const a2 = document.createElement('a');
+            a2.href = '/' + d;
+            a2.textContent = d;
+            warn.appendChild(a2);
+          });
+          warn.appendChild(document.createTextNode(
+            '（使われるのは ' + p.page_id + ' だけです。余りは中身を移してから消してください）'));
+          c.appendChild(warn);
+        }
       } else {
         c.textContent = '— 未作成';
       }

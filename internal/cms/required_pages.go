@@ -91,8 +91,16 @@ type RequiredPageStatus struct {
 	Title     string `json:"title"`
 	Extension string `json:"extension"`
 	Why       string `json:"why"`
-	PageID    string `json:"page_id"` // 既にあればそのID（無ければ空）
+	PageID    string `json:"page_id"` // 使われるページ（いちばん古いもの。無ければ空）
 	Exists    bool   `json:"exists"`
+	// Duplicates は**同じ題の余りのページ**です（2枚目以降。普通は空）。
+	//
+	// **題が機能を決める**ので、同じ題が2枚あると `TopLevelPageByTitle` は
+	// 片方しか返さず、**もう片方は誰からも見えないまま残ります**——2026-09-16 に
+	// 取引先で実際に起きました（E2Eが作った1枚と手で作った1枚）。
+	// 空のうちは害がありませんが、**片方に書き込むと、書いた内容がどこへ行ったのか
+	// 分からなくなります**。防げない（題は人が自由に付けられる）ので、**知らせます**。
+	Duplicates []string `json:"duplicates,omitempty"`
 }
 
 // RequiredPages は登録された置き場の**宣言**を並び順つきで返します。
@@ -123,8 +131,11 @@ func RequiredPageStatuses() []RequiredPageStatus {
 	out := make([]RequiredPageStatus, 0, len(decls))
 	for _, p := range decls {
 		st := RequiredPageStatus{Title: p.Title, Extension: p.Extension, Why: p.Why}
-		if id, ok := TopLevelPageByTitle(p.Title); ok {
-			st.PageID, st.Exists = id, true
+		if ids := TopLevelPagesByTitle(p.Title); len(ids) > 0 {
+			st.PageID, st.Exists = ids[0], true
+			if len(ids) > 1 {
+				st.Duplicates = ids[1:]
+			}
 		}
 		out = append(out, st)
 	}
