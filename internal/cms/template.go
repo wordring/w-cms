@@ -37,6 +37,18 @@ import (
 // TemplateRootTitle はテンプレートルートを見分けるタイトルです（§3.3 の約束）。
 const TemplateRootTitle = "テンプレート"
 
+func init() {
+	// **テンプレート置き場は管理画面のボタンで作れます**（2026-09-16）。
+	//
+	// **これはコアの持ち物**なので、素の w-cms（`-tags minimal`）でも表に出ます
+	// ——拡張が1つも無い環境で、この仕組みが空っぽにならないための1件でもあります。
+	// 中の雛形（受注ページ等）は人が作るものなので、箱だけを用意します。
+	RegisterRequiredPage(RequiredPage{
+		Title: TemplateRootTitle,
+		Why:   "新しいページの雛形を置く場所です。ここの配下は②索引・③計算に載らないので、下書きを置いても集計を汚しません。",
+	})
+}
+
 // maxAncestorWalk は親チェーン辿りの安全上限です（万一の循環で無限ループしないため。
 // page.EffectivePublic と同じ流儀）。
 const maxAncestorWalk = 10000

@@ -223,6 +223,9 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/groups", auth.GroupsAPIHandler)
 	protected.HandleFunc("/api/admin/groups/members", auth.GroupMembersAPIHandler)
 	protected.HandleFunc("/api/admin/audit", auth.AuditAPIHandler)
+	// 拡張が要る置き場（通信箱・取引先・受注・テンプレート置き場）を作る口。
+	// **押すのは人**——起動時に自動で作らない理由は required_pages.go の冒頭。
+	protected.HandleFunc("/api/admin/pages", cms.RequiredPagesAPIHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	for _, route := range cms.PluginRoutes() {

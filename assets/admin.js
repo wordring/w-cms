@@ -25,7 +25,7 @@ async function init() {
   document.getElementById('whoami').textContent = 'ログイン中: ' + me.username + (me.is_admin ? '（管理者）' : '');
   if (!me.is_admin) { setHidden(document.getElementById('denied'), false); return; }
   setHidden(document.getElementById('console'), false);
-  loadUsers(); loadGroups(); loadAudit();
+  loadUsers(); loadGroups(); loadRequiredPages(); loadAudit();
 }
 
 async function loadUsers() {
@@ -104,6 +104,66 @@ async function loadAudit() {
   });
 }
 
+// ── 拡張が要る置き場（2026-09-16）──────────────────────────────────────
+//
+// ユーザー:「拡張プラグインが必要とするフォルダなどは、管理画面でボタンを押して
+// 作成する仕組みにしてはどうでしょう？」——正本は internal/cms/required_pages.go。
+//
+// **在るものは押せる**（ページIDのリンク）、**無いものは理由が読める**。押す人が
+// 「作ってよいか」を自分で判断できるように、`why` をそのまま出します。
+async function loadRequiredPages() {
+  const tb = document.querySelector('#reqpages-table tbody');
+  if (!tb) return;
+  const res = await fetch('/api/admin/pages');
+  if (!res.ok) return;
+  const d = await res.json().catch(() => ({}));
+  tb.textContent = '';
+  (d.pages || []).forEach(p => {
+    const tr = document.createElement('tr');
+    const td = (fill) => { const c = document.createElement('td'); fill(c); tr.appendChild(c); return c; };
+    td(c => { c.textContent = p.title; });
+    // コアの持ち物は拡張IDが空。「—」で埋めて列がずれないようにする。
+    td(c => { c.textContent = p.extension || '—'; });
+    td(c => { c.textContent = p.why || ''; });
+    td(c => {
+      if (p.exists) {
+        // **開けるようにします**——「在る」と言われても、どこに在るか分からないと確かめられない。
+        const a = document.createElement('a');
+        a.href = '/' + p.page_id;
+        a.textContent = '✓ ' + p.page_id;
+        c.appendChild(a);
+      } else {
+        c.textContent = '— 未作成';
+      }
+    });
+    tb.appendChild(tr);
+  });
+  const missing = (d.pages || []).filter(p => !p.exists).length;
+  const btn = document.getElementById('reqpages-create');
+  if (btn) {
+    btn.disabled = missing === 0;
+    btn.textContent = missing === 0 ? '足りない置き場はありません' : '足りない置き場を作る（' + missing + '件）';
+  }
+}
+
+async function createRequiredPages() {
+  const el = document.getElementById('reqpages-msg');
+  el.style.color = '#64748b'; el.textContent = '作成中...';
+  const res = await api('POST', '/api/admin/pages');
+  const d = await res.json().catch(() => ({}));
+  const made = (d.created || []).map(p => p.title + '（' + p.page_id + '）').join('、');
+  if (d.success) {
+    el.style.color = '#16a34a';
+    el.textContent = made ? '作りました: ' + made : '足りないものはありませんでした';
+  } else {
+    // **途中まで作ったものは残ります。** どこまで進んだかを添えないと、
+    // もう一度押してよいのか分かりません（冪等なので押してよい）。
+    el.style.color = '#dc2626';
+    el.textContent = (d.message || '作れませんでした') + (made ? '（ここまで作成: ' + made + '）' : '');
+  }
+  loadRequiredPages();
+}
+
 async function rebuildDatabase() {
   if (!confirm('HTMLファイルからデータベースのインデックスを完全に再構築します。よろしいですか？')) return;
   const el = document.getElementById('rebuild-msg');
@@ -138,6 +198,8 @@ function bindActions() {
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
+  document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
+  document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);
 
   document.querySelector('#users-table tbody').addEventListener('click', e => {
     const btn = e.target.closest('button[data-action]');

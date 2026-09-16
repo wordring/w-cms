@@ -49,6 +49,22 @@
       </div>
     </div>
 
+    <!-- 拡張が要る置き場 -->
+    <h2>置き場</h2>
+    <div class="card">
+      <p class="hint">
+        載っている拡張が要る、トップ直下のページです。<strong>名前が機能を決める</strong>ので、
+        題を変えると機械は見つけられなくなります（作り直すときもこのボタンで足せます）。
+        <strong>足りないものだけ</strong>作るので、何度押しても増えません。
+      </p>
+      <table id="reqpages-table"><thead><tr><th>ページ</th><th>拡張</th><th>何のために</th><th>状態</th></tr></thead><tbody></tbody></table>
+      <div class="row row--gap-lg">
+        <button id="reqpages-create">足りない置き場を作る</button>
+        <button class="sub" id="reqpages-reload">再読み込み</button>
+        <span id="reqpages-msg" class="msg"></span>
+      </div>
+    </div>
+
     <!-- メンテナンス -->
     <h2>メンテナンス</h2>
     <div class="card">

@@ -65,6 +65,8 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/admin/users", "GET", 401, "利用者一覧（admin）"},
 		{"/api/admin/groups", "GET", 401, "グループ一覧（admin）"},
 		{"/api/admin/audit", "GET", 401, "監査ログ（admin）"},
+		{"/api/admin/pages", "GET", 401, "拡張が要る置き場の一覧（admin）"},
+		{"/api/admin/pages", "POST", 401, "足りない置き場を作る（admin）"},
 
 		// 認証不要（公開ルート）。401 にはならない。
 		{"/login", "GET", 200, "ログイン画面"},
