@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"w-cms/internal/auth"
 	"w-cms/ext/comm"
+	"w-cms/ext/comm/contacts"
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -445,5 +446,95 @@ func TestSenderAddressOfFollowsSourceRef(t *testing.T) {
 	// **空を返すのは正常**です——呼ぶ側は読めた名前へ戻ります。
 	if got := senderAddressOf(110); got != "" {
 		t.Errorf("由来の無いページで空を返していません: %q", got)
+	}
+}
+
+// TestFilingLinksToContactsBook は、整理が**2つの木を参照タグで結ぶ**ことを
+// 固定します（2026-09-16）。
+//
+// 2026-09-16 にアドレス帳（`連絡帳`）と部品階層（`取引先`）を別の木に分けました。
+// **題だけで結んでいると、どちらかを改名した日に切れます**——部品階層のフォルダ名も
+// 連絡帳の社名も、人が直すものです。参照はページIDなので切れません。
+//
+// **人が選んだ社名で引きます**（機械が推した組織ではなく）——整理の画面は
+// 「機械が出して人が直す」場所なので、打ち替えた結果が正です。
+func TestFilingLinksToContactsBook(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+
+	// 連絡帳に組織を1枚（アドレス帳で登録した状態）。
+	user := &auth.User{Username: "alice"}
+	bookID, err := contacts.EnsureContactsBox(user)
+	if err != nil {
+		t.Fatalf("連絡帳を作れません: %v", err)
+	}
+	orgID, err := cms.CreateChildPage(bookID, "alice",
+		"<h1>南北スポーツ機械</h1><dl data-type=\"tags\"><dt>取引</dt><dd>顧客</dd></dl>")
+	if err != nil {
+		t.Fatalf("組織ページを作れません: %v", err)
+	}
+
+	partID := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
+	results := postFiling(t, user, []filingRequest{{
+		PageID: partID, Customer: "南北スポーツ機械", Stage: "現行",
+		MachineName: "標準2輪", DrawingName: "取付ベース",
+	}})
+	if len(results) != 1 || results[0].Outcome != "moved" {
+		t.Fatalf("移動になっていません: %+v", results)
+	}
+
+	boxID, ok := findChildByTitle(cms.TopPageID, CustomerBoxTitle)
+	if !ok {
+		t.Fatalf("「%s」が作られていません", CustomerBoxTitle)
+	}
+	custID, ok := findChildByTitle(boxID, "南北スポーツ機械")
+	if !ok {
+		t.Fatal("顧客名ページがありません")
+	}
+	body, err := cms.ReadPageBody(custID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "<dt>" + comm.CounterpartTag + "</dt><dd>" + orgID + "</dd>"
+	if !strings.Contains(body, want) {
+		t.Errorf("連絡帳への参照がありません: %s（%s を期待）", body, want)
+	}
+
+	// **2度目で増えません**（同じタグが2つ並ばない）。
+	part2 := makeDrawingPage(t, inbox, "K120-2", "脚受け", "標準2輪", "南北スポーツ")
+	postFiling(t, user, []filingRequest{{
+		PageID: part2, Customer: "南北スポーツ機械", Stage: "現行",
+		MachineName: "標準2輪", DrawingName: "脚受け",
+	}})
+	body, _ = cms.ReadPageBody(custID)
+	if n := strings.Count(body, want); n != 1 {
+		t.Errorf("参照タグが%d個あります（1個を期待）: %s", n, body)
+	}
+}
+
+// TestFilingWithoutContactsBookEntry は、**連絡帳に居ない相手では結ばない**ことを
+// 固定します。新しい顧客の1通目がこの形で、**結べないのは異常ではありません**。
+func TestFilingWithoutContactsBookEntry(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+
+	partID := makeDrawingPage(t, inbox, "K130-1", "台座", "新型機", "はじめての客先")
+	results := postFiling(t, user, []filingRequest{{
+		PageID: partID, Customer: "はじめての客先", Stage: "現行",
+		MachineName: "新型機", DrawingName: "台座",
+	}})
+	// **整理そのものは通ります**——結べないからといって止めません。
+	if len(results) != 1 || results[0].Outcome != "moved" {
+		t.Fatalf("結べないだけで整理が止まりました: %+v", results)
+	}
+	boxID, _ := findChildByTitle(cms.TopPageID, CustomerBoxTitle)
+	custID, ok := findChildByTitle(boxID, "はじめての客先")
+	if !ok {
+		t.Fatal("顧客名ページがありません")
+	}
+	body, _ := cms.ReadPageBody(custID)
+	if strings.Contains(body, "<dt>"+comm.CounterpartTag+"</dt>") {
+		t.Errorf("居ない相手へ参照を書きました: %s", body)
 	}
 }

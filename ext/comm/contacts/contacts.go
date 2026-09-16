@@ -548,6 +548,58 @@ func isPartnerPage(pageIDInt int) bool {
 	return parent == boxInt
 }
 
+// PartnerByTitle は、連絡帳の直下から**題の一致する組織**を1枚返します（2026-09-16）。
+//
+// **部品階層（`取引先`）と連絡帳を結ぶための口**です。2つの木は 2026-09-16 に
+// 分かれたので、`取引先／社名` のページから「この会社は誰か」を辿る道が要ります。
+// 整理が参照タグ（`相手`）を書くときに、ここで行き先を引きます。
+//
+// **題で引きます**——人が整理の画面で選んだ社名がそのまま行き先になるためです。
+// 機械が推した組織で結ぶと、**人が打ち替えた社名と食い違ったまま結んで**しまいます。
+//
+// ⚠ **2枚あったら引きません**（ok=false）。同じ題の組織が2つあると、どちらを指すか
+// 決められません——黙って片方を選ぶと、**参照が静かに間違った先を向きます**。
+func PartnerByTitle(user *auth.User, title string) (pageID string, ok bool) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "", false
+	}
+	boxID, found := ContactsBoxPageID()
+	if !found {
+		return "", false
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return "", false
+	}
+	rows, err := database.DB.Query(
+		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id`, boxInt, title)
+	if err != nil {
+		return "", false
+	}
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return "", false
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+
+	var hits []int
+	for _, id := range ids {
+		if user == nil || page.CanView(user, id) {
+			hits = append(hits, id)
+		}
+	}
+	if len(hits) != 1 {
+		return "", false // 0枚（まだ登録していない）か、2枚（どちらか決められない）
+	}
+	return page.FormatID(hits[0]), true
+}
+
 // PartnerOfPage は、そのページが属する**相手（社名ページ）**を返します。
 //
 // 担当者ページ（`取引先／社名／担当者／氏名`）や、その下のページから

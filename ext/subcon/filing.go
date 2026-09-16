@@ -507,6 +507,17 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	if err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "顧客名ページを用意できません: " + err.Error()}
 	}
+	// **2つの木を参照タグで結びます**（2026-09-16）。`取引先／社名` のページから
+	// `連絡帳／組織` を指す `相手` のタグを1つ書きます。
+	//
+	// ⚠ **題だけで結んでいると、改名した日に切れます**——部品階層のフォルダ名は
+	// 人が直しますし、連絡帳の社名も直ります。**参照はページIDなので切れません**
+	// （同じ理由で、部品ページの `受信元` もページIDです）。
+	//
+	// **人が選んだ社名で引きます**（機械が推した組織ではなく）——整理の画面は
+	// 「機械が出して人が直す」場所なので、**打ち替えた結果が正**です。
+	// 連絡帳にまだ居ない相手は結びません（新しい顧客の1通目がその形で、正常）。
+	linkPartner(user, customerID, customer)
 	// **装置の上に段を1枚**（2026-09-05 ユーザー:「装置名の上の段として、旧型、現行、
 	// 試作などがあったほうが探しやすいです」）。装置が別の段へ移るときは、
 	// この段ページのあいだで付け替えるだけ——配下の図面もついていきます。
@@ -695,4 +706,42 @@ func movePage(user *auth.User, pageID, newParent, title string) error {
 	}
 	_, _, err := cms.SetPageParent(user, pageID, newParent)
 	return err
+}
+
+// linkPartner は部品階層の社名ページから、連絡帳の組織ページへの参照タグを書きます。
+//
+// **何度呼んでも増えません**（既に在れば何もしない）。引けないときも黙って戻ります
+// ——連絡帳にまだ居ない相手は普通にいるので、**結べないことは異常ではありません**。
+//
+// ⚠ **編集中のページには書きません**（`editlock.RefuseWhileEditing` と同じ理由ですが、
+// ここは画面へ返す `http.ResponseWriter` を持たないので、**開いていたら黙って諦めます**
+// ——整理そのものは続けたいからです。次に整理を押せば書かれます）。
+func linkPartner(user *auth.User, customerID, title string) {
+	partnerID, ok := contacts.PartnerByTitle(user, title)
+	if !ok {
+		return // まだ連絡帳に居ない（新しい顧客の1通目。異常ではない）
+	}
+	body, err := cms.ReadPageBody(customerID)
+	if err != nil {
+		return
+	}
+	// 既に結ばれていれば何もしない（同じタグを2つ並べない）。
+	if strings.Contains(body, "<dt>"+comm.CounterpartTag+"</dt><dd>"+partnerID+"</dd>") {
+		return
+	}
+	if idInt, err := strconv.Atoi(customerID); err == nil {
+		if _, open := editlock.Locks.EditorOpen(idInt); open {
+			return // 開いている人が居る。次の整理で書けばよい
+		}
+	}
+	_ = cms.RewriteBody(customerID, user.Username, func(current string) string {
+		if strings.Contains(current, "<dt>"+comm.CounterpartTag+"</dt><dd>"+partnerID+"</dd>") {
+			return current
+		}
+		pair := "<dt>" + comm.CounterpartTag + "</dt><dd>" + partnerID + "</dd>"
+		if at := cms.EndOfFirstTagList(current); at >= 0 {
+			return current[:at] + pair + current[at:]
+		}
+		return cms.InsertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
+	})
 }
