@@ -262,64 +262,175 @@ func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, 
 	return "", "", false
 }
 
-func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
+// DomainTag は**組織の連絡先**です（`メールアドレス` が個人の連絡先なのに対して）。
+//
+// 2026-09-16 ユーザー決定:「**アドレス帳の社名ページには、ドメインのタグが必要**という
+// ことになります。タグがあればDBに入るので、メールが届いたときに検索すれば社名ページが
+// わかり、すなわち社名もわかるからです」。
+//
+// **2026-09-12 の「ドメインを独立したタグにしない」を覆します。** 当時の心配は
+// 「タグが2種類になり、どちらが正かを人が意識する」でしたが、**2種類ではなく別のもの**
+// でした——`メールアドレス` は**その人**を、`ドメイン` は**その組織**を言い当てます。
+//
+// **暗黙の切り出しをやめたのが本体です。** それまでは登録済みアドレスから機械が
+// ドメインを切り出して一致を見ていたので、`@yahoo.co.jp` の個人客を1人登録すると
+// **以後その全員がその人になりました**（実データに yahoo のアドレスがあります）。
+// タグなら、yahoo に付けないのは編集者の判断です。
+//
+// **1つの組織が複数持てます**（自社が `example-works.co.jp` と `itohocorp.onmicrosoft.com` の
+// 2つを持つ実例）。タグが複数になるだけです。
+//
+// ⚠ **同じドメインを複数の組織が持つと、1つに決まりません。** そのときは
+// `ResolvePartner` が ok=false を返し、**候補を人に選ばせます**
+// （`PartnerCandidates`。2026-09-16 ユーザー:「コンボボックスで選択できる候補が
+// 複数あるということでどうでしょう」）。
+const DomainTag = "ドメイン"
+
+// PartnerRef は既にある相手1枚（画面の選択肢・候補に使います）。は下にあります。
+
+// ResolvePartner はアドレスから**組織のページ**を引きます（§5.2）。
+//
+// 順序は **①`メールアドレス` の完全一致 → ②`ドメイン` タグの一致**。完全一致が先なのは
+// 「自社の工場長だけ別プロバイダ」という実例があるからで、**ドメインは手掛かりであって
+// 決定ではない**という位置づけは変わりません。
+//
+// **1つに決まらなければ ok=false** です——同じドメインを2つの組織が持っていたら、
+// 機械には選べません（`PartnerCandidates` が候補を返し、人が選びます）。
+//
+// 載っているのが人のページでも、**答えるのは組織**です（`PartnerOfPage` で丸める）
+// ——整理が欲しいのは会社の名前だからです。
+func ResolvePartner(user *auth.User, addr string) (pageID string, title string, ok bool) {
+	exact, domain := partnerHits(user, addr)
+	if len(exact) == 1 {
+		return page.FormatID(exact[0].id), exact[0].title, true
+	}
+	if len(exact) > 1 {
+		return "", "", false // 同じアドレスが2つの組織に載っている（人が直す）
+	}
+	if len(domain) == 1 {
+		return page.FormatID(domain[0].id), domain[0].title, true
+	}
+	return "", "", false
+}
+
+// PartnerCandidates はアドレスから引ける**組織の候補**を返します（0件も普通）。
+//
+// `limit` を超えたら打ち切り、`truncated` を立てます。⚠ **件数制限は必須です**
+// （2026-09-16 ユーザー:「ヤフーのようなドメインでは、候補が1万件ということも
+// あり得ます…あまりに多い場合、コンボボックスにはすべての候補は出せませんから、
+// 自分で入力するしかないのです」）。**選べない長さの一覧は、選択肢ではありません。**
+func PartnerCandidates(user *auth.User, addr string, limit int) (refs []PartnerRef, truncated bool) {
+	exact, domain := partnerHits(user, addr)
+	all := append(exact, domain...)
+	seen := map[int]bool{}
+	for _, h := range all {
+		if seen[h.id] {
+			continue
+		}
+		seen[h.id] = true
+		if limit > 0 && len(refs) >= limit {
+			return refs, true
+		}
+		refs = append(refs, PartnerRef{ID: page.FormatID(h.id), Title: h.title})
+	}
+	return refs, false
+}
+
+// partnerMatch は引き当てた組織1件です。
+type partnerMatch struct {
+	id    int
+	title string
+}
+
+// partnerHits はアドレスから、**完全一致で引けた組織**と**ドメインで引けた組織**を
+// 別々に返します（どちらも重複なし・ページIDの順）。
+//
+// **`取引：自社` は外します**——顧客名の推奨値として自社が出ることはありえず、
+// 出ると人がそのまま押してしまいます。
+func partnerHits(user *auth.User, addr string) (exact, byDomain []partnerMatch) {
 	mail := normalizeEmail(addr)
 	if mail == "" {
-		return "", false
+		return nil, nil
 	}
-	domain := mail[strings.LastIndex(mail, "@"):] // "@example.co.jp"
+	domain := domainOf(mail)
 
-	// **取引先の木ぜんたいから引きます**（2026-09-13）。連絡先を人ごとのページへ
-	// 分けたので、アドジスが載っているのは社名ページとは限りません
-	// （`取引先／社名／担当者／氏名`）。見つけた先を `PartnerOfPage` で**会社へ丸めて**
-	// から返します——整理が欲しいのは会社の名前だからです。
+	// 個人の連絡先（`メールアドレス`）と組織の連絡先（`ドメイン`）を1度に読みます。
+	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
 	rows, err := database.DB.Query(
-		`SELECT v.page_id, v.value FROM page_tags v WHERE v.name = ?`, EmailTag)
+		`SELECT page_id, name, value FROM page_tags WHERE name IN (?, ?)`,
+		EmailTag, DomainTag)
 	if err != nil {
-		return "", false
+		return nil, nil
 	}
 	type hit struct {
-		id    int
-		value string
+		id          int
+		name, value string
 	}
-	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
 	var found []hit
 	for rows.Next() {
 		var h hit
-		if err := rows.Scan(&h.id, &h.value); err != nil {
+		if err := rows.Scan(&h.id, &h.name, &h.value); err != nil {
 			rows.Close()
-			return "", false
+			return nil, nil
 		}
 		found = append(found, h)
 	}
 	rows.Close()
 
-	byDomain := ""
+	add := func(dst *[]partnerMatch, id int, title string) {
+		for _, m := range *dst {
+			if m.id == id {
+				return
+			}
+		}
+		*dst = append(*dst, partnerMatch{id: id, title: title})
+	}
 	for _, h := range found {
-		v := normalizeEmail(h.value)
-		if v == "" || !page.CanView(user, h.id) {
+		if user != nil && !page.CanView(user, h.id) {
 			continue
 		}
-		// 載っているのが担当者ページでも、**答えるのは会社の名前**です。
 		companyID, title, ok := PartnerOfPage(h.id)
 		if !ok || title == "" {
-			continue // 取引先の外のページに書かれたアドレスは相手ではない
+			continue // 連絡帳の外のページに書かれた値は連絡先ではない
 		}
-		// `取引：自社` は推奨値にしません（社名ページに付きます）。
 		if isSelfPartner(companyID) {
 			continue
 		}
-		if v == mail {
-			return title, true // 完全一致が最優先
-		}
-		if byDomain == "" && strings.HasSuffix(v, domain) {
-			byDomain = title
+		switch h.name {
+		case EmailTag:
+			if normalizeEmail(h.value) == mail {
+				add(&exact, companyID, title)
+			}
+		case DomainTag:
+			// **完全一致だけ**（サブドメインは拾いません・2026-09-16 ユーザー決定）。
+			// 要るなら編集者がタグを足します。
+			if normalizeDomain(h.value) == domain {
+				add(&byDomain, companyID, title)
+			}
 		}
 	}
-	if byDomain != "" {
-		return byDomain, true
+	return exact, byDomain
+}
+
+// normalizeDomain は `ドメイン` タグの値を畳みます（小文字・前後の空白・先頭の `@`）。
+// 値の形は `example-sports.co.jp`（`@` なし）ですが、**`@` 付きで書かれても拾います**
+// ——人が書く欄なので、書き方の揺れで静かに引けなくなるほうが困ります。
+func normalizeDomain(v string) string {
+	d := strings.ToLower(strings.TrimSpace(v))
+	d = strings.TrimPrefix(d, "@")
+	if i := strings.LastIndex(d, "@"); i >= 0 { // アドレスを貼られても拾う
+		d = d[i+1:]
 	}
-	return "", false
+	return d
+}
+
+// PartnerTitleForAddress はアドレスから組織の**題**を返します（`ResolvePartner` の薄い皮）。
+//
+// 整理（`ext/subcon`）と参照リンクの描画が呼びます。**ページが欲しいなら
+// `ResolvePartner`** を使ってください——題で引き直すのは完全一致の二度手間です。
+func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
+	_, title, ok := ResolvePartner(user, addr)
+	return title, ok
 }
 
 // isSelfPartner はそのページが `取引：自社` かを返します。
@@ -340,16 +451,46 @@ func isSelfPartner(pageIDInt int) bool {
 // 既に載っているアドレスは足しません——二度押しでタグが並ぶのを防ぐだけの判定なので、
 // `MarkHandled` と同じく**文字列で見ます**（取りこぼしても害は同じタグが2つ）。
 func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
+	return addContactTags(pageID, author, EmailTag, addrs)
+}
+
+// AddContactDomains は組織のページへ `ドメイン` のタグを足します（2026-09-16）。
+//
+// **組織の連絡先**です（`AddContactAddresses` が個人の連絡先なのに対して）。
+// **1つの組織が複数持てます**——自社が `example-works.co.jp` と `itohocorp.onmicrosoft.com` の
+// 2つを持つのが実データの例で、タグが2つ並ぶだけです。
+//
+// ⚠ **フリーメールのドメインを足さないのは編集者の判断です**（2026-09-16 ユーザー:
+// 「これは編集者がなんとかする問題だと思います」）。足しても壊れはしません——
+// 同じドメインを別の組織も持てば `ResolvePartner` が1つに決めず、候補を出します。
+func AddContactDomains(pageID, author string, domains []string) (int, error) {
+	norm := make([]string, 0, len(domains))
+	for _, d := range domains {
+		if n := normalizeDomain(d); n != "" {
+			norm = append(norm, n)
+		}
+	}
+	return addContactTags(pageID, author, DomainTag, norm)
+}
+
+// addContactTags は連絡先のタグ（`メールアドレス`／`ドメイン`）を足す共通の本体です。
+//
+// 既に載っている値は足しません——二度押しでタグが並ぶのを防ぐだけの判定なので、
+// `MarkHandled` と同じく**文字列で見ます**（取りこぼしても害は同じタグが2つ）。
+func addContactTags(pageID, author, tagName string, values []string) (int, error) {
 	added := 0
 	err := cms.RewriteBody(pageID, author, func(current string) string {
 		added = 0 // 呼び直されても数が増えないように
 		var pairs strings.Builder
-		for _, a := range addrs {
+		dt := `<dt>` + stdhtml.EscapeString(tagName) + `</dt>`
+		for _, a := range values {
 			dd := `<dd>` + stdhtml.EscapeString(a) + `</dd>`
-			if strings.Contains(current, dd) {
+			// ⚠ **同じ組で並んでいるかを見ます**——値だけで探すと、`メールアドレス` の
+			// 値と `ドメイン` の値がたまたま同じ文字のときに取りこぼします。
+			if strings.Contains(current, dt+dd) {
 				continue
 			}
-			pairs.WriteString(`<dt>` + stdhtml.EscapeString(EmailTag) + `</dt>` + dd)
+			pairs.WriteString(dt + dd)
 			added++
 		}
 		if pairs.Len() == 0 {

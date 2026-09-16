@@ -124,12 +124,21 @@ func TestPartnerTitleForAddressFindsPersonPage(t *testing.T) {
 		title != "南北スポーツ機械" {
 		t.Errorf("完全一致で会社名が返りません: %q ok=%v", title, ok)
 	}
-	// ② ドメイン一致——同じ会社の別の人からの初メールも、その会社に結びつく。
+	// ② **ドメインタグが無いうちは、ドメインでは引けません**（2026-09-16）。
+	// 暗黙の切り出しをやめたので、同じ会社の別の人からの初メールは当たりません。
+	if title, ok := PartnerTitleForAddress(user, "sato@example-sports.co.jp"); ok {
+		t.Errorf("ドメインタグが無いのに引けてしまいました: %q", title)
+	}
+	// ③ **組織にドメインタグを足すと当たります**——これが「組織の連絡先」の役目です。
+	if _, err := AddContactDomains(companyID, user.Username,
+		[]string{"example-sports.co.jp"}); err != nil {
+		t.Fatal(err)
+	}
 	if title, ok := PartnerTitleForAddress(user, "sato@example-sports.co.jp"); !ok ||
 		title != "南北スポーツ機械" {
-		t.Errorf("ドメイン一致で会社名が返りません: %q ok=%v", title, ok)
+		t.Errorf("ドメインタグで会社名が返りません: %q ok=%v", title, ok)
 	}
-	// ③ 無関係なドメインは返さない。
+	// ④ 無関係なドメインは返さない。
 	if title, ok := PartnerTitleForAddress(user, "someone@example.org"); ok {
 		t.Errorf("無関係なアドレスに答えました: %q", title)
 	}

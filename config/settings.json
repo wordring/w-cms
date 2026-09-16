@@ -21,6 +21,7 @@
     "送信日時": { "type": "datetime" },
     "添付": { "type": "number" },
     "メールアドレス": { "type": "text" },
+    "ドメイン": { "type": "code" },
     "電話番号": { "type": "text" },
     "FAX番号": { "type": "text" },
     "住所": { "type": "text" },

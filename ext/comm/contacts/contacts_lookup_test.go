@@ -12,11 +12,22 @@ import (
 // partnerPage は「取引先」の下に相手ページを1枚作ります。
 func partnerPage(t *testing.T, id, boxID, title, relation string, addrs ...string) {
 	t.Helper()
+	partnerPageWith(t, id, boxID, title, relation, addrs, nil)
+}
+
+// partnerPageWith は**組織の連絡先（ドメイン）も書ける**版です（2026-09-16）。
+// `メールアドレス` は個人の連絡先、`ドメイン` は組織の連絡先——別のものなので、
+// 試験も別々に渡せる形にします。
+func partnerPageWith(t *testing.T, id, boxID, title, relation string, addrs, domains []string) {
+	t.Helper()
 	var b strings.Builder
 	b.WriteString("<h1>" + title + "</h1><dl data-type=\"tags\">")
 	cms.WriteTag(&b, RelationTag, relation)
 	for _, a := range addrs {
 		cms.WriteTag(&b, EmailTag, a)
+	}
+	for _, d := range domains {
+		cms.WriteTag(&b, DomainTag, d)
 	}
 	b.WriteString("</dl>")
 	newPage(t, id, b.String(), page.PageMeta{
@@ -39,16 +50,67 @@ func setupPartnerBox(t *testing.T) string {
 //
 // これが社名の揺れを消す鍵です——整理の推奨値が「機械が読んだ名前」ではなく
 // 「既にあるページの題」になるので、打ち写しで `株式会社` の有無が生まれません。
-func TestPartnerTitleForAddressUsesDomain(t *testing.T) {
+// TestPartnerTitleForAddressUsesDomainTag は、**組織の連絡先（`ドメイン` タグ）**で
+// 引けることを固定します（2026-09-16 にこの形へ改めました）。
+//
+// **暗黙の切り出しはやめました。** それまでは登録済みアドレスから機械がドメインを
+// 切り出して一致を見ていたので、`@yahoo.co.jp` の個人客を1人登録すると**以後その
+// ドメインの全員がその人になりました**（下の試験がその再発を止めます）。
+func TestPartnerTitleForAddressUsesDomainTag(t *testing.T) {
 	box := setupPartnerBox(t)
-	partnerPage(t, "000201", box, "南北スポーツ機械", RelationCustomer,
-		"suzuki@example-sports.co.jp")
+	partnerPageWith(t, "000201", box, "南北スポーツ機械", RelationCustomer,
+		[]string{"suzuki@example-sports.co.jp"},
+		[]string{"example-sports.co.jp"})
 
 	u := &auth.User{Username: "alice", IsAdmin: true}
-	// 登録されていない**別の窓口**からのメールでも、ドメインで当たる。
+	// 登録されていない**別の窓口**からのメールでも、組織のドメインで当たる。
 	title, ok := PartnerTitleForAddress(u, "yoshihara@example-sports.co.jp")
 	if !ok || title != "南北スポーツ機械" {
-		t.Fatalf("ドメインで引けていません: %q ok=%v", title, ok)
+		t.Fatalf("ドメインタグで引けていません: %q ok=%v", title, ok)
+	}
+}
+
+// TestPartnerTitleForAddressIgnoresDomainWithoutTag は、**ドメインタグが無ければ
+// ドメインでは引かない**ことを固定します（2026-09-16 ユーザー決定の本体）。
+//
+// これが無いと、フリーメール（yahoo・gmail）で個人客を1人登録しただけで、
+// **同じドメインの他人が全員その人に化けます**。実データに `@yahoo.co.jp` の
+// アドレスがあるので、絵空事ではありません。
+func TestPartnerTitleForAddressIgnoresDomainWithoutTag(t *testing.T) {
+	box := setupPartnerBox(t)
+	partnerPage(t, "000201", box, "山田太郎", RelationCustomer, "yamada@yahoo.co.jp")
+
+	u := &auth.User{Username: "alice", IsAdmin: true}
+	if title, ok := PartnerTitleForAddress(u, "suzuki@yahoo.co.jp"); ok {
+		t.Fatalf("ドメインタグが無いのにドメインで引けてしまいました: %q", title)
+	}
+	// 本人は完全一致でちゃんと引ける。
+	if title, ok := PartnerTitleForAddress(u, "yamada@yahoo.co.jp"); !ok || title != "山田太郎" {
+		t.Errorf("完全一致で引けません: %q ok=%v", title, ok)
+	}
+}
+
+// TestResolvePartnerRefusesWhenAmbiguous は、**同じドメインを2つの組織が持つと
+// 1つに決めない**ことを固定します（2026-09-16 ユーザー:「候補が複数あるということで
+// どうでしょう」）。機械が選ぶと、静かに間違えます。
+func TestResolvePartnerRefusesWhenAmbiguous(t *testing.T) {
+	box := setupPartnerBox(t)
+	partnerPageWith(t, "000201", box, "甲社", RelationCustomer, nil, []string{"shared.example.jp"})
+	partnerPageWith(t, "000202", box, "乙社", RelationCustomer, nil, []string{"shared.example.jp"})
+
+	u := &auth.User{Username: "alice", IsAdmin: true}
+	if id, title, ok := ResolvePartner(u, "who@shared.example.jp"); ok {
+		t.Fatalf("2社が持つドメインで1つに決めてしまいました: %s %q", id, title)
+	}
+	// **候補としては両方出ます**（人が選べるように）。
+	refs, truncated := PartnerCandidates(u, "who@shared.example.jp", 10)
+	if len(refs) != 2 || truncated {
+		t.Fatalf("候補が2件出ません: %+v truncated=%v", refs, truncated)
+	}
+	// ⚠ **件数制限は必須**——ヤフーのようなドメインでは候補が1万件になりえます。
+	refs, truncated = PartnerCandidates(u, "who@shared.example.jp", 1)
+	if len(refs) != 1 || !truncated {
+		t.Errorf("件数制限が効いていません: %+v truncated=%v", refs, truncated)
 	}
 }
 
@@ -113,8 +175,15 @@ func TestAddContactAddressesMergesIntoExisting(t *testing.T) {
 	}
 
 	u := &auth.User{Username: "alice", IsAdmin: true}
-	title, ok := PartnerTitleForAddress(u, "info@a-sub.jp")
+	// **足したアドレスそのもの**で引けます（完全一致）。
+	title, ok := PartnerTitleForAddress(u, "sales@a-sub.jp")
 	if !ok || title != "A社" {
-		t.Fatalf("足したドメインで引けません: %q ok=%v", title, ok)
+		t.Fatalf("足したアドレスで引けません: %q ok=%v", title, ok)
+	}
+	// ⚠ **同じドメインの別の人では引けません**（2026-09-16）——ドメインで引くには
+	// 組織に `ドメイン` タグが要ります。アドレスを1つ足しただけで、そのドメインの
+	// 全員がこの会社になってはいけません。
+	if title, ok := PartnerTitleForAddress(u, "info@a-sub.jp"); ok {
+		t.Errorf("アドレスを足しただけでドメインが効いてしまいました: %q", title)
 	}
 }
