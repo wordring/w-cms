@@ -80,7 +80,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		idInt, err := strconv.Atoi(target)
 		if err != nil || !isPartnerPage(idInt) {
 			// **箱の外へは足しません**（ドメインの逆引きが別物を拾うため）。
-			cms.JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページを選んでください")
+			cms.JSONFail(w, http.StatusBadRequest, "「"+ContactsBoxTitle+"」の下のページを選んでください")
 			return
 		}
 		if !page.RequirePageWrite(w, r, target) {
@@ -134,15 +134,15 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **相手ページは「取引先」の下**（顧客名ページと同じ場所——会社を2枚にしない）。
 	// 箱がまだ無いときはトップへ1枚足すので、**トップへの書き込み**が要ります。
 	needParent := cms.TopPageID
-	if id, ok := PartnerBoxPageID(); ok {
+	if id, ok := ContactsBoxPageID(); ok {
 		needParent = id
 	}
 	if !page.RequirePageWrite(w, r, needParent) {
 		return
 	}
-	boxID, err := EnsurePartnerBox(user)
+	boxID, err := EnsureContactsBox(user)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+PartnerBoxTitle+"」ページを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "「"+ContactsBoxTitle+"」ページを作れません: "+err.Error())
 		return
 	}
 
@@ -218,7 +218,7 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **取引先の下だけ**（ここは連絡先の分類を取り消す口で、本文の一般的な編集口では
 	// ありません。よそのページのタグを消せる道を増やさない）。
 	if _, _, inPartner := PartnerOfPage(idInt); !inPartner {
-		cms.JSONFail(w, http.StatusBadRequest, "「"+PartnerBoxTitle+"」の下のページではありません")
+		cms.JSONFail(w, http.StatusBadRequest, "「"+ContactsBoxTitle+"」の下のページではありません")
 		return
 	}
 	if !page.RequirePageWrite(w, r, pageID) {

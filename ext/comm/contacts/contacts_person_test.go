@@ -26,9 +26,9 @@ func setupPartnerTree(t *testing.T) (user *auth.User, companyID string) {
 	user = &auth.User{Username: "alice", IsAdmin: true}
 	newPage(t, cms.TopPageID, "<h1>トップ</h1>",
 		page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
-	boxID, err := EnsurePartnerBox(user)
+	boxID, err := EnsureContactsBox(user)
 	if err != nil {
-		t.Fatalf("EnsurePartnerBox: %v", err)
+		t.Fatalf("EnsureContactsBox: %v", err)
 	}
 	companyID, err = ensureChildByTitle(user, boxID, "南北スポーツ機械")
 	if err != nil {
@@ -37,11 +37,12 @@ func setupPartnerTree(t *testing.T) (user *auth.User, companyID string) {
 	return user, companyID
 }
 
-// TestEnsureContactPersonBuildsTree は `取引先／社名／担当者／氏名` ができることを固定します。
+// TestEnsureContactPersonBuildsTree は `連絡帳／組織／人` ができることを固定します。
 //
-// **担当者の箱を1枚かませる**のは、社名ページの子に装置名称が並ぶからです
-// （2026-09-05 決定）。人を直接ぶら下げると**人と装置が兄弟になり**、装置が増えるほど
-// 人が埋もれます。
+// **2026-09-16 に `担当者` の箱をやめました**（ユーザー:「/連絡帳/南北スポーツ
+// マシーン/山田太郎 で良いのでは？」）。挟んでいた理由は「社名の子に装置名称が
+// 並ぶから」でしたが、**同じ 2026-09-05 に装置の上へ「段」が入って根拠が消えて**おり、
+// さらにこの日、部品階層は `取引先` の別の木へ分かれました。
 func TestEnsureContactPersonBuildsTree(t *testing.T) {
 	user, companyID := setupPartnerTree(t)
 
@@ -53,15 +54,12 @@ func TestEnsureContactPersonBuildsTree(t *testing.T) {
 	if !ok {
 		t.Fatal("担当者ページのサイドカーが読めません")
 	}
-	boxMeta, ok := page.ReadSidecar(meta.ParentID)
-	if !ok {
-		t.Fatal("担当者の箱が読めません")
+	// **組織の直下**（箱を挟まない）。
+	if meta.ParentID != companyID {
+		t.Errorf("人のページが組織の直下にありません: 親=%s（%s を期待）", meta.ParentID, companyID)
 	}
-	if got := cms.PageTitleByID(mustAtoiT(t, meta.ParentID)); got != ContactPersonBoxTitle {
-		t.Errorf("担当者の箱を挟んでいません: 親の題=%q", got)
-	}
-	if boxMeta.ParentID != companyID {
-		t.Errorf("担当者の箱が社名ページの下にありません: %s", boxMeta.ParentID)
+	if got := cms.PageTitleByID(mustAtoiT(t, personID)); got != "山田 太郎" {
+		t.Errorf("人のページの題が違います: %q", got)
 	}
 
 	// 2度目は作り直さない（同じ人が2枚にならない）。
@@ -240,12 +238,8 @@ func TestUnknownContactsFollowsPageMove(t *testing.T) {
 	if !inList() {
 		t.Error("取引先の外へ動かしたのに未登録へ戻ってきません（行方不明の状態）")
 	}
-	// 戻せば、また消える。
-	box, err := ensureChildByTitle(user, companyID, ContactPersonBoxTitle)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := cms.SetPageParent(user, personID, box); err != nil {
+	// 戻せば、また消える（組織の直下へ）。
+	if _, _, err := cms.SetPageParent(user, personID, companyID); err != nil {
 		t.Fatalf("戻せません: %v", err)
 	}
 	if inList() {

@@ -37,6 +37,13 @@ func init() {
 	// したのは、**整理する前に「どこへ行くのか」を人が見られるようにする**ためです。
 	// ⚠ **作業面はまだありません**（納期・受注残を見るビューが未実装）。見出しだけの
 	// 箱なので、ビューができたらここの本文に足すこと。
+	// **部品階層の根**（2026-09-16 にアドレス帳の木と分けた・customer_box.go）。
+	cms.RegisterRequiredPage(cms.RequiredPage{
+		Title:     CustomerBoxTitle,
+		Extension: "subcon",
+		Why:       "製造部品の階層の根です（社名／段／装置名称／図面名称）。整理を実行すると、通信記録の下にできた部品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
+		Body:      customerBoxBody,
+	})
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     OrderBoxTitle,
 		Extension: "subcon",

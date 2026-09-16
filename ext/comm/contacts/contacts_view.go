@@ -75,8 +75,9 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 					` data-addresses="` + addrAttr + `"` +
 					` data-target="` + stdhtml.EscapeString(c.SuggestPageID) + `"` +
 					` data-person="` + stdhtml.EscapeString(c.Name) + `"` +
+					// **組織の直下に人**（2026-09-16 に `担当者` の箱をやめた）。
 					` title="「` + stdhtml.EscapeString(c.SuggestTitle) + `／` +
-					ContactPersonBoxTitle + `／` + stdhtml.EscapeString(c.Name) +
+					stdhtml.EscapeString(c.Name) +
 					`」のページを作り、このアドレスをそこへ入れます">` +
 					stdhtml.EscapeString(c.Name) + ` を担当者にする</button>`)
 			}
@@ -111,7 +112,7 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 			sb.WriteString(`<button type="button" class="chip-btn contact-register"` +
 				` data-relation="` + stdhtml.EscapeString(rel) + `"` +
 				` data-addresses="` + addrAttr + `"` +
-				` title="この相手を「` + PartnerBoxTitle + `」の下のページにします（取引：` +
+				` title="この相手を「` + ContactsBoxTitle + `」の下のページにします（取引：` +
 				stdhtml.EscapeString(rel) + `）">` + stdhtml.EscapeString(rel) + `</button>`)
 		}
 		sb.WriteString(`</span>`)

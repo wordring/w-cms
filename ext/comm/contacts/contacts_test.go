@@ -25,9 +25,9 @@ func TestPartnerBoxHasWorkSurface(t *testing.T) {
 	newPage(t, cms.TopPageID, "<h1>トップ</h1>",
 		page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 
-	boxID, err := EnsurePartnerBox(user)
+	boxID, err := EnsureContactsBox(user)
 	if err != nil {
-		t.Fatalf("EnsurePartnerBox: %v", err)
+		t.Fatalf("EnsureContactsBox: %v", err)
 	}
 	body, err := cms.ReadPageBody(boxID)
 	if err != nil {
@@ -36,12 +36,12 @@ func TestPartnerBoxHasWorkSurface(t *testing.T) {
 	if !strings.Contains(body, `data-type="unknown-contacts"`) {
 		t.Errorf("作業面（未登録の連絡先）が載っていません: %s", body)
 	}
-	if !strings.Contains(body, "<h1>"+PartnerBoxTitle+"</h1>") {
-		t.Errorf("題が %s になっていません: %s", PartnerBoxTitle, body)
+	if !strings.Contains(body, "<h1>"+ContactsBoxTitle+"</h1>") {
+		t.Errorf("題が %s になっていません: %s", ContactsBoxTitle, body)
 	}
 
 	// 2度目は作り直さない（同じページを返す）。
-	again, err := EnsurePartnerBox(user)
+	again, err := EnsureContactsBox(user)
 	if err != nil {
 		t.Fatal(err)
 	}

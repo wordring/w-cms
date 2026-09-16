@@ -16,7 +16,7 @@ package subcon
 // 行き先は **`取引先／社名／段／装置名称／図面名称`** です。ワンノートの製造部品
 // ページの形に、2026-09-05 の2つの決定を足したもの:
 //
-//   - **顧客名ページは `取引先` の下**（トップ直下をやめた。cms.EnsurePartnerBox）
+//   - **顧客名ページは `取引先` の下**（トップ直下をやめた。cms.EnsureContactsBox）
 //   - **装置名称の上に段**（現行・旧型・試作…）。ユーザー:「装置名の上の段として、
 //     旧型、現行、試作などがあったほうが探しやすいです」。段の名前は設定が持ちます
 //     （`machine_stages`）——「など」と付いたので増える前提です。
@@ -89,7 +89,7 @@ func suggestStage(customer, machine string) string {
 	if customer == "" || machine == "" {
 		return fallback
 	}
-	boxID, ok := contacts.PartnerBoxPageID()
+	boxID, ok := CustomerBoxPageID()
 	if !ok {
 		return fallback
 	}
@@ -208,7 +208,7 @@ func senderAddressOf(partPageID int) string {
 // 整理の画面の入力補助です。**選ばせるのではなく、候補として見せる**だけ——
 // 新しい顧客の1枚目はここに無いので、打てなくしてはいけません。
 func partnerNames(user *auth.User) []string {
-	boxID, ok := contacts.PartnerBoxPageID()
+	boxID, ok := CustomerBoxPageID()
 	if !ok {
 		return []string{}
 	}
@@ -263,7 +263,7 @@ func partnerNames(user *auth.User) []string {
 // （findChildByTitle）、揺れを機械が吸収すると別の装置が1つに潰れます。
 func machineNames(user *auth.User) map[string][]string {
 	out := map[string][]string{}
-	boxID, ok := contacts.PartnerBoxPageID()
+	boxID, ok := CustomerBoxPageID()
 	if !ok {
 		return out
 	}
@@ -498,10 +498,10 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 
 	// **顧客名ページは「取引先」の下**です（2026-09-05 ユーザー決定）。アドレス帳が
 	// 作る相手ページと**同じ場所・同じ1枚**——連絡先を見るページと部品を見るページを
-	// 分けないため（contacts.EnsurePartnerBox の説明が正本）。
-	boxID, err := contacts.EnsurePartnerBox(user)
+	// 分けないため（EnsureCustomerBox の説明が正本）。
+	boxID, err := EnsureCustomerBox(user)
 	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "「" + contacts.PartnerBoxTitle + "」ページを用意できません: " + err.Error()}
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "「" + CustomerBoxTitle + "」ページを用意できません: " + err.Error()}
 	}
 	customerID, err := ensureChildPage(user, boxID, customer)
 	if err != nil {

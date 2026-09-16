@@ -40,7 +40,7 @@ func setupPartnerBox(t *testing.T) string {
 	setupTemplateAPITest(t)
 	newPage(t, cms.TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 	const boxID = "000200"
-	newPage(t, boxID, "<h1>"+PartnerBoxTitle+"</h1>", page.PageMeta{
+	newPage(t, boxID, "<h1>"+ContactsBoxTitle+"</h1>", page.PageMeta{
 		Owner: "alice", Mode: page.DefaultMode, ParentID: cms.TopPageID})
 	return boxID
 }

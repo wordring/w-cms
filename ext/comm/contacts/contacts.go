@@ -89,18 +89,18 @@ func init() {
 		return ContactPageForAddress(nil, addr)
 	})
 
-	// **取引先は管理画面のボタンで作れます**（2026-09-16）。
+	// **連絡帳は管理画面のボタンで作れます**（2026-09-16）。
 	//
-	// ⚠ **ここが行き止まりでした。** 取引先ページを作るのは `EnsurePartnerBox` で、
+	// ⚠ **ここが行き止まりでした。** この箱を作るのは `EnsureContactsBox` で、
 	// その呼び手は**連絡先の登録の口と整理の2つだけ**。ところが登録の画面
-	// （未登録の連絡先）は**取引先ページの上に載っている**ので、
+	// （未登録の連絡先）は**この箱のページの上に載っている**ので、
 	// **登録しないと作業面が出ず、作業面が無いと登録できない**——2026-09-16 に
 	// データを一掃したとき、実際にそうなりました（手で1枚作って抜けた）。
 	cms.RegisterRequiredPage(cms.RequiredPage{
-		Title:     PartnerBoxTitle,
+		Title:     ContactsBoxTitle,
 		Extension: "comm/contacts",
-		Why:       "取引の相手（会社・個人）を集める箱です。メールから拾った「未登録の連絡先」の作業面がこのページに出ます。製造部品の階層もこの下です。",
-		Body:      partnerBoxBody,
+		Why:       "取引の相手（会社・個人・自社）を集める箱です。木は「組織／人」の2段で、メールから拾った「未登録の連絡先」の作業面がこのページに出ます。",
+		Body:      contactsBoxBody,
 	})
 }
 
@@ -128,19 +128,37 @@ var contactsVocab = []cms.VocabDef{{
 	View:        true,
 }}
 
-// ContactPersonBoxTitle は社名ページの下の、窓口の人を集める箱の名前です
-// （`取引先／社名／担当者／名前`）。**装置名称と人を兄弟にしない**ための1枚。
-// 語を1箇所に閉じておくのは「担当」と「担当者」が混ざるのを防ぐためです。
-const ContactPersonBoxTitle = "担当者"
-
-// PartnerBoxTitle は相手ページの置き場（トップ直下）の名前です。通信箱
+// ContactsBoxTitle はアドレス帳の置き場（トップ直下）の名前です。通信箱
 // （MailBoxTitle）・テンプレート置き場と同じく **h1（ページ名）が正**。
-const PartnerBoxTitle = "取引先"
+//
+// **2026-09-16 に `取引先` から `連絡帳` へ改めました**（ユーザー決定）。木は
+// **組織／人**の2段です:
+//
+//	連絡帳／南北スポーツ機械／山田 太郎     ← 会社とその窓口
+//	連絡帳／個人／山田太郎                        ← 個人のお客様
+//
+// **個人のお客様にも組織の段を置きます**（ユーザー:「個人という名前の組織ページの
+// 下に個人名ページが来るのではないでしょうか」）。木の形が常に「組織／人」に
+// 揃うので、読む側が場合分けを持たずに済みます。
+//
+// ⚠ **`取引先` は下請け業務（`ext/subcon`）の持ち物になりました**——あちらは
+// 部品階層の根（`取引先／社名／段／装置名称／図面名称`）です。**別の木**です。
+const ContactsBoxTitle = "連絡帳"
 
-// PartnerBoxPageID はトップ直下の取引先ページを返します（無ければ ok=false）。
-func PartnerBoxPageID() (string, bool) { return cms.TopLevelPageByTitle(PartnerBoxTitle) }
+// ~~ContactPersonBoxTitle~~ は 2026-09-16 に**やめました**（`連絡帳／組織／人`）。
+//
+// 2026-09-05 に `担当者` を挟んだ理由は「社名ページの子には装置名称が並ぶので、
+// 人を直接ぶら下げると埋もれる」でしたが、**同じ日に「装置名称の上に段」も
+// 決まっています**（`取引先／社名／段／装置名称`）。社名ページの子は段3つだけに
+// なったので、挟む理由は当時のうちに消えていました——**2つの決定が同じ日に出て、
+// 後のほうが前のほうの根拠を消していた**わけです。
+//
+// 木が分かれたいまは、人の隣に段すら並びません。
 
-// EnsurePartnerBox は取引先ページを返し、**無ければ作ります**。
+// ContactsBoxPageID はトップ直下の連絡帳ページを返します（無ければ ok=false）。
+func ContactsBoxPageID() (string, bool) { return cms.TopLevelPageByTitle(ContactsBoxTitle) }
+
+// EnsureContactsBox は取引先ページを返し、**無ければ作ります**。
 //
 // **通信箱と違って自動で作ります。** 通信箱は「そこへ落とすと取り込みが走る」という
 // 機能の入口なので、人が意図して置くものです。取引先はただの置き場——無いからと
@@ -148,14 +166,14 @@ func PartnerBoxPageID() (string, bool) { return cms.TopLevelPageByTitle(PartnerB
 // また作られますが、**取り込みのように静かに壊れることはありません**。
 //
 // 権限は呼ぶ側が見ます（作るときはトップへの書き込み、あるときは箱への書き込み）。
-func EnsurePartnerBox(user *auth.User) (string, error) {
-	if id, ok := PartnerBoxPageID(); ok {
+func EnsureContactsBox(user *auth.User) (string, error) {
+	if id, ok := ContactsBoxPageID(); ok {
 		return id, nil
 	}
-	return cms.CreateChildPage(cms.TopPageID, user.Username, partnerBoxBody())
+	return cms.CreateChildPage(cms.TopPageID, user.Username, contactsBoxBody())
 }
 
-// partnerBoxBody は取引先ページの初期の本文です。
+// contactsBoxBody は取引先ページの初期の本文です。
 //
 // **「未登録の連絡先」の作業面を最初から載せます**（2026-09-11）。ここを空の見出し
 // だけで作っていたために、**アドレス帳の作業面がどこにも存在しませんでした**
@@ -164,10 +182,12 @@ func EnsurePartnerBox(user *auth.User) (string, error) {
 //
 // 通信箱は**人が意図して置くページ**なので、作業面も人が入れます。取引先は
 // **機械が作る**ので、**行き止まりのページを作らない責任はこちらにあります**。
-func partnerBoxBody() string {
-	return "<h1>" + stdhtml.EscapeString(PartnerBoxTitle) + "</h1>" +
-		"<p>取引の相手（会社・個人）を集めます。製造部品の階層もこの下です" +
-		"（社名／段／装置名称／図面名称）。</p>" +
+func contactsBoxBody() string {
+	return "<h1>" + stdhtml.EscapeString(ContactsBoxTitle) + "</h1>" +
+		"<p>取引の相手（会社・個人・自社）を集めます。木は<strong>組織／人</strong>の2段です" +
+		"——会社なら「社名／窓口の人」、個人のお客様なら「個人／お名前」。</p>" +
+		"<p>組織のページには<strong>ドメイン</strong>のタグを、人のページには" +
+		"<strong>メールアドレス</strong>のタグを付けると、届いたメールから相手を引けます。</p>" +
 		`<section data-type="` + ContactsViewType + `"></section>`
 }
 
@@ -512,7 +532,7 @@ func addContactTags(pageID, author, tagName string, values []string) (int, error
 // **足す先を箱の中に限ります。** 画面から来たIDをそのまま信じると、通信記録や
 // 図面ページに `メールアドレス` のタグが付き、ドメインの逆引きが別物を拾います。
 func isPartnerPage(pageIDInt int) bool {
-	boxID, ok := PartnerBoxPageID()
+	boxID, ok := ContactsBoxPageID()
 	if !ok {
 		return false
 	}
@@ -539,7 +559,7 @@ func isPartnerPage(pageIDInt int) bool {
 // 社名ページ自身を渡せばそれ自身が返ります。取引先の外なら ok=false。
 // 壊れたデータで無限に辿らないよう回数に上限を置きます（`isDescendantOf` と同じ用心）。
 func PartnerOfPage(pageIDInt int) (id int, title string, ok bool) {
-	boxID, found := PartnerBoxPageID()
+	boxID, found := ContactsBoxPageID()
 	if !found {
 		return 0, "", false
 	}
@@ -583,11 +603,9 @@ func EnsureContactPerson(user *auth.User, companyID, name string) (string, error
 	if name == "" {
 		return "", errors.New("担当者の名前が空です")
 	}
-	boxID, err := ensureChildByTitle(user, companyID, ContactPersonBoxTitle)
-	if err != nil {
-		return "", err
-	}
-	return ensureChildByTitle(user, boxID, name)
+	// **組織の直下に人**（2026-09-16）。`担当者` の箱は挟みません——上の
+	// ContactsBoxTitle の説明に、挟んでいた理由と、それが消えた経緯があります。
+	return ensureChildByTitle(user, companyID, name)
 }
 
 // ensureChildByTitle は題の一致する子を返し、無ければ作ります。
@@ -621,7 +639,7 @@ type PartnerRef struct {
 
 // existingPartners は「取引先」の下にある相手ページを題の順で並べます（読めるものだけ）。
 func existingPartners(user *auth.User) []PartnerRef {
-	boxID, ok := PartnerBoxPageID()
+	boxID, ok := ContactsBoxPageID()
 	if !ok {
 		return nil
 	}
