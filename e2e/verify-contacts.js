@@ -1,8 +1,18 @@
-// 未登録の連絡先——1アドレス1行・推薦・足す（2026-09-13）
+// 未登録の連絡先——「組織」「担当者」の2欄（2026-09-17）
+//
+// ユーザー:「入力欄は『組織コンボボックス』と『担当者名コンボボックス』になると思います。
+// 同じドメインで登録された社名がDBにあれば、組織コンボボックスに候補としてリストされます」。
+//
+// 見るのは: 1アドレス1行／各行に組織・担当者の欄と「登録」がある／組織の候補に必ず
+// 「個人」が居る／同じドメインの組織が既にあれば候補に並び、1つなら組織欄に入っている／
+// 既にある組織が入っている行は取引の選択を隠す（付いているので）。
+//
+// **押すのは、既にある組織が組織欄に入っている行だけ**（実データとしても正しい操作）。
+// そういう行が無い日は構造の確認だけで終わります——連絡帳を片付け切った状態も、
+// 入れ直した直後の空の状態も正常だからです。⚠ 候補に無い社名を打って新しい組織を
+// 作る操作は自動で流しません（実データに機械の名前のページが積もる）。
 const { chromium } = require('playwright');
 const lib = require('./lib');
-// **取引先ページは走るときに探します**（2026-09-16）——データを入れ直すと
-// ページIDが変わるため（詳しくは lib.js の冒頭）。
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
@@ -13,58 +23,57 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
-  const BOX = process.env.WCMS_PARTNER_BOX ||
-    ((await lib.childrenOf(page, '000000')).find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
-  if (!BOX) { console.log('取引先ページがありません（連絡先を1件登録すると作られます）'); await browser.close(); process.exit(1); }
+  await lib.login(page, BASE);
+  // **連絡帳ページは走るときに探します**（トップ直下・題が「連絡帳」）。
+  const BOX = ((await lib.childrenOf(page, '000000')).find(c => (c.Title || '').trim() === '連絡帳') || {}).ID || '';
+  if (!BOX) { console.log('連絡帳ページがありません（管理画面の「置き場」で作れます）'); await browser.close(); process.exit(1); }
   await page.goto(BASE + '/' + BOX); await page.waitForTimeout(1500);
 
-  const before = await page.evaluate(() => ({
-    rows: document.querySelectorAll('#w-editor-content tr[data-address]').length,
-    grouped: document.querySelectorAll('#w-editor-content .contact-addrs').length,
-    suggested: document.querySelectorAll('#w-editor-content .chip-primary').length,
-    overflow: document.documentElement.scrollWidth > window.innerWidth,
-  }));
-  ok(before.rows > 0, '1アドレス1行になっている', before.rows + '行');
-  ok(before.grouped === 0, 'ドメインでまとめた欄が残っていない');
-  ok(!before.overflow, '横にはみ出さない');
-
-  // **データに依存しない形で確かめます**。推薦は「既にある取引先とドメインが一致する行」
-  // にだけ出るので、件数を決め打ちにすると片付けた翌日に落ちます。
-  // ここでは「推薦が出ている行は、確かに登録済みドメインである」ことを見ます。
-  const check = await page.evaluate(async (box) => {
+  const before = await page.evaluate(() => {
     const rows = Array.from(document.querySelectorAll('#w-editor-content tr[data-address]'));
-    const known = await (await fetch('/api/load?id=' + box)).text();
-    return rows.map(r => ({
-      domain: r.dataset.domain,
-      suggested: !!r.querySelector('.chip-primary'),
-      folded: !!r.querySelector('details.contact-more'),
-      hasNew: !!r.querySelector('.contact-register'),
-    }));
-  }, BOX);
-  ok(check.every(r => r.hasNew), 'どの行からも新規登録できる');
-  ok(check.filter(r => r.suggested).every(r => r.folded),
-     '推薦のある行は、ほかの行き先を畳んでいる');
-  ok(check.filter(r => !r.suggested).every(r => !r.folded),
-     '推薦の無い行は畳まない（その行の主役は新規登録）');
-
-  // 推薦のある行を1つ押す（実データとしても正しい操作）。
-  // **推薦が1つも無い日は、そこまでで終わり**——片付け切った状態も正常だからです。
-  const target = await page.evaluate(() => {
-    const btn = document.querySelector('#w-editor-content .chip-primary');
-    if (!btn) return null;
-    return { addr: btn.closest('tr').dataset.address, label: btn.textContent };
+    return {
+      rows: rows.length,
+      overflow: document.documentElement.scrollWidth > window.innerWidth,
+      detail: rows.map(r => {
+        const org = r.querySelector('.contact-org');
+        const opts = org && org.list ? Array.from(org.list.options) : [];
+        const match = opts.find(o => o.value === (org ? org.value.trim() : ''));
+        return {
+          addr: r.dataset.address,
+          hasFields: !!(org && r.querySelector('.contact-person') && r.querySelector('.contact-go')),
+          candidates: opts.map(o => o.value),
+          hasPersonal: opts.some(o => o.value === '個人'),
+          orgValue: org ? org.value : '',
+          existingID: match ? (match.dataset.id || '') : '',
+          relHidden: r.querySelector('.contact-form').classList.contains('contact-form--existing'),
+        };
+      }),
+    };
   });
-  if (!target) {
-    console.log('  — 推薦のある行がありません（全部片付いた状態）。ここまでで終了します');
-    await browser.close();
-    console.log(fail ? fail + ' 件失敗' : '全項目OK');
-    process.exit(fail ? 1 : 0);
+  if (before.rows === 0) {
+    console.log('  — 未登録の連絡先が0件です（片付け切った状態）。ここで終了します');
+    await browser.close(); console.log(fail ? fail + ' 件失敗' : '全項目OK'); process.exit(fail ? 1 : 0);
   }
-  await page.click('#w-editor-content .chip-primary');
-  await page.waitForTimeout(1200);
+  ok(before.rows > 0, '1アドレス1行になっている', before.rows + '行');
+  ok(!before.overflow, '横にはみ出さない');
+  ok(before.detail.every(d => d.hasFields), 'どの行にも組織・担当者の欄と「登録」がある');
+  ok(before.detail.every(d => d.hasPersonal), '組織の候補に必ず「個人」が居る');
+  ok(before.detail.every(d => d.candidates.length <= 22), '候補の数に上限がある（同じドメインの組織は最大20）',
+     Math.max(...before.detail.map(d => d.candidates.length)) + '件が最多');
+  const prefilled = before.detail.filter(d => d.existingID);
+  ok(prefilled.every(d => d.relHidden), '既にある組織が入っている行は取引の選択を隠す', prefilled.length + '行');
+  ok(before.detail.filter(d => !d.existingID).every(d => !d.relHidden), '新しい組織の行は取引の選択を出す');
+
+  const target = prefilled[0];
+  if (!target) {
+    console.log('  — 既にある組織が入っている行がありません。押す操作は飛ばします');
+    ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
+    await browser.close(); console.log(fail ? '\n' + fail + ' 件失敗' : '\n全項目OK'); process.exit(fail ? 1 : 0);
+  }
+
+  // 既にある組織へ「登録」（担当者は初期値のまま。空なら組織の口、名前があれば人のページ）。
+  await page.click('#w-editor-content tr[data-address="' + target.addr + '"] .contact-go');
+  await page.waitForTimeout(1500);
   const after = await page.evaluate((a) => ({
     rows: document.querySelectorAll('#w-editor-content tr[data-address]').length,
     still: !!document.querySelector('#w-editor-content tr[data-address="' + a + '"]'),
@@ -72,29 +81,24 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   ok(after.rows === before.rows - 1, '押した行が一覧から消える', before.rows + ' → ' + after.rows);
   ok(!after.still, target.addr + ' の行が消えた');
 
-  // 取引先の木のどこかに載ったか（正本の確認）。
-  //
-  // **ページIDを決め打ちにしません**——押すボタンによって行き先が変わります
-  // （「○○を担当者にする」なら `社名／担当者／氏名`、「○○へ足す」なら社名ページ）。
-  // データを入れ直すとIDも変わるので、**木を辿って確かめます**。
+  // 連絡帳の木のどこかに載ったか（正本の確認。行き先は組織か、その下の人）。
   const landed = await page.evaluate(async ({ a, box }) => {
     const seen = new Set();
     const walk = async (id, depth) => {
-      if (depth > 5 || seen.has(id)) return false;
+      if (depth > 4 || seen.has(id)) return false;
       seen.add(id);
       const body = await (await fetch('/api/load?id=' + id)).text();
       if (body.includes(a)) return true;
       const res = await fetch('/api/children?parent_id=' + id);
       if (!res.ok) return false;
-      const kids = await res.json();
-      for (const k of (kids || [])) {
+      for (const k of ((await res.json()) || [])) {
         if (await walk(k.ID, depth + 1)) return true;
       }
       return false;
     };
     return walk(box, 0);
   }, { a: target.addr, box: BOX });
-  ok(landed, '取引先の木にアドレスが載った', target.label);
+  ok(landed, '連絡帳の木にアドレスが載った', target.orgValue);
   ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
 
   await browser.close();
