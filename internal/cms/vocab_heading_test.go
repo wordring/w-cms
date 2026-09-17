@@ -41,7 +41,7 @@ func queryIndex(t *testing.T, pageID int, dataType string) []string {
 func TestHeadingDeclaresSectionType(t *testing.T) {
 	setupSaveTest(t)
 
-	body := `<h1>部品ページ</h1>` +
+	body := `<h1>加工製品ページ</h1>` +
 		`<section data-id="s1">` +
 		`<h2>検査記録</h2>` + // ← この言葉が機能を宣言する。data-type は無い
 		`<table>` +

@@ -90,7 +90,7 @@ func TestFileOrderRefusesNonOrderPage(t *testing.T) {
 
 	results := postOrders(t, &auth.User{Username: "alice"}, []string{partID})
 	if len(results) != 1 || results[0].Outcome != "skipped" {
-		t.Fatalf("部品ページを受注として動かしています: %+v", results)
+		t.Fatalf("加工製品ページを受注として動かしています: %+v", results)
 	}
 	if _, ok := findChildByTitle(cms.TopPageID, OrderBoxTitle); ok {
 		t.Errorf("動かさないのに「%s」ページを作っています", OrderBoxTitle)

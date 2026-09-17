@@ -131,7 +131,7 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		}
 	}
 
-	// 2. 部品ページ(000003)の材料マスタ
+	// 2. 加工製品ページ(000003)の材料マスタ
 	// SHAFT-01 という部品は、鋼材(S45C)が1本、高周波焼入れが1個必要
 	sync(3, `<h1>部品</h1>`+
 		`<dl data-type="tags"><dt>部品番号</dt><dd>SHAFT-01</dd></dl>`+

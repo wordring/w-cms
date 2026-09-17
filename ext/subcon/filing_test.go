@@ -18,7 +18,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// 部品ページの整理（提案→人が直す→実行）のテスト。
+// 加工製品ページの整理（提案→人が直す→実行）のテスト。
 //
 // 固定するのは、この機能の**約束**そのものです:
 //
@@ -42,7 +42,7 @@ func setupFilingTest(t *testing.T, inboxID string) {
 	}
 }
 
-// makeDrawingPage は解析が作るのと同じ形の部品ページを inbox の子として作ります。
+// makeDrawingPage は解析が作るのと同じ形の加工製品ページを inbox の子として作ります。
 func makeDrawingPage(t *testing.T, inboxID, no, name, machine, customer string) string {
 	return makeDrawingPageFrom(t, inboxID, "pdf001", no, name, machine, customer)
 }
@@ -55,9 +55,9 @@ func makeDrawingPageFrom(t *testing.T, inboxID, attachID, no, name, machine, cus
 		DocType: "drawing", DrawingNo: no, DrawingName: name,
 		MachineName: machine, Customer: customer,
 	}
-	id, err := cms.CreateChildPage(inboxID, "alice", buildPartPageHTML(inboxID, attachID, j, nil))
+	id, err := cms.CreateChildPage(inboxID, "alice", buildProductPageHTML(inboxID, attachID, j, nil))
 	if err != nil {
-		t.Fatalf("部品ページを作れません: %v", err)
+		t.Fatalf("加工製品ページを作れません: %v", err)
 	}
 	return id
 }
@@ -169,7 +169,7 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 		t.Fatalf("移動になっていません: %+v", results)
 	}
 
-	// 「取引先」の下に顧客名、その下に装置名称、その下に部品ページ
+	// 「取引先」の下に顧客名、その下に装置名称、その下に加工製品ページ
 	// （2026-09-05 ユーザー決定。トップ直下が名簿になるのを避けた）。
 	boxID, ok := findChildByTitle(cms.TopPageID, CustomerBoxTitle)
 	if !ok {
@@ -189,7 +189,7 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 		t.Fatalf("人が打ち替えた装置名称が使われていません（推奨値のままになっている疑い）")
 	}
 	if _, ok := findChildByTitle(machID, "取付ベース"); !ok {
-		t.Errorf("部品ページが装置名称の下へ移っていません")
+		t.Errorf("加工製品ページが装置名称の下へ移っていません")
 	}
 	meta, _ := page.ReadSidecar(partID)
 	if meta.ParentID != machID {
@@ -399,7 +399,7 @@ func TestFileDrawingsAsksWhenSameDrawingNo(t *testing.T) {
 //
 // この鎖は顧客名の推奨の土台です:
 //
-//	部品ページ → `受信元` タグ → 通信記録 → `差出人` → 取引先ページ → その題
+//	加工製品ページ → `受信元` タグ → 通信記録 → `差出人` → 取引先ページ → その題
 //
 // 2026-09-16 まで**試験がありませんでした**。タグ名は生の文字列で書かれていて
 // （`name = '差出人'`）、通信側が欄の名前を変えても**エラーにならず、顧客名の
@@ -425,24 +425,24 @@ func TestSenderAddressOfFollowsSourceRef(t *testing.T) {
 		t.Fatalf("通信記録の索引: %v", err)
 	}
 
-	// ② 部品ページ——由来は「ページID-添付ID」。ハイフンの前だけが元ページ。
+	// ② 加工製品ページ——由来は「ページID-添付ID」。ハイフンの前だけが元ページ。
 	if err := page.WriteSidecar("000111", page.PageMeta{
 		Owner: "alice", Mode: "330", ParentID: "000110",
 	}); err != nil {
-		t.Fatalf("部品ページのサイドカー: %v", err)
+		t.Fatalf("加工製品ページのサイドカー: %v", err)
 	}
 	part := "<h1>ブラケット</h1>" +
 		`<dl data-type="tags">` +
 		"<dt>" + SourceRefTag + "</dt><dd>000110-c3p7</dd>" +
 		"</dl>"
 	if err := cms.SyncIndex("000111", part); err != nil {
-		t.Fatalf("部品ページの索引: %v", err)
+		t.Fatalf("加工製品ページの索引: %v", err)
 	}
 
 	if got := senderAddressOf(111); got != "yamada@example.co.jp" {
 		t.Errorf("由来をたどって差出人アドレスを引けません: %q", got)
 	}
-	// 由来が無ければ空（新しい顧客の1通目や、手で作った部品ページ）。
+	// 由来が無ければ空（新しい顧客の1通目や、手で作った加工製品ページ）。
 	// **空を返すのは正常**です——呼ぶ側は読めた名前へ戻ります。
 	if got := senderAddressOf(110); got != "" {
 		t.Errorf("由来の無いページで空を返していません: %q", got)
@@ -452,8 +452,8 @@ func TestSenderAddressOfFollowsSourceRef(t *testing.T) {
 // TestFilingLinksToContactsBook は、整理が**2つの木を参照タグで結ぶ**ことを
 // 固定します（2026-09-16）。
 //
-// 2026-09-16 にアドレス帳（`連絡帳`）と部品階層（`取引先`）を別の木に分けました。
-// **題だけで結んでいると、どちらかを改名した日に切れます**——部品階層のフォルダ名も
+// 2026-09-16 にアドレス帳（`連絡帳`）と加工製品の階層（`取引先`）を別の木に分けました。
+// **題だけで結んでいると、どちらかを改名した日に切れます**——加工製品の階層のフォルダ名も
 // 連絡帳の社名も、人が直すものです。参照はページIDなので切れません。
 //
 // **人が選んだ社名で引きます**（機械が推した組織ではなく）——整理の画面は
@@ -555,7 +555,7 @@ func TestUnlinkedCustomersOnlyShowsFixable(t *testing.T) {
 	user := &auth.User{Username: "alice"}
 
 	// ⚠ **ページIDは機械が採ります**（明示しないこと）。最初はここで `009201` の
-	// ように書いていて、**自動採番の部品ページを上書き**していました——`板` が
+	// ように書いていて、**自動採番の加工製品ページを上書き**していました——`板` が
 	// 9202、`軸` が 9203 になり、`受信元` の鎖が切れて**番人が一度も効きません**
 	// でした（2026-09-16 に変異試験で発覚）。
 	recBody := "<h1>受信</h1><dl data-type=\"tags\">" +
@@ -633,7 +633,7 @@ func newRecordForTest(t *testing.T, body, parentID string) string {
 	return id
 }
 
-// setSourceRef は部品ページの `受信元` を書き替えます（どの記録から来たかを差し替える）。
+// setSourceRef は加工製品ページの `受信元` を書き替えます（どの記録から来たかを差し替える）。
 func setSourceRef(t *testing.T, partID, recID string) {
 	t.Helper()
 	body, err := cms.ReadPageBody(partID)

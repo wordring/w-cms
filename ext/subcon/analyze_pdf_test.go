@@ -222,7 +222,7 @@ var sampleDrawing = &orderJudgment{
 	DrawingName: "台座Assy",
 }
 
-// TestAnalyzeDrawingMatchesDXF は、図面PDFの解析で部品ページが生まれ、
+// TestAnalyzeDrawingMatchesDXF は、図面PDFの解析で加工製品ページが生まれ、
 // 図面番号の一致したDXFだけが参照タグで結ばれることを検証します。
 func TestAnalyzeDrawingMatchesDXF(t *testing.T) {
 	const id = "000031"
@@ -251,7 +251,7 @@ func TestAnalyzeDrawingMatchesDXF(t *testing.T) {
 		t.Errorf("一致したDXFの数が違います: %d（別部品まで拾っていないか）", resp.MatchedDXF)
 	}
 	if resp.Title != "P103-227-6 台座Assy" {
-		t.Errorf("部品ページの題が違います: %q", resp.Title)
+		t.Errorf("加工製品ページの題が違います: %q", resp.Title)
 	}
 
 	body := readPageBody(t, resp.PageID)

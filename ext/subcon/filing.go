@@ -1,7 +1,7 @@
 package subcon
 
 // ─────────────────────────────────────────────────────────────────────────
-// 部品ページの整理——機械が提案し、人が直して実行する（2026-09-03）
+// 加工製品ページの整理——機械が提案し、人が直して実行する（2026-09-03）
 //
 // ユーザー:「各図面の行き場所について、解析から得られた推奨値を提示して、
 // ユーザーがそれを書き直して実行ボタンを押す形はどうですか？」
@@ -9,7 +9,7 @@ package subcon
 //
 // **なぜ解析の場で決めないのか**——ユーザー:「人間が見てもなにを言っているのか
 // 判断に困る場合も結構多いです。**なぜなら顧客は適当だからです**」。機械にも人にも
-// 「いま」決められないなら、決めさせない。解析は部品ページを通信記録ページの子として
+// 「いま」決められないなら、決めさせない。解析は加工製品ページを通信記録ページの子として
 // 作るところまでで、**通信箱がそのまま「まだ分からないものの置き場」**になります。
 // 整理は分かったとき（たいてい後続のメールや電話）に、この操作で行います。
 //
@@ -30,7 +30,7 @@ package subcon
 // なお `【試作】装置名称` という題の付け方（2026-09-03）は、**段ができたので
 // 要らなくなりました**——題と段の両方に「試作」と書くと二重になります。
 //
-// 移した先に同名の部品ページが在れば、その図面は**改定図面**です（ユーザー）。
+// 移した先に同名の加工製品ページが在れば、その図面は**改定図面**です（ユーザー）。
 // 顧客名／装置名称の下では図面名称が一意なので、**ページが在ること自体が改定の合図**。
 // **旧版は最新版の子ページになります**（2026-09-06 ユーザー:「旧版を最も新しい版の
 // 子にしてはどうでしょう。ワンノートではページが子を持てなかったので、出来ません
@@ -62,7 +62,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// filingRow は1枚の部品ページと、その行き先の推奨値です。
+// filingRow は1枚の加工製品ページと、その行き先の推奨値です。
 type filingRow struct {
 	PageID      string `json:"page_id"`
 	Title       string `json:"title"`
@@ -110,7 +110,7 @@ func suggestStage(customer, machine string) string {
 }
 
 // FilingProposalAPIHandler は GET /api/filing-proposal?page_id=X です。
-// 通信記録ページ X から生まれた部品ページの一覧と、行き先の推奨値を返します。
+// 通信記録ページ X から生まれた加工製品ページの一覧と、行き先の推奨値を返します。
 func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 	_, idInt, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
 	if !ok {
@@ -158,15 +158,15 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 // ユーザー:「社名の揺れは、エイリアスの表かAIでなくせませんか？」）。揺れは
 // 「機械が読んだ名前を人が打ち写す」ところで生まれるので、**打ち写す元を変えます**:
 //
-//	部品ページ → `受信元` タグ → 通信記録 → `差出人アドレス` → 取引先ページ → その題
+//	加工製品ページ → `受信元` タグ → 通信記録 → `差出人アドレス` → 取引先ページ → その題
 //
 // この鎖は**全部が完全一致**で、推測が1つも入りません。エイリアスの表もAIも
 // 要らないのは、**同一性を名前で決めていない**からです。
 //
 // 引けなければ読めた名前（Geminiが図面から読んだ客先）へ戻ります——新しい顧客の
 // 1通目はまだ取引先に居ないのが正常で、そのときは人が打ちます。
-func suggestCustomer(user *auth.User, partPageID int, read string) string {
-	if addr := senderAddressOf(partPageID); addr != "" {
+func suggestCustomer(user *auth.User, productPageID int, read string) string {
+	if addr := senderAddressOf(productPageID); addr != "" {
 		if title, ok := contacts.PartnerTitleForAddress(user, addr); ok {
 			return title
 		}
@@ -174,15 +174,15 @@ func suggestCustomer(user *auth.User, partPageID int, read string) string {
 	return read
 }
 
-// senderAddressOf は部品ページの由来（`受信元`）をたどり、通信記録の差出人アドレスを返します。
+// senderAddressOf は加工製品ページの由来（`受信元`）をたどり、通信記録の差出人アドレスを返します。
 //
-// **由来のタグを見ます**（親ではなく）——部品ページは整理で動きますが、`受信元` は
+// **由来のタグを見ます**（親ではなく）——加工製品ページは整理で動きますが、`受信元` は
 // 動きません。値は「ページID-添付ID」なので、ハイフンの前だけ使います。
-func senderAddressOf(partPageID int) string {
+func senderAddressOf(productPageID int) string {
 	var ref string
 	database.DB.QueryRow(
 		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
-		partPageID, SourceRefTag).Scan(&ref)
+		productPageID, SourceRefTag).Scan(&ref)
 	ref = strings.TrimSpace(ref)
 	if i := strings.Index(ref, "-"); i > 0 {
 		ref = ref[:i]
@@ -439,7 +439,7 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "results": results})
 }
 
-// fileOneDrawing は1枚の部品ページを行き先へ収めます。
+// fileOneDrawing は1枚の加工製品ページを行き先へ収めます。
 func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	pageID, ok := page.NormalizeID(row.PageID)
 	if !ok {
@@ -474,7 +474,7 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// **開いている人が居たら、その行は飛ばします**（2026-09-14）。整理は本文を
 	// 読んで・変えて・書くので、誰かがエディタを開いていると**オートセーブと
 	// 上書きし合います**。関門をハンドラではなく行ごとに置くのは、整理が
-	// **複数のページへ書く**ためです（部品ページ・合流先）——1枚が編集中でも、
+	// **複数のページへ書く**ためです（加工製品ページ・合流先）——1枚が編集中でも、
 	// 残りは片付けられるほうがよい。
 	if holder, open := editlock.Locks.EditorOpen(idInt); open {
 		return filingResult{PageID: pageID, Outcome: "skipped",
@@ -510,9 +510,9 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// **2つの木を参照タグで結びます**（2026-09-16）。`取引先／社名` のページから
 	// `連絡帳／組織` を指す `相手` のタグを1つ書きます。
 	//
-	// ⚠ **題だけで結んでいると、改名した日に切れます**——部品階層のフォルダ名は
+	// ⚠ **題だけで結んでいると、改名した日に切れます**——加工製品の階層のフォルダ名は
 	// 人が直しますし、連絡帳の社名も直ります。**参照はページIDなので切れません**
-	// （同じ理由で、部品ページの `受信元` もページIDです）。
+	// （同じ理由で、加工製品ページの `受信元` もページIDです）。
 	//
 	// **人が選んだ社名で引きます**（機械が推した組織ではなく）——整理の画面は
 	// 「機械が出して人が直す」場所なので、**打ち替えた結果が正**です。
@@ -695,7 +695,7 @@ func formatID(idInt int) string {
 // エスケープの肩代わりはしません——サニタイズ後にHTMLを足す関数と同じ責任）。
 func htmlEscape(s string) string { return stdhtml.EscapeString(s) }
 
-// movePage は部品ページを行き先の下へ移し、題を図面名称に揃えます。
+// movePage は加工製品ページを行き先の下へ移し、題を図面名称に揃えます。
 //
 // 題を揃えるのは、**題がページ名だから**——整理の画面で図面名称を直したのに
 // ページの題が古いままだと、次に同じ部品が来たとき「既にある」の判定
@@ -708,7 +708,7 @@ func movePage(user *auth.User, pageID, newParent, title string) error {
 	return err
 }
 
-// linkPartner は部品階層の社名ページから、連絡帳の組織ページへの参照タグを書きます。
+// linkPartner は加工製品の階層の社名ページから、連絡帳の組織ページへの参照タグを書きます。
 //
 // **何度呼んでも増えません**（既に在れば何もしない）。引けないときも黙って戻ります
 // ——連絡帳にまだ居ない相手は普通にいるので、**結べないことは異常ではありません**。

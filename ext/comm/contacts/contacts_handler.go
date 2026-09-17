@@ -103,7 +103,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		target, orgTitle = norm, cms.PageTitleByID(idInt)
 	} else {
-		// **相手ページの題も早期に正規化します**（2026-09-06）。部品階層の顧客名と
+		// **相手ページの題も早期に正規化します**（2026-09-06）。加工製品の階層の顧客名と
 		// 題で結ぶので、こちらだけ畳まないと食い違います。
 		orgTitle = cms.NormalizeNameForIngest(req.Name)
 		if orgTitle == "" {

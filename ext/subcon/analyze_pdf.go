@@ -56,7 +56,7 @@ type orderJudgment struct {
 	DocType     string `json:"doc_type"`
 	DrawingNo   string `json:"drawing_no"`
 	DrawingName string `json:"drawing_name"`
-	// 装置名称は**ページの置き場所**に効く——ワンノートの製造部品ページは
+	// 装置名称は**ページの置き場所**に効く——ワンノートの加工製品ページは
 	// 「顧客名／装置名称／図面名称」の階層で作られている（2026-09-03 ユーザー）。
 	// 顧客名は Customer を共用する（発注書の発行元と同じ「相手の会社名」）。
 	MachineName string         `json:"machine_name"`
@@ -127,13 +127,13 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	attachIDOf := func() string { return strings.TrimSuffix(fileName, filepath.Ext(fileName)) }
 
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
-	// 同じ部品の図面として1枚の部品ページにまとめる（drawing_match.go）。
+	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
 	if !j.IsClientOrder && j.DocType == "drawing" {
 		matches := MatchDXFAttachments(pageID, j.DrawingNo)
 		newID, err := cms.CreateChildPage(pageID, auth.CurrentUser(r).Username,
-			buildPartPageHTML(pageID, attachIDOf(), j, matches))
+			buildProductPageHTML(pageID, attachIDOf(), j, matches))
 		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "部品ページを作れません: "+err.Error())
+			cms.JSONFail(w, http.StatusInternalServerError, "加工製品ページを作れません: "+err.Error())
 			return
 		}
 		auth.Audit(auth.CurrentUser(r).Username, "analyze-drawing",
@@ -279,7 +279,7 @@ func writeHeaderPair(b *strings.Builder, name, value string) {
 	}
 }
 
-// buildPartPageHTML は部品ページの本文を組みます（機能見出し形・D-2）。
+// buildProductPageHTML は加工製品ページの本文を組みます（機能見出し形・D-2）。
 //
 //	<h1>P103-227-6 台座Assy</h1>
 //	<section><h2>図面</h2><dl> 図面番号・図面名称 </dl></section>
@@ -289,7 +289,7 @@ func writeHeaderPair(b *strings.Builder, name, value string) {
 // **1通のメールの中でPDFとDXFを対応づけた結果**がこのページです。過去のページを
 // 図面番号で探して束ねることはしません——番号は別製品で衝突しうるので、
 // 同一性を担うのは常にページID（drawing_match.go 冒頭）。
-func buildPartPageHTML(hostPageID, attachID string, j *orderJudgment, matches []matchedDXF) string {
+func buildProductPageHTML(hostPageID, attachID string, j *orderJudgment, matches []matchedDXF) string {
 	// 題は「図面番号 図面名称」——**図面名称は重複しうる**ので番号を先に置く。
 	//
 	// **ブロックと同じ正規化を通します。** 通さないと、題が `シュート先Ｔ金具` で
@@ -313,7 +313,7 @@ func buildPartPageHTML(hostPageID, attachID string, j *orderJudgment, matches []
 //
 // **ブロックIDを付けるのが肝**——参照値 `ページID-ブロックID` は押せばこの
 // ブロックへ飛ぶので、これが**その改定の社内コード**になります（2026-09-03 ユーザー:
-// 「部品の社内コードは部品ページのページ番号と改定番号を足したものになるのでは？
+// 「部品の社内コードは加工製品ページのページ番号と改定番号を足したものになるのでは？
 // …すると、社内コードでその項目へ飛べることになります」）。
 // 図面番号が別製品と衝突しても、この番号は構造上一意です。
 //

@@ -4,7 +4,7 @@ package subcon
 // 受注ページの整理——通信箱から「受注」の年月へ移す（2026-09-06）
 //
 // ユーザー:「整理の前に、部品ページや受注ページの置き場所を決めましょう」。
-// 決まったのは **トップ直下の「受注」／年／月**（部品ページのように顧客の下へは
+// 決まったのは **トップ直下の「受注」／年／月**（加工製品ページのように顧客の下へは
 // 置かない）。受注は複数の装置にまたがるので、装置の木には収まりません。
 //
 // **置き場所を決める理由は、探しやすさだけではありません。** 未処理の一覧は
@@ -40,7 +40,7 @@ const OrderBoxTitle = "受注"
 
 // orderRow は整理の画面に出す受注ページ1枚ぶんです。
 //
-// 部品ページと違って**直す欄がありません**——行き先が発注日だけで決まるためで、
+// 加工製品ページと違って**直す欄がありません**——行き先が発注日だけで決まるためで、
 // 画面には「どこへ入るか」を見せて、押すかどうかだけを人に委ねます。
 type orderRow struct {
 	PageID      string `json:"page_id"`
@@ -86,7 +86,7 @@ func orderChildrenOf(user *auth.User, parentIDInt int) ([]orderRow, error) {
 		}
 		blocks, err := cms.VocabBlocksOf(database.DB, c.id, "client-order")
 		if err != nil || len(blocks) == 0 {
-			continue // 受注ページではない（部品ページなど）
+			continue // 受注ページではない（加工製品ページなど）
 		}
 		v := blocks[0].Values
 		when := orderDateOf(c.id, v["ordered-at"])
@@ -138,7 +138,7 @@ func parseOrderDate(v string) (time.Time, bool) {
 
 // fileOneOrder は受注ページ1枚を「受注／年／月」へ収めます。
 //
-// **題は変えません**——部品ページは図面名称に揃えますが（人が打ち替えた値が正）、
+// **題は変えません**——加工製品ページは図面名称に揃えますが（人が打ち替えた値が正）、
 // 受注の題は解析が発注書番号から作ったもので、直す欄がありません。
 func fileOneOrder(user *auth.User, rawID string) filingResult {
 	pageID, ok := page.NormalizeID(rawID)

@@ -42,7 +42,7 @@ func setupPartnerTree(t *testing.T) (user *auth.User, companyID string) {
 // **2026-09-16 に `担当者` の箱をやめました**（ユーザー:「/連絡帳/南北スポーツ
 // マシーン/山田太郎 で良いのでは？」）。挟んでいた理由は「社名の子に装置名称が
 // 並ぶから」でしたが、**同じ 2026-09-05 に装置の上へ「段」が入って根拠が消えて**おり、
-// さらにこの日、部品階層は `取引先` の別の木へ分かれました。
+// さらにこの日、加工製品の階層は `取引先` の別の木へ分かれました。
 func TestEnsureContactPersonBuildsTree(t *testing.T) {
 	user, companyID := setupPartnerTree(t)
 

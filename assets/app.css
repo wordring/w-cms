@@ -1594,7 +1594,7 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     text-decoration: none;
 }
 
-/* 部品ページの整理（提案→人が直す→実行）——閲覧モードのクローム。
+/* 加工製品ページの整理（提案→人が直す→実行）——閲覧モードのクローム。
    機械は推奨値を入れるだけで、決めるのは人（「顧客は適当」なので、
    名前が全部読めていても確認が要る）。 */
 .filing-open {

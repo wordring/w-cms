@@ -37,11 +37,11 @@ func init() {
 	// したのは、**整理する前に「どこへ行くのか」を人が見られるようにする**ためです。
 	// ⚠ **作業面はまだありません**（納期・受注残を見るビューが未実装）。見出しだけの
 	// 箱なので、ビューができたらここの本文に足すこと。
-	// **部品階層の根**（2026-09-16 にアドレス帳の木と分けた・customer_box.go）。
+	// **加工製品の階層の根**（2026-09-16 にアドレス帳の木と分けた・customer_box.go）。
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     CustomerBoxTitle,
 		Extension: "subcon",
-		Why:       "製造部品の階層の根です（社名／段／装置名称／図面名称）。整理を実行すると、通信記録の下にできた部品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
+		Why:       "加工製品の階層の根です（社名／段／装置名称／図面名称）。整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
 		Body:      customerBoxBody,
 	})
 	cms.RegisterRequiredPage(cms.RequiredPage{
@@ -72,7 +72,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ 上の `/api/analyze-attachment` とは**別の仕事**です——あちらは受注ページを
 		// 1枚作り、こちらは人が開いているブロックの中へ明細を入れるだけ（parse_pdf.go）。
 		{Pattern: "/api/parse-pdf", Handler: ParsePDFHandler},
-		// 部品ページの整理（提案を出す口と、実行する口）。**提案は何も作りません**
+		// 加工製品ページの整理（提案を出す口と、実行する口）。**提案は何も作りません**
 		// ——顧客名・装置名称のページが生まれるのは実行のときだけ（filing.go）。
 		{Pattern: "/api/filing-proposal", Handler: FilingProposalAPIHandler},
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
