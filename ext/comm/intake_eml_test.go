@@ -1,10 +1,13 @@
 package comm
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -495,6 +498,130 @@ func titleOfPage(t *testing.T, pageID string) string {
 // ユーザー:「テキストメールは、一行ごとに段落とするのではなく、preタグにしては
 // どうでしょう」（2026-09-05）。段落に割ると**空行・字下げ・引用の `>` の位置**が
 // 落ちます——見積の桁揃えや署名の罫線は、崩すと読めません。
+// TestEmlIntakeExpandsZipAndGuardsAttachments は、メールの添付が人が落とす口と同じ
+// 検査を通り、ZIP の中身が1つずつ添付になることを検証します（2026-09-17）。
+//
+//   - ZIP 本体は残り、中の PDF・DXF は自分のブロックIDを持つ添付になる
+//   - リンク文字はフォルダつきの中のパス、保存名（download）はファイル名だけ
+//   - 中の ZIP・許可外の拡張子・偽の PDF は保存せず、名前と理由を本文に残す
+//   - `添付` タグは保存したブロックの数（ZIP 1＋中の2＝3）
+func TestEmlIntakeExpandsZipAndGuardsAttachments(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+
+	var zbuf bytes.Buffer
+	zw := zip.NewWriter(&zbuf)
+	w, _ := zw.Create("Q055-図面/R310-002_本体.pdf")
+	w.Write([]byte("%PDF-1.4 in zip"))
+	w, _ = zw.Create("Q055-図面/部品.dxf")
+	w.Write([]byte("0\nSECTION\n"))
+	w, _ = zw.Create("Q055-図面/inner.zip")
+	w.Write([]byte("PK"))
+	w, _ = zw.Create("readme.html")
+	w.Write([]byte("<b>x</b>"))
+	zw.Close()
+
+	part := func(name, body string) string {
+		return "--BOUND\r\n" +
+			"Content-Type: application/octet-stream; name=\"" + name + "\"\r\n" +
+			"Content-Transfer-Encoding: base64\r\n" +
+			"Content-Disposition: attachment; filename=\"" + name + "\"\r\n" +
+			"\r\n" + base64.StdEncoding.EncodeToString([]byte(body)) + "\r\n"
+	}
+	eml := "From: toa@example.jp\r\nTo: order@example.co.jp\r\nSubject: zip\r\n" +
+		"Date: Mon, 01 Sep 2026 10:30:00 +0900\r\nMIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=BOUND\r\n\r\n" +
+		part("図面一式.zip", zbuf.String()) +
+		part("virus.exe", "MZ") +
+		part("bad.pdf", "not a pdf") +
+		"--BOUND--\r\n"
+
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	pageID, _, err := emlIntake{}.OnFile(ctx, "mail.eml", []byte(eml))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	html := string(body)
+	for _, want := range []string{
+		`download="図面一式.zip" href="/`, `>図面一式.zip</a>（中の2件を下に展開）`,
+		`download="R310-002_本体.pdf" href="/`, `>↳ Q055-図面/R310-002_本体.pdf</a>`, // フォルダつきの中のパス
+		`download="部品.dxf" href="/`, `>↳ Q055-図面/部品.dxf</a>`,
+		"↳ 展開しなかったもの: Q055-図面/inner.zip（中のZIPは展開しません）・readme.html（受け付けない形式）",
+		"📎 virus.exe（受け付けない形式。保存していません",
+		"📎 bad.pdf（PDFファイルではありません",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("ページに %q がありません:\n%s", want, html)
+		}
+	}
+
+	// files/ には ZIP・中の PDF・中の DXF・受信原本の4つだけ（.exe・偽PDF・中のZIP・html は無い）。
+	entries, _ := os.ReadDir(page.AttachmentDir(pageID))
+	var exts []string
+	for _, e := range entries {
+		exts = append(exts, filepath.Ext(e.Name()))
+	}
+	sort.Strings(exts)
+	if got := strings.Join(exts, " "); got != ".dxf .eml .pdf .zip" {
+		t.Errorf("保存された添付が違います: %v", exts)
+	}
+	// 中の PDF は自分のブロックIDを持つ（ファイル表示・解析がそのまま指せる）。
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".pdf" {
+			id := strings.TrimSuffix(e.Name(), ".pdf")
+			if !strings.Contains(html, `<p data-id="`+id+`">📎 <a download="`) {
+				t.Errorf("中の PDF のブロックがありません: %s", id)
+			}
+		}
+	}
+
+	idInt := 0
+	database.DB.QueryRow(`SELECT id FROM pages WHERE title = ?`, "zip").Scan(&idInt)
+	if rows := queryTags(t, idInt); !strings.Contains(strings.Join(rows, "|"), "添付=3") {
+		t.Errorf("添付の数が保存したブロックの数（3）ではありません: %v", rows)
+	}
+}
+
+// TestEmlIntakeDecodesFoldedEncodedFileName は、和文の添付名（RFC 2047 の符号化語が
+// 2つに折られ、base64 の中に `/` を含む実物の形）が正しく復号されることを固定します。
+//
+// Go 標準の `Part.FileName()` は復号前に `filepath.Base` を掛けるので、`/` で切れて
+// `XkxMISEbKEIyMDI0MDkx?= 3.zip` になっていました（2026-09-17 に実データで発見）。
+func TestEmlIntakeDecodesFoldedEncodedFileName(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+	// 実物のヘッダ（値の中に `/` がある。2語目は `3.zip`）。
+	const w1 = "=?iso-2022-jp?B?WDAxMy1EQxskQjswTlglTiVDJS8+OjlfISE/XkxMISEbKEIyMDI0MDkx?="
+	const w2 = "=?iso-2022-jp?B?My56aXA=?="
+	want := decodeHeader(w1) + "3.zip"
+	if strings.Contains(want, "?=") || !strings.HasSuffix(want, "20240913.zip") {
+		t.Fatalf("期待値の組み立てが違います: %q", want)
+	}
+	var zbuf bytes.Buffer
+	zw := zip.NewWriter(&zbuf)
+	zw.Close()
+	eml := "From: toa@example.jp\r\nTo: order@example.co.jp\r\nSubject: folded\r\n" +
+		"Date: Mon, 01 Sep 2026 10:30:00 +0900\r\nMIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=BOUND\r\n\r\n" +
+		"--BOUND\r\n" +
+		"Content-Type: application/zip\r\n" +
+		"Content-Transfer-Encoding: base64\r\n" +
+		"Content-Disposition: attachment;\r\n\tfilename=\"" + w1 + "\r\n " + w2 + "\"; size=1;\r\n" +
+		"\tcreation-date=\"Fri, 13 Sep 2024 05:50:16 GMT\"\r\n" +
+		"\r\n" + base64.StdEncoding.EncodeToString(zbuf.Bytes()) + "\r\n" +
+		"--BOUND--\r\n"
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	pageID, _, err := emlIntake{}.OnFile(ctx, "mail.eml", []byte(eml))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if !strings.Contains(string(body), `download="`+want+`"`) {
+		t.Errorf("添付名が復号されていません（want %q）:\n%s", want, body)
+	}
+}
+
 func TestPlainTextBlockKeepsShape(t *testing.T) {
 	src := "お世話になっております。\r\n" +
 		"\r\n" +

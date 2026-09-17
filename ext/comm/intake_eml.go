@@ -10,7 +10,8 @@ package comm
 //	                     受信日時（ISO 8601・ローカル時刻＋オフセット）・
 //	                     メッセージID・返信元メッセージID（スレッドの親）</dl>
 //	本文（text/plain を段落へ）
-//	📎 添付（files/ へ保存・リンクは生成ID・download 属性が元名を運ぶ）
+//	📎 添付（files/ へ保存・リンクは生成ID・download 属性が元名を運ぶ。
+//	        人が落とす口と同じ検査を通し、ZIP は中身も1つずつ添付にする——2026-09-17）
 //	📧 受信原本（生の .eml。解釈で落ちるものがあるので原本を残す＝やり直せる）
 //
 // メタはすべて**可変タグ**で持つ——名前：値なら索引に載り、検索も参照も
@@ -193,7 +194,12 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// （2026-09-05）——本文を開かないと分からない値だと、100件の一覧を出すたびに
 	// 100個の本文を読むことになります。**受信原本（.eml）は数えません**
 	// （必ず在るので、数えると全件が 1 から始まって手掛かりになりません）。
-	cms.WriteTag(&b, AttachmentCountTag, countAttachments(parts))
+	// 添付は先に置きます（数をタグへ書くため。ZIP は中身も展開して数えます）。
+	attachHTML, attachCount, err := saveMailAttachments(ctx, pageID, parts)
+	if err != nil {
+		return "", "", err
+	}
+	cms.WriteTag(&b, AttachmentCountTag, attachCount)
 	b.WriteString("</dl>")
 
 	bodyWritten := false
@@ -203,22 +209,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 			bodyWritten = true
 		}
 	}
-	for _, p := range parts {
-		if p.fileName == "" {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(p.fileName))
-		if ext == "" {
-			ext = ".bin"
-		}
-		id, href, err := ctx.SaveAttachment(pageID, ext, p.body)
-		if err != nil {
-			return "", "", err
-		}
-		b.WriteString(`<p data-id="` + html.EscapeString(id) + `">📎 <a href="` +
-			html.EscapeString(href) + `" download="` + html.EscapeString(p.fileName) + `">` +
-			html.EscapeString(p.fileName) + `</a></p>`)
-	}
+	b.WriteString(attachHTML)
 
 	// **受信原本（生の .eml）も保存する**（2026-09-03 ユーザー提案
 	// 「マスタデータとしてEMLも保存してはどうでしょう」）。
@@ -327,20 +318,120 @@ func PlainTextBlockHTML(text string) string {
 	return "<pre>" + html.EscapeString(t) + "</pre>"
 }
 
-// countAttachments は添付（本文でない部品）の数を文字列で返します。
-// **0 なら空を返します**——WriteTag が空を書かないので、添付の無い記録には
-// タグが付きません（「分かることだけ書く」の流儀）。
-func countAttachments(parts []emlPart) string {
+// saveMailAttachments はメールの添付を files/ へ置き、リンクブロックのHTMLと数を返します。
+//
+// ── 検査は人が落とす口と同じ（2026-09-17）──
+//
+// それまでメールの添付は**拡張子の許可リストも中身の検査も通さずに**保存していました
+// （`.exe` でも `.html` でも届いたまま files/ へ）。配信側の守り（未知の種別は
+// `octet-stream`＋`attachment`＋`nosniff`）で実害は出ませんが、人が落とす口
+// （`serveIntake`・`UploadFileHandler`）との非対称でした。いまは
+// `cms.AttachmentExtAccepted`（PDF・画像・`attachment_extensions`）と
+// `cms.GuardUploadContent`（PDFのマジックナンバー・画像の種別一致とEXIF除去）を通し、
+// 通らなかったものは**保存せず、名前と理由を本文に残します**——受信原本（.eml）が
+// 丸ごと持っているので、失うものはありません。
+//
+// ── ZIP は展開します（2026-09-17 ユーザー:「ZIP本体がEMLの中に存在するのであれば、
+// ZIPを展開しても良いと思います」）──
+//
+// 中のファイルを1つずつ添付にします。**ZIP 本体も残します**（目録の表示がそのまま
+// 効く・届いた形の証拠）。展開してよい根拠は原本が ZIP を持っていること——だから
+// 人が手で落とした ZIP は展開しません（`cms.ExpandZip` の冒頭）。
+// 中のパスは**フォルダを含めて**リンク文字にします。実データのフォルダ名は
+// `Q055-サンプル装置仕様　図面` のように装置名称を含みます。
+// `download` 属性（保存名）はファイル名だけです。
+//
+// 数は**保存したブロックの数**です（ZIP 1つ＋中の13件なら 14）。**0 なら空を返します**
+// ——WriteTag が空を書かないので、添付の無い記録にはタグが付きません。
+func saveMailAttachments(ctx *IntakeContext, pageID string, parts []emlPart) (string, string, error) {
+	var b strings.Builder
 	n := 0
+	accepts := func(name string) bool { return cms.AttachmentExtAccepted(filepath.Ext(name)) }
 	for _, p := range parts {
-		if p.fileName != "" {
-			n++
+		if p.fileName == "" {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(p.fileName))
+		if !accepts(p.fileName) {
+			writeUnsavedNote(&b, p.fileName, "受け付けない形式")
+			continue
+		}
+		content, err := cms.GuardUploadContent(p.fileName, p.body)
+		if err != nil {
+			writeUnsavedNote(&b, p.fileName, err.Error())
+			continue
+		}
+		id, href, err := ctx.SaveAttachment(pageID, ext, content)
+		if err != nil {
+			return "", "", err
+		}
+		n++
+		if ext != ".zip" {
+			writeAttachmentBlock(&b, id, href, p.fileName, p.fileName, "")
+			continue
+		}
+
+		members, skipped, zerr := cms.ExpandZip(content, accepts)
+		if zerr != nil {
+			writeAttachmentBlock(&b, id, href, p.fileName, p.fileName,
+				"（ZIPとして読めないので展開していません）")
+			continue
+		}
+		var inner strings.Builder
+		saved := 0
+		for _, m := range members {
+			mc, err := cms.GuardUploadContent(m.Name, m.Content)
+			if err != nil {
+				skipped = append(skipped, cms.ZipSkipped{Name: m.Name, Reason: err.Error()})
+				continue
+			}
+			mid, mhref, err := ctx.SaveAttachment(pageID, strings.ToLower(filepath.Ext(m.Name)), mc)
+			if err != nil {
+				return "", "", err
+			}
+			saved++
+			writeAttachmentBlock(&inner, mid, mhref, zipBaseName(m.Name), "↳ "+m.Name, "")
+		}
+		n += saved
+		writeAttachmentBlock(&b, id, href, p.fileName, p.fileName,
+			"（中の"+strconv.Itoa(saved)+"件を下に展開）")
+		b.WriteString(inner.String())
+		if len(skipped) > 0 {
+			var parts []string
+			for _, s := range skipped {
+				parts = append(parts, s.Name+"（"+s.Reason+"）")
+			}
+			b.WriteString("<p>↳ 展開しなかったもの: " + html.EscapeString(strings.Join(parts, "・")) +
+				"。受信原本の中にあります。</p>")
 		}
 	}
 	if n == 0 {
-		return ""
+		return b.String(), "", nil
 	}
-	return strconv.Itoa(n)
+	return b.String(), strconv.Itoa(n), nil
+}
+
+// writeAttachmentBlock は添付のリンクブロックを書きます。
+// リンク文字（label）と保存名（downloadName）は別です——ZIP の中身はフォルダつきの
+// パスを見せ、保存するときはファイル名だけにします。
+func writeAttachmentBlock(b *strings.Builder, id, href, downloadName, label, note string) {
+	b.WriteString(`<p data-id="` + html.EscapeString(id) + `">📎 <a href="` +
+		html.EscapeString(href) + `" download="` + html.EscapeString(downloadName) + `">` +
+		html.EscapeString(label) + `</a>` + html.EscapeString(note) + `</p>`)
+}
+
+// writeUnsavedNote は、保存しなかった添付の名前と理由を本文に残します（黙って落とさない）。
+func writeUnsavedNote(b *strings.Builder, name, reason string) {
+	b.WriteString("<p>📎 " + html.EscapeString(name) + "（" + html.EscapeString(reason) +
+		"。保存していません——受信原本の中にあります）</p>")
+}
+
+// zipBaseName は ZIP の中のパスからファイル名だけを返します（`/` と `\` の両方を区切りと見る）。
+func zipBaseName(name string) string {
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
 
 // collectParts は MIME を展開して（本文候補と添付の）平らな一覧にします。
@@ -373,10 +464,10 @@ func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {
 				p.Header.Get("Content-Transfer-Encoding"), p)
 			if err == nil {
 				// パート自身のファイル名（添付の印）を優先する
-				if fn := p.FileName(); fn != "" {
+				if fn := partFileName(p); fn != "" {
 					for i := range sub {
 						if sub[i].fileName == "" {
-							sub[i].fileName = decodeHeader(fn)
+							sub[i].fileName = fn
 						}
 					}
 				}
@@ -409,6 +500,28 @@ func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {
 		}
 	}
 	return []emlPart{{mediaType: mediaType, body: raw}}, nil
+}
+
+// partFileName は添付パートの元の名前を返します（復号済み・パス区切りは落とす。無ければ空）。
+//
+// ⚠ **Go 標準の `Part.FileName()` は使いません**（2026-09-17）。あれは RFC 2047 の
+// 復号**前**に `filepath.Base` を掛けるので、符号化文字列の中の `/`（base64 の1文字）で
+// 名前が切れます——実データで `P220-DC装置D…20240913.zip` が
+// `XkxMISEbKEIyMDI0MDkx?= 3.zip` になりました（和文の名前は必ず符号化されるので、
+// 和文の添付の何割かがこうなる）。ここでは**復号してから**区切りを落とします。
+// 見る順は `Content-Disposition` の `filename` → `Content-Type` の `name`（標準と同じ。
+// RFC 2231 の `filename*=` は `mime.ParseMediaType` が `filename` に畳む）。
+func partFileName(p *multipart.Part) string {
+	for _, h := range [][2]string{{"Content-Disposition", "filename"}, {"Content-Type", "name"}} {
+		_, params, err := mime.ParseMediaType(p.Header.Get(h[0]))
+		if err != nil {
+			continue
+		}
+		if v := strings.TrimSpace(params[h[1]]); v != "" {
+			return zipBaseName(decodeHeader(v))
+		}
+	}
+	return ""
 }
 
 // newBase64Reader は改行入りの base64 本文を読むリーダーです。
