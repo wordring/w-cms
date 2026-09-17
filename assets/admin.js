@@ -25,7 +25,7 @@ async function init() {
   document.getElementById('whoami').textContent = 'ログイン中: ' + me.username + (me.is_admin ? '（管理者）' : '');
   if (!me.is_admin) { setHidden(document.getElementById('denied'), false); return; }
   setHidden(document.getElementById('console'), false);
-  loadUsers(); loadGroups(); loadRequiredPages(); loadAudit();
+  loadUsers(); loadGroups(); loadRequiredPages(); loadAudit(); initDevMenu();
 }
 
 async function loadUsers() {
@@ -217,6 +217,49 @@ async function resetData() {
   }
 }
 
+// ── 開発メニュー（2026-09-17・ユーザー:「開発中だけ開発メニューとして、管理画面に
+// 『メールを50通取り込む』ボタンを付けてください」「データの初期化ボタンも開発メニューかも」）──
+//
+// 実運用に入る前に、admin.html の節ごと外す。ボタンは既存の口（POST /api/mail/import）を
+// 押すだけで、新しい API は無い。**メール送受信の拡張が載っていないビルドでは出さない**
+// （/api/tag-schema の extensions に comm/mail が無ければ、その旨を1行出す）。
+async function initDevMenu() {
+  let exts = null;
+  try {
+    const r = await fetch('/api/tag-schema');
+    if (r.ok) exts = (await r.json()).extensions || [];
+  } catch (e) {}
+  const hasMail = exts === null || exts.includes('comm/mail');
+  setHidden(document.getElementById('dev-import-row'), !hasMail);
+  setHidden(document.getElementById('dev-import-none'), hasMail);
+}
+
+async function devImportMail() {
+  const btn = document.getElementById('dev-import-btn');
+  const el = document.getElementById('dev-import-msg');
+  btn.disabled = true;
+  el.style.color = '#64748b'; el.textContent = '取り込み中…（50通で1分ほどかかります）';
+  try {
+    const res = await api('POST', '/api/mail/import', { max: 50 });
+    const d = await res.json().catch(() => ({}));
+    const s = d.summary || {};
+    if (d.success) {
+      el.style.color = '#16a34a';
+      // 内訳まで出す。「完了」だけだと、全部が重複で0通だったときに気づけない。
+      el.textContent = '取り込み ' + (s.imported || 0) + '通・重複 ' + (s.duplicate || 0)
+        + '通・失敗 ' + (s.failed || 0) + '通（サーバーには ' + (s.listed || 0) + '通）。';
+      loadAudit();
+    } else {
+      el.style.color = '#dc2626';
+      el.textContent = d.message || ('取り込めませんでした（' + res.status + '）');
+    }
+  } catch (e) {
+    el.style.color = '#dc2626'; el.textContent = '取り込めませんでした: ' + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function rebuildDatabase() {
   if (!confirm('HTMLファイルからデータベースのインデックスを完全に再構築します。よろしいですか？')) return;
   const el = document.getElementById('rebuild-msg');
@@ -251,6 +294,7 @@ function bindActions() {
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
   document.getElementById('reset-btn').addEventListener('click', resetData);
+  document.getElementById('dev-import-btn').addEventListener('click', devImportMail);
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
   document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
   document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);
