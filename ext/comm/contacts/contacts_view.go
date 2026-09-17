@@ -39,7 +39,9 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		`担当者を空にすると、そのアドレスは組織の口（受注窓口など）として組織のページに入ります。` +
 		`個人のお客様は組織を「` + PersonalOrgTitle + `」にして担当者に名前を入れます。</p>`)
 
-	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
+	// **表は固定幅の割り付け**（`contacts-table`）。操作の欄には長い文（ドメインの説明）が
+	// 入るので、自動割り付けだと操作の列が幅を食い、名前の列が1文字ずつ折れます（2026-09-17 に実際にそうなった）。
+	sb.WriteString(`<table class="materials-table unhandled-table contacts-table"><tbody>`)
 	for i, c := range list {
 		sb.WriteString(`<tr data-domain="` + stdhtml.EscapeString(c.Domain) + `"` +
 			` data-address="` + stdhtml.EscapeString(c.Address) + `">`)
@@ -63,7 +65,8 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		// （素のHTMLの編集できるコンボボックス。JS無しでも打てる・CSP strict の下で動く）。
 		// 候補に無い名前を打てば新しい組織になり、**同じ題の組織が既にあれば口が寄せます**
 		// （`RegisterContactAPIHandler`）。
-		sb.WriteString(`<td class="vocab-chrome unhandled-act contact-form"` +
+		// ⚠ セルそのものを flex にしない（表のセルとして働かなくなる）。中の div を flex にする。
+		sb.WriteString(`<td class="vocab-chrome contact-act"><div class="contact-form"` +
 			` data-personal-title="` + stdhtml.EscapeString(PersonalOrgTitle) + `">`)
 		sb.WriteString(`<label class="contact-field">組織` +
 			`<input type="text" class="contact-org" list="w-orgs-` + rowKey + `" maxlength="120"` +
@@ -125,6 +128,7 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		}
 		sb.WriteString(`<button type="button" class="chip-btn chip-primary contact-go"` +
 			` data-addresses="` + addrAttr + `" title="組織（と担当者）のページへ、このアドレスを入れます">登録</button>`)
+		sb.WriteString(`</div>`)
 		sb.WriteString(`</td></tr>`)
 	}
 	sb.WriteString(`</tbody></table>`)

@@ -1985,8 +1985,21 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     overflow-wrap: anywhere;
 }
 
-/* 未登録の連絡先（2026-09-17 に「組織」「担当者」の2欄へ畳んだ）。 */
-#w-editor-content td.contact-form { align-items: flex-end; }
+/* 未登録の連絡先（2026-09-17 に「組織」「担当者」の2欄へ畳んだ）。
+   表は固定幅の割り付け——操作の欄に長い文（ドメインの説明）が入るので、自動割り付けだと
+   操作の列が幅を食って名前の列が1文字ずつ折れる（実際にそうなった）。セルは表のセルのまま、
+   中の div を flex にする（td を flex にするとセルとして働かない）。 */
+#w-editor-content table.contacts-table { table-layout: fixed; width: 100%; }
+#w-editor-content table.contacts-table td.contact-who { width: 30%; }
+#w-editor-content table.contacts-table td.unhandled-clip { width: 3.5em; }
+#w-editor-content td.contact-act { vertical-align: top; }
+#w-editor-content .contact-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 4px 8px;
+    min-width: 0;
+}
 #w-editor-content .contact-field {
     display: inline-flex;
     flex-direction: column;
@@ -1996,6 +2009,7 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
 }
 #w-editor-content .contact-field input {
     width: 13em;
+    max-width: 100%;
     padding: 2px 6px;
     font-size: 13px;
     border: 1px solid var(--border-strong);
@@ -2017,7 +2031,7 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     cursor: pointer;
 }
 #w-editor-content .contact-form--existing .contact-rel { display: none; }
-#w-editor-content .contact-domain-opt { flex-basis: 100%; font-size: 12px; }
+#w-editor-content .contact-domain-opt { flex-basis: 100%; font-size: 12px; overflow-wrap: anywhere; }
 #w-editor-content .contact-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
 #w-editor-content .contact-addrs {
     font-size: 12px;
