@@ -77,12 +77,6 @@ type UnknownContact struct {
 	// 候補が1万件になりえます**——選べない長さの一覧は選択肢ではないので、
 	// 打ち切ったことを画面が言います。
 	DomainTruncated bool
-	// DomainPeers は**索引にある、同じドメインの別アドレスの数**です（自分を除く）。
-	//
-	// 「このドメインはこの組織専用か」を人が判断する材料です——専用ドメインなら
-	// 数人、フリーメールなら他人が混ざります。⚠ **機械は決めません**
-	// （ユーザー:「これは編集者がなんとかする問題だと思います」）。
-	DomainPeers int
 }
 
 // UnknownContacts は、索引にあってページになっていない相手を**1アドレス1件**で返します。
@@ -167,11 +161,6 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	// **社内のアドレスは並べません**（上の selfDomains）。
 	mine := selfDomains(user)
 
-	// 同じドメインの**別のアドレスが索引に何件あるか**（判断の材料）。
-	peers := map[string]int{}
-	for a := range byAddr {
-		peers[domainOf(a)]++
-	}
 
 	out := make([]UnknownContact, 0, len(byAddr))
 	for addr, a := range byAddr {
@@ -206,9 +195,6 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 			}
 		} else if p, ok := byPartnerDomain[d]; ok {
 			c.SuggestPageID, c.SuggestTitle = p.PageID, p.Title
-		}
-		if n := peers[d]; n > 1 {
-			c.DomainPeers = n - 1 // 自分を除く
 		}
 		// ② 新規のときの社名の推薦——**同じドメインの表示名のうち社名らしいもの**。
 		//    人名しか無ければ諦めてこのアドレスの表示名（人の名前で会社ページを作るのは

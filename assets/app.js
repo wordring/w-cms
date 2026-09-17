@@ -4364,15 +4364,6 @@
         });
     }
 
-    // rowDomains は、その行の「ドメインもその組織のものにする」チェックを読みます。
-    // ⚠ 共有ドメイン（yahoo・gmail）では外すこと。**決めるのは編集者**です。
-    // 「個人」を選ぶと syncContactRow が外して触れなくします。
-    function rowDomains(row) {
-        if (!row || !row.dataset.domain) return [];
-        const chk = row.querySelector('.contact-add-domain');
-        return (chk && chk.checked) ? [row.dataset.domain] : [];
-    }
-
     // contactOrgCandidate は、組織の欄の文字が候補（datalist）に一致すればその候補を返します。
     // **完全一致だけ**——揺れを画面が吸収すると、別の会社へ足すことになります。
     function contactOrgCandidate(td) {
@@ -4386,22 +4377,15 @@
         return null;
     }
 
-    // syncContactRow は組織の欄に合わせて、取引の選択とドメインのチェックを出し分けます。
+    // syncContactRow は組織の欄に合わせて、取引の選択を出し分けます。
     //   - 既にある組織 → 取引は付いているので隠す
-    //   - 「個人」 → 取引は人に付くので出す。ドメインは共有のものなので外して触れなくする
-    //   - 新しい社名 → 取引もドメインも出す
+    //   - 「個人」・新しい社名 → 出す（「個人」は取引が人に付く）
     function syncContactRow(td) {
-        const editMode = document.body.hasAttribute('edit-mode');
         const org = td.querySelector('.contact-org');
         const text = org ? org.value.trim() : '';
         const personal = text !== '' && text === (td.dataset.personalTitle || '個人');
         const cand = contactOrgCandidate(td);
         td.classList.toggle('contact-form--existing', !!(cand && cand.id) && !personal);
-        const chk = td.querySelector('.contact-add-domain');
-        if (chk) {
-            if (personal) chk.checked = false;
-            chk.disabled = editMode || personal;
-        }
     }
 
     // submitContactRow は「登録」——1つの口（/api/contacts/register）へ、組織と担当者を渡します。
@@ -4424,7 +4408,6 @@
             addresses: (go.dataset.addresses || '').split(',').filter(Boolean),
             person_name: person,
             relation: rel ? rel.value : '',
-            domains: rowDomains(row),
         };
         if (cand && cand.id) body.page_id = cand.id; else body.name = org;
         go.disabled = true;

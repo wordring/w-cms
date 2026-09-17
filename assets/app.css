@@ -2031,7 +2031,6 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     cursor: pointer;
 }
 #w-editor-content .contact-form--existing .contact-rel { display: none; }
-#w-editor-content .contact-domain-opt { flex-basis: 100%; font-size: 12px; overflow-wrap: anywhere; }
 #w-editor-content .contact-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
 #w-editor-content .contact-addrs {
     font-size: 12px;
