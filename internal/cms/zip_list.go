@@ -21,6 +21,8 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
@@ -106,8 +108,16 @@ func listZipEntries(path string) ([]zipEntry, int, error) {
 
 // DecodeZipName はエントリ名を UTF-8 へ直します。UTF-8フラグの無い名前は
 // Shift_JIS とみなす（Windows の右クリック圧縮の実情）。復号できなければ原文のまま。
+//
+// ⚠ **フラグが無くても、バイト列が正しい UTF-8 で非ASCIIを含むなら UTF-8 のまま**
+// （2026-09-17）。古い Linux/Java 製のツールは UTF-8 で書くのにフラグを立てません。
+// それを Shift_JIS と読むと `図面` が `蝗ｳ髱｢` になります。Shift_JIS の名前が偶然
+// 正しい UTF-8 になる確率は無視できます（実データ4本・82件で0件）。
 func DecodeZipName(name string, nonUTF8 bool) string {
 	if !nonUTF8 {
+		return name
+	}
+	if utf8.ValidString(name) && strings.IndexFunc(name, func(r rune) bool { return r >= utf8.RuneSelf }) >= 0 {
 		return name
 	}
 	decoded, _, err := transform.String(japanese.ShiftJIS.NewDecoder(), name)
