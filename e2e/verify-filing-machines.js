@@ -21,7 +21,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   await page.fill('#username', 'a'); await page.fill('#password', 'a');
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
 
-  // ── 下ごしらえ: 通信箱の下に仮の記録ページ、その下に図面ブロックを持つ部品ページ
+  // ── 下ごしらえ: 通信箱の下に仮の記録ページ、その下に図面ブロックを持つ加工製品ページ
   const api = (path, opts) => page.evaluate(async ([p, o]) => {
     const res = await fetch(p, o || {});
     return { status: res.status, text: await res.text() };
@@ -50,7 +50,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   const partID = await mk(recordID);
   if (!recordID || !partID) { console.log('下ごしらえに失敗しました'); process.exit(1); }
   // **整理ボタンは通信記録にしか出ません**（`チャネル` タグで判定）。年フォルダや
-  // 部品ページに出しても行き場がないため（2026-09-03 ユーザー指摘）。
+  // 加工製品ページに出しても行き場がないため（2026-09-03 ユーザー指摘）。
   await save(recordID, '<h1>[検証用] 装置名称の候補</h1>'
     + '<dl data-type="tags"><dt>チャネル</dt><dd>メール</dd>'
     + '<dt>向き</dt><dd>受信</dd></dl>');

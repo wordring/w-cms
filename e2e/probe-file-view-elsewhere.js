@@ -94,7 +94,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     const saved = await page.evaluate(async (arg) => {
       const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
       const lj = await lr.json().catch(() => ({}));
-      // **配線は属性1つ**——どのページでも、部品ページでなくても開きます。
+      // **配線は属性1つ**——どのページでも、加工製品ページでなくても開きます。
       const body = '<h1>装置まるごと</h1><p>子部品の図面をここに出します。</p>'
         + '<section data-type="file-view" data-ref="' + arg.ref + '"></section>';
       const res = await fetch('/api/save', {
@@ -115,7 +115,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
         src: w ? (w.querySelector('embed') || {}).getAttribute('src') : '',
       };
     });
-    ok(r.shown, '部品ページでなくてもPDFが開く');
+    ok(r.shown, '加工製品ページでなくてもPDFが開く');
     ok((r.src || '').indexOf('/' + HOST + '/' + ATTACH + '.pdf') === 0, 'URLが参照から導かれている', r.src);
 
     // ④ **編集モードで配線を触れること。** 空の section はクリックもキャレット移動も
