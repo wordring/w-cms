@@ -11,7 +11,7 @@ package subcon
 //	     <h1>受注 PO-xxx</h1>
 //	     <section><h2>顧客の発注書</h2> ヘッダ dl ＋ 明細 table（機能見出し形・D-2）
 //	     <dl data-type="tags"> 受信元: <ページID>-<添付ID>（押すと該当ブロックへ飛ぶ）
-//	                            元ファイル: <ZIP内のパス>（ZIP経由のときだけ）
+//	                            元ファイル: <ZIP内のファイル名>（ZIP経由のときだけ）
 //
 // **起動は人の指先だけ**——「自動ではなくボタンのclickなどで解析が始まると良い」
 // （2026-09-01 ユーザー決定）。当初は .eml 到着時の自動判定（取り込み観察係）として
@@ -178,6 +178,23 @@ func pageTitleOf(pageID string) string {
 	return pageID
 }
 
+// zipEntryFileName はZIP内のパスからファイル名だけを取り出します。
+//
+// **本文の `元ファイル`・`対応DXFファイル` にはファイル名だけを書きます**（2026-09-17
+// ユーザー:「元ファイルタグの値にZIPファイル名が含まれますが、PDFファイル名だけで
+// 良いと思います」）。Windows の右クリック圧縮はZIPの名前のフォルダを1段かぶせるので、
+// 中のパスをそのまま書くと `Q055-…図面/R310-…_支持金具.PDF` と**ZIPの名前が毎回
+// 前に付き**、人が読みたいファイル名が後ろへ押し出されていました。
+// ⚠ ZIPの中で1件を選ぶ鍵（`loadPDFForAnalysis` の `entry`）は**中のパスのまま**です
+// ——同名のファイルが別フォルダに在りうるので、鍵まで切り詰めてはいけません。
+// 区切りは `/` が規約ですが、`\` で書く圧縮ツールも在るので両方を見ます。
+func zipEntryFileName(entry string) string {
+	if i := strings.LastIndexAny(entry, `/\`); i >= 0 {
+		return entry[i+1:]
+	}
+	return entry
+}
+
 // srcEntrySuffix は監査の対象表記にZIP内パスを添えます。
 func srcEntrySuffix(entry string) string {
 	if entry == "" {
@@ -307,11 +324,11 @@ func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment)
 	b.WriteString("</tbody></table></section>")
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
-	// ZIP経由なら中のパスも添える（こちらはただのタグ——参照文法には乗らない）。
+	// ZIP経由なら中のファイル名も添える（こちらはただのタグ——参照文法には乗らない）。
 	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
 	if srcEntry != "" {
-		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(srcEntry) + "</dd>")
+		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(zipEntryFileName(srcEntry)) + "</dd>")
 	}
 	b.WriteString("</dl>")
 	return b.String()
@@ -396,17 +413,17 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
 	if srcEntry != "" {
-		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(srcEntry) + "</dd>")
+		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(zipEntryFileName(srcEntry)) + "</dd>")
 	}
 	// 一致したDXFを参照タグで指す（押すと元の通信記録ページの該当添付へ飛ぶ）。
 	// 一致が無ければ何も書かない——**DXFが無いのも普通**（PDFだけの図面）。
 	for _, m := range matches {
 		b.WriteString("<dt>対応DXF</dt><dd>" +
 			html.EscapeString(hostPageID+"-"+m.AttachID) + "</dd>")
-		// ZIPの中のDXFは、参照がZIPのリンクブロックを指すので**中のパスを添える**
+		// ZIPの中のDXFは、参照がZIPのリンクブロックを指すので**中のファイル名を添える**
 		// （ZIP内のファイルには本文のブロックが無い。発注書解析の 元ファイル と同じ考え）。
 		if m.Entry != "" {
-			b.WriteString("<dt>対応DXFファイル</dt><dd>" + html.EscapeString(m.Entry) + "</dd>")
+			b.WriteString("<dt>対応DXFファイル</dt><dd>" + html.EscapeString(zipEntryFileName(m.Entry)) + "</dd>")
 		}
 	}
 	b.WriteString("</dl>")

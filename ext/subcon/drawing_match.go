@@ -127,8 +127,9 @@ const zipEntryCap = 500
 // matchDXFInZip はZIP添付の中のDXFから、図面番号の一致するものを返します。
 //
 // 参照は**ZIPのリンクブロック**を指します（`ページID-ZIPの添付ID`）——ZIPの中の
-// ファイルには本文のブロックが無いからです。中のパスは `対応DXFファイル` タグへ
-// 別に書きます（発注書解析の `元ファイル` と同じ考え）。
+// ファイルには本文のブロックが無いからです。中のファイル名は `対応DXFファイル` タグへ
+// 別に書きます（発注書解析の `元ファイル` と同じ考え。書くのはファイル名だけで、
+// フォルダは落とします——`zipEntryFileName`）。
 func matchDXFInZip(path, attachID, want string) []matchedDXF {
 	zr, err := zip.OpenReader(path)
 	if err != nil {

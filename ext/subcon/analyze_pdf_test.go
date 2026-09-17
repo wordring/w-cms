@@ -170,7 +170,7 @@ func TestAnalyzeZipEntry(t *testing.T) {
 	body, _ := os.ReadFile(filepath.Join(page.GetPageDir(res.PageID), res.PageID+".html"))
 	for _, want := range []string{
 		"<dt>受信元</dt><dd>" + id + "-zzz9</dd>", // 参照はZIPのリンクブロックへ
-		"<dt>元ファイル</dt><dd>orders/chumon.pdf</dd>",
+		"<dt>元ファイル</dt><dd>chumon.pdf</dd>", // フォルダ（orders/）は落とす——2026-09-17
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("受注ページに %q がありません:\n%s", want, body)
@@ -187,6 +187,23 @@ func TestAnalyzeZipEntry(t *testing.T) {
 
 // TestAnalyzeNonOrderCreatesNothing は「発注書ではない」の返答を検証します
 // （ページは作らない・エラーでもない）。
+// TestZipEntryFileNameDropsFolders は、本文の `元ファイル` に書く値がファイル名だけに
+// なることを検証します（2026-09-17）。Windows の右クリック圧縮はZIPの名前のフォルダを
+// かぶせるので、パスのまま書くとZIPの名前が毎回前に付いていました。
+func TestZipEntryFileNameDropsFolders(t *testing.T) {
+	for in, want := range map[string]string{
+		"chumon.pdf":                       "chumon.pdf",
+		"orders/chumon.pdf":                "chumon.pdf",
+		"Q055-図面/R310-S030_支持金具.PDF": "R310-S030_支持金具.PDF",
+		`Q055-図面\R310-S030_支持金具.PDF`: "R310-S030_支持金具.PDF", // `\` で書く圧縮ツールも在る
+		"a/b/c.dxf":                        "c.dxf",
+	} {
+		if got := zipEntryFileName(in); got != want {
+			t.Errorf("zipEntryFileName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestAnalyzeNonOrderCreatesNothing(t *testing.T) {
 	const id = "000012"
 	setupExtTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
