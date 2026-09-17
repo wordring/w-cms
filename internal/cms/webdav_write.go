@@ -176,7 +176,21 @@ func (w *davWriteFile) Close() error {
 		os.Remove(w.tmpPath)
 		return err
 	}
-	// 3. **ページを触ったことにする**——添付を直しても本文は変わらないので、
+	// 3. 目録（files/meta.json）を進める——いつ・誰が・何を（大きさ・ハッシュ）上書きしたか。
+	//    届いたときの名前は残す（無かった古い添付は保存名を名前にする）。前の値は版と一緒に
+	//    `.versions/` 側へ残らないが、監査 `dav.write` と版のファイルが時刻を持っている。
+	if content, err := os.ReadFile(w.realPath); err == nil {
+		fresh := NewAttachmentMeta(w.name, w.user, AttachmentSourceDav, content)
+		if err := UpdateAttachmentMeta(w.pageID, w.name, func(m *AttachmentMeta) {
+			if m.Name == "" {
+				m.Name = w.name
+			}
+			m.SavedAt, m.By, m.Size, m.SHA256, m.Source = fresh.SavedAt, fresh.By, fresh.Size, fresh.SHA256, fresh.Source
+		}); err != nil {
+			auth.Audit(w.user, "attach.meta-failed", w.pageID+"/"+w.name+": "+err.Error())
+		}
+	}
+	// 4. **ページを触ったことにする**——添付を直しても本文は変わらないので、
 	//    これが無いと「いつ直したか」がどこにも出ません。
 	if _, err := page.BumpUpdatedAt(w.pageID); err != nil {
 		// 更新時刻を進められなくても、**ファイルは既に差し替わっています**。

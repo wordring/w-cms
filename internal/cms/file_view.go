@@ -218,14 +218,15 @@ func attachmentURLFor(user *auth.User, pageID, blockID string) (url, fileName st
 		}
 		n := e.Name()
 		ext := strings.ToLower(filepath.Ext(n))
-		if strings.TrimSuffix(n, filepath.Ext(n)) != blockID {
-			continue
+		if IsAttachmentMetaFile(n) || strings.TrimSuffix(n, filepath.Ext(n)) != blockID {
+			continue // 目録（meta.json）は添付ではない
 		}
 		k, known := fileViewKinds[ext]
 		if !known {
 			k = kindOther // 在るが、ブラウザには描けない形式（DXF・Excel・ZIP など）
 		}
-		return "/" + pageID + "/" + n, n, k, true
+		// 見出しに出すのは**届いたときの名前**（目録があれば。無ければ保存名）——2026-09-17。
+		return "/" + pageID + "/" + n, AttachmentDisplayName(pageID, n), k, true
 	}
 	return "", "", "", false
 }

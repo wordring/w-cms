@@ -75,14 +75,92 @@ func (f davFS) resolve(name string) (pageID string, fileName string, err error) 
 		}
 		// 子ページに無ければ、**最後の1つ**は添付ファイルかもしれない。
 		if i == len(segs)-1 {
-			if _, ok := page.AttachmentPath(cur, seg); ok {
-				return cur, seg, nil
+			if stored, ok := f.attachmentByName(cur, seg); ok {
+				return cur, stored, nil
 			}
 		}
 		return "", "", os.ErrNotExist
 	}
 	return cur, "", nil
 }
+
+// ── 添付の名前 ──
+//
+// **一覧に出すのは届いたときの名前**です（2026-09-17・`files/meta.json`）。保存名は
+// サーバー採番のID（`kokl.dxf`）で、エクスプローラで見ても何のファイルか分かりません。
+// 目録が無い古い添付は保存名のまま。**保存名でも引けます**（逆引きは両方を見る）——
+// 割り当て済みのショートカットが切れないように。
+//
+// 名前はフォルダ名と同じ規則で整えます（Windows で使えない文字は全角へ・予約語）。
+// 同じ名前が同じページに2つあれば、保存名を添えて解きます（`図面 (kokl).dxf`）。
+
+// davAttach は添付1件（保存名と、一覧に出す名前）です。
+type davAttach struct {
+	stored string
+	name   string
+}
+
+// attachmentEntries はページの添付を、一覧に出す名前つきで返します。
+// 目録（meta.json）・版の置き場（.versions）・ドットで始まるものは出しません。
+func (f davFS) attachmentEntries(pageID string) []davAttach {
+	entries, err := os.ReadDir(page.AttachmentDir(pageID))
+	if err != nil {
+		return nil
+	}
+	metas := ReadAttachmentMetas(pageID)
+	used := map[string]bool{}
+	out := make([]davAttach, 0, len(entries))
+	for _, e := range entries {
+		stored := e.Name()
+		if e.IsDir() || strings.HasPrefix(stored, ".") || IsAttachmentMetaFile(stored) {
+			continue
+		}
+		name := stored
+		if m, ok := metas[stored]; ok {
+			if n := safeFolderName(m.Name); n != "" {
+				name = n
+			}
+		}
+		if used[name] {
+			ext := filepath.Ext(name)
+			name = strings.TrimSuffix(name, ext) + " (" + strings.TrimSuffix(stored, filepath.Ext(stored)) + ")" + ext
+		}
+		used[name] = true
+		out = append(out, davAttach{stored: stored, name: name})
+	}
+	return out
+}
+
+// attachmentByName は一覧の名前（または保存名）から保存名を引きます。
+func (f davFS) attachmentByName(pageID, name string) (string, bool) {
+	if strings.HasPrefix(name, ".") || IsAttachmentMetaFile(name) {
+		return "", false
+	}
+	for _, a := range f.attachmentEntries(pageID) {
+		if a.name == name || a.stored == name {
+			return a.stored, true
+		}
+	}
+	return "", false
+}
+
+// displayNameOf は保存名から一覧の名前を返します（Stat で使う）。
+func (f davFS) displayNameOf(pageID, stored string) string {
+	for _, a := range f.attachmentEntries(pageID) {
+		if a.stored == stored {
+			return a.name
+		}
+	}
+	return stored
+}
+
+// davFileInfo は添付の情報に一覧の名前をかぶせます（大きさ・時刻は実ファイルのまま）。
+type davFileInfo struct {
+	fs.FileInfo
+	name string
+}
+
+func (i davFileInfo) Name() string { return i.name }
 
 // childByName は付け替えた名前から子ページを引きます。
 func (f davFS) childByName(parentID, name string) (string, bool) {
@@ -153,7 +231,11 @@ func (f davFS) Stat(ctx context.Context, name string) (fs.FileInfo, error) {
 	if !ok {
 		return nil, os.ErrNotExist
 	}
-	return os.Stat(fp)
+	info, err := os.Stat(fp)
+	if err != nil {
+		return nil, err
+	}
+	return davFileInfo{FileInfo: info, name: f.displayNameOf(pageID, fileName)}, nil
 }
 
 func (f davFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
@@ -231,16 +313,14 @@ func (d *davDir) Readdir(count int) ([]fs.FileInfo, error) {
 	for _, c := range d.fs.childEntries(d.pageID) {
 		out = append(out, davDirInfo{name: c.name})
 	}
-	// 添付は実ファイルなので、そのまま情報を渡します（大きさ・更新時刻が正しく出ます）。
-	entries, err := os.ReadDir(page.AttachmentDir(d.pageID))
-	if err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			if info, err := e.Info(); err == nil {
-				out = append(out, info)
-			}
+	// 添付は実ファイルの情報（大きさ・更新時刻）に、**届いたときの名前**をかぶせて渡します。
+	for _, a := range d.fs.attachmentEntries(d.pageID) {
+		fp, ok := page.AttachmentPath(d.pageID, a.stored)
+		if !ok {
+			continue
+		}
+		if info, err := os.Stat(fp); err == nil {
+			out = append(out, davFileInfo{FileInfo: info, name: a.name})
 		}
 	}
 	return out, nil

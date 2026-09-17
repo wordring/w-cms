@@ -163,3 +163,22 @@ func TestFileViewRejectsPageOnlyRef(t *testing.T) {
 		t.Errorf("理由を知らせていません:\n%s", out)
 	}
 }
+
+// TestFileViewHeadUsesOriginalName は、見出しに**届いたときの名前**（files/meta.json）が
+// 出ることを固定します（2026-09-17）。目録が無ければ保存名のまま。
+func TestFileViewHeadUsesOriginalName(t *testing.T) {
+	fileViewFixture(t, "000001", "c3p7.pdf")
+	body := `<h1>部品</h1><section data-type="file-view" data-ref="000001-c3p7"></section>`
+	out := renderFileViewBody(t, &auth.User{Username: "alice", IsAdmin: true}, 1, body)
+	if !strings.Contains(out, ">c3p7.pdf</a>") {
+		t.Errorf("目録が無いときは保存名が出るはず:\n%s", out)
+	}
+	if err := RecordAttachmentMeta("000001", "c3p7.pdf",
+		NewAttachmentMeta("R310-002_本体.pdf", "alice", "mail:x.eml", []byte("%PDF-1.4"))); err != nil {
+		t.Fatal(err)
+	}
+	out = renderFileViewBody(t, &auth.User{Username: "alice", IsAdmin: true}, 1, body)
+	if !strings.Contains(out, ">R310-002_本体.pdf</a>") || !strings.Contains(out, `src="/000001/c3p7.pdf`) {
+		t.Errorf("見出しが届いた名前になっていません（URLは保存名のまま）:\n%s", out)
+	}
+}

@@ -419,3 +419,52 @@ func TestDavRefusalsAreForbiddenNotMissing(t *testing.T) {
 		}
 	})
 }
+
+// TestDavShowsOriginalNames は、**一覧に出るのは届いたときの名前**（files/meta.json）で、
+// 保存名でも引けることを固定します（2026-09-17 ユーザー:「元のファイル名や保存日時等が
+// 書き込まれていると良い」）。同じ名前が2つあれば保存名を添えて解く。目録は一覧に出ない。
+func TestDavShowsOriginalNames(t *testing.T) {
+	setupDavTest(t)
+	if err := RecordAttachmentMeta("000101", "a1b2.dxf",
+		NewAttachmentMeta("補強ストッパー.dxf", "alice", "mail:x.eml", []byte("0\nSECTION\n"))); err != nil {
+		t.Fatal(err)
+	}
+	// 同じ届いた名前のもう1つ（改定版など）。
+	if _, stored, err := SaveAttachmentFrom("000101", "alice", "補強ストッパー.dxf", "mail:y.eml", []byte("0\nEOF\n")); err != nil {
+		t.Fatal(err)
+	} else if stored == "a1b2.dxf" {
+		t.Fatal("保存名が衝突しました")
+	}
+
+	rr := davRequest(t, "PROPFIND", []string{"部品A"}, "alice", "pw")
+	body := rr.Body.String()
+	if !strings.Contains(body, url.PathEscape("補強ストッパー.dxf")) {
+		t.Errorf("届いたときの名前が一覧に出ていません: %s", body)
+	}
+	if !strings.Contains(body, url.PathEscape("補強ストッパー (")) {
+		t.Errorf("同じ名前の2つ目が保存名で解かれていません: %s", body)
+	}
+	if strings.Contains(body, "meta.json") {
+		t.Errorf("目録が一覧に出ています: %s", body)
+	}
+	// 届いた名前でも保存名でも同じファイルが読める。
+	for _, name := range []string{"補強ストッパー.dxf", "a1b2.dxf"} {
+		rr = davRequest(t, "GET", []string{"部品A", name}, "alice", "pw")
+		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "SECTION") {
+			t.Errorf("%s で読めません: %d %q", name, rr.Code, rr.Body.String())
+		}
+	}
+	// 目録そのものは WebDAV からも読めない。
+	if rr = davRequest(t, "GET", []string{"部品A", "meta.json"}, "alice", "pw"); rr.Code == http.StatusOK {
+		t.Error("目録が WebDAV から読めます")
+	}
+	// 上書きすると目録の事実（誰が・いつ・大きさ・由来）が進み、名前は残る。
+	rr = davRequestBody(t, "PUT", []string{"部品A", "補強ストッパー.dxf"}, "alice", "pw", "0 NEW ")
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusNoContent {
+		t.Fatalf("上書きできていません: %d %s", rr.Code, rr.Body.String())
+	}
+	m, _ := AttachmentMetaOf("000101", "a1b2.dxf")
+	if m.Name != "補強ストッパー.dxf" || m.Source != AttachmentSourceDav || m.Size != int64(len("0 NEW ")) {
+		t.Errorf("上書き後の目録が違います: %+v", m)
+	}
+}

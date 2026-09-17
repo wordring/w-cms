@@ -441,7 +441,8 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// 本文と属性サイドカーは「添付ファイル」ではない。本文は画面／API が、属性は
 	// /api/page-meta と権限APIが、それぞれの認可のもとで返す。ここからは配らない。
 	name := parts[len(parts)-1]
-	if strings.EqualFold(name, pageID+".html") || strings.EqualFold(name, pageID+".meta.json") {
+	if strings.EqualFold(name, pageID+".html") || strings.EqualFold(filepath.Ext(name), ".json") {
+		// .json は本文の属性サイドカーか添付の目録（files/meta.json）で、どちらも配らない。
 		http.NotFound(w, r)
 		return
 	}
@@ -495,7 +496,10 @@ func setAttachmentHeaders(w http.ResponseWriter, name string) {
 // 認可は旧口と同じ——ページの read（実効公開なら匿名も可）。無ければ404で、
 // 「読めない」と「存在しない」は匿名に区別させない（既存の流儀）。
 func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name string, notFound http.HandlerFunc) {
-	if strings.ContainsAny(name, "/\\") || name == "" || strings.HasPrefix(name, ".") {
+	// `.json` は添付にならない拡張子（設定の検査が弾く）。files/ に在る .json は添付の
+	// 目録（`meta.json`・cms.AttachmentMetaFile）なので配らない（2026-09-17）。
+	if strings.ContainsAny(name, "/\\") || name == "" || strings.HasPrefix(name, ".") ||
+		strings.EqualFold(filepath.Ext(name), ".json") {
 		notFound(w, r)
 		return
 	}

@@ -34,7 +34,18 @@ import (
 //
 // 呼ぶ側の責任: 認可・編集ロック・**中身の検査**（拡張子の許可／マジックナンバー）を
 // 済ませてから呼ぶこと。ここは書くだけです。
+//
+// 由来は `upload`（人が落とした）。取り込みなど由来が違う口は `SaveAttachmentFrom` を使う。
 func SaveAttachment(pageID, username, origName string, content []byte) (attachID, fileName string, err error) {
+	return SaveAttachmentFrom(pageID, username, origName, AttachmentSourceUpload, content)
+}
+
+// SaveAttachmentFrom は由来（source）を指定して保存します。
+//
+// 保存したら **`files/meta.json` に事実を書き留めます**（元の名前・保存日時・利用者・大きさ・
+// ハッシュ・由来。attachment_meta.go）。⚠ 目録が書けなくても保存は失敗にしません——
+// 失敗を返すと利用者が押し直して同じファイルが2つになるので、監査に残して続けます。
+func SaveAttachmentFrom(pageID, username, origName, source string, content []byte) (attachID, fileName string, err error) {
 	attachDir := page.AttachmentDir(pageID)
 	if err := os.MkdirAll(attachDir, 0755); err != nil {
 		return "", "", err
@@ -58,5 +69,10 @@ func SaveAttachment(pageID, username, origName string, content []byte) (attachID
 		action = "attach.overwrite"
 	}
 	auth.Audit(username, action, pageID+"/"+fileName)
+	// 目録へ。名前は**ファイル名だけ**（呼ぶ側がパスを渡してきても、フォルダは落とす）。
+	meta := NewAttachmentMeta(filepath.Base(strings.ReplaceAll(origName, `\`, "/")), username, source, content)
+	if err := RecordAttachmentMeta(pageID, fileName, meta); err != nil {
+		auth.Audit(username, "attach.meta-failed", pageID+"/"+fileName+": "+err.Error())
+	}
 	return attachID, fileName, nil
 }
