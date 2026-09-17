@@ -84,8 +84,16 @@ func ResetData(username string) (ResetSummary, error) {
 
 	if _, err := os.Stat(master); err == nil {
 		sum.Pages = countPageDirs(master)
-		if err := os.Rename(master, filepath.Join(backup, "master")); err != nil {
-			return sum, fmt.Errorf("控えへ移せません（%s）: %w", backup, err)
+		if err := renameWithRetry(master, filepath.Join(backup, "master")); err != nil {
+			// **失敗の跡を残しません**（2026-09-17）。空の控えだけが `data/` に積もると、
+			// 「どれが本物の控えか」が読めなくなります（実際に2つ積もりました）。
+			// 中身があるときは消えません（`os.Remove` はディレクトリが空のときだけ通る）。
+			_ = os.Remove(backup)
+			sum.BackupDir = ""
+			return sum, fmt.Errorf("控えへ移せません: %w"+
+				"（%s の中のファイルを、ほかのアプリが開いている可能性があります。"+
+				"エディタで開いたページのファイルを閉じ、少し待ってからもう一度押してください）",
+				err, master)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return sum, err
@@ -110,6 +118,37 @@ func ResetData(username string) (ResetSummary, error) {
 
 	auth.Audit(username, "data.reset", fmt.Sprintf("%dページ → %s", sum.Pages, sum.BackupDir))
 	return sum, nil
+}
+
+// renameForReset は差し替えられる改名です（試験が失敗を注ぎ込むための継ぎ目。
+// `judgeOrderPDF` と同じ流儀で、本番では常に `os.Rename`）。
+var renameForReset = os.Rename
+
+// resetRenameTries / resetRenameWait はやり直しの回数と間隔です。
+const (
+	resetRenameTries = 5
+	resetRenameWait  = 200 * time.Millisecond
+)
+
+// renameWithRetry は**一時的に掴まれている**ことに備えて数回やり直します。
+//
+// ⚠ **Windows では、書いたばかりのファイルを一瞬ほかのものが掴みます**——ウイルス対策の
+// 走査・検索の索引・エディタの見張りが、開いたばかりのハンドルを閉じるまでの数百ミリ秒、
+// **そのフォルダの改名を断ります**（`Access is denied.`）。2026-09-17 に実データで
+// **2度続けて断られ、その40秒後に同じ改名を手で試すと通りました**——つまり掴んでいたのは
+// 一時的なもので、待てば済むものでした。
+//
+// **待てば済むものを、人に「もう一度押してください」と言わせない**のがこの関数です。
+// それでも駄目なら（エディタでそのファイルを開きっぱなしなど）、呼ぶ側が理由を添えて断ります。
+func renameWithRetry(from, to string) error {
+	var err error
+	for i := 0; i < resetRenameTries; i++ {
+		if err = renameForReset(from, to); err == nil {
+			return nil
+		}
+		time.Sleep(resetRenameWait)
+	}
+	return err
 }
 
 // countPageDirs は `data/master/<2桁>/<6桁>` の数を数えます（控えに何枚入ったかの案内用）。

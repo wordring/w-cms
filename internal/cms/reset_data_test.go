@@ -97,3 +97,84 @@ func TestResetDataOnEmptyDataDir(t *testing.T) {
 		t.Errorf("data/master を作り直していません: %v", err)
 	}
 }
+
+// TestResetDataRetriesTransientLock は、**一時的に掴まれていたらやり直す**ことを
+// 固定します（2026-09-17）。
+//
+// 実データで2度続けて `Access is denied.` で断られ、その40秒後に同じ改名を手で試すと
+// 通りました——掴んでいたのは一時的なもの（ウイルス対策の走査・検索の索引・エディタの
+// 見張り）で、**待てば済むものでした**。人に「もう一度押してください」と言わせない。
+func TestResetDataRetriesTransientLock(t *testing.T) {
+	newTestFileDB(t)
+	dir := page.GetPageDir("000123")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "000123.html"), []byte("<h1>x</h1>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tries := 0
+	orig := renameForReset
+	renameForReset = func(from, to string) error {
+		tries++
+		if tries < 3 { // 2回は掴まれている
+			return os.ErrPermission
+		}
+		return orig(from, to)
+	}
+	t.Cleanup(func() { renameForReset = orig })
+
+	sum, err := ResetData("alice")
+	if err != nil {
+		t.Fatalf("やり直しで通るはずが失敗しました（%d回試行）: %v", tries, err)
+	}
+	if tries < 3 {
+		t.Errorf("やり直していません: %d回", tries)
+	}
+	if _, err := os.Stat(filepath.Join(sum.BackupDir, "master", "00", "000123")); err != nil {
+		t.Errorf("控えに入っていません: %v", err)
+	}
+}
+
+// TestResetDataLeavesNoEmptyBackupOnFailure は、**失敗の跡を残さない**ことを
+// 固定します（2026-09-17）。
+//
+// 掴まれたまま断られると、控えの入れ物だけが `data/` に積もります——実データで
+// 2つ積もり、**どれが本物の控えか読めなくなりました**。失敗したら空の入れ物は消し、
+// 画面にも控えの場所を出しません（無いものを案内しない）。
+func TestResetDataLeavesNoEmptyBackupOnFailure(t *testing.T) {
+	newTestFileDB(t)
+	dir := page.GetPageDir("000123")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := renameForReset
+	renameForReset = func(from, to string) error { return os.ErrPermission } // ずっと掴まれている
+	t.Cleanup(func() { renameForReset = orig })
+
+	sum, err := ResetData("alice")
+	if err == nil {
+		t.Fatal("掴まれたままなのに成功しました")
+	}
+	// 理由と、次にすることが書いてある（無言の失敗にしない）。
+	for _, want := range []string{"控えへ移せません", "開いている", "もう一度押して"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("断りに %q がありません: %v", want, err)
+		}
+	}
+	if sum.BackupDir != "" {
+		t.Errorf("作っていない控えを案内しています: %q", sum.BackupDir)
+	}
+	// **正本は無事**で、空の控えは残っていない。
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("正本が消えました: %v", err)
+	}
+	entries, _ := os.ReadDir("data")
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "_reset-") {
+			t.Errorf("空の控えが残っています: %s", e.Name())
+		}
+	}
+}
