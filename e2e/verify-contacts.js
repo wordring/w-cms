@@ -5,7 +5,7 @@
 //
 // 見るのは: 1アドレス1行／各行に組織・担当者の欄と「登録」がある／組織の候補に必ず
 // 「個人」が居る／同じドメインの組織が既にあれば候補に並び、1つなら組織欄に入っている／
-// 既にある組織が入っている行は取引の選択を隠す（付いているので）。
+// 行に余計な道具が無い（ドメインのチェック・取引の選択は 2026-09-17 に外した）。
 //
 // **押すのは、既にある組織が組織欄に入っている行だけ**（実データとしても正しい操作）。
 // そういう行が無い日は構造の確認だけで終わります——連絡帳を片付け切った状態も、
@@ -45,7 +45,10 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
           hasPersonal: opts.some(o => o.value === '個人'),
           orgValue: org ? org.value : '',
           existingID: match ? (match.dataset.id || '') : '',
-          relHidden: r.querySelector('.contact-form').classList.contains('contact-form--existing'),
+          // 行に残っていてはいけないもの（2026-09-17 に外した）。
+          // ドメインのチェックは「既定で入っているのが危ない」、取引は「読むのは自社だけ・
+          // 顧客と仕入先は誰も読まない・両方ありうるのにラジオでは片方しか選べない」。
+          extras: r.querySelectorAll('.contact-add-domain, .contact-rel').length,
         };
       }),
     };
@@ -60,9 +63,9 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   ok(before.detail.every(d => d.hasPersonal), '組織の候補に必ず「個人」が居る');
   ok(before.detail.every(d => d.candidates.length <= 22), '候補の数に上限がある（同じドメインの組織は最大20）',
      Math.max(...before.detail.map(d => d.candidates.length)) + '件が最多');
+  ok(before.detail.every(d => d.extras === 0),
+     '行にあるのは組織・担当者・登録だけ（ドメインのチェックと取引の選択は置かない）');
   const prefilled = before.detail.filter(d => d.existingID);
-  ok(prefilled.every(d => d.relHidden), '既にある組織が入っている行は取引の選択を隠す', prefilled.length + '行');
-  ok(before.detail.filter(d => !d.existingID).every(d => !d.relHidden), '新しい組織の行は取引の選択を出す');
 
   const target = prefilled[0];
   if (!target) {

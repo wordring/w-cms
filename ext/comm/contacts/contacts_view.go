@@ -95,18 +95,18 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 			}
 		}
 		sb.WriteString(`</datalist>`)
-		// 取引は**新しい組織のときだけ**要ります（既にある組織には付いている）。
-		// 画面は組織欄が候補に一致したら隠します（`contact-form--existing`・app.js）。
-		sb.WriteString(`<span class="contact-rel">`)
-		for k, rel := range Relations() {
-			checked := ""
-			if k == 0 {
-				checked = " checked"
-			}
-			sb.WriteString(`<label><input type="radio" name="w-rel-` + rowKey + `" value="` +
-				stdhtml.EscapeString(rel) + `"` + checked + `>` + stdhtml.EscapeString(rel) + `</label>`)
-		}
-		sb.WriteString(`</span>`)
+		// ⚠ **取引（顧客・仕入先・自社）の選択は置きません**（2026-09-17 ユーザー決定）。
+		// コードを当たったところ、**読んでいるのは `自社` だけ**でした（`isSelfPartner`
+		// ——差出人から相手を引くときに自分を外す・社内のアドレスを一覧から隠す、の4か所）。
+		// `顧客` と `仕入先` は**誰も読んでいません**。そのうえ:
+		//
+		//   - 相手は**顧客であり仕入先でもありえます**（2026-09-05 ユーザー）。タグは繰り返せる
+		//     のに、ラジオは片方しか選べず、**画面のほうが現実を表せていませんでした**
+		//   - `自社` は**一生に一度**しか選ばない値なのに、毎行3つの対等な選択肢に並び、
+		//     押し間違えるとその組織のアドレスが一覧から静かに消えていました
+		//
+		// ドメインと同じ扱いにしました——**必要になったとき、組織のページで `取引` のタグを
+		// 1行書きます**。口（`/api/contacts/register` の `relation`）は残してあります。
 
 		// ⚠ **「このドメインもその組織のものにする」のチェックは置きません**（2026-09-17
 		// ユーザー:「ドメイン yahoo.co.jp もその組織のものにするというチェックボックスは

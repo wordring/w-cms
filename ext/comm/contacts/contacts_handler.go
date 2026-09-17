@@ -127,7 +127,12 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	created := false
 	if target == "" {
 		// ── 新しい組織ページを作る ──
-		if !validRelation(req.Relation) {
+		//
+		// ⚠ **取引（`relation`）は任意です**（2026-09-17）。送る画面が無くなったので、
+		// 空なら `取引` のタグを書きません——必要になったとき組織のページで足します。
+		// 値が付いていれば書きますが、表に無い値は断ります（黙って捨てると、書いたつもりの
+		// 値が消えます）。
+		if req.Relation != "" && !validRelation(req.Relation) {
 			cms.JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
 			return
 		}
@@ -145,25 +150,29 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusInternalServerError, "「"+ContactsBoxTitle+"」ページを作れません: "+err.Error())
 			return
 		}
-		var b strings.Builder
-		b.WriteString("<h1>" + stdhtml.EscapeString(orgTitle) + "</h1>")
-		b.WriteString(`<dl data-type="tags">`)
+		// **タグが1つも無ければ `dl` ごと書きません**（空の形式ブロックを置かない）。
+		var tags strings.Builder
 		if !personal {
-			cms.WriteTag(&b, RelationTag, req.Relation)
+			cms.WriteTag(&tags, RelationTag, req.Relation)
 		}
 		// 担当者が居なければ、アドレスは組織の口として組織のページへ（人が居れば下で人へ）。
 		if person == "" {
 			for _, a := range addrs {
-				cms.WriteTag(&b, EmailTag, a)
+				cms.WriteTag(&tags, EmailTag, a)
 			}
 		}
 		// **組織の連絡先**（2026-09-16）。これがあると、同じドメインの**新しい人**からの
 		// 初メールも、この組織に結びつきます。⚠ 共有ドメインに付けると、そのドメインの
-		// 他人まで引き寄せます——だから付けるかは**人が見て決めます**（画面のチェック）。
+		// 他人まで引き寄せます——だから**人が組織のページで書きます**（2026-09-17 に画面の
+		// チェックを外した。口はここに残っている）。
 		for _, d := range doms {
-			cms.WriteTag(&b, DomainTag, d)
+			cms.WriteTag(&tags, DomainTag, d)
 		}
-		b.WriteString("</dl>")
+		var b strings.Builder
+		b.WriteString("<h1>" + stdhtml.EscapeString(orgTitle) + "</h1>")
+		if tags.Len() > 0 {
+			b.WriteString(`<dl data-type="tags">` + tags.String() + "</dl>")
+		}
 		// 電話番号は空で置きます——**書く場所が見えていれば、人は書きます**。
 		b.WriteString(`<p><br/></p>`)
 		target, err = cms.CreateChildPage(boxID, user.Username, b.String())

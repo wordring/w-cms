@@ -4355,12 +4355,8 @@
             td.querySelectorAll('button, input').forEach(el => { el.disabled = editMode; });
             if (td.dataset.wired) return;
             td.dataset.wired = '1';
-            const org = td.querySelector('.contact-org');
             const go = td.querySelector('.contact-go');
-            const sync = () => syncContactRow(td);
-            if (org) { org.addEventListener('input', sync); org.addEventListener('change', sync); }
             if (go) go.addEventListener('click', () => submitContactRow(td));
-            sync();
         });
     }
 
@@ -4375,17 +4371,6 @@
             if (opt.value === text) return { id: opt.dataset.id || '', title: opt.value };
         }
         return null;
-    }
-
-    // syncContactRow は組織の欄に合わせて、取引の選択を出し分けます。
-    //   - 既にある組織 → 取引は付いているので隠す
-    //   - 「個人」・新しい社名 → 出す（「個人」は取引が人に付く）
-    function syncContactRow(td) {
-        const org = td.querySelector('.contact-org');
-        const text = org ? org.value.trim() : '';
-        const personal = text !== '' && text === (td.dataset.personalTitle || '個人');
-        const cand = contactOrgCandidate(td);
-        td.classList.toggle('contact-form--existing', !!(cand && cand.id) && !personal);
     }
 
     // submitContactRow は「登録」——1つの口（/api/contacts/register）へ、組織と担当者を渡します。
@@ -4403,11 +4388,11 @@
             return;
         }
         const cand = contactOrgCandidate(td);
-        const rel = td.querySelector('.contact-rel input:checked');
+        // ⚠ 取引（顧客・仕入先・自社）は送りません（2026-09-17 に選択を外した）。
+        // 必要になったとき、組織のページで `取引` のタグを1行書きます。
         const body = {
             addresses: (go.dataset.addresses || '').split(',').filter(Boolean),
             person_name: person,
-            relation: rel ? rel.value : '',
         };
         if (cand && cand.id) body.page_id = cand.id; else body.name = org;
         go.disabled = true;

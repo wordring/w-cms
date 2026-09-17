@@ -80,6 +80,36 @@ func TestRegisterNewOrgWithPerson(t *testing.T) {
 	}
 }
 
+// TestRegisterWithoutRelationWritesNoTag は、**取引を送らない**（2026-09-17 に画面から
+// 外した）ときの形を固定します——`取引` のタグは書かず、タグが1つも無ければ `dl` ごと
+// 書きません（空の形式ブロックを置かない）。必要になったら組織のページで足します。
+func TestRegisterWithoutRelationWritesNoTag(t *testing.T) {
+	setupPartnerBox(t)
+	u := &auth.User{Username: "alice", IsAdmin: true}
+	code, res := postRegister(t, u, map[string]any{
+		"name": "佐川急便株式会社", "person_name": "配車係",
+		"addresses": []string{"info@sagawa-exp.example"},
+	})
+	if code != 200 || res["created"] != true {
+		t.Fatalf("取引なしで登録できません: %d %+v", code, res)
+	}
+	orgID, _ := PartnerByTitle(u, "佐川急便株式会社")
+	org := bodyOfPage(t, orgID)
+	if strings.Contains(org, RelationTag) {
+		t.Errorf("送っていない取引が書かれました:\n%s", org)
+	}
+	if strings.Contains(org, `<dl data-type="tags">`) {
+		t.Errorf("タグが無いのに空の dl を置きました:\n%s", org)
+	}
+	// 表に無い値は断る（黙って捨てると、書いたつもりの値が消える）。
+	if code, _ := postRegister(t, u, map[string]any{
+		"name": "でたらめ商会", "relation": "とりひき",
+		"addresses": []string{"x@example.com"},
+	}); code != 400 {
+		t.Errorf("表に無い取引を受け付けました: %d", code)
+	}
+}
+
 func TestRegisterByTitleMergesIntoExisting(t *testing.T) {
 	box := setupPartnerBox(t)
 	u := &auth.User{Username: "alice", IsAdmin: true}

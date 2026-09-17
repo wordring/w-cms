@@ -2017,20 +2017,6 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     background: var(--bg-paper);
     color: var(--text);
 }
-/* 取引は新しい組織のときだけ。既にある組織を選んだ行は隠す（付いているので）。 */
-#w-editor-content .contact-rel {
-    display: inline-flex;
-    gap: 8px;
-    align-self: center;
-    font-size: 12px;
-}
-#w-editor-content .contact-rel label {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    cursor: pointer;
-}
-#w-editor-content .contact-form--existing .contact-rel { display: none; }
 #w-editor-content .contact-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
 #w-editor-content .contact-addrs {
     font-size: 12px;
