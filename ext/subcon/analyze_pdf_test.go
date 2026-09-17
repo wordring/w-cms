@@ -1,7 +1,6 @@
 package subcon
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -22,8 +21,8 @@ import (
 //
 // Gemini はネットワークと課金を伴うため呼ばず、判定の入口 judgeOrderPDF を
 // 偽物へ差し替える（seam）。固定するのは判定の後ろ側すべて——
-// 受注ページの生成（機能見出し形・親子・権限継承）・受信元タグ・ZIP内PDFの
-// 取り出し（上限つき）・「発注書ではない」の返答・write 権限の関門。
+// 受注ページの生成（機能見出し形・親子・権限継承）・受信元タグ・
+// 「発注書ではない」の返答・write 権限の関門。
 
 // stubJudge は judgeOrderPDF を差し替え、テスト後に戻します。
 func stubJudge(t *testing.T, f func([]byte) (*orderJudgment, error)) {
@@ -113,10 +112,6 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 			t.Errorf("受注ページに %q がありません:\n%s", want, html)
 		}
 	}
-	if strings.Contains(html, "元ファイル") {
-		t.Error("PDF直接の解析に 元ファイル タグは不要です")
-	}
-
 	// 親子と権限。
 	meta, ok := page.ReadSidecar(res.PageID)
 	if !ok || meta.ParentID != id {
@@ -134,73 +129,6 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 		 WHERE page_id = ? AND data_type = 'client-order' AND field = '発注書番号' AND value = 'PO-2026-001'`,
 		idInt).Scan(&n); err != nil || n != 1 {
 		t.Errorf("発注書番号が索引にありません (n=%d err=%v)", n, err)
-	}
-}
-
-// TestAnalyzeZipEntry は、ZIP添付の中のPDFを1件だけ取り出して解析し、
-// 元ファイル タグが添えられることを検証します。
-func TestAnalyzeZipEntry(t *testing.T) {
-	const id = "000012"
-	setupExtTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
-
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, _ := zw.Create("orders/chumon.pdf")
-	w.Write([]byte("%PDF-1.4 in zip"))
-	w2, _ := zw.Create("readme.txt")
-	w2.Write([]byte("x"))
-	zw.Close()
-	putAttachment(t, id, "zzz9.zip", buf.Bytes())
-	stubJudge(t, func(pdf []byte) (*orderJudgment, error) {
-		if string(pdf) != "%PDF-1.4 in zip" {
-			t.Errorf("ZIPから取り出した中身が違います: %q", pdf)
-		}
-		return sampleJudgment, nil
-	})
-
-	rr := postAnalyze(t, &auth.User{Username: "alice"},
-		map[string]string{"page_id": id, "file": "zzz9.zip", "entry": "orders/chumon.pdf"})
-	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"is_client_order":true`) {
-		t.Fatalf("ZIP内PDFの解析が失敗しました: code=%d body=%s", rr.Code, rr.Body.String())
-	}
-	var res struct {
-		PageID string `json:"page_id"`
-	}
-	json.Unmarshal(rr.Body.Bytes(), &res)
-	body, _ := os.ReadFile(filepath.Join(page.GetPageDir(res.PageID), res.PageID+".html"))
-	for _, want := range []string{
-		"<dt>受信元</dt><dd>" + id + "-zzz9</dd>", // 参照はZIPのリンクブロックへ
-		"<dt>元ファイル</dt><dd>chumon.pdf</dd>", // フォルダ（orders/）は落とす——2026-09-17
-	} {
-		if !strings.Contains(string(body), want) {
-			t.Errorf("受注ページに %q がありません:\n%s", want, body)
-		}
-	}
-
-	// ZIP内のPDF以外は拒否。
-	rr = postAnalyze(t, &auth.User{Username: "alice"},
-		map[string]string{"page_id": id, "file": "zzz9.zip", "entry": "readme.txt"})
-	if rr.Code != 400 {
-		t.Errorf("ZIP内の非PDFが拒否されません: code=%d", rr.Code)
-	}
-}
-
-// TestAnalyzeNonOrderCreatesNothing は「発注書ではない」の返答を検証します
-// （ページは作らない・エラーでもない）。
-// TestZipEntryFileNameDropsFolders は、本文の `元ファイル` に書く値がファイル名だけに
-// なることを検証します（2026-09-17）。Windows の右クリック圧縮はZIPの名前のフォルダを
-// かぶせるので、パスのまま書くとZIPの名前が毎回前に付いていました。
-func TestZipEntryFileNameDropsFolders(t *testing.T) {
-	for in, want := range map[string]string{
-		"chumon.pdf":                       "chumon.pdf",
-		"orders/chumon.pdf":                "chumon.pdf",
-		"Q055-図面/R310-S030_支持金具.PDF": "R310-S030_支持金具.PDF",
-		`Q055-図面\R310-S030_支持金具.PDF`: "R310-S030_支持金具.PDF", // `\` で書く圧縮ツールも在る
-		"a/b/c.dxf":                        "c.dxf",
-	} {
-		if got := zipEntryFileName(in); got != want {
-			t.Errorf("zipEntryFileName(%q) = %q, want %q", in, got, want)
-		}
 	}
 }
 
@@ -265,7 +193,7 @@ func TestBuildOrderPageHTMLEscapes(t *testing.T) {
 		OrderNo:       `<script>alert(1)</script>`,
 		Items:         []orderPDFItem{{ItemName: `<img src=x>`}},
 	}
-	html := buildOrderPageHTML("000090", "abc123", `<b>x</b>.pdf`, j)
+	html := buildOrderPageHTML("000090", "abc123", j)
 	if strings.Contains(html, "<script>") || strings.Contains(html, "<img") || strings.Contains(html, "<b>") {
 		t.Errorf("エスケープされていません:\n%s", html)
 	}

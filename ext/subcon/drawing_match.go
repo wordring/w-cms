@@ -23,8 +23,6 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"archive/zip"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +34,6 @@ import (
 // matchedDXF は図面PDFと対応づいたDXF添付です。
 type matchedDXF struct {
 	AttachID string // 添付ID（＝保存名から拡張子を除いたもの）。参照タグの値に使う
-	Entry    string // ZIPの中のパス（ZIP経由のときだけ。直接の添付なら空）
 	Number   string // DXFの表題欄から読んだ図面番号
 	Name     string // 同・図面名称
 }
@@ -58,6 +55,10 @@ func normalizeDrawingNo(s string) string {
 }
 
 // MatchDXFAttachments は、ページに付いているDXF添付のうち図面番号が一致するものを返します。
+//
+// ⚠ **ZIP の中は見ません**（2026-09-17）。メールの取り込みが ZIP を展開して中身を
+// 添付にするので、DXF は常にページ直下に在ります。それまでは `matchDXFInZip` が
+// ZIP を読み、参照は ZIP のブロックを指していました（中のファイルにはブロックが無い）。
 //
 // drawingNo が空なら何も返しません——**空文字どうしが一致してしまう**と、表題欄が
 // 未記入のDXF（構想図など）が無関係な図面へ全部ぶら下がります。
@@ -94,89 +95,5 @@ func MatchDXFAttachments(pageID, drawingNo string) []matchedDXF {
 		})
 	}
 
-	// **ZIP添付の中も見る**——実運用ではこちらが主経路です（2026-09-03 ユーザー:
-	// 「PDFが沢山ある場合、ZIPされている場合があります」）。図面一式がZIPで届き、
-	// PDFとDXFが同じ包みに入っている形。
-	for _, e := range entries {
-		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".zip") {
-			continue
-		}
-		path, found := page.AttachmentPath(pageID, e.Name())
-		if !found {
-			continue
-		}
-		attachID := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
-		out = append(out, matchDXFInZip(path, attachID, want)...)
-	}
-	return out
-}
-
-// zipReadBudget はZIP1つから読み出してよい合計バイト数です。
-//
-// **目録読みだけ**という原則（zip_list.go）の例外なので、上限を2重に掛けます
-// ——1件ごとの上限（申告サイズと実読みの両方）と、この合計です。小さなZIPが
-// 巨大に膨らむ細工（ZIP爆弾）に、読み出し量そのもので蓋をします。
-func zipReadBudget() int64 { return cms.MaxUploadBytes() }
-
-// zipEntryLimit は1件あたりの上限です。実物の図面DXFは0.5〜2MB程度でした。
-const zipEntryLimit = 8 << 20
-
-// zipEntryCap は1つのZIPで見るDXFの件数上限です（多数の小さな細工への蓋）。
-const zipEntryCap = 500
-
-// matchDXFInZip はZIP添付の中のDXFから、図面番号の一致するものを返します。
-//
-// 参照は**ZIPのリンクブロック**を指します（`ページID-ZIPの添付ID`）——ZIPの中の
-// ファイルには本文のブロックが無いからです。中のファイル名は `対応DXFファイル` タグへ
-// 別に書きます（発注書解析の `元ファイル` と同じ考え。書くのはファイル名だけで、
-// フォルダは落とします——`zipEntryFileName`）。
-func matchDXFInZip(path, attachID, want string) []matchedDXF {
-	zr, err := zip.OpenReader(path)
-	if err != nil {
-		return nil
-	}
-	defer zr.Close()
-
-	var out []matchedDXF
-	budget := zipReadBudget()
-	seen := 0
-	for _, f := range zr.File {
-		if seen >= zipEntryCap || budget <= 0 {
-			break
-		}
-		name := cms.DecodeZipName(f.Name, f.NonUTF8)
-		if f.FileInfo().IsDir() || !strings.EqualFold(filepath.Ext(name), ".dxf") {
-			continue
-		}
-		seen++
-		if f.UncompressedSize64 > zipEntryLimit {
-			continue // 申告サイズで弾く（自己申告なので下の実読みでも打ち切る）
-		}
-		rc, err := f.Open()
-		if err != nil {
-			continue
-		}
-		limit := int64(zipEntryLimit)
-		if limit > budget {
-			limit = budget
-		}
-		content, err := io.ReadAll(io.LimitReader(rc, limit+1))
-		rc.Close()
-		if err != nil || int64(len(content)) > limit {
-			continue // 申告より大きい＝細工の疑い。読まない
-		}
-		budget -= int64(len(content))
-
-		fields := DXFTitleBlock(ParseDXFTexts(content))
-		if normalizeDrawingNo(fields["図面番号"]) != want {
-			continue
-		}
-		out = append(out, matchedDXF{
-			AttachID: attachID,
-			Entry:    name,
-			Number:   fields["図面番号"],
-			Name:     fields["図面名称"],
-		})
-	}
 	return out
 }

@@ -172,12 +172,14 @@ function buildZip(files) { // files: [{name, data}]
         check('ZIPの目録にサイズが出る', /\d+ B/.test(listText));
         check('ZIPの目録に3件出る', await page.locator('.attach-zip-list li').count() === 3);
 
-        // 解析ボタン（人間ゲート型）——PDFリンクの横と、ZIP目録のPDF行にだけ出る。
+        // 解析ボタン（人間ゲート型）——PDFリンクの横にだけ出る。
+        // ⚠ ZIP の目録には出ない（2026-09-17）——取り込みが ZIP を展開して中身を添付にするので、
+        // 解析はページ直下の PDF だけを見る。目録は読むだけ。
         // 押すと /api/analyze-attachment の応答が通知される。サーバーにキーが無ければ
         // 「GEMINI_API_KEY」の設定案内、あれば偽PDFの判定結果（発注書ではない／解析失敗）
         // ——どれでも配線の検証としては十分（判定そのものはGoテストが偽物判定で固定）。
         check('PDFリンクの横に解析ボタンが出る', await page.locator('p .attach-analyze').count() === 1);
-        check('ZIP目録のPDF行にだけ解析ボタンが出る', await page.locator('.attach-zip-list .attach-analyze').count() === 1);
+        check('ZIP目録には解析ボタンが出ない（目録は読むだけ）', await page.locator('.attach-zip-list .attach-analyze').count() === 0);
         await page.locator('p .attach-analyze').click();
         await page.waitForFunction(() => /GEMINI_API_KEY|発注書ではない|解析できませんでした|受注ページを作りました/
             .test(document.getElementById('w-toast-host').innerText), null, { timeout: 30000 });

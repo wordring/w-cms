@@ -3,15 +3,20 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 // PDFの判定→受注ページ生成——ボタン起動（下請け業務・2026-09-01）
 //
-// 添付PDF（またはZIP添付の中のPDF）を Gemini で判定し、**顧客が発行した発注書**
-// なら受注ページをそのページの子として生成します。
+// 添付PDFを Gemini で判定し、**顧客が発行した発注書**なら受注ページを
+// そのページの子として生成します。
 //
-//	通信記録ページ（親）── 📎 発注書.pdf ／ 📎 図面一式.zip
+// ⚠ **ZIP の中の PDF は、ここでは扱いません**（2026-09-17）。メールの取り込みが
+// ZIP を展開して中身を1つずつ添付にするので（`ext/comm/intake_eml.go`）、解析が見る
+// のは常に「自分のブロックIDを持つ PDF」です。それまでは `entry` 引数で ZIP の中の
+// 1件を取り出し、`元ファイル`・`対応DXFファイル` のタグで中のパスを添えていましたが、
+// 参照が ZIP を指すのでファイル表示が PDF を開けませんでした。
+//
+//	通信記録ページ（親）── 📎 発注書.pdf
 //	└─ 受注ページ（本APIが生成）
 //	     <h1>受注 PO-xxx</h1>
 //	     <section><h2>顧客の発注書</h2> ヘッダ dl ＋ 明細 table（機能見出し形・D-2）
 //	     <dl data-type="tags"> 受信元: <ページID>-<添付ID>（押すと該当ブロックへ飛ぶ）
-//	                            元ファイル: <ZIP内のファイル名>（ZIP経由のときだけ）
 //
 // **起動は人の指先だけ**——「自動ではなくボタンのclickなどで解析が始まると良い」
 // （2026-09-01 ユーザー決定）。当初は .eml 到着時の自動判定（取り込み観察係）として
@@ -25,12 +30,9 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"archive/zip"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"html"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -76,8 +78,7 @@ type orderPDFItem struct {
 var judgeOrderPDF = judgeOrderPDFWithGemini
 
 // AnalyzeAttachmentAPIHandler は POST /api/analyze-attachment です。
-// 入力: {page_id, file, entry?}——file は添付の保存名（.pdf か .zip）、
-// entry は ZIP の中のPDFのパス（目録の表示名）。
+// 入力: {page_id, file}——file は添付の保存名（.pdf）。
 func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -87,7 +88,6 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PageID string `json:"page_id"`
 		File   string `json:"file"`
-		Entry  string `json:"entry"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -103,13 +103,13 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fileName, err := cms.SafeAttachmentName(pageID, req.File,
-		map[string]bool{".pdf": true, ".zip": true}, "解析できるのは .pdf と .zip の中のPDFだけです")
+		map[string]bool{".pdf": true}, "解析できるのは .pdf だけです")
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	pdf, srcEntry, err := loadPDFForAnalysis(pageID, fileName, req.Entry)
+	pdf, err := loadPDFForAnalysis(pageID, fileName)
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
@@ -131,13 +131,13 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !j.IsClientOrder && j.DocType == "drawing" {
 		matches := MatchDXFAttachments(pageID, j.DrawingNo)
 		newID, err := cms.CreateChildPage(pageID, auth.CurrentUser(r).Username,
-			buildPartPageHTML(pageID, attachIDOf(), srcEntry, j, matches))
+			buildPartPageHTML(pageID, attachIDOf(), j, matches))
 		if err != nil {
 			cms.JSONFail(w, http.StatusInternalServerError, "部品ページを作れません: "+err.Error())
 			return
 		}
 		auth.Audit(auth.CurrentUser(r).Username, "analyze-drawing",
-			newID+" from "+pageID+"/"+fileName+srcEntrySuffix(srcEntry))
+			newID+" from "+pageID+"/"+fileName)
 		json.NewEncoder(w).Encode(map[string]any{
 			"success": true, "is_client_order": false, "doc_type": "drawing",
 			"page_id": newID, "title": pageTitleOf(newID),
@@ -153,12 +153,12 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	attachID := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 	newID, err := cms.CreateChildPage(pageID, auth.CurrentUser(r).Username,
-		buildOrderPageHTML(pageID, attachID, srcEntry, j))
+		buildOrderPageHTML(pageID, attachID, j))
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
 		return
 	}
-	auth.Audit(auth.CurrentUser(r).Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName+srcEntrySuffix(srcEntry))
+	auth.Audit(auth.CurrentUser(r).Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
 
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "is_client_order": true,
@@ -178,81 +178,17 @@ func pageTitleOf(pageID string) string {
 	return pageID
 }
 
-// zipEntryFileName はZIP内のパスからファイル名だけを取り出します。
-//
-// **本文の `元ファイル`・`対応DXFファイル` にはファイル名だけを書きます**（2026-09-17
-// ユーザー:「元ファイルタグの値にZIPファイル名が含まれますが、PDFファイル名だけで
-// 良いと思います」）。Windows の右クリック圧縮はZIPの名前のフォルダを1段かぶせるので、
-// 中のパスをそのまま書くと `Q055-…図面/R310-…_支持金具.PDF` と**ZIPの名前が毎回
-// 前に付き**、人が読みたいファイル名が後ろへ押し出されていました。
-// ⚠ ZIPの中で1件を選ぶ鍵（`loadPDFForAnalysis` の `entry`）は**中のパスのまま**です
-// ——同名のファイルが別フォルダに在りうるので、鍵まで切り詰めてはいけません。
-// 区切りは `/` が規約ですが、`\` で書く圧縮ツールも在るので両方を見ます。
-func zipEntryFileName(entry string) string {
-	if i := strings.LastIndexAny(entry, `/\`); i >= 0 {
-		return entry[i+1:]
-	}
-	return entry
-}
-
-// srcEntrySuffix は監査の対象表記にZIP内パスを添えます。
-func srcEntrySuffix(entry string) string {
-	if entry == "" {
-		return ""
-	}
-	return "!" + entry
-}
-
 // loadPDFForAnalysis は解析対象のPDFの中身を読みます。
-// file が .pdf ならそのまま、.zip なら entry（目録の表示名）で1件だけ取り出す。
-// 取り出しには上限を掛ける——ZIPの申告サイズは自己申告なので、実読みも打ち切る
-// （小さな入力が巨大に膨らむ細工＝ZIP爆弾への備え）。
-func loadPDFForAnalysis(pageID, fileName, entry string) (pdf []byte, srcEntry string, err error) {
+func loadPDFForAnalysis(pageID, fileName string) ([]byte, error) {
 	path, found := page.AttachmentPath(pageID, fileName)
 	if !found {
-		return nil, "", errors.New("添付が見つかりません")
+		return nil, errors.New("添付が見つかりません")
 	}
-
-	if strings.ToLower(filepath.Ext(fileName)) == ".pdf" {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return nil, "", errors.New("PDFを読めません")
-		}
-		return b, "", nil
-	}
-
-	// ZIP の中の1件。
-	if strings.ToLower(filepath.Ext(entry)) != ".pdf" {
-		return nil, "", errors.New("ZIPの中で解析できるのはPDFだけです")
-	}
-	zr, err := zip.OpenReader(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, "", errors.New("ZIPとして読めません")
+		return nil, errors.New("PDFを読めません")
 	}
-	defer zr.Close()
-	limit := cms.MaxUploadBytes()
-	for _, f := range zr.File {
-		if f.FileInfo().IsDir() || cms.DecodeZipName(f.Name, f.NonUTF8) != entry {
-			continue
-		}
-		if f.UncompressedSize64 > uint64(limit) {
-			return nil, "", fmt.Errorf("ZIP内のファイルが大きすぎます（上限 %dMiB）", limit>>20)
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return nil, "", errors.New("ZIPの中身を開けません")
-		}
-		defer rc.Close()
-		b, err := io.ReadAll(io.LimitReader(rc, limit+1))
-		if err != nil {
-			return nil, "", errors.New("ZIPの中身を読めません")
-		}
-		if int64(len(b)) > limit {
-			return nil, "", fmt.Errorf("ZIP内のファイルが大きすぎます（上限 %dMiB）", limit>>20)
-		}
-		return b, entry, nil
-	}
-	return nil, "", errors.New("ZIPの中に " + entry + " が見つかりません")
+	return b, nil
 }
 
 // judgeOrderPDFWithGemini は判定＋抽出を1コールで行います。
@@ -294,7 +230,7 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
 // buildOrderPageHTML は受注ページの本文を組みます（機能見出し形・D-2）。
 // 形はページテンプレートの受注ページと同じ: ヘッダ dl（発注書番号・発注元・発注日）＋
 // 明細 table（品番・品名・単価・数量・状態）。状態は「未着手」で始まる（進捗の起点）。
-func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment) string {
+func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	title := "受注 " + cms.NormalizeNameForIngest(j.OrderNo)
 	if cms.NormalizeNameForIngest(j.OrderNo) == "" {
 		if cms.NormalizeNameForIngest(j.Customer) != "" {
@@ -324,13 +260,8 @@ func buildOrderPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment)
 	b.WriteString("</tbody></table></section>")
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
-	// ZIP経由なら中のファイル名も添える（こちらはただのタグ——参照文法には乗らない）。
 	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
-		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
-	if srcEntry != "" {
-		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(zipEntryFileName(srcEntry)) + "</dd>")
-	}
-	b.WriteString("</dl>")
+		html.EscapeString(hostPageID+"-"+attachID) + "</dd></dl>")
 	return b.String()
 }
 
@@ -358,7 +289,7 @@ func writeHeaderPair(b *strings.Builder, name, value string) {
 // **1通のメールの中でPDFとDXFを対応づけた結果**がこのページです。過去のページを
 // 図面番号で探して束ねることはしません——番号は別製品で衝突しうるので、
 // 同一性を担うのは常にページID（drawing_match.go 冒頭）。
-func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, matches []matchedDXF) string {
+func buildPartPageHTML(hostPageID, attachID string, j *orderJudgment, matches []matchedDXF) string {
 	// 題は「図面番号 図面名称」——**図面名称は重複しうる**ので番号を先に置く。
 	//
 	// **ブロックと同じ正規化を通します。** 通さないと、題が `シュート先Ｔ金具` で
@@ -371,7 +302,7 @@ func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, 
 
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
-	sec := drawingSectionHTML(j, hostPageID, attachID, srcEntry, matches, "")
+	sec := drawingSectionHTML(j, hostPageID, attachID, matches, "")
 	b.WriteString(sec)
 	// 改訂履歴は**下に**置く（図面は新しいものが上に積まれるので、位置が競合しない）。
 	b.WriteString(revisionsSectionHTML(j, sec))
@@ -389,7 +320,7 @@ func buildPartPageHTML(hostPageID, attachID, srcEntry string, j *orderJudgment, 
 // existingBody は採番の重複を避けるための既存本文です（改定で差し込むとき）。
 // 由来（受信元・対応DXF）を**ブロックの中**に置くのは、改定で合流させるときに
 // ブロックごと運べば出所も一緒に付いて行くようにするためです。
-func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
+func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
 	matches []matchedDXF, existingBody string) string {
 	// 図面番号も同じ扱いです（2026-09-06）——**人がいちばんコピペする値**なので、
 	// 揃わないまま置くと揺れがそこから増えます。畳むのは NFKC までで、
@@ -412,19 +343,11 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID, srcEntry string,
 
 	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
-	if srcEntry != "" {
-		b.WriteString("<dt>元ファイル</dt><dd>" + html.EscapeString(zipEntryFileName(srcEntry)) + "</dd>")
-	}
 	// 一致したDXFを参照タグで指す（押すと元の通信記録ページの該当添付へ飛ぶ）。
 	// 一致が無ければ何も書かない——**DXFが無いのも普通**（PDFだけの図面）。
 	for _, m := range matches {
 		b.WriteString("<dt>対応DXF</dt><dd>" +
 			html.EscapeString(hostPageID+"-"+m.AttachID) + "</dd>")
-		// ZIPの中のDXFは、参照がZIPのリンクブロックを指すので**中のファイル名を添える**
-		// （ZIP内のファイルには本文のブロックが無い。発注書解析の 元ファイル と同じ考え）。
-		if m.Entry != "" {
-			b.WriteString("<dt>対応DXFファイル</dt><dd>" + html.EscapeString(zipEntryFileName(m.Entry)) + "</dd>")
-		}
 	}
 	b.WriteString("</dl>")
 	// **図面をここに開く、と本文に書きます**（2026-09-14）。ユーザー:「HTMLに無いものが

@@ -55,7 +55,7 @@ func makeDrawingPageFrom(t *testing.T, inboxID, attachID, no, name, machine, cus
 		DocType: "drawing", DrawingNo: no, DrawingName: name,
 		MachineName: machine, Customer: customer,
 	}
-	id, err := cms.CreateChildPage(inboxID, "alice", buildPartPageHTML(inboxID, attachID, "", j, nil))
+	id, err := cms.CreateChildPage(inboxID, "alice", buildPartPageHTML(inboxID, attachID, j, nil))
 	if err != nil {
 		t.Fatalf("部品ページを作れません: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestFilingProposalSkipsNonDrawings(t *testing.T) {
 	setupFilingTest(t, inbox)
 	makeDrawingPage(t, inbox, "A-1", "部品A", "装置X", "客先Y")
 	if _, err := cms.CreateChildPage(inbox, "alice",
-		buildOrderPageHTML(inbox, "pdf002", "", sampleJudgment)); err != nil {
+		buildOrderPageHTML(inbox, "pdf002", sampleJudgment)); err != nil {
 		t.Fatalf("受注ページを作れません: %v", err)
 	}
 

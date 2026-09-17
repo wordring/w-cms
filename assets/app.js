@@ -3429,7 +3429,7 @@
                 // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
                 // **解析は下請けの持ち物**——載っていなければボタンを出さない（2026-09-15）。
                 if (a.parentElement) {
-                    const ab = makeAnalyzeButton(m[1], m[2] + '.pdf', '');
+                    const ab = makeAnalyzeButton(m[1], m[2] + '.pdf');
                     btn.insertAdjacentElement('afterend', ab);
                     // **解析済みなら、その隣に結果の印**（2026-09-06）。
                     // ボタンは消しません——読み違いはあるので、押し直せる余地を残します。
@@ -4508,10 +4508,12 @@
         }
     }
 
-    // makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付・ZIP内PDFで共用）。
+    // makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付）。
+    // ⚠ ZIP の中の PDF には出しません（2026-09-17）——取り込みが ZIP を展開して中身を
+    // 1つずつ添付にするので、解析はページ直下の PDF だけを見ます（`entry` 引数は廃止）。
     // 押すと /api/analyze-attachment が Gemini で判定し、発注書なら受注ページを
     // このページの子として作る。結果は通知で知らせる（本文は変えない）。
-    function makeAnalyzeButton(pageId, file, entry) {
+    function makeAnalyzeButton(pageId, file) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'vocab-chrome attach-expand attach-analyze';
@@ -4525,7 +4527,7 @@
                 const res = await fetch('/api/analyze-attachment', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ page_id: pageId, file: file, entry: entry }),
+                    body: JSON.stringify({ page_id: pageId, file: file }),
                 });
                 const d = await res.json();
                 if (!d.success) {
@@ -4687,10 +4689,8 @@
                 size.className = 'attach-zip-size';
                 size.textContent = fmtBytes(e.size);
                 li.appendChild(name);
-                // ZIPの中のPDFは、その1件だけを取り出して解析できる。
-                if (/\.pdf$/i.test(e.name) && hasExtension('subcon')) {
-                    li.appendChild(makeAnalyzeButton(pageId, file, e.name));
-                }
+                // 目録は読むだけ。中のファイルは取り込みが展開して添付にしているので、
+                // 解析・表示はその添付のブロックから行う（2026-09-17）。
                 li.appendChild(size);
                 ul.appendChild(li);
             }

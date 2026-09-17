@@ -18,7 +18,7 @@ func makeOrderPage(t *testing.T, inboxID, no, client, orderedAt string) string {
 		IsClientOrder: true, DocType: "order",
 		OrderNo: no, Customer: client, OrderDate: orderedAt,
 	}
-	id, err := cms.CreateChildPage(inboxID, "alice", buildOrderPageHTML(inboxID, "pdf001", "", j))
+	id, err := cms.CreateChildPage(inboxID, "alice", buildOrderPageHTML(inboxID, "pdf001", j))
 	if err != nil {
 		t.Fatalf("受注ページを作れません: %v", err)
 	}
