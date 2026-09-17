@@ -447,10 +447,24 @@ func TestDavShowsOriginalNames(t *testing.T) {
 	if strings.Contains(body, "meta.json") {
 		t.Errorf("目録が一覧に出ています: %s", body)
 	}
-	// 届いた名前でも保存名でも同じファイルが読める。
-	for _, name := range []string{"補強ストッパー.dxf", "a1b2.dxf"} {
+	// **どちらが素の名前を取るかは決め打ちにしません**（2026-09-17 に一度そうして落ちました）。
+	// 並びは保存名の順で、保存名はサーバー採番なので**どちらが先かは運**です。安定してさえ
+	// いればよく（割り当て済みのパスが切れない）、どちらが勝つかは意味を持ちません。
+	fs := davFS{user: &auth.User{Username: "alice"}}
+	plain := ""
+	for _, a := range fs.attachmentEntries("000101") {
+		if a.name == "補強ストッパー.dxf" {
+			plain = a.stored
+		}
+	}
+	if plain == "" {
+		t.Fatal("素の名前を持つ添付がありません")
+	}
+	// 届いた名前でも保存名でも、**同じ中身**が読める。
+	want := string(mustRead(t, "000101", plain))
+	for _, name := range []string{"補強ストッパー.dxf", plain} {
 		rr = davRequest(t, "GET", []string{"部品A", name}, "alice", "pw")
-		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "SECTION") {
+		if rr.Code != http.StatusOK || rr.Body.String() != want {
 			t.Errorf("%s で読めません: %d %q", name, rr.Code, rr.Body.String())
 		}
 	}
@@ -463,8 +477,22 @@ func TestDavShowsOriginalNames(t *testing.T) {
 	if rr.Code != http.StatusCreated && rr.Code != http.StatusNoContent {
 		t.Fatalf("上書きできていません: %d %s", rr.Code, rr.Body.String())
 	}
-	m, _ := AttachmentMetaOf("000101", "a1b2.dxf")
+	m, _ := AttachmentMetaOf("000101", plain)
 	if m.Name != "補強ストッパー.dxf" || m.Source != AttachmentSourceDav || m.Size != int64(len("0 NEW ")) {
 		t.Errorf("上書き後の目録が違います: %+v", m)
 	}
+}
+
+// mustRead は添付の中身を読みます（テストの下ごしらえ用）。
+func mustRead(t *testing.T, pageID, stored string) []byte {
+	t.Helper()
+	fp, ok := page.AttachmentPath(pageID, stored)
+	if !ok {
+		t.Fatalf("添付がありません: %s/%s", pageID, stored)
+	}
+	b, err := os.ReadFile(fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
