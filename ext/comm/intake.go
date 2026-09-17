@@ -28,7 +28,6 @@ import (
 	"html"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -303,21 +302,20 @@ func (c *IntakeContext) createUnder(parentID, bodyHTML string) (string, error) {
 
 // SaveAttachment は作ったページへ添付を置き、（生成ID, 配信アドレス）を返します。
 // 生成IDは保存名＝URL＝リンクブロックの data-id の3役（storage.go）。
-func (c *IntakeContext) SaveAttachment(pageID, ext string, content []byte) (id, href string, err error) {
+//
+// origName は届いたときの名前（拡張子はここから取る）、source は由来
+// （`mail:<受信原本の保存名>`・`zip:<ZIPの保存名>/<中のパス>` など）。どちらも
+// **目録 `files/meta.json` に残ります**（2026-09-17・`cms.SaveAttachmentFrom`）。
+// 保存の作法そのものはコアの1か所に寄せ、ここは「この取り込みで作ったページか」の
+// 検査だけを持ちます。
+func (c *IntakeContext) SaveAttachment(pageID, origName, source string, content []byte) (id, href string, err error) {
 	if !c.isCreated(pageID) {
 		return "", "", fmt.Errorf("この取り込みで作ったページにしか添付できません: %s", pageID)
 	}
-	ext = strings.ToLower(ext)
-	attachDir := page.AttachmentDir(pageID)
-	if err := os.MkdirAll(attachDir, 0755); err != nil {
+	attachID, name, err := cms.SaveAttachmentFrom(pageID, c.Uploader, origName, source, content)
+	if err != nil {
 		return "", "", err
 	}
-	attachID := page.GeneratedAttachmentID(pageID, ext)
-	name := attachID + ext
-	if err := page.WriteFileAtomic(filepath.Join(attachDir, name), content, 0644); err != nil {
-		return "", "", err
-	}
-	auth.Audit(c.Uploader, "attach", pageID+"/"+name)
 	return attachID, page.AttachmentURLFor(pageID, name), nil
 }
 

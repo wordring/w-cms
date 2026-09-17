@@ -127,20 +127,27 @@ func TestEmlIntakeCreatesRecordPage(t *testing.T) {
 		}
 	}
 
-	// 添付と**受信原本**が生成IDで files/ に居る（原本は §8.1 の証跡）。
+	// 添付と**受信原本**が生成IDで files/ に居る（原本は §8.1 の証跡）。目録（meta.json）も。
 	entries, err := os.ReadDir(page.AttachmentDir(pageID))
-	if err != nil || len(entries) != 2 {
-		t.Fatalf("添付と受信原本が保存されていません: %v %v", entries, err)
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("添付と受信原本と目録が保存されていません: %v %v", entries, err)
 	}
-	var gotPDF, gotEML string
+	var gotPDF, gotEML, pdfStored string
 	for _, e := range entries {
 		body, _ := os.ReadFile(filepath.Join(page.AttachmentDir(pageID), e.Name()))
 		switch filepath.Ext(e.Name()) {
 		case ".pdf":
 			gotPDF = string(body)
+			pdfStored = e.Name()
 		case ".eml":
 			gotEML = string(body)
 		}
+	}
+	// **目録に届いたときの事実が残る**（2026-09-17）——名前・由来（受信原本の保存名）・大きさ。
+	metas := cms.ReadAttachmentMetas(pageID)
+	if m := metas[pdfStored]; m.Name != "chumon.pdf" || !strings.HasPrefix(m.Source, "mail:") ||
+		!strings.HasSuffix(m.Source, ".eml") || m.Size != int64(len(pdf)) || m.By != "alice" || m.SavedAt == "" {
+		t.Errorf("添付の目録が違います: %+v", m)
 	}
 	if gotPDF != string(pdf) {
 		t.Errorf("添付の中身が違います（拡張子ごと保たれていない可能性）: %q", gotPDF)
@@ -207,7 +214,7 @@ func TestIntakeContextLeastPrivilege(t *testing.T) {
 	if err := ctx.UpdatePage("000001", "<h1>乗っ取り</h1>"); err == nil {
 		t.Error("作っていないページを書き直せてしまいました")
 	}
-	if _, _, err := ctx.SaveAttachment("000001", ".txt", []byte("x")); err == nil {
+	if _, _, err := ctx.SaveAttachment("000001", "x.txt", "mail", []byte("x")); err == nil {
 		t.Error("作っていないページへ添付できてしまいました")
 	}
 }
@@ -563,8 +570,22 @@ func TestEmlIntakeExpandsZipAndGuardsAttachments(t *testing.T) {
 		exts = append(exts, filepath.Ext(e.Name()))
 	}
 	sort.Strings(exts)
-	if got := strings.Join(exts, " "); got != ".dxf .eml .pdf .zip" {
+	if got := strings.Join(exts, " "); got != ".dxf .eml .json .pdf .zip" { // .json は目録
 		t.Errorf("保存された添付が違います: %v", exts)
+	}
+	// 目録: 中身の由来は「どの ZIP の、中のどのパスか」、名前はファイル名だけ。
+	for stored, m := range cms.ReadAttachmentMetas(pageID) {
+		switch filepath.Ext(stored) {
+		case ".pdf":
+			if m.Name != "R310-002_本体.pdf" || !strings.HasPrefix(m.Source, "zip:") ||
+				!strings.HasSuffix(m.Source, ".zip/Q055-図面/R310-002_本体.pdf") {
+				t.Errorf("中の PDF の目録が違います: %+v", m)
+			}
+		case ".zip":
+			if m.Name != "図面一式.zip" || !strings.HasPrefix(m.Source, "mail:") {
+				t.Errorf("ZIP の目録が違います: %+v", m)
+			}
+		}
 	}
 	// 中の PDF は自分のブロックIDを持つ（ファイル表示・解析がそのまま指せる）。
 	for _, e := range entries {

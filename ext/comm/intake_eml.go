@@ -194,8 +194,26 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// （2026-09-05）——本文を開かないと分からない値だと、100件の一覧を出すたびに
 	// 100個の本文を読むことになります。**受信原本（.eml）は数えません**
 	// （必ず在るので、数えると全件が 1 から始まって手掛かりになりません）。
-	// 添付は先に置きます（数をタグへ書くため。ZIP は中身も展開して数えます）。
-	attachHTML, attachCount, err := saveMailAttachments(ctx, pageID, parts)
+	// **受信原本（生の .eml）を先に置きます**（2026-09-03 ユーザー提案
+	// 「マスタデータとしてEMLも保存してはどうでしょう」）。
+	//
+	// このあと作る本文は**解釈の産物**で、落ちているものがある——HTMLメールの見た目、
+	// 拾っていないヘッダ、復号前の文字コード、署名。原本は全部を持っている
+	// （添付も base64 で内包した完全アーカイブ）。**あとからやり直せる**ことが
+	// 要件（§2.7④）なので、解釈を改良したときに読み直せる元が要る。
+	//
+	// 実ファイルと二重に持つことになるが、**役割が違うので有害な複製ではない**
+	// （§8.1）——原本は証跡（不変・触らない）、添付は業務が使う作業用コピー。
+	// 配信は `application/octet-stream`＋`attachment` なのでブラウザは解釈しない。
+	// 先に置くのは、添付の目録（files/meta.json）の由来に**原本の保存名**を書くため（2026-09-17）。
+	rawID, rawHref, err := ctx.SaveAttachment(pageID, fileName, "mail", content)
+	if err != nil {
+		return "", "", err // 原本が残せないなら取り込まない（証跡の無い記録は作らない）
+	}
+	rawName := rawID + ".eml"
+
+	// 添付を置きます（数をタグへ書くため本文より先。ZIP は中身も展開して数えます）。
+	attachHTML, attachCount, err := saveMailAttachments(ctx, pageID, rawName, parts)
 	if err != nil {
 		return "", "", err
 	}
@@ -211,21 +229,6 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	}
 	b.WriteString(attachHTML)
 
-	// **受信原本（生の .eml）も保存する**（2026-09-03 ユーザー提案
-	// 「マスタデータとしてEMLも保存してはどうでしょう」）。
-	//
-	// 上で作った本文は**解釈の産物**で、落ちているものがある——HTMLメールの見た目、
-	// 拾っていないヘッダ、復号前の文字コード、署名。原本は全部を持っている
-	// （添付も base64 で内包した完全アーカイブ）。**あとからやり直せる**ことが
-	// 要件（§2.7④）なので、解釈を改良したときに読み直せる元が要る。
-	//
-	// 実ファイルと二重に持つことになるが、**役割が違うので有害な複製ではない**
-	// （§8.1）——原本は証跡（不変・触らない）、添付は業務が使う作業用コピー。
-	// 配信は `application/octet-stream`＋`attachment` なのでブラウザは解釈しない。
-	rawID, rawHref, err := ctx.SaveAttachment(pageID, ".eml", content)
-	if err != nil {
-		return "", "", err // 原本が残せないなら取り込まない（証跡の無い記録は作らない）
-	}
 	b.WriteString(`<p data-id="` + html.EscapeString(rawID) + `">📧 受信原本 <a href="` +
 		html.EscapeString(rawHref) + `" download="` + html.EscapeString(fileName) + `">` +
 		html.EscapeString(fileName) + `</a></p>`)
@@ -343,7 +346,7 @@ func PlainTextBlockHTML(text string) string {
 //
 // 数は**保存したブロックの数**です（ZIP 1つ＋中の13件なら 14）。**0 なら空を返します**
 // ——WriteTag が空を書かないので、添付の無い記録にはタグが付きません。
-func saveMailAttachments(ctx *IntakeContext, pageID string, parts []emlPart) (string, string, error) {
+func saveMailAttachments(ctx *IntakeContext, pageID, rawName string, parts []emlPart) (string, string, error) {
 	var b strings.Builder
 	n := 0
 	accepts := func(name string) bool { return cms.AttachmentExtAccepted(filepath.Ext(name)) }
@@ -361,7 +364,7 @@ func saveMailAttachments(ctx *IntakeContext, pageID string, parts []emlPart) (st
 			writeUnsavedNote(&b, p.fileName, err.Error())
 			continue
 		}
-		id, href, err := ctx.SaveAttachment(pageID, ext, content)
+		id, href, err := ctx.SaveAttachment(pageID, p.fileName, "mail:"+rawName, content)
 		if err != nil {
 			return "", "", err
 		}
@@ -385,7 +388,8 @@ func saveMailAttachments(ctx *IntakeContext, pageID string, parts []emlPart) (st
 				skipped = append(skipped, cms.ZipSkipped{Name: m.Name, Reason: err.Error()})
 				continue
 			}
-			mid, mhref, err := ctx.SaveAttachment(pageID, strings.ToLower(filepath.Ext(m.Name)), mc)
+			// 由来は「どの ZIP の、中のどのパスか」。名前（ファイル名だけ）は目録の name に。
+			mid, mhref, err := ctx.SaveAttachment(pageID, zipBaseName(m.Name), "zip:"+id+ext+"/"+m.Name, mc)
 			if err != nil {
 				return "", "", err
 			}
