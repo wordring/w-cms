@@ -16,6 +16,7 @@
     "受信元": { "type": "ref" },
     "返信元": { "type": "ref" },
     "相手": { "type": "ref" },
+    "連絡帳": { "type": "ref" },
     "受信日時": { "type": "datetime" },
     "発信日時": { "type": "datetime" },
     "送信日時": { "type": "datetime" },

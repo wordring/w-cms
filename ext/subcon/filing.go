@@ -726,7 +726,7 @@ func linkPartner(user *auth.User, customerID, title string) {
 		return
 	}
 	// 既に結ばれていれば何もしない（同じタグを2つ並べない）。
-	if strings.Contains(body, "<dt>"+comm.CounterpartTag+"</dt><dd>"+partnerID+"</dd>") {
+	if strings.Contains(body, "<dt>"+contacts.ContactsRefTag+"</dt><dd>"+partnerID+"</dd>") {
 		return
 	}
 	if idInt, err := strconv.Atoi(customerID); err == nil {
@@ -735,10 +735,10 @@ func linkPartner(user *auth.User, customerID, title string) {
 		}
 	}
 	_ = cms.RewriteBody(customerID, user.Username, func(current string) string {
-		if strings.Contains(current, "<dt>"+comm.CounterpartTag+"</dt><dd>"+partnerID+"</dd>") {
+		if strings.Contains(current, "<dt>"+contacts.ContactsRefTag+"</dt><dd>"+partnerID+"</dd>") {
 			return current
 		}
-		pair := "<dt>" + comm.CounterpartTag + "</dt><dd>" + partnerID + "</dd>"
+		pair := "<dt>" + contacts.ContactsRefTag + "</dt><dd>" + partnerID + "</dd>"
 		if at := cms.EndOfFirstTagList(current); at >= 0 {
 			return current[:at] + pair + current[at:]
 		}

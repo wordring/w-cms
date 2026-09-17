@@ -495,7 +495,10 @@ func TestFilingLinksToContactsBook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "<dt>" + comm.CounterpartTag + "</dt><dd>" + orgID + "</dd>"
+	// ⚠ **定数ではなく、保存される文字そのもので確かめます。** タグの名前は本文に
+	// 書かれる**データ**なので、定数を書き換えると既存のページが静かに引けなくなります
+	// ——両側を定数で書くと、その書き換えを試験が見逃します（2026-09-17）。
+	want := "<dt>連絡帳</dt><dd>" + orgID + "</dd>"
 	if !strings.Contains(body, want) {
 		t.Errorf("連絡帳への参照がありません: %s（%s を期待）", body, want)
 	}
@@ -534,7 +537,7 @@ func TestFilingWithoutContactsBookEntry(t *testing.T) {
 		t.Fatal("顧客名ページがありません")
 	}
 	body, _ := cms.ReadPageBody(custID)
-	if strings.Contains(body, "<dt>"+comm.CounterpartTag+"</dt>") {
+	if strings.Contains(body, "<dt>連絡帳</dt>") {
 		t.Errorf("居ない相手へ参照を書きました: %s", body)
 	}
 }

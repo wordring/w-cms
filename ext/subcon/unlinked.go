@@ -38,7 +38,7 @@ import (
 	"strconv"
 	"strings"
 
-	"w-cms/ext/comm"
+	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -115,7 +115,7 @@ func UnlinkedCustomers(user *auth.User) []UnlinkedCustomer {
 		if !page.CanView(user, h.id) {
 			continue
 		}
-		if hasCounterpartRef(h.id) {
+		if hasContactsRef(h.id) {
 			continue // 結びついている
 		}
 		// **メールが来ている証拠**を1つ探します（無ければ黙る）。
@@ -130,12 +130,15 @@ func UnlinkedCustomers(user *auth.User) []UnlinkedCustomer {
 	return out
 }
 
-// hasCounterpartRef は `相手` の参照タグを持つかを返します。
-func hasCounterpartRef(pageIDInt int) bool {
+// hasContactsRef は `連絡帳` の参照タグを持つか（＝連絡帳の組織と結ばれているか）を返します。
+//
+// ⚠ **2026-09-17 までこのタグは `相手` でした。** 取引先のページ自身が相手なので
+// 「自分は自分です」と書いていることになっていました（`contacts.ContactsRefTag` に経緯）。
+func hasContactsRef(pageIDInt int) bool {
 	var n int
 	database.DB.QueryRow(
 		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = ?`,
-		pageIDInt, comm.CounterpartTag).Scan(&n)
+		pageIDInt, contacts.ContactsRefTag).Scan(&n)
 	return n > 0
 }
 
