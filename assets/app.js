@@ -1303,7 +1303,7 @@
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
-        wireContactRegister();       // 未登録の連絡先の［顧客］［仕入先］［自社］
+        wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
@@ -4349,120 +4349,106 @@
         const host = document.getElementById('w-editor-content');
         if (!host) return;
         const editMode = document.body.hasAttribute('edit-mode');
-        host.querySelectorAll('.contact-register').forEach(btn => {
-            btn.disabled = editMode;
-            if (btn.dataset.wired) return;
-            btn.dataset.wired = '1';
-            btn.addEventListener('click', () => registerContact(btn));
-        });
-        // 「既にある相手へ足す」——2つ目のドメインで会社ページを2枚にしないための口。
-        host.querySelectorAll('.contact-merge').forEach(btn => {
-            btn.disabled = editMode;
-            if (btn.dataset.wired) return;
-            btn.dataset.wired = '1';
-            btn.addEventListener('click', () => mergeContact(btn));
+        // **行の道具は2つの欄＋「登録」**（2026-09-17）。組織の欄が候補（datalist）の
+        // どれかに一致すれば既にある組織へ、無ければ新しい組織を作ります。
+        host.querySelectorAll('.contact-form').forEach(td => {
+            td.querySelectorAll('button, input').forEach(el => { el.disabled = editMode; });
+            if (td.dataset.wired) return;
+            td.dataset.wired = '1';
+            const org = td.querySelector('.contact-org');
+            const go = td.querySelector('.contact-go');
+            const sync = () => syncContactRow(td);
+            if (org) { org.addEventListener('input', sync); org.addEventListener('change', sync); }
+            if (go) go.addEventListener('click', () => submitContactRow(td));
+            sync();
         });
     }
 
     // rowDomains は、その行の「ドメインもその組織のものにする」チェックを読みます。
-    //
-    // **新規登録にも「既にある相手へ足す」にも効きます**（2026-09-16）——チェックは
-    // 行の先頭にあり、押したボタンがどちらでも同じ答えを返します。
     // ⚠ 共有ドメイン（yahoo・gmail）では外すこと。**決めるのは編集者**です。
+    // 「個人」を選ぶと syncContactRow が外して触れなくします。
     function rowDomains(row) {
         if (!row || !row.dataset.domain) return [];
         const chk = row.querySelector('.contact-add-domain');
         return (chk && chk.checked) ? [row.dataset.domain] : [];
     }
 
-    // mergeContact は選ばれた相手ページへ、この行のアドレスを足します。
-    //
-    // **同じ会社かどうかは人が決めます。** ドメインが違えば機械には分かりません
-    // （同じ会社の別ドメインなのか、別会社なのか、名前からは判じられない）。
-    async function mergeContact(btn) {
-        const row = btn.closest('tr');
-        const sel = row && row.querySelector('.contact-merge-target');
-        // **ボタンが相手を持っていればそれが優先**（2026-09-13）。推薦の
-        // 「『○○』へ足す」は、ドメインが既にある取引先と一致した行に出ます
-        // ——選ばせる前に正しい行き先を見せるための口なので、プルダウンは要りません。
-        const target = btn.dataset.target || (sel ? sel.value : '');
-        if (!target) {
-            notify('足す相手を選んでください', { type: 'warn' });
-            if (sel) sel.focus();
+    // contactOrgCandidate は、組織の欄の文字が候補（datalist）に一致すればその候補を返します。
+    // **完全一致だけ**——揺れを画面が吸収すると、別の会社へ足すことになります。
+    function contactOrgCandidate(td) {
+        const org = td.querySelector('.contact-org');
+        const text = org ? org.value.trim() : '';
+        const list = org ? org.list : null;
+        if (!text || !list) return null;
+        for (const opt of list.options) {
+            if (opt.value === text) return { id: opt.dataset.id || '', title: opt.value };
+        }
+        return null;
+    }
+
+    // syncContactRow は組織の欄に合わせて、取引の選択とドメインのチェックを出し分けます。
+    //   - 既にある組織 → 取引は付いているので隠す
+    //   - 「個人」 → 取引は人に付くので出す。ドメインは共有のものなので外して触れなくする
+    //   - 新しい社名 → 取引もドメインも出す
+    function syncContactRow(td) {
+        const editMode = document.body.hasAttribute('edit-mode');
+        const org = td.querySelector('.contact-org');
+        const text = org ? org.value.trim() : '';
+        const personal = text !== '' && text === (td.dataset.personalTitle || '個人');
+        const cand = contactOrgCandidate(td);
+        td.classList.toggle('contact-form--existing', !!(cand && cand.id) && !personal);
+        const chk = td.querySelector('.contact-add-domain');
+        if (chk) {
+            if (personal) chk.checked = false;
+            chk.disabled = editMode || personal;
+        }
+    }
+
+    // submitContactRow は「登録」——1つの口（/api/contacts/register）へ、組織と担当者を渡します。
+    // 組織が候補に一致すれば page_id、無ければ name（サーバーが同じ題の組織を探して寄せる）。
+    async function submitContactRow(td) {
+        const row = td.closest('tr');
+        const orgEl = td.querySelector('.contact-org');
+        const personEl = td.querySelector('.contact-person');
+        const go = td.querySelector('.contact-go');
+        const org = orgEl ? orgEl.value.trim() : '';
+        const person = personEl ? personEl.value.trim() : '';
+        if (!org) {
+            notify('組織を入れてください（社名か「' + (td.dataset.personalTitle || '個人') + '」）', { type: 'warn' });
+            if (orgEl) orgEl.focus();
             return;
         }
-        const title = btn.dataset.target
-            ? btn.textContent
-            : sel.options[sel.selectedIndex].textContent;
-        btn.disabled = true;
+        const cand = contactOrgCandidate(td);
+        const rel = td.querySelector('.contact-rel input:checked');
+        const body = {
+            addresses: (go.dataset.addresses || '').split(',').filter(Boolean),
+            person_name: person,
+            relation: rel ? rel.value : '',
+            domains: rowDomains(row),
+        };
+        if (cand && cand.id) body.page_id = cand.id; else body.name = org;
+        go.disabled = true;
         try {
             const res = await fetch('/api/contacts/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    page_id: target,
-                    // **人の名前があれば担当者ページへ**（2026-09-13）。無ければ会社の口として
-                    // 社名ページへ入ります（`order@…` のような人でないアドレス）。
-                    person_name: btn.dataset.person || '',
-                    addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
-                    // **ドメインは組織のページへ**（2026-09-16）。人のページには付きません
-                    // ——組織の連絡先だからです。2つ目のドメインを足す道はここです
-                    // （実データの自社が example-works.co.jp と itohocorp.onmicrosoft.com の2つ）。
-                    domains: rowDomains(row),
-                }),
+                body: JSON.stringify(body),
             });
             const data = await res.json();
             if (!data.success) {
-                notify(data.message || '足せませんでした', { type: 'warn' });
+                notify(data.message || '登録できませんでした', { type: 'warn' });
                 return;
             }
             // 行を消すのは見た目だけ。正本は相手ページのタグで、次に開けば描き直される。
             if (row) row.remove();
-            notify('「' + (data.title || title) + '」へ' + (data.added || 0) + '件足しました',
+            notify(data.created
+                ? '「' + data.title + '」を登録しました'
+                : '「' + data.title + '」へ' + (data.added || 0) + '件足しました',
                 { type: 'success', duration: 6000 });
         } catch (e) {
-            notify('足せませんでした: ' + e.message, { type: 'warn' });
+            notify('登録できませんでした: ' + e.message, { type: 'warn' });
         } finally {
-            btn.disabled = false;
-        }
-    }
-
-    async function registerContact(btn) {
-        const row = btn.closest('tr');
-        const input = row && row.querySelector('.contact-name-input');
-        const name = input ? input.value.trim() : '';
-        if (!name) {
-            notify('名前を入れてください', { type: 'warn' });
-            if (input) input.focus();
-            return;
-        }
-        btn.disabled = true;
-        try {
-            const res = await fetch('/api/contacts/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: name,
-                    relation: btn.dataset.relation,
-                    addresses: (btn.dataset.addresses || '').split(',').filter(Boolean),
-                    // **組織のドメイン**（2026-09-16）。同じドメインの**新しい人**からの
-                    // 初メールも、その組織に結びつくようになります（rowDomains）。
-                    domains: rowDomains(row),
-                }),
-            });
-            const data = await res.json();
-            if (!data.success) {
-                notify(data.message || '相手ページを作れませんでした', { type: 'warn' });
-                return;
-            }
-            // 行を消すのは見た目だけ。正本はページ側のタグで、次に開けば描き直される。
-            if (row) row.remove();
-            notify('「' + data.title + '」を' + btn.dataset.relation + 'として登録しました',
-                { type: 'success', duration: 6000 });
-        } catch (e) {
-            notify('相手ページを作れませんでした: ' + e.message, { type: 'warn' });
-        } finally {
-            btn.disabled = false;
+            go.disabled = false;
         }
     }
 

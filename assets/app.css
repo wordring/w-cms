@@ -1985,10 +1985,17 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     overflow-wrap: anywhere;
 }
 
-/* 未登録の連絡先（2026-09-05）。名前は直してから押すので、入力欄を行に置く。 */
-#w-editor-content .contact-name-input {
-    width: 100%;
-    min-width: 8em;
+/* 未登録の連絡先（2026-09-17 に「組織」「担当者」の2欄へ畳んだ）。 */
+#w-editor-content td.contact-form { align-items: flex-end; }
+#w-editor-content .contact-field {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+#w-editor-content .contact-field input {
+    width: 13em;
     padding: 2px 6px;
     font-size: 13px;
     border: 1px solid var(--border-strong);
@@ -1996,7 +2003,22 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     background: var(--bg-paper);
     color: var(--text);
 }
-#w-editor-content table.unhandled-table td.contact-name { width: 30%; }
+/* 取引は新しい組織のときだけ。既にある組織を選んだ行は隠す（付いているので）。 */
+#w-editor-content .contact-rel {
+    display: inline-flex;
+    gap: 8px;
+    align-self: center;
+    font-size: 12px;
+}
+#w-editor-content .contact-rel label {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    cursor: pointer;
+}
+#w-editor-content .contact-form--existing .contact-rel { display: none; }
+#w-editor-content .contact-domain-opt { flex-basis: 100%; font-size: 12px; }
+#w-editor-content .contact-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
 #w-editor-content .contact-addrs {
     font-size: 12px;
     color: var(--text-muted);
@@ -2015,21 +2037,6 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     color: var(--text-muted);
     overflow-wrap: anywhere;
 }
-/* 新規登録の一式（名前＋取引の3ボタン）は、推薦のボタンと**見た目で分ける**。
-   押し間違えると会社ページが2枚になるので、まとまりを目で追えることが効く。 */
-#w-editor-content .contact-new {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-    margin-left: 6px;
-    padding-left: 6px;
-    border-left: 1px solid var(--border);
-}
-#w-editor-content .contact-new .contact-name-input {
-    width: auto;
-    flex: 1 1 10em;
-}
 /* 推薦（「○○へ足す」）は主役。**正しい操作を目立たせる**ためで、
    実データでここが埋もれていたせいで会社が2枚になりかけた。 */
 #w-editor-content .chip-btn.chip-primary {
@@ -2045,27 +2052,6 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     align-items: center;
     gap: 4px;
 }
-/* 推薦がある行の「ほかの行き先…」。既定は畳む（JSは使わない・素の details）。 */
-#w-editor-content .contact-more > summary {
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--text-muted);
-    list-style: none;
-}
-#w-editor-content .contact-more > summary::-webkit-details-marker { display: none; }
-#w-editor-content .contact-more > summary::before { content: "⋯ "; }
-#w-editor-content .contact-more[open] {
-    flex-basis: 100%;
-    margin-top: 4px;
-}
-#w-editor-content .contact-other {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-}
-/* 「既にある相手へ足す」の選択。3つの取引ボタンとは行を分けて、
-   ［顧客］を押すつもりで足してしまう取り違えを防ぐ。 */
 /* 解析済みの印。ボタンの隣に並ぶが**押すと飛ぶリンク**なので、
    ボタンと見分けが付くよう枠を持たせず色で示す。 */
 #w-editor-content .attach-analyzed {
@@ -2077,18 +2063,6 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     white-space: nowrap;
 }
 #w-editor-content .attach-analyzed:hover { text-decoration: underline; }
-
-#w-editor-content .contact-merge-target {
-    display: block;
-    margin: 6px 0 4px;
-    max-width: 14em;
-    padding: 1px 4px;
-    font-size: 12px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-paper);
-    color: var(--text);
-}
 
 /* ページ情報カードのQR（2026-09-10）。**スマホで開くための橋**なので、
    指で狙える大きさ（実測で読める下限より十分上）を確保します。

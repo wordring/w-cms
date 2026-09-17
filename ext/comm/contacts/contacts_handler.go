@@ -76,132 +76,163 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
 		return
 	}
+	person := cms.NormalizeNameForIngest(req.PersonName)
+	doms := normalizeDomains(req.Domains)
 
-	// ── 既存の相手へ足す ──
-	if raw := strings.TrimSpace(req.PageID); raw != "" {
-		target, ok := page.NormalizeID(raw)
+	// ── 行き先の組織を決める（2026-09-17 に3つの道を1本にした）──
+	//
+	// ① `page_id` で名指し ② 題の完全一致で既にある組織 ③ 無ければ新しく作る。
+	// **②が要るのは、組織がコンボボックスになったから**——候補に無い名前を打っても、
+	// 同じ題の組織が既にあればそこへ寄せます（会社ページを2枚にしない）。
+	// 揺れは吸収しません（`PartnerByTitle` は完全一致・2枚あれば引かない）。
+	target := strings.TrimSpace(req.PageID)
+	orgTitle := ""
+	if target != "" {
+		norm, ok := page.NormalizeID(target)
 		if !ok {
 			cms.JSONFail(w, http.StatusBadRequest, "相手ページのIDが不正です")
 			return
 		}
-		idInt, err := strconv.Atoi(target)
+		idInt, err := strconv.Atoi(norm)
 		if err != nil || !isPartnerPage(idInt) {
 			// **箱の外へは足しません**（ドメインの逆引きが別物を拾うため）。
 			cms.JSONFail(w, http.StatusBadRequest, "「"+ContactsBoxTitle+"」の下のページを選んでください")
 			return
 		}
-		if !page.RequirePageWrite(w, r, target) {
+		target, orgTitle = norm, cms.PageTitleByID(idInt)
+	} else {
+		// **相手ページの題も早期に正規化します**（2026-09-06）。部品階層の顧客名と
+		// 題で結ぶので、こちらだけ畳まないと食い違います。
+		orgTitle = cms.NormalizeNameForIngest(req.Name)
+		if orgTitle == "" {
+			cms.JSONFail(w, http.StatusBadRequest, "組織の名前を入れてください（社名か「"+PersonalOrgTitle+"」）")
 			return
 		}
-		// **開いている人が居たら断ります**（2026-09-14）。本文を読んで・変えて・書くので、
-		// エディタが開いているとオートセーブと上書きし合います。
-		if !editlock.RefuseWhileEditing(w, target) {
+		if id, ok := PartnerByTitle(user, orgTitle); ok {
+			target = id
+		}
+	}
+	// 「個人」は人の器です——取引は人に付き、ドメイン（共有のもの）は付けません。
+	personal := orgTitle == PersonalOrgTitle
+	if personal && person == "" {
+		cms.JSONFail(w, http.StatusBadRequest, "「"+PersonalOrgTitle+"」のときは担当者の名前を入れてください")
+		return
+	}
+	if personal {
+		doms = nil
+	}
+
+	created := false
+	if target == "" {
+		// ── 新しい組織ページを作る ──
+		if !validRelation(req.Relation) {
+			cms.JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
 			return
 		}
-		// **人の名前が来たら、その人のページへ入れます**（2026-09-13）。
-		// 社名ページにアドレスを平らに積むと、6つ並んだ `メールアドレス` が誰のものか
-		// 分からなくなり、電話番号を足す先もありません。
-		dest, destTitle := target, cms.PageTitleByID(idInt)
-		if person := strings.TrimSpace(req.PersonName); person != "" {
-			pid, err := EnsureContactPerson(user, target, person)
-			if err != nil {
-				cms.JSONFail(w, http.StatusInternalServerError, "担当者ページを作れません: "+err.Error())
-				return
-			}
-			dest = pid
-			destTitle = destTitle + "／" + cms.NormalizeNameForIngest(person)
+		// **相手ページは「連絡帳」の下**。箱がまだ無いときはトップへ1枚足すので、
+		// **トップへの書き込み**が要ります。
+		needParent := cms.TopPageID
+		if id, ok := ContactsBoxPageID(); ok {
+			needParent = id
 		}
-		added, err := AddContactAddresses(dest, user.Username, addrs)
+		if !page.RequirePageWrite(w, r, needParent) {
+			return
+		}
+		boxID, err := EnsureContactsBox(user)
 		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "相手ページへ足せません: "+err.Error())
+			cms.JSONFail(w, http.StatusInternalServerError, "「"+ContactsBoxTitle+"」ページを作れません: "+err.Error())
 			return
 		}
-		// **ドメインは組織のページへ**（2026-09-16）。人のページには付けません
-		// ——組織の連絡先だからです（ユーザー:「南北スポーツ機械は専用の
-		// ドメインを持ちますから、組織のページにドメインタグがあり、担当者の
-		// ページにはドメインタグは必要在りません」）。
-		//
-		// **2つ目のドメインはここで足ります**——実データの自社が `example-works.co.jp` と
-		// `itohocorp.onmicrosoft.com` の2つを持っています。新規登録の口だけで
-		// 書けると、2つ目を足すのにページを2枚作ることになりました。
-		domainsAdded := 0
-		if doms := normalizeDomains(req.Domains); len(doms) > 0 {
-			// 組織が編集中なら足しません（人のページと別なので、改めて確かめます）。
-			if !editlock.RefuseWhileEditing(w, target) {
-				return
+		var b strings.Builder
+		b.WriteString("<h1>" + stdhtml.EscapeString(orgTitle) + "</h1>")
+		b.WriteString(`<dl data-type="tags">`)
+		if !personal {
+			cms.WriteTag(&b, RelationTag, req.Relation)
+		}
+		// 担当者が居なければ、アドレスは組織の口として組織のページへ（人が居れば下で人へ）。
+		if person == "" {
+			for _, a := range addrs {
+				cms.WriteTag(&b, EmailTag, a)
 			}
-			domainsAdded, err = AddContactDomains(target, user.Username, doms)
-			if err != nil {
-				cms.JSONFail(w, http.StatusInternalServerError, "ドメインを足せません: "+err.Error())
+		}
+		// **組織の連絡先**（2026-09-16）。これがあると、同じドメインの**新しい人**からの
+		// 初メールも、この組織に結びつきます。⚠ 共有ドメインに付けると、そのドメインの
+		// 他人まで引き寄せます——だから付けるかは**人が見て決めます**（画面のチェック）。
+		for _, d := range doms {
+			cms.WriteTag(&b, DomainTag, d)
+		}
+		b.WriteString("</dl>")
+		// 電話番号は空で置きます——**書く場所が見えていれば、人は書きます**。
+		b.WriteString(`<p><br/></p>`)
+		target, err = cms.CreateChildPage(boxID, user.Username, b.String())
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
+			return
+		}
+		created = true
+		auth.Audit(user.Username, "contact.register",
+			target+" ("+req.Relation+") "+strings.Join(addrs, ",")+domainsForAudit(doms))
+	} else if !page.RequirePageWrite(w, r, target) {
+		return
+	}
+	// **開いている人が居たら断ります**（2026-09-14）。本文を読んで・変えて・書くので、
+	// エディタが開いているとオートセーブと上書きし合います。
+	if !editlock.RefuseWhileEditing(w, target) {
+		return
+	}
+
+	// ── 人の器へ（2026-09-13）──
+	// 社名ページにアドレスを平らに積むと、6つ並んだ `メールアドレス` が誰のものか
+	// 分からなくなり、電話番号を足す先もありません。**組織の直下に人**（2026-09-16）。
+	dest, destTitle := target, orgTitle
+	added := 0
+	var err error
+	if person != "" {
+		pid, err := EnsureContactPerson(user, target, person)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "担当者ページを作れません: "+err.Error())
+			return
+		}
+		dest, destTitle = pid, orgTitle+"／"+person
+		if !editlock.RefuseWhileEditing(w, dest) {
+			return
+		}
+		// 個人のお客様は**取引が人に付きます**（ユーザー決定）。
+		if personal && validRelation(req.Relation) {
+			if _, err := addContactTags(dest, user.Username, RelationTag, []string{req.Relation}); err != nil {
+				cms.JSONFail(w, http.StatusInternalServerError, "取引を書けません: "+err.Error())
 				return
 			}
 		}
+		added, err = AddContactAddresses(dest, user.Username, addrs)
+	} else if created {
+		added = len(addrs) // 作るときに本文へ書き込み済み
+	} else {
+		added, err = AddContactAddresses(dest, user.Username, addrs)
+	}
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "相手ページへ足せません: "+err.Error())
+		return
+	}
+	// **ドメインは組織のページへ**（2026-09-16）。人のページには付けません——組織の
+	// 連絡先だからです。**2つ目のドメインはここで足ります**（実データの自社が
+	// `example-works.co.jp` と `itohocorp.onmicrosoft.com` の2つを持つ）。
+	domainsAdded := 0
+	if !created && len(doms) > 0 {
+		domainsAdded, err = AddContactDomains(target, user.Username, doms)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "ドメインを足せません: "+err.Error())
+			return
+		}
+	}
+	if !created {
 		auth.Audit(user.Username, "contact.add-addresses",
-			dest+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ",")+
-				domainsForAudit(normalizeDomains(req.Domains)))
-		json.NewEncoder(w).Encode(map[string]any{
-			"success": true, "page_id": dest, "title": destTitle,
-			"added": added, "domains_added": domainsAdded, "merged": true,
-		})
-		return
+			dest+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ",")+domainsForAudit(doms))
 	}
-
-	// ── 新しい相手ページを作る ──
-	// **相手ページの題も早期に正規化します**（2026-09-06）。部品階層の顧客名と
-	// **同じページ**なので、こちらだけ畳まないと題が食い違って2枚に分かれます。
-	name := cms.NormalizeNameForIngest(req.Name)
-	if name == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "名前を入れてください")
-		return
-	}
-	if !validRelation(req.Relation) {
-		cms.JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
-		return
-	}
-
-	// **相手ページは「取引先」の下**（顧客名ページと同じ場所——会社を2枚にしない）。
-	// 箱がまだ無いときはトップへ1枚足すので、**トップへの書き込み**が要ります。
-	needParent := cms.TopPageID
-	if id, ok := ContactsBoxPageID(); ok {
-		needParent = id
-	}
-	if !page.RequirePageWrite(w, r, needParent) {
-		return
-	}
-	boxID, err := EnsureContactsBox(user)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+ContactsBoxTitle+"」ページを作れません: "+err.Error())
-		return
-	}
-
-	var b strings.Builder
-	b.WriteString("<h1>" + stdhtml.EscapeString(name) + "</h1>")
-	b.WriteString(`<dl data-type="tags">`)
-	cms.WriteTag(&b, RelationTag, req.Relation)
-	for _, a := range addrs {
-		cms.WriteTag(&b, EmailTag, a)
-	}
-	// **組織の連絡先**（2026-09-16）。これがあると、同じドメインの**新しい人**からの
-	// 初メールも、この組織に結びつきます。⚠ 共有ドメインに付けると、そのドメインの
-	// 他人まで引き寄せます——だから既定で付けるかは**人が見て決めます**。
-	for _, d := range normalizeDomains(req.Domains) {
-		cms.WriteTag(&b, DomainTag, d)
-	}
-	b.WriteString("</dl>")
-	// 電話番号は空で置きます——**書く場所が見えていれば、人は書きます**
-	// （タグがあれば ☎ 発信のボタンも出ます・app.js）。
-	b.WriteString(`<p><br/></p>`)
-
-	pageID, err := cms.CreateChildPage(boxID, user.Username, b.String())
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
-		return
-	}
-	auth.Audit(user.Username, "contact.register",
-		pageID+" ("+req.Relation+") "+strings.Join(addrs, ",")+
-			domainsForAudit(normalizeDomains(req.Domains)))
 	json.NewEncoder(w).Encode(map[string]any{
-		"success": true, "page_id": pageID, "title": name,
+		"success": true, "page_id": dest, "title": destTitle,
+		"added": added, "domains_added": domainsAdded,
+		"merged": !created, "created": created,
 	})
 }
 

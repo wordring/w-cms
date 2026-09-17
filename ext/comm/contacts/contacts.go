@@ -210,6 +210,49 @@ const (
 // Relations は選択肢を並び順つきで返します（画面が使います）。
 func Relations() []string { return []string{RelationCustomer, RelationSupplier, RelationSelf} }
 
+// PersonalOrgTitle は個人のお客様を置く組織ページの題です（`連絡帳／個人／山田太郎`・
+// 2026-09-16 ユーザー:「個人のお客様は、社名ページの代わりに、たとえば個人という名前の
+// 組織ページの下に個人名ページが来る」）。組織のコンボボックスには常にこれが並びます
+// （2026-09-17）。⚠ **この組織には `取引` も `ドメイン` も付けません**——取引は人のページに
+// 付き（ユーザー:「取引：顧客は、個人ページに付けばよい」）、ドメインは共有のものだからです。
+const PersonalOrgTitle = "個人"
+
+// PersonsOf は組織ページの直下の人（読めるものだけ）を題の順で返します。
+// 担当者のコンボボックスの候補です（2026-09-17）。
+func PersonsOf(user *auth.User, orgID string) []PartnerRef {
+	orgInt, err := strconv.Atoi(orgID)
+	if err != nil {
+		return nil
+	}
+	rows, err := database.DB.Query(
+		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY title ASC`, orgInt)
+	if err != nil {
+		return nil
+	}
+	type hit struct {
+		id    int
+		title string
+	}
+	var found []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.id, &h.title); err != nil {
+			rows.Close()
+			return nil
+		}
+		found = append(found, h)
+	}
+	rows.Close()
+	var out []PartnerRef
+	for _, h := range found {
+		if h.title == "" || !page.CanView(user, h.id) {
+			continue
+		}
+		out = append(out, PartnerRef{ID: page.FormatID(h.id), Title: h.title})
+	}
+	return out
+}
+
 // PartnerTitleForAddress は差出人アドレスから、取引先ページの**題**を引きます。
 //
 // **社名の揺れを消すための鍵**です（2026-09-06 ユーザー:「社名の揺れは、エイリアスの

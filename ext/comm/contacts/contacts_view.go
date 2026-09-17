@@ -34,16 +34,13 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		return sb.String()
 	}
 	sb.WriteString(`<p class="unhandled-note">` +
-		`1行が1アドレスです。` +
-		`<strong>既にある相手が見つかった行は、そこへ足すのが初期の提案</strong>です` +
-		`——押せば相手ページにアドレスが増えます（会社ページは1枚のまま）。` +
-		`新しい相手なら、名前を直してから取引の種類を押してください` +
-		`（顧客と仕入先はあとから足せます）。</p>`)
-
-	partners := existingPartners(user)
+		`1行が1アドレスです。<strong>組織</strong>と<strong>担当者</strong>を入れて「登録」を押します` +
+		`——組織は候補（同じドメインを持つ組織・「` + PersonalOrgTitle + `」）から選ぶか、新しい社名を打ちます。` +
+		`担当者を空にすると、そのアドレスは組織の口（受注窓口など）として組織のページに入ります。` +
+		`個人のお客様は組織を「` + PersonalOrgTitle + `」にして担当者に名前を入れます。</p>`)
 
 	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
-	for _, c := range list {
+	for i, c := range list {
 		sb.WriteString(`<tr data-domain="` + stdhtml.EscapeString(c.Domain) + `"` +
 			` data-address="` + stdhtml.EscapeString(c.Address) + `">`)
 
@@ -54,17 +51,64 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 		sb.WriteString(`<td class="unhandled-clip">` + fmt.Sprint(c.Count) + `件</td>`)
 
 		addrAttr := stdhtml.EscapeString(c.Address)
-		sb.WriteString(`<td class="vocab-chrome unhandled-act">`)
+		rowKey := fmt.Sprintf("r%d", i)
+		cands := orgCandidates(user, c)
+		orgInit, personInit := contactRowInitials(c, cands)
 
-		// **このドメインもその組織のものにするか**（2026-09-16）。
+		// ── 2つのコンボボックス（2026-09-17 ユーザー:「入力欄は『組織コンボボックス』と
+		// 『担当者名コンボボックス』になると思います」）──
 		//
-		// **行の先頭に置きます**——新規登録にも「既にある相手へ足す」にも効くためです。
-		// 2つ目のドメインを足す道（自社の `itohocorp.onmicrosoft.com` が実例）が、
-		// 新規登録の中にしか無いと**ページを2枚作ることになります**。
-		//
-		// 肝心なのは「フリーメールかどうか」ではなく「**ドメインから組織を割り出せるか**」
-		// です（ユーザー）。**決めるのは編集者**なので、機械は**材料だけ**出します:
-		// 同じドメインの別アドレスが索引に何件あるか。
+		// それまでは行き先ごとに別の道具（推薦のボタン・選ぶ `select`・畳んだ新規登録）が
+		// 横に並んでいました。**問いは2つだけ**です——どの組織か、誰か。候補は `datalist`
+		// （素のHTMLの編集できるコンボボックス。JS無しでも打てる・CSP strict の下で動く）。
+		// 候補に無い名前を打てば新しい組織になり、**同じ題の組織が既にあれば口が寄せます**
+		// （`RegisterContactAPIHandler`）。
+		sb.WriteString(`<td class="vocab-chrome unhandled-act contact-form"` +
+			` data-personal-title="` + stdhtml.EscapeString(PersonalOrgTitle) + `">`)
+		sb.WriteString(`<label class="contact-field">組織` +
+			`<input type="text" class="contact-org" list="w-orgs-` + rowKey + `" maxlength="120"` +
+			` value="` + stdhtml.EscapeString(orgInit) + `"` +
+			` placeholder="社名か「` + stdhtml.EscapeString(PersonalOrgTitle) + `」" aria-label="組織"></label>`)
+		// 候補は**同じドメインを持つ組織**（`ドメイン` タグ＝宣言、次に登録済みアドレスの
+		// ドメイン＝推測）と「個人」。⚠ **件数に上限があります**（`domainOwnerLimit`）——
+		// ユーザー:「ヤフーのようなどメインでは、候補が1万件ということもあり得ます」。
+		sb.WriteString(`<datalist id="w-orgs-` + rowKey + `">`)
+		for _, o := range cands {
+			sb.WriteString(`<option value="` + stdhtml.EscapeString(o.Title) + `" data-id="` +
+				stdhtml.EscapeString(o.ID) + `"></option>`)
+		}
+		sb.WriteString(`</datalist>`)
+		sb.WriteString(`<label class="contact-field">担当者` +
+			`<input type="text" class="contact-person" list="w-persons-` + rowKey + `" maxlength="120"` +
+			` value="` + stdhtml.EscapeString(personInit) + `"` +
+			` placeholder="空なら組織の口" aria-label="担当者"></label>`)
+		// 担当者の候補は**候補の組織の下に既にいる人**（label に組織名。同名の別人を
+		// 見分けるため）。
+		sb.WriteString(`<datalist id="w-persons-` + rowKey + `">`)
+		for _, o := range cands {
+			for _, p := range o.Persons {
+				sb.WriteString(`<option value="` + stdhtml.EscapeString(p.Title) + `" label="` +
+					stdhtml.EscapeString(o.Title) + `"></option>`)
+			}
+		}
+		sb.WriteString(`</datalist>`)
+		// 取引は**新しい組織のときだけ**要ります（既にある組織には付いている）。
+		// 画面は組織欄が候補に一致したら隠します（`contact-form--existing`・app.js）。
+		sb.WriteString(`<span class="contact-rel">`)
+		for k, rel := range Relations() {
+			checked := ""
+			if k == 0 {
+				checked = " checked"
+			}
+			sb.WriteString(`<label><input type="radio" name="w-rel-` + rowKey + `" value="` +
+				stdhtml.EscapeString(rel) + `"` + checked + `>` + stdhtml.EscapeString(rel) + `</label>`)
+		}
+		sb.WriteString(`</span>`)
+
+		// **このドメインもその組織のものにするか**（2026-09-16）。肝心なのは「フリーメール
+		// かどうか」ではなく「**ドメインから組織を割り出せるか**」（ユーザー）。決めるのは
+		// 編集者なので、機械は**材料だけ**出します：同じドメインの別アドレスが索引に何件あるか。
+		// 「個人」を選ぶと画面が外します（共有のドメインを個人に結ばない）。
 		if c.Domain != "" {
 			peers := ""
 			if c.DomainPeers > 0 {
@@ -75,113 +119,86 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 				` ドメイン <code>` + stdhtml.EscapeString(c.Domain) + `</code> もその組織のものにする` +
 				stdhtml.EscapeString(peers) + `</label>`)
 		}
-
-		// ── ⓪ **同じドメインを複数の組織が持っているとき**は、先に選ばせます ──
-		//
-		// ドメインから組織が1つに決まらない形です（2026-09-16 ユーザー:「同じドメインを
-		// 複数の組織が共有しているとドメインから組織を決定できなくなります。この場合、
-		// 社名を必要とする場合、コンボボックスで選択できる候補が複数あるということで
-		// どうでしょう？」）。**機械は選ばず、候補を並べます。**
-		if len(c.DomainOwners) > 1 {
-			sb.WriteString(`<span class="contact-domain-pick">`)
-			sb.WriteString(`<select class="contact-merge-target" aria-label="このドメインの組織">`)
-			sb.WriteString(`<option value="">` + stdhtml.EscapeString(c.Domain) +
-				` の組織を選ぶ…（` + fmt.Sprint(len(c.DomainOwners)) + `件` +
-				map[bool]string{true: "・多すぎるので一部", false: ""}[c.DomainTruncated] + `）</option>`)
-			for _, p := range c.DomainOwners {
-				sb.WriteString(`<option value="` + stdhtml.EscapeString(p.ID) + `">` +
-					stdhtml.EscapeString(p.Title) + `</option>`)
-			}
-			sb.WriteString(`</select>`)
-			sb.WriteString(`<button type="button" class="chip-btn chip-primary contact-merge"` +
-				` data-addresses="` + addrAttr + `"` +
-				` title="選んだ組織へ、このアドレスを足します">足す</button>`)
-			sb.WriteString(`</span>`)
+		if c.DomainTruncated {
+			sb.WriteString(`<span class="contact-hint">このドメインを持つ組織が多すぎるので、候補は一部です。` +
+				`候補に無ければ社名を打ってください（同じ題の組織があればそこへ入ります）。</span>`)
 		}
-
-		// ── ① 既にある相手が見つかったなら、それを先に出します ──
-		//
-		// **順序が効きます**。以前は新規作成の［顧客］［仕入先］［自社］が先頭にあり、
-		// 「既にある相手へ足す…」は選んでいない状態でその後ろでした。実データで
-		// 南北スポーツ機械の3アドレスがこの形で並び、**押せば会社が2枚**に
-		// なるところでした（2026-09-13）。
-		if c.SuggestPageID != "" {
-			// **人だと分かるなら、担当者ページを作るのが既定**（2026-09-13 ユーザー:
-			// 「連絡先にはメールアドレス、電話番号、名前など様々なタグが必要なので、
-			// ページに分割する必要があります」）。1人にタグが何個もぶら下がるので、
-			// 社名ページに平らに積むと**誰のものか分からなくなります**。
-			//
-			// 人か会社の口かは**表示名で見分けます**（`order@…` は「コニック金型センター」、
-			// 人は「山田 太郎」）。機械には決め切れないので、**両方出して人が選びます**。
-			if !looksLikeCompany(c.Name) && c.Name != c.Address {
-				sb.WriteString(`<button type="button" class="chip-btn chip-primary contact-merge"` +
-					` data-addresses="` + addrAttr + `"` +
-					` data-target="` + stdhtml.EscapeString(c.SuggestPageID) + `"` +
-					` data-person="` + stdhtml.EscapeString(c.Name) + `"` +
-					// **組織の直下に人**（2026-09-16 に `担当者` の箱をやめた）。
-					` title="「` + stdhtml.EscapeString(c.SuggestTitle) + `／` +
-					stdhtml.EscapeString(c.Name) +
-					`」のページを作り、このアドレスをそこへ入れます">` +
-					stdhtml.EscapeString(c.Name) + ` を担当者にする</button>`)
-			}
-			sb.WriteString(`<button type="button" class="chip-btn contact-merge"` +
-				` data-addresses="` + addrAttr + `"` +
-				` data-target="` + stdhtml.EscapeString(c.SuggestPageID) + `"` +
-				` title="会社の口として「` + stdhtml.EscapeString(c.SuggestTitle) +
-				`」へ足します（受注窓口など、人ではないアドレス）">` +
-				`「` + stdhtml.EscapeString(c.SuggestTitle) + `」へ足す</button>`)
-		}
-
-		// ── ②③ その他の行き先 ──
-		//
-		// **推薦がある行では畳みます**（`details`）。推薦どおりで済むのがほとんどなので、
-		// 全部を横に並べると幅が足りず、実際に［顧客］が画面外へ出ていました
-		// （2026-09-13 に実データで確認）。**JSは使いません**——`details` は素のHTMLで
-		// 開閉でき、CSP strict の下でも動きます。
-		//
-		// 推薦が無い行では畳みません。その行の主役は新規登録だからです。
-		folded := c.SuggestPageID != ""
-		if folded {
-			sb.WriteString(`<details class="contact-more"><summary>ほかの行き先…</summary>`)
-		}
-
-		// ② 新しい相手として登録する。名前の初期値は**社名らしい表示名**
-		//    （`companyLikeName`）。人名しか無ければそのアドレスの表示名が入るので、
-		//    **人が直してから押す**のは変わりません。
-		sb.WriteString(`<span class="contact-new">`)
-		sb.WriteString(`<input type="text" class="contact-name-input" maxlength="120" value="` +
-			stdhtml.EscapeString(c.SuggestName) + `" aria-label="新しい相手の名前">`)
-		for _, rel := range Relations() {
-			sb.WriteString(`<button type="button" class="chip-btn contact-register"` +
-				` data-relation="` + stdhtml.EscapeString(rel) + `"` +
-				` data-addresses="` + addrAttr + `"` +
-				` title="この相手を「` + ContactsBoxTitle + `」の下のページにします（取引：` +
-				stdhtml.EscapeString(rel) + `）">` + stdhtml.EscapeString(rel) + `</button>`)
-		}
-		sb.WriteString(`</span>`)
-
-		// ③ 別の相手を選んで足す。推薦が外れるとき（同じ会社が2つ目のドメインから
-		//    送ってくる、逆に同じドメインに別の会社が居る）に人が選び直す口です。
-		//    **同じ会社かどうかは機械には決められません**。
-		if len(partners) > 0 {
-			sb.WriteString(`<span class="contact-other">`)
-			sb.WriteString(`<select class="contact-merge-target" aria-label="別の相手へ足す">`)
-			sb.WriteString(`<option value="">別の相手へ足す…</option>`)
-			for _, p := range partners {
-				sb.WriteString(`<option value="` + stdhtml.EscapeString(p.ID) + `">` +
-					stdhtml.EscapeString(p.Title) + `</option>`)
-			}
-			sb.WriteString(`</select>`)
-			sb.WriteString(`<button type="button" class="chip-btn contact-merge"` +
-				` data-addresses="` + addrAttr + `"` +
-				` title="選んだ相手ページへ、このアドレスを足します">足す</button>`)
-			sb.WriteString(`</span>`)
-		}
-		if folded {
-			sb.WriteString(`</details>`)
-		}
+		sb.WriteString(`<button type="button" class="chip-btn chip-primary contact-go"` +
+			` data-addresses="` + addrAttr + `" title="組織（と担当者）のページへ、このアドレスを入れます">登録</button>`)
 		sb.WriteString(`</td></tr>`)
 	}
 	sb.WriteString(`</tbody></table>`)
 	return sb.String()
+}
+
+// orgCandidate は組織のコンボボックスの候補1つです（ID が空なら「まだ無い組織」）。
+type orgCandidate struct {
+	ID      string
+	Title   string
+	Persons []PartnerRef // その組織の下に既にいる人（担当者の候補）
+}
+
+// orgCandidates は組織の候補を並べます——①`ドメイン` タグで宣言している組織
+// ②登録済みアドレスのドメインから推測した組織 ③「個人」（無ければ新規として）。
+//
+// **同じドメインで登録された社名が候補になります**（2026-09-17 ユーザー）。連絡帳の
+// 組織を全部並べることはしません——候補の数は制限されるべきで（同上）、候補に無い
+// 社名は打てば足りるからです（同じ題があれば口が寄せる）。
+func orgCandidates(user *auth.User, c UnknownContact) []orgCandidate {
+	var out []orgCandidate
+	seen := map[string]bool{}
+	add := func(id, title string) {
+		key := id
+		if key == "" {
+			key = "title:" + title
+		}
+		if title == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		o := orgCandidate{ID: id, Title: title}
+		if id != "" {
+			o.Persons = PersonsOf(user, id)
+		}
+		out = append(out, o)
+	}
+	for _, p := range c.DomainOwners {
+		add(p.ID, p.Title)
+	}
+	if c.SuggestPageID != "" {
+		add(c.SuggestPageID, c.SuggestTitle)
+	}
+	if id, ok := PartnerByTitle(user, PersonalOrgTitle); ok {
+		add(id, PersonalOrgTitle)
+	} else {
+		add("", PersonalOrgTitle)
+	}
+	return out
+}
+
+// contactRowInitials は2つの欄の初期値を決めます。
+//
+//   - 担当者: 表示名が人らしければそれ（`山田 太郎`）。社名らしいもの・アドレスだけの
+//     ものは空（＝組織の口）。
+//   - 組織: 「個人」以外の候補が**ちょうど1つ**ならそれ。0なら社名らしい表示名
+//     （`SuggestName`）、2つ以上なら空（**機械は選びません**——共有ドメイン）。
+func contactRowInitials(c UnknownContact, cands []orgCandidate) (org, person string) {
+	if !looksLikeCompany(c.Name) && c.Name != c.Address {
+		person = c.Name
+	}
+	var real []orgCandidate
+	for _, o := range cands {
+		if o.Title != PersonalOrgTitle {
+			real = append(real, o)
+		}
+	}
+	switch len(real) {
+	case 1:
+		org = real[0].Title
+	case 0:
+		if looksLikeCompany(c.SuggestName) {
+			org = c.SuggestName
+		}
+	}
+	return org, person
 }
