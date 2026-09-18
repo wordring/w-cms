@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"bytes"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
@@ -147,14 +148,67 @@ func TestDavRequiresAuth(t *testing.T) {
 //
 // Ctrl+S の輪に要らず、事故のとき取り返しがつきにくいためです（`DELETE` は添付を消し、
 // `MOVE` は行方を分からなくします）。**上書き（PUT）と LOCK は通します**。
+//
+// ⚠ **`PROPPATCH` は 2026-09-18 にこの組から外しました**——中身を変えないうえ、
+// Windows が Ctrl+S の途中で送るので、403 を返すと `PUT` まで進めません
+// （`webdav.go` の `davBlockedMethods` に経緯）。番人は下の
+// `TestDavPropPatchDoesNotEraseAttachment`。
 func TestDavBlocksDestructiveMethods(t *testing.T) {
 	setupDavTest(t)
 
-	for _, m := range []string{"DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"} {
+	for _, m := range []string{"DELETE", "MKCOL", "MOVE", "COPY"} {
 		rr := davRequest(t, m, []string{"部品A", "a1b2.dxf"}, "alice", "pw")
 		if rr.Code != http.StatusForbidden {
 			t.Errorf("%s を断っていません: %d", m, rr.Code)
 		}
+	}
+}
+
+// TestDavPropPatchDoesNotEraseAttachment は、**開いただけで添付が消えない**ことを
+// 固定します（2026-09-18）。
+//
+// ⚠ これは実在した壊れ方です。`x/net/webdav` は PROPPATCH でも `O_RDWR` で開き、
+// こちらの `OpenFile` は書きの気配があると**空の一時ファイル**を作って `Close` で
+// 本物に被せていました——**1バイトも書かないまま添付が0バイトになります**。
+// 版には残るので取り返せますが、書いた覚えのない人は気づけません。
+//
+// **PROPPATCH を通す判断と、この守りは一組です**。片方だけ入れてはいけません。
+func TestDavPropPatchDoesNotEraseAttachment(t *testing.T) {
+	setupDavTest(t)
+
+	fp, _ := page.AttachmentPath("000101", "a1b2.dxf")
+	before, err := os.ReadFile(fp)
+	if err != nil || len(before) == 0 {
+		t.Fatalf("前提を作れません: %v", err)
+	}
+
+	// ⚠ **本文を必ず付けること。** 空の PROPPATCH は `x/net/webdav` が本文を読む段で
+	// 400 にするので、`OpenFile` まで届かず——**守りを外しても通る**試験になります
+	// （変異試験で発覚。2026-09-18）。これは Windows が実際に送る形です。
+	const body = `<?xml version="1.0" encoding="utf-8" ?>` +
+		`<D:propertyupdate xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">` +
+		`<D:set><D:prop>` +
+		`<Z:Win32LastModifiedTime>Fri, 18 Sep 2026 12:43:57 GMT</Z:Win32LastModifiedTime>` +
+		`</D:prop></D:set></D:propertyupdate>`
+
+	rr := davRequestBody(t, "PROPPATCH", []string{"部品A", "a1b2.dxf"}, "alice", "pw", body)
+	if rr.Code == http.StatusForbidden {
+		t.Fatalf("PROPPATCH を断っています（Windows は Ctrl+S の途中で送ります）: %d", rr.Code)
+	}
+	if rr.Code != http.StatusMultiStatus {
+		t.Fatalf("PROPPATCH が処理まで届いていません: %d %s", rr.Code, rr.Body.String())
+	}
+
+	after, err := os.ReadFile(fp)
+	if err != nil {
+		t.Fatalf("添付が読めません: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("開いただけで添付が変わりました: %d バイト → %d バイト", len(before), len(after))
+	}
+	// **版も積まれていない**（何も起きていないので、履歴を汚さない）。
+	if vers := AttachmentVersions("000101", "a1b2.dxf"); len(vers) != 0 {
+		t.Errorf("書いていないのに版が積まれています: %+v", vers)
 	}
 }
 

@@ -79,11 +79,20 @@ func davLockSystem() webdav.LockSystem {
 //     「どこなら書けるか」の判断が2箇所に散ります。
 //   - `LOCK`/`UNLOCK`……送ってくるアプリには本来の守りが効きます。送らないアプリでは
 //     効きませんが、**効かないことを理由に塞ぐ**と、送るアプリの守りまで失います。
+//   - `PROPPATCH`……**中身を変えません**（時刻や属性を書くだけ）。2026-09-18 まで
+//     塞いでいましたが、⚠ **Windows は Ctrl+S の途中でこれを送り、403 を返すと
+//     `PUT` まで進みません**——RootPro CAD が実データで「DocFileが壊れています
+//     （0x80030109）」と言って保存に失敗しました（サーバーのログは
+//     `GET` → `LOCK` → `PROPPATCH` で終わり、`PUT` が1度も来ていない）。
+//     消す・動かすと一緒に括ったのが行き過ぎでした。
+//     ⚠ **通すなら `davWriteFile` の `wrote` の守りが要ります**——`x/net/webdav` は
+//     PROPPATCH でも `O_RDWR` で開くので、無いと添付が0バイトになります
+//     （[webdav_write.go] の `Close`）。
 //
 // 通さないもの: **消す・作る・動かす**。Ctrl+S の輪に要らず、事故のとき取り返しが
 // つきにくいためです（`DELETE` はページの添付を消し、`MOVE` は行方を分からなくします）。
 var davBlockedMethods = map[string]bool{
-	"DELETE": true, "MKCOL": true, "MOVE": true, "COPY": true, "PROPPATCH": true,
+	"DELETE": true, "MKCOL": true, "MOVE": true, "COPY": true,
 }
 
 // DavHandler は `/dav/` 以下に**ページの木をそのまま**見せます。

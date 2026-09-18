@@ -166,6 +166,23 @@ func (w *davWriteFile) Close() error {
 		os.Remove(w.tmpPath)
 		return err
 	}
+	// ⚠ **何も書かれていないなら、差し替えません**（2026-09-18）。開いただけで
+	// 消えるのは、いちばん取り返しのつかない壊れ方です——版は残るとはいえ、
+	// 書いた覚えのない人は消えたことに気づけません。`x/net/webdav` は **PROPPATCH でも
+	// `O_RDWR` で開く**ので、これが無いと Ctrl+S のたびに添付が0バイトになり得ます。
+	//
+	// ⚠ **見るのは一時ファイルの大きさで、`Write` を数えてはいけません。**
+	// `davWriteFile` は `*os.File` を埋め込んでいるので `ReadFrom` が昇格し、
+	// `io.Copy` はそちらを直に呼びます——`Write` を差し替えても**素通りします**
+	// （実際にそれで上書きが全部死にました）。大きさなら、どの経路で書かれても効きます。
+	//
+	// 代償: **中身を空にする上書きは通らなくなります**（本物はそのまま）。添付を
+	// 0バイトにしたい場面は無いと判断しました。必要になったら、PUT の本文の長さを
+	// 見て区別すること（「書かなかった」と「空を書いた」は別の事実です）。
+	if st, err := os.Stat(w.tmpPath); err != nil || st.Size() == 0 {
+		os.Remove(w.tmpPath)
+		return nil
+	}
 	// 1. いまの中身を版として残す（**差し替える前に**。ここで失敗したら上書きしない）。
 	if err := saveAttachmentVersion(w.pageID, w.name); err != nil {
 		os.Remove(w.tmpPath)
