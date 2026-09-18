@@ -95,7 +95,7 @@ func contactsViewHTML(user *auth.User, pageIDInt int) string {
 			}
 		}
 		sb.WriteString(`</datalist>`)
-		// ⚠ **取引（顧客・仕入先・自社）は 2026-09-17 に全廃しました**（ユーザー決定:
+		// ⚠ **取引（顧客・仕入先・自社）は 2026-09-18 に全廃しました**（ユーザー決定:
 		// 「自社、顧客、仕入先の区別は全廃します」）。経緯は `contacts.go` の
 		// `PersonalOrgTitle` の手前。行にあるのは**組織・担当者・登録**だけです。
 

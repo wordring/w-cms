@@ -52,10 +52,12 @@ func TestBusinessVocabIsWellFormed(t *testing.T) {
 // **View を宣言した形式は描画も登録されていること**——宣言だけして描画を忘れると、
 // 画面に「まだ用意されていません」が出たまま気づかれません。
 func TestBusinessVocabIsRegistered(t *testing.T) {
+	// ⚠ **`drawing` は 2026-09-18 に廃しました**——図面番号・図面名称・装置名称・客先は
+	// 可変タグ（`page_tags`）へ移りました。横断検索の口が読む表はそちらだからです。
 	want := []string{
 		"part-materials", "client-order", "client-order-items",
 		"our-order", "our-order-items", "our-estimate", "supplier-estimate",
-		"required-materials", "drawing", "drawing-revisions", "drawing-revision-items",
+		"required-materials", "drawing-revisions", "drawing-revision-items",
 		"part-outsourcing", "part-purchased", "part-supplied",
 	}
 	if len(businessVocab) != len(want) {

@@ -331,17 +331,34 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
 	// 畳まずに入れると `φ３２０　共通台座` が別の装置ページになります。
 	name := cms.NormalizeNameForIngest(j.DrawingName)
 
+	// ── ここは**可変タグ1つ**です（2026-09-18 ユーザー決定）──
+	//
+	// ユーザー:「この定義リストを『名前：値のタグ』に変更します。なぜなら、この情報こそ
+	// 検索したいものだからです。おそらくもっとも頻繁に検索し、ワンノートでは取りこぼしが
+	// 多いので、w-cms を作り始めました」。
+	//
+	// **それまで素の `<dl>`（業務ブロックのヘッダ）に置いていました。** 索引には入って
+	// いましたが `vocab_index` のほうで、**横断検索の口（`PagesByTag`）が読む表ではありません**
+	// ——つまり「いちばん検索したい値が、検索の口を持たない表に入っていた」わけです。
+	// タグにすると `図面番号` は設定で `code` 型なので、空白・ハイフン・長音・大小を畳んで
+	// 引けます（`PagesByTagLoose`）——`P103-227-6` を `P103 227 6` と打っても当たります。
+	//
+	// ⚠ **見た目がタグと同じで振る舞いが違う、という混乱も消えます。** 素の `<dl>` と
+	// `<dl data-type="tags">` は画面では区別が付きませんでした。いまは
+	// **「タグと表だけがDBに入る」**の1文で説明できます。
+	//
+	// ⚠ **空欄でも欄を出します**（`<dd><br/></dd>`）——装置名称と客先は解析が読めない
+	// ことがあり、**書く場所が見えていれば人が埋めます**（実データで7枚のうち3枚に
+	// `客先` が無かった）。
 	var b strings.Builder
-	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>図面</h2><dl>`)
-	writeHeaderPair(&b, "図面番号", no)
-	writeHeaderPair(&b, "図面名称", name)
-	// 装置名称・客先は置き場所（顧客名／装置名称／図面名称）に効く項目。
-	// 空でも欄は出す——**あとから人が埋められる**（writeHeaderPair の作り）。
-	writeHeaderPair(&b, "装置名称", cms.NormalizeNameForIngest(j.MachineName))
-	writeHeaderPair(&b, "客先", cms.NormalizeNameForIngest(j.Customer))
-	b.WriteString("</dl>")
-
-	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
+	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>図面</h2>`)
+	b.WriteString(`<dl data-type="tags">`)
+	writeHeaderPair(&b, DrawingNoTag, no)
+	writeHeaderPair(&b, DrawingNameTag, name)
+	// 装置名称・客先は置き場所（社名／段／装置名称／図面名称）に効く項目。
+	writeHeaderPair(&b, MachineNameTag, cms.NormalizeNameForIngest(j.MachineName))
+	writeHeaderPair(&b, ClientNameTag, cms.NormalizeNameForIngest(j.Customer))
+	b.WriteString("<dt>" + SourceRefTag + "</dt><dd>" +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
 	// 一致したDXFを参照タグで指す（押すと元の通信記録ページの該当添付へ飛ぶ）。
 	// 一致が無ければ何も書かない——**DXFが無いのも普通**（PDFだけの図面）。

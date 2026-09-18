@@ -266,38 +266,37 @@ func TestAnalyzeDrawingMatchesDXF(t *testing.T) {
 	}
 
 	// **図面番号で検索できること**が要件（ユーザー:「図面番号、図面名称など様々な
-	// タグがあります。のちのち、これらを検索できるようにしたいです」）。語彙に
-	// 登録して初めて vocab_index に載るので、載っていることを固定する
-	// ——登録を外すと検索は無言で効かなくなる。
+	// タグがあります。のちのち、これらを検索できるようにしたいです」）。
+	//
+	// ⚠ **見るのは `page_tags`** です（2026-09-18）。それまで業務ブロックの索引
+	// （`vocab_index`）に載っていましたが、**横断検索の口（`PagesByTag`）が読む表は
+	// こちらではありません**——「いちばん検索したい値が、検索の口を持たない表に
+	// 入っていた」ので、可変タグへ移しました。
 	idInt, _ := strconv.Atoi(resp.PageID)
-	rows, err := cms.VocabBlocksOf(database.DB, idInt, "drawing")
+	tags, err := cms.TagsOfPage(database.DB, idInt)
 	if err != nil {
 		t.Fatalf("索引を読めません: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("図面ブロックが索引に載っていません: %+v", rows)
+	if cms.FirstTag(tags, DrawingNoTag) != "P103-227-6" {
+		t.Errorf("図面番号がタグの索引に入っていません: %+v", tags)
 	}
-	// VocabBlocksOf は**機械キー**で返す（索引そのものは見出しの表示文字で持つ）。
-	if rows[0].Values["drawing-no"] != "P103-227-6" {
-		t.Errorf("図面番号が索引に入っていません: %+v", rows[0].Values)
+	if cms.FirstTag(tags, DrawingNameTag) != "台座Assy" {
+		t.Errorf("図面名称がタグの索引に入っていません: %+v", tags)
 	}
-	if rows[0].Values["drawing-name"] != "台座Assy" {
-		t.Errorf("図面名称が索引に入っていません: %+v", rows[0].Values)
+	// **横断検索の口で引けること**——ここが移した目的です
+	// （ユーザー:「この情報こそ検索したいものだからです。おそらくもっとも頻繁に検索し、
+	// ワンノートでは取りこぼしが多いので、w-cms を作り始めました」）。
+	ids, err := cms.PagesByTag(database.DB, DrawingNoTag, "P103-227-6")
+	if err != nil || len(ids) != 1 || ids[0] != idInt {
+		t.Errorf("図面番号でページを引けません: %v err=%v", ids, err)
 	}
-	// 空欄も欄としては在る（捏造しないが、あとから人が埋められる）。
-	if _, ok := rows[0].Values["machine-name"]; !ok {
-		t.Errorf("装置名称の欄がありません: %+v", rows[0].Values)
-	}
-
-	// 表示文字での引き当ても効くこと——**検索は見出しの言葉で行う**
-	// （ユーザー:「図面番号、図面名称など様々なタグ…これらを検索できるように
-	// したいです」）。
-	var n int
-	if err := database.DB.QueryRow(
-		`SELECT COUNT(*) FROM vocab_index
-		 WHERE page_id = ? AND data_type = 'drawing' AND field = '図面番号' AND value = 'P103-227-6'`,
-		idInt).Scan(&n); err != nil || n != 1 {
-		t.Errorf("図面番号で引けません (n=%d err=%v)", n, err)
+	// ⚠ **畳んだ一致でも引けること**（`図面番号` は設定で `code` 型）。全角・大小・
+	// 前後の空白の揺れを越えて当たります——コピペで増える揺れがまさにこれです。
+	// ⚠ **区切りの有無は畳みません**（`P103-227-6` と `P1032276` は別扱い）。
+	// 畳み過ぎて別の部品を1つにするほうが、取りこぼしより害が大きいためです。
+	loose, err := cms.PagesByTagLoose(database.DB, DrawingNoTag, "Ｐ１０３－２２７－６")
+	if err != nil || len(loose) != 1 || loose[0] != idInt {
+		t.Errorf("全角・大小の揺れで引けません: %v err=%v", loose, err)
 	}
 }
 

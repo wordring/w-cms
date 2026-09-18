@@ -26,6 +26,18 @@ import (
 	"w-cms/internal/database"
 )
 
+// 加工製品ページの可変タグの名前です（2026-09-18 にヘッダの定義リストから移した）。
+//
+// ⚠ **`図面番号` は設定で `code` 型**なので、畳んだ一致で引けます（`PagesByTagLoose`）
+// ——空白・ハイフン・長音・大小の揺れを越えて当たります。ワンノートの取りこぼしが
+// ここでした。`図面名称`・`装置名称`・`客先` は `text`（長音には触らない）。
+const (
+	DrawingNoTag   = "図面番号"
+	DrawingNameTag = "図面名称"
+	MachineNameTag = "装置名称"
+	ClientNameTag  = "客先"
+)
+
 // SourceRefTag は解析が書く由来の参照タグの名前です（`受信元`）。
 // analyze_pdf.go が書く名前と揃えること——ここがずれると印が出なくなります。
 const SourceRefTag = "受信元"
@@ -107,7 +119,9 @@ func analyzedAttachments(user *auth.User, pageID string) (map[string]analyzedRes
 
 // kindOfPage はそのページが図面ページか受注ページかを返します（どちらでもなければ空）。
 func kindOfPage(pageIDInt int) string {
-	if blocks, err := cms.VocabBlocksOf(database.DB, pageIDInt, "drawing"); err == nil && len(blocks) > 0 {
+	// ⚠ **図面はタグで見ます**（2026-09-18 に業務ブロックから可変タグへ移した）。
+	if tags, err := cms.TagsOfPage(database.DB, pageIDInt); err == nil &&
+		cms.FirstTag(tags, DrawingNoTag) != "" {
 		return "図面"
 	}
 	if blocks, err := cms.VocabBlocksOf(database.DB, pageIDInt, "client-order"); err == nil && len(blocks) > 0 {

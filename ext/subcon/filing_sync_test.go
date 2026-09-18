@@ -163,13 +163,15 @@ func assertIndexed(t *testing.T, pageID, field, value string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ⚠ **見るのは `page_tags`** です（2026-09-18 に図面ブロックのヘッダをタグへ移した）。
+	// 横断検索の口（`PagesByTag`）が読む表はこちらです。
 	var n int
 	if err := database.DB.QueryRow(
-		`SELECT COUNT(*) FROM vocab_index WHERE page_id = ? AND field = ? AND value = ?`,
+		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = ? AND value = ?`,
 		idInt, field, value).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n == 0 {
-		t.Errorf("索引に %s=%s が入っていません", field, value)
+		t.Errorf("タグの索引に %s=%s が入っていません", field, value)
 	}
 }

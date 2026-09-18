@@ -24,40 +24,6 @@ import (
 	"w-cms/internal/cms"
 )
 
-func init() {
-	cms.RegisterMirror("drawing", cms.MirrorHandlerFunc(markSupersededDrawing))
-}
-
-// markSupersededDrawing は、前に別の図面ブロックがある図面へ印を付けます。
-func markSupersededDrawing(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
-	if hasEarlierDrawing(el) {
-		addClass(el, "drawing-superseded")
-	}
-	return true, nil
-}
-
-// hasEarlierDrawing は、同じ親の中でこの要素より前に図面ブロックがあるかを返します。
-func hasEarlierDrawing(el *html.Node) bool {
-	for p := el.PrevSibling; p != nil; p = p.PrevSibling {
-		if p.Type == html.ElementNode && p.Data == "section" && isDrawingSection(p) {
-			return true
-		}
-	}
-	return false
-}
-
-// isDrawingSection は section が図面ブロックかを見出しで判定します（機能見出し形・D-2）。
-// **見出しの表示文字が正**——機械キーを本文へ書く属性はありません。
-func isDrawingSection(sec *html.Node) bool {
-	for c := sec.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode || c.Data != "h2" {
-			continue
-		}
-		return textOf(c) == "図面"
-	}
-	return false
-}
-
 // textOf は要素の中の文字を連結します。
 func textOf(n *html.Node) string {
 	if n.Type == html.TextNode {

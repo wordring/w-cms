@@ -114,6 +114,46 @@ func VocabBlocksOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, erro
 	return vocabRows(db, pageID, dataType, true)
 }
 
+// TagsOfPage はそのページの可変タグを「名前 → 値の並び」で返します（本文の順）。
+//
+// **`PagesByTag` の逆向き**です。あちらは「この値を持つページはどれか」（横断検索）、
+// こちらは「このページは何を持っているか」（1枚の中身）。
+//
+// ⚠ **同じ名前は繰り返せます**ので、値は並びで返します（`対応DXF` が複数、窓口の
+// `メールアドレス` が複数、というのは普通に起きる）。1つだけ要る呼び手は先頭を採ります。
+//
+// 2026-09-18 に足しました。それまで「ページ→タグ」を読む口が無く、業務の値を
+// **タグではなく業務ブロックのヘッダ**に置く理由の1つになっていました
+// （読む口があるほうへ寄る）。タグに寄せるなら、読む口も要ります。
+func TagsOfPage(db ReadOnlyDB, pageID int) (map[string][]string, error) {
+	rows, err := db.Query(`
+		SELECT name, value FROM page_tags
+		WHERE page_id = ?
+		ORDER BY seq
+	`, pageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var name, value string
+		if err := rows.Scan(&name, &value); err != nil {
+			return nil, err
+		}
+		out[name] = append(out[name], value)
+	}
+	return out, rows.Err()
+}
+
+// FirstTag は名前のタグの最初の値を返します（無ければ空）。
+func FirstTag(tags map[string][]string, name string) string {
+	if v := tags[name]; len(v) > 0 {
+		return v[0]
+	}
+	return ""
+}
+
 // PagesByTag は「可変タグ `name` の値が `value` のページ」を返します。
 //
 // 硬いドメイン表を廃したことで、**ページ横断の突き合わせはこの逆引きになります**。

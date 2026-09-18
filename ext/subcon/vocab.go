@@ -136,31 +136,12 @@ var businessVocab = []cms.VocabDef{
 			{Field: "ordered-at", Label: "発注日", Type: cms.ColDate},
 		},
 	},
-	{
-		// 図面ブロック——1つの図面の表題欄です。**加工製品ページには複数並びます**
-		// （改定図面が来たら新しいものを先頭に足す。古いものは赤枠で残し、
-		// 消すのは人の判断——2026-09-03 ユーザー決定）。
-		//
-		// **図面番号で検索できることが要件**（ユーザー:「図面番号、図面名称など
-		// 様々なタグがあります。のちのち、これらを検索できるようにしたいです」）。
-		// 語彙に登録して初めて `vocab_index` に載るので、ここが検索の前提。
-		//
-		// 装置名称と客先を持つのは、**置き場所（顧客名／装置名称／図面名称）の
-		// 推奨値**になるから。ただし置き場所を決めるのは人で、機械は提案するだけ
-		// ——「顧客は適当」なので、いま決められないことがある（作業引き継ぎ）。
-		Type:        "drawing",
-		DisplayName: "図面",
-		Category:    "業務",
-		Icon:        "📐",
-		Element:     "section",
-		File:        true,
-		Columns: []cms.VocabColumn{
-			{Field: "drawing-no", Label: "図面番号", Type: cms.ColText},
-			{Field: "drawing-name", Label: "図面名称", Type: cms.ColText},
-			{Field: "machine-name", Label: "装置名称", Type: cms.ColText},
-			{Field: "client-name", Label: "客先", Type: cms.ColText},
-		},
-	},
+	// ⚠ **形式 `drawing`（📐 図面）は 2026-09-18 に廃しました**（ユーザー決定）。
+	// 図面番号・図面名称・装置名称・客先は**可変タグ**になり、`page_tags` へ入ります
+	// ——横断検索の口（`PagesByTag` / `PagesByTagLoose`）が読む表はこちらだからです。
+	// 本文の `<section><h2>図面</h2>` は**語彙に無いただの節**として残ります（見出しで
+	// まとめるだけ。改定の合流はいまも見出しの文字で節を探します）。
+	// 経緯は `analyze_pdf.go` の `drawingSectionHTML`。
 	{
 		// 改訂履歴——**社内コードの指し先**（2026-09-03 ユーザー:「改訂履歴の項目を
 		// 作り版にdata-idを割り当てれば良いのでは？」）。

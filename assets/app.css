@@ -1655,17 +1655,6 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     cursor: pointer;
 }
 
-/* 改定図面で置き換わった古い図面の赤枠。**先頭以外が古い**——「新しいものが上」と
-   いう並びそのものが最新を表す（状態を別に持たない）。印は表示のときだけ付く
-   （class はサニタイズで落ちるので保存されない）。消すかどうかは人の判断で、
-   古い図面は旧版にも残っている。 */
-#w-editor-content .drawing-superseded {
-    border: 2px solid var(--w-danger, #c0392b);
-    border-radius: 4px;
-    padding: 0.5rem;
-    margin: 0.5rem 0;
-}
-
 /* 「改定として合流」の確認——実行が確認を求めたときだけ現れる。
    最初から見せると「押せば通る」と学習され、偽の改定を止める意味が薄れる。 */
 .filing-confirm {

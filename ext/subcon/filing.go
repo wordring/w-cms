@@ -363,20 +363,24 @@ func drawingChildrenOf(user *auth.User, parentIDInt int) ([]filingRow, error) {
 		if !page.CanView(user, c.id) {
 			continue // 見せ分け（C案）——読めないものは黙って落ちる
 		}
-		blocks, err := cms.VocabBlocksOf(database.DB, c.id, "drawing")
-		if err != nil || len(blocks) == 0 {
-			continue // 図面ページではない（受注ページなど）
+		// ⚠ **可変タグから読みます**（2026-09-18 に業務ブロックから移した）。
+		// 同じ名前のタグは繰り返せますが、この4つは**1ページに1つ**です
+		// （加工製品ページ＝1つの部品。改定で来た旧版は子ページへ移る）。
+		tags, err := cms.TagsOfPage(database.DB, c.id)
+		if err != nil || cms.FirstTag(tags, DrawingNoTag) == "" &&
+			cms.FirstTag(tags, DrawingNameTag) == "" {
+			continue // 加工製品ページではない（受注ページなど）
 		}
-		// 図面が複数あるページ（既に改定を重ねたもの）は**先頭が最新**。
-		v := blocks[0].Values
+		client := cms.FirstTag(tags, ClientNameTag)
+		machine := cms.FirstTag(tags, MachineNameTag)
 		out = append(out, filingRow{
 			PageID:      formatID(c.id),
 			Title:       c.title,
-			DrawingNo:   v["drawing-no"],
-			DrawingName: v["drawing-name"],
-			Customer:    suggestCustomer(user, c.id, v["client-name"]),
-			MachineName: v["machine-name"],
-			Stage:       suggestStage(v["client-name"], v["machine-name"]),
+			DrawingNo:   cms.FirstTag(tags, DrawingNoTag),
+			DrawingName: cms.FirstTag(tags, DrawingNameTag),
+			Customer:    suggestCustomer(user, c.id, client),
+			MachineName: machine,
+			Stage:       suggestStage(client, machine),
 		})
 	}
 	return out, nil
@@ -582,9 +586,9 @@ func syncDrawingFields(user *auth.User, pageID, customer, machine, name string) 
 	}
 	fixed := body
 	for _, f := range []struct{ field, value string }{
-		{"客先", customer},
-		{"装置名称", machine},
-		{"図面名称", name},
+		{ClientNameTag, customer},
+		{MachineNameTag, machine},
+		{DrawingNameTag, name},
 	} {
 		fixed = setDrawingField(fixed, f.field, f.value)
 	}
@@ -611,13 +615,13 @@ func setDrawingField(body, field, value string) string {
 	if strings.Contains(body, "<dt>"+field+"</dt>") {
 		return body // 在るが差し替えなかった（同じ値・または人が印を書いている）
 	}
-	// 図面ブロックのヘッダの `dl` を探します。**属性の無い `<dl>`** がヘッダで、
-	// `<dl data-type="tags">` は可変タグ（`受信元` などが入る別のもの）です。
+	// 図面ブロックの**可変タグの `dl`** を探します（2026-09-18 に素の `<dl>` から移した
+	// ——検索の口が読む表は `page_tags` のほうなので）。
 	h2 := strings.Index(body, "<h2>図面</h2>")
 	if h2 < 0 {
 		return body
 	}
-	open := strings.Index(body[h2:], "<dl>")
+	open := strings.Index(body[h2:], `<dl data-type="tags">`)
 	if open < 0 {
 		return body
 	}

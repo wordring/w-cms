@@ -162,7 +162,7 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	out := make([]UnknownContact, 0, len(byAddr))
 	for addr, a := range byAddr {
 		d := domainOf(addr)
-		// ⚠ **社内のアドレスも並びます**（2026-09-17 に `取引：自社` を全廃したため）。
+		// ⚠ **社内のアドレスも並びます**（2026-09-18 に `取引：自社` を全廃したため）。
 		// 同僚は取引の相手ではないので、本当は並べたくありません——戻すなら設定に
 		// 「自社のドメイン」を置くのが筋です（`contacts.go` の冒頭に経緯）。
 		c := UnknownContact{

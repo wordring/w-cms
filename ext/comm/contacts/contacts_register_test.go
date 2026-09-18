@@ -84,7 +84,7 @@ func TestRegisterNewOrgWithPerson(t *testing.T) {
 // 固定します（空の形式ブロックを置かない）。
 //
 // 担当者が居ればアドレスは人のページへ入り、ドメインを送らなければ組織に書くものが
-// 残りません。⚠ `取引`（顧客・仕入先・自社）は 2026-09-17 に全廃したので、組織のページが
+// 残りません。⚠ `取引`（顧客・仕入先・自社）は 2026-09-18 に全廃したので、組織のページが
 // **タグなしで生まれるのが普通**になりました。
 func TestRegisterWritesNoEmptyTagList(t *testing.T) {
 	setupPartnerBox(t)
