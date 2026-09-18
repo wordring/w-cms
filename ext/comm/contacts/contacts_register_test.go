@@ -15,11 +15,12 @@ import (
 
 // 登録の口（POST /api/contacts/register）のテスト——2026-09-17 に「組織」「担当者」の
 // 2欄へ畳んだあとの形。固定するのは:
-//   - 新しい組織＋担当者を1回で作れる（取引とドメインは組織、アドレスは人）
+//   - 新しい組織＋担当者を1回で作れる（ドメインは組織、アドレスは人）
 //     ⚠ `domains` を送る画面はもうありません（2026-09-17 にチェックを外した）。
 //     口は残っているので、ここが**その口の番人**です。
 //   - 題の完全一致で既にある組織へ寄る（コンボボックスに無い名前を打っても会社が2枚にならない）
-//   - 「個人」は取引が人に付き、ドメインは付かない。担当者が無ければ断る
+//   - 「個人」はドメインが付かない。担当者が無ければ断る
+//   - タグが1つも無ければ `dl` ごと書かない（空の形式ブロックを置かない）
 //   - 候補の並び（同じドメインの組織 →「個人」）と欄の初期値
 
 func postRegister(t *testing.T, u *auth.User, body map[string]any) (int, map[string]any) {
@@ -48,7 +49,7 @@ func TestRegisterNewOrgWithPerson(t *testing.T) {
 	setupPartnerBox(t)
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	code, res := postRegister(t, u, map[string]any{
-		"name": "南北スポーツ機械", "relation": RelationCustomer,
+		"name": "南北スポーツ機械",
 		"person_name": "山田 太郎", "addresses": []string{"yamada@example-sports.co.jp"},
 		"domains": []string{"example-sports.co.jp"},
 	})
@@ -63,9 +64,8 @@ func TestRegisterNewOrgWithPerson(t *testing.T) {
 		t.Fatal("組織ページができていません")
 	}
 	org := bodyOfPage(t, orgID)
-	if !strings.Contains(org, "<dt>"+RelationTag+"</dt><dd>"+RelationCustomer+"</dd>") ||
-		!strings.Contains(org, "<dt>"+DomainTag+"</dt><dd>example-sports.co.jp</dd>") {
-		t.Errorf("組織に取引とドメインがありません:\n%s", org)
+	if !strings.Contains(org, "<dt>"+DomainTag+"</dt><dd>example-sports.co.jp</dd>") {
+		t.Errorf("組織にドメインがありません:\n%s", org)
 	}
 	if strings.Contains(org, EmailTag) {
 		t.Errorf("担当者が居るのに組織にアドレスが付きました:\n%s", org)
@@ -80,10 +80,13 @@ func TestRegisterNewOrgWithPerson(t *testing.T) {
 	}
 }
 
-// TestRegisterWithoutRelationWritesNoTag は、**取引を送らない**（2026-09-17 に画面から
-// 外した）ときの形を固定します——`取引` のタグは書かず、タグが1つも無ければ `dl` ごと
-// 書きません（空の形式ブロックを置かない）。必要になったら組織のページで足します。
-func TestRegisterWithoutRelationWritesNoTag(t *testing.T) {
+// TestRegisterWritesNoEmptyTagList は、**タグが1つも無ければ `dl` ごと書かない**ことを
+// 固定します（空の形式ブロックを置かない）。
+//
+// 担当者が居ればアドレスは人のページへ入り、ドメインを送らなければ組織に書くものが
+// 残りません。⚠ `取引`（顧客・仕入先・自社）は 2026-09-17 に全廃したので、組織のページが
+// **タグなしで生まれるのが普通**になりました。
+func TestRegisterWritesNoEmptyTagList(t *testing.T) {
 	setupPartnerBox(t)
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	code, res := postRegister(t, u, map[string]any{
@@ -91,33 +94,27 @@ func TestRegisterWithoutRelationWritesNoTag(t *testing.T) {
 		"addresses": []string{"info@sagawa-exp.example"},
 	})
 	if code != 200 || res["created"] != true {
-		t.Fatalf("取引なしで登録できません: %d %+v", code, res)
+		t.Fatalf("登録できません: %d %+v", code, res)
 	}
 	orgID, _ := PartnerByTitle(u, "佐川急便株式会社")
 	org := bodyOfPage(t, orgID)
-	if strings.Contains(org, RelationTag) {
-		t.Errorf("送っていない取引が書かれました:\n%s", org)
-	}
 	if strings.Contains(org, `<dl data-type="tags">`) {
 		t.Errorf("タグが無いのに空の dl を置きました:\n%s", org)
 	}
-	// 表に無い値は断る（黙って捨てると、書いたつもりの値が消える）。
-	if code, _ := postRegister(t, u, map[string]any{
-		"name": "でたらめ商会", "relation": "とりひき",
-		"addresses": []string{"x@example.com"},
-	}); code != 400 {
-		t.Errorf("表に無い取引を受け付けました: %d", code)
+	// アドレスは人のページへ入っている（組織には付かない）。
+	if !strings.Contains(bodyOfPage(t, res["page_id"].(string)), "<dd>info@sagawa-exp.example</dd>") {
+		t.Errorf("人のページにアドレスがありません")
 	}
 }
 
 func TestRegisterByTitleMergesIntoExisting(t *testing.T) {
 	box := setupPartnerBox(t)
 	u := &auth.User{Username: "alice", IsAdmin: true}
-	partnerPage(t, "000201", box, "コニック金型センター", RelationSupplier, "info@konic.example")
+	partnerPage(t, "000201", box, "コニック金型センター", "info@konic.example")
 
 	// 候補に無い名前を打った想定（page_id 無し）。題が一致するので既存へ寄る。
 	code, res := postRegister(t, u, map[string]any{
-		"name": "コニック金型センター", "relation": RelationCustomer,
+		"name": "コニック金型センター",
 		"addresses": []string{"order@konic.example"},
 	})
 	if code != 200 || res["merged"] != true || res["page_id"] != "000201" {
@@ -127,25 +124,24 @@ func TestRegisterByTitleMergesIntoExisting(t *testing.T) {
 	if !strings.Contains(body, "<dd>order@konic.example</dd>") {
 		t.Errorf("アドレスが足されていません:\n%s", body)
 	}
-	if strings.Count(body, RelationCustomer) != 0 {
-		t.Errorf("既存の組織の取引を書き換えました:\n%s", body)
-	}
 }
 
-func TestRegisterPersonalPutsRelationOnPerson(t *testing.T) {
+// TestRegisterPersonalNeedsPerson は「個人」の約束を固定します——担当者が無ければ断り、
+// 共有のドメインは組織に付けず、2人目は同じ「個人」の下へ入る。
+func TestRegisterPersonalNeedsPerson(t *testing.T) {
 	setupPartnerBox(t)
 	u := &auth.User{Username: "alice", IsAdmin: true}
 
 	// 担当者が無い「個人」は断る（人の器なので）。
 	if code, _ := postRegister(t, u, map[string]any{
-		"name": PersonalOrgTitle, "relation": RelationCustomer,
+		"name": PersonalOrgTitle,
 		"addresses": []string{"yamada@yahoo.co.jp"},
 	}); code != 400 {
 		t.Errorf("担当者の無い「個人」を受け付けました: %d", code)
 	}
 
 	code, res := postRegister(t, u, map[string]any{
-		"name": PersonalOrgTitle, "relation": RelationCustomer, "person_name": "山田太郎",
+		"name": PersonalOrgTitle, "person_name": "山田太郎",
 		"addresses": []string{"yamada@yahoo.co.jp"}, "domains": []string{"yahoo.co.jp"},
 	})
 	if code != 200 || res["created"] != true {
@@ -156,18 +152,17 @@ func TestRegisterPersonalPutsRelationOnPerson(t *testing.T) {
 		t.Fatal("「個人」の組織ページができていません")
 	}
 	org := bodyOfPage(t, orgID)
-	if strings.Contains(org, RelationTag) || strings.Contains(org, DomainTag) {
-		t.Errorf("「個人」に取引かドメインが付きました（共有ドメインを個人に結ぶことになる）:\n%s", org)
+	if strings.Contains(org, DomainTag) {
+		t.Errorf("「個人」にドメインが付きました（共有ドメインを個人に結ぶことになる）:\n%s", org)
 	}
 	person := bodyOfPage(t, res["page_id"].(string))
-	if !strings.Contains(person, "<dt>"+RelationTag+"</dt><dd>"+RelationCustomer+"</dd>") ||
-		!strings.Contains(person, "<dd>yamada@yahoo.co.jp</dd>") {
-		t.Errorf("人のページに取引とアドレスがありません:\n%s", person)
+	if !strings.Contains(person, "<dd>yamada@yahoo.co.jp</dd>") {
+		t.Errorf("人のページにアドレスがありません:\n%s", person)
 	}
 
 	// 2人目は同じ「個人」の下へ（組織は増えない）。
 	code, res = postRegister(t, u, map[string]any{
-		"name": PersonalOrgTitle, "relation": RelationCustomer, "person_name": "鈴木花子",
+		"name": PersonalOrgTitle, "person_name": "鈴木花子",
 		"addresses": []string{"hanako@gmail.example"},
 	})
 	if code != 200 || res["created"] != false {
@@ -182,9 +177,9 @@ func TestRegisterPersonalPutsRelationOnPerson(t *testing.T) {
 func TestOrgCandidatesAndInitials(t *testing.T) {
 	box := setupPartnerBox(t)
 	u := &auth.User{Username: "alice", IsAdmin: true}
-	partnerPageWith(t, "000201", box, "南北スポーツ機械", RelationCustomer,
+	partnerPageWith(t, "000201", box, "南北スポーツ機械",
 		nil, []string{"example-sports.co.jp"})
-	partnerPage(t, "000202", box, "コニック金型センター", RelationSupplier)
+	partnerPage(t, "000202", box, "コニック金型センター")
 	newPage(t, "000210", "<h1>山田 太郎</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000201"})
 
 	// ドメインの持ち主が1つ → 候補は［その組織, 個人］、組織欄はそれ、担当者欄は表示名。

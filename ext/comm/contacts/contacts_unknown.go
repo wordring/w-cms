@@ -158,16 +158,13 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	//   ② 登録済みアドレスから推したドメイン（2026-09-16 より前からある推測）
 	byDomainTag := ownersByDomainTag(user)
 	byPartnerDomain := partnersByDomain(user)
-	// **社内のアドレスは並べません**（上の selfDomains）。
-	mine := selfDomains(user)
-
 
 	out := make([]UnknownContact, 0, len(byAddr))
 	for addr, a := range byAddr {
 		d := domainOf(addr)
-		if mine[d] {
-			continue // 同僚は取引の相手ではない（片付けようのない行を並べない）
-		}
+		// ⚠ **社内のアドレスも並びます**（2026-09-17 に `取引：自社` を全廃したため）。
+		// 同僚は取引の相手ではないので、本当は並べたくありません——戻すなら設定に
+		// 「自社のドメイン」を置くのが筋です（`contacts.go` の冒頭に経緯）。
 		c := UnknownContact{
 			Address: addr,
 			Domain:  d,
@@ -219,53 +216,6 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	return out, nil
 }
 
-// selfDomains は `取引：自社` の組織が持つ `ドメイン` タグを集めます（2026-09-16）。
-//
-// **社内のアドレスは「未登録の連絡先」に出しません。** 同僚は取引の相手ではないので、
-// 一覧に並べても片付けようがなく、**片付かない行が残り続けると一覧が信用されなく
-// なります**（未処理一覧で学んだこと）。
-//
-// 自社を1度登録すれば、**社内の全員が一度に静かになります**——アドレスを1つずつ
-// 登録させないために、判定はドメインで行います（§5.4:「登録して `取引：自社` を
-// 付けると、未登録の一覧から自社の4アドレスが消え」）。
-//
-// ⚠ **自社が複数のドメインを持つことがあります**（実データで `example-works.co.jp` と
-// `itohocorp.onmicrosoft.com` の2つ）。2つ目は「既にある相手へ足す」で足せます。
-func selfDomains(user *auth.User) map[string]bool {
-	out := map[string]bool{}
-	rows, err := database.DB.Query(
-		`SELECT page_id, value FROM page_tags WHERE name = ?`, DomainTag)
-	if err != nil {
-		return out
-	}
-	type hit struct {
-		id    int
-		value string
-	}
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.value); err != nil {
-			rows.Close()
-			return out
-		}
-		found = append(found, h)
-	}
-	rows.Close()
-
-	for _, h := range found {
-		d := normalizeDomain(h.value)
-		if d == "" || !page.CanView(user, h.id) {
-			continue
-		}
-		companyID, _, ok := PartnerOfPage(h.id)
-		if ok && isSelfPartner(companyID) {
-			out[d] = true
-		}
-	}
-	return out
-}
-
 // domainOwnerLimit は候補として出すドメインの持ち主の上限です。
 //
 // ⚠ **選べない長さの一覧は選択肢ではありません**（2026-09-16 ユーザー:「ヤフーの
@@ -313,9 +263,6 @@ func ownersByDomainTag(user *auth.User) map[string][]PartnerRef {
 		if !ok || title == "" {
 			continue
 		}
-		if isSelfPartner(companyID) {
-			continue // 自社は推薦しない（顧客名の推奨値として出ることはありえない）
-		}
 		id := page.FormatID(companyID)
 		dup := false
 		for _, p := range out[d] {
@@ -342,8 +289,6 @@ type partnerRefByDomain struct{ PageID, Title string }
 // **ドメインは手掛かりであって決定ではありません**——自社の工場長だけ別プロバイダの
 // アドレスを使っている実例があるので、ここで返すのは**初期の提案**だけです。
 // 人が別の相手を選び直せます。
-//
-// `取引：自社` は外します（差出人が自社でも「自社へ足す」を勧めない）。
 func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 	out := map[string]partnerRefByDomain{}
 	// **木ぜんたいから引き、会社へ丸めます**——アドレスが載っているのは社名ページとは
@@ -377,9 +322,6 @@ func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 		}
 		companyID, title, ok := PartnerOfPage(h.id)
 		if !ok || title == "" {
-			continue
-		}
-		if isSelfPartner(companyID) {
 			continue
 		}
 		d := domainOf(v)

@@ -24,9 +24,10 @@ package contacts
 //
 // ── 決めたこと ──
 //
-// **取引の相手は1種類。役割はタグで表します**（`取引：顧客` / `仕入先` / `自社`）。
-// ユーザー:「顧客であり、仕入れ先である場合もあります」——置き場所で分けると、
-// そのとき1枚に保てません。同じページに両方書けます（タグは同じ名前を何度でも置ける）。
+// **取引の相手は1種類。箱も1枚**です。ユーザー:「顧客であり、仕入れ先である場合も
+// あります」——置き場所で分けると、そのとき1枚に保てません。
+// ⚠ **役割のタグ（`取引：顧客` / `仕入先` / `自社`）は 2026-09-17 に全廃しました**
+// （下の `PersonalOrgTitle` の手前に経緯）。相手はただの相手です。
 //
 // **相手ページは「取引先」の下**です（2026-09-05 ユーザー:「トップページの直接の子が
 // 個人名や社名はちょっと具合が悪い」）。もとは 2026-09-03 の決定でトップ直下でしたが、
@@ -99,7 +100,7 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     ContactsBoxTitle,
 		Extension: "comm/contacts",
-		Why:       "取引の相手（会社・個人・自社）を集める箱です。木は「組織／人」の2段で、メールから拾った「未登録の連絡先」の作業面がこのページに出ます。",
+		Why:       "取引の相手（会社・個人）を集める箱です。木は「組織／人」の2段で、メールから拾った「未登録の連絡先」の作業面がこのページに出ます。",
 		Body:      contactsBoxBody,
 	})
 }
@@ -201,7 +202,7 @@ func EnsureContactsBox(user *auth.User) (string, error) {
 // **機械が作る**ので、**行き止まりのページを作らない責任はこちらにあります**。
 func contactsBoxBody() string {
 	return "<h1>" + stdhtml.EscapeString(ContactsBoxTitle) + "</h1>" +
-		"<p>取引の相手（会社・個人・自社）を集めます。木は<strong>組織／人</strong>の2段です" +
+		"<p>取引の相手（会社・個人）を集めます。木は<strong>組織／人</strong>の2段です" +
 		"——会社なら「社名／窓口の人」、個人のお客様なら「個人／お名前」。</p>" +
 		"<p>組織のページには<strong>ドメイン</strong>のタグを、人のページには" +
 		"<strong>メールアドレス</strong>のタグを付けると、届いたメールから相手を引けます。</p>" +
@@ -212,26 +213,31 @@ func contactsBoxBody() string {
 // （会社の窓口が複数、同じ人が複数のアドレスを持つ、どちらも起きる）。
 const EmailTag = "メールアドレス"
 
-// RelationTag は取引の役割です（値は RelationCustomer / RelationSupplier / RelationSelf）。
-// **同じページに複数書けます**——顧客でも仕入先でもある相手が実際にいるためです。
-const RelationTag = "取引"
-
-// 取引の値。**表引きで閉じます**——`仕入先` と `仕入れ先` が混ざると絞り込みが
-// 静かに取りこぼします。
-const (
-	RelationCustomer = "顧客"
-	RelationSupplier = "仕入先"
-	RelationSelf     = "自社"
-)
-
-// Relations は選択肢を並び順つきで返します（画面が使います）。
-func Relations() []string { return []string{RelationCustomer, RelationSupplier, RelationSelf} }
+// ⚠ **`取引`（顧客・仕入先・自社）は 2026-09-17 に全廃しました**（ユーザー決定:
+// 「自社、顧客、仕入先の区別は全廃します」）。
+//
+// **読んでいたのは `自社` だけ**で、`顧客` と `仕入先` は誰も読んでいませんでした。
+// そのうえ3つは**同じ種類の言葉ではありません**——顧客と仕入先は取引の相手を
+// 分類しますが、自社は「**これは取引の相手ではない**」と言っています。分類ではなく、
+// この導入環境そのものの性質です。3つを1つのタグに並べていたのが無理でした。
+//
+// **記録する自由は失われていません**——`取引` は設定の語彙にある言葉1つだったので、
+// 人が本文に `取引：仕入先` と書くのは**コードを1行も足さずにいつでもできます**。
+// 発注の仕組みを作るときに要るなら、そのとき読む側を書けば足ります。
+//
+// ⚠ **自社を知らなくなった代償が2つあります**（承知のうえの決定）:
+//
+//   - 同僚のアドレスが「未登録の連絡先」に並びます（ドメインでまとめて消す道が無い）
+//   - 自社が顧客名の推奨値に出ます（通すと `取引先／自社名` のフォルダができる）
+//
+// 戻すなら、タグではなく**設定に「自社のドメイン」を置く**のが筋です——ページを先に
+// 作る必要がなく、`git pull` で全環境へ届き、同僚を1人ずつ登録しなくて済みます。
 
 // PersonalOrgTitle は個人のお客様を置く組織ページの題です（`連絡帳／個人／山田太郎`・
 // 2026-09-16 ユーザー:「個人のお客様は、社名ページの代わりに、たとえば個人という名前の
 // 組織ページの下に個人名ページが来る」）。組織のコンボボックスには常にこれが並びます
-// （2026-09-17）。⚠ **この組織には `取引` も `ドメイン` も付けません**——取引は人のページに
-// 付き（ユーザー:「取引：顧客は、個人ページに付けばよい」）、ドメインは共有のものだからです。
+// （2026-09-17）。⚠ **この組織に `ドメイン` は付けません**——ヤフーやジーメールは
+// 共有のドメインで、付けるとそのドメインの他人まで「個人」に引き寄せられます。
 const PersonalOrgTitle = "個人"
 
 // PersonsOf は組織ページの直下の人（読めるものだけ）を題の順で返します。
@@ -283,8 +289,9 @@ func PersonsOf(user *auth.User, orgID string) []PartnerRef {
 //     別プロバイダのアドレス」という例があり、ドメインを先に見ると取り違えます。
 //  2. **ドメインの一致**。会社の窓口は増えるので、新しい人からのメールでも当たります。
 //
-// **`取引：自社` のページは返しません。** 顧客名の推奨値として自社が出ることは
-// ありえず、出ると人がそのまま押してしまいます。
+// ⚠ **自社も返します**（2026-09-17 に `取引：自社` を全廃したため）。同僚のメールから
+// 整理すると、顧客名の推奨値に自社の名前が出ます——**通すと `取引先／自社名` の
+// フォルダができます**。人が見て打ち替えてください。
 //
 // 見つからなければ ok=false——**呼ぶ側は読めた名前へ戻ります**。新しい顧客の1通目は
 // ここに無いのが正常で、そのときは人が打ちます。
@@ -425,8 +432,6 @@ type partnerMatch struct {
 // partnerHits はアドレスから、**完全一致で引けた組織**と**ドメインで引けた組織**を
 // 別々に返します（どちらも重複なし・ページIDの順）。
 //
-// **`取引：自社` は外します**——顧客名の推奨値として自社が出ることはありえず、
-// 出ると人がそのまま押してしまいます。
 func partnerHits(user *auth.User, addr string) (exact, byDomain []partnerMatch) {
 	mail := normalizeEmail(addr)
 	if mail == "" {
@@ -473,9 +478,6 @@ func partnerHits(user *auth.User, addr string) (exact, byDomain []partnerMatch) 
 		if !ok || title == "" {
 			continue // 連絡帳の外のページに書かれた値は連絡先ではない
 		}
-		if isSelfPartner(companyID) {
-			continue
-		}
 		switch h.name {
 		case EmailTag:
 			if normalizeEmail(h.value) == mail {
@@ -511,15 +513,6 @@ func normalizeDomain(v string) string {
 func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
 	_, title, ok := ResolvePartner(user, addr)
 	return title, ok
-}
-
-// isSelfPartner はそのページが `取引：自社` かを返します。
-func isSelfPartner(pageIDInt int) bool {
-	var n int
-	database.DB.QueryRow(
-		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = ? AND value = ?`,
-		pageIDInt, RelationTag, RelationSelf).Scan(&n)
-	return n > 0
 }
 
 // AddContactAddresses は既存の相手ページへ `メールアドレス` のタグを足します。

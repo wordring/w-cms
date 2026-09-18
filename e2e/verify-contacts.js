@@ -45,9 +45,8 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
           hasPersonal: opts.some(o => o.value === '個人'),
           orgValue: org ? org.value : '',
           existingID: match ? (match.dataset.id || '') : '',
-          // 行に残っていてはいけないもの（2026-09-17 に外した）。
-          // ドメインのチェックは「既定で入っているのが危ない」、取引は「読むのは自社だけ・
-          // 顧客と仕入先は誰も読まない・両方ありうるのにラジオでは片方しか選べない」。
+          // 行に残っていてはいけないもの（2026-09-17 に外した）。ドメインのチェックは
+          // 「既定で入っているのが危ない」、取引（顧客・仕入先・自社）は**全廃**。
           extras: r.querySelectorAll('.contact-add-domain, .contact-rel').length,
         };
       }),

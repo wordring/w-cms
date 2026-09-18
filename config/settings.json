@@ -33,8 +33,7 @@
     "宛先": { "type": "email" },
     "CC": { "type": "email" },
     "返信先": { "type": "email" },
-    "在籍": { "type": "enum", "values": ["在籍", "休職", "出向", "退社"] },
-    "取引": { "type": "enum", "values": ["顧客", "仕入先", "自社"] }
+    "在籍": { "type": "enum", "values": ["在籍", "休職", "出向", "退社"] }
   },
   "max_upload_mib": 32,
   "attachment_extensions": [

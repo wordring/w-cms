@@ -25,7 +25,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   const made = await page.evaluate(async (a) => {
     const res = await fetch('/api/contacts/register', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'まちがい会社', relation: '顧客', addresses: [a] }),
+      body: JSON.stringify({ name: 'まちがい会社', addresses: [a] }),
     });
     return res.json();
   }, addr);

@@ -4388,8 +4388,6 @@
             return;
         }
         const cand = contactOrgCandidate(td);
-        // ⚠ 取引（顧客・仕入先・自社）は送りません（2026-09-17 に選択を外した）。
-        // 必要になったとき、組織のページで `取引` のタグを1行書きます。
         const body = {
             addresses: (go.dataset.addresses || '').split(',').filter(Boolean),
             person_name: person,

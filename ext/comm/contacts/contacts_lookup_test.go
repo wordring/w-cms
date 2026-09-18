@@ -9,20 +9,19 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// partnerPage は「取引先」の下に相手ページを1枚作ります。
-func partnerPage(t *testing.T, id, boxID, title, relation string, addrs ...string) {
+// partnerPage は「連絡帳」の下に相手ページを1枚作ります。
+func partnerPage(t *testing.T, id, boxID, title string, addrs ...string) {
 	t.Helper()
-	partnerPageWith(t, id, boxID, title, relation, addrs, nil)
+	partnerPageWith(t, id, boxID, title, addrs, nil)
 }
 
 // partnerPageWith は**組織の連絡先（ドメイン）も書ける**版です（2026-09-16）。
 // `メールアドレス` は個人の連絡先、`ドメイン` は組織の連絡先——別のものなので、
 // 試験も別々に渡せる形にします。
-func partnerPageWith(t *testing.T, id, boxID, title, relation string, addrs, domains []string) {
+func partnerPageWith(t *testing.T, id, boxID, title string, addrs, domains []string) {
 	t.Helper()
 	var b strings.Builder
 	b.WriteString("<h1>" + title + "</h1><dl data-type=\"tags\">")
-	cms.WriteTag(&b, RelationTag, relation)
 	for _, a := range addrs {
 		cms.WriteTag(&b, EmailTag, a)
 	}
@@ -58,7 +57,7 @@ func setupPartnerBox(t *testing.T) string {
 // ドメインの全員がその人になりました**（下の試験がその再発を止めます）。
 func TestPartnerTitleForAddressUsesDomainTag(t *testing.T) {
 	box := setupPartnerBox(t)
-	partnerPageWith(t, "000201", box, "南北スポーツ機械", RelationCustomer,
+	partnerPageWith(t, "000201", box, "南北スポーツ機械",
 		[]string{"suzuki@example-sports.co.jp"},
 		[]string{"example-sports.co.jp"})
 
@@ -78,7 +77,7 @@ func TestPartnerTitleForAddressUsesDomainTag(t *testing.T) {
 // アドレスがあるので、絵空事ではありません。
 func TestPartnerTitleForAddressIgnoresDomainWithoutTag(t *testing.T) {
 	box := setupPartnerBox(t)
-	partnerPage(t, "000201", box, "山田太郎", RelationCustomer, "yamada@yahoo.co.jp")
+	partnerPage(t, "000201", box, "山田太郎", "yamada@yahoo.co.jp")
 
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	if title, ok := PartnerTitleForAddress(u, "suzuki@yahoo.co.jp"); ok {
@@ -95,8 +94,8 @@ func TestPartnerTitleForAddressIgnoresDomainWithoutTag(t *testing.T) {
 // どうでしょう」）。機械が選ぶと、静かに間違えます。
 func TestResolvePartnerRefusesWhenAmbiguous(t *testing.T) {
 	box := setupPartnerBox(t)
-	partnerPageWith(t, "000201", box, "甲社", RelationCustomer, nil, []string{"shared.example.jp"})
-	partnerPageWith(t, "000202", box, "乙社", RelationCustomer, nil, []string{"shared.example.jp"})
+	partnerPageWith(t, "000201", box, "甲社", nil, []string{"shared.example.jp"})
+	partnerPageWith(t, "000202", box, "乙社", nil, []string{"shared.example.jp"})
 
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	if id, title, ok := ResolvePartner(u, "who@shared.example.jp"); ok {
@@ -121,8 +120,8 @@ func TestResolvePartnerRefusesWhenAmbiguous(t *testing.T) {
 // 逆にすると、そのドメインの他社と取り違えます。
 func TestPartnerTitleForAddressPrefersExactAddress(t *testing.T) {
 	box := setupPartnerBox(t)
-	partnerPage(t, "000201", box, "A社", RelationCustomer, "someone@shared-isp.ne.jp")
-	partnerPage(t, "000202", box, "B社", RelationCustomer, "sato@shared-isp.ne.jp")
+	partnerPage(t, "000201", box, "A社", "someone@shared-isp.ne.jp")
+	partnerPage(t, "000202", box, "B社", "sato@shared-isp.ne.jp")
 
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	title, ok := PartnerTitleForAddress(u, "sato@shared-isp.ne.jp")
@@ -131,23 +130,11 @@ func TestPartnerTitleForAddressPrefersExactAddress(t *testing.T) {
 	}
 }
 
-// TestPartnerTitleForAddressSkipsSelf は、**`取引：自社` を顧客名の推奨値にしない**
-// ことを固定します。自社が出ると、人がそのまま押してしまいます。
-func TestPartnerTitleForAddressSkipsSelf(t *testing.T) {
-	box := setupPartnerBox(t)
-	partnerPage(t, "000201", box, "東邦金属工業所", RelationSelf, "admin@example-works.co.jp")
-
-	u := &auth.User{Username: "alice", IsAdmin: true}
-	if title, ok := PartnerTitleForAddress(u, "plt@example-works.co.jp"); ok {
-		t.Fatalf("自社を推奨値にしています: %q", title)
-	}
-}
-
 // TestPartnerTitleForAddressUnknown は、**知らない相手では引けない**ことを固定します。
 // 新しい顧客の1通目はこれが正常で、呼ぶ側は読めた名前へ戻ります。
 func TestPartnerTitleForAddressUnknown(t *testing.T) {
 	box := setupPartnerBox(t)
-	partnerPage(t, "000201", box, "A社", RelationCustomer, "someone@a.example.jp")
+	partnerPage(t, "000201", box, "A社", "someone@a.example.jp")
 
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	if title, ok := PartnerTitleForAddress(u, "hello@b.example.jp"); ok {
@@ -162,7 +149,7 @@ func TestPartnerTitleForAddressUnknown(t *testing.T) {
 // ドメインの逆引きで社名の揺れを消した意味が無くなります。
 func TestAddContactAddressesMergesIntoExisting(t *testing.T) {
 	box := setupPartnerBox(t)
-	partnerPage(t, "000201", box, "A社", RelationCustomer, "suzuki@a-main.co.jp")
+	partnerPage(t, "000201", box, "A社", "suzuki@a-main.co.jp")
 
 	added, err := AddContactAddresses("000201", "alice",
 		[]string{"sales@a-sub.jp", "suzuki@a-main.co.jp"})
@@ -198,10 +185,10 @@ func TestRegisterWritesDomainTag(t *testing.T) {
 	u := &auth.User{Username: "alice", IsAdmin: true}
 
 	// ドメインつきで登録した組織（＝画面のチェックが入った状態）。
-	partnerPageWith(t, "000201", box, "南北スポーツ機械", RelationCustomer,
+	partnerPageWith(t, "000201", box, "南北スポーツ機械",
 		[]string{"suzuki@example-sports.co.jp"}, []string{"example-sports.co.jp"})
 	// ドメインなしで登録した組織（＝チェックを外した状態。フリーメールの想定）。
-	partnerPage(t, "000202", box, "山田太郎", RelationCustomer, "yamada@yahoo.co.jp")
+	partnerPage(t, "000202", box, "山田太郎", "yamada@yahoo.co.jp")
 
 	// ① 付けたほうは、**知らない人からのメールでも**組織に結びつく。
 	if title, ok := PartnerTitleForAddress(u, "sato@example-sports.co.jp"); !ok ||
@@ -231,49 +218,5 @@ func TestNormalizeDomainsFolds(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("[%d] %q（%q を期待）", i, got[i], want[i])
 		}
-	}
-}
-
-// TestUnknownContactsHidesOwnDomain は、**自社のドメインのアドレスを並べない**ことを
-// 固定します（2026-09-16・§5.4）。
-//
-// 同僚は取引の相手ではないので、一覧に出ても片付けようがありません。**片付かない行が
-// 残り続けると、人は一覧ごと信用しなくなります**（未処理一覧で学んだこと）。
-// 実データでは自社のアドレスが4つ・104回出てきます。
-func TestUnknownContactsHidesOwnDomain(t *testing.T) {
-	box := setupPartnerBox(t)
-	u := &auth.User{Username: "alice", IsAdmin: true}
-	// 自社を登録（ドメインつき）。
-	partnerPageWith(t, "000201", box, "東邦金属工業所", RelationSelf,
-		[]string{"admin@example-works.co.jp"}, []string{"example-works.co.jp"})
-
-	// 索引に、社内の別アドレスと社外のアドレスを1つずつ。
-	const recID = "009101"
-	body := "<h1>受信</h1><dl data-type=\"tags\">" +
-		"<dt>差出人</dt><dd>佐藤隆弘 &lt;sato@example-works.co.jp&gt;</dd>" +
-		"<dt>宛先</dt><dd>小澤 美智子 &lt;suzuki@example-sports.co.jp&gt;</dd></dl>"
-	newPage(t, recID, body, page.PageMeta{
-		ParentID: cms.TopPageID, Owner: "alice", Mode: page.DefaultMode})
-	if err := cms.SyncIndex(recID, body); err != nil {
-		t.Fatal(err)
-	}
-
-	list, err := UnknownContacts(u)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range list {
-		if c.Address == "sato@example-works.co.jp" {
-			t.Errorf("社内のアドレスが並んでいます: %+v", c)
-		}
-	}
-	found := false
-	for _, c := range list {
-		if c.Address == "suzuki@example-sports.co.jp" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("社外のアドレスまで消えました: %+v", list)
 	}
 }

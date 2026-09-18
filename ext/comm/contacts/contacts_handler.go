@@ -30,7 +30,7 @@ import (
 )
 
 // RegisterContactAPIHandler は POST /api/contacts/register です。
-// 入力: {"name":"株式会社緑川製作所", "relation":"仕入先", "addresses":["…"]}
+// 入力: {"name":"株式会社緑川製作所", "addresses":["…"]}
 func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -44,7 +44,6 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Name      string   `json:"name"`
-		Relation  string   `json:"relation"`
 		Addresses []string `json:"addresses"`
 		// PageID があれば**既存の相手ページへ足します**（2026-09-06）。同じ会社が
 		// 2つ目のドメインから送ってくると、アドレス帳には新しい行として現れます
@@ -114,7 +113,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 			target = id
 		}
 	}
-	// 「個人」は人の器です——取引は人に付き、ドメイン（共有のもの）は付けません。
+	// 「個人」は人の器です。ドメイン（共有のもの）は付けません。
 	personal := orgTitle == PersonalOrgTitle
 	if personal && person == "" {
 		cms.JSONFail(w, http.StatusBadRequest, "「"+PersonalOrgTitle+"」のときは担当者の名前を入れてください")
@@ -127,15 +126,6 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	created := false
 	if target == "" {
 		// ── 新しい組織ページを作る ──
-		//
-		// ⚠ **取引（`relation`）は任意です**（2026-09-17）。送る画面が無くなったので、
-		// 空なら `取引` のタグを書きません——必要になったとき組織のページで足します。
-		// 値が付いていれば書きますが、表に無い値は断ります（黙って捨てると、書いたつもりの
-		// 値が消えます）。
-		if req.Relation != "" && !validRelation(req.Relation) {
-			cms.JSONFail(w, http.StatusBadRequest, "取引の種類が不正です")
-			return
-		}
 		// **相手ページは「連絡帳」の下**。箱がまだ無いときはトップへ1枚足すので、
 		// **トップへの書き込み**が要ります。
 		needParent := cms.TopPageID
@@ -152,9 +142,6 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// **タグが1つも無ければ `dl` ごと書きません**（空の形式ブロックを置かない）。
 		var tags strings.Builder
-		if !personal {
-			cms.WriteTag(&tags, RelationTag, req.Relation)
-		}
 		// 担当者が居なければ、アドレスは組織の口として組織のページへ（人が居れば下で人へ）。
 		if person == "" {
 			for _, a := range addrs {
@@ -182,7 +169,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		created = true
 		auth.Audit(user.Username, "contact.register",
-			target+" ("+req.Relation+") "+strings.Join(addrs, ",")+domainsForAudit(doms))
+			target+" "+strings.Join(addrs, ",")+domainsForAudit(doms))
 	} else if !page.RequirePageWrite(w, r, target) {
 		return
 	}
@@ -207,13 +194,6 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		dest, destTitle = pid, orgTitle+"／"+person
 		if !editlock.RefuseWhileEditing(w, dest) {
 			return
-		}
-		// 個人のお客様は**取引が人に付きます**（ユーザー決定）。
-		if personal && validRelation(req.Relation) {
-			if _, err := addContactTags(dest, user.Username, RelationTag, []string{req.Relation}); err != nil {
-				cms.JSONFail(w, http.StatusInternalServerError, "取引を書けません: "+err.Error())
-				return
-			}
 		}
 		added, err = AddContactAddresses(dest, user.Username, addrs)
 	} else if created {
@@ -352,16 +332,6 @@ func removeEmailTag(body, addr string, removed *int) string {
 	})
 	// `<dl data-type="tags"></dl>` が残ったら外す。
 	return regexp.MustCompile(`<dl data-type="tags">\s*</dl>`).ReplaceAllString(out, "")
-}
-
-// validRelation は取引の値を表引きで確かめます。
-func validRelation(v string) bool {
-	for _, r := range Relations() {
-		if r == v {
-			return true
-		}
-	}
-	return false
 }
 
 // normalizeDomains は受け取ったドメインを畳み、重複と空を落とします。
