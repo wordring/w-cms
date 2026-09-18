@@ -240,13 +240,31 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 		}
 	}
 
+	// ── ヘッダは**可変タグ**、明細は**表**（2026-09-18 ユーザー決定）──
+	//
+	// ユーザー:「受注ページを作成するときにも、出来る限りタグを使いたいです。そのほうが
+	// 編集者もDBに入っていると視覚的にわかるからです」「専用コードの全廃を前向きに
+	// 検討してください」。
+	//
+	// **表とタグだけがDBに入る**——それが説明の全部になりました。機能見出しの節に
+	// 素の定義リストを置く形（業務ブロックのヘッダ）はやめました。⚠ **1文書＝1ページ**が
+	// 規則です（ユーザー:「発注書は一ページ一発注書で問題ない」）——ヘッダがページの
+	// タグになるので、1ページに2つの発注書は置けません。
+	//
+	// ⚠ **明細の表は `data-type` を自分で持ちます。** それまで節の `Items` 宣言を頼りに
+	// 「節の中の素の表」として見つけていましたが、節をやめたので表が自分で名乗ります。
 	var b strings.Builder
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
-	b.WriteString("<section><h2>顧客の発注書</h2><dl>")
-	writeHeaderPair(&b, "発注書番号", cms.NormalizeNameForIngest(j.OrderNo))
-	writeHeaderPair(&b, "発注元", cms.NormalizeNameForIngest(j.Customer))
-	writeHeaderPair(&b, "発注日", j.OrderDate)
-	b.WriteString("</dl><table><tbody>")
+	b.WriteString(`<dl data-type="tags">`)
+	writeHeaderPair(&b, OrderNoTag, cms.NormalizeNameForIngest(j.OrderNo))
+	writeHeaderPair(&b, OrderClientTag, cms.NormalizeNameForIngest(j.Customer))
+	writeHeaderPair(&b, OrderedAtTag, j.OrderDate)
+	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
+	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
+	b.WriteString("<dt>" + SourceRefTag + "</dt><dd>" +
+		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
+	b.WriteString("</dl>")
+	b.WriteString(`<table data-type="client-order-items"><tbody>`)
 	b.WriteString("<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>")
 	for _, it := range j.Items {
 		// 日付と数値は**正規形で書き起こす**（D-3「正規化は取り込み時に行う」）。
@@ -257,11 +275,7 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("数量", it.Quantity)) + "</td>" +
 			"<td>未着手</td></tr>")
 	}
-	b.WriteString("</tbody></table></section>")
-	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
-	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
-	b.WriteString(`<dl data-type="tags"><dt>` + SourceRefTag + `</dt><dd>` +
-		html.EscapeString(hostPageID+"-"+attachID) + "</dd></dl>")
+	b.WriteString("</tbody></table>")
 	return b.String()
 }
 

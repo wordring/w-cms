@@ -38,6 +38,19 @@ const (
 	ClientNameTag  = "客先"
 )
 
+// 受注ページ（顧客の発注書）の可変タグの名前です（2026-09-18 にヘッダから移した）。
+//
+// ⚠ **`発注書番号` は `code`・`発注日` は `date`**（設定の語彙）。日付は畳んだ値が
+// ISO になるので、**範囲で引く口を足すときもそのまま効きます**。
+const (
+	OrderNoTag     = "発注書番号"
+	OrderClientTag = "発注元"
+	OrderedAtTag   = "発注日"
+	// SupplierTag は**弊社の発注書**の相手です（材料屋・加工業者）。⚠ 見積もりや
+	// 部材の表にも `仕入先` の列がありますが、**あちらは行ごとの値**で別物です。
+	SupplierTag = "仕入先"
+)
+
 // SourceRefTag は解析が書く由来の参照タグの名前です（`受信元`）。
 // analyze_pdf.go が書く名前と揃えること——ここがずれると印が出なくなります。
 const SourceRefTag = "受信元"
@@ -119,12 +132,16 @@ func analyzedAttachments(user *auth.User, pageID string) (map[string]analyzedRes
 
 // kindOfPage はそのページが図面ページか受注ページかを返します（どちらでもなければ空）。
 func kindOfPage(pageIDInt int) string {
-	// ⚠ **図面はタグで見ます**（2026-09-18 に業務ブロックから可変タグへ移した）。
-	if tags, err := cms.TagsOfPage(database.DB, pageIDInt); err == nil &&
-		cms.FirstTag(tags, DrawingNoTag) != "" {
+	// ⚠ **どちらもタグで見ます**（2026-09-18 に業務ブロックのヘッダから可変タグへ移した）。
+	// 索引は1度だけ読みます。
+	tags, err := cms.TagsOfPage(database.DB, pageIDInt)
+	if err != nil {
+		return ""
+	}
+	if cms.FirstTag(tags, DrawingNoTag) != "" {
 		return "図面"
 	}
-	if blocks, err := cms.VocabBlocksOf(database.DB, pageIDInt, "client-order"); err == nil && len(blocks) > 0 {
+	if cms.FirstTag(tags, OrderNoTag) != "" {
 		return "受注"
 	}
 	return ""

@@ -84,18 +84,19 @@ func orderChildrenOf(user *auth.User, parentIDInt int) ([]orderRow, error) {
 		if !page.CanView(user, c.id) {
 			continue // 見せ分け（C案）——読めないものは黙って落ちる
 		}
-		blocks, err := cms.VocabBlocksOf(database.DB, c.id, "client-order")
-		if err != nil || len(blocks) == 0 {
+		// ⚠ **可変タグから読みます**（2026-09-18 にヘッダから移した）。
+		tags, err := cms.TagsOfPage(database.DB, c.id)
+		if err != nil || cms.FirstTag(tags, OrderNoTag) == "" {
 			continue // 受注ページではない（加工製品ページなど）
 		}
-		v := blocks[0].Values
-		when := orderDateOf(c.id, v["ordered-at"])
+		orderedAt := cms.FirstTag(tags, OrderedAtTag)
+		when := orderDateOf(c.id, orderedAt)
 		out = append(out, orderRow{
 			PageID:      formatID(c.id),
 			Title:       c.title,
-			OrderNo:     v["order-no"],
-			ClientName:  v["client-name"],
-			OrderedAt:   strings.TrimSpace(v["ordered-at"]),
+			OrderNo:     cms.FirstTag(tags, OrderNoTag),
+			ClientName:  cms.FirstTag(tags, OrderClientTag),
+			OrderedAt:   strings.TrimSpace(orderedAt),
 			Destination: OrderBoxTitle + "／" + when.Format("2006年") + "／" + when.Format("01月"),
 		})
 	}
@@ -149,10 +150,11 @@ func fileOneOrder(user *auth.User, rawID string) filingResult {
 	if err != nil || !canWritePage(user, idInt) {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}
 	}
-	blocks, err := cms.VocabBlocksOf(database.DB, idInt, "client-order")
-	if err != nil || len(blocks) == 0 {
-		// **受注ページ以外を動かさない。** 画面から送られた ID をそのまま信じると、
-		// 図面ページや通信記録まで受注の箱へ入れられます。
+	// **受注ページ以外を動かさない。** 画面から送られた ID をそのまま信じると、
+	// 加工製品ページや通信記録まで受注の箱へ入れられます。
+	// ⚠ 見るのは `発注書番号` のタグです（2026-09-18 にヘッダから移した）。
+	tags, err := cms.TagsOfPage(database.DB, idInt)
+	if err != nil || cms.FirstTag(tags, OrderNoTag) == "" {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "受注ページではありません"}
 	}
 
@@ -161,7 +163,7 @@ func fileOneOrder(user *auth.User, rawID string) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped",
 			Message: "「" + OrderBoxTitle + "」ページを用意できません: " + err.Error()}
 	}
-	when := orderDateOf(idInt, blocks[0].Values["ordered-at"])
+	when := orderDateOf(idInt, cms.FirstTag(tags, OrderedAtTag))
 	monthID, err := cms.EnsureDateFolders(boxID, user.Username, when)
 	if err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped",

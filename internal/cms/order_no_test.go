@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"w-cms/internal/cms/page"
+
+	"w-cms/internal/database"
 )
 
 // 発注書番号（order_no）はページ内の識別子であって、サイト全体の主キーではありません。
@@ -17,25 +19,32 @@ import (
 // 番号が空のときはさらに広く、SQLite の UNIQUE は '' を重複扱いするので
 // **空番号の発注書はサイト全体で1件しか持てません**（番号を書き忘れただけで起きる）。
 
-// clientOrderHTML は受注ページの本文（ヘッダ dl ＋ 明細1行）を組み立てます。
+// ⚠ **ヘッダは可変タグ、明細は表**（2026-09-18）。それまで
+// `<section data-type="client-order"><dl>ヘッダ</dl>` の形で、**素の dl を業務ブロックの
+// ヘッダとして索引**していました。やめた理由は `vocab_index.go` の `OnElement` に。
 func clientOrderHTML(orderNo, client, itemID string) string {
-	return `<section data-type="client-order"><dl>` +
+	return `<dl data-type="tags">` +
 		`<dt>発注書番号</dt><dd>` + orderNo + `</dd>` +
 		`<dt>発注元</dt><dd>` + client + `</dd>` +
 		`<dt>発注日</dt><dd>2026-08-20</dd></dl>` +
 		`<table data-type="client-order-items"><tbody>` +
 		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
 		`<tr><td>` + itemID + `</td><td>部品</td><td>100</td><td>1</td><td></td></tr>` +
-		`</tbody></table></section>`
+		`</tbody></table>`
 }
 
-// countOrdersOf は指定ページの受注ヘッダ・明細の件数を索引から返します。
-// ヘッダは <section data-type="client-order"> のブロック数、明細は
-// <table data-type="client-order-items"> のデータ行数です。
+// countOrdersOf は指定ページの受注の**ヘッダのタグ**と明細の件数を索引から返します。
+// ヘッダは `page_tags` の `発注元`（空になりえない項目）、明細は
+// `<table data-type="client-order-items">` のデータ行数です。
 func countOrdersOf(t *testing.T, pageID int) (headers, items int) {
 	t.Helper()
-	return countVocabBlocks(t, pageID, "client-order"),
-		countVocabDataRows(t, pageID, "client-order-items")
+	var n int
+	if err := database.DB.QueryRow(
+		`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = '発注元'`,
+		pageID).Scan(&n); err != nil {
+		t.Fatalf("タグの索引を数えられません: %v", err)
+	}
+	return n, countVocabDataRows(t, pageID, "client-order-items")
 }
 
 // seedOrderPages は受注ページ2枚分のサイドカーとDB行を用意します。

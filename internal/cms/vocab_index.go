@@ -172,11 +172,26 @@ func (vocabIndexPlugin) OnPageStart(ctx *ObserveContext) error {
 	return err
 }
 
-// OnElement はマーカー付きの table / dl と、形式を持つ section の素の中身を索引します。
-// `section` の中のマーカー付き table / dl は配送係が別に届けてくれるので、ここでは降ります
-// （＝ descend は常に true）。
+// OnElement はマーカー付きの table / dl を索引します。
+//
+// ⚠ **`section` の素の定義リストは索引しません**（2026-09-18 ユーザー決定:「素の定義
+// リストはDBから外しましょう。問題が出てから再検討しましょう」）。それまで機能見出しの
+// 節の中の素の `dl` を**業務ブロックのヘッダ**として索引していましたが、やめました:
+//
+//   - **見た目がタグと同じで振る舞いが違いました**。素の `<dl>` と `<dl data-type="tags">` は
+//     画面で区別が付かないのに、入る表が違う（`vocab_index` と `page_tags`）
+//   - **横断検索の口（`PagesByTag`）が読むのは `page_tags`** です。いちばん検索したい値
+//     （図面番号・発注書番号）が、検索の口を持たない表に入っていました
+//   - ヘッダは「下の明細表の見出し」の役目でしたが、**1文書＝1ページ**を規則にすると
+//     ページのタグで足ります（ユーザー:「発注書は一ページ一発注書で問題ない」）
+//
+// ⚠ **素の「表」は拾い続けます**（`syncVocabSection`）——`■材料` のような見出しの下に
+// 表が並ぶワンノートの形が、そのまま形式宣言になる受け皿だからです（D-2・移行の要）。
+// つまりDBに入るのは**タグと表だけ**。節の中のマーカー付き table / dl は配送係が
+// 別に届けてくれるので、ここでは降ります（＝ descend は常に true）。
 func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
 	if el.Data == "section" {
+		// 節の**素の表**だけを拾います（⚠ 素の定義リストは拾いません・2026-09-18）。
 		return true, syncVocabSection(ctx, el)
 	}
 	if el.Data != "table" && el.Data != "dl" {
@@ -198,42 +213,34 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 		tagSeqOf(ctx, dataType))
 }
 
-// syncVocabSection は形式を持つ section の**素の中身**（data-type を持たない dl と table）を
-// その形式で索引します。
+// syncVocabSection は形式を持つ section の**素の表**をその形式で索引します。
 //
-// **素の dl / table は data-type を持ちません**（役割は包む section が宣言し、鍵は
-// 見出しの表示文字。語彙モデル §8.2・§11.5-4）。配送係は引き金のある要素しか届けない
-// ので、素の要素は誰の手にも渡りません——section の側から拾うのがここです。
+// **素の table は data-type を持ちません**（役割は包む section が宣言し、列の鍵は
+// 見出し行の表示文字。語彙モデル §8.2・§11.5-4）。配送係は引き金のある要素しか
+// 届けないので、素の表は誰の手にも渡りません——section の側から拾うのがここです。
 //
-// 拾う範囲は2段で広がった経緯があります:
-//  1. D-1（2026-08-31）: ヘッダの素の dl。硬いドメイン表があったころは各プラグインが
-//     自分で読んでいたため穴が見えず、索引へ一本化すると**発注元・発注日がどこにも
-//     残らなくなる**欠落だった（TestSectionHeaderIsIndexed が固定）。
-//  2. D-2（同日）: 素の table にも広げ、機能見出しのセクションを全部受けられる形に
-//     した——`<section><h2>検査記録</h2><table>…` が属性ゼロで索引に載る。
-//     ワンノートの「■見出しの下に表」がそのまま w-cms の形式宣言になる
-//     （【考察】ワンノート移行.md §2.5）。
+// **これはワンノート移行の受け皿**です（D-2・2026-08-31）——`■材料` のような見出しの
+// 下に表が並ぶ形がそのまま w-cms の形式宣言になります
+// （【考察】ワンノート移行.md §2.5。766ページがこの形）。
+//
+// ⚠ **素の `dl`（ヘッダ）は拾いません**（2026-09-18 ユーザー決定:「素の定義リストは
+// DBから外しましょう。問題が出てから再検討しましょう」）。名前：値はタグで書きます
+// ——`<dl data-type="tags">` だけがDBに入ります。**表とタグだけがDBに入る**、が
+// 説明の全部です。やめた理由は `OnElement` の注記に。
 //
 // 形式は vocabTypeOf で解決します——data-type 属性が正、無ければ機能見出し。
 // マーカー付きの table / dl（可変タグ・明細表）は独立した形式として配送係が別に
 // 届けるので、ここでは拾いません（拾うと同じ値が二重に索引されます）。
 // 入れ子の section へは降りません（入れ子の業務ブロックは独立して読まれます）。
-//
-// block_no は形式の連番で、ヘッダ dl と素の表がそれぞれ1つずつ番号を取ります。
-// マーカー付き明細表（client-order-items 等）は自分の data-type で別に数えられる
-// ため、1つの section がヘッダ1つと明細表1つを持つ限り**同じ番号どうしが対**に
-// なります（集計はこれで両者を結ぶ）。
 func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 	dataType := vocabTypeOf(section)
 	def, _ := VocabDefByType(dataType)
 	sectionBlockID := Attr(section, "data-id")
 
 	// 素の表の読み方: 形式が明細（Items）を宣言していれば、素の表は**明細**である
-	// ——「顧客の発注書」セクションの素の表は受注明細（2026-08-31 ユーザー:
-	// 「発注書などの表はTableで組みましょう。THに表示される文字列が、すなわち
-	// 列のデータを表します。人に対しても機械に対しても有効」）。
-	// th の表示文字が列を、見出しの言葉が表の役割を宣言し、本文から機械語が消える。
-	// 索引上は従来のマーカー付き明細と**同じ形式名**で載るので、集計は区別しない。
+	// ——見出しの言葉が表の役割を宣言し、th の表示文字が列を宣言するので、本文から
+	// 機械語が消えます（2026-08-31 ユーザー:「THに表示される文字列が、すなわち列の
+	// データを表します。人に対しても機械に対しても有効」）。
 	itemsType, itemsDef := dataType, def
 	if def.Items != "" {
 		if idef, ok := VocabDefByType(def.Items); ok {
@@ -241,45 +248,36 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 		}
 	}
 
-	// 由来（block_id）は素の要素自身の data-id が最優先（2026-08-31 から入れ子にも
-	// 採番される——参照 `ページID-ブロックID` で明細表そのものを指せる）。
-	// 無ければ包んでいる section のIDを刻む（旧データ・手書きの本文）。
-	blockIDOr := func(n *html.Node) string {
-		if id := Attr(n, "data-id"); id != "" {
-			return id
-		}
-		return sectionBlockID
-	}
+	// 由来（block_id）は素の表自身の data-id が最優先（参照 `ページID-ブロックID` で
+	// 表そのものを指せる）。無ければ包んでいる section のIDを刻む。
 	var firstErr error
-	eachPlainVocabChild(section, func(n *html.Node) {
+	eachPlainVocabTable(section, func(n *html.Node) {
 		if firstErr != nil {
 			return
 		}
-		switch n.Data {
-		case "dl":
-			no := ctx.Counter("vocab_index:" + dataType)
-			firstErr = syncVocabDL(ctx.Tx, ctx.PageID, dataType, no, blockIDOr(n), def, n,
-				tagSeqOf(ctx, dataType))
-		case "table":
-			no := ctx.Counter("vocab_index:" + itemsType)
-			firstErr = syncVocabTable(ctx.Tx, ctx.PageID, itemsType, no, blockIDOr(n), itemsDef, n)
+		blockID := Attr(n, "data-id")
+		if blockID == "" {
+			blockID = sectionBlockID
 		}
+		no := ctx.Counter("vocab_index:" + itemsType)
+		firstErr = syncVocabTable(ctx.Tx, ctx.PageID, itemsType, no, blockID, itemsDef, n)
 	})
 	return firstErr
 }
 
-// eachPlainVocabChild は section の**素の中身**（data-type を持たない dl / table）を
-// 文書順で fn へ渡します。マーカー付きは独立した形式（配送係が別に届ける）、
-// 入れ子の section は独立した業務ブロックなので、どちらも渡しません。
-// 索引（syncVocabSection）・種まき（template_new.go）・改名告知（vocab_notify.go）が
-// 同じ切り分けを共有します——ここが割れると「索引には載るのに告知されない」形の
-// ずれが生まれるため、巡回は1箇所に持ちます。
-func eachPlainVocabChild(section *html.Node, fn func(n *html.Node)) {
+// eachPlainVocabTable は section の**素の表**（data-type を持たない table）を文書順で
+// fn へ渡します。マーカー付きは独立した形式（配送係が別に届ける）、入れ子の section は
+// 独立した業務ブロックなので、どちらも渡しません。
+//
+// ⚠ **素の `dl` は渡しません**（2026-09-18 に索引から外した）。索引・種まき・改名告知が
+// 同じ切り分けを共有します——ここが割れると「索引には載るのに告知されない」ずれが
+// 生まれるため、巡回は1箇所に持ちます。
+func eachPlainVocabTable(section *html.Node, fn func(n *html.Node)) {
 	walkSkippingNested(section, map[string]bool{"section": true}, func(n *html.Node) {
 		if Attr(n, "data-type") != "" {
 			return
 		}
-		if n.Data == "dl" || n.Data == "table" {
+		if n.Data == "table" {
 			fn(n)
 		}
 	})

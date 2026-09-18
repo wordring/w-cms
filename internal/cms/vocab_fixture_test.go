@@ -38,8 +38,8 @@ var testFixtureVocab = []VocabDef{
 		Category:    "業務",
 		Icon:        "📩",
 		Element:     "section",
-		Items:       "client-order-items",
 		File:        true,
+		Items:       "client-order-items",
 		Columns: []VocabColumn{
 			{Field: "order-no", Label: "発注書番号", Type: ColText},
 			{Field: "client-name", Label: "発注元", Type: ColText},

@@ -99,7 +99,7 @@ var equivBodies = []struct {
 		`<tr><td>SPCC</td><td>500</td><td>東邦</td><td></td></tr>` +
 		`</tbody></table>`},
 	{"入れ子の受発注", `<section data-type="file" data-src="po.pdf">` +
-		`<section data-type="client-order"><dl><dt>発注書番号</dt><dd>PO-1</dd>` +
+		`<section data-type="client-order"><dl data-type="tags"><dt>発注書番号</dt><dd>PO-1</dd>` +
 		`<dt>発注元</dt><dd>得意先A</dd><dt>発注日</dt><dd>2026-08-26</dd></dl>` +
 		`<table data-type="client-order-items"><tbody>` +
 		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
@@ -195,18 +195,15 @@ func TestVocabIndexObserverMatchesLegacyWalk(t *testing.T) {
 				return
 			}
 			if strings.Contains(c.name, "受発注") {
-				// 新方式はヘッダ（素の dl）も拾うので、旧走査の行は新方式の
-				// 部分集合になる。**旧に無い行が増えている**ことを確かめる。
+				// ⚠ **ヘッダ（素の dl）は 2026-09-18 に索引から外しました**。それまで
+				// 新方式だけがヘッダも拾っていたので「旧に無い行が増えている」ことを
+				// 確かめていましたが、いまは**両方とも明細だけ**です——`vocab_index` の
+				// 行は一致します（ヘッダはタグとして `page_tags` へ入る）。
 				for _, row := range legacy {
 					if !slices.Contains(modern, row) {
 						t.Errorf("旧走査の行が新方式で消えました: %s", row)
 					}
 				}
-				if len(modern) <= len(legacy) {
-					t.Errorf("ヘッダが索引されていません:\n旧:\n%s\n新:\n%s",
-						strings.Join(legacy, "\n"), strings.Join(modern, "\n"))
-				}
-				return
 			}
 			if strings.Join(legacy, "\n") != strings.Join(modern, "\n") {
 				t.Errorf("索引行が一致しません:\n旧:\n%s\n新:\n%s",
@@ -224,7 +221,7 @@ func TestVocabIndexObserverMatchesLegacyWalk(t *testing.T) {
 // 明細が丸ごと消えます——**動いているのに中身が欠ける**形の退行なので、固定します。
 func TestObserversSeeNestedItemsTable(t *testing.T) {
 	db := setupSaveTest(t)
-	body := `<section data-type="client-order"><dl><dt>発注書番号</dt><dd>PO-9</dd></dl>` +
+	body := `<section data-type="client-order"><dl data-type="tags"><dt>発注書番号</dt><dd>PO-9</dd></dl>` +
 		`<table data-type="client-order-items"><tbody>` +
 		`<tr><th>品番</th><th>数量</th></tr><tr><td>X9</td><td>4</td></tr>` +
 		`</tbody></table></section>`
@@ -246,10 +243,11 @@ func TestObserversSeeNestedItemsTable(t *testing.T) {
 		t.Error("明細表が②汎用索引に載っていません（受注の観察係が担当したせいで消えた）")
 	}
 
-	// 受注ヘッダ（素の dl）も索引へ入っていること。
+	// 受注ヘッダ（**タグ**）も索引へ入っていること（2026-09-18 に素の dl から移した）。
 	var orders int
-	db.QueryRow(`SELECT COUNT(DISTINCT block_no) FROM vocab_index WHERE page_id = ? AND data_type = ?`, 910, "client-order").Scan(&orders)
+	db.QueryRow(`SELECT COUNT(*) FROM page_tags WHERE page_id = ? AND name = '発注書番号'`,
+		910).Scan(&orders)
 	if orders != 1 {
-		t.Errorf("受注ヘッダが入っていません: %d", orders)
+		t.Errorf("受注ヘッダのタグが入っていません: %d", orders)
 	}
 }

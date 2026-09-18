@@ -252,21 +252,20 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    仕入先は明細ではなくヘッダ（名前：値）にあるので、同じページの
 	//    our-order ブロックから引きます。**対応づけは block_no**——索引の
 	//    ブロック番号は形式ごとの文書順連番なので、1つの発注書セクションが
-	//    ヘッダ1つと明細表1つを持つ限り、同じ番号どうしが対になります。
-	//    （硬い表のころは発注書番号で結んでいたが、番号が重複すると仕入先が
-	//    入れ替わりえた・設計総点検③。文書順なら重複しても取り違えない）
+	//    ⚠ **仕入先はページの可変タグです**（2026-09-18 にヘッダから移した）。
+	//    **1文書＝1ページ**が規則なので（ユーザー:「発注書は一ページ一発注書で問題ない」）、
+	//    対応づけは**ページ1つ**で閉じます——ヘッダと明細を `block_no` で突き合わせていた
+	//    仕掛けは要らなくなりました（文書順に頼る対応づけが1つ消えた）。
 	//    スコープは受注明細と同じ（発注書が別ページに在っても拾う）。
-	//    **仕入先の対応づけはページごとに閉じます**——block_no は1ページの中の
-	//    文書順連番なので、ページをまたいで同じ番号を突き合わせると取り違えます。
 	var ourItems []cms.VocabRow
-	supplierOf := map[[2]int]string{} // (ページ, ブロック番号) → 仕入先
+	supplierOf := map[int]string{} // ページ → 仕入先
 	for _, id := range scope {
-		headers, err := cms.VocabBlocksOf(db, id, "our-order")
+		tags, err := cms.TagsOfPage(db, id)
 		if err != nil {
 			return nil, err
 		}
-		for _, h := range headers {
-			supplierOf[[2]int{id, h.BlockNo}] = h.Values["supplier-name"]
+		if s := cms.FirstTag(tags, SupplierTag); s != "" {
+			supplierOf[id] = s
 		}
 		rows, err := cms.VocabTableRowsOf(db, id, "our-order-items")
 		if err != nil {
@@ -282,7 +281,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		} else {
 			materialsMap[name] = &RequiredMaterialResponse{
 				MaterialName:  name,
-				SupplierName:  supplierOf[[2]int{oi.PageID, oi.BlockNo}],
+				SupplierName:  supplierOf[oi.PageID],
 				Cost:          0,
 				TotalRequired: 0,
 				Ordered:       quantity,

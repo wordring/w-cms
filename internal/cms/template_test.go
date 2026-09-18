@@ -16,7 +16,7 @@ import (
 func clientOrderBody(title, orderNo string) string {
 	return `<h1>` + title + `</h1>` +
 		`<section data-type="client-order">` +
-		`<dl><dt>発注書番号</dt><dd>` + orderNo + `</dd>` +
+		`<dl data-type="tags"><dt>発注書番号</dt><dd>` + orderNo + `</dd>` +
 		`<dt>発注元</dt><dd>雛形商事</dd>` +
 		`<dt>発注日</dt><dd>2026-08-20</dd></dl>` +
 		`<table data-type="client-order-items"><tbody>` +
@@ -25,14 +25,15 @@ func clientOrderBody(title, orderNo string) string {
 		`</tbody></table></section>`
 }
 
-// countOrders はサイト全体の受注ヘッダ（<section data-type="client-order">）の
-// ブロック数を索引から返します。
+// countOrders はサイト全体の受注ヘッダ（`発注元` のタグ）の件数を索引から返します。
+//
+// ⚠ **2026-09-18 にタグへ移りました**。それまで受注ヘッダは素の定義リストで、
+// `vocab_index` の `client-order` ブロックとして数えていました。
 func countOrders(t *testing.T) int {
 	t.Helper()
 	var n int
 	if err := database.DB.QueryRow(
-		`SELECT COUNT(*) FROM (SELECT DISTINCT page_id, block_no FROM vocab_index
-		 WHERE data_type = 'client-order')`).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM page_tags WHERE name = '発注元'`).Scan(&n); err != nil {
 		t.Fatalf("受注ヘッダの集計に失敗: %v", err)
 	}
 	return n

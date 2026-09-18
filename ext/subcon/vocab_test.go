@@ -30,13 +30,6 @@ func TestBusinessVocabIsWellFormed(t *testing.T) {
 		if len(d.Columns) == 0 && d.Element != "section" {
 			t.Errorf("%s: 列が1つもありません", d.Type)
 		}
-		// Items は実在する table 形式を指すこと（明細の解釈がここで決まる）。
-		if d.Items != "" {
-			ref, ok := cms.VocabDefByType(d.Items)
-			if !ok || ref.Element != "table" {
-				t.Errorf("%s: Items %q が table 形式として見つかりません", d.Type, d.Items)
-			}
-		}
 		for _, c := range d.Columns {
 			if c.Label == "" {
 				t.Errorf("%s: ラベルの無い列があります", d.Type)
@@ -54,9 +47,11 @@ func TestBusinessVocabIsWellFormed(t *testing.T) {
 func TestBusinessVocabIsRegistered(t *testing.T) {
 	// ⚠ **`drawing` は 2026-09-18 に廃しました**——図面番号・図面名称・装置名称・客先は
 	// 可変タグ（`page_tags`）へ移りました。横断検索の口が読む表はそちらだからです。
+	// ⚠ **ヘッダだけの形式は 2026-09-18 に全廃しました**（`drawing`・`client-order`・
+	// `our-order`・`our-estimate`・`supplier-estimate`）。値は**可変タグ**（`page_tags`）へ
+	// 移り、残るのは**行が並ぶ表**と**ビューの器**だけです——「タグと表だけがDBに入る」。
 	want := []string{
-		"part-materials", "client-order", "client-order-items",
-		"our-order", "our-order-items", "our-estimate", "supplier-estimate",
+		"part-materials", "client-order-items", "our-order-items",
 		"required-materials", "drawing-revisions", "drawing-revision-items",
 		"part-outsourcing", "part-purchased", "part-supplied",
 	}

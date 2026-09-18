@@ -6,59 +6,69 @@ import (
 	"w-cms/internal/database"
 )
 
-// TestSectionHeaderIsIndexed は、業務文書ブロックのヘッダが汎用索引に載ることを
-// 固定します。
+// TestPlainDLIsNotIndexed は、**素の定義リストがDBに入らない**ことを固定します
+// （2026-09-18 ユーザー決定:「素の定義リストはDBから外しましょう。問題が出てから
+// 再検討しましょう」）。
 //
-// **ヘッダの <dl> は data-type を持ちません**（鍵は dt の表示文字・語彙モデル §8.2）。
-// 配送係は引き金（data-type）のある要素しか届けないので、素の dl は誰の手にも
-// 渡りません。硬いドメイン表があったころは各プラグインが section を受け取って
-// 自分で子の dl を読んでいたため気づきませんでしたが、テーブルを廃して索引へ
-// 一本化する（D-1）と、**発注元・発注日・発注先がどこにも残らなくなります**。
+// それまで機能見出しの節の中の素の `dl` は**業務ブロックのヘッダ**として
+// `vocab_index` に入っていました。やめた理由は3つ（`vocab_index.go` の `OnElement`）:
 //
-// 明細表だけが索引に載って、ヘッダが黙って消える——という壊れ方をするので、
-// 実HTMLを SyncIndex に通して両方が載ることを見ます。
-func TestSectionHeaderIsIndexed(t *testing.T) {
+//   - **見た目がタグと同じで振る舞いが違う**（素の `<dl>` と `<dl data-type="tags">`）
+//   - **横断検索の口（`PagesByTag`）が読むのは `page_tags`** で、いちばん検索したい値が
+//     検索の口を持たない表に入っていた
+//   - ヘッダは「下の明細表の見出し」の役目だが、**1文書＝1ページ**ならページのタグで足りる
+//
+// いまDBに入るのは**タグと表だけ**です。この番人が落ちたら、素の文書が黙って
+// 索引に入り始めたということです。
+func TestPlainDLIsNotIndexed(t *testing.T) {
 	seedOrderPages(t, "000071")
-	if err := SyncIndex("000071", clientOrderHTML("PO-7", "得意先X", "PART-X")); err != nil {
+	body := `<section data-type="client-order"><dl>` +
+		`<dt>発注書番号</dt><dd>PO-7</dd><dt>発注元</dt><dd>得意先X</dd></dl></section>`
+	if err := SyncIndex("000071", body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
-
-	get := func(dataType, field string) string {
-		t.Helper()
-		var v string
-		err := database.DB.QueryRow(
-			`SELECT value FROM vocab_index WHERE page_id = 71 AND data_type = ? AND field = ?`,
-			dataType, field).Scan(&v)
-		if err != nil {
-			t.Errorf("索引に data_type=%q field=%q がありません: %v", dataType, field, err)
-			return ""
+	for _, q := range []struct{ table, sql string }{
+		{"vocab_index", `SELECT COUNT(*) FROM vocab_index WHERE page_id = 71`},
+		{"page_tags", `SELECT COUNT(*) FROM page_tags WHERE page_id = 71`},
+	} {
+		var n int
+		if err := database.DB.QueryRow(q.sql).Scan(&n); err != nil {
+			t.Fatal(err)
 		}
-		return v
+		if n != 0 {
+			t.Errorf("素の定義リストが %s に入りました: %d行", q.table, n)
+		}
 	}
+}
 
-	// ヘッダ（section の data-type の下に載る）
-	if v := get("client-order", "発注書番号"); v != "PO-7" {
-		t.Errorf("発注書番号が索引と違います: %q (期待 PO-7)", v)
+// TestTagsAreIndexedWithType は、**タグなら索引に入り、型の正規化も効く**ことを
+// 固定します（素の dl との対比）。`発注日` は設定で `date` 型なので、畳んだ値が
+// ISO になります——**範囲で引く口を足すときここが効きます**。
+func TestTagsAreIndexedWithType(t *testing.T) {
+	seedOrderPages(t, "000072")
+	if err := SyncIndex("000072", clientOrderHTML("PO-7", "得意先X", "PART-X")); err != nil {
+		t.Fatalf("SyncIndexエラー: %v", err)
 	}
-	if v := get("client-order", "発注元"); v != "得意先X" {
-		t.Errorf("発注元が索引と違います: %q (期待 得意先X)", v)
+	get := func(name string) (value, norm string) {
+		t.Helper()
+		if err := database.DB.QueryRow(
+			`SELECT value, COALESCE(norm_value,'') FROM page_tags WHERE page_id = 72 AND name = ?`,
+			name).Scan(&value, &norm); err != nil {
+			t.Errorf("タグの索引に %q がありません: %v", name, err)
+		}
+		return value, norm
 	}
-	if v := get("client-order", "発注日"); v != "2026-08-20" {
-		t.Errorf("発注日が索引と違います: %q", v)
+	if v, _ := get("発注書番号"); v != "PO-7" {
+		t.Errorf("発注書番号が索引と違います: %q", v)
 	}
-	// 明細（従来どおり）
-	if v := get("client-order-items", "品番"); v != "PART-X" {
-		t.Errorf("品番が索引と違います: %q (期待 PART-X)", v)
+	if v, _ := get("発注元"); v != "得意先X" {
+		t.Errorf("発注元が索引と違います: %q", v)
 	}
-
-	// 発注日は date 型と解決され、正規化値が入る（ヘッダにも型知識が効くこと）。
-	var norm string
-	if err := database.DB.QueryRow(
-		`SELECT COALESCE(norm_value,'') FROM vocab_index
-		 WHERE page_id = 71 AND data_type = 'client-order' AND field = '発注日'`).Scan(&norm); err != nil {
-		t.Fatalf("正規化値のクエリエラー: %v", err)
+	if v, norm := get("発注日"); v != "2026-08-20" || norm != "2026-08-20" {
+		t.Errorf("発注日が日付として正規化されていません: 生=%q 畳んだ値=%q", v, norm)
 	}
-	if norm != "2026-08-20" {
-		t.Errorf("発注日が日付として正規化されていません: %q", norm)
+	// 明細は表のまま（行が並ぶものは表が正しい）。
+	if got := countVocabDataRows(t, 72, "client-order-items"); got != 1 {
+		t.Errorf("明細の行数が違います: %d", got)
 	}
 }

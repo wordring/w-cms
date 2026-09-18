@@ -53,13 +53,17 @@ func TestUnresolvedVocabFields(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "業務文書ブロックのヘッダ dl の改名を報告する",
-			html: `<section data-type="client-order"><dl>
+			// ⚠ **タグの名前は改名告知の対象ではありません**（2026-09-18 にヘッダを
+			// タグへ移したため）。タグは**運用者が自由に足せる語**で、レジストリに
+			// 無い名前が普通にあります——告知すると毎回鳴って狼少年になります。
+			// 告知が効くのは**表の見出し行**（列がレジストリ宣言と食い違うとき）です。
+			name: "タグの名前は改名告知の対象にしない",
+			html: `<section data-type="client-order"><dl data-type="tags">
 <dt>発注書番号</dt><dd>PO-A100</dd>
 <dt>得意先</dt><dd>南北</dd>
 <dt>発注日</dt><dd>2026-08-20</dd>
 </dl></section>`,
-			want: []string{"顧客の発注書: 発注元"},
+			want: nil,
 		},
 		{
 			name: "単独の dl 形式の改名を報告する",

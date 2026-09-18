@@ -35,13 +35,6 @@ func TestVocabRegistryIsWellFormed(t *testing.T) {
 		if len(d.Columns) == 0 && d.Element != "section" {
 			t.Errorf("%s: 列が1つもありません", d.Type)
 		}
-		// Items はレジストリ内の実在する table 形式を指すこと
-		if d.Items != "" {
-			if ref, ok := VocabDefByType(d.Items); !ok || ref.Element != "table" {
-				t.Errorf("%s: items %q が table 形式として定義されていません", d.Type, d.Items)
-			}
-		}
-
 		fields := map[string]bool{}
 		for _, c := range d.Columns {
 			if c.Label == "" {

@@ -141,7 +141,7 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 		<section data-type="file" data-src="attachments/po_test.pdf">
 			<p>📎 <a href="/data/master/00/00002/attachments/po_test.pdf">発注書.pdf</a></p>
 			<section data-type="client-order">
-				<dl>
+				<dl data-type="tags">
 					<dt>発注書番号</dt><dd>PO-T100</dd>
 					<dt>発注元</dt><dd>南北</dd>
 					<dt>発注日</dt><dd>2026-06-18</dd>
@@ -184,23 +184,25 @@ func TestParseAndSyncNestedOrders(t *testing.T) {
 		t.Errorf("データベースのページタイトルが違います: %s", title)
 	}
 
-	// 可変タグが2件索引されていることを確認（行き先は②汎用索引）
+	// 可変タグの件数（行き先は②汎用索引の `page_tags`）。
+	// ⚠ **2件→5件**（2026-09-18）。受注ヘッダ（発注書番号・発注元・発注日）が
+	// 素の定義リストからタグへ移ったので、その3件が加わりました。
 	var tagCount int
 	err = db.QueryRow("SELECT COUNT(*) FROM page_tags WHERE page_id = ?", pageID).Scan(&tagCount)
 	if err != nil {
 		t.Fatalf("vocab_indexのクエリでエラー: %v", err)
 	}
-	if tagCount != 2 {
+	if tagCount != 5 {
 		t.Errorf("可変タグの件数が違います: %d", tagCount)
 	}
 
-	// 受注ヘッダ（section の data-type の下に載る）。**pdf_path は索引しません**
-	// ——容器の data-src は配線＝属性で、表示される値ではないため（D-1）。
-	if v := vocabValueOf(t, 2, "client-order", "発注書番号"); v != "PO-T100" {
-		t.Errorf("発注書番号が索引に入っていません: %q", v)
+	// 受注ヘッダは**可変タグ**（2026-09-18 に素の dl から移した）。**pdf_path は
+	// 索引しません**——容器の data-src は配線＝属性で、表示される値ではないため（D-1）。
+	if v := tagValueOf(t, 2, "発注書番号"); v != "PO-T100" {
+		t.Errorf("発注書番号がタグの索引に入っていません: %q", v)
 	}
-	if v := vocabValueOf(t, 2, "client-order", "発注元"); v != "南北" {
-		t.Errorf("発注元が索引に入っていません: %q", v)
+	if v := tagValueOf(t, 2, "発注元"); v != "南北" {
+		t.Errorf("発注元がタグの索引に入っていません: %q", v)
 	}
 
 	// 部品点数の集計確認（明細の数量を合計する）
@@ -411,7 +413,7 @@ func TestRebuildDatabase(t *testing.T) {
 	}
 	htmlContent := `<h1>受注ページ</h1>
 <section data-type="client-order">
-	<dl><dt>発注書番号</dt><dd>PO-RB1</dd><dt>発注元</dt><dd>南北</dd></dl>
+	<dl data-type="tags"><dt>発注書番号</dt><dd>PO-RB1</dd><dt>発注元</dt><dd>南北</dd></dl>
 	<table data-type="client-order-items"><tbody>
 		<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>
 		<tr><td>SHAFT-01</td><td>シャフトA</td><td>8000</td><td>3</td><td>未着手</td></tr>

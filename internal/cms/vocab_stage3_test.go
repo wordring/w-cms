@@ -21,7 +21,7 @@ func TestClientOrderFromSection(t *testing.T) {
 	const id = "000050"
 	body := `<section data-type="file" data-src="po.pdf"><p>📎 <a href="/data/master/00/000050/po.pdf">発注書.pdf</a></p>` +
 		`<section data-type="client-order">` +
-		`<dl><dt>発注書番号</dt><dd>PO-A100</dd>` +
+		`<dl data-type="tags"><dt>発注書番号</dt><dd>PO-A100</dd>` +
 		`<dt>発注元</dt><dd>南北</dd>` +
 		`<dt>発注日</dt><dd>2026-06-18</dd></dl>` +
 		`<table data-type="client-order-items"><tbody>` +
@@ -34,12 +34,12 @@ func TestClientOrderFromSection(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	// ヘッダ（包む section の data-type の下に載る）
-	if v := vocabValueOf(t, 50, "client-order", "発注書番号"); v != "PO-A100" {
-		t.Errorf("発注書番号が索引と異なります: %q", v)
+	// ヘッダは**可変タグ**（2026-09-18 に素の dl から移した・`page_tags`）。
+	if v := tagValueOf(t, 50, "発注書番号"); v != "PO-A100" {
+		t.Errorf("発注書番号がタグの索引と異なります: %q", v)
 	}
-	if v := vocabValueOf(t, 50, "client-order", "発注元"); v != "南北" {
-		t.Errorf("発注元が索引と異なります: %q", v)
+	if v := tagValueOf(t, 50, "発注元"); v != "南北" {
+		t.Errorf("発注元がタグの索引と異なります: %q", v)
 	}
 
 	// 明細（生テキストが正本。¥・桁区切りの吸収は norm_num 側で見る）
@@ -107,4 +107,20 @@ func TestEstimatesFromDL(t *testing.T) {
 	if v := vocabValueOf(t, 51, "supplier-estimate", "見積金額"); v != "3000" {
 		t.Errorf("見積金額が索引に入っていません: %q", v)
 	}
+}
+
+// tagValueOf はページの可変タグ1つの生の値を索引から返します（無ければ空）。
+//
+// ⚠ **`vocabValueOf` の相方**です——あちらは業務ブロック（`vocab_index`）、こちらは
+// タグ（`page_tags`）。2026-09-18 にヘッダがタグへ移ったので、ヘッダを確かめる試験は
+// こちらを通します。
+func tagValueOf(t *testing.T, pageID int, name string) string {
+	t.Helper()
+	var v string
+	err := database.DB.QueryRow(
+		`SELECT value FROM page_tags WHERE page_id = ? AND name = ?`, pageID, name).Scan(&v)
+	if err != nil {
+		return ""
+	}
+	return v
 }

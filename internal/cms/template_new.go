@@ -86,8 +86,8 @@ func init() {
 				seq:    ctx.Counter("freshen"),
 			}
 			// 機能見出しのセクション（data-type 無し・見出し語で解決）は、索引と同じ
-			// 切り分けで**素の中身**を温める——素の dl はヘッダ（形式自身の列）、
-			// 素の table は明細（Items 宣言があればその列）。syncVocabSection と同じ規則。
+			// 切り分けで**素の表**を温めます。⚠ **素の定義リストは温めません**
+			// （2026-09-18 に索引から外した。`vocab_index.go` の `OnElement` に経緯）。
 			if el.Data == "section" && Attr(el, "data-type") == "" {
 				itemsDef := def
 				if def.Items != "" {
@@ -95,14 +95,7 @@ func init() {
 						itemsDef = idef
 					}
 				}
-				eachPlainVocabChild(el, func(n *html.Node) {
-					switch n.Data {
-					case "dl":
-						f.freshenDL(n, def)
-					case "table":
-						f.freshenTable(n, itemsDef)
-					}
-				})
+				eachPlainVocabTable(el, func(n *html.Node) { f.freshenTable(n, itemsDef) })
 				return true, nil
 			}
 			if el.Data != def.Element {

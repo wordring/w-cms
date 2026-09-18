@@ -102,8 +102,11 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 	html := string(body)
 	for _, want := range []string{
 		"<h1>受注 PO-2026-001</h1>",
-		"<h2>顧客の発注書</h2>",
+		// ⚠ **ヘッダは可変タグ、明細は表**（2026-09-18）。機能見出しの節はやめました
+		// ——「タグと表だけがDBに入る」。
+		`<dl data-type="tags">`,
 		"<dt>発注元</dt><dd>南北スポーツ</dd>",
+		`<table data-type="client-order-items">`,
 		"<td>ブラケット</td>",
 		"<td>未着手</td>",
 		"<dt>受信元</dt><dd>" + id + "-abc123</dd>",
@@ -121,14 +124,16 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 		t.Errorf("所有者・グループの継承が違います: %+v", meta)
 	}
 
-	// 索引: 機能見出し形が効き、発注書番号で引ける。
+	// **発注書番号で横断検索できること**（`page_tags`・2026-09-18 にヘッダから移した）。
 	idInt, _ := strconv.Atoi(res.PageID)
-	var n int
-	if err := database.DB.QueryRow(
-		`SELECT COUNT(*) FROM vocab_index
-		 WHERE page_id = ? AND data_type = 'client-order' AND field = '発注書番号' AND value = 'PO-2026-001'`,
-		idInt).Scan(&n); err != nil || n != 1 {
-		t.Errorf("発注書番号が索引にありません (n=%d err=%v)", n, err)
+	ids, err := cms.PagesByTag(database.DB, OrderNoTag, "PO-2026-001")
+	if err != nil || len(ids) != 1 || ids[0] != idInt {
+		t.Errorf("発注書番号でページを引けません: %v err=%v", ids, err)
+	}
+	// 明細は表のまま（行が並ぶものは表が正しい）。
+	rows, err := cms.VocabTableRowsOf(database.DB, idInt, "client-order-items")
+	if err != nil || len(rows) != 1 || rows[0].Values["item-name"] != "ブラケット" {
+		t.Errorf("明細が索引に入っていません: %+v err=%v", rows, err)
 	}
 }
 

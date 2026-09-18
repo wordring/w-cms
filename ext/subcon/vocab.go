@@ -122,26 +122,19 @@ var businessVocab = []cms.VocabDef{
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},
 	},
-	{
-		Type:        "client-order",
-		DisplayName: "顧客の発注書",
-		Category:    "業務",
-		Icon:        "📩",
-		Element:     "section",
-		Items:       "client-order-items",
-		File:        true,
-		Columns: []cms.VocabColumn{
-			{Field: "order-no", Label: "発注書番号", Type: cms.ColText},
-			{Field: "client-name", Label: "発注元", Type: cms.ColText},
-			{Field: "ordered-at", Label: "発注日", Type: cms.ColDate},
-		},
-	},
-	// ⚠ **形式 `drawing`（📐 図面）は 2026-09-18 に廃しました**（ユーザー決定）。
-	// 図面番号・図面名称・装置名称・客先は**可変タグ**になり、`page_tags` へ入ります
-	// ——横断検索の口（`PagesByTag` / `PagesByTagLoose`）が読む表はこちらだからです。
-	// 本文の `<section><h2>図面</h2>` は**語彙に無いただの節**として残ります（見出しで
-	// まとめるだけ。改定の合流はいまも見出しの文字で節を探します）。
-	// 経緯は `analyze_pdf.go` の `drawingSectionHTML`。
+	// ⚠ **ヘッダだけの形式は 2026-09-18 に全廃しました**（ユーザー決定:「素の定義リストは
+	// DBから外しましょう」「受注ページを作成するときにも、出来る限りタグを使いたい」）。
+	// 廃したのは `client-order`（顧客の発注書）・`our-order`（弊社の発注書）・
+	// `our-estimate`（弊社の見積もり）・`supplier-estimate`（材料屋の見積もり）と、
+	// 前日までの `drawing`（図面）です。**値は可変タグへ**（`page_tags`）。
+	//
+	// **残すのは行が並ぶ表と、ビューの器だけ**になりました——説明は
+	// **「タグと表だけがDBに入る」**の1文です。⚠ **1文書＝1ページ**が規則
+	// （ユーザー:「発注書は一ページ一発注書で問題ない」）——ヘッダがページのタグに
+	// なるので、1ページに同じ文書を2つ置けません。明細の表は複数あって構いません。
+	//
+	// ⚠ **表は `data-type` を自分で名乗ります。** 節の `Items` 宣言を頼りに
+	// 「節の中の素の表」として見つける仕掛けは、コアから消えました。
 	{
 		// 改訂履歴——**社内コードの指し先**（2026-09-03 ユーザー:「改訂履歴の項目を
 		// 作り版にdata-idを割り当てれば良いのでは？」）。
@@ -191,19 +184,6 @@ var businessVocab = []cms.VocabDef{
 		},
 	},
 	{
-		Type:        "our-order",
-		DisplayName: "自社の発注書",
-		Category:    "業務",
-		Icon:        "📤",
-		Element:     "section",
-		Items:       "our-order-items",
-		Columns: []cms.VocabColumn{
-			{Field: "order-no", Label: "発注書番号", Type: cms.ColText},
-			{Field: "supplier-name", Label: "発注先", Type: cms.ColText},
-			{Field: "ordered-at", Label: "発注日", Type: cms.ColDate},
-		},
-	},
-	{
 		Type:        "our-order-items",
 		DisplayName: "発注明細",
 		Category:    "業務",
@@ -215,32 +195,6 @@ var businessVocab = []cms.VocabDef{
 			{Field: "cost", Label: "単価", Type: cms.ColNumber},
 			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
 			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"未納品", "納品済"}},
-		},
-	},
-	{
-		Type:        "our-estimate",
-		DisplayName: "弊社の見積もり",
-		Category:    "業務",
-		Icon:        "💴",
-		Element:     "dl",
-		Columns: []cms.VocabColumn{
-			{Field: "item-id", Label: "品番", Type: cms.ColText},
-			{Field: "client-name", Label: "顧客", Type: cms.ColText},
-			{Field: "price", Label: "見積金額", Type: cms.ColNumber},
-			{Field: "estimated-at", Label: "見積日", Type: cms.ColDate},
-		},
-	},
-	{
-		Type:        "supplier-estimate",
-		DisplayName: "材料屋の見積もり",
-		Category:    "業務",
-		Icon:        "🏭",
-		Element:     "dl",
-		Columns: []cms.VocabColumn{
-			{Field: "item-name", Label: "部材名", Type: cms.ColText},
-			{Field: "supplier-name", Label: "仕入先", Type: cms.ColText},
-			{Field: "cost", Label: "見積金額", Type: cms.ColNumber},
-			{Field: "estimated-at", Label: "見積日", Type: cms.ColDate},
 		},
 	},
 	{

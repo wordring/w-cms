@@ -6,8 +6,14 @@
 //
 // **検証用に作ったページは最後に片付けます**（実データに残骸を積まない）。
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
-const MAILBOX = process.env.WCMS_MAILBOX || '000001';
+// ⚠ **当て先は焼き込みません**（2026-09-18）。`000001` と書いてあったので、データを
+// 入れ直してテンプレート置き場が `000001` になった日から、下ごしらえが
+// **テンプレート領域の中**に作られていました——あそこは索引に載らない決まりなので、
+// 提案が常に空になり、整理のボタンが出ませんでした（**黙って通る壊れ方**）。
+// 通信箱は走るときに探します（`lib.findMailbox` と同じ「トップ直下・題が通信箱」）。
+let MAILBOX = process.env.WCMS_MAILBOX || '';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -22,6 +28,12 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
 
   // ── 下ごしらえ: 通信箱の下に仮の記録ページ、その下に図面ブロックを持つ加工製品ページ
+  if (!MAILBOX) {
+    const top = await lib.childrenOf(page, '000000');
+    MAILBOX = ((top || []).find(c => (c.Title || '').trim() === '通信箱') || {}).ID || '';
+    if (!MAILBOX) { console.log('通信箱がありません（管理画面の「置き場」で作れます）'); process.exit(1); }
+  }
+
   const api = (path, opts) => page.evaluate(async ([p, o]) => {
     const res = await fetch(p, o || {});
     return { status: res.status, text: await res.text() };
@@ -55,13 +67,25 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     + '<dl data-type="tags"><dt>チャネル</dt><dd>メール</dd>'
     + '<dt>向き</dt><dd>受信</dd></dl>');
   await save(partID,
-    '<h1>[検証用] 部品</h1><section data-id="tst1"><h2>図面</h2><dl>' +
+    // ⚠ **ヘッダは可変タグ**（2026-09-18 に素の定義リストから移した）。
+    // 素の `<dl>` はもうDBに入りません——「タグと表だけがDBに入る」。
+    '<h1>[検証用] 加工製品</h1><section data-id="tst1"><h2>図面</h2>' +
+    '<dl data-type="tags">' +
     '<dt>図面番号</dt><dd>TEST-1</dd><dt>図面名称</dt><dd>[検証用] 部品</dd>' +
     '<dt>装置名称</dt><dd>2輪シュート改良</dd>'
     + '<dt>客先</dt><dd>南北スポーツ機械</dd></dl></section>');
 
   try {
     await page.goto(BASE + '/' + recordID);
+    // 下ごしらえが効いているかを先に見る（ボタンは提案が1件以上あるときだけ出る）。
+    // **前提の確認**——提案が空なら下ごしらえが効いていません（当て先の取り違え・
+    // 索引に載らない領域など）。ボタンの待ちで固まるより、理由を出して落ちるほうがよい。
+    const proposal = await api('/api/filing-proposal?page_id=' + recordID);
+    if (!/"rows":\[\{/.test(proposal.text)) {
+      console.log('  ✗ 下ごしらえの提案が空です（通信箱=' + MAILBOX + '）:',
+        proposal.status, proposal.text.slice(0, 160));
+      process.exit(1);
+    }
     await page.waitForSelector('.filing-open', { timeout: 5000 });
     await page.click('.filing-open');
     await page.waitForSelector('.filing-panel', { timeout: 5000 });

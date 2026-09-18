@@ -94,24 +94,17 @@ func UnresolvedVocabFields(htmlStr string) []string {
 				return
 			}
 			if n.Data == "section" {
-				// section は素の中身から鍵を集める（syncVocabSection と同じ切り分け）。
-				// 素の dl はヘッダ＝形式自身の列、素の table は明細＝ Items 宣言の列。
+				// section は**素の表**から鍵を集めます（syncVocabSection と同じ切り分け）。
+				// ⚠ **素の定義リストは見ません**（2026-09-18 に索引から外した）。
 				itemsDef := def
 				if def.Items != "" {
 					if idef, ok := VocabDefByType(def.Items); ok {
 						itemsDef = idef
 					}
 				}
-				eachPlainVocabChild(n, func(c *html.Node) {
-					switch c.Data {
-					case "dl":
-						for _, label := range unresolvedKeys(dlHeadingKeys(c), def) {
-							seen[def.DisplayName+": "+label] = true
-						}
-					case "table":
-						for _, label := range unresolvedKeys(tableHeadingKeys(c), itemsDef) {
-							seen[itemsDef.DisplayName+": "+label] = true
-						}
+				eachPlainVocabTable(n, func(c *html.Node) {
+					for _, label := range unresolvedKeys(tableHeadingKeys(c), itemsDef) {
+						seen[itemsDef.DisplayName+": "+label] = true
 					}
 				})
 			} else if n.Data == def.Element {

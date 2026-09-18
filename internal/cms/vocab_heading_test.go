@@ -16,6 +16,29 @@ import (
 // セクションへの適用で、ワンノートの「■見出しの下に表」がそのまま形式宣言になる。
 // 解決は vocabTypeOf（walk.go）の1箇所。data-type 属性は明示の正として引き続き勝つ。
 
+// queryPageTags はページの可変タグを "name=value" の列で返します（本文の順）。
+//
+// ⚠ **ヘッダはタグになりました**（2026-09-18）。それまで機能見出しの節の中の素の `dl` は
+// 業務ブロックのヘッダとして `vocab_index` に載っていましたが、やめました
+// （`vocab_index.go` の `OnElement` に経緯）。**素の表の経路は残っています**——
+// `■材料` のような見出しの下に表が並ぶワンノートの形が受け皿だからです。
+func queryPageTags(t *testing.T, pageID int) []string {
+	t.Helper()
+	rows, err := database.DB.Query(
+		`SELECT name, value FROM page_tags WHERE page_id = ? ORDER BY seq`, pageID)
+	if err != nil {
+		t.Fatalf("page_tagsのクエリでエラー: %v", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n, v string
+		rows.Scan(&n, &v)
+		out = append(out, n+"="+v)
+	}
+	return out
+}
+
 // queryIndex は指定形式の索引行を "field=value" の列で返します（文書順）。
 func queryIndex(t *testing.T, pageID int, dataType string) []string {
 	t.Helper()
@@ -80,43 +103,54 @@ func TestHeadingDeclaresSectionType(t *testing.T) {
 	}
 }
 
-// TestHeadingSectionWithHeaderDL は、見出し＋素の dl（ヘッダ）の形が業務文書ブロックと
-// 同じに索引されることを検証します（<section><h2>顧客の発注書</h2><dl>…）。
-func TestHeadingSectionWithHeaderDL(t *testing.T) {
+// TestHeadingSectionTags は、機能見出しのセクションの中の**タグ**が
+// `page_tags` に載ることを固定します。
+//
+// ⚠ **素の `dl`（ヘッダ）は 2026-09-18 に索引から外しました**（ユーザー決定:「素の定義
+// リストはDBから外しましょう」）。名前：値は `<dl data-type="tags">` で書きます——
+// **見た目と振る舞いが一致する**ようになりました（素の定義リストは何も起こさない）。
+// 番人は `TestPlainDLIsNotIndexed`。
+func TestHeadingSectionTags(t *testing.T) {
 	setupSaveTest(t)
 
 	body := `<h1>受注ページ</h1>` +
-		`<section>` +
+		`<section data-id="s2">` +
 		`<h2>顧客の発注書</h2>` +
-		`<dl><dt>発注書番号</dt><dd>PO-H1</dd><dt>発注元</dt><dd>南北</dd></dl>` +
+		`<dl data-type="tags"><dt>発注書番号</dt><dd>PO-H1</dd>` +
+		`<dt>発注元</dt><dd>南北</dd></dl>` +
 		`</section>`
 	if err := SyncIndex("000051", body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
-
-	got := queryIndex(t, 51, "client-order")
-	want := []string{"発注書番号=PO-H1", "発注元=南北"} // dl は row_no＝文書順
+	got := queryPageTags(t, 51)
+	want := []string{"発注書番号=PO-H1", "発注元=南北"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("見出し駆動のヘッダ索引が期待と異なります:\ngot  %v\nwant %v", got, want)
+		t.Errorf("タグの索引が期待と異なります:\ngot  %v\nwant %v", got, want)
 	}
 }
 
 // TestDataTypeBeatsHeading は、data-type 属性と見出しが食い違うとき属性が勝つことを
 // 検証します（明示は推測に勝つ。既存データの意味が見出し次第で変わらないための守り）。
+//
+// ⚠ **payload は表です**（2026-09-18 に素の定義リストを索引から外したため）。
 func TestDataTypeBeatsHeading(t *testing.T) {
 	setupSaveTest(t)
 
 	body := `<h1>混在</h1>` +
 		`<section data-type="client-order">` +
 		`<h2>検査記録</h2>` + // 見出しは別の形式の言葉
-		`<dl><dt>発注書番号</dt><dd>PO-X</dd></dl>` +
+		`<table>` +
+		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
+		`<tr><td>PO-X</td><td>シャフト</td><td>100</td><td>1</td><td>未着手</td></tr>` +
+		`</table>` +
 		`</section>`
 	if err := SyncIndex("000052", body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	if got := queryIndex(t, 52, "client-order"); len(got) != 1 || got[0] != "発注書番号=PO-X" {
-		t.Errorf("data-type が勝っていません: client-order側 %v", got)
+	// 属性が勝つので、素の表は `client-order` の明細（Items 宣言）として載る。
+	if got := queryIndex(t, 52, "client-order-items"); len(got) != 5 {
+		t.Errorf("data-type が勝っていません: client-order-items側 %v", got)
 	}
 	if got := queryIndex(t, 52, "inspection-record"); len(got) != 0 {
 		t.Errorf("見出し側の形式にも索引されています（二重）: %v", got)
@@ -217,7 +251,7 @@ func TestHeadingSectionItemsTable(t *testing.T) {
 	body := `<h1>受注ページ</h1>` +
 		`<section data-id="ord1">` +
 		`<h2>顧客の発注書</h2>` +
-		`<dl><dt>発注書番号</dt><dd>PO-PLAIN</dd><dt>発注元</dt><dd>南北</dd></dl>` +
+		`<dl data-type="tags"><dt>発注書番号</dt><dd>PO-PLAIN</dd><dt>発注元</dt><dd>南北</dd></dl>` +
 		`<table>` +
 		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
 		`<tr><td>SHAFT-01</td><td>シャフト</td><td>¥8,000</td><td>10</td><td>加工中</td></tr>` +
@@ -227,9 +261,9 @@ func TestHeadingSectionItemsTable(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	// ヘッダは client-order、明細は client-order-items——マーカー付きと同じ形式名。
-	if got := queryIndex(t, 55, "client-order"); len(got) != 2 {
-		t.Errorf("ヘッダの索引が期待と異なります: %v", got)
+	// ヘッダは**タグ**（`page_tags`）、明細は `client-order-items`（素の表の経路）。
+	if got := queryPageTags(t, 55); len(got) != 2 {
+		t.Errorf("ヘッダのタグが期待と異なります: %v", got)
 	}
 	items := queryIndex(t, 55, "client-order-items")
 	if len(items) != 5 {
@@ -268,7 +302,10 @@ func TestHeadingRenameIsNotified(t *testing.T) {
 		`</section>`
 
 	got := UnresolvedVocabFields(body)
-	wantHits := []string{"顧客の発注書: 発注元", "受注明細: 品名"}
+	// ⚠ **告知は表の列だけ**です（2026-09-18）。ヘッダがタグへ移ったので、
+	// `顧客の発注書: 発注元` は出ません——タグの名前は運用者が自由に足す語で、
+	// レジストリに無いのが普通だからです（告知すると毎回鳴って狼少年になる）。
+	wantHits := []string{"受注明細: 品名"}
 	for _, w := range wantHits {
 		found := false
 		for _, g := range got {

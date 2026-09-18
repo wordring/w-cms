@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"regexp"
 	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
@@ -23,7 +24,7 @@ import (
 // 「書いてある値（発注元）はそのまま・空欄は型の既定値で埋まる」を確かめます。
 const templateOrderBody = `<h1>受注ページ</h1>` +
 	`<section data-type="client-order">` +
-	`<dl><dt>発注書番号</dt><dd><br></dd>` +
+	`<dl data-type="tags"><dt>発注書番号</dt><dd><br></dd>` +
 	`<dt>発注元</dt><dd>得意先A</dd>` +
 	`<dt>発注日</dt><dd></dd></dl>` +
 	`<table data-type="client-order-items"><tbody>` +
@@ -84,7 +85,7 @@ func TestFreshenFillsEmptyCellsOnly(t *testing.T) {
 // TestFreshenKeepsWrittenOrderNo は、テンプレートに番号が書かれている場合は
 // **触らない**ことを検証します（作者が意図して入れた値を消さない）。
 func TestFreshenKeepsWrittenOrderNo(t *testing.T) {
-	body := `<section data-type="client-order"><dl>` +
+	body := `<section data-type="client-order"><dl data-type="tags">` +
 		`<dt>発注書番号</dt><dd>PO-FIXED</dd></dl></section>`
 	if got := FreshenTemplateBody(body, "000123"); !strings.Contains(got, "PO-FIXED") {
 		t.Errorf("書かれた発注書番号が失われています: %s", got)
@@ -94,11 +95,14 @@ func TestFreshenKeepsWrittenOrderNo(t *testing.T) {
 // TestFreshenNumbersMultipleOrderBlocks は、1ページに発注書ブロックが複数あっても
 // 番号が衝突しないことを検証します（order_no は UNIQUE 制約を持つ）。
 func TestFreshenNumbersMultipleOrderBlocks(t *testing.T) {
-	body := `<section data-type="client-order"><dl><dt>発注書番号</dt><dd></dd></dl></section>` +
-		`<section data-type="client-order"><dl><dt>発注書番号</dt><dd></dd></dl></section>`
+	body := `<section data-type="client-order"><dl data-type="tags"><dt>発注書番号</dt><dd></dd></dl></section>` +
+		`<section data-type="client-order"><dl data-type="tags"><dt>発注書番号</dt><dd></dd></dl></section>`
 	got := FreshenTemplateBody(body, "000123")
-	if !strings.Contains(got, "PO-000123<") || !strings.Contains(got, "PO-000123-2<") {
-		t.Errorf("複数ブロックの採番が衝突しています:\n%s", got)
+	// ⚠ **確かめるのは「衝突しないこと」だけ**です（2026-09-18）。連番の刻み方は
+	// タグのページ通しの `seq` に依るので、`-2` と決め打ちにすると採番の実装を縛ります。
+	nos := regexp.MustCompile(`PO-[0-9-]+`).FindAllString(got, -1)
+	if len(nos) != 2 || nos[0] == nos[1] {
+		t.Errorf("複数ブロックの採番が衝突しています: %v\n%s", nos, got)
 	}
 }
 
