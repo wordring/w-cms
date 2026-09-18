@@ -9,10 +9,15 @@
 //   ③ 通信箱でない普通のページへ同じ .eml → 受け口は引き受けず、ただの添付になる
 //      （`.eml` が attachment_extensions に在るので 200・`intake` なし）
 //
-//   WCMS_MAILBOX … 通信箱のページID（既定 010153）
+//   WCMS_MAILBOX … 通信箱のページID（省略すると走るときに探します）
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const MAILBOX = process.env.WCMS_MAILBOX || '000001';
+// ⚠ **当て先は焼き込みません**（2026-09-18）。`000001` と書いてあったので、データを
+// 入れ直してテンプレート置き場が `000001` になった日から、**テンプレート領域へ**
+// 落としていました（あそこは索引に載らないので、黙って通る壊れ方をします）。
+// 通信箱は「トップ直下・題が通信箱」で探します。
+let MAILBOX = process.env.WCMS_MAILBOX || '';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -23,6 +28,10 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   await page.goto(BASE + '/login');
   await page.fill('#username', 'a'); await page.fill('#password', 'a');
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  if (!MAILBOX) {
+    MAILBOX = await lib.findMailbox(page);
+    if (!MAILBOX) { console.log('通信箱がありません（管理画面の「置き場」で作れます）'); process.exit(1); }
+  }
 
   // 毎回違う Message-ID にする（前回の残りと重複判定されないように）。
   const mid = '<probe-intake-' + Date.now() + '@example.jp>';

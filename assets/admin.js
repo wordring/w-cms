@@ -234,19 +234,36 @@ async function initDevMenu() {
   setHidden(document.getElementById('dev-import-none'), hasMail);
 }
 
-async function devImportMail() {
-  const btn = document.getElementById('dev-import-btn');
+// devImportMail は取り込みを1回押します。
+//
+// month が真なら**今月1日以降**だけを取ります（2026-09-18 ユーザー:「管理ページの
+// メールの取り込みを今月分にすることは出来ますか？」）。⚠ 絞りは**サーバー側の
+// IMAP の `SEARCH SINCE`** が行います——手元で全部取ってから捨てるのではないので、
+// 通信量も待ち時間も減ります。日付は**運用者のローカル時刻**で数えます（月初は
+// 人の暦の話で、UTC で数えると月初の1日がずれます）。
+async function devImportMail(month) {
+  const btn = document.getElementById(month ? 'dev-import-month' : 'dev-import-btn');
   const el = document.getElementById('dev-import-msg');
   btn.disabled = true;
-  el.style.color = '#64748b'; el.textContent = '取り込み中…（50通で1分ほどかかります）';
+  el.style.color = '#64748b';
+  el.textContent = month ? '今月分を取り込み中…' : '取り込み中…（50通で1分ほどかかります）';
+  const body = { max: 50 };
+  if (month) {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    const pad = n => String(n).padStart(2, '0');
+    body.since = first.getFullYear() + '-' + pad(first.getMonth() + 1) + '-01';
+    body.max = 200; // 今月分は「全部」が意図なので、上限を上げる
+  }
   try {
-    const res = await api('POST', '/api/mail/import', { max: 50 });
+    const res = await api('POST', '/api/mail/import', body);
     const d = await res.json().catch(() => ({}));
     const s = d.summary || {};
     if (d.success) {
       el.style.color = '#16a34a';
       // 内訳まで出す。「完了」だけだと、全部が重複で0通だったときに気づけない。
-      el.textContent = '取り込み ' + (s.imported || 0) + '通・重複 ' + (s.duplicate || 0)
+      el.textContent = (month ? '今月分: ' : '')
+        + '取り込み ' + (s.imported || 0) + '通・重複 ' + (s.duplicate || 0)
         + '通・失敗 ' + (s.failed || 0) + '通（サーバーには ' + (s.listed || 0) + '通）。';
       loadAudit();
     } else {
@@ -294,7 +311,8 @@ function bindActions() {
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
   document.getElementById('reset-btn').addEventListener('click', resetData);
-  document.getElementById('dev-import-btn').addEventListener('click', devImportMail);
+  document.getElementById('dev-import-btn').addEventListener('click', () => devImportMail(false));
+  document.getElementById('dev-import-month').addEventListener('click', () => devImportMail(true));
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
   document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
   document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);
