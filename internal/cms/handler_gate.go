@@ -17,12 +17,40 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 )
+
+// queryPageID は `?id=` を、ゼロ詰め6桁と数値の両方で返します
+// （`text/plain` で断る口の共通の入口）。不正なら 400 を書いて ok=false。
+//
+// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。数値しか使わない口でも
+// 畳んでおくのは、`page.GetPageDir(id)` / `page.AttachmentDir(id)` が**文字列を取る**
+// ので、あとで1行足した人が `"1"` を渡すと `data/1/1.html` を探しに行くためです。
+// **同じ7行が7つのハンドラに写されていました**（2026-09-21 に寄せた）。
+func queryPageID(w http.ResponseWriter, r *http.Request) (id string, idInt int, ok bool) {
+	return normalizedPageID(w, r.URL.Query().Get("id"))
+}
+
+// normalizedPageID は raw をゼロ詰め6桁と数値へ畳みます（不正なら 400 を書いて ok=false）。
+func normalizedPageID(w http.ResponseWriter, raw string) (id string, idInt int, ok bool) {
+	id, okID := page.NormalizeID(raw)
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return "", 0, false
+	}
+	return id, mustAtoi(id), true
+}
+
+// WriteJSON は JSON の応答を書きます（成功の応答の定型）。
+func WriteJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
 
 // GateJSONPageRead は、JSONで答える読み取り口の入口をまとめて通します。
 //

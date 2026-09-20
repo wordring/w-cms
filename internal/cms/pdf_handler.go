@@ -1,18 +1,13 @@
 package cms
 
 import (
-	"w-cms/internal/auth"
-	"w-cms/internal/cms/editlock"
-	"w-cms/internal/cms/page"
-
 	"bytes"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
+
+	"w-cms/internal/cms/page"
 )
 
 // 添付1件あたりの上限は設定 max_upload_mib（既定32MiB・cms.MaxUploadBytes）。
@@ -73,92 +68,39 @@ func SafeAttachmentName(pageID, raw string, allowed map[string]bool, extError st
 
 // UploadPDFHandler はドラッグ＆ドロップされたPDFを該当ページIDのフォルダに保存します
 func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	// フォームを読む前に本文サイズを制限する（FormValue が内部でパースするため）。
-	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes())
-
-	pageID := r.FormValue("page_id")
-	if pageID == "" {
-		http.Error(w, "page_id is required", http.StatusBadRequest)
-		return
-	}
-	// 保存先のパスに使う前にゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
-	pageID, ok := page.NormalizeID(pageID)
-	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	// PDFの追加はページ内容の変更なので write 権限を要求する
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-	// **先に引き受ける口があれば回す**（汎用の口と同じ扱い・upload_intercept.go）。
-	// 通信箱の取り込み係に担当が居るのは `.eml` だけなので、**PDF はここを素通りして
-	// 普通の添付**になります（2026-09-05。ユーザー:「通信箱のPDF、DXF取り込みはやめましょう。
-	// メモに添付するようにしましょう」）。
-	if interceptUpload(w, r, pageID, "pdf_file") {
-		return
-	}
-
-	// 添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）。
-	// 本文編集と同じ編集ロックで直列化する（editlock/handler.go の宣言どおり）。
+	// 入口は3本共通（upload_common.go）。**先に引き受ける口があれば回します**
+	// （汎用の口と同じ扱い・upload_intercept.go）——通信箱の取り込み係に担当が居るのは
+	// `.eml` だけなので、**PDF はここを素通りして普通の添付**になります（2026-09-05。
+	// ユーザー:「通信箱のPDF、DXF取り込みはやめましょう。メモに添付するようにしましょう」）。
 	// 解析（parse-pdf）は永続状態を変えない（結果はDOMへ足すだけで、保存は
-	// /api/save がロック検証する）ので、そちらは通さない。
-	if !editlock.RequireEditLock(w, r, pageID) {
-		return
-	}
-
-	file, header, err := r.FormFile("pdf_file")
-	if err != nil {
-		http.Error(w, "ファイルを受け取れませんでした（サイズ上限は "+
-			strconv.FormatInt(MaxUploadBytes()>>20, 10)+"MiB です）", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// 保存する名前を先に確定させる（種類が許可されないなら読み込むまでもない）。
-	fileName, err := attachmentFileName(pageID, header.Filename)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "File read error", http.StatusInternalServerError)
+	// /api/save がロック検証する）ので、そちらは編集ロックを通しません。
+	up, ok := openUpload(w, r, "pdf_file", true, attachmentFileName)
+	if !ok {
 		return
 	}
 
 	// 拡張子は名乗りにすぎないので、中身がPDFであることも確認する
 	// （.pdf という名前のHTMLを置かれると配信側の判定を欺ける）。
-	if !bytes.HasPrefix(content, []byte("%PDF-")) {
+	if !bytes.HasPrefix(up.content, []byte("%PDF-")) {
 		http.Error(w, "PDFファイルではありません（先頭が %PDF- ではありません）", http.StatusBadRequest)
 		return
 	}
 
 	// 保存の作法は1箇所（attachment_save.go）。生成名・上書きの監査まで含む。
-	username := ""
-	if u := auth.CurrentUser(r); u != nil {
-		username = u.Username
-	}
-	attachID, fileName, saveErr := SaveAttachment(pageID, username, fileName, content)
+	attachID, fileName, saveErr := SaveAttachment(up.pageID, up.username, up.fileName, up.content)
 	if saveErr != nil {
 		JSONFail(w, http.StatusInternalServerError, "Failed to save PDF")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteJSON(w, map[string]any{
 		"success":   true,
 		"file_name": fileName,
 		"src":       fileName,
 		"id":        attachID,
 		// 配信アドレス（/<ページID>/<生成名>）。クライアントはこれをリンクへ使う
 		// （自前でパスを組むと置き場の知識が二重になる）。
-		"href": page.AttachmentURLFor(pageID, fileName),
+		"href": page.AttachmentURLFor(up.pageID, fileName),
 	})
 }
 

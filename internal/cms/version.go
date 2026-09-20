@@ -78,7 +78,7 @@ func init() {
 	// 中身が最新の版と同じなら何も起きない（RecordVersion が重複を作らない）。
 	editlock.OnRelease = func(pageIDInt int, username string) {
 		id := page.FormatID(pageIDInt)
-		body, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
+		body, err := os.ReadFile(page.BodyPath(id))
 		if err != nil {
 			return // 本文が無いページ（削除直後など）は放っておく
 		}
@@ -342,7 +342,7 @@ func RevertToVersion(pageID, version, author string) error {
 		return err
 	}
 
-	htmlPath := filepath.Join(page.GetPageDir(pageID), pageID+".html")
+	htmlPath := page.BodyPath(pageID)
 	if current, err := os.ReadFile(htmlPath); err == nil {
 		// いまの内容を必ず残す（窓の内側でも force で切る）。
 		if err := RecordVersion(pageID, author, string(current), true); err != nil {

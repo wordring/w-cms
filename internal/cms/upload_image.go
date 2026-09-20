@@ -20,105 +20,65 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
 
-	"w-cms/internal/auth"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 )
 
 // UploadImageHandler はドロップ／ファイル選択／カメラ撮影で届いた画像を、
 // 該当ページのフォルダへ保存します（POST /api/upload-image）。
 func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	// フォームを読む前に本文サイズを制限する（FormValue が内部でパースするため）。
-	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes())
-
-	pageID, ok := page.NormalizeID(r.FormValue("page_id"))
+	// 入口は3本共通（upload_common.go）。画像は受け口（取り込み）へ回しません。
+	up, ok := openUpload(w, r, "image_file", false, imageAttachmentName)
 	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	// 画像の追加はページ内容の変更なので write 権限を要求する。
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-	// 添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）。
-	// 本文編集と同じ編集ロックで直列化する（PDF の口と同じ扱い）。
-	if !editlock.RequireEditLock(w, r, pageID) {
 		return
 	}
 
-	file, header, err := r.FormFile("image_file")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("ファイルを受け取れませんでした（サイズ上限は %dMiB です）", MaxUploadBytes()>>20), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// 扱えないと分かっている画像形式は、名前の段階で**理由を具体的に**返す。
-	// 「許可リスト外です」だけだと、iOS のカメラ写真（HEIC）が入らない人が
-	// 次に何をすればよいか分からない（要件 §2.6）。
-	if msg := unsupportedImageMessage(header.Filename); msg != "" {
-		http.Error(w, msg, http.StatusBadRequest)
-		return
-	}
-
-	// 保存する名前を先に確定させる（種類が許可されないなら読み込むまでもない）。
-	fileName, err := SafeAttachmentName(pageID, header.Filename, allowedImageExts,
-		"画像ファイル（png / jpeg / webp / gif / svg）のみアップロードできます")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "File read error", http.StatusInternalServerError)
-		return
-	}
-
-	kind, err := checkImageContent(fileName, content)
+	kind, err := checkImageContent(up.fileName, up.content)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// EXIF などのメタデータをここで落とす（保存する正本が無害化済みになる）。
-	content, err = StripImageMetadata(kind, content)
+	content, err := StripImageMetadata(kind, up.content)
 	if err != nil {
 		http.Error(w, "画像を処理できませんでした: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// 保存の作法は1箇所（attachment_save.go）。生成名・上書きの監査まで含む。
-	username := ""
-	if u := auth.CurrentUser(r); u != nil {
-		username = u.Username
-	}
-	attachID, fileName, saveErr := SaveAttachment(pageID, username, fileName, content)
+	attachID, fileName, saveErr := SaveAttachment(up.pageID, up.username, up.fileName, content)
 	if saveErr != nil {
 		JSONFail(w, http.StatusInternalServerError, "画像を保存できませんでした")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteJSON(w, map[string]any{
 		"success":   true,
 		"file_name": fileName,
 		"kind":      kind,
 		// 本文の <img src> へそのまま入れる絶対パス。
-		"src": page.AttachmentURLFor(pageID, fileName),
+		"src": page.AttachmentURLFor(up.pageID, fileName),
 		"id":  attachID,
 	})
+}
+
+// imageAttachmentName は画像の口の名前の検査です。
+//
+// 扱えないと分かっている画像形式は、名前の段階で**理由を具体的に**返します。
+// 「許可リスト外です」だけだと、iOS のカメラ写真（HEIC）が入らない人が
+// 次に何をすればよいか分からない（要件 §2.6）。
+func imageAttachmentName(pageID, raw string) (string, error) {
+	if msg := unsupportedImageMessage(raw); msg != "" {
+		return "", errors.New(msg)
+	}
+	return SafeAttachmentName(pageID, raw, allowedImageExts,
+		"画像ファイル（png / jpeg / webp / gif / svg）のみアップロードできます")
 }
 
 // unsupportedImageMessage は「画像ではあるが扱えない形式」の拒否理由を返します

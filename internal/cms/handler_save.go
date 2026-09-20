@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -93,30 +92,9 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// パスとサイドカーに使う前にゼロ詰め6桁へ正規化する（"0012" のような表記揺れで
 	// 正本が別ディレクトリへ書かれるのを防ぐ。page.NormalizeID のコメント参照）。
-	id, ok := page.NormalizeID(id)
+	// 認可・編集ロックはブロック保存と同じ関門を通す（権限とロックの扱いを分岐させない）。
+	id, ok := gateSave(w, r, id, req.Token)
 	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-
-	// write権限を要求する
-	if !page.RequirePageWrite(w, r, id) {
-		return
-	}
-	// 編集ロックのトークン検証：他者が保持中／自分のトークン失効なら拒否する
-	// （明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。
-	// ロックが無い場合は許可（無競合。フロント未対応でも従来どおり保存できる）。
-	if idInt, e := strconv.Atoi(id); e == nil {
-		if u := auth.CurrentUser(r); u != nil && !editlock.Locks.Validate(idInt, u.Username, req.Token) {
-			http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
-			return
-		}
-	}
-
-	// 更新日時は保存のたびにサーバーが「今」を刻む（サイドカーが正本）。
-	updatedAt, err := page.BumpUpdatedAt(id)
-	if err != nil {
-		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
 		return
 	}
 
@@ -125,53 +103,94 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 編集者は画面上の変化で「何が除去されたか」を知る（エコーバック方式）。
 	safeHTML, sanitized := SanitizeReport(req.HTML)
 
-	pageDir := page.GetPageDir(id)
-	os.MkdirAll(pageDir, 0755)
-
-	htmlPath := filepath.Join(pageDir, id+".html")
-	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
-		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+	updatedAt, ok := writeBody(w, id, safeHTML)
+	if !ok {
 		return
 	}
 
 	// 版として残す（コアレッシングが効くので、オートセーブの連打では増えない。
 	// version.go 参照）。**保存そのものは止めない**——履歴が取れないことを理由に
 	// 書けなくするほうが害が大きい（監査記録と同じ判断）。
-	if u := auth.CurrentUser(r); u != nil {
-		if err := RecordVersion(id, u.Username, safeHTML, false); err != nil {
-			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
-		}
+	if err := RecordVersion(id, auth.UsernameOf(r), safeHTML, false); err != nil {
+		log.Printf("版の記録に失敗しました page=%s: %v", id, err)
 	}
 
-	if err := SyncIndex(id, safeHTML); err != nil {
-		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
-		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
+	if !syncBody(w, id, safeHTML) {
 		return
 	}
+	auth.AuditRequest(r, "save", id)
 
-	if u := auth.CurrentUser(r); u != nil {
-		auth.Audit(u.Username, "save", id)
+	WriteJSON(w, saveEcho(id, updatedAt, safeHTML, req.HTML, sanitized))
+}
+
+// gateSave は保存APIの入口です: ページIDの正規化 → write 権限 → 編集ロックの検証。
+// 全文保存とブロック保存が同じ関門を通ります（権限とロックの扱いを分岐させない）。
+//
+// 編集ロックのトークン検証は、他者が保持中／自分のトークン失効なら拒否します
+// （明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。
+// ロックが無い場合は許可（無競合。フロント未対応でも従来どおり保存できる）。
+func gateSave(w http.ResponseWriter, r *http.Request, rawID, token string) (id string, ok bool) {
+	id, _, ok = normalizedPageID(w, rawID)
+	if !ok {
+		return "", false
 	}
+	if !page.RequirePageWrite(w, r, id) {
+		return "", false
+	}
+	if !editlock.RequireLockToken(w, r, id, token) {
+		return "", false
+	}
+	return id, true
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
-		"page_id":    id,
-		"updated_at": updatedAt,
-		// html はサニタイズ後の本文。sanitized が true のときエディタは差分ブロックを
-		// 置き換えて、除去が起きたことを編集者へ通知する。
-		"html":      safeHTML,
-		"sanitized": sanitized,
-		// レジストリ未定義の data-type の**告知**（拒否ではない。語彙モデル §9 の決定:
-		// 未知の data-type は通し、保存時に「未定義の種別」と通知する）。
-		"unknown_types": UnknownVocabTypes(safeHTML),
-		// 見出しの改名で③計算プラグインが読めなくなった列の告知（同じくエコーバックの流儀）。
-		// 鍵は見出しの表示文字なので、改名は同期を**黙って**止めてしまう。
+// writeBody は更新日時を進めて本文を正本ファイルへ書きます（失敗は応答に書いて ok=false）。
+// 更新日時は保存のたびにサーバーが「今」を刻みます（サイドカーが正本）。
+func writeBody(w http.ResponseWriter, id, html string) (updatedAt string, ok bool) {
+	updatedAt, err := page.BumpUpdatedAt(id)
+	if err != nil {
+		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
+		return "", false
+	}
+	pageDir := page.GetPageDir(id)
+	os.MkdirAll(pageDir, 0755)
+	if err := page.WriteFileAtomic(filepath.Join(pageDir, id+".html"), []byte(html), 0644); err != nil {
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		return "", false
+	}
+	return updatedAt, true
+}
+
+// syncBody は書いた本文で索引を同期します（失敗は応答に書いて false）。
+func syncBody(w http.ResponseWriter, id, html string) bool {
+	if err := SyncIndex(id, html); err != nil {
+		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
+		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
+		return false
+	}
+	return true
+}
+
+// saveEcho は保存の応答のうち、全文保存とブロック保存で共通の鍵です。
+//
+//   - html はサニタイズ後の本文。sanitized が true のときエディタは差分ブロックを
+//     置き換えて、除去が起きたことを編集者へ通知する。
+//   - unknown_types はレジストリ未定義の data-type の**告知**（拒否ではない。語彙モデル §9 の
+//     決定: 未知の data-type は通し、保存時に「未定義の種別」と通知する）。
+//   - unresolved_fields は見出しの改名で③計算プラグインが読めなくなった列の告知
+//     （同じくエコーバックの流儀）。鍵は見出しの表示文字なので、改名は同期を**黙って**止めてしまう。
+//   - stripped_ids は殻が独占する接頭辞つきの id を剥がして保存したことの告知
+//     （走査は**サニタイズ前**の入力 rawHTML。後では接頭辞が消えていて分からない）。
+func saveEcho(id, updatedAt, safeHTML, rawHTML string, sanitized bool) map[string]any {
+	return map[string]any{
+		"success":           true,
+		"page_id":           id,
+		"updated_at":        updatedAt,
+		"html":              safeHTML,
+		"sanitized":         sanitized,
+		"unknown_types":     UnknownVocabTypes(safeHTML),
 		"unresolved_fields": UnresolvedVocabFields(safeHTML),
-		// 殻が独占する接頭辞つきの id は剥がして保存する。書き手が気づけるよう告知する
-		// （走査は**サニタイズ前**の入力。後では接頭辞が消えていて分からない）。
-		"stripped_ids": ShellPrefixedIDs(req.HTML),
-	})
+		"stripped_ids":      ShellPrefixedIDs(rawHTML),
+	}
 }
 
 // SaveBlockRequest は1ブロックだけを更新する保存リクエストです。
@@ -205,30 +224,13 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "page_id と block_id が必要です", http.StatusBadRequest)
 		return
 	}
-	// パスに使う前にゼロ詰め6桁へ正規化する（全文保存と同じ）。
-	normID, ok := page.NormalizeID(req.PageID)
+	// 全文保存と同じ関門（正規化・認可・ロック検証）を通す。
+	id, ok := gateSave(w, r, req.PageID, req.Token)
 	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	req.PageID = normID
-
-	// 全文保存と同じ認可・ロック検証を通す（権限とロックの扱いを分岐させない）。
-	if !page.RequirePageWrite(w, r, req.PageID) {
-		return
-	}
-	idInt, err := strconv.Atoi(req.PageID)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	if u := auth.CurrentUser(r); u != nil && !editlock.Locks.Validate(idInt, u.Username, req.Token) {
-		http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
 		return
 	}
 
-	htmlPath := filepath.Join(page.GetPageDir(req.PageID), req.PageID+".html")
-	current, err := os.ReadFile(htmlPath)
+	current, err := os.ReadFile(page.BodyPath(id))
 	if err != nil {
 		http.Error(w, "本文を読み込めませんでした", http.StatusNotFound)
 		return
@@ -248,38 +250,18 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedAt, err := page.BumpUpdatedAt(req.PageID)
-	if err != nil {
-		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
+	updatedAt, ok := writeBody(w, id, merged)
+	if !ok {
 		return
 	}
-
-	if err := page.WriteFileAtomic(htmlPath, []byte(merged), 0644); err != nil {
-		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+	if !syncBody(w, id, merged) {
 		return
 	}
-	if err := SyncIndex(req.PageID, merged); err != nil {
-		log.Printf("SyncIndex failed for page %s: %v\n", req.PageID, err)
-		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+	auth.AuditRequest(r, "save-block", id)
 
-	if u := auth.CurrentUser(r); u != nil {
-		auth.Audit(u.Username, "save-block", req.PageID)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
-		"page_id":    req.PageID,
-		"block_id":   req.BlockID,
-		"updated_at": updatedAt,
-		// html は当該ブロックのサニタイズ後HTML（エコーバックはブロック単位になる）。
-		"html":      safeBlock,
-		"sanitized": sanitized,
-		// 告知の対象は送られてきたブロックだけ（エコーバックと同じ粒度）。
-		"unknown_types":     UnknownVocabTypes(safeBlock),
-		"unresolved_fields": UnresolvedVocabFields(safeBlock),
-		"stripped_ids":      ShellPrefixedIDs(req.HTML),
-	})
+	// html は当該ブロックのサニタイズ後HTML（エコーバックはブロック単位になる）。
+	// 告知の対象も送られてきたブロックだけ（エコーバックと同じ粒度）。
+	resp := saveEcho(id, updatedAt, safeBlock, req.HTML, sanitized)
+	resp["block_id"] = req.BlockID
+	WriteJSON(w, resp)
 }

@@ -130,11 +130,7 @@ func RenderReferenceLinks(bodyHTML string) string {
 	if !changed {
 		return bodyHTML
 	}
-	var sb strings.Builder
-	for _, n := range nodes {
-		html.Render(&sb, n)
-	}
-	return sb.String()
+	return htmldoc.Render(nodes)
 }
 
 // linkRefDD は dd の中身を参照リンクへ置き換えます（表示文字は元の値のまま）。

@@ -15,14 +15,9 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"crypto/rand"
 	"html"
 	"os"
-	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"w-cms/internal/cms/page"
 )
@@ -62,7 +57,7 @@ func RewriteBody(pageID, author string, rewrite func(current string) string) err
 // rewritePageBody は本文の読み書きの**作法**（サニタイズ・更新日時・版・索引の順序）を
 // 1箇所に持ちます。どこを書き換えるかだけが rewrite で変わります。
 func rewritePageBody(pageID, author string, rewrite func(current string) string) error {
-	htmlPath := filepath.Join(page.GetPageDir(pageID), pageID+".html")
+	htmlPath := page.BodyPath(pageID)
 	current, err := os.ReadFile(htmlPath)
 	if err != nil {
 		return err
@@ -180,15 +175,12 @@ func FirstBlockHTML(bodyHTML string) string {
 // ReadPageBody はページ本文（保存されている生のHTML）を読みます。
 // 表示用の合成（計算ビュー・参照リンク・アンカー）は掛かっていません。
 func ReadPageBody(pageID string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	b, err := os.ReadFile(page.BodyPath(pageID))
 	if err != nil {
 		return "", err
 	}
 	return string(b), nil
 }
-
-// blockIDAttrRe は本文の中の data-id を拾う正規表現です（採番の重複避けに使う）。
-var blockIDAttrRe = regexp.MustCompile(`data-id="([0-9a-z]+)"`)
 
 // NewBlockID は bodyHTML の中で未使用のブロックIDを1つ返します。
 //
@@ -200,28 +192,10 @@ var blockIDAttrRe = regexp.MustCompile(`data-id="([0-9a-z]+)"`)
 //
 // 形はエディタの採番（app.js の newBlockId）に合わせた4桁の base36 です
 // ——**同じ本文に2種類の採番規則を混ぜない**ため。短さで衝突しうる分は、
-// エディタと同じく使用済みとの突き合わせで潰します。
+// エディタと同じく使用済みとの突き合わせで潰します。採番の規則そのものは
+// 添付ID（`page.GeneratedAttachmentID`）と1つの口（`page.RandomShortID`）です。
 func NewBlockID(bodyHTML string) string {
-	used := map[string]bool{}
-	for _, m := range blockIDAttrRe.FindAllStringSubmatch(bodyHTML, -1) {
-		used[m[1]] = true
-	}
-	const chars = "0123456789abcdefghijklmnopqrstuvwxyz"
-	buf := make([]byte, 4)
-	for attempt := 0; attempt < 50; attempt++ {
-		if _, err := rand.Read(buf); err != nil {
-			break
-		}
-		id := make([]byte, 4)
-		for i, b := range buf {
-			id[i] = chars[int(b)%len(chars)]
-		}
-		if !used[string(id)] {
-			return string(id)
-		}
-	}
-	// 乱数が尽きる状況は想定していないが、無言で衝突させるよりは長い値を返す。
-	return strconv.FormatInt(time.Now().UnixNano(), 36)
+	return page.RandomShortID(page.BlockIDsIn([]byte(bodyHTML)))
 }
 
 // ── 可変タグの読み書き（2026-09-15 に intake_eml.go・handler_handled.go から寄せた）──

@@ -149,12 +149,7 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 		// 各ビューは自分の中へ理由を描いて続行する作りなので、ここへは通常来ない。
 		log.Printf("計算ビューの描画でエラー page=%d: %v", pageIDInt, err)
 	}
-
-	var sb strings.Builder
-	for _, n := range nodes {
-		html.Render(&sb, n)
-	}
-	return sb.String()
+	return htmldoc.Render(nodes)
 }
 
 // fillViewMarker はマーカー要素の中身を描画結果（vocab-chrome）へ置き換えます。

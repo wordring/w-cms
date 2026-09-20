@@ -300,6 +300,14 @@ func ParseFragment(s string) ([]*html.Node, error) {
 	return html.ParseFragment(strings.NewReader(s), ctx)
 }
 
+// Render はノード列をHTML文字列へ描画します（ParseFragment の逆）。
+//
+// 本文を木にして書き換え、文字列へ戻す口はすべてここを通します——同じ3行が
+// cms パッケージの5か所に写されていました（2026-09-21 に寄せた）。
+func Render(nodes []*html.Node) string {
+	return renderNodes(nodes)
+}
+
 // renderNodes はノード列をHTML文字列へ描画します。
 func renderNodes(nodes []*html.Node) string {
 	var sb strings.Builder

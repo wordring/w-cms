@@ -199,8 +199,7 @@ func attachmentURLFor(user *auth.User, pageID, blockID string) (url, fileName st
 	}
 	// 添付は `files/` の中。**中身を読まず、名前だけを見ます**——開くのはブラウザで、
 	// ここが要るのは「在るか」と「どう開くか」だけです。
-	dir := filepath.Join(page.GetPageDir(pageID), "files")
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(page.AttachmentDir(pageID))
 	if err != nil {
 		return "", "", "", false
 	}

@@ -78,27 +78,17 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 対象ページの read 権限を要求しますが、匿名でも実効公開（page.EffectivePublic）なら許可します
 // （子ナビと同様の扱い。認証認可設計.md 10.5）。
 func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
-	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
-	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
-	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
-	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, idInt, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 	if !page.RequirePageReadOrPublic(w, r, id) {
 		return
 	}
-	idInt, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
 
 	var parent sql.NullInt64
 	var createdAt, createdBy, updatedAt sql.NullString
-	err = database.DB.QueryRow(
+	err := database.DB.QueryRow(
 		"SELECT parent_id, created_at, created_by, updated_at FROM pages WHERE id = ?", idInt,
 	).Scan(&parent, &createdAt, &createdBy, &updatedAt)
 	if err != nil {
@@ -114,8 +104,7 @@ func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		parentTitle = PageTitleByID(int(parent.Int64))
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteJSON(w, map[string]any{
 		"id":           id,
 		"parent_id":    parentStr,
 		"parent_title": parentTitle,
@@ -147,18 +136,15 @@ func RebuildDBAPIHandler(w http.ResponseWriter, r *http.Request) {
 	pages, ms, ok := lastRebuildResult()
 	// 監査記録（要件定義書 §2.3）。派生索引の作り直しは途中で失敗すると集計が
 	// 静かに欠けるので、いつ・誰が回して何ページ取り込めたのかを残す。
-	if u := auth.CurrentUser(r); u != nil {
-		target := "全再構築"
-		if ok {
-			target = strconv.Itoa(pages) + "ページ / " + strconv.FormatInt(ms, 10) + "ミリ秒"
-		}
-		auth.Audit(u.Username, "rebuild-db", target)
+	target := "全再構築"
+	if ok {
+		target = strconv.Itoa(pages) + "ページ / " + strconv.FormatInt(ms, 10) + "ミリ秒"
 	}
-	resp := map[string]interface{}{"success": true}
+	auth.AuditRequest(r, "rebuild-db", target)
+	resp := map[string]any{"success": true}
 	if ok {
 		resp["pages"] = pages
 		resp["duration_ms"] = ms
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	WriteJSON(w, resp)
 }

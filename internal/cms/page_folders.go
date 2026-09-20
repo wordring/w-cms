@@ -13,7 +13,6 @@ import (
 	"html"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -41,7 +40,7 @@ func CreateChildPage(parentID, owner, bodyHTML string) (string, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", err
 	}
-	if err := page.WriteFileAtomic(filepath.Join(dir, newID+".html"), []byte(safeHTML), 0644); err != nil {
+	if err := page.WriteFileAtomic(page.BodyPath(newID), []byte(safeHTML), 0644); err != nil {
 		return "", err
 	}
 

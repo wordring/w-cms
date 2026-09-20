@@ -22,101 +22,51 @@ package cms
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 
-	"w-cms/internal/auth"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 )
 
 // UploadFileHandler は POST /api/upload-file（汎用の添付）です。
 func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	limit := MaxUploadBytes()
-	r.Body = http.MaxBytesReader(w, r.Body, limit)
-
-	pageID := r.FormValue("page_id")
-	if pageID == "" {
-		http.Error(w, "page_id is required", http.StatusBadRequest)
-		return
-	}
-	pageID, ok := page.NormalizeID(pageID)
+	// 入口は3本共通（upload_common.go）。**先に引き受ける口があれば回します**
+	// （upload_intercept.go・2026-09-15）。いまは通信箱への到着を取り込み係へ回す口だけ
+	// （intake.go）——コアは通信箱を名指ししない。引き受けなければ通常の添付になります。
+	up, ok := openUpload(w, r, "file", true, genericAttachmentName)
 	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-
-	// **先に引き受ける口があれば回す**（upload_intercept.go・2026-09-15）。
-	// いまは通信箱への到着を取り込み係へ回す口だけ（intake.go）——コアは通信箱を
-	// 名指ししない。引き受けなければ、通常の添付として下の経路へ流れる。
-	if interceptUpload(w, r, pageID, "file") {
-		return
-	}
-
-	// 添付は同名を無条件で上書きし、リビジョンも無い——本文編集と同じ編集ロックで直列化。
-	if !editlock.RequireEditLock(w, r, pageID) {
-		return
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "ファイルを受け取れませんでした（サイズ上限は "+
-			strconv.FormatInt(limit>>20, 10)+"MiB です）", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	ext := strings.ToLower(filepath.Ext(header.Filename))
-	// 専用の口があるものは迂回させない（画像＝マジックナンバー検証・EXIF除去、
-	// PDF＝%PDF- 検証）。**通信箱宛てだけは例外**で、上の取り込み分岐が
-	// 種類ごとの検査を通したうえで引き受ける（1つの口で全部受ける・2026-09-03）。
-	if ext == ".pdf" || allowedImageExts[ext] {
-		http.Error(w, "この種類は専用のアップロード口を使ってください（画像・PDF）", http.StatusBadRequest)
-		return
-	}
-	fileName, err := SafeAttachmentName(pageID, header.Filename, GenericAttachmentExts(),
-		"この拡張子は添付として受け付けていません（許可リストは config/settings.json の attachment_extensions）")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "File read error", http.StatusInternalServerError)
 		return
 	}
 
 	// 保存の作法は1箇所（attachment_save.go）。生成名・上書きの監査まで含む。
-	username := ""
-	if u := auth.CurrentUser(r); u != nil {
-		username = u.Username
-	}
-	attachID, fileName, saveErr := SaveAttachment(pageID, username, fileName, content)
+	attachID, fileName, saveErr := SaveAttachment(up.pageID, up.username, up.fileName, up.content)
 	if saveErr != nil {
 		JSONFail(w, http.StatusInternalServerError, "Failed to save file")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	WriteJSON(w, map[string]any{
 		"success":   true,
 		"file_name": fileName,
 		"id":        attachID, // リンクブロックの data-id に使う（ファイル名と一致）
-		"href":      page.AttachmentURLFor(pageID, fileName),
+		"href":      page.AttachmentURLFor(up.pageID, fileName),
 	})
+}
+
+// genericAttachmentName は汎用の口の名前の検査です。
+//
+// 専用の口があるものは迂回させない（画像＝マジックナンバー検証・EXIF除去、
+// PDF＝%PDF- 検証）。**通信箱宛てだけは例外**で、取り込みの受け口が
+// 種類ごとの検査を通したうえで引き受ける（1つの口で全部受ける・2026-09-03）。
+func genericAttachmentName(pageID, raw string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(raw))
+	if ext == ".pdf" || allowedImageExts[ext] {
+		return "", errors.New("この種類は専用のアップロード口を使ってください（画像・PDF）")
+	}
+	return SafeAttachmentName(pageID, raw, GenericAttachmentExts(),
+		"この拡張子は添付として受け付けていません（許可リストは config/settings.json の attachment_extensions）")
 }
 
 // GuardUploadContent は、1つの口で何でも受ける経路のために、**専用の口が持っていた守り**を

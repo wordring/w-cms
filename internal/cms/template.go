@@ -24,7 +24,6 @@ package cms
 import (
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -168,7 +167,7 @@ func loadTemplateBody(w http.ResponseWriter, r *http.Request, tmplID string) (st
 			"テンプレートとして使えません）", http.StatusBadRequest)
 		return "", false
 	}
-	data, err := os.ReadFile(filepath.Join(page.GetPageDir(norm), norm+".html"))
+	data, err := os.ReadFile(page.BodyPath(norm))
 	if err != nil {
 		http.Error(w, "テンプレートの本文を読めませんでした", http.StatusInternalServerError)
 		return "", false
@@ -179,7 +178,7 @@ func loadTemplateBody(w http.ResponseWriter, r *http.Request, tmplID string) (st
 // pageTitleFromDisk はページ本文をディスクから読んでタイトル（最初の h1）を返します。
 // DBの pages.title を使わないのは IsUnderTemplateRoot と同じ理由です（再構築の順序非依存）。
 func pageTitleFromDisk(id string) string {
-	data, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
+	data, err := os.ReadFile(page.BodyPath(id))
 	if err != nil {
 		return ""
 	}

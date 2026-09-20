@@ -2,9 +2,7 @@ package cms
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -24,14 +22,8 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// サイドカーのパスに使うためゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	pageID, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, pageID, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 
@@ -44,8 +36,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		canPublish := u.IsAdmin || u.Username == cur.Owner
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		WriteJSON(w, map[string]any{
 			"owner": cur.Owner, "group": cur.Group, "mode": cur.Mode,
 			"can_chmod": canPublish, "can_chown": u.IsAdmin,
 			// 匿名公開（認証認可設計.md 10章）。public はこのページ自身のフラグ、
@@ -78,67 +69,79 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 現在のサイドカー（正本）を起点に変更する。読めなければ**書かずに止める**
-	// ——派生（page_perms）から組み立て直して書き戻すと、親も作成情報も失ったまま
-	// 「見た目は健全なサイドカー」を新造してしまう（2026-08-21 決定）。
-	p, ok := page.ReadSidecar(id)
-	if !ok {
-		http.Error(w, "ページ属性ファイルを読めないため権限を変更できません。管理者が手作業で修復してください。",
-			http.StatusConflict)
+	if req.Mode != nil && !page.ValidMode(*req.Mode) {
+		http.Error(w, "mode は3桁・各桁0〜3で指定してください（例: 330）", http.StatusBadRequest)
 		return
 	}
-
+	// 匿名公開フラグの変更（認証認可設計.md 10章）。公開（true）にするときだけ
+	// パスゲートを検証する: 親が実効公開でなければ公開できない（ルートは親なしで可）。
+	if req.Public != nil && *req.Public && !parentIsPublishable(pageID) {
+		http.Error(w, "親ページが公開されていないため公開できません。先に親ページを公開するか、公開可能な親へ移動してください。", http.StatusForbidden)
+		return
+	}
+	// 監査の動詞は**最初に指定された欄**で決める（mode → group → public の順）。
 	action := ""
-	if req.Mode != nil {
-		if !page.ValidMode(*req.Mode) {
-			http.Error(w, "mode は3桁・各桁0〜3で指定してください（例: 330）", http.StatusBadRequest)
-			return
-		}
-		p.Mode = *req.Mode
+	switch {
+	case req.Mode != nil:
 		action = "chmod"
-	}
-	if req.Group != nil {
-		p.Group = *req.Group
-		if action == "" {
-			action = "chgrp"
-		}
-	}
-	if req.Public != nil {
-		// 匿名公開フラグの変更（認証認可設計.md 10章）。公開（true）にするときだけ
-		// パスゲートを検証する: 親が実効公開でなければ公開できない（ルートは親なしで可）。
-		if *req.Public && !parentIsPublishable(pageID) {
-			http.Error(w, "親ページが公開されていないため公開できません。先に親ページを公開するか、公開可能な親へ移動してください。", http.StatusForbidden)
-			return
-		}
-		p.Public = *req.Public
-		if action == "" {
-			if *req.Public {
-				action = "publish"
-			} else {
-				action = "unpublish"
-			}
-		}
-	}
-	if action == "" {
+	case req.Group != nil:
+		action = "chgrp"
+	case req.Public != nil && *req.Public:
+		action = "publish"
+	case req.Public != nil:
+		action = "unpublish"
+	default:
 		http.Error(w, "mode・group・public のいずれかを指定してください", http.StatusBadRequest)
 		return
 	}
 
-	if err := page.WriteSidecar(id, p); err != nil {
-		http.Error(w, "サイドカーの書き込みに失敗しました: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := page.RefreshPerms(id); err != nil {
-		http.Error(w, "権限インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
+	p, ok := rewriteSidecarPerms(w, id, "権限", func(p *page.PageMeta) {
+		if req.Mode != nil {
+			p.Mode = *req.Mode
+		}
+		if req.Group != nil {
+			p.Group = *req.Group
+		}
+		if req.Public != nil {
+			p.Public = *req.Public
+		}
+	})
+	if !ok {
 		return
 	}
 	auth.Audit(u.Username, action, id)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteJSON(w, map[string]any{
 		"success": true, "owner": p.Owner, "group": p.Group, "mode": p.Mode,
 		"public": p.Public, "effective_public": page.EffectivePublic(pageID),
 	})
+}
+
+// rewriteSidecarPerms は権限系の書き換えの作法です: サイドカー（正本）を読み、change で
+// 変え、書き戻し、派生（page_perms）を更新する。失敗は応答に書いて ok=false。
+// chmod／chgrp／publish（PagePermsHandler）と chown（PageChownHandler）が共有します。
+//
+// 現在のサイドカーを起点に変更します。読めなければ**書かずに止めます**
+// ——派生（page_perms）から組み立て直して書き戻すと、親も作成情報も失ったまま
+// 「見た目は健全なサイドカー」を新造してしまう（2026-08-21 決定）。what は断り文に入る
+// 対象の呼び名（「権限」「所有者」）。
+func rewriteSidecarPerms(w http.ResponseWriter, id, what string, change func(*page.PageMeta)) (page.PageMeta, bool) {
+	p, ok := page.ReadSidecar(id)
+	if !ok {
+		http.Error(w, "ページ属性ファイルを読めないため"+what+"を変更できません。管理者が手作業で修復してください。",
+			http.StatusConflict)
+		return page.PageMeta{}, false
+	}
+	change(&p)
+	if err := page.WriteSidecar(id, p); err != nil {
+		http.Error(w, "サイドカーの書き込みに失敗しました: "+err.Error(), http.StatusInternalServerError)
+		return page.PageMeta{}, false
+	}
+	if err := page.RefreshPerms(id); err != nil {
+		http.Error(w, "権限インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
+		return page.PageMeta{}, false
+	}
+	return p, true
 }
 
 // parentIsPublishable は、ページ pageID を匿名公開してよいか（親チェーンが許すか）を返します。
@@ -175,13 +178,8 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// サイドカーのパスに使うためゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	if _, err := strconv.Atoi(id); err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, _, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
@@ -200,24 +198,11 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, ok := page.ReadSidecar(id)
+	p, ok := rewriteSidecarPerms(w, id, "所有者", func(p *page.PageMeta) { p.Owner = req.Owner })
 	if !ok {
-		http.Error(w, "ページ属性ファイルを読めないため所有者を変更できません。管理者が手作業で修復してください。",
-			http.StatusConflict)
 		return
 	}
-	p.Owner = req.Owner
+	auth.AuditRequest(r, "chown", id+"->"+req.Owner)
 
-	if err := page.WriteSidecar(id, p); err != nil {
-		http.Error(w, "サイドカーの書き込みに失敗しました: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := page.RefreshPerms(id); err != nil {
-		http.Error(w, "権限インデックスの更新に失敗しました: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	auth.Audit(auth.CurrentUser(r).Username, "chown", id+"->"+req.Owner)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "owner": p.Owner})
+	WriteJSON(w, map[string]any{"success": true, "owner": p.Owner})
 }

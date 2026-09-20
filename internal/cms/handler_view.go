@@ -25,11 +25,10 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。空も不正も同じ扱いで、
-	// 「ページIDが不正です」に寄せます——区別しても呼ぶ側にできることは同じです。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	// 空も不正も同じ扱いで「ページIDが不正です」に寄せます
+	// ——区別しても呼ぶ側にできることは同じです。
+	id, idInt, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 	// ページ本文の取得は read 権限を要求する（匿名でも実効公開なら閲覧可）。
@@ -37,14 +36,8 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idInt, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "Invalid id format", http.StatusBadRequest)
-		return
-	}
-
 	var filePath string
-	err = database.DB.QueryRow("SELECT file_path FROM pages WHERE id = ?", idInt).Scan(&filePath)
+	err := database.DB.QueryRow("SELECT file_path FROM pages WHERE id = ?", idInt).Scan(&filePath)
 	if err != nil {
 		http.Error(w, "Page not found", http.StatusNotFound)
 		return

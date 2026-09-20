@@ -112,12 +112,7 @@ func RenderAnchors(bodyHTML string) string {
 	if !changed {
 		return bodyHTML
 	}
-
-	var sb strings.Builder
-	for _, n := range nodes {
-		html.Render(&sb, n)
-	}
-	return sb.String()
+	return htmldoc.Render(nodes)
 }
 
 // inVocabChrome は要素がサーバー描画の編集クローム（.vocab-chrome）の中にあるかを返します。

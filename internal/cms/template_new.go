@@ -59,12 +59,7 @@ func FreshenTemplateBody(bodyHTML, newPageID string) string {
 		// 種まきの失敗は新規作成を止めるほどではない（設計 §7）。素のコピーで続行する。
 		log.Printf("テンプレートの新規化でエラー page=%s: %v", newPageID, err)
 	}
-
-	var sb strings.Builder
-	for _, n := range nodes {
-		html.Render(&sb, n)
-	}
-	return sb.String()
+	return htmldoc.Render(nodes)
 }
 
 // init はテンプレート新規化を**種まき**としてコアの回覧機構へ登録します（walk.go）。

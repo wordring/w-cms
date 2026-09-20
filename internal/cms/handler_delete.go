@@ -14,7 +14,6 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,9 +36,8 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, pageID, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 	if id == TopPageID {
@@ -51,11 +49,6 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// エディタ内の変更操作と同じ編集ロックで直列化する（他者保持中なら409）。
 	if !editlock.RequireEditLock(w, r, id) {
-		return
-	}
-	pageID, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
 
@@ -84,12 +77,9 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	editlock.Locks.ForceRelease(pageID) // 消えたページのロックは残さない
-	if u := auth.CurrentUser(r); u != nil {
-		auth.Audit(u.Username, "delete-page", id+" -> "+trashPath)
-	}
+	auth.AuditRequest(r, "delete-page", id+" -> "+trashPath)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteJSON(w, map[string]any{
 		"success": true,
 		"page_id": id,
 		// 復旧に使えるよう移動先を返す（UIは表示しないが、監査ログと突き合わせられる）。

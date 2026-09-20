@@ -35,7 +35,7 @@ func SyncIndex(id string, htmlContent string) error {
 	title := PageTitle(root)
 
 	// 手順3: 物理ファイルの保存先パスを構築
-	filePath := filepath.Join(page.GetPageDir(id), id+".html")
+	filePath := page.BodyPath(id)
 
 	// ページ属性（親ページID・作成日時・作成者・更新日時）はサイドカー（正本）から読み取る。
 	// サイドカーが無い場合は親なし・作成情報なしとして扱い、更新日時は「今」（RFC3339 UTC）に

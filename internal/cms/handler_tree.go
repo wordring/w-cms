@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -196,10 +195,8 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. HTMLファイルを物理保存
-	pageDir := page.GetPageDir(newID)
-	os.MkdirAll(pageDir, 0755)
-	htmlPath := filepath.Join(pageDir, newID+".html")
-	if err := page.WriteFileAtomic(htmlPath, []byte(html), 0644); err != nil {
+	os.MkdirAll(page.GetPageDir(newID), 0755)
+	if err := page.WriteFileAtomic(page.BodyPath(newID), []byte(html), 0644); err != nil {
 		http.Error(w, "Failed to write file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -322,31 +319,20 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 // ValidateParentAPIHandler は、編集中ページの親ページ変更が妥当かを返します（クライアントの即時検証用）。
 // 権威的な検証は保存API側でも行われます。対象ページのwrite権限を前提とします。
 func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
-	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
-	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
-	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
-	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, childID, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 	if !page.RequirePageWrite(w, r, id) {
 		return
 	}
-	childID, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
 	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
 
-	w.Header().Set("Content-Type", "application/json")
 	if msg, code := validateParentChange(auth.CurrentUser(r), childID, newParent); code != 0 {
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": msg})
+		WriteJSON(w, map[string]any{"ok": false, "error": msg})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+	WriteJSON(w, map[string]any{"ok": true})
 }
 
 // SetParentAPIHandler は編集中ページの親ページを付け替えます（親はサイドカーが正本）。
@@ -359,7 +345,7 @@ func resyncSubtree(rootID string) {
 	for len(queue) > 0 {
 		id := queue[0]
 		queue = queue[1:]
-		if content, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html")); err == nil {
+		if content, err := os.ReadFile(page.BodyPath(id)); err == nil {
 			if err := SyncIndex(id, string(content)); err != nil {
 				log.Printf("親の付け替え後の再同期に失敗 page=%s: %v", id, err)
 			}
@@ -387,10 +373,8 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// サイドカーのパスに使うためゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, _, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 	if !page.RequirePageWrite(w, r, id) {
@@ -410,8 +394,7 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "parent_id": parentStore, "updated_at": updatedAt})
+	WriteJSON(w, map[string]any{"ok": true, "parent_id": parentStore, "updated_at": updatedAt})
 }
 
 // SetPageParent は親の付け替えの**芯**です（検証・サイドカー・索引・配下の同期）。

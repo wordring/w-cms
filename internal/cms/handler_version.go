@@ -8,9 +8,7 @@ package cms
 // 認可を迂回する裏口になります。
 
 import (
-	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -23,9 +21,8 @@ func VersionsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	id, ok := page.NormalizeID(r.URL.Query().Get("id"))
+	id, _, ok := queryPageID(w, r)
 	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
 	if !page.RequirePageRead(w, r, id) {
@@ -36,8 +33,7 @@ func VersionsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "版の一覧を取得できませんでした", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(list)
+	WriteJSON(w, list)
 }
 
 // VersionAPIHandler は指定した版の本文を返します（GET /api/version?id=&v=）。
@@ -50,9 +46,8 @@ func VersionAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	id, ok := page.NormalizeID(r.URL.Query().Get("id"))
+	id, idInt, ok := queryPageID(w, r)
 	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
 	if !page.RequirePageRead(w, r, id) {
@@ -65,7 +60,6 @@ func VersionAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 本文を読む経路はすべて同じ扱い（サニタイズ二層目＋計算ビューの事前描画。
 	// docs/本文サニタイズ設計.md §4）——ここだけ素通しだと、版を開いた鏡の中身が空になる。
-	idInt, _ := strconv.Atoi(id)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write([]byte(RenderComputedViews(r, idInt, Sanitize(string(body)))))
@@ -84,9 +78,8 @@ func RevertAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
-	id, ok := page.NormalizeID(req.PageID)
+	id, idInt, ok := normalizedPageID(w, req.PageID)
 	if !ok {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
 	// 本文を書き換える操作なので、保存とまったく同じ守りを掛ける。
@@ -97,28 +90,20 @@ func RevertAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := auth.CurrentUser(r)
-	author := page.DefaultOwner
-	if u != nil {
-		author = u.Username
-	}
+	author := auth.UsernameOf(r) // RequirePageWrite が通っていれば空ではない
 	if err := RevertToVersion(id, req.Version, author); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if u != nil {
-		// 監査記録: どの版へ戻したかが分からないと後から追えない。
-		auth.Audit(u.Username, "revert", id+" -> "+req.Version)
-	}
+	// 監査記録: どの版へ戻したかが分からないと後から追えない。
+	auth.AuditRequest(r, "revert", id+" -> "+req.Version)
 
 	body, err := ReadVersion(id, req.Version)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	idInt, _ := strconv.Atoi(id)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteJSON(w, map[string]any{
 		"success": true,
 		"page_id": id,
 		"version": req.Version,
