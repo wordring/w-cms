@@ -63,6 +63,8 @@ type orderJudgment struct {
 	OrderNo     string         `json:"order_no"`
 	Customer    string         `json:"customer"`
 	OrderDate   string         `json:"order_date"`
+	// DueDate は納期です。⚠ **明細ではなくヘッダにあります**（実データで確認）。
+	DueDate string `json:"due_date"`
 	Items       []orderPDFItem `json:"items"`
 	// Drawings は**1つのPDFに複数の図面が入っていたとき**の2枚目以降を含む一覧です
 	// （2026-09-20 ユーザー:「一つのPDFに複数の図面が入っている場合もあるようです」）。
@@ -117,6 +119,10 @@ type orderPDFItem struct {
 	ItemName string `json:"item_name"`
 	Price    string `json:"price"`
 	Quantity string `json:"quantity"`
+	// Unit は数量の単位です（`個`・`セット` など）。⚠ **落とすと数量の意味が
+	// 変わります**——`100` が100個なのか100セットなのか分からなくなり、
+	// **まれにしか出ないセットの行だけが黙って間違います**（2026-09-20）。
+	Unit string `json:"unit"`
 }
 
 // judgeOrderPDF は判定の入口です。テストが偽物へ差し替えられるよう変数にしてあります
@@ -282,7 +288,8 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
   "order_no": "発注書番号（発注書のとき。記載が無ければ空文字）",
   "customer": "発行元（顧客）の会社名（記載が無ければ空文字）",
   "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
-  "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）"}],
+  "due_date": "納期を YYYY-MM-DD 形式で（明細の行ではなく、書面の上のほうにある納期。記載が無ければ空文字）",
+  "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}],
   "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}]
 }
 ⚠ 1つのPDFに**複数の図面**が入っていることがあります（ページごとに別の図面、
@@ -339,6 +346,9 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	writeHeaderPair(&b, OrderNoTag, cms.NormalizeNameForIngest(j.OrderNo))
 	writeHeaderPair(&b, OrderClientTag, cms.NormalizeNameForIngest(j.Customer))
 	writeHeaderPair(&b, OrderedAtTag, j.OrderDate)
+	// ⚠ **納期は行ではなくここ**（2026-09-20・実データで確認）。1文書1ページなので、
+	// 書面のヘッダにあるものはページのタグになります。
+	writeHeaderPair(&b, DueDateTag, j.DueDate)
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
 	b.WriteString("<dt>" + SourceRefTag + "</dt><dd>" +
@@ -364,10 +374,10 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 		b.WriteString("<tr><td></td>" + // 弊社品番（人が結ぶ）
 			"<td>" + html.EscapeString(it.ItemNo) + "</td>" +
 			"<td>" + html.EscapeString(it.ItemName) + "</td>" +
-			"<td>" + html.EscapeString(cms.CanonicalForIngest("単価", it.Price)) + "</td>" +
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("数量", it.Quantity)) + "</td>" +
-			"<td></td>" + // 納期
-			"<td></td>" + // 備考
+			"<td>" + html.EscapeString(it.Unit) + "</td>" +
+			"<td>" + html.EscapeString(cms.CanonicalForIngest("単価", it.Price)) + "</td>" +
+			"<td></td>" + // 備考（⚠ 先方の `サイズ` はここへ入ります・様式の対応表が入ったら）
 			"<td>未着手</td></tr>")
 	}
 	b.WriteString("</tbody></table>")

@@ -30,13 +30,15 @@ func TestOrderItemColumns(t *testing.T) {
 		label string
 		typ   cms.ColumnType
 	}{
-		{"弊社品番", cms.ColRef},   // ⚠ 先頭。加工中に使う番号
-		{"品番", cms.ColCode},     // 顧客の言葉（実データでは図面番号が入る）
+		// ⚠ **並びは実物の発注書に寄せています**（`No. / 品名 / サイズ / 図面番号 /
+		// 数量 / 単位 / 単価 / 金額`）——**数量のすぐ隣が単位**。
+		{"弊社品番", cms.ColRef},  // ⚠ 先頭。加工中に使う番号
+		{"品番", cms.ColCode},    // 顧客の言葉（実データでは図面番号が入る）
 		{"品名", cms.ColText},
-		{"単価", cms.ColNumber},
 		{"数量", cms.ColNumber},
-		{"納期", cms.ColDate},
-		{"備考", cms.ColText},     // ⚠ 既存4表と同じく `状態` の手前
+		{"単位", cms.ColEnum},    // ⚠ 落とすと数量の意味が変わる（個／セット）
+		{"単価", cms.ColNumber},
+		{"備考", cms.ColText},    // ⚠ 既存4表と同じく `状態` の手前。先方の `サイズ` もここ
 		{"状態", cms.ColEnum},
 	}
 	if len(def.Columns) != len(want) {
@@ -101,10 +103,10 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 
 	body := `<h1>受注</h1><table data-type="client-order-items"><tbody>` +
-		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>単価</th>` +
-		`<th>数量</th><th>納期</th><th>備考</th><th>状態</th></tr>` +
-		`<tr><td>000047</td><td>P103-227-6</td><td>ブラケット</td><td>390</td>` +
-		`<td>100</td><td>2026-10-15</td><td>材質変更</td><td>未着手</td></tr>` +
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th>` +
+		`<th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` +
+		`<tr><td>000047</td><td>P103-227-6</td><td>ブラケット</td><td>100</td>` +
+		`<td>セット</td><td>390</td><td>材質変更</td><td>未着手</td></tr>` +
 		`</tbody></table>`
 	if err := cms.SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
@@ -112,7 +114,10 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 
 	for _, c := range []struct{ field, want string }{
 		{"弊社品番", "000047"},
-		{"納期", "2026-10-15"},
+		// ⚠ **`セット` が残ること**——ここが落ちると、数量100が100個なのか
+		// 100セットなのか分からなくなります（まれにしか出ないので、
+		// **セットの行だけが黙って間違います**）。
+		{"単位", "セット"},
 		{"備考", "材質変更"},
 	} {
 		var got string
@@ -122,5 +127,51 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 		if err != nil || got != c.want {
 			t.Errorf("%s が索引に入っていません: %q（%v）", c.field, got, err)
 		}
+	}
+}
+
+// TestOrderPageDueDateIsPageTag は、**納期がページのタグになる**ことを固定します。
+//
+// ⚠ **行ではありません**（2026-09-20 ユーザー:「納期は、各行ではなく、**表とは別に
+// 発注書の最初の方にあります**」）。書面のヘッダにあるものはページのタグになる、
+// という **1文書＝1ページ**の規則どおりです。
+//
+// ⚠ **両方に置いてはいけません。** 同じことを2か所に書くと、どちらが正なのか
+// 分からなくなり、片方だけ直したときに静かに食い違います。
+func TestOrderPageDueDateIsPageTag(t *testing.T) {
+	j := &orderJudgment{
+		IsClientOrder: true, DocType: "order", OrderNo: "PO-1",
+		DueDate: "2026-10-15",
+		Items:   []orderPDFItem{{ItemNo: "A-1", ItemName: "ブラケット", Quantity: "100", Unit: "個"}},
+	}
+	body := buildOrderPageHTML("000001", "pdf001", j)
+
+	if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>2026-10-15</dd>") {
+		t.Errorf("納期がページのタグに出ていません:\n%s", body)
+	}
+	// **明細の列にはしない。**
+	if strings.Contains(body, "<th>納期</th>") {
+		t.Errorf("納期が明細の列にも出ています（2か所になります）:\n%s", body)
+	}
+}
+
+// TestOrderPageRowCarriesUnit は、**単位が行を通る**ことを固定します。
+//
+// ⚠ 落とすと `数量: 100` が100個なのか100セットなのか分からなくなります。
+// **まれにしか出ないので、セットの行だけが黙って間違います。**
+func TestOrderPageRowCarriesUnit(t *testing.T) {
+	j := &orderJudgment{
+		IsClientOrder: true, DocType: "order", OrderNo: "PO-1",
+		Items: []orderPDFItem{{ItemNo: "A-1", ItemName: "ブラケット", Quantity: "2", Unit: "セット"}},
+	}
+	body := buildOrderPageHTML("000001", "pdf001", j)
+	if !strings.Contains(body, "<td>セット</td>") {
+		t.Errorf("単位が落ちています:\n%s", body)
+	}
+	// ⚠ **数量の隣にあること**——見比べる人の目が滑らない並び（実物の発注書も同じ）。
+	iQty := strings.Index(body, "<td>2</td>")
+	iUnit := strings.Index(body, "<td>セット</td>")
+	if iQty < 0 || iUnit < 0 || iUnit < iQty {
+		t.Errorf("単位が数量の隣にありません:\n%s", body)
 	}
 }
