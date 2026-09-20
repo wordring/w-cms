@@ -101,6 +101,33 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     console.log('  — このページに本文の鏡はありません（左レールだけを見ます）');
   }
   ok(after.analyze > 0, '解析ボタンは残っている（押し直せる）', after.analyze + '個');
+  // ── 1つのPDFに複数の図面（2026-09-20）──
+  //
+  // ⚠ **できた全部を見せているか。** `page_id`（1枚目）だけ読んでいると、3枚できても
+  // 画面には1枚しか出ません——子ページ一覧には出るので消えはしませんが、**押した
+  // 直後の手応えが嘘**になります。
+  await page.unroute('**/api/analyze-attachment');
+  await page.route('**/api/analyze-attachment', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      success: true, doc_type: 'drawing', matched_dxf: 0,
+      pages: [
+        { page_id: '000901', title: 'ブラケット図' },
+        { page_id: '000902', title: 'カバー図' },
+        { page_id: '000903', title: '軸受け図' },
+      ],
+    }),
+  }));
+  await page.click('#w-editor-content .attach-analyze');
+  await page.waitForTimeout(1500);
+  const multi = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.toast'))
+      .map(n => n.textContent).join(' | '));
+  ok(/ブラケット図/.test(multi) && /カバー図/.test(multi) && /軸受け図/.test(multi),
+     '3枚できたら3枚とも画面に出る', multi.replace(/\s+/g, ' ').slice(0, 90));
+  ok(/3枚/.test(multi), '何枚できたかを言う');
+
   ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
 
   // 後始末——作った検証用ページを消す。

@@ -4597,13 +4597,30 @@
                 const d = await res.json();
                 if (!d.success) {
                     notify('解析できませんでした: ' + (d.message || res.status), { type: 'alert', duration: 0, id: 'analyze-pdf' });
-                } else if (d.doc_type === 'drawing' && d.page_id) {
+                } else if (d.doc_type === 'drawing' && ((d.pages || []).length || d.page_id)) {
                     // 図面と判定された枝。同じページのDXFと図面番号で突き合わせた
                     // 結果も知らせる（0件も普通——PDFだけの図面はよくある）。
-                    var msg = '加工製品ページを作りました: ' + (d.title || d.page_id) +
-                        '（/' + d.page_id + '）';
+                    //
+                    // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）。
+                    // 1枚につき1ページ作るので、**できた全部を見せます**——`page_id`
+                    // （1枚目）だけ見せていると、3枚できても画面には1枚しか出ず、
+                    // **押した直後の手応えが嘘になります**（子ページ一覧には出るので
+                    // 消えはしませんが、気づくのは後からです）。
+                    var made = (d.pages || []);
+                    if (!made.length && d.page_id) made = [{ page_id: d.page_id, title: d.title }];
+                    var msg = made.length > 1
+                        ? '加工製品ページを ' + made.length + '枚 作りました（このPDFに図面が'
+                          + made.length + '枚入っていました）:\n'
+                        : '加工製品ページを作りました: ';
+                    msg += made.map(function (p) {
+                        return (p.title || p.page_id) + '（/' + p.page_id + '）';
+                    }).join('\n');
+                    if (made.length > 1) {
+                        msg += '\n同じ品物の別図面（部品図と溶接図など）なら、📁 整理で'
+                            + '「二つ目の図面として追加」を選ぶと1ページにまとめられます。';
+                    }
                     if (d.matched_dxf > 0) {
-                        msg += ' — 図面番号の一致したDXF ' + d.matched_dxf + '件と結びました。';
+                        msg += '\n図面番号の一致したDXF ' + d.matched_dxf + '件と結びました。';
                     }
                     notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
                     born = true;
