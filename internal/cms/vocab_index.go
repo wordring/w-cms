@@ -200,10 +200,31 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 	// 形式の解決は配送係と同じ vocabTypeOf——属性が正、無ければ位置の規則
 	// （セクション外の素の dl＝タグ）。
 	dataType := vocabTypeOf(el)
+	// ⚠ **登録されていない形式は索引しません**（2026-09-20 ユーザー決定:「事前に登録
+	// されている語彙だけＤＢに入れましょう。すべての表をＤＢに入れる必要はないと思います」）。
+	//
+	// それまでは「未定義でもゼロ値の def で続行（推論辞書だけ効く）」としていました。
+	// ⚠ **つまり形式が解決しない表も、形式名が空のまま索引に入っていました**——
+	// 普通の文章の中の表まで。意図した設計ではなく、気づかれていなかった振る舞いです。
+	//
+	// これで**受注ページに顧客の発注書の写しをそのまま置けます**（登録しなければ
+	// 索引に載らないので、弊社の明細と二重計上になりません）。
+	// 正本は [docs/【考察】発注書から受注明細へ.md] §2.5。
+	//
+	// ⚠ **ワンノート移行の受け皿は壊れません**——`■材料` の下の素の表は
+	// `VocabDefByHeading` を通るので**もともと登録が前提**でした（`材料`・`外注加工`・
+	// `購入部品`・`支給部品` は登録済み）。
+	//
+	// ⚠ **運用者が自分の表を足す道は、いまコードにしかありません**（`RegisterVocab` を
+	// 呼ぶのはプラグインだけ）。`settings.json` から形式を足せるようにするのが対の宿題です
+	// （同文書 §2.6）。それまでは、登録されていない表は**見えるが索引されない**。
+	def, known := VocabDefByType(dataType)
+	if !known {
+		return true, nil
+	}
 	// block_no は同一 data-type のブロックの文書順連番（同じ形式の表が
 	// ページに複数あっても行を区別できるようにする）。
 	no := ctx.Counter("vocab_index:" + dataType)
-	def, _ := VocabDefByType(dataType) // 未定義でもゼロ値の def で続行（推論辞書だけ効く）
 
 	if el.Data == "table" {
 		return true, syncVocabTable(ctx.Tx, ctx.PageID, dataType, no, Attr(el, "data-id"), def, el)
@@ -234,7 +255,13 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 // 入れ子の section へは降りません（入れ子の業務ブロックは独立して読まれます）。
 func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 	dataType := vocabTypeOf(section)
-	def, _ := VocabDefByType(dataType)
+	// ⚠ **登録されていない見出しの節は、中の素の表も索引しません**（2026-09-20・
+	// `OnElement` と同じ線引き）。ここを揃えないと、`<section><h2>作業メモ</h2><table>`
+	// のような**ただの文章の表**が、形式名の空いた行として索引に残ります。
+	def, known := VocabDefByType(dataType)
+	if !known {
+		return nil
+	}
 	sectionBlockID := Attr(section, "data-id")
 
 	// 素の表の読み方: 形式が明細（Items）を宣言していれば、素の表は**明細**である

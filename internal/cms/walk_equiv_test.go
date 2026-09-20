@@ -37,9 +37,14 @@ func syncVocabAll(tx *sql.Tx, pageID int, root *html.Node) error {
 		if dataType == "" {
 			return // 素の table / dl は文書中の普通の表・定義リスト（オプトイン規約）
 		}
+		// ⚠ **登録された形式だけ索引します**（2026-09-20・本体と同じ線引き）。
+		// ここを揃えないと、この同値試験が「本体が直った」ことを失敗として報告します。
+		def, known := VocabDefByType(dataType)
+		if !known {
+			return
+		}
 		no := blockNo[dataType]
 		blockNo[dataType]++
-		def, _ := VocabDefByType(dataType)
 
 		var err error
 		if n.Data == "table" {
@@ -105,7 +110,9 @@ var equivBodies = []struct {
 		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
 		`<tr><td>X1</td><td>部品X1</td><td>1000</td><td>3</td><td>未着手</td></tr>` +
 		`</tbody></table></section></section>`},
-	{"未定義の形式も索引する", `<table data-type="なぞの表"><tbody>` +
+	// ⚠ **2026-09-20 に「索引する」から裏返りました**（ユーザー決定:「事前に登録されて
+	// いる語彙だけＤＢに入れましょう」）。それまでは形式名が空のまま索引に載っていました。
+	{"未定義の形式は索引しない", `<table data-type="なぞの表"><tbody>` +
 		`<tr><th>あ</th><th>い</th></tr><tr><td>1</td><td>2</td></tr></tbody></table>`},
 	{"同じ形式が複数ある（block_no）", `<dl data-type="tags"><dt>a</dt><dd>1</dd></dl>` +
 		`<p>あいだ</p><dl data-type="tags"><dt>a</dt><dd>2</dd></dl>`},

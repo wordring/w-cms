@@ -118,7 +118,10 @@ func TestVocabIndexFieldAndTypeOverride(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000031"
-	body := `<table data-type="delivery-note">` + // レジストリ未定義の形式でも索引される
+	// ⚠ **登録済みの形式を使います**（2026-09-20 に未登録は索引しなくなったため）。
+	// 確かめたいのは「宣言に無い列」の扱いなので、`検査記録` に宣言の無い
+	// `単価`・`出荷` を混ぜます——**宣言に無ければ推論辞書と th の明示が効く**、が要点です。
+	body := `<table data-type="inspection-record">` +
 		`<tr><th>品番</th><th>単価</th><th data-type="date">出荷</th></tr>` +
 		`<tr><td>GEAR-9</td><td>¥8,000</td><td>2026年8月1日</td></tr>` +
 		`</table>`
@@ -263,15 +266,26 @@ func TestSaveReportsUnknownVocabTypes(t *testing.T) {
 		t.Errorf("unknown_types の告知が期待と異なります: %v", got["unknown_types"])
 	}
 
-	// 告知はするが保存は通る（未知の data-type も索引に載る）
+	// ⚠ **告知はするが、索引には載せません**（2026-09-20 ユーザー決定:「事前に登録されて
+	// いる語彙だけＤＢに入れましょう」）。それまでは形式名を空のまま載せていました。
+	//
+	// **告知と索引は別の仕事です**——「知らない形式がありますよ」と人に伝えることと、
+	// それをDBへ入れることは繋がっていません。⚠ ここが繋がっていると、
+	// **普通の文章の中の表まで索引に混じります**。
 	rows := queryVocabRows(t, 36)
-	found := false
 	for _, r := range rows {
 		if r.dataType == "mystery-type" {
+			t.Errorf("未登録の data-type が索引に載っています: %+v", r)
+		}
+	}
+	// **登録済みのほうは載る**（保存そのものは通る、の確認）。
+	found := false
+	for _, r := range rows {
+		if r.dataType == "inspection-record" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("未知の data-type が索引に載っていません")
+		t.Error("登録済みの data-type が索引に載っていません")
 	}
 }
