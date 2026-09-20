@@ -2,6 +2,7 @@ package cms
 
 import (
 	"database/sql"
+	"strings"
 )
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -152,6 +153,58 @@ func FirstTag(tags map[string][]string, name string) string {
 		return v[0]
 	}
 	return ""
+}
+
+// PageTagValue はそのページの名前つきタグの**最初の生の値**を返します（無ければ空）。
+//
+// `TagsOfPage` の1つだけ版です——「1枚のページの1つのタグ」を引く3行の SQL が
+// 通信・メールの口に5か所写されていました（2026-09-21 に寄せた）。
+func PageTagValue(db ReadOnlyDB, pageID int, name string) string {
+	var v string
+	db.QueryRow(`SELECT value FROM page_tags WHERE page_id = ? AND name = ? ORDER BY seq LIMIT 1`,
+		pageID, name).Scan(&v)
+	return v
+}
+
+// TagRow は `page_tags` の1行です（読み切って返す口の形）。
+type TagRow struct {
+	PageID int
+	Name   string
+	Value  string // 生の値（正本）
+	Norm   string // 畳んだ値（畳めていなければ空）
+}
+
+// TagRowsNamed は名前が names のどれかに当たるタグを**全部読み切ってから**返します。
+//
+// **先に読み切ることが要点です**——行を読みながら中で別のクエリ（`page.CanView` など）を
+// 投げるとカーソルが接続を握ったままになり、`:memory:` DBでは**空の別のDBに当たって
+// 絞り込みが静かに全部落ちます**（2026-09-03 に本番で踏んだ罠）。アドレス帳は同じ
+// 「読んで・溜めて・絞る」を6か所に写していました（2026-09-21 に寄せた）。
+func TagRowsNamed(db ReadOnlyDB, names ...string) ([]TagRow, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(names))
+	marks := make([]string, len(names))
+	for i, n := range names {
+		args[i], marks[i] = n, "?"
+	}
+	rows, err := db.Query(
+		`SELECT page_id, name, value, COALESCE(norm_value, '') FROM page_tags
+		  WHERE name IN (`+strings.Join(marks, ", ")+`) ORDER BY page_id, seq`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TagRow
+	for rows.Next() {
+		var t TagRow
+		if err := rows.Scan(&t.PageID, &t.Name, &t.Value, &t.Norm); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // PagesByTag は「可変タグ `name` の値が `value` のページ」を返します。

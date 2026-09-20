@@ -25,7 +25,6 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"net/http"
 	"w-cms/internal/cms"
 
@@ -56,19 +55,13 @@ func threadRefOf(user *auth.User, idInt int) (ThreadRef, bool) {
 		  WHERE page_id = ? AND name IN (?,?,?)
 		  ORDER BY seq LIMIT 1`,
 		idInt, ReceivedAtTag, SentAtTag, SentOutAtTag).Scan(&r.When)
-	database.DB.QueryRow(
-		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
-		idInt, DirectionTag).Scan(&r.Direction)
+	r.Direction = cms.PageTagValue(database.DB, idInt, DirectionTag)
 	return r, true
 }
 
 // tagOfPage はそのページの名前つきタグの生の値を1つ返します（無ければ空）。
 func tagOfPage(idInt int, name string) string {
-	var v string
-	database.DB.QueryRow(
-		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
-		idInt, name).Scan(&v)
-	return v
+	return cms.PageTagValue(database.DB, idInt, name)
 }
 
 // ThreadOf は pageID の前（親）と次（子）を返します。
@@ -125,5 +118,5 @@ func ThreadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "スレッドを引けません: "+err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "prev": prev, "next": next})
+	cms.WriteJSON(w, map[string]any{"success": true, "prev": prev, "next": next})
 }

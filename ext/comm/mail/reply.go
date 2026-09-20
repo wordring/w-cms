@@ -20,7 +20,6 @@ package mail
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"html"
 	"log"
 	"net/http"
@@ -49,14 +48,8 @@ type ReplyRequest struct {
 
 // MailSendAPIHandler は POST /api/mail/send です。
 func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	var req ReplyRequest
@@ -132,7 +125,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["page_id"] = pageID
 	}
-	json.NewEncoder(w).Encode(resp)
+	cms.WriteJSON(w, resp)
 }
 
 // recordSentMail は通信箱の下へ送信の記録ページを作ります。
@@ -142,7 +135,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRequest) (string, error) {
 	rootID, ok := comm.MailBoxPageID()
 	if !ok {
-		return "", errNoMailBox
+		return "", comm.ErrNoMailBox
 	}
 	// 時刻は1回だけ取ります——年月フォルダと `送信日時` が、日付の変わり目で食い違わないように。
 	now := time.Now()
@@ -233,15 +226,6 @@ func cleanAddrs(in []string) []string {
 	return out
 }
 
-// errNoMailBox は通信箱ページが無い印です。
-var errNoMailBox = errNoMailBoxErr{}
-
-type errNoMailBoxErr struct{}
-
-func (errNoMailBoxErr) Error() string {
-	return "通信箱ページがありません（トップ直下に「" + comm.MailBoxTitle + "」という名前のページを作ってください）"
-}
-
 // sourceMessageID は返信元ページの「メッセージID」タグを読みます（無ければ空）。
 //
 // **索引から直接読みます**——本文を解釈し直さないため。取り込みが書いた値が正本で、
@@ -254,9 +238,5 @@ func sourceMessageID(sourcePageID string) string {
 	if err != nil {
 		return ""
 	}
-	var v string
-	database.DB.QueryRow(
-		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
-		idInt, comm.MessageIDTag).Scan(&v)
-	return strings.TrimSpace(v)
+	return strings.TrimSpace(cms.PageTagValue(database.DB, idInt, comm.MessageIDTag))
 }

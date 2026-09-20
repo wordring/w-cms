@@ -19,6 +19,7 @@ package mail
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -54,7 +55,7 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 
 	inboxID, ok := comm.MailBoxPageID()
 	if !ok {
-		return sum, errNoInbox
+		return sum, comm.ErrNoMailBox
 	}
 	// **Max は「取り込む上限」であって「見る上限」ではありません。**
 	// 見るほうを絞ると、押し直しても同じ新しい50件を見て「全部重複」で止まり、
@@ -126,26 +127,11 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 	return sum, nil
 }
 
-// errNoInbox は通信箱ページが無い印です（トップ直下に「通信箱」という名前のページ）。
-var errNoInbox = errNoInboxErr{}
-
-type errNoInboxErr struct{}
-
-func (errNoInboxErr) Error() string {
-	return "通信箱ページがありません（トップ直下に「" + comm.MailBoxTitle + "」という名前のページを作ってください）"
-}
-
 // MailImportAPIHandler は POST /api/mail/import です。
 // 入力（省略可）: {folder, max, since}
 func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -170,23 +156,8 @@ func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	auth.Audit(user.Username, "mail.import",
-		"listed="+itoa(sum.Listed)+" imported="+itoa(sum.Imported)+
-			" duplicate="+itoa(sum.Duplicate)+" failed="+itoa(sum.Failed))
+	auth.Audit(user.Username, "mail.import", fmt.Sprintf("listed=%d imported=%d duplicate=%d failed=%d",
+		sum.Listed, sum.Imported, sum.Duplicate, sum.Failed))
 
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "summary": sum})
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
+	cms.WriteJSON(w, map[string]any{"success": true, "summary": sum})
 }

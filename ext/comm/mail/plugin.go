@@ -11,7 +11,6 @@ package mail
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -94,7 +93,7 @@ func MailStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{
+	cms.WriteJSON(w, map[string]any{
 		"success":    true,
 		"configured": Configured(),
 		"address":    SignedInAddress(user.Username),
@@ -106,14 +105,8 @@ func MailStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 // デバイスコードを1つ発行して**案内だけ**返し、サインインの完了は背後で待ちます
 // ——利用者は Microsoft の画面で番号を入れるだけで、パスワードは w-cms を通りません。
 func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	if !Configured() {
@@ -146,7 +139,7 @@ func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
 		auth.Audit(username, "mail.signin", addr)
 	}()
 
-	json.NewEncoder(w).Encode(map[string]any{
+	cms.WriteJSON(w, map[string]any{
 		"success":          true,
 		"verification_uri": dc.VerificationURI,
 		"user_code":        dc.UserCode,

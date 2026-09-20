@@ -28,7 +28,6 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"html"
 	"net/http"
 	"strconv"
@@ -44,14 +43,8 @@ import (
 // 入力: {"page_ids": ["010678", ...], "value": "済"}——まとめて押せます。
 // `value` を省くと `済` です（**次へ割り振った、が普通の道**）。
 func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -100,9 +93,7 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 		auth.Audit(user.Username, "intake.handled", pageID+" ("+value+")")
 		done++
 	}
-	json.NewEncoder(w).Encode(map[string]any{
-		"success": true, "handled": done, "failed": failed,
-	})
+	cms.WriteJSON(w, map[string]any{"success": true, "handled": done, "failed": failed})
 }
 
 // MarkHandled はページへ `対応` のタグを足します（値は 済 / 不要）。

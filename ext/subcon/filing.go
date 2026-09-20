@@ -50,6 +50,7 @@ import (
 	stdhtml "html"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -225,22 +226,10 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 // drawingNosOf は本文に載っている図面番号を並べます（図面ブロックごとに1つ）。
 func drawingNosOf(body string) []string {
 	out := []string{}
-	i := 0
-	for {
-		open := cms.IndexSectionTag(body, i)
-		if open < 0 {
-			break
+	for _, sec := range drawingSectionsOf(body) {
+		if no := strings.TrimSpace(drawingNoOf(sec)); no != "" {
+			out = append(out, no)
 		}
-		sec, end, ok := cms.SectionBlockAt(body, open)
-		if !ok {
-			break
-		}
-		if strings.Contains(sec, "<h2>図面</h2>") {
-			if no := strings.TrimSpace(drawingNoOf(sec)); no != "" {
-				out = append(out, no)
-			}
-		}
-		i = end
 	}
 	return out
 }
@@ -284,11 +273,7 @@ func suggestCustomer(user *auth.User, productPageID int, read string) string {
 // **由来のタグを見ます**（親ではなく）——加工製品ページは整理で動きますが、`受信元` は
 // 動きません。値は「ページID-添付ID」なので、ハイフンの前だけ使います。
 func senderAddressOf(productPageID int) string {
-	var ref string
-	database.DB.QueryRow(
-		`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
-		productPageID, SourceRefTag).Scan(&ref)
-	ref = strings.TrimSpace(ref)
+	ref := strings.TrimSpace(cms.PageTagValue(database.DB, productPageID, SourceRefTag))
 	if i := strings.Index(ref, "-"); i > 0 {
 		ref = ref[:i]
 	}
@@ -313,38 +298,33 @@ func senderAddressOf(productPageID int) string {
 // 整理の画面の入力補助です。**選ばせるのではなく、候補として見せる**だけ——
 // 新しい顧客の1枚目はここに無いので、打てなくしてはいけません。
 func partnerNames(user *auth.User) []string {
+	out := []string{}
+	for _, c := range visibleCustomerChildren(user) {
+		out = append(out, c.Title)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// visibleCustomerChildren は `取引先` の直下（社名ページ）のうち、読めて題のあるものを
+// ID順で返します（整理の候補と、連絡帳と未接続の相手の一覧が共有します）。
+func visibleCustomerChildren(user *auth.User) []cms.ChildPage {
 	boxID, ok := CustomerBoxPageID()
 	if !ok {
-		return []string{}
+		return nil
 	}
 	boxInt, err := strconv.Atoi(boxID)
 	if err != nil {
-		return []string{}
+		return nil
 	}
-	dbRows, err := database.DB.Query(
-		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY title ASC`, boxInt)
+	kids, err := cms.ChildPages(database.DB, boxInt)
 	if err != nil {
-		return []string{}
+		return nil
 	}
-	type row struct {
-		id    int
-		title string
-	}
-	var found []row
-	for dbRows.Next() {
-		var r row
-		if err := dbRows.Scan(&r.id, &r.title); err != nil {
-			dbRows.Close()
-			return []string{}
-		}
-		found = append(found, r)
-	}
-	dbRows.Close()
-
-	out := []string{}
-	for _, r := range found {
-		if r.title != "" && page.CanView(user, r.id) {
-			out = append(out, r.title)
+	var out []cms.ChildPage
+	for _, k := range kids {
+		if k.Title != "" && page.CanView(user, k.ID) {
+			out = append(out, k)
 		}
 	}
 	return out
@@ -440,38 +420,20 @@ func machineNames(user *auth.User) map[string][]string {
 // drawingChildrenOf は、そのページの子のうち**図面ブロックを持つもの**を集めます。
 // 推奨値は索引から読みます（解析が入れた値がそのまま初期値になる）。
 func drawingChildrenOf(user *auth.User, parentIDInt int) ([]filingRow, error) {
-	dbRows, err := database.DB.Query(
-		`SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC`, parentIDInt)
+	// **先に読み切ってから絞ります**（`cms.ChildPages`）。
+	children, err := cms.ChildPages(database.DB, parentIDInt)
 	if err != nil {
 		return nil, err
 	}
-	defer dbRows.Close()
-
-	type child struct {
-		id    int
-		title string
-	}
-	var children []child
-	for dbRows.Next() {
-		var c child
-		if err := dbRows.Scan(&c.id, &c.title); err != nil {
-			return nil, err
-		}
-		children = append(children, c)
-	}
-	if err := dbRows.Err(); err != nil {
-		return nil, err
-	}
-
 	out := []filingRow{}
 	for _, c := range children {
-		if !page.CanView(user, c.id) {
+		if !page.CanView(user, c.ID) {
 			continue // 見せ分け（C案）——読めないものは黙って落ちる
 		}
 		// ⚠ **可変タグから読みます**（2026-09-18 に業務ブロックから移した）。
 		// 同じ名前のタグは繰り返せますが、この4つは**1ページに1つ**です
 		// （加工製品ページ＝1つの部品。改定で来た旧版は子ページへ移る）。
-		tags, err := cms.TagsOfPage(database.DB, c.id)
+		tags, err := cms.TagsOfPage(database.DB, c.ID)
 		if err != nil || cms.FirstTag(tags, DrawingNoTag) == "" &&
 			cms.FirstTag(tags, DrawingNameTag) == "" {
 			continue // 加工製品ページではない（受注ページなど）
@@ -479,11 +441,11 @@ func drawingChildrenOf(user *auth.User, parentIDInt int) ([]filingRow, error) {
 		client := cms.FirstTag(tags, ClientNameTag)
 		machine := cms.FirstTag(tags, MachineNameTag)
 		out = append(out, filingRow{
-			PageID:      formatID(c.id),
-			Title:       c.title,
+			PageID:      formatID(c.ID),
+			Title:       c.Title,
 			DrawingNo:   cms.FirstTag(tags, DrawingNoTag),
 			DrawingName: cms.FirstTag(tags, DrawingNameTag),
-			Customer:    suggestCustomer(user, c.id, client),
+			Customer:    suggestCustomer(user, c.ID, client),
 			MachineName: machine,
 			Stage:       suggestStage(client, machine),
 		})
@@ -529,9 +491,8 @@ type filingResult struct {
 // FileDrawingsAPIHandler は POST /api/file-drawings です。
 // 入力: {rows: [{page_id, customer, machine_name, drawing_name}, ...]}
 func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -544,11 +505,6 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
-		return
-	}
 
 	results := make([]filingResult, 0, len(req.Rows)+len(req.Orders))
 	for _, row := range req.Rows {
@@ -557,7 +513,7 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	for _, o := range req.Orders {
 		results = append(results, fileOneOrder(user, o))
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "results": results})
+	cms.WriteJSON(w, map[string]any{"success": true, "results": results})
 }
 
 // fileOneDrawing は1枚の加工製品ページを行き先へ収めます。
@@ -839,18 +795,7 @@ func replaceFirstFieldValue(body, field, value string) string {
 // **完全一致だけ**にするのは、揺れを機械が吸収すると別の顧客が1つに潰れるため
 // ——名寄せは人の仕事です（欄を直せば済む）。
 func findChildByTitle(parentID, title string) (string, bool) {
-	parentInt, err := strconv.Atoi(parentID)
-	if err != nil {
-		return "", false
-	}
-	var id int
-	err = database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
-		parentInt, title).Scan(&id)
-	if err != nil {
-		return "", false
-	}
-	return formatID(id), true
+	return cms.FindChildByTitle(parentID, title)
 }
 
 // ensureChildPage は題の一致する子を返し、無ければ作ります。

@@ -55,47 +55,27 @@ type orderRow struct {
 
 // orderChildrenOf は、そのページの子のうち**発注書ブロックを持つもの**を集めます。
 func orderChildrenOf(user *auth.User, parentIDInt int) ([]orderRow, error) {
-	dbRows, err := database.DB.Query(
-		`SELECT id, title FROM pages WHERE parent_id = ? ORDER BY id ASC`, parentIDInt)
+	// **先に読み切ってから解釈します**（`cms.ChildPages`——行を読みながら別のクエリを
+	// 投げるとカーソルが接続を握ったままになる。view_unhandled.go で踏んだ罠）。
+	children, err := cms.ChildPages(database.DB, parentIDInt)
 	if err != nil {
 		return nil, err
 	}
-	type child struct {
-		id    int
-		title string
-	}
-	// **先に読み切ってから解釈します**——行を読みながら別のクエリを投げると
-	// カーソルが接続を握ったままになる（view_unhandled.go で踏んだ罠）。
-	var children []child
-	for dbRows.Next() {
-		var c child
-		if err := dbRows.Scan(&c.id, &c.title); err != nil {
-			dbRows.Close()
-			return nil, err
-		}
-		children = append(children, c)
-	}
-	err = dbRows.Err()
-	dbRows.Close()
-	if err != nil {
-		return nil, err
-	}
-
 	out := []orderRow{}
 	for _, c := range children {
-		if !page.CanView(user, c.id) {
+		if !page.CanView(user, c.ID) {
 			continue // 見せ分け（C案）——読めないものは黙って落ちる
 		}
 		// ⚠ **可変タグから読みます**（2026-09-18 にヘッダから移した）。
-		tags, err := cms.TagsOfPage(database.DB, c.id)
+		tags, err := cms.TagsOfPage(database.DB, c.ID)
 		if err != nil || cms.FirstTag(tags, OrderNoTag) == "" {
 			continue // 受注ページではない（加工製品ページなど）
 		}
 		orderedAt := cms.FirstTag(tags, OrderedAtTag)
-		when := orderDateOf(c.id, orderedAt)
+		when := orderDateOf(c.ID, orderedAt)
 		out = append(out, orderRow{
-			PageID:      formatID(c.id),
-			Title:       c.title,
+			PageID:      formatID(c.ID),
+			Title:       c.Title,
 			OrderNo:     cms.FirstTag(tags, OrderNoTag),
 			ClientName:  suggestOrderClient(user, cms.FirstTag(tags, OrderClientTag)),
 			OrderedAt:   strings.TrimSpace(orderedAt),

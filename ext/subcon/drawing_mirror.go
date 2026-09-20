@@ -82,13 +82,15 @@ func markObsoleteRows(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 // 受注ページで見るもの、という線引きがここに現れています。
 // **見出しの表示文字が鍵**——機械キーを本文へ書く属性はありません。
 func statusColumnIndex(table *html.Node) int {
-	for _, tr := range rowsOf(table) {
-		for i, c := range cellsOf(tr) {
-			if c.Data == "th" && strings.TrimSpace(textOf(c)) == "区分" {
-				return i
-			}
+	rows := rowsOf(table)
+	if len(rows) == 0 {
+		return -1
+	}
+	// 最初の行が見出し行（語彙モデル §5.1）。そこに無ければ諦める。
+	for i, c := range cellsOf(rows[0]) {
+		if c.Data == "th" && strings.TrimSpace(textOf(c)) == "区分" {
+			return i
 		}
-		return -1 // 最初の行が見出し行（語彙モデル §5.1）。無ければ諦める
 	}
 	return -1
 }

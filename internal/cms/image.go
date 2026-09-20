@@ -354,14 +354,14 @@ func stripWebPChunks(content []byte) ([]byte, error) {
 	body := bytes.NewBuffer(nil)
 	i := 12
 	for i+8 <= len(content) {
-		typ := string(content[i : i+4])
+		typ := content[i : i+4]
 		size := int(binary.LittleEndian.Uint32(content[i+4 : i+8]))
 		padded := size + size%2 // RIFF の塊は偶数長へ詰められる
 		if size < 0 || i+8+padded > len(content) {
 			// 末尾が切れている場合は触らずそのまま返す（壊すより無害）。
 			return content, nil
 		}
-		if !webpMetaChunks[typ] {
+		if !webpMetaChunks[string(typ)] {
 			body.Write(content[i : i+8+padded])
 		}
 		i += 8 + padded

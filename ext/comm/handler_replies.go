@@ -13,7 +13,6 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"net/http"
 	"w-cms/internal/cms"
 
@@ -42,10 +41,8 @@ func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
 		if !page.CanView(user, idInt) {
 			continue
 		}
-		r := ReplyRef{PageID: page.FormatID(idInt), Title: cms.PageTitleByID(idInt)}
-		database.DB.QueryRow(
-			`SELECT value FROM page_tags WHERE page_id = ? AND name = ? LIMIT 1`,
-			idInt, SentAtTag).Scan(&r.SentAt)
+		r := ReplyRef{PageID: page.FormatID(idInt), Title: cms.PageTitleByID(idInt),
+			SentAt: cms.PageTagValue(database.DB, idInt, SentAtTag)}
 		database.DB.QueryRow(
 			// **畳んだ値がアドレス**（生の値は `名前 <アドレス>`）。2026-09-13 に1人1タグへ。
 			`SELECT COALESCE(norm_value, value) FROM page_tags
@@ -69,5 +66,5 @@ func RepliesAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "返信を引けません: "+err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "replies": replies})
+	cms.WriteJSON(w, map[string]any{"success": true, "replies": replies})
 }

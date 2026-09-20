@@ -35,6 +35,7 @@ package subcon
 
 import (
 	stdhtml "html"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -78,53 +79,25 @@ type UnlinkedCustomer struct {
 // **読むだけ**です（何も作りません）。直すのは人が連絡帳で登録したときで、
 // そのあと整理を押せば `相手` の参照が書かれます。
 func UnlinkedCustomers(user *auth.User) []UnlinkedCustomer {
-	boxID, ok := CustomerBoxPageID()
-	if !ok {
-		return nil
-	}
-	boxInt, err := strconv.Atoi(boxID)
-	if err != nil {
-		return nil
-	}
-	rows, err := database.DB.Query(
-		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY title`, boxInt)
-	if err != nil {
-		return nil
-	}
-	type hit struct {
-		id    int
-		title string
-	}
-	// **先に読み切ってから絞ります**（この先で子孫を辿るクエリを投げるため）。
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.title); err != nil {
-			rows.Close()
-			return nil
-		}
-		found = append(found, h)
-	}
-	rows.Close()
+	// 読めて題のある社名ページ（先に読み切ってある——この先で子孫を辿るクエリを投げる）。
+	found := visibleCustomerChildren(user)
+	sort.Slice(found, func(i, j int) bool { return found[i].Title < found[j].Title })
 
 	var out []UnlinkedCustomer
 	for _, h := range found {
 		if len(out) >= unlinkedLimit {
 			break
 		}
-		if !page.CanView(user, h.id) {
-			continue
-		}
-		if hasContactsRef(h.id) {
+		if hasContactsRef(h.ID) {
 			continue // 結びついている
 		}
 		// **メールが来ている証拠**を1つ探します（無ければ黙る）。
-		addr := anySenderUnder(h.id, 0)
+		addr := anySenderUnder(h.ID, 0)
 		if addr == "" {
 			continue // FAXだけ・電話だけの客先。**正当に連絡先ゼロ**
 		}
 		out = append(out, UnlinkedCustomer{
-			PageID: page.FormatID(h.id), Title: h.title, Address: addr,
+			PageID: page.FormatID(h.ID), Title: h.Title, Address: addr,
 		})
 	}
 	return out
@@ -154,23 +127,12 @@ func anySenderUnder(pageIDInt, depth int) string {
 	if addr := senderAddressOf(pageIDInt); addr != "" {
 		return addr
 	}
-	rows, err := database.DB.Query(
-		`SELECT id FROM pages WHERE parent_id = ?`, pageIDInt)
+	kids, err := cms.ChildPages(database.DB, pageIDInt)
 	if err != nil {
 		return ""
 	}
-	var kids []int
-	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return ""
-		}
-		kids = append(kids, id)
-	}
-	rows.Close()
 	for _, k := range kids {
-		if addr := anySenderUnder(k, depth+1); addr != "" {
+		if addr := anySenderUnder(k.ID, depth+1); addr != "" {
 			return addr
 		}
 	}

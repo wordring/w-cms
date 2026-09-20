@@ -138,26 +138,45 @@ func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []str
 // 数えられることはありません。
 func extractDrawingSections(body string) (blocks []string, rest string) {
 	var out strings.Builder
+	last := 0
+	eachSection(body, func(sec string, open, end int) {
+		if isDrawingSection(sec) {
+			blocks = append(blocks, sec)
+			out.WriteString(body[last:open]) // ブロックは落とし、間の本文は残す
+		} else {
+			out.WriteString(body[last:end])
+		}
+		last = end
+	})
+	out.WriteString(body[last:])
+	return blocks, out.String()
+}
+
+// eachSection は本文の最上位の `<section>` を文書順に fn へ渡します
+// （open は開始位置・end は閉じタグの直後）。**入れ子を数えて切ります**
+// （`cms.SectionBlockAt`）。閉じ足りない本文に出会ったらそこで止めます。
+//
+// 図面ブロックを数える・取り出す・後ろへ足す、の4か所が同じ走査を写していました
+// （2026-09-21 に寄せた）。
+func eachSection(body string, fn func(sec string, open, end int)) {
 	i := 0
 	for {
 		open := cms.IndexSectionTag(body, i)
 		if open < 0 {
-			break
+			return
 		}
 		sec, end, ok := cms.SectionBlockAt(body, open)
 		if !ok {
-			break
+			return
 		}
-		if strings.Contains(sec, "<h2>図面</h2>") {
-			blocks = append(blocks, sec)
-			out.WriteString(body[i:open]) // ブロックは落とし、間の本文は残す
-		} else {
-			out.WriteString(body[i:end])
-		}
+		fn(sec, open, end)
 		i = end
 	}
-	out.WriteString(body[i:])
-	return blocks, out.String()
+}
+
+// isDrawingSection は図面ブロック（機能見出し `図面`）かを返します。
+func isDrawingSection(sec string) bool {
+	return strings.Contains(sec, "<h2>図面</h2>")
 }
 
 // linkRevisionRow は改訂履歴の中で図面番号が no の行を、旧版ページへのリンクにします。
@@ -349,21 +368,11 @@ func mergeAsDrawing(user *auth.User, srcPageID, dstPageID string) error {
 // 入ってしまいます（2026-09-20 に直した打ち消し合いと同じ罠）。
 func insertAfterDrawings(body, block string) string {
 	at := -1
-	i := 0
-	for {
-		open := cms.IndexSectionTag(body, i)
-		if open < 0 {
-			break
-		}
-		sec, end, ok := cms.SectionBlockAt(body, open)
-		if !ok {
-			break
-		}
-		if strings.Contains(sec, "<h2>図面</h2>") {
+	eachSection(body, func(sec string, _, end int) {
+		if isDrawingSection(sec) {
 			at = end
 		}
-		i = end
-	}
+	})
 	if at < 0 {
 		return cms.InsertAfterH1(body, block)
 	}
@@ -418,21 +427,12 @@ func sameSourceAttachment(block, dstBody string) bool {
 // drawingSectionsOf は本文の図面ブロックを並べます（入れ子を数えて切ります）。
 func drawingSectionsOf(body string) []string {
 	out := []string{}
-	i := 0
-	for {
-		open := cms.IndexSectionTag(body, i)
-		if open < 0 {
-			return out
-		}
-		sec, end, ok := cms.SectionBlockAt(body, open)
-		if !ok {
-			return out
-		}
-		if strings.Contains(sec, "<h2>図面</h2>") {
+	eachSection(body, func(sec string, _, _ int) {
+		if isDrawingSection(sec) {
 			out = append(out, sec)
 		}
-		i = end
-	}
+	})
+	return out
 }
 
 // suspiciousSameSource はページ同士で同じことを調べます（整理の分岐から使う口）。

@@ -15,7 +15,6 @@ package contacts
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	stdhtml "html"
 	"net/http"
 	"regexp"
@@ -32,14 +31,8 @@ import (
 // RegisterContactAPIHandler は POST /api/contacts/register です。
 // 入力: {"name":"株式会社緑川製作所", "addresses":["…"]}
 func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -223,7 +216,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		auth.Audit(user.Username, "contact.add-addresses",
 			dest+" +"+strconv.Itoa(added)+" "+strings.Join(addrs, ",")+domainsForAudit(doms))
 	}
-	json.NewEncoder(w).Encode(map[string]any{
+	cms.WriteJSON(w, map[string]any{
 		"success": true, "page_id": dest, "title": destTitle,
 		"added": added, "domains_added": domainsAdded,
 		"merged": !created, "created": created,
@@ -244,14 +237,8 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 消すかどうかは人が決めます——押し間違いの取り消しが、**別の押し間違いで
 // ページを消す**ことになっては割に合いません。空になったことは返り値で伝えます。
 func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -271,11 +258,7 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "メールアドレスがありません")
 		return
 	}
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
+	idInt, _ := strconv.Atoi(pageID) // NormalizeID を通った値は必ず数
 	// **取引先の下だけ**（ここは連絡先の分類を取り消す口で、本文の一般的な編集口では
 	// ありません。よそのページのタグを消せる道を増やさない）。
 	if _, _, inPartner := PartnerOfPage(idInt); !inPartner {
@@ -311,7 +294,7 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var children int
 	database.DB.QueryRow(`SELECT COUNT(*) FROM pages WHERE parent_id = ?`, idInt).Scan(&children)
 
-	json.NewEncoder(w).Encode(map[string]any{
+	cms.WriteJSON(w, map[string]any{
 		"success": true, "page_id": pageID, "address": addr,
 		"remaining": left, "children": children,
 		"empty": left == 0 && children == 0,

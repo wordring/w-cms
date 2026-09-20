@@ -23,7 +23,7 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -91,8 +91,8 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 		return false
 	}
 	defer file.Close()
-	h := intakeHandlerFor(strings.ToLower(filepath.Ext(header.Filename)))
-	if h == nil {
+	// 担当が居ないなら**読み込む前に**戻る（大きなファイルを無駄に読まない）。
+	if intakeHandlerFor(strings.ToLower(filepath.Ext(header.Filename))) == nil {
 		return false // 担当なし＝ただの添付
 	}
 	content, err := io.ReadAll(file)
@@ -108,50 +108,35 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return true
 	}
-	uploader := "system"
-	if u := auth.CurrentUser(r); u != nil {
-		uploader = u.Username
+	uploader := auth.UsernameOf(r)
+	if uploader == "" {
+		uploader = "system"
 	}
-	// 重複検知は**取り込み係を呼ぶ前**に行う（【考察】通信記録処理.md §8）。
-	// 同じメールの再ドロップは普通に起きる（送り直し・取りこぼしの確認）が、
-	// 黙って2枚できるとどちらが正かを人が見分けられない——しかも参照タグ
-	// `受信元` の指す先が2つに割れる。**作ってから消す**のではなく、
-	// 作らずに既存を指すのが正しい（可逆性は §2.7 の決定）。
-	if f, ok := h.(SourceRefFinder); ok {
-		if name, value, found := f.SourceRef(header.Filename, content); found {
-			if existing, dup := ExistingIntakePage(name, value); dup {
-				auth.Audit(uploader, "intake.duplicate", existing+" ("+name+"="+value+")")
-				w.Header().Set("Content-Type", "application/json")
-				resp := map[string]any{
-					"success": true, "intake": true, "duplicate": true,
-					"title": header.Filename,
-				}
-				// 読めない相手へ存在を教えない（匿名の404統一と同じ規律）。
-				// 取り込み済みという事実だけは返す——でないと「なぜ入らないのか」が
-				// 分からなくなる。
-				if n, err := strconv.Atoi(existing); err == nil &&
-					page.CanView(auth.CurrentUser(r), n) {
-					resp["page_id"] = existing
-				}
-				json.NewEncoder(w).Encode(resp)
-				return true
-			}
-		}
+	// 芯は `IntakeFile`（重複検知・ページ生成）——メールの取り込みと同じ道です。
+	// ここはHTTPの応答に直すだけ。
+	res, handled, err := IntakeFile(inboxID, uploader, header.Filename, content)
+	if !handled {
+		return false
 	}
-
-	ctx := &IntakeContext{InboxID: inboxID, Uploader: uploader}
-	pageID, title, err := h.OnFile(ctx, header.Filename, content)
 	if err != nil {
 		http.Error(w, "取り込めませんでした: "+err.Error(), http.StatusBadRequest)
 		return true
 	}
-	// 添付PDFの解釈（発注書なら受注ページ生成）はここでは**しない**——
-	// 「自動ではなくボタンのclickなどで解析が始まると良い」（2026-09-01 ユーザー決定・
-	// §3 人間ゲート型）。記録ページの📎に出る「🤖 解析」ボタン（analyze_pdf.go）が担う。
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"success": true, "intake": true, "page_id": pageID, "title": title,
-	})
+	resp := map[string]any{"success": true, "intake": true, "title": res.Title}
+	if res.Duplicate {
+		// 取り込み済みという事実だけは返す——でないと「なぜ入らないのか」が
+		// 分からなくなる。**読めない相手へ存在を教えない**（匿名の404統一と同じ規律）。
+		resp["duplicate"] = true
+		if n, err := strconv.Atoi(res.PageID); err == nil && page.CanView(auth.CurrentUser(r), n) {
+			resp["page_id"] = res.PageID
+		}
+	} else {
+		// 添付PDFの解釈（発注書なら受注ページ生成）はここでは**しない**——
+		// 「自動ではなくボタンのclickなどで解析が始まると良い」（2026-09-01 ユーザー決定・
+		// §3 人間ゲート型）。記録ページの📎に出る「🤖 解析」ボタン（analyze_pdf.go）が担う。
+		resp["page_id"] = res.PageID
+	}
+	cms.WriteJSON(w, resp)
 	return true
 }
 
@@ -164,6 +149,11 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 // 受信と送信は同じ案件のあいだを行き来するので、分けると**1件の経緯が2か所に散ります**。
 // 向きは置き場所ではなく **`向き` のタグ**（DirectionTag）が表します。
 const MailBoxTitle = "通信箱"
+
+// ErrNoMailBox は通信箱ページが無い印です。手で作る記録・メールの取り込み・送信の控えが
+// **同じ文**で断ります（3か所に別々の型で写されていた・2026-09-21 に寄せた）。
+var ErrNoMailBox = errors.New("通信箱ページがありません（トップ直下に「" + MailBoxTitle +
+	"」という名前のページを作ってください）")
 
 // MailBoxPageID はトップ直下の通信箱ページを返します（無ければ ok=false）。
 // リクエスト時にしか呼ばれないためDBで足ります（テンプレートの isLeafPage と同じ理由）。
@@ -327,7 +317,7 @@ func (c *IntakeContext) UpdatePage(pageID, bodyHTML string) error {
 		return fmt.Errorf("この取り込みで作ったページしか書き直せません: %s", pageID)
 	}
 	safeHTML := cms.Sanitize(bodyHTML)
-	htmlPath := filepath.Join(page.GetPageDir(pageID), pageID+".html")
+	htmlPath := page.BodyPath(pageID)
 	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
 		return err
 	}
@@ -388,31 +378,37 @@ func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResul
 // 今日取り込んでも2024年に入る必要があります。ゼロがゼロでない時刻を渡すのは
 // 呼ぶ側の責任で、ゼロ値なら通信箱直下へ作ります（分からない時期を捏造しない）。
 func (c *IntakeContext) CreateDatedPage(t time.Time, bodyHTML string) (string, error) {
-	parent := c.InboxID
-	if !t.IsZero() {
-		var err error
-		if parent, err = c.ensureDateFolder(t); err != nil {
-			return "", err
-		}
+	parent, err := arrivalParent(c.InboxID, c.Uploader, t)
+	if err != nil {
+		return "", err
 	}
 	newID, err := c.createUnder(parent, bodyHTML)
 	if err != nil {
 		return "", err
 	}
-	// 並び順は**届いた時刻**（取り込んだ順ではない）。ISO表記なので文字列のまま
-	// 正しく並びます。
-	if !t.IsZero() {
-		cms.SetSortKey(newID, t.In(time.Local).Format(time.RFC3339))
-	}
+	markArrival(newID, t)
 	return newID, nil
 }
 
-// ensureDateFolder は「年／月」のページを必要なだけ作り、月フォルダのIDを返します。
-func (c *IntakeContext) ensureDateFolder(t time.Time) (string, error) {
-	// 置き場の作法は送信箱と共有します（ensureDateFolderUnder）——受信と送信で
-	// フォルダの作り方が違うと、片方だけ直したときに気づけません。
-	// 月は**ゼロ詰め**（`09月`）——名前で並べたときに順序が狂わないため。
-	return cms.EnsureDateFolders(c.InboxID, c.Uploader, t)
+// arrivalParent は届いた時刻に応じた置き場（`root／年／月`）を返します。
+// 時刻がゼロ値なら root そのもの（分からない時期を捏造しない）。
+//
+// 置き場の作法は受信と送信で共有します（`CreateRecordPage`）——フォルダの作り方が
+// 違うと、片方だけ直したときに気づけません。月は**ゼロ詰め**（`09月`）——名前で
+// 並べたときに順序が狂わないため。
+func arrivalParent(rootID, owner string, t time.Time) (string, error) {
+	if t.IsZero() {
+		return rootID, nil
+	}
+	return cms.EnsureDateFolders(rootID, owner, t)
+}
+
+// markArrival は届いた時刻を並び順キーにします（ゼロ値なら何もしない）。
+// 並び順は**届いた時刻**（取り込んだ順ではない）。ISO表記なので文字列のまま正しく並びます。
+func markArrival(pageID string, t time.Time) {
+	if !t.IsZero() {
+		cms.SetSortKey(pageID, t.In(time.Local).Format(time.RFC3339))
+	}
 }
 
 // ChannelTag はどの経路で届いた（送った）かです。メール・FAX・電話・メモを
@@ -476,19 +472,14 @@ const ReplySourceTag = "返信元"
 // 通信箱の取り込み（IntakeContext.CreateDatedPage）と、送信の記録（ext/comm/mail）
 // が共有します——**受信と送信で置き場の作法を変えない**ため。
 func CreateRecordPage(rootID, owner string, t time.Time, bodyHTML string) (string, error) {
-	parent := rootID
-	if !t.IsZero() {
-		var err error
-		if parent, err = cms.EnsureDateFolders(rootID, owner, t); err != nil {
-			return "", err
-		}
+	parent, err := arrivalParent(rootID, owner, t)
+	if err != nil {
+		return "", err
 	}
 	newID, err := cms.CreateChildPage(parent, owner, bodyHTML)
 	if err != nil {
 		return "", err
 	}
-	if !t.IsZero() {
-		cms.SetSortKey(newID, t.In(time.Local).Format(time.RFC3339))
-	}
+	markArrival(newID, t)
 	return newID, nil
 }

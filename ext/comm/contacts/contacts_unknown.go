@@ -18,6 +18,7 @@ import (
 
 	"w-cms/ext/comm"
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -100,40 +101,19 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 	//
 	// もとは `差出人` と `差出人アドレス` を**隣接で対応づけて**いて、CCが3人いると
 	// 名前がずれていました（3人とも先頭の名前になる。同日に実データで発見）。
-	rows, err := database.DB.Query(
-		`SELECT page_id, value, COALESCE(norm_value, '') FROM page_tags
-		  WHERE name IN (`+sqlPlaceholders(len(addressFields))+`)`,
-		toAnySlice(addressFields)...)
+	// **先に読み切ってから解釈します**（`cms.TagRowsNamed`——行を読みながら別のクエリを投げない）。
+	hits, err := cms.TagRowsNamed(database.DB, addressFields...)
 	if err != nil {
-		return nil, err
-	}
-	// **先に読み切ってから解釈します**（行を読みながら別のクエリを投げない）。
-	type hit struct {
-		pageID int
-		value  string
-		norm   string
-	}
-	var hits []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.pageID, &h.value, &h.norm); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		hits = append(hits, h)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
 	for _, h := range hits {
-		addr := normalizeEmail(h.norm)
+		addr := normalizeEmail(h.Norm)
 		if addr == "" || known[addr] {
 			continue
 		}
 		// **読めないページの相手は数えません**（見せ分けC案——黙って落ちる）。
-		if !page.CanView(user, h.pageID) {
+		if !page.CanView(user, h.PageID) {
 			continue
 		}
 		a := byAddr[addr]
@@ -143,7 +123,7 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 		}
 		a.count++
 		// 表示名は**同じ行の生の値**から取れます（`名前 <アドレス>` の前半）。
-		if n := displayNameOf(h.value); n != "" {
+		if n := displayNameOf(h.Value); n != "" {
 			a.names[n]++
 			d := domainOf(addr)
 			if namesByDomain[d] == nil {
@@ -233,33 +213,17 @@ const domainOwnerLimit = 20
 // ので、全部返して人に選ばせます。
 func ownersByDomainTag(user *auth.User) map[string][]PartnerRef {
 	out := map[string][]PartnerRef{}
-	rows, err := database.DB.Query(
-		`SELECT page_id, value FROM page_tags WHERE name = ?`, DomainTag)
+	// **先に読み切ってから絞ります**（`cms.TagRowsNamed`）。
+	found, err := cms.TagRowsNamed(database.DB, DomainTag)
 	if err != nil {
 		return out
 	}
-	type hit struct {
-		id    int
-		value string
-	}
-	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.value); err != nil {
-			rows.Close()
-			return out
-		}
-		found = append(found, h)
-	}
-	rows.Close()
-
 	for _, h := range found {
-		d := normalizeDomain(h.value)
-		if d == "" || !page.CanView(user, h.id) {
+		d := normalizeDomain(h.Value)
+		if d == "" || !page.CanView(user, h.PageID) {
 			continue
 		}
-		companyID, title, ok := PartnerOfPage(h.id)
+		companyID, title, ok := PartnerOfPage(h.PageID)
 		if !ok || title == "" {
 			continue
 		}
@@ -294,33 +258,17 @@ func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 	// **木ぜんたいから引き、会社へ丸めます**——アドレスが載っているのは社名ページとは
 	// 限りません（`取引先／社名／担当者／氏名`）。2026-09-13 に連絡先を人ごとの
 	// ページへ分けたときからの決まりです。
-	rows, err := database.DB.Query(
-		`SELECT v.page_id, v.value FROM page_tags v WHERE v.name = ?`, EmailTag)
+	// **先に読み切ってから絞ります**（`cms.TagRowsNamed`）。
+	found, err := cms.TagRowsNamed(database.DB, EmailTag)
 	if err != nil {
 		return out
 	}
-	type hit struct {
-		id    int
-		value string
-	}
-	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.value); err != nil {
-			rows.Close()
-			return out
-		}
-		found = append(found, h)
-	}
-	rows.Close()
-
 	for _, h := range found {
-		v := normalizeEmail(h.value)
-		if v == "" || !page.CanView(user, h.id) {
+		v := normalizeEmail(h.Value)
+		if v == "" || !page.CanView(user, h.PageID) {
 			continue
 		}
-		companyID, title, ok := PartnerOfPage(h.id)
+		companyID, title, ok := PartnerOfPage(h.PageID)
 		if !ok || title == "" {
 			continue
 		}
@@ -384,63 +332,23 @@ func looksLikeCompany(name string) bool {
 // 木で判定するので、**動かせば一覧が追従します**——外へ出せば戻ってきて、
 // 入れ直せばまた消えます。人が間違えて動かしても、画面がそれを教えます。
 func knownEmails() (map[string]bool, error) {
-	rows, err := database.DB.Query(
-		`SELECT page_id, value FROM page_tags WHERE name = ?`, EmailTag)
+	// **先に読み切ってから絞ります**（`cms.TagRowsNamed`）。
+	found, err := cms.TagRowsNamed(database.DB, EmailTag)
 	if err != nil {
 		return nil, err
 	}
-	type hit struct {
-		id    int
-		value string
-	}
-	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.value); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		found = append(found, h)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
 	known := map[string]bool{}
 	for _, h := range found {
-		a := normalizeEmail(h.value)
+		a := normalizeEmail(h.Value)
 		if a == "" {
 			continue
 		}
-		if _, _, ok := PartnerOfPage(h.id); !ok {
+		if _, _, ok := PartnerOfPage(h.PageID); !ok {
 			continue // 取引先の外に書かれたアドレスは「登録済み」ではない
 		}
 		known[a] = true
 	}
 	return known, nil
-}
-
-// displayNameFor は同じページの表示名タグを1つ読みます（無ければ空）。
-// sqlPlaceholders は `?, ?, ?` を作ります（`IN (…)` に使う）。
-//
-// **項目の数を決め打ちにしないため**です。`?` を4つ書いて配列の添字を直に渡す形は、
-// 項目が1つ増えた日に panic します（`Bcc` を足す、など）。
-func sqlPlaceholders(n int) string {
-	if n <= 0 {
-		return "NULL"
-	}
-	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
-}
-
-// toAnySlice は文字列の並びをクエリの引数へ渡せる形にします。
-func toAnySlice(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
 }
 
 // displayNameOf は `名前 <アドレス>` の前半（表示名）を返します（無ければ空）。

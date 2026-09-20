@@ -59,6 +59,7 @@ package contacts
 import (
 	"errors"
 	stdhtml "html"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -243,37 +244,42 @@ const PersonalOrgTitle = "個人"
 // PersonsOf は組織ページの直下の人（読めるものだけ）を題の順で返します。
 // 担当者のコンボボックスの候補です（2026-09-17）。
 func PersonsOf(user *auth.User, orgID string) []PartnerRef {
-	orgInt, err := strconv.Atoi(orgID)
+	return visibleChildRefs(user, orgID)
+}
+
+// visibleChildRefs は親の直下の子のうち**読めて題のあるもの**を題の順で返します。
+// 組織の下の人（`PersonsOf`）と、連絡帳の下の組織（`existingPartners`）が同じ形です。
+func visibleChildRefs(user *auth.User, parentID string) []PartnerRef {
+	parentInt, err := strconv.Atoi(parentID)
 	if err != nil {
 		return nil
 	}
-	rows, err := database.DB.Query(
-		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY title ASC`, orgInt)
+	kids, err := cms.ChildPages(database.DB, parentInt)
 	if err != nil {
 		return nil
 	}
-	type hit struct {
-		id    int
-		title string
-	}
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.title); err != nil {
-			rows.Close()
-			return nil
-		}
-		found = append(found, h)
-	}
-	rows.Close()
 	var out []PartnerRef
-	for _, h := range found {
-		if h.title == "" || !page.CanView(user, h.id) {
+	for _, k := range kids {
+		if k.Title == "" || !page.CanView(user, k.ID) {
 			continue
 		}
-		out = append(out, PartnerRef{ID: page.FormatID(h.id), Title: h.title})
+		out = append(out, PartnerRef{ID: page.FormatID(k.ID), Title: k.Title})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	return out
+}
+
+// contactsBoxInt は連絡帳の箱のIDを数で返します（無ければ ok=false）。
+func contactsBoxInt() (int, bool) {
+	boxID, ok := ContactsBoxPageID()
+	if !ok {
+		return 0, false
+	}
+	boxInt, err := strconv.Atoi(boxID)
+	if err != nil {
+		return 0, false
+	}
+	return boxInt, true
 }
 
 // PartnerTitleForAddress は差出人アドレスから、取引先ページの**題**を引きます。
@@ -313,38 +319,22 @@ func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, 
 	if mail == "" {
 		return "", "", false
 	}
-	rows, err := database.DB.Query(
-		`SELECT page_id, value FROM page_tags WHERE name = ?`, EmailTag)
+	// **先に読み切ってから絞ります**（`cms.TagRowsNamed`——行を読みながら別のクエリを投げない）。
+	found, err := cms.TagRowsNamed(database.DB, EmailTag)
 	if err != nil {
 		return "", "", false
 	}
-	type hit struct {
-		id    int
-		value string
-	}
-	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.value); err != nil {
-			rows.Close()
-			return "", "", false
-		}
-		found = append(found, h)
-	}
-	rows.Close()
-
 	for _, h := range found {
-		if normalizeEmail(h.value) != mail {
+		if normalizeEmail(h.Value) != mail {
 			continue
 		}
-		if user != nil && !page.CanView(user, h.id) {
+		if user != nil && !page.CanView(user, h.PageID) {
 			continue
 		}
-		if _, _, inPartner := PartnerOfPage(h.id); !inPartner {
+		if _, _, inPartner := PartnerOfPage(h.PageID); !inPartner {
 			continue // 取引先の外に書かれたアドレスは連絡先ではない
 		}
-		return page.FormatID(h.id), cms.PageTitleByID(h.id), true
+		return page.FormatID(h.PageID), cms.PageTitleByID(h.PageID), true
 	}
 	return "", "", false
 }
@@ -440,27 +430,11 @@ func partnerHits(user *auth.User, addr string) (exact, byDomain []partnerMatch) 
 	domain := domainOf(mail)
 
 	// 個人の連絡先（`メールアドレス`）と組織の連絡先（`ドメイン`）を1度に読みます。
-	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない）。
-	rows, err := database.DB.Query(
-		`SELECT page_id, name, value FROM page_tags WHERE name IN (?, ?)`,
-		EmailTag, DomainTag)
+	// **先に読み切ってから絞ります**（`cms.TagRowsNamed`）。
+	found, err := cms.TagRowsNamed(database.DB, EmailTag, DomainTag)
 	if err != nil {
 		return nil, nil
 	}
-	type hit struct {
-		id          int
-		name, value string
-	}
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.name, &h.value); err != nil {
-			rows.Close()
-			return nil, nil
-		}
-		found = append(found, h)
-	}
-	rows.Close()
 
 	add := func(dst *[]partnerMatch, id int, title string) {
 		for _, m := range *dst {
@@ -471,22 +445,22 @@ func partnerHits(user *auth.User, addr string) (exact, byDomain []partnerMatch) 
 		*dst = append(*dst, partnerMatch{id: id, title: title})
 	}
 	for _, h := range found {
-		if user != nil && !page.CanView(user, h.id) {
+		if user != nil && !page.CanView(user, h.PageID) {
 			continue
 		}
-		companyID, title, ok := PartnerOfPage(h.id)
+		companyID, title, ok := PartnerOfPage(h.PageID)
 		if !ok || title == "" {
 			continue // 連絡帳の外のページに書かれた値は連絡先ではない
 		}
-		switch h.name {
+		switch h.Name {
 		case EmailTag:
-			if normalizeEmail(h.value) == mail {
+			if normalizeEmail(h.Value) == mail {
 				add(&exact, companyID, title)
 			}
 		case DomainTag:
 			// **完全一致だけ**（サブドメインは拾いません・2026-09-16 ユーザー決定）。
 			// 要るなら編集者がタグを足します。
-			if normalizeDomain(h.value) == domain {
+			if normalizeDomain(h.Value) == domain {
 				add(&byDomain, companyID, title)
 			}
 		}
@@ -585,12 +559,8 @@ func addContactTags(pageID, author, tagName string, values []string) (int, error
 // **足す先を箱の中に限ります。** 画面から来たIDをそのまま信じると、通信記録や
 // 図面ページに `メールアドレス` のタグが付き、ドメインの逆引きが別物を拾います。
 func isPartnerPage(pageIDInt int) bool {
-	boxID, ok := ContactsBoxPageID()
+	boxInt, ok := contactsBoxInt()
 	if !ok {
-		return false
-	}
-	boxInt, err := strconv.Atoi(boxID)
-	if err != nil {
 		return false
 	}
 	var parent int
@@ -617,34 +587,18 @@ func PartnerByTitle(user *auth.User, title string) (pageID string, ok bool) {
 	if title == "" {
 		return "", false
 	}
-	boxID, found := ContactsBoxPageID()
+	boxInt, found := contactsBoxInt()
 	if !found {
 		return "", false
 	}
-	boxInt, err := strconv.Atoi(boxID)
+	kids, err := cms.ChildPages(database.DB, boxInt)
 	if err != nil {
 		return "", false
 	}
-	rows, err := database.DB.Query(
-		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id`, boxInt, title)
-	if err != nil {
-		return "", false
-	}
-	var ids []int
-	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return "", false
-		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-
 	var hits []int
-	for _, id := range ids {
-		if user == nil || page.CanView(user, id) {
-			hits = append(hits, id)
+	for _, k := range kids {
+		if k.Title == title && (user == nil || page.CanView(user, k.ID)) {
+			hits = append(hits, k.ID)
 		}
 	}
 	if len(hits) != 1 {
@@ -664,12 +618,8 @@ func PartnerByTitle(user *auth.User, title string) (pageID string, ok bool) {
 // 社名ページ自身を渡せばそれ自身が返ります。取引先の外なら ok=false。
 // 壊れたデータで無限に辿らないよう回数に上限を置きます（`isDescendantOf` と同じ用心）。
 func PartnerOfPage(pageIDInt int) (id int, title string, ok bool) {
-	boxID, found := ContactsBoxPageID()
+	boxInt, found := contactsBoxInt()
 	if !found {
-		return 0, "", false
-	}
-	boxInt, err := strconv.Atoi(boxID)
-	if err != nil {
 		return 0, "", false
 	}
 	cur := pageIDInt
@@ -718,16 +668,12 @@ func EnsureContactPerson(user *auth.User, companyID, name string) (string, error
 // **完全一致だけ**です（`findChildByTitle` と同じ規律）——揺れを機械が吸収すると
 // 別人が1人に潰れます。
 func ensureChildByTitle(user *auth.User, parentID, title string) (string, error) {
+	if id, found := cms.FindChildByTitle(parentID, title); found {
+		return id, nil
+	}
 	parentInt, err := strconv.Atoi(parentID)
 	if err != nil {
 		return "", err
-	}
-	var id int
-	err = database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
-		parentInt, title).Scan(&id)
-	if err == nil {
-		return page.FormatID(id), nil
 	}
 	if !page.GetPerms(parentInt).CanWrite(user) {
 		return "", errors.New("親ページへ書き込む権限がありません")
@@ -742,43 +688,11 @@ type PartnerRef struct {
 	Title string
 }
 
-// existingPartners は「取引先」の下にある相手ページを題の順で並べます（読めるものだけ）。
+// existingPartners は「連絡帳」の下にある組織ページを題の順で並べます（読めるものだけ）。
 func existingPartners(user *auth.User) []PartnerRef {
 	boxID, ok := ContactsBoxPageID()
 	if !ok {
 		return nil
 	}
-	boxInt, err := strconv.Atoi(boxID)
-	if err != nil {
-		return nil
-	}
-	rows, err := database.DB.Query(
-		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY title ASC`, boxInt)
-	if err != nil {
-		return nil
-	}
-	type hit struct {
-		id    int
-		title string
-	}
-	// **先に読み切ってから絞ります**（page.CanView が別のクエリを投げるため）。
-	var found []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.id, &h.title); err != nil {
-			rows.Close()
-			return nil
-		}
-		found = append(found, h)
-	}
-	rows.Close()
-
-	var out []PartnerRef
-	for _, h := range found {
-		if h.title == "" || !page.CanView(user, h.id) {
-			continue
-		}
-		out = append(out, PartnerRef{ID: page.FormatID(h.id), Title: h.title})
-	}
-	return out
+	return visibleChildRefs(user, boxID)
 }

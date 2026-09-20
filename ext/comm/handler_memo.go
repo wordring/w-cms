@@ -29,7 +29,6 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"html"
 	"net/http"
 	"strings"
@@ -83,14 +82,8 @@ func HasDirection(channel string) bool { return !directionless[channel] }
 // NewMemoAPIHandler は POST /api/intake/memo です。
 // 入力: {"channel": "電話", "direction": "受信", "title": "納期の相談"}——題は省略できます。
 func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -111,7 +104,7 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	boxID, ok := MailBoxPageID()
 	if !ok {
-		cms.JSONFail(w, http.StatusConflict, "通信箱ページがありません（トップ直下に「"+MailBoxTitle+"」という名前のページを作ってください）")
+		cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
 		return
 	}
 	// **通信箱への write を要求します**（取り込みと同じ関門）。
@@ -142,9 +135,7 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "intake.memo", pageID+" ("+channel+")")
-	json.NewEncoder(w).Encode(map[string]any{
-		"success": true, "page_id": pageID, "title": title,
-	})
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "title": title})
 }
 
 // memoBodyHTML は記録1枚の本文を組み立てます（切り出してあるのはテストのため）。

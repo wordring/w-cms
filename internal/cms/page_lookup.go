@@ -17,6 +17,8 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"strconv"
+
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -29,6 +31,64 @@ func PageTitleByID(idInt int) string {
 	var t string
 	database.DB.QueryRow(`SELECT COALESCE(title, '') FROM pages WHERE id = ?`, idInt).Scan(&t)
 	return t
+}
+
+// ChildPage は子ページ1枚（ID順の一覧に使う最小の形）です。
+type ChildPage struct {
+	ID    int
+	Title string
+}
+
+// ChildPages は親の子を **ID順で全部読み切ってから**返します（認可はしません）。
+//
+// 呼ぶ側が `page.CanView` で絞ります——**先に読み切る**のは、行を読みながら別の
+// クエリを投げると `:memory:` DBで空の別DBに当たる罠を踏まないためです
+// （`TagRowsNamed` と同じ）。同じ「子を読んで・溜めて・絞る」が拡張に7か所写されて
+// いました（2026-09-21 に寄せた）。題の順が要る呼び手は自分で並べ替えます。
+func ChildPages(db ReadOnlyDB, parentInt int) ([]ChildPage, error) {
+	rows, err := db.Query(
+		`SELECT id, COALESCE(title, '') FROM pages WHERE parent_id = ? ORDER BY id ASC`, parentInt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ChildPage
+	for rows.Next() {
+		var c ChildPage
+		if err := rows.Scan(&c.ID, &c.Title); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// FindChildByTitle は親の子から題が**完全一致**するものを1つ返します（いちばん古いもの）。
+//
+// 完全一致だけにするのは、揺れを機械が吸収すると別の相手が1つに潰れるため
+// ——名寄せは人の仕事です。通信箱の年月フォルダ・加工製品の木・連絡帳の人が
+// 同じ問いを別々の SQL で書いていました（2026-09-21 に寄せた）。
+func FindChildByTitle(parentID, title string) (string, bool) {
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return "", false
+	}
+	var id int
+	if err := database.DB.QueryRow(
+		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
+		parentInt, title).Scan(&id); err != nil {
+		return "", false
+	}
+	return page.FormatID(id), true
+}
+
+// EnsureChildByTitle は題の一致する子を返し、無ければ owner の名前で bodyHTML から作ります
+// （親への write 権限は呼ぶ側が見ます）。
+func EnsureChildByTitle(parentID, owner, title, bodyHTML string) (string, error) {
+	if id, found := FindChildByTitle(parentID, title); found {
+		return id, nil
+	}
+	return CreateChildPage(parentID, owner, bodyHTML)
 }
 
 // TopLevelPageByTitle はトップ直下の題一致ページを返します

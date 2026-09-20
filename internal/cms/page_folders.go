@@ -19,7 +19,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
 
 // CreateChildPage はページ作成の芯です（権限は親から継承・サニタイズ・索引まで。
@@ -109,15 +108,8 @@ func IsDateFolderTitle(title string) bool {
 // の対象は「この取り込みで作った記録ページ」に限る、という最小権限の線を崩さない
 // ためです（そもそもここは IntakeContext を通らない）。
 func ensureFolderUnder(parentID, owner, title string) (string, error) {
-	parentInt, err := strconv.Atoi(parentID)
-	if err != nil {
-		return "", err
-	}
-	var id int
-	if err := database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
-		parentInt, title).Scan(&id); err == nil {
-		return page.FormatID(id), nil
+	if id, found := FindChildByTitle(parentID, title); found {
+		return id, nil
 	}
 	newID, err := CreateChildPage(parentID, owner, "<h1>"+html.EscapeString(title)+"</h1>")
 	if err != nil {

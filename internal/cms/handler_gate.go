@@ -46,6 +46,26 @@ func normalizedPageID(w http.ResponseWriter, raw string) (id string, idInt int, 
 	return id, mustAtoi(id), true
 }
 
+// GateJSONPost は、JSONで答える**書き込み口**の入口です: `Content-Type` → POST の確認 →
+// 利用者。断ったときは応答を書き終えていて ok=false。
+//
+// **同じ8行が拡張の6つの口に写されていました**（2026-09-21 に寄せた）。`/api/` は
+// `RequireAuth` の内側なので利用者が nil になることは普通ありませんが、口ごとに
+// 確かめる形はそのまま残します（ミドルウェアの入れ子は「黙って壊れる層」なので）。
+func GateJSONPost(w http.ResponseWriter, r *http.Request) (user *auth.User, ok bool) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return nil, false
+	}
+	user = auth.CurrentUser(r)
+	if user == nil {
+		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		return nil, false
+	}
+	return user, true
+}
+
 // WriteJSON は JSON の応答を書きます（成功の応答の定型）。
 func WriteJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
