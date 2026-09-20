@@ -38,6 +38,11 @@ func TestOrderItemColumns(t *testing.T) {
 		{"数量", cms.ColNumber},
 		{"単位", cms.ColEnum},    // ⚠ 落とすと数量の意味が変わる（個／セット）
 		{"単価", cms.ColNumber},
+		// ⚠ **行の納期は、ページのタグの納期とは別物**（原本の証拠／弊社の管理）。
+		{"納期", cms.ColDate},
+		// ⚠ **分納があるので要ります**——「100個のうち40個だけ出した」は
+		// `状態` だけでは表せません。
+		{"出荷済み", cms.ColNumber},
 		{"備考", cms.ColText},    // ⚠ 既存4表と同じく `状態` の手前。先方の `サイズ` もここ
 		{"状態", cms.ColEnum},
 	}
@@ -104,9 +109,11 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 
 	body := `<h1>受注</h1><table data-type="client-order-items"><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th>` +
-		`<th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` +
+		`<th>単位</th><th>単価</th><th>納期</th><th>出荷済み</th>` +
+		`<th>備考</th><th>状態</th></tr>` +
 		`<tr><td>000047</td><td>P103-227-6</td><td>ブラケット</td><td>100</td>` +
-		`<td>セット</td><td>390</td><td>材質変更</td><td>未着手</td></tr>` +
+		`<td>セット</td><td>390</td><td>2026-10-15</td><td>40</td>` +
+		`<td>材質変更</td><td>未着手</td></tr>` +
 		`</tbody></table>`
 	if err := cms.SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
@@ -118,6 +125,8 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 		// 100セットなのか分からなくなります（まれにしか出ないので、
 		// **セットの行だけが黙って間違います**）。
 		{"単位", "セット"},
+		// ⚠ **分納の途中**——100セットのうち40セット出した、が索引に残ること。
+		{"出荷済み", "40"},
 		{"備考", "材質変更"},
 	} {
 		var got string
@@ -136,8 +145,8 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 // 発注書の最初の方にあります**」）。書面のヘッダにあるものはページのタグになる、
 // という **1文書＝1ページ**の規則どおりです。
 //
-// ⚠ **両方に置いてはいけません。** 同じことを2か所に書くと、どちらが正なのか
-// 分からなくなり、片方だけ直したときに静かに食い違います。
+// ⚠ **行の納期とは別物です。** ページのタグは**先方が書いたこと**（原本の証拠）、
+// 行は**弊社の予定**（分納で動く）。受注時は同じ値で始まり、そこから別々に動きます。
 func TestOrderPageDueDateIsPageTag(t *testing.T) {
 	j := &orderJudgment{
 		IsClientOrder: true, DocType: "order", OrderNo: "PO-1",
@@ -149,9 +158,16 @@ func TestOrderPageDueDateIsPageTag(t *testing.T) {
 	if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>2026-10-15</dd>") {
 		t.Errorf("納期がページのタグに出ていません:\n%s", body)
 	}
-	// **明細の列にはしない。**
-	if strings.Contains(body, "<th>納期</th>") {
-		t.Errorf("納期が明細の列にも出ています（2か所になります）:\n%s", body)
+	// ⚠ **行にも配ります**（2026-09-20 ユーザー:「行の納期は、**受注時にはタグの納期と
+	// 同じ**です。その後顧客の依頼や弊社の事情で個別に納期が変わることがあります。
+	// すると行の納期を書き換えます」）。同じ日付をN回打たせる理由がなく、
+	// **変わった行だけ直せば済みます**。
+	//
+	// ⚠ **同じ名前が2か所に出ますが、役割が違います**——ページのタグは**先方が
+	// 書いたこと**（原本の証拠・動かさない）、行は**弊社の予定**（分納で動く）。
+	rows := strings.SplitN(body, "</tr>", 3)
+	if len(rows) < 3 || !strings.Contains(rows[1], "<td>2026-10-15</td>") {
+		t.Errorf("行の納期に配られていません:\n%s", body)
 	}
 }
 
@@ -192,5 +208,44 @@ func TestOrderPageKeepsNonDateDueDate(t *testing.T) {
 		if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>"+v+"</dd>") {
 			t.Errorf("日付でない納期 %q が落ちています:\n%s", v, body)
 		}
+	}
+}
+
+// TestOrderPageHasCaption は、**弊社の表にもキャプションが付く**ことを固定します。
+//
+// ユーザー:「弊社の受注表にもキャプションが欲しいところです」（2026-09-20）。
+// 原本の表と並ぶので、**どちらが何なのか見て分かる**必要があります。
+// **§2.4 の「見える文字が形式を宣言する」を、自分たちの表でも実践する形**です。
+func TestOrderPageHasCaption(t *testing.T) {
+	body := buildOrderPageHTML("000001", "pdf001",
+		&orderJudgment{IsClientOrder: true, DocType: "order", OrderNo: "PO-1"})
+
+	def, _ := cms.VocabDefByType("client-order-items")
+	if !strings.Contains(body, "<caption>"+def.DisplayName+"</caption>") {
+		t.Errorf("弊社の表にキャプションがありません:\n%s", body)
+	}
+	// ⚠ **表示名と同じ言葉であること**——違う言葉だと、caption で形式を宣言する
+	// 書き方へ移った日に**その表だけ認識されなくなります**。
+	if !strings.Contains(body, "<caption>受注明細</caption>") {
+		t.Errorf("キャプションが表示名と違います:\n%s", body)
+	}
+}
+
+// TestOrderPageShippedStartsEmpty は、**出荷済みが空で始まる**ことを固定します。
+//
+// ⚠ 空が「まだ出していない」です（`0` と書く必要はありません）。解析が `0` を
+// 埋めると、**人が入れた 0 と見分けが付きません**。
+func TestOrderPageShippedStartsEmpty(t *testing.T) {
+	j := &orderJudgment{
+		IsClientOrder: true, DocType: "order", OrderNo: "PO-1",
+		Items: []orderPDFItem{{ItemNo: "A-1", ItemName: "ブラケット", Quantity: "100", Unit: "個"}},
+	}
+	body := buildOrderPageHTML("000001", "pdf001", j)
+	rows := strings.SplitN(body, "</tr>", 3)
+	if len(rows) < 3 {
+		t.Fatalf("明細の行がありません:\n%s", body)
+	}
+	if strings.Contains(rows[1], "<td>0</td>") {
+		t.Errorf("出荷済みに 0 を埋めています（人が入れた 0 と見分けが付きません）:\n%s", rows[1])
 	}
 }

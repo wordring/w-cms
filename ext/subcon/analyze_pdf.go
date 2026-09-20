@@ -59,10 +59,10 @@ type orderJudgment struct {
 	// 装置名称は**ページの置き場所**に効く——ワンノートの加工製品ページは
 	// 「顧客名／装置名称／図面名称」の階層で作られている（2026-09-03 ユーザー）。
 	// 顧客名は Customer を共用する（発注書の発行元と同じ「相手の会社名」）。
-	MachineName string         `json:"machine_name"`
-	OrderNo     string         `json:"order_no"`
-	Customer    string         `json:"customer"`
-	OrderDate   string         `json:"order_date"`
+	MachineName string `json:"machine_name"`
+	OrderNo     string `json:"order_no"`
+	Customer    string `json:"customer"`
+	OrderDate   string `json:"order_date"`
 	// DueDate は納期です。⚠ **明細ではなくヘッダにあります**（実データで確認）。
 	DueDate string `json:"due_date"`
 	// SourceTable は**発注書の明細表を、先方の見出しのまま**写したものです
@@ -75,8 +75,15 @@ type orderJudgment struct {
 	//
 	// ⚠ **OCRの正しさもここでしか確かめられません**——行を1つ落としていないか、
 	// 数字を取り違えていないか。対応だけ見せる形では分かりません。
-	SourceTable orderSourceTable `json:"source_table"`
-	Items       []orderPDFItem `json:"items"`
+	//
+	// ⚠ **生で受けて、別に解きます。** 構造に直接当てると、**形が合わないだけで
+	// 解析まるごとが失敗します**——実データの2通目で起きました（2026-09-20）。
+	// 原本の写しは**おまけ**で、それが読めなくても発注書番号や明細は取れているべきです。
+	SourceTableRaw json.RawMessage `json:"source_table"`
+
+	// SourceTable は上を解いた結果です（解けなければ空のまま）。
+	SourceTable orderSourceTable `json:"-"`
+	Items       []orderPDFItem   `json:"items"`
 	// Drawings は**1つのPDFに複数の図面が入っていたとき**の2枚目以降を含む一覧です
 	// （2026-09-20 ユーザー:「一つのPDFに複数の図面が入っている場合もあるようです」）。
 	//
@@ -325,10 +332,32 @@ drawings の各項目は次のとおりです:
 	if err != nil {
 		return nil, err
 	}
+	return parseOrderJudgment(respText)
+}
+
+// parseOrderJudgment は Gemini の返答を判定へ読み直します。
+//
+// ⚠ **Gemini を呼ばずに試せるように切り出してあります**（2026-09-20）。実データで
+// 「解析に失敗しました」が出たとき、**読み取りだけを手元で再現できませんでした**
+// ——返答を貼れば同じ道を通るようにしておきます。
+func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	var j orderJudgment
 	if err := json.Unmarshal([]byte(cms.StripJSONFence(respText)), &j); err != nil {
-		return nil, errors.New("応答をJSONとして読めません: " + err.Error())
+		// ⚠ **返ってきたものの頭を添えます**（2026-09-20）。それまでは Go の
+		// 型エラーだけを返していて、**何が返ったのか分からないまま**でした
+		// ——実データで「解析に失敗しました」と出たとき、原因を当てられませんでした。
+		// 直すのはたいていプロンプトなので、**何が返ったかが唯一の手掛かり**です。
+		// ⚠ **文字の途中で切らないこと**——和文は1文字が3バイトなので、
+		// バイト数で切ると画面に化けた文字が出ます（`head[:300]` でやりかけました）。
+		head := strings.TrimSpace(cms.StripJSONFence(respText))
+		if r := []rune(head); len(r) > 300 {
+			head = string(r[:300]) + "…"
+		}
+		return nil, errors.New("応答をJSONとして読めません: " + err.Error() +
+			"（返ってきたもの: " + head + "）")
 	}
+	// ⚠ **原本の写しは、読めなくても先へ進みます**（おまけだから）。
+	j.SourceTable = parseSourceTable(j.SourceTableRaw)
 	return &j, nil
 }
 
@@ -391,7 +420,16 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// 原本は**証拠**であって、検索したいのは弊社の表のほうです——**二重計上も
 	// 最初から起きません**。
 	b.WriteString(sourceTableHTML(j.SourceTable))
-	b.WriteString(`<table data-type="client-order-items"><tbody>`)
+	// ⚠ **キャプションを付けます**（2026-09-20 ユーザー:「弊社の受注表にも
+	// キャプションが欲しいところです」）。原本の表と並ぶので、**どちらが何なのか
+	// 見て分かる**必要があります。
+	//
+	// **§2.4 の「見える文字が形式を宣言する」を、自分たちの表でも実践する形**です。
+	// ⚠ `data-type` も当面は残します（属性が優先・既存の本文と揃える）——
+	// 移行が済んだら属性を落とします。それまでは**キャプションは人のため**に働きます。
+	def, _ := cms.VocabDefByType(clientOrderItemsType)
+	b.WriteString(`<table data-type="` + clientOrderItemsType + `">` +
+		`<caption>` + html.EscapeString(def.DisplayName) + `</caption><tbody>`)
 	// ⚠ **見出しは宣言から組みます**（2026-09-20）。列を足したのに見出しを手で書いた
 	// ままだと、**宣言と本文が黙ってずれます**——索引は見出しの表示文字で引くので、
 	// ずれた列はどこからも読めません。`vocab.go` が正本です。
@@ -414,6 +452,20 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("数量", it.Quantity)) + "</td>" +
 			"<td>" + html.EscapeString(it.Unit) + "</td>" +
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("単価", it.Price)) + "</td>" +
+			// ⚠ **行の納期は、受注時はページの納期と同じ**（2026-09-20 ユーザー:
+			// 「行の納期は、受注時にはタグの納期と同じです。**その後顧客の依頼や
+			// 弊社の事情で個別に納期が変わることがあります**。すると行の納期を
+			// 書き換えます」）。**配っておきます**——同じ日付をN回打たせる理由がなく、
+			// 変わった行だけ直せば済みます。
+			//
+			// ページのタグは**先方が書いたこと**のまま残り、行は**弊社の予定**として
+			// 動きます。⚠ 日付でない値（「最短納期」）もそのまま配ります——
+			// 書いてあることを捨てないのが決まりです。
+			//
+			// 出荷済みは空が「まだ出していない」。⚠ **分納があるので要ります**
+			// ——「100個のうち40個だけ出した」は `状態` だけでは表せません。
+			"<td>" + html.EscapeString(j.DueDate) + "</td>" + // 納期（受注時はページと同じ）
+			"<td></td>" + // 出荷済み
 			"<td></td>" + // 備考（⚠ 先方の `サイズ` はここへ入ります・様式の対応表が入ったら）
 			"<td>未着手</td></tr>")
 	}
@@ -658,3 +710,77 @@ func sourceTableHTML(t orderSourceTable) string {
 // ⚠ **語彙に登録しません**（登録すると索引に載り、弊社の明細と二重になります）。
 // 人が読むための名前です。
 const sourceTableCaption = "顧客の発注書（読んだまま）"
+
+// parseSourceTable は原本の写しを**寛容に**解きます（解けなければ空）。
+//
+// ⚠ **行の形が2通りあります。** 頼んでいるのは `[["1","品名",…]]`（配列の配列）ですが、
+// **Gemini は見出しを鍵にした object で返すことがよくあります**
+// （`[{"No.":"1","品名":"…"}]`）。どちらでも受けます。
+//
+// ⚠ **ここで失敗しても解析は止めません。** 構造に直接当てていたころは、**形が合わない
+// だけで発注書番号も明細も丸ごと失われて**いました（実データの2通目で「解析に失敗
+// しました」が出た原因）。**おまけのために本題を落とさない。**
+func parseSourceTable(raw json.RawMessage) orderSourceTable {
+	if len(raw) == 0 {
+		return orderSourceTable{}
+	}
+	// ① 頼んだとおりの形（見出しの配列＋行の配列）。
+	var direct struct {
+		Headers []string          `json:"headers"`
+		Rows    []json.RawMessage `json:"rows"`
+	}
+	if err := json.Unmarshal(raw, &direct); err != nil {
+		return orderSourceTable{}
+	}
+	out := orderSourceTable{Headers: direct.Headers}
+	for _, r := range direct.Rows {
+		// ②-a 行が配列（頼んだ形）。
+		var cells []string
+		if err := json.Unmarshal(r, &cells); err == nil {
+			out.Rows = append(out.Rows, cells)
+			continue
+		}
+		// ②-b 行が object（見出しを鍵にしている）。**見出しの順に並べ直します**。
+		var byKey map[string]any
+		if err := json.Unmarshal(r, &byKey); err != nil {
+			continue // この行だけ飛ばす（⚠ 1行のために表ごと捨てない）
+		}
+		row := make([]string, len(out.Headers))
+		for i, h := range out.Headers {
+			row[i] = jsonCellText(byKey[h])
+		}
+		out.Rows = append(out.Rows, row)
+	}
+	if len(out.Headers) == 0 || len(out.Rows) == 0 {
+		return orderSourceTable{}
+	}
+	return out
+}
+
+// jsonCellText は JSON の値をセルの文字へ直します（数も文字として扱う——原本の写しなので、
+// 書かれていたとおりの見た目を残すのが目的）。
+func jsonCellText(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case float64:
+		// ⚠ **整数は小数点を付けません**（`100` が `100.000000` になると原本と違う）。
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	default:
+		b, err := json.Marshal(t)
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	}
+}

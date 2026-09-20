@@ -1,8 +1,10 @@
 package subcon
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -135,5 +137,107 @@ func TestOrderSourceTableOmittedWhenEmpty(t *testing.T) {
 	body := buildOrderPageHTML("000001", "pdf001", j)
 	if strings.Contains(body, "<details>") {
 		t.Errorf("原本が読めないのに枠を出しています:\n%s", body)
+	}
+}
+
+// TestParseSourceTableAcceptsBothRowForms は、**行が配列でも object でも受ける**ことを
+// 固定します。
+//
+// ⚠ 頼んでいるのは `[["1","品名",…]]` ですが、**Gemini は見出しを鍵にした object で
+// 返すことがよくあります**（`[{"No.":"1","品名":"…"}]`）。実データの2通目で
+// 「解析に失敗しました」が出た原因でした。
+func TestParseSourceTableAcceptsBothRowForms(t *testing.T) {
+	for _, c := range []struct{ name, raw string }{
+		{"行が配列（頼んだ形）",
+			`{"headers":["No.","品名","数量"],"rows":[["1","ブラケット","100"]]}`},
+		{"行が object（見出しが鍵）",
+			`{"headers":["No.","品名","数量"],"rows":[{"No.":"1","品名":"ブラケット","数量":"100"}]}`},
+		{"数が数のまま返る",
+			`{"headers":["No.","品名","数量"],"rows":[{"No.":1,"品名":"ブラケット","数量":100}]}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := parseSourceTable([]byte(c.raw))
+			if len(got.Rows) != 1 {
+				t.Fatalf("行が取れていません: %+v", got)
+			}
+			want := []string{"1", "ブラケット", "100"}
+			for i, w := range want {
+				if got.Rows[0][i] != w {
+					// ⚠ 数が `100.000000` になっていないか（原本の見た目を保つ）。
+					t.Errorf("%d列目が %q です（%q を期待）", i, got.Rows[0][i], w)
+				}
+			}
+		})
+	}
+}
+
+// TestParseSourceTableSurvivesGarbage は、**読めない原本で空を返す（落ちない）**ことを
+// 固定します。
+func TestParseSourceTableSurvivesGarbage(t *testing.T) {
+	for _, raw := range []string{
+		``, `null`, `"ただの文字列"`, `[]`, `{"headers":[],"rows":[]}`,
+		`{"headers":["A"],"rows":[42]}`,
+	} {
+		if got := parseSourceTable([]byte(raw)); len(got.Rows) != 0 {
+			t.Errorf("%q から行が取れています: %+v", raw, got)
+		}
+	}
+}
+
+// TestJudgmentSurvivesBadSourceTable は、⚠ **原本が読めなくても本題が残る**ことを
+// 固定します。
+//
+// **これがこの直しの本体です。** 構造に直接当てていたころは、**原本の形が合わない
+// だけで発注書番号も明細も丸ごと失われ**、画面には「解析に失敗しました」としか
+// 出ませんでした。**おまけのために本題を落とさない。**
+func TestJudgmentSurvivesBadSourceTable(t *testing.T) {
+	resp := `{"doc_type":"order","is_client_order":true,` +
+		`"order_no":"250715-304","customer":"南北スポーツ機械","order_date":"2026-09-16",` +
+		`"due_date":"最短納期",` +
+		`"source_table":"表は読めませんでした",` + // ⚠ 構造に合わない形
+		`"items":[{"item_no":"K120-1","item_name":"ブラケット","quantity":"100","unit":"個","price":"390"}]}`
+
+	var j orderJudgment
+	if err := json.Unmarshal([]byte(resp), &j); err != nil {
+		t.Fatalf("⚠ 原本の形が合わないだけで応答全体が読めなくなっています: %v", err)
+	}
+	j.SourceTable = parseSourceTable(j.SourceTableRaw)
+
+	if j.OrderNo != "250715-304" || j.DueDate != "最短納期" || len(j.Items) != 1 {
+		t.Errorf("本題が失われています: %+v", j)
+	}
+	if len(j.SourceTable.Rows) != 0 {
+		t.Errorf("読めない原本から行が取れています: %+v", j.SourceTable)
+	}
+	// 本文も組める（原本の枠は出ない）。
+	body := buildOrderPageHTML("000001", "pdf001", &j)
+	if !strings.Contains(body, "<dd>250715-304</dd>") {
+		t.Errorf("発注書番号が本文に出ていません:\n%s", body)
+	}
+	if strings.Contains(body, "<details>") {
+		t.Errorf("読めない原本の枠を出しています:\n%s", body)
+	}
+}
+
+// TestAnalyzeErrorShowsResponseHead は、**返ってきたものの頭がエラー文に出る**ことを
+// 固定します。
+//
+// ⚠ これが無いと「解析に失敗しました」としか出ず、**原因を当てられません**
+// （実データで実際に当てられませんでした・2026-09-20）。直すのはたいてい
+// プロンプトなので、**何が返ったかが唯一の手掛かり**です。
+//
+// ⚠ **文字の途中で切らないこと**もここで見ます——和文は1文字3バイトなので、
+// バイト数で切ると画面に化けた文字が出ます。
+func TestAnalyzeErrorShowsResponseHead(t *testing.T) {
+	long := "これはJSONではありません。" + strings.Repeat("あ", 500)
+	_, err := parseOrderJudgment(long)
+	if err == nil {
+		t.Fatal("JSONでない応答を通しています")
+	}
+	if !strings.Contains(err.Error(), "これはJSONではありません") {
+		t.Errorf("返ってきたものが出ていません: %v", err)
+	}
+	if !utf8.ValidString(err.Error()) {
+		t.Errorf("⚠ 文字の途中で切れています（画面に化けた文字が出ます）: %q", err.Error())
 	}
 }
