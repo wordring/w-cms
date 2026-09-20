@@ -208,7 +208,7 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadGateway, "解析に失敗しました: "+err.Error())
 		return
 	}
-	attachIDOf := func() string { return strings.TrimSuffix(fileName, filepath.Ext(fileName)) }
+	attachID := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
 	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
@@ -233,7 +233,7 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 			matches := MatchDXFAttachments(pageID, dj.DrawingNo)
 			totalMatched += len(matches)
 			newID, err := cms.CreateChildPage(pageID, user.Username,
-				buildProductPageHTML(pageID, attachIDOf(), dj, matches))
+				buildProductPageHTML(pageID, attachID, dj, matches))
 			if err != nil {
 				// ⚠ **途中で失敗しても、できたぶんは残します**——作れた図面まで
 				// 捨てると、人はもう一度解析するしかなくなり、**通ったぶんが二重に
@@ -264,31 +264,18 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attachID := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	newID, err := cms.CreateChildPage(pageID, auth.CurrentUser(r).Username,
-		buildOrderPageHTML(pageID, attachID, j))
+	user := auth.CurrentUser(r)
+	newID, err := cms.CreateChildPage(pageID, user.Username, buildOrderPageHTML(pageID, attachID, j))
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
 		return
 	}
-	auth.Audit(auth.CurrentUser(r).Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
+	auth.Audit(user.Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
 
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "is_client_order": true,
 		"page_id": newID, "title": pageTitleOf(newID),
 	})
-}
-
-// pageTitleOf は索引から題を引きます（引けなければIDをそのまま返す）。
-func pageTitleOf(pageID string) string {
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil {
-		return pageID
-	}
-	if t := cms.PageTitleByID(idInt); t != "" {
-		return t
-	}
-	return pageID
 }
 
 // loadPDFForAnalysis は解析対象のPDFの中身を読みます。
@@ -429,8 +416,7 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	writeHeaderPair(&b, TotalTag, j.Total)
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
-	b.WriteString("<dt>" + SourceRefTag + "</dt><dd>" +
-		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
+	writeHeaderPair(&b, SourceRefTag, hostPageID+"-"+attachID)
 	b.WriteString("</dl>")
 	// ── 顧客の発注書（読んだまま）──
 	//
@@ -449,17 +435,13 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// **§2.4 の「見える文字が形式を宣言する」を、自分たちの表でも実践する形**です。
 	// ⚠ `data-type` も当面は残します（属性が優先・既存の本文と揃える）——
 	// 移行が済んだら属性を落とします。それまでは**キャプションは人のため**に働きます。
-	def, _ := cms.VocabDefByType(clientOrderItemsType)
+	//
+	// ⚠ **見出しは宣言から組みます**（`headerRowHTML`・2026-09-20）。列を足したのに
+	// 見出しを手で書いたままだと、**宣言と本文が黙ってずれます**——索引は見出しの
+	// 表示文字で引くので、ずれた列はどこからも読めません。`vocab.go` が正本です。
 	b.WriteString(`<table data-type="` + clientOrderItemsType + `">` +
-		`<caption>` + html.EscapeString(def.DisplayName) + `</caption><tbody>`)
-	// ⚠ **見出しは宣言から組みます**（2026-09-20）。列を足したのに見出しを手で書いた
-	// ままだと、**宣言と本文が黙ってずれます**——索引は見出しの表示文字で引くので、
-	// ずれた列はどこからも読めません。`vocab.go` が正本です。
-	b.WriteString("<tr>")
-	for _, c := range clientOrderItemColumns() {
-		b.WriteString("<th>" + html.EscapeString(c.Label) + "</th>")
-	}
-	b.WriteString("</tr>")
+		`<caption>` + html.EscapeString(displayNameOf(clientOrderItemsType)) + `</caption><tbody>`)
+	b.WriteString(headerRowHTML(clientOrderItemsType))
 	for _, it := range j.Items {
 		// 日付と数値は**正規形で書き起こす**（D-3「正規化は取り込み時に行う」）。
 		// 読めなければ生のまま入ります——取り込みは情報を捨てない。
@@ -500,6 +482,8 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 // 日付・数値の見出し語（発注日 等）は**正規形へ揃えてから**書きます
 // （D-3・`cms.CanonicalForIngest`）。図面番号や客先名は揃えません——
 // 機械が畳んで書き換えると、原本と見比べたときに食い違うためです。
+// 参照（`受信元`・`対応DXF`）もここを通ります——`ref` 型は正規化の対象外なので、
+// 値はそのまま入ります。
 func writeHeaderPair(b *strings.Builder, name, value string) {
 	b.WriteString("<dt>" + html.EscapeString(name) + "</dt>")
 	if strings.TrimSpace(value) == "" {
@@ -588,13 +572,11 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
 	// 装置名称・客先は置き場所（社名／段／装置名称／図面名称）に効く項目。
 	writeHeaderPair(&b, MachineNameTag, cms.NormalizeNameForIngest(j.MachineName))
 	writeHeaderPair(&b, ClientNameTag, cms.NormalizeNameForIngest(j.Customer))
-	b.WriteString("<dt>" + SourceRefTag + "</dt><dd>" +
-		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
+	writeHeaderPair(&b, SourceRefTag, hostPageID+"-"+attachID)
 	// 一致したDXFを参照タグで指す（押すと元の通信記録ページの該当添付へ飛ぶ）。
 	// 一致が無ければ何も書かない——**DXFが無いのも普通**（PDFだけの図面）。
 	for _, m := range matches {
-		b.WriteString("<dt>対応DXF</dt><dd>" +
-			html.EscapeString(hostPageID+"-"+m.AttachID) + "</dd>")
+		writeHeaderPair(&b, "対応DXF", hostPageID+"-"+m.AttachID)
 	}
 	b.WriteString("</dl>")
 	// **図面をここに開く、と本文に書きます**（2026-09-14）。ユーザー:「HTMLに無いものが
@@ -622,7 +604,8 @@ func revisionsSectionHTML(j *orderJudgment, existingBody string) string {
 	var b strings.Builder
 	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>改訂履歴</h2>`)
 	b.WriteString(`<table data-type="` + revisionItemsType + `"><tbody>`)
-	b.WriteString("<tr><th>版</th><th>図面番号</th><th>受領日</th></tr>")
+	// ⚠ 見出しは宣言から組みます（受注明細と同じ理由——手書きだと列を足した日にずれる）。
+	b.WriteString(headerRowHTML(revisionItemsType))
 	b.WriteString(revisionRowHTML(1, j.DrawingNo, existingBody))
 	b.WriteString("</tbody></table></section>")
 	return b.String()

@@ -37,13 +37,16 @@ func init() {
 
 // renderOrderChecksum は同じページの原本とタグから検算し、明細の足元に結果を出します。
 func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
-	dropChrome(el)
+	cms.DropChrome(el)
 
+	// ⚠ タグは**可変タグ（`dl[data-type="tags"]`）だけ**から読みます（`cms.TagValue`）。
+	// 素の `dl`（業務ブロックのヘッダ）に同じ名前があっても別物です
+	// （「タグと表だけがDBに入る」の線引きと同じ）。
 	root := rootOf(el)
 	src, hasSource := sourceTableIn(root)
-	sub := tagValueIn(root, SubtotalTag)
-	tax := tagValueIn(root, TaxTag)
-	total := tagValueIn(root, TotalTag)
+	sub := cms.TagValue(root, SubtotalTag)
+	tax := cms.TagValue(root, TaxTag)
+	total := cms.TagValue(root, TotalTag)
 
 	// ⚠ **材料が1つも無ければ黙ります。** 手で作った受注ページに毎回
 	// 「検算できません」と出ると、ただの雑音です。
@@ -52,43 +55,43 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 
 	c := checkOrderArithmetic(src, sub, tax, total)
-	warn := c.Warnings()
 	span := headerCellCount(el)
 
-	if len(warn) > 0 {
+	switch warn := c.Warnings(); {
+	case len(warn) > 0:
 		for _, w := range warn {
 			appendChecksumRow(el, span, "checksum-ng", "⚠ 検算: "+w)
 		}
-		if s := c.Skipped(); s != "" {
-			appendChecksumRow(el, span, "checksum-note", s)
-		}
-		return true, nil
-	}
-
-	if c.Checked == 0 && !c.HasSubtotal && !c.HasTotal {
+	case c.Checked == 0 && !c.HasSubtotal && !c.HasTotal:
 		// 原本はあるのに何も検算できなかった——**黙らずに理由を言います**。
 		// たいていは見出しが弊社の知らない言葉で、**様式ページ**が入れば解けます。
 		appendChecksumRow(el, span, "checksum-note",
 			"検算できません（数量・単価・金額の列と、小計・合計のタグが見つかりません）")
-		return true, nil
+		return true, nil // 検算していないので、飛ばした行数も出さない
+	default:
+		appendChecksumRow(el, span, "checksum-ok", agreedMessage(c))
 	}
-
-	msg := "検算: 合っています"
-	if c.Checked > 0 {
-		msg += "（明細" + strconv.Itoa(c.Checked) + "行"
-		if c.HasSubtotal {
-			msg += "・小計"
-		}
-		if c.HasSubtotal && c.HasTax && c.HasTotal {
-			msg += "・合計"
-		}
-		msg += "）"
-	}
-	appendChecksumRow(el, span, "checksum-ok", msg)
+	// 検算したなら、見なかった行があることも言います（合っていても・合っていなくても）。
 	if s := c.Skipped(); s != "" {
 		appendChecksumRow(el, span, "checksum-note", s)
 	}
 	return true, nil
+}
+
+// agreedMessage は「合っています」の文に、何を検算したかを添えます。
+func agreedMessage(c orderChecksum) string {
+	msg := "検算: 合っています"
+	if c.Checked == 0 {
+		return msg
+	}
+	msg += "（明細" + strconv.Itoa(c.Checked) + "行"
+	if c.HasSubtotal {
+		msg += "・小計"
+	}
+	if c.HasSubtotal && c.HasTax && c.HasTotal {
+		msg += "・合計"
+	}
+	return msg + "）"
 }
 
 // appendChecksumRow は表の足元に1行足します。
@@ -111,19 +114,6 @@ func appendChecksumRow(table *html.Node, span int, class, text string) {
 	foot.AppendChild(tr)
 }
 
-// dropChrome は前回描いたクロームを落とします（毎回描き直す）。
-func dropChrome(el *html.Node) {
-	var stale []*html.Node
-	for c := el.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && strings.Contains(cms.Attr(c, "class"), "vocab-chrome") {
-			stale = append(stale, c)
-		}
-	}
-	for _, n := range stale {
-		el.RemoveChild(n)
-	}
-}
-
 // lastChild は直下の同名要素を返します（無ければ nil）。
 func lastChild(el *html.Node, name string) *html.Node {
 	var got *html.Node
@@ -141,13 +131,7 @@ func lastChild(el *html.Node, name string) *html.Node {
 // ずれると足元の行だけ幅が合いません。
 func headerCellCount(table *html.Node) int {
 	for _, tr := range rowsOf(table) {
-		n := 0
-		for c := tr.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.ElementNode && (c.Data == "th" || c.Data == "td") {
-				n++
-			}
-		}
-		if n > 0 {
+		if n := len(cellsOf(tr)); n > 0 {
 			return n
 		}
 	}
@@ -161,43 +145,6 @@ func rootOf(el *html.Node) *html.Node {
 		n = n.Parent
 	}
 	return n
-}
-
-// tagValueIn はページの可変タグ（`dl[data-type="tags"]`）から名前で値を引きます。
-//
-// ⚠ **素の `dl` は見ません**——業務ブロックのヘッダに同じ名前があっても、
-// ページのタグとは別物です（「タグと表だけがDBに入る」の線引きと同じ）。
-func tagValueIn(root *html.Node, name string) string {
-	var found string
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if found != "" {
-			return
-		}
-		if n.Type == html.ElementNode && n.Data == "dl" && cms.Attr(n, "data-type") == "tags" {
-			var key string
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if c.Type != html.ElementNode {
-					continue
-				}
-				switch c.Data {
-				case "dt":
-					key = strings.TrimSpace(textOf(c))
-				case "dd":
-					if key == name {
-						found = strings.TrimSpace(textOf(c))
-						return
-					}
-				}
-			}
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(root)
-	return found
 }
 
 // sourceTableIn は原本の写しの表を探し、見出しと行に開きます。
@@ -230,10 +177,8 @@ func sourceTableIn(root *html.Node) (orderSourceTable, bool) {
 	var out orderSourceTable
 	for i, tr := range rowsOf(table) {
 		var cells []string
-		for c := tr.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.ElementNode && (c.Data == "th" || c.Data == "td") {
-				cells = append(cells, strings.TrimSpace(textOf(c)))
-			}
+		for _, c := range cellsOf(tr) {
+			cells = append(cells, strings.TrimSpace(textOf(c)))
 		}
 		if i == 0 {
 			out.Headers = cells

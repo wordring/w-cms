@@ -2,6 +2,7 @@ package subcon
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,11 @@ import (
 // ⚠ 逆に、この幅では**1円の読み違いは捕まりません**——桁の読み違いは必ず1円より
 // 大きく外れるので、狙いは果たせます。
 const moneyEpsilon = 1.0
+
+// offBy は差が「同じ額」の幅を超えているかを返します。3本の検算が同じ物差しを使います。
+func offBy(diff float64) bool {
+	return math.Abs(diff) > moneyEpsilon
+}
 
 // orderChecksum は検算の結果です。**判断は載せません**——数と、合わなかった事実だけ。
 type orderChecksum struct {
@@ -158,7 +164,7 @@ func checkOrderArithmetic(t orderSourceTable, subtotal, tax, total string) order
 		}
 		c.Checked++
 		c.AmountSum += a
-		if diff := q*p - a; diff > moneyEpsilon || diff < -moneyEpsilon {
+		if offBy(q*p - a) {
 			c.RowIssues = append(c.RowIssues, rowIssue{
 				Line: n + 1, Name: strings.TrimSpace(at(row, ni)),
 				Quantity: q, Price: p, Amount: a,
@@ -183,17 +189,17 @@ func (c orderChecksum) Warnings() []string {
 			r.Line, name, money(r.Quantity), money(r.Price), money(r.Quantity*r.Price), money(r.Amount)))
 	}
 	if c.HasSubtotal && c.Checked > 0 {
-		if d := c.AmountSum - c.Subtotal; d > moneyEpsilon || d < -moneyEpsilon {
+		if d := c.AmountSum - c.Subtotal; offBy(d) {
 			out = append(out, fmt.Sprintf(
 				"明細の金額を足すと %s ですが、小計は %s です（%s の差——行が抜けていませんか）",
-				money(c.AmountSum), money(c.Subtotal), money(abs(d))))
+				money(c.AmountSum), money(c.Subtotal), money(math.Abs(d))))
 		}
 	}
 	if c.HasSubtotal && c.HasTax && c.HasTotal {
-		if d := c.Subtotal + c.Tax - c.Total; d > moneyEpsilon || d < -moneyEpsilon {
+		if d := c.Subtotal + c.Tax - c.Total; offBy(d) {
 			out = append(out, fmt.Sprintf(
 				"小計 %s ＋ 消費税 %s は %s ですが、合計は %s です（%s の差）",
-				money(c.Subtotal), money(c.Tax), money(c.Subtotal+c.Tax), money(c.Total), money(abs(d))))
+				money(c.Subtotal), money(c.Tax), money(c.Subtotal+c.Tax), money(c.Total), money(math.Abs(d))))
 		}
 	}
 	return out
@@ -213,11 +219,4 @@ func (c orderChecksum) Skipped() string {
 // money は額を見やすく整えます（小数が無ければ付けない）。
 func money(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
-}
-
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
 }

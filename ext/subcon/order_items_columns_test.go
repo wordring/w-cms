@@ -69,10 +69,34 @@ func TestOrderPageHeaderMatchesDeclaration(t *testing.T) {
 	j := &orderJudgment{IsClientOrder: true, DocType: "order", OrderNo: "PO-1"}
 	body := buildOrderPageHTML("000001", "pdf001", j)
 
-	for _, c := range clientOrderItemColumns() {
+	for _, c := range columnsOf(clientOrderItemsType) {
 		if !strings.Contains(body, "<th>"+c.Label+"</th>") {
 			t.Errorf("見出しに %q がありません:\n%s", c.Label, body)
 		}
+	}
+}
+
+// TestRevisionHeaderMatchesDeclaration は、**改訂履歴の見出しも宣言から組まれる**ことを
+// 固定します（受注明細と同じ番人）。
+//
+// ⚠ 2026-09-21 まで `<th>版</th><th>図面番号</th><th>受領日</th>` を手書きしていました
+// ——列を足した日に、受注明細で起きたのと同じずれが黙って起きるところでした。
+func TestRevisionHeaderMatchesDeclaration(t *testing.T) {
+	j := &orderJudgment{DocType: "drawing", DrawingNo: "K120-1", DrawingName: "ブラケット"}
+	body := buildProductPageHTML("000001", "pdf001", j, nil)
+
+	cols := columnsOf(revisionItemsType)
+	if len(cols) == 0 {
+		t.Fatal("改訂履歴の形式が登録されていません")
+	}
+	for _, c := range cols {
+		if !strings.Contains(body, "<th>"+c.Label+"</th>") {
+			t.Errorf("見出しに %q がありません:\n%s", c.Label, body)
+		}
+	}
+	// 見出し行のセル数と1版目の行のセル数が揃っていること。
+	if head, row := strings.Count(body, "<th>"), strings.Count(revisionRowHTML(1, "K120-1", ""), "<td>"); head != row {
+		t.Errorf("改訂履歴の列数がずれています: 見出し %d / 行 %d", head, row)
 	}
 }
 

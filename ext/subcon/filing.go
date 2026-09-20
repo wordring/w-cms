@@ -878,6 +878,18 @@ func formatID(idInt int) string {
 	return page.FormatID(idInt)
 }
 
+// pageTitleOf は索引から題を引きます（引けなければIDをそのまま返す）。
+func pageTitleOf(pageID string) string {
+	idInt, err := strconv.Atoi(pageID)
+	if err != nil {
+		return pageID
+	}
+	if t := cms.PageTitleByID(idInt); t != "" {
+		return t
+	}
+	return pageID
+}
+
 // htmlEscape は本文へ入れる前の逃がしです（サニタイザは安全の網で、
 // エスケープの肩代わりはしません——サニタイズ後にHTMLを足す関数と同じ責任）。
 func htmlEscape(s string) string { return stdhtml.EscapeString(s) }

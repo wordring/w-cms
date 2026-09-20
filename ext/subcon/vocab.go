@@ -11,7 +11,12 @@ package subcon
 // 「顧客の発注書」も消えます。
 // ─────────────────────────────────────────────────────────────────────────
 
-import "w-cms/internal/cms"
+import (
+	"html"
+	"strings"
+
+	"w-cms/internal/cms"
+)
 
 func init() {
 	cms.RegisterVocab(businessVocab...)
@@ -277,15 +282,33 @@ var businessVocab = []cms.VocabDef{
 // clientOrderItemsType は受注明細の形式名です（生の文字列を散らさないため）。
 const clientOrderItemsType = "client-order-items"
 
-// clientOrderItemColumns は受注明細の列を宣言から返します（見出し行を組むため）。
-//
-// ⚠ **見出しを手で書かないための口**です（2026-09-20）。列を足したのに本文の
-// `<th>` が古いままだと、**宣言と本文が黙ってずれます**——索引は見出しの表示文字で
-// 引くので、ずれた列はどこからも読めません。エラーも出ません。
-func clientOrderItemColumns() []cms.VocabColumn {
-	def, ok := cms.VocabDefByType(clientOrderItemsType)
+// columnsOf は形式の列を宣言から返します（未登録なら nil）。
+func columnsOf(vocabType string) []cms.VocabColumn {
+	def, ok := cms.VocabDefByType(vocabType)
 	if !ok {
 		return nil
 	}
 	return def.Columns
+}
+
+// displayNameOf は形式の表示名を返します（未登録なら空）。caption に書く名前です。
+func displayNameOf(vocabType string) string {
+	def, _ := cms.VocabDefByType(vocabType)
+	return def.DisplayName
+}
+
+// headerRowHTML は表の見出し行を**宣言から**組みます。
+//
+// ⚠ **見出しを手で書かないための口**です（2026-09-20）。列を足したのに本文の
+// `<th>` が古いままだと、**宣言と本文が黙ってずれます**——索引は見出しの表示文字で
+// 引くので、ずれた列はどこからも読めません。エラーも出ません。
+// 機械が組む表（受注明細・改訂履歴）はすべてここを通します。
+func headerRowHTML(vocabType string) string {
+	var b strings.Builder
+	b.WriteString("<tr>")
+	for _, c := range columnsOf(vocabType) {
+		b.WriteString("<th>" + html.EscapeString(c.Label) + "</th>")
+	}
+	b.WriteString("</tr>")
+	return b.String()
 }

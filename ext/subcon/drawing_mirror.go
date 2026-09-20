@@ -83,16 +83,9 @@ func markObsoleteRows(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 // **見出しの表示文字が鍵**——機械キーを本文へ書く属性はありません。
 func statusColumnIndex(table *html.Node) int {
 	for _, tr := range rowsOf(table) {
-		i := 0
-		for c := tr.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type != html.ElementNode {
-				continue
-			}
+		for i, c := range cellsOf(tr) {
 			if c.Data == "th" && strings.TrimSpace(textOf(c)) == "区分" {
 				return i
-			}
-			if c.Data == "th" || c.Data == "td" {
-				i++
 			}
 		}
 		return -1 // 最初の行が見出し行（語彙モデル §5.1）。無ければ諦める
@@ -120,17 +113,25 @@ func rowsOf(table *html.Node) []*html.Node {
 	return out
 }
 
+// cellsOf は行のセル（`th`・`td`）を並び順に集めます。
+//
+// 表を読む鏡（廃版の印・検算）はすべてここを通ります——「セルとは何か」を
+// 1か所に置くためです。
+func cellsOf(tr *html.Node) []*html.Node {
+	var out []*html.Node
+	for c := tr.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // cellText は行の i 番目のセルの文字を返します。
 func cellText(tr *html.Node, i int) string {
-	n := 0
-	for c := tr.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode || (c.Data != "td" && c.Data != "th") {
-			continue
-		}
-		if n == i {
-			return strings.TrimSpace(textOf(c))
-		}
-		n++
+	cells := cellsOf(tr)
+	if i < 0 || i >= len(cells) {
+		return ""
 	}
-	return ""
+	return strings.TrimSpace(textOf(cells[i]))
 }
