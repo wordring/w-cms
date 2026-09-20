@@ -325,12 +325,47 @@ func vocabTypeOf(el *html.Node) string {
 			return def.Type
 		}
 	}
+	// **表は自分の `<caption>` で名乗れます**（2026-09-20 ユーザー:「見た儘が全ての
+	// 原則から言って、data-type より表の見出し（caption）で検索できるのが筋では？」）。
+	//
+	// ⚠ **`data-type` へ寄ったのは意図した判断ではなく、副作用でした。** 受注ページは
+	// もともと節の機能見出しで形式を宣言していましたが、2026-09-18 に「1文書1ページ」で
+	// 節をやめたとき**見える印が消え、`data-type` が肩代わり**しました。
+	// `caption` は**節で包まずに、表自身が見える名前を持てる**ので、その穴をふさぎます
+	// ——HTML でも `caption` は「表の名前」そのものの要素です。
+	//
+	// 節の機能見出しと**同じ規則**です: 言葉が**登録されているときだけ**形式になり、
+	// 未登録の caption は静かにただの表題に留まります（壊れ方が画面に見える）。
+	// 正本は [docs/【考察】発注書から受注明細へ.md] §2.4。
+	if el.Data == "table" {
+		if def, ok := VocabDefByHeading(tableCaption(el)); ok {
+			return def.Type
+		}
+	}
 	// タグ（可変タグ）は data-type="tags" の**明示が正**のまま残す。
+	// ⚠ **`caption` は表の要素なので `dl` には使えません**——「表は見える印・タグは
+	// 見えない印」という非対称がここに残ります。**表には caption という自然な名前の
+	// 置き場があるが、定義リストには無い**、という差です（同文書 §2.4）。
 	// 「セクション外の素の dl＝タグ」という位置の規則も試したが、
 	// 「用語：説明」のような普通の定義リストまでDBに入ってしまい撤回した
 	// （2026-08-31 ユーザー:「tags については、データベースに入る汎用的な
 	// マークアップとして使いたいので、やはりdata-typeまたは似たような
 	// クラス分けが必要」——素の文書は索引しない、というオプトインの原則と同じ結論）。
+	return ""
+}
+
+// tableCaption は表の名前（**直接の子**である最初の `caption` の表示文字・trim後）を
+// 返します。caption の無い表は空文字列＝ただの表。
+//
+// **直接の子だけ**を見るのは `functionHeading` と同じ理由です——入れ子の表の caption は
+// その表自身の名前であって、外側の表の名前ではありません。HTML の仕様でも `caption` は
+// `table` の直接の子なので、これは素直な読み方です。
+func tableCaption(table *html.Node) string {
+	for c := table.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.Data == "caption" {
+			return strings.TrimSpace(nodeText(c))
+		}
+	}
 	return ""
 }
 
