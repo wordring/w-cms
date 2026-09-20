@@ -25,8 +25,10 @@ import (
 	"strings"
 	"time"
 
+	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -40,8 +42,8 @@ const OrderBoxTitle = "受注"
 
 // orderRow は整理の画面に出す受注ページ1枚ぶんです。
 //
-// 加工製品ページと違って**直す欄がありません**——行き先が発注日だけで決まるためで、
-// 画面には「どこへ入るか」を見せて、押すかどうかだけを人に委ねます。
+// 行き先（`Destination`）は**発注日だけで決まる**ので直せません。⚠ **`ClientName`
+// だけは直せます**（2026-09-20・3箇所を同じマナーに揃えた最後の1つ）。
 type orderRow struct {
 	PageID      string `json:"page_id"`
 	Title       string `json:"title"`
@@ -95,12 +97,36 @@ func orderChildrenOf(user *auth.User, parentIDInt int) ([]orderRow, error) {
 			PageID:      formatID(c.id),
 			Title:       c.title,
 			OrderNo:     cms.FirstTag(tags, OrderNoTag),
-			ClientName:  cms.FirstTag(tags, OrderClientTag),
+			ClientName:  suggestOrderClient(user, cms.FirstTag(tags, OrderClientTag)),
 			OrderedAt:   strings.TrimSpace(orderedAt),
 			Destination: OrderBoxTitle + "／" + when.Format("2006年") + "／" + when.Format("01月"),
 		})
 	}
 	return out, nil
+}
+
+// suggestOrderClient は発注元の欄の初期値を決めます——**連絡帳に法人格違いの同じ
+// 組織が居れば、その実物の題**（2026-09-20 ユーザー:「受注、加工製品、連絡帳を同じ
+// マナーで提案の欄を作ってはどうでしょう？」）。
+//
+// ⚠ **加工製品の `suggestCustomer` とは効き目が違います。** あちらは `linkPartner` が
+// **完全一致**で2つの木を結ぶので、揃えないと**黙って結ばれません**。こちらは
+// `発注元` を引く読み手がまだ1人も居ないので（`fileOneOrder` が見るのは
+// `発注書番号` と `発注日` だけ）、**いま直しても何も起きません**。
+//
+// それでも入口で揃えるのは、**効くのが横断検索が入ったとき**だからです
+// （w-cms を作り始めた動機の1つ・[要件定義書.md] §4.4）。そのとき揃っていない
+// データは、遡って直せません。
+//
+// ⚠ **アドレスの鎖は使いません。** 加工製品は `受信元` から通信記録の差出人まで
+// たどれますが（推測ゼロの完全一致）、受注ページにその鎖があるかは未確認です。
+// **確かめずに鎖を足すと、間違った相手を推して人がそのまま押します**——名前だけで
+// 当たる今の形なら、外れても読んだ名前のまま残ります。
+func suggestOrderClient(user *auth.User, read string) string {
+	if strings.TrimSpace(read) == "" {
+		return "" // **空は埋めません**——読めなかったことを人に見せる
+	}
+	return contacts.SuggestOrgTitle(user, read)
 }
 
 // orderDateOf は受注ページの年月を決める日付を返します。
@@ -137,14 +163,27 @@ func parseOrderDate(v string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// orderRequest は「実行」で送られてくる受注ページ1行です。
+//
+// ⚠ **もとはIDの文字列だけでした**（2026-09-20 に変えた）。直す欄が無かったので
+// 「押した」という事実だけを送っていましたが、`発注元` が直せるようになったので
+// 値を運びます。画面（`assets/app.js` の `runFiling`）も同じ形で送ります。
+type orderRequest struct {
+	PageID string `json:"page_id"`
+	// Client は人が確認した発注元です。**空なら本文に触りません**——欄を空にした
+	// ことを「消したい」とは読みません（`replaceFirstFieldValue` が値を消してしまう）。
+	Client string `json:"client"`
+}
+
 // fileOneOrder は受注ページ1枚を「受注／年／月」へ収めます。
 //
 // **題は変えません**——加工製品ページは図面名称に揃えますが（人が打ち替えた値が正）、
-// 受注の題は解析が発注書番号から作ったもので、直す欄がありません。
-func fileOneOrder(user *auth.User, rawID string) filingResult {
-	pageID, ok := page.NormalizeID(rawID)
+// 受注の題は解析が発注書番号から作ったものです。⚠ **`発注元` だけは書き戻します**
+// （2026-09-20）。
+func fileOneOrder(user *auth.User, row orderRequest) filingResult {
+	pageID, ok := page.NormalizeID(row.PageID)
 	if !ok {
-		return filingResult{PageID: rawID, Outcome: "skipped", Message: "ページIDが不正です"}
+		return filingResult{PageID: row.PageID, Outcome: "skipped", Message: "ページIDが不正です"}
 	}
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil || !canWritePage(user, idInt) {
@@ -156,6 +195,12 @@ func fileOneOrder(user *auth.User, rawID string) filingResult {
 	tags, err := cms.TagsOfPage(database.DB, idInt)
 	if err != nil || cms.FirstTag(tags, OrderNoTag) == "" {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "受注ページではありません"}
+	}
+	// **開いている人が居たら、その行は飛ばします**——下で本文を読んで・変えて・書くので、
+	// エディタが開いているとオートセーブと上書きし合います（`fileOneDrawing` と同じ作法）。
+	if holder, open := editlock.Locks.EditorOpen(idInt); open {
+		return filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "このページは編集中です（" + holder + "）。閉じてからもう一度お試しください"}
 	}
 
 	boxID, err := cms.EnsureTopLevelBox(OrderBoxTitle, user.Username)
@@ -172,7 +217,42 @@ func fileOneOrder(user *auth.User, rawID string) filingResult {
 	if _, _, err := cms.SetPageParent(user, pageID, monthID); err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
 	}
+	// **人が確認した発注元を本文へ書き戻します**（2026-09-20）。⚠ **移してから**書きます
+	// ——移動は行き先だけで決まるので、書き戻しに失敗しても収まったことは変わりません。
+	// 逆にすると、書けなかったときに移すかどうかで迷います。
+	if err := syncOrderClient(user, pageID, row.Client); err != nil {
+		// **収まったことは事実なので、失敗にしません**（`BumpUpdatedAt` と同じ判断）。
+		auth.Audit(user.Username, "file-order.client-failed", pageID+": "+err.Error())
+	}
 	auth.Audit(user.Username, "file-order.move", pageID+" -> "+monthID)
 	return filingResult{PageID: pageID, Outcome: "moved",
 		Message: OrderBoxTitle + "／" + when.Format("2006年") + "／" + when.Format("01月") + " へ収めました"}
+}
+
+// syncOrderClient は人が確認した発注元を、受注ページの可変タグへ書き戻します。
+//
+// **索引のためです**——`page_tags` は本文から作られるので、画面で直しても本文が
+// 元のままなら、揃えた意味がありません（`syncDrawingFields` と同じ理由）。
+//
+// ⚠ **足しません。差し替えるだけです。** `発注元` の行は解析が必ず書くので
+// （`buildOrderPageHTML`）、無いときは**この形のページではない**——そこへ勝手に
+// 行を挿すと、人が消した行を機械が戻すことになります。図面ブロックが足すのは、
+// 解析が読めなかった項目を書かない作りだからで、事情が違います。
+//
+// **値に印が付いていたら触りません**（`replaceFirstFieldValue` が `[^<]*` で見る
+// ——人がリンクや強調を書いたら、機械は踏み潰さない）。
+func syncOrderClient(user *auth.User, pageID, client string) error {
+	client = cms.NormalizeNameForIngest(client)
+	if client == "" {
+		return nil // **空欄は「消したい」ではありません**（読めなかった・触らなかった）
+	}
+	body, err := cms.ReadPageBody(pageID)
+	if err != nil {
+		return err
+	}
+	fixed := replaceFirstFieldValue(body, OrderClientTag, client)
+	if fixed == body {
+		return nil // **変わらないなら書きません**——版と更新日時を無駄に進めない
+	}
+	return cms.RewriteBody(pageID, user.Username, func(string) string { return fixed })
 }

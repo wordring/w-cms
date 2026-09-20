@@ -432,9 +432,10 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Rows []filingRequest `json:"rows"`
-		// Orders は受注ページのIDだけ。直す欄が無いので、送るのは「押した」という
-		// 事実だけです（行き先は発注日から決まる）。
-		Orders []string `json:"orders"`
+		// Orders は受注ページの行です。⚠ **もとはIDの文字列だけでした**
+		// （2026-09-20 に変えた）——`発注元` が直せるようになったので値を運びます。
+		// 行き先は発注日から決まるので、そこは送りません。
+		Orders []orderRequest `json:"orders"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -449,8 +450,8 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	for _, row := range req.Rows {
 		results = append(results, fileOneDrawing(user, row))
 	}
-	for _, id := range req.Orders {
-		results = append(results, fileOneOrder(user, id))
+	for _, o := range req.Orders {
+		results = append(results, fileOneOrder(user, o))
 	}
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "results": results})
 }

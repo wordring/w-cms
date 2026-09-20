@@ -4142,13 +4142,14 @@
         });
         if (rows.length) panel.appendChild(table);
 
-        // **受注ページは別の表**です。直す欄が無い（行き先は発注日で決まる）ので、
-        // 図面と同じ列に並べると空欄ばかりの行になります。
+        // **受注ページは別の表**です。直せるのは発注元だけ（行き先は発注日で決まる）
+        // なので、図面と同じ列に並べると空欄ばかりの行になります。
         const pickedOrders = [];
         if (orders.length) {
             const oHead = document.createElement('p');
             oHead.className = 'filing-head';
-            oHead.textContent = '受注ページは「受注」の年月へ収めます。外す行はチェックを消してください。';
+            oHead.textContent = '受注ページは「受注」の年月へ収めます。' +
+                '発注元は直せます（連絡帳にある社名を初期値にしています）。外す行はチェックを消してください。';
             panel.appendChild(oHead);
 
             const oTable = document.createElement('table');
@@ -4170,13 +4171,28 @@
                 box.setAttribute('aria-label', '収める');
                 tdBox.appendChild(box);
                 tr.appendChild(tdBox);
-                [o.order_no || '（番号なし）', o.client_name || '', o.ordered_at || '（日付なし）',
-                 o.destination || ''].forEach(v => {
+                const tdNo = document.createElement('td');
+                tdNo.textContent = o.order_no || '（番号なし）';
+                tr.appendChild(tdNo);
+
+                // **発注元だけは直せます**（2026-09-20）。初期値はサーバーが連絡帳へ
+                // 寄せた題で、候補は図面の行と同じ `datalist` を共有します
+                // ——同じ問い（どの会社か）に2つの候補一覧を出す理由がありません。
+                const tdClient = document.createElement('td');
+                const client = document.createElement('input');
+                client.type = 'text';
+                client.value = o.client_name || '';
+                client.setAttribute('aria-label', 'client');
+                if ((partners || []).length) client.setAttribute('list', listID);
+                tdClient.appendChild(client);
+                tr.appendChild(tdClient);
+
+                [o.ordered_at || '（日付なし）', o.destination || ''].forEach(v => {
                     const td = document.createElement('td');
                     td.textContent = v;
                     tr.appendChild(td);
                 });
-                pickedOrders.push({ page_id: o.page_id, box: box });
+                pickedOrders.push({ page_id: o.page_id, client: client, box: box });
                 oTable.appendChild(tr);
             });
             panel.appendChild(oTable);
@@ -4208,7 +4224,10 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     rows: payload,
-                    orders: (pickedOrders || []).filter(o => o.box.checked).map(o => o.page_id),
+                    // ⚠ **もとはIDの配列でした**（2026-09-20 に変えた）——発注元が
+                    // 直せるようになったので値を運びます（サーバーは `orderRequest`）。
+                    orders: (pickedOrders || []).filter(o => o.box.checked)
+                        .map(o => ({ page_id: o.page_id, client: o.client.value })),
                 }),
             });
             const d = await res.json();

@@ -25,10 +25,17 @@ func makeOrderPage(t *testing.T, inboxID, no, client, orderedAt string) string {
 	return id
 }
 
-// postOrders は受注ページだけを整理の実行へ送ります。
+// postOrders は受注ページだけを整理の実行へ送ります（発注元は触らない形）。
+//
+// ⚠ **送る形は 2026-09-20 に変わりました**——IDの配列から `{page_id, client}` の
+// 配列へ（発注元が直せるようになったため）。`client` を空にすると本文には触りません。
 func postOrders(t *testing.T, u *auth.User, ids []string) []filingResult {
 	t.Helper()
-	b, _ := json.Marshal(map[string]any{"orders": ids})
+	rows := make([]map[string]string, 0, len(ids))
+	for _, id := range ids {
+		rows = append(rows, map[string]string{"page_id": id})
+	}
+	b, _ := json.Marshal(map[string]any{"orders": rows})
 	req := httptest.NewRequest("POST", "/api/file-drawings", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	if u != nil {
