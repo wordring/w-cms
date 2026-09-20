@@ -65,6 +65,14 @@ type orderJudgment struct {
 	OrderDate   string `json:"order_date"`
 	// DueDate は納期です。⚠ **明細ではなくヘッダにあります**（実データで確認）。
 	DueDate string `json:"due_date"`
+	// 小計・消費税・合計金額です。⚠ **検算に使います**（[checksum.go]）。
+	//
+	// ⚠ **書かれているまま受け取ります——Gemini に計算させません。** 自分の読みを
+	// 自分で検算させると、**数字を合うように書き直します**。誤りが消えるのではなく、
+	// 見えなくなる——検算の意味がそこで失われます。
+	Subtotal string `json:"subtotal"`
+	Tax      string `json:"tax"`
+	Total    string `json:"total"`
 	// SourceTable は**発注書の明細表を、先方の見出しのまま**写したものです
 	// （2026-09-20 ユーザー:「発注書の見出しを**あるがままに表にしたものを原本**として、
 	// 弊社仕様に修正した表を作ると良いと思います」）。
@@ -314,9 +322,17 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
   "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
   "due_date": "納期（明細の行ではなく、書面の上のほうにある納期）。日付なら YYYY-MM-DD 形式、日付でない書き方（「最短」「最短納期」「至急」「都度」など）は**書かれているまま**返してください。記載が無ければ空文字",
   "source_table": {"headers": ["表の見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]},
+  "subtotal": "小計（書かれているまま。記載が無ければ空文字）",
+  "tax": "消費税額（書かれているまま。記載が無ければ空文字）",
+  "total": "合計金額（書かれているまま。記載が無ければ空文字）",
   "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}],
   "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}]
 }
+⚠ subtotal・tax・total は、**書面に書かれている数字をそのまま**返してください。
+**足し算・掛け算をして求めないでください**——書かれていなければ空文字にします。
+（こちらで検算に使うので、計算して埋められると食い違いが見えなくなります。）
+表の右下などに飛び出して書かれていることがあります。
+
 ⚠ 1つのPDFに**複数の図面**が入っていることがあります（ページごとに別の図面、
 あるいは1ページに部品図と溶接図）。その場合は drawings に**figureの数だけ**要素を入れてください。
 図面が1枚だけなら要素は1つ、図面でなければ空配列にします。
@@ -405,6 +421,12 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// ——日付にできないので。プロンプトで「日付でない書き方は書かれているまま」と
 	// 頼むまで、**書いてあるのに何も残らない**状態でした。
 	writeHeaderPair(&b, DueDateTag, j.DueDate)
+	// ⚠ **検算の材料**（[checksum.go]）。空なら空欄で出ます——**書く場所が見えて
+	// いれば人が埋められます**（発注書に書いてあるのに読めなかった場合、人が打てば
+	// その場で検算が効きます。鏡型なので保存し直せば ⚠ が消えます）。
+	writeHeaderPair(&b, SubtotalTag, j.Subtotal)
+	writeHeaderPair(&b, TaxTag, j.Tax)
+	writeHeaderPair(&b, TotalTag, j.Total)
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
 	b.WriteString("<dt>" + SourceRefTag + "</dt><dd>" +

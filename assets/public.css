@@ -218,3 +218,14 @@ body.public {
         overflow-x: auto;
     }
 }
+
+/* 発注書の検算（2026-09-20）。⚠ 印は本文に保存できないので鏡型で付く——
+   人が数字を直せば、次に開いたときに消える。合っているときも黙らないのは、
+   「検算して合った」と「そもそも検算していない」を見分けられるようにするため。 */
+.public-content .order-checksum td {
+    font-size: 0.9em;
+    padding: 6px 8px;
+}
+.public-content .checksum-ng td { background: #fee2e2; }
+.public-content .checksum-ok td { color: var(--pub-muted); }
+.public-content .checksum-note td { color: var(--pub-muted); font-style: italic; }
