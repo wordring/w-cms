@@ -64,6 +64,52 @@ type orderJudgment struct {
 	Customer    string         `json:"customer"`
 	OrderDate   string         `json:"order_date"`
 	Items       []orderPDFItem `json:"items"`
+	// Drawings は**1つのPDFに複数の図面が入っていたとき**の2枚目以降を含む一覧です
+	// （2026-09-20 ユーザー:「一つのPDFに複数の図面が入っている場合もあるようです」）。
+	//
+	// ⚠ **それまでは1枚ぶんしか返せませんでした**（`drawing_no` が単数）。3枚入った
+	// PDFを出しても Gemini は1枚ぶんだけ返し、**残りはどこにも記録されません**——
+	// エラーも出ないので、気づくのは後から「あの図面どこ？」となったときです。
+	//
+	// **1枚につき1ページ作ります**（ユーザー決定:「3ページ作って人が整理で1ページに
+	// まとめるほうが良いと思います。**一つのPDFに複数の製造製品が入っている場合が
+	// あるからです**」）。最初から1ページにまとめると、別々の品物だったときに
+	// **人が切り離せません**——いまは分ける操作がないので、まとめるのは人の判断で。
+	Drawings []drawingJudgment `json:"drawings"`
+}
+
+// drawingJudgment は図面1枚ぶんです（`orderJudgment` の図面の枝と同じ項目）。
+type drawingJudgment struct {
+	DrawingNo   string `json:"drawing_no"`
+	DrawingName string `json:"drawing_name"`
+	MachineName string `json:"machine_name"`
+	Customer    string `json:"customer"`
+}
+
+// drawingList は判定結果を**図面1枚ずつ**に並べ直します。
+//
+// ⚠ **古い形（単数の `drawing_no`）も読めます。** Gemini が `drawings` を返さなかった
+// ときや、試験が単数で組み立てた判定でも、これまでどおり1枚として扱います——
+// **応答の形が変わっただけで解析が止まる**のは避けます。
+func (j *orderJudgment) drawingList() []drawingJudgment {
+	if len(j.Drawings) > 0 {
+		return j.Drawings
+	}
+	if strings.TrimSpace(j.DrawingNo) == "" && strings.TrimSpace(j.DrawingName) == "" {
+		return nil
+	}
+	return []drawingJudgment{{
+		DrawingNo: j.DrawingNo, DrawingName: j.DrawingName,
+		MachineName: j.MachineName, Customer: j.Customer,
+	}}
+}
+
+// asJudgment は図面1枚を、ページを組む関数が受け取る形へ戻します。
+func (d drawingJudgment) asJudgment() *orderJudgment {
+	return &orderJudgment{
+		DocType: "drawing", DrawingNo: d.DrawingNo, DrawingName: d.DrawingName,
+		MachineName: d.MachineName, Customer: d.Customer,
+	}
 }
 
 type orderPDFItem struct {
@@ -129,20 +175,49 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
 	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
 	if !j.IsClientOrder && j.DocType == "drawing" {
-		matches := MatchDXFAttachments(pageID, j.DrawingNo)
-		newID, err := cms.CreateChildPage(pageID, auth.CurrentUser(r).Username,
-			buildProductPageHTML(pageID, attachIDOf(), j, matches))
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "加工製品ページを作れません: "+err.Error())
+		// ⚠ **1枚につき1ページ作ります**（2026-09-20 ユーザー決定）。1つのPDFに
+		// 複数の図面が入っていることがあり、しかも**別々の製造製品**かもしれません
+		// ——最初から1ページにまとめると、別物だったときに人が切り離せません
+		// （分ける操作がない）。まとめるのは整理で人が決めます
+		// （「二つ目の図面として追加」）。
+		drawings := j.drawingList()
+		if len(drawings) == 0 {
+			// 図面と判定したのに1枚も取れなかった——**黙って0ページで終わらない**。
+			cms.JSONFail(w, http.StatusBadGateway,
+				"図面と判定しましたが、図面番号も図面名称も読み取れませんでした")
 			return
 		}
-		auth.Audit(auth.CurrentUser(r).Username, "analyze-drawing",
-			newID+" from "+pageID+"/"+fileName)
-		json.NewEncoder(w).Encode(map[string]any{
+		user := auth.CurrentUser(r)
+		made := []map[string]any{}
+		totalMatched := 0
+		for _, d := range drawings {
+			dj := d.asJudgment()
+			matches := MatchDXFAttachments(pageID, dj.DrawingNo)
+			totalMatched += len(matches)
+			newID, err := cms.CreateChildPage(pageID, user.Username,
+				buildProductPageHTML(pageID, attachIDOf(), dj, matches))
+			if err != nil {
+				// ⚠ **途中で失敗しても、できたぶんは残します**——作れた図面まで
+				// 捨てると、人はもう一度解析するしかなくなり、**通ったぶんが二重に
+				// できます**。何枚できたかを返して、人に見てもらいます。
+				cms.JSONFail(w, http.StatusInternalServerError,
+					"加工製品ページを作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
+				return
+			}
+			auth.Audit(user.Username, "analyze-drawing", newID+" from "+pageID+"/"+fileName)
+			made = append(made, map[string]any{"page_id": newID, "title": pageTitleOf(newID)})
+		}
+		out := map[string]any{
 			"success": true, "is_client_order": false, "doc_type": "drawing",
-			"page_id": newID, "title": pageTitleOf(newID),
-			"matched_dxf": len(matches),
-		})
+			"pages": made, "matched_dxf": totalMatched,
+		}
+		// **1枚のときは今までどおりの形も返します**——画面が `page_id` を読んで
+		// いるので、応答の形を変えただけで表示が壊れないように。
+		if len(made) == 1 {
+			out["page_id"] = made[0]["page_id"]
+			out["title"] = made[0]["title"]
+		}
+		json.NewEncoder(w).Encode(out)
 		return
 	}
 	if !j.IsClientOrder {
@@ -208,11 +283,16 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
   "customer": "発行元（顧客）の会社名（記載が無ければ空文字）",
   "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
   "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）"}],
-  "drawing_no": "図面番号（図面のとき。表題欄に記載された文字列をそのまま。記載が無ければ空文字）",
-  "drawing_name": "図面名称（図面のとき。記載が無ければ空文字）",
-  "machine_name": "装置名称（図面のとき。その部品が使われる装置・機械の名前。記載が無ければ空文字）"
+  "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}]
 }
-図面のときは customer に「客先」（この図面の発注元の会社名。記載が無ければ空文字）を入れてください。
+⚠ 1つのPDFに**複数の図面**が入っていることがあります（ページごとに別の図面、
+あるいは1ページに部品図と溶接図）。その場合は drawings に**figureの数だけ**要素を入れてください。
+図面が1枚だけなら要素は1つ、図面でなければ空配列にします。
+drawings の各項目は次のとおりです:
+  - drawing_no   : 表題欄の図面番号（記載が無ければ空文字）
+  - drawing_name : 図面名称（記載が無ければ空文字）
+  - machine_name : その部品が使われる装置・機械の名前（記載が無ければ空文字）
+  - customer     : 客先（この図面の発注元の会社名。記載が無ければ空文字）
 図面番号は突き合わせに使うので、**表題欄に書かれている文字列をそのまま**返してください
 （ハイフンや記号を補ったり省いたりしない）。該当しない項目は空でかまいません。`
 
