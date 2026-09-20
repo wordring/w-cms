@@ -175,3 +175,22 @@ func TestOrderPageRowCarriesUnit(t *testing.T) {
 		t.Errorf("単位が数量の隣にありません:\n%s", body)
 	}
 }
+
+// TestOrderPageKeepsNonDateDueDate は、**日付でない納期も残る**ことを固定します。
+//
+// ⚠ **実データの1通目が「最短納期」でした**（2026-09-20 ユーザー）。プロンプトが
+// `YYYY-MM-DD 形式で`とだけ頼んでいたころ、Gemini は**空で返して**いました——
+// 日付にできないので。**書いてあるのに何も残らない**状態です。
+//
+// **取り込みは情報を捨てない**（D-3）。`納期` は辞書で `date` なので、日付として
+// 読めない値は**畳んだ値が付かないだけ**で、生の値は正本として残ります
+// （語彙モデル §5.1「解釈できない値は併記しない。拒否もしない」）。
+func TestOrderPageKeepsNonDateDueDate(t *testing.T) {
+	for _, v := range []string{"最短納期", "至急", "都度指示"} {
+		j := &orderJudgment{IsClientOrder: true, DocType: "order", OrderNo: "PO-1", DueDate: v}
+		body := buildOrderPageHTML("000001", "pdf001", j)
+		if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>"+v+"</dd>") {
+			t.Errorf("日付でない納期 %q が落ちています:\n%s", v, body)
+		}
+	}
+}
