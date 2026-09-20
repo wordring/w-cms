@@ -65,6 +65,17 @@ type orderJudgment struct {
 	OrderDate   string         `json:"order_date"`
 	// DueDate は納期です。⚠ **明細ではなくヘッダにあります**（実データで確認）。
 	DueDate string `json:"due_date"`
+	// SourceTable は**発注書の明細表を、先方の見出しのまま**写したものです
+	// （2026-09-20 ユーザー:「発注書の見出しを**あるがままに表にしたものを原本**として、
+	// 弊社仕様に修正した表を作ると良いと思います」）。
+	//
+	// ⚠ **これが無いと、言い換えたことが見えません。** 実データでは先方の `図面番号` を
+	// 弊社の `品番` に入れてきました——結果としては正しいのですが、**黙って言い換えて
+	// いた**ので、原本と見比べない限り気づけませんでした。
+	//
+	// ⚠ **OCRの正しさもここでしか確かめられません**——行を1つ落としていないか、
+	// 数字を取り違えていないか。対応だけ見せる形では分かりません。
+	SourceTable orderSourceTable `json:"source_table"`
 	Items       []orderPDFItem `json:"items"`
 	// Drawings は**1つのPDFに複数の図面が入っていたとき**の2枚目以降を含む一覧です
 	// （2026-09-20 ユーザー:「一つのPDFに複数の図面が入っている場合もあるようです」）。
@@ -112,6 +123,12 @@ func (d drawingJudgment) asJudgment() *orderJudgment {
 		DocType: "drawing", DrawingNo: d.DrawingNo, DrawingName: d.DrawingName,
 		MachineName: d.MachineName, Customer: d.Customer,
 	}
+}
+
+// orderSourceTable は発注書の明細表の写しです（見出しと行を、読めたまま）。
+type orderSourceTable struct {
+	Headers []string   `json:"headers"`
+	Rows    [][]string `json:"rows"`
 }
 
 type orderPDFItem struct {
@@ -289,6 +306,7 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
   "customer": "発行元（顧客）の会社名（記載が無ければ空文字）",
   "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
   "due_date": "納期を YYYY-MM-DD 形式で（明細の行ではなく、書面の上のほうにある納期。記載が無ければ空文字）",
+  "source_table": {"headers": ["表の見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]},
   "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}],
   "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}]
 }
@@ -354,6 +372,16 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	b.WriteString("<dt>" + SourceRefTag + "</dt><dd>" +
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
 	b.WriteString("</dl>")
+	// ── 顧客の発注書（読んだまま）──
+	//
+	// ⚠ **畳んで出します**（`<details>`）。ユーザー:「顧客の表は、整理したあとも
+	// 残します。**ボタンで畳めれば良い**と思います」。素のHTMLだけで畳めるので、
+	// JS も `on*=` も要りません（CSP strict の下で動き、公開ページのゼロJSでも畳めます）。
+	//
+	// ⚠ **形式を登録していないので索引に載りません**（2026-09-20 の線引き）。
+	// 原本は**証拠**であって、検索したいのは弊社の表のほうです——**二重計上も
+	// 最初から起きません**。
+	b.WriteString(sourceTableHTML(j.SourceTable))
 	b.WriteString(`<table data-type="client-order-items"><tbody>`)
 	// ⚠ **見出しは宣言から組みます**（2026-09-20）。列を足したのに見出しを手で書いた
 	// ままだと、**宣言と本文が黙ってずれます**——索引は見出しの表示文字で引くので、
@@ -582,3 +610,42 @@ func revisionTableAt(bodyHTML string) int {
 	}
 	return strings.LastIndex(bodyHTML[:capAt], "<table")
 }
+
+// sourceTableHTML は顧客の発注書の写しを、畳める形で組みます（空なら何も出しません）。
+//
+// ⚠ **`data-type` を付けません。** 形式を登録していない表は索引に載らない決まりなので
+// （2026-09-20）、原本はそのまま「見せるだけ」になります。**caption は人のため**に
+// 付けます——畳んだときに何の表か分かるように。
+func sourceTableHTML(t orderSourceTable) string {
+	if len(t.Headers) == 0 || len(t.Rows) == 0 {
+		return "" // ⚠ **読めなければ出しません**（空の枠だけ出しても誤解を生む）
+	}
+	var b strings.Builder
+	b.WriteString(`<details><summary>` + html.EscapeString(sourceTableCaption) + `</summary>`)
+	b.WriteString(`<table><caption>` + html.EscapeString(sourceTableCaption) + `</caption><tbody><tr>`)
+	for _, h := range t.Headers {
+		b.WriteString("<th>" + html.EscapeString(h) + "</th>")
+	}
+	b.WriteString("</tr>")
+	for _, row := range t.Rows {
+		b.WriteString("<tr>")
+		for i := range t.Headers {
+			v := ""
+			if i < len(row) {
+				v = row[i]
+			}
+			// ⚠ **足りない列は空で埋めます**——列数が揃っていないと、見出しと値の
+			// 対応が1つずつずれて**別の列の値に見えます**。
+			b.WriteString("<td>" + html.EscapeString(v) + "</td>")
+		}
+		b.WriteString("</tr>")
+	}
+	b.WriteString("</tbody></table></details>")
+	return b.String()
+}
+
+// sourceTableCaption は原本の写しの見出しです。
+//
+// ⚠ **語彙に登録しません**（登録すると索引に載り、弊社の明細と二重になります）。
+// 人が読むための名前です。
+const sourceTableCaption = "顧客の発注書（読んだまま）"
