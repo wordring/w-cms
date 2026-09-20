@@ -410,6 +410,17 @@ type filingRequest struct {
 	// 既定は false——**偽の改定を黙って作らない**ため（2026-09-03 ユーザー:
 	// 「同じ図面名称を2回整理すると改定になるのはちょっとマズいと思います」）。
 	ConfirmRevision bool `json:"confirm_revision"`
+	// Merge は**行き先に同じ題のページがあったとき、どうするか**です（2026-09-20）。
+	//
+	//	""          … 未選択。**動かしません**（人が決めるまで通信箱に置いたまま）
+	//	"revision"  … 改定として合流（いまの図面は旧版として子ページへ）
+	//	"drawing"   … 二つ目の図面として追加（同じページに並べる・部品図と溶接図）
+	//
+	// ⚠ **既定を「改定」にしません。** 機械には区別できない（どちらも「同じ品物・
+	// 違う図面番号」）ので、既定を置くと**見ないまま押した人がその既定に従います**。
+	// 溶接図が黙って旧版になるのが、それまでの振る舞いでした。
+	// 空欄は「まだ決められない」の意思表示、という整理の作法に揃えています。
+	Merge string `json:"merge"`
 }
 
 // filingResult は1行の結果です。何が起きたかを人へ返します
@@ -508,7 +519,16 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	//
 	// 移す前に直すのは、**移動に失敗しても値は正しくなっている**ほうが害が小さい
 	// ためです（値が正しくて場所が古いのは探せば見つかる。逆は見つからない）。
-	if err := syncDrawingFields(user, pageID, customer, machine, name); err != nil {
+	//
+	// ⚠ **「二つ目の図面として追加」のときは図面名称を書き戻しません**（2026-09-20）。
+	// そのときの欄の値は**行き先のページを決めるため**に打たれたもの（部品図と同じ題）で、
+	// 運ぶブロックは溶接図です。書き戻すと**2枚目の名前が1枚目の名前に潰れます**。
+	// 客先と装置名称は品物の属性なので、どちらでも揃えます。
+	writeName := name
+	if row.Merge == "drawing" {
+		writeName = ""
+	}
+	if err := syncDrawingFields(user, pageID, customer, machine, writeName); err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped",
 			Message: "図面ブロックの値を直せません: " + err.Error()}
 	}
@@ -547,28 +567,64 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "装置名称ページを用意できません: " + err.Error()}
 	}
 
-	// **既にあれば改定図面**（ユーザー決定）。顧客名／装置名称の下では図面名称が
-	// 一意なので、ページが在ること自体が改定の合図。
+	// **行き先に同じ題のページがあるとき**——改定か、二つ目の図面か（2026-09-20）。
+	//
+	// ⚠ **それまでは黙って改定にしていました。** 図面番号が違えば改定、としていた
+	// のですが、**部品図と溶接図も「図面番号が違う」**ので、片方が旧版として子ページへ
+	// 押し込まれます（ユーザー:「品物としては一つです」）。機械には区別できないので、
+	// **人が選びます**。画面は打ち替えのたびに `/api/filing-target` へ聞いて、
+	// ページがあれば選択肢を出します。
 	if existing, found := findChildByTitle(machineID, name); found && existing != pageID {
-		// **偽の改定を作らない**——同じ添付から作られたものは重複、図面番号が
-		// 同じものは人に確認する（duplicateReason）。
-		if reason, needsConfirm, err := checkRevision(pageID, existing, row.ConfirmRevision); err != nil {
+		// **同じ添付からの重複は、どちらを選んでも止めます**（確認しても通さない）。
+		if dup, err := duplicateSource(pageID, existing); err != nil {
 			return filingResult{PageID: pageID, Outcome: "skipped",
 				Message: "合流先を調べられません: " + err.Error()}
-		} else if reason != "" {
-			outcome := "skipped"
-			if needsConfirm {
-				outcome = "needs_confirm"
+		} else if dup {
+			return filingResult{PageID: pageID, Outcome: "skipped", TargetID: existing,
+				Message: "同じ添付から作られた図面が既にあります（重複なので合流しません）"}
+		}
+
+		switch row.Merge {
+		case "drawing":
+			// ⚠ **図面名称は書き戻しません**（上の `syncDrawingFields` は
+			// `mergeDrawing` のとき名称を飛ばしています）。欄の値は**行き先を決める
+			// ため**のもので、運ぶブロックの中身（溶接図自身の名前と番号）はそのまま。
+			if err := mergeAsDrawing(user, pageID, existing); err != nil {
+				return filingResult{PageID: pageID, Outcome: "skipped",
+					Message: "二つ目の図面として追加できません: " + err.Error()}
 			}
-			return filingResult{PageID: pageID, Outcome: outcome, TargetID: existing, Message: reason}
+			auth.Audit(user.Username, "file-drawing.add", pageID+" -> "+existing)
+			return filingResult{PageID: pageID, Outcome: "added", TargetID: existing,
+				Message: customer + "／" + machine + "／" + name + " へ二つ目の図面として並べました"}
+
+		case "revision":
+			// **偽の改定を作らない**——図面番号が同じものは人に確認する。
+			if reason, needsConfirm, err := checkRevision(pageID, existing, row.ConfirmRevision); err != nil {
+				return filingResult{PageID: pageID, Outcome: "skipped",
+					Message: "合流先を調べられません: " + err.Error()}
+			} else if reason != "" {
+				outcome := "skipped"
+				if needsConfirm {
+					outcome = "needs_confirm"
+				}
+				return filingResult{PageID: pageID, Outcome: outcome, TargetID: existing, Message: reason}
+			}
+			if err := mergeAsRevision(user, pageID, existing); err != nil {
+				return filingResult{PageID: pageID, Outcome: "skipped",
+					Message: "改定として合流できません: " + err.Error()}
+			}
+			auth.Audit(user.Username, "file-drawing.revision", pageID+" -> "+existing)
+			return filingResult{PageID: pageID, Outcome: "revision", TargetID: existing,
+				Message: customer + "／" + machine + "／" + name + " の改定図面として合流しました"}
+
+		default:
+			// **未選択なら動かしません。** ⚠ どちらかを既定にすると、見ないまま
+			// 押した人がその既定に従います——溶接図が黙って旧版になるのが、
+			// それまでの振る舞いでした。
+			return filingResult{PageID: pageID, Outcome: "needs_choice", TargetID: existing,
+				Message: "「" + name + "」は既にあります。" +
+					"改定図面か、同じ品物の二つ目の図面（部品図と溶接図など）かを選んでください"}
 		}
-		if err := mergeAsRevision(user, pageID, existing); err != nil {
-			return filingResult{PageID: pageID, Outcome: "skipped",
-				Message: "改定として合流できません: " + err.Error()}
-		}
-		auth.Audit(user.Username, "file-drawing.revision", pageID+" -> "+existing)
-		return filingResult{PageID: pageID, Outcome: "revision", TargetID: existing,
-			Message: customer + "／" + machine + "／" + name + " の改定図面として合流しました"}
 	}
 
 	if err := movePage(user, pageID, machineID, name); err != nil {
@@ -603,6 +659,13 @@ func syncDrawingFields(user *auth.User, pageID, customer, machine, name string) 
 		{MachineNameTag, machine},
 		{DrawingNameTag, name},
 	} {
+		// ⚠ **空は「消したい」ではありません**（2026-09-20）。渡さなかった項目は
+		// 触らない、という意味です——空で上書きすると、**二つ目の図面として追加する
+		// とき、溶接図の図面名称が消えます**（呼ぶ側が名称だけ渡さない形にしている）。
+		// 受注の `syncOrderClient` と同じ約束です。
+		if strings.TrimSpace(f.value) == "" {
+			continue
+		}
 		fixed = setDrawingField(fixed, f.field, f.value)
 	}
 	if fixed == body {

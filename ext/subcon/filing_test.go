@@ -237,9 +237,14 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 		MachineName: "標準2輪", DrawingName: "取付ベース"}})
 
 	// 改定図面が届いた（図面番号に改訂記号が付く形）。
+	//
+	// ⚠ **`Merge` を送ります**（2026-09-20）。行き先に同じ題のページがあるとき、
+	// 改定か「二つ目の図面」（部品図と溶接図）かは**機械には区別できません**
+	// ——どちらも「同じ品物・違う図面番号」だからです。**未選択では動かしません**
+	// （下の `TestFileDrawingsNeedsChoiceWhenPageExists`）。
 	second := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1A", "取付ベース", "標準2輪", "南北スポーツ")
 	results := postFiling(t, u, []filingRequest{{PageID: second, Customer: "南北スポーツ", Stage: "現行",
-		MachineName: "標準2輪", DrawingName: "取付ベース"}})
+		MachineName: "標準2輪", DrawingName: "取付ベース", Merge: "revision"}})
 	if len(results) != 1 || results[0].Outcome != "revision" {
 		t.Fatalf("改定として扱われていません: %+v", results)
 	}
@@ -372,8 +377,10 @@ func TestFileDrawingsAsksWhenSameDrawingNo(t *testing.T) {
 
 	// 別のメールで届いたが、図面番号は同じ。
 	second := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
+	// ⚠ **改定を選んだうえで**、さらに「番号が同じ」の確認が要ります——問いが2つ
+	// あります（どちらの合流か／本当に改定か）。
 	req := filingRequest{PageID: second, Customer: "南北スポーツ", Stage: "現行",
-		MachineName: "標準2輪", DrawingName: "取付ベース"}
+		MachineName: "標準2輪", DrawingName: "取付ベース", Merge: "revision"}
 
 	results := postFiling(t, u, []filingRequest{req})
 	if len(results) != 1 || results[0].Outcome != "needs_confirm" {

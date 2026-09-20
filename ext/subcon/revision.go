@@ -240,10 +240,8 @@ var revNumberRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>[0-9]+</td><td
 // （空なら合流してよい）。needsConfirm は「人が確認すれば通してよい」の印です。
 func duplicateReason(block, dstBody string, confirmed bool) (reason string, needsConfirm bool) {
 	// 確実な重複——同じ添付から作られている。確認しても通しません。
-	if m := sourceRefRe.FindStringSubmatch(block); m != nil && strings.TrimSpace(m[1]) != "" {
-		if strings.Contains(dstBody, "<dd>"+m[1]+"</dd>") {
-			return "同じ添付から作られた図面が既にあります（重複なので合流しません）", false
-		}
+	if sameSourceAttachment(block, dstBody) {
+		return "同じ添付から作られた図面が既にあります（重複なので合流しません）", false
 	}
 	if confirmed {
 		return "", false
@@ -275,4 +273,119 @@ func checkRevision(srcPageID, dstPageID string, confirmed bool) (reason string, 
 	}
 	r, c := duplicateReason(cms.FirstBlockHTML(srcBody), dstBody, confirmed)
 	return r, c, nil
+}
+
+// ── 二つ目の図面として追加 ───────────────────────────────────────────────
+//
+// ユーザー:「図面が複数あるのは、部品図と溶接図などがあるからで、**品物としては
+// 一つです**。図面さえ置ければ、それでいいのですが、整理の時に既存のページへ
+// 二つ目の図面として追加できる仕組みが必要かと」（2026-09-20）。
+//
+// ⚠ **それまでは黙って「改定」にしていました。** 行き先に同じ題のページがあるとき、
+// 図面番号が違えば改定として合流していました——ところが部品図と溶接図も「図面番号が
+// 違う」ので、**片方が旧版として子ページへ押し込まれます**。エラーも確認も出ません。
+//
+// **機械には区別できません**（改定も別図面も「同じ品物・違う図面番号」）。
+// なので**人が選びます**——このプロジェクトで繰り返している形です。
+
+// mergeAsDrawing は同じ品物の**別の図面**を、既にある加工製品ページへ並べます。
+//
+// 改定との違いは3つです:
+//
+//   - **旧版ページを作りません**（どちらも現行なので、古い新しいがない）
+//   - **改訂履歴に行を足しません**（⚠ 下の注記）
+//   - **図面名称を書き戻しません**（呼ぶ側の責任。溶接図自身の名前を潰さないため）
+//
+// ⚠ **改訂履歴に足さない理由**: 履歴の表は `版 / 図面番号 / 受領日` の1本で、版番号が
+// 通し番号です。別の図面をそこへ混ぜると、**版が2枚の図面をまたいで進みます**
+// （部品図の版2のつもりが溶接図だった、が起きる）。1ページに図面が2枚あるときの
+// 履歴の持ち方は**未決**なので、間違った行を足すより足さないほうを選びました。
+// 由来は運ぶブロックの中の `受信元` が持っているので、出所は失われません。
+func mergeAsDrawing(user *auth.User, srcPageID, dstPageID string) error {
+	srcBody, err := cms.ReadPageBody(srcPageID)
+	if err != nil {
+		return err
+	}
+	block := cms.FirstBlockHTML(srcBody)
+	if strings.TrimSpace(block) == "" {
+		return errors.New("移す図面ブロックが見つかりません")
+	}
+	dstInt, err := strconv.Atoi(dstPageID)
+	if err != nil || !canWritePage(user, dstInt) {
+		return errors.New("合流先へ書き込む権限がありません")
+	}
+	dstBody, err := cms.ReadPageBody(dstPageID)
+	if err != nil {
+		return err
+	}
+	// **ブロックIDが衝突しないようにする**——`ページID-ブロックID` は社内コードなので、
+	// 1つのページの中で重複したら指し先が定まりません（改定の合流と同じ作法）。
+	block = reassignBlockIDIfTaken(block, dstBody)
+
+	if err := cms.RewriteBody(dstPageID, user.Username, func(string) string {
+		return insertAfterDrawings(dstBody, block)
+	}); err != nil {
+		return err
+	}
+	// 並べ終えてから仮のページを片付ける（順序の意味は mergeAsRevision と同じ）。
+	_, err = cms.DeletePageToTrash(srcPageID)
+	return err
+}
+
+// insertAfterDrawings は、既にある**最後の図面ブロックの直後**へ足します。
+//
+// 後ろに置くのは、**先に届いた図面が上に残る**ほうが読む人の当てが外れないためです
+// （改定は新しいものが上ですが、こちらは新旧ではなく部品図と溶接図の並びなので、
+// 届いた順のほうが素直）。図面ブロックが1つも無ければ見出しの直後へ。
+//
+// ⚠ **入れ子を数えて探します**（`cms.SectionBlockAt`）。図面ブロックは中にファイル表示の
+// 節を含むので、最初の `</section>` で切ると**改訂履歴の手前ではなく図面の中へ**
+// 入ってしまいます（2026-09-20 に直した打ち消し合いと同じ罠）。
+func insertAfterDrawings(body, block string) string {
+	at := -1
+	i := 0
+	for {
+		open := cms.IndexSectionTag(body, i)
+		if open < 0 {
+			break
+		}
+		sec, end, ok := cms.SectionBlockAt(body, open)
+		if !ok {
+			break
+		}
+		if strings.Contains(sec, "<h2>図面</h2>") {
+			at = end
+		}
+		i = end
+	}
+	if at < 0 {
+		return cms.InsertAfterH1(body, block)
+	}
+	return body[:at] + block + body[at:]
+}
+
+// sameSourceAttachment は、運ぶブロックと**同じ添付から作られた図面**が行き先に
+// 既にあるかを返します（`受信元` の値が一致するか）。
+//
+// ⚠ **これは「確実な重複」です**——改定でも二つ目の図面でもなく、同じものを2度
+// 整理しただけ。**どちらを選んでも通しません**。
+func sameSourceAttachment(block, dstBody string) bool {
+	m := sourceRefRe.FindStringSubmatch(block)
+	if m == nil || strings.TrimSpace(m[1]) == "" {
+		return false
+	}
+	return strings.Contains(dstBody, "<dd>"+m[1]+"</dd>")
+}
+
+// duplicateSource はページ同士で同じことを調べます（整理の分岐から使う口）。
+func duplicateSource(srcPageID, dstPageID string) (bool, error) {
+	srcBody, err := cms.ReadPageBody(srcPageID)
+	if err != nil {
+		return false, err
+	}
+	dstBody, err := cms.ReadPageBody(dstPageID)
+	if err != nil {
+		return false, err
+	}
+	return sameSourceAttachment(cms.FirstBlockHTML(srcBody), dstBody), nil
 }
