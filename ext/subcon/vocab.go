@@ -176,7 +176,14 @@ var businessVocab = []cms.VocabDef{
 		Element:     "table",
 		Hidden:      true,
 		Columns: []cms.VocabColumn{
-			{Field: "item-id", Label: "品番", Type: cms.ColText},
+			// ⚠ **`code` です**（2026-09-20・実データで確認）。ユーザー:「南北スポーツ
+			// マシーンは品番を入れてこないので、これまでは**図番を品番として入れて**
+			// きました」——つまり実際にこの列へ入るのは**図面番号**です。
+			// `図面番号` は設定で `code`（空白・ハイフン・長音・大小を畳む）なのに
+			// `品番` が `text` だと、**同じ番号が置き場所によって別の鍵になります**
+			// ——`P103-227-6` を `p103 227 6` と打っても品番では当たらない。
+			// 品番そのものもハイフンや全角の揺れを持つので、`code` が素直です。
+			{Field: "item-id", Label: "品番", Type: cms.ColCode},
 			{Field: "item-name", Label: "品名", Type: cms.ColText},
 			{Field: "price", Label: "単価", Type: cms.ColNumber},
 			{Field: "quantity", Label: "数量", Type: cms.ColNumber},

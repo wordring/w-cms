@@ -81,7 +81,12 @@ func TestInferColumnType(t *testing.T) {
 		{"納期", ColDate},
 		{"検査日", ColDate},
 		{"写真", ColImage},
-		{"品番", ColText},     // 辞書に無い語は text
+		// ⚠ **`品番` は 2026-09-20 に辞書へ入りました**（`code`）。実データで、発注書に
+		// 品番の列が無く**図面番号を品番として入れている**ことが分かったためです——
+		// `図面番号` が `code` なのに `品番` が `text` だと、**同じ番号が置き場所に
+		// よって別の鍵になります**。辞書に無い語の例は下の `謎の列` で見ます。
+		{"品番", ColCode},
+		{"謎の列", ColText},   // 辞書に無い語は text
 		{" 数量 ", ColNumber}, // trim してから引く
 	}
 	for _, c := range cases {

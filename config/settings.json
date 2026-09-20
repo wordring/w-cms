@@ -12,6 +12,7 @@
     "納期": { "type": "date" },
     "金額": { "type": "number" },
     "図面番号": { "type": "code" },
+    "品番": { "type": "code" },
     "発注書番号": { "type": "code" },
     "受信元": { "type": "ref" },
     "返信元": { "type": "ref" },
