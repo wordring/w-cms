@@ -141,49 +141,68 @@ func requireSidecar(id string) (PageMeta, error) {
 			"内容＝%s.html は無事です）", sidecarPath(id), id)
 }
 
-// BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。
-// 進めた更新日時(RFC3339)を返します。
-func BumpUpdatedAt(id string) (string, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
+// touchSidecar はサイドカーを読み、change で一部を変え、更新日時を「今」に進めて
+// 書き戻します。進めた更新日時(RFC3339)を返します。
+//
+// **読めないなら書きません**（保存は失敗させて運用者に知らせる。requireSidecar）。
+// 既存ページの属性を一部だけ更新する口（更新日時・親）はすべてここを通ります。
+func touchSidecar(id string, change func(*PageMeta)) (string, error) {
 	meta, err := requireSidecar(id)
 	if err != nil {
-		return "", err // 読めないなら書かない（保存は失敗させて運用者に知らせる）
+		return "", err
 	}
-	meta.UpdatedAt = now
+	change(&meta)
+	meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := WriteSidecar(id, meta); err != nil {
 		return "", err
 	}
-	return now, nil
+	return meta.UpdatedAt, nil
+}
+
+// BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。
+// 進めた更新日時(RFC3339)を返します。
+func BumpUpdatedAt(id string) (string, error) {
+	return touchSidecar(id, func(*PageMeta) {})
 }
 
 // SetSidecarParent は親ページIDを変更し、更新日時を進めます（権限などは保持）。
 // parent はゼロ詰めのページID文字列（空＝トップレベル）。進めた更新日時を返します。
 func SetSidecarParent(id, parent string) (string, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
-	meta, err := requireSidecar(id)
-	if err != nil {
-		return "", err // 読めないなら書かない
+	return touchSidecar(id, func(m *PageMeta) { m.ParentID = parent })
+}
+
+// defaultMeta はサイドカーの無いページ（や索引に無いページ）の既定です
+// ——admin 所有・既定 mode・非公開（フェイルクローズ）。
+func defaultMeta() PageMeta {
+	return PageMeta{Owner: DefaultOwner, Group: "", Mode: DefaultMode}
+}
+
+// sidecarOrDefault はサイドカーを読み、無ければ既定を返します（派生の書き込み用）。
+func sidecarOrDefault(id string) PageMeta {
+	if p, ok := ReadSidecar(id); ok {
+		return p
 	}
-	meta.ParentID = parent
-	meta.UpdatedAt = now
-	if err := WriteSidecar(id, meta); err != nil {
-		return "", err
-	}
-	return now, nil
+	return defaultMeta()
+}
+
+// execer は `*sql.DB` と `*sql.Tx` の共通の口です（page_perms の upsert が両方から呼ばれる）。
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// upsertPerms はサイドカーの権限を cms.db の page_perms へ書きます（派生の更新）。
+func upsertPerms(db execer, pageID int, p PageMeta) error {
+	_, err := db.Exec(`
+		INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode, public=excluded.public
+	`, pageID, p.Owner, p.Group, p.Mode, boolToInt(p.Public))
+	return err
 }
 
 // SyncPageMeta はサイドカー（正本）から cms.db の page_perms を更新します。
 // SyncIndex から呼ばれます。サイドカーが無いページは admin 所有の既定として扱います。
 func SyncPageMeta(tx *sql.Tx, pageID int, id string) error {
-	p, ok := ReadSidecar(id)
-	if !ok {
-		p = PageMeta{Owner: DefaultOwner, Group: "", Mode: DefaultMode}
-	}
-	_, err := tx.Exec(`
-		INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode, public=excluded.public
-	`, pageID, p.Owner, p.Group, p.Mode, boolToInt(p.Public))
-	return err
+	return upsertPerms(tx, pageID, sidecarOrDefault(id))
 }
 
 // RefreshPerms はサイドカー（正本）から cms.db の page_perms を更新します（トランザクション外）。
@@ -193,15 +212,7 @@ func RefreshPerms(id string) error {
 	if err != nil {
 		return err
 	}
-	p, ok := ReadSidecar(id)
-	if !ok {
-		p = PageMeta{Owner: DefaultOwner, Group: "", Mode: DefaultMode}
-	}
-	_, err = database.DB.Exec(`
-		INSERT INTO page_perms (page_id, owner, grp, mode, public) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(page_id) DO UPDATE SET owner=excluded.owner, grp=excluded.grp, mode=excluded.mode, public=excluded.public
-	`, pageID, p.Owner, p.Group, p.Mode, boolToInt(p.Public))
-	return err
+	return upsertPerms(database.DB, pageID, sidecarOrDefault(id))
 }
 
 // boolToInt は SQLite の 0/1 列へ書き込むためのヘルパです。
@@ -234,7 +245,7 @@ func GetPerms(pageID int) PageMeta {
 		`SELECT owner, grp, mode, public FROM page_perms WHERE page_id = ?`, pageID,
 	).Scan(&p.Owner, &p.Group, &p.Mode, &public)
 	if err != nil {
-		return PageMeta{Owner: DefaultOwner, Group: "", Mode: DefaultMode}
+		return defaultMeta()
 	}
 	p.Public = public != 0
 	if p.Mode == "" {
@@ -338,8 +349,10 @@ func requireUser(w http.ResponseWriter, r *http.Request) *auth.User {
 	return u
 }
 
-// RequirePageRead は指定ページIDのread権限を要求します。許可ならtrue、不許可なら403等を書いてfalse。
-func RequirePageRead(w http.ResponseWriter, r *http.Request, idStr string) bool {
+// requirePage は認証済み利用者に対するページ権限の関門です（read／write 共通の骨組み）。
+// 未認証は 401、IDが不正なら 400、allow が偽なら 403 に deny の文を書いて false を返します。
+func requirePage(w http.ResponseWriter, r *http.Request, idStr string,
+	allow func(PageMeta, *auth.User) bool, deny string) bool {
 	u := requireUser(w, r)
 	if u == nil {
 		return false
@@ -349,11 +362,16 @@ func RequirePageRead(w http.ResponseWriter, r *http.Request, idStr string) bool 
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return false
 	}
-	if !GetPerms(pageID).CanRead(u) {
-		http.Error(w, "このページを閲覧する権限がありません", http.StatusForbidden)
+	if !allow(GetPerms(pageID), u) {
+		http.Error(w, deny, http.StatusForbidden)
 		return false
 	}
 	return true
+}
+
+// RequirePageRead は指定ページIDのread権限を要求します。許可ならtrue、不許可なら403等を書いてfalse。
+func RequirePageRead(w http.ResponseWriter, r *http.Request, idStr string) bool {
+	return requirePage(w, r, idStr, PageMeta.CanRead, "このページを閲覧する権限がありません")
 }
 
 // RequirePageReadOrPublic は read 権限を要求しますが、未認証（匿名）でも対象ページが
@@ -387,33 +405,13 @@ func RequirePageReadOrPublic(w http.ResponseWriter, r *http.Request, idStr strin
 
 // RequirePageWrite は指定ページIDのwrite権限を要求します。
 func RequirePageWrite(w http.ResponseWriter, r *http.Request, idStr string) bool {
-	u := requireUser(w, r)
-	if u == nil {
-		return false
-	}
-	pageID, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return false
-	}
-	if !GetPerms(pageID).CanWrite(u) {
-		http.Error(w, "このページを編集する権限がありません", http.StatusForbidden)
-		return false
-	}
-	return true
+	return requirePage(w, r, idStr, PageMeta.CanWrite, "このページを編集する権限がありません")
 }
 
-// RequireAdmin はadmin権限を要求します。
+// RequireAdmin はadmin権限を要求します（auth.RequireAdmin と同じ関門。ページ系の
+// ハンドラが認可の口をこのパッケージだけで揃えられるよう、ここからも呼べます）。
 func RequireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	u := requireUser(w, r)
-	if u == nil {
-		return false
-	}
-	if !u.IsAdmin {
-		http.Error(w, "管理者権限が必要です", http.StatusForbidden)
-		return false
-	}
-	return true
+	return auth.RequireAdmin(w, r)
 }
 
 // DataFileHandler は /data/master/<prefix>/<id>/<file> を、対象ページの read 権限を

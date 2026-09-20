@@ -63,12 +63,22 @@ func FormatID(n int) string {
 // GetPageDir は ID (例: "00A1B") を受け取り、階層化された保存先パス (例: "data/master/00/00A1B") を返します。
 // 1つのフォルダに数万ファイルが集中してOSが重くなるのを防ぐための関数です。
 func GetPageDir(id string) string {
-	// IDの先頭2文字を親フォルダ（プレフィックス）として使用する
+	return shardedDir(MasterDir, id)
+}
+
+// shardedDir は base の下に、IDの先頭2文字を親フォルダ（プレフィックス）として
+// 挟んだパスを返します。正本（data/master）とゴミ箱（data/trash）が同じ階層化を使います。
+func shardedDir(base, id string) string {
 	if len(id) < 2 {
-		return filepath.Join(MasterDir, "00", id)
+		return filepath.Join(base, "00", id)
 	}
-	prefix := id[:2]
-	return filepath.Join(MasterDir, prefix, id)
+	return filepath.Join(base, id[:2], id)
+}
+
+// BodyPath は本文HTML（正本）の場所です（`data/master/<xx>/<id>/<id>.html`）。
+// **本文を読み書きする所は必ずここを通すこと**——同じ結合が11か所に散っていました（2026-09-21）。
+func BodyPath(id string) string {
+	return filepath.Join(GetPageDir(id), id+".html")
 }
 
 // TrashDir は削除したページの退避先です。
@@ -81,10 +91,7 @@ const TrashDir = "data/trash"
 
 // GetTrashDir は削除したページの移動先パスを返します（GetPageDir と同じ階層化）。
 func GetTrashDir(id string) string {
-	if len(id) < 2 {
-		return filepath.Join(TrashDir, "00", id)
-	}
-	return filepath.Join(TrashDir, id[:2], id)
+	return shardedDir(TrashDir, id)
 }
 
 // WriteFileAtomic は「同じフォルダの一時ファイルへ書いて rename」でファイルを
@@ -186,7 +193,16 @@ func AttachmentURLFor(pageID, fileName string) string {
 // なお**既存の8桁の添付はそのまま**です。ファイル名はURLでもあるので、
 // 改名すると本文のリンクが全部切れます。
 func GeneratedAttachmentID(pageID, ext string) string {
-	taken := takenAttachmentIDs(pageID)
+	return RandomShortID(takenAttachmentIDs(pageID))
+}
+
+// RandomShortID は4桁の base36 の識別子を、taken に無いものから1つ返します。
+//
+// **ブロックID（cms.NewBlockID）と添付IDが同じ名前空間を同じ規則で採番する**ための
+// 1つの口です（2026-09-21 に2か所から寄せた）。形はエディタの採番（app.js の
+// newBlockId）に合わせてあります——同じ本文に2種類の採番規則を混ぜないため。
+// 50回試して尽きたら時刻の長い形へ逃がします（無言で衝突させるより長いほうがまし）。
+func RandomShortID(taken map[string]bool) string {
 	const chars = "0123456789abcdefghijklmnopqrstuvwxyz"
 	buf := make([]byte, 4)
 	for attempt := 0; attempt < 50; attempt++ {
@@ -216,16 +232,25 @@ func takenAttachmentIDs(pageID string) map[string]bool {
 	}
 	// 本文は読めなくても止めません——添付の採番は本文保存とは別の操作なので、
 	// ここで失敗させると「本文が壊れていると添付もできない」になります。
-	body, err := os.ReadFile(filepath.Join(GetPageDir(pageID), pageID+".html"))
+	body, err := os.ReadFile(BodyPath(pageID))
 	if err != nil {
 		return taken
 	}
-	for _, m := range blockIDAttrRe.FindAllSubmatch(body, -1) {
-		taken[string(m[1])] = true
+	for id := range BlockIDsIn(body) {
+		taken[id] = true
 	}
 	return taken
 }
 
-// blockIDAttrRe は本文の data-id を拾います（cms.NewBlockID と同じ形。
-// **同じ名前空間を2箇所で採番する**ので、拾い方も揃えておくこと）。
+// BlockIDsIn は本文の data-id を集めます（採番の重複避けに使う）。
+// 拾い方は1か所——**同じ名前空間を2つの口（ブロックID・添付ID）が採番する**ので。
+func BlockIDsIn(body []byte) map[string]bool {
+	used := map[string]bool{}
+	for _, m := range blockIDAttrRe.FindAllSubmatch(body, -1) {
+		used[string(m[1])] = true
+	}
+	return used
+}
+
+// blockIDAttrRe は本文の data-id を拾います。
 var blockIDAttrRe = regexp.MustCompile(`data-id="([0-9a-z]+)"`)

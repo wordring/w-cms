@@ -42,10 +42,8 @@ func InitDB() error {
 	//   - busy_timeout(5000): 書き込みロック衝突時に最大5秒リトライ待ち（database is locked 緩和）
 	//   - journal_mode(WAL): 読み取りと書き込みの並行性を上げる（DB全体の永続設定）
 	// 同時編集の堅牢化（[docs/【考察】同時編集の競合対策.md] シナリオD）。
-	dbPath := filepath.Join("data", "cms.db")
-	dsn := filepath.ToSlash(dbPath) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	var err error
-	DB, err = sql.Open("sqlite", dsn)
+	DB, err = openSQLite("cms.db")
 	if err != nil {
 		return err
 	}
@@ -54,6 +52,15 @@ func InitDB() error {
 	// 汎用索引（vocab_index）は internal/cms の観察係が Schema() で定義し、
 	// main から cms.ApplySchema() で作成する（ドメインごとのテーブルは無い・D-1）。
 	return CreateCoreTables(DB)
+}
+
+// openSQLite は data/<name> を、接続ごとの設定を DSN に載せて開きます。
+// cms.db と auth.db が同じ設定で開かれることをここで保証します
+// （片方だけ busy_timeout が無い、という食い違いを 2026-09-03 に踏んだ）。
+func openSQLite(name string) (*sql.DB, error) {
+	dsn := filepath.ToSlash(filepath.Join("data", name)) +
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+	return sql.Open("sqlite", dsn)
 }
 
 // CoreTables はどのユースケースにも依存しない基盤テーブル（pages / page_perms）の定義です。

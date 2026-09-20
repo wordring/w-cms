@@ -22,43 +22,54 @@ func secureCookies() bool {
 	}
 }
 
-func setSessionCookie(w http.ResponseWriter, token string) {
-	http.SetCookie(w, &http.Cookie{
+// sessionCookie はセッションCookieの型紙です。発行（値と絶対期限）も破棄（空と負の期限）も
+// 同じ属性（Path・HttpOnly・Secure・SameSite）で書かないと、ブラウザが別のCookieとみなして
+// 消せないことがあります。
+func sessionCookie(value string, maxAge int) *http.Cookie {
+	return &http.Cookie{
 		Name:     sessionCookieName,
-		Value:    token,
+		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secureCookies(),
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(sessionAbsoluteTTL.Seconds()),
-	})
+		MaxAge:   maxAge,
+	}
+}
+
+func setSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, sessionCookie(token, int(sessionAbsoluteTTL.Seconds())))
 }
 
 func clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   secureCookies(),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
+	c := sessionCookie("", -1)
+	c.Expires = time.Unix(0, 0)
+	http.SetCookie(w, c)
+}
+
+// userFromRequest はセッションCookieから利用者を解決します（無効・未ログインなら nil）。
+// RequireAuth と OptionalAuth が同じ解決を通ります。
+func userFromRequest(r *http.Request) *User {
+	c, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return nil
+	}
+	username, ok := ResolveSession(c.Value)
+	if !ok {
+		return nil
+	}
+	u, err := LookupUser(username)
+	if err != nil {
+		return nil
+	}
+	return u
 }
 
 // RequireAuth は、セッションCookieから認証済みユーザーを解決して後続ハンドラに渡します。
 // 未認証の場合、API（/api/）は 401、それ以外は /login へリダイレクトします。
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var user *User
-		if c, err := r.Cookie(sessionCookieName); err == nil {
-			if username, ok := ResolveSession(c.Value); ok {
-				if u, e := LookupUser(username); e == nil {
-					user = u
-				}
-			}
-		}
+		user := userFromRequest(r)
 		// **認証が要る経路の応答は、絶対にキャッシュさせない**（要件定義書 §4.4）。
 		// 公開ページをキャッシュ可能にした以上（2026-08-26）、この切り分けが前提条件です。
 		// Cache-Control が無いと、ブラウザや中間キャッシュがヒューリスティックに保存して
@@ -85,13 +96,9 @@ func RequireAuth(next http.Handler) http.Handler {
 // RequirePageReadOrPublic 等で個別に判定します（認証認可設計.md 10.5）。
 func OptionalAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if c, err := r.Cookie(sessionCookieName); err == nil {
-			if username, ok := ResolveSession(c.Value); ok {
-				if u, e := LookupUser(username); e == nil {
-					next.ServeHTTP(w, WithUser(r, u))
-					return
-				}
-			}
+		if u := userFromRequest(r); u != nil {
+			next.ServeHTTP(w, WithUser(r, u))
+			return
 		}
 		next.ServeHTTP(w, r) // 匿名（コンテキストにユーザー無し）
 	})

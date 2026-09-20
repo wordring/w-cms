@@ -1,9 +1,6 @@
 package database
 
-import (
-	"database/sql"
-	"path/filepath"
-)
+import "database/sql"
 
 // AuthDB は認証・認可用の独立したデータベース接続（data/auth.db）です。
 // 本体の cms.db（DB）とは別ライフサイクルで管理され、RebuildDatabase の対象外です。
@@ -29,11 +26,8 @@ var AuthDB *sql.DB
 //
 // journal_mode(WAL) は読み取りと書き込みの並行性を上げます（DB全体の永続設定）。
 func InitAuthDB() error {
-	dbPath := filepath.Join("data", "auth.db")
-	dsn := filepath.ToSlash(dbPath) +
-		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	var err error
-	AuthDB, err = sql.Open("sqlite", dsn)
+	AuthDB, err = openSQLite("auth.db")
 	if err != nil {
 		return err
 	}

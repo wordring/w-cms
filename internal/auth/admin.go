@@ -137,6 +137,22 @@ func Audit(username, action, target string) {
 		time.Now(), username, action, target)
 }
 
+// AuditRequest はリクエストの利用者名で監査記録を1件残します（未認証なら何もしない）。
+// `if u := CurrentUser(r); u != nil { Audit(u.Username, …) }` が10か所に写されていた形です。
+func AuditRequest(r *http.Request, action, target string) {
+	if u := CurrentUser(r); u != nil {
+		Audit(u.Username, action, target)
+	}
+}
+
+// UsernameOf はリクエストの利用者名を返します（未認証なら空）。
+func UsernameOf(r *http.Request) string {
+	if u := CurrentUser(r); u != nil {
+		return u.Username
+	}
+	return ""
+}
+
 // AuditEntry は監査ログの1行です。
 type AuditEntry struct {
 	TS       string `json:"ts"`

@@ -21,6 +21,17 @@ import (
 //
 // 許可なら true。呼び出し側は権限チェック（page.RequirePageWrite 等）の後にこれを通します。
 func RequireEditLock(w http.ResponseWriter, r *http.Request, idStr string) bool {
+	token := r.Header.Get("X-Lock-Token")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	return RequireLockToken(w, r, idStr, token)
+}
+
+// RequireLockToken は、呼ぶ側が取り出したトークンで同じ検証をします
+// （保存APIはトークンを JSON 本文で受けるので、取り出し方だけが違う）。
+// 断り文とステータス（409）はここ1か所です。
+func RequireLockToken(w http.ResponseWriter, r *http.Request, idStr, token string) bool {
 	u := auth.CurrentUser(r)
 	if u == nil {
 		http.Error(w, "認証が必要です", http.StatusUnauthorized)
@@ -30,10 +41,6 @@ func RequireEditLock(w http.ResponseWriter, r *http.Request, idStr string) bool 
 	if err != nil {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return false
-	}
-	token := r.Header.Get("X-Lock-Token")
-	if token == "" {
-		token = r.URL.Query().Get("token")
 	}
 	if !Locks.Validate(pageID, u.Username, token) {
 		http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
@@ -70,6 +77,31 @@ func RefuseWhileEditing(w http.ResponseWriter, idStr string) bool {
 	return true
 }
 
+// queryPageID は `?id=` を読み、ゼロ詰め6桁と数値の両方で返します。
+// 不正なら 400 を書いて ok=false。
+//
+// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。数値しか使わない口でも
+// 畳んでおくのは、`page.GetPageDir(id)` / `page.AttachmentDir(id)` が**文字列を取る**
+// ので、あとで1行足した人が `"1"` を渡すと `data/1/1.html` を探しに行くためです。
+func queryPageID(w http.ResponseWriter, r *http.Request) (id string, idInt int, ok bool) {
+	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
+	if !okID {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return "", 0, false
+	}
+	idInt, _ = strconv.Atoi(id) // NormalizeID を通った値は必ず数
+	return id, idInt, true
+}
+
+// requireWriter は対象ページの write 権限を確かめ、その利用者を返します
+// （断ったときは応答を書き終えていて nil）。ロックの口はすべて write が要ります。
+func requireWriter(w http.ResponseWriter, r *http.Request, id string) *auth.User {
+	if !page.RequirePageWrite(w, r, id) {
+		return nil
+	}
+	return auth.CurrentUser(r) // RequirePageWrite が通っていれば nil ではない
+}
+
 // LockAPIHandler は編集ロックの取得を処理します。
 // POST /api/lock?id=&token= 。対象ページの write 権限を要求します。
 // 本文は返しません（取得口は GET /api/load の1つ。クライアントは取得後に読み直す）。
@@ -78,23 +110,12 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// 認可（page.RequirePageWrite）のためゼロ詰め6桁へ正規化する。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, idInt, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
-	if !page.RequirePageWrite(w, r, id) {
-		return
-	}
-	idInt, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	user := auth.CurrentUser(r)
+	user := requireWriter(w, r, id)
 	if user == nil {
-		http.Error(w, "認証が必要です", http.StatusUnauthorized)
 		return
 	}
 
@@ -124,26 +145,12 @@ func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 // GET /api/lock-events?id=&role=holder|waiter&token= 。対象ページの write 権限を要求します。
 // 接続中＝presence とみなし、保持者の切断は即明け渡し、待機者の切断は猶予キャンセルに使います。
 func LockEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
-	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
-	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
-	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, idInt, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
-	if !page.RequirePageWrite(w, r, id) {
-		return
-	}
-	idInt, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	user := auth.CurrentUser(r)
+	user := requireWriter(w, r, id)
 	if user == nil {
-		http.Error(w, "認証が必要です", http.StatusUnauthorized)
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -220,23 +227,11 @@ func LockForceAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequireAdmin(w, r) {
 		return
 	}
-	// **IDはハンドラの入口で6桁へ畳みます**（2026-09-14）。いまは `Atoi` した数値しか
-	// 使っていないので実害はありませんでしたが、`page.GetPageDir(id)` /
-	// `page.AttachmentDir(id)` は**文字列を取る**ので、あとで1行足した人が `"1"` を
-	// 渡すと `data/1/1.html` を探しに行きます。例外を残さないほうが安いところです。
-	id, okID := page.NormalizeID(r.URL.Query().Get("id"))
-	if !okID {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
-		return
-	}
-	idInt, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+	id, idInt, ok := queryPageID(w, r)
+	if !ok {
 		return
 	}
 	Locks.ForceRelease(idInt)
-	if u := auth.CurrentUser(r); u != nil {
-		auth.Audit(u.Username, "lock.force", id)
-	}
+	auth.Audit(auth.CurrentUser(r).Username, "lock.force", id) // RequireAdmin が通っていれば nil ではない
 	w.WriteHeader(http.StatusNoContent)
 }

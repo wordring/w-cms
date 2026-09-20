@@ -169,10 +169,7 @@ func MeAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 値は末尾を採ります——直近のプロキシが足した1つで、利用者が先頭へ何を書いても
 // その後ろに真の接続元が積まれるためです。
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
+	host := remoteHost(r)
 	if !isTrustedProxy(host) {
 		return host
 	}
@@ -194,11 +191,16 @@ func clientIP(r *http.Request) string {
 // （clientIP）と公開ビューの基底URL（scheme / host）で規則がずれると、片方だけ
 // 詐称できる穴になるためです。
 func IsFromTrustedProxy(r *http.Request) bool {
+	return isTrustedProxy(remoteHost(r))
+}
+
+// remoteHost は接続元アドレスからポートを落としたホスト部です。
+func remoteHost(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		host = r.RemoteAddr
+		return r.RemoteAddr
 	}
-	return isTrustedProxy(host)
+	return host
 }
 
 // isTrustedProxy は、そのアドレスを「前段のプロキシ」とみなすかを返します。
