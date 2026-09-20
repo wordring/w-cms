@@ -58,8 +58,8 @@ func parseRefValue(s string) (pageID, blockID string, ok bool) {
 // 一致するものをリンクへ合成して返します。指す先のページが無ければ
 // `ref-missing` の印を付けます（見た目は assets の CSS が担う）。
 func RenderReferenceLinks(bodyHTML string) string {
-	// 早道: dl が無ければ参照タグも無い（普通のページにパースの費用を掛けない）。
-	if !strings.Contains(bodyHTML, "<dl") {
+	// 早道: dl も table も無ければ参照は無い（普通のページにパースの費用を掛けない）。
+	if !strings.Contains(bodyHTML, "<dl") && !strings.Contains(bodyHTML, "<table") {
 		return bodyHTML
 	}
 	nodes, err := htmldoc.ParseFragment(bodyHTML)
@@ -82,6 +82,12 @@ func RenderReferenceLinks(bodyHTML string) string {
 			//
 			// 桁を6に絞っても足りなかった、というのがここの学びです。**値の形だけでは
 			// 参照と番号を見分けられない**ので、置き場所（可変タグかどうか）も条件にします。
+			if n.Data == "table" {
+				if linkRefCells(n) {
+					changed = true
+				}
+				return
+			}
 			if n.Data != "dl" || Attr(n, "data-type") != "tags" || inVocabChrome(n) {
 				return
 			}
@@ -292,4 +298,84 @@ func parsePageRef(tagName, value string) (pageID string, ok bool) {
 		return "", false
 	}
 	return m[1], true
+}
+
+// linkRefCells は表の**参照の列**のセルをリンクへ合成します（2026-09-20）。
+//
+// ⚠ **列の宣言が `ref` のときだけ**です。可変タグの側で学んだことがそのまま効きます
+// ——「**値の形だけでは参照と番号を見分けられない**」（実データの発注書番号
+// `250401-203` が「6桁＋ハイフン＋英数字」に当てはまり、全件が薄赤になった）。
+// タグでは「可変タグの中か」を条件にしましたが、表では**列の型宣言**という、
+// もっと強い手掛かりがあります。
+//
+// これが要るのは `弊社品番`（加工製品ページのページ番号）を足したためです
+// ——**加工中に使う番号**なので、押して飛べないと意味が半分になります。
+//
+// ⚠ **登録されていない形式の表は触りません。** 索引に載らないのと同じ線引きで、
+// 普通の文章の表に書かれた `000047` のような数をリンクにしないためです。
+func linkRefCells(table *html.Node) bool {
+	if inVocabChrome(table) {
+		return false
+	}
+	def, known := VocabDefByType(vocabTypeOf(table))
+	if !known {
+		return false
+	}
+	rows := tableRows(table)
+	if len(rows) < 2 {
+		return false // 見出しだけの表には値が無い
+	}
+	// 見出し行から、参照の列の位置を拾う。
+	headers := rowCells(rows[0])
+	refCol := make([]bool, len(headers))
+	any := false
+	for i, h := range headers {
+		key := strings.TrimSpace(nodeText(h))
+		if resolveColumnType(h, def, key) == ColRef {
+			refCol[i] = true
+			any = true
+		}
+	}
+	if !any {
+		return false
+	}
+
+	changed := false
+	for _, row := range rows[1:] {
+		for i, cell := range rowCells(row) {
+			if i >= len(refCol) || !refCol[i] {
+				continue
+			}
+			pageID, blockID, ok := parseRefValue(nodeText(cell))
+			if !ok {
+				// ⚠ **空欄は普通です**——解析は弊社品番を空で出し、人が後から結びます。
+				// 薄赤にすると「まだ決めていない」行が全部赤くなります。
+				if strings.TrimSpace(nodeText(cell)) == "" {
+					continue
+				}
+				// **ページ番号だけでも受けます**（`000047`）。タグの側では「名前で
+				// 参照と宣言されているか」を条件にしましたが（`parsePageRef`）、
+				// ここでは**列がすでに `ref` と宣言されている**ので、それが許可です。
+				// ⚠ 弊社品番は**加工製品ページそのもの**を指すので、ブロックIDは要りません。
+				if m := pageIDOnlyRe.FindStringSubmatch(strings.TrimSpace(nodeText(cell))); m != nil {
+					pageID, blockID, ok = m[1], "", true
+				}
+			}
+			if !ok {
+				// 形が合わない値（打ちかけ・別の番号）も、宙ぶらりんとして知らせる。
+				setAttr(cell, "class", "ref-missing")
+				setAttr(cell, "title", "参照の形（ページID または ページID-ブロックID）ではありません")
+				changed = true
+				continue
+			}
+			if pageExists(pageID) {
+				linkRefDD(cell, pageID, blockID)
+			} else {
+				setAttr(cell, "class", "ref-missing")
+				setAttr(cell, "title", "参照先のページ "+pageID+" が見つかりません")
+			}
+			changed = true
+		}
+	}
+	return changed
 }
