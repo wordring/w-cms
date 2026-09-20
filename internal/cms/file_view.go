@@ -114,16 +114,8 @@ func init() {
 // **人が書いた中身は消しません**——消すのは前回描いたクロームだけです。
 // 普通は空ですが、説明の段落などを添えたい人が居るかもしれないので消しません。
 func renderFileView(ctx *MirrorContext, el *html.Node) (bool, error) {
-	// 前回のクロームを落とす（毎回描き直す。`class` は保存されないので残骸は出ない）。
-	var stale []*html.Node
-	for c := el.FirstChild; c != nil; c = c.NextSibling {
-		if isChrome(c) {
-			stale = append(stale, c)
-		}
-	}
-	for _, n := range stale {
-		el.RemoveChild(n)
-	}
+	// 前回のクロームを落とす（毎回描き直す）。
+	DropChrome(el)
 
 	ref := strings.TrimSpace(Attr(el, FileRefAttr))
 	if ref == "" {

@@ -110,7 +110,7 @@ func ExtractDescription(bodyHTML string) string {
 				return
 			}
 			// 計算ビューの中身（サーバーが埋めたクローム）は本文ではない。
-			if hasChromeAncestor(el) {
+			if inVocabChrome(el) {
 				return
 			}
 			if t := strings.TrimSpace(nodeText(el)); t != "" {
@@ -119,16 +119,6 @@ func ExtractDescription(bodyHTML string) string {
 		})
 	}
 	return truncateRunes(collapseSpaces(found), descriptionMaxRunes)
-}
-
-// hasChromeAncestor は要素が .vocab-chrome の中にあるかを返します。
-func hasChromeAncestor(el *stdhtml.Node) bool {
-	for p := el.Parent; p != nil; p = p.Parent {
-		if p.Type == stdhtml.ElementNode && strings.Contains(Attr(p, "class"), "vocab-chrome") {
-			return true
-		}
-	}
-	return false
 }
 
 // collapseSpaces は改行と連続空白を1つの空白へ潰します（メタ情報は1行なので）。

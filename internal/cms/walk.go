@@ -395,6 +395,23 @@ func isChrome(el *html.Node) bool {
 // chromeClass は表示専用クロームの印です（シリアライザ・サニタイザと同じ言葉）。
 const chromeClass = "vocab-chrome"
 
+// DropChrome は要素の直下から、前回描いたクローム（`.vocab-chrome`）を落とします。
+//
+// 鏡型は**毎回描き直す**ので、描く前にこれを通します——人が書いた中身は残り、
+// 消えるのはサーバーが足したものだけです（`class` は保存されないので残骸は出ない）。
+// コアのファイル表示と拡張の鏡（検算など）が同じ口を使います。
+func DropChrome(el *html.Node) {
+	var stale []*html.Node
+	for c := el.FirstChild; c != nil; c = c.NextSibling {
+		if isChrome(c) {
+			stale = append(stale, c)
+		}
+	}
+	for _, n := range stale {
+		el.RemoveChild(n)
+	}
+}
+
 // ── 走査 ─────────────────────────────────────────────────────────────────
 
 // dispatch は1要素分の配送を行い、子孫へ降りるかを返します。

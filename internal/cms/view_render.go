@@ -167,14 +167,12 @@ func fillViewMarker(el *html.Node, innerHTML string) {
 	//   - **機能見出しのセクション**……見出しや注記が本文としてここに住んでいる。
 	//     消すのは前回描いたクロームだけで、「見出しが鏡を呼び、人の書き込みは
 	//     保存されて残り、鏡の中身はその下へ毎回描かれる」（語彙モデル §11.5-7）。
-	var stale []*html.Node
-	for c := el.FirstChild; c != nil; c = c.NextSibling {
-		if Attr(el, "data-type") != "" || isChrome(c) {
-			stale = append(stale, c)
+	if Attr(el, "data-type") != "" {
+		for el.FirstChild != nil {
+			el.RemoveChild(el.FirstChild)
 		}
-	}
-	for _, n := range stale {
-		el.RemoveChild(n)
+	} else {
+		DropChrome(el)
 	}
 	chrome := `<div class="vocab-chrome" contenteditable="false">` + innerHTML + `</div>`
 	nodes, err := htmldoc.ParseFragment(chrome)
