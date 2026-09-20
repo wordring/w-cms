@@ -6,8 +6,13 @@
 //
 // 子ページは**本物を作ります**（サーバーが実際に返すものを見るため）。
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const PAGE = process.env.WCMS_PAGE || '000021';
+// ⚠ **当て先は焼き込みません**（2026-09-20）。`000021` と書いてありましたが、
+// データを入れ直すたびにページIDは総入れ替えになります——実際、初期化の翌日に
+// `000021` は「RE: お見積り、製作依頼」（添付は .eml だけ）になり、**PDFが無いので
+// 解析ボタンが出ず**に落ちました。走るときに `lib.findRecordWithPDF` で探します。
+let PAGE = process.env.WCMS_PAGE || '';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -21,6 +26,15 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   await page.fill('#username', 'a'); await page.fill('#password', 'a');
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
 
+  if (!PAGE) {
+    const rec = await lib.findRecordWithPDF(page);
+    PAGE = rec.pageID;
+  }
+  if (!PAGE) {
+    console.log('  -- PDFを持つ通信記録がありません（取り込み前なら正常）。飛ばします');
+    await browser.close();
+    process.exit(0);
+  }
   await page.goto(BASE + '/' + PAGE);
   await page.waitForTimeout(1800);
 

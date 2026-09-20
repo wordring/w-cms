@@ -5,8 +5,10 @@
 // 「400」だけが出ます。退避のつもりの `|| await res.text()` は**本体を使い切った
 // あと**なので永久に空でした。
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const PAGE = process.env.WCMS_HOST_PAGE || '000021';
+// ⚠ **当て先は焼き込みません**（2026-09-20・`probe-analyze-refresh` と同じ理由）。
+let PAGE = process.env.WCMS_HOST_PAGE || '';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -19,6 +21,15 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   await page.goto(BASE + '/login');
   await page.fill('#username', 'a'); await page.fill('#password', 'a');
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  if (!PAGE) {
+    const rec = await lib.findRecordWithPDF(page);
+    PAGE = rec.pageID;
+  }
+  if (!PAGE) {
+    console.log('  -- PDFを持つ通信記録がありません（取り込み前なら正常）。飛ばします');
+    await browser.close();
+    process.exit(0);
+  }
   await page.goto(BASE + '/' + PAGE);
   await page.waitForTimeout(1500);
 

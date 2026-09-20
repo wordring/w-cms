@@ -4123,21 +4123,102 @@
             fields.customer.addEventListener('input', fillMachines);
             fields.customer.addEventListener('change', fillMachines);
             addText('drawing_name', row.drawing_name);
+
+            const tdConfirm = document.createElement('td');
+
+            // ── 行き先に既にページがあるか（打ち替えのたびに聞く）──
+            //
+            // ユーザー:「図面名称と装置名称を手がかりに、改定図面や追加図面を認識する
+            // はずですが、問題はそれらは**編集者が微妙に書き換える**ことです。整理画面で
+            // 編集者が書き換えるたびに、既存のページがあるか**検索しなおす**必要が
+            // あります」（2026-09-20）。
+            //
+            // ⚠ **装置名称の候補のように先に配れません**——図面名称は顧客×段×装置の
+            // 数だけあるので、そのつどサーバーへ聞きます（`/api/filing-target`）。
+            const choiceWrap = document.createElement('div');
+            choiceWrap.className = 'filing-choice';
+            choiceWrap.hidden = true;
+            const choiceNote = document.createElement('p');
+            choiceNote.className = 'filing-choice-note';
+            choiceWrap.appendChild(choiceNote);
+            const mergeName = 'w-filing-merge-' + rowIndex;
+            const mergeInputs = {};
+            [['revision', '改定図面（いまの図面は旧版として子ページへ）'],
+             ['drawing', '二つ目の図面として追加（部品図と溶接図など）']].forEach(([val, text]) => {
+                const label = document.createElement('label');
+                label.className = 'filing-merge-opt';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = mergeName;
+                radio.value = val;
+                label.appendChild(radio);
+                label.appendChild(document.createTextNode(' ' + text));
+                choiceWrap.appendChild(label);
+                mergeInputs[val] = radio;
+            });
+            tdConfirm.appendChild(choiceWrap);
+
+            // ⚠ **どちらも既定で選びません。** 既定を置くと、見ないまま押した人が
+            // その既定に従います——溶接図が黙って旧版になるのが、それまでの振る舞い
+            // でした。選ばない行は実行しても動きません（サーバーが `needs_choice`）。
+            let targetTimer = null;
+            const askTarget = async () => {
+                const q = new URLSearchParams({
+                    customer: fields.customer.value.trim(),
+                    stage: fields.stage.value,
+                    machine: fields.machine_name.value.trim(),
+                    name: fields.drawing_name.value.trim(),
+                });
+                try {
+                    const res = await fetch('/api/filing-target?' + q.toString());
+                    const d = await res.json();
+                    if (!d || !d.exists) {
+                        choiceWrap.hidden = true;
+                        // **隠すときは選択も外します**——隠れたまま選ばれた値が残ると、
+                        // 打ち替えて別の行き先になったのに前の選択で実行されます。
+                        Object.values(mergeInputs).forEach(b => { b.checked = false; });
+                        return;
+                    }
+                    const nos = (d.drawing_nos || []).join('・');
+                    choiceNote.textContent = '⚠ 「' + (d.title || '') + '」は既にあります' +
+                        (nos ? '（載っている図面: ' + nos + '）' : '') + '。どちらか選んでください。';
+                    choiceWrap.hidden = false;
+                } catch (e) {
+                    // 聞けなくても整理はできます（実行がもう一度判断して `needs_choice`
+                    // を返します）。⚠ ここで黙って選択肢を出すほうが危ないので出しません。
+                    choiceWrap.hidden = true;
+                }
+            };
+            const askTargetSoon = () => {
+                if (targetTimer) clearTimeout(targetTimer);
+                targetTimer = setTimeout(askTarget, 400);
+            };
+            ['customer', 'stage', 'machine_name', 'drawing_name'].forEach(key => {
+                fields[key].addEventListener('input', askTargetSoon);
+                fields[key].addEventListener('change', askTargetSoon);
+            });
+            askTargetSoon();
+
             // 「改定として合流」の確認——**既定は隠しておき、実行が確認を求めた
             // ときだけ出します**。最初から出すと「押せば通る」と学習されてしまい、
             // 偽の改定を止める意味が薄れます。
-            const tdConfirm = document.createElement('td');
+            //
+            // ⚠ **上の選択とは別の問い**です。あちらは「改定か二つ目の図面か」、
+            // こちらは「図面番号が同じだけど本当に改定か」。
             const confirm = document.createElement('label');
             confirm.className = 'filing-confirm';
             confirm.hidden = true;
             const box = document.createElement('input');
             box.type = 'checkbox';
             confirm.appendChild(box);
-            confirm.appendChild(document.createTextNode(' 改定として合流'));
+            confirm.appendChild(document.createTextNode(' 番号が同じだが改定として合流'));
             tdConfirm.appendChild(confirm);
             tr.appendChild(tdConfirm);
 
-            inputs.push({ page_id: row.page_id, fields: fields, confirm: confirm, box: box });
+            inputs.push({
+                page_id: row.page_id, fields: fields, confirm: confirm, box: box,
+                merge: mergeInputs, choice: choiceWrap,
+            });
             table.appendChild(tr);
         });
         if (rows.length) panel.appendChild(table);
@@ -4217,6 +4298,9 @@
             machine_name: i.fields.machine_name.value,
             drawing_name: i.fields.drawing_name.value,
             confirm_revision: i.box.checked,
+            // 行き先に同じ題のページがあったとき、改定か二つ目の図面か（2026-09-20）。
+            // ⚠ **選ばれていなければ空**です——サーバーはそのとき動かしません。
+            merge: (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '',
         }));
         try {
             const res = await fetch('/api/file-drawings', {
@@ -4240,9 +4324,16 @@
             const pending = new Set(results
                 .filter(r => r.outcome === 'needs_confirm').map(r => r.page_id));
             inputs.forEach(i => { i.confirm.hidden = !pending.has(i.page_id); });
+            // **選択待ちの行も表を閉じません**（2026-09-20）。打ち替えのたびの
+            // 問い合わせで既に出ているはずですが、⚠ **聞けなかったとき**（通信が
+            // 切れた・打った直後に押した）はここが最後の関門です。
+            const choosing = new Set(results
+                .filter(r => r.outcome === 'needs_choice').map(r => r.page_id));
+            inputs.forEach(i => { if (choosing.has(i.page_id)) i.choice.hidden = false; });
+            const stay = pending.size + choosing.size;
             notify(lines.join('\n') || '対象がありませんでした。',
-                { type: pending.size ? 'warn' : 'success', duration: 0, id: 'filing' });
-            if (!pending.size) panel.remove();
+                { type: stay ? 'warn' : 'success', duration: 0, id: 'filing' });
+            if (!stay) panel.remove();
         } catch (e) {
             notify('整理を実行できませんでした: ' + e, { type: 'alert', duration: 0, id: 'filing' });
         }

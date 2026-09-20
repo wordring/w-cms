@@ -7,7 +7,13 @@
 // ③実際に取り出せる ④許可していない拡張子は理由つきで断られる。
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-const PAGE = process.env.WCMS_HOST_PAGE || '000021';
+// ⚠ **当て先を焼き込まず、自分で1枚作って最後に消します**（2026-09-20）。
+// `000021` と書いてありましたが、データを入れ直すとそれは**実在の通信記録**になり、
+// この試験は**実データのページへ添付を書き込んで**いました（初期化で消えるとはいえ、
+// 届いた事実の記録に試験用のファイルが積もります）。
+// `verify-filing-machines` などと同じく、下ごしらえは自分で用意します。
+let PAGE = process.env.WCMS_HOST_PAGE || '';
+let madePage = '';
 let fail = 0;
 const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + x : '')); if (!c) fail++; };
 
@@ -23,6 +29,21 @@ const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
   await page.goto(BASE + '/login');
   await page.fill('#username', 'a'); await page.fill('#password', 'a');
   await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  if (!PAGE) {
+    // トップの下に作業用の1枚を作る（題で分かるようにしておく）。
+    madePage = await page.evaluate(async () => {
+      const fd = new URLSearchParams({ parent: '000000' });
+      const res = await fetch('/api/new-page', { method: 'POST', body: fd });
+      const m = (res.url || '').match(/\/(\d{6})/);
+      return m ? m[1] : '';
+    });
+    PAGE = madePage;
+  }
+  if (!PAGE) {
+    console.log('  -- 作業用のページを作れません。飛ばします');
+    await browser.close();
+    process.exit(0);
+  }
   await page.goto(BASE + '/' + PAGE);
   await page.waitForTimeout(1200);
 
@@ -82,6 +103,15 @@ const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
   ok(/拡張子/.test(bad.body), '断る理由が書いてある', bad.body.slice(0, 60));
 
   ok(errs.length === 0, 'JSエラーなし', errs[0] || '');
+
+  // **自分で作ったものは自分で片付けます**（添付ごとゴミ箱へ）。
+  if (madePage) {
+    const gone = await page.evaluate(async (id) => {
+      const res = await fetch('/api/delete-page?id=' + id, { method: 'POST' });
+      return res.status;
+    }, madePage);
+    console.log('  片付け ' + madePage + ': ' + (gone === 200 ? '削除' : 'HTTP ' + gone));
+  }
   await browser.close();
   console.log(fail ? '\n' + fail + ' 件失敗' : '\n全項目OK');
   process.exit(fail ? 1 : 0);
