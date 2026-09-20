@@ -82,6 +82,21 @@ type Settings struct {
 	// `取引：自社` は照合から外す判断に使うので、そちらは表引きで閉じます）。
 	Vocabulary map[string]VocabWord `json:"vocabulary"`
 
+	// VocabFormats は**運用者が足す表の形式**です（2026-09-20 ユーザー決定:
+	// 「表の形式も settings.json から足せるようにします」）。
+	//
+	// ⚠ **「登録された語彙だけDBに入る」と対の決定**です（同日）。それまでは
+	// 「登録されていなくても索引に載る」が運用者の抜け道でしたが、そこを塞いだので
+	// **正面の道を開けました**——塞いだだけだと、**運用者が自分の表をDBに入れる道が
+	// 無くなります**（「語彙とプラグインは運用者が追加できることが要件」・2026-08-26）。
+	//
+	// タグの語（`vocabulary`）と同じく `git pull` で全環境へ届きます。
+	// ⚠ **足したらDB再構築**で効きます（`vocabulary` と同じ）。
+	//
+	// ⚠ **コードの宣言と同じ名前は書けません**（`RegisterVocab` が二重登録で落とすのと
+	// 同じ理由——どちらが効いているのか画面から分からず、列の型だけが静かに変わる）。
+	VocabFormats []VocabDef `json:"vocab_formats,omitempty"`
+
 	// MaxUploadMiB は添付1件あたりの上限（MiB）です。0（未指定）なら既定の32
 	// （「サイズ上限32MiBは設定で変えられるように」——2026-08-31 ユーザー決定）。
 	MaxUploadMiB int `json:"max_upload_mib,omitempty"`
@@ -301,6 +316,10 @@ func (s *Settings) parseSections(path string) error {
 
 // applySections は拡張の節を効かせます（設定の差し替えの直後に呼ぶ）。
 func (s *Settings) applySections() {
+	// ⚠ **設定は読み直されることがあります**（DB再構築が `LoadSettings` を通る）。
+	// 毎回 `RegisterVocab` を呼ぶと**二重登録でその場で落ちます**ので、
+	// 「設定から来たぶんだけ入れ替える」口を通します。
+	SetSettingsVocabFormats(s.VocabFormats)
 	for _, apply := range s.applies {
 		apply()
 	}
@@ -309,6 +328,41 @@ func (s *Settings) applySections() {
 // validate は設定の中身を検査します。**不正なら止めます**——読み飛ばすと、
 // 書いたつもりの語が効かないまま集計だけが変わります。
 func (s Settings) validate(path string) error {
+	// ⚠ **形式の検査は語の前に**——名前が空や重複のまま先へ進むと、
+	// どの宣言が効いているのか分からなくなります。
+	seen := map[string]bool{}
+	for i, d := range s.VocabFormats {
+		if strings.TrimSpace(d.Type) == "" {
+			return fmt.Errorf("%s: vocab_formats[%d] に形式名（type）がありません", path, i)
+		}
+		if strings.TrimSpace(d.DisplayName) == "" {
+			return fmt.Errorf("%s: vocab_formats[%d]（%s）に表示名がありません"+
+				"——**見える文字が形式を宣言する**ので、caption や機能見出しに使う名前が要ります",
+				path, i, d.Type)
+		}
+		if seen[d.Type] {
+			return fmt.Errorf("%s: vocab_formats に形式名 %q が2つあります", path, d.Type)
+		}
+		seen[d.Type] = true
+		// ⚠ **コードの宣言だけを見ます**（設定由来のぶんは除く）。素朴に
+		// `VocabDefByType` で見ると、**読み直しのとき前回の自分と衝突**します
+		// ——実データのDB再構築が HTTP 500 で落ちて気づきました。
+		if codeDeclaredVocabType(d.Type) {
+			return fmt.Errorf("%s: 形式名 %q はコードが既に宣言しています"+
+				"（別の名前にしてください。同じ名前だと、どちらが効いているのか画面から分かりません）",
+				path, d.Type)
+		}
+		for j, c := range d.Columns {
+			if strings.TrimSpace(c.Label) == "" {
+				return fmt.Errorf("%s: vocab_formats[%d]（%s）の %d 列目に見出しがありません",
+					path, i, d.Type, j)
+			}
+			if !validColumnTypes[c.Type] {
+				return fmt.Errorf("%s: vocab_formats[%d]（%s）の列 %q の型 %q は使えません（使えるのは %s）",
+					path, i, d.Type, c.Label, c.Type, strings.Join(validColumnTypeNames(), " / "))
+			}
+		}
+	}
 	for word, w := range s.Vocabulary {
 		if strings.TrimSpace(word) == "" {
 			return fmt.Errorf("%s: vocabulary に空の見出し語があります", path)

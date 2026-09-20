@@ -262,6 +262,54 @@ func RegisterVocab(defs ...VocabDef) {
 	}
 }
 
+// settingsVocabCount は、いまレジストリの末尾に載っている**設定由来の形式の数**です。
+//
+// ⚠ **設定は読み直されます**（DB再構築が `LoadSettings` を通る）。毎回足すと
+// `RegisterVocab` が二重登録でその場で落ちるので、**前回のぶんを外してから足します**。
+var settingsVocabCount int
+
+// codeDeclaredVocabType は、その形式名を**コードが宣言しているか**を返します
+// （設定由来のぶんは見ません）。
+//
+// ⚠ **検査の当て先を間違えると、2回目の読み込みで起動できなくなります。**
+// 設定は読み直されるので（DB再構築が `LoadSettings` を通る）、そのとき前回自分が
+// 登録した形式がレジストリに居ます。素朴に `VocabDefByType` で見ると
+// **自分自身を「コードの宣言と衝突している」と判定**します——実データの再構築が
+// HTTP 500 で落ちて気づきました（2026-09-20）。
+func codeDeclaredVocabType(t string) bool {
+	end := len(vocabRegistry) - settingsVocabCount
+	for i := 0; i < end; i++ {
+		if vocabRegistry[i].Type == t {
+			return true
+		}
+	}
+	return false
+}
+
+// SetSettingsVocabFormats は `config/settings.json` の `vocab_formats` を
+// レジストリへ反映します（前回のぶんは外します）。
+//
+// **コードの宣言（`RegisterVocab`）とは別に数えます**——設定を読み直しても、
+// 拡張が `init()` で登録したものは動きません。
+//
+// ⚠ **末尾に固めて置くのが前提**です。コードの宣言は `init()` の時点で出揃い、
+// そのあとに設定が来るので、この順は崩れません。崩すと外す範囲がずれます。
+func SetSettingsVocabFormats(defs []VocabDef) {
+	if settingsVocabCount > 0 {
+		vocabRegistry = vocabRegistry[:len(vocabRegistry)-settingsVocabCount]
+		settingsVocabCount = 0
+	}
+	for _, d := range defs {
+		if codeDeclaredVocabType(d.Type) {
+			// 検査（`Settings.validate`）で弾いているはずですが、ここでも黙って
+			// 後勝ちにはしません——**どちらが効いているのか分からなくなる**ためです。
+			continue
+		}
+		vocabRegistry = append(vocabRegistry, d)
+		settingsVocabCount++
+	}
+}
+
 // VocabDefs は登録済みの全形式定義を Type 順で返します（/api/tag-schema の応答が
 // 呼び出しごとに変わらないようにするため）。
 func VocabDefs() []VocabDef {
