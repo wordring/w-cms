@@ -152,6 +152,99 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"machines": machineNames(user)})
 }
 
+// FilingTargetAPIHandler は GET /api/filing-target です。
+// 整理の欄に打たれた行き先（顧客／段／装置名称／図面名称）に、**既にページがあるか**を返します。
+//
+// ユーザー:「図面名称と装置名称を手がかりに、改定図面や追加図面を認識するはずですが、
+// 問題はそれらは**編集者が微妙に書き換える**ことです。整理画面で編集者が書き換える
+// たびに、既存のページがあるか**検索しなおす**必要があります」（2026-09-20）。
+//
+// ⚠ **先に配っておけない値**です。装置名称の候補は顧客ごとの一覧を先に配って JS で
+// 絞っていますが（`machines`）、図面名称は顧客×段×装置の数だけあるので配れません。
+// だから**打ち替えのたびに聞きます**。
+//
+// ⚠ **調べるだけで、1枚も作りません。** `ensureChildPage` は無ければ作るので使わず、
+// `findChildByTitle` だけで辿ります——**問い合わせただけで空の顧客ページが増える**のは
+// いちばん質の悪い副作用です。
+//
+// ⚠ **読めないページは「無い」と答えます**（見せ分け・C案）。存在を漏らさないためで、
+// 匿名に「読めない」と「存在しない」を区別させない方針と同じです。
+func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := auth.CurrentUser(r)
+	if user == nil {
+		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		return
+	}
+	q := r.URL.Query()
+	customer := cms.NormalizeNameForIngest(q.Get("customer"))
+	stage := strings.TrimSpace(q.Get("stage"))
+	machine := cms.NormalizeNameForIngest(q.Get("machine"))
+	name := cms.NormalizeNameForIngest(q.Get("name"))
+
+	out := map[string]any{"success": true, "exists": false}
+	if customer == "" || machine == "" || name == "" {
+		json.NewEncoder(w).Encode(out) // まだ埋まっていない——「無い」と同じ扱い
+		return
+	}
+	boxID, ok := CustomerBoxPageID()
+	if !ok {
+		json.NewEncoder(w).Encode(out)
+		return
+	}
+	id := boxID
+	for _, title := range []string{customer, stage, machine, name} {
+		if title == "" {
+			json.NewEncoder(w).Encode(out)
+			return
+		}
+		next, found := findChildByTitle(id, title)
+		if !found {
+			json.NewEncoder(w).Encode(out)
+			return
+		}
+		id = next
+	}
+	idInt, err := strconv.Atoi(id)
+	if err != nil || !page.CanView(user, idInt) {
+		json.NewEncoder(w).Encode(out) // 読めないものは「無い」
+		return
+	}
+	out["exists"] = true
+	out["page_id"] = id
+	out["title"] = name
+	// **既に載っている図面番号**を添えます——人が「改定か、別の図面か」を決める
+	// ときの手掛かりです（同じ番号なら改定、違う番号なら別図面のことが多い。
+	// ⚠ **決めるのは人**で、機械はここでも候補までです）。
+	if body, err := cms.ReadPageBody(id); err == nil {
+		out["drawing_nos"] = drawingNosOf(body)
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+// drawingNosOf は本文に載っている図面番号を並べます（図面ブロックごとに1つ）。
+func drawingNosOf(body string) []string {
+	out := []string{}
+	i := 0
+	for {
+		open := cms.IndexSectionTag(body, i)
+		if open < 0 {
+			break
+		}
+		sec, end, ok := cms.SectionBlockAt(body, open)
+		if !ok {
+			break
+		}
+		if strings.Contains(sec, "<h2>図面</h2>") {
+			if no := strings.TrimSpace(drawingNoOf(sec)); no != "" {
+				out = append(out, no)
+			}
+		}
+		i = end
+	}
+	return out
+}
+
 // suggestCustomer は顧客名の推奨値を返します。
 //
 // **読んだ名前ではなく、既にある取引先ページの題を第一にします**（2026-09-06

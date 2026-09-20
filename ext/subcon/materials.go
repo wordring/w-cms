@@ -75,6 +75,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 加工製品ページの整理（提案を出す口と、実行する口）。**提案は何も作りません**
 		// ——顧客名・装置名称のページが生まれるのは実行のときだけ（filing.go）。
 		{Pattern: "/api/filing-proposal", Handler: FilingProposalAPIHandler},
+		// 整理の欄を打ち替えるたびに「その行き先にページがあるか」を聞く口（2026-09-20）。
+		{Pattern: "/api/filing-target", Handler: FilingTargetAPIHandler},
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
 		// 解析済みの印（添付ID → 生まれたページ）。読むだけで何も作りません。
 		{Pattern: "/api/analyzed", Handler: AnalyzedAPIHandler},
