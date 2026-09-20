@@ -131,6 +131,24 @@ type Settings struct {
 	// 仕組みの側に語彙が漏れます。未指定なら**全部見せます**。
 	WebDAVHidden []string `json:"webdav_hidden,omitempty"`
 
+	// CompanyForms は社名から落とす**法人格**です（`株式会社`・`(株)`・`有限会社` …）。
+	//
+	// ユーザー:「見たままと裏の動作が一致してほしいので、できればページを作る時に
+	// 表記ゆれを無くしたい。株式会社や有限会社、（株）などを無くした社名が連絡帳に
+	// あれば、それを提案するような形で、編集者の承認を得てはどうでしょう？」（2026-09-20）。
+	//
+	// ⚠ **これは索引に入りません。** `char_folding` は比較値（`norm_value`）に効きますが、
+	// こちらは**候補を探すときだけ**に使います。落とした形を保存すると、画面の
+	// 「株式会社南北…」と裏の「南北…」が食い違い、**見たままと裏が一致しなくなる**
+	// ——それを避けるのがこの設計の目的なので、保存しては本末転倒です。
+	// ページに入るのは、人が承認した**連絡帳にある実物の題**です。
+	//
+	// **前株・後株のどちらも落とします**（`株式会社○○` も `○○(株)` も実データにある）。
+	// NFKC が `㈱`→`(株)` まで開くので、表には開いたあとの形を書けば足ります。
+	//
+	// **未指定なら何も落としません**（既定の表はありません——設定が唯一の正本）。
+	CompanyForms []string `json:"company_forms,omitempty"`
+
 	// WebDAVReadOnly は WebDAV から**書き換えられない**ページの題です（祖先まで効きます）。
 	//
 	// ユーザー:「編集するCADファイルは弊社の物です。メール由来のものではありません」
@@ -492,4 +510,17 @@ func readOnlyWebDAVTitles() map[string]bool {
 		}
 	}
 	return out
+}
+
+// CompanyForms は社名から落とす法人格の一覧です（設定の `company_forms`）。
+//
+// ⚠ **索引には効きません**——候補を探すときだけに使います（理由は
+// normalize_company.go の冒頭）。既定は**空**で、何も落としません。
+func CompanyForms() []string {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	if settings == nil {
+		return nil
+	}
+	return settings.CompanyForms
 }
