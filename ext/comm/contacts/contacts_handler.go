@@ -186,9 +186,12 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	added := 0
 	var err error
 	if person != "" {
-		pid, err := EnsureContactPerson(user, target, person)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "担当者ページを作れません: "+err.Error())
+		// ⚠ `:=` で err を作り直さないこと（2026-09-21 に staticcheck が見つけた）。
+		// 内側の err に代入すると、下の `if err != nil` は外側の nil を見て
+		// **足せなかった事実が黙って落ちます**。
+		pid, perr := EnsureContactPerson(user, target, person)
+		if perr != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "担当者ページを作れません: "+perr.Error())
 			return
 		}
 		dest, destTitle = pid, orgTitle+"／"+person
