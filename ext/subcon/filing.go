@@ -668,13 +668,27 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// **人が選びます**。画面は打ち替えのたびに `/api/filing-target` へ聞いて、
 	// ページがあれば選択肢を出します。
 	if existing, found := findChildByTitle(machineID, name); found && existing != pageID {
-		// **同じ添付からの重複は、どちらを選んでも止めます**（確認しても通さない）。
-		if dup, err := duplicateSource(pageID, existing); err != nil {
+		// ⚠ **同じ添付・同じ図面番号は「疑わしい」**——止めずに人へ確認します
+		// （2026-09-20 ユーザー:「実は、同じ添付同じPDFの中に同じ図面番号で別図面が
+		// 入っているものがありました」）。**機械には重複を判定できません**ので、
+		// 最後の砦は「人が確認の文を読む」ことだけになりました。
+		suspicious, err := suspiciousSameSource(pageID, existing)
+		if err != nil {
 			return filingResult{PageID: pageID, Outcome: "skipped",
 				Message: "合流先を調べられません: " + err.Error()}
-		} else if dup {
-			return filingResult{PageID: pageID, Outcome: "skipped", TargetID: existing,
-				Message: "同じ添付から作られた図面が既にあります（重複なので合流しません）"}
+		}
+		if suspicious && !row.ConfirmRevision {
+			return filingResult{PageID: pageID, Outcome: "needs_confirm", TargetID: existing,
+				Message: "「" + name + "」に、同じ添付から作られた同じ図面番号の図面が既にあります。" +
+					"⚠ 本来、同じ図番で別の図面はあってはならないので、" +
+					"二重に整理した可能性が高いです。" +
+					"先方の誤りで**実際に別の図面**なら、「承知のうえで進める」にチェックして実行してください"}
+		}
+		if suspicious {
+			// ⚠ **通したことを残します。** 本来あってはならない形（同じ図番で別図面）を
+			// 人の判断で受け入れた、という事実は、あとから「なぜ同じ番号が2枚あるのか」を
+			// 調べる人にとって唯一の手掛かりです。
+			auth.Audit(user.Username, "file-drawing.same-number-accepted", pageID+" -> "+existing)
 		}
 
 		switch row.Merge {

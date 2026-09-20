@@ -4204,14 +4204,17 @@
             // 偽の改定を止める意味が薄れます。
             //
             // ⚠ **上の選択とは別の問い**です。あちらは「改定か二つ目の図面か」、
-            // こちらは「図面番号が同じだけど本当に改定か」。
+            // こちらは「疑わしい点を承知のうえで進めるか」——⚠ **疑わしさは2種類**
+            // あります: 図面番号が既存の版と同じ／**同じ添付から来た同じ図面番号**
+            // （本来あってはならないが、先方の誤りで実在する。2026-09-20）。
+            // どちらなのかは実行が返す文が言います。
             const confirm = document.createElement('label');
             confirm.className = 'filing-confirm';
             confirm.hidden = true;
             const box = document.createElement('input');
             box.type = 'checkbox';
             confirm.appendChild(box);
-            confirm.appendChild(document.createTextNode(' 番号が同じだが改定として合流'));
+            confirm.appendChild(document.createTextNode(' 承知のうえで進める'));
             tdConfirm.appendChild(confirm);
             tr.appendChild(tdConfirm);
 

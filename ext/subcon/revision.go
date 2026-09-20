@@ -239,12 +239,16 @@ var revNumberRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>[0-9]+</td><td
 // duplicateReason は合流させてよいかを調べ、止める理由を返します
 // （空なら合流してよい）。needsConfirm は「人が確認すれば通してよい」の印です。
 func duplicateReason(block, dstBody string, confirmed bool) (reason string, needsConfirm bool) {
-	// 確実な重複——同じ添付から作られている。確認しても通しません。
-	if sameSourceAttachment(block, dstBody) {
-		return "同じ添付から作られた図面が既にあります（重複なので合流しません）", false
-	}
 	if confirmed {
 		return "", false
+	}
+	// ⚠ **疑わしい——同じ添付から来た、同じ図面番号の図面が既にあります。**
+	// 2026-09-20 まで「確実な重複」として問答無用で止めていましたが、**同じPDFの中に
+	// 同じ図面番号で別の図面が入っていること**が分かったので、人に確認します。
+	if sameSourceAttachment(block, dstBody) {
+		return "同じ添付から作られた、同じ図面番号の図面が既にあります。" +
+			"同じPDFに同じ番号で別の図面が入っていることもあるので、" +
+			"**別の図面なら**「承知のうえで進める」にチェックして実行してください", true
 	}
 	// 疑わしい——図面番号が既存の版と同じ。改定なら普通は番号が変わります。
 	no := strings.TrimSpace(drawingNoOf(block))
@@ -364,21 +368,74 @@ func insertAfterDrawings(body, block string) string {
 	return body[:at] + block + body[at:]
 }
 
-// sameSourceAttachment は、運ぶブロックと**同じ添付から作られた図面**が行き先に
-// 既にあるかを返します（`受信元` の値が一致するか）。
+// sameSourceAttachment は「同じ添付から来た、同じ図面番号の図面」が行き先に既に
+// あるかを返します。**疑わしさの印であって、重複の証明ではありません。**
 //
-// ⚠ **これは「確実な重複」です**——改定でも二つ目の図面でもなく、同じものを2度
-// 整理しただけ。**どちらを選んでも通しません**。
+// ── ⚠ 機械には重複を判定できません（2026-09-20 に2段階で分かった）─────────
+//
+// もとは「同じ添付なら確実な重複」として**問答無用で止めて**いました。ところが:
+//
+//  1. ユーザー:「一つのPDFに複数の図面が入っている場合もあるようです」
+//     → 同じ添付でも別の図面がありうる。図面番号も見るようにした。
+//  2. ユーザー:「実は、**同じ添付同じPDFの中に同じ図面番号で別図面**が入っている
+//     ものがありました」
+//     → **番号も当てにならない。手掛かりが1つも残らない。**
+//
+// なので**止めるのをやめ、人に確認します**。このプロジェクトで繰り返している形
+// ——機械は疑わしいと言うところまで、決めるのは人。
+//
+// ⚠ **代償は正直に**: 二重整理を機械が止める最後の砦が無くなりました。守りは
+// 「人が確認の文を読む」ことだけです。だから文面に**何が疑わしいのか**を書きます。
+//
+// ⚠ **図面番号が読めないときも疑わしいとみなします**（安全側）。区別する手掛かりが
+// 無いので、人に一度見てもらいます。
 func sameSourceAttachment(block, dstBody string) bool {
 	m := sourceRefRe.FindStringSubmatch(block)
 	if m == nil || strings.TrimSpace(m[1]) == "" {
 		return false
 	}
-	return strings.Contains(dstBody, "<dd>"+m[1]+"</dd>")
+	if !strings.Contains(dstBody, "<dd>"+m[1]+"</dd>") {
+		return false // そもそも別の添付から来ている
+	}
+	no := strings.TrimSpace(drawingNoOf(block))
+	if no == "" {
+		return true // 番号が読めない——区別できないので止める
+	}
+	// 行き先に**同じ添付から来た同じ番号の図面**が居るか。
+	for _, sec := range drawingSectionsOf(dstBody) {
+		if !strings.Contains(sec, "<dd>"+m[1]+"</dd>") {
+			continue
+		}
+		if strings.TrimSpace(drawingNoOf(sec)) == no {
+			return true
+		}
+	}
+	return false
 }
 
-// duplicateSource はページ同士で同じことを調べます（整理の分岐から使う口）。
-func duplicateSource(srcPageID, dstPageID string) (bool, error) {
+// drawingSectionsOf は本文の図面ブロックを並べます（入れ子を数えて切ります）。
+func drawingSectionsOf(body string) []string {
+	out := []string{}
+	i := 0
+	for {
+		open := cms.IndexSectionTag(body, i)
+		if open < 0 {
+			return out
+		}
+		sec, end, ok := cms.SectionBlockAt(body, open)
+		if !ok {
+			return out
+		}
+		if strings.Contains(sec, "<h2>図面</h2>") {
+			out = append(out, sec)
+		}
+		i = end
+	}
+}
+
+// suspiciousSameSource はページ同士で同じことを調べます（整理の分岐から使う口）。
+// **真なら「疑わしい」**——止める理由ではなく、人に確認する理由です。
+func suspiciousSameSource(srcPageID, dstPageID string) (bool, error) {
 	srcBody, err := cms.ReadPageBody(srcPageID)
 	if err != nil {
 		return false, err
