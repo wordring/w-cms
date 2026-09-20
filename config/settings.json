@@ -15,6 +15,7 @@
     "品番": { "type": "code" },
     "発注書番号": { "type": "code" },
     "受信元": { "type": "ref" },
+    "弊社品番": { "type": "ref" },
     "返信元": { "type": "ref" },
     "相手": { "type": "ref" },
     "連絡帳": { "type": "ref" },

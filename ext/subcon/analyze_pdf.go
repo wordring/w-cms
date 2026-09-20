@@ -345,14 +345,29 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 		html.EscapeString(hostPageID+"-"+attachID) + "</dd>")
 	b.WriteString("</dl>")
 	b.WriteString(`<table data-type="client-order-items"><tbody>`)
-	b.WriteString("<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>")
+	// ⚠ **見出しは宣言から組みます**（2026-09-20）。列を足したのに見出しを手で書いた
+	// ままだと、**宣言と本文が黙ってずれます**——索引は見出しの表示文字で引くので、
+	// ずれた列はどこからも読めません。`vocab.go` が正本です。
+	b.WriteString("<tr>")
+	for _, c := range clientOrderItemColumns() {
+		b.WriteString("<th>" + html.EscapeString(c.Label) + "</th>")
+	}
+	b.WriteString("</tr>")
 	for _, it := range j.Items {
 		// 日付と数値は**正規形で書き起こす**（D-3「正規化は取り込み時に行う」）。
 		// 読めなければ生のまま入ります——取り込みは情報を捨てない。
-		b.WriteString("<tr><td>" + html.EscapeString(it.ItemNo) + "</td>" +
+		//
+		// ⚠ **弊社品番・納期・備考は空で出します。** 解析には決められません——
+		// 弊社品番は人が文脈から結び、納期と備考は発注書の様式しだいです（様式ページの
+		// 対応表が入ったら、そこから埋まります）。**書く場所が見えていれば人が埋めます**
+		// （図面ブロックで空欄の `客先` を出しているのと同じ理由）。
+		b.WriteString("<tr><td></td>" + // 弊社品番（人が結ぶ）
+			"<td>" + html.EscapeString(it.ItemNo) + "</td>" +
 			"<td>" + html.EscapeString(it.ItemName) + "</td>" +
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("単価", it.Price)) + "</td>" +
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("数量", it.Quantity)) + "</td>" +
+			"<td></td>" + // 納期
+			"<td></td>" + // 備考
 			"<td>未着手</td></tr>")
 	}
 	b.WriteString("</tbody></table>")
