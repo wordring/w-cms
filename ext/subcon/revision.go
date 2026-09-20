@@ -169,7 +169,9 @@ func linkRevisionRow(body, no, oldPageID string) string {
 	if no == "" || oldPageID == "" {
 		return body
 	}
-	at := strings.Index(body, `<table data-type="drawing-revision-items">`)
+	// ⚠ **`InsertRevisionRow` と同じ口を通します**（2026-09-20）。ここだけ生の文字列で
+	// 探していると、`caption` へ移した日に**リンクだけ静かに付かなくなります**。
+	at := revisionTableAt(body)
 	if at < 0 {
 		return body
 	}

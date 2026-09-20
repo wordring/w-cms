@@ -500,7 +500,7 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
 func revisionsSectionHTML(j *orderJudgment, existingBody string) string {
 	var b strings.Builder
 	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>改訂履歴</h2>`)
-	b.WriteString(`<table data-type="drawing-revision-items"><tbody>`)
+	b.WriteString(`<table data-type="` + revisionItemsType + `"><tbody>`)
 	b.WriteString("<tr><th>版</th><th>図面番号</th><th>受領日</th></tr>")
 	b.WriteString(revisionRowHTML(1, j.DrawingNo, existingBody))
 	b.WriteString("</tbody></table></section>")
@@ -521,7 +521,7 @@ var revisionRowRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>`)
 // 版番号を1つ進めた本文を返します。履歴が無い本文はそのまま返します
 // （手で消した・古い形のページ——黙って作り直すと版番号が狂うため）。
 func InsertRevisionRow(bodyHTML, drawingNo string) string {
-	at := strings.Index(bodyHTML, `<table data-type="drawing-revision-items">`)
+	at := revisionTableAt(bodyHTML)
 	if at < 0 {
 		return bodyHTML
 	}
@@ -533,4 +533,42 @@ func InsertRevisionRow(bodyHTML, drawingNo string) string {
 	insertAt := at + head + len("</tr>")
 	rev := len(revisionRowRe.FindAllString(bodyHTML, -1)) + 1
 	return bodyHTML[:insertAt] + revisionRowHTML(rev, drawingNo, bodyHTML) + bodyHTML[insertAt:]
+}
+
+// revisionItemsType は改訂履歴の明細表の形式名です。
+//
+// ⚠ **2箇所が同じ表を文字列で探します**（`InsertRevisionRow` と `linkRevisionRow`）。
+// 生の文字列で持つと、**片方だけ直したときに黙って効かなくなります**——表が
+// 見つからなければどちらも**本文をそのまま返す**ので、エラーが出ません。
+const revisionItemsType = "drawing-revision-items"
+
+// revisionTableAt は改訂履歴の表の開始位置を返します（無ければ -1）。
+//
+// ⚠ **2つの書き方を両方見ます**（2026-09-20）。形式の宣言は `data-type` 属性から
+// **見える文字（`<caption>`）へ移る途中**で、しばらく併存します
+// （[docs/【考察】発注書から受注明細へ.md] §2.4）。
+//
+// ⚠ **片方しか見ていないと、caption へ移した日に改定が黙って積まれなくなります**
+// ——`InsertRevisionRow` は表が見つからなければ**本文をそのまま返す**ので、
+// エラーも出ません。気づくのは「版が増えていない」と誰かが思ったときです。
+//
+// **HTMLをパースせず文字列で探すのは、このファイルの作法です**——本文は正本なので、
+// 触っていない所を1バイトも変えないため（`replaceFirstFieldValue` と同じ理由）。
+func revisionTableAt(bodyHTML string) int {
+	// ① 属性で名乗っている（既存の本文）。
+	if at := strings.Index(bodyHTML, `<table data-type="`+revisionItemsType+`">`); at >= 0 {
+		return at
+	}
+	// ② caption で名乗っている（新しい書き方）。表の開始位置を返すので、
+	//    caption を見つけたら**その表の `<table` まで戻ります**。
+	def, ok := cms.VocabDefByType(revisionItemsType)
+	if !ok {
+		return -1
+	}
+	cap := "<caption>" + def.DisplayName + "</caption>"
+	capAt := strings.Index(bodyHTML, cap)
+	if capAt < 0 {
+		return -1
+	}
+	return strings.LastIndex(bodyHTML[:capAt], "<table")
 }
