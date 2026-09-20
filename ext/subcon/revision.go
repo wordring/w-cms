@@ -127,21 +127,27 @@ func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []str
 // **`section` が入れ子にならない前提**です——業務ブロックは機能見出し形で平らに並ぶ
 // （入れ子にする書き方が無い）。見出しの文字で見分けるのは、機能見出し形そのもの
 // ——機械キーを本文へ書く属性はありません。
+// ⚠ **入れ子を数えて切ります**（2026-09-20）。図面ブロックは中にファイル表示の節を
+// 含むので、「最初に出会う `</section>` まで」で切ると**余分な `</section>` が1つ
+// 残ります**。それまではその余りが、運ぶ側（`FirstBlockHTML`）の**閉じ足りない
+// ブロック**と噛み合って釣り合っていました——**2つの誤りが打ち消し合っていた**わけで、
+// 片方だけ直すと崩れます。いまはどちらも `cms.SectionBlockAt` を通ります。
+//
+// ⚠ **入れ子の節は自分では拾いません。** `IndexSectionTag` で見つけた位置から
+// ブロック丸ごと飛ばすので、図面ブロックの中のファイル表示が別のブロックとして
+// 数えられることはありません。
 func extractDrawingSections(body string) (blocks []string, rest string) {
 	var out strings.Builder
 	i := 0
 	for {
-		open := strings.Index(body[i:], "<section")
+		open := cms.IndexSectionTag(body, i)
 		if open < 0 {
 			break
 		}
-		open += i
-		close := strings.Index(body[open:], "</section>")
-		if close < 0 {
+		sec, end, ok := cms.SectionBlockAt(body, open)
+		if !ok {
 			break
 		}
-		end := open + close + len("</section>")
-		sec := body[open:end]
 		if strings.Contains(sec, "<h2>図面</h2>") {
 			blocks = append(blocks, sec)
 			out.WriteString(body[i:open]) // ブロックは落とし、間の本文は残す

@@ -99,18 +99,82 @@ func SetPageH1(pageID, author, title string) error {
 	})
 }
 
+// IndexSectionTag は from 以降で最初の `<section` **開始タグ**の位置を返します
+// （無ければ -1）。`</section>` には当たりません（`<` の次が `/` なので）。
+//
+// タグ名の切れ目まで見るのは、`<sectionfoo` のような別の要素に当たらないためです。
+func IndexSectionTag(bodyHTML string, from int) int {
+	for i := from; i < len(bodyHTML); {
+		at := strings.Index(bodyHTML[i:], "<section")
+		if at < 0 {
+			return -1
+		}
+		at += i
+		next := at + len("<section")
+		if next >= len(bodyHTML) {
+			return -1
+		}
+		switch bodyHTML[next] {
+		case '>', ' ', '/', '\t', '\n', '\r':
+			return at
+		}
+		i = next
+	}
+	return -1
+}
+
+// SectionBlockAt は open から始まる `<section>` ブロックを、**入れ子を数えて**
+// 丸ごと返します。end は閉じタグの直後の位置です。
+//
+// ⚠ **入れ子を数えるのが肝です。** 図面ブロックは中にファイル表示の節を含むので
+// （`<section data-type="file-view">`）、「最初に出会う `</section>` まで」で切ると
+// **閉じ足りない壊れたHTML**になります。2026-09-20 まで実際にそう切っていました
+// ——本文へ入れるとサニタイズが後ろの節を**その中へ飲み込み**、図面ブロックを
+// 消したときに改訂履歴や材料まで一緒に消える形でした。
+//
+// ⚠ **当時それが表に出なかったのは、取り除く側（`extractDrawingSections`）が
+// 同じ切り方で「余分な `</section>`」を1つ残していたからです**——**2つの誤りが
+// 噛み合って釣り合っていました**。片方だけ直すと崩れるので、直すときは両方です。
+func SectionBlockAt(bodyHTML string, open int) (block string, end int, ok bool) {
+	if open < 0 || open >= len(bodyHTML) {
+		return "", 0, false
+	}
+	depth := 0
+	i := open
+	for i < len(bodyHTML) {
+		nextClose := strings.Index(bodyHTML[i:], "</section>")
+		if nextClose < 0 {
+			return "", 0, false // 閉じ足りない本文（壊れている）
+		}
+		nextClose += i
+		if nextOpen := IndexSectionTag(bodyHTML, i); nextOpen >= 0 && nextOpen < nextClose {
+			depth++
+			i = nextOpen + len("<section")
+			continue
+		}
+		depth--
+		i = nextClose + len("</section>")
+		if depth == 0 {
+			return bodyHTML[open:i], i, true
+		}
+	}
+	return "", 0, false
+}
+
 // FirstBlockHTML は本文から最初の <section>…</section> を取り出します
 // （無ければ空）。改定図面の合流で「新しい図面ブロックだけ」を運ぶために使います。
+//
+// **入れ子を数えます**（`SectionBlockAt` の注記）。
 func FirstBlockHTML(bodyHTML string) string {
-	open := strings.Index(bodyHTML, "<section")
+	open := IndexSectionTag(bodyHTML, 0)
 	if open < 0 {
 		return ""
 	}
-	close := strings.Index(bodyHTML[open:], "</section>")
-	if close < 0 {
+	block, _, ok := SectionBlockAt(bodyHTML, open)
+	if !ok {
 		return ""
 	}
-	return bodyHTML[open : open+close+len("</section>")]
+	return block
 }
 
 // ReadPageBody はページ本文（保存されている生のHTML）を読みます。
