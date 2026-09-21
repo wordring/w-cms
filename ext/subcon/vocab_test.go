@@ -59,7 +59,7 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		"required-materials", "drawing-revisions", "drawing-revision-items",
 		"part-outsourcing", "part-purchased", "part-supplied", "part-estimate",
 		// ⚠ **ビューの器**（2026-09-21）——材質・形状・寸法で材料を探す欄。
-		MaterialSearchViewType,
+		MaterialSearchViewType, UnorderedViewType,
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))

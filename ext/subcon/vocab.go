@@ -403,6 +403,16 @@ var businessVocab = []cms.VocabDef{
 		},
 	},
 	{
+		// 未手配の一覧（2026-09-21）。⚠ **受注を横断します**——発注は納期のグループ
+		// などから出るので、1つの受注ページの中だけを見ても発注書は組めません。
+		Type:        UnorderedViewType,
+		DisplayName: "未手配の一覧",
+		Category:    "ビュー",
+		Icon:        "🧾",
+		Element:     "section",
+		View:        true,
+	},
+	{
 		// 材料を探す欄（2026-09-21）。ユーザー:「あとで**材質形状寸法で検索**したい
 		// ときがあります」。⚠ **器だけの宣言**で、中身はサーバーが描きます。
 		Type:        MaterialSearchViewType,

@@ -6302,3 +6302,105 @@ document.addEventListener('click', (e) => {
         if (go) { e.preventDefault(); search(go); }
     });
 })();
+
+// ── 未手配の一覧から発注書を作る（2026-09-21）────────────────────────────
+//
+// ユーザー:「弊社の発注書は、**受注明細の単位とは無関係に、納期のグループなどから
+// 発行**されます」。⚠ **だから起点は受注ページではなく、受注横断の未手配の一覧**です。
+//
+// ⚠ **仕入先を決めるのは人**（相見積もりを見て決めるので機械には決められない）。
+// ここの仕事は**選ばれた行を送ることと、結果を出すこと**だけです。
+//
+// ⚠ **選ばれていない行は何もしません**——既定は未選択で、押した行だけが入ります。
+(function wireUnorderedOrder() {
+    // ⚠ **送る値は属性から採ります**（表示は丸めることがあるので本文から読まない）。
+    function lineOf(tr) {
+        const d = tr.dataset;
+        return {
+            product_id: d.product || '',
+            material: d.material || '',
+            shape: d.shape || '',
+            size: d.size || '',
+            item_name: d.itemname || '',
+            quantity: d.qty || '',
+            unit: '',
+            cost: d.cost && d.cost !== '0' ? d.cost : '',
+            note: '',
+        };
+    }
+
+    function say(box, text, cls) {
+        box.textContent = '';
+        const p = document.createElement('p');
+        if (cls) p.className = cls;
+        p.textContent = text;
+        box.appendChild(p);
+        return p;
+    }
+
+    async function create(go) {
+        const form = go.closest('.unorder-form');
+        const root = form && form.parentElement;
+        const box = root ? root.querySelector('[data-unorder-result]') : null;
+        const table = root ? root.querySelector('.unorder-table') : null;
+        if (!form || !box || !table) return;
+
+        const picked = [...table.querySelectorAll('.unorder-check')]
+            .filter((c) => c.checked)
+            .map((c) => lineOf(c.closest('tr')));
+        if (picked.length === 0) {
+            // ⚠ **黙って何もしないのがいちばん困る壊れ方**です。
+            say(box, '⚠ 発注する行を選んでください', 'proc-why-ng');
+            return;
+        }
+        const val = (k) => {
+            const el = form.querySelector('[data-unorder="' + k + '"]');
+            return el ? el.value.trim() : '';
+        };
+        const body = {
+            supplier: val('supplier'), order_at: val('order_at'),
+            due: val('due'), note: val('note'), lines: picked,
+        };
+        if (!body.supplier) {
+            say(box, '⚠ 仕入先を入れてください（発注書は1枚に1社です）', 'proc-why-ng');
+            return;
+        }
+        go.disabled = true;
+        say(box, '発注書を作っています…');
+        try {
+            const res = await fetch('/api/our-order/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) {
+                say(box, (d && d.message) || ('作れません（' + res.status + '）'), 'proc-why-ng');
+                return;
+            }
+            // ⚠ **できたページへ行ける形で出します**——「できました」だけだと、
+            //    どこにできたのか分からず探すことになります。
+            box.textContent = '';
+            const p = document.createElement('p');
+            p.appendChild(document.createTextNode('発注書を作りました: '));
+            const a = document.createElement('a');
+            a.href = d.url || ('/' + d.page_id);
+            a.textContent = d.page_id;
+            p.appendChild(a);
+            p.appendChild(document.createTextNode('（' + picked.length + '行）'));
+            box.appendChild(p);
+        } catch (e) {
+            say(box, '作れません（通信に失敗しました）', 'proc-why-ng');
+        } finally {
+            go.disabled = false;
+        }
+    }
+
+    // ⚠ **document へ委譲します**——ビューはサーバーが描き直すので、要素ごとに
+    //    配線すると描き直しのたびに切れます。
+    document.addEventListener('click', (e) => {
+        const go = e.target && e.target.closest ? e.target.closest('[data-unorder-go]') : null;
+        if (go) create(go);
+    });
+})();

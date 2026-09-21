@@ -2388,3 +2388,15 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .proc-oqty { color: var(--text-muted, #6b7280); }
 /* ⚠ **未手配を黙らない**（空欄だと「発注済み」に見える）。色だけに頼らず `⚠` も付く。 */
 #w-editor-content .proc-none { color: var(--text-muted, #6b7280); font-style: italic; }
+
+/* ── 未手配の一覧（2026-09-21）──────────────────────────────────────────
+   ⚠ **受注を横断する表**です。ここから発注書を1枚作ります。 */
+#w-editor-content .unorder-help {
+    margin: 0 0 8px;
+    color: var(--text-muted, #6b7280);
+    font-size: 0.9em;
+}
+#w-editor-content .unorder-pick { width: 2.5em; text-align: center; }
+#w-editor-content .unorder-cost { white-space: nowrap; }
+#w-editor-content .unorder-form { margin-top: 10px; }
+#w-editor-content .unorder-result { margin-top: 8px; font-size: 0.95em; }

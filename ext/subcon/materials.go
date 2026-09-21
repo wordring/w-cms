@@ -39,6 +39,8 @@ func init() {
 	cms.RegisterView("required-materials", procurementViewHTML)
 	// 材料を探す欄（2026-09-21・view_material_search.go）。
 	cms.RegisterView(MaterialSearchViewType, materialSearchViewHTML)
+	// 未手配の一覧（2026-09-21・view_unordered.go）。ここから発注書を1枚作ります。
+	cms.RegisterView(UnorderedViewType, unorderedViewHTML)
 
 	// **受注の置き場は管理画面のボタンで作れます**（2026-09-16）。
 	// 整理のときにも自動で作られます（`cms.EnsureTopLevelBox`）——先に作れるように
@@ -108,6 +110,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ **読めないページは混ぜません**——材料の表には誰でも行を書けるので、
 		// 絞らないと読めない発注書の単価と仕入先が引けてしまいます。
 		{Pattern: "/api/material-search", Handler: MaterialSearchAPIHandler},
+		// 未手配の一覧から発注書を1枚作る口（2026-09-21・our_order_new.go）。
+		// ⚠ **仕入先が無ければ作りません**——1枚＝1社が発注書の単位です。
+		{Pattern: "/api/our-order/new", Handler: NewOurOrderAPIHandler},
 	}
 }
 
