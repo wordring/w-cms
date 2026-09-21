@@ -456,18 +456,39 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 		`<caption>` + html.EscapeString(displayNameOf(clientOrderItemsType)) + `</caption><tbody>`)
 	b.WriteString(headerRowHTML(clientOrderItemsType))
 	for _, it := range j.Items {
-		// 日付と数値は**正規形で書き起こす**（D-3「正規化は取り込み時に行う」）。
-		// 読めなければ生のまま入ります——取り込みは情報を捨てない。
+		// ── 弊社の表は**正規形で書き起こします**（2026-09-21 ユーザー決定）──
 		//
-		// ⚠ **弊社品番・納期・備考は空で出します。** 解析には決められません——
-		// 弊社品番は人が文脈から結び、納期と備考は発注書の様式しだいです（様式ページの
+		// ユーザー:「品名が半角カナになっているので、正規化します。半角カナ以外も
+		// 正規化します」。実データの品名が `ﾌﾞﾗｹｯﾄ` の形で届きました。
+		//
+		// ⚠ **半角カナのままだと、同じ品物が2つの綴りで並びます**——`ブラケット` と
+		// `ﾌﾞﾗｹｯﾄ` は**画面では似て見えるのに、検索では別物**です。索引の畳んだ値
+		// （`norm_value`）は NFKC を通るので引くほうは当たりますが、**人が読む値**
+		// （`value`・表の見た目）は半角のまま残り、目で見比べる人が揺れます。
+		//
+		// 通すのは `NormalizeNameForIngest`（NFKC＋空白の詰め）で、`NormalizeCode`
+		// ではありません——長音を潰すと `レーザー` が `レ-ザ-` になります。
+		//
+		// ⚠ **「機械は text を書き換えない」の例外です。** 理由は
+		// [normalize_ingest.go] が図面名称で述べているのと同じで、**原本がページに
+		// 出ているから**です——食い違えば、すぐ上の「読んだまま」の表と、その上の
+		// PDF で見比べられます。原本の写しは**畳みません**（読んだままが正本）。
+		//
+		// 日付と数値は従来どおり正規形で書き起こします（D-3「正規化は取り込み時に
+		// 行う」）。読めなければ生のまま入ります——取り込みは情報を捨てない。
+		//
+		// ⚠ **弊社品番・備考は空で出します。** 解析には決められません——
+		// 弊社品番は人が文脈から結び、備考は発注書の様式しだいです（様式ページの
 		// 対応表が入ったら、そこから埋まります）。**書く場所が見えていれば人が埋めます**
 		// （図面ブロックで空欄の `客先` を出しているのと同じ理由）。
 		b.WriteString("<tr><td></td>" + // 弊社品番（人が結ぶ）
-			"<td>" + html.EscapeString(it.ItemNo) + "</td>" +
-			"<td>" + html.EscapeString(it.ItemName) + "</td>" +
+			"<td>" + html.EscapeString(cms.NormalizeNameForIngest(it.ItemNo)) + "</td>" +
+			"<td>" + html.EscapeString(cms.NormalizeNameForIngest(it.ItemName)) + "</td>" +
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("数量", it.Quantity)) + "</td>" +
-			"<td>" + html.EscapeString(it.Unit) + "</td>" +
+			// ⚠ **単位も畳みます**——`ｾｯﾄ` のまま入ると選択肢（`個`／`セット`）の
+			// どちらにも当たらず、**画面が「見慣れない単位」として色を付けます**。
+			// まれにしか出ない単位ほど、揺れたまま気づかれません。
+			"<td>" + html.EscapeString(cms.NormalizeNameForIngest(it.Unit)) + "</td>" +
 			"<td>" + html.EscapeString(cms.CanonicalForIngest("単価", it.Price)) + "</td>" +
 			// ⚠ **行の納期は、受注時はページの納期と同じ**（2026-09-20 ユーザー:
 			// 「行の納期は、受注時にはタグの納期と同じです。**その後顧客の依頼や
@@ -481,7 +502,11 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 			//
 			// 出荷済みは空が「まだ出していない」。⚠ **分納があるので要ります**
 			// ——「100個のうち40個だけ出した」は `状態` だけでは表せません。
-			"<td>" + html.EscapeString(j.DueDate) + "</td>" + // 納期（受注時はページと同じ）
+			// ⚠ **行の納期もページのタグと同じ作法を通します**（2026-09-21）。
+			// それまでここだけ生のまま書いていたので、先方が `2026/10/15` と
+			// 書いていると**ページのタグは `2026-10-15`、行は `2026/10/15`** と
+			// 食い違いました。`date` として読めない値（「最短納期」）はそのまま残ります。
+			"<td>" + html.EscapeString(cms.CanonicalForIngest(DueDateTag, j.DueDate)) + "</td>" +
 			"<td></td>" + // 出荷済み
 			"<td></td>" + // 備考（⚠ 先方の `サイズ` はここへ入ります・様式の対応表が入ったら）
 			"<td>未着手</td></tr>")
