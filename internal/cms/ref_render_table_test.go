@@ -129,3 +129,34 @@ func TestTableRefIgnoresNonRefColumns(t *testing.T) {
 		t.Errorf("⚠ 参照でない列を参照として扱っています（2026-09-04 の事故の再来）:\n%s", got)
 	}
 }
+
+// TestTableRefSkipsChromeRows は、⚠ **鏡が描いた行を本文データとして読まない**ことを
+// 固定します。
+//
+// ⚠ **2026-09-21 に実データで踏みました。** 検算の鏡が `<tfoot>` へ足す行は
+// `colspan` で横いっぱいのセル1つなので、**1列目（`弊社品番`＝`ref`）の値**と
+// 読まれ、**「✓ 合っています」の行が宙ぶらりんの参照の薄赤で塗られて**いました
+// ——**合格を警告の色で見せる**、いちばん誤解を生む壊れ方です。
+//
+// ⚠ **順番がこの罠を作ります**——`RenderReferenceLinks` は `RenderComputedViews` の
+// **後**に走るので、**鏡が描いたものを本文として読みます**。クロームを足す鏡が
+// 増えるたびに同じ穴が開くので、番人をここに置きます。
+func TestTableRefSkipsChromeRows(t *testing.T) {
+	setupSaveTest(t)
+
+	body := `<h1>受注</h1><table data-type="client-order-items"><tbody>` + orderItemsHeader +
+		`<tr><td></td><td>P103-227-6</td><td>ブラケット</td><td>390</td>` +
+		`<td>100</td><td></td><td></td><td>未着手</td></tr>` +
+		`</tbody><tfoot class="vocab-chrome">` +
+		`<tr class="order-checksum checksum-ok"><td colspan="8">✓ 検算: 合っています</td></tr>` +
+		`</tfoot></table>`
+
+	got := RenderReferenceLinks(body)
+	if strings.Contains(got, "ref-missing") {
+		t.Errorf("⚠ 鏡の行を宙ぶらりんの参照として塗っています（合格が警告の色になります）:\n%s", got)
+	}
+	// 本文の行はこれまでどおり扱われること（空欄なので薄赤にはならない）。
+	if !strings.Contains(got, "✓ 検算: 合っています") {
+		t.Errorf("鏡の行が消えています:\n%s", got)
+	}
+}

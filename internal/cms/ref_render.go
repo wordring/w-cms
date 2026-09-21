@@ -338,6 +338,20 @@ func linkRefCells(table *html.Node) bool {
 
 	changed := false
 	for _, row := range rows[1:] {
+		// ⚠ **クロームの行は本文データではありません**（2026-09-21 に実データで踏んだ）。
+		// 表の上（`linkRefCells(table)`）では足りません——**表そのものは本文**で、
+		// 中の一部だけがクロームだからです。鏡が `<tfoot>` へ足した検算の行は
+		// `colspan` で横いっぱいのセル1つなので、**1列目（`弊社品番`＝`ref`）の値**と
+		// 読まれ、**「合っています」の行が宙ぶらりんの参照の薄赤で塗られて**いました
+		// （合格を警告の色で見せる、いちばん誤解を生む壊れ方）。
+		//
+		// ⚠ **順番がこの罠を作ります**——`RenderReferenceLinks` は
+		// `RenderComputedViews` の**後**に走るので（handler_view.go）、**鏡が描いた
+		// ものを本文として読みます**。クロームを足す鏡が増えるたびに同じ穴が開くので、
+		// 表の中でも**行ごとに**見ます。
+		if inVocabChrome(row) {
+			continue
+		}
 		for i, cell := range rowCells(row) {
 			if i >= len(refCol) || !refCol[i] {
 				continue
