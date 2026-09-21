@@ -20,6 +20,7 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -194,17 +195,12 @@ func buildOrderPDF(body string) ([]byte, error) {
 		pdfText(p, pdfLeft, y, pdfFontSz, "備考： "+n)
 	}
 
-	var buf strings.Builder
-	if _, err := p.WriteTo(&stringWriter{&buf}); err != nil {
+	var buf bytes.Buffer
+	if _, err := p.WriteTo(&buf); err != nil {
 		return nil, err
 	}
-	return []byte(buf.String()), nil
+	return buf.Bytes(), nil
 }
-
-// stringWriter は strings.Builder を io.Writer にします。
-type stringWriter struct{ b *strings.Builder }
-
-func (w *stringWriter) Write(p []byte) (int, error) { return w.b.Write(p) }
 
 // pdfText は1行書いて、次の行のyを返します。
 func pdfText(p *gopdf.GoPdf, x, y, size float64, s string) float64 {
@@ -323,7 +319,7 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 					}
 				}
 			}
-			if n.Data == "table" && table == nil && isOurOrderTable(n) {
+			if n.Data == "table" && table == nil && isTableOfType(n, ourOrderItemsType) {
 				table = n
 			}
 		}
@@ -342,18 +338,14 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 	if len(trs) < 2 {
 		return nil, nil, nil, errors.New("発注明細に行がありません")
 	}
-	var labels []string
-	for _, c := range cellsOf(trs[0]) {
-		labels = append(labels, strings.TrimSpace(textOf(c)))
-	}
+	labels := cellTexts(trs[0])
 	for _, tr := range trs[1:] {
 		r := map[string]string{}
 		any := false
-		for i, c := range cellsOf(tr) {
+		for i, v := range cellTexts(tr) {
 			if i >= len(labels) {
 				break
 			}
-			v := strings.TrimSpace(textOf(c))
 			r[labels[i]] = v
 			if v != "" {
 				any = true
@@ -399,15 +391,3 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 	return head, rows, cols, nil
 }
 
-// isOurOrderTable は自社の発注明細の表かを見ます（属性でも caption でも）。
-func isOurOrderTable(t *html.Node) bool {
-	if cms.Attr(t, "data-type") == ourOrderItemsType {
-		return true
-	}
-	def, ok := cms.VocabDefByType(ourOrderItemsType)
-	if !ok {
-		return false
-	}
-	cap := lastChild(t, "caption")
-	return cap != nil && strings.TrimSpace(textOf(cap)) == def.DisplayName
-}

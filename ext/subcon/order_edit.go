@@ -29,7 +29,6 @@ import (
 	"net/http"
 	"strings"
 
-	"golang.org/x/net/html"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -138,39 +137,16 @@ func setOrderItemCell(body string, row int, itemNo, field, oldVal, newVal string
 	if err != nil {
 		return "", errors.New("本文を読めません")
 	}
-	var table *html.Node
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if table != nil {
-			return
-		}
-		if n.Type == html.ElementNode && n.Data == "table" && isOrderItemsTable(n) {
-			table = n
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	for _, n := range nodes {
-		walk(n)
-	}
-	if table == nil {
+	tables := tablesOfType(nodes, clientOrderItemsType)
+	if len(tables) == 0 {
 		return "", errors.New("受注明細の表が見つかりません")
 	}
 
-	rows := rowsOf(table)
+	rows := rowsOf(tables[0])
 	if len(rows) < 2 || row < 0 || row+1 >= len(rows) {
 		return "", errCellConflict
 	}
-	head := map[string]int{}
-	i := 0
-	for c := rows[0].FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && (c.Data == "th" || c.Data == "td") {
-			head[strings.TrimSpace(textOf(c))] = i
-			i++
-		}
-	}
+	head := headerIndex(rows[0])
 	col, okCol := head[field]
 	itemCol, okItem := head[ItemNoTag]
 	if !okCol || !okItem {
@@ -200,12 +176,6 @@ func setOrderItemCell(body string, row int, itemNo, field, oldVal, newVal string
 		return "", errCellConflict
 	}
 
-	cell := cells[col]
-	for cell.FirstChild != nil {
-		cell.RemoveChild(cell.FirstChild)
-	}
-	if v := strings.TrimSpace(newVal); v != "" {
-		cell.AppendChild(&html.Node{Type: html.TextNode, Data: v})
-	}
+	setCellText(cells[col], strings.TrimSpace(newVal))
 	return htmldoc.Render(nodes), nil
 }

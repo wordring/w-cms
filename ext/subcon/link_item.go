@@ -36,7 +36,6 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"sort"
 	"strconv"
 	"strings"
 
@@ -75,25 +74,7 @@ func productCodesOf(pageIDInt int) []string {
 // ⚠ **畳んだ一致で引きます**（`PagesByTagLoose`）。`P103-227-6` を `P103 227 6` と
 // 打っても当たる——`code` 型は空白・ハイフン・長音・大小を畳むためです。
 func ProductPagesByCode(value string) []int {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	seen := map[int]bool{}
-	var out []int
-	for _, name := range ProductCodeTags() {
-		ids, err := cms.PagesByTagLoose(database.DB, name, value)
-		if err != nil {
-			continue
-		}
-		for _, id := range ids {
-			if !seen[id] {
-				seen[id] = true
-				out = append(out, id)
-			}
-		}
-	}
-	sort.Ints(out)
-	return out
+	return productPagesByCodeDB(database.DB, value)
 }
 
 // orderPagesWithItemNo は、その品番の明細行を持つ受注ページを返します。
@@ -195,20 +176,9 @@ func fillOurItemNo(body, code, productPageID string) (string, int) {
 	if !ok {
 		return body, 0
 	}
-
 	filled := 0
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "table" && isOrderItemsTable(n) {
-			filled += fillTable(n, want, productPageID)
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	for _, n := range nodes {
-		walk(n)
+	for _, t := range tablesOfType(nodes, clientOrderItemsType) {
+		filled += fillTable(t, want, productPageID)
 	}
 	if filled == 0 {
 		return body, 0
@@ -216,22 +186,8 @@ func fillOurItemNo(body, code, productPageID string) (string, int) {
 	return htmldoc.Render(nodes), filled
 }
 
-// isOrderItemsTable は受注明細の表かを見ます（属性でも caption でも）。
-//
-// ⚠ **両方見ます。** 形式の宣言は `data-type` から見える文字（`<caption>`）へ移る
-// 途中で、しばらく併存します（§2.4）。片方しか見ないと、移した日に**黙って
-// 埋まらなくなります**——エラーは出ません。
-func isOrderItemsTable(t *html.Node) bool {
-	if cms.Attr(t, "data-type") == clientOrderItemsType {
-		return true
-	}
-	def, ok := cms.VocabDefByType(clientOrderItemsType)
-	if !ok {
-		return false
-	}
-	cap := lastChild(t, "caption")
-	return cap != nil && strings.TrimSpace(textOf(cap)) == def.DisplayName
-}
+// isOrderItemsTable は受注明細の表かを見ます（属性でも caption でも——`isTableOfType`）。
+func isOrderItemsTable(t *html.Node) bool { return isTableOfType(t, clientOrderItemsType) }
 
 // fillTable は見出しから列を割り出し、当てはまる行を埋めます。
 func fillTable(t *html.Node, wantNorm, productPageID string) int {
@@ -239,32 +195,16 @@ func fillTable(t *html.Node, wantNorm, productPageID string) int {
 	if len(rows) < 2 {
 		return 0
 	}
-	ourCol, itemCol := -1, -1
-	i := 0
-	for c := rows[0].FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode || (c.Data != "th" && c.Data != "td") {
-			continue
-		}
-		switch strings.TrimSpace(textOf(c)) {
-		case OurItemNoTag:
-			ourCol = i
-		case ItemNoTag:
-			itemCol = i
-		}
-		i++
-	}
-	if ourCol < 0 || itemCol < 0 {
+	col := headerIndex(rows[0])
+	ourCol, okOur := col[OurItemNoTag]
+	itemCol, okItem := col[ItemNoTag]
+	if !okOur || !okItem {
 		return 0
 	}
 
 	filled := 0
 	for _, tr := range rows[1:] {
-		var cells []*html.Node
-		for c := tr.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
-				cells = append(cells, c)
-			}
-		}
+		cells := cellsOf(tr)
 		if ourCol >= len(cells) || itemCol >= len(cells) {
 			continue
 		}
@@ -276,10 +216,7 @@ func fillTable(t *html.Node, wantNorm, productPageID string) int {
 		if !ok || got != wantNorm {
 			continue
 		}
-		for cells[ourCol].FirstChild != nil {
-			cells[ourCol].RemoveChild(cells[ourCol].FirstChild)
-		}
-		cells[ourCol].AppendChild(&html.Node{Type: html.TextNode, Data: productPageID})
+		setCellText(cells[ourCol], productPageID)
 		filled++
 	}
 	return filled
@@ -314,15 +251,7 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 	if len(rows) < 2 {
 		return nil
 	}
-	col := map[string]int{}
-	i := 0
-	for c := rows[0].FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode || (c.Data != "th" && c.Data != "td") {
-			continue
-		}
-		col[strings.TrimSpace(textOf(c))] = i
-		i++
-	}
+	col := headerIndex(rows[0])
 	ourCol, okOur := col[OurItemNoTag]
 	itemCol, okItem := col[ItemNoTag]
 	if !okOur || !okItem {
@@ -332,12 +261,7 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 
 	var notes []string
 	for n, tr := range rows[1:] {
-		var cells []string
-		for c := tr.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
-				cells = append(cells, strings.TrimSpace(textOf(c)))
-			}
-		}
+		cells := cellTexts(tr)
 		at := func(i int, ok bool) string {
 			if !ok || i < 0 || i >= len(cells) {
 				return ""
@@ -357,8 +281,7 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 			}
 			// ⚠ **1件のときだけ言います。** 2件以上あるなら機械には決められないので、
 			// 中途半端に名指しするとかえって誤らせます。
-			cands := productPagesByCodeDB(db, code)
-			cands = visibleOnly(viewer, cands)
+			cands := visibleOnly(viewer, productPagesByCodeDB(db, code))
 			if len(cands) != 1 {
 				continue
 			}
@@ -372,7 +295,7 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 			continue
 		}
 		id, err := strconv.Atoi(strings.TrimSpace(our))
-		if err != nil || !pageCanView(viewer, id) {
+		if err != nil || !page.CanView(viewer, id) {
 			continue
 		}
 		title := cms.PageTitleByID(id)
@@ -399,41 +322,22 @@ func titleMentions(title, name string) bool {
 // productPagesByCodeDB は鏡の読み取り専用DBで引きます。
 //
 // ⚠ **鏡には書き込みTxを渡さない**という型の約束があるので（walk.go 冒頭）、
-// 押し出しの側と口を分けています。
+// 押し出しの側と口を分けています。見る名前は設定（`product_code_tags`）が正本です。
 func productPagesByCodeDB(db cms.ReadOnlyDB, value string) []int {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	seen := map[int]bool{}
-	var out []int
-	for _, name := range ProductCodeTags() {
-		ids, err := cms.PagesByTagLoose(db, name, value)
-		if err != nil {
-			continue
-		}
-		for _, id := range ids {
-			if !seen[id] {
-				seen[id] = true
-				out = append(out, id)
-			}
-		}
-	}
-	sort.Ints(out)
-	return out
+	return pagesByAnyTag(db, ProductCodeTags(), value)
 }
 
 // visibleOnly は閲覧者が読めるページだけを残します（見せ分け・C案）。
 func visibleOnly(viewer *auth.User, ids []int) []int {
 	var out []int
 	for _, id := range ids {
-		if pageCanView(viewer, id) {
+		if page.CanView(viewer, id) {
 			out = append(out, id)
 		}
 	}
 	return out
 }
 
-func pageCanView(viewer *auth.User, id int) bool { return page.CanView(viewer, id) }
 
 // LinkProductsToOrder は受注ページの空いている `弊社品番` を、いま在る加工製品ページで
 // 埋めます（埋めた行数を返す）。**押し出しの逆向き**です。
@@ -491,53 +395,31 @@ func orderItemNosOf(body string) []string {
 	}
 	var out []string
 	seen := map[string]bool{}
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "table" && isOrderItemsTable(n) {
-			rows := rowsOf(n)
-			if len(rows) < 2 {
-				return
-			}
-			col := map[string]int{}
-			i := 0
-			for c := rows[0].FirstChild; c != nil; c = c.NextSibling {
-				if c.Type == html.ElementNode && (c.Data == "th" || c.Data == "td") {
-					col[strings.TrimSpace(textOf(c))] = i
-					i++
-				}
-			}
-			ourCol, okOur := col[OurItemNoTag]
-			itemCol, okItem := col[ItemNoTag]
-			if !okOur || !okItem {
-				return
-			}
-			for _, tr := range rows[1:] {
-				var cells []string
-				for c := tr.FirstChild; c != nil; c = c.NextSibling {
-					if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
-						cells = append(cells, strings.TrimSpace(textOf(c)))
-					}
-				}
-				if ourCol >= len(cells) || itemCol >= len(cells) {
-					continue
-				}
-				// ⚠ **埋まっている行は集めません**（人の値を触らないため）。
-				if cells[ourCol] != "" || cells[itemCol] == "" {
-					continue
-				}
-				if !seen[cells[itemCol]] {
-					seen[cells[itemCol]] = true
-					out = append(out, cells[itemCol])
-				}
-			}
-			return
+	for _, t := range tablesOfType(nodes, clientOrderItemsType) {
+		rows := rowsOf(t)
+		if len(rows) < 2 {
+			continue
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+		col := headerIndex(rows[0])
+		ourCol, okOur := col[OurItemNoTag]
+		itemCol, okItem := col[ItemNoTag]
+		if !okOur || !okItem {
+			continue
 		}
-	}
-	for _, n := range nodes {
-		walk(n)
+		for _, tr := range rows[1:] {
+			cells := cellTexts(tr)
+			if ourCol >= len(cells) || itemCol >= len(cells) {
+				continue
+			}
+			// ⚠ **埋まっている行は集めません**（人の値を触らないため）。
+			if cells[ourCol] != "" || cells[itemCol] == "" {
+				continue
+			}
+			if !seen[cells[itemCol]] {
+				seen[cells[itemCol]] = true
+				out = append(out, cells[itemCol])
+			}
+		}
 	}
 	return out
 }

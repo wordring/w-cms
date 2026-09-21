@@ -136,27 +136,11 @@ func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduc
 // ⚠ **2枚以上に当たったら引きません**——同じ番号で別の加工製品がありえます
 // （「別の製品の図面番号が一致してしまう場合もあり…」）。**決めるのは人**。
 func productByCode(db cms.ReadOnlyDB, code string) (int, bool) {
-	if strings.TrimSpace(code) == "" {
-		return 0, false
-	}
 	names := append([]string{}, ProductCodeTags()...)
 	if def, ok := cms.VocabDefByType(partMaterialsType); ok && def.RequiresTag != "" {
 		names = append(names, def.RequiresTag)
 	}
-	seen := map[int]bool{}
-	var hits []int
-	for _, name := range names {
-		ids, err := cms.PagesByTagLoose(db, name, code)
-		if err != nil {
-			continue
-		}
-		for _, id := range ids {
-			if !seen[id] {
-				seen[id] = true
-				hits = append(hits, id)
-			}
-		}
-	}
+	hits := pagesByAnyTag(db, names, code)
 	if len(hits) != 1 {
 		return 0, false
 	}
