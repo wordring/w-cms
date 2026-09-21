@@ -198,22 +198,12 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 }
 
 // isDescendantOf は child が root の子孫かを返します（自分自身は含めない）。
-// 壊れたデータで無限に辿らないよう回数に上限を置きます（parentCreatesCycle と同じ用心）。
+//
+// ⚠ **実体は 2026-09-21 にコアへ出しました**（`cms.IsDescendantOf`）——受注残表が
+// 同じ走査を要り、**同じものを2つ持つと必ずずれる**ためです。ここは呼び名を
+// 残すだけの薄い包みです。
 func isDescendantOf(childID, rootID int) bool {
-	cur := childID
-	for i := 0; i < 10000; i++ {
-		var parent int
-		err := database.DB.QueryRow(
-			`SELECT COALESCE(parent_id, 0) FROM pages WHERE id = ?`, cur).Scan(&parent)
-		if err != nil || parent == 0 {
-			return false
-		}
-		if parent == rootID {
-			return true
-		}
-		cur = parent
-	}
-	return false
+	return cms.IsDescendantOf(database.DB, childID, rootID)
 }
 
 // unhandledViewHTML は「未処理の受信」ビューの中身を描きます。

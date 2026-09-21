@@ -129,3 +129,29 @@ func TopLevelPagesByTitle(title string) []string {
 	}
 	return out
 }
+
+// IsDescendantOf は child が root の子孫かを返します（**自分自身は含めません**）。
+//
+// ⚠ **壊れたデータで無限に辿らないよう回数に上限を置きます**（`parentCreatesCycle` と
+// 同じ用心）。親が 0（トップ）に着いたら子孫ではありません。
+//
+// **2026-09-21 にコアへ出しました。** それまで `ext/comm` が私有していて、受注残表
+// （`ext/subcon`）が同じものを要りました。⚠ **同じ走査を2つ持つと必ずずれます**
+// ——とくにこの関数は**上限と「自分を含めない」という2つの約束**を持っていて、
+// 写し間違えても**エラーにならず、静かに違う答え**を返します。
+func IsDescendantOf(db ReadOnlyDB, childID, rootID int) bool {
+	cur := childID
+	for i := 0; i < 10000; i++ {
+		var parent int
+		err := db.QueryRow(
+			`SELECT COALESCE(parent_id, 0) FROM pages WHERE id = ?`, cur).Scan(&parent)
+		if err != nil || parent == 0 {
+			return false
+		}
+		if parent == rootID {
+			return true
+		}
+		cur = parent
+	}
+	return false
+}

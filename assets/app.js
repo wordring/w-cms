@@ -5983,3 +5983,41 @@
         loadChildNav();
         loadVersions();
     };
+
+// ── 受注残表の印刷（2026-09-21）────────────────────────────────────────
+//
+// ユーザー:「顧客、納期ごとに別の表として分けて、**ワンタッチで印刷**もできると
+// ありがたい」「**表ごとに印刷ボタン**」。
+//
+// ⚠ **ボタンはサーバーが描いたクロームです**（ext/subcon/backlog.go）。本文は
+// 読み込み直しで作り替わるので、**要素ごとに配線せず document へ委譲します**
+// ——配線し直しを忘れると、押しても何も起きない静かな壊れ方になります。
+//
+// ⚠ **インラインの `onclick` は書けません**（CSP strict）。
+//
+// 刷り方は**印を付けて window.print() を呼ぶだけ**です。どの枚を隠すかは
+// 印刷用CSS（app.css の `@media print`）が決めます——⚠ **JSで display を
+// 書き換えると、画面の見た目まで壊れます**（印刷は画面を触らずに済ませる）。
+document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('.backlog-print') : null;
+    if (!btn) return;
+    const sheet = btn.closest('.backlog-sheet');
+    if (!sheet) return;
+    document.querySelectorAll('.backlog-sheet.w-print-only')
+        .forEach((el) => el.classList.remove('w-print-only'));
+    sheet.classList.add('w-print-only');
+    document.body.classList.add('w-printing-sheet');
+    // ⚠ **必ず後片付けします。** 印が残ると、次に Ctrl+P したとき1枚しか刷れません
+    // （画面には出ないので、原因に気づけない形の壊れ方です）。
+    const cleanup = () => {
+        document.body.classList.remove('w-printing-sheet');
+        sheet.classList.remove('w-print-only');
+    };
+    if (window.matchMedia) {
+        const mq = window.matchMedia('print');
+        const once = (ev) => { if (!ev.matches) { cleanup(); mq.removeListener(once); } };
+        mq.addListener(once);
+    }
+    window.addEventListener('afterprint', cleanup, { once: true });
+    window.print();
+});
