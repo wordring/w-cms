@@ -77,9 +77,21 @@ var businessVocab = []cms.VocabDef{
 		//
 		// `資料` はユーザーの要望（「外注加工の場合、**加工業者に渡す資料を入れる
 		// 場所も必要**です」）。値は同じページに貼った添付への参照
-		// （`ページID-ブロックID`）を書きます——**表のセルの参照はまだリンクになりません**
-		// （参照リンクの描画はタグの dl だけが対象。ref_render.go）。押して飛べる
-		// ようにするのは残件です。
+		// （`ページID-ブロックID`）を書きます。
+		//
+		// ⚠ **2026-09-21 に `ref` 型へ直しました。** それまで `text` だったので、
+		// **押して飛べませんでした**——「表のセルの参照はまだリンクになりません」という
+		// 残件が同日午前に片付いた（`linkRefCells`）のに、**型が `text` のままでは
+		// 恩恵を受けません**。⚠ 列の宣言が `ref` であることが、リンクにする唯一の条件です
+		// （値の形だけでは参照と番号を見分けない——2026-09-04 の事故の教訓）。
+		//
+		// ⚠ **型を変えるなら、いまが最も安全な時期**でした（実データで `資料` に値が
+		// 1つも入っていない）。値が入ってから変えると、**参照の形でない値が一斉に
+		// 薄赤**になります。
+		//
+		// ユーザー（2026-09-21）:「加工の発注には**私が書いた加工図面**も入れる場合が
+		// あります。これまでは、**加工製品のページに貼っていました**」——貼る場所は
+		// そのままで、**発注の側はここから指す**という形です（写しを作らない）。
 		Type:        "part-outsourcing",
 		DisplayName: "外注加工",
 		Category:    "業務",
@@ -89,7 +101,7 @@ var businessVocab = []cms.VocabDef{
 			{Field: "work", Label: "加工内容", Type: cms.ColText},
 			{Field: "supplied", Label: "支給", Type: cms.ColText},
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
-			{Field: "doc", Label: "資料", Type: cms.ColText},
+			{Field: "doc", Label: "資料", Type: cms.ColRef},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},
