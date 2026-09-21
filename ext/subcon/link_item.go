@@ -284,3 +284,153 @@ func fillTable(t *html.Node, wantNorm, productPageID string) int {
 	}
 	return filled
 }
+
+// ── 引き（表示のときに気づかせる）────────────────────────────────────────
+//
+// ⚠ **押し出し（整理の直後に埋める）だけでは取りこぼします**。取りこぼすのは3つ:
+//
+//	・整理のとき、その受注ページを誰かが開いていた（ロックで飛ばした）
+//	・加工製品ページを整理を通さず**手で作った**
+//	・ページの `品番` を**あとから人が書いた**
+//
+// どれも**黙って埋まらないまま**になるので、開いたときに見せます。
+// ⚠ **ここでは書きません**——読むだけの操作（GET）で本文を書き換えると、
+// オートセーブと衝突しますし、「見ただけで変わる」は追いにくい壊れ方です。
+
+// ItemNameTag は受注明細の品名の列です（食い違いの検査に使います）。
+const ItemNameTag = "品名"
+
+// orderLinkNotes は結びについての気づきを返します（無ければ空）。
+//
+// 見るのは2つで、**捕まえるものが違います**:
+//
+//	空いている行 … 結べる相手が居るのに空のまま（押し出しの取りこぼし）
+//	埋まった行   … ⚠ **結び先の題と品名が食い違う**（誤って別の製品に結んだ疑い）
+//
+// ⚠ **2つ目が「1件だけ当たったが、それは別物だった」の最後の砦**です。機械が
+// 黙って埋める以上、**当たったこと自体を疑う目**がどこかに要ります。
+func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []string {
+	rows := rowsOf(table)
+	if len(rows) < 2 {
+		return nil
+	}
+	col := map[string]int{}
+	i := 0
+	for c := rows[0].FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || (c.Data != "th" && c.Data != "td") {
+			continue
+		}
+		col[strings.TrimSpace(textOf(c))] = i
+		i++
+	}
+	ourCol, okOur := col[OurItemNoTag]
+	itemCol, okItem := col[ItemNoTag]
+	if !okOur || !okItem {
+		return nil
+	}
+	nameCol, hasName := col[ItemNameTag]
+
+	var notes []string
+	for n, tr := range rows[1:] {
+		var cells []string
+		for c := tr.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
+				cells = append(cells, strings.TrimSpace(textOf(c)))
+			}
+		}
+		at := func(i int, ok bool) string {
+			if !ok || i < 0 || i >= len(cells) {
+				return ""
+			}
+			return cells[i]
+		}
+		our, code := at(ourCol, true), at(itemCol, true)
+		name := at(nameCol, hasName)
+		label := strconv.Itoa(n+1) + "行目"
+		if name != "" {
+			label += "「" + name + "」"
+		}
+
+		if our == "" {
+			if code == "" {
+				continue
+			}
+			// ⚠ **1件のときだけ言います。** 2件以上あるなら機械には決められないので、
+			// 中途半端に名指しするとかえって誤らせます。
+			cands := productPagesByCodeDB(db, code)
+			cands = visibleOnly(viewer, cands)
+			if len(cands) != 1 {
+				continue
+			}
+			notes = append(notes, label+"の弊社品番が空です（品番 "+code+" は "+
+				page.FormatID(cands[0])+" "+cms.PageTitleByID(cands[0])+" と思われます）")
+			continue
+		}
+
+		// ⚠ **埋まっている行は、結び先が本当にその品物かを見ます。**
+		if !hasName || name == "" {
+			continue
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(our))
+		if err != nil || !pageCanView(viewer, id) {
+			continue
+		}
+		title := cms.PageTitleByID(id)
+		if title == "" || titleMentions(title, name) {
+			continue
+		}
+		notes = append(notes, "⚠ "+label+"は "+page.FormatID(id)+" に結ばれていますが、"+
+			"そのページの題は「"+title+"」です（別の製品に結んでいませんか）")
+	}
+	return notes
+}
+
+// titleMentions は加工製品ページの題が品名を含むかを見ます。
+//
+// ⚠ **完全一致では見ません。** 題は「図面番号 図面名称」の形なので
+// （`K120-01-211 受けブラケット`）、品名はその一部にしか出ません。
+// 畳んでから含むかどうかを見ます——揺れで毎回 ⚠ が出ると、狼少年になります。
+func titleMentions(title, name string) bool {
+	t := cms.NormalizeCode(title)
+	n := cms.NormalizeCode(name)
+	return n != "" && strings.Contains(t, n)
+}
+
+// productPagesByCodeDB は鏡の読み取り専用DBで引きます。
+//
+// ⚠ **鏡には書き込みTxを渡さない**という型の約束があるので（walk.go 冒頭）、
+// 押し出しの側と口を分けています。
+func productPagesByCodeDB(db cms.ReadOnlyDB, value string) []int {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	seen := map[int]bool{}
+	var out []int
+	for _, name := range ProductCodeTags() {
+		ids, err := cms.PagesByTagLoose(db, name, value)
+		if err != nil {
+			continue
+		}
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
+// visibleOnly は閲覧者が読めるページだけを残します（見せ分け・C案）。
+func visibleOnly(viewer *auth.User, ids []int) []int {
+	var out []int
+	for _, id := range ids {
+		if pageCanView(viewer, id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func pageCanView(viewer *auth.User, id int) bool { return page.CanView(viewer, id) }

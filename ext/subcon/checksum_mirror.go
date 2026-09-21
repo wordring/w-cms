@@ -35,10 +35,29 @@ func init() {
 	cms.RegisterMirror(clientOrderItemsType, cms.MirrorHandlerFunc(renderOrderChecksum))
 }
 
-// renderOrderChecksum は同じページの原本とタグから検算し、明細の足元に結果を出します。
+// renderOrderChecksum は明細の足元に、**検算の結果と結びの気づき**を出します。
 func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
+	span := headerCellCount(el)
+	renderChecksumRows(ctx, el, span)
 
+	// **結びについての気づきも同じ足元に出します**（2026-09-21・[link_item.go]）。
+	//
+	// ⚠ **検算の早期戻りに巻き込まないこと。** 手で作った受注ページには原本も小計も
+	// ありませんが、**弊社品番は結べます**——中に入れると、そういうページで黙ります。
+	// ⚠ 場所を分けないのは、**注意書きが画面に散るとどれも読まれなくなる**ためです。
+	for _, n := range orderLinkNotes(ctx.DB, ctx.Viewer, el) {
+		class := "checksum-note"
+		if strings.HasPrefix(n, "⚠") {
+			class = "checksum-ng"
+		}
+		appendChecksumRow(el, span, class, n)
+	}
+	return true, nil
+}
+
+// renderChecksumRows は検算の結果だけを足元へ書きます。
+func renderChecksumRows(ctx *cms.MirrorContext, el *html.Node, span int) {
 	// ⚠ タグは**可変タグ（`dl[data-type="tags"]`）だけ**から読みます（`cms.TagValue`）。
 	// 素の `dl`（業務ブロックのヘッダ）に同じ名前があっても別物です
 	// （「タグと表だけがDBに入る」の線引きと同じ）。
@@ -51,11 +70,10 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	// ⚠ **材料が1つも無ければ黙ります。** 手で作った受注ページに毎回
 	// 「検算できません」と出ると、ただの雑音です。
 	if !hasSource && sub == "" && tax == "" && total == "" {
-		return true, nil
+		return
 	}
 
 	c := checkOrderArithmetic(src, sub, tax, total)
-	span := headerCellCount(el)
 
 	switch warn := c.Warnings(); {
 	case len(warn) > 0:
@@ -67,7 +85,7 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		// たいていは見出しが弊社の知らない言葉で、**様式ページ**が入れば解けます。
 		appendChecksumRow(el, span, "checksum-note",
 			"検算できません（数量・単価・金額の列と、小計・合計のタグが見つかりません）")
-		return true, nil // 検算していないので、飛ばした行数も出さない
+		return // 検算していないので、飛ばした行数も出さない
 	default:
 		appendChecksumRow(el, span, "checksum-ok", agreedMessage(c))
 	}
@@ -75,7 +93,6 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if s := c.Skipped(); s != "" {
 		appendChecksumRow(el, span, "checksum-note", s)
 	}
-	return true, nil
 }
 
 // agreedMessage は「合っています」の文に、何を検算したかを添えます。
