@@ -308,10 +308,43 @@ var businessVocab = []cms.VocabDef{
 		Icon:        "📤",
 		Element:     "table",
 		Hidden:      true,
+		// ⚠ **列は実物の発注書7枚から採りました**（2026-09-21・材料2／加工2／塗装2／
+		// 鍍金1）。実物の見出しはこうでした:
+		//
+		//	材料        … 材質｜形状｜寸法｜単位｜数量｜単価｜金額（税抜）
+		//	加工        … 商品コード｜商品名｜単位｜数量｜単価｜金額（税抜）
+		//	塗装・鍍金  … 商品コード｜商品名｜**色**｜単位｜数量｜単価｜金額（税抜）
+		//
+		// ⚠ **塗装と鍍金は完全に同じ形**で、**加工はそこから `色` が抜けただけ**でした。
+		// 違うのは**材料か、そうでないか**の1点だけ——だから**形式は1つ**にします
+		// （ユーザー:「まとめる方法があればまとめたい」）。⚠ **分けると、次に
+		// 「熱処理」が増えた日にもう1つ作ることになります。**
+		//
+		// ⚠ **使わない列は空のまま**です。紙に出すときに**全行が空の列を落とす**ので、
+		// 材料の発注書に `色` は出ません（受注残表の印刷で作った仕掛けと同じ考え）。
+		//
+		// ⚠ **`商品コード` は `品番` に改めました**（ユーザー決定・同日:「今までは図面番号を
+		// 入れていたが、**これからは品番を入れたい**です。…商品コードという名前を
+		// **品番に変えても良い**と思います」）。⚠ **受注明細と同じ名前・同じ型**に
+		// 揃えるのが肝です——同じものを2つの名前で呼ぶと、横断検索が片方を取りこぼします。
+		//
+		// ⚠ **`弊社品番` も置きます**（同日:「入れる場所があるなら、**弊社品番も入れたい**」）。
+		// 加工製品ページを指す参照で、**紙には出さなくてよい**——相手には意味が無く、
+		// **こちらが問い合わせを受けたときに引くための番号**です。
 		Columns: []cms.VocabColumn{
+			{Field: "our-item-id", Label: "弊社品番", Type: cms.ColRef},
+			{Field: "item-id", Label: "品番", Type: cms.ColCode},
 			{Field: "item-name", Label: "品名", Type: cms.ColText},
-			{Field: "cost", Label: "単価", Type: cms.ColNumber},
+			// 材料のときだけ使う3つ（`材料` 表と同じ名前・同じ意味）。
+			{Field: "material", Label: "材質", Type: cms.ColText},
+			{Field: "shape", Label: "形状", Type: cms.ColText},
+			{Field: "size", Label: "寸法", Type: cms.ColText},
+			// 塗装・鍍金のときだけ使う（値は `緑`・`三価ユニクロ、タコメッキ` など）。
+			{Field: "color", Label: "色", Type: cms.ColText},
 			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+			{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: []string{"個", "セット", "本", "枚", "kg", "m"}},
+			{Field: "cost", Label: "単価", Type: cms.ColNumber},
+			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"未納品", "納品済"}},
 		},
 	},
