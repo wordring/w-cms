@@ -2216,25 +2216,31 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 .backlog-remaining { font-weight: 600; }
 
 /* ── 印刷（2026-09-21）────────────────────────────────────────────────
-   ⚠ **印刷用のCSSはこれが最初**です。画面の道具（レール・ヘッダ・フッタ・
-   ボタン）は紙に要らないので落とします。
-   ⚠ **`.w-print-only` が付いた1枚だけを刷る**——表ごとの印刷ボタンが、押された
-   枚にこの印を付けてから `window.print()` を呼びます（配線は app.js）。 */
+   ⚠ **隠す側を列挙する形は失敗しました**（同日）。`.rail` や `.site-footer` を
+   名指しで消していましたが、**本文の見出しや子ページ一覧は残ったまま**で、
+   結局ページ全体が刷られました。⚠ しかも `.site-header` という**存在しない
+   クラス**まで書いていました——「何を隠すか」を数え上げる形は、殻が増えるたびに
+   破れます。
+
+   いまは逆向きです——**刷る1枚だけを `#w-print-area` へ写し、body の他の子を
+   まとめて消します**。殻に何が増えても効きます。写し（クローン）なので、
+   画面の要素は一切動かしません（⚠ 動かすと、印刷から戻ったときに壊れます）。 */
+#w-print-area { display: none; }
+
 @media print {
-    .rail, .site-header, .site-footer, .rail-toggle,
-    .drawer-backdrop, .backlog-print, .slash-menu, .context-toolbar,
-    .table-toolbar { display: none !important; }
+    /* 1枚だけ刷るとき——器の外を全部消す。 */
+    body.w-printing-sheet > *:not(#w-print-area) { display: none !important; }
+    body.w-printing-sheet #w-print-area { display: block !important; }
 
     body, .container { margin: 0; padding: 0; background: #fff; }
+    .backlog-print { display: none !important; }
 
-    /* 1枚だけ刷るとき——印の付いていない枚を隠す。 */
-    body.w-printing-sheet .backlog-sheet { display: none !important; }
-    body.w-printing-sheet .backlog-sheet.w-print-only { display: block !important; }
-
-    .backlog-table { border-collapse: collapse; }
+    .backlog-table { border-collapse: collapse; width: 100%; }
     .backlog-table th, .backlog-table td {
         border: 1px solid #999;
         padding: 3px 6px;
         font-size: 10.5pt;
     }
+    /* 紙では「受注」列のリンクの下線は邪魔なので消す（URLは出さない）。 */
+    #w-print-area a { color: inherit; text-decoration: none; }
 }

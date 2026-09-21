@@ -5989,35 +5989,45 @@
 // ユーザー:「顧客、納期ごとに別の表として分けて、**ワンタッチで印刷**もできると
 // ありがたい」「**表ごとに印刷ボタン**」。
 //
+// ⚠ **最初の実装は「隠すものを名指しする」形で、失敗しました**（同日・実機で
+// 「表ではなくページ全体が印刷されました」）。レールやフッタは消していましたが、
+// **本文の見出しや子ページ一覧が残っていた**ためです。
+//
+// いまは逆向きです——**刷る1枚を `#w-print-area` へ写し、body の他の子をまとめて
+// 消します**（app.css の `@media print`）。殻に何が増えても効きます。
+//
+// ⚠ **写し（クローン）を使い、画面の要素は動かしません。** 動かすと、印刷から
+// 戻ったときに元の場所へ返す仕事が要り、失敗すると画面が壊れます。
+//
 // ⚠ **ボタンはサーバーが描いたクロームです**（ext/subcon/backlog.go）。本文は
-// 読み込み直しで作り替わるので、**要素ごとに配線せず document へ委譲します**
-// ——配線し直しを忘れると、押しても何も起きない静かな壊れ方になります。
-//
+// 読み込み直しで作り替わるので、**要素ごとに配線せず document へ委譲します**。
 // ⚠ **インラインの `onclick` は書けません**（CSP strict）。
-//
-// 刷り方は**印を付けて window.print() を呼ぶだけ**です。どの枚を隠すかは
-// 印刷用CSS（app.css の `@media print`）が決めます——⚠ **JSで display を
-// 書き換えると、画面の見た目まで壊れます**（印刷は画面を触らずに済ませる）。
 document.addEventListener('click', (e) => {
     const btn = e.target && e.target.closest ? e.target.closest('.backlog-print') : null;
     if (!btn) return;
     const sheet = btn.closest('.backlog-sheet');
     if (!sheet) return;
-    document.querySelectorAll('.backlog-sheet.w-print-only')
-        .forEach((el) => el.classList.remove('w-print-only'));
-    sheet.classList.add('w-print-only');
+
+    let area = document.getElementById('w-print-area');
+    if (!area) {
+        area = document.createElement('div');
+        area.id = 'w-print-area';
+        document.body.appendChild(area);
+    }
+    area.textContent = '';
+    const copy = sheet.cloneNode(true);
+    copy.querySelectorAll('.backlog-print').forEach((b) => b.remove());
+    area.appendChild(copy);
     document.body.classList.add('w-printing-sheet');
+
     // ⚠ **必ず後片付けします。** 印が残ると、次に Ctrl+P したとき1枚しか刷れません
     // （画面には出ないので、原因に気づけない形の壊れ方です）。
     const cleanup = () => {
         document.body.classList.remove('w-printing-sheet');
-        sheet.classList.remove('w-print-only');
+        area.textContent = '';
     };
-    if (window.matchMedia) {
-        const mq = window.matchMedia('print');
-        const once = (ev) => { if (!ev.matches) { cleanup(); mq.removeListener(once); } };
-        mq.addListener(once);
-    }
     window.addEventListener('afterprint', cleanup, { once: true });
+    // afterprint を出さないブラウザへの保険（Safari 系）。
+    setTimeout(cleanup, 60000);
     window.print();
 });
