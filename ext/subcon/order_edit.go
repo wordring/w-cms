@@ -174,14 +174,19 @@ func setOrderItemCell(body string, row int, itemNo, field, oldVal, newVal string
 	col, okCol := head[field]
 	itemCol, okItem := head[ItemNoTag]
 	if !okCol || !okItem {
-		return "", errors.New(field + " の列がありません")
+		// ⚠ **宣言に列を足しても、既にあるページの本文には現れません。**
+		// 新しく解析したページにだけ出ます（2026-09-21 に実機で踏みました——
+		// ユーザー報告:「チェックボタンを押すと、材料発注 の列がありませんと出てます」）。
+		//
+		// ⚠ **自動で足す枝は置きません**（ユーザー決定・同日:「無ければ足すコードは
+		// 必要ないです。**今は開発中なので**」）。解析し直せば揃うあいだは、
+		// **機構を増やさない**ほうが良いという判断です。運用に入ったあとで同じことが
+		// 起きたら、そのとき**移行として1度だけ**走らせる形を考えること
+		// ——書き込みのたびに表の形を変える口を常設すると、想定外の列が生えます。
+		return "", errors.New(field + " の列がこのページの受注明細にありません" +
+			"（あとから宣言に足した列は、解析し直すまで出ません）")
 	}
-	var cells []*html.Node
-	for c := rows[row+1].FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
-			cells = append(cells, c)
-		}
-	}
+	cells := cellsOf(rows[row+1])
 	if col >= len(cells) || itemCol >= len(cells) {
 		return "", errCellConflict
 	}
