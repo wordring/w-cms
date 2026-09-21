@@ -80,6 +80,11 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
 		// 解析済みの印（添付ID → 生まれたページ）。読むだけで何も作りません。
 		{Pattern: "/api/analyzed", Handler: AnalyzedAPIHandler},
+		// 受注残表から受注明細の1セルを書き換える口（2026-09-21・order_edit.go）。
+		// ⚠ **計算ビューで初めての「書ける鏡」**です——押した先が**別のページの
+		// 本文**になるので、行番号と `品番` の2つで照合し、いまの値とも突き合わせ、
+		// 編集ロックの関門を通します。
+		{Pattern: "/api/order-item", Handler: OrderItemEditAPIHandler},
 	}
 }
 

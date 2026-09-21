@@ -293,3 +293,66 @@ func TestBacklogCellsCarryWrapClasses(t *testing.T) {
 			strings.Count(out, `class="cell-wrap"`), out)
 	}
 }
+
+// TestBacklogRowsCarryEditHandles は、⚠ **書き戻しの手掛かりが行に付く**ことを
+// 固定します。
+//
+// ⚠ **3つとも要ります**——ページID・行番号・品番。欠けると、サーバーが照合できず
+// **断られるか、悪くすると隣の行に当たります**。
+func TestBacklogRowsCarryEditHandles(t *testing.T) {
+	setupExtTest(t, "000190", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 191, -1, "受注", "alice", "302", true)
+	seedOrder(t, 192, 191, "南北", "2026-10-15",
+		item("A-1", "甲", "10", "2026-10-15", "")+item("A-2", "乙", "20", "2026-10-15", ""))
+
+	req := httptest.NewRequest("GET", "/000191", nil)
+	req = auth.WithUser(req, adminUser())
+	out := cms.RenderComputedViews(req, 191,
+		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+
+	for _, want := range []string{
+		`data-order-page="000192"`, `data-order-row="0"`, `data-order-row="1"`,
+		`data-order-item="A-1"`, `data-order-item="A-2"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("手掛かり %s がありません:\n%s", want, out)
+		}
+	}
+	// ⚠ **いまの値も持たせます**（compare-and-swap の片割れ）。無いと、二人が
+	// 同じ表を見ているとき**後から押したほうが黙って勝ちます**。
+	if !strings.Contains(out, `data-old=`) {
+		t.Errorf("いまの値が部品に付いていません:\n%s", out)
+	}
+}
+
+// TestBacklogEditControlsCoverDailyFields は、**毎日押す列が部品になっている**ことを
+// 固定します。
+//
+// ⚠ 鍵の列（`品番`・`品名`）は**部品にしません**——書き換えると照合が壊れます。
+func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
+	setupExtTest(t, "000200", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 201, -1, "受注", "alice", "302", true)
+	seedOrder(t, 202, 201, "南北", "2026-10-15", item("A-1", "甲", "10", "2026-10-15", ""))
+
+	req := httptest.NewRequest("GET", "/000201", nil)
+	req = auth.WithUser(req, adminUser())
+	out := cms.RenderComputedViews(req, 201,
+		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+
+	for _, f := range []string{"出荷済み", "状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
+		if !strings.Contains(out, `data-field="`+f+`"`) {
+			t.Errorf("%q を押せません:\n%s", f, out)
+		}
+	}
+	// ⚠ 鍵の列は部品にしない。
+	for _, f := range []string{"品番", "品名", "弊社品番"} {
+		if strings.Contains(out, `data-field="`+f+`"`) {
+			t.Errorf("⚠ 鍵の列 %q を編集できるようにしています（照合が壊れます）", f)
+		}
+	}
+	// ⚠ **選択肢は宣言から**（画面に書き写さない）。`完了` が出ていること。
+	if !strings.Contains(out, `<option>`+StatusDone+`</option>`) &&
+		!strings.Contains(out, `<option selected>`+StatusDone+`</option>`) {
+		t.Errorf("状態の選択肢に %q がありません:\n%s", StatusDone, out)
+	}
+}

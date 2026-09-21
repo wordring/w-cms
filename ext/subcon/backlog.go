@@ -75,15 +75,24 @@ func init() {
 // backlogRow は受注残の1行です。
 type backlogRow struct {
 	OrderPageID string // どの受注ページの行か（押せば飛べる）
-	OrderNo     string
-	OurItemNo   string
-	ItemNo      string
-	ItemName    string
-	Quantity    int
-	Shipped     int
-	Remaining   int
-	Status      string
-	Note        string
+	// RowNo は受注明細の**データ行の番号**（見出しを除いて0から）。
+	// ⚠ **書き戻しの照合に使います**（[order_edit.go]）——番号だけでは足りないので、
+	// `ItemNo` と2つで当てます。
+	RowNo     int
+	OrderNo   string
+	OurItemNo string
+	ItemNo    string
+	ItemName  string
+	Quantity  int
+	Shipped   int
+	Remaining int
+	Status    string
+	Note      string
+	// 手続きの印（`済` か空）。⚠ **今日は人が押すだけです**——導出する元がまだ
+	// ありません（[vocab.go] の宣言に経緯）。
+	MaterialOrdered string
+	DeliveryNote    string
+	Invoice         string
 }
 
 // backlogGroup は「顧客×納期」1組＝**1回の納品の単位**です。
@@ -165,15 +174,21 @@ func backlogGroups(user *auth.User, rootID int) []backlogGroup {
 			}
 			g.Rows = append(g.Rows, backlogRow{
 				OrderPageID: page.FormatID(id),
-				OrderNo:     orderNo,
-				OurItemNo:   strings.TrimSpace(r.Values["our-item-id"]),
-				ItemNo:      strings.TrimSpace(r.Values["item-id"]),
-				ItemName:    strings.TrimSpace(r.Values["item-name"]),
-				Quantity:    qty,
-				Shipped:     shipped,
-				Remaining:   rem,
-				Status:      strings.TrimSpace(r.Values["status"]),
-				Note:        strings.TrimSpace(r.Values["note"]),
+				// ⚠ **索引の `RowNo` をそのまま使います。** 数え直すと、索引の側の
+				// 数え方が変わった日にずれます（本文の行と1対1でなくなる）。
+				RowNo:           r.RowNo,
+				OrderNo:         orderNo,
+				OurItemNo:       strings.TrimSpace(r.Values["our-item-id"]),
+				ItemNo:          strings.TrimSpace(r.Values["item-id"]),
+				ItemName:        strings.TrimSpace(r.Values["item-name"]),
+				Quantity:        qty,
+				Shipped:         shipped,
+				Remaining:       rem,
+				Status:          strings.TrimSpace(r.Values["status"]),
+				Note:            strings.TrimSpace(r.Values["note"]),
+				MaterialOrdered: strings.TrimSpace(r.Values["material-ordered"]),
+				DeliveryNote:    strings.TrimSpace(r.Values["delivery-note"]),
+				Invoice:         strings.TrimSpace(r.Values["invoice"]),
 			})
 		}
 	}
@@ -239,7 +254,10 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 		b.WriteString(`<table class="backlog-table"><tbody>` +
 			`<tr><th class="no-print">弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th class="no-print">数量</th><th class="no-print">出荷済み</th>` +
-			`<th>状態</th><th>備考</th><th class="no-print">受注</th></tr>`)
+			`<th>状態</th>` +
+			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
+			`<th class="no-print">請求書発行</th>` +
+			`<th>備考</th><th class="no-print">受注</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -255,16 +273,27 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			// **紙でだけ落とします**——`no-print` の印を付け、隠すのは印刷用CSSの仕事です。
 			// ⚠ 列を落とすのをサーバーで分岐させない（画面と紙で2つのHTMLを持つと、
 			// 片方だけ直した日にずれます）。
-			b.WriteString(`<tr>` +
+			// ⚠ **ここから受注ページの本文を書き換えます**（2026-09-21 ユーザー:
+			// 「受注残集計表を鏡にして受注ページの受注明細表が編集されるように」）。
+			// 部品には**どの受注のどの行か**を持たせます——照合は行番号と `品番` の
+			// 2つで、いまの値も一緒に送ります（[order_edit.go]・配線は assets/app.js）。
+			//
+			// ⚠ **鍵の列と計算の列は部品にしません**（`弊社品番`・`品番`・`品名`・`残`）。
+			// 鍵を書き換えると**次の書き込みが隣の行に当たります**。
+			st := statusOptionsHTML(r.Status)
+			b.WriteString(`<tr` + rowAttrs(r) + `>` +
 				noPrintCell(refCellHTML(r.OurItemNo)) +
 				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
 				atomicCell(stdhtml.EscapeString(r.ItemName)) +
 				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
 				noPrintCell(strconv.Itoa(r.Quantity)) +
-				noPrintCell(shippedCell(r.Shipped)) +
-				atomicCell(stdhtml.EscapeString(r.Status)) +
+				noPrintCell(numberFieldHTML("出荷済み", shippedCell(r.Shipped))) +
+				`<td class="cell-atomic">` + st + `</td>` +
+				noPrintCell(checkFieldHTML("材料発注", r.MaterialOrdered)) +
+				noPrintCell(checkFieldHTML("納品書発行", r.DeliveryNote)) +
+				noPrintCell(checkFieldHTML("請求書発行", r.Invoice)) +
 				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。
-				`<td class="cell-wrap">` + stdhtml.EscapeString(r.Note) + `</td>` +
+				`<td class="cell-wrap">` + textFieldHTML("備考", r.Note) + `</td>` +
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
 				`</tr>`)
@@ -311,4 +340,93 @@ func orderLabel(r backlogRow) string {
 		return r.OrderNo
 	}
 	return r.OrderPageID
+}
+
+// ── 編集できる部品（2026-09-21）──────────────────────────────────────────
+//
+// ⚠ **クロームなので保存されません。** `<input>` や `<select>` を本文へ書くと
+// サニタイズで落ちますが、ここはサーバーが描くクロームなので置けます——
+// そして**シリアライザが保存しない**ので、本文は綺麗なままです。
+//
+// ⚠ **部品には「どの受注のどの行か」と「いまの値」を持たせます。** 送るときに
+// 一緒に出して、サーバーが**行番号・品番・いまの値の3つ**で照合します
+// （[order_edit.go]）。配線は assets/app.js。
+
+// rowAttrs は行に「どの受注のどの行か」を書きます。
+func rowAttrs(r backlogRow) string {
+	return ` data-order-page="` + stdhtml.EscapeString(r.OrderPageID) + `"` +
+		` data-order-row="` + strconv.Itoa(r.RowNo) + `"` +
+		` data-order-item="` + stdhtml.EscapeString(r.ItemNo) + `"`
+}
+
+// fieldAttrs は部品に「どの列か」と「いまの値」を書きます。
+//
+// ⚠ **`data-old` が compare-and-swap の片割れ**です。これが無いと、二人が同じ表を
+// 見ているとき**後から押したほうが黙って勝ちます**。
+func fieldAttrs(field, cur string) string {
+	return ` data-field="` + stdhtml.EscapeString(field) + `"` +
+		` data-old="` + stdhtml.EscapeString(cur) + `"`
+}
+
+// checkFieldHTML は手続きの印のチェックボックスです（`済` か空の2値）。
+func checkFieldHTML(field, cur string) string {
+	checked := ""
+	if strings.TrimSpace(cur) == MarkDone {
+		checked = " checked"
+	}
+	return `<input type="checkbox" class="order-edit order-check"` +
+		fieldAttrs(field, cur) + checked + ` aria-label="` + stdhtml.EscapeString(field) + `">`
+}
+
+// statusOptionsHTML は状態の選択肢です（⚠ **選択肢は宣言から**——画面に書き写すと、
+// 語を足した日に片方が古くなります）。
+func statusOptionsHTML(cur string) string {
+	var b strings.Builder
+	b.WriteString(`<select class="order-edit order-status"` + fieldAttrs("状態", cur) + `>`)
+	seen := false
+	for _, v := range statusEnum() {
+		sel := ""
+		if v == cur {
+			sel, seen = " selected", true
+		}
+		b.WriteString(`<option` + sel + `>` + stdhtml.EscapeString(v) + `</option>`)
+	}
+	// ⚠ **一覧に無い値も残します**（語彙は入力補助であって検査ではない・§7.1）。
+	// 落とすと、人が打った値が開いた瞬間に消えます。
+	if !seen && strings.TrimSpace(cur) != "" {
+		b.WriteString(`<option selected>` + stdhtml.EscapeString(cur) + `</option>`)
+	}
+	if strings.TrimSpace(cur) == "" {
+		b.WriteString(`<option selected value=""></option>`)
+	}
+	b.WriteString(`</select>`)
+	return b.String()
+}
+
+// statusEnum は `状態` の選択肢を宣言から返します。
+func statusEnum() []string {
+	def, ok := cms.VocabDefByType(clientOrderItemsType)
+	if !ok {
+		return nil
+	}
+	for _, c := range def.Columns {
+		if c.Label == "状態" {
+			return c.Enum
+		}
+	}
+	return nil
+}
+
+// numberFieldHTML は数を打つ欄です（出荷済み）。
+func numberFieldHTML(field, cur string) string {
+	return `<input type="text" inputmode="numeric" class="order-edit order-num"` +
+		fieldAttrs(field, cur) + ` value="` + stdhtml.EscapeString(cur) + `"` +
+		` aria-label="` + stdhtml.EscapeString(field) + `">`
+}
+
+// textFieldHTML は自由文の欄です（備考）。
+func textFieldHTML(field, cur string) string {
+	return `<input type="text" class="order-edit order-text"` +
+		fieldAttrs(field, cur) + ` value="` + stdhtml.EscapeString(cur) + `"` +
+		` aria-label="` + stdhtml.EscapeString(field) + `">`
 }

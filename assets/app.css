@@ -2250,3 +2250,34 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     /* 紙では「受注」列のリンクの下線は邪魔なので消す（URLは出さない）。 */
     #w-print-area a { color: inherit; text-decoration: none; }
 }
+
+/* ── 受注残表の編集（2026-09-21）────────────────────────────────────────
+   ⚠ **クロームの中の部品**なので保存されません。見た目は控えめに——毎日見る表で
+   枠が目立つと、数字より枠を読むことになります。 */
+.order-edit {
+    font: inherit;
+    border: 1px solid transparent;
+    background: transparent;
+    padding: 1px 3px;
+    max-width: 100%;
+}
+.order-edit:hover, .order-edit:focus {
+    border-color: var(--w-border, #cbd5e1);
+    background: #fff;
+}
+.order-num { width: 5em; text-align: right; }
+.order-text { width: 16em; }
+.order-check { width: 1.1em; height: 1.1em; }
+/* 保存できた／できなかったの合図。⚠ **色だけに頼りません**——失敗は `title` に
+   理由が入り、トーストにも出ます（色覚と白黒印刷の両方で効くように）。 */
+.order-edit-ok { background: #dcfce7 !important; }
+.order-edit-ng { background: #fee2e2 !important; border-color: #c0392b !important; }
+/* 保存できなかった理由は**そのセルの中に**出す。⚠ `title` は指で触る画面では
+   出ないので、見える文字にする。 */
+.order-edit-msg {
+    display: block;
+    font-size: 0.8em;
+    color: var(--w-danger, #c0392b);
+    white-space: normal;
+    max-width: 18em;
+}

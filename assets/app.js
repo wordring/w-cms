@@ -6031,3 +6031,99 @@ document.addEventListener('click', (e) => {
     setTimeout(cleanup, 60000);
     window.print();
 });
+
+// ── 受注残表から受注明細を書き換える（2026-09-21）────────────────────────
+//
+// ユーザー:「**受注トップページの受注残集計表を鏡にして受注ページの受注明細表が
+// 編集される**ようにしましょう」。
+//
+// ⚠ **押した先は別のページの本文です。** サーバーが**行番号・品番・いまの値の3つ**で
+// 照合します（ext/subcon/order_edit.go）。ここの仕事は**送ることと、失敗したら
+// 画面を元へ戻すこと**です。
+//
+// ⚠ **押せたのに保存できていない、がいちばん困る壊れ方**なので、
+// 失敗したら必ず値を戻して、理由を出します。
+//
+// ⚠ **`data-old` を成功のたびに更新します。** 忘れると、2回目の変更で
+// 「いまの値が違う」と断られます（自分の1回目の変更と食い違うため）。
+(function wireBacklogEditing() {
+    const valueOf = (el) => (el.type === 'checkbox' ? (el.checked ? '済' : '') : el.value);
+    const setValue = (el, v) => {
+        if (el.type === 'checkbox') el.checked = (v === '済');
+        else el.value = v;
+    };
+
+    // showWhyHere は理由をそのセルの中に出します（空なら消す）。
+    //
+    // ⚠ **`title` だけでは伝わりません**（指で触る画面では出ません）。⚠ そして
+    // トーストは使えません——`showToast` はこのファイルの IIFE の中にあり、
+    // **外からは呼べません**（`typeof` で守ると、黙って何も出ない形になります）。
+    function showWhyHere(el, why) {
+        const cell = el.closest('td');
+        if (!cell) return;
+        let msg = cell.querySelector('.order-edit-msg');
+        if (!why) { if (msg) msg.remove(); return; }
+        if (!msg) {
+            msg = document.createElement('span');
+            msg.className = 'order-edit-msg';
+            cell.appendChild(msg);
+        }
+        msg.textContent = why;
+    }
+
+    async function send(el) {
+        const tr = el.closest('tr');
+        if (!tr) return;
+        const body = {
+            page_id: tr.getAttribute('data-order-page'),
+            row: parseInt(tr.getAttribute('data-order-row'), 10),
+            item_no: tr.getAttribute('data-order-item'),
+            field: el.getAttribute('data-field'),
+            old: el.getAttribute('data-old') || '',
+            value: valueOf(el),
+        };
+        if (body.old === body.value) return; // 変わっていないなら送らない
+        el.classList.remove('order-edit-ng', 'order-edit-ok');
+        el.disabled = true;
+        try {
+            const res = await fetch('/api/order-item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) {
+                // ⚠ **画面を元へ戻します。** 戻さないと「押したのに保存されていない」
+                // 状態が残り、次に見た人が正しいと思い込みます。
+                setValue(el, body.old);
+                el.classList.add('order-edit-ng');
+                showWhyHere(el, (d && d.message) || ('保存できません（' + res.status + '）'));
+                return;
+            }
+            // ⚠ **次の変更のために、いまの値を更新します**（忘れると2回目が断られます）。
+            el.setAttribute('data-old', body.value);
+            showWhyHere(el, '');
+            el.classList.add('order-edit-ok');
+            setTimeout(() => el.classList.remove('order-edit-ok'), 1200);
+        } catch (e) {
+            setValue(el, body.old);
+            el.classList.add('order-edit-ng');
+            showWhyHere(el, '保存できません（通信に失敗しました）');
+        } finally {
+            el.disabled = false;
+        }
+    }
+
+    // ⚠ **document へ委譲します**——受注残表はサーバーが描き直すので、要素ごとに
+    // 配線すると描き直しのたびに切れます。
+    document.addEventListener('change', (e) => {
+        const el = e.target;
+        if (el && el.classList && el.classList.contains('order-edit')) send(el);
+    });
+    // 文字の欄は「離れたとき」にも送る（`change` は値が変わったときだけ出る）。
+    document.addEventListener('blur', (e) => {
+        const el = e.target;
+        if (el && el.classList && el.classList.contains('order-edit') && el.type === 'text') send(el);
+    }, true);
+})();
