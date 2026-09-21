@@ -122,24 +122,9 @@ func agreedMessage(c orderChecksum) string {
 	return msg + "）"
 }
 
-// appendChecksumRow は表の足元に1行足します。
-//
-// ⚠ **`<tfoot>` の行として足します**——表の中に `<p>` は置けません（パーサが
-// 表の外へ追い出し、`<div>` が明細の手前に飛び出します）。
+// appendChecksumRow は表の足元に検算の1行を足します（`appendFootRow`）。
 func appendChecksumRow(table *html.Node, span int, class, text string) {
-	foot := lastChild(table, "tfoot")
-	if foot == nil {
-		foot = &html.Node{Type: html.ElementNode, Data: "tfoot",
-			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome"}}}
-		table.AppendChild(foot)
-	}
-	td := &html.Node{Type: html.ElementNode, Data: "td",
-		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
-	td.AppendChild(&html.Node{Type: html.TextNode, Data: text})
-	tr := &html.Node{Type: html.ElementNode, Data: "tr",
-		Attr: []html.Attribute{{Key: "class", Val: "order-checksum " + class}}}
-	tr.AppendChild(td)
-	foot.AppendChild(tr)
+	appendFootRow(table, span, "order-checksum "+class, text)
 }
 
 // lastChild は直下の同名要素を返します（無ければ nil）。

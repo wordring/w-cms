@@ -116,9 +116,7 @@ func unorderedCostHTML(u UnorderedItem) string {
 // 速ければ表記が揃います。
 func unorderedFormHTML() string {
 	f := func(id, label, ph, typ string) string {
-		return `<label class="matsearch-field"><span>` + stdhtml.EscapeString(label) + `</span>` +
-			`<input type="` + typ + `" class="matsearch-input" data-unorder="` + id + `"` +
-			` placeholder="` + stdhtml.EscapeString(ph) + `"/></label>`
+		return searchFieldHTML("unorder", id, label, ph, typ)
 	}
 	return `<div class="matsearch-form unorder-form">` +
 		f("supplier", "仕入先", "みなと商店", "text") +

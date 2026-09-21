@@ -121,14 +121,15 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note string, lines []ourO
 	b.WriteString(`<h1>発注　` + stdhtml.EscapeString(supplier) + `</h1>`)
 	b.WriteString(`<dl data-type="tags">`)
 	// ⚠ **発注書番号はページ番号そのもの**（別に採番しない）。
-	b.WriteString(`<dt>` + OrderNoTag + `</dt><dd>` + stdhtml.EscapeString(pageID) + `</dd>`)
-	b.WriteString(`<dt>` + SupplierTag + `</dt><dd>` + stdhtml.EscapeString(supplier) + `</dd>`)
-	b.WriteString(`<dt>` + OrderedAtTag + `</dt><dd>` + stdhtml.EscapeString(orderAt) + `</dd>`)
+	// ⚠ **タグは受注ページと同じ口で書きます**（`writeHeaderPair`——日付は正規形へ）。
+	writeHeaderPair(&b, OrderNoTag, pageID)
+	writeHeaderPair(&b, SupplierTag, supplier)
+	writeHeaderPair(&b, OrderedAtTag, orderAt)
 	if due != "" {
-		b.WriteString(`<dt>` + DueDateTag + `</dt><dd>` + stdhtml.EscapeString(due) + `</dd>`)
+		writeHeaderPair(&b, DueDateTag, due)
 	}
 	if note != "" {
-		b.WriteString(`<dt>備考</dt><dd>` + stdhtml.EscapeString(note) + `</dd>`)
+		writeHeaderPair(&b, "備考", note)
 	}
 	b.WriteString(`</dl>`)
 

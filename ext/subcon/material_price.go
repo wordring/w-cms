@@ -23,7 +23,6 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -138,23 +137,11 @@ func isMigrating(db cms.ReadOnlyDB, pageID int) bool {
 // appendMigratingRow は、なぜ引かないのかを表の足元に1行で出します。
 //
 // ⚠ **列は足しません。** 引かないのに見出しだけ出すと、全行が空に見えます。
-// ⚠ **`<tfoot>` の行として足します**——表の中に `<p>` は置けません（パーサが表の外へ
-// 追い出し、明細の手前に飛び出します）。検算の行と同じ作りです。
+// 足元の行として足すのは検算と同じ作りです（`appendFootRow`）。
 func appendMigratingRow(table *html.Node, span int) {
-	foot := lastChild(table, "tfoot")
-	if foot == nil {
-		foot = &html.Node{Type: html.ElementNode, Data: "tfoot",
-			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome"}}}
-		table.AppendChild(foot)
-	}
-	td := &html.Node{Type: html.ElementNode, Data: "td",
-		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
-	td.AppendChild(&html.Node{Type: html.TextNode, Data: "⚠ 移行の確認前なので、参考単価は引いていません（確かめたら「" +
-		MigratingTag + "」タグを消してください）"})
-	tr := &html.Node{Type: html.ElementNode, Data: "tr",
-		Attr: []html.Attribute{{Key: "class", Val: "mat-price-migrating"}}}
-	tr.AppendChild(td)
-	foot.AppendChild(tr)
+	appendFootRow(table, span, "mat-price-migrating",
+		"⚠ 移行の確認前なので、参考単価は引いていません（確かめたら「"+
+			MigratingTag+"」タグを消してください）")
 }
 
 // latestMaterialPrices は**全社の発注明細**から、材料ごとの最新単価を集めます。

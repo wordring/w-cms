@@ -14,6 +14,7 @@ package subcon
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -116,4 +117,26 @@ func pagesByAnyTag(db cms.ReadOnlyDB, names []string, value string) []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+// appendFootRow は表の足元（`<tfoot>`）に、横いっぱいの1行を足します。
+//
+// ⚠ **`<tfoot>` の行として足します**——表の中に `<p>` は置けません（パーサが
+// 表の外へ追い出し、`<div>` が明細の手前に飛び出します・引き継ぎの罠）。
+// `tfoot` は `vocab-chrome` なので保存されません。検算の行と「移行の確認前」の行が
+// 同じ12行を写していたので寄せました。
+func appendFootRow(table *html.Node, span int, trClass, text string) {
+	foot := lastChild(table, "tfoot")
+	if foot == nil {
+		foot = &html.Node{Type: html.ElementNode, Data: "tfoot",
+			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome"}}}
+		table.AppendChild(foot)
+	}
+	td := &html.Node{Type: html.ElementNode, Data: "td",
+		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
+	td.AppendChild(&html.Node{Type: html.TextNode, Data: text})
+	tr := &html.Node{Type: html.ElementNode, Data: "tr",
+		Attr: []html.Attribute{{Key: "class", Val: trClass}}}
+	tr.AppendChild(td)
+	foot.AppendChild(tr)
 }

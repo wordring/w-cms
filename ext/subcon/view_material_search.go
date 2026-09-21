@@ -34,9 +34,7 @@ const MaterialSearchViewType = "material-search"
 // 全部を眺める**ことになります（`MaterialQuery.Empty` と同じ判断）。
 func materialSearchViewHTML(user *auth.User, pageIDInt int) string {
 	f := func(id, label, placeholder string) string {
-		return `<label class="matsearch-field"><span>` + html.EscapeString(label) + `</span>` +
-			`<input type="text" class="matsearch-input" data-matsearch="` + id + `"` +
-			` placeholder="` + html.EscapeString(placeholder) + `"/></label>`
+		return searchFieldHTML("matsearch", id, label, placeholder, "text")
 	}
 	return `<h3 class="matsearch-title">🔎 材料を探す</h3>` +
 		`<p class="matsearch-help">材質・形状は部分一致。厚み・径は一致。` +
@@ -49,6 +47,17 @@ func materialSearchViewHTML(user *auth.User, pageIDInt int) string {
 		f("values", "寸法", "75 1090") +
 		`<button type="button" class="matsearch-go" data-matsearch-go="1">探す</button>` +
 		`</div><div class="matsearch-result" data-matsearch-result="1"></div>`
+}
+
+// searchFieldHTML は探す欄の1つ（見出し＋入力）を組みます。
+//
+// `attr` は画面の配線が読む `data-*` の名前（`matsearch`・`unorder`）——材料を探す欄と
+// 未手配の欄が同じ3行を写していたので寄せました。サニタイズの後に足すクロームなので、
+// **自分でエスケープの責任を負います**。
+func searchFieldHTML(attr, id, label, placeholder, typ string) string {
+	return `<label class="matsearch-field"><span>` + html.EscapeString(label) + `</span>` +
+		`<input type="` + typ + `" class="matsearch-input" data-` + attr + `="` + id + `"` +
+		` placeholder="` + html.EscapeString(placeholder) + `"/></label>`
 }
 
 // MaterialSearchAPIHandler は POST /api/material-search です。
