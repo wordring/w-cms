@@ -89,7 +89,7 @@ func TestFillOurItemNoKeepsHumanValue(t *testing.T) {
 // 書いてくると、その行は自動では埋まりません（人が結べば覚えます）。
 func TestFillOurItemNoFoldsCode(t *testing.T) {
 	for _, cell := range []string{
-		"t050-01-211",     // 小文字
+		"k120-01-211",     // 小文字
 		"Ｋ１２０－０１－２１１",     // 全角
 		" K120-01-211 ",   // 前後の空白
 		"K120 - 01 - 211", // ハイフンの周りの空白

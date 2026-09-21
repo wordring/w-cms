@@ -75,7 +75,7 @@ func notesFor(t *testing.T, body string) []string {
 func TestLinkNoteSuggestsWhenEmpty(t *testing.T) {
 	setupExtTest(t, "000070", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	withProductCodeTags(t, "図面番号", "品番")
-	seedProductPage(t, 71, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 71, "K120-01-211 留めブラケット", "K120-01-211")
 
 	notes := notesFor(t, orderBody([2]string{"", "K120-01-211"}))
 	if len(notes) != 1 {
@@ -94,7 +94,7 @@ func TestLinkNoteSuggestsWhenEmpty(t *testing.T) {
 func TestLinkNoteStaysSilentWhenAmbiguous(t *testing.T) {
 	setupExtTest(t, "000072", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	withProductCodeTags(t, "図面番号", "品番")
-	seedProductPage(t, 73, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 73, "K120-01-211 留めブラケット", "K120-01-211")
 	seedProductPage(t, 74, "K120-01-211 別の品物", "K120-01-211")
 
 	if notes := notesFor(t, orderBody([2]string{"", "K120-01-211"})); len(notes) != 0 {
@@ -107,11 +107,11 @@ func TestLinkNoteStaysSilentWhenAmbiguous(t *testing.T) {
 func TestLinkNoteStaysSilentWhenFilled(t *testing.T) {
 	setupExtTest(t, "000075", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	withProductCodeTags(t, "図面番号", "品番")
-	seedProductPage(t, 76, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 76, "K120-01-211 留めブラケット", "K120-01-211")
 
 	body := `<h1>受注</h1><table data-type="` + clientOrderItemsType + `"><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th></tr>` +
-		`<tr><td>000076</td><td>K120-01-211</td><td>受けブラケット</td></tr>` +
+		`<tr><td>000076</td><td>K120-01-211</td><td>留めブラケット</td></tr>` +
 		`</tbody></table>`
 	if notes := notesFor(t, body); len(notes) != 0 {
 		t.Errorf("正しく結ばれているのに何か言っています: %v", notes)
@@ -126,14 +126,14 @@ func TestLinkNoteStaysSilentWhenFilled(t *testing.T) {
 func TestLinkNoteWarnsOnNameMismatch(t *testing.T) {
 	setupExtTest(t, "000077", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	withProductCodeTags(t, "図面番号", "品番")
-	seedProductPage(t, 78, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 78, "K120-01-211 留めブラケット", "K120-01-211")
 
 	body := `<h1>受注</h1><table data-type="` + clientOrderItemsType + `"><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th></tr>` +
 		`<tr><td>000078</td><td>K120-01-211</td><td>カバー</td></tr>` +
 		`</tbody></table>`
 	notes := notesFor(t, body)
-	if len(notes) != 1 || !strings.Contains(notes[0], "受けブラケット") {
+	if len(notes) != 1 || !strings.Contains(notes[0], "留めブラケット") {
 		t.Fatalf("⚠ 食い違いを見逃しています: %v", notes)
 	}
 	if !strings.HasPrefix(notes[0], "⚠") {
@@ -149,9 +149,9 @@ func TestLinkNoteWarnsOnNameMismatch(t *testing.T) {
 func TestLinkNoteToleratesTitlePrefix(t *testing.T) {
 	setupExtTest(t, "000079", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	withProductCodeTags(t, "図面番号", "品番")
-	seedProductPage(t, 80, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 80, "K120-01-211 留めブラケット", "K120-01-211")
 
-	for _, name := range []string{"受けブラケット", "ｳｹﾌﾞﾗｹｯﾄ"} {
+	for _, name := range []string{"留めブラケット", "留めﾌﾞﾗｹｯﾄ"} {
 		body := `<h1>受注</h1><table data-type="` + clientOrderItemsType + `"><tbody>` +
 			`<tr><th>弊社品番</th><th>品番</th><th>品名</th></tr>` +
 			`<tr><td>000080</td><td>K120-01-211</td><td>` + name + `</td></tr>` +
@@ -207,7 +207,7 @@ func TestLinkNoteRespectsVisibility(t *testing.T) {
 	withProductCodeTags(t, "図面番号", "品番")
 
 	// alice 専有（bob は読めない）と、公開（bob も読める）を1枚ずつ。
-	addPage(t, 82, -1, "K120-01-211 受けブラケット", "alice", "300", false)
+	addPage(t, 82, -1, "K120-01-211 留めブラケット", "alice", "300", false)
 	addPage(t, 83, -1, "K120-01-999 カバー", "alice", "302", true)
 	for _, c := range []struct {
 		id int
@@ -259,7 +259,7 @@ func seedBody(t *testing.T, id, body string) {
 func TestLinkProductsToOrderFillsExisting(t *testing.T) {
 	setupExtTest(t, "000090", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	withProductCodeTags(t, "図面番号", "品番")
-	seedProductPage(t, 91, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 91, "K120-01-211 留めブラケット", "K120-01-211")
 
 	seedBody(t, "000090", orderBody([2]string{"", "K120-01-211"}))
 	user := &auth.User{Username: "root", IsAdmin: true}
@@ -284,7 +284,7 @@ func TestLinkProductsToOrderFillsExisting(t *testing.T) {
 func TestLinkProductsToOrderStaysSilentWhenAmbiguous(t *testing.T) {
 	setupExtTest(t, "000092", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	withProductCodeTags(t, "図面番号", "品番")
-	seedProductPage(t, 93, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 93, "K120-01-211 留めブラケット", "K120-01-211")
 	seedProductPage(t, 94, "K120-01-211 別の品物", "K120-01-211")
 
 	seedBody(t, "000092", orderBody([2]string{"", "K120-01-211"}))

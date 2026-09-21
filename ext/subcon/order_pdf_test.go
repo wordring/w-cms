@@ -177,7 +177,7 @@ func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 
 	// 塗装の発注書（`材質`・`形状`・`寸法` は空）。
 	paint, err := buildOrderPDF(pdfOrderBody(
-		`<tr><td>000036</td><td>K120-01-242</td><td>留めプレート</td>` +
+		`<tr><td>000036</td><td>K120-01-242</td><td>押さえプレート</td>` +
 			`<td></td><td></td><td></td><td>緑</td><td>20</td><td>個</td><td>160</td>` +
 			`<td></td><td>未納品</td></tr>`))
 	if err != nil {

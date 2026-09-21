@@ -311,7 +311,7 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 // titleMentions は加工製品ページの題が品名を含むかを見ます。
 //
 // ⚠ **完全一致では見ません。** 題は「図面番号 図面名称」の形なので
-// （`K120-01-211 受けブラケット`）、品名はその一部にしか出ません。
+// （`K120-01-211 留めブラケット`）、品名はその一部にしか出ません。
 // 畳んでから含むかどうかを見ます——揺れで毎回 ⚠ が出ると、狼少年になります。
 func titleMentions(title, name string) bool {
 	t := cms.NormalizeCode(title)
