@@ -106,7 +106,7 @@ func suggestOrderClient(user *auth.User, read string) string {
 	if strings.TrimSpace(read) == "" {
 		return "" // **空は埋めません**——読めなかったことを人に見せる
 	}
-	return contacts.SuggestOrgTitle(user, read)
+	return contacts.OrgNameForPage(user, read)
 }
 
 // orderDateOf は受注ページの年月を決める日付を返します。

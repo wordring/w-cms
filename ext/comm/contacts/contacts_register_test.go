@@ -214,9 +214,11 @@ func TestOrgCandidatesAndInitials(t *testing.T) {
 	}
 
 	// 候補が無く、表示名が社名らしい → 組織欄にその名前。
+	// ⚠ **法人格は落とします**（2026-09-21）——それまで表示名そのままだったので、
+	// 新しい相手は一度も揃わず、解析が書くタグ（法人格なし）と食い違いました。
 	c3 := UnknownContact{Address: "info@new.example", Domain: "new.example", Name: "株式会社ニュー", SuggestName: "株式会社ニュー"}
 	org, person = contactRowInitials(c3, orgCandidates(u, c3))
-	if org != "株式会社ニュー" || person != "" {
-		t.Errorf("社名らしい表示名が組織欄に入りません: org=%q person=%q", org, person)
+	if org != "ニュー" || person != "" {
+		t.Errorf("社名らしい表示名が、法人格を落として組織欄に入りません: org=%q person=%q", org, person)
 	}
 }

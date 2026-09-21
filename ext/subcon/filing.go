@@ -263,9 +263,10 @@ func suggestCustomer(user *auth.User, productPageID int, read string) string {
 	//
 	// ⚠ **これは提案で、決めるのは人**です。欄は編集できるコンボボックスで、
 	// 読んだ名前も候補の一覧に並びます（`partners`）。候補が2つ以上に割れたときは
-	// `SuggestOrgTitle` が黙って読んだ名前を返します——`株式会社あさひ` と
+	// `OrgNameForPage` が黙って読んだ名前を返します——`株式会社あさひ` と
 	// `有限会社あさひ` は**実在しうる別会社**なので、機械が選んではいけません。
-	return contacts.SuggestOrgTitle(user, read)
+	// 連絡帳にまだ居なければ**法人格を落とした形**を提案します（2026-09-21）。
+	return contacts.OrgNameForPage(user, read)
 }
 
 // senderAddressOf は加工製品ページの由来（`受信元`）をたどり、通信記録の差出人アドレスを返します。

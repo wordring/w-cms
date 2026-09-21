@@ -70,13 +70,44 @@ func TestSuggestOrgStaysSilentWhenAmbiguous(t *testing.T) {
 	}
 }
 
-// TestSuggestOrgTitleKeepsReadWhenAbsent は、**居なければ読んだ名前のまま**を固定します。
-// 新しい客先の1通目は連絡帳に居ないのが正常で、欄を空にしてはいけません。
-func TestSuggestOrgTitleKeepsReadWhenAbsent(t *testing.T) {
+// TestOrgNameForPageFoldsWhenAbsent は、⚠ **連絡帳に居なければ法人格を落とす**ことを
+// 固定します（2026-09-21 ユーザー:「発注元タグに株式会社が入るのが気になります」）。
+//
+// ⚠ **これが直した穴です。** それまでは読んだ名前をそのまま返していたので、
+// **新しい客先の1通目では一度も揃いませんでした**——連絡帳に居ないうちは
+// `株式会社○○` がそのままタグになり、あとから連絡帳に `○○` を作っても
+// 完全一致では結ばれません。
+func TestOrgNameForPageFoldsWhenAbsent(t *testing.T) {
 	user, _ := setupPartnerTree(t)
 
-	const read = "株式会社まだ居ない商会"
-	if got := SuggestOrgTitle(user, read); got != read {
-		t.Errorf("SuggestOrgTitle(%q) = %q; 読んだ名前のままであるべきです", read, got)
+	if got := OrgNameForPage(user, "株式会社まだ居ない商会"); got != "まだ居ない商会" {
+		t.Errorf("OrgNameForPage = %q; 法人格を落とした形を期待します", got)
+	}
+	// **空は埋めません**——読めなかったことを人に見せます。
+	if got := OrgNameForPage(user, "  "); got != "" {
+		t.Errorf("空から %q を作っています", got)
+	}
+}
+
+// TestOrgNameForPageKeepsReadWhenAmbiguous は、⚠ **迷ったら読んだ名前のまま**を
+// 固定します。
+//
+// `株式会社あさひ` と `有限会社あさひ` がどちらも連絡帳に在るとき、畳んだ `あさひ` は
+// **どちらでもない第三の名前**です。機械が迷っているときに新しい名前を作らせません
+// ——「名寄せを機械にやらせない」の一部です。
+func TestOrgNameForPageKeepsReadWhenAmbiguous(t *testing.T) {
+	user, _ := setupPartnerTree(t)
+	boxID, ok := ContactsBoxPageID()
+	if !ok {
+		t.Fatal("連絡帳がありません")
+	}
+	for _, name := range []string{"株式会社あさひ", "有限会社あさひ"} {
+		if _, err := ensureChildByTitle(user, boxID, name); err != nil {
+			t.Fatalf("%s を作れません: %v", name, err)
+		}
+	}
+	const read = "㈱あさひ"
+	if got := OrgNameForPage(user, read); got != read {
+		t.Errorf("OrgNameForPage(%q) = %q; 迷ったら読んだ名前のままであるべきです", read, got)
 	}
 }

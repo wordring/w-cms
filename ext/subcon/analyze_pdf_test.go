@@ -362,3 +362,40 @@ func readPageBody(t *testing.T, pageID string) string {
 	}
 	return string(b)
 }
+
+// TestAnalyzeFoldsClientCompanyForm は、⚠ **解析が書く社名から法人格が落ちる**ことを
+// 固定します（2026-09-21 ユーザー:「発注元タグに株式会社が入るのが気になります」）。
+//
+// ⚠ **それまでは連絡帳に候補が無いと読んだ名前のまま**でした——新しい客先は
+// 連絡帳に居ないのが正常なので、**1通目では一度も揃いません**。`株式会社○○` で
+// タグができ、あとから連絡帳に `○○` を作っても完全一致では結ばれません。
+//
+// ⚠ **生の社名は失われません**——「顧客の発注書（読んだまま）」に残るので、
+// 食い違えば人が見比べられます。
+func TestAnalyzeFoldsClientCompanyForm(t *testing.T) {
+	const id = "000013"
+	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	putAttachment(t, id, "abc124.pdf", []byte("%PDF-1.4 fake"))
+	stubJudge(t, func(pdf []byte) (*orderJudgment, error) {
+		j := *sampleJudgment
+		j.Customer = "株式会社南北スポーツ"
+		return &j, nil
+	})
+
+	rr := postAnalyze(t, &auth.User{Username: "alice"},
+		map[string]string{"page_id": id, "file": "abc124.pdf"})
+	if rr.Code != 200 {
+		t.Fatalf("解析が失敗しました: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var res struct {
+		PageID string `json:"page_id"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &res)
+	body, err := os.ReadFile(filepath.Join(page.GetPageDir(res.PageID), res.PageID+".html"))
+	if err != nil {
+		t.Fatalf("受注ページを読めません: %v", err)
+	}
+	if got := string(body); !strings.Contains(got, "<dt>発注元</dt><dd>南北スポーツ</dd>") {
+		t.Errorf("発注元から法人格が落ちていません:\n%s", got)
+	}
+}

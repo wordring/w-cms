@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 )
 
 // contactsViewHTML は「未登録の連絡先」の作業面です。
@@ -214,8 +215,15 @@ func contactRowInitials(c UnknownContact, cands []orgCandidate) (org, person str
 	case 1:
 		org = real[0].Title
 	case 0:
+		// 連絡帳にまだ居ない相手。⚠ **法人格を落とした形を初期値にします**
+		// （2026-09-21）——それまでは表示名そのまま（`株式会社○○`）だったので、
+		// **新しい相手は一度も揃いませんでした**。解析が書くタグ（`発注元`・`客先`）は
+		// 同じ口（`OrgNameForPage`）を通って法人格を落とすので、ここが生のままだと
+		// **連絡帳の題と機械の書いた社名が食い違います**。
+		// ⚠ **欄は編集できるコンボボックスのままです**——打ち替えればそのとおりに
+		// 登録されます（決めるのは人）。
 		if looksLikeCompany(c.SuggestName) {
-			org = c.SuggestName
+			org = cms.FoldCompanyName(c.SuggestName)
 		}
 	}
 	return org, person

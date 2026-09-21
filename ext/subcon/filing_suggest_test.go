@@ -47,9 +47,16 @@ func TestSuggestCustomerFallsBackToContactsOrg(t *testing.T) {
 	}
 }
 
-// TestSuggestCustomerKeepsUnknownName は、連絡帳に居ない相手は**読んだまま**を
-// 固定します。新しい客先は居ないのが正常で、推測で埋めてはいけません。
-func TestSuggestCustomerKeepsUnknownName(t *testing.T) {
+// TestSuggestCustomerFoldsUnknownName は、⚠ **連絡帳に居ない相手は法人格を落として
+// 提案する**ことを固定します（2026-09-21 ユーザー:「発注元タグに株式会社が入るのが
+// 気になります」）。
+//
+// ⚠ **2026-09-21 まで「読んだまま」でした。** 新しい客先は連絡帳に居ないのが正常
+// なので、**居ないうちは一度も揃いません**——`株式会社○○` でページができ、あとから
+// 連絡帳に `○○` を作っても `linkPartner` は完全一致で引けず、2つの木が黙って
+// 結ばれません。⚠ **これは推測で埋めているのではありません**——読んだ名前を
+// 正規形で書くだけで、生の名前は原本の写しに残ります。
+func TestSuggestCustomerFoldsUnknownName(t *testing.T) {
 	setupFilingTest(t, "000100")
 	user := &auth.User{Username: "alice", IsAdmin: true}
 	if _, err := contacts.EnsureContactsBox(user); err != nil {
@@ -59,9 +66,8 @@ func TestSuggestCustomerKeepsUnknownName(t *testing.T) {
 	pageID := makeDrawingPage(t, "000100", "X1", "部品", "装置", "株式会社まだ居ない商会")
 	idInt := mustAtoi(t, pageID)
 
-	const read = "株式会社まだ居ない商会"
-	if got := suggestCustomer(user, idInt, read); got != read {
-		t.Errorf("居ない相手を書き換えています: %q; want %q", got, read)
+	if got := suggestCustomer(user, idInt, "株式会社まだ居ない商会"); got != "まだ居ない商会" {
+		t.Errorf("法人格を落としていません: %q", got)
 	}
 }
 

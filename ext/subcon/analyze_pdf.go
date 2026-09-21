@@ -43,6 +43,7 @@ import (
 
 	"github.com/google/generative-ai-go/genai"
 
+	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -220,6 +221,25 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	attachID := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	user := auth.CurrentUser(r)
+
+	// ── 社名は**書く前に**揃えます（2026-09-21 ユーザー決定）──
+	//
+	// ユーザー:「発注元タグに株式会社が入るのが気になります」。それまでは連絡帳に
+	// 候補が見つからないと**読んだ名前をそのまま**書いていたので、⚠ **新しい客先の
+	// 1通目では一度も揃いませんでした**——`株式会社○○` がそのままタグになります。
+	//
+	// 揃えるのは `contacts.OrgNameForPage` の1つの口です（連絡帳の登録・受注の整理・
+	// 加工製品の整理と同じ）。候補が居ればその実物の題、2つ以上に割れていれば読んだ
+	// まま、居なければ法人格を落とした形。⚠ **生の社名は原本の写しに残ります**
+	// （「顧客の発注書（読んだまま）」）ので、食い違えば人が見比べられます。
+	//
+	// ⚠ **図面の枝も同じ値を使います**——`客先` は置き場所（社名／段／装置名称）に
+	// 効くので、ここで揃えないと**受注ページと加工製品ページで社名が食い違います**。
+	j.Customer = contacts.OrgNameForPage(user, j.Customer)
+	for i := range j.Drawings {
+		j.Drawings[i].Customer = contacts.OrgNameForPage(user, j.Drawings[i].Customer)
+	}
 
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
 	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
@@ -236,7 +256,6 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 				"図面と判定しましたが、図面番号も図面名称も読み取れませんでした")
 			return
 		}
-		user := auth.CurrentUser(r)
 		made := []map[string]any{}
 		totalMatched := 0
 		for _, d := range drawings {
@@ -275,7 +294,6 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := auth.CurrentUser(r)
 	newID, err := cms.CreateChildPage(pageID, user.Username, buildOrderPageHTML(pageID, attachID, j))
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())

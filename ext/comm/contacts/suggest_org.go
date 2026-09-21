@@ -67,41 +67,77 @@ type OrgSuggestion struct {
 // 迷うなら黙るほうが安全で、これは `PartnerByTitle` が「2枚あったら引かない」
 // のと同じ判断です。
 func SuggestOrg(user *auth.User, read string) (OrgSuggestion, bool) {
+	s, _, ok := suggestOrgAmong(existingPartners(user), read)
+	return s, ok
+}
+
+// suggestOrgAmong は候補を選び、**法人格を落として当たった件数**も返します。
+//
+// 件数を返すのは、`OrgNameForPage` が「0件（まだ居ない）」と「2件以上（決められない）」を
+// **区別する必要がある**ためです——`SuggestOrg` はどちらも ok=false で、そこから先が
+// 正反対になります。
+func suggestOrgAmong(orgs []PartnerRef, read string) (s OrgSuggestion, hits int, ok bool) {
 	read = strings.TrimSpace(read)
-	if read == "" {
-		return OrgSuggestion{}, false
-	}
-	orgs := existingPartners(user)
-	if len(orgs) == 0 {
-		return OrgSuggestion{}, false
+	if read == "" || len(orgs) == 0 {
+		return OrgSuggestion{}, 0, false
 	}
 
 	// ① 題がそのまま一致するか（軽い正規化だけ——`㈱` の開きや全角空白は吸収する）。
 	want := cms.NormalizeText(read)
 	for _, o := range orgs {
 		if cms.NormalizeText(o.Title) == want {
-			return OrgSuggestion{PageID: o.ID, Title: o.Title, Exact: o.Title == read}, true
+			return OrgSuggestion{PageID: o.ID, Title: o.Title, Exact: o.Title == read}, 1, true
 		}
 	}
 
 	// ② 法人格を落として一致するか。**1件に絞れたときだけ**返します。
-	var hits []PartnerRef
+	var found []PartnerRef
 	for _, o := range orgs {
 		if cms.SameCompany(o.Title, read) {
-			hits = append(hits, o)
+			found = append(found, o)
 		}
 	}
-	if len(hits) != 1 {
-		return OrgSuggestion{}, false // 0件（まだ居ない）か、2件以上（決められない）
+	if len(found) != 1 {
+		return OrgSuggestion{}, len(found), false // 0件（まだ居ない）か、2件以上（決められない）
 	}
-	return OrgSuggestion{PageID: hits[0].ID, Title: hits[0].Title}, true
+	return OrgSuggestion{PageID: found[0].ID, Title: found[0].Title}, 1, true
 }
 
-// SuggestOrgTitle は候補の**題だけ**を返します（呼ぶ側が欄へ入れるための短い形）。
-// 見つからなければ読んだ名前をそのまま返す——**欄を空にしません**。
-func SuggestOrgTitle(user *auth.User, read string) string {
-	if s, ok := SuggestOrg(user, read); ok {
-		return s.Title
+// OrgNameForPage は、**機械がページやタグへ書くときの社名**を返します。
+//
+// ユーザー:「発注元タグに株式会社が入るのが気になります」（2026-09-21）。
+// それまでは候補が見つからないと**読んだ名前をそのまま**書いていたので、連絡帳に
+// まだ居ない相手（＝新しい客先の1通目）では `株式会社○○` がそのままタグになりました。
+// ⚠ **連絡帳に居ないうちは一度も揃わない**、という穴です。
+//
+// 決め方は3つに分かれます:
+//
+//	① 候補が1つ    → **連絡帳にある実物の題**（実物が正本。畳んだ形ではない）
+//	② 候補が2つ以上 → **読んだ名前のまま**
+//	③ 候補が0      → **法人格を落とした形**（入口で揃える）
+//
+// ⚠ **②で畳まないのが肝です。** `株式会社あさひ` と `有限会社あさひ` がどちらも
+// 連絡帳に在るとき、畳んだ `あさひ` は**どちらでもない第三の名前**になります。
+// 機械が迷っているときに新しい名前を作らせない——迷うなら読んだままが安全です。
+//
+// ⚠ **③は「名寄せ」ではありません。** 既にある別の名前へ寄せるのではなく、
+// これから作る名前を**正規形で書く**だけです（品名を半角カナから直すのと同じ）。
+// それでも `株式会社あさひ` と `有限会社あさひ` が**どちらも連絡帳に居ないうちに**
+// 続けて届けば、2社が `あさひ` として1つの取引先ページへ入りえます——
+// 相手の生の名前は**受注ページの「顧客の発注書（読んだまま）」に残る**ので、
+// 気づいた人が直せます。**決めるのは人**という根っこは動いていません。
+func OrgNameForPage(user *auth.User, read string) string {
+	read = strings.TrimSpace(read)
+	if read == "" {
+		return "" // **空は埋めません**——読めなかったことを人に見せる
 	}
-	return read
+	s, hits, ok := suggestOrgAmong(existingPartners(user), read)
+	switch {
+	case ok:
+		return s.Title
+	case hits > 1:
+		return read
+	default:
+		return cms.FoldCompanyName(read)
+	}
 }

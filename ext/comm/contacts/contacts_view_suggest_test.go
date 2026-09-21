@@ -54,9 +54,14 @@ func TestOrgCandidatesIncludesFoldedMatch(t *testing.T) {
 	}
 }
 
-// TestOrgCandidatesKeepsUnknownNameAsIs は、**連絡帳に居ない社名は推測で書き換えない**
-// ことを固定します。新しい客先は居ないのが正常で、そのときは読んだ名前のまま人が直します。
-func TestOrgCandidatesKeepsUnknownNameAsIs(t *testing.T) {
+// TestOrgCandidatesFoldsUnknownName は、⚠ **連絡帳に居ない社名は法人格を落として**
+// 初期値にすることを固定します（2026-09-21）。
+//
+// ⚠ **2026-09-21 まで読んだ名前のまま**でした。新しい客先は居ないのが正常なので、
+// **居ないうちは一度も揃いません**——ここで `株式会社○○` のページができると、
+// 解析が書くタグ（`発注元`・`客先`＝法人格なし）と完全一致せず、2つの木が
+// 黙って結ばれません。⚠ **欄は編集できるので、決めるのは人のままです。**
+func TestOrgCandidatesFoldsUnknownName(t *testing.T) {
 	user, _ := setupPartnerTree(t)
 
 	c := UnknownContact{
@@ -67,7 +72,7 @@ func TestOrgCandidatesKeepsUnknownNameAsIs(t *testing.T) {
 	}
 	cands := orgCandidates(user, c)
 	org, _ := contactRowInitials(c, cands)
-	if org != "株式会社まだ知らない製作所" {
-		t.Errorf("知らない社名が書き換わりました: %q", org)
+	if org != "まだ知らない製作所" {
+		t.Errorf("法人格を落としていません: %q", org)
 	}
 }
