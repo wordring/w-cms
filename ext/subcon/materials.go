@@ -51,6 +51,14 @@ func init() {
 		Extension: "subcon",
 		Why:       "受注ページの置き場です（受注／年／月。年月は発注日）。整理を実行すると通信箱からここへ移ります。",
 	})
+	// ⚠ **弊社の発注書は受注ページの下に置けません**（2026-09-21 ユーザー訂正）
+	// ——発注は**納期のグループなどから**発行され、**受注明細の単位とは無関係**なので、
+	// 1枚が複数の受注にまたがります。結びは参照で作ります（filing_order.go の定数）。
+	cms.RegisterRequiredPage(cms.RequiredPage{
+		Title:     PurchaseOrderBoxTitle,
+		Extension: "subcon",
+		Why:       "弊社が出す発注書の置き場です（発注／年／月。年月は発注日）。⚠ 受注ページの下には置けません——発注は納期のグループなどから発行され、受注明細の単位とは無関係だからです。受注との結びは参照で作ります。",
+	})
 }
 
 type materialsPlugin struct{}
