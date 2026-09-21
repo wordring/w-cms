@@ -135,10 +135,14 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   if (!r.titleOnPaper) { console.log('✗ 顧客名と納期の見出しが紙に出ていません'); bad++; }
   else console.log('✓ 見出しが紙に出ています: ' + r.titleText);
 
-  const WANT = ['品番', '品名', '残', '状態', '備考'];
+  // ⚠ **`弊社品番` を足しました**（2026-09-21 ユーザー:「**品番はあいまいさがある
+  //    うえ、顧客の番号であるため、こちらで修正できません。そこで弊社品番を併記して
+  //    あいまいさなく作業できるようにします**」）。
+  // ⚠ **これは作業の紙です**——手元であいまいなく引ける番号が要ります。
+  const WANT = ['弊社品番', '品番', '品名', '残', '状態', '備考'];
   const same = r.headOnPaper.length === WANT.length && r.headOnPaper.every((h, i) => h === WANT[i]);
   if (!same) { console.log('✗ 紙の列が ' + JSON.stringify(r.headOnPaper) + ' です（' + JSON.stringify(WANT) + ' を期待）'); bad++; }
-  else console.log('✓ 紙の列は5つ: ' + r.headOnPaper.join('・'));
+  else console.log('✓ 紙の列は' + WANT.length + 'つ: ' + r.headOnPaper.join('・'));
 
   // ⚠ **見出しと値の数が揃っていること。** 片方にだけ印を付けると、紙で1つずつ
   // ずれます——列が消えるのは値の側だけなので、いちばん気づきにくい壊れ方です。

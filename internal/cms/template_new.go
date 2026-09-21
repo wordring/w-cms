@@ -21,7 +21,6 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -32,12 +31,21 @@ import (
 	"w-cms/internal/database"
 )
 
-// orderNoField は再採番の対象になる機械キーです（UNIQUE 制約を持つ列）。
-const orderNoField = "order-no"
-
+// ⚠ **発注書番号の自動採番は 2026-09-21 に撤去しました。**
+//
+// ユーザー:「**顧客の発注書番号はそのまま使います**」——受注ページの `発注書番号` は
+// **お客様の番号**なので、こちらが `PO-000123` のような番号を入れてはいけません。
+// ⚠ **空欄のほうがまだ良いのです**——**本物らしく見える嘘の番号**は、人が消し忘れると
+// そのまま残り、**お客様の番号だと信じられます**。
+//
+// ⚠ **弊社の発注書の番号は「ページ番号そのもの」**と決めました（同日）。こちらは
+// 発注書を作る機能が書きます——**別に採番すると、同じものに2つの名前ができます**。
+//
+// ⚠ **そしてこの採番は、既に誰にも効いていませんでした**——鍵にしていた `order-no` を
+// 宣言する列は、**2026-09-18 に `client-order`（ヘッダだけの形式）を廃した日から
+// 本番にゼロ**です。⚠ **試験の作り物にだけ残っていて、緑のままでした。**
+//
 // FreshenTemplateBody はテンプレート本文の空欄を列型の既定値で埋めて返します。
-// newPageID は再採番した発注書番号に使います（PO-000123 のように**由来ページが辿れる**
-// 番号にする。エディタの `PO-` ＋時刻下6桁より衝突しにくく、意味も読める）。
 //
 // 値が書かれているセルには触りません——テンプレート作者が意図して入れた既定値
 // （「発注元: 得意先A」など）を消さないためです。
@@ -78,7 +86,6 @@ func init() {
 			f := &templateFreshener{
 				pageID: ctx.NewPageID,
 				today:  ctx.Now.Format("2006-01-02"),
-				seq:    ctx.Counter("freshen"),
 			}
 			// 機能見出しのセクション（data-type 無し・見出し語で解決）は、索引と同じ
 			// 切り分けで**素の表**を温めます。⚠ **素の定義リストは温めません**
@@ -112,12 +119,12 @@ func init() {
 }
 
 // templateFreshener は1つのブロックを新規化するあいだの状態です。
-// 連番（seq）は**コンテキストの Counter** から受け取ります——ページ内で通し番号に
-// なる必要があり、ハンドラは登録時に1つだけ作られる singleton だからです。
+//
+// ⚠ **連番（seq）は 2026-09-21 に消えました**——発注書番号の自動採番を撤去したので、
+// ページ内で通し番号を振る相手が居なくなりました。
 type templateFreshener struct {
 	pageID string
 	today  string
-	seq    int // 同じページ内で複数回採番したときの連番
 }
 
 // freshenTable は表のデータ行（見出し行より後）の空セルを埋めます。
@@ -176,23 +183,12 @@ func (f *templateFreshener) fillCell(cell *html.Node, col VocabColumn) {
 // defaultValue は列型ごとの既定値です（エディタの defaultFieldValue と同じ規則）。
 // text / enum / number / image は空のまま（人が書く）。
 func (f *templateFreshener) defaultValue(col VocabColumn) string {
-	if col.Field == orderNoField {
-		return f.nextOrderNo()
-	}
+	// ⚠ **番号は入れません**（2026-09-21 に撤去・上のコメント）。
+	//    text / enum / number / image は空のまま——**人が書くもの**です。
 	if col.Type == ColDate {
 		return f.today
 	}
 	return ""
-}
-
-// nextOrderNo は新しい発注書番号を返します。1ページ内に発注書ブロックが複数あっても
-// 衝突しないよう、2件目以降は連番を足します。
-func (f *templateFreshener) nextOrderNo() string {
-	f.seq++
-	if f.seq == 1 {
-		return "PO-" + f.pageID
-	}
-	return fmt.Sprintf("PO-%s-%d", f.pageID, f.seq)
 }
 
 // setCellText はセルの中身をテキスト1つで置き換えます。

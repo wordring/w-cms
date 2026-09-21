@@ -252,7 +252,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 		// ⚠ **見出しも同じ印を付けます**——付け忘れると、紙で**見出しと値が1つずつ
 		// ずれます**（列が消えるのは値の側だけなので、いちばん気づきにくい壊れ方）。
 		b.WriteString(`<table class="backlog-table"><tbody>` +
-			`<tr><th class="no-print">弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
+			`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th class="no-print">数量</th><th class="no-print">出荷済み</th>` +
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
@@ -268,9 +268,13 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			// ⚠ **class 名は本文の表と同じものを使います**（`cell-atomic`／`cell-wrap`）
 			// ——見た目の規則を2つ持つと、片方だけ直した日にずれます。横スクロールは
 			// `#w-editor-content table` が全表に効かせています。
-			// ⚠ **紙に出す列は5つだけ**（2026-09-21 ユーザー:「受注残表の印刷は、
-			// **品番、品名、残、状態、備考だけ**で良いです」）。画面では全部見せ、
-			// **紙でだけ落とします**——`no-print` の印を付け、隠すのは印刷用CSSの仕事です。
+			// ⚠ **紙に出す列は6つ**（2026-09-21 ユーザー:「受注残表の印刷は、
+			// **品番、品名、残、状態、備考だけ**で良いです」→ 同日**`弊社品番` を足しました**:
+			// 「**品番はあいまいさがあるうえ、顧客の番号であるため、こちらで修正できません。
+			// そこで弊社品番を併記してあいまいさなく作業できるようにします**」）。
+			// ⚠ **これは作業の紙です**——手元であいまいなく引ける番号が要ります。
+			// 画面では全部見せ、**紙でだけ落とします**——`no-print` の印を付け、
+			// 隠すのは印刷用CSSの仕事です。
 			// ⚠ 列を落とすのをサーバーで分岐させない（画面と紙で2つのHTMLを持つと、
 			// 片方だけ直した日にずれます）。
 			// ⚠ **ここから受注ページの本文を書き換えます**（2026-09-21 ユーザー:
@@ -282,7 +286,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			// 鍵を書き換えると**次の書き込みが隣の行に当たります**。
 			st := statusOptionsHTML(r.Status)
 			b.WriteString(`<tr` + rowAttrs(r) + `>` +
-				noPrintCell(refCellHTML(r.OurItemNo)) +
+				`<td class="cell-atomic">` + refCellHTML(r.OurItemNo) + `</td>` +
 				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
 				atomicCell(stdhtml.EscapeString(r.ItemName)) +
 				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +

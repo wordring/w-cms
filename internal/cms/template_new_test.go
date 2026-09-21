@@ -1,13 +1,13 @@
 package cms
 
 import (
-	"regexp"
 	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -67,8 +67,10 @@ func TestFreshenFillsEmptyCellsOnly(t *testing.T) {
 	got := FreshenTemplateBody(templateOrderBody, "000123")
 	today := time.Now().Format("2006-01-02")
 
-	if !strings.Contains(got, "<dd>PO-000123</dd>") {
-		t.Errorf("発注書番号が採番されていません:\n%s", got)
+	// ⚠ **発注書番号は埋めません**（2026-09-21 ユーザー:「顧客の発注書番号はそのまま
+	//    使います」）。text 列と同じく**空のまま**——人が書くものです。
+	if strings.Contains(got, "PO-000123") {
+		t.Errorf("⚠ 機械が発注書番号を入れています（お客様の番号です）:\n%s", got)
 	}
 	if !strings.Contains(got, "<dd>得意先A</dd>") {
 		t.Errorf("書いてある値が失われています:\n%s", got)
@@ -92,17 +94,25 @@ func TestFreshenKeepsWrittenOrderNo(t *testing.T) {
 	}
 }
 
-// TestFreshenNumbersMultipleOrderBlocks は、1ページに発注書ブロックが複数あっても
-// 番号が衝突しないことを検証します（order_no は UNIQUE 制約を持つ）。
-func TestFreshenNumbersMultipleOrderBlocks(t *testing.T) {
-	body := `<section data-type="client-order"><dl data-type="tags"><dt>発注書番号</dt><dd></dd></dl></section>` +
-		`<section data-type="client-order"><dl data-type="tags"><dt>発注書番号</dt><dd></dd></dl></section>`
+// TestFreshenLeavesOrderNoEmpty は、⚠ **発注書番号を機械が入れない**ことを
+// 固定します（2026-09-21 ユーザー:「**顧客の発注書番号はそのまま使います**」）。
+//
+// ⚠ **空欄のほうがまだ良い**のです——**本物らしく見える嘘の番号**（`PO-000123`）は、
+// 人が消し忘れるとそのまま残り、**お客様の番号だと信じられます**。
+// ⚠ 弊社の発注書の番号は**ページ番号そのもの**で、発注書を作る機能が書きます。
+func TestFreshenLeavesOrderNoEmpty(t *testing.T) {
+	body := `<dl data-type="tags"><dt>発注書番号</dt><dd></dd>` +
+		`<dt>発注日</dt><dd></dd></dl>`
 	got := FreshenTemplateBody(body, "000123")
-	// ⚠ **確かめるのは「衝突しないこと」だけ**です（2026-09-18）。連番の刻み方は
-	// タグのページ通しの `seq` に依るので、`-2` と決め打ちにすると採番の実装を縛ります。
-	nos := regexp.MustCompile(`PO-[0-9-]+`).FindAllString(got, -1)
-	if len(nos) != 2 || nos[0] == nos[1] {
-		t.Errorf("複数ブロックの採番が衝突しています: %v\n%s", nos, got)
+	if regexp.MustCompile(`PO-[0-9-]+`).MatchString(got) {
+		t.Errorf("⚠ 機械が発注書番号を入れています（お客様の番号です）:\n%s", got)
+	}
+	if strings.Contains(got, "000123") {
+		t.Errorf("⚠ ページ番号を発注書番号として入れています:\n%s", got)
+	}
+	// **日付は入れます**——`発注日` は `date` 型で、今日を入れるのは嘘になりません。
+	if !strings.Contains(got, time.Now().Format("2006-01-02")) {
+		t.Errorf("発注日が今日で埋まっていません:\n%s", got)
 	}
 }
 
@@ -127,8 +137,9 @@ func TestNewPageFromTemplate(t *testing.T) {
 	if !strings.Contains(body, "受注ページ") {
 		t.Errorf("テンプレートの本文が写っていません:\n%s", body)
 	}
-	if !strings.Contains(body, "PO-"+newID) {
-		t.Errorf("発注書番号が新ページIDで採番されていません:\n%s", body)
+	// ⚠ **発注書番号は埋めません**（同上・お客様の番号）。
+	if strings.Contains(body, "PO-"+newID) {
+		t.Errorf("⚠ 機械が発注書番号を入れています（お客様の番号です）:\n%s", body)
 	}
 	if !strings.Contains(body, "得意先A") {
 		t.Errorf("テンプレートに書かれた値が失われています:\n%s", body)
