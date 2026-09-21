@@ -2236,6 +2236,10 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 
     body, .container { margin: 0; padding: 0; background: #fff; }
     .backlog-print { display: none !important; }
+    /* ⚠ **紙に出す列は5つだけ**（2026-09-21 ユーザー:「品番、品名、残、状態、備考
+       だけで良いです」）。**見出しと値の両方**に印が要ります——片方だけだと
+       紙で1つずつずれます。顧客名と納期の見出し（`.backlog-title`）は紙にも出します。 */
+    #w-print-area .no-print { display: none !important; }
 
     .backlog-table { border-collapse: collapse; width: 100%; }
     .backlog-table th, .backlog-table td {

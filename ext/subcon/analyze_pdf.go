@@ -567,7 +567,13 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 			"<td>" + html.EscapeString(cms.CanonicalForIngest(DueDateTag, j.DueDate)) + "</td>" +
 			"<td></td>" + // 出荷済み
 			"<td></td>" + // 備考（⚠ 先方の `サイズ` はここへ入ります・様式の対応表が入ったら）
-			"<td>未着手</td></tr>")
+			"<td>未着手</td>" +
+			// ⚠ **手続きの印は空で始めます**（材料発注・納品書発行・請求書発行）。
+			// 解析には分かりません——どれも**これから人がやること**です。
+			// ⚠ **宣言に列を足したら、ここも足すこと**——見出しは宣言から組むので、
+			// 忘れると**見出しだけ増えて行が足りない**表になります（番人つき:
+			// `TestOrderPageRowMatchesHeaderWidth`）。
+			"<td></td><td></td><td></td></tr>")
 	}
 	b.WriteString("</tbody></table>")
 	return b.String()

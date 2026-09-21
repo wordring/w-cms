@@ -2,6 +2,7 @@ package subcon
 
 import (
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -105,8 +106,12 @@ func TestChecksumMirrorSitsInTheTable(t *testing.T) {
 		t.Errorf("⚠ `tfoot` の外に出ています（表の手前へ追い出されています）:\n%s", got)
 	}
 	// 横いっぱいに伸びていること（列数ぶん）。
-	if !strings.Contains(got, `colspan="10"`) {
-		t.Errorf("列数ぶん伸びていません（10列を期待）:\n%s", got)
+	// ⚠ **数を焼き込みません**——列は増えます（2026-09-21 に手続きの印で3つ増え、
+	// 焼き込んだ `10` で落ちました）。**宣言から数える**ので、増えてもずれません。
+	def, _ := cms.VocabDefByType(clientOrderItemsType)
+	want := `colspan="` + strconv.Itoa(len(def.Columns)) + `"`
+	if !strings.Contains(got, want) {
+		t.Errorf("列数ぶん伸びていません（%s を期待）:\n%s", want, got)
 	}
 }
 

@@ -50,6 +50,16 @@ const BacklogViewType = "order-backlog"
 // ときに押すのが `完了` です。**機械の数より人の判断が上。**
 const StatusDone = "完了"
 
+// MarkDone は手続きの印の「済」です（材料発注・納品書発行・請求書発行）。
+//
+// ⚠ **空が「まだ」、`済` が「もう済んだ」**の2値です。`0`/`1` のような機械の値を
+// 使わないのは、**本文は人が読む正本**だからです——表を開いた人が、辞書を引かずに
+// 意味を取れる必要があります。
+//
+// ⚠ **導出が入った日も、この値は生き続けます**（「導出 または 人の印」で表示）。
+// ユーザー:「実際には納品書を発行していないのに発行したことにしたいときもある」。
+const MarkDone = "済"
+
 func init() {
 	cms.RegisterVocab(cms.VocabDef{
 		Type:        BacklogViewType,
@@ -224,9 +234,12 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 		// 印刷ボタンは**クローム**なので保存されません。配線は assets/app.js。
 		b.WriteString(`<button type="button" class="backlog-print" ` +
 			`data-backlog-print="` + strconv.Itoa(i) + `">🖨 この表を印刷</button>`)
+		// ⚠ **見出しも同じ印を付けます**——付け忘れると、紙で**見出しと値が1つずつ
+		// ずれます**（列が消えるのは値の側だけなので、いちばん気づきにくい壊れ方）。
 		b.WriteString(`<table class="backlog-table"><tbody>` +
-			`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
-			`<th>数量</th><th>出荷済み</th><th>状態</th><th>備考</th><th>受注</th></tr>`)
+			`<tr><th class="no-print">弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
+			`<th class="no-print">数量</th><th class="no-print">出荷済み</th>` +
+			`<th>状態</th><th>備考</th><th class="no-print">受注</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -237,17 +250,22 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			// ⚠ **class 名は本文の表と同じものを使います**（`cell-atomic`／`cell-wrap`）
 			// ——見た目の規則を2つ持つと、片方だけ直した日にずれます。横スクロールは
 			// `#w-editor-content table` が全表に効かせています。
+			// ⚠ **紙に出す列は5つだけ**（2026-09-21 ユーザー:「受注残表の印刷は、
+			// **品番、品名、残、状態、備考だけ**で良いです」）。画面では全部見せ、
+			// **紙でだけ落とします**——`no-print` の印を付け、隠すのは印刷用CSSの仕事です。
+			// ⚠ 列を落とすのをサーバーで分岐させない（画面と紙で2つのHTMLを持つと、
+			// 片方だけ直した日にずれます）。
 			b.WriteString(`<tr>` +
-				atomicCell(refCellHTML(r.OurItemNo)) +
+				noPrintCell(refCellHTML(r.OurItemNo)) +
 				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
 				atomicCell(stdhtml.EscapeString(r.ItemName)) +
 				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
-				atomicCell(strconv.Itoa(r.Quantity)) +
-				atomicCell(shippedCell(r.Shipped)) +
+				noPrintCell(strconv.Itoa(r.Quantity)) +
+				noPrintCell(shippedCell(r.Shipped)) +
 				atomicCell(stdhtml.EscapeString(r.Status)) +
 				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。
 				`<td class="cell-wrap">` + stdhtml.EscapeString(r.Note) + `</td>` +
-				atomicCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
+				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
 				`</tr>`)
 		}
@@ -258,6 +276,14 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 
 // atomicCell は折り返さないセルを組みます（中身は組み済みのHTML）。
 func atomicCell(inner string) string { return `<td class="cell-atomic">` + inner + `</td>` }
+
+// noPrintCell は**画面には出すが紙には出さない**セルです。
+//
+// ⚠ **サーバーで列を分岐させません。** 画面用と紙用に2つのHTMLを組むと、片方だけ
+// 直した日にずれます。**同じHTMLに印を付け、隠すのは印刷用CSSの仕事**にします。
+func noPrintCell(inner string) string {
+	return `<td class="cell-atomic no-print">` + inner + `</td>`
+}
 
 // refCellHTML は弊社品番を押せる形にします（空なら空欄のまま）。
 //

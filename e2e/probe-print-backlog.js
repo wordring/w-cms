@@ -93,7 +93,20 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
       if (el.id === 'w-print-area' || el.tagName === 'SCRIPT') return;
       if (visible(el)) outsideText.push(el.tagName + (el.className ? '.' + String(el.className).split(' ')[0] : ''));
     });
+    // ⚠ **紙に出る列を数えます**（2026-09-21 ユーザー:「品番、品名、残、状態、備考
+    // だけで良いです」「**顧客名と納期が書かれた見出しも印刷に入れて**欲しい」）。
+    const t = area ? area.querySelector('.backlog-table') : null;
+    const headOnPaper = t
+      ? Array.from(t.querySelectorAll('tr')[0].children).filter(visible).map((c) => c.textContent.trim())
+      : [];
+    const firstRowCells = t && t.querySelectorAll('tr')[1]
+      ? Array.from(t.querySelectorAll('tr')[1].children).filter(visible).length : 0;
+    const title = area ? area.querySelector('.backlog-title') : null;
     return {
+      headOnPaper,
+      firstRowCells,
+      titleOnPaper: title ? visible(title) : false,
+      titleText: title ? title.textContent.trim() : '',
       areaVisible: area ? visible(area) : false,
       tablesInArea: area ? area.querySelectorAll('table').length : 0,
       printButtonsOnPaper: document.querySelectorAll('.backlog-print').length
@@ -116,6 +129,23 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
   if (r.printButtonsOnPaper) { console.log('✗ 印刷ボタンが紙に出ています'); bad++; }
   else console.log('✓ 印刷ボタンは紙に出ていません');
+
+  // ⚠ **見出し（顧客名と納期）は紙に出す。** 誰の何の納期ぶんの紙か分からないと、
+  // 渡す相手を間違えます——**1枚が1回の納品の単位**なので、ここは落とせません。
+  if (!r.titleOnPaper) { console.log('✗ 顧客名と納期の見出しが紙に出ていません'); bad++; }
+  else console.log('✓ 見出しが紙に出ています: ' + r.titleText);
+
+  const WANT = ['品番', '品名', '残', '状態', '備考'];
+  const same = r.headOnPaper.length === WANT.length && r.headOnPaper.every((h, i) => h === WANT[i]);
+  if (!same) { console.log('✗ 紙の列が ' + JSON.stringify(r.headOnPaper) + ' です（' + JSON.stringify(WANT) + ' を期待）'); bad++; }
+  else console.log('✓ 紙の列は5つ: ' + r.headOnPaper.join('・'));
+
+  // ⚠ **見出しと値の数が揃っていること。** 片方にだけ印を付けると、紙で1つずつ
+  // ずれます——列が消えるのは値の側だけなので、いちばん気づきにくい壊れ方です。
+  if (r.firstRowCells && r.firstRowCells !== r.headOnPaper.length) {
+    console.log('✗ 紙で見出し ' + r.headOnPaper.length + ' 列に対し値が ' + r.firstRowCells + ' 列です（1つずつずれます）');
+    bad++;
+  } else if (r.firstRowCells) console.log('✓ 見出しと値の数が揃っています');
 
   // 後片付けが効くかも見る（⚠ 印が残ると、次の Ctrl+P で1枚しか刷れません）。
   await page.emulateMedia({ media: 'screen' });
