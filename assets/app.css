@@ -2309,3 +2309,56 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     white-space: normal;
     max-width: 18em;
 }
+
+/* ── 材料を探す（2026-09-21）────────────────────────────────────────────
+   ユーザー:「あとで**材質形状寸法で検索**したいときがあります」。
+   ⚠ **欄はサーバーが描く**（ext/subcon/view_material_search.go）。ここは見た目だけ。 */
+#w-editor-content .matsearch-title { margin: 0 0 4px; }
+#w-editor-content .matsearch-help {
+    margin: 0 0 10px;
+    color: var(--text-muted, #6b7280);
+    font-size: 0.9em;
+}
+/* ⚠ **狭い画面で折り返すこと**（`flex-wrap` が無いとページ全体が横スクロールする
+   ——2026-09-07 に「＋ 記録する」の行で1度踏んだ）。 */
+#w-editor-content .matsearch-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
+    margin-bottom: 10px;
+}
+#w-editor-content .matsearch-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.85em;
+    color: var(--text-muted, #6b7280);
+}
+#w-editor-content .matsearch-input {
+    width: 9em;
+    padding: 4px 6px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: var(--radius, 4px);
+    font-size: 1rem;
+}
+#w-editor-content .matsearch-go {
+    padding: 6px 14px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: var(--radius, 4px);
+    background: var(--bg-subtle, #f1f5f9);
+    cursor: pointer;
+}
+#w-editor-content .matsearch-go:disabled { opacity: 0.6; cursor: progress; }
+#w-editor-content .matsearch-table { width: 100%; }
+/* ⚠ **結果のセルは折り返しません**（表の折り返しの方針と同じ——寸法は1つの値で、
+   途中で折ると `□75*75*t3.2` と `*120` に割れて読みにくい）。はみ出すぶんは
+   **表自身が横スクロール**して受けます（ページは揺らさない）。 */
+#w-editor-content .matsearch-table th,
+#w-editor-content .matsearch-table td { white-space: nowrap; }
+#w-editor-content .matsearch-cost { text-align: right; white-space: nowrap; }
+/* ⚠ **「記録なし」を薄く**——数と見分けが付く必要がある（色だけに頼らず `⚠` も付く）。 */
+#w-editor-content .matsearch-none,
+#w-editor-content .matsearch-src { color: var(--text-muted, #6b7280); font-size: 0.9em; }
+#w-editor-content .matsearch-migrating { color: var(--text-muted, #6b7280); font-size: 0.85em; }
+#w-editor-content .matsearch-empty { color: var(--text-muted, #6b7280); font-style: italic; }

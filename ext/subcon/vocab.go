@@ -403,6 +403,16 @@ var businessVocab = []cms.VocabDef{
 		},
 	},
 	{
+		// 材料を探す欄（2026-09-21）。ユーザー:「あとで**材質形状寸法で検索**したい
+		// ときがあります」。⚠ **器だけの宣言**で、中身はサーバーが描きます。
+		Type:        MaterialSearchViewType,
+		DisplayName: "材料を探す",
+		Category:    "ビュー",
+		Icon:        "🔎",
+		Element:     "section",
+		View:        true,
+	},
+	{
 		Type:        "required-materials",
 		DisplayName: "手配状況リスト",
 		Category:    "ビュー",

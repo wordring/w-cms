@@ -31,6 +31,8 @@ func init() {
 	cms.Register(materialsPlugin{})
 	// 計算ビューの描画も自分で登録する（形式の宣言と対）。
 	cms.RegisterView("required-materials", requiredMaterialsViewHTML)
+	// 材料を探す欄（2026-09-21・view_material_search.go）。
+	cms.RegisterView(MaterialSearchViewType, materialSearchViewHTML)
 
 	// **受注の置き場は管理画面のボタンで作れます**（2026-09-16）。
 	// 整理のときにも自動で作られます（`cms.EnsureTopLevelBox`）——先に作れるように
@@ -88,6 +90,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 発注書のPDFを作って、そのページの添付として残す口（2026-09-21・order_pdf.go）。
 		// ⚠ **7年保存がこれで済みます**——ファイルがページと一緒に残り、版も監査も付きます。
 		{Pattern: "/api/order-pdf", Handler: OrderPDFAPIHandler},
+		// 材質・形状・寸法で材料を探す口（2026-09-21・dimension_search.go）。
+		// ⚠ **読めないページは混ぜません**——材料の表には誰でも行を書けるので、
+		// 絞らないと読めない発注書の単価と仕入先が引けてしまいます。
+		{Pattern: "/api/material-search", Handler: MaterialSearchAPIHandler},
 	}
 }
 

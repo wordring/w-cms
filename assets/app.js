@@ -6134,3 +6134,123 @@ document.addEventListener('click', (e) => {
         if (el && el.classList && el.classList.contains('order-edit') && el.type === 'text') send(el);
     }, true);
 })();
+
+// ── 材料を探す（2026-09-21）──────────────────────────────────────────────
+//
+// ユーザー:「あとで**材質形状寸法で検索**したいときがあります。問題は寸法ですが、
+// 検索できるように**分解してDBに入れる**ことは出来ますか？」。
+//
+// ⚠ **欄はサーバーが描きます**（ext/subcon/view_material_search.go）。ここの仕事は
+// **押したときに送って、返ってきた行を並べること**だけです。⚠ 画面が欄を自分で
+// 組むと、**拡張を外したビルドで空の欄だけが残ります**（3d-4 の一般則）。
+//
+// ⚠ **`innerHTML` へ文字列を入れません**（`createElement`＋`textContent`）。
+// 結果には本文から来た文字（材質・形状・寸法・仕入先）が入るので、
+// 組み立てを誤ると保存型XSSになります。
+(function wireMaterialSearch() {
+    const FIELDS = ['material', 'shape', 'thickness', 'diameter', 'values'];
+
+    function cell(row, text, cls) {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.textContent = text;
+        row.appendChild(td);
+        return td;
+    }
+
+    // renderHits は結果の表を組みます。⚠ **0件も黙りません**——「まだ押していない」と
+    // 「押したが無かった」は別物です。
+    function renderHits(box, hits) {
+        box.textContent = '';
+        if (!hits || hits.length === 0) {
+            const p = document.createElement('p');
+            p.className = 'matsearch-empty';
+            p.textContent = '見つかりませんでした（条件を緩めてみてください）';
+            box.appendChild(p);
+            return;
+        }
+        const table = document.createElement('table');
+        table.className = 'matsearch-table';
+        const head = document.createElement('tr');
+        ['材質', '形状', '寸法', '最新単価', '出所', 'ページ'].forEach((h) => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            head.appendChild(th);
+        });
+        table.appendChild(head);
+        hits.forEach((h) => {
+            const tr = document.createElement('tr');
+            cell(tr, h.material || '—');
+            cell(tr, h.shape || '—');
+            cell(tr, h.size || '—');
+            // ⚠ **引けなかったことを黙りません**（材料表の鏡と同じ言い方に揃える）。
+            cell(tr, h.cost ? h.cost.toLocaleString('ja-JP') + '円' : '⚠ 記録なし',
+                h.cost ? 'matsearch-cost' : 'matsearch-none');
+            cell(tr, [h.at, h.supplier].filter(Boolean).join(' ') || '—', 'matsearch-src');
+            const td = document.createElement('td');
+            const a = document.createElement('a');
+            a.href = '/' + String(h.page_id).padStart(6, '0');
+            a.textContent = h.page_title || String(h.page_id);
+            td.appendChild(a);
+            if (h.migrating) {
+                // ⚠ **移行の確認前だと分かるようにします**（表引きは止めてあるが、
+                //    探して見つかること自体は本当なので、隠さずに印を付ける）。
+                const mark = document.createElement('span');
+                mark.className = 'matsearch-migrating';
+                mark.textContent = ' ⚠ 移行の確認前';
+                td.appendChild(mark);
+            }
+            tr.appendChild(td);
+            table.appendChild(tr);
+        });
+        box.appendChild(table);
+    }
+
+    async function search(go) {
+        const form = go.closest('.matsearch-form');
+        const box = form && form.parentElement
+            ? form.parentElement.querySelector('[data-matsearch-result]') : null;
+        if (!form || !box) return;
+        const body = {};
+        FIELDS.forEach((f) => {
+            const el = form.querySelector('[data-matsearch="' + f + '"]');
+            body[f] = el ? el.value.trim() : '';
+        });
+        go.disabled = true;
+        box.textContent = '探しています…';
+        try {
+            const res = await fetch('/api/material-search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) {
+                box.textContent = (d && d.message) || ('探せません（' + res.status + '）');
+                return;
+            }
+            renderHits(box, d.hits);
+        } catch (e) {
+            box.textContent = '探せません（通信に失敗しました）';
+        } finally {
+            go.disabled = false;
+        }
+    }
+
+    // ⚠ **document へ委譲します**——欄はサーバーが描き直すので、要素ごとに配線すると
+    //    描き直しのたびに切れます（受注残表の編集と同じ理由）。
+    document.addEventListener('click', (e) => {
+        const go = e.target && e.target.closest ? e.target.closest('[data-matsearch-go]') : null;
+        if (go) search(go);
+    });
+    // Enter でも探せるようにする（欄に指を置いたまま押せる）。
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        const el = e.target;
+        if (!el || !el.classList || !el.classList.contains('matsearch-input')) return;
+        const form = el.closest('.matsearch-form');
+        const go = form ? form.querySelector('[data-matsearch-go]') : null;
+        if (go) { e.preventDefault(); search(go); }
+    });
+})();
