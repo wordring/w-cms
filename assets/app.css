@@ -364,13 +364,8 @@ body.anonymous .preview-section { display: none !important; }
    1100px以下を含むため、段階1のルールは引き続き有効）。 */
 @media (max-width: 760px) {
     .work-area { flex-direction: column; }
-    /* 表は自分の中で横スクロール——原子列（nowrap）が場所を取っても、
-       text 列を極端に潰さない。ページ全体は横スクロールさせない。 */
-    #w-editor-content table {
-        display: block;
-        max-width: 100%;
-        overflow-x: auto;
-    }
+    /* ⚠ 表の横スクロールは 2026-09-21 に全幅へ出した（上の #w-editor-content table）。
+       ここに重ねて書いてあったものは、同じ宣言なので畳んだ。 */
     /* **列を潰さない。** ユーザー:「テーブルは横スクロールできるようにして、
        横幅を確保するほうが見やすいのでは？」（2026-09-07）。
        `overflow-x` だけだと、表は**収まるまで列を細らせてから**スクロールに入ります
@@ -416,15 +411,9 @@ body.anonymous .preview-section { display: none !important; }
        横スクロールになる（スマホ幅の表示崩れの正体）。 */
     .doc-column { align-self: stretch; }
 
-    /* 幅の広い表・整形済みテキストは、要素自身の中で横スクロールさせる
-       （ページ本体は横スクロールさせない）。table への display:block は
-       行内容を無名テーブルボックスが包む標準的なレスポンシブ対処で、
-       セルの罫線・編集（contenteditable・行操作ツールバー）には影響しない。 */
-    #w-editor-content table {
-        display: block;
-        max-width: 100%;
-        overflow-x: auto;
-    }
+    /* 整形済みテキストは、要素自身の中で横スクロールさせる（ページ本体は揺らさない）。
+       ⚠ 表も同じことをしますが、そちらは 2026-09-21 に全幅へ出しました
+       （上の #w-editor-content table）——ここに重ねて書いてあったぶんは畳みました。 */
     #w-editor-content pre {
         max-width: 100%;
         overflow-x: auto;
@@ -1004,10 +993,26 @@ body[edit-mode] .block-content p:empty::before {
 }
 
 /* 本文の表の基本スタイル。ブラウザ既定の表は枠が無く、挿入直後の空セルが
- * 見えず編集もできないため、文書としての最小の体裁をここで与える（閲覧・編集共通）。 */
+ * 見えず編集もできないため、文書としての最小の体裁をここで与える（閲覧・編集共通）。
+ *
+ * **表は自分の中で横スクロールする**（2026-09-21 ユーザー:「テーブルが横に
+ * 大きくなりますから、テーブルだけスクロールに出来ますか？」）。セルを折り返さない
+ * 方針（td.cell-atomic）と対で、**列を潰さずに幅を確保**するための受け皿。
+ * `display:block` は行内容を無名テーブルボックスが包む標準的な対処で、
+ * セルの罫線・編集（contenteditable・行操作ツールバー）には影響しない。
+ *
+ * ⚠ **幅は表ではなくセルに与えること。** 表そのものがスクロール枠を兼ねているので、
+ * ここへ min-width を置くと**枠ごと広がってページが横スクロール**になる
+ * （狭い画面の対応で1度これで間違えた）。
+ *
+ * ⚠ 2026-09-21 まで、この3行は `@media (max-width: 760px)` の中にだけありました
+ * ——狭い画面では表が自分でスクロールし、広い画面では**ページごと横へ伸びて**いました。 */
 #w-editor-content table {
     border-collapse: collapse;
     margin: 8px 0;
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
 }
 
 #w-editor-content th,
@@ -1262,13 +1267,31 @@ body[edit-mode] #w-editor-content td.cell-invalid {
  *
  * **枠線は付けない。** 警告（赤）より静かであるべきで、正常な状態のほうが
  * 数は多い。文字列の列に付けないのは validateCell 側の判断（そちらのコメント）。 */
-/* 折り返し制御: 短い値（図番・品名・単価など＝原子的）は折らず、長い文は折り返す。
- * 判定は長さ（validateCell の ATOMIC_MAX）。見出し（th）は常に短いラベルなので折らない。
+/* 折り返し制御: **自由文の列（備考）だけ折り返し、ほかは1行に保つ**
+ * （2026-09-21 ユーザー:「備考欄以外は改行しないように」）。判定は app.js の
+ * `WRAP_COLUMNS`——**見出しの表示文字**で決めるので、列を足してもずれない。
+ * 見出し（th）は常に短いラベルなので折らない。
  * 編集・閲覧の両モードで効かせる（読みやすさはモードに依らない）。
- * 幅が競ったときのために、狭い画面では表が自分の中で横スクロールする（下の @media）。 */
+ * ⚠ 2026-09-01〜09-21 は**長さ20字**のしきい値だった——品名が20字を超えると
+ * 同じ列の中で折れる行と折れない行が混ざった（app.js 側のコメントに経緯）。
+ * 幅が競ったぶんは表が自分の中で横スクロールする（上の #w-editor-content table）。 */
 #w-editor-content td.cell-atomic,
 #w-editor-content table th {
     white-space: nowrap;
+}
+
+/* 備考は折り返す。⚠ **幅の頭を押さえないと折り返しません**——表はスクロール枠の
+ * 中で中身なりの幅（max-content）を取るので、`white-space: normal` だけでは
+ * 1行のまま伸び、表だけが果てしなく横へ長くなる。 */
+#w-editor-content td.cell-wrap {
+    white-space: normal;
+    /* ⚠ **下限が要ります。** ほかの列が折り返さないので、表は
+       **備考だけを潰して**収めようとします——実測（760px幅）で 69px まで細り、
+       1つの備考が高さ417pxの短冊になりました。下限を置けば、潰す代わりに
+       表が横スクロールします。 */
+    min-width: 14em;
+    max-width: 28em;
+    overflow-wrap: anywhere; /* 区切りの無い長い連なりでも枠から出さない */
 }
 
 body[edit-mode] #w-editor-content td.cell-known {
