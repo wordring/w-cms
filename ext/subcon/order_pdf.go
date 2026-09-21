@@ -144,7 +144,12 @@ func buildOrderPDF(body string) ([]byte, error) {
 	// ── 題と宛名 ──
 	y = pdfText(p, pdfLeft+180, y, 16, "発注書")
 	y += 6
-	y = pdfText(p, pdfLeft, y, 12, head["発注先"]+"　御中")
+	// ⚠ **`SupplierTag` を通すこと**（2026-09-21 に直した）。ここは生の文字列で
+	// `発注先` と書いてあり、**コードの他のどこにも無い言葉**でした——ページが持つのは
+	// `仕入先`（`SupplierTag`）なので、**「御中」の前がずっと空**だったはずです。
+	// ⚠ **試験が不具合を固定していました**——`pdfOrderBody` も `発注先` と書いていたので、
+	// 読み返しの番人は緑のまま。**生の文字列は、取り違えてもコンパイルが通ります。**
+	y = pdfText(p, pdfLeft, y, 12, head[SupplierTag]+"　御中")
 	y += 4
 
 	// ── 差出人（右側）──

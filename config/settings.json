@@ -83,6 +83,7 @@
         "品番",
         "部品番号"
       ],
+      "pdf_font": "C:/Windows/Fonts/NotoSansJP-VF.ttf",
       "machine_stages": [
         "現行",
         "旧型",

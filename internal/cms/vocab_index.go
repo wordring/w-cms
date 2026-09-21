@@ -301,12 +301,23 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 // 生まれるため、巡回は1箇所に持ちます。
 func eachPlainVocabTable(section *html.Node, fn func(n *html.Node)) {
 	walkSkippingNested(section, map[string]bool{"section": true}, func(n *html.Node) {
-		if Attr(n, "data-type") != "" {
+		if n.Data != "table" {
 			return
 		}
-		if n.Data == "table" {
-			fn(n)
+		// ⚠ **配送係が自分で届ける表は、ここでは拾いません**（拾うと**同じ値が
+		// 二重に索引されます**）。⚠ **2026-09-21 まで `data-type` しか見ておらず、
+		// `<caption>` で名乗る表は素通りしていました**——`<section><h2>材料</h2>` の
+		// 中に `<table><caption>材料</caption>` を書くと、**節から1回・表から1回**
+		// 入り、**手配数も原価もすべて倍**になります。エラーは出ません。
+		//
+		// ⚠ **caption で形式を宣言できるようにした 2026-09-20 から在った穴**です。
+		// 実データに caption 付きの表が無かったので、誰も踏んでいませんでした。
+		// **判定は `vocabTypeOf` と揃えること**——形式の解き方が2か所にあると、
+		// 片方に足した日にずれます。
+		if vocabTypeOf(n) != "" {
+			return
 		}
+		fn(n)
 	})
 }
 

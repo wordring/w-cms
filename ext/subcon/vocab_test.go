@@ -50,10 +50,14 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 	// ⚠ **ヘッダだけの形式は 2026-09-18 に全廃しました**（`drawing`・`client-order`・
 	// `our-order`・`our-estimate`・`supplier-estimate`）。値は**可変タグ**（`page_tags`）へ
 	// 移り、残るのは**行が並ぶ表**と**ビューの器**だけです——「タグと表だけがDBに入る」。
+	// ⚠ **`part-estimate` は 2026-09-21 に足しました**（ユーザー:「表のうち、
+	// 意味の分かるものにキャプションを付けましょう。**キャプションを頼りに集計できる
+	// ようになるはず**です」）。⚠ **キャプションだけでは索引に入りません**
+	// ——「登録された語彙だけDBに入る」ので、ここに載せて初めて集計できます。
 	want := []string{
 		"part-materials", "client-order-items", "our-order-items",
 		"required-materials", "drawing-revisions", "drawing-revision-items",
-		"part-outsourcing", "part-purchased", "part-supplied",
+		"part-outsourcing", "part-purchased", "part-supplied", "part-estimate",
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))

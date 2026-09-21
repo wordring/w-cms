@@ -117,7 +117,7 @@ func utf16beOf(hex string) string {
 func pdfOrderBody(rows string) string {
 	return `<h1>発注</h1><dl data-type="tags">` +
 		`<dt>発注書番号</dt><dd>44</dd>` +
-		`<dt>発注先</dt><dd>株式会社みなと商店</dd>` +
+		`<dt>` + SupplierTag + `</dt><dd>株式会社みなと商店</dd>` +
 		`<dt>発注日</dt><dd>2026-08-19</dd>` +
 		`<dt>備考</dt><dd>急ぎでお願いします</dd></dl>` +
 		`<table data-type="our-order-items"><caption>発注明細</caption><tbody>` +
