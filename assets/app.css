@@ -2195,6 +2195,22 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .checksum-ok td { background: #dcfce7; color: #166534; }
 #w-editor-content .checksum-note td { color: var(--w-muted, #6b7280); font-style: italic; }
 
+/* ── 材料の参考単価（2026-09-21）────────────────────────────────────────
+   材料表の右に足す「最新単価・時点・仕入先」。⚠ **本文ではなく鏡**なので、
+   **人が書いた列と見分けが付く必要があります**——左に区切り線を入れ、
+   文字を少し落として「ここから先はサーバーが足したもの」と分かる形にする。
+   ⚠ 色は使いません（人が書いた列の背景と喧嘩するのと、色覚に頼らないため）。 */
+#w-editor-content .mat-price {
+    border-left: 2px solid var(--w-border, #d1d5db);
+    color: var(--w-muted, #6b7280);
+    font-size: 0.92em;
+    white-space: nowrap;
+}
+#w-editor-content th.mat-price { font-weight: 500; }
+/* ⚠ 2列目以降は区切り線を持たない（組の中に線が3本引かれるのを避ける）。 */
+#w-editor-content .mat-price ~ .mat-price { border-left: none; }
+#w-editor-content .mat-price-none { font-style: italic; white-space: normal; }
+
 /* ── 受注残表（2026-09-21）──────────────────────────────────────────────
    顧客×納期の組ごとに1枚。⚠ **1枚が1回の納品の単位**（ユーザー決定）なので、
    そのまま渡せる見た目にしておく。 */

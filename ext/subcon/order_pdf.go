@@ -396,10 +396,10 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 
 // isOurOrderTable は自社の発注明細の表かを見ます（属性でも caption でも）。
 func isOurOrderTable(t *html.Node) bool {
-	if cms.Attr(t, "data-type") == "our-order-items" {
+	if cms.Attr(t, "data-type") == ourOrderItemsType {
 		return true
 	}
-	def, ok := cms.VocabDefByType("our-order-items")
+	def, ok := cms.VocabDefByType(ourOrderItemsType)
 	if !ok {
 		return false
 	}

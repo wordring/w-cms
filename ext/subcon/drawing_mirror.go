@@ -55,8 +55,21 @@ func init() {
 	// 廃版の構成部品を薄く見せる（表示のときだけ）。**行は消しません**
 	// ——外注加工に出した紙に社内コードが載っているので、消すと指し先が消えます
 	// （ユーザー:「構成部品は図面の改定に伴って廃版になる場合があります」）。
-	for _, t := range []string{"part-materials", "part-outsourcing", "part-purchased", "part-supplied"} {
-		cms.RegisterMirror(t, cms.MirrorHandlerFunc(markObsoleteRows))
+	//
+	// ⚠ **引き金ごとに鏡は1人**です（2人目を登録すると起動時に panic します）。
+	// 材料の表には2つ要る（廃版の印＋参考単価・2026-09-21）ので、**ここで束ねます**。
+	for _, t := range []string{partMaterialsType, "part-outsourcing", "part-purchased", "part-supplied"} {
+		t := t
+		cms.RegisterMirror(t, cms.MirrorHandlerFunc(
+			func(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
+				if _, err := markObsoleteRows(ctx, el); err != nil {
+					return true, err
+				}
+				if t != partMaterialsType {
+					return true, nil
+				}
+				return renderMaterialPrices(ctx, el)
+			}))
 	}
 }
 

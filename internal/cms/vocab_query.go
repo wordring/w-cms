@@ -56,7 +56,7 @@ func vocabRows(db ReadOnlyDB, pageID int, dataType string, perBlock bool) ([]Voc
 	def, _ := VocabDefByType(dataType) // 未定義でもゼロ値で続行（表示文字が鍵になる）
 
 	rows, err := db.Query(`
-		SELECT block_no, block_id, row_no, field, value, norm_num
+		SELECT page_id, block_no, block_id, row_no, field, value, norm_num
 		FROM vocab_index
 		WHERE page_id = ? AND data_type = ?
 		ORDER BY block_no, row_no
@@ -65,20 +65,28 @@ func vocabRows(db ReadOnlyDB, pageID int, dataType string, perBlock bool) ([]Voc
 		return nil, err
 	}
 	defer rows.Close()
+	return scanVocabRows(rows, def, perBlock)
+}
 
-	type key struct{ block, row int }
+// scanVocabRows は問い合わせの結果を、行ごとの値の組へ畳み直します。
+//
+// ⚠ **鍵にページ番号を含めます**——横断で読む口（VocabRowsOfType）が同じ
+// ブロック番号・行番号を別のページから受け取るので、含めないと**別のページの行が
+// 1件に混ざります**。1ページ分を読むときは常に同じ値なので害はありません。
+func scanVocabRows(rows *sql.Rows, def VocabDef, perBlock bool) ([]VocabRow, error) {
+	type key struct{ page, block, row int }
 	index := map[key]int{}
 	var out []VocabRow
 
 	for rows.Next() {
-		var blockNo, rowNo int
+		var pageID, blockNo, rowNo int
 		var blockID, field, value string
 		var normNum sql.NullFloat64
-		if err := rows.Scan(&blockNo, &blockID, &rowNo, &field, &value, &normNum); err != nil {
+		if err := rows.Scan(&pageID, &blockNo, &blockID, &rowNo, &field, &value, &normNum); err != nil {
 			return nil, err
 		}
 
-		k := key{blockNo, rowNo}
+		k := key{pageID, blockNo, rowNo}
 		if perBlock {
 			k.row = 0 // dl は1ブロックで1件
 		}
@@ -113,6 +121,39 @@ func VocabTableRowsOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, e
 // VocabBlocksOf は名前：値形式（1ブロック＝1件）を読みます。
 func VocabBlocksOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, error) {
 	return vocabRows(db, pageID, dataType, true)
+}
+
+// VocabRowsOfType は**全ページから**その形式の表の行を読みます（横断）。
+//
+// `VocabTableRowsOf` の横断版です。「このページは何を持っているか」ではなく
+// 「その形式の行は、どこにあっても全部」を問うときに使います。
+//
+// **`RelatedPages` のスコープでは足りない計算のための口です。** 手配計算は
+// 「このページと参照でつながるページ」を見ますが、**過去にいくらで買ったか**の
+// ような問いは、**関係の有無にかかわらず社内の記録すべて**を当たる必要があります
+// （前に同じ材料を買ったのは、まったく別の受注かもしれない）。
+//
+// ⚠ **絞り込みは呼ぶ側の責任です。** ここは索引をそのまま返すので、必ず
+// `page.CanView` で読めないページ由来の行を落としてください——落とさないと、
+// **読めないページの単価や仕入先が引けてしまいます**（設計総点検で一度踏んだ穴と
+// 同じ形。`ext/subcon/materials.go` の `filterVisible` が手本）。
+//
+// ⚠ **読み切ってから返します**（`TagRowsNamed` と同じ理由）——行を読みながら
+// 中で `page.CanView` を投げると、`:memory:` DBでは**空の別のDBに当たって
+// 絞り込みが静かに全部落ちます**。
+func VocabRowsOfType(db ReadOnlyDB, dataType string) ([]VocabRow, error) {
+	def, _ := VocabDefByType(dataType)
+	rows, err := db.Query(`
+		SELECT page_id, block_no, block_id, row_no, field, value, norm_num
+		FROM vocab_index
+		WHERE data_type = ?
+		ORDER BY page_id, block_no, row_no
+	`, dataType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanVocabRows(rows, def, false)
 }
 
 // TagsOfPage はそのページの可変タグを「名前 → 値の並び」で返します（本文の順）。

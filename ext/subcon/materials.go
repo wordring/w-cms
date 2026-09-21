@@ -195,7 +195,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    拾った・設計総点検③）。広がったのは「どのページを見るか」だけです。
 	var orderItems []cms.VocabRow
 	for _, id := range scope {
-		rows, err := cms.VocabTableRowsOf(db, id, "client-order-items")
+		rows, err := cms.VocabTableRowsOf(db, id, clientOrderItemsType)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +208,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    「そのタグを持つページ」を逆引きしてから、そのページの部材表を読みます。
 	//    鍵の名前はレジストリ宣言（part-materials の RequiresTag）が持つ——ここへ
 	//    直書きすると、見出しを改名したときに告知する側と読む側がずれる（設計総点検⑤）。
-	materialsDef, _ := cms.VocabDefByType("part-materials")
+	materialsDef, _ := cms.VocabDefByType(partMaterialsType)
 	tagName := materialsDef.RequiresTag
 
 	// 同じ品番が明細に何度出ても、定義の引き直しは1度だけ。
@@ -228,7 +228,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 				return nil, err
 			}
 			for _, defPageID := range pageIDs {
-				rows, err := cms.VocabTableRowsOf(db, defPageID, "part-materials")
+				rows, err := cms.VocabTableRowsOf(db, defPageID, partMaterialsType)
 				if err != nil {
 					return nil, err
 				}
@@ -277,7 +277,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		if s := cms.FirstTag(tags, SupplierTag); s != "" {
 			supplierOf[id] = s
 		}
-		rows, err := cms.VocabTableRowsOf(db, id, "our-order-items")
+		rows, err := cms.VocabTableRowsOf(db, id, ourOrderItemsType)
 		if err != nil {
 			return nil, err
 		}
