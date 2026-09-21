@@ -427,6 +427,19 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// ⚠ **形式を登録していないので索引に載りません**（2026-09-20 の線引き）。
 	// 原本は**証拠**であって、検索したいのは弊社の表のほうです——**二重計上も
 	// 最初から起きません**。
+	// ── 原本のPDFを、写しの**上**に置きます（2026-09-21 ユーザー決定）──
+	//
+	// ユーザー:「顧客の発注書（読んだまま）の上にPDFを表示できるようにします
+	// （通常は折りたたむ）」。**写しは読み取りの結果で、PDFが原本そのもの**なので、
+	// 並びは「原本 → 読んだまま → 弊社の明細」になります。
+	//
+	// ⚠ **畳んだ状態で始めます**（`open` を付けない）。受注ページで毎日見るのは
+	// 弊社の明細で、PDFは**食い違いを疑ったときに開くもの**です。開きっぱなしだと
+	// 明細が画面の下へ押し出されます。
+	//
+	// 中身はコアが描きます（`internal/cms/file_view.go`）——**この拡張はPDFの
+	// 出し方を知りません**。人が消せば出なくなり、`受信元` のタグ（出所の記録）は残ります。
+	b.WriteString(sourcePDFHTML(hostPageID + "-" + attachID))
 	b.WriteString(sourceTableHTML(j.SourceTable))
 	// ⚠ **キャプションを付けます**（2026-09-20 ユーザー:「弊社の受注表にも
 	// キャプションが欲しいところです」）。原本の表と並ぶので、**どちらが何なのか
@@ -676,6 +689,26 @@ func revisionTableAt(bodyHTML string) int {
 	}
 	return strings.LastIndex(bodyHTML[:capAt], "<table")
 }
+
+// sourcePDFHTML は発注書のPDFそのものを、畳んだ枠に入れて返します。
+//
+// ⚠ **ファイル表示のマーカー1つだけを書きます。** 開くのはコアの機能で
+// （`section[data-type="file-view" data-ref]`）、拡張は「ここに開く」と書くだけです。
+// 配線は属性です——中に参照タグを書く形は 2026-09-15 に廃止されています。
+//
+// ⚠ **`<details>` は素のHTMLだけで畳めます**（CSP strict の下でも、公開ページの
+// ゼロJSでも動く）。原本の写しが同じ形なので、2つ並んでも作法が揃います。
+func sourcePDFHTML(ref string) string {
+	return `<details><summary>` + html.EscapeString(sourcePDFCaption) + `</summary>` +
+		`<section data-type="` + cms.FileViewType + `" ` +
+		cms.FileRefAttr + `="` + html.EscapeString(ref) + `"></section></details>`
+}
+
+// sourcePDFCaption は原本のPDFの枠の見出しです。
+//
+// ⚠ **`sourceTableCaption`（顧客の発注書（読んだまま））と対で読ませます**——
+// 片方が原本そのもの、もう片方が機械の読み取りだと、畳んだ見出しだけで分かるように。
+const sourcePDFCaption = "顧客の発注書（PDF）"
 
 // sourceTableHTML は顧客の発注書の写しを、畳める形で組みます（空なら何も出しません）。
 //

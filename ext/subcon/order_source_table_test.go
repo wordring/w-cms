@@ -135,7 +135,9 @@ func TestOrderSourceTableOmittedWhenEmpty(t *testing.T) {
 	j.SourceTable = orderSourceTable{}
 
 	body := buildOrderPageHTML("000001", "pdf001", j)
-	if strings.Contains(body, "<details>") {
+	// ⚠ **原本のPDFの枠とは別物です**——PDFの枠は常に出ます（ファイルは在るので）。
+	// ここで見るのは「読んだまま」の表だけです。
+	if strings.Contains(body, sourceTableCaption) {
 		t.Errorf("原本が読めないのに枠を出しています:\n%s", body)
 	}
 }
@@ -214,7 +216,7 @@ func TestJudgmentSurvivesBadSourceTable(t *testing.T) {
 	if !strings.Contains(body, "<dd>250715-304</dd>") {
 		t.Errorf("発注書番号が本文に出ていません:\n%s", body)
 	}
-	if strings.Contains(body, "<details>") {
+	if strings.Contains(body, sourceTableCaption) {
 		t.Errorf("読めない原本の枠を出しています:\n%s", body)
 	}
 }
@@ -239,5 +241,53 @@ func TestAnalyzeErrorShowsResponseHead(t *testing.T) {
 	}
 	if !utf8.ValidString(err.Error()) {
 		t.Errorf("⚠ 文字の途中で切れています（画面に化けた文字が出ます）: %q", err.Error())
+	}
+}
+
+// TestOrderPagePutsPDFAboveSourceTable は、**原本のPDFが写しの上に、畳んで**
+// 置かれることを固定します（2026-09-21 ユーザー:「顧客の発注書（読んだまま）の上に
+// PDFを表示できるようにします（通常は折りたたむ）」）。
+//
+// ⚠ **順番が仕様です**——原本（PDF）→ 読んだまま（機械の読み取り）→ 弊社の明細、と
+// **確かさの順**に並びます。入れ替わると、人は読み取りの結果を原本だと思って見ます。
+func TestOrderPagePutsPDFAboveSourceTable(t *testing.T) {
+	body := buildOrderPageHTML("000001", "pdf001", realOrderJudgment())
+
+	// **ファイル表示のマーカーが、その添付を指している**こと。
+	marker := `<section data-type="` + cms.FileViewType + `" ` +
+		cms.FileRefAttr + `="000001-pdf001"></section>`
+	if !strings.Contains(body, marker) {
+		t.Errorf("PDFを開くマーカーがありません:\n%s", body)
+	}
+	pdfAt := strings.Index(body, sourcePDFCaption)
+	srcAt := strings.Index(body, sourceTableCaption)
+	if pdfAt < 0 {
+		t.Fatalf("原本のPDFの枠がありません:\n%s", body)
+	}
+	if srcAt < 0 {
+		t.Fatalf("原本の写しがありません:\n%s", body)
+	}
+	if pdfAt > srcAt {
+		t.Errorf("PDFが写しより下にあります（PDF %d / 写し %d）", pdfAt, srcAt)
+	}
+	// ⚠ **畳んで始まる**こと（`open` を付けない）。毎日見るのは弊社の明細で、
+	// PDFは食い違いを疑ったときに開くものです。
+	if strings.Contains(body, "<details open") {
+		t.Errorf("PDFが開いたまま始まっています:\n%s", body)
+	}
+}
+
+// TestOrderPageShowsPDFEvenWithoutSourceTable は、⚠ **写しが読めなくてもPDFは出る**
+// ことを固定します。
+//
+// 写しは機械の読み取りなので失敗しえますが、**PDFは在ります**。読めなかったときこそ
+// 人は原本を開きたいので、ここで一緒に消えると**いちばん要るときに無い**ことになります。
+func TestOrderPageShowsPDFEvenWithoutSourceTable(t *testing.T) {
+	j := realOrderJudgment()
+	j.SourceTable = orderSourceTable{} // 読めなかった
+
+	body := buildOrderPageHTML("000001", "pdf001", j)
+	if !strings.Contains(body, sourcePDFCaption) {
+		t.Errorf("写しが読めないとPDFまで消えています:\n%s", body)
 	}
 }

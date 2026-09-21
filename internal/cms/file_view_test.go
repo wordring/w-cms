@@ -182,3 +182,26 @@ func TestFileViewHeadUsesOriginalName(t *testing.T) {
 		t.Errorf("見出しが届いた名前になっていません（URLは保存名のまま）:\n%s", out)
 	}
 }
+
+// TestFileViewOpensInsideDetails は、**畳める枠の中でも開く**ことを固定します
+// （2026-09-21）。
+//
+// ⚠ **受注ページが発注書のPDFをこの形で置きます**（`ext/subcon` の `sourcePDFHTML`）
+// ——`<details>` に入れて畳んだ状態で始めます。配送係が `<details>` の中へ降りなく
+// なった日に、**PDFが黙って出なくなります**。畳んであるので、人は「閉じているだけ」と
+// 思って開き、空を見ることになります——気づきにくい壊れ方です。
+func TestFileViewOpensInsideDetails(t *testing.T) {
+	fileViewFixture(t, "000001", "c3p7.pdf")
+
+	body := `<details><summary>顧客の発注書（PDF）</summary>` +
+		`<section data-type="file-view" data-ref="000001-c3p7"></section></details>`
+	out := renderFileViewBody(t, &auth.User{Username: "alice", IsAdmin: true}, 1, body)
+
+	if !strings.Contains(out, `type="application/pdf"`) {
+		t.Errorf("畳める枠の中でファイルが開いていません:\n%s", out)
+	}
+	// 枠そのものは残る（人が畳んだり開いたりするのはブラウザの仕事）。
+	if !strings.Contains(out, "<details>") {
+		t.Errorf("畳める枠が消えています:\n%s", out)
+	}
+}
