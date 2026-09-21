@@ -28,13 +28,22 @@ const BlockIDAttr = htmldoc.BlockIDAttr
 var sanitizer = htmldoc.New()
 
 // Sanitize は本文HTMLを許可リストに従って安全な形へ整えて返します。
+//
+// ⚠ **表示専用クローム（`.vocab-chrome`）を先に落とします**（[chrome_strip.go]）。
+// 順序が要ります——サニタイズは `class` を落とすので、**後では印が残っていません**。
 func Sanitize(s string) string {
-	return sanitizer.Sanitize(s)
+	stripped, _ := StripChrome(s)
+	return sanitizer.Sanitize(stripped)
 }
 
 // SanitizeReport はサニタイズ結果と、内容が変化したか（＝何かを除去したか）を返します。
+//
+// ⚠ **クロームを落としたことも「変化した」に数えます**——保存のエコーバックで
+// 書き手に伝わるべきことだからです（黙って消すと、消えた理由が誰にも分かりません）。
 func SanitizeReport(s string) (out string, changed bool) {
-	return sanitizer.SanitizeReport(s)
+	stripped, dropped := StripChrome(s)
+	out, changed = sanitizer.SanitizeReport(stripped)
+	return out, changed || dropped > 0
 }
 
 // AllowedVocabulary は「要素名 → 許可属性（ソート済み）」を返します。
