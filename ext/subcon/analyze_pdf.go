@@ -147,10 +147,21 @@ type orderSourceTable struct {
 }
 
 type orderPDFItem struct {
-	ItemNo   string `json:"item_no"`
-	ItemName string `json:"item_name"`
-	Price    string `json:"price"`
-	Quantity string `json:"quantity"`
+	ItemNo string `json:"item_no"`
+	// ItemNoSource は `品番` を**どの列から採ったか**です（先方の見出しの文字のまま）。
+	//
+	// ⚠ **「言い換えたこと」を見せるための欄**です（2026-09-21 ユーザー:「品番には
+	// 入りそうなものを入れます。…そうとも限りません。これはGeminiに尋ねては
+	// どうでしょう？」）。品番を持たず**図番を品番として送ってくる客先**があり、
+	// 一方で図番とは別に品番を持つ客先もあります——**どの列が品番なのかは、
+	// 書面を読まないと決まりません**。だから機械に選ばせ、選んだ根拠を返させます。
+	//
+	// ⚠ **これが無いと、言い換えたことが値からは分かりません**（0c の積み残し）。
+	// 原本の写しと突き合わせれば人には分かりますが、**毎回見比べる人はいません**。
+	ItemNoSource string `json:"item_no_source"`
+	ItemName     string `json:"item_name"`
+	Price        string `json:"price"`
+	Quantity     string `json:"quantity"`
 	// Unit は数量の単位です（`個`・`セット` など）。⚠ **落とすと数量の意味が
 	// 変わります**——`100` が100個なのか100セットなのか分からなくなり、
 	// **まれにしか出ないセットの行だけが黙って間違います**（2026-09-20）。
@@ -291,11 +302,15 @@ func loadPDFForAnalysis(pageID, fileName string) ([]byte, error) {
 	return b, nil
 }
 
-// judgeOrderPDFWithGemini は判定＋抽出を1コールで行います。
-// プロンプト（＝解釈）は本セットの持ち物、呼び出しの型（キー・クライアント・
-// フェンス剥がし）はコア（gemini.go）。
-func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
-	prompt := `このPDFが何の文書かを判定し、種類に応じた項目を抽出してください。
+// orderJudgePrompt は判定＋抽出の頼み文です（＝解釈。このセットの持ち物で、
+// 呼び出しの型——キー・クライアント・フェンス剥がし——はコアの gemini.go）。
+//
+// ⚠ **ここのJSONの鍵と、Go の構造体のタグは一対一です。** 片方だけ直すと、
+// その項目は**エラーにならず、常に空**になります——応答に入っていないだけなので
+// `json.Unmarshal` は何も言いません。番人は `TestPromptMentionsEveryJSONKey`。
+//
+// **関数の外に出してあるのは、その番人が読めるようにするため**です（2026-09-21）。
+const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応じた項目を抽出してください。
 判定する種類は次の3つです:
   - "order"   : 顧客（取引先）が当社宛てに発行した発注書（注文書）
   - "drawing" : 部品や製品の図面（表題欄に図面番号・図面名称があるもの）
@@ -312,13 +327,22 @@ func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
   "subtotal": "小計（書かれているまま。記載が無ければ空文字）",
   "tax": "消費税額（書かれているまま。記載が無ければ空文字）",
   "total": "合計金額（書かれているまま。記載が無ければ空文字）",
-  "items": [{"item_no": "品番", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}],
+  "items": [{"item_no": "品番（下の規則で選ぶ）", "item_no_source": "item_no を採った列の見出し（先方に書かれている文字のまま。見出しが無い列から採ったときは空文字）", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}],
   "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}]
 }
 ⚠ subtotal・tax・total は、**書面に書かれている数字をそのまま**返してください。
 **足し算・掛け算をして求めないでください**——書かれていなければ空文字にします。
 （こちらで検算に使うので、計算して埋められると食い違いが見えなくなります。）
 表の右下などに飛び出して書かれていることがあります。
+
+⚠ item_no（品番）には、**その品物を特定している番号**を入れてください。
+見出しが「品番」の列があればそれを使います。無ければ「図番」「図面番号」「部品番号」
+「型式」「品目コード」など、**その品物を一意に指している列**から選んでください
+——品番を持たず、図番を品番として送ってくる客先が実際にあります。
+番号にあたる列がまったく無ければ空文字にします。**品名を入れないでください**
+（品名は item_name の持ち物で、同じ名前の別の品物がありえます）。
+どの列から採ったかを item_no_source に、**先方の見出しに書かれている文字のまま**
+返してください——こちらが「言い換えたこと」を人に見せるために使います。
 
 ⚠ 1つのPDFに**複数の図面**が入っていることがあります（ページごとに別の図面、
 あるいは1ページに部品図と溶接図）。その場合は drawings に**figureの数だけ**要素を入れてください。
@@ -331,7 +355,11 @@ drawings の各項目は次のとおりです:
 図面番号は突き合わせに使うので、**表題欄に書かれている文字列をそのまま**返してください
 （ハイフンや記号を補ったり省いたりしない）。該当しない項目は空でかまいません。`
 
-	respText, err := cms.GeminiGenerate(prompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
+// judgeOrderPDFWithGemini は判定＋抽出を1コールで行います。
+// プロンプト（＝解釈）は本セットの持ち物、呼び出しの型（キー・クライアント・
+// フェンス剥がし）はコア（gemini.go）。
+func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
+	respText, err := cms.GeminiGenerate(orderJudgePrompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
 	if err != nil {
 		return nil, err
 	}
@@ -452,6 +480,10 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// ⚠ **見出しは宣言から組みます**（`headerRowHTML`・2026-09-20）。列を足したのに
 	// 見出しを手で書いたままだと、**宣言と本文が黙ってずれます**——索引は見出しの
 	// 表示文字で引くので、ずれた列はどこからも読めません。`vocab.go` が正本です。
+	// ⚠ **言い換えたときは、そう書きます**（2026-09-21）。先方の「図面番号」を
+	// 弊社の「品番」に入れたなら、その1行を表の手前に残します——**原本と見比べ
+	// なくても気づける**のがここの目的です（0c の積み残し）。
+	b.WriteString(itemNoSourceNote(j.Items))
 	b.WriteString(`<table data-type="` + clientOrderItemsType + `">` +
 		`<caption>` + html.EscapeString(displayNameOf(clientOrderItemsType)) + `</caption><tbody>`)
 	b.WriteString(headerRowHTML(clientOrderItemsType))
@@ -513,6 +545,62 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	}
 	b.WriteString("</tbody></table>")
 	return b.String()
+}
+
+// itemNoSourceNote は「弊社の `品番` を、先方のどの列から採ったか」の1行です。
+//
+// ⚠ **言い換えたときだけ書きます。** 先方にも「品番」の列があったなら、言い換えて
+// いないので知らせることがありません——**毎回出る注意書きは読まれなくなります**
+// （未処理一覧で一度学んだことです）。
+//
+// ⚠ **行ごとに違う列から採っていたら黙ります。** それは様式を読めていない印で、
+// 「どの列から採ったか」を1行で言えません。**嘘を書くより黙るほうが正直**です
+// ——そのときは原本の写しが手掛かりになります。
+//
+// ⚠ **本文に書きます（鏡型ではありません）。** 検算の ⚠ とは性格が違うためです:
+// あちらは**いまの数字**についての判断なので、人が数字を直したら消えなければ
+// なりません。こちらは**解析がそのとき何をしたか**という出来事で、あとから人が
+// 品番を打ち直しても「解析はそこから採った」は真のままです。消したい人は消せます。
+func itemNoSourceNote(items []orderPDFItem) string {
+	src := ""
+	for _, it := range items {
+		s := cms.NormalizeNameForIngest(it.ItemNoSource)
+		if s == "" {
+			continue
+		}
+		if src == "" {
+			src = s
+			continue
+		}
+		if src != s {
+			return "" // 行ごとに違う＝様式を読めていない
+		}
+	}
+	if src == "" || src == itemNoLabel() {
+		return "" // 知らせることが無い（言い換えていない・分からない）
+	}
+	return `<p>解析は、先方の「` + html.EscapeString(src) +
+		`」を弊社の「` + html.EscapeString(itemNoLabel()) + `」に入れました。</p>`
+}
+
+// itemNoLabel は受注明細の `品番` 列の見出しを返します（宣言と同じ綴りを使うため）。
+//
+// ⚠ **生の文字列で持つと、列を改名した日にこの注意書きが常に出ます**——
+// 「先方の『品番』を弊社の『品番』に入れました」という、意味の無い1行になります。
+//
+// ⚠ **変数ではなく関数です。** パッケージ変数の初期化は `init()` より**先**に
+// 走るので、`var` で持つと語彙が登録される前に引くことになり、**常に空**に
+// なります——空だと上の比較が素通りして、言い換えていないときも1行出ます。
+func itemNoLabel() string { return labelOf(clientOrderItemsType, "item-id") }
+
+// labelOf は形式の列の見出しを宣言から返します（未登録なら空）。
+func labelOf(vocabType, field string) string {
+	for _, c := range columnsOf(vocabType) {
+		if c.Field == field {
+			return c.Label
+		}
+	}
+	return ""
 }
 
 // writeHeaderPair はヘッダ dl の1対を書きます（空値は空欄＝あとから人が埋める）。
