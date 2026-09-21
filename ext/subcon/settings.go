@@ -31,11 +31,28 @@ type settingsSection struct {
 	//
 	// **並び順に意味があります**——先頭が整理の画面の初期値（＝いちばん多い行き先）。
 	MachineStages []string `json:"machine_stages,omitempty"`
+
+	// ProductCodeTags は「**加工製品ページを言い当てる番号**」のタグ名です
+	// （2026-09-21）。受注明細の `品番` からページを特定するときに、この名前の
+	// タグを**順に**引きます。
+	//
+	// ⚠ **客先によって、番号がどのタグに入るかが違います**——南北様は図番で
+	// 発注してくるのでページの `図面番号` に当たり、品番で発注してくる客先は
+	// `品番` に当たります。図面の無い製品は `品番` しか持ちません。
+	// **タグ名を問わず値で当てる**のはそのためです。
+	//
+	// ⚠ **`code` 型の語にすること**（設定の `vocabulary`）。`text` だと長音を
+	// 畳まないので、`レーザー` と `レ-ザ-` のような揺れを越えられません。
+	// **未指定なら結びません**（既定の一覧はありません）。
+	ProductCodeTags []string `json:"product_code_tags,omitempty"`
 }
 
 var (
 	stagesMu      sync.RWMutex
 	machineStages []string
+	// ⚠ **`stagesMu` を共有します。** 設定の反映は1回で両方を差し替えるので、
+	// 別の錠にすると「段は新しいが番号のタグは古い」という中途半端な瞬間ができます。
+	productCodeTags []string
 )
 
 func init() {
@@ -69,12 +86,36 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		}
 		seen[v] = true
 	}
+	// ⚠ **重複と空だけ断ります。** 型（`code` であること）はここでは見ません——
+	// この検査はコアが語彙を効かせる**前**に走ることがあり、見ると「まだ読み込まれて
+	// いない語」を誤って断ります（2026-09-20 に `vocab_formats` で同じ形を踏みました）。
+	seenTag := map[string]bool{}
+	for _, t := range s.ProductCodeTags {
+		v := strings.TrimSpace(t)
+		if v == "" {
+			return nil, fmt.Errorf("product_code_tags に空のタグ名があります")
+		}
+		if seenTag[v] {
+			return nil, fmt.Errorf("product_code_tags に %q が2回あります", t)
+		}
+		seenTag[v] = true
+	}
 	stages := s.MachineStages
+	codeTags := s.ProductCodeTags
 	return func() {
 		stagesMu.Lock()
 		machineStages = stages
+		productCodeTags = codeTags
 		stagesMu.Unlock()
 	}, nil
+}
+
+// ProductCodeTags は「加工製品ページを言い当てる番号」のタグ名を返します（並び順つき）。
+// 返した配列は書き換えないこと（参照側が共有しています）。
+func ProductCodeTags() []string {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	return productCodeTags
 }
 
 // MachineStages は設定の段の一覧を返します（並び順つき。**先頭が整理の初期値**）。

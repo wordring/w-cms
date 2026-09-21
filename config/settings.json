@@ -76,6 +76,11 @@
   ],
   "extensions": {
     "subcon": {
+      "product_code_tags": [
+        "図面番号",
+        "品番",
+        "部品番号"
+      ],
       "machine_stages": [
         "現行",
         "旧型",

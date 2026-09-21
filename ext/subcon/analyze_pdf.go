@@ -713,6 +713,18 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
 	b.WriteString(`<dl data-type="tags">`)
 	writeHeaderPair(&b, DrawingNoTag, no)
 	writeHeaderPair(&b, DrawingNameTag, name)
+	// ⚠ **`品番` は空欄で置きます**（2026-09-21 ユーザー:「加工製品ページに品番タグを
+	// 付けようと思います」）。**図面からは読みません**——「何が品番か」は**取引先ごとの
+	// 取り決め**であって、図面のどこにも書かれていないからです（発注書は列の見出しで
+	// 名乗るので、あちらは Gemini に聞けます。この非対称が要点です）。
+	//
+	// ⚠ **Gemini に推測させると、同じ客先の図面100枚のうち数枚だけ空で返り、
+	// その数枚が黙って検索に当たらなくなります**。代わりに、**人が整理で結んだ事実**を
+	// 覚えます（[link_item.go]）——推測ではないのでぶれません。
+	//
+	// ⚠ **図面の無い製品では、ここが唯一の手掛かり**になります。南北様のように
+	// 図番で発注してくる客先では `図面番号` のほうが当たるので、空のままで構いません。
+	writeHeaderPair(&b, ItemNoTag, "")
 	// 装置名称・客先は置き場所（社名／段／装置名称／図面名称）に効く項目。
 	writeHeaderPair(&b, MachineNameTag, cms.NormalizeNameForIngest(j.MachineName))
 	writeHeaderPair(&b, ClientNameTag, cms.NormalizeNameForIngest(j.Customer))

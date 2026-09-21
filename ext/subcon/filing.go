@@ -509,7 +509,25 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]filingResult, 0, len(req.Rows)+len(req.Orders))
 	for _, row := range req.Rows {
-		results = append(results, fileOneDrawing(user, row))
+		res := fileOneDrawing(user, row)
+		// ⚠ **ここが「弊社品番を機械的に埋める」引き金です**（2026-09-21 ユーザー:
+		// 「注文が入っている以上、近日中に製造製品ページが出来るはずです。**その
+		// タイミングで検索して埋める**ことになると思います。できれば機械的に」）。
+		//
+		// **加工製品ページが置かれた瞬間**——つまり人が整理を押した直後だけに走ります。
+		// 裏で回る仕事は作りません。⚠ **合流したときは合流先**を見ます（そのページが
+		// 新しい図番を得ているので、そちらが受注行の相手です）。
+		// 歯止めと照合の規則は [link_item.go] が正本です。
+		if target := res.TargetID; res.Outcome == "moved" || res.Outcome == "revision" ||
+			res.Outcome == "drawing" {
+			if target == "" {
+				target = res.PageID
+			}
+			if n := LinkOrdersToProduct(user, target); n > 0 {
+				res.Message += "／受注の弊社品番を" + strconv.Itoa(n) + "行埋めました"
+			}
+		}
+		results = append(results, res)
 	}
 	for _, o := range req.Orders {
 		results = append(results, fileOneOrder(user, o))
