@@ -979,6 +979,15 @@ body[edit-mode] .block-content p:empty::before {
 }
 
 .enum-menu button:hover { background: #eff6ff; }
+/* 候補の状態を伝える一行（2026-09-21）。⚠ **0件でも黙らない**——「候補が出ない」と
+   「まだ登録していない」は別物で、後者なら**登録すれば出る**と分かる必要がある。 */
+.enum-menu .enum-menu-note {
+    display: block;
+    padding: 6px 10px;
+    color: var(--text-muted, #6b7280);
+    font-size: 0.85em;
+    white-space: nowrap;
+}
 
 /* テンプレート選択メニュー（子ページ作成）。.enum-menu の見た目を借り、
  * 分類の見出し（枝）だけを足す。階層の字下げは段数が可変なので app.js が

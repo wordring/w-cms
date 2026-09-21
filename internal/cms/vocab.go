@@ -119,6 +119,16 @@ type VocabColumn struct {
 	Label string     `json:"label"`          // 見出しの表示文字（dt の文字）
 	Type  ColumnType `json:"type"`           // 列型
 	Enum  []string   `json:"enum,omitempty"` // Type==ColEnum のときの選択肢
+	// Suggest は「入力のとき候補を出す」列の**候補の出どころの名前**です（2026-09-21）。
+	//
+	// `Enum` との違いは**候補が動く**こと——選択肢が宣言に書ける値なら `Enum`、
+	// **データから引いてくる**なら `Suggest`（取引先の題など）。
+	//
+	// ⚠ **候補は縛りではありません。** 採らずに手で打てます（顧客名のコンボボックスと
+	// 同じ手）——**揃うのは採ったときだけ**で、手打ちは止められません。
+	// ⚠ **出どころはコアが知りません。** 名前で `RegisterSuggestSource` を引くので、
+	// 業務の候補（取引先・仕入先）は**拡張が持ち込みます**。
+	Suggest string `json:"suggest,omitempty"`
 }
 
 // VocabWord は辞書の1語です（`config/settings.json` の `vocabulary`）。

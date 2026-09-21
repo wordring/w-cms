@@ -212,6 +212,11 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 
+	// 入力の候補（2026-09-21・`ext/subcon` の `推奨業者` などが使う）。
+	// ⚠ **認証が要ります**——候補にはページの題が出るためです。出どころは拡張が
+	// `cms.RegisterSuggestSource` で持ち込み、**コアは名前しか知りません**。
+	protected.HandleFunc("/api/suggest", cms.SuggestAPIHandler)
+
 	// 権限管理（owner/admin）
 	protected.HandleFunc("/api/page-perms", cms.PagePermsHandler)
 	protected.HandleFunc("/api/page-chown", cms.PageChownHandler)

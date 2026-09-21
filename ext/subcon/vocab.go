@@ -123,7 +123,7 @@ var businessVocab = []cms.VocabDef{
 			{Field: "work", Label: "加工内容", Type: cms.ColText},
 			{Field: "supplied", Label: "支給", Type: cms.ColText},
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
-			{Field: "vendor", Label: "推奨業者", Type: cms.ColText},
+			{Field: "vendor", Label: "推奨業者", Type: cms.ColText, Suggest: PartnerSuggestSource},
 			{Field: "doc", Label: "資料", Type: cms.ColRef},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},

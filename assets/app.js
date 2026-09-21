@@ -3053,7 +3053,10 @@
         else if (col) type = col.type;
         else if (vocabWords[key]) type = vocabWords[key].type;
         // `label` は見出しの表示文字（＝項目の鍵）。折り返しの判定に使う。
-        return { label: key, type, enum: (col && col.enum) || [] };
+        // `suggest` は**候補の出どころの名前**（2026-09-21）——`enum` と違って
+        // 候補が**データから来る**列（`推奨業者` など）。
+        return { label: key, type, enum: (col && col.enum) || [],
+                 suggest: (col && col.suggest) || '' };
     }
 
     // 値の解釈可否。サーバーの NormalizeValue と同じ規則（全角→半角・通貨記号と
@@ -3181,7 +3184,11 @@
         const col = resolveCellColumn(cell);
         const isEnum = col && col.type === 'enum' && col.enum.length > 0;
         const isImage = col && col.type === 'image';
-        if (!isEnum && !isImage) { hideEnumMenu(); return; }
+        // ⚠ **候補は縛りではありません**（2026-09-21）。採らずに手で打てます
+        //    ——揃うのは採ったときだけで、手打ちは止められません。それでも意味が
+        //    あるのは**打つより選ぶほうが速い**からです。速ければ揃います。
+        const suggestFrom = (col && col.suggest) || '';
+        if (!isEnum && !isImage && !suggestFrom) { hideEnumMenu(); return; }
         if (cell === enumMenuCell) return; // 同じセル内のキャレット移動では作り直さない
 
         enumMenuCell = cell;
@@ -3208,9 +3215,50 @@
             });
             menu.appendChild(b);
         });
+        if (suggestFrom) fillSuggestMenu(menu, cell, suggestFrom);
         menu.classList.add('active');
         const rect = cell.getBoundingClientRect();
         placeFloating(menu, rect, 2);
+    }
+
+    // fillSuggestMenu は出どころから候補を取り、ボタンで並べます。
+    //
+    // ⚠ **`innerHTML` へ文字列を入れません**（候補はページの題＝人が書いた文字）。
+    // ⚠ **0件でも黙りません**——「候補が出ない」と「まだ登録していない」は別物です。
+    // ⚠ **遅れて届くので、セルが変わっていたら捨てます**（別のセルへ候補を出さない）。
+    async function fillSuggestMenu(menu, cell, source) {
+        const note = document.createElement('span');
+        note.className = 'enum-menu-note';
+        note.textContent = '候補を探しています…';
+        menu.appendChild(note);
+        let items = [];
+        try {
+            const res = await fetch('/api/suggest?source=' + encodeURIComponent(source) +
+                '&q=' + encodeURIComponent(cell.textContent.trim()));
+            const d = await res.json().catch(() => ({}));
+            items = (d && d.items) || [];
+        } catch (e) { /* 通信の失敗は「候補なし」と同じ扱い */ }
+        if (enumMenuCell !== cell) return; // 別のセルへ移っていたら捨てる
+        note.remove();
+        if (items.length === 0) {
+            const empty = document.createElement('span');
+            empty.className = 'enum-menu-note';
+            empty.textContent = '候補がありません（取引先に登録すると出ます）';
+            menu.appendChild(empty);
+            return;
+        }
+        items.forEach((v) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = v;
+            b.addEventListener('click', () => {
+                cell.textContent = v;
+                validateCell(cell);
+                placeCaretAtEnd(cell);
+                hideEnumMenu();
+            });
+            menu.appendChild(b);
+        });
     }
 
     // ── PDF付きブロックのエンハンサ（語彙モデル §3: マーカー要素へ振る舞いを配線） ──
