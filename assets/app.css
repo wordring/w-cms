@@ -2196,19 +2196,31 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .checksum-note td { color: var(--w-muted, #6b7280); font-style: italic; }
 
 /* ── 材料の参考単価（2026-09-21）────────────────────────────────────────
-   材料表の右に足す「最新単価・時点・仕入先」。⚠ **本文ではなく鏡**なので、
-   **人が書いた列と見分けが付く必要があります**——左に区切り線を入れ、
-   文字を少し落として「ここから先はサーバーが足したもの」と分かる形にする。
-   ⚠ 色は使いません（人が書いた列の背景と喧嘩するのと、色覚に頼らないため）。 */
+   材料表の右に足す「最新単価」。⚠ **本文ではなく鏡**なので、**人が書いた列と
+   見分けが付く必要があります**——左に区切り線を入れ、文字を少し落として
+   「ここから先はサーバーが足したもの」と分かる形にする。
+   ⚠ 色は使いません（人が書いた列の背景と喧嘩するのと、色覚に頼らないため）。
+
+   ⚠ **1列に畳んであります。** 最初は「最新単価・時点・仕入先」の3列にしましたが、
+   **実測で必ずはみ出しました**——文書の欄は **1920px の画面でも 666px** までしか
+   広がらず（左右のレールぶん）、材料表の素の幅が 529px、3列が 256px でした。
+   **スクロールしないと見えない鏡は、無いのとあまり変わりません。** */
 #w-editor-content .mat-price {
     border-left: 2px solid var(--w-border, #d1d5db);
     color: var(--w-muted, #6b7280);
     font-size: 0.92em;
+    /* ⚠ **表のセルに `max-width` は効きません**（auto レイアウトは中身で幅を決める）。
+       細くするのは**組み立て側**の仕事で、時点と仕入先を別の行に分けてあります。 */
     white-space: nowrap;
 }
 #w-editor-content th.mat-price { font-weight: 500; }
-/* ⚠ 2列目以降は区切り線を持たない（組の中に線が3本引かれるのを避ける）。 */
-#w-editor-content .mat-price ~ .mat-price { border-left: none; }
+#w-editor-content .mat-price-cost { display: block; color: var(--text, #111827); }
+/* 出所（時点・仕入先）。⚠ **小さくしても消さない**——いつの・誰からの値段か
+   分からない数は、ワンノートの `単価（ロット1）みなと` と同じ問題を作り直します。 */
+#w-editor-content .mat-price-src { display: block; font-size: 0.85em; line-height: 1.35; }
+/* ⚠ **断り文は折り返させます。** `nowrap` のままだと
+   「⚠ 買った記録がありません」の1行幅（実測200px）で列が決まり、**値のある行より
+   断り文のほうが列を広げます**——畳んだ意味が消えます（実際に一度そうなりました）。 */
 #w-editor-content .mat-price-none { font-style: italic; white-space: normal; }
 
 /* ── 受注残表（2026-09-21）──────────────────────────────────────────────

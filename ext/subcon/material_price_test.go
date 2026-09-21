@@ -96,7 +96,7 @@ func TestMaterialPriceShowsLatestPurchase(t *testing.T) {
 	})
 
 	got := showMaterials(t, &auth.User{Username: "root", IsAdmin: true}, materialsBody(rows))
-	for _, want := range []string{"最新単価", "時点", "仕入先", "800円", "2026-08-19", "みなと商店"} {
+	for _, want := range []string{"最新単価", "800円", "2026-08-19", "みなと商店"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("⚠ 鏡が走っていないか、%q が出ていません:\n%s", want, got)
 		}
@@ -106,6 +106,11 @@ func TestMaterialPriceShowsLatestPurchase(t *testing.T) {
 	//    落ちるので、貼られた時点では見分けが付かなくなる）。
 	if !strings.Contains(got, `class="vocab-chrome mat-price"`) {
 		t.Errorf("⚠ 足した列にクロームの印がありません（本文に焼き付く形です）:\n%s", got)
+	}
+	// ⚠ **出所は消さないこと。** 値段だけ出すと「いつの・誰からの値段か分からない数」
+	//    になり、ワンノートの `単価（ロット1）みなと` と同じ問題を作り直します。
+	if !strings.Contains(got, `class="mat-price-src"`) {
+		t.Errorf("⚠ 出所（時点・仕入先）の欄がありません:\n%s", got)
 	}
 }
 

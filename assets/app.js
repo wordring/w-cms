@@ -3099,6 +3099,13 @@
     // かったときの落ち着き先で、付けると表が丸ごと青くなって何も伝えなくなる。
     // 薄い青は全体で「機械が読む」の色（見出し語の .vocab-word と同じ）。
     function validateCell(cell) {
+        // ⚠ **サーバーが足したセル（クローム）には触らない**（2026-09-21）。
+        // 本文の列ではないので、型の印（薄い赤／薄い青）も折り返しの方針も当てはまり
+        // ません。⚠ 実際に踏みました——材料の参考単価の列は見出しが `備考` でないため
+        // `cell-atomic`（1行に保つ）が付き、**断り文「⚠ 買った記録がありません」の
+        // 1行幅（実測200px）で列が決まりました**。値より断り文のほうが列を広げる、
+        // という逆転です。検算の `<tfoot>` の行も同じ経路を通っていました。
+        if (isServerOwned(cell)) return;
         const col = resolveCellColumn(cell);
         const text = cell.textContent.trim();
         const typed = !!col && (col.type === 'number' || col.type === 'date');

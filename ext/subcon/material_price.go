@@ -32,12 +32,14 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 参考単価の列です。⚠ **見出しの表示文字が鍵**なので、直すと画面の言葉も変わります。
-const (
-	priceColLabel    = "最新単価"
-	priceDateLabel   = "時点"
-	priceSupplierCol = "仕入先"
-)
+// priceColLabel は足す列の見出しです。⚠ **見出しの表示文字が鍵**なので、直すと
+// 画面の言葉も変わります。
+//
+// ⚠ **1列に畳んであります**（単価・時点・仕入先を縦に重ねる）。最初は3列にしましたが、
+// **実測で必ずはみ出しました**——文書の欄は **1920px の画面でも 666px** までしか
+// 広がらず（左右のレールぶん）、材料表の素の幅が 529px、3列が 256px だったためです。
+// **スクロールしないと見えない鏡は、無いのとあまり変わりません。**
+const priceColLabel = "最新単価"
 
 // materialPrice は「その材料を最後にいくらで買ったか」です。
 type materialPrice struct {
@@ -72,9 +74,7 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		return true, nil
 	}
 
-	appendPriceCell(head, "th", priceColLabel)
-	appendPriceCell(head, "th", priceDateLabel)
-	appendPriceCell(head, "th", priceSupplierCol)
+	appendPriceHead(head, priceColLabel)
 
 	for _, tr := range rows[1:] {
 		key := materialKeyOf(cellText(tr, mi), cellText(tr, si), cellText(tr, zi))
@@ -87,9 +87,11 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		case !ok:
 			appendPriceNote(tr, "⚠ 買った記録がありません")
 		default:
-			appendPriceCell(tr, "td", comma(p.Cost)+"円")
-			appendPriceCell(tr, "td", orDash(p.Date))
-			appendPriceCell(tr, "td", orDash(p.Supplier))
+			// ⚠ **出所を必ず添えます**（時点と仕入先）。値段だけ出すと、
+			//    **いつの・誰からの値段か分からない数**になり、ワンノートの
+			//    `単価（ロット1）みなと` と同じ問題を作り直すことになります。
+			appendPriceValue(tr, comma(p.Cost)+"円",
+				strings.TrimSpace(p.Date), strings.TrimSpace(p.Supplier))
 		}
 	}
 	return true, nil
@@ -210,32 +212,48 @@ func headerIndexOf(head *html.Node, label string) int {
 	return -1
 }
 
-// appendPriceCell は行の末尾へ、クロームのセルを1つ足します。
+// priceCell は行の末尾へクロームのセルを1つ作って返します。
 //
 // ⚠ **`vocab-chrome` を付けるのは必須です**——付けないと、人が画面の表をコピーして
 // 貼ったときに**本当の列として保存されます**（`class` はサニタイズで落ちるので、
 // 貼られた時点では見分けが付かなくなる）。
-func appendPriceCell(tr *html.Node, tag, text string) {
+func priceCell(tr *html.Node, tag, class string) *html.Node {
 	td := &html.Node{Type: html.ElementNode, Data: tag,
-		Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome mat-price"}}}
-	td.AppendChild(&html.Node{Type: html.TextNode, Data: text})
+		Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome " + class}}}
 	tr.AppendChild(td)
+	return td
 }
 
-// appendPriceNote は3列ぶんをまとめて1つの断り文にします。
-func appendPriceNote(tr *html.Node, text string) {
-	td := &html.Node{Type: html.ElementNode, Data: "td",
-		Attr: []html.Attribute{
-			{Key: "class", Val: "vocab-chrome mat-price mat-price-none"},
-			{Key: "colspan", Val: "3"},
-		}}
-	td.AppendChild(&html.Node{Type: html.TextNode, Data: text})
-	tr.AppendChild(td)
+// appendPriceHead は見出し行へ1つ足します。
+func appendPriceHead(tr *html.Node, text string) {
+	priceCell(tr, "th", "mat-price").
+		AppendChild(&html.Node{Type: html.TextNode, Data: text})
 }
 
-func orDash(s string) string {
-	if strings.TrimSpace(s) == "" {
-		return "—"
+// appendPriceValue は単価と、その**出所**（時点・仕入先）を縦に重ねて1セルに入れます。
+//
+// ⚠ **時点と仕入先は別の行にします。** 1行に並べると
+// `2026-08-19 みなと商店` の幅（実測139px）でセルが決まります——**表のセルには
+// `max-width` が効かない**ので、CSS では細くできません。**折るのは組み立て側の仕事**です。
+func appendPriceValue(tr *html.Node, cost, date, supplier string) {
+	td := priceCell(tr, "td", "mat-price")
+	line := func(class, text string) {
+		if text == "" {
+			return
+		}
+		s := &html.Node{Type: html.ElementNode, Data: "span",
+			Attr: []html.Attribute{{Key: "class", Val: class}}}
+		s.AppendChild(&html.Node{Type: html.TextNode, Data: text})
+		td.AppendChild(s)
 	}
-	return s
+	line("mat-price-cost", cost)
+	line("mat-price-src", date)
+	line("mat-price-src", supplier)
 }
+
+// appendPriceNote は、引けなかった理由を同じ列に入れます。
+func appendPriceNote(tr *html.Node, text string) {
+	priceCell(tr, "td", "mat-price mat-price-none").
+		AppendChild(&html.Node{Type: html.TextNode, Data: text})
+}
+
