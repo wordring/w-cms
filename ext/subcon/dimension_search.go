@@ -19,7 +19,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -119,15 +118,7 @@ func SearchMaterials(viewer *auth.User, q MaterialQuery) ([]MaterialHit, error) 
 		grouped[p.key] = append(grouped[p.key], p)
 	}
 
-	visible := map[int]bool{}
-	canView := func(id int) bool {
-		if v, ok := visible[id]; ok {
-			return v
-		}
-		v := page.CanView(viewer, id)
-		visible[id] = v
-		return v
-	}
+	canView := viewCheck(viewer)
 	prices, err := latestMaterialPrices(db, viewer)
 	if err != nil {
 		prices = map[string]materialPrice{} // ⚠ 単価が引けなくても検索は返す

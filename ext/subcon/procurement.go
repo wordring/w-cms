@@ -65,15 +65,7 @@ type ProcurementProduct struct {
 // ProcurementByProduct は受注ページの手配状況を、加工製品ごとに集めます。
 func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduct, error) {
 	db := database.DB
-	visible := map[int]bool{}
-	canView := func(id int) bool {
-		if v, ok := visible[id]; ok {
-			return v
-		}
-		v := page.CanView(user, id)
-		visible[id] = v
-		return v
-	}
+	canView := viewCheck(user)
 
 	items, err := cms.VocabTableRowsOf(db, orderPageID, clientOrderItemsType)
 	if err != nil {
@@ -91,26 +83,17 @@ func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduc
 	for _, it := range items {
 		// ⚠ **弊社品番（加工製品ページ）が無ければ、何にも結べません。** 黙らずに
 		//    理由を出します——空欄だと「要る物が無い」ように見えます。
-		productID, ok := page.NormalizeID(strings.TrimSpace(it.Values["our-item-id"]))
 		p := ProcurementProduct{
 			ItemName: strings.TrimSpace(it.Values["item-name"]),
 			Qty:      cms.VocabQuantity(it),
 		}
-		if !ok || productID == "" {
-			// ⚠ **`品番` から引き直します。** 結び方は2通りあります——
-			//    **`弊社品番`（ページ参照・2026-09-20）**と、**`品番` から番号のタグを
-			//    逆引きする道**（`ProductPagesByCode`）。⚠ **古いページは後者しか
-			//    持ちません**ので、片方だけ見ると**移行前のページが丸ごと出なくなります**。
-			if id, found := productByCode(db, strings.TrimSpace(it.Values["item-id"])); found {
-				productID, ok = page.FormatID(id), true
-			}
-		}
-		if !ok || productID == "" {
+		// 結び方は2通り——`弊社品番` と、`品番` の逆引き（`productOfOrderRow` に経緯）。
+		idInt, ok := productOfOrderRow(db, it)
+		if !ok {
 			p.Why = "⚠ どの加工製品か分かりません（弊社品番を入れてください）"
 			out = append(out, p)
 			continue
 		}
-		idInt := pageNum(productID)
 		p.PageID, p.Title = idInt, cms.PageTitleByID(idInt)
 		if !canView(idInt) {
 			// ⚠ **読めないことは知らせません**（C案）——行ごと落とします。

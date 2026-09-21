@@ -30,7 +30,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/page"
 )
 
 // priceColLabel は足す列の見出しです。⚠ **見出しの表示文字が鍵**なので、直すと
@@ -193,15 +192,7 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 		}
 	}
 
-	visible := map[int]bool{}
-	canView := func(id int) bool {
-		if v, ok := visible[id]; ok {
-			return v
-		}
-		v := page.CanView(viewer, id)
-		visible[id] = v
-		return v
-	}
+	canView := viewCheck(viewer)
 
 	out := map[string]materialPrice{}
 	for _, r := range rows {

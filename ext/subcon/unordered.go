@@ -24,7 +24,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -57,15 +56,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	if len(orders) == 0 {
 		return nil, nil
 	}
-	visible := map[int]bool{}
-	canView := func(id int) bool {
-		if v, ok := visible[id]; ok {
-			return v
-		}
-		v := page.CanView(user, id)
-		visible[id] = v
-		return v
-	}
+	canView := viewCheck(user)
 	ordered, err := orderedByProduct(db, canView)
 	if err != nil {
 		return nil, err
@@ -97,16 +88,10 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 		if strings.TrimSpace(o.Values["status"]) == StatusDone {
 			continue
 		}
-		productID, ok := page.NormalizeID(strings.TrimSpace(o.Values["our-item-id"]))
-		if !ok || productID == "" {
-			if id, found := productByCode(db, strings.TrimSpace(o.Values["item-id"])); found {
-				productID, ok = page.FormatID(id), true
-			}
-		}
-		if !ok || productID == "" {
+		pid, ok := productOfOrderRow(db, o)
+		if !ok {
 			continue // ⚠ どの加工製品か分からない行は、買うものも分かりません
 		}
-		pid := pageNum(productID)
 		if !canView(pid) {
 			continue
 		}

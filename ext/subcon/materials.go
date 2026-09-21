@@ -194,15 +194,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	materialsMap := make(map[string]*RequiredMaterialResponse)
 
 	// 定義元ページの可視判定は1ページにつき1度だけ引く（品番ごとに何度も辿らない）。
-	visible := map[int]bool{}
-	canView := func(defPageID int) bool {
-		if v, ok := visible[defPageID]; ok {
-			return v
-		}
-		v := page.CanView(user, defPageID)
-		visible[defPageID] = v
-		return v
-	}
+	canView := viewCheck(user)
 
 	// 0. 集計のスコープ＝**このページと、参照で直接つながっているページ**
 	//    （`cms.RelatedPages`・2026-09-04 の参照追従化）。取り込みで生まれた
