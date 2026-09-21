@@ -131,7 +131,7 @@ func TestNormalizeValue(t *testing.T) {
 		{ColText, "  台座Assy  ", "台座Assy", true},
 		{ColText, "Ｋ１２０", "K120", true},
 		{ColText, "ﾊﾟｲﾌﾟ", "パイプ", true},
-		{ColText, "ひかり加工", "ひかり加工", true},
+		{ColText, "ひかりレーザー", "ひかりレーザー", true},
 		{ColText, "", "", false},
 
 		// code は**強く**畳む（空白の除去・ハイフン類/長音/`_`→`-`・英字は大文字）。

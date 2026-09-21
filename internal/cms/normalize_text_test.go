@@ -53,13 +53,13 @@ func TestCodeTagIsFoundThroughVariants(t *testing.T) {
 }
 
 // TestTextTagKeepsLongVowel は、**一般のテキストで長音が壊れない**ことを固定します。
-// ここが崩れると `ひかり加工` が `レ-ザ-マックス` になり、会社名で引けなくなります。
+// ここが崩れると `ひかりレーザー` が `ひかりレ-ザ-` になり、会社名で引けなくなります。
 // （`code` と `text` を分けた理由そのものなので、テストで留めておきます）
 func TestTextTagKeepsLongVowel(t *testing.T) {
 	setupSaveTest(t)
 
 	const id = "000062"
-	body := `<dl data-type="tags"><dt>備考</dt><dd>ひかり加工</dd></dl>`
+	body := `<dl data-type="tags"><dt>備考</dt><dd>ひかりレーザー</dd></dl>`
 	if err := SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestTextTagKeepsLongVowel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("索引の読み出しエラー: %v", err)
 	}
-	if norm != "ひかり加工" {
+	if norm != "ひかりレーザー" {
 		t.Errorf("長音が壊れています: %q", norm)
 	}
 }
@@ -139,7 +139,7 @@ func TestCanonicalForIngest(t *testing.T) {
 		{"数量", "5個", "5"},
 		{"発注日", "9月末", "9月末"},                    // 読めなければ生のまま
 		{"図面番号", "p200_911_03a", "p200_911_03a"}, // code は畳まない
-		{"発注元", "ひかり加工", "ひかり加工"},          // text も畳まない
+		{"発注元", "ひかりレーザー", "ひかりレーザー"},          // text も畳まない
 	}
 	for _, c := range cases {
 		if got := CanonicalForIngest(c.field, c.raw); got != c.want {
@@ -159,7 +159,7 @@ func TestNormalizeNameForIngest(t *testing.T) {
 		{"  取付ベース  ", "取付ベース"},         // 前後の空白
 		{"X011  002", "X011 002"},      // 連続する空白は1つに
 		{"ﾊﾟｲﾌﾟ台座", "パイプ台座"},          // 半角カナ
-		{"ひかり加工", "ひかり加工"},    // **長音には触らない**（NormalizeCode と違う）
+		{"ひかりレーザー", "ひかりレーザー"},    // **長音には触らない**（NormalizeCode と違う）
 		{"", ""},
 	}
 	for _, c := range cases {

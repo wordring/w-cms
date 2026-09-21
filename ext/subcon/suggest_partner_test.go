@@ -17,14 +17,14 @@ func seedPartners(t *testing.T, secretOwner string) {
 	t.Helper()
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
 	addPage(t, 50, 0, CustomerBoxTitle, "root", "302", true)
-	addPage(t, 51, 50, "ひかり加工", "root", "302", true)
+	addPage(t, 51, 50, "ひかりレーザー", "root", "302", true)
 	addPage(t, 52, 50, "ふじ鍍金", "root", "302", true)
 	addPage(t, 53, 50, "秘密の外注先", secretOwner, "300", false)
 	addPage(t, 54, 0, "よそのページ", "root", "302", true) // 取引先の下ではない
 	for _, p := range []struct {
 		id    int
 		title string
-	}{{50, CustomerBoxTitle}, {51, "ひかり加工"}, {52, "ふじ鍍金"},
+	}{{50, CustomerBoxTitle}, {51, "ひかりレーザー"}, {52, "ふじ鍍金"},
 		{53, "秘密の外注先"}, {54, "よそのページ"}} {
 		syncBody(t, p.id, "<h1>"+p.title+"</h1>")
 	}
@@ -38,7 +38,7 @@ func TestSuggestPartnersReturnsPartnerBoxChildren(t *testing.T) {
 
 	got := suggestPartners(&auth.User{Username: "root", IsAdmin: true}, "")
 	joined := strings.Join(got, " / ")
-	for _, want := range []string{"ひかり加工", "ふじ鍍金"} {
+	for _, want := range []string{"ひかりレーザー", "ふじ鍍金"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("候補に %q がありません: %s", want, joined)
 		}
@@ -61,7 +61,7 @@ func TestSuggestPartnersFiltersByQuery(t *testing.T) {
 	seedPartners(t, "root")
 	root := &auth.User{Username: "root", IsAdmin: true}
 
-	if got := suggestPartners(root, "レーザー"); len(got) != 1 || got[0] != "ひかり加工" {
+	if got := suggestPartners(root, "レーザー"); len(got) != 1 || got[0] != "ひかりレーザー" {
 		t.Errorf("絞り込みが効いていません: %v", got)
 	}
 	if got := suggestPartners(root, "ﾚｰｻﾞｰ"); len(got) != 1 {
