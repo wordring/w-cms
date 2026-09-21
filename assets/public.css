@@ -227,5 +227,7 @@ body.public {
     padding: 6px 8px;
 }
 .public-content .checksum-ng td { background: #fee2e2; }
-.public-content .checksum-ok td { color: var(--pub-muted); }
+/* 薄い緑＝確かめて合った（2026-09-21）。⚠ 赤と緑は赤緑色覚でいちばん近づく
+   組み合わせなので、色だけに頼らず行の頭の `⚠`／`✓` で見分ける（app.css に実測値）。 */
+.public-content .checksum-ok td { background: #dcfce7; color: #166534; }
 .public-content .checksum-note td { color: var(--pub-muted); font-style: italic; }

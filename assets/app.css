@@ -2173,11 +2173,24 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 
 /* 発注書の検算（2026-09-20・鏡型）。表の足元（tfoot）に1行ずつ出る。
    ⚠ 薄赤は `ref-missing` と同じ意味——「機械が疑わしいと言っている」であって、
-   間違いが確定したという意味ではない（決めるのは人）。 */
+   間違いが確定したという意味ではない（決めるのは人）。
+
+   **薄い緑＝確かめて合った**（2026-09-21 ユーザー:「検算に合格の色は緑系統が
+   良いのでは？」）。全体の色の規約に3色目が増えた:
+     薄い青 … 機械が読む   薄い赤 … 疑わしい・未定義   薄い緑 … 確かめて合った
+   それまで合格は灰色の文字だけで、「検算して合った」と「ただの注記」が同じ見え方だった。
+
+   ⚠ **色だけに頼らないこと。** 赤と緑は赤緑色覚でいちばん近づく組み合わせ——
+   e2e/probe-phone.js と同じ計算で ΔE は正常視 24.4／2型 11.1／1型 9.5 で、
+   同スクリプトの物差し（10以上で別の色・2以下でほぼ同じ）のちょうど境目。
+   ⚠ ただし後退ではない——それまでの白地＋灰文字は赤との差が 8.5／9.5 だった。
+   ⚠ **`ref-missing` の薄赤×薄青（18.3／色覚下でも 17〜21）とは事情が違う**
+   ——あちらは色だけで足りるが、ここは足りない。だから行の頭に `⚠` と `✓` を
+   付けてある（checksum_mirror.go）。**印の形は色覚にも白黒印刷にも影響されない。** */
 #w-editor-content .order-checksum td {
     font-size: 0.9em;
     padding: 6px 8px;
 }
 #w-editor-content .checksum-ng td { background: #fee2e2; }
-#w-editor-content .checksum-ok td { color: var(--w-muted, #6b7280); }
+#w-editor-content .checksum-ok td { background: #dcfce7; color: #166534; }
 #w-editor-content .checksum-note td { color: var(--w-muted, #6b7280); font-style: italic; }

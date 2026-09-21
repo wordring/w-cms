@@ -50,8 +50,13 @@ func TestChecksumMirrorSaysNothingIsWrong(t *testing.T) {
 	)
 	got := render(t, body)
 
-	if !strings.Contains(got, "検算: 合っています") {
-		t.Fatalf("⚠ 鏡が走っていないか、何も言っていません:\n%s", got)
+	if !strings.Contains(got, "✓ 検算: 合っています") {
+		// ⚠ **`✓` は飾りではありません。** 合格は薄い緑、疑わしいは薄い赤ですが、
+		// この2色は赤緑色覚でいちばん近づきます（ΔE は正常視 24.4 に対し
+		// 2型 11.1・1型 9.5＝「別の色」の目安 10 の境目）。**印の形**が最後の
+		// 見分けです——落とすと、
+		// 色を見分けられない人には2つの行が同じに見えます。
+		t.Fatalf("⚠ 鏡が走っていないか、何も言っていません（`✓` も見ます）:\n%s", got)
 	}
 	if !strings.Contains(got, "明細2行") {
 		t.Errorf("何行を検算したのか出ていません:\n%s", got)
