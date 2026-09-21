@@ -111,6 +111,16 @@ type RequiredPageStatus struct {
 //
 // **載っている拡張のぶんだけ**出ます——`-tags minimal` の素の w-cms では
 // コアの置き場（テンプレート）しか登録されないので、表もそれだけになります。
+// IsRequiredPageTitle は、その題が**登録された置き場**のものかを返します。
+//
+// ⚠ **「トップ直下に1枚だけ」を守る側が使います**（`refuseDuplicateBoxTitle`）。
+// コアに業務語を書かずに済むよう、判定は**名簿**を通します——拡張が足した置き場
+// （受注・発注・取引先）にも同じ規則が効きます。
+func IsRequiredPageTitle(title string) bool {
+	_, ok := requiredPageRegistry[strings.TrimSpace(title)]
+	return ok
+}
+
 func RequiredPages() []RequiredPage {
 	out := make([]RequiredPage, 0, len(requiredPageRegistry))
 	for _, p := range requiredPageRegistry {

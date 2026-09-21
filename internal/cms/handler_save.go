@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"golang.org/x/net/html"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -145,7 +148,14 @@ func gateSave(w http.ResponseWriter, r *http.Request, rawID, token string) (id s
 
 // writeBody は更新日時を進めて本文を正本ファイルへ書きます（失敗は応答に書いて ok=false）。
 // 更新日時は保存のたびにサーバーが「今」を刻みます（サイドカーが正本）。
-func writeBody(w http.ResponseWriter, id, html string) (updatedAt string, ok bool) {
+func writeBody(w http.ResponseWriter, id, htmlBody string) (updatedAt string, ok bool) {
+	// ⚠ **置き場の題は、トップ直下に1枚だけ**（2026-09-21 ユーザー:「トップ直下に
+	//    テンプレートページは**一つだけしかないようにすべき**です」）。
+	//    ⚠ **ここで止めます**——保存してから知らせる形だと、**2枚目が既にできています**。
+	if why, bad := refuseDuplicateBoxTitle(id, htmlBody); bad {
+		http.Error(w, why, http.StatusConflict)
+		return "", false
+	}
 	updatedAt, err := page.BumpUpdatedAt(id)
 	if err != nil {
 		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
@@ -153,11 +163,48 @@ func writeBody(w http.ResponseWriter, id, html string) (updatedAt string, ok boo
 	}
 	pageDir := page.GetPageDir(id)
 	os.MkdirAll(pageDir, 0755)
-	if err := page.WriteFileAtomic(filepath.Join(pageDir, id+".html"), []byte(html), 0644); err != nil {
+	if err := page.WriteFileAtomic(filepath.Join(pageDir, id+".html"), []byte(htmlBody), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return "", false
 	}
 	return updatedAt, true
+}
+
+// refuseDuplicateBoxTitle は「**トップ直下の置き場の題は1枚だけ**」を守ります。
+//
+// ユーザー（2026-09-21）:「トップ直下にテンプレートページは**一つだけしかないように
+// すべき**です」。
+//
+// ⚠ **それまでは知らせるだけでした**（管理画面の「置き場」が ⚠ を出す）。知らせる形の
+// 問題は、**気づいたときには既に2枚ある**ことです——そして**使われるのはいちばん古い
+// 1枚だけ**なので、**新しいほうへ書いた内容は誰からも見えないまま残ります**。
+//
+// ⚠ **止める範囲は「トップ直下」だけ**です。深いところに同じ題のページがあっても
+// 構いません（`受注／2026年／09月` の下に「テンプレート」があっても誰も困らない）
+// ——特別な意味を持つのは**トップ直下の1枚**だからです。
+//
+// ⚠ **題は名簿から採ります**（`RequiredPage` の登録）。コアに業務語を書かないための
+// 口で、拡張が足した置き場（受注・発注・取引先）にも同じ規則が効きます。
+func refuseDuplicateBoxTitle(id, htmlBody string) (string, bool) {
+	meta, ok := page.ReadSidecar(id)
+	if !ok || meta.ParentID != TopPageID {
+		return "", false // トップ直下でなければ関係ない
+	}
+	root, err := html.Parse(strings.NewReader(htmlBody))
+	if err != nil {
+		return "", false
+	}
+	title := strings.TrimSpace(PageTitle(root))
+	if !IsRequiredPageTitle(title) {
+		return "", false
+	}
+	for _, other := range TopLevelPagesByTitle(title) {
+		if other != id {
+			return "「" + title + "」はトップ直下に1枚だけです（既に /" + other +
+				" があります）。別の題にするか、そちらを使ってください。", true
+		}
+	}
+	return "", false
 }
 
 // syncBody は書いた本文で索引を同期します（失敗は応答に書いて false）。
