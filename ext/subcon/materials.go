@@ -30,7 +30,13 @@ func init() {
 	cms.RegisterExtension("subcon", "下請け業務")
 	cms.Register(materialsPlugin{})
 	// 計算ビューの描画も自分で登録する（形式の宣言と対）。
-	cms.RegisterView("required-materials", requiredMaterialsViewHTML)
+	// ⚠ **描き方を 2026-09-21 に作り直しました**（view_procurement.go）。
+	// それまでは**材料名で受注ページ全体を合算**していたので、**どの加工製品のぶんか**が
+	// 消えていました。ユーザー:「各受注ページに**各加工製品ごとの項目と購入品の表を
+	// 集める**必要があり、その表の列の一つとして、**発注書番号と発注書ページへのリンク**が
+	// 必要」。⚠ 古い集計（`RequiredMaterials`）は `/api/required-materials` を叩く
+	// 相手が居るので残してあります——**表示だけ**を差し替えました。
+	cms.RegisterView("required-materials", procurementViewHTML)
 	// 材料を探す欄（2026-09-21・view_material_search.go）。
 	cms.RegisterView(MaterialSearchViewType, materialSearchViewHTML)
 

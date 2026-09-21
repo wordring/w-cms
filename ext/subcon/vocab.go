@@ -427,6 +427,7 @@ const (
 	clientOrderItemsType = "client-order-items" // 受注明細（顧客からの注文）
 	ourOrderItemsType    = "our-order-items"    // 発注明細（弊社が出す注文）
 	partMaterialsType    = "part-materials"     // 材料
+	partPurchasedType    = "part-purchased"     // 購入部品
 )
 
 // columnsOf は形式の列を宣言から返します（未登録なら nil）。

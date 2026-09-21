@@ -2362,3 +2362,20 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .matsearch-src { color: var(--text-muted, #6b7280); font-size: 0.9em; }
 #w-editor-content .matsearch-migrating { color: var(--text-muted, #6b7280); font-size: 0.85em; }
 #w-editor-content .matsearch-empty { color: var(--text-muted, #6b7280); font-style: italic; }
+
+/* ── 手配状況（加工製品ごと・2026-09-21 に作り直し）──────────────────────
+   ⚠ **形が変わりました**——材料名の合算 → **加工製品ごと**。ユーザー:「各受注ページに
+   各加工製品ごとの項目と購入品の表を集める必要があり、その表の列の一つとして、
+   発注書番号と発注書ページへのリンクが必要」。 */
+#w-editor-content .proc-product { margin: 0 0 18px; }
+#w-editor-content .proc-name { margin: 0 0 6px; font-size: 1.05em; }
+#w-editor-content .proc-qty { color: var(--text-muted, #6b7280); font-weight: normal; }
+/* ⚠ **移行の確認前だと分かるように**——材料表がワンノートの形のままなら、
+   必要数そのものが当てになりません。 */
+#w-editor-content .proc-migrating,
+#w-editor-content .proc-why { color: var(--text-muted, #6b7280); font-size: 0.85em; }
+#w-editor-content .proc-why-ng { color: #b91c1c; }
+#w-editor-content .proc-orders { font-size: 0.9em; }
+#w-editor-content .proc-oqty { color: var(--text-muted, #6b7280); }
+/* ⚠ **未手配を黙らない**（空欄だと「発注済み」に見える）。色だけに頼らず `⚠` も付く。 */
+#w-editor-content .proc-none { color: var(--text-muted, #6b7280); font-style: italic; }
