@@ -37,13 +37,15 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   }
   if (!target) {
     const children = await page.evaluate(async () => {
-      const r = await fetch('/api/children?id=000000', { credentials: 'same-origin' });
+    const r = await fetch('/api/children?parent_id=000000', { credentials: 'same-origin' });
       const d = await r.json();
-      return (d && d.children) || [];
+      // ⚠ **応答は配列で、鍵は大文字の `ID`**（`{children:[...]}` ではありません）。
+      return Array.isArray(d) ? d.map((c) => c.ID || c.id) : [];
     });
-    for (const c of children) {
-      await page.goto(BASE + '/' + c.id);
-      if (await page.locator('.backlog-sheet').count() > 0) { target = '/' + c.id; break; }
+    for (const id of children) {
+      if (!id) continue;
+      await page.goto(BASE + '/' + id);
+      if (await page.locator('.backlog-sheet').count() > 0) { target = '/' + id; break; }
     }
   }
   if (!target) {

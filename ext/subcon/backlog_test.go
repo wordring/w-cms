@@ -204,3 +204,92 @@ func TestBacklogHasPrintButtonPerSheet(t *testing.T) {
 
 // dbExec は試験の中で権限などを直に直すための薄い包みです。
 func dbExec(q string, args ...any) (any, error) { return database.DB.Exec(q, args...) }
+
+// TestBacklogDropsDoneRows は、⚠ **人が「完了」と言った行を出さない**ことを
+// 固定します。
+//
+// ユーザー:「受注トップページの受注残集計表には、**完了状態の行は入れない**ように
+// しましょう」（2026-09-21）。
+//
+// ⚠ **数が残っていても落とします**——`完了` は「どこまで進んだか」ではなく
+// **「もう受注残に出さない」という人の宣言**だからです。**機械の数より人の判断が上。**
+func TestBacklogDropsDoneRows(t *testing.T) {
+	setupExtTest(t, "000170", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 171, -1, "受注", "alice", "302", true)
+	// 3行とも**数の上では残っています**（出荷済みは空）。
+	body := item("A-1", "まだ作る", "10", "2026-10-15", "") +
+		strings.Replace(item("A-2", "取りやめ", "10", "2026-10-15", ""),
+			"<td>未着手</td>", "<td>"+StatusDone+"</td>", 1) +
+		strings.Replace(item("A-3", "納めた", "10", "2026-10-15", ""),
+			"<td>未着手</td>", "<td>納品済</td>", 1)
+	seedOrder(t, 172, 171, "南北", "2026-10-15", body)
+
+	gs := backlogGroups(adminUser(), 171)
+	got := map[string]bool{}
+	for _, g := range gs {
+		for _, r := range g.Rows {
+			got[r.ItemName] = true
+		}
+	}
+	if got["取りやめ"] {
+		t.Errorf("⚠ 完了の行を出しています: %+v", gs)
+	}
+	if !got["まだ作る"] {
+		t.Fatalf("残っている行まで落としています（そもそも動いていない疑い）: %+v", gs)
+	}
+	// ⚠ **`納品済` は落としません**——出したという事実で、残数があればまだ作ります
+	// （半分だけ納めた行がそれです）。`完了` とは別物、という線引きの番人です。
+	if !got["納めた"] {
+		t.Errorf("⚠ `納品済` を `完了` と同じに扱っています（分納の残りが消えます）: %+v", gs)
+	}
+}
+
+// TestBacklogStatusEnumHasDone は、**選択肢に「完了」がある**ことを固定します。
+//
+// ⚠ 除外だけ入れて選択肢を足し忘れると、**人が押す手段が画面にありません**
+// （一覧に無い値も保存はされますが、打ち込むしかなくなります）。
+func TestBacklogStatusEnumHasDone(t *testing.T) {
+	def, ok := cms.VocabDefByType(clientOrderItemsType)
+	if !ok {
+		t.Fatal("受注明細の宣言がありません")
+	}
+	for _, c := range def.Columns {
+		if c.Label != "状態" {
+			continue
+		}
+		for _, v := range c.Enum {
+			if v == StatusDone {
+				return
+			}
+		}
+		t.Fatalf("⚠ 状態の選択肢に %q がありません（押す手段が画面にありません）: %v", StatusDone, c.Enum)
+	}
+	t.Fatal("状態の列がありません")
+}
+
+// TestBacklogCellsCarryWrapClasses は、⚠ **折り返しの印をサーバーが付ける**ことを
+// 固定します。
+//
+// ⚠ **本文の表とは経路が違います。** `app.js` の `validateTypedTables` は
+// **サーバー所有の表を意図的に飛ばす**ので（クロームは殻の持ち物）、ここで付けないと
+// 受注残表だけ全列が折り返します。
+func TestBacklogCellsCarryWrapClasses(t *testing.T) {
+	setupExtTest(t, "000180", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 181, -1, "受注", "alice", "302", true)
+	seedOrder(t, 182, 181, "南北", "2026-10-15",
+		item("A-1", "とても長い品名がここに入ります", "10", "2026-10-15", ""))
+
+	req := httptest.NewRequest("GET", "/000181", nil)
+	req = auth.WithUser(req, adminUser())
+	out := cms.RenderComputedViews(req, 181,
+		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+
+	if !strings.Contains(out, `class="cell-atomic"`) {
+		t.Errorf("⚠ 折り返さない印がありません（全列が折り返します）:\n%s", out)
+	}
+	// ⚠ **備考だけは折り返す。** 自由文なので1行に保つと表が果てしなく伸びます。
+	if strings.Count(out, `class="cell-wrap"`) != 1 {
+		t.Errorf("備考の折り返しの印が %d 個です（1行ぶんの1を期待）:\n%s",
+			strings.Count(out, `class="cell-wrap"`), out)
+	}
+}

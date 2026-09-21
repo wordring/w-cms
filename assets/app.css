@@ -2212,7 +2212,9 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     color: var(--w-danger, #c0392b);
 }
 .backlog-print { margin-bottom: 0.4rem; }
-.backlog-table { width: 100%; }
+/* ⚠ **幅を与えません。** 表は `#w-editor-content table` で
+   `display:block; overflow-x:auto` のスクロール枠になっているので、`width:100%` を
+   置くと中身なりに伸びられず、列が潰れます（幅はセルに与える——上の注意と同じ）。 */
 .backlog-remaining { font-weight: 600; }
 
 /* ── 印刷（2026-09-21）────────────────────────────────────────────────

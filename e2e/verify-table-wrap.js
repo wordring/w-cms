@@ -19,6 +19,23 @@ const { login } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
+// findBacklogPage は受注残表を置いたページを**走るときに探します**
+// （⚠ 当て先を焼き込まない・2026-09-16 の決定）。
+async function findBacklogPage(page, base) {
+  const children = await page.evaluate(async () => {
+    const r = await fetch('/api/children?parent_id=000000', { credentials: 'same-origin' });
+    const d = await r.json();
+    // ⚠ **応答は配列で、鍵は大文字の `ID`**（`{children:[...]}` ではありません）。
+    return Array.isArray(d) ? d.map((c) => c.ID || c.id) : [];
+  });
+  for (const id of children) {
+    if (!id) continue;
+    await page.goto(base + '/' + id);
+    if (await page.locator('.backlog-table').count() > 0) return '/' + id;
+  }
+  return '';
+}
+
 // 実データに合わせた行——⚠ **品名が20字を超えています**。2026-09-01〜09-21 は
 // 「20字まで1行」というしきい値だったので、ここが折り返していました。
 const LONG_NAME = '受けブラケット組立て用ロングプレート';
@@ -98,6 +115,48 @@ const BODY = '<h1>表の折り返し</h1>' +
       // ⚠ 潰れていないこと。下限（14em≒224px）を割ったら、表がここだけ細らせている。
       say(r.noteW >= 200, '備考が潰れていない（' + r.noteW + 'px）');
       if (width < 1280) say(r.tableScrolls, '表が自分の中で横スクロールする');
+    }
+    // ── 受注残表（クローム）も同じ物差しで測る（2026-09-21）──────────────
+    //
+    // ⚠ **本文の表とは経路が違います。** 折り返しの印を付ける
+    // `validateTypedTables`（app.js）は**サーバー所有の表を意図的に飛ばす**ので
+    // （クロームは殻の持ち物）、受注残表は**サーバーが自分で印を付けています**
+    // （ext/subcon/backlog.go）。**片方だけ直した日にずれる**ので、ここで一緒に見ます。
+    //
+    // ⚠ **受注残表が無ければ飛ばします**（壊れたのか、まだ置いていないだけなのかを
+    // 読む人に分かる形にする——E2E の既存の流儀）。
+    const backlogPage = await findBacklogPage(page, BASE);
+    if (!backlogPage) {
+      console.log('  -- 受注残表を置いたページが無いので飛ばします');
+    } else {
+      await page.setViewportSize({ width: 1000, height: 900 });
+      await page.goto(BASE + backlogPage);
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const t = document.querySelector('.backlog-table');
+        if (!t) return null;
+        const head = Array.from(t.querySelectorAll('tr')[0].children).map((c) => c.textContent.trim());
+        const row = t.querySelectorAll('tr')[1];
+        if (!row) return { empty: true };
+        const cells = Array.from(row.children);
+        const noteAt = head.indexOf('備考');
+        const others = cells.filter((c, i) => i !== noteAt);
+        return {
+          pageScrolls: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          othersNowrap: others.every((c) => getComputedStyle(c).whiteSpace === 'nowrap'),
+          noteWrap: noteAt >= 0 ? getComputedStyle(cells[noteAt]).whiteSpace : '(列なし)',
+          overflowX: getComputedStyle(t).overflowX,
+        };
+      });
+      const say = (ok, msg) => { console.log((ok ? '  OK 受注残 ' : '  NG 受注残 ') + msg); if (!ok) bad++; };
+      if (!r) console.log('  -- 受注残表が描かれていないので飛ばします');
+      else if (r.empty) console.log('  -- 受注残が0行なので飛ばします');
+      else {
+        say(r.othersNowrap, '備考以外は1行');
+        say(r.noteWrap === 'normal', '備考は折り返す（' + r.noteWrap + '）');
+        say(r.overflowX === 'auto' || r.overflowX === 'scroll', '表が自分の中でスクロールできる（' + r.overflowX + '）');
+        say(!r.pageScrolls, 'ページは横へ揺れない');
+      }
     }
   } finally {
     await page.evaluate(async (pid) => {

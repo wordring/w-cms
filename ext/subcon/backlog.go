@@ -38,6 +38,18 @@ import (
 // BacklogViewType は受注残表の形式名です。
 const BacklogViewType = "order-backlog"
 
+// StatusDone は受注明細の `状態` の「完了」です。
+//
+// ⚠ **これだけは、数を上書きする人の宣言です**（2026-09-21 ユーザー:「受注トップ
+// ページの受注残集計表には、**完了状態の行は入れない**ようにしましょう」）。
+// 他の値が「どこまで進んだか」を表すのに対し、`完了` は「**もう受注残に出さない**」。
+//
+// ⚠ **`納品済` とは別物です。** `納品済` は出したという事実で、残数があればまだ
+// 受注残に出ます——半分だけ納めた行は、残り半分を作る必要があるからです。
+// 残数があるのに終わりにしたい（客先が残りを取りやめた・短めの納入で了解を得た）
+// ときに押すのが `完了` です。**機械の数より人の判断が上。**
+const StatusDone = "完了"
+
 func init() {
 	cms.RegisterVocab(cms.VocabDef{
 		Type:        BacklogViewType,
@@ -120,6 +132,12 @@ func backlogGroups(user *auth.User, rootID int) []backlogGroup {
 			// ⚠ **残っている行だけ**。`数量` が読めない行（0）も落ちます——
 			// 数が無ければ「あと何個」が言えないので、残表には載せられません。
 			if rem <= 0 {
+				continue
+			}
+			// ⚠ **人が「完了」と言った行は、数が残っていても出しません**
+			// （2026-09-21 ユーザー決定）。**機械の数より人の判断が上**という
+			// 線引きは、このプロジェクトで一貫しています。
+			if strings.TrimSpace(r.Values["status"]) == StatusDone {
 				continue
 			}
 			due := strings.TrimSpace(r.Values["due"])
@@ -210,22 +228,36 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th>数量</th><th>出荷済み</th><th>状態</th><th>備考</th><th>受注</th></tr>`)
 		for _, r := range g.Rows {
+			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
+			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
+			// 飛ばします**（クロームは殻の持ち物）。ここで付けないと、受注残表だけ
+			// 全列が折り返します（2026-09-21 ユーザー:「備考以外は折り返さない
+			// ようにしましょう。はみ出した部分はスクロールできるように」）。
+			//
+			// ⚠ **class 名は本文の表と同じものを使います**（`cell-atomic`／`cell-wrap`）
+			// ——見た目の規則を2つ持つと、片方だけ直した日にずれます。横スクロールは
+			// `#w-editor-content table` が全表に効かせています。
 			b.WriteString(`<tr>` +
-				`<td>` + refCellHTML(r.OurItemNo) + `</td>` +
-				`<td>` + stdhtml.EscapeString(r.ItemNo) + `</td>` +
-				`<td>` + stdhtml.EscapeString(r.ItemName) + `</td>` +
-				`<td class="backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
-				`<td>` + strconv.Itoa(r.Quantity) + `</td>` +
-				`<td>` + shippedCell(r.Shipped) + `</td>` +
-				`<td>` + stdhtml.EscapeString(r.Status) + `</td>` +
-				`<td>` + stdhtml.EscapeString(r.Note) + `</td>` +
-				`<td><a href="/` + stdhtml.EscapeString(r.OrderPageID) + `">` +
-				stdhtml.EscapeString(orderLabel(r)) + `</a></td></tr>`)
+				atomicCell(refCellHTML(r.OurItemNo)) +
+				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
+				atomicCell(stdhtml.EscapeString(r.ItemName)) +
+				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
+				atomicCell(strconv.Itoa(r.Quantity)) +
+				atomicCell(shippedCell(r.Shipped)) +
+				atomicCell(stdhtml.EscapeString(r.Status)) +
+				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。
+				`<td class="cell-wrap">` + stdhtml.EscapeString(r.Note) + `</td>` +
+				atomicCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
+					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
+				`</tr>`)
 		}
 		b.WriteString(`</tbody></table></section>`)
 	}
 	return b.String()
 }
+
+// atomicCell は折り返さないセルを組みます（中身は組み済みのHTML）。
+func atomicCell(inner string) string { return `<td class="cell-atomic">` + inner + `</td>` }
 
 // refCellHTML は弊社品番を押せる形にします（空なら空欄のまま）。
 //
