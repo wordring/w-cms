@@ -45,6 +45,39 @@ type settingsSection struct {
 	// 畳まないので、`レーザー` と `レ-ザ-` のような揺れを越えられません。
 	// **未指定なら結びません**（既定の一覧はありません）。
 	ProductCodeTags []string `json:"product_code_tags,omitempty"`
+
+	// PDFFont は**発注書のPDFに埋め込む日本語フォント**（`.ttf` のパス）です
+	// （2026-09-21）。
+	//
+	// ⚠ **日本語のPDFはフォントを埋め込まないと読めません。** そして**同梱できるかは
+	// ライセンス次第**なので、**パスを設定で指す形**にしました——w-cms は MIT で公開
+	// されており、フォントを無条件に同梱はできません。
+	//
+	// ⚠ **`.ttc` は読めません**（コレクション形式）。Windows の `meiryo.ttc`・
+	// `msgothic.ttc` は**使えません**。実測で通ったのは `NotoSansJP-VF.ttf`
+	// （**SIL Open Font License**・Windows 同梱）です。
+	//
+	// **未指定ならPDFを作りません**（起動は止めません——Gemini キーと同じ扱いで、
+	// 画面に「設定されていません」と出します）。
+	PDFFont string `json:"pdf_font,omitempty"`
+
+	// Company は**発注書の差出人**です（2026-09-21）。実物の発注書に入っていた項目。
+	//
+	// ⚠ **設定に置きます。** 自社を表すページを作る案もありますが、`取引：自社` の
+	// タグは 2026-09-18 に全廃しており（誰も読んでいなかった）、**同じものを2度作る**
+	// ことになります。設定なら `git pull` で全環境へ届きます。
+	// ⚠ **秘密ではありません**（相手に渡す紙に印刷する情報です）。
+	Company companyInfo `json:"company,omitempty"`
+}
+
+// companyInfo は発注書に刷る差出人です（実物の見出しに合わせた項目）。
+type companyInfo struct {
+	Name    string `json:"name"`
+	Zip     string `json:"zip"`
+	Address string `json:"address"`
+	Person  string `json:"person"`
+	Tel     string `json:"tel"`
+	Fax     string `json:"fax"`
 }
 
 var (
@@ -53,6 +86,8 @@ var (
 	// ⚠ **`stagesMu` を共有します。** 設定の反映は1回で両方を差し替えるので、
 	// 別の錠にすると「段は新しいが番号のタグは古い」という中途半端な瞬間ができます。
 	productCodeTags []string
+	pdfFont         string
+	companyInf      companyInfo
 )
 
 func init() {
@@ -100,14 +135,39 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		}
 		seenTag[v] = true
 	}
+	// ⚠ **フォントの拡張子だけ見ます**（`.ttc` を指されたときに、PDFを作る段で
+	// 「読めません」とだけ出ると理由が分かりません）。**在るかどうかは見ません**
+	// ——設定を読むのはDB再構築でも走るので、そのときファイルが一時的に見えない
+	// 環境で起動を止めたくありません。
+	if f := strings.TrimSpace(s.PDFFont); f != "" && !strings.HasSuffix(strings.ToLower(f), ".ttf") {
+		return nil, fmt.Errorf("pdf_font は .ttf を指してください（%q。⚠ `.ttc` は読めません）", s.PDFFont)
+	}
 	stages := s.MachineStages
 	codeTags := s.ProductCodeTags
+	font := strings.TrimSpace(s.PDFFont)
+	company := s.Company
 	return func() {
 		stagesMu.Lock()
 		machineStages = stages
 		productCodeTags = codeTags
+		pdfFont = font
+		companyInf = company
 		stagesMu.Unlock()
 	}, nil
+}
+
+// PDFFont は発注書のPDFへ埋め込むフォントのパスを返します（未設定なら空）。
+func PDFFont() string {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	return pdfFont
+}
+
+// Company は発注書の差出人を返します。
+func Company() companyInfo {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	return companyInf
 }
 
 // ProductCodeTags は「加工製品ページを言い当てる番号」のタグ名を返します（並び順つき）。

@@ -85,6 +85,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 本文**になるので、行番号と `品番` の2つで照合し、いまの値とも突き合わせ、
 		// 編集ロックの関門を通します。
 		{Pattern: "/api/order-item", Handler: OrderItemEditAPIHandler},
+		// 発注書のPDFを作って、そのページの添付として残す口（2026-09-21・order_pdf.go）。
+		// ⚠ **7年保存がこれで済みます**——ファイルがページと一緒に残り、版も監査も付きます。
+		{Pattern: "/api/order-pdf", Handler: OrderPDFAPIHandler},
 	}
 }
 
