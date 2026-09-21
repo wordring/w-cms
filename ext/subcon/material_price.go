@@ -23,6 +23,7 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -64,6 +65,16 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	zi := headerIndexOf(head, "寸法")
 	if mi < 0 && si < 0 && zi < 0 {
 		return true, nil // 材料の表に見えない（人が列を入れ替えた等）
+	}
+
+	// ⚠ **移行の確認が済むまで引きません**（2026-09-21 ユーザー提案）。
+	//    ワンノートの表には、同じ見た目で違う事情の行が混ざっています。
+	//    **人が確かめた印だけが、表引きしてよい根拠**です。
+	//    ⚠ **黙って引かないのではなく、そう言います**——空欄だと「引けない」と
+	//    「確認前」が見分けられません。
+	if isMigrating(ctx.DB, ctx.PageID) {
+		appendMigratingRow(el, headerCellCount(el))
+		return true, nil
 	}
 
 	prices, err := latestMaterialPrices(ctx.DB, ctx.Viewer)
@@ -108,6 +119,43 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// isMigrating は「移行したまま、まだ人が確かめていない」ページかを返します。
+//
+// ⚠ **値は見ません——タグが在ることで止めます**（フェイルクローズ）。誰かが知らない
+// 値を書いても、止まる側に倒れます。直したら**タグごと消す**のが運用です。
+func isMigrating(db cms.ReadOnlyDB, pageID int) bool {
+	tags, err := cms.TagsOfPage(db, pageID)
+	if err != nil {
+		// ⚠ **読めないときも止めます。** 「確かめた印がある」と言えないなら、
+		//    引いてよい根拠がありません。
+		return true
+	}
+	_, ok := tags[MigratingTag]
+	return ok
+}
+
+// appendMigratingRow は、なぜ引かないのかを表の足元に1行で出します。
+//
+// ⚠ **列は足しません。** 引かないのに見出しだけ出すと、全行が空に見えます。
+// ⚠ **`<tfoot>` の行として足します**——表の中に `<p>` は置けません（パーサが表の外へ
+// 追い出し、明細の手前に飛び出します）。検算の行と同じ作りです。
+func appendMigratingRow(table *html.Node, span int) {
+	foot := lastChild(table, "tfoot")
+	if foot == nil {
+		foot = &html.Node{Type: html.ElementNode, Data: "tfoot",
+			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome"}}}
+		table.AppendChild(foot)
+	}
+	td := &html.Node{Type: html.ElementNode, Data: "td",
+		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
+	td.AppendChild(&html.Node{Type: html.TextNode, Data: "⚠ 移行の確認前なので、参考単価は引いていません（確かめたら「" +
+		MigratingTag + "」タグを消してください）"})
+	tr := &html.Node{Type: html.ElementNode, Data: "tr",
+		Attr: []html.Attribute{{Key: "class", Val: "mat-price-migrating"}}}
+	tr.AppendChild(td)
+	foot.AppendChild(tr)
 }
 
 // latestMaterialPrices は**全社の発注明細**から、材料ごとの最新単価を集めます。
@@ -269,4 +317,3 @@ func appendPriceNote(tr *html.Node, text string) {
 	priceCell(tr, "td", "mat-price mat-price-none").
 		AppendChild(&html.Node{Type: html.TextNode, Data: text})
 }
-

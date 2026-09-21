@@ -195,6 +195,47 @@ func TestMaterialPriceRefusesEmptyKey(t *testing.T) {
 	}
 }
 
+// TestMaterialPriceWaitsForMigrationCheck は、⚠ **移行の確認が済むまで表引きしない**
+// ことを固定します（2026-09-21 ユーザー提案）。
+//
+// ワンノートの表には、同じ見た目で違う事情の行が混ざっています（材料を買わない行・
+// 個数だけ書いてしまった行・ちゃんとした行）。⚠ **機械には見分けられません**。
+// **人が確かめた印だけが、表引きしてよい根拠**です。
+//
+// ⚠ **印を付けるのは「未確認」のほう**——直したらタグごと消すので、**印の無いページが
+// 正常**になります。⚠ **黙って引かないのではなく、そう言います**。
+func TestMaterialPriceWaitsForMigrationCheck(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	rows := `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td></tr>`
+	seedMaterialAndOrder(t, rows, orderSeed{
+		ID: 20, Owner: "root", Mode: "302", Public: true,
+		Date: "2026-08-19", Supplier: "みなと商店",
+		Rows: `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>800</td></tr>`,
+	})
+	// 材料ページに「移行中」の印を付け直す。
+	syncBody(t, 10, `<h1>加工製品</h1>`+
+		`<dl data-type="tags"><dt>`+MigratingTag+`</dt><dd>確認待ち</dd></dl>`+
+		`<table data-type="`+partMaterialsType+`"><tbody>`+
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+rows+`</tbody></table>`)
+
+	body := `<h1>加工製品</h1>` +
+		`<dl data-type="tags"><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
+		`<table data-type="` + partMaterialsType + `"><tbody>` +
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>` + rows + `</tbody></table>`
+	got := showMaterials(t, &auth.User{Username: "root", IsAdmin: true}, body)
+
+	if strings.Contains(got, "800円") {
+		t.Fatalf("⚠ 移行の確認前なのに表引きしています:\n%s", got)
+	}
+	if !strings.Contains(got, "移行の確認前") {
+		t.Errorf("引かない理由を黙っています:\n%s", got)
+	}
+	// ⚠ **列は足さないこと**——引かないのに見出しだけ出すと、全行が空に見えます。
+	if strings.Contains(got, priceColLabel) {
+		t.Errorf("⚠ 引かないのに「%s」の列を足しています:\n%s", priceColLabel, got)
+	}
+}
+
 // TestMaterialPriceMapHasNoEmptyKey は、**集める側でも**空の鍵を落とすことを固定します。
 //
 // ⚠ **これは変異試験が見つけた穴です**（2026-09-21）。空の鍵の番人は2か所

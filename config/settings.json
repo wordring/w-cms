@@ -34,11 +34,13 @@
     "役職": { "type": "text" },
     "部署": { "type": "text" },
     "氏名": { "type": "text" },
+    "推奨業者": { "type": "text" },
     "差出人": { "type": "email" },
     "宛先": { "type": "email" },
     "CC": { "type": "email" },
     "返信先": { "type": "email" },
-    "在籍": { "type": "enum", "values": ["在籍", "休職", "出向", "退社"] }
+    "在籍": { "type": "enum", "values": ["在籍", "休職", "出向", "退社"] },
+    "移行中": { "type": "enum", "values": ["確認待ち"] }
   },
   "max_upload_mib": 32,
   "attachment_extensions": [
