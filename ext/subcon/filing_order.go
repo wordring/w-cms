@@ -205,8 +205,14 @@ func fileOneOrder(user *auth.User, row orderRequest) filingResult {
 		auth.Audit(user.Username, "file-order.client-failed", pageID+": "+err.Error())
 	}
 	auth.Audit(user.Username, "file-order.move", pageID+" -> "+monthID)
-	return filingResult{PageID: pageID, Outcome: "moved",
-		Message: OrderBoxTitle + "／" + when.Format("2006年") + "／" + when.Format("01月") + " へ収めました"}
+	msg := OrderBoxTitle + "／" + when.Format("2006年") + "／" + when.Format("01月") + " へ収めました"
+	// ⚠ **逆向きの結び**（[link_item.go]）。図面が先に届いていた場合、図面の整理は
+	// もう終わっているので、**こちらで走らないと一度も埋まりません**——返り注文は
+	// 必ずこの順です。人が整理を押した直後なので、裏で回る仕事にはなりません。
+	if n := LinkProductsToOrder(user, pageID); n > 0 {
+		msg += "／弊社品番を" + strconv.Itoa(n) + "行埋めました"
+	}
+	return filingResult{PageID: pageID, Outcome: "moved", Message: msg}
 }
 
 // syncOrderClient は人が確認した発注元を、受注ページの可変タグへ書き戻します。

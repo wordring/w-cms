@@ -434,3 +434,110 @@ func visibleOnly(viewer *auth.User, ids []int) []int {
 }
 
 func pageCanView(viewer *auth.User, id int) bool { return page.CanView(viewer, id) }
+
+// LinkProductsToOrder は受注ページの空いている `弊社品番` を、いま在る加工製品ページで
+// 埋めます（埋めた行数を返す）。**押し出しの逆向き**です。
+//
+// ⚠ **こちらが本命です。** 引き金を整理（図面）だけに置いていたとき、
+// **図面が先に届いて発注書が後から来る場合に一度も走りませんでした**——そして
+// **返り注文は必ずこちらです**（図面は何か月も前に来ている）。実データで
+// 「埋まりません」と分かりました（2026-09-21）。
+//
+//	発注書が先 → 図面が後 … 図面の整理で走る（LinkOrdersToProduct）
+//	図面が先 → 発注書が後 … こちらで走る（解析の直後・受注の整理）
+//
+// **どちらも人の操作の直後**です（🤖 解析・📁 整理）。裏で回る仕事は作りません。
+// 歯止め（1件のときだけ・人の値は触らない）は押し出しと同じものを通ります。
+func LinkProductsToOrder(user *auth.User, orderPageID string) int {
+	id, ok := page.NormalizeID(orderPageID)
+	if !ok {
+		return 0
+	}
+	body, err := cms.ReadPageBody(id)
+	if err != nil {
+		return 0
+	}
+	filled := 0
+	for _, code := range orderItemNosOf(body) {
+		cands := ProductPagesByCode(code)
+		// ⚠ **1件でなければ触りません**（押し出しと同じ線引き）。
+		if len(cands) != 1 {
+			continue
+		}
+		target := page.FormatID(cands[0])
+		fixed, n := fillOurItemNo(body, code, target)
+		if n == 0 {
+			continue
+		}
+		body = fixed
+		filled += n
+		auth.Audit(user.Username, "order-item.linked", id+" "+code+" -> "+target)
+	}
+	if filled == 0 {
+		return 0
+	}
+	// ⚠ **書き込みは1回にまとめます**——行ごとに書くと版が7つ増えます。
+	if err := cms.RewriteBody(id, user.Username, func(string) string { return body }); err != nil {
+		return 0
+	}
+	return filled
+}
+
+// orderItemNosOf は受注明細の `品番` の値を、空いている行だけ集めます。
+func orderItemNosOf(body string) []string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "table" && isOrderItemsTable(n) {
+			rows := rowsOf(n)
+			if len(rows) < 2 {
+				return
+			}
+			col := map[string]int{}
+			i := 0
+			for c := rows[0].FirstChild; c != nil; c = c.NextSibling {
+				if c.Type == html.ElementNode && (c.Data == "th" || c.Data == "td") {
+					col[strings.TrimSpace(textOf(c))] = i
+					i++
+				}
+			}
+			ourCol, okOur := col[OurItemNoTag]
+			itemCol, okItem := col[ItemNoTag]
+			if !okOur || !okItem {
+				return
+			}
+			for _, tr := range rows[1:] {
+				var cells []string
+				for c := tr.FirstChild; c != nil; c = c.NextSibling {
+					if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
+						cells = append(cells, strings.TrimSpace(textOf(c)))
+					}
+				}
+				if ourCol >= len(cells) || itemCol >= len(cells) {
+					continue
+				}
+				// ⚠ **埋まっている行は集めません**（人の値を触らないため）。
+				if cells[ourCol] != "" || cells[itemCol] == "" {
+					continue
+				}
+				if !seen[cells[itemCol]] {
+					seen[cells[itemCol]] = true
+					out = append(out, cells[itemCol])
+				}
+			}
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	for _, n := range nodes {
+		walk(n)
+	}
+	return out
+}

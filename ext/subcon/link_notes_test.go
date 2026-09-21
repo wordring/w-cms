@@ -1,6 +1,7 @@
 package subcon
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -229,5 +230,65 @@ func TestLinkNoteRespectsVisibility(t *testing.T) {
 	}
 	if !strings.Contains(joined, "000083") {
 		t.Fatalf("読めるページまで名指ししていません（仕掛けが動いていない疑い）: %v", notes)
+	}
+}
+
+// seedBody はページの本文ファイルを用意します。
+//
+// ⚠ `setupExtTest` はサイドカーと索引しか作りません——`RewriteBody` は**本文
+// ファイルを読む**ので、無いと「ファイルがありません」で落ちます。
+func seedBody(t *testing.T, id, body string) {
+	t.Helper()
+	if err := os.MkdirAll(page.GetPageDir(id), 0o755); err != nil {
+		t.Fatalf("置き場: %v", err)
+	}
+	if err := os.WriteFile(page.BodyPath(id), []byte(body), 0o644); err != nil {
+		t.Fatalf("本文の用意: %v", err)
+	}
+	if err := cms.SyncIndex(id, body); err != nil {
+		t.Fatalf("SyncIndex: %v", err)
+	}
+}
+
+// TestLinkProductsToOrderFillsExisting は、⚠ **図面が先・発注書が後でも埋まる**ことを
+// 固定します。
+//
+// ⚠ **実データで見つかった穴です**（2026-09-21）。引き金を「図面の整理」だけに置いて
+// いたので、**図面が先に届いていると一度も走りませんでした**——そして**返り注文は
+// 必ずこの順**です（図面は何か月も前に来ている）。
+func TestLinkProductsToOrderFillsExisting(t *testing.T) {
+	setupExtTest(t, "000090", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	seedProductPage(t, 91, "K120-01-211 受けブラケット", "K120-01-211")
+
+	seedBody(t, "000090", orderBody([2]string{"", "K120-01-211"}))
+	user := &auth.User{Username: "root", IsAdmin: true}
+	if n := LinkProductsToOrder(user, "000090"); n != 1 {
+		t.Fatalf("埋めた行が %d です（1を期待）", n)
+	}
+	body, err := cms.ReadPageBody("000090")
+	if err != nil {
+		t.Fatalf("読み直し: %v", err)
+	}
+	if !strings.Contains(body, "000091") {
+		t.Errorf("本文に書き戻されていません:\n%s", body)
+	}
+	// ⚠ **2回目は何も起きない**（埋まっている行は触らない）。
+	if n := LinkProductsToOrder(user, "000090"); n != 0 {
+		t.Errorf("2回目で %d 行書き換えています（人の値も同じ経路で守られます）", n)
+	}
+}
+
+// TestLinkProductsToOrderStaysSilentWhenAmbiguous は、⚠ **2件以上なら埋めない**ことを
+// 固定します。
+func TestLinkProductsToOrderStaysSilentWhenAmbiguous(t *testing.T) {
+	setupExtTest(t, "000092", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	seedProductPage(t, 93, "K120-01-211 受けブラケット", "K120-01-211")
+	seedProductPage(t, 94, "K120-01-211 別の品物", "K120-01-211")
+
+	seedBody(t, "000092", orderBody([2]string{"", "K120-01-211"}))
+	if n := LinkProductsToOrder(&auth.User{Username: "root", IsAdmin: true}, "000092"); n != 0 {
+		t.Errorf("⚠ 候補が2件あるのに埋めています: %d行", n)
 	}
 }

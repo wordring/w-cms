@@ -301,9 +301,17 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
 
+	// ⚠ **作った直後に、いま在る加工製品ページと結びます**（2026-09-21・[link_item.go]）。
+	// **図面が先に届いていた場合、ここで結ばないと一度も埋まりません**——図面の整理は
+	// もう終わっているからです。そして**返り注文は必ずこの順**です。
+	//
+	// ⚠ **解析の失敗にはしません**——結べなくても受注ページは正しく作れています。
+	// 埋まった行数は画面へ返し、人が「何が起きたか」を見られるようにします。
+	linked := LinkProductsToOrder(user, newID)
+
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "is_client_order": true,
-		"page_id": newID, "title": pageTitleOf(newID),
+		"page_id": newID, "title": pageTitleOf(newID), "linked_items": linked,
 	})
 }
 
