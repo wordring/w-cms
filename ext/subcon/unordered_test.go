@@ -163,3 +163,55 @@ func TestSortUnorderedGroupsByMachine(t *testing.T) {
 		t.Errorf("並びが %v です（%v を期待）", got, want)
 	}
 }
+
+// TestUnorderedSubtractsWhatIsInTheDraft は、⚠ **発注部材表に入れた分は一覧から
+// 消える**ことを固定します（2026-09-22）。
+//
+// ユーザーの構想:「表作成ボタンをクリックすると発注部材表が開き、**すると元の表からは
+// それらの行が消えます**」。
+//
+// ⚠ **1段目の実装はこれを落としていて、二重に出ていました**（実データで確認）——
+// **同じものを2回発注しかねません。**
+//
+// ⚠ **「消えること」だけを見ません**——それでは「そもそも引けていない」と区別が
+// 付かないので、**入れる前に出ていること**と**一部だけ入れたら残りが出ること**も見ます。
+func TestUnorderedSubtractsWhatIsInTheDraft(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	root := &auth.User{Username: "root", IsAdmin: true}
+
+	before, err := UnorderedItems(root)
+	if err != nil {
+		t.Fatalf("UnorderedItemsエラー: %v", err)
+	}
+	if len(before) != 1 || before[0].Remaining != 3 {
+		t.Fatalf("前提が崩れています（残3が1件のはず）: %#v", before)
+	}
+
+	// 発注部材表を持つページを1枚（⚠ **発注ページでなくてもよい**——横断で読みます）。
+	addPage(t, 60, 0, "発注", "root", "302", true)
+	syncBody(t, 60, `<h1>発注</h1>`+orderDraftHTML([]ourOrderLine{
+		{ProductID: "000031", Material: "鉄", Shape: "FB", Size: "t4.5*75*1090", Quantity: "1"},
+	}))
+
+	mid, err := UnorderedItems(root)
+	if err != nil {
+		t.Fatalf("UnorderedItemsエラー: %v", err)
+	}
+	// ⚠ **一部だけ入れたら、残りが出ること**（3 − 1 = 2）。
+	if len(mid) != 1 || mid[0].Remaining != 2 {
+		t.Fatalf("⚠ 引き算が効いていません（残2が1件のはず）: %#v", mid)
+	}
+
+	// 残りも入れたら、消えること。
+	syncBody(t, 60, `<h1>発注</h1>`+orderDraftHTML([]ourOrderLine{
+		{ProductID: "000031", Material: "鉄", Shape: "FB", Size: "t4.5*75*1090", Quantity: "3"},
+	}))
+	after, err := UnorderedItems(root)
+	if err != nil {
+		t.Fatalf("UnorderedItemsエラー: %v", err)
+	}
+	if len(after) != 0 {
+		t.Errorf("⚠ 発注部材表に入れたのに一覧に残っています（二重に発注しかねません）: %#v", after)
+	}
+}

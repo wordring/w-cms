@@ -66,6 +66,12 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	if err != nil {
 		prices = map[string]materialPrice{}
 	}
+	// ⚠ **発注部材表に入れた分は、もう一覧に出しません**（2026-09-22 ユーザーの構想:
+	//    「表作成ボタンをクリックすると発注部材表が開き、**すると元の表からはそれらの
+	//    行が消えます**」）。
+	//    ⚠ **1段目の実装はこれを落としていて、二重に出ていました**——実データで確認。
+	//    **同じものを2回発注しかねません。**
+	drafted := draftedQty(db, canView)
 
 	// ページのタグ（発注元・納期）は1ページにつき1度だけ読む。
 	type head struct{ client, due string }
@@ -106,6 +112,15 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 		for _, it := range procurementItemsOf(db, pid, cms.VocabQuantity(o), ordered) {
 			if it.Remaining <= 0 {
 				continue // 手配済み
+			}
+			// ⚠ **発注部材表に入っている分を引きます。** 引いて 0 以下なら、
+			//    **もう人が「買う」と決めた**ので一覧からは消えます
+			//    ——戻したければ、発注部材表の行を「戻す」で外します。
+			if d := drafted[procKey(pid, it.Key)]; d > 0 {
+				it.Remaining -= d
+				if it.Remaining <= 0 {
+					continue
+				}
 			}
 			u := UnorderedItem{
 				OrderPageID: o.PageID, OrderTitle: cms.PageTitleByID(o.PageID),

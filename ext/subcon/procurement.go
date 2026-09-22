@@ -49,6 +49,11 @@ type ProcurementItem struct {
 	Ordered   int                `json:"ordered"`
 	Remaining int                `json:"remaining"`
 	Orders    []ProcurementOrder `json:"orders"`
+	// Key は束ねる鍵（材料なら3つ組、購入部品なら畳んだ品名）です。
+	//
+	// ⚠ **未手配の一覧が「発注部材表に入っている分」を引くのに使います**
+	// （2026-09-22）——**同じ鍵**（`procKey`）で束ねないと、**引き算が合いません**。
+	Key string `json:"-"`
 }
 
 // ProcurementProduct は受注明細の1行（＝加工製品1種類）です。
@@ -138,7 +143,7 @@ func procurementItemsOf(db cms.ReadOnlyDB, productID, orderQty int,
 		if name == "" {
 			return
 		}
-		item := ProcurementItem{Name: name, Kind: kind, Per: per,
+		item := ProcurementItem{Name: name, Kind: kind, Per: per, Key: key,
 			Required: per * orderQty, Orders: ordered[procKey(productID, key)]}
 		for _, o := range item.Orders {
 			item.Ordered += o.Qty

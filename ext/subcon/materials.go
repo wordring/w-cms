@@ -118,6 +118,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ **行が0でも作ります**——空の表から始められることが、加工製品ページに
 		// 無い部材（消耗品・治具）だけを買うときの道です。
 		{Pattern: "/api/our-order/draft", Handler: NewOrderDraftAPIHandler},
+		// 発注部材表から1行を外す口（2026-09-22・order_draft.go）。
+		// ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、
+		// ここから消せば**自動的に一覧へ戻ってきます**。
+		{Pattern: "/api/our-order/draft/remove", Handler: RemoveOrderDraftRowAPIHandler},
 	}
 }
 

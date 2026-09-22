@@ -157,3 +157,40 @@ func TestReplaceDraftTableLeavesTheOthers(t *testing.T) {
 		t.Error("⚠ 無い枚数なのに置き換えています")
 	}
 }
+
+// TestRemoveDraftRowTakesTheRightRow は、⚠ **外す行を取り違えない**ことを
+// 固定します（2026-09-22）。
+//
+// ユーザー:「**発注部材表から未手配の一覧へ戻す方法がありません**」——
+// ⚠ **取り違えると、戻したかった行は残り、買うつもりの行が消えます**。
+func TestRemoveDraftRowTakesTheRightRow(t *testing.T) {
+	body := orderDraftHTML([]ourOrderLine{
+		{ItemName: "1行目"}, {ItemName: "2行目"}, {ItemName: "3行目"},
+	})
+	got, ok := removeDraftRow(body, 1, 2)
+	if !ok {
+		t.Fatal("外せていません")
+	}
+	if strings.Contains(got, "2行目") {
+		t.Errorf("⚠ 2行目が残っています:\n%s", got)
+	}
+	for _, keep := range []string{"1行目", "3行目"} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("⚠ %s まで消えました:\n%s", keep, got)
+		}
+	}
+	// ⚠ **見出し行は数えません**（人が見ている「何行目」と揃える）。
+	if !strings.Contains(got, "<th>弊社品番</th>") {
+		t.Errorf("⚠ 見出し行を外しています:\n%s", got)
+	}
+	// 無い行・無い表は何もしない。
+	if _, ok := removeDraftRow(body, 1, 9); ok {
+		t.Error("⚠ 無い行を外したと答えています")
+	}
+	if _, ok := removeDraftRow(body, 2, 1); ok {
+		t.Error("⚠ 無い表から外したと答えています")
+	}
+	if _, ok := removeDraftRow(body, 1, 0); ok {
+		t.Error("⚠ 0行目（見出し）を外しています")
+	}
+}

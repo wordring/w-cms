@@ -6486,6 +6486,43 @@ document.addEventListener('click', (e) => {
             return;
         }
         const d = e.target.closest('[data-unorder-draft]');
-        if (d) draft(d);
+        if (d) {
+            draft(d);
+            return;
+        }
+        const back = e.target.closest('.draft-row-back');
+        if (back) removeDraftRow(back);
     });
+
+    // 発注部材表から1行を外す＝**未手配の一覧へ戻す**（2026-09-22）。
+    //
+    // ユーザー:「**発注部材表から未手配の一覧へ戻す方法がありません**」
+    //
+    // ⚠ **戻す先へ何かを書く必要はありません**——一覧は**毎回計算される鏡**なので、
+    //    ここから消せば**自動的に戻ってきます**。
+    async function removeDraftRow(btn) {
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/our-order/draft/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    page_id: btn.getAttribute('data-draft-page') || '',
+                    table: Number(btn.getAttribute('data-draft-table') || 0),
+                    row: Number(btn.getAttribute('data-draft-row') || 0),
+                }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) {
+                alert('⚠ ' + (d.message || '戻せませんでした'));
+                btn.disabled = false;
+                return;
+            }
+            location.reload();
+        } catch (err) {
+            alert('⚠ 通信に失敗しました: ' + err);
+            btn.disabled = false;
+        }
+    }
 })();

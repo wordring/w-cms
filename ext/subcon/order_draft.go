@@ -349,3 +349,140 @@ func replaceDraftTable(body string, n int, replacementHTML string) (string, bool
 	parent.RemoveChild(target)
 	return htmldoc.Render(nodes), true
 }
+
+// draftedQty は「**いま発注部材表に入っている数**」を、加工製品×購入品ごとに返します。
+//
+// ユーザー（2026-09-22）:「未発注の表のチェックボックスをクリックして…表作成ボタンを
+// クリックすると発注部材表が開き、**すると元の表からはそれらの行が消えます**」
+//
+// ⚠ **1段目の実装はこれを落としていました**——発注部材表に入れても未手配の一覧に
+// 残り、**二重に出ていました**（実データで確認・同日）。**同じものを2回発注しかねません。**
+//
+// ⚠ **鍵は `orderedByProduct` と同じ**（`procKey`）です——発注書と発注部材表で
+// 別の束ね方をすると、**引き算が合わなくなります**。
+func draftedQty(db cms.ReadOnlyDB, canView func(int) bool) map[string]int {
+	rows, err := cms.VocabRowsOfType(db, OrderDraftType)
+	if err != nil {
+		return map[string]int{}
+	}
+	out := map[string]int{}
+	for _, r := range rows {
+		if !canView(r.PageID) {
+			continue
+		}
+		productID, ok := page.NormalizeID(strings.TrimSpace(r.Values["our-item-id"]))
+		if !ok || productID == "" {
+			continue // ⚠ 弊社品番の無い行（消耗品など）は、そもそも一覧に出ません
+		}
+		key := materialKeyOf(r.Values["material"], r.Values["shape"], r.Values["size"])
+		if key == "" {
+			key = cms.NormalizeText(strings.TrimSpace(r.Values["item-name"]))
+		}
+		if key == "" {
+			continue
+		}
+		out[procKey(pageNum(productID), key)] += cms.VocabQuantity(r)
+	}
+	return out
+}
+
+// RemoveOrderDraftRowAPIHandler は POST /api/our-order/draft/remove です。
+//
+// 発注部材表から行を1つ外します（入力: {page_id, table, row}）。
+//
+// ユーザー（2026-09-22）:「**発注部材表から未手配の一覧へ戻す方法がありません**」
+//
+// ⚠ **「戻す」は「外す」です。** 一覧は**毎回計算される鏡**なので、発注部材表から
+// 消せば**自動的に戻ってきます**——戻す先へ何かを書く必要はありません。
+//
+// ⚠ **閲覧モードから押せることが肝**です。本文の表なのでエディタでも消せますが、
+// **一覧を見ながら出し入れする**のに、いちいち編集モードへ入るのは道が遠すぎます。
+func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		PageID string `json:"page_id"`
+		Table  int    `json:"table"` // 何枚目の発注部材表か（1始まり）
+		Row    int    `json:"row"`   // 見出しを除いた何行目か（1始まり）
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, okID := page.NormalizeID(req.PageID)
+	if !okID {
+		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		return
+	}
+	if !page.RequirePageWrite(w, r, pageID) {
+		return
+	}
+	if !editlock.RefuseWhileEditing(w, pageID) {
+		return
+	}
+	done := false
+	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+		out, ok := removeDraftRow(cur, req.Table, req.Row)
+		done = ok
+		if !ok {
+			return cur
+		}
+		return out
+	}); werr != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+werr.Error())
+		return
+	}
+	if !done {
+		cms.JSONFail(w, http.StatusConflict,
+			"その行が見つかりません（画面を読み直してください）")
+		return
+	}
+	auth.Audit(user.Username, "order-draft.remove",
+		pageID+" 表"+itoa(req.Table)+" 行"+itoa(req.Row))
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID})
+}
+
+// removeDraftRow は n 枚目の発注部材表から row 行目（見出しを除く）を外します。
+//
+// ⚠ **見出し行は数えません**——人が画面で見ている「何行目」と揃えるためです。
+// ⚠ **鏡が足した `<tfoot>` の行も数えません**（あれは本文ではありません）。
+func removeDraftRow(body string, n, row int) (string, bool) {
+	if n < 1 || row < 1 {
+		return body, false
+	}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body, false
+	}
+	tables := tablesOfType(nodes, OrderDraftType)
+	if n > len(tables) {
+		return body, false
+	}
+	var body0 *html.Node
+	for c := tables[n-1].FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.Data == "tbody" {
+			body0 = c
+			break
+		}
+	}
+	if body0 == nil {
+		body0 = tables[n-1]
+	}
+	i := 0
+	for c := body0.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || c.Data != "tr" {
+			continue
+		}
+		if i == 0 { // 見出し行
+			i++
+			continue
+		}
+		if i == row {
+			body0.RemoveChild(c)
+			return htmldoc.Render(nodes), true
+		}
+		i++
+	}
+	return body, false
+}
