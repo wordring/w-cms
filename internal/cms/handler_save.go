@@ -58,6 +58,19 @@ func JSONFail(w http.ResponseWriter, status int, message string) {
 	json.NewEncoder(w).Encode(map[string]any{"success": false, "message": message})
 }
 
+// PageIDOrFail はページIDを6桁へ畳みます。畳めなければ 400 の JSON を返して false。
+//
+// 口の前口上の1段目です（2026-09-23 に寄せた——同じ4行がコアと拡張に散っていた）。
+// ⚠ **空白は落としません**（`NormalizeID` と同じ）。落として受けたい口は呼ぶ側で。
+func PageIDOrFail(w http.ResponseWriter, raw string) (string, bool) {
+	pageID, ok := page.NormalizeID(raw)
+	if !ok {
+		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		return "", false
+	}
+	return pageID, true
+}
+
 // SaveRequest はオートセーブで送られてくるJSON構造体です。
 type SaveRequest struct {
 	PageID string `json:"page_id"`

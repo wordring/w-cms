@@ -65,7 +65,7 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, okID := normalizePageIDOrFail(w, req.PageID)
+	pageID, okID := cms.PageIDOrFail(w, req.PageID)
 	if !okID {
 		return
 	}

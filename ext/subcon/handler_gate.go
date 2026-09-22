@@ -21,16 +21,6 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// normalizePageIDOrFail はページIDを6桁へ畳みます。畳めなければ 400 を返して false。
-func normalizePageIDOrFail(w http.ResponseWriter, raw string) (string, bool) {
-	pageID, ok := page.NormalizeID(raw)
-	if !ok {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return "", false
-	}
-	return pageID, true
-}
-
 // requireWritableIdle は「そのページへ write できて、誰も編集していない」を確かめます。
 //
 // ⚠ **機械が既存ページの本文を書き換えるときの関門**です——`RewriteBody` は読んで・
@@ -46,7 +36,7 @@ func requireWritableIdle(w http.ResponseWriter, r *http.Request, pageID string) 
 
 // gateWritablePage は上の2つを続けて通し、通れば6桁のページIDを返します。
 func gateWritablePage(w http.ResponseWriter, r *http.Request, raw string) (string, bool) {
-	pageID, ok := normalizePageIDOrFail(w, raw)
+	pageID, ok := cms.PageIDOrFail(w, raw)
 	if !ok {
 		return "", false
 	}

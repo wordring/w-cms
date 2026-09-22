@@ -60,9 +60,8 @@ func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// パスに使う前にゼロ詰め6桁へ正規化する（page.NormalizeID 参照）。
-	normID, ok := page.NormalizeID(req.PageID)
+	normID, ok := cms.PageIDOrFail(w, req.PageID)
 	if !ok {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	req.PageID = normID

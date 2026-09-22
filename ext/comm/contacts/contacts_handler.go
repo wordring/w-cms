@@ -248,9 +248,8 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, ok := page.NormalizeID(strings.TrimSpace(req.PageID))
+	pageID, ok := cms.PageIDOrFail(w, strings.TrimSpace(req.PageID))
 	if !ok {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	addr := normalizeEmail(req.Address)
