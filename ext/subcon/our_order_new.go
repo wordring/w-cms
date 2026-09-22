@@ -34,6 +34,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
 )
 
 // ourOrderLine は発注書へ入れる1行です（画面から送られてくる形）。
@@ -63,6 +64,7 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		OrderAt  string         `json:"order_at"`
 		Due      string         `json:"due"`
 		Note     string         `json:"note"`
+		Signer   string         `json:"signer"`
 		Lines    []ourOrderLine `json:"lines"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
@@ -99,8 +101,20 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "発注書ページを作れません: "+err.Error())
 		return
 	}
+	// ⚠ **送られてきた差出人をそのまま信じません**——**署名を持つ人の中に居るか**を
+	//    確かめます。読めない人・署名の無い人を紙に刷らないため（画面は選ばせるだけで、
+	//    口は誰でも叩けます）。
+	signerID := ""
+	if want := strings.TrimSpace(req.Signer); want != "" {
+		for _, sg := range Signers(user) {
+			if page.FormatID(sg.PageID) == want {
+				signerID = want
+				break
+			}
+		}
+	}
 	body := buildOurOrderHTML(newID, supplier, when.Format("2006-01-02"),
-		strings.TrimSpace(req.Due), strings.TrimSpace(req.Note), req.Lines)
+		strings.TrimSpace(req.Due), strings.TrimSpace(req.Note), signerID, req.Lines)
 	if err := cms.RewriteBody(newID, user.Username, func(string) string { return body }); err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+err.Error())
 		return
@@ -116,7 +130,7 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 //
 // ⚠ **見出し行は宣言から組みます**（`headerRowHTML`）——手書きに戻すと、
 // 列を足した日に**足した列がどこからも読めません**。エラーは出ません。
-func buildOurOrderHTML(pageID, supplier, orderAt, due, note string, lines []ourOrderLine) string {
+func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, lines []ourOrderLine) string {
 	var b strings.Builder
 	b.WriteString(`<h1>発注　` + stdhtml.EscapeString(supplier) + `</h1>`)
 	b.WriteString(`<dl data-type="tags">`)
@@ -130,6 +144,14 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note string, lines []ourO
 	}
 	if note != "" {
 		writeHeaderPair(&b, "備考", note)
+	}
+	// ⚠ **誰が出したかを残します**（2026-09-22）。値は連絡帳の担当者ページのID
+	//    （`ref` 型なので押せば飛べる）。
+	//    ⚠ **署名の文面は焼き込みません**——**出した紙の正本はPDF**で、それはこの
+	//    ページの添付として残ります（`SaveAttachmentFrom`）。本文へ写すと二重になり、
+	//    あとから署名が変わったときに**紙と本文が食い違います**。
+	if signerID != "" {
+		writeHeaderPair(&b, OrderSignerTag, signerID)
 	}
 	b.WriteString(`</dl>`)
 

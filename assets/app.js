@@ -6359,10 +6359,19 @@ document.addEventListener('click', (e) => {
         };
         const body = {
             supplier: val('supplier'), order_at: val('order_at'),
-            due: val('due'), note: val('note'), lines: picked,
+            due: val('due'), note: val('note'),
+            // ⚠ **差出人は `<select>`**（サーバーが候補を描く）。`val` は value を読むので
+            //    `<input>` と同じ扱いで足ります。
+            signer: val('signer'), lines: picked,
         };
         if (!body.supplier) {
             say(box, '⚠ 仕入先を入れてください（発注書は1枚に1社です）', 'proc-why-ng');
+            return;
+        }
+        if (!body.signer) {
+            // ⚠ **差出人が空のまま作らせません**——**誰の名前で紙が出るか**は
+            //    黙って決めてよいことではないので、既定も置いていません。
+            say(box, '⚠ 差出人を選んでください（紙に刷る署名です）', 'proc-why-ng');
             return;
         }
         go.disabled = true;

@@ -133,7 +133,7 @@ func TestOrderPDFRoundTrips(t *testing.T) {
 	body := pdfOrderBody(`<tr><td></td><td></td><td></td><td>鉄STPG370EG</td>` +
 		`<td>φ27.2</td><td>t3.4*定尺</td><td></td><td>10</td><td>個</td><td>3200</td>` +
 		`<td>ビードカット品</td><td>未納品</td></tr>`)
-	pdf, err := buildOrderPDF(body)
+	pdf, err := buildOrderPDF(body, nil)
 	if err != nil {
 		t.Fatalf("PDFを作れません: %v", err)
 	}
@@ -166,8 +166,8 @@ func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 
 	// 材料の発注書（`品番`・`品名`・`色` は空）。
 	mat, err := buildOrderPDF(pdfOrderBody(
-		`<tr><td></td><td></td><td></td><td>鉄</td><td>板</td><td>t3.2</td>` +
-			`<td></td><td>5</td><td>枚</td><td>800</td><td></td><td>未納品</td></tr>`))
+		`<tr><td></td><td></td><td></td><td>鉄</td><td>板</td><td>t3.2</td>`+
+			`<td></td><td>5</td><td>枚</td><td>800</td><td></td><td>未納品</td></tr>`), nil)
 	if err != nil {
 		t.Fatalf("材料: %v", err)
 	}
@@ -177,9 +177,9 @@ func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 
 	// 塗装の発注書（`材質`・`形状`・`寸法` は空）。
 	paint, err := buildOrderPDF(pdfOrderBody(
-		`<tr><td>000036</td><td>K120-01-242</td><td>押さえプレート</td>` +
-			`<td></td><td></td><td></td><td>緑</td><td>20</td><td>個</td><td>160</td>` +
-			`<td></td><td>未納品</td></tr>`))
+		`<tr><td>000036</td><td>K120-01-242</td><td>押さえプレート</td>`+
+			`<td></td><td></td><td></td><td>緑</td><td>20</td><td>個</td><td>160</td>`+
+			`<td></td><td>未納品</td></tr>`), nil)
 	if err != nil {
 		t.Fatalf("塗装: %v", err)
 	}
@@ -202,8 +202,8 @@ func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 // 書きます——「読めません」だけでは直せません。
 func TestOrderPDFNeedsFont(t *testing.T) {
 	withPDFFont(t, "")
-	_, err := buildOrderPDF(pdfOrderBody(`<tr><td></td><td></td><td>x</td><td></td>` +
-		`<td></td><td></td><td></td><td>1</td><td>個</td><td>1</td><td></td><td>未納品</td></tr>`))
+	_, err := buildOrderPDF(pdfOrderBody(`<tr><td></td><td></td><td>x</td><td></td>`+
+		`<td></td><td></td><td></td><td>1</td><td>個</td><td>1</td><td></td><td>未納品</td></tr>`), nil)
 	if !errors.Is(err, ErrNoPDFFont) {
 		t.Fatalf("フォント未設定を知らせていません: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestOrderPDFNeedsFont(t *testing.T) {
 // TestOrderPDFRefusesNonOrderPage は、**発注書でないページを断る**ことを固定します。
 func TestOrderPDFRefusesNonOrderPage(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
-	if _, err := buildOrderPDF(`<h1>ただのページ</h1><p>本文</p>`); err == nil {
+	if _, err := buildOrderPDF(`<h1>ただのページ</h1><p>本文</p>`, nil); err == nil {
 		t.Fatal("発注明細が無いのにPDFを作っています")
 	}
 }

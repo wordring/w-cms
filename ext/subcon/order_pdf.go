@@ -93,7 +93,7 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
 		return
 	}
-	pdf, err := buildOrderPDF(body)
+	pdf, err := buildOrderPDF(body, user)
 	if err != nil {
 		code := http.StatusBadRequest
 		if errors.Is(err, ErrNoPDFFont) {
@@ -118,7 +118,7 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildOrderPDF は発注書ページの本文からPDFを組みます。
-func buildOrderPDF(body string) ([]byte, error) {
+func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	font := PDFFont()
 	if font == "" {
 		return nil, ErrNoPDFFont
@@ -154,15 +154,8 @@ func buildOrderPDF(body string) ([]byte, error) {
 	y += 4
 
 	// ── 差出人（右側）──
-	c := Company()
 	ry := pdfTop + 10
-	for _, ln := range []string{
-		c.Name, "〒" + c.Zip + " " + c.Address,
-		"担当： " + c.Person, "TEL： " + c.Tel, "FAX： " + c.Fax,
-	} {
-		if strings.TrimSpace(strings.Trim(ln, "〒 担当：TELFAX")) == "" {
-			continue
-		}
+	for _, ln := range senderLines(head, viewer) {
 		ry = pdfText(p, 330, ry, pdfFontSz, ln)
 	}
 	if ry > y {
@@ -390,4 +383,3 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 	}
 	return head, rows, cols, nil
 }
-

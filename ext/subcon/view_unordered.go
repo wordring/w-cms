@@ -63,7 +63,7 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		b.WriteString(`</tr>`)
 	}
 	b.WriteString(`</tbody></table>`)
-	b.WriteString(unorderedFormHTML())
+	b.WriteString(unorderedFormHTML(user))
 	return b.String()
 }
 
@@ -114,11 +114,12 @@ func unorderedCostHTML(u UnorderedItem) string {
 //
 // ⚠ **候補を出します**（`推奨業者` と同じ出どころ）——打つより選ぶほうが速く、
 // 速ければ表記が揃います。
-func unorderedFormHTML() string {
+func unorderedFormHTML(user *auth.User) string {
 	f := func(id, label, ph, typ string) string {
 		return searchFieldHTML("unorder", id, label, ph, typ)
 	}
 	return `<div class="matsearch-form unorder-form">` +
+		signerFieldHTML(user) +
 		f("supplier", "仕入先", "みなと商店", "text") +
 		f("order_at", "発注日", "", "date") +
 		f("due", "納期", "", "date") +
@@ -137,4 +138,46 @@ func unorderedCostValue(u UnorderedItem) string {
 		return ""
 	}
 	return strconv.Itoa(u.Cost)
+}
+
+// signerFieldHTML は差出人を選ぶ欄です（2026-09-22）。
+//
+// ユーザー:「担当者によって変わるので**都度選ぶ**しかないのでは？」——だから
+// **毎回ここで選びます**。
+//
+// ⚠ **候補はサーバーが描きます**（`<select>`）。`推奨業者` のような打ちながらの候補に
+// しないのは、差出人が**打つものではなく選ぶもの**だからです——連絡帳に居る人しか
+// なれません。
+//
+// ⚠ **初期値はログイン名と同じ題の人**（`DefaultSigner`）。当たらなければ**未選択**で、
+// 人が選びます。⚠ **勝手に先頭の人を選ばないこと**——**誰の名前で紙が出るか**は、
+// 黙って決めてよいことではありません。
+func signerFieldHTML(user *auth.User) string {
+	list := Signers(user)
+	def, hasDef := DefaultSigner(user, list)
+
+	var b strings.Builder
+	b.WriteString(`<label class="matsearch-field"><span>差出人</span>`)
+	b.WriteString(`<select class="matsearch-input" data-unorder="signer">`)
+	b.WriteString(`<option value="">（選んでください）</option>`)
+	for _, sg := range list {
+		sel := ""
+		if hasDef && sg.PageID == def.PageID {
+			sel = ` selected`
+		}
+		label := sg.Title
+		if sg.Org != "" {
+			label += "（" + sg.Org + "）"
+		}
+		b.WriteString(`<option value="` + page.FormatID(sg.PageID) + `"` + sel + `>` +
+			stdhtml.EscapeString(label) + `</option>`)
+	}
+	b.WriteString(`</select></label>`)
+	if len(list) == 0 {
+		// ⚠ **0件も黙りません**——「誰も居ない」と「連絡帳を作っていない」は別です。
+		b.WriteString(`<p class="unorder-help">⚠ 差出人の候補がありません` +
+			`（連絡帳の担当者ページに「<strong>` + OrderSignatureHeading +
+			`</strong>」の見出しで署名を書くと、ここに出ます）。</p>`)
+	}
+	return b.String()
 }
