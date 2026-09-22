@@ -46,16 +46,26 @@ type orderSeed struct {
 	Date     string
 	Supplier string
 	Rows     string // <tr><td>材質</td><td>形状</td><td>寸法</td><td>単価</td></tr>
+	// Status は行の `状態` です（空なら `発注済`）。⚠ **2026-09-22 から、出した紙の
+	// 単価だけが「買った値段」**です（[order_status.go](order_status.go)）。
+	Status string
 }
 
 func (o orderSeed) Body() string {
+	st := o.Status
+	if st == "" {
+		st = OrderLineSent
+	}
+	// ⚠ **`状態` の列を足すので、行にもセルを1つ足します**——列がずれると
+	//    `headerIndex` が単価を別の列から読みます。
+	rows := strings.ReplaceAll(o.Rows, "</tr>", "<td>"+st+"</td></tr>")
 	return `<h1>発注書</h1>` +
 		`<dl data-type="tags">` +
 		`<dt>` + OrderedAtTag + `</dt><dd>` + o.Date + `</dd>` +
 		`<dt>` + SupplierTag + `</dt><dd>` + o.Supplier + `</dd></dl>` +
 		`<table data-type="` + ourOrderItemsType + `"><tbody>` +
-		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th></tr>` +
-		o.Rows + `</tbody></table>`
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th><th>状態</th></tr>` +
+		rows + `</tbody></table>`
 }
 
 // syncBody は本文を索引まで通します（本番と同じ道）。⚠ 名前を `sync` にはできません（標準の `sync` パッケージと衝突します）。

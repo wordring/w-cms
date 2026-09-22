@@ -122,6 +122,15 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、
 		// ここから消せば**自動的に一覧へ戻ってきます**。
 		{Pattern: "/api/our-order/draft/remove", Handler: RemoveOrderDraftRowAPIHandler},
+		// 発注明細の1行の `状態` を書き換える口（2026-09-22・order_status.go）。
+		// ⚠ **発注済みの印は行に付きます**（ユーザー:「発注書の表の**一品ずつに
+		// 発注済みの印**をつけます」）——1枚の紙の中でも、**1品だけ取り消す**・
+		// **1品だけ先に納まる**が起こるためです。
+		{Pattern: "/api/our-order/line-status", Handler: OrderLineStatusAPIHandler},
+		// 発注書を出したことを反映する口（2026-09-22・order_send.go）。
+		// ⚠ **取消でない行すべて**に `発注済` を付けます。メールは送信の成功が
+		// その事実、FAX・手渡しは**人が押したこと**がその事実です。
+		{Pattern: "/api/our-order/sent", Handler: OrderSentAPIHandler},
 	}
 }
 

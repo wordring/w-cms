@@ -2412,3 +2412,26 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .unorder-cost { white-space: nowrap; }
 #w-editor-content .unorder-form { margin-top: 10px; }
 #w-editor-content .unorder-result { margin-top: 8px; font-size: 0.95em; }
+
+/* ── 発注書を送る・発注済みの印（2026-09-22）──────────────────────────────
+   ユーザー:「発注書ページで**送信方法を選んで**…」「**発注書の表の一品ずつに
+   発注済みの印**をつけます」。⚠ **印は本文の `状態` の列**で、ここに出るのは
+   **押すためのもの**だけです（`.vocab-chrome`）。 */
+#w-editor-content .order-send { margin-top: 10px; }
+#w-editor-content .order-send-state { margin: 0 0 8px; }
+/* ⚠ **狭い画面で折り返すこと**（`flex-wrap` が無いとページ全体が横スクロールする）。 */
+#w-editor-content .order-send-ways {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+#w-editor-content .order-mail { margin-top: 4px; }
+#w-editor-content .order-mail > summary { cursor: pointer; }
+#w-editor-content .order-mail .matsearch-input { width: 24em; max-width: 100%; }
+#w-editor-content .order-mail-body { width: 100%; }
+#w-editor-content .order-mail-body textarea { width: 100%; font-family: inherit; }
+/* ⚠ **行ごとのボタンは折り返しません**——2つ並ぶだけなので、折ると行の高さが
+   揃わず、表が読みにくくなります。 */
+#w-editor-content .order-row-act { white-space: nowrap; }
+#w-editor-content .order-link-state { margin-left: 6px; }

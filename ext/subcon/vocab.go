@@ -406,6 +406,23 @@ var businessVocab = []cms.VocabDef{
 		Columns:     orderItemColumns(),
 	},
 	{
+		// **発注書へのリンク**（2026-09-22）。発注部材表が発注書になったあと、
+		// 発注ページに残る1行です（ユーザー:「**発注書ページが出来て、実際に発注
+		// するまで発注ページに発注書ページへのリンクが残れば良いのでは？**」）。
+		//
+		// ⚠ **本文に書くのはリンクと行数だけ**——進み具合は鏡が発注書ページから
+		// 読み直します（[order_link_mirror.go](order_link_mirror.go)）。
+		//
+		// ⚠ **スラッシュメニューには出しません**（`Hidden`）。人が手で挿しても
+		// `data-ref` を書く手段が無く、**空の枠ができるだけ**です。
+		Type:        OrderLinkType,
+		DisplayName: "発注書へのリンク",
+		Category:    "業務",
+		Icon:        "📄",
+		Element:     "section",
+		Hidden:      true,
+	},
+	{
 		// 未手配の一覧（2026-09-21）。⚠ **受注を横断します**——発注は納期のグループ
 		// などから出るので、1つの受注ページの中だけを見ても発注書は組めません。
 		Type:        UnorderedViewType,
@@ -501,6 +518,10 @@ func orderItemColumns() []cms.VocabColumn {
 		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: []string{"個", "セット", "本", "枚", "kg", "m"}},
 		{Field: "cost", Label: "単価", Type: cms.ColNumber},
 		{Field: "note", Label: "備考", Type: cms.ColText},
-		{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"未納品", "納品済"}},
+		// ⚠ **発注済みの印は、ここです**（2026-09-22 ユーザー決定:「発注書の表の
+		//    **一品ずつに発注済みの印**をつけます」）。値の意味と、読み手が守ること
+		//    ——とくに **`取消` を「手配した」に数えない**——は
+		//    [order_status.go](order_status.go) の冒頭。
+		{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: orderLineStatuses()},
 	}
 }

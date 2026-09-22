@@ -186,6 +186,13 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 		if !canView(r.PageID) {
 			continue
 		}
+		// ⚠ **出していない紙の単価は「買った値段」ではありません**（2026-09-22）。
+		//    `未発注` は**こちらが書いただけ**で、仕入先はまだ何も承諾していません
+		//    ——それを「最新単価」に出すと、**自分で書いた希望額を相場として
+		//    見積もる**ことになります。`取消` も同じ理由で外します。
+		if !orderLineSent(r.Values["status"]) {
+			continue
+		}
 		key := materialKeyOf(r.Values["material"], r.Values["shape"], r.Values["size"])
 		if key == "" {
 			continue // 鍵にならない行（空の鍵で引き当てない）

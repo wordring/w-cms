@@ -186,6 +186,16 @@ func orderedByProduct(db cms.ReadOnlyDB, canView func(int) bool) (map[string][]P
 		if !canView(r.PageID) {
 			continue
 		}
+		// ⚠ **取り消した行は「手配した」に数えません**（2026-09-22 ユーザー:「大事な
+		//    ことは、**発注の取り消しもある**ということです」）。数えると、**取り消した
+		//    材料が未手配の一覧から消えたまま**になり、⚠ **誰も買わないまま納期が
+		//    来ます**——しかもエラーは出ません。
+		//
+		// ⚠ **`未発注` は数えます。** 紙はできているので、ここで引かないと
+		//    **同じものをもう一度発注書に入れてしまいます**。
+		if orderLineCancelled(r.Values["status"]) {
+			continue
+		}
 		productID, ok := page.NormalizeID(strings.TrimSpace(r.Values["our-item-id"]))
 		if !ok || productID == "" {
 			continue // 弊社品番の無い行は結べない

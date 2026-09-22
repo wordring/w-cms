@@ -188,8 +188,12 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, li
 			"unit":        strings.TrimSpace(ln.Unit),
 			"cost":        moneyOrEmpty(ln.Cost),
 			"note":        strings.TrimSpace(ln.Note),
-			// ⚠ **状態は「未納品」から始めます**（空だと「納品済かどうか不明」に見える）。
-			"status": "未納品",
+			// ⚠ **状態は「未発注」から始めます**（2026-09-22）。紙はできましたが、
+			//    **まだ外へ出ていません**——メール・FAX・手渡しのどれかで出したときに
+			//    `発注済` へ進みます（[order_status.go](order_status.go)）。
+			//    ⚠ **それまでの既定は `未納品` でした**——「紙を作る＝発注した」と
+			//    読む形で、**出す前の紙と出した紙が見分けられません**でした。
+			"status": OrderLineUnsent,
 		}
 		b.WriteString(`<tr>`)
 		for _, c := range columnsOf(ourOrderItemsType) {

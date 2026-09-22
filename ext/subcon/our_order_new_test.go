@@ -22,7 +22,7 @@ func TestBuildOurOrderWritesOurItemNo(t *testing.T) {
 		"<dt>" + DueDateTag + "</dt><dd>2026-09-30</dd>",
 		"<td>000080</td>", // ⚠ 弊社品番
 		"<td>t4.5*75*1090</td>",
-		"<td>未納品</td>", // ⚠ 空だと「納品済かどうか不明」に見える
+		"<td>未発注</td>", // ⚠ 紙はできたが、まだ出していない（order_status.go）
 		`data-type="` + ourOrderItemsType + `"`,
 	} {
 		if !strings.Contains(body, want) {

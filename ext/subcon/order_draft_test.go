@@ -70,13 +70,13 @@ func TestOrderDraftFollowsTheSameRulesAsThePaper(t *testing.T) {
 			t.Errorf("⚠ 紙に %q が出ています:\n%s", bad, paper)
 		}
 	}
-	// ⚠ **状態は書きません**——まだ発注していないのに `未納品` と書くと、
-	//    **もう注文したように見えます**（紙のほうには書きます）。
-	if strings.Contains(draft, "<td>未納品</td>") {
-		t.Errorf("⚠ 発注部材表に「未納品」が入っています（まだ発注していません）:\n%s", draft)
+	// ⚠ **状態は書きません**——まだ紙にもなっていないのに `未発注` と書くと、
+	//    **もう発注書ができたように見えます**（紙のほうには書きます）。
+	if strings.Contains(draft, "<td>"+OrderLineUnsent+"</td>") {
+		t.Errorf("⚠ 発注部材表に「状態」が入っています（まだ紙にもなっていません）:\n%s", draft)
 	}
-	if !strings.Contains(paper, "<td>未納品</td>") {
-		t.Errorf("⚠ 紙のほうに「未納品」がありません:\n%s", paper)
+	if !strings.Contains(paper, "<td>"+OrderLineUnsent+"</td>") {
+		t.Errorf("⚠ 紙のほうに「未発注」がありません:\n%s", paper)
 	}
 }
 

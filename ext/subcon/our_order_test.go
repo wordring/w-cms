@@ -84,21 +84,58 @@ func TestOurOrderItemsMatchClientOrderNames(t *testing.T) {
 	}
 }
 
-// TestOurOrderStatusIsTwoValues は、**発注の状態は2つだけ**であることを固定します。
+// TestOurOrderStatusIsTheOrderMark は、**発注済みの印が行の `状態` である**ことを
+// 固定します（2026-09-22 ユーザー決定:「発注書の表の**一品ずつに発注済みの印**を
+// つけます」）。
 //
 // ⚠ 受注明細の `状態`（未着手／加工中／検査中／納品済／完了）と**別物**です——
-// こちらは**相手がまだ納めていないか、納めたか**の2値。混ぜると、`手配状況リスト` の
-// 発注済の数え方が変わります。
-func TestOurOrderStatusIsTwoValues(t *testing.T) {
+// こちらは**弊社が出した紙が、いまどこまで進んだか**です。
+func TestOurOrderStatusIsTheOrderMark(t *testing.T) {
 	def, _ := cms.VocabDefByType("our-order-items")
 	for _, c := range def.Columns {
 		if c.Label != "状態" {
 			continue
 		}
-		if len(c.Enum) != 2 || c.Enum[0] != "未納品" || c.Enum[1] != "納品済" {
-			t.Errorf("発注の状態が %v です（未納品／納品済 の2つを期待）", c.Enum)
+		want := []string{OrderLineUnsent, OrderLineSent, OrderLineDelivered, OrderLineCancelled}
+		if len(c.Enum) != len(want) {
+			t.Fatalf("発注の状態が %v です（%v を期待）", c.Enum, want)
+		}
+		for i, v := range want {
+			if c.Enum[i] != v {
+				t.Fatalf("発注の状態が %v です（%v を期待）", c.Enum, want)
+			}
 		}
 		return
 	}
 	t.Fatal("状態の列がありません")
+}
+
+// TestOrderLineMeaning は、⚠ **読み手が場合分けを取り違えない**ことを固定します。
+//
+// ⚠ **`取消` を「手配した」に数えると、取り消した材料が未手配の一覧から消えたまま
+// になり、誰も買わないまま納期が来ます**——しかもエラーは出ません。
+// ⚠ **`未発注` を「買った値段」に数えると、自分で書いた希望額を相場として
+// 見積もることになります**。
+func TestOrderLineMeaning(t *testing.T) {
+	for _, tc := range []struct {
+		status          string
+		cancelled, sent bool
+	}{
+		{OrderLineUnsent, false, false},
+		{OrderLineSent, false, true},
+		{OrderLineDelivered, false, true},
+		{OrderLineCancelled, true, false},
+		// ⚠ **2026-09-22 より前の紙**。当時は「紙を作る＝発注した」だったので、
+		//    `未発注` に読むと**既に出した発注書が全部「まだ出していない」に化けます**。
+		{"未納品", false, true},
+		{"", false, false},
+		{" 取消 ", true, false},
+	} {
+		if got := orderLineCancelled(tc.status); got != tc.cancelled {
+			t.Errorf("orderLineCancelled(%q) = %v（%v を期待）", tc.status, got, tc.cancelled)
+		}
+		if got := orderLineSent(tc.status); got != tc.sent {
+			t.Errorf("orderLineSent(%q) = %v（%v を期待）", tc.status, got, tc.sent)
+		}
+	}
 }

@@ -285,9 +285,11 @@ func replaceDraftWithLink(user *auth.User, draftPage, draftIndex, orderID, suppl
 	if _, open := editlock.Locks.EditorOpen(pageNum(pageID)); open {
 		return "⚠ 元の発注部材表はそのままです（誰かが発注ページを編集中です）"
 	}
-	link := `<p>📄 <a href="/` + orderID + `">発注書 ` + orderID + `　` +
-		stdhtml.EscapeString(supplier) + `</a>（` + strconv.Itoa(rows) +
-		`行・<strong>まだ発注していません</strong>）</p>`
+	// ⚠ **「まだ発注していません」は本文に書きません**（2026-09-22）。
+	//    **出したら消えなければならない文**なので、本文に焼き込むと**発注書を出した
+	//    あとも古いまま**残ります。進み具合は鏡が発注書ページから読み直します
+	//    （[order_link_mirror.go](order_link_mirror.go)）。
+	link := orderLinkHTML(orderID, supplier, rows)
 	done := false
 	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
 		out, ok := replaceDraftTable(cur, n, link)

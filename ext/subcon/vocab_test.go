@@ -61,6 +61,9 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		// **発注部材表**（2026-09-22）——未発注の表から作り、人が足し引きしてから
 		// 発注書にする。⚠ **列は発注明細と同じ**（`orderItemColumns`）。
 		OrderDraftType,
+		// **発注書へのリンク**（2026-09-22）——発注部材表が化けた1行。
+		// ⚠ **本文に書くのはリンクと行数だけ**で、進み具合は鏡が読み直します。
+		OrderLinkType,
 		// ⚠ **ビューの器**（2026-09-21）——材質・形状・寸法で材料を探す欄。
 		MaterialSearchViewType, UnorderedViewType,
 	}

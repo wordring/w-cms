@@ -6531,3 +6531,148 @@ document.addEventListener('click', (e) => {
         }
     }
 })();
+
+// ── 発注書を送る・発注済みの印を付ける（2026-09-22）──────────────────────
+//
+// ユーザー:「発注書ページで**送信方法を選んで**、メールの場合は**メールを書く
+// ボックス**が出て送信します。FAXの場合は、FAXのページを揃えて送信します。
+// （**FAXサーバーはまだつくっていないので、人間が送ったボタンを押すかもしれません**）」
+// 「**発注書の表の一品ずつに発注済みの印**をつけます」「大事なことは、**発注の
+// 取り消しもある**ということです」。
+//
+// ⚠ **送信の口は作っていません**——メールは `/api/mail/send` が既に在り、
+//    添付つきで送れて**通信箱に控えが残ります**。ここはそれを呼ぶだけです。
+(function wireOurOrderSend() {
+    function say(box, text, cls) {
+        if (!box) return;
+        box.textContent = '';
+        const p = document.createElement('p');
+        if (cls) p.className = cls;
+        p.textContent = text;
+        box.appendChild(p);
+    }
+
+    async function post(url, body) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+        const d = await res.json().catch(() => ({}));
+        return { ok: res.ok && d.success, data: d };
+    }
+
+    // 行1つの印を変える（発注済・納品済・取消・戻す）。
+    async function setRowStatus(btn) {
+        btn.disabled = true;
+        const r = await post('/api/our-order/line-status', {
+            page_id: btn.getAttribute('data-order-page') || '',
+            row: Number(btn.getAttribute('data-order-row') || 0),
+            value: btn.getAttribute('data-order-status') || '',
+        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        if (!r.ok) {
+            alert('⚠ ' + (r.data.message || '印を変えられませんでした'));
+            btn.disabled = false;
+            return;
+        }
+        // ⚠ **本文が変わったので読み直します**——印は本文の列なので、画面で
+        //    組み立てず、サーバーが描いたものを受け取ります。
+        location.reload();
+    }
+
+    // FAX・手渡しの「送った」。⚠ **人が押したことがその事実**です。
+    async function markSent(btn) {
+        const root = btn.closest('.order-send');
+        const box = root ? root.querySelector('[data-order-result]') : null;
+        const method = btn.getAttribute('data-order-sent') || '';
+        if (!confirm(method + 'で発注書を送りましたか？（取消でない行すべてを発注済みにします）')) return;
+        btn.disabled = true;
+        say(box, '印を付けています…');
+        const r = await post('/api/our-order/sent', {
+            page_id: root ? root.getAttribute('data-order-page') || '' : '',
+            method,
+        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        if (!r.ok) {
+            say(box, '⚠ ' + (r.data.message || '印を付けられませんでした'), 'proc-why-ng');
+            btn.disabled = false;
+            return;
+        }
+        location.reload();
+    }
+
+    // メールで送る。⚠ **3段**です——PDFを作る → 送る → 印を付ける。
+    //
+    // ⚠ **段ごとに何が起きたかを言います。** いちばん困るのは「**送れたのに印が
+    //    付かなかった**」で、そこで黙ると**もう一度送ってしまいます**。
+    async function sendMail(btn) {
+        const root = btn.closest('.order-send');
+        const box = root ? root.querySelector('[data-order-result]') : null;
+        if (!root) return;
+        const pageID = root.getAttribute('data-order-page') || '';
+        const val = (k) => {
+            const el = root.querySelector('[data-order="' + k + '"]');
+            return el ? el.value.trim() : '';
+        };
+        const to = val('to').split(/[,;\s]+/).filter((s) => s);
+        if (to.length === 0) {
+            say(box, '⚠ 宛先を入れてください', 'proc-why-ng');
+            return;
+        }
+        btn.disabled = true;
+        try {
+            // 1. PDFを作る（このページの添付としても残ります）。
+            say(box, '発注書のPDFを作っています…');
+            const pdf = await post('/api/order-pdf', { page_id: pageID });
+            if (!pdf.ok) {
+                say(box, '⚠ PDFを作れませんでした: ' + (pdf.data.message || ''), 'proc-why-ng');
+                return;
+            }
+            // 2. 送る（控えは通信箱に残ります）。
+            say(box, 'メールを送っています…');
+            const sent = await post('/api/mail/send', {
+                to,
+                subject: val('subject'),
+                body: val('body'),
+                attachments: [{
+                    page_id: pageID,
+                    file: pdf.data.file,
+                    // ⚠ **送るときの名前は日時を外します**——相手には保存名の
+                    //    日時は意味がなく、件名と揃っていたほうが探しやすい。
+                    name: '発注書 ' + pageID + '.pdf',
+                }],
+            });
+            if (!sent.ok) {
+                say(box, '⚠ 送れませんでした: ' + (sent.data.message || ''), 'proc-why-ng');
+                return;
+            }
+            // 3. 印を付ける。⚠ **ここで失敗しても「送れていない」とは言いません**。
+            say(box, '送りました。発注済みの印を付けています…');
+            const mark = await post('/api/our-order/sent', { page_id: pageID, method: 'メール' });
+            if (!mark.ok) {
+                say(box, '⚠ メールは送りました（' + to.join(', ') +
+                    '）が、発注済みの印を付けられませんでした: ' +
+                    (mark.data.message || '') + '　行ごとの「✓ 発注済」を押してください。',
+                    'proc-why-ng');
+                return;
+            }
+            location.reload();
+        } catch (err) {
+            say(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ⚠ **document へ委譲します**——鏡はサーバーが描き直すので、要素ごとに
+    //    配線すると描き直しのたびに切れます。
+    document.addEventListener('click', (e) => {
+        if (!e.target || !e.target.closest) return;
+        const row = e.target.closest('.order-row-set');
+        if (row) { setRowStatus(row); return; }
+        const sent = e.target.closest('[data-order-sent]');
+        if (sent) { markSent(sent); return; }
+        const send = e.target.closest('[data-order-send]');
+        if (send) sendMail(send);
+    });
+})();
