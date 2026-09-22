@@ -418,9 +418,13 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	return &j, nil
 }
 
-// buildOrderPageHTML は受注ページの本文を組みます（機能見出し形・D-2）。
-// 形はページテンプレートの受注ページと同じ: ヘッダ dl（発注書番号・発注元・発注日）＋
-// 明細 table（品番・品名・単価・数量・状態）。状態は「未着手」で始まる（進捗の起点）。
+// buildOrderPageHTML は受注ページの本文を組みます。
+//
+// 形（2026-09-18 以降）: ヘッダは**可変タグ**（発注書番号・発注元・発注日・納期・
+// 小計・税・合計・由来）＋ 顧客の発注書を読んだままの表（畳む）＋ 明細の表
+// （`client-order-items`・見出しは宣言から `headerRowHTML` で組む）。
+// ⚠ 機能見出しの節に素の `dl` を置く形は 09-18 にやめました（下の「ヘッダは可変タグ」）。
+// 行の `状態` は「未着手」で始まります（進捗の起点）。
 func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	title := "受注 " + cms.NormalizeNameForIngest(j.OrderNo)
 	if cms.NormalizeNameForIngest(j.OrderNo) == "" {
