@@ -480,9 +480,56 @@ func removeDraftRow(body string, n, row int) (string, bool) {
 		}
 		if i == row {
 			body0.RemoveChild(c)
+			// ⚠ **最後の1行を外したら、表ごと消します**（2026-09-22 ユーザー:
+			//    「**戻しても部材表から消えません**」）。**見出しだけの表が残ると、
+			//    発注ページに空の表が溜まります**——しかも「何枚目へ足すか」の選択肢に
+			//    並ぶので、**押し間違いの元**になります。
+			//    ⚠ **空の表を作る道は残します**（何も選ばずに「発注部材表へ入れる」）
+			//    ——**人が意図して作った空の表**と、**外して空になった表**は別のことです。
+			if !hasBodyRow(body0) {
+				return dropTable(nodes, tables[n-1])
+			}
 			return htmldoc.Render(nodes), true
 		}
 		i++
 	}
 	return body, false
+}
+
+// hasBodyRow は、見出しを除いた行が1つでも残っているかを返します。
+func hasBodyRow(tbody *html.Node) bool {
+	n := 0
+	for c := tbody.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.Data == "tr" {
+			n++
+			if n > 1 { // 見出し行のほかに1つでもあれば
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// dropTable は表そのものをノード列から外します。
+//
+// ⚠ **トップレベルの表には `Parent` がありません**（`ParseFragment` は根の無いノード列を
+// 返す）——**本文の直下に置かれた表がまさにそれ**なので、ノード列のほうを組み替えます。
+func dropTable(nodes []*html.Node, target *html.Node) (string, bool) {
+	if target.Parent != nil {
+		target.Parent.RemoveChild(target)
+		return htmldoc.Render(nodes), true
+	}
+	out := make([]*html.Node, 0, len(nodes))
+	hit := false
+	for _, nd := range nodes {
+		if nd == target {
+			hit = true
+			continue
+		}
+		out = append(out, nd)
+	}
+	if !hit {
+		return htmldoc.Render(nodes), false
+	}
+	return htmldoc.Render(out), true
 }

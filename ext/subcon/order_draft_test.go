@@ -194,3 +194,45 @@ func TestRemoveDraftRowTakesTheRightRow(t *testing.T) {
 		t.Error("⚠ 0行目（見出し）を外しています")
 	}
 }
+
+// TestRemoveDraftRowDropsTheEmptyTable は、⚠ **最後の1行を外したら表ごと消える**ことを
+// 固定します（2026-09-22）。
+//
+// ユーザー:「**戻しても部材表から消えません**」——⚠ **見出しだけの表が残ると、
+// 発注ページに空の表が溜まり**、しかも「何枚目へ足すか」の選択肢に並ぶので
+// **押し間違いの元**になります。
+func TestRemoveDraftRowDropsTheEmptyTable(t *testing.T) {
+	body := `<h1>発注</h1>` +
+		orderDraftHTML([]ourOrderLine{{ItemName: "1枚目の唯一の行"}}) +
+		orderDraftHTML([]ourOrderLine{{ItemName: "2枚目の行A"}, {ItemName: "2枚目の行B"}})
+
+	// 1枚目の唯一の行を外す → **表ごと消える**。
+	got, ok := removeDraftRow(body, 1, 1)
+	if !ok {
+		t.Fatal("外せていません")
+	}
+	if n := strings.Count(got, `data-type="`+OrderDraftType+`"`); n != 1 {
+		t.Errorf("⚠ 表が %d 枚です（空になった1枚が消えて1枚のはず）:\n%s", n, got)
+	}
+	if strings.Contains(got, "1枚目の唯一の行") {
+		t.Errorf("⚠ 行が残っています:\n%s", got)
+	}
+	// ⚠ **他の表は残ること**（同時に進めていた作業が失われないように）。
+	for _, keep := range []string{"2枚目の行A", "2枚目の行B", "<h1>発注</h1>"} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("⚠ %s まで消えました:\n%s", keep, got)
+		}
+	}
+
+	// ⚠ **まだ行が残っているときは、表を消さないこと。**
+	got2, ok := removeDraftRow(body, 2, 1)
+	if !ok {
+		t.Fatal("2枚目から外せていません")
+	}
+	if n := strings.Count(got2, `data-type="`+OrderDraftType+`"`); n != 2 {
+		t.Errorf("⚠ まだ行が残っているのに表を消しました（%d枚）:\n%s", n, got2)
+	}
+	if !strings.Contains(got2, "2枚目の行B") {
+		t.Errorf("⚠ 残るはずの行が消えました:\n%s", got2)
+	}
+}
