@@ -11,12 +11,26 @@
 //   ③ 「✕ 取消」を押した行は、まとめ書きに巻き込まれない
 //   ④ 発注ページのリンクの「まだ発注していません」が、出したあと消える
 //
-// ⚠ **当て先は焼き込みません**——データを入れ直すたびにIDが変わります
-// （2026-09-13 と 09-16 に2度それで壊しました）。`発注` の下から発注書を探します。
+// ⚠ **当て先は自分で作り、最後に消します**（2026-09-23）。09-22 までは `発注` の下から
+// 実物の発注書を探して**その行の印を書き換えていました**——1枚も無い環境（自宅）では
+// 「飛ばす」で終わり、あれば見本の紙が書き換わります。いまは `発注` の下に【E2E】の
+// 発注書を1枚置いて確かめ、消して帰ります（`発注` が無ければトップ直下・④は飛ばす）。
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-order-send.js
 const { chromium } = require('playwright');
+const { login, childrenOf, makePage, deletePage } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
+
+// ⚠ 2行とも `未発注` で始めます——① 1行目に「✓ 発注済」→ ③ 2行目に「✕ 取消」→
+//    「手渡し」のまとめ書き、の順に押すためです。
+const ORDER_BODY = '<h1>【E2E】発注 テスト商店（送る）</h1>' +
+  '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-SEND</dd>' +
+  '<dt>仕入先</dt><dd>テスト商店</dd><dt>発注日</dt><dd>2026-09-23</dd></dl>' +
+  '<table data-type="our-order-items"><caption>発注明細</caption><tbody>' +
+  '<tr><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
+  '<tr><td>E2E-SEND-A</td><td>板</td><td>t3.2</td><td>2</td><td>枚</td><td>800</td><td>未発注</td></tr>' +
+  '<tr><td>E2E-SEND-B</td><td>板</td><td>t1.5</td><td>1</td><td>枚</td><td>900</td><td>未発注</td></tr>' +
+  '</tbody></table>';
 
 // statusesOf は本文の発注明細から `状態` の列を読みます（鏡の足元の行は除く）。
 async function statusesOf(page) {
@@ -38,126 +52,101 @@ async function statusesOf(page) {
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message));
+  await login(page, BASE);
 
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a');
-  await page.fill('#password', 'a');
-  await page.click('button[type=submit]');
-  await page.waitForLoadState('networkidle');
+  // 置き場は `発注`（題が機能）。無ければトップ直下に置き、④だけ飛ばします。
+  const top = await childrenOf(page, '000000');
+  const box = top.find((c) => (c.Title || c.title) === '発注');
+  const boxID = box ? String(box.ID || box.id) : '';
+  if (!boxID) console.log('「発注」ページが無いので、当て先はトップ直下に置きます（④は飛ばします）');
 
-  // 「発注」の下を年・月とたどって、発注明細を持つページを1枚探します。
-  const kidsOf = (id) =>
-    page.evaluate(async (pid) => {
-      const r = await fetch('/api/children?parent_id=' + pid, { credentials: 'same-origin' });
-      const d = await r.json().catch(() => []);
-      return Array.isArray(d) ? d.map((c) => String(c.ID || c.id)) : [];
-    }, id);
-
-  const top = await page.evaluate(async () => {
-    const r = await fetch('/api/children?parent_id=000000', { credentials: 'same-origin' });
-    const d = await r.json().catch(() => []);
-    return Array.isArray(d) ? d.map((c) => [String(c.ID || c.id), c.Title || c.title]) : [];
-  });
-  const box = top.find((k) => k[1] === '発注');
-  if (!box) {
-    console.log('飛ばします: 「発注」ページがありません（まだ作っていないだけかもしれません）');
-    await browser.close();
-    return;
-  }
-
-  // ⚠ **深さは決め打ちしません**（`発注／年／月／発注書`）——幅優先で探します。
-  let found = '';
-  let queue = await kidsOf(box[0]);
-  for (let depth = 0; depth < 4 && queue.length && !found; depth++) {
-    const next = [];
-    for (const id of queue) {
-      await page.goto(BASE + '/' + id);
-      await page.waitForTimeout(250);
-      if ((await page.locator('table[data-type="our-order-items"]').count()) > 0) {
-        found = id;
-        break;
-      }
-      next.push(...(await kidsOf(id)));
-    }
-    queue = next;
-  }
+  const found = await makePage(page, ORDER_BODY, boxID || '000000');
   if (!found) {
-    console.log('飛ばします: 発注書ページが見つかりません（まだ1枚も作っていない）');
+    console.log('✗ 当て先を作れません');
     await browser.close();
-    return;
+    process.exit(1);
   }
-  console.log('当て先: /' + found);
+  console.log('当て先: /' + found + '（作って、最後に消します）');
 
   let bad = 0;
-  await page.goto(BASE + '/' + found);
-  await page.waitForTimeout(700);
+  try {
+    await page.goto(BASE + '/' + found);
+    await page.waitForTimeout(700);
 
-  // ① 送信の欄
-  for (const [sel, name] of [
-    ['[data-order-send]', 'メールの送信ボタン'],
-    ['[data-order-sent="FAX"]', 'FAXで送った'],
-    ['[data-order-sent="手渡し"]', '手渡した'],
-    ['.order-row-set', '行ごとの印のボタン'],
-  ]) {
-    if ((await page.locator(sel).count()) === 0) {
-      console.log('✗ ' + name + ' が出ていません（' + sel + '）');
-      bad++;
-    }
-  }
-  if (bad === 0) console.log('✓ 送信の欄と行ごとのボタンが出ている');
-
-  const before = await statusesOf(page);
-  if (!before || before.length === 0) {
-    console.log('飛ばします: 発注明細に行がありません');
-    await browser.close();
-    return;
-  }
-  console.log('  いまの状態: ' + JSON.stringify(before));
-
-  // ② 1行目に「✓ 発注済」（もう発注済なら飛ばす）
-  const setBtn = page.locator('.order-row-set[data-order-row="1"][data-order-status="発注済"]');
-  if ((await setBtn.count()) === 0) {
-    console.log('飛ばします: 1行目は既に発注済です（' + before[0] + '）');
-  } else {
-    await setBtn.first().click();
-    await page.waitForTimeout(1500);
-    const after = await statusesOf(page);
-    if (!after || after[0] !== '発注済') {
-      console.log('✗ 1行目が発注済になっていません: ' + JSON.stringify(after));
-      bad++;
-    } else console.log('✓ 行ごとの「発注済」が本文に入る');
-
-    // ③ 2行目があれば取消 → まとめ書きに巻き込まれないこと
-    if (after && after.length >= 2) {
-      const cancel = page.locator('.order-row-set[data-order-row="2"][data-order-status="取消"]');
-      if ((await cancel.count()) > 0) {
-        await cancel.first().click();
-        await page.waitForTimeout(1500);
-        page.once('dialog', (d) => d.accept());
-        await page.locator('[data-order-sent="手渡し"]').first().click();
-        await page.waitForTimeout(1800);
-        const done = await statusesOf(page);
-        if (!done || done[1] !== '取消') {
-          console.log('✗ ⚠ まとめ書きが取消の行を巻き込んでいます: ' + JSON.stringify(done));
-          bad++;
-        } else console.log('✓ まとめ書きが取消を巻き込まない');
+    // ① 送信の欄
+    for (const [sel, name] of [
+      ['[data-order-send]', 'メールの送信ボタン'],
+      ['[data-order-sent="FAX"]', 'FAXで送った'],
+      ['[data-order-sent="手渡し"]', '手渡した'],
+      ['.order-row-set', '行ごとの印のボタン'],
+    ]) {
+      if ((await page.locator(sel).count()) === 0) {
+        console.log('✗ ' + name + ' が出ていません（' + sel + '）');
+        bad++;
       }
     }
-  }
+    if (bad === 0) console.log('✓ 送信の欄と行ごとのボタンが出ている');
 
-  // ④ 発注ページのリンク——「まだ発注していません」が**本文に焼き込まれていない**こと
-  //
-  // ⚠ **鏡が出ているかで見ます**（文字の有無ではなく）。まだ出していない発注書が
-  //    他にもあれば、その文は**正しく**残るからです。
-  await page.goto(BASE + '/' + box[0]);
-  await page.waitForTimeout(600);
-  const n = await page.locator('section[data-type="our-order-link"]').count();
-  if (n === 0) {
-    console.log('飛ばします: 発注ページに発注書へのリンクがありません');
-  } else if ((await page.locator('.order-link-state').count()) !== n) {
-    console.log('✗ ⚠ リンクの進み具合が鏡になっていません（本文に焼き込まれている？）');
-    bad++;
-  } else console.log('✓ リンクの進み具合が鏡で出ている（' + n + '本）');
+    const before = await statusesOf(page);
+    if (!before || before.length < 2) {
+      console.log('✗ 発注明細に2行あるはずです: ' + JSON.stringify(before));
+      bad++;
+    } else {
+      console.log('  いまの状態: ' + JSON.stringify(before));
+
+      // ② 1行目に「✓ 発注済」
+      const setBtn = page.locator('.order-row-set[data-order-row="1"][data-order-status="発注済"]');
+      if ((await setBtn.count()) === 0) {
+        console.log('✗ 1行目に「✓ 発注済」が出ていません（' + before[0] + '）');
+        bad++;
+      } else {
+        await setBtn.first().click();
+        await page.waitForTimeout(1500);
+        const after = await statusesOf(page);
+        if (!after || after[0] !== '発注済') {
+          console.log('✗ 1行目が発注済になっていません: ' + JSON.stringify(after));
+          bad++;
+        } else console.log('✓ 行ごとの「発注済」が本文に入る');
+
+        // ③ 2行目を取消（未発注からなので確認は出ない）→ 手渡しのまとめ書きに
+        //    巻き込まれないこと
+        const cancel = page.locator('.order-row-set[data-order-row="2"][data-order-status="取消"]');
+        if ((await cancel.count()) === 0) {
+          console.log('✗ 2行目に「✕ 取消」が出ていません');
+          bad++;
+        } else {
+          await cancel.first().click();
+          await page.waitForTimeout(1500);
+          page.once('dialog', (d) => d.accept());
+          await page.locator('[data-order-sent="手渡し"]').first().click();
+          await page.waitForTimeout(1800);
+          const done = await statusesOf(page);
+          if (!done || done[1] !== '取消') {
+            console.log('✗ ⚠ まとめ書きが取消の行を巻き込んでいます: ' + JSON.stringify(done));
+            bad++;
+          } else console.log('✓ まとめ書きが取消を巻き込まない');
+        }
+      }
+    }
+
+    // ④ 発注ページのリンク——「まだ発注していません」が**本文に焼き込まれていない**こと
+    //
+    // ⚠ **鏡が出ているかで見ます**（文字の有無ではなく）。まだ出していない発注書が
+    //    他にもあれば、その文は**正しく**残るからです。
+    if (boxID) {
+      await page.goto(BASE + '/' + boxID);
+      await page.waitForTimeout(600);
+      const n = await page.locator('section[data-type="our-order-link"]').count();
+      if (n === 0) {
+        console.log('飛ばします: 発注ページに発注書へのリンクがありません');
+      } else if ((await page.locator('.order-link-state').count()) !== n) {
+        console.log('✗ ⚠ リンクの進み具合が鏡になっていません（本文に焼き込まれている？）');
+        bad++;
+      } else console.log('✓ リンクの進み具合が鏡で出ている（' + n + '本）');
+    }
+  } finally {
+    await deletePage(page, found);
+  }
 
   if (errs.length) {
     console.log('✗ JavaScript エラー: ' + JSON.stringify(errs));

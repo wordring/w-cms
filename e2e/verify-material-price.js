@@ -14,7 +14,7 @@
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-material-price.js
 const { chromium } = require('playwright');
-const { login } = require('./lib');
+const { login, makePage, deletePage } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
@@ -33,30 +33,6 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
   '<tr><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
   '<tr><td>E2E-SS400</td><td>板</td><td>t3.2</td><td>2</td><td>枚</td><td>800</td><td>発注済</td></tr>' +
   '</tbody></table>';
-
-// makePage は当て先を自分で作ります（⚠ 焼き込まない・最後に消す）。
-async function makePage(page, html) {
-  const url = await page.evaluate(async () => {
-    const res = await fetch('/api/new-page', {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'parent=000000',
-    });
-    return res.url;
-  });
-  const id = (url.match(/\/(\d{6})/) || [])[1];
-  if (!id) return '';
-  await page.evaluate(async (arg) => {
-    const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
-    const lj = await lr.json().catch(() => ({}));
-    await fetch('/api/save', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page_id: arg.id, html: arg.html, token: lj.token || '' }),
-    });
-    // **握ったロックは必ず外します**——残すと削除にも入れません。
-    await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
-  }, { id, html });
-  return id;
-}
 
 (async () => {
   const browser = await chromium.launch();
@@ -115,12 +91,7 @@ async function makePage(page, html) {
     say(r.fits, '1600px で表が収まる（横スクロールせずに読める）');
     say(!r.pageScrolls, 'ページは横へ揺れない');
   } finally {
-    for (const id of ids) {
-      await page.evaluate(async (pid) => {
-        await fetch('/api/lock/force?id=' + pid, { method: 'POST' });
-        await fetch('/api/delete-page?id=' + encodeURIComponent(pid), { method: 'POST' });
-      }, id);
-    }
+    for (const id of ids) await deletePage(page, id);
   }
   await browser.close();
   console.log(bad === 0 ? 'PASS' : 'FAIL (' + bad + ')');

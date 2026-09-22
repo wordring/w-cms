@@ -20,7 +20,8 @@
 // ——特定のページで確かめたいときのため。
 //
 // ⚠ **探索は「読むだけ」です。** ページを作ったり書き換えたりしません（E2E が
-// 実データを汚さないため。作る必要があるスクリプトは自分で作って最後に消すこと）。
+// 実データを汚さないため）。作る必要があるスクリプトは `makePage` で作り、
+// **最後に `deletePage` で必ず消すこと**（2026-09-23 に集約——4本が同じ20行を写していた）。
 
 const MAILBOX_TITLE = '通信箱';
 const CHANNEL_TAG = 'チャネル';
@@ -32,6 +33,44 @@ async function login(page, base, user = 'a', pass = 'a') {
   await page.fill('#password', pass);
   await page.click('button[type=submit]');
   await page.waitForLoadState('networkidle');
+}
+
+// makePage はページを1枚作り、本文を書いてIDを返します（作れなければ空文字）。
+//
+// **当て先を自分で作るスクリプトのため**の口です（09-21〜22 の4本が同じ20行を
+// 写していたので寄せた・2026-09-23）。⚠ **作ったページは最後に `deletePage` で必ず
+// 消すこと**——残すとトップ直下にゴミが積もり、次の E2E が「その題のページが在る」と
+// 誤読します。⚠ **握ったロックは外して返します**——残すと削除にも入れません。
+async function makePage(page, html, parent = '000000') {
+  const url = await page.evaluate(async (p) => {
+    const res = await fetch('/api/new-page', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'parent=' + encodeURIComponent(p),
+    });
+    return res.url;
+  }, parent);
+  const id = (url.match(/\/(\d{6})/) || [])[1];
+  if (!id) return '';
+  await page.evaluate(async (arg) => {
+    const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
+    const lj = await lr.json().catch(() => ({}));
+    await fetch('/api/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_id: arg.id, html: arg.html, token: lj.token || '' }),
+    });
+    await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
+  }, { id, html });
+  return id;
+}
+
+// deletePage は makePage で作ったページを消します（ロックが残っていても外してから）。
+// 空のIDなら何もしません（作れなかった当て先の後片付けを、呼ぶ側で場合分けしないため）。
+async function deletePage(page, id) {
+  if (!id) return;
+  await page.evaluate(async (pid) => {
+    await fetch('/api/lock/force?id=' + pid, { method: 'POST' });
+    await fetch('/api/delete-page?id=' + encodeURIComponent(pid), { method: 'POST' });
+  }, id);
 }
 
 // childrenOf は子ページを `[{ID, Title}]` で返します。
@@ -151,4 +190,5 @@ async function findPageWithTag(page, tagName, opts = {}) {
 module.exports = {
   MAILBOX_TITLE, CHANNEL_TAG,
   login, childrenOf, bodyOf, findMailbox, findRecordWithPDF, findThreadPair, findPageWithTag,
+  makePage, deletePage,
 };

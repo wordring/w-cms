@@ -15,7 +15,7 @@
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-table-wrap.js
 const { chromium } = require('playwright');
-const { login } = require('./lib');
+const { login, makePage, deletePage } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
@@ -56,29 +56,11 @@ const BODY = '<h1>表の折り返し</h1>' +
   await login(page, BASE);
 
   // 当て先は自分で作って、最後に消す（実データを汚さない・入れ直しで落ちない）。
-  const url = await page.evaluate(async () => {
-    const res = await fetch('/api/new-page', {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'parent=000000',
-    });
-    return res.url;
-  });
-  const id = (url.match(/\/(\d{6})/) || [])[1];
-  if (!id) { console.log('NG ページを作れません: ' + url); process.exit(1); }
+  const id = await makePage(page, BODY);
+  if (!id) { console.log('NG ページを作れません'); process.exit(1); }
 
   let bad = 0;
   try {
-    await page.evaluate(async (arg) => {
-      const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
-      const lj = await lr.json().catch(() => ({}));
-      await fetch('/api/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_id: arg.id, html: arg.html, token: lj.token || '' }),
-      });
-      // **握ったロックは必ず外します**——残すと削除にも入れません。
-      await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
-    }, { id, html: BODY });
-
     for (const width of [1280, 760, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(BASE + '/' + id);
@@ -159,9 +141,7 @@ const BODY = '<h1>表の折り返し</h1>' +
       }
     }
   } finally {
-    await page.evaluate(async (pid) => {
-      await fetch('/api/delete-page?id=' + encodeURIComponent(pid), { method: 'POST' });
-    }, id);
+    await deletePage(page, id);
   }
   await browser.close();
   console.log(bad === 0 ? 'PASS' : 'FAIL (' + bad + ')');
