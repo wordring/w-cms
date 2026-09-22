@@ -23,15 +23,34 @@ import (
 	"w-cms/internal/cms/htmldoc"
 )
 
-// headerIndex は見出し行の「表示文字 → 列の位置」を返します（同じ見出しが2つあれば後勝ち）。
+// headerIndex は見出し行の「表示文字 → 列の位置」を返します。
 //
 // **項目の鍵は見出しの表示文字**なので、列の順番ではなくこの表で引きます。
+//
+// ⚠ **同じ見出しが2つあれば先勝ち**です（2026-09-23 に揃えた）。09-22 まではここだけ
+// 後勝ちで、1列版の `headerIndexOf`（先勝ち）と画面（`draftLinesOf` の `indexOf`）とは
+// **同じ表を別の列に読んでいました**——見出しが重なった表でだけ答えが変わる形で、
+// エラーは出ません。「最初に名乗った列」が効き、2つ目は宣言に無い列として読まれません。
 func headerIndex(tr *html.Node) map[string]int {
 	out := map[string]int{}
 	for i, c := range cellsOf(tr) {
-		out[strings.TrimSpace(textOf(c))] = i
+		key := strings.TrimSpace(textOf(c))
+		if _, dup := out[key]; !dup {
+			out[key] = i
+		}
 	}
 	return out
+}
+
+// headerIndexOf は見出し行からその列の位置を返します（無ければ -1）。
+//
+// `headerIndex` の1列版で、規則（先勝ち）は同じです。09-21 に material_price.go が
+// 置いたものを、規則を1つにするためここへ寄せました（2026-09-23）。
+func headerIndexOf(head *html.Node, label string) int {
+	if i, ok := headerIndex(head)[label]; ok {
+		return i
+	}
+	return -1
 }
 
 // cellTexts は行のセルの文字を、前後の空白を落として並び順に返します。

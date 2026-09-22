@@ -13,6 +13,28 @@ import (
 // 2026-09-23 に寄せた口の番人。09-22 の鏡3本と本文の書き換え3本が写していた
 // 「行末のクロームのセル」「根の無いノード列の差し替え」を、1か所ずつ固定します。
 
+// TestHeaderIndexFirstWins は、同じ見出しが2つある表で**先の列**が効くことを、
+// 表引き（`headerIndex`）と1列版（`headerIndexOf`）の両方で固定します。
+// ⚠ 09-22 までは表引きだけ後勝ちで、画面（`draftLinesOf` の `indexOf`）と別の列を
+// 読んでいました（2026-09-23 に揃えた）。
+func TestHeaderIndexFirstWins(t *testing.T) {
+	nodes, err := htmldoc.ParseFragment(`<table><tbody>` +
+		`<tr><th>品番</th><th>数量</th><th>品番</th></tr><tr><td>a</td><td>1</td><td>b</td></tr></tbody></table>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := rowsOf(nodes[0])[0]
+	if got := headerIndex(head)["品番"]; got != 0 {
+		t.Errorf("headerIndex: 先勝ちのはず（0）が %d", got)
+	}
+	if got := headerIndexOf(head, "品番"); got != 0 {
+		t.Errorf("headerIndexOf: 先勝ちのはず（0）が %d", got)
+	}
+	if got := headerIndexOf(head, "無い列"); got != -1 {
+		t.Errorf("無い列は -1 のはずが %d", got)
+	}
+}
+
 // TestAddRowChromeCells は、見出し行に空の `<th>`・データ行に1始まりの番号で
 // 中身を足すことと、⚠ **どのセルも `vocab-chrome`** であることを固定します。
 func TestAddRowChromeCells(t *testing.T) {

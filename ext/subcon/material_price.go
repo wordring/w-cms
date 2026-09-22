@@ -248,16 +248,6 @@ func materialKeyOf(material, shape, size string) string {
 	return strings.Join(parts, "\x00")
 }
 
-// headerIndexOf は見出し行からその列の位置を返します（無ければ -1）。
-func headerIndexOf(head *html.Node, label string) int {
-	for i, c := range cellsOf(head) {
-		if strings.TrimSpace(textOf(c)) == label {
-			return i
-		}
-	}
-	return -1
-}
-
 // priceCell は行の末尾へクロームのセルを1つ作って返します。
 //
 // ⚠ **`vocab-chrome` を付けるのは必須です**——付けないと、人が画面の表をコピーして
