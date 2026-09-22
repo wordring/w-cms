@@ -141,7 +141,7 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		`<tr><td>外注高周波焼入れ</td><td></td><td></td><td>1</td></tr>`+
 		`</tbody></table>`)
 
-	// 3. 受注ページ(000002)：SHAFT-01 を 10本。自社発注で鋼材を10本発注済み。
+	// 3. 受注ページ(000002)：SHAFT-01 を 10本。自社発注で鋼材を10本発注済み（＋取消が5本）。
 	sync(2, `<h1>受注</h1>`+
 		`<section data-type="client-order"><dl>`+
 		`<dt>発注書番号</dt><dd>PO-A100</dd><dt>発注元</dt><dd>南北</dd></dl>`+
@@ -154,6 +154,8 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		`<table data-type="our-order-items"><tbody>`+
 		`<tr><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>`+
 		`<tr><td>シャフト用鋼材 (S45C)</td><td>2500</td><td>10</td><td>未納品</td></tr>`+
+		// ⚠ 取消の行は発注済みに数えない（2026-09-22 の決定。この集計だけ漏れていた・09-23）。
+		`<tr><td>シャフト用鋼材 (S45C)</td><td>2500</td><td>5</td><td>取消</td></tr>`+
 		`</tbody></table></section>`)
 
 	// 4. APIハンドラーにHTTPリクエストを送ってテスト（adminユーザーで権限チェックを通す）

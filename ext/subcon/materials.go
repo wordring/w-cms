@@ -319,6 +319,12 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		ourItems = append(ourItems, rows...)
 	}
 	for _, oi := range ourItems {
+		// ⚠ **取消の行は手配済みに数えません**（2026-09-22 の決定・判定は order_status.go）。
+		//    この古い集計だけが素通ししていた（2026-09-23 に発見）——数えると、取り消した
+		//    材料が「手配済み」に見えたまま納期が来ます。
+		if orderLineCancelled(oi.Values["status"]) {
+			continue
+		}
 		name := oi.Values["item-name"]
 		quantity := cms.VocabQuantity(oi)
 		if existing, ok := materialsMap[name]; ok {
