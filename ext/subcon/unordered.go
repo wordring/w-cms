@@ -35,6 +35,7 @@ type UnorderedItem struct {
 	Due           string `json:"due"`             // 納期（生の値）
 	ProductPageID int    `json:"product_page_id"` // 加工製品ページ＝弊社品番
 	ProductTitle  string `json:"product_title"`   //
+	Machine       string `json:"machine"`         // 装置名称（同じ納期の中の並び順）
 	Material      string `json:"material"`        // 材質
 	Shape         string `json:"shape"`           // 形状
 	Size          string `json:"size"`            // 寸法
@@ -101,6 +102,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 			due = h.due // 行に無ければページの納期（受注残表と同じ順）
 		}
 		mig := isMigrating(db, pid)
+		machine := machineOf(db, pid)
 		for _, it := range procurementItemsOf(db, pid, cms.VocabQuantity(o), ordered) {
 			if it.Remaining <= 0 {
 				continue // 手配済み
@@ -108,7 +110,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 			u := UnorderedItem{
 				OrderPageID: o.PageID, OrderTitle: cms.PageTitleByID(o.PageID),
 				Client: h.client, Due: due,
-				ProductPageID: pid, ProductTitle: cms.PageTitleByID(pid),
+				ProductPageID: pid, ProductTitle: cms.PageTitleByID(pid), Machine: machine,
 				Name: it.Name, Kind: it.Kind, Remaining: it.Remaining, Migrating: mig,
 			}
 			fillUnorderedMaterial(db, pid, &u, prices)
@@ -161,6 +163,19 @@ func sortUnordered(list []UnorderedItem) {
 		if a.Due != b.Due {
 			return a.Due < b.Due
 		}
+		// ⚠ **同じ納期の中は装置順**（2026-09-22 ユーザー:「納期順で並べ替えをし、
+		//    さらに**同じ納期の中で装置順**に並べ替えをします」）。
+		//    装置ごとにまとまっていないと、**1台ぶんの部材が表のあちこちに散り**、
+		//    まとめて発注しにくくなります。
+		//    ⚠ **装置が空のものは後ろ**——読めなかったものを先頭に置きません
+		//    （納期が読めないものを先頭に置くのとは**逆の判断**です。あちらは
+		//    「急ぎの合図」でしたが、装置が空なのは**ただ分からない**だけです）。
+		if a.Machine != b.Machine {
+			if a.Machine == "" || b.Machine == "" {
+				return b.Machine == ""
+			}
+			return a.Machine < b.Machine
+		}
 		if a.ProductPageID != b.ProductPageID {
 			return a.ProductPageID < b.ProductPageID
 		}
@@ -172,4 +187,16 @@ func sortUnordered(list []UnorderedItem) {
 func isDateLike(s string) bool {
 	_, ok := cms.NormalizeValue(cms.ColDate, strings.TrimSpace(s))
 	return ok && strings.TrimSpace(s) != ""
+}
+
+// machineOf は加工製品ページの装置名称を返します。
+//
+// ⚠ **階層（`取引先／社名／段／装置名称／図面名称`）からは辿りません**——ワンノートから
+// 移したページはまだ階層に入っていないことがあり、**タグのほうが確かです**。
+func machineOf(db cms.ReadOnlyDB, productID int) string {
+	tags, err := cms.TagsOfPage(db, productID)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cms.FirstTag(tags, MachineNameTag))
 }

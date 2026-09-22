@@ -44,9 +44,10 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 	b.WriteString(head)
 	b.WriteString(`<p class="unorder-help">行を選び、仕入先を入れて「発注書を作る」を` +
 		`押すと、<strong>発注／年／月</strong> に1枚できます。` +
+		`並びは<strong>納期順</strong>、同じ納期の中は<strong>装置順</strong>です。` +
 		`⚠ 発注書は<strong>1枚に1社</strong>です。</p>`)
 	b.WriteString(`<table class="materials-table unorder-table"><thead><tr>` +
-		`<th class="unorder-pick">選</th><th>納期</th><th>客先</th><th>弊社品番</th>` +
+		`<th class="unorder-pick">選</th><th>納期</th><th>客先</th><th>装置</th><th>弊社品番</th>` +
 		`<th>購入品</th><th class="num">残</th><th>参考単価</th>` +
 		`</tr></thead><tbody>`)
 	for i, u := range list {
@@ -55,6 +56,9 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 			` data-unorder-row="` + strconv.Itoa(i) + `"/></td>`)
 		b.WriteString(`<td>` + stdhtml.EscapeString(orDash(u.Due)) + `</td>`)
 		b.WriteString(`<td>` + stdhtml.EscapeString(orDash(u.Client)) + `</td>`)
+		// ⚠ **並べ替えの根拠は見えていること。** 装置順に並ぶのに装置が見えないと、
+		//    「なぜこの順なのか」が分からず、**並びが壊れても気づけません**。
+		b.WriteString(`<td>` + stdhtml.EscapeString(orDash(u.Machine)) + `</td>`)
 		b.WriteString(`<td><a href="/` + page.FormatID(u.ProductPageID) + `">` +
 			page.FormatID(u.ProductPageID) + `</a>` + unorderedMigratingMark(u) + `</td>`)
 		b.WriteString(`<td>` + stdhtml.EscapeString(u.Name) + `</td>`)

@@ -1329,6 +1329,18 @@ body[edit-mode] #w-editor-content td.cell-known {
 
 #w-editor-content .view-error { color: #ef4444; }
 
+/* 表の名乗り（caption）は左寄せ。
+   ⚠ ブラウザの既定は中央寄せですが、**表は全幅で自分の中を横スクロールします**
+   （2026-09-21）。中央だと**横に伸びた表の真ん中**に名前が置かれ、スクロールしないと
+   読めないことがあります——**表の名前は、表を読み始める前に目に入るべき**です。
+   ユーザー（2026-09-22）:「表は横に伸びてスクロールするので、キャプションを左寄せに
+   してください」。 */
+#w-editor-content caption {
+    text-align: left;
+    /* 名前と表がくっつくと見出しに見えないので、少しだけ離します。 */
+    padding-bottom: 4px;
+}
+
 #w-editor-content .materials-title {
     font-size: 16px;
     margin: 8px 0 12px;

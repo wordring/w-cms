@@ -137,3 +137,29 @@ func TestSortUnorderedPutsUndatedFirst(t *testing.T) {
 		t.Errorf("並びが %v です（%v を期待）", got, want)
 	}
 }
+
+// TestSortUnorderedGroupsByMachine は、⚠ **同じ納期の中は装置順**であることを
+// 固定します（2026-09-22 ユーザー）。
+//
+// ⚠ **納期より先に装置で並べてはいけません**——発注をまとめる単位は納期です。
+// だから「納期が違えば装置を見ない」ことも一緒に見ます。
+func TestSortUnorderedGroupsByMachine(t *testing.T) {
+	list := []UnorderedItem{
+		{Due: "2026-10-01", Machine: "B装置", Name: "あ"},
+		{Due: "2026-09-25", Machine: "B装置", Name: "い"},
+		{Due: "2026-10-01", Machine: "A装置", Name: "う"},
+		{Due: "2026-09-25", Machine: "A装置", Name: "え"},
+		// ⚠ **装置が空のものは後ろ**（読めなかったものを先頭に置かない）。
+		{Due: "2026-09-25", Machine: "", Name: "お"},
+	}
+	sortUnordered(list)
+	got := make([]string, len(list))
+	for i, u := range list {
+		got[i] = u.Name
+	}
+	// 9/25（A → B → 空）→ 10/1（A → B）
+	want := []string{"え", "い", "お", "う", "あ"}
+	if strings.Join(got, "") != strings.Join(want, "") {
+		t.Errorf("並びが %v です（%v を期待）", got, want)
+	}
+}
