@@ -332,6 +332,7 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		return nil, nil, nil, errors.New("発注明細に行がありません")
 	}
 	labels := cellTexts(trs[0])
+	cancelled := 0
 	for _, tr := range trs[1:] {
 		r := map[string]string{}
 		any := false
@@ -344,11 +345,27 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 				any = true
 			}
 		}
-		if any {
-			rows = append(rows, r)
+		if !any {
+			continue
 		}
+		// ⚠ **取り消した行は紙に刷りません**（2026-09-22）。出す紙は**いま注文する
+		//    もの**で、取り消したものは注文ではありません——刷ると**合計金額にも
+		//    入ります**（`buildOrderPDF` が数量×単価を足すので）。
+		//
+		// ⚠ **行そのものは本文に残します。** 一度は注文しようとした事実で、
+		//    **発注済みから取り消した行は相手も知っています**——消すと、
+		//    「そんな注文は無かった」という紙になります。
+		if orderLineCancelled(r["状態"]) {
+			cancelled++
+			continue
+		}
+		rows = append(rows, r)
 	}
 	if len(rows) == 0 {
+		if cancelled > 0 {
+			return nil, nil, nil, errors.New("発注明細は全部取り消されています（" +
+				itoa(cancelled) + "行）")
+		}
 		return nil, nil, nil, errors.New("発注明細に中身のある行がありません")
 	}
 

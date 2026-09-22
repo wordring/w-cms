@@ -249,6 +249,115 @@ func TestOurOrderMirrorPutsTheSendForm(t *testing.T) {
 	}
 }
 
+// TestCancelIsReachableFromEveryStage は、⚠ **どの段からも取り消せる**ことを
+// 固定します。
+//
+// ユーザー（2026-09-22）:「**発注した後でも取り消す場合があり得ます**。この場合、
+// 電話などで材料屋に取り消しを依頼して、OKが出たら取り消しボタンを押します。
+// 発注前なら単純に取り消します。**発注後に材料屋から取り扱いが無いと連絡が来て
+// キャンセルになることもあります**」。
+//
+// ⚠ **`納品済` からも押せること**を見ます——「2手かければ戻せる」では、
+// 現物が届いたあとの取消が**在ることに気づけません**。
+func TestCancelIsReachableFromEveryStage(t *testing.T) {
+	for _, st := range []string{OrderLineUnsent, OrderLineSent, OrderLineDelivered,
+		orderLineLegacySent, ""} {
+		got := orderRowButtonsHTML("000041", 1, st)
+		if !strings.Contains(got, `data-order-status="`+OrderLineCancelled+`"`) {
+			t.Errorf("⚠ 状態 %q から取り消せません:\n%s", st, got)
+		}
+	}
+	// ⚠ **取消からは「取消」を出しません**——押しても何も変わらないボタンは、
+	//    押した人に「効かなかった」と読まれます。
+	if got := orderRowButtonsHTML("000041", 1, OrderLineCancelled); strings.Contains(
+		got, `data-order-status="`+OrderLineCancelled+`"`) {
+		t.Errorf("⚠ 取消の行にもう一度「取消」が出ています:\n%s", got)
+	}
+}
+
+// TestCancelAsksOnlyAfterThePaperWentOut は、⚠ **確認を出す／出さないの線引き**を
+// 固定します。
+//
+// ユーザー:「**発注前なら単純に取り消します**」／発注後は「電話などで材料屋に
+// 取り消しを依頼して、**OKが出たら**取り消しボタンを押します」。
+//
+// ⚠ **紙が外へ出たあとの取消は、押しただけでは終わりません。** 確かめずに押せる
+// 形にすると「押したから片付いた」と読まれ、**材料屋には注文が残ったまま**に
+// なります。⚠ **逆に、発注前にまで確認を出すと、毎回読まれない問いが増えます**
+// ——そして読まれない確認は、**本当に要るときにも読まれません**。
+func TestCancelAsksOnlyAfterThePaperWentOut(t *testing.T) {
+	for _, tc := range []struct {
+		status string
+		asks   bool
+	}{
+		{OrderLineUnsent, false},
+		{"", false},
+		{OrderLineSent, true},
+		{orderLineLegacySent, true},
+		{OrderLineDelivered, true},
+	} {
+		got := orderRowButtonsHTML("000041", 1, tc.status)
+		if asks := strings.Contains(got, "data-order-confirm="); asks != tc.asks {
+			t.Errorf("状態 %q の確認が %v です（%v を期待）:\n%s",
+				tc.status, asks, tc.asks, got)
+		}
+		// ⚠ **取り消したらどうなるかを書くこと**——「未手配の一覧へ戻ります」が
+		//    無いと、人は**もう一度どこかで発注し直す**必要があると思います。
+		if tc.asks && !strings.Contains(got, "未手配の一覧へ戻ります") {
+			t.Errorf("状態 %q の確認に、戻り先が書かれていません:\n%s", tc.status, got)
+		}
+	}
+}
+
+// TestOrderPDFSkipsCancelledLines は、⚠ **取り消した行を紙に刷らない**ことを
+// 固定します。
+//
+// ⚠ **刷ると合計金額にも入ります**（`buildOrderPDF` が数量×単価を足すため）
+// ——**取り消したものの代金を請求される紙**を自分で作ることになります。
+func TestOrderPDFSkipsCancelledLines(t *testing.T) {
+	withPDFFont(t, systemJPFont(t))
+
+	body := pdfOrderBody(
+		`<tr><td></td><td></td><td></td><td>鉄FB</td><td>FB</td><td>t4.5</td><td></td>` +
+			`<td>2</td><td>本</td><td>500</td><td></td><td>` + OrderLineSent + `</td></tr>` +
+			`<tr><td></td><td></td><td>やめた部品</td><td></td><td></td><td></td><td></td>` +
+			`<td>3</td><td>個</td><td>7000</td><td></td><td>` + OrderLineCancelled + `</td></tr>`)
+	pdf, err := buildOrderPDF(body, nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	got := pdfTextOf(t, pdf)
+	if strings.Contains(got, "やめた部品") {
+		t.Errorf("⚠ 取り消した行が紙に刷られています。読み返した中身:\n%s", got)
+	}
+	// ⚠ **合計まで見ます。** 行が消えても合計に残っていたら、紙の上では
+	//    **取り消したものの代金を請求されます**。
+	if !strings.Contains(got, "1,000") {
+		t.Errorf("⚠ 合計が 1,000 円になっていません（取り消した21,000円が残っている？）:\n%s", got)
+	}
+	if strings.Contains(got, "21,000") || strings.Contains(got, "22,000") {
+		t.Errorf("⚠ 取り消した行の金額が合計に入っています:\n%s", got)
+	}
+}
+
+// TestOrderPDFSaysWhenEverythingIsCancelled は、⚠ **全部取り消したときに黙らない**
+// ことを固定します。
+//
+// 「中身のある行がありません」だと、**書き忘れたのか、取り消したのか**が
+// 読む人に分かりません。
+func TestOrderPDFSaysWhenEverythingIsCancelled(t *testing.T) {
+	body := pdfOrderBody(
+		`<tr><td></td><td></td><td>やめた部品</td><td></td><td></td><td></td><td></td>` +
+			`<td>3</td><td>個</td><td>7000</td><td></td><td>` + OrderLineCancelled + `</td></tr>`)
+	_, _, _, err := readOrderDoc(body)
+	if err == nil {
+		t.Fatal("⚠ 全部取り消した発注書からPDFを作れてしまいます")
+	}
+	if !strings.Contains(err.Error(), "取り消され") {
+		t.Errorf("理由が「取り消した」と言っていません: %v", err)
+	}
+}
+
 // showPage はページを鏡ごしに描きます。
 func showPage(t *testing.T, viewer *auth.User, pageID int, body string) string {
 	t.Helper()

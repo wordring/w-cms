@@ -6564,7 +6564,15 @@ document.addEventListener('click', (e) => {
     }
 
     // 行1つの印を変える（発注済・納品済・取消・戻す）。
+    //
+    // ⚠ **紙が外へ出たあとの取消は、押しただけでは終わりません**（ユーザー:「電話などで
+    //    材料屋に取り消しを依頼して、**OKが出たら**取り消しボタンを押します」）。
+    //    サーバーが `data-order-confirm` を付けた手は、**押す前に確かめます**——
+    //    確かめずに押せると「押したから片付いた」と読まれ、**材料屋には注文が
+    //    残ったまま**になります。⚠ **発注前は確認を出しません**（「単純に取り消します」）。
     async function setRowStatus(btn) {
+        const ask = btn.getAttribute('data-order-confirm') || '';
+        if (ask && !confirm(ask)) return;
         btn.disabled = true;
         const r = await post('/api/our-order/line-status', {
             page_id: btn.getAttribute('data-order-page') || '',

@@ -80,9 +80,14 @@ func orderHeadTags(ctx *cms.MirrorContext) map[string]string {
 
 // addOrderRowButtons は各行の末尾に、印を変えるボタンを足します。
 //
-// ⚠ **出すのは「次の一手」だけ**です。4つの値を全部ボタンにすると、**紙の上の
-// 状態と関係なく押せてしまいます**——`未発注` の行に「納品済」が並ぶのは、
+// ⚠ **出すのは「次の一手」と「取消」だけ**です。4つの値を全部ボタンにすると、
+// **紙の上の状態と関係なく押せてしまいます**——`未発注` の行に「納品済」が並ぶのは、
 // 手が滑るのを待っているのと同じです。
+//
+// ⚠ **取消はどの段からも押せます**（2026-09-22 ユーザー:「**発注した後でも取り消す
+// 場合があり得ます**…**発注後に材料屋から取り扱いが無いと連絡が来てキャンセルに
+// なることもあります**」）。⚠ **納品済からも**——届いたあとに返すこともあるので、
+// 「2手かければ戻せる」では足りません。
 func addOrderRowButtons(table *html.Node, orderID string) {
 	rows := rowsOf(table)
 	if len(rows) < 2 {
@@ -116,24 +121,45 @@ func addOrderRowButtons(table *html.Node, orderID string) {
 //
 // ⚠ **`取消` からは「戻す」だけ**です。取り消した行をいきなり `納品済` にできると、
 // **取り消したはずのものが手配済みに戻り**、未手配の一覧から静かに消えます。
+//
+// ⚠ **取消の重さが2通りあります**（2026-09-22 ユーザー）。
+//
+//	未発注 … 「**発注前なら単純に取り消します**」          → 確かめずに取り消す
+//	発注済 … 「電話などで材料屋に取り消しを依頼して、**OKが出たら**取り消しボタンを
+//	          押します」／「材料屋から取り扱いが無いと連絡が来て」 → **相手の了解が前提**
+//	納品済 … 現物が届いている                              → **返す話**
+//
+// ⚠ **画面はその違いを出します**（`data-order-confirm`）——**紙が外へ出たあとの取消は、
+// 押しただけでは終わりません**。確かめずに押せる形にすると、「押したから片付いた」と
+// 読まれ、**材料屋には注文が残ったまま**になります。
 func orderRowButtonsHTML(orderID string, row int, status string) string {
-	btn := func(value, label, title string) string {
-		return `<button type="button" class="chip-btn order-row-set"` +
+	btn := func(value, label, title, confirm string) string {
+		s := `<button type="button" class="chip-btn order-row-set"` +
 			` data-order-page="` + stdhtml.EscapeString(orderID) + `"` +
 			` data-order-row="` + strconv.Itoa(row) + `"` +
-			` data-order-status="` + stdhtml.EscapeString(value) + `"` +
-			` title="` + stdhtml.EscapeString(title) + `">` + label + `</button>`
+			` data-order-status="` + stdhtml.EscapeString(value) + `"`
+		if confirm != "" {
+			s += ` data-order-confirm="` + stdhtml.EscapeString(confirm) + `"`
+		}
+		return s + ` title="` + stdhtml.EscapeString(title) + `">` + label + `</button>`
 	}
+	// ⚠ **取り消すと未手配の一覧へ戻ります**——引き算が `取消` を数えないためで、
+	//    戻す先へ何かを書く必要はありません（発注部材表の「↩ 戻す」と同じ理屈）。
+	const backNote = "取り消すと、この部材は未手配の一覧へ戻ります。"
 	switch strings.TrimSpace(status) {
 	case OrderLineCancelled:
-		return btn(OrderLineUnsent, "↩ 戻す", "取り消しをやめて「未発注」に戻します")
+		return btn(OrderLineUnsent, "↩ 取消をやめる", "取り消しをやめて「未発注」に戻します", "")
 	case OrderLineSent, orderLineLegacySent:
-		return btn(OrderLineDelivered, "📦 納品済", "この品が届きました") +
-			btn(OrderLineCancelled, "✕ 取消", "この行の発注を取り消します")
+		return btn(OrderLineDelivered, "📦 納品済", "この品が届きました", "") +
+			btn(OrderLineCancelled, "✕ 取消", "発注済みの行を取り消します（相手の了解が要ります）",
+				"⚠ この行は既に発注済みです。材料屋の了解は取れていますか？\n\n"+backNote)
 	case OrderLineDelivered:
-		return btn(OrderLineSent, "↩ 戻す", "納品済を取り消して「発注済」に戻します")
+		return btn(OrderLineSent, "↩ 戻す", "納品済を取り消して「発注済」に戻します", "") +
+			btn(OrderLineCancelled, "✕ 取消", "納品済の行を取り消します（返す話になります）",
+				"⚠ この行は納品済です。現物を返す話になりますが、取り消しますか？\n\n"+backNote)
 	default: // 未発注・空欄
-		return btn(OrderLineSent, "✓ 発注済", "この行だけ発注済みにします") +
-			btn(OrderLineCancelled, "✕ 取消", "この行は発注しません")
+		// ⚠ **ここだけ確認を出しません**（ユーザー:「発注前なら**単純に**取り消します」）。
+		return btn(OrderLineSent, "✓ 発注済", "この行だけ発注済みにします", "") +
+			btn(OrderLineCancelled, "✕ 取消", "この行は発注しません（未手配の一覧へ戻ります）", "")
 	}
 }
