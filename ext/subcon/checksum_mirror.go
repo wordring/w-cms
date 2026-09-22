@@ -166,24 +166,13 @@ func rootOf(el *html.Node) *html.Node {
 // ⚠ 原本は**語彙に登録していません**（登録すると索引に載り、弊社の明細と
 // 二重計上になります）ので、属性では見つけられません。
 func sourceTableIn(root *html.Node) (orderSourceTable, bool) {
-	var table *html.Node
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if table != nil {
-			return
+	table := findElement([]*html.Node{root}, func(n *html.Node) bool {
+		if n.Data != "table" {
+			return false
 		}
-		if n.Type == html.ElementNode && n.Data == "table" {
-			if cap := lastChild(n, "caption"); cap != nil &&
-				strings.TrimSpace(textOf(cap)) == sourceTableCaption {
-				table = n
-				return
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(root)
+		cap := lastChild(n, "caption")
+		return cap != nil && strings.TrimSpace(textOf(cap)) == sourceTableCaption
+	})
 	if table == nil {
 		return orderSourceTable{}, false
 	}
