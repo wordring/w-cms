@@ -46,11 +46,11 @@ func adminUser() *auth.User { return &auth.User{Username: "root", IsAdmin: true}
 func TestBacklogGroupsByClientAndDue(t *testing.T) {
 	setupExtTest(t, "000100", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 101, -1, "受注", "alice", "302", true) // 箱
-	seedOrder(t, 102, 101, "南北", "2026-10-15",
+	seedOrder(t, 102, 101, "あけぼの精工", "2026-10-15",
 		item("A-1", "ブラケット", "100", "2026-10-15", ""))
-	seedOrder(t, 103, 101, "南北", "2026-10-20",
+	seedOrder(t, 103, 101, "あけぼの精工", "2026-10-20",
 		item("A-2", "カバー", "50", "2026-10-20", ""))
-	seedOrder(t, 104, 101, "しらかば", "2026-10-15",
+	seedOrder(t, 104, 101, "やまと工作所", "2026-10-15",
 		item("B-1", "シャフト", "10", "2026-10-15", ""))
 
 	gs := backlogGroups(adminUser(), 101)
@@ -58,7 +58,7 @@ func TestBacklogGroupsByClientAndDue(t *testing.T) {
 		t.Fatalf("組が %d です（顧客×納期で3組を期待）: %+v", len(gs), gs)
 	}
 	// ⚠ **納期順**（同じ納期なら顧客名順）。
-	want := [][2]string{{"南北", "2026-10-15"}, {"しらかば", "2026-10-15"}, {"南北", "2026-10-20"}}
+	want := [][2]string{{"あけぼの精工", "2026-10-15"}, {"やまと工作所", "2026-10-15"}, {"あけぼの精工", "2026-10-20"}}
 	for i, w := range want {
 		if gs[i].Client != w[0] || gs[i].Due != w[1] {
 			t.Errorf("%d番目が %q %q です（%q %q を期待）", i, gs[i].Client, gs[i].Due, w[0], w[1])
@@ -73,7 +73,7 @@ func TestBacklogGroupsByClientAndDue(t *testing.T) {
 func TestBacklogDropsShippedRows(t *testing.T) {
 	setupExtTest(t, "000110", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 111, -1, "受注", "alice", "302", true)
-	seedOrder(t, 112, 111, "南北", "2026-10-15",
+	seedOrder(t, 112, 111, "あけぼの精工", "2026-10-15",
 		item("A-1", "出し切った", "100", "2026-10-15", "100")+
 			item("A-2", "半分だけ", "100", "2026-10-15", "40"))
 
@@ -95,9 +95,9 @@ func TestBacklogDropsShippedRows(t *testing.T) {
 func TestBacklogPutsUnreadableDueFirst(t *testing.T) {
 	setupExtTest(t, "000120", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 121, -1, "受注", "alice", "302", true)
-	seedOrder(t, 122, 121, "南北", "2026-10-15",
+	seedOrder(t, 122, 121, "あけぼの精工", "2026-10-15",
 		item("A-1", "ブラケット", "100", "2026-10-15", ""))
-	seedOrder(t, 123, 121, "南北", "最短納期",
+	seedOrder(t, 123, 121, "あけぼの精工", "最短納期",
 		item("A-9", "大至急", "5", "最短納期", ""))
 
 	gs := backlogGroups(adminUser(), 121)
@@ -125,8 +125,8 @@ func TestBacklogScopeIsDescendantsOnly(t *testing.T) {
 	setupExtTest(t, "000130", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 131, -1, "受注", "alice", "302", true)
 	addPage(t, 132, -1, "よその箱", "alice", "302", true)
-	seedOrder(t, 133, 131, "南北", "2026-10-15", item("A-1", "中", "10", "2026-10-15", ""))
-	seedOrder(t, 134, 132, "南北", "2026-10-15", item("B-1", "外", "10", "2026-10-15", ""))
+	seedOrder(t, 133, 131, "あけぼの精工", "2026-10-15", item("A-1", "中", "10", "2026-10-15", ""))
+	seedOrder(t, 134, 132, "あけぼの精工", "2026-10-15", item("B-1", "外", "10", "2026-10-15", ""))
 
 	gs := backlogGroups(adminUser(), 131)
 	if len(gs) != 1 || len(gs[0].Rows) != 1 || gs[0].Rows[0].ItemName != "中" {
@@ -186,8 +186,8 @@ func TestBacklogViewSaysSoWhenEmpty(t *testing.T) {
 func TestBacklogHasPrintButtonPerSheet(t *testing.T) {
 	setupExtTest(t, "000160", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 161, -1, "受注", "alice", "302", true)
-	seedOrder(t, 162, 161, "南北", "2026-10-15", item("A-1", "甲", "10", "2026-10-15", ""))
-	seedOrder(t, 163, 161, "しらかば", "2026-10-16", item("B-1", "乙", "10", "2026-10-16", ""))
+	seedOrder(t, 162, 161, "あけぼの精工", "2026-10-15", item("A-1", "甲", "10", "2026-10-15", ""))
+	seedOrder(t, 163, 161, "やまと工作所", "2026-10-16", item("B-1", "乙", "10", "2026-10-16", ""))
 
 	req := httptest.NewRequest("GET", "/000161", nil)
 	req = auth.WithUser(req, adminUser())
@@ -222,7 +222,7 @@ func TestBacklogDropsDoneRows(t *testing.T) {
 			"<td>未着手</td>", "<td>"+StatusDone+"</td>", 1) +
 		strings.Replace(item("A-3", "納めた", "10", "2026-10-15", ""),
 			"<td>未着手</td>", "<td>納品済</td>", 1)
-	seedOrder(t, 172, 171, "南北", "2026-10-15", body)
+	seedOrder(t, 172, 171, "あけぼの精工", "2026-10-15", body)
 
 	gs := backlogGroups(adminUser(), 171)
 	got := map[string]bool{}
@@ -276,7 +276,7 @@ func TestBacklogStatusEnumHasDone(t *testing.T) {
 func TestBacklogCellsCarryWrapClasses(t *testing.T) {
 	setupExtTest(t, "000180", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 181, -1, "受注", "alice", "302", true)
-	seedOrder(t, 182, 181, "南北", "2026-10-15",
+	seedOrder(t, 182, 181, "あけぼの精工", "2026-10-15",
 		item("A-1", "とても長い品名がここに入ります", "10", "2026-10-15", ""))
 
 	req := httptest.NewRequest("GET", "/000181", nil)
@@ -302,7 +302,7 @@ func TestBacklogCellsCarryWrapClasses(t *testing.T) {
 func TestBacklogRowsCarryEditHandles(t *testing.T) {
 	setupExtTest(t, "000190", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 191, -1, "受注", "alice", "302", true)
-	seedOrder(t, 192, 191, "南北", "2026-10-15",
+	seedOrder(t, 192, 191, "あけぼの精工", "2026-10-15",
 		item("A-1", "甲", "10", "2026-10-15", "")+item("A-2", "乙", "20", "2026-10-15", ""))
 
 	req := httptest.NewRequest("GET", "/000191", nil)
@@ -332,7 +332,7 @@ func TestBacklogRowsCarryEditHandles(t *testing.T) {
 func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	setupExtTest(t, "000200", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 201, -1, "受注", "alice", "302", true)
-	seedOrder(t, 202, 201, "南北", "2026-10-15", item("A-1", "甲", "10", "2026-10-15", ""))
+	seedOrder(t, 202, 201, "あけぼの精工", "2026-10-15", item("A-1", "甲", "10", "2026-10-15", ""))
 
 	req := httptest.NewRequest("GET", "/000201", nil)
 	req = auth.WithUser(req, adminUser())
