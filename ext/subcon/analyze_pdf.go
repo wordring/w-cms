@@ -178,9 +178,7 @@ var judgeOrderPDF = judgeOrderPDFWithGemini
 // AnalyzeAttachmentAPIHandler は POST /api/analyze-attachment です。
 // 入力: {page_id, file}——file は添付の保存名（.pdf）。
 func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+	if _, ok := cms.GateJSONPost(w, r); !ok {
 		return
 	}
 	var req struct {

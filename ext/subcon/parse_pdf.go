@@ -45,13 +45,9 @@ type ParsedItem struct {
 
 // ParsePDFHandler は保存されたPDFを Gemini に渡し、JSONとして明細を抽出します。
 func ParsePDFHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+	if _, ok := cms.GateJSONPost(w, r); !ok {
 		return
 	}
-
 	var req struct {
 		PageID   string `json:"page_id"`
 		FileName string `json:"file_name"`
