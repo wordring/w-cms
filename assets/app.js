@@ -6589,6 +6589,33 @@ document.addEventListener('click', (e) => {
         location.reload();
     }
 
+    // 発注書のPDFを作って、ページに表示する（2026-09-22）。
+    //
+    // ⚠ **押す道がありませんでした**——口は 09-21 から在ったのに、呼ぶボタンが
+    //    どこにも無く、API を直に叩いて確かめただけでした。
+    async function makePDF(btn) {
+        const root = btn.closest('.order-send');
+        const box = root ? root.querySelector('[data-order-result]') : null;
+        btn.disabled = true;
+        say(box, '発注書のPDFを作っています…');
+        const r = await post('/api/order-pdf', {
+            page_id: root ? root.getAttribute('data-order-page') || '' : '',
+        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        if (!r.ok) {
+            say(box, '⚠ ' + (r.data.message || 'PDFを作れませんでした'), 'proc-why-ng');
+            btn.disabled = false;
+            return;
+        }
+        // ⚠ **表示できなかったことを黙りません**（PDFは出来ているので、失敗では
+        //    ありませんが、画面に出ないことは伝える必要があります）。
+        if (r.data.view_note) {
+            say(box, r.data.view_note, 'proc-why-ng');
+            btn.disabled = false;
+            return;
+        }
+        location.reload();
+    }
+
     // FAX・手渡しの「送った」。⚠ **人が押したことがその事実**です。
     async function markSent(btn) {
         const root = btn.closest('.order-send');
@@ -6678,6 +6705,8 @@ document.addEventListener('click', (e) => {
         if (!e.target || !e.target.closest) return;
         const row = e.target.closest('.order-row-set');
         if (row) { setRowStatus(row); return; }
+        const pdf = e.target.closest('[data-order-pdf]');
+        if (pdf) { makePDF(pdf); return; }
         const sent = e.target.closest('[data-order-sent]');
         if (sent) { markSent(sent); return; }
         const send = e.target.closest('[data-order-send]');

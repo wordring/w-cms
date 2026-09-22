@@ -228,6 +228,13 @@ func orderSendFormHTML(user *auth.User, pageIDInt int, head map[string]string,
 	b.WriteString(`<div class="order-send" data-order-page="` + orderID + `">`)
 	b.WriteString(`<p class="order-send-state">` + orderSendStateHTML(counts) + `</p>`)
 	b.WriteString(`<div class="order-send-ways">`)
+	// ⚠ **PDFを作る道が画面にありませんでした**（2026-09-22 ユーザー報告:「発注書の
+	//    ページにPDFが表示されていません」）。口（`/api/order-pdf`）は 09-21 から
+	//    在りましたが、**呼ぶボタンがどこにも無く**、API を直に叩いて確かめただけ
+	//    でした。⚠ **試した経路と、人が使う経路が違っていた**わけです。
+	b.WriteString(`<button type="button" class="chip-btn" data-order-pdf="1"` +
+		` title="発注書のPDFを作って、このページに表示します（添付にも残ります）">` +
+		`📄 PDFを作る</button>`)
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByFax +
 		`" title="FAXサーバーはまだありません。送ったら押してください">📠 FAXで送った</button>`)
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByHand +

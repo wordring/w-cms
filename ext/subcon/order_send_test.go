@@ -358,6 +358,66 @@ func TestOrderPDFSaysWhenEverythingIsCancelled(t *testing.T) {
 	}
 }
 
+// TestOrderPDFIsShownOnThePage は、⚠ **作ったPDFがページの上で開ける**ことを
+// 固定します（2026-09-22 ユーザー報告:「発注書のページにPDFが表示されていません」）。
+//
+// ⚠ **原因は「作る道が画面に無かった」ことでした。** 口は 09-21 から在ったのに
+// 呼ぶボタンがどこにも無く、**API を直に叩いて確かめただけ**でした——
+// **試した経路と、人が使う経路が違っていた**わけです。
+func TestOrderPDFIsShownOnThePage(t *testing.T) {
+	body := orderPaper(OrderLineUnsent)
+	out, ok := placeOrderPDFView(body, "000041-a1b2")
+	if !ok {
+		t.Fatalf("マーカーを置けません:\n%s", out)
+	}
+	if !strings.Contains(out, `data-type="`+cms.FileViewType+`"`) ||
+		!strings.Contains(out, `data-ref="000041-a1b2"`) {
+		t.Fatalf("⚠ ファイル表示のマーカーがありません:\n%s", out)
+	}
+	// ⚠ **表の「後」であること**（ユーザーの流れ:「新たな表の下に発注書を埋め込み
+	//    表示し」）。前に置くと、明細より先にPDFが出ます。
+	if strings.Index(out, "</table>") > strings.Index(out, `data-ref="000041-a1b2"`) {
+		t.Errorf("⚠ マーカーが発注明細の表より前にあります:\n%s", out)
+	}
+	// ⚠ **サニタイズを通しても残ること。** ここが落ちると、**本文を保存した瞬間に
+	//    配線が消え**、PDFは黙って出なくなります（`class` が落ちるのと同じ形）。
+	if clean := cms.Sanitize(out); !strings.Contains(clean, `data-ref="000041-a1b2"`) {
+		t.Errorf("⚠ サニタイズで配線が落ちています:\n%s", clean)
+	}
+}
+
+// TestOrderPDFViewIsReplacedNotStacked は、⚠ **作り直しても増えない**ことを
+// 固定します。
+//
+// ページの上に3枚並んでいても、**どれが最新か分かりません**。古いPDFは添付として
+// 残り、実際に送ったものは通信箱の控えが持っています。
+func TestOrderPDFViewIsReplacedNotStacked(t *testing.T) {
+	body := orderPaper(OrderLineUnsent)
+	first, _ := placeOrderPDFView(body, "000041-aaaa")
+	second, ok := placeOrderPDFView(first, "000041-bbbb")
+	if !ok {
+		t.Fatalf("2枚目で置き換えられません:\n%s", second)
+	}
+	if n := strings.Count(second, `data-type="`+cms.FileViewType+`"`); n != 1 {
+		t.Fatalf("⚠ マーカーが %d 個あります（1個を期待）:\n%s", n, second)
+	}
+	if strings.Contains(second, "000041-aaaa") || !strings.Contains(second, "000041-bbbb") {
+		t.Errorf("⚠ 新しいPDFを指していません:\n%s", second)
+	}
+	// ⚠ **同じものなら書きません**（版と更新日時を無駄に進めない）。
+	if again, ok := placeOrderPDFView(second, "000041-bbbb"); ok || again != second {
+		t.Errorf("⚠ 同じ参照で書き換えています:\n%s", again)
+	}
+}
+
+// TestOrderPDFViewNeedsTheTable は、⚠ **置き場所が無いときに黙らない**ことを
+// 固定します。
+func TestOrderPDFViewNeedsTheTable(t *testing.T) {
+	if out, ok := placeOrderPDFView(`<h1>ただのページ</h1><p>本文</p>`, "000041-aaaa"); ok {
+		t.Errorf("⚠ 発注明細の無いページにマーカーを置いています:\n%s", out)
+	}
+}
+
 // showPage はページを鏡ごしに描きます。
 func showPage(t *testing.T, viewer *auth.User, pageID int, body string) string {
 	t.Helper()

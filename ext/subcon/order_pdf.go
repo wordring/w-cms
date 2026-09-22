@@ -35,6 +35,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
@@ -83,9 +84,15 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
-	// 添付を足す操作なので write 権限（本文は変えないので編集ロックは要りません
-	// ——解析・取り込みと同じ理屈）。
+	// 添付を足す操作なので write 権限。
 	if !page.RequirePageWrite(w, r, pageID) {
+		return
+	}
+	// ⚠ **2026-09-22 から本文も触ります**（PDFを開くマーカーを置く）。それまでは
+	//    「本文は変えないので編集ロックは要りません」でしたが、**変えるようになった
+	//    ので関門が要ります**——`RewriteBody` は読んで・変えて・書くので、エディタが
+	//    開いているとオートセーブと黙って上書きし合います。
+	if !editlock.RefuseWhileEditing(w, pageID) {
 		return
 	}
 	body, err := cms.ReadPageBody(pageID)
@@ -111,10 +118,20 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "order-pdf", pageID+" "+fileName)
-	json.NewEncoder(w).Encode(map[string]any{
+
+	// ⚠ **作っただけでは、ページを開いても出てきません**（2026-09-22 ユーザー報告:
+	//    「発注書のページにPDFが表示されていません」）。添付として保存されるだけ
+	//    だったので、**本文に「ここで開く」マーカーを置きます**。
+	//    ⚠ **失敗してもPDFは取り消しません**——**紙のほうが重い**ので、
+	//    「画面に出ない」は人が貼り直せば済みます。理由を添えるだけにします。
+	out := map[string]any{
 		"success": true, "attach_id": attachID, "file": fileName,
 		"url": "/" + pageID + "/" + fileName,
-	})
+	}
+	if note := showOrderPDFOnPage(user, pageID, attachID); note != "" {
+		out["view_note"] = note
+	}
+	json.NewEncoder(w).Encode(out)
 }
 
 // buildOrderPDF は発注書ページの本文からPDFを組みます。
