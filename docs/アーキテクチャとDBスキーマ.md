@@ -5,7 +5,8 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 > **カスタム要素（`<m-*>`）は全廃**（2026-08-20 に移行完了）。本文で扱える語彙は
 > [cms/htmldoc/sanitize.go](../internal/cms/htmldoc/sanitize.go) の `structuralElements`＋
 > `data-*` マーカー**だけ**で、形式（`data-type` の値）の宣言は①語彙レジストリ
-> [cms/vocab.go](../internal/cms/vocab.go)（現在12形式）が持ちます。移行の経緯は
+> [cms/vocab.go](../internal/cms/vocab.go)（2026-09-22 時点で **21形式**＝コア5＋拡張16。
+> `DisplayName:` の宣言を数えた）が持ちます。移行の経緯は
 > [【考察】語彙モデル.md](【考察】語彙モデル.md) §8、記録は [変更履歴アーカイブ.md](変更履歴アーカイブ.md)
 > 2026-08-19〜08-20 の各節（2026-08-29 以前の節は 2026-09-02 にアーカイブへ移した）。本書に残る `<m-*>` の表記は、後継形式を示すための
 > **歴史的な言及**です。
@@ -114,7 +115,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 
 | 本文の形式 | 索引での姿 |
 |---|---|
-| `<section data-type="client-order">` のヘッダ `<dl>` | `data_type='client-order'`・`field` は `発注書番号`・`発注元`・`発注日` |
+| `<section data-type="client-order">` のヘッダ `<dl>` | `data_type='client-order'`・`field` は `発注書番号`・`発注元`・`発注日`（**→ 2026-09-18 に廃止**。ヘッダは h1 直下の可変タグ `<dl data-type="tags">` になり `page_tags` へ入る——下の注記） |
 | `<table data-type="client-order-items">` | `data_type='client-order-items'`・1データ行が1 `row_no` |
 | `<section data-type="our-order">` ／ `<table data-type="our-order-items">` | 同上（`発注先` ほか） |
 | `<dl data-type="our-estimate">` ／ `<dl data-type="supplier-estimate">` | `data_type` はその値・1ブロック1件 |
@@ -123,10 +124,18 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 
 **ヘッダの `<dl>` は `data-type` を持ちません**（役割は包む `section` が宣言し、鍵は `dt` の
 表示文字）。配送係は引き金のある要素しか配らないため、素の `dl` は誰にも届きません——
-`vocabIndexPlugin` が **`section` の側から拾います**（`syncVocabSectionHeader`）。
+`vocabIndexPlugin` が **`section` の側から拾います**（`syncVocabSection`）。
 硬い表があったころは各プラグインが `section` を受け取って自分で子の `dl` を読んでいたので
 この穴は見えていませんでした。拾わないと**発注元・発注日・発注先がどこにも残りません**
 （明細表だけが載ってヘッダが黙って消える）。`TestSectionHeaderIsIndexed` が固定しています。
+
+> ⚠ **上の段落は 2026-09-18 で終わった形です**（2026-09-22 確認）。ユーザー決定「素の定義リストは
+> DBから外しましょう」で **`syncVocabSection` は素の `dl` を拾わなくなり**、`TestSectionHeaderIsIndexed`
+> も同じ日に削除されました。いま拾うのは登録された機能見出しの下の**素の表だけ**（ワンノート移行の
+> 受け皿）。受注ページのヘッダ（発注書番号・発注元・発注日・納期・小計・消費税・合計・`受信元`）は
+> **h1 直下の可変タグ `<dl data-type="tags">`** として書かれ `page_tags` へ入ります（`buildOrderPageHTML`）。
+> **「表とタグだけがDBに入る」**が説明の全部です（[変更履歴.md](変更履歴.md) 2026-09-18、
+> コードの注記は [vocab_index.go](../internal/cms/vocab_index.go) の `syncVocabSection` 冒頭）。
 
 **索引しなくなったもの**: 容器 `section[data-type="file"]` の `data-src`（旧 `pdf_path`）。
 配線＝属性であって表示される値ではなく、読む者も1人もいませんでした。本文には残るので
@@ -175,7 +184,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
     算出し、JSON配列で返却します。
 
 数量の**空セルは 1** として読みます（手で書く表で「1個」を書かせないため。硬い表の
-ころは索引を書く側が当てていた既定を、いまは読む側 `vocabQuantity` が当てます）。
+ころは索引を書く側が当てていた既定を、いまは読む側 `cms.VocabQuantity`（[vocab_query.go](../internal/cms/vocab_query.go)）が当てます）。
 品番が空の受注明細行は突き合わせ対象から外します——硬い表では `part_id=''` の行
 （部品番号タグを持たないページの部材）と一致し、無関係な部材が集計に混ざりえました。
 
@@ -428,8 +437,8 @@ DBスキーマは変わりません**。
     ```
 
 **内部処理フロー**:
-1.  リクエストの `page_id` と `file_name` から、サーバー上のPDFファイルのパスを特定し（名前は置く側と同じ `attachmentFileName` で検査。`files/` → 旧のページフォルダ直下の順に探す）、バイナリとして読み込みます。write 権限が要ります（編集ロックは通しません——結果はDOMへ足すだけで、保存は `/api/save` が検証する）。
-2.  Gemini の呼び出しはコア側の共通関数 `geminiGenerate`（[gemini.go](../internal/cms/gemini.go)。キーの取得・クライアント生成・応答テキストの合成・60秒タイムアウト）に一本化されています。プロンプト（＝解釈）は呼ぶ側が持ちます。
+1.  リクエストの `page_id` と `file_name` から、サーバー上のPDFファイルのパスを特定し（名前は置く側と同じ `cms.SafeAttachmentName` で検査し、`page.AttachmentPath` が `files/` → 旧のページフォルダ直下の順に探す）、バイナリとして読み込みます。write 権限が要ります（編集ロックは通しません——結果はDOMへ足すだけで、保存は `/api/save` が検証する）。
+2.  Gemini の呼び出しはコア側の共通関数 `cms.GeminiGenerate`（[gemini.go](../internal/cms/gemini.go)。キーの取得・クライアント生成・応答テキストの合成・60秒タイムアウト。拡張から呼ぶので公開名）に一本化されています。プロンプト（＝解釈）は呼ぶ側が持ちます。
 3.  PDFバイナリを `application/pdf` のBlobとしてモデルに渡し、以下のプロンプト（指示）とともに送信します。
     *   *「このPDFは発注書または見積書です。記載されているすべての部品明細（品名、単価、数量）を抽出し、以下の形式のJSON配列のみを出力してください...」*
 4.  Geminiから返却された文字列から、マークダウン装飾（` ```json `）等を取り除き、純粋なJSONテキストを抽出します。
@@ -461,23 +470,30 @@ DBスキーマは変わりません**。
 
 ### 5.3. 添付の判定→受注ページ生成 API (`POST /api/analyze-attachment`)
 
-添付PDF（またはZIP添付の中のPDF）を Gemini で「顧客が発行した発注書か」判定し、発注書なら
+添付PDF（かつては ZIP 添付の中の PDF も——2026-09-17 に撤去。取り込みが ZIP を展開して中身を
+添付にするため、解析が ZIP を覗く必要が無くなった）を Gemini で「顧客が発行した発注書か」判定し、発注書なら
 **受注ページをそのページの子として生成**します（[ext/subcon/analyze_pdf.go](../ext/subcon/analyze_pdf.go)。
 2026-09-01・下請け業務＝他社デプロイでは外す・差し替える前提）。エディタの
 「🤖 解析」ボタンから呼ばれ、**自動では走りません**（人間ゲート型——「自動ではなくボタンの
 clickなどで解析が始まると良い」。正本は [【考察】通信記録処理.md](【考察】通信記録処理.md) §3）。
 
-*   **リクエスト**: JSON `{"page_id", "file"（添付の保存名。`.pdf` か `.zip`）, "entry"（ZIPの中のPDFのパス。ZIPのときだけ）}`。
+*   **リクエスト**: JSON `{"page_id", "file"（添付の保存名。`.pdf` だけ）}`（`.zip` と `"entry"`（ZIPの中の
+    PDFのパス）は 2026-09-17 に撤去）。
     対象ページの **write 権限**を要求します（子ページを作る操作。本文は変えないので編集ロックは不要）。
-*   **処理**: 名前は `safeAttachmentName` で検査 → `files/` から読む（ZIPは目録の1件だけを
-    `max_upload_mib` の上限つきで取り出す＝ZIP爆弾対策）→ `judgeOrderPDF`（`geminiGenerate` に
-    判定＋抽出のプロンプト）→ 発注書なら `buildOrderPageHTML` が**機能見出し形**（`<section><h2>顧客の
-    発注書</h2>` ＋ヘッダ `dl` ＋明細 `table`。状態は「未着手」）の本文を組み、**`cms.CreateChildPage`**
+*   **処理**: 名前は `cms.SafeAttachmentName`（許可は `.pdf` のみ）で検査 → `files/` から読む（かつての
+    「ZIPは目録の1件だけを `max_upload_mib` の上限つきで取り出す＝ZIP爆弾対策」は ZIP の枝ごと撤去）
+    → `judgeOrderPDF`（試験で差し替えるための変数。実体は `judgeOrderPDFWithGemini`——`cms.GeminiGenerate` に
+    判定＋抽出のプロンプト）→ 発注書なら `buildOrderPageHTML` が本文を組み（2026-09-18 以降の形:
+    **h1 直下の可変タグ `<dl data-type="tags">`** にヘッダ〔発注書番号・発注元・発注日・納期・小計・消費税・
+    合計・`受信元`〕、**原本の写し**（`<details>` で畳む・原本PDFの表示つき）、**`<caption>` で名乗る明細
+    `table`**。状態は「未着手」。かつては `<section><h2>顧客の発注書</h2>` ＋ヘッダ `dl` ＋明細 `table` の
+    機能見出し形だった）、**`cms.CreateChildPage`**
     （[page_folders.go](../internal/cms/page_folders.go)。取り込み係と共用のページ作成の芯。
-    非公開の `createChildPageOf` から公開名になったのは 2026-09-03〔`6267d53`〕、`intake.go` から
-    この汎用ファイルへ割ったのは 2026-09-15〔`03a5a3d`〕。**通信が `ext/comm` へ出たあともコアに
+    非公開の `createChildPageOf` から公開名になったのは 2026-09-03〔`60e33fa`〕、`intake.go` から
+    この汎用ファイルへ割ったのは 2026-09-15〔`c9c2605`〕——ハッシュは 2026-09-20 の履歴書き換え後のもの。
+    **通信が `ext/comm` へ出たあともコアに
     残る**——解析（`ext/subcon`）・アドレス帳・整理も使う芯だからです）で子ページを作ります。
-    本文末尾に**由来参照**の可変タグ `受信元: <元ページID>-<添付ID>` が入り、
+    ヘッダの可変タグに**由来参照** `受信元: <元ページID>-<添付ID>` が入り（かつては本文末尾）、
     参照タグの文法（§9.3）に一致するのでリンクとして描画されます。監査記録は `analyze-pdf`。
 *   **レスポンス**: 発注書なら `{"success": true, "is_client_order": true, "page_id", "title"}`、
     発注書でなければ `{"success": true, "is_client_order": false}`（生成しないのも正常な結果）。
