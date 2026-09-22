@@ -98,3 +98,62 @@ func TestOrderDraftIsFoundByCaptionToo(t *testing.T) {
 		t.Error("無いのに在ると答えています")
 	}
 }
+
+// TestAppendToDraftAddsToTheRightTable は、⚠ **足す先を取り違えない**ことを
+// 固定します（2026-09-22）。
+//
+// ⚠ **発注書は1枚に1社**なので、別の表へ入れると**別の業者の行が1つの紙に混ざります**
+// ——しかも**紙にしてから気づきます**。
+func TestAppendToDraftAddsToTheRightTable(t *testing.T) {
+	body := orderDraftHTML([]ourOrderLine{{ItemName: "1枚目の行"}}) +
+		orderDraftHTML([]ourOrderLine{{ItemName: "2枚目の行"}})
+	got, n, ok := appendToDraft(body, "2", []ourOrderLine{{ItemName: "足した行"}})
+	if !ok || n != 1 {
+		t.Fatalf("足せていません: ok=%v n=%d", ok, n)
+	}
+	// 2枚目の表に入っていること（1枚目には入らない）。
+	i1 := strings.Index(got, "1枚目の行")
+	i2 := strings.Index(got, "2枚目の行")
+	ia := strings.Index(got, "足した行")
+	if !(i1 < i2 && i2 < ia) {
+		t.Errorf("⚠ 足す先が違います（1枚目に入っていませんか）:\n%s", got)
+	}
+	// 無い枚数は断る（黙って1枚目に入れない）。
+	if _, _, ok := appendToDraft(body, "9", []ourOrderLine{{ItemName: "x"}}); ok {
+		t.Error("⚠ 無い枚数なのに足しています")
+	}
+	if _, _, ok := appendToDraft(body, "0", []ourOrderLine{{ItemName: "x"}}); ok {
+		t.Error("⚠ 0枚目に足しています")
+	}
+}
+
+// TestReplaceDraftTableLeavesTheOthers は、⚠ **発注書にした表だけが消える**ことを
+// 固定します。
+//
+// ⚠ **他の表まで消すと、同時に進めていた別の業者ぶんの作業が丸ごと失われます。**
+func TestReplaceDraftTableLeavesTheOthers(t *testing.T) {
+	body := `<h1>発注</h1>` +
+		orderDraftHTML([]ourOrderLine{{ItemName: "1枚目の行"}}) +
+		orderDraftHTML([]ourOrderLine{{ItemName: "2枚目の行"}})
+	got, ok := replaceDraftTable(body, 1, `<p>📄 発注書 000143</p>`)
+	if !ok {
+		t.Fatal("置き換えられていません")
+	}
+	if strings.Contains(got, "1枚目の行") {
+		t.Errorf("⚠ 1枚目が残っています:\n%s", got)
+	}
+	if !strings.Contains(got, "2枚目の行") {
+		t.Errorf("⚠ 2枚目まで消えました（別の業者ぶんの作業が失われます）:\n%s", got)
+	}
+	if !strings.Contains(got, "発注書 000143") {
+		t.Errorf("リンクが入っていません:\n%s", got)
+	}
+	// ⚠ **見出しは残ること**（表だけを置き換える）。
+	if !strings.Contains(got, "<h1>発注</h1>") {
+		t.Errorf("⚠ ページの見出しまで消えました:\n%s", got)
+	}
+	// 無い枚数は何もしない。
+	if _, ok := replaceDraftTable(body, 9, `<p>x</p>`); ok {
+		t.Error("⚠ 無い枚数なのに置き換えています")
+	}
+}

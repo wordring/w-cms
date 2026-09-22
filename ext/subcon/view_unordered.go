@@ -36,13 +36,22 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 	if len(list) == 0 {
 		// ⚠ **0件も黙りません**——「手配し終えた」と「そもそも受注明細に弊社品番が
 		//    無くて引けていない」は別物です。
+		//
+		// ⚠ **それでもフォームは出します**（2026-09-22 に実データで踏んだ）。
+		//    ユーザー:「**必要なければ何もクリックしなくても**表作成ボタンをクリック
+		//    すると発注部材表が開き」——**加工製品ページに無い部材（消耗品・治具）だけを
+		//    買う道**がここです。⚠ **0件のときこそ、その道が要ります**——
+		//    早期に戻ると、**空の表から始める手段が画面から消えます**。
 		return head + `<p class="materials-empty">未手配の購入品はありません` +
-			`（⚠ 受注明細に<strong>弊社品番</strong>が無い行は、ここに出ません）。</p>`
+			`（⚠ 受注明細に<strong>弊社品番</strong>が無い行は、ここに出ません）。` +
+			`加工製品ページに無い部材だけを買うときは、下から<strong>空の発注部材表</strong>` +
+			`を作って書き始めてください。</p>` +
+			unorderedFormHTML(user, pageIDInt)
 	}
 
 	var b strings.Builder
 	b.WriteString(head)
-	b.WriteString(`<p class="unorder-help">行を選んで「発注部材表を作る」を押すと、` +
+	b.WriteString(`<p class="unorder-help">行を選んで「発注部材表へ入れる」を押すと、` +
 		`下に<strong>発注部材表</strong>ができます` +
 		`——そこで<strong>足し引き</strong>してから発注書にします` +
 		`（⚠ <strong>何も選ばずに押してもかまいません</strong>。` +
@@ -118,30 +127,43 @@ func unorderedCostHTML(u UnorderedItem) string {
 	return s
 }
 
-// unorderedFormHTML は仕入先などを入れる欄です。
+// unorderedFormHTML は「発注部材表へ入れる」欄です。
 //
-// ⚠ **候補を出します**（`推奨業者` と同じ出どころ）——打つより選ぶほうが速く、
-// 速ければ表記が揃います。
+// ⚠ **ここに「発注書を作る」は置きません**（2026-09-22 ユーザー訂正:「**発注部材表から
+// 発注書を作るので「発注書を作る」ボタンは発注部材表の下にあるはずです**」）。
+// **ボタンは、その相手の隣にあるべき**です——仕入先と差出人も発注部材表の足元で
+// 決めます（**1枚＝1社**が決まるのは、表を作り終えたときだから）。
 func unorderedFormHTML(user *auth.User, pageIDInt int) string {
-	f := func(id, label, ph, typ string) string {
-		return searchFieldHTML("unorder", id, label, ph, typ)
-	}
 	// ⚠ **ページIDは属性で渡します**——画面の配線は別のスコープに居て
 	//    `currentPageId` が見えません（受注残表の書き戻しも同じ手です）。
 	return `<div class="matsearch-form unorder-form" data-unorder-page="` +
 		page.FormatID(pageIDInt) + `">` +
-		// ⚠ **表作成が先、発注書はそのあと**（2026-09-22 ユーザーの流れ）。
-		//    未発注の表 → [表作成] → **発注部材表**（人が足し引き）→ [発注書作成]。
-		//    ⚠ **何も選ばなくても押せます**——空の表から始める道（消耗品・治具だけを買う）。
+		draftTargetHTML(pageIDInt) +
 		`<button type="button" class="matsearch-go" data-unorder-draft="1">` +
-		`発注部材表を作る</button>` +
-		signerFieldHTML(user) +
-		f("supplier", "仕入先", "みなと商店", "text") +
-		f("order_at", "発注日", "", "date") +
-		f("due", "納期", "", "date") +
-		f("note", "備考", "定尺で結構です", "text") +
-		`<button type="button" class="matsearch-go" data-unorder-go="1">発注書を作る</button>` +
+		`発注部材表へ入れる</button>` +
 		`</div><div class="unorder-result" data-unorder-result="1"></div>`
+}
+
+// draftTargetHTML は「新しく作る／どれに足すか」の欄です（2026-09-22）。
+//
+// ユーザー訂正:「**発注部材表は複数できて良いはずで、新規に作るのか、どれかに足すのか
+// 聞くべきです**」——⚠ **最初の実装は2枚目を 409 で断っていました**。**1枚＝1社**なので、
+// **業者ごとに同時に進める**のが普通の形です。
+//
+// ⚠ **既定は「新しく作る」**です——**黙って既存の表へ混ぜるほうが危ない**
+// （別の業者の行が1つの紙に混ざり、**紙にしてから気づきます**）。
+func draftTargetHTML(pageIDInt int) string {
+	n := CountOrderDrafts(pageIDInt)
+	var b strings.Builder
+	b.WriteString(`<label class="matsearch-field"><span>入れる先</span>`)
+	b.WriteString(`<select class="matsearch-input" data-unorder="into">`)
+	b.WriteString(`<option value="">新しく作る</option>`)
+	for i := 1; i <= n; i++ {
+		b.WriteString(`<option value="` + strconv.Itoa(i) + `">` +
+			strconv.Itoa(i) + `枚目の発注部材表へ足す</option>`)
+	}
+	b.WriteString(`</select></label>`)
+	return b.String()
 }
 
 // unorderedCostValue は発注書へ送る単価です。

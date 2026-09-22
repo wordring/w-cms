@@ -20,6 +20,7 @@ import (
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
 )
 
 // headerIndex は見出し行の「表示文字 → 列の位置」を返します（同じ見出しが2つあれば後勝ち）。
@@ -135,6 +136,33 @@ func appendFootRow(table *html.Node, span int, trClass, text string) {
 	td := &html.Node{Type: html.ElementNode, Data: "td",
 		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
 	td.AppendChild(&html.Node{Type: html.TextNode, Data: text})
+	tr := &html.Node{Type: html.ElementNode, Data: "tr",
+		Attr: []html.Attribute{{Key: "class", Val: trClass}}}
+	tr.AppendChild(td)
+	foot.AppendChild(tr)
+}
+
+// appendFootHTML は表の足元へ、**HTMLの中身**を持つ行を1つ足します。
+//
+// ⚠ **`appendFootRow` はテキストだけ**です（検算の ⚠／✓ の文）。こちらは**入力欄**を
+// 置くために要ります——発注部材表の足元の「発注書を作る」（2026-09-22）。
+//
+// ⚠ **表の中へ `<div>` を直に足してはいけません**——HTMLパーサが表の外（手前）へ
+// 追い出します。だから `<tfoot>` の `<td>` の中に入れます。
+func appendFootHTML(table *html.Node, span int, trClass, innerHTML string) {
+	foot := lastChild(table, "tfoot")
+	if foot == nil {
+		foot = &html.Node{Type: html.ElementNode, Data: "tfoot",
+			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome"}}}
+		table.AppendChild(foot)
+	}
+	td := &html.Node{Type: html.ElementNode, Data: "td",
+		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
+	if nodes, err := htmldoc.ParseFragment(innerHTML); err == nil {
+		for _, n := range nodes {
+			td.AppendChild(n)
+		}
+	}
 	tr := &html.Node{Type: html.ElementNode, Data: "tr",
 		Attr: []html.Attribute{{Key: "class", Val: trClass}}}
 	tr.AppendChild(td)

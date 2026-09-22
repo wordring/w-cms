@@ -25,7 +25,6 @@ package subcon
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	stdhtml "html"
 	"net/http"
 	"strconv"
@@ -66,6 +65,14 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Note     string         `json:"note"`
 		Signer   string         `json:"signer"`
 		Lines    []ourOrderLine `json:"lines"`
+		// DraftPage / DraftIndex は「**どの発注部材表から作ったか**」です（2026-09-22）。
+		//
+		// ⚠ **作り終えたら、その表はこの発注書ページへのリンクに化けます**
+		// （ユーザー決定:「**発注書ページが出来て、実際に発注するまで発注ページに
+		// 発注書ページへのリンクが残れば良いのでは？**」）——中身は発注書ページへ
+		// 移ったので、**残すと古い写しになり、次の発注のときに混ざります**。
+		DraftPage  string `json:"draft_page"`
+		DraftIndex string `json:"draft_index"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -121,9 +128,16 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "our-order-new", newID+" "+supplier+" "+
 		strconv.Itoa(len(req.Lines))+"行")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"success": true, "page_id": newID, "url": "/" + newID})
+
+	// ⚠ **元の発注部材表を、この発注書ページへのリンクに化けさせます**（2026-09-22）。
+	//    ⚠ **失敗しても発注書は取り消しません**——**紙のほうが重い**ので、
+	//    「表が残ってしまった」は人が消せば済みます。理由を添えるだけにします。
+	out := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
+	if note := replaceDraftWithLink(user, req.DraftPage, req.DraftIndex,
+		newID, supplier, len(req.Lines)); note != "" {
+		out["draft_note"] = note
+	}
+	cms.WriteJSON(w, out)
 }
 
 // buildOurOrderHTML は発注書ページの本文を組みます。

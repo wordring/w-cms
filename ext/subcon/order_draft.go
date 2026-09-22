@@ -28,7 +28,10 @@ package subcon
 import (
 	stdhtml "html"
 	"net/http"
+	"strconv"
 	"strings"
+
+	"golang.org/x/net/html"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -52,6 +55,11 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PageID string         `json:"page_id"`
 		Lines  []ourOrderLine `json:"lines"`
+		// Into は足す先の発注部材表（**何枚目か**・1始まり）。空なら**新しく作ります**。
+		//
+		// ⚠ **既定が「新しく作る」なのは、黙って混ぜるほうが危ないから**です——
+		// 発注書は**1枚に1社**なので、別の業者の行が混ざると**紙にしてから気づきます**。
+		Into string `json:"into"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -72,28 +80,91 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := cms.ReadPageBody(pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
+	// ⚠ **発注部材表は何枚あってもかまいません**（2026-09-22 ユーザー訂正）。
+	//    **1枚＝1社**なので、**業者ごとに同時に進める**のが普通の形です——
+	//    ⚠ **最初の実装は2枚目を 409 で断っていました。実務が回りません。**
+	//
+	//    だから**新しく作るのか、どれかに足すのか**を人が選びます。
+	into := strings.TrimSpace(req.Into)
+	rows := 0
+	found := into == "" // 新規なら「行き先が見つかった」扱い
+	werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+		if into == "" {
+			rows = len(req.Lines)
+			return cur + orderDraftHTML(req.Lines)
+		}
+		merged, n, ok := appendToDraft(cur, into, req.Lines)
+		found = ok
+		if !ok {
+			return cur
+		}
+		rows = n
+		return merged
+	})
+	if werr != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+werr.Error())
 		return
 	}
-	// ⚠ **2枚目は作りません。** 流れは「表作成 → 編集 → 発注書作成」が一続きなので、
-	//    表が2つあると**どちらから発注書を作るのか**が決まりません。
-	if isTableOfTypeInBody(body, OrderDraftType) {
+	if !found {
 		cms.JSONFail(w, http.StatusConflict,
-			"発注部材表が既にあります（発注書を作るか、表を消してから作り直してください）")
+			"足す先の発注部材表が見つかりません（画面を読み直してください）")
 		return
 	}
+	auth.Audit(user.Username, "order-draft.create",
+		pageID+" "+itoa(len(req.Lines))+"行 into="+into)
+	cms.WriteJSON(w, map[string]any{
+		"success": true, "page_id": pageID, "rows": rows, "into": into})
+}
 
-	table := orderDraftHTML(req.Lines)
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		return cur + table
-	}); err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+err.Error())
-		return
+// appendToDraft は本文の `into` 枚目の発注部材表へ行を足します。
+//
+// ⚠ **表は木で数えます**——`data-type` でも `<caption>` でも名乗れるので、
+// 文字列で探すと**キャプションで名乗った表を見落とします**。
+func appendToDraft(body, into string, lines []ourOrderLine) (out string, added int, ok bool) {
+	n, err := strconv.Atoi(into)
+	if err != nil || n < 1 {
+		return body, 0, false
 	}
-	auth.Audit(user.Username, "order-draft.create", pageID+" "+itoa(len(req.Lines))+"行")
-	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "rows": len(req.Lines)})
+	nodes, perr := htmldoc.ParseFragment(body)
+	if perr != nil {
+		return body, 0, false
+	}
+	tables := tablesOfType(nodes, OrderDraftType)
+	if n > len(tables) {
+		return body, 0, false
+	}
+	tbody := lastChild(tables[n-1], "tbody")
+	if tbody == nil {
+		tbody = tables[n-1]
+	}
+	for _, ln := range lines {
+		tr := &html.Node{Type: html.ElementNode, Data: "tr"}
+		for _, c := range columnsOf(OrderDraftType) {
+			td := &html.Node{Type: html.ElementNode, Data: "td"}
+			if v := orderLineValue(ln, c.Field); v != "" {
+				td.AppendChild(&html.Node{Type: html.TextNode, Data: v})
+			}
+			tr.AppendChild(td)
+		}
+		tbody.AppendChild(tr)
+		added++
+	}
+	return htmldoc.Render(nodes), added, true
+}
+
+// CountOrderDrafts はページの本文にある発注部材表の数を返します。
+//
+// ⚠ **画面が「新しく作る／1枚目へ足す／2枚目へ足す」を出すため**に要ります。
+func CountOrderDrafts(pageID int) int {
+	body, err := cms.ReadPageBody(page.FormatID(pageID))
+	if err != nil {
+		return 0
+	}
+	nodes, perr := htmldoc.ParseFragment(body)
+	if perr != nil {
+		return 0
+	}
+	return len(tablesOfType(nodes, OrderDraftType))
 }
 
 // orderDraftHTML は発注部材表のHTMLを組みます。
@@ -184,4 +255,97 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(d)
+}
+
+// replaceDraftWithLink は、元になった発注部材表を発注書ページへのリンクに置き換えます。
+//
+// ユーザー（2026-09-22）:「**発注書ページが出来て、実際に発注するまで発注ページに
+// 発注書ページへのリンクが残れば良いのでは？**」
+//
+// ⚠ **表は消して、リンクを残します**——中身は発注書ページへ移ったので、**残すと
+// 古い写しになり、次の発注のときに混ざります**。⚠ **リンクは残します**：
+// **まだ発注していないもの**が発注ページの上で一目で分かるように。
+//
+// ⚠ **うまくいかなくても発注書は取り消しません**——**紙のほうが重い**ので、
+// 「表が残ってしまった」は人が消せば済みます。返すのは**添える一文**だけです。
+func replaceDraftWithLink(user *auth.User, draftPage, draftIndex, orderID, supplier string,
+	rows int) string {
+	if strings.TrimSpace(draftPage) == "" || strings.TrimSpace(draftIndex) == "" {
+		return "" // どの表から作ったか分からない（画面が古いときなど）
+	}
+	pageID, ok := page.NormalizeID(draftPage)
+	if !ok {
+		return "⚠ 元の発注部材表を片付けられません（ページIDが不正です）"
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(draftIndex))
+	if err != nil || n < 1 {
+		return "⚠ 元の発注部材表を片付けられません（何枚目か分かりません）"
+	}
+	// ⚠ **開いている人が居たら触りません**——オートセーブと上書きし合います。
+	if _, open := editlock.Locks.EditorOpen(pageNum(pageID)); open {
+		return "⚠ 元の発注部材表はそのままです（誰かが発注ページを編集中です）"
+	}
+	link := `<p>📄 <a href="/` + orderID + `">発注書 ` + orderID + `　` +
+		stdhtml.EscapeString(supplier) + `</a>（` + strconv.Itoa(rows) +
+		`行・<strong>まだ発注していません</strong>）</p>`
+	done := false
+	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+		out, ok := replaceDraftTable(cur, n, link)
+		done = ok
+		if !ok {
+			return cur
+		}
+		return out
+	}); werr != nil {
+		return "⚠ 元の発注部材表を片付けられません: " + werr.Error()
+	}
+	if !done {
+		return "⚠ 元の発注部材表が見つかりませんでした（画面を読み直してください）"
+	}
+	return ""
+}
+
+// replaceDraftTable は本文の n 枚目の発注部材表を、渡したHTMLで置き換えます。
+//
+// ⚠ **木で探して木で差し替えます**——文字列でやると、`<caption>` で名乗った表や
+// 入れ子の `</table>` で切り損ねます。
+func replaceDraftTable(body string, n int, replacementHTML string) (string, bool) {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body, false
+	}
+	tables := tablesOfType(nodes, OrderDraftType)
+	if n < 1 || n > len(tables) {
+		return body, false
+	}
+	target := tables[n-1]
+	repl, rerr := htmldoc.ParseFragment(replacementHTML)
+	if rerr != nil {
+		return body, false
+	}
+	// ⚠ **トップレベルの表には `Parent` がありません**（`ParseFragment` は根の無い
+	//    ノード列を返す）。**本文の直下に置かれた表がまさにそれ**なので、
+	//    その場合はノード列のほうを組み替えます。
+	if target.Parent == nil {
+		out := make([]*html.Node, 0, len(nodes)+len(repl))
+		hit := false
+		for _, nd := range nodes {
+			if nd == target {
+				hit = true
+				out = append(out, repl...)
+				continue
+			}
+			out = append(out, nd)
+		}
+		if !hit {
+			return body, false
+		}
+		return htmldoc.Render(out), true
+	}
+	parent := target.Parent
+	for _, r := range repl {
+		parent.InsertBefore(r, target)
+	}
+	parent.RemoveChild(target)
+	return htmldoc.Render(nodes), true
 }

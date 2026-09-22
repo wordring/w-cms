@@ -6338,39 +6338,40 @@ document.addEventListener('click', (e) => {
         return p;
     }
 
+    // 発注部材表の足元から**発注書ページ**を作る（2026-09-22・ユーザーの流れ）。
+    //
+    // ⚠ **ボタンは発注部材表の下に居ます**——「発注部材表から発注書を作るので
+    //    『発注書を作る』ボタンは発注部材表の下にあるはずです」（ユーザー訂正）。
+    //    だから**行は、その表から読みます**（未発注の表ではありません）。
     async function create(go) {
-        const form = go.closest('.unorder-form');
-        const root = form && form.parentElement;
-        const box = root ? root.querySelector('[data-unorder-result]') : null;
-        const table = root ? root.querySelector('.unorder-table') : null;
+        const form = go.closest('.draft-form');
+        const box = form && form.parentElement
+            ? form.parentElement.querySelector('[data-draft-result]') : null;
+        const table = form ? form.closest('table') : null;
         if (!form || !box || !table) return;
 
-        const picked = [...table.querySelectorAll('.unorder-check')]
-            .filter((c) => c.checked)
-            .map((c) => lineOf(c.closest('tr')));
-        if (picked.length === 0) {
-            // ⚠ **黙って何もしないのがいちばん困る壊れ方**です。
-            say(box, '⚠ 発注する行を選んでください', 'proc-why-ng');
+        const lines = draftLinesOf(table);
+        if (lines.length === 0) {
+            say(box, '⚠ 発注部材表に行がありません（表へ書いてから押してください）', 'proc-why-ng');
             return;
         }
         const val = (k) => {
-            const el = form.querySelector('[data-unorder="' + k + '"]');
+            const el = form.querySelector('[data-draft="' + k + '"], [data-unorder="' + k + '"]');
             return el ? el.value.trim() : '';
         };
         const body = {
             supplier: val('supplier'), order_at: val('order_at'),
-            due: val('due'), note: val('note'),
-            // ⚠ **差出人は `<select>`**（サーバーが候補を描く）。`val` は value を読むので
-            //    `<input>` と同じ扱いで足ります。
-            signer: val('signer'), lines: picked,
+            due: val('due'), note: val('note'), signer: val('signer'), lines,
+            // ⚠ **どの表から作ったか**——作り終えたら、その表はこの発注書ページへの
+            //    リンクに化けます（ユーザー決定）。
+            draft_page: form.getAttribute('data-draft-page') || '',
+            draft_index: form.getAttribute('data-draft-index') || '',
         };
         if (!body.supplier) {
             say(box, '⚠ 仕入先を入れてください（発注書は1枚に1社です）', 'proc-why-ng');
             return;
         }
         if (!body.signer) {
-            // ⚠ **差出人が空のまま作らせません**——**誰の名前で紙が出るか**は
-            //    黙って決めてよいことではないので、既定も置いていません。
             say(box, '⚠ 差出人を選んでください（紙に刷る署名です）', 'proc-why-ng');
             return;
         }
@@ -6385,25 +6386,46 @@ document.addEventListener('click', (e) => {
             });
             const d = await res.json().catch(() => ({}));
             if (!res.ok || !d.success) {
-                say(box, (d && d.message) || ('作れません（' + res.status + '）'), 'proc-why-ng');
+                say(box, '⚠ ' + (d.message || '発注書を作れませんでした'), 'proc-why-ng');
                 return;
             }
-            // ⚠ **できたページへ行ける形で出します**——「できました」だけだと、
-            //    どこにできたのか分からず探すことになります。
-            box.textContent = '';
-            const p = document.createElement('p');
-            p.appendChild(document.createTextNode('発注書を作りました: '));
-            const a = document.createElement('a');
-            a.href = d.url || ('/' + d.page_id);
-            a.textContent = d.page_id;
-            p.appendChild(a);
-            p.appendChild(document.createTextNode('（' + picked.length + '行）'));
-            box.appendChild(p);
-        } catch (e) {
-            say(box, '作れません（通信に失敗しました）', 'proc-why-ng');
+            say(box, '発注書ができました（' + d.page_id + '）。読み直しています…');
+            location.reload();
+        } catch (err) {
+            say(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
         } finally {
             go.disabled = false;
         }
+    }
+
+    // draftLinesOf は発注部材表の中身を、発注書へ送る形で読みます。
+    //
+    // ⚠ **人が書き換えた値を読みます**——だから属性（`data-*`）ではなく**セルの文字**
+    //    です。未発注の表とは逆で、あちらは機械が出した値なので属性から読みます。
+    function draftLinesOf(table) {
+        const rows = [...table.querySelectorAll('tr')];
+        if (rows.length < 2) return [];
+        const head = [...rows[0].children].map((c) => c.textContent.trim());
+        const at = (cells, label) => {
+            const i = head.indexOf(label);
+            return i >= 0 && cells[i] ? cells[i].textContent.trim() : '';
+        };
+        const out = [];
+        for (const tr of rows.slice(1)) {
+            // ⚠ **鏡が足した行（足元のフォーム）は飛ばします。**
+            if (tr.closest('tfoot')) continue;
+            const cells = [...tr.children];
+            const ln = {
+                product_id: at(cells, '弊社品番'), item_name: at(cells, '品名'),
+                material: at(cells, '材質'), shape: at(cells, '形状'), size: at(cells, '寸法'),
+                quantity: at(cells, '数量'), unit: at(cells, '単位'),
+                cost: at(cells, '単価'), note: at(cells, '備考'),
+            };
+            // 空の行（書き足す取っ掛かりとして置いた1行）は送りません。
+            if (Object.values(ln).every((v) => !v)) continue;
+            out.push(ln);
+        }
+        return out;
     }
 
     // 未発注の表から**発注部材表**を1つ作る（2026-09-22・ユーザーの流れ）。
@@ -6445,7 +6467,7 @@ document.addEventListener('click', (e) => {
             //    画面を組み替えるのではなくサーバーの描いたものを受け取ります。
             // ⚠ **本文が変わったのでページを読み直します**——表は本文の一部なので、
             //    画面で組み立てず、サーバーが描いたものを受け取ります。
-            say(box, '発注部材表を作りました（' + d.rows + '行）。読み直しています…');
+            say(box, (d.into ? d.into + '枚目へ ' : '新しい表に ') + d.rows + '行入れました。読み直しています…');
             location.reload();
         } catch (err) {
             say(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
@@ -6458,7 +6480,7 @@ document.addEventListener('click', (e) => {
     //    配線すると描き直しのたびに切れます。
     document.addEventListener('click', (e) => {
         if (!e.target || !e.target.closest) return;
-        const go = e.target.closest('[data-unorder-go]');
+        const go = e.target.closest('[data-draft-go]');
         if (go) {
             create(go);
             return;
