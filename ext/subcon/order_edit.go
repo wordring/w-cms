@@ -29,12 +29,9 @@ import (
 	"net/http"
 	"strings"
 
-
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
-	"w-cms/internal/cms/page"
 )
 
 // editableOrderFields は受注残表から書ける列です（見出しの表示文字）。
@@ -79,9 +76,8 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, okID := page.NormalizeID(req.PageID)
+	pageID, okID := normalizePageIDOrFail(w, req.PageID)
 	if !okID {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	if !editableOrderFields[req.Field] {
@@ -89,13 +85,9 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, req.Field+" はここからは編集できません")
 		return
 	}
-	// 受注ページ自身への write（残表のページの権限では足りません）。
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-	// ⚠ **開いている人が居れば断ります。** `RequireEditLock` は使えません——
-	// 一覧の画面はトークンを持てず必ず409になるためです（2026-09-14 の決定）。
-	if !editlock.RefuseWhileEditing(w, pageID) {
+	// 受注ページ自身への write（残表のページの権限では足りません）と、
+	// ⚠ **開いている人が居れば断る**関門（`handler_gate.go`）。
+	if !requireWritableIdle(w, r, pageID) {
 		return
 	}
 

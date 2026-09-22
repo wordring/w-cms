@@ -35,7 +35,6 @@ import (
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -66,9 +65,8 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, okID := page.NormalizeID(req.PageID)
+	pageID, okID := normalizePageIDOrFail(w, req.PageID)
 	if !okID {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	method := strings.TrimSpace(req.Method)
@@ -79,22 +77,18 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 			"送り方は "+sendByMail+"・"+sendByFax+"・"+sendByHand+" のどれかです")
 		return
 	}
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-	if !editlock.RefuseWhileEditing(w, pageID) {
+	if !requireWritableIdle(w, r, pageID) {
 		return
 	}
 	changed := 0
-	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		out, n := setOrderLineStatus(cur, 0, OrderLineSent)
 		changed = n
 		return out
-	}); werr != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+werr.Error())
+	}) {
 		return
 	}
-	auth.Audit(user.Username, "our-order.sent", pageID+" "+method+" "+itoa(changed)+"行")
+	auth.Audit(user.Username, "our-order.sent", pageID+" "+method+" "+strconv.Itoa(changed)+"行")
 	// ⚠ **0行でも失敗にしません。** もう全部 `発注済` だった（2通目を送った・
 	//    FAXのあとにメールもした）は**普通に起こります**——そこで赤いエラーを出すと、
 	//    人は「送れていない」と読みます。
@@ -116,11 +110,7 @@ func supplierAddresses(user *auth.User, supplier string) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(id string) {
-		n, err := strconv.Atoi(id)
-		if err != nil {
-			return
-		}
-		for _, v := range mailAddressesOfPage(n) {
+		for _, v := range mailAddressesOfPage(pageNum(id)) {
 			addr := bareMailAddress(v)
 			if addr == "" || seen[addr] {
 				continue
@@ -202,13 +192,12 @@ func orderMailBody(head map[string]string, supplier, orderID string) string {
 }
 
 // signerLinesFor は発注書ページのタグ（`発注担当`）から、その人の署名を読みます。
+//
+// ⚠ **読めるかは見ません**——メールの下書きは、書いている人自身がその署名を
+// 選んだ発注書ページで組むものです。紙に刷る側（`senderLines`）は見ます。
 func signerLinesFor(head map[string]string, heading string) []string {
-	id, ok := page.NormalizeID(strings.TrimSpace(head[OrderSignerTag]))
+	n, ok := signerPage(head)
 	if !ok {
-		return nil
-	}
-	n, err := strconv.Atoi(id)
-	if err != nil {
 		return nil
 	}
 	return SignatureOf(n, heading)
@@ -280,16 +269,16 @@ func orderSendFormHTML(user *auth.User, pageIDInt int, head map[string]string,
 func orderSendStateHTML(c OrderSendCounts) string {
 	switch {
 	case c.Total == 0 && c.Cancelled > 0:
-		return `<strong>全部取り消しました</strong>（` + itoa(c.Cancelled) + `行）`
+		return `<strong>全部取り消しました</strong>（` + strconv.Itoa(c.Cancelled) + `行）`
 	case c.Total == 0:
 		return `明細がありません`
 	case c.Sent == 0:
-		return `⚠ <strong>まだ発注していません</strong>（` + itoa(c.Total) + `行）`
+		return `⚠ <strong>まだ発注していません</strong>（` + strconv.Itoa(c.Total) + `行）`
 	case c.Sent < c.Total:
-		return `⚠ <strong>` + itoa(c.Total-c.Sent) + `行がまだ発注済みになっていません</strong>（` +
-			itoa(c.Sent) + `/` + itoa(c.Total) + `行）`
+		return `⚠ <strong>` + strconv.Itoa(c.Total-c.Sent) + `行がまだ発注済みになっていません</strong>（` +
+			strconv.Itoa(c.Sent) + `/` + strconv.Itoa(c.Total) + `行）`
 	default:
-		return `✓ 発注済み（` + itoa(c.Total) + `行）` + cancelledNote(c)
+		return `✓ 発注済み（` + strconv.Itoa(c.Total) + `行）` + cancelledNote(c)
 	}
 }
 
@@ -298,5 +287,5 @@ func cancelledNote(c OrderSendCounts) string {
 	if c.Cancelled == 0 {
 		return ""
 	}
-	return `　<span class="matsearch-src">取消 ` + itoa(c.Cancelled) + `行</span>`
+	return `　<span class="matsearch-src">取消 ` + strconv.Itoa(c.Cancelled) + `行</span>`
 }

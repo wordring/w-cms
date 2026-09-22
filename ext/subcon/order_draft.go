@@ -64,19 +64,9 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, okID := page.NormalizeID(req.PageID)
+	// 本文へ表を足すので write と、誰も編集していないことが要ります（`handler_gate.go`）。
+	pageID, okID := gateWritablePage(w, r, req.PageID)
 	if !okID {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
-	// 本文へ表を足すので write が要ります。
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-	// ⚠ **機械が既存ページの本文を書き換えるときの関門**（`RewriteBody` は読んで・
-	//    変えて・書くので、エディタが開いているとオートセーブと上書きし合います）。
-	//    ⚠ **自分が開いていても断ります。**
-	if !editlock.RefuseWhileEditing(w, pageID) {
 		return
 	}
 
@@ -88,7 +78,7 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	into := strings.TrimSpace(req.Into)
 	rows := 0
 	found := into == "" // 新規なら「行き先が見つかった」扱い
-	werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		if into == "" {
 			rows = len(req.Lines)
 			return cur + orderDraftHTML(req.Lines)
@@ -100,9 +90,7 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = n
 		return merged
-	})
-	if werr != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+werr.Error())
+	}) {
 		return
 	}
 	if !found {
@@ -111,7 +99,7 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "order-draft.create",
-		pageID+" "+itoa(len(req.Lines))+"行 into="+into)
+		pageID+" "+strconv.Itoa(len(req.Lines))+"行 into="+into)
 	cms.WriteJSON(w, map[string]any{
 		"success": true, "page_id": pageID, "rows": rows, "into": into})
 }
@@ -244,19 +232,6 @@ func isTableOfTypeInBody(body, vocabType string) bool {
 	return len(tablesOfType(nodes, vocabType)) > 0
 }
 
-// itoa は小さな数を文字列にします（監査の文のため）。
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var d []byte
-	for n > 0 {
-		d = append([]byte{byte('0' + n%10)}, d...)
-		n /= 10
-	}
-	return string(d)
-}
-
 // replaceDraftWithLink は、元になった発注部材表を発注書ページへのリンクに置き換えます。
 //
 // ユーザー（2026-09-22）:「**発注書ページが出来て、実際に発注するまで発注ページに
@@ -320,36 +295,12 @@ func replaceDraftTable(body string, n int, replacementHTML string) (string, bool
 	if n < 1 || n > len(tables) {
 		return body, false
 	}
-	target := tables[n-1]
 	repl, rerr := htmldoc.ParseFragment(replacementHTML)
 	if rerr != nil {
 		return body, false
 	}
-	// ⚠ **トップレベルの表には `Parent` がありません**（`ParseFragment` は根の無い
-	//    ノード列を返す）。**本文の直下に置かれた表がまさにそれ**なので、
-	//    その場合はノード列のほうを組み替えます。
-	if target.Parent == nil {
-		out := make([]*html.Node, 0, len(nodes)+len(repl))
-		hit := false
-		for _, nd := range nodes {
-			if nd == target {
-				hit = true
-				out = append(out, repl...)
-				continue
-			}
-			out = append(out, nd)
-		}
-		if !hit {
-			return body, false
-		}
-		return htmldoc.Render(out), true
-	}
-	parent := target.Parent
-	for _, r := range repl {
-		parent.InsertBefore(r, target)
-	}
-	parent.RemoveChild(target)
-	return htmldoc.Render(nodes), true
+	// ⚠ トップレベルの表には `Parent` が無い（`spliceNodes` がその罠を引き受ける）。
+	return spliceNodes(nodes, tables[n-1], repl, false)
 }
 
 // draftedQty は「**いま発注部材表に入っている数**」を、加工製品×購入品ごとに返します。
@@ -412,27 +363,19 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, okID := page.NormalizeID(req.PageID)
+	pageID, okID := gateWritablePage(w, r, req.PageID)
 	if !okID {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-	if !editlock.RefuseWhileEditing(w, pageID) {
 		return
 	}
 	done := false
-	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		out, ok := removeDraftRow(cur, req.Table, req.Row)
 		done = ok
 		if !ok {
 			return cur
 		}
 		return out
-	}); werr != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+werr.Error())
+	}) {
 		return
 	}
 	if !done {
@@ -441,7 +384,7 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "order-draft.remove",
-		pageID+" 表"+itoa(req.Table)+" 行"+itoa(req.Row))
+		pageID+" 表"+strconv.Itoa(req.Table)+" 行"+strconv.Itoa(req.Row))
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID})
 }
 
@@ -461,77 +404,21 @@ func removeDraftRow(body string, n, row int) (string, bool) {
 	if n > len(tables) {
 		return body, false
 	}
-	var body0 *html.Node
-	for c := tables[n-1].FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && c.Data == "tbody" {
-			body0 = c
-			break
-		}
+	table := tables[n-1]
+	rows := rowsOf(table) // 先頭は見出し行
+	if row >= len(rows) {
+		return body, false
 	}
-	if body0 == nil {
-		body0 = tables[n-1]
+	tr := rows[row]
+	tr.Parent.RemoveChild(tr)
+	// ⚠ **最後の1行を外したら、表ごと消します**（2026-09-22 ユーザー:
+	//    「**戻しても部材表から消えません**」）。**見出しだけの表が残ると、
+	//    発注ページに空の表が溜まります**——しかも「何枚目へ足すか」の選択肢に
+	//    並ぶので、**押し間違いの元**になります。
+	//    ⚠ **空の表を作る道は残します**（何も選ばずに「発注部材表へ入れる」）
+	//    ——**人が意図して作った空の表**と、**外して空になった表**は別のことです。
+	if len(rowsOf(table)) <= 1 {
+		return spliceNodes(nodes, table, nil, false)
 	}
-	i := 0
-	for c := body0.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode || c.Data != "tr" {
-			continue
-		}
-		if i == 0 { // 見出し行
-			i++
-			continue
-		}
-		if i == row {
-			body0.RemoveChild(c)
-			// ⚠ **最後の1行を外したら、表ごと消します**（2026-09-22 ユーザー:
-			//    「**戻しても部材表から消えません**」）。**見出しだけの表が残ると、
-			//    発注ページに空の表が溜まります**——しかも「何枚目へ足すか」の選択肢に
-			//    並ぶので、**押し間違いの元**になります。
-			//    ⚠ **空の表を作る道は残します**（何も選ばずに「発注部材表へ入れる」）
-			//    ——**人が意図して作った空の表**と、**外して空になった表**は別のことです。
-			if !hasBodyRow(body0) {
-				return dropTable(nodes, tables[n-1])
-			}
-			return htmldoc.Render(nodes), true
-		}
-		i++
-	}
-	return body, false
-}
-
-// hasBodyRow は、見出しを除いた行が1つでも残っているかを返します。
-func hasBodyRow(tbody *html.Node) bool {
-	n := 0
-	for c := tbody.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && c.Data == "tr" {
-			n++
-			if n > 1 { // 見出し行のほかに1つでもあれば
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// dropTable は表そのものをノード列から外します。
-//
-// ⚠ **トップレベルの表には `Parent` がありません**（`ParseFragment` は根の無いノード列を
-// 返す）——**本文の直下に置かれた表がまさにそれ**なので、ノード列のほうを組み替えます。
-func dropTable(nodes []*html.Node, target *html.Node) (string, bool) {
-	if target.Parent != nil {
-		target.Parent.RemoveChild(target)
-		return htmldoc.Render(nodes), true
-	}
-	out := make([]*html.Node, 0, len(nodes))
-	hit := false
-	for _, nd := range nodes {
-		if nd == target {
-			hit = true
-			continue
-		}
-		out = append(out, nd)
-	}
-	if !hit {
-		return htmldoc.Render(nodes), false
-	}
-	return htmldoc.Render(out), true
+	return htmldoc.Render(nodes), true
 }

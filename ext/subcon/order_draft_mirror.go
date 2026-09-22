@@ -23,7 +23,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
 
@@ -42,7 +41,7 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		span = len(columnsOf(OrderDraftType))
 	}
 	// この表が何枚目かを数えます（画面が「どの表から作るか」を送るため）。
-	idx := draftIndexOf(ctx, el)
+	idx := draftIndexOf(ctx)
 	// ⚠ **行ごとに「戻す」を付けます**（2026-09-22 ユーザー:「**発注部材表から
 	//    未手配の一覧へ戻す方法がありません**」）。
 	//    ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、ここから消せば
@@ -58,42 +57,20 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 // ⚠ **鏡なので本文には残りません**（`.vocab-chrome`）。⚠ **見出し行にも1つ足します**
 // ——足さないと**列がずれて見えます**（見出しが1つ足りない表になる）。
 func addDraftRowButtons(table *html.Node, pageID string, idx int) {
-	tb := lastChild(table, "tbody")
-	if tb == nil {
-		tb = table
-	}
-	row := 0
-	for c := tb.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode || c.Data != "tr" {
-			continue
-		}
-		cell := &html.Node{Type: html.ElementNode, Data: "td",
-			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome draft-row-act"}}}
-		if row == 0 {
-			// 見出し行（`<th>` が並ぶ）。空の見出しを1つ足して列を揃えます。
-			cell.Data = "th"
-		} else {
-			inner := `<button type="button" class="chip-btn draft-row-back"` +
-				` data-draft-page="` + stdhtml.EscapeString(pageID) + `"` +
-				` data-draft-table="` + strconv.Itoa(idx) + `"` +
-				` data-draft-row="` + strconv.Itoa(row) + `"` +
-				` title="未手配の一覧へ戻します（この行を外します）">↩ 戻す</button>`
-			if nodes, err := htmldoc.ParseFragment(inner); err == nil {
-				for _, n := range nodes {
-					cell.AppendChild(n)
-				}
-			}
-		}
-		c.AppendChild(cell)
-		row++
-	}
+	addRowChromeCells(table, "draft-row-act", func(row int, _ *html.Node) string {
+		return `<button type="button" class="chip-btn draft-row-back"` +
+			` data-draft-page="` + stdhtml.EscapeString(pageID) + `"` +
+			` data-draft-table="` + strconv.Itoa(idx) + `"` +
+			` data-draft-row="` + strconv.Itoa(row) + `"` +
+			` title="未手配の一覧へ戻します（この行を外します）">↩ 戻す</button>`
+	})
 }
 
 // draftIndexOf は、その表がページの何枚目の発注部材表かを返します（1始まり）。
 //
 // ⚠ **鏡は表ごとに呼ばれる**ので、自分が何枚目かは自分では分かりません。
 // `MirrorContext.Counter` が形式ごとの文書順の連番を配るので、それを使います。
-func draftIndexOf(ctx *cms.MirrorContext, el *html.Node) int {
+func draftIndexOf(ctx *cms.MirrorContext) int {
 	return ctx.Counter(OrderDraftType) + 1
 }
 

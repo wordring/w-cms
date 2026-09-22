@@ -23,7 +23,6 @@ import (
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
 
@@ -94,27 +93,13 @@ func addOrderRowButtons(table *html.Node, orderID string) {
 		return
 	}
 	si := headerIndexOf(rows[0], "状態")
-	for i, tr := range rows {
-		cell := &html.Node{Type: html.ElementNode, Data: "td",
-			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome order-row-act"}}}
-		if i == 0 {
-			// 見出し行。⚠ **足さないと列がずれて見えます**。
-			cell.Data = "th"
-		} else {
-			status := ""
-			if si >= 0 {
-				status = strings.TrimSpace(cellText(tr, si))
-			}
-			if inner := orderRowButtonsHTML(orderID, i, status); inner != "" {
-				if nodes, err := htmldoc.ParseFragment(inner); err == nil {
-					for _, n := range nodes {
-						cell.AppendChild(n)
-					}
-				}
-			}
+	addRowChromeCells(table, "order-row-act", func(row int, tr *html.Node) string {
+		status := ""
+		if si >= 0 {
+			status = strings.TrimSpace(cellText(tr, si))
 		}
-		tr.AppendChild(cell)
-	}
+		return orderRowButtonsHTML(orderID, row, status)
+	})
 }
 
 // orderRowButtonsHTML は1行ぶんのボタンです。

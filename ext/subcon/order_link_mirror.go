@@ -29,7 +29,6 @@ import (
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
 
@@ -46,36 +45,18 @@ func init() {
 // **何も足さずに黙ります**（見せ分けと同じ規律：読めないと存在しないを区別させない）。
 func renderOrderLinkState(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
-	ref := strings.TrimSpace(attrOf(el, "data-ref"))
-	id, ok := page.NormalizeID(ref)
+	id, ok := page.NormalizeID(strings.TrimSpace(cms.Attr(el, "data-ref")))
 	if !ok {
 		return false, nil
 	}
-	n, err := strconv.Atoi(id)
-	if err != nil || !page.CanView(ctx.Viewer, n) {
+	n := pageNum(id)
+	if !page.CanView(ctx.Viewer, n) {
 		return false, nil
 	}
 	counts := OrderSendStateOf(ctx.DB, n)
-	inner := `<span class="vocab-chrome order-link-state">` +
-		orderSendStateHTML(counts) + `</span>`
-	nodes, perr := htmldoc.ParseFragment(inner)
-	if perr != nil {
-		return false, nil
-	}
-	for _, nd := range nodes {
-		el.AppendChild(nd)
-	}
+	appendHTML(el, `<span class="vocab-chrome order-link-state">`+
+		orderSendStateHTML(counts)+`</span>`)
 	return false, nil
-}
-
-// attrOf は要素の属性を読みます（無ければ空）。
-func attrOf(el *html.Node, key string) string {
-	for _, a := range el.Attr {
-		if a.Key == key {
-			return a.Val
-		}
-	}
-	return ""
 }
 
 // orderLinkHTML は発注部材表と入れ替える本文です。
@@ -86,5 +67,5 @@ func orderLinkHTML(orderID, supplier string, rows int) string {
 	return `<section data-type="` + OrderLinkType + `" data-ref="` +
 		stdhtml.EscapeString(orderID) + `"><p>📄 <a href="/` + stdhtml.EscapeString(orderID) +
 		`">発注書 ` + stdhtml.EscapeString(orderID) + `　` +
-		stdhtml.EscapeString(supplier) + `</a>（` + itoa(rows) + `行）</p></section>`
+		stdhtml.EscapeString(supplier) + `</a>（` + strconv.Itoa(rows) + `行）</p></section>`
 }

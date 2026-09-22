@@ -122,8 +122,7 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	body := buildOurOrderHTML(newID, supplier, when.Format("2006-01-02"),
 		strings.TrimSpace(req.Due), strings.TrimSpace(req.Note), signerID, req.Lines)
-	if err := cms.RewriteBody(newID, user.Username, func(string) string { return body }); err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+err.Error())
+	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
 		return
 	}
 	auth.Audit(user.Username, "our-order-new", newID+" "+supplier+" "+

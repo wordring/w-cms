@@ -35,15 +35,12 @@ package subcon
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
-	"w-cms/internal/cms/page"
-
-	"golang.org/x/net/html"
 )
 
 // 発注明細の `状態` の値です。
@@ -134,9 +131,8 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, okID := page.NormalizeID(req.PageID)
+	pageID, okID := normalizePageIDOrFail(w, req.PageID)
 	if !okID {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
 		return
 	}
 	value := strings.TrimSpace(req.Value)
@@ -147,19 +143,15 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 			strings.Join(orderLineStatuses(), "・")+" のどれかです")
 		return
 	}
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
-	if !editlock.RefuseWhileEditing(w, pageID) {
+	if !requireWritableIdle(w, r, pageID) {
 		return
 	}
 	changed := 0
-	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		out, n := setOrderLineStatus(cur, req.Row, value)
 		changed = n
 		return out
-	}); werr != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "本文を書けません: "+werr.Error())
+	}) {
 		return
 	}
 	if changed == 0 {
@@ -168,7 +160,7 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "our-order.line-status",
-		pageID+" 行"+itoa(req.Row)+" → "+value+"（"+itoa(changed)+"行）")
+		pageID+" 行"+strconv.Itoa(req.Row)+" → "+value+"（"+strconv.Itoa(changed)+"行）")
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "rows": changed})
 }
 
@@ -209,18 +201,18 @@ func setOrderLineStatus(body string, row int, value string) (string, int) {
 			if row > 0 && i+1 != row {
 				continue
 			}
-			cell := cellAt(tr, si)
-			if cell == nil {
+			cells := cellsOf(tr)
+			if si >= len(cells) {
 				continue
 			}
-			cur := strings.TrimSpace(cellText(tr, si))
+			cur := strings.TrimSpace(textOf(cells[si]))
 			if row == 0 && orderLineCancelled(cur) {
 				continue // まとめ書きは取消を起こさない
 			}
 			if cur == value {
 				continue
 			}
-			setCellText(cell, value)
+			setCellText(cells[si], value)
 			changed++
 		}
 	}
@@ -228,22 +220,4 @@ func setOrderLineStatus(body string, row int, value string) (string, int) {
 		return body, 0
 	}
 	return htmldoc.Render(nodes), changed
-}
-
-// cellAt は行の n 番目のセルを返します（無ければ nil）。
-func cellAt(tr *html.Node, n int) *html.Node {
-	if n < 0 {
-		return nil
-	}
-	i := 0
-	for c := tr.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode || (c.Data != "td" && c.Data != "th") {
-			continue
-		}
-		if i == n {
-			return c
-		}
-		i++
-	}
-	return nil
 }

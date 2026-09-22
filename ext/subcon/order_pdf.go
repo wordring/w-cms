@@ -35,9 +35,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
-	"w-cms/internal/cms/page"
 )
 
 // ErrNoPDFFont は「PDF用の日本語フォントが設定されていない」です。
@@ -79,20 +77,12 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, okID := page.NormalizeID(req.PageID)
-	if !okID {
-		cms.JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
-		return
-	}
 	// 添付を足す操作なので write 権限。
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
 	// ⚠ **2026-09-22 から本文も触ります**（PDFを開くマーカーを置く）。それまでは
 	//    「本文は変えないので編集ロックは要りません」でしたが、**変えるようになった
-	//    ので関門が要ります**——`RewriteBody` は読んで・変えて・書くので、エディタが
-	//    開いているとオートセーブと黙って上書きし合います。
-	if !editlock.RefuseWhileEditing(w, pageID) {
+	//    ので関門が要ります**（`handler_gate.go`）。
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID {
 		return
 	}
 	body, err := cms.ReadPageBody(pageID)
@@ -381,7 +371,7 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 	if len(rows) == 0 {
 		if cancelled > 0 {
 			return nil, nil, nil, errors.New("発注明細は全部取り消されています（" +
-				itoa(cancelled) + "行）")
+				strconv.Itoa(cancelled) + "行）")
 		}
 		return nil, nil, nil, errors.New("発注明細に中身のある行がありません")
 	}

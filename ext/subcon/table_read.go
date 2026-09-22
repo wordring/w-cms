@@ -127,19 +127,7 @@ func pagesByAnyTag(db cms.ReadOnlyDB, names []string, value string) []int {
 // `tfoot` は `vocab-chrome` なので保存されません。検算の行と「移行の確認前」の行が
 // 同じ12行を写していたので寄せました。
 func appendFootRow(table *html.Node, span int, trClass, text string) {
-	foot := lastChild(table, "tfoot")
-	if foot == nil {
-		foot = &html.Node{Type: html.ElementNode, Data: "tfoot",
-			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome"}}}
-		table.AppendChild(foot)
-	}
-	td := &html.Node{Type: html.ElementNode, Data: "td",
-		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
-	td.AppendChild(&html.Node{Type: html.TextNode, Data: text})
-	tr := &html.Node{Type: html.ElementNode, Data: "tr",
-		Attr: []html.Attribute{{Key: "class", Val: trClass}}}
-	tr.AppendChild(td)
-	foot.AppendChild(tr)
+	footCell(table, span, trClass).AppendChild(&html.Node{Type: html.TextNode, Data: text})
 }
 
 // appendFootHTML は表の足元へ、**HTMLの中身**を持つ行を1つ足します。
@@ -150,6 +138,12 @@ func appendFootRow(table *html.Node, span int, trClass, text string) {
 // ⚠ **表の中へ `<div>` を直に足してはいけません**——HTMLパーサが表の外（手前）へ
 // 追い出します。だから `<tfoot>` の `<td>` の中に入れます。
 func appendFootHTML(table *html.Node, span int, trClass, innerHTML string) {
+	appendHTML(footCell(table, span, trClass), innerHTML)
+}
+
+// footCell は `<tfoot class="vocab-chrome">`（無ければ作る）に横いっぱいの行を1つ足し、
+// その `<td>` を返します。テキストの行と入力欄の行が同じ12行を写していたので寄せました。
+func footCell(table *html.Node, span int, trClass string) *html.Node {
 	foot := lastChild(table, "tfoot")
 	if foot == nil {
 		foot = &html.Node{Type: html.ElementNode, Data: "tfoot",
@@ -158,13 +152,103 @@ func appendFootHTML(table *html.Node, span int, trClass, innerHTML string) {
 	}
 	td := &html.Node{Type: html.ElementNode, Data: "td",
 		Attr: []html.Attribute{{Key: "colspan", Val: strconv.Itoa(span)}}}
-	if nodes, err := htmldoc.ParseFragment(innerHTML); err == nil {
-		for _, n := range nodes {
-			td.AppendChild(n)
-		}
-	}
 	tr := &html.Node{Type: html.ElementNode, Data: "tr",
 		Attr: []html.Attribute{{Key: "class", Val: trClass}}}
 	tr.AppendChild(td)
 	foot.AppendChild(tr)
+	return td
+}
+
+// appendHTML は断片を解析して、その要素の末尾へ子として足します（解析できなければ何もしない）。
+//
+// 鏡が押すものを足す場所（足元の欄・行末のボタン・リンクの後ろの進み具合）が
+// 同じ5行を4回写していたので寄せました。
+func appendHTML(parent *html.Node, innerHTML string) {
+	nodes, err := htmldoc.ParseFragment(innerHTML)
+	if err != nil {
+		return
+	}
+	for _, n := range nodes {
+		parent.AppendChild(n)
+	}
+}
+
+// addRowChromeCells は表の各行の末尾へクロームのセルを1つ足します。
+//
+// 見出し行（最初の行）には空の `<th>`——⚠ **足さないと列がずれて見えます**。
+// データ行には `inner(row, tr)` が返すHTML（空なら空のセル）。`row` は見出しを除いた
+// 1始まりの番号で、画面が「何行目」を送るときの数え方と揃えてあります。
+// ⚠ **`vocab-chrome` を付けるのは必須です**——付けないと、人が画面の表をコピーして
+// 貼ったときに**本当の列として保存されます**。
+func addRowChromeCells(table *html.Node, class string, inner func(row int, tr *html.Node) string) {
+	for i, tr := range rowsOf(table) {
+		cell := &html.Node{Type: html.ElementNode, Data: "td",
+			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome " + class}}}
+		if i == 0 {
+			cell.Data = "th"
+		} else if s := inner(i, tr); s != "" {
+			appendHTML(cell, s)
+		}
+		tr.AppendChild(cell)
+	}
+}
+
+// findElement は断片の中から、条件に合う最初の要素を文書順で返します（無ければ nil）。
+func findElement(nodes []*html.Node, pred func(*html.Node) bool) *html.Node {
+	var found *html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if found != nil {
+			return
+		}
+		if n.Type == html.ElementNode && pred(n) {
+			found = n
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	for _, n := range nodes {
+		walk(n)
+	}
+	return found
+}
+
+// spliceNodes は断片の中の target を repl で置き換え（keepTarget なら target の直後へ足し）、
+// 描画し直した本文を返します。target が断片に無ければ (元の本文, false)。
+//
+// ⚠ **トップレベルの要素には `Parent` がありません**（`ParseFragment` は根の無い
+// ノード列を返す）。**本文の直下に置かれた表がまさにそれ**なので、その場合は
+// ノード列のほうを組み替えます——表の差し替え・表の削除・PDFのマーカーの挿入が
+// 同じ罠を3回書いていたので寄せました。
+func spliceNodes(nodes []*html.Node, target *html.Node, repl []*html.Node, keepTarget bool) (string, bool) {
+	if target.Parent == nil {
+		out := make([]*html.Node, 0, len(nodes)+len(repl))
+		hit := false
+		for _, nd := range nodes {
+			if nd != target {
+				out = append(out, nd)
+				continue
+			}
+			hit = true
+			if keepTarget {
+				out = append(out, nd)
+			}
+			out = append(out, repl...)
+		}
+		if !hit {
+			return htmldoc.Render(nodes), false
+		}
+		return htmldoc.Render(out), true
+	}
+	parent := target.Parent
+	anchor := target.NextSibling
+	if !keepTarget {
+		parent.RemoveChild(target)
+	}
+	for _, r := range repl {
+		parent.InsertBefore(r, anchor)
+	}
+	return htmldoc.Render(nodes), true
 }

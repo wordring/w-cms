@@ -79,32 +79,14 @@ func placeOrderPDFView(body, ref string) (string, bool) {
 	if len(tables) == 0 {
 		return body, false
 	}
-	target := tables[0]
 	marker, merr := htmldoc.ParseFragment(
 		`<section data-type="` + cms.FileViewType + `" ` + cms.FileRefAttr + `="` +
 			stdhtml.EscapeString(ref) + `"></section>`)
 	if merr != nil || len(marker) == 0 {
 		return body, false
 	}
-	// ⚠ **トップレベルの表には `Parent` がありません**（`ParseFragment` は根の無い
-	//    ノード列を返す）。**本文の直下に置かれた表がまさにそれ**なので、
-	//    その場合はノード列のほうを組み替えます（`replaceDraftTable` と同じ罠）。
-	if target.Parent == nil {
-		out := make([]*html.Node, 0, len(nodes)+len(marker))
-		for _, nd := range nodes {
-			out = append(out, nd)
-			if nd == target {
-				out = append(out, marker...)
-			}
-		}
-		return htmldoc.Render(out), true
-	}
-	parent := target.Parent
-	next := target.NextSibling
-	for _, m := range marker {
-		parent.InsertBefore(m, next)
-	}
-	return htmldoc.Render(nodes), true
+	// ⚠ トップレベルの表には `Parent` が無い（`spliceNodes` がその罠を引き受ける）。
+	return spliceNodes(nodes, tables[0], marker, true)
 }
 
 // firstFileView は本文の最初のファイル表示のマーカーを返します（無ければ nil）。
@@ -113,25 +95,9 @@ func placeOrderPDFView(body, ref string) (string, bool) {
 // 人が別のファイルを貼っていたら、そちらが差し替わる可能性はありますが、
 // **発注書ページに手でファイルを貼る用事はありません**（添付は落とせます）。
 func firstFileView(nodes []*html.Node) *html.Node {
-	var found *html.Node
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if found != nil {
-			return
-		}
-		if n.Type == html.ElementNode && n.Data == "section" &&
-			cms.Attr(n, "data-type") == cms.FileViewType {
-			found = n
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	for _, n := range nodes {
-		walk(n)
-	}
-	return found
+	return findElement(nodes, func(n *html.Node) bool {
+		return n.Data == "section" && cms.Attr(n, "data-type") == cms.FileViewType
+	})
 }
 
 // setAttr は属性を書き換えます（無ければ足します）。

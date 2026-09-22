@@ -249,6 +249,18 @@ func DefaultSigner(user *auth.User, list []Signer) (Signer, bool) {
 	return Signer{}, false
 }
 
+// signerPage は発注書ページのタグ（`発注担当`）が名指しする人のページ番号を返します。
+//
+// ⚠ **`発注担当` のタグは人が本文で書き換えられます**——ここは「誰を指しているか」を
+// 読むだけで、読めるか・署名があるかは呼ぶ側が確かめます。
+func signerPage(head map[string]string) (int, bool) {
+	id, ok := page.NormalizeID(strings.TrimSpace(head[OrderSignerTag]))
+	if !ok {
+		return 0, false
+	}
+	return pageNum(id), true
+}
+
 // senderLines は発注書の紙に刷る差出人の行を返します。
 //
 // ⚠ **担当者ページの署名が先、設定の `company` は後ろ盾**です（2026-09-22）。
@@ -263,11 +275,9 @@ func DefaultSigner(user *auth.User, list []Signer) (Signer, bool) {
 // **紙に出る手前のここが最後の砦**です。
 func senderLines(head map[string]string, viewer *auth.User) []string {
 	// ① このページが名指しした担当者の署名。
-	if id, ok := page.NormalizeID(strings.TrimSpace(head[OrderSignerTag])); ok {
-		if n := pageNum(id); page.CanView(viewer, n) {
-			if lines := SignatureOf(n, OrderSignatureHeading); len(lines) > 0 {
-				return lines
-			}
+	if n, ok := signerPage(head); ok && page.CanView(viewer, n) {
+		if lines := SignatureOf(n, OrderSignatureHeading); len(lines) > 0 {
+			return lines
 		}
 	}
 	// ② 後ろ盾（設定）。
