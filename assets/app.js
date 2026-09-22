@@ -6451,11 +6451,16 @@ document.addEventListener('click', (e) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
-                    body: JSON.stringify({
+                body: JSON.stringify({
                     // ⚠ **ページIDはサーバーが描いた属性から**——この配線は別の
                     //    スコープに居るので `currentPageId` が見えません。
                     page_id: form.getAttribute('data-unorder-page') || '',
                     lines: picked,
+                    // ⚠ **入れる先**（空なら新しく作る）。2026-09-22 に**これを
+                    //    送り忘れていて**、「1枚目へ足す」を選んでも**別の表が
+                    //    できていました**（ユーザー報告）——サーバーは正しく、
+                    //    **画面が値を送っていなかった**のです。
+                    into: (form.querySelector('[data-unorder="into"]') || {}).value || '',
                 }),
             });
             const d = await res.json().catch(() => ({}));
