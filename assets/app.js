@@ -6039,6 +6039,64 @@
         loadVersions();
     };
 
+// ── 鏡のボタンに共通の道具（2026-09-23 に寄せた）─────────────────────────
+//
+// 09-21〜22 に足した5つの配線（受注残の印刷・受注残からの書き戻し・材料を探す・
+// 未手配→発注部材表→発注書・発注書を送る）が、**同じ数行をそれぞれ写していました**
+// ——JSON を POST して `success` を見る（6回）・欄に1文を出す（2回）・入力欄の値を
+// 読む（3回）・document へ委譲した click を `closest` で振り分ける（4回）。
+// ここへ寄せ、以後はここを通します。
+//
+// ⚠ **鏡の配線は、サーバーが描いた属性だけで動くように書きます**（`currentPageId`
+//    など殻の状態に頼らない）——鏡が別のページに描かれた日に黙って壊れます。
+// ⚠ **配線は document へ委譲します**（要素ごとに配線しない）——鏡はサーバーが
+//    描き直すので、要素に付けた配線は描き直しのたびに切れます。
+// ⚠ **`innerHTML` へ文字列を入れません**（`createElement`＋`textContent`）。
+
+// postJSON は JSON を POST して `{ ok, status, data }` を返します。
+// `ok` は **HTTP が 2xx で、かつ本文の `success` が真**のとき。⚠ **通信の失敗は
+// 投げます**（呼ぶ側が「通信に失敗しました」と言い分けるため・握り潰さない）。
+async function postJSON(url, body) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok && !!data.success, status: res.status, data };
+}
+
+// sayIn は欄の中身をその1文だけにします（欄が無ければ何もしない）。
+function sayIn(box, text, cls) {
+    if (!box) return null;
+    box.textContent = '';
+    const p = document.createElement('p');
+    if (cls) p.className = cls;
+    p.textContent = text;
+    box.appendChild(p);
+    return p;
+}
+
+// valueIn は root の中の入力欄の値（前後の空白を落とす）です。無ければ空文字。
+function valueIn(root, selector) {
+    const el = root ? root.querySelector(selector) : null;
+    return el ? el.value.trim() : '';
+}
+
+// delegateClick は document の click を、押された要素から `closest` で引いた
+// **最初の当たり**へ振り分けます。⚠ **並び順が優先順位**です（先に書いた方が勝つ）。
+function delegateClick(handlers) {
+    document.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!t || !t.closest) return;
+        for (const [selector, fn] of handlers) {
+            const hit = t.closest(selector);
+            if (hit) { fn(hit, e); return; }
+        }
+    });
+}
+
 // ── 受注残表の印刷（2026-09-21）────────────────────────────────────────
 //
 // ユーザー:「顧客、納期ごとに別の表として分けて、**ワンタッチで印刷**もできると
@@ -6057,9 +6115,7 @@
 // ⚠ **ボタンはサーバーが描いたクロームです**（ext/subcon/backlog.go）。本文は
 // 読み込み直しで作り替わるので、**要素ごとに配線せず document へ委譲します**。
 // ⚠ **インラインの `onclick` は書けません**（CSP strict）。
-document.addEventListener('click', (e) => {
-    const btn = e.target && e.target.closest ? e.target.closest('.backlog-print') : null;
-    if (!btn) return;
+delegateClick([['.backlog-print', (btn) => {
     const sheet = btn.closest('.backlog-sheet');
     if (!sheet) return;
 
@@ -6085,7 +6141,7 @@ document.addEventListener('click', (e) => {
     // afterprint を出さないブラウザへの保険（Safari 系）。
     setTimeout(cleanup, 60000);
     window.print();
-});
+}]]);
 
 // ── 受注残表から受注明細を書き換える（2026-09-21）────────────────────────
 //
@@ -6141,19 +6197,13 @@ document.addEventListener('click', (e) => {
         el.classList.remove('order-edit-ng', 'order-edit-ok');
         el.disabled = true;
         try {
-            const res = await fetch('/api/order-item', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify(body),
-            });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) {
+            const r = await postJSON('/api/order-item', body);
+            if (!r.ok) {
                 // ⚠ **画面を元へ戻します。** 戻さないと「押したのに保存されていない」
                 // 状態が残り、次に見た人が正しいと思い込みます。
                 setValue(el, body.old);
                 el.classList.add('order-edit-ng');
-                showWhyHere(el, (d && d.message) || ('保存できません（' + res.status + '）'));
+                showWhyHere(el, r.data.message || ('保存できません（' + r.status + '）'));
                 return;
             }
             // ⚠ **次の変更のために、いまの値を更新します**（忘れると2回目が断られます）。
@@ -6260,25 +6310,16 @@ document.addEventListener('click', (e) => {
             ? form.parentElement.querySelector('[data-matsearch-result]') : null;
         if (!form || !box) return;
         const body = {};
-        FIELDS.forEach((f) => {
-            const el = form.querySelector('[data-matsearch="' + f + '"]');
-            body[f] = el ? el.value.trim() : '';
-        });
+        FIELDS.forEach((f) => { body[f] = valueIn(form, '[data-matsearch="' + f + '"]'); });
         go.disabled = true;
         box.textContent = '探しています…';
         try {
-            const res = await fetch('/api/material-search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify(body),
-            });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) {
-                box.textContent = (d && d.message) || ('探せません（' + res.status + '）');
+            const r = await postJSON('/api/material-search', body);
+            if (!r.ok) {
+                box.textContent = r.data.message || ('探せません（' + r.status + '）');
                 return;
             }
-            renderHits(box, d.hits);
+            renderHits(box, r.data.hits);
         } catch (e) {
             box.textContent = '探せません（通信に失敗しました）';
         } finally {
@@ -6288,10 +6329,7 @@ document.addEventListener('click', (e) => {
 
     // ⚠ **document へ委譲します**——欄はサーバーが描き直すので、要素ごとに配線すると
     //    描き直しのたびに切れます（受注残表の編集と同じ理由）。
-    document.addEventListener('click', (e) => {
-        const go = e.target && e.target.closest ? e.target.closest('[data-matsearch-go]') : null;
-        if (go) search(go);
-    });
+    delegateClick([['[data-matsearch-go]', search]]);
     // Enter でも探せるようにする（欄に指を置いたまま押せる）。
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
@@ -6329,15 +6367,6 @@ document.addEventListener('click', (e) => {
         };
     }
 
-    function say(box, text, cls) {
-        box.textContent = '';
-        const p = document.createElement('p');
-        if (cls) p.className = cls;
-        p.textContent = text;
-        box.appendChild(p);
-        return p;
-    }
-
     // 発注部材表の足元から**発注書ページ**を作る（2026-09-22・ユーザーの流れ）。
     //
     // ⚠ **ボタンは発注部材表の下に居ます**——「発注部材表から発注書を作るので
@@ -6352,13 +6381,10 @@ document.addEventListener('click', (e) => {
 
         const lines = draftLinesOf(table);
         if (lines.length === 0) {
-            say(box, '⚠ 発注部材表に行がありません（表へ書いてから押してください）', 'proc-why-ng');
+            sayIn(box,'⚠ 発注部材表に行がありません（表へ書いてから押してください）', 'proc-why-ng');
             return;
         }
-        const val = (k) => {
-            const el = form.querySelector('[data-draft="' + k + '"], [data-unorder="' + k + '"]');
-            return el ? el.value.trim() : '';
-        };
+        const val = (k) => valueIn(form, '[data-draft="' + k + '"], [data-unorder="' + k + '"]');
         const body = {
             supplier: val('supplier'), order_at: val('order_at'),
             due: val('due'), note: val('note'), signer: val('signer'), lines,
@@ -6368,31 +6394,25 @@ document.addEventListener('click', (e) => {
             draft_index: form.getAttribute('data-draft-index') || '',
         };
         if (!body.supplier) {
-            say(box, '⚠ 仕入先を入れてください（発注書は1枚に1社です）', 'proc-why-ng');
+            sayIn(box,'⚠ 仕入先を入れてください（発注書は1枚に1社です）', 'proc-why-ng');
             return;
         }
         if (!body.signer) {
-            say(box, '⚠ 差出人を選んでください（紙に刷る署名です）', 'proc-why-ng');
+            sayIn(box,'⚠ 差出人を選んでください（紙に刷る署名です）', 'proc-why-ng');
             return;
         }
         go.disabled = true;
-        say(box, '発注書を作っています…');
+        sayIn(box,'発注書を作っています…');
         try {
-            const res = await fetch('/api/our-order/new', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify(body),
-            });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) {
-                say(box, '⚠ ' + (d.message || '発注書を作れませんでした'), 'proc-why-ng');
+            const r = await postJSON('/api/our-order/new', body);
+            if (!r.ok) {
+                sayIn(box,'⚠ ' + (r.data.message || '発注書を作れませんでした'), 'proc-why-ng');
                 return;
             }
-            say(box, '発注書ができました（' + d.page_id + '）。読み直しています…');
+            sayIn(box,'発注書ができました（' + r.data.page_id + '）。読み直しています…');
             location.reload();
         } catch (err) {
-            say(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
+            sayIn(box,'⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
         } finally {
             go.disabled = false;
         }
@@ -6445,37 +6465,30 @@ document.addEventListener('click', (e) => {
                   .map((c) => lineOf(c.closest('tr')))
             : [];
         btn.disabled = true;
-        say(box, '発注部材表を作っています…');
+        sayIn(box,'発注部材表を作っています…');
         try {
-            const res = await fetch('/api/our-order/draft', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    // ⚠ **ページIDはサーバーが描いた属性から**——この配線は別の
-                    //    スコープに居るので `currentPageId` が見えません。
-                    page_id: form.getAttribute('data-unorder-page') || '',
-                    lines: picked,
-                    // ⚠ **入れる先**（空なら新しく作る）。2026-09-22 に**これを
-                    //    送り忘れていて**、「1枚目へ足す」を選んでも**別の表が
-                    //    できていました**（ユーザー報告）——サーバーは正しく、
-                    //    **画面が値を送っていなかった**のです。
-                    into: (form.querySelector('[data-unorder="into"]') || {}).value || '',
-                }),
+            const r = await postJSON('/api/our-order/draft', {
+                // ⚠ **ページIDはサーバーが描いた属性から**——この配線は別の
+                //    スコープに居るので `currentPageId` が見えません。
+                page_id: form.getAttribute('data-unorder-page') || '',
+                lines: picked,
+                // ⚠ **入れる先**（空なら新しく作る）。2026-09-22 に**これを
+                //    送り忘れていて**、「1枚目へ足す」を選んでも**別の表が
+                //    できていました**（ユーザー報告）——サーバーは正しく、
+                //    **画面が値を送っていなかった**のです。
+                into: valueIn(form, '[data-unorder="into"]'),
             });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) {
-                say(box, '⚠ ' + (d.message || '発注部材表を作れませんでした'), 'proc-why-ng');
+            if (!r.ok) {
+                sayIn(box,'⚠ ' + (r.data.message || '発注部材表を作れませんでした'), 'proc-why-ng');
                 return;
             }
-            // ⚠ **本文が変わったので読み直します**——表は本文の一部なので、
-            //    画面を組み替えるのではなくサーバーの描いたものを受け取ります。
+            const d = r.data;
             // ⚠ **本文が変わったのでページを読み直します**——表は本文の一部なので、
             //    画面で組み立てず、サーバーが描いたものを受け取ります。
-            say(box, (d.into ? d.into + '枚目へ ' : '新しい表に ') + d.rows + '行入れました。読み直しています…');
+            sayIn(box,(d.into ? d.into + '枚目へ ' : '新しい表に ') + d.rows + '行入れました。読み直しています…');
             location.reload();
         } catch (err) {
-            say(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
+            sayIn(box,'⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
         } finally {
             btn.disabled = false;
         }
@@ -6483,21 +6496,11 @@ document.addEventListener('click', (e) => {
 
     // ⚠ **document へ委譲します**——ビューはサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
-    document.addEventListener('click', (e) => {
-        if (!e.target || !e.target.closest) return;
-        const go = e.target.closest('[data-draft-go]');
-        if (go) {
-            create(go);
-            return;
-        }
-        const d = e.target.closest('[data-unorder-draft]');
-        if (d) {
-            draft(d);
-            return;
-        }
-        const back = e.target.closest('.draft-row-back');
-        if (back) removeDraftRow(back);
-    });
+    delegateClick([
+        ['[data-draft-go]', create],
+        ['[data-unorder-draft]', draft],
+        ['.draft-row-back', removeDraftRow],
+    ]);
 
     // 発注部材表から1行を外す＝**未手配の一覧へ戻す**（2026-09-22）。
     //
@@ -6508,19 +6511,13 @@ document.addEventListener('click', (e) => {
     async function removeDraftRow(btn) {
         btn.disabled = true;
         try {
-            const res = await fetch('/api/our-order/draft/remove', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    page_id: btn.getAttribute('data-draft-page') || '',
-                    table: Number(btn.getAttribute('data-draft-table') || 0),
-                    row: Number(btn.getAttribute('data-draft-row') || 0),
-                }),
+            const r = await postJSON('/api/our-order/draft/remove', {
+                page_id: btn.getAttribute('data-draft-page') || '',
+                table: Number(btn.getAttribute('data-draft-table') || 0),
+                row: Number(btn.getAttribute('data-draft-row') || 0),
             });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) {
-                alert('⚠ ' + (d.message || '戻せませんでした'));
+            if (!r.ok) {
+                alert('⚠ ' + (r.data.message || '戻せませんでした'));
                 btn.disabled = false;
                 return;
             }
@@ -6543,26 +6540,6 @@ document.addEventListener('click', (e) => {
 // ⚠ **送信の口は作っていません**——メールは `/api/mail/send` が既に在り、
 //    添付つきで送れて**通信箱に控えが残ります**。ここはそれを呼ぶだけです。
 (function wireOurOrderSend() {
-    function say(box, text, cls) {
-        if (!box) return;
-        box.textContent = '';
-        const p = document.createElement('p');
-        if (cls) p.className = cls;
-        p.textContent = text;
-        box.appendChild(p);
-    }
-
-    async function post(url, body) {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
-        });
-        const d = await res.json().catch(() => ({}));
-        return { ok: res.ok && d.success, data: d };
-    }
-
     // 行1つの印を変える（発注済・納品済・取消・戻す）。
     //
     // ⚠ **紙が外へ出たあとの取消は、押しただけでは終わりません**（ユーザー:「電話などで
@@ -6574,7 +6551,7 @@ document.addEventListener('click', (e) => {
         const ask = btn.getAttribute('data-order-confirm') || '';
         if (ask && !confirm(ask)) return;
         btn.disabled = true;
-        const r = await post('/api/our-order/line-status', {
+        const r = await postJSON('/api/our-order/line-status', {
             page_id: btn.getAttribute('data-order-page') || '',
             row: Number(btn.getAttribute('data-order-row') || 0),
             value: btn.getAttribute('data-order-status') || '',
@@ -6597,19 +6574,19 @@ document.addEventListener('click', (e) => {
         const root = btn.closest('.order-send');
         const box = root ? root.querySelector('[data-order-result]') : null;
         btn.disabled = true;
-        say(box, '発注書のPDFを作っています…');
-        const r = await post('/api/order-pdf', {
+        sayIn(box,'発注書のPDFを作っています…');
+        const r = await postJSON('/api/order-pdf', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
         }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
         if (!r.ok) {
-            say(box, '⚠ ' + (r.data.message || 'PDFを作れませんでした'), 'proc-why-ng');
+            sayIn(box,'⚠ ' + (r.data.message || 'PDFを作れませんでした'), 'proc-why-ng');
             btn.disabled = false;
             return;
         }
         // ⚠ **表示できなかったことを黙りません**（PDFは出来ているので、失敗では
         //    ありませんが、画面に出ないことは伝える必要があります）。
         if (r.data.view_note) {
-            say(box, r.data.view_note, 'proc-why-ng');
+            sayIn(box,r.data.view_note, 'proc-why-ng');
             btn.disabled = false;
             return;
         }
@@ -6623,13 +6600,13 @@ document.addEventListener('click', (e) => {
         const method = btn.getAttribute('data-order-sent') || '';
         if (!confirm(method + 'で発注書を送りましたか？（取消でない行すべてを発注済みにします）')) return;
         btn.disabled = true;
-        say(box, '印を付けています…');
-        const r = await post('/api/our-order/sent', {
+        sayIn(box,'印を付けています…');
+        const r = await postJSON('/api/our-order/sent', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
             method,
         }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
         if (!r.ok) {
-            say(box, '⚠ ' + (r.data.message || '印を付けられませんでした'), 'proc-why-ng');
+            sayIn(box,'⚠ ' + (r.data.message || '印を付けられませんでした'), 'proc-why-ng');
             btn.disabled = false;
             return;
         }
@@ -6645,27 +6622,24 @@ document.addEventListener('click', (e) => {
         const box = root ? root.querySelector('[data-order-result]') : null;
         if (!root) return;
         const pageID = root.getAttribute('data-order-page') || '';
-        const val = (k) => {
-            const el = root.querySelector('[data-order="' + k + '"]');
-            return el ? el.value.trim() : '';
-        };
+        const val = (k) => valueIn(root, '[data-order="' + k + '"]');
         const to = val('to').split(/[,;\s]+/).filter((s) => s);
         if (to.length === 0) {
-            say(box, '⚠ 宛先を入れてください', 'proc-why-ng');
+            sayIn(box,'⚠ 宛先を入れてください', 'proc-why-ng');
             return;
         }
         btn.disabled = true;
         try {
             // 1. PDFを作る（このページの添付としても残ります）。
-            say(box, '発注書のPDFを作っています…');
-            const pdf = await post('/api/order-pdf', { page_id: pageID });
+            sayIn(box,'発注書のPDFを作っています…');
+            const pdf = await postJSON('/api/order-pdf', { page_id: pageID });
             if (!pdf.ok) {
-                say(box, '⚠ PDFを作れませんでした: ' + (pdf.data.message || ''), 'proc-why-ng');
+                sayIn(box,'⚠ PDFを作れませんでした: ' + (pdf.data.message || ''), 'proc-why-ng');
                 return;
             }
             // 2. 送る（控えは通信箱に残ります）。
-            say(box, 'メールを送っています…');
-            const sent = await post('/api/mail/send', {
+            sayIn(box,'メールを送っています…');
+            const sent = await postJSON('/api/mail/send', {
                 to,
                 subject: val('subject'),
                 body: val('body'),
@@ -6678,14 +6652,14 @@ document.addEventListener('click', (e) => {
                 }],
             });
             if (!sent.ok) {
-                say(box, '⚠ 送れませんでした: ' + (sent.data.message || ''), 'proc-why-ng');
+                sayIn(box,'⚠ 送れませんでした: ' + (sent.data.message || ''), 'proc-why-ng');
                 return;
             }
             // 3. 印を付ける。⚠ **ここで失敗しても「送れていない」とは言いません**。
-            say(box, '送りました。発注済みの印を付けています…');
-            const mark = await post('/api/our-order/sent', { page_id: pageID, method: 'メール' });
+            sayIn(box,'送りました。発注済みの印を付けています…');
+            const mark = await postJSON('/api/our-order/sent', { page_id: pageID, method: 'メール' });
             if (!mark.ok) {
-                say(box, '⚠ メールは送りました（' + to.join(', ') +
+                sayIn(box,'⚠ メールは送りました（' + to.join(', ') +
                     '）が、発注済みの印を付けられませんでした: ' +
                     (mark.data.message || '') + '　行ごとの「✓ 発注済」を押してください。',
                     'proc-why-ng');
@@ -6693,7 +6667,7 @@ document.addEventListener('click', (e) => {
             }
             location.reload();
         } catch (err) {
-            say(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
+            sayIn(box,'⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
         } finally {
             btn.disabled = false;
         }
@@ -6701,15 +6675,10 @@ document.addEventListener('click', (e) => {
 
     // ⚠ **document へ委譲します**——鏡はサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
-    document.addEventListener('click', (e) => {
-        if (!e.target || !e.target.closest) return;
-        const row = e.target.closest('.order-row-set');
-        if (row) { setRowStatus(row); return; }
-        const pdf = e.target.closest('[data-order-pdf]');
-        if (pdf) { makePDF(pdf); return; }
-        const sent = e.target.closest('[data-order-sent]');
-        if (sent) { markSent(sent); return; }
-        const send = e.target.closest('[data-order-send]');
-        if (send) sendMail(send);
-    });
+    delegateClick([
+        ['.order-row-set', setRowStatus],
+        ['[data-order-pdf]', makePDF],
+        ['[data-order-sent]', markSent],
+        ['[data-order-send]', sendMail],
+    ]);
 })();
