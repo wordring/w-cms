@@ -163,11 +163,7 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, li
 		//    **材質・形状・寸法の3つで決まります**——`鉄 FB t4.5*75*1090` と書くと、
 		//    同じことが紙の上で2回言われ、**直すときに食い違います**。
 		//    購入部品は逆で、**品名が同一性そのもの**なので残します。
-		itemName := strings.TrimSpace(ln.ItemName)
-		if strings.TrimSpace(ln.Material) != "" || strings.TrimSpace(ln.Shape) != "" ||
-			strings.TrimSpace(ln.Size) != "" {
-			itemName = ""
-		}
+		itemName := itemNameOf(ln)
 		vals := map[string]string{
 			"our-item-id": strings.TrimSpace(ln.ProductID),
 			"item-name":   itemName,
@@ -205,4 +201,20 @@ func moneyOrEmpty(s string) string {
 		return ""
 	}
 	return v
+}
+
+// itemNameOf は、その行に書く `品名` を返します。
+//
+// ⚠ **材料の行には書きません。** 材料に単独の名前は無く、**材質・形状・寸法の3つで
+// 決まります**——`鉄 FB t4.5*75*1090` と書くと、同じことが紙の上で2回言われ、
+// **直すときに食い違います**。⚠ **購入部品は逆**で、**品名が同一性そのもの**なので残します。
+//
+// ⚠ **発注部材表（`order_draft.go`）と共有します**——同じ規則を2か所に書くと、
+// **片方だけ直した日に、表と紙で品名が違います**。
+func itemNameOf(ln ourOrderLine) string {
+	if strings.TrimSpace(ln.Material) != "" || strings.TrimSpace(ln.Shape) != "" ||
+		strings.TrimSpace(ln.Size) != "" {
+		return ""
+	}
+	return strings.TrimSpace(ln.ItemName)
 }

@@ -114,6 +114,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 未手配の一覧から発注書を1枚作る口（2026-09-21・our_order_new.go）。
 		// ⚠ **仕入先が無ければ作りません**——1枚＝1社が発注書の単位です。
 		{Pattern: "/api/our-order/new", Handler: NewOurOrderAPIHandler},
+		// 未発注の表から**発注部材表**を1つ作る口（2026-09-22・order_draft.go）。
+		// ⚠ **行が0でも作ります**——空の表から始められることが、加工製品ページに
+		// 無い部材（消耗品・治具）だけを買うときの道です。
+		{Pattern: "/api/our-order/draft", Handler: NewOrderDraftAPIHandler},
 	}
 }
 

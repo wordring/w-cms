@@ -6406,10 +6406,64 @@ document.addEventListener('click', (e) => {
         }
     }
 
+    // 未発注の表から**発注部材表**を1つ作る（2026-09-22・ユーザーの流れ）。
+    //
+    // ⚠ **何も選ばなくても押せます**——空の表から始める道（加工製品ページに無い
+    //    部材だけを買うとき）。だから `create` と違って「0件なら断る」をしません。
+    async function draft(btn) {
+        const form = btn.closest('.unorder-form');
+        const root = form && form.parentElement;
+        const box = root ? root.querySelector('[data-unorder-result]') : null;
+        const table = root ? root.querySelector('.unorder-table') : null;
+        if (!form || !box) return;
+
+        const picked = table
+            ? [...table.querySelectorAll('.unorder-check')]
+                  .filter((c) => c.checked)
+                  .map((c) => lineOf(c.closest('tr')))
+            : [];
+        btn.disabled = true;
+        say(box, '発注部材表を作っています…');
+        try {
+            const res = await fetch('/api/our-order/draft', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                    body: JSON.stringify({
+                    // ⚠ **ページIDはサーバーが描いた属性から**——この配線は別の
+                    //    スコープに居るので `currentPageId` が見えません。
+                    page_id: form.getAttribute('data-unorder-page') || '',
+                    lines: picked,
+                }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) {
+                say(box, '⚠ ' + (d.message || '発注部材表を作れませんでした'), 'proc-why-ng');
+                return;
+            }
+            // ⚠ **本文が変わったので読み直します**——表は本文の一部なので、
+            //    画面を組み替えるのではなくサーバーの描いたものを受け取ります。
+            // ⚠ **本文が変わったのでページを読み直します**——表は本文の一部なので、
+            //    画面で組み立てず、サーバーが描いたものを受け取ります。
+            say(box, '発注部材表を作りました（' + d.rows + '行）。読み直しています…');
+            location.reload();
+        } catch (err) {
+            say(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
     // ⚠ **document へ委譲します**——ビューはサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
     document.addEventListener('click', (e) => {
-        const go = e.target && e.target.closest ? e.target.closest('[data-unorder-go]') : null;
-        if (go) create(go);
+        if (!e.target || !e.target.closest) return;
+        const go = e.target.closest('[data-unorder-go]');
+        if (go) {
+            create(go);
+            return;
+        }
+        const d = e.target.closest('[data-unorder-draft]');
+        if (d) draft(d);
     });
 })();

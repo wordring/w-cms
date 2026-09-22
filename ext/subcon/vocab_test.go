@@ -58,6 +58,9 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		"part-materials", "client-order-items", "our-order-items",
 		"required-materials", "drawing-revisions", "drawing-revision-items",
 		"part-outsourcing", "part-purchased", "part-supplied", "part-estimate",
+		// **発注部材表**（2026-09-22）——未発注の表から作り、人が足し引きしてから
+		// 発注書にする。⚠ **列は発注明細と同じ**（`orderItemColumns`）。
+		OrderDraftType,
 		// ⚠ **ビューの器**（2026-09-21）——材質・形状・寸法で材料を探す欄。
 		MaterialSearchViewType, UnorderedViewType,
 	}
@@ -68,5 +71,29 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		if _, ok := cms.VocabDefByType(typ); !ok {
 			t.Errorf("%s がコアへ登録されていません", typ)
 		}
+	}
+}
+
+// TestOrderDraftSharesColumnsWithOrderItems は、⚠ **発注部材表と発注明細の列が
+// 同じ**であることを固定します（2026-09-22）。
+//
+// ⚠ **片方だけ列を足すと、発注部材表から発注書へ移すときに落ちます**——しかも
+// エラーは出ません（索引は見出しの表示文字で引くので、黙ってずれるだけ）。
+func TestOrderDraftSharesColumnsWithOrderItems(t *testing.T) {
+	draft := columnsOf(OrderDraftType)
+	items := columnsOf(ourOrderItemsType)
+	if len(draft) != len(items) {
+		t.Fatalf("列の数が違います: 発注部材表 %d / 発注明細 %d", len(draft), len(items))
+	}
+	for i := range draft {
+		if draft[i].Label != items[i].Label || draft[i].Field != items[i].Field ||
+			draft[i].Type != items[i].Type {
+			t.Errorf("%d列目が違います: %#v / %#v", i, draft[i], items[i])
+		}
+	}
+	// ⚠ **スライスを共有していないこと**——片方を書き換えたらもう片方も変わる、
+	//    という壊れ方は**気づくのが何か月も後**になります。
+	if len(draft) > 0 && &draft[0] == &items[0] {
+		t.Error("⚠ 同じスライスを返しています（片方の書き換えがもう片方に及びます）")
 	}
 }

@@ -42,10 +42,14 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 
 	var b strings.Builder
 	b.WriteString(head)
-	b.WriteString(`<p class="unorder-help">行を選び、仕入先を入れて「発注書を作る」を` +
-		`押すと、<strong>発注／年／月</strong> に1枚できます。` +
-		`並びは<strong>納期順</strong>、同じ納期の中は<strong>装置順</strong>です。` +
-		`⚠ 発注書は<strong>1枚に1社</strong>です。</p>`)
+	b.WriteString(`<p class="unorder-help">行を選んで「発注部材表を作る」を押すと、` +
+		`下に<strong>発注部材表</strong>ができます` +
+		`——そこで<strong>足し引き</strong>してから発注書にします` +
+		`（⚠ <strong>何も選ばずに押してもかまいません</strong>。` +
+		`加工製品ページに無い部材だけを買うときは、空の表から書き始めます）。` +
+		`並びは<strong>納期順</strong>、同じ納期の中は<strong>装置順</strong>。` +
+		`⚠ 発注書は<strong>1枚に1社</strong>なので、` +
+		`<strong>同じ業者のものだけ</strong>を選んでください。</p>`)
 	b.WriteString(`<table class="materials-table unorder-table"><thead><tr>` +
 		`<th class="unorder-pick">選</th><th>納期</th><th>客先</th><th>装置</th><th>弊社品番</th>` +
 		`<th>購入品</th><th class="num">残</th><th>参考単価</th>` +
@@ -67,7 +71,7 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		b.WriteString(`</tr>`)
 	}
 	b.WriteString(`</tbody></table>`)
-	b.WriteString(unorderedFormHTML(user))
+	b.WriteString(unorderedFormHTML(user, pageIDInt))
 	return b.String()
 }
 
@@ -118,11 +122,19 @@ func unorderedCostHTML(u UnorderedItem) string {
 //
 // ⚠ **候補を出します**（`推奨業者` と同じ出どころ）——打つより選ぶほうが速く、
 // 速ければ表記が揃います。
-func unorderedFormHTML(user *auth.User) string {
+func unorderedFormHTML(user *auth.User, pageIDInt int) string {
 	f := func(id, label, ph, typ string) string {
 		return searchFieldHTML("unorder", id, label, ph, typ)
 	}
-	return `<div class="matsearch-form unorder-form">` +
+	// ⚠ **ページIDは属性で渡します**——画面の配線は別のスコープに居て
+	//    `currentPageId` が見えません（受注残表の書き戻しも同じ手です）。
+	return `<div class="matsearch-form unorder-form" data-unorder-page="` +
+		page.FormatID(pageIDInt) + `">` +
+		// ⚠ **表作成が先、発注書はそのあと**（2026-09-22 ユーザーの流れ）。
+		//    未発注の表 → [表作成] → **発注部材表**（人が足し引き）→ [発注書作成]。
+		//    ⚠ **何も選ばなくても押せます**——空の表から始める道（消耗品・治具だけを買う）。
+		`<button type="button" class="matsearch-go" data-unorder-draft="1">` +
+		`発注部材表を作る</button>` +
 		signerFieldHTML(user) +
 		f("supplier", "仕入先", "みなと商店", "text") +
 		f("order_at", "発注日", "", "date") +

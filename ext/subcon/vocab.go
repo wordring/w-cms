@@ -385,22 +385,25 @@ var businessVocab = []cms.VocabDef{
 		// ⚠ **`弊社品番` も置きます**（同日:「入れる場所があるなら、**弊社品番も入れたい**」）。
 		// 加工製品ページを指す参照で、**紙には出さなくてよい**——相手には意味が無く、
 		// **こちらが問い合わせを受けたときに引くための番号**です。
-		Columns: []cms.VocabColumn{
-			{Field: "our-item-id", Label: "弊社品番", Type: cms.ColRef},
-			{Field: "item-id", Label: "品番", Type: cms.ColCode},
-			{Field: "item-name", Label: "品名", Type: cms.ColText},
-			// 材料のときだけ使う3つ（`材料` 表と同じ名前・同じ意味）。
-			{Field: "material", Label: "材質", Type: cms.ColText},
-			{Field: "shape", Label: "形状", Type: cms.ColText},
-			{Field: "size", Label: "寸法", Type: cms.ColText},
-			// 塗装・鍍金のときだけ使う（値は `緑`・`三価ユニクロ、タコメッキ` など）。
-			{Field: "color", Label: "色", Type: cms.ColText},
-			{Field: "quantity", Label: "数量", Type: cms.ColNumber},
-			{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: []string{"個", "セット", "本", "枚", "kg", "m"}},
-			{Field: "cost", Label: "単価", Type: cms.ColNumber},
-			{Field: "note", Label: "備考", Type: cms.ColText},
-			{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"未納品", "納品済"}},
-		},
+		Columns: orderItemColumns(),
+	},
+	{
+		// **発注部材表**（2026-09-22）。ユーザー:「候補の表は**発注ページの未発注の
+		// 表の下**で良いのでは？…**表作成ボタン**をクリックすると**発注部材表**が開き、
+		// そこを編集して**発注書作成**をクリックすると、**発注書ページ**ができ」。
+		//
+		// ⚠ **列は発注明細と同じ12列**です——**そのまま発注書へ移せる**ようにするため。
+		// 違うのは**まだ紙になっていない**ことだけなので、形を変える理由がありません。
+		//
+		// ⚠ **これは鏡ではなく本文の表です。** 未手配の一覧（鏡）は機械が毎回計算し、
+		// こちらは**人が足し引きした結果**が残ります——「今回は自社加工する」「この
+		// 消耗品も頼む」は機械には導けないので、**書いてよい事実**です。
+		Type:        OrderDraftType,
+		DisplayName: "発注部材表",
+		Category:    "業務",
+		Icon:        "🛒",
+		Element:     "table",
+		Columns:     orderItemColumns(),
 	},
 	{
 		// 未手配の一覧（2026-09-21）。⚠ **受注を横断します**——発注は納期のグループ
@@ -436,8 +439,11 @@ var businessVocab = []cms.VocabDef{
 const (
 	clientOrderItemsType = "client-order-items" // 受注明細（顧客からの注文）
 	ourOrderItemsType    = "our-order-items"    // 発注明細（弊社が出す注文）
-	partMaterialsType    = "part-materials"     // 材料
-	partPurchasedType    = "part-purchased"     // 購入部品
+	// OrderDraftType は**発注部材表**です（2026-09-22）。発注ページの上で、
+	// **人が足し引きする**候補の表——これを元に発注書ページが作られます。
+	OrderDraftType    = "order-draft"
+	partMaterialsType = "part-materials" // 材料
+	partPurchasedType = "part-purchased" // 購入部品
 )
 
 // columnsOf は形式の列を宣言から返します（未登録なら nil）。
@@ -469,4 +475,32 @@ func headerRowHTML(vocabType string) string {
 	}
 	b.WriteString("</tr>")
 	return b.String()
+}
+
+// orderItemColumns は発注の明細の列です。
+//
+// ⚠ **発注明細（`our-order-items`）と発注部材表（`order-draft`）で共有します**
+// （2026-09-22）。**片方だけ列を足すと、発注部材表から発注書へ移すときに落ちます**
+// ——しかもエラーは出ません（索引は見出しの表示文字で引くので、黙ってずれるだけ）。
+//
+// ⚠ **関数にしてあるのは、パッケージ変数の初期化が `init()` より先に走るから**では
+// ありません（ここはレジストリを引いていないので安全です）。**同じ値を2つの宣言へ
+// 渡すため**で、スライスを共有すると片方の書き換えがもう片方に及ぶので、毎回作ります。
+func orderItemColumns() []cms.VocabColumn {
+	return []cms.VocabColumn{
+		{Field: "our-item-id", Label: "弊社品番", Type: cms.ColRef},
+		{Field: "item-id", Label: "品番", Type: cms.ColCode},
+		{Field: "item-name", Label: "品名", Type: cms.ColText},
+		// 材料のときだけ使う3つ（`材料` 表と同じ名前・同じ意味）。
+		{Field: "material", Label: "材質", Type: cms.ColText},
+		{Field: "shape", Label: "形状", Type: cms.ColText},
+		{Field: "size", Label: "寸法", Type: cms.ColText},
+		// 塗装・鍍金のときだけ使う（値は `緑`・`三価ユニクロ、タコメッキ` など）。
+		{Field: "color", Label: "色", Type: cms.ColText},
+		{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: []string{"個", "セット", "本", "枚", "kg", "m"}},
+		{Field: "cost", Label: "単価", Type: cms.ColNumber},
+		{Field: "note", Label: "備考", Type: cms.ColText},
+		{Field: "status", Label: "状態", Type: cms.ColEnum, Enum: []string{"未納品", "納品済"}},
+	}
 }
