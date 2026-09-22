@@ -13,15 +13,23 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  await lib.login(page, BASE);
   const BOX = process.env.WCMS_PARTNER_BOX ||
     ((await lib.childrenOf(page, '000000')).find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
   if (!BOX) { console.log('取引先ページがありません（連絡先を1件登録すると作られます）'); await browser.close(); process.exit(1); }
 
-  // ── 下ごしらえ: わざと間違えて分類する
+  // ⚠ **当て先の住所が未登録の一覧に無ければ飛ばします**（2026-09-23）——通信記録を
+  //    取り込んでいない環境（自宅）では「戻った」を確かめようがなく、落ちていました。
   const addr = 'cloud-noreply@google.com';
+  const listed = await page.evaluate(async ({ a, box }) =>
+    (await (await fetch('/api/load?id=' + box)).text()).includes(a), { a: addr, box: BOX });
+  if (!listed) {
+    console.log('飛ばします: 未登録の一覧に ' + addr + ' がありません（通信記録を取り込んだ環境で流すこと）');
+    await browser.close();
+    return;
+  }
+
+  // ── 下ごしらえ: わざと間違えて分類する
   const made = await page.evaluate(async (a) => {
     const res = await fetch('/api/contacts/register', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

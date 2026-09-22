@@ -12,6 +12,7 @@
 // 使い方: WCMS_BASE=https://localhost:8443 node probe-print-backlog.js
 //         （受注残表を置いたページを WCMS_PAGE で指す。既定は受注箱を探す）
 const { chromium } = require('playwright');
+const { login } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
@@ -20,11 +21,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await ctx.newPage();
 
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a');
-  await page.fill('#password', 'a');
-  await page.click('button[type=submit]');
-  await page.waitForLoadState('networkidle');
+  await login(page, BASE);
 
   // ⚠ **当て先を焼き込みません**（2026-09-16 の決定）——受注残表を持つページを探します。
   // ⚠ **先頭のスラッシュ無しでも受けます。** MSYS の bash は環境変数の先頭の `/` を

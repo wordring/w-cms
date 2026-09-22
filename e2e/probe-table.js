@@ -7,6 +7,7 @@
 //
 // 使い方: node probe-table.js
 const { chromium } = require('playwright');
+const { login } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const PAGE = process.env.WCMS_PAGE || '/010153'; // 通信箱（未処理一覧＝列の多い表）
@@ -16,10 +17,7 @@ const PAGE = process.env.WCMS_PAGE || '/010153'; // 通信箱（未処理一覧�
   for (const width of [320, 390, 760, 1200]) {
     const ctx = await browser.newContext({ viewport: { width, height: 800 } });
     const page = await ctx.newPage();
-    await page.goto(BASE + '/login');
-    await page.fill('#username', 'a'); await page.fill('#password', 'a');
-    await page.click('button[type=submit]');
-    await page.waitForLoadState('networkidle');
+    await login(page, BASE);
     await page.goto(BASE + PAGE);
     await page.waitForTimeout(600);
 

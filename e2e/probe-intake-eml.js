@@ -25,9 +25,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await ctx.newPage();
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  await lib.login(page, BASE);
   if (!MAILBOX) {
     MAILBOX = await lib.findMailbox(page);
     if (!MAILBOX) { console.log('通信箱がありません（管理画面の「置き場」で作れます）'); process.exit(1); }

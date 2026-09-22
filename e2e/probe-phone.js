@@ -11,6 +11,7 @@
 //     同じ明るさの青と赤は 1.00:1 になる——見分けは付くのに。
 //     色の差は **CIE Lab の ΔE**、色覚の型は**シミュレーション**で見る。
 const { chromium } = require('playwright');
+const { login } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const USER = process.env.WCMS_USER || 'a';
@@ -62,11 +63,7 @@ function simulate(rgb, kind) {
       hasTouch: true, isMobile: true,
     });
     const page = await ctx.newPage();
-    await page.goto(BASE + '/login');
-    await page.fill('#username', USER);
-    await page.fill('#password', PASS);
-    await page.click('button[type=submit]');
-    await page.waitForLoadState('networkidle');
+    await login(page, BASE, USER, PASS);
 
     console.log('\n=== 幅 ' + width + 'px ===');
 

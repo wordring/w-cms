@@ -6,6 +6,7 @@
 //
 // 使い方: node probe-file-scheme.js
 const { chromium } = require('playwright');
+const { login } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 const USER = process.env.WCMS_USER || 'a';
@@ -22,11 +23,7 @@ const PASS = process.env.WCMS_PASS || 'a';
   });
 
   // ログインして、実際のページ（https オリジン）から試す。
-  await page.goto(BASE + '/login');
-  await page.fill('#username', USER);
-  await page.fill('#password', PASS);
-  await page.click('button[type=submit]');
-  await page.waitForLoadState('networkidle');
+  await login(page, BASE, USER, PASS);
   const origin = new URL(page.url()).origin;
   console.log('起点のオリジン:', origin);
 

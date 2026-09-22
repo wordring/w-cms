@@ -6,6 +6,7 @@
 // 確かめるのは4つ: ①保存できる ②URLが「きれいな形」（/<6桁>/<生成ID>.<拡張子>）
 // ③実際に取り出せる ④許可していない拡張子は理由つきで断られる。
 const { chromium } = require('playwright');
+const lib = require('./lib');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 // ⚠ **当て先を焼き込まず、自分で1枚作って最後に消します**（2026-09-20）。
 // `000021` と書いてありましたが、データを入れ直すとそれは**実在の通信記録**になり、
@@ -26,9 +27,7 @@ const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  await lib.login(page, BASE);
   if (!PAGE) {
     // トップの下に作業用の1枚を作る（題で分かるようにしておく）。
     madePage = await page.evaluate(async () => {

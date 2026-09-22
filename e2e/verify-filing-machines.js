@@ -23,9 +23,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(BASE + '/login');
-  await page.fill('#username', 'a'); await page.fill('#password', 'a');
-  await page.click('button[type=submit]'); await page.waitForLoadState('networkidle');
+  await lib.login(page, BASE);
 
   // ── 下ごしらえ: 通信箱の下に仮の記録ページ、その下に図面ブロックを持つ加工製品ページ
   if (!MAILBOX) {
