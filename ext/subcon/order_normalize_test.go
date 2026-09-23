@@ -59,20 +59,34 @@ func TestOrderItemsAreNormalized(t *testing.T) {
 //
 // ⚠ 行だけ生のまま書いていたので、先方が `2026/10/15` と書くと
 // **ページのタグは `2026-10-15`、行は `2026/10/15`** と食い違っていました。
+//
+// ⚠ **見るのは「一致」であって「正規形」ではありません**（2026-09-23 に直した）。
+// `納期` の型は 2026-09-23 に `date` → `text` へ変わり（利用者決定・自由文の
+// 「最短納期」が入るため）、**畳まれなくなりました**——それまでここは `2026-10-15` と
+// 書いてあったので、型を変えた日に**この番人だけが落ちました**。
+// ⚠ **どちらの形になるかを決めるのは辞書**（`config/settings.json`）です。ここが
+// 押さえるべきなのは**タグと行が食い違わないこと**で、形そのものではありません
+// ——型をまた変える日に、**この試験は落ちてはいけません**。
 func TestOrderRowDueDateMatchesPageTag(t *testing.T) {
 	j := realOrderJudgment()
 	j.DueDate = "2026/10/15"
 
 	body := buildOrderPageHTML("000001", "pdf001", j)
-	if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>2026-10-15</dd>") {
-		t.Errorf("ページのタグが正規形ではありません:\n%s", body)
+	open := "<dt>" + DueDateTag + "</dt><dd>"
+	at := strings.Index(body, open)
+	if at < 0 {
+		t.Fatalf("ページに %s のタグがありません:\n%s", DueDateTag, body)
+	}
+	rest := body[at+len(open):]
+	tag := rest[:strings.Index(rest, "</dd>")]
+	// ⚠ **書いてあることを捨てていないこと**——畳む・畳まないに関わらず、
+	// 空や別の値になっていたらそこで止めます。
+	if tag == "" || !strings.Contains(tag, "2026") {
+		t.Fatalf("タグの納期が失われています（%q）:\n%s", tag, body)
 	}
 	_, ours := ourItemsSegment(t, body)
-	if strings.Contains(ours, "2026/10/15") {
-		t.Errorf("行の納期が生のままです（タグと食い違います）:\n%s", ours)
-	}
-	if !strings.Contains(ours, "<td>2026-10-15</td>") {
-		t.Errorf("行に正規形の納期がありません:\n%s", ours)
+	if !strings.Contains(ours, "<td>"+tag+"</td>") {
+		t.Errorf("行の納期がタグ（%q）と食い違います:\n%s", tag, ours)
 	}
 }
 
