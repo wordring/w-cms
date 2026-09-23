@@ -78,7 +78,7 @@ func TestInferColumnType(t *testing.T) {
 	}{
 		{"単価", ColNumber},
 		{"数量", ColNumber},
-		{"納期", ColDate},
+		{"納期", ColText}, // 2026-09-23 ユーザー決定——「最短納期」のような自由文が入る（【要求】発注フォルダ）
 		{"検査日", ColDate},
 		{"写真", ColImage},
 		// ⚠ **`品番` は 2026-09-20 に辞書へ入りました**（`code`）。実データで、発注書に

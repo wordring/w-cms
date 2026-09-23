@@ -9,7 +9,7 @@
     "画像": { "type": "image" },
     "発注日": { "type": "date" },
     "納品日": { "type": "date" },
-    "納期": { "type": "date" },
+    "納期": { "type": "text" },
     "金額": { "type": "number" },
     "小計": { "type": "number" },
     "消費税": { "type": "number" },
