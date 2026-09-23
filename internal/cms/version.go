@@ -28,11 +28,21 @@ package cms
 //     残していました（「版の履歴が細かすぎます」——2026-08-31 ユーザー指摘）。
 //     置き換え方式なら窓の版が常に最新を持つため、チェックポイントは同内容で自然に
 //     スキップされ、**1セッション＝1版**になります。
-//  2. ⚠ **既定では消しません**（2026-09-23 ユーザー決定:「**5年で消す動作をやめましょう**」）。
-//     消すのは設定 `version_retention_years` に正の数を書いたときだけで、年限で切るので
-//     世代数の上限は設けません。⚠ **年限は1つに決められません**——帳票の保持義務は
-//     **個人5年・法人7年・過去に問題を起こしていた法人は最大10年**で、**設置した先が
-//     どれかは w-cms には分かりません**。⚠ **そして消えた版は戻りません。**
+//  2. ⚠ **版は消しません。消す機構も持ちません**（2026-09-23 ユーザー決定:
+//     「**5年で消す動作をやめましょう**」「**消さないの意味は、消す機構も持たないで
+//     良いです。もしも消す必要が出来たら、エージェントで消します**」）。
+//
+//     ⚠ **年限を1つに決められないことが分かったのが、この決定の中身です**——帳票の
+//     保持義務は**個人5年・法人7年・過去に問題を起こしていた法人は最大10年**で、
+//     **設置した先がどれかは w-cms には分かりません**（w-cms は開発元でない企業も
+//     設置するソフトウェアです）。⚠ **そして消えた版は戻りません。**
+//
+//     ⚠ **「設定で 0 なら消さない」でもありません**——機構そのものを持たないので、
+//     **設定の書き間違いでも消えません**。**消してよいと判断できる場所が、この
+//     ファイルの中に1つもない**という形にしてあります。
+//     ⚠ **それまでは 5年で消していました**——2026-08-21 の決定は「5年は消さない」という
+//     **下限**の話だったのに、実装は**上限**になっていました（この会社は法人なので
+//     2年足りません）。
 //  3. **各版は自己完結**（gzip フル圧縮・差分チェーンなし）。復元にチェーンが要らず、
 //     1つ壊れても他へ波及しません。Go 標準に diff/patch が無い、という事情とも合います。
 // ─────────────────────────────────────────────────────────────────────────
@@ -189,12 +199,7 @@ func RecordVersion(pageID, author, html string, force bool) error {
 		Size: len(html),
 		Hash: hash,
 	}
-	if err := writeVersionFiles(dir, id, info, []byte(html)); err != nil {
-		return err
-	}
-	// 年限を超えた版はここで落とす。ページ単位なので走査量が増え続けることはなく、
-	// 背後で回す掃除役を持たずに済む。
-	return PruneVersions(pageID)
+	return writeVersionFiles(dir, id, info, []byte(html))
 }
 
 // writeVersionFiles は版の2ファイル（本文の gzip と情報の JSON）を書きます。
@@ -300,43 +305,6 @@ func ReadVersion(pageID, version string) ([]byte, error) {
 	// 版は本文HTMLなので、保存時の上限（8MiB）を超えることは無い。
 	// 壊れた・細工された gzip で無制限に展開しないよう上限を掛ける。
 	return io.ReadAll(io.LimitReader(zr, maxJSONBodyBytes))
-}
-
-// PruneVersions は年限を超えた版を消します。
-//
-// ⚠ **既定では何も消しません**（2026-09-23 ユーザー決定:「**5年で消す動作を
-// やめましょう**」）。消すのは `config/settings.json` の `version_retention_years` に
-// **正の数を書いたときだけ**です。
-//
-// ⚠ **年限は1つに決められません**——帳票の保持義務は**個人5年・法人7年・過去に
-// 問題を起こしていた法人は最大10年**で、**設置した先がどれかは w-cms には
-// 分かりません**。⚠ **そして消えた版は戻りません**（`VersionRetention` の冒頭）。
-func PruneVersions(pageID string) error {
-	retention := VersionRetention()
-	if retention <= 0 {
-		// ⚠ **消さないのが既定です。** ここで早く戻るので、`ListVersions` の走査すら
-		//    走りません（保存のたびに呼ばれる道なので、無駄を残さない）。
-		return nil
-	}
-	list, err := ListVersions(pageID)
-	if err != nil {
-		return err
-	}
-	pageID, _ = page.NormalizeID(pageID)
-	dir := versionsDir(pageID)
-	cutoff := time.Now().Add(-retention)
-	for _, v := range list {
-		at, err := time.Parse(time.RFC3339, v.At)
-		if err != nil {
-			// 時刻が読めない版は消さない（消してよいと判断できないので残す側へ倒す）。
-			continue
-		}
-		if at.Before(cutoff) {
-			os.Remove(filepath.Join(dir, v.ID+".html.gz"))
-			os.Remove(filepath.Join(dir, v.ID+".json"))
-		}
-	}
-	return nil
 }
 
 // RevertToVersion は選んだ版を現在の本文として書き戻します。

@@ -50,7 +50,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 )
 
 // SettingsPath は設定ファイルの位置です（正本）。
@@ -101,24 +100,6 @@ type Settings struct {
 	// MaxUploadMiB は添付1件あたりの上限（MiB）です。0（未指定）なら既定の32
 	// （「サイズ上限32MiBは設定で変えられるように」——2026-08-31 ユーザー決定）。
 	MaxUploadMiB int `json:"max_upload_mib,omitempty"`
-
-	// VersionRetentionYears は版を残す年限です。**0（未指定）なら消しません**
-	// （2026-09-23 ユーザー決定:「**5年で消す動作をやめましょう**」）。
-	//
-	// ⚠ **年限は1つに決められません。** 帳票の保持義務は**個人5年・法人7年・
-	// 過去に問題を起こしていた法人は最大10年**で、⚠ **設置した先が個人か法人かは
-	// w-cms には分かりません**（w-cms は開発元でない企業も設置するソフトウェアです）。
-	//
-	// ⚠ **既定を「消さない」にしたのは、間違えたときの被害が対称でないからです**:
-	//
-	//	短すぎた … **保持義務を破る。しかも消えた版は戻らない**
-	//	長すぎた … ディスクを使う（gzip 後は小さい）
-	//
-	// ⚠ **後から年限を延ばしても、既に消えた版は戻りません。** だから初日から
-	// 安全な側に倒しておき、**運用者が自分の事情に合わせて短くする**のが正しい向きです。
-	//
-	// ⚠ **それまでは 5年で消していました**——この会社は法人なので**2年足りません**でした。
-	VersionRetentionYears int `json:"version_retention_years,omitempty"`
 
 	// AttachmentExtensions は汎用の添付として受ける拡張子です（ドットつき小文字）。
 	// **未指定なら1つも受けません**（既定の一覧はありません——設定が唯一の正本）。
@@ -596,17 +577,4 @@ func CompanyForms() []string {
 		return nil
 	}
 	return settings.CompanyForms
-}
-
-// VersionRetention は版を残す年限を返します。**0 なら消しません**（既定）。
-//
-// ⚠ **うるう年で目減りしないよう 366日で数えます**——「N年は消さない」が要件なので、
-// 端数は必ず**長い側**へ倒します。
-func VersionRetention() time.Duration {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil || settings.VersionRetentionYears <= 0 {
-		return 0
-	}
-	return time.Duration(settings.VersionRetentionYears) * 366 * 24 * time.Hour
 }
