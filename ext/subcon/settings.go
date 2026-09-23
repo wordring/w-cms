@@ -53,13 +53,25 @@ type settingsSection struct {
 	// ライセンス次第**なので、**パスを設定で指す形**にしました——w-cms は MIT で公開
 	// されており、フォントを無条件に同梱はできません。
 	//
-	// ⚠ **`.ttc` は読めません**（コレクション形式）。Windows の `meiryo.ttc`・
-	// `msgothic.ttc` は**使えません**。実測で通ったのは `NotoSansJP-VF.ttf`
-	// （**SIL Open Font License**・Windows 同梱）です。
+	// ⚠ **`.ttc`（コレクション）も読めます**（2026-09-23）。gopdf は読めませんが、
+	// こちらで**1書体を取り出して**渡します（[ttc.go](ttc.go)）——**Windows の太い
+	// 和文フォントは全部 `.ttc`** なので、それまでは**いちばん読みやすいフォントを
+	// 締め出して**いました。どの書体かは `pdf_font_face`。
+	//
+	// ⚠ **細いフォントを指さないこと。** `NotoSansJP-VF.ttf` は**可変フォント**で、
+	// `wght` の既定値が **100（Thin）**です——gopdf は可変軸を扱わないので
+	// **いちばん細い形が刷られ**、FAXでかすれます（2026-09-23 ユーザー報告）。
 	//
 	// **未指定ならPDFを作りません**（起動は止めません——Gemini キーと同じ扱いで、
 	// 画面に「設定されていません」と出します）。
 	PDFFont string `json:"pdf_font,omitempty"`
+
+	// PDFFontFace は `.ttc` の中の何番目の書体かです（既定は0）。
+	//
+	// ⚠ **コレクションには似た書体が何本も入っています**——`BIZ-UDGothicB.ttc` なら
+	// 0 が BIZ UDゴシック B、1 が BIZ UDPゴシック B（プロポーショナル）。
+	// **どちらが好みかは人が決めます。**
+	PDFFontFace int `json:"pdf_font_face,omitempty"`
 
 	// Company は**発注書の差出人**です（2026-09-21）。実物の発注書に入っていた項目。
 	//
@@ -87,6 +99,7 @@ var (
 	// 別の錠にすると「段は新しいが番号のタグは古い」という中途半端な瞬間ができます。
 	productCodeTags []string
 	pdfFont         string
+	pdfFontFace     int
 	companyInf      companyInfo
 )
 
@@ -135,22 +148,29 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		}
 		seenTag[v] = true
 	}
-	// ⚠ **フォントの拡張子だけ見ます**（`.ttc` を指されたときに、PDFを作る段で
-	// 「読めません」とだけ出ると理由が分かりません）。**在るかどうかは見ません**
-	// ——設定を読むのはDB再構築でも走るので、そのときファイルが一時的に見えない
-	// 環境で起動を止めたくありません。
-	if f := strings.TrimSpace(s.PDFFont); f != "" && !strings.HasSuffix(strings.ToLower(f), ".ttf") {
-		return nil, fmt.Errorf("pdf_font は .ttf を指してください（%q。⚠ `.ttc` は読めません）", s.PDFFont)
+	// ⚠ **拡張子だけ見ます**（在るかどうかは見ません——設定を読むのはDB再構築でも
+	// 走るので、そのときファイルが一時的に見えない環境で起動を止めたくありません）。
+	// ⚠ **`.ttc` も通します**（2026-09-23）——1書体を取り出して渡すので読めます。
+	if f := strings.TrimSpace(s.PDFFont); f != "" {
+		low := strings.ToLower(f)
+		if !strings.HasSuffix(low, ".ttf") && !strings.HasSuffix(low, ".ttc") {
+			return nil, fmt.Errorf("pdf_font は .ttf か .ttc を指してください（%q）", s.PDFFont)
+		}
+	}
+	if s.PDFFontFace < 0 {
+		return nil, fmt.Errorf("pdf_font_face は0以上です（%d）", s.PDFFontFace)
 	}
 	stages := s.MachineStages
 	codeTags := s.ProductCodeTags
 	font := strings.TrimSpace(s.PDFFont)
+	face := s.PDFFontFace
 	company := s.Company
 	return func() {
 		stagesMu.Lock()
 		machineStages = stages
 		productCodeTags = codeTags
 		pdfFont = font
+		pdfFontFace = face
 		companyInf = company
 		stagesMu.Unlock()
 	}, nil
@@ -195,4 +215,11 @@ func ValidMachineStage(v string) bool {
 		}
 	}
 	return false
+}
+
+// PDFFontFace は `.ttc` の中の何番目の書体を使うかを返します（既定は0）。
+func PDFFontFace() int {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	return pdfFontFace
 }

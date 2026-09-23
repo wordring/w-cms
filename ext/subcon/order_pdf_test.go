@@ -209,7 +209,7 @@ func TestOrderPDFNeedsFont(t *testing.T) {
 		t.Fatalf("フォント未設定を知らせていません: %v", err)
 	}
 	if !strings.Contains(err.Error(), "pdf_font") || !strings.Contains(err.Error(), ".ttc") {
-		t.Errorf("⚠ 直し方（設定の名前と `.ttc` が使えないこと）が書かれていません: %v", err)
+		t.Errorf("⚠ 直し方（設定の名前と、使える形式）が書かれていません: %v", err)
 	}
 }
 
@@ -302,7 +302,7 @@ func TestOrderPDFWrapsBeforeShrinking(t *testing.T) {
 	p := newTestPDF(t)
 	rows := []map[string]string{
 		{"品番": "A100-B01-0051",
-			"品名": "組立補助装置用スライドブラケット組立（左右セット・塗装あり）",
+			"品名": "みらい産業向けスライドブラケット組立（左右セット・塗装あり）",
 			"単位": "個", "数量": "20", "単価": "1500"},
 	}
 	cols, size := fitTableColumns(p, usedCols(rows), rows, pdfRight-pdfLeft)

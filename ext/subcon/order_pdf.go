@@ -170,8 +170,8 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	p := &gopdf.GoPdf{}
 	p.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
 	p.AddPage()
-	if err := p.AddTTFFont("jp", font); err != nil {
-		return nil, fmt.Errorf("フォントを読めません（%s）: %w", font, err)
+	if err := addPDFFont(p, font); err != nil {
+		return nil, err
 	}
 	if err := p.SetFont("jp", "", pdfFontSz); err != nil {
 		return nil, err
@@ -231,14 +231,35 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// pdfInk は1つの文字列を書きます。
+//
+// ユーザー（2026-09-23）:「**PDFの文字が細くてかすれてるような気がします**」。
+//
+// ⚠ **原因はフォントの既定の太さでした。** それまでの設定は Windows の
+// `NotoSansJP-VF.ttf`——**可変フォント**で、`fvar` を読むと **`wght` の既定値が
+// 100（Thin）**です。⚠ **gopdf は可変軸を扱わないので、いちばん細い形がそのまま
+// 刷られていました**（実測で確認）。**太さはフォントそのもので取ります**
+// （[ttc.go](ttc.go) が `.ttc` から太い書体を取り出せるようにしました）。
+//
+// ⚠ **重ね刷り（疑似ボールド）は採りませんでした。** 同じ文字を少しずらして4回書けば
+// 太く見えますが、⚠ **PDFから取り出す文字が4重になります**——`発注書発注書発注書発注書`。
+// 相手がコピーしたときも、**こちらが後でその紙を機械に読ませるとき**も壊れます。
+// **見た目のために、中身を壊さない。**
+//
+// ⚠ **この関数は残します**——**紙へ字を置く口を1つに保つ**ためです。次に太さや
+// 位置を触るとき、**散らばっていると1か所だけ直すことになります**。
+func pdfInk(p *gopdf.GoPdf, x, y, size float64, s string) {
+	p.SetXY(x, y)
+	p.Cell(nil, s)
+}
+
 // pdfText は1行書いて、次の行のyを返します。
 func pdfText(p *gopdf.GoPdf, x, y, size float64, s string) float64 {
 	if strings.TrimSpace(s) == "" {
 		return y
 	}
 	p.SetFont("jp", "", size)
-	p.SetXY(x, y)
-	p.Cell(nil, s)
+	pdfInk(p, x, y, size, s)
 	return y + size + 4
 }
 
@@ -246,16 +267,14 @@ func pdfText(p *gopdf.GoPdf, x, y, size float64, s string) float64 {
 func pdfTextRight(p *gopdf.GoPdf, right, y, size float64, s string) {
 	p.SetFont("jp", "", size)
 	w, _ := p.MeasureTextWidth(s)
-	p.SetXY(right-w, y)
-	p.Cell(nil, s)
+	pdfInk(p, right-w, y, size, s)
 }
 
 // pdfTableHead は見出し行を1つ刷り、次のyを返します（改ページのたびに呼びます）。
 func pdfTableHead(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, line float64) float64 {
 	x := pdfLeft
 	for _, c := range cols {
-		p.SetXY(x+pdfCellPad, y+3)
-		p.Cell(nil, c.Label)
+		pdfInk(p, x+pdfCellPad, y+3, line-7, c.Label)
 		p.Line(x, y, x, y+line)
 		x += c.Width
 	}
@@ -267,7 +286,9 @@ func pdfTableHead(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, line float64
 
 // pdfTable は明細表を組みます（線と文字を自分で置きます）。
 func pdfTable(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, rows []map[string]string) float64 {
-	p.SetLineWidth(0.5)
+	// ⚠ **罫線も太くします**——FAX では細い線も飛びます（字だけ太らせても、
+	//    表の枠が消えると**どの値がどの列か分からなくなります**）。
+	p.SetLineWidth(0.8)
 	// ⚠ **列幅は中身を測って決めます**（2026-09-23）。それまでは**固定のポイント値**で、
 	//    **字の大きさに追随しませんでした**——字を大きくすると隣の列へはみ出し、
 	//    ⚠ **`p.Cell(nil, …)` は幅を持たないので切られもせず、重なって印刷されます**。
@@ -312,13 +333,12 @@ func pdfTable(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, rows []map[strin
 		for i, c := range cols {
 			for n, s := range lines[i] {
 				ly := y + float64(n)*line + 3
+				cx := x + pdfCellPad
 				if c.Right {
 					w, _ := p.MeasureTextWidth(s)
-					p.SetXY(x+c.Width-w-pdfCellPad, ly)
-				} else {
-					p.SetXY(x+pdfCellPad, ly)
+					cx = x + c.Width - w - pdfCellPad
 				}
-				p.Cell(nil, s)
+				pdfInk(p, cx, ly, size, s)
 			}
 			p.Line(x, y, x, y+h)
 			x += c.Width

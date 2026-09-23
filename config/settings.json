@@ -84,7 +84,8 @@
         "品番",
         "部品番号"
       ],
-      "pdf_font": "C:/Windows/Fonts/NotoSansJP-VF.ttf",
+      "pdf_font": "C:/Windows/Fonts/BIZ-UDGothicB.ttc",
+      "pdf_font_face": 0,
       "machine_stages": [
         "現行",
         "旧型",
