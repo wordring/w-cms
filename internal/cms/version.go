@@ -28,8 +28,11 @@ package cms
 //     残していました（「版の履歴が細かすぎます」——2026-08-31 ユーザー指摘）。
 //     置き換え方式なら窓の版が常に最新を持つため、チェックポイントは同内容で自然に
 //     スキップされ、**1セッション＝1版**になります。
-//  2. **5年は消さない**（日本の帳票保持義務。2026-08-21 ユーザー決定）。年限で切るので、
-//     世代数の上限は設けません。
+//  2. ⚠ **既定では消しません**（2026-09-23 ユーザー決定:「**5年で消す動作をやめましょう**」）。
+//     消すのは設定 `version_retention_years` に正の数を書いたときだけで、年限で切るので
+//     世代数の上限は設けません。⚠ **年限は1つに決められません**——帳票の保持義務は
+//     **個人5年・法人7年・過去に問題を起こしていた法人は最大10年**で、**設置した先が
+//     どれかは w-cms には分かりません**。⚠ **そして消えた版は戻りません。**
 //  3. **各版は自己完結**（gzip フル圧縮・差分チェーンなし）。復元にチェーンが要らず、
 //     1つ壊れても他へ波及しません。Go 標準に diff/patch が無い、という事情とも合います。
 // ─────────────────────────────────────────────────────────────────────────
@@ -61,11 +64,6 @@ const (
 	// versionCoalesceWindow は同じ編集者の連続保存をひとまとめにする長さです。
 	// オートセーブ（1〜2秒）をそのまま版にすると履歴が使い物にならなくなるため。
 	versionCoalesceWindow = 10 * time.Minute
-
-	// versionRetention は版を残す年限です。**5年**（日本の帳票保持義務・2026-08-21 決定）。
-	// うるう年で目減りしないよう 366 日で数えます——「5年は消さない」が要件なので、
-	// 端数は必ず**長い側**へ倒します。
-	versionRetention = 5 * 366 * 24 * time.Hour
 
 	// versionTimeLayout は版のファイル名に使う時刻表記です。
 	// RFC3339 は `:` を含みファイル名に使えないので、詰めた形にします。
@@ -304,15 +302,29 @@ func ReadVersion(pageID, version string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(zr, maxJSONBodyBytes))
 }
 
-// PruneVersions は年限（5年）を超えた版を消します。
+// PruneVersions は年限を超えた版を消します。
+//
+// ⚠ **既定では何も消しません**（2026-09-23 ユーザー決定:「**5年で消す動作を
+// やめましょう**」）。消すのは `config/settings.json` の `version_retention_years` に
+// **正の数を書いたときだけ**です。
+//
+// ⚠ **年限は1つに決められません**——帳票の保持義務は**個人5年・法人7年・過去に
+// 問題を起こしていた法人は最大10年**で、**設置した先がどれかは w-cms には
+// 分かりません**。⚠ **そして消えた版は戻りません**（`VersionRetention` の冒頭）。
 func PruneVersions(pageID string) error {
+	retention := VersionRetention()
+	if retention <= 0 {
+		// ⚠ **消さないのが既定です。** ここで早く戻るので、`ListVersions` の走査すら
+		//    走りません（保存のたびに呼ばれる道なので、無駄を残さない）。
+		return nil
+	}
 	list, err := ListVersions(pageID)
 	if err != nil {
 		return err
 	}
 	pageID, _ = page.NormalizeID(pageID)
 	dir := versionsDir(pageID)
-	cutoff := time.Now().Add(-versionRetention)
+	cutoff := time.Now().Add(-retention)
 	for _, v := range list {
 		at, err := time.Parse(time.RFC3339, v.At)
 		if err != nil {

@@ -239,34 +239,101 @@ func TestRevertKeepsCurrentAsVersion(t *testing.T) {
 	}
 }
 
-// TestVersionPruningKeepsFiveYears は、保持年限の規則を検証します。
-// **5年は消さない**（日本の帳票保持義務。2026-08-21 決定）。
-func TestVersionPruningKeepsFiveYears(t *testing.T) {
+// TestVersionsAreKeptForever は、⚠ **既定では版を消さない**ことを固定します。
+//
+// 2026-09-23 ユーザー決定:「**5年で消す動作をやめましょう**」。
+//
+// ⚠ **年限は1つに決められません**——帳票の保持義務は**個人5年・法人7年・過去に
+// 問題を起こしていた法人は最大10年**で、**設置した先がどれかは w-cms には
+// 分かりません**。⚠ **そして消えた版は戻りません**——だから既定を安全な側
+// （消さない）へ倒し、運用者が自分の事情に合わせて短くします。
+func TestVersionsAreKeptForever(t *testing.T) {
 	setupSaveTest(t)
 	const id = "000040"
 	postSave(t, id, "<h1>いま</h1>")
 
 	dir := versionsDir(id)
-	// 4年前（残す）と 6年前（消す）の版を手で置く。
-	writeFakeVersion(t, dir, time.Now().AddDate(-4, 0, 0), "4年前")
-	writeFakeVersion(t, dir, time.Now().AddDate(-6, 0, 0), "6年前")
+	// ⚠ **20年前の版でも消えないこと**（かつては5年で消えていました）。
+	writeFakeVersion(t, dir, time.Now().AddDate(-20, 0, 0), "20年前")
 
 	if err := PruneVersions(id); err != nil {
 		t.Fatalf("PruneVersionsエラー: %v", err)
 	}
+	if !strings.Contains(bodiesOf(t, id), "20年前") {
+		t.Error("⚠ 既定で古い版が消えています（消さないのが既定です）")
+	}
+}
 
+// TestVersionRetentionIsConfigurable は、⚠ **設定したときだけ消す**ことを固定します。
+//
+// ⚠ **「消えないこと」だけを見る試験では足りません**——`PruneVersions` が
+// **何もしない関数に成り下がっていても通ります**。**設定すれば実際に消える**ことまで
+// 見て、初めて「既定が消さない」に意味が出ます。
+func TestVersionRetentionIsConfigurable(t *testing.T) {
+	setupSaveTest(t)
+	const id = "000041"
+	postSave(t, id, "<h1>いま</h1>")
+
+	dir := versionsDir(id)
+	writeFakeVersion(t, dir, time.Now().AddDate(-4, 0, 0), "4年前")
+	writeFakeVersion(t, dir, time.Now().AddDate(-6, 0, 0), "6年前")
+
+	withVersionRetentionYears(t, 5)
+	if err := PruneVersions(id); err != nil {
+		t.Fatalf("PruneVersionsエラー: %v", err)
+	}
+	got := bodiesOf(t, id)
+	if !strings.Contains(got, "4年前") {
+		t.Errorf("⚠ 年限の内側の版が消えました: %s", got)
+	}
+	if strings.Contains(got, "6年前") {
+		t.Errorf("⚠ 年限を超えた版が残っています: %s", got)
+	}
+}
+
+// TestVersionRetentionRoundsUp は、⚠ **端数は長い側へ倒す**ことを固定します。
+//
+// うるう年で目減りすると、**5年目の最後の数日が消えます**——保持義務は
+// 「5年は消さない」なので、**366日で数えます**。
+func TestVersionRetentionRoundsUp(t *testing.T) {
+	withVersionRetentionYears(t, 5)
+	if got, want := VersionRetention(), 5*366*24*time.Hour; got != want {
+		t.Errorf("保持年限が %v です（%v を期待——366日で数える）", got, want)
+	}
+	withVersionRetentionYears(t, 0)
+	if got := VersionRetention(); got != 0 {
+		t.Errorf("未指定で %v を返しています（0＝消さない を期待）", got)
+	}
+}
+
+// withVersionRetentionYears は試験のあいだ保持年限を差し替えます。
+func withVersionRetentionYears(t *testing.T, years int) {
+	t.Helper()
+	settingsMu.Lock()
+	old := settings
+	cur := Settings{}
+	if old != nil {
+		cur = *old
+	}
+	cur.VersionRetentionYears = years
+	settings = &cur
+	settingsMu.Unlock()
+	t.Cleanup(func() {
+		settingsMu.Lock()
+		settings = old
+		settingsMu.Unlock()
+	})
+}
+
+// bodiesOf はページの全部の版の本文を1つに繋げて返します。
+func bodiesOf(t *testing.T, id string) string {
+	t.Helper()
 	var got []string
 	for _, v := range versionsOf(t, id) {
 		b, _ := ReadVersion(id, v.ID)
 		got = append(got, string(b))
 	}
-	joined := strings.Join(got, "|")
-	if !strings.Contains(joined, "4年前") {
-		t.Errorf("5年以内の版が消えました: %v", got)
-	}
-	if strings.Contains(joined, "6年前") {
-		t.Errorf("5年を超えた版が残っています: %v", got)
-	}
+	return strings.Join(got, "|")
 }
 
 // writeFakeVersion は指定時刻の版を直接置きます（年限のテスト用）。
