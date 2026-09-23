@@ -36,7 +36,7 @@ func TestOurOrderItemsCoverRealDocuments(t *testing.T) {
 	for _, want := range []string{
 		"品番", "品名", "数量", "単位", "単価", // 全種類に共通
 		"材質", "形状", "寸法", // 材料だけ
-		"色",           // 塗装・鍍金だけ
+		"表面",               // 塗装・鍍金だけ（色・メッキ・生地）
 		"備考", "状態", "弊社品番", // 弊社の管理
 	} {
 		if _, ok := have[want]; !ok {

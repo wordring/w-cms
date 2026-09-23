@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"errors"
+	"github.com/signintech/gopdf"
 	"io"
 	"os"
 	"regexp"
@@ -122,7 +123,7 @@ func pdfOrderBody(rows string) string {
 		`<dt>備考</dt><dd>急ぎでお願いします</dd></dl>` +
 		`<table data-type="our-order-items"><caption>発注明細</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>材質</th><th>形状</th>` +
-		`<th>寸法</th><th>色</th><th>数量</th><th>単位</th><th>単価</th>` +
+		`<th>寸法</th><th>表面</th><th>数量</th><th>単位</th><th>単価</th>` +
 		`<th>備考</th><th>状態</th></tr>` + rows + `</tbody></table>`
 }
 
@@ -159,19 +160,19 @@ func TestOrderPDFRoundTrips(t *testing.T) {
 
 // TestOrderPDFDropsEmptyColumns は、⚠ **使わない列を紙に出さない**ことを固定します。
 //
-// ⚠ **形式は1つのまま、紙だけ種類ごとに違う**——材料の発注書に `色` は出ず、
+// ⚠ **形式は1つのまま、紙だけ種類ごとに違う**——材料の発注書に `表面` は出ず、
 // 塗装の発注書に `材質` は出ません。これが「まとめる方法」の実体です。
 func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 
-	// 材料の発注書（`品番`・`品名`・`色` は空）。
+	// 材料の発注書（`品番`・`品名`・`表面` は空）。
 	mat, err := buildOrderPDF(pdfOrderBody(
 		`<tr><td></td><td></td><td></td><td>鉄</td><td>板</td><td>t3.2</td>`+
 			`<td></td><td>5</td><td>枚</td><td>800</td><td></td><td>未納品</td></tr>`), nil)
 	if err != nil {
 		t.Fatalf("材料: %v", err)
 	}
-	if s := pdfTextOf(t, mat); strings.Contains(s, "色") {
+	if s := pdfTextOf(t, mat); strings.Contains(s, "表面") {
 		t.Errorf("⚠ 材料の発注書に `色` の列が出ています:\n%s", s)
 	}
 
@@ -217,5 +218,172 @@ func TestOrderPDFRefusesNonOrderPage(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 	if _, err := buildOrderPDF(`<h1>ただのページ</h1><p>本文</p>`, nil); err == nil {
 		t.Fatal("発注明細が無いのにPDFを作っています")
+	}
+}
+
+// ── FAXで読める大きさにする（2026-09-23）────────────────────────────────
+//
+// ユーザー:「**発注書のPDFが文字が小さすぎてFAXで送ると潰れるような気がします**」。
+//
+// ⚠ **G3 FAX の標準モードは縦 98dpi しかありません。** 9pt の和文は縦12走査線ほどで、
+// 画数の多い漢字（`鋼`・`鍍`・`厚`）は塗り潰れます。
+
+// newTestPDF は測るためだけの GoPdf を1つ作ります。
+func newTestPDF(t *testing.T) *gopdf.GoPdf {
+	t.Helper()
+	withPDFFont(t, systemJPFont(t))
+	p := &gopdf.GoPdf{}
+	p.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
+	p.AddPage()
+	if err := p.AddTTFFont("jp", PDFFont()); err != nil {
+		t.Fatalf("フォントを読めません: %v", err)
+	}
+	return p
+}
+
+// pdfTestCols は紙に出る列の並びです（`readOrderDoc` の `want` と同じ順）。
+func pdfTestCols() []orderPDFColumn {
+	return []orderPDFColumn{
+		{Label: "品番"}, {Label: "品名"}, {Label: "材質"}, {Label: "形状"}, {Label: "寸法"},
+		{Label: "表面"}, {Label: "単位"},
+		{Label: "数量", Right: true}, {Label: "単価", Right: true}, {Label: "金額", Right: true},
+	}
+}
+
+// usedCols は値の入っている列だけに絞ります（紙と同じ落とし方）。
+func usedCols(rows []map[string]string) []orderPDFColumn {
+	var out []orderPDFColumn
+	for _, c := range pdfTestCols() {
+		for _, r := range rows {
+			if pdfCellValue(r, c) != "" {
+				out = append(out, c)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// TestOrderPDFTypeIsBigEnoughForFax は、⚠ **ふつうの発注書が 9pt より大きく組まれる**
+// ことを固定します。
+//
+// ⚠ **これがこの変更の目的そのものです。** 「入るなら大きく」なので、
+// **下がったら番人が落ちる**形にしておかないと、列を1つ足した日に黙って 9pt へ
+// 戻ります——そして**戻ったことは紙を見るまで分かりません**。
+func TestOrderPDFTypeIsBigEnoughForFax(t *testing.T) {
+	p := newTestPDF(t)
+	rows := []map[string]string{
+		{"材質": "鉄STPG370EG", "形状": "角パイプ", "寸法": "□75*75*t3.2*1090",
+			"単位": "本", "数量": "10", "単価": "3200"},
+		{"材質": "SS400", "形状": "FB", "寸法": "t4.5*75*1090",
+			"単位": "本", "数量": "2", "単価": "860"},
+	}
+	cols, size := fitTableColumns(p, usedCols(rows), rows, pdfRight-pdfLeft)
+	if size <= 9 {
+		t.Errorf("⚠ 材料の発注書が %.1fpt です（9pt より大きいことを期待——FAXで潰れます）", size)
+	}
+	total := 0.0
+	for _, c := range cols {
+		total += c.Width
+	}
+	// ⚠ **紙から出ていないこと**。字を大きくして列が溢れたら、
+	//    **隣の列へ重なって印刷されます**（`p.Cell` は切りません）。
+	if total > pdfRight-pdfLeft+0.5 {
+		t.Errorf("⚠ 表が紙からはみ出しています（%.1f / %.1f）", total, pdfRight-pdfLeft)
+	}
+}
+
+// TestOrderPDFWrapsBeforeShrinking は、⚠ **長い品名で字を下げない**ことを固定します。
+//
+// ⚠ **折り返した 12pt のほうが、1行に収めた 9.5pt より読めます**——FAX で効くのは
+// **1文字の大きさ**で、行数ではありません。⚠ **実際に踏みました**（2026-09-23）:
+// `単位` が下限に戻るだけで合計が超え、長い品名の紙が 12pt → 9.5pt に落ちていました。
+func TestOrderPDFWrapsBeforeShrinking(t *testing.T) {
+	p := newTestPDF(t)
+	rows := []map[string]string{
+		{"品番": "A100-B01-0051",
+			"品名": "組立補助装置用スライドブラケット組立（左右セット・塗装あり）",
+			"単位": "個", "数量": "20", "単価": "1500"},
+	}
+	cols, size := fitTableColumns(p, usedCols(rows), rows, pdfRight-pdfLeft)
+	// ⚠ **「9pt より大きい」では足りません**（2026-09-23・変異試験で空振り）。
+	//    折り返しをやめても **9.5pt には収まる**ので、その条件では
+	//    **縮めたのか折ったのかを見分けられません**。**いちばん大きい候補**を要求します。
+	if want := pdfFontSteps[0]; size < want {
+		t.Fatalf("⚠ 長い品名で字が %.1fpt に下がりました（%.1fpt のまま折り返すはず）", size, want)
+	}
+	// ⚠ **そして本当に折り返すこと**——字が大きいだけで1行に収まっているなら、
+	//    それは「長い品名」になっていません（番人の下ごしらえが効いていない）。
+	p.SetFont("jp", "", size)
+	var name orderPDFColumn
+	for _, c := range cols {
+		if c.Label == "品名" {
+			name = c
+		}
+	}
+	if name.Width == 0 {
+		t.Fatal("品名の列がありません")
+	}
+	if ls, err := p.SplitText(rows[0]["品名"], name.Width-2*pdfCellPad); err != nil || len(ls) < 2 {
+		t.Errorf("⚠ 品名が折り返されていません（%d 行・幅 %.1f）", len(ls), name.Width)
+	}
+	// ⚠ **見出しより細い列を作らないこと**——値が入っても**何の列か分かりません**。
+	p.SetFont("jp", "", size)
+	for _, c := range cols {
+		w, _ := p.MeasureTextWidth(c.Label)
+		if c.Width < w+2*pdfCellPad-0.5 {
+			t.Errorf("⚠ 列 %q が見出しより細いです（%.1f < %.1f）", c.Label, c.Width, w+2*pdfCellPad)
+		}
+	}
+}
+
+// TestOrderPDFBreaksPages は、⚠ **紙の下からはみ出したら改ページする**ことを
+// 固定します。
+//
+// ⚠ **それまでは描き続けるだけで、溢れた行は黙って消えていました。** 字を大きくして
+// 行が高くなったぶん起きやすくなります——⚠ **行の落丁は、紙を見ても気づけません**
+// （残った行は互いに辻褄が合ったままなので）。
+//
+// ⚠ **文字を読み返す検査では捕まりません**——紙から出ても**中身は残る**ためです。
+// だから**返ってきた y（いまどこまで書いたか）**を見ます。
+func TestOrderPDFBreaksPages(t *testing.T) {
+	p := newTestPDF(t)
+	var rows []map[string]string
+	for i := 0; i < 60; i++ {
+		rows = append(rows, map[string]string{
+			"材質": "SS400", "形状": "FB", "寸法": "t4.5*75*1090",
+			"単位": "本", "数量": "2", "単価": "860"})
+	}
+	y := pdfTable(p, pdfTop, usedCols(rows), rows)
+	if y > pdfBottom {
+		t.Errorf("⚠ 表が紙の下（%.0f）を越えました: y=%.0f——溢れた行は黙って消えます",
+			pdfBottom, y)
+	}
+}
+
+// TestOrderSurfaceColumnCarriesPlatingAndBare は、⚠ **`表面` が色・鍍金・生地を
+// まとめて運ぶ**ことを固定します（2026-09-23 ユーザー:「**発注における色は表面に
+// 変えて、メッキや生地などもここに入れては**どうでしょう」）。
+//
+// ⚠ **`色` では鍍金と生地が入りません**——`三価ユニクロ` は色ではなく、
+// `生地` は「何もしない」という指示です。
+func TestOrderSurfaceColumnCarriesPlatingAndBare(t *testing.T) {
+	withPDFFont(t, systemJPFont(t))
+	body := pdfOrderBody(
+		`<tr><td></td><td>K120-01-242</td><td>押さえプレート</td><td></td><td></td><td></td>` +
+			`<td>緑</td><td>個</td><td>20</td><td>160</td><td></td><td>発注済</td></tr>` +
+			`<tr><td></td><td>K120-01-243</td><td>座金</td><td></td><td></td><td></td>` +
+			`<td>三価ユニクロ</td><td>個</td><td>50</td><td>30</td><td></td><td>発注済</td></tr>` +
+			`<tr><td></td><td>K120-01-244</td><td>カラー</td><td></td><td></td><td></td>` +
+			`<td>生地</td><td>個</td><td>10</td><td>90</td><td></td><td>発注済</td></tr>`)
+	pdf, err := buildOrderPDF(body, nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	got := pdfTextOf(t, pdf)
+	for _, want := range []string{"表面", "緑", "三価ユニクロ", "生地"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("⚠ 紙に %q がありません。読み返した中身:\n%s", want, got)
+		}
 	}
 }

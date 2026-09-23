@@ -49,12 +49,41 @@ var ErrNoPDFFont = errors.New(
 
 // 紙の寸法（A4・単位はポイント）。実物の発注書に寄せています。
 const (
-	pdfLeft   = 40.0
-	pdfRight  = 555.0
-	pdfTop    = 50.0
-	pdfLine   = 16.0
-	pdfFontSz = 9.0
+	// ⚠ **余白を詰めました**（2026-09-22 → 09-23）。A4 は幅 595pt なので、
+	//    32pt は約 11mm——**家庭用・業務用どちらのプリンタでも入る**範囲です。
+	//    広げたぶんは**字を大きくするために使います**。
+	pdfLeft  = 32.0
+	pdfRight = 563.0
+	pdfTop   = 50.0
+	// pdfBottom は紙の下の限界です（A4 は高さ 842pt）。
+	//
+	// ⚠ **これを越えたら改ページします**（2026-09-23）。それまでは**描き続けるだけ**で、
+	// ⚠ **溢れた行は黙って消えていました**——字を大きくして行が高くなったぶん、
+	// 起きやすくなります。**行の落丁は、紙を見ても気づけません。**
+	pdfBottom = 790.0
+	// pdfFontSz は**表以外**（ヘッダの項目・差出人・備考）の字です。
+	//
+	// ⚠ **表の字は固定していません**——中身を測って**入る中でいちばん大きい**
+	// ものを選びます（`pdfFontSteps`・`fitTableColumns`）。
+	pdfFontSz = 10.5
+	// pdfLine は表以外の行送りです（表の行送りは字の大きさから出します）。
+	pdfLine = 16.0
 )
+
+// pdfFontSteps は明細表の字の候補です（**大きい順に試します**）。
+//
+// ⚠ **FAXで潰れるのが出発点です**（2026-09-22 ユーザー:「**発注書のPDFが文字が
+// 小さすぎてFAXで送ると潰れるような気がします**」）。G3 FAX の解像度は
+// **203×98dpi（標準）**で、⚠ **縦が 98dpi しかありません**——9pt の和文は
+// 縦12走査線ほどしかなく、画数の多い漢字（`鋼`・`鍍`・`厚`）は塗り潰れます。
+//
+// ⚠ **だから「入るなら大きく」です。** 12pt から順に試し、**入らなくなったところで
+// 1段下げます**。⚠ **下限は 9pt**——それまでの大きさなので、**どんな中身でも
+// 今より小さくはなりません**。
+var pdfFontSteps = []float64{12, 11.5, 11, 10.5, 10, 9.5, 9}
+
+// pdfCellPad はセルの左右の余白です（線と字がくっつかないように）。
+const pdfCellPad = 4.0
 
 // orderPDFColumn は明細表の1列です。
 type orderPDFColumn struct {
@@ -221,50 +250,254 @@ func pdfTextRight(p *gopdf.GoPdf, right, y, size float64, s string) {
 	p.Cell(nil, s)
 }
 
-// pdfTable は明細表を組みます（線と文字を自分で置きます）。
-func pdfTable(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, rows []map[string]string) float64 {
-	p.SetLineWidth(0.5)
-	// 見出し
+// pdfTableHead は見出し行を1つ刷り、次のyを返します（改ページのたびに呼びます）。
+func pdfTableHead(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, line float64) float64 {
 	x := pdfLeft
-	p.SetFont("jp", "", pdfFontSz)
 	for _, c := range cols {
-		p.SetXY(x+2, y+3)
+		p.SetXY(x+pdfCellPad, y+3)
 		p.Cell(nil, c.Label)
-		p.Line(x, y, x, y+pdfLine)
+		p.Line(x, y, x, y+line)
 		x += c.Width
 	}
 	p.Line(pdfLeft, y, x, y)
-	p.Line(x, y, x, y+pdfLine)
-	p.Line(pdfLeft, y+pdfLine, x, y+pdfLine)
-	y += pdfLine
+	p.Line(x, y, x, y+line)
+	p.Line(pdfLeft, y+line, x, y+line)
+	return y + line
+}
+
+// pdfTable は明細表を組みます（線と文字を自分で置きます）。
+func pdfTable(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, rows []map[string]string) float64 {
+	p.SetLineWidth(0.5)
+	// ⚠ **列幅は中身を測って決めます**（2026-09-23）。それまでは**固定のポイント値**で、
+	//    **字の大きさに追随しませんでした**——字を大きくすると隣の列へはみ出し、
+	//    ⚠ **`p.Cell(nil, …)` は幅を持たないので切られもせず、重なって印刷されます**。
+	//    測れば、①字を大きくできる ②はみ出しが構造的に起きない、の両方が片付きます。
+	cols, size := fitTableColumns(p, cols, rows, pdfRight-pdfLeft)
+	line := size + 7 // 行の高さ（字の上下に余白）
+	p.SetFont("jp", "", size)
+
+	y = pdfTableHead(p, y, cols, line)
 
 	for _, r := range rows {
-		x = pdfLeft
-		for _, c := range cols {
-			v := r[c.Label]
-			if c.Label == "金額" {
-				v = comma(cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"]))
-			} else if c.Right && v != "" {
-				v = comma(cms.VocabNumber(v))
+		// ⚠ **折り返しは最後の手段ですが、無いと困ります**——長い `品名` が1つ
+		//    入っただけで、**字を下限まで下げても入らない**ことがあります。
+		//    そのときは**切らずに折ります**（紙から値が消えるほうが危ない）。
+		lines := make([][]string, len(cols))
+		high := 1
+		for i, c := range cols {
+			v := pdfCellValue(r, c)
+			if v == "" {
+				continue
 			}
-			if v != "" {
+			ls, err := p.SplitText(v, c.Width-2*pdfCellPad)
+			if err != nil || len(ls) == 0 {
+				ls = []string{v}
+			}
+			lines[i] = ls
+			if len(ls) > high {
+				high = len(ls)
+			}
+		}
+		h := float64(high) * line
+		// ⚠ **紙の下からはみ出したら改ページします**（2026-09-23）。それまでは
+		//    **描き続けるだけ**で、⚠ **溢れた行は黙って消えていました**
+		//    ——字を大きくして行が高くなったぶん、起きやすくなります。
+		//    ⚠ **見出しも刷り直します**（2枚目に列の名前が無いと読めません）。
+		if y+h > pdfBottom {
+			p.AddPage()
+			p.SetFont("jp", "", size)
+			y = pdfTableHead(p, pdfTop, cols, line)
+		}
+		x := pdfLeft
+		for i, c := range cols {
+			for n, s := range lines[i] {
+				ly := y + float64(n)*line + 3
 				if c.Right {
-					p.SetFont("jp", "", pdfFontSz)
-					w, _ := p.MeasureTextWidth(v)
-					p.SetXY(x+c.Width-w-2, y+3)
+					w, _ := p.MeasureTextWidth(s)
+					p.SetXY(x+c.Width-w-pdfCellPad, ly)
 				} else {
-					p.SetXY(x+2, y+3)
+					p.SetXY(x+pdfCellPad, ly)
 				}
-				p.Cell(nil, v)
+				p.Cell(nil, s)
 			}
-			p.Line(x, y, x, y+pdfLine)
+			p.Line(x, y, x, y+h)
 			x += c.Width
 		}
-		p.Line(x, y, x, y+pdfLine)
-		p.Line(pdfLeft, y+pdfLine, x, y+pdfLine)
-		y += pdfLine
+		p.Line(x, y, x, y+h)
+		p.Line(pdfLeft, y+h, x, y+h)
+		y += h
 	}
 	return y
+}
+
+// pdfCellValue はそのセルに刷る文字です。
+//
+// ⚠ **`金額` は本文の列ではなく計算です**（数量 × 単価）。測る側と書く側で違う値を
+// 使うと、**測ったより長い文字が入ってはみ出します**——だから1つの口にします。
+func pdfCellValue(r map[string]string, c orderPDFColumn) string {
+	if c.Label == "金額" {
+		return comma(cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"]))
+	}
+	v := r[c.Label]
+	if c.Right && v != "" {
+		return comma(cms.VocabNumber(v))
+	}
+	return v
+}
+
+// fitTableColumns は中身を測って、**列幅**と**字の大きさ**を決めます。
+//
+// ⚠ **「入るなら大きく」です**（2026-09-23・FAX対策）。`pdfFontSteps` を大きい順に
+// 試し、**全部の列が入る最初の大きさ**を採ります。⚠ **下限は 9pt**——それまでの
+// 大きさなので、**どんな中身でも今より小さくはなりません**。
+//
+// ⚠ **入らないときは、字を下げる前に折り返します。** 長い品名が1つ入っただけで
+// 全体が 9.5pt に落ちるのは**割に合いません**——**折り返した 12pt のほうが、
+// 1行に収めた 9.5pt より読めます**（FAX で効くのは1文字の大きさで、行数ではない）。
+// だから**文字の列を細らせて折り返させ**、それでも無理なときだけ字を下げます。
+//
+// ⚠ **細らせるのは文字の列だけ**です。数の列（数量・単価・金額）は折り返しても
+// 読みやすくならず、⚠ **金額が2行に割れると読み違えます**。
+//
+// ⚠ **見出しより細くはしません**——値が入っても**何の列か分からなければ読めません**。
+func fitTableColumns(p *gopdf.GoPdf, cols []orderPDFColumn, rows []map[string]string,
+	avail float64) ([]orderPDFColumn, float64) {
+	var last []orderPDFColumn
+	lastSize := pdfFontSteps[len(pdfFontSteps)-1]
+	for _, s := range pdfFontSteps {
+		w, total := measureColumns(p, cols, rows, s)
+		last, lastSize = w, s
+		if total <= avail {
+			return spreadSpare(w, avail-total), s
+		}
+		if squeezed, ok := squeezeText(p, w, avail, s); ok {
+			return squeezed, s
+		}
+	}
+	// ⚠ **いちばん小さい字でも入らないときは、比で縮めます**（折り返しが受け止める）。
+	//    ここで諦めると**紙からはみ出して印刷されます**——見えない誤りのほうが困ります。
+	total := 0.0
+	for _, c := range last {
+		total += c.Width
+	}
+	if total > avail && total > 0 {
+		k := avail / total
+		for i := range last {
+			last[i].Width *= k
+		}
+	}
+	return last, lastSize
+}
+
+// squeezeText は文字の列を細らせて、折り返しで収める試みです。
+//
+// 細らせる量は**自然な幅に比例**させます——いちばん長い列（たいてい `品名`）が
+// いちばん譲る形で、**短い列は元の幅のまま**です。
+func squeezeText(p *gopdf.GoPdf, cols []orderPDFColumn, avail, size float64) ([]orderPDFColumn, bool) {
+	p.SetFont("jp", "", size)
+	fixed, flex, floor := 0.0, 0.0, 0.0
+	mins := make([]float64, len(cols))
+	for i, c := range cols {
+		if c.Right {
+			fixed += c.Width
+			continue
+		}
+		w, _ := p.MeasureTextWidth(c.Label)
+		mins[i] = w + 2*pdfCellPad
+		flex += c.Width
+		floor += mins[i]
+	}
+	room := avail - fixed
+	if flex == 0 || room < floor {
+		return nil, false // 見出しすら入らない——字を下げるしかない
+	}
+	// ⚠ **下限に当たった列は固定して、残りで配り直します**（繰り返し）。
+	//    1回で割り当てると、**短い列が下限に押し戻されたぶんだけ合計が超え**、
+	//    「入らない」と誤って判定します——**実際に踏みました**（2026-09-23）:
+	//    `単位` が下限に戻るだけで、長い品名の紙が 12pt → 9.5pt に落ちていました。
+	out := make([]orderPDFColumn, len(cols))
+	copy(out, cols)
+	pinned := make([]bool, len(cols))
+	for again := true; again; {
+		again = false
+		freeRoom, freeNat := room, 0.0
+		for i, c := range out {
+			switch {
+			case c.Right:
+			case pinned[i]:
+				freeRoom -= mins[i]
+			default:
+				freeNat += cols[i].Width
+			}
+		}
+		if freeNat == 0 {
+			break
+		}
+		k := freeRoom / freeNat
+		for i := range out {
+			if out[i].Right || pinned[i] {
+				continue
+			}
+			if w := cols[i].Width * k; w >= mins[i] {
+				out[i].Width = w
+			} else {
+				out[i].Width, pinned[i], again = mins[i], true, true
+			}
+		}
+	}
+	total := 0.0
+	for _, c := range out {
+		total += c.Width
+	}
+	if total > avail+0.5 {
+		return nil, false
+	}
+	return spreadSpare(out, avail-total), true
+}
+
+// spreadSpare は余りを文字の列へ均等に配ります（数の列は広げても読みやすくならない）。
+func spreadSpare(cols []orderPDFColumn, spare float64) []orderPDFColumn {
+	if spare <= 0 {
+		return cols
+	}
+	text := 0
+	for _, c := range cols {
+		if !c.Right {
+			text++
+		}
+	}
+	if text == 0 {
+		return cols
+	}
+	add := spare / float64(text)
+	for i := range cols {
+		if !cols[i].Right {
+			cols[i].Width += add
+		}
+	}
+	return cols
+}
+
+// measureColumns はその字の大きさでの列幅と合計を返します。
+//
+// ⚠ **見出しも測ります**——値が短くても、**見出しが入らなければ読めません**。
+func measureColumns(p *gopdf.GoPdf, cols []orderPDFColumn, rows []map[string]string,
+	size float64) ([]orderPDFColumn, float64) {
+	p.SetFont("jp", "", size)
+	out := make([]orderPDFColumn, len(cols))
+	total := 0.0
+	for i, c := range cols {
+		out[i] = c
+		w, _ := p.MeasureTextWidth(c.Label)
+		for _, r := range rows {
+			if vw, _ := p.MeasureTextWidth(pdfCellValue(r, c)); vw > w {
+				w = vw
+			}
+		}
+		out[i].Width = w + 2*pdfCellPad
+		total += out[i].Width
+	}
+	return out, total
 }
 
 // comma は桁区切りを入れます（⚠ 実物が `122,580` と書いているので揃えます）。
@@ -287,7 +520,7 @@ func comma(n int) string {
 
 // readOrderDoc は発注書ページの本文から、ヘッダ・明細・**紙に出す列**を読み出します。
 //
-// ⚠ **全行が空の列は落とします**（ユーザーの実物に合わせて）。材料の発注書に `色` は
+// ⚠ **全行が空の列は落とします**（ユーザーの実物に合わせて）。材料の発注書に `表面` は
 // 出ず、塗装の発注書に `材質` は出ません——**形式は1つのまま、紙だけ種類ごとに違う**
 // 形にするための仕掛けです。受注残表の印刷で「画面と紙で別のHTMLを組まない」と
 // 決めたのと同じ考えで、**組むのは1つ、落とすのは出すとき**。
@@ -383,7 +616,7 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		{Label: "材質", Width: 70},
 		{Label: "形状", Width: 60},
 		{Label: "寸法", Width: 110},
-		{Label: "色", Width: 70},
+		{Label: "表面", Width: 70},
 		{Label: "単位", Width: 32},
 		{Label: "数量", Width: 40, Right: true},
 		{Label: "単価", Width: 55, Right: true},
