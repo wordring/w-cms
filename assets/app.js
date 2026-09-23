@@ -1731,6 +1731,14 @@
     function tableDefOf(table) {
         const t = table.getAttribute('data-type');
         if (t) return vocabDefs.find(v => v.type === t) || null;
+        // 表は自分の <caption> で名乗れる（サーバーの vocabTypeOf ③と同じ規則）。
+        // ⚠ 機械が書く明細（受注明細・発注明細・発注部材表）はこの形で、`data-type` を
+        // 書かない——ここで caption を見ないと、その表だけ列型の検証と折り返しが掛からない。
+        const cap = table.querySelector(':scope > caption');
+        if (cap) {
+            const cdef = vocabDefs.find(v => v.display_name === cap.textContent.trim());
+            if (cdef) return cdef;
+        }
         const sec = table.closest('section');
         if (!sec) return null;
         const sdef = sectionDefOf(sec);

@@ -23,7 +23,7 @@ func TestBuildOurOrderWritesOurItemNo(t *testing.T) {
 		"<td>000080</td>", // ⚠ 弊社品番
 		"<td>t4.5*75*1090</td>",
 		"<td>未発注</td>", // ⚠ 紙はできたが、まだ出していない（order_status.go）
-		`data-type="` + ourOrderItemsType + `"`,
+		"<caption>発注明細</caption>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("本文に %q がありません:\n%s", want, body)

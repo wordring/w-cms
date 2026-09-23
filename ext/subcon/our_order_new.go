@@ -168,7 +168,7 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, li
 	}
 	b.WriteString(`</dl>`)
 
-	b.WriteString(`<table data-type="` + ourOrderItemsType + `"><caption>` +
+	b.WriteString(`<table><caption>` +
 		stdhtml.EscapeString(displayNameOf(ourOrderItemsType)) + `</caption><tbody>`)
 	b.WriteString(headerRowHTML(ourOrderItemsType))
 	for _, ln := range lines {

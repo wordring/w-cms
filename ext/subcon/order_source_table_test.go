@@ -58,7 +58,7 @@ func TestOrderPageKeepsSourceTable(t *testing.T) {
 		t.Errorf("畳める形になっていません:\n%s", body)
 	}
 	// ⚠ **弊社の表も並んでいる**（原本だけになっていない）。
-	if !strings.Contains(body, `data-type="client-order-items"`) {
+	if !strings.Contains(body, "<caption>受注明細</caption>") {
 		t.Errorf("弊社の明細が消えています:\n%s", body)
 	}
 }

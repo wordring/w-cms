@@ -17,7 +17,7 @@ package subcon
 //	     <h1>受注 PO-xxx</h1>
 //	     <dl data-type="tags"> 発注書番号・発注元・発注日・納期・小計・税・合計・
 //	                          受信元: <ページID>-<添付ID>（押すと該当ブロックへ飛ぶ）
-//	     <details> 読んだままの表 ＋ <table data-type="client-order-items"> 弊社の明細
+//	     <details> 読んだままの表 ＋ <table><caption>受注明細</caption> 弊社の明細
 //	     （09-18 まではヘッダを機能見出しの節の素の dl に書いていた——`buildOrderPageHTML`）
 //
 // **起動は人の指先だけ**——「自動ではなくボタンのclickなどで解析が始まると良い」
@@ -513,7 +513,7 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// 弊社の「品番」に入れたなら、その1行を表の手前に残します——**原本と見比べ
 	// なくても気づける**のがここの目的です（0c の積み残し）。
 	b.WriteString(itemNoSourceNote(j.Items))
-	b.WriteString(`<table data-type="` + clientOrderItemsType + `">` +
+	b.WriteString(`<table>` +
 		`<caption>` + html.EscapeString(displayNameOf(clientOrderItemsType)) + `</caption><tbody>`)
 	b.WriteString(headerRowHTML(clientOrderItemsType))
 	for _, it := range j.Items {
@@ -776,7 +776,7 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
 func revisionsSectionHTML(j *orderJudgment, existingBody string) string {
 	var b strings.Builder
 	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>改訂履歴</h2>`)
-	b.WriteString(`<table data-type="` + revisionItemsType + `"><tbody>`)
+	b.WriteString(`<table><caption>` + html.EscapeString(displayNameOf(revisionItemsType)) + `</caption><tbody>`)
 	// ⚠ 見出しは宣言から組みます（受注明細と同じ理由——手書きだと列を足した日にずれる）。
 	b.WriteString(headerRowHTML(revisionItemsType))
 	b.WriteString(revisionRowHTML(1, j.DrawingNo, existingBody))

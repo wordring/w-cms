@@ -17,7 +17,6 @@ func TestOrderDraftBuildsFromPickedLines(t *testing.T) {
 			Quantity: "6", Cost: "400"},
 	})
 	for _, want := range []string{
-		`data-type="` + OrderDraftType + `"`,
 		"<caption>発注部材表</caption>",
 		"<td>000080</td>", "<td>□75*75*t3.2*120</td>", "<td>400</td>",
 	} {
@@ -211,7 +210,7 @@ func TestRemoveDraftRowDropsTheEmptyTable(t *testing.T) {
 	if !ok {
 		t.Fatal("外せていません")
 	}
-	if n := strings.Count(got, `data-type="`+OrderDraftType+`"`); n != 1 {
+	if n := strings.Count(got, "<caption>発注部材表</caption>"); n != 1 {
 		t.Errorf("⚠ 表が %d 枚です（空になった1枚が消えて1枚のはず）:\n%s", n, got)
 	}
 	if strings.Contains(got, "1枚目の唯一の行") {
@@ -229,7 +228,7 @@ func TestRemoveDraftRowDropsTheEmptyTable(t *testing.T) {
 	if !ok {
 		t.Fatal("2枚目から外せていません")
 	}
-	if n := strings.Count(got2, `data-type="`+OrderDraftType+`"`); n != 2 {
+	if n := strings.Count(got2, "<caption>発注部材表</caption>"); n != 2 {
 		t.Errorf("⚠ まだ行が残っているのに表を消しました（%d枚）:\n%s", n, got2)
 	}
 	if !strings.Contains(got2, "2枚目の行B") {

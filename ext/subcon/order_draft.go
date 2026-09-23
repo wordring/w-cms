@@ -164,7 +164,7 @@ func CountOrderDrafts(pageID int) int {
 // 「作れなかった」ではなく「これから書く」**です。
 func orderDraftHTML(lines []ourOrderLine) string {
 	var b strings.Builder
-	b.WriteString(`<table data-type="` + OrderDraftType + `"><caption>` +
+	b.WriteString(`<table><caption>` +
 		stdhtml.EscapeString(displayNameOf(OrderDraftType)) + `</caption><tbody>`)
 	b.WriteString(headerRowHTML(OrderDraftType))
 	for _, ln := range lines {

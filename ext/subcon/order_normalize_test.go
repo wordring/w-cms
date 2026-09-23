@@ -15,7 +15,7 @@ import (
 // ourItemsSegment は本文を「原本まで」と「弊社の明細から」に割ります。
 func ourItemsSegment(t *testing.T, body string) (source, ours string) {
 	t.Helper()
-	at := strings.Index(body, `<table data-type="`+clientOrderItemsType+`"`)
+	at := strings.Index(body, `<table><caption>`+displayNameOf(clientOrderItemsType)+`</caption>`)
 	if at < 0 {
 		t.Fatalf("弊社の明細がありません:\n%s", body)
 	}

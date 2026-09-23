@@ -95,7 +95,7 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
     }
     console.log('当て先: ' + target + '（自分の未手配 ' + rows + ' 行）');
 
-    const tables = () => page.locator('table[data-type="order-draft"]').count();
+    const tables = () => page.locator('table:has(caption:text-is("発注部材表"))').count();
     const before = await tables();
 
     // ① 1枚作る

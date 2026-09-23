@@ -106,7 +106,7 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 		// ——「タグと表だけがDBに入る」。
 		`<dl data-type="tags">`,
 		"<dt>発注元</dt><dd>南北スポーツ</dd>",
-		`<table data-type="client-order-items">`,
+		"<table><caption>受注明細</caption>",
 		"<td>ブラケット</td>",
 		"<td>未着手</td>",
 		"<dt>受信元</dt><dd>" + id + "-abc123</dd>",
