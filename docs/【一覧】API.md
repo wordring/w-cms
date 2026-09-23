@@ -290,7 +290,7 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 | GET | `/sitemap.xml` | 認証不要 | **実効公開のページだけ**を載せた sitemap（`<loc>` は絶対URL・`<lastmod>` は W3C Datetime）。判定は認可と同じ `page.EffectivePublic` を通す——独自の判定を書くと、認可とずれた瞬間に非公開ページのアドレスを外へ配ることになる。`public, max-age=600` |
 | GET | `/robots.txt` | 認証不要 | **サイト全体が非公開なら `Disallow: /`**（トップの実効公開で判定。パスゲートにより「サイトが閉じているか」と同義。索引が使えないときも閉じている扱い＝フェイルクローズ）。公開サイトでは `/api/` と `/login` を閉じ、`Sitemap:` 行で sitemap を案内する。添付（`/data/`）は本文の画像がここから配られるので閉じない |
 
-絶対URLの基底は `WCMS_BASE_URL`（[要件定義書.md](要件定義書.md) §4.3）を最優先し、無ければ
+絶対URLの基底は `WCMS_BASE_URL`（[【要求】運用.md](【要求】運用.md) §3）を最優先し、無ければ
 リクエストから組み立てる（`X-Forwarded-Proto`/`-Host` は**前段がプロキシのときだけ**採用——
 無条件に信じると外から表記を操作できる。監査記録の接続元と同じ規則で、判定は
 `auth.IsFromTrustedProxy` の1関数）。
