@@ -510,7 +510,7 @@ func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {
 //
 // ⚠ **Go 標準の `Part.FileName()` は使いません**（2026-09-17）。あれは RFC 2047 の
 // 復号**前**に `filepath.Base` を掛けるので、符号化文字列の中の `/`（base64 の1文字）で
-// 名前が切れます——実データで `P220-DC装置D…20240913.zip` が
+// 名前が切れます——実データで `K120-DC装置D…20240913.zip` の形の名前が
 // `XkxMISEbKEIyMDI0MDkx?= 3.zip` になりました（和文の名前は必ず符号化されるので、
 // 和文の添付の何割かがこうなる）。ここでは**復号してから**区切りを落とします。
 // 見る順は `Content-Disposition` の `filename` → `Content-Type` の `name`（標準と同じ。
