@@ -155,9 +155,9 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, li
 	if due != "" {
 		writeHeaderPair(&b, DueDateTag, due)
 	}
-	if note != "" {
-		writeHeaderPair(&b, "備考", note)
-	}
+	// ⚠ **備考はタグにしません**（2026-09-24 ユーザー:「発注書ページに『備考』タグが
+	//    ありますが、要求に『備考』タグはありません」）——要求は**表の下の備考欄**で、
+	//    **複数行書けます**。下の `orderNoteSectionHTML` が書きます。
 	// ⚠ **誰が出したかを残します**（2026-09-22）。値は連絡帳の担当者ページのID
 	//    （`ref` 型なので押せば飛べる）。
 	//    ⚠ **署名の文面は焼き込みません**——**出した紙の正本はPDF**で、それはこの
@@ -201,6 +201,35 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, li
 		b.WriteString(`</tr>`)
 	}
 	b.WriteString(`</tbody></table>`)
+	b.WriteString(orderNoteSectionHTML(note))
+	return b.String()
+}
+
+// orderNoteHeading は発注書ページの備考欄の見出しです（本文とPDFで共有）。
+const orderNoteHeading = "備考"
+
+// orderNoteSectionHTML は発注明細の下の**備考欄**を組みます（2026-09-24）。
+//
+// 要求（【要求】発注フォルダ）:「その下のブロックに『備考』入力欄があります。
+// **備考欄は複数行書けます**」。⚠ **相手に伝えることを書く欄**です——行の `備考` 列
+// （他社が知る必要のないメモ）とは別で、こちらは**紙に刷ります**。
+//
+// ⚠ **空でも欄は置きます**——後から書き足す場所が画面に無いと、人はタグや
+// 行の備考に書いてしまいます。
+func orderNoteSectionHTML(note string) string {
+	var b strings.Builder
+	b.WriteString(`<section><h2>` + orderNoteHeading + `</h2>`)
+	wrote := false
+	for _, ln := range strings.Split(strings.ReplaceAll(note, "\r\n", "\n"), "\n") {
+		if ln = strings.TrimSpace(ln); ln != "" {
+			b.WriteString(`<p>` + stdhtml.EscapeString(ln) + `</p>`)
+			wrote = true
+		}
+	}
+	if !wrote {
+		b.WriteString(`<p><br/></p>`)
+	}
+	b.WriteString(`</section>`)
 	return b.String()
 }
 

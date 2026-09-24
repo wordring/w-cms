@@ -387,3 +387,78 @@ func TestOrderSurfaceColumnCarriesPlatingAndBare(t *testing.T) {
 		}
 	}
 }
+
+// TestOrderNoteIsASectionNotATag は、⚠ **備考がタグではなく表の下の節**であることを
+// 固定します（2026-09-24 ユーザー:「発注書ページに『備考』タグがありますが、要求に
+// 『備考』タグはありません」）。要求は「その下のブロックに『備考』入力欄があります。
+// 備考欄は複数行書けます」。
+func TestOrderNoteIsASectionNotATag(t *testing.T) {
+	body := buildOurOrderHTML("000138", "みなと商店", "2026-09-24", "", "定尺で可\n急ぎでお願いします", "", nil)
+	if strings.Contains(body, "<dt>備考</dt>") {
+		t.Errorf("⚠ 備考がタグに書かれています:\n%s", body)
+	}
+	for _, want := range []string{"<section><h2>備考</h2>", "<p>定尺で可</p>", "<p>急ぎでお願いします</p>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("本文に %q がありません:\n%s", want, body)
+		}
+	}
+	// ⚠ **表の下**にあること（要求の並び: 発注明細 → 備考欄）。
+	if strings.Index(body, "<h2>備考</h2>") < strings.Index(body, "</table>") {
+		t.Errorf("⚠ 備考欄が表より上にあります:\n%s", body)
+	}
+	// ⚠ **空でも欄は置く**（後から書き足す場所が要る）。
+	if empty := buildOurOrderHTML("000139", "みなと商店", "2026-09-24", "", "", "", nil); !strings.Contains(empty, "<h2>備考</h2>") {
+		t.Errorf("⚠ 備考が空のとき欄がありません:\n%s", empty)
+	}
+}
+
+// TestOrderPDFPrintsNoteLines は、⚠ **備考欄の複数行が紙に刷られる**ことを、PDFを
+// 読み返して固定します。`<br>` も行の区切り、**古い紙のタグ `備考` も読む**。
+func TestOrderPDFPrintsNoteLines(t *testing.T) {
+	withPDFFont(t, systemJPFont(t))
+	rows := `<tr><td></td><td></td><td></td><td>SS400</td><td>板</td><td>t3.2</td>` +
+		`<td></td><td>2</td><td>枚</td><td>800</td><td>社内メモ</td><td>未発注</td></tr>`
+	table := `<table><caption>発注明細</caption><tbody>` +
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>材質</th><th>形状</th>` +
+		`<th>寸法</th><th>表面</th><th>数量</th><th>単位</th><th>単価</th>` +
+		`<th>備考</th><th>状態</th></tr>` + rows + `</tbody></table>`
+	head := `<h1>発注</h1><dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd></dl>`
+
+	// 新しい形: 節（段落と <br> の両方で区切る）。
+	body := head + table + `<section><h2>備考</h2><p>訂正版（2026-09-24 送付分を破棄し、本書に差し替えてください）</p>` +
+		`<p>定尺で可<br/>急ぎでお願いします</p></section>`
+	pdf, err := buildOrderPDF(body, nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	text := pdfTextOf(t, pdf)
+	for _, want := range []string{"訂正版", "定尺で可", "急ぎでお願いします"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("⚠ 備考の %q が紙にありません:\n%s", want, text)
+		}
+	}
+	// ⚠ **行の備考（社内メモ）は刷らない**——他社が知る必要のないもの。
+	if strings.Contains(text, "社内メモ") {
+		t.Errorf("⚠ 行の備考が紙に出ています:\n%s", text)
+	}
+	// ⚠ <br> で区切った2行が1行に繋がっていないこと——**読み手を直接見ます**
+	//    （`pdfTextOf` は紙の上の文字を区切りなしで返すので、別の行でも隣り合って見える）。
+	head2, _, _, err := readOrderDoc(body)
+	if err != nil {
+		t.Fatalf("読めません: %v", err)
+	}
+	if got := strings.Split(head2[orderNoteHeading], "\n"); len(got) != 3 || got[1] != "定尺で可" || got[2] != "急ぎでお願いします" {
+		t.Errorf("⚠ 備考の行の分け方が違います（段落と <br> の両方で3行のはず）: %q", got)
+	}
+
+	// 古い形: タグの 備考（09-23 までの紙）も読む。
+	old := `<h1>発注</h1><dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd>` +
+		`<dt>備考</dt><dd>昔のタグ</dd></dl>` + table
+	pdf2, err := buildOrderPDF(old, nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	if !strings.Contains(pdfTextOf(t, pdf2), "昔のタグ") {
+		t.Errorf("⚠ 古い紙のタグの備考が刷られていません")
+	}
+}

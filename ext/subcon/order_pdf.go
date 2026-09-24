@@ -219,9 +219,25 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	pdfTextRight(p, pdfRight, y, 11, "合計金額（税抜）　"+comma(total)+" 円")
 	y += pdfLine + 6
 
-	// ── 備考 ──
-	if n := head["備考"]; n != "" {
-		pdfText(p, pdfLeft, y, pdfFontSz, "備考： "+n)
+	// ── 備考（複数行・2026-09-24）──
+	// ⚠ **長い行は紙の幅で折り、紙の下に来たら改ページします**——備考は人が自由に
+	//    書く欄なので、1行に収まる保証がありません（はみ出すと右端で切れて消えます）。
+	if n := strings.TrimSpace(head[orderNoteHeading]); n != "" {
+		p.SetFont("jp", "", pdfFontSz)
+		y = pdfText(p, pdfLeft, y, pdfFontSz, orderNoteHeading+"：")
+		for _, ln := range strings.Split(n, "\n") {
+			parts, err := p.SplitText(ln, pdfRight-pdfLeft-12)
+			if err != nil || len(parts) == 0 {
+				parts = []string{ln}
+			}
+			for _, s := range parts {
+				if y+pdfFontSz+4 > pdfBottom {
+					p.AddPage()
+					y = pdfTop
+				}
+				y = pdfText(p, pdfLeft+12, y, pdfFontSz, s)
+			}
+		}
 	}
 
 	var buf bytes.Buffer
@@ -575,6 +591,12 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 			if n.Data == "table" && table == nil && isTableOfType(n, ourOrderItemsType) {
 				table = n
 			}
+			// ⚠ **備考は表の下の節**（2026-09-24・`orderNoteSectionHTML`）。節が在れば
+			//    **タグの `備考`（09-23 までの紙）より節を採ります**。
+			if n.Data == "section" && sectionHeadingText(n) == orderNoteHeading {
+				head[orderNoteHeading] = strings.Join(noteLinesOf(n), "\n")
+				return
+			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			walk(c)
@@ -659,4 +681,56 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		}
 	}
 	return head, rows, cols, nil
+}
+
+// sectionHeadingText は節の最初の見出し（直接の子の h1〜h6）の文字を返します。
+func sectionHeadingText(sec *html.Node) string {
+	for c := sec.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && len(c.Data) == 2 && c.Data[0] == 'h' &&
+			c.Data[1] >= '1' && c.Data[1] <= '6' {
+			return strings.TrimSpace(textOf(c))
+		}
+	}
+	return ""
+}
+
+// noteLinesOf は備考欄の節から、見出しを除いた本文を行ごとに返します。
+//
+// ⚠ **`<br>` も行の区切りです**（エディタは Shift+Enter で `<br>` を入れます）——
+// 段落だけを区切りにすると、改行したつもりの2行が紙の上で1行に繋がります。
+// 空の行（`<p><br/></p>` の置き場）は落とします。
+func noteLinesOf(sec *html.Node) []string {
+	var out []string
+	var cur strings.Builder
+	flush := func() {
+		if s := strings.TrimSpace(cur.String()); s != "" {
+			out = append(out, s)
+		}
+		cur.Reset()
+	}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		switch n.Type {
+		case html.TextNode:
+			cur.WriteString(n.Data)
+		case html.ElementNode:
+			if n.Data == "br" {
+				flush()
+				return
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+		}
+	}
+	skippedHeading := false
+	for c := sec.FirstChild; c != nil; c = c.NextSibling {
+		if !skippedHeading && c.Type == html.ElementNode && len(c.Data) == 2 && c.Data[0] == 'h' {
+			skippedHeading = true
+			continue
+		}
+		walk(c)
+		flush() // ブロックの境目も行の区切り
+	}
+	return out
 }
