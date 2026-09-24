@@ -141,7 +141,7 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		`<tr><td>外注高周波焼入れ</td><td></td><td></td><td>1</td></tr>`+
 		`</tbody></table>`)
 
-	// 3. 受注ページ(000002)：SHAFT-01 を 10本。自社発注で鋼材を10本発注済み（＋取消が5本）。
+	// 3. 受注ページ(000002)：SHAFT-01 を 10本。自社発注で鋼材を10本発注済み＋取消が5本（計15本を手配済みに数える）。
 	sync(2, `<h1>受注</h1>`+
 		`<section data-type="client-order"><dl>`+
 		`<dt>発注書番号</dt><dd>PO-A100</dd><dt>発注元</dt><dd>南北</dd></dl>`+
@@ -154,7 +154,7 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 		`<table data-type="our-order-items"><tbody>`+
 		`<tr><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>`+
 		`<tr><td>シャフト用鋼材 (S45C)</td><td>2500</td><td>10</td><td>未納品</td></tr>`+
-		// ⚠ 取消の行は発注済みに数えない（2026-09-22 の決定。この集計だけ漏れていた・09-23）。
+		// ⚠ 取消の行も手配済みに数える（2026-09-23 に覆った——取消は「もう発注しない」）。
 		`<tr><td>シャフト用鋼材 (S45C)</td><td>2500</td><td>5</td><td>取消</td></tr>`+
 		`</tbody></table></section>`)
 
@@ -183,13 +183,13 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 	}
 
 	// 結果の検証
-	// 'シャフト用鋼材 (S45C)': 必要数10, 発注済10 -> 残0
+	// 'シャフト用鋼材 (S45C)': 必要数10, 手配済15（取消5を含む） -> 残0
 	// '外注高周波焼入れ': 必要数10, 発注済0 -> 残10
 	var foundSteel, foundHeat bool
 	for _, res := range results {
 		if res.MaterialName == "シャフト用鋼材 (S45C)" {
 			foundSteel = true
-			if res.TotalRequired != 10 || res.Ordered != 10 || res.Remaining != 0 {
+			if res.TotalRequired != 10 || res.Ordered != 15 || res.Remaining != 0 {
 				t.Errorf("シャフト用鋼材の計算結果が不正です: %+v", res)
 			}
 		}

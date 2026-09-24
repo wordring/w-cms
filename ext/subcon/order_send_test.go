@@ -74,13 +74,14 @@ func TestSetOrderLineStatusSaysNothingChanged(t *testing.T) {
 	}
 }
 
-// TestCancelledOrderReturnsToUnordered は、⚠ **取り消したら未手配へ戻る**ことを
-// 固定します（ユーザー:「大事なことは、**発注の取り消しもある**ということです」）。
+// TestCancelledOrderStaysConsumed は、⚠ **取り消しても必要部材表へ戻らない**ことを
+// 固定します（2026-09-23 ユーザー:「状態を取り消しにすることの意味が、**その部材は
+// もう発注しない**ということになりました。**発注書ページで消費して発注しなくなります**」）。
 //
-// ⚠ **これがいちばん危ない取り違えです。** 取消を「手配した」に数えると、
-// **その材料は未手配の一覧から消えたまま**になり、⚠ **誰も買わないまま納期が
-// 来ます**——しかもエラーは出ません。
-func TestCancelledOrderReturnsToUnordered(t *testing.T) {
+// ⚠ **09-22 は逆でした**（取り消すと自動で戻る）。この番人はその名残を捕まえます
+// ——戻る側に書き戻すと、**もう発注しないと決めた部材が必要部材表に再び並び**、
+// 同じものをもう一度発注書に入れてしまいます。戻したいときは「必要部材表へ戻す」。
+func TestCancelledOrderStaysConsumed(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	viewer := &auth.User{Username: "root", IsAdmin: true}
@@ -109,20 +110,15 @@ func TestCancelledOrderReturnsToUnordered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UnorderedItemsエラー: %v", err)
 	}
-	if len(after) != 2 {
-		t.Fatalf("⚠ 取り消した材料が未手配に戻っていません（%d 件）: %#v", len(after), after)
+	// ⚠ **件数だけでなく中身も見ます**——下ごしらえと同じ1件で、それが t3.2 では
+	//    ないこと（取り消した材料が戻っていないこと）まで確かめます。
+	if len(after) != 1 {
+		t.Fatalf("⚠ 取り消した材料が必要部材表に戻っています（%d 件）: %#v", len(after), after)
 	}
-	found := false
 	for _, u := range after {
 		if strings.Contains(u.Size, "t3.2") {
-			found = true
-			if u.Remaining != 6 {
-				t.Errorf("残が %d です（6を期待）: %#v", u.Remaining, u)
-			}
+			t.Errorf("⚠ 取り消した材料が一覧にあります: %#v", u)
 		}
-	}
-	if !found {
-		t.Errorf("⚠ 取り消した材料が一覧にありません: %#v", after)
 	}
 }
 
@@ -301,9 +297,9 @@ func TestCancelAsksOnlyAfterThePaperWentOut(t *testing.T) {
 			t.Errorf("状態 %q の確認が %v です（%v を期待）:\n%s",
 				tc.status, asks, tc.asks, got)
 		}
-		// ⚠ **取り消したらどうなるかを書くこと**——「未手配の一覧へ戻ります」が
-		//    無いと、人は**もう一度どこかで発注し直す**必要があると思います。
-		if tc.asks && !strings.Contains(got, "未手配の一覧へ戻ります") {
+		// ⚠ **取り消したらどうなるかを書くこと**——「必要部材表へは戻りません」が
+		//    無いと、09-22 までの意味（戻る）で読まれ、**誰も買わないまま納期が来ます**。
+		if tc.asks && !strings.Contains(got, "必要部材表へは戻りません") {
 			t.Errorf("状態 %q の確認に、戻り先が書かれていません:\n%s", tc.status, got)
 		}
 	}

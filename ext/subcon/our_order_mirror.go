@@ -104,8 +104,8 @@ func addOrderRowButtons(table *html.Node, orderID string) {
 
 // orderRowButtonsHTML は1行ぶんのボタンです。
 //
-// ⚠ **`取消` からは「戻す」だけ**です。取り消した行をいきなり `納品済` にできると、
-// **取り消したはずのものが手配済みに戻り**、未手配の一覧から静かに消えます。
+// ⚠ **`取消` からは「取消をやめる」（→ 未発注）だけ**です。取り消した行をいきなり
+// `納品済` にできると、**相手に取り消しを頼んだ品が「届いた」ことになります**。
 //
 // ⚠ **取消の重さが2通りあります**（2026-09-22 ユーザー）。
 //
@@ -128,9 +128,11 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 		}
 		return s + ` title="` + stdhtml.EscapeString(title) + `">` + label + `</button>`
 	}
-	// ⚠ **取り消すと未手配の一覧へ戻ります**——引き算が `取消` を数えないためで、
-	//    戻す先へ何かを書く必要はありません（発注部材表の「↩ 戻す」と同じ理屈）。
-	const backNote = "取り消すと、この部材は未手配の一覧へ戻ります。"
+	// ⚠ **取り消しても必要部材表へは戻りません**（2026-09-23 に意味が変わった・
+	//    order_status.go）。**確認の文にそう書くこと**——09-22 まで「戻ります」だったので、
+	//    書かないと人は「どこかに戻った」と思い、**誰も買わないまま納期が来ます**。
+	const backNote = "取り消すと、この部材はもう発注しません（必要部材表へは戻りません）。\n" +
+		"もう一度発注したいときは「必要部材表へ戻す」を押してください。"
 	switch strings.TrimSpace(status) {
 	case OrderLineCancelled:
 		return btn(OrderLineUnsent, "↩ 取消をやめる", "取り消しをやめて「未発注」に戻します", "")
@@ -145,6 +147,6 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 	default: // 未発注・空欄
 		// ⚠ **ここだけ確認を出しません**（ユーザー:「発注前なら**単純に**取り消します」）。
 		return btn(OrderLineSent, "✓ 発注済", "この行だけ発注済みにします", "") +
-			btn(OrderLineCancelled, "✕ 取消", "この行は発注しません（未手配の一覧へ戻ります）", "")
+			btn(OrderLineCancelled, "✕ 取消", "この部材はもう発注しません（必要部材表へは戻りません）", "")
 	}
 }
