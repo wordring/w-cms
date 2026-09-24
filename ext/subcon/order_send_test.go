@@ -431,3 +431,36 @@ func showPage(t *testing.T, viewer *auth.User, pageID int, body string) string {
 	}
 	return cms.RenderComputedViews(req, pageID, body)
 }
+
+// TestMarkOrderSentRewritesOrderDate は、⚠ **送ったら `発注日` が送った日になる**ことを
+// 固定します（2026-09-24 ユーザー:「送信したときに発注日タグを書き換えましょう」）。
+//
+// ⚠ **再送（行がもう全部 `発注済`）でも書き換わること**まで見ます——行の数で
+// 分岐すると、再送した日が紙に載りません。
+func TestMarkOrderSentRewritesOrderDate(t *testing.T) {
+	body := `<h1>発注</h1><dl data-type="tags"><dt>` + OrderNoTag + `</dt><dd>000138</dd>` +
+		`<dt>` + OrderedAtTag + `</dt><dd>2026-09-20</dd><dt>` + DueDateTag + `</dt><dd>2026-10-01</dd></dl>` +
+		`<table><caption>発注明細</caption><tbody><tr><th>品名</th><th>状態</th></tr>` +
+		`<tr><td>A</td><td>未発注</td></tr><tr><td>B</td><td>取消</td></tr></tbody></table>`
+
+	got, n := markOrderSent(body, "2026-09-24")
+	if n != 1 {
+		t.Errorf("発注済にした行が %d です（1を期待・取消は巻き込まない）", n)
+	}
+	if !strings.Contains(got, "<dt>"+OrderedAtTag+"</dt><dd>2026-09-24</dd>") {
+		t.Errorf("⚠ 発注日が送った日になっていません:\n%s", got)
+	}
+	// ⚠ 他の日付（納期）を書き換えないこと。
+	if !strings.Contains(got, "<dt>"+DueDateTag+"</dt><dd>2026-10-01</dd>") {
+		t.Errorf("⚠ 納期まで書き換えています:\n%s", got)
+	}
+
+	// 再送: 行はもう全部 発注済（または取消）。それでも発注日は再送した日。
+	again, n2 := markOrderSent(got, "2026-09-26")
+	if n2 != 0 {
+		t.Errorf("再送で書き換えた行が %d です（0を期待）", n2)
+	}
+	if !strings.Contains(again, "<dt>"+OrderedAtTag+"</dt><dd>2026-09-26</dd>") {
+		t.Errorf("⚠ 再送した日が発注日に入っていません:\n%s", again)
+	}
+}

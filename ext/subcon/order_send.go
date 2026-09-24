@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
@@ -81,8 +82,9 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	changed := 0
+	sentOn := time.Now().Format("2006-01-02")
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, n := setOrderLineStatus(cur, 0, OrderLineSent)
+		out, n := markOrderSent(cur, sentOn)
 		changed = n
 		return out
 	}) {
@@ -94,6 +96,21 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//    人は「送れていない」と読みます。
 	cms.WriteJSON(w, map[string]any{
 		"success": true, "page_id": pageID, "method": method, "rows": changed})
+}
+
+// markOrderSent は「送った」ことを本文へ反映し、`発注済` にした行数を返します。
+//
+// ① 取消でない行を `発注済` に（`setOrderLineStatus` の row=0）
+// ② **`発注日` を送った日に書き換える**（2026-09-24 ユーザー:「発注書ページのPDFは
+//    一度に送信されるので、発注日は一つです。**送信したときに発注日タグを書き換え
+//    ましょう**」）。
+//
+// ⚠ **行が1つも変わらなくても ② はします**——再送では行がもう `発注済` のことがあり、
+// それでも発注日は再送した日です。
+// ⚠ 置き場（`発注／年／月`）は作った月のまま動かしません（ユーザー:「ずれて良いです」）。
+func markOrderSent(body, day string) (string, int) {
+	out, n := setOrderLineStatus(body, 0, OrderLineSent)
+	return replaceFirstFieldValue(out, OrderedAtTag, day), n
 }
 
 // supplierAddresses は仕入先の題から、メールアドレスの候補を集めます。
