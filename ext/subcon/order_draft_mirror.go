@@ -62,7 +62,7 @@ func addDraftRowButtons(table *html.Node, pageID string, idx int) {
 			` data-draft-page="` + stdhtml.EscapeString(pageID) + `"` +
 			` data-draft-table="` + strconv.Itoa(idx) + `"` +
 			` data-draft-row="` + strconv.Itoa(row) + `"` +
-			` title="未手配の一覧へ戻します（この行を外します）">↩ 戻す</button>`
+			` title="必要部材表へ戻します（この行を外します）">↩ 戻す</button>`
 	})
 }
 

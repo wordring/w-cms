@@ -28,7 +28,7 @@ const UnorderedViewType = "unordered-items"
 
 // unorderedViewHTML は未手配の一覧と「発注書を作る」欄を描きます。
 func unorderedViewHTML(user *auth.User, pageIDInt int) string {
-	head := `<h3 class="materials-title">🧾 未手配の一覧（受注横断）</h3>`
+	head := `<h3 class="materials-title">🧾 必要部材表（受注横断）</h3>`
 	list, err := UnorderedItems(user)
 	if err != nil {
 		return head + `<p class="view-error">集計データの取得に失敗しました。</p>`
@@ -42,7 +42,7 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		//    すると発注部材表が開き」——**加工製品ページに無い部材（消耗品・治具）だけを
 		//    買う道**がここです。⚠ **0件のときこそ、その道が要ります**——
 		//    早期に戻ると、**空の表から始める手段が画面から消えます**。
-		return head + `<p class="materials-empty">未手配の購入品はありません` +
+		return head + `<p class="materials-empty">必要部材はありません` +
 			`（⚠ 受注明細に<strong>弊社品番</strong>が無い行は、ここに出ません）。` +
 			`加工製品ページに無い部材だけを買うときは、下から<strong>空の発注部材表</strong>` +
 			`を作って書き始めてください。</p>` +

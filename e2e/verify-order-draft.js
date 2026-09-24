@@ -81,7 +81,7 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
     await page.goto(BASE + target);
     await page.waitForTimeout(800);
     if (await page.locator('[data-unorder-draft]').count() === 0) {
-      console.log('飛ばします: ' + target + ' に未手配の一覧がありません（既にある箱には新しい作業面が入らない）');
+      console.log('飛ばします: ' + target + ' に必要部材表がありません（既にある箱には新しい作業面が入らない）');
       skipped = true;
       return;
     }
