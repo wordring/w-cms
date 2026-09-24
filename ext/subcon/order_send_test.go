@@ -292,7 +292,15 @@ func TestCancelAsksOnlyAfterThePaperWentOut(t *testing.T) {
 		{orderLineLegacySent, true},
 		{OrderLineDelivered, true},
 	} {
-		got := orderRowButtonsHTML("000041", 1, tc.status)
+		// ⚠ **取消ボタンだけを切り出して見ます**（2026-09-24）——行末の「必要部材表へ
+		//    戻す」は**いつも**確かめるので、行全体を見ると未発注でも「確認あり」になります。
+		all := orderRowButtonsHTML("000041", 1, tc.status)
+		at := strings.Index(all, `data-order-status="`+OrderLineCancelled+`"`)
+		if at < 0 {
+			t.Fatalf("状態 %q に取消がありません:\n%s", tc.status, all)
+		}
+		got := all[at:]
+		got = got[:strings.Index(got, "</button>")]
 		if asks := strings.Contains(got, "data-order-confirm="); asks != tc.asks {
 			t.Errorf("状態 %q の確認が %v です（%v を期待）:\n%s",
 				tc.status, asks, tc.asks, got)

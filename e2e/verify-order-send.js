@@ -125,6 +125,38 @@ async function statusesOf(page) {
             console.log('✗ ⚠ まとめ書きが取消の行を巻き込んでいます: ' + JSON.stringify(done));
             bad++;
           } else console.log('✓ まとめ書きが取消を巻き込まない');
+
+          // ⑤ 1行目（発注済）を「必要部材表へ戻す」（2026-09-24）——確認に「再送」が
+          //    出て、行が本文から消えること。⚠ **編集モードでは出ないこと**も見ます。
+          await page.evaluate(() => document.getElementById('w-mode-toggle').click());
+          await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+          const shownInEdit = await page.locator('.order-row-return').first().isVisible().catch(() => false);
+          await page.evaluate(() => document.getElementById('w-mode-toggle').click());
+          await page.waitForFunction(() => !document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+          if (shownInEdit) {
+            console.log('✗ ⚠ 編集モードでも「必要部材表へ戻す」が出ています');
+            bad++;
+          } else console.log('✓ 編集モードでは「必要部材表へ戻す」が出ない');
+
+          const ret = page.locator('.order-row-return[data-order-row="1"]');
+          if ((await ret.count()) === 0) {
+            console.log('✗ 1行目に「必要部材表へ戻す」が出ていません');
+            bad++;
+          } else {
+            let asked = '';
+            page.once('dialog', (d) => { asked = d.message(); d.accept(); });
+            await ret.first().click();
+            await page.waitForTimeout(1800);
+            const left = await statusesOf(page);
+            if (!asked.includes('再送')) {
+              console.log('✗ 送付後の行を戻す確認に「再送」がありません: ' + JSON.stringify(asked));
+              bad++;
+            }
+            if (!left || left.length !== 1 || left[0] !== '取消') {
+              console.log('✗ 戻した行が本文から消えていません: ' + JSON.stringify(left));
+              bad++;
+            } else console.log('✓ 「必要部材表へ戻す」で行が消える（確認に再送の案内）');
+          }
         }
       }
     }

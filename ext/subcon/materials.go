@@ -127,6 +127,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 発注済みの印**をつけます」）——1枚の紙の中でも、**1品だけ取り消す**・
 		// **1品だけ先に納まる**が起こるためです。
 		{Pattern: "/api/our-order/line-status", Handler: OrderLineStatusAPIHandler},
+		// 発注明細の1行を外して必要部材表へ戻す口（2026-09-24・order_return.go）。
+		// ⚠ **取消とは別**——取消は「もう発注しない」（行は残る）、戻すは
+		// 「この発注書では発注しない」（行が消え、必要部材表でまた選べる）。
+		{Pattern: "/api/our-order/return-row", Handler: OrderReturnRowAPIHandler},
 		// 発注書を出したことを反映する口（2026-09-22・order_send.go）。
 		// ⚠ **取消でない行すべて**に `発注済` を付けます。メールは送信の成功が
 		// その事実、FAX・手渡しは**人が押したこと**がその事実です。

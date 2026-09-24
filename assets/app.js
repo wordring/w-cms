@@ -6574,6 +6574,26 @@ delegateClick([['.backlog-print', (btn) => {
         location.reload();
     }
 
+    // 行を発注書から外して、必要部材表へ戻す（2026-09-24）。
+    //
+    // ⚠ **いつも確かめます**（行が本文から消えるため）。確認の文はサーバーが書きます
+    //    ——送付後の行には「再送してください」が付きます。
+    async function returnRow(btn) {
+        const ask = btn.getAttribute('data-order-confirm') || '';
+        if (ask && !confirm(ask)) return;
+        btn.disabled = true;
+        const r = await postJSON('/api/our-order/return-row', {
+            page_id: btn.getAttribute('data-order-page') || '',
+            row: Number(btn.getAttribute('data-order-row') || 0),
+        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        if (!r.ok) {
+            alert('⚠ ' + (r.data.message || '戻せませんでした'));
+            btn.disabled = false;
+            return;
+        }
+        location.reload();
+    }
+
     // 発注書のPDFを作って、ページに表示する（2026-09-22）。
     //
     // ⚠ **押す道がありませんでした**——口は 09-21 から在ったのに、呼ぶボタンが
@@ -6685,6 +6705,7 @@ delegateClick([['.backlog-print', (btn) => {
     //    配線すると描き直しのたびに切れます。
     delegateClick([
         ['.order-row-set', setRowStatus],
+        ['.order-row-return', returnRow],
         ['[data-order-pdf]', makePDF],
         ['[data-order-sent]', markSent],
         ['[data-order-send]', sendMail],

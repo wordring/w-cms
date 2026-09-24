@@ -133,6 +133,33 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 	//    書かないと人は「どこかに戻った」と思い、**誰も買わないまま納期が来ます**。
 	const backNote = "取り消すと、この部材はもう発注しません（必要部材表へは戻りません）。\n" +
 		"もう一度発注したいときは「必要部材表へ戻す」を押してください。"
+	return orderRowStatusButtonsHTML(btn, status, backNote) + orderRowReturnButtonHTML(orderID, row, status)
+}
+
+// orderRowReturnButtonHTML は行末の「必要部材表へ戻す」ボタンです（2026-09-24）。
+//
+// ⚠ **どの段からも押せます**（ユーザー:「発注書の送付後でも押せます」）。
+// ⚠ **いつも確かめます**——押すと**行が発注書から消える**ので、押し間違いが
+// 本文から消えます。送付後は**相手に出した紙に載っている行**なので、そう書きます。
+// ⚠ **編集モードでは出しません**（`view-only`・ユーザー:「このボタンは編集モードでは
+// 消えます」）——編集中の本文から行を消すと、書きかけと食い違います。
+func orderRowReturnButtonHTML(orderID string, row int, status string) string {
+	ask := "この行を発注書から外して、必要部材表へ戻します。"
+	switch strings.TrimSpace(status) {
+	case OrderLineSent, OrderLineDelivered, orderLineLegacySent:
+		ask = "⚠ この行は既に相手に送った発注書に載っています。\n" +
+			"外したら、訂正した発注書を再送してください。\n\n" + ask
+	}
+	return `<button type="button" class="chip-btn order-row-return view-only"` +
+		` data-order-page="` + stdhtml.EscapeString(orderID) + `"` +
+		` data-order-row="` + strconv.Itoa(row) + `"` +
+		` data-order-confirm="` + stdhtml.EscapeString(ask) + `"` +
+		` title="この行を発注書から外し、必要部材表でまた選べるようにします">↩ 必要部材表へ戻す</button>`
+}
+
+// orderRowStatusButtonsHTML は `状態` を変えるボタンです（上の説明のとおり）。
+func orderRowStatusButtonsHTML(btn func(value, label, title, confirm string) string,
+	status, backNote string) string {
 	switch strings.TrimSpace(status) {
 	case OrderLineCancelled:
 		return btn(OrderLineUnsent, "↩ 取消をやめる", "取り消しをやめて「未発注」に戻します", "")
