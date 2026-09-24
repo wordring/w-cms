@@ -434,6 +434,16 @@ var businessVocab = []cms.VocabDef{
 		View:        true,
 	},
 	{
+		// 未発注の発注書（2026-09-24）。発注明細に「未発注」の行を持つ発注書ページを
+		// DBから集めて並べる（unsent_orders.go）。
+		Type:        UnsentOrdersViewType,
+		DisplayName: "未発注の発注書",
+		Category:    "ビュー",
+		Icon:        "📮",
+		Element:     "section",
+		View:        true,
+	},
+	{
 		// 材料を探す欄（2026-09-21）。ユーザー:「あとで**材質形状寸法で検索**したい
 		// ときがあります」。⚠ **器だけの宣言**で、中身はサーバーが描きます。
 		Type:        MaterialSearchViewType,

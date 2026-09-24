@@ -67,10 +67,11 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Lines    []ourOrderLine `json:"lines"`
 		// DraftPage / DraftIndex は「**どの発注部材表から作ったか**」です（2026-09-22）。
 		//
-		// ⚠ **作り終えたら、その表はこの発注書ページへのリンクに化けます**
-		// （ユーザー決定:「**発注書ページが出来て、実際に発注するまで発注ページに
-		// 発注書ページへのリンクが残れば良いのでは？**」）——中身は発注書ページへ
-		// 移ったので、**残すと古い写しになり、次の発注のときに混ざります**。
+		// ⚠ **作り終えたら、その表は消します**——中身は発注書ページへ移ったので、
+		// **残すと古い写しになり、次の発注のときに混ざります**。⚠ 09-22 は発注書への
+		// リンクに化けさせていましたが、2026-09-24 に「未発注の発注書」の一覧（DBから
+		// 数える）ができたので、本文にリンクを残すのをやめました（ユーザー:「発注フォルダ
+		// ページに『⚠ まだ発注していません（4行）』と言ったゴミが残っています」）。
 		DraftPage  string `json:"draft_page"`
 		DraftIndex string `json:"draft_index"`
 	}
@@ -128,12 +129,12 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "our-order-new", newID+" "+supplier+" "+
 		strconv.Itoa(len(req.Lines))+"行")
 
-	// ⚠ **元の発注部材表を、この発注書ページへのリンクに化けさせます**（2026-09-22）。
+	// ⚠ **元の発注部材表は消します**（2026-09-24。09-22 はリンクに化けさせていました）。
+	//    発注書は発注フォルダの「未発注の発注書」がDBから並べるので、本文にリンクは要りません。
 	//    ⚠ **失敗しても発注書は取り消しません**——**紙のほうが重い**ので、
 	//    「表が残ってしまった」は人が消せば済みます。理由を添えるだけにします。
 	out := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
-	if note := replaceDraftWithLink(user, req.DraftPage, req.DraftIndex,
-		newID, supplier, len(req.Lines)); note != "" {
+	if note := removeDraftAfterOrder(user, req.DraftPage, req.DraftIndex); note != "" {
 		out["draft_note"] = note
 	}
 	cms.WriteJSON(w, out)

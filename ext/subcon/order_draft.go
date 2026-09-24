@@ -232,19 +232,21 @@ func isTableOfTypeInBody(body, vocabType string) bool {
 	return len(tablesOfType(nodes, vocabType)) > 0
 }
 
-// replaceDraftWithLink は、元になった発注部材表を発注書ページへのリンクに置き換えます。
+// removeDraftAfterOrder は、発注書を作り終えた元の発注部材表を消します。
 //
-// ユーザー（2026-09-22）:「**発注書ページが出来て、実際に発注するまで発注ページに
-// 発注書ページへのリンクが残れば良いのでは？**」
+// ⚠ **表は消します**——中身は発注書ページへ移ったので、**残すと古い写しになり、
+// 次の発注のときに混ざります**。
 //
-// ⚠ **表は消して、リンクを残します**——中身は発注書ページへ移ったので、**残すと
-// 古い写しになり、次の発注のときに混ざります**。⚠ **リンクは残します**：
-// **まだ発注していないもの**が発注ページの上で一目で分かるように。
+// ⚠ **リンクは残しません**（2026-09-24 に変えた）。09-22 はユーザーの案（「発注書
+// ページが出来て、実際に発注するまで発注ページに発注書ページへのリンクが残れば良い
+// のでは？」）でリンクに化けさせていましたが、**本文に書いたリンクは出しても消しても
+// 残り**、「⚠ まだ発注していません（4行）」がゴミとして溜まりました（ユーザー報告）。
+// いまは発注フォルダの「未発注の発注書」（`unsent_orders.go`）が**DBから毎回数える**ので、
+// 出せば消え、発注書を消せば消えます。
 //
 // ⚠ **うまくいかなくても発注書は取り消しません**——**紙のほうが重い**ので、
 // 「表が残ってしまった」は人が消せば済みます。返すのは**添える一文**だけです。
-func replaceDraftWithLink(user *auth.User, draftPage, draftIndex, orderID, supplier string,
-	rows int) string {
+func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string {
 	if strings.TrimSpace(draftPage) == "" || strings.TrimSpace(draftIndex) == "" {
 		return "" // どの表から作ったか分からない（画面が古いときなど）
 	}
@@ -260,14 +262,9 @@ func replaceDraftWithLink(user *auth.User, draftPage, draftIndex, orderID, suppl
 	if _, open := editlock.Locks.EditorOpen(pageNum(pageID)); open {
 		return "⚠ 元の発注部材表はそのままです（誰かが発注ページを編集中です）"
 	}
-	// ⚠ **「まだ発注していません」は本文に書きません**（2026-09-22）。
-	//    **出したら消えなければならない文**なので、本文に焼き込むと**発注書を出した
-	//    あとも古いまま**残ります。進み具合は鏡が発注書ページから読み直します
-	//    （[order_link_mirror.go](order_link_mirror.go)）。
-	link := orderLinkHTML(orderID, supplier, rows)
 	done := false
 	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		out, ok := replaceDraftTable(cur, n, link)
+		out, ok := replaceDraftTable(cur, n, "")
 		done = ok
 		if !ok {
 			return cur

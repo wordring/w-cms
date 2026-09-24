@@ -41,6 +41,8 @@ func init() {
 	cms.RegisterView(MaterialSearchViewType, materialSearchViewHTML)
 	// 未手配の一覧（2026-09-21・view_unordered.go）。ここから発注書を1枚作ります。
 	cms.RegisterView(UnorderedViewType, unorderedViewHTML)
+	// 未発注の発注書（2026-09-24・unsent_orders.go）。DBから毎回数える鏡。
+	cms.RegisterView(UnsentOrdersViewType, unsentOrdersViewHTML)
 
 	// **受注の置き場は管理画面のボタンで作れます**（2026-09-16）。
 	// 整理のときにも自動で作られます（`cms.EnsureTopLevelBox`）——先に作れるように
@@ -390,5 +392,8 @@ func purchaseOrderBoxBody() string {
 		"<p>弊社が出す発注書の置き場です（発注／年／月。年月は発注日）。</p>" +
 		"<p>下の一覧から行を選び、仕入先と差出人を決めると、発注書が1枚できます。" +
 		"⚠ 発注書は<strong>1枚に1社</strong>です。</p>" +
-		`<section data-type="` + UnorderedViewType + `"></section>`
+		`<section data-type="` + UnorderedViewType + `"></section>` +
+		// ⚠ **未発注の発注書**（2026-09-24）——要求の並びは「必要部材 → 未発注の発注書
+		//    → 発注部材表」。発注部材表は作ったときに本文の末尾へ足されます。
+		`<section data-type="` + UnsentOrdersViewType + `"></section>`
 }

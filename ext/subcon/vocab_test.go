@@ -62,10 +62,13 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		// 発注書にする。⚠ **列は発注明細と同じ**（`orderItemColumns`）。
 		OrderDraftType,
 		// **発注書へのリンク**（2026-09-22）——発注部材表が化けた1行。
-		// ⚠ **本文に書くのはリンクと行数だけ**で、進み具合は鏡が読み直します。
+		// ⚠ **2026-09-24 から新しくは作りません**（「未発注の発注書」に置き換え）。
+		//    宣言は残します——既にある本文の節が「知らない形式」にならないように。
 		OrderLinkType,
 		// ⚠ **ビューの器**（2026-09-21）——材質・形状・寸法で材料を探す欄。
 		MaterialSearchViewType, UnorderedViewType,
+		// **未発注の発注書**（2026-09-24）——DBから数える一覧。
+		UnsentOrdersViewType,
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))
