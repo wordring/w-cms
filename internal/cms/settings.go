@@ -82,6 +82,16 @@ type Settings struct {
 	// `取引：自社` は照合から外す判断に使うので、そちらは表引きで閉じます）。
 	Vocabulary map[string]VocabWord `json:"vocabulary"`
 
+	// TableVocabulary は**表ごとの例外**です（表の名前 → 列の名前 → 型と選択肢）。
+	//
+	// 2026-09-25 ユーザー決定:「列の名前に対して列の型、enumのような選択肢を持つ型と選択肢を
+	// 設定に登録」「デフォルトの選択肢と例外の選択肢ですね」。**既定は Vocabulary（列の名前
+	// ごと）**で、同じ名前でも表によって選択肢が違う列だけをここに書きます——例えば `状態` は
+	// 受注明細が既定（未着手…完了）、発注明細は例外（未発注・発注済・納品済・取消）。
+	// 引く順は **表ごとの例外 → 列の名前の既定 → 文字列**（ColumnWord）。
+	// ⚠ 表の名前はキャプション、列の名前は見出し——どちらも**正規化して**照らします。
+	TableVocabulary map[string]map[string]VocabWord `json:"table_vocabulary,omitempty"`
+
 	// VocabFormats は**運用者が足す表の形式**です（2026-09-20 ユーザー決定:
 	// 「表の形式も settings.json から足せるようにします」）。
 	//
@@ -367,30 +377,22 @@ func (s Settings) validate(path string) error {
 		if strings.TrimSpace(word) == "" {
 			return fmt.Errorf("%s: vocabulary に空の見出し語があります", path)
 		}
-		if !validColumnTypes[w.Type] {
-			// **使える型はここに書き写しません**——写すと型を足した日に片方が古くなります
-			// （2026-09-13 に `datetime`・`ref`・`email` が抜けたまま残っていました）。
-			return fmt.Errorf("%s: vocabulary の %q に未知の列型 %q があります（使えるのは %s）",
-				path, word, w.Type, strings.Join(validColumnTypeNames(), " / "))
+		if err := validateVocabWord(path, fmt.Sprintf("vocabulary の %q", word), w); err != nil {
+			return err
 		}
-		// **選択肢を持てるのは enum だけ**です。ほかの型に書いてあったら、書いた人は
-		// 効くつもりでいます——黙って無視すると、画面の色分けが出ないことに気づけません。
-		if len(w.Values) > 0 && w.Type != ColEnum {
-			return fmt.Errorf("%s: vocabulary の %q は型が %q なのに選択肢があります"+
-				"（選択肢を持てるのは %q だけです）", path, word, w.Type, ColEnum)
+	}
+	// 表ごとの例外（2026-09-25）——中身の規則は vocabulary と同じ。
+	for table, words := range s.TableVocabulary {
+		if strings.TrimSpace(table) == "" {
+			return fmt.Errorf("%s: table_vocabulary に空の表の名前があります", path)
 		}
-		if w.Type == ColEnum && len(w.Values) == 0 {
-			return fmt.Errorf("%s: vocabulary の %q が %q なのに選択肢がありません", path, word, ColEnum)
-		}
-		seen := map[string]bool{}
-		for _, v := range w.Values {
-			if strings.TrimSpace(v) == "" {
-				return fmt.Errorf("%s: vocabulary の %q に空の選択肢があります", path, word)
+		for word, w := range words {
+			if strings.TrimSpace(word) == "" {
+				return fmt.Errorf("%s: table_vocabulary の %q に空の列の名前があります", path, table)
 			}
-			if seen[v] {
-				return fmt.Errorf("%s: vocabulary の %q に選択肢 %q が重複しています", path, word, v)
+			if err := validateVocabWord(path, fmt.Sprintf("table_vocabulary の %q の %q", table, word), w); err != nil {
+				return err
 			}
-			seen[v] = true
 		}
 	}
 	if s.MaxUploadMiB < 0 {
@@ -419,6 +421,73 @@ func (s Settings) validate(path string) error {
 		}
 	}
 	return nil
+}
+
+// validateVocabWord は語1件（型と選択肢）を検査します。where は誤りの文の頭
+// （`vocabulary の "状態"` など）。vocabulary と table_vocabulary が同じ規則を通ります。
+func validateVocabWord(path, where string, w VocabWord) error {
+	if !validColumnTypes[w.Type] {
+		// **使える型はここに書き写しません**——写すと型を足した日に片方が古くなります
+		// （2026-09-13 に `datetime`・`ref`・`email` が抜けたまま残っていました）。
+		return fmt.Errorf("%s: %s に未知の列型 %q があります（使えるのは %s）",
+			path, where, w.Type, strings.Join(validColumnTypeNames(), " / "))
+	}
+	// **選択肢を持てるのは enum だけ**です。ほかの型に書いてあったら、書いた人は
+	// 効くつもりでいます——黙って無視すると、画面の色分けが出ないことに気づけません。
+	if len(w.Values) > 0 && w.Type != ColEnum {
+		return fmt.Errorf("%s: %s は型が %q なのに選択肢があります"+
+			"（選択肢を持てるのは %q だけです）", path, where, w.Type, ColEnum)
+	}
+	if w.Type == ColEnum && len(w.Values) == 0 {
+		return fmt.Errorf("%s: %s が %q なのに選択肢がありません", path, where, ColEnum)
+	}
+	seen := map[string]bool{}
+	for _, v := range w.Values {
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("%s: %s に空の選択肢があります", path, where)
+		}
+		if seen[v] {
+			return fmt.Errorf("%s: %s に選択肢 %q が重複しています", path, where, v)
+		}
+		seen[v] = true
+	}
+	return nil
+}
+
+// ColumnWord は、表 table の列 column の型と選択肢を返します（2026-09-25）。
+//
+// 引く順は **表ごとの例外（table_vocabulary）→ 列の名前の既定（vocabulary）→ 文字列**。
+// 表の名前・列の名前は正規化（TableName）して照らし、ASCII の大小は区別しません
+// （SQLite の名前の比べ方と揃える）。**写しを返します**。
+func ColumnWord(table, column string) VocabWord {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	text := VocabWord{Type: ColText}
+	if settings == nil {
+		return text
+	}
+	tk, ck := asciiFold(TableName(table)), asciiFold(TableName(column))
+	pick := func(words map[string]VocabWord) (VocabWord, bool) {
+		for word, w := range words {
+			if asciiFold(TableName(word)) == ck {
+				return VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...)}, true
+			}
+		}
+		return VocabWord{}, false
+	}
+	if tk != "" {
+		for name, words := range settings.TableVocabulary {
+			if asciiFold(TableName(name)) == tk {
+				if w, ok := pick(words); ok {
+					return w
+				}
+			}
+		}
+	}
+	if w, ok := pick(settings.Vocabulary); ok {
+		return w
+	}
+	return text
 }
 
 // activeTypeInference はいま効いている推論辞書を返します。

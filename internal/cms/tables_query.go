@@ -274,7 +274,7 @@ func QueryTable(user *auth.User, q TableQuery) (TableResult, error) {
 			return TableResult{}, err
 		}
 		// ⚠ **DB に入れたときと同じ正規化**を掛けてから比べる（答え4）。
-		v := tableCellValue(c, strings.TrimSpace(cond.Value))
+		v := tableCellValue(t.Name, c, strings.TrimSpace(cond.Value))
 		if cond.Op == "contains" {
 			s := likeEscape(fmt.Sprint(v))
 			v = "%" + s + "%"

@@ -41,7 +41,28 @@
     "CC": { "type": "email" },
     "返信先": { "type": "email" },
     "在籍": { "type": "enum", "values": ["在籍", "休職", "出向", "退社"] },
-    "移行中": { "type": "enum", "values": ["確認待ち"] }
+    "移行中": { "type": "enum", "values": ["確認待ち"] },
+    "個数": { "type": "number" },
+    "数": { "type": "number" },
+    "出荷済み": { "type": "number" },
+    "受領日": { "type": "date" },
+    "資料": { "type": "ref" },
+    "検査写真": { "type": "image" },
+    "判定": { "type": "enum", "values": ["合格", "不合格"] },
+    "区分": { "type": "enum", "values": ["現行", "廃版"] },
+    "単位": { "type": "enum", "values": ["個", "セット", "本", "枚", "kg", "m"] },
+    "状態": { "type": "enum", "values": ["未着手", "加工中", "検査中", "納品済", "完了"] },
+    "材料発注": { "type": "enum", "values": ["済"] },
+    "納品書発行": { "type": "enum", "values": ["済"] },
+    "請求書発行": { "type": "enum", "values": ["済"] }
+  },
+  "table_vocabulary": {
+    "発注明細": {
+      "状態": { "type": "enum", "values": ["未発注", "発注済", "納品済", "取消"] }
+    },
+    "発注部材表": {
+      "状態": { "type": "enum", "values": ["未発注", "発注済", "納品済", "取消"] }
+    }
   },
   "max_upload_mib": 32,
   "attachment_extensions": [

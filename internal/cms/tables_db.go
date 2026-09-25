@@ -264,12 +264,13 @@ func cellText(n *html.Node) string {
 	return sb.String()
 }
 
-// tableCellValue は、列の名前から型を決めて正規化した値を返します（同書 §3.7）。
+// tableCellValue は、表と列の名前から型を決めて（ColumnWord——表ごとの例外 → 列の名前の既定）
+// 正規化した値を返します（同書 §3.7・§3.10）。
 //
 // ⚠ **畳めない値は、書いたまま入れます**（date の列の `最短納期` など）——落とすと
 // 「書いてあるのに出てこない」。数は**数として**入れます（`"8000" < "900"` にしない）。
-func tableCellValue(column, raw string) any {
-	typ := InferColumnType(column)
+func tableCellValue(table, column, raw string) any {
+	typ := ColumnWord(table, column).Type
 	if n, ok := NormalizeValue(typ, raw); ok && n != "" {
 		return tagNormBind(typ, n)
 	}
@@ -463,7 +464,7 @@ func insertCaptionTable(tx *sql.Tx, existing map[string]dbTable, pageID int, ct 
 				continue
 			}
 			names = append(names, quoteIdent(colFor[i]))
-			args = append(args, tableCellValue(colFor[i], v))
+			args = append(args, tableCellValue(table, colFor[i], v))
 		}
 		q := `INSERT INTO ` + quoteIdent(table) + ` (` + strings.Join(names, ", ") +
 			`) VALUES (` + strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ") + `)`
