@@ -65,6 +65,23 @@
       </div>
     </div>
 
+    <!-- 表の写し（data/tables.db）——DBの日本語化 §7 の2段目 -->
+    <h2>表の写し（data/tables.db）</h2>
+    <div class="card">
+      <p class="hint">
+        本文の<strong>キャプションのある表</strong>が、キャプションの名前の表として入っています
+        （列は見出し。<code>SELECT 品番 FROM 受注明細</code> と引けます）。同じ名前の表は列を統合するので、
+        <strong>打ち間違えた見出しは黙って新しい列になります</strong>——ほかのページに無い列に ⚠ を付けます。
+        <strong>跡</strong>は本文にはもう無い表・列で、データベース再構築で消えます。
+      </p>
+      <table id="tables-table"><thead><tr><th>表</th><th>ページ</th><th>行</th><th>列（その見出しを持つページの数）</th></tr></thead><tbody></tbody></table>
+      <div class="row row--gap-lg">
+        <label><input id="tables-only-suspect" type="checkbox"> 揃っていない表だけ</label>
+        <button class="sub" id="tables-reload">再読み込み</button>
+        <span id="tables-msg" class="msg"></span>
+      </div>
+    </div>
+
     <!-- メンテナンス -->
     <h2>メンテナンス</h2>
     <div class="card">

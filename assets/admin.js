@@ -25,7 +25,67 @@ async function init() {
   document.getElementById('whoami').textContent = 'ログイン中: ' + me.username + (me.is_admin ? '（管理者）' : '');
   if (!me.is_admin) { setHidden(document.getElementById('denied'), false); return; }
   setHidden(document.getElementById('console'), false);
-  loadUsers(); loadGroups(); loadRequiredPages(); loadAudit(); initDevMenu();
+  loadUsers(); loadGroups(); loadRequiredPages(); loadTablesReport(); loadAudit(); initDevMenu();
+}
+
+// ── 表の写し（data/tables.db）——「列の揃っていない表」の一覧（2026-09-25）──────
+// 同じキャプションの表は列を統合するので、打ち間違えた見出しは黙って新しい列になる。
+// ほかのページに無い列に ⚠、本文にはもう無い表・列に「跡」を付ける（数えるのはサーバー
+// ——internal/cms/tables_report.go）。DOM は createElement＋textContent で組む（XSS の前科）。
+let tablesReport = [];
+
+async function loadTablesReport() {
+  const el = document.getElementById('tables-msg');
+  const res = await fetch('/api/admin/tables');
+  if (!res.ok) { el.textContent = '読めませんでした: ' + res.status; return; }
+  const d = await res.json().catch(() => ({}));
+  tablesReport = d.tables || [];
+  const suspects = tablesReport.filter(t => t.suspects > 0).length;
+  el.textContent = '表 ' + tablesReport.length + ' 個' + (suspects ? '（⚠ 揃っていない表 ' + suspects + ' 個）' : '');
+  renderTablesReport();
+}
+
+function renderTablesReport() {
+  const tb = document.querySelector('#tables-table tbody');
+  if (!tb) return;
+  const only = document.getElementById('tables-only-suspect').checked;
+  tb.textContent = '';
+  tablesReport
+    .filter(t => !only || t.suspects > 0 || t.leftover || (t.columns || []).some(c => c.leftover))
+    .forEach(t => {
+      const tr = document.createElement('tr');
+      const td = (fill) => { const c = document.createElement('td'); fill(c); tr.appendChild(c); return c; };
+      td(c => {
+        c.textContent = t.name + (t.leftover ? '（跡）' : '');
+        if (t.needs_quote) c.appendChild(quoteHint(t.name));
+      });
+      td(c => { c.textContent = t.leftover ? '—' : String(t.pages); });
+      td(c => { c.textContent = String(t.rows); });
+      td(c => {
+        (t.columns || []).forEach((col, i) => {
+          if (i) c.appendChild(document.createTextNode('、'));
+          const s = document.createElement('span');
+          if (col.leftover) {
+            s.textContent = col.name + '（跡）';
+            s.className = 'col-leftover';
+          } else {
+            s.textContent = (col.suspect ? '⚠ ' : '') + col.name + '（' + col.pages + '）';
+            if (col.suspect) s.className = 'col-suspect';
+          }
+          if (col.needs_quote) s.title = 'SQL では "' + col.name.replace(/"/g, '""') + '" と引用符で囲みます';
+          c.appendChild(s);
+        });
+      });
+      tb.appendChild(tr);
+    });
+}
+
+// quoteHint は「SQL では引用符が要る」の小さな注記です。
+function quoteHint(name) {
+  const s = document.createElement('div');
+  s.className = 'hint';
+  s.textContent = 'SQL では "' + name.replace(/"/g, '""') + '" と引用符で囲みます';
+  return s;
 }
 
 async function loadUsers() {
@@ -316,6 +376,8 @@ function bindActions() {
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
   document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
   document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);
+  document.getElementById('tables-reload').addEventListener('click', loadTablesReport);
+  document.getElementById('tables-only-suspect').addEventListener('change', renderTablesReport);
 
   document.querySelector('#users-table tbody').addEventListener('click', e => {
     const btn = e.target.closest('button[data-action]');

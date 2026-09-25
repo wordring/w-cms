@@ -240,6 +240,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/pages", cms.RequiredPagesAPIHandler)
 	// データの初期化（**控えを取ってから**消す・合言葉つき・admin限定）。
 	protected.HandleFunc("/api/admin/reset", cms.ResetDataAPIHandler)
+	// 「列の揃っていない表」の一覧（data/tables.db・DBの日本語化 §7 の2段目・admin限定）。
+	protected.HandleFunc("/api/admin/tables", cms.TablesReportAPIHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	for _, route := range cms.PluginRoutes() {

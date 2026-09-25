@@ -49,3 +49,8 @@ code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
   line-height: 1.5;
 }
 .dup-warn a { color: #b45309; }
+
+/* 表の写しの一覧（2026-09-25）——ほかのページに無い列（打ち間違いの疑い）と、
+   本文にはもう無い列（跡・再構築で消える）。色だけに頼らず ⚠・「（跡）」の文字も付ける。 */
+.col-suspect { color: #b45309; font-weight: 600; }
+.col-leftover { color: #94a3b8; text-decoration: line-through; }
