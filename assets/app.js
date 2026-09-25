@@ -6362,16 +6362,23 @@ delegateClick([['.backlog-print', (btn) => {
     // ⚠ **送る値は属性から採ります**（表示は丸めることがあるので本文から読まない）。
     function lineOf(tr) {
         const d = tr.dataset;
+        // ⚠ **臨時部材表から来た行**（2026-09-25）は、品番・表面・単位・備考と
+        //    「何行目から来たか」も運びます——発注部材表へ入れたら、サーバーが
+        //    臨時部材表からその行を消します（移す・引き算しない）。
         return {
             product_id: d.product || '',
+            item_id: d.itemid || '',
             material: d.material || '',
             shape: d.shape || '',
             size: d.size || '',
+            color: d.color || '',
             item_name: d.itemname || '',
             quantity: d.qty || '',
-            unit: '',
+            unit: d.unit || '',
             cost: d.cost && d.cost !== '0' ? d.cost : '',
-            note: '',
+            note: d.note || '',
+            temp_page: d.tempPage || '',
+            temp_row: Number(d.tempRow || 0),
         };
     }
 
@@ -6443,9 +6450,13 @@ delegateClick([['.backlog-print', (btn) => {
             // ⚠ **鏡が足した行（足元のフォーム）は飛ばします。**
             if (tr.closest('tfoot')) continue;
             const cells = [...tr.children];
+            // ⚠ **品番・表面も運びます**（2026-09-25）——それまで送っておらず、
+            //    発注書で**品番と表面（塗装の色・鍍金）が落ちていました**。
             const ln = {
-                product_id: at(cells, '弊社品番'), item_name: at(cells, '品名'),
+                product_id: at(cells, '弊社品番'), item_id: at(cells, '品番'),
+                item_name: at(cells, '品名'),
                 material: at(cells, '材質'), shape: at(cells, '形状'), size: at(cells, '寸法'),
+                color: at(cells, '表面'),
                 quantity: at(cells, '数量'), unit: at(cells, '単位'),
                 cost: at(cells, '単価'), note: at(cells, '備考'),
             };

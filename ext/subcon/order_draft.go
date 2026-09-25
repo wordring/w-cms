@@ -79,6 +79,13 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	rows := 0
 	found := into == "" // 新規なら「行き先が見つかった」扱い
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		// ⚠ **臨時部材表から来た行は、臨時部材表から消します**（2026-09-25・移す）。
+		//    同じページにある分はここで一緒に消します（別の保存にすると、その間に
+		//    行が**2か所に在る**瞬間ができます）。行番号は消す前の本文のものなので、
+		//    **先に消してから**表を足します（発注部材表の位置は臨時部材表と無関係）。
+		if rows := tempRowsOn(req.Lines, pageID); len(rows) > 0 {
+			cur, _ = removeTempPartRows(cur, rows)
+		}
 		if into == "" {
 			rows = len(req.Lines)
 			return cur + orderDraftHTML(req.Lines)
@@ -100,8 +107,12 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "order-draft.create",
 		pageID+" "+strconv.Itoa(len(req.Lines))+"行 into="+into)
-	cms.WriteJSON(w, map[string]any{
-		"success": true, "page_id": pageID, "rows": rows, "into": into})
+	out := map[string]any{"success": true, "page_id": pageID, "rows": rows, "into": into}
+	// 別のページの臨時部材表から来た行（必要部材表を発注フォルダ以外に置いたとき）。
+	if note := takeTempRowsElsewhere(user, req.Lines, pageID); note != "" {
+		out["temp_note"] = note
+	}
+	cms.WriteJSON(w, out)
 }
 
 // appendToDraft は本文の `into` 枚目の発注部材表へ行を足します。
@@ -196,6 +207,10 @@ func orderLineValue(ln ourOrderLine, field string) string {
 	switch field {
 	case "our-item-id":
 		return strings.TrimSpace(ln.ProductID)
+	case "item-id":
+		return strings.TrimSpace(ln.ItemID)
+	case "color":
+		return strings.TrimSpace(ln.Color)
 	case "item-name":
 		return itemNameOf(ln)
 	case "material":
@@ -364,12 +379,31 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
+	// ⚠ **弊社品番の無い行は臨時部材表へ戻します**（2026-09-25）——必要部材表の計算に
+	//    乗らないので、外すだけだと**消えます**。臨時部材表は発注フォルダにあります。
+	//    同じページなら同じ保存で、別のページなら**先に臨時部材表へ足してから**外します
+	//    （途中で失敗したとき、行が消えるより2か所に残るほうへ倒す）。
+	boxID, hasBox := purchaseOrderBoxID()
+	sameBox := hasBox && samePage(boxID, pageID)
+	if !sameBox {
+		if cur, err := cms.ReadPageBody(pageID); err == nil {
+			if _, ln, ok := takeDraftRow(cur, req.Table, req.Row); ok && needsTempParts(ln) {
+				if err := returnToTempParts(user, ln); err != nil {
+					cms.JSONFail(w, http.StatusConflict, "臨時部材表へ戻せません: "+err.Error())
+					return
+				}
+			}
+		}
+	}
 	done := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, ok := removeDraftRow(cur, req.Table, req.Row)
+		out, ln, ok := takeDraftRow(cur, req.Table, req.Row)
 		done = ok
 		if !ok {
 			return cur
+		}
+		if sameBox && needsTempParts(ln) {
+			out, _ = addTempParts(out, []ourOrderLine{ln})
 		}
 		return out
 	}) {
@@ -390,23 +424,31 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 // ⚠ **見出し行は数えません**——人が画面で見ている「何行目」と揃えるためです。
 // ⚠ **鏡が足した `<tfoot>` の行も数えません**（あれは本文ではありません）。
 func removeDraftRow(body string, n, row int) (string, bool) {
+	out, _, ok := takeDraftRow(body, n, row)
+	return out, ok
+}
+
+// takeDraftRow は removeDraftRow と同じく行を外し、**外した行の中身**も返します
+// （弊社品番の無い行を臨時部材表へ戻すため・2026-09-25）。
+func takeDraftRow(body string, n, row int) (string, ourOrderLine, bool) {
 	if n < 1 || row < 1 {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	tables := tablesOfType(nodes, OrderDraftType)
 	if n > len(tables) {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	table := tables[n-1]
 	rows := rowsOf(table) // 先頭は見出し行
 	if row >= len(rows) {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	tr := rows[row]
+	line := lineOfRow(rows[0], tr)
 	tr.Parent.RemoveChild(tr)
 	// ⚠ **最後の1行を外したら、表ごと消します**（2026-09-22 ユーザー:
 	//    「**戻しても部材表から消えません**」）。**見出しだけの表が残ると、
@@ -415,7 +457,17 @@ func removeDraftRow(body string, n, row int) (string, bool) {
 	//    ⚠ **空の表を作る道は残します**（何も選ばずに「発注部材表へ入れる」）
 	//    ——**人が意図して作った空の表**と、**外して空になった表**は別のことです。
 	if len(rowsOf(table)) <= 1 {
-		return spliceNodes(nodes, table, nil, false)
+		out, ok := spliceNodes(nodes, table, nil, false)
+		return out, line, ok
 	}
-	return htmldoc.Render(nodes), true
+	return htmldoc.Render(nodes), line, true
+}
+
+// needsTempParts は「外した行を臨時部材表へ戻すべきか」を返します。
+//
+// ⚠ **弊社品番の無い行だけ**です。弊社品番のある行は必要部材表の**計算**に
+// 乗るので、外せば自動で戻ります（臨時部材表へも書くと**2か所に出ます**）。
+// ⚠ 空の取っ掛かりの行は戻しません。
+func needsTempParts(ln ourOrderLine) bool {
+	return strings.TrimSpace(ln.ProductID) == "" && !lineIsEmpty(ln)
 }

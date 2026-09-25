@@ -45,6 +45,17 @@ type UnorderedItem struct {
 	Cost          int    `json:"cost"`            // 参考単価（引けなければ 0）
 	Supplier      string `json:"supplier"`        // その単価の仕入先
 	Migrating     bool   `json:"migrating"`       // ⚠ 移行の確認前
+
+	// 以下は**臨時部材表から来た行**だけが持ちます（2026-09-25・temp_parts.go）。
+	// TempRow > 0 なら臨時部材の行で、発注部材表へ入れると臨時部材表から消えます。
+	TempPage string `json:"temp_page,omitempty"`
+	TempRow  int    `json:"temp_row,omitempty"`
+	ItemID   string `json:"item_id,omitempty"`
+	ItemName string `json:"item_name,omitempty"`
+	Color    string `json:"color,omitempty"`
+	Unit     string `json:"unit,omitempty"`
+	Note     string `json:"note,omitempty"`
+	CostRaw  string `json:"cost_raw,omitempty"` // 人が書いた単価（書いてあればそれを運ぶ）
 }
 
 // UnorderedItems は、まだ手配していない購入品を受注横断で集めます（納期順）。
@@ -54,17 +65,20 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	prices, err := latestMaterialPrices(db, user)
+	if err != nil {
+		prices = map[string]materialPrice{}
+	}
+	// ⚠ **臨時部材表の行も並べます**（2026-09-25・temp_parts.go）——計算の鎖に乗らない
+	//    材料は、人が書いたこの表が「必要」の記録です。⚠ **受注明細が0件でも出します**。
+	temp := TempPartItems(user, prices)
 	if len(orders) == 0 {
-		return nil, nil
+		return temp, nil
 	}
 	canView := viewCheck(user)
 	ordered, err := orderedByProduct(db, canView)
 	if err != nil {
 		return nil, err
-	}
-	prices, err := latestMaterialPrices(db, user)
-	if err != nil {
-		prices = map[string]materialPrice{}
 	}
 	// ⚠ **発注部材表に入れた分は、もう一覧に出しません**（2026-09-22 ユーザーの構想:
 	//    「表作成ボタンをクリックすると発注部材表が開き、**すると元の表からはそれらの
@@ -133,7 +147,9 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 		}
 	}
 	sortUnordered(out)
-	return out, nil
+	// ⚠ **臨時部材は先頭にまとめます**——納期も装置も無いので、並べ替えに混ぜると
+	//    計算の行の間に散ります。書いた順のまま出します。
+	return append(temp, out...), nil
 }
 
 // fillUnorderedMaterial は材料の3つ組と参考単価を埋めます。

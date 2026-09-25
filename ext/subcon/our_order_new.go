@@ -39,14 +39,23 @@ import (
 // ourOrderLine は発注書へ入れる1行です（画面から送られてくる形）。
 type ourOrderLine struct {
 	ProductID string `json:"product_id"` // 弊社品番（加工製品ページ）
-	Material  string `json:"material"`
-	Shape     string `json:"shape"`
-	Size      string `json:"size"`
-	ItemName  string `json:"item_name"`
-	Quantity  string `json:"quantity"`
-	Unit      string `json:"unit"`
-	Cost      string `json:"cost"`
-	Note      string `json:"note"`
+	// ItemID・Color は `品番`・`表面`（2026-09-25 に足した）。⚠ それまで運んでいなかった
+	// ので、**発注部材表から発注書を作ると品番と表面が落ちていました**（塗装・鍍金の
+	// 発注書で「緑」が消える）。
+	ItemID   string `json:"item_id"`
+	Material string `json:"material"`
+	Shape    string `json:"shape"`
+	Size     string `json:"size"`
+	Color    string `json:"color"`
+	ItemName string `json:"item_name"`
+	Quantity string `json:"quantity"`
+	Unit     string `json:"unit"`
+	Cost     string `json:"cost"`
+	Note     string `json:"note"`
+	// TempPage・TempRow は「**臨時部材表の何行目から来たか**」（2026-09-25）。
+	// 発注部材表へ入れたら、その行を臨時部材表から消します（移す・引き算しない）。
+	TempPage string `json:"temp_page,omitempty"`
+	TempRow  int    `json:"temp_row,omitempty"`
 }
 
 // NewOurOrderAPIHandler は POST /api/our-order/new です。
@@ -180,10 +189,12 @@ func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, li
 		itemName := itemNameOf(ln)
 		vals := map[string]string{
 			"our-item-id": strings.TrimSpace(ln.ProductID),
+			"item-id":     strings.TrimSpace(ln.ItemID),
 			"item-name":   itemName,
 			"material":    strings.TrimSpace(ln.Material),
 			"shape":       strings.TrimSpace(ln.Shape),
 			"size":        strings.TrimSpace(ln.Size),
+			"color":       strings.TrimSpace(ln.Color),
 			"quantity":    strings.TrimSpace(ln.Quantity),
 			"unit":        strings.TrimSpace(ln.Unit),
 			"cost":        moneyOrEmpty(ln.Cost),

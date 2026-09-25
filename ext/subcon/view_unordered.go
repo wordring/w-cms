@@ -44,8 +44,8 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		//    早期に戻ると、**空の表から始める手段が画面から消えます**。
 		return head + `<p class="materials-empty">必要部材はありません` +
 			`（⚠ 受注明細に<strong>弊社品番</strong>が無い行は、ここに出ません）。` +
-			`加工製品ページに無い部材だけを買うときは、下から<strong>空の発注部材表</strong>` +
-			`を作って書き始めてください。</p>` +
+			`加工製品ページに無い部材は、上の<strong>臨時部材表</strong>に書くと、ここに並びます。` +
+			`</p>` +
 			unorderedFormHTML(user, pageIDInt)
 	}
 
@@ -55,8 +55,8 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		`下に<strong>発注部材表</strong>ができます` +
 		`——そこで<strong>足し引き</strong>してから発注書にします` +
 		`（⚠ <strong>何も選ばずに押してもかまいません</strong>。` +
-		`加工製品ページに無い部材だけを買うときは、空の表から書き始めます）。` +
-		`並びは<strong>納期順</strong>、同じ納期の中は<strong>装置順</strong>。` +
+		`加工製品ページに無い部材は、上の臨時部材表に書くとここに並びます）。` +
+		`並びは<strong>臨時部材が先頭</strong>、あとは<strong>納期順</strong>、同じ納期の中は<strong>装置順</strong>。` +
 		`⚠ 発注書は<strong>1枚に1社</strong>なので、` +
 		`<strong>同じ業者のものだけ</strong>を選んでください。</p>`)
 	b.WriteString(`<table class="materials-table unorder-table"><thead><tr>` +
@@ -72,8 +72,13 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		// ⚠ **並べ替えの根拠は見えていること。** 装置順に並ぶのに装置が見えないと、
 		//    「なぜこの順なのか」が分からず、**並びが壊れても気づけません**。
 		b.WriteString(`<td>` + stdhtml.EscapeString(orDash(u.Machine)) + `</td>`)
-		b.WriteString(`<td><a href="/` + page.FormatID(u.ProductPageID) + `">` +
-			page.FormatID(u.ProductPageID) + `</a>` + unorderedMigratingMark(u) + `</td>`)
+		if u.TempRow > 0 {
+			// ⚠ 臨時部材は加工製品ページを持ちません（`/000000` へのリンクを出さない）。
+			b.WriteString(`<td>—</td>`)
+		} else {
+			b.WriteString(`<td><a href="/` + page.FormatID(u.ProductPageID) + `">` +
+				page.FormatID(u.ProductPageID) + `</a>` + unorderedMigratingMark(u) + `</td>`)
+		}
 		b.WriteString(`<td>` + stdhtml.EscapeString(u.Name) + `</td>`)
 		b.WriteString(`<td class="num">` + strconv.Itoa(u.Remaining) + `</td>`)
 		b.WriteString(`<td class="unorder-cost">` + unorderedCostHTML(u) + `</td>`)
@@ -99,6 +104,20 @@ func orDash(s string) string {
 func unorderedRowAttrs(u UnorderedItem) string {
 	at := func(k, v string) string {
 		return ` data-` + k + `="` + stdhtml.EscapeString(v) + `"`
+	}
+	if u.TempRow > 0 {
+		// ⚠ **臨時部材の行**（2026-09-25）——弊社品番は持たず、品番・表面・単位・備考と
+		//    「臨時部材表の何行目か」を運びます。発注部材表へ入れたら、サーバーが臨時部材表
+		//    からその行を消します。⚠ **単価は人が書いた値を優先**（無ければ参考単価）。
+		cost := strings.TrimSpace(u.CostRaw)
+		if cost == "" {
+			cost = unorderedCostValue(u)
+		}
+		return at("material", u.Material) + at("shape", u.Shape) + at("size", u.Size) +
+			at("itemid", u.ItemID) + at("itemname", u.ItemName) + at("color", u.Color) +
+			at("qty", strconv.Itoa(u.Remaining)) + at("unit", u.Unit) +
+			at("cost", cost) + at("note", u.Note) +
+			at("temp-page", u.TempPage) + at("temp-row", strconv.Itoa(u.TempRow))
 	}
 	return at("product", page.FormatID(u.ProductPageID)) +
 		at("material", u.Material) + at("shape", u.Shape) + at("size", u.Size) +

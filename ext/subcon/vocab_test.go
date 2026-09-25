@@ -69,6 +69,8 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		MaterialSearchViewType, UnorderedViewType,
 		// **未発注の発注書**（2026-09-24）——DBから数える一覧。
 		UnsentOrdersViewType,
+		// **臨時部材表**（2026-09-25）——加工製品ページに無い材料を人が書く表。
+		TempPartsType,
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))

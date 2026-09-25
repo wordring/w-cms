@@ -50,9 +50,24 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireWritableIdle(w, r, pageID) {
 		return
 	}
+	// ⚠ **弊社品番の無い行は、発注フォルダの臨時部材表へ戻します**（2026-09-25）——
+	//    必要部材表の計算に乗らないので、外すだけだと消えます（09-24 ユーザー報告:
+	//    「必要部材表へ戻すを押すと発注明細から消えますが、必要部材表へは表示されません」）。
+	//    ⚠ **先に臨時部材表へ足してから、発注書から外します**——途中で失敗したとき、
+	//    行が**消える**より**2か所に残る**ほうへ倒すためです（残ったほうは人が消せる）。
+	returned := false
+	if cur, err := cms.ReadPageBody(pageID); err == nil {
+		if _, ln, ok := takeOrderRow(cur, req.Row); ok && needsTempParts(ln) {
+			if err := returnToTempParts(user, ln); err != nil {
+				cms.JSONFail(w, http.StatusConflict, "臨時部材表へ戻せません: "+err.Error())
+				return
+			}
+			returned = true
+		}
+	}
 	removed := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, ok := removeOrderRow(cur, req.Row)
+		out, _, ok := takeOrderRow(cur, req.Row)
 		removed = ok
 		return out
 	}) {
@@ -63,8 +78,12 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 			"戻す行がありません（画面を読み直してください）")
 		return
 	}
-	auth.Audit(user.Username, "our-order.return-row", pageID+" 行"+strconv.Itoa(req.Row))
-	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID})
+	to := "必要部材表"
+	if returned {
+		to = "臨時部材表"
+	}
+	auth.Audit(user.Username, "our-order.return-row", pageID+" 行"+strconv.Itoa(req.Row)+" → "+to)
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "to": to})
 }
 
 // removeOrderRow は最初の発注明細から、`row` 番目のデータ行を取り除きます。
@@ -73,22 +92,29 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 // **発注書そのもの**です。表ごと消すと、行を足し直す場所が無くなります。
 // ⚠ **2枚目以降の発注明細は見ません**（送信欄と同じく、1ページ1枚が前提）。
 func removeOrderRow(body string, row int) (string, bool) {
+	out, _, ok := takeOrderRow(body, row)
+	return out, ok
+}
+
+// takeOrderRow は removeOrderRow と同じく行を外し、**外した行の中身**も返します。
+func takeOrderRow(body string, row int) (string, ourOrderLine, bool) {
 	if row < 1 {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	tables := tablesOfType(nodes, ourOrderItemsType)
 	if len(tables) == 0 {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	rows := rowsOf(tables[0]) // 先頭は見出し行
 	if row >= len(rows) {
-		return body, false
+		return body, ourOrderLine{}, false
 	}
 	tr := rows[row]
+	line := lineOfRow(rows[0], tr)
 	tr.Parent.RemoveChild(tr)
-	return htmldoc.Render(nodes), true
+	return htmldoc.Render(nodes), line, true
 }
