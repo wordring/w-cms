@@ -296,7 +296,7 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 // fn へ渡します。マーカー付きは独立した形式（配送係が別に届ける）、入れ子の section は
 // 独立した業務ブロックなので、どちらも渡しません。
 //
-// ⚠ **素の `dl` は渡しません**（2026-09-18 に索引から外した）。索引・種まき・改名告知が
+// ⚠ **素の `dl` は渡しません**（2026-09-18 に索引から外した）。索引・改名告知が
 // 同じ切り分けを共有します——ここが割れると「索引には載るのに告知されない」ずれが
 // 生まれるため、巡回は1箇所に持ちます。
 func eachPlainVocabTable(section *html.Node, fn func(n *html.Node)) {
@@ -543,25 +543,6 @@ func walkSkippingNested(root *html.Node, skip map[string]bool, fn func(*html.Nod
 		fn(c)
 		walkSkippingNested(c, skip, fn)
 	}
-}
-
-// FirstVocabChild は root 配下から最初の element[data-type==dataType]（dataType が
-// 空なら data-type を問わない element）を返します。入れ子の section へは降りません
-// （入れ子の業務ブロックは独立して読まれるため）。
-func FirstVocabChild(root *html.Node, element, dataType string) *html.Node {
-	if root == nil {
-		return nil
-	}
-	var found *html.Node
-	walkSkippingNested(root, map[string]bool{"section": true}, func(n *html.Node) {
-		if found != nil || n.Data != element {
-			return
-		}
-		if dataType == "" || Attr(n, "data-type") == dataType {
-			found = n
-		}
-	})
-	return found
 }
 
 // nodeText は要素配下のテキストを連結して返します（表示文字＝値。語彙モデル §2）。

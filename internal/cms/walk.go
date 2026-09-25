@@ -3,9 +3,9 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 // 配送係（Walker）——本文HTMLの回覧機構
 //
-// 設計の正本は [docs/パーサとプラグイン.md]。本文HTMLを処理する3つの経路
-// （保存時の索引・表示時の計算ビュー・新規作成時のテンプレート新規化）を、1つの
-// 走査へ寄せるための土台です。パーサは `x/net/html` のままで、**木を作ってから
+// 設計の正本は [docs/パーサとプラグイン.md]。本文HTMLを処理する経路
+// （保存時の索引・表示時の計算ビュー。⚠ 3つ目の新規作成時のテンプレート新規化は
+// 2026-09-25 に撤去）を、1つの走査へ寄せるための土台です。パーサは `x/net/html` のままで、**木を作ってから
 // 文書順に歩いてイベントを押し込む**（SAX over DOM）形を取ります。
 //
 // 解いている問題は3つ:
@@ -24,11 +24,13 @@ package cms
 // （[【考察】語彙モデル.md](../../docs/【考察】語彙モデル.md) §11・D-2）の採用で
 // 差し替わったのはそこだけで、本機構はそのまま動いています。
 //
-// 段は3つあり、**それぞれ別の受け口・別のコンテキスト**を持ちます（最小権限）:
+// 段は2つあり、**それぞれ別の受け口・別のコンテキスト**を持ちます（最小権限）:
 //
 //   観察係（保存時）  … ObserveHandler / ObserveContext。書き込みTxを持つ。**Replace は無い**
 //   鏡型（表示時）    … MirrorHandler  / MirrorContext。読み取り専用DB。Replace を持つ
-//   種まき（新規作成）… SeedHandler    / SeedContext。読み取り専用DB。Replace を持つ
+//
+// ⚠ **3つ目の段「種まき」（新規作成時）は 2026-09-25 に撤去しました**——唯一の使い手だった
+// テンプレートの新規化が、純粋なコピーになったためです（template_new.go に経緯）。
 //
 // 観察係に `Replace` が無いのは行儀の問題ではなく**型の問題**です。同じ理由で鏡型には
 // 書き込みTxを渡しません——「派生→正本の逆流」（2026-08-21 に一度踏んだ）が
@@ -39,7 +41,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 
 	"golang.org/x/net/html"
 
@@ -53,7 +54,7 @@ const TriggerAll = "*"
 
 // ReadOnlyDB は読み取りだけを宣言するDBの口です。
 //
-// **ラッパーではなくインターフェース**にしているのがポイントで、鏡型・種まきへ
+// **ラッパーではなくインターフェース**にしているのがポイントで、鏡型へ
 // これを渡すと `Exec` が存在しない＝書けないことが型として保証されます。
 type ReadOnlyDB interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
@@ -62,7 +63,7 @@ type ReadOnlyDB interface {
 
 // ── 段別コンテキスト ─────────────────────────────────────────────────────
 
-// walkState は歩行そのものの状態です（3つの段が埋め込んで共有する）。
+// walkState は歩行そのものの状態です（2つの段が埋め込んで共有する）。
 type walkState struct {
 	ancestors []*html.Node
 	replaced  map[*html.Node]bool
@@ -141,14 +142,6 @@ type MirrorContext struct {
 	PageID int
 }
 
-// SeedContext は種まき（新規作成時）の権能です。
-type SeedContext struct {
-	walkState
-	DB        ReadOnlyDB
-	NewPageID string
-	Now       time.Time // 日付の既定値用。時計もコンテキスト経由（テストしやすさ）
-}
-
 // Replace は el を nodes で置き換えます（鏡型）。
 //
 // **素手でノードを繋ぎ替えさせない**のは配送の保証と直結します——「差し替え済みの
@@ -158,24 +151,6 @@ type SeedContext struct {
 // ノードを組んで渡す形にしておけばエスケープの掛け忘れが起こりえない）。
 func (c *MirrorContext) Replace(el *html.Node, nodes ...*html.Node) {
 	c.walkState.replaceNodes(el, nodes...)
-}
-
-// Replace は el を nodes で置き換えます（種まき）。
-func (c *SeedContext) Replace(el *html.Node, nodes ...*html.Node) {
-	c.walkState.replaceNodes(el, nodes...)
-}
-
-// SetText は要素の中身をテキスト1つで置き換えます（種まきのセル埋め）。
-// **現在の使い手はいません**——種まきの道具として残してあります
-// （パーサとプラグイン.md が「セルへの SetText で行う」と指している口です）。
-func (c *SeedContext) SetText(el *html.Node, s string) {
-	for el.FirstChild != nil {
-		el.RemoveChild(el.FirstChild)
-	}
-	if s != "" {
-		el.AppendChild(&html.Node{Type: html.TextNode, Data: s})
-	}
-	c.walkState.markReplaced(el)
 }
 
 func (w *walkState) replaceNodes(el *html.Node, nodes ...*html.Node) {
@@ -218,22 +193,10 @@ type MirrorHandler interface {
 	OnElement(ctx *MirrorContext, el *html.Node) (descend bool, err error)
 }
 
-// SeedHandler は種まき（新規作成時）の受け口です。
-type SeedHandler interface {
-	OnElement(ctx *SeedContext, el *html.Node) (descend bool, err error)
-}
-
 // MirrorHandlerFunc は関数を MirrorHandler にします。
 type MirrorHandlerFunc func(ctx *MirrorContext, el *html.Node) (bool, error)
 
 func (f MirrorHandlerFunc) OnElement(ctx *MirrorContext, el *html.Node) (bool, error) {
-	return f(ctx, el)
-}
-
-// SeedHandlerFunc は関数を SeedHandler にします。
-type SeedHandlerFunc func(ctx *SeedContext, el *html.Node) (bool, error)
-
-func (f SeedHandlerFunc) OnElement(ctx *SeedContext, el *html.Node) (bool, error) {
 	return f(ctx, el)
 }
 
@@ -242,14 +205,12 @@ func (f SeedHandlerFunc) OnElement(ctx *SeedContext, el *html.Node) (bool, error
 type walkRegistry struct {
 	observers map[string][]ObserveHandler // 引き金 → 担当（何人でも）
 	mirrors   map[string]MirrorHandler    // 引き金 → 担当（1人だけ）
-	seeders   map[string]SeedHandler      // 引き金 → 担当（1人だけ）
 }
 
 func newWalkRegistry() *walkRegistry {
 	return &walkRegistry{
 		observers: map[string][]ObserveHandler{},
 		mirrors:   map[string]MirrorHandler{},
-		seeders:   map[string]SeedHandler{},
 	}
 }
 
@@ -265,9 +226,6 @@ var walkers = newWalkRegistry()
 // 「順番」に意味を持たせないための構造的な保証で、重複は起動時に落とします。
 func RegisterMirror(trigger string, h MirrorHandler) { walkers.mirror(trigger, h) }
 
-// RegisterSeeder は種まき（新規作成時）を登録します。引き金ごとに1人。
-func RegisterSeeder(trigger string, h SeedHandler) { walkers.seed(trigger, h) }
-
 func (r *walkRegistry) observe(trigger string, h ObserveHandler) {
 	r.observers[trigger] = append(r.observers[trigger], h)
 }
@@ -277,13 +235,6 @@ func (r *walkRegistry) mirror(trigger string, h MirrorHandler) {
 		panic(fmt.Sprintf("鏡型の引き金が重複しています: %q（引き金ごとに1人）", trigger))
 	}
 	r.mirrors[trigger] = h
-}
-
-func (r *walkRegistry) seed(trigger string, h SeedHandler) {
-	if _, dup := r.seeders[trigger]; dup {
-		panic(fmt.Sprintf("種まきの引き金が重複しています: %q（引き金ごとに1人）", trigger))
-	}
-	r.seeders[trigger] = h
 }
 
 // ── 引き金の解決（差し替え点） ───────────────────────────────────────────
@@ -553,20 +504,6 @@ func (r *walkRegistry) walkMirror(ctx *MirrorContext, nodes []*html.Node) ([]*ht
 		h := r.mirrors[triggerOf(el)]
 		if h == nil {
 			if all := r.mirrors[TriggerAll]; all != nil {
-				return all.OnElement(ctx, el)
-			}
-			return true, nil
-		}
-		return h.OnElement(ctx, el)
-	})
-}
-
-// walkSeed は種まきの段を1周し、書き換わった木を返します（引き金ごとに担当は1人）。
-func (r *walkRegistry) walkSeed(ctx *SeedContext, nodes []*html.Node) ([]*html.Node, error) {
-	return walkFragment(nodes, &ctx.walkState, func(el *html.Node) (bool, error) {
-		h := r.seeders[triggerOf(el)]
-		if h == nil {
-			if all := r.seeders[TriggerAll]; all != nil {
 				return all.OnElement(ctx, el)
 			}
 			return true, nil

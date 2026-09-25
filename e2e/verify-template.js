@@ -5,7 +5,8 @@
 //
 // 正本の設計は docs/【考察】ページテンプレート.md。確かめるのは3点:
 //   ① 「テンプレート」フォルダの**葉**だけがメニューに出る（枝は分類の見出し）
-//   ② テンプレートから作ったページは本文が写り、空欄が型の既定値で埋まる
+//   ② テンプレートから作ったページは本文が写る（2026-09-25 から純粋なコピー——空欄は空欄の
+//      まま・ブロックIDだけ外す）
 //   ③ テンプレート領域の中身は③計算テーブルへ載らない（手配集計に出ない）
 //
 // 前提: サーバーが http://localhost:8080 で起動済み（.claude/launch.json の w-cms）。
@@ -79,7 +80,7 @@ const TEMPLATE_BODY =
     '<dl data-type="tags"><dt>発注書番号</dt><dd><br></dd>' +
     '<dt>発注元</dt><dd>得意先A</dd>' +
     '<dt>発注日</dt><dd><br></dd></dl>' +
-    '<table data-type="client-order-items"><caption>受注明細</caption><tbody>' +
+    '<table data-id="tp01" data-type="client-order-items"><caption>受注明細</caption><tbody>' +
     '<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
     '<tr><td>SAMPLE-1</td><td>見本</td><td>100</td><td>1</td><td>未着手</td></tr>' +
     '</tbody></table>';
@@ -158,29 +159,22 @@ async function findOrMakeTemplateBox(page) {
         check('Escape でメニューが閉じる',
             await page.locator('#w-template-menu.active').count() === 0);
 
-        // ── ② テンプレートから作ると本文が写り、空欄が埋まる ──
+        // ── ② テンプレートから作ると本文が写る（純粋なコピー） ──
         const madeId = await newPage(page, hostId, tmplId);
         const madeHTML = await (await page.request.get(BASE + '/api/load?id=' + madeId)).text();
         check('テンプレートの本文が写る', madeHTML.includes('受注ページ') && madeHTML.includes('得意先A'));
-        // ⚠ **発注書番号の再採番は、いま効きません**（2026-09-21 に判明・未決）。
-        //    再採番は列の宣言の機械キー `order-no` を見ますが、**`発注書番号` は
-        //    2026-09-18 に可変タグへ移り**、タグには機械キーがありません。
-        // ⚠ **そして「採番すべきか」自体が未決**です——受注ページの `発注書番号` は
-        //    **お客様の番号**なので、こちらで採番してはいけません。弊社の発注書の
-        //    ほうは**ページ番号そのもの**と決めました（2026-09-21）。
-        //    **決まるまで、失敗にはしません**（前提が無いときは飛ばす、の流儀）。
-        if (madeHTML.includes('PO-' + madeId)) {
-            check('発注書番号が新ページIDで採番される', true);
-        } else {
-            results.push('-- 発注書番号の再採番は未決のため飛ばします（⚠ タグ化で効かなくなっている）');
-        }
-        // サーバーは**現地時刻**の日付を入れる（Go の time.Now()）。toISOString() は
-        // UTC へ寄せてしまい、日本時間の 00:00〜09:00 に走らせると前日になって落ちる。
+        // ⚠ **2026-09-25 から純粋なコピーです**（ユーザー:「純粋なコピーにしましょう」）。
+        //    それまでは空の日付の列に今日を入れていました（新規化）。いまは**空欄は空欄のまま**
+        //    （「まだ分からない」）で、変えるのは**ブロックID（data-id）を外す**ことだけ。
+        //    発注書番号も入れません（お客様の番号・09-21 に採番を撤去）。
+        check('発注書番号を機械が入れない', !/PO-\d/.test(madeHTML));
+        // 日付は**現地時刻**で比べる（toISOString() は UTC へ寄せ、日本時間の朝に前日になる）。
         const now = new Date();
         const today = now.getFullYear() + '-' +
             String(now.getMonth() + 1).padStart(2, '0') + '-' +
             String(now.getDate()).padStart(2, '0');
-        check('発注日が今日で埋まる', madeHTML.includes(today));
+        check('空欄は空欄のまま（今日を入れない）', !madeHTML.includes(today));
+        check('ブロックIDは写さない', !madeHTML.includes('tp01'));
         check('明細もコピーされる', madeHTML.includes('SAMPLE-1'));
 
         // 作ったページは領域の外なので、今度は計算に載る。

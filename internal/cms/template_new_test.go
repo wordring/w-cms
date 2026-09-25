@@ -17,8 +17,9 @@ import (
 	"w-cms/internal/database"
 )
 
-// ── ページテンプレート 第2段: コピーと新規化パス ────────────────────────
-// 正本は docs/【考察】ページテンプレート.md §4・§5。
+// ── ページテンプレート 第2段: コピー ────────────────────────────────────
+// 正本は docs/【考察】ページテンプレート.md §4・§5。⚠ 2026-09-25 から純粋なコピー
+// （新規化パスは撤去）。
 
 // templateOrderBody は空欄（発注書番号・発注日）を持つテンプレート本文です。
 // 「書いてある値（発注元）はそのまま・空欄は型の既定値で埋まる」を確かめます。
@@ -61,63 +62,60 @@ func bodyOf(t *testing.T, id string) string {
 	return string(data)
 }
 
-// TestFreshenFillsEmptyCellsOnly は新規化の規則
-// 「空欄は列型の既定値で埋める・書いてある値はそのまま保つ」を検証します。
-func TestFreshenFillsEmptyCellsOnly(t *testing.T) {
-	got := FreshenTemplateBody(templateOrderBody, "000123")
-	today := time.Now().Format("2006-01-02")
+// TestCopyTemplateKeepsValuesAndBlanks は、テンプレートが**純粋なコピー**であることを
+// 固定します（2026-09-25 ユーザー:「純粋なコピーにしましょう」）。
+//
+// ⚠ **書いてある値はそのまま・空欄は空欄のまま**。2026-09-25 までは空の日付の列に
+// 今日を入れていました（新規化）が、**空欄は「まだ分からない」**（09-21 の決定）で、
+// 作った日を受領日や発注日と決めつけません。番号も入れません（09-21 に撤去済み）。
+func TestCopyTemplateKeepsValuesAndBlanks(t *testing.T) {
+	got := CopyTemplateBody(templateOrderBody)
 
-	// ⚠ **発注書番号は埋めません**（2026-09-21 ユーザー:「顧客の発注書番号はそのまま
-	//    使います」）。text 列と同じく**空のまま**——人が書くものです。
-	if strings.Contains(got, "PO-000123") {
-		t.Errorf("⚠ 機械が発注書番号を入れています（お客様の番号です）:\n%s", got)
-	}
 	if !strings.Contains(got, "<dd>得意先A</dd>") {
 		t.Errorf("書いてある値が失われています:\n%s", got)
 	}
-	if !strings.Contains(got, "<dd>"+today+"</dd>") {
-		t.Errorf("発注日が今日で埋まっていません:\n%s", got)
+	if strings.Contains(got, time.Now().Format("2006-01-02")) {
+		t.Errorf("⚠ 空の日付の列に今日を入れています（純粋なコピーのはず）:\n%s", got)
 	}
-	// text 列は空のまま（人が書く）。品番のセルが勝手に埋まっていないこと。
-	if !strings.Contains(got, "<td></td>") {
-		t.Errorf("text 列まで埋められています:\n%s", got)
-	}
-}
-
-// TestFreshenKeepsWrittenOrderNo は、テンプレートに番号が書かれている場合は
-// **触らない**ことを検証します（作者が意図して入れた値を消さない）。
-func TestFreshenKeepsWrittenOrderNo(t *testing.T) {
-	body := `<section data-type="client-order"><dl data-type="tags">` +
-		`<dt>発注書番号</dt><dd>PO-FIXED</dd></dl></section>`
-	if got := FreshenTemplateBody(body, "000123"); !strings.Contains(got, "PO-FIXED") {
-		t.Errorf("書かれた発注書番号が失われています: %s", got)
-	}
-}
-
-// TestFreshenLeavesOrderNoEmpty は、⚠ **発注書番号を機械が入れない**ことを
-// 固定します（2026-09-21 ユーザー:「**顧客の発注書番号はそのまま使います**」）。
-//
-// ⚠ **空欄のほうがまだ良い**のです——**本物らしく見える嘘の番号**（`PO-000123`）は、
-// 人が消し忘れるとそのまま残り、**お客様の番号だと信じられます**。
-// ⚠ 弊社の発注書の番号は**ページ番号そのもの**で、発注書を作る機能が書きます。
-func TestFreshenLeavesOrderNoEmpty(t *testing.T) {
-	body := `<dl data-type="tags"><dt>発注書番号</dt><dd></dd>` +
-		`<dt>発注日</dt><dd></dd></dl>`
-	got := FreshenTemplateBody(body, "000123")
 	if regexp.MustCompile(`PO-[0-9-]+`).MatchString(got) {
 		t.Errorf("⚠ 機械が発注書番号を入れています（お客様の番号です）:\n%s", got)
 	}
-	if strings.Contains(got, "000123") {
-		t.Errorf("⚠ ページ番号を発注書番号として入れています:\n%s", got)
+	if !strings.Contains(got, "<dt>発注日</dt><dd></dd>") {
+		t.Errorf("空欄が空欄のまま写っていません:\n%s", got)
 	}
-	// **日付は入れます**——`発注日` は `date` 型で、今日を入れるのは嘘になりません。
-	if !strings.Contains(got, time.Now().Format("2006-01-02")) {
-		t.Errorf("発注日が今日で埋まっていません:\n%s", got)
+	if !strings.Contains(got, `<table data-type="client-order-items">`) {
+		t.Errorf("ブロックID以外の属性まで落としています:\n%s", got)
 	}
 }
 
-// TestNewPageFromTemplate は、テンプレートを指定した新規作成が本文を写して
-// 新規化することを検証します（エンドツーエンド）。
+// TestCopyTemplateDropsBlockIDs は、⚠ **ブロックID（`data-id`）だけを外す**ことを
+// 固定します。
+//
+// エディタは保存のたびにブロックIDを振るので、テンプレートのページも持っています
+// （職場のテンプレートにも付いていた）。写したページが同じIDを持つと、ページどうしで
+// ブロックを運ぶとき（改訂の合流）に衝突します。
+// ⚠ **入れ子も外すこと**——表の**行**にもIDが振られます（社内コードの後半）。
+func TestCopyTemplateDropsBlockIDs(t *testing.T) {
+	body := `<h1 data-id="ab12">加工製品</h1>` +
+		`<section data-id="cd34"><h2>材料</h2>` +
+		`<table data-id="z184" data-type="part-materials"><tbody>` +
+		`<tr><th>材質</th></tr><tr data-id="ef56"><td>鉄</td></tr></tbody></table>` +
+		`<section data-type="file-view" data-ref="000001-gh78"></section></section>`
+	got := CopyTemplateBody(body)
+
+	if strings.Contains(got, "data-id") {
+		t.Errorf("⚠ ブロックIDが残っています:\n%s", got)
+	}
+	for _, keep := range []string{`data-type="part-materials"`, `data-ref="000001-gh78"`,
+		"<h2>材料</h2>", "<td>鉄</td>"} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("%s まで落としています:\n%s", keep, got)
+		}
+	}
+}
+
+// TestNewPageFromTemplate は、テンプレートを指定した新規作成が本文を写すことを
+// 検証します（エンドツーエンド・2026-09-25 から純粋なコピー）。
 func TestNewPageFromTemplate(t *testing.T) {
 	setupSaveTest(t)
 	classify := newTemplateTree(t)
@@ -143,6 +141,10 @@ func TestNewPageFromTemplate(t *testing.T) {
 	}
 	if !strings.Contains(body, "得意先A") {
 		t.Errorf("テンプレートに書かれた値が失われています:\n%s", body)
+	}
+	// ⚠ **空欄は空欄のまま**（新規化をやめた）——口を通しても今日が入らないこと。
+	if strings.Contains(body, time.Now().Format("2006-01-02")) {
+		t.Errorf("⚠ 空の日付の列に今日を入れています:\n%s", body)
 	}
 
 	// コピー先はテンプレート領域の外なので、③計算テーブルへ載る。

@@ -187,11 +187,12 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//    子ページ一覧は左サイドパネル（クローム）が担うため、本文には埋め込まない
 	//    （必要なら子ページ一覧のビュー section[data-type="child-list"] を後から挿せる）。
 	//
-	//    テンプレート指定があれば、読んだ本文の空欄を列型の既定値で埋める（新規化パス）。
-	//    採番済みの newID を発注書番号に使うので、ここまで来てから行う。
+	//    テンプレート指定があれば、読んだ本文を**そのまま写す**（ブロックIDだけ外す）。
+	//    ⚠ 2026-09-25 まで空欄を列型の既定値で埋めていた（新規化）——いまは純粋なコピー
+	//    （template_new.go に経緯）。
 	html := "<h1>新しいページ</h1>\n<p>ここから編集を始めてください。</p>"
 	if templateBody != "" {
-		html = FreshenTemplateBody(templateBody, newID)
+		html = CopyTemplateBody(templateBody)
 	}
 
 	// 4. HTMLファイルを物理保存
