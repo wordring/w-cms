@@ -117,6 +117,36 @@ func TestBacklogPutsUnreadableDueFirst(t *testing.T) {
 	}
 }
 
+// TestBacklogMarksEmptyOurItemNo は、⚠ **弊社品番が空のセルだけが薄赤になる**ことを
+// 固定します（2026-09-25 ユーザー:「弊社品番なしの警告は受注フォルダページの納期別の表の
+// 弊社品番セルの背景を薄赤くする程度で十分」）。
+//
+// ⚠ **埋まった行が赤くならないことも見ます**——全部を赤くしても「赤い」は通ります。
+func TestBacklogMarksEmptyOurItemNo(t *testing.T) {
+	setupExtTest(t, "000125", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 126, -1, "受注", "alice", "302", true)
+	filled := `<tr><td>000031</td><td>A-2</td><td>埋まった行</td><td>5</td>` +
+		`<td>個</td><td>100</td><td>2026-10-15</td><td></td><td></td><td>未着手</td></tr>`
+	seedOrder(t, 127, 126, "あけぼの精工", "2026-10-15",
+		item("A-1", "空の行", "10", "2026-10-15", "")+filled)
+
+	req := httptest.NewRequest("GET", "/000126", nil)
+	req = auth.WithUser(req, adminUser())
+	out := cms.RenderComputedViews(req, 126,
+		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+	if n := strings.Count(out, `backlog-no-item`); n != 1 {
+		t.Fatalf("薄赤のセルが %d 個です（空の行の1個を期待）:\n%s", n, out)
+	}
+	// 薄赤は空の行のセルに付き、埋まった行は今までどおりリンクになる。
+	empty := strings.Index(out, "backlog-no-item")
+	if row := strings.Index(out, "空の行"); row < empty {
+		t.Errorf("⚠ 空の行ではないセルが薄赤です:\n%s", out)
+	}
+	if !strings.Contains(out, `<a href="/000031">000031</a>`) {
+		t.Errorf("埋まった弊社品番がリンクになっていません:\n%s", out)
+	}
+}
+
 // TestBacklogScopeIsDescendantsOnly は、⚠ **置いたページの子孫だけ**を見ることを
 // 固定します。
 //

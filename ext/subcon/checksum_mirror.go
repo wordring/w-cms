@@ -39,9 +39,6 @@ func init() {
 func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	span := headerCellCount(el)
-	// ⚠ **加工製品ページに結べない行**（2026-09-25・unlinked_orders.go）——
-	//    足元の行を足す**前に**数えます（足元の行は空の行に見えるため）。
-	unlinked := markUnlinkedRows(ctx.DB, el)
 	renderChecksumRows(ctx, el, span)
 
 	// **結びについての気づきも同じ足元に出します**（2026-09-21・[link_item.go]）。
@@ -55,9 +52,6 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			class = "checksum-ng"
 		}
 		appendChecksumRow(el, span, class, n)
-	}
-	for _, n := range unlinked {
-		appendChecksumRow(el, span, "checksum-ng", n)
 	}
 	return true, nil
 }

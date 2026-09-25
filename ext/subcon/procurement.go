@@ -124,24 +124,15 @@ func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduc
 // ⚠ **2枚以上に当たったら引きません**——同じ番号で別の加工製品がありえます
 // （「別の製品の図面番号が一致してしまう場合もあり…」）。**決めるのは人**。
 func productByCode(db cms.ReadOnlyDB, code string) (int, bool) {
-	hits := productCandidatesByCode(db, code)
-	if len(hits) != 1 {
-		return 0, false
-	}
-	return hits[0], true
-}
-
-// productCandidatesByCode は `品番` に当たる加工製品ページを全部返します（認可はしない）。
-//
-// `productByCode` の中身で、**当たった枚数**が要る口（結べない行の警告・
-// unlinked_orders.go）のために分けました。⚠ **引く名前を別に組まないこと**——
-// 警告と必要部材表が別の規則で引くと、「赤くないのに出ない」行が生まれます。
-func productCandidatesByCode(db cms.ReadOnlyDB, code string) []int {
 	names := append([]string{}, ProductCodeTags()...)
 	if def, ok := cms.VocabDefByType(partMaterialsType); ok && def.RequiresTag != "" {
 		names = append(names, def.RequiresTag)
 	}
-	return pagesByAnyTag(db, names, code)
+	hits := pagesByAnyTag(db, names, code)
+	if len(hits) != 1 {
+		return 0, false
+	}
+	return hits[0], true
 }
 
 // procurementItemsOf は加工製品1ページぶんの購入品を、必要数・発注済数つきで返します。

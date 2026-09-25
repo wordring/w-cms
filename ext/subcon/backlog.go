@@ -286,7 +286,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			// 鍵を書き換えると**次の書き込みが隣の行に当たります**。
 			st := statusOptionsHTML(r.Status)
 			b.WriteString(`<tr` + rowAttrs(r) + `>` +
-				`<td class="cell-atomic">` + refCellHTML(r.OurItemNo) + `</td>` +
+				ourItemCellHTML(r.OurItemNo) +
 				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
 				atomicCell(stdhtml.EscapeString(r.ItemName)) +
 				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
@@ -316,6 +316,24 @@ func atomicCell(inner string) string { return `<td class="cell-atomic">` + inner
 // 直した日にずれます。**同じHTMLに印を付け、隠すのは印刷用CSSの仕事**にします。
 func noPrintCell(inner string) string {
 	return `<td class="cell-atomic no-print">` + inner + `</td>`
+}
+
+// ourItemCellHTML は弊社品番のセルです。⚠ **空なら薄赤**にします（2026-09-25）。
+//
+// ユーザー:「受注したのに加工製品のページが無い場合、それは作れないわけですから、
+// 何かが間違っています」「**弊社品番なしの警告は受注フォルダページの納期別の表の
+// 弊社品番セルの背景を薄赤くする程度で十分**」。⚠ **警告はここだけ**です——
+// 受注ページの足元や必要部材表に文を足す案は、同日に取り下げました。
+//
+// ⚠ 判定は「空かどうか」だけです（利用者の言葉どおり「弊社品番なし」）。`品番` が
+// 加工製品ページに当たれば必要部材表には出ますが、この表は**作業の紙**で、
+// 手元であいまいなく引ける番号が要る（下の印刷の注記）——空は空として知らせます。
+func ourItemCellHTML(id string) string {
+	if strings.TrimSpace(id) == "" {
+		return `<td class="cell-atomic backlog-no-item" title="弊社品番が空です` +
+			`（加工製品ページがまだ無いか、結んでいません）"></td>`
+	}
+	return `<td class="cell-atomic">` + refCellHTML(id) + `</td>`
 }
 
 // refCellHTML は弊社品番を押せる形にします（空なら空欄のまま）。
