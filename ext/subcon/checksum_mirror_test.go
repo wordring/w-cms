@@ -34,6 +34,10 @@ func orderPageWith(sub, tax, total string, rows ...[]string) string {
 // render は鏡を通した表示用のHTMLを返します。
 func render(t *testing.T, body string) string {
 	t.Helper()
+	// ⚠ **DB を自分で用意します**（2026-09-25）。鏡は索引を引くので（結びの気づき・
+	//    結べない行の警告）、それまでは**前に走った試験が残した DB**に頼っていて、
+	//    この試験だけを流すと nil で落ちていました（`-run Checksum` で再現）。
+	setupMaterialsPermsTest(t)
 	req := httptest.NewRequest("GET", "/000001", nil)
 	req = auth.WithUser(req, &auth.User{Username: "root", IsAdmin: true})
 	return cms.RenderComputedViews(req, 1, body)
@@ -62,7 +66,10 @@ func TestChecksumMirrorSaysNothingIsWrong(t *testing.T) {
 	if !strings.Contains(got, "明細2行") {
 		t.Errorf("何行を検算したのか出ていません:\n%s", got)
 	}
-	if strings.Contains(got, "checksum-ng") {
+	// ⚠ **「⚠ 検算」を見ます**（`checksum-ng` ではなく）——同じ足元に、加工製品
+	//    ページに結べない行の ⚠ も並ぶようになりました（2026-09-25・unlinked_orders.go）。
+	//    この受注ページの品番には加工製品ページが無いので、そちらは正しく出ます。
+	if strings.Contains(got, "⚠ 検算") {
 		t.Errorf("合っているのに ⚠ を出しています:\n%s", got)
 	}
 }
@@ -75,7 +82,9 @@ func TestChecksumMirrorWarnsOnDroppedRow(t *testing.T) {
 	)
 	got := render(t, body)
 
-	if !strings.Contains(got, "checksum-ng") {
+	// ⚠ `checksum-ng` では足りません——加工製品ページの ⚠ も同じ印で出るので、
+	//    検算が黙っても通ってしまいます（2026-09-25）。
+	if !strings.Contains(got, "⚠ 検算") {
 		t.Fatalf("⚠ 落丁が画面に出ていません:\n%s", got)
 	}
 	if !strings.Contains(got, "抜けて") || !strings.Contains(got, "3000") {
@@ -125,7 +134,9 @@ func TestChecksumMirrorStaysSilentWithoutMaterial(t *testing.T) {
 		`<tr><th>弊社品番</th><th>品番</th><th>数量</th></tr>` +
 		`<tr><td></td><td>K1</td><td>3</td></tr></tbody></table>`
 
-	if got := render(t, body); strings.Contains(got, "order-checksum") {
+	// ⚠ **「検算」の文字を見ます**——足元には加工製品ページに結べない行の ⚠ も
+	//    並ぶので（2026-09-25）、足元の行そのもの（`order-checksum`）では見分けられません。
+	if got := render(t, body); strings.Contains(got, "検算") {
 		t.Errorf("材料が無いのに検算の行を出しています:\n%s", got)
 	}
 }

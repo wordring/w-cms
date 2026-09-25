@@ -2413,6 +2413,25 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .unorder-form { margin-top: 10px; }
 #w-editor-content .unorder-result { margin-top: 8px; font-size: 0.95em; }
 
+/* ── 加工製品ページに結べない受注明細（2026-09-25・鏡型）─────────────────
+   ユーザー:「受注したのに加工製品のページが無い場合、それは作れないわけですから、
+   何かが間違っています」「弊社品番の背景を薄赤にしても良いかもしれません」。
+   薄赤は `ref-missing` と同じ意味（機械が疑わしいと言っている）。
+   ⚠ **色だけに頼らない**——空のセルの薄赤と白の差は色覚下で境目なので、`⚠` を
+   擬似要素で添える（本文の文字ではないので保存されない。class もサニタイズで落ちる）。
+   判定は ext/subcon/unlinked_orders.go。 */
+#w-editor-content td.order-unlinked { background: #fee2e2; }
+#w-editor-content td.order-unlinked::before { content: "⚠ "; color: #b91c1c; }
+#w-editor-content .unorder-unlinked {
+    margin: 0 0 8px;
+    padding: 6px 10px;
+    background: #fee2e2;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+#w-editor-content .unorder-unlinked p { margin: 0; }
+#w-editor-content .unorder-unlinked ul { margin: 4px 0 0; padding-left: 1.4em; }
+
 /* ── 発注書を送る・発注済みの印（2026-09-22）──────────────────────────────
    ユーザー:「発注書ページで**送信方法を選んで**…」「**発注書の表の一品ずつに
    発注済みの印**をつけます」。⚠ **印は本文の `状態` の列**で、ここに出るのは
