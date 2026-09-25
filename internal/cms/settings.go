@@ -524,6 +524,29 @@ func VocabularyDict() map[string]VocabWord {
 	return out
 }
 
+// TableVocabularyDict は**表ごとの例外**（`table_vocabulary`）の写しを返します
+// （`/api/tag-schema` が配ります・2026-09-26・DBの日本語化 4-2）。
+//
+// エディタは `VocabularyDict` と合わせて、**`ColumnWord` と同じ順**（例外 → 既定 → 文字列）で
+// 列の型と選択肢を引きます——それまでエディタは登録（表の種類の列の宣言）から引いていて、
+// 表の写しとは**別の正本**を読んでいました。
+func TableVocabularyDict() map[string]map[string]VocabWord {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+	out := map[string]map[string]VocabWord{}
+	if settings == nil {
+		return out
+	}
+	for table, words := range settings.TableVocabulary {
+		m := map[string]VocabWord{}
+		for word, w := range words {
+			m[word] = VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...)}
+		}
+		out[table] = m
+	}
+	return out
+}
+
 // MaxUploadBytes は設定の添付1件あたりの上限（バイト）を返します。
 //
 // **ここだけコードに数を持ちます。** 設定を読む前でも上限ゼロで受けてしまわないため

@@ -1607,6 +1607,10 @@
     // **1語につき1件で、型と選択肢を一緒に持ちます**（2026-09-14 に
     // type_inference と tag_enums の2本を畳んだ）。
     let vocabWords = {};               // { "数量": {type:"number"}, "在籍": {type:"enum", values:[...]}, ... }
+    // **表ごとの例外**（設定の `table_vocabulary`・2026-09-26・DBの日本語化 4-2）。
+    // 表の列の型と選択肢は `columnWord(表, 列)` が **例外 → vocabWords → 文字列** の順で
+    // 引きます（サーバーの `ColumnWord` と同じ順）。
+    let tableWords = {};               // { "発注明細": { "状態": {type:"enum", values:[...]} }, ... }
     // **載っている拡張**（/api/tag-schema の `extensions`・2026-09-15）。拡張の画面はこの
     // ファイルに居るので、サーバーからビルドタグで外しても**ボタンは残り、押すと404が
     // エラーの通知になっていました**（「🤖 解析」「✉️ 返信」「未分類へ戻す」）。
@@ -1628,6 +1632,7 @@
             voidTags = new Set((d && d.void) || []);
             vocabDefs = (d && d.vocab) || [];
             vocabWords = (d && d.vocabulary) || {};
+            tableWords = (d && d.table_vocabulary) || {};
             loadedExtensions = (d && Array.isArray(d.extensions)) ? new Set(d.extensions) : null;
             // **列型の一覧はサーバーが持ちます**（手書きだと型を足した日に古くなる）。
             // 空で返ってきたら初期値を守ります——「明示した型が全部無視される」より、
@@ -1645,6 +1650,7 @@
             voidTags = new Set();
             vocabDefs = [];
             vocabWords = {};
+            tableWords = {};
             loadedExtensions = null;
         }
     }
@@ -2644,15 +2650,15 @@
         placeFloating(pop, rect);
     }
 
-    // refreshColPopoverNote は「明示しない場合に効く型」（レジストリ宣言 or 推論辞書）を示す。
+    // refreshColPopoverNote は「明示しない場合に効く型」と、それを**どこが決めたか**を示す。
+    // ⚠ **2026-09-26 から語彙だけ**（DBの日本語化 4-2）——登録の列の宣言はもう読みません。
     function refreshColPopoverNote(th, key) {
         const note = document.getElementById('w-cp-note');
         const table = th.closest('table');
-        const def = table && tableDefOf(table);
-        const col = def && (def.columns || []).find(c => (c.field && c.field === key) || c.label === key);
-        if (col) note.textContent = '未指定ならレジストリ宣言: ' + col.type;
-        else if (vocabWords[key]) note.textContent = '未指定なら推論: ' + vocabWords[key].type;
-        else note.textContent = '未指定なら text 扱い';
+        const w = columnWord(table ? tableNameOf(table) : '', key);
+        if (w.from === 'table') note.textContent = '未指定なら設定の語彙（この表の例外）: ' + w.type;
+        else if (w.from === 'word') note.textContent = '未指定なら設定の語彙: ' + w.type;
+        else note.textContent = '未指定なら text 扱い（設定の語彙にない名前）';
     }
 
     // applyColType は選択された型を th の data-type へ反映する（空＝属性を外し推論に戻す）。
@@ -3010,7 +3016,7 @@
         return (def.columns || []).find(c => (c.field && c.field === key) || c.label === key) || null;
     }
 
-    // th の data-type 明示 > レジストリ宣言 > 見出し語の辞書（/api/tag-schema） > text。
+    // th の data-type 明示 > 設定の語彙（表の例外 → 列の名前・`columnWord`・2026-09-26 から） > text。
     // code は「畳んで比較する文字」（図面番号・発注書番号）。見た目も入力補助も
     // text と同じで、違うのはサーバー側の索引の畳み方だけ——だから検証は要らない。
     //
@@ -3058,7 +3064,63 @@
         sel.value = keep; // 開いたまま取得が終わっても、選んでいた型を保つ
     }
 
+    // ── 列の型と選択肢は設定の語彙から（2026-09-26・DBの日本語化 4-2）──────────
+    //
+    // ⚠ **それまでは登録（`vocabDefs` の列の宣言）から引いていました**——表の写し
+    // （`data/tables.db`）はサーバーの `ColumnWord` で**語彙**を読むので、エディタと DB が
+    // **別の正本**を見ていました。実際に5か所ずれていて、エディタは受注明細の `最短納期` を
+    // 日付でないとして薄赤にしていました（登録は `date` のまま・語彙は 09-23 から `text`）。
+    //
+    // wordKey は名前を照らす形に畳みます（NFKC・前後と重なりの空白・ASCII の大小）。
+    // サーバーの `asciiFold(TableName(s))` と同じ向きです。⚠ **違うのは1つだけ**——設定の
+    // `char_folding`（`Φ`→`φ` など）はここでは掛けません。見出しに直径記号を書く列は
+    // 無いので実害はありませんが、書いた日はサーバーとここで引き当てが割れます。
+    function wordKey(s) {
+        return String(s || '').normalize('NFKC').trim().split(/\s+/).join(' ')
+            .replace(/[A-Z]/g, c => c.toLowerCase());
+    }
+
+    // pickWord は辞書から、畳んだ名前が同じ語を探します（無ければ null）。
+    function pickWord(words, name) {
+        const k = wordKey(name);
+        if (!k || !words) return null;
+        for (const w of Object.keys(words)) {
+            if (wordKey(w) === k) return words[w];
+        }
+        return null;
+    }
+
+    // columnWord は表 table の列 column の型と選択肢を返します。
+    // 引く順は **表ごとの例外 → 列の名前の既定 → 文字列**（サーバーの `ColumnWord` と同じ）。
+    // `from` は出どころ（'table'・'word'・''）——列設定の札が「何で決まったか」を出すため。
+    function columnWord(table, column) {
+        if (table) {
+            const tk = wordKey(table);
+            for (const t of Object.keys(tableWords)) {
+                if (wordKey(t) !== tk) continue;
+                const w = pickWord(tableWords[t], column);
+                if (w) return { type: w.type, values: w.values || [], from: 'table' };
+            }
+        }
+        const w = pickWord(vocabWords, column);
+        if (w) return { type: w.type, values: w.values || [], from: 'word' };
+        return { type: 'text', values: [], from: '' };
+    }
+
+    // tableNameOf は表の名前です——**キャプションが正**、無ければ文脈から解決した形式の
+    // 表示名（節の見出しの下の素の表など。5段目でキャプションが付くまでの橋渡し）。
+    function tableNameOf(table) {
+        const cap = table.querySelector(':scope > caption');
+        if (cap && cap.textContent.trim()) return cap.textContent.trim();
+        const def = tableDefOf(table);
+        return (def && def.display_name) || '';
+    }
+
     // resolveCellColumn はセルの属する列の {type, enum} を解決する（データ行の td 用）。
+    //
+    // 型は **`th[data-type]` の明示 → 語彙（`columnWord`）→ 文字列**。選択肢も語彙から。
+    // ⚠ **どの表を検証するか**（下の `def` の関門）と **`suggest`** はまだ登録を読みます
+    // ——前者は 4-4（引き金をキャプションで）、後者は語彙に置き場が無く 4-5 までに決める。
     function resolveCellColumn(cell) {
         const table = cell.closest('table');
         if (!table || !table.rows.length) return null;
@@ -3068,15 +3130,13 @@
         if (!th) return null;
         const key = th.textContent.trim();
         const explicit = th.getAttribute('data-type');
-        const col = findVocabColumn(def, key);
-        let type = 'text';
-        if (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) type = explicit;
-        else if (col) type = col.type;
-        else if (vocabWords[key]) type = vocabWords[key].type;
+        const word = columnWord(tableNameOf(table), key);
+        const col = findVocabColumn(def, key); // `suggest` だけのため（上の注）
+        const type = (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) ? explicit : word.type;
         // `label` は見出しの表示文字（＝項目の鍵）。折り返しの判定に使う。
         // `suggest` は**候補の出どころの名前**（2026-09-21）——`enum` と違って
         // 候補が**データから来る**列（`推奨業者` など）。
-        return { label: key, type, enum: (col && col.enum) || [],
+        return { label: key, type, enum: word.values,
                  suggest: (col && col.suggest) || '' };
     }
 

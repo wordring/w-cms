@@ -62,6 +62,11 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// **2026-09-14 に `type_inference` と `tag_enums` の2本を1本へ畳みました**
 		// ——`在籍` が「選択肢だけあって型が無い」状態になっていたためです。
 		"vocabulary": VocabularyDict(),
+		// **表ごとの例外**（`table_vocabulary`・2026-09-26・DBの日本語化 4-2）。
+		// エディタは表の列の型と選択肢を **例外 → 上の既定 → 文字列** の順で引きます
+		// （`ColumnWord` と同じ順）。⚠ **登録（`vocab` の列の宣言）からは引きません**
+		// ——表の写し（`data/tables.db`）が読むのは語彙なので、エディタも同じ正本を読む。
+		"table_vocabulary": TableVocabularyDict(),
 		// `th[data-type]` として書ける列型。**エディタは手書きの一覧を持ちません**
 		// （語彙モデル §7 の原則1）——2026-09-14 まで持っていて、`datetime`・`ref`・
 		// `email` を足した日から**3つ古いまま**でした。
