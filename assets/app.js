@@ -455,6 +455,9 @@
             document.getElementById('w-user-bar').textContent =
                 '👤 ' + me.username + (me.is_admin ? '（管理者）' : '');
             if (me.is_admin) setHidden(document.getElementById('w-admin-link'), false);
+            // 検索画面（表を探す・2026-09-25）はログインした人なら誰でも使える
+            // （サーバーが読めるページの行だけ返す）。匿名には出さない。
+            setHidden(document.getElementById('w-tables-link'), false);
         } catch (e) { /* 通信エラー等は無視（編集UIは権限取得時に再判定） */ }
     }
 

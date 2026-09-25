@@ -242,6 +242,10 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/reset", cms.ResetDataAPIHandler)
 	// 「列の揃っていない表」の一覧（data/tables.db・DBの日本語化 §7 の2段目・admin限定）。
 	protected.HandleFunc("/api/admin/tables", cms.TablesReportAPIHandler)
+	// 表を探す（検索画面 assets/tables.html と AI の口・DBの日本語化 §7 の3段目）。
+	// **読めるページの行だけ**返す。自由な SQL は受けない（tables_query.go）。
+	protected.HandleFunc("/api/tables", cms.TablesAPIHandler)
+	protected.HandleFunc("/api/tables/query", cms.TableQueryAPIHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	for _, route := range cms.PluginRoutes() {

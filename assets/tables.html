@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>w-cms 表を探す</title>
+<!-- 検索画面（2026-09-25・docs/【考察】DBの日本語化.md §7 の3段目）。
+     スタイル・スクリプトは外部ファイル（CSP strict のため）。 -->
+<link rel="stylesheet" href="/assets/tables.css">
+</head>
+<body>
+  <a class="back" href="/">← エディタに戻る</a>
+  <h1>🔎 表を探す</h1>
+  <div id="whoami"></div>
+  <p class="hint">
+    本文の<strong>キャプションのある表</strong>を、キャプションの名前で探せます（列は見出し）。
+    同じ名前の表は、ページをまたいで1つの表にまとまっています。<strong>読めるページの行だけ</strong>が出ます。
+    条件の値は、表に入れたときと同じように揃えてから比べます（全角・半角、半角カナの違いは気にしなくて大丈夫です）。
+  </p>
+
+  <div class="card">
+    <div class="row">
+      <label>表 <select id="tq-table"></select></label>
+      <span id="tq-rows" class="hint"></span>
+    </div>
+    <div class="row row--gap-sm">
+      <span class="label">出す列</span>
+      <span id="tq-columns" class="columns"></span>
+    </div>
+    <div class="row row--gap-sm">
+      <span class="label">条件</span>
+      <div id="tq-where" class="where"></div>
+    </div>
+    <div class="row row--gap-sm">
+      <button class="sub" id="tq-add">＋ 条件を足す</button>
+      <button id="tq-run">探す</button>
+      <span id="tq-msg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="tq-summary" class="hint"></div>
+    <div class="result-scroll">
+      <table id="tq-result"><thead></thead><tbody></tbody></table>
+    </div>
+    <details id="tq-sql-box" class="sql-box is-hidden">
+      <summary>SQL で書くと（DB を直接開ける運用者向け）</summary>
+      <pre id="tq-sql"></pre>
+      <p class="hint">data/tables.db を SQL の道具で開くと、この文で同じ行が引けます（読めるページの絞りは入りません）。</p>
+    </details>
+  </div>
+
+<script src="/assets/tables.js"></script>
+</body>
+</html>

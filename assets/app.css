@@ -1588,6 +1588,9 @@ body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty:
     font-size: 12px;
 }
 
+/* 検索画面へのリンク（2026-09-25）——管理（紫）と見分けが付くように色を変える。 */
+.tables-link { background: #0f766e; }
+
 .logout-btn {
     margin-right: 12px;
     padding: 5px 10px;
