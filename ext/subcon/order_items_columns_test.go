@@ -39,7 +39,10 @@ func TestOrderItemColumns(t *testing.T) {
 		{"単位", cms.ColEnum}, // ⚠ 落とすと数量の意味が変わる（個／セット）
 		{"単価", cms.ColNumber},
 		// ⚠ **行の納期は、ページのタグの納期とは別物**（原本の証拠／弊社の管理）。
-		{"納期", cms.ColDate},
+		// ⚠ **型は `text`**（2026-09-23 利用者決定・「最短納期」のような自由文が入る）。
+		// 2026-09-26 まで登録だけ `date` のまま残り、ここもそれを固定していました
+		// （語彙との一致は `TestRegistryAgreesWithVocabulary` が見ます）。
+		{"納期", cms.ColText},
 		// ⚠ **分納があるので要ります**——「100個のうち40個だけ出した」は
 		// `状態` だけでは表せません。
 		{"出荷済み", cms.ColNumber},

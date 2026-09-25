@@ -227,7 +227,7 @@ var vocabRegistry = []VocabDef{
 		Icon:        "📋",
 		Element:     "table",
 		Columns: []VocabColumn{
-			{Label: "品番", Type: ColText},
+			{Label: "品番", Type: ColCode},
 			{Label: "判定", Type: ColEnum, Enum: []string{"合格", "不合格"}},
 			{Label: "検査写真", Type: ColImage},
 			{Label: "検査日", Type: ColDate},

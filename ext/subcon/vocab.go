@@ -202,7 +202,7 @@ var businessVocab = []cms.VocabDef{
 		Columns: []cms.VocabColumn{
 			{Field: "step", Label: "工程", Type: cms.ColText},
 			{Field: "amount", Label: "数", Type: cms.ColNumber},
-			{Field: "unit", Label: "単位", Type: cms.ColText},
+			{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 		},
 	},
@@ -235,7 +235,7 @@ var businessVocab = []cms.VocabDef{
 		Hidden:      true,
 		Columns: []cms.VocabColumn{
 			{Field: "revision", Label: "版", Type: cms.ColText},
-			{Field: "drawing-no", Label: "図面番号", Type: cms.ColText},
+			{Field: "drawing-no", Label: "図面番号", Type: cms.ColCode},
 			{Field: "received-at", Label: "受領日", Type: cms.ColDate},
 		},
 	},
@@ -285,7 +285,7 @@ var businessVocab = []cms.VocabDef{
 			//
 			// 選択肢は**縛りではなく見分けるための表**です（語彙モデル §5.1）——
 			// ここに無い単位も書けて、画面が色で知らせるだけ。
-			{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: []string{"個", "セット"}},
+			{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
 			{Field: "price", Label: "単価", Type: cms.ColNumber},
 			// ⚠ **行にも納期を持ちます**（2026-09-20 ユーザー:「弊社品番の入った受注表
 			// には**納期も必要**だと思います」）。**ページのタグの納期とは別物**です:
@@ -298,7 +298,8 @@ var businessVocab = []cms.VocabDef{
 			// （ユーザー:「その後顧客の依頼や弊社の事情で個別に納期が変わることが
 			// あります。すると行の納期を書き換えます」「全部揃えられないときは、
 			// **半分だけ分納**するようなこともあります」）。
-			{Field: "due", Label: "納期", Type: cms.ColDate},
+			// ⚠ **型は `text`**（2026-09-23 利用者決定・「最短納期」のような自由文が入る）。
+			{Field: "due", Label: "納期", Type: cms.ColText},
 			// ⚠ **分納があるので、出荷済みの数量が要ります**（2026-09-20 ユーザー:
 			// 「さらに、**出荷済みの数量**も必要です。**分納することがあるから**です」）。
 			//
@@ -518,6 +519,14 @@ func headerRowHTML(vocabType string) string {
 	return b.String()
 }
 
+// unitChoices は `単位` の選択肢です（受注明細・見積もり・発注明細・発注部材表で同じ）。
+//
+// ⚠ **正本は `config/settings.json` の語彙**（2026-09-25 の 4-1 で選択肢を多いほうに合わせた）。
+// 登録（ここ）は縦持ちの索引が読むので残っています——**変えるときは両方**。ずれたら
+// `TestRegistryAgreesWithVocabulary` が落ちます。⚠ **関数にしてあるのは、スライスを
+// 共有すると片方の書き換えがもう片方に及ぶから**（`orderItemColumns` と同じ理由）。
+func unitChoices() []string { return []string{"個", "セット", "本", "枚", "kg", "m"} }
+
 // orderItemColumns は発注の明細の列です。
 //
 // ⚠ **発注明細（`our-order-items`）と発注部材表（`order-draft`）で共有します**
@@ -546,7 +555,7 @@ func orderItemColumns() []cms.VocabColumn {
 		//    直すのは表示文字のほう）。
 		{Field: "color", Label: "表面", Type: cms.ColText},
 		{Field: "quantity", Label: "数量", Type: cms.ColNumber},
-		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: []string{"個", "セット", "本", "枚", "kg", "m"}},
+		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
 		{Field: "cost", Label: "単価", Type: cms.ColNumber},
 		{Field: "note", Label: "備考", Type: cms.ColText},
 		// ⚠ **発注済みの印は、ここです**（2026-09-22 ユーザー決定:「発注書の表の
