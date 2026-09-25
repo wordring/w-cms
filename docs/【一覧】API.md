@@ -221,7 +221,19 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 | POST | `/api/admin/reset` | **データの初期化**（2026-09-16。開発中の入れ直し用。ユーザー:「管理ページにデータの初期化ボタンが欲しいくらいです」）。`{"confirm": "初期化"}`——⚠ **合言葉はサーバーでも見ます**（画面だけで守ると口を直に叩けば素通りする）。**消す前に `data/_reset-<日時>/` へ丸ごと移すので取り消せます**（`<控え>/master` を `data/master` へ戻すだけ）。消すのはページ・ゴミ箱・派生索引で、**残すのは3つ**——`data/mail`（メールのトークン）・`auth.db`（利用者）・`data/tls`（**各PCの信頼ストアに入れた証明書**）。応答は `{success, summary{pages, backup_dir, rebuilt, kept_notice}}`。監査記録は `data.reset`。正本は [reset_data.go](../internal/cms/reset_data.go) |
 | GET/POST | `/api/admin/pages` | **拡張が要る置き場**（2026-09-16。トップ直下の通信箱・取引先・受注・テンプレート置き場）。GET は `{success, pages}` で `{title, extension, why, page_id, exists, duplicates?}` の並び（`duplicates` は**同じ題の余りのページ**。普通は空で、在るときだけ画面が ⚠ を出す——`page_id` は**いちばん古いもの**で、余りは誰からも使われない）——**載っている拡張のぶんだけ**出る（`-tags minimal` ではコアの1件）。POST は**足りないものだけ**作り、`{success, created, pages}` を返す（**冪等**。何度押しても増えない）。⚠ **起動時には作りません**——人が押したことが、そのページを置く意図（通信箱の 2026-09-05 の決定を保つ）。⚠ **本文は宣言した拡張が持ちます**（作業面込み。見出しだけの箱は行き止まりになる）。監査記録は `required-page.create`。正本は [required_pages.go](../internal/cms/required_pages.go) |
 | GET | `/api/admin/audit` | 監査ログの参照。直近200件。記録対象は認証イベント（`login`/`login.fail`/`logout`）・保存・ページ作成／削除・添付（`attach`/`attach.overwrite`）・親の付け替え・権限変更（公開切替 `publish`/`unpublish` を含む）・ロック強制解除・索引の全再構築・ユーザー／グループ管理・取り込み（`intake.create`/`intake.duplicate`）・PDF判定（`analyze-pdf`）（[認証認可設計.md](認証認可設計.md) §9.4） |
-| POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え）。先頭で `config/settings.json` を読み直す |
+| POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え）。先頭で `config/settings.json` を読み直す。⚠ 2026-09-25 から **`data/tables.db`（表の写し）も**作り直す |
+| GET | `/api/admin/tables` | **列の揃っていない表の一覧**（2026-09-25・DBの日本語化 §7 の2段目）。`{success, tables}` で `{name, pages, rows, needs_quote, leftover, suspects, columns[{name, pages, needs_quote, suspect, leftover}]}` の並び。**本文の見出し**を数え直す（値ではない）。`suspect` は2ページ以上ある表で1ページにしか無い見出し、`leftover` は本文にはもう無い表・列（再構築で消える）。正本は [tables_report.go](../internal/cms/tables_report.go) |
+
+### 6.1. 表を探す（要認証・⚠ admin 限定ではない）
+
+2026-09-25・[【考察】DBの日本語化.md](【考察】DBの日本語化.md) §7 の3段目。
+検索画面（`/assets/tables.html`）と AI の口。**読めるページの行だけ**返し、**自由な SQL は受けない**。
+正本は [tables_query.go](../internal/cms/tables_query.go)。
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| GET | `/api/tables` | 探せる表と列。`{success, tables[{name, columns, rows}]}`——**読めるページに行のある表**と、**読めるページに値のある列**だけ（名前そのものが読めないページの中身を語ることがあるため） |
+| POST | `/api/tables/query` | 表を探す。`{table, columns?, where?[{column, op, value}], limit?}`——`op` は `eq`（等しい）・`contains`（含む）・`gte`（以上）・`lte`（以下）の4つ。表・列の名前は**DB に実際にある名前と照らして**から使い、値は**DB に入れたときと同じ正規化**を掛けて `?` で渡す。`limit` は既定200・上限1000。応答は `{success, result{table, columns, rows[{page_id, title, table_id, row_id, values}], truncated, sql}}`——`sql` は運用者が DB を直接開いて同じことを引く文（表示用・読めるページの絞りは入らない）。知らない名前・種類は 400 |
 
 > ⚠ **`/api/intake/memo`・`/api/intake/handled` はここではありません**（2026-09-16 に直した）。
 > どちらも **admin 限定ではなく**（要認証＋対象ページの write）、**コアの口でもありません**
