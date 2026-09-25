@@ -1,10 +1,14 @@
 // Package database は SQLite への接続とコアテーブルの作成を担います。
 //
-// データベースは**2つ**あり、寿命がまったく違います。
+// データベースは**3つ**あり、寿命がまったく違います。
 //
 //   - [DB]（data/cms.db）……**使い捨ての派生インデックス**。正本は data/master 配下の
 //     本文HTMLと属性サイドカーで、cms.db はそこから丸ごと再生成できます
 //     （cms.RebuildDatabase）。バックアップの対象ではありません。
+//   - [TablesDB]（data/tables.db）……**本文の表を、キャプションの名前の表として写したもの**
+//     （2026-09-25・docs/【考察】DBの日本語化.md）。cms.db と同じく**派生**で、再構築で
+//     作り直せます。表の名前も列の名前も**本文に人が書いた文字**なので、中核の表と
+//     名前がぶつからないよう**別のファイル**に置きます。運用者が SQL で開くのはこちら。
 //   - [AuthDB]（data/auth.db）……利用者・グループ・セッション。**ファイルから再生成
 //     できない**情報なので、data/master とは別に必ずバックアップします。
 //
@@ -27,6 +31,20 @@ import (
 
 // DB はアプリケーション全体で共有されるデータベース接続のインスタンスです。
 var DB *sql.DB
+
+// TablesDB は本文の表の写し（data/tables.db）への接続です。**開いていなければ nil** で、
+// そのときは表の写しを作りません（試験の多くはこれを開かない）。
+var TablesDB *sql.DB
+
+// InitTablesDB は data/tables.db を開きます（表はページを同期するときに作られます）。
+func InitTablesDB() error {
+	if err := os.MkdirAll("data", 0755); err != nil {
+		return err
+	}
+	var err error
+	TablesDB, err = openSQLite("tables.db")
+	return err
+}
 
 // InitDB はデータ保存用フォルダの確保と、SQLiteデータベースの初期化・テーブル作成を行います。
 func InitDB() error {

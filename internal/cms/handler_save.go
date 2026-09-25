@@ -250,6 +250,9 @@ func saveEcho(id, updatedAt, safeHTML, rawHTML string, sanitized bool) map[strin
 		"unknown_types":     UnknownVocabTypes(safeHTML),
 		"unresolved_fields": UnresolvedVocabFields(safeHTML),
 		"stripped_ids":      ShellPrefixedIDs(rawHTML),
+		// SQL で引くとき気をつける表の名前・見出し（予約語・引用符の要る名前・予約した列）
+		// ——2026-09-25 利用者:「表の見出しに予約語が来たら警告してください」（tables_db.go）。
+		"table_notes": TableNameNotes(safeHTML),
 	}
 }
 

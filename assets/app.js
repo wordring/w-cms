@@ -876,6 +876,14 @@
             { type: 'warn', duration: 10000, id: 'unresolved-fields' });
     }
 
+    // notifyTableNotes は、表の名前・見出しのうち **SQL で引くとき気をつけるもの**の告知
+    // （2026-09-25 利用者:「表の見出しに予約語が来たら警告してください」）。文はサーバーが組む
+    // （tables_db.go の TableNameNotes）。保存は通す——拒否ではなく告知。
+    function notifyTableNotes(notes) {
+        if (!Array.isArray(notes) || !notes.length) return;
+        notify(notes.join('。') + '。', { type: 'warn', duration: 10000, id: 'table-notes' });
+    }
+
     // notifyStrippedIDs は「殻が独占する接頭辞つきの id を剥がした」ことの告知。
     // 本文の id は自由だが、この接頭辞だけは画面側（シェル）の名前空間なので侵させない。
     function notifyStrippedIDs(ids) {
@@ -971,6 +979,7 @@
             notifyUnknownTypes(data.unknown_types);
             notifyUnresolvedFields(data.unresolved_fields);
             notifyStrippedIDs(data.stripped_ids);
+            notifyTableNotes(data.table_notes);
             // 保存できた状態を記録する（次回の差分判定の基準）
             lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
             setSaveStatus("✅ 保存済", "#10b981");
@@ -1019,6 +1028,7 @@
             notifyUnknownTypes(data.unknown_types);
             notifyUnresolvedFields(data.unresolved_fields);
             notifyStrippedIDs(data.stripped_ids);
+            notifyTableNotes(data.table_notes);
             setSaveStatus("✅ 保存済", "#10b981");
         })
         .catch(onSaveFailed);

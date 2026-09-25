@@ -78,6 +78,13 @@ func main() {
 	}
 	defer database.DB.Close()
 
+	// 表の写し（data/tables.db・キャプションの名前の表。docs/【考察】DBの日本語化.md）。
+	// 中身はページを同期するときに作られる（下の RebuildIfNeeded が初回に作り直す）。
+	if err := database.InitTablesDB(); err != nil {
+		log.Fatalf("表の写しのDB初期化エラー: %v", err)
+	}
+	defer database.TablesDB.Close()
+
 	// 既存DBの定義が現在の宣言とずれていないか先に見る。ApplySchema は
 	// CREATE TABLE IF NOT EXISTS を流すだけで、**既に在るテーブルの定義変更は
 	// 反映されない**ため、放っておくと起動は成功して保存だけが 500 になる。

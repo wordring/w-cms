@@ -123,6 +123,17 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 //
 // ⚠ **値は見ません——タグが在ることで止めます**（フェイルクローズ）。誰かが知らない
 // 値を書いても、止まる側に倒れます。直したら**タグごと消す**のが運用です。
+// ⚠ **`移行中` のページの表は、表の写し（data/tables.db）にも入れません**（2026-09-25）。
+// 利用者:「まずDBに入れずにページを移植し、表のタイトルなど必要なものをClaudeに指摘して
+// 貰い、私がそれに返答して移植ページを更新しましょう。その後、管理ページでDBを再構築します」
+// （【考察】DBの日本語化 §3.6）。**コアは業務の言葉を知らない**ので、ここから渡します
+// （開発方針 §0）。値は見ず、**在るだけで止めます**（isMigrating と同じ）。
+func init() {
+	cms.RegisterTablesExclusion(func(root *html.Node) bool {
+		return cms.HasTag(root, MigratingTag)
+	})
+}
+
 func isMigrating(db cms.ReadOnlyDB, pageID int) bool {
 	tags, err := cms.TagsOfPage(db, pageID)
 	if err != nil {

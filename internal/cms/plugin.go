@@ -283,6 +283,27 @@ func TagValue(root *html.Node, tagName string) string {
 	return found
 }
 
+// HasTag は本文の可変タグに、名前 tagName のタグが**在るか**を返します（値が空でも在る）。
+//
+// 「在るだけで止める」印（フェイルクローズ）を見るための口です——TagValue は値が空だと
+// 「無い」と区別が付きません。
+func HasTag(root *html.Node, tagName string) bool {
+	found := false
+	WalkElements(root, func(n *html.Node) {
+		if found || n.Data != "dl" || vocabTypeOf(n) != "tags" {
+			return
+		}
+		eachDLPair(n, false, func(key string, _ *html.Node) bool {
+			if key == tagName {
+				found = true
+				return false
+			}
+			return true
+		})
+	})
+	return found
+}
+
 // dlTagValue は <dl data-type="tags"> の中から名前 tagName の最初の値を返します。
 // 鍵は dt の表示文字（自由語）です（②汎用索引と同じ規則）。
 func dlTagValue(dl *html.Node, tagName string) string {

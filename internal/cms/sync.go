@@ -158,7 +158,17 @@ func SyncIndex(id string, htmlContent string) error {
 		}
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	// 手順6: 表の写し（data/tables.db・キャプションの名前の表）——tables_db.go。
+	// ⚠ **派生なので、失敗しても保存は止めません**（運用者が SQL の道具で書き込みロックを
+	// 握っていることがある）。ログに残し、DB再構築で直ります。
+	if err := syncCaptionTables(id, pageIDInt, root); err != nil {
+		log.Printf("表の写し（tables.db）の同期に失敗 page=%s: %v", id, err)
+	}
+	return nil
 }
 
 // RebuildDatabase は、HTMLファイル群（data/master配下）を正として、
@@ -184,7 +194,11 @@ func RebuildDatabase() error {
 	}
 
 	// 1. 現在DBに存在する全テーブルを sqlite_master から列挙してDROPする。
+	//    表の写し（data/tables.db）も空にする（ページを入れ直すときに作り直される）。
 	if err := dropAllTables(database.DB); err != nil {
+		return err
+	}
+	if err := ResetTablesDB(); err != nil {
 		return err
 	}
 
@@ -343,6 +357,13 @@ func RebuildIfNeeded() error {
 	}
 	if unfinished {
 		log.Println("前回の索引再構築が完了していません: やり直します")
+		return RebuildDatabase()
+	}
+
+	// 表の写し（data/tables.db）が今の作り方で作られていなければ作り直す
+	// （この仕組みが入った版で初めて起動したとき・作り方を変えたとき）。
+	if tablesDBOutdated() {
+		log.Println("表の写し（data/tables.db）を今の作り方で作り直します: 再構築します")
 		return RebuildDatabase()
 	}
 
