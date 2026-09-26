@@ -24,11 +24,11 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const CODE = 'E2E-DRAFT-' + Date.now().toString(36).toUpperCase();
 const PRODUCT_BODY = '<h1>【E2E】加工製品（発注部材表）</h1>' +
   '<dl data-type="tags"><dt>部品番号</dt><dd>' + CODE + '</dd></dl>' +
-  '<section><h2>材料</h2><table><tbody>' +
+  '<table><caption>材料</caption><tbody>' +
   '<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th><th>備考</th></tr>' +
   '<tr><td>E2E-DRAFT-A</td><td>板</td><td>t3.2</td><td>2</td><td></td></tr>' +
   '<tr><td>E2E-DRAFT-B</td><td>板</td><td>t1.5</td><td>1</td><td></td></tr>' +
-  '</tbody></table></section>';
+  '</tbody></table>';
 const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1>' +
   '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-DRAFT-PO</dd>' +
   '<dt>発注元</dt><dd>テスト商店</dd><dt>発注日</dt><dd>2026-09-23</dd></dl>' +

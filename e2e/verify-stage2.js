@@ -115,14 +115,18 @@ async function waitSaved(page) {
         const vocabItem = page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:inspection-record"]');
         check('レジストリ由来の項目がある', await vocabItem.count() === 1);
         await vocabItem.click();
-        // 見出し形（D-2）: <section><h2>検査記録</h2><table>…</table></section>。
-        // data-type は書かれない——見える言葉（見出しと th）が人にも機械にも宣言になる。
-        const insSection = page.locator('#w-editor-content section').filter({ hasText: '検査記録' }).first();
-        await insSection.waitFor({ timeout: 4000 });
-        check('骨格: 見出しが機能を宣言する', (await insSection.locator('h2').first().innerText()).trim() === '検査記録');
-        check('骨格: data-type は書かれない', await insSection.getAttribute('data-type') === null);
-        const table = insSection.locator('table');
+        // **表はキャプションで名乗る**（2026-09-26・DBの日本語化 5段目・利用者:「全面的に
+        // キャプションに置き換える」）: <table><caption>検査記録</caption>…</table>。
+        // それまでの見出し形（<section><h2>検査記録</h2><table>）は、表の写し
+        // （data/tables.db）に入らなかった。data-type は書かれない——見える言葉が宣言になる。
+        const table = page.locator('#w-editor-content table')
+            .filter({ has: page.locator('caption', { hasText: '検査記録' }) }).first();
         await table.waitFor({ timeout: 4000 });
+        check('骨格: キャプションが表の名前を宣言する',
+            (await table.locator('caption').first().innerText()).trim() === '検査記録');
+        check('骨格: data-type は書かれない', await table.getAttribute('data-type') === null);
+        check('骨格: 見出し形の節で包まない',
+            await table.evaluate((t) => !(t.parentElement && t.parentElement.tagName === 'SECTION')));
         const headers = await table.locator('tr').first().locator('th').allInnerTexts();
         check('骨格: 見出しがレジストリの列定義どおり', headers.join(',') === '品番,判定,検査写真,検査日');
         check('骨格: データ行が1行ある', await table.locator('tr').count() === 2);
@@ -223,7 +227,7 @@ async function waitSaved(page) {
         await caretInto(page, cell(1, 1)); // 「判定」のデータセル
         await page.waitForSelector('#w-enum-menu.active', { timeout: 4000 });
         const choices = await page.locator('#w-enum-menu button').allInnerTexts();
-        check('enum: 選択肢はレジストリの2件', choices.join(',') === '合格,不合格');
+        check('enum: 選択肢は設定の語彙の2件（4-2 から・それまでは登録）', choices.join(',') === '合格,不合格');
         await page.locator('#w-enum-menu button').first().click();
         check('enum: クリックで値が入る', (await cell(1, 1).innerText()) === '合格');
         check('enum: 選択後メニューは閉じる',
@@ -392,10 +396,20 @@ async function waitSaved(page) {
         // ── 保存往復（リロードして残っているか・実行時の印が残っていないか） ──
         await waitSaved(page);
         await page.goto(pageURL.replace('?edit=true', ''));
-        // 見出し形（D-2）: 検査記録は data-type ではなく <h2>検査記録</h2>＋素の表で保存される
-        await page.waitForSelector('#w-editor-content section h2', { timeout: 8000 });
-        const savedHTML = await page.locator('#w-editor-content').innerHTML();
-        check('保存往復: 見出し形の表が残る', savedHTML.includes('検査記録') && /<section[^>]*>\s*<h2/.test(savedHTML));
+        // 検査記録は data-type ではなく <caption>検査記録</caption> で名乗って保存される
+        await page.waitForSelector('#w-editor-content table caption', { timeout: 8000 });
+        // ⚠ **保存された本文を読みます**（`/api/load`）——画面の DOM ではありません。
+        // 2026-09-21 から型の印（cell-known など）は**閲覧モードでも**付くので、画面の
+        // innerHTML を見ると「保存本文に漏れた」と誤って落ちていました（2026-09-26 に直した。
+        // 保存本文には1件も無く、サニタイザは class をそもそも通さない）。
+        const savedPageId = (pageURL.match(/\/(\d{6})/) || [])[1];
+        const savedHTML = await page.evaluate(async (id) =>
+            (await fetch('/api/load?id=' + id, { credentials: 'same-origin' })).text(), savedPageId);
+        // ⚠ 表は最上位のブロックになったので `data-id` が付きます（それまでは包む節に付いていた）。
+        // 見るのは「`data-type` の無い table の直後に caption」。
+        check('保存往復: キャプションで名乗る表が残る',
+            /<table(?![^>]*data-type)[^>]*>\s*<caption>検査記録<\/caption>/.test(savedHTML) &&
+            !/<section[^>]*>\s*<h2>検査記録/.test(savedHTML));
         check('保存往復: dl が残る', savedHTML.includes('data-type="tags"'));
         check('保存往復: 未知種別も保存される', savedHTML.includes('data-type="mystery-form"'));
         check('保存往復: enum で入れた値が残る', savedHTML.includes('合格'));
@@ -442,10 +456,21 @@ async function waitSaved(page) {
             (await page.locator('#w-slash-menu .slash-menu-item:visible').first().innerText()).includes('発注'));
 
         // 矢印＋Enter で選べる（絞り込み後も操作は同じ）。
+        // ⚠ 挿されるものは種類で形が違います（2026-09-26）——**表の種類はキャプションで名乗る表**、
+        // ビューなどは見出し形の節。だから「選んだ項目の名前が、キャプションか節の見出しに出たか」を見る。
+        // 項目は `<div class="slash-menu-item"><b>アイコン</b> 名前</div>`——名前はアイコンの後ろの素の文字。
+        const pickedItem = page.locator('#w-slash-menu .slash-menu-item:visible').first();
+        const picked = await pickedItem.evaluate((el) =>
+            [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim());
+        const pickedType = await pickedItem.getAttribute('data-type');
         await page.keyboard.press('Enter');
         await page.waitForTimeout(600);
-        check('絞り込んだ項目を Enter で挿せる',
-            (await page.locator('#w-editor-content section').filter({ hasText: '発注' }).locator('table').count()) >= 1);
+        const insertedNames = await page.evaluate(() => [
+            ...[...document.querySelectorAll('#w-editor-content table > caption')].map((c) => c.textContent.trim()),
+            ...[...document.querySelectorAll('#w-editor-content section > h2')].map((h) => h.textContent.trim()),
+        ]);
+        check('絞り込んだ項目を Enter で挿せる（' + picked + '）',
+            !!picked && insertedNames.includes(picked));
         check('絞り込みの文字が本文に残らない',
             !(await page.locator('#w-editor-content').innerText()).includes('/発注'));
 
@@ -468,9 +493,10 @@ async function waitSaved(page) {
             }
             return null;
         });
-        // 直前に挿した項目が先頭へ来る（絞り込みの語を 発注 にしたので
-        // 挿さるのは 顧客の発注書）。
-        check('よく使う項目が分類の先頭へ来る', firstInCategory === 'vocab:client-order');
+        // 直前に挿した項目が先頭へ来る。⚠ 期待値は**上で Enter で挿した項目**です——
+        // 2026-09-26 まで `vocab:client-order`（顧客の発注書）を焼き込んでいて、その形式が
+        // 09-18 に消えてから落ち続けていました。
+        check('よく使う項目が分類の先頭へ来る（' + pickedType + '）', !!pickedType && firstInCategory === pickedType);
         await page.keyboard.press('Escape');
         // ── リンクの挿入とプロパティ欄（【考察】添付ファイルの表示と操作 §4） ──
         // 「編集するのにダイアログが出るのは使いにくかった。プロパティ欄があるものが

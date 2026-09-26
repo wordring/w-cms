@@ -20,11 +20,11 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 const MAT_BODY = '<h1>【E2E】材料の参考単価</h1>' +
   '<dl data-type="tags"><dt>部品番号</dt><dd>E2E-MATPRICE</dd></dl>' +
-  '<section><h2>材料</h2><table><tbody>' +
+  '<table><caption>材料</caption><tbody>' +
   '<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th><th>備考</th></tr>' +
   '<tr><td>E2E-SS400</td><td>板</td><td>t3.2</td><td>2</td><td>買った記録があるはず</td></tr>' +
   '<tr><td>E2E-SUS304</td><td>板</td><td>t1.5</td><td>4</td><td>買った記録は無いはず</td></tr>' +
-  '</tbody></table></section>';
+  '</tbody></table>';
 
 const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
   '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-PO</dd>' +
@@ -54,10 +54,12 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
     await page.waitForTimeout(1200); // 印が付くのを待つ
 
     const r = await page.evaluate(() => {
-      const h = [...document.querySelectorAll('#w-editor-content h2')]
+      // 材料の表は**キャプションで名乗る**（2026-09-26・DBの日本語化 5段目。それまでは
+      // `<section><h2>材料</h2><table>` の見出し形で、表の写しに入らない形だった）。
+      const cap = [...document.querySelectorAll('#w-editor-content table > caption')]
         .find((e) => e.textContent.trim() === '材料');
-      if (!h) return null;
-      const t = h.closest('section').querySelector('table');
+      if (!cap) return null;
+      const t = cap.parentElement;
       const rows = [...t.querySelectorAll('tr')];
       const head = [...rows[0].children].map((c) => c.textContent.trim());
       const lastOf = (i) => rows[i].lastElementChild;
@@ -75,7 +77,7 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
         pageScrolls: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       };
     });
-    if (!r) { console.log('NG 材料の節が見つかりません'); process.exit(1); }
+    if (!r) { console.log('NG キャプション「材料」の表が見つかりません'); process.exit(1); }
 
     say(r.priceCol === '最新単価', '参考単価の列が出る（末尾は「' + r.priceCol + '」）');
     say(/800円/.test(r.hit), '買った記録がある行に単価が出る（' + r.hit + '）');

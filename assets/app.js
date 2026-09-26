@@ -2046,18 +2046,37 @@
         return table;
     }
 
+    // buildCaptionTable は**キャプションで名乗る表**を組みます（2026-09-26・DBの日本語化 5段目）。
+    //
+    // 利用者:「全面的にキャプションに置き換える」。表の写し（`data/tables.db`）は**キャプションの
+    // ある表だけ**を読むので、それまでの見出し形（`<section><h2>材料</h2><table>`）と
+    // `data-type` 形で挿した表は、**書いても表の写しに入りませんでした**。
+    // ⚠ `data-type` は書きません（機械が書く表と同じ・09-23）——名前は見える文字だけが持つ。
+    function buildCaptionTable(name, columns) {
+        const table = buildPlainTable(columns);
+        const cap = document.createElement('caption');
+        cap.textContent = name;
+        table.insertBefore(cap, table.firstChild);
+        return table;
+    }
+
     function buildVocabSkeleton(def) {
+        // **表の種類は全部キャプションで挿します**（上の buildCaptionTable）。見出し形の節で
+        // 包むのは、表でない種類（ビューのマーカー・節）だけになりました。
+        if (def.element === 'table') {
+            return buildCaptionTable(def.display_name || def.type, def.columns);
+        }
         if (usesHeadingForm(def)) {
             // 見出し形（D-2）: <section><h2>表示名</h2>…素の中身…</section>。
             // 機械語は本文に書かない——section の役割は見出しの言葉が、列は th / dt の
             // 表示文字が宣言し、サーバーはレジストリ（表示名・Items）で解釈する。
+            // ⚠ **ビュー（必要部材表など）はいまもこの形で挿され、節の見出しで解かれます**
+            // ——表をキャプションへ移しても、この解決は消せません（2026-09-26 に確認）。
             const sec = document.createElement('section');
             const h = document.createElement('h2');
             h.textContent = def.display_name || def.type;
             sec.appendChild(h);
-            if (def.element === 'table') {
-                sec.appendChild(buildPlainTable(def.columns));
-            } else if (def.element === 'dl') {
+            if (def.element === 'dl') {
                 sec.appendChild(buildPlainDl(def.columns));
             } else { // section: ヘッダ dl ＋（Items 宣言があれば）素の明細表
                 if (def.columns && def.columns.length) sec.appendChild(buildPlainDl(def.columns));
@@ -2106,24 +2125,9 @@
             });
             return dl;
         }
-        // table: 最初の tr が見出し行（列の鍵と型を運ぶ。文書自身がスキーマを携帯する）
-        const table = document.createElement('table');
-        table.setAttribute('data-type', def.type);
-        const tbody = document.createElement('tbody');
-        const head = document.createElement('tr');
-        const row = document.createElement('tr');
-        (def.columns || []).forEach(col => {
-            const th = document.createElement('th');
-            // 見出しの表示文字が列の鍵になる（機械キーはレジストリの Label 経由で解決され、
-            // 本文には書き出さない。語彙モデル §5.1「見える文字がすべて」）
-            th.textContent = col.label;
-            head.appendChild(th);
-            row.appendChild(document.createElement('td'));
-        });
-        tbody.appendChild(head);
-        tbody.appendChild(row);
-        table.appendChild(tbody);
-        return table;
+        // ⚠ **表の種類はここまで来ません**（冒頭でキャプション形に返す）。2026-09-26 まで
+        // ここに `<table data-type="…">` を組む枝がありました。
+        return null;
     }
 
     // focusFirstCell は挿入直後の骨格の最初の入力先（td / dd）へキャレットを置く。
