@@ -98,9 +98,14 @@ func TestFileDrawingsAddsSecondDrawing(t *testing.T) {
 	if strings.Count(body, "<section") != strings.Count(body, "</section>") {
 		t.Errorf("⚠ 本文が釣り合っていません:\n%s", body)
 	}
+	// ⚠ 見る文字は `<caption>改訂明細</caption>`（2026-09-27 から解析はキャプションだけで書く）。
+	// 「改訂履歴」のまま見ていると、本文から消えたその文字は**いつでも含まれず、空振り**します。
 	first1 := cms.FirstBlockHTML(body)
-	if strings.Contains(first1, "改訂履歴") {
-		t.Errorf("⚠ 改訂履歴が図面ブロックに飲み込まれています:\n%s", body)
+	if strings.Contains(first1, "<caption>改訂明細</caption>") {
+		t.Errorf("⚠ 改訂明細が図面ブロックに飲み込まれています:\n%s", body)
+	}
+	if !strings.Contains(body, "<caption>改訂明細</caption>") {
+		t.Errorf("改訂明細が消えています:\n%s", body)
 	}
 	// ⚠ **2枚が入れ子になっていないこと。** 足す位置を入れ子を数えずに探すと、
 	// 2枚目が1枚目の**中**（ファイル表示の直後）へ入ります——釣り合いも枚数も

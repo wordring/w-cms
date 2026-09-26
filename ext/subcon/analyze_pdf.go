@@ -679,8 +679,8 @@ func buildProductPageHTML(hostPageID, attachID string, j *orderJudgment, matches
 	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
 	sec := drawingSectionHTML(j, hostPageID, attachID, matches, "")
 	b.WriteString(sec)
-	// 改訂履歴は**下に**置く（図面は新しいものが上に積まれるので、位置が競合しない）。
-	b.WriteString(revisionsSectionHTML(j, sec))
+	// 改訂明細は**下に**置く（図面は新しいものが上に積まれるので、位置が競合しない）。
+	b.WriteString(revisionsTableHTML(j, sec))
 	return b.String()
 }
 
@@ -768,19 +768,26 @@ func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
 	return b.String()
 }
 
-// revisionsSectionHTML は改訂履歴のブロックを組みます（1版目）。
+// revisionsTableHTML は改訂明細の表を組みます（1版目）。
 //
 // **行が社内コードの指し先です**——`ページID-行ID` で押せばその版へ飛びます
 // （2026-09-03 ユーザー:「改訂履歴の項目を作り版にdata-idを割り当てれば良いのでは？」）。
 // 図面ブロックは消せる決まりなので指し先にせず、消す理由の無い小さな行を指します。
-func revisionsSectionHTML(j *orderJudgment, existingBody string) string {
+//
+// ⚠ **キャプションだけで名乗ります**（2026-09-27 利用者:「改訂履歴はキャプションだけで良い
+// です」「メニューの方も用語を統一したほうが良いのでは？」）。それまでは
+// `<section><h2>改訂履歴</h2><table><caption>改訂明細</caption>` で、**同じものに「改訂履歴」と
+// 「改訂明細」の2つの名前**が付いていました。ブロックIDは包む節から表へ移しました。
+// ⚠ **古い本文には節の形が残っています**——読み手（`revisionTableAt`）はキャプションで表を
+// 探すので、どちらの形でも見つかります。
+func revisionsTableHTML(j *orderJudgment, existingBody string) string {
 	var b strings.Builder
-	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>改訂履歴</h2>`)
-	b.WriteString(`<table><caption>` + html.EscapeString(displayNameOf(revisionItemsType)) + `</caption><tbody>`)
+	b.WriteString(`<table data-id="` + cms.NewBlockID(existingBody) + `"><caption>` +
+		html.EscapeString(displayNameOf(revisionItemsType)) + `</caption><tbody>`)
 	// ⚠ 見出しは宣言から組みます（受注明細と同じ理由——手書きだと列を足した日にずれる）。
 	b.WriteString(headerRowHTML(revisionItemsType))
 	b.WriteString(revisionRowHTML(1, j.DrawingNo, existingBody))
-	b.WriteString("</tbody></table></section>")
+	b.WriteString("</tbody></table>")
 	return b.String()
 }
 

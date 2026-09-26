@@ -218,21 +218,30 @@ var businessVocab = []cms.VocabDef{
 		//
 		// 1行が1つの版で、行の `data-id` が改定番号。`ページID-行ID` で飛べます
 		// （アンカー合成は data-id を持つあらゆる要素に効く。anchor.go）。
+		//
+		// ⚠ **2026-09-27 からスラッシュメニューに出しません**（`Hidden`）——利用者:「改訂履歴は
+		// キャプションだけで良いです」「メニューの方も用語を統一したほうが良いのでは？」。
+		// メニューには下の**改訂明細**（キャプションで名乗る表）を出します。
+		// ⚠ **宣言は残します**——古い本文には `<section><h2>改訂履歴</h2>` の節と、その中の
+		// **キャプションの無い表**が残っていて、この宣言の `Items` がそれを改訂明細として読みます。
+		// 古い本文を移し終えたら消す（DBの日本語化 5段目の4）。
 		Type:        "drawing-revisions",
 		DisplayName: "改訂履歴",
 		Category:    "業務",
 		Icon:        "🕐",
 		Element:     "section",
+		Hidden:      true,
 		Items:       "drawing-revision-items",
 		Columns:     []cms.VocabColumn{},
 	},
 	{
+		// **改訂明細**——スラッシュメニューに出すのはこちら（2026-09-27 から・上の注）。
+		// 解析が書く表と同じく `<caption>改訂明細</caption>` で名乗ります。
 		Type:        "drawing-revision-items",
 		DisplayName: "改訂明細",
 		Category:    "業務",
 		Icon:        "🕐",
 		Element:     "table",
-		Hidden:      true,
 		Columns: []cms.VocabColumn{
 			{Field: "revision", Label: "版", Type: cms.ColText},
 			{Field: "drawing-no", Label: "図面番号", Type: cms.ColCode},
