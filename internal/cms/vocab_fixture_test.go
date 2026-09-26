@@ -122,4 +122,21 @@ var testFixtureVocab = []VocabDef{
 		Element:     "section",
 		View:        true,
 	},
+	// 検査記録——**2026-09-27 までコアの本番の登録にあったサンプル語彙**（縦切り第1段の
+	// 実証用）。利用者:「サンプルのスラッシュメニューがあれば削除してほしい」で本番から外し、
+	// ここへ移しました。コアの機構の試験（索引・キャプション・見出し・登録済みだけを索引する
+	// 規則など）が「コード型・選択肢・画像・日付の列を持つ、登録された表」として使います。
+	{
+		Type:        "inspection-record",
+		DisplayName: "検査記録",
+		Category:    "記録",
+		Icon:        "📋",
+		Element:     "table",
+		Columns: []VocabColumn{
+			{Label: "品番", Type: ColCode},
+			{Label: "判定", Type: ColEnum, Enum: []string{"合格", "不合格"}},
+			{Label: "検査写真", Type: ColImage},
+			{Label: "検査日", Type: ColDate},
+		},
+	},
 }

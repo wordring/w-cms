@@ -105,34 +105,53 @@ async function waitSaved(page) {
         const pageURL = page.url();
         check('新規ページが編集モードで開く', /\?edit=true/.test(pageURL));
 
-        // ── スラッシュメニュー → 検査記録の骨格挿入（第1段の回帰） ──
+        // ── スラッシュメニュー → 登録された表の骨格挿入（第1段の回帰） ──
+        //
+        // ⚠ **2026-09-27 まではコアのサンプル語彙「検査記録」を挿していました。** 利用者:
+        // 「サンプルのスラッシュメニューがあれば削除してほしい」で本番の登録から外したので、
+        // 板金の拡張の**見積もり**（登録済み・4列）を挿し、見出しを 品番・判定・検査写真・検査日 に
+        // 打ち替えます——**列の型と選択肢は設定の語彙から列の名前で引く**（DBの日本語化 4-2）ので、
+        // 以降の検査（選択肢・画像・日付）はそのまま効きます。
+        // ⚠ **「判定」は見積もりの登録に無い列**です。だから下の選択肢の検査は、エディタが
+        // **登録ではなく語彙を読んでいる**ことを見分けます（4-2 より前は選択肢が出なかった）。
         const p = page.locator('#w-editor-content p').first();
         await p.click();
         await selectContents(page, p);
         await page.keyboard.type('/');
         await page.waitForSelector('#w-slash-menu.active', { timeout: 4000 });
         check('スラッシュメニューが開く', true);
-        const vocabItem = page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:inspection-record"]');
+        const vocabItem = page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:part-estimate"]');
         check('レジストリ由来の項目がある', await vocabItem.count() === 1);
+        check('サンプルの「検査記録」はメニューに無い',
+            await page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:inspection-record"]').count() === 0);
         await vocabItem.click();
         // **表はキャプションで名乗る**（2026-09-26・DBの日本語化 5段目・利用者:「全面的に
-        // キャプションに置き換える」）: <table><caption>検査記録</caption>…</table>。
-        // それまでの見出し形（<section><h2>検査記録</h2><table>）は、表の写し
+        // キャプションに置き換える」）: <table><caption>見積もり</caption>…</table>。
+        // それまでの見出し形（<section><h2>…</h2><table>）は、表の写し
         // （data/tables.db）に入らなかった。data-type は書かれない——見える言葉が宣言になる。
         const table = page.locator('#w-editor-content table')
-            .filter({ has: page.locator('caption', { hasText: '検査記録' }) }).first();
+            .filter({ has: page.locator('caption', { hasText: '見積もり' }) }).first();
         await table.waitFor({ timeout: 4000 });
         check('骨格: キャプションが表の名前を宣言する',
-            (await table.locator('caption').first().innerText()).trim() === '検査記録');
+            (await table.locator('caption').first().innerText()).trim() === '見積もり');
         check('骨格: data-type は書かれない', await table.getAttribute('data-type') === null);
         check('骨格: 見出し形の節で包まない',
             await table.evaluate((t) => !(t.parentElement && t.parentElement.tagName === 'SECTION')));
         const headers = await table.locator('tr').first().locator('th').allInnerTexts();
-        check('骨格: 見出しがレジストリの列定義どおり', headers.join(',') === '品番,判定,検査写真,検査日');
+        check('骨格: 見出しがレジストリの列定義どおり', headers.join(',') === '工程,数,単位,備考');
         check('骨格: データ行が1行ある', await table.locator('tr').count() === 2);
 
         // ── セル編集と保存往復（第1段の回帰） ──
         const cell = (r, c) => table.locator('tr').nth(r).locator('th, td').nth(c);
+
+        // 見出しを打ち替える（上の注——型と選択肢は語彙が列の名前で決める）。
+        const renamed = ['品番', '判定', '検査写真', '検査日'];
+        for (let i = 0; i < renamed.length; i++) {
+            await selectContents(page, cell(0, i));
+            await page.keyboard.type(renamed[i]);
+        }
+        check('見出しを打ち替えられる',
+            (await table.locator('tr').first().locator('th').allInnerTexts()).join(',') === renamed.join(','));
         await caretInto(page, cell(1, 0));
         await page.keyboard.type('SHAFT-01');
         await waitSaved(page);
@@ -396,7 +415,7 @@ async function waitSaved(page) {
         // ── 保存往復（リロードして残っているか・実行時の印が残っていないか） ──
         await waitSaved(page);
         await page.goto(pageURL.replace('?edit=true', ''));
-        // 検査記録は data-type ではなく <caption>検査記録</caption> で名乗って保存される
+        // 挿した表は data-type ではなく <caption>見積もり</caption> で名乗って保存される
         await page.waitForSelector('#w-editor-content table caption', { timeout: 8000 });
         // ⚠ **保存された本文を読みます**（`/api/load`）——画面の DOM ではありません。
         // 2026-09-21 から型の印（cell-known など）は**閲覧モードでも**付くので、画面の
@@ -408,8 +427,8 @@ async function waitSaved(page) {
         // ⚠ 表は最上位のブロックになったので `data-id` が付きます（それまでは包む節に付いていた）。
         // 見るのは「`data-type` の無い table の直後に caption」。
         check('保存往復: キャプションで名乗る表が残る',
-            /<table(?![^>]*data-type)[^>]*>\s*<caption>検査記録<\/caption>/.test(savedHTML) &&
-            !/<section[^>]*>\s*<h2>検査記録/.test(savedHTML));
+            /<table(?![^>]*data-type)[^>]*>\s*<caption>見積もり<\/caption>/.test(savedHTML) &&
+            !/<section[^>]*>\s*<h2>見積もり/.test(savedHTML));
         check('保存往復: dl が残る', savedHTML.includes('data-type="tags"'));
         check('保存往復: 未知種別も保存される', savedHTML.includes('data-type="mystery-form"'));
         check('保存往復: enum で入れた値が残る', savedHTML.includes('合格'));

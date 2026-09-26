@@ -19,6 +19,7 @@ package cms
 //
 // 定義スキーマはサンプル実装先行（決定ログ）: まず「検査記録」で end-to-end に
 // 動かし、過不足を知ってから実運用スキーマを確定します。
+// （その検査記録は 2026-09-27 に本番の登録から外し、試験用の登録 vocab_fixture_test.go へ移した。）
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -186,7 +187,6 @@ type VocabDef struct {
 
 // vocabRegistry が宣言テーブルの本体です。語彙を増やすときはここへ1件足します。
 //
-// サンプル語彙「検査記録」は縦切り第1段（語彙モデル §8.4）の実証用で、
 // TagsDataType は可変タグの形式名です（`<dl data-type="tags">`）。
 //
 // **索引の行き先を分ける鍵**でもあります（2026-09-13）——この形式だけが `page_tags` へ、
@@ -220,19 +220,10 @@ var vocabRegistry = []VocabDef{
 		Icon:        "📎",
 		Element:     "section",
 	},
-	{
-		Type:        "inspection-record",
-		DisplayName: "検査記録",
-		Category:    "記録",
-		Icon:        "📋",
-		Element:     "table",
-		Columns: []VocabColumn{
-			{Label: "品番", Type: ColCode},
-			{Label: "判定", Type: ColEnum, Enum: []string{"合格", "不合格"}},
-			{Label: "検査写真", Type: ColImage},
-			{Label: "検査日", Type: ColDate},
-		},
-	},
+	// ⚠ **サンプル語彙「検査記録」はここにありました**（縦切り第1段の実証用・2026-09-27 に
+	// 本番の登録から外した——利用者:「サンプルのスラッシュメニューがあれば削除してほしい」）。
+	// コアの機構の試験が「登録された表の種類」として使うので、宣言は試験用の
+	// vocab_fixture_test.go へ移しました。
 
 	// ── 移行第4段（語彙モデル §8.4-4）: 表示専用の計算ビュー ──
 	// 列を持たず、中身はサーバー事前描画（RenderComputedViews）。
@@ -254,7 +245,7 @@ var vocabRegistry = []VocabDef{
 // RegisterVocab は形式の宣言を①語彙レジストリへ足します。**拡張の `init()` から
 // 呼びます**（`Register`／`RegisterIntake` と同じ流儀）。
 //
-// コアが持つのは器と汎用の語彙（`tags`・`file`・計算ビュー・サンプルの検査記録）だけで、
+// コアが持つのは器と汎用の語彙（`tags`・`file`・計算ビュー）だけで、
 // **業務の語彙は拡張が持ち込みます**——「語彙とプラグインは運用者のもの」
 // （[要件定義書.md](../../docs/要件定義書.md) §1.1・§4.5）を、置き場でも成立させる形です。
 // 下請け業務の受発注・部材・見積は `ext/subcon` が登録します。
