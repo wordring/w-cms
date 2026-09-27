@@ -62,15 +62,53 @@ func init() {
 		t := t
 		cms.RegisterMirror(t, cms.MirrorHandlerFunc(
 			func(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
-				if _, err := markObsoleteRows(ctx, el); err != nil {
-					return true, err
+				for _, tbl := range mirrorTablesOf(el) {
+					if _, err := markObsoleteRows(ctx, tbl); err != nil {
+						return true, err
+					}
+					if t != partMaterialsType {
+						continue
+					}
+					if _, err := renderMaterialPrices(ctx, tbl); err != nil {
+						return true, err
+					}
 				}
-				if t != partMaterialsType {
-					return true, nil
-				}
-				return renderMaterialPrices(ctx, el)
+				return true, nil
 			}))
 	}
+}
+
+// mirrorTablesOf は、鏡を掛ける表を返します——el が表ならその表、**見出しの節**
+// （`<section><h2>材料</h2>`）なら、中の**素の表**（自分で形式を名乗らない表）だけ。
+//
+// ⚠ **自分で名乗る表は配送係が別に届けます**（2026-09-27）。加工製品テンプレートは
+// `<section><h2>材料</h2><table><caption>材料</caption>` の形（見出しを残してキャプションを
+// 付けた）で、節の中の表を全部拾っていたころは**節から1回・表から1回**鏡が走り、
+// **最新単価の列が2つ**出ていました（利用者:「材料の表に最新単価の列が二つあるのは何故ですか？」）。
+// 索引は 2026-09-21 に同じ二重を直していました（`eachPlainVocabTable`）——判定は同じ
+// `cms.VocabTypeOf` に揃えます。⚠ 表ごとに掛けるので、節に素の表が2つあれば、それぞれに1列。
+func mirrorTablesOf(el *html.Node) []*html.Node {
+	if el.Data == "table" {
+		return []*html.Node{el}
+	}
+	var out []*html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type != html.ElementNode || c.Data == "section" {
+				continue // 入れ子の節は、それ自身の業務ブロック
+			}
+			if c.Data == "table" {
+				if cms.VocabTypeOf(c) == "" {
+					out = append(out, c)
+				}
+				continue
+			}
+			walk(c)
+		}
+	}
+	walk(el)
+	return out
 }
 
 // markObsoleteRows は 状態＝廃版 の行へ印を付けます（見た目は CSS が担う）。

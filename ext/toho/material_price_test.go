@@ -323,3 +323,42 @@ const (
 	priceHeadCell  = `<th class="vocab-chrome mat-price">` + priceColLabel + `</th>`
 	emptyPriceCell = `<td class="vocab-chrome mat-price"></td>`
 )
+
+// TestMaterialPriceColumnOnceWhenHeadingAndCaption は、**見出しの節とキャプションの両方で
+// 「材料」を名乗る表に、最新単価の列を1つだけ足す**ことを固定します（2026-09-27）。
+//
+// 利用者:「材料の表に最新単価の列が二つあるのは何故ですか？」——加工製品テンプレートは
+// `<section><h2>材料</h2><table><caption>材料</caption>` の形（見出しを残してキャプションを
+// 付けた・DBの日本語化 5段目の2 の案A）で、鏡が**節から1回・表から1回**走っていました
+// （索引は 2026-09-21 に同じ二重を直していた——`eachPlainVocabTable`）。
+// ⚠ 見出しの節の中の**素の表**（キャプションの無い古い形）には、これまでどおり1つ足します。
+func TestMaterialPriceColumnOnceWhenHeadingAndCaption(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	rows := `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td></tr>`
+	seedMaterialAndOrder(t, rows, orderSeed{
+		ID: 20, Owner: "root", Mode: "302", Public: true,
+		Date: "2026-08-19", Supplier: "みなと商店",
+		Rows: `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>800</td></tr>`,
+	})
+	root := &auth.User{Username: "root", IsAdmin: true}
+	head := `<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th><th>区分</th></tr>`
+	row := `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td><td>廃版</td></tr>`
+
+	both := showMaterials(t, root, `<h1>加工製品</h1><section><h2>材料</h2>`+
+		`<table><caption>材料</caption><tbody>`+head+row+`</tbody></table></section>`)
+	if n := strings.Count(both, priceHeadCell); n != 1 {
+		t.Errorf("見出しの節＋キャプションの表に、最新単価の列が %d 個あります:\n%s", n, both)
+	}
+	if !strings.Contains(both, "800円") {
+		t.Errorf("最新単価そのものが出ていません（鏡が走っていない）:\n%s", both)
+	}
+	if n := strings.Count(both, "row-obsolete"); n != 1 {
+		t.Errorf("廃版の印が %d 回付いています:\n%s", n, both)
+	}
+
+	plain := showMaterials(t, root, `<h1>加工製品</h1><section><h2>材料</h2>`+
+		`<table><tbody>`+head+row+`</tbody></table></section>`)
+	if n := strings.Count(plain, priceHeadCell); n != 1 || !strings.Contains(plain, "800円") {
+		t.Errorf("見出しの節の中の素の表に、最新単価が1列出ていません（%d 列）:\n%s", n, plain)
+	}
+}
