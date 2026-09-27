@@ -153,14 +153,23 @@ func procurementItemsOf(db cms.ReadOnlyDB, productID, orderQty int,
 		out = append(out, item)
 	}
 
+	// ⚠ **区分が「廃版」の行は数えません**（2026-09-27 利用者:「廃版は含まなくてよいと思います」）
+	//    ——廃版は図面の改定で使わなくなった構成部品で、行を残すのは外注に出した紙の社内コードの
+	//    指し先だから（drawing_mirror.go）。買う物ではありません。材料・購入部品・外注加工とも同じ。
 	if rows, err := cms.VocabTableRowsOf(db, productID, partMaterialsType); err == nil {
 		for _, m := range rows {
+			if isObsoleteRow(m) {
+				continue
+			}
 			key := materialKeyOf(m.Values["material"], m.Values["shape"], m.Values["size"])
 			add(displayNameOf(partMaterialsType), materialNameOf(m), key, cms.VocabQuantity(m))
 		}
 	}
 	if rows, err := cms.VocabTableRowsOf(db, productID, partPurchasedType); err == nil {
 		for _, m := range rows {
+			if isObsoleteRow(m) {
+				continue
+			}
 			name := strings.TrimSpace(m.Values["item-name"])
 			add(displayNameOf(partPurchasedType), name,
 				cms.NormalizeText(name), cms.VocabQuantity(m))
@@ -173,12 +182,23 @@ func procurementItemsOf(db cms.ReadOnlyDB, productID, orderQty int,
 	//    ⚠ **支給部品は入れません**——お客様から支給されるもので、弊社が買いません。
 	if rows, err := cms.VocabTableRowsOf(db, productID, partOutsourcingType); err == nil {
 		for _, m := range rows {
+			if isObsoleteRow(m) {
+				continue
+			}
 			name := strings.TrimSpace(m.Values["work"])
 			add(displayNameOf(partOutsourcingType), name,
 				cms.NormalizeText(name), cms.VocabQuantity(m))
 		}
 	}
 	return out
+}
+
+// obsoleteMark は構成部品の表の `区分` で「廃版」を表す値です（表示の印と手配の除外で共有）。
+const obsoleteMark = "廃版"
+
+// isObsoleteRow は、構成部品の表の行が廃版かを返します。
+func isObsoleteRow(m cms.VocabRow) bool {
+	return strings.TrimSpace(m.Values["status"]) == obsoleteMark
 }
 
 // orderedByProduct は**全社の発注明細**を「加工製品＋購入品」の鍵で束ねます。

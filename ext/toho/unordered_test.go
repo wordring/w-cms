@@ -274,3 +274,39 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 		}
 	}
 }
+
+// TestUnorderedLeavesOutObsoleteRows は、**区分が「廃版」の行を必要部材表に出さない**ことを
+// 固定します（2026-09-27 利用者:「廃版は含まなくてよいと思います」）。材料・購入部品・外注加工とも。
+func TestUnorderedLeavesOutObsoleteRows(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	syncBody(t, 31, `<h1>ブラケット</h1>`+
+		`<table><caption>材料</caption><tbody>`+
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th><th>区分</th></tr>`+
+		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>1</td><td>現行</td></tr>`+
+		`<tr><td>鉄</td><td>丸棒</td><td>φ20*300</td><td>1</td><td>廃版</td></tr>`+
+		`</tbody></table>`+
+		`<table><caption>購入部品</caption><tbody>`+
+		`<tr><th>品名</th><th>仕様</th><th>個数</th><th>区分</th></tr>`+
+		`<tr><td>古いボルト</td><td></td><td>4</td><td>廃版</td></tr>`+
+		`</tbody></table>`+
+		`<table><caption>外注加工</caption><tbody>`+
+		`<tr><th>加工内容</th><th>個数</th><th>区分</th></tr>`+
+		`<tr><td>古い曲げ</td><td>1</td><td>廃版</td></tr>`+
+		`</tbody></table>`)
+
+	list, err := UnorderedItems(&auth.User{Username: "root", IsAdmin: true})
+	if err != nil {
+		t.Fatalf("UnorderedItemsエラー: %v", err)
+	}
+	var names []string
+	for _, u := range list {
+		names = append(names, u.Name)
+		if strings.Contains(u.Name, "丸棒") || u.Name == "古いボルト" || u.Name == "古い曲げ" {
+			t.Errorf("⚠ 廃版の行が必要部材表に出ています: %#v", u)
+		}
+	}
+	if len(list) != 1 || !strings.Contains(list[0].Name, "t4.5") {
+		t.Errorf("現行の行だけが出るはずです: %v", names)
+	}
+}

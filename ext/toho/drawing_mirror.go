@@ -118,7 +118,7 @@ func markObsoleteRows(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		return true, nil
 	}
 	for _, tr := range rowsOf(el) {
-		if cellText(tr, col) == "廃版" {
+		if cellText(tr, col) == obsoleteMark {
 			addClass(tr, "row-obsolete")
 		}
 	}
