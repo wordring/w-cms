@@ -136,7 +136,7 @@ func VocabBlocksOf(db ReadOnlyDB, pageID int, dataType string) ([]VocabRow, erro
 // ⚠ **絞り込みは呼ぶ側の責任です。** ここは索引をそのまま返すので、必ず
 // `page.CanView` で読めないページ由来の行を落としてください——落とさないと、
 // **読めないページの単価や仕入先が引けてしまいます**（設計総点検で一度踏んだ穴と
-// 同じ形。`ext/subcon/materials.go` の `filterVisible` が手本）。
+// 同じ形。`ext/toho/materials.go` の `filterVisible` が手本）。
 //
 // ⚠ **読み切ってから返します**（`TagRowsNamed` と同じ理由）——行を読みながら
 // 中で `page.CanView` を投げると、`:memory:` DBでは**空の別のDBに当たって

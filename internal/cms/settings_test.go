@@ -83,9 +83,9 @@ func TestSettingsRejectsBrokenFile(t *testing.T) {
 		{"空の見出し語", `{"vocabulary": {"  ": {"type": "date"}}}`},
 		{"打ち間違えたキー", `{"vocabularly": {"加工日": {"type": "date"}}}`},
 		{"置き換えの連鎖", `{"char_folding": {"Φ": "φ", "φ": "f"}}`},
-		// 段（machine_stages）の検査は 2026-09-15 に下請け（ext/subcon）の節へ移った。
+		// 段（machine_stages）の検査は 2026-09-15 に下請け（ext/toho）の節へ移った。
 		// **コアの型から外したので、トップに書くと「知らないキー」で止まる**のが正しい。
-		{"段をトップに書いた（09-15 に extensions.subcon へ移した）", `{"machine_stages": ["現行"]}`},
+		{"段をトップに書いた（09-15 に extensions.toho へ移した）", `{"machine_stages": ["現行"]}`},
 		{"選択肢が空", `{"vocabulary": {"在籍": {"type": "enum"}}}`},
 		{"選択肢に空の値", `{"vocabulary": {"在籍": {"type": "enum", "values": ["在籍", "  "]}}}`},
 		{"選択肢の重複", `{"vocabulary": {"在籍": {"type": "enum", "values": ["在籍", "在籍"]}}}`},
@@ -148,8 +148,8 @@ func TestSettingsLoadsRepoFile(t *testing.T) {
 			t.Errorf("config/settings.json に %q の宣言がありません: %q（期待 %q）", word, got, want)
 		}
 	}
-	if _, ok := settingsSnapshot().Extensions["subcon"]; !ok {
-		t.Error("extensions.subcon の節がありません（段はそこへ移した）")
+	if _, ok := settingsSnapshot().Extensions["toho"]; !ok {
+		t.Error("extensions.toho の節がありません（段はそこへ移した）")
 	}
 	if NormalizeText("Φ320") != "φ320" {
 		t.Error("char_folding が効いていません")

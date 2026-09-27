@@ -53,7 +53,7 @@ import (
 type RequiredPage struct {
 	// Title はトップ直下の題です。**この文字が機能を決めます**（`TopLevelPageByTitle`）。
 	Title string
-	// Extension は持ち主の拡張ID（名簿と同じ`comm`・`comm/contacts`・`subcon`。
+	// Extension は持ち主の拡張ID（名簿と同じ`comm`・`comm/contacts`・`toho`。
 	// コアの持ち物は空）。画面がまとめて見せるために使います。
 	Extension string
 	// Why は「何のために要るか」の一文です。**画面にそのまま出ます**——

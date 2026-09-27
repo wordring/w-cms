@@ -143,7 +143,7 @@ var contactsVocab = []cms.VocabDef{{
 // 下に個人名ページが来るのではないでしょうか」）。木の形が常に「組織／人」に
 // 揃うので、読む側が場合分けを持たずに済みます。
 //
-// ⚠ **`取引先` は下請け業務（`ext/subcon`）の持ち物になりました**——あちらは
+// ⚠ **`取引先` は東邦の業務（`ext/toho`）の持ち物になりました**——あちらは
 // 加工製品の階層の根（`取引先／社名／段／装置名称／図面名称`）です。**別の木**です。
 const ContactsBoxTitle = "連絡帳"
 
@@ -482,7 +482,7 @@ func normalizeDomain(v string) string {
 
 // PartnerTitleForAddress はアドレスから組織の**題**を返します（`ResolvePartner` の薄い皮）。
 //
-// 整理（`ext/subcon`）と参照リンクの描画が呼びます。**ページが欲しいなら
+// 整理（`ext/toho`）と参照リンクの描画が呼びます。**ページが欲しいなら
 // `ResolvePartner`** を使ってください——題で引き直すのは完全一致の二度手間です。
 func PartnerTitleForAddress(user *auth.User, addr string) (string, bool) {
 	_, title, ok := ResolvePartner(user, addr)

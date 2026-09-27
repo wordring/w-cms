@@ -104,8 +104,8 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// PDF解析の口（ParsePDFHandler・ParsedItem）は 2026-09-16 に `ext/subcon` へ
-// 移しました（ext/subcon/parse_pdf.go）。ユーザー:「PDF解析は業務に密着せざるを
-// 得ないので、ext/subcon ではないでしょうか？」——プロンプトが「発注書または
+// PDF解析の口（ParsePDFHandler・ParsedItem）は 2026-09-16 に `ext/toho` へ
+// 移しました（ext/toho/parse_pdf.go）。ユーザー:「PDF解析は業務に密着せざるを
+// 得ないので、ext/toho ではないでしょうか？」——プロンプトが「発注書または
 // 見積書」と業務を語る口が、コアに残っていた最後の1本でした。
 // ここに残るのは**添付としてPDFを置く**口だけです（業務を知りません）。

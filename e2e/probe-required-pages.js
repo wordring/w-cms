@@ -46,8 +46,8 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
      has('comm') ? '通信が載っている → 通信箱が出る' : '通信が無い → 通信箱は出ない');
   ok(titles.includes('取引先') === has('comm/contacts'),
      has('comm/contacts') ? 'アドレス帳が載っている → 取引先が出る' : 'アドレス帳が無い → 取引先は出ない');
-  ok(titles.includes('受注') === has('subcon'),
-     has('subcon') ? '下請けが載っている → 受注が出る' : '下請けが無い → 受注は出ない');
+  ok(titles.includes('受注') === has('toho'),
+     has('toho') ? '下請けが載っている → 受注が出る' : '下請けが無い → 受注は出ない');
 
   // **理由は必ず添える**（押す人が、押してよいかを自分で判断できるように）。
   ok(pages.every(p => (p.why || '').trim().length > 0), 'どの行にも「何のために」が書いてある');

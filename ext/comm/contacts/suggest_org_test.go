@@ -8,7 +8,7 @@ import "testing"
 //
 // ⚠ **法人格の表は実物の `config/settings.json` を使います**（TestMain が読む）。
 // コアへ試験専用の公開関数を足さない、というこのプロジェクトの割り切りに従いました
-// ——`ext/subcon` が `machine_stages` を実物から読むのと同じ形です。
+// ——`ext/toho` が `machine_stages` を実物から読むのと同じ形です。
 // だから `company_forms` から `株式会社` を消すと、ここが落ちて気づけます。
 
 // TestSuggestOrgFoldsCompanyForm は、**法人格の有無を越えて連絡帳の組織を拾う**ことを

@@ -186,7 +186,7 @@ func TestFileViewHeadUsesOriginalName(t *testing.T) {
 // TestFileViewOpensInsideDetails は、**畳める枠の中でも開く**ことを固定します
 // （2026-09-21）。
 //
-// ⚠ **受注ページが発注書のPDFをこの形で置きます**（`ext/subcon` の `sourcePDFHTML`）
+// ⚠ **受注ページが発注書のPDFをこの形で置きます**（`ext/toho` の `sourcePDFHTML`）
 // ——`<details>` に入れて畳んだ状態で始めます。配送係が `<details>` の中へ降りなく
 // なった日に、**PDFが黙って出なくなります**。畳んであるので、人は「閉じているだけ」と
 // 思って開き、空を見ることになります——気づきにくい壊れ方です。

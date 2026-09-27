@@ -136,7 +136,7 @@ func TopLevelPagesByTitle(title string) []string {
 // 同じ用心）。親が 0（トップ）に着いたら子孫ではありません。
 //
 // **2026-09-21 にコアへ出しました。** それまで `ext/comm` が私有していて、受注残表
-// （`ext/subcon`）が同じものを要りました。⚠ **同じ走査を2つ持つと必ずずれます**
+// （`ext/toho`）が同じものを要りました。⚠ **同じ走査を2つ持つと必ずずれます**
 // ——とくにこの関数は**上限と「自分を含めない」という2つの約束**を持っていて、
 // 写し間違えても**エラーにならず、静かに違う答え**を返します。
 func IsDescendantOf(db ReadOnlyDB, childID, rootID int) bool {

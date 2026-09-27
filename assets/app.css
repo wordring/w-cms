@@ -2332,7 +2332,7 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 
 /* ── 材料を探す（2026-09-21）────────────────────────────────────────────
    ユーザー:「あとで**材質形状寸法で検索**したいときがあります」。
-   ⚠ **欄はサーバーが描く**（ext/subcon/view_material_search.go）。ここは見た目だけ。 */
+   ⚠ **欄はサーバーが描く**（ext/toho/view_material_search.go）。ここは見た目だけ。 */
 #w-editor-content .matsearch-title { margin: 0 0 4px; }
 #w-editor-content .matsearch-help {
     margin: 0 0 10px;

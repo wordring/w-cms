@@ -11,7 +11,7 @@ package cms
 // **拡張が持ち込む節**（`extensions`）・文字の置き換え表・WebDAV に見せない題・
 // WebDAV で書ける題
 // （**足したらこの数も直すこと**。WebDAV の2つが抜けたまま残っていました。
-// 2026-09-15 に `装置の段` が `extensions.subcon` へ出たので、3つ目を書き替えました
+// 2026-09-15 に `装置の段` が `extensions.toho` へ出たので、3つ目を書き替えました
 // ——**数は7のままなので、内訳を読まないと気づけない形**でした）。
 // ユーザーの決定（2026-08-30）:「**運用中に増やしてDB再構築します**」——語を増やす
 // たびに再ビルドが要らないよう、ファイルに置きます。増やしたら **DB再構築**
@@ -122,7 +122,7 @@ type Settings struct {
 	// Extensions は**拡張が持ち込む設定の節**です（節の名前 → 中身）。
 	//
 	// 2026-09-15 ユーザー決定（拡張の組み替え §4.2）:「拡張が自分の節を登録」。
-	// それまで `machine_stages` は下請け（ext/subcon）だけが使うのに**型がコアにありました**
+	// それまで `machine_stages` は下請け（ext/toho）だけが使うのに**型がコアにありました**
 	// ——`DisallowUnknownFields` があるので、型をコアから外すだけで起動が止まります。
 	// 中身の読み方と検査は**拡張が持ちます**（RegisterSettingsSection）。コアが知るのは
 	// 「節がある」ことだけです。**語彙（vocabulary）は分けません**——型は名前で決まり、
@@ -287,7 +287,7 @@ var settingsSections = map[string]SettingsSectionParser{}
 
 // RegisterSettingsSection は拡張の設定の節を登録します（拡張の `init()` から呼ぶ）。
 //
-// 節の名前は拡張の名前にします（`subcon`・`comm` など）。同じ名前を2度登録するのは
+// 節の名前は拡張の名前にします（`toho`・`comm` など）。同じ名前を2度登録するのは
 // 取り付けの誤りなので止めます。
 func RegisterSettingsSection(name string, parse SettingsSectionParser) {
 	if _, dup := settingsSections[name]; dup {

@@ -4,7 +4,7 @@ package comm
 //
 // `internal/cms` のテストヘルパはパッケージ境界を越えないので、必要な分だけ
 // ここに持ちます（コアへ「テストのためだけの公開関数」を足さないための割り切り。
-// `ext/comm/contacts/setup_test.go`・`ext/subcon/setup_test.go` と同じ流儀です）。
+// `ext/comm/contacts/setup_test.go`・`ext/toho/setup_test.go` と同じ流儀です）。
 // **名前はコア側の同名ヘルパから引き継ぎました**（移設した試験がそのまま動くように）。
 
 import (

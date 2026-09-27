@@ -60,8 +60,8 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     phoneRec: document.querySelectorAll('#w-editor-content .phone-record').length,
   }));
   ok(host.copyref > 0, '前提: 添付が描かれている（コアの「🔗 参照」）', host.copyref + '個');
-  ok((host.analyze > 0) === has('subcon'),
-     has('subcon') ? '下請けが載っている → 「🤖 解析」が出る' : '下請けが無い → 「🤖 解析」は出ない', host.analyze + '個');
+  ok((host.analyze > 0) === has('toho'),
+     has('toho') ? '下請けが載っている → 「🤖 解析」が出る' : '下請けが無い → 「🤖 解析」は出ない', host.analyze + '個');
   ok((host.reply > 0) === has('comm/mail'),
      has('comm/mail') ? 'メールが載っている → 「✉️ 返信」が出る' : 'メールが無い → 「✉️ 返信」は出ない', host.reply + '個');
   // **箱ごと通信の持ち物**（2026-09-16）。中の2つ（やりとりの前後・この記録への返信）は

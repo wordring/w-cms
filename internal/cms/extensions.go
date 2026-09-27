@@ -14,14 +14,14 @@ package cms
 //     「未分類へ戻す」）。組み替えの §4.1 案A（docs/考察/【考察】通信拡張と下請け拡張への組み替え.md）。
 //
 // **名前は拡張が自分で名乗ります**——取り付け口ではなく拡張の中で登録するので、
-// import の連鎖で入った拡張（`subcon` が連れてくる `comm/contacts`）も名簿に載ります。
+// import の連鎖で入った拡張（`toho` が連れてくる `comm/contacts`）も名簿に載ります。
 // ─────────────────────────────────────────────────────────────────────────
 
 import "sort"
 
 // ExtensionInfo は載っている拡張1つです。
 type ExtensionInfo struct {
-	ID   string // 画面の出し分けに使う名前（`subcon`・`comm/mail` など。パッケージのパスと揃える）
+	ID   string // 画面の出し分けに使う名前（`toho`・`comm/mail` など。パッケージのパスと揃える）
 	Name string // 起動ログに出す日本語の名前
 }
 

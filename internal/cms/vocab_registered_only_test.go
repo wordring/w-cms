@@ -58,7 +58,7 @@ func TestUnregisteredTableIsNotIndexed(t *testing.T) {
 // 試験**になっていました（測っていたのは配送係で、守りではなかった）。
 //
 // ⚠ **見出しは `検査記録` を使います。** ワンノートの受け皿そのもの（`■材料` など）は
-// `ext/subcon` の語彙なので、**コアの試験では登録されていません**——`材料` で書いたら
+// `ext/toho` の語彙なので、**コアの試験では登録されていません**——`材料` で書いたら
 // 当然のように索引されず、危うく「受け皿が壊れた」と誤報するところでした。
 // 確かめたい仕組み（見出しで形式が決まる素の表）は同じです。
 func TestUnregisteredHeadingSectionIsNotIndexed(t *testing.T) {

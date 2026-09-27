@@ -3544,7 +3544,7 @@
     // refreshAnalyzedMarks は解析済みの一覧を取り直し、印を描き直します。
     async function refreshAnalyzedMarks() {
         if (!currentPageId) return;
-        if (!hasExtension('subcon')) { analyzedMap = {}; return; } // 下請けが無ければ問わない（404を出さない）
+        if (!hasExtension('toho')) { analyzedMap = {}; return; } // 下請けが無ければ問わない（404を出さない）
         try {
             const res = await fetch('/api/analyzed?page_id=' + encodeURIComponent(currentPageId));
             const d = await res.json();
@@ -3590,7 +3590,7 @@
             // 参照を1つ書くだけ）。無かったのは**入口**です——`010272-c3p7` という
             // 値は添付IDを手で調べないと書けませんでした。
             btn.insertAdjacentElement('afterend', makeCopyRefButton(m[1], m[2]));
-            if (kind === 'pdf' && hasExtension('subcon')) {
+            if (kind === 'pdf' && hasExtension('toho')) {
                 // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
                 // **解析は下請けの持ち物**——載っていなければボタンを出さない（2026-09-15）。
                 if (a.parentElement) {
@@ -4137,7 +4137,7 @@
         if (!currentPageId) return;
         const host = document.getElementById('w-editor-content');
         if (!host) return;
-        if (!hasExtension('subcon')) return; // 整理は下請けの持ち物（2026-09-15）
+        if (!hasExtension('toho')) return; // 整理は下請けの持ち物（2026-09-15）
         // **整理が意味を持つのは通信記録だけ**——解析で図面ページが生まれた元のページ。
         // 年フォルダや加工製品ページに出しても行き場がない（2026-09-03 ユーザー指摘。
         // それまでは閲覧モードの全ページに出ていた）。
@@ -6215,7 +6215,7 @@ function delegateClick(handlers) {
 // ⚠ **写し（クローン）を使い、画面の要素は動かしません。** 動かすと、印刷から
 // 戻ったときに元の場所へ返す仕事が要り、失敗すると画面が壊れます。
 //
-// ⚠ **ボタンはサーバーが描いたクロームです**（ext/subcon/backlog.go）。本文は
+// ⚠ **ボタンはサーバーが描いたクロームです**（ext/toho/backlog.go）。本文は
 // 読み込み直しで作り替わるので、**要素ごとに配線せず document へ委譲します**。
 // ⚠ **インラインの `onclick` は書けません**（CSP strict）。
 delegateClick([['.backlog-print', (btn) => {
@@ -6252,7 +6252,7 @@ delegateClick([['.backlog-print', (btn) => {
 // 編集される**ようにしましょう」。
 //
 // ⚠ **押した先は別のページの本文です。** サーバーが**行番号・品番・いまの値の3つ**で
-// 照合します（ext/subcon/order_edit.go）。ここの仕事は**送ることと、失敗したら
+// 照合します（ext/toho/order_edit.go）。ここの仕事は**送ることと、失敗したら
 // 画面を元へ戻すこと**です。
 //
 // ⚠ **押せたのに保存できていない、がいちばん困る壊れ方**なので、
@@ -6341,7 +6341,7 @@ delegateClick([['.backlog-print', (btn) => {
 // ユーザー:「あとで**材質形状寸法で検索**したいときがあります。問題は寸法ですが、
 // 検索できるように**分解してDBに入れる**ことは出来ますか？」。
 //
-// ⚠ **欄はサーバーが描きます**（ext/subcon/view_material_search.go）。ここの仕事は
+// ⚠ **欄はサーバーが描きます**（ext/toho/view_material_search.go）。ここの仕事は
 // **押したときに送って、返ってきた行を並べること**だけです。⚠ 画面が欄を自分で
 // 組むと、**拡張を外したビルドで空の欄だけが残ります**（3d-4 の一般則）。
 //

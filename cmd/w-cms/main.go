@@ -187,7 +187,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	// 画像の添付（png/jpeg/webp/gif/svg。中身の検証とEXIF除去はハンドラ内。要件 §2.6）
 	protected.HandleFunc("/api/upload-image", cms.UploadImageHandler)
-	// `/api/parse-pdf`（PDFから明細を読む）は 2026-09-16 に `ext/subcon` の
+	// `/api/parse-pdf`（PDFから明細を読む）は 2026-09-16 に `ext/toho` の
 	// `Routes()` へ移しました——プロンプトが業務を語る口が、コアのルート表に
 	// 残っていた最後の1本でした。
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
@@ -219,7 +219,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 
-	// 入力の候補（2026-09-21・`ext/subcon` の `推奨業者` などが使う）。
+	// 入力の候補（2026-09-21・`ext/toho` の `推奨業者` などが使う）。
 	// ⚠ **認証が要ります**——候補にはページの題が出るためです。出どころは拡張が
 	// `cms.RegisterSuggestSource` で持ち込み、**コアは名前しか知りません**。
 	protected.HandleFunc("/api/suggest", cms.SuggestAPIHandler)

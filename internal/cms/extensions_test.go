@@ -64,8 +64,8 @@ func TestTagSchemaListsExtensions(t *testing.T) {
 	if got := read(); len(got) != 0 {
 		t.Fatalf("前提が崩れています（拡張が載っている）: %v", got)
 	}
-	withExtension(t, "subcon", "下請け業務")
-	if got := read(); len(got) != 1 || got[0] != "subcon" {
+	withExtension(t, "toho", "東邦の業務")
+	if got := read(); len(got) != 1 || got[0] != "toho" {
 		t.Errorf("載っている拡張が知らされていません: %v", got)
 	}
 }

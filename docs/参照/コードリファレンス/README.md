@@ -6,7 +6,7 @@
 「いま何がどうなっているか」だけを扱います。
 
 この版は **2026-09-16〜22 の6日間（149コミット・Go本体 +7,800行）**を受けて、実際の
-コードから測り直したものです。いちばん大きいのは**下請け業務（`ext/subcon`）が
+コードから測り直したものです。いちばん大きいのは**下請け業務（`ext/toho`）が
 12 → 33 ファイルに育ったこと**——受注残表・未手配の一覧・発注書の作成とPDF発行・
 手配状況・材料の参考単価・寸法の分解と検索・検算・弊社品番の自動結び。**拡張が初めて
 表を持ち**（`material_dimensions`）、観察係は2人になりました。コアの登録の口は
@@ -39,7 +39,7 @@ go doc ./ext/comm IntakeHandler    # 取り込み係の受け口
 go doc ./ext/comm Mailer           # メールの口（実装は ext/comm/mail）
 go doc ./ext/comm/contacts         # アドレス帳（なぜ独立した拡張か・コアとの境目）
 go doc ./ext/comm/mail             # メール送受信（IMAP／SMTP）
-go doc ./ext/subcon                # 下請け業務
+go doc ./ext/toho                # 下請け業務
 
 go doc -all ./internal/cms/page      # そのパッケージの全公開APIをコメントごと
 go doc -src ./internal/cms Sanitize  # 実装も見る
@@ -65,7 +65,7 @@ go run golang.org/x/pkgsite/cmd/pkgsite@latest -open .
 
 ```
 cmd/w-cms  ── ext_*.go のブランク import（ビルドタグはここだけ）
-   ├→ ext/subcon        ── ext/comm, ext/comm/contacts を import
+   ├→ ext/toho        ── ext/comm, ext/comm/contacts を import
    ├→ ext/comm/contacts ── ext/comm を import
    ├→ ext/comm/mail     ── ext/comm を import
    └→ ext/comm          ── **ext/ を1つも import しない**
