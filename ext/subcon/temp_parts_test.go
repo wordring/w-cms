@@ -14,8 +14,9 @@ import (
 // 弊社品番の無い行を…戻すと、この表へ戻ってきます。行が無いときも、空の表を表示して
 // おきます」。
 
+// ⚠ 必要部材表の印は見出しで書きます（名前の見えない `data-type` の印は 2026-09-27 に廃止）。
 const tempBoxBody = `<h1>発注</h1><p>弊社が出す発注書の置き場です。</p>` +
-	`<section data-type="unordered-items"></section>`
+	`<section><h2>必要部材表</h2></section>`
 
 func tempLine(name, qty string) ourOrderLine {
 	return ourOrderLine{ItemName: name, Quantity: qty, Unit: "個"}
@@ -31,7 +32,7 @@ func TestAddTempPartsCreatesTheTableAboveRequiredParts(t *testing.T) {
 		t.Fatal("足せていません")
 	}
 	cap := strings.Index(got, "<caption>臨時部材表</caption>")
-	marker := strings.Index(got, `data-type="unordered-items"`)
+	marker := strings.Index(got, `<h2>必要部材表</h2>`)
 	if cap < 0 || marker < 0 || cap > marker {
 		t.Fatalf("⚠ 臨時部材表が必要部材表の上にありません:\n%s", got)
 	}

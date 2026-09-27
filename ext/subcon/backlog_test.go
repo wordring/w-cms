@@ -111,7 +111,7 @@ func TestBacklogPutsUnreadableDueFirst(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000121", nil)
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 121,
-		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 	if !strings.Contains(out, "日付として読めない納期") {
 		t.Errorf("画面で断っていません:\n%s", out)
 	}
@@ -133,7 +133,7 @@ func TestBacklogMarksEmptyOurItemNo(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000126", nil)
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 126,
-		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 	if n := strings.Count(out, `backlog-no-item`); n != 1 {
 		t.Fatalf("薄赤のセルが %d 個です（空の行の1個を期待）:\n%s", n, out)
 	}
@@ -205,7 +205,7 @@ func TestBacklogViewSaysSoWhenEmpty(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000151", nil)
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 151,
-		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 	if !strings.Contains(out, "受注残はありません") {
 		t.Errorf("空の理由を言っていません:\n%s", out)
 	}
@@ -222,7 +222,7 @@ func TestBacklogHasPrintButtonPerSheet(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000161", nil)
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 161,
-		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 	if n := strings.Count(out, "data-backlog-print="); n != 2 {
 		t.Errorf("印刷ボタンが %d 個です（表2枚ぶんの2を期待）:\n%s", n, out)
 	}
@@ -312,7 +312,7 @@ func TestBacklogCellsCarryWrapClasses(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000181", nil)
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 181,
-		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
 	if !strings.Contains(out, `class="cell-atomic"`) {
 		t.Errorf("⚠ 折り返さない印がありません（全列が折り返します）:\n%s", out)
@@ -338,7 +338,7 @@ func TestBacklogRowsCarryEditHandles(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000191", nil)
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 191,
-		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
 	for _, want := range []string{
 		`data-order-page="000192"`, `data-order-row="0"`, `data-order-row="1"`,
@@ -367,7 +367,7 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000201", nil)
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 201,
-		`<h1>受注</h1><section data-type="`+BacklogViewType+`"></section>`)
+		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
 	for _, f := range []string{"出荷済み", "状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
 		if !strings.Contains(out, `data-field="`+f+`"`) {

@@ -64,7 +64,7 @@ func mailBoxBody() string {
 	return "<h1>" + html.EscapeString(MailBoxTitle) + "</h1>" +
 		"<p>ここへ .eml・PDF・図面をドロップすると、通信記録ページが子ページとして" +
 		"作られます。送信の控えも同じ箱に立ちます（向きはタグで表します）。</p>" +
-		`<section data-type="` + UnhandledViewType + `"></section>`
+		cms.ViewMarkerHTML(UnhandledViewType)
 }
 
 // intakeUpload は、アップロード先が通信箱なら取り込み係へ回します。

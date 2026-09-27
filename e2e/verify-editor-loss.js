@@ -75,7 +75,7 @@ const countEditable = page => page.evaluate(() =>
         // 差し替えが起きるとこれも消える——「消えない」ことまで確かめたいので入れる。
         await saveBody(page, id1,
             '<h1>安全化の検証</h1><p>ひとつめの段落</p><p>ふたつめの段落</p>' +
-            '<section data-type="child-list"></section>');
+            '<section><h2>子ページ一覧</h2></section>');
 
         await page.goto(BASE + '/' + id1 + '?edit=true');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });

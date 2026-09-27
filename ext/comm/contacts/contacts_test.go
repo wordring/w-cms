@@ -33,7 +33,7 @@ func TestPartnerBoxHasWorkSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(body, `data-type="unknown-contacts"`) {
+	if !strings.Contains(body, cms.ViewMarkerHTML(ContactsViewType)) {
 		t.Errorf("作業面（未登録の連絡先）が載っていません: %s", body)
 	}
 	if !strings.Contains(body, "<h1>"+ContactsBoxTitle+"</h1>") {

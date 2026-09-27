@@ -48,7 +48,10 @@ func UnknownVocabTypes(htmlStr string) []string {
 			if dt == "" || seen[dt] {
 				return
 			}
-			if _, ok := VocabDefByType(dt); !ok {
+			// ⚠ **鏡の形式名を書いた属性も告げます**——名前の見えない鏡の印は
+			// 2026-09-27 に廃止し、もう描かれません（vocabTypeOf）。黙っていると、
+			// 残った印が**何の知らせもなく空の節**になります。
+			if def, ok := VocabDefByType(dt); !ok || def.View {
 				seen[dt] = true
 			}
 		})

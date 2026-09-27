@@ -1039,8 +1039,9 @@ body[edit-mode] .block-content p:empty::before {
 
 /* 「w-cms がこの要素を見る」ことを枠で示す編集モード時の視覚ヒント
  * （閲覧・公開ページには出さない）。印の規則は data-type の有無ただ1つ
- * ——形式ブロック（DBへ入る）・ファイル容器（配線）・計算ビュー（表示専用）は
- * どれも data-type を持ち、素の文書は持たない。
+ * ——形式ブロック（DBへ入る）・ファイル容器（配線）は data-type を持ち、素の文書は
+ * 持たない。計算ビュー（表示専用）は data-type を持たず、見出しの言葉（.vocab-word）で
+ * 示す（名前の見えない data-type の鏡の印は 2026-09-27 に廃止）。
  *
  * 例外はページタイトルになる h1 で、これだけは data-type を持たない。
  * タイトルは**文書順で最初の h1** という**位置**で決まる（parser.go の ParseCore）ので、
@@ -1381,15 +1382,6 @@ body[edit-mode] #w-editor-content td.cell-known {
 
 #w-editor-content .badge.ok { background: #ecfdf5; color: #10b981; }
 #w-editor-content .badge.ng { background: #fef2f2; color: #ef4444; }
-
-/* 挿入直後（サーバー描画前）の空マーカーには案内を出す（編集モードのみ）。 */
-body[edit-mode] #w-editor-content section[data-type="child-list"]:empty::before,
-body[edit-mode] #w-editor-content section[data-type="required-materials"]:empty::before {
-    content: "（このビューの中身は保存後の再読み込みで表示されます）";
-    color: var(--text-muted);
-    font-size: 12px;
-    font-style: italic;
-}
 
 /* ── ファイル容器（section[data-type=file]）のエンハンサが挿す編集クローム ── */
 #w-editor-content section[data-type] {

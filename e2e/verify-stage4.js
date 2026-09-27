@@ -111,7 +111,7 @@ async function openSlashMenu(page) {
         check('子ページ一覧のSSR（空表示）', (await clFilled.innerText()).includes('子ページはありません'));
         check('SSR後も見出しが残る', (await clSec.locator('h2').first().innerText()).trim() === '子ページ一覧');
         const rmFilled = page.locator('#w-editor-content section').filter({ hasText: '手配状況リスト' }).first().locator('.vocab-chrome');
-        check('手配集計のSSR（見出し）', (await rmFilled.innerText()).includes('部材手配・発注進捗状況'));
+        check('手配集計のSSR（見出し）', (await rmFilled.innerText()).includes('手配状況（加工製品ごと）'));
 
         // 6. 子ページを作ると一覧に載る
         const pageId = pageURL.split('/').pop();
@@ -158,7 +158,7 @@ async function openSlashMenu(page) {
 
         // 9. 計算ビューのクローム見出しは目次に載らない（2026-08-20 の修正）
         const toc = await page.evaluate(() => document.getElementById('w-toc-list').innerText);
-        check('目次にクロームの見出しが載らない', !toc.includes('部材手配・発注進捗状況'));
+        check('目次にクロームの見出しが載らない', !toc.includes('手配状況（加工製品ごと）'));
 
         // 9b. 目次は左レールの先頭にあり、レールが画面より高くなっても
         //     下端の操作（子ページ作成・削除）に届く（2026-09-01）。
@@ -230,18 +230,18 @@ async function openSlashMenu(page) {
             '<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
             '<tr><td>X1</td><td>部品X1</td><td>1000</td><td>3</td><td>未着手</td></tr>' +
             '</tbody></table></section>' +
-            '<section data-type="required-materials"></section>');
+            '<section><h2>手配状況リスト</h2></section>');
         void partId;
 
         await page.goto(BASE + '/' + orderId);
-        // ここは**旧形式の空マーカー**を生HTMLで仕込んだページ（属性マーカーの互換確認を兼ねる）
-        await page.locator('#w-editor-content section[data-type="required-materials"] .vocab-chrome').waitFor({ timeout: 8000 });
+        // 鏡の印は見出し（名前の見えない data-type の印は 2026-09-27 に廃止）
+        await page.locator('#w-editor-content section:has(> h2:text-is("手配状況リスト")) .vocab-chrome').waitFor({ timeout: 8000 });
         check('手配集計のSSRに行が出る',
             (await page.locator('#w-editor-content .materials-table tbody tr').count()) >= 1);
 
         // 10-1. SSR の中身は編集できない（contenteditable="false"）
         check('SSRの中身は contenteditable=false',
-            await page.locator('#w-editor-content section[data-type="required-materials"] .vocab-chrome')
+            await page.locator('#w-editor-content section:has(> h2:text-is("手配状況リスト")) .vocab-chrome')
                 .first().getAttribute('contenteditable') === 'false');
 
         // 10-2. 集計表のセルにキャレットを置いても行操作ツールバーが出ない。

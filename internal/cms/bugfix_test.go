@@ -47,7 +47,7 @@ func TestLoadAPISanitizes(t *testing.T) {
 // アンカーを合成しないことを検証します。クロームは本文ではないので、
 // アンカー名を消費させない（保存もされないので付けても無駄）。
 func TestRenderAnchorsSkipsChrome(t *testing.T) {
-	in := `<section data-type="required-materials">` +
+	in := `<section><h2>手配状況リスト</h2>` +
 		`<div class="vocab-chrome"><h3 class="materials-title">📊 部材手配・発注進捗状況</h3></div>` +
 		`</section><h2 data-id="a1">本物の見出し</h2>`
 	got := RenderAnchors(in)

@@ -8,6 +8,10 @@ package cms
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
+
+	"w-cms/internal/cms/htmldoc"
 )
 
 // TestRequiredPagesIncludeCoreTemplate は、**コアだけでも表が空にならない**ことを
@@ -78,10 +82,45 @@ func TestRequiredPageBodiesCarryWorkSurface(t *testing.T) {
 		if !strings.Contains(body, "<h1>") {
 			t.Errorf("%s: 本文に h1 がありません（題が機能を決めるのに）", p.Title)
 		}
-		if !strings.Contains(body, "<section data-type=") {
+		if !hasWorkSurface(body) {
 			t.Errorf("%s: 本文に作業面がありません（見出しだけのページは行き止まりになります）: %s",
 				p.Title, body)
 		}
+	}
+}
+
+// hasWorkSurface は本文に作業面（鏡の印）があるかを返します。印は見出しで名乗る
+// （名前の見えない `<section data-type=…>` の印は 2026-09-27 に廃止）ので、
+// 文字列ではなく形式の見分け方（vocabTypeOf）で探します。
+func hasWorkSurface(body string) bool {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return false
+	}
+	found := false
+	for _, n := range nodes {
+		WalkElements(n, func(el *html.Node) {
+			if def, ok := VocabDefByType(vocabTypeOf(el)); ok && def.View {
+				found = true
+			}
+		})
+	}
+	return found
+}
+
+// TestRequiredPageBodyCheckSeesViewMarkers は、上の番人が**空振りしない**ことを固定します
+// ——コアのパッケージでは本文を持つ置き場が登録されないので、上のループは何も確かめて
+// いませんでした（2026-09-27 に分かった）。見分け方そのものをここで確かめ、拡張の置き場の
+// 本文は拡張の試験（`TestBoxBodiesCarryViewMarkers`）が確かめます。
+func TestRequiredPageBodyCheckSeesViewMarkers(t *testing.T) {
+	if !hasWorkSurface("<h1>箱</h1>" + ViewMarkerHTML("child-list")) {
+		t.Error("見出しの鏡の印を作業面と見ていません")
+	}
+	if hasWorkSurface(`<h1>箱</h1><section data-type="child-list"></section>`) {
+		t.Error("廃止した名前の見えない印を作業面と見ています")
+	}
+	if hasWorkSurface("<h1>箱</h1><p>説明だけ</p>") {
+		t.Error("見出しだけの本文を作業面ありと見ています")
 	}
 }
 

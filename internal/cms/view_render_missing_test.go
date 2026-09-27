@@ -25,9 +25,10 @@ func TestComputedViewWithoutRendererShowsReason(t *testing.T) {
 	t.Cleanup(func() { vocabRegistry = orig })
 
 	req := httptest.NewRequest("GET", "/000001", nil)
-	got := RenderComputedViews(req, 1, `<section data-type="orphan-view"></section>`)
+	body := `<section><h2>描画処理の無いビュー</h2></section>`
+	got := RenderComputedViews(req, 1, body)
 
-	if strings.Contains(got, `<section data-type="orphan-view"></section>`) {
+	if got == body {
 		t.Fatalf("マーカーが空のまま素通りしています:\n%s", got)
 	}
 	if !strings.Contains(got, "orphan-view") || !strings.Contains(got, "view-error") {

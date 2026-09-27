@@ -863,10 +863,20 @@
     // （ユーザー要望「赤色背景などで告知してください」・2026-08-25）。
     function notifyUnknownTypes(types) {
         if (!Array.isArray(types) || !types.length) return;
-        notify('未定義の種別 ' + types.map(t => '「' + t + '」').join('・') +
-            ' の表・リスト・ブロックがあります。そのまま保存しますが、' +
-            '計算には使われません（綴りを確かめてください）。',
-            { type: 'alert', duration: 0, id: 'unknown-vocab' });
+        // サーバーは、廃止した名前の見えない鏡の印（2026-09-27）もここへ入れて返す。
+        const retired = types.filter(isRetiredViewMarker);
+        const unknown = types.filter(t => !isRetiredViewMarker(t));
+        const parts = [];
+        if (unknown.length) {
+            parts.push('未定義の種別 ' + unknown.map(t => '「' + t + '」').join('・') +
+                ' の表・リスト・ブロックがあります。そのまま保存しますが、' +
+                '計算には使われません（綴りを確かめてください）。');
+        }
+        if (retired.length) {
+            parts.push('名前の見えない鏡の印 ' + retired.map(t => '「' + t + '」').join('・') +
+                ' は廃止しました。描かれないので、スラッシュメニューから見出しの鏡を入れ直してください。');
+        }
+        notify(parts.join(' '), { type: 'alert', duration: 0, id: 'unknown-vocab' });
     }
 
     // notifyUnresolvedFields は「見出しの改名で計算に読まれなくなった項目」の告知。
@@ -1254,9 +1264,9 @@
             if (serializeBlock(h.el) === serializeBlock(incoming[i])) return;
             // 編集中のブロックは触らない（離脱時の保存で反映される）
             if (h.block.contains(document.activeElement)) return;
-            // 計算ビューの中身はサーバーが所有しており、ここで差し替えると
-            // 再読込まで戻せない。マーカー自体は空なので据え置いて実害は無い。
-            if (isViewSection(h.el)) return;
+            // （計算ビューの data-type の空マーカーを据え置く枝は、印ごと 2026-09-27 に廃止。
+            //  いまの鏡は見出しの節で、中身の .vocab-chrome は serializeBlock が落とすので
+            //  中身が違うだけでは差し替わらない。）
             h.content.replaceChild(incoming[i], h.el);
             replaced = true;
         });
@@ -1299,7 +1309,7 @@
         // 見出しや段落を名指ししていたころは、許可されている h4〜h6・ul・table が
         // 表示されるだけで編集できなかった。
         const standardElements = Array.from(editor.querySelectorAll('.block-content > *'))
-            .filter(el => !isCustomTag(el.tagName.toLowerCase()) && !isViewSection(el));
+            .filter(el => !isCustomTag(el.tagName.toLowerCase()));
         standardElements.forEach(el => {
             if (toggle.checked) { el.setAttribute('contenteditable', 'true'); el.oninput = updateHtmlPreview; }
             else { el.removeAttribute('contenteditable'); el.oninput = null; }
@@ -1732,15 +1742,24 @@
     // ための防御として残している（保存時はサニタイザ同様アンラップされる）。
     function isCustomTag(name) { return name.indexOf('-') !== -1; }
 
-    // isViewSection は計算ビューのマーカー（子ページ一覧・手配集計）かを返す。
-    // 中身はサーバー事前描画（vocab-chrome）が所有するので、編集モードでも
-    // contenteditable にしない（view_render.go 参照）。
     // sectionDefOf はセクションの形式を解決する——data-type 属性が正、無ければ機能見出し
     // （サーバーの vocabTypeOf と同じ規則。walk.go）。
+    // ⚠ **鏡（view）は data-type では名乗れない**（名前の見えない印は 2026-09-27 に廃止）
+    // ——鏡の形式名を書いた属性は無視して、見出しで解く（サーバーと同じ）。
     function sectionDefOf(section) {
         const t = section.getAttribute && section.getAttribute('data-type');
-        if (t) return vocabDefs.find(v => v.type === t) || null;
+        if (t) {
+            const def = vocabDefs.find(v => v.type === t) || null;
+            if (!def || !def.view) return def;
+        }
         return headingDefOf(section);
+    }
+
+    // isRetiredViewMarker は、廃止した**名前の見えない鏡の印**（`<section data-type="child-list">`）
+    // かを返す。描かれないので、編集モードで赤く知らせる（decorateVocabBlocks）。
+    function isRetiredViewMarker(type) {
+        const def = vocabDefs.find(v => v.type === type);
+        return !!(def && def.view);
     }
 
     // tableDefOf は表の列宣言を解決する——自分の data-type が正、無ければ**一番近い**
@@ -1779,14 +1798,6 @@
             }
         }
         return null;
-    }
-
-    function isViewSection(el) {
-        if (!el.tagName || el.tagName !== 'SECTION') return false;
-        const t = el.getAttribute('data-type');
-        if (!t) return false;
-        const def = vocabDefs.find(v => v.type === t);
-        return !!(def && def.view);
     }
 
     // esc は属性値・テキストをHTMLとして安全な形にエスケープする。
@@ -2169,8 +2180,9 @@
         if (!newEl) return null;
 
         // 編集モードで挿すなら、構造HTML（見出し・段落・表・定義リスト…）は編集可能にする。
-        // カスタム要素と計算ビューのマーカーは対象外（applyMode と同じ規則）。
-        if (isEdit && !isCustomTag(newEl.tagName.toLowerCase()) && !isViewSection(newEl)) {
+        // カスタム要素は対象外（applyMode と同じ規則）。鏡の節は見出しごと編集でき、
+        // 中身の .vocab-chrome だけが contenteditable="false"（サーバーが付ける）。
+        if (isEdit && !isCustomTag(newEl.tagName.toLowerCase())) {
             newEl.setAttribute('contenteditable', 'true');
             newEl.oninput = updateHtmlPreview;
         }
@@ -4508,7 +4520,7 @@
     // ⚠ **ここに `hasExtension('comm')` は要りません**（2026-09-16 に確かめた）。
     // 押す相手（`.unhandled-mark`・まとめて片付け）は**サーバーが描いたもの**で、
     // 通信が無ければ `unhandled-intake` は語彙レジストリに載らず、鏡の引き金自体が
-    // 立ちません——本文に `<section data-type="unhandled-intake">` が書いてあっても
+    // 立ちません——本文に `<section><h2>未処理の受信</h2></section>` が書いてあっても
     // 空のまま出るので、この関数は何も見つけずに帰ります。**同じ理由で `wireNewRecord`
     // にも要りません**（「＋ 記録する」も同じビューが描いています）。
     // 出し分けが要るのは「JSが自分で作るクローム」だけ——`refreshMailChrome` と
@@ -4794,7 +4806,7 @@
             // 加工製品ページが子ページになりますが、ページに反映されない」）。
             //
             // 古くなるのは**2か所**です——左レールの子ページ一覧と、本文の
-            // 「子ページ一覧の鏡」（`section[data-type="child-list"]`・サーバーが
+            // 「子ページ一覧の鏡」（`<section><h2>子ページ一覧</h2></section>`・サーバーが
             // 中身を埋める計算ビュー）。通知だけでは、押した人は自分で読み込み直す
             // ことになります。
             //
@@ -5000,11 +5012,17 @@
         //   無印   … ただの文書（機械は解釈しない）
         // 既知の属性形式（可変タグ・添付）は姿そのもの（チップ・PDFクローム）が識別。
         attrTargets.forEach(({ el, type }) => {
-            const unknown = !vocabDefs.find(v => v.type === type);
+            const retired = isRetiredViewMarker(type);
+            const unknown = retired || !vocabDefs.find(v => v.type === type);
             el.classList.toggle('is-vocab-unknown', unknown);
-            if (unknown) {
+            if (retired) {
+                const def = vocabDefs.find(v => v.type === type);
+                el.title = '名前の見えない鏡の印「' + type + '」は廃止しました——描かれません。' +
+                    '見出し「' + def.display_name + '」の節で書いてください（スラッシュメニュー）。';
+            } else if (unknown) {
                 el.title = '未定義の形式「' + type + '」——保存はされますが、計算には使われません。';
-            } else if (el.title && el.title.indexOf('未定義の形式') === 0) {
+            } else if (el.title && (el.title.indexOf('未定義の形式') === 0 ||
+                                    el.title.indexOf('名前の見えない鏡の印') === 0)) {
                 el.removeAttribute('title');
             }
         });

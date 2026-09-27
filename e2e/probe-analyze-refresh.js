@@ -38,7 +38,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
 
   const before = await page.evaluate(() => ({
     nav: Array.from(document.querySelectorAll('#w-child-nav-list a')).map(a => a.textContent),
-    mirror: Array.from(document.querySelectorAll('#w-editor-content section[data-type="child-list"] a')).map(a => a.textContent),
+    mirror: Array.from(document.querySelectorAll('#w-editor-content section')).filter(s => (s.querySelector(':scope > h2') || {}).textContent === '子ページ一覧').flatMap(s => Array.from(s.querySelectorAll('a'))).map(a => a.textContent),
     analyze: document.querySelectorAll('#w-editor-content .attach-analyze').length,
   }));
   console.log('    前: 左レール ' + before.nav.length + '件 / 本文の鏡 ' + before.mirror.length + '件');
@@ -81,13 +81,16 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   await page.waitForTimeout(2500);
 
   const after = await page.evaluate((id) => {
-    const has = sel => Array.from(document.querySelectorAll(sel))
-      .some(a => (a.getAttribute('href') || '').endsWith(id));
+    const hits = links => links.some(a => (a.getAttribute('href') || '').endsWith(id));
+    // 鏡の印は見出し（名前の見えない data-type の印は 2026-09-27 に廃止）。
+    const mirrorLinks = Array.from(document.querySelectorAll('#w-editor-content section'))
+      .filter(s => (s.querySelector(':scope > h2') || {}).textContent === '子ページ一覧')
+      .flatMap(s => Array.from(s.querySelectorAll('a')));
     return {
       nav: Array.from(document.querySelectorAll('#w-child-nav-list a')).map(a => a.textContent),
-      mirror: Array.from(document.querySelectorAll('#w-editor-content section[data-type="child-list"] a')).map(a => a.textContent),
-      navHit: has('#w-child-nav-list a'),
-      mirrorHit: has('#w-editor-content section[data-type="child-list"] a'),
+      mirror: mirrorLinks.map(a => a.textContent),
+      navHit: hits(Array.from(document.querySelectorAll('#w-child-nav-list a'))),
+      mirrorHit: hits(mirrorLinks),
       analyze: document.querySelectorAll('#w-editor-content .attach-analyze').length,
     };
   }, newId);

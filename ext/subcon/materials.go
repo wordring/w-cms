@@ -394,8 +394,8 @@ func purchaseOrderBoxBody() string {
 		"⚠ 発注書は<strong>1枚に1社</strong>です。</p>" +
 		// ⚠ **臨時部材表**（2026-09-25）——必要部材表の上。空でも表を置きます。
 		tempPartsTableHTML(nil) +
-		`<section data-type="` + UnorderedViewType + `"></section>` +
+		cms.ViewMarkerHTML(UnorderedViewType) +
 		// ⚠ **未発注の発注書**（2026-09-24）——要求の並びは「必要部材 → 未発注の発注書
 		//    → 発注部材表」。発注部材表は作ったときに本文の末尾へ足されます。
-		`<section data-type="` + UnsentOrdersViewType + `"></section>`
+		cms.ViewMarkerHTML(UnsentOrdersViewType)
 }

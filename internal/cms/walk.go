@@ -280,7 +280,14 @@ func vocabTypeOf(el *html.Node) string {
 		return ""
 	}
 	if dt := Attr(el, "data-type"); dt != "" {
-		return dt
+		// ⚠ **鏡（計算ビュー）は `data-type` では名乗れません**（2026-09-27 に廃止）——
+		// `<section data-type="unordered-items"></section>` は画面に名前が出ない印で、
+		// 利用者:「名前の見えない印は廃止して削除して欲しい」。鏡は節の見出し
+		// （`<section><h2>必要部材表</h2></section>`・`ViewMarkerHTML`）だけで名乗ります。
+		// 属性の印は下の見出しの解決へ落ち、見出しが無ければ**ただの空の節**です。
+		if def, ok := VocabDefByType(dt); !ok || !def.View {
+			return dt
+		}
 	}
 	if el.Data == "section" {
 		if def, ok := VocabDefByHeading(functionHeading(el)); ok {

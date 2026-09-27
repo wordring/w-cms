@@ -178,8 +178,14 @@ func TestRequiredMaterialsViewHidesFromAnonymous(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/1", nil) // Cookieなし＝匿名
-	out := cms.RenderComputedViews(req, 1, `<section data-type="required-materials"></section>`)
+	out := cms.RenderComputedViews(req, 1, cms.ViewMarkerHTML("required-materials"))
 
+	// ⚠ **鏡が描かれたことを先に確かめます**——描かれなければ「見えない」は素通りで
+	// 通ります（2026-09-27 に名前の見えない印を廃止したとき、この番人は属性の印のまま
+	// 何も描かれずに緑でした）。
+	if !strings.Contains(out, `class="vocab-chrome"`) {
+		t.Fatalf("鏡が描かれていません（番人が空振りします）:\n%s", out)
+	}
 	if strings.Contains(out, "極秘部材") || strings.Contains(out, "㊙商社") {
 		t.Errorf("非公開ページ由来の部材が匿名へ描画されました:\n%s", out)
 	}

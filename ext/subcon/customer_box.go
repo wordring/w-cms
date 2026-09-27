@@ -61,5 +61,5 @@ func customerBoxBody() string {
 		"整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。</p>" +
 		"<p>相手の連絡先（メールアドレス・ドメイン・電話番号）は「連絡帳」にあります" +
 		"——こちらは加工製品の置き場です。</p>" +
-		`<section data-type="` + UnlinkedViewType + `"></section>`
+		cms.ViewMarkerHTML(UnlinkedViewType)
 }

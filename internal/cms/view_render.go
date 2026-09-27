@@ -3,10 +3,15 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 // 計算ビュー（表示専用）のサーバー事前描画
 //
-// 本文に保存されるのは空のマーカーだけで、中身はページを返すたびにここで埋める:
+// 本文に保存されるのは見出しだけの節（印）で、中身はページを返すたびにここで埋める:
 //
-//   <section data-type="child-list">          → 子ページ一覧
-//   <section data-type="required-materials">  → 部材手配・発注進捗の集計表
+//   <section><h2>子ページ一覧</h2></section>     → 子ページ一覧
+//   <section><h2>手配状況リスト</h2></section>   → 部材手配・発注進捗の集計表
+//
+// ⚠ **印は見出しで名乗ります**（D-2「表示されている言葉が機能を表します」）。
+// `<section data-type="child-list">` のような**名前の見えない印は 2026-09-27 に廃止**しました
+// （利用者:「名前の見えない印は廃止して削除して欲しい」）——コードが印を書くときは
+// `ViewMarkerHTML` を通すこと。
 //
 // 描画した中身は <div class="vocab-chrome" contenteditable="false"> に包む。
 // エディタのシリアライザは .vocab-chrome を保存しない（エンハンサのクロームと
@@ -57,6 +62,20 @@ func RegisterView(vocabType string, render func(user *auth.User, pageIDInt int) 
 	viewRenderers[vocabType] = render
 }
 
+// ViewMarkerHTML は、本文に置く鏡の印を返します——`<section><h2>表示名</h2></section>`。
+//
+// 置き場の雛形のように**コードが印を書くときは必ずここを通します**（スラッシュメニューが
+// 挿す形と同じ）。表示名はレジストリの宣言から引くので、コードに言葉を焼きません。
+// ⚠ 鏡でない形式を渡すのはプログラムの誤りなので、その場で落とします（黙って空の節を
+// 書くと、鏡が出ない理由がどこにも見えなくなります）。
+func ViewMarkerHTML(viewType string) string {
+	def, ok := VocabDefByType(viewType)
+	if !ok || !def.View {
+		panic("鏡（計算ビュー）として登録されていない形式です: " + viewType)
+	}
+	return "<section><h2>" + stdhtml.EscapeString(def.DisplayName) + "</h2></section>"
+}
+
 // missingViewHTML は「ビューと宣言されているのに描画処理が無い」ことの表示です。
 // 形式名を出すのは、直す人がどの宣言を足せばよいか分かるようにするため。
 func missingViewHTML(vocabType string) string {
@@ -79,8 +98,8 @@ func init() {
 			if el.Data != "section" {
 				return true, nil
 			}
-			// data-type が正、無ければ機能見出し（D-2）——
-			// <section><h2>子ページ一覧</h2></section> だけで鏡が動く。
+			// 機能見出し（D-2）で名乗る——<section><h2>子ページ一覧</h2></section> だけで
+			// 鏡が動く（名前の見えない data-type の印は 2026-09-27 に廃止・vocabTypeOf）。
 			vocabType := vocabTypeOf(el)
 			def, ok := VocabDefByType(vocabType)
 			if !ok || !def.View {
@@ -110,7 +129,9 @@ func hasViewMarker(bodyHTML string) bool {
 		if !def.View && !HasMirror(def.Type) {
 			continue
 		}
-		if strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {
+		// 属性で見分けるのは鏡**でない**形式だけ（ファイル表示など）——鏡の
+		// `data-type` の印は 2026-09-27 に廃止したので、見ても鏡は描かれません。
+		if !def.View && strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {
 			return true
 		}
 		// 機能見出し（D-2）: 表示名が本文に現れたら歩く価値がある。
@@ -152,23 +173,14 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 	return htmldoc.Render(nodes)
 }
 
-// fillViewMarker はマーカー要素の中身を描画結果（vocab-chrome）へ置き換えます。
-// マーカーの中へ誤って書かれた内容は表示に乗せない（ビューの中身はサーバーが所有する）。
+// fillViewMarker は鏡の節の末尾へ描画結果（vocab-chrome）を描きます。
+// 前回描いたクロームは落とし、見出しとその下の人の書き込みは残します。
 func fillViewMarker(el *html.Node, innerHTML string) {
-	// 何を消すかはマーカーの流儀で分かれる（D-2・2026-08-31）:
-	//
-	//   - **data-type の空マーカー**……中身はサーバーの所有物。全部消して描き直す
-	//     （紛れ込んだ内容は表示に乗せない——保存内容は無傷のまま。従来どおり）。
-	//   - **機能見出しのセクション**……見出しや注記が本文としてここに住んでいる。
-	//     消すのは前回描いたクロームだけで、「見出しが鏡を呼び、人の書き込みは
-	//     保存されて残り、鏡の中身はその下へ毎回描かれる」（語彙モデル §11.5-7）。
-	if Attr(el, "data-type") != "" {
-		for el.FirstChild != nil {
-			el.RemoveChild(el.FirstChild)
-		}
-	} else {
-		DropChrome(el)
-	}
+	// **機能見出しのセクション**……見出しや注記が本文としてここに住んでいる。
+	// 消すのは前回描いたクロームだけで、「見出しが鏡を呼び、人の書き込みは
+	// 保存されて残り、鏡の中身はその下へ毎回描かれる」（語彙モデル §11.5-7）。
+	// （中身を全部消して描き直す `data-type` の空マーカーの流儀は、印ごと 2026-09-27 に廃止。）
+	DropChrome(el)
 	chrome := `<div class="vocab-chrome" contenteditable="false">` + innerHTML + `</div>`
 	nodes, err := htmldoc.ParseFragment(chrome)
 	if err != nil {

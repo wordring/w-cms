@@ -167,10 +167,11 @@ type VocabDef struct {
 	// 以下は業務文書ブロック（Element=="section"・語彙モデル §8.2 論点A）用。
 	Items  string `json:"items,omitempty"`  // 明細表の形式名（素の表をこの形式として読む。D-2）
 
-	// View は計算ビュー（表示専用）。本文には空のマーカー <section data-type> だけを
-	// 保存し、中身はサーバーがページ合成時に埋める（view_render.go。ユーザー決定
-	// 2026-08-19: サーバー事前描画）。エディタは骨格＝空 section を挿し、
-	// 中身（.vocab-chrome）は保存しない。
+	// View は計算ビュー（表示専用）。本文には見出しだけの印 <section><h2>表示名</h2></section>
+	// だけを保存し、中身はサーバーがページ合成時に埋める（view_render.go。ユーザー決定
+	// 2026-08-19: サーバー事前描画）。エディタは骨格＝見出しだけの section を挿し、
+	// 中身（.vocab-chrome）は保存しない。⚠ 名前の見えない `<section data-type>` の印は
+	// 2026-09-27 に廃止（コードが印を書くときは `ViewMarkerHTML`）。
 	View bool `json:"view,omitempty"`
 
 	// RequiresTag は「この形式が③計算で使う、ページ横断メタ（<dl data-type="tags"）の

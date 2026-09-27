@@ -207,7 +207,7 @@ func contactsBoxBody() string {
 		"——会社なら「社名／窓口の人」、個人のお客様なら「個人／お名前」。</p>" +
 		"<p>組織のページには<strong>ドメイン</strong>のタグを、人のページには" +
 		"<strong>メールアドレス</strong>のタグを付けると、届いたメールから相手を引けます。</p>" +
-		`<section data-type="` + ContactsViewType + `"></section>`
+		cms.ViewMarkerHTML(ContactsViewType)
 }
 
 // EmailTag は連絡先のメールアドレスです。**1ページに何個でも置けます**
