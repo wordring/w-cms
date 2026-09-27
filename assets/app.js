@@ -183,6 +183,103 @@
         el.style.left = (left + window.scrollX) + 'px';
     }
 
+    // ── 動かせるツールバー（2026-09-27 利用者:「表の編集時に、メニューが邪魔な場所に出がち
+    // なので、メニューをドラッグして位置変更ができるようにしてください」） ──
+    //
+    // 表の行・列のツールバーと定義リストの項目のツールバーは、キャレットのある行の右横
+    // （入らなければ行の上）に出ます。表は文書の欄の中で横にはみ出すので、**ほぼ毎回「上」に
+    // なって前の行を隠していました**。
+    //
+    // 左端のつまみ（⠿）をドラッグすると、**その画面位置に留まります**（`position: fixed`——
+    // スクロールしても、別の行・別の表へ移っても動かない）。位置は UI ストア `toolbars.<名前>` に
+    // 覚えるので、ページを開き直してもそこに出ます（この閲覧者のこのブラウザだけ）。
+    // **つまみをダブルクリックすると、元の「行に付いて回る」出し方へ戻ります。**
+    // ⚠ つまみを押しただけ（動かさない）では留めません——クリックで勝手に固まらないように。
+    const TOOLBAR_EDGE = 4;
+
+    // clampToViewport はツールバーが画面（ビューポート）の中に収まる位置を返します。
+    function clampToViewport(bar, x, y) {
+        const w = bar.offsetWidth || 0, h = bar.offsetHeight || 0;
+        const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+        return {
+            x: Math.max(TOOLBAR_EDGE, Math.min(x, vw - w - TOOLBAR_EDGE)),
+            y: Math.max(TOOLBAR_EDGE, Math.min(y, vh - h - TOOLBAR_EDGE)),
+        };
+    }
+
+    // placeToolbar はツールバーを置きます。留めた位置があればそこ（画面座標）、無ければ
+    // 呼び手が計算した位置（ページ座標 top・left）。**呼ぶ前に表示状態にしておくこと**（寸法を測る）。
+    function placeToolbar(bar, name, top, left) {
+        const pin = UI.get('toolbars.' + name, null);
+        if (pin && typeof pin.x === 'number' && typeof pin.y === 'number') {
+            bar.classList.add('pinned');
+            const p = clampToViewport(bar, pin.x, pin.y);
+            bar.style.left = p.x + 'px';
+            bar.style.top = p.y + 'px';
+            return;
+        }
+        bar.classList.remove('pinned');
+        // ⚠ 行に付いて回るときも**画面の左右に寄せます**——スマホ幅では行の左端から出すと
+        //    右へはみ出していました（320px の画面で 125px・つまみを足す前から・2026-09-27 に実測）。
+        const vw = document.documentElement.clientWidth;
+        const w = bar.offsetWidth || 0;
+        left = Math.max(window.scrollX + TOOLBAR_EDGE, Math.min(left, window.scrollX + vw - w - TOOLBAR_EDGE));
+        bar.style.top = top + 'px';
+        bar.style.left = left + 'px';
+    }
+
+    // makeToolbarDraggable はツールバーの左端につまみを付け、ドラッグで動かせるようにします。
+    // reposition はダブルクリックで元の出し方へ戻したあとに置き直す関数です。
+    function makeToolbarDraggable(bar, name, reposition) {
+        if (!bar || bar.querySelector('.toolbar-grip')) return;
+        const grip = document.createElement('span');
+        grip.className = 'toolbar-grip';
+        grip.textContent = '⠿';
+        grip.title = 'ドラッグで移動（その位置に留まります）／ダブルクリックで元の出し方へ';
+        bar.insertBefore(grip, bar.firstChild);
+
+        let drag = null;
+        grip.addEventListener('pointerdown', e => {
+            if (e.button !== 0) return;
+            e.preventDefault(); // キャレット（どの行への操作か）を動かさない
+            const r = bar.getBoundingClientRect();
+            drag = { sx: e.clientX, sy: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+            grip.setPointerCapture(e.pointerId);
+        });
+        grip.addEventListener('pointermove', e => {
+            if (!drag) return;
+            if (!drag.moved) {
+                if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) < 4) return;
+                drag.moved = true;
+                bar.classList.add('pinned'); // ここから画面座標で動かす
+            }
+            const p = clampToViewport(bar, e.clientX - drag.dx, e.clientY - drag.dy);
+            bar.style.left = p.x + 'px';
+            bar.style.top = p.y + 'px';
+        });
+        const end = e => {
+            if (!drag) return;
+            const moved = drag.moved;
+            drag = null;
+            try { grip.releasePointerCapture(e.pointerId); } catch (err) { /* 既に外れている */ }
+            if (moved) {
+                UI.set('toolbars.' + name, { x: parseFloat(bar.style.left) || 0, y: parseFloat(bar.style.top) || 0 });
+            }
+        };
+        grip.addEventListener('pointerup', end);
+        grip.addEventListener('pointercancel', end);
+        grip.addEventListener('dblclick', e => {
+            e.preventDefault();
+            UI.set('toolbars.' + name, null);
+            bar.classList.remove('pinned');
+            reposition();
+        });
+        // 画面の大きさが変わったら、留めた位置を画面の中へ寄せ直す（覚えた位置はそのまま）。
+        window.addEventListener('resize', () => {
+            if (bar.classList.contains('active') && bar.classList.contains('pinned')) reposition();
+        });
+    }
+
     function showTemplateMenu(tree) {
         const menu = document.getElementById('w-template-menu');
         const btn = document.getElementById('w-create-subpage-btn');
@@ -2500,6 +2597,7 @@
         bar.classList.add('active');
 
         // 行の右横へ。入りきらなければ行の左上へ退避する。
+        // ⚠ 人がつまみで動かしていれば、その位置に留める（placeToolbar・2026-09-27）。
         const rect = row.getBoundingClientRect();
         let top = rect.top + window.scrollY + (rect.height - bar.offsetHeight) / 2;
         let left = rect.right + window.scrollX + 8;
@@ -2507,8 +2605,7 @@
             top = rect.top + window.scrollY - bar.offsetHeight - 4;
             left = rect.left + window.scrollX;
         }
-        bar.style.top = top + 'px';
-        bar.style.left = left + 'px';
+        placeToolbar(bar, 'table', top, left);
     }
 
     // rowCellCount は行の直接の子セル（th / td）の数を返す。
@@ -2970,8 +3067,7 @@
                 left = rect.left + window.scrollX;
             }
         }
-        bar.style.top = top + 'px';
-        bar.style.left = left + 'px';
+        placeToolbar(bar, 'dl', top, left); // つまみで動かしていればその位置（2026-09-27）
     }
 
     // dlGroupOf は dt/dd が属する項目（dt ＋ 後続の dd 列）を返す。
@@ -5568,6 +5664,7 @@
         const tbar = document.getElementById('w-table-toolbar');
         if (tbar) {
             tbar.addEventListener('mousedown', e => e.preventDefault());
+            makeToolbarDraggable(tbar, 'table', updateTableToolbar);
             document.getElementById('w-tt-add').addEventListener('click', tableRowAdd);
             document.getElementById('w-tt-del').addEventListener('click', tableRowDelete);
             document.getElementById('w-tt-up').addEventListener('click', () => tableRowMove(-1));
@@ -5583,6 +5680,7 @@
         const dbar = document.getElementById('w-dl-toolbar');
         if (dbar) {
             dbar.addEventListener('mousedown', e => e.preventDefault());
+            makeToolbarDraggable(dbar, 'dl', updateDlToolbar);
             document.getElementById('w-dt-add').addEventListener('click', dlItemAdd);
             document.getElementById('w-dt-val').addEventListener('click', dlValueAdd);
             document.getElementById('w-dt-up').addEventListener('click', () => dlItemMove(-1));

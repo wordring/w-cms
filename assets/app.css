@@ -887,6 +887,38 @@ body[edit-mode] .block-content p:empty::before {
     display: flex;
 }
 
+/* 画面より広くならない——狭い画面ではボタンが2段に折り返す（スマホ幅で 351px のツールバーが
+   320px の画面からはみ出していた・2026-09-27 に実測）。 */
+.table-toolbar {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 8px);
+}
+
+/* つまみで動かしたツールバーは、その画面位置に留まる（2026-09-27・app.js の makeToolbarDraggable）。
+   スクロールしても、別の行へ移っても動かない。つまみのダブルクリックで元の出し方へ戻る。 */
+.table-toolbar.pinned {
+    position: fixed;
+}
+
+.toolbar-grip {
+    cursor: grab;
+    padding: 4px 3px;
+    color: #94a3b8;
+    font-size: 14px;
+    line-height: 1;
+    user-select: none;
+    touch-action: none; /* 指で引いてもページがスクロールしないように */
+}
+
+.toolbar-grip:active {
+    cursor: grabbing;
+}
+
+/* 留めているあいだは、つまみの色で分かるように（色だけに頼らず、題の説明にも書いてある） */
+.table-toolbar.pinned .toolbar-grip {
+    color: #fbbf24;
+}
+
 .table-toolbar button {
     background: transparent;
     border: none;
