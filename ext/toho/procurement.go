@@ -168,6 +168,18 @@ func procurementItemsOf(db cms.ReadOnlyDB, productID, orderQty int,
 				cms.NormalizeText(name), cms.VocabQuantity(m))
 		}
 	}
+	// ⚠ **外注加工も手配に乗せます**（2026-09-27 利用者:「外注加工の表を埋めてみましたが、発注ページに
+	//    出ません」）。それまでは材料と購入部品だけを数えていました。外注先へも発注書で頼むので、
+	//    同じ道（必要部材表 → 発注部材表 → 発注書）を通ります。名前は**加工内容**で、発注明細の
+	//    `品名` になり、手配済みの鍵も購入部品と同じく品名で結ばれます（`orderedByProduct`・`draftedQty`）。
+	//    ⚠ **支給部品は入れません**——お客様から支給されるもので、弊社が買いません。
+	if rows, err := cms.VocabTableRowsOf(db, productID, partOutsourcingType); err == nil {
+		for _, m := range rows {
+			name := strings.TrimSpace(m.Values["work"])
+			add(displayNameOf(partOutsourcingType), name,
+				cms.NormalizeText(name), cms.VocabQuantity(m))
+		}
+	}
 	return out
 }
 

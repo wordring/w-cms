@@ -40,7 +40,7 @@ type UnorderedItem struct {
 	Shape         string `json:"shape"`           // 形状
 	Size          string `json:"size"`            // 寸法
 	Name          string `json:"name"`            // 表示用の名前
-	Kind          string `json:"kind"`            // 材料 / 購入部品
+	Kind          string `json:"kind"`            // 材料 / 購入部品 / 外注加工
 	Remaining     int    `json:"remaining"`       // 残要手配数
 	Cost          int    `json:"cost"`            // 参考単価（引けなければ 0）
 	Supplier      string `json:"supplier"`        // その単価の仕入先

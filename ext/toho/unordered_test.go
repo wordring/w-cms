@@ -215,3 +215,62 @@ func TestUnorderedSubtractsWhatIsInTheDraft(t *testing.T) {
 		t.Errorf("⚠ 発注部材表に入れたのに一覧に残っています（二重に発注しかねません）: %#v", after)
 	}
 }
+
+// TestUnorderedIncludesOutsourcing は、**外注加工も必要部材表に出る**ことを固定します（2026-09-27）。
+//
+// 利用者:「外注加工の表を埋めてみましたが、発注ページに出ません」——集計が材料と購入部品だけを
+// 数えていました。外注先へも発注書で頼むので、同じ道（必要部材表 → 発注部材表 → 発注書）に乗せます。
+// 名前（＝発注明細の品名・手配済みの鍵）は加工内容。⚠ **支給部品は出しません**（お客様から
+// 支給されるもので、弊社が買わない）。形はテンプレートと同じ「見出しの節＋キャプションの表」。
+func TestUnorderedIncludesOutsourcing(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	syncBody(t, 31, `<h1>ブラケット</h1>`+
+		`<section><h2>外注加工</h2><table><caption>外注加工</caption><tbody>`+
+		`<tr><th>加工内容</th><th>支給</th><th>個数</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
+		`<tr><td>レーザー切断</td><td></td><td>1</td><td></td><td></td><td></td></tr>`+
+		`</tbody></table></section>`+
+		`<section><h2>支給部品</h2><table><caption>支給部品</caption><tbody>`+
+		`<tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th><th>区分</th></tr>`+
+		`<tr><td>支給シャフト</td><td></td><td>1</td><td></td><td></td></tr>`+
+		`</tbody></table></section>`)
+	root := &auth.User{Username: "root", IsAdmin: true}
+
+	list, err := UnorderedItems(root)
+	if err != nil {
+		t.Fatalf("UnorderedItemsエラー: %v", err)
+	}
+	var found *UnorderedItem
+	for i := range list {
+		if list[i].Name == "支給シャフト" {
+			t.Errorf("⚠ 支給部品が必要部材表に出ています: %#v", list[i])
+		}
+		if list[i].Name == "レーザー切断" {
+			found = &list[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("外注加工が必要部材表に出ていません: %#v", list)
+	}
+	if found.Kind != "外注加工" || found.Remaining != 3 || found.ProductPageID != 31 {
+		t.Errorf("外注加工の行が違います（種類・残＝1個×受注3・弊社品番）: %#v", *found)
+	}
+
+	// 発注書に同じ加工内容を品名で入れれば、手配済みとして消える（発注部材表・発注書と同じ鍵）。
+	addPage(t, 33, 0, "発注 ひかりレーザー", "root", "302", true)
+	syncBody(t, 33, `<h1>発注 ひかりレーザー</h1>`+
+		`<dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>ひかりレーザー</dd></dl>`+
+		`<table data-type="`+ourOrderItemsType+`"><tbody>`+
+		`<tr><th>弊社品番</th><th>品名</th><th>数量</th></tr>`+
+		`<tr><td>000031</td><td>レーザー切断</td><td>3</td></tr>`+
+		`</tbody></table>`)
+	list, err = UnorderedItems(root)
+	if err != nil {
+		t.Fatalf("UnorderedItemsエラー: %v", err)
+	}
+	for _, u := range list {
+		if u.Name == "レーザー切断" {
+			t.Errorf("⚠ 発注書に入れた外注加工がまだ出ています: %#v", u)
+		}
+	}
+}

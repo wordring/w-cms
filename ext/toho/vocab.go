@@ -499,8 +499,9 @@ const (
 	// OrderDraftType は**発注部材表**です（2026-09-22）。発注ページの上で、
 	// **人が足し引きする**候補の表——これを元に発注書ページが作られます。
 	OrderDraftType    = "order-draft"
-	partMaterialsType = "part-materials" // 材料
-	partPurchasedType = "part-purchased" // 購入部品
+	partMaterialsType   = "part-materials"   // 材料
+	partPurchasedType   = "part-purchased"   // 購入部品
+	partOutsourcingType = "part-outsourcing" // 外注加工（2026-09-27 から手配に乗る）
 )
 
 // columnsOf は形式の列を宣言から返します（未登録なら nil）。
