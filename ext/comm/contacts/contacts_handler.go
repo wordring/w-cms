@@ -15,7 +15,6 @@ package contacts
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	stdhtml "html"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -116,6 +115,24 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		doms = nil
 	}
 
+	// ⚠ **作り始める前に、要るテンプレートを確かめます**（2026-09-27・テンプレート駆動の D）
+	// ——組織を作ったあとで人のテンプレートが無いと分かると、組織だけが残ります。
+	var need []string
+	if target == "" {
+		need = append(need, OrgTemplate)
+	}
+	if person != "" {
+		if _, found := cms.FindChildByTitle(target, cms.NormalizeNameForIngest(person)); target == "" || !found {
+			need = append(need, PersonTemplate)
+		}
+	}
+	for _, tt := range need {
+		if _, err := cms.PageTemplateBody(tt); err != nil {
+			cms.JSONFail(w, http.StatusConflict, "連絡先を登録できません: "+err.Error())
+			return
+		}
+	}
+
 	created := false
 	if target == "" {
 		// ── 新しい組織ページを作る ──
@@ -133,29 +150,25 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusInternalServerError, "「"+ContactsBoxTitle+"」ページを作れません: "+err.Error())
 			return
 		}
-		// **タグが1つも無ければ `dl` ごと書きません**（空の形式ブロックを置かない）。
-		var tags strings.Builder
+		// **本文はテンプレート「連絡帳の組織」を写して組みます**（2026-09-27）——電話番号など
+		// **人が書く欄**はテンプレートが持ちます（それまでは空の段落1つ:「書く場所が見えて
+		// いれば、人は書きます」）。機械が入れるのは題と、ここで分かったアドレス・ドメインだけ。
+		d, err := cms.DraftFromTemplate(OrgTemplate)
+		if err != nil {
+			cms.JSONFail(w, http.StatusConflict, "相手ページを作れません: "+err.Error())
+			return
+		}
+		d.SetTitle(orgTitle)
 		// 担当者が居なければ、アドレスは組織の口として組織のページへ（人が居れば下で人へ）。
 		if person == "" {
-			for _, a := range addrs {
-				cms.WriteTag(&tags, EmailTag, a)
-			}
+			d.SetTag(EmailTag, addrs...)
 		}
 		// **組織の連絡先**（2026-09-16）。これがあると、同じドメインの**新しい人**からの
 		// 初メールも、この組織に結びつきます。⚠ 共有ドメインに付けると、そのドメインの
 		// 他人まで引き寄せます——だから**人が組織のページで書きます**（2026-09-17 に画面の
 		// チェックを外した。口はここに残っている）。
-		for _, d := range doms {
-			cms.WriteTag(&tags, DomainTag, d)
-		}
-		var b strings.Builder
-		b.WriteString("<h1>" + stdhtml.EscapeString(orgTitle) + "</h1>")
-		if tags.Len() > 0 {
-			b.WriteString(`<dl data-type="tags">` + tags.String() + "</dl>")
-		}
-		// 電話番号は空で置きます——**書く場所が見えていれば、人は書きます**。
-		b.WriteString(`<p><br/></p>`)
-		target, err = cms.CreateChildPage(boxID, user.Username, b.String())
+		d.SetTag(DomainTag, doms...)
+		target, err = cms.CreateChildPage(boxID, user.Username, d.HTML())
 		if err != nil {
 			cms.JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
 			return

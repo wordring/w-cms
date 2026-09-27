@@ -116,16 +116,18 @@ func TestDefaultSignerMatchesLoginName(t *testing.T) {
 // ⚠ **署名の文面は焼き込みません**——出した紙の正本はPDF（このページの添付）で、
 // 本文へ写すと**あとから署名が変わったときに紙と食い違います**。
 func TestBuildOurOrderWritesSigner(t *testing.T) {
-	body := buildOurOrderHTML("000138", "みなと商店", "2026-09-22", "", "", "000012",
+	body := testOurOrder("000138", "みなと商店", "2026-09-22", "", "", "000012",
 		[]ourOrderLine{{ProductID: "000080", Material: "鉄"}})
 	if !strings.Contains(body, "<dt>"+OrderSignerTag+"</dt><dd>000012</dd>") {
 		t.Errorf("⚠ 差出人が残っていません:\n%s", body)
 	}
-	// 選ばれていなければタグごと出さない（空の参照は薄赤になるだけ）。
-	none := buildOurOrderHTML("000138", "みなと商店", "2026-09-22", "", "", "",
+	// 選ばれていなければ値を書かない。⚠ **欄を出すかはテンプレートが決めます**（2026-09-27〜
+	// テンプレート駆動）——それまでは「タグごと出さない」でしたが、いまはテンプレートの空欄の
+	// まま残ります（空の参照は薄赤になり、選んでいないことが見える）。
+	none := testOurOrder("000138", "みなと商店", "2026-09-22", "", "", "",
 		[]ourOrderLine{{ProductID: "000080", Material: "鉄"}})
-	if strings.Contains(none, OrderSignerTag) {
-		t.Errorf("⚠ 空の差出人タグが書かれています:\n%s", none)
+	if strings.Contains(none, "<dd>000012</dd>") || !strings.Contains(none, "<dt>"+OrderSignerTag+"</dt><dd><br/></dd>") {
+		t.Errorf("⚠ 選んでいない差出人の欄がテンプレートのままではありません:\n%s", none)
 	}
 }
 

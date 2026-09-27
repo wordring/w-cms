@@ -51,6 +51,18 @@ func init() {
 		Extension: "comm",
 		Why:       "ここへ .eml を落とすと通信記録ページが作られ、未処理の一覧もこの上に出ます。メールの取り込みもここへ着地します。",
 	})
+
+	// **通信記録もテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     MailInTemplate,
+		Extension: "comm",
+		Why:       "メールを取り込むとき（.eml を落とす・サーバーから取り込む）に写します。見出し「" + MailFilesHeading + "」の節が要ります（受信原本と添付の一覧が入る）。本文のあるメールは見出し「" + MailBodyHeading + "」の節も要ります。",
+	})
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     MemoTemplate,
+		Extension: "comm",
+		Why:       "通信箱の「＋ 記録する」（電話・FAX・メモ）が写します。",
+	})
 }
 
 // intakeUpload は、アップロード先が通信箱なら取り込み係へ回します。

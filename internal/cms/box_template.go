@@ -42,14 +42,20 @@ var ErrNoBoxTemplate = errors.New("置き場を作るテンプレートがあり
 // 仕組みの仕事で、作る人がテンプレートを読めるかどうかとは別の問いです。辿るのは
 // **読み切ってから返す** `ChildPages`（行を読みながら別の問い合わせを投げない）。
 func BoxTemplateID(title string) (string, error) {
+	return templateLeafID(title, ErrNoBoxTemplate)
+}
+
+// templateLeafID はテンプレート置き場の下の葉で、題が title のもののページIDを返します
+// （置き場と、機械が作るページ〔page_template.go〕が共有する引き方）。無ければ notFound。
+func templateLeafID(title string, notFound error) (string, error) {
 	title = strings.TrimSpace(title)
 	rootID, ok := templateRootID()
 	if !ok {
-		return "", ErrNoBoxTemplate
+		return "", notFound
 	}
 	rootInt, err := strconv.Atoi(rootID)
 	if err != nil {
-		return "", ErrNoBoxTemplate
+		return "", notFound
 	}
 	var hits []string
 	var walk func(parent, depth int) error
@@ -83,7 +89,7 @@ func BoxTemplateID(title string) (string, error) {
 	}
 	switch len(hits) {
 	case 0:
-		return "", ErrNoBoxTemplate
+		return "", notFound
 	case 1:
 		return hits[0], nil
 	default:

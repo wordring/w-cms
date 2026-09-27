@@ -45,7 +45,7 @@ func realOrderJudgment() *orderJudgment {
 
 // TestOrderPageKeepsSourceTable は、**先方の見出しがそのまま残る**ことを固定します。
 func TestOrderPageKeepsSourceTable(t *testing.T) {
-	body := buildOrderPageHTML("000001", "pdf001", realOrderJudgment())
+	body := testOrderPage("000001", "pdf001", realOrderJudgment())
 
 	// **先方の言葉**——言い換えていない。
 	for _, h := range []string{"No.", "サイズ", "図面番号", "金額"} {
@@ -72,7 +72,7 @@ func TestOrderSourceTableIsNotIndexed(t *testing.T) {
 	const id = "000085"
 	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 
-	body := buildOrderPageHTML(id, "pdf001", realOrderJudgment())
+	body := testOrderPage(id, "pdf001", realOrderJudgment())
 	if err := cms.SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestOrderSourceTablePadsShortRows(t *testing.T) {
 	j := realOrderJudgment()
 	j.SourceTable.Rows = [][]string{{"1", "ブラケット"}} // 8列のうち2つしか読めなかった
 
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	// 原本の行は8セルになる（見出しと同じ数）。
 	at := strings.Index(body, "<caption>"+sourceTableCaption+"</caption>")
 	if at < 0 {
@@ -134,7 +134,7 @@ func TestOrderSourceTableOmittedWhenEmpty(t *testing.T) {
 	j := realOrderJudgment()
 	j.SourceTable = orderSourceTable{}
 
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	// ⚠ **原本のPDFの枠とは別物です**——PDFの枠は常に出ます（ファイルは在るので）。
 	// ここで見るのは「読んだまま」の表だけです。
 	if strings.Contains(body, sourceTableCaption) {
@@ -212,7 +212,7 @@ func TestJudgmentSurvivesBadSourceTable(t *testing.T) {
 		t.Errorf("読めない原本から行が取れています: %+v", j.SourceTable)
 	}
 	// 本文も組める（原本の枠は出ない）。
-	body := buildOrderPageHTML("000001", "pdf001", &j)
+	body := testOrderPage("000001", "pdf001", &j)
 	if !strings.Contains(body, "<dd>250715-304</dd>") {
 		t.Errorf("発注書番号が本文に出ていません:\n%s", body)
 	}
@@ -251,7 +251,7 @@ func TestAnalyzeErrorShowsResponseHead(t *testing.T) {
 // ⚠ **順番が仕様です**——原本（PDF）→ 読んだまま（機械の読み取り）→ 弊社の明細、と
 // **確かさの順**に並びます。入れ替わると、人は読み取りの結果を原本だと思って見ます。
 func TestOrderPagePutsPDFAboveSourceTable(t *testing.T) {
-	body := buildOrderPageHTML("000001", "pdf001", realOrderJudgment())
+	body := testOrderPage("000001", "pdf001", realOrderJudgment())
 
 	// **ファイル表示のマーカーが、その添付を指している**こと。
 	marker := `<section data-type="` + cms.FileViewType + `" ` +
@@ -286,7 +286,7 @@ func TestOrderPageShowsPDFEvenWithoutSourceTable(t *testing.T) {
 	j := realOrderJudgment()
 	j.SourceTable = orderSourceTable{} // 読めなかった
 
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	if !strings.Contains(body, sourcePDFCaption) {
 		t.Errorf("写しが読めないとPDFまで消えています:\n%s", body)
 	}

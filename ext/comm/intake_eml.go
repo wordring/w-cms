@@ -163,6 +163,53 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 		return "", "", err
 	}
 
+	// ── 本文はテンプレート「通信記録（受信メール）」を写して組みます（2026-09-27）──
+	//
+	// タグの並び・本文と添付の置き場（見出しの節）はテンプレートが持ち、ここは値と数だけを
+	// 入れます。**ページを作る前に**テンプレートと器を確かめます——作ってから断ると、
+	// 題だけのページが通信箱に残ります。
+	d, err := cms.DraftFromTemplate(MailInTemplate)
+	if err != nil {
+		return "", "", err
+	}
+	d.SetTitle(subject)
+	// **向きとチャネルは直交する2軸**（2026-09-05）。向き＝受信／送信、
+	// チャネル＝メール／FAX／電話。「送信 × FAX」が実際に要るので混ぜません。
+	d.SetTag(DirectionTag, DirectionIn)
+	d.SetTag(ChannelTag, ChannelMail)
+	d.SetTag(FromTag, addressTagValues(msg.Header.Get("From"))...)
+	d.SetTag(ToTag, addressTagValues(msg.Header.Get("To"))...)
+	d.SetTag(CcTag, addressTagValues(msg.Header.Get("Cc"))...)
+	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
+	d.SetTag(ReplyToTag, addressTagValues(msg.Header.Get("Reply-To"))...)
+	d.SetTag(ReceivedAtTag, dateISO)
+	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
+	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
+	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
+	// ⚠ テンプレートに欄が無くても足します（`SetTag`）——無いと重複検知が黙って効かない。
+	d.SetTag(MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
+	// スレッドの親（In-Reply-To）。値は親メールの Message-ID なので、
+	// PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
+	d.SetTag(InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
+
+	for _, p := range parts {
+		if p.fileName == "" && strings.HasPrefix(p.mediaType, "text/plain") {
+			if pre := PlainTextBlockHTML(string(p.body)); pre != "" {
+				sec, err := d.RequireContainer(MailBodyHeading)
+				if err != nil {
+					return "", "", err
+				}
+				sec.SetContent(pre)
+			}
+			break
+		}
+	}
+	// 添付の置き場は必ず要ります（受信原本が必ずあるため）。
+	files, err := d.RequireContainer(MailFilesHeading)
+	if err != nil {
+		return "", "", err
+	}
+
 	// 先にページを作り（添付の置き場＝新ページのIDが要る）、添付を置いてから
 	// リンク入りの本文で確定する。
 	pageID, err := ctx.CreateDatedPage(received, "<h1>"+html.EscapeString(subject)+"</h1>")
@@ -170,26 +217,6 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 		return "", "", err
 	}
 
-	var b strings.Builder
-	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
-	b.WriteString(`<dl data-type="tags">`)
-	// **向きとチャネルは直交する2軸**（2026-09-05）。向き＝受信／送信、
-	// チャネル＝メール／FAX／電話。「送信 × FAX」が実際に要るので混ぜません。
-	cms.WriteTag(&b, DirectionTag, DirectionIn)
-	cms.WriteTag(&b, ChannelTag, ChannelMail)
-	writeAddressTags(&b, FromTag, msg.Header.Get("From"))
-	writeAddressTags(&b, ToTag, msg.Header.Get("To"))
-	writeAddressTags(&b, CcTag, msg.Header.Get("Cc"))
-	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
-	writeAddressTags(&b, ReplyToTag, msg.Header.Get("Reply-To"))
-	cms.WriteTag(&b, ReceivedAtTag, dateISO)
-	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
-	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
-	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
-	cms.WriteTag(&b, MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
-	// スレッドの親（In-Reply-To）。値は親メールの Message-ID なので、
-	// PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
-	cms.WriteTag(&b, InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
 	// 添付の数。**一覧で「発注書が付いているか」を見るため**に索引へ載せます
 	// （2026-09-05）——本文を開かないと分からない値だと、100件の一覧を出すたびに
 	// 100個の本文を読むことになります。**受信原本（.eml）は数えません**
@@ -217,32 +244,32 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	if err != nil {
 		return "", "", err
 	}
-	cms.WriteTag(&b, AttachmentCountTag, attachCount)
-	b.WriteString("</dl>")
-
-	bodyWritten := false
-	for _, p := range parts {
-		if p.fileName == "" && !bodyWritten && strings.HasPrefix(p.mediaType, "text/plain") {
-			b.WriteString(PlainTextBlockHTML(string(p.body)))
-			bodyWritten = true
-		}
-	}
-	b.WriteString(attachHTML)
-
-	b.WriteString(`<p data-id="` + html.EscapeString(rawID) + `">📧 受信原本 <a href="` +
+	d.SetTag(AttachmentCountTag, attachCount)
+	files.SetContent(attachHTML +
+		`<p data-id="` + html.EscapeString(rawID) + `">📧 受信原本 <a href="` +
 		html.EscapeString(rawHref) + `" download="` + html.EscapeString(fileName) + `">` +
 		html.EscapeString(fileName) + `</a></p>`)
 
-	if err := ctx.UpdatePage(pageID, b.String()); err != nil {
+	if err := ctx.UpdatePage(pageID, d.HTML()); err != nil {
 		return "", "", err
 	}
 	return pageID, subject, nil
 }
 
+// MailInTemplate は受信メールの通信記録を作るテンプレートの題です（2026-09-27）。
+const MailInTemplate = "通信記録（受信メール）"
+
+// MailBodyHeading / MailFilesHeading は、通信記録のテンプレートで**メールの本文**と
+// **添付の一覧**を入れる見出しの節です（受信と送信の控えで共有）。
+const (
+	MailBodyHeading  = "本文"
+	MailFilesHeading = "添付ファイル"
+)
+
 // addressParser は差出人・宛先の解析器です（表示名の =?ISO-2022-JP?B?…?= も復号する）。
 var addressParser = mail.AddressParser{WordDecoder: &wordDecoder}
 
-// writeAddressTags はアドレス欄を**相手1人につき1つのタグ**として書きます。
+// addressTagValues はアドレス欄を**相手1人につき1つのタグの値**にして返します。
 //
 //	差出人：山田 太郎 <yamada@example.co.jp>
 //
@@ -261,18 +288,19 @@ var addressParser = mail.AddressParser{WordDecoder: &wordDecoder}
 // 宛先が複数あれば**タグを繰り返します**（多値は繰り返し・[【一覧】語彙.md] §4）。
 // 解析できないヘッダは原文のまま1つのタグに落とします——**記録を落とすより、
 // 検索しにくい形でも残すほうがよい**（通信箱は不変アーカイブ）。
-func writeAddressTags(b *strings.Builder, name, raw string) {
+func addressTagValues(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
-		return
+		return nil
 	}
 	list, err := addressParser.ParseList(raw)
 	if err != nil || len(list) == 0 {
-		cms.WriteTag(b, name, decodeHeader(raw))
-		return
+		return []string{decodeHeader(raw)}
 	}
+	out := make([]string, 0, len(list))
 	for _, a := range list {
-		cms.WriteTag(b, name, formatAddress(a.Name, a.Address))
+		out = append(out, formatAddress(a.Name, a.Address))
 	}
+	return out
 }
 
 // formatAddress は `名前 <アドレス>` を組み立てます（名前が無ければアドレスだけ）。

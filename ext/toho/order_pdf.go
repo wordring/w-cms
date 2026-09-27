@@ -591,7 +591,7 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 			if n.Data == "table" && table == nil && isTableOfType(n, ourOrderItemsType) {
 				table = n
 			}
-			// ⚠ **備考は表の下の節**（2026-09-24・`orderNoteSectionHTML`）。節が在れば
+			// ⚠ **備考は表の下の節**（2026-09-24・`fillOrderNote`）。節が在れば
 			//    **タグの `備考`（09-23 までの紙）より節を採ります**。
 			if n.Data == "section" && sectionHeadingText(n) == orderNoteHeading {
 				head[orderNoteHeading] = strings.Join(noteLinesOf(n), "\n")

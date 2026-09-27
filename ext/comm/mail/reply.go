@@ -92,6 +92,20 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//
 	// **添付は送る前に読み切ります。** 途中で足りないと分かると「送ったつもりで
 	// 届いていない」になるので、揃わなければ1通も送りません。
+	// ── 控えのテンプレートを**送る前に**確かめます（2026-09-27）──
+	//
+	// 送信の控えはテンプレート「通信記録（送信メール）」を写して作ります。送ったあとで
+	// 「テンプレートが無くて控えを作れない」と分かると、**出た事実が記録に残りません**
+	// ——だから控えが作れないなら、1通も送りません（発注書のメールもこの口を通ります）。
+	tmpl, err := cms.PageTemplateBody(SentTemplate)
+	if err == nil {
+		_, err = sentRecordBody(tmpl, "", source, "", "", time.Now(), req)
+	}
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "送信の控えを作れないので、送っていません: "+err.Error())
+		return
+	}
+
 	files, err := collectAttachments(user, req.Attachments)
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
@@ -117,7 +131,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "mail.send", strings.Join(cleanAddrs(req.To), ",")+" "+req.Subject)
 
 	// 2. 記録する。**ここで失敗しても送信は成功のまま返します**——出た事実を隠さない。
-	pageID, recErr := recordSentMail(user, source, sentID, req)
+	pageID, recErr := recordSentMail(user, tmpl, source, sentID, req)
 	resp := map[string]any{"success": true, "sent": true}
 	if recErr != nil {
 		log.Printf("送信記録を作れませんでした user=%s: %v", user.Username, recErr)
@@ -132,70 +146,80 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 //
 // **受信と同じ箱・同じ年月フォルダ**です（2026-09-05 の統合）。向きは置き場所ではなく
 // `向き：送信` のタグが表します。
-func recordSentMail(user *auth.User, sourcePageID, messageID string, req ReplyRequest) (string, error) {
+func recordSentMail(user *auth.User, tmpl, sourcePageID, messageID string, req ReplyRequest) (string, error) {
 	rootID, ok := comm.MailBoxPageID()
 	if !ok {
 		return "", comm.ErrNoMailBox
 	}
 	// 時刻は1回だけ取ります——年月フォルダと `送信日時` が、日付の変わり目で食い違わないように。
 	now := time.Now()
-	body := sentRecordBody(SignedInAddress(user.Username), sourcePageID,
+	body, err := sentRecordBody(tmpl, SignedInAddress(user.Username), sourcePageID,
 		sourceMessageID(sourcePageID), messageID, now, req)
+	if err != nil {
+		return "", err
+	}
 	return comm.CreateRecordPage(rootID, user.Username, now, body)
 }
 
-// sentRecordBody は送信の控えの本文を組みます。**DBにもファイルにも触りません**
-// ——試験で「受信の取り込みと同じ名前で書いているか」を直接確かめるために
+// SentTemplate は送信の控えを作るテンプレートの題です（2026-09-27）。
+const SentTemplate = "通信記録（送信メール）"
+
+// sentRecordBody は送信の控えの本文を、テンプレート tmpl を埋めて組みます。**DBにもファイルにも
+// 触りません**——試験で「受信の取り込みと同じ名前で書いているか」を直接確かめるために
 // recordSentMail から切り出しました（2026-09-15。廃止した名前で書き続けていた不具合の
 // 再発を止めるため）。
-func sentRecordBody(from, sourcePageID, sourceMsgID, messageID string, now time.Time, req ReplyRequest) string {
+//
+// ⚠ タグの並び・本文と添付の置き場（見出しの節）はテンプレートが持ちます（2026-09-27）。
+// 本文を入れる節（`comm.MailBodyHeading`）が無い・添えたファイルがあるのに添付の節
+// （`comm.MailFilesHeading`）が無いときは、組めません（`cms.TemplateSlotError`）。
+func sentRecordBody(tmpl, from, sourcePageID, sourceMsgID, messageID string, now time.Time, req ReplyRequest) (string, error) {
 	subject := strings.TrimSpace(req.Subject)
 	if subject == "" {
 		subject = "（件名なし）"
 	}
 
-	var b strings.Builder
-	b.WriteString("<h1>" + html.EscapeString(subject) + "</h1>")
-	b.WriteString(`<dl data-type="tags">`)
-	cms.WriteTag(&b, comm.DirectionTag, comm.DirectionOut)
-	cms.WriteTag(&b, comm.ChannelTag, comm.ChannelMail)
+	d := cms.NewPageDraft(SentTemplate, tmpl)
+	d.SetTitle(subject)
+	d.SetTag(comm.DirectionTag, comm.DirectionOut)
+	d.SetTag(comm.ChannelTag, comm.ChannelMail)
 	// **送るという仕事はその場で終わっています。** 控えを作業待ちに並べても
 	// 押すことが無いので、ここで印を付けます（2026-09-05）。返信を待つ必要が
 	// あるなら、人がこのタグを消せば一覧へ戻ります。
-	cms.WriteTag(&b, comm.HandledTag, comm.HandledNotNeeded)
+	d.SetTag(comm.HandledTag, comm.HandledNotNeeded)
 	// **相手のタグは受信の取り込みと同じ名前**（`comm.FromTag` 等）。2026-09-13 の
 	// 1人1タグへの移行で受信側だけが追随し、ここは `差出人アドレス` 等の廃止した
 	// 名前で書き続けていました（2026-09-15 に発見）。
-	cms.WriteTag(&b, comm.FromTag, from)
-	for _, a := range cleanAddrs(req.To) {
-		cms.WriteTag(&b, comm.ToTag, a)
-	}
-	for _, a := range cleanAddrs(req.Cc) {
-		cms.WriteTag(&b, comm.CcTag, a)
-	}
-	cms.WriteTag(&b, comm.SentAtTag, now.In(time.Local).Format(time.RFC3339))
+	d.SetTag(comm.FromTag, from)
+	d.SetTag(comm.ToTag, cleanAddrs(req.To)...)
+	d.SetTag(comm.CcTag, cleanAddrs(req.Cc)...)
+	d.SetTag(comm.SentAtTag, now.In(time.Local).Format(time.RFC3339))
 	// **自分が立てた Message-ID を残します。** 相手がこれに返信すると、その
 	// In-Reply-To がここを指すので、**受信の取り込みだけでスレッドが繋がります**
 	// （返信元メッセージID の逆引き——既にある仕組みがそのまま効く）。
-	cms.WriteTag(&b, comm.MessageIDTag, messageID)
+	d.SetTag(comm.MessageIDTag, messageID)
 	// 何件添えたか。**受信側と同じタグ**なので、一覧の 📎 もそのまま出ます。
 	if n := len(req.Attachments); n > 0 {
-		cms.WriteTag(&b, comm.AttachmentCountTag, strconv.Itoa(n))
+		d.SetTag(comm.AttachmentCountTag, strconv.Itoa(n))
 	}
-	if sourceMsgID != "" {
-		cms.WriteTag(&b, comm.InReplyToTag, sourceMsgID)
-	}
+	d.SetTag(comm.InReplyToTag, sourceMsgID)
 	// **返信元は参照タグ**（`ページID`）——押せば飛び、逆引きで「この記録への返信」も
 	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
-	cms.WriteTag(&b, comm.ReplySourceTag, sourcePageID)
-	b.WriteString("</dl>")
+	d.SetTag(comm.ReplySourceTag, sourcePageID)
+
 	// 本文は平文のまま `<pre>` へ。HTMLメールは作らないので、**見たままが送った中身**です
 	// ——段落に割ると空行と字下げが落ち、控えが「送ったもの」と違う形になります
 	// （受信側と同じ扱い・2026-09-05）。
-	b.WriteString(comm.PlainTextBlockHTML(req.Body))
+	if pre := comm.PlainTextBlockHTML(req.Body); pre != "" {
+		sec, err := d.RequireContainer(comm.MailBodyHeading)
+		if err != nil {
+			return "", err
+		}
+		sec.SetContent(pre)
+	}
 
 	// **何を添えたかも控えに残します。** リンクは**元のページのファイルを指します**
 	// ——同じものを2つ持たないためで、控えの仕事は「送った事実」を記録することです。
+	var files strings.Builder
 	for _, ref := range req.Attachments {
 		pageID, ok := page.NormalizeID(strings.TrimSpace(ref.PageID))
 		if !ok {
@@ -205,12 +229,19 @@ func sentRecordBody(from, sourcePageID, sourceMsgID, messageID string, now time.
 		if name == "" {
 			name = ref.File
 		}
-		b.WriteString(`<p>📎 <a href="` +
+		files.WriteString(`<p>📎 <a href="` +
 			html.EscapeString(page.AttachmentURLFor(pageID, ref.File)) +
 			`" download="` + html.EscapeString(name) + `">` +
 			html.EscapeString(name) + `</a></p>`)
 	}
-	return b.String()
+	if files.Len() > 0 {
+		sec, err := d.RequireContainer(comm.MailFilesHeading)
+		if err != nil {
+			return "", err
+		}
+		sec.SetContent(files.String())
+	}
+	return d.HTML(), nil
 }
 
 // cleanAddrs は空白を落とし、空の要素を除きます。

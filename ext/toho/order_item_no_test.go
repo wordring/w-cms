@@ -17,7 +17,7 @@ import (
 // noteOf は本文から「品番の出どころ」の1行だけを取り出します（無ければ空）。
 func noteOf(t *testing.T, j *orderJudgment) string {
 	t.Helper()
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	at := strings.Index(body, "<p>解析は、")
 	if at < 0 {
 		return ""

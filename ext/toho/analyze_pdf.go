@@ -210,6 +210,25 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── 作るページのテンプレートを**先に**引きます（2026-09-27）──
+	//
+	// 受注ページも加工製品ページも**テンプレートを写して**作ります（テンプレートが無ければ
+	// 作らない）。どちらになるかは Gemini の答えで決まりますが、**聞く前に両方を確かめます**
+	// ——聞いたあとで「テンプレートが無い」と分かると、有料の問い合わせが無駄になります。
+	orderTmpl, err := cms.PageTemplateBody(OrderPageTemplate)
+	if err == nil {
+		var productTmpl string
+		if productTmpl, err = cms.PageTemplateBody(ProductTemplate); err == nil {
+			analyzeWithTemplates(w, r, pageID, fileName, pdf, orderTmpl, productTmpl)
+			return
+		}
+	}
+	cms.JSONFail(w, http.StatusConflict, "解析の結果を書くテンプレートがありません: "+err.Error())
+}
+
+// analyzeWithTemplates は、テンプレートを確かめたあとの解析の本体です。
+func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileName string,
+	pdf []byte, orderTmpl, productTmpl string) {
 	j, err := judgeOrderPDF(pdf)
 	if err != nil {
 		if errors.Is(err, cms.ErrNoGeminiKey) {
@@ -255,14 +274,24 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 				"図面と判定しましたが、図面番号も図面名称も読み取れませんでした")
 			return
 		}
+		// ⚠ **本文を全部組んでから作り始めます**——テンプレートに図面ブロック・改訂明細が
+		// 無ければ、1枚も作らずに断ります（途中まで作って止まると、人が片付けることになる）。
 		made := []map[string]any{}
 		totalMatched := 0
+		bodies := make([]string, 0, len(drawings))
 		for _, d := range drawings {
 			dj := d.asJudgment()
 			matches := MatchDXFAttachments(pageID, dj.DrawingNo)
 			totalMatched += len(matches)
-			newID, err := cms.CreateChildPage(pageID, user.Username,
-				buildProductPageHTML(pageID, attachID, dj, matches))
+			body, err := buildProductPageHTML(productTmpl, pageID, attachID, dj, matches)
+			if err != nil {
+				cms.JSONFail(w, http.StatusConflict, "加工製品ページを作れません: "+err.Error())
+				return
+			}
+			bodies = append(bodies, body)
+		}
+		for _, body := range bodies {
+			newID, err := cms.CreateChildPage(pageID, user.Username, body)
 			if err != nil {
 				// ⚠ **途中で失敗しても、できたぶんは残します**——作れた図面まで
 				// 捨てると、人はもう一度解析するしかなくなり、**通ったぶんが二重に
@@ -293,7 +322,12 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newID, err := cms.CreateChildPage(pageID, user.Username, buildOrderPageHTML(pageID, attachID, j))
+	body, err := buildOrderPageHTML(orderTmpl, pageID, attachID, j)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "受注ページを作れません: "+err.Error())
+		return
+	}
+	newID, err := cms.CreateChildPage(pageID, user.Username, body)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
 		return
@@ -417,14 +451,28 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	return &j, nil
 }
 
-// buildOrderPageHTML は受注ページの本文を組みます。
+// OrderPageTemplate は受注ページを作るテンプレートの題です（2026-09-27）。
 //
-// 形（2026-09-18 以降）: ヘッダは**可変タグ**（発注書番号・発注元・発注日・納期・
-// 小計・税・合計・由来）＋ 顧客の発注書を読んだままの表（畳む）＋ 明細の表
-// （`client-order-items`・見出しは宣言から `headerRowHTML` で組む）。
-// ⚠ 機能見出しの節に素の `dl` を置く形は 09-18 にやめました（下の「ヘッダは可変タグ」）。
+// ⚠ **受注ページの形はこのテンプレートが決めます**——タグの並び・原本PDFと写しの枠・
+// 受注明細の列の並び。機械が書くのは**題と値と行の数**だけです（利用者:「テンプレートには
+// スラッシュメニューから表などの印を置き、コードはそれを埋めてはどうでしょう？」）。
+// テンプレートが無ければ受注ページを作りません（`cms.ErrNoPageTemplate`）。
+const OrderPageTemplate = "受注ページ"
+
+// buildOrderPageHTML は受注ページの本文を、テンプレート tmpl を埋めて組みます。
+//
+// 埋めるもの（2026-09-27 からテンプレート駆動・形はテンプレートが持つ）:
+//
+//   - **タグ**（発注書番号・発注元・発注日・納期・小計・税・合計・由来）——`<dt>` の名前で
+//     探して値を入れる。テンプレートに無いタグは、値があれば足す。
+//   - **原本のPDF**——まだ配線されていないファイル表示の印へ（無ければ出さない）。
+//   - **顧客の発注書（読んだまま）**——その名前の畳める枠（または見出しの節）の中へ表を
+//     入れる。読めなければ枠ごと消す（無ければ出さない）。
+//   - **受注明細**——キャプション `受注明細` の表へ、見出しの言葉で列を合わせて明細の数だけ
+//     行を作る。⚠ **表が無ければ作らない**（明細の行き場が無い）。
+//
 // 行の `状態` は「未着手」で始まります（進捗の起点）。
-func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
+func buildOrderPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment) (string, error) {
 	title := "受注 " + cms.NormalizeNameForIngest(j.OrderNo)
 	if cms.NormalizeNameForIngest(j.OrderNo) == "" {
 		if cms.NormalizeNameForIngest(j.Customer) != "" {
@@ -444,15 +492,11 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// 素の定義リストを置く形（業務ブロックのヘッダ）はやめました。⚠ **1文書＝1ページ**が
 	// 規則です（ユーザー:「発注書は一ページ一発注書で問題ない」）——ヘッダがページの
 	// タグになるので、1ページに2つの発注書は置けません。
-	//
-	// ⚠ **明細の表は `data-type` を自分で持ちます。** それまで節の `Items` 宣言を頼りに
-	// 「節の中の素の表」として見つけていましたが、節をやめたので表が自分で名乗ります。
-	var b strings.Builder
-	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
-	b.WriteString(`<dl data-type="tags">`)
-	writeHeaderPair(&b, OrderNoTag, cms.NormalizeNameForIngest(j.OrderNo))
-	writeHeaderPair(&b, OrderClientTag, cms.NormalizeNameForIngest(j.Customer))
-	writeHeaderPair(&b, OrderedAtTag, j.OrderDate)
+	d := cms.NewPageDraft(OrderPageTemplate, tmpl)
+	d.SetTitle(title)
+	setHeaderTag(d.DraftBlock, OrderNoTag, cms.NormalizeNameForIngest(j.OrderNo))
+	setHeaderTag(d.DraftBlock, OrderClientTag, cms.NormalizeNameForIngest(j.Customer))
+	setHeaderTag(d.DraftBlock, OrderedAtTag, j.OrderDate)
 	// ⚠ **納期は行ではなくここ**（2026-09-20・実データで確認）。1文書1ページなので、
 	// 書面のヘッダにあるものはページのタグになります。
 	//
@@ -464,58 +508,47 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 	// ⚠ **`YYYY-MM-DD 形式で`とだけ頼んでいたころ、Gemini は空で返していました**
 	// ——日付にできないので。プロンプトで「日付でない書き方は書かれているまま」と
 	// 頼むまで、**書いてあるのに何も残らない**状態でした。
-	writeHeaderPair(&b, DueDateTag, j.DueDate)
-	// ⚠ **検算の材料**（[checksum.go]）。空なら空欄で出ます——**書く場所が見えて
-	// いれば人が埋められます**（発注書に書いてあるのに読めなかった場合、人が打てば
+	setHeaderTag(d.DraftBlock, DueDateTag, j.DueDate)
+	// ⚠ **検算の材料**（[checksum.go]）。空ならテンプレートの空欄のまま出ます——**書く場所が
+	// 見えていれば人が埋められます**（発注書に書いてあるのに読めなかった場合、人が打てば
 	// その場で検算が効きます。鏡型なので保存し直せば ⚠ が消えます）。
-	writeHeaderPair(&b, SubtotalTag, j.Subtotal)
-	writeHeaderPair(&b, TaxTag, j.Tax)
-	writeHeaderPair(&b, TotalTag, j.Total)
+	setHeaderTag(d.DraftBlock, SubtotalTag, j.Subtotal)
+	setHeaderTag(d.DraftBlock, TaxTag, j.Tax)
+	setHeaderTag(d.DraftBlock, TotalTag, j.Total)
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
-	writeHeaderPair(&b, SourceRefTag, hostPageID+"-"+attachID)
-	b.WriteString("</dl>")
+	ref := hostPageID + "-" + attachID
+	setHeaderTag(d.DraftBlock, SourceRefTag, ref)
+
+	// ── 原本のPDF（2026-09-21 ユーザー決定）──
+	//
+	// ユーザー:「顧客の発注書（読んだまま）の上にPDFを表示できるようにします
+	// （通常は折りたたむ）」。**写しは読み取りの結果で、PDFが原本そのもの**なので、
+	// 並びは「原本 → 読んだまま → 弊社の明細」になります（並びはテンプレートが持つ）。
+	//
+	// 中身はコアが描きます（`internal/cms/file_view.go`）——**この拡張はPDFの
+	// 出し方を知りません**。人が消せば出なくなり、`受信元` のタグ（出所の記録）は残ります。
+	// ⚠ テンプレートに印が無ければ出しません（表示は飾りで、原本は元のページに在る）。
+	d.SetFileView(ref)
+
 	// ── 顧客の発注書（読んだまま）──
 	//
-	// ⚠ **畳んで出します**（`<details>`）。ユーザー:「顧客の表は、整理したあとも
-	// 残します。**ボタンで畳めれば良い**と思います」。素のHTMLだけで畳めるので、
-	// JS も `on*=` も要りません（CSP strict の下で動き、公開ページのゼロJSでも畳めます）。
+	// ⚠ **畳んで出します**（`<details>`・テンプレートの枠）。ユーザー:「顧客の表は、
+	// 整理したあとも残します。**ボタンで畳めれば良い**と思います」。素のHTMLだけで畳める
+	// ので、JS も `on*=` も要りません（CSP strict の下で動き、公開ページのゼロJSでも畳めます）。
 	//
 	// ⚠ **形式を登録していないので索引に載りません**（2026-09-20 の線引き）。
 	// 原本は**証拠**であって、検索したいのは弊社の表のほうです——**二重計上も
 	// 最初から起きません**。
-	// ── 原本のPDFを、写しの**上**に置きます（2026-09-21 ユーザー決定）──
-	//
-	// ユーザー:「顧客の発注書（読んだまま）の上にPDFを表示できるようにします
-	// （通常は折りたたむ）」。**写しは読み取りの結果で、PDFが原本そのもの**なので、
-	// 並びは「原本 → 読んだまま → 弊社の明細」になります。
-	//
-	// ⚠ **畳んだ状態で始めます**（`open` を付けない）。受注ページで毎日見るのは
-	// 弊社の明細で、PDFは**食い違いを疑ったときに開くもの**です。開きっぱなしだと
-	// 明細が画面の下へ押し出されます。
-	//
-	// 中身はコアが描きます（`internal/cms/file_view.go`）——**この拡張はPDFの
-	// 出し方を知りません**。人が消せば出なくなり、`受信元` のタグ（出所の記録）は残ります。
-	b.WriteString(sourcePDFHTML(hostPageID + "-" + attachID))
-	b.WriteString(sourceTableHTML(j.SourceTable))
-	// ⚠ **キャプションを付けます**（2026-09-20 ユーザー:「弊社の受注表にも
-	// キャプションが欲しいところです」）。原本の表と並ぶので、**どちらが何なのか
-	// 見て分かる**必要があります。
-	//
-	// **§2.4 の「見える文字が形式を宣言する」を、自分たちの表でも実践する形**です。
-	// ⚠ `data-type` も当面は残します（属性が優先・既存の本文と揃える）——
-	// 移行が済んだら属性を落とします。それまでは**キャプションは人のため**に働きます。
-	//
-	// ⚠ **見出しは宣言から組みます**（`headerRowHTML`・2026-09-20）。列を足したのに
-	// 見出しを手で書いたままだと、**宣言と本文が黙ってずれます**——索引は見出しの
-	// 表示文字で引くので、ずれた列はどこからも読めません。`vocab.go` が正本です。
-	// ⚠ **言い換えたときは、そう書きます**（2026-09-21）。先方の「図面番号」を
-	// 弊社の「品番」に入れたなら、その1行を表の手前に残します——**原本と見比べ
-	// なくても気づける**のがここの目的です（0c の積み残し）。
-	b.WriteString(itemNoSourceNote(j.Items))
-	b.WriteString(`<table>` +
-		`<caption>` + html.EscapeString(displayNameOf(clientOrderItemsType)) + `</caption><tbody>`)
-	b.WriteString(headerRowHTML(clientOrderItemsType))
+	if box, ok := d.Container(sourceTableCaption); ok {
+		if tbl := sourceTableHTML(j.SourceTable); tbl != "" {
+			box.SetContent(tbl)
+		} else {
+			d.Remove(box.Node()) // ⚠ **読めなければ枠ごと出しません**（空の枠は誤解を生む）
+		}
+	}
+
+	var rows []map[string]string
 	for _, it := range j.Items {
 		// ── 弊社の表は**正規形で書き起こします**（2026-09-21 ユーザー決定）──
 		//
@@ -542,15 +575,15 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 		// 弊社品番は人が文脈から結び、備考は発注書の様式しだいです（様式ページの
 		// 対応表が入ったら、そこから埋まります）。**書く場所が見えていれば人が埋めます**
 		// （図面ブロックで空欄の `客先` を出しているのと同じ理由）。
-		b.WriteString("<tr><td></td>" + // 弊社品番（人が結ぶ）
-			"<td>" + html.EscapeString(cms.NormalizeNameForIngest(it.ItemNo)) + "</td>" +
-			"<td>" + html.EscapeString(cms.NormalizeNameForIngest(it.ItemName)) + "</td>" +
-			"<td>" + html.EscapeString(cms.CanonicalForIngest("数量", it.Quantity)) + "</td>" +
+		rows = append(rows, map[string]string{
+			"item-id":   cms.NormalizeNameForIngest(it.ItemNo),
+			"item-name": cms.NormalizeNameForIngest(it.ItemName),
+			"quantity":  cms.CanonicalForIngest("数量", it.Quantity),
 			// ⚠ **単位も畳みます**——`ｾｯﾄ` のまま入ると選択肢（`個`／`セット`）の
 			// どちらにも当たらず、**画面が「見慣れない単位」として色を付けます**。
 			// まれにしか出ない単位ほど、揺れたまま気づかれません。
-			"<td>" + html.EscapeString(cms.NormalizeNameForIngest(it.Unit)) + "</td>" +
-			"<td>" + html.EscapeString(cms.CanonicalForIngest("単価", it.Price)) + "</td>" +
+			"unit":  cms.NormalizeNameForIngest(it.Unit),
+			"price": cms.CanonicalForIngest("単価", it.Price),
 			// ⚠ **行の納期は、受注時はページの納期と同じ**（2026-09-20 ユーザー:
 			// 「行の納期は、受注時にはタグの納期と同じです。**その後顧客の依頼や
 			// 弊社の事情で個別に納期が変わることがあります**。すると行の納期を
@@ -560,26 +593,34 @@ func buildOrderPageHTML(hostPageID, attachID string, j *orderJudgment) string {
 			// ページのタグは**先方が書いたこと**のまま残り、行は**弊社の予定**として
 			// 動きます。⚠ 日付でない値（「最短納期」）もそのまま配ります——
 			// 書いてあることを捨てないのが決まりです。
-			//
-			// 出荷済みは空が「まだ出していない」。⚠ **分納があるので要ります**
-			// ——「100個のうち40個だけ出した」は `状態` だけでは表せません。
 			// ⚠ **行の納期もページのタグと同じ作法を通します**（2026-09-21）。
 			// それまでここだけ生のまま書いていたので、先方が `2026/10/15` と
 			// 書いていると**ページのタグは `2026-10-15`、行は `2026/10/15`** と
 			// 食い違いました。`date` として読めない値（「最短納期」）はそのまま残ります。
-			"<td>" + html.EscapeString(cms.CanonicalForIngest(DueDateTag, j.DueDate)) + "</td>" +
-			"<td></td>" + // 出荷済み
-			"<td></td>" + // 備考（⚠ 先方の `サイズ` はここへ入ります・様式の対応表が入ったら）
-			"<td>未着手</td>" +
+			"due": cms.CanonicalForIngest(DueDateTag, j.DueDate),
+			// 出荷済みは空が「まだ出していない」。⚠ **分納があるので要ります**
+			// ——「100個のうち40個だけ出した」は `状態` だけでは表せません。
 			// ⚠ **手続きの印は空で始めます**（材料発注・納品書発行・請求書発行）。
 			// 解析には分かりません——どれも**これから人がやること**です。
-			// ⚠ **宣言に列を足したら、ここも足すこと**——見出しは宣言から組むので、
-			// 忘れると**見出しだけ増えて行が足りない**表になります（番人つき:
-			// `TestOrderPageRowMatchesHeaderWidth`）。
-			"<td></td><td></td><td></td></tr>")
+			"status": "未着手",
+		})
 	}
-	b.WriteString("</tbody></table>")
-	return b.String()
+	// ⚠ **キャプションで名乗る表です**（2026-09-20 ユーザー:「弊社の受注表にも
+	// キャプションが欲しいところです」）。原本の表と並ぶので、**どちらが何なのか
+	// 見て分かる**必要があります。**列は見出しの言葉で合わせます**——テンプレートで列を
+	// 並べ替えても・足しても崩れず、テンプレートに無い列は値があれば右端へ足します。
+	if _, err := fillVocabTable(d.DraftBlock, clientOrderItemsType, rows); err != nil {
+		return "", err
+	}
+	// ⚠ **言い換えたときは、そう書きます**（2026-09-21）。先方の「図面番号」を
+	// 弊社の「品番」に入れたなら、その1行を表の手前に残します——**原本と見比べ
+	// なくても気づける**のがここの目的です（0c の積み残し）。
+	if note := itemNoSourceNote(j.Items); note != "" {
+		if t, ok := d.Table(displayNameOf(clientOrderItemsType)); ok {
+			d.InsertBefore(t, note)
+		}
+	}
+	return d.HTML(), nil
 }
 
 // itemNoSourceNote は「弊社の `品番` を、先方のどの列から採ったか」の1行です。
@@ -638,33 +679,45 @@ func labelOf(vocabType, field string) string {
 	return ""
 }
 
-// writeHeaderPair はヘッダ dl の1対を書きます（空値は空欄＝あとから人が埋める）。
+// setHeaderTag はタグ name に値を入れます（空値なら何もしない＝テンプレートの空欄のまま、
+// あとから人が埋める）。
 //
 // 日付・数値の見出し語（発注日 等）は**正規形へ揃えてから**書きます
 // （D-3・`cms.CanonicalForIngest`）。図面番号や客先名は揃えません——
 // 機械が畳んで書き換えると、原本と見比べたときに食い違うためです。
 // 参照（`受信元`・`対応DXF`）もここを通ります——`ref` 型は正規化の対象外なので、
 // 値はそのまま入ります。
-func writeHeaderPair(b *strings.Builder, name, value string) {
-	b.WriteString("<dt>" + html.EscapeString(name) + "</dt>")
-	if strings.TrimSpace(value) == "" {
-		b.WriteString("<dd><br/></dd>")
-	} else {
-		b.WriteString("<dd>" + html.EscapeString(cms.CanonicalForIngest(name, value)) + "</dd>")
+func setHeaderTag(b cms.DraftBlock, name string, values ...string) {
+	var vals []string
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			vals = append(vals, cms.CanonicalForIngest(name, v))
+		}
 	}
+	b.SetTag(name, vals...)
 }
 
-// buildProductPageHTML は加工製品ページの本文を組みます（機能見出し形・D-2）。
+// ProductTemplate は加工製品ページを作るテンプレートの題です（2026-09-27）。
+//
+// ⚠ **図面の解析はこのテンプレートを写して加工製品ページを作ります**——人が手で作るときに
+// 選ぶ雛形と同じもの。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細」の表が
+// 要ります（無ければ作りません）。材料・外注加工などの表は写すだけです。
+const ProductTemplate = "加工製品"
+
+// drawingHeading は図面ブロック（見出しの節）の見出しです。
+const drawingHeading = "図面"
+
+// buildProductPageHTML は加工製品ページの本文を、テンプレート tmpl を埋めて組みます。
 //
 //	<h1>P103-227-6 台座Assy</h1>
-//	<section><h2>図面</h2><dl> 図面番号・図面名称 </dl></section>
-//	<dl data-type="tags"> 受信元: <ページID>-<PDFの添付ID>
-//	                      対応DXF: <ページID>-<DXFの添付ID>（一致した数だけ繰り返す）
+//	<section><h2>図面</h2><dl data-type="tags"> 図面番号・図面名称・…・受信元・対応DXF </dl>
+//	  <section data-type="file-view" data-ref="…"></section></section>
+//	<table><caption>改訂明細</caption> … 1版目の行 </table>
 //
 // **1通のメールの中でPDFとDXFを対応づけた結果**がこのページです。過去のページを
 // 図面番号で探して束ねることはしません——番号は別製品で衝突しうるので、
 // 同一性を担うのは常にページID（drawing_match.go 冒頭）。
-func buildProductPageHTML(hostPageID, attachID string, j *orderJudgment, matches []matchedDXF) string {
+func buildProductPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment, matches []matchedDXF) (string, error) {
 	// 題は「図面番号 図面名称」——**図面名称は重複しうる**ので番号を先に置く。
 	//
 	// **ブロックと同じ正規化を通します。** 通さないと、題が `シュート先Ｔ金具` で
@@ -675,16 +728,39 @@ func buildProductPageHTML(hostPageID, attachID string, j *orderJudgment, matches
 		title = "図面（番号不明）"
 	}
 
-	var b strings.Builder
-	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
-	sec := drawingSectionHTML(j, hostPageID, attachID, matches, "")
-	b.WriteString(sec)
-	// 改訂明細は**下に**置く（図面は新しいものが上に積まれるので、位置が競合しない）。
-	b.WriteString(revisionsTableHTML(j, sec))
-	return b.String()
+	d := cms.NewPageDraft(ProductTemplate, tmpl)
+	d.SetTitle(title)
+	if err := fillDrawingBlock(d, j, hostPageID, attachID, matches); err != nil {
+		return "", err
+	}
+	// 改訂明細（1版目）。
+	//
+	// **行が社内コードの指し先です**——`ページID-行ID` で押せばその版へ飛びます
+	// （2026-09-03 ユーザー:「改訂履歴の項目を作り版にdata-idを割り当てれば良いのでは？」）。
+	// 図面ブロックは消せる決まりなので指し先にせず、消す理由の無い小さな行を指します。
+	//
+	// ⚠ **キャプションだけで名乗ります**（2026-09-27 利用者:「改訂履歴はキャプションだけで良い
+	// です」「メニューの方も用語を統一したほうが良いのでは？」）。
+	// ⚠ **表と行にブロックIDを振ります**——テンプレートを写すとブロックIDは外れるので、
+	// 振らないと改定の行を数える正規表現（`revisionRowRe`）に1版目が数えられず、版がずれます。
+	rows, err := fillVocabTable(d.DraftBlock, revisionItemsType, []map[string]string{{
+		"revision":    "1",
+		"drawing-no":  strings.TrimSpace(j.DrawingNo),
+		"received-at": time.Now().In(time.Local).Format("2006-01-02"),
+	}})
+	if err != nil {
+		return "", err
+	}
+	if t, ok := d.Table(displayNameOf(revisionItemsType)); ok {
+		d.AssignBlockID(t)
+	}
+	for _, tr := range rows {
+		d.AssignBlockID(tr)
+	}
+	return d.HTML(), nil
 }
 
-// drawingSectionHTML は図面ブロック1つ分を組みます。
+// fillDrawingBlock は図面ブロック（見出し「図面」の節）を埋めます。
 //
 // **ブロックIDを付けるのが肝**——参照値 `ページID-ブロックID` は押せばこの
 // ブロックへ飛ぶので、これが**その改定の社内コード**になります（2026-09-03 ユーザー:
@@ -692,103 +768,55 @@ func buildProductPageHTML(hostPageID, attachID string, j *orderJudgment, matches
 // …すると、社内コードでその項目へ飛べることになります」）。
 // 図面番号が別製品と衝突しても、この番号は構造上一意です。
 //
-// existingBody は採番の重複を避けるための既存本文です（改定で差し込むとき）。
 // 由来（受信元・対応DXF）を**ブロックの中**に置くのは、改定で合流させるときに
 // ブロックごと運べば出所も一緒に付いて行くようにするためです。
-func drawingSectionHTML(j *orderJudgment, hostPageID, attachID string,
-	matches []matchedDXF, existingBody string) string {
+func fillDrawingBlock(d *cms.PageDraft, j *orderJudgment, hostPageID, attachID string, matches []matchedDXF) error {
+	blk, err := d.RequireContainer(drawingHeading)
+	if err != nil {
+		return err
+	}
+	d.AssignBlockID(blk.Node())
 	// 図面番号も同じ扱いです（2026-09-06）——**人がいちばんコピペする値**なので、
 	// 揃わないまま置くと揺れがそこから増えます。畳むのは NFKC までで、
 	// `NormalizeCode` は使いません（ハイフンと長音を潰すと読めなくなる）。
-	no := cms.NormalizeNameForIngest(j.DrawingNo)
 	// **顧客名・装置名称・図面名称は早期に正規化します**（2026-09-06 ユーザー）。
 	// この3つはそのままページの題になり、題の完全一致が階層の同一性を決めるので、
 	// 畳まずに入れると `φ３２０　共通台座` が別の装置ページになります。
-	name := cms.NormalizeNameForIngest(j.DrawingName)
-
-	// ── ここは**可変タグ1つ**です（2026-09-18 ユーザー決定）──
+	//
+	// ── ここは**可変タグ**です（2026-09-18 ユーザー決定）──
 	//
 	// ユーザー:「この定義リストを『名前：値のタグ』に変更します。なぜなら、この情報こそ
 	// 検索したいものだからです。おそらくもっとも頻繁に検索し、ワンノートでは取りこぼしが
-	// 多いので、w-cms を作り始めました」。
+	// 多いので、w-cms を作り始めました」。タグにすると `図面番号` は設定で `code` 型なので、
+	// 空白・ハイフン・長音・大小を畳んで引けます（`PagesByTagLoose`）。
 	//
-	// **それまで素の `<dl>`（業務ブロックのヘッダ）に置いていました。** 索引には入って
-	// いましたが `vocab_index` のほうで、**横断検索の口（`PagesByTag`）が読む表ではありません**
-	// ——つまり「いちばん検索したい値が、検索の口を持たない表に入っていた」わけです。
-	// タグにすると `図面番号` は設定で `code` 型なので、空白・ハイフン・長音・大小を畳んで
-	// 引けます（`PagesByTagLoose`）——`P103-227-6` を `P103 227 6` と打っても当たります。
-	//
-	// ⚠ **見た目がタグと同じで振る舞いが違う、という混乱も消えます。** 素の `<dl>` と
-	// `<dl data-type="tags">` は画面では区別が付きませんでした。いまは
-	// **「タグと表だけがDBに入る」**の1文で説明できます。
-	//
-	// ⚠ **空欄でも欄を出します**（`<dd><br/></dd>`）——装置名称と客先は解析が読めない
-	// ことがあり、**書く場所が見えていれば人が埋めます**（実データで7枚のうち3枚に
-	// `客先` が無かった）。
-	var b strings.Builder
-	b.WriteString(`<section data-id="` + cms.NewBlockID(existingBody) + `"><h2>図面</h2>`)
-	b.WriteString(`<dl data-type="tags">`)
-	writeHeaderPair(&b, DrawingNoTag, no)
-	writeHeaderPair(&b, DrawingNameTag, name)
-	// ⚠ **`品番` は空欄で置きます**（2026-09-21 ユーザー:「加工製品ページに品番タグを
-	// 付けようと思います」）。**図面からは読みません**——「何が品番か」は**取引先ごとの
-	// 取り決め**であって、図面のどこにも書かれていないからです（発注書は列の見出しで
-	// 名乗るので、あちらは Gemini に聞けます。この非対称が要点です）。
-	//
-	// ⚠ **Gemini に推測させると、同じ客先の図面100枚のうち数枚だけ空で返り、
-	// その数枚が黙って検索に当たらなくなります**。代わりに、**人が整理で結んだ事実**を
-	// 覚えます（[link_item.go]）——推測ではないのでぶれません。
-	//
-	// ⚠ **図面の無い製品では、ここが唯一の手掛かり**になります。みなと商店のように
-	// 図番で発注してくる客先では `図面番号` のほうが当たるので、空のままで構いません。
-	writeHeaderPair(&b, ItemNoTag, "")
+	// ⚠ **空欄でも欄を出します**——テンプレートの空欄（`<dd><br/></dd>`）がそのまま残ります。
+	// 装置名称と客先は解析が読めないことがあり、**書く場所が見えていれば人が埋めます**
+	// （実データで7枚のうち3枚に `客先` が無かった）。
+	// ⚠ **`品番` は書きません**（2026-09-21 ユーザー:「加工製品ページに品番タグを付けようと
+	// 思います」）。**図面からは読みません**——「何が品番か」は取引先ごとの取り決めで、
+	// 図面のどこにも書かれていないからです。置き場は H1 の下（テンプレートが持つ）。
+	setHeaderTag(blk, DrawingNoTag, cms.NormalizeNameForIngest(j.DrawingNo))
+	setHeaderTag(blk, DrawingNameTag, cms.NormalizeNameForIngest(j.DrawingName))
 	// 装置名称・客先は置き場所（社名／段／装置名称／図面名称）に効く項目。
-	writeHeaderPair(&b, MachineNameTag, cms.NormalizeNameForIngest(j.MachineName))
-	writeHeaderPair(&b, ClientNameTag, cms.NormalizeNameForIngest(j.Customer))
-	writeHeaderPair(&b, SourceRefTag, hostPageID+"-"+attachID)
+	setHeaderTag(blk, MachineNameTag, cms.NormalizeNameForIngest(j.MachineName))
+	setHeaderTag(blk, ClientNameTag, cms.NormalizeNameForIngest(j.Customer))
+	ref := hostPageID + "-" + attachID
+	setHeaderTag(blk, SourceRefTag, ref)
 	// 一致したDXFを参照タグで指す（押すと元の通信記録ページの該当添付へ飛ぶ）。
 	// 一致が無ければ何も書かない——**DXFが無いのも普通**（PDFだけの図面）。
+	var dxf []string
 	for _, m := range matches {
-		writeHeaderPair(&b, "対応DXF", hostPageID+"-"+m.AttachID)
+		dxf = append(dxf, hostPageID+"-"+m.AttachID)
 	}
-	b.WriteString("</dl>")
+	setHeaderTag(blk, "対応DXF", dxf...)
 	// **図面をここに開く、と本文に書きます**（2026-09-14）。ユーザー:「HTMLに無いものが
 	// 表示されるのは極力避けたい」「表示するという意図を伝える名前が良いと思います」。
-	//
 	// 中身はコアが描きます（`internal/cms/file_view.go`）——**この拡張はPDFの出し方を
-	// 知りません**。開くのはコアの機能で、拡張は「ここに開く」と書くだけです。
-	// **人が消せます**——消せば図面は出なくなり、参照タグ（出所の記録）は残ります。
-	// **配線は属性1つです**（2026-09-15 に中の参照タグから移した）。もとは中へ
-	// `受信元` のタグを書いていましたが、それは**すぐ上の図面ブロックにも在る**ので、
-	// 同じ値が2つの意味（届いた記録／表示先の指定）で並んでいました。
-	b.WriteString(`<section data-type="` + cms.FileViewType + `" ` +
-		cms.FileRefAttr + `="` + html.EscapeString(hostPageID+"-"+attachID) +
-		`"></section>`)
-	b.WriteString("</section>")
-	return b.String()
-}
-
-// revisionsTableHTML は改訂明細の表を組みます（1版目）。
-//
-// **行が社内コードの指し先です**——`ページID-行ID` で押せばその版へ飛びます
-// （2026-09-03 ユーザー:「改訂履歴の項目を作り版にdata-idを割り当てれば良いのでは？」）。
-// 図面ブロックは消せる決まりなので指し先にせず、消す理由の無い小さな行を指します。
-//
-// ⚠ **キャプションだけで名乗ります**（2026-09-27 利用者:「改訂履歴はキャプションだけで良い
-// です」「メニューの方も用語を統一したほうが良いのでは？」）。それまでは
-// `<section><h2>改訂履歴</h2><table><caption>改訂明細</caption>` で、**同じものに「改訂履歴」と
-// 「改訂明細」の2つの名前**が付いていました。ブロックIDは包む節から表へ移しました。
-// ⚠ **古い本文には節の形が残っています**——読み手（`revisionTableAt`）はキャプションで表を
-// 探すので、どちらの形でも見つかります。
-func revisionsTableHTML(j *orderJudgment, existingBody string) string {
-	var b strings.Builder
-	b.WriteString(`<table data-id="` + cms.NewBlockID(existingBody) + `"><caption>` +
-		html.EscapeString(displayNameOf(revisionItemsType)) + `</caption><tbody>`)
-	// ⚠ 見出しは宣言から組みます（受注明細と同じ理由——手書きだと列を足した日にずれる）。
-	b.WriteString(headerRowHTML(revisionItemsType))
-	b.WriteString(revisionRowHTML(1, j.DrawingNo, existingBody))
-	b.WriteString("</tbody></table>")
-	return b.String()
+	// 知りません**。テンプレートの図面ブロックに置いたファイル表示の印へ配線します
+	// （**人が消せます**——消せば図面は出なくなり、参照タグ〔出所の記録〕は残ります）。
+	blk.SetFileView(ref)
+	return nil
 }
 
 // revisionRowHTML は改訂履歴の1行です。行の data-id が改定番号になります。
@@ -857,27 +885,8 @@ func revisionTableAt(bodyHTML string) int {
 	return strings.LastIndex(bodyHTML[:capAt], "<table")
 }
 
-// sourcePDFHTML は発注書のPDFそのものを、畳んだ枠に入れて返します。
-//
-// ⚠ **ファイル表示のマーカー1つだけを書きます。** 開くのはコアの機能で
-// （`section[data-type="file-view" data-ref]`）、拡張は「ここに開く」と書くだけです。
-// 配線は属性です——中に参照タグを書く形は 2026-09-15 に廃止されています。
-//
-// ⚠ **`<details>` は素のHTMLだけで畳めます**（CSP strict の下でも、公開ページの
-// ゼロJSでも動く）。原本の写しが同じ形なので、2つ並んでも作法が揃います。
-func sourcePDFHTML(ref string) string {
-	return `<details><summary>` + html.EscapeString(sourcePDFCaption) + `</summary>` +
-		`<section data-type="` + cms.FileViewType + `" ` +
-		cms.FileRefAttr + `="` + html.EscapeString(ref) + `"></section></details>`
-}
-
-// sourcePDFCaption は原本のPDFの枠の見出しです。
-//
-// ⚠ **`sourceTableCaption`（顧客の発注書（読んだまま））と対で読ませます**——
-// 片方が原本そのもの、もう片方が機械の読み取りだと、畳んだ見出しだけで分かるように。
-const sourcePDFCaption = "顧客の発注書（PDF）"
-
-// sourceTableHTML は顧客の発注書の写しを、畳める形で組みます（空なら何も出しません）。
+// sourceTableHTML は顧客の発注書の写しの表を組みます（空なら何も出しません）。
+// 畳める枠（`<details>`）はテンプレートが持ちます（2026-09-27）——ここは枠の中身だけ。
 //
 // ⚠ **`data-type` を付けません。** 形式を登録していない表は索引に載らない決まりなので
 // （2026-09-20）、原本はそのまま「見せるだけ」になります。**caption は人のため**に
@@ -887,7 +896,6 @@ func sourceTableHTML(t orderSourceTable) string {
 		return "" // ⚠ **読めなければ出しません**（空の枠だけ出しても誤解を生む）
 	}
 	var b strings.Builder
-	b.WriteString(`<details><summary>` + html.EscapeString(sourceTableCaption) + `</summary>`)
 	b.WriteString(`<table><caption>` + html.EscapeString(sourceTableCaption) + `</caption><tbody><tr>`)
 	for _, h := range t.Headers {
 		b.WriteString("<th>" + html.EscapeString(h) + "</th>")
@@ -906,7 +914,7 @@ func sourceTableHTML(t orderSourceTable) string {
 		}
 		b.WriteString("</tr>")
 	}
-	b.WriteString("</tbody></table></details>")
+	b.WriteString("</tbody></table>")
 	return b.String()
 }
 

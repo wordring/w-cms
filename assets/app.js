@@ -2195,6 +2195,18 @@
             newEl = buildPlainTable([{ label: '' }, { label: '' }]);
         } else if (type === 'dl') {
             newEl = buildPlainDl([{ label: '' }]);
+        } else if (type === 'section') {
+            // **見出しの節**（2026-09-27）——見出しの言葉が節の名前になる。テンプレートでは
+            // **機械が中身を入れる器**です（メールの「本文」「添付ファイル」・発注書の「備考」・
+            // 加工製品の「図面」）。利用者の選択:「見出しの節」。機械語は書かない（見出しが名乗る）。
+            // ⚠ 見出しと段落には空の改行を入れる——空の要素は高さが無く、カーソルを置けない
+            //    （見出しに打ったつもりの字が段落へ入った・2026-09-27 に E2E で踏んだ）。
+            newEl = document.createElement('section');
+            for (const tag of ['h2', 'p']) {
+                const el = document.createElement(tag);
+                el.appendChild(document.createElement('br'));
+                newEl.appendChild(el);
+            }
         }
         if (!newEl) return null;
 
@@ -2288,6 +2300,16 @@
         
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'P')) {
             newEl.focus();
+        } else if (isEdit && type === 'section') {
+            // 見出しの節は、まず名前（見出し）を打てるように。
+            const h = newEl.querySelector('h2');
+            newEl.focus();
+            const range = document.createRange();
+            range.selectNodeContents(h);
+            range.collapse(true);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
         } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL' || newEl.tagName === 'SECTION')) {
             focusFirstCell(newEl);
         }

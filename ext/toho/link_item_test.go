@@ -173,7 +173,7 @@ func TestProductCodeTagsAreDeclared(t *testing.T) {
 // ——「何が品番か」は取引先ごとの取り決めで、図面には書かれていないからです。
 func TestDrawingPageHasItemNoSlot(t *testing.T) {
 	j := &orderJudgment{DocType: "drawing", DrawingNo: "K120-01-211", DrawingName: "ブラケット"}
-	body := buildProductPageHTML("000001", "pdf001", j, nil)
+	body := testProductPage("000001", "pdf001", j, nil)
 
 	if !strings.Contains(body, "<dt>"+ItemNoTag+"</dt>") {
 		t.Fatalf("品番の欄がありません:\n%s", body)

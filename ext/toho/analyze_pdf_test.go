@@ -198,7 +198,7 @@ func TestBuildOrderPageHTMLEscapes(t *testing.T) {
 		OrderNo:       `<script>alert(1)</script>`,
 		Items:         []orderPDFItem{{ItemName: `<img src=x>`}},
 	}
-	html := buildOrderPageHTML("000090", "abc123", j)
+	html := testOrderPage("000090", "abc123", j)
 	if strings.Contains(html, "<script>") || strings.Contains(html, "<img") || strings.Contains(html, "<b>") {
 		t.Errorf("エスケープされていません:\n%s", html)
 	}

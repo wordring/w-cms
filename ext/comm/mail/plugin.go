@@ -25,6 +25,12 @@ func init() {
 	cms.RegisterExtension("comm/mail", "メール送受信・IMAP／SMTP")
 	comm.RegisterMailer(oauthMailer{})
 	cms.Register(mailPlugin{})
+	// **送信の控えもテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     SentTemplate,
+		Extension: "comm/mail",
+		Why:       "メールを送ったときの控えに写します（無いとメールを送りません——出た事実が記録に残らないため）。見出し「" + comm.MailBodyHeading + "」の節が要ります。ファイルを添えたときは見出し「" + comm.MailFilesHeading + "」の節も要ります。",
+	})
 	if Configured() {
 		log.Printf("メール送受信: 有効（IMAP %s／SMTP %s）", imapHost(), func() string { _, a := smtpAddr(); return a }())
 	} else {

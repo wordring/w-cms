@@ -209,7 +209,7 @@ func TestOrderCarriesItemIDAndSurface(t *testing.T) {
 	ln := ourOrderLine{ItemID: "A100-B01-242", ItemName: "留めプレート", Color: "緑", Quantity: "20"}
 	for name, got := range map[string]string{
 		"発注部材表": orderDraftHTML([]ourOrderLine{ln}),
-		"発注書":   buildOurOrderHTML("000150", "ふじ鍍金", "2026-09-25", "", "", "", []ourOrderLine{ln}),
+		"発注書":   testOurOrder("000150", "ふじ鍍金", "2026-09-25", "", "", "", []ourOrderLine{ln}),
 	} {
 		for _, want := range []string{"<td>A100-B01-242</td>", "<td>緑</td>"} {
 			if !strings.Contains(got, want) {

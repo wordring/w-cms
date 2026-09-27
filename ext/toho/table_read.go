@@ -271,3 +271,23 @@ func spliceNodes(nodes []*html.Node, target *html.Node, repl []*html.Node, keepT
 	}
 	return htmldoc.Render(nodes), true
 }
+
+// fillVocabTable は形式 vocabType の表（キャプションは表示名）へ、機械キーごとの値の行を
+// 入れます（2026-09-27）。列の見出しは宣言から引き、テンプレートの見出しの言葉で合わせます
+// ——**列の並びはテンプレートが決め、行の数は機械がその場で決めます**。
+func fillVocabTable(b cms.DraftBlock, vocabType string, rows []map[string]string) ([]*html.Node, error) {
+	cols := columnsOf(vocabType)
+	labels := make([]string, len(cols))
+	for i, c := range cols {
+		labels[i] = c.Label
+	}
+	vals := make([][]string, len(rows))
+	for r, m := range rows {
+		row := make([]string, len(cols))
+		for i, c := range cols {
+			row[i] = strings.TrimSpace(m[c.Field])
+		}
+		vals[r] = row
+	}
+	return b.FillTable(displayNameOf(vocabType), labels, vals)
+}

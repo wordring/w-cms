@@ -393,7 +393,7 @@ func TestOrderSurfaceColumnCarriesPlatingAndBare(t *testing.T) {
 // 『備考』タグはありません」）。要求は「その下のブロックに『備考』入力欄があります。
 // 備考欄は複数行書けます」。
 func TestOrderNoteIsASectionNotATag(t *testing.T) {
-	body := buildOurOrderHTML("000138", "みなと商店", "2026-09-24", "", "定尺で可\n急ぎでお願いします", "", nil)
+	body := testOurOrder("000138", "みなと商店", "2026-09-24", "", "定尺で可\n急ぎでお願いします", "", nil)
 	if strings.Contains(body, "<dt>備考</dt>") {
 		t.Errorf("⚠ 備考がタグに書かれています:\n%s", body)
 	}
@@ -407,7 +407,7 @@ func TestOrderNoteIsASectionNotATag(t *testing.T) {
 		t.Errorf("⚠ 備考欄が表より上にあります:\n%s", body)
 	}
 	// ⚠ **空でも欄は置く**（後から書き足す場所が要る）。
-	if empty := buildOurOrderHTML("000139", "みなと商店", "2026-09-24", "", "", "", nil); !strings.Contains(empty, "<h2>備考</h2>") {
+	if empty := testOurOrder("000139", "みなと商店", "2026-09-24", "", "", "", nil); !strings.Contains(empty, "<h2>備考</h2>") {
 		t.Errorf("⚠ 備考が空のとき欄がありません:\n%s", empty)
 	}
 }

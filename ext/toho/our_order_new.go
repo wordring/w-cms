@@ -101,6 +101,35 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		when = t
 	}
 
+	// ⚠ **送られてきた差出人をそのまま信じません**——**署名を持つ人の中に居るか**を
+	//    確かめます。読めない人・署名の無い人を紙に刷らないため（画面は選ばせるだけで、
+	//    口は誰でも叩けます）。
+	signerID := ""
+	if want := strings.TrimSpace(req.Signer); want != "" {
+		for _, sg := range Signers(user) {
+			if page.FormatID(sg.PageID) == want {
+				signerID = want
+				break
+			}
+		}
+	}
+	// ⚠ **本文はテンプレート「発注書」を写して組みます**（2026-09-27）。**ページを作る前に**
+	//    テンプレートと器（発注明細の表・備考の節）を確かめます——作ってから断ると、
+	//    題が「作成中」のページが置き場に残ります。
+	tmpl, err := cms.PageTemplateBody(PurchaseOrderTemplate)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "発注書ページを作れません: "+err.Error())
+		return
+	}
+	build := func(pageID string) (string, error) {
+		return buildOurOrderHTML(tmpl, pageID, supplier, when.Format("2006-01-02"),
+			strings.TrimSpace(req.Due), strings.TrimSpace(req.Note), signerID, req.Lines)
+	}
+	if _, err := build(""); err != nil {
+		cms.JSONFail(w, http.StatusConflict, "発注書ページを作れません: "+err.Error())
+		return
+	}
+
 	// ⚠ **置き場は `発注／年／月`**（年月は発注日）。無ければ作ります。
 	boxID, err := cms.EnsureTopLevelBox(PurchaseOrderBoxTitle, user.Username)
 	if err != nil {
@@ -118,20 +147,11 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "発注書ページを作れません: "+err.Error())
 		return
 	}
-	// ⚠ **送られてきた差出人をそのまま信じません**——**署名を持つ人の中に居るか**を
-	//    確かめます。読めない人・署名の無い人を紙に刷らないため（画面は選ばせるだけで、
-	//    口は誰でも叩けます）。
-	signerID := ""
-	if want := strings.TrimSpace(req.Signer); want != "" {
-		for _, sg := range Signers(user) {
-			if page.FormatID(sg.PageID) == want {
-				signerID = want
-				break
-			}
-		}
+	body, err := build(newID)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "発注書ページを組めません: "+err.Error())
+		return
 	}
-	body := buildOurOrderHTML(newID, supplier, when.Format("2006-01-02"),
-		strings.TrimSpace(req.Due), strings.TrimSpace(req.Note), signerID, req.Lines)
 	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
 		return
 	}
@@ -149,100 +169,100 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, out)
 }
 
-// buildOurOrderHTML は発注書ページの本文を組みます。
+// PurchaseOrderTemplate は発注書ページを作るテンプレートの題です（2026-09-27）。
 //
-// ⚠ **見出し行は宣言から組みます**（`headerRowHTML`）——手書きに戻すと、
-// 列を足した日に**足した列がどこからも読めません**。エラーは出ません。
-func buildOurOrderHTML(pageID, supplier, orderAt, due, note, signerID string, lines []ourOrderLine) string {
-	var b strings.Builder
-	b.WriteString(`<h1>発注　` + stdhtml.EscapeString(supplier) + `</h1>`)
-	b.WriteString(`<dl data-type="tags">`)
+// ⚠ **発注書ページの形はこのテンプレートが決めます**——タグの並び・発注明細の列の並び・
+// 備考欄。機械が書くのは題と値と行の数だけで、テンプレートが無ければ作りません。
+// キャプション「発注明細」の表が要ります。備考を書くときは見出し「備考」の節も要ります。
+const PurchaseOrderTemplate = "発注書"
+
+// buildOurOrderHTML は発注書ページの本文を、テンプレート tmpl を埋めて組みます。
+//
+// ⚠ **列は見出しの言葉で合わせます**（`fillVocabTable`）——テンプレートで列を並べ替えても
+// 崩れず、テンプレートに無い列は値があれば右端へ足します。
+func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID string, lines []ourOrderLine) (string, error) {
+	d := cms.NewPageDraft(PurchaseOrderTemplate, tmpl)
+	d.SetTitle("発注　" + supplier)
 	// ⚠ **発注書番号はページ番号そのもの**（別に採番しない）。
-	// ⚠ **タグは受注ページと同じ口で書きます**（`writeHeaderPair`——日付は正規形へ）。
-	writeHeaderPair(&b, OrderNoTag, pageID)
-	writeHeaderPair(&b, SupplierTag, supplier)
-	writeHeaderPair(&b, OrderedAtTag, orderAt)
-	if due != "" {
-		writeHeaderPair(&b, DueDateTag, due)
-	}
+	// ⚠ **タグは受注ページと同じ口で書きます**（`setHeaderTag`——日付は正規形へ）。
+	setHeaderTag(d.DraftBlock, OrderNoTag, pageID)
+	setHeaderTag(d.DraftBlock, SupplierTag, supplier)
+	setHeaderTag(d.DraftBlock, OrderedAtTag, orderAt)
+	setHeaderTag(d.DraftBlock, DueDateTag, due)
 	// ⚠ **備考はタグにしません**（2026-09-24 ユーザー:「発注書ページに『備考』タグが
 	//    ありますが、要求に『備考』タグはありません」）——要求は**表の下の備考欄**で、
-	//    **複数行書けます**。下の `orderNoteSectionHTML` が書きます。
+	//    **複数行書けます**。下の `fillOrderNote` が書きます。
 	// ⚠ **誰が出したかを残します**（2026-09-22）。値は連絡帳の担当者ページのID
 	//    （`ref` 型なので押せば飛べる）。
 	//    ⚠ **署名の文面は焼き込みません**——**出した紙の正本はPDF**で、それはこの
 	//    ページの添付として残ります（`SaveAttachmentFrom`）。本文へ写すと二重になり、
 	//    あとから署名が変わったときに**紙と本文が食い違います**。
-	if signerID != "" {
-		writeHeaderPair(&b, OrderSignerTag, signerID)
-	}
-	b.WriteString(`</dl>`)
+	setHeaderTag(d.DraftBlock, OrderSignerTag, signerID)
 
-	b.WriteString(`<table><caption>` +
-		stdhtml.EscapeString(displayNameOf(ourOrderItemsType)) + `</caption><tbody>`)
-	b.WriteString(headerRowHTML(ourOrderItemsType))
+	rows := make([]map[string]string, 0, len(lines))
 	for _, ln := range lines {
 		// ⚠ **材料の行に `品名` は書きません。** 材料に単独の名前は無く、
 		//    **材質・形状・寸法の3つで決まります**——`鉄 FB t4.5*75*1090` と書くと、
 		//    同じことが紙の上で2回言われ、**直すときに食い違います**。
 		//    購入部品は逆で、**品名が同一性そのもの**なので残します。
-		itemName := itemNameOf(ln)
-		vals := map[string]string{
-			"our-item-id": strings.TrimSpace(ln.ProductID),
-			"item-id":     strings.TrimSpace(ln.ItemID),
-			"item-name":   itemName,
-			"material":    strings.TrimSpace(ln.Material),
-			"shape":       strings.TrimSpace(ln.Shape),
-			"size":        strings.TrimSpace(ln.Size),
-			"color":       strings.TrimSpace(ln.Color),
-			"quantity":    strings.TrimSpace(ln.Quantity),
-			"unit":        strings.TrimSpace(ln.Unit),
+		rows = append(rows, map[string]string{
+			"our-item-id": ln.ProductID,
+			"item-id":     ln.ItemID,
+			"item-name":   itemNameOf(ln),
+			"material":    ln.Material,
+			"shape":       ln.Shape,
+			"size":        ln.Size,
+			"color":       ln.Color,
+			"quantity":    ln.Quantity,
+			"unit":        ln.Unit,
 			"cost":        moneyOrEmpty(ln.Cost),
-			"note":        strings.TrimSpace(ln.Note),
+			"note":        ln.Note,
 			// ⚠ **状態は「未発注」から始めます**（2026-09-22）。紙はできましたが、
 			//    **まだ外へ出ていません**——メール・FAX・手渡しのどれかで出したときに
 			//    `発注済` へ進みます（[order_status.go](order_status.go)）。
 			//    ⚠ **それまでの既定は `未納品` でした**——「紙を作る＝発注した」と
 			//    読む形で、**出す前の紙と出した紙が見分けられません**でした。
 			"status": OrderLineUnsent,
-		}
-		b.WriteString(`<tr>`)
-		for _, c := range columnsOf(ourOrderItemsType) {
-			b.WriteString(`<td>` + stdhtml.EscapeString(vals[c.Field]) + `</td>`)
-		}
-		b.WriteString(`</tr>`)
+		})
 	}
-	b.WriteString(`</tbody></table>`)
-	b.WriteString(orderNoteSectionHTML(note))
-	return b.String()
+	if _, err := fillVocabTable(d.DraftBlock, ourOrderItemsType, rows); err != nil {
+		return "", err
+	}
+	if err := fillOrderNote(d, note); err != nil {
+		return "", err
+	}
+	return d.HTML(), nil
 }
 
 // orderNoteHeading は発注書ページの備考欄の見出しです（本文とPDFで共有）。
 const orderNoteHeading = "備考"
 
-// orderNoteSectionHTML は発注明細の下の**備考欄**を組みます（2026-09-24）。
+// fillOrderNote は発注明細の下の**備考欄**（見出し「備考」の節）へ note を入れます（2026-09-24）。
 //
 // 要求（【要求】発注フォルダ）:「その下のブロックに『備考』入力欄があります。
 // **備考欄は複数行書けます**」。⚠ **相手に伝えることを書く欄**です——行の `備考` 列
 // （他社が知る必要のないメモ）とは別で、こちらは**紙に刷ります**。
 //
 // ⚠ **空でも欄は置きます**——後から書き足す場所が画面に無いと、人はタグや
-// 行の備考に書いてしまいます。
-func orderNoteSectionHTML(note string) string {
+// 行の備考に書いてしまいます（欄はテンプレートが持つ。note が空なら欄はそのまま）。
+// ⚠ note があるのに欄が無ければ作りません（`cms.TemplateSlotError`）——紙に刷る言葉を
+// 黙って捨てないため。
+func fillOrderNote(d *cms.PageDraft, note string) error {
 	var b strings.Builder
-	b.WriteString(`<section><h2>` + orderNoteHeading + `</h2>`)
-	wrote := false
 	for _, ln := range strings.Split(strings.ReplaceAll(note, "\r\n", "\n"), "\n") {
 		if ln = strings.TrimSpace(ln); ln != "" {
 			b.WriteString(`<p>` + stdhtml.EscapeString(ln) + `</p>`)
-			wrote = true
 		}
 	}
-	if !wrote {
-		b.WriteString(`<p><br/></p>`)
+	if b.Len() == 0 {
+		return nil
 	}
-	b.WriteString(`</section>`)
-	return b.String()
+	sec, err := d.RequireContainer(orderNoteHeading)
+	if err != nil {
+		return err
+	}
+	sec.SetContent(b.String())
+	return nil
 }
 
 // moneyOrEmpty は単価を書き出します。

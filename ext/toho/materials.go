@@ -49,7 +49,7 @@ func init() {
 	// したのは、**整理する前に「どこへ行くのか」を人が見られるようにする**ためです。
 	// **作業面は受注残**（2026-09-27 に本文を足した——それまでは見出しだけの箱で、職場の受注
 	// フォルダの受注残は人が後から貼っていた）。整理の途中で作るときも同じ本文になります
-	// （`cms.EnsureTopLevelBox` が登録の本文を使う・テンプレート駆動の A）。
+	// （`cms.EnsureTopLevelBox` も同じ題のテンプレートを写す・テンプレート駆動の A）。
 	// **加工製品の階層の根**（2026-09-16 にアドレス帳の木と分けた・customer_box.go）。
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     CustomerBoxTitle,
@@ -68,6 +68,24 @@ func init() {
 		Title:     PurchaseOrderBoxTitle,
 		Extension: "toho",
 		Why:       "弊社が出す発注書の置き場です（発注／年／月。年月は発注日）。⚠ 受注ページの下には置けません——発注は納期のグループなどから発行され、受注明細の単位とは無関係だからです。受注との結びは参照で作ります。未手配の一覧（発注書を作る画面）もここに出ます。",
+	})
+
+	// **機械が作るページもテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
+	// 形（タグの並び・表の列・節）はテンプレート、値と行の数は機械——管理画面に「在る・無い」を出す。
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     OrderPageTemplate,
+		Extension: "toho",
+		Why:       "発注書PDFの解析が受注ページを作るときに写します。キャプション「受注明細」の表が要ります（原本PDFのファイル表示・「顧客の発注書（読んだまま）」の枠は、あれば埋めます）。",
+	})
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     ProductTemplate,
+		Extension: "toho",
+		Why:       "図面PDFの解析が加工製品ページを作るときに写します。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細」の表が要ります。",
+	})
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     PurchaseOrderTemplate,
+		Extension: "toho",
+		Why:       "発注部材表の「発注書ページを作る」が写します。キャプション「発注明細」の表と、見出し「備考」の節が要ります。",
 	})
 }
 

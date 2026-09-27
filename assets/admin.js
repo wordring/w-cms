@@ -231,6 +231,7 @@ async function loadRequiredPages() {
     });
     tb.appendChild(tr);
   });
+  renderPageTemplates(d.templates || []);
   const missing = (d.pages || []).filter(p => !p.exists).length;
   const creatable = (d.pages || []).filter(p => !p.exists && !p.no_template).length;
   const btn = document.getElementById('reqpages-create');
@@ -240,6 +241,34 @@ async function loadRequiredPages() {
       : creatable === 0 ? 'テンプレートが無いので作れません（' + missing + '件）'
       : '足りない置き場を作る（' + creatable + '件）';
   }
+}
+
+// renderPageTemplates は「機械が作るページのテンプレート」の表を描きます（2026-09-27）。
+// 解析・取り込み・発注書のボタンは、この題のテンプレートを写してページを作ります——
+// **無いと作れない**ので、どれが欠けているかをここで見せます。
+function renderPageTemplates(list) {
+  const tb = document.querySelector('#pagetmpl-table tbody');
+  if (!tb) return;
+  tb.textContent = '';
+  list.forEach(p => {
+    const tr = document.createElement('tr');
+    const td = (fill) => { const c = document.createElement('td'); fill(c); tr.appendChild(c); };
+    td(c => { c.textContent = p.title; });
+    td(c => { c.textContent = p.extension || '—'; });
+    td(c => { c.textContent = p.why || ''; });
+    td(c => {
+      if (p.page_id) {
+        const a = document.createElement('a');
+        a.href = '/' + p.page_id;
+        a.textContent = '✓ ' + p.page_id;
+        c.appendChild(a);
+      } else {
+        c.className = 'dup-warn';
+        c.textContent = '⚠ ' + (p.problem || 'テンプレートがありません');
+      }
+    });
+    tb.appendChild(tr);
+  });
 }
 
 async function createRequiredPages() {

@@ -28,7 +28,7 @@ func orderPageWith(sub, tax, total string, rows ...[]string) string {
 			{ItemNo: "K120-1", ItemName: "ブラケット", Quantity: "100", Unit: "個", Price: "390"},
 		},
 	}
-	return buildOrderPageHTML("000001", "pdf001", j)
+	return testOrderPage("000001", "pdf001", j)
 }
 
 // render は鏡を通した表示用のHTMLを返します。

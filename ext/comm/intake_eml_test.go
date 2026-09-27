@@ -41,6 +41,7 @@ func setupInbox(t *testing.T) string {
 	if err := cms.SyncIndex("000090", "<h1>"+MailBoxTitle+"</h1>"); err != nil {
 		t.Fatalf("受信箱の同期エラー: %v", err)
 	}
+	seedCommTemplates(t)
 	return "000090"
 }
 

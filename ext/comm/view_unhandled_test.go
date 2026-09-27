@@ -207,6 +207,7 @@ func setupIntakeTest(t *testing.T) {
 			t.Fatalf("SyncIndexエラー: %v", err)
 		}
 	}
+	seedCommTemplates(t)
 }
 
 // TestUnhandledIncludesInternalJob は、**通信でない案件も作業待ちに並ぶ**ことを

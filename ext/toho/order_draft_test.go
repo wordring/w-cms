@@ -59,7 +59,7 @@ func TestOrderDraftFollowsTheSameRulesAsThePaper(t *testing.T) {
 	ln := ourOrderLine{ProductID: "000080", Material: "鉄", Size: "t4.5",
 		ItemName: "鉄 t4.5", Quantity: "2", Cost: "0"}
 	draft := orderDraftHTML([]ourOrderLine{ln})
-	paper := buildOurOrderHTML("000200", "みなと商店", "2026-09-22", "", "", "",
+	paper := testOurOrder("000200", "みなと商店", "2026-09-22", "", "", "",
 		[]ourOrderLine{ln})
 	for _, bad := range []string{"鉄 t4.5</td>", "<td>0</td>"} {
 		if strings.Contains(draft, bad) {

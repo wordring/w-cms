@@ -76,7 +76,7 @@ func TestOrderItemColumns(t *testing.T) {
 // 引くので、宣言だけ増やして本文の `<th>` が古いままだと**エラーも出ずに欠けます**。
 func TestOrderPageHeaderMatchesDeclaration(t *testing.T) {
 	j := &orderJudgment{IsClientOrder: true, DocType: "order", OrderNo: "PO-1"}
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 
 	for _, c := range columnsOf(clientOrderItemsType) {
 		if !strings.Contains(body, "<th>"+c.Label+"</th>") {
@@ -92,7 +92,7 @@ func TestOrderPageHeaderMatchesDeclaration(t *testing.T) {
 // ——列を足した日に、受注明細で起きたのと同じずれが黙って起きるところでした。
 func TestRevisionHeaderMatchesDeclaration(t *testing.T) {
 	j := &orderJudgment{DocType: "drawing", DrawingNo: "K120-1", DrawingName: "ブラケット"}
-	body := buildProductPageHTML("000001", "pdf001", j, nil)
+	body := testProductPage("000001", "pdf001", j, nil)
 
 	cols := columnsOf(revisionItemsType)
 	if len(cols) == 0 {
@@ -104,7 +104,14 @@ func TestRevisionHeaderMatchesDeclaration(t *testing.T) {
 		}
 	}
 	// 見出し行のセル数と1版目の行のセル数が揃っていること。
-	if head, row := strings.Count(body, "<th>"), strings.Count(revisionRowHTML(1, "K120-1", ""), "<td>"); head != row {
+	// ⚠ **改訂明細の表の中だけ数えます**（2026-09-27）——加工製品はテンプレートを写して
+	// 作るので、同じページに材料などの表の見出しも並びます。
+	at := strings.Index(body, "<caption>"+displayNameOf(revisionItemsType)+"</caption>")
+	if at < 0 {
+		t.Fatalf("改訂明細の表がありません:\n%s", body)
+	}
+	table := body[at : at+strings.Index(body[at:], "</table>")]
+	if head, row := strings.Count(table, "<th>"), strings.Count(revisionRowHTML(1, "K120-1", ""), "<td>"); head != row {
 		t.Errorf("改訂履歴の列数がずれています: 見出し %d / 行 %d", head, row)
 	}
 }
@@ -120,7 +127,7 @@ func TestOrderPageRowMatchesHeaderWidth(t *testing.T) {
 		IsClientOrder: true, DocType: "order", OrderNo: "PO-1",
 		Items: []orderPDFItem{{ItemNo: "A-1", ItemName: "ブラケット", Price: "390", Quantity: "100"}},
 	}
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 
 	head := strings.Count(body, "<th>")
 	rows := strings.SplitN(body, "</tr>", 3)
@@ -186,7 +193,7 @@ func TestOrderPageDueDateIsPageTag(t *testing.T) {
 		DueDate: "2026-10-15",
 		Items:   []orderPDFItem{{ItemNo: "A-1", ItemName: "ブラケット", Quantity: "100", Unit: "個"}},
 	}
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 
 	if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>2026-10-15</dd>") {
 		t.Errorf("納期がページのタグに出ていません:\n%s", body)
@@ -213,7 +220,7 @@ func TestOrderPageRowCarriesUnit(t *testing.T) {
 		IsClientOrder: true, DocType: "order", OrderNo: "PO-1",
 		Items: []orderPDFItem{{ItemNo: "A-1", ItemName: "ブラケット", Quantity: "2", Unit: "セット"}},
 	}
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	if !strings.Contains(body, "<td>セット</td>") {
 		t.Errorf("単位が落ちています:\n%s", body)
 	}
@@ -237,7 +244,7 @@ func TestOrderPageRowCarriesUnit(t *testing.T) {
 func TestOrderPageKeepsNonDateDueDate(t *testing.T) {
 	for _, v := range []string{"最短納期", "至急", "都度指示"} {
 		j := &orderJudgment{IsClientOrder: true, DocType: "order", OrderNo: "PO-1", DueDate: v}
-		body := buildOrderPageHTML("000001", "pdf001", j)
+		body := testOrderPage("000001", "pdf001", j)
 		if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>"+v+"</dd>") {
 			t.Errorf("日付でない納期 %q が落ちています:\n%s", v, body)
 		}
@@ -250,7 +257,7 @@ func TestOrderPageKeepsNonDateDueDate(t *testing.T) {
 // 原本の表と並ぶので、**どちらが何なのか見て分かる**必要があります。
 // **§2.4 の「見える文字が形式を宣言する」を、自分たちの表でも実践する形**です。
 func TestOrderPageHasCaption(t *testing.T) {
-	body := buildOrderPageHTML("000001", "pdf001",
+	body := testOrderPage("000001", "pdf001",
 		&orderJudgment{IsClientOrder: true, DocType: "order", OrderNo: "PO-1"})
 
 	def, _ := cms.VocabDefByType("client-order-items")
@@ -273,7 +280,7 @@ func TestOrderPageShippedStartsEmpty(t *testing.T) {
 		IsClientOrder: true, DocType: "order", OrderNo: "PO-1",
 		Items: []orderPDFItem{{ItemNo: "A-1", ItemName: "ブラケット", Quantity: "100", Unit: "個"}},
 	}
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	rows := strings.SplitN(body, "</tr>", 3)
 	if len(rows) < 3 {
 		t.Fatalf("明細の行がありません:\n%s", body)

@@ -61,7 +61,7 @@ func TestSuggestOrgStaysSilentWhenAmbiguous(t *testing.T) {
 		t.Fatal("連絡帳がありません")
 	}
 	for _, name := range []string{"株式会社あさひ", "有限会社あさひ"} {
-		if _, err := ensureChildByTitle(user, boxID, name); err != nil {
+		if _, err := ensureChildByTitle(user, boxID, name, OrgTemplate); err != nil {
 			t.Fatalf("%s を作れません: %v", name, err)
 		}
 	}
@@ -102,7 +102,7 @@ func TestOrgNameForPageKeepsReadWhenAmbiguous(t *testing.T) {
 		t.Fatal("連絡帳がありません")
 	}
 	for _, name := range []string{"株式会社あさひ", "有限会社あさひ"} {
-		if _, err := ensureChildByTitle(user, boxID, name); err != nil {
+		if _, err := ensureChildByTitle(user, boxID, name, OrgTemplate); err != nil {
 			t.Fatalf("%s を作れません: %v", name, err)
 		}
 	}

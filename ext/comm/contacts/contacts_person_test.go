@@ -30,7 +30,7 @@ func setupPartnerTree(t *testing.T) (user *auth.User, companyID string) {
 	if err != nil {
 		t.Fatalf("EnsureContactsBox: %v", err)
 	}
-	companyID, err = ensureChildByTitle(user, boxID, "南北スポーツ機械")
+	companyID, err = ensureChildByTitle(user, boxID, "南北スポーツ機械", OrgTemplate)
 	if err != nil {
 		t.Fatalf("社名ページを作れません: %v", err)
 	}

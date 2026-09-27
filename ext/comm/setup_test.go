@@ -17,6 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -74,4 +75,38 @@ func queryTags(t *testing.T, pageID int) []string {
 		out = append(out, f+"="+v)
 	}
 	return out
+}
+
+// 通信記録のテンプレート（2026-09-27・テンプレート駆動の D）。職場のテンプレートと同じ形。
+// 可変タグの枠は置きません——機械が値のあるタグだけを h1 の直後に並べます（空の欄を残さない）。
+const (
+	testMailInTemplate = "<h1>" + MailInTemplate + "</h1>" +
+		"<section><h2>" + MailBodyHeading + "</h2></section>" +
+		"<section><h2>" + MailFilesHeading + "</h2></section>"
+	testMemoTemplate = "<h1>" + MemoTemplate + "</h1><p><br/></p>"
+)
+
+// seedCommTemplates はテンプレート置き場に通信記録のテンプレートを置きます
+// （テンプレートが無いと、取り込みも手入力の記録もページを作りません）。
+func seedCommTemplates(t *testing.T) {
+	t.Helper()
+	for _, p := range []struct{ id, parent, body string }{
+		{"000950", "000000", "<h1>" + cms.TemplateRootTitle + "</h1>"},
+		{"000951", "000950", "<h1>通信</h1>"},
+		{"000952", "000951", testMailInTemplate},
+		{"000953", "000951", testMemoTemplate},
+	} {
+		if err := os.MkdirAll(page.GetPageDir(p.id), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(page.BodyPath(p.id), []byte(p.body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := page.WriteSidecar(p.id, page.PageMeta{Owner: "alice", Mode: "330", ParentID: p.parent}); err != nil {
+			t.Fatal(err)
+		}
+		if err := cms.SyncIndex(p.id, p.body); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

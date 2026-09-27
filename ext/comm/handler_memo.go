@@ -29,7 +29,6 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -126,7 +125,14 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !HasDirection(channel) || (direction != DirectionIn && direction != DirectionOut) {
 		direction = ""
 	}
-	body := memoBodyHTML(channel, title, direction,
+	// **本文はテンプレート「通信記録（手入力）」を写して組みます**（2026-09-27）——
+	// タグの並びと、書き始める場所はテンプレートが持ちます。無ければ作りません。
+	tmpl, err := cms.PageTemplateBody(MemoTemplate)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "記録を作れません: "+err.Error())
+		return
+	}
+	body := memoBodyHTML(tmpl, channel, title, direction,
 		strings.TrimSpace(req.Phone), strings.TrimSpace(req.Counterpart), now)
 
 	pageID, err := CreateRecordPage(boxID, user.Username, now, body)
@@ -138,32 +144,35 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "title": title})
 }
 
-// memoBodyHTML は記録1枚の本文を組み立てます（切り出してあるのはテストのため）。
+// MemoTemplate は手で作る記録（電話・FAX・メール・メモ）のテンプレートの題です（2026-09-27）。
+const MemoTemplate = "通信記録（手入力）"
+
+// memoBodyHTML は記録1枚の本文を、テンプレート tmpl を埋めて組み立てます（切り出してあるのは
+// テストのため）。
 //
 // **書くのは分かることだけ**です——メモは届いていないので受信日時を書かず、
 // 発信には向きと発信日時を書く。ここが崩れると、かけた電話が作業待ちに並びます。
-func memoBodyHTML(channel, title, direction string, phone, counterpart string, now time.Time) string {
-	var b strings.Builder
-	b.WriteString("<h1>" + html.EscapeString(title) + "</h1>")
-	b.WriteString(`<dl data-type="tags">`)
-	cms.WriteTag(&b, DirectionTag, direction) // 空なら書かれない（メモ）
-	cms.WriteTag(&b, ChannelTag, channel)
+// ⚠ **欄の並びと、本文の書き始める場所はテンプレートが持ちます**——テンプレートに無い
+// タグは、値があれば足します（`SetTag`）。
+func memoBodyHTML(tmpl, channel, title, direction string, phone, counterpart string, now time.Time) string {
+	d := cms.NewPageDraft(MemoTemplate, tmpl)
+	d.SetTitle(title)
+	d.SetTag(DirectionTag, direction) // 空なら書かれない（メモ）
+	d.SetTag(ChannelTag, channel)
 	// **日時は向きに応じて片方だけ。** 両方書くと「どちらが本当か」が生まれます。
 	switch direction {
 	case DirectionOut:
-		cms.WriteTag(&b, SentOutAtTag, now.In(time.Local).Format(time.RFC3339))
+		d.SetTag(SentOutAtTag, now.In(time.Local).Format(time.RFC3339))
 	case DirectionIn:
-		cms.WriteTag(&b, ReceivedAtTag, now.In(time.Local).Format(time.RFC3339))
+		d.SetTag(ReceivedAtTag, now.In(time.Local).Format(time.RFC3339))
 	}
-	cms.WriteTag(&b, PhoneTag, phone)
+	d.SetTag(PhoneTag, phone)
 	// 相手はページ参照（6桁）。**正規化を通すのは、パスに使う前と同じ規律**で、
 	// 揺れた表記がそのままタグへ入るのを防ぎます。
 	if cp, ok := page.NormalizeID(counterpart); ok {
-		cms.WriteTag(&b, CounterpartTag, cp)
+		d.SetTag(CounterpartTag, cp)
 	}
-	b.WriteString("</dl>")
-	// 本文は空の段落を1つ。**開いてすぐ書き始められる**ようにするためで、
-	// 何も無いページを開くと「どこへ書くのか」から迷います。
-	b.WriteString("<p><br/></p>")
-	return b.String()
+	// 本文の書き始める場所（空の段落など）はテンプレートが持ちます。**開いてすぐ書き始め
+	// られる**ように——何も無いページを開くと「どこへ書くのか」から迷います。
+	return d.HTML()
 }

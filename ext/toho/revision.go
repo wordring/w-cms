@@ -55,7 +55,7 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	if err != nil {
 		return err
 	}
-	block := cms.FirstBlockHTML(srcBody)
+	block := drawingBlockOf(srcBody)
 	if strings.TrimSpace(block) == "" {
 		return errors.New("移す図面ブロックが見つかりません")
 	}
@@ -176,7 +176,21 @@ func eachSection(body string, fn func(sec string, open, end int)) {
 
 // isDrawingSection は図面ブロック（機能見出し `図面`）かを返します。
 func isDrawingSection(sec string) bool {
-	return strings.Contains(sec, "<h2>図面</h2>")
+	return strings.Contains(sec, "<h2>"+drawingHeading+"</h2>")
+}
+
+// drawingBlockOf は本文の最初の図面ブロック（見出し「図面」の節）を返します（無ければ空）。
+//
+// ⚠ **本文の「最初の節」ではありません**（2026-09-27）。それまでは `cms.FirstBlockHTML`
+// （最初の `<section>`）を図面ブロックとして運んでいました——加工製品ページは
+// **テンプレートを写して**作るようになったので、テンプレートで図面ブロックより前に
+// 別の節（材料など）を置くと、**図面ではなくそちらが改定として運ばれます**。
+func drawingBlockOf(body string) string {
+	blocks, _ := extractDrawingSections(body)
+	if len(blocks) == 0 {
+		return ""
+	}
+	return blocks[0]
 }
 
 // linkRevisionRow は改訂履歴の中で図面番号が no の行を、旧版ページへのリンクにします。
@@ -296,7 +310,7 @@ func checkRevision(srcPageID, dstPageID string, confirmed bool) (reason string, 
 	if err != nil {
 		return "", false, err
 	}
-	r, c := duplicateReason(cms.FirstBlockHTML(srcBody), dstBody, confirmed)
+	r, c := duplicateReason(drawingBlockOf(srcBody), dstBody, confirmed)
 	return r, c, nil
 }
 
@@ -331,7 +345,7 @@ func mergeAsDrawing(user *auth.User, srcPageID, dstPageID string) error {
 	if err != nil {
 		return err
 	}
-	block := cms.FirstBlockHTML(srcBody)
+	block := drawingBlockOf(srcBody)
 	if strings.TrimSpace(block) == "" {
 		return errors.New("移す図面ブロックが見つかりません")
 	}
@@ -446,5 +460,5 @@ func suspiciousSameSource(srcPageID, dstPageID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return sameSourceAttachment(cms.FirstBlockHTML(srcBody), dstBody), nil
+	return sameSourceAttachment(drawingBlockOf(srcBody), dstBody), nil
 }

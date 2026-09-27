@@ -34,7 +34,7 @@ func TestOrderItemsAreNormalized(t *testing.T) {
 		Quantity: "100", Unit: "ｾｯﾄ", Price: "390",
 	}}
 
-	source, ours := ourItemsSegment(t, buildOrderPageHTML("000001", "pdf001", j))
+	source, ours := ourItemsSegment(t, testOrderPage("000001", "pdf001", j))
 
 	for _, want := range []string{
 		"<td>K120-1</td>",        // 全角英数・全角ハイフンが半角へ
@@ -71,7 +71,7 @@ func TestOrderRowDueDateMatchesPageTag(t *testing.T) {
 	j := realOrderJudgment()
 	j.DueDate = "2026/10/15"
 
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	open := "<dt>" + DueDateTag + "</dt><dd>"
 	at := strings.Index(body, open)
 	if at < 0 {
@@ -98,7 +98,7 @@ func TestOrderRowKeepsUnreadableDueDate(t *testing.T) {
 	j := realOrderJudgment()
 	j.DueDate = "最短納期"
 
-	body := buildOrderPageHTML("000001", "pdf001", j)
+	body := testOrderPage("000001", "pdf001", j)
 	if !strings.Contains(body, "<dt>"+DueDateTag+"</dt><dd>最短納期</dd>") {
 		t.Errorf("ページのタグから納期が消えています:\n%s", body)
 	}

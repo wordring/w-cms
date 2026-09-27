@@ -80,8 +80,10 @@ func TestRegisterNewOrgWithPerson(t *testing.T) {
 	}
 }
 
-// TestRegisterWritesNoEmptyTagList は、**タグが1つも無ければ `dl` ごと書かない**ことを
-// 固定します（空の形式ブロックを置かない）。
+// TestRegisterWritesNoEmptyTagList は、**書くタグが1つも無ければ、機械は何も足さない**ことを
+// 固定します（空の形式ブロックを置かない）。⚠ 2026-09-27 から組織のページはテンプレート
+// 「連絡帳の組織」を写すので、**可変タグの枠を置くかはテンプレートが決めます**——機械は
+// 値の無いタグも、空の枠も足しません（組織のページ＝テンプレートの写し＋題）。
 //
 // 担当者が居ればアドレスは人のページへ入り、ドメインを送らなければ組織に書くものが
 // 残りません。⚠ `取引`（顧客・仕入先・自社）は 2026-09-18 に全廃したので、組織のページが
@@ -98,8 +100,8 @@ func TestRegisterWritesNoEmptyTagList(t *testing.T) {
 	}
 	orgID, _ := PartnerByTitle(u, "佐川急便株式会社")
 	org := bodyOfPage(t, orgID)
-	if strings.Contains(org, `<dl data-type="tags">`) {
-		t.Errorf("タグが無いのに空の dl を置きました:\n%s", org)
+	if want := "<h1>佐川急便株式会社</h1>" + strings.TrimPrefix(testOrgTemplate, "<h1>"+OrgTemplate+"</h1>"); org != want {
+		t.Errorf("タグが無いのにテンプレートへ何か足しました:\n got %s\nwant %s", org, want)
 	}
 	// アドレスは人のページへ入っている（組織には付かない）。
 	if !strings.Contains(bodyOfPage(t, res["page_id"].(string)), "<dd>info@sagawa-exp.example</dd>") {

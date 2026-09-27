@@ -103,6 +103,17 @@ func init() {
 		Extension: "comm/contacts",
 		Why:       "取引の相手（会社・個人）を集める箱です。木は「組織／人」の2段で、メールから拾った「未登録の連絡先」の作業面がこのページに出ます。",
 	})
+	// **組織・人のページもテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     OrgTemplate,
+		Extension: "comm/contacts",
+		Why:       "連絡先を登録して新しい組織（社名・「個人」）のページを作るときに写します。電話番号など人が書く欄を置いておけます。",
+	})
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     PersonTemplate,
+		Extension: "comm/contacts",
+		Why:       "連絡先を登録して組織の下に人（担当者）のページを作るときに写します。",
+	})
 }
 
 // ContactsViewType は「未登録の連絡先」の形式名です。
@@ -644,14 +655,22 @@ func EnsureContactPerson(user *auth.User, companyID, name string) (string, error
 	}
 	// **組織の直下に人**（2026-09-16）。`担当者` の箱は挟みません——上の
 	// ContactsBoxTitle の説明に、挟んでいた理由と、それが消えた経緯があります。
-	return ensureChildByTitle(user, companyID, name)
+	return ensureChildByTitle(user, companyID, name, PersonTemplate)
 }
 
-// ensureChildByTitle は題の一致する子を返し、無ければ作ります。
+// OrgTemplate / PersonTemplate は、連絡帳の組織・人のページを作るテンプレートの題です
+// （2026-09-27・テンプレート駆動の D）。電話番号・住所など**人が書く欄**はテンプレートが
+// 持ち、機械が入れるのは題と、登録のときに分かったメールアドレス・ドメインだけです。
+const (
+	OrgTemplate    = "連絡帳の組織"
+	PersonTemplate = "連絡帳の人"
+)
+
+// ensureChildByTitle は題の一致する子を返し、無ければテンプレート templateTitle を写して作ります。
 //
 // **完全一致だけ**です（`findChildByTitle` と同じ規律）——揺れを機械が吸収すると
 // 別人が1人に潰れます。
-func ensureChildByTitle(user *auth.User, parentID, title string) (string, error) {
+func ensureChildByTitle(user *auth.User, parentID, title, templateTitle string) (string, error) {
 	if id, found := cms.FindChildByTitle(parentID, title); found {
 		return id, nil
 	}
@@ -662,8 +681,12 @@ func ensureChildByTitle(user *auth.User, parentID, title string) (string, error)
 	if !page.GetPerms(parentInt).CanWrite(user) {
 		return "", errors.New("親ページへ書き込む権限がありません")
 	}
-	return cms.CreateChildPage(parentID, user.Username,
-		"<h1>"+stdhtml.EscapeString(title)+"</h1><p><br/></p>")
+	d, err := cms.DraftFromTemplate(templateTitle)
+	if err != nil {
+		return "", err
+	}
+	d.SetTitle(title)
+	return cms.CreateChildPage(parentID, user.Username, d.HTML())
 }
 
 // PartnerRef は既にある相手ページ1枚（画面の選択肢に使います）。

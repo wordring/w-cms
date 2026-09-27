@@ -80,4 +80,15 @@ func seedContactsBoxTemplate(t *testing.T) {
 	newPage(t, "000901", "<h1>通信</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000900"})
 	newPage(t, "000902", "<h1>"+ContactsBoxTitle+"</h1>"+cms.ViewMarkerHTML(ContactsViewType),
 		page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000901"})
+	// 組織・人のページのテンプレート（2026-09-27・テンプレート駆動の D）。職場のテンプレートと同じ形。
+	newPage(t, "000903", testOrgTemplate, page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000901"})
+	newPage(t, "000904", testPersonTemplate, page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000901"})
 }
+
+// testOrgTemplate / testPersonTemplate は「連絡帳の組織」「連絡帳の人」テンプレートの見本です。
+// 組織には**電話番号の欄**を置いています（職場のテンプレートは空の段落だけ）——テンプレートが
+// 持つ欄が、機械が作ったページにそのまま残ることを見るため。
+const (
+	testOrgTemplate    = "<h1>" + OrgTemplate + "</h1><dl data-type=\"tags\"><dt>電話番号</dt><dd><br/></dd></dl><p><br/></p>"
+	testPersonTemplate = "<h1>" + PersonTemplate + "</h1><p><br/></p>"
+)

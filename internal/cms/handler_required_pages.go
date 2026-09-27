@@ -27,8 +27,9 @@ func RequiredPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"pages":   RequiredPageStatuses(),
+			"success":   true,
+			"pages":     RequiredPageStatuses(),
+			"templates": PageTemplateStatuses(), // 機械が作るページのテンプレート（2026-09-27）
 		})
 	case http.MethodPost:
 		user := auth.CurrentUser(r)
@@ -41,17 +42,19 @@ func RequiredPagesAPIHandler(w http.ResponseWriter, r *http.Request) {
 			// **途中まで作ったものは残します**。何ができたかを添えて返すので、
 			// 画面は「どこまで進んで、どれで止まったか」を出せます。
 			json.NewEncoder(w).Encode(map[string]any{
-				"success": false,
-				"message": err.Error(),
-				"created": created,
-				"pages":   RequiredPageStatuses(),
+				"success":   false,
+				"message":   err.Error(),
+				"created":   created,
+				"pages":     RequiredPageStatuses(),
+				"templates": PageTemplateStatuses(), // 機械が作るページのテンプレート（2026-09-27）
 			})
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"created": created,
-			"pages":   RequiredPageStatuses(),
+			"success":   true,
+			"created":   created,
+			"pages":     RequiredPageStatuses(),
+			"templates": PageTemplateStatuses(), // 機械が作るページのテンプレート（2026-09-27）
 		})
 	default:
 		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")

@@ -49,7 +49,7 @@ func TestMemoBodyWritesOnlyWhatIsKnown(t *testing.T) {
 			if c.channel == "電話" && c.direction == DirectionOut {
 				phone, cp = "06-1234-5678", "010199"
 			}
-			got := memoBodyHTML(c.channel, "用件", c.direction, phone, cp, time.Now())
+			got := memoBodyHTML(testMemoTemplate, c.channel, "用件", c.direction, phone, cp, time.Now())
 			for _, w := range c.want {
 				if !strings.Contains(got, w) {
 					t.Errorf("%q がありません: %s", w, got)
