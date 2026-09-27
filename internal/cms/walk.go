@@ -260,8 +260,9 @@ func triggerOf(el *html.Node) string {
 //	</section>
 //
 // ⚠ **表はこの形で名乗りません**（2026-09-26 利用者:「全面的にキャプションに置き換える」）
-// ——表は `<caption>` で名乗ります（下の vocabTypeOf の caption の枝）。見出し形でいまも名乗るのは、スラッシュメニューが
-// 挿すビューなどの節です（2026-09-27 まで、この例は「検査記録」の表でした）。
+// ——表は `<caption>` で名乗ります（下の vocabTypeOf の caption の枝）。鏡も 2026-09-27 午後から
+// `<section data-mirror="表示名">` で名乗り、見出し形は**移し替えが済むまで読むだけ**です
+// （2026-09-27 まで、この例は「検査記録」の表でした）。
 //
 // 見出しの言葉が**登録されているときだけ**形式になります。data-type は属性を書いた
 // 時点で意図が明白（未知でも索引に載せ告知する）ですが、見出しは全セクションが
@@ -282,9 +283,9 @@ func vocabTypeOf(el *html.Node) string {
 	if dt := Attr(el, "data-type"); dt != "" {
 		// ⚠ **鏡（計算ビュー）は `data-type` では名乗れません**（2026-09-27 に廃止）——
 		// `<section data-type="unordered-items"></section>` は画面に名前が出ない印で、
-		// 利用者:「名前の見えない印は廃止して削除して欲しい」。鏡は節の見出し
-		// （`<section><h2>必要部材表</h2></section>`・`ViewMarkerHTML`）だけで名乗ります。
-		// 属性の印は下の見出しの解決へ落ち、見出しが無ければ**ただの空の節**です。
+		// 利用者:「名前の見えない印は廃止して削除して欲しい」。鏡は下の `data-mirror` の印
+		// （`<section data-mirror="必要部材表"></section>`・`ViewMarkerHTML`）で名乗ります。
+		// 鏡の形式名を書いた `data-type` は下の解決へ落ち、何も無ければ**ただの空の節**です。
 		if def, ok := VocabDefByType(dt); !ok || !def.View {
 			return dt
 		}

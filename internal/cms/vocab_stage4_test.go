@@ -27,7 +27,7 @@ func TestRenderComputedViews(t *testing.T) {
 	mustExec(`INSERT INTO pages (id, title, file_path, parent_id) VALUES (60, '受注ページ', '', NULL)`)
 	mustExec(`INSERT INTO pages (id, title, file_path, parent_id) VALUES (61, '<加工>記録', '', 60)`)
 
-	// 印は見出し（D-2）。見出しの下の人の書き込みは本文として残り、鏡はその下へ描かれる
+	// 印は data-mirror（2026-09-27 午後）。印の中の人の書き込みは本文として残り、鏡はその後ろへ描かれる
 	// （語彙モデル §11.5-7）。前回描いたクロームが紛れ込んでいても描き直す。
 	body := `<h1>受注</h1>` +
 		`<section data-id="v1" data-mirror="子ページ一覧"><p>人の書き込み</p>` +
@@ -70,7 +70,7 @@ func TestRetiredAttributeViewMarkerIsNotRendered(t *testing.T) {
 		}
 	}
 	if got := ViewMarkerHTML("child-list"); got != `<section data-mirror="子ページ一覧"></section>` {
-		t.Errorf("ViewMarkerHTML が見出しの印を返していません: %s", got)
+		t.Errorf("ViewMarkerHTML が data-mirror の印を返していません: %s", got)
 	}
 }
 

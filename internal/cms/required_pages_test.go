@@ -89,7 +89,7 @@ func TestRequiredPageBodiesCarryWorkSurface(t *testing.T) {
 	}
 }
 
-// hasWorkSurface は本文に作業面（鏡の印）があるかを返します。印は見出しで名乗る
+// hasWorkSurface は本文に作業面（鏡の印）があるかを返します。印は data-mirror で名乗る
 // （名前の見えない `<section data-type=…>` の印は 2026-09-27 に廃止）ので、
 // 文字列ではなく形式の見分け方（vocabTypeOf）で探します。
 func hasWorkSurface(body string) bool {
@@ -114,7 +114,7 @@ func hasWorkSurface(body string) bool {
 // 本文は拡張の試験（`TestBoxBodiesCarryViewMarkers`）が確かめます。
 func TestRequiredPageBodyCheckSeesViewMarkers(t *testing.T) {
 	if !hasWorkSurface("<h1>箱</h1>" + ViewMarkerHTML("child-list")) {
-		t.Error("見出しの鏡の印を作業面と見ていません")
+		t.Error("鏡の印（data-mirror）を作業面と見ていません")
 	}
 	if hasWorkSurface(`<h1>箱</h1><section data-type="child-list"></section>`) {
 		t.Error("廃止した名前の見えない印を作業面と見ています")

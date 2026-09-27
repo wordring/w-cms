@@ -179,12 +179,12 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 	return htmldoc.Render(nodes)
 }
 
-// fillViewMarker は鏡の節の末尾へ描画結果（vocab-chrome）を描きます。
-// 前回描いたクロームは落とし、見出しとその下の人の書き込みは残します。
+// fillViewMarker は鏡の印の末尾へ描画結果（vocab-chrome）を描きます。
+// 前回描いたクロームは落とし、印の中に人が書いたものは残します。
 func fillViewMarker(el *html.Node, innerHTML string) {
-	// **機能見出しのセクション**……見出しや注記が本文としてここに住んでいる。
-	// 消すのは前回描いたクロームだけで、「見出しが鏡を呼び、人の書き込みは
-	// 保存されて残り、鏡の中身はその下へ毎回描かれる」（語彙モデル §11.5-7）。
+	// 印（`<section data-mirror="…">`・移行中の見出しの節）の中に人が書いたものは本文として
+	// 住んでいます。消すのは前回描いたクロームだけで、「印が鏡を呼び、人の書き込みは
+	// 保存されて残り、鏡の中身はその後ろへ毎回描かれる」（語彙モデル §11.5-7）。
 	// （中身を全部消して描き直す `data-type` の空マーカーの流儀は、印ごと 2026-09-27 に廃止。）
 	DropChrome(el)
 	chrome := `<div class="vocab-chrome" contenteditable="false">` + innerHTML + `</div>`

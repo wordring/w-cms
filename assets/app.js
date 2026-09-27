@@ -1745,7 +1745,8 @@
     // sectionDefOf はセクションの形式を解決する——data-type 属性が正、無ければ機能見出し
     // （サーバーの vocabTypeOf と同じ規則。walk.go）。
     // ⚠ **鏡（view）は data-type では名乗れない**（名前の見えない印は 2026-09-27 に廃止）
-    // ——鏡の形式名を書いた属性は無視して、見出しで解く（サーバーと同じ）。
+    // ——鏡の形式名を書いた属性は無視して、data-mirror（無ければ移行中の見出し）で解く
+    // （サーバーと同じ）。
     function sectionDefOf(section) {
         const t = section.getAttribute && section.getAttribute('data-type');
         if (t) {
@@ -2081,8 +2082,9 @@
     }
 
     function buildVocabSkeleton(def) {
-        // **表の種類は全部キャプションで挿します**（上の buildCaptionTable）。見出し形の節で
-        // 包むのは、表でない種類（ビューのマーカー・節）だけになりました。
+        // **表の種類は全部キャプションで挿します**（上の buildCaptionTable）。鏡は下の
+        // data-mirror の印1つ。見出し形の節で包むのは、それ以外の節の種類だけです
+        // （既定のビルドでは該当する形式は無い——2026-09-27 に数えた）。
         if (def.element === 'table') {
             return buildCaptionTable(def.display_name || def.type, def.columns);
         }

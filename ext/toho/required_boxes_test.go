@@ -10,7 +10,7 @@ import (
 )
 
 // TestBoxBodiesCarryViewMarkers は、拡張が登録する置き場の本文に**鏡の印があり、
-// 見出しで名乗っている**ことを固定します（2026-09-27）。
+// data-mirror で名乗っている**ことを固定します（2026-09-27）。
 //
 // コアの `TestRequiredPageBodiesCarryWorkSurface` は、コアのパッケージでは本文を持つ置き場が
 // 1つも登録されないので**何も確かめていませんでした**。拡張が入ったこの試験の中なら、
