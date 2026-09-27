@@ -235,3 +235,27 @@ func TestRemoveDraftRowDropsTheEmptyTable(t *testing.T) {
 		t.Errorf("⚠ 残るはずの行が消えました:\n%s", got2)
 	}
 }
+
+// TestNewDraftGoesAfterTheLastDraft は、新しい発注部材表が**すでにある発注部材表のうち最後の
+// ものの直後**に置かれ、無ければ末尾に置かれることを固定します（2026-09-27・テンプレート駆動の C
+// ——位置をコードで決めず、人が並べた場所に従う。それまではいつも末尾だった）。
+func TestNewDraftGoesAfterTheLastDraft(t *testing.T) {
+	first := orderDraftHTML([]ourOrderLine{{ItemName: "一枚目の部材", Quantity: "1", Unit: "個"}})
+	body := `<h1>発注</h1>` + first + `<section data-mirror="必要部材表"></section><p>あとの段落</p>`
+
+	got, n, ok := putLinesIntoDraft(body, "", []ourOrderLine{{ItemName: "二枚目の部材", Quantity: "2", Unit: "個"}})
+	if !ok || n != 1 {
+		t.Fatalf("新しく作れていません: ok=%v n=%d", ok, n)
+	}
+	i1, i2 := strings.Index(got, "一枚目の部材"), strings.Index(got, "二枚目の部材")
+	im, ip := strings.Index(got, `data-mirror="必要部材表"`), strings.Index(got, "あとの段落")
+	if i1 < 0 || i2 < 0 || !(i1 < i2 && i2 < im && im < ip) {
+		t.Errorf("新しい表が最後の発注部材表の直後にありません:\n%s", got)
+	}
+
+	noDraft := `<h1>発注</h1><section data-mirror="必要部材表"></section><p>あとの段落</p>`
+	got, _, _ = putLinesIntoDraft(noDraft, "", []ourOrderLine{{ItemName: "二枚目の部材", Quantity: "2", Unit: "個"}})
+	if !strings.HasSuffix(strings.TrimSpace(got), "</table>") || strings.Index(got, "二枚目の部材") < strings.Index(got, "あとの段落") {
+		t.Errorf("発注部材表が無いときは末尾に置くはず:\n%s", got)
+	}
+}

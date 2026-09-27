@@ -86,17 +86,9 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if rows := tempRowsOn(req.Lines, pageID); len(rows) > 0 {
 			cur, _ = removeTempPartRows(cur, rows)
 		}
-		if into == "" {
-			rows = len(req.Lines)
-			return cur + orderDraftHTML(req.Lines)
-		}
-		merged, n, ok := appendToDraft(cur, into, req.Lines)
-		found = ok
-		if !ok {
-			return cur
-		}
-		rows = n
-		return merged
+		var out string
+		out, rows, found = putLinesIntoDraft(cur, into, req.Lines)
+		return out
 	}) {
 		return
 	}
@@ -173,6 +165,47 @@ func CountOrderDrafts(pageID int) int {
 //
 // ⚠ **行が0でも表の骨は出します**——人がそこへ書き足せるように。**空の表は
 // 「作れなかった」ではなく「これから書く」**です。
+// putLinesIntoDraft は行を発注部材表へ入れた本文を返します（口の本文を変える部分）。
+// into が空なら新しい表を作り（置き場は placeNewDraft）、そうでなければ指した表へ足します。
+// 戻り値は（新しい本文・入れた行数・行き先が見つかったか）。見つからなければ本文はそのまま。
+func putLinesIntoDraft(cur, into string, lines []ourOrderLine) (string, int, bool) {
+	if into == "" {
+		return placeNewDraft(cur, orderDraftHTML(lines)), len(lines), true
+	}
+	merged, n, ok := appendToDraft(cur, into, lines)
+	if !ok {
+		return cur, 0, false
+	}
+	return merged, n, true
+}
+
+// placeNewDraft は新しい発注部材表を**すでにある発注部材表のうち最後のものの直後**へ置きます。
+// 無ければ本文の末尾です。
+//
+// ⚠ **位置をコードで決めない**（2026-09-27・テンプレート駆動の C。利用者:「コードに『この位置に
+// この鏡』と言ったことをハードコーディングするのではなく…」）——それまでは**いつも末尾**で、
+// 人が発注部材表を必要部材表のすぐ下などへ並べ替えても、新しい表は離れた末尾にできていました。
+// 人が並べた場所に、新しいものも並びます。
+func placeNewDraft(body, tableHTML string) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body + tableHTML
+	}
+	drafts := tablesOfType(nodes, OrderDraftType)
+	if len(drafts) == 0 {
+		return body + tableHTML
+	}
+	repl, err := htmldoc.ParseFragment(tableHTML)
+	if err != nil || len(repl) == 0 {
+		return body + tableHTML
+	}
+	out, ok := spliceNodes(nodes, drafts[len(drafts)-1], repl, true)
+	if !ok {
+		return body + tableHTML
+	}
+	return out
+}
+
 func orderDraftHTML(lines []ourOrderLine) string {
 	var b strings.Builder
 	b.WriteString(`<table><caption>` +
