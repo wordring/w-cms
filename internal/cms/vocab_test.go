@@ -8,7 +8,7 @@ import (
 )
 
 // TestVocabRegistryIsWellFormed はレジストリの宣言が規約
-// （docs/【考察】語彙モデル.md §9 決定ログ）を満たすことを検証します。
+// （docs/考察/【考察】語彙モデル.md §9 決定ログ）を満たすことを検証します。
 //   - data-type はレジストリ全体で一意・kebab-case
 //   - element は table / dl のどちらか
 //   - 列は1つ以上・表示ラベル必須・(data-type, 機械キー Field) のセットで一意

@@ -9,7 +9,7 @@ import (
 // 索引を「読む」側の入口（③計算プラグインが業務データを引く経路）
 //
 // 書き込みは vocab_index.go、読み出しはここ。D-1（硬いドメイン表を全廃して
-// 汎用索引へ一本化・docs/アーキテクチャとDBスキーマ.md §9）で、③計算は
+// 汎用索引へ一本化・docs/旧文書/アーキテクチャとDBスキーマ.md §9）で、③計算は
 // 専用テーブルではなく**この層を通して**索引を読みます（業務ブロックは vocab_index、
 // 可変タグは page_tags。2026-09-13 に分離）。
 //
@@ -255,7 +255,7 @@ func TagRowsNamed(db ReadOnlyDB, names ...string) ([]TagRow, error) {
 // 形式で使います。索引 idx_page_tags_field_value が効きます。
 //
 // 生テキスト（value）に対して引きます——正規化値ではなく生が正本だからです
-// （docs/アーキテクチャとDBスキーマ.md §9.1）。
+// （docs/旧文書/アーキテクチャとDBスキーマ.md §9.1）。
 func PagesByTag(db ReadOnlyDB, name, value string) ([]int, error) {
 	if name == "" || value == "" {
 		return nil, nil // 空の鍵で全ページを引き当てない

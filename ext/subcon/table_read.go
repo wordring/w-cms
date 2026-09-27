@@ -76,7 +76,7 @@ func setCellText(cell *html.Node, s string) {
 // isTableOfType は表がその形式かを見ます（属性でも caption でも）。
 //
 // ⚠ **両方見ます。** 形式の宣言は `data-type` から見える文字（`<caption>`）へ移る
-// 途中で、しばらく併存します（[docs/【考察】発注書から受注明細へ.md] §2.4）。
+// 途中で、しばらく併存します（[docs/考察/【考察】発注書から受注明細へ.md] §2.4）。
 // 片方しか見ないと、移した日に**黙って見つからなくなります**——エラーは出ません。
 func isTableOfType(t *html.Node, vocabType string) bool {
 	if cms.Attr(t, "data-type") == vocabType {

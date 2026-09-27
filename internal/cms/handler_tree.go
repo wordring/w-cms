@@ -30,7 +30,7 @@ type PageSummary struct {
 
 // reserveNewPageID は pages テーブルへ最小限の行を原子的に INSERT し、SQLite の自動採番で
 // 確定した新しいページID（6桁ゼロ埋め）を返します。`MAX(id)+1` と異なり同時実行でも一意な
-// IDが得られ、ID衝突（[docs/【考察】同時編集の競合対策.md] シナリオE）を防ぎます。
+// IDが得られ、ID衝突（[docs/考察/【考察】同時編集の競合対策.md] シナリオE）を防ぎます。
 // parent は親ページID（トップレベルは無効値 sql.NullInt64{}）。属性の正本はサイドカーです。
 func reserveNewPageID(parent sql.NullInt64) (string, error) {
 	result, err := database.DB.Exec(
@@ -163,7 +163,7 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	creator := auth.CurrentUser(r)
 
 	// 1-2. テンプレート指定があれば**IDを採番する前に**検証して本文を読む
-	//      （docs/【考察】ページテンプレート.md §4）。採番の後に失敗すると、
+	//      （docs/考察/【考察】ページテンプレート.md §4）。採番の後に失敗すると、
 	//      ファイルの無いページ行が pages に残ってしまうため順序が重要。
 	templateBody, ok := loadTemplateBody(w, r, r.FormValue("template"))
 	if !ok {

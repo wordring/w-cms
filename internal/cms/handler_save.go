@@ -114,7 +114,7 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 本文は許可リスト方式でサニタイズしてから保存する（docs/本文サニタイズ設計.md）。
+	// 本文は許可リスト方式でサニタイズしてから保存する（docs/旧文書/本文サニタイズ設計.md）。
 	// 正本ファイルを清書された状態に保ち、結果はレスポンスでエディタへ返す。
 	// 編集者は画面上の変化で「何が除去されたか」を知る（エコーバック方式）。
 	safeHTML, sanitized := SanitizeReport(req.HTML)

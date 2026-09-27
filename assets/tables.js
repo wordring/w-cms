@@ -1,4 +1,4 @@
-// 検索画面（assets/tables.html）——「表を探す」（2026-09-25・docs/【考察】DBの日本語化.md §7 の3段目）。
+// 検索画面（assets/tables.html）——「表を探す」（2026-09-25・docs/考察/【考察】DBの日本語化.md §7 の3段目）。
 //
 // 口はサーバーの2つだけ: GET /api/tables（探せる表と列）・POST /api/tables/query（探す）。
 // 自由な SQL は送らない。表・列・条件の種類は選ぶだけで、値だけを文字で送る

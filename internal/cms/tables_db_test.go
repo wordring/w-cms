@@ -11,7 +11,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// 表の写し（data/tables.db・キャプションの名前の表）——2026-09-25・docs/【考察】DBの日本語化.md。
+// 表の写し（data/tables.db・キャプションの名前の表）——2026-09-25・docs/考察/【考察】DBの日本語化.md。
 
 // newTestTablesDB は試験用の data/tables.db を開き、終わったら閉じて nil に戻します。
 // ⚠ **nil に戻すこと**——開いたままだと、後の試験の SyncIndex が消えたファイルへ書きます。

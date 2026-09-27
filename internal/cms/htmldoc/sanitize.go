@@ -21,7 +21,7 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────
-// 本文HTMLのサニタイズ（許可リスト方式）— docs/本文サニタイズ設計.md
+// 本文HTMLのサニタイズ（許可リスト方式）— docs/旧文書/本文サニタイズ設計.md
 //
 // ページ本文はユーザー入力由来のHTMLであり、サーバーがシェル（assets/index.html）へ
 // 埋め込んで返すため、危険な要素・属性が残っているとそのまま実行されてしまいます。
@@ -35,11 +35,11 @@ import (
 // 冪等性（Sanitize(Sanitize(x)) == Sanitize(x)）を満たすことが、保存時エコーバックが
 // 収束するための前提条件です（cms パッケージの sanitize_test.go で検証）。
 //
-// 許可リストを増減したら docs/本文サニタイズ設計.md §5 を同時に更新すること。
+// 許可リストを増減したら docs/旧文書/本文サニタイズ設計.md §5 を同時に更新すること。
 // ─────────────────────────────────────────────────────────────────────────
 
 // dangerousElements は部分木ごと削除する要素です（中身のテキストも残しません）。
-// 理由は docs/本文サニタイズ設計.md §5.1 に要素ごとに記載。
+// 理由は docs/旧文書/本文サニタイズ設計.md §5.1 に要素ごとに記載。
 var dangerousElements = map[string]bool{
 	"script": true, "noscript": true, // スクリプト実行そのもの
 	"style":  true,                                  // 任意CSSの注入
@@ -66,7 +66,7 @@ var linkURLAttributes = map[string]bool{"href": true, "cite": true}
 // embedURLAttributes は**相対URLに限る**属性です。
 // 外部URLは閲覧するだけで自動取得され、閲覧者のIPと閲覧時刻を第三者へ渡す
 // （トラッキングビーコン）ため許可しない。CSP `default-src 'self'` でも遮断されるので、
-// 許可しても壊れた表示になるだけで利益がない（docs/本文サニタイズ設計.md §5.5）。
+// 許可しても壊れた表示になるだけで利益がない（docs/旧文書/本文サニタイズ設計.md §5.5）。
 var embedURLAttributes = map[string]bool{"src": true, "srcset": true, "poster": true,
 	// data-src はファイル容器（section[data-type="file"]）の配線。エンハンサが
 	// プレビューのURLに使うため、埋め込みと同じく相対URLに限る（多層防御）。
@@ -119,7 +119,7 @@ var globalAttributes = map[string]bool{BlockIDAttr: true, "id": true}
 // 「マーカー属性を不活性な値として通す」ところまでを受け持ちます。
 //
 // 方針は「**タグは寛容・属性は厳格**」。要素は文書として意味を持つ標準HTMLを危険でない限り
-// 許可し、属性は必要なものだけ許可する（docs/本文サニタイズ設計.md §5.0）。
+// 許可し、属性は必要なものだけ許可する（docs/旧文書/本文サニタイズ設計.md §5.0）。
 var structuralElements = map[string]map[string]bool{
 	// 見出し（目次 buildToc が h1〜h6 を拾うので全段階を扱う）
 	"h1": {}, "h2": {}, "h3": {}, "h4": {}, "h5": {}, "h6": {},
@@ -165,7 +165,7 @@ var structuralElements = map[string]map[string]bool{
 	// ないからです。値は w-cms 自身の参照（6桁-英数字）で、そこからURLを組むのは
 	// サーバー（internal/cms/file_view.go）です。**書く人が宛先を選べない**という
 	// 性質は、ここで値を検査するからではなく、URLを機械が組むことで守られます
-	// （docs/セキュリティ設計.md §4）。だから他の data-* と同じく不活性な文字列として通します。
+	// （docs/旧文書/セキュリティ設計.md §4）。だから他の data-* と同じく不活性な文字列として通します。
 	"section": {"data-type": true, "data-src": true, "data-ref": true}, "article": {}, "header": {}, "footer": {},
 	"aside": {}, "nav": {}, "address": {},
 	"figure": {}, "figcaption": {},
@@ -178,7 +178,7 @@ var structuralElements = map[string]map[string]bool{
 	"ins": {"cite": true, "datetime": true},
 	"del": {"cite": true, "datetime": true},
 
-	// 表。data-type は「マーカー付き標準HTML」（docs/【考察】語彙モデル.md）の
+	// 表。data-type は「マーカー付き標準HTML」（docs/考察/【考察】語彙モデル.md）の
 	// 役割マーカーで、**属性名だけを要素限定で許可**し、値は不活性な文字列として検査しない。
 	// 許可範囲は data-type→table・dl・section・th、data-src・data-ref→section に限る
 	// （決定ログ＝同書 §9、論点A採用＝§8.2 の section 追加、data-field 撤去＝2026-08-20）。

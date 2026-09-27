@@ -136,7 +136,7 @@ func TestSanitizeUnwrapsUnknownElements(t *testing.T) {
 }
 
 // TestSanitizeKeepsStructuralElements は、方針「タグは寛容」に従って追加した要素が
-// 通ることを検証します（docs/本文サニタイズ設計.md §5.2）。
+// 通ることを検証します（docs/旧文書/本文サニタイズ設計.md §5.2）。
 func TestSanitizeKeepsStructuralElements(t *testing.T) {
 	cases := []struct{ name, in, want string }{
 		{"定義リスト", `<dl><dt>用語</dt><dd>説明</dd></dl>`, "<dl>"},
@@ -159,7 +159,7 @@ func TestSanitizeKeepsStructuralElements(t *testing.T) {
 }
 
 // TestSanitizeURLPolicy は、リンク（外部可）と埋め込み（相対のみ）の違いを検証します。
-// docs/本文サニタイズ設計.md §5.5。
+// docs/旧文書/本文サニタイズ設計.md §5.5。
 func TestSanitizeURLPolicy(t *testing.T) {
 	t.Run("リンクは外部URLを許可", func(t *testing.T) {
 		for _, in := range []string{

@@ -8,7 +8,7 @@ import (
 )
 
 // ── ページテンプレート 第1段: 判定と同期除外 ──────────────────────────
-// 正本は docs/【考察】ページテンプレート.md §3・§6。
+// 正本は docs/考察/【考察】ページテンプレート.md §3・§6。
 
 // clientOrderBody は「仮の発注書」を含むテンプレート的な本文です。
 // テンプレート配下に置かれたときに **索引へ入ってはいけない** ことを
@@ -126,7 +126,7 @@ func TestTemplateRootMustBeChildOfTop(t *testing.T) {
 }
 
 // TestTemplateExclusionSurvivesRebuildOrder は**罠の回帰テスト**です
-// （docs/【考察】ページテンプレート.md §6.1）。
+// （docs/考察/【考察】ページテンプレート.md §6.1）。
 //
 // RebuildDatabase は空のDBへページを1つずつ同期するため、先祖判定を pages テーブルで
 // 行うと「先祖がまだ入っていない順序」で誤判定します。ここでは**子のIDを親より小さく**して

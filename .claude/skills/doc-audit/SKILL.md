@@ -64,9 +64,11 @@ grep -rn 'func RequireEditLock(' --include='*.go' .
 # 呼び出し関係。宣言行とテストを除く。**コメント内の言及が混じる**
 grep -rn 'GetPerms(' --include='*.go' internal cmd | grep -v '_test.go'
 
-# 相対リンクの実在
-(cd docs && for l in $(grep -ohE '\]\(([^)#]+\.md)' *.md | sed 's/^](//'); do
-   [ -e "$l" ] || echo "MISSING: $l"; done)
+# 相対リンクの実在（docs はサブフォルダに分かれている——考察/・旧文書/・参照/・拡張/。
+# リンクは各文書の場所から解くので、文書ごとにそのフォルダで確かめる）
+find docs -name '*.md' | while read -r f; do d=$(dirname "$f");
+  grep -oE '\]\([^)#]+\.md' "$f" | sed 's/^](//' | while read -r l; do
+    [ -e "$d/$l" ] || echo "MISSING: $f → $l"; done; done
 ```
 
 **呼び出し関係と全称主張は、数えた結果をそのまま信じない。**

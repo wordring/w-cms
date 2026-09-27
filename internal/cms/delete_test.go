@@ -40,7 +40,7 @@ func lockAs(t *testing.T, pageID int, user string) string {
 
 // TestDeletePageMovesToTrash は、削除がページを**ゴミ箱へ移す**（物理削除しない）ことと、
 // 索引から消えることを検証します。「常に柔軟性」——削除自体も取り消せること
-// （docs/【考察】通信記録処理.md §2.7④）。
+// （docs/考察/【考察】通信記録処理.md §2.7④）。
 func TestDeletePageMovesToTrash(t *testing.T) {
 	setupSaveTest(t)
 	newPage(t, "000020", "<h1>消す対象</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})

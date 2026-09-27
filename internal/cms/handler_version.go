@@ -1,7 +1,7 @@
 package cms
 
 // 版管理（リビジョン／リバート）のAPI。設計は version.go の冒頭と
-// [docs/【考察】アンドゥ・リドゥ.md] §4・§5。
+// [docs/考察/【考察】アンドゥ・リドゥ.md] §4・§5。
 //
 // 認可の考え方は「**版は本文そのもの**」の一言に尽きます——一覧と取得は本文と同じ
 // read、書き戻しは本文と同じ write ＋編集ロック。ここを緩めると、版が本文の
@@ -59,7 +59,7 @@ func VersionAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 本文を読む経路はすべて同じ扱い（サニタイズ二層目＋計算ビューの事前描画。
-	// docs/本文サニタイズ設計.md §4）——ここだけ素通しだと、版を開いた鏡の中身が空になる。
+	// docs/旧文書/本文サニタイズ設計.md §4）——ここだけ素通しだと、版を開いた鏡の中身が空になる。
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write([]byte(RenderComputedViews(r, idInt, Sanitize(string(body)))))

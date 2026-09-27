@@ -78,7 +78,7 @@ func main() {
 	}
 	defer database.DB.Close()
 
-	// 表の写し（data/tables.db・キャプションの名前の表。docs/【考察】DBの日本語化.md）。
+	// 表の写し（data/tables.db・キャプションの名前の表。docs/考察/【考察】DBの日本語化.md）。
 	// 中身はページを同期するときに作られる（下の RebuildIfNeeded が初回に作り直す）。
 	if err := database.InitTablesDB(); err != nil {
 		log.Fatalf("表の写しのDB初期化エラー: %v", err)

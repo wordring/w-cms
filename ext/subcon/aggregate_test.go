@@ -213,7 +213,7 @@ func TestRequiredMaterialsCalculation(t *testing.T) {
 // すべて Schema() で実際に作成されることを検証します（Schema/Tablesのdrift防止）。
 
 // TestRequiredMaterialsFollowsReferences は**参照追従集計**を固定します
-// （2026-09-04・[docs/【考察】通信記録処理.md] §2.5）。
+// （2026-09-04・[docs/考察/【考察】通信記録処理.md] §2.5）。
 //
 // 取り込みで生まれた受注ページは通信記録ページの子で、`受信元` タグで親を指します。
 // **通信記録ページの上で集計しても明細が見える**ことが、この改修の目的です。
