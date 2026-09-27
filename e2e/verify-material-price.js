@@ -71,7 +71,6 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
         // ⚠ クロームのセルに本文の印が付いていないこと（今日の罠）
         atomic: [lastOf(0), lastOf(1), lastOf(2)].some((c) => c.classList.contains('cell-atomic')),
         chrome: [lastOf(0), lastOf(1), lastOf(2)].every((c) => c.classList.contains('vocab-chrome')),
-        missWrap: getComputedStyle(lastOf(2)).whiteSpace,
         priceW: Math.round(lastOf(1).getBoundingClientRect().width),
         fits: t.scrollWidth <= t.clientWidth + 1,
         pageScrolls: document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -84,11 +83,12 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
     // ⚠ **出所を消さない**——値段だけだと「いつの・誰からの値段か分からない数」になり、
     //    ワンノートの `単価（ロット1）みなと` と同じ問題を作り直します。
     say(/2026-08-19/.test(r.hit) && /テスト商店/.test(r.hit), '出所（時点・仕入先）が添えてある');
-    say(/買った記録がありません/.test(r.miss), "引けない行は黙らずに理由を出す（" + r.miss + "）");
+    // 買った記録の無い行は**空欄**（2026-09-27 利用者:「『⚠ 買った記録がありません』は冗長だと思います。
+    // 空なら記録が無いとわかりますから」）。引けなかったときは列ごと出ないので、空欄の意味は1つだけ。
+    say(r.miss === '', '買った記録の無い行は空欄（断り文を出さない・「' + r.miss + '」）');
     say(r.chrome, '足した列はクローム（本文に焼き付かない）');
     // ⚠ ここが今日の罠。付くと断り文の1行幅で列が決まり、値より断り文が列を広げる。
     say(!r.atomic, 'クロームのセルに本文の折り返しの印（cell-atomic）が付かない');
-    say(r.missWrap === 'normal', '断り文は折り返す（' + r.missWrap + '）');
     say(r.priceW <= 160, '参考単価の列が広がりすぎない（' + r.priceW + 'px）');
     say(r.fits, '1600px で表が収まる（横スクロールせずに読める）');
     say(!r.pageScrolls, 'ページは横へ揺れない');

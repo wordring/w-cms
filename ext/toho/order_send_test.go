@@ -140,10 +140,9 @@ func TestUnsentPriceIsNotABoughtPrice(t *testing.T) {
 	if strings.Contains(got, "800円") {
 		t.Errorf("⚠ まだ出していない発注書の単価が「最新単価」に出ています:\n%s", got)
 	}
-	// ⚠ **黙りません。** 「引けなかった」と「そもそも鏡が走っていない」を
-	//    見分けられる形で言います。
-	if !strings.Contains(got, "買った記録がありません") {
-		t.Errorf("⚠ 引けなかったことを黙っています:\n%s", got)
+	// 鏡は走っていて（列が出ている）、その行は空欄＝買った記録が無い（2026-09-27 から断り文は出さない）。
+	if !strings.Contains(got, priceHeadCell) || !strings.Contains(got, emptyPriceCell) {
+		t.Errorf("⚠ 最新単価の列と、その行の空欄がありません:\n%s", got)
 	}
 }
 

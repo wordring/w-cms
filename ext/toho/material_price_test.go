@@ -146,9 +146,11 @@ func TestMaterialPricePrefersNewerOrder(t *testing.T) {
 	}
 }
 
-// TestMaterialPriceSaysWhenNothingBought は、⚠ **引けなかったことを黙らない**ことを
-// 固定します。空欄にすると「単価が出ない」と「買ったことがない」が見分けられません。
-func TestMaterialPriceSaysWhenNothingBought(t *testing.T) {
+// TestMaterialPriceLeavesBlankWhenNothingBought は、**買った記録が無い行は空欄**であることを
+// 固定します（2026-09-27 利用者:「『⚠ 買った記録がありません』は冗長だと思います。空なら記録が
+// 無いとわかりますから」）。⚠ **列そのものは出す**——引けなかった（読み出しの失敗）ときは列ごと
+// 出さないので、列があって欄が空なら「買った記録が無い」しか意味しない。
+func TestMaterialPriceLeavesBlankWhenNothingBought(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	rows := `<tr><td>SUS304</td><td>板</td><td>t1.5</td><td>4</td></tr>`
 	seedMaterialAndOrder(t, rows, orderSeed{
@@ -158,8 +160,11 @@ func TestMaterialPriceSaysWhenNothingBought(t *testing.T) {
 	})
 
 	got := showMaterials(t, &auth.User{Username: "root", IsAdmin: true}, materialsBody(rows))
-	if !strings.Contains(got, "⚠ 買った記録がありません") {
-		t.Fatalf("引けなかったことを黙っています:\n%s", got)
+	if !strings.Contains(got, priceHeadCell) || !strings.Contains(got, emptyPriceCell) {
+		t.Fatalf("最新単価の列と、その行の空欄がありません:\n%s", got)
+	}
+	if strings.Contains(got, "買った記録がありません") {
+		t.Errorf("⚠ 冗長な断り文が戻っています:\n%s", got)
 	}
 	if strings.Contains(got, "800円") {
 		t.Errorf("⚠ 別の材料の単価を引き当てています:\n%s", got)
@@ -290,8 +295,8 @@ func TestMaterialPriceHidesUnreadableOrders(t *testing.T) {
 	if strings.Contains(got, "800円") || strings.Contains(got, "みなと商店") {
 		t.Fatalf("⚠ 読めない発注書の単価と仕入先が出ています:\n%s", got)
 	}
-	if !strings.Contains(got, "⚠ 買った記録がありません") {
-		t.Errorf("欄そのものは出すこと（読めないことは知らせない・C案）:\n%s", got)
+	if !strings.Contains(got, priceHeadCell) || !strings.Contains(got, emptyPriceCell) {
+		t.Errorf("欄そのものは出すこと（読めないことは知らせない・C案——買っていない行と同じ空欄）:\n%s", got)
 	}
 }
 
@@ -311,3 +316,10 @@ func TestMaterialPriceKeyFoldsWidth(t *testing.T) {
 		t.Error("⚠ 寸法を強く畳みすぎています（別の寸法に当たります）")
 	}
 }
+
+// priceHeadCell / emptyPriceCell は、最新単価の列の見出しと、買った記録の無い行の空欄です
+// （表示のときに足すクロームのセル）。
+const (
+	priceHeadCell  = `<th class="vocab-chrome mat-price">` + priceColLabel + `</th>`
+	emptyPriceCell = `<td class="vocab-chrome mat-price"></td>`
+)

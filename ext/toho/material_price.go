@@ -50,8 +50,11 @@ type materialPrice struct {
 
 // renderMaterialPrices は材料表の右へ「最新単価・時点・仕入先」を足します。
 //
-// ⚠ **引けなかったことを黙りません。** 空欄にすると「単価が出ない」と
-// 「そんな材料は買ったことがない」が見分けられません。
+// ⚠ **買った記録が無い行は空欄です**（2026-09-27 利用者:「材料の表の『⚠ 買った記録がありません』は
+// 冗長だと思います。空なら記録が無いとわかりますから」）。それまでは「空欄にすると『単価が出ない』と
+// 『買ったことがない』が見分けられない」として断り文を出していましたが、**引けなかった（読み出しの
+// 失敗）ときは列そのものを出しません**——列があって欄が空なら、「買った記録が無い」しか意味しません。
+// ⚠ 材料の指定が無い行（引きようが無い）と、移行の確認前（引かない）は、別の事情なので言葉で出します。
 func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	rows := rowsOf(el)
 	if len(rows) < 2 {
@@ -107,7 +110,7 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			// ⚠ **警告にはしません**——直すべきものに見えてしまいます。
 			appendPriceNote(tr, "（材料の指定なし）")
 		case !ok:
-			appendPriceNote(tr, "⚠ 買った記録がありません")
+			appendPriceEmpty(tr) // 空欄＝買った記録が無い（上の説明・2026-09-27）
 		default:
 			// ⚠ **出所を必ず添えます**（時点と仕入先）。値段だけ出すと、
 			//    **いつの・誰からの値段か分からない数**になり、ワンノートの
@@ -298,7 +301,12 @@ func appendPriceValue(tr *html.Node, cost, date, supplier string) {
 	line("mat-price-src", supplier)
 }
 
-// appendPriceNote は、引けなかった理由を同じ列に入れます。
+// appendPriceEmpty は「買った記録が無い」行の空欄です（列を揃えるためにセルは置く）。
+func appendPriceEmpty(tr *html.Node) {
+	priceCell(tr, "td", "mat-price")
+}
+
+// appendPriceNote は、引けなかった理由を同じ列に入れます（材料の指定なし）。
 func appendPriceNote(tr *html.Node, text string) {
 	priceCell(tr, "td", "mat-price mat-price-none").
 		AppendChild(&html.Node{Type: html.TextNode, Data: text})
