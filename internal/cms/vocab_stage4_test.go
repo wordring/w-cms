@@ -30,7 +30,7 @@ func TestRenderComputedViews(t *testing.T) {
 	// 印は見出し（D-2）。見出しの下の人の書き込みは本文として残り、鏡はその下へ描かれる
 	// （語彙モデル §11.5-7）。前回描いたクロームが紛れ込んでいても描き直す。
 	body := `<h1>受注</h1>` +
-		`<section data-id="v1"><h2>子ページ一覧</h2><p>人の書き込み</p>` +
+		`<section data-id="v1" data-mirror="子ページ一覧"><p>人の書き込み</p>` +
 		`<div class="vocab-chrome"><p>前回のクローム</p></div></section>`
 
 	req := httptest.NewRequest("GET", "/000060", nil)
@@ -38,7 +38,7 @@ func TestRenderComputedViews(t *testing.T) {
 	out := RenderComputedViews(req, 60, body)
 
 	for _, want := range []string{
-		`<section data-id="v1"><h2>子ページ一覧</h2>`, // 印と data-id は保存内容のまま
+		`<section data-id="v1" data-mirror="子ページ一覧">`, // 印と data-id は保存内容のまま
 		`人の書き込み`,
 		`class="vocab-chrome"`, `contenteditable="false"`,
 		`href="/000061"`, `&lt;加工&gt;記録`, // 子リンク＋タイトルのエスケープ
@@ -69,7 +69,7 @@ func TestRetiredAttributeViewMarkerIsNotRendered(t *testing.T) {
 			t.Errorf("廃止した印で鏡が描かれました:\n%s", out)
 		}
 	}
-	if got := ViewMarkerHTML("child-list"); got != `<section><h2>子ページ一覧</h2></section>` {
+	if got := ViewMarkerHTML("child-list"); got != `<section data-mirror="子ページ一覧"></section>` {
 		t.Errorf("ViewMarkerHTML が見出しの印を返していません: %s", got)
 	}
 }
@@ -105,5 +105,27 @@ func TestRenderComputedViewsNoMarker(t *testing.T) {
 	req := httptest.NewRequest("GET", "/000060", nil)
 	if out := RenderComputedViews(req, 60, body); out != body {
 		t.Errorf("マーカーの無い本文が変化しました:\ngot  %q\nwant %q", out, body)
+	}
+}
+
+// TestMirrorMarkerWithUnknownNameIsNotifiedNotRendered は、鏡の印の名前が鏡として登録されて
+// いないとき（打ち間違い・表の形式の名前）、**描かず、保存時に告げる**ことを固定します
+// （2026-09-27）。黙って空の節にすると、置いたのに鏡が出ない理由がどこにも見えません。
+func TestMirrorMarkerWithUnknownNameIsNotifiedNotRendered(t *testing.T) {
+	setupSaveTest(t)
+	req := httptest.NewRequest("GET", "/000060", nil)
+	req = auth.WithUser(req, &auth.User{Username: "tester", IsAdmin: true})
+	for _, name := range []string{"子ページ一", "手配状況リストX"} {
+		body := `<section data-mirror="` + name + `"></section>`
+		if out := RenderComputedViews(req, 60, body); strings.Contains(out, "vocab-chrome") {
+			t.Errorf("登録されていない名前 %q で鏡が描かれました:\n%s", name, out)
+		}
+		got := UnknownVocabTypes(body)
+		if len(got) != 1 || got[0] != name {
+			t.Errorf("登録されていない名前 %q を告げていません: %v", name, got)
+		}
+	}
+	if got := UnknownVocabTypes(ViewMarkerHTML("child-list")); len(got) != 0 {
+		t.Errorf("正しい鏡の印を告げています: %v", got)
 	}
 }

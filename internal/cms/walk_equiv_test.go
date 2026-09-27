@@ -117,7 +117,7 @@ var equivBodies = []struct {
 	{"同じ形式が複数ある（block_no）", `<dl data-type="tags"><dt>a</dt><dd>1</dd></dl>` +
 		`<p>あいだ</p><dl data-type="tags"><dt>a</dt><dd>2</dd></dl>`},
 	{"素の表と定義リストは索引しない", `<table><tr><td>素</td></tr></table><dl><dt>素</dt><dd>x</dd></dl>`},
-	{"クロームの中は索引しない", `<section><h2>手配状況リスト</h2>` +
+	{"クロームの中は索引しない", `<section data-mirror="手配状況リスト">` +
 		`<div class="vocab-chrome"><table data-type="part-materials"><tbody>` +
 		`<tr><th>部材名</th></tr><tr><td>出てはいけない</td></tr></tbody></table></div></section>`},
 }

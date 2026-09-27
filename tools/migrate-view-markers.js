@@ -1,10 +1,13 @@
-// 名前の見えない鏡の印を、見出しの印へ書き換える（2026-09-27・一度きりの移し替え）。
+// 古い鏡の印を、鏡の印 `data-mirror` へ書き換える（2026-09-27・一度きりの移し替え）。
 //
-//   <section data-type="unordered-items"></section>  →  <section><h2>必要部材表</h2></section>
+//   <section data-type="unordered-items"></section>   →  <section data-mirror="必要部材表"></section>
+//   <section><h2>必要部材表</h2></section>             →  <section data-mirror="必要部材表"></section>
 //
 // 利用者:「名前の見えない印 <section data-type="unordered-items"></section> は廃止して削除して
-// 欲しい」。コードは 2026-09-27 から属性の印を**読みません**（鏡が出なくなる）ので、各環境の
-// データをこれで一度だけ書き換えます。⚠ **両方の環境（職場・自宅）で流し終えたら、この道具は消す**。
+// 欲しい」→（同日）「保存するHTMLにも『表と挿げ替えるためのタグ』が記録される…わかりやすい
+// シングルタグに」「閉じタグがあっても良いです」。コードは属性の印を**読みません**（鏡が出なく
+// なる）。見出しの節（同日の午前だけ使った形）は移し終えるまで読みます。各環境のデータをこれで
+// 一度だけ書き換えます。⚠ **両方の環境（職場・自宅）で流し終えたら、この道具は消す**。
 //
 // どれが鏡で、何という名前かは**動いているサーバーの `/api/tag-schema` から引きます**
 // （形式名も表示名もここに焼かない）。本文は**正本のファイル**（data/master）を読み、
@@ -43,16 +46,28 @@ function escapeHTML(s) {
 function rewrite(html, views) {
   const done = [];
   const skipped = [];
-  const re = /<section\b([^>]*?)\s+data-type="([^"]+)"([^>]*)>([\s\S]*?)<\/section>/g;
-  const out = html.replace(re, (all, before, type, after, inner) => {
+  const names = new Set(views.values());
+  // ① 名前の見えない印 <section data-type="unordered-items"></section>
+  const reType = /<section\b([^>]*?)\s+data-type="([^"]+)"([^>]*)>([\s\S]*?)<\/section>/g;
+  let out = html.replace(reType, (all, before, type, after, inner) => {
     const name = views.get(type);
     if (!name) return all; // 鏡でない（ファイル表示・タグなど）はそのまま
     if (/<section\b/.test(inner) || inner.trim() !== '') {
       skipped.push(type);
       return all;
     }
-    done.push(type);
-    return `<section${before}${after}><h2>${escapeHTML(name)}</h2></section>`;
+    done.push(name);
+    return `<section${before}${after} data-mirror="${escapeHTML(name)}"></section>`;
+  });
+  // ② 見出しの節 <section><h2>必要部材表</h2>…</section>（2026-09-27 の午前だけ使った形）。
+  //    見出しの下に人の書き込みがあれば、印の中にそのまま残す。
+  const reHead = /<section\b([^>]*)>(\s*)<h([1-6])>([^<]*)<\/h\3>([\s\S]*?)<\/section>/g;
+  out = out.replace(reHead, (all, attrs, ws, lv, text, rest) => {
+    const name = text.trim();
+    if (!names.has(name) || /data-(type|mirror)=/.test(attrs)) return all;
+    if (/<section\b/.test(rest)) { skipped.push(name); return all; }
+    done.push(name);
+    return `<section${attrs} data-mirror="${escapeHTML(name)}">${rest.trim() === '' ? '' : rest}</section>`;
   });
   return { out, done, skipped };
 }
@@ -98,7 +113,7 @@ async function save(id, html) {
       if (done.length === 0) continue;
       pages++;
       markers += done.length;
-      console.log(`${DRY ? '（試し）' : ''}${id}: ${done.map(t => views.get(t)).join('・')}`);
+      console.log(`${DRY ? '（試し）' : ''}${id}: ${done.join('・')}`);
       if (!DRY) await save(id, out);
     }
   }

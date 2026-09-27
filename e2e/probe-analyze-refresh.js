@@ -38,7 +38,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
 
   const before = await page.evaluate(() => ({
     nav: Array.from(document.querySelectorAll('#w-child-nav-list a')).map(a => a.textContent),
-    mirror: Array.from(document.querySelectorAll('#w-editor-content section')).filter(s => (s.querySelector(':scope > h2') || {}).textContent === '子ページ一覧').flatMap(s => Array.from(s.querySelectorAll('a'))).map(a => a.textContent),
+    mirror: Array.from(document.querySelectorAll('#w-editor-content section[data-mirror="子ページ一覧"] a')).map(a => a.textContent),
     analyze: document.querySelectorAll('#w-editor-content .attach-analyze').length,
   }));
   console.log('    前: 左レール ' + before.nav.length + '件 / 本文の鏡 ' + before.mirror.length + '件');
@@ -82,10 +82,9 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
 
   const after = await page.evaluate((id) => {
     const hits = links => links.some(a => (a.getAttribute('href') || '').endsWith(id));
-    // 鏡の印は見出し（名前の見えない data-type の印は 2026-09-27 に廃止）。
-    const mirrorLinks = Array.from(document.querySelectorAll('#w-editor-content section'))
-      .filter(s => (s.querySelector(':scope > h2') || {}).textContent === '子ページ一覧')
-      .flatMap(s => Array.from(s.querySelectorAll('a')));
+    // 鏡の印は data-mirror（名前の見えない data-type の印は 2026-09-27 に廃止）。
+    const mirrorLinks = Array.from(document.querySelectorAll(
+      '#w-editor-content section[data-mirror="子ページ一覧"] a'));
     return {
       nav: Array.from(document.querySelectorAll('#w-child-nav-list a')).map(a => a.textContent),
       mirror: mirrorLinks.map(a => a.textContent),

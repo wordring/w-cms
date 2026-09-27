@@ -25,7 +25,7 @@ func TestComputedViewWithoutRendererShowsReason(t *testing.T) {
 	t.Cleanup(func() { vocabRegistry = orig })
 
 	req := httptest.NewRequest("GET", "/000001", nil)
-	body := `<section><h2>描画処理の無いビュー</h2></section>`
+	body := `<section data-mirror="描画処理の無いビュー"></section>`
 	got := RenderComputedViews(req, 1, body)
 
 	if got == body {

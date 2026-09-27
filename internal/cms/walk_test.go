@@ -94,7 +94,7 @@ func TestWalkSkipsChrome(t *testing.T) {
 	var seen []string
 	reg.observe("*", collectFunc(&seen, true))
 
-	nodes := parseFrag(t, `<section><h2>手配状況リスト</h2>`+
+	nodes := parseFrag(t, `<section data-mirror="手配状況リスト">`+
 		`<div class="vocab-chrome"><table data-type="materials-table"><tr><td>1</td></tr></table></div>`+
 		`</section>`+
 		`<dl data-type="tags"><dt>a</dt><dd>b</dd></dl>`)

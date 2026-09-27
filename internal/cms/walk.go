@@ -290,6 +290,19 @@ func vocabTypeOf(el *html.Node) string {
 		}
 	}
 	if el.Data == "section" {
+		// **鏡の印は `<section data-mirror="必要部材表"></section>`**（2026-09-27）——値は鏡の
+		// **表示名**。利用者:「保存するHTMLにも『表と挿げ替えるためのタグ』が記録されるはず。
+		// もう少しわかりやすいシングルタグに出来ないでしょうか」「閉じタグがあっても良いです」。
+		// 鏡でない名前（未登録・表の形式）は、ただの節です（保存時の告知が知らせる）。
+		if name := Attr(el, MirrorAttr); name != "" {
+			if def, ok := VocabDefByHeading(strings.TrimSpace(name)); ok && def.View {
+				return def.Type
+			}
+			return ""
+		}
+		// ⚠ 見出しの節（`<section><h2>必要部材表</h2></section>`）で名乗る鏡は、2026-09-27 の
+		// 午前だけ使った形です。両方の環境を `data-mirror` へ移し終えたら、鏡についてはこの
+		// 解決を消せます（表の見出し形と一緒に・DBの日本語化 5段目の4）。
 		if def, ok := VocabDefByHeading(functionHeading(el)); ok {
 			return def.Type
 		}

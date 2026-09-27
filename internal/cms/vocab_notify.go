@@ -44,6 +44,15 @@ func UnknownVocabTypes(htmlStr string) []string {
 			if n.Data != "table" && n.Data != "dl" && n.Data != "section" {
 				return
 			}
+			// 鏡の印（`data-mirror="表示名"`）の名前が鏡として登録されていなければ告げます
+			// ——打ち間違えた印は、黙っていると空の節になります（2026-09-27）。
+			if n.Data == "section" {
+				if name := strings.TrimSpace(Attr(n, MirrorAttr)); name != "" && !seen[name] {
+					if def, ok := VocabDefByHeading(name); !ok || !def.View {
+						seen[name] = true
+					}
+				}
+			}
 			dt := Attr(n, "data-type")
 			if dt == "" || seen[dt] {
 				return

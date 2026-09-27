@@ -1383,6 +1383,19 @@ body[edit-mode] #w-editor-content td.cell-known {
 #w-editor-content .badge.ok { background: #ecfdf5; color: #10b981; }
 #w-editor-content .badge.ng { background: #fef2f2; color: #ef4444; }
 
+/* ── 鏡の印（section[data-mirror]・2026-09-27）──
+ * 中身はサーバーが読むたびに描く（.vocab-chrome）。挿した直後はまだ空なので、編集モードでだけ
+ * 印の名前を案内として出す（保存されるのは印だけ）。 */
+body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
+    content: "🪞 " attr(data-mirror) "（保存して読み直すと、ここに鏡が出ます）";
+    color: var(--text-muted);
+    font-size: 12px;
+    font-style: italic;
+}
+#w-editor-content section[data-mirror] {
+    margin: 12px 0;
+}
+
 /* ── ファイル容器（section[data-type=file]）のエンハンサが挿す編集クローム ── */
 #w-editor-content section[data-type] {
     margin: 12px 0;

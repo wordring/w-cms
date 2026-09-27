@@ -874,7 +874,7 @@
         }
         if (retired.length) {
             parts.push('名前の見えない鏡の印 ' + retired.map(t => '「' + t + '」').join('・') +
-                ' は廃止しました。描かれないので、スラッシュメニューから見出しの鏡を入れ直してください。');
+                ' は廃止しました。描かれないので、スラッシュメニューから鏡を入れ直してください。');
         }
         notify(parts.join(' '), { type: 'alert', duration: 0, id: 'unknown-vocab' });
     }
@@ -1752,7 +1752,16 @@
             const def = vocabDefs.find(v => v.type === t) || null;
             if (!def || !def.view) return def;
         }
+        // 鏡の印（data-mirror="表示名"・2026-09-27）——サーバーの vocabTypeOf と同じ規則。
+        const m = section.getAttribute && section.getAttribute('data-mirror');
+        if (m) return mirrorDefOf(m);
         return headingDefOf(section);
+    }
+
+    // mirrorDefOf は鏡の印の値（表示名）から鏡の形式を引く。鏡でない名前は null。
+    function mirrorDefOf(name) {
+        const w = String(name || '').trim();
+        return vocabDefs.find(v => v.view && v.display_name === w) || null;
     }
 
     // isRetiredViewMarker は、廃止した**名前の見えない鏡の印**（`<section data-type="child-list">`）
@@ -2077,12 +2086,20 @@
         if (def.element === 'table') {
             return buildCaptionTable(def.display_name || def.type, def.columns);
         }
+        // **鏡（view）は印1つ**——<section data-mirror="必要部材表"></section>（2026-09-27 利用者:
+        // 「保存するHTMLにも『表と挿げ替えるためのタグ』が記録される…わかりやすいシングルタグに」
+        // 「閉じタグがあっても良いです」）。値は表示名で、中身はサーバーが読むたびに描く。
+        if (def.view) {
+            const sec = document.createElement('section');
+            sec.setAttribute('data-mirror', def.display_name || def.type);
+            return sec;
+        }
         if (usesHeadingForm(def)) {
             // 見出し形（D-2）: <section><h2>表示名</h2>…素の中身…</section>。
             // 機械語は本文に書かない——section の役割は見出しの言葉が、列は th / dt の
             // 表示文字が宣言し、サーバーはレジストリ（表示名・Items）で解釈する。
-            // ⚠ **ビュー（必要部材表など）はいまもこの形で挿され、節の見出しで解かれます**
-            // ——表をキャプションへ移しても、この解決は消せません（2026-09-26 に確認）。
+            // （ビューはここを通りません——上の data-mirror の枝で印1つを挿す・2026-09-27。
+            //  それまではこの見出し形で挿され、節の見出しで解かれていました。）
             const sec = document.createElement('section');
             const h = document.createElement('h2');
             h.textContent = def.display_name || def.type;
@@ -5018,7 +5035,7 @@
             if (retired) {
                 const def = vocabDefs.find(v => v.type === type);
                 el.title = '名前の見えない鏡の印「' + type + '」は廃止しました——描かれません。' +
-                    '見出し「' + def.display_name + '」の節で書いてください（スラッシュメニュー）。';
+                    'スラッシュメニューで「' + def.display_name + '」の鏡を入れ直してください。';
             } else if (unknown) {
                 el.title = '未定義の形式「' + type + '」——保存はされますが、計算には使われません。';
             } else if (el.title && (el.title.indexOf('未定義の形式') === 0 ||
@@ -5027,8 +5044,23 @@
             }
         });
 
+        // 鏡の印（data-mirror="表示名"）の名前が鏡として登録されていなければ赤
+        // （打ち間違い・2026-09-27）。保存の告知（unknown_types）と同じ判定。
+        const mirrorTargets = isEdit ? Array.from(editor.querySelectorAll('section[data-mirror]'))
+            .filter(el => !el.closest('.vocab-chrome')) : [];
+        mirrorTargets.forEach(el => {
+            const name = el.getAttribute('data-mirror');
+            const unknown = !mirrorDefOf(name);
+            el.classList.toggle('is-vocab-unknown', unknown);
+            if (unknown) {
+                el.title = '鏡「' + name + '」は登録されていません——描かれません。綴りを確かめてください。';
+            } else if (el.title && el.title.indexOf('鏡「') === 0) {
+                el.removeAttribute('title');
+            }
+        });
+
         // 対象でなくなった赤い印を片付ける（形式を外した・宣言を足した）。
-        const attrSet = new Set(attrTargets.map(x => x.el));
+        const attrSet = new Set(attrTargets.map(x => x.el).concat(mirrorTargets));
         editor.querySelectorAll('.is-vocab-unknown').forEach(el => {
             if (!attrSet.has(el)) el.classList.remove('is-vocab-unknown');
         });

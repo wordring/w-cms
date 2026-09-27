@@ -3,15 +3,17 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 // 計算ビュー（表示専用）のサーバー事前描画
 //
-// 本文に保存されるのは見出しだけの節（印）で、中身はページを返すたびにここで埋める:
+// 本文に保存されるのは**鏡の印**だけで、中身はページを返すたびにここで埋める:
 //
-//   <section><h2>子ページ一覧</h2></section>     → 子ページ一覧
-//   <section><h2>手配状況リスト</h2></section>   → 部材手配・発注進捗の集計表
+//   <section data-mirror="子ページ一覧"></section>     → 子ページ一覧
+//   <section data-mirror="手配状況リスト"></section>   → 部材手配・発注進捗の集計表
 //
-// ⚠ **印は見出しで名乗ります**（D-2「表示されている言葉が機能を表します」）。
-// `<section data-type="child-list">` のような**名前の見えない印は 2026-09-27 に廃止**しました
-// （利用者:「名前の見えない印は廃止して削除して欲しい」）——コードが印を書くときは
-// `ViewMarkerHTML` を通すこと。
+// ⚠ **印の値は鏡の表示名**です（2026-09-27 利用者:「保存するHTMLにも『表と挿げ替えるための
+// タグ』が記録されるはず。もう少しわかりやすいシングルタグに出来ないでしょうか」「閉じタグが
+// あっても良いです」）。コードが印を書くときは `ViewMarkerHTML` を通すこと。
+// ⚠ その日の朝に廃止した `<section data-type="child-list">`（名前の見えない印）は読みません。
+// 午前だけ使った見出しの節（`<section><h2>子ページ一覧</h2></section>`）は、両方の環境を
+// 移し終えるまで読みます（vocabTypeOf）。
 //
 // 描画した中身は <div class="vocab-chrome" contenteditable="false"> に包む。
 // エディタのシリアライザは .vocab-chrome を保存しない（エンハンサのクロームと
@@ -62,7 +64,7 @@ func RegisterView(vocabType string, render func(user *auth.User, pageIDInt int) 
 	viewRenderers[vocabType] = render
 }
 
-// ViewMarkerHTML は、本文に置く鏡の印を返します——`<section><h2>表示名</h2></section>`。
+// ViewMarkerHTML は、本文に置く鏡の印を返します——`<section data-mirror="表示名"></section>`。
 //
 // 置き場の雛形のように**コードが印を書くときは必ずここを通します**（スラッシュメニューが
 // 挿す形と同じ）。表示名はレジストリの宣言から引くので、コードに言葉を焼きません。
@@ -73,8 +75,12 @@ func ViewMarkerHTML(viewType string) string {
 	if !ok || !def.View {
 		panic("鏡（計算ビュー）として登録されていない形式です: " + viewType)
 	}
-	return "<section><h2>" + stdhtml.EscapeString(def.DisplayName) + "</h2></section>"
+	return `<section ` + MirrorAttr + `="` + stdhtml.EscapeString(def.DisplayName) + `"></section>`
 }
+
+// MirrorAttr は鏡の印の属性名です（値は鏡の表示名）。サーバー・サニタイザ・エディタの
+// 3者が同じ綴りを見ます（`FileRefAttr` と同じ流儀）。
+const MirrorAttr = "data-mirror"
 
 // missingViewHTML は「ビューと宣言されているのに描画処理が無い」ことの表示です。
 // 形式名を出すのは、直す人がどの宣言を足せばよいか分かるようにするため。
@@ -98,8 +104,8 @@ func init() {
 			if el.Data != "section" {
 				return true, nil
 			}
-			// 機能見出し（D-2）で名乗る——<section><h2>子ページ一覧</h2></section> だけで
-			// 鏡が動く（名前の見えない data-type の印は 2026-09-27 に廃止・vocabTypeOf）。
+			// 鏡の印 <section data-mirror="子ページ一覧"></section> だけで鏡が動く
+			// （名乗り方の解決は vocabTypeOf——名前の見えない data-type の印は読まない）。
 			vocabType := vocabTypeOf(el)
 			def, ok := VocabDefByType(vocabType)
 			if !ok || !def.View {

@@ -18,13 +18,13 @@ func TestRequiredMaterialsViewRenders(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedSecretMaterial(t, 3, false, "alice")
 
-	body := `<h1>受注</h1><section data-id="v2"><h2>手配状況リスト</h2></section>`
+	body := `<h1>受注</h1><section data-id="v2" data-mirror="手配状況リスト"></section>`
 	req := httptest.NewRequest("GET", "/000003", nil)
 	req = auth.WithUser(req, &auth.User{Username: "root", IsAdmin: true})
 	out := cms.RenderComputedViews(req, 3, body)
 
 	for _, want := range []string{
-		`<section data-id="v2"><h2>手配状況リスト</h2>`, // 印（見出し）は保存内容のまま
+		`<section data-id="v2" data-mirror="手配状況リスト">`, // 印は保存内容のまま
 		`class="vocab-chrome"`,           // 中身はクローム（保存されない）
 		// ⚠ **見出しは 2026-09-21 に変わりました**（材料名の合算 →
 		// **加工製品ごと**）。ユーザー:「各受注ページに各加工製品ごとの項目と購入品の

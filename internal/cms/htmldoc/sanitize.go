@@ -166,7 +166,9 @@ var structuralElements = map[string]map[string]bool{
 	// サーバー（internal/cms/file_view.go）です。**書く人が宛先を選べない**という
 	// 性質は、ここで値を検査するからではなく、URLを機械が組むことで守られます
 	// （docs/旧文書/セキュリティ設計.md §4）。だから他の data-* と同じく不活性な文字列として通します。
-	"section": {"data-type": true, "data-src": true, "data-ref": true}, "article": {}, "header": {}, "footer": {},
+	// data-mirror は鏡（計算ビュー）の印——値は鏡の表示名（`<section data-mirror="必要部材表">`・
+	// 2026-09-27）。これも不活性な文字列で、名前から描く中身を選ぶのはサーバーです。
+	"section": {"data-type": true, "data-src": true, "data-ref": true, "data-mirror": true}, "article": {}, "header": {}, "footer": {},
 	"aside": {}, "nav": {}, "address": {},
 	"figure": {}, "figcaption": {},
 

@@ -89,36 +89,36 @@ async function openSlashMenu(page) {
         check('旧 m-required-materials 項目が無い', await page.locator('#w-slash-menu [data-type="m-required-materials"]').count() === 0);
         check('後継: 子ページ一覧がある', await page.locator('#w-slash-menu [data-type="vocab:child-list"]').count() === 1);
         await page.click('#w-slash-menu [data-type="vocab:child-list"]');
-        // 見出し形（D-2）: 計算ビューも <section><h2>子ページ一覧</h2></section> で挿さる。
-        // 見出しと注記は人の書き込みとして編集でき、鏡の中身はその下へ毎回描かれる。
-        const clMarker = page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first();
-        await clMarker.waitFor({ timeout: 4000 });
-        check('見出しが鏡を宣言する', (await clMarker.locator('h2').first().innerText()).trim() === '子ページ一覧');
+        // 鏡の印（2026-09-27）: <section data-mirror="子ページ一覧"></section> の1つだけが挿さる。
+        // 鏡の中身はサーバーが読むたびに描く（保存されるのは印だけ）。
+        const clMarker = page.locator('#w-editor-content section[data-mirror="子ページ一覧"]').first();
+        await clMarker.waitFor({ state: 'attached', timeout: 4000 });
+        check('印の名前が鏡を宣言する', (await clMarker.getAttribute('data-mirror')) === '子ページ一覧');
         check('マーカーに data-type は無い', await clMarker.getAttribute('data-type') === null);
 
         await openSlashMenu(page);
         await page.click('#w-slash-menu [data-type="vocab:required-materials"]');
-        await page.locator('#w-editor-content section').filter({ hasText: '手配状況リスト' }).first().waitFor({ timeout: 4000 });
+        await page.locator('#w-editor-content section[data-mirror="手配状況リスト"]').first().waitFor({ state: 'attached', timeout: 4000 });
         await settleSaved(page);
         const preview1 = await page.locator('#w-html-preview').inputValue();
-        check('保存は見出しのセクションのみ', preview1.includes('<h2>子ページ一覧</h2>') && preview1.includes('<h2>手配状況リスト</h2>') && !preview1.includes('vocab-chrome'));
+        check('保存は鏡の印のみ', preview1.includes('data-mirror="子ページ一覧"') && preview1.includes('data-mirror="手配状況リスト"') && !preview1.includes('vocab-chrome'));
 
-        // 5. 再読込 → サーバー事前描画が中身を埋める（見出しは残り、中身はその下）
+        // 5. 再読込 → サーバー事前描画が印の中へ中身を埋める
         await page.goto(pageURL);
-        const clSec = page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first();
+        const clSec = page.locator('#w-editor-content section[data-mirror="子ページ一覧"]').first();
         const clFilled = clSec.locator('.vocab-chrome');
         await clFilled.waitFor({ timeout: 8000 });
         check('子ページ一覧のSSR（空表示）', (await clFilled.innerText()).includes('子ページはありません'));
-        check('SSR後も見出しが残る', (await clSec.locator('h2').first().innerText()).trim() === '子ページ一覧');
-        const rmFilled = page.locator('#w-editor-content section').filter({ hasText: '手配状況リスト' }).first().locator('.vocab-chrome');
+        check('SSR後も印が残る', (await clSec.getAttribute('data-mirror')) === '子ページ一覧');
+        const rmFilled = page.locator('#w-editor-content section[data-mirror="手配状況リスト"]').first().locator('.vocab-chrome');
         check('手配集計のSSR（見出し）', (await rmFilled.innerText()).includes('手配状況（加工製品ごと）'));
 
         // 6. 子ページを作ると一覧に載る
         const pageId = pageURL.split('/').pop();
         await page.request.post(BASE + '/api/new-page?parent=' + pageId, { headers: { 'Origin': BASE } });
         await page.goto(pageURL);
-        await page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first().locator('.vocab-chrome').waitFor({ timeout: 8000 });
-        check('作成した子ページがSSRの一覧に出る', await page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first().locator('.vocab-chrome a').count() >= 1);
+        await page.locator('#w-editor-content section[data-mirror="子ページ一覧"]').first().locator('.vocab-chrome').waitFor({ timeout: 8000 });
+        check('作成した子ページがSSRの一覧に出る', await page.locator('#w-editor-content section[data-mirror="子ページ一覧"]').first().locator('.vocab-chrome a').count() >= 1);
 
         // 7. SSRの中身は保存に漏れない（編集→保存の往復）。再読込後は閲覧モードなので
         // トグルで編集モードへ入る（ロック取得を待つ）。
@@ -128,13 +128,13 @@ async function openSlashMenu(page) {
         // SSR 済みの /api/load を読むので、ビューの中身が消えないこと（退行の固定）。
         await page.waitForTimeout(500);
         check('編集モードでもSSRの中身が残る',
-            (await page.locator('#w-editor-content section').filter({ hasText: '子ページ一覧' }).first().locator('.vocab-chrome').count()) >= 1);
+            (await page.locator('#w-editor-content section[data-mirror="子ページ一覧"]').first().locator('.vocab-chrome').count()) >= 1);
         await page.locator('#w-editor-content h1').first().click();
         await page.keyboard.type('X');
         await settleSaved(page);
         const preview2 = await page.locator('#w-html-preview').inputValue();
         check('SSRの中身が保存に漏れない', !preview2.includes('vocab-chrome') && !preview2.includes('子ページはありません'));
-        check('マーカー（見出しのセクション）は保存に残る', preview2.includes('<h2>子ページ一覧</h2>'));
+        check('マーカー（鏡の印）は保存に残る', preview2.includes('data-mirror="子ページ一覧"'));
 
         // 8. ページ内アンカー（描画時合成）: 見出しに id が付き、保存には漏れない
         await page.goto(pageURL);
@@ -230,18 +230,18 @@ async function openSlashMenu(page) {
             '<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
             '<tr><td>X1</td><td>部品X1</td><td>1000</td><td>3</td><td>未着手</td></tr>' +
             '</tbody></table></section>' +
-            '<section><h2>手配状況リスト</h2></section>');
+            '<section data-mirror="手配状況リスト"></section>');
         void partId;
 
         await page.goto(BASE + '/' + orderId);
-        // 鏡の印は見出し（名前の見えない data-type の印は 2026-09-27 に廃止）
-        await page.locator('#w-editor-content section:has(> h2:text-is("手配状況リスト")) .vocab-chrome').waitFor({ timeout: 8000 });
+        // 鏡の印は data-mirror（名前の見えない data-type の印は 2026-09-27 に廃止）
+        await page.locator('#w-editor-content section[data-mirror="手配状況リスト"] .vocab-chrome').waitFor({ timeout: 8000 });
         check('手配集計のSSRに行が出る',
             (await page.locator('#w-editor-content .materials-table tbody tr').count()) >= 1);
 
         // 10-1. SSR の中身は編集できない（contenteditable="false"）
         check('SSRの中身は contenteditable=false',
-            await page.locator('#w-editor-content section:has(> h2:text-is("手配状況リスト")) .vocab-chrome')
+            await page.locator('#w-editor-content section[data-mirror="手配状況リスト"] .vocab-chrome')
                 .first().getAttribute('contenteditable') === 'false');
 
         // 10-2. 集計表のセルにキャレットを置いても行操作ツールバーが出ない。
