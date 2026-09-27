@@ -55,13 +55,11 @@ func init() {
 		Title:     CustomerBoxTitle,
 		Extension: "toho",
 		Why:       "加工製品の階層の根です（社名／段／装置名称／図面名称）。整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
-		Body:      customerBoxBody,
 	})
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     OrderBoxTitle,
 		Extension: "toho",
 		Why:       "受注ページの置き場です（受注／年／月。年月は発注日）。整理を実行すると通信箱からここへ移ります。",
-		Body:      orderBoxBody,
 	})
 	// ⚠ **弊社の発注書は受注ページの下に置けません**（2026-09-21 ユーザー訂正）
 	// ——発注は**納期のグループなどから**発行され、**受注明細の単位とは無関係**なので、
@@ -70,7 +68,6 @@ func init() {
 		Title:     PurchaseOrderBoxTitle,
 		Extension: "toho",
 		Why:       "弊社が出す発注書の置き場です（発注／年／月。年月は発注日）。⚠ 受注ページの下には置けません——発注は納期のグループなどから発行され、受注明細の単位とは無関係だからです。受注との結びは参照で作ります。未手配の一覧（発注書を作る画面）もここに出ます。",
-		Body:      purchaseOrderBoxBody,
 	})
 }
 
@@ -380,35 +377,3 @@ func materialNameOf(row cms.VocabRow) string {
 	return strings.Join(parts, " ")
 }
 
-// orderBoxBody は置き場「受注」の初期本文です（2026-09-27）。作業面は**受注残**（納期ごとの表）。
-//
-// ⚠ **最初の中身だけ**です——作ったあとは人のもので、印（`data-mirror`）を動かしても消しても
-// 構いません（テンプレート駆動）。⚠ **既にある「受注」ページには入りません**（下の発注と同じ）。
-func orderBoxBody() string {
-	return "<h1>" + OrderBoxTitle + "</h1>" +
-		"<p>受注ページの置き場です（受注／年／月。年月は発注日）。" +
-		"整理を実行すると、通信箱の下にできた受注ページがここへ移ります。</p>" +
-		cms.ViewMarkerHTML(BacklogViewType)
-}
-
-// purchaseOrderBoxBody は置き場「発注」の初期本文です。
-//
-// ⚠ **未手配の一覧をここに置きます**（2026-09-22 ユーザー決定）——**発注の作業をする
-// 場所と、発注書が溜まる場所を同じ**にします（受注ページに受注残表を置くのと同じ流儀）。
-// ⚠ **一覧は鏡です**（受注明細と発注明細から毎回計算する）ので、**どこに置いても中身は
-// 同じ**です。変わるのは「どこから始めるか」だけ——だから置き場所は**作業の動線**で決めます。
-//
-// ⚠ **既にある「発注」ページには、これは入りません**——箱の本文は作られた時点のもので、
-// あとからビューを足しても現れません（2026-09-16 に実データで踏んだ）。**手で貼ること。**
-func purchaseOrderBoxBody() string {
-	return "<h1>" + PurchaseOrderBoxTitle + "</h1>" +
-		"<p>弊社が出す発注書の置き場です（発注／年／月。年月は発注日）。</p>" +
-		"<p>下の一覧から行を選び、仕入先と差出人を決めると、発注書が1枚できます。" +
-		"⚠ 発注書は<strong>1枚に1社</strong>です。</p>" +
-		// ⚠ **臨時部材表**（2026-09-25）——必要部材表の上。空でも表を置きます。
-		tempPartsTableHTML(nil) +
-		cms.ViewMarkerHTML(UnorderedViewType) +
-		// ⚠ **未発注の発注書**（2026-09-24）——要求の並びは「必要部材 → 未発注の発注書
-		//    → 発注部材表」。発注部材表は作ったときに本文の末尾へ足されます。
-		cms.ViewMarkerHTML(UnsentOrdersViewType)
-}

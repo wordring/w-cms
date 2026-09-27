@@ -25,7 +25,6 @@ package comm
 import (
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -51,20 +50,7 @@ func init() {
 		Title:     MailBoxTitle,
 		Extension: "comm",
 		Why:       "ここへ .eml を落とすと通信記録ページが作られ、未処理の一覧もこの上に出ます。メールの取り込みもここへ着地します。",
-		Body:      mailBoxBody,
 	})
-}
-
-// mailBoxBody は通信箱の初期の本文です。
-//
-// **作業面（未処理の受信）を最初から載せます。** 見出しだけで作ると、取り込んだ
-// 記録がどこにも並ばず、**箱はあるのに仕事が見えない**状態になります
-// （2026-09-11 に取引先で実際に起きた形）。
-func mailBoxBody() string {
-	return "<h1>" + html.EscapeString(MailBoxTitle) + "</h1>" +
-		"<p>ここへ .eml・PDF・図面をドロップすると、通信記録ページが子ページとして" +
-		"作られます。送信の控えも同じ箱に立ちます（向きはタグで表します）。</p>" +
-		cms.ViewMarkerHTML(UnhandledViewType)
 }
 
 // intakeUpload は、アップロード先が通信箱なら取り込み係へ回します。

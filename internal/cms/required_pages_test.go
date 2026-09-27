@@ -6,12 +6,10 @@ package cms
 // コアの置き場（テンプレート）は素の w-cms でも登録されること。
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
-	"golang.org/x/net/html"
-
-	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
 
@@ -63,68 +61,6 @@ func TestRegisterRequiredPageRejectsEmptyTitle(t *testing.T) {
 	RegisterRequiredPage(RequiredPage{Title: "   "})
 }
 
-// TestRequiredPageBodiesCarryWorkSurface は、**見出しだけの箱を作らない**ことを
-// 固定します。
-//
-// 2026-09-11 に取引先ページが見出しだけで作られ、**アドレス帳の作業面がどこにも
-// 存在しないまま実メール100通が過ぎました**（誰も一覧を見たことがなかった）。
-// 同じことが 09-16 の一掃でも起き、今度は「登録しないと作業面が出ず、作業面が
-// 無いと登録できない」という行き止まりになりました。
-//
-// **作業面を持つべき置き場**（`Body` を宣言しているもの）は、本文に計算ビューの
-// マーカーを含むこと。⚠ 受注の箱だけは例外で、**見るビューがまだありません**
-// （納期・受注残が未実装）——実装したら `Body` を足し、ここの表からも外すこと。
-func TestRequiredPageBodiesCarryWorkSurface(t *testing.T) {
-	for _, p := range RequiredPages() {
-		if p.Body == nil {
-			continue // 見出しだけの箱（受注・テンプレート置き場）
-		}
-		body := p.Body()
-		if !strings.Contains(body, "<h1>") {
-			t.Errorf("%s: 本文に h1 がありません（題が機能を決めるのに）", p.Title)
-		}
-		if !hasWorkSurface(body) {
-			t.Errorf("%s: 本文に作業面がありません（見出しだけのページは行き止まりになります）: %s",
-				p.Title, body)
-		}
-	}
-}
-
-// hasWorkSurface は本文に作業面（鏡の印）があるかを返します。印は data-mirror で名乗る
-// （名前の見えない `<section data-type=…>` の印は 2026-09-27 に廃止）ので、
-// 文字列ではなく形式の見分け方（vocabTypeOf）で探します。
-func hasWorkSurface(body string) bool {
-	nodes, err := htmldoc.ParseFragment(body)
-	if err != nil {
-		return false
-	}
-	found := false
-	for _, n := range nodes {
-		WalkElements(n, func(el *html.Node) {
-			if def, ok := VocabDefByType(vocabTypeOf(el)); ok && def.View {
-				found = true
-			}
-		})
-	}
-	return found
-}
-
-// TestRequiredPageBodyCheckSeesViewMarkers は、上の番人が**空振りしない**ことを固定します
-// ——コアのパッケージでは本文を持つ置き場が登録されないので、上のループは何も確かめて
-// いませんでした（2026-09-27 に分かった）。見分け方そのものをここで確かめ、拡張の置き場の
-// 本文は拡張の試験（`TestBoxBodiesCarryViewMarkers`）が確かめます。
-func TestRequiredPageBodyCheckSeesViewMarkers(t *testing.T) {
-	if !hasWorkSurface("<h1>箱</h1>" + ViewMarkerHTML("child-list")) {
-		t.Error("鏡の印（data-mirror）を作業面と見ていません")
-	}
-	if hasWorkSurface(`<h1>箱</h1><section data-type="child-list"></section>`) {
-		t.Error("廃止した名前の見えない印を作業面と見ています")
-	}
-	if hasWorkSurface("<h1>箱</h1><p>説明だけ</p>") {
-		t.Error("見出しだけの本文を作業面ありと見ています")
-	}
-}
-
 // TestRequiredPageStatusReportsDuplicates は、**同じ題が2枚あることを知らせる**ことを
 // 固定します（2026-09-16）。
 //
@@ -173,42 +109,79 @@ func TestRequiredPageStatusReportsDuplicates(t *testing.T) {
 	}
 }
 
-// TestEnsureTopLevelBoxUsesRegisteredBody は、**置き場を作る道が2本とも同じ本文になる**ことを
-// 固定します（2026-09-27・テンプレート駆動の A）。整理などの途中で作る `EnsureTopLevelBox` は
-// それまで見出しだけで作っていたので、管理画面の「足りない置き場を作る」と中身が違い、
-// 整理で先に作られた「受注」には鏡が無いままでした。
-func TestEnsureTopLevelBoxUsesRegisteredBody(t *testing.T) {
+// TestBoxesAreMadeOnlyFromTemplates は、**置き場はテンプレートからだけ作られる**ことを固定します
+// （2026-09-27 利用者:「コードにハードコーディングせず、テンプレート駆動にしたい」「テンプレートが
+// 無ければ作れないまで行きます」）。
+//
+//   - 同じ題のテンプレート（テンプレート置き場の下の葉）を**純粋にコピー**して作る（ブロックIDは外す）
+//   - テンプレートが無ければ作らない（`ErrNoBoxTemplate`）——管理画面の「足りない置き場を作る」も
+//     ほかの置き場は作り続け、作れなかったものを返す
+//   - 同じ題のテンプレートが2枚あれば、どちらで作るか決められないので作らない
+//   - テンプレート置き場そのものはテンプレートの入れ物なので、見出しだけで作る
+func TestBoxesAreMadeOnlyFromTemplates(t *testing.T) {
 	setupSaveTest(t)
-	newPage(t, TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
+	branch := newTemplateTree(t) // トップ 000000・テンプレート置き場 000010・分類 000011
+	newPage(t, "000012", `<h1 data-id="ab12">試しの箱</h1><p>説明</p>`+ViewMarkerHTML("child-list"),
+		page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: branch})
 	orig := requiredPageRegistry
 	requiredPageRegistry = map[string]RequiredPage{}
 	for k, v := range orig {
 		requiredPageRegistry[k] = v
 	}
 	t.Cleanup(func() { requiredPageRegistry = orig })
-	requiredPageRegistry["試しの箱"] = RequiredPage{Title: "試しの箱",
-		Body: func() string { return "<h1>試しの箱</h1>" + ViewMarkerHTML("child-list") }}
+	requiredPageRegistry["試しの箱"] = RequiredPage{Title: "試しの箱"}
+	requiredPageRegistry["雛形の無い箱"] = RequiredPage{Title: "雛形の無い箱"}
 
-	id, err := EnsureTopLevelBox("試しの箱", "alice")
-	if err != nil {
-		t.Fatalf("EnsureTopLevelBox: %v", err)
+	if id, err := BoxTemplateID("試しの箱"); err != nil || id != "000012" {
+		t.Fatalf("テンプレートを引けません: %q %v", id, err)
 	}
-	body, err := ReadPageBody(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(body, `data-mirror="子ページ一覧"`) {
-		t.Errorf("登録の本文（鏡の印入り）で作られていません: %s", body)
-	}
-	if again, _ := EnsureTopLevelBox("試しの箱", "alice"); again != id {
-		t.Errorf("既にある箱を作り直しました: %s → %s", id, again)
+	for _, st := range RequiredPageStatuses() {
+		if st.Title == "試しの箱" && (st.Template != "000012" || st.NoTemplate) {
+			t.Errorf("状態にテンプレートが出ていません: %+v", st)
+		}
+		if st.Title == "雛形の無い箱" && !st.NoTemplate {
+			t.Errorf("テンプレートが無いことが状態に出ていません: %+v", st)
+		}
 	}
 
-	id2, err := EnsureTopLevelBox("登録の無い箱", "alice")
-	if err != nil {
-		t.Fatal(err)
+	created, err := CreateMissingRequiredPages("alice")
+	if !errors.Is(err, ErrNoBoxTemplate) || !strings.Contains(err.Error(), "雛形の無い箱") {
+		t.Errorf("テンプレートの無い置き場を知らせていません: %v", err)
 	}
-	if body, _ := ReadPageBody(id2); strings.TrimSpace(body) != "<h1>登録の無い箱</h1>" {
-		t.Errorf("登録の無い題は見出しだけのはず: %s", body)
+	var boxID string
+	for _, c := range created {
+		if c.Title == "雛形の無い箱" {
+			t.Errorf("テンプレートが無いのに作りました: %+v", c)
+		}
+		if c.Title == "試しの箱" {
+			boxID = c.PageID
+		}
+	}
+	body, err := ReadPageBody(boxID)
+	if err != nil {
+		t.Fatalf("テンプレートのある置き場を作っていません: %v", err)
+	}
+	if !strings.Contains(body, `data-mirror="子ページ一覧"`) || !strings.Contains(body, "<p>説明</p>") {
+		t.Errorf("テンプレートのコピーになっていません: %s", body)
+	}
+	if strings.Contains(body, `data-id="ab12"`) {
+		t.Errorf("ブロックIDを外していません: %s", body)
+	}
+	if again, _ := EnsureTopLevelBox("試しの箱", "alice"); again != boxID {
+		t.Errorf("既にある置き場を作り直しました: %s → %s", boxID, again)
+	}
+	if _, err := EnsureTopLevelBox("雛形の無い箱", "alice"); !errors.Is(err, ErrNoBoxTemplate) {
+		t.Errorf("EnsureTopLevelBox がテンプレートの無い置き場を断っていません: %v", err)
+	}
+
+	// 同じ題のテンプレートが2枚
+	newPage(t, "000013", `<h1>試しの箱</h1>`, page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: branch})
+	if _, err := BoxTemplateID("試しの箱"); err == nil || errors.Is(err, ErrNoBoxTemplate) {
+		t.Errorf("同じ題のテンプレートが2枚あるのに引けてしまいました: %v", err)
+	}
+
+	// テンプレート置き場そのものは見出しだけで作れる
+	if body, err := boxBodyFromTemplate(TemplateRootTitle); err != nil || body != "<h1>"+TemplateRootTitle+"</h1>" {
+		t.Errorf("テンプレート置き場の本文が違います: %q %v", body, err)
 	}
 }

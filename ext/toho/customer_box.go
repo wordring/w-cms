@@ -26,7 +26,6 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	stdhtml "html"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -47,19 +46,6 @@ func EnsureCustomerBox(user *auth.User) (string, error) {
 	if id, ok := CustomerBoxPageID(); ok {
 		return id, nil
 	}
-	return cms.CreateChildPage(cms.TopPageID, user.Username, customerBoxBody())
-}
-
-// customerBoxBody は取引先ページの初期の本文です。
-//
-// **作業面は「連絡帳と未接続の相手」**（2026-09-16・unlinked.go）。メールは来ている
-// のに連絡帳と結びついていない社名ページを並べます——2026-09-10 の事故がその形でした。
-// ⚠ 見出しだけの箱を作ると行き止まりになります（`required_pages.go` の約束）。
-func customerBoxBody() string {
-	return "<h1>" + stdhtml.EscapeString(CustomerBoxTitle) + "</h1>" +
-		"<p>加工製品の階層です（社名／段／装置名称／図面名称）。" +
-		"整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。</p>" +
-		"<p>相手の連絡先（メールアドレス・ドメイン・電話番号）は「連絡帳」にあります" +
-		"——こちらは加工製品の置き場です。</p>" +
-		cms.ViewMarkerHTML(UnlinkedViewType)
+	// **同じ題のテンプレートから作る。無ければ作らない**（2026-09-27・テンプレート駆動）。
+	return cms.EnsureTopLevelBox(CustomerBoxTitle, user.Username)
 }

@@ -14,6 +14,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"w-cms/ext/comm/contacts"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -47,4 +48,36 @@ func setupExtTest(t *testing.T, id string, p page.PageMeta) {
 	if err := cms.SyncIndex(id, "<h1>添付テスト</h1>"); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
+	seedBoxTemplates(t)
+}
+
+// seedBoxTemplates は置き場のテンプレートを用意します（2026-09-27 から、置き場は**同じ題の
+// テンプレートからだけ**作られる・`cms.EnsureTopLevelBox`）。整理や社名の候補の試験が
+// 取引先・受注・発注・連絡帳の置き場を作るので、その元を置いておきます。
+// ID は試験のページと重ならない 0009xx を使います。
+func seedBoxTemplates(t *testing.T) {
+	t.Helper()
+	write := func(id, parent, body string) {
+		t.Helper()
+		if err := os.MkdirAll(page.GetPageDir(id), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(page.BodyPath(id), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := page.WriteSidecar(id, page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: parent}); err != nil {
+			t.Fatal(err)
+		}
+		if err := cms.SyncIndex(id, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("000900", cms.TopPageID, "<h1>"+cms.TemplateRootTitle+"</h1>")
+	write("000901", "000900", "<h1>東邦</h1>")
+	write("000902", "000901", "<h1>"+CustomerBoxTitle+"</h1>"+cms.ViewMarkerHTML(UnlinkedViewType))
+	write("000903", "000901", "<h1>"+OrderBoxTitle+"</h1>"+cms.ViewMarkerHTML(BacklogViewType))
+	write("000904", "000901", "<h1>"+PurchaseOrderBoxTitle+"</h1>"+
+		cms.ViewMarkerHTML(UnorderedViewType)+cms.ViewMarkerHTML(UnsentOrdersViewType))
+	write("000905", "000900", "<h1>通信</h1>")
+	write("000906", "000905", "<h1>"+contacts.ContactsBoxTitle+"</h1>"+cms.ViewMarkerHTML(contacts.ContactsViewType))
 }

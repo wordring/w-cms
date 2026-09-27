@@ -213,14 +213,32 @@ async function loadRequiredPages() {
       } else {
         c.textContent = '— 未作成';
       }
+      // **置き場はテンプレートからだけ作られます**（2026-09-27）。どのテンプレートから作るか、
+      // テンプレートが無いか（＝作れない・初期化のあと作り直せない）を出します。
+      const tp = document.createElement('div');
+      tp.className = p.no_template ? 'dup-warn' : 'hint';
+      if (p.template) {
+        tp.appendChild(document.createTextNode('テンプレート: '));
+        const a3 = document.createElement('a');
+        a3.href = '/' + p.template;
+        a3.textContent = p.template;
+        tp.appendChild(a3);
+      } else if (p.no_template) {
+        tp.textContent = '⚠ テンプレートがありません——テンプレート置き場の下に、題が「' + p.title +
+          '」のテンプレートを作ってください（無いと' + (p.exists ? '初期化のあと作り直せません' : '作れません') + '）';
+      }
+      if (tp.childNodes.length) c.appendChild(tp);
     });
     tb.appendChild(tr);
   });
   const missing = (d.pages || []).filter(p => !p.exists).length;
+  const creatable = (d.pages || []).filter(p => !p.exists && !p.no_template).length;
   const btn = document.getElementById('reqpages-create');
   if (btn) {
-    btn.disabled = missing === 0;
-    btn.textContent = missing === 0 ? '足りない置き場はありません' : '足りない置き場を作る（' + missing + '件）';
+    btn.disabled = creatable === 0;
+    btn.textContent = missing === 0 ? '足りない置き場はありません'
+      : creatable === 0 ? 'テンプレートが無いので作れません（' + missing + '件）'
+      : '足りない置き場を作る（' + creatable + '件）';
   }
 }
 

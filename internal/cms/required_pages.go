@@ -42,7 +42,7 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"html"
+	"errors"
 	"sort"
 	"strings"
 
@@ -59,9 +59,10 @@ type RequiredPage struct {
 	// Why は「何のために要るか」の一文です。**画面にそのまま出ます**——
 	// 押す人が、押してよいかを自分で判断できるように。
 	Why string
-	// Body は作るときの本文を返します。**作業面を含めること**——見出しだけの
-	// ページを作ると行き止まりになります。nil なら見出しだけ。
-	Body func() string
+	// ⚠ **本文はありません**（2026-09-27 に `Body` を消した）。置き場は**同じ題のテンプレート**を
+	// コピーして作り、テンプレートが無ければ作りません（`boxBodyFromTemplate`）。利用者:
+	// 「コードにハードコーディングせず、テンプレート駆動にしたい」「テンプレートが無ければ
+	// 作れないまで行きます。ハードコーディングを無くしたい」。
 }
 
 // requiredPageRegistry は登録された置き場です。**`init()` の中からだけ**登録します
@@ -101,6 +102,11 @@ type RequiredPageStatus struct {
 	// 空のうちは害がありませんが、**片方に書き込むと、書いた内容がどこへ行ったのか
 	// 分からなくなります**。防げない（題は人が自由に付けられる）ので、**知らせます**。
 	Duplicates []string `json:"duplicates,omitempty"`
+	// Template は、この置き場を作るテンプレートのページID（無ければ空）。
+	// NoTemplate は「テンプレートが要るのに無い」——在らなければ作れません（2026-09-27）。
+	// テンプレート置き場そのものはテンプレートの入れ物なので、テンプレートは要りません。
+	Template   string `json:"template,omitempty"`
+	NoTemplate bool   `json:"no_template,omitempty"`
 }
 
 // RequiredPages は登録された置き場の**宣言**を並び順つきで返します。
@@ -119,22 +125,6 @@ type RequiredPageStatus struct {
 func IsRequiredPageTitle(title string) bool {
 	_, ok := requiredPageRegistry[strings.TrimSpace(title)]
 	return ok
-}
-
-// requiredPageBody は、題 title のトップ直下の置き場を**作るときの本文**を返します。
-// 登録された置き場なら拡張の本文（鏡の印入り）、登録が無いか本文が無ければ見出しだけ。
-//
-// ⚠ **置き場を作る道は2本あり、どちらもここを通ります**（2026-09-27・テンプレート駆動の A）
-// ——管理画面の「足りない置き場を作る」（`CreateMissingRequiredPages`）と、整理などの途中で
-// 作る `EnsureTopLevelBox`。それまで後者は見出しだけで作っていたので、**同じ置き場が作られた
-// 道によって中身が違いました**（整理で先に作られた「受注」には鏡が無かった）。
-// ⚠ 本文は**作るときの最初の中身**だけです——作ったあとは人のもので、鏡は印のある場所に出ます。
-func requiredPageBody(title string) string {
-	title = strings.TrimSpace(title)
-	if p, ok := requiredPageRegistry[title]; ok && p.Body != nil {
-		return p.Body()
-	}
-	return "<h1>" + html.EscapeString(title) + "</h1>"
 }
 
 func RequiredPages() []RequiredPage {
@@ -163,6 +153,13 @@ func RequiredPageStatuses() []RequiredPageStatus {
 				st.Duplicates = ids[1:]
 			}
 		}
+		if p.Title != TemplateRootTitle {
+			if tid, err := BoxTemplateID(p.Title); err == nil {
+				st.Template = tid
+			} else {
+				st.NoTemplate = true
+			}
+		}
 		out = append(out, st)
 	}
 	return out
@@ -173,19 +170,34 @@ func RequiredPageStatuses() []RequiredPageStatus {
 // 途中で失敗しても、そこまでに作ったものは残します（作れたものを巻き戻すと
 // 「押したのに何も起きない」になり、どこまで進んだか分からなくなるため）。
 // エラーは題を添えて返すので、画面はどれで止まったかを出せます。
+//
+// ⚠ **テンプレートの無い置き場は作りません**（2026-09-27）——ほかの置き場は作り続け、最後に
+// 「テンプレートが無くて作れなかったもの」をまとめて返します（`ErrNoBoxTemplate` を包む）。
 func CreateMissingRequiredPages(owner string) (created []RequiredPageStatus, err error) {
+	var noTemplate []string
 	for _, st := range RequiredPageStatuses() {
 		if st.Exists {
 			continue
 		}
 		p := requiredPageRegistry[st.Title]
-		id, cerr := CreateChildPage(TopPageID, owner, requiredPageBody(p.Title))
+		body, berr := boxBodyFromTemplate(p.Title)
+		if errors.Is(berr, ErrNoBoxTemplate) {
+			noTemplate = append(noTemplate, p.Title)
+			continue
+		}
+		if berr != nil {
+			return created, &requiredPageError{Title: p.Title, Err: berr}
+		}
+		id, cerr := CreateChildPage(TopPageID, owner, body)
 		if cerr != nil {
 			return created, &requiredPageError{Title: p.Title, Err: cerr}
 		}
 		auth.Audit(owner, "required-page.create", id+" ("+p.Title+")")
 		st.PageID, st.Exists = id, true
 		created = append(created, st)
+	}
+	if len(noTemplate) > 0 {
+		return created, &requiredPageError{Title: strings.Join(noTemplate, "・"), Err: ErrNoBoxTemplate}
 	}
 	return created, nil
 }

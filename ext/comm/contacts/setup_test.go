@@ -50,6 +50,7 @@ func setupTemplateAPITest(t *testing.T) {
 	if err := cms.ApplySchema(db); err != nil {
 		t.Fatalf("プラグインスキーマ作成エラー: %v", err)
 	}
+	seedContactsBoxTemplate(t)
 }
 
 // newPage は正本（HTML＋サイドカー）を書いて索引まで通します。
@@ -68,4 +69,15 @@ func newPage(t *testing.T, id, body string, meta page.PageMeta) {
 	if err := cms.SyncIndex(id, body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
+}
+
+// seedContactsBoxTemplate は連絡帳の置き場のテンプレートを用意します（2026-09-27 から、置き場は
+// **同じ題のテンプレートからだけ**作られる・`cms.EnsureTopLevelBox`）。ID は試験のページと
+// 重ならない 0009xx を使います。
+func seedContactsBoxTemplate(t *testing.T) {
+	t.Helper()
+	newPage(t, "000900", "<h1>"+cms.TemplateRootTitle+"</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: cms.TopPageID})
+	newPage(t, "000901", "<h1>通信</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000900"})
+	newPage(t, "000902", "<h1>"+ContactsBoxTitle+"</h1>"+cms.ViewMarkerHTML(ContactsViewType),
+		page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000901"})
 }

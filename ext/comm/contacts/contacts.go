@@ -102,7 +102,6 @@ func init() {
 		Title:     ContactsBoxTitle,
 		Extension: "comm/contacts",
 		Why:       "取引の相手（会社・個人）を集める箱です。木は「組織／人」の2段で、メールから拾った「未登録の連絡先」の作業面がこのページに出ます。",
-		Body:      contactsBoxBody,
 	})
 }
 
@@ -189,25 +188,10 @@ func EnsureContactsBox(user *auth.User) (string, error) {
 	if id, ok := ContactsBoxPageID(); ok {
 		return id, nil
 	}
-	return cms.CreateChildPage(cms.TopPageID, user.Username, contactsBoxBody())
-}
-
-// contactsBoxBody は取引先ページの初期の本文です。
-//
-// **「未登録の連絡先」の作業面を最初から載せます**（2026-09-11）。ここを空の見出し
-// だけで作っていたために、**アドレス帳の作業面がどこにも存在しませんでした**
-// ——誰も一覧を見たことがないまま実メール100通が過ぎ、11ドメインのうち登録済みは
-// 1件だけ（しかもそれは整理が作った側で、連絡先を持っていなかった）。
-//
-// 通信箱は**人が意図して置くページ**なので、作業面も人が入れます。取引先は
-// **機械が作る**ので、**行き止まりのページを作らない責任はこちらにあります**。
-func contactsBoxBody() string {
-	return "<h1>" + stdhtml.EscapeString(ContactsBoxTitle) + "</h1>" +
-		"<p>取引の相手（会社・個人）を集めます。木は<strong>組織／人</strong>の2段です" +
-		"——会社なら「社名／窓口の人」、個人のお客様なら「個人／お名前」。</p>" +
-		"<p>組織のページには<strong>ドメイン</strong>のタグを、人のページには" +
-		"<strong>メールアドレス</strong>のタグを付けると、届いたメールから相手を引けます。</p>" +
-		cms.ViewMarkerHTML(ContactsViewType)
+	// **同じ題のテンプレートから作る。無ければ作らない**（2026-09-27・テンプレート駆動——
+	// それまでは本文 `contactsBoxBody` をここに持っていた）。作業面（未登録の連絡先）を最初から
+	// 載せる責任は、いまはテンプレート（テンプレート／通信／連絡帳）にあります。
+	return cms.EnsureTopLevelBox(ContactsBoxTitle, user.Username)
 }
 
 // EmailTag は連絡先のメールアドレスです。**1ページに何個でも置けます**
