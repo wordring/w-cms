@@ -178,3 +178,64 @@ func TestResetDataLeavesNoEmptyBackupOnFailure(t *testing.T) {
 		}
 	}
 }
+
+// TestResetDataKeepsTemplates は、**初期化してもテンプレートは残る**ことを固定します
+// （2026-09-27 利用者:「データの初期化ではテンプレートだけ消さないでください」）。
+//
+//   - テンプレート置き場とその下のページは、添付ごと残る
+//   - 業務のページとトップページは消える（トップは次に開いたとき作り直される）
+//   - 控えは**丸ごと**（テンプレートも控えに入っている——控えから戻せば元どおり）
+//   - 残したテンプレートは派生索引にも入る
+func TestResetDataKeepsTemplates(t *testing.T) {
+	db := newTestFileDB(t)
+	write := func(id, body, parent string) {
+		t.Helper()
+		dir := page.GetPageDir(id)
+		if err := os.MkdirAll(filepath.Join(dir, "files"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, id+".html"), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := page.WriteSidecar(id, page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: parent}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("000000", "<h1>トップ</h1>", "")
+	write("000010", "<h1>"+TemplateRootTitle+"</h1>", "000000")
+	write("000011", "<h1>加工製品</h1>", "000010")
+	if err := os.WriteFile(filepath.Join(page.GetPageDir("000011"), "files", "a1b2.pdf"), []byte("%PDF"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	write("000123", "<h1>受注</h1>", "000000")
+
+	sum, err := ResetData("alice")
+	if err != nil {
+		t.Fatalf("初期化できません: %v", err)
+	}
+	if sum.Templates != 2 || !strings.Contains(sum.KeptNotice, "テンプレート（2ページ）") {
+		t.Errorf("残したテンプレートの数・案内が違います: %d %q", sum.Templates, sum.KeptNotice)
+	}
+	for _, id := range []string{"000010", "000011"} {
+		if _, err := os.Stat(page.BodyPath(id)); err != nil {
+			t.Errorf("テンプレート %s が消えています: %v", id, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(page.GetPageDir("000011"), "files", "a1b2.pdf")); err != nil {
+		t.Errorf("テンプレートの添付が消えています: %v", err)
+	}
+	for _, id := range []string{"000000", "000123"} {
+		if _, err := os.Stat(page.BodyPath(id)); err == nil {
+			t.Errorf("テンプレートでない %s が残っています", id)
+		}
+	}
+	for _, id := range []string{"000000", "000010", "000011", "000123"} {
+		if _, err := os.Stat(filepath.Join(sum.BackupDir, "master", "00", id)); err != nil {
+			t.Errorf("控えに %s がありません（控えは丸ごとのはず）: %v", id, err)
+		}
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pages WHERE id IN (10, 11)`).Scan(&n); err != nil || n != 2 {
+		t.Errorf("残したテンプレートが索引に入っていません: %d %v", n, err)
+	}
+}

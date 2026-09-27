@@ -14,7 +14,14 @@ package cms
 // ── 消すもの・残すもの ──
 //
 //	消す … ページ（data/master）・ゴミ箱（data/trash）・派生索引（cms.db の中身）
-//	残す … data/mail（メールのトークン）・auth.db（利用者）・data/tls（証明書）
+//	残す … data/mail（メールのトークン）・auth.db（利用者）・data/tls（証明書）・
+//	       **テンプレート**（テンプレート置き場とその下のページ・2026-09-27）
+//
+// ⚠ **テンプレートは残します**（2026-09-27 利用者:「データの初期化ではテンプレートだけ消さないで
+// ください」）。テンプレートは**人が作る道具**で、業務のデータではないからです（テンプレート駆動
+// ——機械はテンプレートを使わない）。控えは**丸ごと**取り、そのうえでテンプレートの領域のページだけを
+// 控えから**写し戻します**（控えを欠けさせないため・添付と版もフォルダごと）。
+// 親のトップページ（000000）は残しません——初期化のあと最初に開いたとき作り直されます。
 //
 // **残す3つは「消すと次の一歩が踏めなくなるもの」**です。トークンを消せばメールを
 // 取り込めず、利用者を消せばログインできず、証明書を作り直すと**各PCの信頼ストアに
@@ -57,6 +64,7 @@ type ResetSummary struct {
 	BackupDir  string `json:"backup_dir"`  // 控えの場所（取り消しに使う）
 	Rebuilt    bool   `json:"rebuilt"`     // 派生索引を作り直したか
 	KeptNotice string `json:"kept_notice"` // 残したもの（画面にそのまま出す）
+	Templates  int    `json:"templates"`   // 残したテンプレートのページ数（置き場を含む）
 }
 
 // ResetData はページのデータを初期化します（**控えを取ってから**）。
@@ -82,6 +90,9 @@ func ResetData(username string) (ResetSummary, error) {
 	}
 	sum.BackupDir = backup
 
+	// テンプレートの領域のページを**移す前に**数えます——判定は保存された情報ファイル（親）を
+	// `data/master` から辿るので、移したあとでは引けません。
+	keep := templateAreaPageIDs(master)
 	if _, err := os.Stat(master); err == nil {
 		sum.Pages = countPageDirs(master)
 		if err := renameWithRetry(master, filepath.Join(backup, "master")); err != nil {
@@ -107,6 +118,20 @@ func ResetData(username string) (ResetSummary, error) {
 	// 転びます（ディレクトリを作るのは書き込み側の仕事ではない）。
 	if err := os.MkdirAll(master, 0755); err != nil {
 		return sum, err
+	}
+	// テンプレートを控えから写し戻す（控えは丸ごとのまま）。
+	for _, id := range keep {
+		rel, err := filepath.Rel(master, page.GetPageDir(id))
+		if err != nil {
+			return sum, err
+		}
+		if err := copyTree(filepath.Join(backup, "master", rel), filepath.Join(master, rel)); err != nil {
+			return sum, fmt.Errorf("テンプレート %s を残せません: %w（控えは %s にあります）", id, err, backup)
+		}
+		sum.Templates++
+	}
+	if sum.Templates > 0 {
+		sum.KeptNotice += fmt.Sprintf("テンプレート（%dページ）も残しました。", sum.Templates)
 	}
 
 	// 派生索引を作り直す。**正本が空になったので、索引も空にします**——ここを
@@ -149,6 +174,53 @@ func renameWithRetry(from, to string) error {
 		time.Sleep(resetRenameWait)
 	}
 	return err
+}
+
+// templateAreaPageIDs は `data/master` のページのうち、テンプレートの領域（テンプレート置き場と
+// その下）にあるもののIDを返します。
+func templateAreaPageIDs(master string) []string {
+	var out []string
+	shards, err := os.ReadDir(master)
+	if err != nil {
+		return nil
+	}
+	for _, sh := range shards {
+		if !sh.IsDir() {
+			continue
+		}
+		pages, err := os.ReadDir(filepath.Join(master, sh.Name()))
+		if err != nil {
+			continue
+		}
+		for _, p := range pages {
+			if p.IsDir() && IsTemplateArea(p.Name()) {
+				out = append(out, p.Name())
+			}
+		}
+	}
+	return out
+}
+
+// copyTree はフォルダを中身ごと写します（添付・版を含む）。
+func copyTree(from, to string) error {
+	return filepath.WalkDir(from, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(to, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0755)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, b, 0644)
+	})
 }
 
 // countPageDirs は `data/master/<2桁>/<6桁>` の数を数えます（控えに何枚入ったかの案内用）。
