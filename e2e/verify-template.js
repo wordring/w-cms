@@ -75,8 +75,13 @@ async function cleanup(page) {
 // （「ヘッダだけの形式は全廃しました…値は可変タグへ」）。
 // ⚠ **形式が無いので種まきが素通りし**、発注書番号も発注日も埋まりませんでした
 // ——**試験のほうが古かった**のです（2件の失敗がそれ）。
+// ⚠ **題は【E2E】を付けます**（2026-09-27）。機械が作るページ（受注ページ・発注書・加工製品）も
+// テンプレートを**題で**引くようになったので、「受注ページ」という題の見本を置くと本物の
+// テンプレートと2枚になり、**発注書PDFの解析が止まります**（同じ題が2枚は選べない）。
+const LEAF_TITLE = '【E2E】受注ページ';
+const BRANCH_TITLE = '【E2E】業務';
 const TEMPLATE_BODY =
-    '<h1>受注ページ</h1>' +
+    '<h1>' + LEAF_TITLE + '</h1>' +
     '<dl data-type="tags"><dt>発注書番号</dt><dd><br></dd>' +
     '<dt>発注元</dt><dd>得意先A</dd>' +
     '<dt>発注日</dt><dd><br></dd></dl>' +
@@ -124,7 +129,7 @@ async function findOrMakeTemplateBox(page) {
         //    誰からも見えなくなります**——実際にそれで6件落ちていました。
         const rootId = await findOrMakeTemplateBox(page);
         const classifyId = await newPage(page, rootId);
-        await saveBody(page, classifyId, '<h1>業務</h1><p>受発注まわりの雛形。</p>');
+        await saveBody(page, classifyId, '<h1>' + BRANCH_TITLE + '</h1><p>受発注まわりの雛形。</p>');
         const tmplId = await newPage(page, classifyId);
         await saveBody(page, tmplId, TEMPLATE_BODY);
 
@@ -137,11 +142,11 @@ async function findOrMakeTemplateBox(page) {
         // ⚠ **「1件だけ」とは見ません**——テンプレートの箱は実データと**共有**なので、
         //    ほかの分類（`加工製品` など）が並んでいて当たり前です。
         //    見るのは**自分が作った枝が在るか**だけ。
-        const branch = (tree || []).find((b) => b.title === '業務');
+        const branch = (tree || []).find((b) => b.title === BRANCH_TITLE);
         check('一覧に分類（枝）が返る', !!branch);
         check('分類の下に葉が返る',
             !!branch && branch.children && branch.children.length === 1 &&
-            branch.children[0].title === '受注ページ');
+            branch.children[0].title === LEAF_TITLE);
 
         // メニューUI: 「＋ 子ページを作成」で選択肢が出る。
         const hostId = await newPage(page, '000000');
@@ -153,8 +158,8 @@ async function findOrMakeTemplateBox(page) {
         const items = await page.locator('#w-template-menu button').allTextContents();
         const groups = await page.locator('#w-template-menu .template-menu-group').allTextContents();
         check('メニューに「空のページ」が出る', items.includes('空のページ'));
-        check('メニューに葉（受注ページ）が出る', items.includes('受注ページ'));
-        check('枝（業務）はボタンでなく見出し', !items.includes('業務') && groups.includes('業務'));
+        check('メニューに葉（受注ページ）が出る', items.includes(LEAF_TITLE));
+        check('枝（業務）はボタンでなく見出し', !items.includes(BRANCH_TITLE) && groups.includes(BRANCH_TITLE));
         await page.keyboard.press('Escape');
         check('Escape でメニューが閉じる',
             await page.locator('#w-template-menu.active').count() === 0);
@@ -162,7 +167,7 @@ async function findOrMakeTemplateBox(page) {
         // ── ② テンプレートから作ると本文が写る（純粋なコピー） ──
         const madeId = await newPage(page, hostId, tmplId);
         const madeHTML = await (await page.request.get(BASE + '/api/load?id=' + madeId)).text();
-        check('テンプレートの本文が写る', madeHTML.includes('受注ページ') && madeHTML.includes('得意先A'));
+        check('テンプレートの本文が写る', madeHTML.includes(LEAF_TITLE) && madeHTML.includes('得意先A'));
         // ⚠ **2026-09-25 から純粋なコピーです**（ユーザー:「純粋なコピーにしましょう」）。
         //    それまでは空の日付の列に今日を入れていました（新規化）。いまは**空欄は空欄のまま**
         //    （「まだ分からない」）で、変えるのは**ブロックID（data-id）を外す**ことだけ。
@@ -192,7 +197,9 @@ async function findOrMakeTemplateBox(page) {
         check('ページエラーなし', errs.length === 0);
         if (errs.length) console.error('ERRS:', errs.slice(0, 3));
     } catch (e) { check('実行が最後まで到達', false); console.error(e); }
-    finally { await browser.close(); }
+    // ⚠ **片付けます**（2026-09-27）——`cleanup` は書いてあったのに呼ばれておらず、流すたびに
+    //    テンプレート置き場へ「業務／受注ページ」が積もっていました。
+    finally { await cleanup(page); await browser.close(); }
     console.log(results.join('\n'));
     console.log(failCount === 0 ? `\n✅ 全 ${results.length} 項目 通過` : `\n❌ ${failCount} 件の失敗`);
     process.exit(failCount === 0 ? 0 : 1);
