@@ -121,6 +121,22 @@ func IsRequiredPageTitle(title string) bool {
 	return ok
 }
 
+// requiredPageBody は、題 title のトップ直下の置き場を**作るときの本文**を返します。
+// 登録された置き場なら拡張の本文（鏡の印入り）、登録が無いか本文が無ければ見出しだけ。
+//
+// ⚠ **置き場を作る道は2本あり、どちらもここを通ります**（2026-09-27・テンプレート駆動の A）
+// ——管理画面の「足りない置き場を作る」（`CreateMissingRequiredPages`）と、整理などの途中で
+// 作る `EnsureTopLevelBox`。それまで後者は見出しだけで作っていたので、**同じ置き場が作られた
+// 道によって中身が違いました**（整理で先に作られた「受注」には鏡が無かった）。
+// ⚠ 本文は**作るときの最初の中身**だけです——作ったあとは人のもので、鏡は印のある場所に出ます。
+func requiredPageBody(title string) string {
+	title = strings.TrimSpace(title)
+	if p, ok := requiredPageRegistry[title]; ok && p.Body != nil {
+		return p.Body()
+	}
+	return "<h1>" + html.EscapeString(title) + "</h1>"
+}
+
 func RequiredPages() []RequiredPage {
 	out := make([]RequiredPage, 0, len(requiredPageRegistry))
 	for _, p := range requiredPageRegistry {
@@ -163,11 +179,7 @@ func CreateMissingRequiredPages(owner string) (created []RequiredPageStatus, err
 			continue
 		}
 		p := requiredPageRegistry[st.Title]
-		body := "<h1>" + html.EscapeString(p.Title) + "</h1>"
-		if p.Body != nil {
-			body = p.Body()
-		}
-		id, cerr := CreateChildPage(TopPageID, owner, body)
+		id, cerr := CreateChildPage(TopPageID, owner, requiredPageBody(p.Title))
 		if cerr != nil {
 			return created, &requiredPageError{Title: p.Title, Err: cerr}
 		}

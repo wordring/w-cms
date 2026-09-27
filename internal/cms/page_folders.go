@@ -129,7 +129,9 @@ func EnsureTopLevelBox(title, owner string) (string, error) {
 	if id, ok := TopLevelPageByTitle(title); ok {
 		return id, nil
 	}
-	return CreateChildPage(TopPageID, owner, "<h1>"+html.EscapeString(title)+"</h1>")
+	// 登録された置き場なら、管理画面の「足りない置き場を作る」と**同じ本文**で作る
+	// （2026-09-27・テンプレート駆動の A——それまでは見出しだけで、作られた道で中身が違った）。
+	return CreateChildPage(TopPageID, owner, requiredPageBody(title))
 }
 
 // EnsureDateFolders は root の下に年フォルダ・月フォルダを用意し、月フォルダを返します。

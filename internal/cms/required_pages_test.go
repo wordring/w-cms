@@ -12,6 +12,7 @@ import (
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 )
 
 // TestRequiredPagesIncludeCoreTemplate は、**コアだけでも表が空にならない**ことを
@@ -169,5 +170,45 @@ func TestRequiredPageStatusReportsDuplicates(t *testing.T) {
 		if s.Title == TemplateRootTitle && len(s.Duplicates) != 0 {
 			t.Errorf("1枚だけなのに警告が出ています: %v", s.Duplicates)
 		}
+	}
+}
+
+// TestEnsureTopLevelBoxUsesRegisteredBody は、**置き場を作る道が2本とも同じ本文になる**ことを
+// 固定します（2026-09-27・テンプレート駆動の A）。整理などの途中で作る `EnsureTopLevelBox` は
+// それまで見出しだけで作っていたので、管理画面の「足りない置き場を作る」と中身が違い、
+// 整理で先に作られた「受注」には鏡が無いままでした。
+func TestEnsureTopLevelBoxUsesRegisteredBody(t *testing.T) {
+	setupSaveTest(t)
+	newPage(t, TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
+	orig := requiredPageRegistry
+	requiredPageRegistry = map[string]RequiredPage{}
+	for k, v := range orig {
+		requiredPageRegistry[k] = v
+	}
+	t.Cleanup(func() { requiredPageRegistry = orig })
+	requiredPageRegistry["試しの箱"] = RequiredPage{Title: "試しの箱",
+		Body: func() string { return "<h1>試しの箱</h1>" + ViewMarkerHTML("child-list") }}
+
+	id, err := EnsureTopLevelBox("試しの箱", "alice")
+	if err != nil {
+		t.Fatalf("EnsureTopLevelBox: %v", err)
+	}
+	body, err := ReadPageBody(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, `data-mirror="子ページ一覧"`) {
+		t.Errorf("登録の本文（鏡の印入り）で作られていません: %s", body)
+	}
+	if again, _ := EnsureTopLevelBox("試しの箱", "alice"); again != id {
+		t.Errorf("既にある箱を作り直しました: %s → %s", id, again)
+	}
+
+	id2, err := EnsureTopLevelBox("登録の無い箱", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := ReadPageBody(id2); strings.TrimSpace(body) != "<h1>登録の無い箱</h1>" {
+		t.Errorf("登録の無い題は見出しだけのはず: %s", body)
 	}
 }
