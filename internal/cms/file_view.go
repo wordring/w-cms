@@ -79,6 +79,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/database"
 	"w-cms/internal/cms/page"
 )
 
@@ -111,11 +112,15 @@ func init() {
 
 // renderFileView はマーカーの `data-ref` を読み、指す先のファイルを開く枠を足します。
 //
-// **人が書いた中身は消しません**——消すのは前回描いたクロームだけです。
-// 普通は空ですが、説明の段落などを添えたい人が居るかもしれないので消しません。
+// ⚠ **中の文字は名札で、表示では消します**（2026-09-27 利用者:「保存時は
+// `<section data-type="file-view" data-ref="…">短縮ファイル名</section>` としておいて、表示する
+// ときに消せば良いのでは？」）。名札は保存のたびにサーバーが書き直します（`FillFileViewNames`）
+// ——編集モードで保存すると中は一度空になりますが、サーバーがまた書き込みます。
 func renderFileView(ctx *MirrorContext, el *html.Node) (bool, error) {
-	// 前回のクロームを落とす（毎回描き直す）。
-	DropChrome(el)
+	// 名札と前回のクロームを落とす（毎回描き直す）。
+	for el.FirstChild != nil {
+		el.RemoveChild(el.FirstChild)
+	}
 
 	ref := strings.TrimSpace(Attr(el, FileRefAttr))
 	if ref == "" {
@@ -241,8 +246,12 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 			stdhtml.EscapeString(blockID) + `">` + ref + `</a>）。</p></div>`
 	}
 
-	head := `<p class="file-view-head">📄 <a href="/` + stdhtml.EscapeString(pageID) +
-		`#` + stdhtml.EscapeString(blockID) + `">` + name + `</a> を開いています</p>`
+	// **頭の行を押すと閉じられます**（2026-09-27 利用者:「この中の表示は閉じることが出来るように
+	// したいです」）——`<details>` の `<summary>` にして、最初は開いた状態。JS は要りません。
+	// 枠（`.file-view`）の外側を包むのは、枠が高さを持つ縦並びだからです（枠そのものを
+	// `<details>` にすると、閉じても高さが残ります）。
+	head := `<summary class="file-view-head">📄 <a href="/` + stdhtml.EscapeString(pageID) +
+		`#` + stdhtml.EscapeString(blockID) + `">` + name + `</a> を開いています</summary>`
 
 	var body string
 	switch kind {
@@ -260,7 +269,69 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 	case kindAudio:
 		body = `<audio class="file-view-body" src="` + src + `" controls preload="metadata"></audio>`
 	}
-	return `<div class="file-view" title="右下をつまむと大きさを変えられます">` + head + body + `</div>`
+	return `<details class="file-view-fold" open>` + head +
+		`<div class="file-view" title="右下をつまむと大きさを変えられます">` + body + `</div></details>`
+}
+
+// FillFileViewNames は、本文のファイル表示の印の中へ、指す添付の**短縮ファイル名**を書き込みます
+// （保存のとき・2026-09-27）。保存される HTML を読めば、何を表示しているかが分かるように——
+// `<section data-type="file-view" data-ref="000008-nyd3">A100-B01-001.pdf</section>`。
+//
+// ⚠ **名前は保存した人の権限で引きます**——読めないページの添付の名前を本文に書き込むと、
+// ファイル名（顧客名が入ることがある）が漏れます。引けなければ、中身には触りません
+// （別の人が書いた名札を消さない）。表示のときは `renderFileView` がこの名札を消します。
+func FillFileViewNames(user *auth.User, bodyHTML string) string {
+	if user == nil || !strings.Contains(bodyHTML, `data-type="`+FileViewType+`"`) {
+		return bodyHTML
+	}
+	nodes, err := htmldoc.ParseFragment(bodyHTML)
+	if err != nil {
+		return bodyHTML
+	}
+	changed := false
+	for _, n := range nodes {
+		WalkElements(n, func(el *html.Node) {
+			if el.Data != "section" || Attr(el, "data-type") != FileViewType {
+				return
+			}
+			refPage, blockID, ok := parseRefValue(strings.TrimSpace(Attr(el, FileRefAttr)))
+			if !ok || blockID == "" {
+				return
+			}
+			_, name, _, ok := attachmentURLFor(user, refPage, blockID)
+			if !ok || name == "" {
+				return
+			}
+			if el.FirstChild != nil && el.FirstChild == el.LastChild &&
+				el.FirstChild.Type == html.TextNode && el.FirstChild.Data == name {
+				return // 既に同じ名札
+			}
+			for el.FirstChild != nil {
+				el.RemoveChild(el.FirstChild)
+			}
+			el.AppendChild(&html.Node{Type: html.TextNode, Data: name})
+			changed = true
+		})
+	}
+	if !changed {
+		return bodyHTML
+	}
+	return htmldoc.Render(nodes)
+}
+
+// fillFileViewNamesAs は、利用者名しか持たない書き手（機械が書く道）のための入口です。
+func fillFileViewNamesAs(username, bodyHTML string) string {
+	// 印の無い本文では利用者を引きません（ほとんどの書き込みはこちら）。利用者の DB が
+	// 開いていない（試験など）ときも名札は書きません——名札は読む人のための飾りで、
+	// 無くても表示は目録から引くので壊れません。
+	if !strings.Contains(bodyHTML, `data-type="`+FileViewType+`"`) || database.AuthDB == nil {
+		return bodyHTML
+	}
+	u, err := auth.LookupUser(username)
+	if err != nil || u == nil {
+		return bodyHTML
+	}
+	return FillFileViewNames(u, bodyHTML)
 }
 
 // appendChrome は `.vocab-chrome` に包んだ中身を要素の末尾へ足します。

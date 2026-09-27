@@ -1457,6 +1457,14 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     overflow: hidden;
     resize: vertical;
 }
+/* 畳める外枠（2026-09-27 利用者:「この中の表示は閉じることが出来るようにしたいです」）。
+   頭の行（summary）を押すと閉じる。最初は開いた状態（サーバーが open を付ける）。 */
+#w-editor-content .file-view-fold {
+    margin-top: 8px;
+}
+#w-editor-content .file-view-fold > summary {
+    cursor: pointer;
+}
 /* 出どころの1行。**本文に在るのはタグのほうで、枠はその描画**だと読めるように
    （ユーザー:「HTMLに無いものが表示されるのは極力避けたい」2026-09-14）。 */
 #w-editor-content .file-view-head {

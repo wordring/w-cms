@@ -111,7 +111,8 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
       const w = document.querySelector('#w-editor-content .file-view');
       return {
         shown: !!w,
-        head: w ? (w.querySelector('.file-view-head') || {}).textContent : '',
+        // 頭の行は畳める外枠（.file-view-fold）の summary（2026-09-27）。
+        head: w ? ((w.closest('.file-view-fold') || w).querySelector('.file-view-head') || {}).textContent : '',
         src: w ? (w.querySelector('embed') || {}).getAttribute('src') : '',
       };
     });

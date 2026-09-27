@@ -75,7 +75,8 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
         // **配線が本文に残っていること**——属性が落ちると、マーカーは残るのに
         // 何を開くか分からなくなり、図面が黙って消えます。
         ref: sec ? sec.getAttribute('data-ref') : '',
-        head: w ? (w.querySelector('.file-view-head') || {}).textContent : '',
+        // 頭の行は畳める外枠（.file-view-fold）の summary（2026-09-27）。
+        head: w ? ((w.closest('.file-view-fold') || w).querySelector('.file-view-head') || {}).textContent : '',
         src: w ? (w.querySelector('embed') || {}).getAttribute('src') : '',
         fits: (() => {
           if (!w) return false;

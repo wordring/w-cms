@@ -34,7 +34,7 @@ func CreateChildPage(parentID, owner, bodyHTML string) (string, error) {
 		return "", err
 	}
 
-	safeHTML := Sanitize(bodyHTML)
+	safeHTML := fillFileViewNamesAs(owner, Sanitize(bodyHTML))
 	dir := page.GetPageDir(newID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", err

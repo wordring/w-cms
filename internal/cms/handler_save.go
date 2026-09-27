@@ -118,6 +118,8 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 正本ファイルを清書された状態に保ち、結果はレスポンスでエディタへ返す。
 	// 編集者は画面上の変化で「何が除去されたか」を知る（エコーバック方式）。
 	safeHTML, sanitized := SanitizeReport(req.HTML)
+	// ファイル表示の名札（短縮ファイル名）を書き込む——保存した人の権限で（file_view.go）。
+	safeHTML = FillFileViewNames(auth.CurrentUser(r), safeHTML)
 
 	updatedAt, ok := writeBody(w, id, safeHTML)
 	if !ok {
@@ -312,6 +314,7 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "本文の更新に失敗しました", http.StatusInternalServerError)
 		return
 	}
+	merged = FillFileViewNames(auth.CurrentUser(r), merged)
 
 	updatedAt, ok := writeBody(w, id, merged)
 	if !ok {

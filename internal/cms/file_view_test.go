@@ -205,3 +205,64 @@ func TestFileViewOpensInsideDetails(t *testing.T) {
 		t.Errorf("畳める枠が消えています:\n%s", out)
 	}
 }
+
+// TestFileViewNameTagOnSaveHiddenOnDisplay は、ファイル表示の**名札**を固定します（2026-09-27）。
+// 利用者:「保存時は `<section data-type="file-view" data-ref="…">短縮ファイル名</section>` として
+// おいて、表示するときに消せば良いのでは？」「この中の表示は閉じることが出来るようにしたい」。
+//
+//   - 保存のとき、サーバーが中へ短縮ファイル名を書き込む（目録があれば届いたときの名前）
+//   - 表示のときは名札を消し、開いた状態の `<details>` で出す（頭の行が `<summary>`）
+func TestFileViewNameTagOnSaveHiddenOnDisplay(t *testing.T) {
+	fileViewFixture(t, "000001", "c3p7.pdf")
+	alice := &auth.User{Username: "alice", IsAdmin: true}
+	empty := `<h1>部品</h1><section data-type="file-view" data-ref="000001-c3p7"></section>`
+
+	saved := FillFileViewNames(alice, empty)
+	if !strings.Contains(saved, `data-ref="000001-c3p7">c3p7.pdf</section>`) {
+		t.Fatalf("保存のとき名札が書き込まれていません:\n%s", saved)
+	}
+	if again := FillFileViewNames(alice, saved); again != saved {
+		t.Errorf("名札が同じなのに書き直しています:\n%s\n%s", saved, again)
+	}
+	if err := RecordAttachmentMeta("000001", "c3p7.pdf",
+		NewAttachmentMeta("R310-002_本体.pdf", "alice", "mail:x.eml", []byte("%PDF-1.4"))); err != nil {
+		t.Fatal(err)
+	}
+	saved = FillFileViewNames(alice, saved)
+	if !strings.Contains(saved, `>R310-002_本体.pdf</section>`) {
+		t.Fatalf("名札が届いたときの名前になっていません:\n%s", saved)
+	}
+
+	out := renderFileViewBody(t, alice, 1, saved)
+	if strings.Contains(out, `data-ref="000001-c3p7">R310-002_本体.pdf`) {
+		t.Errorf("表示で名札が消えていません:\n%s", out)
+	}
+	for _, want := range []string{
+		`<details class="file-view-fold" open="">`, `<summary class="file-view-head">`,
+		`>R310-002_本体.pdf</a>`, `type="application/pdf"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("表示に %q がありません:\n%s", want, out)
+		}
+	}
+}
+
+// TestFileViewNameTagNeedsReadPermission は、**読めない人の保存では名札を書かない**ことを
+// 固定します——読めないページの添付の名前（顧客名が入ることがある）を本文へ漏らさないため。
+func TestFileViewNameTagNeedsReadPermission(t *testing.T) {
+	setupUploadTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "700"})
+	dir := filepath.Join(page.GetPageDir("000001"), "files")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "c3p7.pdf"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := `<section data-type="file-view" data-ref="000001-c3p7"></section>`
+	if got := FillFileViewNames(&auth.User{Username: "bob"}, body); got != body {
+		t.Errorf("読めない人の保存で名札が書かれました:\n%s", got)
+	}
+	if got := FillFileViewNames(&auth.User{Username: "alice", IsAdmin: true}, body); !strings.Contains(got, ">c3p7.pdf</section>") {
+		t.Errorf("読める人の保存で名札が書かれていません:\n%s", got)
+	}
+}
