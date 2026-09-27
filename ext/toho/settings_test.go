@@ -47,10 +47,18 @@ func TestSettingsRejectsBrokenSection(t *testing.T) {
 // TestSettingsAbsentSectionClearsStages は、**節が無ければ段が空に戻る**ことを固定します
 // ——読み直しで節を消した運用者の意図どおり、古い段が残らないように。
 func TestSettingsAbsentSectionClearsStages(t *testing.T) {
-	saved := MachineStages()
+	// ⚠ **節の全部を戻します**（2026-09-27）。`apply()` は段だけでなく照合タグ・PDFのフォント・
+	//    会社の情報も空にします。段しか戻していなかったので、**後に走る試験へ空の照合タグが
+	//    漏れていました**——材料表の宣言が `部品番号` を控えとして持っていたあいだは表に出ず、
+	//    宣言を外した日に `TestRequiredMaterialsViewRenders` が全体で流したときだけ落ちました。
+	stagesMu.RLock()
+	savedStages, savedTags, savedFont, savedFace, savedCompany :=
+		machineStages, productCodeTags, pdfFont, pdfFontFace, companyInf
+	stagesMu.RUnlock()
 	t.Cleanup(func() {
 		stagesMu.Lock()
-		machineStages = saved
+		machineStages, productCodeTags, pdfFont, pdfFontFace, companyInf =
+			savedStages, savedTags, savedFont, savedFace, savedCompany
 		stagesMu.Unlock()
 	})
 	apply, err := parseSettings(nil)

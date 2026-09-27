@@ -116,19 +116,17 @@ func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduc
 
 // productByCode は `品番` から加工製品ページを1枚だけ引きます（2枚以上なら引きません）。
 //
-// ⚠ **2つの経路を見ます。** 設定の `product_code_tags`（運用者が足せる・図面番号／
-// 品番／部品番号）と、**材料表の宣言が要求するタグ**（`part-materials` の
-// `RequiresTag`）。⚠ **設定だけに頼ると、運用者がその語を外した日に、移行前のページが
-// 丸ごと出なくなります**——宣言側の鍵は**コードが持っている**ので外れません。
+// 見るのは設定の `product_code_tags`（運用者が足せる・図面番号／品番／部品番号）です。
+// ⚠ 2026-09-27 までは、これに**材料表の宣言が要求するタグ**（`part-materials` の
+// `RequiresTag`＝部品番号）も足していました——「設定だけに頼ると、運用者がその語を外した日に、
+// 移行前のページが丸ごと出なくなる」ための守りでした。宣言を外したので（vocab.go——保存のたびに
+// 「材料: 部品番号」の誤報を出していた・部品番号を持つページは職場に無かった）、⚠ **設定から
+// `部品番号` を外すと、そのタグだけで結ばれていたページは結ばれなくなります**。
 //
 // ⚠ **2枚以上に当たったら引きません**——同じ番号で別の加工製品がありえます
 // （「別の製品の図面番号が一致してしまう場合もあり…」）。**決めるのは人**。
 func productByCode(db cms.ReadOnlyDB, code string) (int, bool) {
-	names := append([]string{}, ProductCodeTags()...)
-	if def, ok := cms.VocabDefByType(partMaterialsType); ok && def.RequiresTag != "" {
-		names = append(names, def.RequiresTag)
-	}
-	hits := pagesByAnyTag(db, names, code)
+	hits := pagesByAnyTag(db, ProductCodeTags(), code)
 	if len(hits) != 1 {
 		return 0, false
 	}

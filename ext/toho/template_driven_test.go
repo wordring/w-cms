@@ -168,3 +168,17 @@ func TestNewOurOrderRefusesWithoutTemplateBeforeCreating(t *testing.T) {
 		t.Errorf("断る前にページを作りました（%d枚）", n)
 	}
 }
+
+// TestProductPageRaisesNoPartNumberNotice は、テンプレートから作った加工製品ページを保存しても
+// 「見出しが合わないため『材料: 部品番号』が計算に読まれません」が**出ない**ことを固定します
+// （2026-09-27 利用者:「…と出るのは何故でしょう？」）。材料の表の宣言が、もう使っていない
+// `部品番号` タグを要求していたための誤報でした（vocab.go）。
+func TestProductPageRaisesNoPartNumberNotice(t *testing.T) {
+	j := &orderJudgment{DocType: "drawing", DrawingNo: "K120-1", DrawingName: "ブラケット"}
+	body := testProductPage("000001", "pdf001", j, nil)
+	for _, f := range cms.UnresolvedVocabFields(body) {
+		if strings.Contains(f, "部品番号") {
+			t.Errorf("⚠ 使っていない部品番号のタグを要求しています: %q", f)
+		}
+	}
+}

@@ -262,12 +262,11 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 
 	// 2. 各受注部品に対し、必要な部材の定義を集めて総必要数を積む。
 	//
-	//    部品番号は部材表の中ではなく**ページ全体のタグ**にあるので、
+	//    品番は部材表の中ではなく**ページ全体のタグ**にあるので、
 	//    「そのタグを持つページ」を逆引きしてから、そのページの部材表を読みます。
-	//    鍵の名前はレジストリ宣言（part-materials の RequiresTag）が持つ——ここへ
-	//    直書きすると、見出しを改名したときに告知する側と読む側がずれる（設計総点検⑤）。
-	materialsDef, _ := cms.VocabDefByType(partMaterialsType)
-	tagName := materialsDef.RequiresTag
+	//    ⚠ 見るタグは設定の照合タグ（`product_code_tags`・図面番号／品番／部品番号）——
+	//    2026-09-27 まではレジストリ宣言（part-materials の RequiresTag＝部品番号）1つでしたが、
+	//    宣言を外しました（vocab.go）。受注明細の照合（`productByCode`）と同じ名前を見ます。
 
 	// 同じ品番が明細に何度出ても、定義の引き直しは1度だけ。
 	defsFor := map[string][]cms.VocabRow{}
@@ -281,11 +280,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 
 		mats, ok := defsFor[partID]
 		if !ok {
-			pageIDs, err := cms.PagesByTag(db, tagName, partID)
-			if err != nil {
-				return nil, err
-			}
-			for _, defPageID := range pageIDs {
+			for _, defPageID := range pagesByAnyTag(db, ProductCodeTags(), partID) {
 				rows, err := cms.VocabTableRowsOf(db, defPageID, partMaterialsType)
 				if err != nil {
 					return nil, err
