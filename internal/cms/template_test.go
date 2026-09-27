@@ -1,8 +1,12 @@
 package cms
 
 import (
+	"errors"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -192,5 +196,50 @@ func TestMovingPageIntoTemplateAreaClearsRows(t *testing.T) {
 	}
 	if n := countOrders(t); n != 1 {
 		t.Fatalf("テンプレートから戻したのに載りません: 受注ヘッダ %d 件", n)
+	}
+}
+
+// TestTemplateAreaMirrorsAndButtonsDoNotWork は、**テンプレートの中では鏡もボタンも働かない**
+// ことを固定します（2026-09-27 利用者:「テンプレート以下では鏡もボタンも機能しないように
+// しましょう」）。鏡のボタンは表示しているページへ書くので、テンプレートの上で押すと、書いた
+// もの（発注部材表など）がそこから作るページ全部へコピーされ、コピーは索引に入って本物の
+// 集計を動かします。
+//
+//   - 鏡の印には名前だけの案内を出し、本物の鏡（ここでは子ページ一覧）は描かない
+//   - 機械の書き込み（RewriteBody）は ErrTemplateArea で断る
+//   - 普通のページでは今までどおり描き、書ける
+func TestTemplateAreaMirrorsAndButtonsDoNotWork(t *testing.T) {
+	setupSaveTest(t)
+	classify := newTemplateTree(t)
+	body := `<h1>発注</h1>` + ViewMarkerHTML("child-list")
+	newPage(t, "000012", body, page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: classify})
+	newPage(t, "000013", "<h1>子</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000012"})
+	newPage(t, "000020", body, page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
+
+	req := httptest.NewRequest("GET", "/000012", nil)
+	req = auth.WithUser(req, &auth.User{Username: "alice", IsAdmin: true})
+	out := RenderComputedViews(req, 12, body)
+	if !strings.Contains(out, "テンプレートの中では鏡を描きません") || !strings.Contains(out, "🪞 子ページ一覧") {
+		t.Errorf("テンプレートの中で鏡の名前の案内が出ていません:\n%s", out)
+	}
+	if strings.Contains(out, `href="/000013"`) || strings.Contains(out, "子ページはありません") {
+		t.Errorf("テンプレートの中で本物の鏡が描かれました:\n%s", out)
+	}
+	if err := RewriteBody("000012", "alice", func(s string) string { return s + "<p>ボタンが書いた</p>" }); !errors.Is(err, ErrTemplateArea) {
+		t.Errorf("テンプレートの中の書き換えを断っていません: %v", err)
+	}
+	if rec := httptest.NewRecorder(); RefuseTemplateArea(rec, "000012") || rec.Code != 409 {
+		t.Errorf("口の関門がテンプレートの中を 409 で断っていません: %d", rec.Code)
+	}
+	if rec := httptest.NewRecorder(); !RefuseTemplateArea(rec, "000020") {
+		t.Errorf("口の関門が普通のページを断りました: %d", rec.Code)
+	}
+
+	out = RenderComputedViews(httptest.NewRequest("GET", "/000020", nil), 20, body)
+	if strings.Contains(out, "テンプレートの中では") || !strings.Contains(out, "vocab-chrome") {
+		t.Errorf("普通のページで鏡が描かれていません:\n%s", out)
+	}
+	if err := RewriteBody("000020", "alice", func(s string) string { return s + "<p>書けた</p>" }); err != nil {
+		t.Errorf("普通のページの書き換えが断られました: %v", err)
 	}
 }

@@ -1322,6 +1322,7 @@ body[edit-mode] #w-editor-content td.cell-known {
 
 #w-editor-content .child-list-empty,
 #w-editor-content .materials-empty,
+#w-editor-content .view-template-note,
 #w-editor-content .view-error {
     color: var(--text-muted);
     font-size: 13px;
@@ -1329,6 +1330,8 @@ body[edit-mode] #w-editor-content td.cell-known {
 }
 
 #w-editor-content .view-error { color: #ef4444; }
+/* テンプレートの中の鏡の案内（2026-09-27・テンプレート以下では鏡を描かない）。 */
+#w-editor-content .view-template-note { font-style: italic; }
 
 /* 表の名乗り（caption）は左寄せ。
    ⚠ ブラウザの既定は中央寄せですが、**表は全幅で自分の中を横スクロールします**

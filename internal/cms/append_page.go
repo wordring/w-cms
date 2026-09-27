@@ -57,6 +57,13 @@ func RewriteBody(pageID, author string, rewrite func(current string) string) err
 // rewritePageBody は本文の読み書きの**作法**（サニタイズ・更新日時・版・索引の順序）を
 // 1箇所に持ちます。どこを書き換えるかだけが rewrite で変わります。
 func rewritePageBody(pageID, author string, rewrite func(current string) string) error {
+	// ⚠ **テンプレートの中は機械では書き換えません**（2026-09-27 利用者:「テンプレート以下では
+	// 鏡もボタンも機能しないようにしましょう」）——鏡のボタンは表示しているページへ書くので、
+	// テンプレートの上で押すと、そこから作るページ全部へ書いたものがコピーされます。
+	// 口ごとの関門（`RefuseTemplateArea`）が先に断るので、ここは取りこぼしの受け皿です。
+	if IsTemplateArea(pageID) {
+		return ErrTemplateArea
+	}
 	htmlPath := page.BodyPath(pageID)
 	current, err := os.ReadFile(htmlPath)
 	if err != nil {

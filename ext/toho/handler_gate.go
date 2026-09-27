@@ -31,6 +31,12 @@ func requireWritableIdle(w http.ResponseWriter, r *http.Request, pageID string) 
 	if !page.RequirePageWrite(w, r, pageID) {
 		return false
 	}
+	// ⚠ **テンプレートの中へは書きません**（2026-09-27 利用者:「テンプレート以下では鏡もボタンも
+	// 機能しないようにしましょう」）——テンプレートの上で押した発注部材表などが、そこから作る
+	// ページ全部へコピーされるため（コアの `RefuseTemplateArea`）。権限の関門より後に置く。
+	if !cms.RefuseTemplateArea(w, pageID) {
+		return false
+	}
 	return editlock.RefuseWhileEditing(w, pageID)
 }
 

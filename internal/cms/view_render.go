@@ -35,6 +35,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -165,6 +166,15 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 		return bodyHTML
 	}
 
+	// ⚠ **テンプレートの中では鏡を描きません**（2026-09-27 利用者:「テンプレート以下では鏡も
+	// ボタンも機能しないようにしましょう」）。鏡の中のボタンは表示しているページへ書くので、
+	// テンプレートの上で押すと、書いたものがそこから作るページ全部へコピーされます。
+	// 鏡の印には**名前だけの案内**を出し（何がここに出るかは分かる）、ほかの鏡（ファイル表示・
+	// 表の足元のボタンなど）は何もしません。
+	if IsTemplateArea(page.FormatID(pageIDInt)) {
+		return renderTemplatePlaceholders(nodes)
+	}
+
 	ctx := &MirrorContext{
 		DB:     database.DB,
 		Viewer: auth.CurrentUser(r),
@@ -175,6 +185,25 @@ func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string
 		// 鏡型のエラーはページ全体を道連れにしない（設計 §7）。
 		// 各ビューは自分の中へ理由を描いて続行する作りなので、ここへは通常来ない。
 		log.Printf("計算ビューの描画でエラー page=%d: %v", pageIDInt, err)
+	}
+	return htmldoc.Render(nodes)
+}
+
+// renderTemplatePlaceholders は、テンプレートの中の鏡の印へ**名前だけの案内**を描きます。
+// 案内も `.vocab-chrome` なので保存されません。
+func renderTemplatePlaceholders(nodes []*html.Node) string {
+	for _, n := range nodes {
+		WalkElements(n, func(el *html.Node) {
+			if el.Data != "section" {
+				return
+			}
+			def, ok := VocabDefByType(vocabTypeOf(el))
+			if !ok || !def.View {
+				return
+			}
+			fillViewMarker(el, `<p class="view-template-note">🪞 `+stdhtml.EscapeString(def.DisplayName)+
+				`——テンプレートの中では鏡を描きません（このテンプレートから作ったページで、ここに鏡が出ます）</p>`)
+		})
 	}
 	return htmldoc.Render(nodes)
 }

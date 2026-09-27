@@ -22,6 +22,7 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -187,4 +188,24 @@ func pageTitleFromDisk(id string) string {
 		return ""
 	}
 	return PageTitle(root)
+}
+
+// ErrTemplateArea は、テンプレートの中を機械（鏡のボタン）で書き換えようとしたことを表します
+// （2026-09-27 利用者:「テンプレート以下では鏡もボタンも機能しないようにしましょう」）。
+var ErrTemplateArea = errors.New("テンプレートの中は、鏡のボタンでは書き換えません（このテンプレートから作ったページで使ってください）")
+
+// RefuseTemplateArea は、ページがテンプレートの中なら 409 を書いて false を返します。
+//
+// **鏡のボタンが書き込む口の関門**です。鏡のボタンは表示しているページへ書くので、テンプレートの
+// 上で押すと、書いたもの（例: 発注部材表）が**そのテンプレートから作るページ全部へコピーされ**、
+// コピーしたページの表は索引に入って本物の集計を動かします（必要部材表から部材が消える）。
+// テンプレートの中では鏡も描かない（`RenderComputedViews`）ので画面にボタンは出ませんが、
+// 口を直に叩けば届くので、ここでも断ります（`RewriteBody` も同じ理由で断る）。
+// ⚠ 権限の関門より**後**に呼ぶこと——書けない人に「テンプレートかどうか」を教えないため。
+func RefuseTemplateArea(w http.ResponseWriter, pageID string) bool {
+	if IsTemplateArea(pageID) {
+		JSONFail(w, http.StatusConflict, ErrTemplateArea.Error())
+		return false
+	}
+	return true
 }
