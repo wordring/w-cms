@@ -129,8 +129,17 @@ func run(root string, boxes []string, since string, max int, handledBefore strin
 	}
 	counts := map[string]int{}
 	var notNeeded []string // 「対応：不要」の印を付ける新しい受信の記録
+	limit := uploadLimit()
 	start := time.Now()
 	for i, it := range items {
+		// 添付の上限（設定 max_upload_mib）を超えるメールは口が読めずに断る（「ページIDが不正です」と返って理由が
+		// 分からない——2026-09-28 に 51MB と 35MB の2通で踏んだ）。送らずに理由を出す。
+		if st, err := os.Stat(it.path); err == nil && st.Size() > limit {
+			counts["大きすぎる"]++
+			fmt.Printf("✗ %s: %.1f MB——添付の上限（%d MiB・config/settings.json の max_upload_mib）を超えるので入れていません\n",
+				filepath.Base(it.path), float64(st.Size())/1e6, limit>>20)
+			continue
+		}
 		res, err := c.upload(inbox, it.path)
 		switch {
 		case err != nil:
@@ -149,8 +158,8 @@ func run(root string, boxes []string, since string, max int, handledBefore strin
 			fmt.Printf("… %d / %d（%s）\n", i+1, len(items), time.Since(start).Round(time.Second))
 		}
 	}
-	fmt.Printf("通信箱へ: 受信を新しく %d・送信を新しく %d・重複 %d・失敗 %d（%d 通・%s）\n",
-		counts["受信を新しく"], counts["送信を新しく"], counts["重複"], counts["失敗"], len(items),
+	fmt.Printf("通信箱へ: 受信を新しく %d・送信を新しく %d・重複 %d・失敗 %d・大きすぎる %d（%d 通・%s）\n",
+		counts["受信を新しく"], counts["送信を新しく"], counts["重複"], counts["失敗"], counts["大きすぎる"], len(items),
 		time.Since(start).Round(time.Second))
 	if len(notNeeded) > 0 {
 		done, err := c.markNotNeeded(notNeeded)
@@ -160,6 +169,21 @@ func run(root string, boxes []string, since string, max int, handledBefore strin
 		fmt.Printf("%s より前の受信 %d 通に「対応：不要」の印を付けました\n", handledBefore, done)
 	}
 	return nil
+}
+
+// uploadLimit は添付1件の上限（バイト）です——w-cms と同じ設定（config/settings.json の max_upload_mib・無ければ32）。
+// 口は本文をこの大きさで切るので、それより大きい .eml は送っても読めない。
+func uploadLimit() int64 {
+	mib := 32
+	if b, err := os.ReadFile(filepath.Join("config", "settings.json")); err == nil {
+		var s struct {
+			MaxUploadMiB int `json:"max_upload_mib"`
+		}
+		if json.Unmarshal(b, &s) == nil && s.MaxUploadMiB > 0 {
+			mib = s.MaxUploadMiB
+		}
+	}
+	return int64(mib) << 20
 }
 
 // ── w-cms への口 ───────────────────────────────────────────────────────
