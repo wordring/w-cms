@@ -53,6 +53,24 @@ $mutex = New-Object System.Threading.Mutex($false, 'w-cms-onenote-extract')
 $own = $false
 try { $own = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $own = $true }
 if (-not $own) { Log "前の回がまだ動いているので、この回は止めます"; return }
+# ⚠ **2台の機械で同じノートブックを吸い出さない**（2026-09-28 利用者:「ワンノートの取り込みを家のパソコンでやって、同時に
+#    会社でw-cmsへ取り込むことは出来ますか？」）——出力先は OneDrive で2台に届くので、両方が目録を書くと食い違う。上の印は
+#    1台の中でしか効かないので、出力先に「吸い出している機械.txt」（機械の名前と時刻）を置き、**別の機械が1時間以内に
+#    吸い出していたら止める**。機械を替えるときは、前の機械のタスクを止めてから1時間待つ（急ぐならこのファイルを消す）。
+$machineFile = Join-Path $root '吸い出している機械.txt'
+if (Test-Path -LiteralPath $machineFile) {
+  $prev = ([IO.File]::ReadAllText($machineFile, $utf8)).Trim() -split "`t"
+  $prevTime = [datetime]::MinValue
+  if ($prev.Count -ge 2) { [void][datetime]::TryParse($prev[1], [ref]$prevTime) }
+  if ($prev[0] -and $prev[0] -ne $env:COMPUTERNAME -and ((Get-Date) - $prevTime).TotalMinutes -lt 60) {
+    Log ("別の機械（{0}）が {1} に吸い出しています——この機械（{2}）では止めます（{3} を見てください）" -f `
+      $prev[0], $prev[1], $env:COMPUTERNAME, $machineFile)
+    $mutex.ReleaseMutex()
+    return
+  }
+}
+function MarkMachine { [IO.File]::WriteAllText($machineFile, $env:COMPUTERNAME + "`t" + (Get-Date).ToString('s'), $utf8) }
+MarkMachine
 $targetFile = Join-Path $root '対象.txt'
 if (-not (Test-Path $targetFile)) {
   [IO.File]::WriteAllText($targetFile, "# 吸い出すセクション（1行1つ・「グループ / セクション」の末尾が一致すれば対象）`r`n", $utf8)
@@ -90,6 +108,7 @@ if ($nb -eq $null) { throw "ノートブック「$Notebook」がありません"
 function SaveCatalog {
   $out = [PSCustomObject]@{ notebook = $Notebook; updatedAt = (Get-Date).ToString('s'); pages = [PSCustomObject]$catalog }
   [IO.File]::WriteAllText($catalogFile, ($out | ConvertTo-Json -Depth 5), $utf8)
+  MarkMachine # 吸い出している機械の時刻も新しく（長い回でも別の機械が割り込まない）
 }
 
 Log ("吸い出しを始めます（待ち {0} 秒・上限 {1} 分）" -f $Wait, $(if ($MaxMinutes -gt 0) { $MaxMinutes } else { 'なし' }))
