@@ -114,9 +114,15 @@ foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
         pr = ($img.GetAttribute('isPrintOut') -eq 'true')
         xi = $img.GetAttribute('xpsFileIndex'); pn = $img.GetAttribute('originalPageNumber') }
     }
+    # SaveImg は画像を保存して true。⚠ **中身が0バイトなら保存せず false**——まだ降りてきていない画像に
+    #    ワンノートが空の中身を返すことがある（2026-09-28・0バイトのファイルを「取れた」と数えていた）。
     function SaveImg($x, [string]$b64) {
-      [IO.File]::WriteAllBytes((Join-Path $files $x.name), [Convert]::FromBase64String($b64))
+      $bytes = [byte[]]@()
+      try { $bytes = [Convert]::FromBase64String($b64.Trim()) } catch { return $false }
+      if ($bytes.Length -eq 0) { return $false }
+      [IO.File]::WriteAllBytes((Join-Path $files $x.name), $bytes)
       $x.img.SetAttribute('wcmsFile', $x.name)
+      return $true
     }
     # 取りに行く（CallbackID → 印刷イメージは中身つきの本文から束の位置で）。取れたものを $pending から外す。
     function TryFetch {
@@ -124,7 +130,7 @@ foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
       foreach ($x in $script:pending) {
         $b64 = ''
         try { $on.GetBinaryPageContent($id, $x.cid, [ref]$b64) } catch { $b64 = '' }
-        if ($b64) { SaveImg $x $b64; $script:got += $x.name; $stat.files++ } else { $rest += $x }
+        if ($b64 -and (SaveImg $x $b64)) { $script:got += $x.name; $stat.files++ } else { $rest += $x }
       }
       if (@($rest | Where-Object { $_.pr }).Count -gt 0) {
         # ⚠ 印刷イメージは GetBinaryPageContent が 0x8004200F でも、中身つきの本文には入っていることがある。
@@ -144,7 +150,7 @@ foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
               }
             }
             $d = if ($hit) { $hit.SelectSingleNode('one:Data', $bns) } else { $null }
-            if ($d -ne $null) { SaveImg $x $d.InnerText; $script:got += $x.name; $stat.files++ } else { $rest2 += $x }
+            if ($d -ne $null -and (SaveImg $x $d.InnerText)) { $script:got += $x.name; $stat.files++ } else { $rest2 += $x }
           }
           $rest = $rest2
         }
