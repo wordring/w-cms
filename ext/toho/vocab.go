@@ -442,8 +442,8 @@ var businessVocab = []cms.VocabDef{
 		// ⚠ **スラッシュメニューに出しません**（2026-09-28 利用者:「発注部材表は機械が作るもので手で書き込む
 		// ことはありません」「手で挿すことは無いのでスラッシュメニューに必要ない」）——機械が節で包んで作る
 		// （order_draft.go の `draftBoxOf`）ので、手で挿した包まれていない表は形が違ってしまう。
-		Hidden:      true,
-		Columns:     orderItemColumns(),
+		Hidden:  true,
+		Columns: orderItemColumns(),
 	},
 	{
 		// **臨時部材表**（2026-09-25）。加工製品ページに無い材料（消耗品・工具・社内用）を
