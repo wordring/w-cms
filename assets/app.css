@@ -1062,6 +1062,12 @@ body[edit-mode] .block-content p:empty::before {
     padding: 4px 10px;
     min-width: 3em;
     text-align: left;
+    /* **空のセルも1行ぶんの高さ**（2026-09-28 利用者:「空の表はセルの高さがずいぶん狭くて編集が困難です。
+       最低高さをキャレットの高さか、文字の高さ以上に出来ないでしょうか」）。全部が空の表は行が 9px に
+       潰れていた（実測）。⚠ セルに min-height は効かないが、**セルの height は「これより低くしない」**の
+       意味になる。1lh は行送り1行ぶん——字の入ったセルと同じ高さで、キャレットも1行の高さで入る。 */
+    height: 1.6em; /* lh を知らないブラウザ用の控え */
+    height: 1lh;
 }
 
 #w-editor-content th {
@@ -1979,6 +1985,9 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 #w-editor-content .unhandled-subject { overflow-wrap: anywhere; }
 #w-editor-content .unhandled-clip    { color: var(--text-muted); }
 #w-editor-content .chip-btn {
+    /* 小さなボタンの文字は**折り返さない**（2026-09-28 利用者:「発注部材表の戻すボタンの文字が折り返されて
+       行の高さが大きくなりすぎます」——列の多い表でボタンの列が細らされ、「↩ 戻す」が2行になっていた）。 */
+    white-space: nowrap;
     padding: 1px 10px;
     font-size: 12px;
     color: var(--text-muted);
@@ -2498,6 +2507,12 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     font-size: 0.9em;
 }
 #w-editor-content .unorder-pick { width: 2.5em; text-align: center; }
+/* **必要部材表のセルは折り返さない**（2026-09-28 利用者:「必要部材表（受注横断）のセルの文字が折り返され、
+   行の高さが大きくなりすぎます」）。表を本文の欄（666px まで）に収めようと列が細らされ、客先・装置・品名が
+   4〜7行に折れて1行が 121px になっていた（実測）。折り返さず、**表の中で横へスクロール**する——本文の表と
+   同じ形（`#w-editor-content table` の overflow-x・自由文の列だけ折る決まり）。この表に自由文の列は無い。 */
+#w-editor-content table.unorder-table th,
+#w-editor-content table.unorder-table td { white-space: nowrap; }
 #w-editor-content .unorder-cost { white-space: nowrap; }
 /* 材料以外の行の種類の札（外注加工・購入部品・支給部品・2026-09-28）。1枚の発注書は1社なので、
    選ぶときに種類が要る。色だけに頼らず、札の文字で種類を言う。 */
@@ -2537,5 +2552,6 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .order-doc { display: block; margin: 2px 0; }
 /* ⚠ **行ごとのボタンは折り返しません**——2つ並ぶだけなので、折ると行の高さが
    揃わず、表が読みにくくなります。 */
-#w-editor-content .order-row-act { white-space: nowrap; }
+#w-editor-content .order-row-act,
+#w-editor-content .draft-row-act { white-space: nowrap; }
 #w-editor-content .order-link-state { margin-left: 6px; }

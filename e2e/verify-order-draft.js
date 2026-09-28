@@ -134,6 +134,29 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
       }
     }
 
+    // 折り返さないこと（2026-09-28 利用者:「発注部材表の戻すボタンの文字が折り返されて行の高さが大きくなりすぎます」
+    // 「必要部材表（受注横断）のセルの文字が折り返され、行の高さが大きくなりすぎます」）。直す前は「↩ 戻す」が
+    // 2行（40px）、必要部材表の行は客先・装置・品名が4〜7行に折れて 121px だった。
+    const wrap = await page.evaluate(() => {
+      const b = document.querySelector('.draft-row-back');
+      const heads = document.querySelector('table.unorder-table tr');
+      const rows = Array.from(document.querySelectorAll('table.unorder-table tr')).slice(1);
+      return {
+        back: b ? Math.round(b.getBoundingClientRect().height) : -1,
+        backLine: b ? parseFloat(getComputedStyle(b).fontSize) * 1.6 + 6 : 0,
+        head: heads ? Math.round(heads.getBoundingClientRect().height) : 0,
+        tallest: Math.max(0, ...rows.map((tr) => Math.round(tr.getBoundingClientRect().height))),
+      };
+    });
+    if (wrap.back < 0 || wrap.back > wrap.backLine) {
+      console.log('✗ 「↩ 戻す」が折り返しています（高さ ' + wrap.back + 'px）');
+      bad++;
+    } else console.log('✓ 「↩ 戻す」は1行（' + wrap.back + 'px）');
+    if (wrap.tallest > wrap.head + 2) {
+      console.log('✗ 必要部材表の行が見出しより高い（折り返している）: ' + JSON.stringify(wrap));
+      bad++;
+    } else console.log('✓ 必要部材表の行は1行（' + wrap.tallest + 'px・見出し ' + wrap.head + 'px）');
+
     // ③ 戻すと、最後の1行で表ごと消える（⚠ 押すのは自分の表の「戻す」だけ）
     const back = '.draft-row-back[data-draft-table="' + afterNew + '"]';
     const backs = await page.locator(back).count();
