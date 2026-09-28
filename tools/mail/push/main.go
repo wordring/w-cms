@@ -9,12 +9,16 @@
 //     ——何度流してもよい（入っているものは「重複」で数える）。
 //   - 自分が出したメール（送信）は「送信」の記録になる（差出人がサインインしているアドレスなら——w-cms 側）。
 //   - **古いものから**上げる（スレッドの親が先に来ると、返信元の逆引きが最初から繋がる）。受信と送信は日付で混ぜる。
+//   - -handled-before <日付>: その日より前の受信は、取り込むと同時に「対応：不要」の印を付ける（2026-09-28 利用者:
+//     「2026年5月より前の受信は、取り込むと同時に『対応：不要』の印を付けてください」——過去のメールで未処理の一覧を
+//     埋めない）。印を付けるのは**この回に新しく入ったものだけ**（前から入っていたものの印は人のものなので触らない）。
 //
 // 使い方（リポジトリの根で・サーバーを動かしたまま）:
 //
 //	go run ./tools/mail/push                     # 受信と送信を全部
 //	go run ./tools/mail/push -since 2026-01-01   # この日以降だけ
 //	go run ./tools/mail/push -max 50             # 50通だけ（試し）
+//	go run ./tools/mail/push -handled-before 2026-05-01
 package main
 
 import (
@@ -57,12 +61,13 @@ func main() {
 	boxes := flag.String("boxes", "受信,送信", "上げる箱")
 	since := flag.String("since", "", "この日以降のものだけ（YYYY-MM-DD）")
 	max := flag.Int("max", 0, "上げる上限（0 なら全部）")
+	handledBefore := flag.String("handled-before", "", "この日より前の受信は「対応：不要」の印を付ける（YYYY-MM-DD）")
 	flag.Parse()
 	root := *dirFlag
 	if root == "" {
 		root = filepath.Join(desktop(), "w-cms", "メール")
 	}
-	if err := run(root, strings.Split(*boxes, ","), *since, *max); err != nil {
+	if err := run(root, strings.Split(*boxes, ","), *since, *max, *handledBefore); err != nil {
 		fmt.Fprintln(os.Stderr, "失敗:", err)
 		os.Exit(1)
 	}
@@ -79,7 +84,7 @@ func desktop() string {
 	return home
 }
 
-func run(root string, boxes []string, since string, max int) error {
+func run(root string, boxes []string, since string, max int, handledBefore string) error {
 	// 置き場の下のアカウント（目録.json のあるフォルダ）を全部。
 	accts, _ := filepath.Glob(filepath.Join(root, "*", "目録.json"))
 	if len(accts) == 0 {
@@ -123,6 +128,7 @@ func run(root string, boxes []string, since string, max int) error {
 		return err
 	}
 	counts := map[string]int{}
+	var notNeeded []string // 「対応：不要」の印を付ける新しい受信の記録
 	start := time.Now()
 	for i, it := range items {
 		res, err := c.upload(inbox, it.path)
@@ -134,6 +140,10 @@ func run(root string, boxes []string, since string, max int) error {
 			counts["重複"]++
 		default:
 			counts[it.box+"を新しく"]++
+			if it.box == "受信" && handledBefore != "" && res.PageID != "" && it.date != "" &&
+				it.date[:min(10, len(it.date))] < handledBefore {
+				notNeeded = append(notNeeded, res.PageID)
+			}
 		}
 		if (i+1)%100 == 0 {
 			fmt.Printf("… %d / %d（%s）\n", i+1, len(items), time.Since(start).Round(time.Second))
@@ -142,6 +152,13 @@ func run(root string, boxes []string, since string, max int) error {
 	fmt.Printf("通信箱へ: 受信を新しく %d・送信を新しく %d・重複 %d・失敗 %d（%d 通・%s）\n",
 		counts["受信を新しく"], counts["送信を新しく"], counts["重複"], counts["失敗"], len(items),
 		time.Since(start).Round(time.Second))
+	if len(notNeeded) > 0 {
+		done, err := c.markNotNeeded(notNeeded)
+		if err != nil {
+			return fmt.Errorf("「対応：不要」の印を付けられません（%d 件中 %d 件まで）: %w", len(notNeeded), done, err)
+		}
+		fmt.Printf("%s より前の受信 %d 通に「対応：不要」の印を付けました\n", handledBefore, done)
+	}
 	return nil
 }
 
@@ -227,6 +244,35 @@ type uploadResult struct {
 	Success   bool   `json:"success"`
 	Duplicate bool   `json:"duplicate"`
 	Title     string `json:"title"`
+	PageID    string `json:"page_id"` // 新しく作った記録（重複のときは既にある記録）
+}
+
+// markNotNeeded は記録に「対応：不要」の印を付けます（通信箱の「済」の口・100件ずつまとめて）。
+func (c *client) markNotNeeded(ids []string) (int, error) {
+	done := 0
+	for i := 0; i < len(ids); i += 100 {
+		part := ids[i:min(i+100, len(ids))]
+		b, _ := json.Marshal(map[string]any{"page_ids": part, "value": "不要"})
+		res, err := c.do("POST", "/api/intake/handled", bytes.NewReader(b), "application/json")
+		if err != nil {
+			return done, err
+		}
+		body, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		var r struct {
+			Handled int `json:"handled"`
+			Failed  int `json:"failed"`
+		}
+		if res.StatusCode != 200 || json.Unmarshal(body, &r) != nil {
+			return done, fmt.Errorf("%d %s", res.StatusCode, strings.TrimSpace(string(body)))
+		}
+		done += r.Handled
+		if r.Failed > 0 {
+			// 開いている人がいる記録などは口が飛ばす——付かなかった数を黙らない。
+			fmt.Printf("⚠ %d 件は印を付けられませんでした（開いている人がいる・権限が無いなど）\n", r.Failed)
+		}
+	}
+	return done, nil
 }
 
 // upload は1通を通信箱へ上げます（取り込み係が引き受ける——編集ロックは要らない）。
