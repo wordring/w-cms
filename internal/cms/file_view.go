@@ -70,7 +70,6 @@ package cms
 
 import (
 	stdhtml "html"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -203,28 +202,17 @@ func attachmentURLFor(user *auth.User, pageID, blockID string) (url, fileName st
 		return "", "", "", false
 	}
 	// 添付は `files/` の中。**中身を読まず、名前だけを見ます**——開くのはブラウザで、
-	// ここが要るのは「在るか」と「どう開くか」だけです。
-	entries, err := os.ReadDir(page.AttachmentDir(pageID))
-	if err != nil {
+	// ここが要るのは「在るか」と「どう開くか」だけです（探すのは attachment_ref.go と共通）。
+	n, found := attachmentFileOf(pageID, blockID)
+	if !found {
 		return "", "", "", false
 	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		n := e.Name()
-		ext := strings.ToLower(filepath.Ext(n))
-		if IsAttachmentMetaFile(n) || strings.TrimSuffix(n, filepath.Ext(n)) != blockID {
-			continue // 目録（meta.json）は添付ではない
-		}
-		k, known := fileViewKinds[ext]
-		if !known {
-			k = kindOther // 在るが、ブラウザには描けない形式（DXF・Excel・ZIP など）
-		}
-		// 見出しに出すのは**届いたときの名前**（目録があれば。無ければ保存名）——2026-09-17。
-		return "/" + pageID + "/" + n, AttachmentDisplayName(pageID, n), k, true
+	k, known := fileViewKinds[strings.ToLower(filepath.Ext(n))]
+	if !known {
+		k = kindOther // 在るが、ブラウザには描けない形式（DXF・Excel・ZIP など）
 	}
-	return "", "", "", false
+	// 見出しに出すのは**届いたときの名前**（目録があれば。無ければ保存名）——2026-09-17。
+	return "/" + pageID + "/" + n, AttachmentDisplayName(pageID, n), k, true
 }
 
 // fileViewInnerHTML は枠のHTMLを組みます。**サニタイズの後に足すので、自前で

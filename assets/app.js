@@ -2306,6 +2306,17 @@
                 el.appendChild(document.createElement('br'));
                 newEl.appendChild(el);
             }
+        } else if (type === 'details') {
+            // **折りたたみ**（2026-09-28）——題（summary）の言葉がブロックの名前になる
+            // （例: 加工製品の「資料 1」）。開いた状態で挿し、中に段落を1つ置く。
+            // ⚠ 空の要素は高さが無くカーソルを置けないので、どちらにも改行を入れる（見出しの節と同じ）。
+            newEl = document.createElement('details');
+            newEl.setAttribute('open', '');
+            for (const tag of ['summary', 'p']) {
+                const el = document.createElement(tag);
+                el.appendChild(document.createElement('br'));
+                newEl.appendChild(el);
+            }
         }
         if (!newEl) return null;
 
@@ -2399,9 +2410,9 @@
         
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'P')) {
             newEl.focus();
-        } else if (isEdit && type === 'section') {
-            // 見出しの節は、まず名前（見出し）を打てるように。
-            const h = newEl.querySelector('h2');
+        } else if (isEdit && (type === 'section' || type === 'details')) {
+            // 見出しの節・折りたたみは、まず名前（見出し・題）を打てるように。
+            const h = newEl.querySelector(type === 'details' ? 'summary' : 'h2');
             newEl.focus();
             const range = document.createRange();
             range.selectNodeContents(h);
@@ -3025,6 +3036,99 @@
             if (bar.textContent !== want) bar.textContent = want;
             bar.classList.toggle('fv-wire-empty', !ref);
         });
+    }
+
+    // ── 折りたたみ（details）の「＋ ファイル」（2026-09-28） ─────────────────
+    //
+    // 利用者:「加工製品のページに、外注加工ごとに資料のブロック（開いたり閉じたりできる）を
+    // 用意して、そこに保存したファイルをメールやFAX、印刷等に追加できるようにしてはどうでしょう？」。
+    // 本文のブロックは上の段に並ぶので、**折りたたみの中へ**ファイルを置く道が要ります——
+    // 編集モードで札を1つ出し、押すとファイルを選んで**このページへ上げ**、
+    // **ファイル表示の印**（`data-ref`）を中の末尾へ足します。
+    // 既にある添付（通信記録に届いた図面など）を置くときは、足した印の札（📄 ファイル表示）
+    // から参照を貼り替えます。
+    function decorateFolds() {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        const isEdit = document.body.hasAttribute('edit-mode');
+        editor.querySelectorAll('details').forEach(fold => {
+            if (fold.closest('.vocab-chrome')) return;
+            let bar = fold.querySelector(':scope > .fold-add-file');
+            if (!isEdit) { if (bar) bar.remove(); return; }
+            if (bar) return; // **必要なときだけDOMを変える**（decorateFileViews と同じ理由）
+            bar = document.createElement('button');
+            bar.type = 'button';
+            bar.className = 'vocab-chrome fold-add-file';
+            bar.contentEditable = 'false';
+            bar.textContent = '＋ ファイル';
+            bar.title = 'ファイルを選んでこのページへ上げ、この折りたたみの中にファイル表示を置きます';
+            bar.addEventListener('mousedown', e => e.preventDefault());
+            bar.addEventListener('click', e => {
+                e.preventDefault();
+                pickAnyFiles(files => { if (files.length) addFilesIntoFold(files, fold); });
+            });
+            fold.appendChild(bar);
+        });
+    }
+
+    // pickAnyFiles はファイル選択を開きます（種類は問わない・複数可）。
+    function pickAnyFiles(onPick) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.addEventListener('change', () => onPick(Array.from(input.files || [])));
+        input.click();
+    }
+
+    // addFilesIntoFold はファイルを順にこのページへ上げ、折りたたみの中へファイル表示の印を足します。
+    // 口は種類で振り分けます（画像・PDF は中身検査つきの専用口——insertAttachmentsAfter と同じ）。
+    async function addFilesIntoFold(files, fold) {
+        if (!currentPageId) {
+            notify('先にページを保存してください。', { type: 'warn', duration: 5000 });
+            return;
+        }
+        for (const f of files) {
+            const isImage = /^image\//.test(f.type || '');
+            const isPDF = f.type === 'application/pdf' || /[.]pdf$/i.test(f.name);
+            const [url, field] = isImage ? ['/api/upload-image', 'image_file']
+                : isPDF ? ['/api/upload-pdf', 'pdf_file'] : ['/api/upload-file', 'file'];
+            const fd = new FormData();
+            fd.append('page_id', currentPageId);
+            fd.append(field, f);
+            try {
+                const res = await lockedFetch(url, { method: 'POST', body: fd });
+                const d = await readResult(res);
+                if (d && d.intake) {
+                    // 通信箱のページでは PDF が記録として取り込まれる（添付にならない）。
+                    notify(f.name + ' は受信箱に取り込まれました（/' + d.page_id + '）——' +
+                        '折りたたみには入れていません。', { type: 'warn', duration: 8000 });
+                    continue;
+                }
+                if (!res.ok || !d || !d.id) {
+                    notify(f.name + ' を上げられませんでした: ' + failMessage(res, d),
+                        { type: 'alert', duration: 0, id: 'fold-upload' });
+                    continue;
+                }
+                const sec = document.createElement('section');
+                sec.setAttribute('data-type', FILE_VIEW_TYPE);
+                sec.setAttribute(FILE_REF_ATTR, currentPageId + '-' + d.id);
+                sec.textContent = f.name; // 名札（保存のたびにサーバーが書き直す・表示では消える）
+                fold.insertBefore(sec, fold.querySelector(':scope > .fold-add-file'));
+            } catch (err) {
+                notify(f.name + ' を上げられませんでした: ' + err.message, { type: 'warn', duration: 8000 });
+            }
+        }
+        decorateFileViews();
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
+    // foldSummaryOf は、編集中の要素が折りたたみの題（summary）の中なら、その summary を返します。
+    function foldSummaryOf(node) {
+        const el = node && (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement);
+        const s = el && el.closest('summary');
+        return s && s.parentElement && s.parentElement.tagName === 'DETAILS' &&
+            s.closest('#w-editor-content') ? s : null;
     }
 
     // ── 定義リスト（dl data-type）の項目操作 ─────────────────────────────
@@ -5201,6 +5305,8 @@
 
         // ファイル表示の配線の札も同じ巡りで面倒を見る（呼び出し口を増やさない）。
         decorateFileViews();
+        // 折りたたみの「＋ ファイル」の札も同じ巡りで（2026-09-28）。
+        decorateFolds();
         // セルの印（折り返し・型の読めた／読めない）も同じ巡りで付け直す。
         //
         // ⚠ **閲覧モードでも要ります。** 2026-09-21 まで `validateTypedTables` は
@@ -5660,6 +5766,42 @@
 
         // レジストリ由来の項目は、下の項目バインド（click / mouseenter）より前に足す。
         populateSlashMenuVocab();
+
+        // ── 折りたたみの題（summary）を打てるように（2026-09-28） ──
+        // ⚠ ブラウザは summary を押すと開閉します——編集モードで題の文字を押すたびに閉じ、
+        //    中の「＋ ファイル」の札まで隠れていました（E2E で踏んだ）。**左端の ▸ を押したときだけ**
+        //    開閉し、文字の上ではキャレットを置くだけにします。空白は開閉しません（確かめた）。
+        // ⚠ Enter は題の中へ改行を入れず、**中身の先頭へ移ります**（行を分ける編集の Enter が
+        //    折りたたみごと割らないように・捕捉の段で先に止める）。
+        const FOLD_MARKER_PX = 20; // ▸ の幅のめやす
+        editor.addEventListener('click', e => {
+            if (!document.body.hasAttribute('edit-mode')) return;
+            const s = foldSummaryOf(e.target);
+            if (!s) return;
+            if (e.clientX - s.getBoundingClientRect().left > FOLD_MARKER_PX) e.preventDefault();
+        });
+        editor.addEventListener('keydown', e => {
+            if (e.key !== 'Enter' || e.isComposing || !document.body.hasAttribute('edit-mode')) return;
+            const sel = window.getSelection();
+            const s = sel && sel.rangeCount ? foldSummaryOf(sel.anchorNode) : null;
+            if (!s) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const fold = s.parentElement;
+            fold.open = true;
+            let target = s.nextElementSibling;
+            while (target && target.classList.contains('vocab-chrome')) target = target.nextElementSibling;
+            if (!target) {
+                target = document.createElement('p');
+                target.appendChild(document.createElement('br'));
+                fold.insertBefore(target, fold.querySelector(':scope > .fold-add-file'));
+            }
+            const range = document.createRange();
+            range.selectNodeContents(target);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }, true);
 
         // 行操作ツールバーのボタン。mousedown を止めないとクリックで選択が崩れ、
         // どの行への操作か（currentTableRow）が失われる。
