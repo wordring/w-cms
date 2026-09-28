@@ -402,6 +402,57 @@ func buildEml(messageID, subject string) string {
 	return s + "\r\nhonbun\r\n"
 }
 
+// TestEmlIntakeOwnMailBecomesSent は、自分が出したメール（送信済みの箱から落とした `.eml`）が
+// 「送信」の記録になることを固定します（2026-09-28）。⚠ 「受信」のままだと、送ったメールが全部
+// 未処理の一覧に並び、日時も「受信日時」になる。形は w-cms が送ったときの控えと同じ——送信のテンプレート・
+// `向き：送信`・`送信日時`・`対応：不要`。差出人が自分でなければ、これまでどおり「受信」。
+func TestEmlIntakeOwnMailBecomesSent(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+	RegisterOwnAddresses(func() []string { return []string{"Me@Example.co.jp"} })
+	t.Cleanup(func() { RegisterOwnAddresses(nil) })
+
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	sent := "From: 南 <me@example.co.jp>\r\n" +
+		"To: supplier@example.jp\r\n" +
+		"Subject: sent-mail\r\n" +
+		"Date: Mon, 01 Sep 2026 10:30:00 +0900\r\n" +
+		"Message-ID: <sent1@example.co.jp>\r\n" +
+		"\r\nhonbun\r\n"
+	pageID, _, err := emlIntake{}.OnFile(ctx, "s.eml", []byte(sent))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(page.GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		t.Fatalf("作られたページを読めません: %v", err)
+	}
+	b := string(body)
+	for _, want := range []string{
+		"<dt>" + DirectionTag + "</dt><dd>" + DirectionOut + "</dd>",
+		"<dt>" + HandledTag + "</dt><dd>" + HandledNotNeeded + "</dd>",
+		"<dt>" + SentAtTag + "</dt><dd>2026-09-01T10:30:00+09:00</dd>",
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("送信の記録に %s がありません:\n%s", want, b)
+		}
+	}
+	if strings.Contains(b, "<dt>"+ReceivedAtTag+"</dt>") {
+		t.Errorf("送信の記録に受信日時があります（日時は向きに応じて片方だけ）:\n%s", b)
+	}
+
+	// 差出人が自分でなければ、これまでどおり受信。
+	inID, _, err := emlIntake{}.OnFile(ctx, "r.eml", []byte(buildEml("<in1@example.jp>", "received-mail")))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	in, _ := os.ReadFile(filepath.Join(page.GetPageDir(inID), inID+".html"))
+	if !strings.Contains(string(in), "<dt>"+DirectionTag+"</dt><dd>"+DirectionIn+"</dd>") ||
+		strings.Contains(string(in), "<dt>"+HandledTag+"</dt>") {
+		t.Errorf("他人からのメールが受信の記録になっていません:\n%s", in)
+	}
+}
+
 // TestEmlIntakeWritesMessageID は、重複検知の鍵が**見える文字として**本文に
 // 書かれ、索引から引けることを固定します。専用テーブルは持たない（D-1）ので、
 // 鍵の置き場は可変タグ以外にありません。

@@ -29,6 +29,8 @@ package comm
 
 import (
 	"errors"
+	netmail "net/mail"
+	"strings"
 
 	"w-cms/internal/auth"
 )
@@ -95,6 +97,39 @@ func RegisterMailer(m Mailer) {
 		panic("メール送信の実装が重複しています: " + mailer.Name() + " と " + m.Name())
 	}
 	mailer = m
+}
+
+// ownAddresses は「自分のアドレス」を返す口です（メールの拡張が載せる——サインインしているアドレス）。
+var ownAddresses func() []string
+
+// RegisterOwnAddresses は「自分のアドレス」の口を登録します（**拡張の init() から**）。`.eml` の取り込みが、
+// 自分が出したメール（送信済みの箱から落としたもの）を「送信」の記録にするために使います（2026-09-28）。
+func RegisterOwnAddresses(f func() []string) { ownAddresses = f }
+
+// isOwnAddress は From の欄が自分のアドレスかです（口が無ければ常に false——全部「受信」のまま）。
+func isOwnAddress(fromHeader string) bool {
+	if ownAddresses == nil || strings.TrimSpace(fromHeader) == "" {
+		return false
+	}
+	own := map[string]bool{}
+	for _, a := range ownAddresses() {
+		if a = strings.ToLower(strings.TrimSpace(a)); a != "" {
+			own[a] = true
+		}
+	}
+	if len(own) == 0 {
+		return false
+	}
+	list, err := netmail.ParseAddressList(fromHeader)
+	if err != nil {
+		return false
+	}
+	for _, a := range list {
+		if own[strings.ToLower(a.Address)] {
+			return true
+		}
+	}
+	return false
 }
 
 // CurrentMailer は登録された実装を返します（無ければ false）。

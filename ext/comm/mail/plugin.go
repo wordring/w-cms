@@ -24,6 +24,8 @@ func init() {
 	// **名簿に載る**（起動ログと画面の出し分け——「✉️ 返信」はこの名前を見て出る）。
 	cms.RegisterExtension("comm/mail", "メール送受信・IMAP／SMTP")
 	comm.RegisterMailer(oauthMailer{})
+	// 自分が出したメールの `.eml` を通信箱へ入れたとき「送信」の記録にするため（2026-09-28）。
+	comm.RegisterOwnAddresses(signedInAddresses)
 	cms.Register(mailPlugin{})
 	// **送信の控えもテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
 	cms.RegisterPageTemplate(cms.PageTemplate{

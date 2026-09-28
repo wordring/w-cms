@@ -83,7 +83,10 @@ const (
 	testMailInTemplate = "<h1>" + MailInTemplate + "</h1>" +
 		"<section><h2>" + MailBodyHeading + "</h2></section>" +
 		"<section><h2>" + MailFilesHeading + "</h2></section>"
-	testMemoTemplate = "<h1>" + MemoTemplate + "</h1><p><br/></p>"
+	testMemoTemplate    = "<h1>" + MemoTemplate + "</h1><p><br/></p>"
+	testMailOutTemplate = "<h1>" + MailOutTemplate + "</h1>" +
+		"<section><h2>" + MailBodyHeading + "</h2></section>" +
+		"<section><h2>" + MailFilesHeading + "</h2></section>"
 )
 
 // seedCommTemplates はテンプレート置き場に通信記録のテンプレートを置きます
@@ -95,6 +98,7 @@ func seedCommTemplates(t *testing.T) {
 		{"000951", "000950", "<h1>通信</h1>"},
 		{"000952", "000951", testMailInTemplate},
 		{"000953", "000951", testMemoTemplate},
+		{"000954", "000951", testMailOutTemplate},
 	} {
 		if err := os.MkdirAll(page.GetPageDir(p.id), 0755); err != nil {
 			t.Fatal(err)

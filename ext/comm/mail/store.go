@@ -113,6 +113,26 @@ func deleteToken(username string) {
 	})
 }
 
+// signedInAddresses はサインインしている全員のアドレスです（保管のファイルを見る・トークンには触れない）。
+// 通信箱の `.eml` の取り込みが「自分が出したメール」を見分けるために使います（comm.RegisterOwnAddresses）。
+func signedInAddresses() []string {
+	entries, err := os.ReadDir(filepath.Join("data", "mail"))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		if a := SignedInAddress(strings.TrimSuffix(name, ".json")); a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // SignedInAddress は、その利用者がどのアドレスでサインインしているかを返します
 // （サインインしていなければ空）。**トークンそのものは返しません。**
 func SignedInAddress(username string) string {

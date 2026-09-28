@@ -162,7 +162,7 @@ func recordSentMail(user *auth.User, tmpl, sourcePageID, messageID string, req R
 }
 
 // SentTemplate は送信の控えを作るテンプレートの題です（2026-09-27）。
-const SentTemplate = "通信記録（送信メール）"
+const SentTemplate = comm.MailOutTemplate
 
 // sentRecordBody は送信の控えの本文を、テンプレート tmpl を埋めて組みます。**DBにもファイルにも
 // 触りません**——試験で「受信の取り込みと同じ名前で書いているか」を直接確かめるために

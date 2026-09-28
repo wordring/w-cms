@@ -168,21 +168,40 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// タグの並び・本文と添付の置き場（見出しの節）はテンプレートが持ち、ここは値と数だけを
 	// 入れます。**ページを作る前に**テンプレートと器を確かめます——作ってから断ると、
 	// 題だけのページが通信箱に残ります。
-	d, err := cms.DraftFromTemplate(MailInTemplate)
+	// **自分が出したメール**（送信済みの箱から落とした `.eml`）は「送信」の記録にします（2026-09-28・
+	// 利用者:「サーバーには私が送信したメールも残っており…」）。見分けるのは差出人が自分のアドレスか
+	// （メールの拡張が口に載せる・サインインしているアドレス）。形は w-cms が送ったときの控えと同じ——
+	// 送信のテンプレート・`向き：送信`・`送信日時`・`対応：不要`（送るという仕事はその場で終わっている）。
+	out := isOwnAddress(msg.Header.Get("From"))
+	tmplName := MailInTemplate
+	if out {
+		tmplName = MailOutTemplate
+	}
+	d, err := cms.DraftFromTemplate(tmplName)
 	if err != nil {
 		return "", "", err
 	}
 	d.SetTitle(subject)
 	// **向きとチャネルは直交する2軸**（2026-09-05）。向き＝受信／送信、
 	// チャネル＝メール／FAX／電話。「送信 × FAX」が実際に要るので混ぜません。
-	d.SetTag(DirectionTag, DirectionIn)
+	if out {
+		d.SetTag(DirectionTag, DirectionOut)
+		d.SetTag(HandledTag, HandledNotNeeded)
+	} else {
+		d.SetTag(DirectionTag, DirectionIn)
+	}
 	d.SetTag(ChannelTag, ChannelMail)
 	d.SetTag(FromTag, addressTagValues(msg.Header.Get("From"))...)
 	d.SetTag(ToTag, addressTagValues(msg.Header.Get("To"))...)
 	d.SetTag(CcTag, addressTagValues(msg.Header.Get("Cc"))...)
 	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
 	d.SetTag(ReplyToTag, addressTagValues(msg.Header.Get("Reply-To"))...)
-	d.SetTag(ReceivedAtTag, dateISO)
+	// **日時は向きに応じて片方だけ**（両方書くと「どちらが本当か」が生まれる）。
+	if out {
+		d.SetTag(SentAtTag, dateISO)
+	} else {
+		d.SetTag(ReceivedAtTag, dateISO)
+	}
 	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
 	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
@@ -258,6 +277,10 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 
 // MailInTemplate は受信メールの通信記録を作るテンプレートの題です（2026-09-27）。
 const MailInTemplate = "通信記録（受信メール）"
+
+// MailOutTemplate は送信メールの通信記録（控え）を作るテンプレートの題です——w-cms が送ったときの控え
+// （ext/comm/mail が登録する）と、自分が出した `.eml` を取り込んだとき（2026-09-28）の両方が使う。
+const MailOutTemplate = "通信記録（送信メール）"
 
 // MailBodyHeading / MailFilesHeading は、通信記録のテンプレートで**メールの本文**と
 // **添付の一覧**を入れる見出しの節です（受信と送信の控えで共有）。
