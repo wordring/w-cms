@@ -69,6 +69,10 @@ type placement struct {
 type settings struct {
 	Template string               `json:"テンプレート"`
 	Sections map[string]placement `json:"セクション"`
+	// PartNoIsDrawingNo は**品番に図面番号を入れる取引先**です（2026-09-28 利用者:「〈ある取引先〉に限っては、
+	// 加工製品の品番に図面番号を入れてください」）。品番は取引先ごとの取り決めなので、取引先の名前で決める
+	// （名前は実データなので、このファイルではなく設定のファイルに書く）。
+	PartNoIsDrawingNo []string `json:"品番を図面番号にする取引先"`
 }
 
 type pageRecord struct {
@@ -209,7 +213,13 @@ func run(root string, dry bool) error {
 		if p.Incomplete {
 			note.warn("⚠ 吸い出しで取れなかったファイルがあります（次の吸い出しで取れれば、製造し直すと入ります）")
 		}
-		if err := buildOne(c, root, p.Dir, tmpl, set.Template, pl, pg, pr, note, dry); err != nil {
+		partNo := false
+		for _, n := range set.PartNoIsDrawingNo {
+			if cms.NormalizeNameForIngest(n) == cms.NormalizeNameForIngest(pl.Partner) {
+				partNo = true
+			}
+		}
+		if err := buildOne(c, root, p.Dir, tmpl, set.Template, pl, partNo, pg, pr, note, dry); err != nil {
 			note.warn("⚠ 製造できませんでした: " + err.Error())
 			continue
 		}
@@ -489,7 +499,7 @@ var tableMap = map[string]struct {
 	"支給品":  {Caption: "支給部品"},
 }
 
-func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, pg *onePage, pr *pageRecord,
+func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo bool, pg *onePage, pr *pageRecord,
 	note *pageNote, dry bool) error {
 	secs := sectionsOf(pg)
 	drawingNo := ""
@@ -599,6 +609,12 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, pg *on
 
 	d := cms.NewPageDraft(tmplTitle, tmpl)
 	d.SetTitle(title)
+	if partNo {
+		d.SetTag("品番", drawingNo) // この取引先の品番は図面番号（題の下のタグ——受注明細の品番と結ぶ）
+	}
+	// 弊社品番＝このページの番号（2026-09-28 利用者:「弊社品番としてタグにページ番号を入れてください。
+	// 検索できるようにです」）。
+	d.SetTag("弊社品番", pageID)
 	d.SetTag(migrateTag, migrateValue)
 	blk, err := d.RequireContainer("図面")
 	if err != nil {
