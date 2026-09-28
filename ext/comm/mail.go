@@ -29,7 +29,6 @@ package comm
 
 import (
 	"errors"
-	netmail "net/mail"
 	"strings"
 
 	"w-cms/internal/auth"
@@ -120,7 +119,10 @@ func isOwnAddress(fromHeader string) bool {
 	if len(own) == 0 {
 		return false
 	}
-	list, err := netmail.ParseAddressList(fromHeader)
+	// ⚠ 表示名が ISO-2022-JP の符号化語だと、標準の ParseAddressList は読めずに誤りを返す（Outlook から送った
+	// 和文の差出人がそうだった・2026-09-28 に踏んだ——送信のメールが全部「受信」になった）。取り込みと同じ
+	// 読み手（文字コードを読める addressParser）を通す。
+	list, err := addressParser.ParseList(fromHeader)
 	if err != nil {
 		return false
 	}

@@ -441,6 +441,21 @@ func TestEmlIntakeOwnMailBecomesSent(t *testing.T) {
 		t.Errorf("送信の記録に受信日時があります（日時は向きに応じて片方だけ）:\n%s", b)
 	}
 
+	// ⚠ 表示名が ISO-2022-JP の符号化語でも自分と分かること（Outlook から送った和文の差出人・2026-09-28 に踏んだ
+	// ——標準の ParseAddressList は読めずに「受信」に倒れた）。
+	jp := "From: =?ISO-2022-JP?B?" + base64.StdEncoding.EncodeToString([]byte(iso2022jp(t, "南"))) +
+		"?= <me@example.co.jp>\r\n" +
+		"To: supplier@example.jp\r\nSubject: sent-jp\r\nDate: Mon, 01 Sep 2026 11:00:00 +0900\r\n" +
+		"Message-ID: <sent2@example.co.jp>\r\n\r\nhonbun\r\n"
+	jpID, _, err := emlIntake{}.OnFile(ctx, "s2.eml", []byte(jp))
+	if err != nil {
+		t.Fatalf("取り込みエラー: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(page.GetPageDir(jpID), jpID+".html")); !strings.Contains(string(b),
+		"<dt>"+DirectionTag+"</dt><dd>"+DirectionOut+"</dd>") {
+		t.Errorf("和文の表示名の差出人（自分）が送信になっていません:\n%s", b)
+	}
+
 	// 差出人が自分でなければ、これまでどおり受信。
 	inID, _, err := emlIntake{}.OnFile(ctx, "r.eml", []byte(buildEml("<in1@example.jp>", "received-mail")))
 	if err != nil {
