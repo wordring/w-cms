@@ -120,6 +120,16 @@ func OrderPrintColumns() []string {
 	return orderPrintColumns
 }
 
+// OrderPrintHeads は紙の上に刷るタグを並び順どおりに返します（空なら 09-27 までの4つ）。
+func OrderPrintHeads() []string {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	if len(orderPrintHeads) > 0 {
+		return orderPrintHeads
+	}
+	return []string{"発注書番号", "発注日", "納期", "納品場所"}
+}
+
 // labelValue は表の行から、列の**見出しの名前**で値を読みます（登録された列は機械キーで入っている）。
 func labelValue(def cms.VocabDef, row cms.VocabRow, label string) string {
 	for _, c := range def.Columns {

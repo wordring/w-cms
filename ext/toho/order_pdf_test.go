@@ -564,3 +564,37 @@ func TestOrderPaperTitle(t *testing.T) {
 		}
 	}
 }
+
+// TestOrderPDFPrintsBlankHeads は、**発注書ページが持つタグは空でも見出しを刷る**ことを固定します
+// （2026-09-28 利用者:「法で決まった記載事項（検査完了期日・支払期日など）は念のため記載して空欄運用」）。
+// ⚠ 持っていないタグ（それより前の発注書）は刷らない——空の見出しが古い紙にまで増えないように。
+func TestOrderPDFPrintsBlankHeads(t *testing.T) {
+	withPDFFont(t, systemJPFont(t))
+
+	row := `<tr><td></td><td></td><td></td><td>鉄</td><td>板</td><td>t3.2</td>` +
+		`<td></td><td>5</td><td>枚</td><td>800</td><td></td><td>未発注</td></tr>`
+	withHeads := strings.Replace(pdfOrderBody(row), `<dt>発注日</dt><dd>2026-08-19</dd>`,
+		`<dt>発注日</dt><dd>2026-08-19</dd><dt>検査完了期日</dt><dd><br/></dd>`+
+			`<dt>支払期日</dt><dd><br/></dd><dt>支払方法</dt><dd>銀行振込</dd>`, 1)
+	if withHeads == pdfOrderBody(row) {
+		t.Fatal("下ごしらえの置き換えが当たっていません")
+	}
+	pdf, err := buildOrderPDF(withHeads, nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	s := pdfTextOf(t, pdf)
+	for _, want := range []string{"検査完了期日", "支払期日", "支払方法", "銀行振込"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("⚠ 紙に %q が出ていません（空のタグも見出しを刷るはず）:\n%s", want, s)
+		}
+	}
+
+	pdf, err = buildOrderPDF(pdfOrderBody(row), nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	if s := pdfTextOf(t, pdf); strings.Contains(s, "検査完了期日") || strings.Contains(s, "納期") {
+		t.Errorf("⚠ ページが持っていないタグの見出しまで刷っています:\n%s", s)
+	}
+}

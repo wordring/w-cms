@@ -54,13 +54,13 @@ func TestSettingsAbsentSectionClearsStages(t *testing.T) {
 	stagesMu.RLock()
 	savedStages, savedTags, savedFont, savedFace, savedCompany :=
 		machineStages, productCodeTags, pdfFont, pdfFontFace, companyInf
-	savedKinds, savedPrint := orderKinds, orderPrintColumns
+	savedKinds, savedPrint, savedHeads := orderKinds, orderPrintColumns, orderPrintHeads
 	stagesMu.RUnlock()
 	t.Cleanup(func() {
 		stagesMu.Lock()
 		machineStages, productCodeTags, pdfFont, pdfFontFace, companyInf =
 			savedStages, savedTags, savedFont, savedFace, savedCompany
-		orderKinds, orderPrintColumns = savedKinds, savedPrint
+		orderKinds, orderPrintColumns, orderPrintHeads = savedKinds, savedPrint, savedHeads
 		stagesMu.Unlock()
 	})
 	apply, err := parseSettings(nil)

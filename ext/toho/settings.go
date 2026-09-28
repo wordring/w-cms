@@ -92,6 +92,12 @@ type settingsSection struct {
 	// 計算の列。利用者:「実際に運用して見ないと私にはわかりません」——使ってみて直す1行。
 	// **未指定なら、それまでの並び**（品番・品名・材質・形状・寸法・表面・単位・数量・単価・金額）。
 	OrderPrintColumns []string `json:"order_print_columns,omitempty"`
+
+	// OrderPrintHeads は**発注書の紙の上に刷るタグ**と並び順です（2026-09-28）。発注書ページが
+	// そのタグを持っていれば、**値が空でも見出しだけ刷ります**——法で決まった記載事項（検査完了期日・
+	// 支払期日・支払方法）を「念のため記載して空欄運用」するため（利用者）。持っていないタグは刷らない。
+	// **未指定なら、それまでの4つ**（発注書番号・発注日・納期・納品場所）。
+	OrderPrintHeads []string `json:"order_print_heads,omitempty"`
 }
 
 // companyInfo は発注書に刷る差出人です（実物の見出しに合わせた項目）。
@@ -115,6 +121,7 @@ var (
 	companyInf        companyInfo
 	orderKinds        []orderKind
 	orderPrintColumns []string
+	orderPrintHeads   []string
 )
 
 func init() {
@@ -182,6 +189,12 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 	}
 	kinds := s.OrderKinds
 	printCols := s.OrderPrintColumns
+	var heads []string
+	for _, h := range s.OrderPrintHeads {
+		if h = strings.TrimSpace(h); h != "" {
+			heads = append(heads, h)
+		}
+	}
 	stages := s.MachineStages
 	codeTags := s.ProductCodeTags
 	font := strings.TrimSpace(s.PDFFont)
@@ -196,6 +209,7 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		companyInf = company
 		orderKinds = kinds
 		orderPrintColumns = printCols
+		orderPrintHeads = heads
 		stagesMu.Unlock()
 	}, nil
 }

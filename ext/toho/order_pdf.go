@@ -200,9 +200,12 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	}
 	y += 8
 
-	// ── ヘッダの4項目 ──
-	for _, k := range []string{"発注書番号", "発注日", "納期", "納品場所"} {
-		if v := head[k]; v != "" {
+	// ── ヘッダ（設定 `order_print_heads`）──
+	// ⚠ **ページがそのタグを持っていれば、空でも見出しを刷ります**（2026-09-28）——法で決まった
+	// 記載事項（検査完了期日・支払期日・支払方法）を「念のため記載して空欄運用」するため（利用者）。
+	// 持っていないタグ（それより前の発注書）は刷りません。
+	for _, k := range OrderPrintHeads() {
+		if v, ok := head[k]; ok {
 			y = pdfText(p, pdfLeft, y, pdfFontSz, k+"： "+v)
 		}
 	}
