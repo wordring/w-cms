@@ -73,6 +73,20 @@ type imapSession struct {
 
 // openIMAP は接続してログインし、受信箱を読み取り専用で開きます。
 func openIMAP(ctx context.Context, username string) (*imapSession, error) {
+	s, err := connectIMAP(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	// **EXAMINE は読み取り専用の SELECT** です（既読の印を付けない）。
+	if _, err := s.command("EXAMINE INBOX"); err != nil {
+		s.conn.Close()
+		return nil, errors.New("受信箱を開けません: " + err.Error())
+	}
+	return s, nil
+}
+
+// connectIMAP は接続してログインします（箱はまだ開きません）。
+func connectIMAP(ctx context.Context, username string) (*imapSession, error) {
 	token, err := mailAccessToken(ctx, username)
 	if err != nil {
 		return nil, err
@@ -112,11 +126,6 @@ func openIMAP(ctx context.Context, username string) (*imapSession, error) {
 	if err := s.authXOAUTH2(addr, token); err != nil {
 		conn.Close()
 		return nil, err
-	}
-	// **EXAMINE は読み取り専用の SELECT** です（既読の印を付けない）。
-	if _, err := s.command("EXAMINE INBOX"); err != nil {
-		conn.Close()
-		return nil, errors.New("受信箱を開けません: " + err.Error())
 	}
 	return s, nil
 }
