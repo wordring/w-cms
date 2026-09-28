@@ -889,14 +889,19 @@ func revisionTableAt(bodyHTML string) int {
 // 畳める枠（`<details>`）はテンプレートが持ちます（2026-09-27）——ここは枠の中身だけ。
 //
 // ⚠ **`data-type` を付けません。** 形式を登録していない表は索引に載らない決まりなので
-// （2026-09-20）、原本はそのまま「見せるだけ」になります。**caption は人のため**に
-// 付けます——畳んだときに何の表か分かるように。
+// （2026-09-20）、原本はそのまま「見せるだけ」になります。
+//
+// ⚠ **caption も付けません**（2026-09-28・利用者の選択）。それまでは「畳んだときに何の表か分かる
+// ように」付けていましたが、**表の写し（`data/tables.db`・2026-09-25）はキャプションのある表を全部
+// DB に入れる**ので、証拠の写しまで DB に入り、顧客の見出し（`No.` など）が保存のたびに「SQL で引くとき
+// 引用符が要る」と告げられていました。何の表かは**外側の折りたたみの題**（テンプレートの
+// 「顧客の発注書（読んだまま）」）が言います。検算はその枠の中の表を読みます（`sourceTableIn`）。
 func sourceTableHTML(t orderSourceTable) string {
 	if len(t.Headers) == 0 || len(t.Rows) == 0 {
 		return "" // ⚠ **読めなければ出しません**（空の枠だけ出しても誤解を生む）
 	}
 	var b strings.Builder
-	b.WriteString(`<table><caption>` + html.EscapeString(sourceTableCaption) + `</caption><tbody><tr>`)
+	b.WriteString(`<table><tbody><tr>`)
 	for _, h := range t.Headers {
 		b.WriteString("<th>" + html.EscapeString(h) + "</th>")
 	}
@@ -918,10 +923,11 @@ func sourceTableHTML(t orderSourceTable) string {
 	return b.String()
 }
 
-// sourceTableCaption は原本の写しの見出しです。
+// sourceTableCaption は原本の写しを入れる枠（テンプレートの折りたたみ・見出しの節）の題です。
 //
 // ⚠ **語彙に登録しません**（登録すると索引に載り、弊社の明細と二重になります）。
-// 人が読むための名前です。
+// 人が読むための名前です。⚠ 2026-09-28 から表の caption には書きません（`sourceTableHTML`）——
+// 名前の定数に "Caption" が残っているのは、それより前の本文の caption も読むためです（`sourceTableIn`）。
 const sourceTableCaption = "顧客の発注書（読んだまま）"
 
 // parseSourceTable は原本の写しを**寛容に**解きます（解けなければ空）。

@@ -161,10 +161,10 @@ func TestChecksumMirrorIsNotSaved(t *testing.T) {
 func TestChecksumMirrorReadsTagsNotHeaders(t *testing.T) {
 	body := `<h1>受注</h1>` +
 		`<dl><dt>小計</dt><dd>1</dd></dl>` + // ⚠ 素の dl。読んではいけない
-		`<table><caption>` + sourceTableCaption + `</caption><tbody>` +
+		`<details><summary>` + sourceTableCaption + `</summary><table><tbody>` +
 		`<tr><th>品名</th><th>数量</th><th>単価</th><th>金額</th></tr>` +
 		`<tr><td>ブラケット</td><td>100</td><td>390</td><td>39000</td></tr>` +
-		`</tbody></table>` +
+		`</tbody></table></details>` +
 		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細</caption><tbody>` +
 		`<tr><th>品番</th><th>数量</th></tr><tr><td>K1</td><td>100</td></tr></tbody></table>`
 
@@ -175,5 +175,20 @@ func TestChecksumMirrorReadsTagsNotHeaders(t *testing.T) {
 	// 小計のタグが無いので、行の検算だけが通って「合っています」になる。
 	if !strings.Contains(got, "検算: 合っています") {
 		t.Errorf("行の検算が働いていません:\n%s", got)
+	}
+}
+
+// TestChecksumMirrorReadsOldCaptionForm は、**2026-09-28 より前の本文**（原本の写しの表が caption で
+// 名乗る形）でも検算することを固定します——新しい本文は枠の題で名乗る（`sourceTableHTML`）。
+func TestChecksumMirrorReadsOldCaptionForm(t *testing.T) {
+	body := `<h1>受注</h1>` +
+		`<table><caption>` + sourceTableCaption + `</caption><tbody>` +
+		`<tr><th>品名</th><th>数量</th><th>単価</th><th>金額</th></tr>` +
+		`<tr><td>ブラケット</td><td>100</td><td>390</td><td>39000</td></tr>` +
+		`</tbody></table>` +
+		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細</caption><tbody>` +
+		`<tr><th>品番</th><th>数量</th></tr><tr><td>K1</td><td>100</td></tr></tbody></table>`
+	if got := render(t, body); !strings.Contains(got, "検算: 合っています") {
+		t.Errorf("古い本文（caption の写し）で検算が働いていません:\n%s", got)
 	}
 }

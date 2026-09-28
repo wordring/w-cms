@@ -162,17 +162,29 @@ func rootOf(el *html.Node) *html.Node {
 
 // sourceTableIn は原本の写しの表を探し、見出しと行に開きます。
 //
-// 見分けるのは **`<caption>` の文字**です（§2.4「見える文字が形式を宣言する」）。
+// 見分けるのは**見える文字**です（§2.4「見える文字が形式を宣言する」）——**入れた枠の題**
+// （折りたたみの `summary`・見出しの節の見出しが「顧客の発注書（読んだまま）」）の中の表。
+// ⚠ 2026-09-28 より前の本文は**表の `<caption>`** で名乗っているので、そちらも読みます
+// （caption を外した理由は `sourceTableHTML`）。
 // ⚠ 原本は**語彙に登録していません**（登録すると索引に載り、弊社の明細と
 // 二重計上になります）ので、属性では見つけられません。
 func sourceTableIn(root *html.Node) (orderSourceTable, bool) {
-	table := findElement([]*html.Node{root}, func(n *html.Node) bool {
-		if n.Data != "table" {
-			return false
-		}
-		cap := lastChild(n, "caption")
-		return cap != nil && strings.TrimSpace(textOf(cap)) == sourceTableCaption
-	})
+	var table *html.Node
+	if box := findElement([]*html.Node{root}, func(n *html.Node) bool {
+		return (n.Data == "details" && strings.TrimSpace(foldTitle(n)) == sourceTableCaption) ||
+			(n.Data == "section" && sectionHeadingText(n) == sourceTableCaption)
+	}); box != nil {
+		table = findElement([]*html.Node{box}, func(n *html.Node) bool { return n.Data == "table" })
+	}
+	if table == nil {
+		table = findElement([]*html.Node{root}, func(n *html.Node) bool {
+			if n.Data != "table" {
+				return false
+			}
+			cap := lastChild(n, "caption")
+			return cap != nil && strings.TrimSpace(textOf(cap)) == sourceTableCaption
+		})
+	}
 	if table == nil {
 		return orderSourceTable{}, false
 	}

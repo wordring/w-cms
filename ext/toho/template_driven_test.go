@@ -66,8 +66,12 @@ func TestOrderPageSourceTableGoesIntoTheFold(t *testing.T) {
 	j := &orderJudgment{IsClientOrder: true, OrderNo: "PO-1"}
 	j.SourceTable = orderSourceTable{Headers: []string{"図番", "数量"}, Rows: [][]string{{"K120-1", "3"}}}
 	body := testOrderPage("000001", "pdf001", j)
-	if !strings.Contains(body, `<details><summary>`+sourceTableCaption+`</summary><table><caption>`+sourceTableCaption+`</caption>`) {
+	if !strings.Contains(body, `<details><summary>`+sourceTableCaption+`</summary><table><tbody>`) {
 		t.Errorf("読んだままの表が枠の中にありません:\n%s", body)
+	}
+	// ⚠ **表に caption を付けない**（2026-09-28）——付けると表の写し（data/tables.db）に証拠の写しまで入る。
+	if strings.Contains(body, `<caption>`+sourceTableCaption+`</caption>`) {
+		t.Errorf("⚠ 読んだままの表に caption が付いています（表の写しに入ってしまう）:\n%s", body)
 	}
 	if !strings.Contains(body, `<section data-type="file-view" data-ref="000001-pdf001">`) {
 		t.Errorf("原本PDFの印へ配線していません:\n%s", body)

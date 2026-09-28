@@ -111,7 +111,7 @@ func TestOrderSourceTablePadsShortRows(t *testing.T) {
 
 	body := testOrderPage("000001", "pdf001", j)
 	// 原本の行は8セルになる（見出しと同じ数）。
-	at := strings.Index(body, "<caption>"+sourceTableCaption+"</caption>")
+	at := strings.Index(body, "<summary>"+sourceTableCaption+"</summary>")
 	if at < 0 {
 		t.Fatalf("原本の表がありません:\n%s", body)
 	}

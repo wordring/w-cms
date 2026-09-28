@@ -143,9 +143,9 @@ func TestFillOurItemNoNeedsBothColumns(t *testing.T) {
 // ⚠ 原本は**先方が書いたまま**が値です。機械が1文字でも足すと、OCR を見比べる
 // という原本の唯一の役目が壊れます。
 func TestFillOurItemNoLeavesOtherTablesAlone(t *testing.T) {
-	body := `<h1>受注</h1><table><caption>` + sourceTableCaption + `</caption><tbody>` +
+	body := `<h1>受注</h1><details><summary>` + sourceTableCaption + `</summary><table><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th></tr>` +
-		`<tr><td></td><td>K120-01-211</td></tr></tbody></table>`
+		`<tr><td></td><td>K120-01-211</td></tr></tbody></table></details>`
 
 	got, n := fillOurItemNo(body, "K120-01-211", "000036")
 	if n != 0 || got != body {
