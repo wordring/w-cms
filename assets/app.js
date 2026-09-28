@@ -986,13 +986,6 @@
             { type: 'warn', duration: 10000, id: 'unresolved-fields' });
     }
 
-    // notifyTableNotes は、表の名前・見出しのうち **SQL で引くとき気をつけるもの**の告知
-    // （2026-09-25 利用者:「表の見出しに予約語が来たら警告してください」）。文はサーバーが組む
-    // （tables_db.go の TableNameNotes）。保存は通す——拒否ではなく告知。
-    function notifyTableNotes(notes) {
-        if (!Array.isArray(notes) || !notes.length) return;
-        notify(notes.join('。') + '。', { type: 'warn', duration: 10000, id: 'table-notes' });
-    }
 
     // notifyStrippedIDs は「殻が独占する接頭辞つきの id を剥がした」ことの告知。
     // 本文の id は自由だが、この接頭辞だけは画面側（シェル）の名前空間なので侵させない。
@@ -1089,7 +1082,6 @@
             notifyUnknownTypes(data.unknown_types);
             notifyUnresolvedFields(data.unresolved_fields);
             notifyStrippedIDs(data.stripped_ids);
-            notifyTableNotes(data.table_notes);
             // 保存できた状態を記録する（次回の差分判定の基準）
             lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
             setSaveStatus("✅ 保存済", "#10b981");
@@ -1138,7 +1130,6 @@
             notifyUnknownTypes(data.unknown_types);
             notifyUnresolvedFields(data.unresolved_fields);
             notifyStrippedIDs(data.stripped_ids);
-            notifyTableNotes(data.table_notes);
             setSaveStatus("✅ 保存済", "#10b981");
         })
         .catch(onSaveFailed);
@@ -1724,6 +1715,9 @@
     // **null は「知らされていない」**——取得に失敗したときは出し分けをせず、従来どおり
     // 全部出します（出ないより、押して断られるほうが原因に気づけるため）。
     let loadedExtensions = null;
+    // **SQL で引くとき気をつける名前の事実**（/api/tag-schema の `sql_names`・2026-09-28）。
+    // null なら薄赤を付けない（知らされていない）。
+    let sqlNames = null;
 
     // hasExtension は拡張が載っているかを返します（知らされていなければ true）。
     function hasExtension(id) {
@@ -1740,6 +1734,7 @@
             vocabDefs = (d && d.vocab) || [];
             vocabWords = (d && d.vocabulary) || {};
             tableWords = (d && d.table_vocabulary) || {};
+            sqlNames = (d && d.sql_names) || null;
             loadedExtensions = (d && Array.isArray(d.extensions)) ? new Set(d.extensions) : null;
             // **列型の一覧はサーバーが持ちます**（手書きだと型を足した日に古くなる）。
             // 空で返ってきたら初期値を守ります——「明示した型が全部無視される」より、
@@ -3035,6 +3030,80 @@
             const want = ref ? '📄 ファイル表示：' + ref : '📄 ファイル表示：参照を設定してください';
             if (bar.textContent !== want) bar.textContent = want;
             bar.classList.toggle('fv-wire-empty', !ref);
+        });
+    }
+
+    // ── 表の名前・見出しの「SQL で引くとき気をつける所」を薄赤に（2026-09-28） ────────────
+    //
+    // 利用者:「警告文を出すより、問題個所の背景を薄赤にする方が分かりやすいかもしれませんね」——
+    // それまでは保存のたびに文で告知していました（TableNameNotes・廃止）。
+    // 表の写し（data/tables.db）に入るのは**キャプションのある表だけ**なので、その名前（caption）と
+    // 見出し（1行目のセル）だけを見ます。見分けはサーバーの identNeedsQuote・isSystemColumn
+    // （internal/cms/tables_db.go）と同じ——**予約語と予約した列はサーバーから**（sql_names・SQLite に
+    // 試した結果）、文字の規則は短いのでここに同じものを書きます。
+    // ⚠ 名前は表の写しと同じく **NFKC＋空白を詰めてから**見ます（全角の括弧も半角に畳まれて引用符が要る）。
+    function sqlNameOf(text) {
+        return String(text || '').normalize('NFKC').split(/\s+/).filter((s) => s).join(' ');
+    }
+
+    // sqlNameProblem は名前の問題を一文で返します（無ければ空）。見出しなら予約した列も見ます。
+    function sqlNameProblem(text, isHeader) {
+        if (!sqlNames) return '';
+        const name = sqlNameOf(text);
+        if (!name) return '';
+        // 予約した列と比べるのは SQLite と同じく ASCII の英字の大小を畳んで（asciiFold）。
+        const folded = name.replace(/[A-Z]/g, (c) => c.toLowerCase());
+        if (isHeader && (sqlNames.system_columns || []).includes(folded)) {
+            return '「' + name + '」は DB の予約した列と同じ名前なので、DB では「' + name +
+                (sqlNames.system_suffix || '') + '」になります';
+        }
+        let needs = false;
+        for (let i = 0; i < name.length && !needs; i++) {
+            const c = name.charCodeAt(i);
+            if (c >= 0x80 || c === 0x5f || (c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a)) continue;
+            if ((c >= 0x30 && c <= 0x39) || c === 0x24) { needs = i === 0; continue; }
+            needs = true; // 空白・記号（括弧・点・ハイフン…）
+        }
+        if (!needs) needs = (sqlNames.quote_words || []).includes(name.toUpperCase());
+        return needs ? 'SQL で引くとき "' + name.replace(/"/g, '""') + '" と引用符で囲む必要があります' : '';
+    }
+
+    // markSqlNames は編集モードで、問題のある表の名前・見出しに薄赤（＋⚠・色だけに頼らない）と説明を付けます。
+    // **必要なときだけ DOM を変えます**（decorateVocabBlocks と同じ理由）。印は class と title なので
+    // 保存されません（シリアライザは許可した属性しか書かない）。
+    function markSqlNames() {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        const want = new Map();
+        if (document.body.hasAttribute('edit-mode') && sqlNames) {
+            editor.querySelectorAll('table').forEach((tbl) => {
+                if (tbl.closest('.vocab-chrome')) return;
+                const cap = tbl.querySelector(':scope > caption');
+                if (!cap || !sqlNameOf(cap.textContent)) return; // キャプションの無い表は DB に入らない
+                const m = sqlNameProblem(cap.textContent, false);
+                if (m) want.set(cap, '表の名前は ' + m);
+                const first = tbl.querySelector(':scope > thead > tr, :scope > tbody > tr, :scope > tr');
+                if (!first) return;
+                Array.from(first.children).forEach((cell) => {
+                    if (cell.classList.contains('vocab-chrome')) return;
+                    const mm = sqlNameProblem(cell.textContent, true);
+                    if (mm) want.set(cell, '見出し' + (mm.charAt(0) === '「' ? '' : 'は ') + mm);
+                });
+            });
+        }
+        editor.querySelectorAll('.sql-name-warn').forEach((el) => {
+            if (want.has(el)) return;
+            el.classList.remove('sql-name-warn');
+            if (el.title === el._sqlTitle) el.removeAttribute('title');
+            el._sqlTitle = undefined;
+        });
+        want.forEach((msg, el) => {
+            if (!el.classList.contains('sql-name-warn')) el.classList.add('sql-name-warn');
+            // 他の飾りが付けた説明は上書きしない（自分が付けたものだけ替える）。
+            if (!el.title || el.title === el._sqlTitle) {
+                if (el.title !== msg) el.title = msg;
+                el._sqlTitle = msg;
+            }
         });
     }
 
@@ -5307,6 +5376,8 @@
         decorateFileViews();
         // 折りたたみの「＋ ファイル」の札も同じ巡りで（2026-09-28）。
         decorateFolds();
+        // 表の名前・見出しの SQL の問題個所の薄赤も同じ巡りで（2026-09-28）。
+        markSqlNames();
         // セルの印（折り返し・型の読めた／読めない）も同じ巡りで付け直す。
         //
         // ⚠ **閲覧モードでも要ります。** 2026-09-21 まで `validateTypedTables` は

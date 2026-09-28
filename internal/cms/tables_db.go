@@ -524,41 +524,26 @@ func tablesDBOutdated() bool {
 	return v < tablesDBVersion
 }
 
-// ── 保存時の告知 ─────────────────────────────────────────────────────────
+// ── エディタへ配る事実（2026-09-28） ──────────────────────────────────────
 
-// TableNameNotes は、本文の表の名前・見出しのうち、**SQL で引くときに気をつけるもの**を
-// 告知の文にして返します（保存の応答で画面に出す・拒否はしない）。
+// SQLNames は、エディタが**表の名前・見出しの問題個所を薄赤にする**ための事実です（`/api/tag-schema`）。
 //
-// 利用者:「表の見出しに予約語が来たら警告してください」。引用符が要る名前（予約語・
-// 空白や記号を含む・数字で始まる）と、出どころの列（page_id など）と重なる見出しを言います。
-func TableNameNotes(bodyHTML string) []string {
-	root, err := html.Parse(strings.NewReader(bodyHTML))
-	if err != nil {
-		return nil
-	}
-	var notes []string
-	said := map[string]bool{}
-	say := func(s string) {
-		if !said[s] {
-			said[s] = true
-			notes = append(notes, s)
+// 利用者:「警告文を出すより、問題個所の背景を薄赤にする方が分かりやすいかもしれませんね」——
+// それまでは保存のたびに文の告知（`TableNameNotes`）を出していました。見分けの規則は
+// `identNeedsQuote`（文字の規則＋予約語）と `isSystemColumn` で、**予約語のどれが引用符を要るかは
+// SQLite に試して決める**ので、その結果をここから配ります（エディタが手書きの一覧を持たない）。
+// 文字の規則（英字・`_`・ASCII 以外は可、数字と `$` は先頭以外、ほかは要る）は短いので
+// エディタにも同じものを書きます（assets/app.js の `sqlNameProblem`）。
+func SQLNames() map[string]any {
+	var words []string
+	for _, k := range sqlKeywords {
+		if sqlKeywordNeedsQuote(k) {
+			words = append(words, k)
 		}
 	}
-	for _, ct := range captionTablesOf(root) {
-		if identNeedsQuote(ct.Name) {
-			say("表「" + ct.Name + "」は SQL で引くとき " + quoteIdent(ct.Name) + " と引用符で囲む必要があります")
-		}
-		for _, h := range ct.Headers {
-			switch {
-			case h == "":
-			case isSystemColumn(h):
-				say("表「" + ct.Name + "」の見出し「" + h + "」は DB の予約した列と同じ名前なので、" +
-					"DB では「" + h + systemColumnSuffix + "」になります")
-			case identNeedsQuote(h):
-				say("表「" + ct.Name + "」の見出し「" + h + "」は SQL で引くとき " + quoteIdent(h) +
-					" と引用符で囲む必要があります")
-			}
-		}
+	return map[string]any{
+		"quote_words":    words,
+		"system_columns": []string{colPageID, colTableID, colRowID},
+		"system_suffix":  systemColumnSuffix,
 	}
-	return notes
 }

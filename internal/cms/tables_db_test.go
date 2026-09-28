@@ -225,23 +225,26 @@ func TestTablesDBExclusions(t *testing.T) {
 	}
 }
 
-// TestTableNameNotes は、SQL で引くとき気をつける名前の告知を固定します
-// （利用者:「表の見出しに予約語が来たら警告してください」）。
-func TestTableNameNotes(t *testing.T) {
-	body := `<table><caption>受注 明細</caption><tbody>` +
-		`<tr><th>品名</th><th>Order</th><th>単価(円)</th><th>1列目</th><th>row_id</th><th>数量</th></tr>` +
-		`</tbody></table>`
-	notes := strings.Join(TableNameNotes(body), "\n")
-	for _, s := range []string{`表「受注 明細」は SQL で引くとき "受注 明細"`, `「Order」`, `「単価(円)」`,
-		`「1列目」`, `「row_id」は DB の予約した列`} {
-		if !strings.Contains(notes, s) {
-			t.Errorf("%s が告知されていません:\n%s", s, notes)
+// TestSQLNamesForEditor は、エディタへ配る事実を固定します（2026-09-28・告知の文から画面の薄赤へ）。
+//
+// ⚠ **予約語はSQLiteに試した結果**——`Order`・`Select` は要り、`Key` のように名前として通るものは
+// 要らない（配らない）。エディタは同じ判定を文字の規則と組み合わせて使います（assets/app.js）。
+func TestSQLNamesForEditor(t *testing.T) {
+	n := SQLNames()
+	words := map[string]bool{}
+	for _, w := range n["quote_words"].([]string) {
+		words[w] = true
+	}
+	for _, w := range []string{"ORDER", "SELECT", "GROUP"} {
+		if !words[w] {
+			t.Errorf("⚠ 引用符の要る予約語 %s が配られていません", w)
 		}
 	}
-	for _, s := range []string{"「品名」", "「数量」"} {
-		if strings.Contains(notes, s) {
-			t.Errorf("⚠ 引用符の要らない %s まで告知しています:\n%s", s, notes)
-		}
+	if words["KEY"] {
+		t.Error("名前として通る予約語（KEY）まで配っています（薄赤が増えすぎる）")
+	}
+	if cols := n["system_columns"].([]string); strings.Join(cols, ",") != "page_id,table_id,row_id" {
+		t.Errorf("予約した列が違います: %v", cols)
 	}
 }
 

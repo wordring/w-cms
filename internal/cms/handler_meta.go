@@ -76,6 +76,10 @@ func TagSchemaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 残って押すと404になっていました。**空でも `[]`**（`null` は「知らされていない」と
 		// みなされ、出し分けが効かない）。
 		"extensions": ExtensionIDs(),
+		// **SQL で引くとき気をつける名前の事実**（2026-09-28・tables_db.go の SQLNames）。エディタは
+		// キャプションのある表の名前と見出しを、これで見て薄赤にします（表の写し `data/tables.db` に
+		// 入るのはキャプションのある表だけなので、それ以外は見ない）。
+		"sql_names": SQLNames(),
 	})
 }
 

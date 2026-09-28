@@ -1561,6 +1561,14 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     font-weight: bold;
     cursor: pointer;
 }
+/* SQL で引くとき気をつける表の名前・見出し（編集モードだけ・2026-09-28・markSqlNames）。
+   薄赤は「解釈はされるが気をつける所」の合図。⚠ を添えて色だけに頼らない（赤緑色覚で境目のため）。 */
+#w-editor-content .sql-name-warn {
+    background: #fdeaea;
+}
+#w-editor-content .sql-name-warn::before {
+    content: "⚠ ";
+}
 /* 折りたたみの「＋ ファイル」の札（編集モードだけ・ファイル表示の配線の札と同じ見た目）。 */
 #w-editor-content .fold-add-file {
     display: block;
