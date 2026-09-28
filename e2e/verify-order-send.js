@@ -23,13 +23,16 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 // ⚠ 2行とも `未発注` で始めます——① 1行目に「✓ 発注済」→ ③ 2行目に「✕ 取消」→
 //    「手渡し」のまとめ書き、の順に押すためです。
+// ⚠ **行に弊社品番を入れます**（無いページ `999999`・2026-09-28）——弊社品番の無い行を「必要部材表へ戻す」と、
+//    **本物の発注ページの臨時部材表へ書き込まれ**、流すたびに `E2E-SEND-A` の行が残っていました。弊社品番の
+//    ある行は外すだけで、ほかのページへは何も書きません（order_return.go）。
 const ORDER_BODY = '<h1>【E2E】発注 テスト商店（送る）</h1>' +
   '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-SEND</dd>' +
   '<dt>仕入先</dt><dd>テスト商店</dd><dt>発注日</dt><dd>2026-09-23</dd></dl>' +
   '<table data-type="our-order-items"><caption>発注明細</caption><tbody>' +
-  '<tr><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
-  '<tr><td>E2E-SEND-A</td><td>板</td><td>t3.2</td><td>2</td><td>枚</td><td>800</td><td>未発注</td></tr>' +
-  '<tr><td>E2E-SEND-B</td><td>板</td><td>t1.5</td><td>1</td><td>枚</td><td>900</td><td>未発注</td></tr>' +
+  '<tr><th>弊社品番</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
+  '<tr><td>999999</td><td>E2E-SEND-A</td><td>板</td><td>t3.2</td><td>2</td><td>枚</td><td>800</td><td>未発注</td></tr>' +
+  '<tr><td>999999</td><td>E2E-SEND-B</td><td>板</td><td>t1.5</td><td>1</td><td>枚</td><td>900</td><td>未発注</td></tr>' +
   '</tbody></table>';
 
 // statusesOf は本文の発注明細から `状態` の列を読みます（鏡の足元の行は除く）。

@@ -34,6 +34,10 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const HEADED = process.argv.includes('--headed');
 
 
+// createdPages は作ったページ（最後に消す）。⚠ 2026-09-28 まで消しておらず、流すたびにトップ直下へ
+// 「後から足した見出し」（見出しを先頭に足す検査で題が変わる）のページが溜まっていた。
+const createdPages = [];
+
 // gotoNewPage は子ページを作ってそのページへ遷移する。
 // /api/new-page は保存型CSRF対策で **POST 限定**（2026-08-21・beb98a1）なので、
 // ブラウザの GET 遷移では作れない。POST してから Location へ遷移する。
@@ -44,7 +48,18 @@ async function gotoNewPage(page, parent, template) {
     const loc = res.headers()["location"];
     if (!loc) throw new Error("new-page failed: " + res.status() + " " + (await res.text()));
     await page.goto(BASE + loc);
-    return loc.replace(/^\//, "").replace(/\?.*$/, "");
+    const id = loc.replace(/^\//, "").replace(/\?.*$/, "");
+    createdPages.push(id);
+    return id;
+}
+
+// deleteCreatedPages は作ったページをゴミ箱へ（編集ロックは自分のものなので外してから）。
+async function deleteCreatedPages(page) {
+    for (const id of createdPages) {
+        const opts = { headers: { "Origin": BASE } };
+        await page.request.post(BASE + "/api/lock/force?id=" + id, opts).catch(() => {});
+        await page.request.post(BASE + "/api/delete-page?id=" + id, opts).catch(() => {});
+    }
 }
 
 const results = [];
@@ -580,6 +595,7 @@ async function waitSaved(page) {
         check('例外なく完走', false);
         console.error(e);
     } finally {
+        await deleteCreatedPages(page).catch(() => {});
         await browser.close();
     }
 
