@@ -83,6 +83,24 @@ type settings struct {
 	PartNoIsDrawingNo []string `json:"品番を図面番号にする取引先"`
 	// Rules は取引先ごとの決まり（取引先の名前 → 決まり）です。上の「品番を図面番号にする取引先」もここへ畳む。
 	Rules map[string]partnerRule `json:"取引先の決まり"`
+	// MachineNotes は装置名称のページに書くワンノートのページの題です（既定は「まとめ」——ワンノートはセクションの
+	// ページに書けなかったので、装置の話を「まとめ」というページに書いていた）。
+	MachineNotes []string `json:"装置のページに書く題"`
+}
+
+// isMachineNote はワンノートのページを装置名称のページに書くかです（題の頭の●などは除いて比べる）。
+func (s settings) isMachineNote(title string) bool {
+	names := s.MachineNotes
+	if len(names) == 0 {
+		names = []string{"まとめ"}
+	}
+	t := normName(titleMarkRe.ReplaceAllString(title, ""))
+	for _, n := range names {
+		if normName(n) == t {
+			return true
+		}
+	}
+	return false
 }
 
 // partnerRule は取引先ごとの加工製品ページの決まりです（2026-09-28 利用者:「〈ある取引先〉に関しては、
@@ -131,6 +149,7 @@ type pageRecord struct {
 	Files     map[string]upload `json:"添付"`
 	Built     string            `json:"製造"`
 	DrawingNo string            `json:"図面番号,omitempty"`
+	Kind      string            `json:"種類,omitempty"` // 空＝加工製品ページ・kindMachine＝装置のページに書いた
 }
 
 type upload struct {
@@ -150,6 +169,7 @@ type catalog struct {
 		Files      []string `json:"files"`
 		Gone       bool     `json:"gone"`
 		Incomplete bool     `json:"incomplete"`
+		Skipped    string   `json:"skipped"` // 別のノートブックに同じものがあるので吸い出さなかった（その理由）
 	} `json:"pages"`
 }
 
@@ -166,7 +186,7 @@ func main() {
 	if root == "" {
 		root = filepath.Join(desktop(), "w-cms", "ワンノート", *notebook)
 	}
-	e := &env{root: root, mutool: *mutool, gemini: *gemini, fresh: *fresh, seen: map[string]string{}}
+	e := &env{root: root, mutool: *mutool, gemini: *gemini, fresh: *fresh, seen: map[string]string{}, machineNotes: map[string]string{}}
 	// 設定（語の型——図面番号は code）と索引（同じ図面番号のページを探す・読むだけ）。リポジトリの根で動かす。
 	if err := cms.LoadSettings(); err != nil {
 		fmt.Fprintln(os.Stderr, "失敗: 設定を読めません（リポジトリの根で動かしてください）:", err)
@@ -266,6 +286,10 @@ func run(e *env, dry bool) error {
 		if p.Gone {
 			continue
 		}
+		if p.Skipped != "" {
+			rep.skip(p.Title, "吸い出していません（"+p.Skipped+"）")
+			continue
+		}
 		// 装置名称は空でもよい（図面の表題欄から読む）——取引先と段は設定で決める。
 		pl, ok := set.Sections[p.Section]
 		if !ok || strings.TrimSpace(pl.Partner) == "" || strings.TrimSpace(pl.Stage) == "" {
@@ -290,7 +314,13 @@ func run(e *env, dry bool) error {
 		if err != nil {
 			return err
 		}
-		if err := buildOne(e, c, p.Dir, tmpl, set.Template, pl, rule, pg, pr, note, dry); err != nil {
+		build := func() error {
+			if set.isMachineNote(p.Title) {
+				return buildMachineNote(e, c, p.Dir, pl, pg, pr, note, dry)
+			}
+			return buildOne(e, c, p.Dir, tmpl, set.Template, pl, rule, pg, pr, note, dry)
+		}
+		if err := build(); err != nil {
 			note.warn("⚠ 製造できませんでした: " + err.Error())
 			continue
 		}
@@ -596,6 +626,9 @@ func tableHasData(rows [][]string) bool {
 // titleMarkRe は題の頭の印（●など）です——図面名称には入れない（意味は報告で聞く）。
 var titleMarkRe = regexp.MustCompile(`^[●○〇◎★☆◆◇■□▲△]+\s*`)
 
+// bracketMarkRe は題の頭の【…】（【旧】【追加工】など）です——題に残す印。
+var bracketMarkRe = regexp.MustCompile(`^(?:【[^】]*】\s*)+`)
+
 // tableMap は ■見出し → 加工製品の表（キャプション）と、列の言い換え（ワンノートの見出し → w-cms の見出し）。
 var tableMap = map[string]struct {
 	Caption string
@@ -627,6 +660,13 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	// 題の頭の印（●など）は外す（2026-09-28 利用者:「●の意味は、変更の有り無しなどをページ名からわかるように
 	// してたものです。消してください」）。
 	name = titleMarkRe.ReplaceAllString(name, "")
+	// 題の頭の【旧】【追加工】…は人が付けた印——題に残す（2026-09-28 利用者:「旧図面という情報を残す必要はあります」）。
+	// 図面名称・品名（表題欄の名前）には入れない。
+	var mark string
+	if m := bracketMarkRe.FindString(name); m != "" {
+		mark = strings.Join(strings.Fields(cms.NormalizeNameForIngest(m)), "")
+		name = strings.TrimSpace(name[len(m):])
+	}
 	drawingNo = cms.NormalizeNameForIngest(drawingNo)
 	name = cms.NormalizeNameForIngest(name)
 
@@ -678,6 +718,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	if rule.Title == "図面名称" && name != "" {
 		title = name // この取引先の題は図面名称だけ（図面番号は図面ブロックのタグと品番で引く）
 	}
+	title = mark + title
 
 	// 前に作った「移行中」のページを作り直す（-fresh）——ごみ箱へ移して、新しく作る。
 	pageID := pr.WCMS
@@ -755,68 +796,8 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 		token = t
 		defer c.unlock(pageID, token)
 	}
-	// 上げる（まだ上げていないものだけ）。名前は見える名前（節＋番号・添付は元の名前）。
-	// 印刷イメージは XPS から切り出した PDF があればそちら（名前は「図面1.pdf」のように）。
-	counter := map[string]int{}
-	used := map[string]bool{}
-	up := func(secName string, it item) (upload, bool) {
-		key, path := it.File, ""
-		if it.Vector != "" {
-			key, path = "pdf:"+filepath.Base(it.Vector), it.Vector
-		} else if it.File != "" {
-			path = filepath.Join(root, dir, "files", it.File)
-		} else {
-			note.warn("⚠ " + secName + " の画像が吸い出せていません")
-			return upload{}, false
-		}
-		used[key] = true
-		if u, ok := pr.Files[key]; ok {
-			return u, true
-		}
-		st, err := os.Stat(path)
-		if err != nil || st.Size() == 0 {
-			note.warn("⚠ " + secName + " のファイルが無いか空です（吸い出し直しで取れれば入ります）: " + filepath.Base(path))
-			return upload{}, false
-		}
-		shown := it.Name
-		switch {
-		case it.Vector != "":
-			counter[secName]++
-			shown = fmt.Sprintf("%s%d.pdf", secName, counter[secName])
-		case it.Kind == "image":
-			// ⚠ **拡張子は中身から**——ワンノートが形式を言わない画像は吸い出しが .png で保存するが、
-			//    中身が JPEG のことがある（2026-09-28・13枚）。画像の口は拡張子と中身が違うと断る。
-			ext, ok := imageExt(path)
-			if !ok {
-				note.warn("⚠ " + secName + " の画像はブラウザで表示できない形式（" + ext + "）なので入れていません")
-				return upload{}, false
-			}
-			counter[secName]++
-			shown = fmt.Sprintf("%s%d%s", secName, counter[secName], ext)
-		}
-		if dry {
-			return upload{ID: "xxxx", URL: "/" + pageID + "/" + filepath.Base(path)}, true
-		}
-		u, err := c.upload(pageID, token, path, shown)
-		if err != nil {
-			note.warn("⚠ " + shown + " を上げられません: " + err.Error())
-			return upload{}, false
-		}
-		pr.Files[key] = u
-		return u, true
-	}
-	defer func() {
-		// 前の製造で上げて、いまは使っていないファイル（添付には版が無く消せない——-fresh で作り直すと残らない）。
-		left := 0
-		for k := range pr.Files {
-			if !used[k] {
-				left++
-			}
-		}
-		if left > 0 {
-			note.info(fmt.Sprintf("前の製造で上げたファイルが %d 個、使われずにページに残っています（-fresh で作り直すと残りません）", left))
-		}
-	}()
+	up, reportLeft := uploaderFor(c, root, dir, pageID, token, pr, note, dry)
+	defer reportLeft()
 
 	d := cms.NewPageDraft(tmplTitle, tmpl)
 	d.SetTitle(title)
@@ -948,37 +929,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			anchor = box.Node()
 			before = false
 		default:
-			var b strings.Builder
-			// ■見積もり は原価の内訳——表の名前は「見積計算表」（2026-09-28 利用者:「見積計算表はどうでしょう？」）。
-			// ⚠ 節の見出しも「見積計算表」に——「見積もり」のままだと w-cms の「見積もり」（売値）の形式として読まれる。
-			heading := s.Name
-			if s.Name == "見積もり" {
-				heading = estimateTable
-			}
-			// 前書き（最初の■より前）は見出しを付けず、題のすぐ下に置く。
-			if s.Name != "前書き" {
-				b.WriteString("<section><h2>" + stdhtml.EscapeString(heading) + "</h2>")
-			}
-			for _, it := range s.Items {
-				switch it.Kind {
-				case "text":
-					b.WriteString(paragraphs(it.Text))
-				case "table":
-					if s.Name == "見積もり" && tableHasData(it.Rows) {
-						b.WriteString(captionTable(estimateTable, it.Rows))
-					} else {
-						b.WriteString(plainTable(it.Rows))
-					}
-				case "image", "file":
-					if u, ok := up(s.Name, it); ok {
-						b.WriteString(mediaHTML(pageID, u, it))
-					}
-				}
-			}
-			if s.Name != "前書き" {
-				b.WriteString("</section>")
-			}
-			nodes, err := htmldoc.ParseFragment(b.String())
+			nodes, err := htmldoc.ParseFragment(sectionHTML(pageID, s, up))
 			if err != nil || len(nodes) == 0 {
 				continue
 			}
@@ -1014,6 +965,133 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 		return os.WriteFile(filepath.Join(out, safeName(title, 80)+".html"), []byte(body), 0o644)
 	}
 	return c.save(pageID, token, body)
+}
+
+// sectionHTML はテンプレートに入れ物の無い節を、見出しの節の HTML にします（前書きは見出し無し）。
+func sectionHTML(pageID string, s section, up func(string, item) (upload, bool)) string {
+	var b strings.Builder
+	// ■見積もり は原価の内訳——表の名前は「見積計算表」（2026-09-28 利用者:「見積計算表はどうでしょう？」）。
+	// ⚠ 節の見出しも「見積計算表」に——「見積もり」のままだと w-cms の「見積もり」（売値）の形式として読まれる。
+	heading := s.Name
+	if s.Name == "見積もり" {
+		heading = estimateTable
+	}
+	// 前書き（最初の■より前）は見出しを付けず、題のすぐ下に置く。
+	if s.Name != "前書き" {
+		b.WriteString("<section><h2>" + stdhtml.EscapeString(heading) + "</h2>")
+	}
+	for _, it := range s.Items {
+		switch it.Kind {
+		case "text":
+			b.WriteString(paragraphs(it.Text))
+		case "table":
+			if s.Name == "見積もり" && tableHasData(it.Rows) {
+				b.WriteString(captionTable(estimateTable, it.Rows))
+			} else {
+				b.WriteString(plainTable(it.Rows))
+			}
+		case "image", "file":
+			if u, ok := up(s.Name, it); ok {
+				b.WriteString(mediaHTML(pageID, u, it))
+			}
+		}
+	}
+	if s.Name != "前書き" {
+		b.WriteString("</section>")
+	}
+	return b.String()
+}
+
+// kindMachine は製造の記録の「種類」——ワンノートのページを装置名称のページに書いた印。
+const kindMachine = "装置のページ"
+
+// buildMachineNote は「まとめ」のようなページを、装置名称のページ（取引先／社名／段／装置名称）に書きます
+// （2026-09-28 利用者:「装置名称のページに移植したら良いと思います。ワンノートはフォルダページに書くことが出来なかった
+// ので、まとめページにしています」）。加工製品ではないので、テンプレートも Gemini も使わず、節を並びのまま置く。
+//
+//   - 書けるのは、装置のページが題だけ（作ったばかり）か「移行中」のタグが残っているときだけ——人が書いた装置のページは
+//     触らない（報告に出す）。
+//   - 同じ装置のページに、この回に別のページを書いたら書かない（上書きし合わない・報告に出す）。
+//   - 前の製造で加工製品ページとして作っていたら（まだ「移行中」なら）ごみ箱へ移す。
+func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, pr *pageRecord, note *pageNote, dry bool) error {
+	machine := cms.NormalizeNameForIngest(pl.Machine)
+	if machine == "" {
+		return errors.New("装置名称が決まっていないので、書く装置のページがありません——" + settingsName + " に書いてください")
+	}
+	if !dry && pr.WCMS != "" && pr.Kind != kindMachine {
+		if body, ok := c.readBody(pr.WCMS); ok && strings.Contains(body, "<dt>"+migrateTag+"</dt>") {
+			if err := c.deletePage(pr.WCMS); err != nil {
+				return err
+			}
+			note.info("前に加工製品ページとして作った " + pr.WCMS + " をごみ箱へ移しました")
+		}
+		pr.WCMS, pr.Files = "", map[string]upload{}
+	}
+	pageID := "000000" // 下見の仮
+	if !dry {
+		id, err := c.ensurePath([]string{"取引先", pl.Partner, pl.Stage, machine})
+		if err != nil {
+			return err
+		}
+		pageID = id
+		note.wcms = pageID
+		if body, _ := c.readBody(pageID); !machinePageWritable(body) {
+			note.warn("⚠ 装置のページ（/" + pageID + "）に人が書いた中身があるので触りません——このページの中身は人が移す")
+			return nil
+		}
+		if t, ok := e.machineNotes[pageID]; ok {
+			note.warn("⚠ 装置のページ（/" + pageID + "）には、この回にワンノートの「" + t + "」を書きました——こちらは書いていません（人が移す）")
+			return nil
+		}
+		e.machineNotes[pageID] = pg.Title
+		if pr.WCMS != pageID {
+			pr.Files = map[string]upload{}
+		}
+	}
+	pr.WCMS, pr.Kind = pageID, kindMachine
+	note.info("装置のページ「" + machine + "」に書きました（加工製品ではない）")
+
+	var token string
+	if !dry {
+		t, err := c.lock(pageID)
+		if err != nil {
+			return err
+		}
+		token = t
+		defer c.unlock(pageID, token)
+	}
+	up, reportLeft := uploaderFor(c, e.root, dir, pageID, token, pr, note, dry)
+	defer reportLeft()
+	var b strings.Builder
+	b.WriteString("<h1>" + stdhtml.EscapeString(machine) + "</h1>")
+	b.WriteString(`<dl data-type="tags"><dt>` + migrateTag + `</dt><dd>` + migrateValue + `</dd></dl>`)
+	for _, s := range sectionsOf(pg) {
+		if s.empty() {
+			if s.Name != "前書き" {
+				note.dropped(s.Name)
+			}
+			continue
+		}
+		b.WriteString(sectionHTML(pageID, s, up))
+	}
+	if dry {
+		out := filepath.Join(e.root, previewDir)
+		os.MkdirAll(out, 0o755)
+		return os.WriteFile(filepath.Join(out, "装置 "+safeName(machine, 80)+".html"), []byte(b.String()), 0o644)
+	}
+	return c.save(pageID, token, b.String())
+}
+
+// machinePageWritable は装置のページに書いてよいかです——題だけ（作ったばかり）か「移行中」のタグが残っている。
+func machinePageWritable(body string) bool {
+	if strings.Contains(body, "<dt>"+migrateTag+"</dt>") {
+		return true
+	}
+	rest := strings.TrimSpace(body)
+	if i := strings.Index(rest, "</h1>"); strings.HasPrefix(rest, "<h1>") && i >= 0 {
+		rest = strings.TrimSpace(rest[i+len("</h1>"):])
+	}
+	return rest == ""
 }
 
 // imageExt は画像の中身から拡張子を決めます（ブラウザで表示できる形式なら ok）。
@@ -1560,4 +1638,74 @@ func (r *report) markdown(dry bool) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+
+// uploaderFor は1つのページへファイルを上げる口です（まだ上げていないものだけ・製造の記録に覚える）。
+// 2つ目の関数は、前の製造で上げて今は使っていないファイルを報告に出す（終わりに呼ぶ）。
+func uploaderFor(c *client, root, dir, pageID, token string, pr *pageRecord, note *pageNote, dry bool) (
+	func(secName string, it item) (upload, bool), func()) {
+	// 上げる（まだ上げていないものだけ）。名前は見える名前（節＋番号・添付は元の名前）。
+	// 印刷イメージは XPS から切り出した PDF があればそちら（名前は「図面1.pdf」のように）。
+	counter := map[string]int{}
+	used := map[string]bool{}
+	up := func(secName string, it item) (upload, bool) {
+		key, path := it.File, ""
+		if it.Vector != "" {
+			key, path = "pdf:"+filepath.Base(it.Vector), it.Vector
+		} else if it.File != "" {
+			path = filepath.Join(root, dir, "files", it.File)
+		} else {
+			note.warn("⚠ " + secName + " の画像が吸い出せていません")
+			return upload{}, false
+		}
+		used[key] = true
+		if u, ok := pr.Files[key]; ok {
+			return u, true
+		}
+		st, err := os.Stat(path)
+		if err != nil || st.Size() == 0 {
+			note.warn("⚠ " + secName + " のファイルが無いか空です（吸い出し直しで取れれば入ります）: " + filepath.Base(path))
+			return upload{}, false
+		}
+		shown := it.Name
+		switch {
+		case it.Vector != "":
+			counter[secName]++
+			shown = fmt.Sprintf("%s%d.pdf", secName, counter[secName])
+		case it.Kind == "image":
+			// ⚠ **拡張子は中身から**——ワンノートが形式を言わない画像は吸い出しが .png で保存するが、
+			//    中身が JPEG のことがある（2026-09-28・13枚）。画像の口は拡張子と中身が違うと断る。
+			ext, ok := imageExt(path)
+			if !ok {
+				note.warn("⚠ " + secName + " の画像はブラウザで表示できない形式（" + ext + "）なので入れていません")
+				return upload{}, false
+			}
+			counter[secName]++
+			shown = fmt.Sprintf("%s%d%s", secName, counter[secName], ext)
+		}
+		if dry {
+			return upload{ID: "xxxx", URL: "/" + pageID + "/" + filepath.Base(path)}, true
+		}
+		u, err := c.upload(pageID, token, path, shown)
+		if err != nil {
+			note.warn("⚠ " + shown + " を上げられません: " + err.Error())
+			return upload{}, false
+		}
+		pr.Files[key] = u
+		return u, true
+	}
+	reportLeft := func() {
+		// 前の製造で上げて、いまは使っていないファイル（添付には版が無く消せない——-fresh で作り直すと残らない）。
+		left := 0
+		for k := range pr.Files {
+			if !used[k] {
+				left++
+			}
+		}
+		if left > 0 {
+			note.info(fmt.Sprintf("前の製造で上げたファイルが %d 個、使われずにページに残っています（-fresh で作り直すと残りません）", left))
+		}
+	}
+	return up, reportLeft
 }

@@ -71,6 +71,8 @@ type env struct {
 	db     *sql.DB // w-cms の索引（読むだけ・同じ図面番号のページを探す）
 	// seen はこの回に作った図面番号（正規化）→ ワンノートの題。
 	seen map[string]string
+	// machineNotes はこの回に書いた装置のページ → ワンノートの題（同じ装置のページに2つ書かない）。
+	machineNotes map[string]string
 
 	mutoolMissing bool
 	geminiOff     bool

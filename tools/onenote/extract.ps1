@@ -25,7 +25,11 @@
 # ⚠ このファイルは BOM 付き UTF-8 で保存すること（PowerShell 5.1 は BOM 無しを cp932 として読む）。
 # ⚠ 実データの名前をこのファイルに書かないこと（公開リポジトリ）——対象は出力先の「対象.txt」に書く。
 # ─────────────────────────────────────────────────────────────────────────
-param([string]$Notebook = '板金部', [int]$Wait = 60, [int]$MaxMinutes = 0)
+param([string]$Notebook = '板金部', [int]$Wait = 60, [int]$MaxMinutes = 0, [string]$SkipIfIn = '')
+# -SkipIfIn <ノートブック>: そのノートブックに同じものがあるページは取らない（2026-09-28 利用者:「板金部に無いものだけ、
+#   〈別のノートブック〉から移植すると良いと思います」——別のノートブックから板金部へコピーして移した経緯があり、重なりが多い）。
+#   「同じもの」は ■図面番号 の値か添付の名前が一致すること（先にそのノートブックを吸い出しておく）。⚠ 題だけでは比べない
+#   ——「まとめ」のように同じ題が装置ごとにある。一致したページは画像も添付も取らず、目録に skipped で残す（通信の節約）。
 # 吸い出しの版——上げると、変わっていないページも1度だけ吸い出し直す（2 で XPS を取るようにした）。
 $version = 2
 $ErrorActionPreference = 'Stop'
@@ -91,7 +95,50 @@ function SaveCatalog {
 Log ("吸い出しを始めます（待ち {0} 秒・上限 {1} 分）" -f $Wait, $(if ($MaxMinutes -gt 0) { $MaxMinutes } else { 'なし' }))
 $seen = @{}
 $stopped = $false
-$stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0 }
+$stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0; skipped = 0 }
+
+# ── 同じものを見分ける手掛かり（-SkipIfIn）──
+function NormCode([string]$s) {
+  if (-not $s) { return '' }
+  return ($s.Normalize([Text.NormalizationForm]::FormKC).ToUpper() -replace '[\s\-‐‑‒–—―ー_]', '')
+}
+function NormName([string]$s) {
+  if (-not $s) { return '' }
+  return ($s.Normalize([Text.NormalizationForm]::FormKC).ToLower() -replace '\s', '')
+}
+# KeysOf はページの本文（基本の XML）から ■図面番号 の値と添付の名前を取ります。⚠ 添付の名前は**3桁以上の数字を含む
+# ものだけ**（図番・日付入りの名前）——「展開 〈部品名〉.dxf」のような部品名だけの名前は、別の装置の同じ名前の
+# 部品（図面番号は違う）にもあり、それで比べると板金部に無い部品を取りこぼす。
+function KeysOf([xml]$x) {
+  $n2 = New-Object System.Xml.XmlNamespaceManager($x.NameTable)
+  $n2.AddNamespace('one', $x.DocumentElement.NamespaceURI)
+  $texts = @($x.SelectNodes('//one:T', $n2) | ForEach-Object { (($_.InnerText -replace '<[^>]*>', '') -replace '&nbsp;', ' ').Trim() } | Where-Object { $_ })
+  $nos = @()
+  for ($i = 0; $i -lt $texts.Count - 1; $i++) {
+    if ($texts[$i] -match '^■\s*図面番号') { $v = NormCode $texts[$i + 1]; if ($v) { $nos += $v } }
+  }
+  $fs = @($x.SelectNodes('//one:InsertedFile', $n2) | ForEach-Object { NormName $_.GetAttribute('preferredName') } | Where-Object { $_ -match '\d{3,}' })
+  return @{ nos = $nos; files = $fs }
+}
+$known = $null
+if ($SkipIfIn) {
+  $kroot = Join-Path ([Environment]::GetFolderPath('Desktop')) ('w-cms\ワンノート\' + $SkipIfIn)
+  $kcat = Join-Path $kroot '目録.json'
+  if (-not (Test-Path $kcat)) { throw "「$SkipIfIn」をまだ吸い出していません（先に吸い出してください）: $kcat" }
+  $known = @{ nos = @{}; files = @{} }
+  $kc = [IO.File]::ReadAllText($kcat, $utf8) | ConvertFrom-Json
+  foreach ($kp in $kc.pages.PSObject.Properties) {
+    $kd = $kp.Value.dir
+    if (-not $kd) { continue }
+    $px = Join-Path $kroot ($kd + '\page.xml')
+    if (-not (Test-Path -LiteralPath $px)) { continue }
+    [xml]$kx = [IO.File]::ReadAllText($px, $utf8)
+    $k = KeysOf $kx
+    foreach ($v in $k.nos) { $known.nos[$v] = $kp.Value.title }
+    foreach ($v in $k.files) { $known.files[$v] = $kp.Value.title }
+  }
+  Log ("「{0}」にあるもの: 図面番号 {1}・添付の名前 {2}（同じもののページは取らない）" -f $SkipIfIn, $known.nos.Count, $known.files.Count)
+}
 :sections foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
   if ($sec.GetAttribute('isInRecycleBin') -eq 'true') { continue }
   $groups = @()
@@ -114,7 +161,9 @@ $stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0 }
     $seen[$id] = $true
     $rec = $catalog[$id]
     # 前回取れなかったファイルがあるページ（incomplete）は、変わっていなくても吸い出し直す。
-    if ($rec -ne $null -and $rec.lastModified -eq $mod -and -not $rec.incomplete -and $rec.v -ge $version -and (Test-Path (Join-Path $root $rec.dir))) {
+    # 別のノートブックと同じとして飛ばしたページ（skipped・置き場が無い）も、変わっていなければそのまま。
+    if ($rec -ne $null -and $rec.lastModified -eq $mod -and -not $rec.incomplete -and $rec.v -ge $version -and
+        ($rec.skipped -or (Test-Path (Join-Path $root $rec.dir)))) {
       $stat.same++; continue
     }
     # 1回の時間の上限（-MaxMinutes）——超えたら残りは次の回へ（遅い回線で少しずつ進めるため）。
@@ -124,7 +173,6 @@ $stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0 }
     else { $rel = (Split-Path $secDir -Leaf) + '\' + (SafeName $title) + '__' + ($id -replace '[{}]', '').Substring(0, 8) }
     $dir = Join-Path $root $rel
     $files = Join-Path $dir 'files'
-    New-Item -ItemType Directory -Force $files | Out-Null
 
     # ── 本文の**構造**は基本（0）で取る ──
     # ⚠ 中身つき（piBinaryData＝1）で頼むと、**まだこの機械へ降りてきていない画像を本文から黙って落とす**
@@ -134,6 +182,24 @@ $stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0 }
     [xml]$pdoc = $content
     $pns = New-Object System.Xml.XmlNamespaceManager($pdoc.NameTable)
     $pns.AddNamespace('one', $pdoc.DocumentElement.NamespaceURI)
+    # 別のノートブックに同じものがあれば、画像も添付も取らない（-SkipIfIn）。
+    if ($known -ne $null) {
+      $k = KeysOf $pdoc
+      $why = ''
+      foreach ($v in $k.nos) { if ($known.nos.ContainsKey($v)) { $why = "「$SkipIfIn」の「" + $known.nos[$v] + "」と同じ図面番号"; break } }
+      if (-not $why) { foreach ($v in $k.files) { if ($known.files.ContainsKey($v)) { $why = "「$SkipIfIn」の「" + $known.files[$v] + "」と同じ添付"; break } } }
+      if ($why) {
+        $stat.skipped++
+        $catalog[$id] = [PSCustomObject]@{
+          title = $title; section = $path; lastModified = $mod; dir = ''
+          extractedAt = (Get-Date).ToString('s'); files = @(); gone = $false; incomplete = $false; v = $version
+          missing = @(); skipped = $why
+        }
+        SaveCatalog
+        continue
+      }
+    }
+    New-Item -ItemType Directory -Force $files | Out-Null
     $got = @()
     $miss = 0
     $lost = @() # 取れなかったもの（目録の missing・取れなかったもの.txt に出す）
@@ -266,8 +332,8 @@ foreach ($r in $left) {
   foreach ($m in @($r.missing)) { if ($m) { $lines += '    ' + $m } }
 }
 [IO.File]::WriteAllText((Join-Path $root '取れなかったもの.txt'), ($lines -join "`r`n") + "`r`n", $utf8)
-$summary = "新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・XPS {7}・取れなかった {5}・まだ取れていないページ {8}" -f `
-  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root, $stat.xps, $left.Count
+$summary = "新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・XPS {7}・取れなかった {5}・まだ取れていないページ {8}・同じものがあるので取らなかった {9}" -f `
+  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root, $stat.xps, $left.Count, $stat.skipped
 if ($stopped) { $summary += '（時間の上限で止めました——残りは次の回）' }
 Log $summary
 $mutex.ReleaseMutex()
