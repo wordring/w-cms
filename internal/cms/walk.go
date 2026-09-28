@@ -301,10 +301,11 @@ func vocabTypeOf(el *html.Node) string {
 			}
 			return ""
 		}
-		// ⚠ 見出しの節（`<section><h2>必要部材表</h2></section>`）で名乗る鏡は、2026-09-27 の
-		// 午前だけ使った形です。両方の環境を `data-mirror` へ移し終えたら、鏡についてはこの
-		// 解決を消せます（表の見出し形と一緒に・DBの日本語化 5段目の4）。
-		if def, ok := VocabDefByHeading(functionHeading(el)); ok {
+		// ⚠ **見出しの節（`<section><h2>必要部材表</h2></section>`）では鏡を名乗れません**
+		// （2026-09-28 に廃止——2026-09-27 の午前だけ使った形で、両方の環境を `data-mirror` へ
+		// 移し終えた。利用者:「古い形の鏡を読む道具とコードを消してよいです」）。見出しで解くのは
+		// 表・節の形式だけです（表の見出し形は DBの日本語化 5段目の4 で消す）。
+		if def, ok := VocabDefByHeading(functionHeading(el)); ok && !def.View {
 			return def.Type
 		}
 	}

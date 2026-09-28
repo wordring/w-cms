@@ -202,37 +202,40 @@ func TestNestedHeadingIsOwnFunction(t *testing.T) {
 	}
 }
 
-// TestHeadingMirrorRendersAndKeepsContent は、見出しの言葉だけで鏡（計算ビュー）が
-// 動き、かつ**人の書き込み（見出し・注記）が消えない**ことを検証します
-// （語彙モデル §11.5-7:「見出しが鏡を呼び、人の書き込みは保存されて残り、
-// 鏡の中身はその下へ毎回描かれる」）。
-func TestHeadingMirrorRendersAndKeepsContent(t *testing.T) {
+// TestMirrorMarkerKeepsContentAndHeadingDoesNotMirror は、**鏡の印（`data-mirror`）の中の人の
+// 書き込みが消えず、鏡の中身はその下へ毎回描かれる**こと（語彙モデル §11.5-7）と、
+// ⚠ **見出しの節では鏡を名乗れない**ことを検証します（2026-09-28 に見出しの節で名乗る鏡を廃止——
+// 両方の環境を data-mirror へ移し終えた・利用者:「古い形の鏡を読む道具とコードを消してよいです」）。
+// それまでこの試験は、見出しの節で鏡が動くことを確かめていました。
+func TestMirrorMarkerKeepsContentAndHeadingDoesNotMirror(t *testing.T) {
 	setupSaveTest(t)
 
 	if _, err := database.DB.Exec(
 		`INSERT INTO pages (id, title, file_path, parent_id) VALUES (61, '子のページ', '', 60)`); err != nil {
 		t.Fatalf("子ページ作成エラー: %v", err)
 	}
-
-	body := `<h1>親ページ</h1>` +
-		`<section>` +
-		`<h2>子ページ一覧</h2>` + // ← 表示名がそのまま鏡の引き金
-		`<p>この一覧は自動で更新されます。</p>` + // 人の注記
-		`</section>`
-
 	req := httptest.NewRequest("GET", "/000060", nil)
 	req = auth.WithUser(req, &auth.User{Username: "tester", IsAdmin: true})
-	out := RenderComputedViews(req, 60, body)
 
+	marked := RenderComputedViews(req, 60, `<h1>親ページ</h1>`+
+		`<section data-mirror="子ページ一覧"><p>この一覧は自動で更新されます。</p></section>`)
 	for _, want := range []string{
-		`<h2>子ページ一覧</h2>`,      // 見出しは残る
-		`この一覧は自動で更新されます。`,      // 注記も残る
+		`この一覧は自動で更新されます。`,      // 人の注記は残る
 		`class="vocab-chrome"`, // 鏡の中身はその下に描かれる
 		`href="/000061"`,       // 実際に子が並ぶ
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("描画結果に %q がありません:\n%s", want, out)
+		if !strings.Contains(marked, want) {
+			t.Errorf("印の描画結果に %q がありません:\n%s", want, marked)
 		}
+	}
+
+	heading := RenderComputedViews(req, 60, `<h1>親ページ</h1>`+
+		`<section><h2>子ページ一覧</h2><p>この一覧は自動で更新されます。</p></section>`)
+	if strings.Contains(heading, "vocab-chrome") || strings.Contains(heading, `href="/000061"`) {
+		t.Errorf("⚠ 廃止した見出しの節で鏡が描かれています:\n%s", heading)
+	}
+	if !strings.Contains(heading, `<h2>子ページ一覧</h2>`) {
+		t.Errorf("見出しの節そのものは本文として残るはず:\n%s", heading)
 	}
 }
 

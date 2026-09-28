@@ -11,9 +11,9 @@ package cms
 // ⚠ **印の値は鏡の表示名**です（2026-09-27 利用者:「保存するHTMLにも『表と挿げ替えるための
 // タグ』が記録されるはず。もう少しわかりやすいシングルタグに出来ないでしょうか」「閉じタグが
 // あっても良いです」）。コードが印を書くときは `ViewMarkerHTML` を通すこと。
-// ⚠ その日の朝に廃止した `<section data-type="child-list">`（名前の見えない印）は読みません。
-// 午前だけ使った見出しの節（`<section><h2>子ページ一覧</h2></section>`）は、両方の環境を
-// 移し終えるまで読みます（vocabTypeOf）。
+// ⚠ その日の朝に廃止した `<section data-type="child-list">`（名前の見えない印）も、
+// 午前だけ使った見出しの節（`<section><h2>子ページ一覧</h2></section>`）も読みません
+// （見出しの節は 2026-09-28 に廃止・両方の環境を移し終えた）。
 //
 // 描画した中身は <div class="vocab-chrome" contenteditable="false"> に包む。
 // エディタのシリアライザは .vocab-chrome を保存しない（エンハンサのクロームと
@@ -211,7 +211,7 @@ func renderTemplatePlaceholders(nodes []*html.Node) string {
 // fillViewMarker は鏡の印の末尾へ描画結果（vocab-chrome）を描きます。
 // 前回描いたクロームは落とし、印の中に人が書いたものは残します。
 func fillViewMarker(el *html.Node, innerHTML string) {
-	// 印（`<section data-mirror="…">`・移行中の見出しの節）の中に人が書いたものは本文として
+	// 印（`<section data-mirror="…">`）の中に人が書いたものは本文として
 	// 住んでいます。消すのは前回描いたクロームだけで、「印が鏡を呼び、人の書き込みは
 	// 保存されて残り、鏡の中身はその後ろへ毎回描かれる」（語彙モデル §11.5-7）。
 	// （中身を全部消して描き直す `data-type` の空マーカーの流儀は、印ごと 2026-09-27 に廃止。）

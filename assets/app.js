@@ -1841,9 +1841,10 @@
 
     // sectionDefOf はセクションの形式を解決する——data-type 属性が正、無ければ機能見出し
     // （サーバーの vocabTypeOf と同じ規則。walk.go）。
-    // ⚠ **鏡（view）は data-type では名乗れない**（名前の見えない印は 2026-09-27 に廃止）
-    // ——鏡の形式名を書いた属性は無視して、data-mirror（無ければ移行中の見出し）で解く
-    // （サーバーと同じ）。
+    // ⚠ **鏡（view）は data-mirror の印だけで名乗る**（サーバーと同じ）——名前の見えない
+    // data-type の印は 2026-09-27 朝に廃止、見出しの節（<section><h2>必要部材表</h2>）で
+    // 名乗る形も 2026-09-28 に廃止した（両環境を data-mirror へ移し終えた・利用者:「古い形の
+    // 鏡を読む道具とコードを消してよいです」）。見出しで解くのは表・節の形式だけ。
     function sectionDefOf(section) {
         const t = section.getAttribute && section.getAttribute('data-type');
         if (t) {
@@ -1853,7 +1854,8 @@
         // 鏡の印（data-mirror="表示名"・2026-09-27）——サーバーの vocabTypeOf と同じ規則。
         const m = section.getAttribute && section.getAttribute('data-mirror');
         if (m) return mirrorDefOf(m);
-        return headingDefOf(section);
+        const h = headingDefOf(section);
+        return h && h.view ? null : h;
     }
 
     // mirrorDefOf は鏡の印の値（表示名）から鏡の形式を引く。鏡でない名前は null。
@@ -5124,7 +5126,7 @@
         const headingTargets = isEdit ? Array.from(editor.querySelectorAll('section:not([data-type])'))
             .filter(el => !el.closest('.vocab-chrome'))
             .map(el => ({ el, def: headingDefOf(el) }))
-            .filter(x => x.def)
+            .filter(x => x.def && !x.def.view) // 鏡は見出しでは名乗らない（2026-09-28）
             .map(x => ({ el: x.el, type: x.def.type })) : [];
 
         const headingMarked = new Set();
