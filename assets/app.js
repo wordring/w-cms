@@ -7032,6 +7032,37 @@ delegateClick([['.backlog-print', (btn) => {
         location.reload();
     }
 
+    // 資料を綴じた FAX・印刷用の1本（2026-09-28・order_docs.go）。発注書のPDF（表示中の正本）は
+    // 差し替えないので、ページは開き直さず、できた1本へのリンクを欄に出します（押して印刷・FAX）。
+    async function makePDFWithDocs(btn) {
+        const root = btn.closest('.order-send');
+        const box = root ? root.querySelector('[data-order-result]') : null;
+        btn.disabled = true;
+        sayIn(box, '発注書に資料を綴じています…');
+        const r = await postJSON('/api/order-pdf-docs', {
+            page_id: root ? root.getAttribute('data-order-page') || '' : '',
+        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        btn.disabled = false;
+        if (!r.ok) {
+            sayIn(box, '⚠ ' + (r.data.message || '綴じられませんでした'), 'proc-why-ng');
+            return;
+        }
+        const p = sayIn(box, '📠 FAX・印刷用を作りました（このページの添付にも残ります）: ');
+        const a = document.createElement('a');
+        a.href = r.data.url || '';
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = r.data.file || '開く';
+        p.appendChild(a);
+        // ⚠ **綴じなかったものを黙りません**——紙にできない形式・読めないPDF・資料の無い行。
+        (r.data.skipped || []).forEach((s) => {
+            const q = document.createElement('p');
+            q.className = 'proc-why-ng';
+            q.textContent = '⚠ ' + s;
+            box.appendChild(q);
+        });
+    }
+
     // FAX・手渡しの「送った」。⚠ **人が押したことがその事実**です。
     async function markSent(btn) {
         const root = btn.closest('.order-send');
@@ -7077,6 +7108,13 @@ delegateClick([['.backlog-print', (btn) => {
                 return;
             }
             // 2. 送る（控えは通信箱に残ります）。
+            //    外注加工の資料は、チェックが付いているものだけ添えます（2026-09-28・order_docs.go）。
+            //    ⚠ 添付は元のページのまま指します（写し直さない・読めるページの添付だけ——サーバーが見る）。
+            const docs = Array.from(root.querySelectorAll('input[data-doc-file]:checked')).map((c) => ({
+                page_id: c.getAttribute('data-doc-page') || '',
+                file: c.getAttribute('data-doc-file') || '',
+                name: c.getAttribute('data-doc-name') || '',
+            }));
             sayIn(box,'メールを送っています…');
             const sent = await postJSON('/api/mail/send', {
                 to,
@@ -7088,7 +7126,7 @@ delegateClick([['.backlog-print', (btn) => {
                     // ⚠ **送るときの名前は日時を外します**——相手には保存名の
                     //    日時は意味がなく、件名と揃っていたほうが探しやすい。
                     name: '発注書 ' + pageID + '.pdf',
-                }],
+                }].concat(docs),
             });
             if (!sent.ok) {
                 sayIn(box,'⚠ 送れませんでした: ' + (sent.data.message || ''), 'proc-why-ng');
@@ -7118,6 +7156,7 @@ delegateClick([['.backlog-print', (btn) => {
         ['.order-row-set', setRowStatus],
         ['.order-row-return', returnRow],
         ['[data-order-pdf]', makePDF],
+        ['[data-order-pdf-docs]', makePDFWithDocs],
         ['[data-order-sent]', markSent],
         ['[data-order-send]', sendMail],
     ]);

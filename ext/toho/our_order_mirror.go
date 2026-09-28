@@ -51,8 +51,11 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	head := orderHeadTags(ctx)
 	counts := OrderSendStateOf(ctx.DB, ctx.PageID)
+	// 外注加工の資料（2026-09-28・order_docs.go）——取り消していない行の「資料 <番号>」から。
+	rows, _ := orderTableRows(el)
+	docs, notes := orderDocs(ctx.Viewer, rows)
 	appendFootHTML(el, span, "order-send-row",
-		orderSendFormHTML(ctx.Viewer, ctx.PageID, head, counts))
+		orderSendFormHTML(ctx.Viewer, ctx.PageID, head, counts, docs, notes))
 	return false, nil
 }
 

@@ -95,6 +95,11 @@ var businessVocab = []cms.VocabDef{
 		// ユーザー（2026-09-21）:「加工の発注には**私が書いた加工図面**も入れる場合が
 		// あります。これまでは、**加工製品のページに貼っていました**」——貼る場所は
 		// そのままで、**発注の側はここから指す**という形です（写しを作らない）。
+		//
+		// ⚠ **2026-09-28 に `資料` の列を外しました**——資料は加工製品ページの**折りたたみ「資料 <番号>」**へ
+		// （中にファイルを置く・発注書のメール／FAX・印刷に添える——order_docs.go）。利用者:「外注加工ごとに
+		// 資料のブロック（開いたり閉じたりできる）を用意して」、列を外すかの問いに「外す」。列と折りたたみの
+		// 2か所に書くと食い違います。
 		Type:        "part-outsourcing",
 		DisplayName: "外注加工",
 		Category:    "業務",
@@ -139,7 +144,6 @@ var businessVocab = []cms.VocabDef{
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
 			{Field: "supplied", Label: "支給", Type: cms.ColText},
 			{Field: "vendor", Label: "推奨業者", Type: cms.ColText, Suggest: PartnerSuggestSource},
-			{Field: "doc", Label: "資料", Type: cms.ColRef},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},

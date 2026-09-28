@@ -126,6 +126,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 発注書のPDFを作って、そのページの添付として残す口（2026-09-21・order_pdf.go）。
 		// ⚠ **7年保存がこれで済みます**——ファイルがページと一緒に残り、版も監査も付きます。
 		{Pattern: "/api/order-pdf", Handler: OrderPDFAPIHandler},
+		{Pattern: "/api/order-pdf-docs", Handler: OrderPDFDocsAPIHandler}, // 資料を綴じた FAX・印刷用（2026-09-28）
 		// 材質・形状・寸法で材料を探す口（2026-09-21・dimension_search.go）。
 		// ⚠ **読めないページは混ぜません**——材料の表には誰でも行を書けるので、
 		// 絞らないと読めない発注書の単価と仕入先が引けてしまいます。

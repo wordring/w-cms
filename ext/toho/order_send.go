@@ -225,7 +225,7 @@ func signerLinesFor(head map[string]string, heading string) []string {
 // ⚠ **3つの道を最初から見せます。** 隠すと、FAXしか使わない相手のときに
 // 「この画面では送れない」と読まれます。
 func orderSendFormHTML(user *auth.User, pageIDInt int, head map[string]string,
-	counts OrderSendCounts) string {
+	counts OrderSendCounts, docs []orderDoc, docNotes []string) string {
 	orderID := page.FormatID(pageIDInt)
 	supplier := strings.TrimSpace(head[SupplierTag])
 	addrs := supplierAddresses(user, supplier)
@@ -241,6 +241,13 @@ func orderSendFormHTML(user *auth.User, pageIDInt int, head map[string]string,
 	b.WriteString(`<button type="button" class="chip-btn" data-order-pdf="1"` +
 		` title="発注書のPDFを作って、このページに表示します（添付にも残ります）">` +
 		`📄 PDFを作る</button>`)
+	// 資料を綴じた FAX・印刷用（2026-09-28・order_docs.go）——**綴じられる資料があるときだけ**。
+	// ⚠ 発注書のPDF（7年保存の正本）とは別の1本（利用者の選択）。
+	if hasPrintableDoc(docs) {
+		b.WriteString(`<button type="button" class="chip-btn" data-order-pdf-docs="1"` +
+			` title="発注書のうしろに外注加工の資料（PDF・画像）を綴じた1本を作ります。発注書のPDFはそのまま"` +
+			`>📠 FAX・印刷用（資料を綴じる）</button>`)
+	}
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByFax +
 		`" title="FAXサーバーはまだありません。送ったら押してください">📠 FAXで送った</button>`)
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByHand +
@@ -269,6 +276,7 @@ func orderSendFormHTML(user *auth.User, pageIDInt int, head map[string]string,
 	b.WriteString(`<label class="matsearch-field order-mail-body"><span>本文</span>` +
 		`<textarea class="matsearch-input" data-order="body" rows="10">` +
 		stdhtml.EscapeString(orderMailBody(head, supplier, orderID)) + `</textarea></label>`)
+	b.WriteString(orderDocsHTML(docs, docNotes))
 	// ⚠ **PDFは押したときに作ります**（下書きを開いただけで添付を増やさない）。
 	b.WriteString(`<p class="unorder-help">⚠ 送るときに<strong>発注書のPDFを作って添付</strong>します` +
 		`（このページの添付にも残ります）。</p>`)

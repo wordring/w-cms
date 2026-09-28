@@ -47,7 +47,9 @@ func TestComponentRowsAreIndexed(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("外注加工の行が2つありません: %+v", rows)
 	}
-	if rows[0].Values["work"] != "曲げ加工" || rows[0].Values["doc"] != "000012-a1b2" {
+	// ⚠ `資料` は 2026-09-28 に宣言から外した（折りたたみ「資料 <番号>」へ）ので、見出しの名前で入る。
+	if rows[0].Values["work"] != "曲げ加工" || rows[0].Values["note"] != "外周のみ" ||
+		rows[0].Values["資料"] != "000012-a1b2" {
 		t.Errorf("列が読めていません: %+v", rows[0].Values)
 	}
 	if rows[1].Values["status"] != "廃版" {

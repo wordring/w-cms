@@ -385,6 +385,13 @@ func pdfCellValue(r map[string]string, c orderPDFColumn) string {
 		}
 		return comma(cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"]))
 	}
+	// 外注加工の番号は **弊社品番-番号** で刷ります（2026-09-28・`000235-1`）——番号は
+	// 加工製品ごとの連番なので、弊社品番が無いと外注先から問い合わせを受けても引けません。
+	if c.Label == "番号" {
+		if no := strings.TrimSpace(r["番号"]); no != "" {
+			return orderLineNo(strings.TrimSpace(r[OurItemNoTag]), no)
+		}
+	}
 	v := r[c.Label]
 	if c.Right && v != "" {
 		return comma(cms.VocabNumber(v))
@@ -620,47 +627,18 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		return nil, nil, nil, errors.New("発注明細の表がありません（このページは発注書ではないようです）")
 	}
 
-	trs := rowsOf(table)
-	if len(trs) < 2 {
+	// ⚠ **取り消した行は紙に刷りません**（2026-09-22）。出す紙は**いま注文する
+	//    もの**で、取り消したものは注文ではありません——刷ると**合計金額にも
+	//    入ります**（`buildOrderPDF` が数量×単価を足すので）。
+	//
+	// ⚠ **行そのものは本文に残します。** 一度は注文しようとした事実で、
+	//    **発注済みから取り消した行は相手も知っています**——消すと、
+	//    「そんな注文は無かった」という紙になります。
+	//    行を読むのは資料を添える口と共通（`orderTableRows`・order_docs.go）。
+	if len(rowsOf(table)) < 2 {
 		return nil, nil, nil, errors.New("発注明細に行がありません")
 	}
-	labels := cellTexts(trs[0])
-	cancelled := 0
-	for _, tr := range trs[1:] {
-		r := map[string]string{}
-		any := false
-		for i, v := range cellTexts(tr) {
-			if i >= len(labels) {
-				break
-			}
-			r[labels[i]] = v
-			if v != "" {
-				any = true
-			}
-		}
-		if !any {
-			continue
-		}
-		// ⚠ **取り消した行は紙に刷りません**（2026-09-22）。出す紙は**いま注文する
-		//    もの**で、取り消したものは注文ではありません——刷ると**合計金額にも
-		//    入ります**（`buildOrderPDF` が数量×単価を足すので）。
-		//
-		// ⚠ **行そのものは本文に残します。** 一度は注文しようとした事実で、
-		//    **発注済みから取り消した行は相手も知っています**——消すと、
-		//    「そんな注文は無かった」という紙になります。
-		if orderLineCancelled(r["状態"]) {
-			cancelled++
-			continue
-		}
-		// 外注加工の番号は **弊社品番-番号** で刷ります（2026-09-28・`000235-1`）——番号は
-		// 加工製品ごとの連番なので、弊社品番が無いと外注先から問い合わせを受けても引けません。
-		// ⚠ 既に弊社品番で始まる番号（人が手で書いた）はそのまま。
-		if no, id := strings.TrimSpace(r["番号"]), strings.TrimSpace(r["弊社品番"]); no != "" && id != "" &&
-			!strings.HasPrefix(no, id) {
-			r["番号"] = id + "-" + no
-		}
-		rows = append(rows, r)
-	}
+	rows, cancelled := orderTableRows(table)
 	if len(rows) == 0 {
 		if cancelled > 0 {
 			return nil, nil, nil, errors.New("発注明細は全部取り消されています（" +

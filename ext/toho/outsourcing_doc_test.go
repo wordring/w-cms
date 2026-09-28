@@ -23,24 +23,23 @@ import (
 //
 // ⚠ 置き場が拡張側なのは、**`part-outsourcing` が下請けの語彙**だからです
 // ——コアの試験からは見えません（最初コア側に書いて落ちました）。
+//
+// ⚠ **2026-09-28 に `資料` の列を宣言から外しました**——資料は加工製品ページの折りたたみ
+// 「資料 <番号>」へ（order_docs.go・利用者:「外す」）。**それまでの本文の `資料` の列は、設定の語彙
+// （`資料` は `ref`）で型が決まるので、押して飛べるまま**です（下の TestOutsourcingDocCellLinks）。
 
-// TestOutsourcingDocIsRef は、宣言が `ref` であることを固定します。
-func TestOutsourcingDocIsRef(t *testing.T) {
+// TestOutsourcingHasNoDocColumn は、外注加工の宣言に `資料` の列が**無い**ことを固定します
+// （資料の置き場は折りたたみ1つ——列と2か所に書くと食い違う）。
+func TestOutsourcingHasNoDocColumn(t *testing.T) {
 	def, ok := cms.VocabDefByType("part-outsourcing")
 	if !ok {
 		t.Fatal("外注加工の宣言がありません")
 	}
 	for _, c := range def.Columns {
-		if c.Label != "資料" {
-			continue
+		if c.Label == "資料" {
+			t.Fatal("⚠ `資料` の列が宣言に戻っています（資料は折りたたみ「資料 <番号>」へ・order_docs.go）")
 		}
-		if c.Type != cms.ColRef {
-			t.Fatalf("⚠ `資料` の型が %q です（%q を期待——`text` だと押せません）",
-				c.Type, cms.ColRef)
-		}
-		return
 	}
-	t.Fatal("`資料` の列がありません（加工業者へ渡す図面の置き場です）")
 }
 
 // TestOutsourcingDocCellLinks は、**実際にリンクになる**ことを固定します。

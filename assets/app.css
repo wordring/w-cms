@@ -2524,6 +2524,9 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .order-mail .matsearch-input { width: 24em; max-width: 100%; }
 #w-editor-content .order-mail-body { width: 100%; }
 #w-editor-content .order-mail-body textarea { width: 100%; font-family: inherit; }
+/* 添える資料（外注加工の「資料 番号」の折りたたみから・2026-09-28）——1つ1行で、チェックを外せる。 */
+#w-editor-content .order-docs { margin: 6px 0; }
+#w-editor-content .order-doc { display: block; margin: 2px 0; }
 /* ⚠ **行ごとのボタンは折り返しません**——2つ並ぶだけなので、折ると行の高さが
    揃わず、表が読みにくくなります。 */
 #w-editor-content .order-row-act { white-space: nowrap; }
