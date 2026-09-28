@@ -439,6 +439,10 @@ var businessVocab = []cms.VocabDef{
 		Category:    "業務",
 		Icon:        "🛒",
 		Element:     "table",
+		// ⚠ **スラッシュメニューに出しません**（2026-09-28 利用者:「発注部材表は機械が作るもので手で書き込む
+		// ことはありません」「手で挿すことは無いのでスラッシュメニューに必要ない」）——機械が節で包んで作る
+		// （order_draft.go の `draftBoxOf`）ので、手で挿した包まれていない表は形が違ってしまう。
+		Hidden:      true,
 		Columns:     orderItemColumns(),
 	},
 	{

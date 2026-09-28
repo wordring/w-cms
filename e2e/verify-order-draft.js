@@ -148,6 +148,17 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
         tallest: Math.max(0, ...rows.map((tr) => Math.round(tr.getBoundingClientRect().height))),
       };
     });
+    // 「発注書を作る」の欄は表の外（包む節の中・表の直後・2026-09-28 利用者:「テーブルの外のブロックに
+    // 出来ませんか？」）——表の中（tfoot）だと表の横スクロールに巻き込まれて右へ長く伸びる。
+    const formAt = await page.evaluate(() => Array.from(document.querySelectorAll('.draft-form-box')).map((b) => ({
+      inTable: !!b.closest('table'),
+      besideDraft: !!(b.parentElement && b.parentElement.tagName === 'SECTION' &&
+        b.parentElement.querySelector(':scope > table > caption')),
+    })));
+    if (formAt.length === 0 || formAt.some((f) => f.inTable || !f.besideDraft)) {
+      console.log('✗ 「発注書を作る」の欄が表の外（包む節の中）にありません: ' + JSON.stringify(formAt));
+      bad++;
+    } else console.log('✓ 「発注書を作る」の欄は表の外・包む節の中（' + formAt.length + ' 個）');
     if (wrap.back < 0 || wrap.back > wrap.backLine) {
       console.log('✗ 「↩ 戻す」が折り返しています（高さ ' + wrap.back + 'px）');
       bad++;
@@ -175,6 +186,14 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
         console.log('✗ 全部戻したのに表が残っています（' + left + ' 枚）');
         bad++;
       } else console.log('✓ 全部戻す → 空の表は残らない（' + left + ' 枚）');
+      // ⚠ 包む節ごと消えること（2026-09-28・draftBoxOf）——表の無い節が残ると発注ページに溜まる。
+      const emptyBoxes = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content section'))
+        .filter((s) => !s.hasAttribute('data-mirror') && !s.hasAttribute('data-type') && !s.closest('.vocab-chrome') &&
+          !s.querySelector('table') && !s.textContent.trim()).length);
+      if (emptyBoxes > 0) {
+        console.log('✗ 表を外したあとに空の節が ' + emptyBoxes + ' 個残っています');
+        bad++;
+      } else console.log('✓ 表を外しても空の節は残らない');
     }
   };
   try {

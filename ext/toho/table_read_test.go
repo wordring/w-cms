@@ -141,10 +141,14 @@ func TestOrderDraftMirrorPutsBackButtonsAndForm(t *testing.T) {
 		`class="vocab-chrome draft-row-act"><button`,   // データ行の「戻す」
 		`data-draft-table="1"`, `data-draft-row="1"`,
 		`data-draft-go="1"`, "発注書を作る", // 足元の欄
-		`class="draft-form-row"`,
+		`class="vocab-chrome draft-form-box"`, // 欄は表の外（包む節の中・2026-09-28）
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("⚠ 鏡に %q がありません:\n%s", want, got)
 		}
+	}
+	// ⚠ **欄は表の外**（包む節の中・表の直後）——表の中（tfoot）だと表の横スクロールに巻き込まれる。
+	if strings.Index(got, "draft-form-box") < strings.Index(got, "</table>") || strings.Contains(got, "<tfoot") {
+		t.Errorf("⚠ 「発注書を作る」の欄が表の中にあります:\n%s", got)
 	}
 }

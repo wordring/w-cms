@@ -2554,4 +2554,6 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
    揃わず、表が読みにくくなります。 */
 #w-editor-content .order-row-act,
 #w-editor-content .draft-row-act { white-space: nowrap; }
+/* 発注部材表の「発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
+#w-editor-content .draft-form-box { margin: 4px 0 16px; }
 #w-editor-content .order-link-state { margin-left: 6px; }

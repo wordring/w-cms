@@ -147,6 +147,10 @@ func TestReplaceDraftTableLeavesTheOthers(t *testing.T) {
 	if !strings.Contains(got, "発注書 000143") {
 		t.Errorf("リンクが入っていません:\n%s", got)
 	}
+	// ⚠ **包む節ごと消えること**（2026-09-28・`draftBoxOf`）——残すと発注ページに空の節が溜まる。
+	if n := strings.Count(got, "<section>"); n != 1 {
+		t.Errorf("⚠ 節が %d 個です（消した表の節まで残っていないか・1個のはず）:\n%s", n, got)
+	}
 	// ⚠ **見出しは残ること**（表だけを置き換える）。
 	if !strings.Contains(got, "<h1>発注</h1>") {
 		t.Errorf("⚠ ページの見出しまで消えました:\n%s", got)
@@ -216,6 +220,9 @@ func TestRemoveDraftRowDropsTheEmptyTable(t *testing.T) {
 	if strings.Contains(got, "1枚目の唯一の行") {
 		t.Errorf("⚠ 行が残っています:\n%s", got)
 	}
+	if n := strings.Count(got, "<section>"); n != 1 {
+		t.Errorf("⚠ 節が %d 個です（空になった表の節まで残っていないか・1個のはず）:\n%s", n, got)
+	}
 	// ⚠ **他の表は残ること**（同時に進めていた作業が失われないように）。
 	for _, keep := range []string{"2枚目の行A", "2枚目の行B", "<h1>発注</h1>"} {
 		if !strings.Contains(got, keep) {
@@ -255,7 +262,7 @@ func TestNewDraftGoesAfterTheLastDraft(t *testing.T) {
 
 	noDraft := `<h1>発注</h1><section data-mirror="必要部材表"></section><p>あとの段落</p>`
 	got, _, _ = putLinesIntoDraft(noDraft, "", []ourOrderLine{{ItemName: "二枚目の部材", Quantity: "2", Unit: "個"}})
-	if !strings.HasSuffix(strings.TrimSpace(got), "</table>") || strings.Index(got, "二枚目の部材") < strings.Index(got, "あとの段落") {
+	if !strings.HasSuffix(strings.TrimSpace(got), "</table></section>") || strings.Index(got, "二枚目の部材") < strings.Index(got, "あとの段落") {
 		t.Errorf("発注部材表が無いときは末尾に置くはず:\n%s", got)
 	}
 }

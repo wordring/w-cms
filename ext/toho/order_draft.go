@@ -199,7 +199,7 @@ func placeNewDraft(body, tableHTML string) string {
 	if err != nil || len(repl) == 0 {
 		return body + tableHTML
 	}
-	out, ok := spliceNodes(nodes, drafts[len(drafts)-1], repl, true)
+	out, ok := spliceNodes(nodes, draftBoxOf(drafts[len(drafts)-1]), repl, true)
 	if !ok {
 		return body + tableHTML
 	}
@@ -208,7 +208,8 @@ func placeNewDraft(body, tableHTML string) string {
 
 func orderDraftHTML(lines []ourOrderLine) string {
 	var b strings.Builder
-	b.WriteString(`<table><caption>` +
+	// ⚠ **節（`<section>`）で包みます**（2026-09-28・`draftBoxOf`）——「発注書を作る」の欄を表の外に出すため。
+	b.WriteString(`<section><table><caption>` +
 		stdhtml.EscapeString(displayNameOf(OrderDraftType)) + `</caption><tbody>`)
 	b.WriteString(headerRowHTML(OrderDraftType))
 	for _, ln := range lines {
@@ -227,8 +228,23 @@ func orderDraftHTML(lines []ourOrderLine) string {
 		}
 		b.WriteString(`</tr>`)
 	}
-	b.WriteString(`</tbody></table>`)
+	b.WriteString(`</tbody></table></section>`)
 	return b.String()
+}
+
+// draftBoxOf は発注部材表を包む節を返します（包まれていなければ表そのもの）。
+//
+// 利用者（2026-09-28）:「発注部材表の発注書作成部分がtfootに入っていますが、テーブルの外のブロックに
+// 出来ませんか？」「表をsectionで囲っても無理ですか？」——表の中（tfoot）に置いた欄は表の横スクロールに
+// 巻き込まれ、17列の表では右へ長く伸びていました。表の外へ素で出すと、エディタが**独立したブロック**として
+// 扱う（ドラッグ・保存に紛れる）ので、**表を節で包み、欄はその節の中（表の直後）**に置きます。
+// 発注部材表は**機械だけが作る**（利用者:「手で書き込むことはありません」——スラッシュメニューにも出さない）
+// ので、作るときに包み、消すときは節ごと消します（節と表は一組）。
+func draftBoxOf(table *html.Node) *html.Node {
+	if p := table.Parent; p != nil && p.Data == "section" {
+		return p
+	}
+	return table
 }
 
 // orderLineValue は画面から来た1行から、列の値を取り出します。
@@ -355,7 +371,8 @@ func replaceDraftTable(body string, n int, replacementHTML string) (string, bool
 		return body, false
 	}
 	// ⚠ トップレベルの表には `Parent` が無い（`spliceNodes` がその罠を引き受ける）。
-	return spliceNodes(nodes, tables[n-1], repl, false)
+	// 節で包まれていれば節ごと差し替える（`draftBoxOf`）。
+	return spliceNodes(nodes, draftBoxOf(tables[n-1]), repl, false)
 }
 
 // draftedQty は「**いま発注部材表に入っている数**」を、加工製品×購入品ごとに返します。
@@ -499,7 +516,7 @@ func takeDraftRow(body string, n, row int) (string, ourOrderLine, bool) {
 	//    ⚠ **空の表を作る道は残します**（何も選ばずに「発注部材表へ入れる」）
 	//    ——**人が意図して作った空の表**と、**外して空になった表**は別のことです。
 	if len(rowsOf(table)) <= 1 {
-		out, ok := spliceNodes(nodes, table, nil, false)
+		out, ok := spliceNodes(nodes, draftBoxOf(table), nil, false) // 節ごと（空の節を残さない）
 		return out, line, ok
 	}
 	return htmldoc.Render(nodes), line, true

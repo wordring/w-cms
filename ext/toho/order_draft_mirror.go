@@ -36,10 +36,6 @@ func init() {
 // 貼っても、入力欄が本文に焼き付くことはありません。
 func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
-	span := headerCellCount(el)
-	if span <= 0 {
-		span = len(columnsOf(OrderDraftType))
-	}
 	// この表が何枚目かを数えます（画面が「どの表から作るか」を送るため）。
 	idx := draftIndexOf(ctx)
 	// ⚠ **行ごとに「戻す」を付けます**（2026-09-22 ユーザー:「**発注部材表から
@@ -47,8 +43,11 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	//    ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、ここから消せば
 	//    **自動的に戻ってきます**。戻す先へ何かを書く必要はありません。
 	addDraftRowButtons(el, page.FormatID(ctx.PageID), idx)
-	appendFootHTML(el, span, "draft-form-row",
-		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx))
+	// 「発注書を作る」の欄は**表の外（包む節の中・表の直後）**へ（2026-09-28・`draftBoxOf`）。
+	box := draftBoxOf(el)
+	cms.DropChrome(box)
+	appendHTML(box, `<div class="vocab-chrome draft-form-box" contenteditable="false">`+
+		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx)+`</div>`)
 	return false, nil
 }
 
