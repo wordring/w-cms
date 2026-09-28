@@ -1407,7 +1407,8 @@
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
         refreshAnalyzedMarks();      // 解析済みの印（取得できたら描き直す）
         refreshDrawingPreviews();    // 加工製品ページの図面をそのまま出す（閲覧モード限定）
-        refreshFilingButton();       // 加工製品ページの整理（閲覧モード限定）
+        restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
+        refreshFilingButton();      // 加工製品ページの整理（閲覧モード限定）
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
         wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
@@ -5178,6 +5179,150 @@
     const DRAWING_H_MAX = 4000;  // 壊れた値でページを埋めない柵
     const DRAWING_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
 
+    // ── 物ごとの見え方をこの端末に憶える（2026-09-28） ─────────────────────
+    //
+    // 利用者:「各ページのPDFなどの埋め込みの縦横比や、ブロックの開閉状態をブラウザに記録して再生することは
+    // 出来ますか？」「一つ一つについて何らかのブラウザの記録エリアに記録したい」「開いてから長く経ったページの
+    // 記録は、古い順に捨ててください」。
+    //
+    //   - 置き場は localStorage の `wcms.view`（UI設定の `wcms.ui` とは分ける——ページが増えるほど大きくなるので、
+    //     レールの開閉などの小さな設定を重くしない）。形は {v:1, pages:{ページ番号:{t:最後に開いた時刻, r:{物:縦横比},
+    //     o:{物:開閉}}}}。1つの物が数十バイトなので、localStorage（1サイト約5MB）には十分入る。
+    //   - 物の鍵: ファイル表示は `f:`＋添付の参照（data-ref）、本文の折りたたみは `d:`＋題の文字＋同じ題の何番目か。
+    //   - **縦横比**（高さ÷幅）で憶える——窓の幅を変えても図面の形が保たれる。つまんで大きさを変えたときに記録する。
+    //   - **古いページから捨てる**——憶えるのは最近開いた VIEW_MAX_PAGES ページまで（記録のあるページを開くたびに
+    //     時刻を新しくする）。書けない（容量超え・無効な環境）ときは古いほうの半分を捨てて書き直し、それでも駄目なら
+    //     憶えないだけ——画面は壊さない。
+    //   - 本文にもサーバーにも残さない（見る人と画面の都合・端末ごと）。
+    const VIEW_KEY = 'wcms.view';
+    const VIEW_MAX_PAGES = 2000;
+    const ViewState = (() => {
+        let cache = null;
+        function load() {
+            if (cache) return cache;
+            try { cache = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { cache = null; }
+            if (!cache || typeof cache !== 'object' || cache.v !== 1 || !cache.pages || typeof cache.pages !== 'object') {
+                cache = { v: 1, pages: {} };
+            }
+            return cache;
+        }
+        // dropOldest は古い順に n ページを捨てます（t が小さいものから）。
+        function dropOldest(c, n) {
+            const ids = Object.keys(c.pages).sort((a, b) => (c.pages[a].t || 0) - (c.pages[b].t || 0));
+            for (const id of ids.slice(0, n)) delete c.pages[id];
+        }
+        function persist() {
+            const c = load();
+            const over = Object.keys(c.pages).length - VIEW_MAX_PAGES;
+            if (over > 0) dropOldest(c, over);
+            try { localStorage.setItem(VIEW_KEY, JSON.stringify(c)); return; } catch (e) { /* 容量超えかもしれない */ }
+            try {
+                dropOldest(c, Math.ceil(Object.keys(c.pages).length / 2));
+                localStorage.setItem(VIEW_KEY, JSON.stringify(c));
+            } catch (e) { /* 憶えないだけ（画面は既定の見え方） */ }
+        }
+        function page(id, create) {
+            const c = load();
+            let p = c.pages[id];
+            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {} };
+            if (p) { p.r = p.r || {}; p.o = p.o || {}; }
+            return p;
+        }
+        return {
+            get(id) { return page(id, false); },
+            // touch は記録のあるページの時刻を新しくします（開いたページは捨てられにくく）。
+            touch(id) { const p = page(id, false); if (p) { p.t = Date.now(); persist(); } },
+            setRatio(id, key, ratio) {
+                const p = page(id, true);
+                p.t = Date.now();
+                p.r[key] = Math.round(ratio * 10000) / 10000;
+                persist();
+            },
+            setOpen(id, key, open) {
+                const p = page(id, true);
+                p.t = Date.now();
+                p.o[key] = open ? 1 : 0;
+                persist();
+            },
+        };
+    })();
+
+    // viewKeyOf は物の鍵です（ファイル表示は添付の参照・本文の折りたたみは題の文字＋何番目か）。空なら憶えない。
+    function viewKeyOf(el) {
+        const fv = el.closest('section[data-type="file-view"][data-ref]');
+        if (fv) return 'f:' + fv.getAttribute('data-ref');
+        if (el.tagName !== 'DETAILS') return '';
+        const label = d => {
+            const s = d.querySelector(':scope > summary');
+            return s ? s.textContent.trim().slice(0, 60) : '';
+        };
+        const mine = label(el);
+        const same = Array.from(document.querySelectorAll('#w-editor-content details'))
+            .filter(d => !d.closest('section[data-type="file-view"]') && !d.closest('.vocab-chrome') && label(d) === mine);
+        return 'd:' + mine + '#' + same.indexOf(el);
+    }
+
+    // applyViewRatios は憶えた縦横比でファイル表示の枠の高さを決めます（幅は窓で決まる）。閉じている枠は幅が0なので
+    // 飛ばし、開いたとき（toggle）にもう一度呼ぶ。
+    function applyViewRatios() {
+        const st = ViewState.get(currentPageId);
+        if (!st) return;
+        document.querySelectorAll('#w-editor-content .file-view').forEach(wrap => {
+            const r = st.r[viewKeyOf(wrap)];
+            if (!r) return;
+            const w = wrap.getBoundingClientRect().width;
+            if (w <= 0) return;
+            wrap.style.height = Math.min(DRAWING_H_MAX, Math.max(DRAWING_H_MIN, Math.round(w * r))) + 'px';
+        });
+    }
+
+    // restoreViewState は憶えた開閉と縦横比を戻します（描き直しの巡りのたびに呼ぶ）。
+    let viewTouchedFor = '';
+    function restoreViewState() {
+        const st = ViewState.get(currentPageId);
+        if (!st) return;
+        if (viewTouchedFor !== currentPageId) {
+            viewTouchedFor = currentPageId;
+            ViewState.touch(currentPageId);
+        }
+        document.querySelectorAll('#w-editor-content details').forEach(d => {
+            if (d.closest('.vocab-chrome')) return;
+            const k = viewKeyOf(d);
+            if (!k || !(k in st.o)) return;
+            const want = !!st.o[k];
+            if (d.open !== want) d.open = want;
+        });
+        applyViewRatios();
+    }
+
+    // 開閉を憶える——**人が題を押したときだけ**（toggle は泡立たないので捕捉の段で受ける）。
+    // ⚠ `<details open>` を本文へ入れただけでもブラウザは toggle を出す（人は何もしていない）。それを記録すると、
+    //    閉じた記録が読み込みのたびに「開いた」で上書きされる（2026-09-28 に E2E で踏んだ）。だから題への
+    //    クリック・Enter・Space で印を付け、印のある toggle だけを記録する（戻したときの toggle も記録しない）。
+    const markUserToggle = e => {
+        const s = e.target instanceof Element && e.target.closest('summary');
+        const d = s && s.parentElement;
+        if (d && d.tagName === 'DETAILS' && d.closest('#w-editor-content')) d.dataset.wUserToggle = '1';
+    };
+    document.addEventListener('click', markUserToggle, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') markUserToggle(e); }, true);
+    document.addEventListener('toggle', e => {
+        const d = e.target;
+        if (!(d instanceof HTMLDetailsElement) || !d.closest('#w-editor-content') || d.closest('.vocab-chrome')) return;
+        if (d.dataset.wUserToggle === '1') {
+            delete d.dataset.wUserToggle;
+            const k = viewKeyOf(d);
+            if (k) ViewState.setOpen(currentPageId, k, d.open);
+        }
+        if (d.open) applyViewRatios();
+    }, true);
+    // 窓の幅が変わったら、縦横比から高さを決め直す。
+    let viewResizeTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(viewResizeTimer);
+        viewResizeTimer = setTimeout(applyViewRatios, 150);
+    });
+
     function wireDrawingResize(wrap, embed) {
         const saved = parseInt(UI.get(DRAWING_H_KEY, 0), 10);
         // 未設定（0・NaN）ならCSSの既定（70vh）に任せます。
@@ -5201,8 +5346,14 @@
             embed.style.pointerEvents = '';
             if (!dragging) return;
             dragging = false;
-            const px = Math.round(wrap.getBoundingClientRect().height);
-            if (px >= DRAWING_H_MIN && px <= DRAWING_H_MAX) UI.set(DRAWING_H_KEY, px);
+            const rect = wrap.getBoundingClientRect();
+            const px = Math.round(rect.height);
+            if (px >= DRAWING_H_MIN && px <= DRAWING_H_MAX) {
+                UI.set(DRAWING_H_KEY, px); // まだ憶えていない枠の既定（これまでどおり）
+                // この枠の縦横比（物ごと・2026-09-28）。
+                const k = viewKeyOf(wrap);
+                if (k && rect.width > 0) ViewState.setRatio(currentPageId, k, px / rect.width);
+            }
         });
     }
 
