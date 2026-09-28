@@ -79,7 +79,7 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 			b.WriteString(`<td><a href="/` + page.FormatID(u.ProductPageID) + `">` +
 				page.FormatID(u.ProductPageID) + `</a>` + unorderedMigratingMark(u) + `</td>`)
 		}
-		b.WriteString(`<td>` + stdhtml.EscapeString(u.Name) + `</td>`)
+		b.WriteString(`<td>` + unorderedKindMark(u) + stdhtml.EscapeString(u.Name) + `</td>`)
 		b.WriteString(`<td class="num">` + strconv.Itoa(u.Remaining) + `</td>`)
 		b.WriteString(`<td class="unorder-cost">` + unorderedCostHTML(u) + `</td>`)
 		b.WriteString(`</tr>`)
@@ -119,10 +119,15 @@ func unorderedRowAttrs(u UnorderedItem) string {
 			at("cost", cost) + at("note", u.Note) +
 			at("temp-page", u.TempPage) + at("temp-row", strconv.Itoa(u.TempRow))
 	}
-	return at("product", page.FormatID(u.ProductPageID)) +
-		at("material", u.Material) + at("shape", u.Shape) + at("size", u.Size) +
-		at("itemname", u.Name) + at("qty", strconv.Itoa(u.Remaining)) +
-		at("cost", unorderedCostValue(u))
+	// ⚠ **運ぶ値は種類の columns から組んだもの**（`u.Values`・2026-09-28）——列の名前と属性の
+	//    対応は `orderLineAttrs`（order_kinds.go）。それまでは材料の形の固定の組で、外注加工の
+	//    番号・加工内容・表面、購入部品の仕様が落ちていました。
+	out := at("product", page.FormatID(u.ProductPageID)) +
+		at("qty", strconv.Itoa(u.Remaining)) + at("cost", unorderedCostValue(u))
+	for _, a := range orderLineAttrs {
+		out += at(a.Attr, u.Values[a.Label])
+	}
+	return out
 }
 
 // unorderedMigratingMark は移行の確認前の印です。
@@ -237,4 +242,14 @@ func signerFieldHTML(user *auth.User) string {
 			`</strong>」の見出しで署名を書くと、ここに出ます）。</p>`)
 	}
 	return b.String()
+}
+
+// unorderedKindMark は、材料以外の行に種類の小さな札を付けます（2026-09-28）——外注加工・購入部品・
+// 支給部品は名前だけでは材料と見分けにくく、**1枚の発注書は1社**なので、選ぶときに種類が要ります。
+func unorderedKindMark(u UnorderedItem) string {
+	k := strings.TrimSpace(u.Kind)
+	if k == "" || k == displayNameOf(partMaterialsType) || u.TempRow > 0 {
+		return ""
+	}
+	return `<span class="unorder-kind">` + stdhtml.EscapeString(k) + `</span> `
 }

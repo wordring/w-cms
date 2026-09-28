@@ -216,23 +216,31 @@ func TestUnorderedSubtractsWhatIsInTheDraft(t *testing.T) {
 	}
 }
 
-// TestUnorderedIncludesOutsourcing は、**外注加工も必要部材表に出る**ことを固定します（2026-09-27）。
+// TestUnorderedIncludesOutsourcing は、**外注加工と支給部品も必要部材表に出る**ことを固定します
+// （2026-09-27・09-28 に種類ごとの運び方を設定へ）。
 //
 // 利用者:「外注加工の表を埋めてみましたが、発注ページに出ません」——集計が材料と購入部品だけを
 // 数えていました。外注先へも発注書で頼むので、同じ道（必要部材表 → 発注部材表 → 発注書）に乗せます。
-// 名前（＝発注明細の品名・手配済みの鍵）は加工内容。⚠ **支給部品は出しません**（お客様から
-// 支給されるもので、弊社が買わない）。形はテンプレートと同じ「見出しの節＋キャプションの表」。
+// ⚠ **支給部品も出します**（2026-09-28 利用者:「支給品は購入しませんが、支給願いという形で
+// 発注します」——09-27 は「出さない」でした）。形はテンプレートと同じ「見出しの節＋キャプションの表」。
+//
+// 外注加工が運ぶ値は設定 `order_kinds` のとおり——品番は加工製品ページの `図面番号` タグ、
+// 品名は `名称` が空なら `図面名称` タグ。手配済みの鍵は **種類＋番号＋加工内容**です
+// （1つの加工製品に外注加工が複数あり得るので番号で分ける・利用者 09-28）。
 func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	syncBody(t, 31, `<h1>ブラケット</h1>`+
+		`<dl data-type="tags"><dt>図面番号</dt><dd>A100-B01-001</dd>`+
+		`<dt>図面名称</dt><dd>ブラケット</dd></dl>`+
 		`<section><h2>外注加工</h2><table><caption>外注加工</caption><tbody>`+
-		`<tr><th>加工内容</th><th>支給</th><th>個数</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
-		`<tr><td>レーザー切断</td><td></td><td>1</td><td></td><td></td><td></td></tr>`+
+		`<tr><th>番号</th><th>名称</th><th>加工内容</th><th>材質</th><th>表面</th><th>個数</th><th>支給</th><th>推奨業者</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
+		`<tr><td>1</td><td></td><td>レーザー切断</td><td>SS400</td><td></td><td>1</td><td>材料支給</td><td>ひかりレーザー</td><td></td><td></td><td></td></tr>`+
+		`<tr><td>2</td><td>カバー</td><td>塗装</td><td></td><td>緑</td><td>2</td><td></td><td></td><td></td><td></td><td></td></tr>`+
 		`</tbody></table></section>`+
 		`<section><h2>支給部品</h2><table><caption>支給部品</caption><tbody>`+
 		`<tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th><th>区分</th></tr>`+
-		`<tr><td>支給シャフト</td><td></td><td>1</td><td></td><td></td></tr>`+
+		`<tr><td>支給シャフト</td><td>φ20</td><td>1</td><td></td><td></td></tr>`+
 		`</tbody></table></section>`)
 	root := &auth.User{Username: "root", IsAdmin: true}
 
@@ -240,37 +248,101 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UnorderedItemsエラー: %v", err)
 	}
-	var found *UnorderedItem
+	byWork := map[string]UnorderedItem{}
+	var supplied *UnorderedItem
 	for i := range list {
-		if list[i].Name == "支給シャフト" {
-			t.Errorf("⚠ 支給部品が必要部材表に出ています: %#v", list[i])
+		if list[i].Kind == "外注加工" {
+			byWork[list[i].Values["加工内容"]] = list[i]
 		}
-		if list[i].Name == "レーザー切断" {
-			found = &list[i]
+		if list[i].Kind == "支給部品" {
+			supplied = &list[i]
 		}
 	}
-	if found == nil {
+	laser, ok := byWork["レーザー切断"]
+	if !ok {
 		t.Fatalf("外注加工が必要部材表に出ていません: %#v", list)
 	}
-	if found.Kind != "外注加工" || found.Remaining != 3 || found.ProductPageID != 31 {
-		t.Errorf("外注加工の行が違います（種類・残＝1個×受注3・弊社品番）: %#v", *found)
+	if laser.Remaining != 3 || laser.ProductPageID != 31 {
+		t.Errorf("外注加工の行が違います（残＝1個×受注3・弊社品番）: %#v", laser)
+	}
+	// ⚠ **品番と品名はタグから来ること**——名称が空なら図面名称（外注先の紙に図番と名前が要る）。
+	if laser.Values["番号"] != "1" || laser.Values["品番"] != "A100-B01-001" ||
+		laser.Values["品名"] != "ブラケット" || laser.Values["材質"] != "SS400" ||
+		laser.Values["支給"] != "材料支給" {
+		t.Errorf("⚠ 外注加工の運ぶ値が違います: %#v", laser.Values)
+	}
+	if laser.Name != "1 ブラケット レーザー切断" {
+		t.Errorf("必要部材表の名前は 番号・品名・加工内容・表面 のはずです: %q", laser.Name)
+	}
+	paint, ok := byWork["塗装"]
+	if !ok {
+		t.Fatalf("2つ目の外注加工が出ていません: %#v", list)
+	}
+	if paint.Values["品名"] != "カバー" || paint.Values["表面"] != "緑" || paint.Remaining != 6 {
+		t.Errorf("⚠ 名称と表面が運ばれていません（名称があれば図面名称より先）: %#v", paint)
+	}
+	// ⚠ 推奨業者は運ばない（発注の表の列ではない——設定の columns に無い）。
+	if _, carried := laser.Values["推奨業者"]; carried {
+		t.Errorf("⚠ 推奨業者まで運んでいます: %#v", laser.Values)
+	}
+	if supplied == nil {
+		t.Fatalf("⚠ 支給部品（支給願い）が必要部材表に出ていません: %#v", list)
+	}
+	if supplied.Name != "支給シャフト φ20" || supplied.Remaining != 3 {
+		t.Errorf("支給部品の行が違います: %#v", *supplied)
 	}
 
-	// 発注書に同じ加工内容を品名で入れれば、手配済みとして消える（発注部材表・発注書と同じ鍵）。
+	// 発注書に同じ種類・番号・加工内容で入れれば、手配済みとして消える（発注部材表・発注書と同じ鍵）。
+	// ⚠ 番号が違えば別の外注加工——塗装は残る。
 	addPage(t, 33, 0, "発注 ひかりレーザー", "root", "302", true)
 	syncBody(t, 33, `<h1>発注 ひかりレーザー</h1>`+
 		`<dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>ひかりレーザー</dd></dl>`+
 		`<table data-type="`+ourOrderItemsType+`"><tbody>`+
-		`<tr><th>弊社品番</th><th>品名</th><th>数量</th></tr>`+
-		`<tr><td>000031</td><td>レーザー切断</td><td>3</td></tr>`+
+		`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>品名</th><th>加工内容</th><th>数量</th></tr>`+
+		`<tr><td>000031</td><td>外注加工</td><td>1</td><td>ブラケット</td><td>レーザー切断</td><td>3</td></tr>`+
 		`</tbody></table>`)
 	list, err = UnorderedItems(root)
 	if err != nil {
 		t.Fatalf("UnorderedItemsエラー: %v", err)
 	}
+	var stillPaint bool
 	for _, u := range list {
-		if u.Name == "レーザー切断" {
+		if u.Kind == "外注加工" && u.Values["加工内容"] == "レーザー切断" {
 			t.Errorf("⚠ 発注書に入れた外注加工がまだ出ています: %#v", u)
+		}
+		if u.Kind == "外注加工" && u.Values["加工内容"] == "塗装" {
+			stillPaint = true
+		}
+	}
+	if !stillPaint {
+		t.Errorf("⚠ 番号の違う外注加工（塗装）まで消えています: %#v", list)
+	}
+}
+
+// TestOrderRowKeyInfersLegacyKind は、**種類の列が無い古い発注明細**を、鍵の列のどれかに値がある
+// 最初の種類として読むことを固定します（2026-09-28 より前の紙——材料は材質・形状・寸法、
+// 購入部品は品名）。⚠ 読めないと、既に発注した部材が必要部材表に戻ります（二重発注）。
+func TestOrderRowKeyInfersLegacyKind(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	syncBody(t, 31, `<h1>ブラケット</h1>`+
+		`<table><caption>購入部品</caption><tbody>`+
+		`<tr><th>品名</th><th>仕様</th><th>個数</th></tr>`+
+		`<tr><td>六角ボルト</td><td></td><td>4</td></tr>`+
+		`</tbody></table>`)
+	syncBody(t, 32, `<h1>発注 みなと商店</h1>`+
+		`<dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>みなと商店</dd></dl>`+
+		`<table data-type="`+ourOrderItemsType+`"><tbody>`+
+		`<tr><th>弊社品番</th><th>品名</th><th>数量</th></tr>`+
+		`<tr><td>000031</td><td>六角ボルト</td><td>12</td></tr>`+
+		`</tbody></table>`)
+	list, err := UnorderedItems(&auth.User{Username: "root", IsAdmin: true})
+	if err != nil {
+		t.Fatalf("UnorderedItemsエラー: %v", err)
+	}
+	for _, u := range list {
+		if u.Kind == "購入部品" {
+			t.Errorf("⚠ 種類の無い古い発注明細が購入部品として数えられていません: %#v", u)
 		}
 	}
 }

@@ -242,6 +242,16 @@ func orderLineValue(ln ourOrderLine, field string) string {
 		return strings.TrimSpace(ln.ProductID)
 	case "item-id":
 		return strings.TrimSpace(ln.ItemID)
+	case "kind":
+		return strings.TrimSpace(ln.Kind)
+	case "no":
+		return strings.TrimSpace(ln.No)
+	case "work":
+		return strings.TrimSpace(ln.Work)
+	case "spec":
+		return strings.TrimSpace(ln.Spec)
+	case "supplied":
+		return strings.TrimSpace(ln.Supplied)
 	case "color":
 		return strings.TrimSpace(ln.Color)
 	case "item-name":
@@ -372,10 +382,9 @@ func draftedQty(db cms.ReadOnlyDB, canView func(int) bool) map[string]int {
 		if !ok || productID == "" {
 			continue // ⚠ 弊社品番の無い行（消耗品など）は、そもそも一覧に出ません
 		}
-		key := materialKeyOf(r.Values["material"], r.Values["shape"], r.Values["size"])
-		if key == "" {
-			key = cms.NormalizeText(strings.TrimSpace(r.Values["item-name"]))
-		}
+		// ⚠ 鍵は発注書・必要部材表と同じ関数（`orderRowKey`・2026-09-28 から種類ごと）。
+		def, _ := cms.VocabDefByType(OrderDraftType)
+		key := orderRowKey(def, r)
 		if key == "" {
 			continue
 		}

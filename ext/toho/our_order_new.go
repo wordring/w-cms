@@ -48,6 +48,13 @@ type ourOrderLine struct {
 	Size     string `json:"size"`
 	Color    string `json:"color"`
 	ItemName string `json:"item_name"`
+	// Kind・No・Work・Spec・Supplied は `種類`・`番号`・`加工内容`・`仕様`・`支給`（2026-09-28・
+	// 部材の種類ごとの運び方——order_kinds.go）。`種類` は手配済みを数える鍵の種類。
+	Kind     string `json:"kind,omitempty"`
+	No       string `json:"no,omitempty"`
+	Work     string `json:"work,omitempty"`
+	Spec     string `json:"spec,omitempty"`
+	Supplied string `json:"supplied,omitempty"`
 	Quantity string `json:"quantity"`
 	Unit     string `json:"unit"`
 	Cost     string `json:"cost"`
@@ -207,6 +214,11 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 		//    購入部品は逆で、**品名が同一性そのもの**なので残します。
 		rows = append(rows, map[string]string{
 			"our-item-id": ln.ProductID,
+			"kind":        ln.Kind,
+			"no":          ln.No,
+			"work":        ln.Work,
+			"spec":        ln.Spec,
+			"supplied":    ln.Supplied,
 			"item-id":     ln.ItemID,
 			"item-name":   itemNameOf(ln),
 			"material":    ln.Material,

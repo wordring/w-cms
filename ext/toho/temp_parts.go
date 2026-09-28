@@ -55,6 +55,12 @@ func tempPartsColumns() []cms.VocabColumn {
 		if c.Field == "our-item-id" || c.Field == "status" {
 			continue
 		}
+		// ⚠ 種類・番号・加工内容・仕様・支給（2026-09-28 に発注の列へ足した）も入れません——
+		//    臨時部材表は加工製品ページに無い材料・消耗品を人が書く表で、種類の運び方の外です。
+		switch c.Field {
+		case "kind", "no", "work", "spec", "supplied":
+			continue
+		}
 		out = append(out, c)
 	}
 	return out

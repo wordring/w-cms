@@ -2465,6 +2465,18 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 }
 #w-editor-content .unorder-pick { width: 2.5em; text-align: center; }
 #w-editor-content .unorder-cost { white-space: nowrap; }
+/* 材料以外の行の種類の札（外注加工・購入部品・支給部品・2026-09-28）。1枚の発注書は1社なので、
+   選ぶときに種類が要る。色だけに頼らず、札の文字で種類を言う。 */
+#w-editor-content .unorder-kind {
+    display: inline-block;
+    padding: 0 4px;
+    margin-right: 2px;
+    border: 1px solid #94a3b8;
+    border-radius: 3px;
+    font-size: 0.8em;
+    color: #475569;
+    white-space: nowrap;
+}
 #w-editor-content .unorder-form { margin-top: 10px; }
 #w-editor-content .unorder-result { margin-top: 8px; font-size: 0.95em; }
 

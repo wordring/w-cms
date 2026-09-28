@@ -42,8 +42,8 @@ type ProcurementOrder struct {
 
 // ProcurementItem は加工製品1種類に要る購入品1行です。
 type ProcurementItem struct {
-	Name      string             `json:"name"` // 材質 形状 寸法 ／ 品名
-	Kind      string             `json:"kind"` // 材料 / 購入部品
+	Name      string             `json:"name"` // 必要部材表に出す名前（種類の display）
+	Kind      string             `json:"kind"` // 種類（設定 order_kinds の kind）
 	Per       int                `json:"per"`  // 一台あたり
 	Required  int                `json:"required"`
 	Ordered   int                `json:"ordered"`
@@ -54,6 +54,9 @@ type ProcurementItem struct {
 	// ⚠ **未手配の一覧が「発注部材表に入っている分」を引くのに使います**
 	// （2026-09-22）——**同じ鍵**（`procKey`）で束ねないと、**引き算が合いません**。
 	Key string `json:"-"`
+	// Values は発注の表の列ごとの値です（2026-09-28・種類の columns から組む）——必要部材表の行が
+	// 発注部材表へ運ぶ値。数量は含まない（残要手配数を運ぶ）。
+	Values map[string]string `json:"values,omitempty"`
 }
 
 // ProcurementProduct は受注明細の1行（＝加工製品1種類）です。
@@ -134,60 +137,51 @@ func productByCode(db cms.ReadOnlyDB, code string) (int, bool) {
 }
 
 // procurementItemsOf は加工製品1ページぶんの購入品を、必要数・発注済数つきで返します。
+//
+// ⚠ **どの表から何を運ぶかは設定の種類が決めます**（2026-09-28・`extensions.toho.order_kinds`・
+// order_kinds.go）。それまでは材料と購入部品（09-27 夕から外注加工も）をコードで1つずつ読んでいて、
+// **種類ごとに要る項目が違うのに、運ぶ値は材料の形の固定の組**でした（利用者:「材料と外注加工、
+// その他では、必要な項目が違うため、発注部材表にうまく入りません」）。
+//
+// ⚠ **区分が「廃版」の行は数えません**（2026-09-27 利用者:「廃版は含まなくてよいと思います」）
+// ——廃版は図面の改定で使わなくなった構成部品で、行を残すのは外注に出した紙の社内コードの
+// 指し先だから（drawing_mirror.go）。買う物ではありません。
 func procurementItemsOf(db cms.ReadOnlyDB, productID, orderQty int,
 	ordered map[string][]ProcurementOrder) []ProcurementItem {
 	var out []ProcurementItem
-	add := func(kind, name, key string, per int) {
-		if name == "" {
-			return
+	var tags map[string][]string // 加工製品ページのタグ（`@品番` などで要るときだけ読む）
+	for _, k := range OrderKinds() {
+		def, ok := cms.VocabDefByHeading(k.From)
+		if !ok || def.View {
+			continue
 		}
-		item := ProcurementItem{Name: name, Kind: kind, Per: per, Key: key,
-			Required: per * orderQty, Orders: ordered[procKey(productID, key)]}
-		for _, o := range item.Orders {
-			item.Ordered += o.Qty
+		rows, err := cms.VocabTableRowsOf(db, productID, def.Type)
+		if err != nil || len(rows) == 0 {
+			continue
 		}
-		item.Remaining = item.Required - item.Ordered
-		if item.Remaining < 0 {
-			item.Remaining = 0
+		if tags == nil {
+			tags, _ = cms.TagsOfPage(db, productID)
 		}
-		out = append(out, item)
-	}
-
-	// ⚠ **区分が「廃版」の行は数えません**（2026-09-27 利用者:「廃版は含まなくてよいと思います」）
-	//    ——廃版は図面の改定で使わなくなった構成部品で、行を残すのは外注に出した紙の社内コードの
-	//    指し先だから（drawing_mirror.go）。買う物ではありません。材料・購入部品・外注加工とも同じ。
-	if rows, err := cms.VocabTableRowsOf(db, productID, partMaterialsType); err == nil {
 		for _, m := range rows {
 			if isObsoleteRow(m) {
 				continue
 			}
-			key := materialKeyOf(m.Values["material"], m.Values["shape"], m.Values["size"])
-			add(displayNameOf(partMaterialsType), materialNameOf(m), key, cms.VocabQuantity(m))
-		}
-	}
-	if rows, err := cms.VocabTableRowsOf(db, productID, partPurchasedType); err == nil {
-		for _, m := range rows {
-			if isObsoleteRow(m) {
-				continue
+			vals := k.valuesOf(def, m, tags, productID)
+			key := k.keyOf(vals)
+			if key == "" {
+				continue // 鍵の列が全部空の行（書きかけ）は数えない
 			}
-			name := strings.TrimSpace(m.Values["item-name"])
-			add(displayNameOf(partPurchasedType), name,
-				cms.NormalizeText(name), cms.VocabQuantity(m))
-		}
-	}
-	// ⚠ **外注加工も手配に乗せます**（2026-09-27 利用者:「外注加工の表を埋めてみましたが、発注ページに
-	//    出ません」）。それまでは材料と購入部品だけを数えていました。外注先へも発注書で頼むので、
-	//    同じ道（必要部材表 → 発注部材表 → 発注書）を通ります。名前は**加工内容**で、発注明細の
-	//    `品名` になり、手配済みの鍵も購入部品と同じく品名で結ばれます（`orderedByProduct`・`draftedQty`）。
-	//    ⚠ **支給部品は入れません**——お客様から支給されるもので、弊社が買いません。
-	if rows, err := cms.VocabTableRowsOf(db, productID, partOutsourcingType); err == nil {
-		for _, m := range rows {
-			if isObsoleteRow(m) {
-				continue
+			per := k.perUnit(def, m)
+			item := ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: per, Key: key,
+				Values: vals, Required: per * orderQty, Orders: ordered[procKey(productID, key)]}
+			for _, o := range item.Orders {
+				item.Ordered += o.Qty
 			}
-			name := strings.TrimSpace(m.Values["work"])
-			add(displayNameOf(partOutsourcingType), name,
-				cms.NormalizeText(name), cms.VocabQuantity(m))
+			item.Remaining = item.Required - item.Ordered
+			if item.Remaining < 0 {
+				item.Remaining = 0
+			}
+			out = append(out, item)
 		}
 	}
 	return out
@@ -228,11 +222,9 @@ func orderedByProduct(db cms.ReadOnlyDB, canView func(int) bool) (map[string][]P
 		if !ok || productID == "" {
 			continue // 弊社品番の無い行は結べない
 		}
-		// 鍵は材料なら3つ組、無ければ品名。⚠ **発注書の書き方に合わせます**。
-		key := materialKeyOf(r.Values["material"], r.Values["shape"], r.Values["size"])
-		if key == "" {
-			key = cms.NormalizeText(strings.TrimSpace(r.Values["item-name"]))
-		}
+		// 鍵は種類ごと（設定の key）——⚠ **必要部材表の側と同じ関数**（`orderRowKey`）。種類の無い
+		//    古い行は、材料（3つ組）・購入部品（品名）として読みます。
+		key := orderRowKey(orderItemsDef(), r)
 		if key == "" {
 			continue
 		}
@@ -252,4 +244,10 @@ func pageNum(id string) int {
 // procKey は「加工製品ページ＋購入品」の鍵です。
 func procKey(productID int, itemKey string) string {
 	return page.FormatID(productID) + "\x00" + itemKey
+}
+
+// orderItemsDef は発注明細の宣言です（列の見出しの名前で値を読むため）。
+func orderItemsDef() cms.VocabDef {
+	def, _ := cms.VocabDefByType(ourOrderItemsType)
+	return def
 }

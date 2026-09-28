@@ -6624,6 +6624,10 @@ delegateClick([['.backlog-print', (btn) => {
             size: d.size || '',
             color: d.color || '',
             item_name: d.itemname || '',
+            // 種類・番号・加工内容・仕様・支給（2026-09-28・部材の種類ごとの運び方——サーバーの
+            // orderLineAttrs が属性に載せる）。
+            kind: d.kind || '', no: d.no || '', work: d.work || '',
+            spec: d.spec || '', supplied: d.supplied || '',
             quantity: d.qty || '',
             unit: d.unit || '',
             cost: d.cost && d.cost !== '0' ? d.cost : '',
@@ -6708,6 +6712,9 @@ delegateClick([['.backlog-print', (btn) => {
                 item_name: at(cells, '品名'),
                 material: at(cells, '材質'), shape: at(cells, '形状'), size: at(cells, '寸法'),
                 color: at(cells, '表面'),
+                // 種類・番号・加工内容・仕様・支給も運ぶ（2026-09-28）——運ばないと、発注書で落ちる。
+                kind: at(cells, '種類'), no: at(cells, '番号'), work: at(cells, '加工内容'),
+                spec: at(cells, '仕様'), supplied: at(cells, '支給'),
                 quantity: at(cells, '数量'), unit: at(cells, '単位'),
                 cost: at(cells, '単価'), note: at(cells, '備考'),
             };

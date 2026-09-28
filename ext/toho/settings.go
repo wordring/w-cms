@@ -80,6 +80,18 @@ type settingsSection struct {
 	// ことになります。設定なら `git pull` で全環境へ届きます。
 	// ⚠ **秘密ではありません**（相手に渡す紙に印刷する情報です）。
 	Company companyInfo `json:"company,omitempty"`
+
+	// OrderKinds は**部材の種類ごとの運び方**です（2026-09-28・order_kinds.go の冒頭）——
+	// 加工製品ページのどの表から、発注の表のどの列へ運び、何を鍵に手配済みを数えるか。
+	// 利用者:「どの列が必要か設定ファイルに書きましょうか？」「一度ご提案通りにやってみましょう」。
+	// **未指定なら必要部材表に何も出しません**（既定の種類はありません）。
+	OrderKinds []orderKind `json:"order_kinds,omitempty"`
+
+	// OrderPrintColumns は**発注書の紙に刷る列**の候補と並び順です（2026-09-28）。どの行にも値の
+	// 無い列は刷りません（【要求】発注フォルダ「PDFを作成するときに空の項目を消す」）。`金額` は
+	// 計算の列。利用者:「実際に運用して見ないと私にはわかりません」——使ってみて直す1行。
+	// **未指定なら、それまでの並び**（品番・品名・材質・形状・寸法・表面・単位・数量・単価・金額）。
+	OrderPrintColumns []string `json:"order_print_columns,omitempty"`
 }
 
 // companyInfo は発注書に刷る差出人です（実物の見出しに合わせた項目）。
@@ -97,10 +109,12 @@ var (
 	machineStages []string
 	// ⚠ **`stagesMu` を共有します。** 設定の反映は1回で両方を差し替えるので、
 	// 別の錠にすると「段は新しいが番号のタグは古い」という中途半端な瞬間ができます。
-	productCodeTags []string
-	pdfFont         string
-	pdfFontFace     int
-	companyInf      companyInfo
+	productCodeTags   []string
+	pdfFont           string
+	pdfFontFace       int
+	companyInf        companyInfo
+	orderKinds        []orderKind
+	orderPrintColumns []string
 )
 
 func init() {
@@ -160,6 +174,14 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 	if s.PDFFontFace < 0 {
 		return nil, fmt.Errorf("pdf_font_face は0以上です（%d）", s.PDFFontFace)
 	}
+	if err := validateOrderKinds(s.OrderKinds); err != nil {
+		return nil, err
+	}
+	if err := validateOrderPrintColumns(s.OrderPrintColumns); err != nil {
+		return nil, err
+	}
+	kinds := s.OrderKinds
+	printCols := s.OrderPrintColumns
 	stages := s.MachineStages
 	codeTags := s.ProductCodeTags
 	font := strings.TrimSpace(s.PDFFont)
@@ -172,6 +194,8 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		pdfFont = font
 		pdfFontFace = face
 		companyInf = company
+		orderKinds = kinds
+		orderPrintColumns = printCols
 		stagesMu.Unlock()
 	}, nil
 }

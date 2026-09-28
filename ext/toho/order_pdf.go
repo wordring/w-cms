@@ -130,7 +130,7 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// ⚠ **名前に日付を入れます**——同じページで作り直すたびに増えるので、
 	// どれがいつのものか分からないと困ります（添付は上書きされません）。
-	name := "発注書 " + time.Now().Format("20060102-150405") + ".pdf"
+	name := orderPaperTitleOf(body) + " " + time.Now().Format("20060102-150405") + ".pdf"
 	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", pdf)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
@@ -179,7 +179,8 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 
 	y := pdfTop
 	// ── 題と宛名 ──
-	y = pdfText(p, pdfLeft+180, y, 16, "発注書")
+	// 題は種類で変わります（支給部品だけの紙は「支給願い」・2026-09-28）。
+	y = pdfText(p, pdfLeft+180, y, 16, orderPaperTitle(rows))
 	y += 6
 	// ⚠ **`SupplierTag` を通すこと**（2026-09-21 に直した）。ここは生の文字列で
 	// `発注先` と書いてあり、**コードの他のどこにも無い言葉**でした——ページが持つのは
@@ -211,13 +212,16 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	y = pdfTable(p, y, cols, rows)
 	y += 4
 
-	// ── 合計 ──
-	total := 0
-	for _, r := range rows {
-		total += cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"])
+	// ── 合計 ──（単価の無い行があれば出さない——`allPriced`）
+	if allPriced(rows) {
+		total := 0
+		for _, r := range rows {
+			total += cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"])
+		}
+		pdfTextRight(p, pdfRight, y, 11, "合計金額（税抜）　"+comma(total)+" 円")
+		y += pdfLine
 	}
-	pdfTextRight(p, pdfRight, y, 11, "合計金額（税抜）　"+comma(total)+" 円")
-	y += pdfLine + 6
+	y += 6
 
 	// ── 備考（複数行・2026-09-24）──
 	// ⚠ **長い行は紙の幅で折り、紙の下に来たら改ページします**——備考は人が自由に
@@ -372,6 +376,10 @@ func pdfTable(p *gopdf.GoPdf, y float64, cols []orderPDFColumn, rows []map[strin
 // 使うと、**測ったより長い文字が入ってはみ出します**——だから1つの口にします。
 func pdfCellValue(r map[string]string, c orderPDFColumn) string {
 	if c.Label == "金額" {
+		// ⚠ **単価が空なら金額も空**（`0` は「0円で発注した」になる——`allPriced`）。
+		if strings.TrimSpace(r["単価"]) == "" {
+			return ""
+		}
 		return comma(cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"]))
 	}
 	v := r[c.Label]
@@ -641,6 +649,13 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 			cancelled++
 			continue
 		}
+		// 外注加工の番号は **弊社品番-番号** で刷ります（2026-09-28・`000235-1`）——番号は
+		// 加工製品ごとの連番なので、弊社品番が無いと外注先から問い合わせを受けても引けません。
+		// ⚠ 既に弊社品番で始まる番号（人が手で書いた）はそのまま。
+		if no, id := strings.TrimSpace(r["番号"]), strings.TrimSpace(r["弊社品番"]); no != "" && id != "" &&
+			!strings.HasPrefix(no, id) {
+			r["番号"] = id + "-" + no
+		}
 		rows = append(rows, r)
 	}
 	if len(rows) == 0 {
@@ -651,27 +666,23 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		return nil, nil, nil, errors.New("発注明細に中身のある行がありません")
 	}
 
-	// 紙に出す列を決める。⚠ **並びと幅は実物に寄せます**。
-	want := []orderPDFColumn{
-		{Label: "品番", Width: 95},
-		{Label: "品名", Width: 150},
-		{Label: "材質", Width: 70},
-		{Label: "形状", Width: 60},
-		{Label: "寸法", Width: 110},
-		{Label: "表面", Width: 70},
-		{Label: "単位", Width: 32},
-		{Label: "数量", Width: 40, Right: true},
-		{Label: "単価", Width: 55, Right: true},
-		{Label: "金額", Width: 65, Right: true},
-	}
-	for _, c := range want {
-		if c.Label == "金額" {
-			cols = append(cols, c) // ⚠ 金額は計算なので本文に無くても出します
-			continue
+	// 紙に出す列を決める。⚠ **並びは設定 `order_print_columns`**（2026-09-28・種類ごとに要る列が
+	// 違うため——外注加工の番号・加工内容・支給、購入部品の仕様）。**幅は実物に寄せた既定**。
+	for _, label := range printColumnLabels() {
+		c := orderPDFColumn{Label: label, Width: 70}
+		if w, ok := pdfColumnWidths[label]; ok {
+			c.Width = w
+		}
+		c.Right = pdfRightColumns[label]
+		// ⚠ 金額は計算なので本文に列が無くても出します——**単価の書いてある行が在れば**
+		// （支給願いのように単価が1つも無い紙では、空の列になるだけなので落とす）。
+		src := c.Label
+		if src == "金額" {
+			src = "単価"
 		}
 		used := false
 		for _, r := range rows {
-			if strings.TrimSpace(r[c.Label]) != "" {
+			if strings.TrimSpace(r[src]) != "" {
 				used = true
 				break
 			}
@@ -681,6 +692,69 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		}
 	}
 	return head, rows, cols, nil
+}
+
+// pdfColumnWidths は紙の列の既定の幅です（ポイント・実物に寄せた値）。⚠ **下限の目安で、
+// 実際の幅は中身から測ります**（`fitTableColumns`）。表に無い列は 70。
+var pdfColumnWidths = map[string]float64{
+	"番号": 55, "品番": 95, "品名": 150, "加工内容": 100, "材質": 70, "形状": 60, "寸法": 110,
+	"表面": 70, "仕様": 90, "支給": 70, "単位": 32, "数量": 40, "単価": 55, "金額": 65,
+}
+
+// pdfRightColumns は右寄せの列です（数——金額が揃わないと読めません）。
+var pdfRightColumns = map[string]bool{"数量": true, "単価": true, "金額": true}
+
+// printColumnLabels は紙に刷る列の候補です（設定 `order_print_columns`・空なら 09-27 までの並び）。
+func printColumnLabels() []string {
+	if cols := OrderPrintColumns(); len(cols) > 0 {
+		return cols
+	}
+	return []string{"品番", "品名", "材質", "形状", "寸法", "表面", "単位", "数量", "単価", "金額"}
+}
+
+// orderPaperTitle は紙の題です——**取り消していない行の種類が全部同じ題を持つとき**だけその題
+// （支給部品は「支給願い」・設定 `order_kinds` の `title`）、それ以外は「発注書」。
+//
+// ⚠ **種類が混ざった紙は「発注書」**です——1枚に支給願いと買う物が並ぶなら、それは発注書です。
+func orderPaperTitle(rows []map[string]string) string {
+	title := ""
+	for i, r := range rows {
+		t := ""
+		if k, ok := orderKindByName(r["種類"]); ok {
+			t = k.Title
+		}
+		if t == "" || (i > 0 && t != title) {
+			return "発注書"
+		}
+		title = t
+	}
+	if title == "" {
+		return "発注書"
+	}
+	return title
+}
+
+// orderPaperTitleOf は本文から紙の題を返します（読めなければ「発注書」——保存名に使うだけ）。
+func orderPaperTitleOf(body string) string {
+	_, rows, _, err := readOrderDoc(body)
+	if err != nil {
+		return "発注書"
+	}
+	return orderPaperTitle(rows)
+}
+
+// allPriced は、刷る行の全部に単価が書いてあるかです（合計を出すかの判定）。
+//
+// ⚠ **単価の無い行が1つでもあれば合計は出しません**（空欄のまま）——【要求】発注フォルダ:
+// 「単価を書かない発注書があります（実物の材料2枚は単価も合計も空欄）。`0` とは別です」。
+// 書いてある行だけ足した合計は**その紙の注文の合計ではない**ので、嘘の数字になります。
+func allPriced(rows []map[string]string) bool {
+	for _, r := range rows {
+		if strings.TrimSpace(r["単価"]) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // sectionHeadingText は節の最初の見出し（直接の子の h1〜h6）の文字を返します。

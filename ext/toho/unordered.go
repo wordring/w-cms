@@ -40,11 +40,13 @@ type UnorderedItem struct {
 	Shape         string `json:"shape"`           // 形状
 	Size          string `json:"size"`            // 寸法
 	Name          string `json:"name"`            // 表示用の名前
-	Kind          string `json:"kind"`            // 材料 / 購入部品 / 外注加工
+	Kind          string `json:"kind"`            // 種類（設定 order_kinds の kind）
 	Remaining     int    `json:"remaining"`       // 残要手配数
 	Cost          int    `json:"cost"`            // 参考単価（引けなければ 0）
 	Supplier      string `json:"supplier"`        // その単価の仕入先
 	Migrating     bool   `json:"migrating"`       // ⚠ 移行の確認前
+	// Values は発注の表の列ごとの値（2026-09-28・種類の columns から）——画面が発注部材表へ運ぶ。
+	Values map[string]string `json:"values,omitempty"`
 
 	// 以下は**臨時部材表から来た行**だけが持ちます（2026-09-25・temp_parts.go）。
 	// TempRow > 0 なら臨時部材の行で、発注部材表へ入れると臨時部材表から消えます。
@@ -140,7 +142,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 				OrderPageID: o.PageID, OrderTitle: cms.PageTitleByID(o.PageID),
 				Client: h.client, Due: due,
 				ProductPageID: pid, ProductTitle: cms.PageTitleByID(pid), Machine: machine,
-				Name: it.Name, Kind: it.Kind, Remaining: it.Remaining, Migrating: mig,
+				Name: it.Name, Kind: it.Kind, Remaining: it.Remaining, Migrating: mig, Values: it.Values,
 			}
 			fillUnorderedMaterial(db, pid, &u, prices)
 			out = append(out, u)
@@ -159,24 +161,16 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 // 材料表をもう一度読んで、**名前が一致する行**から採ります。
 func fillUnorderedMaterial(db cms.ReadOnlyDB, productID int, u *UnorderedItem,
 	prices map[string]materialPrice) {
-	if u.Kind != displayNameOf(partMaterialsType) {
+	// ⚠ 2026-09-28 から、3つ組は**集計が種類の columns から組んだ値**（`Values`）から採ります
+	//    ——材料表を読み直して名前で当てる必要が無くなった。3つ組のある行だけ参考単価を引く。
+	u.Material = strings.TrimSpace(u.Values["材質"])
+	u.Shape = strings.TrimSpace(u.Values["形状"])
+	u.Size = strings.TrimSpace(u.Values["寸法"])
+	if u.Material == "" && u.Shape == "" && u.Size == "" {
 		return
 	}
-	rows, err := cms.VocabTableRowsOf(db, productID, partMaterialsType)
-	if err != nil {
-		return
-	}
-	for _, m := range rows {
-		if materialNameOf(m) != u.Name {
-			continue
-		}
-		u.Material = strings.TrimSpace(m.Values["material"])
-		u.Shape = strings.TrimSpace(m.Values["shape"])
-		u.Size = strings.TrimSpace(m.Values["size"])
-		if p, ok := prices[materialKeyOf(u.Material, u.Shape, u.Size)]; ok {
-			u.Cost, u.Supplier = p.Cost, p.Supplier
-		}
-		return
+	if p, ok := prices[materialKeyOf(u.Material, u.Shape, u.Size)]; ok {
+		u.Cost, u.Supplier = p.Cost, p.Supplier
 	}
 }
 

@@ -462,3 +462,105 @@ func TestOrderPDFPrintsNoteLines(t *testing.T) {
 		t.Errorf("⚠ 古い紙のタグの備考が刷られていません")
 	}
 }
+
+// kindOrderBody は種類の列を持つ発注書の本文です（2026-09-28 からの形）。
+func kindOrderBody(rows string) string {
+	return `<h1>発注</h1><dl data-type="tags">` +
+		`<dt>発注書番号</dt><dd>45</dd>` +
+		`<dt>` + SupplierTag + `</dt><dd>株式会社みなと商店</dd></dl>` +
+		`<table data-type="our-order-items"><caption>発注明細</caption><tbody>` +
+		`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>品番</th><th>品名</th><th>加工内容</th>` +
+		`<th>仕様</th><th>支給</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` +
+		rows + `</tbody></table>`
+}
+
+// TestOrderPDFFollowsKinds は、**紙が部材の種類に従う**ことを固定します（2026-09-28）。
+//
+//   - 支給部品だけの紙は題が「**支給願い**」（利用者:「支給品は購入しませんが、支給願いという形で発注します」）。
+//     ⚠ 種類が混ざれば「発注書」。
+//   - 外注加工の番号は **弊社品番-番号**（`000031-1`）で刷る——番号は加工製品ごとの連番。
+//   - ⚠ **単価が空なら金額も合計も刷らない**（`0` は「0円で発注した」になる・【要求】発注フォルダ）。
+//   - 刷る列は設定 `order_print_columns` から——加工内容・仕様・支給は出る、行の備考は出ない。
+func TestOrderPDFFollowsKinds(t *testing.T) {
+	withPDFFont(t, systemJPFont(t))
+
+	supply := `<tr><td>000031</td><td>支給部品</td><td></td><td></td><td>支給シャフト</td><td></td>` +
+		`<td>φ20</td><td></td><td>3</td><td>本</td><td></td><td>社内のメモ</td><td>未発注</td></tr>`
+	pdf, err := buildOrderPDF(kindOrderBody(supply), nil)
+	if err != nil {
+		t.Fatalf("支給願い: %v", err)
+	}
+	s := pdfTextOf(t, pdf)
+	if !strings.Contains(s, "支給願い") || !strings.Contains(s, "φ20") {
+		t.Errorf("⚠ 支給部品だけの紙の題が「支給願い」になっていないか、仕様が出ていません:\n%s", s)
+	}
+	if strings.Contains(s, "合計金額") || strings.Contains(s, "金額") {
+		t.Errorf("⚠ 単価の無い紙に金額・合計が出ています（0円の注文に読めます）:\n%s", s)
+	}
+	if strings.Contains(s, "社内のメモ") {
+		t.Errorf("⚠ 行の備考（社内のメモ）が紙に出ています:\n%s", s)
+	}
+
+	outsource := `<tr><td>000031</td><td>外注加工</td><td>1</td><td>A100-B01-001</td><td>ブラケット</td>` +
+		`<td>レーザー切断</td><td></td><td>材料支給</td><td>3</td><td>個</td><td>1200</td><td></td><td>未発注</td></tr>`
+	pdf, err = buildOrderPDF(kindOrderBody(outsource+supply), nil)
+	if err != nil {
+		t.Fatalf("外注加工: %v", err)
+	}
+	s = pdfTextOf(t, pdf)
+	for _, want := range []string{"000031-1", "レーザー切断", "材料支給", "A100-B01-001"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("⚠ 外注加工の紙に %q が出ていません:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "支給願い") {
+		t.Errorf("⚠ 種類が混ざった紙の題が「支給願い」です（発注書のはず）:\n%s", s)
+	}
+	// 単価の無い行が1つあるので合計は出さない。書いてある行の金額は出す（3×1200）。
+	if strings.Contains(s, "合計金額") {
+		t.Errorf("⚠ 単価の無い行があるのに合計が出ています（その紙の合計ではありません）:\n%s", s)
+	}
+	if !strings.Contains(s, "3,600") {
+		t.Errorf("単価のある行の金額が出ていません:\n%s", s)
+	}
+}
+
+// TestOrderPaperTitle は紙の題の決め方を固定します（古い紙の種類の無い行は「発注書」）。
+//
+// ⚠ **題を持つ種類どうしが混ざっても「発注書」**——試験のあいだだけ、題を持つ2つ目の種類
+// （社内発注）を足して確かめます（設定で題を持つのは支給部品だけなので、無いと素通りする）。
+func TestOrderPaperTitle(t *testing.T) {
+	stagesMu.Lock()
+	saved := orderKinds
+	orderKinds = append(append([]orderKind{}, saved...), orderKind{Kind: "社内", From: "社内",
+		Key: []string{"品名"}, Columns: map[string]string{"品名": "品名"}, Title: "社内発注"})
+	stagesMu.Unlock()
+	t.Cleanup(func() {
+		stagesMu.Lock()
+		orderKinds = saved
+		stagesMu.Unlock()
+	})
+
+	cases := []struct {
+		kinds []string
+		want  string
+	}{
+		{[]string{"支給部品"}, "支給願い"},
+		{[]string{"支給部品", "支給部品"}, "支給願い"},
+		{[]string{"支給部品", "材料"}, "発注書"},
+		{[]string{"材料", "支給部品"}, "発注書"},
+		{[]string{""}, "発注書"},
+		{[]string{"外注加工"}, "発注書"},
+		{[]string{"社内", "社内"}, "社内発注"},
+		{[]string{"支給部品", "社内"}, "発注書"},
+	}
+	for _, c := range cases {
+		var rows []map[string]string
+		for _, k := range c.kinds {
+			rows = append(rows, map[string]string{"種類": k})
+		}
+		if got := orderPaperTitle(rows); got != c.want {
+			t.Errorf("種類 %v の題が %q です（%q のはず）", c.kinds, got, c.want)
+		}
+	}
+}

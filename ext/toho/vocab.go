@@ -122,10 +122,22 @@ var businessVocab = []cms.VocabDef{
 		// **先に取引先ページが要ります**。代わりに**入力時に候補を出す**形にします
 		// （顧客名のコンボボックスと同じ手）——⚠ **揃うのは採ったときだけ**で、
 		// 手打ちは止められません。
+		//
+		// ⚠ **2026-09-28 に列を足しました**（【考察】部材の種類ごとの発注項目 §9.2・利用者:「足してよい」）:
+		//   - **番号**——1つの加工製品に外注加工が複数ありうるので、行ごとの連番（利用者:「個別に番号を
+		//     割り当てる必要があります」）。紙には「弊社品番-番号」（例 000235-1）で出す。**使い回さない**。
+		//   - **名称**・**材質**——ワンノートの ■外注加工 の表（名称／材質／加工／個数／推奨業者／備考）に
+		//     在ったのに、w-cms の表に無かった。名称は外注先へ渡す品物の名前（紙の品名）。
+		//   - **表面**——塗装の色・艶・鍍金の種類（利用者:「塗装色は可能であれば、外注加工の表にマージしたい」）。
+		//     発注明細の `表面` と同じ名前（機械キーも `color`）。
 		Columns: []cms.VocabColumn{
+			{Field: "no", Label: "番号", Type: cms.ColText},
+			{Field: "item-name", Label: "名称", Type: cms.ColText},
 			{Field: "work", Label: "加工内容", Type: cms.ColText},
-			{Field: "supplied", Label: "支給", Type: cms.ColText},
+			{Field: "material", Label: "材質", Type: cms.ColText},
+			{Field: "color", Label: "表面", Type: cms.ColText},
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
+			{Field: "supplied", Label: "支給", Type: cms.ColText},
 			{Field: "vendor", Label: "推奨業者", Type: cms.ColText, Suggest: PartnerSuggestSource},
 			{Field: "doc", Label: "資料", Type: cms.ColRef},
 			{Field: "note", Label: "備考", Type: cms.ColText},
@@ -140,10 +152,13 @@ var businessVocab = []cms.VocabDef{
 		Category:    "業務",
 		Icon:        "📦",
 		Element:     "table",
+		// ⚠ **推奨業者を足しました**（2026-09-28・§9.3）——ワンノートの ■購入品 は外注加工の表を
+		// 流用して推奨業者を使っていた。紙には出さない（その業者あての紙なので）。
 		Columns: []cms.VocabColumn{
 			{Field: "item-name", Label: "品名", Type: cms.ColText},
 			{Field: "spec", Label: "仕様", Type: cms.ColText},
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
+			{Field: "vendor", Label: "推奨業者", Type: cms.ColText, Suggest: PartnerSuggestSource},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},
@@ -435,7 +450,7 @@ var businessVocab = []cms.VocabDef{
 		// ⚠ **2026-09-27 からスラッシュメニューに出します**（それまでは `Hidden`）——機械が作る
 		// ページはテンプレートを写すようになり、この表はテンプレートに**人が置く印**になった（利用者:
 		// 「テンプレートにはスラッシュメニューから表などの印を置き、コードはそれを埋めてはどうでしょう？」）。
-		Columns:     tempPartsColumns(),
+		Columns: tempPartsColumns(),
 	},
 	{
 		// **発注書へのリンク**（2026-09-22）。発注部材表が発注書になったあと、
@@ -501,7 +516,7 @@ const (
 	ourOrderItemsType    = "our-order-items"    // 発注明細（弊社が出す注文）
 	// OrderDraftType は**発注部材表**です（2026-09-22）。発注ページの上で、
 	// **人が足し引きする**候補の表——これを元に発注書ページが作られます。
-	OrderDraftType    = "order-draft"
+	OrderDraftType      = "order-draft"
 	partMaterialsType   = "part-materials"   // 材料
 	partPurchasedType   = "part-purchased"   // 購入部品
 	partOutsourcingType = "part-outsourcing" // 外注加工（2026-09-27 から手配に乗る）
@@ -558,8 +573,15 @@ func unitChoices() []string { return []string{"個", "セット", "本", "枚", 
 func orderItemColumns() []cms.VocabColumn {
 	return []cms.VocabColumn{
 		{Field: "our-item-id", Label: "弊社品番", Type: cms.ColRef},
+		// ⚠ **種類・番号・加工内容・仕様・支給は 2026-09-28 に足しました**（【考察】部材の種類ごとの
+		//    発注項目 §3・§9）——材料・外注加工・購入部品・支給部品で要る項目が違うので、表は
+		//    **すべての項目の集合**（【要求】発注フォルダ）。紙に刷るかは設定（order_print_columns）。
+		//    **種類**は手配済みを数える鍵の種類で、紙には出しない。臨時部材表には入れない（tempPartsColumns）。
+		{Field: "kind", Label: "種類", Type: cms.ColText},
+		{Field: "no", Label: "番号", Type: cms.ColText},
 		{Field: "item-id", Label: "品番", Type: cms.ColCode},
 		{Field: "item-name", Label: "品名", Type: cms.ColText},
+		{Field: "work", Label: "加工内容", Type: cms.ColText},
 		// 材料のときだけ使う3つ（`材料` 表と同じ名前・同じ意味）。
 		{Field: "material", Label: "材質", Type: cms.ColText},
 		{Field: "shape", Label: "形状", Type: cms.ColText},
@@ -573,6 +595,8 @@ func orderItemColumns() []cms.VocabColumn {
 		//    本文の索引が引けなくなります**（索引は見出しの表示文字で引くので、
 		//    直すのは表示文字のほう）。
 		{Field: "color", Label: "表面", Type: cms.ColText},
+		{Field: "spec", Label: "仕様", Type: cms.ColText},
+		{Field: "supplied", Label: "支給", Type: cms.ColText},
 		{Field: "quantity", Label: "数量", Type: cms.ColNumber},
 		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
 		{Field: "cost", Label: "単価", Type: cms.ColNumber},
