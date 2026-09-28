@@ -11,6 +11,13 @@
 #   - 目録.json に ページID → 最終更新時刻 を残し、**次からは新しい・変わったページだけ**吸い出す。
 #     ワンノートから消えたページは目録で「消えた」にする（吸い出した物は消さない）。
 #   - 移行データの製造（w-cms へ入れる）はこのフォルダだけを読む——何度やり直してもワンノートに触らない。
+#   - 印刷イメージ（図面の PNG）の元の XPS も取る（2026-09-28 利用者:「PNGの図面はワンノートではXPS形式で
+#     記録されています。これをベクターのままPDFに変換できませんか？」）。XPS は**束**（何ページもある印刷物）で、
+#     同じ束を多くのページが共有するので、XPS\ に束ごと1回だけ置く（名前は idDocument）。
+#   - -Wait は、まだこの機械へ降りてきていない画像を待つ秒数（既定60・0なら待たずに次の回へ回す）。
+#   - 取れなかったものはページごとに目録の missing と「取れなかったもの.txt」に残し、次の回が取り直す。何をしたかは
+#     「吸い出しの記録.log」。-MaxMinutes で1回の時間を区切れる（残りは次の回）。目録は1ページごとに保存し、
+#     二重には動かない——時間をおいて繰り返し動かしてよい。
 #
 # ⚠ **読むだけ**です（GetHierarchy・GetPageContent・GetBinaryPageContent）。書き込み系は使わない。
 # ⚠ **32ビットの PowerShell で動かす**（OneNote が32ビット版で、64ビットでは開けない）:
@@ -18,12 +25,30 @@
 # ⚠ このファイルは BOM 付き UTF-8 で保存すること（PowerShell 5.1 は BOM 無しを cp932 として読む）。
 # ⚠ 実データの名前をこのファイルに書かないこと（公開リポジトリ）——対象は出力先の「対象.txt」に書く。
 # ─────────────────────────────────────────────────────────────────────────
-param([string]$Notebook = '板金部')
+param([string]$Notebook = '板金部', [int]$Wait = 60, [int]$MaxMinutes = 0)
+# 吸い出しの版——上げると、変わっていないページも1度だけ吸い出し直す（2 で XPS を取るようにした）。
+$version = 2
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+$started = Get-Date
 
 $root = Join-Path ([Environment]::GetFolderPath('Desktop')) ('w-cms\ワンノート\' + $Notebook)
 New-Item -ItemType Directory -Force $root | Out-Null
+# 記録（タスク スケジューラから無人で回すとき、何をしたかを後で読むため）。
+$logFile = Join-Path $root '吸い出しの記録.log'
+function Log([string]$s) {
+  $line = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  ' + $s
+  Write-Output $s
+  [IO.File]::AppendAllText($logFile, $line + "`r`n", $utf8)
+}
+# ⚠ **二重に動かさない**（2026-09-28 利用者:「ダウンロードできなかったものを記録し、時間をおいて再ダウンロードを
+#    試してください。この再ダウンロードプロセスをセッションが止まっても実行することは出来ますか？」——タスク
+#    スケジューラで繰り返し動かすので、前の回が長引いたときに重ならないようにする）。
+$mutex = New-Object System.Threading.Mutex($false, 'w-cms-onenote-extract')
+# ⚠ 前の回が途中で落ちていると、名前つきの印は「持ち主が居なくなった」例外で返る——取れたとみなす。
+$own = $false
+try { $own = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $own = $true }
+if (-not $own) { Log "前の回がまだ動いているので、この回は止めます"; return }
 $targetFile = Join-Path $root '対象.txt'
 if (-not (Test-Path $targetFile)) {
   [IO.File]::WriteAllText($targetFile, "# 吸い出すセクション（1行1つ・「グループ / セクション」の末尾が一致すれば対象）`r`n", $utf8)
@@ -57,9 +82,17 @@ $ns.AddNamespace('one', $doc.DocumentElement.NamespaceURI)
 $nb = $doc.SelectSingleNode("//one:Notebook[@name='$Notebook']", $ns)
 if ($nb -eq $null) { throw "ノートブック「$Notebook」がありません" }
 
+# SaveCatalog は目録を書きます——**1ページごとに**書く（無人の回が途中で止められても、そこまでは残る）。
+function SaveCatalog {
+  $out = [PSCustomObject]@{ notebook = $Notebook; updatedAt = (Get-Date).ToString('s'); pages = [PSCustomObject]$catalog }
+  [IO.File]::WriteAllText($catalogFile, ($out | ConvertTo-Json -Depth 5), $utf8)
+}
+
+Log ("吸い出しを始めます（待ち {0} 秒・上限 {1} 分）" -f $Wait, $(if ($MaxMinutes -gt 0) { $MaxMinutes } else { 'なし' }))
 $seen = @{}
-$stat = @{ new = 0; changed = 0; same = 0; files = 0; missing = 0 }
-foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
+$stopped = $false
+$stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0 }
+:sections foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
   if ($sec.GetAttribute('isInRecycleBin') -eq 'true') { continue }
   $groups = @()
   $p = $sec.ParentNode
@@ -81,9 +114,11 @@ foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
     $seen[$id] = $true
     $rec = $catalog[$id]
     # 前回取れなかったファイルがあるページ（incomplete）は、変わっていなくても吸い出し直す。
-    if ($rec -ne $null -and $rec.lastModified -eq $mod -and -not $rec.incomplete -and (Test-Path (Join-Path $root $rec.dir))) {
+    if ($rec -ne $null -and $rec.lastModified -eq $mod -and -not $rec.incomplete -and $rec.v -ge $version -and (Test-Path (Join-Path $root $rec.dir))) {
       $stat.same++; continue
     }
+    # 1回の時間の上限（-MaxMinutes）——超えたら残りは次の回へ（遅い回線で少しずつ進めるため）。
+    if ($MaxMinutes -gt 0 -and ((Get-Date) - $started).TotalMinutes -ge $MaxMinutes) { $stopped = $true; break sections }
     # ページの置き場は最初に決めたものを使い続ける（題が変わってもフォルダ名は変えない）。
     if ($rec -ne $null -and $rec.dir) { $rel = $rec.dir }
     else { $rel = (Split-Path $secDir -Leaf) + '\' + (SafeName $title) + '__' + ($id -replace '[{}]', '').Substring(0, 8) }
@@ -101,12 +136,13 @@ foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
     $pns.AddNamespace('one', $pdoc.DocumentElement.NamespaceURI)
     $got = @()
     $miss = 0
+    $lost = @() # 取れなかったもの（目録の missing・取れなかったもの.txt に出す）
     # 画像（写真・印刷イメージ）——名前は CallbackID から。**保存する page.xml の Image に wcmsFile="…" を
     # 書き足す**（製造はこれで画像と結ぶ・推し量らない）。
     $pending = @()
     foreach ($img in $pdoc.SelectNodes('//one:Image', $pns)) {
       $cb = $img.SelectSingleNode('one:CallbackID', $pns)
-      if ($cb -eq $null) { $miss++; continue }
+      if ($cb -eq $null) { $miss++; $lost += '画像（CallbackID なし）'; continue }
       $cid = $cb.GetAttribute('callbackID')
       $fmt = $img.GetAttribute('format'); if (-not $fmt) { $fmt = 'png' }
       $name = 'img_' + (SafeName ($cid -replace '[{}]', '') 60) + '.' + $fmt
@@ -158,19 +194,41 @@ foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
       $script:pending = $rest
     }
     TryFetch
-    if ($pending.Count -gt 0) {
+    if ($pending.Count -gt 0 -and $Wait -gt 0) {
       # ⚠ **まだ降りてきていない画像**——ワンノートにそのページを開かせて降ろさせる（読むだけ・画面が
-      #    そのページへ動く）。遅い回線では時間がかかるので、1分待って取れなければ次の回に回す（incomplete）。
+      #    そのページへ動く）。遅い回線では時間がかかるので、-Wait 秒待って取れなければ次の回に回す（incomplete）。
       try { $on.NavigateTo($id, '', $false) } catch { }
-      $until = (Get-Date).AddSeconds(60)
+      $until = (Get-Date).AddSeconds($Wait)
       while ($pending.Count -gt 0 -and (Get-Date) -lt $until) { Start-Sleep -Seconds 3; TryFetch }
     }
     $miss += $pending.Count
+    foreach ($x in $pending) { $lost += $(if ($x.pr) { '印刷イメージ ' } else { '画像 ' }) + $x.name }
+    # 印刷イメージの元の XPS（束）。**束ごと1回だけ** XPS\ に置き、page.xml の XPSFile に wcmsFile="…" を
+    # 書き足す（製造は印刷イメージの xpsFileIndex で束を引き、originalPageNumber でページを切り出す）。
+    $xpsDir = Join-Path $root 'XPS'
+    foreach ($xf in $pdoc.SelectNodes('//one:XPSFile', $pns)) {
+      $cb = $xf.SelectSingleNode('one:CallbackID', $pns)
+      $docID = ($xf.GetAttribute('idDocument') -replace '[{}]', '')
+      if ($cb -eq $null -or -not $docID) { $miss++; $lost += 'XPS（CallbackID なし）'; continue }
+      $xname = 'xps_' + (SafeName $docID 60) + '.xps'
+      $xpath = Join-Path $xpsDir $xname
+      if (-not (Test-Path -LiteralPath $xpath)) {
+        $b64 = ''
+        try { $on.GetBinaryPageContent($id, $cb.GetAttribute('callbackID'), [ref]$b64) } catch { $b64 = '' }
+        $bytes = [byte[]]@()
+        if ($b64) { try { $bytes = [Convert]::FromBase64String($b64.Trim()) } catch { } }
+        if ($bytes.Length -eq 0) { $miss++; $lost += 'XPS ' + $xname; continue }
+        New-Item -ItemType Directory -Force $xpsDir | Out-Null
+        [IO.File]::WriteAllBytes($xpath, $bytes)
+        $stat.xps++
+      }
+      $xf.SetAttribute('wcmsFile', $xname)
+    }
     [IO.File]::WriteAllText((Join-Path $dir 'page.xml'), $pdoc.OuterXml, $utf8)
     # 添付（PDF・CAD 等）——pathCache に実体がある（pathSource は元の置き場で、もう無いことがある）。
     foreach ($f in $pdoc.SelectNodes('//one:InsertedFile | //one:MediaFile', $pns)) {
       $src = $f.GetAttribute('pathCache')
-      if (-not $src -or -not (Test-Path -LiteralPath $src)) { $miss++; continue }
+      if (-not $src -or -not (Test-Path -LiteralPath $src)) { $miss++; $lost += '添付 ' + $f.GetAttribute('preferredName'); continue }
       $oid = ($f.GetAttribute('objectID') -replace '[{}]', '')
       $name = 'att_' + (SafeName $oid 40) + '__' + (SafeName $f.GetAttribute('preferredName') 80)
       Copy-Item -LiteralPath $src -Destination (Join-Path $files $name) -Force
@@ -180,19 +238,36 @@ foreach ($sec in $nb.SelectNodes('.//one:Section', $ns)) {
     if ($rec -eq $null) { $stat.new++ } else { $stat.changed++ }
     $catalog[$id] = [PSCustomObject]@{
       title = $title; section = $path; lastModified = $mod; dir = $rel
-      extractedAt = (Get-Date).ToString('s'); files = $got; gone = $false; incomplete = ($miss -gt 0)
+      extractedAt = (Get-Date).ToString('s'); files = $got; gone = $false; incomplete = ($miss -gt 0); v = $version
+      missing = @($lost)
     }
+    SaveCatalog
   }
 }
-# 対象のセクションから消えたページ（吸い出した物は残し、印だけ付ける）
+# 対象のセクションから消えたページ（吸い出した物は残し、印だけ付ける）——⚠ 時間の上限で途中で止めた回は
+# 全部を見ていないので付けない（見ていないページを「消えた」にしてしまう）。
 $gone = 0
-foreach ($k in @($catalog.Keys)) {
-  $r = $catalog[$k]
-  $inTarget = $false
-  foreach ($t in $targets) { if ($r.section.EndsWith($t)) { $inTarget = $true; break } }
-  if ($inTarget -and -not $seen.ContainsKey($k) -and -not $r.gone) { $r.gone = $true; $gone++ }
+if (-not $stopped) {
+  foreach ($k in @($catalog.Keys)) {
+    $r = $catalog[$k]
+    $inTarget = $false
+    foreach ($t in $targets) { if ($r.section.EndsWith($t)) { $inTarget = $true; break } }
+    if ($inTarget -and -not $seen.ContainsKey($k) -and -not $r.gone) { $r.gone = $true; $gone++ }
+  }
 }
-$out = [PSCustomObject]@{ notebook = $Notebook; updatedAt = (Get-Date).ToString('s'); pages = [PSCustomObject]$catalog }
-[IO.File]::WriteAllText($catalogFile, ($out | ConvertTo-Json -Depth 5), $utf8)
-Write-Output ("新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・取れなかった {5} → {6}" -f `
-  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root)
+SaveCatalog
+# 取れなかったもの（ページごと）——次の回が取り直す。人が読む一覧。
+$left = @($catalog.Values | Where-Object { $_.incomplete -and -not $_.gone } | Sort-Object section, title)
+# ⚠ 先頭の要素は括弧で包む——PowerShell では「,」が「+」より先に結び付き、後ろの行まで1つの文字列に繋がる。
+$lines = @(('# 取れなかったもの（' + (Get-Date).ToString('yyyy-MM-dd HH:mm') + ' 時点・' + $left.Count + ' ページ）'),
+  '# 次の吸い出しで取り直します。ワンノートでそのページを開くと早く降りてきます。', '')
+foreach ($r in $left) {
+  $lines += $r.section + ' / ' + $r.title
+  foreach ($m in @($r.missing)) { if ($m) { $lines += '    ' + $m } }
+}
+[IO.File]::WriteAllText((Join-Path $root '取れなかったもの.txt'), ($lines -join "`r`n") + "`r`n", $utf8)
+$summary = "新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・XPS {7}・取れなかった {5}・まだ取れていないページ {8}" -f `
+  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root, $stat.xps, $left.Count
+if ($stopped) { $summary += '（時間の上限で止めました——残りは次の回）' }
+Log $summary
+$mutex.ReleaseMutex()
