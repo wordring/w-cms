@@ -514,10 +514,9 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo
 		}
 	}
 	name := pg.Title
-	if m := titleMarkRe.FindString(name); m != "" {
-		note.ask("題の頭に「" + strings.TrimSpace(m) + "」があります——図面名称からは外しました。この印の意味は？（残すべきなら言ってください）")
-		name = titleMarkRe.ReplaceAllString(name, "")
-	}
+	// 題の頭の印（●など）は外す（2026-09-28 利用者:「●の意味は、変更の有り無しなどをページ名からわかるように
+	// してたものです。消してください」）。
+	name = titleMarkRe.ReplaceAllString(name, "")
 	drawingNo = cms.NormalizeNameForIngest(drawingNo)
 	name = cms.NormalizeNameForIngest(name)
 	if drawingNo == "" {
@@ -637,13 +636,35 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo
 	// 節を並びのまま置く。テンプレートに入れ物のある節はそこへ、無い節は直前に置いたものの後ろへ。
 	anchor := blk.Node()
 	before := true // 図面より前の節（不具合・参考図）は図面の前へ
+	// 図面の後ろの目印は改訂明細（図面ブロックのすぐ後ろの表）——図面と改訂明細の間に節を割り込ませない。
+	afterDrawing := blk.Node()
+	if t, ok := d.Table("改訂明細"); ok && t.Parent == blk.Node().Parent {
+		afterDrawing = t
+	}
+	// 表の節（材料・外注加工…）が1つでも出たら、それより後ろのテンプレートに無い節はページの末尾へ——
+	// ワンノートは ■材料 ■見積もり ■工程 ■完成品 ■外注加工 … の順に書くことがあり、並びのまま置くと
+	// テンプレートの表（材料 → 外注加工 → 購入部品 → 支給部品）の間に割り込む。
+	pastTables := false
 	for _, s := range secs {
 		if s.Name == "図面番号" {
 			continue
 		}
+		if tableMap[s.Name].Caption != "" {
+			pastTables = true
+		}
 		if s.empty() {
 			if s.Name != "前書き" {
 				note.dropped(s.Name)
+			}
+			if s.Name == "図面" {
+				anchor, before = afterDrawing, false
+			}
+			// 空でもテンプレートに入れ物のある節なら、並びの目印はそこへ進める——進めないと、あとの節が
+			// テンプレートの表（外注加工・購入部品…）より前に入る。
+			if m := tableMap[s.Name]; m.Caption != "" {
+				if box, ok := d.Container(m.Caption); ok {
+					anchor, before = box.Node(), false
+				}
 			}
 			continue
 		}
@@ -671,7 +692,7 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo
 					appendHTML(blk.Node(), plainTable(it.Rows))
 				}
 			}
-			anchor = blk.Node()
+			anchor = afterDrawing
 		case tableMap[s.Name].Caption != "":
 			m := tableMap[s.Name]
 			box, ok := d.Container(m.Caption)
@@ -699,8 +720,9 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo
 					appendHTML(box.Node(), paragraphs(it.Text))
 					// 表の外の文——説明（※…）でなければ、表に入れるべき中身かもしれない（例: 購入品の
 					// 「カラー かなめ商会 530円」が ■材料 の下に文で書かれている）。機械は文から行を作らない。
+					// 利用者（2026-09-28）:「文で書かれた部品は人が表に入れます」——移すページの一覧として報告に出す。
 					if !strings.HasPrefix(it.Text, "※") {
-						note.ask("■" + s.Name + " の表の外に文があります——表の行（購入部品など）にするものか確かめてください")
+						note.todo("■" + s.Name + " の表の外に文があります（部品なら人が表へ移す）: " + firstLine(it.Text))
 					}
 				case "image", "file":
 					if u, ok := up(s.Name, it); ok {
@@ -712,16 +734,26 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo
 			before = false
 		default:
 			var b strings.Builder
+			// ■見積もり は原価の内訳——表の名前は「見積計算表」（2026-09-28 利用者:「見積計算表はどうでしょう？」）。
+			// ⚠ 節の見出しも「見積計算表」に——「見積もり」のままだと w-cms の「見積もり」（売値）の形式として読まれる。
+			heading := s.Name
+			if s.Name == "見積もり" {
+				heading = estimateTable
+			}
 			// 前書き（最初の■より前）は見出しを付けず、題のすぐ下に置く。
 			if s.Name != "前書き" {
-				b.WriteString("<section><h2>" + stdhtml.EscapeString(s.Name) + "</h2>")
+				b.WriteString("<section><h2>" + stdhtml.EscapeString(heading) + "</h2>")
 			}
 			for _, it := range s.Items {
 				switch it.Kind {
 				case "text":
 					b.WriteString(paragraphs(it.Text))
 				case "table":
-					b.WriteString(plainTable(it.Rows))
+					if s.Name == "見積もり" && tableHasData(it.Rows) {
+						b.WriteString(captionTable(estimateTable, it.Rows))
+					} else {
+						b.WriteString(plainTable(it.Rows))
+					}
 				case "image", "file":
 					if u, ok := up(s.Name, it); ok {
 						b.WriteString(mediaHTML(pageID, u, it))
@@ -730,10 +762,6 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo
 			}
 			if s.Name != "前書き" {
 				b.WriteString("</section>")
-			}
-			if s.Name == "見積もり" {
-				note.ask("■見積もり の表は**キャプションを付けていません**（DBに入らない）——中身は原価の内訳（工程・数・単位）で、" +
-					"w-cms の「見積もり」（売値）とは別物のため。どの名前の表にするか決めてください")
 			}
 			nodes, err := htmldoc.ParseFragment(b.String())
 			if err != nil || len(nodes) == 0 {
@@ -749,6 +777,12 @@ func buildOne(c *client, root, dir, tmpl, tmplTitle string, pl placement, partNo
 				// 前書きは題のすぐ下（タグの後ろ）——図面ブロックの前へ。
 				for _, n := range nodes {
 					blk.Node().Parent.InsertBefore(n, blk.Node())
+				}
+				continue
+			}
+			if pastTables {
+				for _, n := range nodes {
+					d.Node().AppendChild(n)
 				}
 				continue
 			}
@@ -838,6 +872,23 @@ func paragraphs(t string) string {
 		}
 	}
 	return b.String()
+}
+
+// estimateTable は ■見積もり（原価の内訳）の表の名前です（利用者が決めた）。
+const estimateTable = "見積計算表"
+
+// firstLine は文の1行目です（報告に出す長さに）。
+func firstLine(s string) string {
+	l := strings.SplitN(strings.TrimSpace(s), "\n", 2)[0]
+	if r := []rune(l); len(r) > 40 {
+		l = string(r[:40]) + "…"
+	}
+	return l
+}
+
+// captionTable はキャプションで名乗る表です（表の写し＝DBに、この名前の表として入る）。
+func captionTable(caption string, rows [][]string) string {
+	return strings.Replace(plainTable(rows), "<table>", "<table><caption>"+stdhtml.EscapeString(caption)+"</caption>", 1)
 }
 
 // plainTable はキャプションの無い表です（DBに入らない——名前は人が決める）。
@@ -1180,12 +1231,14 @@ type pageNote struct {
 	infos []string
 	warns []string
 	asks  []string
+	todos []string
 	drops []string
 }
 
 func (n *pageNote) info(s string) { n.infos = append(n.infos, s) }
 func (n *pageNote) warn(s string) { n.warns = append(n.warns, s) }
 func (n *pageNote) ask(s string)  { n.asks = append(n.asks, s) }
+func (n *pageNote) todo(s string) { n.todos = append(n.todos, s) }
 func (n *pageNote) dropped(s string) {
 	n.drops = append(n.drops, s)
 }
@@ -1257,6 +1310,9 @@ func (r *report) markdown(dry bool) string {
 		}
 		for _, s := range p.warns {
 			b.WriteString("- " + s + "\n")
+		}
+		for _, s := range p.todos {
+			b.WriteString("- 【人の手】" + s + "\n")
 		}
 		if len(p.drops) > 0 {
 			b.WriteString("- 中身の無い見出しを落としました: " + strings.Join(p.drops, "・") + "\n")
