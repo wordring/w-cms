@@ -12,6 +12,7 @@
 //   - 置き場は本物の木（取引先／社名／加工製品／装置名称）——セクションごとに「製造の設定.json」で決める。
 //     試作・見積もり・旧型は段のフォルダではなく加工製品ページのタグ「区分」（2026-09-29）。木の形はサーバーが
 //     知っている（/api/product-folder・ext/toho/product_tree.go）ので、道具は社名と装置名称を渡すだけ。
+//     装置名称が設定にも表題欄にも無い品目は「不明」の置き場へ（図面の装置名称のタグは空のまま・2026-09-29）。
 //   - 作ったページには「移行中：確認待ち」。**やり直しは、そのタグが残っているページだけを上書きする**
 //     （利用者:「『移行中』のタグを外したページは触らない」）。上げたファイルは「製造の記録.json」に
 //     覚えて、やり直しで二度上げない。
@@ -783,8 +784,12 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	if drawingNo == "" {
 		note.ask("図面番号がありません（■図面番号 も表題欄も）——題は図面名称だけにしました（人が書く）")
 	}
-	if machine == "" {
-		return errors.New("装置名称が決まりません（置き場の設定にも図面の表題欄にも無い）——" + settingsName + " に書いてください")
+	// 装置の区別が無い品目は「不明」の置き場へ（2026-09-29 利用者:「装置の区別が無い取引先の品目は、「不明」の下に
+	// 入れてください」）。⚠ 図面の `装置名称` タグは空のまま——分からないことを「不明」という装置名にしない。
+	folder := machine
+	if folder == "" {
+		folder = unknownMachine
+		note.info("装置名称が分からないので「" + unknownMachine + "」の下に入れました（置き場の設定にも図面の表題欄にも無い）")
 	}
 	title := strings.TrimSpace(drawingNo + " " + name)
 	if rule.Title == "図面名称" && name != "" {
@@ -841,7 +846,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			}
 		}
 		if pageID == "" {
-			parent, err := c.productFolder(pl.Partner, machine)
+			parent, err := c.productFolder(pl.Partner, folder)
 			if err != nil {
 				return err
 			}
@@ -1152,6 +1157,9 @@ func sectionHTML(pageID string, s section, up func(string, item) (upload, bool))
 // kindMachine は製造の記録の「種類」——ワンノートのページを装置名称のページに書いた印。
 const kindMachine = "装置のページ"
 
+// unknownMachine は装置の区別が無い品目の置き場の題です（取引先／社名／加工製品／不明・2026-09-29 利用者）。
+const unknownMachine = "不明"
+
 // buildMachineNote は「まとめ」のようなページを、装置名称のページ（取引先／社名／加工製品／装置名称）に書きます
 // （2026-09-28 利用者:「装置名称のページに移植したら良いと思います。ワンノートはフォルダページに書くことが出来なかった
 // ので、まとめページにしています」）。加工製品ではないので、テンプレートも Gemini も使わず、節を並びのまま置く。
@@ -1163,7 +1171,8 @@ const kindMachine = "装置のページ"
 func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, pr *pageRecord, note *pageNote, dry bool) error {
 	machine := cms.NormalizeNameForIngest(pl.Machine)
 	if machine == "" {
-		return errors.New("装置名称が決まっていないので、書く装置のページがありません——" + settingsName + " に書いてください")
+		// 装置の区別が無い取引先の「まとめ」は、品目と同じ「不明」の置き場のページに書く。
+		machine = unknownMachine
 	}
 	if !dry && pr.WCMS != "" && pr.Kind != kindMachine {
 		if body, ok := c.readBody(pr.WCMS); ok && strings.Contains(body, "<dt>"+migrateTag+"</dt>") {
