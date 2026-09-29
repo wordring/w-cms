@@ -31,6 +31,8 @@ func (commPlugin) Routes() []cms.Route {
 		// スレッドの前後（In-Reply-To の鎖）。`/api/replies` とは別の鎖で、
 		// **受信どうしの返り**も繋がる（handler_thread.go の冒頭に違いを書いた）。
 		{Pattern: "/api/thread", Handler: ThreadAPIHandler},
+		// メールの一覧（受信も送信も・スレッドは画面が In-Reply-To で組む・2026-09-29）。
+		{Pattern: "/api/mails", Handler: MailListAPIHandler},
 		// 未処理の一覧から「対応：不要」を付ける（まとめて押せる）。
 		{Pattern: "/api/intake/handled", Handler: MarkHandledAPIHandler},
 		// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。

@@ -1,0 +1,29 @@
+/* メールの一覧（assets/mails.html・2026-09-29）。土台は tables.css。インラインの style は書かない（CSP strict）
+ * ——字下げの深さだけは描画のあとに CSSOM で当てる（mails.js）。 */
+
+label { font-size: 13px; color: #475569; }
+label.check { display: inline-flex; align-items: center; gap: 4px; padding-top: 4px; }
+#ml-q { width: 18em; }
+
+/* 件名の列だけ折り返す（長い件名で横に伸びすぎない）。 */
+td.subject { white-space: normal; min-width: 18em; max-width: 40em; }
+td.subject a { color: #1d4ed8; text-decoration: none; }
+td.subject a:hover { text-decoration: underline; }
+td.who { max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
+
+/* 向きの札（文字の色だけに頼らない——受信／送信の字を添える）。 */
+.dir { font-size: 12px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; }
+.dir-in { background: #e0f2fe; color: #075985; }
+.dir-out { background: #fef3c7; color: #92400e; }
+
+/* スレッドの境目と、返信の字下げの目印。 */
+tr.thread-start td { border-top: 2px solid #cbd5e1; }
+.reply-mark { color: #94a3b8; margin-right: 4px; }
+.thread-count { font-size: 11px; color: #475569; background: #f1f5f9; border-radius: 8px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
+button.fold { background: none; color: #475569; padding: 0 4px; margin-right: 2px; font-size: 12px; }
+
+/* 絞り込みに当たらないが、同じスレッドなので並べている行。 */
+tr.dim td { opacity: 0.45; }
+
+/* 未処理（受信で「対応」が無い）の印——色だけに頼らない（⚠ を添える）。 */
+.unhandled { color: #b45309; white-space: nowrap; }

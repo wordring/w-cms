@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>w-cms メール一覧</title>
+<!-- メールの一覧（2026-09-29・ext/comm の GET /api/mails）。受信も送信も、In-Reply-To で返信の鎖に束ねて並べる。
+     スタイル・スクリプトは外部ファイル（CSP strict のため）。見た目は「表を探す」（tables.css）を土台にする。 -->
+<link rel="stylesheet" href="/assets/tables.css">
+<link rel="stylesheet" href="/assets/mails.css">
+</head>
+<body>
+  <a class="back" href="/">← エディタに戻る</a>
+  <h1>✉️ メール一覧</h1>
+  <p class="hint">
+    通信箱のメールの記録を、<strong>受信も送信も</strong>並べます。返信は <strong>In-Reply-To</strong>（どのメールへの返信か）で
+    元のメールの下に字下げして並び、やりとりの一続き（スレッド）は新しく動いた順です。<strong>読める記録だけ</strong>が出ます。
+  </p>
+
+  <div class="card">
+    <div class="row">
+      <label>探す <input id="ml-q" type="search" placeholder="件名・相手（名前・アドレス）"></label>
+      <label>向き
+        <select id="ml-dir">
+          <option value="">すべて</option>
+          <option value="受信">受信</option>
+          <option value="送信">送信</option>
+        </select>
+      </label>
+      <label>期間 <input id="ml-from" type="date"> 〜 <input id="ml-to" type="date"></label>
+    </div>
+    <div class="row">
+      <label class="check"><input id="ml-unhandled" type="checkbox"> 未処理だけ</label>
+      <label class="check"><input id="ml-flat" type="checkbox"> スレッドに束ねない（日付順）</label>
+      <span id="ml-count" class="hint"></span>
+      <span id="ml-msg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="result-scroll">
+      <table id="ml-table">
+        <thead>
+          <tr><th>日時</th><th>向き</th><th>相手</th><th>件名</th><th>📎</th><th>対応</th></tr>
+        </thead>
+        <tbody id="ml-body"></tbody>
+      </table>
+    </div>
+    <div class="row">
+      <button class="sub is-hidden" id="ml-more">もっと見る</button>
+    </div>
+  </div>
+
+  <script src="/assets/mails.js"></script>
+</body>
+</html>

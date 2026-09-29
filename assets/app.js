@@ -555,6 +555,8 @@
             // 検索画面（表を探す・2026-09-25）はログインした人なら誰でも使える
             // （サーバーが読めるページの行だけ返す）。匿名には出さない。
             setHidden(document.getElementById('w-tables-link'), false);
+            // メールの一覧（2026-09-29）は通信の拡張の持ち物——載っていなければ出さない（語彙の読み込みのあとでも見直す）。
+            setHidden(document.getElementById('w-mails-link'), !hasExtension('comm'));
         } catch (e) { /* 通信エラー等は無視（編集UIは権限取得時に再判定） */ }
     }
 
@@ -1737,6 +1739,9 @@
             tableWords = (d && d.table_vocabulary) || {};
             sqlNames = (d && d.sql_names) || null;
             loadedExtensions = (d && Array.isArray(d.extensions)) ? new Set(d.extensions) : null;
+            // 通信の拡張が無ければメールの一覧の入口を下げる（ログインの確かめより後に届くことがある）。
+            const mailsLink = document.getElementById('w-mails-link');
+            if (mailsLink && !hasExtension('comm')) setHidden(mailsLink, true);
             // **列型の一覧はサーバーが持ちます**（手書きだと型を足した日に古くなる）。
             // 空で返ってきたら初期値を守ります——「明示した型が全部無視される」より、
             // 一手前の一覧で動いているほうが害が小さいためです。
