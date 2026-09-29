@@ -76,6 +76,10 @@ type placement struct {
 	// 空なら通常の製品。選択肢は w-cms の設定の語彙「区分」。
 	Kinds []string `json:"区分,omitempty"`
 	Machine string `json:"装置名称"`
+	// Skip は**移さない理由**です（空でなければ、そのセクションのページは作らない・2026-09-29）。
+	// 例: 利用者（2026-09-29）「旧製品／【旧】○○は移植する必要はありません。○○に移植した元データだからです」。
+	// 置き場が無いときの「決まっていません」と分けるため（決めた結果として移さないのか、まだ決めていないのか）。
+	Skip string `json:"移さない,omitempty"`
 }
 
 type settings struct {
@@ -338,6 +342,10 @@ func run(e *env, dry bool) error {
 		}
 		// 装置名称は空でもよい（図面の表題欄から読む）——取引先は設定で決める（区分は無くてよい）。
 		pl, ok := set.Sections[p.Section]
+		if ok && strings.TrimSpace(pl.Skip) != "" {
+			rep.skip(p.Title, "移さないと決めたセクションです（"+strings.TrimSpace(pl.Skip)+"）")
+			continue
+		}
 		if !ok || strings.TrimSpace(pl.Partner) == "" {
 			rep.skip(p.Title, "置き場が決まっていません（"+settingsName+" の「"+p.Section+"」）")
 			continue
