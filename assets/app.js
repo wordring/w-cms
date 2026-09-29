@@ -67,6 +67,9 @@
 
     let slashMenuVisible = false;
     let currentSlashBlock = null;
+    // currentSlashNested は、節・折りたたみの中の段落からスラッシュメニューを開いたときの**その段落**
+    // （2026-09-29）——選んだものはその段落1つを置き換える（上の段のブロックごと置き換えない）。
+    let currentSlashNested = null;
     let slashSelectedIndex = 0;
     let draggedBlock = null;
     let activeBlock = null;
@@ -1391,6 +1394,7 @@
             hideSlashMenu();
             hideContextToolbar();
             hideTableToolbar();
+            hideInnerBar();
         }
 
         // 編集できるのは本文のブロック（見出し・段落・リスト・表・定義リスト・引用…）。
@@ -2505,6 +2509,288 @@
                 wrapInBlock(child);
             }
         });
+    }
+
+    // ── 節・折りたたみの中の要素にも ⠿・🗑・＋（2026-09-29） ─────────────────────────────
+    //
+    // 利用者:「図面一枚一枚がブロック（Section）という構造は難しいですか？…ブロックを消したり移動したり
+    // 汎用的な操作なので覚える必要もない」「Pもブロックなら…普通に段落ブロックと同じ扱いで、埋め込みPDFも
+    // 扱えるのでは？」「最終的には節の中のPDFを節の外にも動かせるようにしたいです」。
+    // 上の段のブロックだけが包み（.editor-block）で ⠿・🗑・＋ を持ち、節や折りたたみの中の要素には
+    // 手が届かなかった。
+    //
+    // ⚠ **中の要素は包みません**——保存の組み立ては上の段の包みしか外さないので、中を包むと本文に余計な
+    //    div が書き出される。操作の帯は**本文の外に1つだけ**置き、指している要素の左の欄へ浮かべる
+    //    （指している間は、その上の段のブロックの操作を隠す——左の欄には指している物の操作だけが出る）。
+    // ⚠ **入れ物の名前（節の最初の見出し・折りたたみの題）は動かさない・消さない**——節ごとは上の段の ⠿・🗑。
+    //    名前の上へ落とすと、その入れ物の先頭（名前の直後）へ入る（空の入れ物へも入れられる）。
+    // 節をまたいで動かしてよいのは、表が caption でだけ名乗るようになったから（2026-09-29 に節の見出しで
+    // 名乗る形を廃止）——どこへ動かしても読まれ方は変わらない。
+    let innerHover = null;   // 帯が指している中の要素
+    let draggedInner = null; // ⠿ で掴んでいる中の要素
+
+    function firstContentChild(box) {
+        return Array.from(box.children).find(c => !c.classList.contains('vocab-chrome')) || null;
+    }
+
+    // innerBoxOf は、el を「中の要素」として扱えるなら、その入れ物（素の節・本文の折りたたみ）を返す。
+    function innerBoxOf(el) {
+        if (!el || el.nodeType !== 1 || el.classList.contains('vocab-chrome')) return null;
+        const box = el.parentElement;
+        if (!box || !box.closest('#w-editor-content') || box.closest('.vocab-chrome')) return null;
+        const fold = box.tagName === 'DETAILS' && !box.classList.contains('file-view-fold');
+        const sec = box.tagName === 'SECTION' && !box.hasAttribute('data-type') && !box.hasAttribute('data-mirror');
+        if (!fold && !sec) return null;
+        if (el.tagName === 'SUMMARY') return null;
+        if (sec && /^H[1-6]$/.test(el.tagName) && el === firstContentChild(box)) return null;
+        return box;
+    }
+
+    // innerTargetAt は、指している場所から見て一番内側の「中の要素」を返す（無ければ null）。
+    function innerTargetAt(node) {
+        const editor = document.getElementById('w-editor-content');
+        let n = node && (node.nodeType === 1 ? node : node.parentElement);
+        while (n && n !== editor) {
+            if (innerBoxOf(n)) return n;
+            n = n.parentElement;
+        }
+        return null;
+    }
+
+    // boxHeadAt は、指している場所が入れ物の名前（節の最初の見出し・折りたたみの題）ならそれを返す。
+    function boxHeadAt(node) {
+        const editor = document.getElementById('w-editor-content');
+        let n = node && (node.nodeType === 1 ? node : node.parentElement);
+        while (n && n !== editor) {
+            const box = n.parentElement;
+            if (box && !box.closest('.vocab-chrome')) {
+                if (n.tagName === 'SUMMARY' && box.tagName === 'DETAILS' && !box.classList.contains('file-view-fold')) return n;
+                if (/^H[1-6]$/.test(n.tagName) && box.tagName === 'SECTION' && !box.hasAttribute('data-type') &&
+                    !box.hasAttribute('data-mirror') && n === firstContentChild(box)) return n;
+            }
+            n = n.parentElement;
+        }
+        return null;
+    }
+
+    function innerBar() {
+        let bar = document.getElementById('w-inner-controls');
+        if (bar) return bar;
+        bar = document.createElement('div');
+        bar.id = 'w-inner-controls';
+        bar.className = 'inner-controls';
+        bar.contentEditable = 'false';
+        const drag = document.createElement('div');
+        drag.className = 'drag-handle';
+        drag.textContent = '⠿';
+        drag.title = 'ドラッグして移動（節や折りたたみの外へも・中へも）';
+        drag.draggable = true;
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'delete-btn';
+        del.textContent = '🗑';
+        del.title = 'この要素を削除（Ctrl+Z で戻せます）';
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.textContent = '＋';
+        add.title = 'この下に追加';
+        [del, add].forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
+        del.addEventListener('click', () => { const el = innerHover; hideInnerBar(); if (el) deleteInner(el); });
+        add.addEventListener('click', () => { const el = innerHover; hideInnerBar(); if (el) addAfterInner(el); });
+        drag.addEventListener('dragstart', e => {
+            if (!innerHover) { e.preventDefault(); return; }
+            draggedInner = innerHover;
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', ''); } catch (err) { /* 入れなくても動く */ }
+            try { e.dataTransfer.setDragImage(draggedInner, 12, 12); } catch (err) { /* 既定の絵 */ }
+            setTimeout(() => { if (draggedInner) draggedInner.classList.add('inner-dragging'); }, 0);
+        });
+        drag.addEventListener('dragend', endInnerDrag);
+        bar.append(drag, del, add);
+        document.body.appendChild(bar);
+        return bar;
+    }
+
+    // showInnerBar は帯を el の左の欄（上の段の操作と同じ列）へ出す。CSP のため位置は CSSOM で当てる。
+    function showInnerBar(el) {
+        const bar = innerBar();
+        innerHover = el;
+        const block = el.closest('.editor-block');
+        document.querySelectorAll('.editor-block.inner-pointing').forEach(b => {
+            if (b !== block) b.classList.remove('inner-pointing');
+        });
+        if (block) block.classList.add('inner-pointing');
+        bar.classList.add('active');
+        const content = el.closest('.block-content') || el.parentElement;
+        const cr = content.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        bar.style.top = (window.scrollY + r.top) + 'px';
+        // スマホ幅では左の欄が無いので、画面の左端で止める（要素に少し重なる）。
+        bar.style.left = Math.max(window.scrollX + 2, window.scrollX + cr.left - bar.offsetWidth - 8) + 'px';
+    }
+
+    function hideInnerBar() {
+        innerHover = null;
+        const bar = document.getElementById('w-inner-controls');
+        if (bar) bar.classList.remove('active');
+        document.querySelectorAll('.editor-block.inner-pointing').forEach(b => b.classList.remove('inner-pointing'));
+    }
+
+    // deleteInner は中の要素を消す（ファイル表示なら「外す」と同じ知らせ——ファイルは添付に残る）。
+    function deleteInner(el) {
+        if (el.matches('section[data-type="file-view"][data-ref]')) { removeFileView(el); return; }
+        el.remove();
+        updateHtmlPreview();
+        triggerAutoSave();
+    }
+
+    // addAfterInner は中の要素の直後へ段落を足し、スラッシュメニューを開く（上の段の ＋ と同じ流れ）。
+    // ⚠ 置き換えるのは**その段落1つ**（chooseSlashItem の currentSlashNested）——上の段の置き換えを
+    //    通すと、包んでいる節ごと置き換わる。
+    function addAfterInner(el) {
+        const p = document.createElement('p');
+        p.textContent = '/';
+        el.parentElement.insertBefore(p, el.nextSibling);
+        const host = p.closest('[contenteditable="true"]');
+        if (host) host.focus({ preventScroll: true });
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        showSlashMenu(p);
+        updateHtmlPreview();
+    }
+
+    // applyNestedChoice はスラッシュメニューの選択で、中の段落1つを置き換える（画像は後ろへ足す）。
+    function applyNestedChoice(type, p) {
+        if (type === 'image') {
+            pickImageFiles(async files => {
+                if (!files.length) return;
+                await insertImagesAfter(files, p);
+                if (!p.textContent.trim() && !p.querySelector('img')) p.remove();
+                updateHtmlPreview();
+                triggerAutoSave();
+            });
+            return;
+        }
+        const el = createComponentElement(type, document.body.hasAttribute('edit-mode'));
+        if (!el) return;
+        el.removeAttribute('contenteditable'); // 入れ物（節・折りたたみ）が編集の単位
+        p.replaceWith(el);
+        if (typeof el.render === 'function') el.render();
+        enhanceFileSections();
+        decorateVocabBlocks();
+        decorateFileViews();
+        decorateFolds();
+        updateHtmlPreview();
+        triggerAutoSave();
+        if (el.tagName === 'TABLE' || el.tagName === 'DL') focusFirstCell(el);
+    }
+
+    function clearInnerDropMarks() {
+        document.querySelectorAll('.inner-drop-before, .inner-drop-after').forEach(n =>
+            n.classList.remove('inner-drop-before', 'inner-drop-after'));
+    }
+
+    function endInnerDrag() {
+        if (draggedInner) draggedInner.classList.remove('inner-dragging');
+        draggedInner = null;
+        clearInnerDropMarks();
+    }
+
+    // innerDropPlan は落とす先を決める。上の段どうしの移動は従来の処理（setupDragAndDrop）に任せて null。
+    //   inner … 中の要素の前後へ／head … 入れ物の名前の直後（先頭）へ／top … 上の段のブロックの前後へ
+    function innerDropPlan(e) {
+        const src = draggedInner || (draggedBlock && draggedBlock.querySelector('.block-content > *'));
+        if (!src) return null;
+        const t = innerTargetAt(e.target);
+        if (t && t !== src && !src.contains(t)) {
+            const r = t.getBoundingClientRect();
+            return { mode: 'inner', ref: t, before: e.clientY < r.top + r.height / 2 };
+        }
+        const head = boxHeadAt(e.target);
+        if (head && !src.contains(head)) return { mode: 'head', ref: head };
+        if (draggedInner) {
+            const block = e.target.closest && e.target.closest('.editor-block');
+            if (block) {
+                const r = block.getBoundingClientRect();
+                return { mode: 'top', ref: block, before: e.clientY < r.top + r.height / 2 };
+            }
+        }
+        return null;
+    }
+
+    function setupInnerBlocks() {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        const pick = (target, x, y) => {
+            if (!document.body.hasAttribute('edit-mode') || draggedInner || draggedBlock) {
+                if (innerHover && !document.body.hasAttribute('edit-mode')) hideInnerBar();
+                return;
+            }
+            const bar = document.getElementById('w-inner-controls');
+            if (bar && bar.contains(target)) return; // 帯の上では消さない
+            const el = innerTargetAt(target);
+            if (el) { showInnerBar(el); return; }
+            if (!innerHover) return;
+            // 要素から帯へ手を動かすあいだ（左の欄）は消さない。
+            const r = innerHover.getBoundingClientRect();
+            const br = bar ? bar.getBoundingClientRect() : r;
+            if (y >= r.top && y <= r.bottom && x >= br.left - 4 && x <= r.right) return;
+            hideInnerBar();
+        };
+        // ⚠ **ボタンを押しているあいだは帯を動かさない**——⠿ を押したまま動かし始めた瞬間に「段落から外れた」と
+        //    帯を隠すと、掴んだ ⠿ が消えてドラッグが始まらない（2026-09-29 に E2E で踏んだ）。
+        document.addEventListener('mousemove', e => { if (!e.buttons) pick(e.target, e.clientX, e.clientY); });
+        // 触る画面（スマホ）はマウスを乗せられないので、触ったら出す。
+        document.addEventListener('pointerdown', e => {
+            if (e.pointerType === 'touch') pick(e.target, e.clientX, e.clientY);
+        });
+
+        // ⚠ **捕捉の段で先に受けます**——上の段のブロックの受け手（setupDragAndDrop）より前に、
+        //    中の要素が絡む落とし方を引き取る。上の段どうしは素通しする（innerDropPlan が null）。
+        document.addEventListener('dragover', e => {
+            if (!draggedInner && !draggedBlock) return;
+            const plan = innerDropPlan(e);
+            clearInnerDropMarks();
+            if (!plan) return;
+            e.preventDefault();
+            e.stopPropagation();
+            plan.ref.classList.add(plan.mode === 'head' || !plan.before ? 'inner-drop-after' : 'inner-drop-before');
+        }, true);
+        document.addEventListener('drop', e => {
+            if (!draggedInner && !draggedBlock) return;
+            const plan = innerDropPlan(e);
+            if (!plan) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const fromBlock = draggedInner ? null : draggedBlock;
+            const src = draggedInner || fromBlock.querySelector('.block-content > *');
+            clearInnerDropMarks();
+            if (plan.mode === 'top') {
+                plan.ref.parentNode.insertBefore(src, plan.before ? plan.ref : plan.ref.nextSibling);
+                src.setAttribute('contenteditable', 'true'); // 上の段のブロックとして編集できるように
+                src.oninput = updateHtmlPreview;
+                wrapInBlock(src);
+            } else {
+                const at = plan.mode === 'head' ? plan.ref.nextSibling : (plan.before ? plan.ref : plan.ref.nextSibling);
+                plan.ref.parentElement.insertBefore(src, at);
+                src.removeAttribute('contenteditable'); // 入れ物（節・折りたたみ）が編集の単位
+                src.oninput = null;
+            }
+            if (fromBlock) fromBlock.remove();
+            endInnerDrag();
+            document.querySelectorAll('.editor-block').forEach(b => b.classList.remove('drag-over', 'dragging'));
+            draggedBlock = null;
+            decorateFileViews();
+            decorateFolds();
+            decorateVocabBlocks();
+            updateHtmlPreview();
+            triggerAutoSave();
+        }, true);
+        document.addEventListener('dragend', () => { if (draggedInner) endInnerDrag(); clearInnerDropMarks(); }, true);
     }
 
     // ── 汎用表エディタ: 行・列操作ツールバー（docs/考察/【考察】語彙モデル.md §5.2） ──
@@ -5831,6 +6117,8 @@
     // insertImagesAfter は選ばれた画像を順に添付し、refBlock の後ろへ1枚ずつ挿します。
     // alt にはファイル名を入れる（読み上げと、画像が出ないときの手掛かり）。
     async function insertImagesAfter(files, refBlock) {
+        // 節・折りたたみの中の要素の後ろへ入れるときは包まない（中の要素は包まない・2026-09-29）。
+        const nested = !!(refBlock && refBlock.classList && !refBlock.classList.contains('editor-block'));
         let last = refBlock;
         for (const f of files) {
             const up = await uploadImageFile(f);
@@ -5841,7 +6129,7 @@
             img.src = up.src;
             img.alt = f.name;
             p.appendChild(img);
-            const block = wrapInBlock(p);
+            const block = nested ? p : wrapInBlock(p);
             if (last && last.parentNode) {
                 last.parentNode.insertBefore(block, last.nextSibling);
             } else {
@@ -6045,8 +6333,15 @@
     // 置き換え型の項目では消えますが、画像のように「後ろへ挿す」項目では残ってしまいます。
     function chooseSlashItem(type) {
         const block = currentSlashBlock;
+        const nested = currentSlashNested;
         noteSlashUse(type);
         hideSlashMenu();
+        // 節・折りたたみの中の段落から開いたときは、その段落1つだけを置き換える（2026-09-29）。
+        if (nested && nested.isConnected) {
+            if (/^\/.*/.test(nested.textContent || '')) nested.textContent = '';
+            applyNestedChoice(type, nested);
+            return;
+        }
         if (!block) return;
         const content = block.querySelector('.block-content');
         const el = content && content.firstElementChild;
@@ -6066,6 +6361,7 @@
         slashMenuVisible = true;
         const menu = document.getElementById('w-slash-menu');
         currentSlashBlock = targetElement.closest('.editor-block');
+        currentSlashNested = innerBoxOf(targetElement) ? targetElement : null;
         // 開くたびに絞り込みは白紙へ戻し、頻度順も取り直す。
         slashQuery = '';
         renderSlashMenu();
@@ -6092,6 +6388,7 @@
         const menu = document.getElementById('w-slash-menu');
         if (menu) menu.classList.remove('active');
         currentSlashBlock = null;
+        currentSlashNested = null;
     }
 
     function updateSlashMenuSelection() {
@@ -6131,6 +6428,8 @@
 
         // レジストリ由来の項目は、下の項目バインド（click / mouseenter）より前に足す。
         populateSlashMenuVocab();
+        // 節・折りたたみの中の要素の ⠿・🗑・＋（2026-09-29）。
+        setupInnerBlocks();
 
         // ── 折りたたみの題（summary）を打てるように（2026-09-28） ──
         // ⚠ ブラウザは summary を押すと開閉します——編集モードで題の文字を押すたびに閉じ、
@@ -6226,9 +6525,19 @@
             const target = e.target;
             // `/` で開き、**続けて打った文字はそのまま絞り込み語**になる
             // （入力欄を置かないのは、フォーカスを移すとキャレットを失うため）。
-            const text = target.tagName === 'P' ? (target.innerText || '') : '';
+            // 節・折りたたみの中の段落でも開く（2026-09-29）——そこでは編集の単位が入れ物なので、入力の
+            // 相手（target）は入れ物になる。キャレットのある段落を探す。選んだものはその段落1つを置き換える。
+            let para = target.tagName === 'P' ? target : null;
+            if (!para) {
+                const sel0 = window.getSelection();
+                const n0 = sel0 && sel0.anchorNode;
+                const el0 = n0 && (n0.nodeType === 1 ? n0 : n0.parentElement);
+                const p0 = el0 && el0.closest && el0.closest('p');
+                if (p0 && innerBoxOf(p0)) para = p0;
+            }
+            const text = para ? (para.innerText || '') : '';
             if (text.charAt(0) === '/') {
-                if (!slashMenuVisible) showSlashMenu(target);
+                if (!slashMenuVisible) showSlashMenu(para);
                 filterSlashMenu(text.slice(1));
             } else {
                 hideSlashMenu();
@@ -6261,6 +6570,14 @@
                 if (fmt && !e.shiftKey) { e.preventDefault(); toggleInlineFormat(fmt); return; }
             }
 
+            // スラッシュメニューが開いているあいだは、矢印・Enter・Escape はメニューの操作
+            // ——節・折りたたみの中の段落から開いたときは入力の相手が入れ物（節）なので、下の段落の
+            // 判定より先に受ける（2026-09-29 に E2E で踏んだ——Enter が節の中の改行になっていた）。
+            if (slashMenuVisible && ['ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) {
+                handleSlashMenuKey(e);
+                return;
+            }
+
             const target = e.target;
             if (target.tagName !== 'P' && target.tagName !== 'H1' && target.tagName !== 'H2' && target.tagName !== 'H3') {
                 return; // Ignore inputs inside web components
@@ -6268,13 +6585,6 @@
 
             const block = target.closest('.editor-block');
             if (!block) return;
-
-            if (slashMenuVisible) {
-                if (['ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) {
-                    handleSlashMenuKey(e);
-                    return;
-                }
-            }
 
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -6312,7 +6622,9 @@
         });
 
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('#w-slash-menu') && !e.target.closest('.editor-block')) {
+            // ⚠ 中の要素の帯（＋）はスラッシュメニューを開く側——閉じない（2026-09-29 に E2E で踏んだ）。
+            if (!e.target.closest('#w-slash-menu') && !e.target.closest('.editor-block') &&
+                !e.target.closest('#w-inner-controls')) {
                 hideSlashMenu();
             }
         });

@@ -721,6 +721,42 @@ body[edit-mode] .editor-block:hover > .add-btn {
     color: #475569;
 }
 
+/* 節・折りたたみの中の要素の ⠿・🗑・＋（2026-09-29）——本文の外に1つだけ置き、指している要素の左の欄へ
+   浮かべる（位置は app.js が CSSOM で当てる）。指している間は、包んでいる上の段のブロックの操作を隠す
+   ——左の欄には指している物の操作だけが出る。 */
+.inner-controls {
+    display: none;
+    position: absolute;
+    z-index: 30;
+    align-items: center;
+    padding-top: 2px;
+    user-select: none;
+}
+body[edit-mode] .inner-controls.active { display: flex; }
+.inner-controls button, .inner-controls .drag-handle {
+    background: #fff;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.inner-controls button:hover, .inner-controls .drag-handle:hover {
+    background: #e2e8f0;
+    color: #475569;
+}
+.inner-controls .delete-btn:hover { color: #ef4444; }
+body[edit-mode] .editor-block.inner-pointing > .block-controls,
+body[edit-mode] .editor-block.inner-pointing > .add-btn { opacity: 0; }
+/* 落とし先の印（前なら上の線・後ろなら下の線）と、掴んでいる要素。 */
+#w-editor-content .inner-drop-before { box-shadow: 0 -3px 0 0 #3b82f6; }
+#w-editor-content .inner-drop-after { box-shadow: 0 3px 0 0 #3b82f6; }
+#w-editor-content .inner-dragging { opacity: 0.4; }
+
 .drag-handle {
     cursor: grab !important;
 }
