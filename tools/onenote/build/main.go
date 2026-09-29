@@ -728,7 +728,8 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	// 印刷イメージは移さない（drawing.go）。図面番号・図面名称・装置名称は表題欄から入れる。
 	e.prepare(dir, secs, note)
 	machine := cms.NormalizeNameForIngest(pl.Machine)
-	if m, ok := mainDrawing(secs, drawingNo, name); ok {
+	m, hasMain := mainDrawing(secs, drawingNo, name)
+	if hasMain {
 		if no := cms.NormalizeNameForIngest(m.No); no != "" {
 			if drawingNo != "" && normNo(no) != normNo(drawingNo) {
 				note.ask("図面番号がワンノート（■図面番号）と図面の表題欄で違います——表題欄の方を入れました")
@@ -923,8 +924,22 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 		switch {
 		case s.Name == "図面":
 			before = false
-			fileViews := 0
-			for _, it := range s.Items {
+			// **図面1枚ごとに図面ブロックを1つ**（2026-09-29 利用者:「図面一枚一枚がブロック（Section）という
+			// 構造は難しいですか？人間にはそのほうが分かりやすいですが。ブロックを消したり移動したり汎用的な操作
+			// なので」「図面が複数あれば、図面用のタグも複数あるのかもしれません」）。それまでは ■図面 の画像も
+			// PDF も1つのブロックに詰めていたので、1枚だけ消す・動かすができず、タグ（図面番号・図面名称）も
+			// 1組しか持てなかった。解析の「二つ目の図面として追加」と同じ形——主な図面はテンプレートの図面
+			// ブロックへ、ほかの図面はテンプレートの図面ブロックを写して1枚ずつ、主な図面の直後（改訂明細より前）へ。
+			mainAt := -1
+			for i, it := range s.Items {
+				if hasMain && (it.Kind == "image" || it.Kind == "file") && readsInclude(it.Reads, m) {
+					mainAt = i
+					break
+				}
+			}
+			placedMain := false
+			last := blk.Node()
+			for i, it := range s.Items {
 				switch it.Kind {
 				case "image", "file":
 					u, ok := up("図面", it)
@@ -932,12 +947,22 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 						continue
 					}
 					ref := pageID + "-" + u.ID
-					if fileViews == 0 && blk.SetFileView(ref) {
-						fileViews++
+					if !placedMain && (i == mainAt || mainAt < 0) {
+						if !blk.SetFileView(ref) {
+							appendHTML(blk.Node(), fileViewHTML(ref))
+						}
+						placedMain = true
 						continue
 					}
-					appendHTML(blk.Node(), `<section data-type="file-view" data-ref="`+stdhtml.EscapeString(ref)+`"></section>`)
-					fileViews++
+					n, err := extraDrawingBlock(tmplTitle, tmpl, it.Reads, machine, pl.Partner, ref)
+					if err != nil {
+						note.warn("⚠ 2枚目からの図面のブロックを作れません（主な図面のブロックへ入れました）: " + err.Error())
+						appendHTML(blk.Node(), fileViewHTML(ref))
+						continue
+					}
+					insertAfter(last, n)
+					d.AssignBlockID(n)
+					last = n
 				case "text":
 					appendHTML(blk.Node(), paragraphs(it.Text))
 				case "table":

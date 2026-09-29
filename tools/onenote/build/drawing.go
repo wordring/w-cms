@@ -21,12 +21,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/generative-ai-go/genai"
+	"golang.org/x/net/html"
 
 	"w-cms/internal/cms"
 )
@@ -340,4 +342,56 @@ func (e *env) duplicate(drawingNo, own string) string {
 		}
 	}
 	return ""
+}
+
+// readsInclude はファイルから読んだ図面の中に、主な図面があるかです。
+func readsInclude(reads []drawingRead, main drawingRead) bool {
+	for _, r := range reads {
+		if sameDrawing(r, main) {
+			return true
+		}
+	}
+	return false
+}
+
+// fileViewHTML はファイル表示の印です（添付の参照1つ）。
+func fileViewHTML(ref string) string {
+	return `<section data-type="file-view" data-ref="` + stdhtml.EscapeString(ref) + `"></section>`
+}
+
+// extraDrawingBlock は2枚目からの図面のブロックを、**テンプレートの図面ブロックを写して**作ります（2026-09-29）。
+//
+// 図面1枚ごとにブロックを1つ——タグ（図面番号・図面名称）はそのファイルから読んだ値（1つのファイルに図面が
+// 何枚もあれば、その数だけ並べる）、装置名称と客先はページと同じ。読めなかったファイルはタグを空欄のまま
+// （人が書く）。返すノードはどの木にも付いていない（呼び手が差し込む）。
+func extraDrawingBlock(tmplTitle, tmpl string, reads []drawingRead, machine, partner, ref string) (*html.Node, error) {
+	x := cms.NewPageDraft(tmplTitle, tmpl)
+	b, err := x.RequireContainer("図面")
+	if err != nil {
+		return nil, err
+	}
+	var nos, names []string
+	seenNo, seenName := map[string]bool{}, map[string]bool{}
+	for _, r := range reads {
+		if no := cms.NormalizeNameForIngest(r.No); no != "" && !seenNo[normNo(no)] {
+			seenNo[normNo(no)] = true
+			nos = append(nos, no)
+		}
+		if nm := cms.NormalizeNameForIngest(r.Name); nm != "" && !seenName[normName(nm)] {
+			seenName[normName(nm)] = true
+			names = append(names, nm)
+		}
+	}
+	b.SetTag("図面番号", nos...)
+	b.SetTag("図面名称", names...)
+	b.SetTag("装置名称", machine)
+	b.SetTag("客先", cms.NormalizeNameForIngest(partner))
+	if !b.SetFileView(ref) {
+		appendHTML(b.Node(), fileViewHTML(ref))
+	}
+	n := b.Node()
+	if n.Parent != nil {
+		n.Parent.RemoveChild(n)
+	}
+	return n, nil
 }
