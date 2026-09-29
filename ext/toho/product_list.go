@@ -25,7 +25,6 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
-	"w-cms/internal/cms"
 	"w-cms/internal/database"
 )
 
@@ -41,6 +40,10 @@ type productListRow struct {
 	PageID    int
 	Title     string
 	Machine   string // 親のページの題（装置名称）
+	// DrawingNo・PartNo は**全部の値**を「・」で繋いだものです——1ページに図面が何枚もあれば図面番号も
+	// その数だけあり（図面1枚ごとに図面ブロック・2026-09-29）、品番も2つ持つページがあります（利用者:
+	// 「メーカーが常に品番を間違って送って来るものがあり、正しく送ってきたときに備えて正しい品番と間違った
+	// 品番の両方で検索する必要がある」）。先頭だけ見せると、もう一方で絞ったときに当たらない。
 	DrawingNo string
 	PartNo    string
 	Kinds     []string
@@ -137,8 +140,8 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 		row := productListRow{
 			PageID:    p.id,
 			Title:     p.title,
-			DrawingNo: cms.FirstTag(t, DrawingNoTag),
-			PartNo:    cms.FirstTag(t, "品番"),
+			DrawingNo: joinUnique(t[DrawingNoTag]),
+			PartNo:    joinUnique(t["品番"]),
 			Migrating: len(t[MigratingTag]) > 0,
 		}
 		if p.parent != hostID && canView(p.parent) {
@@ -245,4 +248,17 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 	b.WriteString(`</tbody></table>`)
 	b.WriteString(`<p class="materials-empty plist-none" data-plist-none="1" hidden>当てはまる加工製品はありません。</p>`)
 	return b.String()
+}
+
+// joinUnique は値を重ならないように「・」で繋ぎます（空は落とす・並びは元のまま）。
+func joinUnique(vals []string) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, v := range vals {
+		if v = strings.TrimSpace(v); v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return strings.Join(out, "・")
 }
