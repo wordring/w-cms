@@ -246,6 +246,8 @@ func buildHandler() http.Handler {
 	// **読めるページの行だけ**返す。自由な SQL は受けない（tables_query.go）。
 	protected.HandleFunc("/api/tables", cms.TablesAPIHandler)
 	protected.HandleFunc("/api/tables/query", cms.TableQueryAPIHandler)
+	// 添付をローカルのアプリで編集する——鍵を出す（ログインした人・2026-09-29）。
+	protected.HandleFunc("/api/local-edit/start", cms.LocalEditStartAPIHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	for _, route := range cms.PluginRoutes() {
@@ -294,6 +296,9 @@ func buildHandler() http.Handler {
 	root.Handle("/api/qr", auth.OptionalAuth(http.HandlerFunc(cms.QRAPIHandler)))
 	// ZIP添付の目録（閲覧の一部。認可は添付配信と同じ実効公開の個別判定）
 	root.Handle("/api/zip-list", auth.OptionalAuth(http.HandlerFunc(cms.ZipListAPIHandler)))
+	// 常駐ヘルパー（cmd/w-cms-edit）がファイルを受け渡す口——ブラウザのログインを持たないので、ログインの外で
+	// **鍵だけ**を確かめる（鍵はそのファイル1つに限る・使い捨て・2026-09-29）。
+	root.HandleFunc("/api/local-edit/file", cms.LocalEditFileAPIHandler)
 
 	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）。
 	root.Handle("/api/", auth.RequireAuth(protected))

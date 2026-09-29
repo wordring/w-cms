@@ -1410,6 +1410,7 @@
         refreshAnalyzedMarks();      // 解析済みの印（取得できたら描き直す）
         refreshDrawingPreviews();    // 加工製品ページの図面をそのまま出す（閲覧モード限定）
         restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
+        decorateLocalEdit();         // ファイル表示の「📝 ローカルで編集」（2026-09-29）
         refreshFilingButton();      // 加工製品ページの整理（閲覧モード限定）
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
@@ -5243,6 +5244,62 @@
     const DRAWING_H_MIN = 200;   // これ以下だと図面が判別できない
     const DRAWING_H_MAX = 4000;  // 壊れた値でページを埋めない柵
     const DRAWING_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
+
+    // ── 「📝 ローカルで編集」（2026-09-29） ───────────────────────────────
+    //
+    // 利用者:「実運用するには、ローカルアプリで添付ファイルを編集して保存できる必要があります」。ファイル表示の頭の
+    // 行に置く。押すと w-cms がそのファイル1つに限る鍵を出し（POST /api/local-edit/start）、`w-cms-edit:` のリンクで
+    // 各 PC の常駐ヘルパー（cmd/w-cms-edit）がファイルを落として既定のアプリで開き、**保存（Ctrl+S）するたびに**
+    // w-cms へ上げる（前の中身は版に残る）。⚠ WebDAV は Ctrl+S をアプリを閉じるまで送らなかった（2026-09-18）
+    // ——だからこの形。書けない所（通信箱の下・権限が無い）は読み取り専用で開く（確かめてから）。
+    function decorateLocalEdit() {
+        if (document.body.classList.contains('anonymous')) return;
+        document.querySelectorAll('#w-editor-content section[data-type="file-view"][data-ref]').forEach(sec => {
+            const head = sec.querySelector('.file-view-head');
+            if (!head || head.querySelector('.local-edit-btn')) return;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'vocab-chrome local-edit-btn';
+            btn.contentEditable = 'false';
+            btn.textContent = '📝 ローカルで編集';
+            btn.title = 'この PC のアプリで開いて編集し、保存（Ctrl+S）するたびに w-cms へ入れます（道具 w-cms-edit が要ります）';
+            btn.addEventListener('mousedown', e => e.preventDefault());
+            btn.addEventListener('click', e => {
+                // 頭の行（summary）の中なので、押しても畳まれないように。
+                e.preventDefault();
+                e.stopPropagation();
+                startLocalEdit(sec.getAttribute('data-ref'), btn);
+            });
+            head.appendChild(btn);
+        });
+    }
+
+    async function startLocalEdit(ref, btn) {
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/local-edit/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ref }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) {
+                notify(d.message || ('ローカルで編集できません（' + res.status + '）'), { type: 'warn' });
+                return;
+            }
+            if (!d.writable && !confirm('「' + d.name + '」はここでは書き換えられません（通信箱の下・権限が無い など）。\n'
+                + '読み取り専用で開きます。よろしいですか？')) return;
+            location.href = d.link; // 各 PC の w-cms-edit が受ける（入っていなければ何も起きない）
+            notify(d.writable
+                ? '📝 「' + d.name + '」をアプリで開きます。保存（Ctrl+S）するたびに、数秒で w-cms に入ります（前の中身は版に残ります）。'
+                    + '開かないときは、この PC に w-cms-edit が入っていません。'
+                : '「' + d.name + '」を読み取り専用で開きます。', { duration: 12000 });
+        } catch (e) {
+            notify('ローカルで編集できません: ' + e.message, { type: 'warn' });
+        } finally {
+            btn.disabled = false;
+        }
+    }
 
     // ── 物ごとの見え方をこの端末に憶える（2026-09-28） ─────────────────────
     //

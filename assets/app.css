@@ -1554,6 +1554,23 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 #w-editor-content .fv-wire-empty {
     background: #fdeaea;
 }
+/* ファイル表示の頭の「📝 ローカルで編集」（2026-09-29・常駐ヘルパー w-cms-edit で開く）。 */
+#w-editor-content .local-edit-btn {
+    margin-left: 8px;
+    padding: 1px 8px;
+    font: inherit;
+    font-size: 0.85em;
+    color: inherit;
+    background: var(--vocab-bg, #eef4ff);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    white-space: nowrap;
+}
+#w-editor-content .local-edit-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
 /* 本文の折りたたみ（2026-09-28・スラッシュメニュー「折りたたみ」）。題（summary）の言葉が
    ブロックの名前——例: 加工製品の「資料 1」。枠で囲んで、どこまでが中身か見えるように。
    ⚠ ファイル表示の外枠（.file-view-fold）は鏡のクロームなので除く。 */
