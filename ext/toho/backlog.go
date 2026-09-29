@@ -105,13 +105,24 @@ type backlogGroup struct {
 
 // backlogGroups は指定ページの子孫から受注残を集め、顧客×納期で束ねて返します。
 func backlogGroups(user *auth.User, rootID int) []backlogGroup {
+	gs, _ := backlogScan(user, rootID)
+	return gs
+}
+
+// backlogScan は backlogGroups の本体です。飛ばした「移行中」の受注ページの数も返します。
+//
+// ⚠ **「移行中」の受注ページは数えません**（2026-09-29）——ワンノートとメールから過去の注文を
+// 移すと、**納め済みの注文**も受注ページになります。確かめる前に受注残へ並ぶと、終わった仕事が
+// 「残っている」に化けます。加工製品ページの「移行中」と同じく、**印が在るだけで止め**、人が
+// 確かめて印を消したら並びます。⚠ **黙っては欠かさず、枚数を知らせます**（backlogViewHTML）。
+func backlogScan(user *auth.User, rootID int) ([]backlogGroup, int) {
 	db := database.DB
 	// ⚠ **先に読み切ってから解釈します**——行を読みながら別のクエリを投げると、
 	// `:memory:` では別の空DBに当たります（2026-09-03 に本番で踏んだ罠）。
 	rows, err := db.Query(
 		`SELECT DISTINCT page_id FROM vocab_index WHERE data_type = ?`, clientOrderItemsType)
 	if err != nil {
-		return nil
+		return nil, 0
 	}
 	var pageIDs []int
 	for rows.Next() {
@@ -123,6 +134,7 @@ func backlogGroups(user *auth.User, rootID int) []backlogGroup {
 	rows.Close()
 
 	byKey := map[string]*backlogGroup{}
+	migrating := 0
 	for _, id := range pageIDs {
 		// ⚠ **子孫だけ**（自分自身は受注ページではないので含めない）。
 		if !cms.IsDescendantOf(db, id, rootID) {
@@ -134,6 +146,10 @@ func backlogGroups(user *auth.User, rootID int) []backlogGroup {
 		}
 		tags, err := cms.TagsOfPage(db, id)
 		if err != nil {
+			continue
+		}
+		if _, ok := tags[MigratingTag]; ok {
+			migrating++
 			continue
 		}
 		client := cms.FirstTag(tags, OrderClientTag)
@@ -198,7 +214,7 @@ func backlogGroups(user *auth.User, rootID int) []backlogGroup {
 		out = append(out, *g)
 	}
 	sortBacklogGroups(out)
-	return out
+	return out, migrating
 }
 
 // sortBacklogGroups は納期順に並べます。
@@ -223,12 +239,20 @@ func sortBacklogGroups(gs []backlogGroup) {
 
 // backlogViewHTML は受注残表を組みます（サーバー事前描画）。
 func backlogViewHTML(user *auth.User, pageIDInt int) string {
-	groups := backlogGroups(user, pageIDInt)
+	groups, migrating := backlogScan(user, pageIDInt)
+	// ⚠ **移行中で飛ばした受注ページの枚数を言います**——言わないと「移した注文が出てこない」を
+	//    集計の壊れと見分けられません。
+	migNote := ""
+	if migrating > 0 {
+		migNote = `<p class="materials-empty">※「` + MigratingTag + `」の受注ページ ` + strconv.Itoa(migrating) +
+			` 枚は入れていません（確かめたら、そのページの「` + MigratingTag + `」のタグを消すと並びます）。</p>`
+	}
 	if len(groups) == 0 {
 		return `<p class="child-list-empty">受注残はありません（このページの下に、` +
-			`まだ出していない明細がありません）。</p>`
+			`まだ出していない明細がありません）。</p>` + migNote
 	}
 	var b strings.Builder
+	b.WriteString(migNote)
 	for i, g := range groups {
 		b.WriteString(`<section class="backlog-sheet" data-backlog="` + strconv.Itoa(i) + `">`)
 		title := g.Client

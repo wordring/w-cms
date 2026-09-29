@@ -257,6 +257,14 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 		return nil, err
 	}
 	scope = filterVisible(scope, canView)
+	// ⚠ **「移行中」の受注ページは数えません**（2026-09-29・受注残・必要部材表と同じ線引き）。
+	kept := scope[:0]
+	for _, id := range scope {
+		if !isMigrating(db, id) {
+			kept = append(kept, id)
+		}
+	}
+	scope = kept
 
 	// 1. スコープの受注明細（品番・数量）を索引から読む。
 	//    **ページで絞る**のは変わりません——同じ発注書番号を別ページで使っても

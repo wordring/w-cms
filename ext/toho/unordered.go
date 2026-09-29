@@ -90,14 +90,19 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	drafted := draftedQty(db, canView)
 
 	// ページのタグ（発注元・納期）は1ページにつき1度だけ読む。
-	type head struct{ client, due string }
+	type head struct {
+		client, due string
+		migrating   bool
+	}
 	heads := map[int]head{}
 	headOf := func(id int) head {
 		if h, ok := heads[id]; ok {
 			return h
 		}
-		tags, _ := cms.TagsOfPage(db, id)
-		h := head{client: cms.FirstTag(tags, OrderClientTag), due: cms.FirstTag(tags, DueDateTag)}
+		tags, err := cms.TagsOfPage(db, id)
+		_, mig := tags[MigratingTag]
+		h := head{client: cms.FirstTag(tags, OrderClientTag), due: cms.FirstTag(tags, DueDateTag),
+			migrating: mig || err != nil} // 読めないときも止める側（isMigrating と同じ）
 		heads[id] = h
 		return h
 	}
@@ -105,6 +110,12 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	var out []UnorderedItem
 	for _, o := range orders {
 		if !canView(o.PageID) {
+			continue
+		}
+		// ⚠ **「移行中」の受注ページの行は数えません**（2026-09-29・受注残と同じ線引き）——
+		//    ワンノートとメールから移した過去の注文は、確かめるまで「買うもの」にしない
+		//    （納め済みの注文の材料が必要部材表に並ぶと、同じものを二度買います）。
+		if headOf(o.PageID).migrating {
 			continue
 		}
 		// ⚠ **完了した行は手配の対象ではありません**（受注残表と同じ線引き）。
