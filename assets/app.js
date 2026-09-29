@@ -5407,6 +5407,15 @@
         });
     }
 
+    // viewTrackable は開閉を憶える折りたたみかです——本文の折りたたみと、**ファイル表示（PDF など）の枠**。
+    // ⚠ ファイル表示の枠はサーバーが描く飾り（.vocab-chrome）の中にあるので、飾りを一律に除くと外れる
+    //    （2026-09-29 利用者:「各ページの各PDFファイルの開閉も個別にブラウザに記録して再生したいです」）。
+    //    鍵は縦横比と同じ添付の参照（viewKeyOf の `f:ページID-添付ID`）——開閉と縦横比は別の欄に入る。
+    function viewTrackable(d) {
+        if (d.classList.contains('file-view-fold')) return !!d.closest('section[data-type="file-view"][data-ref]');
+        return !d.closest('.vocab-chrome');
+    }
+
     // restoreViewState は憶えた開閉と縦横比を戻します（描き直しの巡りのたびに呼ぶ）。
     let viewTouchedFor = '';
     function restoreViewState() {
@@ -5417,7 +5426,7 @@
             ViewState.touch(currentPageId);
         }
         document.querySelectorAll('#w-editor-content details').forEach(d => {
-            if (d.closest('.vocab-chrome')) return;
+            if (!viewTrackable(d)) return;
             const k = viewKeyOf(d);
             if (!k || !(k in st.o)) return;
             const want = !!st.o[k];
@@ -5439,7 +5448,7 @@
     document.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') markUserToggle(e); }, true);
     document.addEventListener('toggle', e => {
         const d = e.target;
-        if (!(d instanceof HTMLDetailsElement) || !d.closest('#w-editor-content') || d.closest('.vocab-chrome')) return;
+        if (!(d instanceof HTMLDetailsElement) || !d.closest('#w-editor-content') || !viewTrackable(d)) return;
         if (d.dataset.wUserToggle === '1') {
             delete d.dataset.wUserToggle;
             const k = viewKeyOf(d);

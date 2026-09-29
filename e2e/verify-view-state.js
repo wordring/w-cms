@@ -126,6 +126,23 @@ function minimalPDF() {
     await page.evaluate(() => { document.getElementById('w-editor-content').style.maxWidth = ''; });
     await page.setViewportSize({ width: 1280, height: 900 });
 
+    // ④ **PDF の枠の開閉も1枚ずつ憶える**（2026-09-29 利用者:「各ページの各PDFファイルの開閉も個別に
+    //    ブラウザに記録して再生したいです」）——枠はサーバーが描く飾りの中なので、それまでは記録の外だった。
+    //    題の中には添付へのリンクがあるので、左端（📄）を押す。
+    const pdfFold = (i) => page.locator('#w-editor-content details.file-view-fold').nth(i);
+    await pdfFold(0).locator(':scope > summary').click({ position: { x: 4, y: 8 } });
+    await page.waitForTimeout(300);
+    check('押して閉じた PDF の枠が閉じた', await pdfFold(0).evaluate(d => d.open) === false);
+    await page.reload();
+    await page.waitForTimeout(1000);
+    check('閉じた PDF の枠は、開き直しても閉じたまま', await pdfFold(0).evaluate(d => d.open) === false);
+    check('ほかの PDF の枠は開いたまま（1枚ずつ）', await pdfFold(1).evaluate(d => d.open) === true);
+    await pdfFold(0).locator(':scope > summary').click({ position: { x: 4, y: 8 } });
+    await page.waitForTimeout(300);
+    await page.reload();
+    await page.waitForTimeout(1000);
+    check('開き直した PDF の枠は、開き直しても開いたまま', await pdfFold(0).evaluate(d => d.open) === true);
+
     // ③ 上限を超えたら古い順に捨てる（2005ページの古い記録を入れてから1つ書く）
     await page.evaluate(() => {
       const c = JSON.parse(localStorage.getItem('wcms.view'));
