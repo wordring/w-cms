@@ -10,7 +10,7 @@
 //   ④ 編集モードに配線の札が出て、押すと欄が開く
 //   ⑤ スラッシュメニューから挿したものも配線できる（見出し形で挿さらない）
 //   ⑥ 欄は札の直下に開き、貼り替えたら古い枠が消える
-//   ⑦ 見出し形（`<h2>ファイル表示</h2>`）にも札が出る
+//   ⑦ 見出し形（`<h2>ファイル表示</h2>`）はファイル表示にならない（2026-09-29 に節の見出しで名乗る形を廃止）
 //   ⑧ 描けない形式は開く口（`.file-view-plain`）で出る
 const { chromium } = require('playwright');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
@@ -215,9 +215,9 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     ok(re.before && !re.after, '貼り替えたら古い枠が消える');
     ok(re.ref === HOST + '-' + NONVIEW, '配線が新しい値になる', re.ref);
 
-    // ⑦ **見出し形にも札が出る。** `<section><h2>ファイル表示</h2>` と人が打ったものも
-    //    サーバーは file-view と解釈する（`vocabTypeOf`）ので、札が無いと「欄へ貼って」と
-    //    出るのに欄を開けない（コードレビュー #2）。
+    // ⑦ **見出し形はファイル表示にならない**（2026-09-29 に節の見出しで名乗る形を廃止・DBの日本語化 5段目の4）。
+    //    それまでは `<section><h2>ファイル表示</h2>` と人が打ったものもサーバーが file-view と解釈したので、
+    //    札を出していた（コードレビュー #2）。いまはサーバーも画面も属性（data-type）だけを見る——ただの節。
     const hf = await page.evaluate(async () => {
       const ed = document.getElementById('w-editor-content');
       const sec = document.createElement('section');
@@ -226,7 +226,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
       await new Promise(r => setTimeout(r, 600));
       return { bar: !!sec.querySelector(':scope > .fv-wire'), dataType: sec.getAttribute('data-type') };
     });
-    ok(hf.bar, '見出し形（data-type なし）にも配線の札が出る');
+    ok(!hf.bar, '見出し形（data-type なし）はファイル表示ではない（札が出ない）');
     ok(hf.dataType === null, '見出し形のまま（属性を勝手に足さない）');
 
     // ⑧ **描けない形式は開く口。** 閲覧へ戻して開き直すと、⑥で貼り替えた `.eml` が

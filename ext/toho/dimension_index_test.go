@@ -69,12 +69,10 @@ func TestDimensionIndexDoesNotDoubleCount(t *testing.T) {
 	}
 }
 
-// TestDimensionIndexReadsPlainTableUnderHeading は、**caption の無い素の表**
-// （節の見出しだけが名乗る形）も読むことを固定します。
-//
-// ⚠ ワンノートから移した本文はこの形になりえます——片方しか読まないと、
-// **移行したページだけ検索に出ない**という気づきにくい欠け方をします。
-func TestDimensionIndexReadsPlainTableUnderHeading(t *testing.T) {
+// TestDimensionIndexIgnoresPlainTableUnderHeading は、**caption の無い素の表**（節の見出しだけが
+// 名乗っていた形）を**読まない**ことを固定します（2026-09-29 に節の見出しで名乗る形を廃止・
+// DBの日本語化 5段目の4——それまではこの試験が「読む」ことを確かめていた）。表は caption で名乗る。
+func TestDimensionIndexIgnoresPlainTableUnderHeading(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
 	addPage(t, 12, 0, "加工製品", "root", "302", true)
@@ -85,8 +83,18 @@ func TestDimensionIndexReadsPlainTableUnderHeading(t *testing.T) {
 		`<tr><td>鉄</td><td>チャンネル</td><td>C125*65*t6*507</td><td>2</td></tr>`+
 		`</tbody></table></section>`)
 
+	if got := dimRowsSummary(t, 12); got != "" {
+		t.Fatalf("見出しの節の中の素の表を読んでいます: %s", got)
+	}
+	// 同じ表にキャプションを付ければ読む。
+	syncBody(t, 12, `<h1>加工製品</h1>`+
+		`<section><h2>材料</h2>`+
+		`<table><caption>材料</caption><tbody>`+
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
+		`<tr><td>鉄</td><td>チャンネル</td><td>C125*65*t6*507</td><td>2</td></tr>`+
+		`</tbody></table></section>`)
 	if got := dimRowsSummary(t, 12); got != "寸法値=C125 寸法値=65 厚み=t6 寸法値=507" {
-		t.Fatalf("素の表が読めていません: %s", got)
+		t.Fatalf("キャプションの表が読めていません: %s", got)
 	}
 }
 

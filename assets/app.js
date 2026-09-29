@@ -1842,8 +1842,10 @@
     // ための防御として残している（保存時はサニタイザ同様アンラップされる）。
     function isCustomTag(name) { return name.indexOf('-') !== -1; }
 
-    // sectionDefOf はセクションの形式を解決する——data-type 属性が正、無ければ機能見出し
+    // sectionDefOf はセクションの形式を解決する——data-type 属性か、鏡の印（data-mirror）
     // （サーバーの vocabTypeOf と同じ規則。walk.go）。
+    // ⚠ **節の見出しでは名乗れません**（2026-09-29 に廃止・DBの日本語化 5段目の4）——見出しは人が読む
+    // 言葉で、表は自分の caption で名乗る（利用者:「最終的には節の中のPDFを節の外にも動かせるようにしたい」）。
     // ⚠ **鏡（view）は data-mirror の印だけで名乗る**（サーバーと同じ）——名前の見えない
     // data-type の印は 2026-09-27 朝に廃止、見出しの節（<section><h2>必要部材表</h2>）で
     // 名乗る形も 2026-09-28 に廃止した（両環境を data-mirror へ移し終えた・利用者:「古い形の
@@ -1857,8 +1859,7 @@
         // 鏡の印（data-mirror="表示名"・2026-09-27）——サーバーの vocabTypeOf と同じ規則。
         const m = section.getAttribute && section.getAttribute('data-mirror');
         if (m) return mirrorDefOf(m);
-        const h = headingDefOf(section);
-        return h && h.view ? null : h;
+        return null;
     }
 
     // mirrorDefOf は鏡の印の値（表示名）から鏡の形式を引く。鏡でない名前は null。
@@ -1874,10 +1875,10 @@
         return !!(def && def.view);
     }
 
-    // tableDefOf は表の列宣言を解決する——自分の data-type が正、無ければ**一番近い**
-    // 包んでいる section の形式。その形式が明細（items）を宣言していれば素の表は明細
-    // （サーバーの syncVocabSection と同じ規則）。どれにも当たらなければ null＝
-    // 機械に読まれない素の表（型検証も掛けない——読まれないものに赤印は出さない）。
+    // tableDefOf は表の列宣言を解決する——自分の data-type が正、次に自分の caption、無ければ**一番近い**
+    // 包んでいる section の形式（data-type の節だけ——見出しの節は形式を持たない・2026-09-29）。その形式が
+    // 明細（items）を宣言していれば素の表は明細（サーバーの syncVocabSection と同じ規則）。どれにも当たらなければ
+    // null＝機械に読まれない素の表（型検証も掛けない——読まれないものに赤印は出さない）。
     function tableDefOf(table) {
         const t = table.getAttribute('data-type');
         if (t) return vocabDefs.find(v => v.type === t) || null;
@@ -1898,18 +1899,6 @@
             if (idef) return idef;
         }
         return sdef;
-    }
-
-    // headingDefOf はセクションの機能見出し（直接の子の最初の h1〜h6）を表示名と
-    // 突き合わせる（サーバーの vocabTypeOf と同じ規則。walk.go）。
-    function headingDefOf(section) {
-        for (const c of section.children) {
-            if (/^H[1-6]$/.test(c.tagName)) {
-                const w = c.textContent.trim();
-                return vocabDefs.find(v => v.display_name === w) || null;
-            }
-        }
-        return null;
     }
 
     // esc は属性値・テキストをHTMLとして安全な形にエスケープする。
@@ -2113,27 +2102,6 @@
         return '';
     }
 
-    // usesHeadingForm は「見出しが機能を宣言する形」で挿す形式かを返す（D-2・2026-08-31）。
-    // 例外は4つだけ——親の中に埋め込まれる明細（hidden）・ページ横断メタの可変タグ
-    // （専用のチップUIが data-type="tags" を前提にする）・単独のPDF添付ブロック
-    // （file。data-src の配線を持つ）・ファイル表示（file-view。data-ref の配線を持つ）。
-    // それ以外は data-type を書かず、**表示名の見出し＋素の中身**で挿す
-    // ——見える文字が人にも機械にも同じ宣言になる。
-    //
-    // ⚠ **配線を属性に持つ形式は、この例外に入れること。** 見出し形で挿すと
-    // `data-type` が付かず、属性を編集するUIの絞り込み（`section[data-type=…]`）から
-    // 外れます——2026-09-15 に file-view を足したとき、ここへ入れ忘れて
-    // **スラッシュメニューから挿すと配線できない**状態になりました。鏡は機能見出しでも
-    // 引き金が立つので「参照がありません」とだけ出て、**その欄を開く手段が画面に無い**
-    // という気づきにくい形で壊れます。
-    function usesHeadingForm(def) {
-        if (def.hidden) return false;
-        if (def.type === 'tags') return false;
-        if (def.type === 'file') return false;
-        if (def.type === 'file-view') return false;
-        return true;
-    }
-
     // buildPlainDl は素の dl（ヘッダ）を組む。鍵は dt の表示文字。
     function buildPlainDl(columns) {
         const dl = document.createElement('dl');
@@ -2185,8 +2153,9 @@
 
     function buildVocabSkeleton(def) {
         // **表の種類は全部キャプションで挿します**（上の buildCaptionTable）。鏡は下の
-        // data-mirror の印1つ。見出し形の節で包むのは、それ以外の節の種類だけです
-        // （既定のビルドでは該当する形式は無い——2026-09-27 に数えた）。
+        // data-mirror の印1つ。それ以外（ファイル表示など属性で配線するもの）は data-type の節。
+        // ⚠ 見出しの節（<section><h2>表示名</h2>）で挿す枝は 2026-09-29 に消した——節の見出しでは
+        //    名乗れなくなった（DBの日本語化 5段目の4）。そのころ通る種類は既に無かった。
         if (def.element === 'table') {
             return buildCaptionTable(def.display_name || def.type, def.columns);
         }
@@ -2196,27 +2165,6 @@
         if (def.view) {
             const sec = document.createElement('section');
             sec.setAttribute('data-mirror', def.display_name || def.type);
-            return sec;
-        }
-        if (usesHeadingForm(def)) {
-            // 見出し形（D-2）: <section><h2>表示名</h2>…素の中身…</section>。
-            // 機械語は本文に書かない——section の役割は見出しの言葉が、列は th / dt の
-            // 表示文字が宣言し、サーバーはレジストリ（表示名・Items）で解釈する。
-            // （ビューはここを通りません——上の data-mirror の枝で印1つを挿す・2026-09-27。
-            //  それまではこの見出し形で挿され、節の見出しで解かれていました。）
-            const sec = document.createElement('section');
-            const h = document.createElement('h2');
-            h.textContent = def.display_name || def.type;
-            sec.appendChild(h);
-            if (def.element === 'dl') {
-                sec.appendChild(buildPlainDl(def.columns));
-            } else { // section: ヘッダ dl ＋（Items 宣言があれば）素の明細表
-                if (def.columns && def.columns.length) sec.appendChild(buildPlainDl(def.columns));
-                if (def.items) {
-                    const itemsDef = vocabDefs.find(v => v.type === def.items);
-                    if (itemsDef) sec.appendChild(buildPlainTable(itemsDef.columns));
-                }
-            }
             return sec;
         }
         if (def.element === 'section') {
@@ -3010,10 +2958,8 @@
         // 本文が丸ごと差し替わった（解析の取り直し・ロック喪失）とき、欄だけが浮いたまま残ると、
         // 打ったキーが `!sec.isConnected` で黙って捨てられます。
         if (fileViewAnchor && (!isEdit || !fileViewAnchor.isConnected)) hideFileViewPopover();
-        // **見出し形も拾います**（コードレビュー #2）。`<section><h2>ファイル表示</h2>` と
-        // 人が打った・貼ったものも、サーバーは file-view と解釈して鏡を立てます
-        // （`vocabTypeOf`）。`data-type` だけ見ていると、そこに「欄へ貼って」と出るのに
-        // 欄を開く札が無い——スラッシュメニューを直したあとも、この経路で同じ壊れ方が残っていました。
+        // 形式は sectionDefOf で見ます（サーバーの vocabTypeOf と同じ規則）。⚠ 2026-09-29 から節の見出し
+        // （`<section><h2>ファイル表示</h2>`）では名乗れません——ファイル表示は `data-type` の節だけ。
         editor.querySelectorAll('section').forEach(sec => {
             if (sec.closest('.vocab-chrome')) return;
             const def = sectionDefOf(sec);
@@ -5642,29 +5588,20 @@
             !el.closest('.vocab-chrome') && el.tagName !== 'TH' && el.tagName !== 'TD')
             .map(el => ({ el, type: el.getAttribute('data-type') })) : [];
 
-        // 見出し駆動のセクション（D-2）——data-type 無しでも、最初の見出し（直接の子の
-        // h1〜h6）が表示名と一致すれば形式を持つ。未登録の見出し語は**ただのセクション**
-        // なので対象外（赤い札も出さない——静かに何もしないのが決定）。
-        const headingTargets = isEdit ? Array.from(editor.querySelectorAll('section:not([data-type])'))
-            .filter(el => !el.closest('.vocab-chrome'))
-            .map(el => ({ el, def: headingDefOf(el) }))
-            .filter(x => x.def && !x.def.view) // 鏡は見出しでは名乗らない（2026-09-28）
-            .map(x => ({ el: x.el, type: x.def.type })) : [];
-
-        const headingMarked = new Set();
-        // 見出し駆動のセクションに**札は出さない**（2026-08-31 ユーザー:「sectionの横に
-        // 自社の発注書とタグを出すのはどのような理由ですか？」——理由が無かった）。
-        // 札の存在理由は「属性は見えないから、見える札で形式を示す」（改名すると赤に
-        // 変わって気づける）。見出し形では**見出し自身が宣言**なので、
-        // **一致した言葉そのものへ薄い青の背景**を付けて「機械が認識した」を示す
-        // （同日ユーザー提案。D-3「認識できた形式は背景色で示す」の機能見出し版）。
-        // 改名すると背景が消える——それが「形式でなくなった」の合図。
-        headingTargets.forEach(({ el }) => {
-            headingMarked.add(el);
-            for (const c of el.children) {
-                if (/^H[1-6]$/.test(c.tagName)) { c.classList.add('vocab-word'); break; }
-            }
-        });
+        // **機械が読む言葉へ薄い青の背景**（D-3「認識できた形式は背景色で示す」）——2026-09-29 からは
+        // **表の名前（caption）**。それまでは節の見出しの言葉に付けていたが、見出しでは名乗れなくなった
+        // （DBの日本語化 5段目の4）。改名すると背景が消える——「機械が読まなくなった」の合図。
+        const captionMarked = new Set();
+        if (isEdit) {
+            editor.querySelectorAll('table > caption').forEach(cap => {
+                if (cap.closest('.vocab-chrome')) return;
+                const w = cap.textContent.trim();
+                if (vocabDefs.find(v => !v.view && v.display_name === w)) {
+                    cap.classList.add('vocab-word');
+                    captionMarked.add(cap);
+                }
+            });
+        }
         // **札は出さない**（2026-08-31 ユーザー2件:「そんなものを出さなくても
         // 見分けがつく」「薄青にならないものはデータベースに入らないという程度の
         // 認識で良い」）。識別はすべて**背景色**へ一本化した:
@@ -5711,10 +5648,9 @@
         // 旧仕様の札が残っていれば片付ける（この関数が唯一の作り手だった）。
         editor.querySelectorAll('.vocab-label').forEach(el => el.remove());
 
-        // 見出しを消した・別の言葉へ変えたセクションの印を片付ける。
+        // 名前を消した・別の言葉へ変えた表（と、見出しに付けていた 2026-09-29 までの印）を片付ける。
         editor.querySelectorAll('.vocab-word').forEach(el => {
-            const sec = el.closest('section');
-            if (!sec || !headingMarked.has(sec)) el.classList.remove('vocab-word');
+            if (!captionMarked.has(el)) el.classList.remove('vocab-word');
         });
 
         if (!isEdit) {

@@ -77,15 +77,10 @@ func TestUnregisteredHeadingSectionIsNotIndexed(t *testing.T) {
 		t.Fatalf("SyncIndexエラー: %v", err)
 	}
 
-	rows := queryVocabRows(t, 72)
-	for _, r := range rows {
-		if r.dataType != "inspection-record" {
-			t.Errorf("登録されていない見出しの表が索引に入っています: %+v", r)
-		}
-	}
-	// ⚠ **ワンノート移行の受け皿を潰していないこと**——見出しで形式が決まる素の表は、
-	// これまでどおり載ります（一度うっかり消して気づいた経緯あり・2026-09-18）。
-	if len(rows) == 0 {
-		t.Error("登録済みの見出しの下の素の表まで索引から消えています（移行の受け皿）")
+	// ⚠ **登録済みの見出しの下の素の表も、もう載りません**（2026-09-29・DBの日本語化 5段目の4）。
+	// それまでは「見出しで形式が決まる素の表」をワンノート移行の受け皿として載せていて、ここは
+	// それを潰していないかを確かめていた——いまは表は caption でだけ名乗る（移植の道具も caption で書く）。
+	if rows := queryVocabRows(t, 72); len(rows) != 0 {
+		t.Errorf("見出しの節の中の素の表が索引に入っています: %+v", rows)
 	}
 }

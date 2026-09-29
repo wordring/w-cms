@@ -58,18 +58,24 @@ func queryIndex(t *testing.T, pageID int, dataType string) []string {
 	return out
 }
 
-// TestHeadingDeclaresSectionType は、見出しの言葉だけで（属性ゼロで）中の素の表が
-// その形式として索引されることを検証します。列型もレジストリ宣言から解決される
-// （検査日が date として正規化される）ことまで見る。
-func TestHeadingDeclaresSectionType(t *testing.T) {
+// TestHeadingDoesNotDeclareSectionType は、⚠ **節の見出しでは表の形式が決まらない**ことを固定します
+// （2026-09-29 に廃止・DBの日本語化 5段目の4——それまではこの試験が「見出しの言葉だけで中の素の表が
+// その形式として索引される」ことを確かめていました）。利用者:「最終的には節の中のPDFを節の外にも
+// 動かせるようにしたい」——見出しで読むと、表を節の外へ動かしただけで黙って形式が変わる。
+// 表は自分の caption で名乗り、そのときは列型もレジストリ宣言から解決される（検査日が date に畳まれる）。
+func TestHeadingDoesNotDeclareSectionType(t *testing.T) {
 	setupSaveTest(t)
 
 	body := `<h1>加工製品ページ</h1>` +
 		`<section data-id="s1">` +
-		`<h2>検査記録</h2>` + // ← この言葉が機能を宣言する。data-type は無い
+		`<h2>検査記録</h2>` + // ← 見出しは人が読む言葉。形式は決まらない
 		`<table>` +
 		`<tr><th>品番</th><th>判定</th><th>検査日</th></tr>` +
 		`<tr><td>A-1</td><td>合格</td><td>2026/8/31</td></tr>` +
+		`</table>` +
+		`<table data-id="t2"><caption>検査記録</caption>` + // ← 表が自分で名乗る
+		`<tr><th>品番</th><th>判定</th><th>検査日</th></tr>` +
+		`<tr><td>B-2</td><td>不合格</td><td>2026/9/1</td></tr>` +
 		`</table>` +
 		`</section>`
 	if err := SyncIndex("000050", body); err != nil {
@@ -77,9 +83,9 @@ func TestHeadingDeclaresSectionType(t *testing.T) {
 	}
 
 	got := queryIndex(t, 50, "inspection-record")
-	want := []string{"判定=合格", "品番=A-1", "検査日=2026/8/31"} // field のバイト順
+	want := []string{"判定=不合格", "品番=B-2", "検査日=2026/9/1"} // キャプションの表だけ
 	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("見出し駆動の索引が期待と異なります:\ngot  %v\nwant %v", got, want)
+		t.Errorf("索引が期待と異なります（見出しの下の素の表が入っていないか）:\ngot  %v\nwant %v", got, want)
 	}
 
 	// レジストリ宣言（検査日=date）による正規化が効いていること。
@@ -88,18 +94,17 @@ func TestHeadingDeclaresSectionType(t *testing.T) {
 		`SELECT COALESCE(norm_value,'') FROM vocab_index WHERE page_id = 50 AND field = '検査日'`).Scan(&norm); err != nil {
 		t.Fatalf("クエリエラー: %v", err)
 	}
-	if norm != "2026-08-31" {
+	if norm != "2026-09-01" {
 		t.Errorf("列型がレジストリから解決されていません: norm_value=%q", norm)
 	}
-
-	// 由来のブロックIDは包んでいる section のもの。
+	// 由来のブロックIDは表自身のもの。
 	var blockID string
 	if err := database.DB.QueryRow(
 		`SELECT block_id FROM vocab_index WHERE page_id = 50 AND field = '品番'`).Scan(&blockID); err != nil {
 		t.Fatalf("クエリエラー: %v", err)
 	}
-	if blockID != "s1" {
-		t.Errorf("素の表の由来が section を指していません: block_id=%q", blockID)
+	if blockID != "t2" {
+		t.Errorf("表の由来が表自身を指していません: block_id=%q", blockID)
 	}
 }
 
@@ -182,26 +187,6 @@ func TestUnregisteredHeadingIsInert(t *testing.T) {
 	}
 }
 
-// TestNestedHeadingIsOwnFunction は、入れ子のセクションの見出しが入れ子自身の機能で
-// あって親には効かないことを検証します（§11.5-1: 一番近い祖先が勝つ）。
-func TestNestedHeadingIsOwnFunction(t *testing.T) {
-	setupSaveTest(t)
-
-	body := `<h1>入れ子</h1>` +
-		`<section>` + // 見出しなし＝ただの区切り
-		`<section><h2>検査記録</h2>` +
-		`<table><tr><th>品番</th></tr><tr><td>B-2</td></tr></table>` +
-		`</section>` +
-		`</section>`
-	if err := SyncIndex("000054", body); err != nil {
-		t.Fatalf("SyncIndexエラー: %v", err)
-	}
-
-	if got := queryIndex(t, 54, "inspection-record"); len(got) != 1 || got[0] != "品番=B-2" {
-		t.Errorf("入れ子の見出し駆動が働いていません: %v", got)
-	}
-}
-
 // TestMirrorMarkerKeepsContentAndHeadingDoesNotMirror は、**鏡の印（`data-mirror`）の中の人の
 // 書き込みが消えず、鏡の中身はその下へ毎回描かれる**こと（語彙モデル §11.5-7）と、
 // ⚠ **見出しの節では鏡を名乗れない**ことを検証します（2026-09-28 に見出しの節で名乗る鏡を廃止——
@@ -239,85 +224,22 @@ func TestMirrorMarkerKeepsContentAndHeadingDoesNotMirror(t *testing.T) {
 	}
 }
 
-// TestHeadingSectionItemsTable は、機能見出しのセクション内の**素の明細表**が
-// Items 宣言の形式として索引されることを検証します（2026-08-31 ユーザー:
-// 「発注書などの表はTableで組みましょう。THに表示される文字列が、すなわち列の
-// データを表します。人に対しても機械に対しても有効」）。
-//
-// <section><h2>顧客の発注書</h2><dl>ヘッダ</dl><table>明細</table></section> という
-// **属性ゼロの受注ブロック**が、従来のマーカー付きとまったく同じ形（ヘッダ＝
-// client-order・明細＝client-order-items・block_no の対・列型の解決）で索引に載る。
-// 集計（vocab_query）は両者を区別しないので、部材手配・進捗の計算がそのまま効く。
-func TestHeadingSectionItemsTable(t *testing.T) {
-	setupSaveTest(t)
-
-	body := `<h1>受注ページ</h1>` +
-		`<section data-id="ord1">` +
-		`<h2>顧客の発注書</h2>` +
-		`<dl data-type="tags"><dt>発注書番号</dt><dd>PO-PLAIN</dd><dt>発注元</dt><dd>南北</dd></dl>` +
-		`<table>` +
-		`<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>` +
-		`<tr><td>SHAFT-01</td><td>シャフト</td><td>¥8,000</td><td>10</td><td>加工中</td></tr>` +
-		`</table>` +
-		`</section>`
-	if err := SyncIndex("000055", body); err != nil {
-		t.Fatalf("SyncIndexエラー: %v", err)
-	}
-
-	// ヘッダは**タグ**（`page_tags`）、明細は `client-order-items`（素の表の経路）。
-	if got := queryPageTags(t, 55); len(got) != 2 {
-		t.Errorf("ヘッダのタグが期待と異なります: %v", got)
-	}
-	items := queryIndex(t, 55, "client-order-items")
-	if len(items) != 5 {
-		t.Fatalf("明細の索引が期待と異なります: %v", items)
-	}
-
-	// 列型は Items 宣言（client-order-items の Columns）から解決される——
-	// 単価が number として norm_num に入る（¥・桁区切りも吸収）。
-	var normNum float64
-	if err := database.DB.QueryRow(
-		`SELECT norm_num FROM vocab_index WHERE page_id = 55 AND field = '単価'`).Scan(&normNum); err != nil {
-		t.Fatalf("クエリエラー: %v", err)
-	}
-	if normNum != 8000 {
-		t.Errorf("明細の列型が Items 宣言から解決されていません: norm_num=%v", normNum)
-	}
-
-	// ヘッダと明細の block_no は対（どちらも最初のブロック＝0）。
-	var hdrNo, itemNo int
-	database.DB.QueryRow(`SELECT block_no FROM vocab_index WHERE page_id = 55 AND data_type = 'client-order' LIMIT 1`).Scan(&hdrNo)
-	database.DB.QueryRow(`SELECT block_no FROM vocab_index WHERE page_id = 55 AND data_type = 'client-order-items' LIMIT 1`).Scan(&itemNo)
-	if hdrNo != 0 || itemNo != 0 {
-		t.Errorf("ヘッダと明細の block_no が対になっていません: hdr=%d item=%d", hdrNo, itemNo)
-	}
-}
-
-// TestHeadingRenameIsNotified は、見出し駆動のブロックでも改名告知が働くことを検証します。
-// エディタが機能見出しで挿す形へ切り替わると、新規ブロックはすべてこの経路を通る——
-// ここが黙ると「改名で計算が読めなくなったのに告知ゼロ」という D-2 前の穴が再来する。
-func TestHeadingRenameIsNotified(t *testing.T) {
-	body := `<section>` +
-		`<h2>顧客の発注書</h2>` +
-		`<dl><dt>発注書番号</dt><dd>PO-1</dd><dt>得意先</dt><dd>X</dd></dl>` + // 発注元→得意先
-		`<table><tr><th>品番</th><th>品名（変更）</th><th>単価</th><th>数量</th><th>状態</th></tr>` + // 品名→品名（変更）
-		`<tr><td>A</td><td>B</td><td>1</td><td>2</td><td>未着手</td></tr></table>` +
-		`</section>`
+// TestCaptionRenameIsNotified は、キャプションで名乗る表の列の改名が告知されることを検証します
+// （2026-09-29 まではこの試験が「見出しで名乗る節」で同じことを確かめていた——見出しの形は廃止）。
+// ここが黙ると「改名で計算が読めなくなったのに告知ゼロ」という穴が再来する。
+func TestCaptionRenameIsNotified(t *testing.T) {
+	body := `<table><caption>受注明細</caption>` +
+		`<tr><th>品番</th><th>品名（変更）</th><th>単価</th><th>数量</th><th>状態</th></tr>` + // 品名→品名（変更）
+		`<tr><td>A</td><td>B</td><td>1</td><td>2</td><td>未着手</td></tr></table>`
 
 	got := UnresolvedVocabFields(body)
-	// ⚠ **告知は表の列だけ**です（2026-09-18）。ヘッダがタグへ移ったので、
-	// `顧客の発注書: 発注元` は出ません——タグの名前は運用者が自由に足す語で、
-	// レジストリに無いのが普通だからです（告知すると毎回鳴って狼少年になる）。
-	wantHits := []string{"受注明細: 品名"}
-	for _, w := range wantHits {
-		found := false
-		for _, g := range got {
-			if g == w {
-				found = true
-			}
+	found := false
+	for _, g := range got {
+		if g == "受注明細: 品名" {
+			found = true
 		}
-		if !found {
-			t.Errorf("改名告知に %q がありません: %v", w, got)
-		}
+	}
+	if !found {
+		t.Errorf("改名告知に %q がありません: %v", "受注明細: 品名", got)
 	}
 }

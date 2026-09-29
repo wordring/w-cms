@@ -6,7 +6,7 @@
 //   ① 見出しの節（データ）に「＋ ファイル」が出て、PDF を2枚足せる
 //   ② 1枚だけ「✕ 外す」で外せる——保存した本文（正本のファイル）から消え、余計なものが残らない
 //   ③ 閲覧モードに戻すと「✕ 外す」「＋ ファイル」「札」が消える
-//   ④ 材料の表の節（形式で名乗る節）には「＋ ファイル」を出さない
+//   ④ 材料の節（2026-09-29 から素の見出しの節）にも「＋ ファイル」が出る——中の表はキャプションで名乗る
 //
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-file-view-remove.js（リポジトリの e2e/ で）
@@ -67,7 +67,8 @@ function rawBody(id) {
     const matSec = '#w-editor-content section:has(> h2:text-is("材料"))';
     // ④ 材料の節には出ない・データの節には出る
     check('データの節に「＋ ファイル」が出る', await page.locator(dataSec + ' > .fold-add-file').count() === 1);
-    check('材料の表の節には「＋ ファイル」を出さない', await page.locator(matSec + ' > .fold-add-file').count() === 0);
+    // 節の見出しでは名乗らない（2026-09-29）——材料の節も素の見出しの節なので出る。
+    check('材料の節にも「＋ ファイル」が出る（見出しでは名乗らない）', await page.locator(matSec + ' > .fold-add-file').count() === 1);
 
     // ① PDF を2枚足す
     for (const name of ['図面A.pdf', '図面B.pdf']) {

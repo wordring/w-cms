@@ -356,9 +356,11 @@ func TestMaterialPriceColumnOnceWhenHeadingAndCaption(t *testing.T) {
 		t.Errorf("廃版の印が %d 回付いています:\n%s", n, both)
 	}
 
+	// ⚠ **見出しの節の中の素の表（キャプションの無い表）は、もう材料表ではありません**（2026-09-29 に
+	// 節の見出しで名乗る形を廃止・DBの日本語化 5段目の4——それまではここで1列足すことを確かめていた）。
 	plain := showMaterials(t, root, `<h1>加工製品</h1><section><h2>材料</h2>`+
 		`<table><tbody>`+head+row+`</tbody></table></section>`)
-	if n := strings.Count(plain, priceHeadCell); n != 1 || !strings.Contains(plain, "800円") {
-		t.Errorf("見出しの節の中の素の表に、最新単価が1列出ていません（%d 列）:\n%s", n, plain)
+	if n := strings.Count(plain, priceHeadCell); n != 0 {
+		t.Errorf("見出しの節の中の素の表に、最新単価の列が %d 個あります（材料表ではない）:\n%s", n, plain)
 	}
 }
