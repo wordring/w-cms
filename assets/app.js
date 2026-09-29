@@ -1414,6 +1414,7 @@
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
         wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
+        wireMailFetch();             // 「📥 新しいメールを読み込む」（その隣・2026-09-29）
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
@@ -4900,6 +4901,65 @@
             title.addEventListener('keydown', e => {
                 if (e.key === 'Enter') { e.preventDefault(); createRecord(btn); }
             });
+        }
+    }
+
+    // ── 通信箱の「📥 新しいメールを読み込む」（2026-09-29） ─────────────────
+    //
+    // 利用者:「通信箱に最新のメールを読み込むボタンもお願いします」。「＋ 記録する」（通信箱の未処理の一覧の欄）の
+    // 隣に置く。押すと**受信箱と送信済みの箱**から、まだ入っていないメールだけを取り込む（POST /api/mail/import・
+    // 重複は Message-ID で弾く・1回で箱ごとに50通まで——残りはもう一度押す）。送信済みのメールは差出人が自分なので
+    // 「送信」の記録になる。メールの拡張（comm/mail）が載っていなければ出さない。
+    function wireMailFetch() {
+        const memo = document.getElementById('w-memo-create');
+        if (!memo || !hasExtension('comm/mail') || document.getElementById('w-mail-fetch')) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'w-mail-fetch';
+        btn.textContent = '📥 新しいメールを読み込む';
+        btn.title = '受信箱と送信済みの箱から、まだ通信箱に入っていないメールを取り込みます';
+        memo.insertAdjacentElement('afterend', btn);
+        btn.addEventListener('click', () => fetchNewMail(btn));
+    }
+
+    async function fetchNewMail(btn) {
+        const label = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '📥 読み込み中…';
+        const got = { 受信: 0, 送信: 0 };
+        let failed = 0, more = false;
+        const errs = [];
+        for (const folder of ['受信', '送信']) {
+            try {
+                const res = await fetch('/api/mail/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder, max: 50 }),
+                });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || !d.success) {
+                    errs.push(folder + ': ' + (d.message || d.error || ('HTTP ' + res.status)));
+                    continue;
+                }
+                const s = d.summary || {};
+                got[folder] = s.imported || 0;
+                failed += s.failed || 0;
+                if ((s.imported || 0) >= 50) more = true; // 1回の上限に当たった——まだある
+            } catch (e) {
+                errs.push(folder + ': ' + e.message);
+            }
+        }
+        btn.disabled = false;
+        btn.textContent = label;
+        let text = '受信 ' + got['受信'] + ' 通・送信 ' + got['送信'] + ' 通を読み込みました';
+        if (failed) text += '（失敗 ' + failed + ' 通）';
+        if (more) text += '——まだあります。もう一度押してください';
+        if (errs.length) text += '——' + errs.join(' / ');
+        notify(text, { type: (errs.length || failed) ? 'warn' : 'success', duration: 8000 });
+        if (got['受信'] + got['送信'] > 0) {
+            loadChildNav();
+            // 書きかけを消さない（取り込み側は reloadContent を編集モードでは呼ばない——引き継ぎの罠）。
+            if (!document.body.hasAttribute('edit-mode')) reloadContent();
         }
     }
 

@@ -29,7 +29,7 @@ type MessageRef struct {
 
 // ListOptions は一覧の条件です。
 type ListOptions struct {
-	Folder string // 予約（いまは受信箱だけ）。移設後にフォルダ指定が要れば使う
+	Folder string // 取り込む箱（空・「受信」＝受信箱／「送信」＝送信済みの箱・2026-09-29）
 	Max    int    // 取る最大件数（0 なら 50）
 	Since  string // ISO 8601。これ以降に届いたものだけ（空なら全期間）
 }

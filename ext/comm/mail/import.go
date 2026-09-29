@@ -19,6 +19,7 @@ package mail
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -70,7 +71,7 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 
 	// **接続は1本で通します。** IMAP は状態を持つ（認証・開いた箱）ので、
 	// 1通ごとに繋ぎ直すのは無駄です。
-	sess, err := openIMAP(ctx, username)
+	sess, err := openImportBox(ctx, username, opt.Folder)
 	if err != nil {
 		return sum, err
 	}
@@ -125,6 +126,35 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 		}
 	}
 	return sum, nil
+}
+
+// FolderSent は取り込む箱の「送信済み」です（ListOptions.Folder・2026-09-29）。Outlook から送ったメールは送信済みの
+// 箱にある——取り込むと、差出人が自分なので「送信」の記録になる（comm の `.eml` の取り込み）。
+const FolderSent = "送信"
+
+// openImportBox は取り込む箱を読み取り専用で開きます（空・「受信」は受信箱、FolderSent は送信済みの箱——
+// LIST の \Sent の印で探す）。
+func openImportBox(ctx context.Context, username, folder string) (*imapSession, error) {
+	switch folder {
+	case "", "受信", "INBOX":
+		return openIMAP(ctx, username)
+	case FolderSent:
+		s, err := connectIMAP(ctx, username)
+		if err != nil {
+			return nil, err
+		}
+		box, err := s.specialBox(SentBox)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		if _, err := s.command("EXAMINE " + imapQuote(box)); err != nil {
+			s.Close()
+			return nil, errors.New("送信済みの箱を開けません: " + err.Error())
+		}
+		return s, nil
+	}
+	return nil, errors.New("箱「" + folder + "」は分かりません（受信・送信）")
 }
 
 // MailImportAPIHandler は POST /api/mail/import です。
