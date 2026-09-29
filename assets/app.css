@@ -1554,6 +1554,21 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 #w-editor-content .fv-wire-empty {
     background: #fdeaea;
 }
+/* 「✕ 外す」（2026-09-29・節や折りたたみの中のファイル表示を1枚だけ外す）。札の横に並べる。 */
+#w-editor-content .fv-wire:has(+ .fv-remove) { display: inline-block; }
+#w-editor-content .fv-remove {
+    display: inline-block;
+    margin: 0 0 4px 6px;
+    padding: 2px 8px;
+    font: inherit;
+    font-size: 0.85em;
+    color: inherit;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+#w-editor-content .fv-remove:hover { background: #fdeaea; }
 /* ファイル表示の頭の「📝 ローカルで編集」（2026-09-29・常駐ヘルパー w-cms-edit で開く）。 */
 #w-editor-content .local-edit-btn {
     margin-left: 8px;

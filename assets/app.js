@@ -2992,7 +2992,7 @@
         // 保存の往復で作り直されないので、残すと札は新しい値・枠は古いPDF、という
         // 食い違いが編集モードを出るまで続きます。消せば「配線した。枠は次に開いたとき」と
         // 読めます（札が残るので空白にはならない）。
-        sec.querySelectorAll(':scope > .vocab-chrome:not(.fv-wire)').forEach(n => n.remove());
+        sec.querySelectorAll(':scope > .vocab-chrome:not(.fv-wire):not(.fv-remove)').forEach(n => n.remove());
         decorateFileViews();
         updateHtmlPreview();
         triggerAutoSave();
@@ -3019,7 +3019,13 @@
             const def = sectionDefOf(sec);
             if (!def || def.type !== FILE_VIEW_TYPE) return;
             let bar = sec.querySelector(':scope > .fv-wire');
-            if (!isEdit) { if (bar) bar.remove(); return; }
+            if (!isEdit) {
+                // ⚠ **「✕ 外す」も一緒に消す**（2026-09-29 利用者:「編集モードから閲覧モードに変更しても外すという
+                //    ボタンが消えません」——札だけ消して、外すの札を残していた）。
+                if (bar) bar.remove();
+                sec.querySelectorAll(':scope > .fv-remove').forEach(n => n.remove());
+                return;
+            }
             if (!bar) {
                 bar = document.createElement('button');
                 bar.type = 'button';
@@ -3038,7 +3044,44 @@
             const want = ref ? '📄 ファイル表示：' + ref : '📄 ファイル表示：参照を設定してください';
             if (bar.textContent !== want) bar.textContent = want;
             bar.classList.toggle('fv-wire-empty', !ref);
+            // **1枚だけ外す**（2026-09-29 利用者:「図面のブロックごと消すことは出来ますが、一枚の図面だけ
+            // 消すことが出来ません」）——ブロックの 🗑 は本文の上の段にしか付かないので、節や折りたたみの
+            // 中のファイル表示には外す道がありませんでした。⚠ **外すのは表示の印だけ**で、ファイルは
+            // 添付に残ります（別の表示から指せる・版にも残る）。確認は出しません（ブロックの 🗑 と同じ——
+            // 編集中のアンドゥで戻せる）。
+            if (!sec.querySelector(':scope > .fv-remove')) {
+                const rm = document.createElement('button');
+                rm.type = 'button';
+                rm.className = 'vocab-chrome fv-remove';
+                rm.contentEditable = 'false';
+                rm.textContent = '✕ 外す';
+                rm.title = 'このファイル表示を本文から外します（ファイルは添付に残ります・Ctrl+Z で戻せます）';
+                rm.addEventListener('mousedown', e => e.preventDefault());
+                rm.addEventListener('click', e => {
+                    e.preventDefault();
+                    removeFileView(sec);
+                });
+                bar.insertAdjacentElement('afterend', rm);
+            }
         });
+    }
+
+    // removeFileView はファイル表示の印を本文から外します（ファイルそのものは消さない）。
+    // 空になったブロックは、ブロックの 🗑 と同じく本文の上の段なら取り除きます。
+    function removeFileView(sec) {
+        if (fileViewAnchor === sec) hideFileViewPopover();
+        const name = (sec.getAttribute(FILE_REF_ATTR) || '').trim();
+        const block = sec.parentElement && sec.parentElement.classList.contains('block-content')
+            ? sec.closest('.editor-block') : null;
+        if (block) {
+            deleteBlock(block); // 上の段のファイル表示はブロックごと（🗑 と同じ）
+        } else {
+            sec.remove();
+            updateHtmlPreview();
+        }
+        triggerAutoSave();
+        notify('ファイル表示を外しました' + (name ? '（' + name + '）' : '') +
+            '。ファイルは添付に残っています——戻すなら Ctrl+Z。', { type: 'info', duration: 6000 });
     }
 
     // ── 表の名前・見出しの「SQL で引くとき気をつける所」を薄赤に（2026-09-28） ────────────
@@ -3124,13 +3167,28 @@
     // **ファイル表示の印**（`data-ref`）を中の末尾へ足します。
     // 既にある添付（通信記録に届いた図面など）を置くときは、足した印の札（📄 ファイル表示）
     // から参照を貼り替えます。
+    //
+    // ⚠ **見出しの節にも出します**（2026-09-29 利用者:「加工製品ページで図面のブロックごと消すことは
+    // 出来ますが、一枚の図面だけ消すことが出来ません」「おそらく追加も難しいのでは？」）——図面の
+    // ブロック（`<section><h2>図面</h2>…`）もデータの節も、中へファイル表示を足す道がありませんでした。
+    // 出すのは**形式で名乗らない素の見出しの節**だけ（材料などの表の節・鏡・ファイル表示そのものには
+    // 出さない——そこへファイルを置く意味が無い）。外すほうはファイル表示の札の「✕ 外す」。
+    function fileHolderOf(el) {
+        if (el.tagName === 'DETAILS') return true;
+        if (el.tagName !== 'SECTION' || el.hasAttribute('data-type') || el.hasAttribute('data-mirror')) return false;
+        if (sectionDefOf(el)) return false;
+        const first = Array.from(el.children).find(c => !c.classList.contains('vocab-chrome'));
+        return !!first && /^H[2-6]$/.test(first.tagName);
+    }
+
     function decorateFolds() {
         const editor = document.getElementById('w-editor-content');
         if (!editor) return;
         const isEdit = document.body.hasAttribute('edit-mode');
-        editor.querySelectorAll('details').forEach(fold => {
+        editor.querySelectorAll('details, section').forEach(fold => {
             if (fold.closest('.vocab-chrome')) return;
             let bar = fold.querySelector(':scope > .fold-add-file');
+            if (isEdit && !fileHolderOf(fold)) { if (bar) bar.remove(); return; }
             if (!isEdit) { if (bar) bar.remove(); return; }
             if (bar) return; // **必要なときだけDOMを変える**（decorateFileViews と同じ理由）
             bar = document.createElement('button');
@@ -3138,7 +3196,8 @@
             bar.className = 'vocab-chrome fold-add-file';
             bar.contentEditable = 'false';
             bar.textContent = '＋ ファイル';
-            bar.title = 'ファイルを選んでこのページへ上げ、この折りたたみの中にファイル表示を置きます';
+            bar.title = 'ファイルを選んでこのページへ上げ、この' +
+                (fold.tagName === 'DETAILS' ? '折りたたみ' : '節') + 'の中にファイル表示を置きます';
             bar.addEventListener('mousedown', e => e.preventDefault());
             bar.addEventListener('click', e => {
                 e.preventDefault();
@@ -3178,7 +3237,7 @@
                 if (d && d.intake) {
                     // 通信箱のページでは PDF が記録として取り込まれる（添付にならない）。
                     notify(f.name + ' は受信箱に取り込まれました（/' + d.page_id + '）——' +
-                        '折りたたみには入れていません。', { type: 'warn', duration: 8000 });
+                        'ここには入れていません。', { type: 'warn', duration: 8000 });
                     continue;
                 }
                 if (!res.ok || !d || !d.id) {
