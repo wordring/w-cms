@@ -2124,6 +2124,15 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
  *
  * 間隔の付け方は「**まとまりの前を空ける**」——見出しの前は大きく、見出しと直後の
  * 本文は近く。通信記録なら「件名／タグ／本文／添付」が4つのまとまりに見えます。 */
+/* 見出しの色（2026-09-29 利用者:「見出しの文字が黒では主張しすぎるので、もう少し薄くしたいです」）——
+   それまでは本文と同じほぼ黒（--text）の太字だった。題（h1）は一段だけ、節の見出しは補足の文字と同じ灰色に。
+   節の中の見出し（図面・材料…）も同じにするため、.block-content 直下に限らない。 */
+#w-editor-content h1 { color: #334155; }
+#w-editor-content h2,
+#w-editor-content h3,
+#w-editor-content h4,
+#w-editor-content h5,
+#w-editor-content h6 { color: var(--text-muted); }
 #w-editor-content .block-content > h1 { padding-bottom: 14px; }
 #w-editor-content .block-content > h2 { padding-top: 22px; padding-bottom: 4px; }
 #w-editor-content .block-content > h3,
