@@ -32,6 +32,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"bytes"
 	"crypto/tls"
 	"database/sql"
@@ -163,6 +165,10 @@ type pageRecord struct {
 type upload struct {
 	ID  string `json:"id"`
 	URL string `json:"url"`
+	// SHA は上げたときの中身の指紋です（2026-09-29）。中身が変わっていたら上げ直す——家の吸い出しと
+	// 職場の製造を同時に動かすと、届きかけのファイルを上げてしまうことがあり、ワンノートで直した画像が
+	// 同じ名前で届くこともある。名前だけで覚えていると、どちらも古いまま残る。空は指紋を取る前の記録。
+	SHA string `json:"sha256,omitempty"`
 }
 
 type record struct {
@@ -1702,13 +1708,24 @@ func uploaderFor(c *client, root, dir, pageID, token string, pr *pageRecord, not
 			return upload{}, false
 		}
 		used[key] = true
-		if u, ok := pr.Files[key]; ok {
-			return u, true
-		}
 		st, err := os.Stat(path)
 		if err != nil || st.Size() == 0 {
+			if u, ok := pr.Files[key]; ok {
+				return u, true // 前に上げたもの（いまは読めなくても、上げた分はある）
+			}
 			note.warn("⚠ " + secName + " のファイルが無いか空です（吸い出し直しで取れれば入ります）: " + filepath.Base(path))
 			return upload{}, false
+		}
+		sum := fileSHA(path)
+		if u, ok := pr.Files[key]; ok {
+			if u.SHA == "" || sum == "" || u.SHA == sum {
+				if u.SHA == "" && sum != "" {
+					u.SHA = sum // 指紋を取る前の記録——いまの中身を覚える（上げ直しはしない）
+					pr.Files[key] = u
+				}
+				return u, true
+			}
+			note.info("「" + filepath.Base(path) + "」は中身が変わったので上げ直しました（前のファイルは添付に残ります）")
 		}
 		shown := it.Name
 		switch {
@@ -1734,6 +1751,7 @@ func uploaderFor(c *client, root, dir, pageID, token string, pr *pageRecord, not
 			note.warn("⚠ " + shown + " を上げられません: " + err.Error())
 			return upload{}, false
 		}
+		u.SHA = sum
 		pr.Files[key] = u
 		return u, true
 	}
@@ -1750,4 +1768,17 @@ func uploaderFor(c *client, root, dir, pageID, token string, pr *pageRecord, not
 		}
 	}
 	return up, reportLeft
+}
+// fileSHA はファイルの中身の指紋（sha256 の16進）です。読めなければ空。
+func fileSHA(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
