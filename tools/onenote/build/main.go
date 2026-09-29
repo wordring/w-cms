@@ -87,6 +87,9 @@ type placement struct {
 type settings struct {
 	Template string               `json:"テンプレート"`
 	Sections map[string]placement `json:"セクション"`
+	// TableDest は**人が決めた表の行き先**です（2026-09-29・tables.go）——w-cms のページ番号 → ■節 → その節の表ごとの
+	// 行き先（キャプション・「表のまま」・空は機械の決まりのまま）。例: {"001392": {"材料": ["材料", "外注加工", "外注加工"]}}。
+	TableDest map[string]map[string][]string `json:"表の行き先,omitempty"`
 	// PartNoIsDrawingNo は**品番に図面番号を入れる取引先**です（2026-09-28 利用者:「〈ある取引先〉に限っては、
 	// 加工製品の品番に図面番号を入れてください」）。品番は取引先ごとの取り決めなので、取引先の名前で決める
 	// （名前は実データなので、このファイルではなく設定のファイルに書く）。
@@ -283,6 +286,7 @@ func run(e *env, dry bool) error {
 		}
 		return fmt.Errorf("%s を作りました。セクションごとに取引先・装置名称（と、あれば区分）を書いてから、もう一度動かしてください", setPath)
 	}
+	e.tableDest = set.TableDest
 	var rec record
 	recPath := filepath.Join(root, recordName)
 	if err := readJSON(recPath, &rec); err != nil || rec.Pages == nil {
@@ -437,6 +441,8 @@ type item struct {
 	Kind  string     // "text" | "table" | "image" | "file"
 	Text  string     // 文
 	Rows  [][]string // 表
+	// Struck は表のセルが取り消し線で打ち消されているか（Rows と同じ形・2026-09-29——tables.go）。
+	Struck [][]bool
 	File  string     // 画像・添付の吸い出したファイル名（files\ の中）
 	Name  string     // 添付の元の名前
 	Print bool       // 印刷イメージ
@@ -566,7 +572,8 @@ func walkOE(children *xnode, out *[]item) {
 					*out = append(*out, item{Kind: "text", Text: t})
 				}
 			case "Table":
-				*out = append(*out, item{Kind: "table", Rows: tableRows(c)})
+				rows, struck := tableRows(c)
+				*out = append(*out, item{Kind: "table", Rows: rows, Struck: struck})
 			case "Image":
 				// File が空なら吸い出せていない画像（報告に出す）——印刷イメージなら XPS から取れることがある。
 				it := item{Kind: "image", File: c.attr("wcmsFile"), Print: c.attr("isPrintOut") == "true",
@@ -584,14 +591,16 @@ func walkOE(children *xnode, out *[]item) {
 	}
 }
 
-func tableRows(t *xnode) [][]string {
+func tableRows(t *xnode) ([][]string, [][]bool) {
 	var rows [][]string
+	var struck [][]bool
 	for i := range t.Nodes {
 		r := &t.Nodes[i]
 		if r.XMLName.Local != "Row" {
 			continue
 		}
 		var cells []string
+		var ss []bool
 		for j := range r.Nodes {
 			c := &r.Nodes[j]
 			if c.XMLName.Local != "Cell" {
@@ -600,10 +609,12 @@ func tableRows(t *xnode) [][]string {
 			var parts []string
 			collectText(c, &parts)
 			cells = append(cells, strings.Join(parts, "\n"))
+			ss = append(ss, cellStruck(c))
 		}
 		rows = append(rows, cells)
+		struck = append(struck, ss)
 	}
-	return rows
+	return rows, struck
 }
 
 // insertedFileName は吸い出しが付けた添付のファイル名です（extract.ps1 の名付けと対）:
@@ -904,6 +915,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	// ワンノートは ■材料 ■見積もり ■工程 ■完成品 ■外注加工 … の順に書くことがあり、並びのまま置くと
 	// テンプレートの表（材料 → 外注加工 → 購入部品 → 支給部品）の間に割り込む。
 	pastTables := false
+	var fills tableFills // テンプレートの表へ入れる行（行き先の表ごと・最後に1回で埋める——tables.go）
 	for _, s := range secs {
 		if s.Name == "図面番号" {
 			continue
@@ -972,7 +984,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 				case "text":
 					appendHTML(blk.Node(), paragraphs(it.Text))
 				case "table":
-					appendHTML(blk.Node(), plainTable(it.Rows))
+					appendHTML(blk.Node(), plainTableS(it.Rows, it.Struck))
 				}
 			}
 			anchor = afterDrawing
@@ -983,22 +995,69 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 				note.warn("⚠ テンプレートに「" + m.Caption + "」の節がありません——表は落としました")
 				continue
 			}
-			filled := false
+			// 表は**行き先を決めて集め**、ページの最後に1回で埋める（tables.go）。
+			dests := e.tableDest[pageID][s.Name] // 人が決めた行き先（製造の設定.json の「表の行き先」）
+			ti := 0
+			var primary []string // この節でテンプレートの表へ入れた最初の表の見出し
 			for _, it := range s.Items {
 				switch it.Kind {
 				case "table":
-					if !filled && tableHasData(it.Rows) {
-						cols, rows := mapTable(it.Rows, m.Rename, m.Number)
-						if _, err := box.FillTable(m.Caption, cols, rows); err != nil {
-							note.warn("⚠ 「" + m.Caption + "」を埋められません: " + err.Error())
-						}
-						filled = true
+					if !tableHasData(it.Rows) {
 						continue
 					}
-					if tableHasData(it.Rows) {
-						appendHTML(box.Node(), plainTable(it.Rows))
-						note.ask("「" + s.Name + "」に表が2つ以上あります——2つ目からはキャプションの無い表（DBに入らない）で残しました")
+					rows, nObs := markObsolete(it.Rows, it.Struck)
+					if nObs > 0 {
+						note.info(fmt.Sprintf("「%s」の取り消し線の行 %d 行は、区分を「%s」にしました", s.Name, nObs, obsoleteValue))
 					}
+					dest := ""
+					if ti < len(dests) {
+						dest = strings.TrimSpace(dests[ti])
+					}
+					ti++
+					if dest == keepPlain {
+						appendHTML(box.Node(), plainTableS(it.Rows, it.Struck))
+						continue
+					}
+					if dest != "" {
+						dm, ok := tableByCaption(dest)
+						if !ok {
+							note.warn("⚠ 表の行き先「" + dest + "」はテンプレートの表ではありません——キャプションの無い表で残しました")
+							appendHTML(box.Node(), plainTableS(it.Rows, it.Struck))
+							continue
+						}
+						if pc, pr, ok := partsList(rows); ok && dest == "購入部品" {
+							fills.add(dest, pc, pr, false)
+							continue
+						}
+						if dest == "外注加工" {
+							rows = forOutsourcing(rows)
+						}
+						cols, vals := mapTable(rows, dm.Rename, dm.Number)
+						fills.add(dest, cols, vals, dm.Number)
+						note.info("「" + s.Name + "」の " + fmt.Sprint(ti) + " 番目の表は、設定のとおり「" + dest + "」へ入れました")
+						continue
+					}
+					// 見出しの無い2列の表（品名｜〇個）は購入部品（利用者:「○○は、下の表が購入部品のようです」）。
+					if pc, pr, ok := partsList(rows); ok {
+						fills.add("購入部品", pc, pr, false)
+						note.ask("「" + s.Name + "」の見出しの無い2列の表（品名｜個数）を購入部品へ入れました——違っていれば" +
+							settingsName + " の「表の行き先」で直せます")
+						continue
+					}
+					cols, vals := mapTable(rows, m.Rename, m.Number)
+					// 最初の表と、同じ見出しの表（取り消した表の代わりの新しい表など）はテンプレートの表へ。
+					if primary == nil || sharesColumns(primary, cols, 2) {
+						if primary != nil {
+							note.info("「" + s.Name + "」の " + fmt.Sprint(ti) + " 番目の表は見出しが同じなので、「" + m.Caption + "」の表へまとめました")
+						} else {
+							primary = cols
+						}
+						fills.add(m.Caption, cols, vals, m.Number)
+						continue
+					}
+					appendHTML(box.Node(), plainTableS(it.Rows, it.Struck))
+					note.ask("「" + s.Name + "」に見出しの違う表があります——キャプションの無い表（DBに入らない）で残しました（行き先は " +
+						settingsName + " の「表の行き先」で決められます・ページ番号 " + pageID + "）")
 				case "text":
 					appendHTML(box.Node(), paragraphs(it.Text))
 					// 表の外の文——説明（※…）でなければ、表に入れるべき中身かもしれない（例: 購入品の
@@ -1045,6 +1104,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			}
 		}
 	}
+	fills.fill(d, note)
 	body := d.HTML()
 	if dry {
 		out := filepath.Join(root, previewDir)
@@ -1073,9 +1133,9 @@ func sectionHTML(pageID string, s section, up func(string, item) (upload, bool))
 			b.WriteString(paragraphs(it.Text))
 		case "table":
 			if s.Name == "見積もり" && tableHasData(it.Rows) {
-				b.WriteString(captionTable(estimateTable, it.Rows))
+				b.WriteString(captionTable(estimateTable, it.Rows, it.Struck))
 			} else {
-				b.WriteString(plainTable(it.Rows))
+				b.WriteString(plainTableS(it.Rows, it.Struck))
 			}
 		case "image", "file":
 			if u, ok := up(s.Name, it); ok {
@@ -1153,6 +1213,20 @@ func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, 
 	b.WriteString("<h1>" + stdhtml.EscapeString(machine) + "</h1>")
 	b.WriteString(`<dl data-type="tags"><dt>` + migrateTag + `</dt><dd>` + migrateValue + `</dd></dl>`)
 	for _, s := range sectionsOf(pg) {
+		// **材料の空の表は落とす**（2026-09-29 利用者:「装置のページの材料の項目は表が空なら見出し表共に消して
+		// よいです。表の中身があれば消さずに、表にキャプションを付けずDBに入らないようにしてください」）——
+		// 空の表だけの節は下の s.empty() で見出しごと落ちる。文の残る節は見出しを残す（消すと文だけが前の節に
+		// くっついて、何の話か分からなくなる）。中身のある表はキャプションを付けない（sectionHTML のまま）。
+		if s.Name == "材料" {
+			kept := s.Items[:0:0]
+			for _, it := range s.Items {
+				if it.Kind == "table" && !tableHasData(it.Rows) {
+					continue
+				}
+				kept = append(kept, it)
+			}
+			s.Items = kept
+		}
 		if s.empty() {
 			if s.Name != "前書き" {
 				note.dropped(s.Name)
@@ -1267,27 +1341,8 @@ func firstLine(s string) string {
 }
 
 // captionTable はキャプションで名乗る表です（表の写し＝DBに、この名前の表として入る）。
-func captionTable(caption string, rows [][]string) string {
-	return strings.Replace(plainTable(rows), "<table>", "<table><caption>"+stdhtml.EscapeString(caption)+"</caption>", 1)
-}
-
-// plainTable はキャプションの無い表です（DBに入らない——名前は人が決める）。
-func plainTable(rows [][]string) string {
-	var b strings.Builder
-	b.WriteString("<table><tbody>")
-	for i, r := range rows {
-		b.WriteString("<tr>")
-		cell := "td"
-		if i == 0 {
-			cell = "th"
-		}
-		for _, v := range r {
-			b.WriteString("<" + cell + ">" + stdhtml.EscapeString(v) + "</" + cell + ">")
-		}
-		b.WriteString("</tr>")
-	}
-	b.WriteString("</tbody></table>")
-	return b.String()
+func captionTable(caption string, rows [][]string, struck [][]bool) string {
+	return strings.Replace(plainTableS(rows, struck), "<table>", "<table><caption>"+stdhtml.EscapeString(caption)+"</caption>", 1)
 }
 
 // mediaHTML は節の中の画像（img）・添付（ファイル表示）です。

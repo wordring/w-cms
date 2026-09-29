@@ -75,6 +75,8 @@ type env struct {
 	seen map[string]string
 	// machineNotes はこの回に書いた装置のページ → ワンノートの題（同じ装置のページに2つ書かない）。
 	machineNotes map[string]string
+	// tableDest は人が決めた表の行き先（製造の設定.json の「表の行き先」・tables.go）。
+	tableDest map[string]map[string][]string
 
 	mutoolMissing bool
 	geminiOff     bool
