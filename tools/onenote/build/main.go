@@ -170,7 +170,26 @@ type catalog struct {
 		Gone       bool     `json:"gone"`
 		Incomplete bool     `json:"incomplete"`
 		Skipped    string   `json:"skipped"` // 別のノートブックに同じものがあるので吸い出さなかった（その理由）
+		LocalIDs   strings1 `json:"localIds"` // 機械ごとのワンノートのページID（目録の鍵は機械に依らない page-id・2026-09-29）
 	} `json:"pages"`
+}
+
+// strings1 は文字列の並びです——⚠ PowerShell の ConvertTo-Json は要素1つの配列を**ただの文字列**で書くことがある
+// （`$( … )` が配列をほどく・2026-09-29 に踏んだ）ので、どちらの形も読む。
+type strings1 []string
+
+func (s *strings1) UnmarshalJSON(b []byte) error {
+	var one string
+	if json.Unmarshal(b, &one) == nil {
+		*s = strings1{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return err
+	}
+	*s = many
+	return nil
 }
 
 func main() {
@@ -254,6 +273,29 @@ func run(e *env, dry bool) error {
 	recPath := filepath.Join(root, recordName)
 	if err := readJSON(recPath, &rec); err != nil || rec.Pages == nil {
 		rec = record{Pages: map[string]*pageRecord{}}
+	}
+	// 製造の記録の鍵を目録の鍵へ移し替える（2026-09-29）——目録の鍵が機械ごとのページIDから機械に依らない page-id に
+	// 変わった。前の鍵（会社の機械のID）で覚えているページは、目録の localIds で当てて移す。⚠ 移さないと、同じ
+	// ワンノートのページを「初めて」と読んで w-cms に2枚目を作る。
+	moved := 0
+	for key, p := range cat.Pages {
+		if rec.Pages[key] != nil {
+			continue
+		}
+		for _, lid := range p.LocalIDs {
+			if r := rec.Pages[lid]; r != nil && lid != key {
+				rec.Pages[key] = r
+				delete(rec.Pages, lid)
+				moved++
+				break
+			}
+		}
+	}
+	if moved > 0 && !dry {
+		if err := writeJSON(recPath, rec); err != nil {
+			return err
+		}
+		fmt.Printf("製造の記録の鍵を %d 件移し替えました\n", moved)
 	}
 
 	c, err := newClient()

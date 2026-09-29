@@ -114,7 +114,27 @@ function SaveCatalog {
 Log ("吸い出しを始めます（待ち {0} 秒・上限 {1} 分）" -f $Wait, $(if ($MaxMinutes -gt 0) { $MaxMinutes } else { 'なし' }))
 $seen = @{}
 $stopped = $false
-$stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0; skipped = 0 }
+$stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0; skipped = 0; rekeyed = 0 }
+
+# ── 目録の鍵は機械に依らないもの（2026-09-29） ──
+# ⚠ ワンノートのページID（GetHierarchy の ID）は**機械ごとに違う**（頭の GUID が別物）——家で吸い出すと、会社で吸い出した
+#    ページが全部「新しい」と数えられ、別のIDで二重に入った（09-28 夜に家で手試しして分かった）。ページへのリンク
+#    （GetHyperlinkToObject）の page-id={…} はワンノートのファイルの中のページのIDなので、これを鍵にする。取れなければ
+#    この機械のIDのまま（報告に出す）。
+$stat.nokey = 0
+function StableKey([string]$lid) {
+  $link = ''
+  try { $on.GetHyperlinkToObject($lid, '', [ref]$link) } catch { $link = '' }
+  if ($link -match 'page-id=(\{[0-9A-Fa-f-]{36}\})') { return $Matches[1].ToUpper() }
+  $script:stat.nokey++
+  return $lid
+}
+# 置き場を2つ以上のページが共有しているもの（09-29 まで・同じ節に同じ題）——その回で新しいフォルダへ吸い出し直す。
+$dirUse = @{}
+foreach ($r in $catalog.Values) { if ($r.dir) { $dirUse[$r.dir] = 1 + [int]$dirUse[$r.dir] } }
+$sharedDirs = @{}
+foreach ($d in @($dirUse.Keys)) { if ($dirUse[$d] -gt 1) { $sharedDirs[$d] = $true } }
+if ($sharedDirs.Count -gt 0) { Log ("置き場を共有しているフォルダ {0} 個——そのページは新しいフォルダへ吸い出し直します" -f $sharedDirs.Count) }
 
 # ── 同じものを見分ける手掛かり（-SkipIfIn）──
 function NormCode([string]$s) {
@@ -174,22 +194,36 @@ if ($SkipIfIn) {
 
   $secDir = Join-Path $root (SafeName ($path -replace ' / ', '__') 120)
   foreach ($pg in $sec.SelectNodes('one:Page', $ns)) {
-    $id = $pg.GetAttribute('ID')
+    $id = $pg.GetAttribute('ID')   # この機械のページID（ワンノートの呼び出しに使う）
+    $key = StableKey $id           # 目録の鍵（機械に依らない）
     $mod = $pg.GetAttribute('lastModifiedTime')
     $title = $pg.GetAttribute('name')
-    $seen[$id] = $true
-    $rec = $catalog[$id]
+    $seen[$key] = $true
+    $rec = $catalog[$key]
+    if ($rec -eq $null -and $catalog.ContainsKey($id)) {
+      # 前の版の目録（この機械のIDが鍵）——鍵を移し替える（中身はそのまま使う）。
+      $rec = $catalog[$id]; $catalog.Remove($id); $catalog[$key] = $rec; $stat.rekeyed++
+    }
+    if ($rec -ne $null) {
+      # この機械のIDも覚えておく（製造の記録が前の鍵で覚えているページを当てるため・機械ごとに1つずつ足す）。
+      $ids = @($rec.localIds | Where-Object { $_ }) ; if ($ids -notcontains $id) { $ids += $id }
+      $rec | Add-Member -NotePropertyName localIds -NotePropertyValue ([string[]]$ids) -Force
+    }
+    # 置き場を別のページと共有している（09-29 まで）なら、新しい名前のフォルダへ吸い出し直す。
+    $shared = ($rec -ne $null -and $rec.dir -and $sharedDirs.ContainsKey($rec.dir))
     # 前回取れなかったファイルがあるページ（incomplete）は、変わっていなくても吸い出し直す。
     # 別のノートブックと同じとして飛ばしたページ（skipped・置き場が無い）も、変わっていなければそのまま。
-    if ($rec -ne $null -and $rec.lastModified -eq $mod -and -not $rec.incomplete -and $rec.v -ge $version -and
+    if ($rec -ne $null -and $rec.lastModified -eq $mod -and -not $rec.incomplete -and $rec.v -ge $version -and -not $shared -and
         ($rec.skipped -or (Test-Path (Join-Path $root $rec.dir)))) {
       $stat.same++; continue
     }
     # 1回の時間の上限（-MaxMinutes）——超えたら残りは次の回へ（遅い回線で少しずつ進めるため）。
     if ($MaxMinutes -gt 0 -and ((Get-Date) - $started).TotalMinutes -ge $MaxMinutes) { $stopped = $true; break sections }
-    # ページの置き場は最初に決めたものを使い続ける（題が変わってもフォルダ名は変えない）。
-    if ($rec -ne $null -and $rec.dir) { $rel = $rec.dir }
-    else { $rel = (Split-Path $secDir -Leaf) + '\' + (SafeName $title) + '__' + ($id -replace '[{}]', '').Substring(0, 8) }
+    # ページの置き場は最初に決めたものを使い続ける（題が変わってもフォルダ名は変えない）。新しい置き場の名前は
+    # 「題__ページの鍵の頭8桁」——⚠ 09-29 までは機械のIDの頭8桁で、これは**節の GUID**なので、同じ節に同じ題の
+    # ページが2枚あると1つのフォルダを共有していた（家の手試しで見つかった）。
+    if ($rec -ne $null -and $rec.dir -and -not $shared) { $rel = $rec.dir }
+    else { $rel = (Split-Path $secDir -Leaf) + '\' + (SafeName $title) + '__' + ($key -replace '[{}]', '').Substring(0, 8) }
     $dir = Join-Path $root $rel
     $files = Join-Path $dir 'files'
 
@@ -209,10 +243,10 @@ if ($SkipIfIn) {
       if (-not $why) { foreach ($v in $k.files) { if ($known.files.ContainsKey($v)) { $why = "「$SkipIfIn」の「" + $known.files[$v] + "」と同じ添付"; break } } }
       if ($why) {
         $stat.skipped++
-        $catalog[$id] = [PSCustomObject]@{
+        $catalog[$key] = [PSCustomObject]@{
           title = $title; section = $path; lastModified = $mod; dir = ''
           extractedAt = (Get-Date).ToString('s'); files = @(); gone = $false; incomplete = $false; v = $version
-          missing = @(); skipped = $why
+          missing = @(); skipped = $why; localIds = [string[]]@($id)
         }
         SaveCatalog
         continue
@@ -321,10 +355,10 @@ if ($SkipIfIn) {
     }
     $stat.missing += $miss
     if ($rec -eq $null) { $stat.new++ } else { $stat.changed++ }
-    $catalog[$id] = [PSCustomObject]@{
+    $catalog[$key] = [PSCustomObject]@{
       title = $title; section = $path; lastModified = $mod; dir = $rel
       extractedAt = (Get-Date).ToString('s'); files = $got; gone = $false; incomplete = ($miss -gt 0); v = $version
-      missing = @($lost)
+      missing = @($lost); localIds = [string[]]$(if ($rec -ne $null) { @($rec.localIds) } else { @($id) })
     }
     SaveCatalog
   }
@@ -351,8 +385,8 @@ foreach ($r in $left) {
   foreach ($m in @($r.missing)) { if ($m) { $lines += '    ' + $m } }
 }
 [IO.File]::WriteAllText((Join-Path $root '取れなかったもの.txt'), ($lines -join "`r`n") + "`r`n", $utf8)
-$summary = "新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・XPS {7}・取れなかった {5}・まだ取れていないページ {8}・同じものがあるので取らなかった {9}" -f `
-  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root, $stat.xps, $left.Count, $stat.skipped
+$summary = "新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・XPS {7}・取れなかった {5}・まだ取れていないページ {8}・同じものがあるので取らなかった {9}・鍵を移し替えた {10}・鍵が取れなかった {11}" -f `
+  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root, $stat.xps, $left.Count, $stat.skipped, $stat.rekeyed, $stat.nokey
 if ($stopped) { $summary += '（時間の上限で止めました——残りは次の回）' }
 Log $summary
 $mutex.ReleaseMutex()
