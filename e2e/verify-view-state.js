@@ -47,7 +47,8 @@ function minimalPDF() {
     await login(page, BASE);
     id = await makePage(page, '<h1>【E2E】見え方の記録</h1>' +
       '<details open><summary>資料 1</summary><p>図面</p></details>' +
-      '<details open><summary>メモ</summary><p>中身</p></details>');
+      '<details open><summary>メモ</summary><p>中身</p></details>' +
+      '<details open><summary>資料 2</summary><p>図面2</p></details>');
     check('当て先を作れた', !!id, id);
 
     // 図面（PDF）を「資料 1」へ上げる（編集モードの「＋ ファイル」）。
@@ -60,6 +61,14 @@ function minimalPDF() {
     await chooser.setFiles([{ name: '図面A3.pdf', mimeType: 'application/pdf', buffer: minimalPDF() }]);
     await page.waitForFunction(() => document.querySelector(
       '#w-editor-content details section[data-type="file-view"][data-ref]'), null, { timeout: 8000 });
+    // 2枚目の PDF を「資料 2」へ（1枚目の大きさを変えても、2枚目は変わらないことを見るため）。
+    const [chooser2] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      page.locator('#w-editor-content details:has(> summary:text-is("資料 2")) .fold-add-file').click(),
+    ]);
+    await chooser2.setFiles([{ name: '図面A3-2.pdf', mimeType: 'application/pdf', buffer: minimalPDF() }]);
+    await page.waitForFunction(() => document.querySelectorAll(
+      '#w-editor-content details section[data-type="file-view"][data-ref]').length >= 2, null, { timeout: 8000 });
     await page.waitForTimeout(2500); // 自動保存
 
     // ① 閲覧モードで「メモ」を閉じる → 開き直しても閉じたまま
@@ -76,6 +85,8 @@ function minimalPDF() {
 
     // ② 枠の右下をつまんで縮める → 開き直すと同じ縦横比
     const wrap = page.locator('#w-editor-content .file-view').first();
+    const second = () => page.locator('#w-editor-content details:has(> summary:text-is("資料 2")) .file-view').first().boundingBox();
+    const s0 = await second();
     await wrap.scrollIntoViewIfNeeded();
     const b0 = await wrap.boundingBox();
     await page.mouse.move(b0.x + b0.width - 4, b0.y + b0.height - 4);
@@ -92,6 +103,11 @@ function minimalPDF() {
     await page.waitForTimeout(1000);
     const b2 = await page.locator('#w-editor-content .file-view').first().boundingBox();
     check('開き直しても同じ高さ（縦横比）', Math.abs(b2.height - b1.height) <= 3, b1.height + ' → ' + b2.height);
+    // ⚠ ほかの枠は変わらない（2026-09-29 利用者:「一枚のPDFの大きさを変えると、ページを再読み込みすると同じページの
+    //    ほかのPDFの大きさも変わってしまいます」——最後につまんだ高さを全部の枠に当てていた）。
+    const s2 = await second();
+    check('1枚目を変えても、2枚目の高さは変わらない', s0 && s2 && Math.abs(s2.height - s0.height) <= 3,
+      (s0 && s0.height) + ' → ' + (s2 && s2.height));
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.waitForTimeout(600);
     const b3 = await page.locator('#w-editor-content .file-view').first().boundingBox();

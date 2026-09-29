@@ -5236,11 +5236,11 @@
     // 大きさを変えられるように出来ますか？」）。枠の右下をつまんで縦に伸ばすと、
     // **次に開いたときも同じ高さ**です。
     //
-    // 置き場は UI設定（`wcms.ui` の `drawing.height`・この端末のブラウザ）です。
+    // 置き場は**枠ごとの縦横比**（`wcms.view`・この端末のブラウザ・2026-09-28〜）。09-29 までは `wcms.ui` の
+    // `drawing.height`（全部の枠で1つの高さ）にも書いていて、1枚を変えるとほかの PDF まで変わった——いまは使わない。
     // **本文にもサーバーにも残しません**——枠はクロームで、A3の図面を大きく見たいか
     // 一覧しやすく小さくしたいかは**見る人と画面の都合**だからです。他の人の画面を
     // 動かしてしまわない、という意味でもあります。
-    const DRAWING_H_KEY = 'drawing.height';
     const DRAWING_H_MIN = 200;   // これ以下だと図面が判別できない
     const DRAWING_H_MAX = 4000;  // 壊れた値でページを埋めない柵
     const DRAWING_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
@@ -5446,12 +5446,10 @@
     });
 
     function wireDrawingResize(wrap, embed) {
-        const saved = parseInt(UI.get(DRAWING_H_KEY, 0), 10);
-        // 未設定（0・NaN）ならCSSの既定（70vh）に任せます。
-        if (saved) {
-            wrap.style.height =
-                Math.min(DRAWING_H_MAX, Math.max(DRAWING_H_MIN, saved)) + 'px';
-        }
+        // ⚠ **記録の無い枠は CSS の既定（70vh）のまま**（2026-09-29）。それまでは「最後につまんだ高さ」（UI設定の
+        //    `drawing.height`）を全部の枠に当てていたので、1枚の大きさを変えると、開き直したときに同じページのほかの
+        //    PDF まで同じ高さになった（利用者:「一枚のPDFの大きさを変えると、ページを再読み込みすると同じページの
+        //    ほかのPDFの大きさも変わってしまいます」）。大きさは物ごとの縦横比だけが持つ（restoreViewState）。
 
         let dragging = false;
         wrap.addEventListener('pointerdown', (e) => {
@@ -5471,8 +5469,7 @@
             const rect = wrap.getBoundingClientRect();
             const px = Math.round(rect.height);
             if (px >= DRAWING_H_MIN && px <= DRAWING_H_MAX) {
-                UI.set(DRAWING_H_KEY, px); // まだ憶えていない枠の既定（これまでどおり）
-                // この枠の縦横比（物ごと・2026-09-28）。
+                // この枠の縦横比（物ごと・2026-09-28）。ほかの枠には使わない。
                 const k = viewKeyOf(wrap);
                 if (k && rect.width > 0) ViewState.setRatio(currentPageId, k, px / rect.width);
             }
