@@ -43,6 +43,8 @@ func init() {
 	cms.RegisterView(UnorderedViewType, unorderedViewHTML)
 	// 未発注の発注書（2026-09-24・unsent_orders.go）。DBから毎回数える鏡。
 	cms.RegisterView(UnsentOrdersViewType, unsentOrdersViewHTML)
+	// 加工製品の一覧（2026-09-29・product_list.go）。区分と装置名称で絞って見る鏡。
+	cms.RegisterView(ProductListViewType, productListViewHTML)
 
 	// **受注の置き場は管理画面のボタンで作れます**（2026-09-16）。
 	// 整理のときにも自動で作られます（`cms.EnsureTopLevelBox`）——先に作れるように
@@ -54,7 +56,7 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     CustomerBoxTitle,
 		Extension: "toho",
-		Why:       "加工製品の階層の根です（社名／段／装置名称／図面名称）。整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
+		Why:       "加工製品の階層の根です（社名／加工製品／装置名称／図面名称）。整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
 	})
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     OrderBoxTitle,
@@ -81,6 +83,11 @@ func init() {
 		Title:     ProductTemplate,
 		Extension: "toho",
 		Why:       "図面PDFの解析が加工製品ページを作るときに写します。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細」の表が要ります。",
+	})
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     ProductsBoxTemplate,
+		Extension: "toho",
+		Why:       "整理（とワンノートの移植）が、社名の下に「加工製品」の箱を作るときに写します（題は「加工製品」になります）。鏡「加工製品の一覧」を置いておくと、区分（試作・見積もり・旧型）や装置名称で絞って見られます。",
 	})
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     PurchaseOrderTemplate,
@@ -116,6 +123,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 整理の欄を打ち替えるたびに「その行き先にページがあるか」を聞く口（2026-09-20）。
 		{Pattern: "/api/filing-target", Handler: FilingTargetAPIHandler},
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
+		// 加工製品の置き場（取引先／社名／加工製品／装置名称）を用意する口（2026-09-29・
+		// ワンノートの移植の道具が使う。木の形を知るのは product_tree.go の1つ）。
+		{Pattern: "/api/product-folder", Handler: ProductFolderAPIHandler},
 		// 解析済みの印（添付ID → 生まれたページ）。読むだけで何も作りません。
 		{Pattern: "/api/analyzed", Handler: AnalyzedAPIHandler},
 		// 受注残表から受注明細の1セルを書き換える口（2026-09-21・order_edit.go）。

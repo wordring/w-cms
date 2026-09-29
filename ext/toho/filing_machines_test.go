@@ -16,21 +16,26 @@ import (
 // TestMachineNamesGroupsByCustomer は、装置名称の候補が**顧客ごと**に返ることを
 // 固定します（2026-09-11 ユーザー:「装置名称の候補表示はあると良いと思います」）。
 //
-// 全部混ぜて返すと、他社の装置名が候補に出ます。段はまたいで集めます——人が知りたいのは
-// 「この装置はもう在るか」で、どの段に在るかは suggestStage が別に答えるためです。
+// 全部混ぜて返すと、他社の装置名が候補に出ます。区分（試作など）はまたいで集めます——
+// 人が知りたいのは「この装置はもう在るか」です（2026-09-29 までは段のフォルダをまたいでいた）。
 func TestMachineNamesGroupsByCustomer(t *testing.T) {
 	const inbox = "000012"
 	setupFilingTest(t, inbox)
 	user := &auth.User{Username: "alice"}
 
-	for _, f := range []struct{ customer, stage, machine, drawing string }{
-		{"南北スポーツ機械", "現行", "φ410 2輪", "シュート先本体"},
-		{"南北スポーツ機械", "試作", "φ320 共通台座", "補強ストッパー"},
-		{"緑川製作所", "現行", "スリッター", "受け板"},
+	for _, f := range []struct {
+		customer string
+		kinds    []string
+		machine  string
+		drawing  string
+	}{
+		{"南北スポーツ機械", nil, "φ410 2輪", "シュート先本体"},
+		{"南北スポーツ機械", []string{"試作"}, "φ320 共通台座", "補強ストッパー"},
+		{"緑川製作所", nil, "スリッター", "受け板"},
 	} {
 		partID := makeDrawingPage(t, inbox, "K120-"+f.drawing, f.drawing, f.machine, f.customer)
 		results := postFiling(t, user, []filingRequest{{
-			PageID: partID, Customer: f.customer, Stage: f.stage,
+			PageID: partID, Customer: f.customer, Kinds: f.kinds,
 			MachineName: f.machine, DrawingName: f.drawing,
 		}})
 		if len(results) != 1 || results[0].Outcome != "moved" {
@@ -42,9 +47,9 @@ func TestMachineNamesGroupsByCustomer(t *testing.T) {
 	if len(got["南北スポーツ機械"]) != 2 {
 		t.Errorf("南北スポーツ機械の装置が2つ返りません: %v", got["南北スポーツ機械"])
 	}
-	// **段をまたいで集める**——試作の装置も候補に出る。
+	// **区分をまたいで集める**——試作の品目しか無い装置も候補に出る。
 	if !contains(got["南北スポーツ機械"], "φ320 共通台座") {
-		t.Errorf("別の段の装置が落ちています: %v", got["南北スポーツ機械"])
+		t.Errorf("試作の品目の装置が落ちています: %v", got["南北スポーツ機械"])
 	}
 	// **他社の装置は混ざらない**。
 	if contains(got["南北スポーツ機械"], "スリッター") {

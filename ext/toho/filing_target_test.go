@@ -16,11 +16,10 @@ import (
 // 問題はそれらは**編集者が微妙に書き換える**ことです。整理画面で編集者が書き換える
 // たびに、既存のページがあるか**検索しなおす**必要があります」。
 
-func getFilingTarget(t *testing.T, u *auth.User, customer, stage, machine, name string) map[string]any {
+func getFilingTarget(t *testing.T, u *auth.User, customer, machine, name string) map[string]any {
 	t.Helper()
 	q := url.Values{}
 	q.Set("customer", customer)
-	q.Set("stage", stage)
 	q.Set("machine", machine)
 	q.Set("name", name)
 	req := httptest.NewRequest("GET", "/api/filing-target?"+q.Encode(), nil)
@@ -48,7 +47,7 @@ func TestFilingTargetFindsExistingPage(t *testing.T) {
 	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
 	postFiling(t, u, []filingRequest{secondRow(first, "取付ベース", "")})
 
-	got := getFilingTarget(t, u, "南北スポーツ", "現行", "標準2輪", "取付ベース")
+	got := getFilingTarget(t, u, "南北スポーツ", "標準2輪", "取付ベース")
 	if got["exists"] != true {
 		t.Fatalf("既にあるページを見つけていません: %+v", got)
 	}
@@ -68,7 +67,7 @@ func TestFilingTargetSaysNoWhenAbsent(t *testing.T) {
 	setupFilingTest(t, inbox)
 	u := &auth.User{Username: "alice"}
 
-	got := getFilingTarget(t, u, "まだ知らない客", "現行", "まだ知らない装置", "まだ知らない図面")
+	got := getFilingTarget(t, u, "まだ知らない客", "まだ知らない装置", "まだ知らない図面")
 	if got["exists"] != false {
 		t.Errorf("在ることにしています: %+v", got)
 	}
@@ -95,8 +94,8 @@ func TestFilingTargetCreatesNothing(t *testing.T) {
 	before := countPages(t)
 	// 打ちかけの途中のような値で何度も聞く（既にある顧客の下と、まったく新しい行き先）。
 	for _, name := range []string{"脚", "脚取", "脚取付", "別の図面"} {
-		getFilingTarget(t, u, "南北スポーツ", "現行", "標準2輪", name)
-		getFilingTarget(t, u, "新しい客先", "現行", "新しい装置", name)
+		getFilingTarget(t, u, "南北スポーツ", "標準2輪", name)
+		getFilingTarget(t, u, "新しい客先", "新しい装置", name)
 	}
 	if after := countPages(t); after != before {
 		t.Errorf("⚠ 問い合わせただけでページが増えています: %d → %d", before, after)
@@ -128,11 +127,11 @@ func TestFilingTargetNormalizesLikeFiling(t *testing.T) {
 
 	// 整理は `NormalizeNameForIngest` を通すので、全角の英数や空白は畳まれて入ります。
 	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準２輪", "南北スポーツ")
-	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ", Stage: "現行",
+	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ",
 		MachineName: "標準２輪", DrawingName: "取付ベース"}})
 
 	// 画面から**全角のまま**聞いても、同じページに当たること。
-	got := getFilingTarget(t, u, "南北スポーツ", "現行", "標準２輪", "取付ベース")
+	got := getFilingTarget(t, u, "南北スポーツ", "標準２輪", "取付ベース")
 	if got["exists"] != true {
 		t.Errorf("畳み方が整理の本体と揃っていません: %+v", got)
 	}

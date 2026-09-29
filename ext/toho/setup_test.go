@@ -84,4 +84,6 @@ func seedBoxTemplates(t *testing.T) {
 	write("000907", "000901", testOrderPageTemplate())
 	write("000908", "000901", testPurchaseOrderTemplate())
 	write("000909", "000901", testProductTemplate())
+	// 社名の下の「加工製品」の箱（2026-09-29・段をやめた）。
+	write("000910", "000901", "<h1>"+ProductsBoxTemplate+"</h1>"+cms.ViewMarkerHTML(ProductListViewType))
 }

@@ -499,6 +499,16 @@ var businessVocab = []cms.VocabDef{
 		View:        true,
 	},
 	{
+		// 加工製品の一覧（2026-09-29・product_list.go）。社名の下の「加工製品」の箱に置き、
+		// 区分（試作・見積もり・旧型）や装置名称で絞って見る。段のフォルダの代わり。
+		Type:        ProductListViewType,
+		DisplayName: "加工製品の一覧",
+		Category:    "ビュー",
+		Icon:        "🗂",
+		Element:     "section",
+		View:        true,
+	},
+	{
 		// 材料を探す欄（2026-09-21）。ユーザー:「あとで**材質形状寸法で検索**したい
 		// ときがあります」。⚠ **器だけの宣言**で、中身はサーバーが描きます。
 		Type:        MaterialSearchViewType,

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -153,16 +154,17 @@ func TestFilingProposalSkipsNonDrawings(t *testing.T) {
 }
 
 // TestFileDrawingsUsesEditedValues は、**人が直した値がそのまま使われる**ことを
-// 固定します。顧客名の打ち替えと、**段の選択**（試作か現行か）は機械には決められない
+// 固定します。顧客名の打ち替えと、**区分の選択**（試作か・見積もりか）は機械には決められない
 // ——メールを読むしかない——ので、ここが効かないと機能そのものが無意味になります。
 func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	const inbox = "000012"
 	setupFilingTest(t, inbox)
 	partID := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
 
-	// 人が顧客名を打ち替え、段に「試作」を選んだ（メールを読んで試作と分かった）。
+	// 人が顧客名を打ち替え、区分に「試作」と「見積もり」を選んだ（メールを読んで分かった・
+	// 2026-09-29 利用者:「試作かつ見積もりという場合がある」）。
 	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械", Stage: "試作",
+		PageID: partID, Customer: "南北スポーツ機械", Kinds: []string{"見積もり", "試作"},
 		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
@@ -179,12 +181,20 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	if !ok {
 		t.Fatalf("顧客名ページが「%s」の下に作られていません", CustomerBoxTitle)
 	}
-	// 装置の上に段が1枚入る（2026-09-05 ユーザー決定）。
-	stageID, ok := findChildByTitle(custID, "試作")
-	if !ok {
-		t.Fatalf("段のページ（試作）が作られていません")
+	// 社名と装置のあいだは「加工製品」の箱（2026-09-29 に段のフォルダをやめた）。
+	if _, ok := findChildByTitle(custID, "試作"); ok {
+		t.Errorf("段のページ（試作）が作られています——区分はタグです")
 	}
-	machID, ok := findChildByTitle(stageID, "標準2輪")
+	boxOfProducts, ok := findChildByTitle(custID, ProductsBoxTitle)
+	if !ok {
+		t.Fatalf("「%s」の箱が作られていません", ProductsBoxTitle)
+	}
+	// 箱はテンプレートから作る（一覧の鏡を持つ）。
+	if body, _ := cms.ReadPageBody(boxOfProducts); !strings.Contains(body, "<h1>"+ProductsBoxTitle+"</h1>") ||
+		!strings.Contains(body, "加工製品の一覧") {
+		t.Errorf("箱がテンプレートの形ではありません: %s", body)
+	}
+	machID, ok := findChildByTitle(boxOfProducts, "標準2輪")
 	if !ok {
 		t.Fatalf("人が打ち替えた装置名称が使われていません（推奨値のままになっている疑い）")
 	}
@@ -194,6 +204,15 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	meta, _ := page.ReadSidecar(partID)
 	if meta.ParentID != machID {
 		t.Errorf("親が付け替わっていません: %+v", meta)
+	}
+	// 区分はタグで、**選択肢の並び**（試作・見積もり）に揃えて2つ付く。
+	idInt, _ := strconv.Atoi(partID)
+	tags, _ := cms.TagsOfPage(database.DB, idInt)
+	if got := strings.Join(tags[ProductKindTag], "・"); got != "試作・見積もり" {
+		t.Errorf("区分のタグが %q です（試作・見積もり のはず）", got)
+	}
+	if !strings.Contains(results[0].Message, "南北スポーツ機械／加工製品／標準2輪／取付ベース") {
+		t.Errorf("知らせに行き先がありません: %s", results[0].Message)
 	}
 }
 
@@ -233,7 +252,7 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 	u := &auth.User{Username: "alice"}
 
 	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
-	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ", Stage: "現行",
+	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ",
 		MachineName: "標準2輪", DrawingName: "取付ベース"}})
 
 	// 改定図面が届いた（図面番号に改訂記号が付く形）。
@@ -243,7 +262,7 @@ func TestFileDrawingsSecondBecomesRevision(t *testing.T) {
 	// ——どちらも「同じ品物・違う図面番号」だからです。**未選択では動かしません**
 	// （下の `TestFileDrawingsNeedsChoiceWhenPageExists`）。
 	second := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1A", "取付ベース", "標準2輪", "南北スポーツ")
-	results := postFiling(t, u, []filingRequest{{PageID: second, Customer: "南北スポーツ", Stage: "現行",
+	results := postFiling(t, u, []filingRequest{{PageID: second, Customer: "南北スポーツ",
 		MachineName: "標準2輪", DrawingName: "取付ベース", Merge: "revision"}})
 	if len(results) != 1 || results[0].Outcome != "revision" {
 		t.Fatalf("改定として扱われていません: %+v", results)
@@ -337,6 +356,11 @@ var revRowRe = regexp.MustCompile(`<tr data-id="([0-9a-z]+)"><td>([0-9]+)</td>`)
 // 同じPDFを解析し直して整理に流すと、中身は同じなのに版が増えてしまいます
 // ——履歴が嘘になり、社内コードも赤枠の古い図面も意味なく積み上がります。
 // 由来が同じなら改定ではありえないので、確認を挟まず止めます。
+//
+// ⚠ **2026-09-20 からは「止める」ではなく「人へ確認する」**（`needs_confirm`・同じ添付に
+// 同じ図番の別図面が実在した）。⚠ **この試験は 2026-09-29 まで空振りしていました**——行に段を
+// 渡していなかったので、1回目も2回目も「段を選んでください」で `skipped` になり、同じ添付の
+// 判定まで届いていませんでした（段をやめた日に、本当の道を通って落ちて気づいた）。
 func TestFileDrawingsRejectsSameAttachment(t *testing.T) {
 	const inbox = "000012"
 	setupFilingTest(t, inbox)
@@ -347,13 +371,17 @@ func TestFileDrawingsRejectsSameAttachment(t *testing.T) {
 	}
 
 	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
-	postFiling(t, u, []filingRequest{row(first)})
+	if res := postFiling(t, u, []filingRequest{row(first)}); len(res) != 1 || res[0].Outcome != "moved" {
+		t.Fatalf("1枚目が収まっていません（下ごしらえ）: %+v", res)
+	}
 
-	// 同じPDFをもう一度解析してしまった（由来が同じ）。
+	// 同じPDFをもう一度解析してしまった（由来が同じ）。**改定を選んでも**確認で止まる。
 	again := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
-	results := postFiling(t, u, []filingRequest{row(again)})
-	if len(results) != 1 || results[0].Outcome != "skipped" {
-		t.Fatalf("同じ添付なのに合流しています: %+v", results)
+	req := row(again)
+	req.Merge = "revision"
+	results := postFiling(t, u, []filingRequest{req})
+	if len(results) != 1 || results[0].Outcome != "needs_confirm" || results[0].TargetID != first {
+		t.Fatalf("同じ添付なのに確認なしで進んでいます: %+v", results)
 	}
 
 	// 合流先の履歴は1版のまま。
@@ -372,14 +400,14 @@ func TestFileDrawingsAsksWhenSameDrawingNo(t *testing.T) {
 	u := &auth.User{Username: "alice"}
 
 	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
-	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ", Stage: "現行",
+	postFiling(t, u, []filingRequest{{PageID: first, Customer: "南北スポーツ",
 		MachineName: "標準2輪", DrawingName: "取付ベース"}})
 
 	// 別のメールで届いたが、図面番号は同じ。
 	second := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
 	// ⚠ **改定を選んだうえで**、さらに「番号が同じ」の確認が要ります——問いが2つ
 	// あります（どちらの合流か／本当に改定か）。
-	req := filingRequest{PageID: second, Customer: "南北スポーツ", Stage: "現行",
+	req := filingRequest{PageID: second, Customer: "南北スポーツ",
 		MachineName: "標準2輪", DrawingName: "取付ベース", Merge: "revision"}
 
 	results := postFiling(t, u, []filingRequest{req})
@@ -483,7 +511,7 @@ func TestFilingLinksToContactsBook(t *testing.T) {
 
 	partID := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
 	results := postFiling(t, user, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械", Stage: "現行",
+		PageID: partID, Customer: "南北スポーツ機械",
 		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
@@ -513,7 +541,7 @@ func TestFilingLinksToContactsBook(t *testing.T) {
 	// **2度目で増えません**（同じタグが2つ並ばない）。
 	part2 := makeDrawingPage(t, inbox, "K120-2", "脚受け", "標準2輪", "南北スポーツ")
 	postFiling(t, user, []filingRequest{{
-		PageID: part2, Customer: "南北スポーツ機械", Stage: "現行",
+		PageID: part2, Customer: "南北スポーツ機械",
 		MachineName: "標準2輪", DrawingName: "脚受け",
 	}})
 	body, _ = cms.ReadPageBody(custID)
@@ -531,7 +559,7 @@ func TestFilingWithoutContactsBookEntry(t *testing.T) {
 
 	partID := makeDrawingPage(t, inbox, "K130-1", "台座", "新型機", "はじめての客先")
 	results := postFiling(t, user, []filingRequest{{
-		PageID: partID, Customer: "はじめての客先", Stage: "現行",
+		PageID: partID, Customer: "はじめての客先",
 		MachineName: "新型機", DrawingName: "台座",
 	}})
 	// **整理そのものは通ります**——結べないからといって止めません。
@@ -602,7 +630,7 @@ func TestUnlinkedCustomersOnlyShowsFixable(t *testing.T) {
 		{linkedPart, "結びつく客先", "済機", "軸"},
 	} {
 		if r := postFiling(t, user, []filingRequest{{
-			PageID: f.part, Customer: f.customer, Stage: "現行",
+			PageID: f.part, Customer: f.customer,
 			MachineName: f.machine, DrawingName: f.drawing,
 		}}); len(r) != 1 || r[0].Outcome != "moved" {
 			t.Fatalf("整理できません（%s）: %+v", f.customer, r)

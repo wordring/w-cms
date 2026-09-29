@@ -9,7 +9,9 @@
 //   - ページは**加工製品のテンプレートを埋めて**作る（解析が作るページと同じ形——題は「図面番号 図面名称」、
 //     図面ブロックに図面番号・図面名称・装置名称・客先のタグ、改訂明細の1版目）。材料・外注加工は
 //     キャプションの表へ。それ以外の ■見出し は中身があれば見出しの節で、並びを保って残す。
-//   - 置き場は本物の木（取引先／社名／段／装置名称）——セクションごとに「製造の設定.json」で決める。
+//   - 置き場は本物の木（取引先／社名／加工製品／装置名称）——セクションごとに「製造の設定.json」で決める。
+//     試作・見積もり・旧型は段のフォルダではなく加工製品ページのタグ「区分」（2026-09-29）。木の形はサーバーが
+//     知っている（/api/product-folder・ext/toho/product_tree.go）ので、道具は社名と装置名称を渡すだけ。
 //   - 作ったページには「移行中：確認待ち」。**やり直しは、そのタグが残っているページだけを上書きする**
 //     （利用者:「『移行中』のタグを外したページは触らない」）。上げたファイルは「製造の記録.json」に
 //     覚えて、やり直しで二度上げない。
@@ -70,7 +72,9 @@ const (
 // placement は1つのセクションの置き場です（設定のファイル・人が書く）。
 type placement struct {
 	Partner string `json:"取引先"`
-	Stage   string `json:"段"`
+	// Kinds は加工製品ページに付ける区分（試作・見積もり・旧型…・2026-09-29 に段のフォルダから替えた）。
+	// 空なら通常の製品。選択肢は w-cms の設定の語彙「区分」。
+	Kinds []string `json:"区分,omitempty"`
 	Machine string `json:"装置名称"`
 }
 
@@ -262,12 +266,12 @@ func run(e *env, dry bool) error {
 	if err := readJSON(setPath, &set); err != nil {
 		set = settings{Template: "加工製品", Sections: map[string]placement{}}
 		for _, p := range cat.Pages {
-			set.Sections[p.Section] = placement{Stage: "現行"}
+			set.Sections[p.Section] = placement{}
 		}
 		if werr := writeJSON(setPath, set); werr != nil {
 			return werr
 		}
-		return fmt.Errorf("%s を作りました。セクションごとに取引先・段・装置名称を書いてから、もう一度動かしてください", setPath)
+		return fmt.Errorf("%s を作りました。セクションごとに取引先・装置名称（と、あれば区分）を書いてから、もう一度動かしてください", setPath)
 	}
 	var rec record
 	recPath := filepath.Join(root, recordName)
@@ -332,9 +336,9 @@ func run(e *env, dry bool) error {
 			rep.skip(p.Title, "吸い出していません（"+p.Skipped+"）")
 			continue
 		}
-		// 装置名称は空でもよい（図面の表題欄から読む）——取引先と段は設定で決める。
+		// 装置名称は空でもよい（図面の表題欄から読む）——取引先は設定で決める（区分は無くてよい）。
 		pl, ok := set.Sections[p.Section]
-		if !ok || strings.TrimSpace(pl.Partner) == "" || strings.TrimSpace(pl.Stage) == "" {
+		if !ok || strings.TrimSpace(pl.Partner) == "" {
 			rep.skip(p.Title, "置き場が決まっていません（"+settingsName+" の「"+p.Section+"」）")
 			continue
 		}
@@ -811,7 +815,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			}
 		}
 		if pageID == "" {
-			parent, err := c.ensurePath([]string{"取引先", pl.Partner, pl.Stage, machine})
+			parent, err := c.productFolder(pl.Partner, machine)
 			if err != nil {
 				return err
 			}
@@ -852,6 +856,8 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	// 弊社品番＝このページの番号（2026-09-28 利用者:「弊社品番としてタグにページ番号を入れてください。
 	// 検索できるようにです」）。
 	d.SetTag("弊社品番", pageID)
+	// 区分（試作・見積もり・旧型）はセクションの置き場から（2026-09-29・段のフォルダの代わり）。
+	d.SetTag("区分", pl.Kinds...)
 	d.SetTag(migrateTag, migrateValue)
 	blk, err := d.RequireContainer("図面")
 	if err != nil {
@@ -1047,7 +1053,7 @@ func sectionHTML(pageID string, s section, up func(string, item) (upload, bool))
 // kindMachine は製造の記録の「種類」——ワンノートのページを装置名称のページに書いた印。
 const kindMachine = "装置のページ"
 
-// buildMachineNote は「まとめ」のようなページを、装置名称のページ（取引先／社名／段／装置名称）に書きます
+// buildMachineNote は「まとめ」のようなページを、装置名称のページ（取引先／社名／加工製品／装置名称）に書きます
 // （2026-09-28 利用者:「装置名称のページに移植したら良いと思います。ワンノートはフォルダページに書くことが出来なかった
 // ので、まとめページにしています」）。加工製品ではないので、テンプレートも Gemini も使わず、節を並びのまま置く。
 //
@@ -1071,7 +1077,7 @@ func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, 
 	}
 	pageID := "000000" // 下見の仮
 	if !dry {
-		id, err := c.ensurePath([]string{"取引先", pl.Partner, pl.Stage, machine})
+		id, err := c.productFolder(pl.Partner, machine)
 		if err != nil {
 			return err
 		}
@@ -1389,65 +1395,26 @@ func (c *client) templateBody(title string) (string, error) {
 	return body, nil
 }
 
-func (c *client) children(id string) ([]treeNode, error) {
-	var raw json.RawMessage
-	if err := c.getJSON("/api/children?parent_id="+id, &raw); err != nil {
-		return nil, err
+// productFolder は `取引先／社名／加工製品／装置名称` をサーバーに用意させ、装置名称のページを返します
+// （2026-09-29）。それまでは道具が木の道を自分で辿って作っていました——**段をやめた日に道具だけが段を
+// 作り続ける**形なので、木の形はサーバー（整理と同じ ext/toho/product_tree.go）に任せます。
+// 「加工製品」の箱はテンプレート「取引先の加工製品」から作られます（無ければ 409 で止まる）。
+func (c *client) productFolder(partner, machine string) (string, error) {
+	b, _ := json.Marshal(map[string]string{"customer": partner, "machine": machine})
+	res, err := c.do("POST", "/api/product-folder", bytes.NewReader(b), "application/json", "")
+	if err != nil {
+		return "", err
 	}
-	var list []map[string]any
-	if err := json.Unmarshal(raw, &list); err != nil {
-		var wrap struct {
-			Children []map[string]any `json:"children"`
-		}
-		if err := json.Unmarshal(raw, &wrap); err != nil {
-			return nil, err
-		}
-		list = wrap.Children
+	defer res.Body.Close()
+	var out struct {
+		PageID  string `json:"page_id"`
+		Message string `json:"message"`
 	}
-	var out []treeNode
-	for _, m := range list {
-		id, _ := firstOf(m, "id", "ID").(string)
-		t, _ := firstOf(m, "title", "Title").(string)
-		out = append(out, treeNode{ID: id, Title: t})
+	json.NewDecoder(res.Body).Decode(&out)
+	if res.StatusCode != 200 || out.PageID == "" {
+		return "", fmt.Errorf("加工製品の置き場を用意できません（%d）: %s", res.StatusCode, out.Message)
 	}
-	return out, nil
-}
-
-func firstOf(m map[string]any, keys ...string) any {
-	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			return v
-		}
-	}
-	return nil
-}
-
-// ensurePath はトップから題の並びを辿り、無ければ作ります（途中のページは題だけ——整理と同じ形）。
-func (c *client) ensurePath(titles []string) (string, error) {
-	parent := "000000"
-	for _, t := range titles {
-		t = cms.NormalizeNameForIngest(t)
-		kids, err := c.children(parent)
-		if err != nil {
-			return "", err
-		}
-		next := ""
-		for _, k := range kids {
-			if strings.TrimSpace(k.Title) == t {
-				next = k.ID
-				break
-			}
-		}
-		if next == "" {
-			id, err := c.newPage(parent, "<h1>"+stdhtml.EscapeString(t)+"</h1>")
-			if err != nil {
-				return "", err
-			}
-			next = id
-		}
-		parent = next
-	}
-	return parent, nil
+	return out.PageID, nil
 }
 
 var pageIDRe = regexp.MustCompile(`(\d{6})`)

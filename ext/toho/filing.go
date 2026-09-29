@@ -13,22 +13,22 @@ package toho
 // 作るところまでで、**通信箱がそのまま「まだ分からないものの置き場」**になります。
 // 整理は分かったとき（たいてい後続のメールや電話）に、この操作で行います。
 //
-// 行き先は **`取引先／社名／段／装置名称／図面名称`** です。ワンノートの製造部品
-// ページの形に、2026-09-05 の2つの決定を足したもの:
+// 行き先は **`取引先／社名／加工製品／装置名称／図面名称`** です（2026-09-29 に段を
+// やめた・木の形は product_tree.go が正本）。ワンノートの製造部品ページの形に、
+// 決定を足したもの:
 //
-//   - **顧客名ページは `取引先` の下**（トップ直下をやめた。cms.EnsureContactsBox）
-//   - **装置名称の上に段**（現行・旧型・試作…）。ユーザー:「装置名の上の段として、
-//     旧型、現行、試作などがあったほうが探しやすいです」。段の名前は設定が持ちます
-//     （`machine_stages`）——「など」と付いたので増える前提です。
+//   - **顧客名ページは `取引先` の下**（2026-09-05・トップ直下をやめた）
+//   - ~~装置名称の上に段（現行・旧型・試作…）~~ → **2026-09-29 に `区分` のタグへ**。
+//     利用者:「フォルダで分けるのをやめて、試作のタグをつけるように変更したい」。
+//     段のフォルダは1つしか選べず、「試作かつ見積もり」を表せませんでした。
 //
-// **段は人が毎回選びます**（同日ユーザー決定）。機械が入れるのは初期値だけで、
-// 既にその装置が在ればその段、無ければ一覧の先頭（現行）。試作か現行かは
-// メールを読まないと分からないので、**機械には決められない**ためです。
+// **区分は人が選びます**（段のときと同じ理由）。試作か見積もりかはメールを読まないと
+// 分からないので、**機械には決められません**。何も選ばなければ通常の製品です。
 //
 // 見積だけ・試作のときは装置名称から新しく作ります。ユーザー:「これは、メールの
 // 内容から判断するしかありません」——人が欄を打ち替える前提です。
-// なお `【試作】装置名称` という題の付け方（2026-09-03）は、**段ができたので
-// 要らなくなりました**——題と段の両方に「試作」と書くと二重になります。
+// なお `【試作】装置名称` という題の付け方（2026-09-03）は、段を経て**区分のタグに
+// なったので要りません**——題とタグの両方に「試作」と書くと二重になります。
 //
 // 移した先に同名の加工製品ページが在れば、その図面は**改定図面**です（ユーザー）。
 // 顧客名／装置名称の下では図面名称が一意なので、**ページが在ること自体が改定の合図**。
@@ -71,43 +71,9 @@ type filingRow struct {
 	DrawingName string `json:"drawing_name"`
 	Customer    string `json:"customer"`     // 推奨値（客先）。人が直す
 	MachineName string `json:"machine_name"` // 推奨値（装置名称）。人が直す
-	// Stage は装置の段（現行・旧型・試作…）の推奨値です。**既にその装置が在れば
-	// その段**、無ければ一覧の先頭。ユーザー決定は「人が毎回選ぶ」なので、
-	// これは初期値であって決定ではありません（2026-09-05）。
-	Stage string `json:"stage"`
-}
-
-// suggestStage はその装置がいま居る段を探します（無ければ一覧の先頭）。
-//
-// **人が毎回選ぶ**のが決定ですが、既にある装置を別の段へ入れてしまう事故は
-// 初期値で防げます——`取引先／社名／段／装置名称` を段ごとに当たります。
-func suggestStage(customer, machine string) string {
-	stages := MachineStages()
-	fallback := ""
-	if len(stages) > 0 {
-		fallback = stages[0]
-	}
-	if customer == "" || machine == "" {
-		return fallback
-	}
-	boxID, ok := CustomerBoxPageID()
-	if !ok {
-		return fallback
-	}
-	custID, ok := findChildByTitle(boxID, customer)
-	if !ok {
-		return fallback
-	}
-	for _, st := range stages {
-		stageID, ok := findChildByTitle(custID, st)
-		if !ok {
-			continue
-		}
-		if _, ok := findChildByTitle(stageID, machine); ok {
-			return st
-		}
-	}
-	return fallback
+	// Kinds はそのページにいま付いている区分（試作・見積もり…）です（2026-09-29）。
+	// 画面の印の初期値で、**人が直します**。
+	Kinds []string `json:"kinds"`
 }
 
 // FilingProposalAPIHandler は GET /api/filing-proposal?page_id=X です。
@@ -131,8 +97,8 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "受注の一覧を作れません: "+err.Error())
 		return
 	}
-	// 段の一覧も返します——**選べる値は設定が持つ**ので、画面に書き写しません
-	// （語が2箇所にあると必ず片方が古くなる）。
+	// 区分の選択肢も返します——**選べる値は設定（語彙 `区分`）が持つ**ので、画面に
+	// 書き写しません（語が2箇所にあると必ず片方が古くなる）。
 	//
 	// **既にある取引先の名前も返します**（2026-09-06）。初回の実データで
 	// 「南北スポーツ機械」（アドレス帳が作った）と「株式会社南北スポーツ
@@ -149,19 +115,19 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 全部混ぜると他社の装置名が候補に出ます。
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "rows": rows, "orders": orders,
-		"stages": MachineStages(), "partners": partnerNames(user),
+		"kinds": ProductKinds(), "partners": partnerNames(user),
 		"machines": machineNames(user)})
 }
 
 // FilingTargetAPIHandler は GET /api/filing-target です。
-// 整理の欄に打たれた行き先（顧客／段／装置名称／図面名称）に、**既にページがあるか**を返します。
+// 整理の欄に打たれた行き先（顧客／加工製品／装置名称／図面名称）に、**既にページがあるか**を返します。
 //
 // ユーザー:「図面名称と装置名称を手がかりに、改定図面や追加図面を認識するはずですが、
 // 問題はそれらは**編集者が微妙に書き換える**ことです。整理画面で編集者が書き換える
 // たびに、既存のページがあるか**検索しなおす**必要があります」（2026-09-20）。
 //
 // ⚠ **先に配っておけない値**です。装置名称の候補は顧客ごとの一覧を先に配って JS で
-// 絞っていますが（`machines`）、図面名称は顧客×段×装置の数だけあるので配れません。
+// 絞っていますが（`machines`）、図面名称は顧客×装置の数だけあるので配れません。
 // だから**打ち替えのたびに聞きます**。
 //
 // ⚠ **調べるだけで、1枚も作りません。** `ensureChildPage` は無ければ作るので使わず、
@@ -179,7 +145,6 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	customer := cms.NormalizeNameForIngest(q.Get("customer"))
-	stage := strings.TrimSpace(q.Get("stage"))
 	machine := cms.NormalizeNameForIngest(q.Get("machine"))
 	name := cms.NormalizeNameForIngest(q.Get("name"))
 
@@ -194,7 +159,7 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := boxID
-	for _, title := range []string{customer, stage, machine, name} {
+	for _, title := range []string{customer, ProductsBoxTitle, machine, name} {
 		if title == "" {
 			json.NewEncoder(w).Encode(out)
 			return
@@ -333,16 +298,13 @@ func visibleCustomerChildren(user *auth.User) []cms.ChildPage {
 
 // machineNames は、既にある装置名称を**顧客ごと**に返します（画面の候補用）。
 //
-// 木は `取引先／社名／段／装置名称` なので、装置は顧客の**孫**です。
-// **段はまたいで集めます**——人が知りたいのは「この装置はもう在るか」で、
-// それがどの段に在るかは `suggestStage` が別に答えるためです（現行に在る装置を
-// 試作へ入れ直すこともあり、段で絞ると既存が見えなくなります）。
+// 木は `取引先／社名／加工製品／装置名称` なので、装置は顧客の**孫**です（2026-09-29 までは
+// 真ん中が段〔現行・旧型・試作〕で、段をまたいで集めていました）。
 //
-// ⚠ **ただし「顧客の孫」だけでは広すぎます。** 社名ページの子は段だけではなく、
+// ⚠ **ただし「顧客の孫」だけでは広すぎます。** 社名ページの子は加工製品の箱だけではなく、
 // `担当者`（窓口の人を集める箱）も並びます——そこの孫は**人の名前**なので、
 // 絞らないと `小澤 美智子` が装置の候補に出ます（2026-09-14 に実データで発見）。
-// **真ん中の世代は段の一覧（設定の `machine_stages`）に限ります**——段は閉じた
-// 集合なので、表引きで断てます。`担当者` を名指しで除くやり方は採りません
+// **真ん中の世代は「加工製品」の箱に限ります**。`担当者` を名指しで除くやり方は採りません
 // （箱が増えるたびに除外が増え、いつか漏れます）。
 //
 // **候補を出すだけで、合わせるのは人**です。完全一致でしか階層は繋がらないので
@@ -357,26 +319,16 @@ func machineNames(user *auth.User) map[string][]string {
 	if err != nil {
 		return out
 	}
-	// 段が1つも設定されていなければ、装置の置き場そのものが決まりません。
-	stages := MachineStages()
-	if len(stages) == 0 {
-		return out
-	}
-	ph := strings.TrimSuffix(strings.Repeat("?,", len(stages)), ",")
-	args := []any{boxInt}
-	for _, st := range stages {
-		args = append(args, st)
-	}
 	// **3世代を1回のクエリで取ります**。行を読みながら別のクエリを投げると
 	// `:memory:` DBでカーソルが接続を握ったままになり、**絞り込みが静かに全部落ちます**
 	// （2026-09-03 に本番コードで踏んだ罠）。
 	rows, err := database.DB.Query(`
 		SELECT cust.id, COALESCE(cust.title, ''), mach.id, COALESCE(mach.title, '')
 		  FROM pages cust
-		  JOIN pages stage ON stage.parent_id = cust.id
-		  JOIN pages mach  ON mach.parent_id  = stage.id
-		 WHERE cust.parent_id = ? AND stage.title IN (`+ph+`)
-		 ORDER BY cust.title ASC, mach.title ASC`, args...)
+		  JOIN pages box  ON box.parent_id  = cust.id
+		  JOIN pages mach ON mach.parent_id = box.id
+		 WHERE cust.parent_id = ? AND box.title = ?
+		 ORDER BY cust.title ASC, mach.title ASC`, boxInt, ProductsBoxTitle)
 	if err != nil {
 		return out
 	}
@@ -410,7 +362,7 @@ func machineNames(user *auth.User) map[string][]string {
 			seen[h.cust] = map[string]bool{}
 		}
 		if seen[h.cust][h.mach] {
-			continue // 同じ装置名が複数の段に在ることがある
+			continue // 同じ題の加工製品の箱が2枚あると、同じ装置名が2回来る
 		}
 		seen[h.cust][h.mach] = true
 		out[h.cust] = append(out[h.cust], h.mach)
@@ -448,7 +400,7 @@ func drawingChildrenOf(user *auth.User, parentIDInt int) ([]filingRow, error) {
 			DrawingName: cms.FirstTag(tags, DrawingNameTag),
 			Customer:    suggestCustomer(user, c.ID, client),
 			MachineName: machine,
-			Stage:       suggestStage(client, machine),
+			Kinds:       append([]string{}, tags[ProductKindTag]...),
 		})
 	}
 	return out, nil
@@ -460,8 +412,9 @@ type filingRequest struct {
 	Customer    string `json:"customer"`
 	MachineName string `json:"machine_name"`
 	DrawingName string `json:"drawing_name"`
-	// Stage は装置の段です（現行・旧型・試作…）。**人が選びます**。
-	Stage string `json:"stage"`
+	// Kinds は加工製品の区分です（試作・見積もり・旧型…・2026-09-29）。**人が選びます**。
+	// 空なら通常の製品。選択肢は設定の語彙 `区分`。
+	Kinds []string `json:"kinds"`
 	// ConfirmRevision は「図面番号が同じでも改定として合流してよい」の確認です。
 	// 既定は false——**偽の改定を黙って作らない**ため（2026-09-03 ユーザー:
 	// 「同じ図面名称を2回整理すると改定になるのはちょっとマズいと思います」）。
@@ -549,7 +502,6 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	customer := cms.NormalizeNameForIngest(row.Customer)
 	machine := cms.NormalizeNameForIngest(row.MachineName)
 	name := cms.NormalizeNameForIngest(row.DrawingName)
-	stage := strings.TrimSpace(row.Stage)
 
 	// **空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
 	// （通信箱が保留の置き場。空の顧客ページを増やさない）。
@@ -557,11 +509,12 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped",
 			Message: "顧客名・装置名称・図面名称のどれかが空なので、そのままにしました"}
 	}
-	// **段は表引きで閉じます**——「現行」と「現行品」が混ざると、探すときに
-	// 静かに取りこぼします（設定 machine_stages が正本）。
-	if !ValidMachineStage(stage) {
+	// **区分は表引きで閉じます**——「試作」と「試作品」が混ざると、絞るときに
+	// 静かに取りこぼします（設定の語彙 `区分` が正本）。
+	kinds, bad := cleanProductKinds(row.Kinds)
+	if bad != "" {
 		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "段（" + strings.Join(MachineStages(), "・") + "）を選んでください"}
+			Message: "区分「" + bad + "」は選べません（" + strings.Join(ProductKinds(), "・") + "）"}
 	}
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil || !canWritePage(user, idInt) {
@@ -604,35 +557,28 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// **顧客名ページは「取引先」の下**です（2026-09-05 ユーザー決定）。アドレス帳が
 	// 作る相手ページと**同じ場所・同じ1枚**——連絡先を見るページと部品を見るページを
 	// 分けないため（EnsureCustomerBox の説明が正本）。
-	boxID, err := EnsureCustomerBox(user)
-	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "「" + CustomerBoxTitle + "」ページを用意できません: " + err.Error()}
-	}
-	customerID, err := ensureChildPage(user, boxID, customer)
-	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "顧客名ページを用意できません: " + err.Error()}
-	}
+	//
 	// **2つの木を参照タグで結びます**（2026-09-16）。`取引先／社名` のページから
-	// `連絡帳／組織` を指す `相手` のタグを1つ書きます。
+	// `連絡帳／組織` を指す `相手` のタグを1つ書きます（`ensureProductPath` の中の
+	// `linkPartner`）。⚠ **題だけで結んでいると、改名した日に切れます**——参照は
+	// ページIDなので切れません。**人が選んだ社名で引きます**（機械が推した組織ではなく）
+	// ——整理の画面は「機械が出して人が直す」場所なので、**打ち替えた結果が正**です。
 	//
-	// ⚠ **題だけで結んでいると、改名した日に切れます**——加工製品の階層のフォルダ名は
-	// 人が直しますし、連絡帳の社名も直ります。**参照はページIDなので切れません**
-	// （同じ理由で、加工製品ページの `受信元` もページIDです）。
-	//
-	// **人が選んだ社名で引きます**（機械が推した組織ではなく）——整理の画面は
-	// 「機械が出して人が直す」場所なので、**打ち替えた結果が正**です。
-	// 連絡帳にまだ居ない相手は結びません（新しい顧客の1通目がその形で、正常）。
-	linkPartner(user, customerID, customer)
-	// **装置の上に段を1枚**（2026-09-05 ユーザー:「装置名の上の段として、旧型、現行、
-	// 試作などがあったほうが探しやすいです」）。装置が別の段へ移るときは、
-	// この段ページのあいだで付け替えるだけ——配下の図面もついていきます。
-	stageID, err := ensureChildPage(user, customerID, stage)
+	// **社名と装置のあいだは「加工製品」の箱**です（2026-09-29 に段をやめた・product_tree.go）。
+	machineID, err := ensureProductPath(user, customer, machine)
 	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "段のページを用意できません: " + err.Error()}
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: err.Error()}
 	}
-	machineID, err := ensureChildPage(user, stageID, machine)
-	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "装置名称ページを用意できません: " + err.Error()}
+	where := customer + "／" + ProductsBoxTitle + "／" + machine + "／" + name
+	// kindsNote は区分を書いた結果を知らせる一言です（書けなくても整理は済んでいる）。
+	kindsNote := func(target string, replace bool) string {
+		if err := setProductKinds(user, target, kinds, replace); err != nil {
+			return "／⚠ 区分を書けませんでした: " + err.Error()
+		}
+		if len(kinds) > 0 {
+			return "（区分: " + strings.Join(kinds, "・") + "）"
+		}
+		return ""
 	}
 
 	// **行き先に同じ題のページがあるとき**——改定か、二つ目の図面か（2026-09-20）。
@@ -677,7 +623,7 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 			}
 			auth.Audit(user.Username, "file-drawing.add", pageID+" -> "+existing)
 			return filingResult{PageID: pageID, Outcome: "added", TargetID: existing,
-				Message: customer + "／" + machine + "／" + name + " へ二つ目の図面として並べました"}
+				Message: where + " へ二つ目の図面として並べました" + kindsNote(existing, false)}
 
 		case "revision":
 			// **偽の改定を作らない**——図面番号が同じものは人に確認する。
@@ -697,7 +643,7 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 			}
 			auth.Audit(user.Username, "file-drawing.revision", pageID+" -> "+existing)
 			return filingResult{PageID: pageID, Outcome: "revision", TargetID: existing,
-				Message: customer + "／" + machine + "／" + name + " の改定図面として合流しました"}
+				Message: where + " の改定図面として合流しました" + kindsNote(existing, false)}
 
 		default:
 			// **未選択なら動かしません。** ⚠ どちらかを既定にすると、見ないまま
@@ -713,8 +659,10 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
 	}
 	auth.Audit(user.Username, "file-drawing.move", pageID+" -> "+machineID)
+	// **運んできたページは印のとおりに揃えます**（外した区分は消す）——画面の印の初期値は
+	// このページ自身の区分なので、外したのは人の意思です。
 	return filingResult{PageID: pageID, Outcome: "moved",
-		Message: customer + "／" + stage + "／" + machine + "／" + name + " へ収めました"}
+		Message: where + " へ収めました" + kindsNote(pageID, true)}
 }
 
 // syncDrawingFields は図面ブロックの `客先`・`装置名称`・`図面名称` を、整理の画面で

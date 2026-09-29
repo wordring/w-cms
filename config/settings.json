@@ -49,7 +49,7 @@
     "資料": { "type": "ref" },
     "検査写真": { "type": "image" },
     "判定": { "type": "enum", "values": ["合格", "不合格"] },
-    "区分": { "type": "enum", "values": ["現行", "廃版"] },
+    "区分": { "type": "enum", "values": ["試作", "見積もり", "旧型"] },
     "単位": { "type": "enum", "values": ["個", "セット", "本", "枚", "kg", "m"] },
     "状態": { "type": "enum", "values": ["未着手", "加工中", "検査中", "納品済", "完了"] },
     "材料発注": { "type": "enum", "values": ["済"] },
@@ -57,6 +57,18 @@
     "請求書発行": { "type": "enum", "values": ["済"] }
   },
   "table_vocabulary": {
+    "材料": {
+      "区分": { "type": "enum", "values": ["現行", "廃版"] }
+    },
+    "外注加工": {
+      "区分": { "type": "enum", "values": ["現行", "廃版"] }
+    },
+    "購入部品": {
+      "区分": { "type": "enum", "values": ["現行", "廃版"] }
+    },
+    "支給部品": {
+      "区分": { "type": "enum", "values": ["現行", "廃版"] }
+    },
     "発注明細": {
       "状態": { "type": "enum", "values": ["未発注", "発注済", "納品済", "取消"] }
     },
@@ -107,11 +119,6 @@
       ],
       "pdf_font": "C:/Windows/Fonts/BIZ-UDGothicB.ttc",
       "pdf_font_face": 0,
-      "machine_stages": [
-        "現行",
-        "旧型",
-        "試作"
-      ],
       "order_kinds": [
         {
           "kind": "材料",

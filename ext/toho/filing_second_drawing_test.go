@@ -20,7 +20,7 @@ import (
 // secondRow は整理の1行を作ります（`Merge` だけ差し替えて使う）。
 func secondRow(pageID, name, merge string) filingRequest {
 	return filingRequest{
-		PageID: pageID, Customer: "南北スポーツ", Stage: "現行",
+		PageID: pageID, Customer: "南北スポーツ",
 		MachineName: "標準2輪", DrawingName: name, Merge: merge,
 	}
 }

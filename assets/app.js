@@ -4467,7 +4467,7 @@
         // 言うより、出さないほうが親切です。
         let rows = [];
         let orders = [];
-        let stages = [];
+        let kinds = [];
         let partners = [];
         let machines = {};
         try {
@@ -4477,9 +4477,9 @@
             rows = d.rows || [];
             // 受注ページも同じ画面で片付けます（行き先は発注日で決まるので欄は無い）。
             orders = d.orders || [];
-            // **段の選択肢はサーバーが持ちます**（設定 machine_stages）。
+            // **区分の選択肢はサーバーが持ちます**（設定の語彙「区分」・2026-09-29 に段から替えた）。
             // 画面に書き写すと、語を足した日に片方だけ古くなります。
-            stages = d.stages || [];
+            kinds = d.kinds || [];
             // 既にある取引先の名前——顧客名の入力候補に出します。
             partners = d.partners || [];
             // 既にある装置名称（顧客ごと）——装置名称の入力候補に出します。
@@ -4491,27 +4491,28 @@
         btn.type = 'button';
         btn.className = 'vocab-chrome filing-chrome filing-open';
         btn.textContent = '📁 整理（' + (rows.length + orders.length) + '件）';
-        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, stages, partners, machines));
+        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, kinds, partners, machines));
         host.appendChild(btn);
     }
 
     // toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
-    function toggleFilingPanel(btn, rows, orders, stages, partners, machines) {
+    function toggleFilingPanel(btn, rows, orders, kinds, partners, machines) {
         const existing = document.querySelector('.filing-panel');
         if (existing) { existing.remove(); return; }
-        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, stages, partners, machines));
+        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, kinds, partners, machines));
     }
 
     // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
     // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます。
-    function buildFilingPanel(rows, orders, stages, partners, machines) {
+    function buildFilingPanel(rows, orders, kinds, partners, machines) {
         const panel = document.createElement('div');
         panel.className = 'vocab-chrome filing-chrome filing-panel';
         panel.setAttribute('contenteditable', 'false');
 
         const head = document.createElement('p');
         head.className = 'filing-head';
-        head.textContent = '行き先を決めてください（社名／段／装置名称／図面名称）。空欄の行は動かしません。';
+        head.textContent = '行き先を決めてください（社名／加工製品／装置名称／図面名称）。' +
+            '区分は当てはまるものに印を（無ければ通常の製品）。空欄の行は動かしません。';
         if (rows.length) panel.appendChild(head);
 
         // **既にある取引先を候補に出します。** 実データの初回で、アドレス帳が作った
@@ -4533,7 +4534,7 @@
         const table = document.createElement('table');
         table.className = 'filing-table';
         const trh = document.createElement('tr');
-        ['図面番号', '顧客名', '段', '装置名称', '図面名称', ''].forEach(t => {
+        ['図面番号', '顧客名', '装置名称', '図面名称', '区分', ''].forEach(t => {
             const th = document.createElement('th');
             th.textContent = t;
             trh.appendChild(th);
@@ -4549,7 +4550,7 @@
             tr.appendChild(tdNo);
 
             const fields = {};
-            // 顧客名は自由入力、段は選択、その先はまた自由入力——**列の順に組みます**
+            // 顧客名・装置名称・図面名称は自由入力、区分は印——**列の順に組みます**
             // （表の見出しと並びが1対1でないと、打つ人が迷います）。
             const addText = (key, value) => {
                 const td = document.createElement('td');
@@ -4565,22 +4566,6 @@
             if ((partners || []).length) {
                 fields.customer.setAttribute('list', listID);
             }
-
-            // **段は選ぶだけ**——打てるようにすると「現行」と「現行品」が混ざり、
-            // 探すときに静かに取りこぼします（サーバーも表引きで断ります）。
-            const tdStage = document.createElement('td');
-            const sel = document.createElement('select');
-            sel.setAttribute('aria-label', 'stage');
-            (stages || []).forEach(st => {
-                const op = document.createElement('option');
-                op.value = st;
-                op.textContent = st;
-                if (st === row.stage) op.selected = true;
-                sel.appendChild(op);
-            });
-            tdStage.appendChild(sel);
-            tr.appendChild(tdStage);
-            fields.stage = sel;
 
             addText('machine_name', row.machine_name);
             // **装置名称の候補は、その行の顧客のぶんだけ**（2026-09-11）。
@@ -4609,6 +4594,25 @@
             fields.customer.addEventListener('change', fillMachines);
             addText('drawing_name', row.drawing_name);
 
+            // **区分は印で選ぶだけ**（2026-09-29・段のフォルダの代わり）——打てるようにすると
+            // 「試作」と「試作品」が混ざり、絞るときに静かに取りこぼします（サーバーも表引きで断ります）。
+            // ⚠ **2つ付けられます**（利用者:「試作かつ見積もりという場合がある」）。
+            const tdKinds = document.createElement('td');
+            tdKinds.className = 'filing-kinds';
+            const kindBoxes = [];
+            (kinds || []).forEach(k => {
+                const label = document.createElement('label');
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.value = k;
+                box.checked = (row.kinds || []).includes(k);
+                label.appendChild(box);
+                label.appendChild(document.createTextNode(' ' + k));
+                tdKinds.appendChild(label);
+                kindBoxes.push(box);
+            });
+            tr.appendChild(tdKinds);
+
             const tdConfirm = document.createElement('td');
 
             // ── 行き先に既にページがあるか（打ち替えのたびに聞く）──
@@ -4618,7 +4622,7 @@
             // 編集者が書き換えるたびに、既存のページがあるか**検索しなおす**必要が
             // あります」（2026-09-20）。
             //
-            // ⚠ **装置名称の候補のように先に配れません**——図面名称は顧客×段×装置の
+            // ⚠ **装置名称の候補のように先に配れません**——図面名称は顧客×装置の
             // 数だけあるので、そのつどサーバーへ聞きます（`/api/filing-target`）。
             const choiceWrap = document.createElement('div');
             choiceWrap.className = 'filing-choice';
@@ -4650,7 +4654,6 @@
             const askTarget = async () => {
                 const q = new URLSearchParams({
                     customer: fields.customer.value.trim(),
-                    stage: fields.stage.value,
                     machine: fields.machine_name.value.trim(),
                     name: fields.drawing_name.value.trim(),
                 });
@@ -4678,7 +4681,7 @@
                 if (targetTimer) clearTimeout(targetTimer);
                 targetTimer = setTimeout(askTarget, 400);
             };
-            ['customer', 'stage', 'machine_name', 'drawing_name'].forEach(key => {
+            ['customer', 'machine_name', 'drawing_name'].forEach(key => {
                 fields[key].addEventListener('input', askTargetSoon);
                 fields[key].addEventListener('change', askTargetSoon);
             });
@@ -4705,7 +4708,7 @@
 
             inputs.push({
                 page_id: row.page_id, fields: fields, confirm: confirm, box: box,
-                merge: mergeInputs, choice: choiceWrap,
+                merge: mergeInputs, choice: choiceWrap, kinds: kindBoxes,
             });
             table.appendChild(tr);
         });
@@ -4782,7 +4785,8 @@
         const payload = inputs.map(i => ({
             page_id: i.page_id,
             customer: i.fields.customer.value,
-            stage: i.fields.stage.value,
+            // 区分（2026-09-29）——印の付いたものだけ。空なら通常の製品。
+            kinds: (i.kinds || []).filter(b => b.checked).map(b => b.value),
             machine_name: i.fields.machine_name.value,
             drawing_name: i.fields.drawing_name.value,
             confirm_revision: i.box.checked,
@@ -7501,4 +7505,61 @@ delegateClick([['.backlog-print', (btn) => {
         ['[data-order-sent]', markSent],
         ['[data-order-send]', sendMail],
     ]);
+})();
+
+// ── 加工製品の一覧を絞る（2026-09-29）──────────────────────────────────────
+//
+// 利用者:「加工製品のトップページにでも、フィルターして表示する項目があれば良いと思います」。
+// 段のフォルダ（現行・旧型・試作）をやめて区分のタグにしたので、試作だけ・見積もりだけを
+// **見る**場所がここです。
+//
+// ⚠ **欄も表もサーバーが描きます**（ext/toho/product_list.go）。ここは**隠すだけ**——1社の
+// 加工製品は数百枚なので、全部を描いて隠すほうが、打つたびにサーバーへ聞くより速い。
+// 文字は NFKC＋小文字で比べます（全角の英数字・大小の打ち分けで外れないように）。
+(function wireProductList() {
+    const norm = (s) => String(s || '').normalize('NFKC').toLowerCase();
+
+    function apply(form) {
+        const wrap = form.parentElement;
+        const table = wrap ? wrap.querySelector('table.plist-table') : null;
+        if (!table) return;
+        const terms = norm(valueIn(form, '[data-plist-text]')).split(/\s+/).filter(Boolean);
+        const machine = valueIn(form, '[data-plist-machine]');
+        const boxes = Array.from(form.querySelectorAll('[data-plist-kind]'));
+        const known = new Set(boxes.map(b => b.dataset.plistKind).filter(Boolean));
+        const picked = new Set(boxes.filter(b => b.checked).map(b => b.dataset.plistKind));
+        const migBox = form.querySelector('[data-plist-migrating]');
+        const migOnly = !!(migBox && migBox.checked);
+        let shown = 0;
+        let total = 0;
+        table.querySelectorAll('tr[data-plist-row]').forEach(tr => {
+            total++;
+            // 区分の付いていない行は「通常」（値が空の印）。⚠ 選択肢に無い区分だけの行も
+            // 「通常」に数えます——黙って一覧から消えるほうが悪いので。
+            const kinds = (tr.dataset.kinds || '').split('\t').filter(k => known.has(k));
+            let ok = kinds.length ? kinds.some(k => picked.has(k)) : picked.has('');
+            if (ok && machine && tr.dataset.machine !== machine) ok = false;
+            if (ok && migOnly && tr.dataset.migrating !== '1') ok = false;
+            if (ok && terms.length) {
+                if (tr.wPlistText === undefined) tr.wPlistText = norm(tr.dataset.text);
+                ok = terms.every(t => tr.wPlistText.includes(t));
+            }
+            tr.hidden = !ok;
+            if (ok) shown++;
+        });
+        const count = form.querySelector('[data-plist-count]');
+        if (count) count.textContent = shown === total ? total + ' 件' : shown + ' 件（全 ' + total + ' 件）';
+        const none = wrap.querySelector('[data-plist-none]');
+        if (none) none.hidden = shown > 0;
+    }
+
+    // ⚠ **document へ委譲します**——鏡はサーバーが描き直すので、要素ごとに配線すると
+    //    描き直しのたびに切れます（材料を探す欄と同じ理由）。
+    const onEvent = (e) => {
+        const t = e.target;
+        const form = t && t.closest ? t.closest('[data-plist-form]') : null;
+        if (form) apply(form);
+    };
+    document.addEventListener('input', onEvent);
+    document.addEventListener('change', onEvent);
 })();

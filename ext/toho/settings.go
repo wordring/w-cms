@@ -8,8 +8,12 @@ package toho
 // ありました。設定ファイルは1本のまま、読み方と検査をここへ移しています。
 //
 //	"extensions": {
-//	  "toho": { "machine_stages": ["現行", "旧型", "試作"] }
+//	  "toho": { "product_code_tags": ["図面番号", "品番"], … }
 //	}
+//
+// ⚠ **段（`machine_stages`）は 2026-09-29 に無くなりました**——加工製品の木から段のフォルダを
+// やめ、試作・見積もり・旧型はタグ `区分`（選択肢は語彙）にした（product_tree.go）。
+// 書いたままの設定は、打ち間違いと同じく起動を止めます（黙って無視しない）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -24,14 +28,6 @@ import (
 
 // settingsSection は `extensions.toho` の中身です。
 type settingsSection struct {
-	// MachineStages は装置名称の**上の段**の名前です（`取引先／社名／段／装置名称`）。
-	// ユーザー:「装置名の上の段として、旧型、現行、試作などがあったほうが探しやすい」
-	// （2026-09-05）。「など」と付いたので**運用中に増える前提**。
-	// **未指定なら段を1つも出しません**（既定の一覧はありません）。
-	//
-	// **並び順に意味があります**——先頭が整理の画面の初期値（＝いちばん多い行き先）。
-	MachineStages []string `json:"machine_stages,omitempty"`
-
 	// ProductCodeTags は「**加工製品ページを言い当てる番号**」のタグ名です
 	// （2026-09-21）。受注明細の `品番` からページを特定するときに、この名前の
 	// タグを**順に**引きます。
@@ -111,10 +107,10 @@ type companyInfo struct {
 }
 
 var (
-	stagesMu      sync.RWMutex
-	machineStages []string
-	// ⚠ **`stagesMu` を共有します。** 設定の反映は1回で両方を差し替えるので、
-	// 別の錠にすると「段は新しいが番号のタグは古い」という中途半端な瞬間ができます。
+	// stagesMu は節の全部の値を守ります（名前は段を持っていたころの名残）。
+	// ⚠ **1つの錠を共有します。** 設定の反映は1回で全部を差し替えるので、別の錠にすると
+	// 「番号のタグは新しいがフォントは古い」という中途半端な瞬間ができます。
+	stagesMu          sync.RWMutex
 	productCodeTags   []string
 	pdfFont           string
 	pdfFontFace       int
@@ -138,22 +134,6 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		if err := dec.Decode(&s); err != nil {
 			return nil, fmt.Errorf("書式が不正です（手で直してください）: %w", err)
 		}
-	}
-	seen := map[string]bool{}
-	for _, st := range s.MachineStages {
-		v := strings.TrimSpace(st)
-		if v == "" {
-			return nil, fmt.Errorf("machine_stages に空の段があります")
-		}
-		// **段はページの題になります。** 題に使えない文字が混じると、整理の実行が
-		// 全件そこで止まります——書いた時点で気づけるよう、ここで断ります。
-		if strings.ContainsAny(v, "/\\") {
-			return nil, fmt.Errorf("machine_stages の %q に区切り文字は使えません（ページの題になります）", st)
-		}
-		if seen[v] {
-			return nil, fmt.Errorf("machine_stages に %q が2回あります", v)
-		}
-		seen[v] = true
 	}
 	// ⚠ **重複と空だけ断ります。** 型（`code` であること）はここでは見ません——
 	// この検査はコアが語彙を効かせる**前**に走ることがあり、見ると「まだ読み込まれて
@@ -195,14 +175,12 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 			heads = append(heads, h)
 		}
 	}
-	stages := s.MachineStages
 	codeTags := s.ProductCodeTags
 	font := strings.TrimSpace(s.PDFFont)
 	face := s.PDFFontFace
 	company := s.Company
 	return func() {
 		stagesMu.Lock()
-		machineStages = stages
 		productCodeTags = codeTags
 		pdfFont = font
 		pdfFontFace = face
@@ -234,25 +212,6 @@ func ProductCodeTags() []string {
 	stagesMu.RLock()
 	defer stagesMu.RUnlock()
 	return productCodeTags
-}
-
-// MachineStages は設定の段の一覧を返します（並び順つき。**先頭が整理の初期値**）。
-// 返した配列は書き換えないこと（参照側が共有しています）。
-func MachineStages() []string {
-	stagesMu.RLock()
-	defer stagesMu.RUnlock()
-	return machineStages
-}
-
-// ValidMachineStage は段が一覧にあるかを**表引きで**確かめます。
-// 「現行」と「現行品」が混ざると、探すときに静かに取りこぼすためです。
-func ValidMachineStage(v string) bool {
-	for _, st := range MachineStages() {
-		if st == v {
-			return true
-		}
-	}
-	return false
 }
 
 // PDFFontFace は `.ttc` の中の何番目の書体を使うかを返します（既定は0）。

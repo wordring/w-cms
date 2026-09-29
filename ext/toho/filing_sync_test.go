@@ -26,7 +26,7 @@ func TestFileDrawingsSyncsIndexedFields(t *testing.T) {
 		"標準２輪", "株式会社南北北スポーツ機械") // ← 解析の読み違い
 
 	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械", Stage: "現行",
+		PageID: partID, Customer: "南北スポーツ機械",
 		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
@@ -73,7 +73,7 @@ func TestFileDrawingsFillsEmptyClientName(t *testing.T) {
 	}
 
 	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械", Stage: "現行",
+		PageID: partID, Customer: "南北スポーツ機械",
 		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
@@ -108,7 +108,7 @@ func TestFileDrawingsAddsMissingClientName(t *testing.T) {
 	}
 
 	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械", Stage: "現行",
+		PageID: partID, Customer: "南北スポーツ機械",
 		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
@@ -142,7 +142,7 @@ func TestFileDrawingsKeepsHandEditedValues(t *testing.T) {
 	}
 
 	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械", Stage: "現行",
+		PageID: partID, Customer: "南北スポーツ機械",
 		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
