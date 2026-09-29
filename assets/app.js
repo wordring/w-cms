@@ -5442,12 +5442,28 @@
         }
         if (d.open) applyViewRatios();
     }, true);
-    // 窓の幅が変わったら、縦横比から高さを決め直す。
-    let viewResizeTimer = null;
-    window.addEventListener('resize', () => {
-        clearTimeout(viewResizeTimer);
-        viewResizeTimer = setTimeout(applyViewRatios, 150);
-    });
+    // 本文の欄の幅が変わったら、縦横比から高さを決め直す。
+    // ⚠ **その場で追従します**（2026-09-29 利用者:「ブラウザの幅を変えたような場合は、動的に追従できません」）。
+    //    それまでは窓の resize を 150ms 待ってから1回だけ決め直していたので、**引いているあいだは高さが古いまま**で、
+    //    窓の大きさは変わらずに欄だけが変わるとき（左右のレールの開け閉め・スクロールバーの出入り）は決め直しも
+    //    しませんでした。いまは**欄そのものの幅**を見て（ResizeObserver）、描く前の1コマで決め直します。
+    //    幅が変わったときだけ動くので、高さを変えたこと自体では回りません（高さ→幅の輪にならない）。
+    let viewRatioFrame = 0;
+    const applyViewRatiosSoon = () => {
+        if (viewRatioFrame) return;
+        viewRatioFrame = requestAnimationFrame(() => { viewRatioFrame = 0; applyViewRatios(); });
+    };
+    window.addEventListener('resize', applyViewRatiosSoon);
+    const viewContent = document.getElementById('w-editor-content');
+    if (viewContent && typeof ResizeObserver === 'function') {
+        let lastWidth = -1;
+        new ResizeObserver(entries => {
+            const w = Math.round(entries[0].contentRect.width);
+            if (w === lastWidth) return;
+            lastWidth = w;
+            applyViewRatiosSoon();
+        }).observe(viewContent);
+    }
 
     function wireDrawingResize(wrap, embed) {
         // ⚠ **記録の無い枠は CSS の既定（70vh）のまま**（2026-09-29）。それまでは「最後につまんだ高さ」（UI設定の

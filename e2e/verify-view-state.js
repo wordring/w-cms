@@ -108,12 +108,22 @@ function minimalPDF() {
     const s2 = await second();
     check('1枚目を変えても、2枚目の高さは変わらない', s0 && s2 && Math.abs(s2.height - s0.height) <= 3,
       (s0 && s0.height) + ' → ' + (s2 && s2.height));
+    // ⚠ **その場で追従する**（2026-09-29 利用者:「ブラウザの幅を変えたような場合は、動的に追従できません」）。
+    //    それまでは 150ms 待ってから決め直していた——**待たずに**（2コマ程度で）測る。
     await page.setViewportSize({ width: 1000, height: 900 });
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(50);
     const b3 = await page.locator('#w-editor-content .file-view').first().boundingBox();
     const r2 = b2.height / b2.width, r3 = b3.height / b3.width;
-    check('窓の幅を変えても縦横比が保たれる', Math.abs(r3 - r2) < 0.02 || b3.height <= 201,
+    check('窓の幅を変えても縦横比が保たれる（その場で）', Math.abs(r3 - r2) < 0.02 || b3.height <= 201,
       r2.toFixed(3) + ' → ' + r3.toFixed(3));
+    // 窓は変わらずに**本文の欄だけ**が細くなっても追従する（レールの開け閉めなど・resize は出ない）。
+    await page.evaluate(() => { document.getElementById('w-editor-content').style.maxWidth = '420px'; });
+    await page.waitForTimeout(50);
+    const b4 = await page.locator('#w-editor-content .file-view').first().boundingBox();
+    const r4 = b4.height / b4.width;
+    check('欄の幅だけが変わっても縦横比が保たれる', Math.abs(r4 - r2) < 0.02 || b4.height <= 201,
+      r2.toFixed(3) + ' → ' + r4.toFixed(3) + '（幅 ' + Math.round(b4.width) + 'px）');
+    await page.evaluate(() => { document.getElementById('w-editor-content').style.maxWidth = ''; });
     await page.setViewportSize({ width: 1280, height: 900 });
 
     // ③ 上限を超えたら古い順に捨てる（2005ページの古い記録を入れてから1つ書く）
