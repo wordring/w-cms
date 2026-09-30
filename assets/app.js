@@ -4662,10 +4662,12 @@
         panel.className = 'vocab-chrome filing-chrome filing-panel';
         panel.setAttribute('contenteditable', 'false');
 
+        // ⚠ **言葉は短く・1枚ずつ縦に**（2026-09-30 利用者:「入力欄が見えなくなるくらい、横幅が狭くなります。
+        //    横にたくさんの項目がありすぎるのと、チェックボックスの説明が長すぎます」）——それまでは6列の表で、
+        //    欄が 50px 台まで押しつぶされ、選択肢の説明が1文字ずつ縦に折れていました。
         const head = document.createElement('p');
         head.className = 'filing-head';
-        head.textContent = '行き先を決めてください（社名／加工製品／装置名称／図面名称）。' +
-            '区分は当てはまるものに印を（無ければ通常の製品）。空欄の行は動かしません。';
+        head.textContent = '行き先: 取引先／社名／加工製品／装置名称／図面名称。空欄の図面は動かしません。';
         if (rows.length) panel.appendChild(head);
 
         // **既にある取引先を候補に出します。** 実データの初回で、アドレス帳が作った
@@ -4684,43 +4686,43 @@
             panel.appendChild(dl);
         }
 
-        const table = document.createElement('table');
-        table.className = 'filing-table';
-        const trh = document.createElement('tr');
-        ['図面番号', '顧客名', '装置名称', '図面名称', '区分', ''].forEach(t => {
-            const th = document.createElement('th');
-            th.textContent = t;
-            trh.appendChild(th);
-        });
-        table.appendChild(trh);
+        // 図面1枚ごとにカード（見出し＝図面番号・欄は1行に1つで横幅いっぱい）。
+        const list = document.createElement('div');
+        list.className = 'filing-cards';
 
         const inputs = [];
         rows.forEach((row, rowIndex) => {
-            const tr = document.createElement('tr');
-            const tdNo = document.createElement('td');
-            tdNo.className = 'filing-no';
-            tdNo.textContent = row.drawing_no || '（番号なし）';
-            tr.appendChild(tdNo);
+            const card = document.createElement('div');
+            card.className = 'filing-card';
+            const no = document.createElement('p');
+            no.className = 'filing-no';
+            no.textContent = '📄 ' + (row.drawing_no || '（図面番号なし）');
+            card.appendChild(no);
+            const grid = document.createElement('div');
+            grid.className = 'filing-grid';
+            card.appendChild(grid);
 
             const fields = {};
-            // 顧客名・装置名称・図面名称は自由入力、区分は印——**列の順に組みます**
-            // （表の見出しと並びが1対1でないと、打つ人が迷います）。
-            const addText = (key, value) => {
-                const td = document.createElement('td');
+            // 顧客名・装置名称・図面名称は自由入力（1行に1つ・見出しは左）、区分は印。
+            const addText = (key, labelText, value) => {
+                const lb = document.createElement('label');
+                lb.className = 'filing-field';
+                const span = document.createElement('span');
+                span.textContent = labelText;
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.value = value || '';
                 input.setAttribute('aria-label', key);
-                td.appendChild(input);
-                tr.appendChild(td);
+                lb.append(span, input);
+                grid.appendChild(lb);
                 fields[key] = input;
             };
-            addText('customer', row.customer);
+            addText('customer', '顧客名', row.customer);
             if ((partners || []).length) {
                 fields.customer.setAttribute('list', listID);
             }
 
-            addText('machine_name', row.machine_name);
+            addText('machine_name', '装置名称', row.machine_name);
             // **装置名称の候補は、その行の顧客のぶんだけ**（2026-09-11）。
             // 顧客名で解いたのと同じ問題が一段下に残っていました——1通のメールの
             // 5枚が `φ410 2輪` / `2輪シュート改良` / `φ410-2輪` / `2軸シュート改良`
@@ -4745,13 +4747,20 @@
             fillMachines();
             fields.customer.addEventListener('input', fillMachines);
             fields.customer.addEventListener('change', fillMachines);
-            addText('drawing_name', row.drawing_name);
+            addText('drawing_name', '図面名称', row.drawing_name);
 
             // **区分は印で選ぶだけ**（2026-09-29・段のフォルダの代わり）——打てるようにすると
             // 「試作」と「試作品」が混ざり、絞るときに静かに取りこぼします（サーバーも表引きで断ります）。
-            // ⚠ **2つ付けられます**（利用者:「試作かつ見積もりという場合がある」）。
-            const tdKinds = document.createElement('td');
-            tdKinds.className = 'filing-kinds';
+            // ⚠ **2つ付けられます**（利用者:「試作かつ見積もりという場合がある」）。無ければ通常の製品。
+            const tdKinds = document.createElement('div');
+            tdKinds.className = 'filing-field filing-kinds';
+            const kindsHead = document.createElement('span');
+            kindsHead.textContent = '区分';
+            kindsHead.title = '当てはまるものに印（無ければ通常の製品）';
+            tdKinds.appendChild(kindsHead);
+            const kindsWrap = document.createElement('div');
+            kindsWrap.className = 'filing-kinds-boxes';
+            tdKinds.appendChild(kindsWrap);
             const kindBoxes = [];
             (kinds || []).forEach(k => {
                 const label = document.createElement('label');
@@ -4761,12 +4770,13 @@
                 box.checked = (row.kinds || []).includes(k);
                 label.appendChild(box);
                 label.appendChild(document.createTextNode(' ' + k));
-                tdKinds.appendChild(label);
+                kindsWrap.appendChild(label);
                 kindBoxes.push(box);
             });
-            tr.appendChild(tdKinds);
+            grid.appendChild(tdKinds);
 
-            const tdConfirm = document.createElement('td');
+            const tdConfirm = document.createElement('div');
+            tdConfirm.className = 'filing-card-foot';
 
             // ── 行き先に既にページがあるか（打ち替えのたびに聞く）──
             //
@@ -4785,10 +4795,12 @@
             choiceWrap.appendChild(choiceNote);
             const mergeName = 'w-filing-merge-' + rowIndex;
             const mergeInputs = {};
-            [['revision', '改定図面（いまの図面は旧版として子ページへ）'],
-             ['drawing', '二つ目の図面として追加（部品図と溶接図など）']].forEach(([val, text]) => {
+            // 言葉は利用者の案（2026-09-30:「『図面改定』と『図面追加』をご提案します」）。詳しくはマウスを載せたときに。
+            [['revision', '図面改定', 'いまの図面は旧版として子ページへ移します'],
+             ['drawing', '図面追加', '同じ品物の二つ目の図面として足します（部品図と溶接図など）']].forEach(([val, text, hint]) => {
                 const label = document.createElement('label');
                 label.className = 'filing-merge-opt';
+                label.title = hint;
                 const radio = document.createElement('input');
                 radio.type = 'radio';
                 radio.name = mergeName;
@@ -4822,7 +4834,7 @@
                     }
                     const nos = (d.drawing_nos || []).join('・');
                     choiceNote.textContent = '⚠ 「' + (d.title || '') + '」は既にあります' +
-                        (nos ? '（載っている図面: ' + nos + '）' : '') + '。どちらか選んでください。';
+                        (nos ? '（図面: ' + nos + '）' : '') + '。どちらか選んでください:';
                     choiceWrap.hidden = false;
                 } catch (e) {
                     // 聞けなくても整理はできます（実行がもう一度判断して `needs_choice`
@@ -4857,15 +4869,15 @@
             confirm.appendChild(box);
             confirm.appendChild(document.createTextNode(' 承知のうえで進める'));
             tdConfirm.appendChild(confirm);
-            tr.appendChild(tdConfirm);
+            card.appendChild(tdConfirm);
 
             inputs.push({
                 page_id: row.page_id, fields: fields, confirm: confirm, box: box,
                 merge: mergeInputs, choice: choiceWrap, kinds: kindBoxes,
             });
-            table.appendChild(tr);
+            list.appendChild(card);
         });
-        if (rows.length) panel.appendChild(table);
+        if (rows.length) panel.appendChild(list);
 
         // **受注ページは別の表**です。直せるのは発注元だけ（行き先は発注日で決まる）
         // なので、図面と同じ列に並べると空欄ばかりの行になります。
@@ -4873,8 +4885,7 @@
         if (orders.length) {
             const oHead = document.createElement('p');
             oHead.className = 'filing-head';
-            oHead.textContent = '受注ページは「受注」の年月へ収めます。' +
-                '発注元は直せます（連絡帳にある社名を初期値にしています）。外す行はチェックを消してください。';
+            oHead.textContent = '受注ページは「受注」の年月へ収めます（外すものは印を外す）。';
             panel.appendChild(oHead);
 
             const oTable = document.createElement('table');

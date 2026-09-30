@@ -91,6 +91,13 @@ const (
 // 件数は総数として別に見せるので、多いこと自体は分かります。
 const unhandledLimit = 100
 
+// 一覧で短く出す長さ（文字数・2026-09-30）。相手は連絡帳の名前ならたいてい収まり、アドレスは頭だけで誰か
+// 分かる程度。題は1行に収まる程度——どちらも元の値はマウスを載せると出る（title）。
+const (
+	unhandledFromMax  = 8
+	unhandledTitleMax = 36
+)
+
 // unhandledRow は一覧の1行です。
 type unhandledRow struct {
 	PageID      string
@@ -365,6 +372,7 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 			`印を付けるまで残ります。</p>`)
 	}
 	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
+	names := map[string]string{} // 同じ相手を何度も引かない（この描画の中だけの控え）
 	for _, r := range rows {
 		id := stdhtml.EscapeString(r.PageID)
 		sb.WriteString(`<tr data-page-id="` + id + `">`)
@@ -375,19 +383,24 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 			channelWithDirection(r.Channel, r.Direction) + `</td>`)
 		sb.WriteString(`<td class="unhandled-when">` +
 			stdhtml.EscapeString(shortTime(r.Received)) + `</td>`)
-		sb.WriteString(`<td class="unhandled-from">` + stdhtml.EscapeString(r.From) + `</td>`)
+		// 相手と題は**短く**出し、元の値はマウスを載せたときの title に（2026-09-30 利用者:「アドレスから連絡帳の
+		// 名前が引ける場合、名前だけの表示にして、引けないアドレスも短縮表示にして、表の幅を節約してください。
+		// タイトルもあまりにも長いものは短縮表示してください」）。相手は連絡帳の名前 → メールの名前 → アドレス。
+		sb.WriteString(`<td class="unhandled-from" title="` + stdhtml.EscapeString(r.From) + `">` +
+			stdhtml.EscapeString(shortPartner(user, r.From, unhandledFromMax, names)) + `</td>`)
 		// 下書き（2026-09-30）——まだ送っていないことを題の前に言う（開くと直して送れる）。
 		draft := ""
 		if r.Draft != "" {
 			draft = `<span class="unhandled-draft">📝 下書き</span> `
 		}
-		sb.WriteString(`<td class="unhandled-subject">` + draft + `<a href="/` + id + `">` +
-			stdhtml.EscapeString(r.Title) + `</a></td>`)
+		// 添付の数は題の後ろに小さく（2026-09-30——専用の列をやめて、題の幅に回す）。
 		clip := ""
 		if r.Attachments != "" {
-			clip = "📎" + stdhtml.EscapeString(r.Attachments)
+			clip = ` <span class="unhandled-clip">📎` + stdhtml.EscapeString(r.Attachments) + `</span>`
 		}
-		sb.WriteString(`<td class="unhandled-clip">` + clip + `</td>`)
+		sb.WriteString(`<td class="unhandled-subject">` + draft + `<a href="/` + id + `" title="` +
+			stdhtml.EscapeString(r.Title) + `">` + stdhtml.EscapeString(ellipsize(r.Title, unhandledTitleMax)) + `</a>` +
+			clip + `</td>`)
 		sb.WriteString(`<td class="vocab-chrome unhandled-act">` +
 			`<button type="button" class="chip-btn unhandled-mark" data-page-id="` + id +
 			`" data-value="` + HandledDone +

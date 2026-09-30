@@ -407,3 +407,74 @@ func TestUnhandledColumnsMatchTheirTags(t *testing.T) {
 		t.Errorf("受信日時の欄が違います: %q", got.Received)
 	}
 }
+
+// TestUnhandledShortensPartnerAndTitle は、一覧の相手と題が**短く**出ることを固定します（2026-09-30 利用者:
+// 「アドレスから連絡帳の名前が引ける場合、名前だけの表示にして、引けないアドレスも短縮表示にして、表の幅を
+// 節約してください。タイトルもあまりにも長いものは短縮表示してください」）。
+//
+//   - 連絡帳で引ければその名前だけ（メールに書かれた名前・アドレスは出さない）
+//   - 引けなければメールに書かれた名前、無ければアドレス——長ければ「…」で切る
+//   - 題も長ければ切る。どれも元の値は title（マウスを載せると出る）に残る
+func TestUnhandledShortensPartnerAndTitle(t *testing.T) {
+	setupIntakeTest(t)
+	orig := contactNamer
+	contactNamer = func(_ *auth.User, addr string) (string, bool) {
+		if addr == "yamada@example.co.jp" {
+			return "山田 太郎", true
+		}
+		return "", false
+	}
+	t.Cleanup(func() { contactNamer = orig })
+
+	put := func(id, subject, from string) {
+		t.Helper()
+		if err := page.WriteSidecar(id, page.PageMeta{Owner: "alice", Mode: "330", ParentID: "000100"}); err != nil {
+			t.Fatal(err)
+		}
+		body := "<h1>" + subject + "</h1>" + `<dl data-type="tags">` +
+			"<dt>" + DirectionTag + "</dt><dd>" + DirectionIn + "</dd>" +
+			"<dt>" + ChannelTag + "</dt><dd>" + ChannelMail + "</dd>" +
+			"<dt>" + ReceivedAtTag + "</dt><dd>2026-09-30T10:00:00+09:00</dd>" +
+			"<dt>" + FromTag + "</dt><dd>" + from + "</dd></dl>"
+		if err := cms.SyncIndex(id, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	long := strings.Repeat("とても長い件名", 10) // 70 文字
+	put("000271", "見積の件", "株式会社みらい産業 営業部 山田 &lt;yamada@example.co.jp&gt;")
+	put("000272", long, "&lt;averyveryverylongaddress@example.co.jp&gt;")
+	put("000273", "ご案内", "ひかりレーザー &lt;info@example.jp&gt;")
+
+	out := unhandledViewHTML(&auth.User{Username: "alice", IsAdmin: true}, 100)
+	cell := func(pageID, class string) string {
+		i := strings.Index(out, `<tr data-page-id="`+pageID+`">`)
+		if i < 0 {
+			t.Fatalf("行 %s がありません:\n%s", pageID, out)
+		}
+		row := out[i:]
+		row = row[:strings.Index(row, "</tr>")]
+		j := strings.Index(row, `class="`+class+`"`)
+		if j < 0 {
+			t.Fatalf("行 %s に %s がありません", pageID, class)
+		}
+		c := row[j:]
+		return c[:strings.Index(c, "</td>")]
+	}
+	if c := cell("000271", "unhandled-from"); !strings.HasSuffix(c, ">山田 太郎") ||
+		!strings.Contains(c, `title="株式会社みらい産業 営業部 山田 &lt;yamada@example.co.jp&gt;"`) {
+		t.Errorf("連絡帳の名前だけ（元の値は title）になっていません: %s", c)
+	}
+	if c := cell("000272", "unhandled-from"); !strings.HasSuffix(c, ">averyve…") {
+		t.Errorf("引けないアドレスが短くなっていません: %s", c)
+	}
+	if c := cell("000273", "unhandled-from"); !strings.HasSuffix(c, ">ひかりレーザー") {
+		t.Errorf("引けないときはメールに書かれた名前のはず: %s", c)
+	}
+	sub := cell("000272", "unhandled-subject")
+	if !strings.Contains(sub, `title="`+long+`"`) || !strings.Contains(sub, ">"+string([]rune(long)[:unhandledTitleMax-1])+"…</a>") {
+		t.Errorf("長い題が切られていない・元の題が title に無い: %s", sub)
+	}
+	if c := cell("000271", "unhandled-subject"); !strings.Contains(c, ">見積の件</a>") {
+		t.Errorf("短い題まで切っています: %s", c)
+	}
+}

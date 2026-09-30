@@ -619,7 +619,7 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 			// ため**のもので、運ぶブロックの中身（溶接図自身の名前と番号）はそのまま。
 			if err := mergeAsDrawing(user, pageID, existing); err != nil {
 				return filingResult{PageID: pageID, Outcome: "skipped",
-					Message: "二つ目の図面として追加できません: " + err.Error()}
+					Message: "図面追加できません: " + err.Error()}
 			}
 			auth.Audit(user.Username, "file-drawing.add", pageID+" -> "+existing)
 			return filingResult{PageID: pageID, Outcome: "added", TargetID: existing,
@@ -650,8 +650,8 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 			// 押した人がその既定に従います——溶接図が黙って旧版になるのが、
 			// それまでの振る舞いでした。
 			return filingResult{PageID: pageID, Outcome: "needs_choice", TargetID: existing,
-				Message: "「" + name + "」は既にあります。" +
-					"改定図面か、同じ品物の二つ目の図面（部品図と溶接図など）かを選んでください"}
+				// 言葉は画面の選択肢と同じ（2026-09-30 利用者の案「図面改定」「図面追加」）。
+				Message: "「" + name + "」は既にあります。「図面改定」か「図面追加」かを選んでください"}
 		}
 	}
 
