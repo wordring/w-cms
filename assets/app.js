@@ -1414,7 +1414,7 @@
         refreshAnalyzedMarks();      // 解析済みの印（取得できたら描き直す）
         refreshDrawingPreviews();    // 加工製品ページの図面をそのまま出す（閲覧モード限定）
         restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
-        decorateLocalEdit();         // ファイル表示の「📝 ローカルで編集」（2026-09-29）
+        decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
         refreshFilingButton();      // 加工製品ページの整理（閲覧モード限定）
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
@@ -5402,7 +5402,7 @@
     const DRAWING_H_MAX = 4000;  // 壊れた値でページを埋めない柵
     const DRAWING_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
 
-    // ── 「📝 ローカルで編集」（2026-09-29） ───────────────────────────────
+    // ── 「📝 ローカル編集」（2026-09-29） ───────────────────────────────
     //
     // 利用者:「実運用するには、ローカルアプリで添付ファイルを編集して保存できる必要があります」。ファイル表示の頭の
     // 行に置く。押すと w-cms がそのファイル1つに限る鍵を出し（POST /api/local-edit/start）、`w-cms-edit:` のリンクで
@@ -5418,8 +5418,9 @@
             btn.type = 'button';
             btn.className = 'vocab-chrome local-edit-btn';
             btn.contentEditable = 'false';
-            btn.textContent = '📝 ローカルで編集';
-            btn.title = 'この PC のアプリで開いて編集し、保存（Ctrl+S）するたびに w-cms へ入れます（道具 w-cms-edit が要ります）';
+            // 言葉は短く（2026-09-30 利用者:「説明が冗長なので、『ローカル編集』というような短い言葉で良いのでは？」）。
+            btn.textContent = '📝 ローカル編集';
+            btn.title = 'PC のアプリで編集';
             btn.addEventListener('mousedown', e => e.preventDefault());
             btn.addEventListener('click', e => {
                 // 頭の行（summary）の中なので、押しても畳まれないように。
@@ -5441,24 +5442,23 @@
             });
             const d = await res.json().catch(() => ({}));
             if (!res.ok || !d.success) {
-                notify(d.message || ('ローカルで編集できません（' + res.status + '）'), { type: 'warn' });
+                notify(d.message || ('ローカル編集できません（' + res.status + '）'), { type: 'warn' });
                 return;
             }
-            if (!d.writable && !confirm('「' + d.name + '」はここでは書き換えられません（通信箱の下・権限が無い など）。\n'
-                + '読み取り専用で開きます。よろしいですか？')) return;
+            if (!d.writable && !confirm('「' + d.name + '」は書き換えられません。読み取り専用で開きますか？')) return;
             location.href = d.link; // 各 PC の w-cms-edit が受ける（入っていなければ何も起きない）
+            // ⚠ 開かないとき（w-cms-edit が入っていない）の一言だけは残す——黙ると「押しても何も起きない」になる。
             notify(d.writable
-                ? '📝 「' + d.name + '」をアプリで開きます。保存（Ctrl+S）するたびに、数秒で w-cms に入ります（前の中身は版に残ります）。'
-                    + '開かないときは、この PC に w-cms-edit が入っていません。'
-                : '「' + d.name + '」を読み取り専用で開きます。', { duration: 12000 });
+                ? '📝 「' + d.name + '」を開きます。保存すると w-cms に入ります（開かないときは w-cms-edit が要ります）'
+                : '「' + d.name + '」を読み取り専用で開きます', { duration: 8000 });
         } catch (e) {
-            notify('ローカルで編集できません: ' + e.message, { type: 'warn' });
+            notify('ローカル編集できません: ' + e.message, { type: 'warn' });
         } finally {
             btn.disabled = false;
         }
     }
 
-    // ── 写真も「📝 ローカルで編集」（2026-09-30） ────────────────────────────
+    // ── 写真も「📝 ローカル編集」（2026-09-30） ────────────────────────────
     //
     // 利用者:「写真などもワンクリックでローカルアプリで編集できてよいと思います」「イメージと添付ファイルは
     // 扱いが違って当然ですね」——写真は本文の中の絵（`<img>`）のままにして、**マウスを載せたときだけ**隅に
@@ -5476,8 +5476,8 @@
         btn.type = 'button';
         btn.id = 'w-img-edit';
         btn.className = 'img-edit-btn';
-        btn.textContent = '📝';
-        btn.title = 'この写真を PC のアプリで開いて編集し、保存（Ctrl+S）するたびに w-cms へ入れます（道具 w-cms-edit が要ります）';
+        btn.textContent = '📝 ローカル編集';
+        btn.title = 'PC のアプリで編集';
         btn.addEventListener('mousedown', e => e.preventDefault());
         btn.addEventListener('click', e => {
             e.preventDefault();
@@ -6824,8 +6824,8 @@
             // 画像・ファイルを足す（2026-09-30 利用者:「BIUリンクの方に画像マークでもあれば良いのでは？」
             // 「画像を追加するボタンも必要」）——キャレットのすぐ後ろへ（節・折りたたみの中なら中のまま）。
             // 🖼 は画像だけを選ぶ（スマホではカメラも選べる）、📎 は何でも（画像は絵・それ以外はファイル表示）。
-            [['🖼', 'w-ctx-image', 'ここに画像を足す（スマホではその場で撮れます）', true],
-             ['📎', 'w-ctx-file', 'ここにファイルを足す（画像・PDF・DXF など何でも・複数可）', false]]
+            [['🖼', 'w-ctx-image', '画像を追加', true],
+             ['📎', 'w-ctx-file', 'ファイルを追加', false]]
                 .forEach(([label, id, title, imagesOnly]) => {
                     const b = document.createElement('button');
                     b.id = id;

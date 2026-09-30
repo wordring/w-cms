@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// scheme はブラウザから受けるリンクの頭です（w-cms の画面の「📝 ローカルで編集」が
+// scheme はブラウザから受けるリンクの頭です（w-cms の画面の「📝 ローカル編集」が
 // `w-cms-edit:<w-cms のアドレス>#<鍵>` を作る——internal/cms/local_edit.go）。
 const scheme = "w-cms-edit:"
 

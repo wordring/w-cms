@@ -1605,7 +1605,7 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     cursor: pointer;
 }
 #w-editor-content .fv-remove:hover { background: #fdeaea; }
-/* ファイル表示の頭の「📝 ローカルで編集」（2026-09-29・常駐ヘルパー w-cms-edit で開く）。 */
+/* ファイル表示の頭の「📝 ローカル編集」（2026-09-29・常駐ヘルパー w-cms-edit で開く）。 */
 #w-editor-content .local-edit-btn {
     margin-left: 8px;
     padding: 1px 8px;

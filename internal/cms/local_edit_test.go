@@ -11,7 +11,7 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// startLocalEdit は「📝 ローカルで編集」の鍵を出し、鍵と書けるかを返します。
+// startLocalEdit は「📝 ローカル編集」の鍵を出し、鍵と書けるかを返します。
 func startLocalEdit(t *testing.T, user, ref string) (token string, writable bool) {
 	t.Helper()
 	req := httptest.NewRequest("POST", "/api/local-edit/start", strings.NewReader(`{"ref":"`+ref+`"}`))

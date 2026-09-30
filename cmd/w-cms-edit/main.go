@@ -1,7 +1,7 @@
 //go:build windows
 
 // Command w-cms-edit は、w-cms の添付を**ローカルのアプリで編集する**ための、各 PC に置く小さな常駐ヘルパーです
-// （2026-09-29）。w-cms の画面の「📝 ローカルで編集」（`w-cms-edit:` のリンク）を受けて、
+// （2026-09-29）。w-cms の画面の「📝 ローカル編集」（`w-cms-edit:` のリンク）を受けて、
 //
 //  1. そのファイルを手元（%LOCALAPPDATA%\w-cms-edit\…）へ落とし、
 //  2. 既定のアプリで開き、
@@ -267,7 +267,7 @@ func doInstall(addresses string) error {
 		}
 	}
 	showMessage("w-cms-edit を登録しました（" + strings.Join(bases, "・") + "）。\n" +
-		"w-cms のファイル表示の「📝 ローカルで編集」で、アプリで開いて保存（Ctrl+S）すると、数秒で w-cms に入ります。")
+		"w-cms のファイル表示の「📝 ローカル編集」で、アプリで開いて保存（Ctrl+S）すると、数秒で w-cms に入ります。")
 	return nil
 }
 

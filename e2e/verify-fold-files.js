@@ -142,7 +142,7 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
     check('保存: 写真', !!imgSrc && body.includes('src="' + imgSrc + '"'));
     check('保存: 帯の札は本文に残らない', !body.includes('fold-add-file') && !body.includes('＋ ファイル') && !body.includes('w-ctx-'));
 
-    // 閲覧モードでは写真にマウスを載せると 📝（ローカルで編集）が出る
+    // 閲覧モードでは写真にマウスを載せると 📝（ローカル編集）が出る
     await page.goto(BASE + '/' + id);
     await page.waitForSelector('#w-editor-content details img', { timeout: 8000 });
     await page.locator('#w-editor-content details img').first().hover({ force: true });
