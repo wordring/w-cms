@@ -353,15 +353,33 @@ func visibleOnly(viewer *auth.User, ids []int) []int {
 // **どちらも人の操作の直後**です（🤖 解析・📁 整理）。裏で回る仕事は作りません。
 // 歯止め（1件のときだけ・人の値は触らない）は押し出しと同じものを通ります。
 func LinkProductsToOrder(user *auth.User, orderPageID string) int {
+	filled := 0
+	for _, l := range linkProductsToOrder(user, orderPageID) {
+		filled += l.Rows
+	}
+	return filled
+}
+
+// orderLink は受注の行を加工製品ページへ結んだ1件です（品番ごと）。
+type orderLink struct {
+	Order   string `json:"order"`   // 受注ページ
+	Code    string `json:"code"`    // 受注明細の品番
+	Product string `json:"product"` // 結んだ加工製品ページ
+	Title   string `json:"title"`   // その題（人が「本当にこれか」を見るため——【旧】の付いたページなど）
+	Rows    int    `json:"rows"`    // 埋めた行
+}
+
+// linkProductsToOrder は LinkProductsToOrder の本体で、何をどこへ結んだかを返します（書けなかったら空）。
+func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	id, ok := page.NormalizeID(orderPageID)
 	if !ok {
-		return 0
+		return nil
 	}
 	body, err := cms.ReadPageBody(id)
 	if err != nil {
-		return 0
+		return nil
 	}
-	filled := 0
+	var links []orderLink
 	for _, code := range orderItemNosOf(body) {
 		cands := ProductPagesByCode(code)
 		// ⚠ **1件でなければ触りません**（押し出しと同じ線引き）。
@@ -374,17 +392,20 @@ func LinkProductsToOrder(user *auth.User, orderPageID string) int {
 			continue
 		}
 		body = fixed
-		filled += n
-		auth.Audit(user.Username, "order-item.linked", id+" "+code+" -> "+target)
+		links = append(links, orderLink{Order: id, Code: code, Product: target, Title: cms.PageTitleByID(cands[0]), Rows: n})
 	}
-	if filled == 0 {
-		return 0
+	if len(links) == 0 {
+		return nil
 	}
 	// ⚠ **書き込みは1回にまとめます**——行ごとに書くと版が7つ増えます。
 	if err := cms.RewriteBody(id, user.Username, func(string) string { return body }); err != nil {
-		return 0
+		return nil
 	}
-	return filled
+	// 監査は書けてから（書けなかった結びを「結んだ」と残さない）。
+	for _, l := range links {
+		auth.Audit(user.Username, "order-item.linked", id+" "+l.Code+" -> "+l.Product)
+	}
+	return links
 }
 
 // orderItemNosOf は受注明細の `品番` の値を、空いている行だけ集めます。
