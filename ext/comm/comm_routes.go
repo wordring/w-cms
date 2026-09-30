@@ -37,5 +37,7 @@ func (commPlugin) Routes() []cms.Route {
 		{Pattern: "/api/intake/handled", Handler: MarkHandledAPIHandler},
 		// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
 		{Pattern: "/api/intake/memo", Handler: NewMemoAPIHandler},
+		// `.eml` を通信箱の記録にする（道具 tools/mail/push が叩く・2026-09-30——通信箱へ落とす道をやめた代わり）。
+		{Pattern: "/api/intake/eml", Handler: IntakeEMLAPIHandler},
 	}
 }

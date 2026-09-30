@@ -32,10 +32,9 @@ import (
 
 // UploadFileHandler は POST /api/upload-file（汎用の添付）です。
 func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
-	// 入口は3本共通（upload_common.go）。**先に引き受ける口があれば回します**
-	// （upload_intercept.go・2026-09-15）。いまは通信箱への到着を取り込み係へ回す口だけ
-	// （intake.go）——コアは通信箱を名指ししない。引き受けなければ通常の添付になります。
-	up, ok := openUpload(w, r, "file", true, genericAttachmentName)
+	// 入口は3本共通（upload_common.go）。⚠ 2026-09-15〜09-30 は「先に引き受ける口」（通信箱への `.eml` を
+	// 記録にする）へ回していましたが、無くしました——どのページへ上げても添付になります。
+	up, ok := openUpload(w, r, "file", genericAttachmentName)
 	if !ok {
 		return
 	}
@@ -58,8 +57,7 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 // genericAttachmentName は汎用の口の名前の検査です。
 //
 // 専用の口があるものは迂回させない（画像＝マジックナンバー検証・EXIF除去、
-// PDF＝%PDF- 検証）。**通信箱宛てだけは例外**で、取り込みの受け口が
-// 種類ごとの検査を通したうえで引き受ける（1つの口で全部受ける・2026-09-03）。
+// PDF＝%PDF- 検証）。
 func genericAttachmentName(pageID, raw string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(raw))
 	if ext == ".pdf" || allowedImageExts[ext] {

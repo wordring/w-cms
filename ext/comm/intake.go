@@ -39,8 +39,11 @@ import (
 )
 
 func init() {
-	// **通信箱への到着を取り込み係へ回す受け口**（2026-09-15 にアップロード口から裏返した）。
-	cms.RegisterUploadInterceptor(intakeUpload)
+	// ⚠ **通信箱へファイルを落としても、もう記録は生まれません**（2026-09-30 利用者:「通信箱ページのファイルをドロップすると
+	// 子ページが作られる機能はもはや必要ないでしょう　ページを作るボタンが新設されたからです」）——それまでは
+	// アップロードの受け口（コアの `RegisterUploadInterceptor`・09-15）で `.eml` の到着を取り込み係へ回していた。
+	// 記録を作るのは「📥 新しいメールを読み込む」「＋ 記録する」「✉️ 新しいメール」のボタンで、`.eml` を上げる道具
+	// （tools/mail/push）は専用の口 `/api/intake/eml` を叩く。
 
 	// **通信箱は管理画面のボタンで作れます**（2026-09-16）。ユーザー:「拡張プラグインが
 	// 必要とするフォルダなどは、管理画面でボタンを押して作成する仕組みにしては
@@ -49,14 +52,14 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     MailBoxTitle,
 		Extension: "comm",
-		Why:       "ここへ .eml を落とすと通信記録ページが作られ、未処理の一覧もこの上に出ます。メールの取り込みもここへ着地します。",
+		Why:       "メールの取り込み・「＋ 記録する」で通信記録ページがここに作られ、未処理の一覧もこの上に出ます。",
 	})
 
 	// **通信記録もテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     MailInTemplate,
 		Extension: "comm",
-		Why:       "メールを取り込むとき（.eml を落とす・サーバーから取り込む）に写します。見出し「" + MailFilesHeading + "」の節が要ります（受信原本と添付の一覧が入る）。本文のあるメールは見出し「" + MailBodyHeading + "」の節も要ります。",
+		Why:       "メールを取り込むとき（サーバーから取り込む・.eml を道具で上げる）に写します。見出し「" + MailFilesHeading + "」の節が要ります（受信原本と添付の一覧が入る）。本文のあるメールは見出し「" + MailBodyHeading + "」の節も要ります。",
 	})
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     MemoTemplate,
@@ -65,24 +68,38 @@ func init() {
 	})
 }
 
-// intakeUpload は、アップロード先が通信箱なら取り込み係へ回します。
+// IntakeEMLAPIHandler は POST /api/intake/eml です（フォーム欄 `file` に `.eml`・2026-09-30）。
 //
-// **通信箱への到着は取り込み係へ回覧する**（2026-09-01）。通信箱の本文は変更しない
-// （子ページが生まれるだけ）ので編集ロックは要らない。取り込み係が居ない拡張子は
-// false を返し、通常の添付として保存される。
-func intakeUpload(w http.ResponseWriter, r *http.Request, pageID, formField string) bool {
-	inboxID, ok := MailBoxPageID()
-	if !ok || inboxID != pageID {
-		return false
+// `.eml` を通信箱の記録にします——メールの取り込みと同じ芯（`IntakeFile`・重複は Message-ID で弾く）。
+// 使い手は `.eml` を上げる道具（tools/mail/push）と試験。**画面からファイルを落としても、ここへは来ません**
+// （それまでは通信箱への添付のアップロードを引き受けていた——利用者:「通信箱ページのファイルをドロップすると子ページが
+// 作られる機能はもはや必要ないでしょう」）。通信箱の本文は変えない（子ページが生まれるだけ）ので編集ロックは要らず、
+// 通信箱への write 権限を要ります。
+func IntakeEMLAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	return serveIntake(w, r, inboxID, formField)
+	r.Body = http.MaxBytesReader(w, r.Body, cms.MaxUploadBytes())
+	inboxID, ok := MailBoxPageID()
+	if !ok {
+		cms.JSONFail(w, http.StatusConflict, "通信箱がありません（管理画面の「置き場」で作れます）")
+		return
+	}
+	if !page.RequirePageWrite(w, r, inboxID) {
+		return
+	}
+	if _, header, err := r.FormFile("file"); err != nil || !strings.EqualFold(filepath.Ext(header.Filename), ".eml") {
+		cms.JSONFail(w, http.StatusBadRequest, "取り込めるのは .eml だけです（フォーム欄 file）")
+		return
+	}
+	if !serveIntake(w, r, inboxID, "file") {
+		cms.JSONFail(w, http.StatusBadRequest, "取り込めませんでした")
+	}
 }
 
-// serveIntake は通信箱へのアップロードを取り込み係に回します。
-// 担当が居なければ false（通常の添付経路へ戻す）。
-// formField はファイルが入っているフォーム欄の名前です（汎用の口は "file"、
-// PDF専用の口は "pdf_file"）——**通信箱への到着はどちらの口からも同じ取り込み係へ
-// 回す**ため、口ごとの違いはこの引数だけに閉じ込めます。
+// serveIntake はアップロードを取り込み係に回します。担当が居なければ false（応答は書いていない）。
+// formField はファイルが入っているフォーム欄の名前です。
 func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField string) bool {
 	file, header, err := r.FormFile(formField)
 	if err != nil {

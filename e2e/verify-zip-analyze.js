@@ -2,7 +2,7 @@
 //
 // 利用者:「添付ファイルのPDFについて、ZIPの場合まとめて解析するオプションが欲しいです」。
 //
-//   ① ZIP（中にPDF 2つ）の付いたメールを通信箱へ落とす——取り込みが ZIP を展開して中身を1つずつ添付にする
+//   ① ZIP（中にPDF 2つ）の付いたメールを /api/intake/eml で通信箱の記録にする——取り込みが ZIP を展開して中身を1つずつ添付にする
 //   ② ZIP の隣に「🤖 中のPDFをまとめて解析（2件）」が出る
 //   ③ 押すと中のPDFを中のパスの順に1つずつ解析し、最後に1つの知らせにまとめる
 //      （解析の口は差し止める——Gemini は呼ばない・ページも作らない）
@@ -75,7 +75,7 @@ function buildZip(files) {
       process.exit(0);
     }
 
-    // ① ZIP の付いたメールを通信箱へ。
+    // ① ZIP の付いたメールを通信箱の記録に。
     const zip = buildZip([
       { name: 'drawings/B-200.pdf', data: '%PDF-1.4 e2e B' },
       { name: 'drawings/A-100.pdf', data: '%PDF-1.4 e2e A' },
@@ -105,9 +105,9 @@ function buildZip(files) {
     ].join('\r\n');
     const up = await page.evaluate(async (a) => {
       const fd = new FormData();
-      fd.append('page_id', a.box);
+
       fd.append('file', new Blob([a.eml], { type: 'message/rfc822' }), 'e2e-zip.eml');
-      const res = await fetch('/api/upload-file', { method: 'POST', body: fd });
+      const res = await fetch('/api/intake/eml', { method: 'POST', body: fd });
       return res.json().catch(() => ({}));
     }, { box, eml });
     record = up.page_id || '';

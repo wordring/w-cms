@@ -3443,9 +3443,7 @@
 
     // insertFileViewsAfter は画像以外のファイルを順にこのページへ上げ、ref の後ろへファイル表示の印を置きます。
     // 口は種類で振り分けます（PDF は %PDF- 検査つきの専用口・それ以外は汎用口）。最後に置いた要素を返します。
-    //
-    // ⚠ **通信箱のページでは取り込みになります**（.eml・PDF は記録のページとして生まれ、ここには入らない）——
-    //    行き先を知らせ、左レールに出す（本文は取り直さない——書きかけを消さない）。
+    // ⚠ 通信箱のページでも添付になるだけです（2026-09-30 まで .eml は記録のページとして生まれていた）。
     async function insertFileViewsAfter(files, ref) {
         if (!currentPageId) {
             notify('先にページを保存してください。', { type: 'warn', duration: 5000 });
@@ -3460,12 +3458,6 @@
             try {
                 const res = await lockedFetch(isPDF ? '/api/upload-pdf' : '/api/upload-file', { method: 'POST', body: fd });
                 const d = await readResult(res);
-                if (d && d.intake) {
-                    notify('受信箱に取り込みました: ' + (d.title || d.page_id) + '（/' + d.page_id + '）',
-                        { type: 'success', duration: 8000 });
-                    loadChildNav();
-                    continue;
-                }
                 if (!res.ok || !d || !d.success || !d.id) {
                     notify(f.name + ' を上げられませんでした: ' + failMessage(res, d),
                         { type: 'alert', duration: 0, id: 'file-upload' });

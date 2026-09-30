@@ -21,6 +21,7 @@ func TestCommStateChangingHandlersRejectGET(t *testing.T) {
 	}{
 		{"対応：不要を付ける", "/api/intake/handled", MarkHandledAPIHandler},
 		{"手で記録を作る", "/api/intake/memo", NewMemoAPIHandler},
+		{".eml を記録にする", "/api/intake/eml", IntakeEMLAPIHandler},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

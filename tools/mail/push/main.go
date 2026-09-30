@@ -123,8 +123,8 @@ func run(root string, boxes []string, since string, max int, handledBefore strin
 	if err != nil {
 		return err
 	}
-	inbox, err := c.inboxID()
-	if err != nil {
+	// 通信箱が無ければ先に止める（口も断るが、1通目で分かるより先に言う）。
+	if _, err := c.inboxID(); err != nil {
 		return err
 	}
 	counts := map[string]int{}
@@ -140,7 +140,7 @@ func run(root string, boxes []string, since string, max int, handledBefore strin
 				filepath.Base(it.path), float64(st.Size())/1e6, limit>>20)
 			continue
 		}
-		res, err := c.upload(inbox, it.path)
+		res, err := c.upload(it.path)
 		switch {
 		case err != nil:
 			counts["失敗"]++
@@ -299,22 +299,22 @@ func (c *client) markNotNeeded(ids []string) (int, error) {
 	return done, nil
 }
 
-// upload は1通を通信箱へ上げます（取り込み係が引き受ける——編集ロックは要らない）。
-func (c *client) upload(inbox, path string) (uploadResult, error) {
+// upload は1通を通信箱の記録にします（`/api/intake/eml`——編集ロックは要らない。2026-09-30 まで通信箱への
+// 添付のアップロード `/api/upload-file` を取り込み係が引き受けていたが、画面から落とす道をやめたので専用の口へ）。
+func (c *client) upload(path string) (uploadResult, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return uploadResult{}, err
 	}
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
-	w.WriteField("page_id", inbox)
 	fw, err := w.CreateFormFile("file", "mail.eml")
 	if err != nil {
 		return uploadResult{}, err
 	}
 	fw.Write(content)
 	w.Close()
-	res, err := c.do("POST", "/api/upload-file", &buf, w.FormDataContentType())
+	res, err := c.do("POST", "/api/intake/eml", &buf, w.FormDataContentType())
 	if err != nil {
 		return uploadResult{}, err
 	}

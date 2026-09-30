@@ -32,13 +32,12 @@ type uploadIntake struct {
 // openUpload は添付の口の共通の入口です。断ったときは応答を書き終えていて ok=false。
 //
 //   - 名前の検査（safeName）は読み込みより**先**——種類が許可されないなら読み込むまでもない。
-//   - intercept は「先に引き受ける口があれば回す」か（upload_intercept.go）。画像の口は
-//     回しません——通信箱の取り込み係が引き受けるのは汎用と PDF の口だけです。
-//     受け口は編集ロックを**確かめる前**に呼びます（通信箱のように本文を変えずに
-//     子ページを生むだけの受け口があるため）。
+//   - ⚠ **先に引き受ける口（受け口）は 2026-09-30 に無くしました**——使い手は通信箱の取り込み係だけで、
+//     通信箱へ落とした `.eml` を記録にしていました（利用者:「通信箱ページのファイルをドロップすると子ページが
+//     作られる機能はもはや必要ないでしょう」）。どのページへ上げても、添付になるだけです。
 //   - 添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）ので、
 //     本文編集と同じ編集ロックで直列化します（editlock/handler.go の宣言どおり）。
-func openUpload(w http.ResponseWriter, r *http.Request, formField string, intercept bool,
+func openUpload(w http.ResponseWriter, r *http.Request, formField string,
 	safeName func(pageID, raw string) (string, error)) (up uploadIntake, ok bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -56,9 +55,6 @@ func openUpload(w http.ResponseWriter, r *http.Request, formField string, interc
 	// 添付の追加はページ内容の変更なので write 権限を要求する。
 	if !page.RequirePageWrite(w, r, pageID) {
 		return up, false
-	}
-	if intercept && interceptUpload(w, r, pageID, formField) {
-		return up, false // 引き受けた側が応答を書き終えている
 	}
 	if !editlock.RequireEditLock(w, r, pageID) {
 		return up, false

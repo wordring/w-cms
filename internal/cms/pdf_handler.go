@@ -68,13 +68,11 @@ func SafeAttachmentName(pageID, raw string, allowed map[string]bool, extError st
 
 // UploadPDFHandler はドラッグ＆ドロップされたPDFを該当ページIDのフォルダに保存します
 func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
-	// 入口は3本共通（upload_common.go）。**先に引き受ける口があれば回します**
-	// （汎用の口と同じ扱い・upload_intercept.go）——通信箱の取り込み係に担当が居るのは
-	// `.eml` だけなので、**PDF はここを素通りして普通の添付**になります（2026-09-05。
-	// ユーザー:「通信箱のPDF、DXF取り込みはやめましょう。メモに添付するようにしましょう」）。
+	// 入口は3本共通（upload_common.go）。PDF はどのページへ上げても普通の添付です（通信箱の PDF 取り込みは
+	// 2026-09-05 に、`.eml` の取り込みも 09-30 にやめた）。
 	// 解析（parse-pdf）は永続状態を変えない（結果はDOMへ足すだけで、保存は
 	// /api/save がロック検証する）ので、そちらは編集ロックを通しません。
-	up, ok := openUpload(w, r, "pdf_file", true, attachmentFileName)
+	up, ok := openUpload(w, r, "pdf_file", attachmentFileName)
 	if !ok {
 		return
 	}

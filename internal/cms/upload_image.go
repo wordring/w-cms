@@ -32,8 +32,8 @@ import (
 // UploadImageHandler はドロップ／ファイル選択／カメラ撮影で届いた画像を、
 // 該当ページのフォルダへ保存します（POST /api/upload-image）。
 func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
-	// 入口は3本共通（upload_common.go）。画像は受け口（取り込み）へ回しません。
-	up, ok := openUpload(w, r, "image_file", false, imageAttachmentName)
+	// 入口は3本共通（upload_common.go）。
+	up, ok := openUpload(w, r, "image_file", imageAttachmentName)
 	if !ok {
 		return
 	}

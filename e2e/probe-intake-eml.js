@@ -1,13 +1,14 @@
-// 通信箱へ .eml を落とすと取り込み係が記録ページを作る（受け口のフック・2026-09-15）
+// .eml を通信箱の記録にする口（/api/intake/eml・2026-09-30）と、通信箱へ落としても記録ができないこと
 //
-// 2026-09-15 に、汎用のアップロード口が `MailBoxPageID()` を直接呼んでいたのを
-// **受け口のフック**（cms.RegisterUploadInterceptor）へ裏返しました。通信の語彙を
-// ext/comm へ出すための下ごしらえで、**経路の形が変わったので実際に通して確かめます**:
+// 2026-09-15〜09-30 は、通信箱へ .eml を落とすと取り込み係が記録ページを作っていました（アップロードの受け口）。
+// 利用者:「通信箱ページのファイルをドロップすると子ページが作られる機能はもはや必要ないでしょう　ページを作るボタンが
+// 新設されたからです」——受け口を無くし、.eml を上げる道具（tools/mail/push）は専用の口を叩きます:
 //
-//   ① 通信箱へ .eml を落とす → `intake:true` で記録ページができる
+//   ① /api/intake/eml へ .eml → `intake:true` で記録ページができる
 //   ② 同じ .eml をもう一度 → `duplicate:true`（2枚目は作らない）
-//   ③ 通信箱でない普通のページへ同じ .eml → 受け口は引き受けず、ただの添付になる
-//      （`.eml` が attachment_extensions に在るので 200・`intake` なし）
+//
+// 「通信箱へ落としても記録にならない（ただの添付）」は Go の試験（ext/comm の TestDropOnMailboxIsJustAttachment）が見ます
+// ——ここで本物の通信箱へ上げると、本物のページに添付が残る（2026-09-30 に一度やって、手で消した）。
 //
 //   WCMS_MAILBOX … 通信箱のページID（省略すると走るときに探します）
 const { chromium } = require('playwright');
@@ -46,61 +47,33 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     '',
   ].join('\r\n');
 
-  const upload = (pageID, text) => page.evaluate(async (a) => {
+  const post = (url, pageID, text) => page.evaluate(async (a) => {
     const fd = new FormData();
-    fd.append('page_id', a.pageID);
+    if (a.pageID) fd.append('page_id', a.pageID);
     fd.append('file', new Blob([a.text], { type: 'message/rfc822' }), 'probe.eml');
-    const res = await fetch('/api/upload-file', { method: 'POST', body: fd });
+    const res = await fetch(a.url, { method: 'POST', body: fd });
     const body = await res.text();
     let d = {}; try { d = JSON.parse(body); } catch (e) {}
     return { status: res.status, d, body: body.slice(0, 160) };
-  }, { pageID, text });
+  }, { url, pageID, text });
+  const upload = (text) => post('/api/intake/eml', '', text);
 
   const created = [];
-  let host = '';
+
   try {
-    // ① 通信箱へ
-    const r1 = await upload(MAILBOX, eml);
+    // ① 口へ
+    const r1 = await upload(eml);
     ok(r1.status === 200 && r1.d.intake === true && !!r1.d.page_id,
-       '通信箱へ落とすと取り込み係が記録ページを作る', r1.status + ' ' + r1.body);
+       '/api/intake/eml で記録ページができる', r1.status + ' ' + r1.body);
     if (r1.d.page_id) created.push(r1.d.page_id);
 
     // ② 同じものをもう一度
-    const r2 = await upload(MAILBOX, eml);
+    const r2 = await upload(eml);
     ok(r2.status === 200 && r2.d.duplicate === true, '同じメールは2枚目を作らない（重複検知）', r2.body);
     ok(!r2.d.page_id || r2.d.page_id === r1.d.page_id, '重複は既存の記録を指す', String(r2.d.page_id));
 
-    // ③ 普通のページへ——受け口は引き受けない
-    const made = await page.evaluate(async () => {
-      const res = await fetch('/api/new-page', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'parent=000000',
-      });
-      return res.url;
-    });
-    host = (made.match(/\/(\d{6})/) || [])[1] || '';
-    ok(!!host, '普通のページを作れた', host);
-    if (host) {
-      // 普通の添付は編集ロックが要る。
-      await page.evaluate(async (id) => { await fetch('/api/lock?id=' + id, { method: 'POST' }); }, host);
-      const tok = await page.evaluate(async (id) => {
-        await fetch('/api/lock/force?id=' + id, { method: 'POST' });
-        const r = await fetch('/api/lock?id=' + id, { method: 'POST' });
-        return (await r.json().catch(() => ({}))).token || '';
-      }, host);
-      const r3 = await page.evaluate(async (a) => {
-        const fd = new FormData();
-        fd.append('page_id', a.id);
-        fd.append('file', new Blob([a.text], { type: 'message/rfc822' }), 'probe.eml');
-        const res = await fetch('/api/upload-file', { method: 'POST', body: fd, headers: { 'X-Lock-Token': a.tok } });
-        const body = await res.text();
-        let d = {}; try { d = JSON.parse(body); } catch (e) {}
-        return { status: res.status, d, body: body.slice(0, 160) };
-      }, { id: host, text: eml, tok });
-      ok(r3.status === 200 && r3.d.success === true && !r3.d.intake,
-         '通信箱でないページでは受け口が引き受けない（ただの添付になる）', r3.status + ' ' + r3.body);
-    }
   } finally {
-    for (const id of created.concat(host ? [host] : [])) {
+    for (const id of created) {
       const del = await page.evaluate(async (i) => {
         await fetch('/api/lock/force?id=' + i, { method: 'POST' });
         return (await fetch('/api/delete-page?id=' + encodeURIComponent(i), { method: 'POST' })).status;
