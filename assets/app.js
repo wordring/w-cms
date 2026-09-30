@@ -5497,7 +5497,8 @@
                 return { kind: 'drawing', made: made, matchedDxf: d.matched_dxf || 0 };
             }
             if (!d.is_client_order) return { kind: 'none', made: [] };
-            return { kind: 'order', made: [{ page_id: d.page_id, title: d.title }] };
+            // 1つのPDFに発注書が何枚も入っていれば1枚につき1ページ（2026-09-30・`pages`）。
+            return { kind: 'order', made: (d.pages || []).length ? d.pages : [{ page_id: d.page_id, title: d.title }] };
         } catch (e) {
             return { error: String(e) };
         }
@@ -5597,9 +5598,10 @@
             } else if (d.kind === 'none') {
                 notify('発注書でも図面でもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
             } else {
-                const o = d.made[0] || {};
-                notify('受注ページを作りました: ' + (o.title || o.page_id) +
-                    '（/' + o.page_id + '）', { type: 'success', duration: 0, id: 'analyze-pdf' });
+                const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
+                notify((d.made.length > 1
+                    ? '受注ページを ' + d.made.length + '枚 作りました（このPDFに発注書が' + d.made.length + '枚入っていました）:\n'
+                    : '受注ページを作りました: ') + list, { type: 'success', duration: 0, id: 'analyze-pdf' });
                 born = true;
             }
             btn.disabled = false;

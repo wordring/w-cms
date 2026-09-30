@@ -107,6 +107,34 @@ type orderJudgment struct {
 	// あるからです**」）。最初から1ページにまとめると、別々の品物だったときに
 	// **人が切り離せません**——いまは分ける操作がないので、まとめるのは人の判断で。
 	Drawings []drawingJudgment `json:"drawings"`
+	// Orders は**1つのPDFに発注書が何枚も入っていたとき**の発注書ごとの一覧です（2026-09-30 利用者:「一枚のPDFに複数の
+	// 発注書が入っています。Geminiは複数のPDFを一枚のPDFのように返答したようです。プロンプトで複数枚の発注書が入っている
+	// ことを考慮して、返答も発注書ごとに配列のように渡していただいてはどうでしょう」）。
+	//
+	// ⚠ **それまでは1枚ぶんの項目しか無く**、2枚の発注書の明細が1つの受注ページに混ざり、検算も合わなかった（実データの
+	// 2024-11 の注文書）。**1枚につき1ページ**作ります——発注書番号も発注日も小計も、紙ごとに違うからです。
+	// 各要素は上の発注書の項目（order_no・customer・…・items）を持ちます。
+	Orders []orderJudgment `json:"orders"`
+}
+
+// orderList は判定結果を**発注書1枚ずつ**に並べ直します（`drawingList` と同じ形）。
+//
+// ⚠ **古い形（上の単数の項目）も読めます**——`orders` が無い応答や、試験が単数で組んだ判定は1枚として扱います。
+// 客先が紙ごとに空なら、上の客先で埋めます（1通の発行元は同じ）。
+func (j *orderJudgment) orderList() []*orderJudgment {
+	if len(j.Orders) == 0 {
+		return []*orderJudgment{j}
+	}
+	out := make([]*orderJudgment, 0, len(j.Orders))
+	for i := range j.Orders {
+		o := &j.Orders[i]
+		o.IsClientOrder, o.DocType = true, "order"
+		if strings.TrimSpace(o.Customer) == "" {
+			o.Customer = j.Customer
+		}
+		out = append(out, o)
+	}
+	return out
 }
 
 // drawingJudgment は図面1枚ぶんです（`orderJudgment` の図面の枝と同じ項目）。
@@ -258,6 +286,9 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 	for i := range j.Drawings {
 		j.Drawings[i].Customer = contacts.OrgNameForPage(user, j.Drawings[i].Customer)
 	}
+	for i := range j.Orders {
+		j.Orders[i].Customer = contacts.OrgNameForPage(user, j.Orders[i].Customer)
+	}
 
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
 	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
@@ -322,30 +353,47 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		return
 	}
 
-	body, err := buildOrderPageHTML(orderTmpl, pageID, attachID, j)
-	if err != nil {
-		cms.JSONFail(w, http.StatusConflict, "受注ページを作れません: "+err.Error())
-		return
+	// ⚠ **発注書1枚につき1ページ**（2026-09-30・`orderList`）。図面の枝と同じく、**本文を全部組んでから作り始めます**
+	// ——テンプレートに足りない印があれば1枚も作らずに断る（途中まで作って止まると、人が片付けることになる）。
+	sheets := j.orderList()
+	bodies := make([]string, 0, len(sheets))
+	for _, o := range sheets {
+		body, err := buildOrderPageHTML(orderTmpl, pageID, attachID, o)
+		if err != nil {
+			cms.JSONFail(w, http.StatusConflict, "受注ページを作れません: "+err.Error())
+			return
+		}
+		bodies = append(bodies, body)
 	}
-	newID, err := cms.CreateChildPage(pageID, user.Username, body)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "受注ページを作れません: "+err.Error())
-		return
+	made := []map[string]any{}
+	linked := 0
+	for _, body := range bodies {
+		newID, err := cms.CreateChildPage(pageID, user.Username, body)
+		if err != nil {
+			// ⚠ できたぶんは残す（図面の枝と同じ——捨てると押し直しで二重にできる）。
+			cms.JSONFail(w, http.StatusInternalServerError,
+				"受注ページを作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
+			return
+		}
+		auth.Audit(user.Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
+		// ⚠ **作った直後に、いま在る加工製品ページと結びます**（2026-09-21・[link_item.go]）。
+		// **図面が先に届いていた場合、ここで結ばないと一度も埋まりません**——図面の整理は
+		// もう終わっているからです。そして**返り注文は必ずこの順**です。
+		//
+		// ⚠ **解析の失敗にはしません**——結べなくても受注ページは正しく作れています。
+		// 埋まった行数は画面へ返し、人が「何が起きたか」を見られるようにします。
+		linked += LinkProductsToOrder(user, newID)
+		made = append(made, map[string]any{"page_id": newID, "title": pageTitleOf(newID)})
 	}
-	auth.Audit(user.Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
-
-	// ⚠ **作った直後に、いま在る加工製品ページと結びます**（2026-09-21・[link_item.go]）。
-	// **図面が先に届いていた場合、ここで結ばないと一度も埋まりません**——図面の整理は
-	// もう終わっているからです。そして**返り注文は必ずこの順**です。
-	//
-	// ⚠ **解析の失敗にはしません**——結べなくても受注ページは正しく作れています。
-	// 埋まった行数は画面へ返し、人が「何が起きたか」を見られるようにします。
-	linked := LinkProductsToOrder(user, newID)
-
-	json.NewEncoder(w).Encode(map[string]any{
+	// **1枚のときは今までどおりの形**（`page_id`・`title`）——画面がそれを読んでいる。2枚以上は `pages` も。
+	out := map[string]any{
 		"success": true, "is_client_order": true,
-		"page_id": newID, "title": pageTitleOf(newID), "linked_items": linked,
-	})
+		"page_id": made[0]["page_id"], "title": made[0]["title"], "linked_items": linked,
+	}
+	if len(made) > 1 {
+		out["pages"] = made
+	}
+	json.NewEncoder(w).Encode(out)
 }
 
 // loadPDFForAnalysis は解析対象のPDFの中身を読みます。
@@ -378,17 +426,23 @@ const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応
 {
   "doc_type": "order" または "drawing" または "other",
   "is_client_order": doc_type が "order" のとき true、それ以外は false,
-  "order_no": "発注書番号（発注書のとき。記載が無ければ空文字）",
-  "customer": "発行元（顧客）の会社名（記載が無ければ空文字）",
-  "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
-  "due_date": "納期（明細の行ではなく、書面の上のほうにある納期）。日付なら YYYY-MM-DD 形式、日付でない書き方（「最短」「最短納期」「至急」「都度」など）は**書かれているまま**返してください。記載が無ければ空文字",
-  "source_table": {"headers": ["表の見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]},
-  "subtotal": "小計（書かれているまま。記載が無ければ空文字）",
-  "tax": "消費税額（書かれているまま。記載が無ければ空文字）",
-  "total": "合計金額（書かれているまま。記載が無ければ空文字）",
-  "items": [{"item_no": "品番（下の規則で選ぶ）", "item_no_source": "item_no を採った列の見出し（先方に書かれている文字のまま。見出しが無い列から採ったときは空文字）", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}],
+  "orders": [{
+    "order_no": "発注書番号（記載が無ければ空文字）",
+    "customer": "発行元（顧客）の会社名（記載が無ければ空文字）",
+    "order_date": "発注日を YYYY-MM-DD 形式で（記載が無ければ空文字）",
+    "due_date": "納期（明細の行ではなく、書面の上のほうにある納期）。日付なら YYYY-MM-DD 形式、日付でない書き方（「最短」「最短納期」「至急」「都度」など）は**書かれているまま**返してください。記載が無ければ空文字",
+    "source_table": {"headers": ["表の見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]},
+    "subtotal": "小計（書かれているまま。記載が無ければ空文字）",
+    "tax": "消費税額（書かれているまま。記載が無ければ空文字）",
+    "total": "合計金額（書かれているまま。記載が無ければ空文字）",
+    "items": [{"item_no": "品番（下の規則で選ぶ）", "item_no_source": "item_no を採った列の見出し（先方に書かれている文字のまま。見出しが無い列から採ったときは空文字）", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}]
+  }],
   "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}]
 }
+⚠ 1つのPDFに**複数の発注書**が入っていることがあります（ページごとに別の発注書——発注書番号・発注日・小計が
+紙ごとに違う）。その場合は orders に**発注書の枚数だけ**要素を入れ、明細・小計・合計は**その発注書に書かれている
+ものだけ**を入れてください（別の発注書の行を混ぜない）。1枚の発注書が複数ページに続いているときは1つの要素です
+（発注書番号が同じ・小計が最後のページにある）。発注書が1枚なら要素は1つ、発注書でなければ空配列にします。
 ⚠ subtotal・tax・total は、**書面に書かれている数字をそのまま**返してください。
 **足し算・掛け算をして求めないでください**——書かれていなければ空文字にします。
 （こちらで検算に使うので、計算して埋められると食い違いが見えなくなります。）
@@ -454,6 +508,11 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	j.SourceTable = parseSourceTable(j.SourceTableRaw)
 	// ⚠ 品番に名前の列を選んでいたら、記号の列へ替えます（item_no_column.go・2026-09-29）。
 	fixItemNoColumn(&j)
+	// 発注書ごとの要素も同じように（2026-09-30・1つのPDFに発注書が何枚も入っているとき）。
+	for i := range j.Orders {
+		j.Orders[i].SourceTable = parseSourceTable(j.Orders[i].SourceTableRaw)
+		fixItemNoColumn(&j.Orders[i])
+	}
 	return &j, nil
 }
 
