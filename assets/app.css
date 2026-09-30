@@ -1916,7 +1916,18 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 /* ⚠ **`hidden` を打ち消さないこと**（2026-09-30 に見つけた）——上の `display: flex` が勝って、既にページが
    無いのに選択肢が出ていた（「既にあるときだけ出す」が効いていなかった）。 */
 .filing-choice[hidden],
-.filing-confirm[hidden] { display: none; }
+.filing-confirm[hidden],
+.filing-merge-opt[hidden],
+.filing-dups[hidden] { display: none; }
+
+/* 同じ図面が既にあるときの知らせ（2026-09-30）——「⚠ 同じ図面が既にあります: 装置／題（同じ図面番号・同じファイルです）」。 */
+.filing-dups { flex-basis: 100%; }
+.filing-dup {
+    margin: 0.15em 0;
+    color: var(--w-danger, #c0392b);
+}
+.filing-dup a { color: inherit; font-weight: 600; }
+.filing-compare-out { color: var(--text, #1e293b); }
 
 .filing-choice-note {
     flex-basis: 100%;

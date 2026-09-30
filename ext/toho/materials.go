@@ -123,6 +123,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 整理の欄を打ち替えるたびに「その行き先にページがあるか」を聞く口（2026-09-20）。
 		{Pattern: "/api/filing-target", Handler: FilingTargetAPIHandler},
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
+		// 整理を待つ図面と既にある加工製品の図面を、Gemini に見比べさせる口（2026-09-30・filing_duplicate.go）。
+		// 押したときだけ呼ぶ——同じファイルなら Gemini を呼ばずに答える。
+		{Pattern: "/api/compare-drawings", Handler: CompareDrawingsAPIHandler},
 		// 加工製品の置き場（取引先／社名／加工製品／装置名称）を用意する口（2026-09-29・
 		// ワンノートの移植の道具が使う。木の形を知るのは product_tree.go の1つ）。
 		{Pattern: "/api/product-folder", Handler: ProductFolderAPIHandler},

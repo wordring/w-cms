@@ -154,7 +154,13 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 全くの新規図面で加工製品ページを新設する場合がある」。装置名称が読めていない図面（表題欄に無い）は、
 	// 行き先の題が一致せず「無い」になり、改定・追加の相手を人が探す手掛かりがありませんでした。
 	// ⚠ **候補までです**——押すと欄に入り、決めるのは人（図面番号でページを自動的に束ねない）。
-	out["candidates"] = productCandidates(user, customer, q.Get("drawing_no"), name)
+	cands := productCandidates(user, customer, q.Get("drawing_no"), name)
+	// **同じ図面が既にあるか**（2026-09-30 利用者:「同じものがあるということを提示して欲しい」）——整理を待つ
+	// ページを渡されたら、候補に「同じ図面番号」「同じファイル」の印を付けます（filing_duplicate.go）。
+	if draftID, ok := page.NormalizeID(q.Get("page_id")); ok {
+		markDuplicateCandidates(user, draftID, cands)
+	}
+	out["candidates"] = cands
 	if customer == "" || machine == "" || name == "" {
 		json.NewEncoder(w).Encode(out) // まだ埋まっていない——「無い」と同じ扱い
 		return
@@ -200,6 +206,10 @@ type productCandidate struct {
 	Title      string `json:"title"`
 	Machine    string `json:"machine"`
 	DrawingNos string `json:"drawing_nos"`
+	// SameNo・SameFile は「届いた図面と同じと見える」印です（2026-09-30・filing_duplicate.go）——版の印まで
+	// 同じ図面番号／図面ブロックが指すファイルの中身が同じ。整理を待つページ（`page_id`）を渡されたときだけ付きます。
+	SameNo   bool `json:"same_no"`
+	SameFile bool `json:"same_file"`
 }
 
 // revSuffix は図面番号の末尾の版の印です（`rev1`・`_rev0`・`Rev.2`）——改定の図面は番号にこれが付くので外して比べる。
@@ -496,19 +506,22 @@ type filingRequest struct {
 	//	""・"new"   … 行き先に無ければ新規の加工製品ページ。**在れば動かしません**（人が決めるまで通信箱に置いたまま）
 	//	"revision"  … 図面改定（いまの図面は旧版として子ページへ）。⚠ 行き先が無ければ作らずに断る（2026-09-30）
 	//	"drawing"   … 図面追加（同じページに並べる・部品図と溶接図）。⚠ 同上
+	//	"duplicate" … 重複（取り込まない）。同じ図面が DuplicateOf に既にある（2026-09-30・filing_duplicate.go）
 	//
 	// ⚠ **既定を「改定」にしません。** 機械には区別できない（どちらも「同じ品物・
 	// 違う図面番号」）ので、既定を置くと**見ないまま押した人がその既定に従います**。
 	// 溶接図が黙って旧版になるのが、それまでの振る舞いでした。
 	// 空欄は「まだ決められない」の意思表示、という整理の作法に揃えています。
 	Merge string `json:"merge"`
+	// DuplicateOf は「重複（取り込まない）」のときの、既にある加工製品のページIDです（2026-09-30）。
+	DuplicateOf string `json:"duplicate_of"`
 }
 
 // filingResult は1行の結果です。何が起きたかを人へ返します
 // （黙って動かすのではなく、**どこへ入ったか・改定になったか**を必ず見せる）。
 type filingResult struct {
 	PageID string `json:"page_id"`
-	// "moved" / "revision" / "skipped" / "needs_confirm"（人の確認待ち）
+	// "moved" / "revision" / "added" / "discarded"（重複・取り込まない） / "skipped" / "needs_confirm"（人の確認待ち） / "needs_choice"
 	Outcome  string `json:"outcome"`
 	Message  string `json:"message"`
 	TargetID string `json:"target_id,omitempty"` // 改定のときは合流先
@@ -565,6 +578,11 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	pageID, ok := page.NormalizeID(row.PageID)
 	if !ok {
 		return filingResult{PageID: row.PageID, Outcome: "skipped", Message: "ページIDが不正です"}
+	}
+	// **重複（取り込まない）は行き先の欄を見ません**（2026-09-30）——装置名称が読めていない図面でも片付けられるよう、
+	// 空欄の確かめより先に分けます。権限と編集中の確かめは向こうで（仮のページと既にある加工製品の両方）。
+	if row.Merge == "duplicate" {
+		return discardDuplicate(user, pageID, row.DuplicateOf)
 	}
 	// **人が打った値もここで正規化します**（2026-09-06 ユーザー:「顧客名、装置名称、
 	// 図面名称の値を早期に正規化したいです」）。この3つはそのままページの題になり、

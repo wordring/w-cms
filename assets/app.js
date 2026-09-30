@@ -4745,6 +4745,7 @@
         rows.forEach((row, rowIndex) => {
             const card = document.createElement('div');
             card.className = 'filing-card';
+            card.dataset.pageId = row.page_id;
             const no = document.createElement('p');
             no.className = 'filing-no';
             no.textContent = '📄 ' + (row.drawing_no || '（図面番号なし）');
@@ -4848,14 +4849,22 @@
             choiceWrap.className = 'filing-choice';
             const choiceNote = document.createElement('p');
             choiceNote.className = 'filing-choice-note';
+            // 同じ図面が既にあるときの知らせ（2026-09-30 利用者:「同じものがあるということを提示して欲しいのと、
+            // 同じものがあるので取り込まない選択肢が欲しいです」）——サーバーが候補に付けた印（同じ図面番号・同じファイル）から。
+            const dupWrap = document.createElement('div');
+            dupWrap.className = 'filing-dups';
+            dupWrap.hidden = true;
             const candWrap = document.createElement('div');
             candWrap.className = 'filing-candidates';
             const mergeName = 'w-filing-merge-' + rowIndex;
             const mergeInputs = {};
+            const mergeLabels = {};
             // 言葉は利用者の案（2026-09-30:「『図面改定』と『図面追加』をご提案します」）。詳しくはマウスを載せたときに。
+            // 「重複（取り込まない）」は同じ図面が既にあるときだけ出す。
             [['new', '新規', '新しい加工製品ページとして置きます'],
              ['drawing', '図面追加', '既にある加工製品に、二つ目の図面として足します（部品図と溶接図など）'],
-             ['revision', '図面改定', '既にある加工製品の図面を差し替えます（いまの図面は旧版として子ページへ）']]
+             ['revision', '図面改定', '既にある加工製品の図面を差し替えます（いまの図面は旧版として子ページへ）'],
+             ['duplicate', '重複（取り込まない）', '同じ図面が既にあるので取り込みません（解析で作ったページはごみ箱へ・既にある加工製品にこのメールの受信元を書き足します）']]
                 .forEach(([val, text, hint]) => {
                     const label = document.createElement('label');
                     label.className = 'filing-merge-opt';
@@ -4868,19 +4877,29 @@
                     label.appendChild(document.createTextNode(' ' + text));
                     choiceWrap.appendChild(label);
                     mergeInputs[val] = radio;
+                    mergeLabels[val] = label;
                 });
+            mergeLabels.duplicate.hidden = true;
             choiceWrap.appendChild(choiceNote);
+            choiceWrap.appendChild(dupWrap);
             choiceWrap.appendChild(candWrap);
             tdConfirm.appendChild(choiceWrap);
 
             let target = { exists: false, page_id: '' };
+            // dup は「重複」の相手（同じ図面番号か同じファイルの加工製品のうち、いちばん強いもの）。
+            let dup = null;
+            // 人が自分で選んだら、聞き直しのたびの初期値で上書きしない。
+            let userPicked = false;
             const picked = () => Object.keys(mergeInputs).find(k => mergeInputs[k].checked) || '';
             const explain = () => {
                 const m = picked();
-                if (target.exists) {
+                if (m === 'duplicate' && dup) {
+                    choiceNote.textContent = '取り込みません——解析で作ったこのページはごみ箱へ移し、「' +
+                        (dup.machine ? dup.machine + '／' : '') + dup.title + '」にこのメールの受信元を書き足します';
+                } else if (target.exists) {
                     const nos = target.nos ? '（図面: ' + target.nos + '）' : '';
                     choiceNote.textContent = '⚠ 行き先の「' + target.title + '」は既にあります' + nos +
-                        (m === 'drawing' || m === 'revision' ? '。' : '。図面追加か図面改定を選んでください');
+                        (m === 'drawing' || m === 'revision' ? '。' : dup ? '。図面追加・図面改定・重複のどれかを選んでください' : '。図面追加か図面改定を選んでください');
                 } else if (m === 'drawing' || m === 'revision') {
                     choiceNote.textContent = '⚠ 行き先に同じ加工製品がありません。下の候補を押すか、装置名称・図面名称を合わせてください';
                 } else {
@@ -4888,7 +4907,60 @@
                 }
                 choiceNote.hidden = !choiceNote.textContent;
             };
-            Object.values(mergeInputs).forEach(r => r.addEventListener('change', explain));
+            Object.values(mergeInputs).forEach(r => r.addEventListener('change', () => {
+                userPicked = true;
+                explain();
+            }));
+
+            // showDups は「同じ図面が既にある」の知らせです。同じファイルでなく番号だけ同じなら、中身を Gemini に
+            // 見比べさせるボタンを添える（押したときだけ・利用者:「PDFの中身も比較してくれるなら」）。
+            const showDups = (dups) => {
+                dupWrap.replaceChildren();
+                dupWrap.hidden = !dups.length;
+                dups.forEach(c => {
+                    const line = document.createElement('p');
+                    line.className = 'filing-dup';
+                    const a = document.createElement('a');
+                    a.href = '/' + c.page_id;
+                    a.target = '_blank';
+                    a.textContent = (c.machine ? c.machine + '／' : '') + c.title;
+                    const why = c.same_no && c.same_file ? '同じ図面番号・同じファイルです'
+                        : c.same_no ? '同じ図面番号ですが、ファイルの中身は違います（図番を変えない改定か、PDFを作り直しただけかもしれません）'
+                        : '同じファイルから作られています（1つのPDFに別の図面が入っていることもあります）';
+                    line.append('⚠ 同じ図面が既にあります: ', a, '。' + why);
+                    if (c.same_no && !c.same_file) {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'chip-btn filing-compare';
+                        b.textContent = '🤖 中身を比べる';
+                        b.title = '2つのPDFを Gemini に見比べさせます（数十秒かかります）';
+                        const out = document.createElement('span');
+                        out.className = 'filing-compare-out';
+                        b.addEventListener('click', async () => {
+                            b.disabled = true;
+                            out.textContent = ' 見比べています…';
+                            try {
+                                const res = await fetch('/api/compare-drawings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ page_id: row.page_id, with: c.page_id }),
+                                });
+                                const d = await res.json().catch(() => ({}));
+                                if (!res.ok || !d.success) throw new Error(d.message || res.status);
+                                const diffs = (d.differences || []).join('・');
+                                out.textContent = d.same
+                                    ? ' ✓ 同じ図面です' + (d.summary ? '（' + d.summary + '）' : '')
+                                    : ' ⚠ 違いがあります: ' + (diffs || d.summary || '（詳しくは言えませんでした）');
+                            } catch (e) {
+                                out.textContent = ' 見比べられませんでした: ' + e.message;
+                            }
+                            b.disabled = false;
+                        });
+                        line.append(' ', b, out);
+                    }
+                    dupWrap.appendChild(line);
+                });
+            };
 
             let targetTimer = null;
             const askTarget = async () => {
@@ -4897,6 +4969,8 @@
                     machine: fields.machine_name.value.trim(),
                     name: fields.drawing_name.value.trim(),
                     drawing_no: row.drawing_no || '',
+                    // 整理を待つこのページ——サーバーが候補に「同じ図面番号」「同じファイル」の印を付ける（2026-09-30）。
+                    page_id: row.page_id,
                 });
                 let d = null;
                 try {
@@ -4915,10 +4989,27 @@
                 // 同じ題のページが在るなら「新規」は選べない（同じ所に同じ題の加工製品を2枚作らない）。
                 mergeInputs.new.disabled = target.exists;
                 if (target.exists && mergeInputs.new.checked) mergeInputs.new.checked = false;
+                // 同じ図面が既にあるか（2026-09-30）——「重複（取り込まない）」はそのときだけ出す。相手は同じ番号で
+                // 同じファイルのものを第一に、次に同じ番号。同じ番号で同じファイルなら、人が選ぶ前の初期値にする。
+                const all = (d && d.candidates) || [];
+                const dups = all.filter(c => c.same_no || c.same_file);
+                const rank = c => (c.same_no ? 2 : 0) + (c.same_file ? 1 : 0);
+                dup = dups.slice().sort((x, y) => rank(y) - rank(x))[0] || null;
+                showDups(dups);
+                mergeLabels.duplicate.hidden = !dup;
+                if (!dup && mergeInputs.duplicate.checked) {
+                    mergeInputs.duplicate.checked = false;
+                    userPicked = false;
+                }
+                if (!userPicked && dup && dup.same_no && dup.same_file) {
+                    mergeInputs.duplicate.checked = true;
+                } else if (!userPicked && mergeInputs.duplicate.checked) {
+                    mergeInputs.duplicate.checked = false; // 初期値で選んでいたが、もう言い切れない
+                }
                 if (!target.exists && !picked()) mergeInputs.new.checked = true;
                 // 既にある加工製品の候補（押すと装置名称・図面名称の欄へ入り、行き先を聞き直す）。
                 candWrap.replaceChildren();
-                const cands = ((d && d.candidates) || []).filter(c => c.page_id !== target.page_id);
+                const cands = all.filter(c => c.page_id !== target.page_id);
                 if (cands.length) {
                     const head = document.createElement('span');
                     head.className = 'filing-cand-head';
@@ -4972,7 +5063,7 @@
 
             inputs.push({
                 page_id: row.page_id, fields: fields, confirm: confirm, box: box,
-                merge: mergeInputs, choice: choiceWrap, kinds: kindBoxes,
+                merge: mergeInputs, choice: choiceWrap, kinds: kindBoxes, dupOf: () => (dup ? dup.page_id : ''),
             });
             list.appendChild(card);
         });
@@ -5056,6 +5147,8 @@
             // 行き先に同じ題のページがあったとき、改定か二つ目の図面か（2026-09-20）。
             // ⚠ **選ばれていなければ空**です——サーバーはそのとき動かしません。
             merge: (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '',
+            // 重複（取り込まない）の相手（2026-09-30）。
+            duplicate_of: i.dupOf ? i.dupOf() : '',
         }));
         try {
             const res = await fetch('/api/file-drawings', {
