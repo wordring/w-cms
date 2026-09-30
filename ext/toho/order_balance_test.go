@@ -25,7 +25,7 @@ func balanceTable(t *testing.T, rows string) orderBalance {
 //
 //   - 残数 × 単価の和（出荷済みを引く・出しすぎた行は0）
 //   - 完了の行は入れない（受注残表と同じ）
-//   - 単価の読めない行は金額に入れず、数を言う（全部読めないなら 0円——2026-09-30 深夜 利用者:「シンプルに0円で大丈夫です」）
+//   - 単価の読めない行は金額に入れない（全部読めないなら 0円——2026-09-30 深夜 利用者:「シンプルに0円で大丈夫です」）
 func TestOrderBalance(t *testing.T) {
 	b := balanceTable(t,
 		`<tr><td>A-1</td><td>20</td><td>1,500</td><td>2</td><td>未着手</td></tr>`+ // 18 × 1500 = 27000
@@ -36,15 +36,16 @@ func TestOrderBalance(t *testing.T) {
 	if b.Amount != 27000 || b.Open != 2 || b.Rows != 5 || b.NoPrice != 1 || b.Done != 1 {
 		t.Fatalf("数え方が違います: %+v", b)
 	}
-	if msg := balanceMessage(b); msg != "受注残高: 27,000円（残のある行 2／5行・⚠ 単価の無い 1行は入っていません）" {
+	// 出すのは「受注残高: N円」だけ（2026-09-30 深夜 利用者:「（残のある行…）というのも無くて良いです」）。
+	if msg := balanceMessage(b); msg != "受注残高: 27,000円" {
 		t.Errorf("文が違います: %s", msg)
 	}
 	all := balanceTable(t, `<tr><td>A-1</td><td>5</td><td>100</td><td>5</td><td>納品済</td></tr>`)
-	if msg := balanceMessage(all); msg != "受注残高: 0円（残のある行はありません）" {
+	if msg := balanceMessage(all); msg != "受注残高: 0円" {
 		t.Errorf("全部納めた受注の文: %s", msg)
 	}
 	none := balanceTable(t, `<tr><td>A-1</td><td>5</td><td></td><td></td><td></td></tr>`)
-	if msg := balanceMessage(none); msg != "受注残高: 0円（残のある行 1／1行・⚠ 単価の無い 1行は入っていません）" {
+	if msg := balanceMessage(none); msg != "受注残高: 0円" {
 		t.Errorf("単価の無い受注の文: %s", msg)
 	}
 }

@@ -398,14 +398,15 @@ func pricedItem(itemNo, name, qty, price, shipped, status string) string {
 // （2026-09-30 夜 利用者:「受注残高は、受注フォルダのトップに入れて欲しいです」）。
 //
 //   - Σ 残 × 単価（出荷済みを引く）——数える行は**表に並んだ行と同じ**（出し切った行・完了の行・「移行中」の受注ページは入らない）
-//   - 単価の読めない行は金額に入れず、数を言う（全部読めないなら 0円——2026-09-30 深夜 利用者:「シンプルに0円で大丈夫です」）
+//   - 出すのは「受注残高: N円」だけ・単価の読めない行は金額に入れない（全部読めないなら 0円——2026-09-30 深夜 利用者:
+//     「シンプルに0円で大丈夫です」「（残のある行…）というのも無くて良いです」）
 //   - 表より上に出る
 func TestBacklogViewShowsTotal(t *testing.T) {
 	setupExtTest(t, "000400", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 401, -1, "受注", "alice", "302", true)
 	seedOrder(t, 402, 401, "あけぼの精工", "2026-10-15",
 		pricedItem("A-1", "半分だけ", "10", "100", "4", "未着手")+ // 残6 × 100 = 600
-			pricedItem("A-2", "単価なし", "5", "", "", "未着手")+ // 残5・単価なし（金額に入らない・数える）
+			pricedItem("A-2", "単価なし", "5", "", "", "未着手")+ // 残5・単価なし（金額に入らない）
 			pricedItem("A-3", "出し切った", "3", "999", "3", "未着手")) // 残0（入らない）
 	seedOrder(t, 403, 401, "やまと工作所", "2026-10-20",
 		pricedItem("B-1", "シャフト", "2", "1,500", "", "未着手")+ // 残2 × 1,500 = 3,000
@@ -424,7 +425,7 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 	}
 
 	out := backlogViewHTML(adminUser(), 401)
-	want := `受注残高: 3,600円（残のある行 3・受注 2枚・⚠ 単価の無い 1行は入っていません）`
+	want := `<p class="backlog-total">受注残高: 3,600円</p>`
 	i := strings.Index(out, want)
 	if i < 0 {
 		t.Fatalf("受注残高の行がありません（%q を期待）:\n%s", want, out)
@@ -438,7 +439,7 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 	addPage(t, 411, -1, "受注", "alice", "302", true)
 	seedOrder(t, 412, 411, "あけぼの精工", "2026-10-15", pricedItem("A-1", "単価なし", "5", "", "", "未着手"))
 	out = backlogViewHTML(adminUser(), 411)
-	if !strings.Contains(out, `受注残高: 0円（残のある行 1・受注 1枚・⚠ 単価の無い 1行は入っていません）`) {
+	if !strings.Contains(out, `<p class="backlog-total">受注残高: 0円</p>`) {
 		t.Errorf("単価の無い受注残を 0円と言っていません:\n%s", out)
 	}
 }

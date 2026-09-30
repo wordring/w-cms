@@ -9,14 +9,14 @@ package toho
 // 入れません（受注残表と同じ——人が「もう出さない」と言った行・改定で差し替えた行）。
 //
 // ⚠ **本文には書きません（鏡型）**——出荷済みを直せば次に開いたとき数え直す（検算と同じ足元に出す・引き金も同じ）。
-// ⚠ **単価の読めない行は金額に入れず、数を言います**——黙って入れないと、残高が小さく見えるだけで気づけない。
-// どの行にも単価が無ければ、そのまま **0円**（2026-09-30 深夜 利用者:「『単価が無いので出せません』ではなく、シンプルに0円で
-// 大丈夫です」——それまでは「0円と言うと残が無いと読まれる」として「出せません」と出していた。単価の無い行の数は括弧に出る）。
+// **出すのは「受注残高: N円」だけ**（2026-09-30 深夜 利用者:「『単価が無いので出せません』ではなく、シンプルに0円で大丈夫
+// です」「（残のある行 1・受注 1枚・⚠ 単価の無い 1行は入っていません）というのも無くて良いです」）。単価の読めない行は金額に
+// 入らない（0として数える）——どの行にも単価が無ければ 0円。⚠ それまでは「黙って入れないと残高が小さく見えるだけで気づけない」
+// として単価の無い行の数を括弧で言い、全部無ければ「出せません」と出していた。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
 	"math"
-	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -93,21 +93,14 @@ func isHeaderRow(tr *html.Node) bool {
 	return !td
 }
 
-// balanceMessage は足元に出す1行です。
+// balanceMessage は足元に出す1行です（「受注残高: N円」だけ——冒頭の注記）。
 func balanceMessage(b orderBalance) string {
-	if b.Open == 0 {
-		msg := "受注残高: 0円（残のある行はありません"
-		if b.Done > 0 {
-			msg += "・完了 " + strconv.Itoa(b.Done) + "行"
-		}
-		return msg + "）"
-	}
-	msg := "受注残高: " + comma(int(math.Round(b.Amount))) + "円（残のある行 " + strconv.Itoa(b.Open) + "／" +
-		strconv.Itoa(b.Rows) + "行"
-	if b.NoPrice > 0 {
-		msg += "・⚠ 単価の無い " + strconv.Itoa(b.NoPrice) + "行は入っていません"
-	}
-	return msg + "）"
+	return yenLine(b.Amount)
+}
+
+// yenLine は「受注残高: N円」の1行です（受注ページの足元と受注フォルダのトップで同じ形）。
+func yenLine(amount float64) string {
+	return "受注残高: " + comma(int(math.Round(amount))) + "円"
 }
 
 // ── 受注フォルダのトップの受注残高（2026-09-30 夜）──
@@ -118,28 +111,21 @@ func balanceMessage(b orderBalance) string {
 
 // backlogTotal は受注残表に並んだ行の合計です。
 type backlogTotal struct {
-	Amount  float64 // Σ 残 × 単価（単価の読める行だけ）
-	Rows    int     // 並んだ行
-	Orders  int     // その行を持つ受注ページの枚数
-	NoPrice int     // 単価が読めない行
+	Amount float64 // Σ 残 × 単価（単価の読める行だけ）
+	Rows   int     // 並んだ行
 }
 
 // backlogTotalOf は受注残表の組から合計を数えます。
 func backlogTotalOf(gs []backlogGroup) backlogTotal {
 	var t backlogTotal
-	orders := map[string]bool{}
 	for _, g := range gs {
 		for _, r := range g.Rows {
 			t.Rows++
-			orders[r.OrderPageID] = true
-			if !r.HasPrice {
-				t.NoPrice++
-				continue
+			if r.HasPrice {
+				t.Amount += float64(r.Remaining) * r.Price
 			}
-			t.Amount += float64(r.Remaining) * r.Price
 		}
 	}
-	t.Orders = len(orders)
 	return t
 }
 
@@ -148,13 +134,7 @@ func backlogTotalHTML(t backlogTotal) string {
 	if t.Rows == 0 {
 		return ""
 	}
-	// どの行にも単価が無ければ 0円（冒頭の注記——単価の無い行の数は括弧に出る）。
-	msg := "受注残高: " + comma(int(math.Round(t.Amount))) + "円（残のある行 " + strconv.Itoa(t.Rows) +
-		"・受注 " + strconv.Itoa(t.Orders) + "枚"
-	if t.NoPrice > 0 {
-		msg += "・⚠ 単価の無い " + strconv.Itoa(t.NoPrice) + "行は入っていません"
-	}
-	return `<p class="backlog-total">` + msg + "）</p>"
+	return `<p class="backlog-total">` + yenLine(t.Amount) + `</p>`
 }
 
 // appendOrderBalance は受注明細の足元に受注残高の行を足します（数えられなければ何もしない）。
