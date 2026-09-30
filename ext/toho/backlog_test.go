@@ -386,3 +386,59 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 		t.Errorf("状態の選択肢に %q がありません:\n%s", StatusDone, out)
 	}
 }
+
+// pricedItem は単価・状態を指定した明細1行を組みます。
+func pricedItem(itemNo, name, qty, price, shipped, status string) string {
+	return `<tr><td></td><td>` + itemNo + `</td><td>` + name + `</td><td>` + qty +
+		`</td><td>個</td><td>` + price + `</td><td>2026-10-15</td><td>` + shipped +
+		`</td><td></td><td>` + status + `</td></tr>`
+}
+
+// TestBacklogViewShowsTotal は、受注フォルダのトップ（受注残表のいちばん上）に受注残高が出ることを固定します
+// （2026-09-30 夜 利用者:「受注残高は、受注フォルダのトップに入れて欲しいです」）。
+//
+//   - Σ 残 × 単価（出荷済みを引く）——数える行は**表に並んだ行と同じ**（出し切った行・完了の行・「移行中」の受注ページは入らない）
+//   - 単価の読めない行は金額に入れず、数を言う（全部読めないなら 0円——2026-09-30 深夜 利用者:「シンプルに0円で大丈夫です」）
+//   - 表より上に出る
+func TestBacklogViewShowsTotal(t *testing.T) {
+	setupExtTest(t, "000400", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 401, -1, "受注", "alice", "302", true)
+	seedOrder(t, 402, 401, "あけぼの精工", "2026-10-15",
+		pricedItem("A-1", "半分だけ", "10", "100", "4", "未着手")+ // 残6 × 100 = 600
+			pricedItem("A-2", "単価なし", "5", "", "", "未着手")+ // 残5・単価なし（金額に入らない・数える）
+			pricedItem("A-3", "出し切った", "3", "999", "3", "未着手")) // 残0（入らない）
+	seedOrder(t, 403, 401, "やまと工作所", "2026-10-20",
+		pricedItem("B-1", "シャフト", "2", "1,500", "", "未着手")+ // 残2 × 1,500 = 3,000
+			pricedItem("B-2", "取りやめ", "5", "100", "", StatusDone)) // 完了（入らない）
+	seedOrder(t, 404, 401, "やまと工作所", "2026-10-20",
+		pricedItem("C-1", "移した注文", "9", "10000", "", "未着手"))
+	// 404 を「移行中」にする（受注残に並ばない——合計にも入らない）。
+	body := `<h1>受注</h1><dl data-type="tags"><dt>発注元</dt><dd>やまと工作所</dd>` +
+		`<dt>納期</dt><dd>2026-10-20</dd><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
+		`<table><caption>受注明細</caption><tbody>` +
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
+		`<th>単価</th><th>納期</th><th>出荷済み</th><th>備考</th><th>状態</th></tr>` +
+		pricedItem("C-1", "移した注文", "9", "10000", "", "未着手") + `</tbody></table>`
+	if err := cms.SyncIndex(page.FormatID(404), body); err != nil {
+		t.Fatal(err)
+	}
+
+	out := backlogViewHTML(adminUser(), 401)
+	want := `受注残高: 3,600円（残のある行 3・受注 2枚・⚠ 単価の無い 1行は入っていません）`
+	i := strings.Index(out, want)
+	if i < 0 {
+		t.Fatalf("受注残高の行がありません（%q を期待）:\n%s", want, out)
+	}
+	if j := strings.Index(out, `class="backlog-sheet"`); j < 0 || i > j {
+		t.Errorf("受注残高が表より上にありません:\n%s", out)
+	}
+
+	// どの行も単価を持たない——0円（単価の無い行の数は括弧に）。
+	setupExtTest(t, "000410", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 411, -1, "受注", "alice", "302", true)
+	seedOrder(t, 412, 411, "あけぼの精工", "2026-10-15", pricedItem("A-1", "単価なし", "5", "", "", "未着手"))
+	out = backlogViewHTML(adminUser(), 411)
+	if !strings.Contains(out, `受注残高: 0円（残のある行 1・受注 1枚・⚠ 単価の無い 1行は入っていません）`) {
+		t.Errorf("単価の無い受注残を 0円と言っていません:\n%s", out)
+	}
+}

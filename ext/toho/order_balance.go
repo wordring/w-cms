@@ -10,6 +10,8 @@ package toho
 //
 // ⚠ **本文には書きません（鏡型）**——出荷済みを直せば次に開いたとき数え直す（検算と同じ足元に出す・引き金も同じ）。
 // ⚠ **単価の読めない行は金額に入れず、数を言います**——黙って入れないと、残高が小さく見えるだけで気づけない。
+// どの行にも単価が無ければ、そのまま **0円**（2026-09-30 深夜 利用者:「『単価が無いので出せません』ではなく、シンプルに0円で
+// 大丈夫です」——それまでは「0円と言うと残が無いと読まれる」として「出せません」と出していた。単価の無い行の数は括弧に出る）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -100,16 +102,59 @@ func balanceMessage(b orderBalance) string {
 		}
 		return msg + "）"
 	}
-	if b.NoPrice == b.Open {
-		// 残のある行がどれも単価を持たない——0円と言うと「残が無い」と読まれる。
-		return "受注残高: 単価が無いので出せません（残のある行 " + strconv.Itoa(b.Open) + "／" + strconv.Itoa(b.Rows) + "行）"
-	}
 	msg := "受注残高: " + comma(int(math.Round(b.Amount))) + "円（残のある行 " + strconv.Itoa(b.Open) + "／" +
 		strconv.Itoa(b.Rows) + "行"
 	if b.NoPrice > 0 {
 		msg += "・⚠ 単価の無い " + strconv.Itoa(b.NoPrice) + "行は入っていません"
 	}
 	return msg + "）"
+}
+
+// ── 受注フォルダのトップの受注残高（2026-09-30 夜）──
+//
+// 利用者:「受注残高は、受注フォルダのトップに入れて欲しいです」——受注残表（backlog.go）のいちばん上に、表に並んだ行の
+// Σ 残 × 単価 を出す。**数える行は受注残表と同じ**（「移行中」の受注ページ・`完了` の行・残の無い行は入らない）ので、
+// 表と合計が食い違わない。⚠ 受注ページの足元の受注残高（上）は残す——1枚の受注の残高と、フォルダ全体の残高は別の問い。
+
+// backlogTotal は受注残表に並んだ行の合計です。
+type backlogTotal struct {
+	Amount  float64 // Σ 残 × 単価（単価の読める行だけ）
+	Rows    int     // 並んだ行
+	Orders  int     // その行を持つ受注ページの枚数
+	NoPrice int     // 単価が読めない行
+}
+
+// backlogTotalOf は受注残表の組から合計を数えます。
+func backlogTotalOf(gs []backlogGroup) backlogTotal {
+	var t backlogTotal
+	orders := map[string]bool{}
+	for _, g := range gs {
+		for _, r := range g.Rows {
+			t.Rows++
+			orders[r.OrderPageID] = true
+			if !r.HasPrice {
+				t.NoPrice++
+				continue
+			}
+			t.Amount += float64(r.Remaining) * r.Price
+		}
+	}
+	t.Orders = len(orders)
+	return t
+}
+
+// backlogTotalHTML は受注残表のいちばん上の1行です（行が無ければ空）。中身は数と決まった文だけ（本文の値を含まない）。
+func backlogTotalHTML(t backlogTotal) string {
+	if t.Rows == 0 {
+		return ""
+	}
+	// どの行にも単価が無ければ 0円（冒頭の注記——単価の無い行の数は括弧に出る）。
+	msg := "受注残高: " + comma(int(math.Round(t.Amount))) + "円（残のある行 " + strconv.Itoa(t.Rows) +
+		"・受注 " + strconv.Itoa(t.Orders) + "枚"
+	if t.NoPrice > 0 {
+		msg += "・⚠ 単価の無い " + strconv.Itoa(t.NoPrice) + "行は入っていません"
+	}
+	return `<p class="backlog-total">` + msg + "）</p>"
 }
 
 // appendOrderBalance は受注明細の足元に受注残高の行を足します（数えられなければ何もしない）。

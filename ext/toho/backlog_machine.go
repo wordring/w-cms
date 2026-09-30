@@ -169,14 +169,15 @@ func columnHoldsNames(src orderSourceTable, col int) bool {
 
 // machineCellHTML は受注残表の装置名のセルです（どこから引いたかをマウスを載せると言う）。
 func machineCellHTML(r backlogRow) string {
-	// ⚠ 紙には出さない（見出しと同じ印——片方だけだと紙で見出しと値が1つずれる）。
+	// 紙にも出す（2026-09-30 夜 利用者:「装置名は紙にも出して欲しいです」）。⚠ 見出しと同じ印に揃えること——片方だけ
+	// `no-print` だと紙で見出しと値が1つずれる。
 	if r.Machine == "" {
-		return `<td class="cell-atomic no-print"></td>`
+		return `<td class="cell-atomic"></td>`
 	}
 	from := "顧客の発注書（読んだまま）から"
 	if r.MachineFromProduct {
 		from = "加工製品ページの置き場の装置"
 	}
-	return `<td class="cell-atomic no-print" title="` + stdhtml.EscapeString(from) + `">` + stdhtml.EscapeString(r.Machine) + `</td>`
+	return `<td class="cell-atomic" title="` + stdhtml.EscapeString(from) + `">` + stdhtml.EscapeString(r.Machine) + `</td>`
 }
 

@@ -2467,6 +2467,8 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     color: var(--w-danger, #c0392b);
 }
 .backlog-print { margin-bottom: 0.4rem; }
+/* 受注フォルダのトップの受注残高（2026-09-30 夜・order_balance.go の backlogTotalHTML）——表の上の1行。 */
+.backlog-total { margin: 0 0 1rem; font-weight: 600; }
 /* ⚠ **幅を与えません。** 表は `#w-editor-content table` で
    `display:block; overflow-x:auto` のスクロール枠になっているので、`width:100%` を
    置くと中身なりに伸びられず、列が潰れます（幅はセルに与える——上の注意と同じ）。 */
@@ -2497,7 +2499,8 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     .backlog-print { display: none !important; }
     /* ⚠ **紙に出す列は5つだけ**（2026-09-21 ユーザー:「品番、品名、残、状態、備考
        だけで良いです」）。**見出しと値の両方**に印が要ります——片方だけだと
-       紙で1つずつずれます。顧客名と納期の見出し（`.backlog-title`）は紙にも出します。 */
+       紙で1つずつずれます。顧客名と納期の見出し（`.backlog-title`）は紙にも出します。
+       その後 `弊社品番`（09-21）と `装置名`（09-30 夜・利用者:「装置名は紙にも出して欲しいです」）を足して、いまは7つ。 */
     #w-print-area .no-print { display: none !important; }
 
     .backlog-table { border-collapse: collapse; width: 100%; }

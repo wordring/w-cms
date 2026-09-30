@@ -136,7 +136,8 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   //    うえ、顧客の番号であるため、こちらで修正できません。そこで弊社品番を併記して
   //    あいまいさなく作業できるようにします**」）。
   // ⚠ **これは作業の紙です**——手元であいまいなく引ける番号が要ります。
-  const WANT = ['弊社品番', '品番', '品名', '残', '状態', '備考'];
+  // 装置名を左端に足した（2026-09-30 夜 利用者:「装置名は紙にも出して欲しいです」）。
+  const WANT = ['装置名', '弊社品番', '品番', '品名', '残', '状態', '備考'];
   const same = r.headOnPaper.length === WANT.length && r.headOnPaper.every((h, i) => h === WANT[i]);
   if (!same) { console.log('✗ 紙の列が ' + JSON.stringify(r.headOnPaper) + ' です（' + JSON.stringify(WANT) + ' を期待）'); bad++; }
   else console.log('✓ 紙の列は' + WANT.length + 'つ: ' + r.headOnPaper.join('・'));

@@ -90,6 +90,9 @@ type backlogRow struct {
 	Quantity  int
 	Shipped   int
 	Remaining int
+	// Price は単価です（2026-09-30・受注フォルダのトップの受注残高に使う・表には出さない）。HasPrice は読めたか。
+	Price    float64
+	HasPrice bool
 	Status    string
 	Note      string
 	// 手続きの印（`済` か空）。⚠ **今日は人が押すだけです**——導出する元がまだ
@@ -194,6 +197,7 @@ func backlogScan(user *auth.User, rootID int) ([]backlogGroup, int) {
 				byKey[key] = g
 			}
 			machine, fromProduct := machines.machineOf(id, r.Values["our-item-id"], r.Values["item-id"], r.Values["item-name"])
+			price, hasPrice := parseMoney(r.Values["price"])
 			g.Rows = append(g.Rows, backlogRow{
 				OrderPageID: page.FormatID(id),
 				// ⚠ **索引の `RowNo` をそのまま使います。** 数え直すと、索引の側の
@@ -208,6 +212,8 @@ func backlogScan(user *auth.User, rootID int) ([]backlogGroup, int) {
 				Quantity:        qty,
 				Shipped:         shipped,
 				Remaining:       rem,
+				Price:              price,
+				HasPrice:           hasPrice,
 				Status:          strings.TrimSpace(r.Values["status"]),
 				Note:            strings.TrimSpace(r.Values["note"]),
 				MaterialOrdered: strings.TrimSpace(r.Values["material-ordered"]),
@@ -260,6 +266,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			`まだ出していない明細がありません）。</p>` + migNote
 	}
 	var b strings.Builder
+	b.WriteString(backlogTotalHTML(backlogTotalOf(groups)))
 	b.WriteString(migNote)
 	for i, g := range groups {
 		b.WriteString(`<section class="backlog-sheet" data-backlog="` + strconv.Itoa(i) + `">`)
@@ -283,10 +290,10 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			`data-backlog-print="` + strconv.Itoa(i) + `">🖨 この表を印刷</button>`)
 		// ⚠ **見出しも同じ印を付けます**——付け忘れると、紙で**見出しと値が1つずつ
 		// ずれます**（列が消えるのは値の側だけなので、いちばん気づきにくい壊れ方）。
-		// 装置名は左端（2026-09-30 利用者:「受注残の表に装置名も入れたい」）。⚠ **紙には出さない**——紙の列は 09-21 に利用者が
-		// 決めた6つ（下の注記）。紙にも要るかは聞いている。
+		// 装置名は左端（2026-09-30 利用者:「受注残の表に装置名も入れたい」）。紙にも出す（同日夜 利用者:「装置名は紙にも出して
+		// 欲しいです」——紙の列は下の注記の6つ＋装置名の7つ）。
 		b.WriteString(`<table class="backlog-table"><tbody>` +
-			`<tr><th class="no-print">装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
+			`<tr><th>装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th class="no-print">数量</th><th class="no-print">出荷済み</th>` +
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
