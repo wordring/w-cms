@@ -82,7 +82,7 @@ func orderChildrenOf(user *auth.User, parentIDInt int) ([]orderRow, error) {
 		}
 		// ⚠ **可変タグから読みます**（2026-09-18 にヘッダから移した）。
 		tags, err := cms.TagsOfPage(database.DB, c.ID)
-		if err != nil || cms.FirstTag(tags, OrderNoTag) == "" {
+		if err != nil || !isOrderPageTags(tags) {
 			continue // 受注ページではない（加工製品ページなど）
 		}
 		orderedAt := cms.FirstTag(tags, OrderedAtTag)
@@ -185,9 +185,9 @@ func fileOneOrder(user *auth.User, row orderRequest) filingResult {
 	}
 	// **受注ページ以外を動かさない。** 画面から送られた ID をそのまま信じると、
 	// 加工製品ページや通信記録まで受注の箱へ入れられます。
-	// ⚠ 見るのは `発注書番号` のタグです（2026-09-18 にヘッダから移した）。
+	// ⚠ 見るのは `発注書番号` か `発注元` のタグです（2026-09-18 にヘッダから移した・09-30 に `発注元` も——isOrderPageTags）。
 	tags, err := cms.TagsOfPage(database.DB, idInt)
-	if err != nil || cms.FirstTag(tags, OrderNoTag) == "" {
+	if err != nil || !isOrderPageTags(tags) {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "受注ページではありません"}
 	}
 	// **開いている人が居たら、その行は飛ばします**——下で本文を読んで・変えて・書くので、

@@ -198,10 +198,19 @@ func kindOfPage(pageIDInt int) string {
 	if cms.FirstTag(tags, DrawingNoTag) != "" {
 		return "図面"
 	}
-	if cms.FirstTag(tags, OrderNoTag) != "" {
+	if isOrderPageTags(tags) {
 		return "受注"
 	}
 	return ""
+}
+
+// isOrderPageTags は受注ページのタグか——`発注書番号` か `発注元` を持つ（2026-09-30）。
+//
+// ⚠ それまでは `発注書番号` だけで見ていた——**番号の無い注文**（湯山製作所の月ごとの加工品の表のように、発注書番号を
+// 持たない客先がある）は受注ページにしても整理に出ず、添付の「✓ 受注」の印も付かなかった。`発注元` は解析が受注ページに
+// 必ず書くタグで、加工製品ページ（`客先`）とは名前が違うので取り違えない。
+func isOrderPageTags(tags map[string][]string) bool {
+	return cms.FirstTag(tags, OrderNoTag) != "" || cms.FirstTag(tags, OrderClientTag) != ""
 }
 
 // 受注明細の列の名前です。⚠ **`vocab.go` の `Label` と揃えること**——索引も本文の

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"w-cms/internal/auth"
@@ -105,5 +106,27 @@ func TestFileOrderRefusesNonOrderPage(t *testing.T) {
 	meta, _ := page.ReadSidecar(partID)
 	if meta.ParentID != inbox {
 		t.Errorf("親が動いています: %+v", meta)
+	}
+}
+
+// TestFileOrderWithoutNumber は、**発注書番号の無い注文**も受注ページとして整理に出て収まることを固定します
+// （2026-09-30——月ごとの加工品の表のように番号を持たない客先がある・`isOrderPageTags`）。
+// 加工製品ページ（`客先` だけ）は相変わらず受注ではない（上の TestFileOrderRefusesNonOrderPage）。
+func TestFileOrderWithoutNumber(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	orderID := makeOrderPage(t, inbox, "", "やまと工作所", "2025-07-02")
+	u := &auth.User{Username: "alice"}
+
+	idInt, _ := strconv.Atoi(inbox)
+	rows, err := orderChildrenOf(u, idInt)
+	if err != nil || len(rows) != 1 || rows[0].PageID != orderID {
+		t.Fatalf("番号の無い受注ページが整理に出ていません: %+v %v", rows, err)
+	}
+	if res := postOrders(t, u, []string{orderID}); len(res) != 1 || res[0].Outcome != "moved" {
+		t.Fatalf("番号の無い受注ページを収めていません: %+v", res)
+	}
+	if k := kindOfPage(mustAtoi(t, orderID)); k != "受注" {
+		t.Errorf("添付の印が「受注」になりません: %q", k)
 	}
 }
