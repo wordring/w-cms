@@ -56,6 +56,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -140,6 +141,40 @@ func ReadAttachmentMetas(pageID string) map[string]AttachmentMeta {
 		return map[string]AttachmentMeta{}
 	}
 	return m
+}
+
+// ExpandedZipFile は ZIP から取り出して保存した添付1つです（`ZipMembersOf`・取り出す前の中身は `ZipMember`）。
+type ExpandedZipFile struct {
+	Stored string // 保存名（`<id>.<拡張子>`）
+	Path   string // ZIP の中のパス（フォルダつき）
+}
+
+// ZipMembersOf はページの添付のうち ZIP から取り出したものを、「ZIP の保存名 → 中身（中のパスの順）」で返します。
+// 目録の `source` の `zip:<ZIPの保存名>/<中のパス>` から組みます（2026-09-30——ZIP の中のPDFをまとめて解析する
+// ため・利用者:「添付ファイルのPDFについて、ZIPの場合まとめて解析するオプションが欲しいです」）。
+// 目録の無い添付は入りません（由来が分からない）。
+func ZipMembersOf(pageID string) map[string][]ExpandedZipFile {
+	out := map[string][]ExpandedZipFile{}
+	for stored, m := range ReadAttachmentMetas(pageID) {
+		rest, ok := strings.CutPrefix(m.Source, "zip:")
+		if !ok {
+			continue
+		}
+		zip, path, ok := strings.Cut(rest, "/")
+		if !ok || zip == "" || path == "" {
+			continue
+		}
+		out[zip] = append(out[zip], ExpandedZipFile{Stored: stored, Path: path})
+	}
+	for _, ms := range out {
+		sort.Slice(ms, func(i, j int) bool {
+			if ms[i].Path != ms[j].Path {
+				return ms[i].Path < ms[j].Path
+			}
+			return ms[i].Stored < ms[j].Stored
+		})
+	}
+	return out
 }
 
 // AttachmentMetaOf は保存名1つぶんの事実を返します。

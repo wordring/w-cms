@@ -18,6 +18,7 @@ package toho
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"w-cms/internal/auth"
@@ -105,7 +106,32 @@ func AnalyzedAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "調べられません: "+err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "analyzed": out})
+	json.NewEncoder(w).Encode(map[string]any{"success": true, "analyzed": out, "zip_pdfs": zipPDFsOf(pageID)})
+}
+
+// zipPDF は ZIP から取り出したPDF1つです（「まとめて解析」が順に解析する相手）。
+type zipPDF struct {
+	ID   string `json:"id"`   // 添付ID
+	File string `json:"file"` // 保存名（/api/analyze-attachment へ渡す形）
+	Path string `json:"path"` // ZIP の中のパス
+}
+
+// zipPDFsOf は「ZIP の添付ID → 中のPDF（中のパスの順）」です（2026-09-30 利用者:「添付ファイルのPDFについて、
+// ZIPの場合まとめて解析するオプションが欲しいです」）。ZIP を展開するのはメールの取り込みで、中身は1つずつ添付に
+// なっている——どれがどの ZIP から出たかは添付の目録（`cms.ZipMembersOf`）が持つ。
+func zipPDFsOf(pageID string) map[string][]zipPDF {
+	out := map[string][]zipPDF{}
+	for zip, members := range cms.ZipMembersOf(pageID) {
+		zipID := strings.TrimSuffix(zip, filepath.Ext(zip))
+		for _, m := range members {
+			if !strings.EqualFold(filepath.Ext(m.Stored), ".pdf") {
+				continue
+			}
+			out[zipID] = append(out[zipID], zipPDF{ID: strings.TrimSuffix(m.Stored, filepath.Ext(m.Stored)),
+				File: m.Stored, Path: m.Path})
+		}
+	}
+	return out
 }
 
 // analyzedAttachments は「添付ID → 生まれたページ」を返します。

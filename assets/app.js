@@ -4218,17 +4218,21 @@
     // **印そのものは保存していません**——解析が書いた `受信元` の逆引きです。
     // だから、間違った解析をゴミ箱へ入れれば印も消え、もう一度解析できます。
     let analyzedMap = {};
+    // zipPDFs は「ZIP の添付ID → 中のPDF（[{id, file, path}]・中のパスの順）」（2026-09-30・まとめて解析）。
+    let zipPDFs = {};
 
     // refreshAnalyzedMarks は解析済みの一覧を取り直し、印を描き直します。
     async function refreshAnalyzedMarks() {
         if (!currentPageId) return;
-        if (!hasExtension('toho')) { analyzedMap = {}; return; } // 下請けが無ければ問わない（404を出さない）
+        if (!hasExtension('toho')) { analyzedMap = {}; zipPDFs = {}; return; } // 下請けが無ければ問わない（404を出さない）
         try {
             const res = await fetch('/api/analyzed?page_id=' + encodeURIComponent(currentPageId));
             const d = await res.json();
             analyzedMap = (d && d.success && d.analyzed) ? d.analyzed : {};
+            zipPDFs = (d && d.success && d.zip_pdfs) ? d.zip_pdfs : {};
         } catch (e) {
             analyzedMap = {}; // 印が出ないだけ——解析そのものは押せる
+            zipPDFs = {};
         }
         refreshAttachmentPreviews();
     }
@@ -4267,7 +4271,13 @@
             // 埋め込み自体は前からできました（`section[data-type="file-view"]` に
             // 参照を1つ書くだけ）。無かったのは**入口**です——`010272-c3p7` という
             // 値は添付IDを手で調べないと書けませんでした。
-            btn.insertAdjacentElement('afterend', makeCopyRefButton(m[1], m[2]));
+            const copyRef = makeCopyRefButton(m[1], m[2]);
+            btn.insertAdjacentElement('afterend', copyRef);
+            // ZIP には「中のPDFをまとめて解析」（2026-09-30）——中身は取り込みで1つずつ添付になっている。
+            if (kind === 'zip' && hasExtension('toho') && (zipPDFs[m[2]] || []).length) {
+                const zb = makeZipAnalyzeButton(m[1], zipPDFs[m[2]]);
+                if (zb) copyRef.insertAdjacentElement('afterend', zb);
+            }
             if (kind === 'pdf' && hasExtension('toho')) {
                 // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
                 // **解析は下請けの持ち物**——載っていなければボタンを出さない（2026-09-15）。
@@ -5477,6 +5487,77 @@
         }
     }
 
+    // analyzeOne は添付1つを解析します（「🤖 解析」と「まとめて解析」が共有する・2026-09-30 に切り出した）。
+    // 返すのは {kind: 'drawing'|'order'|'none', made: [{page_id, title}], matchedDxf} か {error}。
+    async function analyzeOne(pageId, file) {
+        try {
+            const res = await fetch('/api/analyze-attachment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_id: pageId, file: file }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) return { error: d.message || String(res.status) };
+            if (d.doc_type === 'drawing' && ((d.pages || []).length || d.page_id)) {
+                // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）——1枚につき1ページ。
+                let made = d.pages || [];
+                if (!made.length && d.page_id) made = [{ page_id: d.page_id, title: d.title }];
+                return { kind: 'drawing', made: made, matchedDxf: d.matched_dxf || 0 };
+            }
+            if (!d.is_client_order) return { kind: 'none', made: [] };
+            return { kind: 'order', made: [{ page_id: d.page_id, title: d.title }] };
+        } catch (e) {
+            return { error: String(e) };
+        }
+    }
+
+    // makeZipAnalyzeButton は ZIP の隣の「🤖 中のPDFをまとめて解析」です（2026-09-30 利用者:「添付ファイルのPDFに
+    // ついて、ZIPの場合まとめて解析するオプションが欲しいです」）。中のPDFを**1つずつ順に**「🤖 解析」と同じ口で
+    // 解析し、最後に1つの知らせにまとめる。⚠ **解析済みのものは飛ばす**（押し直しで同じページを二重に作らない——
+    // 読み違いの解析し直しは1件ずつの「🤖 再解析」で）。途中でページを離れると止まるが、押し直せば残りから続く。
+    // 解析済みしか無ければ出さない。
+    function makeZipAnalyzeButton(pageId, pdfs) {
+        const todo = pdfs.filter(p => !analyzedMap[p.id]);
+        if (!todo.length) return null;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'vocab-chrome attach-expand attach-analyze attach-analyze-zip';
+        const skipped = pdfs.length - todo.length;
+        const label = '🤖 中のPDFをまとめて解析（' + todo.length + '件）';
+        btn.textContent = label;
+        btn.title = '中のPDFを1つずつ順に解析します（Gemini を ' + todo.length + '回呼びます・1件に数十秒）' +
+            (skipped ? '。解析済みの ' + skipped + '件は飛ばします' : '');
+        btn.addEventListener('click', async () => {
+            if (!confirm('中のPDF ' + todo.length + '件を順に解析します（Gemini を ' + todo.length +
+                '回呼びます・1件に数十秒）。' + (skipped ? '解析済みの ' + skipped + '件は飛ばします。' : '') +
+                '途中でページを離れると止まります（押し直せば残りから）。')) return;
+            btn.disabled = true;
+            let drawings = 0, orders = 0;
+            const none = [], failed = [];
+            for (let i = 0; i < todo.length; i++) {
+                btn.textContent = '🤖 解析中… ' + (i + 1) + '/' + todo.length;
+                const r = await analyzeOne(pageId, todo[i].file);
+                if (r.error) failed.push(todo[i].path + '（' + r.error + '）');
+                else if (r.kind === 'drawing') drawings += r.made.length;
+                else if (r.kind === 'order') orders += r.made.length;
+                else none.push(todo[i].path);
+            }
+            const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
+                (orders ? '・受注ページ ' + orders + '枚' : '') + '。'];
+            if (none.length) lines.push('発注書でも図面でもない（ページは作っていない）: ' + none.join('・'));
+            if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
+            if (drawings) lines.push('📁 整理で行き先を決めてください。');
+            notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
+            btn.disabled = false;
+            btn.textContent = label;
+            if (drawings || orders) {
+                await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
+                loadChildNav();        // 左レールの子ページ一覧
+            }
+        });
+        return btn;
+    }
+
     // makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付）。
     // ⚠ ZIP の中の PDF には出しません（2026-09-17）——取り込みが ZIP を展開して中身を
     // 1つずつ添付にするので、解析はページ直下の PDF だけを見ます（`entry` 引数は廃止）。
@@ -5492,51 +5573,42 @@
             btn.textContent = '🤖 解析中…';
             // **ページが生まれたか**。生まれたときだけ画面を取り直します（下）。
             let born = false;
-            try {
-                const res = await fetch('/api/analyze-attachment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ page_id: pageId, file: file }),
-                });
-                const d = await res.json();
-                if (!d.success) {
-                    notify('解析できませんでした: ' + (d.message || res.status), { type: 'alert', duration: 0, id: 'analyze-pdf' });
-                } else if (d.doc_type === 'drawing' && ((d.pages || []).length || d.page_id)) {
-                    // 図面と判定された枝。同じページのDXFと図面番号で突き合わせた
-                    // 結果も知らせる（0件も普通——PDFだけの図面はよくある）。
-                    //
-                    // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）。
-                    // 1枚につき1ページ作るので、**できた全部を見せます**——`page_id`
-                    // （1枚目）だけ見せていると、3枚できても画面には1枚しか出ず、
-                    // **押した直後の手応えが嘘になります**（子ページ一覧には出るので
-                    // 消えはしませんが、気づくのは後からです）。
-                    var made = (d.pages || []);
-                    if (!made.length && d.page_id) made = [{ page_id: d.page_id, title: d.title }];
-                    var msg = made.length > 1
-                        ? '加工製品ページを ' + made.length + '枚 作りました（このPDFに図面が'
-                          + made.length + '枚入っていました）:\n'
-                        : '加工製品ページを作りました: ';
-                    msg += made.map(function (p) {
-                        return (p.title || p.page_id) + '（/' + p.page_id + '）';
-                    }).join('\n');
-                    if (made.length > 1) {
-                        msg += '\n同じ品物の別図面（部品図と溶接図など）なら、📁 整理で'
-                            + '「二つ目の図面として追加」を選ぶと1ページにまとめられます。';
-                    }
-                    if (d.matched_dxf > 0) {
-                        msg += '\n図面番号の一致したDXF ' + d.matched_dxf + '件と結びました。';
-                    }
-                    notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
-                    born = true;
-                } else if (!d.is_client_order) {
-                    notify('発注書でも図面でもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
-                } else {
-                    notify('受注ページを作りました: ' + (d.title || d.page_id) +
-                        '（/' + d.page_id + '）', { type: 'success', duration: 0, id: 'analyze-pdf' });
-                    born = true;
+            const d = await analyzeOne(pageId, file);
+            if (d.error) {
+                notify('解析できませんでした: ' + d.error, { type: 'alert', duration: 0, id: 'analyze-pdf' });
+            } else if (d.kind === 'drawing') {
+                // 図面と判定された枝。同じページのDXFと図面番号で突き合わせた
+                // 結果も知らせる（0件も普通——PDFだけの図面はよくある）。
+                //
+                // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）。
+                // 1枚につき1ページ作るので、**できた全部を見せます**——`page_id`
+                // （1枚目）だけ見せていると、3枚できても画面には1枚しか出ず、
+                // **押した直後の手応えが嘘になります**（子ページ一覧には出るので
+                // 消えはしませんが、気づくのは後からです）。
+                var made = d.made;
+                var msg = made.length > 1
+                    ? '加工製品ページを ' + made.length + '枚 作りました（このPDFに図面が'
+                      + made.length + '枚入っていました）:\n'
+                    : '加工製品ページを作りました: ';
+                msg += made.map(function (p) {
+                    return (p.title || p.page_id) + '（/' + p.page_id + '）';
+                }).join('\n');
+                if (made.length > 1) {
+                    msg += '\n同じ品物の別図面（部品図と溶接図など）なら、📁 整理で'
+                        + '「二つ目の図面として追加」を選ぶと1ページにまとめられます。';
                 }
-            } catch (e) {
-                notify('解析できませんでした: ' + e, { type: 'alert', duration: 0, id: 'analyze-pdf' });
+                if (d.matchedDxf > 0) {
+                    msg += '\n図面番号の一致したDXF ' + d.matchedDxf + '件と結びました。';
+                }
+                notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
+                born = true;
+            } else if (d.kind === 'none') {
+                notify('発注書でも図面でもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
+            } else {
+                const o = d.made[0] || {};
+                notify('受注ページを作りました: ' + (o.title || o.page_id) +
+                    '（/' + o.page_id + '）', { type: 'success', duration: 0, id: 'analyze-pdf' });
+                born = true;
             }
             btn.disabled = false;
             btn.textContent = '🤖 解析';

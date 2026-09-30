@@ -116,3 +116,33 @@ func TestMetaFileIsNotServed(t *testing.T) {
 		t.Error("IsAttachmentMetaFile の判定が違います")
 	}
 }
+
+// TestZipMembersOf は、ZIP から取り出した添付を ZIP ごとに中のパスの順で返すことを固定します
+// （2026-09-30——ZIP の中のPDFをまとめて解析する）。ZIP でない添付・別の ZIP の中身は混ざらない。
+func TestZipMembersOf(t *testing.T) {
+	newTestFileDB(t)
+	newPage(t, "000202", "<h1>目録</h1>", page.PageMeta{Owner: "alice", Mode: "330"})
+	save := func(name, source string) string {
+		t.Helper()
+		_, stored, err := SaveAttachmentFrom("000202", "alice", name, source, []byte("%PDF-1.4 "+name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stored
+	}
+	save("単品.pdf", "mail:abcd.eml")
+	b := save("B.pdf", "zip:zz01.zip/図面/B.pdf")
+	a := save("A.pdf", "zip:zz01.zip/図面/A.pdf")
+	o := save("C.pdf", "zip:zz02.zip/C.pdf")
+
+	got := ZipMembersOf("000202")
+	if len(got) != 2 || len(got["zz01.zip"]) != 2 || len(got["zz02.zip"]) != 1 {
+		t.Fatalf("ZIP ごとに分かれていません: %+v", got)
+	}
+	if got["zz01.zip"][0].Stored != a || got["zz01.zip"][1].Stored != b || got["zz01.zip"][0].Path != "図面/A.pdf" {
+		t.Errorf("中のパスの順ではありません: %+v", got["zz01.zip"])
+	}
+	if got["zz02.zip"][0].Stored != o {
+		t.Errorf("別の ZIP の中身: %+v", got["zz02.zip"])
+	}
+}
