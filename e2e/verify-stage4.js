@@ -40,6 +40,8 @@ async function newPageWithBody(page, parent, html) {
 }
 
 const results = []; let failCount = 0;
+// 作ったページ（最後に消す・2026-09-30——それまでは成功しても「部品X1」「受注A」などがトップ直下に残っていた）。
+const created = [];
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 }); }
 // 直前に飛んでいた保存の応答が「保存済」を上書きするため、1回の waitSaved では直近の
@@ -80,7 +82,7 @@ async function openSlashMenu(page) {
         }
 
         // 4. 新規ページで計算ビューを挿す
-        await gotoNewPage(page, '000000');
+        created.push(await gotoNewPage(page, '000000'));
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         const pageURL = page.url().replace(/\?edit.*$/, '');
 
@@ -115,7 +117,8 @@ async function openSlashMenu(page) {
 
         // 6. 子ページを作ると一覧に載る
         const pageId = pageURL.split('/').pop();
-        await page.request.post(BASE + '/api/new-page?parent=' + pageId, { headers: { 'Origin': BASE } });
+        const childRes = await page.request.post(BASE + '/api/new-page?parent=' + pageId, { headers: { 'Origin': BASE }, maxRedirects: 0 });
+        created.push((childRes.headers()['location'] || '').replace(/^\//, '').replace(/\?.*$/, ''));
         await page.goto(pageURL);
         await page.locator('#w-editor-content section[data-mirror="子ページ一覧"]').first().locator('.vocab-chrome').waitFor({ timeout: 8000 });
         check('作成した子ページがSSRの一覧に出る', await page.locator('#w-editor-content section[data-mirror="子ページ一覧"]').first().locator('.vocab-chrome a').count() >= 1);
@@ -213,25 +216,29 @@ async function openSlashMenu(page) {
         //     再読込で黙って消える。だから「そもそもボタンが出ない」ようにした。
         //     中身のある手配集計表を作るには受注と部材定義の両方が要るので、
         //     ここで仕込む（空の集計表には <tr> が無く、退行を突けないため）。
+        //     ⚠ 2026-09-30 にいまの形へ直した——表はキャプションで名乗る（`data-type` の属性・`<section data-type="client-order">`
+        //     は 09-18〜29 に廃止）・受注の行は**弊社品番で加工製品ページを指す**（`部品番号` のタグで結ぶ形は無くなった）。
+        //     それまでは手配集計に行が出ず、この節が2件落ちていた。
         const partId = await newPageWithBody(page, '000000',
-            '<h1>部品X1</h1>' +
-            '<dl data-type="tags"><dt>部品番号</dt><dd>X1</dd></dl>' +
-            '<table data-type="part-materials"><tbody>' +
+            '<h1>【E2E】部品X1</h1>' +
+            '<dl data-type="tags"><dt>図面番号</dt><dd>E2E-X1</dd></dl>' +
+            '<table><caption>材料</caption><tbody>' +
             // 2026-09-03 に材料の列を実務どおりに変えた（材質・形状・寸法・個数）。
             // 名前にあたるものは3つを繋いだもの（materials.go の materialNameOf）。
             '<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
             '<tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td></tr>' +
             '</tbody></table>');
+        created.push(partId);
         const orderId = await newPageWithBody(page, '000000',
-            '<h1>受注A</h1>' +
-            '<section data-type="client-order"><dl><dt>発注書番号</dt><dd>PO-E2E</dd>' +
+            '<h1>【E2E】受注A</h1>' +
+            '<dl data-type="tags"><dt>発注書番号</dt><dd>PO-E2E</dd>' +
             '<dt>発注元</dt><dd>得意先A</dd><dt>発注日</dt><dd>2026-08-25</dd></dl>' +
-            '<table data-type="client-order-items"><tbody>' +
-            '<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
-            '<tr><td>X1</td><td>部品X1</td><td>1000</td><td>3</td><td>未着手</td></tr>' +
-            '</tbody></table></section>' +
+            '<table><caption>受注明細</caption><tbody>' +
+            '<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
+            '<tr><td>' + partId + '</td><td>E2E-X1</td><td>部品X1</td><td>1000</td><td>3</td><td>未着手</td></tr>' +
+            '</tbody></table>' +
             '<section data-mirror="手配状況リスト"></section>');
-        void partId;
+        created.push(orderId);
 
         await page.goto(BASE + '/' + orderId);
         // 鏡の印は data-mirror（名前の見えない data-type の印は 2026-09-27 に廃止）
@@ -259,7 +266,7 @@ async function openSlashMenu(page) {
         //       覆いかぶさってクリックが届かない。見出しへ寄って引っ込めてから狙う。
         await page.locator('#w-editor-content h1').first().click();
         await page.waitForTimeout(400);
-        await page.locator('#w-editor-content table[data-type="client-order-items"] td').first().click();
+        await page.locator('#w-editor-content table:has(> caption:text-is("受注明細")) td').first().click();
         await page.waitForTimeout(400);
         check('本文の表では行操作ツールバーが出る',
             (await page.locator('#w-table-toolbar.active').count()) === 1);
@@ -269,7 +276,16 @@ async function openSlashMenu(page) {
         if (cspViolations.length) console.error('CSP:', cspViolations.slice(0, 3));
         if (errs.length) console.error('ERRS:', errs.slice(0, 3));
     } catch (e) { check('実行が最後まで到達', false); console.error(e); }
-    finally { await browser.close(); }
+    finally {
+        // 作ったページを消す——落ちても残骸を残さない（子を先に・編集ロックを外してから）。
+        for (const id of created.filter(Boolean).reverse()) {
+            try {
+                await page.request.post(BASE + '/api/lock/force?id=' + id, { headers: { 'Origin': BASE } });
+                await page.request.post(BASE + '/api/delete-page?id=' + id, { headers: { 'Origin': BASE } });
+            } catch (e) { console.error('片付けに失敗: ' + id + ' ' + e.message); }
+        }
+        await browser.close();
+    }
     console.log(results.join('\n'));
     console.log(failCount === 0 ? `\n✅ 全 ${results.length} 項目 通過` : `\n❌ ${failCount} 件の失敗`);
     process.exit(failCount === 0 ? 0 : 1);
