@@ -983,7 +983,21 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 						placedMain = true
 						continue
 					}
-					n, err := extraDrawingBlock(tmplTitle, tmpl, it.Reads, machine, pl.Partner, ref)
+					// 1つのファイルに別の加工製品の図面も入っていたら、このページのものだけを名乗る（2026-09-30・ownReads）。
+					reads, others := ownReads(it.Reads, m, hasMain)
+					if len(others) > 0 {
+						var where []string
+						for _, o := range others {
+							at := e.duplicate(o.No, pageID)
+							if at == "" {
+								at = "どのページにも無い——要るなら人が作る"
+							}
+							where = append(where, strings.TrimSpace(o.No+" "+o.Name)+"（"+at+"）")
+						}
+						note.ask("1つの PDF に、このページのものでない図面も入っていました——このページには名乗らせていません: " +
+							strings.Join(where, "・"))
+					}
+					n, err := extraDrawingBlock(tmplTitle, tmpl, reads, machine, pl.Partner, ref)
 					if err != nil {
 						note.warn("⚠ 2枚目からの図面のブロックを作れません（主な図面のブロックへ入れました）: " + err.Error())
 						appendHTML(blk.Node(), fileViewHTML(ref))

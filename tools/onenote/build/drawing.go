@@ -356,6 +356,35 @@ func readsInclude(reads []drawingRead, main drawingRead) bool {
 	return false
 }
 
+// ownReads は1つのファイルから読んだ図面のうち、**このページのもの**だけを返します（2026-09-30）。others はそれ以外。
+//
+// 利用者:「一つのPDFに複数の図面が入っている場合もあり得ます」——一式（本体・側板の左右・カバーの左右）を1つの PDF に
+// まとめた添付を、それまでは読んだ図面番号を全部このページの図面ブロックに並べていた。すると**別の加工製品の図面番号を
+// このページが名乗り**、受注の行が違う品物のページに結ばれる（実データで、左右のカバーの右が本体のページに結ばれていた）。
+//
+// このページのもの: 主な図面と同じ図面番号／名前が主な図面の名前を含む（「○○(溶接指示図)」）。
+// ⚠ ファイルの図面が1枚だけなら、それはこのページに添えられた図面なので全部このページのもの（部品図と溶接図を別の
+// ファイルで添えることがある）。⚠ 主な図面が分からない・どれも当てはまらないときも全部返す（決められないので減らさない）。
+func ownReads(reads []drawingRead, main drawingRead, hasMain bool) (own, others []drawingRead) {
+	if len(reads) <= 1 || !hasMain {
+		return reads, nil
+	}
+	mainNo, mainName := normNo(main.No), normName(main.Name)
+	for _, r := range reads {
+		sameNo := mainNo != "" && normNo(r.No) == mainNo
+		sameName := mainName != "" && strings.Contains(normName(r.Name), mainName)
+		if sameNo || sameName {
+			own = append(own, r)
+		} else {
+			others = append(others, r)
+		}
+	}
+	if len(own) == 0 {
+		return reads, nil
+	}
+	return own, others
+}
+
 // fileViewHTML はファイル表示の印です（添付の参照1つ）。
 func fileViewHTML(ref string) string {
 	return `<section data-type="file-view" data-ref="` + stdhtml.EscapeString(ref) + `"></section>`
