@@ -78,9 +78,13 @@ type backlogRow struct {
 	// RowNo は受注明細の**データ行の番号**（見出しを除いて0から）。
 	// ⚠ **書き戻しの照合に使います**（[order_edit.go]）——番号だけでは足りないので、
 	// `ItemNo` と2つで当てます。
-	RowNo     int
-	OrderNo   string
-	OurItemNo string
+	RowNo   int
+	OrderNo string
+	// Machine は装置名です（2026-09-30・backlog_machine.go）——加工製品ページの置き場か、顧客の発注書の写しから。
+	// MachineFromProduct は前者か（セルの説明に使う）。
+	Machine            string
+	MachineFromProduct bool
+	OurItemNo          string
 	ItemNo    string
 	ItemName  string
 	Quantity  int
@@ -135,6 +139,7 @@ func backlogScan(user *auth.User, rootID int) ([]backlogGroup, int) {
 
 	byKey := map[string]*backlogGroup{}
 	migrating := 0
+	machines := newMachineLookup()
 	for _, id := range pageIDs {
 		// ⚠ **子孫だけ**（自分自身は受注ページではないので含めない）。
 		if !cms.IsDescendantOf(db, id, rootID) {
@@ -188,12 +193,15 @@ func backlogScan(user *auth.User, rootID int) ([]backlogGroup, int) {
 				g = &backlogGroup{Client: client, Due: due, DueISO: iso}
 				byKey[key] = g
 			}
+			machine, fromProduct := machines.machineOf(id, r.Values["our-item-id"], r.Values["item-id"], r.Values["item-name"])
 			g.Rows = append(g.Rows, backlogRow{
 				OrderPageID: page.FormatID(id),
 				// ⚠ **索引の `RowNo` をそのまま使います。** 数え直すと、索引の側の
 				// 数え方が変わった日にずれます（本文の行と1対1でなくなる）。
-				RowNo:           r.RowNo,
-				OrderNo:         orderNo,
+				RowNo:              r.RowNo,
+				OrderNo:            orderNo,
+				Machine:            machine,
+				MachineFromProduct: fromProduct,
 				OurItemNo:       strings.TrimSpace(r.Values["our-item-id"]),
 				ItemNo:          strings.TrimSpace(r.Values["item-id"]),
 				ItemName:        strings.TrimSpace(r.Values["item-name"]),
@@ -275,8 +283,10 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			`data-backlog-print="` + strconv.Itoa(i) + `">🖨 この表を印刷</button>`)
 		// ⚠ **見出しも同じ印を付けます**——付け忘れると、紙で**見出しと値が1つずつ
 		// ずれます**（列が消えるのは値の側だけなので、いちばん気づきにくい壊れ方）。
+		// 装置名は左端（2026-09-30 利用者:「受注残の表に装置名も入れたい」）。⚠ **紙には出さない**——紙の列は 09-21 に利用者が
+		// 決めた6つ（下の注記）。紙にも要るかは聞いている。
 		b.WriteString(`<table class="backlog-table"><tbody>` +
-			`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
+			`<tr><th class="no-print">装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th class="no-print">数量</th><th class="no-print">出荷済み</th>` +
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
@@ -310,6 +320,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			// 鍵を書き換えると**次の書き込みが隣の行に当たります**。
 			st := statusOptionsHTML(r.Status)
 			b.WriteString(`<tr` + rowAttrs(r) + `>` +
+				machineCellHTML(r) +
 				ourItemCellHTML(r.OurItemNo) +
 				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
 				atomicCell(stdhtml.EscapeString(r.ItemName)) +
