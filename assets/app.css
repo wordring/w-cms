@@ -2415,6 +2415,12 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .checksum-ng td { background: #fee2e2; }
 #w-editor-content .checksum-ok td { background: #dcfce7; color: #166534; }
 #w-editor-content .checksum-note td { color: var(--w-muted, #6b7280); font-style: italic; }
+/* 受注残高（2026-09-30・order_balance.go）——受注明細の足元のいちばん上。数字を読むので太く・右寄せにはしない（文になっている）。 */
+#w-editor-content .order-balance td {
+    padding: 6px 8px;
+    font-weight: 600;
+    background: var(--bg-subtle, #f8fafc);
+}
 
 /* ── 材料の参考単価（2026-09-21）────────────────────────────────────────
    材料表の右に足す「最新単価」。⚠ **本文ではなく鏡**なので、**人が書いた列と

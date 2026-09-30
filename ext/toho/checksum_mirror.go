@@ -39,6 +39,9 @@ func init() {
 func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	span := headerCellCount(el)
+	// **受注残高**（2026-09-30 利用者:「受注ページに受注残高を出したい」・order_balance.go）——検算より先に、いちばん上に。
+	// ⚠ 引き金が同じ（受注明細の表）なので、別の鏡にせずここで足す（鏡は引き金1つにつき1つ）。
+	appendOrderBalance(el, span)
 	renderChecksumRows(ctx, el, span)
 
 	// **結びについての気づきも同じ足元に出します**（2026-09-21・[link_item.go]）。
