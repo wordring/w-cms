@@ -189,6 +189,9 @@ type catalog struct {
 		Incomplete bool     `json:"incomplete"`
 		Skipped    string   `json:"skipped"` // 別のノートブックに同じものがあるので吸い出さなかった（その理由）
 		LocalIDs   strings1 `json:"localIds"` // 機械ごとのワンノートのページID（目録の鍵は機械に依らない page-id・2026-09-29）
+
+		// ワンノートでも失われたもの（2026-09-30・吸い出しの「ワンノートでも失われたもの.txt」に人が書いたもの）——取り直さない。
+		LostInOneNote strings1 `json:"lostInOneNote"`
 	} `json:"pages"`
 }
 
@@ -374,6 +377,9 @@ func run(e *env, dry bool) error {
 		note := rep.page(p.Title)
 		if p.Incomplete {
 			note.warn("⚠ 吸い出しで取れなかったファイルがあります（次の吸い出しで取れれば、製造し直すと入ります）")
+		}
+		if len(p.LostInOneNote) > 0 {
+			note.warn("⚠ ワンノートでも失われているファイルがあります——入りません（" + strings.Join(p.LostInOneNote, "・") + "）")
 		}
 		rule, err := set.ruleFor(pl.Partner)
 		if err != nil {
