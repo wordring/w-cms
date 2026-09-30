@@ -35,6 +35,13 @@ const geminiModelName = "gemini-3.5-flash"
 // GeminiGenerate はプロンプトと添付データ（PDF等）を Gemini へ渡し、
 // 応答テキストを返します。
 func GeminiGenerate(prompt string, blob genai.Blob) (string, error) {
+	return GeminiGenerateBlobs(prompt, blob)
+}
+
+// GeminiGenerateBlobs は添付データを**いくつでも**渡せる形です（2026-09-30——2つの図面PDFを見比べさせるのが
+// 最初の使い手・利用者:「PDFの中身も比較してくれるなら、それに越したことは無いです」）。
+// 添付は渡した順に並び、プロンプトは最後に付きます——プロンプトで「1つ目」「2つ目」と呼べます。
+func GeminiGenerateBlobs(prompt string, blobs ...genai.Blob) (string, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		return "", ErrNoGeminiKey
@@ -48,7 +55,12 @@ func GeminiGenerate(prompt string, blob genai.Blob) (string, error) {
 	}
 	defer client.Close()
 
-	resp, err := client.GenerativeModel(geminiModelName).GenerateContent(ctx, blob, genai.Text(prompt))
+	parts := make([]genai.Part, 0, len(blobs)+1)
+	for _, b := range blobs {
+		parts = append(parts, b)
+	}
+	parts = append(parts, genai.Text(prompt))
+	resp, err := client.GenerativeModel(geminiModelName).GenerateContent(ctx, parts...)
 	if err != nil {
 		return "", err
 	}
