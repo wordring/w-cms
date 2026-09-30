@@ -70,6 +70,9 @@ type env struct {
 	mutool string
 	gemini bool
 	fresh  bool // 前に作った「移行中」のページをごみ箱へ移して作り直す
+	// only は作り直すページを w-cms のページIDで絞ります（空なら全部・2026-09-30——利用者が直している最中の
+	// ほかのページに触らずに、決まったページだけを入れ直すため）。
+	only map[string]bool
 	db     *sql.DB // w-cms の索引（読むだけ・同じ図面番号のページを探す）
 	// seen はこの回に作った図面番号（正規化）→ ワンノートの題。
 	seen map[string]string

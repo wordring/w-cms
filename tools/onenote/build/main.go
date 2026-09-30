@@ -221,12 +221,21 @@ func main() {
 		"印刷イメージの XPS を PDF にする mutool（無ければ PNG のまま）")
 	gemini := flag.Bool("gemini", true, "Gemini で図面の表題欄を読む（控えのあるファイルは呼ばない・GEMINI_API_KEY が要る）")
 	fresh := flag.Bool("fresh", false, "前に作った「移行中」のページをごみ箱へ移して作り直す（前に上げたファイルを残さない・ページ番号は変わる）")
+	onlyFlag := flag.String("only", "", "作り直すページを w-cms のページIDで絞る（カンマ区切り・報告は「製造の報告（一部）.md」）")
 	flag.Parse()
 	root := *dirFlag
 	if root == "" {
 		root = filepath.Join(desktop(), "w-cms", "ワンノート", *notebook)
 	}
 	e := &env{root: root, mutool: *mutool, gemini: *gemini, fresh: *fresh, seen: map[string]string{}, machineNotes: map[string]string{}}
+	for _, id := range strings.Split(*onlyFlag, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			if e.only == nil {
+				e.only = map[string]bool{}
+			}
+			e.only[fmt.Sprintf("%06s", strings.TrimLeft(id, "/"))] = true
+		}
+	}
 	// 設定（語の型——図面番号は code）と索引（同じ図面番号のページを探す・読むだけ）。リポジトリの根で動かす。
 	if err := cms.LoadSettings(); err != nil {
 		fmt.Fprintln(os.Stderr, "失敗: 設定を読めません（リポジトリの根で動かしてください）:", err)
@@ -370,6 +379,10 @@ func run(e *env, dry bool) error {
 			continue
 		}
 		pr := rec.Pages[id]
+		// `-only` なら、そのページIDで作ったページだけ（ほかは黙って飛ばす——報告も別のファイル）。
+		if len(e.only) > 0 && (pr == nil || !e.only[pr.WCMS]) {
+			continue
+		}
 		if pr == nil {
 			pr = &pageRecord{Files: map[string]upload{}}
 			rec.Pages[id] = pr
@@ -408,11 +421,15 @@ func run(e *env, dry bool) error {
 	if e.geminiOff {
 		rep.notes = append(rep.notes, "⚠ GEMINI_API_KEY が無いので図面の表題欄を読んでいません（控えのあるファイルだけ使いました）")
 	}
-	if err := os.WriteFile(filepath.Join(root, reportName), []byte(rep.markdown(dry)), 0o644); err != nil {
+	name := reportName
+	if len(e.only) > 0 {
+		name = "製造の報告（一部）.md" // いつもの報告を一部の回で上書きしない
+	}
+	if err := os.WriteFile(filepath.Join(root, name), []byte(rep.markdown(dry)), 0o644); err != nil {
 		return err
 	}
 	fmt.Println(rep.summary())
-	fmt.Println("報告:", filepath.Join(root, reportName))
+	fmt.Println("報告:", filepath.Join(root, name))
 	return nil
 }
 
