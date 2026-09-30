@@ -9,10 +9,17 @@ package toho
 // ページが出来るはず**です。そのタイミングで検索して埋めることになると思います。
 // **できれば機械的にやってほしいです**」。
 //
-// ⚠ **解析の瞬間には結べません。** 発注書が先に届き、図面はあとから来る（あるいは
-// 数か月前に来ている）。だから引き金は**加工製品ページが置かれたとき**に置きます
-// ——整理の実行、つまり**人の操作の直後**です。**裏で走る仕事は作りません**
-// （Gemini も解析も「人が押した直後だけ」という既存の流儀に揃えます）。
+// **結ぶのは2つの時点だけです**（2026-10-01 に単純化——利用者:「単純化しましょう。受注ページを作った時に
+// 弊社品番が無くリンクされなかった品物は、受注フォルダを開いたタイミングで、品番を検索しページ番号を
+// 取得します。検索出来れば弊社品番がありますし、なければ依然として背景薄赤です」「受注フォルダを中心に
+// 作業するので問題ないはずです」）:
+//
+//	受注ページを作ったとき … 🤖解析の直後（analyze_pdf.go）
+//	受注フォルダを開いたとき … 受注残表に並ぶ行で空いているもの（backlog.go の linkBacklogRows）
+//
+// ⚠ それまでは**加工製品ページが置かれたとき**（図面の整理）・受注の整理・管理者の結び直しの口でも結んで
+// いた——引き金が散らばり、二つ目の図面では条件の取り違えで走っていなかった。どちらの時点も**人の操作の
+// 直後**で、**裏で走る仕事は作りません**（Gemini も解析も「人が押した直後だけ」という既存の流儀）。
 //
 // **照合はタグ名を問いません。** 加工製品ページ側の手掛かりは客先によって違います:
 //
@@ -43,31 +50,10 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
-
-// productCodesOf は加工製品ページが持つ「相手が指す番号」を集めます。
-func productCodesOf(pageIDInt int) []string {
-	tags, err := cms.TagsOfPage(database.DB, pageIDInt)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	seen := map[string]bool{}
-	for _, name := range ProductCodeTags() {
-		for _, v := range tags[name] {
-			v = strings.TrimSpace(v)
-			if v != "" && !seen[v] {
-				seen[v] = true
-				out = append(out, v)
-			}
-		}
-	}
-	return out
-}
 
 // ProductPagesByCode は、その番号を持つ加工製品ページを返します（タグ名は問わない）。
 //
@@ -75,92 +61,6 @@ func productCodesOf(pageIDInt int) []string {
 // 打っても当たる——`code` 型は空白・ハイフン・長音・大小を畳むためです。
 func ProductPagesByCode(value string) []int {
 	return productPagesByCodeDB(database.DB, value)
-}
-
-// orderPagesWithItemNo は、その品番の明細行を持つ受注ページを返します。
-//
-// ⚠ **索引を引きます**（`vocab_index`）。受注明細は登録済みの形式なので載っています。
-// 畳み方は列の宣言（`品番` は `code`）と同じものを通すこと——別の畳み方で引くと、
-// **エラーにならず0件**になります。
-func orderPagesWithItemNo(value string) []int {
-	norm, ok := cms.NormalizeValue(cms.ColCode, value)
-	if !ok || norm == "" {
-		return nil
-	}
-	rows, err := database.DB.Query(
-		`SELECT DISTINCT page_id FROM vocab_index
-		  WHERE data_type = ? AND field = ? AND norm_value = ?`,
-		clientOrderItemsType, ItemNoTag, norm)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var out []int
-	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err == nil {
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
-// LinkOrdersToProduct は、この加工製品ページを指すべき受注行の `弊社品番` を埋めます。
-//
-// 埋めた行数を返します（0 なら何も書いていません）。**引き金は整理の実行**——
-// つまり人の操作の直後だけです。
-func LinkOrdersToProduct(user *auth.User, productPageID string) int {
-	id, ok := page.NormalizeID(productPageID)
-	if !ok {
-		return 0
-	}
-	productPageID = id
-	productInt, err := strconv.Atoi(id)
-	if err != nil {
-		return 0
-	}
-	codes := productCodesOf(productInt)
-	if len(codes) == 0 {
-		return 0
-	}
-
-	filled := 0
-	done := map[int]bool{}
-	for _, code := range codes {
-		// ⚠ **1件でなければ触りません。** 同じ番号の加工製品ページが2枚あるなら、
-		// どちらを指すべきかは機械には決められません（2026-09-20 の結論）。
-		if cands := ProductPagesByCode(code); len(cands) != 1 || cands[0] != productInt {
-			continue
-		}
-		for _, orderInt := range orderPagesWithItemNo(code) {
-			if done[orderInt] {
-				continue
-			}
-			done[orderInt] = true
-			orderID := page.FormatID(orderInt)
-			// ⚠ **開かれているページは飛ばします**——オートセーブと黙って
-			// 上書きし合うためです（2026-09-14 の決定）。次の整理で拾えます。
-			if _, open := editlock.Locks.EditorOpen(orderInt); open {
-				continue
-			}
-			body, err := cms.ReadPageBody(orderID)
-			if err != nil {
-				continue
-			}
-			fixed, n := fillOurItemNo(body, code, productPageID)
-			if n == 0 {
-				continue
-			}
-			if err := cms.RewriteBody(orderID, user.Username,
-				func(string) string { return fixed }); err != nil {
-				continue
-			}
-			auth.Audit(user.Username, "order-item.linked",
-				orderID+" "+code+" -> "+productPageID)
-			filled += n
-		}
-	}
-	return filled
 }
 
 // fillOurItemNo は受注明細の空いている `弊社品番` を埋めます（埋めた行数を返す）。
@@ -224,15 +124,11 @@ func fillTable(t *html.Node, wantNorm, productPageID string) int {
 
 // ── 引き（表示のときに気づかせる）────────────────────────────────────────
 //
-// ⚠ **押し出し（整理の直後に埋める）だけでは取りこぼします**。取りこぼすのは3つ:
-//
-//	・整理のとき、その受注ページを誰かが開いていた（ロックで飛ばした）
-//	・加工製品ページを整理を通さず**手で作った**
-//	・ページの `品番` を**あとから人が書いた**
-//
-// どれも**黙って埋まらないまま**になるので、開いたときに見せます。
-// ⚠ **ここでは書きません**——読むだけの操作（GET）で本文を書き換えると、
-// オートセーブと衝突しますし、「見ただけで変わる」は追いにくい壊れ方です。
+// 受注ページを開いたときは、空いている行と結び先の食い違いを**見せるだけ**で、**書きません**。
+// ⚠ 書くのは**受注フォルダを開いたとき**だけ（backlog.go の `linkBacklogRows`・2026-10-01）。
+// ⚠ もとは「読むだけの操作（GET）で本文を書き換えると、オートセーブと衝突しますし、『見ただけで変わる』は
+// 追いにくい壊れ方」として、どこでも書かなかった。受注フォルダで書くのは利用者の決定で、その2つには
+// **編集中の受注ページは飛ばす**・**監査に残す**（`order-item.linked`）で答えている。
 
 // ItemNameTag は受注明細の品名の列です（食い違いの検査に使います）。
 const ItemNameTag = "品名"
@@ -241,7 +137,7 @@ const ItemNameTag = "品名"
 //
 // 見るのは2つで、**捕まえるものが違います**:
 //
-//	空いている行 … 結べる相手が居るのに空のまま（押し出しの取りこぼし）
+//	空いている行 … 結べる相手が居るのに空のまま（受注フォルダをまだ開いていない・その受注ページを誰かが編集していた）
 //	埋まった行   … ⚠ **結び先の題と品名が食い違う**（誤って別の製品に結んだ疑い）
 //
 // ⚠ **2つ目が「1件だけ当たったが、それは別物だった」の最後の砦**です。機械が
@@ -322,7 +218,7 @@ func titleMentions(title, name string) bool {
 // productPagesByCodeDB は鏡の読み取り専用DBで引きます。
 //
 // ⚠ **鏡には書き込みTxを渡さない**という型の約束があるので（walk.go 冒頭）、
-// 押し出しの側と口を分けています。見る名前は設定（`product_code_tags`）が正本です。
+// 書く側（`ProductPagesByCode`）と口を分けています。見る名前は設定（`product_code_tags`）が正本です。
 func productPagesByCodeDB(db cms.ReadOnlyDB, value string) []int {
 	return pagesByAnyTag(db, ProductCodeTags(), value)
 }
@@ -340,18 +236,19 @@ func visibleOnly(viewer *auth.User, ids []int) []int {
 
 
 // LinkProductsToOrder は受注ページの空いている `弊社品番` を、いま在る加工製品ページで
-// 埋めます（埋めた行数を返す）。**押し出しの逆向き**です。
+// 埋めます（埋めた行数を返す）。
 //
 // ⚠ **こちらが本命です。** 引き金を整理（図面）だけに置いていたとき、
 // **図面が先に届いて発注書が後から来る場合に一度も走りませんでした**——そして
 // **返り注文は必ずこちらです**（図面は何か月も前に来ている）。実データで
 // 「埋まりません」と分かりました（2026-09-21）。
 //
-//	発注書が先 → 図面が後 … 図面の整理で走る（LinkOrdersToProduct）
-//	図面が先 → 発注書が後 … こちらで走る（解析の直後・受注の整理）
+//	図面が先 → 発注書が後 … 解析の直後にこれで結ぶ
+//	発注書が先 → 図面が後 … 受注フォルダを開いたときにこれで結ぶ（backlog.go の linkBacklogRows）
 //
-// **どちらも人の操作の直後**です（🤖 解析・📁 整理）。裏で回る仕事は作りません。
-// 歯止め（1件のときだけ・人の値は触らない）は押し出しと同じものを通ります。
+// **どちらも人の操作の直後**です（🤖 解析・受注フォルダを開く）。裏で回る仕事は作りません。
+// ⚠ **編集ロックと書き込みの権限は見ません**——呼ぶ側が確かめる（解析は作ったばかりのページ・受注フォルダは
+// `linkBacklogRows` が確かめる）。
 func LinkProductsToOrder(user *auth.User, orderPageID string) int {
 	filled := 0
 	for _, l := range linkProductsToOrder(user, orderPageID) {
@@ -382,7 +279,7 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	var links []orderLink
 	for _, code := range orderItemNosOf(body) {
 		cands := ProductPagesByCode(code)
-		// ⚠ **1件でなければ触りません**（押し出しと同じ線引き）。
+		// ⚠ **1件でなければ触りません**（同じ図番で別の品物が実在する——2026-09-20）。
 		if len(cands) != 1 {
 			continue
 		}

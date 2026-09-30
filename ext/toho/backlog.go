@@ -31,6 +31,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -251,9 +252,57 @@ func sortBacklogGroups(gs []backlogGroup) {
 	})
 }
 
+// linkBacklogRows は、受注残表に並ぶ行のうち `弊社品番` の空いているものを、いま在る加工製品ページで埋めます
+// （埋めた行数を返す）。
+//
+// 利用者（2026-10-01）:「単純化しましょう。受注ページを作った時に弊社品番が無くリンクされなかった品物は、
+// 受注フォルダを開いたタイミングで、品番を検索しページ番号を取得します。検索出来れば弊社品番がありますし、
+// なければ依然として背景薄赤です。ページがあれば、受注ページにリンクを書き込むことが出来ます」
+// 「管理者メニューで直すのは編集者にとってきつそうです」「受注フォルダを中心に作業するので問題ないはずです」。
+//
+// 結ぶのは作ったときと同じ `linkProductsToOrder`——**候補がちょうど1件のときだけ・人の入れた値は触らない**。
+// 見つからない・2件以上なら空のまま（受注残表のセルは薄赤のまま）。
+//
+//   - ⚠ **書けない人は書かない**（その受注ページへの write が無い）——次に書ける人が開いたときに結ぶ。
+//   - ⚠ **誰かが編集中の受注ページは飛ばす**（オートセーブと黙って上書きし合う）——次に開いたときに結ぶ。
+//   - 監査に残る（`order-item.linked`）。何がいつ自動で埋まったか追える。
+//   - ⚠ **表示（GET）で書く**のはここだけ。書く中身は「空いた欄を、ただ1つの候補で埋める」だけなので、
+//     誰が何度開いても結果は同じ（2回目からは何も書かない）。
+func linkBacklogRows(user *auth.User, groups []backlogGroup) int {
+	if user == nil {
+		return 0
+	}
+	seen := map[string]bool{}
+	filled := 0
+	for _, g := range groups {
+		for _, r := range g.Rows {
+			if r.OurItemNo != "" || r.ItemNo == "" || seen[r.OrderPageID] {
+				continue
+			}
+			seen[r.OrderPageID] = true
+			id, err := strconv.Atoi(r.OrderPageID)
+			if err != nil || !canWritePage(user, id) {
+				continue
+			}
+			if _, open := editlock.Locks.EditorOpen(id); open {
+				continue
+			}
+			for _, l := range linkProductsToOrder(user, r.OrderPageID) {
+				filled += l.Rows
+			}
+		}
+	}
+	return filled
+}
+
 // backlogViewHTML は受注残表を組みます（サーバー事前描画）。
 func backlogViewHTML(user *auth.User, pageIDInt int) string {
 	groups, migrating := backlogScan(user, pageIDInt)
+	// 空いている `弊社品番` を、いま在る加工製品ページで埋めてから描く（linkBacklogRows）。
+	// 書いたら読み直す——索引は書いたときに直っている（RewriteBody → SyncIndex）。
+	if linkBacklogRows(user, groups) > 0 {
+		groups, migrating = backlogScan(user, pageIDInt)
+	}
 	// ⚠ **移行中で飛ばした受注ページの枚数を言います**——言わないと「移した注文が出てこない」を
 	//    集計の壊れと見分けられません。
 	migNote := ""

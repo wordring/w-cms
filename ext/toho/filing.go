@@ -547,25 +547,11 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]filingResult, 0, len(req.Rows)+len(req.Orders))
 	for _, row := range req.Rows {
-		res := fileOneDrawing(user, row)
-		// ⚠ **ここが「弊社品番を機械的に埋める」引き金です**（2026-09-21 ユーザー:
-		// 「注文が入っている以上、近日中に製造製品ページが出来るはずです。**その
-		// タイミングで検索して埋める**ことになると思います。できれば機械的に」）。
-		//
-		// **加工製品ページが置かれた瞬間**——つまり人が整理を押した直後だけに走ります。
-		// 裏で回る仕事は作りません。⚠ **合流したときは合流先**を見ます（そのページが
-		// 新しい図番を得ているので、そちらが受注行の相手です）。
-		// 歯止めと照合の規則は [link_item.go] が正本です。
-		if target := res.TargetID; res.Outcome == "moved" || res.Outcome == "revision" ||
-			res.Outcome == "drawing" {
-			if target == "" {
-				target = res.PageID
-			}
-			if n := LinkOrdersToProduct(user, target); n > 0 {
-				res.Message += "／受注の弊社品番を" + strconv.Itoa(n) + "行埋めました"
-			}
-		}
-		results = append(results, res)
+		// ⚠ **ここでは受注の行を結びません**（2026-10-01 に外した）。加工製品ページが後から置かれたときの
+		// 受注の `弊社品番` は、**受注フォルダを開いたとき**に埋まります（backlog.go の `linkBacklogRows`・
+		// 利用者:「単純化しましょう」）。ここで結んでいた頃は、二つ目の図面（結果 "added"）を条件の
+		// "drawing" で取りこぼしていた。
+		results = append(results, fileOneDrawing(user, row))
 	}
 	for _, o := range req.Orders {
 		results = append(results, fileOneOrder(user, o))

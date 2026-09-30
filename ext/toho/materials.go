@@ -129,9 +129,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 加工製品の置き場（取引先／社名／加工製品／装置名称）を用意する口（2026-09-29・
 		// ワンノートの移植の道具が使う。木の形を知るのは product_tree.go の1つ）。
 		{Pattern: "/api/product-folder", Handler: ProductFolderAPIHandler},
-		// 受注の行を、あとからできた加工製品ページへ結び直す口（2026-09-30・order_relink.go・管理者）。
-		// ワンノートの取り込みは整理を通らないので結ばない——製造の道具が本番の回の最後に呼ぶ。
-		{Pattern: "/api/order-items/relink", Handler: OrderItemsRelinkAPIHandler},
+		// ⚠ 受注の行を結び直す管理者の口（/api/order-items/relink）は 2026-10-01 に外した——受注フォルダを
+		// 開いたときに結ぶ（backlog.go の linkBacklogRows・利用者「管理者メニューで直すのは編集者にとってきつそうです」）。
 		// 解析済みの印（添付ID → 生まれたページ）。読むだけで何も作りません。
 		{Pattern: "/api/analyzed", Handler: AnalyzedAPIHandler},
 		// 受注残表から受注明細の1セルを書き換える口（2026-09-21・order_edit.go）。

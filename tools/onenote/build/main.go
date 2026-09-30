@@ -415,15 +415,10 @@ func run(e *env, dry bool) error {
 			}
 		}
 	}
-	// 受注の行を、いま在る加工製品ページへ結び直す（2026-09-30 夜）——⚠ 取り込みは整理を通らずにページを作るので、
-	// ここで結ばないと、先に整理した受注の `弊社品番` が空のまま残る（利用者:「品番〈図番〉の加工製品ページはあるのに、
-	// 受注残の表に弊社品番なしになるのは何故でしょう？」）。下見では呼ばない（サーバーに書く口なので）。
+	// 受注の行（`弊社品番` の空いているもの）は、**受注フォルダを開いたときに**サーバーが結ぶ（2026-10-01——それまでは
+	// ここから管理者の口 /api/order-items/relink を呼んでいた。利用者:「単純化しましょう」）。
 	if !dry {
-		if res, err := c.relinkOrders(); err != nil {
-			rep.notes = append(rep.notes, "⚠ 受注の行を結び直せませんでした: "+err.Error())
-		} else {
-			rep.relink = &res
-		}
+		rep.notes = append(rep.notes, "受注の行の弊社品番は、受注フォルダを開いたときに結ばれます（候補がちょうど1件の行だけ）。")
 	}
 	if e.mutoolMissing {
 		rep.notes = append(rep.notes, "⚠ mutool がありません（"+e.mutool+"）——印刷イメージは PNG のまま入れました")
@@ -1567,56 +1562,6 @@ func (c *client) productFolder(partner, machine string) (string, error) {
 	return out.PageID, nil
 }
 
-// relinkResult は /api/order-items/relink の答えです（ext/toho/order_relink.go）。
-type relinkResult struct {
-	Pages   int      `json:"pages"`
-	Rows    int      `json:"rows"`
-	Editing []string `json:"editing"`
-	Links   []struct {
-		Order   string `json:"order"`
-		Code    string `json:"code"`
-		Product string `json:"product"`
-		Title   string `json:"title"`
-		Rows    int    `json:"rows"`
-	} `json:"links"`
-}
-
-// relinkOrders は受注の行を、いま在る加工製品ページへ結び直します（2026-09-30 夜）。結ぶのはサーバー——歯止め
-// （候補がちょうど1件のときだけ・人の入れた値は触らない・編集中の受注ページは飛ばす）も同じ口の中。
-func (c *client) relinkOrders() (relinkResult, error) {
-	var out relinkResult
-	res, err := c.do("POST", "/api/order-items/relink", nil, "application/json", "")
-	if err != nil {
-		return out, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		b, _ := io.ReadAll(res.Body)
-		return out, fmt.Errorf("%d: %s", res.StatusCode, strings.TrimSpace(string(b)))
-	}
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-		return out, err
-	}
-	return out, nil
-}
-
-// markdown は報告の節です。⚠ 結び先の題も書く——【旧】の付いたページに結んでよいかは人が見る。
-func (r relinkResult) markdown() string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("## 受注の行を結んだ（%d行・受注 %d枚を見た）\n\n", r.Rows, r.Pages))
-	if len(r.Links) == 0 {
-		b.WriteString("新しく結んだ行はありません。\n")
-	}
-	for _, l := range r.Links {
-		b.WriteString(fmt.Sprintf("- /%s の品番 %s → /%s %s（%d行）\n", l.Order, l.Code, l.Product, l.Title, l.Rows))
-	}
-	if len(r.Editing) > 0 {
-		b.WriteString("- ⚠ 編集中で飛ばした受注ページ: /" + strings.Join(r.Editing, "・/") +
-			"（閉じてから製造をもう一度流すと結ばれます）\n")
-	}
-	return b.String() + "\n"
-}
-
 var pageIDRe = regexp.MustCompile(`(\d{6})`)
 
 func (c *client) newPage(parent, body string) (string, error) {
@@ -1767,10 +1712,9 @@ func (n *pageNote) dropped(s string) {
 }
 
 type report struct {
-	pages  []*pageNote
-	skips  []string
-	notes  []string      // 回全体の注意（道具が無い・鍵が無い）
-	relink *relinkResult // 受注の行を結び直した結果（本番の回だけ）
+	pages []*pageNote
+	skips []string
+	notes []string // 回全体の注意（道具が無い・鍵が無い）
 }
 
 func (r *report) page(title string) *pageNote {
@@ -1822,9 +1766,6 @@ func (r *report) markdown(dry bool) string {
 			b.WriteString("- " + s + "\n")
 		}
 		b.WriteString("\n")
-	}
-	if r.relink != nil {
-		b.WriteString(r.relink.markdown())
 	}
 	b.WriteString("## ページごと\n\n")
 	for _, p := range r.pages {
