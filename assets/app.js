@@ -4165,6 +4165,52 @@
     const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
     // DRAFT_TAG は下書きの印のタグです（ext/comm/compose.go の comm.DraftTag と同じ言葉・2026-09-30）。
     const DRAFT_TAG = '下書き';
+    // HANDLED_TAG は対応の印のタグです（ext/comm/view_unhandled.go の HandledTag と同じ言葉）。
+    const HANDLED_TAG = '対応';
+
+    // handledControl はメールのページの「対応: 未処理・済・不要」の札です（2026-09-30）。押すと
+    // POST /api/intake/handled（`未処理` は印を外す）で書き、ページを読み直してタグの表示も揃える。
+    function handledControl(current) {
+        const wrap = document.createElement('p');
+        wrap.className = 'mail-handled';
+        const head = document.createElement('span');
+        head.className = 'mail-handled-head';
+        head.textContent = '対応:';
+        wrap.appendChild(head);
+        const now = current || '未処理';
+        [['未処理', '返信や次の作業がまだ'], ['済', '次の作業へ割り振った（責任はそちらへ）'],
+         ['不要', '何も生まれない（案内・お礼など）']].forEach(([value, hint]) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'chip-btn mail-handled-btn' + (value === now ? ' is-current' : '');
+            b.textContent = (value === now ? '● ' : '') + value;
+            b.title = hint;
+            b.disabled = value === now;
+            b.addEventListener('click', async () => {
+                b.disabled = true;
+                try {
+                    const res = await fetch('/api/intake/handled', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ page_ids: [currentPageId], value }),
+                    });
+                    const d = await res.json().catch(() => ({}));
+                    if (!res.ok || !d.success || !d.handled) {
+                        notify(d.message || '対応を変えられませんでした（編集中・権限が無い など）', { type: 'warn' });
+                        b.disabled = false;
+                        return;
+                    }
+                    notify('対応を「' + value + '」にしました', { type: 'success', duration: 3000 });
+                    reloadContent();
+                } catch (e) {
+                    notify('対応を変えられませんでした: ' + e.message, { type: 'warn' });
+                    b.disabled = false;
+                }
+            });
+            wrap.appendChild(b);
+        });
+        return wrap;
+    }
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
 
     // analyzedMap は「添付ID → 解析で生まれたページ」。印を出すために持ちます。
@@ -4463,6 +4509,11 @@
         const box = document.createElement('div');
         box.className = 'vocab-chrome mail-chrome';
         box.setAttribute('contenteditable', 'false');
+
+        // 対応（2026-09-30 利用者:「そのメールへの対応が終わったかどうかは、受信フォルダではなく、メールページで
+        // 選択したいです」）——未処理・済・不要のどれかを押す。いまの値は押せない（押しても変わらない）。
+        // 下書き（まだ送っていない）には出さない——送ると送った日の控えが作られ、そちらは送った時点で「不要」。
+        if (!tagValue(DRAFT_TAG)) box.appendChild(handledControl(tagValue(HANDLED_TAG)));
 
         // **「✉️ 返信」だけがメール拡張の持ち物**です（2026-09-15）。同じ箱の「🧵 やりとりの
         // 前後」と「📨 この記録への返信」は記録を読むだけなので、メールを外しても出します。

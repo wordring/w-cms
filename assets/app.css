@@ -1973,6 +1973,17 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 .mail-chrome {
     margin: 1.5rem 0 0.5rem;
 }
+/* メールのページの「対応: 未処理・済・不要」（2026-09-30）。いまの値は ● 付きで押せない。
+   ⚠ `:disabled` まで書いて `.chip-btn:disabled`（薄くする）に勝たせる——同じ強さだと後ろのそちらが勝ち、
+   いまの値が「押せない飾り」に見えた。 */
+.mail-handled { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
+.mail-handled-head { font-size: 0.9em; color: var(--text-muted, #475569); margin-right: 2px; }
+#w-editor-content .mail-handled-btn.is-current:disabled {
+    border-color: var(--accent, #2a6);
+    color: var(--accent, #2a6);
+    font-weight: 600;
+    opacity: 1;
+}
 
 .mail-reply-open {
     padding: 0.35rem 1rem;

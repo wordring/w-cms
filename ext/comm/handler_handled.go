@@ -28,8 +28,10 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"errors"
 	"html"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"w-cms/internal/cms"
@@ -60,8 +62,11 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// **値は表引きで閉じます**——自由に書けると `済` と `完了` が混ざり、
 	// あとから「何件が不要だったか」を数えられなくなります。
+	// `未処理` は印を外す（2026-09-30——メールのページで対応を選べるようにした日に足した）。
 	value := strings.TrimSpace(req.Value)
-	if value != HandledNotNeeded {
+	switch value {
+	case HandledNotNeeded, HandledUndo:
+	default:
 		value = HandledDone
 	}
 
@@ -86,7 +91,7 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 			failed++
 			continue
 		}
-		if err := MarkHandled(pageID, user.Username, value); err != nil {
+		if err := SetHandled(pageID, user.Username, value); err != nil {
 			failed++
 			continue
 		}
@@ -96,33 +101,34 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "handled": done, "failed": failed})
 }
 
-// MarkHandled はページへ `対応` のタグを足します（値は 済 / 不要）。
-//
-// **既に付いていれば何もしません**（二重に押しても増えない）。付ける先は最初の
-// 可変タグの並びで、無ければ h1 の直後に新しく作ります——参照タグの描画が
-// 可変タグの中だけを見るのと同じで、**タグは可変タグの中に居るのが本来**です。
-// ⚠ **呼ぶ前に `editlock.RefuseWhileEditing` を通すこと。** ここは本文を読んで・
-// 変えて・書くので、誰かがエディタを開いていると上書きし合います
-// （`append_page.go` の「ロックは呼ぶ側が取ります」の一件）。
-func MarkHandled(pageID, author, value string) error {
-	pair := `<dt>` + html.EscapeString(HandledTag) + `</dt><dd>` +
-		html.EscapeString(value) + `</dd>`
+// HandledUndo は「印を外して未処理に戻す」の指示です（タグの値ではない・2026-09-30）。
+const HandledUndo = "未処理"
+
+// handledPairRe は本文の `対応` のタグ（dt と dd の組）です（字下げ・属性・空の dd も拾う）。
+var handledPairRe = regexp.MustCompile(`(?s)<dt[^>]*>\s*` + regexp.QuoteMeta(html.EscapeString(HandledTag)) +
+	`\s*</dt>\s*<dd[^>]*>.*?</dd>`)
+
+// SetHandled は `対応` の印を value にします（済 / 不要）。value が HandledUndo なら外して未処理に戻します
+// （2026-09-30 利用者:「そのメールへの対応が終わったかどうかは、受信フォルダではなく、メールページで選択したいです」
+// ——一覧の「済」「不要」は付けるだけだった〔旧 MarkHandled・既に付いていれば何もしない〕が、メールのページでは
+// 付け替えも戻すもできる）。付ける先は最初の可変タグの並びで、無ければ h1 の直後に新しく作ります——**タグは
+// 可変タグの中に居るのが本来**。1つだけ置くので、二度押しても増えません。
+// ⚠ **呼ぶ前に `editlock.RefuseWhileEditing` を通すこと。** 本文を読んで・変えて・書くので、誰かがエディタを
+// 開いていると上書きし合います（`append_page.go` の「ロックは呼ぶ側が取ります」の一件）。
+func SetHandled(pageID, author, value string) error {
+	if value != HandledUndo && value != HandledDone && value != HandledNotNeeded {
+		return errors.New("対応の値は " + HandledDone + "・" + HandledNotNeeded + "・" + HandledUndo + " のどれかです")
+	}
 	return cms.RewriteBody(pageID, author, func(current string) string {
-		if hasHandledTag(current) {
-			return current
+		out := handledPairRe.ReplaceAllString(current, "")
+		if value == HandledUndo {
+			return out
 		}
-		if at := cms.EndOfFirstTagList(current); at >= 0 {
-			return current[:at] + pair + current[at:]
+		pair := `<dt>` + html.EscapeString(HandledTag) + `</dt><dd>` + html.EscapeString(value) + `</dd>`
+		if at := cms.EndOfFirstTagList(out); at >= 0 {
+			return out[:at] + pair + out[at:]
 		}
-		return cms.InsertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
+		return cms.InsertAfterH1(out, `<dl data-type="tags">`+pair+`</dl>`)
 	})
 }
 
-// hasHandledTag は「対応：不要」が既に在るかを見ます。
-//
-// **文字列で見ます**——HTMLを解析し直すほどの判定ではなく、ここで拾いたいのは
-// 「二度押しで2つ付く」を防ぐことだけだからです。取りこぼしても害は
-// 「同じタグが2つ並ぶ」で、索引の逆引きは変わりません。
-func hasHandledTag(body string) bool {
-	return strings.Contains(body, `<dt>`+html.EscapeString(HandledTag)+`</dt>`)
-}
