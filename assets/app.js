@@ -4286,6 +4286,21 @@
                 }
             }
         });
+        // 表計算（.xlsx）にも「🤖 解析」（2026-09-30 利用者:「ハッキリと受注したとわかる場合は、受注ページにして良い」
+        // ——Excel の注文リスト。サーバーが文字にして判定する）。表示のボタンは無い（開くのはリンクで）。
+        if (!hasExtension('toho')) return;
+        document.querySelectorAll('#w-editor-content a[href]').forEach(a => {
+            if (a.closest('.vocab-chrome')) return;
+            const m = /^\/([0-9]{6})\/([0-9a-z]+)\.xlsx$/.exec(a.getAttribute('href') || '');
+            if (!m) return;
+            const ab = makeAnalyzeButton(m[1], m[2] + '.xlsx');
+            a.insertAdjacentElement('afterend', ab);
+            const done = analyzedMap[m[2]];
+            if (done) {
+                ab.textContent = '🤖 再解析';
+                ab.insertAdjacentElement('afterend', makeAnalyzedMark(done));
+            }
+        });
     }
 
 

@@ -225,8 +225,9 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
+	// 表計算（.xlsx）も受けます（2026-09-30・Excel の注文リスト——文字にして判定する・judgeOrderSheet）。
 	fileName, err := cms.SafeAttachmentName(pageID, req.File,
-		map[string]bool{".pdf": true}, "解析できるのは .pdf だけです")
+		map[string]bool{".pdf": true, ".xlsx": true}, "解析できるのは .pdf と .xlsx だけです")
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
@@ -257,7 +258,18 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 // analyzeWithTemplates は、テンプレートを確かめたあとの解析の本体です。
 func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileName string,
 	pdf []byte, orderTmpl, productTmpl string) {
-	j, err := judgeOrderPDF(pdf)
+	var j *orderJudgment
+	var err error
+	if strings.EqualFold(filepath.Ext(fileName), ".xlsx") {
+		text, terr := cms.XLSXText(pdf)
+		if terr != nil {
+			cms.JSONFail(w, http.StatusBadRequest, terr.Error())
+			return
+		}
+		j, err = judgeOrderSheet(text)
+	} else {
+		j, err = judgeOrderPDF(pdf)
+	}
 	if err != nil {
 		if errors.Is(err, cms.ErrNoGeminiKey) {
 			cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
@@ -404,7 +416,7 @@ func loadPDFForAnalysis(pageID, fileName string) ([]byte, error) {
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, errors.New("PDFを読めません")
+		return nil, errors.New("添付を読めません")
 	}
 	return b, nil
 }
@@ -477,6 +489,30 @@ drawings の各項目は次のとおりです:
 // フェンス剥がし）はコア（gemini.go）。
 func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
 	respText, err := cms.GeminiGenerate(orderJudgePrompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
+	if err != nil {
+		return nil, err
+	}
+	return parseOrderJudgment(respText)
+}
+
+// judgeOrderSheet は表計算（.xlsx）を文字にしたものの判定の入口です（2026-09-30・試験が差し替えられるよう変数）。
+//
+// 利用者:「Excelの注文リストは法的に無効ですが、顧客との信頼関係で取り扱う場合があります。ハッキリと受注したと
+// わかる場合は、受注ページにして良いと思います」。Gemini は .xlsx を受けないので、コアの `cms.XLSXText` で文字にして渡す。
+// ⚠ **受注かどうかを決めるのは人**です——押すのは「ハッキリと受注した」と分かった表計算だけ（解析は人が押したときだけ）。
+var judgeOrderSheet = judgeOrderSheetWithGemini
+
+// sheetPreamble は表計算を渡すときに頼み文の頭へ足す断りです。
+const sheetPreamble = `（ここで渡すのはPDFではなく、表計算（Excel）のファイルを文字にしたものです。「=== シート 名前」がシートの区切りで、
+各行は「列=値」を | で区切っています。下の「このPDF」はこの表計算のことと読んでください。
+1台あたりの個数と、今回作る数（「今回製作個数」「注文数」など）の両方があるときは、**今回作る数**を数量にしてください。
+表が見出しで区切られていくつもあるときも、1つの注文なら orders の要素は1つにして、明細を全部入れてください。）
+
+`
+
+func judgeOrderSheetWithGemini(text string) (*orderJudgment, error) {
+	respText, err := cms.GeminiGenerateBlobs(sheetPreamble+orderJudgePrompt,
+		genai.Blob{MIMEType: "text/plain", Data: []byte(text)})
 	if err != nil {
 		return nil, err
 	}
