@@ -3,10 +3,10 @@
 // 利用者:「加工製品ページで図面のブロックごと消すことは出来ますが、一枚の図面だけ消すことが出来ません」
 // 「おそらく追加も難しいのでは？」「エディタを編集モードから閲覧モードに変更しても外すというボタンが消えません」。
 //
-//   ① 見出しの節（データ）に「＋ ファイル」が出て、PDF を2枚足せる
+//   ① 見出しの節（データ）の中の段落にキャレットを置き、書式の帯の 📎 から PDF を2枚足せる（2026-09-30——「＋ ファイル」の札はやめた）
 //   ② 1枚だけ「✕ 外す」で外せる——保存した本文（正本のファイル）から消え、余計なものが残らない
 //   ③ 閲覧モードに戻すと「✕ 外す」「＋ ファイル」「札」が消える
-//   ④ 材料の節（2026-09-29 から素の見出しの節）にも「＋ ファイル」が出る——中の表はキャプションで名乗る
+//   ④ どの節にも「＋ ファイル」の札は出ない（2026-09-30）
 //
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-file-view-remove.js（リポジトリの e2e/ で）
@@ -65,16 +65,19 @@ function rawBody(id) {
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
     const dataSec = '#w-editor-content section:has(> h2:text-is("データ"))';
     const matSec = '#w-editor-content section:has(> h2:text-is("材料"))';
-    // ④ 材料の節には出ない・データの節には出る
-    check('データの節に「＋ ファイル」が出る', await page.locator(dataSec + ' > .fold-add-file').count() === 1);
-    // 節の見出しでは名乗らない（2026-09-29）——材料の節も素の見出しの節なので出る。
-    check('材料の節にも「＋ ファイル」が出る（見出しでは名乗らない）', await page.locator(matSec + ' > .fold-add-file').count() === 1);
+    // ④ 札はもう出ない（2026-09-30 に書式の帯の 🖼・📎 へ移した）
+    check('データの節にも材料の節にも「＋ ファイル」が出ない',
+      await page.locator(dataSec + ' > .fold-add-file').count() === 0 && await page.locator(matSec + ' > .fold-add-file').count() === 0);
 
     // ① PDF を2枚足す
     for (const name of ['図面A.pdf', '図面B.pdf']) {
       const [chooser] = await Promise.all([
         page.waitForEvent('filechooser'),
-        page.locator(dataSec + ' > .fold-add-file').click(),
+        (async () => {
+          await page.locator(dataSec + ' > p', { hasText: '中身' }).click();
+          await page.waitForSelector('#w-context-toolbar.active #w-ctx-file', { timeout: 4000 });
+          await page.locator('#w-context-toolbar #w-ctx-file').click();
+        })(),
       ]);
       await chooser.setFiles([{ name, mimeType: 'application/pdf', buffer: minimalPDF() }]);
       await page.waitForTimeout(800);

@@ -51,12 +51,17 @@ function minimalPDF() {
       '<details open><summary>資料 2</summary><p>図面2</p></details>');
     check('当て先を作れた', !!id, id);
 
-    // 図面（PDF）を「資料 1」へ上げる（編集モードの「＋ ファイル」）。
+    // 図面（PDF）を「資料 1」へ上げる（中の段落にキャレットを置いて書式の帯の 📎——2026-09-30 に「＋ ファイル」の札はやめた）。
     await page.goto(BASE + '/' + id + '?edit=true');
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+    const addFileIn = async (paraText) => {
+      await page.locator('#w-editor-content details > p', { hasText: paraText }).first().click();
+      await page.waitForSelector('#w-context-toolbar.active #w-ctx-file', { timeout: 4000 });
+      await page.locator('#w-context-toolbar #w-ctx-file').click();
+    };
     const [chooser] = await Promise.all([
       page.waitForEvent('filechooser'),
-      page.locator('#w-editor-content details .fold-add-file').first().click(),
+      addFileIn('図面'),
     ]);
     await chooser.setFiles([{ name: '図面A3.pdf', mimeType: 'application/pdf', buffer: minimalPDF() }]);
     await page.waitForFunction(() => document.querySelector(
@@ -64,7 +69,7 @@ function minimalPDF() {
     // 2枚目の PDF を「資料 2」へ（1枚目の大きさを変えても、2枚目は変わらないことを見るため）。
     const [chooser2] = await Promise.all([
       page.waitForEvent('filechooser'),
-      page.locator('#w-editor-content details:has(> summary:text-is("資料 2")) .fold-add-file').click(),
+      addFileIn('図面2'),
     ]);
     await chooser2.setFiles([{ name: '図面A3-2.pdf', mimeType: 'application/pdf', buffer: minimalPDF() }]);
     await page.waitForFunction(() => document.querySelectorAll(

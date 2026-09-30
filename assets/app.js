@@ -2344,6 +2344,10 @@
             pickImageFiles(files => { if (files.length) insertImagesAfter(files, block); });
             return;
         }
+        if (type === 'attach') { // 📎 ファイル（2026-09-30・画像は絵・それ以外はファイル表示）
+            pickAnyFiles(files => { if (files.length) insertFilesAfter(files, block); });
+            return;
+        }
         replaceBlockWithComponent(type, block);
     }
 
@@ -2665,10 +2669,11 @@
 
     // applyNestedChoice はスラッシュメニューの選択で、中の段落1つを置き換える（画像は後ろへ足す）。
     function applyNestedChoice(type, p) {
-        if (type === 'image') {
-            pickImageFiles(async files => {
+        if (type === 'image' || type === 'attach') {
+            const pick = type === 'image' ? pickImageFiles : pickAnyFiles;
+            pick(async files => {
                 if (!files.length) return;
-                await insertImagesAfter(files, p);
+                await insertFilesAfter(files, p);
                 if (!p.textContent.trim() && !p.querySelector('img')) p.remove();
                 updateHtmlPreview();
                 triggerAutoSave();
@@ -2683,7 +2688,6 @@
         enhanceFileSections();
         decorateVocabBlocks();
         decorateFileViews();
-        decorateFolds();
         updateHtmlPreview();
         triggerAutoSave();
         if (el.tagName === 'TABLE' || el.tagName === 'DL') focusFirstCell(el);
@@ -2785,7 +2789,6 @@
             document.querySelectorAll('.editor-block').forEach(b => b.classList.remove('drag-over', 'dragging'));
             draggedBlock = null;
             decorateFileViews();
-            decorateFolds();
             decorateVocabBlocks();
             updateHtmlPreview();
             triggerAutoSave();
@@ -3390,54 +3393,22 @@
         });
     }
 
-    // ── 折りたたみ（details）の「＋ ファイル」（2026-09-28） ─────────────────
+    // ── 画像・ファイルを足す（2026-09-30） ─────────────────────────────────
     //
-    // 利用者:「加工製品のページに、外注加工ごとに資料のブロック（開いたり閉じたりできる）を
-    // 用意して、そこに保存したファイルをメールやFAX、印刷等に追加できるようにしてはどうでしょう？」。
-    // 本文のブロックは上の段に並ぶので、**折りたたみの中へ**ファイルを置く道が要ります——
-    // 編集モードで札を1つ出し、押すとファイルを選んで**このページへ上げ**、
-    // **ファイル表示の印**（`data-ref`）を中の末尾へ足します。
-    // 既にある添付（通信記録に届いた図面など）を置くときは、足した印の札（📄 ファイル表示）
-    // から参照を貼り替えます。
+    // 利用者:「+ファイルというボタンが編集で消せなくなっています」「ファイルの追加はスラッシュメニューで統一的に
+    // 扱ってはどうでしょうか？」「そのブロックの中に画像ファイル等を入れるのに『+ファイル』のボタンが必要というなら、
+    // BIUリンクの方に画像マークでもあれば良いのでは？」「イメージと添付ファイルは扱いが違って当然ですね」
+    // 「画像を追加するボタンも必要だと思います」「ファイルのドラッグによる追加もあると便利」。
     //
-    // ⚠ **見出しの節にも出します**（2026-09-29 利用者:「加工製品ページで図面のブロックごと消すことは
-    // 出来ますが、一枚の図面だけ消すことが出来ません」「おそらく追加も難しいのでは？」）——図面の
-    // ブロック（`<section><h2>図面</h2>…`）もデータの節も、中へファイル表示を足す道がありませんでした。
-    // 出すのは**形式で名乗らない素の見出しの節**だけ（材料などの表の節・鏡・ファイル表示そのものには
-    // 出さない——そこへファイルを置く意味が無い）。外すほうはファイル表示の札の「✕ 外す」。
-    function fileHolderOf(el) {
-        if (el.tagName === 'DETAILS') return true;
-        if (el.tagName !== 'SECTION' || el.hasAttribute('data-type') || el.hasAttribute('data-mirror')) return false;
-        if (sectionDefOf(el)) return false;
-        const first = Array.from(el.children).find(c => !c.classList.contains('vocab-chrome'));
-        return !!first && /^H[2-6]$/.test(first.tagName);
-    }
-
-    function decorateFolds() {
-        const editor = document.getElementById('w-editor-content');
-        if (!editor) return;
-        const isEdit = document.body.hasAttribute('edit-mode');
-        editor.querySelectorAll('details, section').forEach(fold => {
-            if (fold.closest('.vocab-chrome')) return;
-            let bar = fold.querySelector(':scope > .fold-add-file');
-            if (isEdit && !fileHolderOf(fold)) { if (bar) bar.remove(); return; }
-            if (!isEdit) { if (bar) bar.remove(); return; }
-            if (bar) return; // **必要なときだけDOMを変える**（decorateFileViews と同じ理由）
-            bar = document.createElement('button');
-            bar.type = 'button';
-            bar.className = 'vocab-chrome fold-add-file';
-            bar.contentEditable = 'false';
-            bar.textContent = '＋ ファイル';
-            bar.title = 'ファイルを選んでこのページへ上げ、この' +
-                (fold.tagName === 'DETAILS' ? '折りたたみ' : '節') + 'の中にファイル表示を置きます';
-            bar.addEventListener('mousedown', e => e.preventDefault());
-            bar.addEventListener('click', e => {
-                e.preventDefault();
-                pickAnyFiles(files => { if (files.length) addFilesIntoFold(files, fold); });
-            });
-            fold.appendChild(bar);
-        });
-    }
+    // それまでは道が4つあり、できる形が3通りでした（スラッシュの「画像」＝絵・ドラッグ＝絵か📎リンク・
+    // 節と折りたたみの末尾の「＋ ファイル」＝ファイル表示・スラッシュの「ファイル表示」＝空の印）。いまは:
+    //
+    //   入口 … 書式の帯の 🖼（画像だけ）・📎（何でも）／スラッシュの「🖼 画像」「📎 ファイル」／ドラッグ
+    //   形   … **画像は本文の中の絵**（`<p><img>`）、**それ以外はファイル表示の印**（開く枠・開く案内）
+    //   場所 … キャレット（ドラッグは落とした所）のすぐ後ろ。節・折りたたみの中なら中のまま（名前の上なら先頭）
+    //
+    // ⚠ 節と折りたたみの末尾に出していた「＋ ファイル」（2026-09-28〜29）は消しました——編集モードで節ごとに
+    // 並ぶ飾りで、本文に見えるのに消せませんでした。既にある添付を指すのは、スラッシュの「ファイル表示」の札。
 
     // pickAnyFiles はファイル選択を開きます（種類は問わない・複数可）。
     function pickAnyFiles(onPick) {
@@ -3448,40 +3419,63 @@
         input.click();
     }
 
-    // addFilesIntoFold はファイルを順にこのページへ上げ、折りたたみの中へファイル表示の印を足します。
-    // 口は種類で振り分けます（画像・PDF は中身検査つきの専用口——insertAttachmentsAfter と同じ）。
-    async function addFilesIntoFold(files, fold) {
+    // fileInsertPointAt は、node（キャレット・落とした所）から見て、足すものを置く「直前の要素」を返します。
+    //   - 入れ物の名前（素の節の最初の見出し・折りたたみの題）→ その名前（中の先頭へ入る）
+    //   - 節・折りたたみの中の要素 → その要素（入れ物の中のまま）
+    //   - それ以外 → 上の段のブロック（その後ろへ新しいブロック）
+    function fileInsertPointAt(node) {
+        const head = boxHeadAt(node);
+        if (head) return head;
+        const inner = innerTargetAt(node);
+        if (inner) return inner;
+        const el = node && (node.nodeType === 1 ? node : node.parentElement);
+        return el && el.closest ? el.closest('#w-editor-content .editor-block') : null;
+    }
+
+    // insertAfterRef は el を ref の後ろへ置きます（上の段のブロックの後ろなら包む・入れ物の中なら包まない）。
+    function insertAfterRef(el, ref) {
+        const top = !ref || ref.classList.contains('editor-block');
+        const node = top ? wrapInBlock(el) : el;
+        if (ref && ref.parentNode) ref.parentNode.insertBefore(node, ref.nextSibling);
+        else document.getElementById('w-editor-content').appendChild(node);
+        return node;
+    }
+
+    // insertFileViewsAfter は画像以外のファイルを順にこのページへ上げ、ref の後ろへファイル表示の印を置きます。
+    // 口は種類で振り分けます（PDF は %PDF- 検査つきの専用口・それ以外は汎用口）。最後に置いた要素を返します。
+    //
+    // ⚠ **通信箱のページでは取り込みになります**（.eml・PDF は記録のページとして生まれ、ここには入らない）——
+    //    行き先を知らせ、左レールに出す（本文は取り直さない——書きかけを消さない）。
+    async function insertFileViewsAfter(files, ref) {
         if (!currentPageId) {
             notify('先にページを保存してください。', { type: 'warn', duration: 5000 });
-            return;
+            return ref;
         }
+        let last = ref;
         for (const f of files) {
-            const isImage = /^image\//.test(f.type || '');
             const isPDF = f.type === 'application/pdf' || /[.]pdf$/i.test(f.name);
-            const [url, field] = isImage ? ['/api/upload-image', 'image_file']
-                : isPDF ? ['/api/upload-pdf', 'pdf_file'] : ['/api/upload-file', 'file'];
             const fd = new FormData();
             fd.append('page_id', currentPageId);
-            fd.append(field, f);
+            fd.append(isPDF ? 'pdf_file' : 'file', f);
             try {
-                const res = await lockedFetch(url, { method: 'POST', body: fd });
+                const res = await lockedFetch(isPDF ? '/api/upload-pdf' : '/api/upload-file', { method: 'POST', body: fd });
                 const d = await readResult(res);
                 if (d && d.intake) {
-                    // 通信箱のページでは PDF が記録として取り込まれる（添付にならない）。
-                    notify(f.name + ' は受信箱に取り込まれました（/' + d.page_id + '）——' +
-                        'ここには入れていません。', { type: 'warn', duration: 8000 });
+                    notify('受信箱に取り込みました: ' + (d.title || d.page_id) + '（/' + d.page_id + '）',
+                        { type: 'success', duration: 8000 });
+                    loadChildNav();
                     continue;
                 }
-                if (!res.ok || !d || !d.id) {
+                if (!res.ok || !d || !d.success || !d.id) {
                     notify(f.name + ' を上げられませんでした: ' + failMessage(res, d),
-                        { type: 'alert', duration: 0, id: 'fold-upload' });
+                        { type: 'alert', duration: 0, id: 'file-upload' });
                     continue;
                 }
                 const sec = document.createElement('section');
                 sec.setAttribute('data-type', FILE_VIEW_TYPE);
                 sec.setAttribute(FILE_REF_ATTR, currentPageId + '-' + d.id);
                 sec.textContent = f.name; // 名札（保存のたびにサーバーが書き直す・表示では消える）
-                fold.insertBefore(sec, fold.querySelector(':scope > .fold-add-file'));
+                last = insertAfterRef(sec, last);
             } catch (err) {
                 notify(f.name + ' を上げられませんでした: ' + err.message, { type: 'warn', duration: 8000 });
             }
@@ -3489,6 +3483,31 @@
         decorateFileViews();
         updateHtmlPreview();
         triggerAutoSave();
+        return last;
+    }
+
+    // insertFilesAfter は選んだファイルを種類で振り分けて ref の後ろへ置きます（画像は絵・それ以外はファイル表示）。
+    async function insertFilesAfter(files, ref) {
+        const images = files.filter(f => (f.type || '').indexOf('image/') === 0);
+        const others = files.filter(f => (f.type || '').indexOf('image/') !== 0);
+        let last = ref;
+        if (images.length) last = await insertImagesAfter(images, last);
+        if (others.length) last = await insertFileViewsAfter(others, last);
+        return last;
+    }
+
+    // addFilesAtCaret は書式の帯の 🖼・📎 から呼ばれます（キャレットの位置を先に決めてから選ばせる——選んでいる間に
+    // キャレットが動いても、押したときの場所へ入る）。
+    function addFilesAtCaret(imagesOnly) {
+        const sel = window.getSelection();
+        const ref = sel && sel.rangeCount ? fileInsertPointAt(sel.anchorNode) : null;
+        if (!ref || !ref.closest('#w-editor-content')) {
+            notify('入れる場所へキャレットを置いてから押してください。', { type: 'warn', duration: 5000 });
+            return;
+        }
+        const done = files => { if (files.length) insertFilesAfter(files, ref); };
+        if (imagesOnly) pickImageFiles(done);
+        else pickAnyFiles(done);
     }
 
     // foldSummaryOf は、編集中の要素が折りたたみの題（summary）の中なら、その summary を返します。
@@ -5439,6 +5458,67 @@
         }
     }
 
+    // ── 写真も「📝 ローカルで編集」（2026-09-30） ────────────────────────────
+    //
+    // 利用者:「写真などもワンクリックでローカルアプリで編集できてよいと思います」「イメージと添付ファイルは
+    // 扱いが違って当然ですね」——写真は本文の中の絵（`<img>`）のままにして、**マウスを載せたときだけ**隅に
+    // 📝 を1つ浮かべる（本文の外に置く1つの札・閲覧でも編集でも）。住所 `/<6桁>/<添付ID>.<拡張子>` の添付ID が
+    // そのままファイル表示の参照（`ページ番号-添付ID`）なので、同じ口（startLocalEdit）で開く。
+    // ⚠ ファイル表示の中の絵（頭の行に 📝 がある）とタッチ端末（載せる操作が無い）には出さない。
+    const IMG_ATTACH_SRC = /^\/(\d{6})\/([0-9a-z]+)\.[0-9a-z]+$/i;
+    let imgEditTarget = null;
+    let imgEditHideTimer = 0;
+
+    function imgEditButton() {
+        let btn = document.getElementById('w-img-edit');
+        if (btn) return btn;
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'w-img-edit';
+        btn.className = 'img-edit-btn';
+        btn.textContent = '📝';
+        btn.title = 'この写真を PC のアプリで開いて編集し、保存（Ctrl+S）するたびに w-cms へ入れます（道具 w-cms-edit が要ります）';
+        btn.addEventListener('mousedown', e => e.preventDefault());
+        btn.addEventListener('click', e => {
+            e.preventDefault();
+            const m = imgEditTarget && (imgEditTarget.getAttribute('src') || '').match(IMG_ATTACH_SRC);
+            if (m) startLocalEdit(m[1] + '-' + m[2], btn);
+        });
+        btn.addEventListener('mouseenter', () => clearTimeout(imgEditHideTimer));
+        btn.addEventListener('mouseleave', () => hideImgEditSoon());
+        document.body.appendChild(btn);
+        return btn;
+    }
+
+    function hideImgEditSoon() {
+        clearTimeout(imgEditHideTimer);
+        imgEditHideTimer = setTimeout(() => {
+            const btn = document.getElementById('w-img-edit');
+            if (btn) btn.classList.remove('active');
+            imgEditTarget = null;
+        }, 250);
+    }
+
+    document.addEventListener('mouseover', e => {
+        const img = e.target;
+        if (!img || img.tagName !== 'IMG' || document.body.classList.contains('anonymous')) return;
+        if (!img.closest('#w-editor-content') || img.closest('.vocab-chrome, .file-view')) return;
+        if (!IMG_ATTACH_SRC.test(img.getAttribute('src') || '')) return;
+        if (window.matchMedia('(pointer: coarse)').matches) return;
+        clearTimeout(imgEditHideTimer);
+        imgEditTarget = img;
+        const btn = imgEditButton();
+        const r = img.getBoundingClientRect();
+        btn.classList.add('active');
+        btn.style.top = (window.scrollY + r.top + 6) + 'px';
+        btn.style.left = (window.scrollX + r.right - btn.offsetWidth - 6) + 'px';
+    });
+    document.addEventListener('mouseout', e => {
+        if (e.target && e.target === imgEditTarget && e.relatedTarget !== document.getElementById('w-img-edit')) {
+            hideImgEditSoon();
+        }
+    });
+
     // ── 物ごとの見え方をこの端末に憶える（2026-09-28） ─────────────────────
     //
     // 利用者:「各ページのPDFなどの埋め込みの縦横比や、ブロックの開閉状態をブラウザに記録して再生することは
@@ -5797,8 +5877,6 @@
 
         // ファイル表示の配線の札も同じ巡りで面倒を見る（呼び出し口を増やさない）。
         decorateFileViews();
-        // 折りたたみの「＋ ファイル」の札も同じ巡りで（2026-09-28）。
-        decorateFolds();
         // 表の名前・見出しの SQL の問題個所の薄赤も同じ巡りで（2026-09-28）。
         markSqlNames();
         // セルの印（折り返し・型の読めた／読めない）も同じ巡りで付け直す。
@@ -5896,67 +5974,6 @@
         }
     }
 
-    // insertAttachmentsAfter は画像以外のファイルを順に添付し、refBlock の後ろへ
-    // 📎 リンクの段落として挿します。PDF は PDF口（%PDF- 検査つき）、それ以外は
-    // 汎用口（/api/upload-file）へ送る。リンクの href はサーバーが返す（files/ 配下）。
-    async function insertAttachmentsAfter(files, refBlock) {
-        if (!currentPageId) {
-            notify('先にページを保存してください。', { type: 'warn', duration: 5000 });
-            return;
-        }
-        let last = refBlock;
-        for (const f of files) {
-            const isPDF = f.type === 'application/pdf' || /[.]pdf$/i.test(f.name);
-            const fd = new FormData();
-            fd.append('page_id', currentPageId);
-            fd.append(isPDF ? 'pdf_file' : 'file', f);
-            try {
-                const res = await lockedFetch(isPDF ? '/api/upload-pdf' : '/api/upload-file',
-                    { method: 'POST', body: fd });
-                const d = await readResult(res);
-                if (d && d.intake) {
-                    // 受信箱への取り込み——添付ではなく子ページが生まれた。
-                    // 本文にリンクは挿さず、行き先を知らせる（一覧は子ページ一覧の鏡が担う）。
-                    // PDFの解釈（発注書→受注ページ）は自動では走らない——記録ページの
-                    // 📎に出る「🤖 解析」ボタンから（人間ゲート型・2026-09-01）。
-                    notify('受信箱に取り込みました: ' + (d.title || d.page_id) +
-                        '（/' + d.page_id + '）', { type: 'success', duration: 8000 });
-                    // **生まれた子ページを左レールへ出す**（2026-09-14）。解析と同じ穴で、
-                    // 通知だけでは押した人が自分で読み込み直すことになります。
-                    // **本文は取り直しません**——落とすのは編集モードなので、
-                    // `reloadContent()` を呼ぶと書きかけを消します（本文の鏡は次に
-                    // 閲覧モードへ戻ったときに揃います）。
-                    loadChildNav();
-                    continue;
-                }
-                if (!res.ok || !d.success) {
-                    notify(f.name + ' を添付できませんでした: ' + failMessage(res, d),
-                        { type: 'alert', duration: 0, id: 'file-upload' });
-                    continue;
-                }
-                const p = document.createElement('p');
-                if (d.id) p.setAttribute('data-id', d.id); // 添付ID＝ブロックID（3役の一致）
-                p.textContent = '📎 ';
-                const a = document.createElement('a');
-                a.href = d.href || '';
-                a.download = f.name; // 保存名の既定は元の名前（URLは生成IDのまま）
-                a.textContent = f.name;
-                p.appendChild(a);
-                const block = wrapInBlock(p);
-                if (last && last.parentNode) {
-                    last.parentNode.insertBefore(block, last.nextSibling);
-                } else {
-                    document.getElementById('w-editor-content').appendChild(block);
-                }
-                last = block;
-            } catch (err) {
-                notify(f.name + ' の添付に失敗しました: ' + err.message, { type: 'warn', duration: 8000 });
-            }
-        }
-        updateHtmlPreview();
-        triggerAutoSave();
-    }
-
     // insertImagesAfter は選ばれた画像を順に添付し、refBlock の後ろへ1枚ずつ挿します。
     // alt にはファイル名を入れる（読み上げと、画像が出ないときの手掛かり）。
     async function insertImagesAfter(files, refBlock) {
@@ -5982,6 +5999,7 @@
         }
         updateHtmlPreview();
         triggerAutoSave();
+        return last; // 続けて足すもの（📎 で画像と一緒に選んだファイル）はこの後ろへ
     }
 
     // insertImageIntoCell は image 列のセルへ画像を1枚入れます（差し替えは上書き）。
@@ -6301,7 +6319,7 @@
             if (!target) {
                 target = document.createElement('p');
                 target.appendChild(document.createElement('br'));
-                fold.insertBefore(target, fold.querySelector(':scope > .fold-add-file'));
+                fold.appendChild(target);
             }
             const range = document.createRange();
             range.selectNodeContents(target);
@@ -6540,17 +6558,19 @@
             // 種類で口を分ける——画像は画像口（EXIF除去・中身検査）、PDFはPDF口
             // （%PDF-検査）、それ以外は汎用口（拡張子は設定・中身は配信側が守る）。
             // 「添付はドラッグアンドドロップに耐えられた方が良い」（2026-08-31）。
+            // 2026-09-30 から、画像は本文の中の絵・それ以外はファイル表示の印（書式の帯の 📎 と同じ・
+            // insertFilesAfter）。**落とした所のすぐ後ろ**——節・折りたたみの中なら中のまま。
             const images = all.filter(f => f.type.indexOf('image/') === 0);
             const others = all.filter(f => f.type.indexOf('image/') !== 0);
             const cell = e.target.closest && e.target.closest('#w-editor-content td');
             const col = cell && resolveCellColumn(cell);
             if (images.length && cell && col && col.type === 'image' && !isServerOwned(cell)) {
                 insertImageIntoCell(cell, images[0]); // 表のセルへは1枚だけ
-                if (!others.length) return;
+                // ⚠ セルへ入れた画像を本文へ二重に入れない（09-30 まで、ほかのファイルと一緒に落とすと入っていた）。
+                if (others.length) insertFileViewsAfter(others, fileInsertPointAt(e.target));
+                return;
             }
-            const block = e.target.closest ? e.target.closest('.editor-block') : null;
-            if (images.length) insertImagesAfter(images, block);
-            if (others.length) insertAttachmentsAfter(others, block);
+            insertFilesAfter(all, fileInsertPointAt(e.target));
         });
 
         // 項目の click / mouseenter は renderSlashMenu が項目を作るたびに配線する
@@ -6801,6 +6821,21 @@
             link.addEventListener('mousedown', e => e.preventDefault());
             link.addEventListener('click', e => { e.preventDefault(); linkSelection(); });
             toolbar.appendChild(link);
+            // 画像・ファイルを足す（2026-09-30 利用者:「BIUリンクの方に画像マークでもあれば良いのでは？」
+            // 「画像を追加するボタンも必要」）——キャレットのすぐ後ろへ（節・折りたたみの中なら中のまま）。
+            // 🖼 は画像だけを選ぶ（スマホではカメラも選べる）、📎 は何でも（画像は絵・それ以外はファイル表示）。
+            [['🖼', 'w-ctx-image', 'ここに画像を足す（スマホではその場で撮れます）', true],
+             ['📎', 'w-ctx-file', 'ここにファイルを足す（画像・PDF・DXF など何でも・複数可）', false]]
+                .forEach(([label, id, title, imagesOnly]) => {
+                    const b = document.createElement('button');
+                    b.id = id;
+                    b.innerText = label;
+                    b.title = title;
+                    b.style.minWidth = '24px';
+                    b.addEventListener('mousedown', e => e.preventDefault()); // キャレットを本文に残す
+                    b.addEventListener('click', e => { e.preventDefault(); addFilesAtCaret(imagesOnly); });
+                    toolbar.appendChild(b);
+                });
             hasButtons = true;
         }
 

@@ -1622,6 +1622,21 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     opacity: 0.5;
     cursor: wait;
 }
+/* 写真の「📝」（2026-09-30）——マウスを載せた写真の右上に浮かぶ札（本文の外に1つ・位置は CSSOM）。 */
+.img-edit-btn {
+    position: absolute;
+    z-index: 900;
+    display: none;
+    padding: 2px 8px;
+    font-size: 14px;
+    background: var(--bg-paper, #fff);
+    border: 1px solid var(--border-strong, #cbd5e1);
+    border-radius: var(--radius, 8px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+}
+.img-edit-btn.active { display: block; }
+.img-edit-btn:disabled { opacity: 0.5; cursor: wait; }
 /* 本文の折りたたみ（2026-09-28・スラッシュメニュー「折りたたみ」）。題（summary）の言葉が
    ブロックの名前——例: 加工製品の「資料 1」。枠で囲んで、どこまでが中身か見えるように。
    ⚠ ファイル表示の外枠（.file-view-fold）は鏡のクロームなので除く。 */
@@ -1642,19 +1657,6 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 }
 #w-editor-content .sql-name-warn::before {
     content: "⚠ ";
-}
-/* 折りたたみの「＋ ファイル」の札（編集モードだけ・ファイル表示の配線の札と同じ見た目）。 */
-#w-editor-content .fold-add-file {
-    display: block;
-    margin: 4px 0;
-    padding: 2px 8px;
-    font: inherit;
-    font-size: 0.85em;
-    color: inherit;
-    background: var(--vocab-bg, #eef4ff);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    cursor: pointer;
 }
 #w-editor-content .attach-zip-list {
     margin: 0;

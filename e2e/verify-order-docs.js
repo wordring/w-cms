@@ -3,7 +3,7 @@
 // 利用者:「加工製品のページに、外注加工ごとに資料のブロック（開いたり閉じたりできる）を用意して、
 // そこに保存したファイルをメールやFAX、印刷等に追加できるようにしてはどうでしょう？」。
 //
-//   ① 加工製品の「資料 1」の折りたたみに「＋ ファイル」で図面（A3 横のPDF）を上げる
+//   ① 加工製品の「資料 1」の折りたたみに、書式の帯の 📎 で図面（A3 横のPDF）を上げる
 //   ② 発注書（行が 弊社品番＋番号 1 を指す）のメールの送る欄（部品）に、その図面の候補（チェック済み）が出る
 //   ③ 「📠 FAX・印刷用（資料を綴じる）」を押すと、発注書のうしろに図面を綴じた1本ができる
 //   ④ メールの送信に図面が添付として載る——⚠ **送信の口は画面の中で差し止める**（本物のメールは出さない）
@@ -53,12 +53,14 @@ function minimalPDF() {
       '<details open><summary>資料 1</summary><p>図面</p></details>');
     check('加工製品を作れた', !!product, product);
 
-    // ① 「＋ ファイル」で図面を上げる
+    // ① 「資料 1」の中にキャレットを置き、書式の帯の 📎 で図面を上げる（2026-09-30——「＋ ファイル」の札はやめた）
     await page.goto(BASE + '/' + product + '?edit=true');
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+    await page.locator('#w-editor-content details > p', { hasText: '図面' }).click();
+    await page.waitForSelector('#w-context-toolbar.active #w-ctx-file', { timeout: 4000 });
     const [chooser] = await Promise.all([
       page.waitForEvent('filechooser'),
-      page.locator('#w-editor-content details .fold-add-file').click(),
+      page.locator('#w-context-toolbar #w-ctx-file').click(),
     ]);
     await chooser.setFiles([{ name: '図面A3.pdf', mimeType: 'application/pdf', buffer: minimalPDF() }]);
     await page.waitForFunction(() => document.querySelector(

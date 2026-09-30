@@ -3,8 +3,9 @@
 // 利用者:「加工製品のページに、外注加工ごとに資料のブロック（開いたり閉じたりできる）を用意して、
 // そこに保存したファイルをメールやFAX、印刷等に追加できるようにしてはどうでしょう？」。
 //
-//   ① 編集モードで折りたたみの中に「＋ ファイル」の札が出る（閲覧モードでは出ない）
-//   ② 札からファイルを上げると、中にファイル表示の印（data-ref＝このページ-添付ID）が入り、保存される
+//   ① 折りたたみの末尾に「＋ ファイル」の札は**もう出ない**（2026-09-30 に書式の帯の 🖼・📎 へ移した）
+//   ② 中の段落にキャレットを置いて帯の 📎 からファイルを上げると、**画像は絵・それ以外はファイル表示の印**
+//      （data-ref＝このページ-添付ID）で**折りたたみの中**に入り、保存される
 //   ③ 題（summary）の文字を打てる——題を押しても閉じない・空白が打てる
 //   ④ スラッシュメニュー「折りたたみ」で挿せて、題から打ち始められる
 //
@@ -44,10 +45,10 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
     check('当て先を作れた', !!id, id);
     await openEditor();
 
-    // ① 札が出る
+    // ① 札はもう出ない（書式の帯の 🖼・📎 へ移した・2026-09-30）
     const fold = page.locator('#w-editor-content details').first();
-    check('編集モードで折りたたみに「＋ ファイル」の札が出る',
-      await fold.locator(':scope > .fold-add-file').count() === 1);
+    check('編集モードでも折りたたみに「＋ ファイル」の札が出ない',
+      await page.locator('#w-editor-content .fold-add-file').count() === 0);
 
     // ③ 題を押しても閉じない・空白が打てる
     const sum = fold.locator(':scope > summary');
@@ -78,23 +79,45 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
     await page.waitForTimeout(150);
     check('左端の ▸ では開閉できる', closed && await fold.evaluate(el => el.open));
 
-    // ② 札からファイルを上げる（DXF＝汎用口・PNG＝画像口）
+    // ② 中の段落にキャレットを置き、書式の帯の 📎 から上げる（DXF＝ファイル表示・PNG＝絵）
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await fold.locator(':scope > p').first().click();
+    await page.waitForSelector('#w-context-toolbar.active #w-ctx-file', { timeout: 4000 });
+    check('書式の帯に 🖼 と 📎 が出る',
+      await page.locator('#w-context-toolbar #w-ctx-image').count() === 1 &&
+      await page.locator('#w-context-toolbar #w-ctx-file').count() === 1);
     const [chooser] = await Promise.all([
       page.waitForEvent('filechooser'),
-      fold.locator(':scope > .fold-add-file').click(),
+      page.locator('#w-context-toolbar #w-ctx-file').click(),
     ]);
     await chooser.setFiles([
       { name: '展開.dxf', mimeType: 'application/octet-stream', buffer: Buffer.from('0\nSECTION\n0\nEOF\n') },
       { name: '写真.png', mimeType: 'image/png', buffer: png },
     ]);
-    await page.waitForFunction(() => document.querySelectorAll(
-      '#w-editor-content details section[data-type="file-view"]').length >= 2, null, { timeout: 8000 })
-      .catch(() => {});
+    await page.waitForFunction(() => {
+      const d = document.querySelector('#w-editor-content details');
+      return d && d.querySelector('section[data-type="file-view"]') && d.querySelector('img');
+    }, null, { timeout: 8000 }).catch(() => {});
     const refs = await fold.evaluate(el => Array.from(el.querySelectorAll('section[data-type="file-view"]'))
       .map(s => s.getAttribute('data-ref')));
-    check('上げた2つがファイル表示の印として中に入る', refs.length === 2 &&
+    check('DXF はファイル表示の印として折りたたみの中に入る', refs.length === 1 &&
       refs.every(r => new RegExp('^' + id + '-[0-9a-z]+$').test(r)), JSON.stringify(refs));
+    const imgSrc = await fold.evaluate(el => { const i = el.querySelector('img'); return i ? i.getAttribute('src') : ''; });
+    check('写真は絵（img）として折りたたみの中に入る', new RegExp('^/' + id + '/[0-9a-z]+\\.png$').test(imgSrc), imgSrc);
+    check('折りたたみは割れず1つのまま', await page.locator('#w-editor-content details').count() === 1);
+
+    // ②' ドラッグ——折りたたみの中の段落へ落とすと、中のまま入る（2026-09-30・帯の 📎 と同じ処理）
+    await page.evaluate(() => {
+      const p = document.querySelector('#w-editor-content details > p');
+      const dt = new DataTransfer();
+      dt.items.add(new File(['0\nSECTION\n0\nEOF\n'], '落とした.dxf', { type: 'application/octet-stream' }));
+      p.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    await page.waitForFunction(() => document.querySelectorAll(
+      '#w-editor-content details section[data-type="file-view"]').length >= 2, null, { timeout: 8000 }).catch(() => {});
+    check('落としたファイルも折りたたみの中にファイル表示で入る',
+      await fold.locator('section[data-type="file-view"]').count() === 2);
+    check('スラッシュメニューに「📎 ファイル」がある', await page.locator('#w-slash-menu .slash-menu-item[data-type="attach"]').count() === 1);
 
     // ④ スラッシュメニュー「折りたたみ」
     await page.locator('#w-editor-content p', { hasText: 'あとがき' }).click();
@@ -116,12 +139,15 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
     check('保存: 2つ目の折りたたみ', /<details open="?"?>\s*<summary>資料 2<\/summary>/.test(body) ||
       body.includes('<summary>資料 2</summary>'));
     check('保存: 中のファイル表示の印', refs.every(r => body.includes('data-ref="' + r + '"')));
-    check('保存: 札は本文に残らない', !body.includes('fold-add-file') && !body.includes('＋ ファイル'));
+    check('保存: 写真', !!imgSrc && body.includes('src="' + imgSrc + '"'));
+    check('保存: 帯の札は本文に残らない', !body.includes('fold-add-file') && !body.includes('＋ ファイル') && !body.includes('w-ctx-'));
 
-    // ① 閲覧モードでは札が出ない
+    // 閲覧モードでは写真にマウスを載せると 📝（ローカルで編集）が出る
     await page.goto(BASE + '/' + id);
-    await page.waitForSelector('#w-editor-content details', { timeout: 8000 });
-    check('閲覧モードでは札が出ない', await page.locator('.fold-add-file').count() === 0);
+    await page.waitForSelector('#w-editor-content details img', { timeout: 8000 });
+    await page.locator('#w-editor-content details img').first().hover({ force: true });
+    await page.waitForTimeout(200);
+    check('写真に載せると 📝 が出る', await page.locator('#w-img-edit.active').count() === 1);
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));
