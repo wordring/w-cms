@@ -15,6 +15,7 @@ td.who { max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
 .dir { font-size: 12px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; }
 .dir-in { background: #e0f2fe; color: #075985; }
 .dir-out { background: #fef3c7; color: #92400e; }
+.dir-draft { background: #ede9fe; color: #5b21b6; } /* 下書き（2026-09-30）——📝 の印も付く（色だけに頼らない） */
 
 /* スレッドの境目と、返信の字下げの目印。 */
 tr.thread-start td { border-top: 2px solid #cbd5e1; }

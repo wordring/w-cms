@@ -67,9 +67,11 @@
         heads.forEach((h) => { const out = []; walk(h, 0, out); threads.push(out); });
         // 輪の中にだけ居て頭が無かったもの（普通は起きない）も落とさない。
         mails.forEach((m) => { if (!visited.has(m)) { const out = []; walk(m, 0, out); threads.push(out); } });
+        // 下書きは日時を持たない（まだ送っていない）ので、いちばん上に並べる（書きかけを忘れない）。
+        const stamp = (m) => (m.draft ? '￿' : String(m.when || ''));
         threads = threads.map((members) => ({
             members,
-            latest: members.reduce((x, e) => (String(e.m.when || '') > x ? String(e.m.when || '') : x), ''),
+            latest: members.reduce((x, e) => (stamp(e.m) > x ? stamp(e.m) : x), ''),
         }));
         threads.sort((a, b) => b.latest.localeCompare(a.latest));
     }
@@ -90,7 +92,8 @@
         const day = String(m.when || '').slice(0, 10);
         if (f.from && (!day || day < f.from)) return false;
         if (f.to && (!day || day > f.to)) return false;
-        if (f.unhandled && !(m.direction === '受信' && !m.handled)) return false;
+        // 下書きも未処理（書きかけ・送っていない）。
+        if (f.unhandled && !((m.direction === '受信' || m.draft) && !m.handled)) return false;
         if (f.q) {
             const hay = [m.title, ...(m.from || []), ...(m.to || []), ...(m.cc || [])].join(' ').toLowerCase();
             if (!hay.includes(f.q)) return false;
@@ -110,11 +113,12 @@
         const tr = document.createElement('tr');
         if (opts.start) tr.classList.add('thread-start');
         if (opts.dim) tr.classList.add('dim');
-        cell(tr, when(m));
+        cell(tr, m.draft ? '（まだ送っていない）' : when(m));
         const dirTd = cell(tr, '');
         const badge = document.createElement('span');
-        badge.className = 'dir ' + (m.direction === '送信' ? 'dir-out' : 'dir-in');
-        badge.textContent = m.direction === '送信' ? '📤 送信' : '📥 受信';
+        badge.className = 'dir ' + (m.draft ? 'dir-draft' : m.direction === '送信' ? 'dir-out' : 'dir-in');
+        // 下書き（2026-09-30）——送る欄で「下書きに保存」したもの。開くと直して送れる。
+        badge.textContent = m.draft ? '📝 下書き' : m.direction === '送信' ? '📤 送信' : '📥 受信';
         dirTd.appendChild(badge);
         const names = partner(m);
         const whoTd = cell(tr, names.join('、'), 'who');
@@ -153,7 +157,7 @@
         cell(tr, m.attachments ? m.attachments : '', 'num');
         const h = cell(tr, '');
         if (m.handled) h.textContent = m.handled;
-        else if (m.direction === '受信') {
+        else if (m.direction === '受信' || m.draft) {
             const u = document.createElement('span');
             u.className = 'unhandled';
             u.textContent = '⚠ 未処理';
@@ -222,5 +226,14 @@
     ['ml-q', 'ml-from', 'ml-to'].forEach((id) => $(id).addEventListener('input', again));
     ['ml-dir', 'ml-unhandled', 'ml-flat'].forEach((id) => $(id).addEventListener('change', again));
     $('ml-more').addEventListener('click', () => { shown += PAGE; render(); });
+
+    // 新しいメール（送る欄の部品・2026-09-30・assets/mail-compose.js）。もう一度押すと畳む。
+    const composeHost = $('ml-compose');
+    $('ml-new').addEventListener('click', () => {
+        if (composeHost.firstChild) { composeHost.textContent = ''; return; }
+        if (window.wcmsMailCompose) window.wcmsMailCompose.open(composeHost, { purpose: '新規' });
+    });
+    // 送れたら一覧を読み直す（送信の控えが並ぶ）。
+    composeHost.addEventListener('wcms:mail-sent', () => load());
     load();
 })();

@@ -46,16 +46,33 @@ type ReplyRequest struct {
 	Attachments []AttachRef `json:"attachments"`
 }
 
+// SendRequest は送る欄からの1通です（2026-09-30 に用件と下書きを足した）。
+//
+//   - Purpose・PageID … 用件（`comm.RegisterSendPurpose`）と、その元のページ。用件が
+//     「返信として送る」なら元のページが返信元になり、送る直前の仕事（発注書なら PDF を作って添える）と
+//     送れたあとの仕事（発注済みにする）もここで走ります。空なら昔の形（source_page_id だけ）。
+//   - DraftID … 下書きから送るとき。送れたら下書きはごみ箱へ（控えは送った日に新しく作る）。
+type SendRequest struct {
+	ReplyRequest
+	Purpose string `json:"purpose"`
+	PageID  string `json:"page_id"`
+	DraftID string `json:"draft_id"`
+}
+
+// sendMail は実際に送る口です（試験が偽物へ差し替えられるよう変数にしてある——本物は外へメールが出る）。
+var sendMail = comm.SendMail
+
 // MailSendAPIHandler は POST /api/mail/send です。
 func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
 		return
 	}
-	var req ReplyRequest
-	if !cms.DecodeJSONBody(w, r, &req) {
+	var sreq SendRequest
+	if !cms.DecodeJSONBody(w, r, &sreq) {
 		return
 	}
+	req := sreq.ReplyRequest
 	if len(cleanAddrs(req.To)) == 0 {
 		cms.JSONFail(w, http.StatusBadRequest, "宛先が空です")
 		return
@@ -63,6 +80,31 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.Body) == "" {
 		cms.JSONFail(w, http.StatusBadRequest, "本文が空です")
 		return
+	}
+	// ── 用件（2026-09-30）──
+	var purpose comm.SendPurpose
+	purposePageID := ""
+	if name := strings.TrimSpace(sreq.Purpose); name != "" {
+		p, ok := comm.SendPurposeOf(name)
+		if !ok {
+			cms.JSONFail(w, http.StatusBadRequest, "用件「"+name+"」はありません")
+			return
+		}
+		if purposePageID, ok = purposePage(w, user, p, sreq.PageID); !ok {
+			return
+		}
+		purpose = p
+		if p.InReplyTo && strings.TrimSpace(req.SourcePageID) == "" {
+			req.SourcePageID = purposePageID
+		}
+	}
+	// ⚠ **下書きは送る前に確かめます**——送ってから「下書きを片付けられない」と分かっても、
+	// 出たメールは戻せません（書けない・エディタで開いている下書きなら、1通も送らない）。
+	draftID := ""
+	if raw := strings.TrimSpace(sreq.DraftID); raw != "" {
+		if draftID, ok = checkDraftWritable(w, r, user, raw); !ok {
+			return
+		}
 	}
 	source := ""
 	if req.SourcePageID != "" {
@@ -106,12 +148,23 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 送る直前の仕事（発注書なら PDF を作って添える）。断るときは用件の側が応答を書いています。
+	if purpose.Prepare != nil {
+		extra, ok := purpose.Prepare(w, r, purposePageID)
+		if !ok {
+			return
+		}
+		for _, a := range extra {
+			req.Attachments = append(req.Attachments, AttachRef{PageID: a.PageID, File: a.File, Name: a.Name})
+		}
+	}
+
 	files, err := collectAttachments(user, req.Attachments)
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sentID, err := comm.SendMail(user, comm.OutgoingMail{
+	sentID, err := sendMail(user, comm.OutgoingMail{
 		To: cleanAddrs(req.To), Cc: cleanAddrs(req.Cc),
 		Subject: req.Subject, BodyText: req.Body,
 		InReplyTo:   sourceMessageID(source),
@@ -138,6 +191,21 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		resp["record_error"] = "メールは送信しましたが、送信箱への記録を作れませんでした: " + recErr.Error()
 	} else {
 		resp["page_id"] = pageID
+	}
+	// 3. 送れたあとの仕事（発注書なら発注済みにする）。⚠ **失敗しても「送れていない」とは言いません**
+	// ——黙るともう一度送ってしまうので、送れたことと、できなかったことを両方返します。
+	if purpose.AfterSent != nil {
+		if err := purpose.AfterSent(user, purposePageID, pageID); err != nil {
+			resp["after_error"] = "メールは送りましたが、" + err.Error()
+		}
+	}
+	// 4. 下書きを片付ける（控えは送った日の月に新しく作ったので、下書きはごみ箱へ）。
+	if draftID != "" {
+		if _, err := cms.DeletePageToTrash(draftID); err != nil {
+			resp["draft_error"] = "メールは送りましたが、下書き（/" + draftID + "）を片付けられませんでした: " + err.Error()
+		} else {
+			auth.Audit(user.Username, "mail.draft.sent", draftID)
+		}
 	}
 	cms.WriteJSON(w, resp)
 }
@@ -205,14 +273,22 @@ func sentRecordBody(tmpl, from, sourcePageID, sourceMsgID, messageID string, now
 	// **返信元は参照タグ**（`ページID`）——押せば飛び、逆引きで「この記録への返信」も
 	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
 	d.SetTag(comm.ReplySourceTag, sourcePageID)
+	if err := fillMailBody(d, req); err != nil {
+		return "", err
+	}
+	return d.HTML(), nil
+}
 
+// fillMailBody は本文（`本文` の節の `<pre>`）と添付のリンク（`添付ファイル` の節）を書きます。
+// 送信の控えと下書きが共有します（2026-09-30——同じ形でないと、下書きを開き直したときに読み戻せない）。
+func fillMailBody(d *cms.PageDraft, req ReplyRequest) error {
 	// 本文は平文のまま `<pre>` へ。HTMLメールは作らないので、**見たままが送った中身**です
 	// ——段落に割ると空行と字下げが落ち、控えが「送ったもの」と違う形になります
 	// （受信側と同じ扱い・2026-09-05）。
 	if pre := comm.PlainTextBlockHTML(req.Body); pre != "" {
 		sec, err := d.RequireContainer(comm.MailBodyHeading)
 		if err != nil {
-			return "", err
+			return err
 		}
 		sec.SetContent(pre)
 	}
@@ -237,11 +313,11 @@ func sentRecordBody(tmpl, from, sourcePageID, sourceMsgID, messageID string, now
 	if files.Len() > 0 {
 		sec, err := d.RequireContainer(comm.MailFilesHeading)
 		if err != nil {
-			return "", err
+			return err
 		}
 		sec.SetContent(files.String())
 	}
-	return d.HTML(), nil
+	return nil
 }
 
 // cleanAddrs は空白を落とし、空の要素を除きます。

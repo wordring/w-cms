@@ -78,7 +78,7 @@ async function statusesOf(page) {
 
     // ① 送信の欄
     for (const [sel, name] of [
-      ['[data-order-send]', 'メールの送信ボタン'],
+      ['[data-mail-compose="発注書"]', 'メールの送る欄（部品・2026-09-30）'],
       ['[data-order-sent="FAX"]', 'FAXで送った'],
       ['[data-order-sent="手渡し"]', '手渡した'],
       ['.order-row-set', '行ごとの印のボタン'],

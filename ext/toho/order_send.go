@@ -224,11 +224,11 @@ func signerLinesFor(head map[string]string, heading string) []string {
 //
 // ⚠ **3つの道を最初から見せます。** 隠すと、FAXしか使わない相手のときに
 // 「この画面では送れない」と読まれます。
-func orderSendFormHTML(user *auth.User, pageIDInt int, head map[string]string,
-	counts OrderSendCounts, docs []orderDoc, docNotes []string) string {
+//
+// ⚠ **メールの宛先・件名・本文・資料の候補はここで描きません**（2026-09-30 から送る欄の部品——
+// 用件「発注書」の初期値は order_mail.go）。docs は「FAX・印刷用（資料を綴じる）」を出すかだけに使う。
+func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc) string {
 	orderID := page.FormatID(pageIDInt)
-	supplier := strings.TrimSpace(head[SupplierTag])
-	addrs := supplierAddresses(user, supplier)
 
 	var b strings.Builder
 	b.WriteString(`<div class="order-send" data-order-page="` + orderID + `">`)
@@ -258,29 +258,11 @@ func orderSendFormHTML(user *auth.User, pageIDInt int, head map[string]string,
 	//
 	// ⚠ **`<details>` で畳みます**——素のHTMLだけで開閉できるので、CSP strict の
 	//    下でも動きます（受注ページの原本と同じ手）。
+	// ⚠ **中身は送る欄の部品が描きます**（2026-09-30・`assets/mail-compose.js`）——開いたときに
+	//    用件「発注書」の初期値（order_mail.go）を引いて、宛先・件名・本文・資料・下書きの保存を出す。
 	b.WriteString(`<details class="order-mail"><summary>📧 メールで送る</summary>`)
-	b.WriteString(`<label class="matsearch-field"><span>宛先</span>` +
-		`<input type="text" class="matsearch-input" data-order="to" value="` +
-		stdhtml.EscapeString(strings.Join(addrs, ", ")) +
-		`" placeholder="eigyo@example.co.jp"/></label>`)
-	if len(addrs) == 0 {
-		// ⚠ **引けなかったことを黙りません**——空欄だと「連絡帳に居ないから出せない」
-		//    のか「引く仕掛けが壊れている」のかが分かりません。
-		b.WriteString(`<p class="unorder-help">⚠ 「` + stdhtml.EscapeString(supplier) +
-			`」の連絡先が連絡帳にありません（題が一致する組織ページに「` +
-			contacts.EmailTag + `」のタグを付けると、ここに出ます）。</p>`)
-	}
-	b.WriteString(`<label class="matsearch-field"><span>件名</span>` +
-		`<input type="text" class="matsearch-input" data-order="subject" value="` +
-		stdhtml.EscapeString(orderMailSubject(orderID, supplier)) + `"/></label>`)
-	b.WriteString(`<label class="matsearch-field order-mail-body"><span>本文</span>` +
-		`<textarea class="matsearch-input" data-order="body" rows="10">` +
-		stdhtml.EscapeString(orderMailBody(head, supplier, orderID)) + `</textarea></label>`)
-	b.WriteString(orderDocsHTML(docs, docNotes))
-	// ⚠ **PDFは押したときに作ります**（下書きを開いただけで添付を増やさない）。
-	b.WriteString(`<p class="unorder-help">⚠ 送るときに<strong>発注書のPDFを作って添付</strong>します` +
-		`（このページの添付にも残ります）。</p>`)
-	b.WriteString(`<button type="button" class="matsearch-go" data-order-send="1">送信</button>`)
+	b.WriteString(`<div class="mail-compose-host" data-mail-compose="` + stdhtml.EscapeString(OrderMailPurpose) +
+		`" data-mail-page="` + orderID + `"></div>`)
 	b.WriteString(`</details>`)
 	b.WriteString(`<div class="unorder-result" data-order-result="1"></div>`)
 	b.WriteString(`</div>`)

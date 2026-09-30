@@ -4144,6 +4144,8 @@
     // PDFの中身が悪意を持つ危険は埋め込み方によらず同じなので、開くかどうかの
     // 判断を人に残す（自動では開かない）。ZIPは目録だけ（/api/zip-list・展開はしない）。
     const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
+    // DRAFT_TAG は下書きの印のタグです（ext/comm/compose.go の comm.DraftTag と同じ言葉・2026-09-30）。
+    const DRAFT_TAG = '下書き';
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
 
     // analyzedMap は「添付ID → 解析で生まれたページ」。印を出すために持ちます。
@@ -4445,13 +4447,30 @@
 
         // **「✉️ 返信」だけがメール拡張の持ち物**です（2026-09-15）。同じ箱の「🧵 やりとりの
         // 前後」と「📨 この記録への返信」は記録を読むだけなので、メールを外しても出します。
-        if (hasExtension('comm/mail')) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'mail-reply-open';
-            btn.textContent = '✉️ 返信';
-            btn.addEventListener('click', () => toggleReplyForm(box, btn));
-            box.appendChild(btn);
+        //
+        // ⚠ **書く欄は部品です**（2026-09-30・assets/mail-compose.js）——用件「返信」の初期値
+        // （宛先・RE: の件名・署名・引用・添付の候補）はサーバーが組みます。
+        // ⚠ **下書きのページ**（`下書き` のタグ）では、返信の代わりに**下書きを開いた送る欄**を出します
+        // （開いたらすぐ直して送れる・送ったら下書きはごみ箱へ行き、控えのページへ移る）。
+        const compose = window.wcmsMailCompose;
+        if (hasExtension('comm/mail') && compose) {
+            const slot = document.createElement('div');
+            slot.className = 'mail-compose-host';
+            if (tagValue(DRAFT_TAG)) {
+                box.appendChild(slot);
+                compose.open(slot, { draftId: currentPageId });
+            } else {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'mail-reply-open';
+                btn.textContent = '✉️ 返信';
+                btn.addEventListener('click', () => {
+                    if (slot.firstChild) { slot.textContent = ''; return; } // もう一度押すと畳む
+                    compose.open(slot, { purpose: '返信', pageId: currentPageId });
+                });
+                box.appendChild(btn);
+                box.appendChild(slot);
+            }
         }
         host.appendChild(box);
 
@@ -4554,182 +4573,6 @@
         });
         wrap.appendChild(ul);
         box.appendChild(wrap);
-    }
-
-    // bareAddress は `名前 <アドレス>` からアドレスだけを取り出します。
-    //
-    // **投函の宛先には素のアドレスしか置けません。** SMTP の `RCPT TO:` へは
-    // この値がそのまま渡るので（`ext/comm/mail/smtp.go` の `c.Rcpt`）、飾りの名前が
-    // 付いていると断られます。サーバー側の `normalizeEmailTag` と同じ規則です
-    // ——山括弧があれば中身、無ければ全体。
-    function bareAddress(raw) {
-        const s = String(raw || '').trim();
-        const i = s.lastIndexOf('<');
-        if (i >= 0) {
-            const j = s.indexOf('>', i);
-            if (j > i) return s.slice(i + 1, j).trim();
-        }
-        return s;
-    }
-
-    // replyTo は返信の宛先の初期値です。
-    //
-    // **`返信先`（Reply-To）が先**——差出人と違う窓口に返させたいときに付くヘッダで、
-    // 付いているなら相手はそちらで受けたいのです（付いていないほうが普通）。
-    //
-    // ⚠ **2026-09-13 から `差出人アドレス` タグはありません**（1人1タグにした日に
-    // `差出人` が `名前 <アドレス>` を持つ形へ変わった）。ここが古いままだったので、
-    // **返信の宛先が空のまま出ていました**（2026-09-14 に実測して気づいた）。
-    function replyTo() {
-        return bareAddress(tagValue('返信先') || tagValue('差出人'));
-    }
-
-    // toggleReplyForm は返信の入力欄を出し入れします。宛先と件名は元のメールから
-    // 埋めますが、**全部書き直せます**（機械が決めるのは初期値まで）。
-    function toggleReplyForm(box, btn) {
-        const existing = box.querySelector('.mail-reply-form');
-        if (existing) { existing.remove(); return; }
-
-        const form = document.createElement('div');
-        form.className = 'mail-reply-form';
-
-        const fields = {};
-        [['to', '宛先', replyTo()],
-         ['cc', 'CC', ''],
-         ['subject', '件名', replySubject()]].forEach(([key, label, value]) => {
-            const row = document.createElement('div');
-            row.className = 'mail-reply-row';
-            const lb = document.createElement('label');
-            lb.textContent = label;
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = value;
-            row.appendChild(lb);
-            row.appendChild(input);
-            form.appendChild(row);
-            fields[key] = input;
-        });
-
-        const body = document.createElement('textarea');
-        body.className = 'mail-reply-body';
-        body.rows = 10;
-        body.value = quotedBody();
-        form.appendChild(body);
-
-        // **添付はこのページにあるものから選びます**（2026-09-05）。図面PDFを業者へ
-        // 回す、見積書を顧客へ返す——実際に起きるのはこの形で、手元のディスクから
-        // 選び直す必要がありません（同じファイルが2つに増えるのも防げます）。
-        const picks = attachmentPickers(form);
-
-        const send = document.createElement('button');
-        send.type = 'button';
-        send.className = 'mail-reply-send';
-        send.textContent = '送信';
-        send.addEventListener('click', () => sendReply(fields, body, send, form, picks));
-        form.appendChild(send);
-
-        btn.insertAdjacentElement('afterend', form);
-        fields.to.focus();
-    }
-
-    // replySubject は元の件名へ RE: を1つだけ付けます（RE: RE: を重ねない）。
-    function replySubject() {
-        const host = document.getElementById('w-editor-content');
-        const h1 = host && host.querySelector('h1:not(.vocab-chrome h1)');
-        const subj = h1 ? h1.textContent.trim() : '';
-        return /^\s*re\s*:/i.test(subj) ? subj : 'RE: ' + subj;
-    }
-
-    // quotedBody は元の本文を引用にします（差出人の1行を添えて `> ` を付ける）。
-    //
-    // **本文は `<pre>` 1つ**です（2026-09-05 の取り込み変更）。段落だけを集める
-    // 書き方のままだと**引用が空になります**——`pre` へ移した日に一緒に直すべきでした。
-    // 添付のリンク段落（📎・📧）は引用に混ぜません。
-    function quotedBody() {
-        const host = document.getElementById('w-editor-content');
-        if (!host) return '\n\n';
-        const lines = [];
-        host.querySelectorAll('pre, p').forEach(el => {
-            if (el.closest('.vocab-chrome')) return;
-            const t = el.textContent.replace(/\r\n/g, '\n').trimEnd();
-            if (!t.trim()) return;
-            if (/^(📎|📧)/.test(t.trim())) return; // 添付のリンク行
-            t.split('\n').forEach(line => lines.push('> ' + line));
-        });
-        // 引用の頭は**飾りの名前ごと**でよい（読む人に見せる文字で、投函には使わない）。
-        const from = tagValue('差出人');
-        const head = from ? '\n\n' + from + ' さんは書きました:\n' : '\n\n';
-        return head + lines.slice(0, 60).join('\n') + '\n';
-    }
-
-    // attachmentPickers はこのページの添付を選べるようにします（無ければ何も出さない）。
-    //
-    // 一覧は**本文のリンクから作ります**——📎（添付）と 📧（受信原本）の段落は
-    // きれいなURL（`/<6桁>/<生成ID>.<拡張子>`）を持つので、そこから採れます。
-    // **形を必ず検査する**のは、クロームがリンクから何かを導出するときの決まりです
-    // （`refreshAttachmentPreviews` と同じ流儀）。
-    function attachmentPickers(form) {
-        const host = document.getElementById('w-editor-content');
-        if (!host) return [];
-        const picks = [];
-        const box = document.createElement('div');
-        box.className = 'mail-reply-attach';
-
-        host.querySelectorAll('p[data-id] > a[href]').forEach(a => {
-            if (a.closest('.vocab-chrome')) return;
-            const m = a.getAttribute('href').match(/^\/(\d{6})\/([0-9a-z]+\.[0-9a-z]+)$/i);
-            if (!m) return;
-            const shown = a.getAttribute('download') || m[2];
-            const label = document.createElement('label');
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            label.appendChild(cb);
-            label.appendChild(document.createTextNode(' ' + shown));
-            box.appendChild(label);
-            picks.push({ cb, ref: { page_id: m[1], file: m[2], name: shown } });
-        });
-        if (!picks.length) return [];
-
-        const head = document.createElement('p');
-        head.className = 'mail-reply-attach-head';
-        head.textContent = '📎 添付を付ける';
-        form.appendChild(head);
-        form.appendChild(box);
-        return picks;
-    }
-
-    async function sendReply(fields, body, send, form, picks) {
-        send.disabled = true;
-        send.textContent = '送信中…';
-        try {
-            const res = await fetch('/api/mail/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    source_page_id: currentPageId,
-                    to: [fields.to.value],
-                    cc: [fields.cc.value],
-                    subject: fields.subject.value,
-                    body: body.value,
-                    attachments: (picks || []).filter(p => p.cb.checked).map(p => p.ref),
-                }),
-            });
-            const d = await res.json();
-            if (!d.success) throw new Error(d.message || res.status);
-            // **送れたが記録できなかった**ときも、送れた事実は必ず伝える。
-            if (d.record_error) {
-                notify(d.record_error, { type: 'warn', duration: 0, id: 'mail-send' });
-            } else {
-                notify('送信しました。控えは送信箱にあります（/' + d.page_id + '）',
-                    { type: 'success', duration: 0, id: 'mail-send' });
-            }
-            form.remove();
-            refreshMailChrome(); // 「この記録への返信」を出し直す
-        } catch (e) {
-            notify('送信できませんでした: ' + e, { type: 'alert', duration: 0, id: 'mail-send' });
-        }
-        send.disabled = false;
-        send.textContent = '送信';
     }
 
     // ── 加工製品ページの整理（提案→人が直す→実行）───────────────────────────
@@ -7634,7 +7477,9 @@ delegateClick([['.backlog-print', (btn) => {
 // 取り消しもある**ということです」。
 //
 // ⚠ **送信の口は作っていません**——メールは `/api/mail/send` が既に在り、
-//    添付つきで送れて**通信箱に控えが残ります**。ここはそれを呼ぶだけです。
+//    添付つきで送れて**通信箱に控えが残ります**。
+// ⚠ **メールを書く欄は部品です**（2026-09-30・assets/mail-compose.js）——ここに残るのは行ごとの印・
+//    PDFを作る・FAX・手渡しのボタンだけ。
 (function wireOurOrderSend() {
     // 行1つの印を変える（発注済・納品済・取消・戻す）。
     //
@@ -7760,73 +7605,6 @@ delegateClick([['.backlog-print', (btn) => {
         location.reload();
     }
 
-    // メールで送る。⚠ **3段**です——PDFを作る → 送る → 印を付ける。
-    //
-    // ⚠ **段ごとに何が起きたかを言います。** いちばん困るのは「**送れたのに印が
-    //    付かなかった**」で、そこで黙ると**もう一度送ってしまいます**。
-    async function sendMail(btn) {
-        const root = btn.closest('.order-send');
-        const box = root ? root.querySelector('[data-order-result]') : null;
-        if (!root) return;
-        const pageID = root.getAttribute('data-order-page') || '';
-        const val = (k) => valueIn(root, '[data-order="' + k + '"]');
-        const to = val('to').split(/[,;\s]+/).filter((s) => s);
-        if (to.length === 0) {
-            sayIn(box,'⚠ 宛先を入れてください', 'proc-why-ng');
-            return;
-        }
-        btn.disabled = true;
-        try {
-            // 1. PDFを作る（このページの添付としても残ります）。
-            sayIn(box,'発注書のPDFを作っています…');
-            const pdf = await postJSON('/api/order-pdf', { page_id: pageID });
-            if (!pdf.ok) {
-                sayIn(box,'⚠ PDFを作れませんでした: ' + (pdf.data.message || ''), 'proc-why-ng');
-                return;
-            }
-            // 2. 送る（控えは通信箱に残ります）。
-            //    外注加工の資料は、チェックが付いているものだけ添えます（2026-09-28・order_docs.go）。
-            //    ⚠ 添付は元のページのまま指します（写し直さない・読めるページの添付だけ——サーバーが見る）。
-            const docs = Array.from(root.querySelectorAll('input[data-doc-file]:checked')).map((c) => ({
-                page_id: c.getAttribute('data-doc-page') || '',
-                file: c.getAttribute('data-doc-file') || '',
-                name: c.getAttribute('data-doc-name') || '',
-            }));
-            sayIn(box,'メールを送っています…');
-            const sent = await postJSON('/api/mail/send', {
-                to,
-                subject: val('subject'),
-                body: val('body'),
-                attachments: [{
-                    page_id: pageID,
-                    file: pdf.data.file,
-                    // ⚠ **送るときの名前は日時を外します**——相手には保存名の
-                    //    日時は意味がなく、件名と揃っていたほうが探しやすい。
-                    name: '発注書 ' + pageID + '.pdf',
-                }].concat(docs),
-            });
-            if (!sent.ok) {
-                sayIn(box,'⚠ 送れませんでした: ' + (sent.data.message || ''), 'proc-why-ng');
-                return;
-            }
-            // 3. 印を付ける。⚠ **ここで失敗しても「送れていない」とは言いません**。
-            sayIn(box,'送りました。発注済みの印を付けています…');
-            const mark = await postJSON('/api/our-order/sent', { page_id: pageID, method: 'メール' });
-            if (!mark.ok) {
-                sayIn(box,'⚠ メールは送りました（' + to.join(', ') +
-                    '）が、発注済みの印を付けられませんでした: ' +
-                    (mark.data.message || '') + '　行ごとの「✓ 発注済」を押してください。',
-                    'proc-why-ng');
-                return;
-            }
-            location.reload();
-        } catch (err) {
-            sayIn(box,'⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
     // ⚠ **document へ委譲します**——鏡はサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
     delegateClick([
@@ -7835,7 +7613,8 @@ delegateClick([['.backlog-print', (btn) => {
         ['[data-order-pdf]', makePDF],
         ['[data-order-pdf-docs]', makePDFWithDocs],
         ['[data-order-sent]', markSent],
-        ['[data-order-send]', sendMail],
+        // メールで送る欄は部品です（2026-09-30・assets/mail-compose.js——「PDFを作る → 送る → 発注済みにする」は
+        // サーバーの用件「発注書」が受け持つ・ext/toho/order_mail.go）。
     ]);
 })();
 

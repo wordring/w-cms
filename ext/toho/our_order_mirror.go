@@ -49,35 +49,13 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if span <= 0 {
 		span = len(columnsOf(ourOrderItemsType))
 	}
-	head := orderHeadTags(ctx)
 	counts := OrderSendStateOf(ctx.DB, ctx.PageID)
 	// 外注加工の資料（2026-09-28・order_docs.go）——取り消していない行の「資料 <番号>」から。
+	// ⚠ ここでは「FAX・印刷用（資料を綴じる）」を出すかだけに使う（メールの添付の候補は送る欄の初期値）。
 	rows, _ := orderTableRows(el)
-	docs, notes := orderDocs(ctx.Viewer, rows)
-	appendFootHTML(el, span, "order-send-row",
-		orderSendFormHTML(ctx.Viewer, ctx.PageID, head, counts, docs, notes))
+	docs, _ := orderDocs(ctx.Viewer, rows)
+	appendFootHTML(el, span, "order-send-row", orderSendFormHTML(ctx.PageID, counts, docs))
 	return false, nil
-}
-
-// orderHeadTags は発注書ページのタグを名前→値で読みます（仕入先・発注担当）。
-//
-// ⚠ **索引から読みます**（本文ではなく）。鏡は表の要素しか渡されないので、
-// ページ全体のタグは自分では見えません。
-func orderHeadTags(ctx *cms.MirrorContext) map[string]string {
-	out := map[string]string{}
-	tags, err := cms.TagsOfPage(ctx.DB, ctx.PageID)
-	if err != nil {
-		return out
-	}
-	for k, v := range tags {
-		// ⚠ **同じ名前のタグは何個でも置けます**（`TagsOfPage` は値の並びを返す）。
-		//    ここで見たいのは `仕入先`・`発注担当` のように**1つしかないもの**なので、
-		//    先頭を採ります。
-		if len(v) > 0 {
-			out[k] = v[0]
-		}
-	}
-	return out
 }
 
 // addOrderRowButtons は各行の末尾に、印を変えるボタンを足します。

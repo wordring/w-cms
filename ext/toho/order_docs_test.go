@@ -102,38 +102,63 @@ func TestOrderDocsFollowsLineToFold(t *testing.T) {
 	}
 }
 
-// TestOrderSendFormOffersDocs は、発注書ページの送信欄に**資料のチェック**（全部チェック済み）と、
-// 綴じられる資料があるときだけ「📠 FAX・印刷用（資料を綴じる）」が出ることを固定します。
+// TestOrderSendFormOffersDocs は、発注書のメールの**添付の候補に資料**（全部チェック済み）が並び、
+// 綴じられる資料があるときだけ送信欄に「📠 FAX・印刷用（資料を綴じる）」が出ることを固定します。
+//
+// ⚠ 2026-09-30 から資料のチェックは送る欄の部品が描きます——候補は用件「発注書」の初期値
+// （`orderMailDefaults`）で、送信欄の鏡は部品を置く場所（`data-mail-compose`）だけを持ちます。
 func TestOrderSendFormOffersDocs(t *testing.T) {
 	seedOrderDocs(t)
 	addPage(t, 50, 0, "発注 ひかりレーザー", "root", "302", true)
-	render := func(no string) string {
+	bob := &auth.User{Username: "bob"}
+	put := func(no string) string {
 		body := `<h1>発注</h1><table data-type="` + ourOrderItemsType + `"><tbody>` +
 			`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>状態</th></tr>` +
 			`<tr><td>000031</td><td>外注加工</td><td>` + no + `</td><td>レーザー切断</td><td>1</td><td>未発注</td></tr>` +
 			`</tbody></table>`
-		syncBody(t, 50, body)
+		writeBodyFile(t, 50, body)
 		req := httptest.NewRequest("GET", "/000050", nil)
-		req = auth.WithUser(req, &auth.User{Username: "bob"})
+		req = auth.WithUser(req, bob)
 		return cms.RenderComputedViews(req, 50, body)
 	}
-	out := render("1")
-	if !regexp.MustCompile(`<input type="checkbox" checked(="")? data-doc-page="000040" data-doc-file="dr01.pdf"`).MatchString(out) {
-		t.Errorf("図面のチェックが出ていません:\n%s", out)
+	out := put("1")
+	if !strings.Contains(out, `data-mail-compose="`+OrderMailPurpose+`"`) {
+		t.Errorf("送信欄に送る欄の部品の置き場がありません:\n%s", out)
 	}
 	if !strings.Contains(out, `data-order-pdf-docs="1"`) {
 		t.Errorf("綴じられる資料があるのに FAX・印刷用のボタンが出ていません:\n%s", out)
 	}
-	if strings.Contains(out, "se01.pdf") {
-		t.Errorf("⚠ 読めない図面を候補に出しています:\n%s", out)
+	d, err := orderMailDefaults(bob, "000050")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, a := range d.Attachments {
+		files = append(files, a.PageID+"/"+a.File)
+		if !a.Checked {
+			t.Errorf("資料の候補 %s に印が付いていません", a.File)
+		}
+	}
+	if !strings.Contains(strings.Join(files, " "), "000040/dr01.pdf") {
+		t.Errorf("図面が添付の候補にありません: %v", files)
+	}
+	if strings.Contains(strings.Join(files, " "), "se01.pdf") {
+		t.Errorf("⚠ 読めない図面を候補に出しています: %v", files)
 	}
 
-	out = render("3")
-	if strings.Contains(out, `data-order-pdf-docs="1"`) || strings.Contains(out, `data-doc-file=`) {
-		t.Errorf("資料の無い行でボタンや候補が出ています:\n%s", out)
+	out = put("3")
+	if strings.Contains(out, `data-order-pdf-docs="1"`) {
+		t.Errorf("資料の無い行で FAX・印刷用のボタンが出ています:\n%s", out)
 	}
-	if !strings.Contains(out, "000031-3 は資料がありません") {
-		t.Errorf("資料が無いことを言っていません:\n%s", out)
+	d, err = orderMailDefaults(bob, "000050")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Attachments) != 0 {
+		t.Errorf("資料の無い行で添付の候補が出ています: %+v", d.Attachments)
+	}
+	if !strings.Contains(strings.Join(d.Notes, " "), "000031-3 は資料がありません") {
+		t.Errorf("資料が無いことを言っていません: %v", d.Notes)
 	}
 }
 

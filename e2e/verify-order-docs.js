@@ -4,7 +4,7 @@
 // そこに保存したファイルをメールやFAX、印刷等に追加できるようにしてはどうでしょう？」。
 //
 //   ① 加工製品の「資料 1」の折りたたみに「＋ ファイル」で図面（A3 横のPDF）を上げる
-//   ② 発注書（行が 弊社品番＋番号 1 を指す）の送信欄に、その図面のチェック（チェック済み）が出る
+//   ② 発注書（行が 弊社品番＋番号 1 を指す）のメールの送る欄（部品）に、その図面の候補（チェック済み）が出る
 //   ③ 「📠 FAX・印刷用（資料を綴じる）」を押すと、発注書のうしろに図面を綴じた1本ができる
 //   ④ メールの送信に図面が添付として載る——⚠ **送信の口は画面の中で差し止める**（本物のメールは出さない）
 //
@@ -74,13 +74,15 @@ function minimalPDF() {
       '</tbody></table>');
     check('発注書を作れた', !!order, order);
 
-    // ② 送信欄に図面のチェック
+    // ② メールの送る欄（部品・2026-09-30）を開くと、添付の候補に図面（チェック済み）
     await page.goto(BASE + '/' + order);
     await page.waitForSelector('.order-send', { timeout: 8000 });
-    const box = page.locator('.order-docs input[data-doc-file]');
-    check('送信欄に図面のチェックが出る', await box.count() === 1);
-    check('はじめからチェック済み', await box.first().isChecked());
     check('FAX・印刷用のボタンが出る', await page.locator('[data-order-pdf-docs]').count() === 1);
+    await page.locator('details.order-mail > summary').click();
+    await page.waitForSelector('.order-mail .mail-compose [data-mc="to"]', { timeout: 8000 });
+    const box = page.locator('.order-mail .mail-compose input[data-mc-file]');
+    check('送る欄の添付の候補に図面が出る', await box.count() === 1);
+    check('はじめからチェック済み', await box.first().isChecked());
 
     // ③ FAX・印刷用
     await page.locator('[data-order-pdf-docs]').click();
@@ -95,22 +97,27 @@ function minimalPDF() {
     check('綴じた1本が開ける', info.ok, href);
     check('発注書のうしろに図面が綴じてある（2ページ・A3 横のまま）', info.pages === 2 && info.a3, JSON.stringify(info));
 
-    // ④ メールに図面が載る（⚠ 送信の口は差し止める）
+    // ④ メールに図面が載る（⚠ 送信の口は差し止める——本物のメールは出さない）。
+    //    2026-09-30 から発注書のPDFはサーバーが送る直前に作って足す（用件「発注書」）ので、画面が送るのは
+    //    選んだ資料と用件だけ——ここでは「図面が選ばれて、用件が発注書であること」を見る。
     let mailBody = null;
     await page.route('**/api/mail/send', async (route) => {
       mailBody = JSON.parse(route.request().postData() || '{}');
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true}' });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true,"after_error":"（試験なので送っていません）"}' });
     });
-    await page.route('**/api/our-order/sent', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true}' }));
-    await page.locator('details.order-mail > summary').click();
-    await page.locator('[data-order="to"]').fill('e2e@invalid.example');
-    await page.locator('[data-order-send]').click();
-    await page.waitForFunction(() => true, null, { timeout: 100 });
+    const sendBtn = page.locator('.order-mail .mail-compose [data-mc-send]');
+    if (await sendBtn.isDisabled()) {
+      // メールにサインインしていない環境では送信が押せない——押せるようにして口を差し止めたまま流す。
+      await page.evaluate(() => { document.querySelector('.order-mail .mail-compose [data-mc-send]').disabled = false; });
+    }
+    await page.locator('.order-mail .mail-compose [data-mc="to"]').fill('e2e@invalid.example');
+    await sendBtn.click();
     for (let i = 0; i < 50 && !mailBody; i++) await page.waitForTimeout(200);
     const files = (mailBody && mailBody.attachments || []).map((a) => a.page_id + '/' + a.file);
-    check('メールに発注書と図面が載る', files.length === 2 &&
+    check('メールに図面が載る（発注書のPDFはサーバーが足す）', files.length === 1 &&
       files.some((f) => f.startsWith(product + '/')), JSON.stringify(files));
+    check('用件は発注書・元のページはこの発注書', mailBody && mailBody.purpose === '発注書' && mailBody.page_id === order,
+      JSON.stringify(mailBody && { purpose: mailBody.purpose, page_id: mailBody.page_id }));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

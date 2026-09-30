@@ -100,6 +100,7 @@ type unhandledRow struct {
 	From        string
 	Attachments string // 添付の数（無ければ空）
 	Direction   string // 向き（受信／送信。メモや社内案件では空）
+	Draft       string // 下書きなら用件（返信・新規・発注書）——まだ送っていない（2026-09-30）
 }
 
 // UnhandledIntakes は未処理の通信記録を新しい順に返します（総数も返す）。
@@ -141,7 +142,9 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		       COALESCE((SELECT a.value FROM page_tags a
 		                  WHERE a.page_id = p.id AND a.name = ? LIMIT 1), ''),
 		       COALESCE((SELECT d.value FROM page_tags d
-		                  WHERE d.page_id = p.id AND d.name = ? LIMIT 1), '')
+		                  WHERE d.page_id = p.id AND d.name = ? LIMIT 1), ''),
+		       COALESCE((SELECT g.value FROM page_tags g
+		                  WHERE g.page_id = p.id AND g.name = ? LIMIT 1), '')
 		  FROM pages p
 		 WHERE NOT EXISTS (SELECT 1 FROM page_tags h
 		                    WHERE h.page_id = p.id AND h.name = ?)
@@ -150,7 +153,7 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 	// ⚠ **`?` は現れた順に対応します**——SELECT の途中に欄を足したら、ここへ同じ
 	// 位置で足すこと。名前が1つずれても SQL は通り、**その欄だけ静かに空**になります。
 	dbRows, err := database.DB.Query(q,
-		ChannelTag, ReceivedAtTag, FromTag, AttachmentCountTag, DirectionTag, HandledTag)
+		ChannelTag, ReceivedAtTag, FromTag, AttachmentCountTag, DirectionTag, DraftTag, HandledTag)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -165,7 +168,7 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 	for dbRows.Next() {
 		var c candidate
 		if err := dbRows.Scan(&c.id, &c.row.Title, &c.row.Channel,
-			&c.row.Received, &c.row.From, &c.row.Attachments, &c.row.Direction); err != nil {
+			&c.row.Received, &c.row.From, &c.row.Attachments, &c.row.Direction, &c.row.Draft); err != nil {
 			dbRows.Close()
 			return nil, 0, err
 		}
@@ -373,7 +376,12 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 		sb.WriteString(`<td class="unhandled-when">` +
 			stdhtml.EscapeString(shortTime(r.Received)) + `</td>`)
 		sb.WriteString(`<td class="unhandled-from">` + stdhtml.EscapeString(r.From) + `</td>`)
-		sb.WriteString(`<td class="unhandled-subject"><a href="/` + id + `">` +
+		// 下書き（2026-09-30）——まだ送っていないことを題の前に言う（開くと直して送れる）。
+		draft := ""
+		if r.Draft != "" {
+			draft = `<span class="unhandled-draft">📝 下書き</span> `
+		}
+		sb.WriteString(`<td class="unhandled-subject">` + draft + `<a href="/` + id + `">` +
 			stdhtml.EscapeString(r.Title) + `</a></td>`)
 		clip := ""
 		if r.Attachments != "" {

@@ -234,7 +234,7 @@ func TestOurOrderMirrorPutsTheSendForm(t *testing.T) {
 
 	for _, want := range []string{
 		"FAXで送った", "手渡した", "メールで送る",
-		`data-order-send="1"`,                       // メールの送信ボタン
+		`data-mail-compose="` + OrderMailPurpose + `"`, // メールの送る欄（部品・2026-09-30）
 		`data-order-status="` + OrderLineSent + `"`, // 行ごとの「発注済」
 		`class="vocab-chrome order-row-act"`,
 	} {

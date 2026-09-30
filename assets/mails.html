@@ -8,6 +8,7 @@
      スタイル・スクリプトは外部ファイル（CSP strict のため）。見た目は「表を探す」（tables.css）を土台にする。 -->
 <link rel="stylesheet" href="/assets/tables.css">
 <link rel="stylesheet" href="/assets/mails.css">
+<link rel="stylesheet" href="/assets/mail-compose.css">
 </head>
 <body>
   <a class="back" href="/">← エディタに戻る</a>
@@ -37,6 +38,14 @@
     </div>
   </div>
 
+  <!-- 新しいメール（送る欄の部品・2026-09-30・assets/mail-compose.js）。下書きに保存すると通信箱の未処理に並ぶ。 -->
+  <div class="card">
+    <div class="row">
+      <button type="button" id="ml-new">✉️ 新しいメール</button>
+    </div>
+    <div id="ml-compose"></div>
+  </div>
+
   <div class="card">
     <div class="result-scroll">
       <table id="ml-table">
@@ -51,6 +60,7 @@
     </div>
   </div>
 
+  <script src="/assets/mail-compose.js"></script>
   <script src="/assets/mails.js"></script>
 </body>
 </html>

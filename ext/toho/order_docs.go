@@ -28,7 +28,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	stdhtml "html"
 	"image"
 	_ "image/jpeg" // 綴じる画像の大きさを読む
 	_ "image/png"
@@ -191,29 +190,6 @@ func foldTitle(details *html.Node) string {
 // foldKey は題を比べる形へ畳みます（NFKC・空白を除く）。
 func foldKey(s string) string {
 	return strings.Join(strings.Fields(cms.NormalizeText(s)), "")
-}
-
-// orderDocsHTML は送信欄に出す資料の候補です（メールの添付のチェックと、紙にできないものの一言）。
-// 自前でエスケープの責任を負います（鏡のクローム）。
-func orderDocsHTML(docs []orderDoc, notes []string) string {
-	if len(docs) == 0 && len(notes) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString(`<div class="order-docs"><p class="unorder-help">添える資料（外注加工の「` +
-		docsFoldWord + ` 番号」の折りたたみから・外すときはチェックを外す）:</p>`)
-	for _, d := range docs {
-		b.WriteString(`<label class="order-doc"><input type="checkbox" checked` +
-			` data-doc-page="` + stdhtml.EscapeString(d.PageID) + `"` +
-			` data-doc-file="` + stdhtml.EscapeString(d.File) + `"` +
-			` data-doc-name="` + stdhtml.EscapeString(d.Name) + `"/> ` +
-			stdhtml.EscapeString(d.Line) + `　` + stdhtml.EscapeString(d.Name) + `</label>`)
-	}
-	for _, n := range notes {
-		b.WriteString(`<p class="unorder-help">` + stdhtml.EscapeString(n) + `</p>`)
-	}
-	b.WriteString(`</div>`)
-	return b.String()
 }
 
 // hasPrintableDoc は紙に綴じられる資料が1つでもあるかです（FAX・印刷用のボタンを出すか）。

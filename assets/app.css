@@ -1928,48 +1928,7 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     font: inherit;
     cursor: pointer;
 }
-
-.mail-reply-form {
-    border: 1px solid var(--w-border, #ccc);
-    border-radius: 6px;
-    padding: 0.75rem 1rem 1rem;
-    margin: 0.5rem 0 1rem;
-    background: var(--w-surface-alt, #fafafa);
-}
-
-.mail-reply-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.4rem;
-}
-
-.mail-reply-row label {
-    flex: 0 0 3.5rem;
-    font-size: 0.85em;
-    opacity: 0.75;
-}
-
-.mail-reply-row input {
-    flex: 1 1 auto;
-    padding: 0.3rem 0.4rem;
-    font: inherit;
-}
-
-.mail-reply-body {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.4rem;
-    font: inherit;
-    margin-top: 0.3rem;
-}
-
-.mail-reply-send {
-    margin-top: 0.5rem;
-    padding: 0.4rem 1.2rem;
-    font: inherit;
-    cursor: pointer;
-}
+/* 返信を書く欄は部品です（2026-09-30・assets/mail-compose.css）。 */
 
 .mail-replies {
     margin-top: 0.75rem;
@@ -2051,6 +2010,8 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 #w-editor-content .unhandled-when    { white-space: nowrap; color: var(--text-muted); }
 #w-editor-content .unhandled-from    { color: var(--text-muted); max-width: 12em; }
 #w-editor-content .unhandled-subject { overflow-wrap: anywhere; }
+/* 下書き（2026-09-30）——まだ送っていないメール。📝 の印も付く（色だけに頼らない）。 */
+#w-editor-content .unhandled-draft { font-size: 12px; color: #5b21b6; white-space: nowrap; }
 #w-editor-content .unhandled-clip    { color: var(--text-muted); }
 #w-editor-content .chip-btn {
     /* 小さなボタンの文字は**折り返さない**（2026-09-28 利用者:「発注部材表の戻すボタンの文字が折り返されて
@@ -2195,25 +2156,6 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 #w-editor-content .block-content > section { padding-top: 10px; padding-bottom: 10px; }
 /* 📎 添付・📧 原本のリンク行。**本文から離す**が、添付どうしは近くまとめる。 */
 #w-editor-content .block-content > p { padding-top: 5px; padding-bottom: 5px; }
-
-/* 返信に付ける添付の選択（2026-09-05）。**このページにあるものから選ぶ**ので、
- * 手元のディスクを開く必要がない。添付が無いページでは丸ごと出ない。 */
-#w-editor-content .mail-reply-attach-head {
-    margin: 10px 0 2px;
-    font-size: 12px;
-    color: var(--text-muted);
-}
-#w-editor-content .mail-reply-attach {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-bottom: 8px;
-}
-#w-editor-content .mail-reply-attach label {
-    font-size: 13px;
-    cursor: pointer;
-    overflow-wrap: anywhere;
-}
 
 /* 未登録の連絡先（2026-09-17 に「組織」「担当者」の2欄へ畳んだ）。
    表は固定幅の割り付け——操作の欄に長い文（ドメインの説明）が入るので、自動割り付けだと
@@ -2652,12 +2594,7 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 }
 #w-editor-content .order-mail { margin-top: 4px; }
 #w-editor-content .order-mail > summary { cursor: pointer; }
-#w-editor-content .order-mail .matsearch-input { width: 24em; max-width: 100%; }
-#w-editor-content .order-mail-body { width: 100%; }
-#w-editor-content .order-mail-body textarea { width: 100%; font-family: inherit; }
-/* 添える資料（外注加工の「資料 番号」の折りたたみから・2026-09-28）——1つ1行で、チェックを外せる。 */
-#w-editor-content .order-docs { margin: 6px 0; }
-#w-editor-content .order-doc { display: block; margin: 2px 0; }
+/* 中のメールを書く欄は部品（2026-09-30・assets/mail-compose.css）——資料のチェックもその添付の候補。 */
 /* ⚠ **行ごとのボタンは折り返しません**——2つ並ぶだけなので、折ると行の高さが
    揃わず、表が読みにくくなります。 */
 #w-editor-content .order-row-act,

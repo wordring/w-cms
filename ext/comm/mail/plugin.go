@@ -55,6 +55,9 @@ func (mailPlugin) Routes() []cms.Route {
 		{Pattern: "/api/mail/import", Handler: MailImportAPIHandler},
 		// 送信——本体は送信箱、返信元へは参照タグで繋ぐ（reply.go）。
 		{Pattern: "/api/mail/send", Handler: MailSendAPIHandler},
+		// 送る欄の中身（用件の初期値・保存した下書き）と、下書きの保存（compose.go・2026-09-30）。
+		{Pattern: "/api/mail/compose", Handler: ComposeAPIHandler},
+		{Pattern: "/api/mail/draft", Handler: DraftSaveAPIHandler},
 	}
 }
 

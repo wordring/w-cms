@@ -114,10 +114,36 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
+	made, ok := makeOrderPDF(w, user, pageID)
+	if !ok {
+		return
+	}
+	out := map[string]any{
+		"success": true, "attach_id": made.AttachID, "file": made.File,
+		"url": "/" + pageID + "/" + made.File,
+	}
+	if made.ViewNote != "" {
+		out["view_note"] = made.ViewNote
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+// madeOrderPDF は作った発注書のPDFです。
+type madeOrderPDF struct {
+	AttachID string // 添付の識別子（4桁）
+	File     string // 保存名
+	ViewNote string // ページに表示できなかった理由（出せたなら空）
+}
+
+// makeOrderPDF は発注書のPDFを作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。
+//
+// `/api/order-pdf` と、メールで送る直前（送る欄の用件「発注書」・order_mail.go）が共有します。
+// 断るときは応答を書いて false を返します。
+func makeOrderPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool) {
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
 		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
-		return
+		return madeOrderPDF{}, false
 	}
 	pdf, err := buildOrderPDF(body, user)
 	if err != nil {
@@ -126,7 +152,7 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 			code = http.StatusServiceUnavailable
 		}
 		cms.JSONFail(w, code, err.Error())
-		return
+		return madeOrderPDF{}, false
 	}
 	// ⚠ **名前に日付を入れます**——同じページで作り直すたびに増えるので、
 	// どれがいつのものか分からないと困ります（添付は上書きされません）。
@@ -134,7 +160,7 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", pdf)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
-		return
+		return madeOrderPDF{}, false
 	}
 	auth.Audit(user.Username, "order-pdf", pageID+" "+fileName)
 
@@ -143,14 +169,8 @@ func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//    だったので、**本文に「ここで開く」マーカーを置きます**。
 	//    ⚠ **失敗してもPDFは取り消しません**——**紙のほうが重い**ので、
 	//    「画面に出ない」は人が貼り直せば済みます。理由を添えるだけにします。
-	out := map[string]any{
-		"success": true, "attach_id": attachID, "file": fileName,
-		"url": "/" + pageID + "/" + fileName,
-	}
-	if note := showOrderPDFOnPage(user, pageID, attachID); note != "" {
-		out["view_note"] = note
-	}
-	json.NewEncoder(w).Encode(out)
+	return madeOrderPDF{AttachID: attachID, File: fileName,
+		ViewNote: showOrderPDFOnPage(user, pageID, attachID)}, true
 }
 
 // buildOrderPDF は発注書ページの本文からPDFを組みます。

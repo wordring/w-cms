@@ -365,6 +365,7 @@ func TestUnhandledColumnsMatchTheirTags(t *testing.T) {
 		"<dt>" + ReceivedAtTag + "</dt><dd>2026-09-07T08:09:10+09:00</dd>" +
 		"<dt>" + FromTag + "</dt><dd>山田 太郎 &lt;yamada@example.co.jp&gt;</dd>" +
 		"<dt>" + AttachmentCountTag + "</dt><dd>3</dd>" +
+		"<dt>" + DraftTag + "</dt><dd>" + PurposeReply + "</dd>" +
 		"</dl>"
 	if err := cms.SyncIndex("000260", body); err != nil {
 		t.Fatalf("SyncIndexエラー: %v", err)
@@ -391,6 +392,9 @@ func TestUnhandledColumnsMatchTheirTags(t *testing.T) {
 	}
 	if got.Attachments != "3" {
 		t.Errorf("添付の欄が違います: %q（\"3\" を期待）", got.Attachments)
+	}
+	if got.Draft != PurposeReply {
+		t.Errorf("下書きの欄が違います: %q（%q を期待）", got.Draft, PurposeReply)
 	}
 	// 差出人は**生の値**（`名前 <アドレス>`）。畳んだ値はアドレスだけなので、
 	// どちらが来ても名前で見分けられるように名前で確かめます。

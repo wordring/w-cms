@@ -1,0 +1,110 @@
+/* メールの送る欄（部品・assets/mail-compose.js・2026-09-30）。
+ * エディタのページ（app.css の中）とメール一覧（mails.html）の両方で使うので、色は app.css の変数を
+ * 読み、無ければ同じ値に落とす。インラインの style は書かない（CSP strict）。 */
+
+.mail-compose {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 6px;
+    padding: 0.6rem 0.9rem 0.8rem;
+    margin: 0.5rem 0 1rem;
+    background: var(--bg-subtle, #f8fafc);
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.mail-compose .mc-head {
+    margin: 0 0 0.4rem;
+    font-weight: 600;
+    color: var(--text-strong, #0f172a);
+}
+
+.mail-compose .mc-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.mail-compose .mc-label {
+    flex: 0 0 3.5rem;
+    font-size: 0.85em;
+    color: var(--text-muted, #475569);
+}
+
+.mail-compose .mc-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.3rem 0.4rem;
+    font: inherit;
+}
+
+.mail-compose .mc-body {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.4rem;
+    font: inherit;
+    margin-top: 0.2rem;
+}
+
+.mail-compose .mc-attach-head {
+    margin: 0.5rem 0 0.2rem;
+    font-size: 0.9em;
+    color: var(--text-muted, #475569);
+}
+
+.mail-compose .mc-attach-item {
+    display: block;
+    margin: 2px 0;
+    overflow-wrap: anywhere;
+}
+
+.mail-compose .mc-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.mail-compose .mc-bar button {
+    padding: 0.4rem 1.1rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mail-compose .mc-bar button:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.mail-compose .mc-note {
+    margin: 0.3rem 0;
+    font-size: 0.9em;
+    color: var(--text-muted, #475569);
+}
+
+.mail-compose .mc-ng,
+.mc-ng {
+    margin: 0.3rem 0;
+    color: #b91c1c;
+}
+
+.mail-compose .mc-ok {
+    margin: 0.3rem 0;
+    color: #047857;
+}
+
+.mc-wait {
+    color: var(--text-faint, #64748b);
+}
+
+/* スマホ幅——見出しを上に置いて、欄を横いっぱいに使う。 */
+@media (max-width: 560px) {
+    .mail-compose .mc-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.1rem;
+    }
+    .mail-compose .mc-label {
+        flex: none;
+    }
+}

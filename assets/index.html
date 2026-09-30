@@ -11,6 +11,8 @@
     <script src="/assets/boot.js"></script>
     <!-- 殻のスタイル（外部CSS＝CSPの self）。2026-08-06 にインラインのスタイルブロックから切り出し -->
     <link rel="stylesheet" href="/assets/app.css">
+    <!-- メールの送る欄（部品・2026-09-30）。メール一覧（mails.html）と共有する。 -->
+    <link rel="stylesheet" href="/assets/mail-compose.css">
 </head>
 <body>
 
@@ -290,7 +292,10 @@
 <footer class="site-footer">w-cms</footer>
 
 <!-- 殻の本体スクリプト（外部JS＝CSPの self）。2026-08-06 にインラインのスクリプトブロックから切り出し。
-     defer なし＝本文DOMが揃ってから同期実行される従来の順序を保つ。 -->
+     defer なし＝本文DOMが揃ってから同期実行される従来の順序を保つ。
+     メールの送る欄（部品・2026-09-30）は app.js に頼らないので先に読む——app.js が
+     window.wcmsMailCompose を呼ぶときには揃っている。 -->
+<script src="/assets/mail-compose.js"></script>
 <script src="/assets/app.js"></script>
 
 </body>
