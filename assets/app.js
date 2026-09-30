@@ -5818,6 +5818,8 @@
     //     時刻を新しくする）。書けない（容量超え・無効な環境）ときは古いほうの半分を捨てて書き直し、それでも駄目なら
     //     憶えないだけ——画面は壊さない。
     //   - 本文にもサーバーにも残さない（見る人と画面の都合・端末ごと）。
+    //   - 鏡の中の**絞り込みの欄**も憶える（2026-09-30・欄 `i`・下の rememberKeyOf）——利用者:「チェックボタンの状態を
+    //     ブラウザに記憶してはどうでしょうか？汎用的な機構としてです」。
     const VIEW_KEY = 'wcms.view';
     const VIEW_MAX_PAGES = 2000;
     const ViewState = (() => {
@@ -5848,8 +5850,8 @@
         function page(id, create) {
             const c = load();
             let p = c.pages[id];
-            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {} };
-            if (p) { p.r = p.r || {}; p.o = p.o || {}; }
+            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {}, i: {} };
+            if (p) { p.r = p.r || {}; p.o = p.o || {}; p.i = p.i || {}; }
             return p;
         }
         return {
@@ -5866,6 +5868,13 @@
                 const p = page(id, true);
                 p.t = Date.now();
                 p.o[key] = open ? 1 : 0;
+                persist();
+            },
+            // setInput は鏡の中の絞り込みの欄の値を憶えます（印は 1/0・文字と選択は文字列）。
+            setInput(id, key, value) {
+                const p = page(id, true);
+                p.t = Date.now();
+                p.i[key] = value;
                 persist();
             },
         };
@@ -5926,7 +5935,66 @@
             if (d.open !== want) d.open = want;
         });
         applyViewRatios();
+        restoreRememberedInputs(st);
     }
+
+    // ── 鏡の中の絞り込みの欄を憶える（2026-09-30） ─────────────────────────
+    //
+    // 利用者:「/001305 を見て思ったのですが、チェックボタンの状態をブラウザに記憶してはどうでしょうか？汎用的な機構と
+    // してです」——鏡「加工製品の一覧」の絞り込み（区分の印・移行中だけ・文字・装置名称）が、開くたびに初期値へ戻っていた。
+    //
+    //   - **憶えるのは鏡を描く側が `data-w-remember` の印を付けた入れ物の中の入力だけ**。⚠ 鏡の中には本文へ書き戻す欄
+    //     （受注残表の出荷済み・材料発注など）もある——それをブラウザの記憶で戻すと、古い値が本文の値を上書きしたように
+    //     見え（戻したときの change で書き込みまで走りうる）、データの正本が2つになる。だから一律には憶えず、見る人の
+    //     都合の欄（絞り込み）だけを印で名乗らせる。鏡ごとに書くのは印1つで、憶える・戻す仕事はここ1か所。
+    //   - 鍵は鏡の名前＋同じ名前の鏡の何番目か＋入力の印（data-* の名前と値・種類）＋同じ印の何番目か。
+    //   - **戻したら change を出す**——鏡の側の絞り込み（document への委譲）が掛け直す。印だけ戻って表が絞られて
+    //     いない、を作らない。⚠ 自分で出した change は憶えない（isTrusted で見分ける）。
+    function rememberKeyOf(el) {
+        const box = el.closest('[data-w-remember]');
+        const mirror = el.closest('section[data-mirror]');
+        if (!box || !mirror || !mirror.closest('#w-editor-content')) return '';
+        const name = mirror.getAttribute('data-mirror');
+        const mirrors = Array.from(document.querySelectorAll('#w-editor-content section[data-mirror]'))
+            .filter(s => s.getAttribute('data-mirror') === name);
+        const sig = e => e.tagName.toLowerCase() + ':' + (e.type || '') + ':' + Array.from(e.attributes)
+            .filter(a => a.name.startsWith('data-')).map(a => a.name + '=' + a.value).sort().join('&');
+        const mine = sig(el);
+        const same = Array.from(box.querySelectorAll('input, select, textarea')).filter(e => sig(e) === mine);
+        return 'm:' + name + '#' + mirrors.indexOf(mirror) + '|' + mine + '#' + same.indexOf(el);
+    }
+    const rememberValueOf = el => (el.type === 'checkbox' || el.type === 'radio') ? (el.checked ? 1 : 0) : el.value;
+
+    function restoreRememberedInputs(st) {
+        if (!st || !st.i) return;
+        document.querySelectorAll('#w-editor-content [data-w-remember]').forEach(box => {
+            let changed = null;
+            box.querySelectorAll('input, select, textarea').forEach(el => {
+                const k = rememberKeyOf(el);
+                if (!k || !(k in st.i)) return;
+                const want = st.i[k];
+                if (el.type === 'checkbox' || el.type === 'radio') {
+                    if (el.checked !== !!want) { el.checked = !!want; changed = el; }
+                } else if (typeof want === 'string' && el.value !== want) {
+                    // 選択肢から消えた値（装置名称が無くなった等）は戻さない——空の選択にすると全部が隠れる。
+                    if (el.tagName === 'SELECT' && !Array.from(el.options).some(o => o.value === want)) return;
+                    el.value = want;
+                    changed = el;
+                }
+            });
+            if (changed) changed.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    }
+
+    const recordRememberedInput = e => {
+        if (!e.isTrusted) return; // 戻したときに自分で出した change は憶えない
+        const el = e.target;
+        if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return;
+        const k = rememberKeyOf(el);
+        if (k) ViewState.setInput(currentPageId, k, rememberValueOf(el));
+    };
+    document.addEventListener('input', recordRememberedInput, true);
+    document.addEventListener('change', recordRememberedInput, true);
 
     // 開閉を憶える——**人が題を押したときだけ**（toggle は泡立たないので捕捉の段で受ける）。
     // ⚠ `<details open>` を本文へ入れただけでもブラウザは toggle を出す（人は何もしていない）。それを記録すると、

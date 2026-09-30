@@ -6,8 +6,9 @@
 //   ① 閲覧モードで閉じた折りたたみは、開き直しても閉じたまま
 //   ② ファイル表示の枠の縦横比を憶えていれば、その比で高さが決まる（窓の幅を変えても比が保たれる）
 //   ③ 記録のページが上限（2000）を超えると、古い順に捨てる（開いているページは残る）
+//   ④ 鏡の中の絞り込みの欄（data-w-remember）を憶え、開き直すと戻して表も絞り直す（2026-09-30）
 //
-// 当て先は自分で作って最後に消します（トップ直下に1枚）。
+// 当て先は自分で作って最後に消します（トップ直下に2枚・④の一覧の下に子ページ2枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-view-state.js
 const { chromium } = require('playwright');
 const { login, makePage, deletePage } = require('./lib');
@@ -43,6 +44,8 @@ function minimalPDF() {
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
   let id = '';
+  let host = '';
+  const kids = [];
   try {
     await login(page, BASE);
     id = await makePage(page, '<h1>【E2E】見え方の記録</h1>' +
@@ -172,8 +175,47 @@ function minimalPDF() {
       for (const k of Object.keys(c.pages)) if (k.startsWith('9') || k === location.pathname.slice(1)) delete c.pages[k];
       localStorage.setItem('wcms.view', JSON.stringify(c));
     });
+
+    // ④ 鏡の中の絞り込みの欄を憶える（2026-09-30・data-w-remember）——利用者:「チェックボタンの状態をブラウザに記憶しては
+    //    どうでしょうか？汎用的な機構としてです」。加工製品の一覧の区分の印と文字を変え、開き直しても戻り、**表も絞られている**こと。
+    host = await makePage(page, '<h1>【E2E】加工製品の一覧の記録</h1><section data-mirror="加工製品の一覧"></section>');
+    kids.push(await makePage(page, '<h1>【E2E】通常の品</h1><dl data-type="tags"><dt>図面番号</dt><dd>E2E-PL-001</dd></dl>', host));
+    kids.push(await makePage(page, '<h1>【E2E】試作の品</h1><dl data-type="tags"><dt>図面番号</dt><dd>E2E-PL-002</dd>' +
+      '<dt>区分</dt><dd>試作</dd></dl>', host));
+    check('一覧の当て先を作れた', !!host && kids.every(Boolean), host + ' ' + kids.join(','));
+    const plist = () => page.evaluate(() => {
+      const f = document.querySelector('#w-editor-content [data-plist-form]');
+      const rows = Array.from(document.querySelectorAll('#w-editor-content tr[data-plist-row]'));
+      return {
+        normal: f.querySelector('[data-plist-kind=""]').checked,
+        text: f.querySelector('[data-plist-text]').value,
+        shown: rows.filter(r => !r.hidden).map(r => r.textContent).join('|'),
+        count: (f.querySelector('[data-plist-count]') || {}).textContent || '',
+      };
+    });
+    await page.goto(BASE + '/' + host);
+    await page.waitForSelector('#w-editor-content [data-plist-form]', { timeout: 8000 });
+    await page.locator('#w-editor-content [data-plist-kind=""]').uncheck(); // 「通常」の印を外す
+    await page.locator('#w-editor-content [data-plist-text]').fill('E2E-PL');
+    const pb = await plist();
+    check('絞り込みが効いている（試作だけ）', !pb.normal && pb.shown.includes('試作の品') && !pb.shown.includes('通常の品'),
+      JSON.stringify(pb));
+    await page.reload();
+    await page.waitForSelector('#w-editor-content [data-plist-form]', { timeout: 8000 });
+    await page.waitForTimeout(500);
+    const pa = await plist();
+    check('開き直しても「通常」の印は外れたまま・文字も残る', !pa.normal && pa.text === 'E2E-PL', JSON.stringify(pa));
+    check('戻した印で表も絞られている（印だけ戻っていない）',
+      pa.shown.includes('試作の品') && !pa.shown.includes('通常の品') && pa.count.includes('全 2 件'), JSON.stringify(pa));
+    await page.evaluate((h) => {
+      const c = JSON.parse(localStorage.getItem('wcms.view'));
+      delete c.pages[h];
+      localStorage.setItem('wcms.view', JSON.stringify(c));
+    }, host);
   } finally {
     await deletePage(page, id);
+    for (const k of kids) await deletePage(page, k);
+    await deletePage(page, host);
   }
   check('JavaScript エラーなし', errs.length === 0, errs.join(' / '));
   console.log(fails === 0 ? '\n結果: 合格' : '\n結果: ' + fails + ' 件の不合格');

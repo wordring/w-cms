@@ -195,7 +195,9 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 			machines = append(machines, r.Machine)
 		}
 	}
-	b.WriteString(`<div class="matsearch-form plist-form" data-plist-form="1">`)
+	// data-w-remember: この欄の値をブラウザに憶えて、開き直したときに戻す（2026-09-30・assets/app.js の rememberKeyOf）。
+	// 絞り込みは見る人の都合なので憶えてよい——⚠ 本文へ書き戻す欄には付けないこと。
+	b.WriteString(`<div class="matsearch-form plist-form" data-plist-form="1" data-w-remember="1">`)
 	b.WriteString(`<label class="matsearch-field"><span>文字で絞る</span>` +
 		`<input type="search" class="matsearch-input plist-text" data-plist-text="1"` +
 		` placeholder="品目・図面番号・品番"/></label>`)
