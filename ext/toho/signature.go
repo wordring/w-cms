@@ -35,12 +35,9 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/net/html"
-
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -53,10 +50,9 @@ const (
 
 	// MailSignatureHeading はメールの署名を置く節の見出しです。
 	//
-	// ⚠ **まだ誰も読んでいません**（2026-09-22）。ユーザーが「発注書用の署名や
-	// メール用の署名」と並べたので、**置き場だけ先に決めてあります**——返信を作る口
-	// （`ext/comm/mail/reply.go`）が使うときに、同じ `signatureLines` で読めます。
-	MailSignatureHeading = "メールの署名"
+	// ⚠ **連絡帳の拡張の言葉です**（2026-09-30——返信・新しいメールの送る欄も同じ署名を読む）。
+	// 2026-09-22 は「置き場だけ先に決めてある」でした。
+	MailSignatureHeading = contacts.MailSignatureHeading
 
 	// OrderSignerTag は発注書ページが持つ「誰が出したか」の参照タグです。
 	//
@@ -121,107 +117,10 @@ func Signers(user *auth.User) []Signer {
 
 // SignatureOf はページ本文から、その見出しの節の中身を行として返します。
 //
+// ⚠ **読み方は連絡帳の拡張の持ち物です**（2026-09-30 に移した——メールの署名は返信にも要る共通の道具）。
 // ⚠ **読めるかは呼ぶ側が見ます**（この関数は本文を読むだけ）。
 func SignatureOf(pageID int, heading string) []string {
-	body, err := cms.ReadPageBody(page.FormatID(pageID))
-	if err != nil {
-		return nil
-	}
-	return signatureLines(body, heading)
-}
-
-// signatureLines は本文から、その見出しを持つ節の中身を行にして返します。
-//
-// ⚠ **`<br>` も行の区切りです**——署名を1つの段落に改行で書く人が居ます。
-// ⚠ **見出しそのものは返しません**（紙に「発注書の署名」とは刷らない）。
-func signatureLines(bodyHTML, heading string) []string {
-	nodes, err := htmldoc.ParseFragment(bodyHTML)
-	if err != nil {
-		return nil
-	}
-	var found []string
-	for _, root := range nodes {
-		if found != nil {
-			break
-		}
-		cms.WalkElements(root, func(n *html.Node) {
-			if found != nil || n.Data != "section" {
-				return
-			}
-			if sectionHeading(n) != heading {
-				return
-			}
-			found = sectionTextLines(n)
-		})
-	}
-	return found
-}
-
-// sectionHeading は節の直下の見出し（h2〜h6）の文字を返します。
-//
-// ⚠ **直下だけ**を見ます——入れ子の節の見出しを拾うと、別の節の中身を署名として
-// 刷ることになります。
-func sectionHeading(section *html.Node) string {
-	for c := section.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode {
-			continue
-		}
-		switch c.Data {
-		case "h2", "h3", "h4", "h5", "h6":
-			return strings.TrimSpace(textOf(c))
-		}
-	}
-	return ""
-}
-
-// sectionTextLines は節の中身を行の並びにします（見出しは外す）。
-func sectionTextLines(section *html.Node) []string {
-	var out []string
-	add := func(s string) {
-		for _, ln := range strings.Split(s, "\n") {
-			if ln = strings.TrimSpace(ln); ln != "" {
-				out = append(out, ln)
-			}
-		}
-	}
-	for c := section.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.TextNode {
-			add(c.Data)
-			continue
-		}
-		if c.Type != html.ElementNode {
-			continue
-		}
-		switch c.Data {
-		case "h2", "h3", "h4", "h5", "h6":
-			continue // 見出しは紙に刷らない
-		default:
-			add(brToNewline(c))
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// brToNewline は要素の文字を、`<br>` を改行として取り出します。
-func brToNewline(n *html.Node) string {
-	var sb strings.Builder
-	var walk func(*html.Node)
-	walk = func(x *html.Node) {
-		switch {
-		case x.Type == html.TextNode:
-			sb.WriteString(x.Data)
-		case x.Type == html.ElementNode && x.Data == "br":
-			sb.WriteString("\n")
-		}
-		for c := x.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(n)
-	return sb.String()
+	return contacts.SignatureOf(pageID, heading)
 }
 
 // DefaultSigner は「いま操作している人」に当たる署名を返します。
