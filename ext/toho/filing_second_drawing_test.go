@@ -229,3 +229,55 @@ func TestFileDrawingsAsksWhenNumberUnknown(t *testing.T) {
 		t.Errorf("図面が増えています: %d個", n)
 	}
 }
+
+// TestFileDrawingsRefusesMergeWithoutTarget は、⚠ **図面改定・図面追加を選んだのに行き先が無いときは作らない**ことを
+// 固定します（2026-09-30）——それまでは黙って新しい加工製品ページになっていた（改定のつもりが新規）。
+func TestFileDrawingsRefusesMergeWithoutTarget(t *testing.T) {
+	const inbox = "000053"
+	setupFilingTest(t, inbox)
+	u := &auth.User{Username: "alice"}
+
+	for _, merge := range []string{"revision", "drawing"} {
+		p := makeDrawingPage(t, inbox, "K120-9", "無いはずの品目", "標準2輪", "南北スポーツ")
+		results := postFiling(t, u, []filingRequest{secondRow(p, "無いはずの品目", merge)})
+		if len(results) != 1 || results[0].Outcome != "needs_choice" {
+			t.Fatalf("%s: 行き先が無いのに断っていません: %+v", merge, results)
+		}
+		if meta, _ := page.ReadSidecar(p); meta.ParentID != inbox {
+			t.Errorf("%s: 行き先が無いのに動いています（新規にしていませんか）: 親=%s", merge, meta.ParentID)
+		}
+	}
+	// 「新規」は作る（行き先が無いので）。
+	p := makeDrawingPage(t, inbox, "K120-9", "無いはずの品目", "標準2輪", "南北スポーツ")
+	if results := postFiling(t, u, []filingRequest{secondRow(p, "無いはずの品目", "new")}); len(results) != 1 ||
+		results[0].Outcome == "needs_choice" || results[0].Outcome == "skipped" {
+		t.Errorf("新規が通りません: %+v", results)
+	}
+}
+
+// TestProductCandidatesIgnoreRevisionSuffix は、既にある加工製品の候補が**版の印を除いた図面番号**で当たり、
+// 旧版の子ページは候補に出ないことを固定します（2026-09-30——`rev1` の付いた図面で改定の相手を探す）。
+func TestProductCandidatesIgnoreRevisionSuffix(t *testing.T) {
+	const inbox = "000054"
+	setupFilingTest(t, inbox)
+	u := &auth.User{Username: "alice"}
+	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
+	postFiling(t, u, []filingRequest{secondRow(first, "取付ベース", "")})
+	// 改定して旧版の子ページを作る（旧版も同じ図面番号を持つ）。
+	rev := makeDrawingPageFrom(t, inbox, "pdf003", "K120-1 rev1", "取付ベース", "標準2輪", "南北スポーツ")
+	if r := postFiling(t, u, []filingRequest{secondRow(rev, "取付ベース", "revision")}); len(r) != 1 || r[0].Outcome != "revision" {
+		t.Fatalf("改定できません: %+v", r)
+	}
+
+	got := productCandidates(u, "南北スポーツ", "k120-1_REV2", "")
+	if len(got) != 1 || got[0].PageID != first || got[0].Machine != "標準2輪" {
+		t.Errorf("版の印を除いた図面番号で当たっていない・旧版を出している: %+v", got)
+	}
+	// 題でも当たる（図面番号が読めていないとき）。
+	if got := productCandidates(u, "南北スポーツ", "", "取付ベース"); len(got) != 1 || got[0].PageID != first {
+		t.Errorf("題で当たっていません: %+v", got)
+	}
+	if got := productCandidates(u, "南北スポーツ", "Z999-1", "別の品目"); len(got) != 0 {
+		t.Errorf("関係ないものを出しています: %+v", got)
+	}
+}

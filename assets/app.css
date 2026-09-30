@@ -1923,6 +1923,16 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     margin: 0;
     color: var(--w-danger, #c0392b);
 }
+/* 既にある加工製品の候補（2026-09-30）——押すと装置名称・図面名称の欄に入る。 */
+.filing-candidates {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+.filing-candidates:empty { display: none; }
+.filing-cand-head { font-size: 0.9em; color: var(--text-muted, #475569); margin-right: 2px; }
 
 /* 選択肢の言葉は短い（図面改定・図面追加）ので1行に並べる。詳しい説明は title。 */
 .filing-merge-opt {

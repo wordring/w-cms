@@ -4778,69 +4778,117 @@
             const tdConfirm = document.createElement('div');
             tdConfirm.className = 'filing-card-foot';
 
-            // ── 行き先に既にページがあるか（打ち替えのたびに聞く）──
+            // ── 新規・図面追加・図面改定（2026-09-30 からいつも出す）──
             //
-            // ユーザー:「図面名称と装置名称を手がかりに、改定図面や追加図面を認識する
-            // はずですが、問題はそれらは**編集者が微妙に書き換える**ことです。整理画面で
-            // 編集者が書き換えるたびに、既存のページがあるか**検索しなおす**必要が
-            // あります」（2026-09-20）。
+            // 利用者:「既存の加工製品に図面を追加する場合、既存の加工製品の図面が修正され、新しい図面に変更する場合、
+            // 全くの新規図面で加工製品ページを新設する場合があるからです」。それまでは「行き先に同じ題のページが
+            // あるときだけ」改定・追加を出していた（09-20）——装置名称が読めていない図面（今回の rev1）では行き先が
+            // 引けず、改定の相手を探す手掛かりが画面に無かった。いまは3つをいつも出し、**既にある加工製品の候補**
+            // （同じ取引先で図面番号〔版の印は除く〕か題が同じ）を押すと欄に入る。
             //
-            // ⚠ **装置名称の候補のように先に配れません**——図面名称は顧客×装置の
-            // 数だけあるので、そのつどサーバーへ聞きます（`/api/filing-target`）。
+            //   行き先に同じ題のページが無い … 既定は「新規」。改定・追加を選んだら「相手を決めてください」
+            //                                    （サーバーも作らずに断る——黙って新規にしない）
+            //   行き先に同じ題のページが在る … 「新規」は選べない。改定か追加を**人が選ぶ**（既定を置かない——
+            //                                    溶接図が黙って旧版になるのが、それまでの振る舞いだった）
+            //
+            // ⚠ 行き先の題は打ち替えるたびに聞き直す（ユーザー:「編集者が微妙に書き換える」2026-09-20）。
+            // ⚠ 行き先が別のページへ変わったら、改定・追加の選択は外す（前の相手のつもりで選んだものを持ち越さない）。
             const choiceWrap = document.createElement('div');
             choiceWrap.className = 'filing-choice';
-            choiceWrap.hidden = true;
             const choiceNote = document.createElement('p');
             choiceNote.className = 'filing-choice-note';
-            choiceWrap.appendChild(choiceNote);
+            const candWrap = document.createElement('div');
+            candWrap.className = 'filing-candidates';
             const mergeName = 'w-filing-merge-' + rowIndex;
             const mergeInputs = {};
             // 言葉は利用者の案（2026-09-30:「『図面改定』と『図面追加』をご提案します」）。詳しくはマウスを載せたときに。
-            [['revision', '図面改定', 'いまの図面は旧版として子ページへ移します'],
-             ['drawing', '図面追加', '同じ品物の二つ目の図面として足します（部品図と溶接図など）']].forEach(([val, text, hint]) => {
-                const label = document.createElement('label');
-                label.className = 'filing-merge-opt';
-                label.title = hint;
-                const radio = document.createElement('input');
-                radio.type = 'radio';
-                radio.name = mergeName;
-                radio.value = val;
-                label.appendChild(radio);
-                label.appendChild(document.createTextNode(' ' + text));
-                choiceWrap.appendChild(label);
-                mergeInputs[val] = radio;
-            });
+            [['new', '新規', '新しい加工製品ページとして置きます'],
+             ['drawing', '図面追加', '既にある加工製品に、二つ目の図面として足します（部品図と溶接図など）'],
+             ['revision', '図面改定', '既にある加工製品の図面を差し替えます（いまの図面は旧版として子ページへ）']]
+                .forEach(([val, text, hint]) => {
+                    const label = document.createElement('label');
+                    label.className = 'filing-merge-opt';
+                    label.title = hint;
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = mergeName;
+                    radio.value = val;
+                    label.appendChild(radio);
+                    label.appendChild(document.createTextNode(' ' + text));
+                    choiceWrap.appendChild(label);
+                    mergeInputs[val] = radio;
+                });
+            choiceWrap.appendChild(choiceNote);
+            choiceWrap.appendChild(candWrap);
             tdConfirm.appendChild(choiceWrap);
 
-            // ⚠ **どちらも既定で選びません。** 既定を置くと、見ないまま押した人が
-            // その既定に従います——溶接図が黙って旧版になるのが、それまでの振る舞い
-            // でした。選ばない行は実行しても動きません（サーバーが `needs_choice`）。
+            let target = { exists: false, page_id: '' };
+            const picked = () => Object.keys(mergeInputs).find(k => mergeInputs[k].checked) || '';
+            const explain = () => {
+                const m = picked();
+                if (target.exists) {
+                    const nos = target.nos ? '（図面: ' + target.nos + '）' : '';
+                    choiceNote.textContent = '⚠ 行き先の「' + target.title + '」は既にあります' + nos +
+                        (m === 'drawing' || m === 'revision' ? '。' : '。図面追加か図面改定を選んでください');
+                } else if (m === 'drawing' || m === 'revision') {
+                    choiceNote.textContent = '⚠ 行き先に同じ加工製品がありません。下の候補を押すか、装置名称・図面名称を合わせてください';
+                } else {
+                    choiceNote.textContent = '';
+                }
+                choiceNote.hidden = !choiceNote.textContent;
+            };
+            Object.values(mergeInputs).forEach(r => r.addEventListener('change', explain));
+
             let targetTimer = null;
             const askTarget = async () => {
                 const q = new URLSearchParams({
                     customer: fields.customer.value.trim(),
                     machine: fields.machine_name.value.trim(),
                     name: fields.drawing_name.value.trim(),
+                    drawing_no: row.drawing_no || '',
                 });
+                let d = null;
                 try {
                     const res = await fetch('/api/filing-target?' + q.toString());
-                    const d = await res.json();
-                    if (!d || !d.exists) {
-                        choiceWrap.hidden = true;
-                        // **隠すときは選択も外します**——隠れたまま選ばれた値が残ると、
-                        // 打ち替えて別の行き先になったのに前の選択で実行されます。
-                        Object.values(mergeInputs).forEach(b => { b.checked = false; });
-                        return;
-                    }
-                    const nos = (d.drawing_nos || []).join('・');
-                    choiceNote.textContent = '⚠ 「' + (d.title || '') + '」は既にあります' +
-                        (nos ? '（図面: ' + nos + '）' : '') + '。どちらか選んでください:';
-                    choiceWrap.hidden = false;
-                } catch (e) {
-                    // 聞けなくても整理はできます（実行がもう一度判断して `needs_choice`
-                    // を返します）。⚠ ここで黙って選択肢を出すほうが危ないので出しません。
-                    choiceWrap.hidden = true;
+                    d = await res.json();
+                } catch (e) { d = null; }
+                const was = target.page_id;
+                target = d && d.exists
+                    ? { exists: true, page_id: d.page_id || '', title: d.title || '', nos: (d.drawing_nos || []).join('・') }
+                    : { exists: false, page_id: '' };
+                // 行き先が変わったら、前の相手のつもりの改定・追加は外す。
+                if (target.page_id !== was && (picked() === 'drawing' || picked() === 'revision')) {
+                    mergeInputs.drawing.checked = false;
+                    mergeInputs.revision.checked = false;
                 }
+                // 同じ題のページが在るなら「新規」は選べない（同じ所に同じ題の加工製品を2枚作らない）。
+                mergeInputs.new.disabled = target.exists;
+                if (target.exists && mergeInputs.new.checked) mergeInputs.new.checked = false;
+                if (!target.exists && !picked()) mergeInputs.new.checked = true;
+                // 既にある加工製品の候補（押すと装置名称・図面名称の欄へ入り、行き先を聞き直す）。
+                candWrap.replaceChildren();
+                const cands = ((d && d.candidates) || []).filter(c => c.page_id !== target.page_id);
+                if (cands.length) {
+                    const head = document.createElement('span');
+                    head.className = 'filing-cand-head';
+                    head.textContent = '既にある加工製品:';
+                    candWrap.appendChild(head);
+                    cands.forEach(c => {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'chip-btn filing-cand';
+                        b.textContent = (c.machine ? c.machine + '／' : '') + c.title;
+                        b.title = '行き先をここにする（図面: ' + (c.drawing_nos || 'なし') + '・/' + c.page_id + '）';
+                        b.addEventListener('click', () => {
+                            fields.machine_name.value = c.machine || '';
+                            fields.drawing_name.value = c.title || '';
+                            fields.machine_name.dispatchEvent(new Event('change'));
+                            askTarget();
+                        });
+                        candWrap.appendChild(b);
+                    });
+                }
+                explain();
             };
             const askTargetSoon = () => {
                 if (targetTimer) clearTimeout(targetTimer);

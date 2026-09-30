@@ -149,6 +149,12 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 	name := cms.NormalizeNameForIngest(q.Get("name"))
 
 	out := map[string]any{"success": true, "exists": false}
+	// **既にある加工製品の候補**（2026-09-30）——同じ取引先の中で、図面番号（版の印は除く）か題が同じページ。
+	// 利用者:「既存の加工製品に図面を追加する場合、既存の加工製品の図面が修正され、新しい図面に変更する場合、
+	// 全くの新規図面で加工製品ページを新設する場合がある」。装置名称が読めていない図面（表題欄に無い）は、
+	// 行き先の題が一致せず「無い」になり、改定・追加の相手を人が探す手掛かりがありませんでした。
+	// ⚠ **候補までです**——押すと欄に入り、決めるのは人（図面番号でページを自動的に束ねない）。
+	out["candidates"] = productCandidates(user, customer, q.Get("drawing_no"), name)
 	if customer == "" || machine == "" || name == "" {
 		json.NewEncoder(w).Encode(out) // まだ埋まっていない——「無い」と同じ扱い
 		return
@@ -186,6 +192,72 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 		out["drawing_nos"] = drawingNosOf(body)
 	}
 	json.NewEncoder(w).Encode(out)
+}
+
+// productCandidate は整理の欄に出す「既にある加工製品」の候補です。
+type productCandidate struct {
+	PageID     string `json:"page_id"`
+	Title      string `json:"title"`
+	Machine    string `json:"machine"`
+	DrawingNos string `json:"drawing_nos"`
+}
+
+// revSuffix は図面番号の末尾の版の印です（`rev1`・`_rev0`・`Rev.2`）——改定の図面は番号にこれが付くので外して比べる。
+var revSuffix = regexp.MustCompile(`(?i)[\s_\-]*rev\.?\s*\d+$`)
+
+// sameDrawingKey は図面番号を比べる形にします（版の印を外し、区切り・大小を畳む）。
+func sameDrawingKey(no string) string {
+	no = strings.TrimSpace(cms.NormalizeNameForIngest(no))
+	return cms.NormalizeCode(revSuffix.ReplaceAllString(no, ""))
+}
+
+// productCandidates は取引先の「加工製品」の下から、図面番号（版の印は除く）か題が同じページを探します（5件まで・読める
+// ものだけ・旧版の子ページは除く）。
+func productCandidates(user *auth.User, customer, drawingNo, name string) []productCandidate {
+	out := []productCandidate{}
+	boxID, ok := CustomerBoxPageID()
+	if customer == "" || !ok {
+		return out
+	}
+	partnerID, found := findChildByTitle(boxID, customer)
+	if !found {
+		return out
+	}
+	productsID, found := findChildByTitle(partnerID, ProductsBoxTitle)
+	if !found {
+		return out
+	}
+	hostID, err := strconv.Atoi(productsID)
+	if err != nil {
+		return out
+	}
+	rows, err := productListRows(user, hostID)
+	if err != nil {
+		return out
+	}
+	want := sameDrawingKey(drawingNo)
+	wantName := cms.NormalizeText(name)
+	// 旧版の子ページは `productListRows` が既に外している（加工製品ページの子は一覧に入らない）。
+	for _, r := range rows {
+		hit :=wantName != "" && cms.NormalizeText(r.Title) == wantName
+		if !hit && want != "" {
+			for _, no := range strings.Split(r.DrawingNo, "・") {
+				if sameDrawingKey(no) == want {
+					hit = true
+					break
+				}
+			}
+		}
+		if !hit {
+			continue
+		}
+		out = append(out, productCandidate{PageID: page.FormatID(r.PageID), Title: r.Title,
+			Machine: r.Machine, DrawingNos: r.DrawingNo})
+		if len(out) >= 5 {
+			break
+		}
+	}
+	return out
 }
 
 // drawingNosOf は本文に載っている図面番号を並べます（図面ブロックごとに1つ）。
@@ -421,9 +493,9 @@ type filingRequest struct {
 	ConfirmRevision bool `json:"confirm_revision"`
 	// Merge は**行き先に同じ題のページがあったとき、どうするか**です（2026-09-20）。
 	//
-	//	""          … 未選択。**動かしません**（人が決めるまで通信箱に置いたまま）
-	//	"revision"  … 改定として合流（いまの図面は旧版として子ページへ）
-	//	"drawing"   … 二つ目の図面として追加（同じページに並べる・部品図と溶接図）
+	//	""・"new"   … 行き先に無ければ新規の加工製品ページ。**在れば動かしません**（人が決めるまで通信箱に置いたまま）
+	//	"revision"  … 図面改定（いまの図面は旧版として子ページへ）。⚠ 行き先が無ければ作らずに断る（2026-09-30）
+	//	"drawing"   … 図面追加（同じページに並べる・部品図と溶接図）。⚠ 同上
 	//
 	// ⚠ **既定を「改定」にしません。** 機械には区別できない（どちらも「同じ品物・
 	// 違う図面番号」）ので、既定を置くと**見ないまま押した人がその既定に従います**。
@@ -655,6 +727,14 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		}
 	}
 
+	// ⚠ **改定・追加を選んだのに行き先が無いときは、作りません**（2026-09-30）——それまでは黙って新しい加工製品
+	// ページになっていました（改定のつもりが新規・画面の選択肢がいつも出ていた間は実際に起こり得た）。相手は候補を
+	// 押すか、装置名称・図面名称を既にあるページに合わせて決めます。
+	if row.Merge == "revision" || row.Merge == "drawing" {
+		return filingResult{PageID: pageID, Outcome: "needs_choice",
+			Message: "「" + where + "」はまだありません。図面改定・図面追加は、既にある加工製品を行き先にしてください" +
+				"（候補を押すと欄に入ります）。新しく作るなら「新規」を選んでください"}
+	}
 	if err := movePage(user, pageID, machineID, name); err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
 	}
