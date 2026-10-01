@@ -230,8 +230,11 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 		// 開けますという表示は冗長すぎます」）——説明はマウスを載せたときに（title）、出どころは括弧で添えるだけ。
 		// ⚠ ID（`ref`）は**画面が「🔗 ID」の札にして出します**（2026-10-01・app.js の decorateLocalEdit——押すと
 		// 写せる）。ここに ID の文字も出すと同じ値が2つ並ぶので、出どころへのリンクは「出どころ」の語にした。
+		// ⚠ リンクに `download`（届いたときの名前）を付ける（2026-10-01 利用者:「STEPファイルも加工製品ページで参照して
+		// ダウンロードできるようにしたい」）——配信は素の `Content-Disposition: attachment`（保存名の既定はリンクの
+		// download 属性が運ぶ・page.setAttachmentHeaders）なので、付けないと保存名（`abcd.step`）で落ちていた。
 		return `<div class="file-view file-view-plain">` +
-			`<p class="file-view-head" title="押すと保存します（ブラウザでは開けない形式）">📎 <a href="` + src + `">` + name + `</a>` +
+			`<p class="file-view-head" title="押すと保存します（ブラウザでは開けない形式）">📎 <a href="` + src + `" download="` + name + `">` + name + `</a>` +
 			` <span class="file-view-note">（<a href="/` + stdhtml.EscapeString(pageID) + `#` +
 			stdhtml.EscapeString(blockID) + `" title="` + ref + ` の出どころのページへ">出どころ</a>）</span></p></div>`
 	}

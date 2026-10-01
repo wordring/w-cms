@@ -94,7 +94,7 @@ func TestFileViewOpensAnyKind(t *testing.T) {
 		{"c3pa.mp3", `<audio class="file-view-body"`},
 		// **テキストは「描ける」に入れません**（2026-09-15 のコードレビュー #1）。
 		// 配信が octet-stream＋attachment なので `<embed>` は描けず、開く口を出すのが正。
-		{"c3pb.csv", `<a href="/000001/c3pb.csv">`},
+		{"c3pb.csv", `<a download="c3pb.csv" href="/000001/c3pb.csv">`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -125,6 +125,18 @@ func TestFileViewUnrenderableOffersLink(t *testing.T) {
 	}
 	if !strings.Contains(out, `href="/000001/c3p7.dxf"`) {
 		t.Errorf("開く口がありません:\n%s", out)
+	}
+}
+
+// TestFileViewUnrenderableDownloadsByName は、描けない形式（STEP など）のリンクに download（届いたときの名前）が付く
+// ことを固定します（2026-10-01 利用者:「STEPファイルも加工製品ページで参照してダウンロードできるようにしたい」）——
+// 配信は素の attachment なので、付けないと保存名で落ちる。
+func TestFileViewUnrenderableDownloadsByName(t *testing.T) {
+	fileViewFixture(t, "000001", "s7ep.step")
+	body := `<section data-type="file-view" data-ref="000001-s7ep"></section>`
+	out := renderFileViewBody(t, &auth.User{Username: "alice", IsAdmin: true}, 1, body)
+	if !strings.Contains(out, `<a download="s7ep.step" href="/000001/s7ep.step">`) {
+		t.Errorf("STEP のリンクに download がありません:\n%s", out)
 	}
 }
 

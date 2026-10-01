@@ -4400,6 +4400,15 @@
                 }
             }
         });
+        // PDF・ZIP 以外の添付（STEP・DXF・Excel …）にも「🔗 参照」（2026-10-01 利用者:「STEPファイルも加工製品ページで参照して
+        // ダウンロードできるようにしたい」）——写した ID を加工製品ページの 📄 ファイル表示へ貼ると、そこから保存できる。
+        document.querySelectorAll('#w-editor-content a[href]').forEach(a => {
+            if (a.closest('.vocab-chrome')) return;
+            const m = /^\/([0-9]{6})\/([0-9a-z]+)\.([0-9a-z_]+)$/.exec(a.getAttribute('href') || '');
+            // PDF・ZIP は上で付けた。画像は写真の「🔗 ID」がある（decorateLocalEdit と同じ札を二重にしない）。
+            if (!m || /^(pdf|zip|jpe?g|png|gif|webp|svg|bmp)$/.test(m[3])) return;
+            a.insertAdjacentElement('afterend', makeCopyRefButton(m[1], m[2]));
+        });
         // 表計算（.xlsx）にも「🤖 解析」（2026-09-30 利用者:「ハッキリと受注したとわかる場合は、受注ページにして良い」
         // ——Excel の注文リスト。サーバーが文字にして判定する）。表示のボタンは無い（開くのはリンクで）。
         if (!hasExtension('toho')) return;
