@@ -171,11 +171,7 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := boxID
-	for _, title := range []string{customer, ProductsBoxTitle, machine, name} {
-		if title == "" {
-			json.NewEncoder(w).Encode(out)
-			return
-		}
+	for _, title := range []string{customer, ProductsBoxTitle, machine} {
 		next, found := findChildByTitle(id, title)
 		if !found {
 			json.NewEncoder(w).Encode(out)
@@ -183,20 +179,36 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		id = next
 	}
-	idInt, err := strconv.Atoi(id)
-	if err != nil || !page.CanView(user, idInt) {
-		json.NewEncoder(w).Encode(out) // 読めないものは「無い」
+	// 行き先の題のページは**何枚もありうる**（2026-10-01 利用者:「実際には同じ品名があります」——「新規」で隣に置ける）。
+	// 読めるものだけを古い順に返し、図面追加・図面改定の相手は人が選ぶ（`same`）。
+	type samePage struct {
+		PageID     string   `json:"page_id"`
+		DrawingNos []string `json:"drawing_nos"`
+	}
+	var same []samePage
+	for _, sid := range childrenByTitle(id, name, "") {
+		idInt, err := strconv.Atoi(sid)
+		if err != nil || !page.CanView(user, idInt) {
+			continue // 読めないものは「無い」
+		}
+		sp := samePage{PageID: sid}
+		// **既に載っている図面番号**を添えます——人が「改定か、別の図面か」を決める
+		// ときの手掛かりです（同じ番号なら改定、違う番号なら別図面のことが多い。
+		// ⚠ **決めるのは人**で、機械はここでも候補までです）。
+		if body, err := cms.ReadPageBody(sid); err == nil {
+			sp.DrawingNos = drawingNosOf(body)
+		}
+		same = append(same, sp)
+	}
+	if len(same) == 0 {
+		json.NewEncoder(w).Encode(out)
 		return
 	}
 	out["exists"] = true
-	out["page_id"] = id
+	out["page_id"] = same[0].PageID
 	out["title"] = name
-	// **既に載っている図面番号**を添えます——人が「改定か、別の図面か」を決める
-	// ときの手掛かりです（同じ番号なら改定、違う番号なら別図面のことが多い。
-	// ⚠ **決めるのは人**で、機械はここでも候補までです）。
-	if body, err := cms.ReadPageBody(id); err == nil {
-		out["drawing_nos"] = drawingNosOf(body)
-	}
+	out["drawing_nos"] = same[0].DrawingNos
+	out["same"] = same
 	json.NewEncoder(w).Encode(out)
 }
 
@@ -534,6 +546,9 @@ type filingRequest struct {
 	Merge string `json:"merge"`
 	// DuplicateOf は「重複（取り込まない）」のときの、既にある加工製品のページIDです（2026-09-30）。
 	DuplicateOf string `json:"duplicate_of"`
+	// Target は図面追加・図面改定の行き先のページIDです（2026-10-01）——行き先に同じ題の加工製品が何枚もあるとき、
+	// 人が候補を押して決めたもの。空なら題で引く（1枚だけならそれ）。
+	Target string `json:"target"`
 }
 
 // filingResult は1行の結果です。何が起きたかを人へ返します
@@ -688,7 +703,24 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// 押し込まれます（ユーザー:「品物としては一つです」）。機械には区別できないので、
 	// **人が選びます**。画面は打ち替えのたびに `/api/filing-target` へ聞いて、
 	// ページがあれば選択肢を出します。
-	if existing, found := findChildByTitle(machineID, name); found && existing != pageID {
+	//
+	// ⚠ **同じ題の別の品物もあります**（2026-10-01 利用者:「品名がかぶると加工製品ページが追加できないようですが、
+	// 実際には同じ品名があります」）——「新規」を選べば、同じ題のページが在っても隣に置きます。そのため行き先に同じ題が
+	// **何枚も**ありえるので、図面追加・図面改定の相手は人が押した候補（`Target`）で決めます（1枚だけなら題で引く）。
+	sameTitle := childrenByTitle(machineID, name, pageID)
+	if len(sameTitle) > 0 && row.Merge != "new" {
+		if row.Merge != "drawing" && row.Merge != "revision" {
+			// **未選択なら動かしません。** ⚠ どちらかを既定にすると、見ないまま
+			// 押した人がその既定に従います——溶接図が黙って旧版になるのが、
+			// それまでの振る舞いでした。
+			return filingResult{PageID: pageID, Outcome: "needs_choice", TargetID: sameTitle[0],
+				// 言葉は画面の選択肢と同じ（2026-09-30 利用者の案「図面改定」「図面追加」）。
+				Message: "「" + name + "」は既にあります。「図面改定」か「図面追加」か、同じ名前の別の品物なら「新規」を選んでください"}
+		}
+		existing, why := pickMergeTarget(sameTitle, row.Target, name)
+		if why != "" {
+			return filingResult{PageID: pageID, Outcome: "needs_choice", Message: why}
+		}
 		// ⚠ **同じ添付・同じ図面番号は「疑わしい」**——止めずに人へ確認します
 		// （2026-09-20 ユーザー:「実は、同じ添付同じPDFの中に同じ図面番号で別図面が
 		// 入っているものがありました」）。**機械には重複を判定できません**ので、
@@ -744,14 +776,6 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 			auth.Audit(user.Username, "file-drawing.revision", pageID+" -> "+existing)
 			return filingResult{PageID: pageID, Outcome: "revision", TargetID: existing,
 				Message: where + " の改定図面として合流しました" + kindsNote(existing, false)}
-
-		default:
-			// **未選択なら動かしません。** ⚠ どちらかを既定にすると、見ないまま
-			// 押した人がその既定に従います——溶接図が黙って旧版になるのが、
-			// それまでの振る舞いでした。
-			return filingResult{PageID: pageID, Outcome: "needs_choice", TargetID: existing,
-				// 言葉は画面の選択肢と同じ（2026-09-30 利用者の案「図面改定」「図面追加」）。
-				Message: "「" + name + "」は既にあります。「図面改定」か「図面追加」かを選んでください"}
 		}
 	}
 
@@ -767,10 +791,57 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
 	}
 	auth.Audit(user.Username, "file-drawing.move", pageID+" -> "+machineID)
+	// 同じ題の隣に「新規」で置いたことは残し、知らせます（2026-10-01）——あとで「なぜ同じ名前が2枚あるのか」を
+	// 調べる人の手掛かり。⚠ 同じ品物を二重に作っていないかは、品番・図面番号で人が見る（題は判断の基準にしない）。
+	sameNote := ""
+	if len(sameTitle) > 0 {
+		auth.Audit(user.Username, "file-drawing.same-name", pageID+" beside "+strings.Join(sameTitle, ","))
+		sameNote = "（同じ名前の加工製品が既に " + strconv.Itoa(len(sameTitle)) + " 枚あります——別の品物として隣に置きました）"
+	}
 	// **運んできたページは印のとおりに揃えます**（外した区分は消す）——画面の印の初期値は
 	// このページ自身の区分なので、外したのは人の意思です。
 	return filingResult{PageID: pageID, Outcome: "moved",
-		Message: where + " へ収めました" + kindsNote(pageID, true)}
+		Message: where + " へ収めました" + sameNote + kindsNote(pageID, true)}
+}
+
+// childrenByTitle は親の子のうち、題が完全一致するページを古い順に返します（except は除く）。
+// 同じ題の別の品物があるので（2026-10-01）、1枚とは限りません。
+func childrenByTitle(parentID, title, except string) []string {
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return nil
+	}
+	kids, err := cms.ChildPages(database.DB, parentInt)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, k := range kids {
+		if id := formatID(k.ID); k.Title == title && id != except {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// pickMergeTarget は図面追加・図面改定の行き先を、同じ題のページ（sameTitle）から決めます。
+// 人が候補を押していれば（target）それ、1枚だけならそれ。決められなければ理由を返します。
+func pickMergeTarget(sameTitle []string, target, name string) (string, string) {
+	if target != "" {
+		if id, ok := page.NormalizeID(target); ok {
+			for _, s := range sameTitle {
+				if s == id {
+					return id, ""
+				}
+			}
+		}
+		return "", "選んだ行き先（/" + target + "）は「" + name + "」ではありません。候補を押し直してください"
+	}
+	if len(sameTitle) == 1 {
+		return sameTitle[0], ""
+	}
+	return "", "「" + name + "」が " + strconv.Itoa(len(sameTitle)) + " 枚あります（/" + strings.Join(sameTitle, "・/") +
+		"）。図面追加・図面改定の行き先は、下の候補から押して決めてください"
 }
 
 // syncDrawingFields は図面ブロックの `客先`・`装置名称`・`図面名称` を、整理の画面で

@@ -4993,8 +4993,10 @@
             //
             //   行き先に同じ題のページが無い … 既定は「新規」。改定・追加を選んだら「相手を決めてください」
             //                                    （サーバーも作らずに断る——黙って新規にしない）
-            //   行き先に同じ題のページが在る … 「新規」は選べない。改定か追加を**人が選ぶ**（既定を置かない——
-            //                                    溶接図が黙って旧版になるのが、それまでの振る舞いだった）
+            //   行き先に同じ題のページが在る … 改定か追加か、同じ名前の別の品物なら新規かを**人が選ぶ**（既定を置かない——
+            //                                    溶接図が黙って旧版になるのが、それまでの振る舞いだった）。2026-10-01 までは
+            //                                    「新規」を選べなかった（利用者:「実際には同じ品名があります」）
+            //   同じ題のページが何枚も在る   … 改定・追加の行き先を押して決める（`target`——押すまでサーバーも動かさない）
             //
             // ⚠ 行き先の題は打ち替えるたびに聞き直す（ユーザー:「編集者が微妙に書き換える」2026-09-20）。
             // ⚠ 行き先が別のページへ変わったら、改定・追加の選択は外す（前の相手のつもりで選んだものを持ち越さない）。
@@ -5009,6 +5011,9 @@
             dupWrap.hidden = true;
             const candWrap = document.createElement('div');
             candWrap.className = 'filing-candidates';
+            // 同じ題の加工製品が何枚もあるときの、図面追加・図面改定の行き先（2026-10-01）。
+            const sameWrap = document.createElement('div');
+            sameWrap.className = 'filing-candidates filing-same';
             const mergeName = 'w-filing-merge-' + rowIndex;
             const mergeInputs = {};
             const mergeLabels = {};
@@ -5035,10 +5040,14 @@
             mergeLabels.duplicate.hidden = true;
             choiceWrap.appendChild(choiceNote);
             choiceWrap.appendChild(dupWrap);
+            choiceWrap.appendChild(sameWrap);
             choiceWrap.appendChild(candWrap);
             tdConfirm.appendChild(choiceWrap);
 
-            let target = { exists: false, page_id: '' };
+            let target = { exists: false, page_id: '', same: [] };
+            // chosenTarget は人が押した行き先のページ（同じ題が何枚もあるとき・候補を押したとき）。
+            let chosenTarget = '';
+            const ambiguous = () => target.same.length > 1 && !target.same.some(s => s.page_id === chosenTarget);
             // dup は「重複」の相手（同じ図面番号か同じファイルの加工製品のうち、いちばん強いもの）。
             let dup = null;
             // 人が自分で選んだら、聞き直しのたびの初期値で上書きしない。
@@ -5049,10 +5058,16 @@
                 if (m === 'duplicate' && dup) {
                     choiceNote.textContent = '取り込みません——解析で作ったこのページはごみ箱へ移し、「' +
                         (dup.machine ? dup.machine + '／' : '') + dup.title + '」にこのメールの受信元を書き足します';
+                } else if (target.exists && m === 'new') {
+                    choiceNote.textContent = '⚠ 「' + target.title + '」は既に' + (target.same.length > 1 ? ' ' + target.same.length + ' 枚' : '') +
+                        'あります——同じ名前の別の品物として、隣に新しく置きます';
+                } else if (target.exists && (m === 'drawing' || m === 'revision') && ambiguous()) {
+                    choiceNote.textContent = '⚠ 「' + target.title + '」が ' + target.same.length + ' 枚あります。下から行き先を押してください';
                 } else if (target.exists) {
-                    const nos = target.nos ? '（図面: ' + target.nos + '）' : '';
+                    const nos = target.same.length > 1 ? '（' + target.same.length + ' 枚）' : target.nos ? '（図面: ' + target.nos + '）' : '';
                     choiceNote.textContent = '⚠ 行き先の「' + target.title + '」は既にあります' + nos +
-                        (m === 'drawing' || m === 'revision' ? '。' : dup ? '。図面追加・図面改定・重複のどれかを選んでください' : '。図面追加か図面改定を選んでください');
+                        (m === 'drawing' || m === 'revision' ? '。' : dup ? '。図面追加・図面改定・重複か、同じ名前の別の品物なら新規を選んでください'
+                            : '。図面追加・図面改定か、同じ名前の別の品物なら新規を選んでください');
                 } else if (m === 'drawing' || m === 'revision') {
                     choiceNote.textContent = '⚠ 行き先に同じ加工製品がありません。下の候補を押すか、装置名称・図面名称を合わせてください';
                 } else {
@@ -5132,16 +5147,39 @@
                 } catch (e) { d = null; }
                 const was = target.page_id;
                 target = d && d.exists
-                    ? { exists: true, page_id: d.page_id || '', title: d.title || '', nos: (d.drawing_nos || []).join('・') }
-                    : { exists: false, page_id: '' };
+                    ? { exists: true, page_id: d.page_id || '', title: d.title || '', nos: (d.drawing_nos || []).join('・'),
+                        same: d.same || [] }
+                    : { exists: false, page_id: '', same: [] };
                 // 行き先が変わったら、前の相手のつもりの改定・追加は外す。
                 if (target.page_id !== was && (picked() === 'drawing' || picked() === 'revision')) {
                     mergeInputs.drawing.checked = false;
                     mergeInputs.revision.checked = false;
                 }
-                // 同じ題のページが在るなら「新規」は選べない（同じ所に同じ題の加工製品を2枚作らない）。
-                mergeInputs.new.disabled = target.exists;
-                if (target.exists && mergeInputs.new.checked) mergeInputs.new.checked = false;
+                // 押した行き先が、もう同じ題の中に無ければ外す（欄を打ち替えた）。
+                if (chosenTarget && !target.same.some(s => s.page_id === chosenTarget)) chosenTarget = '';
+                // 同じ題のページが在るとき「新規」の既定は外す（同じ名前の別の品物なら人が選ぶ・2026-10-01 から選べる）。
+                if (target.exists && !userPicked && mergeInputs.new.checked) mergeInputs.new.checked = false;
+                // 同じ題が何枚もあるなら、図面追加・図面改定の行き先を押して決める。
+                sameWrap.replaceChildren();
+                if (target.same.length > 1) {
+                    const head = document.createElement('span');
+                    head.className = 'filing-cand-head';
+                    head.textContent = '図面追加・図面改定の行き先:';
+                    sameWrap.appendChild(head);
+                    target.same.forEach(s => {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'chip-btn filing-same-pick' + (s.page_id === chosenTarget ? ' is-chosen' : '');
+                        b.textContent = (s.page_id === chosenTarget ? '✓ ' : '') + '/' + s.page_id +
+                            '（図面: ' + ((s.drawing_nos || []).join('・') || 'なし') + '）';
+                        b.title = 'この「' + target.title + '」を行き先にする（押すと開かずに選ぶ・中身は /' + s.page_id + ' で見る）';
+                        b.addEventListener('click', () => {
+                            chosenTarget = s.page_id;
+                            askTarget(); // 印を描き直す
+                        });
+                        sameWrap.appendChild(b);
+                    });
+                }
                 // 同じ図面が既にあるか（2026-09-30）——「重複（取り込まない）」はそのときだけ出す。相手は同じ番号で
                 // 同じファイルのものを第一に、次に同じ番号。同じ番号で同じファイルなら、人が選ぶ前の初期値にする。
                 const all = (d && d.candidates) || [];
@@ -5162,7 +5200,7 @@
                 if (!target.exists && !picked()) mergeInputs.new.checked = true;
                 // 既にある加工製品の候補（押すと装置名称・図面名称の欄へ入り、行き先を聞き直す）。
                 candWrap.replaceChildren();
-                const cands = all.filter(c => c.page_id !== target.page_id);
+                const cands = all.filter(c => !target.same.some(s => s.page_id === c.page_id));
                 if (cands.length) {
                     const head = document.createElement('span');
                     head.className = 'filing-cand-head';
@@ -5175,6 +5213,7 @@
                         b.textContent = (c.machine ? c.machine + '／' : '') + c.title;
                         b.title = '行き先をここにする（図面: ' + (c.drawing_nos || 'なし') + '・/' + c.page_id + '）';
                         b.addEventListener('click', () => {
+                            chosenTarget = c.page_id; // 同じ題が何枚もあっても、押したこのページが行き先
                             fields.machine_name.value = c.machine || '';
                             fields.drawing_name.value = c.title || '';
                             fields.machine_name.dispatchEvent(new Event('change'));
@@ -5217,6 +5256,7 @@
             inputs.push({
                 page_id: row.page_id, fields: fields, confirm: confirm, box: box,
                 merge: mergeInputs, choice: choiceWrap, kinds: kindBoxes, dupOf: () => (dup ? dup.page_id : ''),
+                target: () => chosenTarget,
             });
             list.appendChild(card);
         });
@@ -5302,6 +5342,8 @@
             merge: (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '',
             // 重複（取り込まない）の相手（2026-09-30）。
             duplicate_of: i.dupOf ? i.dupOf() : '',
+            // 図面追加・図面改定の行き先（同じ題が何枚もあるとき・候補を押したとき・2026-10-01）。空なら題で引く。
+            target: i.target ? i.target() : '',
         }));
         try {
             const res = await fetch('/api/file-drawings', {

@@ -281,3 +281,58 @@ func TestProductCandidatesIgnoreRevisionSuffix(t *testing.T) {
 		t.Errorf("関係ないものを出しています: %+v", got)
 	}
 }
+
+// TestFileDrawingsNewBesideSameName は、**同じ題の別の品物**を「新規」で隣に置けること、そのあと同じ題が2枚あるときの
+// 図面追加は**行き先を押さないと動かさない**こと、押した行き先（Target）へ入ることを固定します（2026-10-01 利用者:
+// 「品名がかぶると加工製品ページが追加できないようですが、実際には同じ品名があります」）。
+func TestFileDrawingsNewBesideSameName(t *testing.T) {
+	const inbox = "000058"
+	setupFilingTest(t, inbox)
+	u := &auth.User{Username: "alice"}
+
+	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
+	postFiling(t, u, []filingRequest{secondRow(first, "取付ベース", "")})
+	firstParent := mustParent(t, first)
+
+	// 同じ名前の**別の品物**——「新規」なら隣に置く。
+	other := makeDrawingPageFrom(t, inbox, "pdf002", "K200-5", "取付ベース", "標準2輪", "南北スポーツ")
+	results := postFiling(t, u, []filingRequest{secondRow(other, "取付ベース", "new")})
+	if len(results) != 1 || results[0].Outcome != "moved" || !strings.Contains(results[0].Message, "別の品物として隣に置きました") {
+		t.Fatalf("同じ名前の別の品物を新規で置けません: %+v", results)
+	}
+	if p := mustParent(t, other); p != firstParent {
+		t.Errorf("隣（同じ装置名称の下）に置かれていません: %s（%s のはず）", p, firstParent)
+	}
+	if got := childrenByTitle(firstParent, "取付ベース", ""); len(got) != 2 {
+		t.Errorf("同じ題のページが2枚になっていません: %v", got)
+	}
+
+	// 同じ題が2枚——図面追加は、行き先を押していなければ動かさない。
+	third := makeDrawingPageFrom(t, inbox, "pdf003", "K200-5W", "取付ベース溶接", "標準2輪", "南北スポーツ")
+	results = postFiling(t, u, []filingRequest{secondRow(third, "取付ベース", "drawing")})
+	if len(results) != 1 || results[0].Outcome != "needs_choice" || !strings.Contains(results[0].Message, "2 枚あります") {
+		t.Fatalf("同じ題が2枚なのに行き先を決めずに動かしました: %+v", results)
+	}
+	// 押した行き先（2枚目）へ入る。
+	row := secondRow(third, "取付ベース", "drawing")
+	row.Target = other
+	results = postFiling(t, u, []filingRequest{row})
+	if len(results) != 1 || results[0].Outcome != "added" || results[0].TargetID != other {
+		t.Fatalf("押した行き先へ図面追加されていません: %+v", results)
+	}
+	if body := readPageBody(t, other); !strings.Contains(body, "K200-5W") {
+		t.Errorf("2枚目に溶接図が並んでいません:\n%s", body)
+	}
+	if body := readPageBody(t, first); strings.Contains(body, "K200-5W") {
+		t.Errorf("押していない1枚目に入りました:\n%s", body)
+	}
+}
+
+func mustParent(t *testing.T, id string) string {
+	t.Helper()
+	meta, ok := page.ReadSidecar(id)
+	if !ok {
+		t.Fatalf("サイドカーを読めません: %s", id)
+	}
+	return meta.ParentID
+}

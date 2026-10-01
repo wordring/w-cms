@@ -1944,6 +1944,8 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 }
 .filing-candidates:empty { display: none; }
 .filing-cand-head { font-size: 0.9em; color: var(--text-muted, #475569); margin-right: 2px; }
+/* 同じ題の加工製品が何枚もあるときの行き先（2026-10-01）——押したものは「✓」と太字・枠（色だけで分けない）。 */
+.filing-same-pick.is-chosen { font-weight: bold; outline: 2px solid var(--accent, #2563eb); }
 
 /* 選択肢の言葉は短い（図面改定・図面追加）ので1行に並べる。詳しい説明は title。 */
 .filing-merge-opt {
