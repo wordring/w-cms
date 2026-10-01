@@ -131,34 +131,8 @@ func bareAddr(s string) string {
 	return strings.TrimSpace(v)
 }
 
-// mailBodyText は記録の本文（`本文` の節の `<pre>`）を平文で返します。
-//
-// ⚠ 節が無い古い記録は、本文の最初の `<pre>` を読みます（2026-09-05 から本文は `<pre>` 1つ）。
-func mailBodyText(bodyHTML string) string {
-	nodes, err := htmldoc.ParseFragment(bodyHTML)
-	if err != nil {
-		return ""
-	}
-	var inSection, anyPre string
-	for _, root := range nodes {
-		cms.WalkElements(root, func(n *html.Node) {
-			if n.Data == "section" && inSection == "" && sectionHeadingText(n) == comm.MailBodyHeading {
-				cms.WalkElements(n, func(p *html.Node) {
-					if p.Data == "pre" && inSection == "" {
-						inSection = nodeText(p)
-					}
-				})
-			}
-			if n.Data == "pre" && anyPre == "" {
-				anyPre = nodeText(n)
-			}
-		})
-	}
-	if inSection != "" {
-		return inSection
-	}
-	return anyPre
-}
+// mailBodyText は記録の本文を平文で返します（本体は comm.RecordBodyText——2026-10-01 に上げた）。
+func mailBodyText(bodyHTML string) string { return comm.RecordBodyText(bodyHTML) }
 
 // cleanAttachHref はページの添付のきれいなURL（`/<6桁>/<生成ID>.<拡張子>`）です。
 var cleanAttachHref = regexp.MustCompile(`^/(\d{6})/([0-9a-z]+\.[0-9a-z]+)$`)
