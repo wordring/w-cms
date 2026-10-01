@@ -6790,7 +6790,19 @@
                 alt: def.type,
             });
         });
-        slashItems = items;
+        // 基本は決まった並び（下の slashBasicOrder）——載っていないものは後ろへ、もとの順のまま。
+        const order = slashBasicOrder();
+        const rank = it => { const i = order.indexOf(it.type); return i < 0 ? order.length : i; };
+        const basic = items.filter(it => it.category === '基本').sort((a, b) => rank(a) - rank(b));
+        slashItems = basic.concat(items.filter(it => it.category !== '基本'));
+    }
+
+    // slashBasicOrder は「基本」の並びです（2026-10-01 利用者:「スラッシュメニューは見出し1－3は並んでいて欲しいですね。
+    // その下に段落などでしょうか。タグも良く使うのでメニューの上の方に出ていて欲しいです」）。**基本は使った回数で並べ替えない**
+    // ——並べ替えると見出し1〜3が離れ、覚えた場所が動く。ほかの分類はこれまでどおり、使った回数の多い順。
+    // ⚠ 関数にしてある（定数を外に置くと、buildSlashItems が先に呼ばれたときに使えない）。
+    function slashBasicOrder() {
+        return ['h1', 'h2', 'h3', 'p', 'vocab:tags', 'attach', 'vocab:file-view', 'table', 'dl', 'section', 'details'];
     }
 
     // slashUseCount は使った回数（UI ストアに永続化）。
@@ -6844,7 +6856,8 @@
 
             groups[cat]
                 .slice()
-                .sort((a, b) => slashUseCount(b.type) - slashUseCount(a.type))
+                // 基本は決まった並びのまま（slashBasicOrder）。ほかの分類は使った回数の多い順。
+                .sort((a, b) => cat === '基本' ? 0 : slashUseCount(b.type) - slashUseCount(a.type))
                 .forEach(item => {
                     const el = document.createElement('div');
                     el.className = 'slash-menu-item';

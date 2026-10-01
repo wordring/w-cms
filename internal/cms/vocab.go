@@ -203,7 +203,9 @@ var vocabRegistry = []VocabDef{
 	{
 		Type:        "tags",
 		DisplayName: "可変タグ",
-		Category:    "メタ",
+		// 基本の分類（2026-10-01 利用者:「タグも良く使うのでメニューの上の方に出ていて欲しいです」——それまでは「メタ」で
+		// メニューのいちばん下）。並びは画面が決める（assets/app.js の slashBasicOrder——段落のすぐ下）。
+		Category:    "基本",
 		Icon:        "🏷️",
 		Element:     "dl",
 		Columns: []VocabColumn{
