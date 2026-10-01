@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/database"
 )
 
@@ -46,7 +47,11 @@ type productListRow struct {
 	// 品番の両方で検索する必要がある」）。先頭だけ見せると、もう一方で絞ったときに当たらない。
 	DrawingNo string
 	PartNo    string
-	Kinds     []string
+	// Names は**題と違う名前**です（2026-10-01）——ページの `品名`（改定で品名が変わると2つ残る——revision.go の
+	// renamedItemNames）と、図面に書いてある `図面名称`。利用者:「どちらの品名でも検索できる必要が出てきました」
+	// 「一つの加工製品ページに二つの品名を許容してはどうでしょう？」。題だけで絞ると新しい名前で当たらない。
+	Names []string
+	Kinds []string
 	Migrating bool // `移行中` のタグがある（ワンノートからの移植で、人の確認待ち）
 }
 
@@ -144,6 +149,7 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 			PartNo:    joinUnique(t["品番"]),
 			Migrating: len(t[MigratingTag]) > 0,
 		}
+		row.Names = otherNames(p.title, t[ItemNameTag], t[DrawingNameTag])
 		if p.parent != hostID && canView(p.parent) {
 			row.Machine = p.ptit
 		}
@@ -236,11 +242,15 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 		if r.Migrating {
 			mig = "1"
 		}
-		text := strings.Join([]string{r.Machine, title, r.DrawingNo, r.PartNo}, " ")
+		text := strings.Join(append([]string{r.Machine, title, r.DrawingNo, r.PartNo}, r.Names...), " ")
 		b.WriteString(`<tr data-plist-row="1" data-machine="` + esc(r.Machine) + `" data-kinds="` +
 			esc(strings.Join(r.Kinds, "\t")) + `" data-migrating="` + mig + `" data-text="` + esc(text) + `">`)
 		b.WriteString(`<td class="plist-wrap">` + esc(r.Machine) + `</td>`)
 		b.WriteString(`<td class="plist-wrap"><a href="/` + id + `">` + esc(title) + `</a>`)
+		if len(r.Names) > 0 {
+			// 題と違う名前（改定で変わった品名など）も見せる——その名前で絞って当たった行が、なぜ当たったか分かるように。
+			b.WriteString(` <span class="plist-names">（` + esc(strings.Join(r.Names, "・")) + `）</span>`)
+		}
 		if r.Migrating {
 			b.WriteString(` <span class="matsearch-migrating">（移行中）</span>`)
 		}
@@ -250,6 +260,24 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 	b.WriteString(`</tbody></table>`)
 	b.WriteString(`<p class="materials-empty plist-none" data-plist-none="1" hidden>当てはまる加工製品はありません。</p>`)
 	return b.String()
+}
+
+// otherNames は名前の並びから、題と同じもの・重なるものを落として返します（比べるのは文字を畳んだ形）。
+func otherNames(title string, lists ...[]string) []string {
+	seen := map[string]bool{cms.NormalizeText(title): true}
+	var out []string
+	for _, l := range lists {
+		for _, v := range l {
+			v = strings.TrimSpace(v)
+			k := cms.NormalizeText(v)
+			if v == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // joinUnique は値を重ならないように「・」で繋ぎます（空は落とす・並びは元のまま）。

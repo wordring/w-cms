@@ -70,9 +70,10 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 
 	// 1. いま載っている図面ブロックを外し、旧版ページへ移す。
 	oldBlocks, rest := extractDrawingSections(dstBody)
-	oldPageID, oldNo := "", ""
+	oldPageID, oldNo, oldName := "", "", ""
 	if len(oldBlocks) > 0 {
 		oldNo = drawingNoOf(oldBlocks[0])
+		oldName = drawingNameOf(oldBlocks[0])
 		oldPageID, err = createOldVersionPage(user, dstPageID, oldNo, oldBlocks)
 		if err != nil {
 			return err
@@ -96,6 +97,12 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		if oldPageID != "" {
 			body = linkRevisionRow(body, oldNo, oldPageID)
 		}
+		// **品名が変わった改定なら、品名を2つとも残す**（2026-10-01 利用者:「改定図面にする場合、品名を変えて
+		// くる場合があるようです。弊社としては、どちらの品名でも検索できる必要が出てきました」「一つの加工製品
+		// ページに二つの品名を許容してはどうでしょう？」）——題の下の `品名` タグに古い名前と新しい名前。
+		if names := renamedItemNames(oldName, pageTitleOf(dstPageID), drawingNameOf(block)); len(names) > 0 {
+			body = withTagValues(body, ItemNameTag, names, false)
+		}
 		return body
 	}); err != nil {
 		return err
@@ -113,7 +120,15 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 // 題は `旧版 <図面番号> <図面名称>`（2026-09-06 ユーザー決定）。同じ題の兄弟が
 // 既に居れば受領日を添えます——**図面番号が変わらない改定**が実際にあるためです。
 func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []string) (string, error) {
-	name := pageTitleOf(dstPageID)
+	// 名前は**その版の図面に書いてある名前**（2026-10-01）——改定で品名が変わることがあるので、加工製品ページの
+	// 題（いまの名前とは限らない）ではなく、運ぶ図面ブロックの `図面名称` を先に見ます。
+	name := ""
+	if len(blocks) > 0 {
+		name = drawingNameOf(blocks[0])
+	}
+	if name == "" {
+		name = pageTitleOf(dstPageID)
+	}
 	title := strings.TrimSpace("旧版 " + strings.TrimSpace(oldNo) + " " + strings.TrimSpace(name))
 	if _, taken := findChildByTitle(dstPageID, title); taken {
 		title += "（" + time.Now().In(time.Local).Format("2006-01-02") + "）"
@@ -243,6 +258,29 @@ var drawingNoRe = regexp.MustCompile(`<dt>図面番号</dt><dd>([^<]*)</dd>`)
 func drawingNoOf(block string) string {
 	if m := drawingNoRe.FindStringSubmatch(block); m != nil {
 		return m[1]
+	}
+	return ""
+}
+
+// renamedItemNames は、改定で品名が変わったときに加工製品ページへ残す品名（古い・新しい）を返します
+// （変わっていなければ空）。古い名前は古い図面の `図面名称`、無ければページの題。比べるのは文字を畳んだ形。
+func renamedItemNames(oldName, title, newName string) []string {
+	if oldName == "" {
+		oldName = strings.TrimSpace(title)
+	}
+	if oldName == "" || newName == "" || cms.NormalizeText(oldName) == cms.NormalizeText(newName) {
+		return nil
+	}
+	return []string{oldName, newName}
+}
+
+// drawingNameRe は図面ブロックから図面名称を拾います（旧版の子ページの題に使う）。
+var drawingNameRe = regexp.MustCompile(`<dt>` + regexp.QuoteMeta(DrawingNameTag) + `</dt><dd>([^<]*)</dd>`)
+
+// drawingNameOf は図面ブロックの図面名称を返します（無ければ空）。
+func drawingNameOf(block string) string {
+	if m := drawingNameRe.FindStringSubmatch(block); m != nil {
+		return strings.TrimSpace(m[1])
 	}
 	return ""
 }

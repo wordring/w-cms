@@ -221,8 +221,8 @@ func sameDrawingKey(no string) string {
 	return cms.NormalizeCode(revSuffix.ReplaceAllString(no, ""))
 }
 
-// productCandidates は取引先の「加工製品」の下から、図面番号（版の印は除く）か題が同じページを探します（5件まで・読める
-// ものだけ・旧版の子ページは除く）。
+// productCandidates は取引先の「加工製品」の下から、番号（図面番号・品番——版の印は除く）と名前（題・品名・図面名称）の両方が
+// 合うページを探し、無ければどちらかが合うページを返します（5件まで・読めるものだけ・旧版の子ページは除く）。
 func productCandidates(user *auth.User, customer, drawingNo, name string) []productCandidate {
 	out := []productCandidate{}
 	boxID, ok := CustomerBoxPageID()
@@ -247,27 +247,41 @@ func productCandidates(user *auth.User, customer, drawingNo, name string) []prod
 	}
 	want := sameDrawingKey(drawingNo)
 	wantName := cms.NormalizeText(name)
+	// **まず番号と名前の両方が合うページ、無ければどちらかが合うページ**（2026-10-01 利用者:「検索や結びの照合は、
+	// 最初に品番と品名で行うべきです。一致しない場合に、ほかの方法を試せば良いと思います」）。番号は図面番号と品番、
+	// 名前は題と、ページの品名・図面名称（改定で品名が変わると品名が2つ残る）。
 	// 旧版の子ページは `productListRows` が既に外している（加工製品ページの子は一覧に入らない）。
+	var both, either []productCandidate
 	for _, r := range rows {
-		hit :=wantName != "" && cms.NormalizeText(r.Title) == wantName
-		if !hit && want != "" {
-			for _, no := range strings.Split(r.DrawingNo, "・") {
-				if sameDrawingKey(no) == want {
-					hit = true
+		nameHit := wantName != "" && cms.NormalizeText(r.Title) == wantName
+		for _, n := range r.Names {
+			if !nameHit && wantName != "" && cms.NormalizeText(n) == wantName {
+				nameHit = true
+			}
+		}
+		noHit := false
+		if want != "" {
+			for _, no := range strings.Split(r.DrawingNo+"・"+r.PartNo, "・") {
+				if no != "" && sameDrawingKey(no) == want {
+					noHit = true
 					break
 				}
 			}
 		}
-		if !hit {
-			continue
-		}
-		out = append(out, productCandidate{PageID: page.FormatID(r.PageID), Title: r.Title,
-			Machine: r.Machine, DrawingNos: r.DrawingNo})
-		if len(out) >= 5 {
-			break
+		c := productCandidate{PageID: page.FormatID(r.PageID), Title: r.Title, Machine: r.Machine, DrawingNos: r.DrawingNo}
+		if nameHit && noHit {
+			both = append(both, c)
+		} else if nameHit || noHit {
+			either = append(either, c)
 		}
 	}
-	return out
+	if len(both) == 0 {
+		both = either
+	}
+	if len(both) > 5 {
+		both = both[:5]
+	}
+	return append(out, both...)
 }
 
 // drawingNosOf は本文に載っている図面番号を並べます（図面ブロックごとに1つ）。
@@ -621,8 +635,13 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// そのときの欄の値は**行き先のページを決めるため**に打たれたもの（部品図と同じ題）で、
 	// 運ぶブロックは溶接図です。書き戻すと**2枚目の名前が1枚目の名前に潰れます**。
 	// 客先と装置名称は品物の属性なので、どちらでも揃えます。
+	//
+	// ⚠ **「図面改定」のときも書き戻しません**（2026-10-01）——利用者:「改定図面にする場合、品名を変えてくる
+	// 場合があるようです。弊社としては、どちらの品名でも検索できる必要が出てきました」。改定の行き先は題で
+	// 決まるので、欄には**既にあるページの題（古い名前）**が入ります。それを書き戻すと、改定図面に書いてある
+	// **新しい名前が消えて**、新しい名前では探せなくなっていました。古い名前は題と旧版の子ページに残ります。
 	writeName := name
-	if row.Merge == "drawing" {
+	if row.Merge == "drawing" || row.Merge == "revision" {
 		writeName = ""
 	}
 	if err := syncDrawingFields(user, pageID, customer, machine, writeName); err != nil {

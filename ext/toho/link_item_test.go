@@ -162,7 +162,7 @@ func TestFillOurItemNoLeavesOtherTablesAlone(t *testing.T) {
 // **Goを書き直さないと結べません**（「運用者が語彙を足せる」要件・2026-08-26）。
 func TestProductCodeTagsAreDeclared(t *testing.T) {
 	withProductCodeTags(t) // 空にする
-	if got := productPagesForCustomer(database.DB, "南北スポーツ", "K120-01-211"); len(got) != 0 {
+	if got := productPagesForCustomer(database.DB, "南北スポーツ", "K120-01-211", ""); len(got) != 0 {
 		t.Errorf("タグ名が1つも無いのに引いています: %v", got)
 	}
 }

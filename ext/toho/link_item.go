@@ -60,6 +60,12 @@ import (
 // ⚠ **空いている行だけ**です。人が入れた値は上書きしません——機械の推測より
 // 人の判断が上、という線引きはこのプロジェクトで一貫しています。
 func fillOurItemNo(body, code, productPageID string) (string, int) {
+	return fillOurItemNoNamed(body, code, "", true, productPageID)
+}
+
+// fillOurItemNoNamed は fillOurItemNo の、品名も合う行だけを埋める形です（anyName なら品名は見ない）。
+// 品番と品名の組ごとに結ぶので（productPagesForCustomer）、同じ品番で品名の違う行は別の加工製品へ結びうる。
+func fillOurItemNoNamed(body, code, name string, anyName bool, productPageID string) (string, int) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
 		return body, 0
@@ -70,7 +76,7 @@ func fillOurItemNo(body, code, productPageID string) (string, int) {
 	}
 	filled := 0
 	for _, t := range tablesOfType(nodes, clientOrderItemsType) {
-		filled += fillTable(t, want, productPageID)
+		filled += fillTable(t, want, itemNameKey(name), anyName, productPageID)
 	}
 	if filled == 0 {
 		return body, 0
@@ -82,7 +88,7 @@ func fillOurItemNo(body, code, productPageID string) (string, int) {
 func isOrderItemsTable(t *html.Node) bool { return isTableOfType(t, clientOrderItemsType) }
 
 // fillTable は見出しから列を割り出し、当てはまる行を埋めます。
-func fillTable(t *html.Node, wantNorm, productPageID string) int {
+func fillTable(t *html.Node, wantNorm, nameKey string, anyName bool, productPageID string) int {
 	rows := rowsOf(t)
 	if len(rows) < 2 {
 		return 0
@@ -93,6 +99,7 @@ func fillTable(t *html.Node, wantNorm, productPageID string) int {
 	if !okOur || !okItem {
 		return 0
 	}
+	nameCol, hasName := col[ItemNameTag]
 
 	filled := 0
 	for _, tr := range rows[1:] {
@@ -107,6 +114,15 @@ func fillTable(t *html.Node, wantNorm, productPageID string) int {
 		got, ok := cms.NormalizeValue(cms.ColCode, strings.TrimSpace(textOf(cells[itemCol])))
 		if !ok || got != wantNorm {
 			continue
+		}
+		if !anyName {
+			rowName := ""
+			if hasName && nameCol < len(cells) {
+				rowName = itemNameKey(textOf(cells[nameCol]))
+			}
+			if rowName != nameKey {
+				continue
+			}
 		}
 		setCellText(cells[ourCol], productPageID)
 		filled++
@@ -169,7 +185,7 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 			if code == "" {
 				continue
 			}
-			cands := visibleOnly(viewer, productPagesForCustomer(db, customer, code))
+			cands := visibleOnly(viewer, productPagesForCustomer(db, customer, code, name))
 			// ⚠ **同じ客先で同じ品番が2枚以上なら警告します**（2026-10-01 利用者:「同じ会社内の同一品番は警告し、
 			// 人間が対応します」）——どれにも結ばない（機械には決められない）。どのページかを並べて、人が直せるように。
 			if len(cands) > 1 {
@@ -178,7 +194,8 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 					ids = append(ids, page.FormatID(c))
 				}
 				notes = append(notes, "⚠ "+label+"の品番 "+code+" の加工製品ページが同じ客先に "+
-					strconv.Itoa(len(cands))+" 枚あります（"+strings.Join(ids, "・")+"）——結べません。どちらかの品番を直してください")
+					strconv.Itoa(len(cands))+" 枚あり、品名でも1枚に決まりません（"+strings.Join(ids, "・")+
+					"）——結べません。品番か品名を直すか、弊社品番を手で入れてください")
 				continue
 			}
 			if len(cands) != 1 {
@@ -198,7 +215,7 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 			continue
 		}
 		title := cms.PageTitleByID(id)
-		if title == "" || titleMentions(title, name) {
+		if title == "" || titleMentions(title, name) || namesMention(db, id, name) {
 			continue
 		}
 		notes = append(notes, "⚠ "+label+"は "+page.FormatID(id)+" に結ばれていますが、"+
@@ -216,6 +233,23 @@ func titleMentions(title, name string) bool {
 	t := cms.NormalizeCode(title)
 	n := cms.NormalizeCode(name)
 	return n != "" && strings.Contains(t, n)
+}
+
+// namesMention は加工製品ページの `品名`・`図面名称` のどれかが品名を含むかを見ます（2026-10-01——改定で品名が
+// 変わると品名を2つ持つ。題は古い名前のままなので、題だけ見ると新しい品名の受注が毎回 ⚠ になる）。
+func namesMention(db cms.ReadOnlyDB, id int, name string) bool {
+	tags, err := cms.TagsOfPage(db, id)
+	if err != nil {
+		return false
+	}
+	for _, tag := range []string{ItemNameTag, DrawingNameTag} {
+		for _, v := range tags[tag] {
+			if titleMentions(v, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // visibleOnly は閲覧者が読めるページだけを残します（見せ分け・C案）。
@@ -275,14 +309,16 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	idInt, _ := strconv.Atoi(id)
 	customer := cms.PageTagValue(database.DB, idInt, OrderClientTag)
 	var links []orderLink
-	for _, code := range orderItemNosOf(body) {
-		cands := productPagesForCustomer(database.DB, customer, code)
+	// 品番と品名の組ごとに照合します（2026-10-01 利用者:「最初に品番と品名で行うべきです」——product_customer.go）。
+	for _, k := range orderItemKeysOf(body) {
+		code := k.Code
+		cands := productPagesForCustomer(database.DB, customer, code, k.Name)
 		// ⚠ **1件でなければ触りません**（同じ客先で同じ品番が2枚——人が直す・鏡が ⚠ で知らせる）。
 		if len(cands) != 1 {
 			continue
 		}
 		target := page.FormatID(cands[0])
-		fixed, n := fillOurItemNo(body, code, target)
+		fixed, n := fillOurItemNoNamed(body, code, k.Name, false, target)
 		if n == 0 {
 			continue
 		}
@@ -303,14 +339,17 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	return links
 }
 
-// orderItemNosOf は受注明細の `品番` の値を、空いている行だけ集めます。
-func orderItemNosOf(body string) []string {
+// orderItemKey は受注明細の空いている行の「品番と品名」の組です。
+type orderItemKey struct{ Code, Name string }
+
+// orderItemKeysOf は受注明細の空いている行の「品番と品名」の組を集めます（同じ組は1つ・畳んだ形で比べる）。
+func orderItemKeysOf(body string) []orderItemKey {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
 		return nil
 	}
-	var out []string
-	seen := map[string]bool{}
+	var out []orderItemKey
+	seen := map[[2]string]bool{}
 	for _, t := range tablesOfType(nodes, clientOrderItemsType) {
 		rows := rowsOf(t)
 		if len(rows) < 2 {
@@ -322,6 +361,7 @@ func orderItemNosOf(body string) []string {
 		if !okOur || !okItem {
 			continue
 		}
+		nameCol, hasName := col[ItemNameTag]
 		for _, tr := range rows[1:] {
 			cells := cellTexts(tr)
 			if ourCol >= len(cells) || itemCol >= len(cells) {
@@ -331,9 +371,15 @@ func orderItemNosOf(body string) []string {
 			if cells[ourCol] != "" || cells[itemCol] == "" {
 				continue
 			}
-			if !seen[cells[itemCol]] {
-				seen[cells[itemCol]] = true
-				out = append(out, cells[itemCol])
+			name := ""
+			if hasName && nameCol < len(cells) {
+				name = cells[nameCol]
+			}
+			codeNorm, _ := cms.NormalizeValue(cms.ColCode, cells[itemCol])
+			key := [2]string{codeNorm, itemNameKey(name)}
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, orderItemKey{Code: cells[itemCol], Name: name})
 			}
 		}
 	}

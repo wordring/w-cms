@@ -148,6 +148,35 @@ func TestLinkNoteWarnsOnNameMismatch(t *testing.T) {
 	}
 }
 
+// TestLinkNoteAcceptsSecondItemName は、**品名を2つ持つ加工製品ページ**（改定で品名が変わった）に結ばれた行を、
+// 新しい品名でも食い違い扱いしないことを固定します（2026-10-01 利用者:「一つの加工製品ページに二つの品名を許容しては
+// どうでしょう？」——題は古い名前のままなので、題だけ見ると新しい品名の受注が毎回 ⚠ になる）。
+func TestLinkNoteAcceptsSecondItemName(t *testing.T) {
+	setupExtTest(t, "000081", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	if _, err := database.DB.Exec(`INSERT INTO pages (id, title, file_path) VALUES (82, '留めブラケット', '')`); err != nil {
+		t.Fatal(err)
+	}
+	product := `<h1>留めブラケット</h1><dl data-type="tags"><dt>品名</dt><dd>留めブラケット</dd>` +
+		`<dt>品名</dt><dd>固定ブラケット</dd></dl>`
+	if err := cms.SyncIndex("000082", product); err != nil {
+		t.Fatal(err)
+	}
+	row := func(name string) string {
+		return `<h1>受注</h1><table data-type="` + clientOrderItemsType + `"><tbody>` +
+			`<tr><th>弊社品番</th><th>品番</th><th>品名</th></tr>` +
+			`<tr><td>000082</td><td>K120-01-211</td><td>` + name + `</td></tr></tbody></table>`
+	}
+	for _, name := range []string{"留めブラケット", "固定ブラケット"} {
+		if notes := notesFor(t, row(name)); len(notes) != 0 {
+			t.Errorf("品名 %q を食い違い扱いしています: %v", name, notes)
+		}
+	}
+	if notes := notesFor(t, row("カバー")); len(notes) != 1 {
+		t.Errorf("⚠ どちらの品名とも違う行を見逃しています: %v", notes)
+	}
+}
+
 // TestLinkNoteToleratesTitlePrefix は、⚠ **題に図番が付いていても食い違い扱いしない**
 // ことを固定します。
 //
@@ -335,5 +364,63 @@ func TestLinkByCustomerAndCode(t *testing.T) {
 	seedBody(t, "000097", noClient)
 	if n := LinkProductsToOrder(user, "000097"); n != 0 {
 		t.Errorf("発注元の無い受注を品番だけで結んでいます: %d", n)
+	}
+}
+
+// TestLinkByCodeAndNameFirst は、**照合をまず品番と品名で、合わなければ品番だけで**行うことを固定します
+// （2026-10-01 利用者:「検索や結びの照合は、最初に品番と品名で行うべきです。一致しない場合に、ほかの方法を
+// 試せば良いと思います」）。
+//
+//	同じ品番の加工製品ページが2枚（左と右）——品名で1枚に決まれば、行ごとに別のページへ結ぶ
+//	品名がどちらとも合わない行——品番だけでは2枚なので結ばず、⚠ で知らせる
+//	品番の加工製品ページが1枚で品名が合わない——品番だけで結ぶ（それまでどおり・食い違いは ⚠ で知らせる）
+func TestLinkByCodeAndNameFirst(t *testing.T) {
+	setupExtTest(t, "000098", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	seed := func(id int, title, no, name string) {
+		t.Helper()
+		if _, err := database.DB.Exec(`INSERT INTO pages (id, title, file_path) VALUES (?, ?, '')`, id, title); err != nil {
+			t.Fatal(err)
+		}
+		if err := cms.SyncIndex(page.FormatID(id), `<h1>`+title+`</h1><section><h2>図面</h2><dl data-type="tags">`+
+			`<dt>図面番号</dt><dd>`+no+`</dd><dt>図面名称</dt><dd>`+name+`</dd><dt>客先</dt><dd>南北スポーツ</dd></dl></section>`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(91, "【左右】カバー", "K120-05", "カバー左")
+	seed(92, "カバー右", "K120-05", "カバー右")
+	seed(93, "取付ステー", "K120-06", "取付ステー")
+	user := &auth.User{Username: "root", IsAdmin: true}
+
+	body := `<h1>受注 A-2</h1><dl data-type="tags"><dt>発注元</dt><dd>南北スポーツ</dd></dl><table data-type="` +
+		clientOrderItemsType + `"><caption>受注明細</caption><tbody>` +
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>` +
+		`<tr><td></td><td>K120-05</td><td>カバー 左</td><td>2</td></tr>` +
+		`<tr><td></td><td>K120-05</td><td>ｶﾊﾞｰ右</td><td>2</td></tr>` +
+		`<tr><td></td><td>K120-05</td><td>カバー</td><td>1</td></tr>` +
+		`<tr><td></td><td>K120-06</td><td>ブラケット</td><td>4</td></tr>` +
+		`</tbody></table>`
+	seedBody(t, "000098", body)
+	if n := LinkProductsToOrder(user, "000098"); n != 3 {
+		t.Errorf("結んだ行の数が違います（3のはず）: %d", n)
+	}
+	got, _ := cms.ReadPageBody("000098")
+	for _, want := range []string{
+		`<td>000091</td><td>K120-05</td><td>カバー 左</td>`,
+		`<td>000092</td><td>K120-05</td><td>ｶﾊﾞｰ右</td>`,
+		`<td></td><td>K120-05</td><td>カバー</td>`, // 品名が合わず品番だけでは2枚——結ばない
+		`<td>000093</td><td>K120-06</td><td>ブラケット</td>`, // 品番が1枚——品名が違っても結ぶ（それまでどおり）
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("行の結びが違います（%s が無い）:\n%s", want, got)
+		}
+	}
+	notes := notesFor(t, got)
+	joined := strings.Join(notes, "\n")
+	if !strings.Contains(joined, "同じ客先に 2 枚") || !strings.Contains(joined, "000091・000092") {
+		t.Errorf("品名の合わない行の2枚を知らせていません: %v", notes)
+	}
+	if !strings.Contains(joined, "取付ステー") {
+		t.Errorf("品番だけで結んだ行の品名の食い違いを知らせていません: %v", notes)
 	}
 }
