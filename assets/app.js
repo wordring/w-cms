@@ -4980,6 +4980,33 @@
             });
             grid.appendChild(tdKinds);
 
+            // 「図面番号を品番に」「図面名称を品名に」（2026-10-01 利用者:「図面名称を品名、図面番号を品番にするチェックボックスが
+            // あっても良いのかもしれません」）——新規のときだけ効く（出すのも新規のときだけ）。初期値は取引先のページの決まり
+            // （`品番の決め方：図面番号`・`品名の決め方：図面名称`・サーバーが行き先と一緒に返す）。人が触ったら、顧客を打ち替えても戻さない。
+            // 弊社品番（このページの番号）は印が無くても書く。
+            const tdRules = document.createElement('div');
+            tdRules.className = 'filing-field filing-kinds filing-rules';
+            const rulesHead = document.createElement('span');
+            rulesHead.textContent = '品番・品名';
+            rulesHead.title = '新しく置く加工製品の題の下のタグ（空いているときだけ書く・弊社品番はいつも書く）';
+            tdRules.appendChild(rulesHead);
+            const rulesWrap = document.createElement('div');
+            rulesWrap.className = 'filing-kinds-boxes';
+            tdRules.appendChild(rulesWrap);
+            const ruleBox = (text) => {
+                const label = document.createElement('label');
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.addEventListener('change', () => { box.dataset.touched = '1'; });
+                label.appendChild(box);
+                label.appendChild(document.createTextNode(' ' + text));
+                rulesWrap.appendChild(label);
+                return box;
+            };
+            const ruleBoxes = { partNo: ruleBox('図面番号を品番に'), itemName: ruleBox('図面名称を品名に') };
+            tdRules.hidden = true;
+            grid.appendChild(tdRules);
+
             const tdConfirm = document.createElement('div');
             tdConfirm.className = 'filing-card-foot';
 
@@ -5055,6 +5082,7 @@
             const picked = () => Object.keys(mergeInputs).find(k => mergeInputs[k].checked) || '';
             const explain = () => {
                 const m = picked();
+                tdRules.hidden = m !== 'new';
                 if (m === 'duplicate' && dup) {
                     choiceNote.textContent = '取り込みません——解析で作ったこのページはごみ箱へ移し、「' +
                         (dup.machine ? dup.machine + '／' : '') + dup.title + '」にこのメールの受信元を書き足します';
@@ -5155,6 +5183,10 @@
                     mergeInputs.drawing.checked = false;
                     mergeInputs.revision.checked = false;
                 }
+                // 「図面番号を品番に」「図面名称を品名に」の初期値は取引先の決まり（人が触ったものはそのまま）。
+                const rule = (d && d.rule) || {};
+                if (!ruleBoxes.partNo.dataset.touched) ruleBoxes.partNo.checked = !!rule.part_no;
+                if (!ruleBoxes.itemName.dataset.touched) ruleBoxes.itemName.checked = !!rule.item_name;
                 // 押した行き先が、もう同じ題の中に無ければ外す（欄を打ち替えた）。
                 if (chosenTarget && !target.same.some(s => s.page_id === chosenTarget)) chosenTarget = '';
                 // 同じ題のページが在るとき「新規」の既定は外す（同じ名前の別の品物なら人が選ぶ・2026-10-01 から選べる）。
@@ -5256,7 +5288,7 @@
             inputs.push({
                 page_id: row.page_id, fields: fields, confirm: confirm, box: box,
                 merge: mergeInputs, choice: choiceWrap, kinds: kindBoxes, dupOf: () => (dup ? dup.page_id : ''),
-                target: () => chosenTarget,
+                target: () => chosenTarget, rules: ruleBoxes,
             });
             list.appendChild(card);
         });
@@ -5344,6 +5376,9 @@
             duplicate_of: i.dupOf ? i.dupOf() : '',
             // 図面追加・図面改定の行き先（同じ題が何枚もあるとき・候補を押したとき・2026-10-01）。空なら題で引く。
             target: i.target ? i.target() : '',
+            // 「図面番号を品番に」「図面名称を品名に」（新規のときだけ効く・2026-10-01）。
+            part_no_from_drawing: !!(i.rules && i.rules.partNo.checked),
+            item_name_from_drawing: !!(i.rules && i.rules.itemName.checked),
         }));
         try {
             const res = await fetch('/api/file-drawings', {

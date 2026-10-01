@@ -161,6 +161,9 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 		markDuplicateCandidates(user, draftID, cands)
 	}
 	out["candidates"] = cands
+	// 取引先の決まり（2026-10-01・partner_rules.go）——画面の「図面番号を品番に」「図面名称を品名に」の印の初期値。
+	rule := partnerRuleFor(customer)
+	out["rule"] = map[string]any{"part_no": rule.PartNoIsDrawingNo, "item_name": rule.ItemNameIsDrawingName}
 	if customer == "" || machine == "" || name == "" {
 		json.NewEncoder(w).Encode(out) // まだ埋まっていない——「無い」と同じ扱い
 		return
@@ -549,6 +552,11 @@ type filingRequest struct {
 	// Target は図面追加・図面改定の行き先のページIDです（2026-10-01）——行き先に同じ題の加工製品が何枚もあるとき、
 	// 人が候補を押して決めたもの。空なら題で引く（1枚だけならそれ）。
 	Target string `json:"target"`
+	// PartNoFromDrawing・ItemNameFromDrawing は「図面番号を品番に」「図面名称を品名に」の印です（2026-10-01 利用者:
+	// 「図面名称を品名、図面番号を品番にするチェックボックスがあっても良いのかもしれません」）。新規のときだけ効く。
+	// 無ければ（道具など印を送らない口）取引先のページの決まり（partner_rules.go）に従う。
+	PartNoFromDrawing   *bool `json:"part_no_from_drawing"`
+	ItemNameFromDrawing *bool `json:"item_name_from_drawing"`
 }
 
 // filingResult は1行の結果です。何が起きたかを人へ返します
@@ -791,6 +799,8 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
 	}
 	auth.Audit(user.Username, "file-drawing.move", pageID+" -> "+machineID)
+	// 弊社品番と、取引先の決まり（品番＝図面番号・品名＝図面名称）を書きます（2026-10-01・partner_rules.go）。
+	ruleNote := applyPartnerRules(user, pageID, idInt, customer, name, row.PartNoFromDrawing, row.ItemNameFromDrawing)
 	// 同じ題の隣に「新規」で置いたことは残し、知らせます（2026-10-01）——あとで「なぜ同じ名前が2枚あるのか」を
 	// 調べる人の手掛かり。⚠ 同じ品物を二重に作っていないかは、品番・図面番号で人が見る（題は判断の基準にしない）。
 	sameNote := ""
@@ -801,7 +811,33 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// **運んできたページは印のとおりに揃えます**（外した区分は消す）——画面の印の初期値は
 	// このページ自身の区分なので、外したのは人の意思です。
 	return filingResult{PageID: pageID, Outcome: "moved",
-		Message: where + " へ収めました" + sameNote + kindsNote(pageID, true)}
+		Message: where + " へ収めました" + sameNote + kindsNote(pageID, true) + ruleNote}
+}
+
+// applyPartnerRules は整理で新しく置いた加工製品ページに、弊社品番と取引先の決まりのタグを書き、知らせる一言を返します
+// （書けなくても整理は済んでいる）。partNo・itemName は画面の印——あればそちらが決まりより先。
+func applyPartnerRules(user *auth.User, pageID string, idInt int, customer, name string, partNo, itemName *bool) string {
+	rule := partnerRuleFor(customer)
+	if partNo != nil {
+		rule.PartNoIsDrawingNo = *partNo
+	}
+	if itemName != nil {
+		rule.ItemNameIsDrawingName = *itemName
+	}
+	if partNo != nil && itemName != nil {
+		rule.Unknown = nil // 人が両方を決めたので、取引先の決まりの読めない値は効いていない
+	}
+	drawingNo := cms.PageTagValue(database.DB, idInt, DrawingNoTag)
+	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+		return withProductRules(cur, pageID, drawingNo, name, rule)
+	}); err != nil {
+		return "／⚠ 弊社品番・品番・品名を書けませんでした: " + err.Error()
+	}
+	if len(rule.Unknown) > 0 {
+		return "／⚠ 取引先の決まりの「" + strings.Join(rule.Unknown, "・") + "」は分かりません（書けるのは「" +
+			PartNoRuleTag + "：" + ruleDrawingNo + "」「" + ItemNameRuleTag + "：" + ruleDrawingName + "」）"
+	}
+	return ""
 }
 
 // childrenByTitle は親の子のうち、題が完全一致するページを古い順に返します（except は除く）。

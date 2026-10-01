@@ -6,6 +6,9 @@
 //   ① 行き先に同じ題の加工製品があっても「新規」を選べる（既定では選ばれていない）——選んで実行すると隣に置かれる
 //   ② 同じ題が2枚になったあと、図面追加では「行き先」のボタンが2つ出て、押すまで「下から行き先を押して」と言う
 //   ③ 押した方（2枚目）へ図面追加され、1枚目には入らない
+//   ④ 「図面番号を品番に」「図面名称を品名に」（新規のときだけ出る・初期値は取引先のページの決まり）——印のとおりに品番・品名、
+//      いつも弊社品番が題の下に入る（利用者:「品名や弊社品番のタグが出来ず、品番に図面番号も入りません」
+//      「図面名称を品名、図面番号を品番にするチェックボックスがあっても良いのかもしれません」）
 //
 // 当て先は全部自分で作って最後に消します（取引先の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-filing-same-name.js
@@ -56,7 +59,8 @@ const drawingBlock = (no, name) =>
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
     // 既にある加工製品（取引先／【E2E】の会社／加工製品／【E2E】装置／【E2E】取付ベース）。
-    cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
+    // 取引先の決まりは「品番の決め方：図面番号」だけ（品名の決め方は書かない）。
+    cust = await makePage(page, '<h1>' + CUSTOMER + '</h1><dl data-type="tags"><dt>品番の決め方</dt><dd>図面番号</dd></dl>', partners);
     const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
     const mach = await makePage(page, '<h1>' + MACHINE + '</h1>', prodBox);
     const first = await makePage(page, '<h1>' + NAME + '</h1>' + drawingBlock('E2E-SN-1', NAME), mach);
@@ -85,10 +89,19 @@ const drawingBlock = (no, name) =>
     await card(other).locator('label.filing-merge-opt', { hasText: '新規' }).click();
     const n1 = (await note(other).textContent()) || '';
     check('① 新規を選ぶと「別の品物として隣に置く」と言う', n1.includes('別の品物として'), n1);
+    // ④ 印——新規のときだけ出て、初期値は取引先の決まり（品番だけ）。品名にも印を付ける。
+    const rules = card(other).locator('.filing-rules');
+    const boxes = rules.locator('input[type="checkbox"]');
+    check('④ 新規を選ぶと「図面番号を品番に」「図面名称を品名に」が出る', await rules.isVisible() && await boxes.count() === 2);
+    check('④ 初期値は取引先の決まり（品番に印・品名に印なし）', await boxes.nth(0).isChecked() && !(await boxes.nth(1).isChecked()));
+    await boxes.nth(1).check();
     await page.locator('#w-editor-content .filing-run').click();
     await page.waitForFunction(() => !document.querySelector('#w-editor-content .filing-panel'), null, { timeout: 10000 }).catch(() => {});
     const siblings = (await childrenOf(page, mach)).filter(c => (c.Title || '').trim() === NAME).map(c => c.ID);
     check('① 実行すると隣に置かれ、同じ題が2枚になる', siblings.length === 2 && siblings.includes(other), siblings.join(','));
+    const nb = await bodyOf(page, other);
+    check('④ 題の下に品番（図面番号）・品名（図面名称）・弊社品番', nb.includes('<dt>品番</dt><dd>E2E-SN-2</dd>') &&
+      nb.includes('<dt>品名</dt><dd>' + NAME + '</dd>') && nb.includes('<dt>弊社品番</dt><dd>' + other + '</dd>'), nb.slice(0, 300));
 
     // ② 同じ品名の溶接図が届いた——2枚目へ図面追加したい。
     const weld = await makePage(page, '<h1>E2E-SN-2W ' + NAME + '溶接</h1>' + drawingBlock('E2E-SN-2W', NAME), record);
@@ -96,6 +109,7 @@ const drawingBlock = (no, name) =>
     await card(weld).locator('.filing-same-pick').first().waitFor({ timeout: 10000 }).catch(() => {});
     check('② 行き先のボタンが2つ出る', await card(weld).locator('.filing-same-pick').count() === 2);
     await card(weld).locator('label.filing-merge-opt', { hasText: '図面追加' }).click();
+    check('④ 図面追加では品番・品名の印を出さない', !(await card(weld).locator('.filing-rules').isVisible()));
     const n2 = (await note(weld).textContent()) || '';
     check('② 押すまで「下から行き先を押して」と言う', n2.includes('行き先を押してください'), n2);
     await card(weld).locator('.filing-same-pick', { hasText: '/' + other }).click();

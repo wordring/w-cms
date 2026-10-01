@@ -1879,6 +1879,8 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     font: inherit;
 }
 .filing-kinds-boxes { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; }
+/* 「図面番号を品番に」「図面名称を品名に」は新規のときだけ出す（2026-10-01）——display: grid が hidden に勝つため。 */
+.filing-field[hidden] { display: none; }
 .filing-card-foot { margin-top: 0.3rem; }
 /* 受注ページの表の「発注元」の欄は、押しつぶされない幅を持たせる。 */
 .filing-orders input { min-width: 9em; }
