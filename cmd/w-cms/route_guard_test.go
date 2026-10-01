@@ -38,7 +38,6 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/save-block", "POST", 401, "ブロック保存"},
 		{"/api/upload-pdf", "POST", 401, "添付アップロード（PDF）"},
 		{"/api/upload-image", "POST", 401, "添付アップロード（画像）"},
-		{"/api/parse-pdf", "POST", 401, "PDF解析（外部LLMへ送る）"},
 		{"/api/analyze-attachment", "POST", 401, "添付PDFの判定→受注ページ生成（外部LLMへ送る）"},
 		{"/api/new-page", "POST", 401, "ページ作成"},
 		{"/api/delete-page", "POST", 401, "ページ削除"},
@@ -164,7 +163,6 @@ func TestStateChangingRoutesRejectGET(t *testing.T) {
 		"/api/upload-pdf",
 		"/api/upload-image",
 		"/api/revert",
-		"/api/parse-pdf",
 		"/api/login",
 	} {
 		req := httptest.NewRequest("GET", path, nil)

@@ -4065,19 +4065,8 @@
                 uploadPDFToSection(sec, f);
             });
             sec.appendChild(zone);
-
-            // 明細AI解析: PDF があり、このブロック自身（または容器の中身）が
-            // 受発注（File 宣言の形式）なら出す。
-            const isOrderSec = s2 => { const d = sectionDefOf(s2); return !!(d && d.file); };
-            const hasOrder = isOrderSec(sec) || Array.from(sec.querySelectorAll('section')).some(isOrderSec);
-            if (src && hasOrder) {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'vocab-chrome parse-pdf-btn';
-                btn.textContent = '🤖 PDFから明細を解析';
-                btn.addEventListener('click', () => parsePDFIntoSection(sec, src));
-                sec.appendChild(btn);
-            }
+            // 「🤖 PDFから明細を解析」（/api/parse-pdf）は 2026-10-01 に口ごと片付けた——押す道が無くなっていた
+            // （File を宣言する形式が無い）。PDF を読むのは添付の「🤖 解析」（受注ページ・加工製品ページを作る）。
         });
     }
 
@@ -6626,52 +6615,6 @@
         cell.appendChild(img);
         updateHtmlPreview();
         triggerAutoSave();
-    }
-
-    // parsePDFIntoSection はPDFをAI解析し、容器内の受発注ブロックの明細表へ行を足す。
-    async function parsePDFIntoSection(sec, src) {
-        notify('PDFを解析しています…', { type: 'info', duration: 0, id: 'parse-pdf' });
-        try {
-            const res = await fetch('/api/parse-pdf', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_id: currentPageId, file_name: src })
-            });
-            const d = await readResult(res);
-            dismissToast('parse-pdf');
-            if (!d.success || !Array.isArray(d.items)) {
-                notify('解析に失敗しました: ' + failMessage(res, d), { type: 'warn', duration: 10000 });
-                return;
-            }
-            // 受発注ブロックは属性でも見出し（D-2）でも書ける。容器廃止後は sec 自身が
-            // 受発注ブロックのことがあるので、自分→中の順で形式の解決で探す。
-            const isOrderSec = s2 => { const d = sectionDefOf(s2); return !!(d && d.file); };
-            const order = isOrderSec(sec) ? sec
-                : Array.from(sec.querySelectorAll('section')).find(isOrderSec);
-            const table = order && Array.from(order.querySelectorAll('table')).find(t => tableDefOf(t));
-            if (!table) return;
-            // 見出しの表示文字をレジストリ経由で機械キーへ解決する（AI応答の鍵は機械キー）。
-            const itemsDef = tableDefOf(table);
-            const fields = Array.from(table.querySelectorAll('tr:first-child th'))
-                .map(th => (findVocabColumn(itemsDef, th.textContent.trim()) || {}).field || '');
-            const tbody = table.querySelector('tbody') || table;
-            d.items.forEach(it => {
-                const tr = document.createElement('tr');
-                fields.forEach(f => {
-                    const td = document.createElement('td');
-                    if (f === 'item-name') td.textContent = it.item_name || '';
-                    else if (f === 'price' || f === 'cost') td.textContent = it.price || '';
-                    else if (f === 'quantity') td.textContent = it.quantity || '';
-                    tr.appendChild(td);
-                });
-                tbody.appendChild(tr);
-            });
-            updateHtmlPreview();
-            notify(d.items.length + ' 件の明細を追加しました。内容を確認してください。', { type: 'success', duration: 5000 });
-        } catch (e) {
-            dismissToast('parse-pdf');
-            notify('解析に失敗しました: ' + e.message, { type: 'warn', duration: 10000 });
-        }
     }
 
     // ── スラッシュメニュー（絞り込み・分類・頻度順。エディタ仕様 §3.1） ──────

@@ -29,6 +29,9 @@ func setupExtTest(t *testing.T, id string, p page.PageMeta) {
 		t.Fatalf("Chdirエラー: %v", err)
 	}
 	t.Cleanup(func() { os.Chdir(origWd) })
+	// ⚠ **試験から Gemini を呼ばせない**（2026-10-01）——開発機の環境に本物のキーがあると、守りが壊れた試験は試験のデータを
+	// 外部（Gemini）へ送ってしまう（名前の関門を外す変異で、実際に送られた）。判定を差し替えない試験は「キーが無い」で止まる。
+	t.Setenv("GEMINI_API_KEY", "")
 
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

@@ -1711,17 +1711,7 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     background: #eef2ff;
 }
 
-#w-editor-content .parse-pdf-btn {
-    margin: 4px 0 8px;
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg-subtle);
-    cursor: pointer;
-    font-size: 13px;
-}
 
-#w-editor-content .parse-pdf-btn:hover { background: var(--border); }
 
 /* ── ヘッダー右側とパネル内の小物 ─────────────────────────────────────
  * 2026-08-06 に index.html のインライン style= から移設した分。
