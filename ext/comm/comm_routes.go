@@ -39,5 +39,8 @@ func (commPlugin) Routes() []cms.Route {
 		{Pattern: "/api/intake/memo", Handler: NewMemoAPIHandler},
 		// `.eml` を通信箱の記録にする（道具 tools/mail/push が叩く・2026-09-30——通信箱へ落とす道をやめた代わり）。
 		{Pattern: "/api/intake/eml", Handler: IntakeEMLAPIHandler},
+		// 記録から作るページ（選ぶ欄と「作成」・種類は拡張が登録する・2026-10-01・record_make.go）。
+		{Pattern: "/api/record-makers", Handler: RecordMakersAPIHandler},
+		{Pattern: "/api/record-make", Handler: RecordMakeAPIHandler},
 	}
 }

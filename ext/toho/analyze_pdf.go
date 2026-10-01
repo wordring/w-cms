@@ -841,6 +841,14 @@ func buildProductPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment, m
 	if err := fillDrawingBlock(d, j, hostPageID, attachID, matches); err != nil {
 		return "", err
 	}
+	if err := fillFirstRevision(d, j.DrawingNo); err != nil {
+		return "", err
+	}
+	return d.HTML(), nil
+}
+
+// fillFirstRevision は改訂明細の1版目を書きます（解析が作る加工製品ページと、メールから作る空の加工製品ページで同じ）。
+func fillFirstRevision(d *cms.PageDraft, drawingNo string) error {
 	// 改訂明細（1版目）。
 	//
 	// **行が社内コードの指し先です**——`ページID-行ID` で押せばその版へ飛びます
@@ -853,11 +861,11 @@ func buildProductPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment, m
 	// 振らないと改定の行を数える正規表現（`revisionRowRe`）に1版目が数えられず、版がずれます。
 	rows, err := fillVocabTable(d.DraftBlock, revisionItemsType, []map[string]string{{
 		"revision":    "1",
-		"drawing-no":  strings.TrimSpace(j.DrawingNo),
+		"drawing-no":  strings.TrimSpace(drawingNo),
 		"received-at": time.Now().In(time.Local).Format("2006-01-02"),
 	}})
 	if err != nil {
-		return "", err
+		return err
 	}
 	if t, ok := d.Table(displayNameOf(revisionItemsType)); ok {
 		d.AssignBlockID(t)
@@ -865,7 +873,7 @@ func buildProductPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment, m
 	for _, tr := range rows {
 		d.AssignBlockID(tr)
 	}
-	return d.HTML(), nil
+	return nil
 }
 
 // fillDrawingBlock は図面ブロック（見出し「図面」の節）を埋めます。

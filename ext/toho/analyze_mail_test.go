@@ -12,15 +12,15 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// postAnalyzeMail は /api/analyze-mail-order を呼びます。
+// postAnalyzeMail は記録から作る口（comm の POST /api/record-make）へ「受注ページ」を頼みます（2026-10-01 に専用の口から移した）。
 func postAnalyzeMail(t *testing.T, u *auth.User, pageID string) *httptest.ResponseRecorder {
 	t.Helper()
-	b, _ := json.Marshal(map[string]string{"page_id": pageID})
-	req := httptest.NewRequest("POST", "/api/analyze-mail-order", bytes.NewReader(b))
+	b, _ := json.Marshal(map[string]string{"page_id": pageID, "kind": MailOrderKind})
+	req := httptest.NewRequest("POST", "/api/record-make", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	req = auth.WithUser(req, u)
 	rr := httptest.NewRecorder()
-	AnalyzeMailOrderAPIHandler(rr, req)
+	comm.RecordMakeAPIHandler(rr, req)
 	return rr
 }
 
@@ -60,14 +60,14 @@ func TestAnalyzeMailCreatesOrderPage(t *testing.T) {
 			t.Errorf("判定へ渡す文字に %q がありません:\n%s", want, got)
 		}
 	}
-	var res struct {
-		IsClientOrder bool   `json:"is_client_order"`
-		PageID        string `json:"page_id"`
+	var made struct {
+		Pages []comm.MadePage `json:"pages"`
 	}
-	json.Unmarshal(rr.Body.Bytes(), &res)
-	if !res.IsClientOrder || res.PageID == "" {
+	json.Unmarshal(rr.Body.Bytes(), &made)
+	if len(made.Pages) != 1 || made.Pages[0].PageID == "" || made.Pages[0].Kind != "受注" {
 		t.Fatalf("受注ページができていません: %s", rr.Body.String())
 	}
+	res := made.Pages[0]
 	body := readPageBody(t, res.PageID)
 	if !strings.Contains(body, "<td>K120-3</td>") {
 		t.Errorf("明細が入っていません:\n%s", body)
@@ -97,7 +97,7 @@ func TestAnalyzeMailRefusesNonOrder(t *testing.T) {
 	t.Cleanup(func() { judgeOrderMail = orig })
 
 	rr := postAnalyzeMail(t, &auth.User{Username: "alice"}, id)
-	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"is_client_order":false`) {
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "注文のメールではない") || !strings.Contains(rr.Body.String(), `"pages":[]`) {
 		t.Fatalf("注文ではないメールの答えが違います: %d %s", rr.Code, rr.Body.String())
 	}
 	if marks := mailOrderPages(&auth.User{Username: "alice"}, id); len(marks) != 0 {

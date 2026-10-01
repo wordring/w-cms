@@ -4183,68 +4183,95 @@
     const DRAFT_TAG = '下書き';
     // HANDLED_TAG は対応の印のタグです（ext/comm/view_unhandled.go の HandledTag と同じ言葉）。
     const HANDLED_TAG = '対応';
-    // DIRECTION_TAG は向きのタグです（ext/comm/intake.go の DirectionTag と同じ言葉・値は 受信／送信）。
-    const DIRECTION_TAG = '向き';
 
-    // mailOrderControl はメールの記録の「🤖 本文から受注ページ」です（2026-10-01・東邦の拡張・ext/toho/analyze_mail.go）。
-    // 利用者:「発注書が無くても、メールから簡単に発注ページを作れませんか？」→ 受注ページ。客先がメールの本文だけで注文して
-    // くる（発注書の PDF が付かない）とき、本文を読んで受注ページを作る（添付の 🤖 解析と同じ形・メールの記録の子）。
-    // ⚠ 押すのは人（「ハッキリ注文だ」と分かったメールだけ）——Gemini が「注文ではない」と答えたら作らない。
-    // 既に作ったものがあれば「✓ 受注」の印を横に並べる（押し直しはできる——読み違いはあるので）。
-    function mailOrderControl() {
+    // recordMakeControl はメールの記録の「作るページ [選ぶ] [作成]」です（2026-10-01・ext/comm/record_make.go）。
+    // 利用者:「メールから作るボタンは「受注ページ作成」「加工製品ページ作成」「返信」ページのタイプは増える可能性があるので
+    // 「受注ページ」「加工製品ページ」をコンボボックスで選択して「作成」ボタンを押せばいいかも」。
+    // 選べる種類は**拡張が登録する**（`GET /api/record-makers`——東邦の拡張なら 受注ページ・加工製品ページ）。この画面は
+    // 種類の名前も作り方も知らない。もう作ったページは横に「✓ 受注」「✓ 加工製品」の印で並べる（作り直しはできる）。
+    // 種類が1つも無く、印も無ければ何も出さない（書けない人には選ぶ欄を出さず、印だけ）。
+    function recordMakeControl() {
         const wrap = document.createElement('p');
-        wrap.className = 'mail-order';
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'mail-order-btn';
-        btn.textContent = '🤖 本文から受注ページ';
-        btn.title = '発注書の PDF が付いていない注文のメールを読んで、受注ページを作ります';
-        wrap.appendChild(btn);
+        wrap.className = 'record-make';
+        wrap.hidden = true;
         const marks = document.createElement('span');
-        wrap.appendChild(marks);
+        marks.className = 'record-make-marks';
         const showMarks = (list) => {
             marks.textContent = '';
             (list || []).forEach(r => {
                 marks.appendChild(document.createTextNode(' '));
                 marks.appendChild(makeAnalyzedMark(r));
             });
-            btn.textContent = (list && list.length) ? '🤖 本文から受注ページ（もう一度）' : '🤖 本文から受注ページ';
         };
-        fetch('/api/analyzed?page_id=' + encodeURIComponent(currentPageId))
-            .then(r => r.json()).then(d => showMarks(d && d.mail_orders)).catch(() => {});
-        btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            btn.textContent = '🤖 読んでいます…';
-            let born = false;
-            try {
-                const res = await fetch('/api/analyze-mail-order', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ page_id: currentPageId }),
-                });
-                const d = await readResult(res);
-                if (!res.ok || !d || !d.success) {
-                    notify('受注ページを作れませんでした: ' + failMessage(res, d), { type: 'alert', duration: 0, id: 'analyze-mail' });
-                } else if (!d.is_client_order) {
-                    notify('注文のメールではないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000, id: 'analyze-mail' });
-                } else {
-                    const made = d.pages || [{ page_id: d.page_id, title: d.title }];
-                    notify('受注ページを作りました: ' + made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n') +
-                        (d.linked_items ? '\n加工製品と ' + d.linked_items + ' 行を結びました。' : ''),
-                        { type: 'success', duration: 0, id: 'analyze-mail' });
-                    born = true;
+        fetch('/api/record-makers?page_id=' + encodeURIComponent(currentPageId))
+            .then(r => r.json()).then(d => {
+                if (!d || !d.success) return;
+                const kinds = d.kinds || [];
+                if (!kinds.length && !(d.made || []).length) return;
+                if (kinds.length) {
+                    const label = document.createElement('label');
+                    label.textContent = '作るページ ';
+                    const sel = document.createElement('select');
+                    sel.className = 'record-make-kind';
+                    kinds.forEach(k => {
+                        const o = document.createElement('option');
+                        o.value = k.name;
+                        o.textContent = k.name;
+                        o.title = k.hint || '';
+                        sel.appendChild(o);
+                    });
+                    const hint = () => { sel.title = (kinds.find(k => k.name === sel.value) || {}).hint || ''; };
+                    sel.addEventListener('change', hint);
+                    hint();
+                    label.appendChild(sel);
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'record-make-go';
+                    btn.textContent = '作成';
+                    btn.addEventListener('click', () => makeFromRecord(sel.value, btn));
+                    wrap.appendChild(label);
+                    wrap.appendChild(document.createTextNode(' '));
+                    wrap.appendChild(btn);
                 }
-            } catch (e) {
-                notify('受注ページを作れませんでした: ' + e.message, { type: 'alert', duration: 0, id: 'analyze-mail' });
-            }
-            btn.disabled = false;
-            btn.textContent = '🤖 本文から受注ページ';
-            if (born) {
-                await reloadContent(); // 子ページ一覧の鏡と、この欄（印つき）を描き直す
-                loadChildNav();        // 左レールの子ページ一覧
-            }
-        });
+                wrap.appendChild(marks);
+                showMarks(d.made);
+                wrap.hidden = false;
+            }).catch(() => {});
         return wrap;
+    }
+
+    // makeFromRecord は選んだ種類のページを作ります（POST /api/record-make）。受注ページは Gemini が本文を読むので時間がかかる。
+    async function makeFromRecord(kind, btn) {
+        btn.disabled = true;
+        btn.textContent = '作っています…';
+        let born = false, open = '';
+        try {
+            const res = await fetch('/api/record-make', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_id: currentPageId, kind }),
+            });
+            const d = await readResult(res);
+            if (!res.ok || !d || !d.success) {
+                notify(kind + 'を作れませんでした: ' + failMessage(res, d), { type: 'alert', duration: 0, id: 'record-make' });
+            } else if (!(d.pages || []).length) {
+                notify(d.say || 'ページは作りませんでした。', { type: 'warn', duration: 8000, id: 'record-make' });
+            } else {
+                notify(kind + 'を作りました: ' + d.pages.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n') +
+                    (d.say ? '\n' + d.say : ''), { type: 'success', duration: 0, id: 'record-make' });
+                born = true;
+                open = d.open || '';
+            }
+        } catch (e) {
+            notify(kind + 'を作れませんでした: ' + e.message, { type: 'alert', duration: 0, id: 'record-make' });
+        }
+        btn.disabled = false;
+        btn.textContent = '作成';
+        if (open) { location.href = '/' + open + '?edit=true'; return; } // 人が続けて書くページは開く
+        if (born) {
+            await reloadContent(); // 子ページ一覧の鏡と、この欄（印つき）を描き直す
+            loadChildNav();        // 左レールの子ページ一覧
+        }
     }
 
     // handledControl はメールのページの「対応: 未処理・済・不要」の札です（2026-09-30）。押すと
@@ -4629,10 +4656,8 @@
         // 選択したいです」）——未処理・済・不要のどれかを押す。いまの値は押せない（押しても変わらない）。
         // 下書き（まだ送っていない）には出さない——送ると送った日の控えが作られ、そちらは送った時点で「不要」。
         if (!tagValue(DRAFT_TAG)) box.appendChild(handledControl(tagValue(HANDLED_TAG)));
-        // 受信したメールの本文から受注ページ（2026-10-01・東邦の拡張が載っているときだけ）。
-        if (hasExtension('toho') && !tagValue(DRAFT_TAG) && tagValue(DIRECTION_TAG) === '受信') {
-            box.appendChild(mailOrderControl());
-        }
+        // この記録から作るページ（2026-10-01・選べる種類は拡張が登録する——受信だけ・下書きには出さないもサーバーが決める）。
+        if (!tagValue(DRAFT_TAG)) box.appendChild(recordMakeControl());
 
         // **「✉️ 返信」だけがメール拡張の持ち物**です（2026-09-15）。同じ箱の「🧵 やりとりの
         // 前後」と「📨 この記録への返信」は記録を読むだけなので、メールを外しても出します。

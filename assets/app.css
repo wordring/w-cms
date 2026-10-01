@@ -1989,10 +1989,12 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
    いまの値が「押せない飾り」に見えた。 */
 .mail-handled { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
 .mail-handled-head { font-size: 0.9em; color: var(--text-muted, #475569); margin-right: 2px; }
-/* メールの本文から受注ページ（2026-10-01・東邦）。押したあとの印（✓ 受注）は横に並ぶ。 */
-.mail-order { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
-.mail-order-btn { padding: 0.3rem 0.9rem; font: inherit; cursor: pointer; }
-.mail-order-btn:disabled { opacity: 0.6; cursor: wait; }
+/* この記録から作るページ（2026-10-01・選ぶ欄と「作成」・作った印〔✓ 受注・✓ 加工製品〕は横に並ぶ）。 */
+.record-make { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
+.record-make[hidden] { display: none; } /* 種類も印も無いときは出さない（display: flex が hidden に勝つため） */
+.record-make-kind { font: inherit; padding: 0.2rem 0.3rem; }
+.record-make-go { padding: 0.3rem 0.9rem; font: inherit; cursor: pointer; }
+.record-make-go:disabled { opacity: 0.6; cursor: wait; }
 #w-editor-content .mail-handled-btn.is-current:disabled {
     border-color: var(--accent, #2a6);
     color: var(--accent, #2a6);

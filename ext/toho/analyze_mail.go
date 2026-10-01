@@ -16,7 +16,6 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -74,58 +73,51 @@ func mailForJudgment(pageIDInt int, title, body string) string {
 	return "件名: " + title + "\n差出人: " + cms.FirstTag(tags, comm.FromTag) + "\n日付: " + date + "\n\n" + text
 }
 
-// AnalyzeMailOrderAPIHandler は POST /api/analyze-mail-order です。入力: {page_id}——メールの記録のページ。
-func AnalyzeMailOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, ok := cms.PageIDOrFail(w, req.PageID)
-	if !ok {
-		return
-	}
-	// 子ページを作る操作なので write 権限（本文は変えないので編集ロックは不要——添付の解析と同じ理屈）。
-	if !page.RequirePageWrite(w, r, pageID) {
-		return
-	}
+// MailOrderKind はメールの記録から作るページの種類「受注ページ」です（2026-10-01・comm の選ぶ欄に出る）。
+const MailOrderKind = "受注ページ"
+
+func init() {
+	// 利用者:「「受注ページ」「加工製品ページ」をコンボボックスで選択して「作成」ボタンを押せばいいかも」（2026-10-01）。
+	comm.RegisterRecordMaker(comm.RecordMaker{
+		Name: MailOrderKind, Order: 10, Directions: []string{"受信"},
+		Hint: "🤖 本文を読んで受注ページを作ります（発注書の PDF が付いていない注文のメール）",
+		Make: makeOrderFromMail,
+		Made: func(user *auth.User, pageID string) []comm.MadePage {
+			var out []comm.MadePage
+			for _, r := range mailOrderPages(user, pageID) {
+				out = append(out, comm.MadePage{PageID: r.PageID, Title: r.Title, Kind: r.Kind})
+			}
+			return out
+		},
+	})
+}
+
+// makeOrderFromMail はメールの記録の本文を読んで受注ページを作ります（comm の口 POST /api/record-make から）。
+// 権限（write）と、記録であること（`チャネル` のタグ）は口が先に確かめている。
+func makeOrderFromMail(user *auth.User, pageID string) (comm.MakeResult, error) {
 	idInt, _ := strconv.Atoi(pageID)
-	if cms.PageTagValue(database.DB, idInt, comm.ChannelTag) == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "メールの記録ではありません")
-		return
-	}
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "本文を読めません: "+err.Error())
-		return
+		return comm.MakeResult{}, errors.New("本文を読めません: " + err.Error())
 	}
 	if strings.TrimSpace(comm.RecordBodyText(body)) == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "このメールには本文がありません")
-		return
+		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadRequest, Message: "このメールには本文がありません"}
 	}
 	// テンプレートは**聞く前に**確かめる（聞いたあとで無いと分かると、有料の問い合わせが無駄になる）。
 	orderTmpl, err := cms.PageTemplateBody(OrderPageTemplate)
 	if err != nil {
-		cms.JSONFail(w, http.StatusConflict, "解析の結果を書くテンプレートがありません: "+err.Error())
-		return
+		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "解析の結果を書くテンプレートがありません: " + err.Error()}
 	}
 	j, err := judgeOrderMail(mailForJudgment(idInt, cms.PageTitleByID(idInt), body))
 	if err != nil {
 		if errors.Is(err, cms.ErrNoGeminiKey) {
-			cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
-			return
+			return comm.MakeResult{}, &comm.MakeError{Status: http.StatusServiceUnavailable,
+				Message: "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。"}
 		}
-		cms.JSONFail(w, http.StatusBadGateway, "解析に失敗しました: "+err.Error())
-		return
+		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadGateway, Message: "解析に失敗しました: " + err.Error()}
 	}
 	if !j.IsClientOrder {
-		json.NewEncoder(w).Encode(map[string]any{"success": true, "is_client_order": false})
-		return
+		return comm.MakeResult{Say: "注文のメールではないと判定されました（ページは作っていません）。"}, nil
 	}
 	sheets := j.orderList()
 	// 発注元は本文の会社名を揃えて（連絡帳の題へ）、読めなければ差出人のアドレスから取引先を引く。
@@ -141,32 +133,25 @@ func AnalyzeMailOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		b, err := buildOrderPageHTML(orderTmpl, pageID, "", o)
 		if err != nil {
-			cms.JSONFail(w, http.StatusConflict, "受注ページを作れません: "+err.Error())
-			return
+			return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "受注ページを作れません: " + err.Error()}
 		}
 		bodies = append(bodies, b)
 	}
-	made := []map[string]any{}
+	var res comm.MakeResult
 	linked := 0
 	for _, b := range bodies {
 		newID, err := cms.CreateChildPage(pageID, user.Username, b)
 		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError,
-				"受注ページを作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
-			return
+			return res, errors.New("受注ページを作れません（" + strconv.Itoa(len(res.Pages)) + "枚目まで作成済み）: " + err.Error())
 		}
 		auth.Audit(user.Username, "analyze-mail", newID+" from "+pageID)
 		linked += LinkProductsToOrder(user, newID)
-		made = append(made, map[string]any{"page_id": newID, "title": pageTitleOf(newID)})
+		res.Pages = append(res.Pages, comm.MadePage{PageID: newID, Title: pageTitleOf(newID), Kind: "受注"})
 	}
-	out := map[string]any{
-		"success": true, "is_client_order": true,
-		"page_id": made[0]["page_id"], "title": made[0]["title"], "linked_items": linked,
+	if linked > 0 {
+		res.Say = "加工製品と " + strconv.Itoa(linked) + " 行を結びました。"
 	}
-	if len(made) > 1 {
-		out["pages"] = made
-	}
-	json.NewEncoder(w).Encode(out)
+	return res, nil
 }
 
 // mailOrderPages は、メールの記録の本文から作った受注ページ（`受信元` がそのページ全体）を返します（読めるものだけ）。
