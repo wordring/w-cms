@@ -1605,8 +1605,8 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     cursor: pointer;
 }
 #w-editor-content .fv-remove:hover { background: #fdeaea; }
-/* ファイル表示の頭の「📝 ローカル編集」（2026-09-29・常駐ヘルパー w-cms-edit で開く）。 */
-#w-editor-content .local-edit-btn {
+/* ファイル表示の頭の「⋯」（2026-10-01——それまでは「🔗 ID」「📝 ローカル編集」を並べていた）。 */
+#w-editor-content .file-menu-btn {
     margin-left: 8px;
     padding: 1px 8px;
     font: inherit;
@@ -1618,7 +1618,7 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     cursor: pointer;
     white-space: nowrap;
 }
-#w-editor-content .local-edit-btn:disabled {
+#w-editor-content .file-menu-btn:disabled {
     opacity: 0.5;
     cursor: wait;
 }
@@ -1636,6 +1636,33 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     cursor: pointer;
 }
 .img-edit-btn.active { display: block; }
+/* 「⋯」のメニュー（2026-10-01・形式に合った操作——app.js の openFileMenu）。本文の外に1つ・位置は placeFloating。 */
+.file-menu {
+    position: absolute;
+    z-index: 950;
+    display: none;
+    min-width: 12em;
+    padding: 4px 0;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: var(--radius, 6px);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);
+}
+.file-menu.active { display: block; }
+.file-menu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 14px;
+    font: inherit;
+    font-size: 0.9em;
+    text-align: left;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.file-menu-item:hover, .file-menu-item:focus { background: var(--vocab-bg, #eef4ff); }
 .img-edit-btn:disabled { opacity: 0.5; cursor: wait; }
 /* 本文の折りたたみ（2026-09-28・スラッシュメニュー「折りたたみ」）。題（summary）の言葉が
    ブロックの名前——例: 加工製品の「資料 1」。枠で囲んで、どこまでが中身か見えるように。

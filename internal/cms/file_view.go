@@ -223,6 +223,9 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 	ref := stdhtml.EscapeString(pageID + "-" + blockID)
 	name := stdhtml.EscapeString(fileName)
 	src := stdhtml.EscapeString(url)
+	// 画面の「⋯」（形式に合った操作のメニュー・2026-10-01・assets/app.js の openFileMenu）が読む、ファイルの住所と名前。
+	// クロームの属性なので保存されない（`.vocab-chrome` の中・StripChrome）。
+	fileData := ` data-file-url="` + src + `" data-file-name="` + name + `"`
 
 	if kind == kindOther {
 		// **描けないものは、開く口を出します。** ここで「見つかりません」と言うのは
@@ -234,7 +237,7 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 		// ⚠ リンクに `download`（届いたときの名前）を付ける（2026-10-01 利用者:「STEPファイルも加工製品ページで参照して
 		// ダウンロードできるようにしたい」）——配信は素の `Content-Disposition: attachment`（保存名の既定はリンクの
 		// download 属性が運ぶ・page.setAttachmentHeaders）なので、付けないと保存名（`abcd.step`）で落ちていた。
-		return `<div class="file-view file-view-plain">` +
+		return `<div class="file-view file-view-plain"` + fileData + `>` +
 			`<p class="file-view-head" title="押すと保存します（ブラウザでは開けない形式）">📎 <a href="` + src + `" download="` + name + `">` + name + `</a>` +
 			` <span class="file-view-note">（<a href="/` + stdhtml.EscapeString(pageID) + `#` +
 			stdhtml.EscapeString(blockID) + `" title="` + ref + ` の出どころのページへ">出どころ</a>）</span></p></div>`
@@ -264,7 +267,7 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 	case kindAudio:
 		body = `<audio class="file-view-body" src="` + src + `" controls preload="metadata"></audio>`
 	}
-	return `<details class="file-view-fold" open>` + head +
+	return `<details class="file-view-fold" open` + fileData + `>` + head +
 		`<div class="file-view" title="右下をつまむと大きさを変えられます">` + body + `</div></details>`
 }
 

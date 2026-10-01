@@ -148,7 +148,10 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
     await page.waitForSelector('#w-editor-content details img', { timeout: 8000 });
     await page.locator('#w-editor-content details img').first().hover({ force: true });
     await page.waitForTimeout(200);
-    check('写真に載せると 📝 が出る', await page.locator('#w-img-edit.active').count() === 1);
+    // 2026-10-01 から写真の札は「⋯」1つ——📝 ローカル編集はそのメニューの中。
+    check('写真に載せると「⋯」が出る', await page.locator('#w-img-menu.active').count() === 1);
+    await page.locator('#w-img-menu.active').click().catch(() => {});
+    check('「⋯」のメニューに 📝 ローカル編集', await page.locator('#w-file-menu.active .file-menu-item', { hasText: 'ローカル編集' }).count() === 1);
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

@@ -47,16 +47,15 @@ const check = (label, ok, note = '') => { console.log((ok ? '✓ ' : '✗ ') + l
     const img = page.locator('#w-editor-content img').first();
     await img.waitFor({ timeout: 8000 });
     await img.hover();
-    const ref = page.locator('#w-img-ref.active');
-    await ref.waitFor({ timeout: 5000 }).catch(() => {});
-    check('写真に載せると「🔗 ID」が出る', await ref.count() === 1);
-    const pos = await page.evaluate(() => {
-      const a = document.getElementById('w-img-ref').getBoundingClientRect();
-      const b = document.getElementById('w-img-edit').getBoundingClientRect();
-      return { refRight: a.right, editLeft: b.left, sameTop: Math.abs(a.top - b.top) < 1 };
-    });
-    check('📝 の左に並ぶ（重ならない）', pos.refRight <= pos.editLeft && pos.sameTop, JSON.stringify(pos));
-    await ref.click();
+    // 2026-10-01 から写真の札は「⋯」1つ——押すと形式に合った操作のメニュー（🔗 ID を写す はその中）。
+    const dots = page.locator('#w-img-menu.active');
+    await dots.waitFor({ timeout: 5000 }).catch(() => {});
+    check('写真に載せると「⋯」が出る', await dots.count() === 1);
+    await dots.click();
+    const idItem = page.locator('#w-file-menu.active .file-menu-item', { hasText: 'ID を写す' });
+    await idItem.waitFor({ timeout: 5000 }).catch(() => {});
+    check('「⋯」のメニューに「🔗 ID を写す」', await idItem.count() === 1);
+    await idItem.click();
     await page.waitForTimeout(300);
     const clip = await page.evaluate(() => navigator.clipboard.readText()).catch((e) => 'ERR ' + e);
     check('押すと写真の ID が写る', m && clip === m[1] + '-' + m[2], clip);

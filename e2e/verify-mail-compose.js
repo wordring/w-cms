@@ -103,9 +103,13 @@ const check = (label, ok, note = '') => {
     const wantRef = doc + '-' + upID;
     check('ファイルを置いたページを作れた', !!doc && !!upID, wantRef);
     await page.goto(BASE + '/' + doc);
-    const copyBtn = page.locator('#w-editor-content section[data-type="file-view"] .file-ref-copy');
-    await copyBtn.waitFor({ timeout: 8000 }).catch(() => {});
-    check('ファイル表示の頭に「🔗 ID」', ((await copyBtn.textContent().catch(() => '')) || '').trim() === '🔗 ' + wantRef,
+    // 2026-10-01 からファイル表示の頭は「⋯」1つ——「🔗 ID を写す」はそのメニューの中。
+    const dots = page.locator('#w-editor-content section[data-type="file-view"] .file-menu-btn');
+    await dots.waitFor({ timeout: 8000 }).catch(() => {});
+    await dots.click();
+    const copyBtn = page.locator('#w-file-menu.active .file-menu-item', { hasText: 'ID を写す' });
+    await copyBtn.waitFor({ timeout: 5000 }).catch(() => {});
+    check('ファイル表示の「⋯」に「🔗 ID を写す（' + wantRef + '）」', ((await copyBtn.textContent().catch(() => '')) || '').includes(wantRef),
       await copyBtn.textContent().catch(() => ''));
     await copyBtn.click();
     await page.waitForTimeout(300);

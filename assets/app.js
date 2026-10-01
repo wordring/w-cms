@@ -4190,7 +4190,11 @@
             marks.textContent = '';
             (list || []).forEach(r => {
                 marks.appendChild(document.createTextNode(' '));
-                marks.appendChild(makeAnalyzedMark(r));
+                // ⚠ `attach-expand` を外す——添付の札を描き直す refreshAttachmentPreviews が本文の中の `.attach-expand` を
+                // 全部消すので、問い合わせの答えが先に着くと印が消えていた（2026-10-01・E2E で間欠に落ちた）。
+                const mark = makeAnalyzedMark(r);
+                mark.classList.remove('attach-expand');
+                marks.appendChild(mark);
             });
         };
         fetch('/api/record-makers?page_id=' + encodeURIComponent(currentPageId))
@@ -5900,38 +5904,179 @@
         if (document.body.classList.contains('anonymous')) return;
         document.querySelectorAll('#w-editor-content section[data-type="file-view"][data-ref]').forEach(sec => {
             const head = sec.querySelector('.file-view-head');
-            if (!head || head.querySelector('.local-edit-btn')) return;
-            // 「🔗 ID」——押すと ID を写す（2026-10-01・copyFileRef の前口上）。頭の行（summary）の中なので畳まない。
-            const ref = sec.getAttribute('data-ref');
-            const cp = document.createElement('button');
-            cp.type = 'button';
-            cp.className = 'vocab-chrome local-edit-btn file-ref-copy';
-            cp.contentEditable = 'false';
-            cp.textContent = '🔗 ' + ref;
-            cp.title = copyRefTitle(ref);
-            cp.addEventListener('mousedown', e => e.preventDefault());
-            cp.addEventListener('click', e => {
-                e.preventDefault();
-                e.stopPropagation();
-                copyFileRef(ref);
-            });
-            head.appendChild(cp);
+            const data = sec.querySelector('[data-file-url]');
+            if (!head || !data || head.querySelector('.file-menu-btn')) return;
+            // 「⋯」1つ（2026-10-01）——押すと形式に合った操作のメニュー（🔗 ID・⬇ 保存・📝 ローカル編集・🤖 解析…・openFileMenu）。
+            // それまでは「🔗 ID」と「📝 ローカル編集」を全部の形式に並べていた。頭の行（summary）の中なので、押しても畳まない。
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'vocab-chrome local-edit-btn';
+            btn.className = 'vocab-chrome file-menu-btn';
             btn.contentEditable = 'false';
-            // 言葉は短く（2026-09-30 利用者:「説明が冗長なので、『ローカル編集』というような短い言葉で良いのでは？」）。
-            btn.textContent = '📝 ローカル編集';
-            btn.title = 'PC のアプリで編集';
+            btn.textContent = '⋯';
+            btn.title = 'このファイルの操作（ID を写す・保存・ローカル編集…）';
             btn.addEventListener('mousedown', e => e.preventDefault());
             btn.addEventListener('click', e => {
-                // 頭の行（summary）の中なので、押しても畳まれないように。
                 e.preventDefault();
                 e.stopPropagation();
-                startLocalEdit(sec.getAttribute('data-ref'), btn);
+                const url = data.getAttribute('data-file-url') || '';
+                openFileMenu(btn, { ref: sec.getAttribute('data-ref'), url, name: data.getAttribute('data-file-name') || '',
+                    kind: fileKindOf(url), host: sec });
             });
             head.appendChild(btn);
         });
+    }
+
+    // ── ファイルの「⋯」——形式に合った操作のメニュー（2026-10-01） ──────────────
+    //
+    // 利用者:「ドロップやファイルダイアログで追加された画像やファイル等は形式を判定して、ファイル形式にあったボタンなり
+    // クリックメニューを搭載してはどうでしょう？」→（出し方を聞いて）「⋯」1つにまとめる・🤖 解析はメールのページだけ。
+    // ファイル表示の頭と、写真（マウスを載せたとき）に出す。項目は形式で決まる（fileMenuItems）。
+    //
+    //   どれも     … 🔗 ID を写す・⬇ 保存（届いたときの名前で）
+    //   PDF        … ＋📝 ローカル編集・🤖 解析（メールのページだけ——作るページはそのページの子に生まれ、整理で置き場へ）
+    //   画像       … ＋🔍 原寸で開く・📝 ローカル編集
+    //   Excel      … ＋📝 Excel で開く・🤖 解析（同上）
+    //   CAD        … ＋📝 CAD で開く
+    //   ZIP        … ＋🗂 中身を見る・🤖 中のPDFをまとめて解析（同上）
+    //   動画・音声 … 共通の2つだけ
+    //   ほか       … ＋📝 ローカル編集
+    const FILE_KIND_BY_EXT = {
+        pdf: 'pdf', xlsx: 'xlsx', zip: 'zip',
+        jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image',
+        dxf: 'cad', step: 'cad', stp: 'cad', rpcd: 'cad', dwg: 'cad', igs: 'cad', iges: 'cad', x_t: 'cad', slddrw: 'cad',
+        mp4: 'media', webm: 'media', mov: 'media', mp3: 'media', wav: 'media', m4a: 'media', ogg: 'media',
+    };
+    function fileKindOf(url) {
+        const m = /\.([0-9a-z_]+)$/i.exec(String(url || '').split(/[?#]/)[0]);
+        return (m && FILE_KIND_BY_EXT[m[1].toLowerCase()]) || 'other';
+    }
+
+    // analyzableHere は、そのファイルを 🤖 解析してよい所か——メールのページで、ファイルがそのページの添付のとき。
+    function analyzableHere(pageOfFile) {
+        return hasExtension('toho') && !!tagValue(CHANNEL_TAG) && pageOfFile === currentPageId;
+    }
+
+    function fileMenuItems(info) {
+        const ref = info.ref || '';
+        const pid = ref.split('-')[0];
+        const aid = ref.split('-')[1] || '';
+        const file = String(info.url || '').split('/').pop();
+        const items = [];
+        items.push({ icon: '🔗', label: 'ID を写す（' + ref + '）', title: copyRefTitle(ref), run: () => copyFileRef(ref) });
+        items.push({ icon: '⬇', label: '保存', title: '届いたときの名前で保存します', run: () => downloadFile(info.url, info.name) });
+        switch (info.kind) {
+        case 'pdf':
+            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '解析（受注・図面を読む）', run: () => runAnalyzeFile(pid, file) });
+            items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
+            break;
+        case 'xlsx':
+            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '解析（注文リストを読む）', run: () => runAnalyzeFile(pid, file) });
+            items.push({ icon: '📝', label: 'Excel で開く', run: b => startLocalEdit(ref, b) });
+            break;
+        case 'image':
+            items.push({ icon: '🔍', label: '原寸で開く', run: () => window.open(info.url, '_blank', 'noopener') });
+            items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
+            break;
+        case 'cad':
+            items.push({ icon: '📝', label: 'CAD で開く', run: b => startLocalEdit(ref, b) });
+            break;
+        case 'zip':
+            items.push({ icon: '🗂', label: '中身を見る', run: () => toggleZipListIn(info.host, pid, file) });
+            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '中のPDFをまとめて解析', run: () => runZipAnalyze(pid, aid) });
+            break;
+        case 'media':
+            break;
+        default:
+            items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
+        }
+        return items;
+    }
+
+    // openFileMenu は「⋯」の下にメニューを開きます（もう一度押すか、外を押すか、Esc で閉じる）。
+    function openFileMenu(anchor, info) {
+        let menu = document.getElementById('w-file-menu');
+        if (menu && menu.classList.contains('active') && menu.wcmsAnchor === anchor) { closeFileMenu(); return; }
+        if (!menu) {
+            menu = document.createElement('div');
+            menu.id = 'w-file-menu';
+            menu.className = 'file-menu';
+            menu.setAttribute('role', 'menu');
+            document.body.appendChild(menu);
+            document.addEventListener('mousedown', e => {
+                const m = document.getElementById('w-file-menu');
+                if (m && m.classList.contains('active') && !m.contains(e.target) && e.target !== m.wcmsAnchor) closeFileMenu();
+            });
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFileMenu(); });
+        }
+        menu.textContent = '';
+        menu.wcmsAnchor = anchor;
+        fileMenuItems(info).forEach(it => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'file-menu-item';
+            b.setAttribute('role', 'menuitem');
+            b.textContent = it.icon + ' ' + it.label;
+            if (it.title) b.title = it.title;
+            b.addEventListener('mousedown', e => e.preventDefault());
+            b.addEventListener('click', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                closeFileMenu();
+                it.run(anchor);
+            });
+            menu.appendChild(b);
+        });
+        menu.classList.add('active');
+        placeFloating(menu, anchor.getBoundingClientRect(), 4);
+    }
+
+    function closeFileMenu() {
+        const menu = document.getElementById('w-file-menu');
+        if (menu) { menu.classList.remove('active'); menu.wcmsAnchor = null; }
+    }
+
+    // downloadFile は添付を届いたときの名前で保存します（同じ場所のリンクに download を付けて押す）。
+    function downloadFile(url, name) {
+        if (!url) return;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name || '';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }
+
+    // runAnalyzeFile は添付1つを 🤖 解析します（📎 の「🤖 解析」と同じ口と知らせ——makeAnalyzeButton）。
+    function runAnalyzeFile(pageId, file) {
+        notify('🤖 解析しています…', { type: 'info', duration: 0, id: 'analyze-pdf' });
+        makeAnalyzeButton(pageId, file).click();
+    }
+
+    // runZipAnalyze は ZIP の中のPDFをまとめて解析します（どの PDF が中にあるかは /api/analyzed が知っている）。
+    async function runZipAnalyze(pageId, zipID) {
+        try {
+            const d = await (await fetch('/api/analyzed?page_id=' + encodeURIComponent(pageId))).json();
+            analyzedMap = (d && d.analyzed) || analyzedMap;
+            const pdfs = ((d && d.zip_pdfs) || {})[zipID] || [];
+            const btn = pdfs.length ? makeZipAnalyzeButton(pageId, pdfs) : null;
+            if (!btn) { notify(pdfs.length ? '中のPDFは解析済みです。' : 'この ZIP の中に PDF はありません。', { duration: 6000 }); return; }
+            btn.click();
+        } catch (e) {
+            notify('まとめて解析できません: ' + e.message, { type: 'warn' });
+        }
+    }
+
+    // toggleZipListIn はファイル表示の下に ZIP の中身の一覧を開け閉めします。
+    function toggleZipListIn(host, pageId, file) {
+        if (!host) return;
+        const open = host.querySelector('.attach-preview');
+        if (open) { open.remove(); return; }
+        const wrap = document.createElement('div');
+        wrap.className = 'vocab-chrome attach-preview';
+        wrap.contentEditable = 'false';
+        wrap.textContent = '読み込み中…';
+        (host.querySelector(':scope > .vocab-chrome') || host).appendChild(wrap);
+        loadZipListInto(wrap, pageId, file);
     }
 
     async function startLocalEdit(ref, btn) {
@@ -5971,42 +6116,26 @@
     let imgEditTarget = null;
     let imgEditHideTimer = 0;
 
-    function imgEditButton() {
-        let btn = document.getElementById('w-img-edit');
+    // 写真の「⋯」（2026-10-01）——マウスを載せると右上に1つ浮かべ、押すと形式に合った操作のメニュー（🔗 ID・⬇ 保存・
+    // 🔍 原寸で開く・📝 ローカル編集——openFileMenu）。それまでは「🔗 ID」と「📝 ローカル編集」の2つを浮かべていた。
+    function imgMenuButton() {
+        let btn = document.getElementById('w-img-menu');
         if (btn) return btn;
         btn = document.createElement('button');
         btn.type = 'button';
-        btn.id = 'w-img-edit';
+        btn.id = 'w-img-menu';
         btn.className = 'img-edit-btn';
-        btn.textContent = '📝 ローカル編集';
-        btn.title = 'PC のアプリで編集';
+        btn.textContent = '⋯';
+        btn.title = 'この写真の操作（ID を写す・保存・原寸・ローカル編集）';
         btn.addEventListener('mousedown', e => e.preventDefault());
         btn.addEventListener('click', e => {
             e.preventDefault();
-            const m = imgEditTarget && (imgEditTarget.getAttribute('src') || '').match(IMG_ATTACH_SRC);
-            if (m) startLocalEdit(m[1] + '-' + m[2], btn);
-        });
-        btn.addEventListener('mouseenter', () => clearTimeout(imgEditHideTimer));
-        btn.addEventListener('mouseleave', () => hideImgEditSoon());
-        document.body.appendChild(btn);
-        return btn;
-    }
-
-    // 写真の「🔗 ID」（2026-10-01）——📝 の左に並べる。押すと写真の ID（`ページ番号-添付ID`）を写す
-    // （メールの添付・📄 ファイル表示の欄へ貼れる——copyFileRef）。
-    function imgRefButton() {
-        let btn = document.getElementById('w-img-ref');
-        if (btn) return btn;
-        btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = 'w-img-ref';
-        btn.className = 'img-edit-btn';
-        btn.textContent = '🔗 ID';
-        btn.addEventListener('mousedown', e => e.preventDefault());
-        btn.addEventListener('click', e => {
-            e.preventDefault();
-            const m = imgEditTarget && (imgEditTarget.getAttribute('src') || '').match(IMG_ATTACH_SRC);
-            if (m) copyFileRef(m[1] + '-' + m[2]);
+            const img = imgEditTarget;
+            const src = img ? img.getAttribute('src') || '' : '';
+            const m = src.match(IMG_ATTACH_SRC);
+            if (!m) return;
+            openFileMenu(btn, { ref: m[1] + '-' + m[2], url: src, name: (img.getAttribute('alt') || '').trim() || src.split('/').pop(),
+                kind: 'image', host: img });
         });
         btn.addEventListener('mouseenter', () => clearTimeout(imgEditHideTimer));
         btn.addEventListener('mouseleave', () => hideImgEditSoon());
@@ -6017,10 +6146,11 @@
     function hideImgEditSoon() {
         clearTimeout(imgEditHideTimer);
         imgEditHideTimer = setTimeout(() => {
-            ['w-img-edit', 'w-img-ref'].forEach(id => {
-                const btn = document.getElementById(id);
-                if (btn) btn.classList.remove('active');
-            });
+            const menu = document.getElementById('w-file-menu');
+            const btn = document.getElementById('w-img-menu');
+            // メニューを開いているあいだは「⋯」を消さない（押した札が消えると、メニューが宙に浮く）。
+            if (menu && menu.classList.contains('active') && menu.wcmsAnchor === btn) return;
+            if (btn) btn.classList.remove('active');
             imgEditTarget = null;
         }, 250);
     }
@@ -6033,22 +6163,15 @@
         if (window.matchMedia('(pointer: coarse)').matches) return;
         clearTimeout(imgEditHideTimer);
         imgEditTarget = img;
-        const btn = imgEditButton();
-        const refBtn = imgRefButton();
-        const m = (img.getAttribute('src') || '').match(IMG_ATTACH_SRC);
-        refBtn.title = copyRefTitle(m[1] + '-' + m[2]);
+        const btn = imgMenuButton();
         const r = img.getBoundingClientRect();
         btn.classList.add('active');
-        refBtn.classList.add('active');
         btn.style.top = (window.scrollY + r.top + 6) + 'px';
         btn.style.left = (window.scrollX + r.right - btn.offsetWidth - 6) + 'px';
-        refBtn.style.top = btn.style.top;
-        refBtn.style.left = (window.scrollX + r.right - btn.offsetWidth - refBtn.offsetWidth - 12) + 'px';
     });
     document.addEventListener('mouseout', e => {
         const to = e.relatedTarget;
-        if (e.target && e.target === imgEditTarget &&
-            to !== document.getElementById('w-img-edit') && to !== document.getElementById('w-img-ref')) {
+        if (e.target && e.target === imgEditTarget && to !== document.getElementById('w-img-menu')) {
             hideImgEditSoon();
         }
     });

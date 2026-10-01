@@ -250,7 +250,7 @@ func TestFileViewNameTagOnSaveHiddenOnDisplay(t *testing.T) {
 		t.Errorf("表示で名札が消えていません:\n%s", out)
 	}
 	for _, want := range []string{
-		`<details class="file-view-fold" open="">`, `<summary class="file-view-head">`,
+		`<details class="file-view-fold" open="" data-file-url="/000001/c3p7.pdf" data-file-name="R310-002_本体.pdf">`, `<summary class="file-view-head">`,
 		`>R310-002_本体.pdf</a>`, `type="application/pdf"`,
 	} {
 		if !strings.Contains(out, want) {
