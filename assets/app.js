@@ -4183,6 +4183,69 @@
     const DRAFT_TAG = '下書き';
     // HANDLED_TAG は対応の印のタグです（ext/comm/view_unhandled.go の HandledTag と同じ言葉）。
     const HANDLED_TAG = '対応';
+    // DIRECTION_TAG は向きのタグです（ext/comm/intake.go の DirectionTag と同じ言葉・値は 受信／送信）。
+    const DIRECTION_TAG = '向き';
+
+    // mailOrderControl はメールの記録の「🤖 本文から受注ページ」です（2026-10-01・東邦の拡張・ext/toho/analyze_mail.go）。
+    // 利用者:「発注書が無くても、メールから簡単に発注ページを作れませんか？」→ 受注ページ。客先がメールの本文だけで注文して
+    // くる（発注書の PDF が付かない）とき、本文を読んで受注ページを作る（添付の 🤖 解析と同じ形・メールの記録の子）。
+    // ⚠ 押すのは人（「ハッキリ注文だ」と分かったメールだけ）——Gemini が「注文ではない」と答えたら作らない。
+    // 既に作ったものがあれば「✓ 受注」の印を横に並べる（押し直しはできる——読み違いはあるので）。
+    function mailOrderControl() {
+        const wrap = document.createElement('p');
+        wrap.className = 'mail-order';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mail-order-btn';
+        btn.textContent = '🤖 本文から受注ページ';
+        btn.title = '発注書の PDF が付いていない注文のメールを読んで、受注ページを作ります';
+        wrap.appendChild(btn);
+        const marks = document.createElement('span');
+        wrap.appendChild(marks);
+        const showMarks = (list) => {
+            marks.textContent = '';
+            (list || []).forEach(r => {
+                marks.appendChild(document.createTextNode(' '));
+                marks.appendChild(makeAnalyzedMark(r));
+            });
+            btn.textContent = (list && list.length) ? '🤖 本文から受注ページ（もう一度）' : '🤖 本文から受注ページ';
+        };
+        fetch('/api/analyzed?page_id=' + encodeURIComponent(currentPageId))
+            .then(r => r.json()).then(d => showMarks(d && d.mail_orders)).catch(() => {});
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = '🤖 読んでいます…';
+            let born = false;
+            try {
+                const res = await fetch('/api/analyze-mail-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page_id: currentPageId }),
+                });
+                const d = await readResult(res);
+                if (!res.ok || !d || !d.success) {
+                    notify('受注ページを作れませんでした: ' + failMessage(res, d), { type: 'alert', duration: 0, id: 'analyze-mail' });
+                } else if (!d.is_client_order) {
+                    notify('注文のメールではないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000, id: 'analyze-mail' });
+                } else {
+                    const made = d.pages || [{ page_id: d.page_id, title: d.title }];
+                    notify('受注ページを作りました: ' + made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n') +
+                        (d.linked_items ? '\n加工製品と ' + d.linked_items + ' 行を結びました。' : ''),
+                        { type: 'success', duration: 0, id: 'analyze-mail' });
+                    born = true;
+                }
+            } catch (e) {
+                notify('受注ページを作れませんでした: ' + e.message, { type: 'alert', duration: 0, id: 'analyze-mail' });
+            }
+            btn.disabled = false;
+            btn.textContent = '🤖 本文から受注ページ';
+            if (born) {
+                await reloadContent(); // 子ページ一覧の鏡と、この欄（印つき）を描き直す
+                loadChildNav();        // 左レールの子ページ一覧
+            }
+        });
+        return wrap;
+    }
 
     // handledControl はメールのページの「対応: 未処理・済・不要」の札です（2026-09-30）。押すと
     // POST /api/intake/handled（`未処理` は印を外す）で書き、ページを読み直してタグの表示も揃える。
@@ -4566,6 +4629,10 @@
         // 選択したいです」）——未処理・済・不要のどれかを押す。いまの値は押せない（押しても変わらない）。
         // 下書き（まだ送っていない）には出さない——送ると送った日の控えが作られ、そちらは送った時点で「不要」。
         if (!tagValue(DRAFT_TAG)) box.appendChild(handledControl(tagValue(HANDLED_TAG)));
+        // 受信したメールの本文から受注ページ（2026-10-01・東邦の拡張が載っているときだけ）。
+        if (hasExtension('toho') && !tagValue(DRAFT_TAG) && tagValue(DIRECTION_TAG) === '受信') {
+            box.appendChild(mailOrderControl());
+        }
 
         // **「✉️ 返信」だけがメール拡張の持ち物**です（2026-09-15）。同じ箱の「🧵 やりとりの
         // 前後」と「📨 この記録への返信」は記録を読むだけなので、メールを外しても出します。

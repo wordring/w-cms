@@ -526,6 +526,46 @@ func (b DraftBlock) SetFileView(ref string) bool {
 	return true
 }
 
+// DropFileView は範囲の中の**まだ配線されていない**最初のファイル表示を消します（2026-10-01）。包んでいる
+// 折りたたみ・節にほかの中身が無ければ（題・見出しだけなら）、それごと消します。無ければ何もせず false。
+//
+// 原本のファイルが無い文書を同じテンプレートから作るとき（メールの本文から作る受注ページ——PDF の枠が要らない）に、
+// 空の枠（「参照がありません」）を残さないため。
+func (b DraftBlock) DropFileView() bool {
+	fv := findFirst(b.n, func(n *html.Node) bool {
+		return n.Data == "section" && Attr(n, "data-type") == FileViewType &&
+			strings.TrimSpace(Attr(n, FileRefAttr)) == ""
+	})
+	if fv == nil {
+		return false
+	}
+	box := fv.Parent
+	box.RemoveChild(fv)
+	if box != b.n && (box.Data == "details" || box.Data == "section") && onlyNamesLeft(box) {
+		box.Parent.RemoveChild(box)
+	}
+	return true
+}
+
+// onlyNamesLeft は入れ物に名前（summary・見出し）と空白しか残っていないかを返します。
+func onlyNamesLeft(box *html.Node) bool {
+	for c := box.FirstChild; c != nil; c = c.NextSibling {
+		switch c.Type {
+		case html.TextNode:
+			if strings.TrimSpace(c.Data) != "" {
+				return false
+			}
+		case html.ElementNode:
+			switch c.Data {
+			case "summary", "h2", "h3", "h4", "h5", "h6":
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ── 小さな道具 ─────────────────────────────────────────────────────
 
 // walkDrafts は root の子孫要素を文書順に fn へ渡します。fn が false を返した要素の

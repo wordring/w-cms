@@ -106,7 +106,9 @@ func AnalyzedAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "調べられません: "+err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "analyzed": out, "zip_pdfs": zipPDFsOf(pageID)})
+	json.NewEncoder(w).Encode(map[string]any{"success": true, "analyzed": out, "zip_pdfs": zipPDFsOf(pageID),
+		// メールの本文から作った受注ページ（2026-10-01・analyze_mail.go）——「🤖 本文から受注ページ」の横に印を出す。
+		"mail_orders": mailOrderPages(user, pageID)})
 }
 
 // zipPDF は ZIP から取り出したPDF1つです（「まとめて解析」が順に解析する相手）。

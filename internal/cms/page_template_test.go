@@ -203,3 +203,27 @@ func TestPageTemplatesAreLookedUpByTitle(t *testing.T) {
 		}
 	}
 }
+
+// TestDraftDropsUnwiredFileView は、配線しないファイル表示を**包んでいる折りたたみごと**消し、ほかの中身がある
+// 入れ物は残すことを固定します（2026-10-01・メールの本文から作る受注ページ——原本の PDF が無い）。
+func TestDraftDropsUnwiredFileView(t *testing.T) {
+	d := NewPageDraft("受注ページ", `<h1>受注ページ</h1>`+
+		`<details><summary>原本（PDF）</summary><section data-type="file-view" data-ref=""></section></details>`+
+		`<details><summary>資料</summary><p>説明</p><section data-type="file-view" data-ref=""></section></details>`)
+	if !d.DropFileView() {
+		t.Fatal("消すファイル表示が見つかりません")
+	}
+	got := d.HTML()
+	if strings.Contains(got, "原本（PDF）") {
+		t.Errorf("中身の無くなった折りたたみが残っています:\n%s", got)
+	}
+	if !strings.Contains(got, "<summary>資料</summary><p>説明</p><section") {
+		t.Errorf("2つ目（まだ消していない）の入れ物を壊しています:\n%s", got)
+	}
+	if !d.DropFileView() || !strings.Contains(d.HTML(), "<summary>資料</summary><p>説明</p></details>") {
+		t.Errorf("ほかの中身がある入れ物は残すはず:\n%s", d.HTML())
+	}
+	if d.DropFileView() {
+		t.Error("もう無いのに消したと言っています")
+	}
+}

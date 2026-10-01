@@ -619,6 +619,9 @@ func buildOrderPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment) (st
 	// 由来参照（§9.1）——値は「元ページID-添付ID」。参照タグの文法（ref_render.go）に
 	// 一致するのでリンクとして描画され、押すと元ページの該当ブロックへ飛ぶ。
 	ref := hostPageID + "-" + attachID
+	if attachID == "" {
+		ref = hostPageID // メールの本文から作るとき（2026-10-01・analyze_mail.go）——由来はメールのページ全体
+	}
 	setHeaderTag(d.DraftBlock, SourceRefTag, ref)
 
 	// ── 原本のPDF（2026-09-21 ユーザー決定）──
@@ -630,7 +633,11 @@ func buildOrderPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment) (st
 	// 中身はコアが描きます（`internal/cms/file_view.go`）——**この拡張はPDFの
 	// 出し方を知りません**。人が消せば出なくなり、`受信元` のタグ（出所の記録）は残ります。
 	// ⚠ テンプレートに印が無ければ出しません（表示は飾りで、原本は元のページに在る）。
-	d.SetFileView(ref)
+	if attachID != "" {
+		d.SetFileView(ref)
+	} else {
+		d.DropFileView() // 原本のファイルが無い（メールの本文）——空の PDF の枠を残さない
+	}
 
 	// ── 顧客の発注書（読んだまま）──
 	//

@@ -113,6 +113,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		// PDF解析（東邦の業務）。main.go への直書きをやめてここへ寄せた
 		// ——ルートも拡張と一緒に外れる（`-tags minimal` で消える）。
 		{Pattern: "/api/analyze-attachment", Handler: AnalyzeAttachmentAPIHandler},
+		// メールの本文から受注ページを作る（2026-10-01・発注書の PDF が付かない注文——analyze_mail.go）。
+		{Pattern: "/api/analyze-mail-order", Handler: AnalyzeMailOrderAPIHandler},
 		// PDFから明細を読み、開いているブロックへ差し込む（2026-09-16 にコアから移設）。
 		// ⚠ 上の `/api/analyze-attachment` とは**別の仕事**です——あちらは受注ページを
 		// 1枚作り、こちらは人が開いているブロックの中へ明細を入れるだけ（parse_pdf.go）。
