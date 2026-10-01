@@ -7,6 +7,8 @@
 //   ③ 保存した本文に絵が残る
 //   ④ 文字と画像が一緒に載っているとき（Excel のセルのコピーなど）は横取りしない——絵を足さない
 //   ⑤ 閲覧モードでは何もしない
+//   ⑥ 名前：値（タグ）の中へ書式つきの文字を貼ると、文字だけが入る（改行は空白に）——2026-10-01 利用者:「タグの中で
+//      コピペするときは、文字列だけにしましょう」
 //
 // 当て先はトップ直下に自分で作り、最後に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-paste-image.js
@@ -43,6 +45,24 @@ async function paste(page, selector, text) {
   }, { selector, b64: PNG_B64, text });
 }
 
+// pasteText は、キャレットを置いた要素へ文字（text/plain と text/html）の貼り付けを送ります。
+async function pasteText(page, selector, plain, htmlText) {
+  await page.evaluate(({ selector, plain, htmlText }) => {
+    const target = document.querySelector(selector);
+    target.focus && target.focus();
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const dt = new DataTransfer();
+    dt.setData('text/plain', plain);
+    dt.setData('text/html', htmlText);
+    target.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, { selector, plain, htmlText });
+}
+
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
@@ -51,7 +71,7 @@ async function paste(page, selector, text) {
   let id = '';
   try {
     await login(page, BASE);
-    id = await makePage(page, '<h1>【E2E】画像の貼り付け</h1><p>段落A</p><p>段落B</p>');
+    id = await makePage(page, '<h1>【E2E】画像の貼り付け</h1><dl data-type="tags"><dt>品名</dt><dd>元</dd></dl><p>段落A</p><p>段落B</p>');
     check('当て先を作れた', !!id, id);
 
     // ⑤ 閲覧モードでは何もしない
@@ -93,6 +113,15 @@ async function paste(page, selector, text) {
     await paste(page, '#w-editor-content p[data-e2e="a"]', 'セルの文字');
     await page.waitForTimeout(1500);
     check('文字が一緒に載っているときは絵を足さない', await img.count() === 1, String(await img.count()));
+
+    // ⑥ タグの中は文字だけ
+    await pasteText(page, '#w-editor-content dl dd', '値A\n値B', '<b>値A</b><table><tr><td>値B</td></tr></table>');
+    await page.waitForTimeout(300);
+    const dd = await page.evaluate(() => {
+      const el = document.querySelector('#w-editor-content dl dd');
+      return { text: el.textContent, html: el.innerHTML };
+    });
+    check('タグの中へ貼ると文字だけ（改行は空白）', dd.text === '元値A 値B' && !/<(b|table|p|div)/i.test(dd.html), JSON.stringify(dd));
 
     // ③ 保存した本文に残る
     await page.waitForTimeout(2500); // 自動保存（1.5秒のデバウンス）

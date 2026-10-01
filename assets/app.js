@@ -7084,6 +7084,19 @@
             if (!document.body.hasAttribute('edit-mode')) return;
             const cd = e.clipboardData;
             if (!cd) return;
+            // **名前：値（タグ・定義リスト）の中は文字だけ**（2026-10-01 利用者:「名前値のタグを編集するとき、HTMLのような
+            // 構造がコピペされるとレイアウトが崩れます。そこで、タグの中でコピペするときは、文字列だけにしましょう」）——
+            // 書式・表・段落を持ち込まず、改行とタブは空白1つに畳む（値は1行）。ファイルだけのときは下の道へ。
+            const selNow = window.getSelection();
+            const atNow = selNow && selNow.rangeCount ? selNow.anchorNode : null;
+            const elNow = atNow && (atNow.nodeType === 1 ? atNow : atNow.parentElement);
+            const inPair = elNow && elNow.closest('#w-editor-content dl dt, #w-editor-content dl dd');
+            const plain = cd.getData('text/plain') || '';
+            if (inPair && plain.trim()) {
+                e.preventDefault();
+                document.execCommand('insertText', false, plain.replace(/\s*[\r\n\t]+\s*/g, ' ').trim());
+                return;
+            }
             const files = Array.from(cd.files || []);
             if (!files.length || (cd.getData('text/plain') || '').trim()) return;
             const sel = window.getSelection();
