@@ -75,6 +75,8 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		ProductListViewType,
 		// **手配不要**（2026-10-01）——必要部材表で「不要にする」を押した部材の記録（skip.go）。
 		SkipType,
+		// **見積明細**（2026-10-01）——顧客へ出す見積書の明細（estimate_doc.go）。
+		EstimateItemsType,
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))

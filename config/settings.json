@@ -20,6 +20,9 @@
     "受信元": { "type": "ref" },
     "弊社品番": { "type": "ref" },
     "受注": { "type": "ref" },
+    "見積番号": { "type": "code" },
+    "見積日": { "type": "date" },
+    "見積担当": { "type": "ref" },
     "返信元": { "type": "ref" },
     "下書きの元": { "type": "ref" },
     "相手": { "type": "ref" },
@@ -125,6 +128,8 @@
       "pdf_font": "C:/Windows/Fonts/BIZ-UDGothicB.ttc",
       "pdf_font_face": 0,
       "estimate_profit_rate": 10,
+      "estimate_tags": { "取引方法": "従来通り", "有効期限": "1カ月" },
+      "tax_rate": 10,
       "order_kinds": [
         {
           "kind": "材料",

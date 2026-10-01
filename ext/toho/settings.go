@@ -99,6 +99,14 @@ type settingsSection struct {
 	// デフォルトで10％なので、単価に1.1をかければ良いのですが、利益率を変更できるようにしたいです」——表ごとの率は表の
 	// 「弊社利益」の行が持ち、無い表にこれを使う。**未指定なら確定単価を出しません**（そう書く）。
 	EstimateProfitRate *float64 `json:"estimate_profit_rate,omitempty"`
+
+	// EstimateTags は新しい見積書に入れる**タグの既定値**です（2026-10-01・estimate_doc.go）——見本の「取引方法: 従来通り」
+	// 「有効期限: 1カ月」。作ったあとは見積書ページで直せる。
+	EstimateTags map[string]string `json:"estimate_tags,omitempty"`
+
+	// TaxRate は見積書の紙に刷る**消費税率**（%）です（2026-10-01・見本「下記価格には消費税は含んでおりません。税率 10％」）。
+	// 未指定なら税率の行を刷りません。
+	TaxRate *float64 `json:"tax_rate,omitempty"`
 }
 
 // companyInfo は発注書に刷る差出人です（実物の見出しに合わせた項目）。
@@ -124,6 +132,8 @@ var (
 	orderPrintColumns []string
 	orderPrintHeads   []string
 	estimateRate      *float64
+	estimateTags      map[string]string
+	taxRate           *float64
 )
 
 func init() {
@@ -189,6 +199,13 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 	face := s.PDFFontFace
 	company := s.Company
 	rate := s.EstimateProfitRate
+	etags := map[string]string{}
+	for k, v := range s.EstimateTags {
+		if k, v = strings.TrimSpace(k), strings.TrimSpace(v); k != "" && v != "" {
+			etags[k] = v
+		}
+	}
+	tax := s.TaxRate
 	return func() {
 		stagesMu.Lock()
 		productCodeTags = codeTags
@@ -199,6 +216,8 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		orderPrintColumns = printCols
 		orderPrintHeads = heads
 		estimateRate = rate
+		estimateTags = etags
+		taxRate = tax
 		stagesMu.Unlock()
 	}, nil
 }
@@ -211,6 +230,27 @@ func EstimateProfitRate() (float64, bool) {
 		return 0, false
 	}
 	return *estimateRate, true
+}
+
+// EstimateTagDefaults は新しい見積書に入れるタグの既定値です（写しを返す）。
+func EstimateTagDefaults() map[string]string {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	out := map[string]string{}
+	for k, v := range estimateTags {
+		out[k] = v
+	}
+	return out
+}
+
+// TaxRate は見積書に刷る消費税率（%）です（未設定なら ok=false）。
+func TaxRate() (float64, bool) {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	if taxRate == nil {
+		return 0, false
+	}
+	return *taxRate, true
 }
 
 // PDFFont は発注書のPDFへ埋め込むフォントのパスを返します（未設定なら空）。

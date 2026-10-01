@@ -81,6 +81,13 @@ func init() {
 		Why:       "顧客へ出す見積書の置き場です。加工屋・材料屋への見積の依頼は発注のくくりなので、ここには置きません。",
 	})
 
+	// 見積書ページ（2026-10-01・estimate_doc.go）——見積計算表の「見積書に入れる」が写す。
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     EstimateTemplate,
+		Extension: "toho",
+		Why:       "見積計算表の「見積書に入れる」が見積書ページを作るときに写します。キャプション「見積明細」の表が要ります（タグ 見積番号・見積先・見積先担当・見積日・受渡期日・受渡場所・取引方法・有効期限・見積担当と、見出し「備考」の節は、あれば埋めます）。",
+	})
+
 	// **機械が作るページもテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
 	// 形（タグの並び・表の列・節）はテンプレート、値と行の数は機械——管理画面に「在る・無い」を出す。
 	cms.RegisterPageTemplate(cms.PageTemplate{
@@ -129,6 +136,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 必要部材表から「不要にする」・戻す（2026-10-01・skip.go）。
 		{Pattern: "/api/our-order/skip", Handler: SkipAPIHandler},
 		{Pattern: "/api/our-order/skip/remove", Handler: SkipRemoveAPIHandler},
+		// 顧客へ出す見積書（2026-10-01・estimate_doc.go・estimate_pdf.go）。
+		{Pattern: "/api/estimate/add", Handler: AddToEstimateAPIHandler},
+		{Pattern: "/api/estimate-pdf", Handler: EstimatePDFAPIHandler},
 		// PDFから明細を読み、開いているブロックへ差し込む（2026-09-16 にコアから移設）。
 		// ⚠ 上の `/api/analyze-attachment` とは**別の仕事**です——あちらは受注ページを
 		// 1枚作り、こちらは人が開いているブロックの中へ明細を入れるだけ（parse_pdf.go）。

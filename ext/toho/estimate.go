@@ -179,6 +179,8 @@ func renderEstimate(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			strconv.Itoa(index)+`">利益率 <input type="number" class="estimate-rate-input" min="0" step="0.1" value="`+
 			stdhtml.EscapeString(rateText(r.Rate))+`"> % <button type="button" class="estimate-rate-set">変える</button>`+
 			` <span class="estimate-rate-say"></span></span>`)
+		// 見積書に入れる（2026-10-01・estimate_doc.go）——確定単価・ロット・備考を見積書の見積明細へ写す。
+		appendFootHTML(el, span, "estimate-add", estimateAddFormHTML(ctx.Viewer, ctx.PageID, index))
 	}
 	return true, nil
 }

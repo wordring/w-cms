@@ -43,6 +43,15 @@ func testOrderPageTemplate() string {
 		emptyVocabTable(clientOrderItemsType)
 }
 
+// testEstimateTemplate は見積書ページのテンプレートです（2026-10-01・職場のテンプレート／東邦／見積書と同じ形）。
+func testEstimateTemplate() string {
+	return `<h1>` + EstimateTemplate + `</h1>` +
+		emptyTagsDL(EstimateNoTag, EstimateClientTag, EstimatePersonTag, EstimateDateTag, EstimateDueTag,
+			EstimatePlaceTag, EstimateTradeTag, EstimateValidTag, EstimateSignerTag) +
+		emptyVocabTable(EstimateItemsType) +
+		`<section><h2>` + estimateNoteHeading + `</h2><p><br/></p></section>`
+}
+
 func testPurchaseOrderTemplate() string {
 	return `<h1>` + PurchaseOrderTemplate + `</h1>` +
 		emptyTagsDL(OrderNoTag, SupplierTag, OrderedAtTag, DueDateTag, OrderSignerTag) +

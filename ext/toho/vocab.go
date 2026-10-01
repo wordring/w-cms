@@ -466,6 +466,17 @@ var businessVocab = []cms.VocabDef{
 		Columns: tempPartsColumns(),
 	},
 	{
+		// **見積明細**（2026-10-01・estimate_doc.go）——顧客へ出す見積書ページの明細。受注明細と同じ名前・同じ型の列
+		// （品番で「前いくらで出したか」を引けるように）。機械が見積計算表から作るので、スラッシュメニューには出さない。
+		Type:        EstimateItemsType,
+		DisplayName: "見積明細",
+		Category:    "業務",
+		Icon:        "📄",
+		Element:     "table",
+		Hidden:      true,
+		Columns:     estimateItemColumns(),
+	},
+	{
 		// **手配不要**（2026-10-01・skip.go）。必要部材表で「不要にする」を押した部材の記録——利用者:「必要部材表は
 		// チェックして発注部材表に入れますが、必要なくなった時に消すのはどうしましょう？」→「不要にする」ボタン。
 		// 在庫で足りる・自社で作る・電話で買った などの理由と日付を残し、必要部材表から引く（発注部材表と同じ数え方）。

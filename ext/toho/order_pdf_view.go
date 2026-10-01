@@ -62,6 +62,11 @@ func showOrderPDFOnPage(user *auth.User, pageID, attachID string) string {
 // 既にマーカーがあれば**参照を差し替え**、無ければ**発注明細の表の直後**に足します。
 // 戻り値の ok は、置けたか（本文が変わったか）です。
 func placeOrderPDFView(body, ref string) (string, bool) {
+	return placePDFView(body, ref, ourOrderItemsType)
+}
+
+// placePDFView は placeOrderPDFView の、明細の表の形式を選べる形です（見積書でも使う・2026-10-01）。
+func placePDFView(body, ref, tableType string) (string, bool) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
 		return body, false
@@ -75,7 +80,7 @@ func placeOrderPDFView(body, ref string) (string, bool) {
 		return htmldoc.Render(nodes), true
 	}
 	// ② 無ければ発注明細の表の直後へ。
-	tables := tablesOfType(nodes, ourOrderItemsType)
+	tables := tablesOfType(nodes, tableType)
 	if len(tables) == 0 {
 		return body, false
 	}

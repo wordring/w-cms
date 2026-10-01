@@ -7616,6 +7616,46 @@ delegateClick([['.estimate-rate-set', async (btn) => {
     location.reload();
 }]]);
 
+// ── 見積書（2026-10-01・ext/toho/estimate_doc.go・estimate_pdf.go）─────────────
+//
+// 利用者:「顧客へ見積書」「見積計算表から」「宛名は会社＋担当者」。見積計算表の足元の「見積書に入れる」で、その表の確定単価・
+// ロット・備考を見積書の見積明細へ写す（新しい見積書か、同じ客先の作りかけへ足す）。見積書の足元の「📄 PDFを作る」で紙を作る。
+delegateClick([['.estimate-add-go', async (btn) => {
+    const form = btn.closest('.estimate-add-form');
+    const say = form && form.querySelector('.estimate-add-say');
+    if (!form) return;
+    const into = valueIn(form, '.estimate-add-into');
+    const client = valueIn(form, '.estimate-add-client');
+    if (!into && !client) { sayIn(say, '⚠ 客先を書いてください'); return; }
+    btn.disabled = true;
+    sayIn(say, '見積書に入れています…');
+    const r = await postJSON('/api/estimate/add', {
+        product: form.getAttribute('data-estimate-product') || '',
+        index: Number(form.getAttribute('data-estimate-index') || 0),
+        into, client,
+        person: valueIn(form, '.estimate-add-person'),
+        signer: valueIn(form, '.estimate-add-signer'),
+    }).catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '入れられませんでした')); return; }
+    if (say) {
+        say.textContent = (r.data.new ? '新しい見積書を作りました: ' : '見積書に足しました: ');
+        const a = document.createElement('a');
+        a.href = '/' + r.data.page_id;
+        a.textContent = '/' + r.data.page_id;
+        say.appendChild(a);
+    }
+}], ['.estimate-pdf-go', async (btn) => {
+    const say = btn.parentElement && btn.parentElement.querySelector('.estimate-pdf-say');
+    btn.disabled = true;
+    sayIn(say, 'PDFを作っています…');
+    const r = await postJSON('/api/estimate-pdf', { page_id: btn.getAttribute('data-estimate-page') || '' })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    location.reload();
+}]]);
+
 // ── 受注残表の印刷（2026-09-21）────────────────────────────────────────
 //
 // ユーザー:「顧客、納期ごとに別の表として分けて、**ワンタッチで印刷**もできると
