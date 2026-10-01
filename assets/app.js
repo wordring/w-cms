@@ -2234,8 +2234,9 @@
             newEl = buildVocabSkeleton(def);
             // かつて受発注は file 容器で包んで挿していたが、容器は廃止した
             // （PDFの取り付け台は形式自身の File 宣言が担う。2026-08-31）。
-        } else if (type === 'h1') {
-            newEl = document.createElement('h1');
+        } else if (type === 'h1' || type === 'h2' || type === 'h3') {
+            // 見出しは H3 まで（2026-10-01 利用者:「見出しはH3程度まで必要と思います」——それまではメニューに H1 だけ）。
+            newEl = document.createElement(type);
             newEl.innerText = '';
         } else if (type === 'p') {
             newEl = document.createElement('p');
@@ -2367,7 +2368,7 @@
         decorateVocabBlocks();
         updateHtmlPreview();
         
-        if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'P')) {
+        if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
             newEl.focus();
         } else if (isEdit && (type === 'section' || type === 'details')) {
             // 見出しの節・折りたたみは、まず名前（見出し・題）を打てるように。

@@ -96,7 +96,8 @@ func init() {
 	RegisterVocab(VocabDef{
 		Type:        FileViewType,
 		DisplayName: "ファイル表示",
-		Category:    "共通",
+		// 基本の分類（2026-10-01 利用者:「ファイル表示は基本グループに入れると便利です」——それまでは「共通」）。
+		Category:    "基本",
 		Icon:        "📄",
 		Element:     "section",
 		// **列はありません**——配線は属性で、中に書くものがないためです。
