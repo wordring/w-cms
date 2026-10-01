@@ -22,6 +22,9 @@ func secureCookies() bool {
 	}
 }
 
+// SecureCookies は Cookie に Secure 属性を付けるかを返します（起動時に有効な設定を1行出すため・2026-10-01）。
+func SecureCookies() bool { return secureCookies() }
+
 // sessionCookie はセッションCookieの型紙です。発行（値と絶対期限）も破棄（空と負の期限）も
 // 同じ属性（Path・HttpOnly・Secure・SameSite）で書かないと、ブラウザが別のCookieとみなして
 // 消せないことがあります。

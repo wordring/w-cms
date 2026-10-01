@@ -149,6 +149,8 @@ func main() {
 	// 書きかけなので止める——黙って平文へ落ちると「HTTPSのつもりで平文だった」が
 	// 起きます（Cookie と Basic の合言葉が素で流れる）。
 	cert, key := tlsCertPath(), tlsKeyPath()
+	// いま何が効いているかを1行（秘密は有無だけ・startup_line.go）。
+	log.Println(effectiveSettingsLine(cert, key))
 	switch {
 	case cert != "" && key != "":
 		log.Println("w-cms 起動: https://localhost:8443")
