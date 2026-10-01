@@ -1,6 +1,9 @@
 package cms
 
 import (
+	"encoding/json"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,5 +68,69 @@ func TestAttachmentOfRefChecksTheReferredPage(t *testing.T) {
 	}
 	if _, _, ok := AttachmentOfRef(&auth.User{Username: "alice"}, FileRef{PageID: "000001", ID: "zzzz"}); ok {
 		t.Error("無い添付を在ると言っています")
+	}
+}
+
+// TestParseFileRefTakesIDAndAddress は、人が貼る2つの形——ID（`ページ番号-添付ID`）と添付の住所——を
+// 同じ参照へ畳み、ページ全体の参照や文法外は断ることを固定します（2026-10-01）。
+func TestParseFileRefTakesIDAndAddress(t *testing.T) {
+	want := FileRef{PageID: "000235", ID: "ab12"}
+	for _, s := range []string{
+		"000235-ab12", " 000235-ab12\n", "000235－ab12",
+		"/000235/ab12.pdf", "https://localhost:8443/000235/ab12.pdf", "https://localhost:8443/000235/ab12.pdf#page=2",
+	} {
+		got, ok := ParseFileRef(s)
+		if !ok || got != want {
+			t.Errorf("%q を畳めません: %v %v", s, got, ok)
+		}
+	}
+	for _, s := range []string{"", "000235", "abc", "/000235", "https://example.com/x.pdf", "00235-ab12"} {
+		if got, ok := ParseFileRef(s); ok {
+			t.Errorf("%q を参照と読んでいます: %v", s, got)
+		}
+	}
+}
+
+// TestFileRefAPIHandlerResolvesForReaders は、`/api/file-ref` が読める人にだけ添付の組を返し、
+// 読めない・無いは同じ 404 にすることを固定します（2026-10-01）。
+func TestFileRefAPIHandlerResolvesForReaders(t *testing.T) {
+	newTestFileDB(t)
+	if err := page.WriteSidecar("000001", page.PageMeta{Owner: "alice", Mode: "300"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncIndex("000001", "<h1>通信記録</h1>"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(page.GetPageDir("000001"), "files")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "c3p7.pdf"), []byte("%PDF-1.4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	call := func(user, ref string) (int, map[string]any) {
+		req := httptest.NewRequest("GET", "/api/file-ref?ref="+url.QueryEscape(ref), nil)
+		req = auth.WithUser(req, &auth.User{Username: user})
+		rr := httptest.NewRecorder()
+		FileRefAPIHandler(rr, req)
+		var got map[string]any
+		_ = json.Unmarshal(rr.Body.Bytes(), &got)
+		return rr.Code, got
+	}
+
+	code, got := call("alice", "000001-c3p7")
+	if code != 200 || got["page_id"] != "000001" || got["file"] != "c3p7.pdf" || got["ref"] != "000001-c3p7" || got["name"] == "" {
+		t.Errorf("読める人に添付の組を返しません: %d %v", code, got)
+	}
+	if code, _ := call("alice", "/000001/c3p7.pdf"); code != 200 {
+		t.Errorf("添付の住所を受けません: %d", code)
+	}
+	codeNoRead, _ := call("bob", "000001-c3p7")
+	codeMissing, _ := call("alice", "000001-zzzz")
+	if codeNoRead != 404 || codeMissing != 404 {
+		t.Errorf("読めない・無いは同じ 404 のはず: 読めない=%d 無い=%d", codeNoRead, codeMissing)
+	}
+	if code, _ := call("alice", "000001"); code != 400 {
+		t.Errorf("ページ全体の参照は 400 のはず: %d", code)
 	}
 }

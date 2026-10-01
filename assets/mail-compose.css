@@ -58,6 +58,30 @@
     overflow-wrap: anywhere;
 }
 
+/* 「🔗 ID で添付を足す」（2026-10-01）——ID の欄とボタンを1行に（狭い画面では折り返す）。 */
+.mail-compose .mc-attach-add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+}
+
+.mail-compose .mc-attach-add .mc-attach-id {
+    flex: 1 1 14rem;
+    min-width: 0;
+}
+
+.mail-compose .mc-attach-add-btn {
+    padding: 0.2rem 0.8rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mail-compose .mc-attach-msg p {
+    margin: 0.2rem 0;
+    font-size: 0.9em;
+}
+
 .mail-compose .mc-bar {
     display: flex;
     flex-wrap: wrap;

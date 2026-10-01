@@ -71,6 +71,7 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/admin/tables", "GET", 401, "列の揃っていない表の一覧（admin）"},
 		{"/api/tables", "GET", 401, "探せる表の一覧"},
 		{"/api/tables/query", "POST", 401, "表を探す"},
+		{"/api/file-ref", "GET", 401, "ファイルの ID を添付の組へ引く"},
 
 		// 認証不要（公開ルート）。401 にはならない。
 		{"/login", "GET", 200, "ログイン画面"},

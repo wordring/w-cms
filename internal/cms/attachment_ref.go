@@ -20,6 +20,7 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -110,4 +111,74 @@ func attachmentFileOf(pageID, attachID string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ── ID から添付を引く口（2026-10-01） ─────────────────────────────────────
+//
+// 利用者:「メール送信にファイル添付が無いです。PDFや画像の表示にIDが在ると思いますが、それをクリック程度で
+// 簡単にクリップボードへコピーできると、ほかの場所にスラッシュメニューから貼りつけたり、メールに添付できるのでは」。
+//
+// ファイル表示・画像の「🔗」で写した ID（`ページ番号-添付ID`）を、メールの送る欄などが添付の組
+// （ページ・保存名・届いたときの名前）へ引くための口です。**どの業務でも「この ID のファイルを渡す」は起きる**
+// のでコアに置きます（開発方針 §0）。読めるかは指されたページで見ます（`AttachmentOfRef`）。
+
+// ParseFileRef は人が貼った文字列を添付の参照へ畳みます——`000235-abcd`（ID）と、添付の住所
+// （`/000235/abcd.pdf`・`https://…/000235/abcd.pdf`）の両方を受けます。ページ全体の参照
+// （`000235`）や文法外は ok=false。
+func ParseFileRef(s string) (FileRef, bool) {
+	s = strings.TrimSpace(s)
+	if p, id, ok := parseRefValue(s); ok && id != "" {
+		return FileRef{PageID: p, ID: id}, true
+	}
+	// 住所の形——スキームとホストは落とし、`#…`・`?…` も落とす。
+	if i := strings.Index(s, "://"); i >= 0 {
+		rest := s[i+3:]
+		j := strings.IndexByte(rest, '/')
+		if j < 0 {
+			return FileRef{}, false
+		}
+		s = rest[j:]
+	}
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+	return fileRefOfURL(s)
+}
+
+// FileRefAPIHandler は `GET /api/file-ref?ref=<ID>` で、添付の組を返します。
+//
+//	{"success":true, "ref":"000235-abcd", "page_id":"000235", "file":"abcd.pdf", "name":"図面.pdf"}
+//
+// **読めない・無いは同じ 404**（匿名の404統一と同じ規律）。
+func FileRefAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	user := auth.CurrentUser(r)
+	if user == nil {
+		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		return
+	}
+	raw := r.URL.Query().Get("ref")
+	ref, ok := ParseFileRef(raw)
+	if !ok {
+		JSONFail(w, http.StatusBadRequest, "「"+strings.TrimSpace(raw)+"」はファイルの ID ではありません（「ページ番号-添付ID」の形です）")
+		return
+	}
+	stored, display, found := AttachmentOfRef(user, ref)
+	if !found {
+		JSONFail(w, http.StatusNotFound, ref.PageID+"-"+ref.ID+" のファイルが見つかりません")
+		return
+	}
+	if display == "" {
+		display = stored
+	}
+	WriteJSON(w, map[string]any{
+		"success": true,
+		"ref":     ref.PageID + "-" + ref.ID,
+		"page_id": ref.PageID,
+		"file":    stored,
+		"name":    display,
+	})
 }

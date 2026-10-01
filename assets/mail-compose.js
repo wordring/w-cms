@@ -146,22 +146,86 @@
 
         // 添付の候補——印の付いたものだけ送る（回すかどうかは人が決める）。
         const picks = [];
-        if ((d.attachments || []).length) {
-            form.appendChild(el('p', 'mc-attach-head', '📎 添付（印を付けたものを送ります）'));
-            const list = el('div', 'mc-attach');
-            d.attachments.forEach((a) => {
-                const lb = el('label', 'mc-attach-item');
-                const cb = el('input');
-                cb.type = 'checkbox';
-                cb.checked = !!a.checked;
-                cb.setAttribute('data-mc-file', a.page_id + '/' + a.file);
-                lb.appendChild(cb);
-                lb.appendChild(document.createTextNode(' ' + (a.name || a.file)));
-                list.appendChild(lb);
-                picks.push({ cb, ref: { page_id: a.page_id, file: a.file, name: a.name || a.file } });
-            });
-            form.appendChild(list);
-        }
+        form.appendChild(el('p', 'mc-attach-head', '📎 添付（印を付けたものを送ります）'));
+        const list = el('div', 'mc-attach');
+        form.appendChild(list);
+        // addPick は候補を1つ足します（同じファイルが既にあれば印を付けるだけ）。足したら true。
+        const addPick = (a, checked) => {
+            const key = a.page_id + '/' + a.file;
+            const had = picks.find((p) => p.key === key);
+            if (had) {
+                had.cb.checked = true;
+                return false;
+            }
+            const lb = el('label', 'mc-attach-item');
+            const cb = el('input');
+            cb.type = 'checkbox';
+            cb.checked = !!checked;
+            cb.setAttribute('data-mc-file', key);
+            lb.appendChild(cb);
+            lb.appendChild(document.createTextNode(' ' + (a.name || a.file)));
+            list.appendChild(lb);
+            picks.push({ key, cb, ref: { page_id: a.page_id, file: a.file, name: a.name || a.file } });
+            return true;
+        };
+        (d.attachments || []).forEach((a) => addPick(a, !!a.checked));
+
+        // 「🔗 ID で添付を足す」（2026-10-01 利用者:「メール送信にファイル添付が無いです。PDFや画像の表示にIDが
+        // 在ると思いますが、それをクリック程度で簡単にクリップボードへコピーできると、…メールに添付できるのでは」）
+        // ——ファイル表示・写真の「🔗」で写した ID（`ページ番号-添付ID`）を貼ると、サーバーが添付の組へ引いて
+        // （GET /api/file-ref・読めるファイルだけ）印を付けて並べる。貼った時点で足す（Enter・ボタンでも）。
+        // いくつでも（空白・「,」区切り）。添付の住所（`/000235/ab12.pdf`）も受ける。
+        const addRow = el('div', 'mc-attach-add');
+        const idInput = el('input', 'mc-input mc-attach-id');
+        idInput.type = 'text';
+        idInput.placeholder = '🔗 ファイルの ID を貼る（例 000235-ab12）';
+        idInput.setAttribute('data-mc-attach-id', '1');
+        const addBtn = el('button', 'mc-attach-add-btn', '添付に足す');
+        addBtn.type = 'button';
+        addRow.appendChild(idInput);
+        addRow.appendChild(addBtn);
+        form.appendChild(addRow);
+        const addMsg = el('div', 'mc-attach-msg');
+        addMsg.setAttribute('data-mc-attach-msg', '1');
+        form.appendChild(addMsg);
+        let adding = false;
+        const addByIDs = async () => {
+            const ids = idInput.value.split(/[\s,、;；]+/).map((x) => x.trim()).filter(Boolean);
+            if (!ids.length || adding) return;
+            adding = true;
+            addBtn.disabled = true;
+            addMsg.textContent = '';
+            const left = [];
+            for (const id of ids) {
+                let r;
+                try {
+                    r = await getJSON('/api/file-ref?ref=' + encodeURIComponent(id));
+                } catch (e) {
+                    add(addMsg, '⚠ ' + id + ': 通信に失敗しました', 'mc-ng');
+                    left.push(id);
+                    continue;
+                }
+                if (!r.ok) {
+                    add(addMsg, '⚠ ' + (r.data.message || id + ' を引けません（' + r.status + '）'), 'mc-ng');
+                    left.push(id);
+                    continue;
+                }
+                const a = { page_id: r.data.page_id, file: r.data.file, name: r.data.name };
+                add(addMsg, (addPick(a, true) ? '✓ 足しました: ' : '✓ 既に並んでいます（印を付けました）: ') + a.name, 'mc-ok');
+            }
+            idInput.value = left.join(' '); // 引けなかったものだけ残す（直して押し直せる）
+            addBtn.disabled = false;
+            adding = false;
+        };
+        addBtn.addEventListener('click', addByIDs);
+        idInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) {
+                e.preventDefault();
+                addByIDs();
+            }
+        });
+        // 貼った時点で足す（値が入るのは paste の後なので、1拍おく）。
+        idInput.addEventListener('paste', () => setTimeout(addByIDs, 0));
         if (d.send_note) add(form, d.send_note, 'mc-note');
 
         const bar = el('div', 'mc-bar');

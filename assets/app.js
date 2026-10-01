@@ -2328,6 +2328,8 @@
 
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
             newEl.focus();
+        } else if (isEdit && openNewFileViewWire(newEl)) {
+            // 空のファイル表示は参照の欄を開いた（openNewFileViewWire）
         } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL' || newEl.tagName === 'SECTION')) {
             focusFirstCell(newEl); // 挿入した骨格の最初のセルから入力を始められるように
         }
@@ -2379,10 +2381,23 @@
             const sel = window.getSelection();
             sel.removeAllRanges();
             sel.addRange(range);
+        } else if (isEdit && openNewFileViewWire(newEl)) {
+            // 空のファイル表示は参照の欄を開いた（openNewFileViewWire）
         } else if (isEdit && (newEl.tagName === 'TABLE' || newEl.tagName === 'DL' || newEl.tagName === 'SECTION')) {
             focusFirstCell(newEl);
         }
         return newEl;
+    }
+
+    // openNewFileViewWire は、挿したばかりの**空のファイル表示**なら参照の欄をすぐ開いて true を返します
+    // （2026-10-01）——ファイル表示・写真の「🔗 ID」で写した ID を貼るだけで済むように（利用者:「…クリップボードへ
+    // コピーできると、ほかの場所にスラッシュメニューから貼りつけたり…」）。
+    function openNewFileViewWire(newEl) {
+        if (newEl.tagName !== 'SECTION' || newEl.getAttribute('data-type') !== FILE_VIEW_TYPE ||
+            newEl.getAttribute(FILE_REF_ATTR)) return false;
+        decorateFileViews();
+        openFileViewPopover(newEl, newEl.querySelector(':scope > .fv-wire'));
+        return true;
     }
 
     function setupDragAndDrop(block) {
@@ -4319,19 +4334,30 @@
         btn.type = 'button';
         btn.className = 'vocab-chrome attach-expand attach-copyref';
         btn.textContent = '🔗 参照';
-        btn.title = ref + ' を写します（別のページで 📄 ファイル表示 を挿し、その札を押して貼ると開きます）';
-        btn.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(ref);
-                notify(ref + ' を写しました。別のページの 📄 ファイル表示 の欄へ貼ってください。',
-                    { type: 'success', duration: 6000, id: 'copyref' });
-            } catch (e) {
-                // **写せない環境でも詰ませません**——値そのものを見せて、手で選べるように。
-                notify('写せませんでした。この値を手で控えてください: ' + ref,
-                    { type: 'warn', duration: 0, id: 'copyref' });
-            }
-        });
+        btn.title = copyRefTitle(ref);
+        btn.addEventListener('click', () => copyFileRef(ref));
         return btn;
+    }
+
+    // ── ファイルの ID を写す（2026-10-01） ───────────────────────────────
+    //
+    // 利用者:「メール送信にファイル添付が無いです。PDFや画像の表示にIDが在ると思いますが、それをクリック程度で
+    // 簡単にクリップボードへコピーできると、ほかの場所にスラッシュメニューから貼りつけたり、メールに添付できるのでは」。
+    // ID（`ページ番号-添付ID`）の貼り先は2つ——📄 ファイル表示の欄（スラッシュメニューで挿して札を押す）と、メールの
+    // 送る欄の「🔗 ID で添付を足す」（mail-compose.js・サーバーの GET /api/file-ref が添付の組へ引く）。
+    // ⚠ const にしない（本文を描く処理がこの行より上で先に走りうる——関数の宣言は先に立つ）。
+    function copyRefTitle(ref) { return ref + ' を写します（メールの「🔗 ID で添付を足す」や、別のページの 📄 ファイル表示 の欄へ貼れます）'; }
+
+    async function copyFileRef(ref) {
+        try {
+            await navigator.clipboard.writeText(ref);
+            notify(ref + ' を写しました。メールの添付や 📄 ファイル表示 の欄へ貼れます。',
+                { type: 'success', duration: 6000, id: 'copyref' });
+        } catch (e) {
+            // **写せない環境でも詰ませません**——値そのものを見せて、手で選べるように。
+            notify('写せませんでした。この値を手で控えてください: ' + ref,
+                { type: 'warn', duration: 0, id: 'copyref' });
+        }
     }
 
     // ── メールの返信と「この記録への返信」ののぞき見（2026-09-03）──────────
@@ -5698,6 +5724,21 @@
         document.querySelectorAll('#w-editor-content section[data-type="file-view"][data-ref]').forEach(sec => {
             const head = sec.querySelector('.file-view-head');
             if (!head || head.querySelector('.local-edit-btn')) return;
+            // 「🔗 ID」——押すと ID を写す（2026-10-01・copyFileRef の前口上）。頭の行（summary）の中なので畳まない。
+            const ref = sec.getAttribute('data-ref');
+            const cp = document.createElement('button');
+            cp.type = 'button';
+            cp.className = 'vocab-chrome local-edit-btn file-ref-copy';
+            cp.contentEditable = 'false';
+            cp.textContent = '🔗 ' + ref;
+            cp.title = copyRefTitle(ref);
+            cp.addEventListener('mousedown', e => e.preventDefault());
+            cp.addEventListener('click', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                copyFileRef(ref);
+            });
+            head.appendChild(cp);
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'vocab-chrome local-edit-btn';
@@ -5774,11 +5815,35 @@
         return btn;
     }
 
+    // 写真の「🔗 ID」（2026-10-01）——📝 の左に並べる。押すと写真の ID（`ページ番号-添付ID`）を写す
+    // （メールの添付・📄 ファイル表示の欄へ貼れる——copyFileRef）。
+    function imgRefButton() {
+        let btn = document.getElementById('w-img-ref');
+        if (btn) return btn;
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'w-img-ref';
+        btn.className = 'img-edit-btn';
+        btn.textContent = '🔗 ID';
+        btn.addEventListener('mousedown', e => e.preventDefault());
+        btn.addEventListener('click', e => {
+            e.preventDefault();
+            const m = imgEditTarget && (imgEditTarget.getAttribute('src') || '').match(IMG_ATTACH_SRC);
+            if (m) copyFileRef(m[1] + '-' + m[2]);
+        });
+        btn.addEventListener('mouseenter', () => clearTimeout(imgEditHideTimer));
+        btn.addEventListener('mouseleave', () => hideImgEditSoon());
+        document.body.appendChild(btn);
+        return btn;
+    }
+
     function hideImgEditSoon() {
         clearTimeout(imgEditHideTimer);
         imgEditHideTimer = setTimeout(() => {
-            const btn = document.getElementById('w-img-edit');
-            if (btn) btn.classList.remove('active');
+            ['w-img-edit', 'w-img-ref'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.classList.remove('active');
+            });
             imgEditTarget = null;
         }, 250);
     }
@@ -5792,13 +5857,21 @@
         clearTimeout(imgEditHideTimer);
         imgEditTarget = img;
         const btn = imgEditButton();
+        const refBtn = imgRefButton();
+        const m = (img.getAttribute('src') || '').match(IMG_ATTACH_SRC);
+        refBtn.title = copyRefTitle(m[1] + '-' + m[2]);
         const r = img.getBoundingClientRect();
         btn.classList.add('active');
+        refBtn.classList.add('active');
         btn.style.top = (window.scrollY + r.top + 6) + 'px';
         btn.style.left = (window.scrollX + r.right - btn.offsetWidth - 6) + 'px';
+        refBtn.style.top = btn.style.top;
+        refBtn.style.left = (window.scrollX + r.right - btn.offsetWidth - refBtn.offsetWidth - 12) + 'px';
     });
     document.addEventListener('mouseout', e => {
-        if (e.target && e.target === imgEditTarget && e.relatedTarget !== document.getElementById('w-img-edit')) {
+        const to = e.relatedTarget;
+        if (e.target && e.target === imgEditTarget &&
+            to !== document.getElementById('w-img-edit') && to !== document.getElementById('w-img-ref')) {
             hideImgEditSoon();
         }
     });

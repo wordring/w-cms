@@ -8,8 +8,10 @@
 //   ③ 下書きのページを開くと、送る欄が書いたとおりに開いている（直して保存し直すと同じページ）
 //   ④ メール一覧に「📝 下書き」で並び、「✉️ 新しいメール」で空の送る欄が開く
 //   ⑤ 送信は口を差し止めて（本物のメールは出さない）、下書きと用件が送られることだけを見る
+//   ⑥ 別のページのファイル表示の「🔗 ID」で写した ID を送る欄に貼ると、添付に印付きで並ぶ（2026-10-01）——
+//      下書きにも残り、送るときに渡る。引けない ID は理由を出して欄に残す
 //
-// 当て先（受信メールの記録）は通信箱の下に自分で作り、最後に下書きと一緒に消します。
+// 当て先（受信メールの記録と、ファイルを置くページ）は通信箱の下に自分で作り、最後に下書きと一緒に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mail-compose.js
 const { chromium } = require('playwright');
 const { login, makePage, deletePage, findMailbox } = require('./lib');
@@ -23,10 +25,11 @@ const check = (label, ok, note = '') => {
 
 (async () => {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 },
+    permissions: ['clipboard-read', 'clipboard-write'] });
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
-  let record = '', draft = '';
+  let record = '', draft = '', doc = '', docFile = '';
   try {
     await login(page, BASE);
     const box = await findMailbox(page);
@@ -81,6 +84,60 @@ const check = (label, ok, note = '') => {
     const quoted = await val('body');
     check('本文に引用が入る', quoted.includes('> E2E の本文です') && quoted.includes('> 2行目'), JSON.stringify(quoted.slice(0, 120)));
 
+    // ⑥ 別のページのファイルを ID で添付に足す（2026-10-01）
+    doc = await makePage(page, '<h1>【E2E】添付の置き場</h1><p>置き場</p>', record);
+    const lock = await page.request.post(BASE + '/api/lock?id=' + doc, { headers: { Origin: BASE } });
+    const lockToken = (await lock.json()).token;
+    const up = await page.request.post(BASE + '/api/upload-pdf', {
+      headers: { Origin: BASE, 'X-Lock-Token': lockToken },
+      multipart: { page_id: doc, pdf_file: { name: 'E2E資料.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') } },
+    });
+    const upID = ((await up.json().catch(() => ({}))).id || '').replace(/\.[^.]+$/, '');
+    await page.evaluate(async (arg) => {
+      await fetch('/api/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page_id: arg.id, html: arg.html, token: arg.token }),
+      });
+    }, { id: doc, token: lockToken, html: '<h1>【E2E】添付の置き場</h1><section data-type="file-view" data-ref="' + doc + '-' + upID + '"></section>' });
+    await page.request.post(BASE + '/api/lock/force?id=' + doc, { headers: { Origin: BASE } });
+    const wantRef = doc + '-' + upID;
+    check('ファイルを置いたページを作れた', !!doc && !!upID, wantRef);
+    await page.goto(BASE + '/' + doc);
+    const copyBtn = page.locator('#w-editor-content section[data-type="file-view"] .file-ref-copy');
+    await copyBtn.waitFor({ timeout: 8000 }).catch(() => {});
+    check('ファイル表示の頭に「🔗 ID」', ((await copyBtn.textContent().catch(() => '')) || '').trim() === '🔗 ' + wantRef,
+      await copyBtn.textContent().catch(() => ''));
+    await copyBtn.click();
+    await page.waitForTimeout(300);
+    const clip = await page.evaluate(() => navigator.clipboard.readText()).catch((e) => 'ERR ' + e);
+    check('押すと ID がクリップボードへ', clip === wantRef, clip);
+    check('押しても畳まれない', await page.locator('#w-editor-content .file-view-fold[open]').count() === 1);
+
+    await page.goto(BASE + '/' + record);
+    await page.locator('#w-editor-content .mail-reply-open').click();
+    const idBox = page.locator('#w-editor-content .mail-compose [data-mc-attach-id]');
+    await idBox.waitFor({ timeout: 8000 });
+    const addMsg = page.locator('#w-editor-content .mail-compose [data-mc-attach-msg]');
+    await idBox.fill('abc');
+    await idBox.press('Enter');
+    await addMsg.locator('.mc-ng').waitFor({ timeout: 8000 }).catch(() => {});
+    check('引けない ID は理由を出し、欄に残す', (await addMsg.textContent()).includes('ID ではありません') && (await idBox.inputValue()) === 'abc',
+      await addMsg.textContent());
+    await idBox.fill('');
+    await idBox.focus();
+    await page.keyboard.press('Control+V'); // 貼った時点で足す
+    const picked = page.locator('#w-editor-content .mail-compose [data-mc-file="' + doc + '/' + upID + '.pdf"]');
+    await picked.waitFor({ timeout: 8000 }).catch(() => {});
+    check('貼ると添付に印付きで並ぶ', (await picked.count()) === 1 && (await picked.isChecked()), await addMsg.textContent());
+    check('並んだ名前は届いたときの名前', ((await picked.locator('xpath=..').textContent()) || '').includes('E2E資料.pdf'));
+    check('足したら欄は空に', (await idBox.inputValue()) === '');
+    await idBox.fill(wantRef);
+    await idBox.press('Enter');
+    await page.waitForTimeout(800);
+    check('同じ ID をもう一度貼っても1つ', (await page.locator('#w-editor-content .mail-compose [data-mc-file="' + doc + '/' + upID + '.pdf"]').count()) === 1,
+      await addMsg.textContent());
+    docFile = upID + '.pdf';
+
     // ② 下書きに保存
     await page.locator('#w-editor-content .mail-compose [data-mc="body"]').fill('E2E の下書きです。\n\n' + quoted);
     await page.locator('#w-editor-content .mail-compose [data-mc-save]').click();
@@ -96,6 +153,8 @@ const check = (label, ok, note = '') => {
     check('件名も戻る', (await val('subject')) === 'RE: 【E2E】見積のお願い');
     check('返信ボタンではなく下書きの欄', await page.locator('#w-editor-content .mail-reply-open').count() === 0);
     check('下書きには対応の札を出さない', await page.locator('#w-editor-content .mail-handled').count() === 0);
+    const keptPick = page.locator('#w-editor-content .mail-compose [data-mc-file="' + doc + '/' + docFile + '"]');
+    check('ID で足した添付が下書きに残る（印付き）', (await keptPick.count()) === 1 && (await keptPick.isChecked()));
     await page.locator('#w-editor-content .mail-compose [data-mc="subject"]').fill('RE: 【E2E】見積のお願い（直した）');
     await page.locator('#w-editor-content .mail-compose [data-mc-save]').click();
     await link.waitFor({ timeout: 8000 });
@@ -136,6 +195,8 @@ const check = (label, ok, note = '') => {
     for (let i = 0; i < 40 && !sent; i++) await page.waitForTimeout(200);
     check('下書きから送ると用件と下書きが渡る', sent && sent.purpose === '返信' && sent.page_id === record && sent.draft_id === draft,
       JSON.stringify(sent && { purpose: sent.purpose, page_id: sent.page_id, draft_id: sent.draft_id }));
+    check('ID で足した添付が送るときに渡る', !!sent && (sent.attachments || []).some((a) => a.page_id === doc && a.file === docFile),
+      JSON.stringify(sent && sent.attachments));
     await page.waitForTimeout(500);
     const told = await page.locator('#w-editor-content .mail-compose [data-mc-result]').textContent();
     check('送れたことと、片付けられなかったことを両方言う', told.includes('送信しました') && told.includes('試験なので'), told);
@@ -145,6 +206,7 @@ const check = (label, ok, note = '') => {
   } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
     if (draft) await deletePage(page, draft).catch(() => {});
+    if (doc) await deletePage(page, doc).catch(() => {});
     if (record) await deletePage(page, record).catch(() => {});
     await browser.close();
     console.log(fails === 0 ? '\n結果: すべて通りました' : '\n結果: ' + fails + ' 件落ちました');

@@ -248,6 +248,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/tables/query", cms.TableQueryAPIHandler)
 	// 添付をローカルのアプリで編集する——鍵を出す（ログインした人・2026-09-29）。
 	protected.HandleFunc("/api/local-edit/start", cms.LocalEditStartAPIHandler)
+	// ファイルの ID（`ページ番号-添付ID`）を添付の組へ引く（メールの添付に足す——2026-10-01）。
+	protected.HandleFunc("/api/file-ref", cms.FileRefAPIHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	for _, route := range cms.PluginRoutes() {
