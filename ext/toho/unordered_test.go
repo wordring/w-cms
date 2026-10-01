@@ -71,6 +71,30 @@ func TestUnorderedSkipsDoneLines(t *testing.T) {
 	}
 }
 
+// TestUnorderedSkipsShippedLines は、**出し終えた受注明細（数量 − 出荷済み ≤ 0）は手配の対象ではない**ことと、
+// 分納の途中の行は残ることを固定します（2026-10-01 利用者:「発注フォルダから、納品済みの品物用の部材を外しましょう」
+// ——受注残表と同じ線引き）。
+func TestUnorderedSkipsShippedLines(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	order := func(shipped string) string {
+		return `<h1>受注</h1><table data-type="`+clientOrderItemsType+`"><tbody>`+
+			`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済み</th><th>状態</th></tr>`+
+			`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>3</td><td>`+shipped+`</td><td>納品済</td></tr>`+
+			`</tbody></table>`
+	}
+	user := &auth.User{Username: "root", IsAdmin: true}
+
+	syncBody(t, 30, order("3"))
+	if list, err := UnorderedItems(user); err != nil || len(list) != 0 {
+		t.Fatalf("⚠ 出し終えた行から必要部材が出ています: %v %#v", err, list)
+	}
+	syncBody(t, 30, order("1"))
+	if list, err := UnorderedItems(user); err != nil || len(list) != 1 || list[0].Remaining != 3 {
+		t.Fatalf("分納の途中（3個のうち1個出した）の行が消えています: %v %#v", err, list)
+	}
+}
+
 // TestUnorderedHidesUnreadableProducts は、⚠ **読めない加工製品は出さない**ことを
 // 固定します。
 //

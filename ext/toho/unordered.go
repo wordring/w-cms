@@ -122,6 +122,13 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 		if strings.TrimSpace(o.Values["status"]) == StatusDone {
 			continue
 		}
+		// ⚠ **出し終えた行（数量 − 出荷済み ≤ 0）も手配の対象ではありません**（2026-10-01 利用者:「発注フォルダから、
+		//    納品済みの品物用の部材を外しましょう」——受注残表と同じ線引き・backlog.go）。それまでは `完了` だけを外していて、
+		//    納め終えた注文の材料が必要部材表に並んでいた（一覧は開くたびに計算し直す鏡なので、外せば次に開いたときから消える）。
+		//    ⚠ 分納の途中（一部だけ出した）は残す——数は受注の数量のまま（買った分は発注明細の側で引く）。
+		if cms.VocabQuantity(o)-cms.VocabNumber(o.Values["shipped"]) <= 0 {
+			continue
+		}
 		pid, ok := productOfOrderRow(db, o)
 		if !ok {
 			continue // ⚠ どの加工製品か分からない行は、買うものも分かりません
