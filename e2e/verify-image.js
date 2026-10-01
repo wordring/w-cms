@@ -44,24 +44,26 @@ const HEIC_HEAD = Buffer.concat([
     const errs = []; const cspViolations = [];
     page.on('pageerror', e => errs.push(String(e)));
     page.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });
+    let pageId = '';
     try {
         await page.goto(BASE + '/login');
         await page.fill('#username', 'a'); await page.fill('#password', 'a');
         await page.click('button[type=submit]');
         await page.waitForURL('**/000000**', { timeout: 8000 });
 
-        const pageId = await gotoNewPage(page, '000000');
+        pageId = await gotoNewPage(page, '000000');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         const pageURL = BASE + '/' + pageId;
 
-        // 1. スラッシュメニューに画像がある
+        // 1. スラッシュメニューに「画像・ファイル」が1つある（2026-10-01 に「🖼 画像」と1つへ——種類は機械が見分ける）
         await openSlashMenu(page);
-        check('スラッシュメニューに画像がある', await page.locator('#w-slash-menu [data-type="image"]').count() === 1);
+        check('スラッシュメニューに「画像・ファイル」が1つ', await page.locator('#w-slash-menu [data-type="attach"]').count() === 1 &&
+            await page.locator('#w-slash-menu [data-type="image"]').count() === 0);
 
         // 2. 選ぶとファイル選択が開き、選んだ画像が本文へ入る
         const [chooser] = await Promise.all([
             page.waitForEvent('filechooser', { timeout: 5000 }),
-            page.click('#w-slash-menu [data-type="image"]'),
+            page.click('#w-slash-menu [data-type="attach"]'),
         ]);
         check('複数枚をまとめて選べる', chooser.isMultiple());
         await chooser.setFiles({ name: 'テスト画像.png', mimeType: 'image/png', buffer: PNG_1x1 });
@@ -157,7 +159,14 @@ const HEIC_HEAD = Buffer.concat([
         if (cspViolations.length) console.error('CSP:', cspViolations.slice(0, 3));
         if (errs.length) console.error('ERRS:', errs.slice(0, 3));
     } catch (e) { check('実行が最後まで到達', false); console.error(e); }
-    finally { await browser.close(); }
+    finally {
+        // 作ったページは消す（2026-10-01 まではトップ直下に残していた）。
+        if (pageId) {
+            await page.request.post(BASE + '/api/lock/force?id=' + pageId, { headers: { 'Origin': BASE } }).catch(() => {});
+            await page.request.post(BASE + '/api/delete-page?id=' + pageId, { headers: { 'Origin': BASE } }).catch(() => {});
+        }
+        await browser.close();
+    }
     console.log(results.join('\n'));
     console.log(failCount === 0 ? `\n✅ 全 ${results.length} 項目 通過` : `\n❌ ${failCount} 件の失敗`);
     process.exit(failCount === 0 ? 0 : 1);

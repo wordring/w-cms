@@ -83,8 +83,9 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
     await fold.locator(':scope > p').first().click();
     await page.waitForSelector('#w-context-toolbar.active #w-ctx-file', { timeout: 4000 });
-    check('書式の帯に 🖼 と 📎 が出る',
-      await page.locator('#w-context-toolbar #w-ctx-image').count() === 1 &&
+    // 入口は 📎 の1つ（2026-10-01——画像か PDF かは機械が見分ける。🖼 はやめた）
+    check('書式の帯に 📎 が1つ（🖼 は無い）',
+      await page.locator('#w-context-toolbar #w-ctx-image').count() === 0 &&
       await page.locator('#w-context-toolbar #w-ctx-file').count() === 1);
     const [chooser] = await Promise.all([
       page.waitForEvent('filechooser'),

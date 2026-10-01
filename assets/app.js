@@ -2342,11 +2342,9 @@
     // **ファイルを選んでアップロードしてから挿す**非同期の操作なので分けます。
     // クリックと Enter の両方から呼ぶので、分岐はここ1箇所に置きます。
     function applySlashChoice(type, block) {
-        if (type === 'image') {
-            pickImageFiles(files => { if (files.length) insertImagesAfter(files, block); });
-            return;
-        }
-        if (type === 'attach') { // 📎 ファイル（2026-09-30・画像は絵・それ以外はファイル表示）
+        // 📎 画像・ファイル（2026-09-30・画像は絵・それ以外はファイル表示）。'image'（🖼 画像）は 10-01 にメニューから
+        // 外して1つにした——種類は機械が見分ける。古い呼び出しが来ても同じ道へ。
+        if (type === 'image' || type === 'attach') {
             pickAnyFiles(files => { if (files.length) insertFilesAfter(files, block); });
             return;
         }
@@ -2684,9 +2682,8 @@
 
     // applyNestedChoice はスラッシュメニューの選択で、中の段落1つを置き換える（画像は後ろへ足す）。
     function applyNestedChoice(type, p) {
-        if (type === 'image' || type === 'attach') {
-            const pick = type === 'image' ? pickImageFiles : pickAnyFiles;
-            pick(async files => {
+        if (type === 'image' || type === 'attach') { // 'image' は 10-01 にメニューから外した（古い呼び出しの受け）
+            pickAnyFiles(async files => {
                 if (!files.length) return;
                 await insertFilesAfter(files, p);
                 if (!p.textContent.trim() && !p.querySelector('img')) p.remove();
@@ -3418,12 +3415,26 @@
     // それまでは道が4つあり、できる形が3通りでした（スラッシュの「画像」＝絵・ドラッグ＝絵か📎リンク・
     // 節と折りたたみの末尾の「＋ ファイル」＝ファイル表示・スラッシュの「ファイル表示」＝空の印）。いまは:
     //
-    //   入口 … 書式の帯の 🖼（画像だけ）・📎（何でも）／スラッシュの「🖼 画像」「📎 ファイル」／ドラッグ
+    //   入口 … 書式の帯の 📎／スラッシュの「📎 画像・ファイル」／ドラッグ／貼り付け（Ctrl+V）——**種類は選ばせない**
+    //          （2026-10-01 利用者:「画像とPDFの違いを自動判定して、画像をはる、PDFをはるというわけかたをなくせませんか」
+    //          ——09-30 は 🖼〔画像だけ〕と 📎・「🖼 画像」と「📎 ファイル」の2つずつだった）
     //   形   … **画像は本文の中の絵**（`<p><img>`）、**それ以外はファイル表示の印**（開く枠・開く案内）
     //   場所 … キャレット（ドラッグは落とした所）のすぐ後ろ。節・折りたたみの中なら中のまま（名前の上なら先頭）
     //
     // ⚠ 節と折りたたみの末尾に出していた「＋ ファイル」（2026-09-28〜29）は消しました——編集モードで節ごとに
     // 並ぶ飾りで、本文に見えるのに消せませんでした。既にある添付を指すのは、スラッシュの「ファイル表示」の札。
+
+    // pastedFileName は貼り付けた画像に名前を付けます——切り取りの画像は「image.png」で届くので、貼った日時の名前に
+    // （`貼り付け 2026-10-01 13.15.42.png`・何枚かなら「-2」…）。名前のあるファイル（エクスプローラーからのコピー）はそのまま。
+    function pastedFileName(f, i, n) {
+        if (f.name && !/^image\.[a-z0-9]+$/i.test(f.name)) return f;
+        const d = new Date();
+        const p2 = x => String(x).padStart(2, '0');
+        const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '');
+        const name = '貼り付け ' + d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' +
+            p2(d.getHours()) + '.' + p2(d.getMinutes()) + '.' + p2(d.getSeconds()) + (n > 1 ? '-' + (i + 1) : '') + '.' + ext;
+        return new File([f], name, { type: f.type });
+    }
 
     // pickAnyFiles はファイル選択を開きます（種類は問わない・複数可）。
     function pickAnyFiles(onPick) {
@@ -3503,18 +3514,16 @@
         return last;
     }
 
-    // addFilesAtCaret は書式の帯の 🖼・📎 から呼ばれます（キャレットの位置を先に決めてから選ばせる——選んでいる間に
-    // キャレットが動いても、押したときの場所へ入る）。
-    function addFilesAtCaret(imagesOnly) {
+    // addFilesAtCaret は書式の帯の 📎 から呼ばれます（キャレットの位置を先に決めてから選ばせる——選んでいる間に
+    // キャレットが動いても、押したときの場所へ入る）。種類は選ばせない（画像は絵・それ以外はファイル表示）。
+    function addFilesAtCaret() {
         const sel = window.getSelection();
         const ref = sel && sel.rangeCount ? fileInsertPointAt(sel.anchorNode) : null;
         if (!ref || !ref.closest('#w-editor-content')) {
             notify('入れる場所へキャレットを置いてから押してください。', { type: 'warn', duration: 5000 });
             return;
         }
-        const done = files => { if (files.length) insertFilesAfter(files, ref); };
-        if (imagesOnly) pickImageFiles(done);
-        else pickAnyFiles(done);
+        pickAnyFiles(files => { if (files.length) insertFilesAfter(files, ref); });
     }
 
     // foldSummaryOf は、編集中の要素が折りたたみの題（summary）の中なら、その summary を返します。
@@ -6998,6 +7007,34 @@
             insertFilesAfter(all, fileInsertPointAt(e.target));
         });
 
+        // 画像を貼り付ける（2026-10-01 利用者:「画像をペーストできるようにしたい」）——画面の切り取り・「画像をコピー」を
+        // Ctrl+V で。ドロップと同じ道（insertFilesAfter）で添付にし、**キャレットのすぐ後ろ**へ置く（節・折りたたみの中なら
+        // 中のまま）。画像の列のセルなら、そのセルへ1枚。
+        // ⚠ **文字があるときは横取りしない**——Excel のセルや Word の文をコピーすると、文字と一緒に「見た目の画像」も
+        //    クリップボードに載るので、画像を優先すると文字の貼り付けが絵に化ける。文字が無いときだけ（画像だけのとき）扱う。
+        // ⚠ 切り取りの画像は名前が「image.png」なので、貼った日時の名前に付け替える（添付の目録・alt に出る名前）。
+        editor.addEventListener('paste', e => {
+            if (!document.body.hasAttribute('edit-mode')) return;
+            const cd = e.clipboardData;
+            if (!cd) return;
+            const files = Array.from(cd.files || []);
+            if (!files.length || (cd.getData('text/plain') || '').trim()) return;
+            const sel = window.getSelection();
+            const at = sel && sel.rangeCount ? sel.anchorNode : null;
+            const el = at && (at.nodeType === 1 ? at : at.parentElement);
+            if (!el || !el.closest('#w-editor-content') || isServerOwned(el)) return;
+            e.preventDefault();
+            const named = files.map((f, i) => pastedFileName(f, i, files.length));
+            const cell = el.closest('#w-editor-content td');
+            const col = cell && resolveCellColumn(cell);
+            const images = named.filter(f => f.type.indexOf('image/') === 0);
+            if (images.length && cell && col && col.type === 'image' && !isServerOwned(cell)) {
+                insertImageIntoCell(cell, images[0]); // 表のセルへは1枚だけ（ドロップと同じ）
+                return;
+            }
+            insertFilesAfter(named, fileInsertPointAt(at));
+        });
+
         // 項目の click / mouseenter は renderSlashMenu が項目を作るたびに配線する
         // （絞り込みのたびに作り直すので、ここで一度だけ配線すると外れてしまう）。
         //
@@ -7246,21 +7283,21 @@
             link.addEventListener('mousedown', e => e.preventDefault());
             link.addEventListener('click', e => { e.preventDefault(); linkSelection(); });
             toolbar.appendChild(link);
-            // 画像・ファイルを足す（2026-09-30 利用者:「BIUリンクの方に画像マークでもあれば良いのでは？」
-            // 「画像を追加するボタンも必要」）——キャレットのすぐ後ろへ（節・折りたたみの中なら中のまま）。
-            // 🖼 は画像だけを選ぶ（スマホではカメラも選べる）、📎 は何でも（画像は絵・それ以外はファイル表示）。
-            [['🖼', 'w-ctx-image', '画像を追加', true],
-             ['📎', 'w-ctx-file', 'ファイルを追加', false]]
-                .forEach(([label, id, title, imagesOnly]) => {
-                    const b = document.createElement('button');
-                    b.id = id;
-                    b.innerText = label;
-                    b.title = title;
-                    b.style.minWidth = '24px';
-                    b.addEventListener('mousedown', e => e.preventDefault()); // キャレットを本文に残す
-                    b.addEventListener('click', e => { e.preventDefault(); addFilesAtCaret(imagesOnly); });
-                    toolbar.appendChild(b);
-                });
+            // 画像・ファイルを足す（2026-09-30 利用者:「BIUリンクの方に画像マークでもあれば良いのでは？」）——キャレットの
+            // すぐ後ろへ（節・折りたたみの中なら中のまま）。⚠ **入口は 📎 の1つ**（2026-10-01 利用者:「画像とPDFの違いを
+            // 自動判定して、画像をはる、PDFをはるというわけかたをなくせませんか」——09-30 は 🖼〔画像だけ〕と 📎 の2つだった）。
+            // 種類は機械が見分ける（画像は絵・それ以外はファイル表示——insertFilesAfter）。スマホでもカメラは選べる（種類を
+            // 絞らない選択でも、端末がカメラを出す）。
+            {
+                const b = document.createElement('button');
+                b.id = 'w-ctx-file';
+                b.innerText = '📎';
+                b.title = '画像・ファイルを追加（画像は絵、PDF などはファイル表示で入ります）';
+                b.style.minWidth = '24px';
+                b.addEventListener('mousedown', e => e.preventDefault()); // キャレットを本文に残す
+                b.addEventListener('click', e => { e.preventDefault(); addFilesAtCaret(); });
+                toolbar.appendChild(b);
+            }
             hasButtons = true;
         }
 
