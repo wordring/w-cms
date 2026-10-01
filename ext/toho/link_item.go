@@ -55,14 +55,6 @@ import (
 	"w-cms/internal/database"
 )
 
-// ProductPagesByCode は、その番号を持つ加工製品ページを返します（タグ名は問わない）。
-//
-// ⚠ **畳んだ一致で引きます**（`PagesByTagLoose`）。`P103-227-6` を `P103 227 6` と
-// 打っても当たる——`code` 型は空白・ハイフン・長音・大小を畳むためです。
-func ProductPagesByCode(value string) []int {
-	return productPagesByCodeDB(database.DB, value)
-}
-
 // fillOurItemNo は受注明細の空いている `弊社品番` を埋めます（埋めた行数を返す）。
 //
 // ⚠ **空いている行だけ**です。人が入れた値は上書きしません——機械の推測より
@@ -154,6 +146,8 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 		return nil
 	}
 	nameCol, hasName := col[ItemNameTag]
+	// 客先＋品番で引く（2026-10-01）——受注ページの発注元。
+	customer := cms.TagValue(rootOf(table), OrderClientTag)
 
 	var notes []string
 	for n, tr := range rows[1:] {
@@ -175,9 +169,18 @@ func orderLinkNotes(db cms.ReadOnlyDB, viewer *auth.User, table *html.Node) []st
 			if code == "" {
 				continue
 			}
-			// ⚠ **1件のときだけ言います。** 2件以上あるなら機械には決められないので、
-			// 中途半端に名指しするとかえって誤らせます。
-			cands := visibleOnly(viewer, productPagesByCodeDB(db, code))
+			cands := visibleOnly(viewer, productPagesForCustomer(db, customer, code))
+			// ⚠ **同じ客先で同じ品番が2枚以上なら警告します**（2026-10-01 利用者:「同じ会社内の同一品番は警告し、
+			// 人間が対応します」）——どれにも結ばない（機械には決められない）。どのページかを並べて、人が直せるように。
+			if len(cands) > 1 {
+				var ids []string
+				for _, c := range cands {
+					ids = append(ids, page.FormatID(c))
+				}
+				notes = append(notes, "⚠ "+label+"の品番 "+code+" の加工製品ページが同じ客先に "+
+					strconv.Itoa(len(cands))+" 枚あります（"+strings.Join(ids, "・")+"）——結べません。どちらかの品番を直してください")
+				continue
+			}
 			if len(cands) != 1 {
 				continue
 			}
@@ -213,14 +216,6 @@ func titleMentions(title, name string) bool {
 	t := cms.NormalizeCode(title)
 	n := cms.NormalizeCode(name)
 	return n != "" && strings.Contains(t, n)
-}
-
-// productPagesByCodeDB は鏡の読み取り専用DBで引きます。
-//
-// ⚠ **鏡には書き込みTxを渡さない**という型の約束があるので（walk.go 冒頭）、
-// 書く側（`ProductPagesByCode`）と口を分けています。見る名前は設定（`product_code_tags`）が正本です。
-func productPagesByCodeDB(db cms.ReadOnlyDB, value string) []int {
-	return pagesByAnyTag(db, ProductCodeTags(), value)
 }
 
 // visibleOnly は閲覧者が読めるページだけを残します（見せ分け・C案）。
@@ -276,10 +271,13 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	if err != nil {
 		return nil
 	}
+	// ⚠ **客先＋品番で引きます**（2026-10-01・product_customer.go——会社が違えば同じ品番がありうる）。
+	idInt, _ := strconv.Atoi(id)
+	customer := cms.PageTagValue(database.DB, idInt, OrderClientTag)
 	var links []orderLink
 	for _, code := range orderItemNosOf(body) {
-		cands := ProductPagesByCode(code)
-		// ⚠ **1件でなければ触りません**（同じ図番で別の品物が実在する——2026-09-20）。
+		cands := productPagesForCustomer(database.DB, customer, code)
+		// ⚠ **1件でなければ触りません**（同じ客先で同じ品番が2枚——人が直す・鏡が ⚠ で知らせる）。
 		if len(cands) != 1 {
 			continue
 		}

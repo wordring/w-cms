@@ -32,7 +32,7 @@ func seedProductPage(t *testing.T, idInt int, title, drawingNo string) {
 	}
 	body := `<h1>` + title + `</h1><section><h2>図面</h2>` +
 		`<dl data-type="tags"><dt>図面番号</dt><dd>` + drawingNo + `</dd>` +
-		`<dt>品番</dt><dd><br/></dd></dl></section>`
+		`<dt>品番</dt><dd><br/></dd><dt>客先</dt><dd>南北スポーツ</dd></dl></section>` // 客先（2026-10-01・客先＋品番で引く）
 	if err := cms.SyncIndex(page.FormatID(idInt), body); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
 	}
@@ -59,9 +59,12 @@ func notesFor(t *testing.T, body string) []string {
 			walk(c)
 		}
 	}
+	// 本文の木（根の下）にする——実際の表示と同じく、表から本文のタグ（発注元）へ辿れるように（2026-10-01）。
+	root := &html.Node{Type: html.ElementNode, Data: "div"}
 	for _, n := range nodes {
-		walk(n)
+		root.AppendChild(n)
 	}
+	walk(root)
 	if found == nil {
 		t.Fatalf("表がありません:\n%s", body)
 	}
@@ -97,8 +100,12 @@ func TestLinkNoteStaysSilentWhenAmbiguous(t *testing.T) {
 	seedProductPage(t, 73, "K120-01-211 留めブラケット", "K120-01-211")
 	seedProductPage(t, 74, "K120-01-211 別の品物", "K120-01-211")
 
-	if notes := notesFor(t, orderBody([2]string{"", "K120-01-211"})); len(notes) != 0 {
-		t.Errorf("⚠ 候補が2件あるのに名指ししています: %v", notes)
+	// ⚠ どちらかを名指しはしない——同じ客先に2枚あると**警告する**（2026-10-01 利用者:「同じ会社内の同一品番は警告し、
+	// 人間が対応します」）。どのページかは並べる。
+	notes := notesFor(t, orderBody([2]string{"", "K120-01-211"}))
+	if len(notes) != 1 || !strings.Contains(notes[0], "同じ客先に 2 枚") || !strings.Contains(notes[0], "000073・000074") ||
+		strings.Contains(notes[0], "と思われます") {
+		t.Errorf("同じ客先の同じ品番を警告していない（または片方を名指ししている）: %v", notes)
 	}
 }
 
@@ -183,9 +190,12 @@ func notesForAs(t *testing.T, viewer *auth.User, body string) []string {
 			walk(c)
 		}
 	}
+	// 本文の木（根の下）にする——実際の表示と同じく、表から本文のタグ（発注元）へ辿れるように（2026-10-01）。
+	root := &html.Node{Type: html.ElementNode, Data: "div"}
 	for _, n := range nodes {
-		walk(n)
+		root.AppendChild(n)
 	}
+	walk(root)
 	if found == nil {
 		t.Fatalf("表がありません")
 	}
@@ -214,7 +224,7 @@ func TestLinkNoteRespectsVisibility(t *testing.T) {
 		no string
 	}{{82, "K120-01-211"}, {83, "K120-01-999"}} {
 		if err := cms.SyncIndex(page.FormatID(c.id),
-			`<h1>x</h1><dl data-type="tags"><dt>図面番号</dt><dd>`+c.no+`</dd></dl>`); err != nil {
+			`<h1>x</h1><dl data-type="tags"><dt>図面番号</dt><dd>`+c.no+`</dd><dt>客先</dt><dd>南北スポーツ</dd></dl>`); err != nil {
 			t.Fatalf("SyncIndex: %v", err)
 		}
 	}
@@ -290,5 +300,40 @@ func TestLinkProductsToOrderStaysSilentWhenAmbiguous(t *testing.T) {
 	seedBody(t, "000092", orderBody([2]string{"", "K120-01-211"}))
 	if n := LinkProductsToOrder(&auth.User{Username: "root", IsAdmin: true}, "000092"); n != 0 {
 		t.Errorf("⚠ 候補が2件あるのに埋めています: %d行", n)
+	}
+}
+
+// TestLinkByCustomerAndCode は、**客先＋品番で引く**ことを固定します（2026-10-01 利用者:「会社が違えば同じ品番が偶然
+// 重なることもあり得ます。そこで、検索時には顧客ID（または顧客名）と品番で特定してください」「会社が違えば同じ品番を
+// 許します」）。
+//
+//   - 同じ品番が2つの客先にあっても、受注の発注元の客先のページに結ぶ
+//   - 発注元の無い受注は結ばない（客先が分からないので品番だけでは特定しない）
+func TestLinkByCustomerAndCode(t *testing.T) {
+	setupExtTest(t, "000097", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	seedProductPage(t, 95, "K120-01-211 留めブラケット", "K120-01-211") // 客先 南北スポーツ
+	if _, err := database.DB.Exec(`INSERT INTO pages (id, title, file_path) VALUES (96, 'K120-01-211 別の会社の品', '')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := cms.SyncIndex("000096", `<h1>K120-01-211 別の会社の品</h1><section><h2>図面</h2><dl data-type="tags">`+
+		`<dt>図面番号</dt><dd>K120-01-211</dd><dt>客先</dt><dd>みなと商店</dd></dl></section>`); err != nil {
+		t.Fatal(err)
+	}
+	user := &auth.User{Username: "root", IsAdmin: true}
+
+	seedBody(t, "000097", orderBody([2]string{"", "K120-01-211"})) // 発注元 南北スポーツ
+	if n := LinkProductsToOrder(user, "000097"); n != 1 {
+		t.Fatalf("同じ品番が別の客先にもあるだけで結べなくなっています: %d", n)
+	}
+	if body, _ := cms.ReadPageBody("000097"); !strings.Contains(body, "<td>000095</td>") {
+		t.Errorf("発注元の客先のページ（000095）に結んでいません:\n%s", body)
+	}
+
+	noClient := strings.Replace(orderBody([2]string{"", "K120-01-211"}),
+		`<dl data-type="tags"><dt>発注元</dt><dd>南北スポーツ</dd></dl>`, "", 1)
+	seedBody(t, "000097", noClient)
+	if n := LinkProductsToOrder(user, "000097"); n != 0 {
+		t.Errorf("発注元の無い受注を品番だけで結んでいます: %d", n)
 	}
 }

@@ -128,8 +128,10 @@ func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduc
 //
 // ⚠ **2枚以上に当たったら引きません**——同じ番号で別の加工製品がありえます
 // （「別の製品の図面番号が一致してしまう場合もあり…」）。**決めるのは人**。
-func productByCode(db cms.ReadOnlyDB, code string) (int, bool) {
-	hits := pagesByAnyTag(db, ProductCodeTags(), code)
+//
+// ⚠ **客先＋品番で引きます**（2026-10-01・product_customer.go——会社が違えば同じ品番がありうる）。
+func productByCode(db cms.ReadOnlyDB, customer, code string) (int, bool) {
+	hits := productPagesForCustomer(db, customer, code)
 	if len(hits) != 1 {
 		return 0, false
 	}

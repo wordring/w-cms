@@ -46,5 +46,6 @@ func productOfOrderRow(db cms.ReadOnlyDB, r cms.VocabRow) (int, bool) {
 	if id, ok := page.NormalizeID(strings.TrimSpace(r.Values["our-item-id"])); ok && id != "" {
 		return pageNum(id), true
 	}
-	return productByCode(db, strings.TrimSpace(r.Values["item-id"]))
+	// 客先＋品番で引く（2026-10-01・product_customer.go）——受注ページの発注元。
+	return productByCode(db, cms.PageTagValue(db, r.PageID, OrderClientTag), strings.TrimSpace(r.Values["item-id"]))
 }

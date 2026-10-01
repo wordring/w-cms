@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"w-cms/internal/cms"
+	"w-cms/internal/database"
 )
 
 // **品番から製造製品ページを特定し、受注明細の `弊社品番` を埋める**（2026-09-21）。
@@ -31,7 +32,8 @@ func withProductCodeTags(t *testing.T, names ...string) {
 
 // orderBody は受注明細を1つ持つ本文を組みます（`弊社品番` は空）。
 func orderBody(rows ...[2]string) string {
-	b := `<h1>受注 A-1</h1><table data-type="` + clientOrderItemsType + `">` +
+	// 発注元を持つ（2026-10-01——客先＋品番で引くので、客先の分からない受注は結ばない）。
+	b := `<h1>受注 A-1</h1><dl data-type="tags"><dt>発注元</dt><dd>南北スポーツ</dd></dl><table data-type="` + clientOrderItemsType + `">` +
 		`<caption>受注明細</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>`
 	for _, r := range rows {
@@ -160,7 +162,7 @@ func TestFillOurItemNoLeavesOtherTablesAlone(t *testing.T) {
 // **Goを書き直さないと結べません**（「運用者が語彙を足せる」要件・2026-08-26）。
 func TestProductCodeTagsAreDeclared(t *testing.T) {
 	withProductCodeTags(t) // 空にする
-	if got := ProductPagesByCode("K120-01-211"); len(got) != 0 {
+	if got := productPagesForCustomer(database.DB, "南北スポーツ", "K120-01-211"); len(got) != 0 {
 		t.Errorf("タグ名が1つも無いのに引いています: %v", got)
 	}
 }
