@@ -63,10 +63,6 @@ type UnorderedItem struct {
 // UnorderedItems は、まだ手配していない購入品を受注横断で集めます（納期順）。
 func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	db := database.DB
-	orders, err := cms.VocabRowsOfType(db, clientOrderItemsType)
-	if err != nil {
-		return nil, err
-	}
 	prices, err := latestMaterialPrices(db, user)
 	if err != nil {
 		prices = map[string]materialPrice{}
@@ -74,95 +70,37 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	// ⚠ **臨時部材表の行も並べます**（2026-09-25・temp_parts.go）——計算の鎖に乗らない
 	//    材料は、人が書いたこの表が「必要」の記録です。⚠ **受注明細が0件でも出します**。
 	temp := TempPartItems(user, prices)
-	if len(orders) == 0 {
-		return temp, nil
-	}
 	canView := viewCheck(user)
-	ordered, err := orderedByProduct(db, canView)
+	// 手配の対象になる受注の行（受注残表と同じ線引き——移行中・完了・出し終えた行は入れない・2026-10-01 に出し終えた行も）。
+	open, err := openOrderRows(db, canView)
 	if err != nil {
 		return nil, err
 	}
-	// ⚠ **発注部材表に入れた分は、もう一覧に出しません**（2026-09-22 ユーザーの構想:
-	//    「表作成ボタンをクリックすると発注部材表が開き、**すると元の表からはそれらの
-	//    行が消えます**」）。
-	//    ⚠ **1段目の実装はこれを落としていて、二重に出ていました**——実データで確認。
-	//    **同じものを2回発注しかねません。**
-	drafted := draftedQty(db, canView)
-
-	// ページのタグ（発注元・納期）は1ページにつき1度だけ読む。
-	type head struct {
-		client, due string
-		migrating   bool
+	if len(open) == 0 {
+		return temp, nil
 	}
-	heads := map[int]head{}
-	headOf := func(id int) head {
-		if h, ok := heads[id]; ok {
-			return h
-		}
-		tags, err := cms.TagsOfPage(db, id)
-		_, mig := tags[MigratingTag]
-		h := head{client: cms.FirstTag(tags, OrderClientTag), due: cms.FirstTag(tags, DueDateTag),
-			migrating: mig || err != nil} // 読めないときも止める側（isMigrating と同じ）
-		heads[id] = h
-		return h
-	}
+	// ⚠ **手当て（発注明細・発注部材表・手配不要）は受注ごとに当てます**（2026-10-01・procure_ledger.go）。それまでは
+	//    加工製品ごとの通算を、どの受注の行からも引いていました（2つの受注が同時に残ると両方0に見える・納め終えた
+	//    注文のために買った分が次の注文を埋める）。⚠ **発注部材表に入れた分も引きます**（2026-09-22——引かないと
+	//    二重に出て、同じものを2回発注しかねません）。
+	ledger := buildLedger(db, canView, open)
 
 	var out []UnorderedItem
-	for _, o := range orders {
-		if !canView(o.PageID) {
-			continue
-		}
-		// ⚠ **「移行中」の受注ページの行は数えません**（2026-09-29・受注残と同じ線引き）——
-		//    ワンノートとメールから移した過去の注文は、確かめるまで「買うもの」にしない
-		//    （納め済みの注文の材料が必要部材表に並ぶと、同じものを二度買います）。
-		if headOf(o.PageID).migrating {
-			continue
-		}
-		// ⚠ **完了した行は手配の対象ではありません**（受注残表と同じ線引き）。
-		if strings.TrimSpace(o.Values["status"]) == StatusDone {
-			continue
-		}
-		// ⚠ **出し終えた行（数量 − 出荷済み ≤ 0）も手配の対象ではありません**（2026-10-01 利用者:「発注フォルダから、
-		//    納品済みの品物用の部材を外しましょう」——受注残表と同じ線引き・backlog.go）。それまでは `完了` だけを外していて、
-		//    納め終えた注文の材料が必要部材表に並んでいた（一覧は開くたびに計算し直す鏡なので、外せば次に開いたときから消える）。
-		//    ⚠ 分納の途中（一部だけ出した）は残す——数は受注の数量のまま（買った分は発注明細の側で引く）。
-		if cms.VocabQuantity(o)-cms.VocabNumber(o.Values["shipped"]) <= 0 {
-			continue
-		}
-		pid, ok := productOfOrderRow(db, o)
-		if !ok {
-			continue // ⚠ どの加工製品か分からない行は、買うものも分かりません
-		}
-		if !canView(pid) {
-			continue
-		}
-		h := headOf(o.PageID)
-		due := strings.TrimSpace(o.Values["due"])
-		if due == "" {
-			due = h.due // 行に無ければページの納期（受注残表と同じ順）
-		}
-		mig := isMigrating(db, pid)
-		machine := machineOf(db, pid)
-		for _, it := range procurementItemsOf(db, pid, cms.VocabQuantity(o), ordered) {
-			if it.Remaining <= 0 {
-				continue // 手配済み
-			}
-			// ⚠ **発注部材表に入っている分を引きます。** 引いて 0 以下なら、
-			//    **もう人が「買う」と決めた**ので一覧からは消えます
-			//    ——戻したければ、発注部材表の行を「戻す」で外します。
-			if d := drafted[procKey(pid, it.Key)]; d > 0 {
-				it.Remaining -= d
-				if it.Remaining <= 0 {
-					continue
-				}
+	for _, o := range open {
+		mig := isMigrating(db, o.pid)
+		machine := machineOf(db, o.pid)
+		for _, it := range ledger.needs[refOf(o.row)] {
+			rem := it.Required - ledger.coverOf(o.row, it.Key).total()
+			if rem <= 0 {
+				continue // 手配済み（発注した・発注部材表に入れた・不要にした・在庫を回した）
 			}
 			u := UnorderedItem{
-				OrderPageID: o.PageID, OrderTitle: cms.PageTitleByID(o.PageID),
-				Client: h.client, Due: due,
-				ProductPageID: pid, ProductTitle: cms.PageTitleByID(pid), Machine: machine,
-				Name: it.Name, Kind: it.Kind, Remaining: it.Remaining, Migrating: mig, Values: it.Values,
+				OrderPageID: o.row.PageID, OrderTitle: cms.PageTitleByID(o.row.PageID),
+				Client: o.client, Due: o.due,
+				ProductPageID: o.pid, ProductTitle: cms.PageTitleByID(o.pid), Machine: machine,
+				Name: it.Name, Kind: it.Kind, Remaining: rem, Migrating: mig, Values: it.Values,
 			}
-			fillUnorderedMaterial(db, pid, &u, prices)
+			fillUnorderedMaterial(db, o.pid, &u, prices)
 			out = append(out, u)
 		}
 	}

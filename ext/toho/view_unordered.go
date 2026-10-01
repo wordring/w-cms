@@ -122,7 +122,8 @@ func unorderedRowAttrs(u UnorderedItem) string {
 	// ⚠ **運ぶ値は種類の columns から組んだもの**（`u.Values`・2026-09-28）——列の名前と属性の
 	//    対応は `orderLineAttrs`（order_kinds.go）。それまでは材料の形の固定の組で、外注加工の
 	//    番号・加工内容・表面、購入部品の仕様が落ちていました。
-	out := at("product", page.FormatID(u.ProductPageID)) +
+	// `for-order`＝どの受注のための部材か（2026-10-01・受注ごとに数える——procure_ledger.go）。
+	out := at("product", page.FormatID(u.ProductPageID)) + at("for-order", page.FormatID(u.OrderPageID)) +
 		at("qty", strconv.Itoa(u.Remaining)) + at("cost", unorderedCostValue(u))
 	for _, a := range orderLineAttrs {
 		out += at(a.Attr, u.Values[a.Label])
@@ -165,6 +166,11 @@ func unorderedFormHTML(user *auth.User, pageIDInt int) string {
 		draftTargetHTML(pageIDInt) +
 		`<button type="button" class="matsearch-go" data-unorder-draft="1">` +
 		`発注部材表へ入れる</button>` +
+		// 「不要にする」（2026-10-01・skip.go）——在庫で足りる・自社で作る など、この受注のぶんはもう買わない部材を
+		// 手配不要の表へ移す（理由は任意）。
+		`<span class="unorder-skip"><input type="text" class="matsearch-input" data-unorder="reason"` +
+		` placeholder="不要の理由（在庫あり など）"/>` +
+		`<button type="button" class="matsearch-go unorder-skip-go" data-unorder-skip="1">🚫 不要にする</button></span>` +
 		`</div><div class="unorder-result" data-unorder-result="1"></div>`
 }
 

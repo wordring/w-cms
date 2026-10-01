@@ -466,6 +466,19 @@ var businessVocab = []cms.VocabDef{
 		Columns: tempPartsColumns(),
 	},
 	{
+		// **手配不要**（2026-10-01・skip.go）。必要部材表で「不要にする」を押した部材の記録——利用者:「必要部材表は
+		// チェックして発注部材表に入れますが、必要なくなった時に消すのはどうしましょう？」→「不要にする」ボタン。
+		// 在庫で足りる・自社で作る・電話で買った などの理由と日付を残し、必要部材表から引く（発注部材表と同じ数え方）。
+		// 機械が作る表なのでスラッシュメニューには出さない。
+		Type:        SkipType,
+		DisplayName: "手配不要",
+		Category:    "業務",
+		Icon:        "🚫",
+		Element:     "table",
+		Hidden:      true,
+		Columns:     skipColumns(),
+	},
+	{
 		// **発注書へのリンク**（2026-09-22）。発注部材表が発注書になったあと、
 		// 発注ページに残る1行です（ユーザー:「**発注書ページが出来て、実際に発注
 		// するまで発注ページに発注書ページへのリンクが残れば良いのでは？**」）。
@@ -596,6 +609,10 @@ func unitChoices() []string { return []string{"個", "セット", "本", "枚", 
 func orderItemColumns() []cms.VocabColumn {
 	return []cms.VocabColumn{
 		{Field: "our-item-id", Label: "弊社品番", Type: cms.ColRef},
+		// ⚠ **受注（どの受注ページのための部材か）は 2026-10-01 に足しました**（procure_ledger.go）——利用者:「受注ごとに
+		//    数える」。必要部材表から運ぶときに入る。無い行（それまでの行・手で書いた行）は通算の手当てとして数える。
+		//    紙には刷らない（order_print_columns に無い）。臨時部材表には入れない（tempPartsColumns）。
+		{Field: "for-order", Label: "受注", Type: cms.ColRef},
 		// ⚠ **種類・番号・加工内容・仕様・支給は 2026-09-28 に足しました**（【考察】部材の種類ごとの
 		//    発注項目 §3・§9）——材料・外注加工・購入部品・支給部品で要る項目が違うので、表は
 		//    **すべての項目の集合**（【要求】発注フォルダ）。紙に刷るかは設定（order_print_columns）。

@@ -39,6 +39,8 @@ import (
 // ourOrderLine は発注書へ入れる1行です（画面から送られてくる形）。
 type ourOrderLine struct {
 	ProductID string `json:"product_id"` // 弊社品番（加工製品ページ）
+	// ForOrder は「どの受注ページのための部材か」（2026-10-01・procure_ledger.go——受注ごとに数える）。
+	ForOrder string `json:"for_order,omitempty"`
 	// ItemID・Color は `品番`・`表面`（2026-09-25 に足した）。⚠ それまで運んでいなかった
 	// ので、**発注部材表から発注書を作ると品番と表面が落ちていました**（塗装・鍍金の
 	// 発注書で「緑」が消える）。

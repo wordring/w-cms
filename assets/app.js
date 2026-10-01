@@ -7878,6 +7878,8 @@ delegateClick([['.backlog-print', (btn) => {
         //    臨時部材表からその行を消します（移す・引き算しない）。
         return {
             product_id: d.product || '',
+            // どの受注のための部材か（2026-10-01・受注ごとに数える——サーバーの procure_ledger.go）。
+            for_order: d.forOrder || '',
             item_id: d.itemid || '',
             material: d.material || '',
             shape: d.shape || '',
@@ -7968,7 +7970,7 @@ delegateClick([['.backlog-print', (btn) => {
             // ⚠ **品番・表面も運びます**（2026-09-25）——それまで送っておらず、
             //    発注書で**品番と表面（塗装の色・鍍金）が落ちていました**。
             const ln = {
-                product_id: at(cells, '弊社品番'), item_id: at(cells, '品番'),
+                product_id: at(cells, '弊社品番'), for_order: at(cells, '受注'), item_id: at(cells, '品番'),
                 item_name: at(cells, '品名'),
                 material: at(cells, '材質'), shape: at(cells, '形状'), size: at(cells, '寸法'),
                 color: at(cells, '表面'),
@@ -8033,10 +8035,67 @@ delegateClick([['.backlog-print', (btn) => {
 
     // ⚠ **document へ委譲します**——ビューはサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
+    // 必要部材表から「不要にする」（2026-10-01・サーバーの skip.go）——選んだ行を手配不要の表へ。理由は任意。
+    async function skip(btn) {
+        const form = btn.closest('.unorder-form');
+        const root = form && form.parentElement;
+        const box = root ? root.querySelector('[data-unorder-result]') : null;
+        const table = root ? root.querySelector('.unorder-table') : null;
+        if (!form || !box) return;
+        const picked = table
+            ? [...table.querySelectorAll('.unorder-check')].filter((c) => c.checked).map((c) => lineOf(c.closest('tr')))
+            : [];
+        if (picked.length === 0) {
+            sayIn(box, '⚠ 不要にする行を選んでください', 'proc-why-ng');
+            return;
+        }
+        btn.disabled = true;
+        sayIn(box, '手配不要の表へ移しています…');
+        try {
+            const r = await postJSON('/api/our-order/skip', {
+                page_id: form.getAttribute('data-unorder-page') || '',
+                lines: picked,
+                reason: valueIn(form, '[data-unorder="reason"]'),
+            });
+            if (!r.ok) {
+                sayIn(box, '⚠ ' + (r.data.message || '不要にできませんでした'), 'proc-why-ng');
+                return;
+            }
+            sayIn(box, r.data.rows + '行を手配不要の表へ移しました。読み直しています…');
+            location.reload();
+        } catch (err) {
+            sayIn(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // 手配不要の表から1行を外す＝必要部材表へ戻す（2026-10-01）。
+    async function removeSkipRow(btn) {
+        btn.disabled = true;
+        try {
+            const r = await postJSON('/api/our-order/skip/remove', {
+                page_id: btn.getAttribute('data-skip-page') || '',
+                row: Number(btn.getAttribute('data-skip-row') || 0),
+            });
+            if (!r.ok) {
+                alert('⚠ ' + (r.data.message || '戻せませんでした'));
+                btn.disabled = false;
+                return;
+            }
+            location.reload();
+        } catch (err) {
+            alert('⚠ 通信に失敗しました: ' + err);
+            btn.disabled = false;
+        }
+    }
+
     delegateClick([
         ['[data-draft-go]', create],
         ['[data-unorder-draft]', draft],
+        ['[data-unorder-skip]', skip],
         ['.draft-row-back', removeDraftRow],
+        ['.skip-row-back', removeSkipRow],
     ]);
 
     // 発注部材表から1行を外す＝**未手配の一覧へ戻す**（2026-09-22）。

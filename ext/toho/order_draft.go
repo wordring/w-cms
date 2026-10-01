@@ -128,11 +128,14 @@ func appendToDraft(body, into string, lines []ourOrderLine) (out string, added i
 	if tbody == nil {
 		tbody = tables[n-1]
 	}
+	// ⚠ **既にある表の見出しに合わせて**列を並べます（2026-10-01）——列を足した日（受注）より前に作った表へ足すと、
+	//    宣言の並びで組んだ行は見出しとずれます。見出しに無い列の値は入れません。
+	fields := fieldsOfHeader(tables[n-1], OrderDraftType)
 	for _, ln := range lines {
 		tr := &html.Node{Type: html.ElementNode, Data: "tr"}
-		for _, c := range columnsOf(OrderDraftType) {
+		for _, field := range fields {
 			td := &html.Node{Type: html.ElementNode, Data: "td"}
-			if v := orderLineValue(ln, c.Field); v != "" {
+			if v := orderLineValue(ln, field); v != "" {
 				td.AppendChild(&html.Node{Type: html.TextNode, Data: v})
 			}
 			tr.AppendChild(td)
@@ -141,6 +144,29 @@ func appendToDraft(body, into string, lines []ourOrderLine) (out string, added i
 		added++
 	}
 	return htmldoc.Render(nodes), added, true
+}
+
+// fieldsOfHeader は表の見出し行の列を、宣言の機械キー（Field）で返します（宣言に無い見出しは空——値を入れない）。
+// 見出し行が無ければ宣言の並びです。
+func fieldsOfHeader(table *html.Node, vocabType string) []string {
+	byLabel := map[string]string{}
+	var all []string
+	for _, c := range columnsOf(vocabType) {
+		byLabel[c.Label] = c.Field
+		all = append(all, c.Field)
+	}
+	rows := rowsOf(table)
+	if len(rows) == 0 {
+		return all
+	}
+	var out []string
+	for _, h := range cellTexts(rows[0]) {
+		out = append(out, byLabel[strings.TrimSpace(h)])
+	}
+	if len(out) == 0 {
+		return all
+	}
+	return out
 }
 
 // CountOrderDrafts はページの本文にある発注部材表の数を返します。
@@ -256,6 +282,8 @@ func orderLineValue(ln ourOrderLine, field string) string {
 	switch field {
 	case "our-item-id":
 		return strings.TrimSpace(ln.ProductID)
+	case "for-order":
+		return strings.TrimSpace(ln.ForOrder)
 	case "item-id":
 		return strings.TrimSpace(ln.ItemID)
 	case "kind":
@@ -373,41 +401,6 @@ func replaceDraftTable(body string, n int, replacementHTML string) (string, bool
 	// ⚠ トップレベルの表には `Parent` が無い（`spliceNodes` がその罠を引き受ける）。
 	// 節で包まれていれば節ごと差し替える（`draftBoxOf`）。
 	return spliceNodes(nodes, draftBoxOf(tables[n-1]), repl, false)
-}
-
-// draftedQty は「**いま発注部材表に入っている数**」を、加工製品×購入品ごとに返します。
-//
-// ユーザー（2026-09-22）:「未発注の表のチェックボックスをクリックして…表作成ボタンを
-// クリックすると発注部材表が開き、**すると元の表からはそれらの行が消えます**」
-//
-// ⚠ **1段目の実装はこれを落としていました**——発注部材表に入れても未手配の一覧に
-// 残り、**二重に出ていました**（実データで確認・同日）。**同じものを2回発注しかねません。**
-//
-// ⚠ **鍵は `orderedByProduct` と同じ**（`procKey`）です——発注書と発注部材表で
-// 別の束ね方をすると、**引き算が合わなくなります**。
-func draftedQty(db cms.ReadOnlyDB, canView func(int) bool) map[string]int {
-	rows, err := cms.VocabRowsOfType(db, OrderDraftType)
-	if err != nil {
-		return map[string]int{}
-	}
-	out := map[string]int{}
-	for _, r := range rows {
-		if !canView(r.PageID) {
-			continue
-		}
-		productID, ok := page.NormalizeID(strings.TrimSpace(r.Values["our-item-id"]))
-		if !ok || productID == "" {
-			continue // ⚠ 弊社品番の無い行（消耗品など）は、そもそも一覧に出ません
-		}
-		// ⚠ 鍵は発注書・必要部材表と同じ関数（`orderRowKey`・2026-09-28 から種類ごと）。
-		def, _ := cms.VocabDefByType(OrderDraftType)
-		key := orderRowKey(def, r)
-		if key == "" {
-			continue
-		}
-		out[procKey(pageNum(productID), key)] += cms.VocabQuantity(r)
-	}
-	return out
 }
 
 // RemoveOrderDraftRowAPIHandler は POST /api/our-order/draft/remove です。

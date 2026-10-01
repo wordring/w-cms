@@ -52,7 +52,7 @@ const tempPartsClient = "臨時部材"
 func tempPartsColumns() []cms.VocabColumn {
 	var out []cms.VocabColumn
 	for _, c := range orderItemColumns() {
-		if c.Field == "our-item-id" || c.Field == "status" {
+		if c.Field == "our-item-id" || c.Field == "status" || c.Field == "for-order" {
 			continue
 		}
 		// ⚠ 種類・番号・加工内容・仕様・支給（2026-09-28 に発注の列へ足した）も入れません——
@@ -110,7 +110,7 @@ func lineOfRow(head, tr *html.Node) ourOrderLine {
 		return ""
 	}
 	return ourOrderLine{
-		ProductID: at("弊社品番"), ItemID: at("品番"), ItemName: at("品名"),
+		ProductID: at("弊社品番"), ForOrder: at("受注"), ItemID: at("品番"), ItemName: at("品名"),
 		Material: at("材質"), Shape: at("形状"), Size: at("寸法"), Color: at("表面"),
 		Quantity: at("数量"), Unit: at("単位"), Cost: at("単価"), Note: at("備考"),
 	}

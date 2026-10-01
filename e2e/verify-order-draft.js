@@ -23,7 +23,8 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 //    「2枚に当たるので結ばない」（`productByCode`）で未手配に出なくなります。
 const CODE = 'E2E-DRAFT-' + Date.now().toString(36).toUpperCase();
 const PRODUCT_BODY = '<h1>【E2E】加工製品（発注部材表）</h1>' +
-  '<dl data-type="tags"><dt>部品番号</dt><dd>' + CODE + '</dd></dl>' +
+  // 客先＋品番で引く（2026-10-01）——受注の発注元と同じ客先が要る。
+  '<dl data-type="tags"><dt>部品番号</dt><dd>' + CODE + '</dd><dt>客先</dt><dd>テスト商店</dd></dl>' +
   '<table><caption>材料</caption><tbody>' +
   '<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th><th>備考</th></tr>' +
   '<tr><td>E2E-DRAFT-A</td><td>板</td><td>t3.2</td><td>2</td><td></td></tr>' +

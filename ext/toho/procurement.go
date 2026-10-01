@@ -38,6 +38,8 @@ type ProcurementOrder struct {
 	PageID int    `json:"page_id"`
 	Title  string `json:"title"`
 	Qty    int    `json:"qty"`
+	// Stock は「ほかの受注のために買った余り（在庫）を回した」印です（2026-10-01・procure_ledger.go）。
+	Stock bool `json:"stock,omitempty"`
 }
 
 // ProcurementItem は加工製品1種類に要る購入品1行です。
@@ -47,6 +49,8 @@ type ProcurementItem struct {
 	Per       int                `json:"per"`  // 一台あたり
 	Required  int                `json:"required"`
 	Ordered   int                `json:"ordered"`
+	Drafted   int                `json:"drafted,omitempty"` // 発注部材表に入れた分（2026-10-01）
+	Skipped   int                `json:"skipped,omitempty"` // 手配不要にした分（2026-10-01）
 	Remaining int                `json:"remaining"`
 	Orders    []ProcurementOrder `json:"orders"`
 	// Key は束ねる鍵（材料なら3つ組、購入部品なら畳んだ品名）です。
@@ -82,10 +86,12 @@ func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduc
 	if len(items) == 0 {
 		return nil, nil
 	}
-	ordered, err := orderedByProduct(db, canView)
+	// ⚠ **手当ては受注ごとに数えます**（2026-10-01・procure_ledger.go）——必要部材表と同じ帳簿を通す。
+	open, err := openOrderRows(db, canView)
 	if err != nil {
 		return nil, err
 	}
+	ledger := buildLedger(db, canView, open)
 
 	var out []ProcurementProduct
 	for _, it := range items {
@@ -108,7 +114,20 @@ func ProcurementByProduct(user *auth.User, orderPageID int) ([]ProcurementProduc
 			continue
 		}
 		p.Migrating = isMigrating(db, idInt)
-		p.Items = procurementItemsOf(db, idInt, p.Qty, ordered)
+		for _, need := range productNeeds(db, idInt, p.Qty) {
+			var c coverage
+			if ledger.isOpen(it) {
+				c = ledger.coverOf(it, need.Key)
+			} else {
+				c = ledger.specificCover(orderPageID, idInt, need.Key) // 閉じた受注——その受注のための分だけ見せる
+			}
+			need.Ordered, need.Drafted, need.Skipped, need.Orders = c.ordered, c.drafted, c.skipped, c.orders
+			need.Remaining = need.Required - c.total()
+			if need.Remaining < 0 {
+				need.Remaining = 0
+			}
+			p.Items = append(p.Items, need)
+		}
 		if len(p.Items) == 0 && p.Why == "" {
 			p.Why = "（この加工製品に購入品の登録がありません）"
 		}
@@ -139,7 +158,7 @@ func productByCode(db cms.ReadOnlyDB, customer, code, name string) (int, bool) {
 	return hits[0], true
 }
 
-// procurementItemsOf は加工製品1ページぶんの購入品を、必要数・発注済数つきで返します。
+// productNeeds は加工製品1ページぶんの購入品を、必要数つきで返します（手当ては procure_ledger.go の帳簿が当てる）。
 //
 // ⚠ **どの表から何を運ぶかは設定の種類が決めます**（2026-09-28・`extensions.toho.order_kinds`・
 // order_kinds.go）。それまでは材料と購入部品（09-27 夕から外注加工も）をコードで1つずつ読んでいて、
@@ -149,8 +168,7 @@ func productByCode(db cms.ReadOnlyDB, customer, code, name string) (int, bool) {
 // ⚠ **区分が「廃版」の行は数えません**（2026-09-27 利用者:「廃版は含まなくてよいと思います」）
 // ——廃版は図面の改定で使わなくなった構成部品で、行を残すのは外注に出した紙の社内コードの
 // 指し先だから（drawing_mirror.go）。買う物ではありません。
-func procurementItemsOf(db cms.ReadOnlyDB, productID, orderQty int,
-	ordered map[string][]ProcurementOrder) []ProcurementItem {
+func productNeeds(db cms.ReadOnlyDB, productID, orderQty int) []ProcurementItem {
 	var out []ProcurementItem
 	var tags map[string][]string // 加工製品ページのタグ（`@品番` などで要るときだけ読む）
 	for _, k := range OrderKinds() {
@@ -175,16 +193,8 @@ func procurementItemsOf(db cms.ReadOnlyDB, productID, orderQty int,
 				continue // 鍵の列が全部空の行（書きかけ）は数えない
 			}
 			per := k.perUnit(def, m)
-			item := ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: per, Key: key,
-				Values: vals, Required: per * orderQty, Orders: ordered[procKey(productID, key)]}
-			for _, o := range item.Orders {
-				item.Ordered += o.Qty
-			}
-			item.Remaining = item.Required - item.Ordered
-			if item.Remaining < 0 {
-				item.Remaining = 0
-			}
-			out = append(out, item)
+			out = append(out, ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: per, Key: key,
+				Values: vals, Required: per * orderQty, Remaining: per * orderQty})
 		}
 	}
 	return out
@@ -198,46 +208,6 @@ func isObsoleteRow(m cms.VocabRow) bool {
 	return strings.TrimSpace(m.Values["status"]) == obsoleteMark
 }
 
-// orderedByProduct は**全社の発注明細**を「加工製品＋購入品」の鍵で束ねます。
-//
-// ⚠ **`弊社品番` が書かれている行だけ**が結ばれます。書かれていない発注は
-// 「どの加工製品のぶんか」を語らないので、**混ぜません**——混ぜると、同じ材料を使う
-// 別の製品の発注が、この製品の手配済みに化けます。
-func orderedByProduct(db cms.ReadOnlyDB, canView func(int) bool) (map[string][]ProcurementOrder, error) {
-	rows, err := cms.VocabRowsOfType(db, ourOrderItemsType)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string][]ProcurementOrder{}
-	for _, r := range rows {
-		if !canView(r.PageID) {
-			continue
-		}
-		// ⚠ **取消の行も「手配した」に数えます**（2026-09-23 ユーザー:「状態を取り消しに
-		//    することの意味が、**その部材はもう発注しない**ということになりました。
-		//    **発注書ページで消費して発注しなくなります**」）。09-22 は逆（数えない＝
-		//    必要部材表へ自動で戻る）でしたが、覆りました。⚠ **戻したいときは行末の
-		//    「必要部材表へ戻す」**——行が発注書から消えるので、ここで数えなくなります。
-		//
-		// ⚠ **`未発注` も数えます。** 紙はできているので、ここで引かないと
-		//    **同じものをもう一度発注書に入れてしまいます**。
-		productID, ok := page.NormalizeID(strings.TrimSpace(r.Values["our-item-id"]))
-		if !ok || productID == "" {
-			continue // 弊社品番の無い行は結べない
-		}
-		// 鍵は種類ごと（設定の key）——⚠ **必要部材表の側と同じ関数**（`orderRowKey`）。種類の無い
-		//    古い行は、材料（3つ組）・購入部品（品名）として読みます。
-		key := orderRowKey(orderItemsDef(), r)
-		if key == "" {
-			continue
-		}
-		k := procKey(pageNum(productID), key)
-		out[k] = append(out[k], ProcurementOrder{
-			PageID: r.PageID, Title: cms.PageTitleByID(r.PageID), Qty: cms.VocabQuantity(r)})
-	}
-	return out, nil
-}
-
 // pageNum はゼロ詰め6桁のページIDを数にします（`page.NormalizeID` を通ったあとに使う）。
 func pageNum(id string) int {
 	n, _ := strconv.Atoi(id)
@@ -249,8 +219,3 @@ func procKey(productID int, itemKey string) string {
 	return page.FormatID(productID) + "\x00" + itemKey
 }
 
-// orderItemsDef は発注明細の宣言です（列の見出しの名前で値を読むため）。
-func orderItemsDef() cms.VocabDef {
-	def, _ := cms.VocabDefByType(ourOrderItemsType)
-	return def
-}

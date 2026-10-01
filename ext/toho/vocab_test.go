@@ -73,6 +73,8 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		TempPartsType,
 		// **加工製品の一覧**（2026-09-29）——社名の下の「加工製品」の箱で、区分と装置名称で絞る鏡。
 		ProductListViewType,
+		// **手配不要**（2026-10-01）——必要部材表で「不要にする」を押した部材の記録（skip.go）。
+		SkipType,
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))

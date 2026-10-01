@@ -125,7 +125,18 @@ func procRemaining(it ProcurementItem) string {
 // ⚠ **0件を黙りません**——「まだ発注していない」と「発注書に弊社品番が書かれていない」
 // は別物なので、後者に気づけるよう**理由の形**で出します。
 func procOrderLinks(it ProcurementItem) string {
+	// 発注部材表に入れた分・不要にした分（2026-10-01・procure_ledger.go）——紙にはまだなっていないが、手配は済んでいる。
+	var notes []string
+	if it.Drafted > 0 {
+		notes = append(notes, `<span class="proc-oqty">発注部材表に `+strconv.Itoa(it.Drafted)+`</span>`)
+	}
+	if it.Skipped > 0 {
+		notes = append(notes, `<span class="proc-oqty">手配不要 `+strconv.Itoa(it.Skipped)+`</span>`)
+	}
 	if len(it.Orders) == 0 {
+		if len(notes) > 0 {
+			return strings.Join(notes, `<br/>`)
+		}
 		return `<span class="proc-none">⚠ 未手配（発注書に弊社品番がありますか）</span>`
 	}
 	var parts []string
@@ -135,9 +146,13 @@ func procOrderLinks(it ProcurementItem) string {
 		if title != "" {
 			label += "　" + title
 		}
+		stock := ""
+		if o.Stock {
+			stock = "・在庫" // ほかの受注のために買った余り（2026-10-01）
+		}
 		parts = append(parts, `<a href="/`+page.FormatID(o.PageID)+`" title="`+
 			stdhtml.EscapeString(title)+`">`+stdhtml.EscapeString(label)+`</a>`+
-			`<span class="proc-oqty">（`+strconv.Itoa(o.Qty)+`）</span>`)
+			`<span class="proc-oqty">（`+strconv.Itoa(o.Qty)+stock+`）</span>`)
 	}
-	return strings.Join(parts, `<br/>`)
+	return strings.Join(append(parts, notes...), `<br/>`)
 }
