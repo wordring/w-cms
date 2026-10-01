@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"encoding/json"
 	"html"
 	"net"
@@ -41,7 +42,13 @@ const loginPageHTML = `<!DOCTYPE html>
 // LoginPageHandler はログインフォームを表示します（GET /login、認証不要）。
 func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	errMsg := ""
-	if r.URL.Query().Get("error") != "" {
+	switch r.URL.Query().Get("error") {
+	case "":
+	case "wait":
+		// 続けて失敗したあとの待ち（バックオフ・ロックアウト）——パスワードは確かめていない（2026-10-01）。
+		// 「違います」と言うと、正しく打ち直した人が打ち間違いだと思い込むので、待つように言う。
+		errMsg = `<div class="error">続けて失敗したので、しばらく待ってからもう一度お試しください。</div>`
+	default:
 		errMsg = `<div class="error">ユーザー名またはパスワードが違います。</div>`
 	}
 	// 戻り先を持ち回る。匿名の404画面から来た人を、ログインしたその足で
@@ -97,7 +104,11 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 失敗も記録する。総当たりや、辞めた人の試行が見えるのはここだけ。
 		// 入力されたパスワードは記録しない（記録そのものが漏洩経路になる）。
 		Audit(username, "login.fail", clientIP(r))
-		http.Redirect(w, r, "/login?error=1&next="+url.QueryEscape(next), http.StatusFound)
+		code := "1"
+		if errors.Is(err, ErrLockedOut) {
+			code = "wait"
+		}
+		http.Redirect(w, r, "/login?error="+code+"&next="+url.QueryEscape(next), http.StatusFound)
 		return
 	}
 

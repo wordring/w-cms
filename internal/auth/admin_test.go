@@ -19,6 +19,7 @@ func TestUserManagement(t *testing.T) {
 	if _, err := Authenticate("alice", "oldpass"); err != ErrAuthFailed {
 		t.Errorf("旧パスワードがまだ通ります: %v", err)
 	}
+	advanceClock(backoffFor(1)) // 失敗のあとのバックオフの待ち（2026-10-01）
 
 	// 無効化：無効なユーザーは認証できない
 	if err := SetDisabled("alice", true); err != nil {

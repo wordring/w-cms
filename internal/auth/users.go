@@ -11,10 +11,34 @@ import (
 )
 
 // 総当たり対策のしきい値（認証認可設計.md 2.3節）。
+//
+// **バックオフ**（2026-10-01 利用者:「バックオフも作る」——【要求】権限 §1 の「バックオフ／ロックアウト」のうち、それまで
+// ロックアウトだけだった）: 続けて失敗するたびに、次を試せるまでの待ちを倍にします（1・2・4・8秒）。待ちのあいだの試行は
+// パスワードを確かめずに断り、数えません。5回続けて失敗したら、それまでどおり15分のロックアウト。
+// 数えるのは**打たれた利用者名ごと**（存在しない名前も同じ）なので、待ちの有無から利用者の有無は分かりません。
 const (
 	maxFailBeforeLock = 5                // この回数連続失敗でロックアウト
 	lockoutDuration   = 15 * time.Minute // ロックアウト時間
+	backoffBase       = 1 * time.Second  // 1回目の失敗のあとの待ち（以後、失敗のたびに倍）
 )
+
+// nowFunc は今の時刻です（試験が時計を進めるため）。
+var nowFunc = time.Now
+
+// backoffFor は、続けて failCount 回失敗したあと、次を試せるまでの待ちです（ロックアウトの長さを超えない）。
+func backoffFor(failCount int) time.Duration {
+	if failCount <= 0 {
+		return 0
+	}
+	if failCount >= maxFailBeforeLock {
+		return lockoutDuration
+	}
+	d := backoffBase << (failCount - 1)
+	if d > lockoutDuration {
+		d = lockoutDuration
+	}
+	return d
+}
 
 // User は認証済みユーザーの情報です。
 type User struct {
@@ -171,11 +195,12 @@ func isLockedOut(username string) (bool, time.Time) {
 	err := database.AuthDB.QueryRow(
 		`SELECT fail_count, last_fail FROM login_attempts WHERE username = ?`, username,
 	).Scan(&failCount, &lastFail)
-	if err != nil || failCount < maxFailBeforeLock || !lastFail.Valid {
+	if err != nil || failCount <= 0 || !lastFail.Valid {
 		return false, time.Time{}
 	}
-	until := lastFail.Time.Add(lockoutDuration)
-	if time.Now().Before(until) {
+	// 5回未満はバックオフの待ち、5回からはロックアウト（backoffFor）。
+	until := lastFail.Time.Add(backoffFor(failCount))
+	if nowFunc().Before(until) {
 		return true, until
 	}
 	return false, time.Time{}
@@ -185,7 +210,7 @@ func recordFailure(username string) {
 	database.AuthDB.Exec(`
 		INSERT INTO login_attempts (username, fail_count, last_fail) VALUES (?, 1, ?)
 		ON CONFLICT(username) DO UPDATE SET fail_count = fail_count + 1, last_fail = excluded.last_fail
-	`, username, time.Now())
+	`, username, nowFunc())
 }
 
 func clearFailures(username string) {
