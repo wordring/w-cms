@@ -242,6 +242,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/reset", cms.ResetDataAPIHandler)
 	// 「列の揃っていない表」の一覧（data/tables.db・DBの日本語化 §7 の2段目・admin限定）。
 	protected.HandleFunc("/api/admin/tables", cms.TablesReportAPIHandler)
+	// タグの値を置き換える（選択肢の言葉を変えたとき・版が残る・編集中は飛ばす・admin限定・2026-10-01）。
+	protected.HandleFunc("/api/admin/tag-rename", cms.TagRenameAPIHandler)
 	// 表を探す（検索画面 assets/tables.html と AI の口・DBの日本語化 §7 の3段目）。
 	// **読めるページの行だけ**返す。自由な SQL は受けない（tables_query.go）。
 	protected.HandleFunc("/api/tables", cms.TablesAPIHandler)

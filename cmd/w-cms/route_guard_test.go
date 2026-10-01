@@ -70,6 +70,7 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/admin/pages", "POST", 401, "足りない置き場を作る（admin）"},
 		{"/api/admin/reset", "POST", 401, "データの初期化（admin）"},
 		{"/api/admin/tables", "GET", 401, "列の揃っていない表の一覧（admin）"},
+		{"/api/admin/tag-rename", "POST", 401, "タグの値を置き換える（admin）"},
 		{"/api/tables", "GET", 401, "探せる表の一覧"},
 		{"/api/tables/query", "POST", 401, "表を探す"},
 		{"/api/file-ref", "GET", 401, "ファイルの ID を添付の組へ引く"},

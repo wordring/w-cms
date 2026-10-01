@@ -101,6 +101,18 @@
         <span class="hint">HTMLファイル（<code>data/master</code>）を正としてDBインデックスを完全に作り直します。</span>
         <span id="rebuild-msg" class="msg"></span>
       </div>
+      <!-- タグの値を置き換える（2026-10-01）——設定の語彙で選択肢の言葉を変えたとき、既にあるページのタグを揃える。 -->
+      <div class="row row--gap-lg">
+        <input id="tr-name" placeholder="タグの名前（例: 区分）" aria-label="タグの名前">
+        <input id="tr-from" placeholder="今の値" aria-label="今の値">
+        <input id="tr-to" placeholder="新しい値" aria-label="新しい値">
+        <button id="tr-go">タグの値を置き換える</button>
+        <span id="tr-msg" class="msg"></span>
+      </div>
+      <p class="hint">
+        可変タグ（「名前：値」）の組だけを置き換えます——本文の文や表、メールの件名には触りません。先に当たるページの数を見せて
+        確かめます。版が残るので、ページごとに元へ戻せます。<strong>編集中のページは飛ばします</strong>（閉じてからもう一度押す）。
+      </p>
     </div>
 
     <!-- 開発メニュー（開発中だけ。実運用に入る前にこの節ごと外す） -->

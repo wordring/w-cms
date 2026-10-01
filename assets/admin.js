@@ -401,6 +401,38 @@ async function rebuildDatabase() {
   else { el.style.color = '#dc2626'; el.textContent = '失敗: ' + await res.text(); }
 }
 
+// タグの値を置き換える（2026-10-01・/api/admin/tag-rename）。先に dry で数えて確かめてから書く。
+async function renameTagValue() {
+  const name = val('tr-name'), from = val('tr-from'), to = val('tr-to');
+  const el = document.getElementById('tr-msg');
+  const say = (color, text) => { el.style.color = color; el.textContent = text; };
+  if (!name || !from || !to) { say('#dc2626', 'タグの名前・今の値・新しい値を書いてください'); return; }
+  const post = async (dry) => {
+    const res = await api('POST', '/api/admin/tag-rename', { name, from, to, dry });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+    return d.result || {};
+  };
+  // skipped は飛ばしたページの説明（編集中・テンプレート・本文に組が無い）。
+  const skipped = (r) => [
+    (r.editing || []).length ? '編集中で飛ばした ' + r.editing.join('・') : '',
+    (r.template || []).length ? 'テンプレートの中で飛ばした ' + r.template.join('・') : '',
+    (r.missed || []).length ? '本文に組が無かった ' + r.missed.join('・') : '',
+  ].filter(Boolean).join(' / ');
+  try {
+    say('#64748b', '数えています…');
+    const pre = await post(true);
+    const n = (pre.changed || []).length;
+    if (n === 0) { say('#dc2626', `「${name}：${from}」のページはありません` + (skipped(pre) ? '（' + skipped(pre) + '）' : '')); return; }
+    if (!confirm(`${n} ページの「${name}：${from}」を「${name}：${to}」に置き換えます。よろしいですか？`)) { say('#64748b', ''); return; }
+    const r = await post(false);
+    say('#16a34a', `${(r.changed || []).length} ページを置き換えました` + (skipped(r) ? '（' + skipped(r) + '）' : '') + '。');
+    loadAudit();
+  } catch (e) {
+    say('#dc2626', '置き換えられませんでした: ' + e.message);
+  }
+}
+
 function val(id) { return document.getElementById(id).value.trim(); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function msg(id, res) {
@@ -417,6 +449,7 @@ function bindActions() {
   document.getElementById('gm-add').addEventListener('click', () => groupMember('add'));
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
+  document.getElementById('tr-go').addEventListener('click', renameTagValue);
   document.getElementById('reset-btn').addEventListener('click', resetData);
   document.getElementById('dev-import-btn').addEventListener('click', () => devImportMail(false));
   document.getElementById('dev-import-month').addEventListener('click', () => devImportMail(true));
