@@ -171,19 +171,6 @@ func attachmentLinks(bodyHTML string) []comm.ComposeAttachment {
 	return out
 }
 
-// sectionHeadingText は節の直下の見出しの文字です。
-func sectionHeadingText(section *html.Node) string {
-	for c := section.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode {
-			switch c.Data {
-			case "h2", "h3", "h4", "h5", "h6":
-				return strings.TrimSpace(nodeText(c))
-			}
-		}
-	}
-	return ""
-}
-
 // nodeText は要素の中の文字をつなげて返します（`<br>` は改行）。
 func nodeText(n *html.Node) string {
 	var sb strings.Builder
