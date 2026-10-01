@@ -103,7 +103,7 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     ProductsBoxTemplate,
 		Extension: "toho",
-		Why:       "整理（とワンノートの移植）が、社名の下に「加工製品」の箱を作るときに写します（題は「加工製品」になります）。鏡「加工製品の一覧」を置いておくと、区分（試作・見積もり・旧型）や装置名称で絞って見られます。",
+		Why:       "整理（とワンノートの移植）が、社名の下に「加工製品」の箱を作るときに写します（題は「加工製品」になります）。鏡「加工製品の一覧」を置いておくと、区分（試作・見積・旧型）や装置名称で絞って見られます。",
 	})
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     PurchaseOrderTemplate,

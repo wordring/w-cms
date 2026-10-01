@@ -14,9 +14,9 @@ import (
 func TestWithTagValues(t *testing.T) {
 	const page = `<h1>取付ベース</h1><dl data-type="tags"><dt>品番</dt><dd>K120-1</dd></dl>` +
 		`<section><h2>図面</h2><dl data-type="tags"><dt>図面番号</dt><dd>K120-1</dd></dl></section>`
-	got := withTagValues(page, "区分", []string{"試作", "見積もり"}, false)
+	got := withTagValues(page, "区分", []string{"試作", "見積"}, false)
 	// ページの並び（h1 の下）の最後へ足す——図面ブロックの中の並びへは混ぜない。
-	want := `<dt>品番</dt><dd>K120-1</dd><dt>区分</dt><dd>試作</dd><dt>区分</dt><dd>見積もり</dd></dl><section>`
+	want := `<dt>品番</dt><dd>K120-1</dd><dt>区分</dt><dd>試作</dd><dt>区分</dt><dd>見積</dd></dl><section>`
 	if !strings.Contains(got, want) {
 		t.Errorf("ページの並びの最後に足していません:\n%s", got)
 	}
@@ -26,8 +26,8 @@ func TestWithTagValues(t *testing.T) {
 		t.Errorf("在る区分をもう一度足しました:\n%s", again)
 	}
 	// replace は印の外れた区分を消す（空欄の欄は残す）。
-	if cut := withTagValues(got, "区分", []string{"見積もり"}, true); strings.Contains(cut, "<dd>試作</dd>") ||
-		!strings.Contains(cut, "<dd>見積もり</dd>") {
+	if cut := withTagValues(got, "区分", []string{"見積"}, true); strings.Contains(cut, "<dd>試作</dd>") ||
+		!strings.Contains(cut, "<dd>見積</dd>") {
 		t.Errorf("外した区分が残っています:\n%s", cut)
 	}
 	// テンプレートが置いた空の欄へ入れる（欄が2つに増えない）。
@@ -76,7 +76,7 @@ func TestProductListShowsProductsAndKinds(t *testing.T) {
 	file(filingRequest{PageID: a, Customer: "南北スポーツ", MachineName: "標準2輪", DrawingName: "取付ベース"})
 	b := makeDrawingPage(t, inbox, "K120-2", "補強板", "φ320 共通台座", "南北スポーツ")
 	file(filingRequest{PageID: b, Customer: "南北スポーツ", MachineName: "φ320 共通台座", DrawingName: "補強板",
-		Kinds: []string{"試作", "見積もり"}})
+		Kinds: []string{"試作", "見積"}})
 	// 取付ベースの改定——旧版は最新版の子ページになる。**一覧には1行だけ**のはず。
 	a2 := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1A", "取付ベース", "標準2輪", "南北スポーツ")
 	file(filingRequest{PageID: a2, Customer: "南北スポーツ", MachineName: "標準2輪", DrawingName: "取付ベース",
@@ -98,7 +98,7 @@ func TestProductListShowsProductsAndKinds(t *testing.T) {
 	}
 	// 装置名称の順（φ320… が先）。
 	if rows[0].Title != "補強板" || rows[0].Machine != "φ320 共通台座" ||
-		strings.Join(rows[0].Kinds, "・") != "試作・見積もり" {
+		strings.Join(rows[0].Kinds, "・") != "試作・見積" {
 		t.Errorf("1行目が違います: %+v", rows[0])
 	}
 	if rows[1].Title != "取付ベース" || rows[1].Machine != "標準2輪" || len(rows[1].Kinds) != 0 ||
@@ -109,7 +109,7 @@ func TestProductListShowsProductsAndKinds(t *testing.T) {
 	html := productListViewHTML(u, host)
 	for _, want := range []string{
 		`data-plist-form="1"`, `data-plist-kind="" checked`, `data-plist-kind="試作" checked`,
-		`data-kinds="試作	見積もり"`, `<option value="標準2輪">`, `2 件`,
+		`data-kinds="試作	見積"`, `<option value="標準2輪">`, `2 件`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("一覧に %q がありません:\n%s", want, html)

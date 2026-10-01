@@ -14,7 +14,7 @@ import (
 func TestSettingsRepoFileHasProductKinds(t *testing.T) {
 	// TestMain（settings_repo_test.go）がリポジトリの設定を読み込み済み。
 	kinds := ProductKinds()
-	for _, want := range []string{"試作", "見積もり", "旧型"} {
+	for _, want := range []string{"試作", "見積", "旧型"} {
 		if !contains(kinds, want) {
 			t.Errorf("語彙の区分に %q がありません: %v", want, kinds)
 		}

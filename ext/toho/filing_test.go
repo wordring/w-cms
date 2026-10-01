@@ -154,17 +154,17 @@ func TestFilingProposalSkipsNonDrawings(t *testing.T) {
 }
 
 // TestFileDrawingsUsesEditedValues は、**人が直した値がそのまま使われる**ことを
-// 固定します。顧客名の打ち替えと、**区分の選択**（試作か・見積もりか）は機械には決められない
+// 固定します。顧客名の打ち替えと、**区分の選択**（試作か・見積か）は機械には決められない
 // ——メールを読むしかない——ので、ここが効かないと機能そのものが無意味になります。
 func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	const inbox = "000012"
 	setupFilingTest(t, inbox)
 	partID := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
 
-	// 人が顧客名を打ち替え、区分に「試作」と「見積もり」を選んだ（メールを読んで分かった・
+	// 人が顧客名を打ち替え、区分に「試作」と「見積」を選んだ（メールを読んで分かった・
 	// 2026-09-29 利用者:「試作かつ見積もりという場合がある」）。
 	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
-		PageID: partID, Customer: "南北スポーツ機械", Kinds: []string{"見積もり", "試作"},
+		PageID: partID, Customer: "南北スポーツ機械", Kinds: []string{"見積", "試作"},
 		MachineName: "標準2輪", DrawingName: "取付ベース",
 	}})
 	if len(results) != 1 || results[0].Outcome != "moved" {
@@ -205,11 +205,11 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	if meta.ParentID != machID {
 		t.Errorf("親が付け替わっていません: %+v", meta)
 	}
-	// 区分はタグで、**選択肢の並び**（試作・見積もり）に揃えて2つ付く。
+	// 区分はタグで、**選択肢の並び**（試作・見積）に揃えて2つ付く。
 	idInt, _ := strconv.Atoi(partID)
 	tags, _ := cms.TagsOfPage(database.DB, idInt)
-	if got := strings.Join(tags[ProductKindTag], "・"); got != "試作・見積もり" {
-		t.Errorf("区分のタグが %q です（試作・見積もり のはず）", got)
+	if got := strings.Join(tags[ProductKindTag], "・"); got != "試作・見積" {
+		t.Errorf("区分のタグが %q です（試作・見積 のはず）", got)
 	}
 	if !strings.Contains(results[0].Message, "南北スポーツ機械／加工製品／標準2輪／取付ベース") {
 		t.Errorf("知らせに行き先がありません: %s", results[0].Message)

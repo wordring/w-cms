@@ -22,7 +22,7 @@ package toho
 //     利用者:「フォルダで分けるのをやめて、試作のタグをつけるように変更したい」。
 //     段のフォルダは1つしか選べず、「試作かつ見積もり」を表せませんでした。
 //
-// **区分は人が選びます**（段のときと同じ理由）。試作か見積もりかはメールを読まないと
+// **区分は人が選びます**（段のときと同じ理由）。試作か見積かはメールを読まないと
 // 分からないので、**機械には決められません**。何も選ばなければ通常の製品です。
 //
 // 見積だけ・試作のときは装置名称から新しく作ります。ユーザー:「これは、メールの
@@ -71,7 +71,7 @@ type filingRow struct {
 	DrawingName string `json:"drawing_name"`
 	Customer    string `json:"customer"`     // 推奨値（客先）。人が直す
 	MachineName string `json:"machine_name"` // 推奨値（装置名称）。人が直す
-	// Kinds はそのページにいま付いている区分（試作・見積もり…）です（2026-09-29）。
+	// Kinds はそのページにいま付いている区分（試作・見積…）です（2026-09-29）。
 	// 画面の印の初期値で、**人が直します**。
 	Kinds []string `json:"kinds"`
 }
@@ -513,7 +513,7 @@ type filingRequest struct {
 	Customer    string `json:"customer"`
 	MachineName string `json:"machine_name"`
 	DrawingName string `json:"drawing_name"`
-	// Kinds は加工製品の区分です（試作・見積もり・旧型…・2026-09-29）。**人が選びます**。
+	// Kinds は加工製品の区分です（試作・見積・旧型…・2026-09-29）。**人が選びます**。
 	// 空なら通常の製品。選択肢は設定の語彙 `区分`。
 	Kinds []string `json:"kinds"`
 	// ConfirmRevision は「図面番号が同じでも改定として合流してよい」の確認です。
