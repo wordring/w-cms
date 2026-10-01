@@ -240,8 +240,9 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 	// したいです」）——`<details>` の `<summary>` にして、最初は開いた状態。JS は要りません。
 	// 枠（`.file-view`）の外側を包むのは、枠が高さを持つ縦並びだからです（枠そのものを
 	// `<details>` にすると、閉じても高さが残ります）。
+	// ⚠ 頭の行は**ファイル名だけ**（2026-10-01 利用者:「を開いていますは冗長です。ファイル名だけで分かります」）。
 	head := `<summary class="file-view-head">📄 <a href="/` + stdhtml.EscapeString(pageID) +
-		`#` + stdhtml.EscapeString(blockID) + `">` + name + `</a> を開いています</summary>`
+		`#` + stdhtml.EscapeString(blockID) + `">` + name + `</a></summary>`
 
 	var body string
 	switch kind {
