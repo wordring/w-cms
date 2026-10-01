@@ -254,12 +254,25 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 		if r.Migrating {
 			b.WriteString(` <span class="matsearch-migrating">（移行中）</span>`)
 		}
-		b.WriteString(`</td><td>` + esc(r.DrawingNo) + `</td><td>` + esc(r.PartNo) + `</td>` +
+		// 図面番号・品番が何枚ぶんもあれば**縦に並べる**（2026-10-01 利用者:「図面番号が複数ある場合、縦に並べれば全体が
+		// 上手く表示されるのでは？」）——「・」で横に繋ぐと列が伸びて、表が横にはみ出していた。
+		b.WriteString(`</td><td>` + stackLines(r.DrawingNo) + `</td><td>` + stackLines(r.PartNo) + `</td>` +
 			`<td>` + esc(strings.Join(r.Kinds, "・")) + `</td></tr>`)
 	}
 	b.WriteString(`</tbody></table>`)
 	b.WriteString(`<p class="materials-empty plist-none" data-plist-none="1" hidden>当てはまる加工製品はありません。</p>`)
 	return b.String()
+}
+
+// stackLines は「・」で繋いだ値を、1つずつ改行で縦に並べた HTML にします（それぞれエスケープする）。
+func stackLines(joined string) string {
+	var out []string
+	for _, v := range strings.Split(joined, "・") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, stdhtml.EscapeString(v))
+		}
+	}
+	return strings.Join(out, "<br/>")
 }
 
 // otherNames は名前の並びから、題と同じもの・重なるものを落として返します（比べるのは文字を畳んだ形）。

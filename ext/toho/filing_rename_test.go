@@ -120,3 +120,14 @@ func TestCandidatesPreferNumberAndName(t *testing.T) {
 		t.Errorf("名前が合わなければ番号の合うページを全部出すはず: %s", ids(got))
 	}
 }
+
+// TestStackLinesPutsEachOnItsOwnLine は、加工製品の一覧で図面番号・品番を1つずつ縦に並べることを固定します（2026-10-01
+// 利用者:「図面番号が複数ある場合、縦に並べれば全体が上手く表示されるのでは？」）。値はエスケープする。
+func TestStackLinesPutsEachOnItsOwnLine(t *testing.T) {
+	if got := stackLines("K120-1・K120-1W・<x>"); got != "K120-1<br/>K120-1W<br/>&lt;x&gt;" {
+		t.Errorf("縦に並んでいません: %q", got)
+	}
+	if got := stackLines(""); got != "" {
+		t.Errorf("空なら空のはず: %q", got)
+	}
+}
