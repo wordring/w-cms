@@ -115,6 +115,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/analyze-attachment", Handler: AnalyzeAttachmentAPIHandler},
 		// メールの本文から受注ページを作る（2026-10-01・発注書の PDF が付かない注文——analyze_mail.go）。
 		{Pattern: "/api/analyze-mail-order", Handler: AnalyzeMailOrderAPIHandler},
+		// 見積計算表の弊社利益の率を書く（2026-10-01・estimate.go）。
+		{Pattern: "/api/estimate-rate", Handler: EstimateRateAPIHandler},
 		// PDFから明細を読み、開いているブロックへ差し込む（2026-09-16 にコアから移設）。
 		// ⚠ 上の `/api/analyze-attachment` とは**別の仕事**です——あちらは受注ページを
 		// 1枚作り、こちらは人が開いているブロックの中へ明細を入れるだけ（parse_pdf.go）。

@@ -2426,6 +2426,14 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     background: var(--bg-subtle, #f8fafc);
 }
 
+/* 見積計算表の足元（2026-10-01・estimate.go）——弊社利益の式、確定単価（太く・少し大きく）、率を変える欄。 */
+#w-editor-content .estimate-profit td { padding: 4px 8px; background: var(--bg-subtle, #f8fafc); }
+#w-editor-content .estimate-final td { padding: 6px 8px; font-size: 1.1em; background: var(--bg-subtle, #f8fafc); }
+#w-editor-content .estimate-final strong { font-weight: 700; }
+#w-editor-content .estimate-rate td { padding: 4px 8px; font-size: 0.9em; }
+#w-editor-content .estimate-rate-input { width: 5em; }
+#w-editor-content .estimate-note td { color: var(--w-muted, #6b7280); font-style: italic; }
+
 /* ── 材料の参考単価（2026-09-21）────────────────────────────────────────
    材料表の右に足す「最新単価」。⚠ **本文ではなく鏡**なので、**人が書いた列と
    見分けが付く必要があります**——左に区切り線を入れ、文字を少し落として

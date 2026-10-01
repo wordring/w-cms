@@ -64,6 +64,9 @@
     "外注加工": {
       "区分": { "type": "enum", "values": ["現行", "廃版"] }
     },
+    "見積計算表": {
+      "単位": { "type": "text" }
+    },
     "購入部品": {
       "区分": { "type": "enum", "values": ["現行", "廃版"] }
     },
@@ -120,6 +123,7 @@
       ],
       "pdf_font": "C:/Windows/Fonts/BIZ-UDGothicB.ttc",
       "pdf_font_face": 0,
+      "estimate_profit_rate": 10,
       "order_kinds": [
         {
           "kind": "材料",

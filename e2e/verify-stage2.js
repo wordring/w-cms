@@ -146,14 +146,14 @@ async function waitSaved(page) {
             await page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:drawing-revisions"]').count() === 0);
         await vocabItem.click();
         // **表はキャプションで名乗る**（2026-09-26・DBの日本語化 5段目・利用者:「全面的に
-        // キャプションに置き換える」）: <table><caption>見積もり</caption>…</table>。
+        // キャプションに置き換える」）: <table><caption>見積計算表</caption>…</table>。
         // それまでの見出し形（<section><h2>…</h2><table>）は、表の写し
         // （data/tables.db）に入らなかった。data-type は書かれない——見える言葉が宣言になる。
         const table = page.locator('#w-editor-content table')
-            .filter({ has: page.locator('caption', { hasText: '見積もり' }) }).first();
+            .filter({ has: page.locator('caption', { hasText: '見積計算表' }) }).first();
         await table.waitFor({ timeout: 4000 });
         check('骨格: キャプションが表の名前を宣言する',
-            (await table.locator('caption').first().innerText()).trim() === '見積もり');
+            (await table.locator('caption').first().innerText()).trim() === '見積計算表');
         check('骨格: data-type は書かれない', await table.getAttribute('data-type') === null);
         check('骨格: 見出し形の節で包まない',
             await table.evaluate((t) => !(t.parentElement && t.parentElement.tagName === 'SECTION')));
@@ -435,7 +435,7 @@ async function waitSaved(page) {
         // ── 保存往復（リロードして残っているか・実行時の印が残っていないか） ──
         await waitSaved(page);
         await page.goto(pageURL.replace('?edit=true', ''));
-        // 挿した表は data-type ではなく <caption>見積もり</caption> で名乗って保存される
+        // 挿した表は data-type ではなく <caption>見積計算表</caption> で名乗って保存される
         await page.waitForSelector('#w-editor-content table caption', { timeout: 8000 });
         // ⚠ **保存された本文を読みます**（`/api/load`）——画面の DOM ではありません。
         // 2026-09-21 から型の印（cell-known など）は**閲覧モードでも**付くので、画面の
@@ -447,8 +447,8 @@ async function waitSaved(page) {
         // ⚠ 表は最上位のブロックになったので `data-id` が付きます（それまでは包む節に付いていた）。
         // 見るのは「`data-type` の無い table の直後に caption」。
         check('保存往復: キャプションで名乗る表が残る',
-            /<table(?![^>]*data-type)[^>]*>\s*<caption>見積もり<\/caption>/.test(savedHTML) &&
-            !/<section[^>]*>\s*<h2>見積もり/.test(savedHTML));
+            /<table(?![^>]*data-type)[^>]*>\s*<caption>見積計算表<\/caption>/.test(savedHTML) &&
+            !/<section[^>]*>\s*<h2>見積計算表/.test(savedHTML));
         check('保存往復: dl が残る', savedHTML.includes('data-type="tags"'));
         check('保存往復: 未知種別も保存される', savedHTML.includes('data-type="mystery-form"'));
         check('保存往復: enum で入れた値が残る', savedHTML.includes('合格'));

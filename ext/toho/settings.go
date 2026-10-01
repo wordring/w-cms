@@ -94,6 +94,11 @@ type settingsSection struct {
 	// 支払期日・支払方法）を「念のため記載して空欄運用」するため（利用者）。持っていないタグは刷らない。
 	// **未指定なら、それまでの4つ**（発注書番号・発注日・納期・納品場所）。
 	OrderPrintHeads []string `json:"order_print_heads,omitempty"`
+
+	// EstimateProfitRate は見積計算表の**弊社利益の既定の率**（%）です（2026-10-01・estimate.go）。利用者:「弊社利益は
+	// デフォルトで10％なので、単価に1.1をかければ良いのですが、利益率を変更できるようにしたいです」——表ごとの率は表の
+	// 「弊社利益」の行が持ち、無い表にこれを使う。**未指定なら確定単価を出しません**（そう書く）。
+	EstimateProfitRate *float64 `json:"estimate_profit_rate,omitempty"`
 }
 
 // companyInfo は発注書に刷る差出人です（実物の見出しに合わせた項目）。
@@ -118,6 +123,7 @@ var (
 	orderKinds        []orderKind
 	orderPrintColumns []string
 	orderPrintHeads   []string
+	estimateRate      *float64
 )
 
 func init() {
@@ -158,6 +164,9 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 			return nil, fmt.Errorf("pdf_font は .ttf か .ttc を指してください（%q）", s.PDFFont)
 		}
 	}
+	if r := s.EstimateProfitRate; r != nil && (*r < 0 || *r >= 1000) {
+		return nil, fmt.Errorf("estimate_profit_rate は 0 以上 1000 未満の %%（%v）", *r)
+	}
 	if s.PDFFontFace < 0 {
 		return nil, fmt.Errorf("pdf_font_face は0以上です（%d）", s.PDFFontFace)
 	}
@@ -179,6 +188,7 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 	font := strings.TrimSpace(s.PDFFont)
 	face := s.PDFFontFace
 	company := s.Company
+	rate := s.EstimateProfitRate
 	return func() {
 		stagesMu.Lock()
 		productCodeTags = codeTags
@@ -188,8 +198,19 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		orderKinds = kinds
 		orderPrintColumns = printCols
 		orderPrintHeads = heads
+		estimateRate = rate
 		stagesMu.Unlock()
 	}, nil
+}
+
+// EstimateProfitRate は見積計算表の弊社利益の既定の率（%）を返します（未設定なら ok=false）。
+func EstimateProfitRate() (float64, bool) {
+	stagesMu.RLock()
+	defer stagesMu.RUnlock()
+	if estimateRate == nil {
+		return 0, false
+	}
+	return *estimateRate, true
 }
 
 // PDFFont は発注書のPDFへ埋め込むフォントのパスを返します（未設定なら空）。

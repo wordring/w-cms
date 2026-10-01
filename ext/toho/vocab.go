@@ -216,15 +216,20 @@ var businessVocab = []cms.VocabDef{
 		// ⚠ **これは原価の内訳で、お客様に出す見積書ではありません。** 売値の側を
 		// 作る日が来たら**別の名前**を付けること（`見積書` など）——同じ言葉にすると
 		// 原価が客先向けの集計に混ざります。
+		//
+		// ⚠ **2026-10-01 に表示名を「見積もり」から「見積計算表」へ**——ワンノートから移した 246 ページの表は
+		// 「見積計算表」で名乗っていて（09-28 利用者:「見積計算表はどうでしょう？」）、「見積もり」の表は0枚だった。
+		// 同じ列の形式が2つの名前に割れていたのを1つに。表の下に弊社利益と確定単価を出す（estimate.go）。
+		// `単位` は `text`（個・円・% が混ざる——設定の `table_vocabulary` の見積計算表と揃える）。
 		Type:        "part-estimate",
-		DisplayName: "見積もり",
+		DisplayName: "見積計算表",
 		Category:    "業務",
 		Icon:        "🧮",
 		Element:     "table",
 		Columns: []cms.VocabColumn{
 			{Field: "step", Label: "工程", Type: cms.ColText},
 			{Field: "amount", Label: "数", Type: cms.ColNumber},
-			{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
+			{Field: "unit", Label: "単位", Type: cms.ColText},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 		},
 	},

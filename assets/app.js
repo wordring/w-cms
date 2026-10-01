@@ -7595,6 +7595,27 @@ function delegateClick(handlers) {
     });
 }
 
+// ── 見積計算表の利益率を変える（2026-10-01・ext/toho/estimate.go）─────────────
+//
+// 利用者:「利益率を変更できるようにしたいです」。足元の欄（サーバーが描いたクローム）の「変える」で、その表の
+// 「弊社利益」の行に率を書く（無ければ表の末尾に足す）——書けたらページを読み直して計算し直す。
+// ⚠ 編集モードでは表の「弊社利益」の行を直接直せる（欄は閲覧モードで使う）。
+delegateClick([['.estimate-rate-set', async (btn) => {
+    const form = btn.closest('.estimate-rate-form');
+    const say = form && form.querySelector('.estimate-rate-say');
+    const rate = Number(valueIn(form, '.estimate-rate-input'));
+    if (!form || !isFinite(rate) || rate < 0) { sayIn(say, '⚠ 率を数で書いてください'); return; }
+    btn.disabled = true;
+    const r = await postJSON('/api/estimate-rate', {
+        page_id: location.pathname.replace(/^\//, '').slice(0, 6),
+        index: Number(form.getAttribute('data-estimate-index')),
+        rate,
+    }).catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '書けませんでした')); return; }
+    location.reload();
+}]]);
+
 // ── 受注残表の印刷（2026-09-21）────────────────────────────────────────
 //
 // ユーザー:「顧客、納期ごとに別の表として分けて、**ワンタッチで印刷**もできると
