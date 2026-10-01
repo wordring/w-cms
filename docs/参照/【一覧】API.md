@@ -223,6 +223,7 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 | GET | `/api/admin/audit` | 監査ログの参照。直近200件。記録対象は認証イベント（`login`/`login.fail`/`logout`）・保存・ページ作成／削除・添付（`attach`/`attach.overwrite`）・親の付け替え・権限変更（公開切替 `publish`/`unpublish` を含む）・ロック強制解除・索引の全再構築・ユーザー／グループ管理・取り込み（`intake.create`/`intake.duplicate`）・PDF判定（`analyze-pdf`）（[認証認可設計.md](../旧文書/認証認可設計.md) §9.4） |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え）。先頭で `config/settings.json` を読み直す。⚠ 2026-09-25 から **`data/tables.db`（表の写し）も**作り直す |
 | GET | `/api/admin/tables` | **列の揃っていない表の一覧**（2026-09-25・DBの日本語化 §7 の2段目）。`{success, tables}` で `{name, pages, rows, needs_quote, leftover, suspects, columns[{name, pages, needs_quote, suspect, leftover}]}` の並び。**本文の見出し**を数え直す（値ではない）。`suspect` は2ページ以上ある表で1ページにしか無い見出し、`leftover` は本文にはもう無い表・列（再構築で消える）。正本は [tables_report.go](../../internal/cms/tables_report.go) |
+| POST | `/api/admin/tag-rename` | **タグの値を置き換える**（2026-10-01・admin）。`{name, from, to, dry}`——可変タグ `name` の値が `from` のページ（索引 `PagesByTag` で引く）の**「名前：値」の組だけ**を `to` に書き換える（地の文・表・件名は触らない・同じページに `to` の組が既にあれば古い組を消すだけ）。書くのは `RewriteBody`（版が残る・索引も直る）。**編集中のページ・テンプレートの中は飛ばす**。`dry` なら数えるだけ。応答は `{success, dry, result{found, changed, editing, template, missed}}`。監査記録は `tag.rename`。設定の語彙で選択肢の言葉を変えたときに使う（管理画面のメンテナンス）。正本は [tag_rename.go](../../internal/cms/tag_rename.go) |
 
 ### 6.1. 表を探す（要認証・⚠ admin 限定ではない）
 
