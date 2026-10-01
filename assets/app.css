@@ -2642,6 +2642,9 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .plist-table td { white-space: nowrap; }
 #w-editor-content .plist-table td.plist-wrap { white-space: normal; min-width: 8em; }
 #w-editor-content .plist-names { color: var(--text-muted, #6b7280); font-size: 0.85em; } /* 題と違う名前（改定で変わった品名など・2026-10-01） */
+/* 品番が無い行は図面番号を代わりに出す（2026-10-01）——品番と見分けられるよう薄く・「（図番）」の印。 */
+#w-editor-content .plist-dwg { color: var(--text-muted, #6b7280); }
+#w-editor-content .plist-dwg small { margin-left: 2px; font-size: 0.8em; }
 
 /* 整理の画面の区分の印（2026-09-29・段の選択の代わり）。 */
 .filing-kinds label { display: inline-block; margin-right: 8px; white-space: nowrap; }

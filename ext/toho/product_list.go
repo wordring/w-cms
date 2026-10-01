@@ -231,7 +231,7 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 
 	// ── 表 ──
 	b.WriteString(`<table class="materials-table plist-table"><thead><tr>` +
-		`<th>装置名称</th><th>品目</th><th>図面番号</th><th>品番</th><th>区分</th></tr></thead><tbody>`)
+		`<th>装置名称</th><th>品目</th><th>品番</th><th>区分</th></tr></thead><tbody>`)
 	for _, r := range list {
 		id := formatID(r.PageID)
 		title := r.Title
@@ -256,12 +256,25 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 		}
 		// 図面番号・品番が何枚ぶんもあれば**縦に並べる**（2026-10-01 利用者:「図面番号が複数ある場合、縦に並べれば全体が
 		// 上手く表示されるのでは？」）——「・」で横に繋ぐと列が伸びて、表が横にはみ出していた。
-		b.WriteString(`</td><td>` + stackLines(r.DrawingNo) + `</td><td>` + stackLines(r.PartNo) + `</td>` +
+		b.WriteString(`</td><td>` + partNoCell(r) + `</td>` +
 			`<td>` + esc(strings.Join(r.Kinds, "・")) + `</td></tr>`)
 	}
 	b.WriteString(`</tbody></table>`)
 	b.WriteString(`<p class="materials-empty plist-none" data-plist-none="1" hidden>当てはまる加工製品はありません。</p>`)
 	return b.String()
+}
+
+// partNoCell は一覧の「品番」の列です——品番があれば品番だけ、無ければ図面番号を「図番」の印を付けて出します
+// （2026-10-01 利用者:「加工製品の一覧は品番があれば図面番号は必要ないかもしれません」）。図面番号の列は無くした。
+// ⚠ 文字で絞る対象（data-text）には図面番号を残す——列に出なくても、図面番号で引けば当たる。
+func partNoCell(r productListRow) string {
+	if r.PartNo != "" {
+		return stackLines(r.PartNo)
+	}
+	if r.DrawingNo == "" {
+		return ""
+	}
+	return `<span class="plist-dwg" title="品番が無いので図面番号">` + stackLines(r.DrawingNo) + `<small>（図番）</small></span>`
 }
 
 // stackLines は「・」で繋いだ値を、1つずつ改行で縦に並べた HTML にします（それぞれエスケープする）。

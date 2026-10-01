@@ -131,3 +131,18 @@ func TestStackLinesPutsEachOnItsOwnLine(t *testing.T) {
 		t.Errorf("空なら空のはず: %q", got)
 	}
 }
+
+// TestPartNoCellPrefersPartNo は、加工製品の一覧の「品番」の列が、品番があれば品番だけ・無ければ図面番号に「図番」の印を
+// 付けて出すことを固定します（2026-10-01 利用者:「加工製品の一覧は品番があれば図面番号は必要ないかもしれません」）。
+func TestPartNoCellPrefersPartNo(t *testing.T) {
+	if got := partNoCell(productListRow{PartNo: "K-1", DrawingNo: "A100-B01-001"}); got != "K-1" {
+		t.Errorf("品番があるのに図面番号が出ています: %q", got)
+	}
+	got := partNoCell(productListRow{DrawingNo: "A100-B01-001・A100-B01-002"})
+	if !strings.Contains(got, "A100-B01-001<br/>A100-B01-002") || !strings.Contains(got, "（図番）") {
+		t.Errorf("品番が無いのに図面番号が印つきで出ていません: %q", got)
+	}
+	if got := partNoCell(productListRow{}); got != "" {
+		t.Errorf("どちらも無ければ空のはず: %q", got)
+	}
+}
