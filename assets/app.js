@@ -1423,6 +1423,7 @@
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
+        refreshTablePrint();         // どの表にも「🖨 この表を印刷」（閲覧モード限定・2026-10-02）
         wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
@@ -7868,7 +7869,14 @@ delegateClick([['.estimate-add-go', async (btn) => {
 delegateClick([['.backlog-print', (btn) => {
     const sheet = btn.closest('.backlog-sheet');
     if (!sheet) return;
+    const copy = sheet.cloneNode(true);
+    copy.querySelectorAll('.backlog-print').forEach((b) => b.remove());
+    printOnly(copy);
+}]]);
 
+// printOnly は node（写し）だけを紙に刷ります——`#w-print-area` へ入れ、body の他の子を消す（app.css の `@media print`）。
+// 受注残表の印刷と、どの表にも付く「🖨 この表を印刷」が使います。
+function printOnly(node) {
     let area = document.getElementById('w-print-area');
     if (!area) {
         area = document.createElement('div');
@@ -7876,9 +7884,7 @@ delegateClick([['.backlog-print', (btn) => {
         document.body.appendChild(area);
     }
     area.textContent = '';
-    const copy = sheet.cloneNode(true);
-    copy.querySelectorAll('.backlog-print').forEach((b) => b.remove());
-    area.appendChild(copy);
+    area.appendChild(node);
     document.body.classList.add('w-printing-sheet');
 
     // ⚠ **必ず後片付けします。** 印が残ると、次に Ctrl+P したとき1枚しか刷れません
@@ -7891,6 +7897,62 @@ delegateClick([['.backlog-print', (btn) => {
     // afterprint を出さないブラウザへの保険（Safari 系）。
     setTimeout(cleanup, 60000);
     window.print();
+}
+
+// ── どの表にも「🖨 この表を印刷」（2026-10-02）────────────────────────────
+//
+// 利用者:「こういった表を印刷できるようになりませんか？」（Excel から貼った表）→「どの表にも『🖨 この表を印刷』」。
+// 受注残表の印刷（上）と同じ仕組みで、**その表の写しだけ**を刷ります。紙の頭にはページの題を置きます
+// （表のキャプションは表と一緒に出る）。
+//
+// ⚠ **閲覧モードだけ**——編集モードでは出しません（`applyMode` が呼ぶたびに作り直す）。ボタンはクローム
+//    （`.vocab-chrome`）なので保存されません。
+// ⚠ **受注残表は自分のボタンを持つ**ので付けません。表の中の表にも付けません。
+// ⚠ 紙には操作の部品を出しません——ボタン・入力欄・選ぶ欄を外し、外して空になったサーバーのセル（「↩ 戻す」の列など）も
+//    外します。値の入ったサーバーのセル（最新単価など）は画面と同じに残します。
+function refreshTablePrint() {
+    document.querySelectorAll('#w-editor-content .w-table-print').forEach((b) => b.remove());
+    if (document.body.hasAttribute('edit-mode')) return;
+    document.querySelectorAll('#w-editor-content table').forEach((t) => {
+        if (t.parentElement && t.parentElement.closest('table')) return;
+        if (t.closest('.backlog-sheet')) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'vocab-chrome w-table-print';
+        btn.contentEditable = 'false';
+        btn.textContent = '🖨 この表を印刷';
+        t.insertAdjacentElement('beforebegin', btn);
+    });
+}
+
+// printableTableCopy は表の写しから、紙に要らない操作の部品を外したものを返します。
+function printableTableCopy(table) {
+    const copy = table.cloneNode(true);
+    copy.querySelectorAll('button, input, select, textarea, .w-table-print, .draft-form-box')
+        .forEach((el) => el.remove());
+    copy.querySelectorAll('th.vocab-chrome, td.vocab-chrome').forEach((c) => {
+        if (!c.textContent.trim()) c.remove();
+    });
+    copy.querySelectorAll('tr').forEach((tr) => {
+        if (!tr.children.length) tr.remove();
+    });
+    return copy;
+}
+
+delegateClick([['.w-table-print', (btn) => {
+    const table = btn.nextElementSibling;
+    if (!table || table.tagName !== 'TABLE') return;
+    const sheet = document.createElement('div');
+    sheet.className = 'w-print-sheet';
+    const h1 = document.querySelector('#w-editor-content h1');
+    if (h1 && h1.textContent.trim()) {
+        const title = document.createElement('p');
+        title.className = 'w-print-title';
+        title.textContent = h1.textContent.trim();
+        sheet.appendChild(title);
+    }
+    sheet.appendChild(printableTableCopy(table));
+    printOnly(sheet);
 }]]);
 
 // ── 受注残表から受注明細を書き換える（2026-09-21）────────────────────────

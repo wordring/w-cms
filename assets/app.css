@@ -2551,7 +2551,34 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     }
     /* 紙では「受注」列のリンクの下線は邪魔なので消す（URLは出さない）。 */
     #w-print-area a { color: inherit; text-decoration: none; }
+
+    /* どの表にも付く「🖨 この表を印刷」（2026-10-02）——紙の頭にページの題、表は罫線つき。 */
+    .w-table-print { display: none !important; }
+    #w-print-area .w-print-title { font-size: 12pt; font-weight: bold; margin: 0 0 6px; }
+    #w-print-area .w-print-sheet table { border-collapse: collapse; width: 100%; }
+    #w-print-area .w-print-sheet caption { text-align: left; font-weight: bold; margin-bottom: 4px; }
+    #w-print-area .w-print-sheet th, #w-print-area .w-print-sheet td {
+        border: 1px solid #999;
+        padding: 3px 6px;
+        font-size: 10.5pt;
+        background: #fff;
+    }
 }
+
+/* 「🖨 この表を印刷」——表の上の右端に小さく。毎日見る表で目立たないよう、指すまで薄く。 */
+#w-editor-content .w-table-print {
+    display: block;
+    margin: 4px 0 2px auto;
+    padding: 1px 8px;
+    font-size: 0.8em;
+    color: var(--text-muted, #6b7280);
+    background: transparent;
+    border: 1px solid var(--w-border, #cbd5e1);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.6;
+}
+#w-editor-content .w-table-print:hover, #w-editor-content .w-table-print:focus { opacity: 1; }
 
 /* ── 受注残表の編集（2026-09-21）────────────────────────────────────────
    ⚠ **クロームの中の部品**なので保存されません。見た目は控えめに——毎日見る表で
