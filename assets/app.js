@@ -7964,16 +7964,36 @@ function printOnly(node) {
     area.appendChild(node);
     document.body.classList.add('w-printing-sheet');
 
+    // ⚠ **ページの埋め込み（PDF の embed・iframe・object）は刷るあいだだけ外します。** 残っていると Chrome は
+    // print() を「まだ読み込み中」として後回しにし、**印刷の画面が開きません**（エラーも出ない）。2026-10-02 夜に
+    // 利用者:「この表を印刷を押しても何も起きません」（加工製品ページの材料表）——図面の PDF のあるページだけで起き、
+    // 受注残表（PDF の無いページ）では開いた。本物の Chrome で、埋め込みを外すと同じページでも開くのを確かめた
+    // （ヘッドレスでは起きないので E2E では外したことだけを見る——verify-table-print.js）。
+    // 紙に出ない部分なので見た目は変わりません。後片付けで元の場所へ戻します（PDF は読み直しになる）。
+    const parked = [];
+    document.querySelectorAll('embed, iframe, object').forEach((el) => {
+        if (area.contains(el)) return;
+        const mark = document.createComment('w-print-parked');
+        el.replaceWith(mark);
+        parked.push([mark, el]);
+    });
+
     // ⚠ **必ず後片付けします。** 印が残ると、次に Ctrl+P したとき1枚しか刷れません
-    // （画面には出ないので、原因に気づけない形の壊れ方です）。
+    // （画面には出ないので、原因に気づけない形の壊れ方です）。外した埋め込みも戻します。
+    let done = false;
     const cleanup = () => {
+        if (done) return;
+        done = true;
         document.body.classList.remove('w-printing-sheet');
         area.textContent = '';
+        parked.forEach(([mark, el]) => { if (mark.parentNode) mark.replaceWith(el); });
     };
     window.addEventListener('afterprint', cleanup, { once: true });
     // afterprint を出さないブラウザへの保険（Safari 系）。
     setTimeout(cleanup, 60000);
-    window.print();
+    // 外した埋め込みがあれば、外れたことが Chrome に届いてから呼びます（同じ流れの中で呼ぶと、まだ読み込み中に見える）。
+    if (parked.length) setTimeout(() => window.print(), 0);
+    else window.print();
 }
 
 // ── どの表にも「🖨 この表を印刷」（2026-10-02）────────────────────────────

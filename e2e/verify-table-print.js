@@ -67,6 +67,38 @@ const BODY = '<h1>【E2E】表の印刷</h1>' +
       check(!/<button|この表を印刷/.test(p.html), '紙に印刷ボタンが出ない');
     }
 
+    // ページに埋め込み（図面の PDF など）があると、刷るあいだだけ外し、後で元の場所へ戻す（2026-10-02 夜——残っていると
+    // 本物の Chrome は print() を後回しにして印刷の画面を開かない。ヘッドレスでは起きないので、外したことと戻したことを見る）。
+    await page.evaluate(() => {
+      const e = document.createElement('embed');
+      e.id = 'e2e-embed';
+      e.type = 'application/pdf';
+      document.querySelector('#w-editor-content p').appendChild(e);
+      window.__printed = null;
+      window.print = () => {
+        const area = document.getElementById('w-print-area');
+        window.__printed = {
+          outside: [...document.querySelectorAll('embed, iframe, object')].filter((x) => !area.contains(x)).length,
+          text: area.textContent,
+        };
+      };
+    });
+    await page.locator('#w-editor-content .w-table-print').first().click();
+    await page.waitForFunction(() => window.__printed, null, { timeout: 3000 }).catch(() => {});
+    const q = await page.evaluate(() => window.__printed);
+    check(!!q, '埋め込みのあるページでも印刷が呼ばれる');
+    if (q) {
+      check(q.outside === 0, '刷るあいだはページの埋め込みを外す', q.outside + ' 個残った');
+      check(q.text.includes('E2E-PRINT-A'), '押した表が紙に出る（埋め込みのあるページ）');
+    }
+    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    const restored = await page.evaluate(() => {
+      const e = document.getElementById('e2e-embed');
+      return !!(e && e.closest('#w-editor-content p'));
+    });
+    check(restored, '印刷のあと、埋め込みを元の場所へ戻す');
+    await page.evaluate(() => { const e = document.getElementById('e2e-embed'); if (e) e.remove(); });
+
     // 編集モードでは出さない（保存されない）。
     await page.evaluate(() => document.getElementById('w-mode-toggle').click());
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
