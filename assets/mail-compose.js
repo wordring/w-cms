@@ -120,7 +120,8 @@
         const head = el('p', 'mc-head', state.draftId ? '📝 下書き（' + (d.purpose || '') + '）' : '✉️ ' + (d.purpose || 'メール'));
         form.appendChild(head);
         if (!ready) {
-            add(form, '⚠ メールにサインインしていないので、いまは送れません（下書きには保存できます）。', 'mc-ng');
+            add(form, '⚠ メールにサインインしていないので、いまは送れません（下書きには保存できます）。' +
+                'サインインは通信箱の「✉️ メールにサインイン」から。', 'mc-ng');
         }
         (d.notes || []).forEach((n) => add(form, n, 'mc-note'));
 

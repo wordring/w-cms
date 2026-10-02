@@ -5506,6 +5506,83 @@
         btn.title = '受信箱と送信済みの箱から、まだ通信箱に入っていないメールを取り込みます';
         memo.insertAdjacentElement('afterend', btn);
         btn.addEventListener('click', () => fetchNewMail(btn));
+        wireMailSignIn(btn);
+    }
+
+    // wireMailSignIn は「✉️ メールにサインイン」を「📥 新しいメールを読み込む」の隣に置きます（2026-10-02）。
+    //
+    // 利用者:「メールの画面からもう一度サインインを教えてください」——サインインの口（`POST /api/mail/signin`・
+    // デバイスコード）はあったが、**押す道が画面のどこにも無かった**（最初のサインインは口を直に叩いていた）。
+    // 新しい利用者で入るとサインインが要る（保管は利用者ごと）ので、画面から始められるようにする。
+    //
+    // ⚠ **サインインしていないときだけ出す**（`/api/mail/status`）。押すと Microsoft の画面へのリンクと番号を出し、
+    //    そこでサインインし終えるのを待って（status を数秒おきに見る）、済んだら消える。パスワードは w-cms を通らない。
+    async function wireMailSignIn(after) {
+        if (document.getElementById('w-mail-signin')) return;
+        let st;
+        try {
+            st = await (await fetch('/api/mail/status')).json();
+        } catch (e) {
+            return;
+        }
+        if (!st || !st.success || !st.configured || st.address) return;
+        if (document.getElementById('w-mail-signin')) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'w-mail-signin';
+        btn.textContent = '✉️ メールにサインイン';
+        btn.title = 'メールにサインインしていません（サインインは利用者ごと）。押すと Microsoft の画面でサインインします';
+        const box = document.createElement('span');
+        box.id = 'w-mail-signin-box';
+        box.className = 'mail-signin-box';
+        after.insertAdjacentElement('afterend', btn);
+        btn.insertAdjacentElement('afterend', box);
+        btn.addEventListener('click', () => startMailSignIn(btn, box));
+    }
+
+    async function startMailSignIn(btn, box) {
+        btn.disabled = true;
+        box.textContent = 'サインインの番号をもらっています…';
+        let d;
+        try {
+            const res = await fetch('/api/mail/signin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        } catch (e) {
+            box.textContent = '⚠ サインインを始められません: ' + e.message;
+            btn.disabled = false;
+            return;
+        }
+        // 案内: リンクを開いて番号を入れる（別のタブ）。
+        box.textContent = '';
+        const a = document.createElement('a');
+        a.href = d.verification_uri;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'Microsoft の画面を開く';
+        const code = document.createElement('strong');
+        code.className = 'mail-signin-code';
+        code.textContent = d.user_code;
+        box.append('① ', a, '　② 番号 ', code, ' を入れて、メールのアカウントでサインイン（このページはそのまま待ちます）');
+        // 済むのを待つ（番号の期限まで・3秒おき）。
+        const until = Date.now() + (Number(d.expires_in) || 900) * 1000;
+        while (Date.now() < until) {
+            await new Promise((r) => setTimeout(r, 3000));
+            let st;
+            try {
+                st = await (await fetch('/api/mail/status')).json();
+            } catch (e) {
+                continue;
+            }
+            if (st && st.address) {
+                btn.remove();
+                box.textContent = '✓ ' + st.address + ' でサインインしました';
+                notify('メールにサインインしました（' + st.address + '）', { type: 'success', duration: 8000 });
+                return;
+            }
+        }
+        box.textContent = '⚠ 番号の期限が切れました。もう一度押してください';
+        btn.disabled = false;
     }
 
     async function fetchNewMail(btn) {

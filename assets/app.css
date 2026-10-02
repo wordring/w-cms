@@ -2191,6 +2191,11 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 #w-editor-content #w-memo-create:hover:not(:disabled) { background: var(--border); }
 #w-editor-content #w-memo-create:disabled { opacity: .4; cursor: default; }
 
+/* 「✉️ メールにサインイン」（2026-10-02・サインインしていないときだけ）と、押したあとの案内（番号とリンク）。 */
+#w-editor-content #w-mail-signin { white-space: nowrap; cursor: pointer; }
+#w-editor-content .mail-signin-box { font-size: 13px; white-space: normal; }
+#w-editor-content .mail-signin-code { font-size: 1.15em; letter-spacing: 0.08em; }
+
 /* ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）。返信のクロームと同じ
  * 「本文の外に出す帯」で、記録を作るかはチェック1つで決める。 */
 #w-editor-content .phone-chrome {
