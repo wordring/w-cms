@@ -1,7 +1,8 @@
 package contacts
 
 // ─────────────────────────────────────────────────────────────────────────
-// 署名——連絡帳の人のページに書いた「○○の署名」の節（2026-09-22・2026-09-30 に東邦の拡張から移した）
+// 署名——連絡帳の人のページに書いた「○○の署名」の見出しの中身（2026-09-22・2026-09-30 に東邦の拡張から移した・
+// 2026-10-02 からふつうの見出しの下も読む）
 //
 // 利用者（2026-09-22）:「連絡帳には自社の担当者のページがありますから、そこに**発注書用の署名や
 // メール用の署名**を書いておけばよいのでは？」。
@@ -40,7 +41,12 @@ func SignatureOf(pageID int, heading string) []string {
 	return SignatureLines(body, heading)
 }
 
-// SignatureLines は本文から、その見出しを持つ節の中身を行にして返します（無ければ nil）。
+// SignatureLines は本文から、その見出しの中身を行にして返します（無ければ nil）。
+//
+// 読む形は2つ——**見出しの節**（`<section><h2>発注書の署名</h2><p>…</p></section>`）と、
+// **ふつうの見出し**（`<h2>発注書の署名</h2><p>…</p>`——次の同じか上の段の見出しまで）。
+// ⚠ **ふつうの見出しも読みます**（2026-10-02）——利用者がエディタの「見出し2」で署名を書いたら効かなかった。
+// 節の形しか読んでいませんでしたが、エディタで見出しを打てば素の `<h2>` になるので、普通に書くとこちらです。
 //
 // ⚠ **`<br>` も行の区切りです**——署名を1つの段落に改行で書く人が居ます。
 // ⚠ **見出しそのものは返しません**（紙やメールに「メールの署名」とは書かない）。
@@ -49,22 +55,83 @@ func SignatureLines(bodyHTML, heading string) []string {
 	if err != nil {
 		return nil
 	}
+	// ⚠ 断片の頭のノードは兄弟を持ちません（ParseFragment が切り離す）——見出しから次の段落へ進めるよう、
+	// 仮の親にまとめます。
+	root := &html.Node{Type: html.ElementNode, Data: "body"}
+	for _, n := range nodes {
+		root.AppendChild(n)
+	}
 	var found []string
-	for _, root := range nodes {
+	cms.WalkElements(root, func(n *html.Node) {
 		if found != nil {
+			return
+		}
+		if n.Data == "section" {
+			if sectionHeading(n) == heading {
+				found = sectionTextLines(n)
+			}
+			return
+		}
+		if headingLevel(n) < 2 || isSectionHead(n) {
+			return // 節の見出しは上の枝が読む
+		}
+		if strings.TrimSpace(brToNewline(n)) == heading {
+			found = linesAfterHeading(n)
+		}
+	})
+	return found
+}
+
+// headingLevel は h1〜h6 の段（1〜6）を返します（見出しでなければ 0）。
+func headingLevel(n *html.Node) int {
+	if n.Type != html.ElementNode || len(n.Data) != 2 || n.Data[0] != 'h' || n.Data[1] < '1' || n.Data[1] > '6' {
+		return 0
+	}
+	return int(n.Data[1] - '0')
+}
+
+// isSectionHead は、その見出しが節の直下の（節の名前になる）見出しかを返します。
+func isSectionHead(h *html.Node) bool {
+	return h.Parent != nil && h.Parent.Data == "section" && firstHeading(h.Parent) == h
+}
+
+// linesAfterHeading は、ふつうの見出しの後ろの兄弟を、次の同じか上の段の見出しまで行にします。
+//
+// ⚠ **節（`<section>`）の手前でも止めます**——ファイル表示や見出しの節は別のもので、署名の続きではありません。
+// 下の段の見出しは書きません（節の読み方 `sectionTextLines` と同じ）。
+func linesAfterHeading(h *html.Node) []string {
+	level := headingLevel(h)
+	var out []string
+	add := func(s string) {
+		for _, ln := range strings.Split(s, "\n") {
+			if ln = strings.TrimSpace(ln); ln != "" {
+				out = append(out, ln)
+			}
+		}
+	}
+	for c := h.NextSibling; c != nil; c = c.NextSibling {
+		if c.Type == html.TextNode {
+			add(c.Data)
+			continue
+		}
+		if c.Type != html.ElementNode {
+			continue
+		}
+		if lv := headingLevel(c); lv > 0 {
+			if lv <= level {
+				break
+			}
+			continue
+		}
+		if c.Data == "section" {
 			break
 		}
-		cms.WalkElements(root, func(n *html.Node) {
-			if found != nil || n.Data != "section" {
-				return
-			}
-			if sectionHeading(n) != heading {
-				return
-			}
-			found = sectionTextLines(n)
-		})
+		add(brToNewline(c))
 	}
-	return found
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // MySignature は「いま操作している人」の署名を返します（無ければ nil）。
@@ -115,16 +182,20 @@ func MySignature(user *auth.User, heading string) []string {
 //
 // ⚠ **直下だけ**を見ます——入れ子の節の見出しを拾うと、別の節の中身を署名として書くことになります。
 func sectionHeading(section *html.Node) string {
-	for c := section.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.ElementNode {
-			continue
-		}
-		switch c.Data {
-		case "h2", "h3", "h4", "h5", "h6":
-			return strings.TrimSpace(brToNewline(c))
-		}
+	if h := firstHeading(section); h != nil {
+		return strings.TrimSpace(brToNewline(h))
 	}
 	return ""
+}
+
+// firstHeading は節の直下の最初の見出し（h2〜h6）を返します（無ければ nil）。
+func firstHeading(section *html.Node) *html.Node {
+	for c := section.FirstChild; c != nil; c = c.NextSibling {
+		if headingLevel(c) >= 2 {
+			return c
+		}
+	}
+	return nil
 }
 
 // sectionTextLines は節の中身を行の並びにします（見出しは外す）。

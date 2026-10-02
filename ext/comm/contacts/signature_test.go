@@ -75,6 +75,44 @@ func TestSignatureLinesIgnoresNestedHeadings(t *testing.T) {
 	}
 }
 
+// TestSignatureLinesReadsPlainHeadings は、⚠ **ふつうの見出し（節で包まない `<h2>`）の下も読む**ことを固定します
+// （2026-10-02——利用者がエディタの「見出し2」で書いたら効かなかった。下の本文はそのとき保存された形と同じ作り）。
+func TestSignatureLinesReadsPlainHeadings(t *testing.T) {
+	body := `<h1 data-id="z1ql">山田 太郎</h1>` +
+		`<dl data-id="nj5j" data-type="tags"><dt>メールアドレス</dt><dd>yamada@example.com</dd></dl>` +
+		`<p data-id="3y10"><br/></p>` +
+		`<h2 data-id="3l6c"><strong>` + orderSig + `</strong></h2>` +
+		`<p data-id="r8xu">みらい産業</p><p>担当： 山田 太郎</p>` +
+		`<p data-id="jgob"></p>` +
+		`<h2 data-id="ukio">` + MailSignatureHeading + `</h2>` +
+		`<p data-id="b0vs">メール用です</p>`
+	if got := SignatureLines(body, orderSig); strings.Join(got, "|") != "みらい産業|担当： 山田 太郎" {
+		t.Errorf("発注書の署名が %v です（次の見出しの手前まで・見出しの太字は外して当てる）", got)
+	}
+	if got := SignatureLines(body, MailSignatureHeading); strings.Join(got, "|") != "メール用です" {
+		t.Errorf("メールの署名が %v です", got)
+	}
+}
+
+// TestSignatureLinesPlainHeadingStops は、⚠ **ふつうの見出しの中身がどこで終わるか**を固定します——同じか上の段の
+// 見出し・節の手前で止まり、下の段の見出しは書かない（署名に別の話が混ざると、紙にそのまま刷られます）。
+func TestSignatureLinesPlainHeadingStops(t *testing.T) {
+	body := `<h2>` + orderSig + `</h2><p>一行目</p><h3>小見出し</h3><p>二行目</p>` +
+		`<section data-type="file-view" data-ref="000001-abcd">図面.pdf</section><p>節の後ろ</p>`
+	if got := SignatureLines(body, orderSig); strings.Join(got, "|") != "一行目|二行目" {
+		t.Errorf("署名が %v です（一行目|二行目 のはず——節の手前で止まる・下の段の見出しは書かない）", got)
+	}
+	body = `<h3>` + orderSig + `</h3><p>一行目</p><h2>別の話</h2><p>別の行</p>`
+	if got := SignatureLines(body, orderSig); strings.Join(got, "|") != "一行目" {
+		t.Errorf("署名が %v です（上の段の見出しで止まるはず）", got)
+	}
+	// 節の見出しは節として読む（後ろの兄弟まで読まない）。
+	body = `<section><h2>` + orderSig + `</h2><p>節の中</p></section><p>節の外</p>`
+	if got := SignatureLines(body, orderSig); strings.Join(got, "|") != "節の中" {
+		t.Errorf("署名が %v です（節の中だけのはず）", got)
+	}
+}
+
 // TestMySignatureFindsTheLoginNamePage は、⚠ **ログイン名と同じ題の人のページのメールの署名**を
 // 返すこと・当たらなければ空であることを固定します（2026-09-30・送る欄の初期値）。
 func TestMySignatureFindsTheLoginNamePage(t *testing.T) {
