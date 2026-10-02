@@ -8139,8 +8139,16 @@ delegateClick([['.backlog-print', (btn) => {
         const form = go.closest('.draft-form');
         const box = form && form.parentElement
             ? form.parentElement.querySelector('[data-draft-result]') : null;
-        const table = form ? form.closest('table') : null;
-        if (!form || !box || !table) return;
+        // ⚠ **欄は表の外に居ます**（2026-09-28 から——発注部材表を節で包み、欄を表の直後へ置いた）。
+        //    それまでの `form.closest('table')` は節の形で空になり、**押しても黙って何もしませんでした**
+        //    （2026-10-02 利用者:「発注部材表から発注書が作れません」——09-28 の夕方から1枚も作れていなかった）。
+        //    節で包まない古い形（欄が表の中）も読めるよう、両方を探します。
+        const table = form ? (form.closest('table') || draftTableOf(form)) : null;
+        if (!form || !box) return;
+        if (!table) {
+            sayIn(box, '⚠ 発注部材表が見つかりません（ページを読み直してから押してください）', 'proc-why-ng');
+            return;
+        }
 
         const lines = draftLinesOf(table);
         if (lines.length === 0) {
@@ -8179,6 +8187,14 @@ delegateClick([['.backlog-print', (btn) => {
         } finally {
             go.disabled = false;
         }
+    }
+
+    // draftTableOf は「発注書を作る」の欄が属する発注部材表を返します（無ければ null）。
+    //
+    // 欄は表を包む節（`<section>`）の中、表の直後に居ます（サーバーの `draftBoxOf`）。
+    function draftTableOf(form) {
+        const sec = form.closest('section');
+        return sec ? sec.querySelector(':scope > table') : null;
     }
 
     // draftLinesOf は発注部材表の中身を、発注書へ送る形で読みます。
