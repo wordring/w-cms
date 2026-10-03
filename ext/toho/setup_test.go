@@ -92,4 +92,7 @@ func seedBoxTemplates(t *testing.T) {
 	// 見積の置き場と見積書（2026-10-01）。
 	write("000911", "000901", "<h1>"+EstimateBoxTitle+"</h1>")
 	write("000912", "000901", testEstimateTemplate())
+	// 見積依頼の置き場と見積依頼書（2026-10-03）。
+	write("000913", "000901", "<h1>"+RFQBoxTitle+"</h1>")
+	write("000914", "000901", testRFQTemplate())
 }

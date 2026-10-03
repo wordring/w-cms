@@ -52,6 +52,13 @@ func testEstimateTemplate() string {
 		`<section><h2>` + estimateNoteHeading + `</h2><p><br/></p></section>`
 }
 
+func testRFQTemplate() string {
+	return `<h1>` + RFQTemplate + `</h1>` +
+		emptyTagsDL(RFQNoTag, SupplierTag, RFQDateTag, RFQSignerTag, EstimateSentTag, RFQAnsweredTag) +
+		emptyVocabTable(RFQItemsType) +
+		`<section><h2>` + rfqNoteHeading + `</h2><p><br/></p></section>`
+}
+
 func testPurchaseOrderTemplate() string {
 	return `<h1>` + PurchaseOrderTemplate + `</h1>` +
 		emptyTagsDL(OrderNoTag, SupplierTag, OrderedAtTag, DueDateTag, OrderSignerTag) +

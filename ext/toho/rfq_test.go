@@ -11,6 +11,7 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 )
 
 // 見積依頼の段1（2026-10-03・rfq.go・rfq_api.go）——再見積依頼で集める・重複の赤・見積依頼部材表へ移す・不要・↩ 戻す。
@@ -279,5 +280,59 @@ func TestRFQFolderProductsAndCollectMany(t *testing.T) {
 	}
 	if boxBody(t) != before {
 		t.Error("断ったのに本文が変わりました")
+	}
+}
+
+// TestRFQNewDoc は見積依頼書ページを作る（2026-10-03・段2・rfq_doc.go）を固定します——見積依頼部材表の行が見積依頼明細へ
+// （状態は未回答・⚠ 単価は空——業者に聞く前の値を紙に持ち込まない）、タグ（見積依頼番号＝ページ番号・仕入先・見積依頼日）と
+// 備考の節が入り、置き場は 見積依頼／年／月、元の見積依頼部材表は消える。仕入先が無ければ作らない。
+func TestRFQNewDoc(t *testing.T) {
+	const box = "000040"
+	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
+	seedBody(t, box, `<h1>`+RFQBoxTitle+`</h1>`+tableOfLinesHTML(RFQDraftType, []ourOrderLine{
+		{ProductID: "000041", Kind: "材料", Material: "SS400", Shape: "板", Size: "t6*80*120", Quantity: "6", Unit: "枚", Cost: "1200"},
+		{Kind: "購入部品", ItemID: "M8-20", ItemName: "六角ボルト", Quantity: "10", Unit: "本"},
+	}, true))
+	root := &auth.User{Username: "root", IsAdmin: true}
+
+	if code, _ := postRFQ(t, root, RFQNewDocAPIHandler, map[string]any{"page_id": box, "table": 1}); code != 400 {
+		t.Errorf("仕入先が無いのに %d", code)
+	}
+	if code, _ := postRFQ(t, root, RFQNewDocAPIHandler, map[string]any{"page_id": box, "table": 2, "supplier": "わかば鋼業"}); code != 409 {
+		t.Errorf("無い見積依頼部材表で %d", code)
+	}
+	code, out := postRFQ(t, root, RFQNewDocAPIHandler, map[string]any{"page_id": box, "table": 1,
+		"supplier": "わかば鋼業", "date": "2026-10-05", "note": "標準2輪用"})
+	id, _ := out["page_id"].(string)
+	if code != 200 || id == "" || out["rows"] != float64(2) {
+		t.Fatalf("見積依頼書ページを作れません: %d %v", code, out)
+	}
+	body := readPageBody(t, id)
+	for _, want := range []string{
+		"<h1>見積依頼　わかば鋼業</h1>",
+		"<dt>" + RFQNoTag + "</dt><dd>" + id + "</dd>",
+		"<dt>" + SupplierTag + "</dt><dd>わかば鋼業</dd>",
+		"<dt>" + RFQDateTag + "</dt><dd>2026-10-05</dd>",
+		"<p>標準2輪用</p>",
+		">SS400<", ">六角ボルト<", ">" + rfqLineUnanswered + "<",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("見積依頼書ページに %q がありません:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "1200") {
+		t.Errorf("単価が写っています（業者に聞く前の値）:\n%s", body)
+	}
+	if got := rfqRows(t, body, RFQItemsType, 1); len(got) != 2 || strings.Count(body, ">"+rfqLineUnanswered+"<") != 2 {
+		t.Errorf("見積依頼明細が2行・未回答ではありません: %+v", got)
+	}
+	// 置き場は 見積依頼／年／月。
+	meta, _ := page.ReadSidecar(id)
+	month, _ := page.ReadSidecar(meta.ParentID)
+	if cms.PageTitleByID(pageNum(meta.ParentID)) != "10月" || cms.PageTitleByID(pageNum(month.ParentID)) != "2026年" {
+		t.Errorf("置き場が 見積依頼／2026年／10月 ではありません: %s ← %s", cms.PageTitleByID(pageNum(meta.ParentID)), cms.PageTitleByID(pageNum(month.ParentID)))
+	}
+	if after := readPageBody(t, box); strings.Contains(after, "<caption>見積依頼部材表</caption>") {
+		t.Errorf("元の見積依頼部材表が残っています:\n%s", after)
 	}
 }

@@ -294,6 +294,11 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			` data-rfq-page="` + pageID + `" data-rfq-table="` + strconv.Itoa(idx) + `" data-rfq-row="` + strconv.Itoa(row) + `"` +
 			` title="見積依頼必要部材表へ戻します（この行を外します）">↩ 戻す</button>`
 	})
+	// 「見積依頼書ページを作る」の欄は表の外（包む節の中・表の直後）へ——発注部材表の「発注書を作る」と同じ（rfq_doc.go）。
+	box := draftBoxOf(el)
+	cms.DropChrome(box)
+	appendHTML(box, `<div class="vocab-chrome draft-form-box" contenteditable="false">`+
+		rfqDocFormHTML(ctx.Viewer, pageID, idx)+`</div>`)
 	return false, nil
 }
 

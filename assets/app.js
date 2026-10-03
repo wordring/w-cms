@@ -8517,6 +8517,39 @@ delegateClick([['.estimate-add-go', async (btn) => {
             sayIn(box, (r.data.products || []).length + ' 件・' + r.data.rows + ' 行を見積依頼必要部材表へ入れました。読み直しています…');
             location.reload();
         }],
+        // 見積依頼書ページを作る（2026-10-03・段2——ext/toho/rfq_doc.go）。行はサーバーが本文から読む（表の番号だけ送る）。
+        ['[data-rfq-doc-go]', async (btn) => {
+            const form = btn.closest('.rfq-doc-form');
+            if (!form) return;
+            const box = resultOf(form, '[data-rfq-doc-result]');
+            const body = {
+                page_id: form.getAttribute('data-rfq-page') || '',
+                table: Number(form.getAttribute('data-rfq-table') || 0),
+                supplier: valueIn(form, '[data-rfqdoc="supplier"]'),
+                signer: valueIn(form, '[data-unorder="signer"]'),
+                date: valueIn(form, '[data-rfqdoc="date"]'),
+                note: valueIn(form, '[data-rfqdoc="note"]'),
+            };
+            if (!body.supplier) {
+                sayIn(box, '⚠ 仕入先を入れてください（見積依頼書は1枚に1社です）', 'proc-why-ng');
+                return;
+            }
+            if (!body.signer) {
+                sayIn(box, '⚠ 差出人を選んでください（紙に刷る署名です）', 'proc-why-ng');
+                return;
+            }
+            btn.disabled = true;
+            sayIn(box, '見積依頼書ページを作っています…');
+            const r = await postJSON('/api/rfq/new', body);
+            btn.disabled = false;
+            if (!r.ok) {
+                sayIn(box, '⚠ ' + (r.data.message || '見積依頼書ページを作れませんでした'), 'proc-why-ng');
+                return;
+            }
+            if (r.data.draft_note) alert(r.data.draft_note);
+            sayIn(box, '見積依頼書ページ /' + r.data.page_id + ' を作りました（' + r.data.rows + ' 行）。開いています…');
+            location.href = '/' + r.data.page_id;
+        }],
         ['.rfq-draft-back', async (btn) => {
             btn.disabled = true;
             const r = await postJSON('/api/rfq/draft/back', {
