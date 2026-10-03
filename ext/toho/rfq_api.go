@@ -3,7 +3,8 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 // 見積依頼の口（2026-10-03・段1——rfq.go の絵）
 //
-//	POST /api/rfq/collect        … 再見積依頼フォーム: 弊社品番＋ロットの部材を見積依頼必要部材表へ足す
+//	POST /api/rfq/collect        … 再見積依頼フォーム: 弊社品番＋ロットの部材を見積依頼必要部材表へ足す（items で何枚でも）
+//	GET  /api/rfq/folder-products … 装置フォルダの下の加工製品（再見積依頼の一時的な表・読むだけ）
 //	POST /api/rfq/needs/move     … 見積依頼必要部材表（と臨時部材表）の選んだ行を見積依頼部材表へ移す
 //	POST /api/rfq/needs/remove   … 選んだ行を消す（「不要」——記録は残さない・利用者:「人間が判断して必要なければ消します」）
 //	POST /api/rfq/draft/back     … 見積依頼部材表の行を見積依頼必要部材表へ戻す（↩ 戻す）
@@ -93,33 +94,41 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		PageID  string `json:"page_id"`
-		Product string `json:"product"`
-		Lot     string `json:"lot"`
+		PageID  string           `json:"page_id"`
+		Product string           `json:"product"`
+		Lot     string           `json:"lot"`
+		Items   []rfqCollectItem `json:"items"` // 装置フォルダの一時的な表で選んだ加工製品（あれば product・lot より先）
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pid, okP := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.Product), "/"))
-	if !okP || !page.CanView(user, pageNum(pid)) {
-		cms.JSONFail(w, http.StatusBadRequest, "弊社品番（加工製品ページの番号）を書いてください")
-		return
+	// 1つの加工製品（弊社品番の欄）なら、断る理由はそのまま断る。何枚か（装置フォルダの一時的な表で選んだもの）なら、
+	// 集められないものは飛ばして理由を返し、集められたものだけ入れる（1枚が空でもほかの分は入れたい）。
+	single := len(req.Items) == 0
+	items := req.Items
+	if single {
+		items = []rfqCollectItem{{Product: req.Product, Lot: req.Lot}}
 	}
-	productID := pageNum(pid)
-	var lots []int
-	if s := strings.TrimSpace(req.Lot); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 1 {
-			cms.JSONFail(w, http.StatusBadRequest, "ロットは1以上の数で書いてください（空なら見積計算表のロット）")
-			return
+	var lines []ourOrderLine
+	var done []map[string]any
+	var skipped []string
+	var log []string
+	for _, it := range items {
+		pid, lots, ls, status, msg := rfqItemLines(user, it)
+		if msg != "" {
+			if single {
+				cms.JSONFail(w, status, msg)
+				return
+			}
+			skipped = append(skipped, msg)
+			continue
 		}
-		lots = []int{n}
-	} else if lots = estimateLotsOf(productID); len(lots) == 0 {
-		lots = []int{1} // 見積計算表が無い・ロットが読めない——1個分
+		lines = append(lines, ls...)
+		done = append(done, map[string]any{"product": pid, "lots": lots, "rows": len(ls)})
+		log = append(log, pid+" ロット"+joinInts(lots))
 	}
-	lines := rfqLinesOfProduct(productID, lots)
 	if len(lines) == 0 {
-		cms.JSONFail(w, http.StatusConflict, "/"+pid+" に材料・購入部品・外注加工の表がありません（集めるものがありません）")
+		cms.JSONFail(w, http.StatusConflict, "集められるものがありません——"+strings.Join(skipped, "／"))
 		return
 	}
 	pageID, okID := gateWritablePage(w, r, req.PageID)
@@ -134,8 +143,90 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}) {
 		return
 	}
-	auth.Audit(user.Username, "rfq.collect", pageID+" <- "+pid+" ロット"+joinInts(lots)+" "+strconv.Itoa(added)+"行")
-	cms.WriteJSON(w, map[string]any{"success": true, "rows": added, "lots": lots, "product": pid})
+	auth.Audit(user.Username, "rfq.collect", pageID+" <- "+strings.Join(log, "・")+" "+strconv.Itoa(added)+"行")
+	res := map[string]any{"success": true, "rows": added, "products": done, "skipped": skipped}
+	if single {
+		res["lots"] = done[0]["lots"]
+		res["product"] = done[0]["product"]
+	}
+	cms.WriteJSON(w, res)
+}
+
+// rfqCollectItem は集める加工製品1つです（弊社品番＝加工製品ページの番号・ロット——空なら見積計算表のロット）。
+type rfqCollectItem struct {
+	Product string `json:"product"`
+	Lot     string `json:"lot"`
+}
+
+// rfqItemLines は加工製品1つの部材を行にします。集められなければ断る理由（msg）と、そのときの状態の番号を返します。
+func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, lines []ourOrderLine, status int, msg string) {
+	pid, okP := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(it.Product), "/"))
+	if !okP || !page.CanView(user, pageNum(pid)) {
+		return "", nil, nil, http.StatusBadRequest, "弊社品番（加工製品ページの番号）を書いてください"
+	}
+	productID := pageNum(pid)
+	if s := strings.TrimSpace(it.Lot); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 {
+			return pid, nil, nil, http.StatusBadRequest, "/" + pid + " のロットは1以上の数で書いてください（空なら見積計算表のロット）"
+		}
+		lots = []int{n}
+	} else if lots = estimateLotsOf(productID); len(lots) == 0 {
+		lots = []int{1} // 見積計算表が無い・ロットが読めない——1個分
+	}
+	lines = rfqLinesOfProduct(productID, lots)
+	if len(lines) == 0 {
+		return pid, lots, nil, http.StatusConflict, "/" + pid + " に材料・購入部品・外注加工の表がありません（集めるものがありません）"
+	}
+	return pid, lots, lines, 0, ""
+}
+
+// RFQFolderProductsAPIHandler は GET /api/rfq/folder-products?folder=001234 です（2026-10-03）。
+//
+// 利用者:「装置フォルダのページ番号を入力する欄を作り、その下にある加工製品を列挙する一時的な表を作ります。その表で
+// チェックした加工製品から見積依頼必要部材表に追加するように」。**読むだけ**——表は画面の中だけで組み（本文には残さない）、
+// 選んだものは `/api/rfq/collect` の items で送る。並びと「加工製品ページかどうか」は「加工製品の一覧」と同じ
+// （`productListRows`——改定で子ページへ移った旧版は出さない）。どのページの番号でもよい（その下を全部見る）。
+func RFQFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user := auth.CurrentUser(r)
+	if user == nil {
+		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		return
+	}
+	fid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.URL.Query().Get("folder")), "/"))
+	exists := 0
+	if ok {
+		// ⚠ 管理者には CanView が無いページでも通るので、在るかを別に見る（無い番号に「0 件」と答えない）。
+		database.DB.QueryRow(`SELECT COUNT(*) FROM pages WHERE id = ?`, pageNum(fid)).Scan(&exists)
+	}
+	if !ok || exists == 0 || !page.CanView(user, pageNum(fid)) {
+		cms.JSONFail(w, http.StatusNotFound, "その番号のページがありません（装置フォルダのページ番号を書いてください）")
+		return
+	}
+	rows, err := productListRows(user, pageNum(fid))
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "加工製品を読めませんでした: "+err.Error())
+		return
+	}
+	type product struct {
+		ID        string `json:"id"`
+		Title     string `json:"title"`
+		Machine   string `json:"machine"`
+		PartNo    string `json:"part_no"`
+		DrawingNo string `json:"drawing_no"`
+		Lots      []int  `json:"lots"`
+		Migrating bool   `json:"migrating"`
+	}
+	out := make([]product, 0, len(rows))
+	for _, p := range rows {
+		lots := estimateLotsOf(p.PageID)
+		if lots == nil {
+			lots = []int{}
+		}
+		out = append(out, product{ID: page.FormatID(p.PageID), Title: p.Title, Machine: p.Machine,
+			PartNo: p.PartNo, DrawingNo: p.DrawingNo, Lots: lots, Migrating: p.Migrating})
+	}
+	cms.WriteJSON(w, map[string]any{"success": true, "folder": fid, "title": cms.PageTitleByID(pageNum(fid)), "products": out})
 }
 
 // rfqPickRequest は見積依頼必要部材表の選んだ行です（行番号は見出しを除いた何行目か・1始まり）。

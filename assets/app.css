@@ -2168,6 +2168,8 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content tr.rfq-temp-row.rfq-dup > td { background: #fee2e2; }
 #w-editor-content .rfq-temp-mark { margin-left: 4px; color: var(--text-muted, #64748b); font-size: 0.85em; white-space: nowrap; }
 #w-editor-content td.rfq-pick, #w-editor-content th.rfq-pick { white-space: nowrap; }
+/* 再見積依頼の「装置フォルダから選ぶ」一時的な表（2026-10-03・画面だけ——app.js の listFolder）。ロットの欄は数字が入る幅だけ。 */
+#w-editor-content .rfq-folder-table input.rfq-folder-lot { width: 6em; }
 #w-editor-content .unhandled-bulk { margin: 8px 0 0; }
 #w-editor-content #w-unhandled-bulk-done,
 #w-editor-content #w-unhandled-bulk-skip {

@@ -8269,6 +8269,105 @@ delegateClick([['.estimate-add-go', async (btn) => {
         const host = form.parentElement;
         return host ? host.querySelector(sel) : null;
     };
+    // ── 装置フォルダから選ぶ（2026-10-03）——利用者:「装置フォルダのページ番号を入力する欄を作り、その下にある加工製品を
+    //    列挙する一時的な表を作ります。その表でチェックした加工製品から見積依頼必要部材表に追加する」。
+    //    表はここで組む（本文には残さない・読むのは /api/rfq/folder-products）。番号の欄はブラウザに憶える
+    //    （サーバーの data-w-remember）ので、入れて読み直したあとも、戻した change でもう一度並ぶ。
+    const cell = (tag, text) => {
+        const c = document.createElement(tag);
+        if (text !== undefined) c.textContent = text;
+        return c;
+    };
+    async function listFolder(form) {
+        const list = resultOf(form, '[data-rfq-folder-list]');
+        if (!list) return;
+        const folder = valueIn(form, '[data-rfq="folder"]');
+        if (!folder) {
+            list.replaceChildren();
+            return;
+        }
+        // 続けて呼ばれたら（欄を離れた change と「一覧を出す」など）、最後の1回の答えだけを描く。
+        const seq = (list._rfqSeq = (list._rfqSeq || 0) + 1);
+        sayIn(list, '読んでいます…');
+        let data = {};
+        let ok = false;
+        try {
+            const res = await fetch('/api/rfq/folder-products?folder=' + encodeURIComponent(folder), { credentials: 'same-origin' });
+            data = await res.json().catch(() => ({}));
+            ok = res.ok && !!data.success;
+        } catch (e) { data = { message: e.message }; }
+        if (list._rfqSeq !== seq) return;
+        if (!ok) {
+            sayIn(list, '⚠ ' + (data.message || '読めませんでした'), 'proc-why-ng');
+            return;
+        }
+        const products = data.products || [];
+        list.replaceChildren();
+        list.appendChild(cell('p', '/' + data.folder + ' ' + (data.title || '') + ' の下の加工製品: ' + products.length + ' 件'));
+        if (!products.length) return;
+        const table = cell('table');
+        table.className = 'rfq-folder-table';
+        const head = cell('tr');
+        const allTh = cell('th');
+        const all = document.createElement('input');
+        all.type = 'checkbox';
+        all.setAttribute('data-rfq-folder-all', '1');
+        all.title = '全部選ぶ';
+        allTh.appendChild(all);
+        head.appendChild(allTh);
+        ['弊社品番', '加工製品', '品番・図番', '見積計算表のロット', 'ロット'].forEach((t) => head.appendChild(cell('th', t)));
+        const thead = cell('thead');
+        thead.appendChild(head);
+        table.appendChild(thead);
+        const tbody = cell('tbody');
+        products.forEach((p) => {
+            const tr = cell('tr');
+            const pick = cell('td');
+            const c = document.createElement('input');
+            c.type = 'checkbox';
+            c.setAttribute('data-rfq-folder-pick', p.id);
+            pick.appendChild(c);
+            tr.appendChild(pick);
+            const idTd = cell('td');
+            const a = cell('a', p.id);
+            a.href = '/' + p.id;
+            a.target = '_blank';
+            idTd.appendChild(a);
+            tr.appendChild(idTd);
+            tr.appendChild(cell('td', (p.machine && p.machine !== data.title ? p.machine + ' ／ ' : '') + p.title + (p.migrating ? '（移行中）' : '')));
+            tr.appendChild(cell('td', p.part_no || (p.drawing_no ? '図番 ' + p.drawing_no : '')));
+            tr.appendChild(cell('td', (p.lots || []).length ? p.lots.join('・') : '—（1個分）'));
+            const lotTd = cell('td');
+            const lot = document.createElement('input');
+            lot.type = 'number';
+            lot.min = '1';
+            lot.className = 'matsearch-input rfq-folder-lot';
+            lot.placeholder = '空なら左';
+            lot.setAttribute('data-rfq-folder-lot', '1');
+            lotTd.appendChild(lot);
+            tr.appendChild(lotTd);
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        list.appendChild(table);
+        const foot = cell('div');
+        foot.className = 'matsearch-form';
+        const go = cell('button', 'チェックした加工製品を見積依頼必要部材表へ');
+        go.type = 'button';
+        go.className = 'matsearch-go';
+        go.setAttribute('data-rfq-folder-add', '1');
+        foot.appendChild(go);
+        list.appendChild(foot);
+        const result = cell('div');
+        result.className = 'unorder-result';
+        result.setAttribute('data-rfq-folder-result', '1');
+        list.appendChild(result);
+    }
+    // 番号の欄: 打って Enter・欄を離れたとき・ブラウザが憶えた値を戻したとき（どれも change）にも並べる。
+    document.addEventListener('change', (e) => {
+        const input = e.target instanceof Element && e.target.closest('.rfq-folder-form [data-rfq="folder"]');
+        if (input) listFolder(input.closest('.rfq-folder-form'));
+    });
     const picked = (table) => {
         const rows = [], tempRows = [];
         if (!table) return { rows, tempRows };
@@ -8341,6 +8440,43 @@ delegateClick([['.estimate-add-go', async (btn) => {
                 return;
             }
             sayIn(box, r.data.rows + ' 行を消しました。読み直しています…');
+            location.reload();
+        }],
+        ['[data-rfq-folder]', (btn) => {
+            const form = btn.closest('.rfq-folder-form');
+            if (form) listFolder(form);
+        }],
+        ['[data-rfq-folder-all]', (box) => {
+            const list = box.closest('[data-rfq-folder-list]');
+            if (list) list.querySelectorAll('input[data-rfq-folder-pick]').forEach((c) => { c.checked = box.checked; });
+        }],
+        ['[data-rfq-folder-add]', async (btn) => {
+            const list = btn.closest('[data-rfq-folder-list]');
+            const form = list && list.parentElement ? list.parentElement.querySelector('.rfq-folder-form') : null;
+            if (!form) return;
+            const box = list.querySelector('[data-rfq-folder-result]');
+            const items = [];
+            list.querySelectorAll('input[data-rfq-folder-pick]:checked').forEach((c) => {
+                const tr = c.closest('tr');
+                const lot = tr ? tr.querySelector('input[data-rfq-folder-lot]') : null;
+                items.push({ product: c.getAttribute('data-rfq-folder-pick'), lot: lot ? lot.value.trim() : '' });
+            });
+            if (!items.length) {
+                sayIn(box, '⚠ 入れる加工製品をチェックしてください', 'proc-why-ng');
+                return;
+            }
+            btn.disabled = true;
+            sayIn(box, '集めています…');
+            const r = await postJSON('/api/rfq/collect', { page_id: form.getAttribute('data-rfq-page') || '', items });
+            btn.disabled = false;
+            if (!r.ok) {
+                sayIn(box, '⚠ ' + (r.data.message || '集められませんでした'), 'proc-why-ng');
+                return;
+            }
+            const skipped = r.data.skipped || [];
+            // 飛ばしたものは読み直すと消えるので、先に知らせる（読み直したあとも一覧は憶えた番号で出る）。
+            if (skipped.length) alert((r.data.products || []).length + ' 件・' + r.data.rows + ' 行を入れました。\n入れられなかったもの:\n' + skipped.join('\n'));
+            sayIn(box, (r.data.products || []).length + ' 件・' + r.data.rows + ' 行を見積依頼必要部材表へ入れました。読み直しています…');
             location.reload();
         }],
         ['.rfq-draft-back', async (btn) => {

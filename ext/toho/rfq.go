@@ -307,5 +307,15 @@ func rfqRequoteViewHTML(_ *auth.User, pageIDInt int) string {
 		`<label class="matsearch-field"><span>弊社品番</span><input type="text" class="matsearch-input" data-rfq="product" placeholder="001234"/></label>` +
 		`<label class="matsearch-field"><span>ロット</span><input type="number" min="1" class="matsearch-input" data-rfq="lot" placeholder="空なら見積計算表"/></label>` +
 		`<button type="button" class="matsearch-go" data-rfq-collect="1">集める</button>` +
-		`</div><div class="unorder-result" data-rfq-collect-result="1"></div>`
+		`</div><div class="unorder-result" data-rfq-collect-result="1"></div>` +
+		// 装置フォルダから選ぶ（2026-10-03）——利用者:「装置フォルダのページ番号を入力する欄を作り、その下にある加工製品を
+		// 列挙する一時的な表を作ります。その表でチェックした加工製品から見積依頼必要部材表に追加する」。表は画面が組む
+		// （本文に残さない・app.js の wireRFQ）。番号はブラウザに憶える（data-w-remember）——入れたあとに読み直しても、
+		// 同じ装置の残りを続けて選べる。
+		`<p class="unorder-help">装置フォルダのページ番号を書いて「一覧を出す」を押すと、その下の加工製品が並びます。` +
+		`チェックしたものを、それぞれのロット（空なら見積計算表のロット）で見積依頼必要部材表へ入れます。</p>` +
+		`<div class="matsearch-form rfq-folder-form" data-rfq-page="` + page.FormatID(pageIDInt) + `" data-w-remember="1">` +
+		`<label class="matsearch-field"><span>装置フォルダ</span><input type="text" class="matsearch-input" data-rfq="folder" placeholder="001234"/></label>` +
+		`<button type="button" class="matsearch-go" data-rfq-folder="1">一覧を出す</button>` +
+		`</div><div class="rfq-folder-list" data-rfq-folder-list="1"></div>`
 }

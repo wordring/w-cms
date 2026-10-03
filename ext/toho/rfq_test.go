@@ -211,3 +211,73 @@ func TestRFQMoveRemoveAndBack(t *testing.T) {
 		t.Errorf("何も選ばずに消して %d", code)
 	}
 }
+
+// TestRFQFolderProductsAndCollectMany は装置フォルダから選ぶ口（2026-10-03）を固定します——
+// ① フォルダの下の加工製品が並ぶ（⚠ 改定で子ページへ移った旧版は出さない——同じ品物が版の数だけ並ぶ）
+// ② 何枚か選んで送ると、集められるものだけ入れ、集められないもの（部材の表が無い）は理由を返す
+// ③ 1枚も集められなければ断り、本文は変わらない
+func TestRFQFolderProductsAndCollectMany(t *testing.T) {
+	u := seedRFQ(t)
+	addPage(t, 52, 0, "標準2輪", "root", "302", true)
+	addPage(t, 53, 52, "取付ベース", "root", "302", true)
+	addPage(t, 54, 52, "ステー", "root", "302", true)
+	addPage(t, 55, 53, "取付ベース", "root", "302", true) // 改定で子へ移った旧版
+	tag := func(no string) string { return `<dl data-type="tags"><dt>品番</dt><dd>` + no + `</dd></dl>` }
+	writeBodyFile(t, 53, `<h1>取付ベース</h1>`+tag("A100-B01-1")+
+		`<table data-type="`+partMaterialsType+`"><tbody>`+
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
+		`<tr><td>SS400</td><td>板</td><td>t6*80*120</td><td>3</td></tr>`+
+		`</tbody></table>`)
+	writeBodyFile(t, 54, `<h1>ステー</h1>`+tag("A100-B01-2"))
+	writeBodyFile(t, 55, `<h1>取付ベース</h1>`+tag("A100-B01-1"))
+
+	list := func(folder string) (int, map[string]any) {
+		t.Helper()
+		req := auth.WithUser(httptest.NewRequest("GET", "/api/rfq/folder-products?folder="+folder, nil), u)
+		rr := httptest.NewRecorder()
+		RFQFolderProductsAPIHandler(rr, req)
+		var out map[string]any
+		_ = json.Unmarshal(rr.Body.Bytes(), &out)
+		return rr.Code, out
+	}
+	// ①
+	code, out := list("000052")
+	if code != 200 || out["title"] != "標準2輪" {
+		t.Fatalf("一覧が出ません: %d %v", code, out)
+	}
+	var ids []string
+	for _, p := range out["products"].([]any) {
+		m := p.(map[string]any)
+		ids = append(ids, m["id"].(string)+":"+m["part_no"].(string))
+	}
+	if strings.Join(ids, ",") != "000054:A100-B01-2,000053:A100-B01-1" {
+		t.Errorf("並んだ加工製品が %v です（旧版 000055 は出ない・題の順）", ids)
+	}
+	if code, _ := list("999999"); code != 404 {
+		t.Errorf("無いページの番号で %d", code)
+	}
+
+	// ②
+	code, res := postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "items": []map[string]string{
+		{"product": "000053", "lot": "2"}, {"product": "000054"}, {"product": "000051"}}})
+	if code != 200 || res["rows"] != float64(5) {
+		t.Fatalf("何枚かを集められません: %d %v", code, res)
+	}
+	if sk, _ := res["skipped"].([]any); len(sk) != 1 || !strings.Contains(sk[0].(string), "000054") {
+		t.Errorf("部材の無い 000054 の理由が返りません: %v", res["skipped"])
+	}
+	got := rfqRows(t, boxBody(t), RFQNeedsType, 1)
+	if len(got) != 5 || got[0].ProductID != "000053" || got[0].Quantity != "6" || got[1].ProductID != "000051" {
+		t.Errorf("入った行が違います（000053 をロット2で6・続いて 000051 の4行）: %+v", got)
+	}
+
+	// ③
+	before := boxBody(t)
+	if code, res := postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "items": []map[string]string{
+		{"product": "000054"}, {"product": "000053", "lot": "0"}}}); code != 409 {
+		t.Errorf("1枚も集められないのに %d %v", code, res)
+	}
+	if boxBody(t) != before {
+		t.Error("断ったのに本文が変わりました")
+	}
+}
