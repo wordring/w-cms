@@ -5044,7 +5044,10 @@
             [['new', '新規', '新しい加工製品ページとして置きます'],
              ['drawing', '図面追加', '既にある加工製品に、二つ目の図面として足します（部品図と溶接図など）'],
              ['revision', '図面改定', '既にある加工製品の図面を差し替えます（いまの図面は旧版として子ページへ）'],
-             ['duplicate', '重複（取り込まない）', '同じ図面が既にあるので取り込みません（解析で作ったページはごみ箱へ・既にある加工製品にこのメールの受信元を書き足します）']]
+             ['duplicate', '重複（取り込まない）', '同じ図面が既にあるので取り込みません（解析で作ったページはごみ箱へ・既にある加工製品にこのメールの受信元を書き足します）'],
+             // **何もしない**（2026-10-03 利用者:「図面を解析しても何もしない選択肢も必要です」）——実行で送らない。解析で作った
+             // ページはこのメールの下にそのまま残る（あとで整理できる・要らなければページを消す）。
+             ['skip', '何もしない', '今回は整理しません——解析で作ったページはこのメールの下にそのまま残ります（あとで整理できます）']]
                 .forEach(([val, text, hint]) => {
                     const label = document.createElement('label');
                     label.className = 'filing-merge-opt';
@@ -5101,7 +5104,9 @@
                 const m = picked();
                 tdRules.hidden = m !== 'new';
                 searchWrap.hidden = m !== 'drawing' && m !== 'revision';
-                if (m === 'duplicate' && dup) {
+                if (m === 'skip') {
+                    choiceNote.textContent = '整理しません——解析で作ったこのページは、このメールの下にそのまま残します';
+                } else if (m === 'duplicate' && dup) {
                     choiceNote.textContent = '取り込みません——解析で作ったこのページはごみ箱へ移し、「' +
                         (dup.machine ? dup.machine + '／' : '') + dup.title + '」にこのメールの受信元を書き足します';
                 } else if (target.exists && m === 'new') {
@@ -5460,6 +5465,16 @@
 
     // keep は「ほかの行がまだ残っている」——確かめて送り直すときに、済んだ行だけを見て表を閉じないため。
     async function runFiling(inputs, pickedOrders, run, panel, keep) {
+        // 「何もしない」の行は送らない（2026-10-03）——解析で作ったページはこのメールの下にそのまま残る。
+        const mergeOf = (i) => (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '';
+        const skipped = inputs.filter(i => mergeOf(i) === 'skip');
+        inputs = inputs.filter(i => mergeOf(i) !== 'skip');
+        const skipNote = skipped.length ? '「何もしない」の ' + skipped.length + ' 枚は、このメールの下にそのまま残しました。' : '';
+        if (!inputs.length && !(pickedOrders || []).some(o => o.box.checked)) {
+            notify(skipNote || '対象がありませんでした。', { type: 'success', duration: 0, id: 'filing' });
+            if (!keep) panel.remove();
+            return;
+        }
         run.disabled = true;
         run.textContent = '実行中…';
         const payload = inputs.map(i => ({
@@ -5498,6 +5513,7 @@
             // 何が起きたかを必ず見せる（黙って動かさない）。
             const results = d.results || [];
             const lines = results.map(r => r.message).filter(Boolean);
+            if (skipNote) lines.push(skipNote);
             // **確認待ちの行は表を閉じない**——チェックを出して、人が判断してから
             // もう一度実行してもらう（偽の改定を黙って作らないための関門）。
             const pending = new Set(results

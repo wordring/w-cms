@@ -7,6 +7,7 @@
 //   ① 図面追加を選ぶと「行き先を探す」が出る（番号も名前も違う二つ目の図面は、機械の候補に出ない）
 //   ② 題の一部で探すと既にある加工製品が出て、押すと行き先になる（✓）——実行すると、その加工製品へ図面追加される
 //   ③ 同じ図面番号（版の印だけ違う）を図面追加すると、確かめのダイアログ——「やめる」なら入らない、「追加する」なら入る
+//   ④ 「何もしない」を選ぶと、実行しても動かさない（このメールの下にそのまま残る）
 //
 // 当て先は全部自分で作って最後に消します（取引先の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-filing-search.js
@@ -122,6 +123,16 @@ const drawingBlock = (no, name, machine) =>
     await page.waitForFunction(() => !document.querySelector('#w-editor-content .filing-panel'), null, { timeout: 10000 }).catch(() => {});
     check('③ 「追加する」なら入る', (await bodyOf(page, first)).includes('E2E-FS-1_rev1'));
 
+    // ④ 何もしない（2026-10-03 利用者:「図面を解析しても何もしない選択肢も必要です」）——送らず、このメールの下にそのまま残る。
+    const keepMe = await makePage(page, '<h1>E2E-FS-SKIP ' + NAME + '</h1>' + drawingBlock('E2E-FS-SKIP', '【E2E】残す図面', '【E2E】残す装置'), record);
+    await openFiling();
+    await card(keepMe).locator('label.filing-merge-opt', { hasText: '何もしない' }).click();
+    const skipNote = (await card(keepMe).locator('.filing-choice-note').textContent().catch(() => '')) || '';
+    check('④ 「何もしない」を選ぶと「そのまま残します」と言う', skipNote.includes('そのまま残します'), skipNote);
+    await page.locator('#w-editor-content .filing-run').click();
+    await page.waitForFunction(() => !document.querySelector('#w-editor-content .filing-panel'), null, { timeout: 10000 }).catch(() => {});
+    const kids = (await childrenOf(page, record)).map((c) => c.ID);
+    check('④ 実行しても動かさない（このメールの下に残る）', kids.includes(keepMe) && !(await bodyOf(page, first)).includes('E2E-FS-SKIP'), kids.join(','));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
     await cleanup();
     const partnersAfter = (await childrenOf(page, partners)).map(c => c.ID).join(',');
