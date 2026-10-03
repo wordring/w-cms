@@ -8534,6 +8534,132 @@ delegateClick([['.estimate-add-go', async (btn) => {
     ]);
 })();
 
+// ── 見積書を作る——装置フォルダから選ぶ（2026-10-03・ext/toho/estimate_folder.go）────────────────
+//
+// 利用者:「見積依頼フォルダと同じように、装置のフォルダのページIDを入れると加工製品を一時的な表に列挙します。必要な加工製品に
+// チェックを入れてボタンを押すと、見積もりページが出来て、対応する加工製品ページから確定単価を収集して見積明細表を作ります。
+// ボタンを押すとPDFが作られます」。
+//
+//   - 行は**見積計算表1枚につき1行**（ロット・確定単価・単価の行の備考）——確定単価の出ない表は選べない行にして理由を出す。
+//   - 見積先は一覧を出すたびにその装置の社名を入れ直す（担当者の候補もその会社の人）。番号の欄だけブラウザに憶える。
+//   - 見積明細は一覧の順（押した順ではない——並びが予想どおりになるように）。
+//   - 作れたらその見積書ページを開く——PDF はそのページの足元の「📄 PDFを作る」。
+(function wireEstimateFolder() {
+    const partsOf = (el) => {
+        const root = el.closest('.vocab-chrome') || el.parentElement;
+        return {
+            form: root.querySelector('.estimate-folder-form'),
+            box: root.querySelector('[data-estf-box]'),
+            make: root.querySelector('[data-estf-make]'),
+            say: root.querySelector('[data-estf-result]'),
+        };
+    };
+    async function listEstimateFolder(form) {
+        const { box, make, say } = partsOf(form);
+        if (!box || !make) return;
+        const folder = valueIn(form, '[data-estf="folder"]');
+        sayIn(say, '');
+        if (!folder) {
+            box.replaceChildren();
+            make.hidden = true;
+            return;
+        }
+        // 続けて呼ばれたら（欄を離れた change と「一覧を出す」など）、最後の1回の答えだけを描く。
+        const seq = (box._estfSeq = (box._estfSeq || 0) + 1);
+        sayIn(box, '読んでいます…');
+        const r = await getJSON('/api/estimate/folder-products?folder=' + encodeURIComponent(folder));
+        if (box._estfSeq !== seq) return;
+        if (!r.ok) {
+            sayIn(box, '⚠ ' + (r.data.message || '読めませんでした'), 'proc-why-ng');
+            make.hidden = true;
+            return;
+        }
+        const data = r.data;
+        const products = data.products || [];
+        const rows = [];
+        products.forEach((p) => {
+            const name = (p.machine && p.machine !== data.title ? p.machine + ' ／ ' : '') + p.title + (p.migrating ? '（移行中）' : '');
+            const part = p.part_no || (p.drawing_no ? '図番 ' + p.drawing_no : '');
+            if (!(p.tables || []).length) {
+                rows.push({ pick: null, cells: [pageLink(p.id), name, part, '', '', '見積計算表なし'] });
+                return;
+            }
+            p.tables.forEach((t) => {
+                if (t.why) {
+                    rows.push({ pick: null, cells: [pageLink(p.id), name, part, '', '', '⚠ 確定単価が出ません: ' + t.why] });
+                    return;
+                }
+                rows.push({ pick: p.id + ':' + t.index, cells: [pageLink(p.id), name, part,
+                    (t.quantity || '') + (t.quantity ? ' ' + (t.unit || '') : ''),
+                    Number(t.price).toLocaleString('ja-JP') + '円', t.note || ''] });
+            });
+        });
+        box.replaceChildren();
+        const head = document.createElement('p');
+        head.textContent = '/' + data.folder + ' ' + (data.title || '') + ' の下の加工製品: ' + products.length + ' 件';
+        box.appendChild(head);
+        if (rows.length) {
+            box.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '数量（ロット）', '確定単価', '備考'], rows,
+                'data-estf-pick', 'estimate-folder-table'));
+        }
+        const pickable = rows.some((x) => x.pick !== null);
+        make.hidden = !pickable;
+        if (!pickable) return;
+        const client = make.querySelector('[data-estf="client"]');
+        if (client) client.value = data.client || '';
+        const person = make.querySelector('[data-estf="person"]');
+        if (person) person.value = '';
+        const persons = make.querySelector('datalist[data-estf="persons"]');
+        if (persons) {
+            persons.replaceChildren();
+            (data.persons || []).forEach((n) => {
+                const o = document.createElement('option');
+                o.value = n;
+                persons.appendChild(o);
+            });
+        }
+    }
+    delegateClick([
+        ['[data-estf-list]', (btn) => {
+            const form = btn.closest('.estimate-folder-form');
+            if (form) listEstimateFolder(form);
+        }],
+        ['[data-estf-make-go]', async (btn) => {
+            const { box, make, say } = partsOf(btn);
+            const items = [];
+            box.querySelectorAll('input[data-estf-pick]:checked').forEach((c) => {
+                const v = c.getAttribute('data-estf-pick');
+                const at = v.lastIndexOf(':');
+                items.push({ product: v.slice(0, at), index: Number(v.slice(at + 1)) });
+            });
+            if (!items.length) {
+                sayIn(say, '⚠ 見積書に入れる見積計算表をチェックしてください', 'proc-why-ng');
+                return;
+            }
+            btn.disabled = true;
+            sayIn(say, '見積書を作っています…');
+            const r = await postJSON('/api/estimate/from-folder', {
+                items,
+                client: valueIn(make, '[data-estf="client"]'),
+                person: valueIn(make, '[data-estf="person"]'),
+                signer: valueIn(make, 'select.estimate-add-signer'),
+            });
+            btn.disabled = false;
+            if (!r.ok) {
+                sayIn(say, '⚠ ' + (r.data.message || '見積書を作れませんでした'), 'proc-why-ng');
+                return;
+            }
+            sayIn(say, '見積書 /' + r.data.page_id + ' を作りました（' + r.data.rows + ' 行）。開いています…');
+            location.href = '/' + r.data.page_id;
+        }],
+    ]);
+    // 番号の欄: 打って Enter・欄を離れたとき・ブラウザが憶えた値を戻したとき（どれも change）にも並べる。
+    document.addEventListener('change', (e) => {
+        const input = e.target instanceof Element && e.target.closest('.estimate-folder-form [data-estf="folder"]');
+        if (input) listEstimateFolder(input.closest('.estimate-folder-form'));
+    });
+})();
+
 // ── 受注残表の印刷（2026-09-21）────────────────────────────────────────
 //
 // ユーザー:「顧客、納期ごとに別の表として分けて、**ワンタッチで印刷**もできると

@@ -129,3 +129,98 @@ func TestEstimatePDFRoundTrips(t *testing.T) {
 		t.Errorf("⚠ 金額 8,040 が %d 回です（明細と合計で2回）:\n%s", n, got)
 	}
 }
+
+// TestEstimateFromFolder は「見積書を作る」（装置フォルダから選ぶ・2026-10-03・estimate_folder.go）を固定します——
+// ① 装置フォルダの下の加工製品が見積計算表ごとに並ぶ（確定単価・ロット・確定単価の出ない表は理由・表の無い加工製品も並ぶ）
+// ② 送った表の順に見積明細が入った見積書ページができる（単価は確定単価・備考は単価の行の備考）
+// ③ 選んだ表の1つでも確定単価が出なければ作らない（顧客へ出す紙が黙って欠けないように）
+func TestEstimateFromFolder(t *testing.T) {
+	const folder = "000030"
+	setupExtTest(t, folder, page.PageMeta{Owner: "root", Mode: "330"})
+	seedBody(t, folder, `<h1>標準2輪</h1><dl data-type="tags"><dt>`+ClientNameTag+`</dt><dd>みなと商店</dd></dl>`)
+	mk := func(id, body string) {
+		t.Helper()
+		if err := page.WriteSidecar(id, page.PageMeta{Owner: "root", Mode: "330", ParentID: folder}); err != nil {
+			t.Fatal(err)
+		}
+		seedBody(t, id, body)
+	}
+	tag := func(no string) string { return `<dl data-type="tags"><dt>品番</dt><dd>` + no + `</dd></dl>` }
+	mk("000031", `<h1>取付ベース</h1>`+tag("A100-B01-1")+
+		estimateTable([3]string{"ロット", "20", "個"}, [3]string{"材料", "55", "円"}, [3]string{"板金", "310", "円"})+
+		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
+		`<tr><td>ロット</td><td>40</td><td>個</td><td></td></tr>`+
+		`<tr><td>単価</td><td>500</td><td>円</td><td>塗装あり</td></tr></tbody></table>`)
+	mk("000032", `<h1>ステー</h1>`+tag("A100-B01-2")+ // 列にロットを並べた形——計算できない
+		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>ロット20</th><th>ロット40</th></tr>`+
+		`<tr><td>単価</td><td>500</td><td>450</td></tr></tbody></table>`)
+	mk("000033", `<h1>補強板</h1>`+tag("A100-B01-3"))
+	root := &auth.User{Username: "root", IsAdmin: true}
+
+	// ①
+	req := auth.WithUser(httptest.NewRequest("GET", "/api/estimate/folder-products?folder="+folder, nil), root)
+	rr := httptest.NewRecorder()
+	EstimateFolderProductsAPIHandler(rr, req)
+	var listed struct {
+		Client   string `json:"client"`
+		Products []struct {
+			ID     string `json:"id"`
+			Tables []struct {
+				Index           int
+				Quantity, Price string
+				Note, Why       string
+			} `json:"tables"`
+		} `json:"products"`
+	}
+	if rr.Code != 200 || json.Unmarshal(rr.Body.Bytes(), &listed) != nil {
+		t.Fatalf("一覧が出ません: %d %s", rr.Code, rr.Body.String())
+	}
+	var got []string
+	for _, p := range listed.Products {
+		s := p.ID + ":"
+		for _, tb := range p.Tables {
+			if tb.Why != "" {
+				s += "[理由あり]"
+			} else {
+				s += "[" + tb.Quantity + "個" + tb.Price + "円" + tb.Note + "]"
+			}
+		}
+		got = append(got, s)
+	}
+	if strings.Join(got, " ") != "000032:[理由あり] 000031:[20個402円][40個550円塗装あり] 000033:" || listed.Client != "みなと商店" {
+		t.Errorf("一覧が違います: %v 見積先 %q", got, listed.Client)
+	}
+
+	post := func(body map[string]any) (int, map[string]any) {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		r := auth.WithUser(httptest.NewRequest("POST", "/api/estimate/from-folder", bytes.NewReader(b)), root)
+		r.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		EstimateFromFolderAPIHandler(rr, r)
+		var out map[string]any
+		_ = json.Unmarshal(rr.Body.Bytes(), &out)
+		return rr.Code, out
+	}
+	// ② 送った順（40個の表 → 20個の表——画面は一覧の順で送る）。
+	code, out := post(map[string]any{"client": "みなと商店", "items": []map[string]any{
+		{"product": "000031", "index": 1}, {"product": "000031", "index": 0}}})
+	est, _ := out["page_id"].(string)
+	if code != 200 || est == "" {
+		t.Fatalf("見積書を作れません: %d %v", code, out)
+	}
+	body := readPageBody(t, est)
+	first := strings.Index(body, "<td>000031</td><td>A100-B01-1</td><td>取付ベース</td><td>40</td><td>個</td><td>550</td><td>塗装あり</td>")
+	second := strings.Index(body, "<td>000031</td><td>A100-B01-1</td><td>取付ベース</td><td>20</td><td>個</td><td>402</td>")
+	if first < 0 || second < 0 || first > second {
+		t.Errorf("見積明細が送った順に入っていません:\n%s", body)
+	}
+	if !strings.Contains(body, "<dt>"+EstimateClientTag+"</dt><dd>みなと商店</dd>") {
+		t.Errorf("見積先が入っていません:\n%s", body)
+	}
+	// ③
+	if code, out := post(map[string]any{"items": []map[string]any{{"product": "000031", "index": 0}, {"product": "000032", "index": 0}}}); code != 409 ||
+		!strings.Contains(out["message"].(string), "000032") {
+		t.Errorf("確定単価の出ない表を選んだのに %d %v", code, out)
+	}
+}

@@ -2170,6 +2170,8 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content td.rfq-pick, #w-editor-content th.rfq-pick { white-space: nowrap; }
 /* 再見積依頼の「装置フォルダから選ぶ」一時的な表（2026-10-03・画面だけ——app.js の listFolder）。ロットの欄は数字が入る幅だけ。 */
 #w-editor-content .rfq-folder-table input.rfq-folder-lot { width: 6em; }
+/* 見積書を作る（装置フォルダから・2026-10-03）——見積先などの欄は一覧に選べる行が出るまで隠す（.matsearch-form の display に勝たせる）。 */
+#w-editor-content .estimate-folder-make[hidden] { display: none; }
 #w-editor-content .unhandled-bulk { margin: 8px 0 0; }
 #w-editor-content #w-unhandled-bulk-done,
 #w-editor-content #w-unhandled-bulk-skip {
