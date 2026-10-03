@@ -120,6 +120,32 @@ func OrderPrintColumns() []string {
 	return orderPrintColumns
 }
 
+// RFQPrintColumns は見積依頼書の紙に刷る列の候補を並び順どおりに返します（2026-10-03）。未指定なら発注書の紙の列から
+// `金額` を除いた並び。⚠ `単価` は必ず入れる（業者が書き込む欄——無ければ末尾に足す）。
+func RFQPrintColumns() []string {
+	stagesMu.RLock()
+	cols := rfqPrintColumns
+	stagesMu.RUnlock()
+	if len(cols) == 0 {
+		cols = printColumnLabels()
+	}
+	var out []string
+	price := false
+	for _, c := range cols {
+		if c == "金額" {
+			continue
+		}
+		if c == "単価" {
+			price = true
+		}
+		out = append(out, c)
+	}
+	if !price {
+		out = append(out, "単価")
+	}
+	return out
+}
+
 // OrderPrintHeads は紙の上に刷るタグを並び順どおりに返します（空なら 09-27 までの4つ）。
 func OrderPrintHeads() []string {
 	stagesMu.RLock()

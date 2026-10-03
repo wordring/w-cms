@@ -83,6 +83,38 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     // ④
     const after = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), box);
     check('④ 元の見積依頼部材表は消える', !after.includes('<caption>見積依頼部材表</caption>'));
+
+    // ⑤ 見積依頼明細の下の備考の欄・PDF を作る・PDF の下の送る欄・送った（FAX・手渡し）（2026-10-03・段2の後半）。
+    // ⚠ 送る口は画面の手前で止める（本物のメールは出さない）。
+    await page.route('**/api/mail/send', (route) => route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ success: false, message: 'E2E で止めました' }) }));
+    await page.goto(BASE + '/' + doc);
+    await page.waitForTimeout(800);
+    const noteBox = page.locator('#w-editor-content .estimate-note-save[data-note-url="/api/rfq/note"]');
+    check('⑤ 見積依頼明細の下に備考の欄', await noteBox.count() === 1);
+    await page.locator('#w-editor-content .estimate-note-input').fill('E2E 標準2輪用');
+    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), noteBox.click()]);
+    await page.waitForTimeout(1000);
+    let raw5 = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), doc);
+    check('⑤ 備考を保存すると備考の節に入る', raw5.includes('<h2>備考</h2><p>E2E 標準2輪用</p>'));
+    await Promise.all([page.waitForEvent('load', { timeout: 20000 }).catch(() => {}), page.locator('#w-editor-content .rfq-pdf-go').click()]);
+    await page.waitForTimeout(1500);
+    const order = await page.evaluate(() => {
+      const root = document.getElementById('w-editor-content');
+      const html = root.innerHTML;
+      return { table: html.indexOf('<caption>見積依頼明細</caption>'), pdf: html.search(/data-type="file-view"/), send: html.indexOf('見積依頼を送る') };
+    });
+    check('⑤ PDF を作ると明細の下に出る', order.pdf > order.table && order.table >= 0, JSON.stringify(order));
+    check('⑤ 送る欄は PDF の下', order.send > order.pdf, JSON.stringify(order));
+    await page.waitForSelector('.mail-compose [data-mc="to"]', { timeout: 10000 }).catch(() => {});
+    const genText = (await page.locator('.mail-compose .mc-attach-generated').textContent().catch(() => '')) || '';
+    check('⑤ 送る欄が開いていて、見積依頼書のPDFが添付に印つきで並ぶ', genText.includes('見積依頼書 ' + doc + '.pdf') &&
+      await page.locator('.mail-compose input[data-mc-generated]').isChecked().catch(() => false), genText);
+    check('⑤ 件名は「見積依頼（№ ページ番号）」', (await page.locator('.mail-compose [data-mc="subject"]').inputValue().catch(() => '')) === '見積依頼（№ ' + doc + '）');
+    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('#w-editor-content .rfq-sent-go').click()]);
+    await page.waitForTimeout(1000);
+    raw5 = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), doc);
+    check('⑤ 「送った（FAX・手渡し）」で送付日に今日', /<dt>送付日<\/dt><dd>\d{4}-\d{2}-\d{2}<\/dd>/.test(raw5));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

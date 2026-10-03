@@ -2,6 +2,8 @@ package toho
 
 import (
 	"strings"
+
+	"w-cms/internal/cms"
 )
 
 // 機械が作るページのテンプレート（2026-09-27〜）の、試験で使う写しです。
@@ -56,7 +58,7 @@ func testRFQTemplate() string {
 	return `<h1>` + RFQTemplate + `</h1>` +
 		emptyTagsDL(RFQNoTag, SupplierTag, RFQDateTag, RFQSignerTag, EstimateSentTag, RFQAnsweredTag) +
 		emptyVocabTable(RFQItemsType) +
-		`<section><h2>` + rfqNoteHeading + `</h2><p><br/></p></section>`
+		`<section><h2>` + rfqNoteHeading + `</h2><p><br/></p></section>` + cms.ViewMarkerHTML(RFQSendViewType)
 }
 
 func testPurchaseOrderTemplate() string {

@@ -89,6 +89,11 @@ type settingsSection struct {
 	// **未指定なら、それまでの並び**（品番・品名・材質・形状・寸法・表面・単位・数量・単価・金額）。
 	OrderPrintColumns []string `json:"order_print_columns,omitempty"`
 
+	// RFQPrintColumns は**見積依頼書の紙に刷る列**の候補と並び順です（2026-10-03・rfq_pdf.go）。発注書と同じく、どの行にも
+	// 値の無い列は刷らない——ただし `単価` は**いつも空欄で刷る**（業者が書き込む欄）。`金額` は刷らない。
+	// **未指定なら発注書の紙の列（order_print_columns）から `金額` を除いた並び**。
+	RFQPrintColumns []string `json:"rfq_print_columns,omitempty"`
+
 	// OrderPrintHeads は**発注書の紙の上に刷るタグ**と並び順です（2026-09-28）。発注書ページが
 	// そのタグを持っていれば、**値が空でも見出しだけ刷ります**——法で決まった記載事項（検査完了期日・
 	// 支払期日・支払方法）を「念のため記載して空欄運用」するため（利用者）。持っていないタグは刷らない。
@@ -130,6 +135,7 @@ var (
 	companyInf        companyInfo
 	orderKinds        []orderKind
 	orderPrintColumns []string
+	rfqPrintColumns   []string
 	orderPrintHeads   []string
 	estimateRate      *float64
 	estimateTags      map[string]string
@@ -186,8 +192,12 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 	if err := validateOrderPrintColumns(s.OrderPrintColumns); err != nil {
 		return nil, err
 	}
+	if err := validateOrderPrintColumns(s.RFQPrintColumns); err != nil {
+		return nil, fmt.Errorf("rfq_print_columns: %w", err)
+	}
 	kinds := s.OrderKinds
 	printCols := s.OrderPrintColumns
+	rfqCols := s.RFQPrintColumns
 	var heads []string
 	for _, h := range s.OrderPrintHeads {
 		if h = strings.TrimSpace(h); h != "" {
@@ -214,6 +224,7 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		companyInf = company
 		orderKinds = kinds
 		orderPrintColumns = printCols
+		rfqPrintColumns = rfqCols
 		orderPrintHeads = heads
 		estimateRate = rate
 		estimateTags = etags

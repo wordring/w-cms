@@ -149,6 +149,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/rfq/folder-products", Handler: RFQFolderProductsAPIHandler},
 		// 見積依頼書ページを作る（2026-10-03・段2——rfq_doc.go）。
 		{Pattern: "/api/rfq/new", Handler: RFQNewDocAPIHandler},
+		// 見積依頼書の紙・備考・送った（FAX・手渡し）（2026-10-03・段2の後半——rfq_pdf.go）。
+		{Pattern: "/api/rfq-pdf", Handler: RFQPDFAPIHandler},
+		{Pattern: "/api/rfq/note", Handler: RFQNoteAPIHandler},
+		{Pattern: "/api/rfq/sent", Handler: RFQSentAPIHandler},
 		// 見積書を作る——装置フォルダから選ぶ（2026-10-03・estimate_folder.go）。
 		{Pattern: "/api/estimate/folder-products", Handler: EstimateFolderProductsAPIHandler},
 		{Pattern: "/api/estimate/from-folder", Handler: EstimateFromFolderAPIHandler},

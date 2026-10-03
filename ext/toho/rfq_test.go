@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -334,5 +335,80 @@ func TestRFQNewDoc(t *testing.T) {
 	}
 	if after := readPageBody(t, box); strings.Contains(after, "<caption>見積依頼部材表</caption>") {
 		t.Errorf("元の見積依頼部材表が残っています:\n%s", after)
+	}
+}
+
+// TestRFQPDFRoundTrips は見積依頼書の紙（2026-10-03・rfq_pdf.go）を読み返して確かめます——題・日付・№・仕入先 御中・明細・
+// 「よろしくお願いします。」・備考が刷られ、⚠ **単価は空欄**（本文に値があっても刷らない——業者が書き込む欄）、辞退の行は刷らない。
+func TestRFQPDFRoundTrips(t *testing.T) {
+	withPDFFont(t, systemJPFont(t))
+	body := `<h1>見積依頼　わかば鋼業</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000310</dd><dt>` + SupplierTag +
+		`</dt><dd>わかば鋼業</dd><dt>` + RFQDateTag + `</dt><dd>2026-10-05</dd></dl>` +
+		`<table><caption>見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
+		`<tr><td>000080</td><td>材料</td><td>SS400</td><td>板</td><td>t6*80*120</td><td>6</td><td>枚</td><td>999</td><td>未回答</td></tr>` +
+		`<tr><td>000081</td><td>材料</td><td>A5052</td><td>丸棒</td><td>φ30*50</td><td>2</td><td>本</td><td></td><td>辞退</td></tr>` +
+		`</tbody></table><section><h2>備考</h2><p>標準2輪用</p></section>`
+	pdf, err := buildRFQPDF(body, nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	got := pdfTextOf(t, pdf)
+	for _, want := range []string{"2026年10月5日", "000310", "わかば鋼業", "御中", "御見積をお願いいたします", "SS400", "t6*80*120", "単価",
+		"よろしくお願いします。", "標準2輪用"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("⚠ PDFに %q が入っていません。読み返した中身:\n%s", want, got)
+		}
+	}
+	for _, not := range []string{"999", "A5052", "金額"} {
+		if strings.Contains(got, not) {
+			t.Errorf("⚠ PDFに %q が刷られています（単価は空欄・辞退の行と金額は刷らない）:\n%s", not, got)
+		}
+	}
+}
+
+// TestRFQDocFooterAndSend は見積依頼書ページの足元（備考の欄・PDF を作る）と末尾の「見積依頼を送る」、送る用件の初期値
+// （送るときに作る PDF・件名）、備考の保存、「送った（FAX・手渡し）」の送付日を固定します（2026-10-03）。
+func TestRFQDocFooterAndSend(t *testing.T) {
+	const box = "000040"
+	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
+	seedBody(t, box, `<h1>`+RFQBoxTitle+`</h1>`+tableOfLinesHTML(RFQDraftType, []ourOrderLine{
+		{ProductID: "000041", Kind: "材料", Material: "SS400", Shape: "板", Size: "t6*80*120", Quantity: "6", Unit: "枚"},
+	}, true))
+	root := &auth.User{Username: "root", IsAdmin: true}
+	_, out := postRFQ(t, root, RFQNewDocAPIHandler, map[string]any{"page_id": box, "table": 1, "supplier": "わかば鋼業"})
+	id, _ := out["page_id"].(string)
+	if id == "" {
+		t.Fatalf("見積依頼書ページを作れません: %v", out)
+	}
+	body := readPageBody(t, id)
+	req := auth.WithUser(httptest.NewRequest("GET", "/"+id, nil), root)
+	shown := cms.RenderComputedViews(req, pageNum(id), body)
+	for _, want := range []string{`data-note-url="/api/rfq/note"`, `class="chip-btn rfq-pdf-go"`, `data-mail-compose="` + RFQMailPurpose + `"`, `rfq-sent-go`} {
+		if !strings.Contains(shown, want) {
+			t.Errorf("見積依頼書ページに %q がありません:\n%s", want, shown)
+		}
+	}
+	// 送る欄は PDF の下——ファイル表示は明細の直後、「見積依頼を送る」は末尾（テンプレートの最後）。
+	if strings.Index(shown, "見積依頼を送る") < strings.Index(shown, "<caption>見積依頼明細</caption>") {
+		t.Errorf("「見積依頼を送る」が明細より上にあります")
+	}
+	d, err := rfqMailDefaults(root, id)
+	if err != nil || d.Generated != "見積依頼書 "+id+".pdf" || d.Subject != "見積依頼（№ "+id+"）" {
+		t.Errorf("送る欄の初期値が違います: %+v %v", d, err)
+	}
+	if code, _ := postRFQ(t, root, RFQNoteAPIHandler, map[string]any{"page_id": id, "note": "標準2輪用"}); code != 200 {
+		t.Fatalf("備考を保存できません: %d", code)
+	}
+	if _, _, note, _ := readRFQDoc(readPageBody(t, id)); strings.Join(note, "／") != "標準2輪用" {
+		t.Errorf("紙が読む備考が %v", note)
+	}
+	if code, _ := postRFQ(t, root, RFQSentAPIHandler, map[string]any{"page_id": id}); code != 200 {
+		t.Fatalf("送ったにできません: %d", code)
+	}
+	if !strings.Contains(readPageBody(t, id), "<dt>"+EstimateSentTag+"</dt><dd>"+time.Now().Format("2006-01-02")+"</dd>") {
+		t.Errorf("送付日が入っていません:\n%s", readPageBody(t, id))
+	}
+	if code, _ := postRFQ(t, root, RFQSentAPIHandler, map[string]any{"page_id": box}); code != 400 {
+		t.Errorf("見積依頼書でないページに送付日を書こうとして %d", code)
 	}
 }

@@ -39,9 +39,14 @@ func estimateNoteOf(pageID string) string {
 
 // estimateNoteBoxHTML は見積明細の足元の備考の欄です。
 func estimateNoteBoxHTML(pid, note string) string {
-	return `<div class="estimate-note-box"><span class="estimate-note-label">備考（紙では明細の下に刷ります）</span>` +
+	return noteBoxHTML(pid, note, "/api/estimate/note", "備考（紙では明細の下に刷ります）")
+}
+
+// noteBoxHTML は明細の足元の備考の欄です（見積書・見積依頼書——保存する口 url だけが違う）。
+func noteBoxHTML(pid, note, url, label string) string {
+	return `<div class="estimate-note-box"><span class="estimate-note-label">` + stdhtml.EscapeString(label) + `</span>` +
 		`<textarea class="estimate-note-input" rows="3">` + stdhtml.EscapeString(note) + `</textarea>` +
-		`<button type="button" class="chip-btn estimate-note-save" data-estimate-page="` + pid + `">備考を保存</button> ` +
+		`<button type="button" class="chip-btn estimate-note-save" data-estimate-page="` + pid + `" data-note-url="` + stdhtml.EscapeString(url) + `">備考を保存</button> ` +
 		`<span class="estimate-note-say"></span></div>`
 }
 

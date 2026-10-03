@@ -8334,10 +8334,32 @@ delegateClick([['.estimate-add-go', async (btn) => {
     if (!input) return;
     btn.disabled = true;
     sayIn(say, '保存しています…');
-    const r = await postJSON('/api/estimate/note', { page_id: btn.getAttribute('data-estimate-page') || '', note: input.value })
+    // 保存する口は欄が持つ（見積書は /api/estimate/note・見積依頼書は /api/rfq/note——2026-10-03）。
+    const url = btn.getAttribute('data-note-url') || '/api/estimate/note';
+    const r = await postJSON(url, { page_id: btn.getAttribute('data-estimate-page') || '', note: input.value })
         .catch(e => ({ ok: false, data: { message: String(e) } }));
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '備考を保存できませんでした')); return; }
+    location.reload();
+}], ['.rfq-pdf-go', async (btn) => {
+    // 見積依頼書の「📄 PDFを作る」（2026-10-03・ext/toho/rfq_pdf.go）——作ったら読み直す（PDF は明細の下に出る）。
+    const say = btn.parentElement && btn.parentElement.querySelector('.rfq-pdf-say');
+    btn.disabled = true;
+    sayIn(say, 'PDFを作っています…');
+    const r = await postJSON('/api/rfq-pdf', { page_id: btn.getAttribute('data-rfq-page') || '' })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    location.reload();
+}], ['.rfq-sent-go', async (btn) => {
+    // 見積依頼書を FAX・手渡しで送った（2026-10-03）——送付日に今日。
+    if (!window.confirm('FAX・手渡しで送ったことにして、送付日に今日の日付を書きます。よろしいですか？')) return;
+    const say = btn.parentElement && btn.parentElement.querySelector('.rfq-sent-say');
+    btn.disabled = true;
+    const r = await postJSON('/api/rfq/sent', { page_id: btn.getAttribute('data-rfq-page') || '' })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '書けませんでした')); return; }
     location.reload();
 }]]);
 

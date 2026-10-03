@@ -406,19 +406,34 @@
     }
 
     // `<details>` の中の置き場は、開いたときに描く（⚠ toggle は泡立たないので捕捉で拾う）。
+    const load = (host) => {
+        if (host.getAttribute('data-mc-loaded')) return;
+        host.setAttribute('data-mc-loaded', '1');
+        open(host, {
+            purpose: host.getAttribute('data-mail-compose') || '',
+            pageId: host.getAttribute('data-mail-page') || '',
+            draftId: host.getAttribute('data-mail-draft') || '',
+        });
+    };
     document.addEventListener('toggle', (e) => {
         const det = e.target;
         if (!det || det.tagName !== 'DETAILS' || !det.open) return;
-        det.querySelectorAll('[data-mail-compose]').forEach((host) => {
-            if (host.getAttribute('data-mc-loaded')) return;
-            host.setAttribute('data-mc-loaded', '1');
-            open(host, {
-                purpose: host.getAttribute('data-mail-compose') || '',
-                pageId: host.getAttribute('data-mail-page') || '',
-                draftId: host.getAttribute('data-mail-draft') || '',
-            });
-        });
+        det.querySelectorAll('[data-mail-compose]').forEach(load);
     }, true);
+    // **最初から開いている** `<details>`（見積依頼書の「見積依頼を送る」——2026-10-03 利用者:「PDFの下に発送項目（メールを
+    // 書くボックス）」）は toggle を待たずに描く——開いた状態で差し込まれた枠には toggle が届かないことがあった（E2E で踏んだ）。
+    // 本文は後から差し込まれる（描き直しの巡り）ので、差し込まれたときにも探す（1コマにまとめる）。
+    let drawFrame = 0;
+    const drawOpen = () => {
+        if (drawFrame) return;
+        drawFrame = requestAnimationFrame(() => {
+            drawFrame = 0;
+            document.querySelectorAll('details[open] [data-mail-compose]:not([data-mc-loaded])').forEach(load);
+        });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', drawOpen);
+    else drawOpen();
+    new MutationObserver(drawOpen).observe(document.documentElement, { childList: true, subtree: true });
 
     window.wcmsMailCompose = { open };
 })();
