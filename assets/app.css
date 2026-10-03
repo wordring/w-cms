@@ -2499,6 +2499,12 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .estimate-add-form input[type="text"] { width: 9em; }
 #w-editor-content .estimate-add-head { font-weight: 600; }
 #w-editor-content .estimate-total td { padding: 6px 8px; font-size: 1.05em; background: var(--bg-subtle, #f8fafc); }
+/* 見積明細の下の備考の欄（2026-10-03・estimate_note.go）——閲覧モードで書く。編集モードでは「備考」の節を直接直すので隠す。 */
+#w-editor-content .estimate-note-row td { padding: 6px 8px; }
+#w-editor-content .estimate-note-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
+#w-editor-content .estimate-note-label { width: 100%; font-size: 0.85em; color: var(--text-muted, #6b7280); }
+#w-editor-content .estimate-note-input { flex: 1 1 320px; min-height: 4.5em; font: inherit; padding: 4px 6px; box-sizing: border-box; }
+body[edit-mode] #w-editor-content .estimate-note-row { display: none; }
 
 /* ── 材料の参考単価（2026-09-21）────────────────────────────────────────
    材料表の右に足す「最新単価」。⚠ **本文ではなく鏡**なので、**人が書いた列と

@@ -92,6 +92,16 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     check('② 見積先が入る', raw.includes('<dt>見積先</dt><dd>【E2E】客先</dd>'));
     check('② 見積書の「📄 PDFを作る」がある', await page.locator('#w-editor-content .estimate-pdf-go').count() === 1);
 
+    // ⑤ 見積明細の下の備考の欄で書いて保存すると、「備考」の節に入る（2026-10-03）。
+    const note = page.locator('#w-editor-content .estimate-note-input');
+    check('⑤ 見積明細の下に備考の欄がある', await note.count() === 1);
+    await note.fill('E2E 塗装は別途\nE2E 納期はご相談');
+    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('#w-editor-content .estimate-note-save').click()]);
+    await page.waitForTimeout(1000);
+    const saved = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), est);
+    check('⑤ 保存すると「備考」の節に入る', saved.includes('<h2>備考</h2><p>E2E 塗装は別途</p><p>E2E 納期はご相談</p>'), saved.slice(-200));
+    check('⑤ 読み直しても欄にいまの備考が出る', (await page.locator('#w-editor-content .estimate-note-input').inputValue()) === 'E2E 塗装は別途\nE2E 納期はご相談');
+
     // ④ 未送付の見積書に並び、「送付不要」で外れる。
     await page.goto(BASE + '/' + box);
     await page.waitForTimeout(800);

@@ -154,6 +154,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/estimate/from-folder", Handler: EstimateFromFolderAPIHandler},
 		// 未送付の見積書の「送った（FAX・手渡し）」「送付不要」（2026-10-03・estimate_unsent.go）。
 		{Pattern: "/api/estimate/mark", Handler: EstimateMarkAPIHandler},
+		// 見積書の備考を見積明細の下で書く（2026-10-03・estimate_note.go）。
+		{Pattern: "/api/estimate/note", Handler: EstimateNoteAPIHandler},
 		{Pattern: "/api/rfq/needs/move", Handler: RFQNeedsMoveAPIHandler},
 		{Pattern: "/api/rfq/needs/remove", Handler: RFQNeedsRemoveAPIHandler},
 		{Pattern: "/api/rfq/draft/back", Handler: RFQDraftBackAPIHandler},

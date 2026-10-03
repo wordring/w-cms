@@ -286,3 +286,57 @@ func TestEstimateUnsentList(t *testing.T) {
 		t.Errorf("0件の断りがありません:\n%s", html)
 	}
 }
+
+// TestEstimateNoteBox は見積明細の下の備考の欄（2026-10-03・estimate_note.go）を固定します——欄は見積明細の足元に出て、
+// 保存すると「備考」の節（PDF が刷るところ）が書き換わり、欄にも出る。空にすれば空の段落。見積書でないページには書かない。
+// 利用者:「見積書ページの見積明細テーブルの下に備考入力欄を付けると良いと思います」。
+func TestEstimateNoteBox(t *testing.T) {
+	const product = "000021"
+	setupExtTest(t, product, page.PageMeta{Owner: "root", Mode: "330"})
+	seedEstimateProduct(t, product)
+	root := &auth.User{Username: "root", IsAdmin: true}
+	est, _ := postEstimateAdd(t, root, map[string]any{"product": product, "index": 0, "client": "みなと商店"})["page_id"].(string)
+	show := func() string {
+		t.Helper()
+		req := auth.WithUser(httptest.NewRequest("GET", "/"+est, nil), root)
+		return cms.RenderComputedViews(req, pageNum(est), readPageBody(t, est))
+	}
+	if html := show(); !strings.Contains(html, `class="estimate-note-input" rows="3"></textarea>`) {
+		t.Fatalf("見積明細の下に空の備考の欄がありません:\n%s", html)
+	}
+	post := func(id, note string) int {
+		t.Helper()
+		b, _ := json.Marshal(map[string]string{"page_id": id, "note": note})
+		r := auth.WithUser(httptest.NewRequest("POST", "/api/estimate/note", bytes.NewReader(b)), root)
+		r.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		EstimateNoteAPIHandler(rr, r)
+		return rr.Code
+	}
+	if code := post(product, "x"); code != 400 {
+		t.Errorf("見積書でないページに書こうとして %d", code)
+	}
+	if code := post(est, "塗装は別途\n納期はご相談"); code != 200 {
+		t.Fatalf("備考を保存できません: %d", code)
+	}
+	body := readPageBody(t, est)
+	if !strings.Contains(body, "<section><h2>"+estimateNoteHeading+"</h2><p>塗装は別途</p><p>納期はご相談</p></section>") {
+		t.Errorf("備考の節が書き換わっていません:\n%s", body)
+	}
+	if _, _, note, err := readEstimateDoc(body); err != nil || strings.Join(note, "／") != "塗装は別途／納期はご相談" {
+		t.Errorf("PDF が読む備考が %v（%v）", note, err)
+	}
+	if html := show(); !strings.Contains(html, ">塗装は別途\n納期はご相談</textarea>") {
+		t.Errorf("欄にいまの備考が出ません:\n%s", html)
+	}
+	if code := post(est, ""); code != 200 {
+		t.Fatalf("備考を空にできません: %d", code)
+	}
+	if body := readPageBody(t, est); !strings.Contains(body, "<h2>"+estimateNoteHeading+"</h2><p><br/></p></section>") {
+		t.Errorf("空の備考が空の段落になっていません:\n%s", body)
+	}
+	// 節が無い本文には末尾に作る。
+	if out, err := withEstimateNote("<h1>見積</h1><p>本文</p>", "追記"); err != nil || !strings.HasSuffix(out, "<section><h2>備考</h2><p>追記</p></section>") {
+		t.Errorf("節の無い本文に備考を作れません: %q %v", out, err)
+	}
+}

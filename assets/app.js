@@ -8325,6 +8325,20 @@ delegateClick([['.estimate-add-go', async (btn) => {
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
     location.reload();
+}], ['.estimate-note-save', async (btn) => {
+    // 備考を見積明細の下で書く（2026-10-03・ext/toho/estimate_note.go）——利用者:「見積書ページの見積明細テーブルの下に
+    // 備考入力欄を付けると良いと思います」。保存先は見積書ページの「備考」の節（PDF はそこを刷る）。
+    const box = btn.closest('.estimate-note-box');
+    const input = box && box.querySelector('.estimate-note-input');
+    const say = box && box.querySelector('.estimate-note-say');
+    if (!input) return;
+    btn.disabled = true;
+    sayIn(say, '保存しています…');
+    const r = await postJSON('/api/estimate/note', { page_id: btn.getAttribute('data-estimate-page') || '', note: input.value })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '備考を保存できませんでした')); return; }
+    location.reload();
 }]]);
 
 // ── 見積依頼（2026-10-03・段1——ext/toho/rfq.go・rfq_api.go）───────────────────────
