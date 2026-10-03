@@ -224,3 +224,65 @@ func TestEstimateFromFolder(t *testing.T) {
 		t.Errorf("確定単価の出ない表を選んだのに %d %v", code, out)
 	}
 }
+
+// TestEstimateUnsentList は「未送付の見積書」（2026-10-03・estimate_unsent.go）を固定します——見積書を作ると並び、
+// 「送った（FAX・手渡し）」は送付日・「送付不要」は送付不要のタグに今日を書いて一覧から外れる。見積書でないページには書かない。
+// 利用者:「見積書を創ったら送付するか、必要ないと記すまで、未送付としてフォルダにいて欲しい」。
+func TestEstimateUnsentList(t *testing.T) {
+	const product = "000021"
+	setupExtTest(t, product, page.PageMeta{Owner: "root", Mode: "330"})
+	seedEstimateProduct(t, product)
+	root := &auth.User{Username: "root", IsAdmin: true}
+	a, _ := postEstimateAdd(t, root, map[string]any{"product": product, "index": 0, "client": "みなと商店"})["page_id"].(string)
+	b, _ := postEstimateAdd(t, root, map[string]any{"product": product, "index": 1, "client": "みなと商店"})["page_id"].(string)
+	ids := func() []string {
+		t.Helper()
+		list, err := unsentEstimates(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, e := range list {
+			out = append(out, page.FormatID(e.PageID)+":"+e.Client)
+		}
+		return out
+	}
+	if got := strings.Join(ids(), ","); got != a+":みなと商店,"+b+":みなと商店" {
+		t.Fatalf("作った見積書2枚が未送付に並びません: %s（%s・%s）", got, a, b)
+	}
+	if html := estimateUnsentViewHTML(root, 0); !strings.Contains(html, `data-est-mark="nosend" data-est-page="`+b+`"`) {
+		t.Errorf("一覧に「送付不要」のボタンがありません:\n%s", html)
+	}
+	mark := func(id, m string) int {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"page_id": id, "mark": m})
+		r := auth.WithUser(httptest.NewRequest("POST", "/api/estimate/mark", bytes.NewReader(body)), root)
+		r.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		EstimateMarkAPIHandler(rr, r)
+		return rr.Code
+	}
+	if code := mark(product, "sent"); code != 400 {
+		t.Errorf("見積書でないページに送付日を書こうとして %d", code)
+	}
+	if code := mark(a, "sent"); code != 200 {
+		t.Fatalf("送ったにできません: %d", code)
+	}
+	if got := strings.Join(ids(), ","); got != b+":みなと商店" {
+		t.Errorf("送った見積書がまだ並んでいます: %s", got)
+	}
+	if code := mark(b, "nosend"); code != 200 {
+		t.Fatalf("送付不要にできません: %d", code)
+	}
+	if got := ids(); len(got) != 0 {
+		t.Errorf("送付不要の見積書がまだ並んでいます: %v", got)
+	}
+	today := time.Now().Format("2006-01-02")
+	if !strings.Contains(readPageBody(t, a), "<dt>"+EstimateSentTag+"</dt><dd>"+today+"</dd>") ||
+		!strings.Contains(readPageBody(t, b), "<dt>"+EstimateNoSendTag+"</dt><dd>"+today+"</dd>") {
+		t.Errorf("送付日・送付不要のタグが入っていません:\n%s\n%s", readPageBody(t, a), readPageBody(t, b))
+	}
+	if html := estimateUnsentViewHTML(root, 0); !strings.Contains(html, "未送付の見積書はありません") {
+		t.Errorf("0件の断りがありません:\n%s", html)
+	}
+}

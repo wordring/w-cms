@@ -150,6 +150,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 見積書を作る——装置フォルダから選ぶ（2026-10-03・estimate_folder.go）。
 		{Pattern: "/api/estimate/folder-products", Handler: EstimateFolderProductsAPIHandler},
 		{Pattern: "/api/estimate/from-folder", Handler: EstimateFromFolderAPIHandler},
+		// 未送付の見積書の「送った（FAX・手渡し）」「送付不要」（2026-10-03・estimate_unsent.go）。
+		{Pattern: "/api/estimate/mark", Handler: EstimateMarkAPIHandler},
 		{Pattern: "/api/rfq/needs/move", Handler: RFQNeedsMoveAPIHandler},
 		{Pattern: "/api/rfq/needs/remove", Handler: RFQNeedsRemoveAPIHandler},
 		{Pattern: "/api/rfq/draft/back", Handler: RFQDraftBackAPIHandler},

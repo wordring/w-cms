@@ -8652,6 +8652,26 @@ delegateClick([['.estimate-add-go', async (btn) => {
             sayIn(say, '見積書 /' + r.data.page_id + ' を作りました（' + r.data.rows + ' 行）。開いています…');
             location.href = '/' + r.data.page_id;
         }],
+        // 未送付の見積書（2026-10-03・ext/toho/estimate_unsent.go）——「送った（FAX・手渡し）」「送付不要」。
+        // 利用者:「見積書を創ったら送付するか、必要ないと記すまで、未送付としてフォルダにいて欲しい」。
+        ['[data-est-mark]', async (btn) => {
+            const mark = btn.getAttribute('data-est-mark');
+            const id = btn.getAttribute('data-est-page') || '';
+            const msg = mark === 'nosend'
+                ? '見積書 /' + id + ' を「送付不要」にします（未送付の一覧から外れます）。よろしいですか？'
+                : '見積書 /' + id + ' を FAX・手渡しで送ったことにして、送付日に今日の日付を書きます。よろしいですか？';
+            if (!window.confirm(msg)) return;
+            const say = btn.closest('table') ? btn.closest('table').parentElement.querySelector('[data-est-mark-result]') : null;
+            btn.disabled = true;
+            const r = await postJSON('/api/estimate/mark', { page_id: id, mark });
+            if (!r.ok) {
+                btn.disabled = false;
+                if (say) sayIn(say, '⚠ ' + (r.data.message || '書けませんでした'), 'proc-why-ng');
+                else alert('⚠ ' + (r.data.message || '書けませんでした'));
+                return;
+            }
+            location.reload();
+        }],
     ]);
     // 番号の欄: 打って Enter・欄を離れたとき・ブラウザが憶えた値を戻したとき（どれも change）にも並べる。
     document.addEventListener('change', (e) => {

@@ -9,6 +9,7 @@
 //      選べない行で理由が出る。見積先にその装置の客先が入る
 //   ② 2行を選んで「見積書を作る」→ 見積書ページが開き、見積明細に一覧の順で確定単価が入る。PDF のボタンがある
 //   ③ 開き直しても、憶えた番号で一覧がまた並ぶ
+//   ④ できた見積書は「未送付の見積書」に並び、「送付不要」を押すと外れる（見積書に送付不要のタグ）
 //
 // 当て先（【E2E】の置き場・装置フォルダ・加工製品3つ）は自分で作り、できた見積書（本物の 見積／年／月 の下）と、試験が作った
 // 年月のフォルダは最後に消します。本物の置き場の本文には触りません。
@@ -23,7 +24,7 @@ const check = (label, ok, note = '') => {
   if (!ok) fails++;
 };
 
-const BOX = '<h1>【E2E】見積の置き場（フォルダ）</h1><section data-mirror="見積書を作る"></section>';
+const BOX = '<h1>【E2E】見積の置き場（フォルダ）</h1><section data-mirror="未送付の見積書"></section><section data-mirror="見積書を作る"></section>';
 const FOLDER = '<h1>【E2E】見積の装置フォルダ</h1><dl data-type="tags"><dt>客先</dt><dd>【E2E】客先</dd></dl>';
 const tags = (no) => '<dl data-type="tags"><dt>品番</dt><dd>' + no + '</dd></dl>';
 const calc = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>' +
@@ -43,6 +44,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
   const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 1000 } });
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
+  page.on('dialog', (d) => d.accept());
   let box = '', folder = '', p1 = '', p2 = '', p3 = '', est = '';
   try {
     await login(page, BASE);
@@ -89,6 +91,17 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     check('② 見積明細に一覧の順で確定単価が入る', a > 0 && b > a, 'a=' + a + ' b=' + b);
     check('② 見積先が入る', raw.includes('<dt>見積先</dt><dd>【E2E】客先</dd>'));
     check('② 見積書の「📄 PDFを作る」がある', await page.locator('#w-editor-content .estimate-pdf-go').count() === 1);
+
+    // ④ 未送付の見積書に並び、「送付不要」で外れる。
+    await page.goto(BASE + '/' + box);
+    await page.waitForTimeout(800);
+    const nosend = page.locator('button[data-est-mark="nosend"][data-est-page="' + est + '"]');
+    check('④ できた見積書が「未送付の見積書」に並ぶ', await nosend.count() === 1);
+    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), nosend.click()]);
+    await page.waitForTimeout(1200);
+    check('④ 「送付不要」を押すと一覧から外れる', await page.locator('button[data-est-page="' + est + '"]').count() === 0);
+    const after = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), est);
+    check('④ 見積書に送付不要のタグ（今日）が入る', /<dt>送付不要<\/dt><dd>\d{4}-\d{2}-\d{2}<\/dd>/.test(after));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));
