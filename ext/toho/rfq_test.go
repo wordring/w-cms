@@ -1,0 +1,213 @@
+package toho
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"w-cms/internal/auth"
+	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
+)
+
+// 見積依頼の段1（2026-10-03・rfq.go・rfq_api.go）——再見積依頼で集める・重複の赤・見積依頼部材表へ移す・不要・↩ 戻す。
+
+const rfqProductID = 51
+const rfqBoxID = 50
+
+// seedRFQ は加工製品（材料2行・見積計算表2枚——ロット20とロット40）と、見積依頼の置き場を作ります。
+func seedRFQ(t *testing.T) *auth.User {
+	t.Helper()
+	setupMaterialsPermsTest(t)
+	addPage(t, 0, -1, "トップ", "admin", "302", true)
+	addPage(t, rfqProductID, 0, "カバー", "root", "302", true)
+	addPage(t, rfqBoxID, 0, RFQBoxTitle, "root", "302", true)
+	writeBodyFile(t, rfqProductID, `<h1>カバー</h1>`+
+		`<table data-type="`+partMaterialsType+`"><tbody>`+
+		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
+		`<tr><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>2</td></tr>`+
+		`<tr><td>SUS304</td><td>丸棒</td><td>φ20*50</td><td>1</td></tr>`+
+		`</tbody></table>`+
+		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
+		`<tr><td>ロット</td><td>20</td><td>個</td><td></td></tr><tr><td>単価</td><td>500</td><td>円</td><td></td></tr></tbody></table>`+
+		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
+		`<tr><td>ロット</td><td>40</td><td>個</td><td></td></tr><tr><td>単価</td><td>450</td><td>円</td><td></td></tr></tbody></table>`)
+	writeBodyFile(t, rfqBoxID, `<h1>`+RFQBoxTitle+`</h1>`+
+		`<section data-mirror="再見積依頼"></section>`+
+		tableOfLinesHTML(RFQTempPartsType, nil, false)+
+		tableOfLinesHTML(RFQNeedsType, nil, true))
+	return &auth.User{Username: "root", IsAdmin: true}
+}
+
+func postRFQ(t *testing.T, u *auth.User, handler http.HandlerFunc, body any) (int, map[string]any) {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/api/rfq", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req = auth.WithUser(req, u)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	var out map[string]any
+	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	return rr.Code, out
+}
+
+// rfqRows は本文の vocabType の n 枚目（1始まり）の表の、空でない行を返します。
+func rfqRows(t *testing.T, body, vocabType string, n int) []ourOrderLine {
+	t.Helper()
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables := tablesOfType(nodes, vocabType)
+	if n > len(tables) {
+		return nil
+	}
+	rows := rowsOf(tables[n-1])
+	var out []ourOrderLine
+	for _, tr := range rows[1:] {
+		if ln := lineOfRow(rows[0], tr); !lineIsEmpty(ln) {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
+func boxBody(t *testing.T) string {
+	t.Helper()
+	body, err := cms.ReadPageBody("000050")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// TestRFQCollectUsesEstimateLots は、⚠ **ロットが空なら見積計算表のロットごとに行になる**（ロット × 部材の数量）こと、
+// **ロットを書けばその数**であることを固定します。
+func TestRFQCollectUsesEstimateLots(t *testing.T) {
+	u := seedRFQ(t)
+	if got := estimateLotsOf(rfqProductID); len(got) != 2 || got[0] != 20 || got[1] != 40 {
+		t.Fatalf("見積計算表のロットが %v です（[20 40] のはず）", got)
+	}
+	code, out := postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051"})
+	if code != 200 || out["rows"] != float64(4) {
+		t.Fatalf("集められません: %d %v", code, out)
+	}
+	got := rfqRows(t, boxBody(t), RFQNeedsType, 1)
+	var qty []string
+	for _, ln := range got {
+		qty = append(qty, ln.Material+":"+ln.Quantity)
+		if ln.ProductID != "000051" || ln.Kind == "" {
+			t.Errorf("弊社品番・種類が入っていません: %+v", ln)
+		}
+	}
+	if strings.Join(qty, ",") != "鉄:40,SUS304:20,鉄:80,SUS304:40" {
+		t.Errorf("数が %v です（ロット20と40 × 個数2・1）", qty)
+	}
+	// ロットを書けばその数。
+	if code, out := postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "/000051", "lot": "5"}); code != 200 || out["rows"] != float64(2) {
+		t.Fatalf("ロット5で集められません: %d %v", code, out)
+	}
+	if got := rfqRows(t, boxBody(t), RFQNeedsType, 1); len(got) != 6 || got[4].Quantity != "10" || got[5].Quantity != "5" {
+		t.Errorf("ロット5の行が足されていません: %+v", got)
+	}
+	// 書いていない・読めない番号は断る。
+	if code, _ := postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "abc"}); code != 400 {
+		t.Errorf("読めない弊社品番で %d", code)
+	}
+}
+
+// TestRFQNeedsMarksDuplicates は、⚠ **同じもの・同じ数が表の中に2つ以上あれば赤（＋⚠ 重複）**、臨時部材表の行も並び、
+// 同じロットでなければ重複でないことを固定します。
+func TestRFQNeedsMarksDuplicates(t *testing.T) {
+	u := seedRFQ(t)
+	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"})
+	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"}) // 二度目——重複
+	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "6"}) // 別のロット
+	body := boxBody(t)
+	// 臨時部材表に1行（鉄 板 t3.2*100*200 を10——ロット5の行と同じもの・同じ数）。
+	next, _, ok := appendLinesToTable(body, RFQTempPartsType, 1, []ourOrderLine{{Kind: "材料", Material: "鉄", Shape: "板", Size: "t3.2*100*200", Quantity: "10"}})
+	if !ok {
+		t.Fatal("臨時部材表へ書けません")
+	}
+	writeBodyFile(t, rfqBoxID, next)
+	req := auth.WithUser(httptest.NewRequest("GET", "/000050", nil), u)
+	shown := cms.RenderComputedViews(req, rfqBoxID, next)
+	// ⚠ 印（rfq-dup-mark）を数える——「⚠ 重複」の文字は操作の欄の説明にも在る（文字で数えると説明の分まで数えた）。
+	if n := strings.Count(shown, `class="rfq-dup-mark"`); n != 5 { // ロット5の2行×2回 ＋ 臨時の1行
+		t.Errorf("重複の印が %d です（5のはず）:\n%s", n, shown)
+	}
+	// ⚠ **表の行として**並ぶこと（tbody の中の tr・セルに値）——文字列の有る無しだけを見ると、`<tbody><tr><td>` の札が
+	//    落ちてチェックの欄と文字だけが残った形（ブラウザが表の外へ追い出す・2026-10-03 に E2E で踏んだ）でも通ってしまう。
+	if !strings.Contains(shown, `<tbody class="vocab-chrome rfq-temp-rows"><tr class="rfq-temp-row rfq-dup"><td>`) ||
+		!strings.Contains(shown, `<td>t3.2*100*200</td>`) || !strings.Contains(shown, `data-rfq-temp-row="1"`) {
+		t.Errorf("臨時部材表の行が表の行として並んでいません:\n%s", shown)
+	}
+	if !strings.Contains(shown, "見積依頼部材表へ入れる") || !strings.Contains(shown, "不要") {
+		t.Errorf("操作の欄がありません")
+	}
+}
+
+// TestRFQMoveRemoveAndBack は、⚠ **選んだ行（臨時部材表の行も）を見積依頼部材表へ移し、元から消える**こと・**不要は消すだけ**・
+// **↩ 戻すで見積依頼必要部材表へ戻り、最後の1行なら表ごと消える**ことを固定します。
+func TestRFQMoveRemoveAndBack(t *testing.T) {
+	u := seedRFQ(t)
+	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"})
+	body := boxBody(t)
+	next, _, _ := appendLinesToTable(body, RFQTempPartsType, 1, []ourOrderLine{{Material: "真鍮", Shape: "板", Size: "t1", Quantity: "3"}})
+	writeBodyFile(t, rfqBoxID, next)
+
+	code, out := postRFQ(t, u, RFQNeedsMoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{1}, "temp_rows": []int{1}})
+	if code != 200 || out["rows"] != float64(2) {
+		t.Fatalf("移せません: %d %v", code, out)
+	}
+	body = boxBody(t)
+	if got := rfqRows(t, body, RFQDraftType, 1); len(got) != 2 || got[0].Material != "鉄" || got[1].Material != "真鍮" {
+		t.Fatalf("見積依頼部材表に入っていません: %+v", got)
+	}
+	if got := rfqRows(t, body, RFQNeedsType, 1); len(got) != 1 || got[0].Material != "SUS304" {
+		t.Errorf("移した行が見積依頼必要部材表に残っています: %+v", got)
+	}
+	if got := rfqRows(t, body, RFQTempPartsType, 1); len(got) != 0 {
+		t.Errorf("移した臨時部材が臨時部材表に残っています: %+v", got)
+	}
+	if !strings.Contains(body, "<caption>見積依頼の臨時部材表</caption>") || !strings.Contains(body, "<caption>見積依頼必要部材表</caption>") {
+		t.Errorf("空になっても表は残るはず")
+	}
+	// 2枚目へ足す・1枚目へ足す。
+	if code, out := postRFQ(t, u, RFQNeedsMoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{1}, "into": "1"}); code != 200 || out["rows"] != float64(1) {
+		t.Fatalf("1枚目へ足せません: %d %v", code, out)
+	}
+	if got := rfqRows(t, boxBody(t), RFQDraftType, 1); len(got) != 3 {
+		t.Errorf("1枚目に3行のはず: %+v", got)
+	}
+	if code, _ := postRFQ(t, u, RFQNeedsMoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{}, "into": "9"}); code != 409 {
+		t.Errorf("無い表へ足して %d", code)
+	}
+	// ↩ 戻す——3行とも戻すと表ごと消える。
+	for i := 0; i < 3; i++ {
+		if code, out := postRFQ(t, u, RFQDraftBackAPIHandler, map[string]any{"page_id": "000050", "table": 1, "row": 1}); code != 200 {
+			t.Fatalf("戻せません: %d %v", code, out)
+		}
+	}
+	body = boxBody(t)
+	if strings.Contains(body, "<caption>見積依頼部材表</caption>") {
+		t.Errorf("空になった見積依頼部材表が残っています")
+	}
+	if got := rfqRows(t, body, RFQNeedsType, 1); len(got) != 3 {
+		t.Errorf("戻した行が見積依頼必要部材表に無い: %+v", got)
+	}
+	// 不要——消すだけ。
+	if code, out := postRFQ(t, u, RFQNeedsRemoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{1, 2}}); code != 200 || out["rows"] != float64(2) {
+		t.Fatalf("消せません: %d %v", code, out)
+	}
+	if got := rfqRows(t, boxBody(t), RFQNeedsType, 1); len(got) != 1 {
+		t.Errorf("不要で消えていません: %+v", got)
+	}
+	if code, _ := postRFQ(t, u, RFQNeedsRemoveAPIHandler, map[string]any{"page_id": "000050"}); code != 400 {
+		t.Errorf("何も選ばずに消して %d", code)
+	}
+}

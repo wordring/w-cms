@@ -8066,6 +8066,114 @@ delegateClick([['.estimate-add-go', async (btn) => {
     location.reload();
 }]]);
 
+// ── 見積依頼（2026-10-03・段1——ext/toho/rfq.go・rfq_api.go）───────────────────────
+//
+// 再見積依頼フォームの「集める」・見積依頼必要部材表の「見積依頼部材表へ入れる」「不要（消す）」・見積依頼部材表の「↩ 戻す」。
+// ⚠ **行は行番号で送ります**（サーバーが本文から読む——表示は丸めることがあるので値は送らない）。押したら読み直す。
+// ⚠ 欄は表を包む節の中（表の直後）か、包まれていなければ表の足元（tfoot）——どちらからでも表を探す（発注部材表で
+//    「欄を含む表」だけを探して黙って何もしなかった前科——2026-10-02）。
+(function wireRFQ() {
+    const rfqTableOf = (form) => {
+        const inTable = form.closest('table');
+        if (inTable) return inTable;
+        const sec = form.closest('section');
+        return sec ? sec.querySelector(':scope > table') : null;
+    };
+    const resultOf = (form, sel) => {
+        const host = form.parentElement;
+        return host ? host.querySelector(sel) : null;
+    };
+    const picked = (table) => {
+        const rows = [], tempRows = [];
+        if (!table) return { rows, tempRows };
+        table.querySelectorAll('input.rfq-check:checked').forEach((c) => {
+            if (c.dataset.rfqRow) rows.push(Number(c.dataset.rfqRow));
+            if (c.dataset.rfqTempRow) tempRows.push(Number(c.dataset.rfqTempRow));
+        });
+        return { rows, tempRows };
+    };
+    delegateClick([
+        ['[data-rfq-collect]', async (btn) => {
+            const form = btn.closest('.rfq-collect-form');
+            if (!form) return;
+            const box = resultOf(form, '[data-rfq-collect-result]');
+            const product = valueIn(form, '[data-rfq="product"]');
+            if (!product) {
+                sayIn(box, '⚠ 弊社品番（加工製品ページの番号）を書いてください', 'proc-why-ng');
+                return;
+            }
+            btn.disabled = true;
+            sayIn(box, '集めています…');
+            const r = await postJSON('/api/rfq/collect', {
+                page_id: form.getAttribute('data-rfq-page') || '', product, lot: valueIn(form, '[data-rfq="lot"]'),
+            });
+            btn.disabled = false;
+            if (!r.ok) {
+                sayIn(box, '⚠ ' + (r.data.message || '集められませんでした'), 'proc-why-ng');
+                return;
+            }
+            sayIn(box, r.data.rows + ' 行を見積依頼必要部材表へ入れました（ロット ' + (r.data.lots || []).join('・') + '）。読み直しています…');
+            location.reload();
+        }],
+        ['[data-rfq-move]', async (btn) => {
+            const form = btn.closest('.rfq-needs-form');
+            if (!form) return;
+            const box = resultOf(form, '[data-rfq-result]');
+            const { rows, tempRows } = picked(rfqTableOf(form));
+            btn.disabled = true;
+            sayIn(box, '見積依頼部材表へ入れています…');
+            const r = await postJSON('/api/rfq/needs/move', {
+                page_id: form.getAttribute('data-rfq-page') || '', rows, temp_rows: tempRows,
+                into: valueIn(form, '[data-rfq="into"]'),
+            });
+            btn.disabled = false;
+            if (!r.ok) {
+                sayIn(box, '⚠ ' + (r.data.message || '入れられませんでした'), 'proc-why-ng');
+                return;
+            }
+            sayIn(box, r.data.rows + ' 行を見積依頼部材表へ入れました。読み直しています…');
+            location.reload();
+        }],
+        ['[data-rfq-remove]', async (btn) => {
+            const form = btn.closest('.rfq-needs-form');
+            if (!form) return;
+            const box = resultOf(form, '[data-rfq-result]');
+            const { rows, tempRows } = picked(rfqTableOf(form));
+            const n = rows.length + tempRows.length;
+            if (!n) {
+                sayIn(box, '⚠ 消す行を選んでください', 'proc-why-ng');
+                return;
+            }
+            if (!window.confirm('選んだ ' + n + ' 行を消します（記録は残りません）。よろしいですか？')) return;
+            btn.disabled = true;
+            const r = await postJSON('/api/rfq/needs/remove', {
+                page_id: form.getAttribute('data-rfq-page') || '', rows, temp_rows: tempRows,
+            });
+            btn.disabled = false;
+            if (!r.ok) {
+                sayIn(box, '⚠ ' + (r.data.message || '消せませんでした'), 'proc-why-ng');
+                return;
+            }
+            sayIn(box, r.data.rows + ' 行を消しました。読み直しています…');
+            location.reload();
+        }],
+        ['.rfq-draft-back', async (btn) => {
+            btn.disabled = true;
+            const r = await postJSON('/api/rfq/draft/back', {
+                page_id: btn.getAttribute('data-rfq-page') || '',
+                table: Number(btn.getAttribute('data-rfq-table') || 0),
+                row: Number(btn.getAttribute('data-rfq-row') || 0),
+            });
+            if (!r.ok) {
+                btn.disabled = false;
+                alert('⚠ ' + (r.data.message || '戻せませんでした'));
+                return;
+            }
+            location.reload();
+        }],
+    ]);
+})();
+
 // ── 受注残表の印刷（2026-09-21）────────────────────────────────────────
 //
 // ユーザー:「顧客、納期ごとに別の表として分けて、**ワンタッチで印刷**もできると

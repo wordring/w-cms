@@ -144,6 +144,11 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/filing-target", Handler: FilingTargetAPIHandler},
 		// 図面追加・図面改定の行き先を、品番・品名・図面番号・題・ページ番号で探す口（2026-10-03・filing_search.go）。
 		{Pattern: "/api/filing-search", Handler: FilingSearchAPIHandler},
+		// 見積依頼（2026-10-03・段1——rfq.go・rfq_api.go）。
+		{Pattern: "/api/rfq/collect", Handler: RFQCollectAPIHandler},
+		{Pattern: "/api/rfq/needs/move", Handler: RFQNeedsMoveAPIHandler},
+		{Pattern: "/api/rfq/needs/remove", Handler: RFQNeedsRemoveAPIHandler},
+		{Pattern: "/api/rfq/draft/back", Handler: RFQDraftBackAPIHandler},
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
 		// 整理を待つ図面と既にある加工製品の図面を、Gemini に見比べさせる口（2026-09-30・filing_duplicate.go）。
 		// 押したときだけ呼ぶ——同じファイルなら Gemini を呼ばずに答える。

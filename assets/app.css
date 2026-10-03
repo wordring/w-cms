@@ -2160,6 +2160,14 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content .chip-btn:hover:not(:disabled) { background: var(--border); }
 #w-editor-content .chip-btn:disabled { opacity: .4; cursor: default; }
 #w-editor-content .chip-btn + .chip-btn { margin-left: 4px; }
+
+/* 見積依頼必要部材表（2026-10-03・ext/toho/rfq.go）——重複は薄い赤＋「⚠ 重複」（色だけで分けない）、臨時部材表の行は薄い灰。 */
+#w-editor-content tr.rfq-dup > td { background: #fee2e2; }
+#w-editor-content .rfq-dup-mark { margin-left: 4px; color: #b91c1c; font-size: 0.85em; white-space: nowrap; }
+#w-editor-content tr.rfq-temp-row > td { background: var(--bg-subtle, #f8fafc); }
+#w-editor-content tr.rfq-temp-row.rfq-dup > td { background: #fee2e2; }
+#w-editor-content .rfq-temp-mark { margin-left: 4px; color: var(--text-muted, #64748b); font-size: 0.85em; white-space: nowrap; }
+#w-editor-content td.rfq-pick, #w-editor-content th.rfq-pick { white-space: nowrap; }
 #w-editor-content .unhandled-bulk { margin: 8px 0 0; }
 #w-editor-content #w-unhandled-bulk-done,
 #w-editor-content #w-unhandled-bulk-skip {
