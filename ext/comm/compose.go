@@ -72,6 +72,10 @@ type ComposeDraft struct {
 	SendNote string `json:"send_note,omitempty"`
 	// Reload は送れたあとにページを開き直すかです（送った結果が本文に入る用件——発注書）。
 	Reload bool `json:"reload,omitempty"`
+	// Generated は**送るときに作って添えるファイル**の名前です（発注書・見積書の PDF——Prepare が作る）。送る欄の添付に
+	// 印つきで並べ、外せば作らない（2026-10-03 利用者:「見積書ページのメール作成欄は見積書PDFも他と同じように表示し、ただし
+	// 最初から添付に入っているようにするとわかりやすい」——それまでは並ばず、送る欄の注意書きでしか分からなかった）。
+	Generated string `json:"generated,omitempty"`
 }
 
 // SendPurpose は用件1つぶんの仕事です。どれも任意（nil なら何もしない）。
@@ -80,6 +84,8 @@ type SendPurpose struct {
 	Defaults func(user *auth.User, pageID string) (ComposeDraft, error)
 	// Prepare は送る直前に呼ばれ、添えるファイルを返します。⚠ **断るときは自分で応答を書いて
 	// false を返します**（関門と同じ作法——書けない・編集中などの理由は用件の側が知っている）。
+	// ⚠ 初期値に Generated（作って添えるファイルの名前）を出す用件では、Prepare の仕事は**そのファイルを作ることだけ**に
+	// すること——送る欄でその印を外すと Prepare を呼ばない（SendRequest.SkipGenerated）。
 	Prepare func(w http.ResponseWriter, r *http.Request, pageID string) ([]ComposeAttachment, bool)
 	// AfterSent は送れたあとに呼ばれます。⚠ **ここで失敗しても送信は成功のまま**です（出た事実を
 	// 隠さない）——エラーは理由として人に見せます。recordID は送信の控えのページ（作れなければ空）。

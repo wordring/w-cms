@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,7 +35,7 @@ func init() {
 	comm.RegisterSendPurpose(testPurpose, comm.SendPurpose{
 		NeedsPage: true,
 		Defaults: func(_ *auth.User, pageID string) (comm.ComposeDraft, error) {
-			return comm.ComposeDraft{To: []string{"t@example.jp"}, SendNote: "送ると試験の紙を添えます", Reload: true}, nil
+			return comm.ComposeDraft{To: []string{"t@example.jp"}, SendNote: "送ると試験の紙を添えます", Reload: true, Generated: "試験の紙.pdf"}, nil
 		},
 		Prepare: func(w http.ResponseWriter, r *http.Request, pageID string) ([]comm.ComposeAttachment, bool) {
 			return []comm.ComposeAttachment{{PageID: pageID, File: "pp01.pdf", Name: "試験の紙.pdf"}}, true
@@ -291,5 +292,51 @@ func TestSendRefusesUnwritableDraftBeforeSending(t *testing.T) {
 	}, alice)
 	if code != 409 || called {
 		t.Errorf("下書きでないページを draft_id にして %d・送った=%v です（409 で送らないはず）", code, called)
+	}
+}
+
+// TestSendSkipsGeneratedWhenUnchecked は、送る欄で「送るときに作るファイル」（Generated）の印を外すと、送る直前の仕事
+// （Prepare——PDF を作って添える）を呼ばず、その添付が付かないことを固定します（2026-10-03 利用者:「見積書PDFも他と同じように
+// 表示し、ただし最初から添付に入っているように」——印つきで並び、外せば作らない）。初期値には Generated が載る。
+func TestSendSkipsGeneratedWhenUnchecked(t *testing.T) {
+	setupMailTest(t)
+	seedSourceMail(t)
+	var sent comm.OutgoingMail
+	orig := sendMail
+	sendMail = func(_ *auth.User, m comm.OutgoingMail) (string, error) { sent = m; return "<new@example.jp>", nil }
+	t.Cleanup(func() { sendMail = orig })
+	send := func(skip bool) []string {
+		t.Helper()
+		sent = comm.OutgoingMail{}
+		code, out := callJSON(t, MailSendAPIHandler, "POST", "/api/mail/send", map[string]any{
+			"purpose": testPurpose, "page_id": "000200", "to": []string{"t@example.jp"}, "body": "本文",
+			"skip_generated": skip,
+		}, alice)
+		if code != 200 || out["success"] != true {
+			t.Fatalf("送れません: %d %v", code, out)
+		}
+		var names []string
+		for _, a := range sent.Attachments {
+			names = append(names, a.Name)
+		}
+		return names
+	}
+	// 初期値にも、保存した下書きを開き直したときにも、送るときに作るファイルの名前が載る（送る欄が印つきで並べる）。
+	_, out := callJSON(t, ComposeAPIHandler, "GET", "/api/mail/compose?purpose="+url.QueryEscape(testPurpose)+"&page_id=000200", nil, alice)
+	if d, _ := out["draft"].(map[string]any); d == nil || d["generated"] != "試験の紙.pdf" {
+		t.Errorf("初期値に generated がありません: %v", out)
+	}
+	_, saved := callJSON(t, DraftSaveAPIHandler, "POST", "/api/mail/draft", map[string]any{
+		"purpose": testPurpose, "page_id": "000200", "to": []string{"t@example.jp"}, "subject": "試験", "body": "本文",
+	}, alice)
+	_, out = callJSON(t, ComposeAPIHandler, "GET", "/api/mail/compose?draft="+saved["draft_id"].(string), nil, alice)
+	if d, _ := out["draft"].(map[string]any); d == nil || d["generated"] != "試験の紙.pdf" {
+		t.Errorf("下書きを開き直すと generated がありません: %v", out)
+	}
+	if got := send(false); strings.Join(got, ",") != "試験の紙.pdf" {
+		t.Errorf("印のままなら作って添えるはず: %v", got)
+	}
+	if got := send(true); len(got) != 0 {
+		t.Errorf("印を外したのに添えています: %v", got)
 	}
 }

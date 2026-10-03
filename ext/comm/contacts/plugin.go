@@ -71,5 +71,7 @@ func (contactsPlugin) Routes() []cms.Route {
 		// 分類の取り消し（未分類へ戻す）。**ページは消しません**——押し間違いの
 		// 取り消しが別の押し間違いでページを消すことになっては割に合わないため。
 		{Pattern: "/api/contacts/unfile", Handler: UnfileContactAPIHandler},
+		// 送る欄の宛先・CC の候補（2026-10-03・address_book.go）。
+		{Pattern: "/api/contacts/addresses", Handler: AddressBookAPIHandler},
 	}
 }

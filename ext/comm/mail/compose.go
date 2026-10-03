@@ -300,7 +300,7 @@ func ComposeAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 送ると何が起きるか（発注書なら PDF・発注済み）は、いまの用件から引き直す。
 		if p, ok := comm.SendPurposeOf(d.Purpose); ok && p.Defaults != nil && (d.PageID != "" || !p.NeedsPage) {
 			if def, err := p.Defaults(user, d.PageID); err == nil {
-				d.SendNote, d.Reload = def.SendNote, def.Reload
+				d.SendNote, d.Reload, d.Generated = def.SendNote, def.Reload, def.Generated
 			}
 		}
 	} else {

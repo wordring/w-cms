@@ -132,3 +132,10 @@
         flex: none;
     }
 }
+
+/* 宛先の候補——連絡帳から（2026-10-03）。選ぶと「宛先へ」「CCへ」の欄の末尾にアドレスを足す。 */
+.mail-compose .mc-book-target {
+    flex: 0 0 auto;
+    font: inherit;
+    padding: 0.25rem 0.3rem;
+}

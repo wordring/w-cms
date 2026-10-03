@@ -111,6 +111,71 @@
         render(host, r.data.draft || {}, !!r.data.ready);
     }
 
+    // ── 宛先の候補——連絡帳から（2026-10-03・ext/comm/contacts/address_book.go）──────────────
+    //
+    // 利用者:「宛先は連絡帳から候補を取得してコンボボックスで出して欲しい」。宛先・CC の下に「連絡帳から」の欄（打って絞れる
+    // 候補の一覧＝datalist）を1つ置き、選ぶと「宛先へ」「CCへ」で選んだ方の欄の末尾にアドレスを足す（同じアドレスは足さない）。
+    // 候補は連絡帳の組織と人のアドレス（読めるものだけ）。宛先の欄そのものは今までどおり手で書ける。
+    let bookPromise = null;
+    const addressBook = () => {
+        if (!bookPromise) {
+            bookPromise = getJSON('/api/contacts/addresses')
+                .then((r) => (r.ok ? r.data.entries || [] : []))
+                .catch(() => []);
+        }
+        return bookPromise;
+    };
+    let bookSeq = 0;
+    async function addressPickers(form, to, cc) {
+        const entries = await addressBook();
+        if (!entries.length) return;
+        const listID = 'mc-book-' + (++bookSeq);
+        const dl = el('datalist');
+        dl.id = listID;
+        const byLabel = new Map();
+        entries.forEach((e) => {
+            const who = e.name ? e.name + '（' + e.org + '）' : e.org;
+            const label = who + ' <' + e.address + '>';
+            byLabel.set(label, e.address);
+            const o = el('option');
+            o.value = label;
+            dl.appendChild(o);
+        });
+        const row = el('div', 'mc-row mc-book');
+        row.appendChild(el('span', 'mc-label', '連絡帳'));
+        const input = el('input', 'mc-input mc-book-input');
+        input.type = 'text';
+        input.setAttribute('list', listID);
+        input.placeholder = '連絡帳から選ぶ（名前・会社・アドレスで絞れる）';
+        input.setAttribute('data-mc', 'book');
+        const target = el('select', 'mc-book-target');
+        [['to', '宛先へ'], ['cc', 'CCへ']].forEach(([v, t]) => {
+            const o = el('option', null, t);
+            o.value = v;
+            target.appendChild(o);
+        });
+        row.appendChild(input);
+        row.appendChild(target);
+        row.appendChild(dl);
+        // 宛先・CC の欄のすぐ下へ（件名より前）。
+        const ccRow = cc.closest('.mc-row');
+        if (ccRow && ccRow.nextSibling) form.insertBefore(row, ccRow.nextSibling);
+        else form.appendChild(row);
+        const pick = () => {
+            const addr = byLabel.get(input.value);
+            if (!addr) return; // 候補の1つを選んだときだけ（打っている途中は何もしない）
+            const field = target.value === 'cc' ? cc : to;
+            const have = field.value.split(/[,;、\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+            if (!have.includes(addr.toLowerCase())) {
+                const cur = field.value.trim().replace(/[,;、]\s*$/, '');
+                field.value = cur ? cur + ', ' + addr : addr;
+            }
+            input.value = '';
+        };
+        input.addEventListener('input', pick);
+        input.addEventListener('change', pick);
+    }
+
     function render(host, d, ready) {
         host.textContent = '';
         const state = { draftId: d.draft_id || '' };
@@ -138,6 +203,7 @@
         };
         const to = field('宛先', 'to', (d.to || []).join(', '));
         const cc = field('CC', 'cc', (d.cc || []).join(', '));
+        addressPickers(form, to, cc);
         const subject = field('件名', 'subject', d.subject || '');
         const body = el('textarea', 'mc-body');
         body.rows = 12;
@@ -170,6 +236,20 @@
             return true;
         };
         (d.attachments || []).forEach((a) => addPick(a, !!a.checked));
+        // 送るときに作るファイル（発注書・見積書の PDF——2026-10-03 利用者:「見積書PDFも他と同じように表示し、ただし最初から
+        // 添付に入っているようにするとわかりやすい」）。ほかの添付と同じ並びのいちばん上に印つきで出し、外せば作らない
+        // （skip_generated）。作るのは送るとき——いつも最新の明細で。
+        let genCb = null;
+        if (d.generated) {
+            const lb = el('label', 'mc-attach-item mc-attach-generated');
+            genCb = el('input');
+            genCb.type = 'checkbox';
+            genCb.checked = true;
+            genCb.setAttribute('data-mc-generated', '1');
+            lb.appendChild(genCb);
+            lb.appendChild(document.createTextNode(' ' + d.generated + '（送るときに作ります）'));
+            list.insertBefore(lb, list.firstChild);
+        }
 
         // 「🔗 ID で添付を足す」（2026-10-01 利用者:「メール送信にファイル添付が無いです。PDFや画像の表示にIDが
         // 在ると思いますが、それをクリック程度で簡単にクリップボードへコピーできると、…メールに添付できるのでは」）
@@ -254,6 +334,7 @@
             subject: subject.value,
             body: body.value,
             attachments: picks.filter((p) => p.cb.checked).map((p) => p.ref),
+            skip_generated: genCb ? !genCb.checked : false,
         });
 
         saveBtn.addEventListener('click', async () => {

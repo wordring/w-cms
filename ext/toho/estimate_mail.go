@@ -85,7 +85,10 @@ func estimateMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, er
 		To:       estimateAddresses(user, client, person),
 		Subject:  "御見積書（№ " + head[EstimateNoTag] + "）",
 		Body:     b.String(),
-		SendNote: "送るときに見積書のPDFを作って添付し（このページの添付にも残ります）、送れたら「" + EstimateSentTag + "」のタグに今日の日付を書きます。",
+		SendNote: "印の付いた見積書のPDFは送るときに作って添付し（このページの添付にも残ります）、送れたら「" + EstimateSentTag + "」のタグに今日の日付を書きます。",
+		// 送るときに作る PDF を添付の欄に印つきで並べる（2026-10-03 利用者:「見積書PDFも他と同じように表示し、ただし最初から
+		// 添付に入っているように」）。作るのは送るとき（いつも最新の明細で）——印を外せば作らない。
+		Generated: "御見積書 " + pageID + ".pdf",
 		Reload:   true,
 	}
 	if len(d.To) == 0 {

@@ -57,6 +57,8 @@ type SendRequest struct {
 	Purpose string `json:"purpose"`
 	PageID  string `json:"page_id"`
 	DraftID string `json:"draft_id"`
+	// SkipGenerated は、送る欄で「送るときに作るファイル」（ComposeDraft.Generated）の印を外したことです——Prepare を呼ばない。
+	SkipGenerated bool `json:"skip_generated"`
 }
 
 // sendMail は実際に送る口です（試験が偽物へ差し替えられるよう変数にしてある——本物は外へメールが出る）。
@@ -149,7 +151,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 送る直前の仕事（発注書なら PDF を作って添える）。断るときは用件の側が応答を書いています。
-	if purpose.Prepare != nil {
+	if purpose.Prepare != nil && !sreq.SkipGenerated {
 		extra, ok := purpose.Prepare(w, r, purposePageID)
 		if !ok {
 			return

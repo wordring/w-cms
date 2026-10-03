@@ -65,8 +65,10 @@ func orderMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error
 		Subject: orderMailSubject(pageID, supplier),
 		Body:    orderMailBody(head, supplier, pageID),
 		// ⚠ **PDFは押したときに作ります**（下書きを開いただけで添付を増やさない）。
-		SendNote: "送るときに発注書のPDFを作って添付し（このページの添付にも残ります）、" +
+		SendNote: "印の付いた発注書のPDFは送るときに作って添付し（このページの添付にも残ります）、" +
 			"送れたら取消でない行を発注済みにします。",
+		// 送るときに作る PDF を添付の欄に印つきで並べる（2026-10-03・見積書と同じ）。
+		Generated: "発注書 " + pageID + ".pdf",
 		Reload: true,
 	}
 	if len(d.To) == 0 {
