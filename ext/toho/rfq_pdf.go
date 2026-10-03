@@ -402,11 +402,17 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 		return ""
 	}
 	sent := cms.PageTagValue(database.DB, pageIDInt, EstimateSentTag)
+	answered := cms.PageTagValue(database.DB, pageIDInt, RFQAnsweredTag)
 	var b strings.Builder
 	b.WriteString(`<h3 class="materials-title">✉️ 見積依頼を送る</h3>`)
+	// 送る欄は、まだ送っていなくて返事も来ていないときだけ最初から開く（返事の来た見積——過去の見積もりを移したものも——は閉じておく）。
 	open := ` open`
 	if strings.TrimSpace(sent) != "" {
 		b.WriteString(`<p class="unorder-help">送付日: ` + stdhtml.EscapeString(sent) + `（もう一度送ることもできます）</p>`)
+		open = ""
+	}
+	if strings.TrimSpace(answered) != "" {
+		b.WriteString(`<p class="unorder-help">回答日: ` + stdhtml.EscapeString(answered) + `</p>`)
 		open = ""
 	}
 	b.WriteString(`<details class="estimate-mail rfq-mail"` + open + `><summary>✉️ メールで送る</summary>` +

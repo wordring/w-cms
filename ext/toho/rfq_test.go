@@ -412,3 +412,44 @@ func TestRFQDocFooterAndSend(t *testing.T) {
 		t.Errorf("見積依頼書でないページに送付日を書こうとして %d", code)
 	}
 }
+
+// TestRFQImportAnsweredQuote は過去の見積もりを移す口（2026-10-04・RFQImportAPIHandler）を固定します——管理者だけ・
+// 見積依頼明細に単価と「回答あり」・回答日と見積依頼日はその日・置き場は 見積依頼／その年／その月・備考の節。
+func TestRFQImportAnsweredQuote(t *testing.T) {
+	const box = "000040"
+	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
+	in := map[string]any{"supplier": "ふじ鍍金", "date": "2025-05-14", "note": "ワンノートから移した過去の見積",
+		"lines": []map[string]string{
+			{"product_id": "000041", "kind": "外注加工", "work": "塗装", "color": "緑", "quantity": "20", "cost": "298", "note": "元: 2025-05-14 ふじ鍍金 ロット20 298"},
+		}}
+	if code, _ := postRFQ(t, &auth.User{Username: "bob"}, RFQImportAPIHandler, in); code != 403 {
+		t.Errorf("管理者でない人が移せてしまう: %d", code)
+	}
+	root := &auth.User{Username: "root", IsAdmin: true}
+	code, out := postRFQ(t, root, RFQImportAPIHandler, in)
+	id, _ := out["page_id"].(string)
+	if code != 200 || id == "" {
+		t.Fatalf("移せません: %d %v", code, out)
+	}
+	body := readPageBody(t, id)
+	for _, want := range []string{"<h1>見積依頼　ふじ鍍金</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2025-05-14</dd>",
+		"<dt>" + RFQDateTag + "</dt><dd>2025-05-14</dd>", ">298<", ">" + rfqLineAnswered + "<", ">塗装<", ">緑<",
+		"<p>ワンノートから移した過去の見積</p>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("移した見積依頼書ページに %q がありません:\n%s", want, body)
+		}
+	}
+	meta, _ := page.ReadSidecar(id)
+	month, _ := page.ReadSidecar(meta.ParentID)
+	if cms.PageTitleByID(pageNum(meta.ParentID)) != "05月" || cms.PageTitleByID(pageNum(month.ParentID)) != "2025年" {
+		t.Errorf("置き場がその日の年月ではありません: %s ← %s", cms.PageTitleByID(pageNum(meta.ParentID)), cms.PageTitleByID(pageNum(month.ParentID)))
+	}
+	// 返事の来た見積なので、送る欄は閉じておき回答日を出す（まだのものだけ開く）。
+	shown := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/"+id, nil), root), pageNum(id), body)
+	if !strings.Contains(shown, `class="estimate-mail rfq-mail"><summary>`) || !strings.Contains(shown, "回答日: 2025-05-14") {
+		t.Errorf("返事の来た見積の送る欄が閉じていません:\n%s", shown)
+	}
+	if code, _ := postRFQ(t, root, RFQImportAPIHandler, map[string]any{"supplier": "ふじ鍍金", "date": "2025/05/14", "lines": in["lines"]}); code != 400 {
+		t.Errorf("日付の形が違うのに %d", code)
+	}
+}

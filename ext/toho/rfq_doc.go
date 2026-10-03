@@ -42,6 +42,7 @@ const (
 	RFQAnsweredTag    = "回答日"
 	rfqNoteHeading    = "備考"
 	rfqLineUnanswered = "未回答"
+	rfqLineAnswered   = "回答あり"
 )
 
 func init() {
@@ -69,16 +70,21 @@ func rfqDocFormHTML(user *auth.User, pageID string, idx int) string {
 }
 
 // buildRFQDocHTML は見積依頼書ページの本文を、テンプレート tmpl を埋めて組みます。
-func buildRFQDocHTML(tmpl, pageID, supplier, date, note, signerID string, lines []ourOrderLine) (string, error) {
+//
+// answered なら返事を貰った見積（過去の見積もりの移し——RFQImportAPIHandler）: 単価を写し、状態は「回答あり」、回答日は date。
+func buildRFQDocHTML(tmpl, pageID, supplier, date, note, signerID string, lines []ourOrderLine, answered bool) (string, error) {
 	d := cms.NewPageDraft(RFQTemplate, tmpl)
 	d.SetTitle("見積依頼　" + supplier)
 	setHeaderTag(d.DraftBlock, RFQNoTag, pageID)
 	setHeaderTag(d.DraftBlock, SupplierTag, supplier)
 	setHeaderTag(d.DraftBlock, RFQDateTag, date)
 	setHeaderTag(d.DraftBlock, RFQSignerTag, signerID)
+	if answered {
+		setHeaderTag(d.DraftBlock, RFQAnsweredTag, date)
+	}
 	rows := make([]map[string]string, 0, len(lines))
 	for _, ln := range lines {
-		rows = append(rows, map[string]string{
+		row := map[string]string{
 			"our-item-id": ln.ProductID,
 			"for-order":   ln.ForOrder,
 			"kind":        ln.Kind,
@@ -97,7 +103,12 @@ func buildRFQDocHTML(tmpl, pageID, supplier, date, note, signerID string, lines 
 			"note":        ln.Note,
 			// 単価は空——業者の返事を書く欄（紙では空欄で刷る）。状態は「未回答」から。
 			"status": rfqLineUnanswered,
-		})
+		}
+		if answered {
+			row["cost"] = moneyOrEmpty(ln.Cost)
+			row["status"] = rfqLineAnswered
+		}
+		rows = append(rows, row)
 	}
 	if _, err := fillVocabTable(d.DraftBlock, RFQItemsType, rows); err != nil {
 		return "", err
@@ -215,7 +226,7 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	build := func(pageID string) (string, error) {
-		return buildRFQDocHTML(tmpl, pageID, supplier, when.Format("2006-01-02"), req.Note, signerID, lines)
+		return buildRFQDocHTML(tmpl, pageID, supplier, when.Format("2006-01-02"), req.Note, signerID, lines, false)
 	}
 	if _, err := build(""); err != nil {
 		cms.JSONFail(w, http.StatusConflict, "見積依頼書ページを作れません: "+err.Error())
@@ -260,4 +271,75 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		out["draft_note"] = "⚠ 元の見積依頼部材表を片付けられませんでした（手で消してください）"
 	}
 	cms.WriteJSON(w, out)
+}
+
+// RFQImportAPIHandler は POST /api/rfq/import です（2026-10-04・**管理者だけ**）——過去の見積もり（ワンノートから加工製品ページに
+// 入った「日付　業者　見積　ロット　価格」の行）を見積依頼書ページへ移す口。入力: {supplier, date, note, lines}（lines の cost が単価）。
+//
+// 利用者:「専用の見積依頼書ページを作り、そこに入れるようにしましょうか？」——業者の値段の置き場を見積依頼明細の単価の列1つに
+// そろえる（あとで作る単価表は見積依頼明細だけを読めばよい）。返事を貰った見積なので、単価に値段・状態は「回答あり」・
+// 回答日は date（見積依頼日も date——依頼した日は分からない）。置き場は 見積依頼／年／月（date の年月）。
+// 1回で1枚（業者×日付）。何枚も作り、二重に作らない記録を持つのは移す道具の仕事（実名を含む一覧を読むのでリポジトリの外）。
+func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	if !user.IsAdmin {
+		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます（過去の見積もりの移し）")
+		return
+	}
+	var req struct {
+		Supplier string         `json:"supplier"`
+		Date     string         `json:"date"`
+		Note     string         `json:"note"`
+		Lines    []ourOrderLine `json:"lines"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	supplier := strings.TrimSpace(req.Supplier)
+	when, err := time.Parse("2006-01-02", strings.TrimSpace(req.Date))
+	if supplier == "" || err != nil || len(req.Lines) == 0 {
+		cms.JSONFail(w, http.StatusBadRequest, "業者・日付（YYYY-MM-DD）・行が要ります")
+		return
+	}
+	tmpl, err := cms.PageTemplateBody(RFQTemplate)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "見積依頼書ページを作れません: "+err.Error())
+		return
+	}
+	date := when.Format("2006-01-02")
+	build := func(pageID string) (string, error) {
+		return buildRFQDocHTML(tmpl, pageID, supplier, date, req.Note, "", req.Lines, true)
+	}
+	if _, err := build(""); err != nil {
+		cms.JSONFail(w, http.StatusConflict, "見積依頼書ページを作れません: "+err.Error())
+		return
+	}
+	boxID, err := cms.EnsureTopLevelBox(RFQBoxTitle, user.Username)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "「"+RFQBoxTitle+"」ページを用意できません: "+err.Error())
+		return
+	}
+	monthID, err := cms.EnsureDateFolders(boxID, user.Username, when)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "年月のフォルダを作れません: "+err.Error())
+		return
+	}
+	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "見積依頼書ページを作れません: "+err.Error())
+		return
+	}
+	body, err := build(newID)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "見積依頼書ページを組めません: "+err.Error())
+		return
+	}
+	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
+		return
+	}
+	auth.Audit(user.Username, "rfq.import", newID+" "+supplier+" "+date+" "+strconv.Itoa(len(req.Lines))+"行")
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "rows": len(req.Lines)})
 }
