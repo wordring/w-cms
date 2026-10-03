@@ -1424,6 +1424,7 @@
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         refreshTablePrint();         // どの表にも「🖨 この表を印刷」（閲覧モード限定・2026-10-02）
+        refreshTableSort();          // 列の題を押して並べ替える（閲覧モード限定・表示だけ・2026-10-03）
         wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
@@ -2024,6 +2025,10 @@
         'figure', 'details', 'section', 'article', 'header', 'footer', 'aside', 'nav',
     ]);
 
+    // tableSortOriginal は、閲覧モードで並べ替えた `tbody` → 並べ替える前の子ノードの並び（下の serializeChildren と
+    // 「表の列の題を押して並べ替える」が使う）。
+    const tableSortOriginal = new WeakMap();
+
     function serializeAttrs(el, allowed, extraAttrs) {
         let attrs = extraAttrs || '';
         allowed.forEach(a => {
@@ -2035,10 +2040,16 @@
 
     // serializeChildren は子ノード列を書き出す。未知の要素は**アンラップ**して中身だけ残す
     // （サーバーのサニタイザと同じ扱い。文字が消えるより形が崩れる方が損失が小さい）。
+    //
+    // ⚠ 閲覧モードで列の題を押して並べ替えた表（下の「表の列の題を押して並べ替える」）は、`tbody` の行が DOM の上で
+    //    動いています。並べ替えは表示だけなので、書き出しは**並べ替える前の並び**で行います（tableSortOriginal）。
     function serializeChildren(el, indent) {
         const pretty = WHITESPACE_INSENSITIVE.has(el.tagName.toLowerCase());
         let out = '';
-        el.childNodes.forEach(node => {
+        const kids = tableSortOriginal.has(el)
+            ? tableSortOriginal.get(el).filter(n => n.parentNode === el)
+            : el.childNodes;
+        kids.forEach(node => {
             // エンハンサが挿す編集クローム（PDFドロップゾーン・プレビュー等）は本文ではない
             if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('vocab-chrome')) return;
             if (node.nodeType === Node.TEXT_NODE) {
@@ -6412,6 +6423,7 @@
     //   - 本文にもサーバーにも残さない（見る人と画面の都合・端末ごと）。
     //   - 鏡の中の**絞り込みの欄**も憶える（2026-09-30・欄 `i`・下の rememberKeyOf）——利用者:「チェックボタンの状態を
     //     ブラウザに記憶してはどうでしょうか？汎用的な機構としてです」。
+    //   - 表の**並べ替え**も憶える（2026-10-03・欄 `s`・下の「表の列の題を押して並べ替える」）。
     const VIEW_KEY = 'wcms.view';
     const VIEW_MAX_PAGES = 2000;
     const ViewState = (() => {
@@ -6442,8 +6454,8 @@
         function page(id, create) {
             const c = load();
             let p = c.pages[id];
-            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {}, i: {} };
-            if (p) { p.r = p.r || {}; p.o = p.o || {}; p.i = p.i || {}; }
+            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {}, i: {}, s: {} };
+            if (p) { p.r = p.r || {}; p.o = p.o || {}; p.i = p.i || {}; p.s = p.s || {}; }
             return p;
         }
         return {
@@ -6467,6 +6479,13 @@
                 const p = page(id, true);
                 p.t = Date.now();
                 p.i[key] = value;
+                persist();
+            },
+            // setSort は表の並べ替え（列の見出しの文字と向き）を憶えます。null なら忘れる（元の並び）。
+            setSort(id, key, value) {
+                const p = page(id, true);
+                p.t = Date.now();
+                if (value) p.s[key] = value; else delete p.s[key];
                 persist();
             },
         };
@@ -6529,6 +6548,173 @@
         applyViewRatios();
         restoreRememberedInputs(st);
     }
+
+    // ── 表の列の題を押して並べ替える（2026-10-03） ─────────────────────────
+    //
+    // 利用者:「表の列の題をクリックして並び順を変えるように出来ませんか？」→ 問いへの答え:「表示だけ」「この端末で憶える」。
+    //
+    //   - **閲覧モードだけ・表示だけ**——本文は書き換えない（版も増えない）。題を押すたびに 昇順 → 降順 → 元の並び。
+    //   - 並べ替えは端末に憶える（`wcms.view` の欄 `s`）。表の鍵はキャプション（無ければ見出しの文字）＋同じ鍵の何番目か、
+    //     列は**見出しの文字**で憶える——列を足しても別の列で並ばない。見出しが消えていたら並べない。
+    //   - ⚠ **並べ替えた並びを本文に保存させない**——行は DOM の上で動かすので、書き出し（serializeChildren）は並べ替えた
+    //     `tbody` を**元の並び**で書く（tableSortOriginal）。編集モードへ入るときは元の並びへ戻す（編集中に行を足すと
+    //     「元の並び」が定まらないため・編集は本文の並びで）。
+    //   - 行のボタン（発注・見積依頼の ↩ 戻す、受注残表の欄など）は行番号を属性で持つので、並べ替えても押す先はずれない。
+    //   - 並べるのは見出しの行（最初の行が全部 th）のある表だけ——縦の表（見積計算表）や、結合したセル（colspan・rowspan）の
+    //     ある表は並べない。`tbody` ごとに並べる（臨時部材の行のような別の `tbody` は混ぜない）・足元（tfoot）は動かさない。
+    //     選ぶ欄・ボタンだけの見出し（チェックの列など）と空の見出しは押せない。
+    //   - 比べ方: 全角は半角に畳み、数（桁区切り・円記号つきも）は数として、ほかは数字の部分を数として比べる（`2026/9/5` <
+    //     `2026/10/15`）。**空のセルはどちら向きでも最後**。同じ値は元の並びのまま。
+    const tableSortState = new WeakMap(); // table → { col, dir }（dir: 1 昇順・-1 降順）
+    const tableSortKeys = new WeakMap();  // table → 憶える鍵
+    const tableSortCollator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
+
+    // sortHeaderRow は表の見出しの行（全部が th の最初の行）を返します。並べられない表なら null。
+    function sortHeaderRow(table) {
+        if (table.parentElement && table.parentElement.closest('table')) return null; // 表の中の表
+        const first = table.querySelector(':scope > thead > tr, :scope > tbody > tr, :scope > tr');
+        if (!first || !first.children.length) return null;
+        if (!Array.from(first.children).every(c => c.tagName === 'TH')) return null;
+        const rows = sortBodyRows(table, first);
+        if (rows.length < 2) return null;
+        const spanned = c => c.colSpan > 1 || c.rowSpan > 1;
+        if (Array.from(first.children).some(spanned)) return null;
+        if (rows.some(r => Array.from(r.cells).some(spanned))) return null;
+        return first;
+    }
+
+    // sortBodyRows は並べる行（tbody の行・見出しの行は除く）を返します。
+    function sortBodyRows(table, header) {
+        const out = [];
+        Array.from(table.tBodies).forEach(b => Array.from(b.rows).forEach(r => { if (r !== header) out.push(r); }));
+        return out;
+    }
+
+    // sortableHeaderCell はその見出しを押して並べられるかです（選ぶ欄・ボタンだけの見出し・空の見出しは押せない）。
+    function sortableHeaderCell(th) {
+        if (th.querySelector('input, button, select, textarea')) return false;
+        return sortHeaderText(th) !== '';
+    }
+
+    function sortHeaderText(th) {
+        const c = th.cloneNode(true);
+        c.querySelectorAll('.w-sort-mark').forEach(e => e.remove());
+        return c.textContent.trim();
+    }
+
+    // sortCellText はセルの比べる文字です（入力欄なら値・セルの中の飾りとボタンは除く）。
+    function sortCellText(cell) {
+        if (!cell) return '';
+        const field = cell.querySelector('input:not([type=checkbox]):not([type=radio]):not([type=button]), select, textarea');
+        let s;
+        if (field) {
+            s = field.value;
+        } else {
+            const c = cell.cloneNode(true);
+            if (!cell.classList.contains('vocab-chrome')) c.querySelectorAll('.vocab-chrome').forEach(e => e.remove());
+            c.querySelectorAll('button').forEach(e => e.remove());
+            s = c.textContent;
+        }
+        return (s || '').normalize('NFKC').trim();
+    }
+
+    function sortNumberOf(s) {
+        const t = s.replace(/[,\s¥円]/g, '');
+        return /^[-+]?\d+(\.\d+)?$/.test(t) ? parseFloat(t) : null;
+    }
+
+    function compareSortText(a, b) {
+        const na = sortNumberOf(a);
+        const nb = sortNumberOf(b);
+        if (na !== null && nb !== null) return na - nb;
+        return tableSortCollator.compare(a, b);
+    }
+
+    // unsortTable は表を元の並びへ戻し、印を外します。
+    function unsortTable(table) {
+        Array.from(table.tBodies).forEach(b => {
+            const orig = tableSortOriginal.get(b);
+            if (!orig) return;
+            orig.forEach(n => { if (n.parentNode === b) b.appendChild(n); });
+            tableSortOriginal.delete(b);
+        });
+        tableSortState.delete(table);
+        table.querySelectorAll(':scope .w-sort-mark').forEach(e => e.remove());
+        table.querySelectorAll(':scope th.w-sorted').forEach(th => th.classList.remove('w-sorted'));
+    }
+
+    // sortTable は表を col 列で並べます（dir: 1 昇順・-1 降順・0 元の並び）。
+    function sortTable(table, header, col, dir) {
+        unsortTable(table);
+        if (!dir || col < 0) return;
+        Array.from(table.tBodies).forEach(b => {
+            const rows = Array.from(b.rows).filter(r => r !== header);
+            if (rows.length < 2) return;
+            tableSortOriginal.set(b, Array.from(b.childNodes));
+            const keyed = rows.map((r, i) => ({ r, i, t: sortCellText(r.cells[col]) }));
+            keyed.sort((x, y) => {
+                const ex = x.t === '';
+                const ey = y.t === '';
+                if (ex !== ey) return ex ? 1 : -1;
+                return (ex ? 0 : compareSortText(x.t, y.t) * dir) || x.i - y.i;
+            });
+            keyed.forEach(k => b.appendChild(k.r)); // 見出しの行は動かさない（行は見出しの後ろへ並ぶ）
+        });
+        tableSortState.set(table, { col, dir });
+        const th = header.children[col];
+        if (th) {
+            th.classList.add('w-sorted');
+            const mark = document.createElement('span');
+            mark.className = 'vocab-chrome w-sort-mark';
+            mark.contentEditable = 'false';
+            mark.textContent = dir > 0 ? '▲' : '▼';
+            th.appendChild(mark);
+        }
+    }
+
+    // refreshTableSort は描き直しの巡りのたびに呼ばれます——いったん元の並びへ戻し、閲覧モードなら押せる見出しに印を付けて、
+    // 憶えた並べ替えを戻します。編集モードでは元の並びのまま（印も付けない）。
+    function refreshTableSort() {
+        const editing = document.body.hasAttribute('edit-mode');
+        const st = ViewState.get(currentPageId);
+        const seen = {};
+        document.querySelectorAll('#w-editor-content table').forEach(table => {
+            unsortTable(table);
+            table.querySelectorAll(':scope th.w-sortable').forEach(th => th.classList.remove('w-sortable'));
+            tableSortKeys.delete(table);
+            if (editing) return;
+            const header = sortHeaderRow(table);
+            if (!header) return;
+            const cap = table.querySelector(':scope > caption');
+            const name = ((cap && cap.textContent.trim()) ||
+                Array.from(header.children).map(sortHeaderText).join('|')).slice(0, 80);
+            seen[name] = (seen[name] || 0) + 1;
+            const key = 't:' + name + '#' + (seen[name] - 1);
+            tableSortKeys.set(table, key);
+            Array.from(header.children).forEach(th => { if (sortableHeaderCell(th)) th.classList.add('w-sortable'); });
+            const want = st && st.s && st.s[key];
+            if (!want) return;
+            const col = Array.from(header.children).findIndex(th => th.classList.contains('w-sortable') && sortHeaderText(th) === want.c);
+            if (col >= 0) sortTable(table, header, col, want.d === -1 ? -1 : 1);
+        });
+    }
+
+    document.addEventListener('click', e => {
+        if (document.body.hasAttribute('edit-mode')) return;
+        if (!(e.target instanceof Element)) return;
+        const th = e.target.closest('#w-editor-content th.w-sortable');
+        if (!th || e.target.closest('a, button, input, select, textarea, summary')) return;
+        const table = th.closest('table');
+        const header = th.parentElement;
+        if (!table || sortHeaderRow(table) !== header) return;
+        const col = Array.from(header.children).indexOf(th);
+        const cur = tableSortState.get(table);
+        // 別の列なら昇順から・同じ列なら 昇順 → 降順 → 元の並び。
+        const dir = (!cur || cur.col !== col) ? 1 : (cur.dir === 1 ? -1 : 0);
+        sortTable(table, header, col, dir);
+        const key = tableSortKeys.get(table);
+        if (key) ViewState.setSort(currentPageId, key, dir ? { c: sortHeaderText(th), d: dir } : null);
+    });
 
     // ── 鏡の中の絞り込みの欄を憶える（2026-09-30） ─────────────────────────
     //
@@ -8278,7 +8464,7 @@ function refreshTablePrint() {
 // printableTableCopy は表の写しから、紙に要らない操作の部品を外したものを返します。
 function printableTableCopy(table) {
     const copy = table.cloneNode(true);
-    copy.querySelectorAll('button, input, select, textarea, .w-table-print, .draft-form-box')
+    copy.querySelectorAll('button, input, select, textarea, .w-table-print, .draft-form-box, .w-sort-mark')
         .forEach((el) => el.remove());
     copy.querySelectorAll('th.vocab-chrome, td.vocab-chrome').forEach((c) => {
         if (!c.textContent.trim()) c.remove();

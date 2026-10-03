@@ -2617,6 +2617,12 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 }
 #w-editor-content .w-table-print:hover, #w-editor-content .w-table-print:focus { opacity: 1; }
 
+/* 列の題を押して並べ替える（閲覧モードだけ・表示だけ・2026-10-03）——押せる題は指したときだけ下線、並べた列に ▲▼。
+   印は .vocab-chrome なので保存されません（並べ替えた行の並びも書き出しでは元に戻る——app.js の tableSortOriginal）。 */
+#w-editor-content th.w-sortable { cursor: pointer; user-select: none; }
+#w-editor-content th.w-sortable:hover { text-decoration: underline dotted; }
+#w-editor-content .w-sort-mark { margin-left: 4px; font-size: 0.75em; color: var(--accent-strong, #2563eb); }
+
 /* ── 受注残表の編集（2026-09-21）────────────────────────────────────────
    ⚠ **クロームの中の部品**なので保存されません。見た目は控えめに——毎日見る表で
    枠が目立つと、数字より枠を読むことになります。 */
