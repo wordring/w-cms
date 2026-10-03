@@ -98,7 +98,8 @@ const check = (label, ok, note = '') => {
       const meta = await page.evaluate(async (id) => (await (await fetch('/api/page-meta?id=' + id)).json()).parent_id, est).catch(() => '');
       await deletePage(page, est).catch(() => {});
       let folder = meta;
-      for (let i = 0; i < 2 && folder; i++) {
+      // ⚠ 試験が作ったフォルダだけ（当て先より新しい番号）——実運用の空の年月フォルダは消さない（2026-10-03）。
+      for (let i = 0; i < 2 && folder && Number(folder) > Number(product || 0); i++) {
         const kids = await childrenOf(page, folder).catch(() => [1]);
         if (kids.length !== 0) break;
         const up = await page.evaluate(async (id) => (await (await fetch('/api/page-meta?id=' + id)).json()).parent_id, folder).catch(() => '');
