@@ -751,6 +751,15 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 			// 調べる人にとって唯一の手掛かりです。
 			auth.Audit(user.Username, "file-drawing.same-number-accepted", pageID+" -> "+existing)
 		}
+		// **図面追加で同じ図面が在る・図面改定で同じ図面が無い**ときは、人に確かめます（2026-10-03 利用者:「図面追加で同じ図面が
+		// 在ったら警告、図面改定で同じ図面が無ければ警告ということになります。警告ダイアログが出て、追加するかやめるか選んでは
+		// どうでしょうか」）。「同じ図面」は版の印を除いた図面番号が同じ図面（`sameDrawingKey`）。図面番号が読めていなければ
+		// 判断しない。画面は確認の文をダイアログに出し、進めるなら `confirm_revision` を付けて送り直す。
+		if !row.ConfirmRevision && (row.Merge == "drawing" || row.Merge == "revision") {
+			if msg := mergeMismatch(pageID, existing, row.Merge, name); msg != "" {
+				return filingResult{PageID: pageID, Outcome: "needs_confirm", TargetID: existing, Message: msg}
+			}
+		}
 
 		switch row.Merge {
 		case "drawing":

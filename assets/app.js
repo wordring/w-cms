@@ -5060,15 +5060,37 @@
                     mergeLabels[val] = label;
                 });
             mergeLabels.duplicate.hidden = true;
+            // **図面追加・図面改定の行き先を探す**（2026-10-03 利用者:「図面を追加してもどこに入れるか入力する欄が無い」
+            // 「どの加工製品に追加するか人間が指定する必要があります」）——品番・品名・図面番号・題・ページ番号で既にある
+            // 加工製品を探す（`/api/filing-search`・同じ取引先が先）。押すと、上の候補を押したときと同じく欄（取引先・装置名称・
+            // 図面名称）に入り、そのページが行き先になる。二つ目の図面（溶接図など）は番号も名前も違うので、機械の候補に出ない。
+            const searchWrap = document.createElement('div');
+            searchWrap.className = 'filing-search';
+            searchWrap.hidden = true;
+            const searchLabel = document.createElement('label');
+            searchLabel.className = 'filing-search-label';
+            searchLabel.textContent = '行き先を探す: ';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'search';
+            searchInput.className = 'filing-search-input';
+            searchInput.placeholder = '品番・品名・図面番号・題・ページ番号';
+            searchLabel.appendChild(searchInput);
+            const searchOut = document.createElement('div');
+            searchOut.className = 'filing-candidates filing-search-out';
+            searchWrap.append(searchLabel, searchOut);
             choiceWrap.appendChild(choiceNote);
             choiceWrap.appendChild(dupWrap);
             choiceWrap.appendChild(sameWrap);
             choiceWrap.appendChild(candWrap);
+            choiceWrap.appendChild(searchWrap);
             tdConfirm.appendChild(choiceWrap);
 
             let target = { exists: false, page_id: '', same: [] };
             // chosenTarget は人が押した行き先のページ（同じ題が何枚もあるとき・候補を押したとき）。
             let chosenTarget = '';
+            // keepMergeOnce は「人が行き先を押した」印です——次の聞き直しで行き先が変わっても、図面追加・図面改定の選択を外さない
+            // （2026-10-03——外していたので、図面追加を選んで行き先を探して押すと選択が消え、実行で「選んでください」と断られた）。
+            let keepMergeOnce = false;
             const ambiguous = () => target.same.length > 1 && !target.same.some(s => s.page_id === chosenTarget);
             // dup は「重複」の相手（同じ図面番号か同じファイルの加工製品のうち、いちばん強いもの）。
             let dup = null;
@@ -5078,6 +5100,7 @@
             const explain = () => {
                 const m = picked();
                 tdRules.hidden = m !== 'new';
+                searchWrap.hidden = m !== 'drawing' && m !== 'revision';
                 if (m === 'duplicate' && dup) {
                     choiceNote.textContent = '取り込みません——解析で作ったこのページはごみ箱へ移し、「' +
                         (dup.machine ? dup.machine + '／' : '') + dup.title + '」にこのメールの受信元を書き足します';
@@ -5174,7 +5197,11 @@
                         same: d.same || [] }
                     : { exists: false, page_id: '', same: [] };
                 // 行き先が変わったら、前の相手のつもりの改定・追加は外す。
-                if (target.page_id !== was && (picked() === 'drawing' || picked() === 'revision')) {
+                const keepMerge = keepMergeOnce;
+                keepMergeOnce = false;
+                // ⚠ 行き先が「無い → 在る」に変わっただけなら外さない（前の相手が居ないので、持ち越すものが無い——開いた直後に
+                //    図面追加を押すと、最初の聞き直しの答えで選択が消えていた・2026-10-03）。
+                if (target.page_id !== was && was !== '' && !keepMerge && (picked() === 'drawing' || picked() === 'revision')) {
                     mergeInputs.drawing.checked = false;
                     mergeInputs.revision.checked = false;
                 }
@@ -5241,6 +5268,7 @@
                         b.title = '行き先をここにする（図面: ' + (c.drawing_nos || 'なし') + '・/' + c.page_id + '）';
                         b.addEventListener('click', () => {
                             chosenTarget = c.page_id; // 同じ題が何枚もあっても、押したこのページが行き先
+                            keepMergeOnce = true;     // 人が押した行き先——図面追加・図面改定の選択は外さない
                             fields.machine_name.value = c.machine || '';
                             fields.drawing_name.value = c.title || '';
                             fields.machine_name.dispatchEvent(new Event('change'));
@@ -5260,6 +5288,53 @@
                 fields[key].addEventListener('change', askTargetSoon);
             });
             askTargetSoon();
+
+            // 行き先を探す（上の searchWrap）——打つたびに少し待って聞く。押した結果が行き先になる。
+            let searchTimer = null;
+            let searchSeq = 0;
+            const runSearch = async () => {
+                const qv = searchInput.value.trim();
+                const seq = ++searchSeq;
+                if (!qv) { searchOut.replaceChildren(); return; }
+                let d = null;
+                try {
+                    const res = await fetch('/api/filing-search?' + new URLSearchParams({
+                        customer: fields.customer.value.trim(), q: qv,
+                    }).toString());
+                    d = await res.json();
+                } catch (e) { d = null; }
+                if (seq !== searchSeq) return; // 打ち替えた——古い答えは捨てる
+                searchOut.replaceChildren();
+                const hits = (d && d.results) || [];
+                const head = document.createElement('span');
+                head.className = 'filing-cand-head';
+                head.textContent = hits.length ? '見つかった加工製品（押すと行き先）:' : '見つかりません';
+                searchOut.appendChild(head);
+                hits.forEach(h => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'chip-btn filing-search-pick' + (h.page_id === chosenTarget ? ' is-chosen' : '');
+                    b.textContent = (h.page_id === chosenTarget ? '✓ ' : '') +
+                        [h.customer, h.machine, h.title].filter(Boolean).join('／') + '（/' + h.page_id + '）';
+                    b.title = '行き先をここにする（図面: ' + (h.drawing_nos || 'なし') + (h.part_nos ? '・品番: ' + h.part_nos : '') + '）';
+                    b.addEventListener('click', () => {
+                        chosenTarget = h.page_id;
+                        keepMergeOnce = true; // 人が押した行き先——図面追加・図面改定の選択は外さない
+                        fields.customer.value = h.customer || fields.customer.value;
+                        fields.machine_name.value = h.machine || '';
+                        fields.drawing_name.value = h.title || '';
+                        fields.customer.dispatchEvent(new Event('change'));
+                        fields.machine_name.dispatchEvent(new Event('change'));
+                        askTarget();
+                        runSearch(); // 印（✓）を描き直す
+                    });
+                    searchOut.appendChild(b);
+                });
+            };
+            searchInput.addEventListener('input', () => {
+                if (searchTimer) clearTimeout(searchTimer);
+                searchTimer = setTimeout(runSearch, 300);
+            });
 
             // 「改定として合流」の確認——**既定は隠しておき、実行が確認を求めた
             // ときだけ出します**。最初から出すと「押せば通る」と学習されてしまい、
@@ -5353,7 +5428,38 @@
         return panel;
     }
 
-    async function runFiling(inputs, pickedOrders, run, panel) {
+    // askConfirm は確かめのダイアログを出し、進めるなら true を返します（2026-10-03 利用者:「警告ダイアログが出て、追加するか
+    // やめるか選んではどうでしょうか」）。⚠ 既定の釦は「やめる」（Enter で黙って進まない）。Esc も「やめる」。
+    function askConfirm(message, yesLabel, noLabel) {
+        return new Promise((resolve) => {
+            const dlg = document.createElement('dialog');
+            dlg.className = 'w-confirm';
+            const p = document.createElement('p');
+            p.className = 'w-confirm-msg';
+            p.textContent = String(message || '').replace(/\*\*/g, '');
+            const bar = document.createElement('div');
+            bar.className = 'w-confirm-bar';
+            const no = document.createElement('button');
+            no.type = 'button';
+            no.textContent = noLabel;
+            const yes = document.createElement('button');
+            yes.type = 'button';
+            yes.className = 'w-confirm-yes';
+            yes.textContent = yesLabel;
+            bar.append(no, yes);
+            dlg.append(p, bar);
+            document.body.appendChild(dlg);
+            const done = (v) => { if (dlg.open) dlg.close(); dlg.remove(); resolve(v); };
+            no.addEventListener('click', () => done(false));
+            yes.addEventListener('click', () => done(true));
+            dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(false); });
+            dlg.showModal();
+            no.focus();
+        });
+    }
+
+    // keep は「ほかの行がまだ残っている」——確かめて送り直すときに、済んだ行だけを見て表を閉じないため。
+    async function runFiling(inputs, pickedOrders, run, panel, keep) {
         run.disabled = true;
         run.textContent = '実行中…';
         const payload = inputs.map(i => ({
@@ -5406,7 +5512,26 @@
             const stay = pending.size + choosing.size;
             notify(lines.join('\n') || '対象がありませんでした。',
                 { type: stay ? 'warn' : 'success', duration: 0, id: 'filing' });
-            if (!stay) panel.remove();
+            // **確かめが要る行は、1行ずつダイアログで聞く**（2026-10-03）——進めるなら印を付けてその行だけ送り直す。
+            // やめた行は表に残る（「承知のうえで進める」のチェックも出ている——あとで選び直せる）。
+            const again = [];
+            for (const r of results.filter(x => x.outcome === 'needs_confirm')) {
+                const i = inputs.find(x => x.page_id === r.page_id);
+                if (!i) continue;
+                const m = (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '';
+                const yes = m === 'drawing' ? '追加する' : m === 'revision' ? '改定する' : '進める';
+                if (await askConfirm(r.message, yes, 'やめる')) {
+                    i.box.checked = true;
+                    again.push(i);
+                }
+            }
+            if (again.length) {
+                run.disabled = false;
+                run.textContent = '実行';
+                await runFiling(again, [], run, panel, keep || stay > again.length);
+                return;
+            }
+            if (!stay && !keep) panel.remove();
         } catch (e) {
             notify('整理を実行できませんでした: ' + e, { type: 'alert', duration: 0, id: 'filing' });
         }

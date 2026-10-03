@@ -142,6 +142,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/filing-proposal", Handler: FilingProposalAPIHandler},
 		// 整理の欄を打ち替えるたびに「その行き先にページがあるか」を聞く口（2026-09-20）。
 		{Pattern: "/api/filing-target", Handler: FilingTargetAPIHandler},
+		// 図面追加・図面改定の行き先を、品番・品名・図面番号・題・ページ番号で探す口（2026-10-03・filing_search.go）。
+		{Pattern: "/api/filing-search", Handler: FilingSearchAPIHandler},
 		{Pattern: "/api/file-drawings", Handler: FileDrawingsAPIHandler},
 		// 整理を待つ図面と既にある加工製品の図面を、Gemini に見比べさせる口（2026-09-30・filing_duplicate.go）。
 		// 押したときだけ呼ぶ——同じファイルなら Gemini を呼ばずに答える。

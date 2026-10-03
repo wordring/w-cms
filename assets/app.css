@@ -1963,6 +1963,27 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 }
 .filing-candidates:empty { display: none; }
 .filing-cand-head { font-size: 0.9em; color: var(--text-muted, #475569); margin-right: 2px; }
+/* 図面追加・図面改定の行き先を探す（2026-10-03）——押したものは「✓」と太字・枠（色だけで分けない）。 */
+.filing-search { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; }
+.filing-search[hidden] { display: none; }
+.filing-search-label { font-size: 0.9em; }
+.filing-search-input { width: min(28em, 100%); max-width: 100%; box-sizing: border-box; }
+.filing-search-pick.is-chosen { font-weight: bold; border-width: 2px; }
+
+/* 確かめのダイアログ（2026-10-03・app.js の askConfirm）——「追加する／改定する」と「やめる」。 */
+dialog.w-confirm {
+    max-width: min(36em, calc(100vw - 32px));
+    border: 1px solid var(--border-strong, #94a3b8);
+    border-radius: 8px;
+    padding: 16px;
+    background: var(--bg-paper, #fff);
+    color: var(--text, #1e293b);
+}
+dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
+.w-confirm-msg { margin: 0 0 12px; white-space: pre-wrap; line-height: 1.6; }
+.w-confirm-bar { display: flex; justify-content: flex-end; gap: 8px; }
+.w-confirm-bar button { padding: 4px 14px; cursor: pointer; }
+.w-confirm-yes { font-weight: bold; }
 /* 同じ題の加工製品が何枚もあるときの行き先（2026-10-01）——押したものは「✓」と太字・枠（色だけで分けない）。 */
 .filing-same-pick.is-chosen { font-weight: bold; outline: 2px solid var(--accent, #2563eb); }
 
