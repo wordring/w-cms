@@ -2,7 +2,8 @@
 //
 // 利用者:「こういった表を印刷できるようになりませんか？」（Excel から貼った表）→「どの表にも『🖨 この表を印刷』」。
 //
-// ⚠ **本物の印刷はしません**——`window.print` を差し替え、呼ばれた瞬間の `#w-print-area` の中身を控えて見ます。
+// 押すと見えない枠（`#w-print-frame`）に写しが入り、その枠が刷られる——枠の中身と print() を呼んだ印（`data-printed`）を見ます
+// （ヘッドレスの print() は何もしない）。
 // 表は自分で作ったページに置き、最後に消します。
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-table-print.js
@@ -44,59 +45,57 @@ const BODY = '<h1>【E2E】表の印刷</h1>' +
     const n = await page.locator('#w-editor-content .w-table-print').count();
     check(n === 2, '表2つにそれぞれ「🖨 この表を印刷」が付く', n + ' 個');
 
-    // 押した瞬間の紙の中身を控える（本物の印刷はしない）。
-    await page.evaluate(() => {
-      window.__printed = null;
-      window.print = () => {
-        const area = document.getElementById('w-print-area');
-        window.__printed = {
+    // 押すと、見えない枠（#w-print-frame）にその表の写しだけが入り、その枠が刷られる（2026-10-03——ページそのものは刷らない）。
+    const frameOf = async () => {
+      await page.waitForFunction(() => {
+        const f = document.getElementById('w-print-frame');
+        return f && f.getAttribute('data-printed') === '1';
+      }, null, { timeout: 4000 }).catch(() => {});
+      return page.evaluate(() => {
+        const f = document.getElementById('w-print-frame');
+        if (!f || f.getAttribute('data-printed') !== '1') return null;
+        const d = f.contentDocument;
+        const area = d.getElementById('w-print-area');
+        return {
           html: area ? area.innerHTML : '',
           text: area ? area.textContent : '',
-          printing: document.body.classList.contains('w-printing-sheet'),
+          printing: d.body.classList.contains('w-printing-sheet'),
+          css: !!d.querySelector('link[rel="stylesheet"][href$="/assets/app.css"]'),
+          pageMarked: document.body.classList.contains('w-printing-sheet'),
         };
-      };
-    });
+      });
+    };
     await page.locator('#w-editor-content .w-table-print').nth(1).click();
-    const p = await page.evaluate(() => window.__printed);
-    check(!!p, '押すと印刷が呼ばれる');
+    const p = await frameOf();
+    check(!!p, '押すと見えない枠が刷られる');
     if (p) {
-      check(p.printing, '刷る間は他のものを隠す印が付く');
+      check(p.printing && p.css, '枠の中は紙の決まり（app.css・w-printing-sheet）で刷る');
+      check(!p.pageMarked, 'ページそのものには印を付けない（ページは刷らない）');
       check(p.text.includes('E2E-PRINT-B'), '押した表が紙に出る');
       check(!p.text.includes('E2E-PRINT-A') && !p.text.includes('前の段落'), 'ほかの表・本文は紙に出ない', p.text.slice(0, 120));
       check(p.text.includes('【E2E】表の印刷'), '紙の頭にページの題が出る');
       check(!/<button|この表を印刷/.test(p.html), '紙に印刷ボタンが出ない');
     }
 
-    // ページに埋め込み（図面の PDF など）があると、刷るあいだだけ外し、後で元の場所へ戻す（2026-10-02 夜——残っていると
-    // 本物の Chrome は print() を後回しにして印刷の画面を開かない。ヘッドレスでは起きないので、外したことと戻したことを見る）。
+    // ページに埋め込み（図面の PDF など）があっても、触らない（2026-10-03——10-02 夜は刷るあいだだけ外していたが、職場で
+    // 「二回押さないと開きません」。いまは別の枠を刷るので、ページの埋め込みは外さない）。
     await page.evaluate(() => {
       const e = document.createElement('embed');
       e.id = 'e2e-embed';
       e.type = 'application/pdf';
       document.querySelector('#w-editor-content p').appendChild(e);
-      window.__printed = null;
-      window.print = () => {
-        const area = document.getElementById('w-print-area');
-        window.__printed = {
-          outside: [...document.querySelectorAll('embed, iframe, object')].filter((x) => !area.contains(x)).length,
-          text: area.textContent,
-        };
-      };
+      const f = document.getElementById('w-print-frame');
+      if (f) f.remove();
     });
     await page.locator('#w-editor-content .w-table-print').first().click();
-    await page.waitForFunction(() => window.__printed, null, { timeout: 3000 }).catch(() => {});
-    const q = await page.evaluate(() => window.__printed);
-    check(!!q, '埋め込みのあるページでも印刷が呼ばれる');
-    if (q) {
-      check(q.outside === 0, '刷るあいだはページの埋め込みを外す', q.outside + ' 個残った');
-      check(q.text.includes('E2E-PRINT-A'), '押した表が紙に出る（埋め込みのあるページ）');
-    }
-    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
-    const restored = await page.evaluate(() => {
+    const q = await frameOf();
+    check(!!q, '埋め込みのあるページでも、押すと枠が刷られる');
+    if (q) check(q.text.includes('E2E-PRINT-A'), '押した表が紙に出る（埋め込みのあるページ）');
+    const kept = await page.evaluate(() => {
       const e = document.getElementById('e2e-embed');
       return !!(e && e.closest('#w-editor-content p'));
     });
-    check(restored, '印刷のあと、埋め込みを元の場所へ戻す');
+    check(kept, 'ページの埋め込みは外さない（元の場所のまま）');
     await page.evaluate(() => { const e = document.getElementById('e2e-embed'); if (e) e.remove(); });
 
     // 編集モードでは出さない（保存されない）。

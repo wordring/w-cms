@@ -2534,6 +2534,9 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
    まとめて消します**。殻に何が増えても効きます。写し（クローン）なので、
    画面の要素は一切動かしません（⚠ 動かすと、印刷から戻ったときに壊れます）。 */
 #w-print-area { display: none; }
+/* 刷る写しを置く見えない枠（app.js の printOnly・2026-10-03）。⚠ display:none にすると刷れないブラウザがあるので、
+   大きさ0で画面の外へ置く。 */
+#w-print-frame { position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; }
 
 @media print {
     /* 1枚だけ刷るとき——器の外を全部消す。 */
