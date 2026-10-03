@@ -8178,6 +8178,81 @@ function valueIn(root, selector) {
     return el ? el.value.trim() : '';
 }
 
+// getJSON は GET して JSON を受け取ります（postJSON と同じ形の答え）。
+async function getJSON(url) {
+    try {
+        const res = await fetch(url, { credentials: 'same-origin' });
+        const data = await res.json().catch(() => ({}));
+        return { ok: res.ok && !!data.success, status: res.status, data };
+    } catch (e) {
+        return { ok: false, status: 0, data: { message: e.message } };
+    }
+}
+
+// ── 装置フォルダから選ぶ一時的な表（2026-10-03）────────────────────────────
+//
+// 再見積依頼（wireRFQ）と見積書を作る（wireEstimateFolder）が同じ形で組みます。表は画面だけ（鏡の中のクローム・本文に残さない）。
+//   headers: 見出しの文字（先頭の選ぶ欄は除く）
+//   rows:    { pick: 選ぶ欄の値（null なら選べない行）, cells: 文字か要素の並び }
+//   attr:    選ぶ欄の属性名（値が pick）——見出しの「全部選ぶ」（data-pick-all="attr"）が、その表の attr の欄を全部入れ・外す。
+function folderPickTable(headers, rows, attr, className) {
+    const el = (tag, text) => {
+        const c = document.createElement(tag);
+        if (text !== undefined) c.textContent = text;
+        return c;
+    };
+    const table = el('table');
+    table.className = className;
+    const head = el('tr');
+    const allTh = el('th');
+    const all = document.createElement('input');
+    all.type = 'checkbox';
+    all.title = '全部選ぶ';
+    all.setAttribute('data-pick-all', attr);
+    allTh.appendChild(all);
+    head.appendChild(allTh);
+    headers.forEach((h) => head.appendChild(el('th', h)));
+    const thead = el('thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    const tbody = el('tbody');
+    rows.forEach((r) => {
+        const tr = el('tr');
+        const pickTd = el('td');
+        if (r.pick !== null && r.pick !== undefined) {
+            const c = document.createElement('input');
+            c.type = 'checkbox';
+            c.setAttribute(attr, r.pick);
+            pickTd.appendChild(c);
+        }
+        tr.appendChild(pickTd);
+        r.cells.forEach((v) => {
+            const td = el('td');
+            if (v instanceof Node) td.appendChild(v);
+            else td.textContent = v === null || v === undefined ? '' : String(v);
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    return table;
+}
+
+// pageLink は加工製品ページへのリンク（別のタブで開く）です。
+function pageLink(id) {
+    const a = document.createElement('a');
+    a.href = '/' + id;
+    a.target = '_blank';
+    a.textContent = id;
+    return a;
+}
+
+delegateClick([['[data-pick-all]', (box) => {
+    const table = box.closest('table');
+    const attr = box.getAttribute('data-pick-all');
+    if (table && attr) table.querySelectorAll('input[' + attr + ']').forEach((c) => { c.checked = box.checked; });
+}]]);
+
 // delegateClick は document の click を、押された要素から `closest` で引いた
 // **最初の当たり**へ振り分けます。⚠ **並び順が優先順位**です（先に書いた方が勝つ）。
 function delegateClick(handlers) {
@@ -8289,67 +8364,34 @@ delegateClick([['.estimate-add-go', async (btn) => {
         // 続けて呼ばれたら（欄を離れた change と「一覧を出す」など）、最後の1回の答えだけを描く。
         const seq = (list._rfqSeq = (list._rfqSeq || 0) + 1);
         sayIn(list, '読んでいます…');
-        let data = {};
-        let ok = false;
-        try {
-            const res = await fetch('/api/rfq/folder-products?folder=' + encodeURIComponent(folder), { credentials: 'same-origin' });
-            data = await res.json().catch(() => ({}));
-            ok = res.ok && !!data.success;
-        } catch (e) { data = { message: e.message }; }
+        const r = await getJSON('/api/rfq/folder-products?folder=' + encodeURIComponent(folder));
         if (list._rfqSeq !== seq) return;
-        if (!ok) {
-            sayIn(list, '⚠ ' + (data.message || '読めませんでした'), 'proc-why-ng');
+        if (!r.ok) {
+            sayIn(list, '⚠ ' + (r.data.message || '読めませんでした'), 'proc-why-ng');
             return;
         }
+        const data = r.data;
         const products = data.products || [];
         list.replaceChildren();
         list.appendChild(cell('p', '/' + data.folder + ' ' + (data.title || '') + ' の下の加工製品: ' + products.length + ' 件'));
         if (!products.length) return;
-        const table = cell('table');
-        table.className = 'rfq-folder-table';
-        const head = cell('tr');
-        const allTh = cell('th');
-        const all = document.createElement('input');
-        all.type = 'checkbox';
-        all.setAttribute('data-rfq-folder-all', '1');
-        all.title = '全部選ぶ';
-        allTh.appendChild(all);
-        head.appendChild(allTh);
-        ['弊社品番', '加工製品', '品番・図番', '見積計算表のロット', 'ロット'].forEach((t) => head.appendChild(cell('th', t)));
-        const thead = cell('thead');
-        thead.appendChild(head);
-        table.appendChild(thead);
-        const tbody = cell('tbody');
-        products.forEach((p) => {
-            const tr = cell('tr');
-            const pick = cell('td');
-            const c = document.createElement('input');
-            c.type = 'checkbox';
-            c.setAttribute('data-rfq-folder-pick', p.id);
-            pick.appendChild(c);
-            tr.appendChild(pick);
-            const idTd = cell('td');
-            const a = cell('a', p.id);
-            a.href = '/' + p.id;
-            a.target = '_blank';
-            idTd.appendChild(a);
-            tr.appendChild(idTd);
-            tr.appendChild(cell('td', (p.machine && p.machine !== data.title ? p.machine + ' ／ ' : '') + p.title + (p.migrating ? '（移行中）' : '')));
-            tr.appendChild(cell('td', p.part_no || (p.drawing_no ? '図番 ' + p.drawing_no : '')));
-            tr.appendChild(cell('td', (p.lots || []).length ? p.lots.join('・') : '—（1個分）'));
-            const lotTd = cell('td');
+        const rows = products.map((p) => {
             const lot = document.createElement('input');
             lot.type = 'number';
             lot.min = '1';
             lot.className = 'matsearch-input rfq-folder-lot';
             lot.placeholder = '空なら左';
             lot.setAttribute('data-rfq-folder-lot', '1');
-            lotTd.appendChild(lot);
-            tr.appendChild(lotTd);
-            tbody.appendChild(tr);
+            return { pick: p.id, cells: [
+                pageLink(p.id),
+                (p.machine && p.machine !== data.title ? p.machine + ' ／ ' : '') + p.title + (p.migrating ? '（移行中）' : ''),
+                p.part_no || (p.drawing_no ? '図番 ' + p.drawing_no : ''),
+                (p.lots || []).length ? p.lots.join('・') : '—（1個分）',
+                lot,
+            ] };
         });
-        table.appendChild(tbody);
-        list.appendChild(table);
+        list.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '見積計算表のロット', 'ロット'], rows,
+            'data-rfq-folder-pick', 'rfq-folder-table'));
         const foot = cell('div');
         foot.className = 'matsearch-form';
         const go = cell('button', 'チェックした加工製品を見積依頼必要部材表へ');
@@ -8445,10 +8487,6 @@ delegateClick([['.estimate-add-go', async (btn) => {
         ['[data-rfq-folder]', (btn) => {
             const form = btn.closest('.rfq-folder-form');
             if (form) listFolder(form);
-        }],
-        ['[data-rfq-folder-all]', (box) => {
-            const list = box.closest('[data-rfq-folder-list]');
-            if (list) list.querySelectorAll('input[data-rfq-folder-pick]').forEach((c) => { c.checked = box.checked; });
         }],
         ['[data-rfq-folder-add]', async (btn) => {
             const list = btn.closest('[data-rfq-folder-list]');

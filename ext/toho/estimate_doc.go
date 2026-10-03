@@ -84,25 +84,61 @@ func (l estimateLine) values() map[string]string {
 
 // estimateLineOf は加工製品ページの index 枚目（0から）の見積計算表から、見積明細の1行を組みます。
 func estimateLineOf(productID int, index int) (estimateLine, error) {
-	body, err := cms.ReadPageBody(page.FormatID(productID))
+	opts, err := estimateOptionsOf(productID)
 	if err != nil {
 		return estimateLine{}, err
+	}
+	if index < 0 || index >= len(opts) {
+		return estimateLine{}, errString("その見積計算表が見つかりません（ページを開き直してください）")
+	}
+	if why := opts[index].Why; why != "" {
+		return estimateLine{}, errString("確定単価が出ていません: " + why)
+	}
+	return opts[index].Line, nil
+}
+
+// estimateOption は加工製品ページの見積計算表1枚から組んだ見積明細の1行です（確定単価が出なければ Why に理由）。
+type estimateOption struct {
+	Index int
+	Line  estimateLine
+	Why   string
+}
+
+// estimateOptionsOf は加工製品ページの見積計算表を全部、表の順に見積明細の行にします（見積計算表が無ければ空）。
+// 1つの加工製品に見積計算表は何枚あってもよい（塗装あり・なし、ロットごと——【要求】見積 §4）ので、1枚ずつ組む。
+func estimateOptionsOf(productID int) ([]estimateOption, error) {
+	body, err := cms.ReadPageBody(page.FormatID(productID))
+	if err != nil {
+		return nil, err
 	}
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
-		return estimateLine{}, err
+		return nil, err
 	}
 	tables := tablesOfType(nodes, estimateType)
-	if index < 0 || index >= len(tables) {
-		return estimateLine{}, errString("その見積計算表が見つかりません（ページを開き直してください）")
+	if len(tables) == 0 {
+		return nil, nil
 	}
-	t := tables[index]
 	def, hasDef := EstimateProfitRate()
-	r := estimateOf(t, def, hasDef)
-	if !r.OK {
-		return estimateLine{}, errString("確定単価が出ていません: " + r.Why)
+	itemID, itemName := estimateItemNamesOf(productID)
+	out := make([]estimateOption, 0, len(tables))
+	for i, t := range tables {
+		r := estimateOf(t, def, hasDef)
+		if !r.OK {
+			out = append(out, estimateOption{Index: i, Why: r.Why})
+			continue
+		}
+		ln := estimateLineFromTable(t, r)
+		ln.ProductID = page.FormatID(productID)
+		ln.ItemID, ln.ItemName = itemID, itemName
+		out = append(out, estimateOption{Index: i, Line: ln})
 	}
-	ln := estimateLine{ProductID: page.FormatID(productID), Price: strconv.Itoa(r.Final), Unit: "個"}
+	return out, nil
+}
+
+// estimateLineFromTable は確定単価の出た見積計算表1枚から、見積明細の行の数量・単位・単価・備考を組みます。
+func estimateLineFromTable(t *html.Node, r estimateResult) estimateLine {
+	ln := estimateLine{Price: strconv.Itoa(r.Final), Unit: "個"}
 	// 数量はロットの行、備考は単価の行の備考（「塗装無し」など——見本の表にあった書き方）。
 	rows := rowsOf(t)
 	col := headerIndex(rows[0])
@@ -126,20 +162,24 @@ func estimateLineOf(productID int, index int) (estimateLine, error) {
 			ln.Note = at(cells, "備考")
 		}
 	}
-	// 品番・品名は加工製品ページのタグから（品番→図面番号、品名→図面名称→題）。
+	return ln
+}
+
+// estimateItemNamesOf は見積明細に書く品番・品名を加工製品ページのタグから引きます（品番→図面番号、品名→図面名称→題）。
+func estimateItemNamesOf(productID int) (itemID, itemName string) {
 	tags, _ := cms.TagsOfPage(database.DB, productID)
-	ln.ItemID = cms.FirstTag(tags, "品番")
-	if ln.ItemID == "" {
-		ln.ItemID = cms.FirstTag(tags, DrawingNoTag)
+	itemID = cms.FirstTag(tags, "品番")
+	if itemID == "" {
+		itemID = cms.FirstTag(tags, DrawingNoTag)
 	}
-	ln.ItemName = cms.FirstTag(tags, ItemNameTag)
-	if ln.ItemName == "" {
-		ln.ItemName = cms.FirstTag(tags, DrawingNameTag)
+	itemName = cms.FirstTag(tags, ItemNameTag)
+	if itemName == "" {
+		itemName = cms.FirstTag(tags, DrawingNameTag)
 	}
-	if ln.ItemName == "" {
-		ln.ItemName = cms.PageTitleByID(productID)
+	if itemName == "" {
+		itemName = cms.PageTitleByID(productID)
 	}
-	return ln, nil
+	return itemID, itemName
 }
 
 // buildEstimateHTML は見積書ページの本文を、テンプレート tmpl を埋めて組みます。
@@ -304,9 +344,22 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.WriteJSON(w, map[string]any{"success": true, "page_id": estID, "new": false})
 		return
 	}
-	// 新しい見積書。差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける）。
+	// 新しい見積書。
+	newID, client, ok := newEstimatePage(w, user, req.Client, req.Person, req.Signer, []estimateLine{ln})
+	if !ok {
+		return
+	}
+	auth.Audit(user.Username, "estimate.new", newID+" ← "+productID+" "+client)
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "new": true})
+}
+
+// newEstimatePage は見積書ページを `見積／年／月` に作り、lines を見積明細に入れます（テンプレート「見積書」を写す）。
+// 断ったときは w に書いて ok=false。client は社名を書く口（OrgNameForPage）を通した見積先です。
+// 見積計算表の「見積書に入れる」と、見積フォルダの「見積書を作る」（装置フォルダから選ぶ）が同じ道を通る。
+func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn, signerIn string, lines []estimateLine) (newID, client string, ok bool) {
+	// 差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける）。
 	signerID := ""
-	if want := strings.TrimSpace(req.Signer); want != "" {
+	if want := strings.TrimSpace(signerIn); want != "" {
 		for _, sg := range Signers(user) {
 			if page.FormatID(sg.PageID) == want {
 				signerID = want
@@ -314,46 +367,45 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	client := contacts.OrgNameForPage(user, strings.TrimSpace(req.Client))
-	person := strings.Join(strings.Fields(req.Person), " ")
+	client = contacts.OrgNameForPage(user, strings.TrimSpace(clientIn))
+	person := strings.Join(strings.Fields(personIn), " ")
 	tmpl, err := cms.PageTemplateBody(EstimateTemplate)
 	if err != nil {
 		cms.JSONFail(w, http.StatusConflict, "見積書ページを作れません: "+err.Error())
-		return
+		return "", "", false
 	}
 	now := time.Now()
 	build := func(pageID string) (string, error) {
-		return buildEstimateHTML(tmpl, pageID, client, person, now.Format("2006-01-02"), signerID, []estimateLine{ln})
+		return buildEstimateHTML(tmpl, pageID, client, person, now.Format("2006-01-02"), signerID, lines)
 	}
 	if _, err := build(""); err != nil {
 		cms.JSONFail(w, http.StatusConflict, "見積書ページを作れません: "+err.Error())
-		return
+		return "", "", false
 	}
 	boxID, err := cms.EnsureTopLevelBox(EstimateBoxTitle, user.Username)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "「"+EstimateBoxTitle+"」ページを用意できません: "+err.Error())
-		return
+		return "", "", false
 	}
 	monthID, err := cms.EnsureDateFolders(boxID, user.Username, now)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "年月のフォルダを作れません: "+err.Error())
-		return
+		return "", "", false
 	}
-	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	newID, err = cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "見積書ページを作れません: "+err.Error())
-		return
+		return "", "", false
 	}
 	body, err := build(newID)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "見積書ページを組めません: "+err.Error())
-		return
+		return "", "", false
 	}
 	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
-		return
+		return "", "", false
 	}
-	auth.Audit(user.Username, "estimate.new", newID+" ← "+productID+" "+client)
-	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "new": true})
+	return newID, client, true
 }
 
 // estimateAddFormHTML は見積計算表の足元の「見積書に入れる」欄です（書ける人にだけ出す）。

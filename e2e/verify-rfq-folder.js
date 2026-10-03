@@ -72,9 +72,9 @@ const tableRows = (html, caption) => {
       !(await page.evaluate(() => document.getElementById('w-html-preview').value)).includes('E2E-RFQF'));
 
     // ④（入れる前に）見出しのチェックで全部選べ、外せる。
-    await page.locator('[data-rfq-folder-all]').check();
+    await page.locator('.rfq-folder-table [data-pick-all]').check();
     check('④ 見出しのチェックで全部選べる', await page.locator('.rfq-folder-table input[data-rfq-folder-pick]:checked').count() === 2);
-    await page.locator('[data-rfq-folder-all]').uncheck();
+    await page.locator('.rfq-folder-table [data-pick-all]').uncheck();
     check('④ もう一度押すと全部外れる', await page.locator('.rfq-folder-table input[data-rfq-folder-pick]:checked').count() === 0);
 
     // ② 部品1をロット3・部品2はそのまま。

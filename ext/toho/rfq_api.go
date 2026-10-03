@@ -188,34 +188,13 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 // 選んだものは `/api/rfq/collect` の items で送る。並びと「加工製品ページかどうか」は「加工製品の一覧」と同じ
 // （`productListRows`——改定で子ページへ移った旧版は出さない）。どのページの番号でもよい（その下を全部見る）。
 func RFQFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
-		return
-	}
-	fid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.URL.Query().Get("folder")), "/"))
-	exists := 0
-	if ok {
-		// ⚠ 管理者には CanView が無いページでも通るので、在るかを別に見る（無い番号に「0 件」と答えない）。
-		database.DB.QueryRow(`SELECT COUNT(*) FROM pages WHERE id = ?`, pageNum(fid)).Scan(&exists)
-	}
-	if !ok || exists == 0 || !page.CanView(user, pageNum(fid)) {
-		cms.JSONFail(w, http.StatusNotFound, "その番号のページがありません（装置フォルダのページ番号を書いてください）")
-		return
-	}
-	rows, err := productListRows(user, pageNum(fid))
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "加工製品を読めませんでした: "+err.Error())
+	_, fid, rows, ok := folderProductsOrFail(w, r)
+	if !ok {
 		return
 	}
 	type product struct {
-		ID        string `json:"id"`
-		Title     string `json:"title"`
-		Machine   string `json:"machine"`
-		PartNo    string `json:"part_no"`
-		DrawingNo string `json:"drawing_no"`
-		Lots      []int  `json:"lots"`
-		Migrating bool   `json:"migrating"`
+		folderProduct
+		Lots []int `json:"lots"`
 	}
 	out := make([]product, 0, len(rows))
 	for _, p := range rows {
@@ -223,8 +202,7 @@ func RFQFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if lots == nil {
 			lots = []int{}
 		}
-		out = append(out, product{ID: page.FormatID(p.PageID), Title: p.Title, Machine: p.Machine,
-			PartNo: p.PartNo, DrawingNo: p.DrawingNo, Lots: lots, Migrating: p.Migrating})
+		out = append(out, product{folderProduct: folderProductOf(p), Lots: lots})
 	}
 	cms.WriteJSON(w, map[string]any{"success": true, "folder": fid, "title": cms.PageTitleByID(pageNum(fid)), "products": out})
 }
