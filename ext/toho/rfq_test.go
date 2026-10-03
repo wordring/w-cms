@@ -453,3 +453,76 @@ func TestRFQImportAnsweredQuote(t *testing.T) {
 		t.Errorf("日付の形が違うのに %d", code)
 	}
 }
+
+// TestRFQFillItemNames は見積依頼明細の空の品番・品名を加工製品ページから埋めること（2026-10-04・fillRFQItemNames）を固定します——
+// 移す口（import）は自動で埋め、既に書いてある品名は残す。後始末の口（fill-names）は管理者だけ。
+// 利用者:「品番と品名の欄が埋まらない事には、人間には見てわかりません」。
+func TestRFQFillItemNames(t *testing.T) {
+	const box = "000040"
+	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
+	seedBody(t, "000041", `<h1>取付ベース</h1><dl data-type="tags"><dt>品番</dt><dd>A100-B01-1</dd><dt>品名</dt><dd>取付ベース</dd></dl>`)
+	root := &auth.User{Username: "root", IsAdmin: true}
+	_, out := postRFQ(t, root, RFQImportAPIHandler, map[string]any{"supplier": "ふじ鍍金", "date": "2025-05-14",
+		"lines": []map[string]string{
+			{"product_id": "000041", "kind": "外注加工", "work": "塗装", "quantity": "20", "cost": "298"},
+			{"product_id": "000041", "kind": "外注加工", "work": "塗装", "item_name": "カバー（上）", "quantity": "20", "cost": "300"},
+		}})
+	id, _ := out["page_id"].(string)
+	body := readPageBody(t, id)
+	if !strings.Contains(body, "<td>外注加工</td><td></td><td>A100-B01-1</td><td>取付ベース</td>") {
+		t.Errorf("空の品番・品名が加工製品ページから埋まっていません:\n%s", body)
+	}
+	if !strings.Contains(body, "<td>A100-B01-1</td><td>カバー（上）</td>") {
+		t.Errorf("書いてあった品名が残っていません（品番だけ埋めるはず）:\n%s", body)
+	}
+	// 後始末の口: 品番・品名を消した本文を書き戻してから、管理者だけが埋められる。
+	emptied := strings.ReplaceAll(strings.ReplaceAll(body, "<td>A100-B01-1</td>", "<td></td>"), "<td>取付ベース</td>", "<td></td>")
+	seedBody(t, id, emptied)
+	if code, _ := postRFQ(t, &auth.User{Username: "bob"}, RFQFillNamesAPIHandler, map[string]any{"page_id": id}); code != 403 {
+		t.Errorf("管理者でない人が埋められてしまう: %d", code)
+	}
+	code, res := postRFQ(t, root, RFQFillNamesAPIHandler, map[string]any{"page_id": id})
+	if code != 200 || res["filled"] != float64(3) {
+		t.Errorf("後始末で埋めたセルが %v（3のはず——1行目の品番・品名と2行目の品番）: %d", res["filled"], code)
+	}
+	if b := readPageBody(t, id); !strings.Contains(b, "<td>A100-B01-1</td><td>取付ベース</td>") || !strings.Contains(b, "<td>A100-B01-1</td><td>カバー（上）</td>") {
+		t.Errorf("後始末で埋まっていません:\n%s", b)
+	}
+}
+
+// TestRFQSetCellsChecksFirst は見積依頼明細のセルを確かめてから書き換える口（2026-10-04・RFQSetCellsAPIHandler）を固定します——
+// いまの値が合えば書き、1つでも合わなければ何も書かない（409）・管理者だけ。移した行の「数の無い行に入れた 1」を空欄に戻すのに使う。
+func TestRFQSetCellsChecksFirst(t *testing.T) {
+	const box = "000040"
+	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
+	root := &auth.User{Username: "root", IsAdmin: true}
+	_, out := postRFQ(t, root, RFQImportAPIHandler, map[string]any{"supplier": "ふじ鍍金", "date": "2025-05-14",
+		"lines": []map[string]string{
+			{"product_id": "000041", "kind": "外注加工", "work": "塗装", "quantity": "1", "cost": "298"},
+			{"product_id": "000041", "kind": "外注加工", "work": "塗装", "quantity": "20", "cost": "250"},
+		}})
+	id, _ := out["page_id"].(string)
+	edit := func(u *auth.User, expect map[string]string) (int, map[string]any) {
+		return postRFQ(t, u, RFQSetCellsAPIHandler, map[string]any{"page_id": id, "edits": []map[string]any{
+			{"row": 2, "expect": map[string]string{"数量": "20", "単価": "250"}, "set": map[string]string{}},
+			{"row": 1, "expect": expect, "set": map[string]string{"数量": ""}},
+		}})
+	}
+	if code, _ := edit(&auth.User{Username: "bob"}, map[string]string{"数量": "1"}); code != 403 {
+		t.Errorf("管理者でない人が書き換えられてしまう: %d", code)
+	}
+	before := readPageBody(t, id)
+	if code, res := edit(root, map[string]string{"数量": "1", "単価": "999"}); code != 409 || !strings.Contains(res["message"].(string), "単価") {
+		t.Errorf("いまの値が合わないのに %d %v", code, res)
+	}
+	if readPageBody(t, id) != before {
+		t.Error("合わなかったのに本文が変わりました")
+	}
+	if code, res := edit(root, map[string]string{"数量": "1", "単価": "298"}); code != 200 || res["changed"] != float64(1) {
+		t.Fatalf("書き換えられません: %d %v", code, res)
+	}
+	got := rfqRows(t, readPageBody(t, id), RFQItemsType, 1)
+	if len(got) != 2 || got[0].Quantity != "" || got[1].Quantity != "20" {
+		t.Errorf("1行目の数量だけ空欄のはず: %+v", got)
+	}
+}

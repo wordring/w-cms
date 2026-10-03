@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/html"
+
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
@@ -337,9 +339,204 @@ func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "見積依頼書ページを組めません: "+err.Error())
 		return
 	}
+	// 品番・品名が空の行は加工製品ページから埋める（利用者:「品番と品名の欄が埋まらない事には、人間には見てわかりません」）。
+	body, _ = fillRFQItemNames(body)
 	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
 		return
 	}
 	auth.Audit(user.Username, "rfq.import", newID+" "+supplier+" "+date+" "+strconv.Itoa(len(req.Lines))+"行")
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "rows": len(req.Lines)})
+}
+
+// fillRFQItemNames は見積依頼明細の行のうち、品番・品名が空のセルを弊社品番の加工製品ページから埋めます（埋めたセルの数を返す）。
+// 品番は加工製品の 品番（無ければ図面番号）、品名は 品名（無ければ図面名称・題）——estimateItemNamesOf と同じ引き方。
+// 利用者（2026-10-04）:「品番と品名の欄が埋まらない事には、人間には見てわかりません」——過去の見積もりを移した行は弊社品番（ページ番号）と
+// 「塗装」だけで、何の値段か読めなかった。⚠ 空のセルだけ埋める（元の行から読んだ品名「ホイールカバー（上）」などは残す）。
+func fillRFQItemNames(body string) (string, int) {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body, 0
+	}
+	filled := 0
+	memo := map[int][2]string{}
+	for _, t := range tablesOfType(nodes, RFQItemsType) {
+		rows := rowsOf(t)
+		if len(rows) < 2 {
+			continue
+		}
+		col := headerIndex(rows[0])
+		pc, okP := col["弊社品番"]
+		ic, okI := col["品番"]
+		nc, okN := col["品名"]
+		if !okP || (!okI && !okN) {
+			continue
+		}
+		for _, tr := range rows[1:] {
+			cells := cellsOf(tr)
+			if pc >= len(cells) {
+				continue
+			}
+			pid, ok := page.NormalizeID(strings.TrimSpace(textOf(cells[pc])))
+			if !ok {
+				continue
+			}
+			n := pageNum(pid)
+			names, seen := memo[n]
+			if !seen {
+				id, name := estimateItemNamesOf(n)
+				names = [2]string{id, name}
+				memo[n] = names
+			}
+			if okI && ic < len(cells) && strings.TrimSpace(textOf(cells[ic])) == "" && names[0] != "" {
+				setCellText(cells[ic], names[0])
+				filled++
+			}
+			if okN && nc < len(cells) && strings.TrimSpace(textOf(cells[nc])) == "" && names[1] != "" {
+				setCellText(cells[nc], names[1])
+				filled++
+			}
+		}
+	}
+	if filled == 0 {
+		return body, 0
+	}
+	return htmldoc.Render(nodes), filled
+}
+
+// RFQFillNamesAPIHandler は POST /api/rfq/fill-names です（2026-10-04・管理者だけ）——見積依頼書ページの見積依頼明細の空の品番・品名を
+// 加工製品ページから埋めます（過去の見積もりを移したページの後始末。新しく移すぶんは RFQImportAPIHandler が埋める）。
+func RFQFillNamesAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	if !user.IsAdmin {
+		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます")
+		return
+	}
+	var req struct {
+		PageID string `json:"page_id"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID {
+		return
+	}
+	if !isRFQPage(pageID) {
+		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書ページではありません")
+		return
+	}
+	filled := 0
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		out, n := fillRFQItemNames(cur)
+		filled = n
+		return out
+	}) {
+		return
+	}
+	if filled > 0 {
+		auth.Audit(user.Username, "rfq.fill-names", pageID+" "+strconv.Itoa(filled)+"セル")
+	}
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "filled": filled})
+}
+
+// RFQSetCellsAPIHandler は POST /api/rfq/set-cells です（2026-10-04・管理者だけ）——見積依頼明細（1枚目）のセルを、**いまの値を
+// 確かめてから**書き換えます。入力: {page_id, edits: [{row（見出しを除いた何行目か・1始まり）, expect: {列: いまの値}, set: {列: 新しい値}}]}。
+// 1つでも合わなければ何も書きません（409・どこが違うかを返す）——人が直したあとの行を黙って上書きしないため。
+//
+// 過去の見積もりを移した行の後始末に使う（利用者 10-04:「数量の記述が無いと1個にしているようですが、ちょっとまずいです…空欄にするのが
+// 妥当では？」——1回目の移しで数の無い行に 1 を入れていた）。
+func RFQSetCellsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	if !user.IsAdmin {
+		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます")
+		return
+	}
+	var req struct {
+		PageID string `json:"page_id"`
+		Edits  []struct {
+			Row    int               `json:"row"`
+			Expect map[string]string `json:"expect"`
+			Set    map[string]string `json:"set"`
+		} `json:"edits"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID {
+		return
+	}
+	if !isRFQPage(pageID) {
+		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書ページではありません")
+		return
+	}
+	var mismatch string
+	changed := 0
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		nodes, err := htmldoc.ParseFragment(cur)
+		if err != nil {
+			mismatch = "本文を読めません"
+			return cur
+		}
+		tables := tablesOfType(nodes, RFQItemsType)
+		if len(tables) == 0 {
+			mismatch = "見積依頼明細の表がありません"
+			return cur
+		}
+		rows := rowsOf(tables[0])
+		col := headerIndex(rows[0])
+		cell := func(row int, label string) (*html.Node, bool) {
+			i, ok := col[label]
+			if !ok || row < 1 || row >= len(rows) {
+				return nil, false
+			}
+			cells := cellsOf(rows[row])
+			if i >= len(cells) {
+				return nil, false
+			}
+			return cells[i], true
+		}
+		// まず全部を確かめる（1つでも合わなければ何も書かない）。
+		for _, e := range req.Edits {
+			for label, want := range e.Expect {
+				c, ok := cell(e.Row, label)
+				if !ok || strings.TrimSpace(textOf(c)) != strings.TrimSpace(want) {
+					got := ""
+					if ok {
+						got = strings.TrimSpace(textOf(c))
+					}
+					mismatch = strconv.Itoa(e.Row) + "行目の「" + label + "」が「" + want + "」ではありません（いま「" + got + "」）"
+					return cur
+				}
+			}
+			for label := range e.Set {
+				if _, ok := cell(e.Row, label); !ok {
+					mismatch = strconv.Itoa(e.Row) + "行目に「" + label + "」の列がありません"
+					return cur
+				}
+			}
+		}
+		for _, e := range req.Edits {
+			for label, v := range e.Set {
+				c, _ := cell(e.Row, label)
+				setCellText(c, strings.TrimSpace(v))
+				changed++
+			}
+		}
+		return htmldoc.Render(nodes)
+	}) {
+		return
+	}
+	if mismatch != "" {
+		cms.JSONFail(w, http.StatusConflict, "書き換えていません: "+mismatch)
+		return
+	}
+	auth.Audit(user.Username, "rfq.set-cells", pageID+" "+strconv.Itoa(changed)+"セル")
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "changed": changed})
 }
