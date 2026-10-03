@@ -78,7 +78,7 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     EstimateBoxTitle,
 		Extension: "toho",
-		Why:       "顧客へ出す見積書の置き場です。加工屋・材料屋への見積の依頼は発注のくくりなので、ここには置きません。",
+		Why:       "顧客へ出す見積書の置き場です。業者への見積依頼はトップ直下の「見積依頼」に置きます（ここには置きません）。",
 	})
 
 	// 見積書ページ（2026-10-01・estimate_doc.go）——見積計算表の「見積書に入れる」が写す。
