@@ -113,13 +113,15 @@ func lineOfRow(head, tr *html.Node) ourOrderLine {
 		ProductID: at("弊社品番"), ForOrder: at("受注"), ItemID: at("品番"), ItemName: at("品名"),
 		Material: at("材質"), Shape: at("形状"), Size: at("寸法"), Color: at("表面"),
 		Quantity: at("数量"), Unit: at("単位"), Cost: at("単価"), Note: at("備考"),
+		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・見積依頼の表は発注明細と同じ列——行を移しても落とさない）。
+		Kind: at("種類"), No: at("番号"), Work: at("加工内容"), Spec: at("仕様"), Supplied: at("支給"),
 	}
 }
 
 // lineIsEmpty は「書き足す取っ掛かりとして置いた空の行」かを返します。
 func lineIsEmpty(ln ourOrderLine) bool {
 	return strings.TrimSpace(ln.ItemID+ln.ItemName+ln.Material+ln.Shape+ln.Size+
-		ln.Color+ln.Quantity+ln.Unit+ln.Cost+ln.Note) == ""
+		ln.Color+ln.Quantity+ln.Unit+ln.Cost+ln.Note+ln.Kind+ln.No+ln.Work+ln.Spec+ln.Supplied) == ""
 }
 
 // tempPart は臨時部材表の1行です。Row は**見出しを除いた何行目か**（1始まり）。

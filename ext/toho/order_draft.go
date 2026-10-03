@@ -26,7 +26,6 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	stdhtml "html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -113,37 +112,11 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 文字列で探すと**キャプションで名乗った表を見落とします**。
 func appendToDraft(body, into string, lines []ourOrderLine) (out string, added int, ok bool) {
 	n, err := strconv.Atoi(into)
-	if err != nil || n < 1 {
+	if err != nil {
 		return body, 0, false
 	}
-	nodes, perr := htmldoc.ParseFragment(body)
-	if perr != nil {
-		return body, 0, false
-	}
-	tables := tablesOfType(nodes, OrderDraftType)
-	if n > len(tables) {
-		return body, 0, false
-	}
-	tbody := lastChild(tables[n-1], "tbody")
-	if tbody == nil {
-		tbody = tables[n-1]
-	}
-	// ⚠ **既にある表の見出しに合わせて**列を並べます（2026-10-01）——列を足した日（受注）より前に作った表へ足すと、
-	//    宣言の並びで組んだ行は見出しとずれます。見出しに無い列の値は入れません。
-	fields := fieldsOfHeader(tables[n-1], OrderDraftType)
-	for _, ln := range lines {
-		tr := &html.Node{Type: html.ElementNode, Data: "tr"}
-		for _, field := range fields {
-			td := &html.Node{Type: html.ElementNode, Data: "td"}
-			if v := orderLineValue(ln, field); v != "" {
-				td.AppendChild(&html.Node{Type: html.TextNode, Data: v})
-			}
-			tr.AppendChild(td)
-		}
-		tbody.AppendChild(tr)
-		added++
-	}
-	return htmldoc.Render(nodes), added, true
+	// 足す道具は表の種類を引数にした共有のもの（table_lines.go・2026-10-03——見積依頼部材表も使う）。
+	return appendLinesToTable(body, OrderDraftType, n, lines)
 }
 
 // fieldsOfHeader は表の見出し行の列を、宣言の機械キー（Field）で返します（宣言に無い見出しは空——値を入れない）。
@@ -213,49 +186,12 @@ func putLinesIntoDraft(cur, into string, lines []ourOrderLine) (string, int, boo
 // 人が発注部材表を必要部材表のすぐ下などへ並べ替えても、新しい表は離れた末尾にできていました。
 // 人が並べた場所に、新しいものも並びます。
 func placeNewDraft(body, tableHTML string) string {
-	nodes, err := htmldoc.ParseFragment(body)
-	if err != nil {
-		return body + tableHTML
-	}
-	drafts := tablesOfType(nodes, OrderDraftType)
-	if len(drafts) == 0 {
-		return body + tableHTML
-	}
-	repl, err := htmldoc.ParseFragment(tableHTML)
-	if err != nil || len(repl) == 0 {
-		return body + tableHTML
-	}
-	out, ok := spliceNodes(nodes, draftBoxOf(drafts[len(drafts)-1]), repl, true)
-	if !ok {
-		return body + tableHTML
-	}
-	return out
+	return placeNewTableAfterLast(body, OrderDraftType, tableHTML)
 }
 
 func orderDraftHTML(lines []ourOrderLine) string {
-	var b strings.Builder
 	// ⚠ **節（`<section>`）で包みます**（2026-09-28・`draftBoxOf`）——「発注書を作る」の欄を表の外に出すため。
-	b.WriteString(`<section><table><caption>` +
-		stdhtml.EscapeString(displayNameOf(OrderDraftType)) + `</caption><tbody>`)
-	b.WriteString(headerRowHTML(OrderDraftType))
-	for _, ln := range lines {
-		b.WriteString(`<tr>`)
-		for _, c := range columnsOf(OrderDraftType) {
-			b.WriteString(`<td>` + stdhtml.EscapeString(orderLineValue(ln, c.Field)) + `</td>`)
-		}
-		b.WriteString(`</tr>`)
-	}
-	if len(lines) == 0 {
-		// ⚠ **空の行を1つ置きます**——見出しだけの表は、エディタで行を足す取っ掛かりが
-		//    ありません（人が「ここへ書く」と分かる形にする）。
-		b.WriteString(`<tr>`)
-		for range columnsOf(OrderDraftType) {
-			b.WriteString(`<td></td>`)
-		}
-		b.WriteString(`</tr>`)
-	}
-	b.WriteString(`</tbody></table></section>`)
-	return b.String()
+	return tableOfLinesHTML(OrderDraftType, lines, true)
 }
 
 // draftBoxOf は発注部材表を包む節を返します（包まれていなければ表そのもの）。
@@ -483,36 +419,14 @@ func removeDraftRow(body string, n, row int) (string, bool) {
 // takeDraftRow は removeDraftRow と同じく行を外し、**外した行の中身**も返します
 // （弊社品番の無い行を臨時部材表へ戻すため・2026-09-25）。
 func takeDraftRow(body string, n, row int) (string, ourOrderLine, bool) {
-	if n < 1 || row < 1 {
+	// ⚠ **最後の1行を外したら、表ごと消します**（2026-09-22 ユーザー:「**戻しても部材表から消えません**」）。
+	//    **見出しだけの表が残ると、発注ページに空の表が溜まります**——しかも「何枚目へ足すか」の選択肢に並ぶので、
+	//    **押し間違いの元**になります。⚠ **空の表を作る道は残します**（何も選ばずに「発注部材表へ入れる」）。
+	out, lines, ok := takeTableRows(body, OrderDraftType, n, []int{row}, true)
+	if !ok || len(lines) == 0 {
 		return body, ourOrderLine{}, false
 	}
-	nodes, err := htmldoc.ParseFragment(body)
-	if err != nil {
-		return body, ourOrderLine{}, false
-	}
-	tables := tablesOfType(nodes, OrderDraftType)
-	if n > len(tables) {
-		return body, ourOrderLine{}, false
-	}
-	table := tables[n-1]
-	rows := rowsOf(table) // 先頭は見出し行
-	if row >= len(rows) {
-		return body, ourOrderLine{}, false
-	}
-	tr := rows[row]
-	line := lineOfRow(rows[0], tr)
-	tr.Parent.RemoveChild(tr)
-	// ⚠ **最後の1行を外したら、表ごと消します**（2026-09-22 ユーザー:
-	//    「**戻しても部材表から消えません**」）。**見出しだけの表が残ると、
-	//    発注ページに空の表が溜まります**——しかも「何枚目へ足すか」の選択肢に
-	//    並ぶので、**押し間違いの元**になります。
-	//    ⚠ **空の表を作る道は残します**（何も選ばずに「発注部材表へ入れる」）
-	//    ——**人が意図して作った空の表**と、**外して空になった表**は別のことです。
-	if len(rowsOf(table)) <= 1 {
-		out, ok := spliceNodes(nodes, draftBoxOf(table), nil, false) // 節ごと（空の節を残さない）
-		return out, line, ok
-	}
-	return htmldoc.Render(nodes), line, true
+	return out, lines[0], true
 }
 
 // needsTempParts は「外した行を臨時部材表へ戻すべきか」を返します。
