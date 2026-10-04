@@ -10,7 +10,7 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 加工製品ページの「貰った見積」（2026-10-04・rfq_quotes.go）。
+// 加工製品ページの「見積回答」（2026-10-04・rfq_quotes.go）。
 
 // productWithSupplied は支給部品の表を持つ加工製品ページの本文です（テンプレートと同じ「見出しの節＋キャプション」の形）。
 const productWithSupplied = `<h1>カバー</h1>` +
@@ -46,7 +46,7 @@ func TestProductPageListsReceivedQuotes(t *testing.T) {
 		return cms.RenderComputedViews(req, productID, productWithSupplied)
 	}
 	got := show(41)
-	for _, want := range []string{"💴 貰った見積", "ふじ鍍金", "298円", ">20<", ">緑<", "塗装", `<a href="/` + ids[0] + `">2025-05-14</a>`,
+	for _, want := range []string{"💴 見積回答", "ふじ鍍金", "298円", ">20<", ">緑<", "塗装", `<a href="/` + ids[0] + `">2025-05-14</a>`,
 		"みなと商店", "1500円", "SS400 板 t3.2", `<a href="/` + ids[1] + `">2026-01-20</a>`, `class="vocab-chrome rfq-quotes"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("⚠ 鏡が走っていないか、%q が出ていません:\n%s", want, got)
@@ -59,15 +59,15 @@ func TestProductPageListsReceivedQuotes(t *testing.T) {
 		t.Errorf("⚠ 新しい見積（2026-01-20）が先に来ていません:\n%s", got)
 	}
 	if i, j, k := strings.Index(got, "</table>"), strings.Index(got, "rfq-quotes"), strings.Index(got, "</section>"); !(i < j && j < k) {
-		t.Errorf("⚠ 貰った見積が支給部品の表の後・節の中にありません（表 %d・一覧 %d・節の終わり %d）:\n%s", i, j, k, got)
+		t.Errorf("⚠ 見積回答が支給部品の表の後・節の中にありません（表 %d・一覧 %d・節の終わり %d）:\n%s", i, j, k, got)
 	}
-	if n := strings.Count(got, "💴 貰った見積"); n != 1 {
-		t.Errorf("貰った見積が %d 回出ています（1ページに1回）", n)
+	if n := strings.Count(got, "💴 見積回答"); n != 1 {
+		t.Errorf("見積回答が %d 回出ています（1ページに1回）", n)
 	}
 
 	// 見積の無い加工製品は短い断りだけ（表は出さない）。
 	empty := show(43)
-	if !strings.Contains(empty, "💴 貰った見積") || !strings.Contains(empty, "まだありません") || strings.Contains(empty, "rfq-quotes-table") {
+	if !strings.Contains(empty, "💴 見積回答") || !strings.Contains(empty, "まだありません") || strings.Contains(empty, "rfq-quotes-table") {
 		t.Errorf("見積の無い加工製品の出方が違います:\n%s", empty)
 	}
 }

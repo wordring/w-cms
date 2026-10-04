@@ -1,11 +1,13 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 加工製品ページの「貰った見積」（2026-10-04）
+// 加工製品ページの「見積回答」（2026-10-04）
 //
 // 利用者:「進めてください」（筆者の勧め——加工製品ページに「貰った見積」の一覧を置き、そのページの見積依頼明細の行を業者・
 // 日付・ロット・単価で並べる）。業者の値段は見積依頼明細の単価の列1か所にそろえた（過去の見積もりを移したものも、これから
 // 届く返事も）ので、ここはそれを**加工製品の側から引いて並べるだけ**（鏡——本文には書かない）。
+// 見出しは同じ日に「見積回答」へ改めた（利用者:「ほかと衝突が無ければ、貰った見積もりの見出しを見積回答に変えたい」——
+// コード・設定・文書に同じ語は無く、見積依頼明細の状態〔未回答・回答あり〕・回答日と言葉がそろう）。
 //
 //   - 置き場所は**部品の表の最後（支給部品の表）の下**——部品の表（材料・外注加工・購入部品・支給部品）の鏡（drawing_mirror.go）に
 //     相乗りする。ページに支給部品の表が無ければ出ない（テンプレートには在る）。
@@ -27,7 +29,7 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// quoteRow は「貰った見積」の1行です。
+// quoteRow は「見積回答」の1行です。
 type quoteRow struct {
 	RFQPage int
 	Date    string // 回答日（無ければ見積依頼日）
@@ -91,10 +93,10 @@ func quotesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []quote
 	return out
 }
 
-// quotesListHTML は「貰った見積」を描きます（行が無ければ短い断り）。
+// quotesListHTML は「見積回答」を描きます（行が無ければ短い断り）。
 func quotesListHTML(list []quoteRow) string {
 	var b strings.Builder
-	b.WriteString(`<div class="vocab-chrome rfq-quotes" contenteditable="false"><p class="materials-title">💴 貰った見積</p>`)
+	b.WriteString(`<div class="vocab-chrome rfq-quotes" contenteditable="false"><p class="materials-title">💴 見積回答</p>`)
 	if len(list) == 0 {
 		b.WriteString(`<p class="materials-empty">まだありません（見積依頼書に業者の返事〔単価〕が入ると、ここに並びます）。</p></div>`)
 		return b.String()
@@ -128,7 +130,7 @@ func quotesListHTML(list []quoteRow) string {
 	return b.String()
 }
 
-// appendQuotesList は支給部品の表の下に「貰った見積」を出します（1ページに1回）。表を包む節があれば節の末尾、
+// appendQuotesList は支給部品の表の下に「見積回答」を出します（1ページに1回）。表を包む節があれば節の末尾、
 // 無ければ表の直後——⚠ 表の中へ `<div>` を入れない（HTMLパーサが表の外へ追い出す）。
 func appendQuotesList(ctx *cms.MirrorContext, tbl *html.Node) {
 	if ctx.Counter("rfq-quotes") > 0 || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
