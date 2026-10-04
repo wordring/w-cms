@@ -6230,7 +6230,108 @@
         default:
             items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
         }
+        // 図面が2つ以上並んだページの図面のファイル（2026-10-04）——あとから改定にする（supersedeDrawingFrom）。
+        if (canSupersedeFrom(info.host)) {
+            items.push({ icon: '📐', label: 'この図面で改定する（前の図面を旧版へ）',
+                title: 'この図面を最新の図面にして、選んだ前の図面を旧版の子ページへ移します', run: () => supersedeDrawingFrom(info.host) });
+        }
         return items;
+    }
+
+    // ── あとから改定にする（2026-10-04） ──────────────────────────────
+    //
+    // 利用者:「加工製品に図面を追加しました。するともともとあった図面と変更が見つかりました。そこで追加した図面を
+    // 改定図面とし、元々あった図面を古い図面として子ページにしたいのです」。整理の「図面追加」で並べた図面を、あとから
+    // 整理の「図面改定」と同じ形へ組み替える（POST /api/drawing/supersede・ext/toho/drawing_supersede.go）。
+    // 押した図面のファイルの図面が新しい図面。古い図面は選ぶ（2つなら残りの1つ）。両方の番号と名前を出して確かめる。
+    // 閲覧モードだけ（編集中はサーバーが断る——自分が開いていても）。
+
+    // drawingSections は本文の最上位の図面ブロック（見出し「図面」の h2 を持つ節）を本文の順に返します——サーバーの
+    // `drawingSectionsOf` と同じ数え方（何番目かで指すので、数え方が食い違うと別の図面を旧版へ送る——番号の確かめが止める）。
+    // ⚠ 閲覧の画面では節がブロックの枠（div.block-content）に包まれている——`#w-editor-content > section` では拾えない。
+    function drawingSections() {
+        const content = document.getElementById('w-editor-content');
+        if (!content) return [];
+        return Array.from(content.querySelectorAll('section')).filter(s =>
+            !(s.parentElement && s.parentElement.closest('#w-editor-content section')) &&
+            Array.from(s.querySelectorAll('h2')).some(h => h.textContent.trim() === '図面'));
+    }
+
+    function canSupersedeFrom(host) {
+        if (!host || !hasExtension('toho') || document.body.hasAttribute('edit-mode')) return false;
+        const all = drawingSections();
+        return all.length >= 2 && all.some(s => s.contains(host));
+    }
+
+    // drawingTag は図面ブロックのタグの値です（dt/dd から）。
+    function drawingTag(sec, name) {
+        const dt = Array.from(sec.querySelectorAll(':scope > dl[data-type="tags"] > dt')).find(d => d.textContent.trim() === name);
+        const dd = dt && dt.nextElementSibling;
+        return dd ? dd.textContent.trim() : '';
+    }
+
+    // drawingLabel は図面ブロックの「図面番号 名称」です。
+    function drawingLabel(sec) {
+        return [drawingTag(sec, '図面番号'), drawingTag(sec, '図面名称')].filter(Boolean).join(' ') || '（番号の無い図面）';
+    }
+
+    // askChoice は選ぶダイアログを出し、選んだ番号を返します（やめたら -1）。⚠ 既定は「やめる」・Esc も「やめる」。
+    function askChoice(message, labels) {
+        return new Promise((resolve) => {
+            const dlg = document.createElement('dialog');
+            dlg.className = 'w-confirm';
+            const p = document.createElement('p');
+            p.className = 'w-confirm-msg';
+            p.textContent = message;
+            const list = document.createElement('div');
+            list.className = 'w-choice-list';
+            const done = (v) => { if (dlg.open) dlg.close(); dlg.remove(); resolve(v); };
+            labels.forEach((label, i) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = label;
+                b.addEventListener('click', () => done(i));
+                list.appendChild(b);
+            });
+            const bar = document.createElement('div');
+            bar.className = 'w-confirm-bar';
+            const no = document.createElement('button');
+            no.type = 'button';
+            no.textContent = 'やめる';
+            no.addEventListener('click', () => done(-1));
+            bar.appendChild(no);
+            dlg.append(p, list, bar);
+            document.body.appendChild(dlg);
+            dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(-1); });
+            dlg.showModal();
+            no.focus();
+        });
+    }
+
+    async function supersedeDrawingFrom(host) {
+        const all = drawingSections();
+        const mine = all.find(s => s.contains(host));
+        const others = all.filter(s => s !== mine);
+        if (!mine || !others.length) return;
+        let old = others[0];
+        if (others.length > 1) {
+            const i = await askChoice('「' + drawingLabel(mine) + '」で改定する前の図面はどれですか？（選んだ図面を旧版の子ページへ移します）',
+                others.map(drawingLabel));
+            if (i < 0) return;
+            old = others[i];
+        }
+        const ok = await askConfirm('「' + drawingLabel(old) + '」を旧版として子ページへ移し、\n「' + drawingLabel(mine) +
+            '」をこのページの最新の図面にします（改訂明細に1行足します）。', '旧版へ移す', 'やめる');
+        if (!ok) return;
+        const pick = (s) => ({ index: all.indexOf(s), no: drawingTag(s, '図面番号') });
+        const r = await postJSON('/api/drawing/supersede', { page_id: currentPageId, new: pick(mine), old: pick(old) });
+        if (!r.ok) {
+            notify((r.data && r.data.message) || ('旧版へ移せません（' + r.status + '）'), { type: 'warn', duration: 0 });
+            return;
+        }
+        notify('前の図面を「' + (r.data.title || '旧版') + '」へ移しました。', { type: 'success' });
+        await reloadContent();
+        loadChildNav();
     }
 
     // openFileMenu は「⋯」の下にメニューを開きます（もう一度押すか、外を押すか、Esc で閉じる）。
