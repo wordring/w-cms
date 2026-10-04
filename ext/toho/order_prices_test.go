@@ -48,6 +48,13 @@ func TestProductPageListsOrderPrices(t *testing.T) {
 		addPage(t, o.id, -1, "受注", o.owner, o.mode, o.public)
 		seedBody(t, page.FormatID(o.id), o.body)
 	}
+	// 出した見積（見積書ページの見積明細・送付済）と、別の加工製品の見積。
+	addPage(t, 707, -1, "見積", "root", "302", true)
+	seedBody(t, "000707", `<h1>見積　みなと商店</h1><dl data-type="tags"><dt>`+EstimateNoTag+`</dt><dd>000707</dd><dt>`+EstimateDateTag+
+		`</dt><dd>2026-08-15</dd><dt>`+EstimateSentTag+`</dt><dd>2026-08-16</dd></dl><table data-type="`+EstimateItemsType+`"><caption>見積明細</caption><tbody>`+
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>`+
+		`<tr><td>000701</td><td>K-1</td><td>カバー</td><td>50</td><td>個</td><td>480</td><td></td></tr>`+
+		`<tr><td>000799</td><td>K-9</td><td>別</td><td>50</td><td>個</td><td>666</td><td></td></tr></tbody></table>`)
 	show := func(u *auth.User) string {
 		return cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000701", nil), u), 701, product)
 	}
@@ -56,7 +63,7 @@ func TestProductPageListsOrderPrices(t *testing.T) {
 		t.Fatal("前提が崩れています: bob は /000706 を読めてはいけません")
 	}
 	got := show(bob)
-	for _, want := range []string{"🧾 受注の単価", "500円", "520円", `<a href="/000702">2026-05-01</a>`, `<a href="/000703">2026-07-01</a>`,
+	for _, want := range []string{"🧾 受注・見積の単価", "500円", "520円", `<a href="/000702">2026-05-01</a>`, `<a href="/000703">2026-07-01</a>`,
 		">A-1<", ">A-2<", ">K-1※<", ">納品済<", `class="vocab-chrome rfq-quotes order-prices"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("⚠ 鏡が走っていないか、%q が出ていません:\n%s", want, got)
@@ -73,11 +80,24 @@ func TestProductPageListsOrderPrices(t *testing.T) {
 	if n := strings.Count(got, ">K-1※<"); n != 1 {
 		t.Errorf("※ は品番で当てた1行だけのはず（弊社品番で結ばれた行には付けない）: %d\n%s", n, got)
 	}
-	if i, j := strings.Index(got, "💴 見積回答"), strings.Index(got, "🧾 受注の単価"); !(i >= 0 && i < j) {
+	if i, j := strings.Index(got, "💴 見積回答"), strings.Index(got, "🧾 受注・見積の単価"); !(i >= 0 && i < j) {
 		t.Errorf("受注の単価は見積回答の後ろのはず（%d・%d）", i, j)
 	}
 	if admin := show(&auth.User{Username: "root", IsAdmin: true}); !strings.Contains(admin, "888円") {
 		t.Errorf("読める人には /000706 の行も出るはず:\n%s", admin)
+	}
+	// 見積の行——種類「見積」・見積番号・送付済・日付順に混ざる（2026-08-15 は 2026-07-01 の受注より先）・別の加工製品の見積は出ない。
+	for _, want := range []string{`<a href="/000707">2026-08-15</a></td><td>見積</td><td>000707</td>`, "480円", ">50個<", ">送付済<",
+		`</td><td>受注</td><td>A-2</td>`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("⚠ 見積の行（か種類の列）が出ていません: %q\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "666円") {
+		t.Errorf("⚠ 別の加工製品の見積が出ています:\n%s", got)
+	}
+	if strings.Index(got, "480円") > strings.Index(got, "520円") {
+		t.Errorf("⚠ 見積（2026-08-15）が受注（2026-07-01）より後ろです——日付順に混ぜるはず:\n%s", got)
 	}
 }
 
@@ -97,10 +117,10 @@ func TestOrderPricesUnderLastEstimate(t *testing.T) {
 	seedBody(t, "000712", pricedOrderBody("C-1", "みなと商店", "2026-06-01", [5]string{"000711", "K-2", "20", "540", "納品済"}))
 
 	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000711", nil), &auth.User{Username: "root", IsAdmin: true}), 711, product)
-	if n := strings.Count(got, "🧾 受注の単価"); n != 1 {
+	if n := strings.Count(got, "🧾 受注・見積の単価"); n != 1 {
 		t.Fatalf("受注の単価が %d 回出ています（1回）:\n%s", n, got)
 	}
-	at := strings.Index(got, "🧾 受注の単価")
+	at := strings.Index(got, "🧾 受注・見積の単価")
 	last := strings.LastIndex(got, "<caption>見積計算表</caption>")
 	if !(last >= 0 && last < at) || strings.Index(got[last:], "</table>")+last > at {
 		t.Errorf("⚠ 最後の見積計算表の直後にありません:\n%s", got)

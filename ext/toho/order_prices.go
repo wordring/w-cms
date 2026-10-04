@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 加工製品ページの「受注の単価」（2026-10-04）
+// 加工製品ページの「受注・見積の単価」（2026-10-04——初めは「受注の単価」・同じ日に見積の行も並べた）
 //
 // 利用者:「発注書から最新価格が分かるという目論見もあります」→ 問いへの答え「客先の注文の単価」→ 筆者の勧め（加工製品ページに
 // 「受注の単価」を並べる）に「次に進みましょう」。客先の注文（受注明細）の単価は**弊社の販売価格**で、加工製品ごとに
@@ -28,11 +28,20 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// orderPriceRow は「受注の単価」の1行です。
+// 見積の行も並べる（2026-10-04・利用者:「続きをお願いします」——筆者の挙げた続き「見積書の見積明細（出した見積の値段）も同じ所に
+// 並べる」）。どちらも**弊社が出した値段**なので1つの表に日付順で混ぜ、種類（受注・見積）の列で分ける。見積明細は見積書を作るときに
+// 弊社品番が必ず入るので、品番では当てない。見積の状態は 送付済（送付日）・送付不要・未送付。
+const (
+	orderPriceKindOrder    = "受注"
+	orderPriceKindEstimate = "見積"
+)
+
+// orderPriceRow は「受注・見積の単価」の1行です。
 type orderPriceRow struct {
-	OrderPage int
-	Date      string // 発注日
-	No        string // 発注書番号
+	Kind      string // 受注・見積
+	OrderPage int    // 受注ページ・見積書ページ
+	Date      string // 発注日・見積日
+	No        string // 発注書番号・見積番号
 	Code      string // 品番（客先の言葉）
 	Qty       string
 	Unit      string
@@ -87,11 +96,12 @@ func orderPricesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []
 		if byCode && !containsID(productPagesForCustomer(db, cms.FirstTag(h, OrderClientTag), v["item-id"], v["item-name"]), productID) {
 			continue
 		}
-		out = append(out, orderPriceRow{OrderPage: r.PageID, Date: strings.TrimSpace(cms.FirstTag(h, OrderedAtTag)),
+		out = append(out, orderPriceRow{Kind: orderPriceKindOrder, OrderPage: r.PageID, Date: strings.TrimSpace(cms.FirstTag(h, OrderedAtTag)),
 			No: strings.TrimSpace(cms.FirstTag(h, OrderNoTag)), Code: strings.TrimSpace(v["item-id"]),
 			Qty: strings.TrimSpace(v["quantity"]), Unit: strings.TrimSpace(v["unit"]), Price: strings.TrimSpace(v["price"]),
 			Status: strings.TrimSpace(v["status"]), ByCode: byCode})
 	}
+	out = append(out, estimatePricesForProduct(db, canView, productID)...)
 	key := func(d string) string {
 		if n, ok := cms.NormalizeValue(cms.ColDate, d); ok {
 			return n
@@ -107,6 +117,39 @@ func orderPricesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []
 	return out
 }
 
+// estimatePricesForProduct は、弊社品番がこのページの見積明細の行です（読める見積書ページだけ）。
+func estimatePricesForProduct(db cms.ReadOnlyDB, canView func(int) bool, productID int) []orderPriceRow {
+	rows, err := cms.VocabRowsOfType(db, EstimateItemsType)
+	if err != nil {
+		return nil
+	}
+	want := page.FormatID(productID)
+	heads := map[int]map[string][]string{}
+	var out []orderPriceRow
+	for _, r := range rows {
+		v := r.Values
+		if strings.TrimSpace(v["our-item-id"]) != want || !canView(r.PageID) || cms.IsTemplateArea(page.FormatID(r.PageID)) {
+			continue
+		}
+		h, ok := heads[r.PageID]
+		if !ok {
+			h, _ = cms.TagsOfPage(db, r.PageID)
+			heads[r.PageID] = h
+		}
+		status := "未送付"
+		switch {
+		case strings.TrimSpace(cms.FirstTag(h, EstimateSentTag)) != "":
+			status = "送付済"
+		case strings.TrimSpace(cms.FirstTag(h, EstimateNoSendTag)) != "":
+			status = "送付不要"
+		}
+		out = append(out, orderPriceRow{Kind: orderPriceKindEstimate, OrderPage: r.PageID, Date: strings.TrimSpace(cms.FirstTag(h, EstimateDateTag)),
+			No: strings.TrimSpace(cms.FirstTag(h, EstimateNoTag)), Code: strings.TrimSpace(v["item-id"]),
+			Qty: strings.TrimSpace(v["quantity"]), Unit: strings.TrimSpace(v["unit"]), Price: strings.TrimSpace(v["price"]), Status: status})
+	}
+	return out
+}
+
 func containsID(ids []int, id int) bool {
 	for _, x := range ids {
 		if x == id {
@@ -116,15 +159,15 @@ func containsID(ids []int, id int) bool {
 	return false
 }
 
-// orderPricesHTML は「受注の単価」を描きます（行が無ければ短い断り）。
+// orderPricesHTML は「受注・見積の単価」を描きます（行が無ければ短い断り）。
 func orderPricesHTML(list []orderPriceRow) string {
 	var b strings.Builder
-	b.WriteString(`<div class="vocab-chrome rfq-quotes order-prices" contenteditable="false"><p class="materials-title">🧾 受注の単価</p>`)
+	b.WriteString(`<div class="vocab-chrome rfq-quotes order-prices" contenteditable="false"><p class="materials-title">🧾 受注・見積の単価</p>`)
 	if len(list) == 0 {
-		b.WriteString(`<p class="materials-empty">まだありません（受注明細の弊社品番がこのページの行と、客先と品番が合う行がここに並びます）。</p></div>`)
+		b.WriteString(`<p class="materials-empty">まだありません（受注明細・見積明細の弊社品番がこのページの行と、客先と品番が合う受注の行がここに並びます）。</p></div>`)
 		return b.String()
 	}
-	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>発注日</th><th>発注書番号</th>` +
+	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>日付</th><th>種類</th><th>番号</th>` +
 		`<th>品番</th><th class="num">数量</th><th class="num">単価</th><th>状態</th></tr></thead><tbody>`)
 	marked := false
 	for _, q := range list {
@@ -150,7 +193,7 @@ func orderPricesHTML(list []orderPriceRow) string {
 		if status == "" {
 			status = "—"
 		}
-		b.WriteString(`<tr><td><a href="/` + id + `">` + stdhtml.EscapeString(label) + `</a></td><td>` + stdhtml.EscapeString(q.No) +
+		b.WriteString(`<tr><td><a href="/` + id + `">` + stdhtml.EscapeString(label) + `</a></td><td>` + stdhtml.EscapeString(q.Kind) + `</td><td>` + stdhtml.EscapeString(q.No) +
 			`</td><td>` + code + `</td><td class="num">` + stdhtml.EscapeString(qty) + `</td><td class="num">` + stdhtml.EscapeString(price) +
 			`</td><td>` + stdhtml.EscapeString(status) + `</td></tr>`)
 	}

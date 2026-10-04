@@ -54,7 +54,7 @@ const (
 func init() {
 	cms.RegisterMirror(estimateType, cms.MirrorHandlerFunc(func(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		ok, err := renderEstimate(ctx, el)
-		// 最後の見積計算表の直後に「🧾 受注の単価」（2026-10-04・order_prices.go）——計算できなかった表でも。
+		// 最後の見積計算表の直後に「🧾 受注・見積の単価」（2026-10-04・order_prices.go）——計算できなかった表でも。
 		if el.Data == "table" {
 			placeOrderPricesAfterEstimate(ctx, el)
 		}
