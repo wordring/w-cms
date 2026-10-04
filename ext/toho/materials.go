@@ -153,6 +153,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/rfq/import", Handler: RFQImportAPIHandler},
 		{Pattern: "/api/rfq/fill-names", Handler: RFQFillNamesAPIHandler},
 		{Pattern: "/api/rfq/set-cells", Handler: RFQSetCellsAPIHandler},
+		// 過去の販売価格を見積書ページへ移す（2026-10-04・管理者だけ——estimate_import.go）。
+		{Pattern: "/api/estimate/import", Handler: EstimateImportAPIHandler},
 		// 表の末尾へ行を足す（2026-10-04・管理者だけ——見積から加工製品の外注加工に塗装の行を足す道具が使う・table_append.go）。
 		{Pattern: "/api/table/append-rows", Handler: AppendTableRowsAPIHandler},
 		// 見積依頼書の紙・備考・送った（FAX・手渡し）（2026-10-03・段2の後半——rfq_pdf.go）。
