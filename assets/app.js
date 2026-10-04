@@ -6716,6 +6716,27 @@
         if (key) ViewState.setSort(currentPageId, key, dir ? { c: sortHeaderText(th), d: dir } : null);
     });
 
+    // ── 節をまとめて畳む（2026-10-04） ─────────────────────────────────────
+    //
+    // 利用者:「材料、外注加工などの部材項目全体について開閉できるようにしたい」。
+    //
+    //   - **どの節を畳むかは鏡（サーバー）が決める**——節に class `w-fold` と組の名前 `w-fold-<組>` を付ける（東邦の部材の節は
+    //     `w-fold-parts`・ext/toho/drawing_mirror.go）。ここは業務の語を知らず、印の付いた節を組ごとに開け閉めするだけ。
+    //   - **閲覧モードだけ・表示だけ**——節の最初の見出しを押すと、同じ組の節が**まとめて**見出しだけになる（もう一度押すと開く）。
+    //     本文は書き換えない（`class` は書き出さない・サーバーでも落ちる）。編集モードでは全部見える（CSS）。憶えない——
+    //     ページを開き直すと開いた形に戻る。
+    document.addEventListener('click', e => {
+        if (document.body.hasAttribute('edit-mode')) return;
+        if (!(e.target instanceof Element) || e.target.closest('a, button, input, select, textarea, summary')) return;
+        const head = e.target.closest('#w-editor-content section.w-fold > :is(h1, h2, h3, h4, h5, h6):first-child');
+        if (!head) return;
+        const group = Array.from(head.parentElement.classList).find(c => c.startsWith('w-fold-') && c !== 'w-fold-shut');
+        if (!group) return;
+        const shut = !head.parentElement.classList.contains('w-fold-shut');
+        document.querySelectorAll('#w-editor-content section.w-fold.' + CSS.escape(group))
+            .forEach(sec => sec.classList.toggle('w-fold-shut', shut));
+    });
+
     // ── 鏡の中の絞り込みの欄を憶える（2026-09-30） ─────────────────────────
     //
     // 利用者:「/001305 を見て思ったのですが、チェックボタンの状態をブラウザに記憶してはどうでしょうか？汎用的な機構と
