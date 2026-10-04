@@ -408,7 +408,7 @@ func run(e *env, dry bool) error {
 			note.warn("⚠ 製造できませんでした: " + err.Error())
 			continue
 		}
-		if !dry {
+		if !dry && !note.kept {
 			pr.Built = time.Now().Format(time.RFC3339)
 			if err := writeJSON(recPath, rec); err != nil { // 1ページごとに残す（途中で止まっても二度上げない）
 				return err
@@ -429,6 +429,9 @@ func run(e *env, dry bool) error {
 	name := reportName
 	if len(e.only) > 0 {
 		name = "製造の報告（一部）.md" // いつもの報告を一部の回で上書きしない
+	}
+	if dry {
+		name = strings.TrimSuffix(name, ".md") + "（下見）.md" // 下見で本物の回の報告を上書きしない（2026-10-04）
 	}
 	if err := os.WriteFile(filepath.Join(root, name), []byte(rep.markdown(dry)), 0o644); err != nil {
 		return err
@@ -825,8 +828,17 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	}
 	title = mark + title
 
-	// 前に作った「移行中」のページを作り直す（-fresh）——ごみ箱へ移して、新しく作る。
+	// 作ったあとに保存されたページは、「移行中」が残っていても触らない（2026-10-04・editedSince）。
+	// 下見（-dry）でも見る——読むだけなので、どのページが守られるかが下見の報告に出る。
 	pageID := pr.WCMS
+	if pageID != "" {
+		if edited, when := editedSince(pageID, pr.Built); edited {
+			keepEdited(note, pageID, when)
+			return nil
+		}
+	}
+
+	// 前に作った「移行中」のページを作り直す（-fresh）——ごみ箱へ移して、新しく作る。
 	if !dry && e.fresh && pageID != "" {
 		if body, ok := c.readBody(pageID); ok && strings.Contains(body, "<dt>"+migrateTag+"</dt>") {
 			if err := c.deletePage(pageID); err != nil {
@@ -1216,6 +1228,13 @@ func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, 
 		// 装置の区別が無い取引先の「まとめ」は、品目と同じ「不明」の置き場のページに書く。
 		machine = unknownMachine
 	}
+	// 作ったあとに保存されたページは触らない（2026-10-04・editedSince）——前に作った加工製品ページも、装置のページも。
+	if pr.WCMS != "" {
+		if edited, when := editedSince(pr.WCMS, pr.Built); edited {
+			keepEdited(note, pr.WCMS, when)
+			return nil
+		}
+	}
 	if !dry && pr.WCMS != "" && pr.Kind != kindMachine {
 		if body, ok := c.readBody(pr.WCMS); ok && strings.Contains(body, "<dt>"+migrateTag+"</dt>") {
 			if err := c.deletePage(pr.WCMS); err != nil {
@@ -1502,6 +1521,64 @@ func bodyPath(id string) string {
 	return filepath.Join("data", "master", id[:2], id, id+".html")
 }
 
+// editedSince は、ページが since（製造の記録の「製造」——この道具が最後に書き終えた時刻）より後に保存されたかと、
+// その最後の保存（日時と保存した人）を返します（2026-10-04）。
+//
+// 利用者:「私が編集したページは上書きされると困りますが、編集したかどうかわかりますか？」——それまでは「移行中」の
+// タグが残っていれば作り直していたので、タグを付けたまま人が直したページ（や、見積から外注加工に塗装の行を足した
+// ページ）が、やり直しで黙って元に戻るところだった（10-04 に数えると、作ったページ287のうち166が作ったあとに保存
+// されていて、全部「移行中」のまま）。版の記録（versions/*.json の at・by——保存のたびに w-cms が残す）で見る。
+// 版の記録が無いときは本文のファイルの更新時刻で。since が読めない（古い記録）なら守らない（見分けられない）。
+func editedSince(id, since string) (bool, string) {
+	t0, err := time.Parse(time.RFC3339, since)
+	if err != nil || len(id) < 2 {
+		return false, ""
+	}
+	limit := t0.Add(5 * time.Second)
+	dir := filepath.Join("data", "master", id[:2], id, "versions")
+	ents, _ := os.ReadDir(dir)
+	var last time.Time
+	by := ""
+	for _, ent := range ents {
+		if !strings.HasSuffix(ent.Name(), ".json") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, ent.Name()))
+		if err != nil {
+			continue
+		}
+		var v struct {
+			At string `json:"at"`
+			By string `json:"by"`
+		}
+		if json.Unmarshal(b, &v) != nil {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, v.At)
+		if err != nil || !at.After(limit) {
+			continue
+		}
+		if at.After(last) {
+			last, by = at, v.By
+		}
+	}
+	if !last.IsZero() {
+		return true, last.Local().Format("2006-01-02 15:04") + "・" + by
+	}
+	if fi, err := os.Stat(bodyPath(id)); err == nil && fi.ModTime().After(limit) {
+		return true, fi.ModTime().Format("2006-01-02 15:04")
+	}
+	return false, ""
+}
+
+// keepEdited は、作ったあとに保存されたページを触らなかったことを報告に書きます。
+func keepEdited(note *pageNote, pageID, when string) {
+	note.kept = true
+	note.wcms = pageID
+	note.warn("⚠ 作ったあとに保存されています（" + when + "）——人の編集を守るため触りません。ワンノートの変わった分は人が移すか、" +
+		"このページを消してから流し直してください（/" + pageID + "）")
+}
+
 func (c *client) readBody(id string) (string, bool) {
 	b, err := os.ReadFile(bodyPath(id))
 	return string(b), err == nil
@@ -1696,6 +1773,9 @@ type pageNote struct {
 	title     string
 	wcms      string
 	duplicate bool // 同じ図面番号のページがあるので作らなかった
+	// kept は「作ったあとに保存されているので触らなかった」です（2026-10-04）——製造の記録の「製造」の時刻を
+	// 進めない（進めると、次の回にその編集が「製造より前」に見えて守れなくなる）。
+	kept  bool
 	infos []string
 	warns []string
 	asks  []string
