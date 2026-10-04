@@ -69,6 +69,7 @@ func init() {
 					// 支給部品の表（部品の表の最後）の下に「見積回答」（2026-10-04・rfq_quotes.go）。
 					if t == "part-supplied" {
 						appendQuotesList(ctx, tbl)
+						appendOrderPrices(ctx, tbl) // その後ろに「受注の単価」（2026-10-04・order_prices.go）
 					}
 					if t != partMaterialsType {
 						continue
