@@ -317,6 +317,10 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 	var b strings.Builder
 	b.WriteString(backlogTotalHTML(backlogTotalOf(groups)))
 	b.WriteString(migNote)
+	// 選んだ行を見積依頼へ（2026-10-04・見積依頼の段3——【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」）。
+	// 紙には出さない（no-print——受注残表は1枚ずつ印刷する作業の紙・同 §4 の7「選ぶ印を紙に出さないこと」）。配線は assets/app.js。
+	b.WriteString(`<div class="backlog-rfq-bar no-print"><button type="button" class="backlog-rfq-go">☑ 選んだ行を見積依頼へ</button>` +
+		` <span class="backlog-rfq-say"></span></div>`)
 	for i, g := range groups {
 		b.WriteString(`<section class="backlog-sheet" data-backlog="` + strconv.Itoa(i) + `">`)
 		title := g.Client
@@ -347,7 +351,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
-			`<th>備考</th><th class="no-print">受注</th></tr>`)
+			`<th>備考</th><th class="no-print">受注</th><th class="no-print">見積依頼</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -391,11 +395,27 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 				`<td class="cell-wrap">` + textFieldHTML("備考", r.Note) + `</td>` +
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
+				noPrintCell(rfqPickHTML(r)) +
 				`</tr>`)
 		}
 		b.WriteString(`</tbody></table></section>`)
 	}
 	return b.String()
+}
+
+// rfqPickHTML は受注残の行を見積依頼へ送るために選ぶ欄です（2026-10-04・段3）。送るのは弊社品番（加工製品ページ）・
+// 受注残（数量 − 出荷済み）・受注ページ——見積依頼の置き場の見積依頼必要部材表に、受注残 × 部材の数量で入る（/api/rfq/collect）。
+// 弊社品番が空の行（どの加工製品か分からない）と、残が無い行は選べない（理由を title に）。
+func rfqPickHTML(r backlogRow) string {
+	switch {
+	case strings.TrimSpace(r.OurItemNo) == "":
+		return `<input type="checkbox" disabled title="弊社品番が空なので見積依頼へ送れません">`
+	case r.Remaining <= 0:
+		return `<input type="checkbox" disabled title="受注残がありません">`
+	}
+	return `<input type="checkbox" class="backlog-rfq-pick" title="この行の部材を見積依頼へ" data-product="` +
+		stdhtml.EscapeString(r.OurItemNo) + `" data-lot="` + strconv.Itoa(r.Remaining) + `" data-order="` +
+		stdhtml.EscapeString(r.OrderPageID) + `">`
 }
 
 // atomicCell は折り返さないセルを組みます（中身は組み済みのHTML）。

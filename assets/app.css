@@ -2559,6 +2559,10 @@ body[edit-mode] #w-editor-content .estimate-note-row { display: none; }
 /* ── 受注残表（2026-09-21）──────────────────────────────────────────────
    顧客×納期の組ごとに1枚。⚠ **1枚が1回の納品の単位**（ユーザー決定）なので、
    そのまま渡せる見た目にしておく。 */
+/* 受注残表から見積依頼へ（2026-10-04・見積依頼の段3・app.js）——受注残高の下のボタンと結果の一言。紙には出さない（no-print）。 */
+.backlog-rfq-bar { margin: 8px 0 12px; }
+.backlog-rfq-bar .backlog-rfq-say p { display: inline; margin: 0 0 0 8px; font-size: 13px; }
+
 .backlog-sheet {
     margin: 0 0 1.75rem;
     break-inside: avoid;

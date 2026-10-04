@@ -131,7 +131,17 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "集められるものがありません——"+strings.Join(skipped, "／"))
 		return
 	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
+	// 送り先が無ければ見積依頼の置き場（2026-10-04・段3——受注フォルダの受注残表から送るとき、画面は置き場の番号を知らない）。
+	target := strings.TrimSpace(req.PageID)
+	if target == "" {
+		boxID, err := cms.EnsureTopLevelBox(RFQBoxTitle, user.Username)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "「"+RFQBoxTitle+"」ページを用意できません: "+err.Error())
+			return
+		}
+		target = boxID
+	}
+	pageID, okID := gateWritablePage(w, r, target)
 	if !okID {
 		return
 	}
@@ -144,7 +154,7 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "rfq.collect", pageID+" <- "+strings.Join(log, "・")+" "+strconv.Itoa(added)+"行")
-	res := map[string]any{"success": true, "rows": added, "products": done, "skipped": skipped}
+	res := map[string]any{"success": true, "rows": added, "products": done, "skipped": skipped, "page_id": pageID}
 	if single {
 		res["lots"] = done[0]["lots"]
 		res["product"] = done[0]["product"]
@@ -153,9 +163,14 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // rfqCollectItem は集める加工製品1つです（弊社品番＝加工製品ページの番号・ロット——空なら見積計算表のロット）。
+//
+// ForOrder はどの受注のための部材か（2026-10-04・段3——受注フォルダの受注残表から送るとき、受注ページの番号）。行の「受注」の
+// 列に入る（【要求】見積依頼 §2「見積依頼明細の『受注』の列は発注明細と同じく残し、受注残表から集めた部材に入る」）。
+// ロットにはその受注残（数量 − 出荷済み）を入れて送る——手配済みは引かない（同 §2）。
 type rfqCollectItem struct {
-	Product string `json:"product"`
-	Lot     string `json:"lot"`
+	Product  string `json:"product"`
+	Lot      string `json:"lot"`
+	ForOrder string `json:"for_order"`
 }
 
 // rfqItemLines は加工製品1つの部材を行にします。集められなければ断る理由（msg）と、そのときの状態の番号を返します。
@@ -177,6 +192,15 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 	lines = rfqLinesOfProduct(productID, lots)
 	if len(lines) == 0 {
 		return pid, lots, nil, http.StatusConflict, "/" + pid + " に材料・購入部品・外注加工の表がありません（集めるものがありません）"
+	}
+	if s := strings.TrimSpace(it.ForOrder); s != "" {
+		order, ok := page.NormalizeID(strings.TrimPrefix(s, "/"))
+		if !ok {
+			return pid, lots, nil, http.StatusBadRequest, "受注ページの番号が読めません: " + s
+		}
+		for i := range lines {
+			lines[i].ForOrder = order
+		}
 	}
 	return pid, lots, lines, 0, ""
 }

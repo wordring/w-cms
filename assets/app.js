@@ -9321,6 +9321,41 @@ delegateClick([['.backlog-print', (btn) => {
     printOnly(copy);
 }]]);
 
+// ── 受注残表から見積依頼へ（2026-10-04・見積依頼の段3） ────────────────────
+//
+// 【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」。受注残表の「見積依頼」の欄で選んだ行
+// （弊社品番・受注残・受注ページ——サーバーが描いた data-*）を /api/rfq/collect へ送り、見積依頼の置き場の見積依頼必要部材表に
+// 入れる。数は受注残 × 部材の数量（手配済みは引かない）・行の「受注」の列にその受注ページ・送り先はサーバーが探す。
+// 選ぶ欄とボタンは紙に出さない（no-print——受注残表は1枚ずつ印刷する作業の紙）。
+delegateClick([['.backlog-rfq-go', async (btn) => {
+    const say = btn.parentElement.querySelector('.backlog-rfq-say');
+    const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-rfq-pick:checked'));
+    if (!picks.length) {
+        sayIn(say, '受注残表の右端の「見積依頼」の欄で、送る行を選んでください。', 'warn');
+        return;
+    }
+    const items = picks.map((c) => ({ product: c.dataset.product, lot: c.dataset.lot, for_order: c.dataset.order }));
+    btn.disabled = true;
+    try {
+        const r = await postJSON('/api/rfq/collect', { items });
+        if (!r.ok) {
+            sayIn(say, (r.data && r.data.message) || ('見積依頼へ送れませんでした（' + r.status + '）'), 'warn');
+            return;
+        }
+        picks.forEach((c) => { c.checked = false; });
+        const skipped = (r.data.skipped || []).length ? '——送れなかったもの: ' + r.data.skipped.join('／') : '';
+        const p = sayIn(say, `見積依頼必要部材表へ ${r.data.rows} 行入れました（受注残 ${picks.length} 行から）${skipped}　`);
+        const a = document.createElement('a');
+        a.href = '/' + r.data.page_id;
+        a.textContent = '見積依頼を開く';
+        p.appendChild(a);
+    } catch (e) {
+        sayIn(say, '通信に失敗しました: ' + e.message, 'warn');
+    } finally {
+        btn.disabled = false;
+    }
+}]]);
+
 // printOnly は node（写し）だけを紙に刷ります。受注残表の印刷と、どの表にも付く「🖨 この表を印刷」が使います。
 //
 // **見えない別の枠（iframe `#w-print-frame`）に写しを置き、その枠だけを刷ります**（2026-10-03）。枠の中は app.css を読み、
