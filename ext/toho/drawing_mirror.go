@@ -66,6 +66,10 @@ func init() {
 					if _, err := markObsoleteRows(ctx, tbl); err != nil {
 						return true, err
 					}
+					// 支給部品の表（部品の表の最後）の下に「貰った見積」（2026-10-04・rfq_quotes.go）。
+					if t == "part-supplied" {
+						appendQuotesList(ctx, tbl)
+					}
 					if t != partMaterialsType {
 						continue
 					}

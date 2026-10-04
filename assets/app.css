@@ -1448,6 +1448,14 @@ body[edit-mode] #w-editor-content td.cell-known {
 
 #w-editor-content table.materials-table .num { text-align: right; }
 #w-editor-content table.materials-table .status { text-align: center; }
+/* 加工製品ページの「貰った見積」（2026-10-04・ext/toho/rfq_quotes.go）——支給部品の表の下。
+   列が8つあり欄（最大 666px）にぎりぎりなので、はみ出したときは表が自分の中で横スクロールします。
+   「何の値段か」だけ折り返し、ほかは1行に保ちます（業者名や日付が途中で折れないように）。 */
+#w-editor-content .rfq-quotes { margin-top: 16px; }
+#w-editor-content .rfq-quotes-scroll { overflow-x: auto; }
+#w-editor-content table.rfq-quotes-table th,
+#w-editor-content table.rfq-quotes-table td { padding: 6px 8px; white-space: nowrap; }
+#w-editor-content table.rfq-quotes-table td.what { white-space: normal; min-width: 10em; }
 
 #w-editor-content .badge {
     padding: 4px 8px;
