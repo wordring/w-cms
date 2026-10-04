@@ -52,7 +52,14 @@ const (
 )
 
 func init() {
-	cms.RegisterMirror(estimateType, cms.MirrorHandlerFunc(renderEstimate))
+	cms.RegisterMirror(estimateType, cms.MirrorHandlerFunc(func(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
+		ok, err := renderEstimate(ctx, el)
+		// 最後の見積計算表の直後に「🧾 受注の単価」（2026-10-04・order_prices.go）——計算できなかった表でも。
+		if el.Data == "table" {
+			placeOrderPricesAfterEstimate(ctx, el)
+		}
+		return ok, err
+	}))
 }
 
 // estimateResult は見積計算表1枚の計算の結果です。

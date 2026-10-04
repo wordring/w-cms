@@ -80,3 +80,38 @@ func TestProductPageListsOrderPrices(t *testing.T) {
 		t.Errorf("読める人には /000706 の行も出るはず:\n%s", admin)
 	}
 }
+
+// TestOrderPricesUnderLastEstimate は、⚠ **見積計算表があれば最後の1枚の直後**に出し（支給部品の下には出さない・1回だけ）、
+// 計算できない見積計算表でも置くことを固定します——利用者:「受注の単価は見積もり計算表の下が良いかもしれませんね」。
+func TestOrderPricesUnderLastEstimate(t *testing.T) {
+	setupExtTest(t, "000710", page.PageMeta{Owner: "root", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	addPage(t, 711, -1, "カバー", "root", "302", true)
+	product := `<h1>カバー</h1><dl data-type="tags"><dt>品番</dt><dd>K-2</dd></dl>` +
+		productWithSupplied[len(`<h1>カバー</h1>`):] +
+		`<section><h2>見積計算表</h2>` + estimateTable([3]string{"ロット", "20", "個"}, [3]string{"単価", "500", "円"}) + `<p>塗装あり</p></section>` +
+		`<section><h2>工程</h2><p>ケガキ</p></section>` +
+		`<section><h2>見積計算表（塗装なし）</h2>` + estimateTable([3]string{"ロット", "20", "個"}) + `<p>塗装なし</p></section>`
+	seedBody(t, "000711", product)
+	addPage(t, 712, -1, "受注", "root", "302", true)
+	seedBody(t, "000712", pricedOrderBody("C-1", "みなと商店", "2026-06-01", [5]string{"000711", "K-2", "20", "540", "納品済"}))
+
+	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000711", nil), &auth.User{Username: "root", IsAdmin: true}), 711, product)
+	if n := strings.Count(got, "🧾 受注の単価"); n != 1 {
+		t.Fatalf("受注の単価が %d 回出ています（1回）:\n%s", n, got)
+	}
+	at := strings.Index(got, "🧾 受注の単価")
+	last := strings.LastIndex(got, "<caption>見積計算表</caption>")
+	if !(last >= 0 && last < at) || strings.Index(got[last:], "</table>")+last > at {
+		t.Errorf("⚠ 最後の見積計算表の直後にありません:\n%s", got)
+	}
+	if i := strings.Index(got, "塗装なし</p>"); i < at {
+		t.Errorf("⚠ 表の直後ではなく節の末尾に置いています（表と節の続きの間に入るはず）:\n%s", got)
+	}
+	if i := strings.Index(got, "💴 見積回答"); i > at || strings.Contains(got[:strings.Index(got, "<h2>見積計算表</h2>")], "order-prices") {
+		t.Errorf("⚠ 支給部品の下にも出ているか、見積回答より前です:\n%s", got)
+	}
+	if !strings.Contains(got[at:], "540円") {
+		t.Errorf("受注の行が並んでいません:\n%s", got[at:])
+	}
+}
