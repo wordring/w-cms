@@ -77,6 +77,31 @@
     cursor: pointer;
 }
 
+/* 「💻 パソコンから添付」（2026-10-04）——ボタンと一言を1行に。ファイルを持って欄の上へ来たら枠を出す。 */
+.mail-compose .mc-attach-local {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+}
+
+.mail-compose .mc-attach-local-btn {
+    padding: 0.2rem 0.8rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mail-compose .mc-attach-local-note {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.mail-compose.mc-drop {
+    outline: 2px dashed #3a7bd5;
+    outline-offset: 2px;
+}
+
 .mail-compose .mc-attach-msg p {
     margin: 0.2rem 0;
     font-size: 0.9em;

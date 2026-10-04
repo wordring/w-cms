@@ -307,6 +307,95 @@
         });
         // 貼った時点で足す（値が入るのは paste の後なので、1拍おく）。
         idInput.addEventListener('paste', () => setTimeout(addByIDs, 0));
+
+        // 「💻 パソコンから添付」（2026-10-04 利用者:「新しいメールを作成するときに、ローカルコンピュータから添付したいです。
+        // 返信などの時も同様です」）——選ぶか、この欄へドロップする。置き場は**下書きのページ**（まだ下書きでなければ先に
+        // 保存する）——POST /api/mail/attach。置いたら印つきで並べ、下書きにも書き留める（開き直しても並ぶ）。送ると控えの
+        // ページへ写る（ext/comm/mail/compose_attach.go——下書きは送るとごみ箱へ行くので）。
+        const localRow = el('div', 'mc-attach-local');
+        const localBtn = el('button', 'mc-attach-local-btn', '💻 パソコンから添付');
+        localBtn.type = 'button';
+        const localInput = el('input');
+        localInput.type = 'file';
+        localInput.multiple = true;
+        localInput.hidden = true;
+        localInput.setAttribute('data-mc-local', '1');
+        localRow.appendChild(localBtn);
+        localRow.appendChild(localInput);
+        localRow.appendChild(el('span', 'mc-attach-local-note', 'この欄へドロップしても足せます（下書きに置きます）'));
+        form.insertBefore(localRow, addMsg);
+        let uploading = false;
+        // ensureDraft は下書きが無ければ保存して作ります（ファイルの置き場が要る）。
+        const ensureDraft = async () => {
+            if (state.draftId) return true;
+            const r = await postJSON('/api/mail/draft', collect());
+            if (!r.ok || !r.data.draft_id) {
+                add(addMsg, '⚠ 下書きを作れないので、ファイルを置けません: ' + (r.data.message || r.status), 'mc-ng');
+                return false;
+            }
+            state.draftId = r.data.draft_id;
+            head.textContent = '📝 下書き（' + (d.purpose || '') + '）';
+            add(addMsg, '📝 ファイルを置くため、下書きに保存しました（通信箱の未処理に並びます）: /' + state.draftId, 'mc-note');
+            return true;
+        };
+        const uploadLocal = async (fileList) => {
+            const files = Array.from(fileList || []);
+            if (!files.length || uploading) return;
+            uploading = true;
+            localBtn.disabled = true;
+            addMsg.textContent = '';
+            try {
+                if (!(await ensureDraft())) return;
+                let added = 0;
+                for (const f of files) {
+                    const fd = new FormData();
+                    fd.append('draft_id', state.draftId);
+                    fd.append('file', f, f.name);
+                    let res, data = {};
+                    try {
+                        res = await fetch('/api/mail/attach', { method: 'POST', credentials: 'same-origin', body: fd });
+                        data = await res.json().catch(() => ({}));
+                    } catch (e) {
+                        add(addMsg, '⚠ ' + f.name + ': 通信に失敗しました', 'mc-ng');
+                        continue;
+                    }
+                    if (!res.ok || !data.success) {
+                        add(addMsg, '⚠ ' + (data.message || f.name + ' を置けません（' + res.status + '）'), 'mc-ng');
+                        continue;
+                    }
+                    addPick({ page_id: data.page_id, file: data.file, name: data.name }, true);
+                    add(addMsg, '✓ 足しました: ' + data.name, 'mc-ok');
+                    added++;
+                }
+                if (added) {
+                    const r = await postJSON('/api/mail/draft', collect());
+                    if (!r.ok) add(addMsg, '⚠ 下書きに書き留められませんでした（送れば添わります）: ' + (r.data.message || r.status), 'mc-ng');
+                }
+            } finally {
+                uploading = false;
+                localBtn.disabled = false;
+                localInput.value = '';
+            }
+        };
+        localBtn.addEventListener('click', () => localInput.click());
+        localInput.addEventListener('change', () => uploadLocal(localInput.files));
+        const carriesFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+        form.addEventListener('dragover', (e) => {
+            if (!carriesFiles(e)) return;
+            e.preventDefault();
+            e.stopPropagation(); // 本文へのドロップ（ページの添付になる）へ渡さない
+            form.classList.add('mc-drop');
+        });
+        form.addEventListener('dragleave', (e) => {
+            if (!form.contains(e.relatedTarget)) form.classList.remove('mc-drop');
+        });
+        form.addEventListener('drop', (e) => {
+            if (!carriesFiles(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            form.classList.remove('mc-drop');
+            uploadLocal(e.dataTransfer.files);
+        });
         if (d.send_note) add(form, d.send_note, 'mc-note');
 
         const bar = el('div', 'mc-bar');
@@ -390,7 +479,7 @@
             //    片付けられなかったときも、「送れていない」とは言わない（黙るともう一度送ってしまう）。
             const record = r.data.page_id || '';
             say(result, '✓ 送信しました。控えは通信箱にあります:', 'mc-ok', record);
-            const warns = [r.data.record_error, r.data.after_error, r.data.draft_error].filter(Boolean);
+            const warns = [r.data.record_error, r.data.attach_error, r.data.after_error, r.data.draft_error].filter(Boolean);
             warns.forEach((w) => add(result, '⚠ ' + w, 'mc-ng'));
             form.querySelectorAll('input, textarea, button').forEach((x) => { x.disabled = true; });
             host.dispatchEvent(new CustomEvent('wcms:mail-sent', { bubbles: true, detail: { record, warns } }));

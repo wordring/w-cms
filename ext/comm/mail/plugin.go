@@ -58,6 +58,8 @@ func (mailPlugin) Routes() []cms.Route {
 		// 送る欄の中身（用件の初期値・保存した下書き）と、下書きの保存（compose.go・2026-09-30）。
 		{Pattern: "/api/mail/compose", Handler: ComposeAPIHandler},
 		{Pattern: "/api/mail/draft", Handler: DraftSaveAPIHandler},
+		// パソコンのファイルを下書きへ置く（compose_attach.go・2026-10-04）。
+		{Pattern: "/api/mail/attach", Handler: MailAttachAPIHandler},
 	}
 }
 

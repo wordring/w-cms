@@ -201,8 +201,20 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 			resp["after_error"] = "メールは送りましたが、" + err.Error()
 		}
 	}
+	// 3b. 下書きに置いたファイル（パソコンから添えたもの・compose_attach.go）を控えへ写す——下書きはこのあとごみ箱へ
+	// 行くので、控えのリンクが下書きを指したままにしない。写せない（控えも無い）なら下書きを残す。
+	keepDraft := false
+	if draftID != "" && usesPage(req.Attachments, draftID) {
+		if recErr != nil {
+			keepDraft = true
+		} else if _, err := moveDraftAttachments(user, draftID, pageID, req.Attachments); err != nil {
+			keepDraft = true
+			resp["attach_error"] = "メールは送りましたが、パソコンから添えたファイルを控えへ写せませんでした（下書き /" + draftID +
+				" に残しています）: " + err.Error()
+		}
+	}
 	// 4. 下書きを片付ける（控えは送った日の月に新しく作ったので、下書きはごみ箱へ）。
-	if draftID != "" {
+	if draftID != "" && !keepDraft {
 		if _, err := cms.DeletePageToTrash(draftID); err != nil {
 			resp["draft_error"] = "メールは送りましたが、下書き（/" + draftID + "）を片付けられませんでした: " + err.Error()
 		} else {
