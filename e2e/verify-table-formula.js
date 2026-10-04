@@ -8,7 +8,8 @@
 //       ② 書き出し（保存されるもの）は式のまま ③ 列の題で並べると計算した値で並ぶ
 //       ④ 編集では式のまま（式の印）⑤ 編集で個数を変えて閲覧へ戻ると計算し直す
 //   貼り付け: ⑥ タブ区切りの塊がキャレットのセルから右下へ・足りない行は足す ⑦ はみ出した列は貼らない
-//       ⑧ 見出しの行からは貼らない ⑨ 1つのセルだけ（Excel の1セル＝表の HTML）は文字だけ ⑩ 保存される
+//       ⑧ 見出しの行にも貼れる（利用者「見出しもうまいことコピペできませんか？」→「見出しの行にも貼れる」）
+//       ⑨ 1つのセルだけ（Excel の1セル＝表の HTML）は文字だけ ⑩ 保存される
 //
 // 表は自分で作ったページに置き、最後に消します。
 //
@@ -147,7 +148,9 @@ const BODY = '<h1>【E2E】表の式と貼り付け</h1>' +
     await paste(0, 0, { 'text/plain': 'H1\tH2\nv1\tv2\n' });
     await page.waitForTimeout(300);
     const head = await page.evaluate(() => Array.from(document.querySelector('#w-editor-content table').rows[0].cells).map((c) => c.textContent.trim()));
-    check(same(head, ['品名', '単価', '個数', '価格']), '見出しの行からは貼らない', JSON.stringify(head));
+    g = await grid();
+    check(same(head, ['H1', 'H2', '個数', '価格']) && same(g[0].slice(0, 2), ['v1', 'v2']),
+      '見出しの行にも貼れる（1行目が見出しを上書き・2行目からデータの行）', JSON.stringify([head, g[0]]));
     await paste(2, 0, { 'text/html': '<table><tr><td>ONE-CELL</td></tr></table>', 'text/plain': 'ONE-CELL\n' });
     await page.waitForTimeout(300);
     const one = await page.evaluate(() => {

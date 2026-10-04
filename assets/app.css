@@ -1386,6 +1386,11 @@ body[edit-mode] #w-editor-content td.cell-known {
  * 閲覧モード: 計算した結果を見せる。数にできない（読めない式・無い列・数でない値）ときは**赤い背景に赤の太字**で
  * 「⚠ エラー: 理由」（利用者:「エラーと赤背景赤太文字を表示してはどうでしょう？」——色だけに頼らず ⚠ の印も）。
  * 編集モード: 式のまま。式のセルは青い字、前回の計算がエラーなら赤い背景（理由は閲覧モードで出る）。 */
+/* 表のセルを矩形で選ぶ（2026-10-04・app.js「表のセルを矩形で選ぶ」）——選んだセルは薄い青に青い枠（型の印や式の赤より上）。
+ * ドラッグしているあいだは表の文字を選ばせない（セルを選んでいる）。 */
+#w-editor-content td.w-cell-selected,
+#w-editor-content th.w-cell-selected { background: #dbeafe !important; box-shadow: inset 0 0 0 1px #60a5fa; }
+body.w-cell-dragging #w-editor-content table { user-select: none; }
 #w-editor-content td.w-formula-error-cell { background: #fee2e2; }
 #w-editor-content td .w-formula-error { color: #b91c1c; font-weight: 700; }
 body[edit-mode] #w-editor-content td.cell-formula { color: #1d4ed8; }

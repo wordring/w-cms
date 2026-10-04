@@ -6633,8 +6633,10 @@
     //   - クリップボードが**表**（Excel・ブラウザの表の HTML）か**タブ区切り**の文字なら、キャレットのあるセルを左上にして
     //     右下へ上書きする（Excel と同じ）。**文字だけ**——書式・リンク・画像は持ち込まない。セルの中の改行は空白に。
     //   - 行が足りなければ**行を足す**。列が足りなければ**はみ出した列は捨てて知らせる**（列は見出しが意味を持つので勝手に
-    //     足さない）。見出しの行（th）・結合したセル・画像のあるセル・サーバーが足したセル（クローム）には書かない。
-    //   - 見出しの行から始めた塊は貼らない（見出しを書き換えると列の意味が変わる）。
+    //     足さない）。結合したセル・画像のあるセル・サーバーが足したセル（クローム）には書かない。
+    //   - **見出しの行にも貼れる**（利用者:「表のコピペですが、見出しもうまいことコピペできませんか？」→ 問いへの答え「見出しの行にも
+    //     貼れる」）——見出しの行から始めると、1行目が見出しを上書きし、2行目からがデータの行へ。見出しが変わると列の型も変わるので、
+    //     表の印を付け直す（validateTypedTables）。
     //   - 1つのセルだけなら文字だけを入れる——Excel の1セルのコピーは表の HTML なので、そのままだと表の中に表ができていた。
     //   - 本文の変化は自動保存（MutationObserver）と元に戻す（Ctrl+Z）にそのまま乗る。
     function clipboardGrid(cd) {
@@ -6666,7 +6668,7 @@
         const x = c.cloneNode(true);
         x.querySelectorAll('.vocab-chrome:not(.w-formula-shown), style, script').forEach(e => e.remove());
         x.querySelectorAll('br').forEach(b => b.replaceWith(' '));
-        return (x.textContent || '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+        return (x.textContent || '').replace(/\s+/g, ' ').trim();
     }
 
     // parseTSV はタブ区切りの文字を行と列に分けます（Excel の書き方——"…" で囲んだ値は中にタブ・改行・"" を持てる）。
@@ -6699,10 +6701,7 @@
         const startRow = start.parentElement;
         const table = start.closest('table');
         if (!table || !startRow || startRow.tagName !== 'TR') return;
-        if (start.tagName === 'TH' || startRow === table.rows[0]) {
-            notify('見出しの行からは貼れません——データの行のセルにキャレットを置いてください。', { type: 'warn', id: 'paste-grid' });
-            return;
-        }
+        const headerTouched = startRow === table.rows[0];
         const bodyCells = tr => Array.from(tr.cells).filter(c => !isServerOwned(c));
         const width = bodyCells(startRow).length;
         const col0 = bodyCells(startRow).indexOf(start);
@@ -6728,21 +6727,246 @@
             vals.forEach((v, c) => {
                 const cell = cells[col0 + c];
                 if (!cell) return;
-                if (cell.tagName !== 'TD' || cell.colSpan > 1 || cell.rowSpan > 1 || cell.querySelector('img')) { skipped++; return; }
+                if (cell.colSpan > 1 || cell.rowSpan > 1 || cell.querySelector('img')) { skipped++; return; }
                 cell.textContent = v;
-                validateCell(cell);
+                if (cell.tagName === 'TD') validateCell(cell);
                 filled++;
                 last = cell;
             });
         });
-        if (last) placeCaretAtEnd(last);
+        // 見出しを書き換えたら列の型が変わる——表のセルの印（読めた・読めない）を付け直す。
+        if (headerTouched) validateTypedTables();
+        if (last && !selectedCells().length) placeCaretAtEnd(last);
         updateHtmlPreview();
         const notes = [];
         if (added) notes.push(`行を ${added} 行足しました`);
         if (dropped) notes.push(`表からはみ出した ${dropped} 列は貼っていません`);
-        if (skipped) notes.push(`見出し・結合・画像のセル ${skipped} か所には書いていません`);
+        if (skipped) notes.push(`結合・画像のセル ${skipped} か所には書いていません`);
         notify(`${grid.length} 行 × ${maxCols} 列を貼りました（${filled} セル）` + (notes.length ? '——' + notes.join('・') : '') + '。',
             { type: notes.length ? 'warn' : 'info', id: 'paste-grid', duration: notes.length ? 8000 : 3000 });
+    }
+
+    // ── 表のセルを矩形で選ぶ（2026-10-04） ─────────────────────────────────
+    //
+    // 利用者:「表のセルの選択ですが、ドラッグ矩形の範囲にあるセルを選択するように出来ますか？」。
+    //
+    //   - 表の中でドラッグして**別のセルへ入ると**、文字の選択をやめて**セルの矩形**を選ぶ（Excel と同じ）。同じセルの中のドラッグは
+    //     今までどおり文字の選択。Shift を押しながらセルを押すと、前に押したセルからの矩形。閲覧モード・編集モードの両方
+    //     （鏡の表——受注残表など——も選べる）。
+    //   - 選んだセルで: **コピー**（Ctrl+C——タブ区切りと表の HTML。Excel にも w-cms の表にも貼れる）。編集モードでは**消す**
+    //     （Delete・Backspace）・**切り取り**（Ctrl+X）・**貼り付け**（Ctrl+V——選んだ矩形の左上から。値が1つなら選んだセル全部へ）。
+    //   - 写すのは見えている文字（閲覧モードの式は結果・編集モードは式・入力欄は値）。消す・書くのは本文のセルだけ（鏡・結合・画像の
+    //     セルは触らない）。
+    //   - 選んだ印は class（保存されない）。ほかの所を押すか Esc、ほかのキーで外れる。結合したセルは表の格子（rowspan・colspan）で数える。
+    let cellSel = null;   // { table, anchor: [行, 列], focus: [行, 列] }——格子の位置
+    let cellDrag = null;  // { table, start: セル, active: 矩形に入ったか }
+    let lastCell = null;  // Shift で広げる起点
+
+    // tableGrid は表の格子（grid[行][列] = そこを占めるセル）です。
+    function tableGrid(table) {
+        const grid = [];
+        Array.from(table.rows).forEach((tr, r) => {
+            grid[r] = grid[r] || [];
+            let c = 0;
+            Array.from(tr.cells).forEach(cell => {
+                while (grid[r][c]) c++;
+                for (let dr = 0; dr < (cell.rowSpan || 1); dr++) {
+                    for (let dc = 0; dc < (cell.colSpan || 1); dc++) {
+                        grid[r + dr] = grid[r + dr] || [];
+                        grid[r + dr][c + dc] = cell;
+                    }
+                }
+                c += cell.colSpan || 1;
+            });
+        });
+        return grid;
+    }
+
+    function gridPos(grid, cell) {
+        for (let r = 0; r < grid.length; r++) {
+            const c = (grid[r] || []).indexOf(cell);
+            if (c >= 0) return [r, c];
+        }
+        return null;
+    }
+
+    function cellSelBounds() {
+        const [r0, c0] = cellSel.anchor;
+        const [r1, c1] = cellSel.focus;
+        return { top: Math.min(r0, r1), bottom: Math.max(r0, r1), left: Math.min(c0, c1), right: Math.max(c0, c1) };
+    }
+
+    // selectedCells は選んだ矩形のセルです（左上から・同じセルは1つ）。
+    function selectedCells() {
+        if (!cellSel || !cellSel.table.isConnected) return [];
+        const grid = tableGrid(cellSel.table);
+        const b = cellSelBounds();
+        const out = [];
+        for (let r = b.top; r <= b.bottom; r++) {
+            for (let c = b.left; c <= b.right; c++) {
+                const cell = (grid[r] || [])[c];
+                if (cell && out.indexOf(cell) === -1) out.push(cell);
+            }
+        }
+        return out;
+    }
+
+    function markCellSel() {
+        document.querySelectorAll('#w-editor-content .w-cell-selected').forEach(c => c.classList.remove('w-cell-selected'));
+        selectedCells().forEach(c => c.classList.add('w-cell-selected'));
+    }
+
+    function clearCellSel() {
+        if (!cellSel) return;
+        cellSel = null;
+        markCellSel();
+    }
+
+    function setCellSel(table, from, to) {
+        const grid = tableGrid(table);
+        const a = gridPos(grid, from);
+        const b = gridPos(grid, to);
+        if (!a || !b) return;
+        cellSel = { table, anchor: a, focus: b };
+        markCellSel();
+        const s = window.getSelection();
+        if (s && s.rangeCount) s.removeAllRanges(); // 文字の選択は外す（セルを選んでいる）
+    }
+
+    // writableCell は消す・書くセルか（編集モード・本文・結合も画像も無い）。
+    function writableCell(cell) {
+        return document.body.hasAttribute('edit-mode') && !isServerOwned(cell) &&
+            cell.colSpan === 1 && cell.rowSpan === 1 && !cell.querySelector('img');
+    }
+
+    // cellCopyText はセルの見えている文字です（入力欄は値・ボタンと並べ替えの印は除く・改行は空白）。
+    function cellCopyText(cell) {
+        const field = cell.querySelector('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=hidden]), select, textarea');
+        if (field) return (field.value || '').trim();
+        const x = cell.cloneNode(true);
+        x.querySelectorAll('button, .w-sort-mark, script, style').forEach(e => e.remove());
+        x.querySelectorAll('br').forEach(e => e.replaceWith(' '));
+        return (x.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    // cellSelClipboard は選んだ矩形を、タブ区切りの文字と表の HTML にします（結合したセルの続きは空）。
+    function cellSelClipboard() {
+        const grid = tableGrid(cellSel.table);
+        const b = cellSelBounds();
+        const quote = v => (/^"|[\t\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v);
+        const lines = [];
+        const t = document.createElement('table');
+        const tb = document.createElement('tbody');
+        t.appendChild(tb);
+        for (let r = b.top; r <= b.bottom; r++) {
+            const vals = [];
+            const tr = document.createElement('tr');
+            for (let c = b.left; c <= b.right; c++) {
+                const cell = (grid[r] || [])[c];
+                const first = cell && gridPos(grid, cell);
+                const v = cell && first[0] === r && first[1] === c ? cellCopyText(cell) : '';
+                vals.push(quote(v));
+                const out = document.createElement(cell && cell.tagName === 'TH' ? 'th' : 'td');
+                out.textContent = v;
+                tr.appendChild(out);
+            }
+            lines.push(vals.join('\t'));
+            tb.appendChild(tr);
+        }
+        return { text: lines.join('\n') + '\n', html: t.outerHTML };
+    }
+
+    // clearSelectedCells は選んだセルの中身を消します（編集モード）。
+    function clearSelectedCells() {
+        let n = 0;
+        selectedCells().forEach(cell => {
+            if (!writableCell(cell)) return;
+            cell.textContent = '';
+            if (cell.tagName === 'TD') validateCell(cell);
+            n++;
+        });
+        if (n) updateHtmlPreview();
+        return n;
+    }
+
+    document.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        const t = e.target instanceof Element ? e.target : null;
+        const cell = t && t.closest('#w-editor-content td, #w-editor-content th');
+        if (!cell || t.closest('a, button, input, select, textarea, label, summary')) {
+            clearCellSel();
+            cellDrag = null;
+            return;
+        }
+        const table = cell.closest('table');
+        if (e.shiftKey && lastCell && lastCell.isConnected && lastCell.closest('table') === table && lastCell !== cell) {
+            e.preventDefault();
+            setCellSel(table, lastCell, cell);
+            return;
+        }
+        clearCellSel();
+        lastCell = cell;
+        cellDrag = { table, start: cell, active: false };
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!cellDrag || !(e.buttons & 1)) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const cell = el && el.closest('td, th');
+        if (!cell || cell.closest('table') !== cellDrag.table) return;
+        if (!cellDrag.active && cell === cellDrag.start) return; // 同じセルの中は文字の選択のまま
+        cellDrag.active = true;
+        document.body.classList.add('w-cell-dragging');
+        e.preventDefault();
+        setCellSel(cellDrag.table, cellDrag.start, cell);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!cellDrag) return;
+        cellDrag = null;
+        document.body.classList.remove('w-cell-dragging');
+    });
+
+    document.addEventListener('keydown', e => {
+        if (!cellSel) return;
+        if (e.key === 'Escape') { clearCellSel(); return; }
+        if (['Shift', 'Control', 'Meta', 'Alt'].indexOf(e.key) !== -1 || e.ctrlKey || e.metaKey) return; // Ctrl+C・X・V は下の出来事で
+        if ((e.key === 'Delete' || e.key === 'Backspace') && document.body.hasAttribute('edit-mode')) {
+            e.preventDefault();
+            clearSelectedCells();
+            return;
+        }
+        clearCellSel();
+    }, true);
+
+    document.addEventListener('copy', e => {
+        if (!cellSel || !e.clipboardData || !selectedCells().length) return;
+        const c = cellSelClipboard();
+        e.clipboardData.setData('text/plain', c.text);
+        e.clipboardData.setData('text/html', c.html);
+        e.preventDefault();
+    });
+
+    document.addEventListener('cut', e => {
+        if (!cellSel || !e.clipboardData || !selectedCells().length) return;
+        const c = cellSelClipboard();
+        e.clipboardData.setData('text/plain', c.text);
+        e.clipboardData.setData('text/html', c.html);
+        e.preventDefault();
+        clearSelectedCells();
+    });
+
+    // fillSelectedCells は選んだセル全部に同じ値を書きます（1つの値を矩形へ貼ったとき）。
+    function fillSelectedCells(value) {
+        let n = 0;
+        selectedCells().forEach(cell => {
+            if (!writableCell(cell)) return;
+            cell.textContent = value;
+            if (cell.tagName === 'TD') validateCell(cell);
+            n++;
+        });
+        if (n) updateHtmlPreview();
+        return n;
     }
 
     // ── 表の列の題を押して並べ替える（2026-10-03） ─────────────────────────
@@ -7998,13 +8222,17 @@
             }
             // **表のセルへ複数のセルを貼る**（2026-10-04・下の「表へ複数のセルを貼る」）——Excel や表からコピーした
             // セルの塊を、キャレットのあるセルから右下へ。1つのセルだけなら文字だけを入れる（表の中に表を作らない）。
-            const cellNow = elNow && elNow.closest('#w-editor-content td, #w-editor-content th');
+            // セルを矩形で選んでいれば（下の「表のセルを矩形で選ぶ」）、その左上から。値が1つなら選んだセル全部へ。
+            const picked = selectedCells().filter(c => !isServerOwned(c));
+            const cellNow = picked[0] || (elNow && elNow.closest('#w-editor-content td, #w-editor-content th'));
             if (cellNow && !isServerOwned(cellNow)) {
-                const grid = clipboardGrid(cd);
+                let grid = clipboardGrid(cd);
+                if (!grid && picked.length && plain.trim()) grid = [[plain.replace(/\s+/g, ' ').trim()]];
                 if (grid && grid.length && grid[0].length) {
                     e.preventDefault();
                     if (grid.length === 1 && grid[0].length === 1) {
-                        document.execCommand('insertText', false, grid[0][0]);
+                        if (picked.length) fillSelectedCells(grid[0][0]);
+                        else document.execCommand('insertText', false, grid[0][0]);
                         return;
                     }
                     pasteGridIntoTable(cellNow, grid);
