@@ -2649,17 +2649,22 @@ body[edit-mode] #w-editor-content .estimate-note-row { display: none; }
 #w-editor-content th.w-sortable { cursor: pointer; user-select: none; }
 #w-editor-content th.w-sortable:hover { text-decoration: underline dotted; }
 
-/* 節をまとめて畳む（2026-10-04・app.js「節をまとめて畳む」）——鏡が `w-fold` を付けた節の最初の見出しを押すと、同じ組の節が
-   見出しだけになる。閲覧モードだけ（編集モードでは全部見える・印も出さない）。印は疑似要素で——見出しの文字（節の名前）に混ぜない。 */
-body:not([edit-mode]) #w-editor-content section.w-fold > :is(h1, h2, h3, h4, h5, h6):first-child { cursor: pointer; user-select: none; }
-body:not([edit-mode]) #w-editor-content section.w-fold > :is(h1, h2, h3, h4, h5, h6):first-child::before {
-    content: '▾ ';
+/* 見出しで畳む（2026-10-04・app.js「見出しで畳む」）——閲覧モードで見出しを押すと、次の同じ段か上の段の見出しの手前まで隠す。
+   印は疑似要素で見出しの左の余白に（見出しの文字に混ぜない・押す前後で文字が動かない）。開いている見出しはマウスを載せたときだけ ▾、
+   畳んだ見出しはいつも ▸ と、続きのあることを示す「…」。編集モードでは全部見える・印も出さない。 */
+body:not([edit-mode]) #w-editor-content .w-foldable { cursor: pointer; position: relative; }
+body:not([edit-mode]) #w-editor-content .w-foldable::before {
+    position: absolute;
+    left: -1.1em;
+    width: 1em;
     color: var(--text-muted);
+    font-size: 0.8em;
+    line-height: inherit;
 }
-body:not([edit-mode]) #w-editor-content section.w-fold.w-fold-shut > :is(h1, h2, h3, h4, h5, h6):first-child::before { content: '▸ '; }
-/* 畳んだ節は見出しの上下を詰める（並んだ見出しが1つの目次に見えるように——開いた形の余白のままだと1つ約 97px）。 */
-body:not([edit-mode]) #w-editor-content section.w-fold.w-fold-shut > :is(h1, h2, h3, h4, h5, h6):first-child { margin-top: 4px; margin-bottom: 4px; }
-body:not([edit-mode]) #w-editor-content section.w-fold.w-fold-shut > :not(:is(h1, h2, h3, h4, h5, h6):first-child) { display: none; }
+body:not([edit-mode]) #w-editor-content .w-foldable:hover::before { content: '▾'; }
+body:not([edit-mode]) #w-editor-content .w-foldable.w-heading-folded::before { content: '▸'; }
+body:not([edit-mode]) #w-editor-content .w-foldable.w-heading-folded::after { content: ' …'; color: var(--text-muted); font-weight: 400; }
+body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !important; }
 #w-editor-content .w-sort-mark { margin-left: 4px; font-size: 0.75em; color: var(--accent-strong, #2563eb); }
 
 /* ── 受注残表の編集（2026-09-21）────────────────────────────────────────

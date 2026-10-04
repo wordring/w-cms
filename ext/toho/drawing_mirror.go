@@ -36,23 +36,6 @@ func textOf(n *html.Node) string {
 	return out
 }
 
-// partsFoldClass は部材の節が名乗る畳みの組です（`w-fold-<組>`——同じ組の節は見出しを押すとまとめて開閉する）。
-const partsFoldClass = "w-fold-parts"
-
-// addClassOnce は class 属性に name が無いときだけ足します（1つの節に部材の表が2枚あっても1つ）。
-func addClassOnce(el *html.Node, name string) {
-	for _, a := range el.Attr {
-		if a.Key == "class" {
-			for _, c := range strings.Fields(a.Val) {
-				if c == name {
-					return
-				}
-			}
-		}
-	}
-	addClass(el, name)
-}
-
 // addClass は class 属性へ1つ足します（既存があれば空白で連ねる）。
 func addClass(el *html.Node, name string) {
 	for i, a := range el.Attr {
@@ -82,13 +65,6 @@ func init() {
 				for _, tbl := range mirrorTablesOf(el) {
 					if _, err := markObsoleteRows(ctx, tbl); err != nil {
 						return true, err
-					}
-					// 部材の節（材料・外注加工・購入部品・支給部品）をまとめて畳めるように名乗らせる（2026-10-04・
-					// 利用者:「材料、外注加工などの部材項目全体について開閉できるようにしたい」）。畳むのは画面
-					// （app.js「節をまとめて畳む」）で、ここは印を付けるだけ——`class` は保存されない（表示のたびに付け直す）。
-					if box := draftBoxOf(tbl); box != tbl {
-						addClassOnce(box, "w-fold")
-						addClassOnce(box, partsFoldClass)
 					}
 					// 支給部品の表（部品の表の最後）の下に「見積回答」（2026-10-04・rfq_quotes.go）。
 					if t == "part-supplied" {

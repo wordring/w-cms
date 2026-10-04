@@ -1424,6 +1424,7 @@
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         refreshFormulaCells();       // 表のセルの式——閲覧では結果・編集では式（2026-10-04・並べ替え・印刷より先に）
+        refreshHeadingFolds();       // 見出しを押して次の同じ段の見出しまで畳む（閲覧モード限定・表示だけ・2026-10-04）
         refreshTablePrint();         // どの表にも「🖨 この表を印刷」（閲覧モード限定・2026-10-02）
         refreshTableSort();          // 列の題を押して並べ替える（閲覧モード限定・表示だけ・2026-10-03）
         wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」
@@ -6914,25 +6915,108 @@
         if (key) ViewState.setSort(currentPageId, key, dir ? { c: sortHeaderText(th), d: dir } : null);
     });
 
-    // ── 節をまとめて畳む（2026-10-04） ─────────────────────────────────────
+    // ── 見出しで畳む（2026-10-04） ─────────────────────────────────────────
     //
-    // 利用者:「材料、外注加工などの部材項目全体について開閉できるようにしたい」。
+    // 利用者:「先ほど、材料や外注加工などを開閉させるようにしたのですが、それはやめて、汎用的な機構にしたいです。すべての
+    // 見出しについて、クリックすると、次の同レベル見出し（H2なら次のH2）の前まで閉じれるようにしたいです」
+    // （同じ日の午前に作った「部材の節をまとめて畳む」——鏡が印を付けた節だけ——を置き換えた）。
     //
-    //   - **どの節を畳むかは鏡（サーバー）が決める**——節に class `w-fold` と組の名前 `w-fold-<組>` を付ける（東邦の部材の節は
-    //     `w-fold-parts`・ext/toho/drawing_mirror.go）。ここは業務の語を知らず、印の付いた節を組ごとに開け閉めするだけ。
-    //   - **閲覧モードだけ・表示だけ**——節の最初の見出しを押すと、同じ組の節が**まとめて**見出しだけになる（もう一度押すと開く）。
-    //     本文は書き換えない（`class` は書き出さない・サーバーでも落ちる）。編集モードでは全部見える（CSS）。憶えない——
-    //     ページを開き直すと開いた形に戻る。
+    //   - **閲覧モードだけ・表示だけ**——本文の見出しを押すと、その下を**次の同じ段か上の段の見出しの手前まで**隠す
+    //     （H2 なら次の H2 か H1 まで——上の段の見出しを越えて隠すと、別の章が消える）。もう一度押すと開く。本文は書き換えない
+    //     （`class` は書き出さない）。編集モードでは全部見える（CSS）。憶えない——開き直すと開いた形。
+    //   - 節（`<section>`）の**最初の見出し**なら、節の残りと、節の後ろの続き（次の見出しまで）も隠す——見出しの下に節が来る形
+    //     （`<section><h2>材料</h2><table>…</section>`）でも、見出しを並べただけの形でも同じに畳める。節の途中の見出しは、
+    //     その節の終わりまで。
+    //   - 畳まないもの: ページの題（最初の H1——畳むとページが丸ごと消える）・鏡（サーバーが足したもの）の中の見出し・表や
+    //     リストの中の見出し。
+    //   - 畳んだ見出しの中にさらに畳んだ見出しがあれば、外を開いても中は畳んだまま（どこを隠すかは畳んだ見出しから毎回求め直す）。
+    function headingLevel(el) {
+        return el && /^H[1-6]$/.test(el.tagName) ? Number(el.tagName[1]) : 0;
+    }
+
+    function isFoldableHeading(h) {
+        if (!headingLevel(h) || isServerOwned(h)) return false;
+        const editor = document.getElementById('w-editor-content');
+        if (!editor || !editor.contains(h) || h.closest('table, ul, ol, dl')) return false;
+        return h !== editor.querySelector('h1'); // ページの題
+    }
+
+    // stopsFold は el がこの段（level）の畳みを止めるか——同じ段か上の段の本文の見出しであるか、それを中に持つか。
+    function stopsFold(el, level) {
+        const lv = headingLevel(el);
+        if (lv) return lv <= level && !isServerOwned(el);
+        return Array.from(el.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+            .some(x => headingLevel(x) <= level && !isServerOwned(x));
+    }
+
+    // foldRange は見出し h を畳んだときに隠す要素です。
+    function foldRange(h) {
+        const level = headingLevel(h);
+        const editor = document.getElementById('w-editor-content');
+        const out = [];
+        let node = h;
+        while (node && node !== editor) {
+            for (let sib = node.nextElementSibling; sib; sib = sib.nextElementSibling) {
+                if (stopsFold(sib, level)) return out;
+                out.push(sib);
+            }
+            const parent = node.parentElement;
+            if (!parent || parent === editor) break;
+            // 入れ物を越えて続けるのは、ブロックの包みか、この見出しで始まる入れ物（節）のとき。
+            const wrapper = parent.classList.contains('block-content') || parent.classList.contains('editor-block');
+            const first = Array.from(parent.children).find(c => !isServerOwned(c));
+            if (!wrapper && !(first && (first === h || first.contains(h)))) break;
+            node = parent;
+        }
+        return out;
+    }
+
+    // applyHeadingFolds は、いま畳んでいる見出しから隠す要素を求め直します。
+    function applyHeadingFolds() {
+        document.querySelectorAll('#w-editor-content .w-fold-hidden').forEach(el => el.classList.remove('w-fold-hidden'));
+        document.querySelectorAll('#w-editor-content .w-heading-folded').forEach(h => {
+            if (!isFoldableHeading(h)) { h.classList.remove('w-heading-folded'); return; }
+            foldRange(h).forEach(el => el.classList.add('w-fold-hidden'));
+        });
+    }
+
+    // foldedHeadingKeys は、このページを開いているあいだ畳んだ見出しです（ページ・段・文字・同じ見出しの何番目か）。
+    // 編集から戻ると、保存の返事（エコーバック）で見出しの要素が作り直されて印が消えるので、ここから付け直す。
+    // ⚠ ブラウザには憶えない——開き直すと開いた形（利用者は並べ替えでも「記憶は必要ない」）。
+    const foldedHeadingKeys = new Set();
+    const HEADING_SELECTOR = '#w-editor-content h1, #w-editor-content h2, #w-editor-content h3, #w-editor-content h4, #w-editor-content h5, #w-editor-content h6';
+
+    function headingKey(h) {
+        const text = h.textContent.trim();
+        let nth = 0;
+        for (const x of document.querySelectorAll(HEADING_SELECTOR)) {
+            if (x === h) break;
+            if (x.tagName === h.tagName && x.textContent.trim() === text) nth++;
+        }
+        return currentPageId + '|' + h.tagName + '|' + text + '|' + nth;
+    }
+
+    // refreshHeadingFolds は描き直しの巡りのたびに呼ばれます——押せる見出しに印を付け、畳んだ形を求め直す。
+    function refreshHeadingFolds() {
+        document.querySelectorAll(HEADING_SELECTOR).forEach(h => {
+            const ok = isFoldableHeading(h);
+            h.classList.toggle('w-foldable', ok);
+            h.classList.toggle('w-heading-folded', ok && foldedHeadingKeys.has(headingKey(h)));
+        });
+        applyHeadingFolds();
+    }
+
     document.addEventListener('click', e => {
         if (document.body.hasAttribute('edit-mode')) return;
         if (!(e.target instanceof Element) || e.target.closest('a, button, input, select, textarea, summary')) return;
-        const head = e.target.closest('#w-editor-content section.w-fold > :is(h1, h2, h3, h4, h5, h6):first-child');
-        if (!head) return;
-        const group = Array.from(head.parentElement.classList).find(c => c.startsWith('w-fold-') && c !== 'w-fold-shut');
-        if (!group) return;
-        const shut = !head.parentElement.classList.contains('w-fold-shut');
-        document.querySelectorAll('#w-editor-content section.w-fold.' + CSS.escape(group))
-            .forEach(sec => sec.classList.toggle('w-fold-shut', shut));
+        const h = e.target.closest(HEADING_SELECTOR);
+        if (!h || !isFoldableHeading(h)) return;
+        const sel = window.getSelection && window.getSelection();
+        if (sel && !sel.isCollapsed && h.contains(sel.anchorNode)) return; // 見出しの文字を選んでいるときは畳まない
+        const key = headingKey(h);
+        if (h.classList.toggle('w-heading-folded')) foldedHeadingKeys.add(key);
+        else foldedHeadingKeys.delete(key);
+        applyHeadingFolds();
     });
 
     // ── 鏡の中の絞り込みの欄を憶える（2026-09-30） ─────────────────────────
