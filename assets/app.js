@@ -1423,6 +1423,7 @@
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
+        refreshFormulaCells();       // 表のセルの式——閲覧では結果・編集では式（2026-10-04・並べ替え・印刷より先に）
         refreshTablePrint();         // どの表にも「🖨 この表を印刷」（閲覧モード限定・2026-10-02）
         refreshTableSort();          // 列の題を押して並べ替える（閲覧モード限定・表示だけ・2026-10-03）
         wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」
@@ -1455,7 +1456,12 @@
                 try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
             }
             await releaseLock();
+            // 式のセルの結果はサーバーが計算する（formula.go）——編集で式や値を変えたら、手元の結果は古い。
+            // 古い結果を見せないよう外してから閲覧へ戻し、式があれば本文を読み直す（2026-10-04）。
+            const formulas = hasFormulaCells();
+            if (formulas) clearFormulaResults();
             applyMode();
+            if (formulas) await reloadContent();
             // 自分の操作での退出もモードを明示（ヘッダーが隠れるため）。id:'mode' で取得トーストと置換。
             notify('閲覧モードに戻りました。', { type: 'info', duration: 2500, id: 'mode' });
         }
@@ -2028,6 +2034,8 @@
     // tableSortOriginal は、閲覧モードで並べ替えた `tbody` → 並べ替える前の子ノードの並び（下の serializeChildren と
     // 「表の列の題を押して並べ替える」が使う）。
     const tableSortOriginal = new WeakMap();
+    // formulaOriginal は、閲覧モードで式の結果を見せている `td` → 式のときの子ノード（下の「表のセルの式」・書き出しは式で）。
+    const formulaOriginal = new WeakMap();
 
     function serializeAttrs(el, allowed, extraAttrs) {
         let attrs = extraAttrs || '';
@@ -2043,12 +2051,13 @@
     //
     // ⚠ 閲覧モードで列の題を押して並べ替えた表（下の「表の列の題を押して並べ替える」）は、`tbody` の行が DOM の上で
     //    動いています。並べ替えは表示だけなので、書き出しは**並べ替える前の並び**で行います（tableSortOriginal）。
+    // ⚠ 閲覧モードで式の結果を見せているセル（下の「表のセルの式」）も、書き出しは**式**で行います（formulaOriginal）。
     function serializeChildren(el, indent) {
         const pretty = WHITESPACE_INSENSITIVE.has(el.tagName.toLowerCase());
         let out = '';
         const kids = tableSortOriginal.has(el)
             ? tableSortOriginal.get(el).filter(n => n.parentNode === el)
-            : el.childNodes;
+            : formulaOriginal.has(el) ? formulaOriginal.get(el) : el.childNodes;
         kids.forEach(node => {
             // エンハンサが挿す編集クローム（PDFドロップゾーン・プレビュー等）は本文ではない
             if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('vocab-chrome')) return;
@@ -3867,7 +3876,8 @@
         if (isServerOwned(cell)) return;
         const col = resolveCellColumn(cell);
         const text = cell.textContent.trim();
-        const typed = !!col && (col.type === 'number' || col.type === 'date');
+        // 式のセル（`=個数*単価`）は値ではないので型の印を付けない（式の印は refreshFormulaCells）。
+        const typed = !!col && (col.type === 'number' || col.type === 'date') && !isFormulaText(text);
         let bad = false;
         if (typed && text !== '') {
             bad = col.type === 'number' ? !isValidNumberText(text) : !isValidDateText(text);
@@ -6549,6 +6559,191 @@
         restoreRememberedInputs(st);
     }
 
+    // ── 表のセルの式（2026-10-04） ─────────────────────────────────────────
+    //
+    // 利用者:「汎用的な仕組みとして、列の題名で計算させるということです。=個数*単価みたいにセルに書きます。編集時には
+    // 書いたままを表示して編集でき、閲覧時には計算結果を表示できるのはどうですか？数値に変換できない場合、エラーと赤背景
+    // 赤太文字を表示してはどうでしょう？」「小数も残す」。
+    //
+    //   - **計算はサーバー**（internal/cms/formula.go）——本文を返すときに式のセルへ `data-w-value`（結果）か
+    //     `data-w-error`（理由）を付ける。DB にも同じ関数で計算した値が入るので、見える値と探せる値が揃う。
+    //     ここは**見せるだけ**（計算しない）。属性は保存されない（`td` に許す属性ではない）。
+    //   - 閲覧モード: 式のセルの中身を結果（エラーなら「⚠ エラー: 理由」を赤）に差し替える。書き出し（serializeChildren）は
+    //     元の式で（formulaOriginal）。マウスを載せると式が出る。
+    //   - 編集モード: 式のまま（元の中身へ戻す）。式のセルは `cell-formula`、前回の計算がエラーなら `cell-formula-error`。
+    //   - 編集から抜けたら、式があれば本文を読み直して計算し直す（onModeToggle）。
+    function isFormulaText(t) {
+        return /^\s*[=＝]/.test(t || '');
+    }
+
+    function hasFormulaCells() {
+        return Array.from(document.querySelectorAll('#w-editor-content td'))
+            .some(td => !isServerOwned(td) && isFormulaText(formulaOriginal.has(td) ? '=' : td.textContent));
+    }
+
+    function restoreFormulaCell(td) {
+        const orig = formulaOriginal.get(td);
+        if (!orig) return;
+        td.replaceChildren(...orig);
+        formulaOriginal.delete(td);
+        td.classList.remove('w-formula-error-cell');
+    }
+
+    // clearFormulaResults は手元の（古いかもしれない）結果を外します。
+    function clearFormulaResults() {
+        document.querySelectorAll('#w-editor-content td[data-w-value], #w-editor-content td[data-w-error]').forEach(td => {
+            restoreFormulaCell(td);
+            td.removeAttribute('data-w-value');
+            td.removeAttribute('data-w-error');
+        });
+    }
+
+    function refreshFormulaCells() {
+        const editing = document.body.hasAttribute('edit-mode');
+        document.querySelectorAll('#w-editor-content td').forEach(td => {
+            if (isServerOwned(td)) return;
+            const hasResult = td.hasAttribute('data-w-value') || td.hasAttribute('data-w-error');
+            if (editing) {
+                restoreFormulaCell(td);
+                const formula = isFormulaText(td.textContent);
+                td.classList.toggle('cell-formula', formula);
+                td.classList.toggle('cell-formula-error', formula && td.hasAttribute('data-w-error'));
+                return;
+            }
+            td.classList.remove('cell-formula', 'cell-formula-error');
+            if (!hasResult || formulaOriginal.has(td)) return;
+            const err = td.getAttribute('data-w-error');
+            formulaOriginal.set(td, Array.from(td.childNodes));
+            const shown = document.createElement('span');
+            shown.className = 'vocab-chrome w-formula-shown' + (err !== null ? ' w-formula-error' : '');
+            shown.contentEditable = 'false';
+            shown.title = td.textContent.trim(); // 式
+            shown.textContent = err !== null ? '⚠ エラー: ' + err : td.getAttribute('data-w-value');
+            td.replaceChildren(shown);
+            td.classList.toggle('w-formula-error-cell', err !== null);
+        });
+    }
+
+    // ── 表へ複数のセルを貼る（2026-10-04） ─────────────────────────────────
+    //
+    // 利用者:「表のコピペを一つ一つしなくてもキャレットのある位置から右下に向かってペーストできませんか？」「複数セルを
+    // コピーしたときの話です」。
+    //
+    //   - クリップボードが**表**（Excel・ブラウザの表の HTML）か**タブ区切り**の文字なら、キャレットのあるセルを左上にして
+    //     右下へ上書きする（Excel と同じ）。**文字だけ**——書式・リンク・画像は持ち込まない。セルの中の改行は空白に。
+    //   - 行が足りなければ**行を足す**。列が足りなければ**はみ出した列は捨てて知らせる**（列は見出しが意味を持つので勝手に
+    //     足さない）。見出しの行（th）・結合したセル・画像のあるセル・サーバーが足したセル（クローム）には書かない。
+    //   - 見出しの行から始めた塊は貼らない（見出しを書き換えると列の意味が変わる）。
+    //   - 1つのセルだけなら文字だけを入れる——Excel の1セルのコピーは表の HTML なので、そのままだと表の中に表ができていた。
+    //   - 本文の変化は自動保存（MutationObserver）と元に戻す（Ctrl+Z）にそのまま乗る。
+    function clipboardGrid(cd) {
+        const htmlText = cd.getData('text/html') || '';
+        if (/<table[\s>]/i.test(htmlText)) {
+            const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+            const t = doc.querySelector('table');
+            if (t) {
+                const rows = [];
+                Array.from(t.rows).forEach(tr => {
+                    const row = [];
+                    Array.from(tr.cells).forEach(c => {
+                        if (c.classList.contains('vocab-chrome')) return; // w-cms の表から写した鏡の列（最新単価など）
+                        row.push(clipCellText(c));
+                        for (let k = 1; k < (c.colSpan || 1); k++) row.push('');
+                    });
+                    if (row.length) rows.push(row);
+                });
+                if (rows.length) return rows;
+            }
+        }
+        const plain = cd.getData('text/plain') || '';
+        if (plain.indexOf('\t') === -1) return null;
+        return parseTSV(plain);
+    }
+
+    // clipCellText はコピーしたセルの文字です——鏡の飾り（並べ替えの印など）は除き、式の結果は値のまま、改行は空白に。
+    function clipCellText(c) {
+        const x = c.cloneNode(true);
+        x.querySelectorAll('.vocab-chrome:not(.w-formula-shown), style, script').forEach(e => e.remove());
+        x.querySelectorAll('br').forEach(b => b.replaceWith(' '));
+        return (x.textContent || '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    // parseTSV はタブ区切りの文字を行と列に分けます（Excel の書き方——"…" で囲んだ値は中にタブ・改行・"" を持てる）。
+    function parseTSV(text) {
+        const s = text.replace(/\r\n?/g, '\n');
+        const rows = [];
+        let row = [], cur = '', quoted = false, atStart = true;
+        for (let i = 0; i < s.length; i++) {
+            const ch = s[i];
+            if (quoted) {
+                if (ch === '"') {
+                    if (s[i + 1] === '"') { cur += '"'; i++; } else { quoted = false; }
+                } else {
+                    cur += ch;
+                }
+                continue;
+            }
+            if (ch === '"' && atStart) { quoted = true; atStart = false; continue; }
+            if (ch === '\t') { row.push(cur); cur = ''; atStart = true; continue; }
+            if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; atStart = true; continue; }
+            cur += ch;
+            atStart = false;
+        }
+        if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+        return rows.map(r => r.map(v => v.replace(/\s+/g, ' ').trim()));
+    }
+
+    // pasteGridIntoTable は grid（行の配列）を start のセルから右下へ書きます。
+    function pasteGridIntoTable(start, grid) {
+        const startRow = start.parentElement;
+        const table = start.closest('table');
+        if (!table || !startRow || startRow.tagName !== 'TR') return;
+        if (start.tagName === 'TH' || startRow === table.rows[0]) {
+            notify('見出しの行からは貼れません——データの行のセルにキャレットを置いてください。', { type: 'warn', id: 'paste-grid' });
+            return;
+        }
+        const bodyCells = tr => Array.from(tr.cells).filter(c => !isServerOwned(c));
+        const width = bodyCells(startRow).length;
+        const col0 = bodyCells(startRow).indexOf(start);
+        if (col0 < 0) return;
+        let tr = startRow;
+        let added = 0, skipped = 0, filled = 0, last = null;
+        const maxCols = Math.max(...grid.map(r => r.length));
+        const dropped = Math.max(0, col0 + maxCols - width);
+        grid.forEach((vals, r) => {
+            if (r > 0) {
+                let next = tr.nextElementSibling;
+                while (next && next.tagName !== 'TR') next = next.nextElementSibling;
+                if (!next || isServerOwned(next)) {
+                    const nr = document.createElement('tr');
+                    for (let k = 0; k < width; k++) nr.appendChild(document.createElement('td'));
+                    tr.parentNode.insertBefore(nr, tr.nextSibling);
+                    next = nr;
+                    added++;
+                }
+                tr = next;
+            }
+            const cells = bodyCells(tr);
+            vals.forEach((v, c) => {
+                const cell = cells[col0 + c];
+                if (!cell) return;
+                if (cell.tagName !== 'TD' || cell.colSpan > 1 || cell.rowSpan > 1 || cell.querySelector('img')) { skipped++; return; }
+                cell.textContent = v;
+                validateCell(cell);
+                filled++;
+                last = cell;
+            });
+        });
+        if (last) placeCaretAtEnd(last);
+        updateHtmlPreview();
+        const notes = [];
+        if (added) notes.push(`行を ${added} 行足しました`);
+        if (dropped) notes.push(`表からはみ出した ${dropped} 列は貼っていません`);
+        if (skipped) notes.push(`見出し・結合・画像のセル ${skipped} か所には書いていません`);
+        notify(`${grid.length} 行 × ${maxCols} 列を貼りました（${filled} セル）` + (notes.length ? '——' + notes.join('・') : '') + '。',
+            { type: notes.length ? 'warn' : 'info', id: 'paste-grid', duration: notes.length ? 8000 : 3000 });
+    }
+
     // ── 表の列の題を押して並べ替える（2026-10-03） ─────────────────────────
     //
     // 利用者:「表の列の題をクリックして並び順を変えるように出来ませんか？」→ 問いへの答え:「表示だけ」「この端末で憶える」。
@@ -6605,6 +6800,9 @@
     // sortCellText はセルの比べる文字です（入力欄なら値・セルの中の飾りとボタンは除く）。
     function sortCellText(cell) {
         if (!cell) return '';
+        // 式のセルは計算した値で（見せている値は飾り〔クローム〕なので下では読めない）。エラーの見せ方も飾りなので、
+        // 下で空として読まれ、空のセルと同じく最後へ並ぶ。
+        if (cell.hasAttribute('data-w-value')) return cell.getAttribute('data-w-value');
         const field = cell.querySelector('input:not([type=checkbox]):not([type=radio]):not([type=button]), select, textarea');
         let s;
         if (field) {
@@ -7713,6 +7911,21 @@
                 e.preventDefault();
                 document.execCommand('insertText', false, plain.replace(/\s*[\r\n\t]+\s*/g, ' ').trim());
                 return;
+            }
+            // **表のセルへ複数のセルを貼る**（2026-10-04・下の「表へ複数のセルを貼る」）——Excel や表からコピーした
+            // セルの塊を、キャレットのあるセルから右下へ。1つのセルだけなら文字だけを入れる（表の中に表を作らない）。
+            const cellNow = elNow && elNow.closest('#w-editor-content td, #w-editor-content th');
+            if (cellNow && !isServerOwned(cellNow)) {
+                const grid = clipboardGrid(cd);
+                if (grid && grid.length && grid[0].length) {
+                    e.preventDefault();
+                    if (grid.length === 1 && grid[0].length === 1) {
+                        document.execCommand('insertText', false, grid[0][0]);
+                        return;
+                    }
+                    pasteGridIntoTable(cellNow, grid);
+                    return;
+                }
             }
             const files = Array.from(cd.files || []);
             if (!files.length || (cd.getData('text/plain') || '').trim()) return;

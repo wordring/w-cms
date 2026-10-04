@@ -342,13 +342,23 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, blockI
 		cols = append(cols, vocabColumn{key: key, typ: resolveColumnType(cell, def, key)})
 	}
 
+	keys := make([]string, len(cols))
+	for i, c := range cols {
+		keys[i] = c.key
+	}
 	for r, row := range rows[1:] {
-		for i, cell := range rowCells(row) {
+		cells := rowCells(row)
+		texts := make([]string, len(cells))
+		for i, cell := range cells {
+			texts[i] = strings.TrimSpace(nodeText(cell))
+		}
+		// 式のセル（`=個数*単価`）は計算した値を索引する（2026-10-04・formula.go）。
+		values := FormulaCellValues(keys, texts)
+		for i := range cells {
 			if i >= len(cols) || cols[i].key == "" {
 				continue // 見出しの無い列は鍵が決まらないため索引できない
 			}
-			value := strings.TrimSpace(nodeText(cell))
-			if err := insertVocabEntry(tx, pageID, dataType, blockNo, blockID, r, cols[i].key, cols[i].typ, value); err != nil {
+			if err := insertVocabEntry(tx, pageID, dataType, blockNo, blockID, r, cols[i].key, cols[i].typ, values[i]); err != nil {
 				return err
 			}
 		}

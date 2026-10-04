@@ -157,6 +157,9 @@ func hasViewMarker(bodyHTML string) bool {
 //
 // 走査そのものはコアの配送係（walk.go）が行い、ここは**段の入口**だけを担います。
 func RenderComputedViews(r *http.Request, pageIDInt int, bodyHTML string) string {
+	// 表のセルの式に計算した結果を添える（2026-10-04・formula.go）——鏡の引き金とは関係なく、式のセルがあれば。
+	// 鏡より先に——鏡が足す表（クローム）は式を持たない。
+	bodyHTML = renderFormulaCells(bodyHTML)
 	// 早道: 登録済みの引き金が本文に1つも無ければパースも走査もしない。
 	if !hasViewMarker(bodyHTML) {
 		return bodyHTML

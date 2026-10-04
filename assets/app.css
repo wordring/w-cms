@@ -1382,6 +1382,15 @@ body[edit-mode] #w-editor-content td.cell-known {
     background: #eff6ff;
 }
 
+/* 表のセルの式（2026-10-04・app.js「表のセルの式」・計算は internal/cms/formula.go）。
+ * 閲覧モード: 計算した結果を見せる。数にできない（読めない式・無い列・数でない値）ときは**赤い背景に赤の太字**で
+ * 「⚠ エラー: 理由」（利用者:「エラーと赤背景赤太文字を表示してはどうでしょう？」——色だけに頼らず ⚠ の印も）。
+ * 編集モード: 式のまま。式のセルは青い字、前回の計算がエラーなら赤い背景（理由は閲覧モードで出る）。 */
+#w-editor-content td.w-formula-error-cell { background: #fee2e2; }
+#w-editor-content td .w-formula-error { color: #b91c1c; font-weight: 700; }
+body[edit-mode] #w-editor-content td.cell-formula { color: #1d4ed8; }
+body[edit-mode] #w-editor-content td.cell-formula-error { background: #fee2e2; color: #b91c1c; font-weight: 700; }
+
 /* ── 計算ビュー（section[data-type=child-list|required-materials]）──
    中身はサーバー事前描画（view_render.go）が .vocab-chrome として埋める。 */
 #w-editor-content ul.child-list {

@@ -235,7 +235,8 @@ func captionTablesOf(root *html.Node) []captionTable {
 				cells = append(cells, v)
 			}
 			if !blank {
-				ct.Rows = append(ct.Rows, tableRow{No: i + 1, Cells: cells})
+				// 式のセル（`=個数*単価`）は計算した値を入れる（2026-10-04・formula.go）——画面に見える値と DB で探せる値を揃える。
+				ct.Rows = append(ct.Rows, tableRow{No: i + 1, Cells: FormulaCellValues(ct.Headers, cells)})
 			}
 		}
 		out = append(out, ct)
