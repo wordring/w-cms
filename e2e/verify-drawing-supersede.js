@@ -51,8 +51,10 @@ const check = (label, ok, note = '') => {
     }, { id, html });
   };
   const fv = (ref) => '<section data-type="file-view" data-ref="' + ref + '"></section>';
-  const drawing = (no, name, ref) => '<section><h2>図面</h2><dl data-type="tags"><dt>図面番号</dt><dd>' + no +
-    '</dd><dt>図面名称</dt><dd>' + name + '</dd></dl>' + fv(ref) + '</section>';
+  // ⚠ エディタで保存した本文と同じ**字下げのある形**で書く（2026-10-04 に職場で、dt と dd のあいだの改行のせいで
+  // サーバーが図面番号を読めず「古い図面がこのページに見つかりません」——詰めた形だけの試験では見えなかった）。
+  const drawing = (no, name, ref) => '<section>\n    <h2>図面</h2>\n    <dl data-type="tags">\n        <dt>図面番号</dt>\n        <dd>' + no +
+    '</dd>\n        <dt>図面名称</dt>\n        <dd>' + name + '</dd>\n    </dl>\n    ' + fv(ref) + '\n</section>\n';
   // menuOf は n 番目のファイル表示の「⋯」を押して、メニューの項目の文字を返します（開いたまま返す——押すなら呼び手が押す）。
   const openMenu = async (ref) => {
     await page.locator('#w-editor-content section[data-ref="' + ref + '"] .file-menu-btn').click();
@@ -69,8 +71,8 @@ const check = (label, ok, note = '') => {
     const c = await upload(id, '【E2E】資料.pdf');
     check('添付を3つ置けた', !!a && !!b && !!c, [a, b, c].join(','));
     await saveBody(id, '<h1>【E2E】あとから改定</h1>' + drawing('E2E-A1', '試験の台', id + '-' + a) + drawing('E2E-A2', '試験の台', id + '-' + b) +
-      '<table><caption>改訂明細</caption><tbody><tr><th>版</th><th>図面番号</th><th>受領日</th></tr>' +
-      '<tr><td>1</td><td>E2E-A1</td><td>2026-10-01</td></tr></tbody></table>' +
+      '<table>\n    <caption>改訂明細</caption>\n    <tbody>\n        <tr>\n            <th>版</th>\n            <th>図面番号</th>\n            <th>受領日</th>\n        </tr>\n' +
+      '        <tr data-id="e2r1">\n            <td>1</td>\n            <td>E2E-A1</td>\n            <td>2026-10-01</td>\n        </tr>\n    </tbody>\n</table>\n' +
       '<section><h2>データ</h2>' + fv(id + '-' + c) + '</section>');
 
     await page.goto(BASE + '/' + id);
@@ -116,7 +118,7 @@ const check = (label, ok, note = '') => {
     check('③ もう片方は「旧版 E2E-A1 試験の台」の子ページへ', !!old, JSON.stringify(kids));
     check('③ 改訂明細の E2E-A1 は旧版ページへのリンク', !!old && body.link.includes('/' + old.ID + ' E2E-A1'), JSON.stringify(body.link));
     const html = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);
-    check('③ 改訂明細に E2E-A2 の行', /<td>E2E-A2<\/td>/.test(html));
+    check('③ 改訂明細に E2E-A2 の行（版2——字下げされた版1の行も数える）', /<td>2<\/td><td>E2E-A2<\/td>/.test(html));
     if (old) {
       const oldHtml = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), old.ID);
       check('③ 旧版ページに古い図面（ファイルごと）', oldHtml.includes('E2E-A1') && oldHtml.includes(id + '-' + a), '');

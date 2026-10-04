@@ -90,13 +90,15 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	newNo := drawingNoOf(block)
 	if err := cms.RewriteBody(dstPageID, user.Username, func(string) string {
 		body := cms.InsertAfterH1(dstBody, block)
+		// ⚠ **リンクを先に付けてから行を足す**（2026-10-04）——図面番号を変えない改定では、足した新しい行も同じ
+		// 番号なので、足してから探すと**新しい行が旧版へのリンクになっていた**（新しい行は先頭に入るため）。
+		if oldPageID != "" {
+			body = linkRevisionRow(body, oldNo, oldPageID)
+		}
 		// **改訂履歴に1行足す**——社内コードの指し先はこの行です（vocab.go の
 		// drawing-revisions）。図面ブロックは人が消せる決まりなので、消せるものを
 		// 指し先にすると紙に出たコードが宙ぶらりんになります。
 		body = InsertRevisionRow(body, newNo)
-		if oldPageID != "" {
-			body = linkRevisionRow(body, oldNo, oldPageID)
-		}
 		// **品名が変わった改定なら、品名を2つとも残す**（2026-10-01 利用者:「改定図面にする場合、品名を変えて
 		// くる場合があるようです。弊社としては、どちらの品名でも検索できる必要が出てきました」「一つの加工製品
 		// ページに二つの品名を許容してはどうでしょう？」）——題の下の `品名` タグに古い名前と新しい名前。
@@ -252,7 +254,12 @@ func reassignBlockIDIfTaken(block, dstBody string) string {
 }
 
 // drawingNoRe は図面ブロックから図面番号を拾います（改訂履歴の行に載せる）。
-var drawingNoRe = regexp.MustCompile(`<dt>図面番号</dt><dd>([^<]*)</dd>`)
+//
+// ⚠ **dt と dd のあいだ・dd の中の空白を許します**（2026-10-04）——エディタで保存した本文は字下げされて
+// `<dt>図面番号</dt>` の後ろで改行して `<dd>…</dd>` になる（filing_duplicate.go の factsOfBlock も同じ注意）。詰めた形しか
+// 読まなかったので、保存したことのある加工製品ページ（職場で図面が2つ以上のページの半分ほど）では図面番号が
+// 空に読め、改定の旧版ページの題から番号が落ち・改訂明細のリンクも付かず・あとから改定にするは断っていた。
+var drawingNoRe = regexp.MustCompile(`<dt>図面番号</dt>\s*<dd>\s*([^<]*?)\s*</dd>`)
 
 // drawingNoOf は図面ブロックの図面番号を返します（無ければ空）。
 func drawingNoOf(block string) string {
@@ -275,7 +282,7 @@ func renamedItemNames(oldName, title, newName string) []string {
 }
 
 // drawingNameRe は図面ブロックから図面名称を拾います（旧版の子ページの題に使う）。
-var drawingNameRe = regexp.MustCompile(`<dt>` + regexp.QuoteMeta(DrawingNameTag) + `</dt><dd>([^<]*)</dd>`)
+var drawingNameRe = regexp.MustCompile(`<dt>` + regexp.QuoteMeta(DrawingNameTag) + `</dt>\s*<dd>\s*([^<]*?)\s*</dd>`) // 空白は drawingNoRe と同じ
 
 // drawingNameOf は図面ブロックの図面名称を返します（無ければ空）。
 func drawingNameOf(block string) string {
@@ -304,10 +311,10 @@ func drawingNameOf(block string) string {
 // 名前を焼き込むと、書き手を直しても**合流の重複検知だけが静かに素通り**します。
 // `regexp.QuoteMeta` を通すのは、タグ名に将来メタ文字が入っても壊れないため。
 var sourceRefRe = regexp.MustCompile(
-	`<dt>` + regexp.QuoteMeta(SourceRefTag) + `</dt><dd>([^<]*)</dd>`)
+	`<dt>` + regexp.QuoteMeta(SourceRefTag) + `</dt>\s*<dd>\s*([^<]*?)\s*</dd>`) // 空白は drawingNoRe と同じ
 
 // revNumberRe は改訂履歴の行から図面番号を拾います。
-var revNumberRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>[0-9]+</td><td>([^<]*)</td>`)
+var revNumberRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+">\s*<td>\s*[0-9]+\s*</td>\s*<td>\s*([^<]*?)\s*</td>`) // 字下げを許す（drawingNoRe と同じ）
 
 // duplicateReason は合流させてよいかを調べ、止める理由を返します
 // （空なら合流してよい）。needsConfirm は「人が確認すれば通してよい」の印です。

@@ -1,6 +1,7 @@
 package toho
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -121,6 +122,61 @@ func TestSupersedeDrawingTakesOldPlace(t *testing.T) {
 	}
 	if strings.Count(after, "<dd>W2</dd>") != 1 || strings.Count(after, "あいだ") != 1 {
 		t.Errorf("図面かあいだの節が2つになったか消えています:\n%s", after)
+	}
+}
+
+// TestSupersedeDrawingIndentedBody は、エディタで保存した本文（タグの dt と dd・改訂明細の tr と td のあいだに字下げ）でも
+// 図面番号を読めることを見ます（2026-10-04 に職場で「古い図面がこのページに見つかりません」——詰めた形しか読まなかった）。
+// 旧版の題に番号が入り、改訂明細の新しい行は版2（字下げされた行も数える）、古い行は旧版へのリンク。
+func TestSupersedeDrawingIndentedBody(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := twoDrawingPage(t, inbox, "P1", "台", "P2", "台")
+	if err := cms.RewriteBody(dst, "alice", func(b string) string {
+		b = strings.ReplaceAll(b, "</dt><dd>", "</dt>\n        <dd>")
+		b = regexp.MustCompile(`(<tr data-id="[0-9a-z]+">)<td>`).ReplaceAllString(b, "$1\n            <td>")
+		return strings.ReplaceAll(b, "</td><td>", "</td>\n            <td>")
+	}); err != nil {
+		t.Fatalf("字下げ: %v", err)
+	}
+	before, _ := cms.ReadPageBody(dst)
+	if strings.Contains(before, "</dt><dd>") || !strings.Contains(before, "\n            <td>1</td>") {
+		t.Fatalf("字下げした本文になっていません:\n%s", before)
+	}
+	oldPage, err := supersedeDrawing(user, dst, drawingPick{1, "P2"}, drawingPick{0, "P1"})
+	if err != nil {
+		t.Fatalf("字下げした本文で断りました: %v", err)
+	}
+	if id, ok := findChildByTitle(dst, "旧版 P1 台"); !ok || id != oldPage {
+		t.Errorf("旧版の題に図面番号がありません（「旧版 P1 台」が無い）")
+	}
+	after, _ := cms.ReadPageBody(dst)
+	if !strings.Contains(after, "<td>2</td><td>P2</td>") {
+		t.Errorf("改訂明細の新しい行が版2になっていません（字下げされた行を数えていない）:\n%s", after)
+	}
+	if !strings.Contains(after, `<a href="/`+oldPage+`">P1</a>`) {
+		t.Errorf("改訂明細の P1 が旧版ページへのリンクになっていません:\n%s", after)
+	}
+}
+
+// TestSupersedeDrawingSameNumber は、図面番号を変えない改定（職場の 000226 の形）で、旧版へのリンクが
+// **古い行（版1）**に付き、足した新しい行（版2）には付かないことを見ます。
+func TestSupersedeDrawingSameNumber(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := twoDrawingPage(t, inbox, "S1", "台", "S1", "台")
+	oldPage, err := supersedeDrawing(user, dst, drawingPick{1, "S1"}, drawingPick{0, "S1"})
+	if err != nil {
+		t.Fatalf("supersedeDrawing: %v", err)
+	}
+	after, _ := cms.ReadPageBody(dst)
+	if !strings.Contains(after, `<td>1</td><td><a href="/`+oldPage+`">S1</a></td>`) {
+		t.Errorf("旧版へのリンクが古い行（版1）に付いていません:\n%s", after)
+	}
+	if !strings.Contains(after, "<td>2</td><td>S1</td>") {
+		t.Errorf("新しい行（版2）にリンクが付いてしまったか、行がありません:\n%s", after)
 	}
 }
 

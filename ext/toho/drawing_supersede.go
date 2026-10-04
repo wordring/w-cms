@@ -91,8 +91,9 @@ func supersedeDrawing(user *auth.User, pageID string, newPick, oldPick drawingPi
 		next = body[:oldOpen] + body[oldEnd:]
 	}
 	newNo := drawingNoOf(newSec)
-	next = InsertRevisionRow(next, newNo)
+	// リンクを先に付けてから行を足す——番号を変えない改定で新しい行にリンクが付かないように（mergeAsRevision と同じ）。
 	next = linkRevisionRow(next, oldNo, oldPageID)
+	next = InsertRevisionRow(next, newNo)
 	if names := renamedItemNames(oldName, pageTitleOf(pageID), drawingNameOf(newSec)); len(names) > 0 {
 		next = withTagValues(next, ItemNameTag, names, false)
 	}

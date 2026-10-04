@@ -943,7 +943,9 @@ func revisionRowHTML(rev int, drawingNo, existingBody string) string {
 }
 
 // revisionRowRe は改訂履歴の行（見出し行を除く）を数えるための正規表現です。
-var revisionRowRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+"><td>`)
+// ⚠ 字下げを許す（2026-10-04）——エディタで保存した改訂明細は `<tr data-id="…">` の後ろで改行して `<td>` になり、
+// 数えないと新しい行の版番号がずれる（revision.go の drawingNoRe と同じ注意）。
+var revisionRowRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+">\s*<td>`)
 
 // InsertRevisionRow は改訂履歴の**先頭**（見出し行の直後）へ1行足し、
 // 版番号を1つ進めた本文を返します。履歴が無い本文はそのまま返します

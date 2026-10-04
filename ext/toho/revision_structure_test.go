@@ -68,6 +68,30 @@ func TestRevisionMergeKeepsSiblingBlocks(t *testing.T) {
 	}
 }
 
+// TestRevisionMergeSameNumberLinksOldRow は、図面番号を変えない改定で、旧版へのリンクが**古い行（版1）**に付き、
+// 足した新しい行（版2）には付かないことを固定します（2026-10-04——足してから探していたので新しい行に付いていた）。
+func TestRevisionMergeSameNumberLinksOldRow(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "R1", "ブラケット", "装置A", "客A")
+	src := makeDrawingPageFrom(t, inbox, "pdf-b", "R1", "ブラケット", "装置A", "客A")
+	if err := mergeAsRevision(user, src, dst); err != nil {
+		t.Fatalf("mergeAsRevision: %v", err)
+	}
+	oldPage, ok := findChildByTitle(dst, "旧版 R1 ブラケット")
+	if !ok {
+		t.Fatalf("旧版の子ページがありません")
+	}
+	after, _ := cms.ReadPageBody(dst)
+	if !strings.Contains(after, `<td>1</td><td><a href="/`+oldPage+`">R1</a></td>`) {
+		t.Errorf("旧版へのリンクが古い行（版1）に付いていません:\n%s", after)
+	}
+	if !strings.Contains(after, "<td>2</td><td>R1</td>") {
+		t.Errorf("新しい行（版2）にリンクが付いてしまったか、行がありません:\n%s", after)
+	}
+}
+
 // TestExtractDrawingSectionsLeavesBalancedRest は、**取り除いた残りも釣り合う**ことを
 // 固定します。
 //
