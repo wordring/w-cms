@@ -131,6 +131,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/analyze-attachment", Handler: AnalyzeAttachmentAPIHandler},
 		// 見積計算表の弊社利益の率を書く（2026-10-01・estimate.go）。
 		{Pattern: "/api/estimate-rate", Handler: EstimateRateAPIHandler},
+		// 見積回答の単価を見積計算表へ写す（2026-10-05・estimate_put.go）。
+		{Pattern: "/api/estimate/rows", Handler: EstimateRowsAPIHandler},
+		{Pattern: "/api/estimate/put-cost", Handler: EstimatePutCostAPIHandler},
 		// 必要部材表から「不要にする」・戻す（2026-10-01・skip.go）。
 		{Pattern: "/api/our-order/skip", Handler: SkipAPIHandler},
 		{Pattern: "/api/our-order/skip/remove", Handler: SkipRemoveAPIHandler},

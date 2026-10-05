@@ -1470,6 +1470,11 @@ body[edit-mode] #w-editor-content td.cell-formula-error { background: #fee2e2; c
 #w-editor-content table.rfq-quotes-table th,
 #w-editor-content table.rfq-quotes-table td { padding: 6px 8px; white-space: nowrap; }
 #w-editor-content table.rfq-quotes-table td.what { white-space: normal; min-width: 10em; }
+/* 見積回答の「計算表へ」の欄（2026-10-05・estimate_put.go）——どの表・どの行へ写すかを選ぶ。 */
+#w-editor-content .rfq-quote-put-form { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 0.9em; }
+#w-editor-content .rfq-quote-put-name { width: 12em; }
+#w-editor-content .rfq-quote-put-value { width: 6em; }
+body[edit-mode] #w-editor-content .rfq-quote-put, body[edit-mode] #w-editor-content .rfq-quote-put-panel { display: none; }
 
 #w-editor-content .badge {
     padding: 4px 8px;

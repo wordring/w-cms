@@ -19,6 +19,7 @@ package toho
 import (
 	stdhtml "html"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -93,8 +94,9 @@ func quotesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []quote
 	return out
 }
 
-// quotesListHTML は「見積回答」を描きます（行が無ければ短い断り）。
-func quotesListHTML(list []quoteRow) string {
+// quotesListHTML は「見積回答」を描きます（行が無ければ短い断り）。productID が空でなければ、単価のある行に
+// 「計算表へ」（見積計算表へ写す——estimate_put.go・2026-10-05）を出す。
+func quotesListHTML(list []quoteRow, productID string) string {
 	var b strings.Builder
 	b.WriteString(`<div class="vocab-chrome rfq-quotes" contenteditable="false"><p class="materials-title">💴 見積回答</p>`)
 	if len(list) == 0 {
@@ -102,7 +104,11 @@ func quotesListHTML(list []quoteRow) string {
 		return b.String()
 	}
 	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>日付</th><th>業者</th><th>種類</th><th>何の値段か</th>` +
-		`<th>表面</th><th class="num">ロット</th><th class="num">単価</th><th>状態</th></tr></thead><tbody>`)
+		`<th>表面</th><th class="num">ロット</th><th class="num">単価</th><th>状態</th>`)
+	if productID != "" {
+		b.WriteString(`<th class="no-print"></th>`)
+	}
+	b.WriteString(`</tr></thead><tbody>`)
 	for _, q := range list {
 		status := q.Status
 		switch status {
@@ -124,9 +130,24 @@ func quotesListHTML(list []quoteRow) string {
 		b.WriteString(`<tr><td><a href="/` + id + `">` + stdhtml.EscapeString(label) + `</a></td><td>` + stdhtml.EscapeString(q.Vendor) + `</td><td>` +
 			stdhtml.EscapeString(q.Kind) + `</td><td class="what">` + stdhtml.EscapeString(q.What) + `</td><td>` + stdhtml.EscapeString(q.Color) +
 			`</td><td class="num">` + stdhtml.EscapeString(q.Lot) + `</td><td class="num">` + stdhtml.EscapeString(price) +
-			`</td><td>` + stdhtml.EscapeString(status) + `</td></tr>`)
+			`</td><td>` + stdhtml.EscapeString(status) + `</td>`)
+		if productID != "" {
+			b.WriteString(`<td class="no-print">`)
+			// 単価のある行だけ——出所（見積 業者 日付）を添えて写す。
+			if _, err := strconv.ParseFloat(cleanPrice(q.Price), 64); err == nil {
+				b.WriteString(`<button type="button" class="chip-btn rfq-quote-put" data-product="` + productID + `" data-price="` +
+					stdhtml.EscapeString(cleanPrice(q.Price)) + `" data-what="` + stdhtml.EscapeString(q.What) + `" data-note="` +
+					stdhtml.EscapeString(strings.TrimSpace("見積 "+q.Vendor+" "+q.Date)) + `" title="この単価を見積計算表の行へ写します（どの表のどの行かは選びます）">計算表へ</button>`)
+			}
+			b.WriteString(`</td>`)
+		}
+		b.WriteString(`</tr>`)
 	}
-	b.WriteString(`</tbody></table></div></div>`)
+	b.WriteString(`</tbody></table></div>`)
+	if productID != "" {
+		b.WriteString(`<div class="rfq-quote-put-panel"></div>`)
+	}
+	b.WriteString(`</div>`)
 	return b.String()
 }
 
@@ -136,7 +157,12 @@ func appendQuotesList(ctx *cms.MirrorContext, tbl *html.Node) {
 	if ctx.Counter("rfq-quotes") > 0 || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
 		return
 	}
-	frag := quotesListHTML(quotesForProduct(ctx.DB, ctx.Viewer, ctx.PageID))
+	// 「計算表へ」は書ける人に・見積計算表のあるページだけ。
+	put := ""
+	if ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID) && estimateTablesIn(ctx.PageID) > 0 {
+		put = page.FormatID(ctx.PageID)
+	}
+	frag := quotesListHTML(quotesForProduct(ctx.DB, ctx.Viewer, ctx.PageID), put)
 	if p := tbl.Parent; p != nil && p.Data == "section" {
 		appendHTML(p, frag)
 		return

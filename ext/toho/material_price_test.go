@@ -364,3 +364,44 @@ func TestMaterialPriceColumnOnceWhenHeadingAndCaption(t *testing.T) {
 		t.Errorf("見出しの節の中の素の表に、最新単価の列が %d 個あります（材料表ではない）:\n%s", n, plain)
 	}
 }
+
+// TestMaterialPriceShowsQuoteWhenNothingBought は、買った記録の無い行に**業者に聞いた値段**（見積依頼明細の回答あり）を
+// 「見積」の印・日付（回答日）・仕入先つきで出すことを固定します（2026-10-05——【要求】見積依頼 §4 の未決5「最新単価に見積も出す」）。
+//
+//   - ⚠ 買った値段がある行には出さない（言われた値段が買った値段を上書きしない）
+//   - いちばん新しい見積（回答日）——古い見積は出さない
+//   - 回答待ち（未回答）・読めない見積依頼書は混ぜない
+func TestMaterialPriceShowsQuoteWhenNothingBought(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	rows := `<tr><td>SUS304</td><td>板</td><td>t1.5</td><td>4</td></tr><tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td></tr>`
+	seedMaterialAndOrder(t, rows, orderSeed{
+		ID: 20, Owner: "root", Mode: "302", Public: true, Date: "2026-08-19", Supplier: "みなと商店",
+		Rows: `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>800</td></tr>`,
+	})
+	quote := func(id int, owner, mode, supplier, answered string, lines ...string) {
+		addPage(t, id, 0, "見積依頼　"+supplier, owner, mode, mode != "300")
+		syncBody(t, id, `<h1>見積依頼　`+supplier+`</h1><dl data-type="tags"><dt>`+RFQNoTag+`</dt><dd>`+fmt.Sprintf("%06d", id)+
+			`</dd><dt>`+SupplierTag+`</dt><dd>`+supplier+`</dd><dt>`+RFQAnsweredTag+`</dt><dd>`+answered+`</dd></dl>`+
+			`<table><caption>見積依頼明細</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th><th>状態</th></tr>`+
+			strings.Join(lines, "")+`</tbody></table>`)
+	}
+	line := func(mat, size, price, state string) string {
+		return `<tr><td>` + mat + `</td><td>板</td><td>` + size + `</td><td>` + price + `</td><td>` + state + `</td></tr>`
+	}
+	quote(30, "root", "302", "わかば鋼業", "2026-10-01", line("SUS304", "t1.5", "1500", rfqLineAnswered), line("SS400", "t3.2", "700", rfqLineAnswered))
+	quote(31, "root", "302", "かなめ商会", "2026-09-01", line("SUS304", "t1.5", "1400", rfqLineAnswered))   // 古い
+	quote(32, "root", "302", "やまと工作所", "2026-10-03", line("SUS304", "t1.5", "1600", rfqLineUnanswered)) // 回答待ち
+	quote(33, "alice", "300", "あけぼの精工", "2026-10-04", line("SUS304", "t1.5", "1700", rfqLineAnswered)) // 読めない
+
+	got := showMaterials(t, &auth.User{Username: "root"}, materialsBody(rows))
+	for _, want := range []string{"見積 1,500円", "2026-10-01", "わかば鋼業", ">800円<"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("最新単価に %q がありません:\n%s", want, got)
+		}
+	}
+	for _, not := range []string{"700円", "1,400円", "1,600円", "1,700円", "あけぼの精工"} {
+		if strings.Contains(got, not) {
+			t.Errorf("⚠ 最新単価に %q が出ています（買った値段がある行・古い見積・回答待ち・読めない見積依頼書は出さない）:\n%s", not, got)
+		}
+	}
+}

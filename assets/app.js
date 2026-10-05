@@ -9209,6 +9209,102 @@ function renderRFQReplyProposal(out, pageId, d) {
     });
 }
 
+// ── 見積回答の単価を見積計算表へ写す（2026-10-05・ext/toho/estimate_put.go）──────────────────
+//
+// 利用者の答え（【要求】見積依頼 §4 の未決5）:「見積計算表へ写すボタン」。加工製品ページの「💴 見積回答」の行の「計算表へ」→
+// どの見積計算表（ロット）・どの行（工程——無ければ新しい行）へ写すかを人が選ぶ → `数` に単価・`備考` に出所（見積 業者 日付）。
+// 行は「何の値段か」と同じ名前の工程があれば最初から選んでおく。いまの値を置き換えるときは確かめる。
+delegateClick([['.rfq-quote-put', (btn) => openQuotePutPanel(btn)]]);
+
+async function openQuotePutPanel(btn) {
+    const box = btn.closest('.rfq-quotes');
+    const panel = box && box.querySelector('.rfq-quote-put-panel');
+    if (!panel) return;
+    const pageId = btn.getAttribute('data-product') || '';
+    const price = btn.getAttribute('data-price') || '';
+    const what = btn.getAttribute('data-what') || '';
+    const note = btn.getAttribute('data-note') || '';
+    panel.textContent = '';
+    const head = document.createElement('p');
+    head.textContent = '見積計算表を読んでいます…';
+    panel.appendChild(head);
+    const r = await getJSON('/api/estimate/rows?page_id=' + encodeURIComponent(pageId));
+    if (!r.ok) { head.textContent = '⚠ ' + ((r.data && r.data.message) || '見積計算表を読めません'); return; }
+    const tables = (r.data.tables || []).filter((t) => !t.why);
+    if (!tables.length) { head.textContent = '⚠ 写せる見積計算表がありません（「工程」「数」の列のある表に写せます）'; return; }
+    head.textContent = '「' + what + '」 ' + price + '円（' + note + '）を見積計算表へ写します:';
+    const row = document.createElement('div');
+    row.className = 'rfq-quote-put-form';
+    const label = (text, el) => { const l = document.createElement('label'); l.append(document.createTextNode(text), el); return l; };
+    const tSel = document.createElement('select');
+    tSel.className = 'rfq-quote-put-table';
+    tables.forEach((t) => {
+        const o = document.createElement('option');
+        o.value = String(t.index);
+        o.textContent = (t.index + 1) + '枚目' + (t.lot ? '（ロット ' + t.lot + '）' : '');
+        tSel.appendChild(o);
+    });
+    const rSel = document.createElement('select');
+    rSel.className = 'rfq-quote-put-row';
+    const newName = document.createElement('input');
+    newName.type = 'text';
+    newName.className = 'rfq-quote-put-name';
+    newName.value = what;
+    const val = document.createElement('input');
+    val.type = 'text';
+    val.className = 'rfq-quote-put-value';
+    val.value = price;
+    const fill = () => {
+        const t = tables.find((x) => String(x.index) === tSel.value) || tables[0];
+        rSel.textContent = '';
+        let picked = '';
+        (t.rows || []).forEach((rw) => {
+            const o = document.createElement('option');
+            o.value = rw.step;
+            o.textContent = rw.step + (rw.num ? '（いま ' + rw.num + (rw.unit || '') + '）' : '');
+            rSel.appendChild(o);
+            if (!picked && (rw.step === what || (what && (what.includes(rw.step) || rw.step.includes(what))))) picked = rw.step;
+        });
+        const o = document.createElement('option');
+        o.value = '__new';
+        o.textContent = '＋ 新しい行を足す';
+        rSel.appendChild(o);
+        rSel.value = picked || '__new';
+        newName.hidden = rSel.value !== '__new';
+    };
+    tSel.addEventListener('change', fill);
+    rSel.addEventListener('change', () => { newName.hidden = rSel.value !== '__new'; });
+    fill();
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'chip-btn rfq-quote-put-go';
+    go.textContent = '写す';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'chip-btn';
+    cancel.textContent = 'やめる';
+    cancel.addEventListener('click', () => { panel.textContent = ''; });
+    const msg = document.createElement('span');
+    msg.className = 'rfq-quote-put-say';
+    row.append(label('表: ', tSel), label(' 行: ', rSel), newName, label(' 単価: ', val), document.createTextNode(' 円 '), go, cancel, msg);
+    panel.appendChild(row);
+    go.addEventListener('click', async () => {
+        const t = tables.find((x) => String(x.index) === tSel.value) || tables[0];
+        const add = rSel.value === '__new';
+        const step = add ? newName.value.trim() : rSel.value;
+        if (!step) { msg.textContent = ' ⚠ 新しい行の名前（工程）を書いてください'; return; }
+        const cur = add ? null : (t.rows || []).find((rw) => rw.step === step);
+        if (cur && cur.num && !window.confirm('「' + step + '」のいまの値 ' + cur.num + (cur.unit || '') + ' を ' + val.value.trim() + ' 円に置き換えます。よろしいですか？')) return;
+        go.disabled = true;
+        msg.textContent = ' 写しています…';
+        const res = await postJSON('/api/estimate/put-cost', { page_id: pageId, index: t.index, step, add, value: val.value.trim(), note })
+            .catch((e) => ({ ok: false, data: { message: String(e) } }));
+        go.disabled = false;
+        if (!res.ok) { msg.textContent = ' ⚠ ' + ((res.data && res.data.message) || '写せませんでした'); return; }
+        location.reload();
+    });
+}
+
 // ── 見積依頼（2026-10-03・段1——ext/toho/rfq.go・rfq_api.go）───────────────────────
 //
 // 再見積依頼フォームの「集める」・見積依頼必要部材表の「見積依頼部材表へ入れる」「不要（消す）」・見積依頼部材表の「↩ 戻す」。

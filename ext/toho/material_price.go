@@ -29,6 +29,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
 )
 
 // priceColLabel は足す列の見出しです。⚠ **見出しの表示文字が鍵**なので、直すと
@@ -85,6 +86,10 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		//    同じ判断）。
 		return true, nil
 	}
+	// 買った記録が無い行には、業者に聞いた値段（見積依頼の返事）を「見積」の印つきで出す（2026-10-05 利用者の答え——
+	// 【要求】見積依頼 §4 の未決5「最新単価に見積も出す」・出所の順位2）。⚠ 買った値段（順位1）がある行には出さない
+	// ——言われた値段が買った値段を上書きしない。読めなければ見積を出さないだけ（買った値段は出す）。
+	quotes, _ := latestQuotedPrices(ctx.DB, ctx.Viewer)
 
 	appendPriceHead(head, priceColLabel)
 
@@ -110,6 +115,12 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			// ⚠ **警告にはしません**——直すべきものに見えてしまいます。
 			appendPriceNote(tr, "（材料の指定なし）")
 		case !ok:
+			if q, ok := quotes[key]; ok {
+				// ⚠ **「見積」と書きます**——買った値段と見分けが付かないと、言われた値段を相場として見積もる。
+				//    色だけで分けない（文字の印）。
+				appendPriceValue(tr, "見積 "+comma(q.Cost)+"円", strings.TrimSpace(q.Date), strings.TrimSpace(q.Supplier))
+				continue
+			}
 			appendPriceEmpty(tr) // 空欄＝買った記録が無い（上の説明・2026-09-27）
 		default:
 			// ⚠ **出所を必ず添えます**（時点と仕入先）。値段だけ出すと、
@@ -217,6 +228,55 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 		}
 		p := materialPrice{Cost: cost, Date: dateOf[r.PageID],
 			Supplier: supplierOf[r.PageID], PageID: r.PageID}
+		if cur, ok := out[key]; ok && !newerPrice(p, cur) {
+			continue
+		}
+		out[key] = p
+	}
+	return out, nil
+}
+
+// latestQuotedPrices は**全社の見積依頼明細**から、材料ごとのいちばん新しい「言われた値段」（回答ありの単価）を集めます
+// （2026-10-05）。日付は見積依頼書の回答日（無ければ見積依頼日）、仕入先はそのページの仕入先。相見積もりで同じ日に
+// 何社もあれば、あとから作られたページ（newerPrice と同じ）。読めないページ・テンプレートの中は混ぜない。
+func latestQuotedPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]materialPrice, error) {
+	rows, err := cms.VocabRowsOfType(db, RFQItemsType)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return map[string]materialPrice{}, nil
+	}
+	tags, err := cms.TagRowsNamed(db, RFQAnsweredTag, RFQDateTag, SupplierTag)
+	if err != nil {
+		return nil, err
+	}
+	answered, asked, supplierOf := map[int]string{}, map[int]string{}, map[int]string{}
+	for _, t := range tags {
+		m := map[string]map[int]string{RFQAnsweredTag: answered, RFQDateTag: asked, SupplierTag: supplierOf}[t.Name]
+		if _, dup := m[t.PageID]; !dup && strings.TrimSpace(t.Value) != "" {
+			m[t.PageID] = t.Value
+		}
+	}
+	canView := viewCheck(viewer)
+	out := map[string]materialPrice{}
+	for _, r := range rows {
+		if !canView(r.PageID) || cms.IsTemplateArea(page.FormatID(r.PageID)) || strings.TrimSpace(r.Values["status"]) != rfqLineAnswered {
+			continue
+		}
+		key := materialKeyOf(r.Values["material"], r.Values["shape"], r.Values["size"])
+		cost := r.Num("cost")
+		if key == "" || cost <= 0 {
+			continue
+		}
+		date := answered[r.PageID]
+		if date == "" {
+			date = asked[r.PageID]
+		}
+		if n, ok := cms.NormalizeValue(cms.ColDate, date); ok {
+			date = n // 暦で比べる（`2024/1/5` と `2024-01-22` が混ざっても）
+		}
+		p := materialPrice{Cost: cost, Date: date, Supplier: supplierOf[r.PageID], PageID: r.PageID}
 		if cur, ok := out[key]; ok && !newerPrice(p, cur) {
 			continue
 		}
