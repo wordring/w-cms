@@ -9035,6 +9035,180 @@ delegateClick([['.estimate-add-go', async (btn) => {
     location.reload();
 }]]);
 
+// ── 見積依頼の返事（2026-10-05・段4の前半——ext/toho/rfq_reply.go）─────────────────────────
+//
+// 利用者:「両方」（✓ 回答を記録と 🤖 返事を読む）。返事は「見積依頼書に手書きで FAX」「業者の見積書 PDF をメール」「メールの
+// 本文に値段」。見積依頼明細の足元の「返事:」の行に2つのボタン——
+//   ✓ 回答を記録 … 手で単価を書いたあと押す。単価の入った未回答の行を回答あり・回答日に今日（/api/rfq/answered）
+//   🤖 返事を読む … 返事の候補（このページのファイル・題に「№ このページ」を含む受信メールの本文と添付）を選び、🤖 で読んだ
+//                   単価の**案**を表で見せる（/api/rfq/read-reply——何も書かない）。人が直して印の付いた行を書き込む
+//                   （/api/rfq/apply-reply——読んだあとに行がずれていたら断られる）。
+delegateClick([['.rfq-answered-go', async (btn) => {
+    const say = btn.parentElement && btn.parentElement.querySelector('.rfq-reply-say');
+    btn.disabled = true;
+    sayIn(say, '記録しています…');
+    const r = await postJSON('/api/rfq/answered', { page_id: btn.getAttribute('data-rfq-page') || '' })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '記録できませんでした')); return; }
+    location.reload();
+}], ['.rfq-read-go', (btn) => openRFQReplyPanel(btn)]]);
+
+// openRFQReplyPanel は「🤖 返事を読む」の欄を開きます（もう一度押すと閉じる）。
+async function openRFQReplyPanel(btn) {
+    const cell = btn.parentElement;
+    const panel = cell && cell.querySelector('.rfq-reply-panel');
+    const say = cell && cell.querySelector('.rfq-reply-say');
+    if (!panel) return;
+    if (panel.childElementCount) { panel.textContent = ''; return; }
+    const pageId = btn.getAttribute('data-rfq-page') || '';
+    sayIn(say, '返事の候補を探しています…');
+    const r = await getJSON('/api/rfq/reply-sources?page_id=' + encodeURIComponent(pageId));
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '返事の候補を出せません')); return; }
+    if (say) say.textContent = '';
+    const sources = r.data.sources || [];
+    const head = document.createElement('p');
+    head.textContent = '🤖 読む返事を選んでください（FAX の取り込み・写真・業者の見積書はこのページに置くと並びます）:';
+    panel.appendChild(head);
+    const list = document.createElement('div');
+    list.className = 'rfq-reply-sources';
+    const radio = (value, checked) => {
+        const rb = document.createElement('input');
+        rb.type = 'radio';
+        rb.name = 'rfq-reply-src-' + pageId;
+        rb.value = value;
+        rb.checked = checked;
+        return rb;
+    };
+    sources.forEach((s, i) => {
+        const lb = document.createElement('label');
+        lb.append(radio(String(i), i === 0), document.createTextNode(' ' + s.label));
+        list.appendChild(lb);
+    });
+    const other = document.createElement('label');
+    const idIn = document.createElement('input');
+    idIn.type = 'text';
+    idIn.className = 'rfq-reply-id';
+    idIn.placeholder = '🔗 ファイルの ID（000235-ab12）か、メールのページ番号';
+    const otherRadio = radio('other', sources.length === 0);
+    idIn.addEventListener('focus', () => { otherRadio.checked = true; });
+    other.append(otherRadio, document.createTextNode(' ほか: '), idIn);
+    list.appendChild(other);
+    panel.appendChild(list);
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'chip-btn rfq-reply-read';
+    go.textContent = '🤖 読む';
+    panel.appendChild(go);
+    const out = document.createElement('div');
+    out.className = 'rfq-reply-result';
+    panel.appendChild(out);
+    go.addEventListener('click', async () => {
+        const picked = list.querySelector('input[type=radio]:checked');
+        let src = null;
+        if (picked && picked.value !== 'other') {
+            const s = sources[Number(picked.value)];
+            src = { source_page: s.page_id, source_file: s.file || '' };
+        } else {
+            const v = idIn.value.trim();
+            if (/^\d{1,6}-[0-9a-z]+$/i.test(v)) {
+                const fr = await getJSON('/api/file-ref?ref=' + encodeURIComponent(v));
+                if (!fr.ok) { sayIn(out, '⚠ ' + ((fr.data && fr.data.message) || v + ' を引けません')); return; }
+                src = { source_page: fr.data.page_id, source_file: fr.data.file };
+            } else if (/^\d{1,6}$/.test(v)) {
+                src = { source_page: v.padStart(6, '0'), source_file: '' };
+            } else {
+                sayIn(out, '⚠ 読む返事を選ぶか、ファイルの ID・メールのページ番号を書いてください');
+                return;
+            }
+        }
+        go.disabled = true;
+        sayIn(out, '🤖 読んでいます…（数十秒かかることがあります）');
+        const rr = await postJSON('/api/rfq/read-reply', Object.assign({ page_id: pageId }, src))
+            .catch(e => ({ ok: false, data: { message: String(e) } }));
+        go.disabled = false;
+        if (!rr.ok) { sayIn(out, '⚠ ' + ((rr.data && rr.data.message) || '読めませんでした')); return; }
+        renderRFQReplyProposal(out, pageId, rr.data);
+    });
+}
+
+// renderRFQReplyProposal は 🤖 の案を表にします——人が直して、印の付いた行を書き込む。
+function renderRFQReplyProposal(out, pageId, d) {
+    out.textContent = '';
+    const note = document.createElement('p');
+    note.className = 'proc-why-ng';
+    note.textContent = '⚠ 🤖 は読み違えることがあります。返事と見比べて、直してから書き込んでください。';
+    out.appendChild(note);
+    if (d.summary) {
+        const p = document.createElement('p');
+        p.textContent = '🤖 ' + d.summary;
+        out.appendChild(p);
+    }
+    const byRow = {};
+    (d.guesses || []).forEach((g) => { byRow[g.row] = g; });
+    const table = document.createElement('table');
+    table.className = 'rfq-reply-table';
+    const hr = document.createElement('tr');
+    ['書く', '行', '何の値段か', 'いまの単価', '読んだ単価', '辞退', '備考'].forEach((h) => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        hr.appendChild(th);
+    });
+    table.appendChild(hr);
+    const lines = [];
+    (d.rows || []).forEach((row) => {
+        const g = byRow[row.row] || {};
+        const tr = document.createElement('tr');
+        const td = (child) => { const c = document.createElement('td'); if (typeof child === 'string') c.textContent = child; else c.appendChild(child); tr.appendChild(c); return c; };
+        const use = document.createElement('input');
+        use.type = 'checkbox';
+        use.checked = !!(g.unit_price || g.declined || g.note);
+        const price = document.createElement('input');
+        price.type = 'text';
+        price.className = 'rfq-reply-price';
+        price.value = g.unit_price || '';
+        const declined = document.createElement('input');
+        declined.type = 'checkbox';
+        declined.checked = !!g.declined;
+        const memo = document.createElement('input');
+        memo.type = 'text';
+        memo.className = 'rfq-reply-note';
+        memo.value = g.note || '';
+        [price, memo].forEach((x) => x.addEventListener('input', () => { use.checked = true; }));
+        declined.addEventListener('change', () => { use.checked = true; });
+        td(use);
+        td(String(row.row));
+        td(row.what || '');
+        td((row.price || '') + (row.status ? '（' + row.status + '）' : ''));
+        td(price);
+        td(declined);
+        td(memo);
+        table.appendChild(tr);
+        lines.push({ row, use, price, declined, memo });
+    });
+    out.appendChild(table);
+    const apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'chip-btn rfq-reply-apply';
+    apply.textContent = '✍ 印の付いた行を書き込む';
+    const msg = document.createElement('span');
+    msg.className = 'rfq-reply-apply-say';
+    out.append(apply, document.createTextNode(' '), msg);
+    apply.addEventListener('click', async () => {
+        const send = lines.filter((l) => l.use.checked).map((l) => ({
+            row: l.row.row, what: l.row.what, price: l.price.value.trim(), declined: l.declined.checked, note: l.memo.value.trim(),
+        }));
+        if (!send.length) { sayIn(msg, '⚠ 書き込む行に印を付けてください'); return; }
+        apply.disabled = true;
+        sayIn(msg, '書き込んでいます…');
+        const r = await postJSON('/api/rfq/apply-reply', { page_id: pageId, lines: send })
+            .catch(e => ({ ok: false, data: { message: String(e) } }));
+        apply.disabled = false;
+        if (!r.ok) { sayIn(msg, '⚠ ' + ((r.data && r.data.message) || '書き込めませんでした')); return; }
+        location.reload();
+    });
+}
+
 // ── 見積依頼（2026-10-03・段1——ext/toho/rfq.go・rfq_api.go）───────────────────────
 //
 // 再見積依頼フォームの「集める」・見積依頼必要部材表の「見積依頼部材表へ入れる」「不要（消す）」・見積依頼部材表の「↩ 戻す」。

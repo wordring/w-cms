@@ -2530,6 +2530,15 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .estimate-note-label { width: 100%; font-size: 0.85em; color: var(--text-muted, #6b7280); }
 #w-editor-content .estimate-note-input { flex: 1 1 320px; min-height: 4.5em; font: inherit; padding: 4px 6px; box-sizing: border-box; }
 body[edit-mode] #w-editor-content .estimate-note-row { display: none; }
+/* 見積依頼の返事（2026-10-05・rfq_reply.go）——「返事:」の行と 🤖 の案の表。閲覧モードだけ（編集中はサーバーが断る）。 */
+#w-editor-content .rfq-reply-actions td { padding: 4px 8px; font-size: 0.9em; }
+body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
+#w-editor-content .rfq-reply-sources { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+#w-editor-content .rfq-reply-id { width: 22em; max-width: 100%; }
+#w-editor-content .rfq-reply-table { margin: 6px 0; font-size: 0.95em; }
+#w-editor-content .rfq-reply-table td, #w-editor-content .rfq-reply-table th { padding: 2px 6px; }
+#w-editor-content .rfq-reply-price { width: 7em; }
+#w-editor-content .rfq-reply-note { width: 12em; }
 
 /* ── 材料の参考単価（2026-09-21）────────────────────────────────────────
    材料表の右に足す「最新単価」。⚠ **本文ではなく鏡**なので、**人が書いた列と

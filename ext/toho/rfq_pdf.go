@@ -460,6 +460,13 @@ func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	appendFootHTML(el, span, "estimate-actions",
 		`<button type="button" class="chip-btn rfq-pdf-go" data-rfq-page="`+pid+`">📄 PDFを作る</button> `+
 			`<span class="rfq-pdf-say"></span>`)
+	// 業者の返事（2026-10-05・rfq_reply.go）——手で単価を書いたら「回答を記録」・返事の FAX／PDF／メールを 🤖 で読む。
+	appendFootHTML(el, span, "rfq-reply-actions",
+		`返事: <button type="button" class="chip-btn rfq-answered-go" data-rfq-page="`+pid+`"`+
+			` title="単価を書いた未回答の行を「回答あり」にし、回答日に今日の日付を書きます">✓ 回答を記録</button> `+
+			`<button type="button" class="chip-btn rfq-read-go" data-rfq-page="`+pid+`"`+
+			` title="返事（このページに置いた FAX・PDF・写真、または返事のメール）を 🤖 で読み、確かめてから単価を書きます">🤖 返事を読む</button> `+
+			`<span class="rfq-reply-say"></span><div class="rfq-reply-panel"></div>`)
 	return false, nil
 }
 
