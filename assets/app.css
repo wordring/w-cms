@@ -2543,6 +2543,10 @@ body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
 #w-editor-content .rfq-reply-table { margin: 6px 0; font-size: 0.95em; }
 #w-editor-content .rfq-reply-table td, #w-editor-content .rfq-reply-table th { padding: 2px 6px; }
 #w-editor-content .rfq-reply-price { width: 7em; }
+/* 返事から見積依頼書ページを作る案の表（2026-10-05・rfq_reply_make.go）。 */
+#w-editor-content .rfq-reply-make-table input[type="text"] { width: 5.5em; }
+#w-editor-content .rfq-reply-make-table input.rfq-mk-name, #w-editor-content .rfq-reply-make-table input.rfq-mk-note { width: 14em; }
+#w-editor-content .rfq-mk-hint { font-size: 0.8em; color: var(--text-muted, #6b7280); }
 #w-editor-content .rfq-reply-note { width: 12em; }
 
 /* ── 材料の参考単価（2026-09-21）────────────────────────────────────────

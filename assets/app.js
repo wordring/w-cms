@@ -9096,6 +9096,92 @@ delegateClick([['.rfq-reply-link', async (btn) => {
     location.reload();
 }]]);
 
+// 返事ページの「この返事から見積依頼書ページを作る」（2026-10-05・移行期——ext/toho/rfq_reply_make.go）。読んだままの表を見積依頼明細の列に
+// 読み替えた案（GET /api/rfq-reply/draft——弊社品番は図面番号・品番から当てる）を表で出し、人が直して「見積依頼書ページを作る」
+// （POST /api/rfq-reply/make-rfq）→ できた見積依頼書へ移る（返事はその子へ）。
+delegateClick([['.rfq-reply-make', (btn) => openRFQReplyMakePanel(btn)]]);
+
+const RFQ_REPLY_MAKE_COLS = [
+    ['product_id', '弊社品番', 'rfq-mk-pid'], ['kind', '種類', 'rfq-mk-kind'], ['item_id', '品番', 'rfq-mk-id'], ['item_name', '品名', 'rfq-mk-name'],
+    ['quantity', '数量', 'rfq-mk-qty'], ['unit', '単位', 'rfq-mk-unit'], ['cost', '単価', 'rfq-mk-cost'], ['note', '備考', 'rfq-mk-note'],
+];
+
+async function openRFQReplyMakePanel(btn) {
+    const panel = btn.closest('section') && btn.closest('section').querySelector('.rfq-reply-make-panel');
+    if (!panel) return;
+    if (panel.childElementCount) { panel.textContent = ''; return; }
+    const replyId = btn.getAttribute('data-reply') || '';
+    const head = document.createElement('p');
+    head.textContent = '返事の表を読み替えています…';
+    panel.appendChild(head);
+    const r = await getJSON('/api/rfq-reply/draft?page_id=' + encodeURIComponent(replyId));
+    if (!r.ok) { head.textContent = '⚠ ' + ((r.data && r.data.message) || '案を作れません'); return; }
+    head.textContent = '仕入先 ' + (r.data.supplier || '（無し）') + '・回答日 ' + (r.data.date || '（無し）') +
+        ' の見積依頼書ページを作ります。弊社品番（加工製品ページの番号）・種類・品物を直してから「作る」を押してください（入れない行は印を外す）:';
+    const table = document.createElement('table');
+    table.className = 'rfq-reply-table rfq-reply-make-table';
+    const hr = document.createElement('tr');
+    ['入れる'].concat(RFQ_REPLY_MAKE_COLS.map((c) => c[1])).forEach((h) => { const th = document.createElement('th'); th.textContent = h; hr.appendChild(th); });
+    table.appendChild(hr);
+    const lines = [];
+    (r.data.rows || []).forEach((row) => {
+        const tr = document.createElement('tr');
+        const td = (el) => { const c = document.createElement('td'); c.appendChild(el); tr.appendChild(c); return c; };
+        const use = document.createElement('input');
+        use.type = 'checkbox';
+        use.checked = true;
+        td(use);
+        const inputs = {};
+        RFQ_REPLY_MAKE_COLS.forEach(([key, , cls]) => {
+            let el;
+            if (key === 'kind') {
+                el = document.createElement('select');
+                ['', '材料', '外注加工', '購入部品', '支給部品'].forEach((k) => { const o = document.createElement('option'); o.value = k; o.textContent = k || '—'; el.appendChild(o); });
+                el.value = row.kind || '';
+            } else {
+                el = document.createElement('input');
+                el.type = 'text';
+                el.value = row[key] || '';
+            }
+            el.className = cls;
+            inputs[key] = el;
+            const c = td(el);
+            if (key === 'product_id' && row.product_title) {
+                const hint = document.createElement('div');
+                hint.className = 'rfq-mk-hint';
+                hint.textContent = row.product_title;
+                c.appendChild(hint);
+            }
+        });
+        table.appendChild(tr);
+        lines.push({ use, inputs, row });
+    });
+    panel.appendChild(table);
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'chip-btn rfq-reply-make-go';
+    go.textContent = '見積依頼書ページを作る';
+    const msg = document.createElement('span');
+    msg.className = 'rfq-reply-make-say';
+    panel.append(go, document.createTextNode(' '), msg);
+    go.addEventListener('click', async () => {
+        const rows = lines.filter((l) => l.use.checked).map((l) => {
+            const o = Object.assign({}, l.row);
+            delete o.product_title;
+            RFQ_REPLY_MAKE_COLS.forEach(([key]) => { o[key] = l.inputs[key].value.trim(); });
+            return o;
+        });
+        if (!rows.length) { msg.textContent = ' ⚠ 入れる行に印を付けてください'; return; }
+        go.disabled = true;
+        msg.textContent = ' 作っています…';
+        const res = await postJSON('/api/rfq-reply/make-rfq', { page_id: replyId, rows })
+            .catch((e) => ({ ok: false, data: { message: String(e) } }));
+        go.disabled = false;
+        if (!res.ok) { msg.textContent = ' ⚠ ' + ((res.data && res.data.message) || '作れませんでした'); return; }
+        location.href = '/' + res.data.page_id;
+    });
+}
+
 // openRFQReplyPanel は「🤖 返事を読む」の欄を開きます（もう一度押すと閉じる）。
 async function openRFQReplyPanel(btn) {
     const cell = btn.parentElement;

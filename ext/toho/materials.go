@@ -173,6 +173,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/rfq/apply-reply", Handler: RFQApplyReplyAPIHandler},
 		// 見積依頼の返事ページを見積依頼書に結ぶ（2026-10-05・rfq_reply_page.go）。
 		{Pattern: "/api/rfq-reply/link", Handler: RFQReplyLinkAPIHandler},
+		// 見積依頼の記録が無い返事から見積依頼書ページを作る（2026-10-05・移行期——rfq_reply_make.go）。
+		{Pattern: "/api/rfq-reply/draft", Handler: RFQReplyDraftAPIHandler},
+		{Pattern: "/api/rfq-reply/make-rfq", Handler: RFQReplyMakeRFQAPIHandler},
 		{Pattern: "/api/rfq/sent", Handler: RFQSentAPIHandler},
 		// 見積書を作る——装置フォルダから選ぶ（2026-10-03・estimate_folder.go）。
 		{Pattern: "/api/estimate/folder-products", Handler: EstimateFolderProductsAPIHandler},
