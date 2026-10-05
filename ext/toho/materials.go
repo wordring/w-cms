@@ -161,6 +161,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/drawing/supersede", Handler: DrawingSupersedeAPIHandler},
 		// 見積依頼書の紙・備考・送った（FAX・手渡し）（2026-10-03・段2の後半——rfq_pdf.go）。
 		{Pattern: "/api/rfq-pdf", Handler: RFQPDFAPIHandler},
+		{Pattern: "/api/rfq-pdf-docs", Handler: RFQPDFDocsAPIHandler}, // 資料を綴じた FAX・印刷用（2026-10-05）
 		{Pattern: "/api/rfq/note", Handler: RFQNoteAPIHandler},
 		{Pattern: "/api/rfq/sent", Handler: RFQSentAPIHandler},
 		// 見積書を作る——装置フォルダから選ぶ（2026-10-03・estimate_folder.go）。

@@ -301,6 +301,74 @@ func RFQPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
+// RFQPDFDocsAPIHandler は POST /api/rfq-pdf-docs です（入力: {page_id}）——見積依頼書のうしろに外注加工の資料（PDF のページ・
+// 画像）を綴じた **FAX・印刷用の1本**を作り、そのページの添付として残して開くURLを返します（2026-10-05）。
+//
+// 【要求】見積依頼 §1・§2「外注加工の見積依頼には図面を綴じる」「📠 FAX（図面を綴じた FAX・印刷用）」——発注書の
+// `/api/order-pdf-docs`（order_docs.go）と同じ作り: 資料は明細の行（弊社品番＋番号）が指す加工製品ページの「資料 <番号>」、
+// 綴じるのは `bindOrderDocs`。⚠ **本文は触りません**（表示中の見積依頼書の PDF は差し替えない）——編集中でも断らない。
+// 辞退の行の資料は綴じない（readRFQDoc が外す）。
+func RFQPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		PageID string `json:"page_id"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, ok := cms.PageIDOrFail(w, req.PageID)
+	if !ok || !page.RequirePageWrite(w, r, pageID) || !cms.RefuseTemplateArea(w, pageID) {
+		return
+	}
+	if !isRFQPage(pageID) {
+		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書のページではありません")
+		return
+	}
+	body, err := cms.ReadPageBody(pageID)
+	if err != nil {
+		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
+		return
+	}
+	_, rows, _, err := readRFQDoc(body)
+	if err != nil {
+		cms.JSONFail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	docs, notes := orderDocs(user, rows)
+	if !hasPrintableDoc(docs) {
+		cms.JSONFail(w, http.StatusBadRequest, "紙に綴じられる資料（PDF・画像）がありません")
+		return
+	}
+	rfqPDF, err := buildRFQPDF(body, user)
+	if err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, ErrNoPDFFont) {
+			code = http.StatusServiceUnavailable
+		}
+		cms.JSONFail(w, code, err.Error())
+		return
+	}
+	bound, skipped, err := bindOrderDocs(rfqPDF, docs)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "綴じられません: "+err.Error())
+		return
+	}
+	name := "見積依頼書 " + pageID + "＋資料 " + time.Now().Format("20060102-150405") + ".pdf"
+	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", bound)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
+		return
+	}
+	auth.Audit(user.Username, "rfq-pdf-docs", pageID+" "+fileName)
+	cms.WriteJSON(w, map[string]any{
+		"success": true, "attach_id": attachID, "file": fileName,
+		"url": "/" + pageID + "/" + fileName, "skipped": append(skipped, notes...),
+	})
+}
+
 // RFQNoteAPIHandler は POST /api/rfq/note です（入力: {page_id, note}）——見積依頼書ページの「備考」の節を書き換えます。
 func RFQNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
@@ -417,6 +485,16 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 	}
 	b.WriteString(`<details class="estimate-mail rfq-mail"` + open + `><summary>✉️ メールで送る</summary>` +
 		`<div data-mail-compose="` + RFQMailPurpose + `" data-mail-page="` + pid + `"></div></details>`)
+	// FAX・印刷用（資料を綴じる）——綴じられる資料（外注加工の「資料 <番号>」の PDF・画像）があるときだけ（2026-10-05）。
+	if body, err := cms.ReadPageBody(pid); err == nil {
+		if _, rows, _, err := readRFQDoc(body); err == nil {
+			if docs, _ := orderDocs(user, rows); hasPrintableDoc(docs) {
+				b.WriteString(`<p class="unorder-help">FAX・印刷: <button type="button" class="chip-btn rfq-pdf-docs-go" data-rfq-page="` + pid +
+					`" title="見積依頼書のうしろに外注加工の資料（PDF・画像）を綴じた1本を作ります。見積依頼書のPDFはそのまま">` +
+					`📠 FAX・印刷用（資料を綴じる）</button> <span class="rfq-pdf-docs-say"></span></p>`)
+			}
+		}
+	}
 	b.WriteString(`<p class="unorder-help">FAX・手渡しで送ったら: ` +
 		`<button type="button" class="chip-btn rfq-sent-go" data-rfq-page="` + pid + `">送った（FAX・手渡し）</button> ` +
 		`<span class="rfq-sent-say"></span>（送付日に今日の日付を書きます）</p>`)

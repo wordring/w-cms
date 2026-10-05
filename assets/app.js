@@ -8998,6 +8998,31 @@ delegateClick([['.estimate-add-go', async (btn) => {
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
     location.reload();
+}], ['.rfq-pdf-docs-go', async (btn) => {
+    // 見積依頼書の「📠 FAX・印刷用（資料を綴じる）」（2026-10-05・ext/toho/rfq_pdf.go）——発注書の makePDFWithDocs と同じ。
+    // 見積依頼書の PDF（表示中のもの）は差し替えないので読み直さず、できた1本へのリンクを出す（押して印刷・FAX）。
+    const say = btn.parentElement && btn.parentElement.querySelector('.rfq-pdf-docs-say');
+    btn.disabled = true;
+    sayIn(say, '見積依頼書に資料を綴じています…');
+    const r = await postJSON('/api/rfq-pdf-docs', { page_id: btn.getAttribute('data-rfq-page') || '' })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '綴じられませんでした')); return; }
+    const p = sayIn(say, '📠 FAX・印刷用を作りました（このページの添付にも残ります）: ');
+    if (!p) return;
+    const a = document.createElement('a');
+    a.href = r.data.url || '';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = r.data.file || '開く';
+    p.appendChild(a);
+    // ⚠ 綴じなかったものを黙らない——紙にできない形式・読めないPDF・資料の無い行。
+    (r.data.skipped || []).forEach((s) => {
+        const q = document.createElement('p');
+        q.className = 'proc-why-ng';
+        q.textContent = '⚠ ' + s;
+        say.appendChild(q);
+    });
 }], ['.rfq-sent-go', async (btn) => {
     // 見積依頼書を FAX・手渡しで送った（2026-10-03）——送付日に今日。
     if (!window.confirm('FAX・手渡しで送ったことにして、送付日に今日の日付を書きます。よろしいですか？')) return;
