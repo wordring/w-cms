@@ -45,6 +45,7 @@ import (
 
 	"github.com/google/generative-ai-go/genai"
 
+	"w-cms/ext/comm"
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -115,6 +116,9 @@ type orderJudgment struct {
 	// 2024-11 の注文書）。**1枚につき1ページ**作ります——発注書番号も発注日も小計も、紙ごとに違うからです。
 	// 各要素は上の発注書の項目（order_no・customer・…・items）を持ちます。
 	Orders []orderJudgment `json:"orders"`
+	// RFQReply は**業者の見積依頼の返事**と判定したときの中身です（2026-10-05・rfq_reply_page.go——doc_type が "rfq_reply"）。
+	// 利用者:「見積依頼の返事は通信記録に入るので、解析ボタンを押して解析し、見積依頼の返事とわかれば、見積依頼の返事ページを作り」。
+	RFQReply *rfqReplyJudgment `json:"rfq_reply"`
 }
 
 // orderList は判定結果を**発注書1枚ずつ**に並べ直します（`drawingList` と同じ形）。
@@ -302,6 +306,27 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		j.Orders[i].Customer = contacts.OrgNameForPage(user, j.Orders[i].Customer)
 	}
 
+	// **見積依頼の返事の枝**（2026-10-05・rfq_reply_page.go）——返事ページを記録の子に作り、どの見積依頼書への返事かを
+	// 突き合わせる（候補が1つなら結んで見積依頼書の子へ移す）。テンプレートは判定のあとで引く——受注・図面の解析を、返事の
+	// テンプレートが無い環境でも止めないため（無ければ返事と判定した時点で断る）。
+	if j.DocType == "rfq_reply" && j.RFQReply != nil {
+		m, err := makeRFQReply(user, pageID, attachID, j.RFQReply)
+		if err != nil {
+			var me *comm.MakeError
+			if errors.As(err, &me) {
+				cms.JSONFail(w, me.Status, me.Message)
+			} else {
+				cms.JSONFail(w, http.StatusInternalServerError, "見積依頼の返事ページを作れません: "+err.Error())
+			}
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true, "is_client_order": false, "doc_type": "rfq_reply",
+			"page_id": m.PageID, "title": pageTitleOf(m.PageID), "linked_rfq": m.Linked, "candidates": m.Candidates, "say": rfqReplySay(m),
+		})
+		return
+	}
+
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
 	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
 	if !j.IsClientOrder && j.DocType == "drawing" {
@@ -430,13 +455,15 @@ func loadPDFForAnalysis(pageID, fileName string) ([]byte, error) {
 //
 // **関数の外に出してあるのは、その番人が読めるようにするため**です（2026-09-21）。
 const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応じた項目を抽出してください。
-判定する種類は次の3つです:
-  - "order"   : 顧客（取引先）が当社宛てに発行した発注書（注文書）
-  - "drawing" : 部品や製品の図面（表題欄に図面番号・図面名称があるもの）
-  - "other"   : 上記以外（見積書・請求書・納品書・カタログ・案内など）
+判定する種類は次の4つです:
+  - "order"     : 顧客（取引先）が当社宛てに発行した発注書（注文書）——当社が売る側
+  - "drawing"   : 部品や製品の図面（表題欄に図面番号・図面名称があるもの）
+  - "rfq_reply" : 業者（仕入先）から当社への見積・見積依頼への返事——当社が買う側（当社が送った見積依頼書に単価を書き込んで
+                  返してきたもの、業者が当社宛てに出した見積書）。当社の見積依頼書には「№」で見積依頼番号が刷ってあります
+  - "other"     : 上記以外（当社が発行した見積書・請求書・納品書・カタログ・案内など）
 次の形式のJSONオブジェクトのみを出力してください（マークダウンのコードブロック修飾は付けない）:
 {
-  "doc_type": "order" または "drawing" または "other",
+  "doc_type": "order" または "drawing" または "rfq_reply" または "other",
   "is_client_order": doc_type が "order" のとき true、それ以外は false,
   "orders": [{
     "order_no": "発注書番号（記載が無ければ空文字）",
@@ -449,8 +476,11 @@ const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応
     "total": "合計金額（書かれているまま。記載が無ければ空文字）",
     "items": [{"item_no": "品番（下の規則で選ぶ）", "item_no_source": "item_no を採った列の見出し（先方に書かれている文字のまま。見出しが無い列から採ったときは空文字）", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}]
   }],
-  "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}]
+  "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}],
+  "rfq_reply": doc_type が "rfq_reply" のときだけ {"rfq_no": "当社の見積依頼書の番号（「№」の後ろの数字。読めなければ空文字）", "supplier": "返事をくれた業者の会社名", "date": "返事の日付を YYYY-MM-DD で（無ければ空文字）", "source_table": {"headers": ["見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]}}、それ以外は null
 }
+⚠ rfq_reply の source_table には、品物の欄（品名・材質・寸法・数量など）と、業者が書き込んだ単価・金額・備考を**書かれているまま**
+入れてください。手書きの数字も読んで入れてください。**計算はしないでください**（書かれていない欄は空文字）。
 ⚠ 1つのPDFに**複数の発注書**が入っていることがあります（ページごとに別の発注書——発注書番号・発注日・小計が
 紙ごとに違う）。その場合は orders に**発注書の枚数だけ**要素を入れ、明細・小計・合計は**その発注書に書かれている
 ものだけ**を入れてください（別の発注書の行を混ぜない）。1枚の発注書が複数ページに続いているときは1つの要素です
@@ -548,6 +578,9 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	for i := range j.Orders {
 		j.Orders[i].SourceTable = parseSourceTable(j.Orders[i].SourceTableRaw)
 		fixItemNoColumn(&j.Orders[i])
+	}
+	if j.RFQReply != nil {
+		j.RFQReply.SourceTable = parseSourceTable(j.RFQReply.SourceTableRaw)
 	}
 	return &j, nil
 }

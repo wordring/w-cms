@@ -365,8 +365,10 @@ func RFQReplySourcesAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書ページではありません")
 		return
 	}
+	// 0. この見積依頼書に結んだ返事ページ（通信記録の 🤖 解析から・2026-10-05・rfq_reply_page.go）の原本——いちばん上に。
+	out := rfqReplyPageSources(user, pageID)
 	// 1. このページに置いたファイル（FAX の取り込み・写真・業者の見積書）——作った見積依頼書の PDF は除く。
-	out := pageFileSources(pageID, "このページ: ", func(name string) bool { return strings.HasPrefix(name, "見積依頼書 ") })
+	out = append(out, pageFileSources(pageID, "このページ: ", func(name string) bool { return strings.HasPrefix(name, "見積依頼書 ") })...)
 	// 2. 題に「№ <このページ>」を含む受信メール（見積依頼のメールの件名「見積依頼（№ …）」への返信）——新しい順。
 	rows, err := database.DB.Query(`SELECT id, title FROM pages WHERE title LIKE ? ORDER BY id DESC LIMIT 20`, "%№ "+pageID+"%")
 	if err == nil {

@@ -61,6 +61,15 @@ func testRFQTemplate() string {
 		`<section><h2>` + rfqNoteHeading + `</h2><p><br/></p></section>` + cms.ViewMarkerHTML(RFQSendViewType)
 }
 
+// testRFQReplyTemplate は見積依頼の返事ページのテンプレートです（2026-10-05・職場のテンプレート／東邦／見積依頼の返事と同じ形）。
+func testRFQReplyTemplate() string {
+	return `<h1>` + RFQReplyTemplate + `</h1>` +
+		emptyTagsDL(SupplierTag, RFQAnsweredTag, RFQReplyReadNoTag, RFQReplyLinkTag) +
+		cms.ViewMarkerHTML(RFQReplyMatchViewType) +
+		`<details><summary>業者の返事（原本）</summary><section data-type="file-view" data-ref=""></section></details>` +
+		`<details open><summary>` + rfqReplySourceCaption + `</summary><p><br/></p></details>`
+}
+
 func testPurchaseOrderTemplate() string {
 	return `<h1>` + PurchaseOrderTemplate + `</h1>` +
 		emptyTagsDL(OrderNoTag, SupplierTag, OrderedAtTag, DueDateTag, OrderSignerTag) +

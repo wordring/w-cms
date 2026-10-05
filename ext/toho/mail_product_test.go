@@ -41,7 +41,7 @@ func TestRecordMakersListKindsByDirection(t *testing.T) {
 	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	u := &auth.User{Username: "alice"}
 	seedBody(t, id, mailRecordBody("見積のお願い", "図面を送ります。"))
-	if kinds, _ := getRecordMakers(t, u, id); strings.Join(kinds, "・") != MailOrderKind+"・"+MailProductKind {
+	if kinds, _ := getRecordMakers(t, u, id); strings.Join(kinds, "・") != MailOrderKind+"・"+MailProductKind+"・"+RFQReplyMailKind {
 		t.Errorf("受信のメールの種類が違います: %v", kinds)
 	}
 	seedBody(t, id, strings.Replace(mailRecordBody("送った控え", "本文"), "<dd>受信</dd>", "<dd>送信</dd>", 1))

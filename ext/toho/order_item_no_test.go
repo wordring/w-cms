@@ -98,6 +98,7 @@ func TestPromptMentionsEveryJSONKey(t *testing.T) {
 		reflect.TypeOf(orderJudgment{}),
 		reflect.TypeOf(orderPDFItem{}),
 		reflect.TypeOf(drawingJudgment{}),
+		reflect.TypeOf(rfqReplyJudgment{}), // 見積依頼の返事（2026-10-05）
 	} {
 		for i := 0; i < typ.NumField(); i++ {
 			tag := typ.Field(i).Tag.Get("json")

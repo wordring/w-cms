@@ -201,6 +201,9 @@ func kindOfPage(pageIDInt int) string {
 	if isOrderPageTags(tags) {
 		return "受注"
 	}
+	if isRFQReplyTags(tags) {
+		return rfqReplyKind // 見積依頼の返事ページ（2026-10-05・rfq_reply_page.go）
+	}
 	return ""
 }
 

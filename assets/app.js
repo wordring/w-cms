@@ -1415,6 +1415,7 @@
         refreshDrawingPreviews();    // 加工製品ページの図面をそのまま出す（閲覧モード限定）
         restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
         decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
+        openRFQReplyFromHash();      // 返事ページの「見積依頼書で単価を写す」から来たら 🤖 返事を読む の欄を開く（2026-10-05）
         refreshFilingButton();      // 加工製品ページの整理（閲覧モード限定）
         refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
@@ -5959,6 +5960,10 @@
                 if (!made.length && d.page_id) made = [{ page_id: d.page_id, title: d.title }];
                 return { kind: 'drawing', made: made, matchedDxf: d.matched_dxf || 0 };
             }
+            // 見積依頼の返事（2026-10-05・ext/toho/rfq_reply_page.go）——返事ページを作り、どの見積依頼書への返事かを突き合わせた。
+            if (d.doc_type === 'rfq_reply' && d.page_id) {
+                return { kind: 'rfq_reply', made: [{ page_id: d.page_id, title: d.title }], say: d.say || '', linked: d.linked_rfq || '' };
+            }
             if (!d.is_client_order) return { kind: 'none', made: [] };
             // 1つのPDFに発注書が何枚も入っていれば1枚につき1ページ（2026-09-30・`pages`）。
             return { kind: 'order', made: (d.pages || []).length ? d.pages : [{ page_id: d.page_id, title: d.title }] };
@@ -5988,7 +5993,7 @@
                 '回呼びます・1件に数十秒）。' + (skipped ? '解析済みの ' + skipped + '件は飛ばします。' : '') +
                 '途中でページを離れると止まります（押し直せば残りから）。')) return;
             btn.disabled = true;
-            let drawings = 0, orders = 0;
+            let drawings = 0, orders = 0, replies = 0;
             const none = [], failed = [];
             for (let i = 0; i < todo.length; i++) {
                 btn.textContent = '🤖 解析中… ' + (i + 1) + '/' + todo.length;
@@ -5996,17 +6001,18 @@
                 if (r.error) failed.push(todo[i].path + '（' + r.error + '）');
                 else if (r.kind === 'drawing') drawings += r.made.length;
                 else if (r.kind === 'order') orders += r.made.length;
+                else if (r.kind === 'rfq_reply') replies += r.made.length;
                 else none.push(todo[i].path);
             }
             const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
-                (orders ? '・受注ページ ' + orders + '枚' : '') + '。'];
-            if (none.length) lines.push('発注書でも図面でもない（ページは作っていない）: ' + none.join('・'));
+                (orders ? '・受注ページ ' + orders + '枚' : '') + (replies ? '・見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
+            if (none.length) lines.push('発注書・図面・見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・'));
             if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
             if (drawings) lines.push('📁 整理で行き先を決めてください。');
             notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
             btn.disabled = false;
             btn.textContent = label;
-            if (drawings || orders) {
+            if (drawings || orders || replies) {
                 await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
                 loadChildNav();        // 左レールの子ページ一覧
             }
@@ -6058,8 +6064,13 @@
                 }
                 notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
                 born = true;
+            } else if (d.kind === 'rfq_reply') {
+                const p = d.made[0];
+                notify('見積依頼の返事ページを作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' + d.say,
+                    { type: d.linked ? 'success' : 'warn', duration: 0, id: 'analyze-pdf' });
+                born = true;
             } else if (d.kind === 'none') {
-                notify('発注書でも図面でもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
+                notify('発注書・図面・見積依頼の返事のどれでもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
             } else {
                 const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
                 notify((d.made.length > 1
@@ -9053,6 +9064,37 @@ delegateClick([['.rfq-answered-go', async (btn) => {
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '記録できませんでした')); return; }
     location.reload();
 }], ['.rfq-read-go', (btn) => openRFQReplyPanel(btn)]]);
+
+// openRFQReplyFromHash は、返事ページの「見積依頼書で単価を写す（🤖 返事を読む）」（`/見積依頼書#rfq-reply`）から来たとき、
+// 「🤖 返事を読む」の欄を開きます（2026-10-05・ext/toho/rfq_reply_page.go）——候補のいちばん上が結んだ返事の原本。読むのは人が押す。
+// 一度開いたら印（#rfq-reply）を消す（描き直しのたびに開き直さない）。
+function openRFQReplyFromHash() {
+    if (location.hash !== '#rfq-reply' || document.body.hasAttribute('edit-mode')) return;
+    const btn = document.querySelector('#w-editor-content .rfq-read-go');
+    if (!btn) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    openRFQReplyPanel(btn);
+    btn.scrollIntoView({ block: 'center' });
+}
+
+// 返事ページの「この見積依頼書への返事」「結ぶ」（2026-10-05・/api/rfq-reply/link）——結ぶと見積依頼書の子へ移る。
+delegateClick([['.rfq-reply-link', async (btn) => {
+    const row = btn.parentElement;
+    const input = row && row.querySelector('.rfq-reply-no');
+    const rfq = btn.getAttribute('data-rfq') || (input ? input.value.trim() : '');
+    const say = row && row.querySelector('.rfq-reply-link-say');
+    if (!rfq) { sayIn(say, '⚠ 見積依頼番号を入れてください'); return; }
+    btn.disabled = true;
+    const r = await postJSON('/api/rfq-reply/link', { page_id: btn.getAttribute('data-reply') || '', rfq })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) {
+        if (say) sayIn(say, '⚠ ' + ((r.data && r.data.message) || '結べませんでした'));
+        else notify('結べませんでした: ' + ((r.data && r.data.message) || r.status), { type: 'warn' });
+        return;
+    }
+    location.reload();
+}]]);
 
 // openRFQReplyPanel は「🤖 返事を読む」の欄を開きます（もう一度押すと閉じる）。
 async function openRFQReplyPanel(btn) {
