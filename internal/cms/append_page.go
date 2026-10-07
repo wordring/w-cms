@@ -73,12 +73,15 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 	// 保存経路と同じ順序（handler_save.go）——サニタイズ → 更新日時 → 書き込み →
 	// 版 → 索引。版を残すので、機械が足したものは人がリバートで取り消せる。
 	safeHTML := fillFileViewNamesAs(author, Sanitize(rewrite(string(current))))
-	if _, err := page.BumpUpdatedAt(pageID); err != nil {
+	updatedAt, err := page.BumpUpdatedAt(pageID)
+	if err != nil {
 		return err
 	}
 	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
 		return err
 	}
+	// 開いている人へ知らせる——版と索引まで済ませてから（page_events.go）。
+	defer notifyPageUpdated(pageID, author, updatedAt)
 	if err := RecordVersion(pageID, author, safeHTML, false); err != nil {
 		return err
 	}

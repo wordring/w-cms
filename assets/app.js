@@ -537,6 +537,7 @@
 
     // --- 認証・権限まわり ---
     let currentUserIsAdmin = false;
+    let currentUsername = ''; // ページの更新の知らせで「あなたの操作で」と言い分けるため（2026-10-07）
 
     // loadMe は認証状態を取得し、未認証（匿名）なら読み取り専用モードへ切り替える。
     // /api/me は OptionalAuth 配下で、未認証時も 200 で {authenticated:false} を返す。
@@ -552,6 +553,7 @@
                 return;
             }
             currentUserIsAdmin = !!me.is_admin;
+            currentUsername = me.username || '';
             document.getElementById('w-user-bar').textContent =
                 '👤 ' + me.username + (me.is_admin ? '（管理者）' : '');
             if (me.is_admin) setHidden(document.getElementById('w-admin-link'), false);
@@ -704,6 +706,7 @@
             document.getElementById('w-pi-created-at').textContent = formatDateTime(m.created_at);
             document.getElementById('w-pi-created-by').textContent = m.created_by || '—';
             document.getElementById('w-pi-updated-at').textContent = formatDateTime(m.updated_at);
+            loadedUpdatedAt = m.updated_at || ''; // つなぎ直したときに、切れていたあいだの書き込みを見分ける（2026-10-07）
             showPageQR();
         } catch (e) { /* 取得失敗時は既定表示のまま */ }
     }
@@ -1457,6 +1460,10 @@
                 clearTimeout(saveTimeout); saveTimeout = null;
                 try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
             }
+            // ページの更新の知らせが比べる相手を覚え直す——編集権を放す前に（ほかの人がまだ書けないうちに・2026-10-07）。
+            // ⚠ 編集から出るときだけ——ページを開いたときもここを通る（閲覧で始まる）が、そのときは開いたときの姿を
+            //    覚え済み（window.onload）なので、読み直しを1回余計に走らせない（鏡の計算を含む）。
+            if (document.body.hasAttribute('edit-mode')) await adoptViewSourceFromServer();
             await releaseLock();
             // 式のセルの結果はサーバーが計算する（formula.go）——編集で式や値を変えたら、手元の結果は古い。
             // 古い結果を見せないよう外してから閲覧へ戻し、式があれば本文を読み直す（2026-10-04）。
@@ -1476,6 +1483,9 @@
         const toggle = document.getElementById('w-mode-toggle');
         const ok = await acquireLock();
         if (!ok) { toggle.checked = false; applyMode(); return false; }
+        // 編集に入ると本文は最新に載せ替わっている（acquireLock）——ページの更新の知らせは要らない（2026-10-07）。
+        clearTimeout(pageCheckTimer); pageCheckTimer = null; pendingPageHTML = null;
+        dismissToast('page-updated');
         toggle.checked = true;
         applyMode();
         openHolderEvents();
@@ -1497,16 +1507,17 @@
 
     // populateEditor は本文HTMLをエディタへ流し込みブロック化する（ロード時・ロック取得時に共用）。
     // 本文を丸ごと入れ替えるので、ブロック単位保存の基準は破棄する（次回は全文保存）。
-    function populateEditor(htmlStr) {
+    // view は閲覧の描き方（/api/load?view=1）で読んだ本文か——そうなら、ページの更新の知らせが比べる相手として
+    // 覚える（そうでなければ捨てる——編集用の素の本文は閲覧の描き方と比べられない・2026-10-07）。
+    function populateEditor(htmlStr, view) {
         lastSavedBlocks = null;
-        const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
         const editorContent = document.getElementById('w-editor-content');
         editorContent.innerHTML = '';
-        Array.from(doc.body.children).forEach(child => {
-            if (child.tagName.toLowerCase() === 'script') return;
-            editorContent.appendChild(child);
-        });
+        const blocks = serverBlocksOf(htmlStr);
+        const htmls = blocks.map(c => c.outerHTML);
+        blocks.forEach(child => editorContent.appendChild(child));
         initBlocks();
+        adoptViewSource(view ? htmls : []);
         buildToc();
         enhanceFileSections();
         decorateVocabBlocks();
@@ -1649,14 +1660,225 @@
     }
 
     // reloadContent は現在のページ本文をサーバーから取り直してエディタへ反映する（閲覧モード想定）。
+    // 閲覧モードでは開いたときと同じ描き方（view=1——見出しのアンカーと参照リンクつき）で読む
+    // （2026-10-07・ページの更新の知らせが、前に読んだものと比べるため。⚠ 編集モードでは素の本文——
+    // 合成したアンカーとリンクが本文として保存されないように）。
     async function reloadContent() {
         try {
-            const res = await fetch('/api/load?id=' + currentPageId);
+            const view = !document.body.hasAttribute('edit-mode');
+            const res = await fetch('/api/load?id=' + currentPageId + (view ? '&view=1' : ''));
             if (!res.ok) return;
-            populateEditor(await res.text());
+            populateEditor(await res.text(), view);
             applyMode();
             loadPageMeta(); // 更新日時などの属性表示も最新化
         } catch (e) {}
+    }
+
+    // ── ページの更新の知らせ（2026-10-07） ─────────────────────────────────
+    //
+    // 利用者:「誰かが書き込むと、同じページを見ているほかの人に再読み込み通知が送られて、
+    // 編集されたブロックだけ再読み込みできますか？」
+    //
+    //   - 閲覧しているタブは /api/page-events を購読する（internal/cms/page_events.go）。本文が書き換わると、
+    //     書く人の自動保存が続くあいだは待ち（PAGE_CHECK_WAIT_MS・長くても PAGE_CHECK_MAX_MS）、本文を開いたときと
+    //     同じ描き方（/api/load?view=1）で読み直して、**前に読んだもの**と上の段のブロックごとに比べる。
+    //   - 変わったところがあれば知らせ（「○○がこのページを更新しました（N か所）」＋「変わったところを読み込む」）。
+    //     押すと変わったブロックだけを差し替える——変わっていないブロックは要素ごと残すので、畳んだ見出し・開いた
+    //     PDF・並べ替え・鏡の絞り込みはそのまま。差し替えたブロックはしばらく色を付ける。
+    //   - ⚠ **比べる相手は画面のいまの姿ではなく、前に読んだときのサーバーの描いた HTML**（viewSource）——画面は
+    //     飾り付け（式の結果・畳み・並べ替え・札）で変わっている。ID ではなく中身で比べるのは、機械が作るページの
+    //     ブロックは data-id を持たないから（2026-10-07 の職場: 1616 ページのうち全部のブロックに ID があるのは 93）。
+    //   - ⚠ **入力中の欄があるブロックは差し替えない**（消えるので）——知らせを残して、終えてから押してもらう。
+    //   - 編集モードのタブは知らせを受けない（編集権は1人だけ・機械の書き換えも編集中は断られる）。編集に入ると
+    //     比べる相手は無くなり（populateEditor）、出るときに編集権を放す前に読み直して覚え直す（adoptViewSourceFromServer）。
+    let viewSource = new WeakMap(); // 上の段の要素 → 前に読んだときのサーバーの描いた HTML
+    let pageES = null;
+    let pageCheckTimer = null;
+    let pageCheckFirstAt = 0;
+    let pageUpdateBy = '';
+    let pendingPageHTML = null;
+    let loadedUpdatedAt = '';
+    const PAGE_CHECK_WAIT_MS = 2000;
+    const PAGE_CHECK_MAX_MS = 10000;
+
+    // contentBlocks は本文の上の段の要素を文書順で返す（包み .editor-block の中身・包む前なら要素そのもの）。
+    // ⚠ 飾り付けが本文の直下へ足した要素（包みの無いもの）は数えない——中身ではないので、差し替えで消さない。
+    function contentBlocks(beforeWrap) {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return [];
+        return Array.from(editor.children).map(c => {
+            if (c.classList.contains('editor-block')) {
+                const box = c.querySelector(':scope > .block-content');
+                return box ? firstContentChild(box) : null;
+            }
+            return beforeWrap ? c : null;
+        }).filter(el => el && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE');
+    }
+
+    // adoptViewSource は、いまの上の段の要素に「サーバーが描いた HTML」を覚えさせる。htmls を渡せばその順に
+    // （読み直したもの）、無ければ要素のいまの姿から（開いた直後・包みと飾り付けの前に呼ぶこと）。
+    function adoptViewSource(htmls, beforeWrap) {
+        viewSource = new WeakMap();
+        const blocks = contentBlocks(beforeWrap);
+        if (htmls && htmls.length !== blocks.length) return; // 並びが合わない——覚えない（次の差し替えで全部を取り直す）
+        blocks.forEach((el, i) => viewSource.set(el, htmls ? htmls[i] : el.outerHTML));
+    }
+
+    // serverBlocksOf は本文の HTML を上の段の要素に分ける（populateEditor と同じ分け方）。
+    function serverBlocksOf(htmlStr) {
+        const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
+        return Array.from(doc.body.children).filter(c => c.tagName.toLowerCase() !== 'script');
+    }
+
+    // adoptViewSourceFromServer は、編集を終えるとき（編集権を放す前——ほかの人はまだ書けない）に、閲覧の描き方で
+    // 読み直して覚え直す。画面は編集したときの姿のまま（描き直さない）。
+    async function adoptViewSourceFromServer() {
+        try {
+            const res = await fetch('/api/load?id=' + currentPageId + '&view=1');
+            if (res.ok) adoptViewSource(serverBlocksOf(await res.text()).map(c => c.outerHTML));
+        } catch (e) { /* 覚えられなければ、次の知らせで全部を取り直す */ }
+    }
+
+    // blockIsBusy は、そのブロックの中で人が入力している途中か（差し替えると消える）を返す。
+    // 鏡の絞り込み（data-w-remember）は差し替えたあと戻るので数えない。
+    function blockIsBusy(el) {
+        const a = document.activeElement;
+        if (a && a !== document.body && el.contains(a) && (a.matches('input, textarea, select') || a.isContentEditable)) return true;
+        return Array.from(el.querySelectorAll('input, textarea, select')).some(f => {
+            if (f.closest('[data-w-remember]')) return false;
+            if (f.tagName === 'SELECT') return Array.from(f.options).some(o => o.selected !== o.defaultSelected);
+            if (f.type === 'checkbox' || f.type === 'radio') return f.checked !== f.defaultChecked;
+            if (['button', 'submit', 'reset', 'hidden', 'file'].includes(f.type)) return false;
+            return f.value !== f.defaultValue;
+        });
+    }
+
+    // planPageUpdate は、読み直した本文といまの画面を比べて、残すブロック・消すブロック・足すブロックを決める。
+    // 同じ HTML の並びを最長で残し（LCS）、残したもののあいだ（すき間）ごとに差し替える。
+    function planPageUpdate(htmlStr) {
+        const fresh = serverBlocksOf(htmlStr);
+        const freshHTML = fresh.map(c => c.outerHTML);
+        const live = contentBlocks();
+        const liveHTML = live.map(el => viewSource.get(el));
+        const n = live.length, m = fresh.length;
+        const same = (i, j) => liveHTML[i] !== undefined && liveHTML[i] === freshHTML[j];
+        const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+        for (let i = n - 1; i >= 0; i--) {
+            for (let j = m - 1; j >= 0; j--) L[i][j] = same(i, j) ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+        }
+        const pairs = [[-1, -1]];
+        for (let i = 0, j = 0; i < n && j < m;) {
+            if (same(i, j)) { pairs.push([i, j]); i++; j++; }
+            else if (L[i + 1][j] >= L[i][j + 1]) i++;
+            else j++;
+        }
+        pairs.push([n, m]);
+        const gaps = [];
+        for (let k = 1; k < pairs.length; k++) {
+            const [ai, aj] = pairs[k - 1], [bi, bj] = pairs[k];
+            const removed = live.slice(ai + 1, bi), added = fresh.slice(aj + 1, bj), addedHTML = freshHTML.slice(aj + 1, bj);
+            if (!removed.length && !added.length) continue;
+            gaps.push({ before: ai >= 0 ? live[ai] : null, after: bi < n ? live[bi] : null, removed, added, addedHTML,
+                busy: removed.some(blockIsBusy) });
+        }
+        return { gaps, places: gaps.reduce((s, g) => s + Math.max(g.removed.length, g.added.length), 0) };
+    }
+
+    const wrapperOf = el => el.closest('.editor-block') || el;
+
+    // applyPageUpdate は差し替えを当てる。入力中のブロックがあるすき間は飛ばす（数を返す）。
+    function applyPageUpdate(plan) {
+        const editor = document.getElementById('w-editor-content');
+        let skipped = 0;
+        const flashed = [];
+        plan.gaps.forEach(g => {
+            if (g.busy) { skipped++; return; }
+            // 足す位置——消すブロックの先頭の前・無ければ後ろに残すブロックの前・無ければ前に残すブロックの後ろ。
+            const ref = g.removed.length ? wrapperOf(g.removed[0]) : (g.after ? wrapperOf(g.after) : null);
+            let prev = g.before ? wrapperOf(g.before) : null;
+            g.added.forEach((node, k) => {
+                if (ref) editor.insertBefore(node, ref);
+                else if (prev) prev.after(node);
+                else editor.appendChild(node);
+                const wrap = wrapInBlock(node);
+                viewSource.set(node, g.addedHTML[k]);
+                prev = wrap;
+                flashed.push(wrap);
+            });
+            g.removed.forEach(el => wrapperOf(el).remove());
+        });
+        if (flashed.length || plan.gaps.some(g => !g.busy)) {
+            buildToc();
+            enhanceFileSections();
+            decorateVocabBlocks();
+            applyMode();
+            loadPageMeta();
+        }
+        flashed.forEach(w => w.classList.add('w-block-updated'));
+        if (flashed.length) setTimeout(() => flashed.forEach(w => w.classList.remove('w-block-updated')), 4000);
+        return skipped;
+    }
+
+    // schedulePageCheck は知らせを受けて、少し待ってから読み直す（続けて来たら待ち直す・長くても PAGE_CHECK_MAX_MS）。
+    function schedulePageCheck(by) {
+        if (by) pageUpdateBy = by;
+        const now = Date.now();
+        if (!pageCheckTimer) pageCheckFirstAt = now;
+        clearTimeout(pageCheckTimer);
+        const wait = Math.max(0, Math.min(PAGE_CHECK_WAIT_MS, pageCheckFirstAt + PAGE_CHECK_MAX_MS - now));
+        pageCheckTimer = setTimeout(checkPageUpdate, wait);
+    }
+
+    // checkPageUpdate は読み直して比べ、変わったところがあれば知らせる（まだ差し替えない）。
+    async function checkPageUpdate() {
+        pageCheckTimer = null;
+        if (document.body.hasAttribute('edit-mode')) return;
+        let html;
+        try {
+            const res = await fetch('/api/load?id=' + currentPageId + '&view=1');
+            if (!res.ok) return;
+            html = await res.text();
+        } catch (e) { return; }
+        if (document.body.hasAttribute('edit-mode')) return; // 読んでいるあいだに編集へ入った
+        const plan = planPageUpdate(html);
+        if (!plan.places) { pendingPageHTML = null; dismissToast('page-updated'); return; }
+        pendingPageHTML = html;
+        const who = !pageUpdateBy ? 'このページが更新されました'
+            : pageUpdateBy === currentUsername ? 'あなたの操作でこのページが更新されました'
+            : '「' + pageUpdateBy + '」がこのページを更新しました';
+        notify(who + '（' + plan.places + ' か所）。', {
+            type: 'info', duration: 0, id: 'page-updated',
+            action: { label: '変わったところを読み込む', onClick: () => applyPendingPageUpdate() },
+        });
+    }
+
+    // applyPendingPageUpdate は「変わったところを読み込む」——知らせたときに読んだ本文で、いまの画面と比べ直して当てる。
+    function applyPendingPageUpdate() {
+        if (!pendingPageHTML || document.body.hasAttribute('edit-mode')) return;
+        const html = pendingPageHTML;
+        pendingPageHTML = null;
+        const skipped = applyPageUpdate(planPageUpdate(html));
+        pageUpdateBy = '';
+        if (skipped) {
+            pendingPageHTML = html;
+            notify('入力中の欄があるところ（' + skipped + ' か所）は読み込んでいません。入力を終えてからもう一度押してください。', {
+                type: 'warn', duration: 0, id: 'page-updated',
+                action: { label: '変わったところを読み込む', onClick: () => applyPendingPageUpdate() },
+            });
+        }
+    }
+
+    // openPageEvents は、このページの更新の知らせを購読する（タブを開いているあいだずっと・EventSource は自分でつなぎ直す）。
+    function openPageEvents() {
+        if (pageES || !window.EventSource) return;
+        pageES = new EventSource('/api/page-events?id=' + currentPageId);
+        pageES.onmessage = (e) => {
+            let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+            if (document.body.hasAttribute('edit-mode')) return;
+            if (ev.type === 'updated') schedulePageCheck(ev.by || '');
+            // つなぎ直したとき——切れていたあいだに書かれていたら比べる（開いた直後は属性をまだ読んでいなければ見送る）。
+            else if (ev.type === 'hello' && loadedUpdatedAt && ev.updated_at && ev.updated_at !== loadedUpdatedAt) schedulePageCheck('');
+        };
     }
 
     // leaveEditMode は編集モードを抜ける（トグルOFF相当）。
@@ -8765,6 +8987,8 @@
         // 本文はサーバーが #w-editor-content へ埋め込み済み（合成方式）。fetch はせず、
         // 既にあるDOMをそのまま初期コンテンツとしてブロック化する。認可・404・
         // 匿名のログイン誘導はサーバー側で解決済みなので、ここでは扱わない。
+        // ページの更新の知らせが比べる相手を、包みと飾り付けの前に覚える（サーバーが描いたままの姿・2026-10-07）。
+        adoptViewSource(null, true);
         initBlocks();
         buildToc();
         setupEditorEvents();
@@ -8789,6 +9013,7 @@
         loadPerms();
         loadChildNav();
         loadVersions();
+        openPageEvents(); // ほかの人の書き込みを知らせる（2026-10-07）
     };
 
 // ── 鏡のボタンに共通の道具（2026-09-23 に寄せた）─────────────────────────

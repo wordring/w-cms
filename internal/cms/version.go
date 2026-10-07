@@ -337,9 +337,12 @@ func RevertToVersion(pageID, version, author string) error {
 		return err
 	}
 	// 更新日時は「今」前進する（サイドカーが正本。リバートも内容の変更なので）。
-	if _, err := page.BumpUpdatedAt(pageID); err != nil {
+	updatedAt, err := page.BumpUpdatedAt(pageID)
+	if err != nil {
 		return err
 	}
+	// 開いている人へ知らせる——索引と版まで済ませてから（page_events.go）。
+	defer notifyPageUpdated(pageID, author, updatedAt)
 	if err := SyncIndex(pageID, safeHTML); err != nil {
 		return err
 	}

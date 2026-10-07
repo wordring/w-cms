@@ -137,6 +137,7 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.AuditRequest(r, "save", id)
+	notifyPageUpdated(id, auth.UsernameOf(r), updatedAt) // 開いている人へ（page_events.go）
 
 	WriteJSON(w, saveEcho(id, updatedAt, safeHTML, req.HTML, sanitized))
 }
@@ -324,6 +325,7 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.AuditRequest(r, "save-block", id)
+	notifyPageUpdated(id, auth.UsernameOf(r), updatedAt) // 開いている人へ（page_events.go）
 
 	// html は当該ブロックのサニタイズ後HTML（エコーバックはブロック単位になる）。
 	// 告知の対象も送られてきたブロックだけ（エコーバックと同じ粒度）。

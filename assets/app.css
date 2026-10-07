@@ -2886,3 +2886,7 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
 /* 発注部材表の「発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
 #w-editor-content .draft-form-box { margin: 4px 0 16px; }
 #w-editor-content .order-link-state { margin-left: 6px; }
+/* ページの更新の知らせで差し替えたブロック（2026-10-07）——しばらく薄い黄色で示して消える。色だけに頼らず左の線も付ける。 */
+#w-editor-content .editor-block.w-block-updated { animation: w-block-updated 4s ease-out; box-shadow: inset 3px 0 0 #f59e0b; }
+@keyframes w-block-updated { from { background: #fef3c7; } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { #w-editor-content .editor-block.w-block-updated { animation: none; background: #fef3c7; } }

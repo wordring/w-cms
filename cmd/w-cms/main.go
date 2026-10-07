@@ -205,6 +205,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/lock-events", editlock.LockEventsAPIHandler)
 	protected.HandleFunc("/api/unlock", editlock.UnlockAPIHandler)
 	protected.HandleFunc("/api/lock/force", editlock.LockForceAPIHandler)
+	// ページの更新の知らせ（SSE・読める人なら誰でも——閲覧中のタブが変わったブロックだけ読み直す。page_events.go）
+	protected.HandleFunc("/api/page-events", cms.PageEventsAPIHandler)
 
 	// 保存済み文書の版管理（リビジョン／リバート。version.go）。
 	// 版は本文そのものなので、一覧・取得は本文と同じ read、書き戻しは write ＋編集ロック。
