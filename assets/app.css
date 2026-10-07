@@ -2948,3 +2948,10 @@ body.w-lightbox-open { overflow: hidden; }
     #w-lightbox .lb-next { right: 16px; }
 }
 
+/* ── 帯のブロックの種類（2026-10-07・assets/app.js の「ブロックの種類を替える」） ──
+   いまの種類は青い背景（押した印）。文字のブロックの外では押せない（薄く）。スマホの下の帯はボタンが増えたので折り返す。 */
+.context-toolbar .ctx-sep { width: 1px; align-self: stretch; background: #475569; margin: 0 2px; }
+.context-toolbar button.ctx-type.is-active { background: #2563eb; }
+.context-toolbar button:disabled { opacity: 0.4; cursor: default; }
+.context-toolbar button:disabled:hover { background: transparent; }
+.context-toolbar.is-docked { flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 24px); }

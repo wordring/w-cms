@@ -8647,7 +8647,10 @@
                 if (p0 && innerBoxOf(p0)) para = p0;
             }
             const text = para ? (para.innerText || '') : '';
-            if (text.charAt(0) === '/') {
+            // 全角の「／」でも開く（2026-10-07 利用者:「スラッシュを入力するのは、日本語環境ではめんどう」）。
+            // ⚠ 「・」（日本語入力の / キー）では開かない——「・材料」のような箇条書きで Enter を押すと、表に化ける。
+            //    打たずに開く道は帯の「＋」（showContextToolbarForBlock）。
+            if (text.charAt(0) === '/' || text.charAt(0) === '／') {
                 if (!slashMenuVisible) showSlashMenu(para);
                 filterSlashMenu(text.slice(1));
             } else {
@@ -8734,8 +8737,9 @@
 
         document.addEventListener('click', (e) => {
             // ⚠ 中の要素の帯（＋）はスラッシュメニューを開く側——閉じない（2026-09-29 に E2E で踏んだ）。
+            // 帯（文字の帯）の「＋」も開く側（2026-10-07）。
             if (!e.target.closest('#w-slash-menu') && !e.target.closest('.editor-block') &&
-                !e.target.closest('#w-inner-controls')) {
+                !e.target.closest('#w-inner-controls') && !e.target.closest('#w-ctx-add')) {
                 hideSlashMenu();
             }
         });
@@ -8914,7 +8918,103 @@
         if (activeBlock !== block) {
             activeBlock = block;
             showContextToolbarForBlock(block);
+        } else {
+            refreshBlockTypeButtons(); // 同じブロックの中でキャレットが動いた（節の中の段落と見出しなど）
         }
+    }
+
+    // ── ブロックの種類を替える（2026-10-07） ───────────────────────────────
+    //
+    // 利用者:「既存の文字列ブロックを見出しに変えたり段落に変えたりしたい」「スラッシュを入力するのは、日本語環境では
+    // めんどう」——帯（showContextToolbarForBlock）の「¶ H1 H2 H3」で、**キャレットのある文字のブロック**（段落・見出し）
+    // の種類だけを替える。中身・属性（ブロック ID）・キャレットの位置はそのまま。節や折りたたみの中の段落・見出しにも効く。
+    // ⚠ 表・リスト・定義リストの中の文字は対象外（そこは中身の書式なので）。いまの種類のボタンは押した印になる。
+    const BLOCK_TYPE_CHOICES = [['P', '¶', '段落'], ['H1', 'H1', '見出し1'], ['H2', 'H2', '見出し2'], ['H3', 'H3', '見出し3']];
+    const TEXT_BLOCK_TAGS = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+
+    // textBlockAtCaret はキャレットのある文字のブロック（段落・見出し）を返す（無ければ null）。
+    function textBlockAtCaret() {
+        const sel = window.getSelection();
+        const n = sel && sel.rangeCount ? sel.anchorNode : null;
+        const editor = document.getElementById('w-editor-content');
+        let el = n && (n.nodeType === 1 ? n : n.parentElement);
+        if (!el || !editor || !editor.contains(el) || el.closest('.vocab-chrome, .block-controls')) return null;
+        for (; el && el !== editor; el = el.parentElement) {
+            if (!TEXT_BLOCK_TAGS.includes(el.tagName)) continue;
+            return el.closest('td, th, li, dd, dt, caption, summary') ? null : el;
+        }
+        return null;
+    }
+
+    // refreshBlockTypeButtons は、帯の種類のボタンにいまの種類の印を付ける（文字のブロックの外なら押せない）。
+    function refreshBlockTypeButtons() {
+        const el = textBlockAtCaret();
+        document.querySelectorAll('#w-context-toolbar .ctx-type').forEach(b => {
+            const on = !!el && el.tagName === b.dataset.tag;
+            if (b.classList.contains('is-active') !== on) b.classList.toggle('is-active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            b.disabled = !el;
+        });
+    }
+
+    // caretTextOffset は、キャレットが el の文字の何文字目にあるかを返す（el の外なら null）。
+    function caretTextOffset(el) {
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount || !el.contains(sel.anchorNode)) return null;
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        r.setEnd(sel.anchorNode, sel.anchorOffset);
+        return r.toString().length;
+    }
+
+    // placeCaretAtTextOffset は、el の文字の offset 文字目へキャレットを置く（null なら末尾）。
+    function placeCaretAtTextOffset(el, offset) {
+        const range = document.createRange();
+        let rest = offset == null ? Infinity : offset;
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let placed = false;
+        for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+            if (rest <= t.nodeValue.length) { range.setStart(t, rest); placed = true; break; }
+            rest -= t.nodeValue.length;
+        }
+        if (!placed) range.selectNodeContents(el);
+        range.collapse(placed);
+        const host = el.closest('[contenteditable="true"]');
+        if (host) host.focus({ preventScroll: true });
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    // convertTextBlock は文字のブロックの種類を替える（要素を作り直し、中身と属性を移す）。
+    function convertTextBlock(el, tag) {
+        if (!el || !document.body.hasAttribute('edit-mode')) return;
+        if (el.tagName === tag) { refreshBlockTypeButtons(); return; }
+        const offset = caretTextOffset(el);
+        const n = document.createElement(tag.toLowerCase());
+        Array.from(el.attributes).forEach(a => n.setAttribute(a.name, a.value));
+        while (el.firstChild) n.appendChild(el.firstChild);
+        n.oninput = el.oninput; // 上の段なら applyMode が付けた配線を引き継ぐ
+        el.replaceWith(n);
+        if (!n.firstChild) n.appendChild(document.createElement('br')); // 空ならキャレットの足場
+        placeCaretAtTextOffset(n, offset);
+        updateHtmlPreview();
+        buildToc();
+        triggerAutoSave();
+        refreshBlockTypeButtons();
+    }
+
+    // addBlockBelowCaret は帯の「＋」——キャレットのある要素の下に段落を足して、スラッシュメニューと同じ一覧を開く
+    // （ブロックの下端の ＋・節の中の ＋ と同じ流れ。スラッシュは打たない）。
+    function addBlockBelowCaret(block) {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        const el = textBlockAtCaret();
+        if (el && innerBoxOf(el)) { addAfterInner(el); return; }
+        const newP = insertComponent('p', block, 'after');
+        if (!newP) return;
+        newP.focus();
+        newP.innerText = '/';
+        showSlashMenu(newP);
     }
 
     // ── インライン装飾（太字・斜体・下線）─────────────────────────────────
@@ -9146,10 +9246,37 @@
                 b.addEventListener('click', e => { e.preventDefault(); addFilesAtCaret(); });
                 toolbar.appendChild(b);
             }
+            // 文字のブロックの種類を替える・下にブロックを足す（2026-10-07 利用者:「既存の文字列ブロックを見出しに変えたり
+            // 段落に変えたりしたい」「スラッシュを入力するのは、日本語環境ではめんどう」）。下の「ブロックの種類を替える」。
+            {
+                const sep = document.createElement('span');
+                sep.className = 'ctx-sep';
+                toolbar.appendChild(sep);
+                BLOCK_TYPE_CHOICES.forEach(([tag, label, title]) => {
+                    const b = document.createElement('button');
+                    b.className = 'ctx-type';
+                    b.dataset.tag = tag;
+                    b.innerText = label;
+                    b.title = title + 'にする';
+                    b.style.minWidth = '24px';
+                    b.addEventListener('mousedown', e => e.preventDefault()); // キャレットを本文に残す
+                    b.addEventListener('click', e => { e.preventDefault(); convertTextBlock(textBlockAtCaret(), tag); });
+                    toolbar.appendChild(b);
+                });
+                const add = document.createElement('button');
+                add.id = 'w-ctx-add';
+                add.innerText = '＋';
+                add.title = '下にブロックを足す（スラッシュを打たずに一覧から選ぶ）';
+                add.style.minWidth = '24px';
+                add.addEventListener('mousedown', e => e.preventDefault());
+                add.addEventListener('click', e => { e.preventDefault(); addBlockBelowCaret(block); });
+                toolbar.appendChild(add);
+            }
             hasButtons = true;
         }
 
         if (hasButtons) {
+            refreshBlockTypeButtons(); // いまの種類の印（作り直したばかりの帯にはまだ無い）
             toolbar.classList.add('active');
             // タッチ端末では**画面下のドック**に出す（2026-09-01 スマホ実機確認:
             // 「文字列を選択すると、切り取り、コピーなどのコンテキストメニューが出て、
