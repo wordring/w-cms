@@ -231,3 +231,24 @@ body.public {
    組み合わせなので、色だけに頼らず行の頭の `⚠`／`✓` で見分ける（app.css に実測値）。 */
 .public-content .checksum-ok td { background: #dcfce7; color: #166534; }
 .public-content .checksum-note td { color: var(--pub-muted); font-style: italic; }
+
+/* カルーセル（2026-10-07）——公開ページにはスクリプトが無いので、横に払って1枚ずつ送れる形だけを CSS で作る
+   （ログインした画面の送り方は assets/app.js の「カルーセル」）。 */
+.public-content section[data-type="carousel"] {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 8px;
+    padding: 8px;
+    margin: 0 0 20px;
+    background: #f1f5f9;
+    border-radius: var(--pub-radius);
+}
+.public-content section[data-type="carousel"] > * {
+    flex: 0 0 100%;
+    scroll-snap-align: center;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+}
+.public-content section[data-type="carousel"] img { max-height: 60vh; object-fit: contain; }

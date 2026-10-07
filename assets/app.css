@@ -2890,3 +2890,61 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
 #w-editor-content .editor-block.w-block-updated { animation: w-block-updated 4s ease-out; box-shadow: inset 3px 0 0 #f59e0b; }
 @keyframes w-block-updated { from { background: #fef3c7; } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { #w-editor-content .editor-block.w-block-updated { animation: none; background: #fef3c7; } }
+
+/* ── カルーセル（2026-10-07・assets/app.js の「カルーセル」） ───────────────
+   閲覧: 中の要素を同じ升に重ね、いまの1枚（.car-current）だけ見せる——枚ごとに高さが変わって下が跳ねないように。
+   横の払いは JS が受けるので、ブラウザには縦のスクロールだけ任せる（touch-action）。 */
+body:not([edit-mode]) #w-editor-content section[data-type="carousel"] {
+    display: grid; justify-items: center; align-items: center;
+    background: #f1f5f9; border-radius: 6px; padding: 8px 8px 4px; margin: 8px 0; touch-action: pan-y;
+}
+body:not([edit-mode]) #w-editor-content section[data-type="carousel"] > :not(.vocab-chrome) {
+    grid-area: 1 / 1; visibility: hidden; margin: 0; max-width: 100%;
+}
+body:not([edit-mode]) #w-editor-content section[data-type="carousel"] > .car-current { visibility: visible; }
+body:not([edit-mode]) #w-editor-content section[data-type="carousel"] img {
+    display: block; max-width: 100%; max-height: 60vh; object-fit: contain;
+}
+#w-editor-content .car-nav { grid-area: 2 / 1; display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+#w-editor-content .car-nav button {
+    min-width: 40px; min-height: 36px; font-size: 22px; line-height: 1; border: 1px solid #cbd5e1;
+    border-radius: 6px; background: #fff; color: #334155; cursor: pointer;
+}
+#w-editor-content .car-nav button:hover { background: #e2e8f0; }
+#w-editor-content .car-count { font-size: 13px; color: #475569; min-width: 4em; text-align: center; }
+/* 編集: 枠と帯。中の画像は小さめに縦に並べる（⠿・🗑 は左の欄に出る）。 */
+body[edit-mode] #w-editor-content section[data-type="carousel"] {
+    border: 2px dashed #93c5fd; border-radius: 6px; padding: 6px 8px; margin: 8px 0; min-height: 48px;
+}
+body[edit-mode] #w-editor-content section[data-type="carousel"] img { max-height: 160px; }
+#w-editor-content .car-edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; }
+#w-editor-content .car-label { color: #1e40af; font-weight: 600; }
+#w-editor-content .car-edit-bar button {
+    font-size: 13px; padding: 2px 8px; border: 1px solid #bfdbfe; border-radius: 4px; background: #eff6ff; color: #1e40af; cursor: pointer;
+}
+
+/* ── 画像の拡大表示（2026-10-07・assets/app.js の「画像の拡大表示」） ───────── */
+body:not([edit-mode]) #w-editor-content p > img,
+body:not([edit-mode]) #w-editor-content td > img { cursor: zoom-in; }
+body.w-lightbox-open { overflow: hidden; }
+#w-lightbox {
+    position: fixed; inset: 0; z-index: 1500; background: rgba(15, 23, 42, 0.92);
+    display: flex; align-items: center; justify-content: center; touch-action: pan-y;
+}
+#w-lightbox .lb-figure { margin: 0; max-width: calc(100vw - 112px); max-height: calc(100vh - 80px); display: flex; flex-direction: column; align-items: center; }
+#w-lightbox .lb-img { max-width: 100%; max-height: calc(100vh - 110px); object-fit: contain; background: #fff; }
+#w-lightbox .lb-caption { color: #e2e8f0; font-size: 13px; margin-top: 6px; text-align: center; word-break: break-all; }
+#w-lightbox .lb-count { position: absolute; top: 12px; left: 16px; color: #e2e8f0; font-size: 14px; }
+#w-lightbox button {
+    border: none; background: rgba(255, 255, 255, 0.12); color: #fff; cursor: pointer; border-radius: 6px;
+}
+#w-lightbox button:hover { background: rgba(255, 255, 255, 0.25); }
+#w-lightbox .lb-close { position: absolute; top: 8px; right: 12px; width: 44px; height: 44px; font-size: 22px; }
+#w-lightbox .lb-prev, #w-lightbox .lb-next { width: 44px; height: 72px; font-size: 32px; margin: 0 6px; flex: 0 0 auto; }
+@media (max-width: 600px) {
+    #w-lightbox .lb-figure { max-width: 100vw; }
+    #w-lightbox .lb-prev, #w-lightbox .lb-next { position: absolute; bottom: 16px; }
+    #w-lightbox .lb-prev { left: 16px; }
+    #w-lightbox .lb-next { right: 16px; }
+}
+

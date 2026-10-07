@@ -243,6 +243,17 @@ var vocabRegistry = []VocabDef{
 		Element:     "section",
 		View:        true,
 	},
+	// カルーセル（2026-10-07 利用者:「カルーセルを入れることは出来ますか？」→ 形は「『カルーセル』ブロックを挿す」）。
+	// 中に入れた画像（`<p><img></p>`——本文の画像と同じ形）を、閲覧モードで1枚ずつ送って見せる。**列はありません**
+	// ——中身は画像の段落で、見せ方は画面だけが持つ（assets/app.js の「カルーセル」・公開ページは assets/public.css の
+	// 横送り）。本文に残るのは `<section data-type="carousel">…画像の段落…</section>` だけ。
+	{
+		Type:        "carousel",
+		DisplayName: "カルーセル",
+		Category:    "基本",
+		Icon:        "🎠",
+		Element:     "section",
+	},
 	// `unhandled-intake`（未処理の受信）は**ここにありません**——通信が `RegisterVocab` で
 	// 自分から持ち込みます（2026-09-15。view_unhandled.go の init）。
 	// `unknown-contacts`（未登録の連絡先）は**ここにありません**——アドレス帳が

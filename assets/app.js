@@ -2809,7 +2809,9 @@
         const box = el.parentElement;
         if (!box || !box.closest('#w-editor-content') || box.closest('.vocab-chrome')) return null;
         const fold = box.tagName === 'DETAILS' && !box.classList.contains('file-view-fold');
-        const sec = box.tagName === 'SECTION' && !box.hasAttribute('data-type') && !box.hasAttribute('data-mirror');
+        // カルーセルの中の画像も「中の要素」（⠿ で並べ替え・出し入れ・🗑 で外す——2026-10-07）。
+        const sec = box.tagName === 'SECTION' && !box.hasAttribute('data-mirror') &&
+            (!box.hasAttribute('data-type') || box.getAttribute('data-type') === CAROUSEL_TYPE);
         if (!fold && !sec) return null;
         if (el.tagName === 'SUMMARY') return null;
         if (sec && /^H[1-6]$/.test(el.tagName) && el === firstContentChild(box)) return null;
@@ -2981,6 +2983,9 @@
         }
         const head = boxHeadAt(e.target);
         if (head && !src.contains(head)) return { mode: 'head', ref: head };
+        // カルーセルの枠（中の画像の外・空のカルーセルも）へ落とすと末尾へ入る（2026-10-07・名前の見出しが無いので）。
+        const car = e.target.closest && e.target.closest('section[data-type="' + CAROUSEL_TYPE + '"]');
+        if (car && car !== src && !src.contains(car) && car.closest('#w-editor-content')) return { mode: 'into', ref: car };
         if (draggedInner) {
             const block = e.target.closest && e.target.closest('.editor-block');
             if (block) {
@@ -3043,6 +3048,10 @@
                 src.setAttribute('contenteditable', 'true'); // 上の段のブロックとして編集できるように
                 src.oninput = updateHtmlPreview;
                 wrapInBlock(src);
+            } else if (plan.mode === 'into') {
+                plan.ref.appendChild(src);
+                src.removeAttribute('contenteditable'); // 入れ物（カルーセル）が編集の単位
+                src.oninput = null;
             } else {
                 const at = plan.mode === 'head' ? plan.ref.nextSibling : (plan.before ? plan.ref : plan.ref.nextSibling);
                 plan.ref.parentElement.insertBefore(src, at);
@@ -3583,6 +3592,281 @@
         notify('ファイル表示を外しました' + (name ? '（' + name + '）' : '') +
             '。ファイルは添付に残っています——戻すなら Ctrl+Z。', { type: 'info', duration: 6000 });
     }
+
+    // ── カルーセル（2026-10-07） ─────────────────────────────────────────
+    //
+    // 利用者:「カルーセルを入れることは出来ますか？」→ 形は「『カルーセル』ブロックを挿す」（続いた画像を自動でまとめる案は
+    // 採らなかった）・画像を押したときの拡大表示も「する」（下の「画像の拡大表示」）。
+    //
+    // 本文に残るのは `<section data-type="carousel">` と中の画像の段落（`<p><img></p>`）だけ（internal/cms/vocab.go）。
+    // 見せ方はここだけが持つ:
+    //   - 閲覧モード: 中の要素を1枚ずつ見せる——全部を同じ升に重ね、いまの1枚以外は visibility で隠す（枚ごとに
+    //     高さが変わって下の本文が跳ねないように）。2枚以上なら下に「‹ 2 / 5 ›」の帯・触る画面では横に払って送る。
+    //   - 編集モード: 枠と「🎠 カルーセル」の帯——「🖼 画像を足す」と「⬇ すぐ下の画像を入れる」（いまのページに縦に並ぶ
+    //     写真をまとめるため）。中の画像は節の中の要素と同じく ⠿ で並べ替え・出し入れ、🗑 で外す（innerBoxOf）。
+    //   - 帯は .vocab-chrome（保存されない）。⚠ 必要なときだけ DOM を変える（編集モードでは DOM の変化が自動保存へ巡る）。
+    const CAROUSEL_TYPE = 'carousel';
+    const carouselIndex = new WeakMap(); // カルーセル → いま見せている枚の番号（閲覧モード・この画面だけ）
+
+    const carouselSlides = car => Array.from(car.children).filter(c => !c.classList.contains('vocab-chrome'));
+
+    // isImageOnlyBlock は、要素が画像だけの段落か（すぐ下の画像をまとめるときの見分け）。
+    function isImageOnlyBlock(el) {
+        if (!el || el.tagName !== 'P' || !el.querySelector('img')) return false;
+        return Array.from(el.childNodes).every(n => (n.nodeType === 3 && !n.textContent.trim()) ||
+            (n.nodeType === 1 && (n.tagName === 'IMG' || n.tagName === 'BR')));
+    }
+
+    // nextImageBlocks は、カルーセルのすぐ下に続く「画像だけの段落」を返す（上の段なら包みごと・節の中ならその要素）。
+    function nextImageBlocks(car) {
+        const top = car.parentElement && car.parentElement.classList.contains('block-content') ? car.closest('.editor-block') : null;
+        const out = [];
+        for (let n = (top || car).nextElementSibling; n; n = n.nextElementSibling) {
+            let el = n;
+            if (top) {
+                const box = n.classList.contains('editor-block') ? n.querySelector(':scope > .block-content') : null;
+                el = box ? firstContentChild(box) : null;
+            }
+            if (!isImageOnlyBlock(el)) break;
+            out.push({ el, wrap: top ? n : null });
+        }
+        return out;
+    }
+
+    function carouselButton(cls, text, title, onClick) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = cls;
+        b.contentEditable = 'false';
+        b.textContent = text;
+        if (title) b.title = title;
+        b.addEventListener('mousedown', e => e.preventDefault()); // キャレットを動かさない
+        b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); onClick(); });
+        return b;
+    }
+
+    // takeImagesBelow は「⬇ すぐ下の画像を入れる」——カルーセルのすぐ下に続く画像だけの段落を中の末尾へ移す。
+    function takeImagesBelow(car) {
+        const below = nextImageBlocks(car);
+        if (!below.length) {
+            notify('このカルーセルのすぐ下に画像がありません（画像だけの段落が続いているところを入れます）。', { type: 'info', duration: 5000 });
+            return;
+        }
+        below.forEach(({ el, wrap }) => {
+            car.appendChild(el);
+            el.removeAttribute('contenteditable'); // 入れ物（カルーセル）が編集の単位
+            el.oninput = null;
+            if (wrap) wrap.remove();
+        });
+        updateHtmlPreview();
+        triggerAutoSave();
+        notify('すぐ下の画像 ' + below.length + ' 枚をカルーセルに入れました（戻すなら Ctrl+Z）。', { type: 'success', duration: 4000 });
+    }
+
+    // addImagesToCarousel は「🖼 画像を足す」——選んだ画像を添付して中の末尾へ足す。
+    function addImagesToCarousel(car) {
+        pickImageFiles(async files => {
+            if (!files.length) return;
+            const slides = carouselSlides(car);
+            await insertImagesAfter(files, slides.length ? slides[slides.length - 1] : car.querySelector(':scope > .car-edit-bar'));
+        });
+    }
+
+    // showCarouselSlide は閲覧モードで i 枚目を見せる（端を越えたら反対の端へ回る）。
+    function showCarouselSlide(car, i) {
+        const slides = carouselSlides(car);
+        if (!slides.length) return;
+        i = ((i % slides.length) + slides.length) % slides.length;
+        carouselIndex.set(car, i);
+        slides.forEach((s, k) => { if (s.classList.contains('car-current') !== (k === i)) s.classList.toggle('car-current', k === i); });
+        const count = car.querySelector(':scope > .car-nav .car-count');
+        const want = (i + 1) + ' / ' + slides.length;
+        if (count && count.textContent !== want) count.textContent = want;
+    }
+
+    // decorateCarousels は帯を付け替える（decorateVocabBlocks の巡りから・モードに合わせて）。
+    function decorateCarousels() {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        const isEdit = document.body.hasAttribute('edit-mode');
+        editor.querySelectorAll('section[data-type="' + CAROUSEL_TYPE + '"]').forEach(car => {
+            if (car.closest('.vocab-chrome')) return;
+            const editBar = car.querySelector(':scope > .car-edit-bar');
+            const nav = car.querySelector(':scope > .car-nav');
+            if (isEdit) {
+                if (nav) nav.remove();
+                carouselSlides(car).forEach(s => { if (s.classList.contains('car-current')) s.classList.remove('car-current'); });
+                if (!editBar) {
+                    const bar = document.createElement('div');
+                    bar.className = 'vocab-chrome car-edit-bar';
+                    bar.contentEditable = 'false';
+                    const label = document.createElement('span');
+                    label.className = 'car-label';
+                    label.textContent = '🎠 カルーセル';
+                    bar.append(label,
+                        carouselButton('car-add', '🖼 画像を足す', '画像を選んで、このカルーセルの末尾へ足します', () => addImagesToCarousel(car)),
+                        carouselButton('car-take', '⬇ すぐ下の画像を入れる', 'このカルーセルのすぐ下に続く画像（画像だけの段落）を中へ移します', () => takeImagesBelow(car)));
+                    car.insertBefore(bar, car.firstChild);
+                }
+                return;
+            }
+            if (editBar) editBar.remove();
+            const slides = carouselSlides(car);
+            if (slides.length < 2) {
+                if (nav) nav.remove();
+            } else if (!nav) {
+                const bar = document.createElement('div');
+                bar.className = 'vocab-chrome car-nav';
+                const count = document.createElement('span');
+                count.className = 'car-count';
+                bar.append(
+                    carouselButton('car-prev', '‹', '前の画像', () => showCarouselSlide(car, (carouselIndex.get(car) || 0) - 1)),
+                    count,
+                    carouselButton('car-next', '›', '次の画像', () => showCarouselSlide(car, (carouselIndex.get(car) || 0) + 1)));
+                car.appendChild(bar);
+            }
+            showCarouselSlide(car, Math.min(carouselIndex.get(car) || 0, Math.max(0, slides.length - 1)));
+        });
+    }
+
+    // 触る画面では横に払って送る（閲覧モード・document へ委譲——カルーセルは描き直されるので要素に付けない）。
+    // 払ったあとの click（拡大表示が開く）は捨てる。
+    let carouselSwipe = null;
+    const carouselSwipedAt = new WeakMap(); // カルーセル → 払って送った時刻（本文の要素に属性を足さない）
+    document.addEventListener('pointerdown', e => {
+        if (document.body.hasAttribute('edit-mode') || e.pointerType === 'mouse') return;
+        const car = e.target.closest && e.target.closest('#w-editor-content section[data-type="' + CAROUSEL_TYPE + '"]');
+        carouselSwipe = car ? { car, x: e.clientX, y: e.clientY } : null;
+    });
+    document.addEventListener('pointerup', e => {
+        const s = carouselSwipe;
+        carouselSwipe = null;
+        if (!s) return;
+        const dx = e.clientX - s.x, dy = e.clientY - s.y;
+        if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+        showCarouselSlide(s.car, (carouselIndex.get(s.car) || 0) + (dx < 0 ? 1 : -1));
+        carouselSwipedAt.set(s.car, Date.now());
+    });
+
+    // ── 画像の拡大表示（2026-10-07） ───────────────────────────────────
+    //
+    // 利用者: 画像を押したときに、大きく開いてページの中の画像を前後に送れるように「する」（カルーセルと一緒に決めた）。
+    // 閲覧モードで本文の画像を押すと画面いっぱいに開く。‹ ›・← →・横に払う で同じページの画像を前後に、Esc・✕・外側で閉じる。
+    // 数えるのは本文の画像——リンクやボタンの中・鏡やファイル表示（クローム）の中は除く。カルーセルの中は隠れている枚も入る
+    // （閉じたとき、最後に見ていた画像がカルーセルの中ならその枚を見せる）。
+    let lightboxList = [];
+    let lightboxAt = 0;
+    let lightboxSwipe = null;
+
+    function lightboxImages() {
+        return Array.from(document.querySelectorAll('#w-editor-content img'))
+            .filter(img => img.getAttribute('src') && !img.closest('a, button, .vocab-chrome, .file-view'));
+    }
+
+    function lightboxEl() {
+        let box = document.getElementById('w-lightbox');
+        if (box) return box;
+        box = document.createElement('div');
+        box.id = 'w-lightbox';
+        box.className = 'is-hidden';
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-modal', 'true');
+        box.setAttribute('aria-label', '画像の拡大表示');
+        const btn = (cls, text, label, fn) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = cls;
+            b.textContent = text;
+            b.title = label;
+            b.setAttribute('aria-label', label);
+            b.addEventListener('click', e => { e.stopPropagation(); fn(); });
+            return b;
+        };
+        const fig = document.createElement('figure');
+        fig.className = 'lb-figure';
+        const img = document.createElement('img');
+        img.className = 'lb-img';
+        const cap = document.createElement('figcaption');
+        cap.className = 'lb-caption';
+        fig.append(img, cap);
+        const count = document.createElement('div');
+        count.className = 'lb-count';
+        box.append(btn('lb-close', '✕', '閉じる（Esc）', closeLightbox),
+            btn('lb-prev', '‹', '前の画像（←）', () => showLightbox(lightboxAt - 1)),
+            fig,
+            btn('lb-next', '›', '次の画像（→）', () => showLightbox(lightboxAt + 1)),
+            count);
+        // 外側（画像と道具の外）を押すと閉じる。
+        box.addEventListener('click', e => { if (e.target === box || e.target === fig) closeLightbox(); });
+        box.addEventListener('pointerdown', e => { lightboxSwipe = e.pointerType === 'mouse' ? null : { x: e.clientX, y: e.clientY }; });
+        box.addEventListener('pointerup', e => {
+            const s = lightboxSwipe;
+            lightboxSwipe = null;
+            if (!s) return;
+            const dx = e.clientX - s.x, dy = e.clientY - s.y;
+            if (Math.abs(dx) >= 40 && Math.abs(dx) >= Math.abs(dy)) showLightbox(lightboxAt + (dx < 0 ? 1 : -1));
+        });
+        document.body.appendChild(box);
+        return box;
+    }
+
+    function showLightbox(i) {
+        if (!lightboxList.length) return;
+        lightboxAt = ((i % lightboxList.length) + lightboxList.length) % lightboxList.length;
+        const src = lightboxList[lightboxAt];
+        const box = lightboxEl();
+        const img = box.querySelector('.lb-img');
+        img.src = src.getAttribute('src');
+        img.alt = src.getAttribute('alt') || '';
+        box.querySelector('.lb-caption').textContent = src.getAttribute('alt') || '';
+        box.querySelector('.lb-count').textContent = (lightboxAt + 1) + ' / ' + lightboxList.length;
+        const many = lightboxList.length > 1;
+        setHidden(box.querySelector('.lb-prev'), !many);
+        setHidden(box.querySelector('.lb-next'), !many);
+    }
+
+    function openLightbox(img) {
+        lightboxList = lightboxImages();
+        const i = lightboxList.indexOf(img);
+        if (i < 0) return;
+        const box = lightboxEl();
+        setHidden(box, false);
+        document.body.classList.add('w-lightbox-open');
+        showLightbox(i);
+        box.querySelector('.lb-close').focus({ preventScroll: true });
+    }
+
+    function closeLightbox() {
+        const box = document.getElementById('w-lightbox');
+        if (!box || box.classList.contains('is-hidden')) return;
+        setHidden(box, true);
+        document.body.classList.remove('w-lightbox-open');
+        // 最後に見ていた画像がカルーセルの中なら、その枚を見せておく。
+        const last = lightboxList[lightboxAt];
+        const car = last && last.closest('section[data-type="' + CAROUSEL_TYPE + '"]');
+        if (car) {
+            const slide = carouselSlides(car).find(s => s.contains(last));
+            if (slide) showCarouselSlide(car, carouselSlides(car).indexOf(slide));
+        }
+        lightboxList = [];
+    }
+
+    document.addEventListener('click', e => {
+        if (document.body.hasAttribute('edit-mode')) return;
+        const img = e.target instanceof Element && e.target.closest('#w-editor-content img');
+        if (!img || img.closest('a, button, .vocab-chrome, .file-view')) return;
+        const car = img.closest('section[data-type="' + CAROUSEL_TYPE + '"]');
+        if (car && Date.now() - (carouselSwipedAt.get(car) || 0) < 500) return; // 払って送った直後の click
+        e.preventDefault();
+        openLightbox(img);
+    });
+    document.addEventListener('keydown', e => {
+        const box = document.getElementById('w-lightbox');
+        if (!box || box.classList.contains('is-hidden')) return;
+        if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); showLightbox(lightboxAt - 1); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); showLightbox(lightboxAt + 1); }
+    });
 
     // ── 表の名前・見出しの「SQL で引くとき気をつける所」を薄赤に（2026-09-28） ────────────
     //
@@ -7875,6 +8159,7 @@
 
         // ファイル表示の配線の札も同じ巡りで面倒を見る（呼び出し口を増やさない）。
         decorateFileViews();
+        decorateCarousels(); // カルーセルの帯（編集）と送る道具（閲覧）も同じ巡りで（2026-10-07）
         // 表の名前・見出しの SQL の問題個所の薄赤も同じ巡りで（2026-09-28）。
         markSqlNames();
         // セルの印（折り返し・型の読めた／読めない）も同じ巡りで付け直す。
@@ -8075,7 +8360,7 @@
     // ——並べ替えると見出し1〜3が離れ、覚えた場所が動く。ほかの分類はこれまでどおり、使った回数の多い順。
     // ⚠ 関数にしてある（定数を外に置くと、buildSlashItems が先に呼ばれたときに使えない）。
     function slashBasicOrder() {
-        return ['h1', 'h2', 'h3', 'p', 'vocab:tags', 'attach', 'vocab:file-view', 'table', 'dl', 'section', 'details'];
+        return ['h1', 'h2', 'h3', 'p', 'vocab:tags', 'attach', 'vocab:file-view', 'vocab:carousel', 'table', 'dl', 'section', 'details'];
     }
 
     // slashUseCount は使った回数（UI ストアに永続化）。
