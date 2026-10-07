@@ -109,7 +109,7 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 | メソッド | パス | 認可 | 編集ロック | 概要 |
 |---|---|---|---|---|
 | GET | `/{id}` | 任意認証 | — | **ページ本体**。本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成）。**殻は相手で分かれる**（2026-08-26）——認証済みは編集用 `assets/index.html`（`RenderPageShell`・`Cache-Control: no-store`）、匿名は**公開専用** `assets/public.html`（`RenderPublicShell`・スクリプト無し・`description`/OGP/canonical つき・`public, max-age=600` ＋ `Vary: Cookie` ＋ `ETag`）。本文はサニタイズ後に**計算ビューの中身が埋められる**（`RenderComputedViews`。下記の注記）。権限無し=403（体裁つきのHTML）／匿名×非公開=404（トップだけ `/login` へ302）／不存在=404 |
-| GET | `/api/load` | 任意認証（read） | — | ページ本文（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用**。`id` は入口で6桁へ畳み、**空も不正も400「ページIDが不正です」**（2026-09-14。前は空だけ `Missing id` で分けていたが、呼ぶ側にできることは同じ）。**描画時と同じくサニタイズを通し**、計算ビューの中身を埋めて返す。**ページ内アンカーの合成（`RenderAnchors`）と参照リンクの合成（`RenderReferenceLinks`）は通さない**——合成した id や `<a>` がエディタのDOMへ入ると本文として保存されるため（下記の注記） |
+| GET | `/api/load` | 任意認証（read） | — | ページ本文（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用**。`id` は入口で6桁へ畳み、**空も不正も400「ページIDが不正です」**（2026-09-14。前は空だけ `Missing id` で分けていたが、呼ぶ側にできることは同じ）。**描画時と同じくサニタイズを通し**、計算ビューの中身を埋めて返す。**ページ内アンカーの合成（`RenderAnchors`）と参照リンクの合成（`RenderReferenceLinks`）は通さない**——合成した id や `<a>` がエディタのDOMへ入ると本文として保存されるため（下記の注記）。⚠ **`view=1` を付けたときだけ**両方を通す（2026-10-07）——閲覧の画面が読み直して、開いたときの姿と比べて変わったブロックだけを差し替えるため（ページの更新の知らせ・`/api/page-events`）。編集モードの載せ替えでは付けない |
 | POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types`、見出しの改名で計算に読まれなくなった項目の告知 `unresolved_fields`、殻の接頭辞を剥がした id の告知 `stripped_ids` を返す（下記の注記）。JSONボディは**8MiB上限**（超過は413。JSONを受けるAPIは共通） |
 | POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types`・`unresolved_fields`・`stripped_ids` は当該ブロック分のみ） |
 | GET | `/api/page-meta` | 任意認証（read） | — | ページ属性（親ページID・親ページ名・更新日時など）。匿名には実効公開のときだけ返す |
@@ -157,6 +157,7 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 |---|---|---|---|
 | POST | `/api/lock` | 要認証（write） | ロック取得（`{ok, token}`）。取れなければ **423 Locked** ＋ `{ok:false, holder, same_user, grace_remaining_sec}`。**本文は返さない**——取得後にフロントが `GET /api/load` を読む（そちらは計算ビューのSSRを通るため。2026-08-20 変更） |
 | GET | `/api/lock-events` | 要認証（write） | ロック状態の **SSE** 購読（保持者・待機者で共用） |
+| GET | `/api/page-events` | 要認証（**read**） | ページの更新の知らせの **SSE** 購読（2026-10-07・`internal/cms/page_events.go`）。つないだ直後に `{type:"hello", updated_at}`、本文が書き換わるたびに `{type:"updated", by, updated_at}`。知らせるのは本文を書く口（`/api/save`・`/api/save-block`・`RewriteBody`／`SetPageH1`・`RevertToVersion`）。**どこが変わったかは送らない**——画面が `/api/load?view=1` で読み直して比べる。ロックの流れとは別（あちらは write が要る） |
 | POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
 | POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
 
