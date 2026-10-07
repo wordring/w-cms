@@ -886,7 +886,7 @@ body[edit-mode] .block-content p:empty::before {
     z-index: 1100;
 }
 .context-toolbar.is-docked button {
-    padding: 8px 9px;
+    padding: 8px 5px; /* ↶ ↷ を足しても 390px 幅に12個が入るように（2026-10-07） */
     font-size: 15px;
     flex: 0 0 auto;
 }

@@ -9182,6 +9182,7 @@
             showContextToolbarForBlock(block);
         } else {
             refreshBlockTypeButtons(); // 同じブロックの中でキャレットが動いた（節の中の段落と見出しなど）
+            positionContextToolbar(block); // 帯もキャレットの行へ寄せる（背の高い節の中で動いたとき）
         }
     }
 
@@ -9571,16 +9572,39 @@
             if (window.matchMedia('(pointer: coarse)').matches) {
                 toolbar.classList.add('is-docked');
                 toolbar.style.left = '';
-                positionDockedToolbar(); // キーボードに合わせて「見えている下端」へ
+                positionDockedToolbar(); // キーボードに合わせて「見えている上端」へ
             } else {
                 toolbar.classList.remove('is-docked');
-                const rect = block.getBoundingClientRect();
-                toolbar.style.top = (rect.top + window.scrollY - 35) + 'px';
-                toolbar.style.left = (rect.left + window.scrollX + 20) + 'px';
+                positionContextToolbar(block);
             }
         } else {
             hideContextToolbar();
         }
+    }
+
+    // positionContextToolbar は PC の帯を、**キャレットのある行**（文字の要素）のすぐ上に置く——入らなければ（画面やヘッダーの上へ
+    // はみ出すなら）すぐ下へ。⚠ 2026-10-07 まではブロックの上端の上に置いていた（利用者:「帯が出ません」「一番下では出ます」）——
+    // 写真を何十枚も持つ節は高さが 7万px にもなり、その下の方を触ると帯は画面のはるか上（実測 -68,624px）に出て見えなかった。
+    // キャレットが同じブロックの中で動いたときも置き直す（updateContextToolbar）。
+    function positionContextToolbar(block) {
+        const toolbar = document.getElementById('w-context-toolbar');
+        if (!toolbar || toolbar.classList.contains('is-docked') || !toolbar.classList.contains('active')) return;
+        const sel = window.getSelection();
+        const n = sel && sel.rangeCount ? sel.anchorNode : null;
+        const at = n && (n.nodeType === 1 ? n : n.parentElement);
+        // 行の目安: キャレットのある文字の要素（段落・見出し・セル・項目）——無ければブロック。
+        const line = (at && block && block.contains(at) && at.closest('p, h1, h2, h3, h4, h5, h6, li, td, th, dt, dd, caption, summary, blockquote, pre')) || block;
+        if (!line) return;
+        const rect = line.getBoundingClientRect();
+        const h = toolbar.offsetHeight || 34;
+        const header = document.querySelector('header.header');
+        const hr = header ? header.getBoundingClientRect() : null;
+        const ceiling = hr && hr.bottom > 0 ? hr.bottom : 0; // 出ているヘッダーの下端（出ていなければ画面の上端）
+        let top = rect.top - h - 6;
+        if (top < ceiling + 4) top = Math.min(rect.bottom + 6, window.innerHeight - h - 4); // 上に入らなければ下へ
+        const blockRect = (block || line).getBoundingClientRect();
+        toolbar.style.top = (top + window.scrollY) + 'px';
+        toolbar.style.left = (Math.max(blockRect.left, 0) + window.scrollX + 20) + 'px';
     }
 
     function hideContextToolbar() {
