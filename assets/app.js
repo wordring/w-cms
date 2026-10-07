@@ -8478,11 +8478,41 @@
         renderSlashMenu();
         menu.classList.add('active');
 
-        const rect = targetElement.getBoundingClientRect();
-        placeFloating(menu, rect, 5);
+        slashAnchor = targetElement;
+        placeSlashMenu();
 
         slashSelectedIndex = 0;
         updateSlashMenuSelection();
+    }
+
+    // placeSlashMenu はメニューを、キャレットの段落の下（入らなければ上）の**見えている範囲**に置く（2026-10-07 利用者:
+    // 「ブロック挿入のメニューは下層キーボードに隠れるので、これも何とかしたいです」）。見えている範囲は visualViewport
+    // （スマホではキーボードの分だけ縮む）で、スマホの帯（画面の上）とも重ねない。高さは入る分に縮めて、中を巻物にする。
+    // キーボードが出入りしたら置き直す（下の visualViewport の聞き手）。
+    let slashAnchor = null;
+    function placeSlashMenu() {
+        const menu = document.getElementById('w-slash-menu');
+        if (!menu || !slashMenuVisible || !slashAnchor || !slashAnchor.isConnected) return;
+        const rect = slashAnchor.getBoundingClientRect();
+        const vv = window.visualViewport;
+        const vTop = vv ? vv.offsetTop : 0;
+        const vBottom = vTop + (vv ? vv.height : window.innerHeight);
+        const bar = document.getElementById('w-context-toolbar');
+        const reserve = bar && bar.classList.contains('active') && bar.classList.contains('is-docked') ? bar.offsetHeight + 8 : 0;
+        const gap = 5, pad = 8, least = 120;
+        menu.style.maxHeight = '';
+        const natural = Math.min(menu.scrollHeight, 300);
+        const below = vBottom - rect.bottom - gap - pad;
+        const above = rect.top - (vTop + reserve) - gap - pad;
+        const downward = below >= natural || below >= above;
+        const h = Math.max(least, Math.min(natural, downward ? below : above));
+        menu.style.maxHeight = h + 'px';
+        placeFloating(menu, rect, gap); // 左右の寄せ（下に置く top もここで決まる）
+        if (!downward) menu.style.top = (rect.top - gap - h + window.scrollY) + 'px';
+    }
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', placeSlashMenu);
+        window.visualViewport.addEventListener('scroll', placeSlashMenu);
     }
 
     // filterSlashMenu は `/` に続けて打たれた文字で候補を絞ります。
@@ -8491,11 +8521,13 @@
         renderSlashMenu();
         slashSelectedIndex = 0;
         updateSlashMenuSelection();
+        placeSlashMenu(); // 絞ると高さが変わる——上に置いていたら段落から離れる
     }
 
     function hideSlashMenu() {
         slashMenuVisible = false;
         slashQuery = '';
+        slashAnchor = null;
         const menu = document.getElementById('w-slash-menu');
         if (menu) menu.classList.remove('active');
         currentSlashBlock = null;
@@ -9278,10 +9310,11 @@
         if (hasButtons) {
             refreshBlockTypeButtons(); // いまの種類の印（作り直したばかりの帯にはまだ無い）
             toolbar.classList.add('active');
-            // タッチ端末では**画面下のドック**に出す（2026-09-01 スマホ実機確認:
+            // タッチ端末では**画面の端のドック**に出す（2026-09-01 スマホ実機確認:
             // 「文字列を選択すると、切り取り、コピーなどのコンテキストメニューが出て、
             // w-cmsのコンテキストメニューが隠れます」）。ネイティブの選択メニューは
-            // 選択位置の近くにしか出ないので、下端なら場所を取り合わない。
+            // 選択位置の近くにしか出ないので、端なら場所を取り合わない。⚠ 2026-10-07 から**上の端**
+            // （下の端は打っている行のすぐ下を塞いだ——positionDockedToolbar）。
             if (window.matchMedia('(pointer: coarse)').matches) {
                 toolbar.classList.add('is-docked');
                 toolbar.style.left = '';
@@ -9311,13 +9344,16 @@
     // ビューポート基準なので、ソフトキーボードが出ると隠れる（2026-09-01 実機確認
     // 「画面下の固定ドックでは、ソフトキーボードに隠されるようです」）。
     // visualViewport はキーボードで縮むため、その下端に合わせれば常に見える。
+    // ⚠ **2026-10-07 から画面の上**（利用者:「スマホでは帯が書き込みを邪魔するので上の方に出した方がよいと思います」）
+    //    ——それまでは見えている領域の下端（キーボードのすぐ上）で、打っている行のすぐ下を塞いでいた。
+    //    見えている領域の上端に置く（iOS でキーボードが出てページがずれても、visualViewport の offsetTop で追う）。
     function positionDockedToolbar() {
         const toolbar = document.getElementById('w-context-toolbar');
         if (!toolbar || !toolbar.classList.contains('is-docked') ||
             !toolbar.classList.contains('active')) return;
         const vv = window.visualViewport;
-        if (!vv) return; // 古いブラウザは CSS の bottom 固定にフォールバック
-        toolbar.style.top = (vv.offsetTop + vv.height - toolbar.offsetHeight - 12) + 'px';
+        if (!vv) return; // 古いブラウザは CSS の top 固定にフォールバック
+        toolbar.style.top = (vv.offsetTop + 6) + 'px';
     }
     if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', positionDockedToolbar);

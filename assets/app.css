@@ -868,23 +868,27 @@ body[edit-mode] .block-content p:empty::before {
 /* タッチ端末では画面下のドックに出す（ネイティブの選択メニューは選択位置の
  * 近くに出るため、選択の上に重ねると隠される——2026-09-01 スマホ実機確認）。
  * ボタンも指のあたり判定に合わせて大きくする。 */
+/* ⚠ 2026-10-07 から**画面の上・全幅の1列**（利用者:「スマホでは帯が書き込みを邪魔するので上の方に出した方がよい」）。
+ * それまでは下端の中央寄せ（left: 50%）で、ボタンが増えると幅が画面の半分に縛られて何段にも折れ、打っている行の下を塞いだ。
+ * 入りきらないボタンは帯の中で横に流して見る。ヘッダー（z-index 1000）より手前。 */
 .context-toolbar.is-docked {
     position: fixed;
-    left: 50%;
-    transform: translateX(-50%);
-    /* 縦位置は JS（positionDockedToolbar）が visualViewport の下端に合わせて
-       top を設定する——ソフトキーボードが出ても隠れない。ここは
+    left: 8px;
+    right: 8px;
+    /* 縦位置は JS（positionDockedToolbar）が visualViewport の上端に合わせて
+       top を設定する——ページがずれても見えている領域の上に居る。ここは
        visualViewport の無い古いブラウザ向けのフォールバックだけ。 */
-    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    padding: 6px;
-    gap: 8px;
-}
-.context-toolbar.is-docked[style*="top"] {
-    bottom: auto; /* JS が top を決めたら bottom は使わない（両方効くと箱が伸びる） */
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    padding: 4px;
+    gap: 2px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    z-index: 1100;
 }
 .context-toolbar.is-docked button {
-    padding: 10px 14px;
-    font-size: 16px;
+    padding: 8px 9px;
+    font-size: 15px;
+    flex: 0 0 auto;
 }
 
 .context-toolbar button {
@@ -2949,9 +2953,8 @@ body.w-lightbox-open { overflow: hidden; }
 }
 
 /* ── 帯のブロックの種類（2026-10-07・assets/app.js の「ブロックの種類を替える」） ──
-   いまの種類は青い背景（押した印）。文字のブロックの外では押せない（薄く）。スマホの下の帯はボタンが増えたので折り返す。 */
+   いまの種類は青い背景（押した印）。文字のブロックの外では押せない（薄く）。スマホの帯は上の端に全幅の1列（上の .is-docked）。 */
 .context-toolbar .ctx-sep { width: 1px; align-self: stretch; background: #475569; margin: 0 2px; }
 .context-toolbar button.ctx-type.is-active { background: #2563eb; }
 .context-toolbar button:disabled { opacity: 0.4; cursor: default; }
 .context-toolbar button:disabled:hover { background: transparent; }
-.context-toolbar.is-docked { flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 24px); }

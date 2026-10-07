@@ -137,9 +137,31 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const t = document.getElementById('w-context-toolbar');
       const r = t.getBoundingClientRect();
       return { active: t.classList.contains('active'), docked: t.classList.contains('is-docked'), left: Math.round(r.left), right: Math.round(r.right),
-        buttons: t.querySelectorAll('button').length, vw: window.innerWidth };
+        top: Math.round(r.top), height: Math.round(r.height), buttons: t.querySelectorAll('button').length, vw: window.innerWidth };
     });
-    check('⑧ スマホ幅では下の帯が画面からはみ出さない', box.active && box.docked && box.left >= 0 && box.right <= box.vw, JSON.stringify(box));
+    // 2026-10-07 から画面の上・全幅の1列（利用者:「スマホでは帯が書き込みを邪魔するので上の方に出した方がよい」）。
+    check('⑧ スマホでは帯が画面の上に1列で出て、はみ出さない', box.active && box.docked && box.top <= 20 && box.height <= 56 &&
+      box.left >= 0 && box.right <= box.vw, JSON.stringify(box));
+    // ⑨ キーボードが出て見えている高さが縮んだ形で、下の方の段落の「＋」——メニューは見えている範囲（帯の下）に収まる
+    //    （利用者:「ブロック挿入のメニューは下層キーボードに隠れるので、これも何とかしたいです」）。
+    await pp.setViewportSize({ width: 375, height: 380 });
+    await pp.evaluate(() => {
+      const el = document.querySelector('#w-editor-content [data-id="ee05"]');
+      window.scrollBy(0, el.getBoundingClientRect().bottom - (window.innerHeight - 40));
+    });
+    await pp.tap('#w-editor-content [data-id="ee05"]');
+    await sleep(500);
+    await pp.tap('#w-ctx-add');
+    await sleep(700);
+    const m9 = await pp.evaluate(() => {
+      const menu = document.getElementById('w-slash-menu');
+      const r = menu.getBoundingClientRect();
+      const bar = document.getElementById('w-context-toolbar').getBoundingClientRect();
+      return { active: menu.classList.contains('active'), top: Math.round(r.top), bottom: Math.round(r.bottom), barBottom: Math.round(bar.bottom),
+        vh: window.innerHeight, items: menu.querySelectorAll('.slash-menu-item').length };
+    });
+    check('⑨ キーボードで狭いときも、メニューは見えている範囲（帯の下）に収まる', m9.active && m9.items > 3 && m9.top >= m9.barBottom &&
+      m9.bottom <= m9.vh, JSON.stringify(m9));
     await pp.goto(BASE + '/000000').catch(() => {});
     await phone.close();
   } finally {
