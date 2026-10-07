@@ -2201,8 +2201,15 @@
     // （重複したままだとサーバーが差し替え対象を特定できず 409 で全文保存に落ち続ける）。
     function ensureBlockIds() {
         const used = new Set();
+        const seen = new Set();
         let changed = 0;
         const assign = el => {
+            // ⚠ **同じ要素を2度数えない**（2026-10-07 に直した）——上の段の表・節・定義リストは、上の段の巡りと
+            //    下の「入れ子」の巡り（`.block-content table` は上の段の表にも当たる）の両方に来る。2度目は自分の ID を
+            //    「重複」とみなして振り直していたので、**編集して保存するたびに上の段の表と節の ID が変わり**、
+            //    「ページID-ブロックID」の参照が切れ、ページの更新の知らせが触っていない表まで「変わった」に数えていた。
+            if (seen.has(el)) return;
+            seen.add(el);
             const id = el.getAttribute(BLOCK_ID_ATTR);
             if (id && !used.has(id)) { used.add(id); return; } // 一意なのでそのまま
             const fresh = newBlockId(used);                     // 未採番 or 重複 → 振り直す
