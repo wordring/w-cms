@@ -1055,8 +1055,8 @@
             return Promise.resolve();
         }
 
-        // 変更が確定したこの時点をアンドゥ履歴へ積む（保存と同じ粒度）
-        pushSnapshot(document.getElementById('w-html-preview').value);
+        // ⚠ 保存のときにはアンドゥの履歴へ積まない（2026-10-07）——区切りは checkpoint の仕組みだけ（「区切り（チェックポイント）」）。
+        //    保存は focusout でも走るので、操作の途中（要素の差し替えのあいだ）の一瞬の姿が積まれていた。
 
         // **約束を返します**（2026-09-15）。閲覧モードへ戻る側が「書きかけを流し終えるまで
         // ロックを放さない」ために要ります——放してから届いた保存は 409 で捨てられます。
@@ -1085,7 +1085,7 @@
                 if (applySanitizedHtml(data.html)) { updateHtmlPreview(); buildToc(); }
                 notifySanitized();
                 // 除去後の状態を積み直す。積まないと「除去された危険な内容」へアンドゥで戻れてしまう。
-                pushSnapshot(document.getElementById('w-html-preview').value);
+                replaceTopState();
             }
             notifyUnknownTypes(data.unknown_types);
             notifyUnresolvedFields(data.unresolved_fields);
@@ -1129,7 +1129,7 @@
                 buildToc();
                 notifySanitized();
                 // 除去後の状態を積み直す（アンドゥで危険な内容へ戻らないように）
-                pushSnapshot(document.getElementById('w-html-preview').value);
+                replaceTopState();
                 lastSavedBlocks = serializeBlocks();
             } else {
                 // 送ったブロックだけ記録を更新する
@@ -1166,8 +1166,8 @@
     // 粒度は「変更が確定した単位」＝保存が走る単位（既存の1.5秒デバウンス）。
     // 1キーストロークごとではないので粗いが、カスタム要素も属性ごとHTMLに乗るため
     // すべてのブロック操作を一様に扱える。
-    const UNDO_LIMIT = 100;
-    let undoStack = [];        // [{html, caret}] 末尾が現在の状態
+    const UNDO_LIMIT = 200;
+    let undoStack = [];        // [{blocks: [{id, html}], caret}] 末尾が現在の状態
     let redoStack = [];
     let suppressSnapshot = false; // 復元中は積まない（復元が新しい変更として記録されるのを防ぐ）
 
@@ -1234,55 +1234,280 @@
         } catch (e) { /* 位置が復元できなくても編集は続行できる */ }
     }
 
-    // pushSnapshot は現在の状態を履歴へ積む。直前と同じ内容なら積まない。
-    function pushSnapshot(html) {
-        if (suppressSnapshot) return;
+    // ── 区切り（チェックポイント）と、変わったブロックだけの差し替え（2026-10-07 に本格化） ──
+    //
+    // 利用者:「アンドゥ・リドゥを本格化してください」。それまでの粗さ（E2E verify-undo.js で確かめた）:
+    //   ① 区切りが保存（1.5秒）だけ——保存の前に Ctrl+Z を押すと打った文字が消え、やり直しでも戻らなかった
+    //   ② 戻すたびに本文を丸ごと描き直していた——ファイル表示の枠・鏡（サーバーが描く中身）が消え、PDF も読み直した
+    //   ③ 打った文字とブロックの操作が1つの区切りに混ざった（打ってすぐ見出しにすると、戻すと両方消えた）
+    //   ④ スマホには Ctrl+Z が無く、戻す道が無かった
+    // いまの形:
+    //   - 区切るとき: 打つのが CHECKPOINT_IDLE_MS 止まったとき（scheduleCheckpoint）・Enter・帯やメニュー・ブロックの操作
+    //     （⠿ 🗑 ＋）・ほかの道具を押す直前・貼り付けとドラッグの直前（flushCheckpoint——setupHistoryHooks）。戻す・やり直す前にも、
+    //     まだ区切っていない変更を区切る（打ったばかりの文字を失わない・やり直せる）。
+    //   - 記録は上の段のブロックごとの書き出し（[{id, html}]）。同じ中身なら積まない。
+    //   - 戻すときは**変わったブロックだけ**差し替える（reconcileBlocks）——同じ HTML の並びを最長で残し、動いたブロックは要素ごと
+    //     動かし、前にあったブロックはそのときの要素を使い回す（サーバーが描いた中身ごと戻る）。
+    //   - 帯の ↶ ↷（スマホ用・showContextToolbarForBlock）とキー（Ctrl+Z・Ctrl+Y・Ctrl+Shift+Z）。
+    const CHECKPOINT_IDLE_MS = 700;
+    const KNOWN_ELEMENTS_LIMIT = 400;
+    let checkpointTimer = null;
+    const knownElements = new Map(); // 書き出した HTML → そのときの上の段の要素（戻すときに使い回す・古いものから捨てる）
+
+    // rememberElements は、いまの上の段の要素を書き出した HTML で覚える（あとで消されても、戻すときに使い回せる）。
+    function rememberElements(live) {
+        live.forEach(b => {
+            if (knownElements.has(b.html)) knownElements.delete(b.html); // 新しい順へ
+            knownElements.set(b.html, b.el);
+        });
+        while (knownElements.size > KNOWN_ELEMENTS_LIMIT) knownElements.delete(knownElements.keys().next().value);
+    }
+
+    // pushState は書き出した状態を履歴へ積む。直前と同じ中身なら積まない（積んだら true）。
+    function pushState(live) {
+        if (suppressSnapshot) return false;
+        rememberElements(live);
         const top = undoStack[undoStack.length - 1];
-        if (top && top.html === html) return;
-        undoStack.push({ html: html, caret: captureCaret() });
+        if (top && top.blocks.length === live.length && top.blocks.every((b, i) => b.html === live[i].html)) return false;
+        // 変わっていないブロックの文字列は、直前の記録のものを使い回す（同じ文字列を何百も持たない）。
+        const prev = new Map(top ? top.blocks.map(b => [b.html, b.html]) : []);
+        undoStack.push({ blocks: live.map(b => ({ id: b.id, html: prev.get(b.html) || b.html })), caret: captureCaret() });
         if (undoStack.length > UNDO_LIMIT) undoStack.shift();
         redoStack = []; // 新しい変更が入ったらリドゥは無効
+        refreshUndoButtons();
+        return true;
     }
 
-    // resetHistory はセッションの区切りで履歴を捨てる。
+    // replaceTopState は、サーバーがサニタイズで除いたあとの姿を記録にする——**積み増さずに、いちばん新しい記録を置き換える**
+    // （積むと、戻すと除く前の危険な中身へ戻れてしまう）。除く前の姿がまだ積まれていなければ（区切りを待っている）、ふつうに区切る。
+    function replaceTopState() {
+        if (suppressSnapshot) return;
+        if (checkpointTimer || undoStack.length === 0) { checkpoint(); return; }
+        const live = serializeBlocks();
+        rememberElements(live);
+        undoStack[undoStack.length - 1] = { blocks: live.map(b => ({ id: b.id, html: b.html })), caret: captureCaret() };
+        refreshUndoButtons();
+    }
+
+    // quietDomChange は、機械が要素を差し替えている途中の印（focusout の保存を止める）。
+    let quietDomChange = false;
+
+    // checkpoint はまだ区切っていない変更を区切る（変わっていなければ何もしない）。
+    function checkpoint() {
+        clearTimeout(checkpointTimer);
+        checkpointTimer = null;
+        if (!document.body.hasAttribute('edit-mode') || suppressSnapshot) return;
+        pushState(serializeBlocks());
+    }
+    // flushCheckpoint は、操作の直前に打った分を区切る（打った文字と操作を別の区切りにする）。
+    const flushCheckpoint = () => checkpoint();
+
+    // scheduleCheckpoint は、打つのが止まったら区切る（打つたびに待ち直す）。
+    function scheduleCheckpoint() {
+        if (!document.body.hasAttribute('edit-mode') || suppressSnapshot) return;
+        clearTimeout(checkpointTimer);
+        checkpointTimer = setTimeout(checkpoint, CHECKPOINT_IDLE_MS);
+        refreshUndoButtons();
+    }
+
+    // resetHistory はセッションの区切りで履歴を捨てる。withCurrent なら、いまの状態を起点として積む。
     // 編集権を失ったときは本文がサーバーの最新版に置き換わり手元の編集も失われているため、
     // 戻せない状態へアンドゥできないようにここで必ず捨てる。
-    function resetHistory(initialHtml) {
+    function resetHistory(withCurrent) {
+        clearTimeout(checkpointTimer);
+        checkpointTimer = null;
         undoStack = [];
         redoStack = [];
-        if (typeof initialHtml === 'string') undoStack.push({ html: initialHtml, caret: null });
+        knownElements.clear();
+        if (withCurrent) {
+            const live = serializeBlocks();
+            rememberElements(live);
+            undoStack.push({ blocks: live.map(b => ({ id: b.id, html: b.html })), caret: null });
+        }
+        refreshUndoButtons();
     }
 
-    // restoreSnapshot は履歴の状態を画面へ戻し、その結果を保存する。
-    function restoreSnapshot(snap) {
+    // elementFromHTML は書き出した1ブロックの HTML から要素を作る（populateEditor と同じく DOMParser——スクリプトは走らない）。
+    function elementFromHTML(html) {
+        const el = new DOMParser().parseFromString(html, 'text/html').body.firstElementChild;
+        return el ? document.importNode(el, true) : null;
+    }
+
+    // morphInto は画面の要素 live の中身を、記録から作った要素 target に合わせる——**作り直さない**ので、サーバーが描いた中身
+    // （.vocab-chrome——表の鏡の列・節の中のファイル表示の枠）は比べずにその場に残る。属性のうち、表示のために画面が付けたもの
+    // （class・contenteditable など——書き出しには出ない）は残す（applyMode と飾り付けが付け直す）。
+    const MORPH_KEEP_ATTRS = new Set(['class', 'contenteditable', 'style', 'spellcheck', 'draggable', 'tabindex']);
+    const isChromeNode = n => n.nodeType === 1 && n.classList.contains('vocab-chrome');
+    function morphInto(live, target) {
+        Array.from(live.attributes).forEach(a => {
+            if (!target.hasAttribute(a.name) && !MORPH_KEEP_ATTRS.has(a.name)) live.removeAttribute(a.name);
+        });
+        Array.from(target.attributes).forEach(a => { if (live.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value); });
+        const lk = Array.from(live.childNodes).filter(n => !isChromeNode(n) && (n.nodeType === 1 || n.nodeType === 3));
+        const tk = Array.from(target.childNodes).filter(n => n.nodeType === 1 || n.nodeType === 3);
+        let i = 0;
+        for (; i < tk.length; i++) {
+            const t = tk[i], l = lk[i];
+            if (l && l.nodeType === t.nodeType && (t.nodeType === 3 || (l.tagName === t.tagName && !isChromeNode(t)))) {
+                if (t.nodeType === 3) { if (l.nodeValue !== t.nodeValue) l.nodeValue = t.nodeValue; }
+                else morphInto(l, t);
+                continue;
+            }
+            // 種類が違う——記録の側の要素を入れる（後ろのサーバーの中身より前へ）。
+            const node = document.importNode(t, true);
+            if (l) live.insertBefore(node, l);
+            else {
+                const tail = Array.from(live.childNodes).reverse().find(n => !isChromeNode(n));
+                if (tail) tail.after(node); else live.insertBefore(node, live.firstChild);
+            }
+            lk.splice(i, 0, node);
+        }
+        for (; i < lk.length; i++) lk[i].remove(); // 記録に無い子は外す（サーバーの中身はそのまま）
+    }
+
+    // reconcileBlocks は上の段のブロックを target（[{html}]）の並びにする——変わったブロックだけ差し替える。
+    function reconcileBlocks(target) {
+        const editor = document.getElementById('w-editor-content');
+        const live = serializeBlocks();
+        const want = target.map(b => b.html);
+        const n = live.length, m = want.length;
+        // 同じ HTML の並びを最長で残す（LCS）——残すブロックは動かさない（PDF の枠を読み直させない）。
+        const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+        for (let i = n - 1; i >= 0; i--) {
+            for (let j = m - 1; j >= 0; j--) L[i][j] = live[i].html === want[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+        }
+        const pick = new Array(m).fill(null);
+        const used = new Set();
+        for (let i = 0, j = 0; i < n && j < m;) {
+            if (live[i].html === want[j]) { pick[j] = live[i].el; used.add(live[i].el); i++; j++; }
+            else if (L[i + 1][j] >= L[i][j + 1]) i++;
+            else j++;
+        }
+        // 残さなかったブロック——並びの外で同じ中身のもの（動いたブロック）は要素ごと動かす。
+        const spare = new Map();
+        live.forEach(b => { if (!used.has(b.el) && !spare.has(b.html)) spare.set(b.html, b.el); });
+        // 同じブロック（同じ ID・同じ種類）で中身だけ変わったものは、作り直さずに中身を合わせる（morphInto）。
+        const byId = new Map();
+        live.forEach(b => { if (!used.has(b.el) && b.id && !byId.has(b.id)) byId.set(b.id, b.el); });
+        for (let j = 0; j < m; j++) {
+            if (pick[j]) continue;
+            let el = spare.get(want[j]);
+            if (el && used.has(el)) el = null; // 中身を合わせて使った要素は二度使わない
+            if (el) spare.delete(want[j]);
+            if (!el && target[j].id && byId.has(target[j].id)) {
+                const cand = byId.get(target[j].id);
+                const t = elementFromHTML(want[j]);
+                if (!used.has(cand) && t && t.tagName === cand.tagName) {
+                    morphInto(cand, t);
+                    el = cand;
+                }
+            }
+            if (!el) {
+                // 前にあった要素（消したブロック）——中身が変わっていなければ、サーバーが描いた中身ごと使い回す。
+                const old = knownElements.get(want[j]);
+                if (old && !old.isConnected && !used.has(old) && serializeBlock(old) === want[j]) el = old;
+            }
+            if (!el) el = elementFromHTML(want[j]);
+            if (!el) continue;
+            pick[j] = el;
+            used.add(el);
+        }
+        // 使わなかったブロックを外す（覚えておく——やり直しで使い回す）。
+        live.forEach(b => {
+            if (used.has(b.el)) return;
+            knownElements.set(b.html, b.el);
+            (b.el.closest('.editor-block') || b.el).remove();
+        });
+        // 並べる——いる場所にあるものは動かさない。
+        let prev = null;
+        pick.forEach(el => {
+            if (!el) return;
+            let wrap = el.closest('.editor-block');
+            if (!wrap || !editor.contains(wrap)) {
+                if (prev) prev.after(el); else editor.insertBefore(el, editor.firstChild);
+                wrap = wrapInBlock(el);
+            } else if (prev ? prev.nextElementSibling !== wrap : editor.firstElementChild !== wrap) {
+                if (prev) prev.after(wrap); else editor.insertBefore(wrap, editor.firstChild);
+            }
+            prev = wrap;
+        });
+    }
+
+    // restoreState は履歴の状態を画面へ戻し、その結果を保存する。caret は戻したあとに置くキャレット。
+    function restoreState(snap, caret) {
         suppressSnapshot = true;
-        populateEditor(snap.html);
-        // populateEditor は本文を流し込むだけで編集用の属性は付けない（既存の呼び出し元も
-        // 直後に applyMode を呼んでいる）。これを忘れるとブロックが contenteditable でなくなり、
-        // アンドゥ直後に文字が打てなくなる。キャレット復元より前に呼ぶ必要がある。
+        clearTimeout(checkpointTimer);
+        checkpointTimer = null;
+        reconcileBlocks(snap.blocks);
+        // 新しく作ったブロックには編集用の属性が無い（applyMode が付ける）——付けないと、戻した直後に文字が打てない。
+        // キャレット復元より前に呼ぶ必要がある。
         applyMode();
-        restoreCaret(snap.caret);
+        buildToc();
+        restoreCaret(caret);
         updateHtmlPreview();
         validateTypedTables(); // 復元でDOMが入れ替わり実行時の印（.cell-invalid）が消えるため
         suppressSnapshot = false;
         triggerAutoSave(); // 戻した内容を正本へ反映する
+        refreshUndoButtons();
+    }
+
+    function canUndo() {
+        return undoStack.length >= 2 || !!checkpointTimer;
     }
 
     function undo() {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        checkpoint(); // まだ区切っていない変更（打ったばかりの文字）も、戻せて・やり直せるように
         if (undoStack.length < 2) return; // 先頭は編集開始時の状態なので残す
         const current = undoStack.pop();
         redoStack.push(current);
         // 内容は1つ前の状態へ戻すが、キャレットは**取り消した編集があった位置**へ置く。
         // 「戻した先の状態が作られたときのキャレット」は今回の操作と無関係な場所なので、
         // 一般的なエディタと同じく、取り消した編集の位置に寄せるほうが自然に感じられる。
-        restoreSnapshot({ html: undoStack[undoStack.length - 1].html, caret: current.caret });
+        restoreState(undoStack[undoStack.length - 1], current.caret);
     }
 
     function redo() {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        checkpoint(); // 戻したあとに打っていれば、それが新しい変更（やり直しは無くなる）
         if (redoStack.length === 0) return;
         const next = redoStack.pop();
         undoStack.push(next);
-        restoreSnapshot(next);
+        restoreState(next, next.caret);
+    }
+
+    // refreshUndoButtons は帯の ↶ ↷ を、押せるときだけ押せるようにする。
+    function refreshUndoButtons() {
+        const u = document.getElementById('w-ctx-undo');
+        const r = document.getElementById('w-ctx-redo');
+        if (u) u.disabled = !canUndo();
+        if (r) r.disabled = redoStack.length === 0;
+    }
+
+    // setupHistoryHooks は区切りの引き金を配線する（編集モードのときだけ効く）。
+    //   - Enter・Tab・Ctrl の組み合わせ（太字など——戻す・やり直す・写すは除く）の前に区切る（キーの処理より先——捕捉の段）
+    //   - 帯・メニュー・ブロックの操作・欄など、本文の文字の外を押す前に区切る（捕捉の段の pointerdown）
+    //   - 貼り付け・ドラッグの前に区切る
+    //   本文が変わったときの「止まったら区切る」は setupAutoSave の観察から（scheduleCheckpoint）。
+    function setupHistoryHooks() {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        editor.addEventListener('keydown', e => {
+            if (!document.body.hasAttribute('edit-mode') || e.isComposing) return;
+            const k = (e.key || '').toLowerCase();
+            if (e.key === 'Enter' || e.key === 'Tab' || ((e.ctrlKey || e.metaKey) && !['z', 'y', 'c', 'control', 'meta', 'shift'].includes(k))) {
+                flushCheckpoint();
+            }
+        }, true);
+        editor.addEventListener('paste', () => flushCheckpoint(), true);
+        document.addEventListener('dragstart', () => { if (document.body.hasAttribute('edit-mode')) flushCheckpoint(); }, true);
+        document.addEventListener('pointerdown', e => {
+            if (!document.body.hasAttribute('edit-mode') || !(e.target instanceof Element)) return;
+            if (e.target.closest('#w-ctx-undo, #w-ctx-redo')) return; // 戻す・やり直すは自分で区切る
+            // 本文の中の文字（段落・セル）を押すのは、打つ場所を変えるだけ——区切らない。
+            const inText = e.target.closest('#w-editor-content') && !e.target.closest('.block-controls, .add-btn, .vocab-chrome, button, input, select');
+            if (!inText) flushCheckpoint();
+        }, true);
     }
 
     function triggerAutoSave() {
@@ -1300,6 +1525,7 @@
     function setupAutoSave() {
         const observer = new MutationObserver((mutations) => {
             triggerAutoSave();
+            scheduleCheckpoint(); // アンドゥの区切り——打つのが止まったら（2026-10-07）
             buildToc(); // 見出しの追加・削除・移動を目次に反映
         });
         observer.observe(document.getElementById('w-editor-content'), {
@@ -1313,6 +1539,7 @@
 
         document.getElementById('w-editor-content').addEventListener('input', () => {
             triggerAutoSave();
+            scheduleCheckpoint();
             buildToc(); // 見出しテキストの編集を目次に反映
         });
 
@@ -1322,6 +1549,9 @@
         // ブロックを編集し続けている間の保険として引き続き効く。
         document.getElementById('w-editor-content').addEventListener('focusout', () => {
             if (!document.body.hasAttribute('edit-mode')) return;
+            // 機械が要素を差し替えている途中（見出しにする・戻す）は保存しない——フォーカスのある要素を外した瞬間に、ブラウザが
+            // 同期で focusout を出す。そのときの本文は差し替えの途中の姿（中身を移した空の段落）なので、送ると一瞬壊れる（2026-10-07）。
+            if (quietDomChange || suppressSnapshot) return;
             if (saveTimeout) clearTimeout(saveTimeout);
             saveToServer();
         });
@@ -1497,7 +1727,7 @@
 
         // アンドゥ履歴はこの編集セッションのもの。開始時の状態を起点として積む。
         updateHtmlPreview();
-        resetHistory(document.getElementById('w-html-preview').value);
+        resetHistory(true); // いまの状態を起点に
         validateTypedTables(); // 既存本文の型不一致を編集開始時に可視化する
         // ヘッダー（モードトグル）はスクロールで隠れるため、モード移行は緑トーストで明示する。
         // 待機後に available で自動入室した場合もここを通るので「権限が回ってきた」気付きにもなる。
@@ -9025,9 +9255,14 @@
         const offset = caretTextOffset(el);
         const n = document.createElement(tag.toLowerCase());
         Array.from(el.attributes).forEach(a => n.setAttribute(a.name, a.value));
-        while (el.firstChild) n.appendChild(el.firstChild);
-        n.oninput = el.oninput; // 上の段なら applyMode が付けた配線を引き継ぐ
-        el.replaceWith(n);
+        quietDomChange = true; // 中身を移したあと・外す前の姿を、focusout の保存が拾わないように
+        try {
+            while (el.firstChild) n.appendChild(el.firstChild);
+            n.oninput = el.oninput; // 上の段なら applyMode が付けた配線を引き継ぐ
+            el.replaceWith(n);
+        } finally {
+            quietDomChange = false;
+        }
         if (!n.firstChild) n.appendChild(document.createElement('br')); // 空ならキャレットの足場
         placeCaretAtTextOffset(n, offset);
         updateHtmlPreview();
@@ -9238,6 +9473,23 @@
         // （明細行の追加は、表そのものを編集する #w-table-toolbar が担う。かつては
         //  発注書のカスタム要素に「＋ 部品を追加」を出していたが、移行完了で不要になった）
         if (!isCustomTag(tagName)) {
+            // 戻す・やり直す（2026-10-07 利用者:「アンドゥ・リドゥを本格化してください」）——スマホには Ctrl+Z が無いので、帯の頭に。
+            [['w-ctx-undo', '↶', '元に戻す（Ctrl+Z）', () => undo()], ['w-ctx-redo', '↷', 'やり直す（Ctrl+Y）', () => redo()]].forEach(([id, label, title, fn]) => {
+                const b = document.createElement('button');
+                b.id = id;
+                b.innerText = label;
+                b.title = title;
+                b.setAttribute('aria-label', title);
+                b.style.minWidth = '24px';
+                b.addEventListener('mousedown', e => e.preventDefault()); // キャレットを本文に残す
+                b.addEventListener('click', e => { e.preventDefault(); fn(); });
+                toolbar.appendChild(b);
+            });
+            {
+                const sep = document.createElement('span');
+                sep.className = 'ctx-sep';
+                toolbar.appendChild(sep);
+            }
             // 見出し・段落だけでなく、リストや引用の中の文字も装飾できる。
             [['B', 'bold'], ['I', 'italic'], ['U', 'underline']].forEach(([label, kind]) => {
                 const btn = document.createElement('button');
@@ -9309,6 +9561,7 @@
 
         if (hasButtons) {
             refreshBlockTypeButtons(); // いまの種類の印（作り直したばかりの帯にはまだ無い）
+            refreshUndoButtons();      // ↶ ↷ は押せるときだけ
             toolbar.classList.add('active');
             // タッチ端末では**画面の端のドック**に出す（2026-09-01 スマホ実機確認:
             // 「文字列を選択すると、切り取り、コピーなどのコンテキストメニューが出て、
@@ -9448,6 +9701,7 @@
         buildToc();
         setupEditorEvents();
         setupAutoSave();
+        setupHistoryHooks(); // アンドゥの区切りの引き金（2026-10-07）
 
         if (anon) {
             // 匿名は読み取り専用。編集モードへは入らず、権限カード（loadPerms）は
