@@ -10,6 +10,8 @@
 #   - ページごとに page.xml（本文）と、画像（CallbackID で取る）・添付（pathCache の写し）を files\ に置く。
 #   - 目録.json に ページID → 最終更新時刻 を残し、**次からは新しい・変わったページだけ**吸い出す。
 #     ワンノートから消えたページは目録で「消えた」にする（吸い出した物は消さない）。
+#     ⚠ 最終更新が同じページも本文（基本の XML）だけは読み、目録に無い添付・目録より多い画像があれば吸い出し直す
+#     （2026-10-08・下の MissedOnFirstRead）。
 #   - 移行データの製造（w-cms へ入れる）はこのフォルダだけを読む——何度やり直してもワンノートに触らない。
 #   - 印刷イメージ（図面の PNG）の元の XPS も取る（2026-09-28 利用者:「PNGの図面はワンノートではXPS形式で
 #     記録されています。これをベクターのままPDFに変換できませんか？」）。XPS は**束**（何ページもある印刷物）で、
@@ -258,12 +260,43 @@ $stat = @{ new = 0; changed = 0; same = 0; files = 0; xps = 0; missing = 0; skip
 #    （GetHyperlinkToObject）の page-id={…} はワンノートのファイルの中のページのIDなので、これを鍵にする。取れなければ
 #    この機械のIDのまま（報告に出す）。
 $stat.nokey = 0
+$stat.refetch = 0
 function StableKey([string]$lid) {
   $link = ''
   try { $on.GetHyperlinkToObject($lid, '', [ref]$link) } catch { $link = '' }
   if ($link -match 'page-id=(\{[0-9A-Fa-f-]{36}\})') { return $Matches[1].ToUpper() }
   $script:stat.nokey++
   return $lid
+}
+# ── 最終更新が同じでも取りこぼしていたページ（2026-10-08） ──
+# ⚠ 最初の回のとき**まだこの機械へ降りてきていなかった添付は、本文の XML に要素ごと無い**ことがある（09-28 の最初の回で
+#    添付が1つも無かったページが、10-08 に読むと4つあった——利用者:「001323 の移植にデータファイルが無く、不完全です」）。
+#    ワンノートの最終更新は変わらないので「同じ」として飛ばされ、要素が無いので「取れなかった」にも数えない——ずっと残る。
+#    そこで最終更新が同じページも本文（基本の XML・画像も添付も降ろさない）だけは読み、目録に無い添付か、目録より多い画像が
+#    あれば吸い出し直す。添付は名前で比べる（吸い出しが付ける名前は機械に依らない）。画像は**数で**比べる——画像の名前
+#    （CallbackID）が機械ごとに違うかもしれず、名前で比べると別の機械の回で全部のページを吸い出し直しかねない。
+#    MissedOnFirstRead は、取り直す理由（無ければ空）を返す。
+function MissedOnFirstRead([string]$lid, $rec) {
+  $c = ''
+  try { $on.GetPageContent($lid, [ref]$c, 0) } catch { return '' }
+  [xml]$px = $c
+  $n2 = New-Object System.Xml.XmlNamespaceManager($px.NameTable)
+  $n2.AddNamespace('one', $px.DocumentElement.NamespaceURI)
+  $have = @{}
+  foreach ($f in @($rec.files)) { if ($f) { $have[$f] = $true } }
+  $new = @()
+  foreach ($f in $px.SelectNodes('//one:InsertedFile | //one:MediaFile', $n2)) {
+    # 名前の付け方は下の「添付」と同じ。
+    $name = 'att_' + (SafeName ($f.GetAttribute('objectID') -replace '[{}]', '') 40) + '__' + (SafeName $f.GetAttribute('preferredName') 80)
+    if (-not $have.ContainsKey($name)) { $new += $f.GetAttribute('preferredName') }
+  }
+  $imgs = @($px.SelectNodes('//one:Image', $n2)).Count
+  $known = @($rec.files | Where-Object { $_ -like 'img_*' }).Count +
+    @($rec.lostInOneNote | Where-Object { $_ -like '画像 *' -or $_ -like '印刷イメージ *' }).Count
+  $why = @()
+  if ($new.Count -gt 0) { $why += '添付 ' + ($new -join '・') }
+  if ($imgs -gt $known) { $why += ('画像 {0}（目録は {1}）' -f $imgs, $known) }
+  return ($why -join '・')
 }
 # 置き場を2つ以上のページが共有しているもの（09-29 まで・同じ節に同じ題）——その回で新しいフォルダへ吸い出し直す。
 $dirUse = @{}
@@ -349,7 +382,13 @@ if ($SkipIfIn) {
     # 別のノートブックと同じとして飛ばしたページ（skipped・置き場が無い）も、変わっていなければそのまま。
     if ($rec -ne $null -and $rec.lastModified -eq $mod -and -not $rec.incomplete -and $rec.v -ge $version -and -not $shared -and
         ($rec.skipped -or (Test-Path (Join-Path $root $rec.dir)))) {
-      $stat.same++; continue
+      # 最終更新は同じでも、最初の回で取りこぼしていれば吸い出し直す（上の MissedOnFirstRead・別のノートブックと同じと
+      # して飛ばしたページは見ない）。
+      $why = ''
+      if (-not $rec.skipped) { $why = MissedOnFirstRead $id $rec }
+      if (-not $why) { $stat.same++; continue }
+      Log ("最終更新は同じですが、目録に無いものがあるので吸い出し直します: {0} / {1}（{2}）" -f $path, $title, $why)
+      $stat.refetch++
     }
     # 1回の時間の上限（-MaxMinutes）——超えたら残りは次の回へ（遅い回線で少しずつ進めるため）。
     if ($MaxMinutes -gt 0 -and ((Get-Date) - $started).TotalMinutes -ge $MaxMinutes) { $stopped = $true; break sections }
@@ -555,8 +594,8 @@ if ($gaveUp.Count -gt 0) {
   }
 }
 [IO.File]::WriteAllText((Join-Path $root '取れなかったもの.txt'), ($lines -join "`r`n") + "`r`n", $utf8)
-$summary = "新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・XPS {7}・取れなかった {5}・まだ取れていないページ {8}・同じものがあるので取らなかった {9}・鍵を移し替えた {10}・鍵が取れなかった {11}・同じ中身なので書かなかった {12}・ワンノートでも失われた {13}" -f `
-  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root, $stat.xps, $left.Count, $stat.skipped, $stat.rekeyed, $stat.nokey, $stat.kept, $stat.lostInOneNote
+$summary = "新しい {0}・変わった {1}・同じ {2}・消えた {3}・ファイル {4}・XPS {7}・取れなかった {5}・まだ取れていないページ {8}・同じものがあるので取らなかった {9}・鍵を移し替えた {10}・鍵が取れなかった {11}・同じ中身なので書かなかった {12}・ワンノートでも失われた {13}・最終更新は同じでも取り直した {14}" -f `
+  $stat.new, $stat.changed, $stat.same, $gone, $stat.files, $stat.missing, $root, $stat.xps, $left.Count, $stat.skipped, $stat.rekeyed, $stat.nokey, $stat.kept, $stat.lostInOneNote, $stat.refetch
 Meter
 if ($DailyMB -gt 0 -or $Interval -gt 0) { $summary += ("・通信 {0}（今日 {1}）" -f (MB $runBytes), (MB (TodayBytes))) }
 if ($budgetHit) { $summary += ("（今日の通信量が上限 {0} MB に近づいたので止めました——残りは明日以降の回）" -f $DailyMB) }
