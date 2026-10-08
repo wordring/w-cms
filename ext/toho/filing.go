@@ -113,10 +113,11 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//
 	// **顧客ごとに分けて返します**——装置名称は顧客の中でしか意味を持たないので、
 	// 全部混ぜると他社の装置名が候補に出ます。
+	// **記録の添付も返します**（2026-10-08・filing_files.go——図面以外のファイルも、行き先を探して足せるように）。
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true, "rows": rows, "orders": orders,
 		"kinds": ProductKinds(), "partners": partnerNames(user),
-		"machines": machineNames(user)})
+		"machines": machineNames(user), "files": mailFilesOf(page.FormatID(idInt))})
 }
 
 // FilingTargetAPIHandler は GET /api/filing-target です。
@@ -540,6 +541,7 @@ type filingRequest struct {
 	//	""・"new"   … 行き先に無ければ新規の加工製品ページ。**在れば動かしません**（人が決めるまで通信箱に置いたまま）
 	//	"revision"  … 図面改定（いまの図面は旧版として子ページへ）。⚠ 行き先が無ければ作らずに断る（2026-09-30）
 	//	"drawing"   … 図面追加（同じページに並べる・部品図と溶接図）。⚠ 同上
+	//	"folder"    … 装置のページへ（装置名称のページに足す・組立図など——2026-10-08・filing_folder.go）。図面名称は見ない
 	//	"duplicate" … 重複（取り込まない）。同じ図面が DuplicateOf に既にある（2026-09-30・filing_duplicate.go）
 	//
 	// ⚠ **既定を「改定」にしません。** 機械には区別できない（どちらも「同じ品物・
@@ -612,6 +614,10 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	if row.Merge == "duplicate" {
 		return discardDuplicate(user, pageID, row.DuplicateOf)
 	}
+	// **装置のページへ**（2026-10-08・filing_folder.go）——加工製品ではなく装置名称のページに図面を足す。図面名称の欄は見ない。
+	if row.Merge == "folder" {
+		return fileToMachineFolder(user, pageID, row)
+	}
 	// **人が打った値もここで正規化します**（2026-09-06 ユーザー:「顧客名、装置名称、
 	// 図面名称の値を早期に正規化したいです」）。この3つはそのままページの題になり、
 	// **題の完全一致が階層の同一性**なので、揃えないと同じ装置のページが2枚できます。
@@ -625,7 +631,7 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// （通信箱が保留の置き場。空の顧客ページを増やさない）。
 	if customer == "" || machine == "" || name == "" {
 		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "顧客名・装置名称・図面名称のどれかが空なので、そのままにしました"}
+			Message: "顧客名・装置名称・製品名称のどれかが空なので、そのままにしました"}
 	}
 	// **区分は表引きで閉じます**——「試作」と「試作品」が混ざると、絞るときに
 	// 静かに取りこぼします（設定の語彙 `区分` が正本）。
@@ -817,10 +823,11 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		auth.Audit(user.Username, "file-drawing.same-name", pageID+" beside "+strings.Join(sameTitle, ","))
 		sameNote = "（同じ名前の加工製品が既に " + strconv.Itoa(len(sameTitle)) + " 枚あります——別の品物として隣に置きました）"
 	}
-	// **運んできたページは印のとおりに揃えます**（外した区分は消す）——画面の印の初期値は
-	// このページ自身の区分なので、外したのは人の意思です。
+	// 区分は**足すだけ**です（2026-10-08 に「揃える」からやめた）——整理の欄から区分の印を外したので、画面は区分を送らない
+	// （利用者:「試作や見積もりによるフォルダ分けが無くなったので、整理ブロックで入力する必要はなくなりました」）。揃えると、
+	// 送らなかった＝空で置き換えて、運んできたページに付いていた区分を消してしまう。区分を付けるのは加工製品ページで。
 	return filingResult{PageID: pageID, Outcome: "moved",
-		Message: where + " へ収めました" + sameNote + kindsNote(pageID, true) + ruleNote}
+		Message: where + " へ収めました" + sameNote + kindsNote(pageID, false) + ruleNote}
 }
 
 // applyPartnerRules は整理で新しく置いた加工製品ページに、弊社品番と取引先の決まりのタグを書き、知らせる一言を返します

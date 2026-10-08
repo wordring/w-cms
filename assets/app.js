@@ -5588,6 +5588,7 @@
         let kinds = [];
         let partners = [];
         let machines = {};
+        let files = [];
         try {
             const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(currentPageId));
             const d = await res.json();
@@ -5602,27 +5603,30 @@
             partners = d.partners || [];
             // 既にある装置名称（顧客ごと）——装置名称の入力候補に出します。
             machines = d.machines || {};
+            // 記録の添付（2026-10-08・ext/toho/filing_files.go——図面以外のファイルも、行き先を探して足す）。
+            files = d.files || [];
         } catch (e) { return; }
-        if (!rows.length && !orders.length) return;
+        if (!rows.length && !orders.length && !files.length) return;
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'vocab-chrome filing-chrome filing-open';
-        btn.textContent = '📁 整理（' + (rows.length + orders.length) + '件）';
-        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, kinds, partners, machines));
+        const n = rows.length + orders.length;
+        btn.textContent = '📁 整理（' + (n ? n + '件' : '') + (n && files.length ? '・' : '') + (files.length ? 'ファイル ' + files.length : '') + '）';
+        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, kinds, partners, machines, files));
         host.appendChild(btn);
     }
 
     // toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
-    function toggleFilingPanel(btn, rows, orders, kinds, partners, machines) {
+    function toggleFilingPanel(btn, rows, orders, kinds, partners, machines, files) {
         const existing = document.querySelector('.filing-panel');
         if (existing) { existing.remove(); return; }
-        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, kinds, partners, machines));
+        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, kinds, partners, machines, files));
     }
 
     // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
     // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます。
-    function buildFilingPanel(rows, orders, kinds, partners, machines) {
+    function buildFilingPanel(rows, orders, kinds, partners, machines, files) {
         const panel = document.createElement('div');
         panel.className = 'vocab-chrome filing-chrome filing-panel';
         panel.setAttribute('contenteditable', 'false');
@@ -5632,7 +5636,9 @@
         //    欄が 50px 台まで押しつぶされ、選択肢の説明が1文字ずつ縦に折れていました。
         const head = document.createElement('p');
         head.className = 'filing-head';
-        head.textContent = '行き先: 取引先／社名／加工製品／装置名称／図面名称。空欄の図面は動かしません。';
+        // 欄の名前はページの名前（2026-10-08 利用者:「『顧客名』『装置名称』『（加工）製品名称』がページ名の意味ではないでしょうか？」
+        // ——それまで3つ目は「図面名称」と呼んでいたが、入れるのは加工製品ページの題）。
+        head.textContent = '行き先: 取引先／顧客名／加工製品／装置名称／製品名称。空欄の図面は動かしません。';
         if (rows.length) panel.appendChild(head);
 
         // **既にある取引先を候補に出します。** 実データの初回で、アドレス帳が作った
@@ -5713,33 +5719,12 @@
             fillMachines();
             fields.customer.addEventListener('input', fillMachines);
             fields.customer.addEventListener('change', fillMachines);
-            addText('drawing_name', '図面名称', row.drawing_name);
+            addText('drawing_name', '製品名称', row.drawing_name); // 加工製品ページの題（2026-10-08 に「図面名称」から改めた）
 
-            // **区分は印で選ぶだけ**（2026-09-29・段のフォルダの代わり）——打てるようにすると
-            // 「試作」と「試作品」が混ざり、絞るときに静かに取りこぼします（サーバーも表引きで断ります）。
-            // ⚠ **2つ付けられます**（利用者:「試作かつ見積もりという場合がある」）。無ければ通常の製品。
-            const tdKinds = document.createElement('div');
-            tdKinds.className = 'filing-field filing-kinds';
-            const kindsHead = document.createElement('span');
-            kindsHead.textContent = '区分';
-            kindsHead.title = '当てはまるものに印（無ければ通常の製品）';
-            tdKinds.appendChild(kindsHead);
-            const kindsWrap = document.createElement('div');
-            kindsWrap.className = 'filing-kinds-boxes';
-            tdKinds.appendChild(kindsWrap);
+            // **区分は整理では選びません**（2026-10-08 利用者:「試作や見積もりによるフォルダ分けが無くなったので、整理ブロックで入力する
+            // 必要はなくなりました」——09-29 から区分は加工製品ページのタグで、行き先の木を分けない）。区分を付けるのは加工製品ページで。
+            // 送る値は空（サーバーは区分を書かない——kindsNote は空なら何も言わない）。
             const kindBoxes = [];
-            (kinds || []).forEach(k => {
-                const label = document.createElement('label');
-                const box = document.createElement('input');
-                box.type = 'checkbox';
-                box.value = k;
-                box.checked = (row.kinds || []).includes(k);
-                label.appendChild(box);
-                label.appendChild(document.createTextNode(' ' + k));
-                kindsWrap.appendChild(label);
-                kindBoxes.push(box);
-            });
-            grid.appendChild(tdKinds);
 
             // 「図面番号を品番に」「図面名称を品名に」（2026-10-01 利用者:「図面名称を品名、図面番号を品番にするチェックボックスが
             // あっても良いのかもしれません」）——新規のときだけ効く（出すのも新規のときだけ）。初期値は取引先のページの決まり
@@ -5810,6 +5795,8 @@
             [['new', '新規', '新しい加工製品ページとして置きます'],
              ['drawing', '図面追加', '既にある加工製品に、二つ目の図面として足します（部品図と溶接図など）'],
              ['revision', '図面改定', '既にある加工製品の図面を差し替えます（いまの図面は旧版として子ページへ）'],
+             // 装置のページへ（2026-10-08 利用者:「図面をフォルダページに追加したいのですが、出来ません」）——組立図など装置全体の図面。
+             ['folder', '装置のページへ', '装置名称のページ（加工製品のフォルダ）に図面を足します——加工製品ページは作りません（組立図など）'],
              ['duplicate', '重複（取り込まない）', '同じ図面が既にあるので取り込みません（解析で作ったページはごみ箱へ・既にある加工製品にこのメールの受信元を書き足します）'],
              // **何もしない**（2026-10-03 利用者:「図面を解析しても何もしない選択肢も必要です」）——実行で送らない。解析で作った
              // ページはこのメールの下にそのまま残る（あとで整理できる・要らなければページを消す）。
@@ -5872,6 +5859,12 @@
                 searchWrap.hidden = m !== 'drawing' && m !== 'revision';
                 if (m === 'skip') {
                     choiceNote.textContent = '整理しません——解析で作ったこのページは、このメールの下にそのまま残します';
+                } else if (m === 'folder') {
+                    // 装置のページへ（2026-10-08・ext/toho/filing_folder.go）——行き先は取引先と装置名称の欄で決まる。
+                    const mn = fields.machine_name.value.trim();
+                    choiceNote.textContent = mn
+                        ? '装置「' + mn + '」のページにこの図面を足します（加工製品ページは作りません・製品名称の欄は使いません）'
+                        : '⚠ 装置名称を入れてください（既にある装置のページに足します）';
                 } else if (m === 'duplicate' && dup) {
                     choiceNote.textContent = '取り込みません——解析で作ったこのページはごみ箱へ移し、「' +
                         (dup.machine ? dup.machine + '／' : '') + dup.title + '」にこのメールの受信元を書き足します';
@@ -5886,7 +5879,7 @@
                         (m === 'drawing' || m === 'revision' ? '。' : dup ? '。図面追加・図面改定・重複か、同じ名前の別の品物なら新規を選んでください'
                             : '。図面追加・図面改定か、同じ名前の別の品物なら新規を選んでください');
                 } else if (m === 'drawing' || m === 'revision') {
-                    choiceNote.textContent = '⚠ 行き先に同じ加工製品がありません。下の候補を押すか、装置名称・図面名称を合わせてください';
+                    choiceNote.textContent = '⚠ 行き先に同じ加工製品がありません。下の候補を押すか、装置名称・製品名称を合わせてください';
                 } else {
                     choiceNote.textContent = '';
                 }
@@ -6195,8 +6188,128 @@
         run.className = 'filing-run';
         run.textContent = '実行';
         run.addEventListener('click', () => runFiling(inputs, pickedOrders, run, panel));
-        panel.appendChild(run);
+        // 「ほかのファイル」の段（2026-10-08）——それぞれ「＋ …」で動くので、実行ボタンは図面か受注があるときだけ。
+        if ((files || []).length) panel.appendChild(buildFilingFiles(files));
+        if (rows.length || orders.length) panel.appendChild(run);
         return panel;
+    }
+
+    // buildFilingFiles は整理の「📎 ほかのファイル」の段です（2026-10-08・ext/toho/filing_files.go）。
+    //
+    // 利用者:「図面以外のファイルでも、ここで相手を検索して追加できるとありがたいですね」——仕様書・3Dデータなど、🤖 解析で加工製品
+    // ページにならない添付。添付ごとに「行き先を探す」（加工製品ページと装置のページ——`folders=1`）→「＋ …」で、そのページの末尾に
+    // ファイル表示を足す（添付はこのメールに置いたまま・指すだけ）。どのページがもう表示しているかは、欄を開いたときに1回だけ探す（重い）。
+    function buildFilingFiles(files) {
+        const wrap = document.createElement('div');
+        wrap.className = 'filing-files';
+        const head = document.createElement('p');
+        head.className = 'filing-head';
+        head.textContent = '📎 ほかのファイル——行き先を探して押すと、そのページにファイル表示を足します（添付はこのメールに置いたまま）。';
+        wrap.appendChild(head);
+        const shownBoxes = {};
+        files.forEach(f => {
+            const card = document.createElement('div');
+            card.className = 'filing-card filing-file';
+            card.dataset.attach = f.id;
+            const name = document.createElement('p');
+            name.className = 'filing-no';
+            name.textContent = '📎 ' + f.name;
+            const shown = document.createElement('p');
+            shown.className = 'filing-file-shown';
+            shown.textContent = '表示しているページ: 調べています…';
+            shownBoxes[f.ref] = { box: shown, list: [] };
+            const label = document.createElement('label');
+            label.className = 'filing-search-label';
+            label.textContent = '行き先を探す: ';
+            const input = document.createElement('input');
+            input.type = 'search';
+            input.className = 'filing-search-input';
+            input.placeholder = '品番・品名・図面番号・題・装置名・ページ番号';
+            label.appendChild(input);
+            const out = document.createElement('div');
+            out.className = 'filing-candidates filing-search-out';
+            const note = document.createElement('p');
+            note.className = 'filing-file-note';
+            note.hidden = true;
+            card.append(name, shown, label, out, note);
+            let timer = null;
+            const search = async () => {
+                const q = input.value.trim();
+                out.replaceChildren();
+                if (!q) return;
+                let hits = [];
+                try {
+                    const res = await fetch('/api/filing-search?' + new URLSearchParams({ q: q, folders: '1' }));
+                    hits = ((await res.json()).results) || [];
+                } catch (e) { return; }
+                if (input.value.trim() !== q) return; // 打ち替えた——古い答えは出さない
+                if (!hits.length) {
+                    const p = document.createElement('p');
+                    p.className = 'filing-search-none';
+                    p.textContent = '見つかりません';
+                    out.appendChild(p);
+                }
+                hits.forEach(h => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'chip-btn filing-file-add';
+                    b.textContent = '＋ ' + (h.kind === 'folder' ? '📁 ' : '') + (h.customer ? h.customer + '／' : '') +
+                        (h.machine ? h.machine + '／' : '') + h.title + '（/' + h.page_id + '）';
+                    b.title = h.kind === 'folder' ? '装置のページの末尾にファイル表示を足します' : '加工製品ページの末尾にファイル表示を足します';
+                    b.addEventListener('click', () => addFilingFile(f, h, note, shownBoxes[f.ref]));
+                    out.appendChild(b);
+                });
+            };
+            input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 300); });
+            wrap.appendChild(card);
+        });
+        (async () => {
+            let shown = {};
+            try {
+                const d = await (await fetch('/api/filing-files-shown?page_id=' + encodeURIComponent(currentPageId))).json();
+                shown = d.shown || {};
+            } catch (e) { /* 分からなければ空のまま */ }
+            Object.entries(shownBoxes).forEach(([ref, s]) => { s.list = shown[ref] || []; renderFilingShown(s); });
+        })();
+        return wrap;
+    }
+
+    // renderFilingShown は「表示しているページ: …」を描きます（題へのリンク）。
+    function renderFilingShown(s) {
+        s.box.replaceChildren();
+        s.box.appendChild(document.createTextNode('表示しているページ: '));
+        if (!s.list.length) { s.box.appendChild(document.createTextNode('まだありません')); return; }
+        s.list.forEach((p, i) => {
+            if (i) s.box.appendChild(document.createTextNode('・'));
+            const a = document.createElement('a');
+            a.href = '/' + p.page_id;
+            a.textContent = p.title || ('/' + p.page_id);
+            s.box.appendChild(a);
+        });
+    }
+
+    // addFilingFile は「＋ …」——選んだページの末尾にファイル表示を足します（同じページに同じ添付は足さない——サーバーが断る）。
+    async function addFilingFile(f, h, note, s) {
+        note.hidden = false;
+        let r;
+        try {
+            r = await postJSON('/api/filing-attach', { page_id: currentPageId, attach: f.id, target: h.page_id });
+        } catch (e) {
+            note.className = 'filing-file-note is-warn';
+            note.textContent = '⚠ 足せませんでした（通信に失敗しました）';
+            return;
+        }
+        if (!r.ok) {
+            note.className = 'filing-file-note is-warn';
+            note.textContent = '⚠ ' + ((r.data && r.data.message) || ('足せませんでした（' + r.status + '）'));
+            return;
+        }
+        note.className = 'filing-file-note is-ok';
+        note.textContent = '✓ 「' + (r.data.title || h.title) + '」に足しました';
+        if (s && !s.list.some(p => p.page_id === r.data.page_id)) {
+            s.list.push({ page_id: r.data.page_id, title: r.data.title || h.title });
+            renderFilingShown(s);
+        }
     }
 
     // askConfirm は確かめのダイアログを出し、進めるなら true を返します（2026-10-03 利用者:「警告ダイアログが出て、追加するか
@@ -6301,7 +6414,7 @@
                 const i = inputs.find(x => x.page_id === r.page_id);
                 if (!i) continue;
                 const m = (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '';
-                const yes = m === 'drawing' ? '追加する' : m === 'revision' ? '改定する' : '進める';
+                const yes = m === 'drawing' ? '追加する' : m === 'revision' ? '改定する' : m === 'folder' ? '足す' : '進める';
                 if (await askConfirm(r.message, yes, 'やめる')) {
                     i.box.checked = true;
                     again.push(i);

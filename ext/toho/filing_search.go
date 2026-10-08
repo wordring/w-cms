@@ -36,6 +36,8 @@ type productHit struct {
 	Customer   string `json:"customer"`
 	DrawingNos string `json:"drawing_nos"`
 	PartNos    string `json:"part_nos"`
+	// Kind は "folder" なら装置のページ（2026-10-08——`folders=1` のときだけ出す。整理の「ほかのファイル」の行き先）。空なら加工製品。
+	Kind string `json:"kind,omitempty"`
 }
 
 // FilingSearchAPIHandler は GET /api/filing-search?q=…&customer=… です。
@@ -49,7 +51,7 @@ func FilingSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	hits := searchProducts(user, cms.NormalizeNameForIngest(q.Get("customer")), q.Get("q"), filingSearchLimit)
+	hits := searchProducts(user, cms.NormalizeNameForIngest(q.Get("customer")), q.Get("q"), filingSearchLimit, q.Get("folders") == "1")
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "results": hits})
 }
 
@@ -57,7 +59,8 @@ func FilingSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 //
 // 当てるのは、題・装置名称・ほかの名前（品名・図面名称）の**文字**（全角半角を畳んで含むか）と、図面番号・品番の
 // **符牒**（区切り・大小も外して含むか）、それにページ番号（`001234`・`/001234` のちょうど一致）。
-func searchProducts(user *auth.User, customer, q string, limit int) []productHit {
+// withFolders なら、装置のページ（加工製品の箱の直下——題か装置のページ番号で当てる）も返します（2026-10-08）。
+func searchProducts(user *auth.User, customer, q string, limit int, withFolders bool) []productHit {
 	out := []productHit{}
 	q = strings.TrimSpace(q)
 	boxID, ok := CustomerBoxPageID()
@@ -96,6 +99,21 @@ func searchProducts(user *auth.User, customer, q string, limit int) []productHit
 		productsID, found := findChildByTitle(page.FormatID(p.ID), ProductsBoxTitle)
 		if !found {
 			continue
+		}
+		if withFolders {
+			folders, _ := cms.ChildPages(database.DB, pageNum(productsID))
+			for _, fd := range folders {
+				id := page.FormatID(fd.ID)
+				if !page.CanView(user, fd.ID) || !((isID && id == wantID) || textHit(fd.Title)) {
+					continue
+				}
+				h := productHit{PageID: id, Title: fd.Title, Customer: p.Title, Kind: "folder"}
+				if wantCustomer != "" && cms.NormalizeText(p.Title) == wantCustomer {
+					mine = append(mine, h)
+				} else {
+					others = append(others, h)
+				}
+			}
 		}
 		rows, err := productListRows(user, pageNum(productsID))
 		if err != nil {

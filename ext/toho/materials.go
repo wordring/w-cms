@@ -147,6 +147,9 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/filing-target", Handler: FilingTargetAPIHandler},
 		// 図面追加・図面改定の行き先を、品番・品名・図面番号・題・ページ番号で探す口（2026-10-03・filing_search.go）。
 		{Pattern: "/api/filing-search", Handler: FilingSearchAPIHandler},
+		// 整理の「ほかのファイル」（2026-10-08・filing_files.go）——添付を表示しているページ・添付を足す。
+		{Pattern: "/api/filing-files-shown", Handler: FilingFilesShownAPIHandler},
+		{Pattern: "/api/filing-attach", Handler: FilingAttachAPIHandler},
 		// 見積依頼（2026-10-03・段1——rfq.go・rfq_api.go）。
 		{Pattern: "/api/rfq/collect", Handler: RFQCollectAPIHandler},
 		{Pattern: "/api/rfq/folder-products", Handler: RFQFolderProductsAPIHandler},

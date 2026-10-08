@@ -2958,3 +2958,11 @@ body.w-lightbox-open { overflow: hidden; }
 .context-toolbar button.ctx-type.is-active { background: #2563eb; }
 .context-toolbar button:disabled { opacity: 0.4; cursor: default; }
 .context-toolbar button:disabled:hover { background: transparent; }
+
+/* 整理の「📎 ほかのファイル」（2026-10-08・assets/app.js の buildFilingFiles）。色だけに頼らず ✓ / ⚠ を頭に付ける（文で）。 */
+#w-editor-content .filing-files { margin-top: 12px; }
+#w-editor-content .filing-file-shown { margin: 2px 0 6px; font-size: 12px; color: #475569; }
+#w-editor-content .filing-file-note { margin: 4px 0 0; font-size: 13px; }
+#w-editor-content .filing-file-note.is-ok { color: #166534; }
+#w-editor-content .filing-file-note.is-warn { color: #b91c1c; }
+#w-editor-content .filing-search-none { margin: 4px 0; font-size: 12px; color: #64748b; }
