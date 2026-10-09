@@ -369,7 +369,8 @@ func TestEmlIntakeWritesThreadAndReplyTo(t *testing.T) {
 		t.Fatalf("返信のページを読めません: %v", err)
 	}
 	for _, want := range []string{
-		"<dt>返信元メッセージID</dt><dd>&lt;parent@example.jp&gt;</dd>",
+		"<dt>In-Reply-To</dt><dd>&lt;parent@example.jp&gt;</dd>", // ヘッダの名前そのまま（2026-10-09）
+		"<dt>親ページID</dt><dd>" + parentID + "</dd>",        // 親がもう在れば、取り込みが親子を書く
 		"<dt>返信先</dt><dd>営業窓口 &lt;sales@example.jp&gt;</dd>",
 	} {
 		if !strings.Contains(string(body), want) {
@@ -377,7 +378,7 @@ func TestEmlIntakeWritesThreadAndReplyTo(t *testing.T) {
 		}
 	}
 
-	// 肝心なのはここ——返信元メッセージIDから**親の記録ページが引ける**。
+	// 肝心なのはここ——In-Reply-To から**親の記録ページが引ける**（取り込みが 親ページID を書く元）。
 	ids, err := cms.PagesByTag(database.DB, MessageIDTag, "<parent@example.jp>")
 	if err != nil {
 		t.Fatalf("逆引きエラー: %v", err)
@@ -484,11 +485,11 @@ func TestEmlIntakeWritesMessageID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("作られたページを読めません: %v", err)
 	}
-	if !strings.Contains(string(body), "<dt>メッセージID</dt><dd>&lt;abc123@example.jp&gt;</dd>") {
+	if !strings.Contains(string(body), "<dt>Message-ID</dt><dd>&lt;abc123@example.jp&gt;</dd>") { // ヘッダの名前そのまま（2026-10-09）
 		t.Errorf("メッセージIDのタグがありません:\n%s", body)
 	}
 	// 索引から引ける（逆引きは生テキスト・pagesByTag）
-	ids, err := cms.PagesByTag(database.DB, "メッセージID", "<abc123@example.jp>")
+	ids, err := cms.PagesByTag(database.DB, "Message-ID", "<abc123@example.jp>")
 	if err != nil {
 		t.Fatalf("逆引きエラー: %v", err)
 	}
@@ -519,7 +520,7 @@ func TestEmlIntakeDetectsDuplicate(t *testing.T) {
 
 	// 2回目: 取り込み係を呼ぶ前に、コアが鍵で既存ページを見つける
 	name, value, ok := emlIntake{}.SourceRef("m.eml", eml)
-	if !ok || name != "メッセージID" || value != "<dup@example.jp>" {
+	if !ok || name != "Message-ID" || value != "<dup@example.jp>" {
 		t.Fatalf("鍵の取り出しが違います: %q %q ok=%v", name, value, ok)
 	}
 	existing, dup := ExistingIntakePage(name, value)

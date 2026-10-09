@@ -97,9 +97,9 @@ func TestRenderReferenceLinksPageRefTag(t *testing.T) {
 	}
 
 	body := `<dl data-type="tags">` +
-		// `返信元` は `config/settings.json` で ref と宣言してある語（定数は 2026-09-15 に ext/comm へ出た。
+		// `親ページID` は `config/settings.json` で ref と宣言してある語（2026-10-09 まで `返信元`）（定数は 2026-09-15 に ext/comm へ出た。
 		// ここで見ているのはコアの「宣言済みの語ならリンクにする」なので、語は文字で書く）。
-		`<dt>返信元</dt><dd>000002</dd>` + // 宣言済み → ページへのリンク
+		`<dt>親ページID</dt><dd>000002</dd>` + // 宣言済み → ページへのリンク
 		`<dt>発注書番号</dt><dd>000002</dd>` + // 宣言していない → 素通り
 		`</dl>`
 	out := RenderReferenceLinks(body)

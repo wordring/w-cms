@@ -42,12 +42,14 @@
     }
 
     function buildThreads() {
-        const byMsg = new Map();
-        mails.forEach((m) => { if (m.message_id && !byMsg.has(m.message_id)) byMsg.set(m.message_id, m); });
+        // 木は 親ページID（m.parent）で組む（2026-10-09——利用者:「通信記録の前後をたどるには、基本的に『親ページID』を検索します」）。
+        // それまではヘッダの In-Reply-To（m.in_reply_to → m.message_id）で組んでいた。親が一覧に無い（読めない・メールでない）なら頭にする。
+        const byPage = new Map();
+        mails.forEach((m) => byPage.set(m.page_id, m));
         const children = new Map();
         const hasParent = new Set();
         mails.forEach((m) => {
-            const p = m.in_reply_to ? byMsg.get(m.in_reply_to) : null;
+            const p = m.parent ? byPage.get(m.parent) : null;
             if (p && p !== m) {
                 if (!children.has(p)) children.set(p, []);
                 children.get(p).push(m);

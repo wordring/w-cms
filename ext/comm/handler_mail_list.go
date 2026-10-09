@@ -35,7 +35,8 @@ type MailListItem struct {
 	To          []string `json:"to"`
 	Cc          []string `json:"cc"`
 	MessageID   string   `json:"message_id"`
-	InReplyTo   string   `json:"in_reply_to"` // 返信元メッセージID（スレッドの親）
+	InReplyTo   string   `json:"in_reply_to"` // In-Reply-To ヘッダの写し
+	Parent      string   `json:"parent"`      // 親ページID（スレッドの親——画面はこれで木を組む・2026-10-09）
 	Attachments string   `json:"attachments"` // 添付の数（無ければ空）
 	Handled     string   `json:"handled"`     // 対応（済／不要）。空は未処理
 	Draft       string   `json:"draft"`       // 下書きなら用件（返信・新規・発注書）。送った記録は空（2026-09-30）
@@ -44,7 +45,7 @@ type MailListItem struct {
 // MailList は user が読めるメールの記録を、新しい順に返します。
 func MailList(user *auth.User) ([]MailListItem, error) {
 	rows, err := cms.TagRowsNamed(database.DB, ChannelTag, DirectionTag, ReceivedAtTag, SentAtTag,
-		FromTag, ToTag, CcTag, MessageIDTag, InReplyToTag, AttachmentCountTag, HandledTag, DraftTag)
+		FromTag, ToTag, CcTag, MessageIDTag, InReplyToTag, ParentPageTag, AttachmentCountTag, HandledTag, DraftTag)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +78,8 @@ func MailList(user *auth.User) ([]MailListItem, error) {
 			it.MessageID = r.Value
 		case InReplyToTag:
 			it.InReplyTo = r.Value
+		case ParentPageTag:
+			it.Parent = r.Value
 		case AttachmentCountTag:
 			it.Attachments = r.Value
 		case HandledTag:

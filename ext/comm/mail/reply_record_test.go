@@ -37,14 +37,15 @@ func TestSentRecordUsesIntakeTagNames(t *testing.T) {
 		"<dt>" + comm.CcTag + "</dt><dd>cc@example.jp</dd>",
 		"<dt>" + comm.SentAtTag + "</dt>",
 		"<dt>" + comm.InReplyToTag + "</dt>",
-		"<dt>" + comm.ReplySourceTag + "</dt><dd>010272</dd>",
+		"<dt>" + comm.ParentPageTag + "</dt><dd>010272</dd>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("控えに %q がありません:\n%s", want, body)
 		}
 	}
 	// **廃止した名前が戻っていないこと**（逆向きの固定）。
-	for _, gone := range []string{"差出人アドレス", "宛先アドレス", "CCアドレス"} {
+	for _, gone := range []string{"差出人アドレス", "宛先アドレス", "CCアドレス",
+		"<dt>メッセージID</dt>", "<dt>返信元メッセージID</dt>", "<dt>返信元</dt>"} { // 2026-10-09 に名前を替えた
 		if strings.Contains(body, gone) {
 			t.Errorf("廃止した名前 %q で書いています:\n%s", gone, body)
 		}

@@ -214,14 +214,10 @@ func rfqReplyCandidates(user *auth.User, hostPageID, readNo, supplier string) []
 		for _, m := range rfqNoRe.FindAllStringSubmatch(cms.PageTitleByID(hostInt), -1) {
 			add(rfqPageOf(user, m[1]))
 		}
-		// ③ こちらが送った見積依頼のメール（返信元メッセージID の先の控え）の件名の「№」。
-		tags, _ := cms.TagsOfPage(database.DB, hostInt)
-		if irt := strings.TrimSpace(cms.FirstTag(tags, comm.InReplyToTag)); irt != "" {
-			var sent int
-			if database.DB.QueryRow(`SELECT page_id FROM page_tags WHERE name = ? AND value = ? LIMIT 1`, comm.MessageIDTag, irt).Scan(&sent) == nil {
-				for _, m := range rfqNoRe.FindAllStringSubmatch(cms.PageTitleByID(sent), -1) {
-					add(rfqPageOf(user, m[1]))
-				}
+		// ③ こちらが送った見積依頼のメール（親ページID の先の控え——2026-10-09 まではメールの In-Reply-To で引いていた）の件名の「№」。
+		if parent, err := strconv.Atoi(strings.TrimSpace(cms.PageTagValue(database.DB, hostInt, comm.ParentPageTag))); err == nil {
+			for _, m := range rfqNoRe.FindAllStringSubmatch(cms.PageTitleByID(parent), -1) {
+				add(rfqPageOf(user, m[1]))
 			}
 		}
 	}

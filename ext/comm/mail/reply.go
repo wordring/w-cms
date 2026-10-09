@@ -283,10 +283,11 @@ func sentRecordBody(tmpl, from, sourcePageID, sourceMsgID, messageID string, now
 	if n := len(req.Attachments); n > 0 {
 		d.SetTag(comm.AttachmentCountTag, strconv.Itoa(n))
 	}
-	d.SetTag(comm.InReplyToTag, sourceMsgID)
-	// **返信元は参照タグ**（`ページID`）——押せば飛び、逆引きで「この記録への返信」も
-	// 引けます。返信元が無い新規メールでは書きません（分からないことを書かない）。
-	d.SetTag(comm.ReplySourceTag, sourcePageID)
+	d.SetTag(comm.InReplyToTag, sourceMsgID) // ヘッダの写し（相手へ送る In-Reply-To と同じ）
+	// **親子は 親ページID（参照タグ・`ページID`）**——押せば飛び、逆引きで「この記録への返信」も引けます（2026-10-09・
+	// それまでは「返信元」）。返信元の記録に Message-ID が無くても（FAX・電話・メモ）書けます。返信元が無い新規メールでは
+	// 書きません（分からないことを書かない）。
+	d.SetTag(comm.ParentPageTag, sourcePageID)
 	if err := fillMailBody(d, req); err != nil {
 		return "", err
 	}

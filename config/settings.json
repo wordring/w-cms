@@ -27,7 +27,7 @@
     "見積依頼日": { "type": "date" },
     "見積依頼担当": { "type": "ref" },
     "回答日": { "type": "date" },
-    "返信元": { "type": "ref" },
+    "親ページID": { "type": "ref" },
     "下書きの元": { "type": "ref" },
     "相手": { "type": "ref" },
     "連絡帳": { "type": "ref" },

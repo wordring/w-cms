@@ -25,6 +25,7 @@ type fakeBatches struct {
 	gate  chan struct{} // nil でなければ、1回ごとにここから受け取るまで待つ（動いている最中を見るため）
 	err   map[string]error
 	panicOn string
+	fixes int // 記録の直し（fixRecordTags）を呼んだ回数
 }
 
 func (f *fakeBatches) batch(ctx context.Context, username string, opt ListOptions) (ImportSummary, error) {
@@ -51,10 +52,16 @@ func (f *fakeBatches) batch(ctx context.Context, username string, opt ListOption
 
 func withFakeFetch(t *testing.T, f *fakeBatches, signed bool) {
 	t.Helper()
-	oldB, oldS := importBatch, signedIn
+	oldB, oldS, oldF := importBatch, signedIn, fixRecordTags
 	importBatch = f.batch
 	signedIn = func(string) bool { return signed }
-	t.Cleanup(func() { importBatch, signedIn = oldB, oldS })
+	fixRecordTags = func(string) (int, int, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.fixes++
+		return 0, 0, nil
+	}
+	t.Cleanup(func() { importBatch, signedIn, fixRecordTags = oldB, oldS, oldF })
 }
 
 func postFetch(t *testing.T, username string) (int, map[string]any) {
@@ -98,6 +105,10 @@ func TestFetchRunsToEndAfterRequestEnds(t *testing.T) {
 	}
 	if st.Folders["受信"].Imported != 107 || st.Folders[FolderSent].Imported != 3 || st.Folders["受信"].Duplicate != 3 {
 		t.Errorf("数が違います: 受信 %+v 送信 %+v", *st.Folders["受信"], *st.Folders[FolderSent])
+	}
+	// 取り込み済みの記録の直し（古い名前・親ページID）は、読み込みの前と後に1回ずつ（2026-10-09・comm/parent_link.go）。
+	if f.fixes != 2 {
+		t.Errorf("記録の直しを %d 回呼びました（前と後の2回のはず）", f.fixes)
 	}
 	if st.FinishedAt == "" || st.Folder != "" || len(st.Errors) != 0 || len(st.Titles) == 0 {
 		t.Errorf("終わった様子が違います: %+v", st)

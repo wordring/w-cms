@@ -22,10 +22,21 @@ package comm
 //
 // **取り込みの順に依存しません。** 返信を先に落としても、あとで親が入れば繋がります
 // ——どちらの向きも「いま索引にあるもの」を引くだけだからです。
+//
+// ⚠ **2026-10-09 から、たどるのは `親ページID`（ParentPageTag）です**——利用者:「通信記録の前後をたどるには、基本的に
+// 『親ページID』を検索します」。メールのヘッダ（Message-ID・In-Reply-To——名前もヘッダそのままに）は届いた事実の写しで、
+// 親子は取り込みと送信の控えが 親ページID に書く（parent_link.go）。FAX・電話・メモの記録から返信しても同じ鎖に乗る。
+//
+//	前（親）  = このページの 親ページID が指すページ
+//	次（子）  = 親ページID がこのページを指すページ
+//
+// 親があとから取り込まれた子には、読み込みの仕事の最後に 親ページID が書き足される（FixRecordTags）——上の「順に
+// 依存しない」は、書き足されるまでのあいだは成り立たない。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
 	"net/http"
+	"strconv"
 	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
@@ -66,40 +77,28 @@ func tagOfPage(idInt int, name string) string {
 
 // ThreadOf は pageID の前（親）と次（子）を返します。
 //
-// **前は高々1件**です（`In-Reply-To` は1つの親を指す）。Message-ID が重複していたら
-// 最初の1件を採ります——実在しうる話ではありますが、そのときは鎖そのものが壊れており、
-// ここで選び直しても直りません。
+// **前は高々1件**です（親ページID は1つの親を指す——2026-10-09 まではメールの In-Reply-To で引いていた）。
 func ThreadOf(user *auth.User, idInt int) (prev *ThreadRef, next []ThreadRef, err error) {
 	next = []ThreadRef{}
 
-	if parentMsgID := tagOfPage(idInt, InReplyToTag); parentMsgID != "" {
-		ids, e := cms.PagesByTag(database.DB, MessageIDTag, parentMsgID)
-		if e != nil {
-			return nil, nil, e
-		}
-		for _, pid := range ids {
-			if pid == idInt {
-				continue // 自分自身は前にしない（壊れた鎖への保険）
-			}
+	if parent, ok := page.NormalizeID(tagOfPage(idInt, ParentPageTag)); ok {
+		if pid, err := strconv.Atoi(parent); err == nil && pid != idInt { // 自分自身は前にしない（壊れた鎖への保険）
 			if r, ok := threadRefOf(user, pid); ok {
 				prev = &r
-				break
 			}
 		}
 	}
 
-	if myMsgID := tagOfPage(idInt, MessageIDTag); myMsgID != "" {
-		ids, e := cms.PagesByTag(database.DB, InReplyToTag, myMsgID)
-		if e != nil {
-			return nil, nil, e
+	ids, e := cms.PagesByTag(database.DB, ParentPageTag, page.FormatID(idInt))
+	if e != nil {
+		return nil, nil, e
+	}
+	for _, pid := range ids {
+		if pid == idInt {
+			continue
 		}
-		for _, pid := range ids {
-			if pid == idInt {
-				continue
-			}
-			if r, ok := threadRefOf(user, pid); ok {
-				next = append(next, r)
-			}
+		if r, ok := threadRefOf(user, pid); ok {
+			next = append(next, r)
 		}
 	}
 	return prev, next, nil

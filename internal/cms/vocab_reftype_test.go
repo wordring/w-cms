@@ -63,7 +63,7 @@ func TestNormalizeDateTime(t *testing.T) {
 // もとは Goコードの中の表（pageRefTags）でした。辞書へ移したことで、運用者が
 // 自分の参照タグを足せます——ここが壊れると、その自由が黙って失われます。
 func TestRefTagDeclaredByDictionary(t *testing.T) {
-	for _, name := range []string{"受信元", "返信元", "相手"} {
+	for _, name := range []string{"受信元", "親ページID", "相手"} {
 		if InferColumnType(name) != ColRef {
 			t.Errorf("%s が参照として宣言されていません: %q", name, InferColumnType(name))
 		}

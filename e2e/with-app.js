@@ -6,18 +6,28 @@
 //    差し替えた app.js が一度も配られなければ「!!」の行を出します（道具が効いていない）。
 //
 // 使い方: APP_JS=<直した app.js> WCMS_BASE=https://localhost:8443 node with-app.js verify-cell-select.js
+//         ほかの assets のファイルは ASSETS="mails.js=<直した mails.js>,app.css=<…>" で（2026-10-09）。
 // ⚠ 効いているかは、わざと壊した写しで E2E が落ちることを1度見て確かめる。
 const fs = require('fs');
 const path = require('path');
 const pw = require('playwright');
 
-const body = fs.readFileSync(process.env.APP_JS, 'utf8');
+// 差し替える assets のファイル（名前 → 中身）。
+const swaps = {};
+if (process.env.APP_JS) swaps['app.js'] = fs.readFileSync(process.env.APP_JS, 'utf8');
+for (const pair of (process.env.ASSETS || '').split(',').filter(Boolean)) {
+  const [name, file] = pair.split('=');
+  swaps[name.trim()] = fs.readFileSync(file.trim(), 'utf8');
+}
+const typeOf = (name) => (name.endsWith('.css') ? 'text/css' : 'application/javascript') + '; charset=utf-8';
 let served = 0;
 const hook = async (ctx) => {
-  await ctx.route('**/assets/app.js*', (route) => {
-    served++;
-    route.fulfill({ status: 200, contentType: 'application/javascript; charset=utf-8', body });
-  });
+  for (const [name, body] of Object.entries(swaps)) {
+    await ctx.route('**/assets/' + name + '*', (route) => {
+      served++;
+      route.fulfill({ status: 200, contentType: typeOf(name), body });
+    });
+  }
   return ctx;
 };
 const origLaunch = pw.chromium.launch.bind(pw.chromium);
@@ -28,5 +38,5 @@ pw.chromium.launch = async (...args) => {
   b.newPage = async (...o) => (await b.newContext(...o)).newPage();
   return b;
 };
-process.on('exit', () => { if (!served) console.log('!! 差し替えた app.js が一度も配られていません'); });
+process.on('exit', () => { if (!served) console.log('!! 差し替えたファイルが一度も配られていません'); });
 require(path.resolve(__dirname, process.argv[2]));

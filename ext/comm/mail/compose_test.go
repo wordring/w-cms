@@ -158,7 +158,7 @@ func TestDraftRoundTrips(t *testing.T) {
 		t.Errorf("下書きの元が %v です", got)
 	}
 	// ⚠ **対応の印は付けない**（未処理に並ぶ——書きかけを忘れない）・`返信元` もまだ付けない。
-	if len(tags[comm.HandledTag]) > 0 || len(tags[comm.ReplySourceTag]) > 0 || len(tags[comm.SentAtTag]) > 0 {
+	if len(tags[comm.HandledTag]) > 0 || len(tags[comm.ParentPageTag]) > 0 || len(tags[comm.SentAtTag]) > 0 {
 		t.Errorf("下書きに送った印が付いています: %v", tags)
 	}
 
@@ -273,7 +273,7 @@ func TestSendReplyPurposeThreads(t *testing.T) {
 	}
 	rec, _ := strconv.Atoi(out["page_id"].(string))
 	tags, _ := cms.TagsOfPage(database.DB, rec)
-	if got := tags[comm.ReplySourceTag]; len(got) != 1 || got[0] != "000200" {
+	if got := tags[comm.ParentPageTag]; len(got) != 1 || got[0] != "000200" {
 		t.Errorf("控えの返信元が %v です", got)
 	}
 }

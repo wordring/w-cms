@@ -8,8 +8,9 @@ package comm
 // 返信の本体は送信箱に立ち、こちらは逆引きで見えるだけ。返信元の本文は
 // 一切変わりません（通信記録は届いたときのまま不変に保つ）。
 //
-// 逆引きの鍵は送信記録に書かれた `返信元` タグ（値＝返信元のページID）。
-// 索引を1回引くだけで、専用のテーブルも、返信元側への書き込みも要りません。
+// 逆引きの鍵は記録に書かれた `親ページID` タグ（値＝親の記録のページID・2026-10-09——それまでは w-cms が送った控えに
+// だけ書く `返信元`）。出すのは**こちらが送った**返信（`向き`＝送信）——Outlook から送って取り込んだ返信も入る。
+// 相手からの返信も含めた前後は `/api/thread`。索引を1回引くだけで、専用のテーブルも、返信元側への書き込みも要りません。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -29,16 +30,16 @@ type ReplyRef struct {
 	To     string `json:"to"`
 }
 
-// RepliesTo は pageID を返信元とする記録を、送った順に返します。
+// RepliesTo は pageID を親とする記録のうち、こちらが送ったもの（向き＝送信）を返します。
 func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
-	ids, err := cms.PagesByTag(database.DB, ReplySourceTag, pageID)
+	ids, err := cms.PagesByTag(database.DB, ParentPageTag, pageID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]ReplyRef, 0, len(ids))
 	for _, idInt := range ids {
 		// **読めない相手には見せない**（見せ分けC案——黙って落ちる）。
-		if !page.CanView(user, idInt) {
+		if !page.CanView(user, idInt) || cms.PageTagValue(database.DB, idInt, DirectionTag) != DirectionOut {
 			continue
 		}
 		r := ReplyRef{PageID: page.FormatID(idInt), Title: cms.PageTitleByID(idInt),

@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 )
@@ -43,6 +44,8 @@ const fetchTimeout = 30 * time.Minute
 var (
 	importBatch = ImportMessages
 	signedIn    = func(username string) bool { return SignedInAddress(username) != "" }
+	// fixRecordTags は取り込み済みの記録を今の形へ直します（古い名前のタグ・親ページID——comm/parent_link.go・2026-10-09）。
+	fixRecordTags = comm.FixRecordTags
 )
 
 // FetchFolderStatus は箱1つの数です。
@@ -120,23 +123,40 @@ func runFetch(username string, st *FetchStatus) {
 		f()
 	}
 	total := FetchFolderStatus{}
+	// 取り込み済みの記録を今の形へ（古い名前のタグを新しい名前へ・親ページID の無い子に親を書き足す）。**読み込みの前に1回**
+	// （直す前の記録と見分けて二重に入れないため）、**後に1回**（この回で親があとから入った子へ書き足すため——受信の箱を
+	// 先に読むので、こちらが送ったメール〔親〕は相手の返信〔子〕より後に入る）。
+	fixed := 0
+	fix := func() {
+		renamed, linked, err := fixRecordTags(username)
+		if err != nil {
+			log.Printf("通信記録を直せません user=%q: %v", username, err)
+			return
+		}
+		if renamed+linked > 0 {
+			log.Printf("通信記録を直しました: タグの名前 %d 件・親ページID %d 件", renamed, linked)
+		}
+		fixed += renamed + linked
+	}
 	// ⚠ **途中で落ちても「動いている」のまま残さない**（残すと二度と始められない）。
 	defer func() {
 		if p := recover(); p != nil {
 			log.Printf("メールの読み込みが落ちました user=%q: %v", username, p)
 			update(func() { st.Errors = append(st.Errors, fmt.Sprint("途中で止まりました: ", p)) })
 		}
+		fix() // この回で親があとから入った子へ親ページID を書き足す
 		update(func() {
 			st.Running = false
 			st.Folder = ""
 			st.FinishedAt = time.Now().Format(time.RFC3339)
 		})
-		auth.Audit(username, "mail.import", fmt.Sprintf("background imported=%d duplicate=%d failed=%d",
-			total.Imported, total.Duplicate, total.Failed))
+		auth.Audit(username, "mail.import", fmt.Sprintf("background imported=%d duplicate=%d failed=%d fixed=%d",
+			total.Imported, total.Duplicate, total.Failed, fixed))
 	}()
 	// ⚠ **要求の文脈を使いません**——ページを閉じても続けるため（上限だけ置く）。
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
+	fix()
 	for _, folder := range fetchFolders {
 		update(func() { st.Folder = folder })
 		for {

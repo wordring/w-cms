@@ -85,19 +85,22 @@ type emlPart struct {
 // つまり**見える文字**しかありません——「見える文字がデータの手掛かり」
 // （コンセプト §2）がここでも効いて、`vocab_index` の逆引き（`PagesByTag`）が
 // そのまま重複判定になります。新しい仕組みは1つも要りません。
-const MessageIDTag = "メッセージID"
+//
+// **名前はメールのヘッダそのまま**です（2026-10-09——利用者:「メール関連のタグはメールヘッダそのまま In-Reply-To などとして
+// 記録し、それとは別に親子関係を表すタグとして『親ページID』タグを付ける」）。それまでは「メッセージID」——取り込み済みの記録は
+// 読み込みのたびに直す（parent_link.go の FixRecordTags）。
+const MessageIDTag = "Message-ID"
 
-// InReplyToTag は**スレッドの親**を指す鍵です（`In-Reply-To` ヘッダ。返信元メールの
-// Message-ID が入る）。
+// InReplyToTag は `In-Reply-To` ヘッダの写しです（返信しているメールの Message-ID が入る）。名前はヘッダそのまま
+// （2026-10-09・それまでは「返信元メッセージID」）。
 //
 // 名前が紛らわしいので注記します——**`Reply-To` とは別のヘッダ**です。
 // `Reply-To` は「返信の宛先アドレス」（差出人と違う窓口に返させたいときに使う）で、
 // 親子関係は作りません。作るのは `In-Reply-To` のほうです。
 //
-// **新しい仕組みは要りません**——値は Message-ID なので、親の記録ページは
-// 重複検知と同じ逆引き（`PagesByTag(MessageIDTag, 値)`）1回で引けます。
-// 取り込みの順にも依存しません（返信を先に落としても、あとで親が入れば繋がる）。
-const InReplyToTag = "返信元メッセージID"
+// ⚠ **親子をたどるのはこのタグではなく `親ページID`（ParentPageTag）です**（2026-10-09）。取り込みはこの値と同じ
+// Message-ID を持つ記録を引いて 親ページID を書き、親があとから入れば子に書き足します（parent_link.go）。
+const InReplyToTag = "In-Reply-To"
 
 // 通信記録の相手と日時のタグ名です（2026-09-15 に定数へ）。
 //
@@ -207,9 +210,15 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
 	// ⚠ テンプレートに欄が無くても足します（`SetTag`）——無いと重複検知が黙って効かない。
 	d.SetTag(MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
-	// スレッドの親（In-Reply-To）。値は親メールの Message-ID なので、
-	// PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
-	d.SetTag(InReplyToTag, strings.TrimSpace(msg.Header.Get("In-Reply-To")))
+	// In-Reply-To ヘッダの写し。値は親メールの Message-ID なので、PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
+	inReplyTo := strings.TrimSpace(msg.Header.Get("In-Reply-To"))
+	d.SetTag(InReplyToTag, inReplyTo)
+	// 親子は 親ページID（2026-10-09・parent_link.go）——親がもう在れば、いま書く。⚠ 親があとから入ったときに既にある子へ
+	// 書き足すのは取り込みの係ではしない（既にあるページは書き換えない線——IntakeContext）。読み込みの仕事の最後に
+	// FixRecordTags が書き足す。
+	if parent := ParentRecordOf(inReplyTo, 0); parent != "" {
+		d.SetTag(ParentPageTag, parent)
+	}
 
 	for _, p := range parts {
 		if p.fileName == "" && strings.HasPrefix(p.mediaType, "text/plain") {

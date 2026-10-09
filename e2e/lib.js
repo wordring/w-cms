@@ -160,37 +160,28 @@ async function findRecordWithPDF(page, opts = {}) {
 }
 
 // findThreadPair は「返信の鎖でつながった2枚」を探し、`{prev, next}` を返します
-// （`prev` の `メッセージID` を `next` の `返信元メッセージID` が指している）。
-//
-// **鎖はヘッダの `In-Reply-To`** なので、受信どうしの返りも当たります——取り込んだ
-// メールの中に1組あれば足ります。見つからなければ両方とも空。
+// （`next` の `親ページID` が `prev` を指している——2026-10-09 から親子はこのタグ。それまではヘッダの
+// In-Reply-To の鎖）。受信どうしの返りも当たります——取り込んだメールの中に1組あれば足ります。見つからなければ両方とも空。
 async function findThreadPair(page, opts = {}) {
   const root = opts.mailbox || await findMailbox(page);
   if (!root) return { prev: '', next: '' };
-  const byMsgID = new Map();   // メッセージID → ページID
-  const replyTo = [];          // [ページID, 返信元メッセージID]
   const queue = [root];
   const seen = new Set([root]);
   let scanned = 0;
+  // ⚠ エディタで保存した本文は dt と dd のあいだに改行が入る（引き継ぎの罠）。
   const pick = (body, tag) => {
-    const m = body.match(new RegExp('<dt>' + tag + '</dt><dd>([^<]*)</dd>'));
+    const m = body.match(new RegExp('<dt>\\s*' + tag + '\\s*</dt>\\s*<dd>([^<]*)</dd>'));
     return m ? m[1].trim() : '';
   };
   while (queue.length && scanned < 200) {
     const id = queue.shift();
     scanned++;
     const body = await bodyOf(page, id);
-    const mid = pick(body, 'メッセージID');
-    const rid = pick(body, '返信元メッセージID');
-    if (mid) byMsgID.set(mid, id);
-    if (rid) replyTo.push([id, rid]);
+    const parent = pick(body, '親ページID');
+    if (/^\d{6}$/.test(parent) && parent !== id) return { prev: parent, next: id };
     for (const c of await childrenOf(page, id)) {
       if (!seen.has(c.ID)) { seen.add(c.ID); queue.push(c.ID); }
     }
-  }
-  for (const [id, rid] of replyTo) {
-    const prev = byMsgID.get(rid);
-    if (prev && prev !== id) return { prev, next: id };
   }
   return { prev: '', next: '' };
 }

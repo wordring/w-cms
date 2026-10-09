@@ -173,8 +173,9 @@ func TestAnalyzeRFQReplyNeedsHumanWhenUnsure(t *testing.T) {
 	}
 
 	// ④ 件名に№が無くても、こちらが送った見積依頼のメール（控え）への返信なら、控えの件名の№で結ぶ。
-	if _, err := cms.CreateChildPage(rfqReplyBox, "root", `<h1>見積依頼（№ `+w2+`）</h1><dl data-type="tags"><dt>`+comm.DirectionTag+
-		`</dt><dd>`+comm.DirectionOut+`</dd><dt>`+comm.MessageIDTag+`</dt><dd>&lt;rfq-`+w2+`@example.jp&gt;</dd></dl>`); err != nil {
+	sent, err := cms.CreateChildPage(rfqReplyBox, "root", `<h1>見積依頼（№ `+w2+`）</h1><dl data-type="tags"><dt>`+comm.DirectionTag+
+		`</dt><dd>`+comm.DirectionOut+`</dd><dt>`+comm.MessageIDTag+`</dt><dd>&lt;rfq-`+w2+`@example.jp&gt;</dd></dl>`)
+	if err != nil {
 		t.Fatal(err)
 	}
 	mail4 := newReplyMail(t, "お見積りの件", "")
@@ -182,6 +183,13 @@ func TestAnalyzeRFQReplyNeedsHumanWhenUnsure(t *testing.T) {
 		return withTagValues(b, comm.InReplyToTag, []string{"<rfq-" + w2 + "@example.jp>"}, false)
 	}); err != nil {
 		t.Fatal(err)
+	}
+	// 親子は 親ページID（2026-10-09）——控えがあとから入った返事にも、読み込みの仕事の最後に書き足される（FixRecordTags）。
+	if _, linked, err := comm.FixRecordTags("root"); err != nil || linked < 1 {
+		t.Fatalf("返事に親ページID を書き足せません: %d %v", linked, err)
+	}
+	if !strings.Contains(readPageBody(t, mail4), "<dt>"+comm.ParentPageTag+"</dt><dd>"+sent+"</dd>") {
+		t.Fatalf("返事の親ページID が控えを指していません:\n%s", readPageBody(t, mail4))
 	}
 	stubReply(t, "", "わかば鋼業")
 	if out4 := analyzeReply(t, mail4); out4.LinkedRFQ != w2 {

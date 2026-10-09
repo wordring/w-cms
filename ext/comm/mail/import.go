@@ -95,7 +95,7 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 		}
 		// **落とす前に重複を確かめる**（本体は数百KBある）。
 		if id := strings.TrimSpace(r.MessageID); id != "" {
-			if _, dup := comm.ExistingIntakePage(comm.MessageIDTag, id); dup {
+			if _, dup := comm.ExistingMailRecord(id); dup { // 直す前の記録（古い名前）も見る
 				sum.Duplicate++
 				continue
 			}

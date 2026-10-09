@@ -364,7 +364,11 @@ func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResul
 	// 重複検知は**取り込み係を呼ぶ前**に行う（作ってから消すのではなく、作らない）。
 	if f, ok := h.(SourceRefFinder); ok {
 		if name, value, found := f.SourceRef(fileName, content); found {
-			if existing, dup := ExistingIntakePage(name, value); dup {
+			existing, dup := ExistingIntakePage(name, value)
+			if !dup && name == MessageIDTag {
+				existing, dup = ExistingMailRecord(value) // 直す前の記録（古い名前）も見る——parent_link.go
+			}
+			if dup {
 				auth.Audit(uploader, "intake.duplicate", existing+" ("+name+"="+value+")")
 				return IntakeResult{PageID: existing, Title: fileName, Duplicate: true}, true, nil
 			}
@@ -477,10 +481,15 @@ const (
 // TopLevelPageByTitle は page_lookup.go にあります（通信箱・テンプレート置き場・
 // 取引先が共有する「名前が機能」の引き方）。
 
-// ReplyToTag は「この記録はどの記録への返信か」を指す参照タグです。
-// 値は返信元のページID——参照タグの文法（ref_render.go）に乗るのでリンクになり、
-// **逆引き**（PagesByTag）で「この記録への返信」も引けます。
-const ReplySourceTag = "返信元"
+// ParentPageTag は「この記録はどの記録への返信か」——通信記録の親子——を指す参照タグです（2026-10-09・parent_link.go）。
+// 値は親の記録のページID——参照タグの文法（ref_render.go）に乗るのでリンクになり、**逆引き**（PagesByTag）で
+// 子（この記録への返信）も引けます。通信記録の前後をたどるのはこのタグです。
+//
+// それまでは「返信元」の名前で、w-cms から送った返信の控えにだけ書いていた（メールどうしの親子は In-Reply-To で
+// その都度引いていた）。利用者:「メール関連のタグはメールヘッダそのまま In-Reply-To などとして記録し、それとは別に
+// 親子関係を表すタグとして『親ページID』タグを付けるのはどうでしょう？もちろん、通信記録の前後をたどるには、
+// 基本的に『親ページID』を検索します」。
+const ParentPageTag = "親ページID"
 
 // CreateRecordPage は年フォルダ／月フォルダの下へ記録ページを1枚作ります。
 //
