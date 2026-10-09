@@ -4680,6 +4680,10 @@
     //   - enum 列 … 選択肢のボタンを並べる
     //   - image 列 … 画像を選ぶボタン1つ（ファイル選択。モバイルではカメラも選べる）
     // 器（#w-enum-menu）は共通で、中身だけ列型で作り分ける。
+    //
+    // **タグの値（可変タグの dd）にも enum の選択肢を出す**（2026-10-09 利用者:「タグにはコンボボックスで候補を出す設定が
+    // 無かったでしょうか？」→「enum のタグ全部に出す」——【要求】タグと表 §11「タグの値にも、型に応じた入力補助を」）。
+    // 選択肢は表のセルと同じ設定の語彙（`vocabWords` の `values`）。タグには enum だけ（image・候補の出どころは表のセルだけ）。
     function updateEnumMenu() {
         const menu = document.getElementById('w-enum-menu');
         if (!menu) return;
@@ -4690,11 +4694,13 @@
         const el = node ? (node.nodeType === Node.TEXT_NODE ? node.parentElement : node) : null;
         // 対象は data-type 付きに限らない——見出し形（D-2）の素の表も、文脈で列宣言が
         // 解決できれば補助を出す（resolveCellColumn が読まれない表では null を返す）。
-        const cell = el && el.closest ? el.closest('#w-editor-content table td') : null;
+        const td = el && el.closest ? el.closest('#w-editor-content table td') : null;
+        const tagDD = !td && el && el.closest ? el.closest('#w-editor-content dl[data-type="tags"] > dd') : null;
+        const cell = td || tagDD;
         if (!cell || isServerOwned(cell)) { hideEnumMenu(); return; }
-        const col = resolveCellColumn(cell);
+        const col = td ? resolveCellColumn(td) : tagValueColumn(tagDD);
         const isEnum = col && col.type === 'enum' && col.enum.length > 0;
-        const isImage = col && col.type === 'image';
+        const isImage = !!td && col && col.type === 'image';
         // ⚠ **候補は縛りではありません**（2026-09-21）。採らずに手で打てます
         //    ——揃うのは採ったときだけで、手打ちは止められません。それでも意味が
         //    あるのは**打つより選ぶほうが速い**からです。速ければ揃います。
@@ -4720,9 +4726,13 @@
             b.textContent = v;
             b.addEventListener('click', () => {
                 cell.textContent = v;      // childList の変化で MutationObserver → 自動保存が走る
-                validateCell(cell);
+                if (td) validateCell(td);
+                else markTagVocabulary();  // 選択肢の中にあるかの印（tag-known）を付け直す
                 placeCaretAtEnd(cell);
                 hideEnumMenu();
+                // 選んだあとは、同じセルに居るあいだ開き直さない（2026-10-09）——キャレットを置き直すと selectionchange が
+                // この後に届き、閉じたばかりのメニューが同じセルにまた開いていた（タグでは下の行の値を覆った）。
+                enumMenuCell = cell;
             });
             menu.appendChild(b);
         });
@@ -4730,6 +4740,17 @@
         menu.classList.add('active');
         const rect = cell.getBoundingClientRect();
         placeFloating(menu, rect, 2);
+    }
+
+    // tagValueColumn はタグの値（dd）の {label, type, enum, suggest} を、すぐ前の dt の名前で設定の語彙から引きます
+    // （resolveCellColumn のタグ版・語彙に無い名前は null）。
+    function tagValueColumn(dd) {
+        const dt = dd.previousElementSibling;
+        if (!dt || dt.tagName !== 'DT') return null;
+        const label = dt.textContent.trim();
+        const word = vocabWords[label];
+        if (!word) return null;
+        return { label, type: word.type || (word.values ? 'enum' : ''), enum: word.values || [], suggest: '' };
     }
 
     // fillSuggestMenu は出どころから候補を取り、ボタンで並べます。
