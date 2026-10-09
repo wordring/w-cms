@@ -1,11 +1,13 @@
 package toho
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 )
 
@@ -97,5 +99,30 @@ func TestFileToMachineFolderAsksWhenSameFileShown(t *testing.T) {
 	body, _ := cms.ReadPageBody(folder)
 	if n := strings.Count(body, `data-ref="`+inbox+`-pdf003"`); n != 2 {
 		t.Errorf("同じファイルの表示が %d 個（前からの1つ＋足した1つ のはず）: %s", n, body)
+	}
+}
+
+// TestFilingSkipsUnwritableOrOpen は、整理が、動かすページを書けない人の行と、誰かが開いているページの行を飛ばすことを
+// 固定します（通常の整理と「装置のページへ」が共有する関門 filingSourceGate の番人・2026-10-09）。
+func TestFilingSkipsUnwritableOrOpen(t *testing.T) {
+	const inbox = "000019"
+	folderSetup(t, inbox)
+	part := makeDrawingPageFrom(t, inbox, "pdf011", "A100-00Y", "仮の部品", "テスト装置", "みらい産業")
+	row := filingRequest{PageID: part, Customer: "みらい産業", MachineName: "テスト装置", DrawingName: "仮の部品", Merge: "new"}
+	if res := postFiling(t, &auth.User{Username: "bob"}, []filingRequest{row}); len(res) != 1 || res[0].Outcome != "skipped" ||
+		res[0].Message != "このページを動かす権限がありません" {
+		t.Errorf("書けない人の行を飛ばしていません: %+v", res)
+	}
+	n, _ := strconv.Atoi(part)
+	if r := editlock.Locks.TryAcquire(n, "carol", ""); !r.Acquired {
+		t.Fatal("ロックを取れません")
+	}
+	t.Cleanup(func() { editlock.Locks.ForceRelease(n) })
+	for _, m := range []string{"new", "folder"} {
+		row.Merge = m
+		if res := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{row}); len(res) != 1 || res[0].Outcome != "skipped" ||
+			!strings.Contains(res[0].Message, "編集中") {
+			t.Errorf("%s: 開いているページを動かしています: %+v", m, res)
+		}
 	}
 }

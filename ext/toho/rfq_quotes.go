@@ -79,14 +79,8 @@ func quotesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []quote
 			Lot: strings.TrimSpace(v["quantity"]), Price: strings.TrimSpace(v["cost"]), Status: strings.TrimSpace(v["status"])})
 	}
 	// 日付は暦で並べる（`2024/1/5` と `2024-01-22` が混ざっても）——読めない日付は後ろ。
-	key := func(d string) string {
-		if n, ok := cms.NormalizeValue(cms.ColDate, d); ok {
-			return n
-		}
-		return ""
-	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if a, b := key(out[i].Date), key(out[j].Date); a != b {
+		if a, b := calendarKey(out[i].Date), calendarKey(out[j].Date); a != b {
 			return a > b
 		}
 		return out[i].Vendor < out[j].Vendor

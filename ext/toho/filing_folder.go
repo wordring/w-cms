@@ -51,13 +51,8 @@ func fileToMachineFolder(user *auth.User, pageID string, row filingRequest) fili
 	if customer == "" || machine == "" {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "顧客名・装置名称のどちらかが空なので、そのままにしました"}
 	}
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil || !canWritePage(user, idInt) {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}
-	}
-	if holder, open := editlock.Locks.EditorOpen(idInt); open {
-		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "このページは編集中です（" + holder + "）。閉じてからもう一度お試しください"}
+	if _, refused, ok := filingSourceGate(user, pageID); !ok {
+		return refused
 	}
 	where := customer + "／" + ProductsBoxTitle + "／" + machine
 	folderID, ok := findMachineFolder(customer, machine)

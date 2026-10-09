@@ -603,6 +603,24 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "results": results})
 }
 
+// filingSourceGate は、整理で動かすページ（解析が作ったページ）を user が書けて、誰も開いていないかを見ます。
+// 通せないときは飛ばす行を返します（ok=false）。
+//
+// **開いている人が居たら、その行は飛ばします**（2026-09-14）。整理は本文を読んで・変えて・書くので、誰かがエディタを
+// 開いていると**オートセーブと上書きし合います**。関門をハンドラではなく行ごとに置くのは、整理が**複数のページへ書く**
+// ためです（加工製品ページ・合流先）——1枚が編集中でも、残りは片付けられるほうがよい。
+func filingSourceGate(user *auth.User, pageID string) (idInt int, refused filingResult, ok bool) {
+	idInt, err := strconv.Atoi(pageID)
+	if err != nil || !canWritePage(user, idInt) {
+		return 0, filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}, false
+	}
+	if holder, open := editlock.Locks.EditorOpen(idInt); open {
+		return 0, filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "このページは編集中です（" + holder + "）。閉じてからもう一度お試しください"}, false
+	}
+	return idInt, filingResult{}, true
+}
+
 // fileOneDrawing は1枚の加工製品ページを行き先へ収めます。
 func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	pageID, ok := page.NormalizeID(row.PageID)
@@ -640,18 +658,9 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "skipped",
 			Message: "区分「" + bad + "」は選べません（" + strings.Join(ProductKinds(), "・") + "）"}
 	}
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil || !canWritePage(user, idInt) {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "このページを動かす権限がありません"}
-	}
-	// **開いている人が居たら、その行は飛ばします**（2026-09-14）。整理は本文を
-	// 読んで・変えて・書くので、誰かがエディタを開いていると**オートセーブと
-	// 上書きし合います**。関門をハンドラではなく行ごとに置くのは、整理が
-	// **複数のページへ書く**ためです（加工製品ページ・合流先）——1枚が編集中でも、
-	// 残りは片付けられるほうがよい。
-	if holder, open := editlock.Locks.EditorOpen(idInt); open {
-		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "このページは編集中です（" + holder + "）。閉じてからもう一度お試しください"}
+	idInt, refused, ok := filingSourceGate(user, pageID)
+	if !ok {
+		return refused
 	}
 
 	// **人が直した値を、図面ブロックにも書き戻します**（2026-09-11 ユーザー:「整理で

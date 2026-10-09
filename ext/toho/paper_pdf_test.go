@@ -264,3 +264,14 @@ func TestDocKindsAndSender(t *testing.T) {
 		t.Errorf("宛先があるのに注意しています: %v", d.Notes)
 	}
 }
+
+// TestCalendarKey は、日付を暦で並べる鍵（受注・見積の単価と見積回答の並べ方）が、書き方の混ざった日付を YYYY-MM-DD に
+// 畳み、読めない日付を空（新しい順に並べると後ろ）にすることを固定します（2026-10-09 に2つの写しを寄せた口の番人）。
+func TestCalendarKey(t *testing.T) {
+	if a, b := calendarKey("2024/1/5"), calendarKey("2024-01-22"); a != "2024-01-05" || !(b > a) {
+		t.Errorf("暦の順になりません: %q %q", a, b)
+	}
+	if k := calendarKey("いつか"); k != "" || !(calendarKey("2024/1/5") > k) {
+		t.Errorf("読めない日付の鍵 = %q（空で、新しい順に並べると後ろのはず）", k)
+	}
+}

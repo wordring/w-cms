@@ -102,19 +102,22 @@ func orderPricesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []
 			Status: strings.TrimSpace(v["status"]), ByCode: byCode})
 	}
 	out = append(out, estimatePricesForProduct(db, canView, productID)...)
-	key := func(d string) string {
-		if n, ok := cms.NormalizeValue(cms.ColDate, d); ok {
-			return n
-		}
-		return ""
-	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if a, b := key(out[i].Date), key(out[j].Date); a != b {
+		if a, b := calendarKey(out[i].Date), calendarKey(out[j].Date); a != b {
 			return a > b
 		}
 		return out[i].No > out[j].No
 	})
 	return out
+}
+
+// calendarKey は日付を暦で並べるための鍵です（`2024/1/5` と `2024-01-22` が混ざっても YYYY-MM-DD に畳む・読めなければ
+// 空——新しい順に並べると後ろへ行く）。受注・見積の単価と見積回答の並べ方が写していた（2026-10-09 に寄せた）。
+func calendarKey(d string) string {
+	if n, ok := cms.NormalizeValue(cms.ColDate, d); ok {
+		return n
+	}
+	return ""
 }
 
 // estimatePricesForProduct は、弊社品番がこのページの見積明細の行です（読める見積書ページだけ）。
