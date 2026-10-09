@@ -4844,8 +4844,10 @@
     //
     // 畳む対象は**機械に向けた値**——人は普段読まないが、機械には要る値:
     //   - `◯◯アドレス`     … 完全一致で検索するために原子化したメールアドレス
-    //   - `◯◯メッセージID` … 取り込みの重複検知の鍵（`メッセージID`）と
-    //                          スレッドの親（`返信元メッセージID`）
+    //   - `Message-ID`・`In-Reply-To` … メールのヘッダの写し（取り込みの重複検知の鍵と、返信元のメールの
+    //                          Message-ID）。2026-10-09 にヘッダの名前へ改めた（それまでは `メッセージID`・
+    //                          `返信元メッセージID`——直す前の記録のために末尾の一致も残す）。人が前後をたどるのは
+    //                          参照の `親ページID` なので、そちらは畳まない
     //   - `◯◯ハッシュ`     … 中身から作る重複検知の鍵（FAXの `内容ハッシュ`）
     // 対ごとに開閉ボタンを付ける案より、**開閉が1つで済み・IDの類も一緒に
     // 片付く**。「誰のアドレスか」はタグの名前が持っているので、まとめて開いても
@@ -4859,6 +4861,7 @@
     //
     // だから**編集モードでは畳まない**（編集する対象は本物でなければならない）。
     const MACHINE_TAG_SUFFIX = /(アドレス|メッセージID|ハッシュ)$/;
+    const MACHINE_TAG_NAMES = new Set(['Message-ID', 'In-Reply-To']);
 
     function foldMachineTags() {
         document.querySelectorAll('#w-editor-content .tag-detail-toggle').forEach(el => el.remove());
@@ -4882,13 +4885,14 @@
             // アドレスこそがそのページの中身です。実際、担当者ページを開いても
             // アドレスが「詳細」の中で、何も書いていないページに見えていました。
             //
-            // `メッセージID`・`ハッシュ` は対の有無に関わらず機械専用なので畳みます。
+            // `Message-ID`・`In-Reply-To`・`メッセージID`・`ハッシュ` は対の有無に関わらず機械専用なので畳みます。
             const names = new Set(
                 Array.from(dl.children)
                     .filter(el => el.tagName === 'DT')
                     .map(el => el.textContent.trim()));
             const folded = pairs.filter(p => {
                 const name = p.dt.textContent.trim();
+                if (MACHINE_TAG_NAMES.has(name)) return true;
                 if (!MACHINE_TAG_SUFFIX.test(name)) return false;
                 if (!name.endsWith('アドレス')) return true; // ID・ハッシュは常に畳む
                 return names.has(name.slice(0, -'アドレス'.length));

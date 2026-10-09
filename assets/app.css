@@ -1240,7 +1240,7 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] dd,
     overflow-wrap: anywhere; /* 単語の途中でも折る（英数字の長い連なりのため） */
 }
 
-/* 機械に向けたタグ（◯◯アドレス・メッセージID）は閲覧モードで「詳細」へ畳む
+/* 機械に向けたタグ（◯◯アドレス・Message-ID・In-Reply-To）は閲覧モードで「詳細」へ畳む
  * （app.js foldMachineTags）。**畳むのは見た目だけ**で、本文にも索引にも対は在る。
  * dt/dd はグリッドの升目なので、消すのは display: none でよい。 */
 #w-editor-content dl[data-type="tags"] dt.tag-folded,
