@@ -6315,30 +6315,37 @@
     // askConfirm は確かめのダイアログを出し、進めるなら true を返します（2026-10-03 利用者:「警告ダイアログが出て、追加するか
     // やめるか選んではどうでしょうか」）。⚠ 既定の釦は「やめる」（Enter で黙って進まない）。Esc も「やめる」。
     function askConfirm(message, yesLabel, noLabel) {
+        return openDialog(String(message || '').replace(/\*\*/g, ''), null, [[noLabel, false], [yesLabel, true, 'w-confirm-yes']], false);
+    }
+
+    // openDialog は確かめ・選ぶダイアログの土台です（askConfirm・askChoice が写していた——2026-10-09 に寄せた）。
+    // 文・中身（middle(done) が作る要素・無ければ省く）・下の帯の釦（[文字, 返す値, class]）を並べ、押した釦の値で終わる
+    // Promise を返します。⚠ 既定の釦（focus）は帯の最初の釦（「やめる」）——Enter で黙って進まない。Esc は cancelValue。
+    function openDialog(message, middle, buttons, cancelValue) {
         return new Promise((resolve) => {
             const dlg = document.createElement('dialog');
             dlg.className = 'w-confirm';
             const p = document.createElement('p');
             p.className = 'w-confirm-msg';
-            p.textContent = String(message || '').replace(/\*\*/g, '');
+            p.textContent = message;
+            const done = (v) => { if (dlg.open) dlg.close(); dlg.remove(); resolve(v); };
             const bar = document.createElement('div');
             bar.className = 'w-confirm-bar';
-            const no = document.createElement('button');
-            no.type = 'button';
-            no.textContent = noLabel;
-            const yes = document.createElement('button');
-            yes.type = 'button';
-            yes.className = 'w-confirm-yes';
-            yes.textContent = yesLabel;
-            bar.append(no, yes);
-            dlg.append(p, bar);
+            const btns = buttons.map(([label, value, cls]) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                if (cls) b.className = cls;
+                b.textContent = label;
+                b.addEventListener('click', () => done(value));
+                bar.appendChild(b);
+                return b;
+            });
+            const mid = middle ? middle(done) : null;
+            if (mid) dlg.append(p, mid, bar); else dlg.append(p, bar);
             document.body.appendChild(dlg);
-            const done = (v) => { if (dlg.open) dlg.close(); dlg.remove(); resolve(v); };
-            no.addEventListener('click', () => done(false));
-            yes.addEventListener('click', () => done(true));
-            dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(false); });
+            dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(cancelValue); });
             dlg.showModal();
-            no.focus();
+            btns[0].focus();
         });
     }
 
@@ -7144,15 +7151,9 @@
 
     // askChoice は選ぶダイアログを出し、選んだ番号を返します（やめたら -1）。⚠ 既定は「やめる」・Esc も「やめる」。
     function askChoice(message, labels) {
-        return new Promise((resolve) => {
-            const dlg = document.createElement('dialog');
-            dlg.className = 'w-confirm';
-            const p = document.createElement('p');
-            p.className = 'w-confirm-msg';
-            p.textContent = message;
+        return openDialog(message, (done) => {
             const list = document.createElement('div');
             list.className = 'w-choice-list';
-            const done = (v) => { if (dlg.open) dlg.close(); dlg.remove(); resolve(v); };
             labels.forEach((label, i) => {
                 const b = document.createElement('button');
                 b.type = 'button';
@@ -7160,19 +7161,8 @@
                 b.addEventListener('click', () => done(i));
                 list.appendChild(b);
             });
-            const bar = document.createElement('div');
-            bar.className = 'w-confirm-bar';
-            const no = document.createElement('button');
-            no.type = 'button';
-            no.textContent = 'やめる';
-            no.addEventListener('click', () => done(-1));
-            bar.appendChild(no);
-            dlg.append(p, list, bar);
-            document.body.appendChild(dlg);
-            dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(-1); });
-            dlg.showModal();
-            no.focus();
-        });
+            return list;
+        }, [['やめる', -1]], -1);
     }
 
     async function supersedeDrawingFrom(host) {
@@ -7907,22 +7897,18 @@
         clearCellSel();
     }, true);
 
-    document.addEventListener('copy', e => {
-        if (!cellSel || !e.clipboardData || !selectedCells().length) return;
+    // putCellsOnClipboard は、選んだセルがあればタブ区切りと表の HTML でクリップボードへ写して true を返します
+    // （Ctrl+C・Ctrl+X——コピーと切り取りが写していた・2026-10-09 に寄せた）。
+    function putCellsOnClipboard(e) {
+        if (!cellSel || !e.clipboardData || !selectedCells().length) return false;
         const c = cellSelClipboard();
         e.clipboardData.setData('text/plain', c.text);
         e.clipboardData.setData('text/html', c.html);
         e.preventDefault();
-    });
-
-    document.addEventListener('cut', e => {
-        if (!cellSel || !e.clipboardData || !selectedCells().length) return;
-        const c = cellSelClipboard();
-        e.clipboardData.setData('text/plain', c.text);
-        e.clipboardData.setData('text/html', c.html);
-        e.preventDefault();
-        clearSelectedCells();
-    });
+        return true;
+    }
+    document.addEventListener('copy', e => { putCellsOnClipboard(e); });
+    document.addEventListener('cut', e => { if (putCellsOnClipboard(e)) clearSelectedCells(); });
 
     // fillSelectedCells は選んだセル全部に同じ値を書きます（1つの値を矩形へ貼ったとき）。
     function fillSelectedCells(value) {
@@ -9890,6 +9876,25 @@ async function postJSON(url, body) {
     return { ok: res.ok && !!data.success, status: res.status, data };
 }
 
+// sayBoundPDF は、資料を綴じた1本（FAX・印刷用）ができたことを欄に出し、開くリンクを添えます（発注書・見積依頼書——
+// 2026-10-09 に2つの写しを寄せた）。⚠ **綴じなかったものを黙りません**——紙にできない形式・読めないPDF・資料の無い行。
+function sayBoundPDF(box, data) {
+    const p = sayIn(box, '📠 FAX・印刷用を作りました（このページの添付にも残ります）: ');
+    if (!p) return;
+    const a = document.createElement('a');
+    a.href = data.url || '';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = data.file || '開く';
+    p.appendChild(a);
+    (data.skipped || []).forEach((s) => {
+        const q = document.createElement('p');
+        q.className = 'proc-why-ng';
+        q.textContent = '⚠ ' + s;
+        box.appendChild(q);
+    });
+}
+
 // sayIn は欄の中身をその1文だけにします（欄が無ければ何もしない）。
 function sayIn(box, text, cls) {
     if (!box) return null;
@@ -10090,21 +10095,7 @@ delegateClick([['.estimate-add-go', async (btn) => {
         .catch(e => ({ ok: false, data: { message: String(e) } }));
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '綴じられませんでした')); return; }
-    const p = sayIn(say, '📠 FAX・印刷用を作りました（このページの添付にも残ります）: ');
-    if (!p) return;
-    const a = document.createElement('a');
-    a.href = r.data.url || '';
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.textContent = r.data.file || '開く';
-    p.appendChild(a);
-    // ⚠ 綴じなかったものを黙らない——紙にできない形式・読めないPDF・資料の無い行。
-    (r.data.skipped || []).forEach((s) => {
-        const q = document.createElement('p');
-        q.className = 'proc-why-ng';
-        q.textContent = '⚠ ' + s;
-        say.appendChild(q);
-    });
+    sayBoundPDF(say, r.data);
 }], ['.rfq-sent-go', async (btn) => {
     // 見積依頼書を FAX・手渡しで送った（2026-10-03）——送付日に今日。
     if (!window.confirm('FAX・手渡しで送ったことにして、送付日に今日の日付を書きます。よろしいですか？')) return;
@@ -11397,22 +11388,28 @@ delegateClick([['.w-table-print', (btn) => {
         return out;
     }
 
+    // pickedOf は押したボタンの欄（.unorder-form）・答えを出す欄・未発注の表でチェックした行を返します（欄が無ければ null）。
+    // 「発注部材表を作る」と「不要にする」が写していた（2026-10-09 に寄せた）。
+    function pickedOf(btn) {
+        const form = btn.closest('.unorder-form');
+        const root = form && form.parentElement;
+        const box = root ? root.querySelector('[data-unorder-result]') : null;
+        const table = root ? root.querySelector('.unorder-table') : null;
+        if (!form || !box) return null;
+        const lines = table
+            ? [...table.querySelectorAll('.unorder-check')].filter((c) => c.checked).map((c) => lineOf(c.closest('tr')))
+            : [];
+        return { form, box, lines };
+    }
+
     // 未発注の表から**発注部材表**を1つ作る（2026-09-22・ユーザーの流れ）。
     //
     // ⚠ **何も選ばなくても押せます**——空の表から始める道（加工製品ページに無い
     //    部材だけを買うとき）。だから `create` と違って「0件なら断る」をしません。
     async function draft(btn) {
-        const form = btn.closest('.unorder-form');
-        const root = form && form.parentElement;
-        const box = root ? root.querySelector('[data-unorder-result]') : null;
-        const table = root ? root.querySelector('.unorder-table') : null;
-        if (!form || !box) return;
-
-        const picked = table
-            ? [...table.querySelectorAll('.unorder-check')]
-                  .filter((c) => c.checked)
-                  .map((c) => lineOf(c.closest('tr')))
-            : [];
+        const at = pickedOf(btn);
+        if (!at) return;
+        const { form, box, lines: picked } = at;
         btn.disabled = true;
         sayIn(box,'発注部材表を作っています…');
         try {
@@ -11447,14 +11444,9 @@ delegateClick([['.w-table-print', (btn) => {
     //    配線すると描き直しのたびに切れます。
     // 必要部材表から「不要にする」（2026-10-01・サーバーの skip.go）——選んだ行を手配不要の表へ。理由は任意。
     async function skip(btn) {
-        const form = btn.closest('.unorder-form');
-        const root = form && form.parentElement;
-        const box = root ? root.querySelector('[data-unorder-result]') : null;
-        const table = root ? root.querySelector('.unorder-table') : null;
-        if (!form || !box) return;
-        const picked = table
-            ? [...table.querySelectorAll('.unorder-check')].filter((c) => c.checked).map((c) => lineOf(c.closest('tr')))
-            : [];
+        const at = pickedOf(btn);
+        if (!at) return;
+        const { form, box, lines: picked } = at;
         if (picked.length === 0) {
             sayIn(box, '⚠ 不要にする行を選んでください', 'proc-why-ng');
             return;
@@ -11636,20 +11628,7 @@ delegateClick([['.w-table-print', (btn) => {
             sayIn(box, '⚠ ' + (r.data.message || '綴じられませんでした'), 'proc-why-ng');
             return;
         }
-        const p = sayIn(box, '📠 FAX・印刷用を作りました（このページの添付にも残ります）: ');
-        const a = document.createElement('a');
-        a.href = r.data.url || '';
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.textContent = r.data.file || '開く';
-        p.appendChild(a);
-        // ⚠ **綴じなかったものを黙りません**——紙にできない形式・読めないPDF・資料の無い行。
-        (r.data.skipped || []).forEach((s) => {
-            const q = document.createElement('p');
-            q.className = 'proc-why-ng';
-            q.textContent = '⚠ ' + s;
-            box.appendChild(q);
-        });
+        sayBoundPDF(box, r.data);
     }
 
     // FAX・手渡しの「送った」。⚠ **人が押したことがその事実**です。
