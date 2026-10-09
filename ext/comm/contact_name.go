@@ -46,6 +46,20 @@ func splitMailbox(v string) (name, addr string) {
 	return "", v
 }
 
+// BareAddress は `名前 <アドレス>` からアドレスだけを取り出します（山括弧が無ければ全体）。
+//
+// ⚠ **SMTP の `RCPT TO:` は素のアドレスしか受けません**——送る口（メールの送る欄・発注書や見積書を送る欄）は
+// 宛先をここに通す。2026-10-09 に、メールの送る欄（`bareAddr`）と発注書の送る欄（`bareMailAddress`）の写しを寄せた。
+func BareAddress(s string) string {
+	v := strings.TrimSpace(s)
+	if i := strings.LastIndex(v, "<"); i >= 0 {
+		if j := strings.Index(v[i:], ">"); j > 0 {
+			v = v[i+1 : i+j]
+		}
+	}
+	return strings.TrimSpace(v)
+}
+
 // shortPartner は一覧に出す相手の短い名前です——連絡帳の名前 → メールに書かれた名前 → アドレスの順で1つ選び、
 // max 文字を超えたら「…」で切ります（元の値は呼ぶ側が title に置く）。names は同じ描画の中での控え。
 func shortPartner(user *auth.User, from string, max int, names map[string]string) string {

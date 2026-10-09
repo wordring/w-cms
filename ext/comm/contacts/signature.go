@@ -75,7 +75,7 @@ func SignatureLines(bodyHTML, heading string) []string {
 		if headingLevel(n) < 2 || isSectionHead(n) {
 			return // 節の見出しは上の枝が読む
 		}
-		if strings.TrimSpace(brToNewline(n)) == heading {
+		if strings.TrimSpace(cms.TextWithBreaks(n)) == heading {
 			found = linesAfterHeading(n)
 		}
 	})
@@ -126,7 +126,7 @@ func linesAfterHeading(h *html.Node) []string {
 		if c.Data == "section" {
 			break
 		}
-		add(brToNewline(c))
+		add(cms.TextWithBreaks(c))
 	}
 	if len(out) == 0 {
 		return nil
@@ -183,7 +183,7 @@ func MySignature(user *auth.User, heading string) []string {
 // ⚠ **直下だけ**を見ます——入れ子の節の見出しを拾うと、別の節の中身を署名として書くことになります。
 func sectionHeading(section *html.Node) string {
 	if h := firstHeading(section); h != nil {
-		return strings.TrimSpace(brToNewline(h))
+		return strings.TrimSpace(cms.TextWithBreaks(h))
 	}
 	return ""
 }
@@ -220,30 +220,11 @@ func sectionTextLines(section *html.Node) []string {
 		case "h2", "h3", "h4", "h5", "h6":
 			continue // 見出しは書かない
 		default:
-			add(brToNewline(c))
+			add(cms.TextWithBreaks(c))
 		}
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
-}
-
-// brToNewline は要素の文字を、`<br>` を改行として取り出します。
-func brToNewline(n *html.Node) string {
-	var sb strings.Builder
-	var walk func(*html.Node)
-	walk = func(x *html.Node) {
-		switch {
-		case x.Type == html.TextNode:
-			sb.WriteString(x.Data)
-		case x.Type == html.ElementNode && x.Data == "br":
-			sb.WriteString("\n")
-		}
-		for c := x.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(n)
-	return sb.String()
 }

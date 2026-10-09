@@ -48,7 +48,7 @@ func estimateAddresses(user *auth.User, client, person string) []string {
 				}
 				var out []string
 				for _, v := range mailAddressesOfPage(pageNum(p.ID)) {
-					if a := bareMailAddress(v); a != "" {
+					if a := comm.BareAddress(v); a != "" {
 						out = append(out, a)
 					}
 				}

@@ -66,6 +66,25 @@ func GateJSONPost(w http.ResponseWriter, r *http.Request) (user *auth.User, ok b
 	return user, true
 }
 
+// GateJSONGet は、JSONで答える**ログインが要る読み取り口**（ページを名指ししないもの）の入口です:
+// `Content-Type` → GET の確認 → 利用者。断ったときは応答を書き終えていて ok=false。
+// ページを名指しする口は `GateJSONPageRead`（匿名でも公開ページは読める）。
+//
+// 同じ10行が4つの口（宛先の候補・メールの一覧・送る欄・ファイルの参照）に写されていた（2026-10-09 に寄せた）。
+func GateJSONGet(w http.ResponseWriter, r *http.Request) (user *auth.User, ok bool) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return nil, false
+	}
+	user = auth.CurrentUser(r)
+	if user == nil {
+		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+		return nil, false
+	}
+	return user, true
+}
+
 // WriteJSON は JSON の応答を書きます（成功の応答の定型）。
 func WriteJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -30,12 +30,12 @@ func RecordBodyText(bodyHTML string) string {
 			if n.Data == "section" && inSection == "" && sectionHeadingOf(n) == MailBodyHeading {
 				cms.WalkElements(n, func(p *html.Node) {
 					if p.Data == "pre" && inSection == "" {
-						inSection = textWithBreaks(p)
+						inSection = cms.TextWithBreaks(p)
 					}
 				})
 			}
 			if n.Data == "pre" && anyPre == "" {
-				anyPre = textWithBreaks(n)
+				anyPre = cms.TextWithBreaks(n)
 			}
 		})
 	}
@@ -51,28 +51,9 @@ func sectionHeadingOf(section *html.Node) string {
 		if c.Type == html.ElementNode {
 			switch c.Data {
 			case "h2", "h3", "h4", "h5", "h6":
-				return strings.TrimSpace(textWithBreaks(c))
+				return strings.TrimSpace(cms.TextWithBreaks(c))
 			}
 		}
 	}
 	return ""
-}
-
-// textWithBreaks は要素の中の文字をつなげて返します（`<br>` は改行）。
-func textWithBreaks(n *html.Node) string {
-	var sb strings.Builder
-	var walk func(*html.Node)
-	walk = func(x *html.Node) {
-		switch {
-		case x.Type == html.TextNode:
-			sb.WriteString(x.Data)
-		case x.Type == html.ElementNode && x.Data == "br":
-			sb.WriteString("\n")
-		}
-		for c := x.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(n)
-	return sb.String()
 }

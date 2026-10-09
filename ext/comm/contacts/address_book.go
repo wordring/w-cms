@@ -99,14 +99,8 @@ func AddressBook(user *auth.User) []AddressEntry {
 
 // AddressBookAPIHandler は GET /api/contacts/addresses です（送る欄の宛先・CC の候補・読むだけ）。
 func AddressBookAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONGet(w, r)
+	if !ok {
 		return
 	}
 	entries := AddressBook(user)

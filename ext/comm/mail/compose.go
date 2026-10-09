@@ -88,7 +88,7 @@ func replyDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) {
 	if to == "" {
 		to = first(comm.FromTag)
 	}
-	if to = bareAddr(to); to != "" {
+	if to = comm.BareAddress(to); to != "" {
 		d.To = []string{to}
 	}
 	subj := cms.PageTitleByID(id)
@@ -120,17 +120,6 @@ func replyDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) {
 	return d, nil
 }
 
-// bareAddr は `名前 <アドレス>` からアドレスだけを取り出します（山括弧が無ければ全体）。
-func bareAddr(s string) string {
-	v := strings.TrimSpace(s)
-	if i := strings.LastIndex(v, "<"); i >= 0 {
-		if j := strings.Index(v[i:], ">"); j > 0 {
-			v = v[i+1 : i+j]
-		}
-	}
-	return strings.TrimSpace(v)
-}
-
 // mailBodyText は記録の本文を平文で返します（本体は comm.RecordBodyText——2026-10-01 に上げた）。
 func mailBodyText(bodyHTML string) string { return comm.RecordBodyText(bodyHTML) }
 
@@ -160,7 +149,7 @@ func attachmentLinks(bodyHTML string) []comm.ComposeAttachment {
 			seen[m[1]+"/"+m[2]] = true
 			name := strings.TrimSpace(cms.Attr(n, "download"))
 			if name == "" {
-				name = strings.TrimSpace(nodeText(n))
+				name = strings.TrimSpace(cms.TextWithBreaks(n))
 			}
 			if name == "" {
 				name = m[2]
@@ -169,25 +158,6 @@ func attachmentLinks(bodyHTML string) []comm.ComposeAttachment {
 		})
 	}
 	return out
-}
-
-// nodeText は要素の中の文字をつなげて返します（`<br>` は改行）。
-func nodeText(n *html.Node) string {
-	var sb strings.Builder
-	var walk func(*html.Node)
-	walk = func(x *html.Node) {
-		switch {
-		case x.Type == html.TextNode:
-			sb.WriteString(x.Data)
-		case x.Type == html.ElementNode && x.Data == "br":
-			sb.WriteString("\n")
-		}
-		for c := x.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(n)
-	return sb.String()
 }
 
 // ─── 下書き ───────────────────────────────────────────────────────────────
@@ -274,14 +244,8 @@ func mailReady(user *auth.User) bool {
 
 // ComposeAPIHandler は GET /api/mail/compose です（用件の初期値か、保存した下書き）。
 func ComposeAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONGet(w, r)
+	if !ok {
 		return
 	}
 	q := r.URL.Query()

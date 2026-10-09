@@ -222,13 +222,13 @@ func captionTablesOf(root *html.Node) []captionTable {
 		seen[key]++
 		ct := captionTable{Name: name, No: seen[key]}
 		for _, c := range rowCells(rows[0]) {
-			ct.Headers = append(ct.Headers, TableName(cellText(c)))
+			ct.Headers = append(ct.Headers, TableName(TextWithBreaks(c)))
 		}
 		for i, tr := range rows[1:] {
 			var cells []string
 			blank := true
 			for _, c := range rowCells(tr) {
-				v := strings.TrimSpace(cellText(c))
+				v := strings.TrimSpace(TextWithBreaks(c))
 				if v != "" {
 					blank = false
 				}
@@ -244,8 +244,10 @@ func captionTablesOf(root *html.Node) []captionTable {
 	return out
 }
 
-// cellText はセルの文字を返します。`<br>` は改行にします（複数行の備考を1行に潰さない）。
-func cellText(n *html.Node) string {
+// TextWithBreaks は要素の中の文字をつなげて返します。`<br>` は改行にします（表のセルの複数行の備考を1行に
+// 潰さない・署名や見出しの行を分ける）。前後の空白は落としません（要れば呼ぶ側で）。
+// 2026-10-09 に、拡張の写し3つ（署名・メールの添付の名札・通信記録の見出し）をここへ寄せた。
+func TextWithBreaks(n *html.Node) string {
 	var sb strings.Builder
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {

@@ -107,14 +107,8 @@ func MailList(user *auth.User) ([]MailListItem, error) {
 
 // MailListAPIHandler は GET /api/mails です（読めるメールの記録を全部・新しい順）。
 func MailListAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		cms.JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := cms.GateJSONGet(w, r)
+	if !ok {
 		return
 	}
 	list, err := MailList(user)

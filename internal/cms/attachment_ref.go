@@ -151,13 +151,8 @@ func ParseFileRef(s string) (FileRef, bool) {
 //
 // **読めない・無いは同じ 404**（匿名の404統一と同じ規律）。
 func FileRefAPIHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		JSONFail(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	user := auth.CurrentUser(r)
-	if user == nil {
-		JSONFail(w, http.StatusForbidden, "ログインが必要です")
+	user, ok := GateJSONGet(w, r)
+	if !ok {
 		return
 	}
 	raw := r.URL.Query().Get("ref")

@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"w-cms/ext/comm"
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -128,7 +129,7 @@ func supplierAddresses(user *auth.User, supplier string) []string {
 	var out []string
 	add := func(id string) {
 		for _, v := range mailAddressesOfPage(pageNum(id)) {
-			addr := bareMailAddress(v)
+			addr := comm.BareAddress(v)
 			if addr == "" || seen[addr] {
 				continue
 			}
@@ -153,20 +154,6 @@ func mailAddressesOfPage(pageID int) []string {
 		return nil
 	}
 	return tags[contacts.EmailTag]
-}
-
-// bareMailAddress は `名前 <アドレス>` からアドレスだけを取り出します。
-//
-// ⚠ **SMTP の `RCPT TO:` は素のアドレスしか受けません**（返信の宛先と同じ都合・
-// `ext/comm/mail/reply.go` の `bareAddress`）。
-func bareMailAddress(s string) string {
-	v := strings.TrimSpace(s)
-	if i := strings.LastIndex(v, "<"); i >= 0 {
-		if j := strings.Index(v[i:], ">"); j > 0 {
-			v = v[i+1 : i+j]
-		}
-	}
-	return strings.TrimSpace(v)
 }
 
 // orderMailSubject は発注書メールの件名です。

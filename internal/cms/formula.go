@@ -482,13 +482,13 @@ func renderFormulaCells(bodyHTML string) string {
 			}
 			var headers []string
 			for _, c := range rowCells(rows[0]) {
-				headers = append(headers, strings.TrimSpace(cellText(c)))
+				headers = append(headers, strings.TrimSpace(TextWithBreaks(c)))
 			}
 			for _, tr := range rows[1:] {
 				cells := rowCells(tr)
 				texts := make([]string, len(cells))
 				for i, c := range cells {
-					texts[i] = strings.TrimSpace(cellText(c))
+					texts[i] = strings.TrimSpace(TextWithBreaks(c))
 				}
 				for i, r := range EvalRowFormulas(headers, texts) {
 					if !r.Formula || cells[i].Data != "td" {
