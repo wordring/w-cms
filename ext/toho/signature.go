@@ -115,6 +115,24 @@ func Signers(user *auth.User) []Signer {
 	return out
 }
 
+// trustedSigner は、画面から送られてきた差出人（人のページID）が、署名を持つ人（user が読める）の中に居ればその ID を、
+// 居なければ空を返します。
+//
+// ⚠ **送られてきた差出人をそのまま信じません**——読めない人・署名の無い人を紙に刷らないため（画面は選ばせるだけで、
+// 口は誰でも叩けます）。2026-10-09 に発注書と見積依頼書を作る口の写しを寄せた。
+func trustedSigner(user *auth.User, want string) string {
+	want = strings.TrimSpace(want)
+	if want == "" {
+		return ""
+	}
+	for _, sg := range Signers(user) {
+		if page.FormatID(sg.PageID) == want {
+			return want
+		}
+	}
+	return ""
+}
+
 // SignatureOf はページ本文から、その見出しの節の中身を行として返します。
 //
 // ⚠ **読み方は連絡帳の拡張の持ち物です**（2026-09-30 に移した——メールの署名は返信にも要る共通の道具）。

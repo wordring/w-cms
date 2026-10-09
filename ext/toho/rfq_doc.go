@@ -211,16 +211,8 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if t, err := time.Parse("2006-01-02", strings.TrimSpace(req.Date)); err == nil {
 		when = t
 	}
-	// 差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける）。
-	signerID := ""
-	if want := strings.TrimSpace(req.Signer); want != "" {
-		for _, sg := range Signers(user) {
-			if page.FormatID(sg.PageID) == want {
-				signerID = want
-				break
-			}
-		}
-	}
+	// 差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける——trustedSigner）。
+	signerID := trustedSigner(user, req.Signer)
 	// ページを作る前にテンプレートと器を確かめる（作ってから断ると「作成中」のページが残る）。
 	tmpl, err := cms.PageTemplateBody(RFQTemplate)
 	if err != nil {

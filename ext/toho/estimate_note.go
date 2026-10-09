@@ -108,6 +108,17 @@ func withEstimateNote(body, note string) (string, error) {
 
 // EstimateNoteAPIHandler は POST /api/estimate/note です。入力: {page_id, note}——見積書ページの「備考」の節を書き換えます。
 func EstimateNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
+	serveDocNote(w, r, isEstimatePage, "見積書ページではありません", "estimate.note")
+}
+
+// isEstimatePage は見積書ページか（テンプレートの外で、見積番号のタグを持つ）です。
+func isEstimatePage(pageID string) bool {
+	return !cms.IsTemplateArea(pageID) && cms.PageTagValue(database.DB, pageNum(pageID), EstimateNoTag) != ""
+}
+
+// serveDocNote は紙のページ（見積書・見積依頼書）の「備考」の節を書き換える口（POST・入力 {page_id, note}）の共通の形です。
+// isDoc がそのページの種類か、notDoc はそうでないときの断りの文、audit は監査の名前（2026-10-09 に2つの写しを寄せた）。
+func serveDocNote(w http.ResponseWriter, r *http.Request, isDoc func(pageID string) bool, notDoc, audit string) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
 		return
@@ -123,13 +134,13 @@ func EstimateNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
-	if cms.IsTemplateArea(pageID) || cms.PageTagValue(database.DB, pageNum(pageID), EstimateNoTag) == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "見積書ページではありません")
+	if !isDoc(pageID) {
+		cms.JSONFail(w, http.StatusBadRequest, notDoc)
 		return
 	}
 	var failed error
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, err := withEstimateNote(cur, req.Note)
+		out, err := withEstimateNote(cur, req.Note) // 見出し「備考」の節——見積書と見積依頼書は同じ形
 		if err != nil {
 			failed = err
 			return cur
@@ -142,6 +153,6 @@ func EstimateNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "備考を書けません: "+failed.Error())
 		return
 	}
-	auth.Audit(user.Username, "estimate.note", pageID)
+	auth.Audit(user.Username, audit, pageID)
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID})
 }

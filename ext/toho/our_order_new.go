@@ -33,7 +33,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/page"
 )
 
 // ourOrderLine は発注書へ入れる1行です（画面から送られてくる形）。
@@ -110,18 +109,8 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		when = t
 	}
 
-	// ⚠ **送られてきた差出人をそのまま信じません**——**署名を持つ人の中に居るか**を
-	//    確かめます。読めない人・署名の無い人を紙に刷らないため（画面は選ばせるだけで、
-	//    口は誰でも叩けます）。
-	signerID := ""
-	if want := strings.TrimSpace(req.Signer); want != "" {
-		for _, sg := range Signers(user) {
-			if page.FormatID(sg.PageID) == want {
-				signerID = want
-				break
-			}
-		}
-	}
+	// ⚠ **送られてきた差出人をそのまま信じません**——署名を持つ人の中に居るかを確かめます（trustedSigner）。
+	signerID := trustedSigner(user, req.Signer)
 	// ⚠ **本文はテンプレート「発注書」を写して組みます**（2026-09-27）。**ページを作る前に**
 	//    テンプレートと器（発注明細の表・備考の節）を確かめます——作ってから断ると、
 	//    題が「作成中」のページが置き場に残ります。

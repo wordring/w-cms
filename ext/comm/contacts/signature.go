@@ -102,16 +102,9 @@ func isSectionHead(h *html.Node) bool {
 func linesAfterHeading(h *html.Node) []string {
 	level := headingLevel(h)
 	var out []string
-	add := func(s string) {
-		for _, ln := range strings.Split(s, "\n") {
-			if ln = strings.TrimSpace(ln); ln != "" {
-				out = append(out, ln)
-			}
-		}
-	}
 	for c := h.NextSibling; c != nil; c = c.NextSibling {
 		if c.Type == html.TextNode {
-			add(c.Data)
+			out = appendLines(out, c.Data)
 			continue
 		}
 		if c.Type != html.ElementNode {
@@ -126,7 +119,7 @@ func linesAfterHeading(h *html.Node) []string {
 		if c.Data == "section" {
 			break
 		}
-		add(cms.TextWithBreaks(c))
+		out = appendLines(out, cms.TextWithBreaks(c))
 	}
 	if len(out) == 0 {
 		return nil
@@ -198,19 +191,23 @@ func firstHeading(section *html.Node) *html.Node {
 	return nil
 }
 
+// appendLines は s を行に分け、前後の空白を落として空でない行を out に足します（署名の行——ふつうの見出しの後ろと節の
+// 中身の2つの読み方が写していた）。
+func appendLines(out []string, s string) []string {
+	for _, ln := range strings.Split(s, "\n") {
+		if ln = strings.TrimSpace(ln); ln != "" {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
 // sectionTextLines は節の中身を行の並びにします（見出しは外す）。
 func sectionTextLines(section *html.Node) []string {
 	var out []string
-	add := func(s string) {
-		for _, ln := range strings.Split(s, "\n") {
-			if ln = strings.TrimSpace(ln); ln != "" {
-				out = append(out, ln)
-			}
-		}
-	}
 	for c := section.FirstChild; c != nil; c = c.NextSibling {
 		if c.Type == html.TextNode {
-			add(c.Data)
+			out = appendLines(out, c.Data)
 			continue
 		}
 		if c.Type != html.ElementNode {
@@ -220,7 +217,7 @@ func sectionTextLines(section *html.Node) []string {
 		case "h2", "h3", "h4", "h5", "h6":
 			continue // 見出しは書かない
 		default:
-			add(cms.TextWithBreaks(c))
+			out = appendLines(out, cms.TextWithBreaks(c))
 		}
 	}
 	if len(out) == 0 {

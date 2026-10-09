@@ -111,9 +111,16 @@ func prepareEstimateMail(w http.ResponseWriter, r *http.Request, pageID string) 
 }
 
 func afterEstimateMail(user *auth.User, pageID, _ string) error {
+	return markSentByMail(user, pageID, "見積書", "estimate.sent")
+}
+
+// markSentByMail は、メールで送ったあとに `送付日` へ今日を書きます（見積書・見積依頼書の送る欄の後始末——FAX・手渡しは
+// 人が「送った」を押す）。paper は断りの文に入れる紙の名前、audit は監査の名前。書けなければ理由を返します（送ったことは
+// 取り消さない）。2026-10-09 に見積書と見積依頼書の写しを寄せた。
+func markSentByMail(user *auth.User, pageID, paper, audit string) error {
 	n, err := strconv.Atoi(pageID)
 	if err != nil {
-		return errors.New("見積書のページIDが不正です")
+		return errors.New(paper + "のページIDが不正です")
 	}
 	if !page.GetPerms(n).CanWrite(user) || cms.IsTemplateArea(pageID) {
 		return errors.New("送付日を書けませんでした（このページを書き換える権限がありません）")
@@ -127,6 +134,6 @@ func afterEstimateMail(user *auth.User, pageID, _ string) error {
 	}); err != nil {
 		return errors.New("送付日を書けませんでした: " + err.Error())
 	}
-	auth.Audit(user.Username, "estimate.sent", pageID+" mail")
+	auth.Audit(user.Username, audit, pageID+" mail")
 	return nil
 }

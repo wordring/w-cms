@@ -71,20 +71,32 @@ func orderMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error
 		Generated: "発注書 " + pageID + ".pdf",
 		Reload: true,
 	}
+	noteNoSupplierAddress(&d, supplier)
+	// 外注加工の資料——取消していない行の「資料 <番号>」から。
+	attachLineDocs(&d, user, rows)
+	return d, nil
+}
+
+// noteNoSupplierAddress は、仕入先の連絡先が連絡帳から引けなかったら送る欄に注意を添えます（発注書・見積依頼書）。
+//
+// ⚠ **引けなかったことを黙りません**——空欄だと「連絡帳に居ないから出せない」のか「引く仕掛けが壊れている」のかが
+// 分かりません。
+func noteNoSupplierAddress(d *comm.ComposeDraft, supplier string) {
 	if len(d.To) == 0 {
-		// ⚠ **引けなかったことを黙りません**——空欄だと「連絡帳に居ないから出せない」のか
-		//    「引く仕掛けが壊れている」のかが分かりません。
 		d.Notes = append(d.Notes, "⚠ 「"+supplier+"」の連絡先が連絡帳にありません（題が一致する組織ページに「"+
 			contacts.EmailTag+"」のタグを付けると、ここに出ます）。")
 	}
-	// 外注加工の資料——取消していない行の「資料 <番号>」から。全部に印を付けて並べる（人が外せる）。
+}
+
+// attachLineDocs は、明細の行（弊社品番＋番号）が指す外注加工の資料を、全部に印を付けて送る欄の添付に並べます
+// （人が外せる）。資料が無い・読めない行は一言を添えます（発注書・見積依頼書——2026-10-09 に写しを寄せた）。
+func attachLineDocs(d *comm.ComposeDraft, user *auth.User, rows []map[string]string) {
 	docs, notes := orderDocs(user, rows)
 	for _, doc := range docs {
 		d.Attachments = append(d.Attachments, comm.ComposeAttachment{
 			PageID: doc.PageID, File: doc.File, Name: doc.Name, Checked: true})
 	}
 	d.Notes = append(d.Notes, notes...)
-	return d, nil
 }
 
 // prepareOrderMail は送る直前に発注書のPDFを作り、添えるファイルとして返します。

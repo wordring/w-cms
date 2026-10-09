@@ -24,7 +24,6 @@ import (
 	"errors"
 	stdhtml "html"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -34,7 +33,6 @@ import (
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -242,42 +240,7 @@ func RFQPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // RFQNoteAPIHandler は POST /api/rfq/note です（入力: {page_id, note}）——見積依頼書ページの「備考」の節を書き換えます。
 func RFQNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-		Note   string `json:"note"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書ページではありません")
-		return
-	}
-	var failed error
-	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, err := withEstimateNote(cur, req.Note) // 見出し「備考」の節——見積書と同じ形
-		if err != nil {
-			failed = err
-			return cur
-		}
-		return out
-	}) {
-		return
-	}
-	if failed != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "備考を書けません: "+failed.Error())
-		return
-	}
-	auth.Audit(user.Username, "rfq.note", pageID)
-	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID})
+	serveDocNote(w, r, isRFQPage, "見積依頼書ページではありません", "rfq.note")
 }
 
 // RFQSentAPIHandler は POST /api/rfq/sent です（入力: {page_id}）——FAX・手渡しで送ったとき、`送付日` に今日を書きます。
@@ -404,16 +367,9 @@ func rfqMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) 
 		Generated: "見積依頼書 " + pageID + ".pdf",
 		Reload:    true,
 	}
-	if len(d.To) == 0 {
-		d.Notes = append(d.Notes, "⚠ 「"+supplier+"」の連絡先が連絡帳にありません（題が一致する組織ページに「"+
-			contacts.EmailTag+"」のタグを付けると、ここに出ます）。")
-	}
-	// 外注加工の資料（行の 弊社品番＋番号 の「資料 <番号>」）——発注書と同じ。全部に印を付けて並べる（人が外せる）。
-	docs, notes := orderDocs(user, rows)
-	for _, doc := range docs {
-		d.Attachments = append(d.Attachments, comm.ComposeAttachment{PageID: doc.PageID, File: doc.File, Name: doc.Name, Checked: true})
-	}
-	d.Notes = append(d.Notes, notes...)
+	noteNoSupplierAddress(&d, supplier)
+	// 外注加工の資料（行の 弊社品番＋番号 の「資料 <番号>」）——発注書と同じ。
+	attachLineDocs(&d, user, rows)
 	return d, nil
 }
 
@@ -430,22 +386,5 @@ func prepareRFQMail(w http.ResponseWriter, r *http.Request, pageID string) ([]co
 }
 
 func afterRFQMail(user *auth.User, pageID, _ string) error {
-	n, err := strconv.Atoi(pageID)
-	if err != nil {
-		return errors.New("見積依頼書のページIDが不正です")
-	}
-	if !page.GetPerms(n).CanWrite(user) || cms.IsTemplateArea(pageID) {
-		return errors.New("送付日を書けませんでした（このページを書き換える権限がありません）")
-	}
-	if holder, open := editlock.Locks.EditorOpen(n); open {
-		return errors.New("送付日を書けませんでした（このページは編集中です（" + holder + "））")
-	}
-	today := time.Now().Format("2006-01-02")
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		return withTagValues(cur, EstimateSentTag, []string{today}, true)
-	}); err != nil {
-		return errors.New("送付日を書けませんでした: " + err.Error())
-	}
-	auth.Audit(user.Username, "rfq.sent", pageID+" mail")
-	return nil
+	return markSentByMail(user, pageID, "見積依頼書", "rfq.sent")
 }

@@ -145,3 +145,12 @@ func TestMySignatureFindsTheLoginNamePage(t *testing.T) {
 		t.Errorf("当たらない人で %v が返りました", got)
 	}
 }
+
+// TestAppendLines は、署名の行を拾うとき前後の空白を落とし、空行を足さないことを固定します（2026-10-09 に同じファイルの
+// 2つの読み方の写しを寄せた口の番人）。
+func TestAppendLines(t *testing.T) {
+	got := appendLines([]string{"前"}, "  みらい産業 \n\n\t担当： 南 \n ")
+	if strings.Join(got, "|") != "前|みらい産業|担当： 南" {
+		t.Errorf("appendLines = %q", got)
+	}
+}

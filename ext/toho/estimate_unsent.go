@@ -150,7 +150,7 @@ func EstimateMarkAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
-	if cms.IsTemplateArea(pageID) || cms.PageTagValue(database.DB, pageNum(pageID), EstimateNoTag) == "" {
+	if !isEstimatePage(pageID) {
 		cms.JSONFail(w, http.StatusBadRequest, "見積書ページではありません")
 		return
 	}

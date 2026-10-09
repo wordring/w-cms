@@ -7,9 +7,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/signintech/gopdf"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -166,5 +168,99 @@ func TestPaperSteps(t *testing.T) {
 	}
 	if got := pdfTextOf(t, pdf); !strings.Contains(got, "備考：") || !strings.Contains(got, "行79") {
 		t.Errorf("備考の見出しか最後の行がありません:\n%s", got)
+	}
+}
+
+// TestMarkSentByMail は、メールで送ったあとに送付日へ今日を書くこと（見積書・見積依頼書の送る欄の後始末）と、書けない人・
+// テンプレートの中では書かずに理由を返すことを固定します（2026-10-09 に2つの写しを寄せた markSentByMail の番人）。
+func TestMarkSentByMail(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	addPage(t, 0, -1, "トップ", "admin", "302", true)
+	addPage(t, 61, 0, "見積", "root", "302", true)
+	writeBodyFile(t, 61, estimatePaperBody())
+	today := time.Now().Format("2006-01-02")
+	if err := markSentByMail(&auth.User{Username: "bob"}, "000061", "見積書", "estimate.sent"); err == nil || !strings.Contains(err.Error(), "権限") {
+		t.Errorf("書けない人なのに書きました: %v", err)
+	}
+	if b, _ := cms.ReadPageBody("000061"); strings.Contains(b, today) {
+		t.Errorf("書けない人の分で送付日が入っています")
+	}
+	if err := markSentByMail(&auth.User{Username: "root"}, "000061", "見積書", "estimate.sent"); err != nil {
+		t.Fatalf("書けません: %v", err)
+	}
+	if b := mustBody(t, "000061"); !regexp.MustCompile(`<dt>` + EstimateSentTag + `</dt>\s*<dd>` + today + `</dd>`).MatchString(b) {
+		t.Errorf("送付日に今日（%s）が入っていません:\n%s", today, b)
+	}
+	if err := markSentByMail(&auth.User{Username: "root"}, "x", "見積依頼書", "rfq.sent"); err == nil || !strings.Contains(err.Error(), "見積依頼書のページIDが不正です") {
+		t.Errorf("ページIDが不正なのに: %v", err)
+	}
+}
+
+func mustBody(t *testing.T, id string) string {
+	t.Helper()
+	b, err := cms.ReadPageBody(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// TestDocKindsAndSender は、紙のページの見分け方（テンプレートの中の見本は見積書・見積依頼書と見ない）・差出人の確かめ
+// （署名を持つ人の中に居なければ空）・連絡帳に宛先が無いときの注意を固定します（2026-10-09 に写しを寄せた口の番人）。
+func TestDocKindsAndSender(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	addPage(t, 0, -1, "トップ", "admin", "302", true)
+	seedBoxTemplates(t)
+	// テンプレート置き場（000900）の下の見本——番号のタグを持っていても紙のページではない。
+	sample := `<h1>見本</h1><dl data-type="tags"><dt>` + EstimateNoTag + `</dt><dd>000001</dd><dt>` + RFQNoTag + `</dt><dd>000002</dd></dl>`
+	if err := os.MkdirAll(page.GetPageDir("000960"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(page.BodyPath("000960"), []byte(sample), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.WriteSidecar("000960", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000900"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cms.SyncIndex("000960", sample); err != nil {
+		t.Fatal(err)
+	}
+	if isEstimatePage("000960") || isRFQPage("000960") {
+		t.Errorf("テンプレートの中の見本を紙のページと見ています")
+	}
+	addPage(t, 61, 0, "見積", "root", "302", true)
+	writeBodyFile(t, 61, estimatePaperBody())
+	if !isEstimatePage("000061") {
+		t.Errorf("見積書ページを見積書と見ていません")
+	}
+
+	// 差出人——署名を持つ人（21）なら通し、署名の無い人（22）・空は空。
+	addPage(t, 3, 0, "連絡帳", "root", "302", true)
+	addPage(t, 20, 3, "みらい産業", "root", "302", true)
+	addPage(t, 21, 20, "南 康一", "root", "302", true)
+	addPage(t, 22, 20, "山田 花子", "root", "302", true)
+	writeBodyFile(t, 21, `<h1>南 康一</h1><section><h2>`+OrderSignatureHeading+`</h2><p>みらい産業</p></section>`)
+	writeBodyFile(t, 22, `<h1>山田 花子</h1><p>まだ署名を書いていません</p>`)
+	root := &auth.User{Username: "root", IsAdmin: true}
+	if got := trustedSigner(root, " 000021 "); got != "000021" {
+		t.Errorf("署名を持つ人を通しません: %q", got)
+	}
+	if got := trustedSigner(root, "000022"); got != "" {
+		t.Errorf("署名の無い人を通しています: %q", got)
+	}
+	if got := trustedSigner(root, ""); got != "" {
+		t.Errorf("空なのに %q", got)
+	}
+
+	// 連絡帳に宛先が無ければ注意を1つ、あれば何も言わない。
+	d := comm.ComposeDraft{}
+	noteNoSupplierAddress(&d, "ひかりレーザー")
+	if len(d.Notes) != 1 || !strings.Contains(d.Notes[0], "「ひかりレーザー」の連絡先が連絡帳にありません") {
+		t.Errorf("宛先が無いのに注意がありません: %v", d.Notes)
+	}
+	d = comm.ComposeDraft{To: []string{"order@example.invalid"}}
+	noteNoSupplierAddress(&d, "ひかりレーザー")
+	if len(d.Notes) != 0 {
+		t.Errorf("宛先があるのに注意しています: %v", d.Notes)
 	}
 }
