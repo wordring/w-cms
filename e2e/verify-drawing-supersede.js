@@ -12,7 +12,7 @@
 // 自分で作ったページの上だけで動き、作ったページ（旧版の子ページも）は最後に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-drawing-supersede.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, childrenOf } = require('./lib');
+const { login, makePage, deletePage, childrenOf, writeBody } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -41,15 +41,7 @@ const check = (label, ok, note = '') => {
     await page.request.post(BASE + '/api/lock/force?id=' + pageId, { headers: { Origin: BASE } });
     return ((await res.json().catch(() => ({}))).id) || '';
   };
-  const saveBody = async (id, html) => {
-    await page.evaluate(async (arg) => {
-      const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
-      const lj = await lr.json().catch(() => ({}));
-      await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_id: arg.id, html: arg.html, token: lj.token || '' }) });
-      await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
-    }, { id, html });
-  };
+  const saveBody = (id, html) => writeBody(page, id, html);
   const fv = (ref) => '<section data-type="file-view" data-ref="' + ref + '"></section>';
   // ⚠ エディタで保存した本文と同じ**字下げのある形**で書く（2026-10-04 に職場で、dt と dd のあいだの改行のせいで
   // サーバーが図面番号を読めず「古い図面がこのページに見つかりません」——詰めた形だけの試験では見えなかった）。

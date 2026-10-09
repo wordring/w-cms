@@ -12,7 +12,7 @@
 //    rfq_reply_test.go）。回答を記録・書き込むは本物の口で、**自分で作ったページ**に書きます。作ったページは最後に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-rfq-reply.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage } = require('./lib');
+const { login, makePage, deletePage, writeBody } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -44,15 +44,7 @@ const today = () => {
       guesses: [{ row: 2, unit_price: '1200', declined: false, note: '' }],
     }) });
   });
-  const saveBody = async (id, html) => {
-    await page.evaluate(async (arg) => {
-      const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
-      const lj = await lr.json().catch(() => ({}));
-      await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_id: arg.id, html: arg.html, token: lj.token || '' }) });
-      await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
-    }, { id, html });
-  };
+  const saveBody = (id, html) => writeBody(page, id, html);
   const upload = async (pageId, name) => {
     const lock = await page.request.post(BASE + '/api/lock?id=' + pageId, { headers: { Origin: BASE } });
     const token = (await lock.json()).token;

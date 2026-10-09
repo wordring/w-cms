@@ -11,7 +11,7 @@
 // 当て先は自分で作って最後に消します（トップ直下に2枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-order-docs.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage } = require('./lib');
+const { login, makePage, deletePage, minimalPDF } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -20,24 +20,6 @@ const check = (label, ok, note = '') => {
   if (!ok) fails++;
 };
 
-// minimalPDF は A3 横・1ページの素のPDFを組みます（xref の位置も数える）。
-function minimalPDF() {
-  const stream = '40 40 m 1100 800 l S';
-  const objs = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1190.55 841.89] /Contents 4 0 R /Resources << >> >>',
-    '<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream',
-  ];
-  let out = '%PDF-1.4\n';
-  const offs = [];
-  objs.forEach((o, i) => { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
-  const xref = out.length;
-  out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' +
-    offs.map((o) => String(o).padStart(10, '0') + ' 00000 n \n').join('');
-  out += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
-  return Buffer.from(out, 'latin1');
-}
 
 (async () => {
   const browser = await chromium.launch();

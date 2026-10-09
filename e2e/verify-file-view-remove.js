@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
-const { login, makePage, deletePage } = require('./lib');
+const { login, makePage, deletePage, minimalPDF } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -22,23 +22,6 @@ const check = (label, ok, note = '') => {
   if (!ok) fails++;
 };
 
-function minimalPDF() {
-  const stream = '40 40 m 500 400 l S';
-  const objs = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << >> >>',
-    '<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream',
-  ];
-  let out = '%PDF-1.4\n';
-  const offs = [];
-  objs.forEach((o, i) => { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
-  const xref = out.length;
-  out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' +
-    offs.map((o) => String(o).padStart(10, '0') + ' 00000 n \n').join('');
-  out += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
-  return Buffer.from(out, 'latin1');
-}
 
 // rawBody は正本のファイル（サーバーが鏡を埋める前）を読みます——E2E はサーバーと同じ機械で走る前提。
 function rawBody(id) {
@@ -79,7 +62,7 @@ function rawBody(id) {
           await page.locator('#w-context-toolbar #w-ctx-file').click();
         })(),
       ]);
-      await chooser.setFiles([{ name, mimeType: 'application/pdf', buffer: minimalPDF() }]);
+      await chooser.setFiles([{ name, mimeType: 'application/pdf', buffer: minimalPDF('0 0 595 842', '40 40 m 500 400 l S') }]);
       await page.waitForTimeout(800);
     }
     const views = () => page.locator(dataSec + ' > section[data-type="file-view"][data-ref]').count();

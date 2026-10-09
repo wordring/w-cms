@@ -8,7 +8,7 @@
 // 自分で作ったページ（入れ物・加工製品・見積依頼書）の上だけで動き、最後に全部消します。本物の見積依頼の置き場には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-rfq-pdf-docs.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage } = require('./lib');
+const { login, makePage, deletePage, writeBody, minimalPDF } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -17,24 +17,6 @@ const check = (label, ok, note = '') => {
   if (!ok) fails++;
 };
 
-// tinyPDF は A3 横1ページの本物の PDF を組みます（綴じる部品が読める形——xref の位置を数える）。
-function tinyPDF() {
-  const objs = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1190.55 841.89] /Resources << >> /Contents 4 0 R >>',
-  ];
-  const stream = '40 40 m 1100 800 l S';
-  let out = '%PDF-1.4\n';
-  const offs = [];
-  objs.forEach((o, i) => { offs.push(Buffer.byteLength(out)); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
-  offs.push(Buffer.byteLength(out));
-  out += '4 0 obj\n<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream\nendobj\n';
-  const xref = Buffer.byteLength(out);
-  out += 'xref\n0 5\n0000000000 65535 f \n' + offs.map((n) => String(n).padStart(10, '0') + ' 00000 n \n').join('');
-  out += 'trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
-  return Buffer.from(out, 'latin1');
-}
 
 (async () => {
   const browser = await chromium.launch();
@@ -43,15 +25,7 @@ function tinyPDF() {
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
   const made = [];
-  const saveBody = async (id, html) => {
-    await page.evaluate(async (arg) => {
-      const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
-      const lj = await lr.json().catch(() => ({}));
-      await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_id: arg.id, html: arg.html, token: lj.token || '' }) });
-      await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
-    }, { id, html });
-  };
+  const saveBody = (id, html) => writeBody(page, id, html);
   try {
     await login(page, BASE);
     const box = await makePage(page, '<h1>【E2E】見積依頼の資料</h1><p>x</p>');
@@ -62,7 +36,7 @@ function tinyPDF() {
     const token = (await lock.json()).token;
     const up = await page.request.post(BASE + '/api/upload-pdf', {
       headers: { Origin: BASE, 'X-Lock-Token': token },
-      multipart: { page_id: prod, pdf_file: { name: '【E2E】図面.pdf', mimeType: 'application/pdf', buffer: tinyPDF() } },
+      multipart: { page_id: prod, pdf_file: { name: '【E2E】図面.pdf', mimeType: 'application/pdf', buffer: minimalPDF() } },
     });
     await page.request.post(BASE + '/api/lock/force?id=' + prod, { headers: { Origin: BASE } });
     const drawing = ((await up.json().catch(() => ({}))).id) || '';

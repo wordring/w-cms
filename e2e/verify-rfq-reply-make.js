@@ -11,7 +11,7 @@
 //    （作る側は Go の rfq_reply_make_test.go）。案を出す口は本物（読むだけ）。ページは自分で作り、最後に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-rfq-reply-make.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, childrenOf } = require('./lib');
+const { login, makePage, deletePage, childrenOf, writeBody } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -28,15 +28,7 @@ const check = (label, ok, note = '') => {
   page.on('pageerror', (e) => errs.push(String(e)));
   let box = '';
   let sent = null;
-  const saveBody = async (id, html) => {
-    await page.evaluate(async (arg) => {
-      const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
-      const lj = await lr.json().catch(() => ({}));
-      await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_id: arg.id, html: arg.html, token: lj.token || '' }) });
-      await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
-    }, { id, html });
-  };
+  const saveBody = (id, html) => writeBody(page, id, html);
   try {
     await login(page, BASE);
     box = await makePage(page, '<h1>【E2E】返事から見積依頼書</h1><p>x</p>');

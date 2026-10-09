@@ -51,6 +51,14 @@ async function makePage(page, html, parent = '000000') {
   }, parent);
   const id = (url.match(/\/(\d{6})/) || [])[1];
   if (!id) return '';
+  await writeBody(page, id, html);
+  return id;
+}
+
+// writeBody はページの本文を html に書き換えます（ロックを取って保存し、外す）。⚠ **自分で作ったページにだけ**使うこと
+// ——ロックを奪わない形ではないので、人が開いているページに使うと書きかけと上書きし合います。
+// 2026-10-09 に、7本の E2E が写していた saveBody を寄せた。
+async function writeBody(page, id, html) {
   await page.evaluate(async (arg) => {
     const lr = await fetch('/api/lock?id=' + arg.id, { method: 'POST' });
     const lj = await lr.json().catch(() => ({}));
@@ -60,7 +68,26 @@ async function makePage(page, html, parent = '000000') {
     });
     await fetch('/api/lock/force?id=' + arg.id, { method: 'POST' });
   }, { id, html });
-  return id;
+}
+
+// minimalPDF は1ページの素の PDF を組みます（既定は A3 横に斜めの線1本——図面の代わり）。xref の位置も数えるので、
+// PDF を読む部品（サーバーの綴じる処理・ブラウザの表示）がそのまま読めます。mediaBox と line で紙と線を選べます。
+// 2026-10-09 に、4本の E2E が写していた minimalPDF・tinyPDF を寄せた。
+function minimalPDF(mediaBox = '0 0 1190.55 841.89', line = '40 40 m 1100 800 l S') {
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [' + mediaBox + '] /Contents 4 0 R /Resources << >> >>',
+    '<< /Length ' + line.length + ' >>\nstream\n' + line + '\nendstream',
+  ];
+  let out = '%PDF-1.4\n';
+  const offs = [];
+  objs.forEach((o, i) => { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
+  const xref = out.length;
+  out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' +
+    offs.map((o) => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+  out += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
+  return Buffer.from(out, 'latin1');
 }
 
 // deletePage は makePage で作ったページを消します（ロックが残っていても外してから）。
@@ -190,5 +217,5 @@ async function findPageWithTag(page, tagName, opts = {}) {
 module.exports = {
   MAILBOX_TITLE, CHANNEL_TAG,
   login, childrenOf, bodyOf, findMailbox, findRecordWithPDF, findThreadPair, findPageWithTag,
-  makePage, deletePage,
+  makePage, deletePage, writeBody, minimalPDF,
 };
