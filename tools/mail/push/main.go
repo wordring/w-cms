@@ -23,7 +23,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -31,13 +30,13 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/http/cookiejar"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"w-cms/tools/internal/wcms"
 )
 
 type mailMeta struct {
@@ -65,23 +64,12 @@ func main() {
 	flag.Parse()
 	root := *dirFlag
 	if root == "" {
-		root = filepath.Join(desktop(), "w-cms", "メール")
+		root = filepath.Join(wcms.Desktop(), "w-cms", "メール")
 	}
 	if err := run(root, strings.Split(*boxes, ","), *since, *max, *handledBefore); err != nil {
 		fmt.Fprintln(os.Stderr, "失敗:", err)
 		os.Exit(1)
 	}
-}
-
-func desktop() string {
-	home, _ := os.UserHomeDir()
-	for _, p := range []string{filepath.Join(home, "OneDrive", "デスクトップ"), filepath.Join(home, "OneDrive", "Desktop"),
-		filepath.Join(home, "Desktop")} {
-		if st, err := os.Stat(p); err == nil && st.IsDir() {
-			return p
-		}
-	}
-	return home
 }
 
 func run(root string, boxes []string, since string, max int, handledBefore string) error {
@@ -188,50 +176,18 @@ func uploadLimit() int64 {
 
 // ── w-cms への口 ───────────────────────────────────────────────────────
 
-type client struct {
-	base string
-	hc   *http.Client
-}
+type client struct{ *wcms.Client }
 
 func newClient() (*client, error) {
-	base := strings.TrimRight(os.Getenv("WCMS_BASE"), "/")
-	if base == "" {
-		base = "https://localhost:8443"
-	}
-	jar, _ := cookiejar.New(nil)
-	c := &client{base: base, hc: &http.Client{
-		Jar: jar,
-		// 手元のサーバーは自己署名の証明書（ローカル検証のため確かめない）。
-		Transport:     &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		Timeout:       5 * time.Minute,
-	}}
-	user, pass := os.Getenv("WCMS_USER"), os.Getenv("WCMS_PASS")
-	if user == "" {
-		user, pass = "a", "a" // ローカル開発の管理者（引き継ぎ・環境の節）
-	}
-	res, err := c.do("POST", "/api/login", strings.NewReader(url.Values{"username": {user}, "password": {pass}}.Encode()),
-		"application/x-www-form-urlencoded")
+	wc, err := wcms.Login(5 * time.Minute)
 	if err != nil {
 		return nil, err
 	}
-	res.Body.Close()
-	if strings.Contains(res.Header.Get("Location"), "error") {
-		return nil, errors.New("ログインできません")
-	}
-	return c, nil
+	return &client{wc}, nil
 }
 
 func (c *client) do(method, path string, body io.Reader, ctype string) (*http.Response, error) {
-	req, err := http.NewRequest(method, c.base+path, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Origin", c.base)
-	if ctype != "" {
-		req.Header.Set("Content-Type", ctype)
-	}
-	return c.hc.Do(req)
+	return c.Do(method, path, body, ctype, "")
 }
 
 // inboxID はトップ直下の「通信箱」です（題が機能——引き継ぎ「通信箱は h1 で決まる」）。

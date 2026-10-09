@@ -36,18 +36,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"bytes"
-	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"encoding/xml"
-	"errors"
 	"flag"
 	"fmt"
 	stdhtml "html"
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -61,6 +58,7 @@ import (
 
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/tools/internal/wcms"
 )
 
 const (
@@ -217,7 +215,7 @@ func main() {
 	dry := flag.Bool("dry", false, "下見だけ（サーバーに書かない）")
 	notebook := flag.String("notebook", "板金部", "ノートブック")
 	dirFlag := flag.String("dir", "", "吸い出したデータの置き場（既定はデスクトップの w-cms\\ワンノート\\<ノートブック>）")
-	mutool := flag.String("mutool", filepath.Join(desktop(), "w-cms", "道具", "mupdf", "mutool.exe"),
+	mutool := flag.String("mutool", filepath.Join(wcms.Desktop(), "w-cms", "道具", "mupdf", "mutool.exe"),
 		"印刷イメージの XPS を PDF にする mutool（無ければ PNG のまま）")
 	gemini := flag.Bool("gemini", true, "Gemini で図面の表題欄を読む（控えのあるファイルは呼ばない・GEMINI_API_KEY が要る）")
 	fresh := flag.Bool("fresh", false, "前に作った「移行中」のページをごみ箱へ移して作り直す（前に上げたファイルを残さない・ページ番号は変わる）")
@@ -225,7 +223,7 @@ func main() {
 	flag.Parse()
 	root := *dirFlag
 	if root == "" {
-		root = filepath.Join(desktop(), "w-cms", "ワンノート", *notebook)
+		root = filepath.Join(wcms.Desktop(), "w-cms", "ワンノート", *notebook)
 	}
 	e := &env{root: root, mutool: *mutool, gemini: *gemini, fresh: *fresh, seen: map[string]string{}, machineNotes: map[string]string{}}
 	for _, id := range strings.Split(*onlyFlag, ",") {
@@ -250,18 +248,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "失敗:", err)
 		os.Exit(1)
 	}
-}
-
-// desktop はデスクトップの場所です（OneDrive へ移されていればそちら）。
-func desktop() string {
-	home, _ := os.UserHomeDir()
-	for _, p := range []string{filepath.Join(home, "OneDrive", "デスクトップ"), filepath.Join(home, "OneDrive", "Desktop"),
-		filepath.Join(home, "Desktop")} {
-		if st, err := os.Stat(p); err == nil && st.IsDir() {
-			return p
-		}
-	}
-	return home
 }
 
 func readJSON(path string, v any) error {
@@ -1455,53 +1441,18 @@ func childRows(t *html.Node) []*html.Node {
 
 // ── w-cms への口 ───────────────────────────────────────────────────────
 
-type client struct {
-	base string
-	hc   *http.Client
-}
+type client struct{ *wcms.Client }
 
 func newClient() (*client, error) {
-	base := strings.TrimRight(os.Getenv("WCMS_BASE"), "/")
-	if base == "" {
-		base = "https://localhost:8443"
-	}
-	jar, _ := cookiejar.New(nil)
-	c := &client{base: base, hc: &http.Client{
-		Jar: jar,
-		// 手元のサーバーは自己署名の証明書（ローカル検証のため確かめない）。
-		Transport:     &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		Timeout:       2 * time.Minute,
-	}}
-	user, pass := os.Getenv("WCMS_USER"), os.Getenv("WCMS_PASS")
-	if user == "" {
-		user, pass = "a", "a" // ローカル開発の管理者（引き継ぎ・環境の節）
-	}
-	res, err := c.do("POST", "/api/login", strings.NewReader(url.Values{"username": {user}, "password": {pass}}.Encode()),
-		"application/x-www-form-urlencoded", "")
+	wc, err := wcms.Login(2 * time.Minute)
 	if err != nil {
 		return nil, err
 	}
-	res.Body.Close()
-	if loc := res.Header.Get("Location"); strings.Contains(loc, "error") {
-		return nil, errors.New("ログインできません")
-	}
-	return c, nil
+	return &client{wc}, nil
 }
 
 func (c *client) do(method, path string, body io.Reader, ctype, token string) (*http.Response, error) {
-	req, err := http.NewRequest(method, c.base+path, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Origin", c.base)
-	if ctype != "" {
-		req.Header.Set("Content-Type", ctype)
-	}
-	if token != "" {
-		req.Header.Set("X-Lock-Token", token)
-	}
-	return c.hc.Do(req)
+	return c.Do(method, path, body, ctype, token)
 }
 
 func (c *client) getJSON(path string, v any) error {

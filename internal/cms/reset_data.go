@@ -180,6 +180,17 @@ func renameWithRetry(from, to string) error {
 // その下）にあるもののIDを返します。
 func templateAreaPageIDs(master string) []string {
 	var out []string
+	for _, id := range pageDirNames(master) {
+		if IsTemplateArea(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// pageDirNames は `data/master/<2桁>/<6桁>` のページのフォルダ名（ページID）を返します（読めない段は飛ばす）。
+func pageDirNames(master string) []string {
+	var out []string
 	shards, err := os.ReadDir(master)
 	if err != nil {
 		return nil
@@ -193,7 +204,7 @@ func templateAreaPageIDs(master string) []string {
 			continue
 		}
 		for _, p := range pages {
-			if p.IsDir() && IsTemplateArea(p.Name()) {
+			if p.IsDir() {
 				out = append(out, p.Name())
 			}
 		}
@@ -225,24 +236,5 @@ func copyTree(from, to string) error {
 
 // countPageDirs は `data/master/<2桁>/<6桁>` の数を数えます（控えに何枚入ったかの案内用）。
 func countPageDirs(master string) int {
-	n := 0
-	shards, err := os.ReadDir(master)
-	if err != nil {
-		return 0
-	}
-	for _, sh := range shards {
-		if !sh.IsDir() {
-			continue
-		}
-		pages, err := os.ReadDir(filepath.Join(master, sh.Name()))
-		if err != nil {
-			continue
-		}
-		for _, p := range pages {
-			if p.IsDir() {
-				n++
-			}
-		}
-	}
-	return n
+	return len(pageDirNames(master))
 }

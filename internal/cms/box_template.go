@@ -106,9 +106,19 @@ func boxBodyFromTemplate(title string) (string, error) {
 	if title == TemplateRootTitle {
 		return "<h1>" + html.EscapeString(title) + "</h1>", nil
 	}
-	tid, err := BoxTemplateID(title)
+	raw, err := templateBody(title, ErrNoBoxTemplate)
 	if err != nil {
-		if errors.Is(err, ErrNoBoxTemplate) {
+		return "", err
+	}
+	return CopyTemplateBody(raw), nil
+}
+
+// templateBody は題 title のテンプレート（テンプレート置き場の下の葉）の本文——正本のファイル——を返します
+// （置き場と、機械が作るページ〔page_template.go〕が共有する読み方）。無ければ notFound を題つきで包んで返します。
+func templateBody(title string, notFound error) (string, error) {
+	tid, err := templateLeafID(title, notFound)
+	if err != nil {
+		if errors.Is(err, notFound) {
 			return "", fmt.Errorf("「%s」: %w", title, err)
 		}
 		return "", err
@@ -117,5 +127,5 @@ func boxBodyFromTemplate(title string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("「%s」のテンプレート %s を読めません: %w", title, tid, err)
 	}
-	return CopyTemplateBody(raw), nil
+	return raw, nil
 }

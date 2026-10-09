@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"w-cms/ext/comm/mail"
+	"w-cms/tools/internal/wcms"
 )
 
 type mailMeta struct {
@@ -70,24 +71,12 @@ func main() {
 	flag.Parse()
 	root := *dirFlag
 	if root == "" {
-		root = filepath.Join(desktop(), "w-cms", "メール")
+		root = filepath.Join(wcms.Desktop(), "w-cms", "メール")
 	}
 	if err := run(*user, root, *since, *max, strings.Split(*boxes, ",")); err != nil {
 		fmt.Fprintln(os.Stderr, "失敗:", err)
 		os.Exit(1)
 	}
-}
-
-// desktop はデスクトップの場所です（OneDrive へ移されていればそちら）。
-func desktop() string {
-	home, _ := os.UserHomeDir()
-	for _, p := range []string{filepath.Join(home, "OneDrive", "デスクトップ"), filepath.Join(home, "OneDrive", "Desktop"),
-		filepath.Join(home, "Desktop")} {
-		if st, err := os.Stat(p); err == nil && st.IsDir() {
-			return p
-		}
-	}
-	return home
 }
 
 var unsafeRe = regexp.MustCompile(`[\\/:*?"<>|\x00-\x1f]`)

@@ -36,7 +36,6 @@ package cms
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -124,19 +123,7 @@ func PageTemplateStatuses() []PageTemplateStatus {
 // PageTemplateBody は題 title のテンプレートの本文（正本のファイル）を返します。
 // 無ければ `ErrNoPageTemplate` を題つきで包んで返します。
 func PageTemplateBody(title string) (string, error) {
-	title = strings.TrimSpace(title)
-	tid, err := templateLeafID(title, ErrNoPageTemplate)
-	if err != nil {
-		if errors.Is(err, ErrNoPageTemplate) {
-			return "", fmt.Errorf("「%s」: %w", title, err)
-		}
-		return "", err
-	}
-	raw, err := ReadPageBody(tid)
-	if err != nil {
-		return "", fmt.Errorf("「%s」のテンプレート %s を読めません: %w", title, tid, err)
-	}
-	return raw, nil
+	return templateBody(strings.TrimSpace(title), ErrNoPageTemplate)
 }
 
 // DraftFromTemplate は題 title のテンプレートを写した下書きを返します。
