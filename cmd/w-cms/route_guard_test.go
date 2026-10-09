@@ -48,6 +48,8 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/mail/status", "GET", 401, "メールのサインイン状態"},
 		{"/api/mail/signin", "POST", 401, "メールのサインイン開始"},
 		{"/api/mail/import", "POST", 401, "メールの取り込み"},
+		{"/api/mail/fetch-new", "POST", 401, "メールの読み込みを裏で始める"},
+		{"/api/mail/fetch-new/status", "GET", 401, "メールの読み込みの様子"},
 		{"/api/mail/send", "POST", 401, "メール送信"},
 		{"/api/replies", "GET", 401, "この記録への返信の逆引き"},
 		{"/api/thread", "GET", 401, "スレッドの前後（In-Reply-To の鎖）"},
@@ -164,6 +166,7 @@ func TestStateChangingRoutesRejectGET(t *testing.T) {
 		"/api/upload-image",
 		"/api/revert",
 		"/api/login",
+		"/api/mail/fetch-new", // 読み込みを裏で始める（2026-10-09）
 	} {
 		req := httptest.NewRequest("GET", path, nil)
 		rr := httptest.NewRecorder()

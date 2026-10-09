@@ -53,6 +53,9 @@ func (mailPlugin) Routes() []cms.Route {
 		{Pattern: "/api/mail/signin", Handler: MailSignInAPIHandler},
 		// 取り込みは**人が押したときだけ**走ります（自動で回し続けない）。
 		{Pattern: "/api/mail/import", Handler: MailImportAPIHandler},
+		// 新しいメールの読み込みを裏で続ける（fetch_job.go・2026-10-09——ページを閉じても止まらない）。
+		{Pattern: "/api/mail/fetch-new", Handler: MailFetchAPIHandler},
+		{Pattern: "/api/mail/fetch-new/status", Handler: MailFetchStatusAPIHandler},
 		// 送信——本体は送信箱、返信元へは参照タグで繋ぐ（reply.go）。
 		{Pattern: "/api/mail/send", Handler: MailSendAPIHandler},
 		// 送る欄の中身（用件の初期値・保存した下書き）と、下書きの保存（compose.go・2026-09-30）。

@@ -6520,9 +6520,14 @@
     // ── 通信箱の「📥 新しいメールを読み込む」（2026-09-29） ─────────────────
     //
     // 利用者:「通信箱に最新のメールを読み込むボタンもお願いします」。「＋ 記録する」（通信箱の未処理の一覧の欄）の
-    // 隣に置く。押すと**受信箱と送信済みの箱**から、まだ入っていないメールだけを取り込む（POST /api/mail/import・
-    // 重複は Message-ID で弾く・1回で箱ごとに50通まで——残りはもう一度押す）。送信済みのメールは差出人が自分なので
-    // 「送信」の記録になる。メールの拡張（comm/mail）が載っていなければ出さない。
+    // 隣に置く。押すと**受信箱と送信済みの箱**から、まだ入っていないメールだけを取り込む（重複は Message-ID で弾く）。
+    // 送信済みのメールは差出人が自分なので「送信」の記録になる。メールの拡張（comm/mail）が載っていなければ出さない。
+    //
+    // ⚠ **読み込みはサーバーの裏で続きます**（2026-10-09 利用者:「新しいメールの読み込みは、ページを閉じても継続するように
+    //    してください」——ext/comm/mail/fetch_job.go）。押すと POST /api/mail/fetch-new で始め、画面は
+    //    GET /api/mail/fetch-new/status で様子を見に行くだけ。新しいメールが尽きるまで読むので「もう一度押す」は要らない。
+    //    それまでは画面が箱ごとに /api/mail/import を呼び、ページを閉じると途中で止まっていた。開いたときに読み込みが
+    //    動いていれば、その続きを見る（ボタンが「読み込み中…」になり、終わったら知らせる）。
     function wireMailFetch() {
         const memo = document.getElementById('w-memo-create');
         if (!memo || !hasExtension('comm/mail') || document.getElementById('w-mail-fetch')) return;
@@ -6534,6 +6539,18 @@
         memo.insertAdjacentElement('afterend', btn);
         btn.addEventListener('click', () => fetchNewMail(btn));
         wireMailSignIn(btn);
+        resumeMailFetch(btn);
+    }
+
+    // resumeMailFetch は、開いたときに裏の読み込みが動いていれば、その様子を見続けます（閉じたあいだも続いていた回）。
+    async function resumeMailFetch(btn) {
+        let st = null;
+        try {
+            st = ((await (await fetch('/api/mail/fetch-new/status')).json()) || {}).status;
+        } catch (e) {
+            return;
+        }
+        if (st && st.running) watchMailFetch(btn, st.run);
     }
 
     // wireMailSignIn は「✉️ メールにサインイン」を「📥 新しいメールを読み込む」の隣に置きます（2026-10-02）。
@@ -6613,37 +6630,53 @@
     }
 
     async function fetchNewMail(btn) {
-        const label = btn.textContent;
         btn.disabled = true;
-        btn.textContent = '📥 読み込み中…';
-        const got = { 受信: 0, 送信: 0 };
-        let failed = 0, more = false;
-        const errs = [];
-        for (const folder of ['受信', '送信']) {
-            try {
-                const res = await fetch('/api/mail/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folder, max: 50 }),
-                });
-                const d = await res.json().catch(() => ({}));
-                if (!res.ok || !d.success) {
-                    errs.push(folder + ': ' + (d.message || d.error || ('HTTP ' + res.status)));
-                    continue;
-                }
-                const s = d.summary || {};
-                got[folder] = s.imported || 0;
-                failed += s.failed || 0;
-                if ((s.imported || 0) >= 50) more = true; // 1回の上限に当たった——まだある
-            } catch (e) {
-                errs.push(folder + ': ' + e.message);
-            }
+        let r;
+        try {
+            r = await postJSON('/api/mail/fetch-new', {});
+        } catch (e) {
+            r = { ok: false, data: { message: '通信に失敗しました: ' + e.message } };
         }
+        if (!r.ok || !r.data.status) {
+            btn.disabled = false;
+            notify((r.data && r.data.message) || 'メールの読み込みを始められませんでした', { type: 'warn', duration: 8000 });
+            return;
+        }
+        watchMailFetch(btn, r.data.status.run);
+    }
+
+    // watchMailFetch は裏の読み込み（回 run）の様子を2秒おきに見て、ボタンに読み込んだ数を出し、終わったら知らせます。
+    // ⚠ 見ているのは画面だけ——ページを閉じても読み込みは続きます（ボタンの title でもそう言う）。
+    async function watchMailFetch(btn, run) {
+        if (btn.dataset.watching === String(run)) return; // 同じ回を二重に見ない
+        btn.dataset.watching = String(run);
+        const label = '📥 新しいメールを読み込む';
+        const title = btn.title;
+        btn.disabled = true;
+        btn.title = '読み込みはサーバーで続いています——ページを閉じても止まりません';
+        const count = (st, folder) => ((st.folders || {})[folder] || {}).imported || 0;
+        let st = null;
+        for (;;) {
+            try {
+                st = ((await (await fetch('/api/mail/fetch-new/status')).json()) || {}).status;
+            } catch (e) {
+                st = null; // 一時の通信の失敗——続けて見る
+            }
+            if (st && st.run === run && !st.running) break;
+            if (st && st.run !== run) break; // 別の回に替わった（ほかの画面から押し直した）——ここでは見るのをやめる
+            btn.textContent = '📥 読み込み中…' + (st ? '（' + (count(st, '受信') + count(st, '送信')) + ' 通）' : '');
+            await new Promise((res) => setTimeout(res, 2000));
+        }
+        delete btn.dataset.watching;
         btn.disabled = false;
         btn.textContent = label;
+        btn.title = title;
+        if (!st || st.run !== run) return;
+        const got = { 受信: count(st, '受信'), 送信: count(st, '送信') };
+        const failed = ['受信', '送信'].reduce((n, f) => n + (((st.folders || {})[f] || {}).failed || 0), 0);
+        const errs = st.errors || [];
         let text = '受信 ' + got['受信'] + ' 通・送信 ' + got['送信'] + ' 通を読み込みました';
         if (failed) text += '（失敗 ' + failed + ' 通）';
-        if (more) text += '——まだあります。もう一度押してください';
         if (errs.length) text += '——' + errs.join(' / ');
         notify(text, { type: (errs.length || failed) ? 'warn' : 'success', duration: 8000 });
         if (got['受信'] + got['送信'] > 0) {

@@ -172,7 +172,8 @@ func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 本体が空でも既定で動きます（50件）。
 	json.NewDecoder(r.Body).Decode(&req)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	// ⚠ **要求が切れても、始めた1回分は最後まで取り込みます**（2026-10-09——ページを閉じると途中で止まっていた）。
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 	defer cancel()
 
 	sum, err := ImportMessages(ctx, user.Username, ListOptions{
