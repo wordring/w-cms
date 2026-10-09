@@ -20,15 +20,10 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/signintech/gopdf"
 	"golang.org/x/net/html"
@@ -96,36 +91,7 @@ type orderPDFColumn struct {
 //
 // できたPDFを**そのページの添付として保存**し、開くためのURLを返します。
 func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	// 添付を足す操作なので write 権限。
-	// ⚠ **2026-09-22 から本文も触ります**（PDFを開くマーカーを置く）。それまでは
-	//    「本文は変えないので編集ロックは要りません」でしたが、**変えるようになった
-	//    ので関門が要ります**（`handler_gate.go`）。
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-	made, ok := makeOrderPDF(w, user, pageID)
-	if !ok {
-		return
-	}
-	out := map[string]any{
-		"success": true, "attach_id": made.AttachID, "file": made.File,
-		"url": "/" + pageID + "/" + made.File,
-	}
-	if made.ViewNote != "" {
-		out["view_note"] = made.ViewNote
-	}
-	json.NewEncoder(w).Encode(out)
+	servePaper(w, r, makeOrderPDF) // 口の形は見積書・見積依頼書と同じ（paper_pdf.go）
 }
 
 // madeOrderPDF は作った発注書のPDFです。
@@ -140,60 +106,29 @@ type madeOrderPDF struct {
 // `/api/order-pdf` と、メールで送る直前（送る欄の用件「発注書」・order_mail.go）が共有します。
 // 断るときは応答を書いて false を返します。
 func makeOrderPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool) {
-	body, err := cms.ReadPageBody(pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
-		return madeOrderPDF{}, false
-	}
-	pdf, err := buildOrderPDF(body, user)
-	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, ErrNoPDFFont) {
-			code = http.StatusServiceUnavailable
-		}
-		cms.JSONFail(w, code, err.Error())
-		return madeOrderPDF{}, false
-	}
-	// ⚠ **名前に日付を入れます**——同じページで作り直すたびに増えるので、
-	// どれがいつのものか分からないと困ります（添付は上書きされません）。
-	name := orderPaperTitleOf(body) + " " + time.Now().Format("20060102-150405") + ".pdf"
-	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", pdf)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
-		return madeOrderPDF{}, false
-	}
-	auth.Audit(user.Username, "order-pdf", pageID+" "+fileName)
-
-	// ⚠ **作っただけでは、ページを開いても出てきません**（2026-09-22 ユーザー報告:
-	//    「発注書のページにPDFが表示されていません」）。添付として保存されるだけ
-	//    だったので、**本文に「ここで開く」マーカーを置きます**。
-	//    ⚠ **失敗してもPDFは取り消しません**——**紙のほうが重い**ので、
-	//    「画面に出ない」は人が貼り直せば済みます。理由を添えるだけにします。
-	return madeOrderPDF{AttachID: attachID, File: fileName,
-		ViewNote: showOrderPDFOnPage(user, pageID, attachID)}, true
+	return makePaper(w, user, pageID, paperKind{
+		build: buildOrderPDF,
+		name:  func(body, _ string) string { return orderPaperTitleOf(body) },
+		audit: "order-pdf",
+		// ⚠ **作っただけでは、ページを開いても出てきません**（2026-09-22 ユーザー報告:
+		//    「発注書のページにPDFが表示されていません」）。添付として保存されるだけ
+		//    だったので、**本文に「ここで開く」マーカーを置きます**。
+		show: showBelowItems(ourOrderItemsType, "発注明細"),
+	})
 }
 
 // buildOrderPDF は発注書ページの本文からPDFを組みます。
 func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
-	font := PDFFont()
-	if font == "" {
-		return nil, ErrNoPDFFont
-	}
-	if _, err := os.Stat(font); err != nil {
-		return nil, fmt.Errorf("%w（いまの設定: %s）", ErrNoPDFFont, font)
+	font, err := paperFont()
+	if err != nil {
+		return nil, err
 	}
 	head, rows, cols, err := readOrderDoc(body)
 	if err != nil {
 		return nil, err
 	}
-
-	p := &gopdf.GoPdf{}
-	p.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
-	p.AddPage()
-	if err := addPDFFont(p, font); err != nil {
-		return nil, err
-	}
-	if err := p.SetFont("jp", "", pdfFontSz); err != nil {
+	p, err := startPaper(font)
+	if err != nil {
 		return nil, err
 	}
 
@@ -211,13 +146,7 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	y += 4
 
 	// ── 差出人（右側）──
-	ry := pdfTop + 10
-	for _, ln := range senderLines(head, viewer) {
-		ry = pdfText(p, 330, ry, pdfFontSz, ln)
-	}
-	if ry > y {
-		y = ry
-	}
+	y = pdfSender(p, pdfTop+10, y, senderLines(head, viewer))
 	y += 8
 
 	// ── ヘッダ（設定 `order_print_heads`）──
@@ -246,32 +175,12 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	}
 	y += 6
 
-	// ── 備考（複数行・2026-09-24）──
-	// ⚠ **長い行は紙の幅で折り、紙の下に来たら改ページします**——備考は人が自由に
-	//    書く欄なので、1行に収まる保証がありません（はみ出すと右端で切れて消えます）。
+	// ── 備考（複数行・2026-09-24——長い行は紙の幅で折る・pdfNote）──
 	if n := strings.TrimSpace(head[orderNoteHeading]); n != "" {
 		p.SetFont("jp", "", pdfFontSz)
-		y = pdfText(p, pdfLeft, y, pdfFontSz, orderNoteHeading+"：")
-		for _, ln := range strings.Split(n, "\n") {
-			parts, err := p.SplitText(ln, pdfRight-pdfLeft-12)
-			if err != nil || len(parts) == 0 {
-				parts = []string{ln}
-			}
-			for _, s := range parts {
-				if y+pdfFontSz+4 > pdfBottom {
-					p.AddPage()
-					y = pdfTop
-				}
-				y = pdfText(p, pdfLeft+12, y, pdfFontSz, s)
-			}
-		}
+		pdfNote(p, y, orderNoteHeading, strings.Split(n, "\n"))
 	}
-
-	var buf bytes.Buffer
-	if _, err := p.WriteTo(&buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return finishPaper(p)
 }
 
 // pdfInk は1つの文字列を書きます。

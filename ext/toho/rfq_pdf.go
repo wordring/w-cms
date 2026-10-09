@@ -21,18 +21,13 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"fmt"
 	stdhtml "html"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/signintech/gopdf"
 	"golang.org/x/net/html"
 
 	"w-cms/ext/comm"
@@ -143,12 +138,9 @@ func rfqPaperColumns(rows []map[string]string) []orderPDFColumn {
 
 // buildRFQPDF は見積依頼書ページの本文から PDF を組みます。
 func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
-	font := PDFFont()
-	if font == "" {
-		return nil, ErrNoPDFFont
-	}
-	if _, err := os.Stat(font); err != nil {
-		return nil, fmt.Errorf("%w（いまの設定: %s）", ErrNoPDFFont, font)
+	font, err := paperFont()
+	if err != nil {
+		return nil, err
 	}
 	head, rows, note, err := readRFQDoc(body)
 	if err != nil {
@@ -157,13 +149,8 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 	if len(rows) == 0 {
 		return nil, errors.New("見積依頼明細に刷る行がありません（辞退の行は刷りません）")
 	}
-	p := &gopdf.GoPdf{}
-	p.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
-	p.AddPage()
-	if err := addPDFFont(p, font); err != nil {
-		return nil, err
-	}
-	if err := p.SetFont("jp", "", pdfFontSz); err != nil {
+	p, err := startPaper(font)
+	if err != nil {
 		return nil, err
 	}
 
@@ -182,13 +169,7 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 	y = pdfText(p, pdfLeft, y, pdfFontSz, "単価をご記入のうえ、ご返送くださいますようお願いいたします。")
 
 	// ── 差出人（右）——見積依頼担当の署名（発注書の署名と同じ節）──
-	ry := pdfTop + 34
-	for _, ln := range senderLines(map[string]string{OrderSignerTag: head[RFQSignerTag]}, viewer) {
-		ry = pdfText(p, 330, ry, pdfFontSz, ln)
-	}
-	if ry > y {
-		y = ry
-	}
+	y = pdfSender(p, pdfTop+34, y, senderLines(map[string]string{OrderSignerTag: head[RFQSignerTag]}, viewer))
 	y += 10
 
 	// ── 明細（単価は空欄で刷る）──
@@ -209,64 +190,19 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 
 	// ── 備考（「○○用」など）──
 	if len(note) > 0 {
-		y = pdfText(p, pdfLeft, y, pdfFontSz, rfqNoteHeading+"：")
-		for _, ln := range note {
-			parts, err := p.SplitText(ln, pdfRight-pdfLeft-12)
-			if err != nil || len(parts) == 0 {
-				parts = []string{ln}
-			}
-			for _, s := range parts {
-				if y+pdfFontSz+4 > pdfBottom {
-					p.AddPage()
-					y = pdfTop
-				}
-				y = pdfText(p, pdfLeft+12, y, pdfFontSz, s)
-			}
-		}
+		pdfNote(p, y, rfqNoteHeading, note)
 	}
-	var buf bytes.Buffer
-	if _, err := p.WriteTo(&buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return finishPaper(p)
 }
 
 // makeRFQPDF は見積依頼書の PDF を作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。断るときは応答を書いて false。
 func makeRFQPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool) {
-	body, err := cms.ReadPageBody(pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
-		return madeOrderPDF{}, false
-	}
-	pdf, err := buildRFQPDF(body, user)
-	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, ErrNoPDFFont) {
-			code = http.StatusServiceUnavailable
-		}
-		cms.JSONFail(w, code, err.Error())
-		return madeOrderPDF{}, false
-	}
-	name := "見積依頼書 " + pageID + " " + time.Now().Format("20060102-150405") + ".pdf"
-	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", pdf)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
-		return madeOrderPDF{}, false
-	}
-	auth.Audit(user.Username, "rfq-pdf", pageID+" "+fileName)
-	ref := pageID + "-" + attachID
-	note := ""
-	changed := false
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		out, ok := placePDFView(cur, ref, RFQItemsType)
-		changed = ok
-		return out
-	}); err != nil {
-		note = "⚠ PDFは作りましたが、ページに表示できません: " + err.Error()
-	} else if !changed {
-		note = "⚠ PDFは作りましたが、置き場所が分かりません（見積依頼明細の表がありません）。添付からは開けます。"
-	}
-	return madeOrderPDF{AttachID: attachID, File: fileName, ViewNote: note}, true
+	return makePaper(w, user, pageID, paperKind{
+		build: buildRFQPDF,
+		name:  func(_, pageID string) string { return "見積依頼書 " + pageID },
+		audit: "rfq-pdf",
+		show:  showBelowItems(RFQItemsType, "見積依頼明細"),
+	})
 }
 
 // isRFQPage は見積依頼書ページか（テンプレートの外で、見積依頼番号のタグを持つ）です。
@@ -276,29 +212,7 @@ func isRFQPage(pageID string) bool {
 
 // RFQPDFAPIHandler は POST /api/rfq-pdf です（入力: {page_id}）。
 func RFQPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-	made, ok := makeRFQPDF(w, user, pageID)
-	if !ok {
-		return
-	}
-	out := map[string]any{"success": true, "attach_id": made.AttachID, "file": made.File, "url": "/" + pageID + "/" + made.File}
-	if made.ViewNote != "" {
-		out["view_note"] = made.ViewNote
-	}
-	json.NewEncoder(w).Encode(out)
+	servePaper(w, r, makeRFQPDF)
 }
 
 // RFQPDFDocsAPIHandler は POST /api/rfq-pdf-docs です（入力: {page_id}）——見積依頼書のうしろに外注加工の資料（PDF のページ・
@@ -309,63 +223,20 @@ func RFQPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 綴じるのは `bindOrderDocs`。⚠ **本文は触りません**（表示中の見積依頼書の PDF は差し替えない）——編集中でも断らない。
 // 辞退の行の資料は綴じない（readRFQDoc が外す）。
 func RFQPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, ok := cms.PageIDOrFail(w, req.PageID)
-	if !ok || !page.RequirePageWrite(w, r, pageID) || !cms.RefuseTemplateArea(w, pageID) {
-		return
-	}
-	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書のページではありません")
-		return
-	}
-	body, err := cms.ReadPageBody(pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
-		return
-	}
-	_, rows, _, err := readRFQDoc(body)
-	if err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	docs, notes := orderDocs(user, rows)
-	if !hasPrintableDoc(docs) {
-		cms.JSONFail(w, http.StatusBadRequest, "紙に綴じられる資料（PDF・画像）がありません")
-		return
-	}
-	rfqPDF, err := buildRFQPDF(body, user)
-	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, ErrNoPDFFont) {
-			code = http.StatusServiceUnavailable
-		}
-		cms.JSONFail(w, code, err.Error())
-		return
-	}
-	bound, skipped, err := bindOrderDocs(rfqPDF, docs)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "綴じられません: "+err.Error())
-		return
-	}
-	name := "見積依頼書 " + pageID + "＋資料 " + time.Now().Format("20060102-150405") + ".pdf"
-	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", bound)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
-		return
-	}
-	auth.Audit(user.Username, "rfq-pdf-docs", pageID+" "+fileName)
-	cms.WriteJSON(w, map[string]any{
-		"success": true, "attach_id": attachID, "file": fileName,
-		"url": "/" + pageID + "/" + fileName, "skipped": append(skipped, notes...),
+	serveBoundPaper(w, r, boundKind{
+		check: func(pageID string) string {
+			if !isRFQPage(pageID) {
+				return "見積依頼書のページではありません"
+			}
+			return ""
+		},
+		rows: func(body string) ([]map[string]string, error) {
+			_, rows, _, err := readRFQDoc(body)
+			return rows, err
+		},
+		build: buildRFQPDF,
+		name:  func(_ []map[string]string, pageID string) string { return "見積依頼書 " + pageID },
+		audit: "rfq-pdf-docs",
 	})
 }
 

@@ -25,8 +25,6 @@ package toho
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg" // 綴じる画像の大きさを読む
@@ -208,6 +206,31 @@ func hasPrintableDoc(docs []orderDoc) bool {
 // 保存して開くURLを返します。⚠ **本文は触りません**（表示中の発注書のPDFは差し替えない）——
 // だから編集中でも断りません（write 権限とテンプレートの外、だけを見る）。
 func OrderPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	serveBoundPaper(w, r, boundKind{
+		rows: func(body string) ([]map[string]string, error) {
+			_, rows, _, err := readOrderDoc(body)
+			return rows, err
+		},
+		build: buildOrderPDF,
+		name:  func(rows []map[string]string, _ string) string { return orderPaperTitle(rows) },
+		audit: "order-pdf-docs",
+	})
+}
+
+// boundKind は資料を綴じた1本（FAX・印刷用）の、紙の種類ごとに違うところです（発注書・見積依頼書）。
+type boundKind struct {
+	check func(pageID string) string                          // 作れないページなら理由（nil か空なら作る）
+	rows  func(body string) ([]map[string]string, error)       // 明細の行（資料はその行が指す加工製品ページのもの）
+	build func(body string, viewer *auth.User) ([]byte, error) // 綴じる前の紙
+	name  func(rows []map[string]string, pageID string) string // 添付の名前の頭（うしろに「＋資料 日時.pdf」）
+	audit string
+}
+
+// serveBoundPaper は資料を綴じた1本を作る口（POST・入力 {page_id}）の共通の形です。
+//
+// ⚠ **本文は触りません**（表示中の紙の PDF は差し替えない）——だから編集中でも断らず、write 権限とテンプレートの
+// 外だけを見ます。
+func serveBoundPaper(w http.ResponseWriter, r *http.Request, k boundKind) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
 		return
@@ -222,12 +245,18 @@ func OrderPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok || !page.RequirePageWrite(w, r, pageID) || !cms.RefuseTemplateArea(w, pageID) {
 		return
 	}
+	if k.check != nil {
+		if why := k.check(pageID); why != "" {
+			cms.JSONFail(w, http.StatusBadRequest, why)
+			return
+		}
+	}
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
 		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
 		return
 	}
-	_, rows, _, err := readOrderDoc(body)
+	rows, err := k.rows(body)
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
@@ -237,28 +266,24 @@ func OrderPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "紙に綴じられる資料（PDF・画像）がありません")
 		return
 	}
-	orderPDF, err := buildOrderPDF(body, user)
+	paper, err := k.build(body, user)
 	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, ErrNoPDFFont) {
-			code = http.StatusServiceUnavailable
-		}
-		cms.JSONFail(w, code, err.Error())
+		failPaper(w, err)
 		return
 	}
-	bound, skipped, err := bindOrderDocs(orderPDF, docs)
+	bound, skipped, err := bindOrderDocs(paper, docs)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "綴じられません: "+err.Error())
 		return
 	}
-	name := orderPaperTitle(rows) + "＋資料 " + time.Now().Format("20060102-150405") + ".pdf"
+	name := k.name(rows, pageID) + "＋資料 " + time.Now().Format("20060102-150405") + ".pdf"
 	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", bound)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
 		return
 	}
-	auth.Audit(user.Username, "order-pdf-docs", pageID+" "+fileName)
-	json.NewEncoder(w).Encode(map[string]any{
+	auth.Audit(user.Username, k.audit, pageID+" "+fileName)
+	cms.WriteJSON(w, map[string]any{
 		"success": true, "attach_id": attachID, "file": fileName,
 		"url": "/" + pageID + "/" + fileName, "skipped": append(skipped, notes...),
 	})

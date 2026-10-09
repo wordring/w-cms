@@ -10,18 +10,14 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	stdhtml "html"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/signintech/gopdf"
 	"golang.org/x/net/html"
 
 	"w-cms/internal/auth"
@@ -118,12 +114,9 @@ func jpDate(s string) string {
 
 // buildEstimatePDF は見積書ページの本文から PDF を組みます。
 func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
-	font := PDFFont()
-	if font == "" {
-		return nil, ErrNoPDFFont
-	}
-	if _, err := os.Stat(font); err != nil {
-		return nil, fmt.Errorf("%w（いまの設定: %s）", ErrNoPDFFont, font)
+	font, err := paperFont()
+	if err != nil {
+		return nil, err
 	}
 	head, rows, note, err := readEstimateDoc(body)
 	if err != nil {
@@ -132,13 +125,8 @@ func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
 	if len(rows) == 0 {
 		return nil, errors.New("見積明細に行がありません")
 	}
-	p := &gopdf.GoPdf{}
-	p.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
-	p.AddPage()
-	if err := addPDFFont(p, font); err != nil {
-		return nil, err
-	}
-	if err := p.SetFont("jp", "", pdfFontSz); err != nil {
+	p, err := startPaper(font)
+	if err != nil {
 		return nil, err
 	}
 
@@ -162,13 +150,7 @@ func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
 	y = pdfText(p, pdfLeft, y, pdfFontSz, "下記のとおり御見積申し上げます")
 
 	// ── 差出人（右）——見積担当の署名（発注書の署名と同じ節）──
-	ry := pdfTop + 34
-	for _, ln := range senderLines(map[string]string{OrderSignerTag: head[EstimateSignerTag]}, viewer) {
-		ry = pdfText(p, 330, ry, pdfFontSz, ln)
-	}
-	if ry > y {
-		y = ry
-	}
+	y = pdfSender(p, pdfTop+34, y, senderLines(map[string]string{OrderSignerTag: head[EstimateSignerTag]}, viewer))
 	y += 8
 
 	// ── 受渡期日・受渡場所・取引方法・有効期限 ──
@@ -213,91 +195,24 @@ func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
 
 	// ── 備考 ──
 	if len(note) > 0 {
-		y = pdfText(p, pdfLeft, y, pdfFontSz, estimateNoteHeading+"：")
-		for _, ln := range note {
-			parts, err := p.SplitText(ln, pdfRight-pdfLeft-12)
-			if err != nil || len(parts) == 0 {
-				parts = []string{ln}
-			}
-			for _, s := range parts {
-				if y+pdfFontSz+4 > pdfBottom {
-					p.AddPage()
-					y = pdfTop
-				}
-				y = pdfText(p, pdfLeft+12, y, pdfFontSz, s)
-			}
-		}
+		pdfNote(p, y, estimateNoteHeading, note)
 	}
-	var buf bytes.Buffer
-	if _, err := p.WriteTo(&buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return finishPaper(p)
 }
 
 // makeEstimatePDF は見積書の PDF を作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。断るときは応答を書いて false。
 func makeEstimatePDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool) {
-	body, err := cms.ReadPageBody(pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "ページを読めません: "+err.Error())
-		return madeOrderPDF{}, false
-	}
-	pdf, err := buildEstimatePDF(body, user)
-	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, ErrNoPDFFont) {
-			code = http.StatusServiceUnavailable
-		}
-		cms.JSONFail(w, code, err.Error())
-		return madeOrderPDF{}, false
-	}
-	name := "御見積書 " + pageID + " " + time.Now().Format("20060102-150405") + ".pdf"
-	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", pdf)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
-		return madeOrderPDF{}, false
-	}
-	auth.Audit(user.Username, "estimate-pdf", pageID+" "+fileName)
-	ref := pageID + "-" + attachID
-	note := ""
-	changed := false
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		out, ok := placePDFView(cur, ref, EstimateItemsType)
-		changed = ok
-		return out
-	}); err != nil {
-		note = "⚠ PDFは作りましたが、ページに表示できません: " + err.Error()
-	} else if !changed {
-		note = "⚠ PDFは作りましたが、置き場所が分かりません（見積明細の表がありません）。添付からは開けます。"
-	}
-	return madeOrderPDF{AttachID: attachID, File: fileName, ViewNote: note}, true
+	return makePaper(w, user, pageID, paperKind{
+		build: buildEstimatePDF,
+		name:  func(_, pageID string) string { return "御見積書 " + pageID },
+		audit: "estimate-pdf",
+		show:  showBelowItems(EstimateItemsType, "見積明細"),
+	})
 }
 
 // EstimatePDFAPIHandler は POST /api/estimate-pdf です（入力: {page_id}）。
 func EstimatePDFAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-	made, ok := makeEstimatePDF(w, user, pageID)
-	if !ok {
-		return
-	}
-	out := map[string]any{"success": true, "attach_id": made.AttachID, "file": made.File, "url": "/" + pageID + "/" + made.File}
-	if made.ViewNote != "" {
-		out["view_note"] = made.ViewNote
-	}
-	json.NewEncoder(w).Encode(out)
+	servePaper(w, r, makeEstimatePDF)
 }
 
 // renderEstimateItems は見積明細の足元に、合計（税抜）・PDF を作る・メールで送る を出します（鏡）。

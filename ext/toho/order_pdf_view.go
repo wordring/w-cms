@@ -28,34 +28,9 @@ import (
 
 	"golang.org/x/net/html"
 
-	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
 )
-
-// showOrderPDFOnPage は、作ったPDFをそのページで開けるようにします。
-//
-// 返すのは**添える一文**だけです（空なら何も言うことがない）。
-// ⚠ **うまくいかなくてもPDFは取り消しません**——**紙のほうが重い**ので、
-// 「画面に出ない」は人が貼り直せば済みます。
-func showOrderPDFOnPage(user *auth.User, pageID, attachID string) string {
-	ref := pageID + "-" + attachID
-	changed := false
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		out, ok := placeOrderPDFView(cur, ref)
-		changed = ok
-		return out
-	}); err != nil {
-		return "⚠ PDFは作りましたが、ページに表示できません: " + err.Error()
-	}
-	if !changed {
-		// ⚠ **表が無ければ置き場所が決まりません。** 黙ると「作ったのに出ない」に
-		//    なるので、そう言います。
-		return "⚠ PDFは作りましたが、置き場所が分かりません（発注明細の表がありません）。" +
-			"添付からは開けます。"
-	}
-	return ""
-}
 
 // placeOrderPDFView は本文に「このPDFを開く」マーカーを置きます。
 //
