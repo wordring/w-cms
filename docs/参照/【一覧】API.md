@@ -110,8 +110,9 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 |---|---|---|---|---|
 | GET | `/{id}` | 任意認証 | — | **ページ本体**。本文とタイトルを埋め込んだ完成HTMLを返す（サーバー合成）。**殻は相手で分かれる**（2026-08-26）——認証済みは編集用 `assets/index.html`（`RenderPageShell`・`Cache-Control: no-store`）、匿名は**公開専用** `assets/public.html`（`RenderPublicShell`・スクリプト無し・`description`/OGP/canonical つき・`public, max-age=600` ＋ `Vary: Cookie` ＋ `ETag`）。本文はサニタイズ後に**計算ビューの中身が埋められる**（`RenderComputedViews`。下記の注記）。権限無し=403（体裁つきのHTML）／匿名×非公開=404（トップだけ `/login` へ302）／不存在=404 |
 | GET | `/api/load` | 任意認証（read） | — | ページ本文（`text/plain`）。初期表示では使わず、**編集ロック起点の載せ替え専用**。`id` は入口で6桁へ畳み、**空も不正も400「ページIDが不正です」**（2026-09-14。前は空だけ `Missing id` で分けていたが、呼ぶ側にできることは同じ）。**描画時と同じくサニタイズを通し**、計算ビューの中身を埋めて返す。**ページ内アンカーの合成（`RenderAnchors`）と参照リンクの合成（`RenderReferenceLinks`）は通さない**——合成した id や `<a>` がエディタのDOMへ入ると本文として保存されるため（下記の注記）。⚠ **`view=1` を付けたときだけ**両方を通す（2026-10-07）——閲覧の画面が読み直して、開いたときの姿と比べて変わったブロックだけを差し替えるため（ページの更新の知らせ・`/api/page-events`）。編集モードの載せ替えでは付けない |
-| POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types`、見出しの改名で計算に読まれなくなった項目の告知 `unresolved_fields`、殻の接頭辞を剥がした id の告知 `stripped_ids` を返す（下記の注記）。JSONボディは**8MiB上限**（超過は413。JSONを受けるAPIは共通） |
-| POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types`・`unresolved_fields`・`stripped_ids` は当該ブロック分のみ） |
+| POST | `/api/save` | 要認証（write） | 要 | 本文全体を保存（⚠ 2026-10-12 から**画面は使わない**——道具〔ワンノートの製造・テンプレートの取り込み・E2E の `makePage`〕のために残す。画面の保存は `/api/sync`）。サニタイズ結果と `sanitized`、レジストリ未定義の `data-type` の告知 `unknown_types`、見出しの改名で計算に読まれなくなった項目の告知 `unresolved_fields`、殻の接頭辞を剥がした id の告知 `stripped_ids` を返す（下記の注記）。JSONボディは**8MiB上限**（超過は413。JSONを受けるAPIは共通） |
+| POST | `/api/save-block` | 要認証（write） | 要 | `data-id` で指定した**1ブロックだけ**保存（⚠ 2026-10-12 から画面は使わない——`/api/sync`）。対象が無い／重複なら **409**（クライアントは全文保存へフォールバック）。応答は `/api/save` と同形（`unknown_types`・`unresolved_fields`・`stripped_ids` は当該ブロック分のみ） |
+| POST | `/api/sync` | 要認証（write） | 要 | **画面の保存はこれ1本**（2026-10-12・`internal/cms/handler_sync.go`——編集モードをやめてブロック単位の保護にした・【考察】編集モードの再考 §6・§7）。要求 `{page_id, full, base:[{id,h}], order:[id], changes:[{id, base_h, base_html, html}], tab}`——元の並びと指紋（サーバーが前の応答で渡したもの）・いまの並び・変えた（足した）ブロック。ページごとの書き込みの錠の中で当てる: 元の指紋のままなら当てる・相手も変えていれば中身で比べ直し、表は違うセルなら黙って合わせる・合わせられなければ**ぶつかった**（本文は相手の版のまま）。消したブロックは相手が変えていれば残す（`kept`）。応答 `{blocks:[{id, h, html?, why?}], conflicts:[{id, kind:"changed"|"deleted", html?, h?, by}], kept, kept_by, written, updated_at, unknown_types, unresolved_fields, stripped_ids}`——`html` は画面が持っていない・古いブロックだけ（閲覧と同じ鏡を描いたもの・`why` は other・new・kept・merged・sanitized・full）。`full: true` で全部（書ける形に入るとき）。何も変えていなければ書かない（知らせも出ない） |
 | GET | `/api/page-meta` | 任意認証（read） | — | ページ属性（親ページID・親ページ名・更新日時など）。匿名には実効公開のときだけ返す |
 | GET | `/api/children` | 任意認証（親のread） | — | 子ページ一覧（ID昇順）。認証済みには read 権限のある子、匿名には**実効公開の子だけ**を絞って返す（`visibleChildren`。計算ビューのサーバー事前描画と共用） |
 | POST | `/api/delete-page` | 要認証（write） | 要 | ページを**ゴミ箱（`data/trash`）へ移し**、索引から取り除く。物理削除ではない（取り消せることが要件）。**トップページは400**／**子ページを持つと409**（件数つき）／他者ロック中は409。応答は `{success, page_id, trash_path}` |
@@ -122,6 +123,7 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 | GET | `/api/versions` | 要認証（read） | — | **版の一覧**を新しい順で返す（`[{id, at, by, size, hash}]`。2026-08-26）。版は本文そのものなので本文と同じ read を要求する |
 | GET | `/api/version` | 要認証（read） | — | 指定した版の本文（`?id=&v=`）。`text/plain` ＋ `nosniff` ＋**描画時と同じサニタイズ**（`/api/load` と同じ扱い）。版IDは時刻由来の形しか受け付けない＝ページのフォルダの外は指せない |
 | POST | `/api/revert` | 要認証（write） | 要 | 選んだ版を**本文として書き戻す**。戻すのは本文HTMLだけで、サイドカー（親・所有者・権限・公開）は触らない＝**リバートが権限昇格の抜け道にならない**。書き戻す前に「いまの内容」を版として残すので、リバート自体も取り消せる。監査記録は `revert` |
+| POST | `/api/version-checkpoint` | 要認証（write） | 要 | 版の区切り（`?id=`・2026-10-12——編集権を手放したときの区切りの代わり）。画面が閲覧モードへ切り替えたとき・ページを離れるとき（そのタブで書いていれば）に呼ぶ。いまの本文が最新の版と違えば新しい版を切り、同じなら最新の版を閉じる（`sealed`——あとの保存が同じ人の10分の窓でも畳まない） |
 | GET | `/data/...` | 任意認証（read） | — | 添付ファイル配信の**旧形（`/data/master/<xx>/<id>/…`・互換）**。新しい添付は下のきれいなURLで配る（`DataFileHandler`。ページフォルダ直下と `files/` の両方を受ける）。ページのread権限を要求する保護ハンドラ。`nosniff` 付き。**PDFとラスタ画像（png/jpeg/webp/gif）はインライン**、**SVG は不活性化**（`image/svg+xml` ＋ `Content-Disposition: attachment` ＋ この応答限定の `Content-Security-Policy: sandbox; default-src 'none'`）、**それ以外はダウンロード扱い**（`application/octet-stream`＋`attachment`。応答ヘッダの決め方 `setAttachmentHeaders` はきれいなURLと共有）。本文とサイドカーは配らない |
 | GET | `/{6桁ページID}/{ファイル名}` | 任意認証（read） | — | **添付のきれいなURL**（2026-08-31「実際に保存される場所を推測されたくない」）。`RootHandler` がページURLの下の2区画パスを `page.ServeCleanAttachment` へ回し、ページフォルダの `files/` サブフォルダから配る（物理配置はURLに出ない）。認可と応答ヘッダは `/data/...` と同じ（`RequirePageReadOrPublic`・`setAttachmentHeaders`）。無ければ404で、**匿名には「読めない」と「存在しない」を区別させない**。各アップロードAPIが返す `href` はこの形 |
 
@@ -155,9 +157,10 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 
 | メソッド | パス | 認可 | 概要 |
 |---|---|---|---|
-| POST | `/api/lock` | 要認証（write） | ロック取得（`{ok, token}`）。取れなければ **423 Locked** ＋ `{ok:false, holder, same_user, grace_remaining_sec}`。**本文は返さない**——取得後にフロントが `GET /api/load` を読む（そちらは計算ビューのSSRを通るため。2026-08-20 変更） |
+| POST | `/api/lock` | 要認証（write） | ⚠ 2026-10-12 から**画面は握らない**（ブロック単位の保護——`/api/sync`）。道具が `/api/save` の前に一瞬握るためだけに残す。ロック取得（`{ok, token}`）。取れなければ **423 Locked** ＋ `{ok:false, holder, same_user, grace_remaining_sec}`。**本文は返さない**——取得後にフロントが `GET /api/load` を読む（そちらは計算ビューのSSRを通るため。2026-08-20 変更） |
 | GET | `/api/lock-events` | 要認証（write） | ロック状態の **SSE** 購読（保持者・待機者で共用） |
 | GET | `/api/page-events` | 要認証（**read**） | ページの更新の知らせの **SSE** 購読（2026-10-07・`internal/cms/page_events.go`）。つないだ直後に `{type:"hello", updated_at}`、本文が書き換わるたびに `{type:"updated", by, updated_at}`。知らせるのは本文を書く口（`/api/save`・`/api/save-block`・`RewriteBody`／`SetPageH1`・`RevertToVersion`）。**どこが変わったかは送らない**——画面が `/api/load?view=1` で読み直して比べる。ロックの流れとは別（あちらは write が要る） |
+| GET | `/api/page-watchers` | 要認証（read） | そのページを開いている人の名前 `{users:[…]}`（2026-10-12・`page_events.go`——ページを消す前の確かめのダイアログに「○○さんが開いています」）。`tab` のタブ（自分）は除く |
 | POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
 | POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
 
