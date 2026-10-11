@@ -154,6 +154,33 @@ func TestVersionSkipsUnchangedContent(t *testing.T) {
 	}
 }
 
+// TestVersionCheckpointSealsNewest は、区切り（force）を打つと、中身が最新の版と同じでもその版を閉じ、次の保存が
+// 上書きしない（新しい版になる）ことを検証します（2026-10-12——編集権をやめたので保存のたびに版を記録する。書き終えた
+// ときの形を、あとの保存で畳まれて失わないため）。
+func TestVersionCheckpointSealsNewest(t *testing.T) {
+	setupSaveTest(t)
+	const id = "000041"
+	postSave(t, id, "<h1>書き終えた形</h1>")
+	before := len(versionsOf(t, id))
+	if err := RecordVersion(id, "tester", "<h1>書き終えた形</h1>", true); err != nil {
+		t.Fatalf("RecordVersionエラー: %v", err)
+	}
+	list := versionsOf(t, id)
+	if len(list) != before || !list[0].Sealed {
+		t.Fatalf("同じ中身の区切りで版が増えた・閉じていない: %d→%d sealed=%v", before, len(list), list[0].Sealed)
+	}
+	// 窓の内側でも、閉じた版へは畳まない。
+	postSave(t, id, "<h1>次に書いた形</h1>")
+	list = versionsOf(t, id)
+	if len(list) != before+1 {
+		t.Fatalf("閉じた版へ畳んだ: %d", len(list))
+	}
+	old, _ := ReadVersion(id, list[1].ID)
+	if !strings.Contains(string(old), "書き終えた形") {
+		t.Fatalf("書き終えた形が版に残らない: %s", old)
+	}
+}
+
 // TestVersionForcedCheckpointRecordsChange は、明示チェックポイント（ロック解放時）が
 // コアレッシングの窓の中でも版を切ることを検証します。
 // これが無いと、10分の窓の内側で編集を終えた人の最後の状態が残りません。

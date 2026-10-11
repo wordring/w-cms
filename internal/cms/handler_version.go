@@ -9,6 +9,7 @@ package cms
 
 import (
 	"net/http"
+	"os"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -63,6 +64,37 @@ func VersionAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write([]byte(RenderComputedViews(r, idInt, Sanitize(string(body)))))
+}
+
+// VersionCheckpointAPIHandler は POST /api/version-checkpoint?id= です——いまの本文で版の区切りを打ちます（2026-10-12）。
+//
+// それまでは**編集権を手放したとき**に区切りを打っていました（editlock.OnRelease）——同じ人の10分以内の保存は1つの版に
+// まとめられるので、書き終えたときに区切らないと、その回の最後の形が独立した版として残らない。編集権をやめたので、
+// 画面が**閲覧モードへ切り替えたとき・ページを離れるとき**（そのタブで書いていれば）にこれを呼ぶ。中身が最新の版と
+// 同じなら何もしない（RecordVersion）。
+func VersionCheckpointAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id, _, ok := queryPageID(w, r)
+	if !ok {
+		return
+	}
+	if !page.RequirePageWrite(w, r, id) {
+		return
+	}
+	defer LockPageBody(id)()
+	body, err := os.ReadFile(page.BodyPath(id))
+	if err != nil {
+		http.Error(w, "本文を読み込めませんでした", http.StatusNotFound)
+		return
+	}
+	if err := RecordVersion(id, auth.UsernameOf(r), string(body), true); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	WriteJSON(w, map[string]any{"success": true})
 }
 
 // RevertAPIHandler は選んだ版を現在の本文として書き戻します（POST /api/revert）。

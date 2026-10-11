@@ -88,12 +88,13 @@ async function versionsOf(page, id) {
         await page.waitForTimeout(600);
         check('右レールに版が並ぶ', (await page.locator('#w-vh-list .version-item').count()) >= 1);
 
-        // 4. 閲覧モードへ戻ると（ロック解放）チェックポイントが打たれる
+        // 4. 閲覧モードへ戻ると区切りが打たれる（2026-10-12——編集権をやめた。保存のたびに版を記録するので、最新の版は
+        //    もう最後の形——区切りはその版を閉じ、あとの保存が上書きしないようにする）
         await page.evaluate(() => document.getElementById('w-mode-toggle').click());
         await page.waitForFunction(() => !document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         await page.waitForTimeout(800);
         versions = await versionsOf(page, id);
-        check('ロック解放で最後の状態が残る', versions.length === before + 1);
+        check('閲覧へ戻ると最後の状態が版に残り、閉じる', versions.length === before && versions[0].sealed === true);
         const latest = await (await page.request.get(BASE + '/api/version?id=' + id + '&v=' + versions[0].id)).text();
         check('最新の版が最後の本文', latest.includes('あいうえ'));
         check('閲覧モードでは戻すボタンが出ない', (await page.locator('#w-vh-list .version-revert').count()) === 0);

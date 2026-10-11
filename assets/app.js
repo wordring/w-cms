@@ -1004,6 +1004,7 @@
     let syncReady = false;          // 書ける形に入って元を受け取ったあと（それまでは送らない）
     const syncConflicts = new Map(); // ブロック ID → { kind: 'changed'|'deleted', panel, ... }
     let syncChain = Promise.resolve();
+    let syncWrote = false;          // このタブが書いた（閲覧モードへ切り替えたとき・離れるときに版の区切りを打つ——checkpointVersion）
 
     function setSaveStatus(text, color) {
         const el = document.getElementById('w-save-status');
@@ -1165,6 +1166,18 @@
     }
     window.wcmsFlushSave = flushPendingSave; // 鏡のボタン（postJSON）が押す前に呼ぶ
 
+    // checkpointVersion は版の区切りを打つ（このタブが書いていれば——2026-10-12）。それまでは編集権を手放したときにサーバーが
+    // 打っていた（同じ人の10分以内の保存は1つの版にまとまるので、書き終えたときに区切らないと最後の形が独立した版に残らない）。
+    // beacon はページを離れるとき（応答を待たない）。
+    function checkpointVersion(beacon) {
+        if (!syncWrote || !currentPageId) return Promise.resolve();
+        syncWrote = false;
+        const url = '/api/version-checkpoint?id=' + currentPageId;
+        if (beacon && navigator.sendBeacon) { navigator.sendBeacon(url); return Promise.resolve(); }
+        return fetch(url, { method: 'POST' }).catch(() => {});
+    }
+    window.addEventListener('pagehide', () => checkpointVersion(true));
+
     function queueSync(pull) {
         const run = syncChain.then(() => runSync(pull));
         syncChain = run.catch(() => {});
@@ -1221,6 +1234,7 @@
         }
         dismissToast('save-failed');
         applySyncResult(data, sent);
+        if (data.written) syncWrote = true;
         notifyUnknownTypes(data.unknown_types);
         notifyUnresolvedFields(data.unresolved_fields);
         notifyStrippedIDs(data.stripped_ids);
@@ -2073,7 +2087,7 @@
         // **書きかけを先に流します**（2026-09-15）。自動保存は1.5秒のデバウンスなので、
         // 最後の入力から1.5秒以内に閲覧へ戻ると、その分がまだ送られていません。
         const wasEditing = document.body.hasAttribute('edit-mode');
-        if (wasEditing) await flushPendingSave();
+        if (wasEditing) { await flushPendingSave(); await checkpointVersion(false); }
         syncReady = false;
         // ページの更新の知らせが比べる相手を覚え直す（閲覧の描き方で——2026-10-07）。
         // ⚠ 書ける形から出るときだけ——ページを開いたときもここを通る（閲覧で始まる）が、そのときは開いたときの姿を

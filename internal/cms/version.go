@@ -103,6 +103,9 @@ type VersionInfo struct {
 	By   string `json:"by"`   // 保存した利用者
 	Size int    `json:"size"` // 本文のバイト数（圧縮前）
 	Hash string `json:"hash"` // 本文の SHA-256（重複を作らないための判定に使う）
+	// Sealed は区切りを打った版（2026-10-12）——同じ人の10分以内の保存でも、この版へは畳まない（次の保存は新しい版）。
+	// 書き終えたとき（閲覧モードへ切り替えた・ページを離れた）の形を、あとの保存で上書きさせないため。
+	Sealed bool `json:"sealed,omitempty"`
 }
 
 // versionsDir はページの版置き場を返します。
@@ -158,10 +161,16 @@ func RecordVersion(pageID, author, html string, force bool) error {
 	if len(list) > 0 {
 		newest := list[0]
 		// 中身が同じなら、どの契機でも版は増やさない。
+		// 区切り（force）なら、その版を閉じる——中身が同じでも、次の保存が上書きしないように（Sealed）。
 		if newest.Hash == hash {
+			if force && !newest.Sealed {
+				info := newest
+				info.Sealed = true
+				return writeVersionFiles(dir, newest.ID, info, []byte(html))
+			}
 			return nil
 		}
-		if !force && newest.By == author {
+		if !force && newest.By == author && !newest.Sealed {
 			// 窓の起点は**版ID（作成時刻）**。At を起点にすると置き換えのたびに
 			// 窓が滑り、書き続ける限り永遠に1版へ畳まれてしまう。IDなら
 			// 「10分ごとに次の版」という粒度が保たれる。

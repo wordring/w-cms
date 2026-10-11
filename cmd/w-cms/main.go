@@ -216,6 +216,8 @@ func buildHandler() http.Handler {
 	// 版は本文そのものなので、一覧・取得は本文と同じ read、書き戻しは write ＋編集ロック。
 	protected.HandleFunc("/api/versions", cms.VersionsAPIHandler)
 	protected.HandleFunc("/api/version", cms.VersionAPIHandler)
+	// 版の区切り（閲覧モードへ切り替えたとき・ページを離れるとき——編集権の手放しの代わり・2026-10-12）。
+	protected.HandleFunc("/api/version-checkpoint", cms.VersionCheckpointAPIHandler)
 	protected.HandleFunc("/api/revert", cms.RevertAPIHandler)
 
 	protected.HandleFunc("/api/reorder", cms.ReorderAPIHandler)
