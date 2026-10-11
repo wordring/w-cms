@@ -3,9 +3,11 @@ package cms
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 )
 
@@ -36,24 +38,34 @@ type pageEvent struct {
 	Type      string `json:"type"` // hello（つないだ直後）・updated（本文が書き換わった）
 	By        string `json:"by,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+	// Tab は書いたタブ（2026-10-12）——書ける形のタブは自分の保存の知らせを受けても読み直さない。
+	// 業務のボタン・道具の書き込みは空（押したタブも読み直す——ボタンが書いた中身を受け取るため）。
+	Tab string `json:"tab,omitempty"`
+}
+
+// pageWatcher は購読している1本（タブ1つ）です。誰が開いているかは、ページを消すときの確かめに使う
+// （2026-10-12 利用者が選んだ形——消す前の確かめのダイアログに「○○さんが開いています」）。
+type pageWatcher struct {
+	user string
+	tab  string
 }
 
 // pageWatchers はページごとの購読者です（タブ1つにつき1本）。
 type pageWatchers struct {
 	mu   sync.Mutex
-	subs map[string]map[chan pageEvent]struct{}
+	subs map[string]map[chan pageEvent]pageWatcher
 }
 
-var watchers = &pageWatchers{subs: map[string]map[chan pageEvent]struct{}{}}
+var watchers = &pageWatchers{subs: map[string]map[chan pageEvent]pageWatcher{}}
 
-func (p *pageWatchers) subscribe(id string) chan pageEvent {
+func (p *pageWatchers) subscribe(id string, who pageWatcher) chan pageEvent {
 	ch := make(chan pageEvent, 4)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.subs[id] == nil {
-		p.subs[id] = map[chan pageEvent]struct{}{}
+		p.subs[id] = map[chan pageEvent]pageWatcher{}
 	}
-	p.subs[id][ch] = struct{}{}
+	p.subs[id][ch] = who
 	return ch
 }
 
@@ -64,6 +76,20 @@ func (p *pageWatchers) unsubscribe(id string, ch chan pageEvent) {
 	if len(p.subs[id]) == 0 {
 		delete(p.subs, id)
 	}
+}
+
+// who はそのページを開いているタブを返します（exceptTab のタブを除く）。
+func (p *pageWatchers) who(id, exceptTab string) []pageWatcher {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []pageWatcher
+	for _, w := range p.subs[id] {
+		if exceptTab != "" && w.tab == exceptTab {
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
 }
 
 // publish は購読者へ配ります。**詰まった購読者は待ちません**——書き込みの口を止めない
@@ -83,10 +109,43 @@ func (p *pageWatchers) publish(id string, ev pageEvent) {
 // notifyPageUpdated は、そのページを開いているタブへ「本文が書き換わった」を知らせます。
 // 購読の鍵と揃えるため、id はゼロ詰め6桁へ畳んでから配ります。
 func notifyPageUpdated(id, by, updatedAt string) {
+	notifyPageUpdatedFrom(id, by, "", updatedAt)
+}
+
+// notifyPageUpdatedFrom は書いたタブを添えて知らせます（/api/sync——2026-10-12）。
+func notifyPageUpdatedFrom(id, by, tab, updatedAt string) {
 	if norm, ok := page.NormalizeID(id); ok {
 		id = norm
 	}
-	watchers.publish(id, pageEvent{Type: "updated", By: by, UpdatedAt: updatedAt})
+	watchers.publish(id, pageEvent{Type: "updated", By: by, UpdatedAt: updatedAt, Tab: tab})
+}
+
+// PageWatchersAPIHandler は GET /api/page-watchers?id=&tab= です——そのページを開いている人の名前（重ならないように）を
+// 返します（tab のタブ＝自分は除く）。ページを消す前の確かめに使う（2026-10-12）。
+func PageWatchersAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id, ok := page.NormalizeID(r.URL.Query().Get("id"))
+	if !ok {
+		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
+		return
+	}
+	if !page.RequirePageRead(w, r, id) {
+		return
+	}
+	seen := map[string]bool{}
+	names := []string{}
+	for _, wt := range watchers.who(id, r.URL.Query().Get("tab")) {
+		if wt.user == "" || seen[wt.user] {
+			continue
+		}
+		seen[wt.user] = true
+		names = append(names, wt.user)
+	}
+	sort.Strings(names)
+	WriteJSON(w, map[string]any{"success": true, "users": names})
 }
 
 // pageEventsKeepalive は、つないだままの線を中継の機器に切られないための間隔です。
@@ -115,7 +174,7 @@ func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no") // リバースプロキシのバッファリング抑止
 
 	// 先に購読してから hello を送る——逆だと、そのあいだの書き込みを取りこぼす。
-	ch := watchers.subscribe(id)
+	ch := watchers.subscribe(id, pageWatcher{user: auth.UsernameOf(r), tab: r.URL.Query().Get("tab")})
 	defer watchers.unsubscribe(id, ch)
 
 	send := func(ev pageEvent) {

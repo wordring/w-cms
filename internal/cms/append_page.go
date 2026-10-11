@@ -64,6 +64,9 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 	if IsTemplateArea(pageID) {
 		return ErrTemplateArea
 	}
+	// ページごとの書き込みの錠（body_lock.go・2026-10-12）——編集権をやめたので、人の保存と同時に来うる。
+	// 読んで・変えて・書いて・索引まで、ほかの書き込みを挟ませない。
+	defer LockPageBody(pageID)()
 	htmlPath := page.BodyPath(pageID)
 	current, err := os.ReadFile(htmlPath)
 	if err != nil {
@@ -73,6 +76,8 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 	// 保存経路と同じ順序（handler_save.go）——サニタイズ → 更新日時 → 書き込み →
 	// 版 → 索引。版を残すので、機械が足したものは人がリバートで取り消せる。
 	safeHTML := fillFileViewNamesAs(author, Sanitize(rewrite(string(current))))
+	// ぶつかったときの「○○さん」——機械が変えたブロックは押した人が書いたと覚える（block_sync.go）。
+	noteBlockWriters(pageID, author, string(current), safeHTML)
 	updatedAt, err := page.BumpUpdatedAt(pageID)
 	if err != nil {
 		return err

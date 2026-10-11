@@ -121,19 +121,30 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// ファイル表示の名札（短縮ファイル名）を書き込む——保存した人の権限で（file_view.go）。
 	safeHTML = FillFileViewNames(auth.CurrentUser(r), safeHTML)
 
-	updatedAt, ok := writeBody(w, id, safeHTML)
+	// ページごとの書き込みの錠（body_lock.go・2026-10-12）——全文の保存は道具（ワンノートの製造・テンプレートの
+	// 取り込み・E2E）が使う口。画面は /api/sync を使う。
+	updatedAt, ok := func() (string, bool) {
+		defer LockPageBody(id)()
+		before, _ := os.ReadFile(page.BodyPath(id))
+		updatedAt, ok := writeBody(w, id, safeHTML)
+		if !ok {
+			return "", false
+		}
+
+		// 版として残す（コアレッシングが効くので、オートセーブの連打では増えない。
+		// version.go 参照）。**保存そのものは止めない**——履歴が取れないことを理由に
+		// 書けなくするほうが害が大きい（監査記録と同じ判断）。
+		if err := RecordVersion(id, auth.UsernameOf(r), safeHTML, false); err != nil {
+			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
+		}
+
+		if !syncBody(w, id, safeHTML) {
+			return "", false
+		}
+		noteBlockWriters(id, auth.UsernameOf(r), string(before), safeHTML)
+		return updatedAt, true
+	}()
 	if !ok {
-		return
-	}
-
-	// 版として残す（コアレッシングが効くので、オートセーブの連打では増えない。
-	// version.go 参照）。**保存そのものは止めない**——履歴が取れないことを理由に
-	// 書けなくするほうが害が大きい（監査記録と同じ判断）。
-	if err := RecordVersion(id, auth.UsernameOf(r), safeHTML, false); err != nil {
-		log.Printf("版の記録に失敗しました page=%s: %v", id, err)
-	}
-
-	if !syncBody(w, id, safeHTML) {
 		return
 	}
 	auth.AuditRequest(r, "save", id)
@@ -296,32 +307,40 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, err := os.ReadFile(page.BodyPath(id))
-	if err != nil {
-		http.Error(w, "本文を読み込めませんでした", http.StatusNotFound)
-		return
-	}
-
 	// ブロック単体をサニタイズしてから差し込む（全文と同じ許可リスト）。
 	safeBlock, sanitized := SanitizeReport(req.HTML)
 
-	merged, err := ReplaceBlock(string(current), req.BlockID, safeBlock)
-	if err != nil {
-		// 見つからない／重複 → クライアントは全文保存へフォールバックする
-		if errors.Is(err, ErrBlockNotFound) || errors.Is(err, ErrBlockAmbiguous) {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
+	// ページごとの書き込みの錠（body_lock.go・2026-10-12）——読んで・差し込んで・書いて・索引まで。
+	updatedAt, ok := func() (string, bool) {
+		defer LockPageBody(id)()
+		current, err := os.ReadFile(page.BodyPath(id))
+		if err != nil {
+			http.Error(w, "本文を読み込めませんでした", http.StatusNotFound)
+			return "", false
 		}
-		http.Error(w, "本文の更新に失敗しました", http.StatusInternalServerError)
-		return
-	}
-	merged = FillFileViewNames(auth.CurrentUser(r), merged)
+		merged, err := ReplaceBlock(string(current), req.BlockID, safeBlock)
+		if err != nil {
+			// 見つからない／重複 → クライアントは全文保存へフォールバックする
+			if errors.Is(err, ErrBlockNotFound) || errors.Is(err, ErrBlockAmbiguous) {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return "", false
+			}
+			http.Error(w, "本文の更新に失敗しました", http.StatusInternalServerError)
+			return "", false
+		}
+		merged = FillFileViewNames(auth.CurrentUser(r), merged)
 
-	updatedAt, ok := writeBody(w, id, merged)
+		updatedAt, ok := writeBody(w, id, merged)
+		if !ok {
+			return "", false
+		}
+		if !syncBody(w, id, merged) {
+			return "", false
+		}
+		noteBlockWriters(id, auth.UsernameOf(r), string(current), merged)
+		return updatedAt, true
+	}()
 	if !ok {
-		return
-	}
-	if !syncBody(w, id, merged) {
 		return
 	}
 	auth.AuditRequest(r, "save-block", id)

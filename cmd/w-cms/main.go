@@ -185,6 +185,8 @@ func buildHandler() http.Handler {
 	// 1ブロックだけの保存。data-id が無い本文や構造変更では使えないため、
 	// クライアントは 409 等で /api/save（全文保存）へフォールバックする。
 	protected.HandleFunc("/api/save-block", cms.SaveBlockAPIHandler)
+	// ブロック単位で合わせる保存（2026-10-12——編集権をやめた画面の保存はこれ1本。全文・ブロックの保存は道具のため）。
+	protected.HandleFunc("/api/sync", cms.SyncAPIHandler)
 	protected.HandleFunc("/api/upload-file", cms.UploadFileHandler)
 	protected.HandleFunc("/api/upload-pdf", cms.UploadPDFHandler)
 	// 画像の添付（png/jpeg/webp/gif/svg。中身の検証とEXIF除去はハンドラ内。要件 §2.6）
@@ -207,6 +209,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/lock/force", editlock.LockForceAPIHandler)
 	// ページの更新の知らせ（SSE・読める人なら誰でも——閲覧中のタブが変わったブロックだけ読み直す。page_events.go）
 	protected.HandleFunc("/api/page-events", cms.PageEventsAPIHandler)
+	// そのページを開いている人（ページを消す前の確かめ・2026-10-12）。
+	protected.HandleFunc("/api/page-watchers", cms.PageWatchersAPIHandler)
 
 	// 保存済み文書の版管理（リビジョン／リバート。version.go）。
 	// 版は本文そのものなので、一覧・取得は本文と同じ read、書き戻しは write ＋編集ロック。

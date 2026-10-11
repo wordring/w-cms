@@ -332,6 +332,7 @@ func (c *IntakeContext) UpdatePage(pageID, bodyHTML string) error {
 		return fmt.Errorf("この取り込みで作ったページしか書き直せません: %s", pageID)
 	}
 	safeHTML := cms.Sanitize(bodyHTML)
+	defer cms.LockPageBody(pageID)() // ページごとの書き込みの錠（2026-10-12）
 	htmlPath := page.BodyPath(pageID)
 	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
 		return err

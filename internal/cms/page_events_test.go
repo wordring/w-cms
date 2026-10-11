@@ -45,9 +45,9 @@ func TestPageEventsSaveNotifiesOpenTabs(t *testing.T) {
 	setupSaveTest(t)
 	newPage(t, "000051", `<h1>見る</h1><p data-id="aa01">前</p>`, page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
 	newPage(t, "000052", `<h1>ほか</h1>`, page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
-	mine := watchers.subscribe("000051")
+	mine := watchers.subscribe("000051", pageWatcher{})
 	defer watchers.unsubscribe("000051", mine)
-	other := watchers.subscribe("000052")
+	other := watchers.subscribe("000052", pageWatcher{})
 	defer watchers.unsubscribe("000052", other)
 
 	// 揺れた表記の ID で保存しても、ゼロ詰めの購読に届く。
@@ -78,7 +78,7 @@ func TestPageEventsSaveNotifiesOpenTabs(t *testing.T) {
 func TestPageEventsMachineWritesAndRevertNotify(t *testing.T) {
 	setupSaveTest(t)
 	newPage(t, "000053", `<h1>機械</h1><p>一</p>`, page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
-	ch := watchers.subscribe("000053")
+	ch := watchers.subscribe("000053", pageWatcher{})
 	defer watchers.unsubscribe("000053", ch)
 
 	if err := RewriteBody("000053", "解析", func(cur string) string { return cur + "<p>二</p>" }); err != nil {
@@ -112,7 +112,7 @@ func TestPageEventsMachineWritesAndRevertNotify(t *testing.T) {
 // TestPageEventsPublishDoesNotWaitForStuckTabs は、読まないタブがあっても書き込みの口が
 // 止まらないことを確かめます（詰まった購読者は飛ばす）。
 func TestPageEventsPublishDoesNotWaitForStuckTabs(t *testing.T) {
-	stuck := watchers.subscribe("000054")
+	stuck := watchers.subscribe("000054", pageWatcher{})
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 50; i++ {
@@ -254,7 +254,7 @@ func TestLoadViewMatchesPageRendering(t *testing.T) {
 // TestPageEventsNotifyFoldsID は、揺れた表記の ID で知らせても、ゼロ詰めの購読に届くことを確かめます
 // （いまの呼び手はどれも畳んでから渡すが、知らせる側でも畳んでおく——取りこぼしは黙って起きるので）。
 func TestPageEventsNotifyFoldsID(t *testing.T) {
-	ch := watchers.subscribe("000058")
+	ch := watchers.subscribe("000058", pageWatcher{})
 	defer watchers.unsubscribe("000058", ch)
 	notifyPageUpdated("58", "bob", "t")
 	if ev := nextEvent(t, ch); ev.By != "bob" {

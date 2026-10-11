@@ -322,8 +322,11 @@ func RevertToVersion(pageID, version, author string) error {
 		return err
 	}
 
+	// ページごとの書き込みの錠（body_lock.go・2026-10-12）——戻すのも「ほかの書き手の1人」（問い7）。
+	defer LockPageBody(pageID)()
 	htmlPath := page.BodyPath(pageID)
 	if current, err := os.ReadFile(htmlPath); err == nil {
+		defer noteBlockWriters(pageID, author, string(current), Sanitize(string(body)))
 		// いまの内容を必ず残す（窓の内側でも force で切る）。
 		if err := RecordVersion(pageID, author, string(current), true); err != nil {
 			return err
