@@ -775,6 +775,13 @@
                 // 先頭（＝いまの内容）に戻すボタンは出さない。押しても何も起きず、
                 // 「戻せなかった」ように見えるだけなので。
                 if (isEdit && idx > 0) {
+                    // ブロックごとに見て戻す（2026-10-12 利用者が選んだ形——ほかの人の書き込みを消さずに、そこだけ戻す・問い8）。
+                    const look = document.createElement('button');
+                    look.type = 'button';
+                    look.className = 'rail-btn version-blocks';
+                    look.textContent = 'ブロックごとに見る';
+                    look.addEventListener('click', () => openVersionBlocks(v));
+                    li.appendChild(look);
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'rail-btn version-revert';
@@ -785,6 +792,97 @@
                 list.appendChild(li);
             });
         } catch (e) { /* 取得失敗時は前の表示のまま（履歴が出ないだけ） */ }
+    }
+
+    // ── 版から「このブロックだけ戻す」（2026-10-12・【考察】編集モードの再考 §6 問い8）────────────────
+    //
+    // 利用者が選んだ形:「版を押すと、その版といまで違うブロックに印を付けて見せ、ブロックごとに『このブロックだけ戻す』」。
+    // ページ丸ごと戻すと、その後にほかの人が書いた別のブロックまで消える——翌日に誤りに気づいたとき、そこだけ戻せるように。
+    // 戻すのは画面のブロックを差し替えるだけ（ふつうの書き込みとして /api/sync で送る——相手がそのブロックを書いていればぶつかる）。
+    // 版の本文は ID の無いブロックを持つことがある（機械が書いた昔の版）——ID が無ければ中身で照らす。
+    async function openVersionBlocks(v) {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        let html;
+        try {
+            const res = await fetch('/api/version?id=' + encodeURIComponent(currentPageId) + '&v=' + encodeURIComponent(v.id));
+            if (!res.ok) throw new Error(await res.text());
+            html = await res.text();
+        } catch (e) {
+            notify('版を読めませんでした: ' + e.message, { type: 'warn', duration: 8000 });
+            return;
+        }
+        const old = serverBlocksOf(html).map(el => ({ id: el.getAttribute(BLOCK_ID_ATTR) || '', el, ser: serializeBlock(el) }));
+        const live = serializeBlocks();
+        const liveById = new Map(live.map(b => [b.id, b]));
+        const liveHTML = new Set(live.map(b => b.html));
+        const diffs = [];
+        old.forEach((b, i) => {
+            if (b.id && liveById.has(b.id)) {
+                if (liveById.get(b.id).html !== b.ser) diffs.push({ kind: 'changed', b, i });
+            } else if (!liveHTML.has(b.ser)) {
+                diffs.push({ kind: 'gone', b, i });
+            }
+        });
+        const middle = (done) => {
+            const box = document.createElement('div');
+            box.className = 'w-version-blocks';
+            if (!diffs.length) {
+                const p = document.createElement('p');
+                p.textContent = 'この版といまで違うブロックはありません。';
+                box.appendChild(p);
+                return box;
+            }
+            diffs.forEach(d => {
+                const item = document.createElement('div');
+                item.className = 'w-version-block';
+                const label = document.createElement('p');
+                label.className = 'w-version-block-label';
+                label.textContent = d.kind === 'changed' ? '⚠ いまと中身が違うブロック（この版のときの中身）' : '⚠ いまは無いブロック（この版のときの中身）';
+                const view = document.createElement('div');
+                view.className = 'w-version-block-view';
+                view.appendChild(document.importNode(d.b.el, true));
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'w-version-block-revert';
+                btn.textContent = 'このブロックだけ戻す';
+                btn.addEventListener('click', () => {
+                    revertOneBlock(d, old);
+                    btn.disabled = true;
+                    btn.textContent = '戻しました';
+                });
+                item.append(label, view, btn);
+                box.appendChild(item);
+            });
+            return box;
+        };
+        await openDialog(formatDateTime(v.at) + ' の版（' + (v.by || '—') + '）といまで違うブロック: ' + diffs.length + ' か所',
+            middle, [['閉じる', null]], null);
+    }
+
+    // revertOneBlock は版のブロック1つを画面へ戻す（いまあれば差し替え、無ければ版の並びで前にあるブロックの後ろへ足す）。
+    function revertOneBlock(d, old) {
+        flushCheckpoint();
+        const node = document.importNode(d.b.el, true);
+        const cur = d.b.id ? blockElementById(d.b.id) : null;
+        if (cur) {
+            cur.replaceWith(node);
+        } else {
+            if (d.b.id && blockElementById(d.b.id)) node.removeAttribute(BLOCK_ID_ATTR);
+            let prev = null;
+            for (let k = d.i - 1; k >= 0 && !prev; k--) {
+                const o = old[k];
+                prev = o.id ? blockElementById(o.id) : topLevelBlocks().find(el => serializeBlock(el) === o.ser) || null;
+            }
+            const editor = document.getElementById('w-editor-content');
+            const anchor = prev ? (prev.closest('.editor-block') || prev) : null;
+            if (anchor) anchor.after(node); else editor.insertBefore(node, editor.firstChild);
+            wrapInBlock(node);
+        }
+        applyMode();
+        buildToc();
+        updateHtmlPreview();
+        triggerAutoSave();
+        notify('ブロックを版の中身に戻しました（保存されます・アンドゥで取り消せます）。', { type: 'success', duration: 5000, id: 'version-block' });
     }
 
     // revertToVersion は選んだ版を本文へ書き戻す。
@@ -803,14 +901,20 @@
             const d = await readResult(res);
             if (!res.ok || !d.success) throw new Error(failMessage(res, d));
             msg.textContent = '';
-            // 本文を載せ替える。サーバーが返すのは戻した本文そのもの。
-            populateEditor(d.html);
+            // 本文を載せ替える——戻したのも「ほかの書き手の1人」（2026-10-12）。書ける形なら元ごと受け取り直す
+            // （アンドゥの履歴は戻した中身を起点に合わせる）。
+            if (document.body.hasAttribute('edit-mode')) {
+                await loadForEditing();
+                applyMode();
+                rebaseHistory();
+            } else {
+                populateEditor(d.html);
+            }
             loadVersions();
             loadPageMeta();
             notify('本文を ' + formatDateTime(v.at) + ' の版に戻しました。', { type: 'success', duration: 6000 });
         } catch (e) {
             msg.textContent = '';
-            if (e.message === 'lock-lost') return; // 明け渡しの案内は handleLockLost が出す
             notify('版を戻せませんでした: ' + e.message, { type: 'warn', duration: 8000 });
         }
     }
@@ -834,7 +938,6 @@
             document.getElementById('w-pi-parent-input').value = data.parent_id || '';
             if (data.updated_at) document.getElementById('w-pi-updated-at').textContent = formatDateTime(data.updated_at);
         } catch (e) {
-            if (e && e.message === 'lock-lost') return; // 編集権喪失は handleLockLost が処理済み
             input.classList.add('invalid');
             errEl.textContent = '親ページの変更に失敗しました（通信エラー）';
         }
@@ -853,7 +956,6 @@
             if (res.ok) { msg.style.color = '#16a34a'; msg.textContent = '保存しました。'; }
             else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
         } catch (e) {
-            if (e && e.message === 'lock-lost') return; // 編集権喪失は handleLockLost が処理済み
             msg.style.color = '#dc2626'; msg.textContent = '通信エラー';
         }
     }
@@ -873,7 +975,6 @@
                 msg.style.color = '#16a34a'; msg.textContent = '所有者を変更しました。';
             } else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
         } catch (e) {
-            if (e && e.message === 'lock-lost') return; // 編集権喪失は handleLockLost が処理済み
             msg.style.color = '#dc2626'; msg.textContent = '通信エラー';
         }
     }
@@ -881,27 +982,28 @@
     // 親ページIDの編集はサイドパネルの「親ページID」入力＋適用ボタンが担い、
     // /api/set-parent（サーバーが検証）でサイドカーへ反映する（applyParent を参照）。
 
-    // lastSavedBlocks は直近に保存した状態（[{id, html}]）。変更の有無と、
-    // 「どのブロックが変わったか」の判定に使う。null なら次回は全文保存。
-    let lastSavedBlocks = null;
-
-    // decideSaveStrategy は今回の保存方法を決める。
-    //   none  … 変更なし。送らない（ブロック間を移動しただけ等）
-    //   block … 1ブロックの内容だけが変わった。そのブロックだけ送る
-    //   full  … 追加・削除・並べ替え・ID未採番・複数ブロック変更。従来どおり全文
-    function decideSaveStrategy(blocks) {
-        if (!lastSavedBlocks) return { kind: 'full' };
-
-        // 構造（ブロックの並びとID）が変わっていたら全文で送る
-        const ids = blocks.map(b => b.id).join('\n');
-        const prevIds = lastSavedBlocks.map(b => b.id).join('\n');
-        if (ids !== prevIds) return { kind: 'full' };
-
-        const changed = blocks.filter((b, i) => b.html !== lastSavedBlocks[i].html);
-        if (changed.length === 0) return { kind: 'none' };
-        if (changed.length === 1 && changed[0].id) return { kind: 'block', block: changed[0] };
-        return { kind: 'full' };
-    }
+    // ── ブロック単位で合わせる保存の状態（2026-10-12・【考察】編集モードの再考 §6） ──────────────
+    //
+    // 利用者:「排他のために編集モードを設けたが、今後は編集モードの代わりに、閲覧に邪魔なものを表示しない目的で、
+    // 閲覧モードを設けることにします。そして、ブロック単位の保護に変更し、保護の内容は編集中の同ブロックを同時に
+    // 編集したものが居たら、警告してマージできるように両方表示します」。
+    //
+    //   - syncBase は、このタブが**いまの中身の元にしたサーバーの版**——ブロック ID → { h: サーバーの指紋, html: そのとき
+    //     この画面が書き出した形 }。h はサーバーが計算したものだけ（画面とサーバーの書き出しは字面が違いうる）。
+    //   - syncOrder は元の並び。送るのは「元の並びと指紋」「いまの並び」「元から変えたブロック」（/api/sync）。
+    //   - ⚠ **元の指紋は、画面の中身より新しくしてはいけない**——新しくすると、相手の変更を知らないまま「元のまま」と
+    //     名乗って上書きする。古いぶんには「ぶつかった」と言われるだけ（サーバーが中身で比べ直す）。
+    //   - syncConflicts は並べている（聞いている）ブロック——そのあいだ中身は送らない（相手の版を黙って上書きしない）。
+    const TAB_ID = (() => {
+        const b = new Uint8Array(8);
+        crypto.getRandomValues(b);
+        return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    })();
+    let syncBase = new Map();
+    let syncOrder = [];
+    let syncReady = false;          // 書ける形に入って元を受け取ったあと（それまでは送らない）
+    const syncConflicts = new Map(); // ブロック ID → { kind: 'changed'|'deleted', panel, ... }
+    let syncChain = Promise.resolve();
 
     function setSaveStatus(text, color) {
         const el = document.getElementById('w-save-status');
@@ -1009,12 +1111,17 @@
     // （ボタン自体も applyMode が編集モードでだけ表示する）。
     async function deletePage() {
         if (!currentPageId) return;
-        if (!confirm('このページをゴミ箱（data/trash）へ移します。よろしいですか。')) return;
+        // ほかの人が開いていれば、確かめのダイアログに名前を出す（2026-10-12 利用者が選んだ形——それでも消せる）。
+        let others = [];
         try {
-            const res = await fetch('/api/delete-page?id=' + currentPageId, {
-                method: 'POST',
-                headers: lockToken ? { 'X-Lock-Token': lockToken } : {}
-            });
+            const w = await fetch('/api/page-watchers?id=' + currentPageId + '&tab=' + TAB_ID);
+            if (w.ok) others = ((await w.json()).users || []);
+        } catch (e) { /* 分からなければ名前を出さずに確かめる */ }
+        const opened = others.length ? '「' + others.join('」「') + '」さんがこのページを開いています。\n' : '';
+        if (!confirm(opened + 'このページをゴミ箱（data/trash）へ移します。よろしいですか。')) return;
+        try {
+            await flushPendingSave();
+            const res = await fetch('/api/delete-page?id=' + currentPageId, { method: 'POST' });
             if (!res.ok) {
                 notify('削除できませんでした: ' + (await res.text()).trim(), { type: 'warn', duration: 10000 });
                 return;
@@ -1027,8 +1134,10 @@
         }
     }
 
+    // saveToServer は書きかけを送る（約束を返す——書ける形を出る側・業務のボタンが「送り終えるまで待つ」ため）。
+    // 送るのは1本ずつ（前の応答で元が変わるので、重ねて送らない——syncChain）。
     function saveToServer() {
-        if (!document.body.hasAttribute('edit-mode')) return; // 編集モード時のみ保存
+        if (!document.body.hasAttribute('edit-mode')) return Promise.resolve(); // 書ける形のときだけ保存
         // 語彙が未取得のまま保存すると、本文が丸ごと欠落したものを書いてしまう。
         // **黙って見送ってはいけない**——打った内容が保存されないまま「保存済」が
         // 出続け、その回の入力がまるごと失われる（2026-08-21 修正）。
@@ -1038,122 +1147,333 @@
             notify('本文の語彙を取得できていないため保存できません。ページを再読み込みしてください。' +
                 '（書きかけは失われます——先に内容をコピーしてください）',
                 { type: 'warn', duration: 0, id: 'no-vocab' });
-            return;
-        }
-
-        ensureBlockIds(); // 新しく作られたブロックにIDを振る（構造変更なので全文保存になる）
-        const blocks = serializeBlocks();
-        document.getElementById('w-html-preview').value = joinBlocks(blocks);
-
-        const plan = decideSaveStrategy(blocks);
-        if (plan.kind === 'none') {
-            // 変更なし。保存要求は出さない（無駄なDB同期・書き込みをしない）が、
-            // 内容は保存済みと一致しているので表示は「保存済」へ戻す。
-            // エコーバック（sanitized）でDOMが変わると MutationObserver が「未保存」を
-            // 立て、その後の保存が 'none' で早期returnして表示が戻らない経路があった。
-            setSaveStatus("✅ 保存済", "#10b981");
             return Promise.resolve();
         }
-
-        // ⚠ 保存のときにはアンドゥの履歴へ積まない（2026-10-07）——区切りは checkpoint の仕組みだけ（「区切り（チェックポイント）」）。
-        //    保存は focusout でも走るので、操作の途中（要素の差し替えのあいだ）の一瞬の姿が積まれていた。
-
-        // **約束を返します**（2026-09-15）。閲覧モードへ戻る側が「書きかけを流し終えるまで
-        // ロックを放さない」ために要ります——放してから届いた保存は 409 で捨てられます。
-        if (plan.kind === 'block') return saveBlockToServer(plan.block, blocks);
-        return saveFullToServer(blocks);
+        return queueSync(false);
     }
 
-    // saveFullToServer は本文全体を保存する（従来の方式）。
-    function saveFullToServer(blocks) {
-        setSaveStatus("保存中...", "#f59e0b");
-        return fetch('/api/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ page_id: currentPageId, html: joinBlocks(blocks), token: lockToken })
-        })
-        .then(res => {
-            // 409 = 編集権の喪失（他者へ明け渡し済み）。退避して閲覧モードへ。
-            if (res.status === 409) { handleLockLost(); return null; }
-            return res.json();
-        })
-        .then(data => {
-            if (!data) return;
-            if (!data.success) { onSaveFailed(); return; }
-            applySavedMeta(data);
-            if (data.sanitized && typeof data.html === 'string') {
-                if (applySanitizedHtml(data.html)) { updateHtmlPreview(); buildToc(); }
-                notifySanitized();
-                // 除去後の状態を積み直す。積まないと「除去された危険な内容」へアンドゥで戻れてしまう。
-                replaceTopState();
-            }
-            notifyUnknownTypes(data.unknown_types);
-            notifyUnresolvedFields(data.unresolved_fields);
-            notifyStrippedIDs(data.stripped_ids);
-            // 保存できた状態を記録する（次回の差分判定の基準）
-            lastSavedBlocks = data.sanitized ? serializeBlocks() : blocks;
-            setSaveStatus("✅ 保存済", "#10b981");
-        })
-        .catch(onSaveFailed);
+    // pullFromServer は、変えていなくても送って、相手の変更を受け取る（ページの更新の知らせを受けたとき・業務のボタンのあと）。
+    function pullFromServer() {
+        if (!document.body.hasAttribute('edit-mode')) return Promise.resolve();
+        return queueSync(true);
     }
 
-    // saveBlockToServer は1ブロックだけを保存する。
-    // サーバー側でブロックが見つからない／重複する場合は 409 が返るので、全文保存へ切り替える。
-    function saveBlockToServer(block, blocks) {
-        setSaveStatus("保存中...", "#f59e0b");
-        return fetch('/api/save-block', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                page_id: currentPageId, block_id: block.id, html: block.html, token: lockToken
-            })
-        })
-        .then(res => {
-            if (res.status === 409) {
-                // 編集権の喪失かブロック不整合か、本文を見て切り分ける
-                return res.text().then(text => {
-                    if (text.indexOf('編集権') >= 0) { handleLockLost(); return null; }
-                    lastSavedBlocks = null; // 次は全文で送り直す
-                    return saveFullToServer(blocks).then(() => null);
-                });
-            }
-            return res.json();
-        })
-        .then(data => {
-            if (!data) return;
-            if (!data.success) { onSaveFailed(); return; }
-            applySavedMeta(data);
-            if (data.sanitized && typeof data.html === 'string') {
-                applySanitizedBlock(block, data.html);
-                updateHtmlPreview();
-                buildToc();
-                notifySanitized();
-                // 除去後の状態を積み直す（アンドゥで危険な内容へ戻らないように）
-                replaceTopState();
-                lastSavedBlocks = serializeBlocks();
-            } else {
-                // 送ったブロックだけ記録を更新する
-                lastSavedBlocks = blocks.map(b => ({ id: b.id, html: b.html }));
-            }
-            notifyUnknownTypes(data.unknown_types);
-            notifyUnresolvedFields(data.unresolved_fields);
-            notifyStrippedIDs(data.stripped_ids);
-            setSaveStatus("✅ 保存済", "#10b981");
-        })
-        .catch(onSaveFailed);
+    // flushPendingSave は、待っている自動保存を今すぐ流して終わるまで待つ（業務のボタン・書ける形を出る前）。
+    async function flushPendingSave() {
+        if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+        try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
+    }
+    window.wcmsFlushSave = flushPendingSave; // 鏡のボタン（postJSON）が押す前に呼ぶ
+
+    function queueSync(pull) {
+        const run = syncChain.then(() => runSync(pull));
+        syncChain = run.catch(() => {});
+        return run;
     }
 
-    // applySanitizedBlock はサニタイズ結果を当該ブロックへ反映する。
-    // 編集中のブロックはキャレットが飛ぶので触らない（離脱時の保存で反映される）。
-    function applySanitizedBlock(block, htmlStr) {
-        const el = block.el;
-        if (!el || !el.parentNode) return false;
-        if (el.contains(document.activeElement)) return false;
-        const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
-        const incoming = doc.body.firstElementChild;
-        if (!incoming) { el.parentNode.removeChild(el); return true; }
-        el.parentNode.replaceChild(incoming, el);
-        return true;
+    // runSync は1回送って、応答を画面へ当てる。
+    async function runSync(pull) {
+        if (!document.body.hasAttribute('edit-mode') || !syncReady) return;
+        // 上の段の ID を揃え、入れ子へは**変えたブロックの中だけ**振る（見ただけのページを書き換えない——ensureBlockIds）。
+        ensureBlockIds(new Set());
+        let blocks = serializeBlocks();
+        const changedEls = blocks.filter(b => b.id && !syncConflicts.has(b.id) &&
+            (!syncBase.has(b.id) || syncBase.get(b.id).html !== b.html)).map(b => b.el);
+        if (changedEls.length && ensureBlockIds(new Set(changedEls)) > 0) blocks = serializeBlocks();
+        document.getElementById('w-html-preview').value = joinBlocks(blocks);
+        const sent = new Map();
+        const order = [];
+        const changes = [];
+        blocks.forEach(b => {
+            if (!b.id || sent.has(b.id)) return;
+            sent.set(b.id, b.html);
+            const c = syncConflicts.get(b.id);
+            if (c && c.kind === 'deleted') return; // 「消す」「残す」を聞いているあいだは並びにも入れない
+            order.push(b.id);
+            if (c) return; // 並べているあいだは中身を送らない（相手の版を黙って上書きしない）
+            const base = syncBase.get(b.id);
+            if (!base) changes.push({ id: b.id, base_h: '', base_html: '', html: b.html });
+            else if (base.html !== b.html) changes.push({ id: b.id, base_h: base.h, base_html: base.html, html: b.html });
+        });
+        const sameOrder = order.length === syncOrder.length && order.every((id, i) => id === syncOrder[i]);
+        if (!pull && !changes.length && sameOrder) {
+            setSyncStatus();
+            return;
+        }
+        if (changes.length || !sameOrder) setSaveStatus("保存中...", "#f59e0b");
+        let res, data;
+        try {
+            res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    page_id: currentPageId,
+                    base: syncOrder.map(id => ({ id, h: (syncBase.get(id) || {}).h || '' })),
+                    order, changes, tab: TAB_ID,
+                }),
+            });
+            data = await readResult(res);
+        } catch (e) { onSaveFailed(e); return; }
+        if (!res.ok || !data || !data.success) {
+            onSaveFailed();
+            notify('保存できませんでした: ' + failMessage(res, data), { type: 'warn', duration: 10000, id: 'save-failed' });
+            return;
+        }
+        dismissToast('save-failed');
+        applySyncResult(data, sent);
+        notifyUnknownTypes(data.unknown_types);
+        notifyUnresolvedFields(data.unresolved_fields);
+        notifyStrippedIDs(data.stripped_ids);
+        setSyncStatus();
+    }
+
+    // setSyncStatus は保存の表示を、いまの状態（並べているブロックがあるか・書きかけが残っているか）に合わせる。
+    function setSyncStatus() {
+        if (syncConflicts.size) { setSaveStatus("⚠ 確かめ待ち（" + syncConflicts.size + "）", "#ef4444"); return; }
+        if (saveTimeout) { setSaveStatus("未保存", "#94a3b8"); return; }
+        setSaveStatus("✅ 保存済", "#10b981");
+    }
+
+    // blockElementById は上の段のブロックを ID で探す。
+    function blockElementById(id) {
+        return topLevelBlocks().find(el => el.getAttribute(BLOCK_ID_ATTR) === id) || null;
+    }
+
+    // applySyncResult はサーバーの応答（仕上がりの並び・指紋・描き直すブロック・ぶつかり）を画面へ当てる。
+    //   - 描き直すブロック（相手が変えた・足した・合わせた）は、送ったあとにまた書いていれば**その場で並べる**（問い3）。
+    //     書いていなければ差し替える（相手の変更はアンドゥの履歴にも書き写す——アンドゥは自分の変更だけを戻す・問い2）。
+    //   - 仕上がりに無いブロック（相手が消した）は、送ったあとに書いていれば「消す」「残す」を聞く（問い6）。
+    //   - 並びは仕上がりの並びにする（聞いているブロック・送ったあとに足したブロックはいまの位置の近くに残す）。
+    function applySyncResult(data, sent) {
+        applySavedMeta(data);
+        if (data.updated_at) loadedUpdatedAt = data.updated_at; // つなぎ直したときの見分け（openPageEvents）
+        const live = new Map();
+        topLevelBlocks().forEach(el => {
+            const id = el.getAttribute(BLOCK_ID_ATTR);
+            if (id && !live.has(id)) live.set(id, el);
+        });
+        const typedSince = id => live.has(id) && sent.has(id) && serializeBlock(live.get(id)) !== sent.get(id);
+        const conflictIds = new Set((data.conflicts || []).map(c => c.id));
+        const finalIds = (data.blocks || []).map(b => b.id);
+        const finalSet = new Set(finalIds);
+        const remote = []; // 相手の変更（アンドゥの履歴へ書き写す）: { id, before, after }
+        const fresh = new Map(); // 新しく作った要素
+        const flashed = [];
+        let sanitizedSeen = false;
+        const restoreCaretSoon = []; // 差し替えたブロックにあったキャレット（applyMode のあとで戻す）
+        let touched = false;
+        const wasQuiet = quietDomChange, wasSuppressed = suppressSnapshot;
+        quietDomChange = true;
+        suppressSnapshot = true;
+        try {
+            (data.conflicts || []).forEach(c => openConflict(c.id, c));
+            (data.blocks || []).forEach(b => {
+                if (conflictIds.has(b.id) || syncConflicts.has(b.id)) return;
+                const el = live.get(b.id);
+                if (!b.html) {
+                    // 画面の書き出しのまま当たった・変わっていない——元を進める（中身は送ったときの書き出し）。
+                    const prev = syncBase.get(b.id);
+                    const html = sent.has(b.id) ? sent.get(b.id) : (prev ? prev.html : (el ? serializeBlock(el) : ''));
+                    syncBase.set(b.id, { h: b.h, html });
+                    return;
+                }
+                if (el && typedSince(b.id)) {
+                    if (b.why === 'sanitized') { syncBase.set(b.id, { h: b.h, html: sent.get(b.id) }); return; }
+                    openConflict(b.id, { id: b.id, kind: 'changed', html: b.html, h: b.h, by: data.by || '' });
+                    return;
+                }
+                // キャレットのあるブロックはサニタイズでは差し替えない（それまでの保存と同じ——差し替えるとキャレットと折りたたみの
+                // 開閉が飛ぶ）。元は送ったときの書き出しのまま——次に送ればまたサニタイズされる。
+                const focused = el && el.contains(document.activeElement);
+                if (focused && b.why === 'sanitized') { syncBase.set(b.id, { h: b.h, html: sent.get(b.id) }); return; }
+                const node = elementFromHTML(b.html);
+                if (!node) return;
+                const before = el ? serializeBlock(el) : null;
+                const caret = focused ? captureCaret() : null;
+                if (el) {
+                    if (el.tagName === node.tagName && el.tagName === 'DETAILS') node.open = el.open; // 開閉は見た目——保存されない
+                    el.replaceWith(node);
+                    if (caret) restoreCaretSoon.push(caret);
+                } else {
+                    fresh.set(b.id, node);
+                }
+                const after = serializeBlock(node);
+                syncBase.set(b.id, { h: b.h, html: after });
+                if (b.why !== 'sanitized' && b.why !== 'full') remote.push({ id: b.id, before, after });
+                if (b.why === 'other' || b.why === 'new' || b.why === 'kept' || b.why === 'merged') flashed.push(node);
+                if (b.why === 'sanitized') sanitizedSeen = true;
+                touched = true;
+            });
+            // 仕上がりに無いブロック——相手が消した。
+            live.forEach((el, id) => {
+                if (finalSet.has(id) || syncConflicts.has(id) || !sent.has(id)) return;
+                if (!syncBase.has(id)) return; // 足したのに入らなかった（サニタイズで空になった）——そのまま残す
+                if (typedSince(id)) { openConflict(id, { id, kind: 'deleted', by: '' }); return; }
+                remote.push({ id, before: serializeBlock(el), after: null });
+                (el.closest('.editor-block') || el).remove();
+                syncBase.delete(id);
+                touched = true;
+            });
+            if (placeBlocks(finalIds, fresh)) touched = true;
+            syncOrder = finalIds.filter(id => !syncConflicts.has(id) || syncConflicts.get(id).kind !== 'deleted');
+        } finally {
+            quietDomChange = wasQuiet;
+            suppressSnapshot = wasSuppressed;
+        }
+        if (touched) {
+            applyMode();
+            buildToc();
+            updateHtmlPreview();
+            if (remote.length) patchHistoryForRemote(remote);
+            // サニタイズで除いたあとの姿を履歴の上にする（戻すと除く前の危険な中身へ戻れてしまう）。
+            if (sanitizedSeen) { notifySanitized(); replaceTopState(); }
+            restoreCaretSoon.forEach(c => restoreCaret(c));
+            flashed.forEach(n => {
+                const w = n.closest('.editor-block') || n;
+                w.classList.add('w-block-updated');
+                setTimeout(() => w.classList.remove('w-block-updated'), 4000);
+            });
+        }
+        if ((data.kept || []).length) {
+            const by = data.kept_by || {};
+            const names = Array.from(new Set(data.kept.map(id => by[id]).filter(Boolean)));
+            notify((names.length ? '「' + names.join('」「') + '」さん' : 'ほかの人') +
+                'が書き換えていたブロック（' + data.kept.length + ' か所）は消さずに残しました。消すなら、読んでからもう一度消してください。',
+                { type: 'warn', duration: 12000, id: 'sync-kept' });
+        }
+    }
+
+    // placeBlocks は上の段を ids の並びにする（fresh は新しく作った要素）。並びに無いブロック（聞いているもの・送ったあとに
+    // 足したもの）は、いまのすぐ前のブロックの後ろに残す。動かしたら true。
+    function placeBlocks(ids, fresh) {
+        const editor = document.getElementById('w-editor-content');
+        const live = topLevelBlocks();
+        const byId = new Map();
+        live.forEach(el => { const id = el.getAttribute(BLOCK_ID_ATTR); if (id && !byId.has(id)) byId.set(id, el); });
+        const seq = [];
+        ids.forEach(id => { const el = fresh.get(id) || byId.get(id); if (el && !seq.includes(el)) seq.push(el); });
+        let anchor = null;
+        live.forEach(el => {
+            if (seq.includes(el)) { anchor = el; return; }
+            const at = anchor ? seq.indexOf(anchor) + 1 : 0;
+            seq.splice(at, 0, el);
+            anchor = el;
+        });
+        let moved = false;
+        let prev = null;
+        seq.forEach(el => {
+            let wrap = el.closest('.editor-block');
+            if (!wrap || !editor.contains(wrap)) {
+                if (prev) prev.after(el); else editor.insertBefore(el, editor.firstChild);
+                wrap = wrapInBlock(el);
+                moved = true;
+            } else if (prev ? prev.nextElementSibling !== wrap : editor.firstElementChild !== wrap) {
+                if (prev) prev.after(wrap); else editor.insertBefore(wrap, editor.firstChild);
+                moved = true;
+            }
+            prev = wrap;
+        });
+        return moved;
+    }
+
+    // ── ぶつかったブロックを並べる（問い4・問い6）──────────────────────────────
+    //
+    // 相手の版を**上に読むだけで**（色の枠で）出し、下の自分の版はそのまま書ける。「これで決める」「自分の版にする」は
+    // 自分の版を相手の版の上に送り直し（元を相手の版にしてある）、「相手の版にする」は相手の版へ差し替える。
+    // 相手が消したブロックは「消す（相手に合わせる）」「残す」を聞く。
+    // ⚠ 枠は .editor-block の中・.block-content の外へ置く——.block-content の中に置くと上の段のブロックに数えられる。
+    function openConflict(id, c) {
+        const el = blockElementById(id);
+        if (!el) return;
+        closeConflict(id);
+        const wrap = el.closest('.editor-block');
+        const who = c.by ? '「' + c.by + '」さん' : 'ほかの人';
+        const panel = document.createElement('div');
+        panel.className = 'vocab-chrome w-conflict';
+        panel.contentEditable = 'false';
+        const head = document.createElement('p');
+        head.className = 'w-conflict-head';
+        const actions = document.createElement('div');
+        actions.className = 'w-conflict-actions';
+        const button = (label, cls, fn) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'w-conflict-btn ' + cls;
+            b.textContent = label;
+            b.addEventListener('click', fn);
+            actions.appendChild(b);
+        };
+        let theirs = null;
+        if (c.kind === 'deleted') {
+            head.textContent = '⚠ ' + who + 'がこのブロックを消しました。あなたの書きかけを残しますか？';
+            button('消す（相手に合わせる）', 'w-conflict-drop', () => resolveConflict(id, 'drop'));
+            button('残す', 'w-conflict-keep', () => resolveConflict(id, 'keep'));
+            syncBase.delete(id);
+        } else {
+            head.textContent = '⚠ ' + who + 'がこのブロックを書き換えました。上が相手の版、下があなたの版です。' +
+                '相手の書いたことを取り込んで「これで決める」を押してください。';
+            theirs = elementFromHTML(c.html || '');
+            const box = document.createElement('div');
+            box.className = 'w-conflict-theirs';
+            if (theirs) box.appendChild(theirs);
+            panel.appendChild(head);
+            panel.appendChild(box);
+            button('これで決める', 'w-conflict-done', () => resolveConflict(id, 'mine'));
+            button('相手の版にする', 'w-conflict-theirs-btn', () => resolveConflict(id, 'theirs'));
+            button('自分の版にする', 'w-conflict-mine', () => resolveConflict(id, 'mine'));
+            // 元を相手の版にする——「これで決める」で送る自分の版は、相手の版を見たうえでのもの。
+            syncBase.set(id, { h: c.h, html: theirs ? serializeBlock(theirs) : '' });
+        }
+        if (!panel.contains(head)) panel.appendChild(head);
+        panel.appendChild(actions);
+        if (wrap) {
+            const content = wrap.querySelector(':scope > .block-content');
+            wrap.insertBefore(panel, content || wrap.firstChild);
+            wrap.classList.add('w-conflict-block');
+        } else {
+            el.before(panel);
+        }
+        syncConflicts.set(id, { kind: c.kind, panel, theirsHTML: c.html || '', h: c.h || '' });
+        notify('⚠ ' + who + 'と同じブロックを書いていました。ページの中の黄色い枠で、どちらにするか決めてください。',
+            { type: 'warn', duration: 12000, id: 'sync-conflict' });
+        setSyncStatus();
+    }
+
+    function closeConflict(id) {
+        const c = syncConflicts.get(id);
+        if (!c) return;
+        if (c.panel) {
+            const wrap = c.panel.closest('.editor-block');
+            if (wrap) wrap.classList.remove('w-conflict-block');
+            c.panel.remove();
+        }
+        syncConflicts.delete(id);
+    }
+
+    // resolveConflict は並べたブロックを決める（mine・theirs・drop・keep）。
+    function resolveConflict(id, how) {
+        const c = syncConflicts.get(id);
+        if (!c) return;
+        const el = blockElementById(id);
+        flushCheckpoint();
+        if (how === 'theirs' && el) {
+            const node = elementFromHTML(c.theirsHTML);
+            if (node) {
+                el.replaceWith(node);
+                syncBase.set(id, { h: c.h, html: serializeBlock(node) });
+            }
+        } else if (how === 'drop' && el) {
+            (el.closest('.editor-block') || el).remove();
+            syncBase.delete(id);
+        } else if (how === 'keep') {
+            syncBase.delete(id); // 足したブロックとして送る（前にあるブロックの後ろへ入る）
+        }
+        closeConflict(id);
+        if (!syncConflicts.size) dismissToast('sync-conflict');
+        applyMode();
+        buildToc();
+        triggerAutoSave();
+        setSyncStatus();
     }
 
     // ── 編集中のアンドゥ・リドゥ（docs/考察/【考察】アンドゥ・リドゥ.md §3）────────────
@@ -1275,6 +1595,7 @@
         if (undoStack.length > UNDO_LIMIT) undoStack.shift();
         redoStack = []; // 新しい変更が入ったらリドゥは無効
         refreshUndoButtons();
+        saveHistorySoon(); // 同じタブなら読み直しても残す（2026-10-12）
         return true;
     }
 
@@ -1438,16 +1759,110 @@
         suppressSnapshot = true;
         clearTimeout(checkpointTimer);
         checkpointTimer = null;
+        // ⚠ 戻そうとしたブロックを相手が書き換えていたら（stale——patchHistoryForRemote が付ける印）、黙って戻さずに並べる
+        //    （2026-10-12 利用者が選んだ形——アンドゥは自分の変更だけを戻す・相手の書き込みは消さない）。
+        //    いまの中身（相手の版）を覚えておき、戻したあとで「上が相手の版・下があなたの版」にする。
+        const staleTheirs = [];
+        snap.blocks.forEach(b => {
+            if (!b.stale) return;
+            const el = blockElementById(b.id);
+            if (!el || serializeBlock(el) === b.html) return;
+            const base = syncBase.get(b.id);
+            staleTheirs.push({ id: b.id, html: el.outerHTML, h: base ? base.h : '' });
+        });
         reconcileBlocks(snap.blocks);
         // 新しく作ったブロックには編集用の属性が無い（applyMode が付ける）——付けないと、戻した直後に文字が打てない。
         // キャレット復元より前に呼ぶ必要がある。
         applyMode();
+        staleTheirs.forEach(t => openConflict(t.id, { id: t.id, kind: 'changed', html: t.html, h: t.h, by: '' }));
         buildToc();
         restoreCaret(caret);
         updateHtmlPreview();
         validateTypedTables(); // 復元でDOMが入れ替わり実行時の印（.cell-invalid）が消えるため
         suppressSnapshot = false;
         triggerAutoSave(); // 戻した内容を正本へ反映する
+        refreshUndoButtons();
+        saveHistorySoon();
+    }
+
+    // patchHistoryForRemote は、相手の変更（ほかの人・業務のボタン）をアンドゥの履歴へ書き写す——アンドゥで戻すのは
+    // **自分の変更だけ**（2026-10-12・【考察】編集モードの再考 §6 問い2）。remote は { id, before, after }（足した: before が null・
+    // 消した: after が null）。記録のそのブロックが相手の変更の前と同じなら書き写し、違えば（自分が前に書いていた形）印 stale を
+    // 付ける——その記録へ戻すときは黙って戻さずに並べる（restoreState）。
+    function patchHistoryForRemote(remote) {
+        const all = undoStack.concat(redoStack);
+        remote.forEach(r => {
+            all.forEach(s => {
+                const i = s.blocks.findIndex(b => b.id === r.id);
+                if (r.before === null) {
+                    if (i >= 0) return;
+                    // 仕上がりの並びで前にあるブロックの後ろへ（無ければ先頭）。
+                    const pos = syncOrder.indexOf(r.id);
+                    let at = 0;
+                    for (let k = pos - 1; k >= 0; k--) {
+                        const j = s.blocks.findIndex(b => b.id === syncOrder[k]);
+                        if (j >= 0) { at = j + 1; break; }
+                    }
+                    s.blocks.splice(at, 0, { id: r.id, html: r.after });
+                    return;
+                }
+                if (i < 0) return;
+                if (s.blocks[i].html === r.before) {
+                    if (r.after === null) s.blocks.splice(i, 1);
+                    else s.blocks[i] = { id: r.id, html: r.after };
+                } else {
+                    s.blocks[i] = { id: s.blocks[i].id, html: s.blocks[i].html, stale: true };
+                }
+            });
+        });
+        saveHistorySoon();
+    }
+
+    // ── アンドゥの履歴を、同じタブなら読み直しても残す（2026-10-12・問い8）─────────────────
+    // ブラウザのタブごとの保管（sessionStorage）——タブを閉じると消える。入りきらない・使えないときは手元だけ。
+    const historyKey = () => 'wcms.undo.' + currentPageId;
+    let historySaveTimer = null;
+    function saveHistorySoon() {
+        clearTimeout(historySaveTimer);
+        historySaveTimer = setTimeout(() => {
+            try {
+                const pack = s => ({
+                    blocks: s.blocks.map(b => b.stale ? { id: b.id, html: b.html, stale: true } : { id: b.id, html: b.html }),
+                    caret: s.caret || null,
+                });
+                sessionStorage.setItem(historyKey(), JSON.stringify({ undo: undoStack.slice(-50).map(pack), redo: redoStack.slice(-50).map(pack) }));
+            } catch (e) { /* 入りきらない・使えない——タブを開いているあいだは手元に残る */ }
+        }, 400);
+    }
+    function loadSavedHistory() {
+        try {
+            const s = JSON.parse(sessionStorage.getItem(historyKey()) || 'null');
+            if (s && Array.isArray(s.undo) && s.undo.length) return s;
+        } catch (e) { /* 読めなければ無いものとする */ }
+        return null;
+    }
+
+    // rebaseHistory は、いまの画面（書ける形に入った・読み直した直後）を履歴の起点に合わせる。手元に履歴が無ければ、
+    // このタブの保管から戻す。履歴の上（最後の記録）といまで違うブロックは相手の変更として書き写す。
+    function rebaseHistory() {
+        if (!undoStack.length) {
+            const saved = loadSavedHistory();
+            if (saved) { undoStack = saved.undo; redoStack = saved.redo || []; }
+        }
+        if (!undoStack.length) { resetHistory(true); return; }
+        const top = undoStack[undoStack.length - 1];
+        const live = serializeBlocks();
+        const liveMap = new Map(live.map(b => [b.id, b.html]));
+        const topMap = new Map(top.blocks.map(b => [b.id, b.html]));
+        const remote = [];
+        live.forEach(b => {
+            if (!topMap.has(b.id)) remote.push({ id: b.id, before: null, after: b.html });
+            else if (topMap.get(b.id) !== b.html) remote.push({ id: b.id, before: topMap.get(b.id), after: b.html });
+        });
+        top.blocks.forEach(b => { if (!liveMap.has(b.id)) remote.push({ id: b.id, before: b.html, after: null }); });
+        if (remote.length) patchHistoryForRemote(remote);
+        undoStack[undoStack.length - 1] = { blocks: live.map(b => ({ id: b.id, html: b.html })), caret: null };
+        rememberElements(live);
         refreshUndoButtons();
     }
 
@@ -1518,6 +1933,7 @@
 
         if (saveTimeout) clearTimeout(saveTimeout);
         saveTimeout = setTimeout(() => {
+            saveTimeout = null; // 鳴ったら空にする（「未保存」の表示が残らないように——setSyncStatus）
             saveToServer();
         }, 1500); // 1.5秒デバウンス
     }
@@ -1557,60 +1973,33 @@
         });
     }
 
-    // applySanitizedHtml はサーバーがサニタイズした本文をエディタへ反映する。
-    // 差分のあったトップレベルのブロックだけを差し替え、フォーカス中のブロックは
-    // キャレットが飛ばないよう据え置く（そのブロックは離脱時の保存で反映される）。
-    function applySanitizedHtml(htmlStr) {
-        const container = document.getElementById('w-editor-content');
-        const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
-        const incoming = Array.from(doc.body.children);
-        // 現在のトップレベル要素（wrapInBlock により .editor-block > .block-content > 実体）
-        const holders = Array.from(container.children).map(block => {
-            const content = block.classList.contains('editor-block')
-                ? block.querySelector('.block-content')
-                : null;
-            return { block, content, el: content ? content.firstElementChild : block };
-        });
+    // ── 書ける形と閲覧モード（2026-10-12 に作り直した）──────────────────────────────
+    //
+    // 利用者:「排他のために編集モードを設けたが、今後は編集モードの代わりに、閲覧に邪魔なものを表示しない目的で、
+    // 閲覧モードを設けることにします」（【考察】編集モードの再考 §6）。
+    //   - **編集権は取らない**——切り替えは一瞬。守りはブロック単位（/api/sync——ぶつかったら両方を並べる）。
+    //   - **閲覧モードは読むだけ**（打てない）。表の並べ替え・見出しで畳む・カルーセル・画像の拡大・機械向けのタグを畳むは閲覧モード。
+    //   - **開いたときの形はこの端末に憶える**（最後に使った形——localStorage `wcms.mode`）。初めてはパソコン＝書ける形・
+    //     スマホ＝閲覧モード（読むたびにキーボードと帯が出ないように——問い1）。
+    //   - 書ける形の本文は /api/sync の full で読む（閲覧の描き方〔見出しのアンカー・参照リンク〕を入れない——入れると本文として
+    //     保存される）。元の並びと指紋も同じ応答で受け取る（読んだ中身と元がずれない）。
+    const MODE_KEY = 'wcms.mode';
 
-        // 個数が変わった（ブロックごと除去された等）場合は全体を作り直す。
-        if (holders.length !== incoming.length) {
-            populateEditor(htmlStr);
-            return true;
-        }
-
-        let replaced = false;
-        holders.forEach((h, i) => {
-            if (!h.el || !h.content) return;
-            // 比較は**保存される形**で行う（両辺を同じシリアライザに通す）。
-            // outerHTML を直接比べると、編集モードの contenteditable と
-            // サーバー事前描画のクローム（.vocab-chrome）は**現在のDOMにしか無い**ため
-            // 必ず不一致になり、安全化のたびに全ブロックが差し替えられていた
-            // ——差し替え後の要素は保存形なので contenteditable を持たず、
-            // ページ全体が黙って編集不能になっていた（2026-08-21 修正）。
-            if (serializeBlock(h.el) === serializeBlock(incoming[i])) return;
-            // 編集中のブロックは触らない（離脱時の保存で反映される）
-            if (h.block.contains(document.activeElement)) return;
-            // （計算ビューの data-type の空マーカーを据え置く枝は、印ごと 2026-09-27 に廃止。
-            //  いまの鏡は見出しの節で、中身の .vocab-chrome は serializeBlock が落とすので
-            //  中身が違うだけでは差し替わらない。）
-            h.content.replaceChild(incoming[i], h.el);
-            replaced = true;
-        });
-        // 差し替えた要素は保存形＝contenteditable もエンハンサのクロームも持たない。
-        // モードを当て直さないと、その場で編集できなくなる。
-        if (replaced) applyMode();
-        return replaced;
+    // preferredMode は、ページを開いたときの形（'edit' か 'view'）を返す。
+    function preferredMode() {
+        try {
+            const m = localStorage.getItem(MODE_KEY);
+            if (m === 'edit' || m === 'view') return m;
+        } catch (e) { /* 使えなければ既定 */ }
+        const phone = window.matchMedia && window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+        return phone ? 'view' : 'edit';
     }
 
-    // ── 編集モードと編集ロック ──────────────────────────────────────────────
-    // 編集は悲観ロック（ページ単位）で保護する。編集モードに入るときにロックを取得し、
-    // 抜けるとき／タブを閉じるときに解放する。保持中は status を10秒ポーリングして
-    // 「待機者あり」や「明け渡し（lost）」を検知する。設計は
-    // docs/考察/【考察】同時編集の競合対策.md を参照。
-    let lockToken = null;       // 保持中のみ非null
-    let lockES = null;          // ロック状態のSSE購読（保持者/待機者で共用。閲覧時はnull）
+    function rememberMode(m) {
+        try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* 憶えられなくても切り替えはできる */ }
+    }
 
-    // applyMode は表示/編集の DOM 切り替えのみを行う（ロックの取得・解放は onModeToggle が担う）。
+    // applyMode は閲覧／書ける形の DOM 切り替えのみを行う（元の受け取り・保存は onModeToggle が担う）。
     function applyMode() {
         const toggle = document.getElementById('w-mode-toggle');
         const modeText = document.getElementById('w-mode-text');
@@ -1618,7 +2007,7 @@
 
         if (toggle.checked) {
             document.body.setAttribute('edit-mode', '');
-            modeText.innerText = "編集モード";
+            modeText.innerText = "編集できます";
             modeText.style.color = "#10b981";
         } else {
             document.body.removeAttribute('edit-mode');
@@ -1672,75 +2061,89 @@
         loadVersions();
     }
 
-    // onModeToggle は編集モード切替の入口。編集に入るときはロックを取得してから、
-    // 抜けるときはロックを解放してから DOM を切り替える。
-    async function onModeToggle() {
+    // onModeToggle は閲覧／書ける形の切り替えの入口（人がトグルを押したとき・ページを開いたとき）。
+    // remember が真なら、この端末に憶える（人が押したとき）。
+    async function onModeToggle(e) {
         const toggle = document.getElementById('w-mode-toggle');
+        if (e && e.type === 'change') rememberMode(toggle.checked ? 'edit' : 'view');
         if (toggle.checked) {
             await enterEditMode();
-        } else {
-            closeLockEvents();
-            dismissToast('waiter'); // 自分が編集をやめたら「待機者あり」トーストも消す
-            // **書きかけを先に流します**（2026-09-15）。自動保存は1.5秒のデバウンスなので、
-            // 最後の入力から1.5秒以内に閲覧へ戻ると、その分がまだ送られていません。
-            // 以前はそのままロックを放していたので、**直前の1.5秒の編集が黙って消えていました**
-            // （ファイル表示の参照を貼り替えてすぐ戻る、で実測。プロパティ欄の値は
-            // 打つそばから反映するので、この窓に入りやすい）。
-            if (saveTimeout) {
-                clearTimeout(saveTimeout); saveTimeout = null;
-                try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
-            }
-            // ページの更新の知らせが比べる相手を覚え直す——編集権を放す前に（ほかの人がまだ書けないうちに・2026-10-07）。
-            // ⚠ 編集から出るときだけ——ページを開いたときもここを通る（閲覧で始まる）が、そのときは開いたときの姿を
-            //    覚え済み（window.onload）なので、読み直しを1回余計に走らせない（鏡の計算を含む）。
-            if (document.body.hasAttribute('edit-mode')) await adoptViewSourceFromServer();
-            await releaseLock();
-            // 式のセルの結果はサーバーが計算する（formula.go）——編集で式や値を変えたら、手元の結果は古い。
-            // 古い結果を見せないよう外してから閲覧へ戻し、式があれば本文を読み直す（2026-10-04）。
-            const formulas = hasFormulaCells();
-            if (formulas) clearFormulaResults();
-            applyMode();
-            if (formulas) await reloadContent();
-            // 自分の操作での退出もモードを明示（ヘッダーが隠れるため）。id:'mode' で取得トーストと置換。
-            notify('閲覧モードに戻りました。', { type: 'info', duration: 2500, id: 'mode' });
+            return;
         }
+        // **書きかけを先に流します**（2026-09-15）。自動保存は1.5秒のデバウンスなので、
+        // 最後の入力から1.5秒以内に閲覧へ戻ると、その分がまだ送られていません。
+        const wasEditing = document.body.hasAttribute('edit-mode');
+        if (wasEditing) await flushPendingSave();
+        syncReady = false;
+        // ページの更新の知らせが比べる相手を覚え直す（閲覧の描き方で——2026-10-07）。
+        // ⚠ 書ける形から出るときだけ——ページを開いたときもここを通る（閲覧で始まる）が、そのときは開いたときの姿を
+        //    覚え済み（window.onload）なので、読み直しを1回余計に走らせない（鏡の計算を含む）。
+        if (wasEditing) await adoptViewSourceFromServer();
+        // 式のセルの結果はサーバーが計算する（formula.go）——編集で式や値を変えたら、手元の結果は古い。
+        // 古い結果を見せないよう外してから閲覧へ戻し、式があれば本文を読み直す（2026-10-04）。
+        const formulas = hasFormulaCells();
+        if (formulas) clearFormulaResults();
+        applyMode();
+        if (formulas) await reloadContent();
+        if (wasEditing) notify('閲覧モードにしました。', { type: 'info', duration: 2500, id: 'mode' });
     }
 
-    // enterEditMode は編集モードへ入る。ロックを取得できたら編集UIへ切り替え、保持者として SSE を購読する。
-    // busy なら閲覧モードに留め、待機者として購読しつつ「待機をやめる」トーストを表示する
-    // （空き次第サーバーからの available で自動的に編集へ入る。available 経路からも呼ばれる）。
+    // enterEditMode は書ける形へ入る——編集権は取らない。いまの本文と元（並びと指紋）を /api/sync の full で受け取って
+    // 載せ替え、アンドゥの履歴をいまの画面へ合わせる。書けない人（403）は閲覧のままにする。
     async function enterEditMode() {
         const toggle = document.getElementById('w-mode-toggle');
-        const ok = await acquireLock();
+        const ok = await loadForEditing();
         if (!ok) { toggle.checked = false; applyMode(); return false; }
-        // 編集に入ると本文は最新に載せ替わっている（acquireLock）——ページの更新の知らせは要らない（2026-10-07）。
+        // 書ける形では「ページの更新の知らせ」の札は出さない（届いた変更はその場で差し替える）。
         clearTimeout(pageCheckTimer); pageCheckTimer = null; pendingPageHTML = null;
         dismissToast('page-updated');
         toggle.checked = true;
         applyMode();
-        openHolderEvents();
-
-        // ブロック単位保存の基準を作る。未採番のブロックがあれば採番し、その回は
-        // 全文保存でIDを正本へ永続化させる（lastSavedBlocks を null のままにする）。
-        // すべて採番済みなら、いまの状態を基準にして以降は差分だけ送れる。
-        lastSavedBlocks = ensureBlockIds() > 0 ? null : serializeBlocks();
-
-        // アンドゥ履歴はこの編集セッションのもの。開始時の状態を起点として積む。
         updateHtmlPreview();
-        resetHistory(true); // いまの状態を起点に
+        rebaseHistory(); // アンドゥの履歴は閲覧と行き来しても・同じタブなら読み直しても残す（問い8）
         validateTypedTables(); // 既存本文の型不一致を編集開始時に可視化する
-        // ヘッダー（モードトグル）はスクロールで隠れるため、モード移行は緑トーストで明示する。
-        // 待機後に available で自動入室した場合もここを通るので「権限が回ってきた」気付きにもなる。
-        notify('編集権を取得しました。編集モードです。', { type: 'success', duration: 3000, id: 'mode' });
         return true;
     }
 
-    // populateEditor は本文HTMLをエディタへ流し込みブロック化する（ロード時・ロック取得時に共用）。
-    // 本文を丸ごと入れ替えるので、ブロック単位保存の基準は破棄する（次回は全文保存）。
+    // loadForEditing は /api/sync の full で本文と元を受け取り、エディタへ載せ替える（成功なら true）。
+    async function loadForEditing() {
+        let res, d;
+        try {
+            res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_id: currentPageId, full: true, tab: TAB_ID }),
+            });
+            d = await readResult(res);
+        } catch (e) {
+            notify('書ける形にできませんでした（通信エラー）。', { type: 'error', id: 'mode' });
+            return false;
+        }
+        if (res.status === 403) return false; // 書く権限が無い——閲覧のまま（トグルは loadPerms が隠す）
+        if (!res.ok || !d || !d.success) {
+            notify('書ける形にできませんでした: ' + failMessage(res, d), { type: 'error', id: 'mode' });
+            return false;
+        }
+        const blocks = d.blocks || [];
+        populateEditor(blocks.map(b => b.html || '').join('\n'));
+        syncConflicts.forEach((c, id) => closeConflict(id));
+        syncBase = new Map();
+        topLevelBlocks().forEach(el => {
+            const id = el.getAttribute(BLOCK_ID_ATTR);
+            const b = blocks.find(x => x.id === id);
+            if (b) syncBase.set(id, { h: b.h, html: serializeBlock(el) });
+        });
+        syncOrder = blocks.map(b => b.id);
+        syncReady = true;
+        applySavedMeta(d);
+        loadedUpdatedAt = d.updated_at || loadedUpdatedAt;
+        return true;
+    }
+
+    // populateEditor は本文HTMLをエディタへ流し込みブロック化する（ロード時・書ける形に入るときに共用）。
     // view は閲覧の描き方（/api/load?view=1）で読んだ本文か——そうなら、ページの更新の知らせが比べる相手として
     // 覚える（そうでなければ捨てる——編集用の素の本文は閲覧の描き方と比べられない・2026-10-07）。
     function populateEditor(htmlStr, view) {
-        lastSavedBlocks = null;
         const editorContent = document.getElementById('w-editor-content');
         editorContent.innerHTML = '';
         const blocks = serverBlocksOf(htmlStr);
@@ -1753,152 +2156,28 @@
         decorateVocabBlocks();
     }
 
-    // acquireLock は編集ロックを取得する。成功なら最新HTMLで再ロードして true、
-    // busy なら「待機をやめる」ボタン付きトーストを出し、待機者として SSE を購読して false を返す
-    // （空き次第でサーバーから push され、自動的に編集へ入る）。
-    async function acquireLock() {
-        try {
-            const res = await fetch('/api/lock?id=' + currentPageId, { method: 'POST' });
-            if (res.status === 423) {
-                const d = await readResult(res);
-                showBusyToast(d);
-                openWaiterEvents(); // 空き通知を待つ（プッシュ）
-                return false;
-            }
-            if (!res.ok) { notify('編集ロックを取得できませんでした。', { type: 'error' }); return false; }
-            const d = await res.json();
-            lockToken = d.token;
-            // ロックを取ったら最新の本文へ載せ替える。ロック応答ではなく /api/load を読むのは、
-            // そちらが計算ビューのサーバー事前描画を通るため（生のHTMLだとビューの中身が消える）。
-            // ロック保持中は他者が保存できないので、この2手の間に内容は変わらない。
-            try {
-                const body = await fetch('/api/load?id=' + currentPageId);
-                if (body.ok) {
-                    const html = await body.text();
-                    if (html.length) populateEditor(html);
-                }
-            } catch (e) { /* 読めなければ画面の内容のまま編集を続ける */ }
-            dismissToast('lock');
-            return true;
-        } catch (e) {
-            notify('編集ロックの取得に失敗しました（通信エラー）。', { type: 'error' });
-            return false;
-        }
-    }
-
-    // showBusyToast は busy(423)応答／busyイベントから「○○が編集中・残り時間」トーストを出す。
-    // すでに待機者として購読済みで、空き次第サーバーからの available で自動的に編集へ入るため、
-    // ボタンは取得（再試行）ではなく「待機をやめる（キャンセル）」を提供する。
-    function showBusyToast(d) {
-        const who = d.same_user ? 'このページは別のタブ／ウィンドウ' : `このページは「${d.holder || '他のユーザー'}」さん`;
-        const sec = d.grace_remaining_sec || 0;
-        const tail = sec > 0 ? `あと約${Math.max(1, Math.ceil(sec / 60))}分で空きます。` : '';
-        notify(`${who}で編集中です。${tail}空き次第このまま自動で編集を開始します。閲覧のみ可能です。`, {
-            type: 'warn', duration: 0, id: 'lock',
-            action: { label: '待機をやめる', onClick: () => cancelWaiting() }
-        });
-    }
-
-    // cancelWaiting は空き待ち（待機者としての SSE 購読）をやめ、busyトーストを消す。
-    // 購読を閉じるとサーバーは待機者の離脱として猶予をキャンセルする（保持者は保持を続ける）。
-    function cancelWaiting() {
-        closeLockEvents();
-        dismissToast('lock');
-    }
-
-    // releaseLock は保持中のロックを明示解放する。
-    async function releaseLock() {
-        if (!lockToken) return;
-        const t = lockToken; lockToken = null;
-        try { await fetch(`/api/unlock?id=${currentPageId}&token=${encodeURIComponent(t)}`, { method: 'POST' }); } catch (e) {}
-    }
-
-    // lockedFetch はエディタ内の変更操作を、現在の編集ロックトークン付き（X-Lock-Token ヘッダ）で送る
-    // 共通ラッパ。サーバー（RequireEditLock）が他者保持/失効を 409 で返したら handleLockLost に集約する
-    // （クリップボード退避＋閲覧復帰＋再読込）。権限変更・親付け替え・将来の画像/PDF操作などは必ず
-    // これを通すことで、本文編集と同じロックを共有して直列化する。409時は Error('lock-lost') を投げる。
+    // lockedFetch は、ページの属性・添付などを変える要求を送る共通の口（2026-10-12 から編集権のしるしは付けない——編集権は
+    // 取らないので）。**書きかけを先に保存してから**送る（添付を足す・版を戻すは本文に効くので、書きかけと前後しないように）。
+    // 名前は呼び手が多いので残した。
     async function lockedFetch(url, opts = {}) {
-        const headers = Object.assign({}, opts.headers, { 'X-Lock-Token': lockToken || '' });
-        const res = await fetch(url, Object.assign({}, opts, { headers }));
-        if (res.status === 409) { handleLockLost(); throw new Error('lock-lost'); }
-        return res;
+        if (document.body.hasAttribute('edit-mode')) await flushPendingSave();
+        return fetch(url, opts);
     }
 
-    // ── ロック状態のプッシュ通知（SSE） ─────────────────────────────────────
-    // ポーリングの代わりに /api/lock-events を購読し、サーバーからの状態変化を受け取る。
-    // 接続中＝presence なので、タブを閉じれば即座に保持者離脱／待機者離脱が検知される。
-
-    function closeLockEvents() { if (lockES) { lockES.close(); lockES = null; } }
-
-    // openHolderEvents は保持者として購読し、「待機者あり」「明け渡し（lost）」を受け取る。
-    function openHolderEvents() {
-        closeLockEvents();
-        lockES = new EventSource(`/api/lock-events?id=${currentPageId}&role=holder&token=${encodeURIComponent(lockToken)}`);
-        lockES.onmessage = (e) => {
-            let st; try { st = JSON.parse(e.data); } catch (_) { return; }
-            if (st.type === 'lost') { handleLockLost(); return; }
-            if (st.type === 'waiter') {
-                const mins = Math.max(1, Math.ceil((st.grace_remaining_sec || 0) / 60));
-                notify(`このページの編集を待っている人がいます。あと約${mins}分で編集権が移ります。`, {
-                    type: 'warn', duration: 0, id: 'waiter',
-                    // 待たずに今すぐ譲る。直前の内容は保存してから解放するので失われない。
-                    action: { label: '今すぐ編集権を渡す', onClick: () => { saveToServer(); leaveEditMode(); } }
-                });
-            } else { // holding（待機者なし）
-                dismissToast('waiter');
-            }
-        };
-    }
-
-    // openWaiterEvents は待機者として購読し、空き次第（available）で自動的に編集へ入る。
-    function openWaiterEvents() {
-        closeLockEvents();
-        lockES = new EventSource(`/api/lock-events?id=${currentPageId}&role=waiter`);
-        lockES.onmessage = (e) => {
-            let st; try { st = JSON.parse(e.data); } catch (_) { return; }
-            if (st.type === 'available') {
-                closeLockEvents();
-                enterEditMode(); // 取得して編集へ（競合に負ければ acquireLock が再び待機購読する）
-            } else if (st.type === 'busy') {
-                showBusyToast(st); // 残り時間などを更新
-            }
-        };
-    }
-
-    // handleLockLost は明け渡し/失効で編集権を失ったときの処理。
-    // 自分の変更をクリップボードへ退避し、閲覧モードへ戻したうえで最新の内容を再読込する
-    // （他の人の編集を反映する）。
-    async function handleLockLost() {
-        closeLockEvents();
-        dismissToast('waiter'); // 「待機者あり」トーストは編集権を失った時点で無意味なので消す
-        lockToken = null;
-        let saved = false;
-        try {
-            const html = document.getElementById('w-html-preview').value;
-            if (navigator.clipboard && html) { await navigator.clipboard.writeText(html); saved = true; }
-        } catch (e) { saved = false; }
-        const toggle = document.getElementById('w-mode-toggle');
-        toggle.checked = false;
-        applyMode();
-        // 本文がサーバーの最新版に置き換わり、手元の編集は失われている（上で退避済み）。
-        // 戻せない状態へアンドゥできてしまわないよう、履歴はここで捨てる。
-        resetHistory();
-        await reloadContent(); // 最新（他の人の編集）を反映
-        const tail = saved ? 'あなたの変更はクリップボードへ退避しました。' : 'あなたの未保存の変更は反映されていない場合があります。';
-        notify('編集権が他の人に移りました。最新の内容を再読込しました。' + tail,
-            { type: 'warn', duration: 10000, id: 'lost' }); // 情報通知なので一定時間で自動消去
-    }
-
-    // reloadContent は現在のページ本文をサーバーから取り直してエディタへ反映する（閲覧モード想定）。
-    // 閲覧モードでは開いたときと同じ描き方（view=1——見出しのアンカーと参照リンクつき）で読む
-    // （2026-10-07・ページの更新の知らせが、前に読んだものと比べるため。⚠ 編集モードでは素の本文——
-    // 合成したアンカーとリンクが本文として保存されないように）。
+    // reloadContent は現在のページ本文をサーバーから取り直して反映する。
+    //   - 閲覧モードでは開いたときと同じ描き方（view=1——見出しのアンカーと参照リンクつき）で読み直す（2026-10-07）。
+    //   - 書ける形では、書きかけを消さないよう**変わったブロックだけ**を受け取る（/api/sync——業務のボタンのあとなど）。
     async function reloadContent() {
         try {
-            const view = !document.body.hasAttribute('edit-mode');
-            const res = await fetch('/api/load?id=' + currentPageId + (view ? '&view=1' : ''));
+            if (document.body.hasAttribute('edit-mode')) {
+                await flushPendingSave();
+                await pullFromServer();
+                loadPageMeta();
+                return;
+            }
+            const res = await fetch('/api/load?id=' + currentPageId + '&view=1');
             if (!res.ok) return;
-            populateEditor(await res.text(), view);
+            populateEditor(await res.text(), true);
             applyMode();
             loadPageMeta(); // 更新日時などの属性表示も最新化
         } catch (e) {}
@@ -1927,6 +2206,7 @@
     let pageCheckFirstAt = 0;
     let pageUpdateBy = '';
     let pendingPageHTML = null;
+    let editPullTimer = null; // 書ける形で知らせを受けてから受け取りに行くまで（2026-10-12）
     let loadedUpdatedAt = '';
     const PAGE_CHECK_WAIT_MS = 2000;
     const PAGE_CHECK_MAX_MS = 10000;
@@ -2101,23 +2381,24 @@
     // openPageEvents は、このページの更新の知らせを購読する（タブを開いているあいだずっと・EventSource は自分でつなぎ直す）。
     function openPageEvents() {
         if (pageES || !window.EventSource) return;
-        pageES = new EventSource('/api/page-events?id=' + currentPageId);
+        // tab はこのタブの印（2026-10-12）——自分の保存の知らせを見分ける・ページを消すときに「開いている人」に数えられる。
+        pageES = new EventSource('/api/page-events?id=' + currentPageId + '&tab=' + TAB_ID);
         pageES.onmessage = (e) => {
             let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
-            if (document.body.hasAttribute('edit-mode')) return;
+            if (ev.type === 'updated' && ev.tab === TAB_ID) return; // このタブ自身の保存
+            if (document.body.hasAttribute('edit-mode')) {
+                // 書ける形では、ほかの人（業務のボタンを含む）の書き込みをその場で受け取る——書いている最中のブロックを
+                // 相手が書き換えていたら、受け取ったときに並べる（2026-10-12・問い3）。少し待つのは相手の保存が続くあいだ。
+                if (ev.type === 'updated' || (ev.type === 'hello' && loadedUpdatedAt && ev.updated_at && ev.updated_at !== loadedUpdatedAt)) {
+                    clearTimeout(editPullTimer);
+                    editPullTimer = setTimeout(() => { pullFromServer(); }, 300);
+                }
+                return;
+            }
             if (ev.type === 'updated') schedulePageCheck(ev.by || '');
             // つなぎ直したとき——切れていたあいだに書かれていたら比べる（開いた直後は属性をまだ読んでいなければ見送る）。
             else if (ev.type === 'hello' && loadedUpdatedAt && ev.updated_at && ev.updated_at !== loadedUpdatedAt) schedulePageCheck('');
         };
-    }
-
-    // leaveEditMode は編集モードを抜ける（トグルOFF相当）。
-    async function leaveEditMode() {
-        const toggle = document.getElementById('w-mode-toggle');
-        if (!toggle.checked) return;
-        toggle.checked = false;
-        resetHistory(); // 編集セッションの終わり。アンドゥ履歴は持ち越さない
-        await onModeToggle();
     }
 
 
@@ -2421,6 +2702,9 @@
     function isSerializableBlock(el) {
         if (!tagSchema) return false;
         if (EDITOR_CHROME.some(c => el.classList.contains(c))) return false;
+        // ⚠ 画面が本文の直下へ足した飾り付け（.vocab-chrome——メールの返信の箱・整理のボタン・☎ など）は本文ではない
+        //    （2026-10-12——業務のボタンを書ける形でも出すようにしたので、保存の巡りに入ると本文として書き出される）。
+        if (el.classList.contains('vocab-chrome')) return false;
         return !!tagSchema[el.tagName.toLowerCase()];
     }
 
@@ -2429,10 +2713,16 @@
     // 既存ページは初回の編集時にここで採番され、その回の全文保存で正本へ永続化される。
     // 重複修復が要るのは、ページ間でブロックをコピーするとIDが重複しうるため
     // （重複したままだとサーバーが差し替え対象を特定できず 409 で全文保存に落ち続ける）。
-    function ensureBlockIds() {
+    //
+    // within を渡すと、入れ子へ振るのは**その上の段のブロックの中だけ**（2026-10-12）——書ける形がパソコンの既定になったので、
+    // 開いて見ているだけで入れ子の表・行へ ID を振って保存すると、見ただけのページが書き換わる（更新日時が進み、ほかの人へ
+    // 知らせが飛ぶ）。上の段の ID だけは常に揃える（どのブロックかを ID で見分けるため）。空の Set なら上の段だけ。
+    function ensureBlockIds(within) {
         const used = new Set();
         const seen = new Set();
         let changed = 0;
+        const scope = within ? Array.from(within) : null;
+        const inScope = el => !scope || scope.some(t => t === el || t.contains(el));
         const assign = el => {
             // ⚠ **同じ要素を2度数えない**（2026-10-07 に直した）——上の段の表・節・定義リストは、上の段の巡りと
             //    下の「入れ子」の巡り（`.block-content table` は上の段の表にも当たる）の両方に来る。2度目は自分の ID を
@@ -2457,6 +2747,7 @@
             editor.querySelectorAll('.block-content table, .block-content dl, .block-content section')
                 .forEach(el => {
                     if (el.closest('.vocab-chrome')) return;
+                    if (!inScope(el)) { const id = el.getAttribute(BLOCK_ID_ATTR); if (id) used.add(id); return; }
                     assign(el);
                 });
             // **語彙の表のデータ行にもIDを振る**（2026-09-03）。
@@ -2466,6 +2757,7 @@
             editor.querySelectorAll('.block-content table[data-type] tr')
                 .forEach(tr => {
                     if (tr.closest('.vocab-chrome')) return;
+                    if (!inScope(tr)) { const id = tr.getAttribute(BLOCK_ID_ATTR); if (id) used.add(id); return; }
                     if (!tr.querySelector('td')) return; // 見出し行
                     assign(tr);
                 });
@@ -5305,7 +5597,7 @@
 
     function refreshContactUnfile() {
         document.querySelectorAll('#w-editor-content .contact-unfile').forEach(el => el.remove());
-        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
         if (!hasExtension('comm/contacts')) return; // アドレス帳の持ち物（2026-09-15）
         const host = document.getElementById('w-editor-content');
         if (!host || !currentPageId) return;
@@ -5319,6 +5611,7 @@
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'vocab-chrome chip-btn contact-unfile';
+            btn.contentEditable = 'false'; // 書ける形では dd が書けるので、札の字に打てないように（2026-10-12）
             btn.textContent = '未分類へ戻す';
             btn.title = addr + ' をこのページから外し、「未登録の連絡先」へ戻します'
                 + '（ページは消しません）';
@@ -5359,7 +5652,7 @@
 
     function refreshPhoneChrome() {
         document.querySelectorAll('#w-editor-content .phone-chrome').forEach(el => el.remove());
-        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
         const host = document.getElementById('w-editor-content');
         if (!host || !currentPageId) return;
         const number = tagValue(PHONE_TAG);
@@ -5430,7 +5723,7 @@
 
     function refreshMailChrome() {
         document.querySelectorAll('#w-editor-content .mail-chrome').forEach(el => el.remove());
-        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
         // **箱ごと通信の持ち物**です（2026-09-16）。中の「🧵 やりとりの前後」と
         // 「📨 この記録への返信」は `/api/thread`・`/api/replies` を叩くので、通信が
         // 無いと**通信記録ページを開くたびに 404 を2本**出します（どちらも失敗を
@@ -5596,7 +5889,7 @@
 
     async function refreshFilingButton() {
         document.querySelectorAll('#w-editor-content .filing-chrome').forEach(el => el.remove());
-        if (document.body.hasAttribute('edit-mode')) return; // 閲覧モード限定
+        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
         if (!currentPageId) return;
         const host = document.getElementById('w-editor-content');
         if (!host) return;
@@ -6485,7 +6778,7 @@
     function wireUnhandledActions() {
         const host = document.getElementById('w-editor-content');
         if (!host) return;
-        const editMode = document.body.hasAttribute('edit-mode');
+        const editMode = false; // 書ける形でも押せる（2026-10-12・問い5——押す前に書きかけを保存する）
         host.querySelectorAll('.unhandled-mark').forEach(btn => {
             btn.disabled = editMode;
             if (btn.dataset.wired) return;
@@ -6752,7 +7045,7 @@
     function wireContactRegister() {
         const host = document.getElementById('w-editor-content');
         if (!host) return;
-        const editMode = document.body.hasAttribute('edit-mode');
+        const editMode = false; // 書ける形でも押せる（2026-10-12・問い5）
         // **行の道具は2つの欄＋「登録」**（2026-09-17）。組織の欄が候補（datalist）の
         // どれかに一致すれば既にある組織へ、無ければ新しい組織を作ります。
         host.querySelectorAll('.contact-form').forEach(td => {
@@ -7190,7 +7483,8 @@
     }
 
     function canSupersedeFrom(host) {
-        if (!host || !hasExtension('toho') || document.body.hasAttribute('edit-mode')) return false;
+        // 書ける形でも押せる（2026-10-12・問い5）。
+        if (!host || !hasExtension('toho')) return false;
         const all = drawingSections();
         return all.length >= 2 && all.some(s => s.contains(host));
     }
@@ -9795,12 +10089,6 @@
     }
 
     // 初回読み込み時の初期表示
-    // タブを閉じる／離れるときに、保持中のロックをベストエフォートで解放する。
-    window.addEventListener('pagehide', () => {
-        if (lockToken) {
-            navigator.sendBeacon(`/api/unlock?id=${currentPageId}&token=${encodeURIComponent(lockToken)}`);
-        }
-    });
 
     // initHeadroom はヘッダーをスクロール方向で出し入れする（headroom 型 / B案）。
     // 下スクロールで隠し、上スクロール／上端付近（REVEAL_AT_TOP）で再表示する。
@@ -9866,9 +10154,9 @@
 
         const urlParams = new URLSearchParams(window.location.search);
 
-        // 編集モード自動判定（?editパラメータがあるか）。匿名は編集できないので無視する。
-        // 実際の編集モード適用とロック取得はロード完了後の onModeToggle() が行う。
-        if (!anon && urlParams.has('edit')) {
+        // 開いたときの形——?edit があれば書ける形、無ければこの端末に憶えた形（初めてはパソコン＝書ける形・スマホ＝閲覧——
+        // 2026-10-12・問い1）。匿名は書けないので閲覧のまま。書く権限が無ければ loadForEditing が閲覧へ戻す。
+        if (!anon && (urlParams.has('edit') || preferredMode() === 'edit')) {
             const toggle = document.getElementById('w-mode-toggle');
             if (toggle) toggle.checked = true;
         }
@@ -9895,7 +10183,7 @@
             loadChildNav();
             return;
         }
-        // ?edit ならロックを取得して編集、なければ閲覧モードを適用する。
+        // 書ける形なら本文と元を受け取って載せ替え、閲覧なら閲覧の形を当てる（2026-10-12——編集権は取らない）。
         onModeToggle();
 
         // ページ属性（親・作成/更新情報）・権限・子ページナビをサイドパネルへ読み込む。
@@ -9924,6 +10212,9 @@
 // `ok` は **HTTP が 2xx で、かつ本文の `success` が真**のとき。⚠ **通信の失敗は
 // 投げます**（呼ぶ側が「通信に失敗しました」と言い分けるため・握り潰さない）。
 async function postJSON(url, body) {
+    // 書ける形で押したときは、書きかけを先に保存してから送る（2026-10-12・問い5——直してすぐ押せる。ボタンが読む本文に
+    // 直した中身が入っているように）。
+    if (window.wcmsFlushSave) await window.wcmsFlushSave();
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -10189,7 +10480,7 @@ delegateClick([['.rfq-answered-go', async (btn) => {
 // 「🤖 返事を読む」の欄を開きます（2026-10-05・ext/toho/rfq_reply_page.go）——候補のいちばん上が結んだ返事の原本。読むのは人が押す。
 // 一度開いたら印（#rfq-reply）を消す（描き直しのたびに開き直さない）。
 function openRFQReplyFromHash() {
-    if (location.hash !== '#rfq-reply' || document.body.hasAttribute('edit-mode')) return;
+    if (location.hash !== '#rfq-reply') return; // 書ける形でも開く（2026-10-12・問い5）
     const btn = document.querySelector('#w-editor-content .rfq-read-go');
     if (!btn) return;
     history.replaceState(null, '', location.pathname + location.search);

@@ -2895,6 +2895,17 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
 @keyframes w-block-updated { from { background: #fef3c7; } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { #w-editor-content .editor-block.w-block-updated { animation: none; background: #fef3c7; } }
 
+/* ── ぶつかったブロック（2026-10-12・【考察】編集モードの再考 §6 問い4・問い6）──────────────
+   相手の版を上に読むだけで出し（色の枠）、下の自分の版はそのまま書ける。⚠ 色だけで分けない——見出しの文に ⚠ を付ける。 */
+#w-editor-content .editor-block.w-conflict-block { outline: 2px solid #f59e0b; outline-offset: 2px; border-radius: 4px; }
+#w-editor-content .w-conflict { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.92rem; color: #78350f; }
+#w-editor-content .w-conflict-head { margin: 0 0 6px; font-weight: 600; }
+#w-editor-content .w-conflict-theirs { background: #fff; border: 1px dashed #d97706; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; max-height: 50vh; overflow: auto; }
+#w-editor-content .w-conflict-theirs::before { content: "相手の版（読むだけ）"; display: block; font-size: 0.8rem; color: #92400e; margin-bottom: 4px; }
+#w-editor-content .w-conflict-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+#w-editor-content .w-conflict-btn { font: inherit; font-size: 0.88rem; padding: 4px 10px; border-radius: 4px; border: 1px solid #d97706; background: #fff; color: #78350f; cursor: pointer; }
+#w-editor-content .w-conflict-btn.w-conflict-done, #w-editor-content .w-conflict-btn.w-conflict-keep { background: #f59e0b; color: #fff; border-color: #d97706; }
+
 /* ── カルーセル（2026-10-07・assets/app.js の「カルーセル」） ───────────────
    閲覧: 中の要素を同じ升に重ね、いまの1枚（.car-current）だけ見せる——枚ごとに高さが変わって下が跳ねないように。
    横の払いは JS が受けるので、ブラウザには縦のスクロールだけ任せる（touch-action）。 */
@@ -2966,3 +2977,10 @@ body.w-lightbox-open { overflow: hidden; }
 #w-editor-content .filing-file-note.is-ok { color: #166534; }
 #w-editor-content .filing-file-note.is-warn { color: #b91c1c; }
 #w-editor-content .filing-search-none { margin: 4px 0; font-size: 12px; color: #64748b; }
+
+/* ── 版から「このブロックだけ戻す」（2026-10-12・【考察】編集モードの再考 §6 問い8）── */
+dialog.w-confirm .w-version-blocks { max-height: 60vh; overflow: auto; margin: 8px 0; }
+dialog.w-confirm .w-version-block { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+dialog.w-confirm .w-version-block-label { margin: 0 0 4px; font-size: 0.85rem; color: #92400e; font-weight: 600; }
+dialog.w-confirm .w-version-block-view { background: #f8fafc; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; max-height: 30vh; overflow: auto; }
+dialog.w-confirm .w-version-block-revert { font: inherit; font-size: 0.88rem; padding: 4px 10px; border-radius: 4px; border: 1px solid #d97706; background: #fff; color: #78350f; cursor: pointer; }
