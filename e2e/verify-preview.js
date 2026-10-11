@@ -79,6 +79,8 @@ function buildZip(files) { // files: [{name, data}]
     page.on('pageerror', e => errs.push(String(e)));
     page.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });
     try {
+        // 開いたときの形は閲覧（2026-10-12——パソコンの既定が書ける形になった・lib.js の login と同じ）。
+        await page.context().addInitScript(() => { try { localStorage.setItem('wcms.mode', 'view'); } catch (e) {} });
         await page.goto(BASE + '/login');
         await page.fill('#username', 'a'); await page.fill('#password', 'a');
         await page.click('button[type=submit]');

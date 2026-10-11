@@ -113,6 +113,8 @@ async function findOrMakeTemplateBox(page) {
     const errs = [];
     page.on('pageerror', e => errs.push(String(e)));
     try {
+        // 開いたときの形は閲覧（2026-10-12——パソコンの既定が書ける形になった・lib.js の login と同じ）。
+        await page.context().addInitScript(() => { try { localStorage.setItem('wcms.mode', 'view'); } catch (e) {} });
         await page.goto(BASE + '/login');
         await page.fill('#w-username, #username', 'a');
         await page.fill('#w-password, #password', 'a');

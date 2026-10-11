@@ -27,7 +27,17 @@ const MAILBOX_TITLE = '通信箱';
 const CHANNEL_TAG = 'チャネル';
 
 // login はログインして networkidle まで待ちます（どのスクリプトも同じ形だったので集約）。
-async function login(page, base, user = 'a', pass = 'a') {
+//
+// ⚠ **ページを開いたときの形は「閲覧モード」に揃えます**（2026-10-12）——編集モードをやめて「パソコンはふだん書ける形・
+//    開いたときの形は端末に憶える」にした（【考察】編集モードの再考 §6 問い1）。それまでの E2E は「開くと閲覧・トグルで
+//    編集」を前提に書かれているので、開くたびに `wcms.mode` を閲覧にしてから読み込ませる（トグルを押した直後のページの
+//    中では書ける形のまま）。新しい既定（書ける形で開く・端末に憶える）を確かめる試験は opts.keepMode で外す。
+async function login(page, base, user = 'a', pass = 'a', opts = {}) {
+  if (!opts.keepMode) {
+    await page.context().addInitScript(() => {
+      try { localStorage.setItem('wcms.mode', 'view'); } catch (e) { /* 使えない環境は既定のまま */ }
+    });
+  }
   await page.goto(base + '/login');
   await page.fill('#username', user);
   await page.fill('#password', pass);

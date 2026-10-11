@@ -61,6 +61,8 @@ async function openSlashMenu(page) {
     page.on('dialog', d => d.accept());
     try {
         // 1. ログイン画面: CSP strict 下で外部CSS（login.css）が効いている
+        // 開いたときの形は閲覧（2026-10-12——パソコンの既定が書ける形になった・lib.js の login と同じ）。
+        await page.context().addInitScript(() => { try { localStorage.setItem('wcms.mode', 'view'); } catch (e) {} });
         await page.goto(BASE + '/login');
         const cardBg = await page.locator('.card').evaluate(el => getComputedStyle(el).backgroundColor);
         check('ログイン画面に外部CSSが効く', cardBg === 'rgb(255, 255, 255)');

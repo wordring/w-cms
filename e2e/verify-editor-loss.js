@@ -25,6 +25,8 @@ const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 
 async function login(page) {
+    // 開いたときの形は閲覧（2026-10-12——パソコンの既定が書ける形になった・lib.js の login と同じ）。
+    await page.context().addInitScript(() => { try { localStorage.setItem('wcms.mode', 'view'); } catch (e) {} });
     await page.goto(BASE + '/login');
     await page.fill('#w-username, #username', 'a');
     await page.fill('#w-password, #password', 'a');
