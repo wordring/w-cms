@@ -2174,6 +2174,207 @@
         }, true);
     }
 
+    // ── 矢印キーでブロックの端を越える（2026-10-12 午後）────────────────────────────
+    // 利用者:「テーブルのセルを矢印キーで移動していくと、最後のセルの次に移ったあとキャレットが無くなり移動できなくなります。
+    // ほかにもそういう要素があります」——ブロックごとに書ける欄（contenteditable）が分かれているので、ブラウザは欄の端を越えて
+    // キャレットを動かせない。表の最後のセルの → と最後の行の ↓ は欄の外（.block-content）へ抜けてキャレットが行き場を失い、段落・
+    // 箇条書き・タグ・節・折りたたみの端では動かなかった。表の鏡の列（サーバーが描く .vocab-chrome のセル）にも入り込んでいた。
+    // 直し方: **まずブラウザに動かしてもらい**、そのあと（このタスクのあと）に見る。欄の外へ抜けた・鏡（.vocab-chrome・
+    // contenteditable="false"）に入った・動かなかった（← → は位置が同じ・↑ ↓ は行が変わらない）ときだけ直す——
+    //   1. 同じ欄の中で次の場所へ（← → は文書の順で次・前の場所、↑ ↓ は画面で1つ下・上の行のうち、元の横の位置にいちばん近い場所
+    //      ——ブラウザの ↓ は、表では同じ行の右のセル・タグでは同じ行の値・折りたたみの見出しでは見出しの終わりへ動くだけだった）
+    //   2. 無ければ、次のブロックの頭（→ ↓）・前のブロックの終わり（← ↑）へ
+    //   3. それも無ければ、抜けたときは元の位置へ戻す（欄の外にキャレットを残さない）。
+    // それまでの「段落と見出しで ↑ ↓ を押すたびに前・次のブロックへフォーカスを移す」は外した（行の途中でも飛び、表や折りたたみへ
+    // フォーカスを移すとキャレットが欄の外に置かれていた）。
+    const CARET_LEAVES = 'td,th,li,dd,dt,p,h1,h2,h3,h4,h5,h6,summary,caption,blockquote,pre,figcaption';
+    // isShown は、その要素が見えているか（閉じた折りたたみの中は、箱があっても見えていない——Chrome は中身を content-visibility で
+    // 隠すので getClientRects では分からない。checkVisibility の無いブラウザは箱で見る）。
+    const isShown = el => !!el && (el.checkVisibility ? el.checkVisibility() : el.getClientRects().length > 0);
+    const isChromeNode2 = n => { const el = n && (n.nodeType === 3 ? n.parentElement : n); return !!(el && el.closest && el.closest('.vocab-chrome, [contenteditable="false"]')); };
+
+    // editableHostOf は、そのノードを含む書ける欄（上の段のブロック）を返す（本文の外・閲覧モードなら null）。
+    function editableHostOf(node) {
+        const el = node && (node.nodeType === 3 ? node.parentElement : node);
+        if (!el || !el.closest) return null;
+        const host = el.closest('#w-editor-content .block-content > [contenteditable="true"]');
+        return host || null;
+    }
+
+    // caretStops は、欄の中でキャレットを置ける場所（文字のあるノード・中身の無い葉の要素）を文書順に返す（鏡の中は除く）。
+    function caretStops(host) {
+        const out = [];
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+            acceptNode: n => (n.nodeType === 1 && (n.classList.contains('vocab-chrome') || n.getAttribute('contenteditable') === 'false'))
+                ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+        });
+        let n;
+        while ((n = walker.nextNode())) {
+            const el = n.nodeType === 3 ? n.parentElement : n;
+            if (!isShown(el)) continue; // 見えていない（閉じた折りたたみの中など）
+            if (n.nodeType === 3) {
+                if (n.nodeValue.trim() || (n.parentElement && n.parentElement.matches(CARET_LEAVES))) out.push(n);
+            } else if (n.matches(CARET_LEAVES) && !n.textContent.trim()) {
+                out.push(n);
+            }
+        }
+        // 文字のあるノードは、その葉の要素より後ろで拾われる——中身のある葉の要素は入れていないので重ならない。
+        return out;
+    }
+
+    // placeCaretAtStop は、キャレットを置ける場所の頭（atEnd なら終わり）にキャレットを置く（欄へフォーカスしてから）。
+    function placeCaretAtStop(host, stop, atEnd) {
+        if (host.focus) host.focus({ preventScroll: true });
+        const range = document.createRange();
+        if (stop.nodeType === 3) range.setStart(stop, atEnd ? stop.nodeValue.length : 0);
+        else { range.selectNodeContents(stop); range.collapse(!atEnd); }
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const el = stop.nodeType === 3 ? stop.parentElement : stop;
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    }
+
+    // moveToNeighborBlock は、次（dir > 0——頭へ）・前（dir < 0——終わりへ）の書けるブロックへキャレットを移す。移したら true。
+    function moveToNeighborBlock(host, dir) {
+        const blocks = topLevelBlocks();
+        let i = blocks.indexOf(host);
+        if (i < 0) return false;
+        for (i += dir; i >= 0 && i < blocks.length; i += dir) {
+            const b = blocks[i];
+            if (b.getAttribute('contenteditable') !== 'true') continue;
+            const stops = caretStops(b);
+            if (!stops.length) continue;
+            placeCaretAtStop(b, dir > 0 ? stops[0] : stops[stops.length - 1], dir < 0);
+            return true;
+        }
+        return false;
+    }
+
+    // stopRect はキャレットを置ける場所の画面の位置。
+    function stopRect(stop) {
+        if (stop.nodeType === 3) {
+            const r = document.createRange();
+            r.selectNodeContents(stop);
+            const rs = r.getClientRects();
+            if (rs.length) return rs[0];
+            return stop.parentElement.getBoundingClientRect();
+        }
+        return stop.getBoundingClientRect();
+    }
+
+    // stopInHost は、同じ欄の中で次に置く場所を返す（無ければ null）。← → は文書の順で before の後ろ・前、↑ ↓ は画面で1つ下・上の行
+    // （before の上端より下・上）のうち、元の横の位置にいちばん近い場所。
+    function stopInHost(host, before, dir, vertical) {
+        const stops = caretStops(host);
+        if (!stops.length || !before.node || !before.node.isConnected) return null;
+        const at = document.createRange();
+        try { at.setStart(before.node, before.offset); at.collapse(true); } catch (e) { return null; }
+        if (!vertical) {
+            const ordered = stops.filter(s => {
+                const end = s.nodeType === 3 ? s.nodeValue.length : s.childNodes.length;
+                try { return dir > 0 ? at.comparePoint(s, 0) === 1 : at.comparePoint(s, end) === -1; } catch (e) { return false; }
+            });
+            if (!ordered.length) return null;
+            return dir > 0 ? ordered[0] : ordered[ordered.length - 1];
+        }
+        if (before.top === null) return null;
+        const mid = r => r.top + r.height / 2;
+        const cands = stops.map(s => ({ s, r: stopRect(s) })).filter(x => x.r && (dir > 0 ? mid(x.r) > before.top + 4 : mid(x.r) < before.top - 4));
+        if (!cands.length) return null;
+        const rowMid = dir > 0 ? Math.min(...cands.map(x => mid(x.r))) : Math.max(...cands.map(x => mid(x.r)));
+        const row = cands.filter(x => Math.abs(mid(x.r) - rowMid) <= 4);
+        const x0 = before.left === null ? 0 : before.left;
+        row.sort((a, b) => Math.abs(a.r.left - x0) - Math.abs(b.r.left - x0));
+        return row[0].s;
+    }
+
+    // alignColumn は、↑ ↓ で表のセル・タグの項目（td・th・dt・dd）へ動いたとき、同じ行のうち元の横の位置にいちばん近い場所へ置き直す。
+    const CELLS = 'td,th,dt,dd';
+    function alignColumn(host, before, after) {
+        const el = after.node && (after.node.nodeType === 3 ? after.node.parentElement : after.node);
+        const cell = el && el.closest ? el.closest(CELLS) : null;
+        if (!cell || !host.contains(cell) || before.left === null) return;
+        const mid = r => r.top + r.height / 2;
+        const row = caretStops(host).map(s => ({ s, r: stopRect(s) }))
+            .filter(x => x.r && Math.abs(mid(x.r) - after.top) <= 4 && (x.s.nodeType === 3 ? x.s.parentElement : x.s).closest(CELLS));
+        if (row.length < 2) return;
+        row.sort((a, b) => Math.abs(a.r.left - before.left) - Math.abs(b.r.left - before.left));
+        const best = row[0].s;
+        const bestCell = (best.nodeType === 3 ? best.parentElement : best).closest(CELLS);
+        if (bestCell !== cell) placeCaretAtStop(host, best, false);
+    }
+
+    // caretSnapshot は、いまのキャレット（ノード・位置・欄の中の文字の位置・画面の上端）を覚える。
+    function caretSnapshot() {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return null;
+        const range = sel.getRangeAt(0);
+        // 行は上端でなく**縦の真ん中**で比べる（キャレットが要素の上にあるときは要素の箱で測る——箱の上端は文字より余白の分だけ上）。
+        let top = null, left = null;
+        const rects = range.getClientRects();
+        if (rects.length) { top = rects[0].top + rects[0].height / 2; left = rects[0].left; }
+        else {
+            const el = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+            if (el && el.getBoundingClientRect) { const b = el.getBoundingClientRect(); top = b.top + b.height / 2; left = b.left; }
+        }
+        const c = captureCaret();
+        return { node: range.startContainer, offset: range.startOffset, key: c ? c.blockId + ':' + c.offset : '', top, left };
+    }
+
+    // afterArrow は、ブラウザが矢印キーで動かしたあとのキャレットを見て、必要なら直す。
+    function afterArrow(host, dir, vertical, before) {
+        const sel = window.getSelection();
+        if (!document.body.hasAttribute('edit-mode')) return;
+        const now = sel.rangeCount ? sel.anchorNode : null;
+        const nowEl = now && (now.nodeType === 3 ? now.parentElement : now);
+        // 欄の外・鏡の中・見えないところ（閉じた折りたたみの中——ブラウザの ↓ は見出しからそこへ入っていた）は「抜けた」。
+        const escaped = !now || editableHostOf(now) !== host || isChromeNode2(now) || !isShown(nowEl);
+        let stuck = false;
+        let after = null;
+        if (!escaped) {
+            after = caretSnapshot();
+            // ← → は位置がそのまま（欄の端でブラウザが動かさなかった）。↑ ↓ は行が変わらない（縦の真ん中で比べる）。
+            if (vertical) stuck = !!after && before.top !== null && after.top !== null && (dir > 0 ? after.top <= before.top + 4 : after.top >= before.top - 4);
+            else stuck = !!after && after.node === before.node && after.offset === before.offset;
+        }
+        if (!escaped && !stuck) {
+            // ↑ ↓ で表のセル・タグの項目へ動いたら、同じ行のうち元の横の位置にいちばん近いセルへ（ブラウザは列を外すことがある）。
+            if (vertical && after) alignColumn(host, before, after);
+            return;
+        }
+        const inHost = stopInHost(host, before, dir, vertical);
+        if (inHost) { placeCaretAtStop(host, inHost, dir < 0 && !vertical); return; }
+        if (moveToNeighborBlock(host, dir)) return;
+        if (escaped && before.node && before.node.isConnected) {
+            // 次・前に書けるブロックが無い——元の位置へ戻す（欄の外にキャレットを残さない）。
+            if (host.focus) host.focus({ preventScroll: true });
+            const r = document.createRange();
+            try { r.setStart(before.node, before.offset); } catch (e) { r.selectNodeContents(host); r.collapse(dir < 0); }
+            r.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(r);
+        }
+    }
+
+    // setupArrowNavigation は、書ける形の本文で矢印キー（Shift・Ctrl なし）を見張る（捕捉の段——スラッシュメニューの操作は除く）。
+    function setupArrowNavigation() {
+        document.addEventListener('keydown', e => {
+            if (!document.body.hasAttribute('edit-mode') || e.isComposing || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+            const dir = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+            if (!dir || slashMenuVisible) return;
+            const sel = window.getSelection();
+            if (!sel.rangeCount || !sel.isCollapsed) return;
+            const host = editableHostOf(sel.anchorNode);
+            if (!host) return;
+            const before = caretSnapshot();
+            if (!before) return;
+            const vertical = e.key === 'ArrowDown' || e.key === 'ArrowUp';
+            setTimeout(() => afterArrow(host, dir, vertical, before), 0);
+        }, true);
+    }
+
     // triggerAutoSave は「まだ保存していない」の印を付けるだけ（2026-10-12 昼——1.5秒止まるたびの保存をやめた。利用者:「保存は、
     // ブロックを去る時とページを去る時に限定して、細かい通信を抑制してはどうでしょう？」【考察】編集モードの再考 §8）。保存するのは、
     // ブロックを去るとき（下の focusout——ブロックごとに書ける欄が分かれているので、別のブロックへ移る・本文の外を押すと出る。表は
@@ -9775,19 +9976,9 @@
                 }
                 block.remove();
                 updateHtmlPreview();
-            } else if (e.key === 'ArrowUp') {
-                const prevBlock = block.previousElementSibling;
-                if (prevBlock && prevBlock.classList.contains('editor-block')) {
-                    const content = prevBlock.querySelector('.block-content > *');
-                    if (content && content.focus) content.focus();
-                }
-            } else if (e.key === 'ArrowDown') {
-                const nextBlock = block.nextElementSibling;
-                if (nextBlock && nextBlock.classList.contains('editor-block')) {
-                    const content = nextBlock.querySelector('.block-content > *');
-                    if (content && content.focus) content.focus();
-                }
             }
+            // ↑ ↓ ← → でブロックの端を越えるのは setupArrowNavigation（2026-10-12 午後——ここで ↑ ↓ のたびに前・次のブロックへ
+            // フォーカスを移していたのはやめた）。
         });
 
         document.addEventListener('click', (e) => {
@@ -10516,6 +10707,7 @@
         setupHistoryHooks(); // アンドゥの区切りの引き金（2026-10-07）
         setupSaveOnLeave();  // タブを隠す・ページを去るときに保存（2026-10-12 昼）
         setupPresence();     // キャレットのあるブロックを知らせる（2026-10-12 昼）
+        setupArrowNavigation(); // 矢印キーでブロックの端を越える（2026-10-12 午後）
 
         if (anon) {
             // 匿名は読み取り専用。編集モードへは入らず、権限カード（loadPerms）は
