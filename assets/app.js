@@ -4660,13 +4660,14 @@
     //
     // 本文に残るのは `<section data-type="carousel">` と中の画像の段落（`<p><img></p>`）だけ（internal/cms/vocab.go）。
     // 見せ方はここだけが持つ:
-    //   - 閲覧モード: 中の要素を1枚ずつ見せる——全部を同じ升に重ね、いまの1枚以外は visibility で隠す（枚ごとに
-    //     高さが変わって下の本文が跳ねないように）。2枚以上なら下に「‹ 2 / 5 ›」の帯・触る画面では横に払って送る。
+    //   - 閲覧モード: **見せる幅が空いている限り次の画像も並べて見せる**（2026-10-12 利用者:「カルーセルについて、見せる領域が
+    //     空いている限り次の画像も見せるように並べて見せてください」——それまでは1枚ずつ重ねて見せていた）。横に巻く帯
+    //     （overflow-x・枚の端で止まる scroll-snap）で、入りきらなければすぐ下に「‹ 1–3 / 8 ›」（1画面ぶん巻く・端では押せない）。
+    //     触る画面ではそのまま横に払って巻く（ブラウザの横スクロール）。
     //   - 編集モード: 枠と「🎠 カルーセル」の帯——「🖼 画像を足す」と「⬇ すぐ下の画像を入れる」（いまのページに縦に並ぶ
     //     写真をまとめるため）。中の画像は節の中の要素と同じく ⠿ で並べ替え・出し入れ、🗑 で外す（innerBoxOf）。
     //   - 帯は .vocab-chrome（保存されない）。⚠ 必要なときだけ DOM を変える（編集モードでは DOM の変化が自動保存へ巡る）。
     const CAROUSEL_TYPE = 'carousel';
-    const carouselIndex = new WeakMap(); // カルーセル → いま見せている枚の番号（閲覧モード・この画面だけ）
 
     const carouselSlides = car => Array.from(car.children).filter(c => !c.classList.contains('vocab-chrome'));
 
@@ -4732,16 +4733,52 @@
         });
     }
 
-    // showCarouselSlide は閲覧モードで i 枚目を見せる（端を越えたら反対の端へ回る）。
+    // showCarouselSlide は閲覧モードで、その枚が帯の左端に来るまで横に巻く（拡大表示を閉じたとき・番号から）。
     function showCarouselSlide(car, i) {
         const slides = carouselSlides(car);
-        if (!slides.length) return;
-        i = ((i % slides.length) + slides.length) % slides.length;
-        carouselIndex.set(car, i);
-        slides.forEach((s, k) => { if (s.classList.contains('car-current') !== (k === i)) s.classList.toggle('car-current', k === i); });
-        const count = car.querySelector(':scope > .car-nav .car-count');
-        const want = (i + 1) + ' / ' + slides.length;
+        const s = slides[Math.max(0, Math.min(i, slides.length - 1))];
+        if (!s) return;
+        const pad = parseFloat(getComputedStyle(car).paddingLeft) || 0;
+        const left = s.getBoundingClientRect().left - car.getBoundingClientRect().left + car.scrollLeft - pad;
+        car.scrollTo({ left, behavior: 'auto' });
+        refreshCarouselNav(car);
+    }
+
+    // carouselNavOf は、カルーセルのすぐ下の送る帯（閲覧モードだけ・.vocab-chrome——帯は横に巻く中に置けないのですぐ下の兄弟）。
+    const carouselNavOf = car => { const n = car.nextElementSibling; return n && n.classList.contains('car-nav') ? n : null; };
+
+    // visibleSlides は、いま帯に見えている枚の番号の範囲（真ん中が見える範囲に入っている枚）。
+    function visibleSlides(car) {
+        const slides = carouselSlides(car);
+        const box = car.getBoundingClientRect();
+        let first = -1, last = -1;
+        slides.forEach((s, k) => {
+            const r = s.getBoundingClientRect();
+            const mid = r.left + r.width / 2;
+            if (mid >= box.left - 1 && mid <= box.right + 1) { if (first < 0) first = k; last = k; }
+        });
+        return { first, last, n: slides.length };
+    }
+
+    // refreshCarouselNav は送る帯を合わせる——全部が見えていれば帯は出さない、出すときは「1–3 / 8」と端で押せない ‹ ›。
+    function refreshCarouselNav(car) {
+        const nav = carouselNavOf(car);
+        if (!nav) return;
+        const overflow = car.scrollWidth > car.clientWidth + 2;
+        if (nav.hidden === overflow) nav.hidden = !overflow;
+        if (!overflow) return;
+        const v = visibleSlides(car);
+        const want = v.first < 0 ? '' : (v.first === v.last ? (v.first + 1) + ' / ' + v.n : (v.first + 1) + '–' + (v.last + 1) + ' / ' + v.n);
+        const count = nav.querySelector('.car-count');
         if (count && count.textContent !== want) count.textContent = want;
+        const prev = nav.querySelector('.car-prev'), next = nav.querySelector('.car-next');
+        if (prev) prev.disabled = car.scrollLeft <= 1;
+        if (next) next.disabled = car.scrollLeft + car.clientWidth >= car.scrollWidth - 1;
+    }
+
+    // pageCarousel は帯を1画面ぶん（見えている幅から少し引いた分）横に巻く——枚の端で止まる（scroll-snap）。
+    function pageCarousel(car, dir) {
+        car.scrollBy({ left: dir * Math.max(80, car.clientWidth - 48), behavior: 'smooth' });
     }
 
     // decorateCarousels は帯を付け替える（decorateVocabBlocks の巡りから・モードに合わせて）。
@@ -4752,10 +4789,9 @@
         editor.querySelectorAll('section[data-type="' + CAROUSEL_TYPE + '"]').forEach(car => {
             if (car.closest('.vocab-chrome')) return;
             const editBar = car.querySelector(':scope > .car-edit-bar');
-            const nav = car.querySelector(':scope > .car-nav');
+            const nav = carouselNavOf(car);
             if (isEdit) {
                 if (nav) nav.remove();
-                carouselSlides(car).forEach(s => { if (s.classList.contains('car-current')) s.classList.remove('car-current'); });
                 if (!editBar) {
                     const bar = document.createElement('div');
                     bar.className = 'vocab-chrome car-edit-bar';
@@ -4771,41 +4807,31 @@
                 return;
             }
             if (editBar) editBar.remove();
-            const slides = carouselSlides(car);
-            if (slides.length < 2) {
-                if (nav) nav.remove();
-            } else if (!nav) {
+            if (!nav) {
                 const bar = document.createElement('div');
                 bar.className = 'vocab-chrome car-nav';
+                bar.hidden = true;
                 const count = document.createElement('span');
                 count.className = 'car-count';
                 bar.append(
-                    carouselButton('car-prev', '‹', '前の画像', () => showCarouselSlide(car, (carouselIndex.get(car) || 0) - 1)),
+                    carouselButton('car-prev', '‹', '前の画像', () => pageCarousel(car, -1)),
                     count,
-                    carouselButton('car-next', '›', '次の画像', () => showCarouselSlide(car, (carouselIndex.get(car) || 0) + 1)));
-                car.appendChild(bar);
+                    carouselButton('car-next', '›', '次の画像', () => pageCarousel(car, 1)));
+                car.after(bar);
             }
-            showCarouselSlide(car, Math.min(carouselIndex.get(car) || 0, Math.max(0, slides.length - 1)));
+            // 配線の印は WeakSet で持つ（本文の要素に属性を足すと保存される）。
+            if (!carouselWired.has(car)) {
+                carouselWired.add(car);
+                car.addEventListener('scroll', () => refreshCarouselNav(car), { passive: true });
+                car.querySelectorAll('img').forEach(img => { if (!img.complete) img.addEventListener('load', () => refreshCarouselNav(car), { once: true }); });
+            }
+            refreshCarouselNav(car);
         });
     }
-
-    // 触る画面では横に払って送る（閲覧モード・document へ委譲——カルーセルは描き直されるので要素に付けない）。
-    // 払ったあとの click（拡大表示が開く）は捨てる。
-    let carouselSwipe = null;
-    const carouselSwipedAt = new WeakMap(); // カルーセル → 払って送った時刻（本文の要素に属性を足さない）
-    document.addEventListener('pointerdown', e => {
-        if (document.body.hasAttribute('edit-mode') || e.pointerType === 'mouse') return;
-        const car = e.target.closest && e.target.closest('#w-editor-content section[data-type="' + CAROUSEL_TYPE + '"]');
-        carouselSwipe = car ? { car, x: e.clientX, y: e.clientY } : null;
-    });
-    document.addEventListener('pointerup', e => {
-        const s = carouselSwipe;
-        carouselSwipe = null;
-        if (!s) return;
-        const dx = e.clientX - s.x, dy = e.clientY - s.y;
-        if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
-        showCarouselSlide(s.car, (carouselIndex.get(s.car) || 0) + (dx < 0 ? 1 : -1));
-        carouselSwipedAt.set(s.car, Date.now());
+    const carouselWired = new WeakSet(); // 横に巻いたときに送る帯を合わせる聞き手を付けたカルーセル
+    window.addEventListener('resize', () => {
+        if (document.body.hasAttribute('edit-mode')) return;
+        document.querySelectorAll('#w-editor-content section[data-type="' + CAROUSEL_TYPE + '"]').forEach(refreshCarouselNav);
     });
 
     // ── 画像の拡大表示（2026-10-07） ───────────────────────────────────
@@ -4901,7 +4927,7 @@
         if (!box || box.classList.contains('is-hidden')) return;
         setHidden(box, true);
         document.body.classList.remove('w-lightbox-open');
-        // 最後に見ていた画像がカルーセルの中なら、その枚を見せておく。
+        // 最後に見ていた画像がカルーセルの中なら、その枚が帯の左端に来るまで巻いておく。
         const last = lightboxList[lightboxAt];
         const car = last && last.closest('section[data-type="' + CAROUSEL_TYPE + '"]');
         if (car) {
@@ -4915,8 +4941,6 @@
         if (document.body.hasAttribute('edit-mode')) return;
         const img = e.target instanceof Element && e.target.closest('#w-editor-content img');
         if (!img || img.closest('a, button, .vocab-chrome, .file-view')) return;
-        const car = img.closest('section[data-type="' + CAROUSEL_TYPE + '"]');
-        if (car && Date.now() - (carouselSwipedAt.get(car) || 0) < 500) return; // 払って送った直後の click
         e.preventDefault();
         openLightbox(img);
     });

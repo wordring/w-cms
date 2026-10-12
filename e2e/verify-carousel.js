@@ -3,15 +3,16 @@
 //
 // 利用者:「カルーセルを入れることは出来ますか？」→ 形は「『カルーセル』ブロックを挿す」・画像を押したときの拡大表示も「する」。
 //
-//   閲覧 ① 1枚ずつ見せる（いまの1枚だけ見える・「1 / 3」）・枚が変わっても高さが変わらない
-//        ② ‹ › で送る（端で反対へ回る）・触る画面で横に払うと送る
+//   閲覧 ① 幅が空いている限り並べて見せる（2026-10-12 利用者:「見せる領域が空いている限り次の画像も見せるように並べて見せて
+//           ください」——それまでは1枚ずつ）・全部見えていれば送る帯は出さない
+//        ② 狭い画面では入りきらない分を横に巻く——「‹ 1 / 3 ›」で送る・端では押せない・横に巻くと数も変わる
 //        ③ 画像を押すと拡大表示——ページの画像を数える（リンクの中の画像は数えない）・→ ← で前後・Esc で閉じると、
-//           最後に見ていたカルーセルの枚を見せる・外側を押しても閉じる
+//           最後に見ていた枚がカルーセルに見える・外側を押しても閉じる
 //   編集 ④ 帯（🎠 カルーセル）が出て送る道具は消える・本文の写しに帯や印が混ざらない・画像を押しても拡大しない
 //        ⑤ 「⬇ すぐ下の画像を入れる」——画像だけの段落が続くところまで中へ移す
 //        ⑥ 「🖼 画像を足す」——選んだ画像を末尾へ
 //        ⑦ スラッシュメニューの「基本」でファイル表示のすぐ下に「カルーセル」——押すと空のカルーセル（帯つき）
-//        ⑧ 保存した本文はカルーセルの節と中の画像だけ（帯・印なし）→ 閲覧へ戻ると「1 / 6」
+//        ⑧ 保存した本文はカルーセルの節と中の画像だけ（帯・印なし）→ 閲覧へ戻ると並べて見せる（入りきらなければ送る帯）
 //
 // ページは自分で作り、最後に消します。本物の置き場には書きません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-carousel.js
@@ -57,12 +58,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await fetch('/api/unlock?id=' + a.id + '&token=' + encodeURIComponent(lj.token || ''), { method: 'POST' });
     return d.src || '';
   }, { id, b64, name });
+  // carState は閲覧のカルーセル——見えている枚（帯の中に真ん中がある）・1列か・送る帯（出ているか・数・端で押せないか）。
   const carState = () => page.evaluate(() => {
     const car = document.querySelector('#w-editor-content section[data-type="carousel"]');
     const slides = Array.from(car.children).filter((c) => !c.classList.contains('vocab-chrome'));
-    const shown = slides.filter((s) => getComputedStyle(s).visibility === 'visible').map((s) => (s.querySelector('img') || {}).alt);
-    const count = car.querySelector('.car-count');
-    return { shown, count: count ? count.textContent : '', height: Math.round(car.getBoundingClientRect().height), n: slides.length };
+    const box = car.getBoundingClientRect();
+    const shown = slides.filter((s) => { const r = s.getBoundingClientRect(); const m = r.left + r.width / 2; return m >= box.left - 1 && m <= box.right + 1; })
+      .map((s) => (s.querySelector('img') || {}).alt);
+    const tops = slides.map((s) => Math.round(s.getBoundingClientRect().top + s.getBoundingClientRect().height / 2));
+    const nav = car.nextElementSibling && car.nextElementSibling.classList.contains('car-nav') ? car.nextElementSibling : null;
+    const shownNav = !!nav && !nav.hidden && getComputedStyle(nav).display !== 'none';
+    return { shown, oneRow: Math.max(...tops) - Math.min(...tops) <= 2, nav: shownNav, count: nav ? nav.querySelector('.car-count').textContent : '',
+      prevDisabled: !!nav && nav.querySelector('.car-prev').disabled, nextDisabled: !!nav && nav.querySelector('.car-next').disabled, n: slides.length };
   });
   const lb = () => page.evaluate(() => {
     const box = document.getElementById('w-lightbox');
@@ -73,7 +80,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await login(page, BASE);
     id = await makePage(page, '<h1>【E2E】カルーセル</h1><p>x</p>');
     const src = {};
-    for (const [k, w, h, c] of [['a', 200, 100, '#ef4444'], ['b', 200, 300, '#22c55e'], ['c', 200, 150, '#3b82f6'], ['d', 100, 100, '#eab308'], ['e', 100, 100, '#a855f7']]) {
+    for (const [k, w, h, c] of [['a', 160, 80, '#ef4444'], ['b', 160, 240, '#22c55e'], ['c', 160, 120, '#3b82f6'], ['d', 100, 100, '#eab308'], ['e', 100, 100, '#a855f7']]) {
       src[k] = await upload(await png(w, h, c), k + '.png');
     }
     check('画像を添付できた', Object.values(src).every((s) => /^\/\d{6}\//.test(s)), JSON.stringify(src));
@@ -87,33 +94,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       await fetch('/api/unlock?id=' + a.id + '&token=' + encodeURIComponent(lj.token || ''), { method: 'POST' });
     }, { id, html: body });
 
-    // ── 閲覧 ──
+    // ── 閲覧 ──（2026-10-12 から並べて見せる——利用者:「見せる領域が空いている限り次の画像も見せるように並べて見せてください」）
     await page.goto(BASE + '/' + id);
-    await page.waitForSelector('#w-editor-content .car-nav', { timeout: 10000 }).catch(() => {});
+    await page.waitForSelector('#w-editor-content .car-nav', { state: 'attached', timeout: 10000 }).catch(() => {});
     await page.waitForFunction(() => Array.from(document.querySelectorAll('#w-editor-content img')).every((i) => i.complete), null, { timeout: 10000 }).catch(() => {});
+    await sleep(300);
     const s1 = await carState();
-    check('① 1枚ずつ見せる（1 / 3）', JSON.stringify(s1.shown) === '["a.png"]' && s1.count === '1 / 3', JSON.stringify(s1));
+    check('① 幅が空いている限り並べて見せる（3枚とも1列に見える・送る帯は出さない）', JSON.stringify(s1.shown) === '["a.png","b.png","c.png"]' &&
+      s1.oneRow && !s1.nav, JSON.stringify(s1));
+
+    // ② 狭い画面では入りきらない分を横に巻く——「‹ › 」で送り、数は見えている枚。
+    await page.setViewportSize({ width: 375, height: 900 });
+    await sleep(500);
+    const n1 = await carState();
+    check('② 入りきらないときは送る帯が出る（1 から・始めは ‹ が押せない）', n1.nav && /^1(–2)? \/ 3$/.test(n1.count) && n1.prevDisabled && !n1.nextDisabled, JSON.stringify(n1));
     await page.click('#w-editor-content .car-next');
-    const s2 = await carState();
-    check('② › で次へ・高さは変わらない', JSON.stringify(s2.shown) === '["b.png"]' && s2.count === '2 / 3' && s2.height === s1.height,
-      JSON.stringify([s1.height, s2]));
+    await sleep(700);
+    const n2 = await carState();
+    check('② › で次の枚へ巻く', n2.count !== n1.count && !n2.count.startsWith('1') && !n2.prevDisabled, JSON.stringify(n2));
+    for (let k = 0; k < 3; k++) { if (!(await carState()).nextDisabled) { await page.click('#w-editor-content .car-next'); await sleep(700); } }
+    const n3 = await carState();
+    check('② 端まで巻くと › は押せない（最後の枚が見える）', n3.nextDisabled && /3 \/ 3$/.test(n3.count) && n3.shown.includes('c.png'), JSON.stringify(n3));
     await page.click('#w-editor-content .car-prev');
-    await page.click('#w-editor-content .car-prev');
-    const s3 = await carState();
-    check('② ‹ で端から反対へ回る（3 / 3）', JSON.stringify(s3.shown) === '["c.png"]' && s3.count === '3 / 3', JSON.stringify(s3));
-    await page.evaluate(() => {
-      const car = document.querySelector('#w-editor-content section[data-type="carousel"]');
-      const r = car.getBoundingClientRect();
-      const y = r.top + 40;
-      car.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', clientX: r.left + 200, clientY: y, bubbles: true }));
-      car.dispatchEvent(new PointerEvent('pointerup', { pointerType: 'touch', clientX: r.left + 60, clientY: y + 5, bubbles: true }));
-    });
-    const s4 = await carState();
-    check('② 触る画面で左へ払うと次へ（3 → 1）', s4.count === '1 / 3', JSON.stringify(s4));
-    await sleep(700); // 払った直後の押下は拡大しない（払いのあとの click を捨てる）ので、少し置く
+    await sleep(700);
+    const n4 = await carState();
+    check('② ‹ で戻る', !n4.nextDisabled && n4.count !== n3.count, JSON.stringify(n4));
+    await page.evaluate(() => { const car = document.querySelector('#w-editor-content section[data-type="carousel"]'); car.scrollLeft = 0; });
+    await sleep(400);
+    check('② 横に払う（帯を横に巻く）と数も変わる', (await carState()).count === n1.count);
 
     // ③ 拡大表示。
-    await page.click('#w-editor-content section[data-type="carousel"] .car-current img');
+    await page.click('#w-editor-content section[data-type="carousel"] img[alt="a.png"]');
     const l1 = await lb();
     check('③ 画像を押すと拡大（ページの画像5枚・リンクの中は数えない）', l1 && l1.count === '1 / 5' && l1.alt === 'a.png', JSON.stringify(l1));
     await page.keyboard.press('ArrowRight');
@@ -126,8 +137,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('③ → ← で前後', l2 && l2.alt === 'b.png' && l4 && l4.alt === 'd.png' && l3 && l3.count === '3 / 5' && l3.alt === 'c.png',
       JSON.stringify([l2, l4, l3]));
     await page.keyboard.press('Escape');
+    await sleep(300);
     const s5 = await carState();
-    check('③ Esc で閉じると、最後に見ていた枚をカルーセルで見せる', (await lb()) === null && s5.count === '3 / 3', JSON.stringify(s5));
+    check('③ Esc で閉じると、最後に見ていた枚がカルーセルに見える', (await lb()) === null && s5.shown.includes('c.png') && /3 \/ 3$/.test(s5.count), JSON.stringify(s5));
+    await page.setViewportSize({ width: 1280, height: 1100 });
+    await sleep(400);
     await page.click('#w-editor-content img[alt="d.png"]');
     const l5 = await lb();
     await page.mouse.click(8, 500); // 外側
@@ -202,7 +216,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(500);
     const s6 = await carState();
     const bar = await page.evaluate(() => !!document.querySelector('#w-editor-content .car-edit-bar'));
-    check('⑧ 閲覧へ戻ると送る道具（1 / 6）・帯は消える', s6.count === '1 / 6' && !bar, JSON.stringify(s6));
+    check('⑧ 閲覧へ戻ると並べて見せる（入りきらない分は送る帯・1 から）・編集の帯は消える', s6.oneRow && s6.shown[0] === 'a.png' &&
+      (s6.nav ? /^1(–\d+)? \/ 6$/.test(s6.count) : s6.shown.length === 6) && !bar, JSON.stringify(s6));
   } finally {
     // 編集モードのまま消すと断られることがある（エディタが編集権を持ったまま）——ページから離れてから消す。
     await page.goto(BASE + '/000000').catch(() => {});

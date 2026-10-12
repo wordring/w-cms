@@ -2914,20 +2914,24 @@ body[edit-mode] #w-editor-content .editor-block.w-block-others { background: #f6
 #w-editor-content .w-conflict-btn.w-conflict-done, #w-editor-content .w-conflict-btn.w-conflict-keep { background: #f59e0b; color: #fff; border-color: #d97706; }
 
 /* ── カルーセル（2026-10-07・assets/app.js の「カルーセル」） ───────────────
-   閲覧: 中の要素を同じ升に重ね、いまの1枚（.car-current）だけ見せる——枚ごとに高さが変わって下が跳ねないように。
-   横の払いは JS が受けるので、ブラウザには縦のスクロールだけ任せる（touch-action）。 */
+   閲覧: 見せる幅が空いている限り次の画像も並べる（2026-10-12 利用者:「見せる領域が空いている限り次の画像も見せるように並べて
+   見せてください」）——横に巻く帯（枚の端で止まる）。画像の高さは低めに揃えて上限を置く（大きな写真で1枚が幅いっぱいにならない
+   ように——拡大は押して開く）。入りきらなければすぐ下の .car-nav（‹ 1–3 / 8 ›）。それまでは1枚ずつ重ねていた。 */
 body:not([edit-mode]) #w-editor-content section[data-type="carousel"] {
-    display: grid; justify-items: center; align-items: center;
-    background: #f1f5f9; border-radius: 6px; padding: 8px 8px 4px; margin: 8px 0; touch-action: pan-y;
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
+    overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: thin;
+    scroll-padding-inline: 8px; /* 枠の内側の余白の分——無いと最初の枚に吸い付いて 8px 巻いた形で始まり、‹ が押せる */
+    background: #f1f5f9; border-radius: 6px; padding: 8px; margin: 8px 0;
 }
 body:not([edit-mode]) #w-editor-content section[data-type="carousel"] > :not(.vocab-chrome) {
-    grid-area: 1 / 1; visibility: hidden; margin: 0; max-width: 100%;
+    flex: 0 0 auto; margin: 0; max-width: 100%; scroll-snap-align: start;
 }
-body:not([edit-mode]) #w-editor-content section[data-type="carousel"] > .car-current { visibility: visible; }
 body:not([edit-mode]) #w-editor-content section[data-type="carousel"] img {
-    display: block; max-width: 100%; max-height: 60vh; object-fit: contain;
+    display: block; max-width: 100%; max-height: min(40vh, 260px); width: auto; height: auto; object-fit: contain;
 }
-#w-editor-content .car-nav { grid-area: 2 / 1; display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+#w-editor-content .car-nav { display: flex; justify-content: center; align-items: center; gap: 12px; margin: -2px 0 8px; }
+#w-editor-content .car-nav[hidden] { display: none; }
+#w-editor-content .car-nav button:disabled { opacity: 0.35; cursor: default; }
 #w-editor-content .car-nav button {
     min-width: 40px; min-height: 36px; font-size: 22px; line-height: 1; border: 1px solid #cbd5e1;
     border-radius: 6px; background: #fff; color: #334155; cursor: pointer;

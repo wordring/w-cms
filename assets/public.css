@@ -238,17 +238,19 @@ body.public {
     display: flex;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
+    scroll-padding-inline: 8px;
+    align-items: center;
     gap: 8px;
     padding: 8px;
     margin: 0 0 20px;
     background: #f1f5f9;
     border-radius: var(--pub-radius);
 }
+/* 見せる幅が空いている限り次の画像も並べる（2026-10-12——編集画面の閲覧モードと同じ・app.css）。それまでは1枚ずつ（幅いっぱい）。 */
 .public-content section[data-type="carousel"] > * {
-    flex: 0 0 100%;
-    scroll-snap-align: center;
+    flex: 0 0 auto;
+    max-width: 100%;
+    scroll-snap-align: start;
     margin: 0;
-    display: flex;
-    justify-content: center;
 }
-.public-content section[data-type="carousel"] img { max-height: 60vh; object-fit: contain; }
+.public-content section[data-type="carousel"] img { display: block; max-width: 100%; max-height: min(40vh, 260px); width: auto; height: auto; object-fit: contain; }
