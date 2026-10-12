@@ -9516,22 +9516,31 @@
         const vTop = vv ? vv.offsetTop : 0;
         const vBottom = vTop + (vv ? vv.height : window.innerHeight);
         const bar = document.getElementById('w-context-toolbar');
-        const reserve = bar && bar.classList.contains('active') && bar.classList.contains('is-docked') ? bar.offsetHeight + 8 : 0;
+        // スマホの帯（画面の上のドック）の分を空ける——**帯がいま出ていなくても**（「＋」から開いた直後は帯が一度消えてから出直す
+        // ことがあり、そのときに置くとメニューが帯に重なっていた——2026-10-12。帯が出直したら置き直す——updateContextToolbar）。
+        const docked = !!bar && (bar.classList.contains('is-docked') || window.matchMedia('(pointer: coarse)').matches);
+        const reserve = docked ? Math.max(bar.offsetHeight || 0, 48) + 8 : 0;
         const gap = 5, pad = 8, least = 120;
         menu.style.maxHeight = '';
         const natural = Math.min(menu.scrollHeight, 300);
-        const below = vBottom - rect.bottom - gap - pad;
-        const above = rect.top - (vTop + reserve) - gap - pad;
+        // メニューは帯の下端（topLimit）より上に出さない——段落が帯の下に隠れているときも（2026-10-12——段落のすぐ下に置いて帯に重なっていた）。
+        const topLimit = vTop + reserve;
+        const startBelow = Math.max(rect.bottom + gap, topLimit);
+        const below = vBottom - startBelow - pad;
+        const above = rect.top - topLimit - gap - pad;
         const downward = below >= natural || below >= above;
         const h = Math.max(least, Math.min(natural, downward ? below : above));
         menu.style.maxHeight = h + 'px';
-        placeFloating(menu, rect, gap); // 左右の寄せ（下に置く top もここで決まる）
-        if (!downward) menu.style.top = (rect.top - gap - h + window.scrollY) + 'px';
+        placeFloating(menu, rect, gap); // 左右の寄せ
+        menu.style.top = ((downward ? startBelow : Math.max(rect.top - gap - h, topLimit)) + window.scrollY) + 'px';
     }
     if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', placeSlashMenu);
         window.visualViewport.addEventListener('scroll', placeSlashMenu);
     }
+    // ページが巻き戻っても置き直す——「＋」で足した段落へフォーカスするとブラウザがそこまで巻き、ページに置いたメニューだけが
+    // 一緒に上がって画面の上の帯に重なっていた（2026-10-12）。
+    window.addEventListener('scroll', () => { if (slashMenuVisible) placeSlashMenu(); }, { passive: true });
 
     // filterSlashMenu は `/` に続けて打たれた文字で候補を絞ります。
     function filterSlashMenu(query) {
@@ -10357,6 +10366,7 @@
                 toolbar.classList.add('is-docked');
                 toolbar.style.left = '';
                 positionDockedToolbar(); // キーボードに合わせて「見えている上端」へ
+                if (slashMenuVisible) placeSlashMenu(); // 帯が出直したらメニューを置き直す（帯の下へ）
             } else {
                 toolbar.classList.remove('is-docked');
                 positionContextToolbar(block);
