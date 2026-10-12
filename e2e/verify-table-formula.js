@@ -158,7 +158,8 @@ const BODY = '<h1>【E2E】表の式と貼り付け</h1>' +
       return { text: td.textContent.trim(), nested: !!td.querySelector('table') };
     });
     check(one.text.endsWith('ONE-CELL') && !one.nested, 'Excel の1セル（表の HTML）は文字だけ入る（表の中に表を作らない）', JSON.stringify(one));
-    await page.waitForTimeout(2500); // 自動保存
+    await page.evaluate(() => document.activeElement && document.activeElement.blur()); // 保存はブロックを去るとき（2026-10-12 昼）
+    await page.waitForTimeout(2500);
     const saved = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);
     check(saved.includes('P-E') && saved.includes('=個数*単価') && saved.includes('ONE-CELL'), '貼った値と式は保存された');
     await setMode(false);

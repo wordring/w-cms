@@ -126,17 +126,22 @@ async function waitText(p, did, want, ms = 6000) {
     check(s.includes('一-A1') && s.includes('二-B1'), '1. 正本に両方が残る', s.replace(/\s+/g, ' ').slice(0, 200));
     check(!(await B.$('.w-conflict')) && !(await A.$('.w-conflict')), '1. 違うブロックなのでぶつからない');
 
-    // ── 2. 同じブロックを書いている最中に相手が保存——その場で両方を並べる（相手の版が上） ──
+    // ── 2. 同じブロックを書いている最中に相手が保存——書いている間は枠を出さず、去って送ったときに並べる（相手の版が上） ──
+    //    2026-10-12 昼から（利用者:「一文字打っただけで競合を検出しマージしろと言われても困ります」——早めの知らせは黄色の背景）。
+    //    それまでは相手の保存が届いた時点でその場に枠を出していた。
     await typeAt(B, 'p3aa', '-B2');          // B は書きかけ（まだ保存していない）
     await typeAt(A, 'p3aa', '-A2');
-    await flush(A);                          // A が先に保存 → B へ知らせ → B が受け取りに行き、ぶつかる
+    await flush(A);                          // A が先に保存 → B へ知らせ → B が受け取りに行く（書きかけは送らない）
+    await sleep(2500);
+    check(!(await B.$('.w-conflict')) && (await textOf(B, 'p3aa')).includes('三-B2'), '2. 書いている間は枠を出さない（書きかけはそのまま）');
+    await flush(B);                          // B が去って送る → ぶつかる
     let panel = await B.waitForSelector('.w-conflict', { timeout: 6000 }).catch(() => null);
-    check(!!panel, '2. 書いている最中に相手が同じブロックを保存——その場で枠が出る');
+    check(!!panel, '2. 書いていたブロックを去って送ると枠が出る');
     if (panel) {
       const pt = await panel.textContent();
       check(pt.includes('三-A2') && pt.includes('a'), '2. 枠の上に相手の版と名前', pt.slice(0, 120));
       check((await textOf(B, 'p3aa')).includes('三-B2'), '2. 下の自分の版（書きかけ）はそのまま');
-      await sleep(2500); // 自動保存（1.5秒）が走っても、枠が出ているあいだは自分の版を黙って送らない
+      await flush(B); await sleep(1500); // もう一度送っても、枠が出ているあいだは自分の版を黙って送らない
       s = await stored(A, id);
       check(s.includes('三-A2') && !s.includes('三-B2'), '2. 決めるまでは正本は相手の版のまま（自動保存が自分の版を送らない）', s.replace(/\s+/g, ' ').slice(0, 200));
       await B.click('.w-conflict .w-conflict-done'); // これで決める
@@ -150,6 +155,8 @@ async function waitText(p, did, want, ms = 6000) {
     await typeAt(B, 'p4aa', '-B3');
     await typeAt(A, 'p4aa', '-A3');
     await flush(A);
+    await sleep(1500);
+    await flush(B);                          // 去って送るとぶつかる
     panel = await B.waitForSelector('.w-conflict', { timeout: 6000 }).catch(() => null);
     check(!!panel, '3. ふたたび枠が出る');
     if (panel) {
@@ -177,6 +184,8 @@ async function waitText(p, did, want, ms = 6000) {
     await typeCell(B, 'r1aa', 1, '-B');      // B: 甲 → 甲-B（書きかけ）
     await typeCell(A, 'r1aa', 1, '-A');      // A: 甲 → 甲-A
     await flush(A);
+    await sleep(1500);
+    await flush(B);                          // 去って送るとぶつかる
     panel = await B.waitForSelector('.w-conflict', { timeout: 6000 }).catch(() => null);
     check(!!panel, '4b. 表の同じセルを違う値にした——枠で並べる');
     if (panel) {
@@ -276,15 +285,19 @@ async function waitText(p, did, want, ms = 6000) {
     for (let i = 0; i < 30 && !ok; i++) { ok = await tagged(A, TAG_NEW); if (!ok) await sleep(200); }
     check(ok, '11. 機械の書き込みが書ける形の A に届く');
     check((await textOf(A, 'p1aa')).includes('-M'), '11. A の書きかけ（別のブロック）は消えない');
-    await sleep(2500);
+    await flush(A);                          // 保存はブロックを去るとき（2026-10-12 昼）
+    await sleep(1500);
     s = await stored(A, id);
     check(s.includes(TAG_NEW) && s.includes('-M'), '11. 正本に両方が残る', s.replace(/\s+/g, ' ').slice(0, 220));
     // B がタグの値を書いている最中に機械がそのタグを書き換える——B に枠が出る。
     await caretAtEnd(B, '#w-editor-content [data-id="tg1a"] dd');
     await B.keyboard.type('-B');
     rn = await api(admin, 'POST', '/api/admin/tag-rename', { name: '区分', from: TAG_NEW, to: TAG_NEW + '2', dry: false });
+    await sleep(2500);
+    check(!(await B.$('.w-conflict')), '11. 書いている間は機械の書き換えでも枠を出さない（2026-10-12 昼から——去って送るまで待つ）');
+    await flush(B);                          // B が去って送る
     panel = await B.waitForSelector('.w-conflict', { timeout: 6000 }).catch(() => null);
-    check(!!panel && (await panel.textContent()).includes(TAG_NEW + '2'), '11. 書いているブロックを機械が書き換えた——枠で並べる');
+    check(!!panel && (await panel.textContent()).includes(TAG_NEW + '2'), '11. 書いているブロックを機械が書き換えた——去って送ると枠で並べる');
     if (panel) {
       await B.click('.w-conflict .w-conflict-theirs-btn');
       await sleep(1500);

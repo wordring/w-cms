@@ -146,7 +146,8 @@ const BODY = '<h1>【E2E】セルを選ぶ</h1>' +
     g = await grid();
     check(c.text === '3\tz\n' && g[3][1] === '' && g[3][2] === '', '切り取りは写して消す', JSON.stringify([c.text, g[3]]));
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(2500); // 自動保存
+    await page.evaluate(() => document.activeElement && document.activeElement.blur()); // 保存はブロックを去るとき（2026-10-12 昼）
+    await page.waitForTimeout(2500);
     const preview = await page.locator('#w-html-preview').inputValue();
     check(!/w-cell-selected|w-cell-dragging/.test(preview), '選んだ印は書き出し（保存されるもの）に入らない');
     const saved = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);

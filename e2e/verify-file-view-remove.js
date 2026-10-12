@@ -68,14 +68,16 @@ function rawBody(id) {
     const views = () => page.locator(dataSec + ' > section[data-type="file-view"][data-ref]').count();
     check('節の中にファイル表示が2つできた', await views() === 2, String(await views()));
     check('それぞれに「✕ 外す」が出る', await page.locator(dataSec + ' .fv-remove').count() === 2);
-    await page.waitForTimeout(2500); // 自動保存
+    await page.evaluate(() => document.activeElement && document.activeElement.blur()); // 保存はブロックを去るとき（2026-10-12 昼）
+    await page.waitForTimeout(2500);
     const before = (rawBody(id).match(/data-type="file-view"/g) || []).length;
     check('保存した本文にファイル表示が2つ', before === 2, String(before));
 
     // ② 1枚だけ外す
     const firstRef = await page.locator(dataSec + ' > section[data-type="file-view"]').first().getAttribute('data-ref');
     await page.locator(dataSec + ' .fv-remove').first().click();
-    await page.waitForTimeout(2500); // 自動保存
+    await page.evaluate(() => document.activeElement && document.activeElement.blur()); // 保存はブロックを去るとき（2026-10-12 昼）
+    await page.waitForTimeout(2500);
     check('画面から1枚だけ外れた', await views() === 1, String(await views()));
     const saved = rawBody(id);
     check('保存した本文から外れた（残りは1つ）',

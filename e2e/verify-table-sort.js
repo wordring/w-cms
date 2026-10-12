@@ -107,7 +107,8 @@ const ORIGINAL = ['E2E-SORT-B', 'E2E-SORT-A', 'E2E-SORT-C', 'E2E-SORT-D'];
     await p.click();
     await page.keyboard.press('End');
     await page.keyboard.type('（直した）');
-    await page.waitForTimeout(2500); // 自動保存（1.5秒）を待つ
+    await page.evaluate(() => document.activeElement && document.activeElement.blur()); // 保存はブロックを去るとき（2026-10-12 昼）
+    await page.waitForTimeout(2500);
     const saved = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);
     check(saved.includes('（直した）'), '編集は保存された');
     check(same(savedOrder(saved), ORIGINAL), '保存された本文の行は元の並び', JSON.stringify(savedOrder(saved)));

@@ -2891,6 +2891,9 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
 #w-editor-content .draft-form-box { margin: 4px 0 16px; }
 #w-editor-content .order-link-state { margin-left: 6px; }
 /* ページの更新の知らせで差し替えたブロック（2026-10-07）——しばらく薄い黄色で示して消える。色だけに頼らず左の線も付ける。 */
+/* ほかの人のキャレットのあるブロック（2026-10-12 昼・app.js renderPresence）——彩度の低い黄色の背景だけ
+ * （利用者:「置いただけで背景色を黄色系の彩度の低い色にしては？説明が多すぎるのでシンプルに」）。名前はマウスを載せると出る。 */
+body[edit-mode] #w-editor-content .editor-block.w-block-others { background: #f6f0d8; border-radius: 4px; }
 #w-editor-content .editor-block.w-block-updated { animation: w-block-updated 4s ease-out; box-shadow: inset 3px 0 0 #f59e0b; }
 @keyframes w-block-updated { from { background: #fef3c7; } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { #w-editor-content .editor-block.w-block-updated { animation: none; background: #fef3c7; } }

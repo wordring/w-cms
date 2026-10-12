@@ -160,6 +160,7 @@ const MARK = 'E2E' + Date.now().toString(36).toUpperCase();
     await caretAt('pa01');
     await page.keyboard.type('R');
     await sleep(1200);
+    await caretAt('pb02'); // 保存はブロックを去るとき（2026-10-12 昼）
     await waitSaved();
     await page.reload();
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 }).catch(() => {});

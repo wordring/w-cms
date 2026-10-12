@@ -80,7 +80,10 @@
         pathId = '000000';
     }
     let currentPageId = pathId;
-    let saveTimeout = null;
+    // unsaved は、まだ保存していない変更がある印（表示だけ——保存は書き出しを元と比べて決める）。editSeq は変えた回数
+    // （保存の最中に打った分を見分ける）。2026-10-12 昼に1.5秒止まるたびの保存をやめた（triggerAutoSave）。
+    let unsaved = false;
+    let editSeq = 0;
 
     // ── 子ページの作成（テンプレート選択つき） ──────────────────────────
     // テンプレートは「テンプレート」フォルダ配下の**葉**（docs/考察/【考察】ページテンプレート.md §3.2）。
@@ -1161,9 +1164,11 @@
 
     // flushPendingSave は、待っている自動保存を今すぐ流して終わるまで待つ（業務のボタン・書ける形を出る前）。
     async function flushPendingSave() {
-        if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
         try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
     }
+    // saveNow は、操作（帯・メニュー・⠿ 🗑 ＋）・アンドゥとリドゥ・ぶつかりを決めたあとにすぐ保存する（ブロックの形を変えるので、
+    // ブロックを去るのを待たない——2026-10-12 昼）。
+    const saveNow = () => { flushPendingSave(); };
     window.wcmsFlushSave = flushPendingSave; // 鏡のボタン（postJSON）が押す前に呼ぶ
 
     // checkpointVersion は版の区切りを打つ（このタブが書いていれば——2026-10-12）。それまでは編集権を手放したときにサーバーが
@@ -1212,8 +1217,20 @@
         //    （2026-10-12——🗑 で消したブロックをアンドゥで戻すと、元と同じ中身なので「変わっていない」と見なして送らず、
         //    サーバーは並びの中の知らない ID を捨て、画面からも4秒後に消えていた。版の「このブロックだけ戻す」も同じ道）。
         const known = new Set(syncOrder);
+        // ⚠ 受け取りに行くとき（pull——相手の保存の知らせ）は、**書いている最中のブロック**（キャレットがあり、まだ保存していない）を
+        //    送らない（2026-10-12 昼 利用者:「保存は、ブロックを去る時とページを去る時に限定して、細かい通信を抑制してはどうでしょう？
+        //    一文字打っただけで競合を検出しマージしろと言われても困ります」）。並びには入れる。相手がそのブロックを書き換えていたら、
+        //    受け取ったときに並べる（applySyncResult の held）。
+        const holdId = pull ? caretBlockId() : '';
+        const held = new Set();
+        const seqAtSend = editSeq;
         blocks.forEach(b => {
-            if (!b.id || sent.has(b.id)) return;
+            if (!b.id || sent.has(b.id) || held.has(b.id)) return;
+            if (b.id === holdId && !syncConflicts.has(b.id) && known.has(b.id) && syncBase.has(b.id) && syncBase.get(b.id).html !== b.html) {
+                order.push(b.id);
+                held.add(b.id);
+                return;
+            }
             sent.set(b.id, b.html);
             const c = syncConflicts.get(b.id);
             if (c && c.kind === 'deleted') return; // 「消す」「残す」を聞いているあいだは並びにも入れない
@@ -1225,21 +1242,22 @@
         });
         const sameOrder = order.length === syncOrder.length && order.every((id, i) => id === syncOrder[i]);
         if (!pull && !changes.length && sameOrder) {
+            if (editSeq === seqAtSend) unsaved = false;
             setSyncStatus();
             return;
         }
         if (changes.length || !sameOrder) setSaveStatus("保存中...", "#f59e0b");
         let res, data;
         try {
-            res = await fetch('/api/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    page_id: currentPageId,
-                    base: syncOrder.map(id => ({ id, h: (syncBase.get(id) || {}).h || '' })),
-                    order, changes, tab: TAB_ID,
-                }),
+            const body = JSON.stringify({
+                page_id: currentPageId,
+                base: syncOrder.map(id => ({ id, h: (syncBase.get(id) || {}).h || '' })),
+                order, changes, tab: TAB_ID,
             });
+            // タブを隠したとき・ページを去るときの保存は、ページが閉じても届くように keepalive（中身が 64KB を超えると使えない）。
+            // ⚠ ページを去るとき（pagehide）は、visibilityState がまだ visible のことがある——印（leavingPage）でも見る。
+            const keepalive = (document.visibilityState === 'hidden' || leavingPage) && body.length < 60000;
+            res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive });
             data = await readResult(res);
         } catch (e) { onSaveFailed(e); return; }
         if (!res.ok || !data || !data.success) {
@@ -1248,7 +1266,8 @@
             return;
         }
         dismissToast('save-failed');
-        applySyncResult(data, sent);
+        unsaved = held.size > 0 || editSeq !== seqAtSend;
+        applySyncResult(data, sent, held);
         if (data.written) syncWrote = true;
         notifyUnknownTypes(data.unknown_types);
         notifyUnresolvedFields(data.unresolved_fields);
@@ -1259,7 +1278,7 @@
     // setSyncStatus は保存の表示を、いまの状態（並べているブロックがあるか・書きかけが残っているか）に合わせる。
     function setSyncStatus() {
         if (syncConflicts.size) { setSaveStatus("⚠ 確かめ待ち（" + syncConflicts.size + "）", "#ef4444"); return; }
-        if (saveTimeout) { setSaveStatus("未保存", "#94a3b8"); return; }
+        if (unsaved) { setSaveStatus("未保存", "#94a3b8"); return; }
         setSaveStatus("✅ 保存済", "#10b981");
     }
 
@@ -1273,7 +1292,8 @@
     //     書いていなければ差し替える（相手の変更はアンドゥの履歴にも書き写す——アンドゥは自分の変更だけを戻す・問い2）。
     //   - 仕上がりに無いブロック（相手が消した）は、送ったあとに書いていれば「消す」「残す」を聞く（問い6）。
     //   - 並びは仕上がりの並びにする（聞いているブロック・送ったあとに足したブロックはいまの位置の近くに残す）。
-    function applySyncResult(data, sent) {
+    function applySyncResult(data, sent, held) {
+        held = held || new Set();
         // 相手の変更を当てる前に、自分のまだ拾っていない変更をコマンドにする（当てたあとは「相手の変更」として記録へ写すので、
         // 混ざると自分の変更がアンドゥできなくなる——2026-10-12）。
         captureAll();
@@ -1284,7 +1304,8 @@
             const id = el.getAttribute(BLOCK_ID_ATTR);
             if (id && !live.has(id)) live.set(id, el);
         });
-        const typedSince = id => live.has(id) && sent.has(id) && serializeBlock(live.get(id)) !== sent.get(id);
+        // 送ったあとにまた書いた・書いている最中で送らなかった（held——ここで効くのは相手が消したときだけ）ブロック。
+        const typedSince = id => live.has(id) && (sent.has(id) ? serializeBlock(live.get(id)) !== sent.get(id) : held.has(id));
         const conflictIds = new Set((data.conflicts || []).map(c => c.id));
         const finalIds = (data.blocks || []).map(b => b.id);
         const finalSet = new Set(finalIds);
@@ -1302,6 +1323,11 @@
             (data.conflicts || []).forEach(c => openConflict(c.id, c));
             (data.blocks || []).forEach(b => {
                 if (conflictIds.has(b.id) || syncConflicts.has(b.id)) return;
+                // 書いている最中で送らなかったブロック（held）を相手が書き換えていた——いまは受け取らない。並べるのは、このブロックを
+                // 去って送ったとき（表の違うセルならそこで黙って合わさる）。元（syncBase）も進めない——送るときに3者で比べるため
+                // （2026-10-12 昼 利用者:「一文字打っただけで競合を検出しマージしろと言われても困ります」——早めの知らせは黄色の背景）。
+                // 相手が消したときは、いままでどおりその場で「消す」「残す」を聞く（下）。
+                if (held.has(b.id) && b.html) return;
                 const el = live.get(b.id);
                 if (!b.html) {
                     // 画面の書き出しのまま当たった・変わっていない——元を進める（中身は送ったときの書き出し）。
@@ -1339,7 +1365,7 @@
             });
             // 仕上がりに無いブロック——相手が消した。
             live.forEach((el, id) => {
-                if (finalSet.has(id) || syncConflicts.has(id) || !sent.has(id)) return;
+                if (finalSet.has(id) || syncConflicts.has(id) || (!sent.has(id) && !held.has(id))) return;
                 if (!syncBase.has(id)) return; // 足したのに入らなかった（サニタイズで空になった）——そのまま残す
                 if (typedSince(id)) { openConflict(id, { id, kind: 'deleted', by: '' }); return; }
                 remote.push({ id, before: serializeBlock(el), after: null });
@@ -1509,6 +1535,7 @@
         applyMode();
         buildToc();
         triggerAutoSave();
+        saveNow(); // 決めた版をすぐ正本へ
         setSyncStatus();
     }
 
@@ -1937,7 +1964,8 @@
             suppressSnapshot = false;
         }
         if (keptOne) notify('ほかの人が書き換えていたブロックは消さずに残しました。', { type: 'warn', duration: 8000, id: 'undo-kept' });
-        triggerAutoSave(); // 戻した中身を正本へ（戻したブロックは変更として送られる）
+        triggerAutoSave();
+        saveNow(); // 戻した中身をすぐ正本へ（戻したブロックは変更として送られる）
         refreshUndoButtons();
         saveHistorySoon();
     }
@@ -2112,12 +2140,13 @@
             if (e.key === 'Enter' || e.key === 'Tab' || ((e.ctrlKey || e.metaKey) && !['c', 'control', 'meta', 'shift', 'alt'].includes(k))) {
                 flushCheckpoint();
                 const label = e.key === 'Enter' ? '改行' : e.key === 'Tab' ? 'Tab' : (KEY_OP_LABEL[k] || '');
-                setTimeout(() => captureAll(label), 0);
+                // 改行・Tab はブロックの形を変える——拾ったらすぐ保存（太字などはブロックの中——去るときに）。
+                setTimeout(() => { if (captureAll(label) && (e.key === 'Enter' || e.key === 'Tab')) saveNow(); }, 0);
             }
         }, true);
         editor.addEventListener('paste', () => { flushCheckpoint(); setTimeout(() => captureAll('貼り付け'), 0); }, true);
         document.addEventListener('dragstart', () => { if (document.body.hasAttribute('edit-mode')) flushCheckpoint(); }, true);
-        document.addEventListener('drop', () => { if (document.body.hasAttribute('edit-mode')) setTimeout(() => captureAll('動かす'), 0); }, true);
+        document.addEventListener('drop', () => { if (document.body.hasAttribute('edit-mode')) setTimeout(() => { if (captureAll('動かす')) saveNow(); }, 0); }, true);
         let armed = false;
         document.addEventListener('pointerdown', e => {
             if (!document.body.hasAttribute('edit-mode') || !(e.target instanceof Element)) return;
@@ -2129,26 +2158,46 @@
             armed = true;
         }, true);
         // 押した操作が終わったら（このタスクのあと）名前を付けて拾う。非同期の操作（サーバーに聞いてから書く）は、止まったときに拾う。
+        // ⚠ pointerdown の無いクリック（キーボードの Enter・Space でボタンを押す）でも拾う——押す前の分もここで拾う（2026-10-12 昼）。
         document.addEventListener('click', e => {
-            if (!armed) return;
+            const wasArmed = armed;
             armed = false;
-            if (!document.body.hasAttribute('edit-mode')) return;
+            if (!document.body.hasAttribute('edit-mode') || !(e.target instanceof Element)) return;
+            if (e.target.closest('#w-ctx-undo, #w-ctx-redo')) return;
+            if (!wasArmed) {
+                const inText = e.target.closest('#w-editor-content') && !e.target.closest('.block-controls, .add-btn, .vocab-chrome, button, input, select');
+                if (inText) return;
+                flushCheckpoint();
+            }
             const label = opLabelOf(e.target);
-            setTimeout(() => captureAll(label), 0);
+            setTimeout(() => { if (captureAll(label)) saveNow(); }, 0); // 操作のあとはすぐ保存（ブロックを去るのを待たない）
         }, true);
     }
 
+    // triggerAutoSave は「まだ保存していない」の印を付けるだけ（2026-10-12 昼——1.5秒止まるたびの保存をやめた。利用者:「保存は、
+    // ブロックを去る時とページを去る時に限定して、細かい通信を抑制してはどうでしょう？」【考察】編集モードの再考 §8）。保存するのは、
+    // ブロックを去るとき（下の focusout——ブロックごとに書ける欄が分かれているので、別のブロックへ移る・本文の外を押すと出る。表は
+    // 表ごと）・タブを隠すとき・ページを去るとき（setupSaveOnLeave）・閲覧モードへ替えるとき・業務のボタンの前・操作とアンドゥの
+    // あと（saveNow）。保険の保存（長く止まったら）は置かない（利用者の答え）。
     function triggerAutoSave() {
         if (!document.body.hasAttribute('edit-mode')) return;
-        const statusEl = document.getElementById('w-save-status');
-        statusEl.innerText = "未保存";
-        statusEl.style.color = "#94a3b8";
+        unsaved = true;
+        editSeq++;
+        setSaveStatus("未保存", "#94a3b8");
+    }
 
-        if (saveTimeout) clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
-            saveTimeout = null; // 鳴ったら空にする（「未保存」の表示が残らないように——setSyncStatus）
-            saveToServer();
-        }, 1500); // 1.5秒デバウンス
+    // setupSaveOnLeave は、タブを隠すとき（パソコンが眠る・ほかのアプリへ移る・別のタブへ移る）とページを去るときに保存する。
+    let leavingPage = false; // ページを去る途中（pagehide のあと——送る保存は keepalive にする）
+    function setupSaveOnLeave() {
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && document.body.hasAttribute('edit-mode')) flushPendingSave();
+        });
+        window.addEventListener('pagehide', () => {
+            leavingPage = true;
+            if (document.body.hasAttribute('edit-mode')) flushPendingSave();
+        });
+        // 戻る・進むでページがそのまま戻ってきたら（bfcache）印を外す。
+        window.addEventListener('pageshow', () => { leavingPage = false; });
     }
 
     function setupAutoSave() {
@@ -2174,14 +2223,13 @@
 
         // ブロックの編集が終わった時点（＝フォーカスがそのブロックから外れた時）で即保存する。
         // サーバーはサニタイズ結果を返すので、除去が起きた場合はその変化がすぐ画面に出る
-        // （docs/旧文書/本文サニタイズ設計.md のエコーバック方式）。デバウンス保存は、ひとつの
-        // ブロックを編集し続けている間の保険として引き続き効く。
+        // （docs/旧文書/本文サニタイズ設計.md のエコーバック方式）。2026-10-12 昼からは、これがふだんの保存の機会
+        // （1.5秒止まるたびの保存はやめた——triggerAutoSave）。
         document.getElementById('w-editor-content').addEventListener('focusout', () => {
             if (!document.body.hasAttribute('edit-mode')) return;
             // 機械が要素を差し替えている途中（見出しにする・戻す）は保存しない——フォーカスのある要素を外した瞬間に、ブラウザが
             // 同期で focusout を出す。そのときの本文は差し替えの途中の姿（中身を移した空の段落）なので、送ると一瞬壊れる（2026-10-07）。
             if (quietDomChange || suppressSnapshot) return;
-            if (saveTimeout) clearTimeout(saveTimeout);
             saveToServer();
         });
     }
@@ -2265,6 +2313,8 @@
         refreshTableSort();          // 列の題を押して並べ替える（閲覧モード限定・表示だけ・2026-10-03）
         wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
+        renderPresence();            // ほかの人のキャレットのあるブロック（書ける形だけ・2026-10-12 昼）
+        updatePresence(false);
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
         refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
@@ -2591,6 +2641,75 @@
         }
     }
 
+    // ── ほかの人のキャレットのあるブロック（2026-10-12 昼）──────────────────────────
+    // 利用者:「他人が同じブロックにキャレットを置いている、あるいはすでに文字を打ち込んでいるような場合は、早期に警告して欲しいです」
+    // →「置いただけで背景色を黄色系の彩度の低い色にしては？説明が多すぎるのでシンプルに」「表ごと」（【考察】編集モードの再考 §8）。
+    //   - このタブは、キャレットのある上の段のブロックが変わるたびに POST /api/presence で知らせる（表は表ごと——セルを移っても同じ
+    //     ブロック）。タブを隠したら「どこにも置いていない」。サーバーはページの更新の知らせの購読ごとに覚え、同じページのタブへ配る
+    //     （{type:"presence"}・つないだ直後の hello にも）——タブを閉じれば購読が切れて消える。
+    //   - 受けたタブは、ほかのタブのいるブロックの背景を薄い黄色にするだけ（.w-block-others・名前はマウスを載せると出る）。書ける形のときだけ。
+    let presenceSent = null;   // 送った（このタブのキャレットのある）ブロック——null はまだ送っていない
+    let presenceTimer = null;
+    let othersPresence = [];   // [{tab, user, block}]（自分のタブも入っている——描くときに除く）
+
+    // caretBlockId は、このタブのキャレットのある上の段のブロックの ID（書ける形で、本文にフォーカスがあるとき）。
+    function caretBlockId() {
+        if (!document.body.hasAttribute('edit-mode') || document.visibilityState === 'hidden') return '';
+        const a = document.activeElement;
+        if (!a || !a.closest || !a.closest('#w-editor-content')) return '';
+        const b = topBlockOf(a);
+        return b ? (b.getAttribute(BLOCK_ID_ATTR) || '') : '';
+    }
+
+    // updatePresence は、キャレットのあるブロックが変わっていれば知らせる（immediate でなければ少し待つ——ブロックを渡り歩くあいだは送らない）。
+    function updatePresence(immediate) {
+        clearTimeout(presenceTimer);
+        const run = () => {
+            if (!currentPageId) return;
+            const id = caretBlockId();
+            if (id === presenceSent || (presenceSent === null && id === '')) { presenceSent = id; return; }
+            presenceSent = id;
+            fetch('/api/presence', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+                body: JSON.stringify({ id: currentPageId, tab: TAB_ID, block: id }),
+            }).catch(() => { /* 届かなくても書くことはできる——次に動いたときにまた送る */ });
+        };
+        if (immediate) run(); else presenceTimer = setTimeout(run, 250);
+    }
+
+    // renderPresence は、ほかのタブのいるブロックの背景を薄い黄色にする（名前はマウスを載せると出る）。
+    function renderPresence() {
+        document.querySelectorAll('#w-editor-content .w-block-others').forEach(el => {
+            el.classList.remove('w-block-others');
+            if (el.dataset.othersTitle) { el.removeAttribute('title'); delete el.dataset.othersTitle; }
+        });
+        if (!document.body.hasAttribute('edit-mode')) return;
+        const byBlock = new Map();
+        othersPresence.forEach(p => {
+            if (!p || p.tab === TAB_ID || !p.block) return;
+            if (!byBlock.has(p.block)) byBlock.set(p.block, new Set());
+            byBlock.get(p.block).add(p.user || 'ほかの人');
+        });
+        byBlock.forEach((users, id) => {
+            const el = blockElementById(id);
+            const wrap = el && (el.closest('.editor-block') || el);
+            if (!wrap) return;
+            wrap.classList.add('w-block-others');
+            if (!wrap.hasAttribute('title')) {
+                wrap.title = Array.from(users).join('・');
+                wrap.dataset.othersTitle = '1';
+            }
+        });
+    }
+
+    // setupPresence は、キャレットの移り・タブの出入りで知らせる引き金を配線する。
+    function setupPresence() {
+        document.addEventListener('focusin', () => updatePresence(false), true);
+        document.addEventListener('focusout', () => updatePresence(false), true);
+        document.addEventListener('visibilitychange', () => updatePresence(true));
+        // タブを閉じたら、購読（/api/page-events）が切れてサーバーが印を消す——ここで送らなくてよい。
+    }
+
     // openPageEvents は、このページの更新の知らせを購読する（タブを開いているあいだずっと・EventSource は自分でつなぎ直す）。
     function openPageEvents() {
         if (pageES || !window.EventSource) return;
@@ -2598,6 +2717,9 @@
         pageES = new EventSource('/api/page-events?id=' + currentPageId + '&tab=' + TAB_ID);
         pageES.onmessage = (e) => {
             let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+            // ほかの人のキャレットのあるブロック（2026-10-12 昼）——つないだ直後（hello）にも入っている。つなぎ直したら送り直す。
+            if (ev.type === 'presence') { othersPresence = ev.presence || []; renderPresence(); return; }
+            if (ev.type === 'hello') { othersPresence = ev.presence || []; renderPresence(); presenceSent = null; updatePresence(true); }
             if (ev.type === 'updated' && ev.tab === TAB_ID) return; // このタブ自身の保存
             if (document.body.hasAttribute('edit-mode')) {
                 // 書ける形では、ほかの人（業務のボタンを含む）の書き込みをその場で受け取る——書いている最中のブロックを
@@ -10380,6 +10502,8 @@
         setupEditorEvents();
         setupAutoSave();
         setupHistoryHooks(); // アンドゥの区切りの引き金（2026-10-07）
+        setupSaveOnLeave();  // タブを隠す・ページを去るときに保存（2026-10-12 昼）
+        setupPresence();     // キャレットのあるブロックを知らせる（2026-10-12 昼）
 
         if (anon) {
             // 匿名は読み取り専用。編集モードへは入らず、権限カード（loadPerms）は

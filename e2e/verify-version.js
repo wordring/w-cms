@@ -18,7 +18,7 @@ const H = { Origin: BASE };
 const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 }); }
-async function settleSaved(page) { await waitSaved(page); await page.waitForTimeout(2000); await waitSaved(page); }
+async function settleSaved(page) { await page.evaluate(() => document.activeElement && document.activeElement.blur()); /* 保存はブロックを去るとき（2026-10-12 昼） */ await waitSaved(page); await page.waitForTimeout(2000); await waitSaved(page); }
 
 async function gotoNewPage(page, parent) {
     const res = await page.request.post(BASE + '/api/new-page?parent=' + parent, { headers: H, maxRedirects: 0 });
@@ -47,6 +47,7 @@ async function versionsOf(page, id) {
     const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
     const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const errs = []; const cspViolations = [];
+    let madeId = '';
     page.on('pageerror', e => errs.push(String(e)));
     page.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });
     page.on('dialog', d => d.accept());
@@ -59,6 +60,7 @@ async function versionsOf(page, id) {
         await page.waitForURL('**/000000**', { timeout: 8000 });
 
         const id = await gotoNewPage(page, '000000');
+        madeId = id; // 最後に消す（2026-10-12——職場は実運用なので残さない）
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
         const pageURL = BASE + '/' + id;
 
@@ -137,7 +139,13 @@ async function versionsOf(page, id) {
         if (cspViolations.length) console.error('CSP:', cspViolations.slice(0, 3));
         if (errs.length) console.error('ERRS:', errs.slice(0, 3));
     } catch (e) { check('実行が最後まで到達', false); console.error(e); }
-    finally { await browser.close(); }
+    finally {
+        if (madeId) {
+            await page.request.post(BASE + '/api/lock/force?id=' + madeId, { headers: H }).catch(() => {});
+            await page.request.post(BASE + '/api/delete-page?id=' + madeId, { headers: H }).catch(() => {});
+        }
+        await browser.close();
+    }
     console.log(results.join('\n'));
     console.log(failCount === 0 ? `\n✅ 全 ${results.length} 項目 通過` : `\n❌ ${failCount} 件の失敗`);
     process.exit(failCount === 0 ? 0 : 1);

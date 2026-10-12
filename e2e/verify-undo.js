@@ -174,7 +174,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('⑦ 帯の ↶ ↷ で戻す・やり直す', u7 === 'P:段落B' && r7 === 'P:段落Bs', [u7, r7].join(' → '));
     check('⑦ やり直せないときは ↷ が押せない・新しく打つとやり直せなくなる', b7a === '押せない' && b7b === '押せる' && b7c === '押せない', [b7a, b7b, b7c].join(' → '));
 
-    // ⑧
+    // ⑧（2026-10-12 昼から保存はブロックを去るとき——打った段落 B から出てから待つ）
+    await caretEnd('cc03');
     await sleep(2500);
     const saved = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);
     check('⑧ 戻した中身が保存される', /段落Bt</.test(saved) && /段落C</.test(saved) && /data-type="file-view"/.test(saved) && /段落Axyz</.test(saved) && !/段落Axyzr/.test(saved),
