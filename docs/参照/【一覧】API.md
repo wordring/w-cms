@@ -159,7 +159,8 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 |---|---|---|---|
 | POST | `/api/lock` | 要認証（write） | ⚠ 2026-10-12 から**画面は握らない**（ブロック単位の保護——`/api/sync`）。道具が `/api/save` の前に一瞬握るためだけに残す。ロック取得（`{ok, token}`）。取れなければ **423 Locked** ＋ `{ok:false, holder, same_user, grace_remaining_sec}`。**本文は返さない**——取得後にフロントが `GET /api/load` を読む（そちらは計算ビューのSSRを通るため。2026-08-20 変更） |
 | GET | `/api/lock-events` | 要認証（write） | ロック状態の **SSE** 購読（保持者・待機者で共用） |
-| GET | `/api/page-events` | 要認証（**read**） | ページの更新の知らせの **SSE** 購読（2026-10-07・`internal/cms/page_events.go`）。つないだ直後に `{type:"hello", updated_at}`、本文が書き換わるたびに `{type:"updated", by, updated_at}`。知らせるのは本文を書く口（`/api/save`・`/api/save-block`・`RewriteBody`／`SetPageH1`・`RevertToVersion`）。**どこが変わったかは送らない**——画面が `/api/load?view=1` で読み直して比べる。ロックの流れとは別（あちらは write が要る） |
+| GET | `/api/page-events` | 要認証（**read**） | ページの更新の知らせの **SSE** 購読（2026-10-07・`internal/cms/page_events.go`）。つないだ直後に `{type:"hello", updated_at, presence}`、本文が書き換わるたびに `{type:"updated", by, updated_at}`、キャレットのあるブロックが変わるたびに `{type:"presence", presence:[{tab, user, block}]}`（2026-10-12 昼——購読ごとに覚える・タブを閉じると消える）。知らせるのは本文を書く口（`/api/save`・`/api/save-block`・`RewriteBody`／`SetPageH1`・`RevertToVersion`）。**どこが変わったかは送らない**——画面が `/api/load?view=1` で読み直して比べる。ロックの流れとは別（あちらは write が要る） |
+| POST | `/api/presence` | 要認証（read） | 書ける形のタブのキャレットのある上の段のブロック `{id, tab, block}`（2026-10-12 昼・`page_events.go`——ほかの人の画面でそのブロックの背景を薄い黄色に）。そのタブの購読（`/api/page-events`）に覚え、変わったら同じページのタブへ `presence` を配る。名乗れるのは自分の購読だけ・`block` は空（どこにも置いていない）か英数字・GET は 405 |
 | GET | `/api/page-watchers` | 要認証（read） | そのページを開いている人の名前 `{users:[…]}`（2026-10-12・`page_events.go`——ページを消す前の確かめのダイアログに「○○さんが開いています」）。`tab` のタブ（自分）は除く |
 | POST | `/api/unlock` | 要認証 | ロック解放。**write は見ない**（解放できるのはトークンが一致する保持者本人だけ）。タブを閉じるときは `navigator.sendBeacon` で送る |
 | POST | `/api/lock/force` | **admin のみ** | ロックの強制解放（保持者が落ちてスタックしたときの救済） |
