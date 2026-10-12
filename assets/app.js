@@ -2266,14 +2266,16 @@
         const modeText = document.getElementById('w-mode-text');
         const editor = document.getElementById('w-editor-content');
 
+        // スイッチは「閲覧」1つの意味にそろえる（2026-10-12 利用者:「閲覧モードのスイッチですが、編集できますに変えず「閲覧」の
+        // ままで、編集できるときにグレーアウトして意味の統一を図ってはどうでしょう」）——文字はいつも「閲覧」、書けるときは灰色。
+        // 中の checkbox は書ける形で checked のまま（見た目だけを逆にする——app.css の .slider）。
+        modeText.innerText = "閲覧";
         if (toggle.checked) {
             document.body.setAttribute('edit-mode', '');
-            modeText.innerText = "編集できます";
-            modeText.style.color = "#10b981";
+            modeText.style.color = "#cbd5e1";
         } else {
             document.body.removeAttribute('edit-mode');
-            modeText.innerText = "閲覧モード";
-            modeText.style.color = "#475569";
+            modeText.style.color = "#334155";
             hideSlashMenu();
             hideContextToolbar();
             hideTableToolbar();

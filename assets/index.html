@@ -145,9 +145,10 @@
             <a id="w-admin-link" class="admin-link is-hidden" href="/assets/admin.html">⚙ 管理</a>
             <button id="w-logout-btn" class="logout-btn">ログアウト</button>
             <span id="w-save-status"></span>
-            <span class="mode-label" id="w-mode-text">閲覧モード</span>
-            <label class="switch">
-                <input type="checkbox" id="w-mode-toggle">
+            <span class="mode-label" id="w-mode-text">閲覧</span>
+            <!-- 「閲覧」のオン・オフに見せる（2026-10-12）——中の checkbox は書ける形で checked（見た目だけ逆・app.css の .slider） -->
+            <label class="switch" title="オンで閲覧モード（読むだけ）・オフで書ける">
+                <input type="checkbox" id="w-mode-toggle" aria-label="書ける形（オフで閲覧モード）">
                 <span class="slider"></span>
             </label>
         </div>
