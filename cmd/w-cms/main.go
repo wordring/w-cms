@@ -211,6 +211,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/page-events", cms.PageEventsAPIHandler)
 	// そのページを開いている人（ページを消す前の確かめ・2026-10-12）。
 	protected.HandleFunc("/api/page-watchers", cms.PageWatchersAPIHandler)
+	// 書ける形のタブのキャレットのあるブロック（ほかの人の画面でそのブロックの背景を薄い黄色に・2026-10-12 昼）。
+	protected.HandleFunc("/api/presence", cms.PresenceAPIHandler)
 
 	// 保存済み文書の版管理（リビジョン／リバート。version.go）。
 	// 版は本文そのものなので、一覧・取得は本文と同じ read、書き戻しは write ＋編集ロック。

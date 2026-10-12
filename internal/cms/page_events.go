@@ -3,6 +3,7 @@ package cms
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -32,6 +33,15 @@ import (
 //
 // 編集ロック（editlock）の SSE とは別の流れです——あちらは編集権を持つ人・待つ人のための
 // もので write 権限が要り、こちらは読める人なら誰でも購読できます。
+//
+// ── ほかの人のキャレットのあるブロック（2026-10-12 昼） ──
+//
+// 利用者:「他人が同じブロックにキャレットを置いている、あるいはすでに文字を打ち込んでいるような場合は、早期に警告して欲しいです」
+// →「置いただけで背景色を黄色系の彩度の低い色にしては？説明が多すぎるのでシンプルに」「表ごと」。
+//
+// 書ける形のタブは、キャレットのある上の段のブロックが変わるたびに POST /api/presence で知らせ、ここは購読（タブ1つ）ごとに
+// 覚えて、同じページを開いているタブへ {type:"presence", presence:[{tab, user, block}]} を配ります（つないだ直後の hello にも
+// 入れる）。**心拍は要りません**——タブを閉じれば購読が切れ、そのタブの印も消えて配り直します。
 
 // pageEvent は購読者へ送る1件です。
 type pageEvent struct {
@@ -41,13 +51,23 @@ type pageEvent struct {
 	// Tab は書いたタブ（2026-10-12）——書ける形のタブは自分の保存の知らせを受けても読み直さない。
 	// 業務のボタン・道具の書き込みは空（押したタブも読み直す——ボタンが書いた中身を受け取るため）。
 	Tab string `json:"tab,omitempty"`
+	// Presence はキャレットのあるブロック（type が presence と hello のとき・2026-10-12 昼）。
+	Presence []presenceItem `json:"presence,omitempty"`
+}
+
+// presenceItem は、あるタブのキャレットのある上の段のブロックです。
+type presenceItem struct {
+	Tab   string `json:"tab"`
+	User  string `json:"user"`
+	Block string `json:"block"`
 }
 
 // pageWatcher は購読している1本（タブ1つ）です。誰が開いているかは、ページを消すときの確かめに使う
 // （2026-10-12 利用者が選んだ形——消す前の確かめのダイアログに「○○さんが開いています」）。
 type pageWatcher struct {
-	user string
-	tab  string
+	user  string
+	tab   string
+	block string // キャレットのある上の段のブロック（空はどこにも置いていない——2026-10-12 昼）
 }
 
 // pageWatchers はページごとの購読者です（タブ1つにつき1本）。
@@ -69,13 +89,52 @@ func (p *pageWatchers) subscribe(id string, who pageWatcher) chan pageEvent {
 	return ch
 }
 
-func (p *pageWatchers) unsubscribe(id string, ch chan pageEvent) {
+// unsubscribe は購読を外します。外したタブがブロックにキャレットを置いていたら true（配り直す）。
+func (p *pageWatchers) unsubscribe(id string, ch chan pageEvent) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	had := p.subs[id][ch].block != ""
 	delete(p.subs[id], ch)
 	if len(p.subs[id]) == 0 {
 		delete(p.subs, id)
 	}
+	return had
+}
+
+// setBlock は、そのタブ（user の購読に限る）のキャレットのあるブロックを覚えます。変わったら true。
+// 購読がまだ無い（つなぐ前）なら覚えない——画面はつないだときの hello で送り直します。
+func (p *pageWatchers) setBlock(id, tab, user, block string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	changed := false
+	for ch, w := range p.subs[id] {
+		if w.tab != tab || w.user != user || w.block == block {
+			continue
+		}
+		w.block = block
+		p.subs[id][ch] = w
+		changed = true
+	}
+	return changed
+}
+
+// presence は、そのページでキャレットをブロックに置いているタブです（並びはタブの印の順）。
+func (p *pageWatchers) presence(id string) []presenceItem {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []presenceItem
+	for _, w := range p.subs[id] {
+		if w.block != "" {
+			out = append(out, presenceItem{Tab: w.tab, User: w.user, Block: w.block})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Tab < out[j].Tab })
+	return out
+}
+
+// publishPresence は、そのページを開いているタブへキャレットの場所を配り直します。
+func publishPresence(id string) {
+	watchers.publish(id, pageEvent{Type: "presence", Presence: watchers.presence(id)})
 }
 
 // who はそのページを開いているタブを返します（exceptTab のタブを除く）。
@@ -148,6 +207,43 @@ func PageWatchersAPIHandler(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, map[string]any{"success": true, "users": names})
 }
 
+// presenceBlockRe はブロックの ID の形です（上の段の data-id——英数字。空は「どこにも置いていない」）。
+var presenceBlockRe = regexp.MustCompile(`^[0-9A-Za-z_-]{1,32}$`)
+
+// PresenceAPIHandler は POST /api/presence {id, tab, block} です——書ける形のタブが、キャレットのある上の段のブロックを
+// 知らせます（2026-10-12 昼）。そのタブの購読（/api/page-events）に覚え、変わったら同じページのタブへ配ります。
+// 名乗れるのは自分の購読だけ（別の人のタブの印は変えられない）。対象ページの read 権限を要求します。
+func PresenceAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ID    string `json:"id"`
+		Tab   string `json:"tab"`
+		Block string `json:"block"`
+	}
+	if !DecodeJSONBody(w, r, &req) {
+		return
+	}
+	id, ok := page.NormalizeID(req.ID)
+	if !ok {
+		JSONFail(w, http.StatusBadRequest, "ページIDが不正です")
+		return
+	}
+	if req.Tab == "" || (req.Block != "" && !presenceBlockRe.MatchString(req.Block)) {
+		JSONFail(w, http.StatusBadRequest, "タブかブロックの印が不正です")
+		return
+	}
+	if !page.RequirePageRead(w, r, id) {
+		return
+	}
+	if watchers.setBlock(id, req.Tab, user.Username, req.Block) {
+		publishPresence(id)
+	}
+	WriteJSON(w, map[string]any{"success": true})
+}
+
 // pageEventsKeepalive は、つないだままの線を中継の機器に切られないための間隔です。
 const pageEventsKeepalive = 25 * time.Second
 
@@ -175,14 +271,18 @@ func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 先に購読してから hello を送る——逆だと、そのあいだの書き込みを取りこぼす。
 	ch := watchers.subscribe(id, pageWatcher{user: auth.UsernameOf(r), tab: r.URL.Query().Get("tab")})
-	defer watchers.unsubscribe(id, ch)
+	defer func() {
+		if watchers.unsubscribe(id, ch) {
+			publishPresence(id) // 閉じたタブの印を消す
+		}
+	}()
 
 	send := func(ev pageEvent) {
 		b, _ := json.Marshal(ev)
 		w.Write([]byte("data: " + string(b) + "\n\n"))
 		flusher.Flush()
 	}
-	hello := pageEvent{Type: "hello"}
+	hello := pageEvent{Type: "hello", Presence: watchers.presence(id)}
 	if meta, ok := page.ReadSidecar(id); ok {
 		hello.UpdatedAt = meta.UpdatedAt
 	}
