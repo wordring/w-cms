@@ -34,6 +34,7 @@ const MARK = 'E2E' + Date.now().toString(36).toUpperCase();
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
   let id = '';
+  let id2 = '';
   const text = (d) => page.evaluate((x) => { const el = document.querySelector('#w-editor-content [data-id="' + x + '"]'); return el ? el.textContent : '(無い)'; }, d);
   const caretAt = (d) => page.evaluate((x) => {
     const el = document.querySelector('#w-editor-content [data-id="' + x + '"]');
@@ -177,11 +178,40 @@ const MARK = 'E2E' + Date.now().toString(36).toUpperCase();
     await waitSaved();
     const s9 = await stored();
     check('⑨ 戻した中身が保存される', s9.includes('段落Aabcd<') && !s9.includes('段落AabcdR') && s9.includes('段落D'), s9.slice(0, 300));
+
+    // ⑩ 節の中を直して保存したあと、全部戻して待っても、やり直しが残る（利用者:「アンドゥし続けて、アンドゥバッファが空になると、
+    //    リドゥバッファも空になっていませんか？」——保存の前に節の中の要素へ振った ID を「変更」として拾い、やり直しを消していた）
+    id2 = await makePage(page, '<h1>' + MARK + ' 節</h1><p data-id="pa01">段落Aabcd</p><p data-id="pb02">段落B</p>' +
+      '<section data-id="se06"><h2>材料</h2><p>節の段落</p><table><caption>材料</caption><tbody><tr><th>品</th></tr><tr><td>鉄</td></tr></tbody></table></section>');
+    await page.goto(BASE + '/' + id2);
+    await page.evaluate(() => { const t = document.getElementById('w-mode-toggle'); if (!t.checked) { t.checked = true; t.dispatchEvent(new Event('change', { bubbles: true })); } });
+    await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+    await sleep(800);
+    const steps = [['#w-editor-content [data-id="pa01"]', '1'], ['#w-editor-content section[data-id="se06"] p', '2'], ['#w-editor-content section[data-id="se06"] td', '3']];
+    for (const [q, ch] of steps) {
+      await page.evaluate((x) => { const el = document.querySelector(x); const ed = el.closest('[contenteditable="true"]') || el; ed.focus(); const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, q);
+      await page.keyboard.type(ch);
+      await sleep(1200);
+    }
+    await caretAt('pb02');
+    await sleep(2500); // ブロックを去って保存（節の中へ ID が振られる）・止まったときの拾い
+    const firstUndo = await page.evaluate(() => (document.getElementById('w-ctx-undo') || {}).title || '');
+    for (let i = 0; i < 3; i++) await undo();
+    const allUndone = await page.evaluate(() => [document.querySelector('#w-editor-content [data-id="pa01"]').textContent,
+      document.querySelector('#w-editor-content section[data-id="se06"] p').textContent, document.querySelector('#w-editor-content section[data-id="se06"] td').textContent].join('|'));
+    await sleep(3000); // 戻した中身の保存と、止まったときの拾い
+    const redoOK = await page.evaluate(() => { const r = document.getElementById('w-ctx-redo'); return !!r && !r.disabled; });
+    for (let i = 0; i < 3; i++) await redo();
+    const allRedone = await page.evaluate(() => [document.querySelector('#w-editor-content [data-id="pa01"]').textContent,
+      document.querySelector('#w-editor-content section[data-id="se06"] p').textContent, document.querySelector('#w-editor-content section[data-id="se06"] td').textContent].join('|'));
+    check('⑩ 節の中を直したあと、全部戻して待ってもやり直せる', firstUndo.includes('入力') && allUndone === '段落Aabcd|節の段落|鉄' && redoOK &&
+      allRedone === '段落Aabcd1|節の段落2|鉄3', [firstUndo, allUndone, redoOK, allRedone].join(' / '));
     check('ページのエラーが無い', errs.length === 0, errs.join(' / '));
   } catch (e) {
     check('例外なし: ' + e.message, false);
   } finally {
     await deletePage(page, id);
+    await deletePage(page, id2);
     await browser.close();
   }
   console.log(fails ? '\n' + fails + ' 件の失敗' : '\nすべて合格');

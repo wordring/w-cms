@@ -1188,11 +1188,22 @@
     async function runSync(pull) {
         if (!document.body.hasAttribute('edit-mode') || !syncReady) return;
         // 上の段の ID を揃え、入れ子へは**変えたブロックの中だけ**振る（見ただけのページを書き換えない——ensureBlockIds）。
+        captureAll(); // まだ拾っていない自分の変更を先にコマンドにする（このあと振る ID と混ぜない）
         ensureBlockIds(new Set());
         let blocks = serializeBlocks();
         const changedEls = blocks.filter(b => b.id && !syncConflicts.has(b.id) &&
             (!syncBase.has(b.id) || syncBase.get(b.id).html !== b.html)).map(b => b.el);
-        if (changedEls.length && ensureBlockIds(new Set(changedEls)) > 0) blocks = serializeBlocks();
+        if (changedEls.length) {
+            // ⚠ 入れ子へ振った ID は利用者の変更ではない——アンドゥの記録へ写す（2026-10-12 利用者:「アンドゥし続けて、アンドゥバッファが
+            //    空になると、リドゥバッファも空になっていませんか？」——節の中を直して保存すると、ここで節の中の要素に ID が振られ、
+            //    止まったときの拾いがそれを「変更」のコマンドに積んで、やり直しを消していた。直した直後の Ctrl+Z も、まずこれを戻していた）。
+            const prior = new Map(changedEls.map(el => [el, serializeBlock(el)]));
+            if (ensureBlockIds(new Set(changedEls)) > 0) {
+                blocks = serializeBlocks();
+                adoptMachineEdits(changedEls.map(el => ({ id: el.getAttribute(BLOCK_ID_ATTR), before: prior.get(el), after: serializeBlock(el) }))
+                    .filter(x => x.id && x.before !== x.after));
+            }
+        }
         document.getElementById('w-html-preview').value = joinBlocks(blocks);
         const sent = new Map();
         const order = [];
@@ -1351,7 +1362,7 @@
             // 相手の変更は記録へ写す（コマンドにしない——アンドゥは自分の変更だけを戻す・問い2）。
             if (remote.length) adoptExternal(remote.map(r => r.id));
             // サニタイズで除いたあとの姿を、そのブロックを最後に変えたコマンドの「後」にする（やり直しで除く前の危険な中身へ戻れない）。
-            if (sanitizedSeen) { notifySanitized(); adoptSanitized(sanitizedList); }
+            if (sanitizedSeen) { notifySanitized(); adoptMachineEdits(sanitizedList); }
             restoreCaretSoon.forEach(c => restoreCaret(c));
             flashed.forEach(n => {
                 const w = n.closest('.editor-block') || n;
@@ -1940,9 +1951,11 @@
         refreshUndoButtons();
     }
 
-    // adoptSanitized は、サーバーがサニタイズで除いたあとの姿を、そのブロックを最後に変えたコマンドの「後」にする
-    // （除く前の危険な中身へやり直しで戻れないように・戻すときに相手の変更と取り違えないように）。list は [{id, before, after}]。
-    function adoptSanitized(list) {
+    // adoptMachineEdits は、機械がブロックを書き換えた姿（サーバーのサニタイズのエコーバック・保存の前に入れ子へ振った ID）を、
+    // そのブロックの「いま」を指すコマンドの側へ写す——アンドゥの列でいちばん新しいコマンドの「後」と、リドゥの列でいちばん新しい
+    // （次にやり直す側の）コマンドの「前」。利用者の変更ではないのでコマンドは積まない（積むとやり直しが消える）。サニタイズは、除く前の
+    // 危険な中身へやり直しで戻れないように・戻すときに相手の変更と取り違えないように。list は [{id, before, after}]。
+    function adoptMachineEdits(list) {
         list.forEach(s => {
             for (let i = undoStack.length - 1; i >= 0; i--) {
                 const c = undoStack[i].changes.find(x => x.id === s.id);
@@ -1950,7 +1963,15 @@
                 if (c.after === s.before) c.after = s.after;
                 break;
             }
-            if (s.after === null) committed.delete(s.id); else committed.set(s.id, s.after);
+            for (let i = redoStack.length - 1; i >= 0; i--) {
+                const c = redoStack[i].changes.find(x => x.id === s.id);
+                if (!c) continue;
+                if (c.before === s.before) c.before = s.after;
+                break;
+            }
+            if (!committed.has(s.id) || committed.get(s.id) === s.before) {
+                if (s.after === null) committed.delete(s.id); else committed.set(s.id, s.after);
+            }
         });
         saveHistorySoon();
     }
@@ -1997,8 +2018,10 @@
         refreshUndoButtons();
     }
 
+    // canUndo は ↶ を押せるか——戻せるコマンドがあるとき。打った文字はすぐコマンドになり、操作は押したあとすぐ拾うので、
+    // 止まったときの拾いを待つあいだも押せる形にはしない（何も戻せないのに押せていた——2026-10-12）。
     function canUndo() {
-        return undoStack.length > 0 || !!captureTimer;
+        return undoStack.length > 0;
     }
 
     function undo() {
