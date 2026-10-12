@@ -1197,6 +1197,10 @@
         const sent = new Map();
         const order = [];
         const changes = [];
+        // ⚠ サーバーの並び（syncOrder）に無いブロックは、元（syncBase）が残っていても**足したブロックとして中身ごと送る**
+        //    （2026-10-12——🗑 で消したブロックをアンドゥで戻すと、元と同じ中身なので「変わっていない」と見なして送らず、
+        //    サーバーは並びの中の知らない ID を捨て、画面からも4秒後に消えていた。版の「このブロックだけ戻す」も同じ道）。
+        const known = new Set(syncOrder);
         blocks.forEach(b => {
             if (!b.id || sent.has(b.id)) return;
             sent.set(b.id, b.html);
@@ -1205,7 +1209,7 @@
             order.push(b.id);
             if (c) return; // 並べているあいだは中身を送らない（相手の版を黙って上書きしない）
             const base = syncBase.get(b.id);
-            if (!base) changes.push({ id: b.id, base_h: '', base_html: '', html: b.html });
+            if (!base || !known.has(b.id)) changes.push({ id: b.id, base_h: '', base_html: '', html: b.html });
             else if (base.html !== b.html) changes.push({ id: b.id, base_h: base.h, base_html: base.html, html: b.html });
         });
         const sameOrder = order.length === syncOrder.length && order.every((id, i) => id === syncOrder[i]);
@@ -1329,6 +1333,8 @@
                 touched = true;
             });
             if (placeBlocks(finalIds, fresh)) touched = true;
+            // 仕上がりに無いブロックの元は捨てる（聞いているものは残す）——残すと、あとで同じ中身で戻ったときに送られない。
+            Array.from(syncBase.keys()).forEach(id => { if (!finalSet.has(id) && !syncConflicts.has(id)) syncBase.delete(id); });
             syncOrder = finalIds.filter(id => !syncConflicts.has(id) || syncConflicts.get(id).kind !== 'deleted');
         } finally {
             quietDomChange = wasQuiet;
