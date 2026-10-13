@@ -216,7 +216,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// **ドメインは組織のページへ**（2026-09-16）。人のページには付けません——組織の
 	// 連絡先だからです。**2つ目のドメインはここで足ります**（実データの自社が
-	// `example-works.co.jp` と `itohocorp.onmicrosoft.com` の2つを持つ）。
+	// `example-works.co.jp` と `exampleworks.onmicrosoft.com` の2つを持つ）。
 	domainsAdded := 0
 	if !created && len(doms) > 0 {
 		domainsAdded, err = AddContactDomains(target, user.Username, doms)

@@ -112,18 +112,18 @@ func TestRegisterWritesNoEmptyTagList(t *testing.T) {
 func TestRegisterByTitleMergesIntoExisting(t *testing.T) {
 	box := setupPartnerBox(t)
 	u := &auth.User{Username: "alice", IsAdmin: true}
-	partnerPage(t, "000201", box, "コニック金型センター", "info@konic.example")
+	partnerPage(t, "000201", box, "こだま金型製作所", "info@kanagata.example")
 
 	// 候補に無い名前を打った想定（page_id 無し）。題が一致するので既存へ寄る。
 	code, res := postRegister(t, u, map[string]any{
-		"name": "コニック金型センター",
-		"addresses": []string{"order@konic.example"},
+		"name": "こだま金型製作所",
+		"addresses": []string{"order@kanagata.example"},
 	})
 	if code != 200 || res["merged"] != true || res["page_id"] != "000201" {
 		t.Fatalf("既にある組織へ寄りません（会社が2枚になる）: %d %+v", code, res)
 	}
 	body := bodyOfPage(t, "000201")
-	if !strings.Contains(body, "<dd>order@konic.example</dd>") {
+	if !strings.Contains(body, "<dd>order@kanagata.example</dd>") {
 		t.Errorf("アドレスが足されていません:\n%s", body)
 	}
 }
@@ -181,7 +181,7 @@ func TestOrgCandidatesAndInitials(t *testing.T) {
 	u := &auth.User{Username: "alice", IsAdmin: true}
 	partnerPageWith(t, "000201", box, "南北スポーツ機械",
 		nil, []string{"example-sports.co.jp"})
-	partnerPage(t, "000202", box, "コニック金型センター")
+	partnerPage(t, "000202", box, "こだま金型製作所")
 	newPage(t, "000210", "<h1>山田 太郎</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: "000201"})
 
 	// ドメインの持ち主が1つ → 候補は［その組織, 個人］、組織欄はそれ、担当者欄は表示名。
@@ -209,7 +209,7 @@ func TestOrgCandidatesAndInitials(t *testing.T) {
 
 	// 持ち主が2つ（共有ドメイン）→ 組織欄は空（機械は選ばない）。会社の口は担当者が空。
 	c2 := UnknownContact{Address: "order@shared.example", Domain: "shared.example", Name: "order@shared.example",
-		DomainOwners: []PartnerRef{{ID: "000201", Title: "南北スポーツ機械"}, {ID: "000202", Title: "コニック金型センター"}}}
+		DomainOwners: []PartnerRef{{ID: "000201", Title: "南北スポーツ機械"}, {ID: "000202", Title: "こだま金型製作所"}}}
 	org, person = contactRowInitials(c2, orgCandidates(u, c2))
 	if org != "" || person != "" {
 		t.Errorf("共有ドメインで機械が選びました: org=%q person=%q", org, person)

@@ -349,7 +349,7 @@ func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, 
 // **以後その全員がその人になりました**（実データに yahoo のアドレスがあります）。
 // タグなら、yahoo に付けないのは編集者の判断です。
 //
-// **1つの組織が複数持てます**（自社が `example-works.co.jp` と `itohocorp.onmicrosoft.com` の
+// **1つの組織が複数持てます**（自社が `example-works.co.jp` と `exampleworks.onmicrosoft.com` の
 // 2つを持つ実例）。タグが複数になるだけです。
 //
 // ⚠ **同じドメインを複数の組織が持つと、1つに決まりません。** そのときは
@@ -499,7 +499,7 @@ func AddContactAddresses(pageID, author string, addrs []string) (int, error) {
 // AddContactDomains は組織のページへ `ドメイン` のタグを足します（2026-09-16）。
 //
 // **組織の連絡先**です（`AddContactAddresses` が個人の連絡先なのに対して）。
-// **1つの組織が複数持てます**——自社が `example-works.co.jp` と `itohocorp.onmicrosoft.com` の
+// **1つの組織が複数持てます**——自社が `example-works.co.jp` と `exampleworks.onmicrosoft.com` の
 // 2つを持つのが実データの例で、タグが2つ並ぶだけです。
 //
 // ⚠ **フリーメールのドメインを足さないのは編集者の判断です**（2026-09-16 ユーザー:
