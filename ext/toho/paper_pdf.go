@@ -114,6 +114,8 @@ type paperKind struct {
 
 // stampedPDFName は添付の名前です——⚠ **日時を入れます**（同じページで作り直すたびに増えるので、どれがいつのものか
 // 分からないと困る・添付は上書きされない）。
+// （発注書だけは 2026-10-14 から、まだ送っていない表示中の PDF を作り直すと、その添付を上書きします——
+// order_pdf_sent.go の `overwriteUnsentOrderPDF`。名前の日時も作り直した時刻へ替わります。）
 func stampedPDFName(head string) string {
 	return head + " " + time.Now().Format("20060102-150405") + ".pdf"
 }

@@ -12,6 +12,8 @@ package contacts
 //
 // ⚠ **どちらも本文を読んで・変えて・書きます。** エディタが開いていると上書きし
 // 合うので、`editlock.RefuseWhileEditing` を通します（2026-09-14）。
+// 2026-10-12 からブラウザは編集権を取らないので、この関門が断るのは道具（`/api/lock`）が握っているときだけです。
+// 人の保存とは、`cms.RewriteBody` の書き込みの錠（`cms.LockPageBody`）で順に並びます。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -181,6 +183,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// **開いている人が居たら断ります**（2026-09-14）。本文を読んで・変えて・書くので、
 	// エディタが開いているとオートセーブと上書きし合います。
+	// （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ——ファイルの冒頭。）
 	if !editlock.RefuseWhileEditing(w, target) {
 		return
 	}

@@ -123,6 +123,7 @@ func OrderSendStateOf(db cms.ReadOnlyDB, pageID int) OrderSendCounts {
 //
 // ⚠ **閲覧モードから押せることが肝**です。紙を出したあとに印を付けるのに、
 // いちいち編集モードへ入るのは道が遠すぎます。
+// （2026-10-12 に編集モードをやめました。いまは閲覧モードでも書ける形でも押せます。）
 func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {

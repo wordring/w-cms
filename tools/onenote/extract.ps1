@@ -24,8 +24,10 @@
 #     「通信量を測る」）。
 #
 # ⚠ **読むだけ**です（GetHierarchy・GetPageContent・GetBinaryPageContent）。書き込み系は使わない。
-# ⚠ **32ビットの PowerShell で動かす**（OneNote が32ビット版で、64ビットでは開けない）:
+# ⚠ **OneNote と同じビット数の PowerShell で動かす**（ビット数が違うと OneNote を開けない）。
+#   職場の OneNote は32ビット版なので SysWOW64、家は64ビット版なので System32 の powershell.exe（吸い出しは 2026-09-29 から家で動かしている）:
 #     C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File extract.ps1 [ノートブック名]
+#     C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File extract.ps1 [ノートブック名]
 # ⚠ このファイルは BOM 付き UTF-8 で保存すること（PowerShell 5.1 は BOM 無しを cp932 として読む）。
 # ⚠ 実データの名前をこのファイルに書かないこと（公開リポジトリ）——対象は出力先の「対象.txt」に書く。
 # ─────────────────────────────────────────────────────────────────────────

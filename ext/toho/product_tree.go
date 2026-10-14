@@ -141,6 +141,7 @@ func ensureProductPath(user *auth.User, customer, machine string) (string, error
 // 合流先の区分を消してよい根拠がありません。
 //
 // ⚠ **編集中のページには書きません**（オートセーブと上書きし合う・競合対策 §9）。
+// （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ。人の保存とは `cms.RewriteBody` の錠で順に並ぶ。）
 func setProductKinds(user *auth.User, pageID string, kinds []string, replace bool) error {
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil {

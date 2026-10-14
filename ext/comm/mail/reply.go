@@ -10,8 +10,10 @@ package mail
 // しません——返信元を持たない新規のメールが行き場を失いますし、送った記録が
 // 受け取った記録に従属して見えるためです。繋がりは所有ではなく**参照**で表します:
 //
-//	送信記録の `返信元` タグ → 返信元の記録ページ（押せば飛ぶ）
+//	送信記録の `親ページID` タグ → 返信元の記録ページ（押せば飛ぶ）
 //	返信元の側からは**逆引き**で「この記録への返信」が引ける（PagesByTag）
+//
+// （このタグは、2026-10-09 まで `返信元` の名前でした。）
 //
 // **送信と記録は別の失敗をします。** メールは出たのに記録を作れなかった場合、
 // 記録が無いことより「出したかどうか分からない」ほうが困るので、
@@ -101,7 +103,8 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// ⚠ **下書きは送る前に確かめます**——送ってから「下書きを片付けられない」と分かっても、
-	// 出たメールは戻せません（書けない・エディタで開いている下書きなら、1通も送らない）。
+	// 出たメールは戻せません（書けない・エディタで開いている下書きなら、1通も送らない。
+	// 2026-10-12 から「エディタで開いている」は、道具〔`/api/lock`〕が握っているときだけ）。
 	draftID := ""
 	if raw := strings.TrimSpace(sreq.DraftID); raw != "" {
 		if draftID, ok = checkDraftWritable(w, r, user, raw); !ok {
@@ -277,7 +280,8 @@ func sentRecordBody(tmpl, from, sourcePageID, sourceMsgID, messageID string, now
 	d.SetTag(comm.SentAtTag, now.In(time.Local).Format(time.RFC3339))
 	// **自分が立てた Message-ID を残します。** 相手がこれに返信すると、その
 	// In-Reply-To がここを指すので、**受信の取り込みだけでスレッドが繋がります**
-	// （返信元メッセージID の逆引き——既にある仕組みがそのまま効く）。
+	// （取り込みが、In-Reply-To と同じ Message-ID を持つこの記録を引いて、相手の返信に `親ページID` を書く——
+	// parent_link.go の `ParentRecordOf`。2026-10-09 までは「返信元メッセージID」のタグの逆引きでたどっていた）。
 	d.SetTag(comm.MessageIDTag, messageID)
 	// 何件添えたか。**受信側と同じタグ**なので、一覧の 📎 もそのまま出ます。
 	if n := len(req.Attachments); n > 0 {
@@ -348,7 +352,7 @@ func cleanAddrs(in []string) []string {
 	return out
 }
 
-// sourceMessageID は返信元ページの「メッセージID」タグを読みます（無ければ空）。
+// sourceMessageID は返信元ページの「Message-ID」タグを読みます（無ければ空。2026-10-09 までの名前は「メッセージID」）。
 //
 // **索引から直接読みます**——本文を解釈し直さないため。取り込みが書いた値が正本で、
 // 受信メールの Message-ID がそのまま入っています。

@@ -46,6 +46,7 @@ type MailAttachment struct {
 // InReplyTo に返信元の Message-ID を入れると、**受信側と同じ仕組みでスレッドが
 // 繋がります**——取り込みが `返信元メッセージID` タグを書き、索引の逆引き
 // （PagesByTag）で辿れるのと同じ形（intake_eml.go）。
+// （2026-10-09 から、タグの名前は `In-Reply-To` です。w-cms の中で前後をたどるのは `親ページID`——parent_link.go。）
 type OutgoingMail struct {
 	To          []string
 	Cc          []string

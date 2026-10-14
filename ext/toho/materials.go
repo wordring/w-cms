@@ -20,6 +20,8 @@ import (
 // <table data-type="part-materials"> の中身は汎用索引 vocab_index が受け持ち、
 // ここに残るのは③計算——GET /api/required-materials（部材手配計算API）と、
 // 計算ビューのサーバー事前描画が共用する RequiredMaterials だけです。
+// （2026-09-21 から、計算ビューの描画は加工製品ごとの集計 `procurementViewHTML`〔view_procurement.go〕へ
+// 替わりました。いま `RequiredMaterials` を呼ぶのは `/api/required-materials` と試験だけです——下の init()。）
 //
 // 「語彙とプラグインは運用者のもの」（要件定義書 §1.1・§4.5）の形に近づいた、
 // というのがこの引き算の意味です。コアのスキーマから板金部の語彙が消えました。
@@ -204,7 +206,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 受注残表から受注明細の1セルを書き換える口（2026-09-21・order_edit.go）。
 		// ⚠ **計算ビューで初めての「書ける鏡」**です——押した先が**別のページの
 		// 本文**になるので、行番号と `品番` の2つで照合し、いまの値とも突き合わせ、
-		// 編集ロックの関門を通します。
+		// 編集ロックの関門を通します（2026-10-12 からは、道具が `/api/lock` で握っているときだけ断る）。
 		{Pattern: "/api/order-item", Handler: OrderItemEditAPIHandler},
 		// 発注書のPDFを作って、そのページの添付として残す口（2026-09-21・order_pdf.go）。
 		// ⚠ **7年保存がこれで済みます**——ファイルがページと一緒に残り、版も監査も付きます。
@@ -302,8 +304,10 @@ func filterVisible(ids []int, canView func(int) bool) []int {
 }
 
 // RequiredMaterials は指定ページ（受注ページ）に紐づく部材の要手配数・発注済数を
-// 集計します。/api/required-materials と計算ビューのサーバー事前描画
-// （view_render.go）が共用する。
+// 集計します。呼ぶのは /api/required-materials（と試験）だけです。
+// 2026-09-21 までは計算ビューのサーバー事前描画も共用していましたが、画面の表示は
+// 加工製品ごとの集計 `procurementViewHTML`（view_procurement.go）へ替わりました。
+// この口を叩くのは `e2e/verify-template.js` だけなので、消すなら当て先を先に替えること。
 //
 // **読む先は汎用索引 vocab_index だけです**（D-1・2026-08-31）。かつては
 // client_order_items / part_materials / our_order_items+our_orders という

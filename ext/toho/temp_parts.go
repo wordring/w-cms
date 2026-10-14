@@ -283,6 +283,7 @@ var errBoxBusy = errors.New("発注フォルダを誰かが編集中です（編
 // returnToTempParts は行を発注フォルダの臨時部材表へ書きます（発注書ページから戻すとき）。
 //
 // ⚠ **発注フォルダを誰かが編集中なら断ります**——オートセーブと黙って上書きし合います。
+// （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ。人の保存とは `cms.RewriteBody` の錠で順に並ぶ。）
 // ⚠ 発注フォルダが無ければ作ります（置き場の箱・`EnsureTopLevelBox`）。
 func returnToTempParts(user *auth.User, ln ourOrderLine) error {
 	boxID, err := cms.EnsureTopLevelBox(PurchaseOrderBoxTitle, user.Username)

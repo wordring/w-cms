@@ -572,7 +572,12 @@ type filingResult struct {
 }
 
 // FileDrawingsAPIHandler は POST /api/file-drawings です。
-// 入力: {rows: [{page_id, customer, machine_name, drawing_name}, ...]}
+// 入力: {rows: [{page_id, customer, machine_name, drawing_name, kinds, merge, …}, ...], orders: [{page_id, client}, ...]}
+// （rows の全部の欄は `filingRequest`、orders は `orderRequest`〔filing_order.go〕）。
+//
+// 関門は行ごとです（`filingSourceGate`）。2026-10-12 からブラウザは編集権を取らないので、
+// 「編集中なら飛ばす」は道具（`/api/lock`）が握っているときだけ効きます。人の保存とは、
+// 本文を書く口（`cms.RewriteBody` など）の書き込みの錠で順に並びます。
 func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -609,6 +614,9 @@ func FileDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 // **開いている人が居たら、その行は飛ばします**（2026-09-14）。整理は本文を読んで・変えて・書くので、誰かがエディタを
 // 開いていると**オートセーブと上書きし合います**。関門をハンドラではなく行ごとに置くのは、整理が**複数のページへ書く**
 // ためです（加工製品ページ・合流先）——1枚が編集中でも、残りは片付けられるほうがよい。
+//
+// （2026-10-12 から）ブラウザは編集権を取らないので、`EditorOpen` で飛ばすのは道具（`/api/lock` → `/api/save`）が
+// 一瞬握っているときだけです。人がページを開いていても通り、書き込みは `cms.RewriteBody` の錠で人の保存と順に並びます。
 func filingSourceGate(user *auth.User, pageID string) (idInt int, refused filingResult, ok bool) {
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil || !canWritePage(user, idInt) {
@@ -1067,6 +1075,8 @@ func movePage(user *auth.User, pageID, newParent, title string) error {
 // ⚠ **編集中のページには書きません**（`editlock.RefuseWhileEditing` と同じ理由ですが、
 // ここは画面へ返す `http.ResponseWriter` を持たないので、**開いていたら黙って諦めます**
 // ——整理そのものは続けたいからです。次に整理を押せば書かれます）。
+// （2026-10-12 から）ブラウザは編集権を取らないので、諦めるのは道具（`/api/lock`）が握っているときだけです。
+// 書き込みは `cms.RewriteBody` の錠の中なので、人の保存とは順に並びます。
 func linkPartner(user *auth.User, customerID, title string) {
 	partnerID, ok := contacts.PartnerByTitle(user, title)
 	if !ok {

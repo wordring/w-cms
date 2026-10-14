@@ -180,7 +180,8 @@ func renderEstimate(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	appendFootRow(el, span, "estimate-profit", estimateProfitRow+": "+basis+" × "+rate+" = "+comma(r.Profit)+"円")
 	appendFootHTML(el, span, "estimate-final", `<strong>`+estimateFinalRow+`: `+stdhtml.EscapeString(comma(r.Final))+`円</strong>`)
-	// 率を変える欄——書ける人にだけ（閲覧モードで押す・編集モードでは表の「弊社利益」の行を直接直せる）。
+	// 率を変える欄——書ける人にだけ（閲覧モードでも書ける形でも押せる。書ける形では表の「弊社利益」の行を直接直してもよい。
+	// 2026-10-12 までは「閲覧モードで押す・編集モードでは行を直接直す」の分け方だった）。
 	if ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID) {
 		appendFootHTML(el, span, "estimate-rate", `<span class="estimate-rate-form" data-estimate-index="`+
 			strconv.Itoa(index)+`">利益率 <input type="number" class="estimate-rate-input" min="0" step="0.1" value="`+

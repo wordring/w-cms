@@ -14,6 +14,10 @@ package comm
 //   - **親があとから取り込まれたら、既にある子に書き足す**（利用者が「書き足す」を選んだ）——受信の箱を先に読むと、
 //     こちらが送ったメール（親）より相手の返信（子）が先に入るため。誰かが子を開いて編集していたら飛ばし、次に読み込んだ
 //     ときに書き足す（FixRecordTags）。
+//     （2026-10-12 から、ブラウザは編集権を取らないので、飛ばすのは道具〔`/api/lock`〕が子を握っているときだけ。
+//     人の保存とは `cms.RewriteBody` の書き込みの錠で順に並びます。）
+//     いま書き足すのは、メールの読み込みのたびの `FixRecordTags` の②です。`LinkChildrenOf`（親を取り込んだその場で
+//     書き足す口）は、どこからも呼ばれていません。
 //   - 取り込み済みの記録（それまでの名前「メッセージID」「返信元メッセージID」「返信元」）は、メールの読み込みのたびに
 //     最初に直す（FixRecordTags——直すものが無ければ索引を引くだけ）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -85,6 +89,7 @@ func withParentTag(body, parentID string) (string, bool) {
 }
 
 // addParent は記録 childID に 親ページID を書き足します。誰かが開いて編集していれば飛ばします（false——次の回で）。
+// （2026-10-12 から、飛ばすのは道具〔`/api/lock`〕が握っているときだけです。）
 func addParent(childID int, parentID, by string) bool {
 	if _, open := editlock.Locks.EditorOpen(childID); open {
 		return false
@@ -100,6 +105,7 @@ func addParent(childID int, parentID, by string) bool {
 
 // LinkChildrenOf は、Message-ID が msgID の記録 parentID を、親ページID の無い子（In-Reply-To が msgID）に書き足します。
 // 書き足した数を返します（編集中の子は飛ばす——次の読み込みで FixRecordTags が拾う）。
+// ⚠ いまはどこからも呼ばれていません（親があとから来た子への書き足しは、`FixRecordTags` の②が受け持っています）。
 func LinkChildrenOf(parentID, msgID, by string) int {
 	msgID = strings.TrimSpace(msgID)
 	self, err := strconv.Atoi(parentID)
@@ -135,7 +141,8 @@ func renameLegacyTags(body string) string {
 }
 
 // FixRecordTags は取り込み済みの記録を今の形へ直します——古い名前のタグを新しい名前へ（①）、親ページID の無い子に、
-// 引ける親を書き足す（②）。誰かが開いて編集している記録は飛ばします（次に呼ばれたときに直す）。
+// 引ける親を書き足す（②）。誰かが開いて編集している記録は飛ばします（次に呼ばれたときに直す。
+// 2026-10-12 からは、道具〔`/api/lock`〕が握っている記録だけを飛ばします）。
 // 直した記録の数を返します。直すものが無ければ索引を引くだけです（メールの読み込みのたびに最初に呼ぶ）。
 func FixRecordTags(by string) (renamed, linked int, err error) {
 	// ① 古い名前（先に読み切ってから書く——行を読みながら書き換えない）。

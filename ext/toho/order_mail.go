@@ -112,6 +112,7 @@ func attachLineDocs(d *comm.ComposeDraft, user *auth.User, rows []map[string]str
 //
 // ⚠ **関門は `/api/order-pdf` と同じ**です（write 権限・テンプレートの外・誰も編集していない——送れたあとに
 // 発注済みの印と記録を本文へ書くため）。断るときは応答を書いて false（メールは1通も出ない）。
+// 「誰も編集していない」は、2026-10-12 からは道具（`/api/lock`）が握っていないことだけを見ます。
 func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]comm.ComposeAttachment, bool) {
 	user := auth.CurrentUser(r)
 	if !requireWritableIdle(w, r, pageID) {

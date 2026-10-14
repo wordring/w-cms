@@ -187,12 +187,14 @@ const ContactsRefTag = "連絡帳"
 // ContactsBoxPageID はトップ直下の連絡帳ページを返します（無ければ ok=false）。
 func ContactsBoxPageID() (string, bool) { return cms.TopLevelPageByTitle(ContactsBoxTitle) }
 
-// EnsureContactsBox は取引先ページを返し、**無ければ作ります**。
+// EnsureContactsBox はトップ直下の連絡帳ページ（`ContactsBoxTitle`）を返し、**無ければ作ります**
+// （2026-09-16 に箱が「取引先」から「連絡帳」へ分かれる前は、取引先ページでした）。
 //
 // **通信箱と違って自動で作ります。** 通信箱は「そこへ落とすと取り込みが走る」という
 // 機能の入口なので、人が意図して置くものです。取引先はただの置き場——無いからと
 // 登録ボタンを行き止まりにする理由がありません。名前を変えられたら次の登録で
 // また作られますが、**取り込みのように静かに壊れることはありません**。
+// （2026-09-27 から、作るのは同じ題のテンプレートがあるときだけです。無ければエラーを返します——下の本文。）
 //
 // 権限は呼ぶ側が見ます（作るときはトップへの書き込み、あるときは箱への書き込み）。
 func EnsureContactsBox(user *auth.User) (string, error) {

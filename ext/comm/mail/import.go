@@ -84,7 +84,8 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 	sum.Listed = len(refs)
 
 	// 古いものから取り込みます——**スレッドの親が先に来る**ほうが、
-	// 返信元メッセージIDの逆引きが最初から繋がります。
+	// 返信元メッセージIDの逆引きが最初から繋がります（2026-10-09 からは、取り込みが親の記録を引いて
+	// 子に `親ページID` をその場で書けます。親があとから来たときは FixRecordTags が書き足します）。
 	for i := len(refs) - 1; i >= 0; i-- {
 		if sum.Imported >= limit {
 			break // 続きは次に押したときへ（1回の要求が長く居座らない）

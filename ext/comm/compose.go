@@ -30,7 +30,7 @@ import (
 
 // 組み込みの用件の名前です（画面にもこの言葉で出ます）。
 const (
-	PurposeReply = "返信" // 通信記録への返信（In-Reply-To と `返信元` が付く）
+	PurposeReply = "返信" // 通信記録への返信（In-Reply-To と `親ページID` が付く。2026-10-09 までは `返信元`）
 	PurposeNew   = "新規" // 元のページの無いメール
 )
 
@@ -43,8 +43,8 @@ const (
 	// DraftTag は下書きの印です。値は用件の名前（返信・新規・発注書）。
 	DraftTag = "下書き"
 	// DraftSourceTag は用件の元のページ（返信元のメール・発注書）を指す参照タグです。
-	// ⚠ `返信元` にはしません——送る前から「この記録への返信」に並ぶと、出していない返信が
-	// 出したように見えます。
+	// ⚠ `親ページID`（2026-10-09 までは `返信元`）にはしません——送る前から「この記録への返信」に並ぶと、
+	// 出していない返信が出したように見えます。
 	DraftSourceTag = "下書きの元"
 )
 
@@ -93,7 +93,7 @@ type SendPurpose struct {
 	// AfterSent は送れたあとに呼ばれます。⚠ **ここで失敗しても送信は成功のまま**です（出た事実を
 	// 隠さない）——エラーは理由として人に見せます。recordID は送信の控えのページ（作れなければ空）。
 	AfterSent func(user *auth.User, pageID, recordID string) error
-	// InReplyTo は用件の元のページへの返信として送るかです（In-Reply-To と `返信元` が付く）。
+	// InReplyTo は用件の元のページへの返信として送るかです（In-Reply-To と `親ページID` が付く。2026-10-09 までは `返信元`）。
 	InReplyTo bool
 	// NeedsPage は用件の元のページが要るかです（新規以外は要る）。
 	NeedsPage bool

@@ -299,6 +299,8 @@ func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string
 		return "⚠ 元の発注部材表を片付けられません（何枚目か分かりません）"
 	}
 	// ⚠ **開いている人が居たら触りません**——オートセーブと上書きし合います。
+	// （2026-10-12 から、ブラウザは編集権を取らないので、触らないのは道具〔`/api/lock`〕が握っているときだけ。
+	// 人の保存とは `cms.RewriteBody` の錠で順に並びます。）
 	if _, open := editlock.Locks.EditorOpen(pageNum(pageID)); open {
 		return "⚠ 元の発注部材表はそのままです（誰かが発注ページを編集中です）"
 	}
@@ -352,6 +354,7 @@ func replaceDraftTable(body string, n int, replacementHTML string) (string, bool
 //
 // ⚠ **閲覧モードから押せることが肝**です。本文の表なのでエディタでも消せますが、
 // **一覧を見ながら出し入れする**のに、いちいち編集モードへ入るのは道が遠すぎます。
+// （2026-10-12 に編集モードをやめました。いまは閲覧モードでも書ける形でも押せます。）
 func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {

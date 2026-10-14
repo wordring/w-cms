@@ -37,7 +37,8 @@ const draftAttachSource = "mail-compose"
 // 応答は {success, page_id, file, name}——送る欄の添付の候補と同じ組（AttachRef）。
 //
 // 守りは添付の口と同じ: 本文の上限（max_upload_mib）・下書きを書けること（下書きのページだけ・エディタで開いて
-// いれば断る——checkDraftWritable）・送れる種類だけ（sendableExts）・名前の検査（SafeAttachmentName）・
+// いれば断る——checkDraftWritable。2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ）・
+// 送れる種類だけ（sendableExts）・名前の検査（SafeAttachmentName）・
 // 中身の検査（PDF の先頭・画像の種別と EXIF——GuardUploadContent）。
 func MailAttachAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)

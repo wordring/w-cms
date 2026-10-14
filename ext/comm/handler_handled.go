@@ -25,6 +25,9 @@ package comm
 //
 // **編集ロックは要りません。** 人が編集中の本文を奪う操作ではなく、タグを1つ足すだけ
 // ——取り込みや解析と同じ理屈です（write 権限は要ります）。
+// （2026-09-14 から、口は1件ずつ「開いている人が居れば飛ばす」を見ています——下の `MarkHandledAPIHandler`。
+// 2026-10-12 からブラウザは編集権を取らないので、飛ばすのは道具〔`/api/lock`〕が握っているときだけです。
+// 本文は `cms.RewriteBody` の書き込みの錠の中で書くので、人の保存とは順に並びます。）
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -87,6 +90,7 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// **開いている人が居たら飛ばします**（2026-09-14）。`MarkHandled` は本文を
 		// 読んで・変えて・書くので、エディタが開いていると上書きし合います。
 		// ここも1件ずつ——押せたものは押せたままにするのがこの口の流儀です。
+		// （2026-10-12 から、飛ばすのは道具〔`/api/lock`〕が握っているときだけ。人の保存とは錠で順に並ぶ。）
 		if _, open := editlock.Locks.EditorOpen(idInt); open {
 			failed++
 			continue
@@ -115,6 +119,8 @@ var handledPairRe = regexp.MustCompile(`(?s)<dt[^>]*>\s*` + regexp.QuoteMeta(htm
 // 可変タグの中に居るのが本来**。1つだけ置くので、二度押しても増えません。
 // ⚠ **呼ぶ前に `editlock.RefuseWhileEditing` を通すこと。** 本文を読んで・変えて・書くので、誰かがエディタを
 // 開いていると上書きし合います（`append_page.go` の「ロックは呼ぶ側が取ります」の一件）。
+// （2026-10-12 から、ブラウザは編集権を取らないので、この関門が断るのは道具〔`/api/lock`〕が握っているときだけです。
+// 人の保存とぶつからないのは、`cms.RewriteBody` がページごとの書き込みの錠〔`cms.LockPageBody`〕の中で書くからです。）
 func SetHandled(pageID, author, value string) error {
 	if value != HandledUndo && value != HandledDone && value != HandledNotNeeded {
 		return errors.New("対応の値は " + HandledDone + "・" + HandledNotNeeded + "・" + HandledUndo + " のどれかです")

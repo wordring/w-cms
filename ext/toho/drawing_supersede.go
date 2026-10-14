@@ -107,7 +107,8 @@ func supersedeDrawing(user *auth.User, pageID string, newPick, oldPick drawingPi
 // DrawingSupersedeAPIHandler は POST /api/drawing/supersede です
 // （入力: {page_id, new:{index, no}, old:{index, no}}——本文の最上位の図面の何番目か〔0から〕とその図面番号）。
 // 応答は {success, old_page, title}。
-// 書けない・編集中（自分でも）・テンプレートの中は断ります（`requireWritableIdle`）。
+// 書けない・編集中（自分でも）・テンプレートの中は断ります（`requireWritableIdle`。2026-10-12 から、
+// 「編集中」で断るのは道具〔`/api/lock`〕が握っているときだけ）。
 func DrawingSupersedeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {

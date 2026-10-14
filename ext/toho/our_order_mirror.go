@@ -13,6 +13,8 @@ package toho
 //
 // ⚠ **閲覧モードから押せることが肝**です。紙を出したあとに印を付けるのに、
 // いちいち編集モードへ入るのは道が遠すぎます（発注部材表の「戻す」と同じ判断）。
+// （2026-10-12 に編集モードをやめ、パソコンは書ける形で開きます。業務のボタンは書ける形でも押せます。
+// ただし行末の「必要部材表へ戻す」だけは、いまも書ける形では隠れます——下の `orderRowReturnButtonHTML`。）
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -138,6 +140,9 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 // 本文から消えます。送付後は**相手に出した紙に載っている行**なので、そう書きます。
 // ⚠ **編集モードでは出しません**（`view-only`・ユーザー:「このボタンは編集モードでは
 // 消えます」）——編集中の本文から行を消すと、書きかけと食い違います。
+// ⚠ 2026-10-12 から、パソコンは書ける形（`body[edit-mode]`）で開くので、この `view-only` により
+// 閲覧モードへ替えないと出ません（`assets/app.css` の `body[edit-mode] .view-only`。
+// 直すかは利用者に聞いています——【考察】文書の食い違い §3.1）。
 func orderRowReturnButtonHTML(orderID string, row int, status string) string {
 	ask := "この行を発注書から外して、必要部材表へ戻します。"
 	switch strings.TrimSpace(status) {

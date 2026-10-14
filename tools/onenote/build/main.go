@@ -1625,6 +1625,8 @@ func (c *client) lock(id string) (string, error) {
 	if res.StatusCode != 200 {
 		b, _ := io.ReadAll(res.Body)
 		// ⚠ 誰かが編集中なら奪わない（本物の木のページ）。
+		// （2026-10-12 から、ブラウザは編集権を取らないので、ここで断られるのは別の道具が握っているときだけ。
+		// 人がページを開いていても錠は取れます。）
 		return "", fmt.Errorf("編集中のため触りません（%s: %d %s）", id, res.StatusCode, strings.TrimSpace(string(b)))
 	}
 	var v struct {
@@ -1642,7 +1644,8 @@ func (c *client) unlock(id, token string) {
 	}
 }
 
-// deletePage はページをごみ箱へ移します（編集ロックを取ってから・誰かが編集中なら断られる）。
+// deletePage はページをごみ箱へ移します（編集ロックを取ってから・誰かが編集中なら断られる。
+// 2026-10-12 から、断られるのは別の道具が握っているときだけ——人がページを開いていても消せます）。
 func (c *client) deletePage(id string) error {
 	token, err := c.lock(id)
 	if err != nil {
