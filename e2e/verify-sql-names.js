@@ -11,7 +11,7 @@
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-sql-names.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, bodyOf } = require('./lib');
+const { login, makePage, deletePage, bodyOf, saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -65,7 +65,7 @@ const BODY = '<h1>【E2E】SQL の名前</h1>' +
     check('直すとその場で薄赤が消える', !m2.some((t) => t.startsWith('単価')), JSON.stringify(m2));
 
     // ④ 保存しても本文に残らない・告知の文は出ない
-    await page.waitForTimeout(2500);
+    await saveNow(page); // 保存はブロックを去るときなので、いま保存させる（2026-10-12 から・lib.js の saveNow と同じ）
     const body = await bodyOf(page, id);
     check('保存: 印は本文に残らない', !body.includes('sql-name-warn') && !body.includes('⚠'));
     check('保存: 直した見出しが入った', body.includes('<th>単価</th>'));

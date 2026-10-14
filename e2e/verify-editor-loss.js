@@ -20,6 +20,7 @@
 // 実行: cd e2e && node verify-editor-loss.js
 const { chromium } = require('playwright');
 
+const { saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
@@ -101,8 +102,9 @@ const countEditable = page => page.evaluate(() =>
             a.textContent = 'あぶないリンク';
             p.appendChild(a);
         });
-        // 自動保存（1.5秒）＋応答の反映を待つ
-        await page.waitForTimeout(4000);
+        // 保存（2026-10-12 からブロックを去るときなので、いま保存させる）＋応答の反映を待つ
+        await saveNow(page);
+        await page.waitForTimeout(1000);
         const sanitizedFired = await page.evaluate(() =>
             !document.querySelector('#w-editor-content a[href^="javascript"]'));
         check('前提: サーバーの安全化が実際に走った', sanitizedFired);
@@ -142,7 +144,9 @@ const countEditable = page => page.evaluate(() =>
                 || document.querySelector('#w-editor-content p');
             if (p) { p.textContent = '保存されないはずの入力'; }
         });
-        await page2.waitForTimeout(4000);
+        // 保存させる（語彙が無いので見送られ、知らせが出るはず——2026-10-12 から保存はブロックを去るとき）
+        await page2.evaluate(() => window.wcmsFlushSave && window.wcmsFlushSave());
+        await page2.waitForTimeout(1000);
 
         const status = await page2.evaluate(() => document.getElementById('w-save-status').innerText);
         check(`E-2: 語彙が無いとき「保存済」と偽らない（実際の表示: ${JSON.stringify(status)}）`,

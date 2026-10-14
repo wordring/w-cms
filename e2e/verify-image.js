@@ -9,11 +9,12 @@ let chromium;
 try { ({ chromium } = createRequire(path.join(process.cwd(), 'noop.js'))('playwright')); }
 catch (e) { console.error('node_modules のあるディレクトリ（e2e/）から実行してください'); process.exit(2); }
 
+const { saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 const results = []; let failCount = 0;
 function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); if (!cond) failCount++; }
-async function waitSaved(page) { await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 }); }
+async function waitSaved(page) { await saveNow(page); await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 }); }
 async function settleSaved(page) { await waitSaved(page); await page.waitForTimeout(2000); await waitSaved(page); }
 
 async function gotoNewPage(page, parent) {

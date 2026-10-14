@@ -12,7 +12,7 @@
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-machine-templates.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, bodyOf } = require('./lib');
+const { login, makePage, deletePage, bodyOf, saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -58,7 +58,7 @@ async function openSlashMenu(page) {
     // ① 見出しの節を挿して、見出しを打つ。
     await page.locator('#w-slash-menu .slash-menu-item[data-type="section"]').click();
     await page.keyboard.type('本文');
-    await page.waitForTimeout(2500); // 自動保存（1.5秒のデバウンス）を待つ
+    await saveNow(page); // 保存はブロックを去るときなので、いま保存させる（2026-10-12 から・lib.js の saveNow と同じ）
     const body = await bodyOf(page, id);
     check('見出しの節が本文に保存される', /<section[^>]*>\s*<h2>本文<\/h2>/.test(body), body.slice(0, 160));
 

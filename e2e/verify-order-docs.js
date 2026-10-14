@@ -11,7 +11,7 @@
 // 当て先は自分で作って最後に消します（トップ直下に2枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-order-docs.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, minimalPDF } = require('./lib');
+const { login, makePage, deletePage, minimalPDF, saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -47,7 +47,7 @@ const check = (label, ok, note = '') => {
     await chooser.setFiles([{ name: '図面A3.pdf', mimeType: 'application/pdf', buffer: minimalPDF() }]);
     await page.waitForFunction(() => document.querySelector(
       '#w-editor-content details section[data-type="file-view"][data-ref]'), null, { timeout: 8000 });
-    await page.waitForTimeout(2500); // 自動保存
+    await saveNow(page); // 保存はブロックを去るときなので、発注書を開く前にいま保存する（2026-10-14）
     check('図面が「資料 1」に入った', await page.locator('#w-editor-content details section[data-type="file-view"]').count() === 1);
 
     order = await makePage(page, '<h1>【E2E】資料の発注書</h1>' +
@@ -82,7 +82,7 @@ const check = (label, ok, note = '') => {
     check('発注書のうしろに図面が綴じてある（2ページ・A3 横のまま）', info.pages === 2 && info.a3, JSON.stringify(info));
 
     // ④ メールに図面が載る（⚠ 送信の口は差し止める——本物のメールは出さない）。
-    //    2026-09-30 から発注書のPDFはサーバーが送る直前に作って足す（用件「発注書」）ので、画面が送るのは
+    //    発注書のPDFはサーバーが足す（用件「発注書」——2026-10-14 からはページに表示中のPDF・無ければそのとき作る）ので、画面が送るのは
     //    選んだ資料と用件だけ——ここでは「図面が選ばれて、用件が発注書であること」を見る。
     let mailBody = null;
     await page.route('**/api/mail/send', async (route) => {

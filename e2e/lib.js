@@ -110,6 +110,24 @@ async function deletePage(page, id) {
   }, id);
 }
 
+// saveNow は、開いているページの書きかけをいま保存し、終わるのを待ちます（2026-10-14）。
+//
+// 2026-10-12 昼から、画面はブロックを去るとき・タブを隠すとき・ページを去るときにだけ保存します（打っているあいだは
+// 「未保存」のまま）。続けて別のページを開くと、去るときの保存と次のページの読み込みが競り合います——
+// 書いたものを別のページから読む試験は、先にこれを呼びます（app.js の window.wcmsFlushSave・鏡のボタンも同じ口）。
+// 書ける形に入った直後は、最初の同期が済むまで保存が空振りするので、保存し終えるまで呼び直します（8秒まで）。
+async function saveNow(page) {
+  const done = await page.evaluate(async () => {
+    for (let i = 0; i < 40; i++) {
+      if (window.wcmsFlushSave) await window.wcmsFlushSave();
+      if (!(window.wcmsHasUnsaved && window.wcmsHasUnsaved())) return true;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return false;
+  });
+  if (!done) throw new Error('saveNow: 8秒待っても保存し終えませんでした');
+}
+
 // childrenOf は子ページを `[{ID, Title}]` で返します。
 async function childrenOf(page, pageID) {
   return page.evaluate(async (id) => {
@@ -218,5 +236,5 @@ async function findPageWithTag(page, tagName, opts = {}) {
 module.exports = {
   MAILBOX_TITLE, CHANNEL_TAG,
   login, childrenOf, bodyOf, findMailbox, findRecordWithPDF, findThreadPair, findPageWithTag,
-  makePage, deletePage, writeBody, minimalPDF,
+  makePage, deletePage, writeBody, minimalPDF, saveNow,
 };

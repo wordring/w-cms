@@ -10,6 +10,7 @@ let chromium;
 try { ({ chromium } = createRequire(path.join(process.cwd(), 'noop.js'))('playwright')); }
 catch (e) { console.error('node_modules のあるディレクトリ（e2e/）から実行してください'); process.exit(2); }
 
+const { saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 const results = []; let failCount = 0;
@@ -136,6 +137,7 @@ function buildZip(files) { // files: [{name, data}]
         }, { pid: pageId, pdf: pdfName, zip: zipName });
         await page.evaluate(() => document.querySelector('#w-editor-content [contenteditable]')
             .dispatchEvent(new InputEvent('input', { bubbles: true })));
+        await saveNow(page); // 保存はブロックを去るときなので、いま保存させる（2026-10-12 から）
         await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 });
 
         // 編集モードでは展開ボタンが出ない。
