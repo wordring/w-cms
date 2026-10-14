@@ -40,8 +40,12 @@ func sessionCookie(value string, maxAge int) *http.Cookie {
 	}
 }
 
+// setSessionCookie はセッションの Cookie を出します。寿命は「最後の操作から8時間」と同じです——
+// ログインのときと、操作で寿命が延びたとき（userFromRequest）に出し直すので、ブラウザの Cookie が
+// サーバーの期限より先に消えることはありません（2026-10-14・それまではログインの1度だけで、
+// 操作していてもログインから8時間で Cookie が消えていた）。
 func setSessionCookie(w http.ResponseWriter, token string) {
-	http.SetCookie(w, sessionCookie(token, int(sessionAbsoluteTTL.Seconds())))
+	http.SetCookie(w, sessionCookie(token, int(SessionIdleTTL.Seconds())))
 }
 
 func clearSessionCookie(w http.ResponseWriter) {
@@ -52,14 +56,20 @@ func clearSessionCookie(w http.ResponseWriter) {
 
 // userFromRequest はセッションCookieから利用者を解決します（無効・未ログインなら nil）。
 // RequireAuth と OptionalAuth が同じ解決を通ります。
-func userFromRequest(r *http.Request) *User {
+//
+// 利用者の操作（isOperation）なら寿命を延ばし、延ばしたときは Cookie も出し直します。
+// 裏で自動に飛ぶ要求では延ばしません（【要求】権限 §1「最後の操作から8時間」）。
+func userFromRequest(w http.ResponseWriter, r *http.Request) *User {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return nil
 	}
-	username, ok := ResolveSession(c.Value)
+	username, _, renewed, ok := resolveSession(c.Value, isOperation(r))
 	if !ok {
 		return nil
+	}
+	if renewed {
+		setSessionCookie(w, c.Value)
 	}
 	u, err := LookupUser(username)
 	if err != nil {
@@ -72,7 +82,7 @@ func userFromRequest(r *http.Request) *User {
 // 未認証の場合、API（/api/）は 401、それ以外は /login へリダイレクトします。
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user := userFromRequest(r)
+		user := userFromRequest(w, r)
 		// **認証が要る経路の応答は、絶対にキャッシュさせない**（要件定義書 §4.4）。
 		// 公開ページをキャッシュ可能にした以上（2026-08-26）、この切り分けが前提条件です。
 		// Cache-Control が無いと、ブラウザや中間キャッシュがヒューリスティックに保存して
@@ -99,7 +109,7 @@ func RequireAuth(next http.Handler) http.Handler {
 // RequirePageReadOrPublic 等で個別に判定します（認証認可設計.md 10.5）。
 func OptionalAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if u := userFromRequest(r); u != nil {
+		if u := userFromRequest(w, r); u != nil {
 			next.ServeHTTP(w, WithUser(r, u))
 			return
 		}

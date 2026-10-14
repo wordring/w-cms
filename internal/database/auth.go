@@ -16,7 +16,8 @@ var AuthDB *sql.DB
 //
 //   - **busy_timeout が無く、競合が即 SQLITE_BUSY になっていた。** auth.db は
 //     読むだけの器ではありません——[ResolveSession] が**認証のたびに** last_seen を
-//     UPDATE し、監査記録も書き込みます。同時アクセスで衝突すると
+//     UPDATE し、監査記録も書き込みます（2026-10-14 からは、last_seen を書くのは利用者の
+//     操作のときだけ・前の記録から1分以上経ったときだけ——internal/auth/session.go）。同時アクセスで衝突すると
 //     `database is locked` が返り、ResolveSession はそれを「セッション無効」と
 //     区別できないので **401**——つまり**利用者が黙ってログアウトさせられていた**
 //     （E2Eの間欠的な 401 として観測。実測で SQLITE_BUSY を確認）。

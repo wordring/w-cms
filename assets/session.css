@@ -1,0 +1,42 @@
+/* セッションの失効の告知（assets/session.js・2026-10-14・【要求】権限 §1）。
+   画面の上の真ん中に固定の帯。エディタの殻・管理・表を探す・メール一覧のどれでも同じ見た目。
+   色はトーストの warn（app.css の .toast.warn）に揃える。 */
+.w-session-bar {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: #92400e;
+    color: #f8fafc;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    line-height: 1.5;
+}
+.w-session-bar.is-ended { background: #991b1b; }
+.w-session-msg { flex: 1 1 auto; }
+.w-session-bar button {
+    background: #fff;
+    color: #92400e;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.w-session-bar a {
+    color: #fff;
+    font-weight: 700;
+    white-space: nowrap;
+}
+@media print { .w-session-bar { display: none; } }

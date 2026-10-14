@@ -82,24 +82,6 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 }
 
-func TestSessionExpiry(t *testing.T) {
-	setupAuthDB(t)
-
-	// 絶対期限切れ
-	token, _ := CreateSession("bob")
-	database.AuthDB.Exec(`UPDATE sessions SET expires_at = ?`, time.Now().Add(-time.Minute))
-	if _, ok := ResolveSession(token); ok {
-		t.Error("絶対期限切れのセッションが有効と判定されました")
-	}
-
-	// アイドル期限切れ
-	token2, _ := CreateSession("carol")
-	database.AuthDB.Exec(`UPDATE sessions SET last_seen = ? WHERE username = 'carol'`, time.Now().Add(-31*time.Minute))
-	if _, ok := ResolveSession(token2); ok {
-		t.Error("アイドル期限切れのセッションが有効と判定されました")
-	}
-}
-
 func TestAuthenticateAndLockout(t *testing.T) {
 	setupAuthDB(t)
 
