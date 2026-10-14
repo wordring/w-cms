@@ -84,6 +84,9 @@
     // （保存の最中に打った分を見分ける）。2026-10-12 昼に1.5秒止まるたびの保存をやめた（triggerAutoSave）。
     let unsaved = false;
     let editSeq = 0;
+    // BG_HEADERS は、利用者の操作ではなく画面が裏で自動に送る要求（知らせを受けての読み直し・様子の見張り）に付ける印。
+    // この印の付いた要求ではセッションの寿命が延びない（【要求】権限 §1「最後の操作から8時間」・internal/auth/session.go・2026-10-14）。
+    const BG_HEADERS = { 'X-Wcms-Background': '1' };
 
     // ── 子ページの作成（テンプレート選択つき） ──────────────────────────
     // テンプレートは「テンプレート」フォルダ配下の**葉**（docs/考察/【考察】ページテンプレート.md §3.2）。
@@ -1170,6 +1173,9 @@
     // ブロックを去るのを待たない——2026-10-12 昼）。
     const saveNow = () => { flushPendingSave(); };
     window.wcmsFlushSave = flushPendingSave; // 鏡のボタン（postJSON）が押す前に呼ぶ
+    // 書きかけ（まだ保存していない変更・確かめ待ちのぶつかり）があるか——セッションが切れたとき、session.js が
+    // ログインへ移らずにその場に残すかを決める（移ると書きかけが消える・2026-10-14）。
+    window.wcmsHasUnsaved = () => unsaved || syncConflicts.size > 0;
 
     // checkpointVersion は版の区切りを打つ（このタブが書いていれば——2026-10-12）。それまでは編集権を手放したときにサーバーが
     // 打っていた（同じ人の10分以内の保存は1つの版にまとまるので、書き終えたときに区切らないと最後の形が独立した版に残らない）。
@@ -1257,7 +1263,10 @@
             // タブを隠したとき・ページを去るときの保存は、ページが閉じても届くように keepalive（中身が 64KB を超えると使えない）。
             // ⚠ ページを去るとき（pagehide）は、visibilityState がまだ visible のことがある——印（leavingPage）でも見る。
             const keepalive = (document.visibilityState === 'hidden' || leavingPage) && body.length < 60000;
-            res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive });
+            // 受け取りに行くだけ（自分の変更を送らない）ときは、知らせを受けて自動に飛ぶ要求——セッションを延ばさない（2026-10-14）。
+            const headers = (pull && !changes.length) ? Object.assign({ 'Content-Type': 'application/json' }, BG_HEADERS)
+                : { 'Content-Type': 'application/json' };
+            res = await fetch('/api/sync', { method: 'POST', headers, body, keepalive });
             data = await readResult(res);
         } catch (e) { onSaveFailed(e); return; }
         if (!res.ok || !data || !data.success) {
@@ -2811,7 +2820,8 @@
         if (document.body.hasAttribute('edit-mode')) return;
         let html;
         try {
-            const res = await fetch('/api/load?id=' + currentPageId + '&view=1');
+            // 知らせを受けて自動に読む——操作ではない（セッションを延ばさない）。
+            const res = await fetch('/api/load?id=' + currentPageId + '&view=1', { headers: BG_HEADERS });
             if (!res.ok) return;
             html = await res.text();
         } catch (e) { return; }
@@ -7494,7 +7504,7 @@
             await new Promise((r) => setTimeout(r, 3000));
             let st;
             try {
-                st = await (await fetch('/api/mail/status')).json();
+                st = await (await fetch('/api/mail/status', { headers: BG_HEADERS })).json(); // 待つあいだの見張り——操作ではない
             } catch (e) {
                 continue;
             }
@@ -7538,7 +7548,8 @@
         let st = null;
         for (;;) {
             try {
-                st = ((await (await fetch('/api/mail/fetch-new/status')).json()) || {}).status;
+                // 2秒おきの見張り——操作ではない（読み込みが何時間続いてもセッションを延ばさない）。
+                st = ((await (await fetch('/api/mail/fetch-new/status', { headers: BG_HEADERS })).json()) || {}).status;
             } catch (e) {
                 st = null; // 一時の通信の失敗——続けて見る
             }

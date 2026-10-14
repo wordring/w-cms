@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="/assets/app.css">
     <!-- メールの送る欄（部品・2026-09-30）。メール一覧（mails.html）と共有する。 -->
     <link rel="stylesheet" href="/assets/mail-compose.css">
+    <!-- セッションの失効の告知（2026-10-14・session.js と対）。 -->
+    <link rel="stylesheet" href="/assets/session.css">
 </head>
 <body>
 
@@ -302,6 +304,8 @@
      window.wcmsMailCompose を呼ぶときには揃っている。 -->
 <script src="/assets/mail-compose.js"></script>
 <script src="/assets/app.js"></script>
+<!-- セッションの失効の5分前に告知する（2026-10-14・【要求】権限 §1）。app.js に頼らない（書きかけの有無だけ window.wcmsHasUnsaved で聞く）。 -->
+<script src="/assets/session.js"></script>
 
 </body>
 </html>
