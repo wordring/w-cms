@@ -12,6 +12,7 @@ func TestEffectiveSettingsLineHidesSecrets(t *testing.T) {
 	t.Setenv("WCMS_MAIL_CLIENT_ID", "secret-client-id")
 	t.Setenv("WCMS_DAV", "1")
 	t.Setenv("WCMS_SECURE_COOKIES", "0")
+	t.Setenv("WCMS_ADDR", "") // 既定の待ち受けで見る（listen_test.go が WCMS_ADDR を渡した形を見る）
 	line := effectiveSettingsLine("cert.pem", "key.pem")
 	for _, want := range []string{"https://localhost:8443（TLS あり）", "WebDAV あり", "Secure Cookie なし",
 		"Gemini のキー あり", "メールのアプリ登録 あり", "設定 config/settings.json"} {

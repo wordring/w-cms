@@ -53,6 +53,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // ResetConfirmWord は初期化に要る合言葉です（画面がそのまま案内に使います）。
@@ -74,11 +75,11 @@ func ResetData(username string) (ResetSummary, error) {
 	var sum ResetSummary
 	sum.KeptNotice = "メールのトークン（data/mail）・利用者（auth.db）・証明書（data/tls）は残しました。"
 
-	master := page.MasterDir
+	master := page.MasterDir()
 	// 控えの場所。**`data/` の直下**に置きます——隠すと、消したことに気づいた人が
-	// 探せません（ディスクを見れば分かる場所に置く）。
+	// 探せません（ディスクを見れば分かる場所に置く）。場所を変えたときは、その場所の直下（WCMS_DATA_DIR）。
 	stamp := time.Now().Format("20060102-150405")
-	backup := filepath.Join(filepath.Dir(master), "_reset-"+stamp)
+	backup := database.DataPath("_reset-" + stamp)
 
 	// ⚠ **控えの中でも元の名前のまま置きます**（`<控え>/master`・`<控え>/trash`）。
 	// 最初は `data/master` をそのまま控えの名前へ改名していましたが、それだと
@@ -110,7 +111,7 @@ func ResetData(username string) (ResetSummary, error) {
 		return sum, err
 	}
 	// ゴミ箱も一緒に控えへ（消したページの唯一の写しなので、捨てません）。
-	trash := filepath.Join(filepath.Dir(master), "trash")
+	trash := page.TrashDir()
 	if _, err := os.Stat(trash); err == nil {
 		_ = os.Rename(trash, filepath.Join(backup, "trash"))
 	}

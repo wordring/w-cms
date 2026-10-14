@@ -58,11 +58,11 @@ func TestSaveNormalizesPageID(t *testing.T) {
 		t.Errorf("応答の page_id が正規化されていません: %v", got["page_id"])
 	}
 
-	normPath := filepath.Join("data", "master", "00", "000012", "000012.html")
+	normPath := filepath.Join(page.MasterDir(), "00", "000012", "000012.html")
 	if _, err := os.Stat(normPath); err != nil {
 		t.Errorf("正規のパスに正本がありません: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join("data", "master", "00", "0012")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(page.MasterDir(), "00", "0012")); !os.IsNotExist(err) {
 		t.Errorf("揺れた表記のディレクトリ data/master/00/0012 が作られています")
 	}
 }
@@ -94,10 +94,10 @@ func TestUploadNormalizesPageID(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("アップロードが失敗しました: status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join("data", "master", "00", "000012", "files", savedNameOf(t, rr))); err != nil {
+	if _, err := os.Stat(filepath.Join(page.MasterDir(), "00", "000012", "files", savedNameOf(t, rr))); err != nil {
 		t.Errorf("正規のディレクトリに添付がありません: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join("data", "master", "00", "0012")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(page.MasterDir(), "00", "0012")); !os.IsNotExist(err) {
 		t.Errorf("揺れた表記のディレクトリが作られています")
 	}
 }

@@ -105,7 +105,8 @@ func pagesShowing(user *auth.User, refs []string) map[string][]shownPage {
 		if p.path == "" || !page.CanView(user, p.id) {
 			continue
 		}
-		b, err := os.ReadFile(p.path)
+		// 読むのは索引の file_path ではなく、いまのデータの場所の本文（WCMS_DATA_DIR・2026-10-14）。
+		b, err := os.ReadFile(page.BodyPath(page.FormatID(p.id)))
 		if err != nil || !strings.Contains(string(b), `data-ref="`) {
 			continue
 		}

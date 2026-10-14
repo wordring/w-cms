@@ -36,14 +36,16 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var filePath string
-	err := database.DB.QueryRow("SELECT file_path FROM pages WHERE id = ?", idInt).Scan(&filePath)
+	var one int
+	err := database.DB.QueryRow("SELECT 1 FROM pages WHERE id = ?", idInt).Scan(&one)
 	if err != nil {
 		http.Error(w, "Page not found", http.StatusNotFound)
 		return
 	}
 
-	content, err := os.ReadFile(filePath)
+	// 読むのは索引の file_path ではなく、いまのデータの場所の本文（page.BodyPath）——
+	// 索引は書いたときの場所を覚えているので、`data/` を動かして WCMS_DATA_DIR を渡すと古い場所を指す（2026-10-14）。
+	content, err := os.ReadFile(page.BodyPath(id))
 	if err != nil {
 		http.Error(w, "Failed to read file", http.StatusInternalServerError)
 		return
@@ -147,10 +149,11 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var filePath, title string
+	// 本文は索引の file_path ではなく page.BodyPath から読む（LoadAPIHandler と同じ理由・2026-10-14）。
+	var title string
 	err = database.DB.QueryRow(
-		"SELECT file_path, COALESCE(title, '') FROM pages WHERE id = ?", pageID,
-	).Scan(&filePath, &title)
+		"SELECT COALESCE(title, '') FROM pages WHERE id = ?", pageID,
+	).Scan(&title)
 	if err != nil {
 		pageNotFound(w, r)
 		return
@@ -162,7 +165,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(page.BodyPath(page.FormatID(pageID)))
 	if err != nil {
 		pageNotFound(w, r)
 		return

@@ -446,7 +446,9 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setAttachmentHeaders(w, name)
-	http.ServeFile(w, r, filepath.Join(".", filepath.FromSlash(clean)))
+	// URLの `/data/master` は名前で、置き場所ではありません——データの場所（WCMS_DATA_DIR・
+	// 既定 data）の下の master へ読み替えます（2026-10-14）。parts は path.Clean 済みなので `..` を含みません。
+	http.ServeFile(w, r, filepath.Join(append([]string{MasterDir()}, parts[2:]...)...))
 }
 
 // setAttachmentHeaders は添付の応答ヘッダを種別で決めます。

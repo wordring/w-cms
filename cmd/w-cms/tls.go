@@ -50,14 +50,16 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"w-cms/internal/database"
 )
 
 // tlsCertPath / tlsKeyPath は証明書と鍵の位置です（環境変数で差し替え）。
 func tlsCertPath() string { return os.Getenv("WCMS_TLS_CERT") }
 func tlsKeyPath() string  { return os.Getenv("WCMS_TLS_KEY") }
 
-// defaultCertDir は `-gencert` の出力先です。
-const defaultCertDir = "data/tls"
+// defaultCertDir は `-gencert` の出力先です（データの場所の下の `tls`。既定は `data/tls`・WCMS_DATA_DIR で変わる）。
+func defaultCertDir() string { return database.DataPath("tls") }
 
 // generateSelfSignedCert は自己署名の証明書と鍵を作ります。
 //
@@ -157,7 +159,7 @@ func printCertInstructions(certFile, keyFile string) {
 
 起動:
   WCMS_TLS_CERT=%s WCMS_TLS_KEY=%s go run ./cmd/w-cms
-  → https://localhost:8443/
+  → %s/
 
 ⚠ このままではブラウザもWindowsも信じません。使う各PCで1度だけ信頼させます
   （PowerShell を「管理者として実行」して、**この1行を貼る**）:
@@ -166,5 +168,5 @@ func printCertInstructions(certFile, keyFile string) {
 
   信頼させると、WebDAV の割り当ても通るようになります（平文HTTPで Basic を送らない
   という Windows の既定は、HTTPS なら当てはまらないため）。
-`, certFile, keyFile, certFile, keyFile, absCert)
+`, certFile, keyFile, certFile, keyFile, listenURL(listenAddr(true), true), absCert)
 }

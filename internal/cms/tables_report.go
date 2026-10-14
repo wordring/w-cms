@@ -207,7 +207,7 @@ func tableColumnNames(tx *sql.Tx, table string) ([]string, error) {
 // eachPageBody は data/master のページ本文を1枚ずつ読んで fn へ渡します（版置き場は除く）。
 // 読めないページは飛ばします（一覧のための読み直しで、止めるほどではない）。
 func eachPageBody(fn func(id string, pageID int, root *html.Node)) error {
-	err := filepath.Walk(page.MasterDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(page.MasterDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
 				return filepath.SkipDir

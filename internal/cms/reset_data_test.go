@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // TestResetDataKeepsRestorableBackup は、**控えが1手で戻せる形**であることを
@@ -35,7 +36,7 @@ func TestResetDataKeepsRestorableBackup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Join("data", "trash", "000999"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(page.TrashDir(), "000999"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,11 +60,11 @@ func TestResetDataKeepsRestorableBackup(t *testing.T) {
 	}
 
 	// ② **消えている**（正本の側は空）。
-	if n := countPageDirs(page.MasterDir); n != 0 {
+	if n := countPageDirs(page.MasterDir()); n != 0 {
 		t.Errorf("ページが残っています: %d枚", n)
 	}
 	// ③ **置き場は在る**——無いままだと、次にページを作るとき転びます。
-	if fi, err := os.Stat(page.MasterDir); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(page.MasterDir()); err != nil || !fi.IsDir() {
 		t.Errorf("data/master が作り直されていません: %v", err)
 	}
 	// ④ **残すものは残っている**（この試験では auth.db などは作っていないので、
@@ -83,7 +84,7 @@ func TestResetDataKeepsRestorableBackup(t *testing.T) {
 // （初回起動の直後に押す場合）。
 func TestResetDataOnEmptyDataDir(t *testing.T) {
 	newTestFileDB(t)
-	if err := os.RemoveAll(page.MasterDir); err != nil {
+	if err := os.RemoveAll(page.MasterDir()); err != nil {
 		t.Fatal(err)
 	}
 	sum, err := ResetData("alice")
@@ -93,7 +94,7 @@ func TestResetDataOnEmptyDataDir(t *testing.T) {
 	if sum.Pages != 0 {
 		t.Errorf("ページ数が0ではありません: %d", sum.Pages)
 	}
-	if fi, err := os.Stat(page.MasterDir); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(page.MasterDir()); err != nil || !fi.IsDir() {
 		t.Errorf("data/master を作り直していません: %v", err)
 	}
 }
@@ -171,7 +172,7 @@ func TestResetDataLeavesNoEmptyBackupOnFailure(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Errorf("正本が消えました: %v", err)
 	}
-	entries, _ := os.ReadDir("data")
+	entries, _ := os.ReadDir(database.DataDir())
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "_reset-") {
 			t.Errorf("空の控えが残っています: %s", e.Name())
@@ -238,4 +239,24 @@ func TestResetDataKeepsTemplates(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pages WHERE id IN (10, 11)`).Scan(&n); err != nil || n != 2 {
 		t.Errorf("残したテンプレートが索引に入っていません: %d %v", n, err)
 	}
+}
+
+// TestDataDirMovesResetBackup は、初期化の控え（_reset-<日時>）もデータの場所の直下に置くことを固定します
+// （WCMS_DATA_DIR・2026-10-14——data_dir_test.go の続き）。
+func TestDataDirMovesResetBackup(t *testing.T) {
+	newTestFileDB(t)
+	dir := useOtherDataDir(t)
+	newPage(t, "000123", "<h1>控えの試験</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode})
+
+	sum, err := ResetData("alice")
+	if err != nil {
+		t.Fatalf("初期化できません: %v", err)
+	}
+	if filepath.Dir(sum.BackupDir) != dir || !strings.HasPrefix(filepath.Base(sum.BackupDir), "_reset-") {
+		t.Errorf("控えがデータの場所の直下にありません: %q（%q の下のはず）", sum.BackupDir, dir)
+	}
+	if _, err := os.Stat(filepath.Join(sum.BackupDir, "master", "00", "000123")); err != nil {
+		t.Errorf("控えにページがありません: %v", err)
+	}
+	noLocalData(t)
 }

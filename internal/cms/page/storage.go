@@ -31,10 +31,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"w-cms/internal/database"
 )
 
 const IDLength = 6
-const MasterDir = "data/master"
+
+// MasterDir は正本の置き場です（データの場所の下の `master`。既定は `data/master`）。
+// データの場所は `WCMS_DATA_DIR` で変えられるので（database.DataDir・2026-10-14）、定数ではなく関数です。
+func MasterDir() string { return database.DataPath("master") }
 
 // NormalizeID は受け取った page_id 文字列をゼロ詰め6桁の正規形へ揃えます。
 // 数値として解釈できない・負数の場合は ok=false。
@@ -63,7 +68,7 @@ func FormatID(n int) string {
 // GetPageDir は ID (例: "00A1B") を受け取り、階層化された保存先パス (例: "data/master/00/00A1B") を返します。
 // 1つのフォルダに数万ファイルが集中してOSが重くなるのを防ぐための関数です。
 func GetPageDir(id string) string {
-	return shardedDir(MasterDir, id)
+	return shardedDir(MasterDir(), id)
 }
 
 // shardedDir は base の下に、IDの先頭2文字を親フォルダ（プレフィックス）として
@@ -87,11 +92,12 @@ func BodyPath(id string) string {
 // 自動判定で作ったページを取り消せることが要件なら、その取り消し自体も
 // 取り返しがつく必要があるからです（docs/考察/【考察】通信記録処理.md §2.7④「常に柔軟性」）。
 // DB再構築（RebuildDatabase）は data/master だけを走査するので、移すだけで索引からも消えます。
-const TrashDir = "data/trash"
+// 場所はデータの場所の下の `trash`（既定は `data/trash`）。
+func TrashDir() string { return database.DataPath("trash") }
 
 // GetTrashDir は削除したページの移動先パスを返します（GetPageDir と同じ階層化）。
 func GetTrashDir(id string) string {
-	return shardedDir(TrashDir, id)
+	return shardedDir(TrashDir(), id)
 }
 
 // WriteFileAtomic は「同じフォルダの一時ファイルへ書いて rename」でファイルを
