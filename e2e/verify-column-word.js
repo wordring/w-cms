@@ -64,6 +64,10 @@ const BODY = '<h1>【E2E】列の語彙</h1>' +
   const menuFor = async (caption, col) => {
     const sel = await cellSel(caption, col);
     if (!sel) return null;
+    // 前のセルで開いたメニューを閉じてから押す——開いたままだと、表の並びによっては次のセルに重なって押せない
+    // （2026-10-14・発注明細の足元に備考の欄が入って列の幅が変わり、受注明細の「状態」のメニューが重なった）。
+    // メニューは本文の外を押すと閉じる（app.js の document の mousedown）。
+    await page.dispatchEvent('body', 'mousedown');
     await page.click(sel);
     await page.waitForTimeout(400);
     return page.evaluate(() => {
