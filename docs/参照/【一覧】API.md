@@ -211,6 +211,7 @@ JSONで答えるAPIの失敗は `JSONFail`（`handler_save.go`）が
 | POST | `/api/login` | 認証不要 | ログイン。argon2id 検証（同時実行はセマフォで4件まで）。失敗は `login_attempts` に記録し、**5回連続で15分ロックアウト** |
 | POST | `/api/logout` | 要認証 | ログアウト（セッション行を削除）。**POST限定**（GETは405）——`/api/new-page` と同じ保存型CSRFで、本文の `<img src="/api/logout">` 1つで開いた全員を無音で追い出せた |
 | GET | `/api/me` | 任意認証 | 認証状態。未認証は `{authenticated:false}` |
+| GET / POST | `/api/session` | 要認証 | セッションが失効するまでの残り（2026-10-14・`{expires_in, idle_ttl, warn_before}`——秒）。**GET は寿命を延ばさない**（画面 `assets/session.js` が失効の5分前の告知のために見る）。**POST は告知の「続ける」**で、操作として寿命を延ばす（CSRF の検査あり）。失効していれば 401 |
 
 ## 6. 管理（admin限定）
 
