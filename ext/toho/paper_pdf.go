@@ -190,5 +190,8 @@ func servePaper(w http.ResponseWriter, r *http.Request, makeFn func(w http.Respo
 	if made.ViewNote != "" {
 		out["view_note"] = made.ViewNote
 	}
+	if made.Overwrote { // 発注書の、まだ送っていない PDF を上書きした（order_pdf_sent.go）
+		out["overwrote"] = true
+	}
 	json.NewEncoder(w).Encode(out)
 }

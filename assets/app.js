@@ -12504,6 +12504,22 @@ delegateClick([['.w-table-print', (btn) => {
         const root = btn.closest('.order-send');
         const box = root ? root.querySelector('[data-order-result]') : null;
         btn.disabled = true;
+        // 備考の欄を書きかけのまま押したら、先に保存してから作る（2026-10-14・欄の下の「PDF作成」——紙は本文の
+        // 「備考」の節を刷るので、保存していない備考は紙に載らない）。
+        const note = root ? root.querySelector('.estimate-note-input') : null;
+        const noteBtn = root ? root.querySelector('.estimate-note-save') : null;
+        if (note && noteBtn && note.value !== note.defaultValue) {
+            sayIn(box, '備考を保存しています…');
+            const s = await postJSON(noteBtn.getAttribute('data-note-url') || '/api/our-order/note', {
+                page_id: noteBtn.getAttribute('data-estimate-page') || '', note: note.value,
+            }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+            if (!s.ok) {
+                sayIn(box, '⚠ ' + ((s.data && s.data.message) || '備考を保存できませんでした') + '（PDFは作っていません）', 'proc-why-ng');
+                btn.disabled = false;
+                return;
+            }
+            note.defaultValue = note.value;
+        }
         sayIn(box,'発注書のPDFを作っています…');
         const r = await postJSON('/api/order-pdf', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',

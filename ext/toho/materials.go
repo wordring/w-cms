@@ -238,6 +238,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ **取消でない行すべて**に `発注済` を付けます。メールは送信の成功が
 		// その事実、FAX・手渡しは**人が押したこと**がその事実です。
 		{Pattern: "/api/our-order/sent", Handler: OrderSentAPIHandler},
+		// 発注書の備考の欄を保存する口（2026-10-14・order_pdf_sent.go——見積書の /api/estimate/note と同じ形）。
+		{Pattern: "/api/our-order/note", Handler: OrderNoteAPIHandler},
 	}
 }
 

@@ -84,8 +84,9 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	changed := 0
 	sentOn := time.Now().Format("2006-01-02")
+	// 送った PDF（表示中のもの）を記録の節へ（2026-10-14・order_pdf_sent.go）——次の「PDF作成」はそれを上書きしない。
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, n := markOrderSent(cur, sentOn)
+		out, n := recordOrderSent(cur, user, pageID, sentOn, method, "", nil)
 		changed = n
 		return out
 	}) {
@@ -214,20 +215,26 @@ func signerLinesFor(head map[string]string, heading string) []string {
 //
 // ⚠ **メールの宛先・件名・本文・資料の候補はここで描きません**（2026-09-30 から送る欄の部品——
 // 用件「発注書」の初期値は order_mail.go）。docs は「FAX・印刷用（資料を綴じる）」を出すかだけに使う。
-func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc) string {
+//
+// noteBox は備考の入力欄です（書ける人にだけ・空なら出さない——2026-10-14・【要求】発注フォルダの並びの 4
+// 「『備考』入力欄のブロック。備考欄は複数行書けます。その下に『PDF作成』ボタンがあります」）。
+func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, noteBox string) string {
 	orderID := page.FormatID(pageIDInt)
 
 	var b strings.Builder
 	b.WriteString(`<div class="order-send" data-order-page="` + orderID + `">`)
 	b.WriteString(`<p class="order-send-state">` + orderSendStateHTML(counts) + `</p>`)
-	b.WriteString(`<div class="order-send-ways">`)
+	b.WriteString(noteBox)
 	// ⚠ **PDFを作る道が画面にありませんでした**（2026-09-22 ユーザー報告:「発注書の
 	//    ページにPDFが表示されていません」）。口（`/api/order-pdf`）は 09-21 から
 	//    在りましたが、**呼ぶボタンがどこにも無く**、API を直に叩いて確かめただけ
 	//    でした。⚠ **試した経路と、人が使う経路が違っていた**わけです。
-	b.WriteString(`<button type="button" class="chip-btn" data-order-pdf="1"` +
-		` title="発注書のPDFを作って、このページに表示します（添付にも残ります）">` +
-		`📄 PDFを作る</button>`)
+	// 2026-10-14 から備考の欄の下に置き、名前を要求の「PDF作成」にそろえた。送る前は前の PDF を上書きし、
+	// 送ったあとは新しい版を作る（order_pdf_sent.go）。
+	b.WriteString(`<div class="order-pdf-row"><button type="button" class="chip-btn" data-order-pdf="1"` +
+		` title="発注書のPDFを作って、このページに表示します（送る前は前のPDFを上書きし、送ったあとは新しい版を作ります）">` +
+		`📄 PDF作成</button></div>`)
+	b.WriteString(`<div class="order-send-ways">`)
 	// 資料を綴じた FAX・印刷用（2026-09-28・order_docs.go）——**綴じられる資料があるときだけ**。
 	// ⚠ 発注書のPDF（7年保存の正本）とは別の1本（利用者の選択）。
 	if hasPrintableDoc(docs) {

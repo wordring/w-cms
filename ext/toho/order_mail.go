@@ -12,13 +12,13 @@ package toho
 //
 //	初期値   … 宛先の候補（連絡帳の仕入先）・件名（発注書番号入り）・本文（メールの署名入り）・
 //	           外注加工の資料（印を付けて並べる）・連絡帳に宛先が無い／資料が無いの一言
-//	送る直前 … 発注書のPDFを作って添える（ページにも表示する・`makeOrderPDF`）
-//	送れた後 … 取消でない行を発注済みに・発注日を送った日に（`markOrderSent`）
+//	送る直前 … ページに表示している発注書のPDFを添える（まだ無いときだけ作って表示する・`makeOrderPDF`）
+//	送れた後 … 取消でない行を発注済みに・発注日を送った日に・送ったPDFを記録の節へ（`recordOrderSent`）
 //
 // ⚠ **3段の順と「送れたのに印が付かなかった」の扱いは変えていません**——印を付けられなかったときは
 // 送れたことと一緒に理由を返し（`after_error`）、人が行ごとの「✓ 発注済」を押します。
-// ⚠ 送る直前に PDF を作り直すのは 09-22 からのまま（「表示中の最新のPDFを送る」〔C4・09-24 決定〕は
-// 再送とキャンセルの仕事で扱う——【要求】発注フォルダ「発注書の再送とキャンセル」）。
+// ⚠ 2026-10-14 まで、送る直前に PDF を毎回作り直していました。いまは表示中の最新のPDFを送ります
+// （【要求】発注フォルダ「発注書を送信」・C4〔09-24 決定〕——order_pdf_sent.go）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -64,12 +64,19 @@ func orderMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error
 		To:      supplierAddresses(user, supplier),
 		Subject: orderMailSubject(pageID, supplier),
 		Body:    orderMailBody(head, supplier, pageID),
-		// ⚠ **PDFは押したときに作ります**（下書きを開いただけで添付を増やさない）。
-		SendNote: "印の付いた発注書のPDFは送るときに作って添付し（このページの添付にも残ります）、" +
-			"送れたら取消でない行を発注済みにします。",
-		// 送るときに作る PDF を添付の欄に印つきで並べる（2026-10-03・見積書と同じ）。
-		Generated: "発注書 " + pageID + ".pdf",
-		Reload: true,
+		// ⚠ **送るのはページに表示している PDF**（2026-10-14・【要求】発注フォルダ「発注書を送信」——送る直前に
+		//    作り直さない）。まだ無いときだけ送るときに作る（下書きを開いただけで添付を増やさない）。
+		SendNote: "印の付いた発注書のPDFは、このページに表示しているものを添えます（作り直しません——明細や備考を直したら、" +
+			"先に「PDF作成」を押してください。まだ無ければ送るときに作ります）。" +
+			"送れたら取消でない行を発注済みにし、送ったPDFをこのページの「" + orderSentHeading + "」に記録します。",
+		// 添えるPDFを添付の欄に印つきで並べる（2026-10-03・見積書と同じ）。
+		Generated: orderMailFileName(pageID),
+		Reload:    true,
+	}
+	if body, err := cms.ReadPageBody(pageID); err == nil {
+		if _, _, shown := shownOrderPDF(user, pageID, body); shown {
+			d.GeneratedNote = "このページに表示しているPDF"
+		}
 	}
 	noteNoSupplierAddress(&d, supplier)
 	// 外注加工の資料——取消していない行の「資料 <番号>」から。
@@ -99,29 +106,38 @@ func attachLineDocs(d *comm.ComposeDraft, user *auth.User, rows []map[string]str
 	d.Notes = append(d.Notes, notes...)
 }
 
-// prepareOrderMail は送る直前に発注書のPDFを作り、添えるファイルとして返します。
+// prepareOrderMail は、送るときに添える発注書のPDFを返します——**ページに表示している PDF**です
+// （2026-10-14・【要求】発注フォルダ「発注書を送信」:「送るPDFは、発注書ページに表示している最新のPDFです
+// （送る直前に作り直しません）」）。まだ表示している PDF が無いときだけ、ここで作って表示します。
 //
-// ⚠ **関門は `/api/order-pdf` と同じ**です（write 権限・テンプレートの外・誰も編集していない——本文に
-// PDFを開く印を置くため）。断るときは応答を書いて false（メールは1通も出ない）。
+// ⚠ **関門は `/api/order-pdf` と同じ**です（write 権限・テンプレートの外・誰も編集していない——送れたあとに
+// 発注済みの印と記録を本文へ書くため）。断るときは応答を書いて false（メールは1通も出ない）。
 func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]comm.ComposeAttachment, bool) {
 	user := auth.CurrentUser(r)
 	if !requireWritableIdle(w, r, pageID) {
 		return nil, false
 	}
+	// ⚠ **送るときの名前は日時を外します**——相手には保存名の日時は意味がなく、件名と揃っていたほうが
+	// 探しやすい（09-22 の画面の送り方と同じ名前）。
+	if body, err := cms.ReadPageBody(pageID); err == nil {
+		if stored, _, shown := shownOrderPDF(user, pageID, body); shown {
+			return []comm.ComposeAttachment{{PageID: pageID, File: stored, Name: orderMailFileName(pageID), Checked: true}}, true
+		}
+	}
 	made, ok := makeOrderPDF(w, user, pageID)
 	if !ok {
 		return nil, false
 	}
-	// ⚠ **送るときの名前は日時を外します**——相手には保存名の日時は意味がなく、件名と揃っていたほうが
-	// 探しやすい（09-22 の画面の送り方と同じ名前）。
-	return []comm.ComposeAttachment{{PageID: pageID, File: made.File, Name: "発注書 " + pageID + ".pdf", Checked: true}}, true
+	return []comm.ComposeAttachment{{PageID: pageID, File: made.File, Name: orderMailFileName(pageID), Checked: true}}, true
 }
 
-// afterOrderMail は送れたあとに、取消でない行を発注済みにして発注日を送った日にします。
+// afterOrderMail は送れたあとに、取消でない行を発注済みにして発注日を送った日にし、送った PDF を記録の節
+// （「送った発注書」・order_pdf_sent.go）へ1行足します。送った PDF は、送信の控え（recordID）が添えたファイルの
+// うち、このページの添付です（控えが無ければ表示中の PDF とみなします）。
 //
 // ⚠ **ここはもう応答を書けません**（メールは出たあと）——書けない・編集中なら理由を返し、送る欄が
 // 「送りましたが、発注済みの印を付けられませんでした」と人に伝えます。
-func afterOrderMail(user *auth.User, pageID, _ string) error {
+func afterOrderMail(user *auth.User, pageID, recordID string) error {
 	n, err := strconv.Atoi(pageID)
 	if err != nil {
 		return errors.New("発注書のページIDが不正です")
@@ -134,8 +150,9 @@ func afterOrderMail(user *auth.User, pageID, _ string) error {
 	}
 	changed := 0
 	sentOn := time.Now().Format("2006-01-02")
+	files := mailedOrderFiles(user, pageID, recordID)
 	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		out, c := markOrderSent(cur, sentOn)
+		out, c := recordOrderSent(cur, user, pageID, sentOn, sendByMail, recordID, files)
 		changed = c
 		return out
 	}); err != nil {

@@ -2884,6 +2884,9 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
     gap: 8px;
     margin-bottom: 8px;
 }
+/* 備考の欄とその下の「PDF作成」（2026-10-14・our_order_mirror.go——部品は見積書の備考の欄と同じ）。 */
+#w-editor-content .order-send .estimate-note-box { margin-bottom: 6px; }
+#w-editor-content .order-pdf-row { margin-bottom: 8px; }
 #w-editor-content .order-mail { margin-top: 4px; }
 #w-editor-content .order-mail > summary { cursor: pointer; }
 /* 中のメールを書く欄は部品（2026-09-30・assets/mail-compose.css）——資料のチェックもその添付の候補。 */
