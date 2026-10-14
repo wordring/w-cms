@@ -374,13 +374,14 @@ func TestRFQPDFRoundTrips(t *testing.T) {
 		t.Fatalf("PDFを作れません: %v", err)
 	}
 	got := pdfTextOf(t, pdf)
-	for _, want := range []string{"2026年10月5日", "000310", "わかば鋼業", "御中", "御見積をお願いいたします", "SS400", "t6*80*120", "単価",
+	// 宛名は見本の欄のとおり「（宛先） 様」（【要求】見積依頼 §1・2026-10-14——それまでは「御中」）。
+	for _, want := range []string{"2026年10月5日", "000310", "わかば鋼業　様", "御見積をお願いいたします", "SS400", "t6*80*120", "単価",
 		"よろしくお願いします。", "標準2輪用"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("⚠ PDFに %q が入っていません。読み返した中身:\n%s", want, got)
 		}
 	}
-	for _, not := range []string{"999", "A5052", "金額"} {
+	for _, not := range []string{"999", "A5052", "金額", "御中"} {
 		if strings.Contains(got, not) {
 			t.Errorf("⚠ PDFに %q が刷られています（単価は空欄・辞退の行と金額は刷らない）:\n%s", not, got)
 		}
