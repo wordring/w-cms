@@ -25,7 +25,7 @@ async function init() {
   document.getElementById('whoami').textContent = 'ログイン中: ' + me.username + (me.is_admin ? '（管理者）' : '');
   if (!me.is_admin) { setHidden(document.getElementById('denied'), false); return; }
   setHidden(document.getElementById('console'), false);
-  loadUsers(); loadGroups(); loadRequiredPages(); loadTablesReport(); loadAudit(); initDevMenu();
+  loadUsers(); loadGroups(); loadRequiredPages(); loadTablesReport(); loadAudit();
 }
 
 // ── 表の写し（data/tables.db）——「列の揃っていない表」の一覧（2026-09-25）──────
@@ -289,101 +289,6 @@ async function createRequiredPages() {
   loadRequiredPages();
 }
 
-// ── データの初期化（2026-09-16）────────────────────────────────────────
-//
-// ユーザー:「管理ページにデータの初期化ボタンが欲しいくらいです」（開発中の
-// 入れ直し用）。正本は internal/cms/reset_data.go。
-//
-// **歯止めは3つ**——admin・合言葉・確認ダイアログ。⚠ 合言葉は**サーバーでも
-// 見ています**（画面だけで守ると口を直に叩けば素通りする）。
-async function resetData() {
-  const el = document.getElementById('reset-msg');
-  const word = val('reset-word');
-  if (!word) {
-    el.style.color = '#dc2626';
-    el.textContent = '合言葉を入力してください';
-    return;
-  }
-  if (!confirm('ページを全部消します（控えは data/_reset-<日時>/ に残ります）。よろしいですか？')) return;
-  el.style.color = '#64748b'; el.textContent = '初期化中...';
-  const res = await api('POST', '/api/admin/reset', { confirm: word });
-  const d = await res.json().catch(() => ({}));
-  const s = d.summary || {};
-  if (d.success) {
-    el.style.color = '#16a34a';
-    // **控えの場所を必ず出します**——「消えた」だけを伝えると、間違えて押した人が
-    // 戻せると気づけません。
-    el.textContent = s.pages + 'ページを控えへ移しました（' + (s.backup_dir || '') + '）。'
-      + (s.kept_notice || '');
-    document.getElementById('reset-word').value = '';
-    loadRequiredPages(); loadAudit();
-  } else {
-    el.style.color = '#dc2626';
-    el.textContent = (d.message || '初期化できませんでした')
-      + (s.backup_dir ? '（控え: ' + s.backup_dir + '）' : '');
-  }
-}
-
-// ── 開発メニュー（2026-09-17・ユーザー:「開発中だけ開発メニューとして、管理画面に
-// 『メールを50通取り込む』ボタンを付けてください」「データの初期化ボタンも開発メニューかも」）──
-//
-// 実運用に入る前に、admin.html の節ごと外す。ボタンは既存の口（POST /api/mail/import）を
-// 押すだけで、新しい API は無い。**メール送受信の拡張が載っていないビルドでは出さない**
-// （/api/tag-schema の extensions に comm/mail が無ければ、その旨を1行出す）。
-async function initDevMenu() {
-  let exts = null;
-  try {
-    const r = await fetch('/api/tag-schema');
-    if (r.ok) exts = (await r.json()).extensions || [];
-  } catch (e) {}
-  const hasMail = exts === null || exts.includes('comm/mail');
-  setHidden(document.getElementById('dev-import-row'), !hasMail);
-  setHidden(document.getElementById('dev-import-none'), hasMail);
-}
-
-// devImportMail は取り込みを1回押します。
-//
-// month が真なら**今月1日以降**だけを取ります（2026-09-18 ユーザー:「管理ページの
-// メールの取り込みを今月分にすることは出来ますか？」）。⚠ 絞りは**サーバー側の
-// IMAP の `SEARCH SINCE`** が行います——手元で全部取ってから捨てるのではないので、
-// 通信量も待ち時間も減ります。日付は**運用者のローカル時刻**で数えます（月初は
-// 人の暦の話で、UTC で数えると月初の1日がずれます）。
-async function devImportMail(month) {
-  const btn = document.getElementById(month ? 'dev-import-month' : 'dev-import-btn');
-  const el = document.getElementById('dev-import-msg');
-  btn.disabled = true;
-  el.style.color = '#64748b';
-  el.textContent = month ? '今月分を取り込み中…' : '取り込み中…（50通で1分ほどかかります）';
-  const body = { max: 50 };
-  if (month) {
-    const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    const pad = n => String(n).padStart(2, '0');
-    body.since = first.getFullYear() + '-' + pad(first.getMonth() + 1) + '-01';
-    body.max = 200; // 今月分は「全部」が意図なので、上限を上げる
-  }
-  try {
-    const res = await api('POST', '/api/mail/import', body);
-    const d = await res.json().catch(() => ({}));
-    const s = d.summary || {};
-    if (d.success) {
-      el.style.color = '#16a34a';
-      // 内訳まで出す。「完了」だけだと、全部が重複で0通だったときに気づけない。
-      el.textContent = (month ? '今月分: ' : '')
-        + '取り込み ' + (s.imported || 0) + '通・重複 ' + (s.duplicate || 0)
-        + '通・失敗 ' + (s.failed || 0) + '通（サーバーには ' + (s.listed || 0) + '通）。';
-      loadAudit();
-    } else {
-      el.style.color = '#dc2626';
-      el.textContent = d.message || ('取り込めませんでした（' + res.status + '）');
-    }
-  } catch (e) {
-    el.style.color = '#dc2626'; el.textContent = '取り込めませんでした: ' + e;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 async function rebuildDatabase() {
   if (!confirm('HTMLファイルからデータベースのインデックスを完全に再構築します。よろしいですか？')) return;
   const el = document.getElementById('rebuild-msg');
@@ -450,9 +355,6 @@ function bindActions() {
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
   document.getElementById('tr-go').addEventListener('click', renameTagValue);
-  document.getElementById('reset-btn').addEventListener('click', resetData);
-  document.getElementById('dev-import-btn').addEventListener('click', () => devImportMail(false));
-  document.getElementById('dev-import-month').addEventListener('click', () => devImportMail(true));
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
   document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
   document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);

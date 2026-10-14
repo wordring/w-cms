@@ -115,34 +115,6 @@
       </p>
     </div>
 
-    <!-- 開発メニュー（開発中だけ。実運用に入る前にこの節ごと外す） -->
-    <h2>開発メニュー</h2>
-    <div class="card">
-      <p class="hint">
-        <strong>開発中だけの道具です。</strong>データの入れ直しを「初期化 → 置き場 → 取り込み」の
-        3押しで回すためのもので、実運用に入る前にこの節ごと外します。
-      </p>
-      <div class="row row--gap-lg">
-        <input id="reset-word" placeholder="合言葉" aria-label="初期化の合言葉">
-        <button id="reset-btn" class="danger-btn">🧹 データの初期化</button>
-        <span id="reset-msg" class="msg"></span>
-      </div>
-      <p class="hint">
-        <strong>ページを全部消します</strong>（<strong>テンプレートは残します</strong>——テンプレート置き場と
-        その下のページ）。消す前に <code>data/_reset-&lt;日時&gt;/</code> へ丸ごと移すので
-        <strong>取り消せます</strong>。メールのトークン・利用者・証明書も残ります。
-        実行するには合言葉 <code>初期化</code> を入力してください。
-      </p>
-      <hr>
-      <div id="dev-import-row" class="row row--gap-lg is-hidden">
-        <button id="dev-import-btn">📥 メールを50通取り込む</button>
-        <button id="dev-import-month">📅 今月分を取り込む</button>
-        <span class="hint">サインイン済みのアカウントから、通信箱の中へ入ります（重複は飛ばします）。<strong>今月分</strong>は今月1日以降に届いたものを最大200通。</span>
-        <span id="dev-import-msg" class="msg"></span>
-      </div>
-      <p id="dev-import-none" class="hint is-hidden">メール送受信の拡張が載っていないビルドなので、取り込みのボタンはありません。</p>
-    </div>
-
     <!-- 監査ログ -->
     <h2>監査ログ（最近200件）</h2>
     <div class="card">

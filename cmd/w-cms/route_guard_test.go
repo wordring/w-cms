@@ -68,7 +68,6 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/admin/audit", "GET", 401, "監査ログ（admin）"},
 		{"/api/admin/pages", "GET", 401, "拡張が要る置き場の一覧（admin）"},
 		{"/api/admin/pages", "POST", 401, "足りない置き場を作る（admin）"},
-		{"/api/admin/reset", "POST", 401, "データの初期化（admin）"},
 		{"/api/admin/tables", "GET", 401, "列の揃っていない表の一覧（admin）"},
 		{"/api/admin/tag-rename", "POST", 401, "タグの値を置き換える（admin）"},
 		{"/api/record-makers", "GET", 401, "記録から作れるページの種類"},
