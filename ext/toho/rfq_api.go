@@ -73,6 +73,7 @@ func rfqLinesOfProduct(productID int, lots []int) []ourOrderLine {
 			ln := rfqLineFromValues(it.Values)
 			ln.ProductID = page.FormatID(productID)
 			ln.Quantity = strconv.Itoa(it.Required)
+			ln.Lot = strconv.Itoa(lot) // 重複は「同じもの・同じロット」で見る（rfqDupKey）
 			out = append(out, ln)
 		}
 	}
@@ -81,7 +82,7 @@ func rfqLinesOfProduct(productID int, lots []int) []ourOrderLine {
 
 // appendRFQNeeds は本文の見積依頼必要部材表（1枚目）へ行を足します。**表が無ければ作ります**（節で包む・本文の末尾）。
 func appendRFQNeeds(body string, lines []ourOrderLine) (string, int) {
-	if out, n, ok := appendLinesToTable(body, RFQNeedsType, 1, lines); ok {
+	if out, n, ok := appendRFQLines(body, RFQNeedsType, 1, lines); ok {
 		return out, n
 	}
 	return body + tableOfLinesHTML(RFQNeedsType, lines, true), len(lines)
@@ -291,7 +292,7 @@ func RFQNeedsMoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 			found = false
 			return cur
 		}
-		out, k, ok := appendLinesToTable(next, RFQDraftType, n, lines)
+		out, k, ok := appendRFQLines(next, RFQDraftType, n, lines)
 		if !ok {
 			found = false
 			return cur

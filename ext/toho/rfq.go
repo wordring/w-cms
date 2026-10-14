@@ -66,7 +66,40 @@ func rfqColumns() []cms.VocabColumn {
 	return cols
 }
 
-// rfqNeedsColumns は見積依頼必要部材表の列です——発注明細の列から単価と状態を除いたもの（まだ聞いていない）。
+// rfqLotColumn は見積依頼必要部材表・見積依頼部材表の `ロット` の列です（2026-10-14）。
+//
+// 【要求】見積依頼 §2:「重複とみなすのは、見積依頼必要部材表の中に、同じものが同じロットで同時に出ているときだけ」。
+// 重複をロットで見るには、行がロットを持っていなければなりません——再見積依頼フォーム（弊社品番＋ロット）と受注残表
+// （受注残の数）から集めた行に、集めたときのロットを残します。見積依頼部材表にも置くのは、「↩ 戻す」で戻した行が
+// ロットを失わないため。見積依頼明細（紙）には置きません（紙の列は発注書と同じ・数量で足りる）。
+// ⚠ 型は設定（`config/settings.json` の table_vocabulary）と同じ number——変えるときは両方。
+func rfqLotColumn() cms.VocabColumn {
+	return cms.VocabColumn{Field: "lot", Label: "ロット", Type: cms.ColNumber}
+}
+
+// withLotBeforeQuantity は列の並びの `数量` の前に `ロット` を挟みます（`数量` が無ければ末尾）。
+func withLotBeforeQuantity(cols []cms.VocabColumn) []cms.VocabColumn {
+	out := make([]cms.VocabColumn, 0, len(cols)+1)
+	put := false
+	for _, c := range cols {
+		if c.Field == "quantity" && !put {
+			out = append(out, rfqLotColumn())
+			put = true
+		}
+		out = append(out, c)
+	}
+	if !put {
+		out = append(out, rfqLotColumn())
+	}
+	return out
+}
+
+// rfqDraftColumns は見積依頼部材表の列です——見積依頼明細の列（発注明細と同じ）に `ロット` を足したもの。
+func rfqDraftColumns() []cms.VocabColumn {
+	return withLotBeforeQuantity(rfqColumns())
+}
+
+// rfqNeedsColumns は見積依頼必要部材表の列です——発注明細の列から単価と状態を除き（まだ聞いていない）、`ロット` を足したもの。
 func rfqNeedsColumns() []cms.VocabColumn {
 	var out []cms.VocabColumn
 	for _, c := range orderItemColumns() {
@@ -75,7 +108,7 @@ func rfqNeedsColumns() []cms.VocabColumn {
 		}
 		out = append(out, c)
 	}
-	return out
+	return withLotBeforeQuantity(out)
 }
 
 // rfqTempColumns は見積依頼の臨時部材表の列です——発注の臨時部材表の列から単価を除いたもの。
@@ -104,7 +137,7 @@ func init() {
 		cms.VocabDef{
 			// ⚠ 機械だけが節で包んで作る（発注部材表と同じ）——スラッシュメニューに出さない。
 			Type: RFQDraftType, DisplayName: "見積依頼部材表", Category: "業務", Icon: "🛒", Element: "table",
-			Hidden: true, Columns: rfqColumns(),
+			Hidden: true, Columns: rfqDraftColumns(),
 		},
 		cms.VocabDef{
 			// テンプレート「見積依頼書」に人が置く表。
@@ -138,16 +171,89 @@ func rfqLineFromValues(v map[string]string) ourOrderLine {
 
 // rfqDupKey は「同じもの・同じロット」を見分ける鍵です（重複の赤）。
 //
+// 【要求】見積依頼 §2:「重複とみなすのは、見積依頼必要部材表の中に、同じものが同じロットで同時に出ているときだけ」
+// （2026-10-14 に、それまでの「同じもの・同じ数」から改めた）。
+//
+// 「同じもの」は部材を表す列（番号・品番・品名・加工内容・材質・形状・寸法・表面・仕様・支給）です。
 // 種類は見ません——臨時部材表には種類の列が無く、同じ材料を書いても集めた行（種類「材料」）と重ならなくなる。
-// 加工製品（弊社品番）と受注も見ません——別の品物が同じ材料を同じ数だけ使うなら、同じ業者へ二度聞く必要は無いので重複です。
+// 加工製品（弊社品番）と受注も見ません——別の品物が同じ材料を同じロットで使うなら、同じ業者へ二度聞く必要は無いので重複です。
+// 数量も見ません——同じロットでも、加工製品ごとに1個あたりの数が違えば数量は違います。
+//
+// ⚠ **ロットの分からない行**（臨時部材表に手で書いた行・ロットの列が無かった頃の行）は、ロットの代わりに**数量と単位**で
+// 比べます（それまでの見方）。ロットの分かる行とは重ねません（ロットと数は比べられない）。
 // 文字は全角半角・前後の空白・大小を畳んで比べます。
 func rfqDupKey(ln ourOrderLine) string {
+	fold := func(s string) string { return strings.ToLower(cms.NormalizeText(s)) }
 	parts := []string{ln.No, ln.ItemID, ln.ItemName, ln.Work, ln.Material, ln.Shape, ln.Size, ln.Color,
-		ln.Spec, ln.Supplied, ln.Quantity, ln.Unit}
+		ln.Spec, ln.Supplied}
 	for i, p := range parts {
-		parts[i] = strings.ToLower(cms.NormalizeText(p))
+		parts[i] = fold(p)
+	}
+	if lot := fold(ln.Lot); lot != "" {
+		parts = append(parts, "ロット", lot)
+	} else {
+		parts = append(parts, "数", fold(ln.Quantity), fold(ln.Unit))
 	}
 	return strings.Join(parts, "\x1f")
+}
+
+// ensureLotColumn は本文の n 枚目（1始まり）の vocabType の表に `ロット` の見出しが無ければ、`数量` の前（無ければ末尾）に
+// 列を足し、ほかの行にも空のセルを挟みます（2026-10-14）。
+//
+// ⚠ **ロットの列が無かった頃の表**（見積依頼必要部材表・見積依頼部材表）へ、ロットの分かる行を足すときに使います——
+// 列が無いまま足すと、見出しに合わせて並べる（`fieldsOfHeader`）ので、ロットが黙って落ちます。
+// 表が見つからない・既に列がある・壊れて読めないときは本文をそのまま返します。
+func ensureLotColumn(body, vocabType string, n int) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body
+	}
+	tables := tablesOfType(nodes, vocabType)
+	if n < 1 || n > len(tables) {
+		return body
+	}
+	rows := rowsOf(tables[n-1])
+	if len(rows) == 0 || len(cellsOf(rows[0])) == 0 {
+		return body
+	}
+	idx := headerIndex(rows[0])
+	label := rfqLotColumn().Label
+	if _, ok := idx[label]; ok {
+		return body
+	}
+	at := -1
+	if i, ok := idx["数量"]; ok {
+		at = i
+	}
+	for r, tr := range rows {
+		tag := "td"
+		if r == 0 {
+			tag = cellsOf(tr)[0].Data // 見出しの行は th（手で直した表が td で書いていても揃える）
+		}
+		cell := &html.Node{Type: html.ElementNode, Data: tag}
+		if r == 0 {
+			cell.AppendChild(&html.Node{Type: html.TextNode, Data: label})
+		}
+		cells := cellsOf(tr)
+		if at >= 0 && at < len(cells) {
+			tr.InsertBefore(cell, cells[at])
+		} else {
+			tr.AppendChild(cell)
+		}
+	}
+	return htmldoc.Render(nodes)
+}
+
+// appendRFQLines は本文の n 枚目の vocabType の表（見積依頼必要部材表・見積依頼部材表）へ行を足します。
+// ロットの分かる行があり、表にロットの列が無ければ、先に列を足します（`ensureLotColumn`）。
+func appendRFQLines(body, vocabType string, n int, lines []ourOrderLine) (string, int, bool) {
+	for _, ln := range lines {
+		if strings.TrimSpace(ln.Lot) != "" {
+			body = ensureLotColumn(body, vocabType, n)
+			break
+		}
+	}
+	return appendLinesToTable(body, vocabType, n, lines)
 }
 
 // rfqTempPartsOf は本文の見積依頼の臨時部材表から、空でない行を読みます。
@@ -212,7 +318,7 @@ func renderRFQNeeds(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	for _, tp := range temps {
 		count[rfqDupKey(tp.Line)]++
 	}
-	dupMark := `<span class="rfq-dup-mark" title="同じもの・同じ数が、この表の中に2つ以上あります">⚠ 重複</span>`
+	dupMark := `<span class="rfq-dup-mark" title="同じもの・同じロットが、この表の中に2つ以上あります（ロットの無い行は同じ数）">⚠ 重複</span>`
 	addRowChromeCells(el, "rfq-pick", func(row int, tr *html.Node) string {
 		ln := lines[row]
 		if lineIsEmpty(ln) {
@@ -269,7 +375,7 @@ func rfqNeedsFormHTML(pageID string, pageIDInt int) string {
 	var b strings.Builder
 	b.WriteString(`<p class="unorder-help">行を選んで「見積依頼部材表へ入れる」を押すと、下に<strong>見積依頼部材表</strong>ができます` +
 		`（見積依頼書は<strong>1枚に1社</strong>——同じ業者へ聞くものだけを選ぶ）。` +
-		`<strong>⚠ 重複</strong>は同じもの・同じ数が表の中に2つ以上あるもの——要らなければ選んで「不要」で消します。` +
+		`<strong>⚠ 重複</strong>は同じもの・同じロットが表の中に2つ以上あるもの（ロットの無い行は同じ数で見ます）——要らなければ選んで「不要」で消します。` +
 		`数は表を直接直せます（編集モード）。</p>`)
 	b.WriteString(`<div class="matsearch-form rfq-needs-form" data-rfq-page="` + pageID + `">`)
 	b.WriteString(`<label class="matsearch-field"><span>入れる先</span><select class="matsearch-input" data-rfq="into">` +

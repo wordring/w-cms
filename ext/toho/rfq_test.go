@@ -122,16 +122,21 @@ func TestRFQCollectUsesEstimateLots(t *testing.T) {
 	}
 }
 
-// TestRFQNeedsMarksDuplicates は、⚠ **同じもの・同じ数が表の中に2つ以上あれば赤（＋⚠ 重複）**、臨時部材表の行も並び、
-// 同じロットでなければ重複でないことを固定します。
+// TestRFQNeedsMarksDuplicates は、⚠ **同じもの・同じロットが表の中に2つ以上あれば赤（＋⚠ 重複）**、臨時部材表の行も並び、
+// 同じロットでなければ重複でないことを固定します（【要求】見積依頼 §2・2026-10-14 に「同じ数」から改めた）。
+// ロットの分からない臨時部材表の行は、ロットの分かる行とは重ならず、臨時の行どうしは同じ数で重なる。
 func TestRFQNeedsMarksDuplicates(t *testing.T) {
 	u := seedRFQ(t)
 	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"})
 	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"}) // 二度目——重複
 	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "6"}) // 別のロット
 	body := boxBody(t)
-	// 臨時部材表に1行（鉄 板 t3.2*100*200 を10——ロット5の行と同じもの・同じ数）。
-	next, _, ok := appendLinesToTable(body, RFQTempPartsType, 1, []ourOrderLine{{Kind: "材料", Material: "鉄", Shape: "板", Size: "t3.2*100*200", Quantity: "10"}})
+	if got := rfqRows(t, body, RFQNeedsType, 1); len(got) != 6 || got[0].Lot != "5" || got[4].Lot != "6" {
+		t.Fatalf("集めた行にロットが残っていません: %+v", got)
+	}
+	// 臨時部材表に2行（鉄 板 t3.2*100*200 を10——ロット5の行と同じもの・同じ数だが、ロットが分からない）。
+	tmp := ourOrderLine{Kind: "材料", Material: "鉄", Shape: "板", Size: "t3.2*100*200", Quantity: "10"}
+	next, _, ok := appendLinesToTable(body, RFQTempPartsType, 1, []ourOrderLine{tmp})
 	if !ok {
 		t.Fatal("臨時部材表へ書けません")
 	}
@@ -139,11 +144,22 @@ func TestRFQNeedsMarksDuplicates(t *testing.T) {
 	req := auth.WithUser(httptest.NewRequest("GET", "/000050", nil), u)
 	shown := cms.RenderComputedViews(req, rfqBoxID, next)
 	// ⚠ 印（rfq-dup-mark）を数える——「⚠ 重複」の文字は操作の欄の説明にも在る（文字で数えると説明の分まで数えた）。
-	if n := strings.Count(shown, `class="rfq-dup-mark"`); n != 5 { // ロット5の2行×2回 ＋ 臨時の1行
-		t.Errorf("重複の印が %d です（5のはず）:\n%s", n, shown)
+	if n := strings.Count(shown, `class="rfq-dup-mark"`); n != 4 { // ロット5の2行×2回（臨時の1行はロットが分からないので重ならない）
+		t.Errorf("重複の印が %d です（4のはず）:\n%s", n, shown)
 	}
 	// ⚠ **表の行として**並ぶこと（tbody の中の tr・セルに値）——文字列の有る無しだけを見ると、`<tbody><tr><td>` の札が
 	//    落ちてチェックの欄と文字だけが残った形（ブラウザが表の外へ追い出す・2026-10-03 に E2E で踏んだ）でも通ってしまう。
+	if !strings.Contains(shown, `<tbody class="vocab-chrome rfq-temp-rows"><tr class="rfq-temp-row"><td>`) ||
+		!strings.Contains(shown, `<td>t3.2*100*200</td>`) || !strings.Contains(shown, `data-rfq-temp-row="1"`) {
+		t.Errorf("臨時部材表の行が表の行として並んでいません:\n%s", shown)
+	}
+	// 臨時の行をもう1つ（同じもの・同じ数）——臨時の行どうしは数で重なる。
+	next, _, _ = appendLinesToTable(next, RFQTempPartsType, 1, []ourOrderLine{tmp})
+	writeBodyFile(t, rfqBoxID, next)
+	shown = cms.RenderComputedViews(req, rfqBoxID, next)
+	if n := strings.Count(shown, `class="rfq-dup-mark"`); n != 6 { // ロット5の4行 ＋ 臨時の2行
+		t.Errorf("重複の印が %d です（6のはず）:\n%s", n, shown)
+	}
 	if !strings.Contains(shown, `<tbody class="vocab-chrome rfq-temp-rows"><tr class="rfq-temp-row rfq-dup"><td>`) ||
 		!strings.Contains(shown, `<td>t3.2*100*200</td>`) || !strings.Contains(shown, `data-rfq-temp-row="1"`) {
 		t.Errorf("臨時部材表の行が表の行として並んでいません:\n%s", shown)
@@ -169,6 +185,8 @@ func TestRFQMoveRemoveAndBack(t *testing.T) {
 	body = boxBody(t)
 	if got := rfqRows(t, body, RFQDraftType, 1); len(got) != 2 || got[0].Material != "鉄" || got[1].Material != "真鍮" {
 		t.Fatalf("見積依頼部材表に入っていません: %+v", got)
+	} else if got[0].Lot != "5" || got[1].Lot != "" {
+		t.Errorf("見積依頼部材表へ移した行のロットが違います（集めた行は5・臨時の行は空のはず）: %+v", got)
 	}
 	if got := rfqRows(t, body, RFQNeedsType, 1); len(got) != 1 || got[0].Material != "SUS304" {
 		t.Errorf("移した行が見積依頼必要部材表に残っています: %+v", got)
@@ -201,6 +219,9 @@ func TestRFQMoveRemoveAndBack(t *testing.T) {
 	}
 	if got := rfqRows(t, body, RFQNeedsType, 1); len(got) != 3 {
 		t.Errorf("戻した行が見積依頼必要部材表に無い: %+v", got)
+	} else if lots := got[0].Lot + "," + got[1].Lot + "," + got[2].Lot; lots != "5,,5" {
+		// ⚠ ↩ 戻すでロットを失うと、戻した行は同じロットの行と重ならなくなる（見積依頼部材表にもロットの列を置く理由）。
+		t.Errorf("戻した行のロットが %q です（\"5,,5\"——戻した順に 鉄・臨時の真鍮・SUS304）: %+v", lots, got)
 	}
 	// 不要——消すだけ。
 	if code, out := postRFQ(t, u, RFQNeedsRemoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{1, 2}}); code != 200 || out["rows"] != float64(2) {

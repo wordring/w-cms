@@ -244,6 +244,8 @@ func orderLineValue(ln ourOrderLine, field string) string {
 		return strings.TrimSpace(ln.Size)
 	case "quantity":
 		return strings.TrimSpace(ln.Quantity)
+	case "lot":
+		return strings.TrimSpace(ln.Lot)
 	case "unit":
 		return strings.TrimSpace(ln.Unit)
 	case "cost":

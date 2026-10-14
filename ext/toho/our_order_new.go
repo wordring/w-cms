@@ -57,6 +57,9 @@ type ourOrderLine struct {
 	Spec     string `json:"spec,omitempty"`
 	Supplied string `json:"supplied,omitempty"`
 	Quantity string `json:"quantity"`
+	// Lot は「どのロットのための数か」（2026-10-14・見積依頼必要部材表と見積依頼部材表だけの列 `ロット`——rfq.go）。
+	// 見積依頼の重複を「同じもの・同じロット」で見るために運びます。発注の表には列が無いので書かれません。
+	Lot      string `json:"lot,omitempty"`
 	Unit     string `json:"unit"`
 	Cost     string `json:"cost"`
 	Note     string `json:"note"`

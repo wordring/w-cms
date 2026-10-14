@@ -115,6 +115,8 @@ func lineOfRow(head, tr *html.Node) ourOrderLine {
 		Quantity: at("数量"), Unit: at("単位"), Cost: at("単価"), Note: at("備考"),
 		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・見積依頼の表は発注明細と同じ列——行を移しても落とさない）。
 		Kind: at("種類"), No: at("番号"), Work: at("加工内容"), Spec: at("仕様"), Supplied: at("支給"),
+		// ロットは見積依頼必要部材表・見積依頼部材表だけの列（2026-10-14・rfq.go）——列の無い表では空。
+		Lot: at("ロット"),
 	}
 }
 
