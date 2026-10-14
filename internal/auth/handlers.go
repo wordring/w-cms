@@ -170,6 +170,37 @@ func MeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SessionAPIHandler は、このセッションが失効するまでの残り時間を返します（/api/session・要認証）。
+// 画面が失効の数分前に告知するための口です（【要求】権限 §1・2026-10-14）。
+//
+//   - GET は**寿命を延ばしません**（画面が裏で残りを見るだけ——isOperation）。
+//   - POST は告知の「続ける」です。利用者の操作なので、RequireAuth を通るときに寿命が延び、
+//     延びたあとの残りを返します。
+//
+// 失効していれば RequireAuth が 401 を返すので、ここへは来ません。
+func SessionAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	c, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		http.Error(w, "認証が必要です", http.StatusUnauthorized)
+		return
+	}
+	remaining, ok := SessionRemaining(c.Value)
+	if !ok {
+		http.Error(w, "認証が必要です", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"expires_in":  int(remaining.Seconds()),          // 失効までの秒
+		"idle_ttl":    int(SessionIdleTTL.Seconds()),     // 最後の操作から失効までの秒（8時間）
+		"warn_before": int(SessionWarnBefore.Seconds()), // 失効の何秒前に告知するか（5分）
+	})
+}
+
 // clientIP はリクエストの接続元アドレスを返します（監査記録用）。
 //
 // 本番はリバースプロキシの背後で動く（[【ガイド】デプロイ・運用.md] §6.2）ため、

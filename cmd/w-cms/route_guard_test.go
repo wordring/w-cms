@@ -76,6 +76,8 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/tables", "GET", 401, "探せる表の一覧"},
 		{"/api/tables/query", "POST", 401, "表を探す"},
 		{"/api/file-ref", "GET", 401, "ファイルの ID を添付の組へ引く"},
+		{"/api/session", "GET", 401, "失効までの残り時間（告知のため）"},
+		{"/api/session", "POST", 401, "告知の「続ける」（寿命を延ばす）"},
 
 		// 認証不要（公開ルート）。401 にはならない。
 		{"/login", "GET", 200, "ログイン画面"},

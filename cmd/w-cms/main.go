@@ -230,6 +230,8 @@ func buildHandler() http.Handler {
 	// 出入りする、という `/api/required-materials` 等と同じ形です。
 	protected.HandleFunc("/api/rebuild-db", cms.RebuildDBAPIHandler)
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
+	// 失効までの残り時間（画面が失効の5分前に告知する・GET は寿命を延ばさない・POST は「続ける」——2026-10-14）。
+	protected.HandleFunc(auth.SessionAPIPath, auth.SessionAPIHandler)
 
 	// 入力の候補（2026-09-21・`ext/toho` の `推奨業者` などが使う）。
 	// ⚠ **認証が要ります**——候補にはページの題が出るためです。出どころは拡張が
