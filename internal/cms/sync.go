@@ -345,7 +345,7 @@ func dropAllTables(db *sql.DB) error {
 // データベースを全再構築します。バックアップからファイル（data/master）だけを復元した状態で
 // アプリを起動するだけでDBが自動再生成されるようにするための、起動時フックです。
 func RebuildIfNeeded() error {
-	if !hasHTMLFiles(page.MasterDir) {
+	if !hasHTMLFiles(page.MasterDir()) {
 		return nil // 元になるファイルが無いなら再構築のしようがない
 	}
 
@@ -399,7 +399,7 @@ func hasHTMLFiles(dir string) bool {
 // 取り込んだページ数を返します（完了の記録に使う）。
 func resyncAllPages() (int, error) {
 	count := 0
-	err := filepath.Walk(page.MasterDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(page.MasterDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// data/master が存在しない場合などは、再構築対象なしとして正常終了する。
 			if os.IsNotExist(err) {

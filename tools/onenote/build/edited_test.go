@@ -19,7 +19,7 @@ func TestEditedSince(t *testing.T) {
 	built := time.Date(2026, 9, 30, 14, 31, 34, 0, time.FixedZone("JST", 9*3600))
 	since := built.Format(time.RFC3339)
 	page := func(id string) string {
-		dir := filepath.Join("data", "master", id[:2], id, "versions")
+		dir := filepath.Join(filepath.Dir(bodyPath(id)), "versions")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}

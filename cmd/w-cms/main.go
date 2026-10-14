@@ -55,9 +55,13 @@ func (n noDirListing) Open(name string) (http.File, error) {
 
 // main はアプリケーションの起動とルーティングの設定を行います。
 func main() {
+	// データの場所（WCMS_DATA_DIR・既定 data）を**いちばん先に**決める——証明書・DB・本文・
+	// メールの保管は、どれもここから引く（database.DataPath・2026-10-14）。
+	database.UseDataDirFromEnv()
+
 	// **証明書を作るだけの用**（サーバーは起動しない）。設定もDBも要らないので先に処理する。
 	if len(os.Args) > 1 && os.Args[1] == "-gencert" {
-		certFile, keyFile, err := generateSelfSignedCert(defaultCertDir)
+		certFile, keyFile, err := generateSelfSignedCert(defaultCertDir())
 		if err != nil {
 			log.Fatalf("証明書を作れません: %v", err)
 		}
@@ -151,17 +155,20 @@ func main() {
 	cert, key := tlsCertPath(), tlsKeyPath()
 	// いま何が効いているかを1行（秘密は有無だけ・startup_line.go）。
 	log.Println(effectiveSettingsLine(cert, key))
+	// 待ち受けは WCMS_ADDR（無ければ :8080、TLS のときは :8443——listen.go）。
 	switch {
 	case cert != "" && key != "":
-		log.Println("w-cms 起動: https://localhost:8443")
-		if err := http.ListenAndServeTLS(":8443", cert, key, handler); err != nil {
+		addr := listenAddr(true)
+		log.Println("w-cms 起動: " + listenURL(addr, true))
+		if err := http.ListenAndServeTLS(addr, cert, key, handler); err != nil {
 			log.Fatalf("サーバー終了: %v", err)
 		}
 	case cert != "" || key != "":
 		log.Fatal("HTTPS の設定が片方だけです（WCMS_TLS_CERT と WCMS_TLS_KEY は両方要ります）")
 	default:
-		log.Println("w-cms 起動: http://localhost:8080")
-		if err := http.ListenAndServe(":8080", handler); err != nil {
+		addr := listenAddr(false)
+		log.Println("w-cms 起動: " + listenURL(addr, false))
+		if err := http.ListenAndServe(addr, handler); err != nil {
 			log.Fatalf("サーバー終了: %v", err)
 		}
 	}

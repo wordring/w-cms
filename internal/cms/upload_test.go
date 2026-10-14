@@ -15,6 +15,7 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 
 	_ "modernc.org/sqlite"
 )
@@ -151,7 +152,7 @@ func TestUploadStripsPathComponents(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(page.AttachmentDir(id), saved)); err != nil {
 			t.Errorf("%s が files/ に保存されていません: %v", name, err)
 		}
-		if _, err := os.Stat(filepath.Join("data", "escape.pdf")); err == nil {
+		if _, err := os.Stat(database.DataPath("escape.pdf")); err == nil {
 			t.Errorf("%s がページディレクトリの外へ保存されました", name)
 		}
 	}

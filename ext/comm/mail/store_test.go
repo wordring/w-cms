@@ -11,7 +11,36 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"w-cms/internal/database"
 )
+
+// TestTokenStoreFollowsDataDir は、データの場所（WCMS_DATA_DIR・2026-10-14）を変えると、サインインの保管も
+// その下の mail に置かれ、作業ディレクトリの data/ には書かないことを固定します（1台に2つ同居させたとき、
+// 隣のインスタンスのサインインを読み書きしない）。
+func TestTokenStoreFollowsDataDir(t *testing.T) {
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origWd) })
+	other := filepath.Join(t.TempDir(), "site", "data")
+	database.SetDataDir(other)
+	t.Cleanup(func() { database.SetDataDir("") })
+
+	if err := saveToken("a", storedToken{RefreshToken: "r", Address: "a@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(other, "mail", "a.json")); err != nil {
+		t.Errorf("保管がデータの場所の下にありません: %v", err)
+	}
+	if got := signedInAddresses(); len(got) != 1 || got[0] != "a@example.com" {
+		t.Errorf("データの場所の保管を読めません: %v", got)
+	}
+	if _, err := os.Stat("data"); !os.IsNotExist(err) {
+		t.Errorf("⚠ 作業ディレクトリの data/ に書きました（%v）", err)
+	}
+}
 
 // TestTokenPathKeepsASCIINames は、⚠ **ASCII の名前の保管先が変わらない**ことを固定します
 // （変えると、既にサインインしている人の保管が読めなくなり、全員がサインインし直しになる）。

@@ -58,6 +58,8 @@ import (
 
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 	"w-cms/tools/internal/wcms"
 )
 
@@ -221,6 +223,8 @@ func main() {
 	fresh := flag.Bool("fresh", false, "前に作った「移行中」のページをごみ箱へ移して作り直す（前に上げたファイルを残さない・ページ番号は変わる）")
 	onlyFlag := flag.String("only", "", "作り直すページを w-cms のページIDで絞る（カンマ区切り・報告は「製造の報告（一部）.md」）")
 	flag.Parse()
+	// データの場所はサーバーと同じ決め方（WCMS_DATA_DIR・無ければ data）。本文と索引を読むので合わせる。
+	database.UseDataDirFromEnv()
 	root := *dirFlag
 	if root == "" {
 		root = filepath.Join(wcms.Desktop(), "w-cms", "ワンノート", *notebook)
@@ -239,7 +243,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "失敗: 設定を読めません（リポジトリの根で動かしてください）:", err)
 		os.Exit(1)
 	}
-	if db, err := sql.Open("sqlite", filepath.ToSlash(filepath.Join("data", "cms.db"))+
+	if db, err := sql.Open("sqlite", filepath.ToSlash(database.DataPath("cms.db"))+
 		"?_pragma=busy_timeout(5000)&_pragma=query_only(1)"); err == nil {
 		e.db = db
 		defer db.Close()
@@ -1467,9 +1471,10 @@ func (c *client) getJSON(path string, v any) error {
 	return json.NewDecoder(res.Body).Decode(v)
 }
 
-// bodyPath は正本の本文ファイルです（リポジトリの根で動かす——サーバーと同じ data\）。
+// bodyPath は正本の本文ファイルです（リポジトリの根で動かす——サーバーと同じ data\。
+// サーバーに WCMS_DATA_DIR を渡しているなら、この道具にも同じ値を渡す——main が読む）。
 func bodyPath(id string) string {
-	return filepath.Join("data", "master", id[:2], id, id+".html")
+	return page.BodyPath(id)
 }
 
 // editedSince は、ページが since（製造の記録の「製造」——この道具が最後に書き終えた時刻）より後に保存されたかと、
@@ -1486,7 +1491,7 @@ func editedSince(id, since string) (bool, string) {
 		return false, ""
 	}
 	limit := t0.Add(5 * time.Second)
-	dir := filepath.Join("data", "master", id[:2], id, "versions")
+	dir := filepath.Join(page.GetPageDir(id), "versions")
 	ents, _ := os.ReadDir(dir)
 	var last time.Time
 	by := ""

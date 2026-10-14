@@ -38,7 +38,7 @@ var TablesDB *sql.DB
 
 // InitTablesDB は data/tables.db を開きます（表はページを同期するときに作られます）。
 func InitTablesDB() error {
-	if err := os.MkdirAll("data", 0755); err != nil {
+	if err := os.MkdirAll(DataDir(), 0755); err != nil {
 		return err
 	}
 	var err error
@@ -48,8 +48,8 @@ func InitTablesDB() error {
 
 // InitDB はデータ保存用フォルダの確保と、SQLiteデータベースの初期化・テーブル作成を行います。
 func InitDB() error {
-	// 手順1: 物理ファイル群を保存する "data" ディレクトリを作成する
-	if err := os.MkdirAll("data", 0755); err != nil {
+	// 手順1: 物理ファイル群を保存するデータの場所（既定 "data"・WCMS_DATA_DIR）を作成する
+	if err := os.MkdirAll(DataDir(), 0755); err != nil {
 		return err
 	}
 
@@ -72,11 +72,11 @@ func InitDB() error {
 	return CreateCoreTables(DB)
 }
 
-// openSQLite は data/<name> を、接続ごとの設定を DSN に載せて開きます。
+// openSQLite は <データの場所>/<name>（既定 data/<name>）を、接続ごとの設定を DSN に載せて開きます。
 // cms.db と auth.db が同じ設定で開かれることをここで保証します
 // （片方だけ busy_timeout が無い、という食い違いを 2026-09-03 に踏んだ）。
 func openSQLite(name string) (*sql.DB, error) {
-	dsn := filepath.ToSlash(filepath.Join("data", name)) +
+	dsn := filepath.ToSlash(DataPath(name)) +
 		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	return sql.Open("sqlite", dsn)
 }

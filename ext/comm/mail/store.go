@@ -27,7 +27,11 @@ import (
 	"unicode/utf8"
 
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
+
+// mailStoreDir は保管の置き場です（データの場所の下の `mail`。既定は `data/mail`・WCMS_DATA_DIR で変わる）。
+func mailStoreDir() string { return database.DataPath("mail") }
 
 // storedToken はディスクに置く中身です。
 type storedToken struct {
@@ -57,10 +61,10 @@ const maxEncodedNameBytes = 96
 // なので、2つの形はぶつかりません。16進なので `../` も作れません。
 func tokenPath(username string) string {
 	if safeName.MatchString(username) {
-		return filepath.Join("data", "mail", username+".json")
+		return filepath.Join(mailStoreDir(), username+".json")
 	}
 	if name := encodedName(username); name != "" {
-		return filepath.Join("data", "mail", name+".json")
+		return filepath.Join(mailStoreDir(), name+".json")
 	}
 	return ""
 }
@@ -161,7 +165,7 @@ func deleteToken(username string) {
 // signedInAddresses はサインインしている全員のアドレスです（保管のファイルを見る・トークンには触れない）。
 // 通信箱の `.eml` の取り込みが「自分が出したメール」を見分けるために使います（comm.RegisterOwnAddresses）。
 func signedInAddresses() []string {
-	entries, err := os.ReadDir(filepath.Join("data", "mail"))
+	entries, err := os.ReadDir(mailStoreDir())
 	if err != nil {
 		return nil
 	}

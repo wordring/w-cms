@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"w-cms/ext/comm/mail"
+	"w-cms/internal/database"
 	"w-cms/tools/internal/wcms"
 )
 
@@ -69,6 +70,8 @@ func main() {
 	max := flag.Int("max", 0, "1つの箱で1回に落とす上限（0 なら全部）")
 	boxes := flag.String("boxes", "受信,送信", "落とす箱（受信・送信）")
 	flag.Parse()
+	// サインインの保管（<データの場所>/mail）はサーバーと同じ決め方で引く（WCMS_DATA_DIR・無ければ data）。
+	database.UseDataDirFromEnv()
 	root := *dirFlag
 	if root == "" {
 		root = filepath.Join(wcms.Desktop(), "w-cms", "メール")
