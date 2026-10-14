@@ -347,6 +347,25 @@ func (b DraftBlock) SetTag(name string, values ...string) {
 	}
 }
 
+// EnsureTag は範囲の中にタグ `name` の欄が無ければ、**空の欄**（`<dd><br/></dd>`——人が値を書く場所）を
+// 最初の可変タグの末尾へ足します。既にあれば何もしません（テンプレートの欄と値を残す）。
+//
+// 機械がまだ値を知らないタグを、ページを作るときから置いておくためのものです（2026-10-14——値の無い欄は
+// SetTag では置けない）。名前を知るのは拡張で、コアは置き方だけを持ちます。
+func (b DraftBlock) EnsureTag(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" || b.tagDD(name) != nil {
+		return
+	}
+	dt := newElement("dt")
+	setNodeText(dt, name)
+	dd := newElement("dd")
+	dd.AppendChild(newElement("br"))
+	dl := b.tagList()
+	dl.AppendChild(dt)
+	dl.AppendChild(dd)
+}
+
 // tagDD は範囲の中の可変タグから、名前が name の最初の dd を返します（無ければ nil）。
 func (b DraftBlock) tagDD(name string) *html.Node {
 	var hit *html.Node

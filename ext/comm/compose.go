@@ -76,6 +76,9 @@ type ComposeDraft struct {
 	// 印つきで並べ、外せば作らない（2026-10-03 利用者:「見積書ページのメール作成欄は見積書PDFも他と同じように表示し、ただし
 	// 最初から添付に入っているようにするとわかりやすい」——それまでは並ばず、送る欄の注意書きでしか分からなかった）。
 	Generated string `json:"generated,omitempty"`
+	// GeneratedNote は Generated の名前のうしろに括弧で添える一言です（空なら画面は「送るときに作ります」）。
+	// 送るときに作らず、ページに表示しているファイルを添える用件（発注書・2026-10-14）が、そう言うために使います。
+	GeneratedNote string `json:"generated_note,omitempty"`
 }
 
 // SendPurpose は用件1つぶんの仕事です。どれも任意（nil なら何もしない）。
