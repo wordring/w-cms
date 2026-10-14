@@ -460,7 +460,7 @@ func (p *fParser) factor() (fNode, error) {
 var formulaCellRe = regexp.MustCompile(`<td[^>]*>\s*(?:<[^>]+>\s*)*(?:=|＝)`)
 
 // renderFormulaCells は本文の表の式のセルに、計算した結果を属性で添えます——`data-w-value`（値・空のセルを
-// 参照したら空）か `data-w-error`（理由）。画面は閲覧モードでこれを見せ、編集モードでは式のまま（app.js
+// 参照したら空）か `data-w-error`（理由）。画面は閲覧モードでこれを見せ、書ける形では式のまま（app.js
 // 「表のセルの式」）。⚠ **属性は保存されない**——`td` に許す属性は colspan・rowspan・headers だけで、画面の
 // 書き出しもサーバーのサニタイズも落とす。本文に入るのは式だけ。
 func renderFormulaCells(bodyHTML string) string {

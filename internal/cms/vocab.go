@@ -13,9 +13,10 @@ package cms
 //
 // **レジストリは安全性の門ではありません。** サニタイズの許可リストは htmldoc が
 // 属性名だけを要素限定で持ち、data-type の値は検査しません。未知の data-type も
-// 保存を通し（＋保存時に告知）、②汎用索引（vocab_index.go）にも載ります。
+// 保存は通します（＋保存時に告知）。ただし②汎用索引（vocab_index.go）には載りません
+// （2026-09-20 から、登録された形式だけを索引します——それまでは未知の形式も載っていました）。
 // レジストリが担うのは編集支援（スラッシュメニュー・骨格生成・入力補助）と
-// 型推論・正規化の語彙だけです。
+// 型推論・正規化の語彙、それに「どの表とタグを索引に入れるか」の線引きです。
 //
 // 定義スキーマはサンプル実装先行（決定ログ）: まず「検査記録」で end-to-end に
 // 動かし、過不足を知ってから実運用スキーマを確定します。
@@ -167,11 +168,12 @@ type VocabDef struct {
 	// 以下は業務文書ブロック（Element=="section"・語彙モデル §8.2 論点A）用。
 	Items  string `json:"items,omitempty"`  // 明細表の形式名（素の表をこの形式として読む。D-2）
 
-	// View は計算ビュー（表示専用）。本文には見出しだけの印 <section><h2>表示名</h2></section>
+	// View は計算ビュー（表示専用）。本文には鏡の印 <section data-mirror="表示名"></section>
 	// だけを保存し、中身はサーバーがページ合成時に埋める（view_render.go。ユーザー決定
-	// 2026-08-19: サーバー事前描画）。エディタは骨格＝見出しだけの section を挿し、
+	// 2026-08-19: サーバー事前描画）。エディタは印だけの section を挿し、
 	// 中身（.vocab-chrome）は保存しない。⚠ 名前の見えない `<section data-type>` の印は
-	// 2026-09-27 に廃止（コードが印を書くときは `ViewMarkerHTML`）。
+	// 2026-09-27 に廃止（コードが印を書くときは `ViewMarkerHTML`）。見出しだけの印
+	// <section><h2>表示名</h2></section> で名乗る形も 2026-09-28 に廃止した（walk.go の vocabTypeOf）。
 	View bool `json:"view,omitempty"`
 
 	// RequiresTag は「この形式が③計算で使う、ページ横断メタ（<dl data-type="tags"）の
@@ -183,6 +185,10 @@ type VocabDef struct {
 	// なるのに告知はゼロ——「Field を持たない
 	// 列は改名しても壊れない」という UnresolvedVocabFields の前提が、ここだけ破れていた。
 	// 宣言にすることで、読み取りと告知が同じ1箇所を見る。
+	//
+	// いまは本番の登録でこれを宣言している形式はありません（2026-09-27 に材料の宣言から `部品番号` を外した——
+	// ext/toho/vocab.go。宣言しているのは試験用の vocab_fixture_test.go だけ）。告知の仕組み（vocab_notify.go）と、
+	// この欄は残してあります。
 	RequiresTag string `json:"requires_tag,omitempty"`
 }
 
@@ -355,6 +361,10 @@ func VocabDefByType(t string) (VocabDef, bool) {
 // 一致しない言葉は「形式なし」＝ただのセクションで、告知はしません——見出しは
 // data-type と違って**全セクションが普通に持つもの**なので、未登録語への告知は
 // 「作業メモ」のような普通の見出しへの誤検知の洪水になります（エージェント判断）。
+//
+// ⚠ 名前は「見出し」のままですが、**節の見出しで形式を名乗る読み方は 2026-09-29 に廃止**しました
+// （walk.go の vocabTypeOf）。いま引く言葉は、表の `<caption>`・鏡の印 `data-mirror` の表示名・
+// 保存時の告知（vocab_notify.go）・拡張の設定の語（ext/toho/procurement.go）です。
 func VocabDefByHeading(word string) (VocabDef, bool) {
 	if word == "" {
 		return VocabDef{}, false

@@ -382,6 +382,7 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+	// 2026-10-12 から画面は編集ロックを取らないので、道具が握るとき以外は素通り（親は本文と別なのですぐ効く）。
 	if !editlock.RequireEditLock(w, r, id) {
 		return
 	}
@@ -406,6 +407,8 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 //
 // 権限と編集ロックの確認は**呼ぶ側の責任**です（AppendToPageBody と同じ線引き。
 // エディタからの操作はロックが要り、整理は作った直後のページを動かすので要らない）。
+// （AppendToPageBody はいまは無く、同じ線引きは append_page.go の冒頭にあります。編集ロックは
+// 2026-10-12 から画面が取らないので、道具が握るとき以外は素通りです。）
 func SetPageParent(user *auth.User, id, newParent string) (parentStore, updatedAt string, err error) {
 	childID, err := strconv.Atoi(id)
 	if err != nil {

@@ -37,6 +37,8 @@ type uploadIntake struct {
 //     作られる機能はもはや必要ないでしょう」）。どのページへ上げても、添付になるだけです。
 //   - 添付は同名を無条件で上書きし、リビジョンもゴミ箱も無い（＝復元できない）ので、
 //     本文編集と同じ編集ロックで直列化します（editlock/handler.go の宣言どおり）。
+//     2026-10-12 から画面は編集ロックを取らないので、この関門は道具が握るとき以外は素通りです
+//     （添付を足すのは書く権限だけで足りる——【考察】編集モードの再考 §6 問い7）。
 func openUpload(w http.ResponseWriter, r *http.Request, formField string,
 	safeName func(pageID, raw string) (string, error)) (up uploadIntake, ok bool) {
 	if r.Method != http.MethodPost {

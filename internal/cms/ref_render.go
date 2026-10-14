@@ -108,7 +108,7 @@ func RenderReferenceLinks(bodyHTML string) string {
 				pageID, blockID, ok := parseRefValue(nodeText(dd))
 				if !ok {
 					// 形が合わなくても、**名前で宣言されたタグ**ならページ全体への
-					// 参照として扱います（返信元など）。
+					// 参照として扱います（親ページID など——2026-10-09 に `返信元` から改名）。
 					if pageID, ok = parsePageRef(key, nodeText(dd)); !ok {
 						return true
 					}
@@ -265,7 +265,7 @@ func setAttr(n *html.Node, key, val string) {
 // 発注書番号や図番のような普通の値まで拾ってしまうためです
 // （`TestRenderReferenceLinks` がその誤爆を固定しています）。
 //
-// けれど**ページ全体を指したいこともあります**（返信元＝どの記録への返信か）。
+// けれど**ページ全体を指したいこともあります**（親ページID＝どの記録への返信か。2026-10-09 までの名前は `返信元`）。
 // そこだけは「このタグはページを指す」と名前で宣言してもらいます。宣言があれば
 // 誤爆の余地はありません——他のタグの6桁の値は今までどおり素通りします。
 //
@@ -277,6 +277,8 @@ func setAttr(n *html.Node, key, val string) {
 // この仕組みの根幹（「項目の鍵は見出しの表示文字」）で、参照だけ別の原理
 // （属性で明示）にする理由がありません。辞書にあることで**運用者が自分の
 // 参照タグを足せます**。既定は `受信元`・`返信元`・`相手`（vocab.go）。
+// （いまの正本は config/settings.json の `vocabulary` で、`"type": "ref"` の語です——`受信元`・`親ページID`・
+// `相手`・`連絡帳` など。`返信元` は 2026-10-09 に `親ページID` へ改めました。）
 func isPageRefTag(tagName string) bool {
 	return InferColumnType(strings.TrimSpace(tagName)) == ColRef
 }

@@ -115,7 +115,7 @@ func init() {
 // ⚠ **中の文字は名札で、表示では消します**（2026-09-27 利用者:「保存時は
 // `<section data-type="file-view" data-ref="…">短縮ファイル名</section>` としておいて、表示する
 // ときに消せば良いのでは？」）。名札は保存のたびにサーバーが書き直します（`FillFileViewNames`）
-// ——編集モードで保存すると中は一度空になりますが、サーバーがまた書き込みます。
+// ——書ける形（2026-10-12 までの編集モード）で保存すると中は一度空になりますが、サーバーがまた書き込みます。
 func renderFileView(ctx *MirrorContext, el *html.Node) (bool, error) {
 	// 名札と前回のクロームを落とす（毎回描き直す）。
 	for el.FirstChild != nil {

@@ -2,6 +2,10 @@ package cms
 
 // 本文の保存API（全文保存とブロック単位保存）。認可 → 編集ロック検証 → サニタイズ →
 // 正本ファイルの書き込み → インデックス同期、という順序はどちらの経路でも同じです。
+//
+// 2026-10-12 から、画面（エディタ）の保存は `POST /api/sync`（handler_sync.go）だけです。
+// ここの2つの口は道具（ワンノートの製造・テンプレートの取り込み・E2E の `/api/lock` → `/api/save`）の
+// ために残してあります。どちらもページごとの書き込みの錠（body_lock.go）の中で書きます。
 
 import (
 	"encoding/json"
@@ -71,14 +75,17 @@ func PageIDOrFail(w http.ResponseWriter, raw string) (string, bool) {
 	return pageID, true
 }
 
-// SaveRequest はオートセーブで送られてくるJSON構造体です。
+// SaveRequest は全文保存（`POST /api/save`）で送られてくるJSON構造体です。
+// 2026-10-12 まではエディタのオートセーブがこれを送っていました。いまは道具だけが送ります。
 type SaveRequest struct {
 	PageID string `json:"page_id"`
 	HTML   string `json:"html"`
-	Token  string `json:"token"` // 編集ロックのトークン（保持者の検証に使う）
+	Token  string `json:"token"` // 編集ロックのトークン（保持者の検証に使う。道具が /api/lock で取ったもの）
 }
 
-// SaveAPIHandler はエディタからの自動保存（JSON）を受け取り、HTMLファイルとDB同期を上書き保存します。
+// SaveAPIHandler は本文の全文（JSON）を受け取り、HTMLファイルとDB同期を上書き保存します。
+// 2026-10-12 まではエディタの自動保存の口でした。いまは画面は `/api/sync` を使い、
+// ここを叩くのは道具（ワンノートの製造・テンプレートの取り込み・E2E）だけです。
 func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -159,6 +166,8 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 編集ロックのトークン検証は、他者が保持中／自分のトークン失効なら拒否します
 // （明け渡し後の古いクライアントが新しい保持者の編集を上書きしないため）。
 // ロックが無い場合は許可（無競合。フロント未対応でも従来どおり保存できる）。
+// 2026-10-12 から画面はロックを取らないので、ロックの検証が効くのは道具が `/api/lock` で
+// 握っているあいだだけです。同時の書き込みを1つずつ通すのは、呼ぶ側が取る書き込みの錠（body_lock.go）です。
 func gateSave(w http.ResponseWriter, r *http.Request, rawID, token string) (id string, ok bool) {
 	id, _, ok = normalizedPageID(w, rawID)
 	if !ok {
@@ -287,6 +296,9 @@ type SaveBlockRequest struct {
 //
 // 正本はファイル単位で書き直し、SyncIndex もページ単位の洗い替えのままなので、
 // これで減るのは送信量とエコーバックの粒度です。
+//
+// 2026-10-12 から、画面はこの口を使いません（保存は `/api/sync` の1本——ブロック単位で当てる）。
+// 上の「クライアントがフォールバックする」は、それまでのエディタの話です。口は残してあります。
 func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

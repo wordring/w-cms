@@ -74,7 +74,7 @@ func RelatedPages(db ReadOnlyDB, pageID int) ([]int, error) {
 			addPageID(found, id)
 			continue
 		}
-		// ページ全体を指すと宣言されたタグ（返信元 等）は6桁だけの形も採る。
+		// ページ全体を指すと宣言されたタグ（親ページID 等——2026-10-09 までの `返信元`）は6桁だけの形も採る。
 		if id, ok := parsePageRef(t.field, t.value); ok {
 			addPageID(found, id)
 		}

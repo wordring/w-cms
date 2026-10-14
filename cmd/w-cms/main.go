@@ -191,6 +191,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/save", cms.SaveAPIHandler)
 	// 1ブロックだけの保存。data-id が無い本文や構造変更では使えないため、
 	// クライアントは 409 等で /api/save（全文保存）へフォールバックする。
+	// （2026-10-12 から画面はこの2つを使わない——保存は下の /api/sync。2つは道具のために残してある。）
 	protected.HandleFunc("/api/save-block", cms.SaveBlockAPIHandler)
 	// ブロック単位で合わせる保存（2026-10-12——編集権をやめた画面の保存はこれ1本。全文・ブロックの保存は道具のため）。
 	protected.HandleFunc("/api/sync", cms.SyncAPIHandler)
@@ -210,6 +211,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/delete-page", cms.DeletePageAPIHandler)
 
 	// 同時編集の悲観ロック（ページ単位・競合トリガー方式・SSEプッシュ）
+	// 2026-10-12 から画面は取らない——/api/lock → /api/save で書く道具のために残してある（editlock/lock.go の冒頭）。
 	protected.HandleFunc("/api/lock", editlock.LockAPIHandler)
 	protected.HandleFunc("/api/lock-events", editlock.LockEventsAPIHandler)
 	protected.HandleFunc("/api/unlock", editlock.UnlockAPIHandler)
@@ -222,7 +224,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/presence", cms.PresenceAPIHandler)
 
 	// 保存済み文書の版管理（リビジョン／リバート。version.go）。
-	// 版は本文そのものなので、一覧・取得は本文と同じ read、書き戻しは write ＋編集ロック。
+	// 版は本文そのものなので、一覧・取得は本文と同じ read、書き戻しは write ＋編集ロック
+	// （編集ロックは道具が握るとき以外は素通り・2026-10-12。書き戻しはページごとの書き込みの錠の中）。
 	protected.HandleFunc("/api/versions", cms.VersionsAPIHandler)
 	protected.HandleFunc("/api/version", cms.VersionAPIHandler)
 	// 版の区切り（閲覧モードへ切り替えたとき・ページを離れるとき——編集権の手放しの代わり・2026-10-12）。
@@ -261,7 +264,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/pages", cms.RequiredPagesAPIHandler)
 	// 「列の揃っていない表」の一覧（data/tables.db・DBの日本語化 §7 の2段目・admin限定）。
 	protected.HandleFunc("/api/admin/tables", cms.TablesReportAPIHandler)
-	// タグの値を置き換える（選択肢の言葉を変えたとき・版が残る・編集中は飛ばす・admin限定・2026-10-01）。
+	// タグの値を置き換える（選択肢の言葉を変えたとき・版が残る・admin限定・2026-10-01）。
+	// 「編集中は飛ばす」は 2026-10-12 から道具が握った直後だけ（tag_rename.go の冒頭）。
 	protected.HandleFunc("/api/admin/tag-rename", cms.TagRenameAPIHandler)
 	// 表を探す（検索画面 assets/tables.html と AI の口・DBの日本語化 §7 の3段目）。
 	// **読めるページの行だけ**返す。自由な SQL は受けない（tables_query.go）。

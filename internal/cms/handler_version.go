@@ -6,6 +6,8 @@ package cms
 // 認可の考え方は「**版は本文そのもの**」の一言に尽きます——一覧と取得は本文と同じ
 // read、書き戻しは本文と同じ write ＋編集ロック。ここを緩めると、版が本文の
 // 認可を迂回する裏口になります。
+// （2026-10-12 から画面は編集ロックを取らないので、ロックの関門は道具が握るとき以外は素通りです。
+// 書き戻しは、人の保存と同じページごとの書き込みの錠（body_lock.go）の中で行います——RevertToVersion。）
 
 import (
 	"net/http"
@@ -114,7 +116,8 @@ func RevertAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// 本文を書き換える操作なので、保存とまったく同じ守りを掛ける。
+	// 本文を書き換える操作なので、保存とまったく同じ守りを掛ける
+	// （編集ロックは道具が握るとき以外は素通り・2026-10-12。同時の書き込みは RevertToVersion の錠が1つずつ通す）。
 	if !page.RequirePageWrite(w, r, id) {
 		return
 	}

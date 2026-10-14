@@ -11,6 +11,8 @@ import (
 )
 
 // RequireEditLock は、エディタ内の変更操作が現在の編集ロック保持者から来ていることを要求します。
+// ⚠ 2026-10-12 から画面はロックを取らないので、ふだんは「ロックが無ければ許可」の枝で素通りです
+// （断るのは、道具が `/api/lock` で握っているあいだに別の口から来たときだけ）。
 // 本文保存・権限変更・親付け替え・将来のリソース操作（画像/PDF等）を、本文編集と同じロックで
 // 直列化するための共通ゲートです。トークンは `X-Lock-Token` ヘッダ（無ければ `token` クエリ）で受けます。
 //
@@ -62,6 +64,13 @@ func RequireLockToken(w http.ResponseWriter, r *http.Request, idStr, token strin
 //
 // 断るのは**いま開いている人が居るとき**だけです（`EditorOpen`）。ブラウザを
 // 閉じただけの人のロックで永久に止まらないようにするため。
+//
+// ⚠ **2026-10-12 から、いまはほぼ素通りです。** 画面（エディタ）が編集権を取らなくなった
+// （編集モードをやめ、人の保存は `/api/sync` でブロック単位に当てる）ので、ここが断るのは
+// 道具が `/api/lock` → `/api/save` で一瞬握っているときだけです。人の書きかけと機械の書き込みの
+// 重なりは、いまは cms のページごとの書き込みの錠（`cms.LockPageBody`・`cms.RewriteBody` が取る）が
+// 1つずつ通し、同じブロックがぶつかれば画面が両方を並べます（機械も「ほかの書き手の1人」）。
+// 上の段落は 2026-10-12 までの事情です。呼び出しは、道具の書き込みを守るために残してあります。
 func RefuseWhileEditing(w http.ResponseWriter, idStr string) bool {
 	pageID, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -105,6 +114,7 @@ func requireWriter(w http.ResponseWriter, r *http.Request, id string) *auth.User
 // LockAPIHandler は編集ロックの取得を処理します。
 // POST /api/lock?id=&token= 。対象ページの write 権限を要求します。
 // 本文は返しません（取得口は GET /api/load の1つ。クライアントは取得後に読み直す）。
+// 2026-10-12 から画面は呼びません。呼ぶのは道具（`/api/lock` → `/api/save` で書くもの）だけです。
 func LockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -197,7 +207,8 @@ func LockEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // UnlockAPIHandler は保持者本人によるロックの明示解放です。
-// POST /api/unlock?id=&token= 。タブ離脱時の navigator.sendBeacon からも呼ばれます。
+// POST /api/unlock?id=&token= 。2026-10-12 までは、タブ離脱時の navigator.sendBeacon からも
+// 呼ばれていました（いまは画面がロックを取らないので、呼ぶのは道具だけです）。
 func UnlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

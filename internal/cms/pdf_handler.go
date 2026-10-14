@@ -72,6 +72,7 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 	// 2026-09-05 に、`.eml` の取り込みも 09-30 にやめた）。
 	// 解析（parse-pdf）は永続状態を変えない（結果はDOMへ足すだけで、保存は
 	// /api/save がロック検証する）ので、そちらは編集ロックを通しません。
+	// （2026-10-12 から画面の保存は /api/sync で、ページごとの書き込みの錠の中でブロック単位に当てます。）
 	up, ok := openUpload(w, r, "pdf_file", attachmentFileName)
 	if !ok {
 		return

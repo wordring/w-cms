@@ -56,6 +56,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+	// 2026-10-12 から画面は編集ロックを取らないので、道具が握るとき以外は素通り（権限は本文と別なのですぐ効く）。
 	if !editlock.RequireEditLock(w, r, id) {
 		return
 	}
@@ -183,6 +184,7 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// エディタ内の変更操作は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+	// 2026-10-12 から画面は編集ロックを取らないので、道具が握るとき以外は素通り（権限は本文と別なのですぐ効く）。
 	if !editlock.RequireEditLock(w, r, id) {
 		return
 	}

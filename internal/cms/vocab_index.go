@@ -158,7 +158,8 @@ func (vocabIndexPlugin) Schema() []string {
 func (vocabIndexPlugin) Tables() []string { return []string{"vocab_index", "page_tags"} }
 
 // Triggers はマーカーのある要素**すべて**を受け取ることを宣言します。
-// 未知の `data-type` もそのまま索引に載る、という現行仕様がそのままこの1行になります。
+// 未知の `data-type` もここまでは届きます。索引に載せるかは OnElement が登録で決めます
+// （2026-09-20 から、登録されていない形式は索引しません——それまでは「未知もそのまま載る」でした）。
 func (vocabIndexPlugin) Triggers() []string { return []string{TriggerAll} }
 
 // OnPageStart は当該ページ分を洗い流します（洗い替えの前半）。
@@ -187,6 +188,8 @@ func (vocabIndexPlugin) OnPageStart(ctx *ObserveContext) error {
 //
 // ⚠ **素の「表」は拾い続けます**（`syncVocabSection`）——`■材料` のような見出しの下に
 // 表が並ぶワンノートの形が、そのまま形式宣言になる受け皿だからです（D-2・移行の要）。
+// （2026-09-29 に、節の見出しで形式を名乗る読み方は廃止しました。いま節の側から素の表を拾うのは、
+// 節が `data-type` 属性で形式を名乗るときだけです。表は自分の `<caption>` で名乗ります——walk.go の vocabTypeOf。）
 // つまりDBに入るのは**タグと表だけ**。節の中のマーカー付き table / dl は配送係が
 // 別に届けてくれるので、ここでは降ります（＝ descend は常に true）。
 func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, error) {
@@ -197,8 +200,8 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 	if el.Data != "table" && el.Data != "dl" {
 		return true, nil // 形式の無い要素は配送係が弾く。ここへ来るのは section 等
 	}
-	// 形式の解決は配送係と同じ vocabTypeOf——属性が正、無ければ位置の規則
-	// （セクション外の素の dl＝タグ）。
+	// 形式の解決は配送係と同じ vocabTypeOf——属性が正、無ければ表は自分の `<caption>`
+	// （位置の規則「セクション外の素の dl＝タグ」は試して撤回した。タグは data-type="tags" の明示だけ）。
 	dataType := vocabTypeOf(el)
 	// ⚠ **登録されていない形式は索引しません**（2026-09-20 ユーザー決定:「事前に登録
 	// されている語彙だけＤＢに入れましょう。すべての表をＤＢに入れる必要はないと思います」）。
@@ -214,6 +217,8 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 	// ⚠ **ワンノート移行の受け皿は壊れません**——`■材料` の下の素の表は
 	// `VocabDefByHeading` を通るので**もともと登録が前提**でした（`材料`・`外注加工`・
 	// `購入部品`・`支給部品` は登録済み）。
+	// （2026-09-29 に節の見出しで名乗る読み方は廃止しました。いまワンノートから移した表は、
+	// 自分の `<caption>` で同じ登録の言葉を名乗ります。）
 	//
 	// ⚠ **運用者が自分の表を足す道は、いまコードにしかありません**（`RegisterVocab` を
 	// 呼ぶのはプラグインだけ）。`settings.json` から形式を足せるようにするのが対の宿題です
@@ -249,7 +254,11 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 // ——`<dl data-type="tags">` だけがDBに入ります。**表とタグだけがDBに入る**、が
 // 説明の全部です。やめた理由は `OnElement` の注記に。
 //
-// 形式は vocabTypeOf で解決します——data-type 属性が正、無ければ機能見出し。
+// 形式は vocabTypeOf で解決します——節が形式を持つのは data-type 属性のときだけです
+// （機能見出しで名乗る読み方は 2026-09-29 に廃止。鏡の印 `data-mirror` の節は計算ビューで、
+// 本文に中身を持ちません）。いまここで素の表を拾うのは古い形 `<section data-type="…">` の節だけで、
+// この枝は DBの日本語化 5段目の4 で消す予定です（[docs/考察/【考察】DBの日本語化.md] §7）。
+// 上の「ワンノート移行の受け皿」は、見出しで名乗っていたころの話です。
 // マーカー付きの table / dl（可変タグ・明細表）は独立した形式として配送係が別に
 // 届けるので、ここでは拾いません（拾うと同じ値が二重に索引されます）。
 // 入れ子の section へは降りません（入れ子の業務ブロックは独立して読まれます）。
@@ -268,6 +277,7 @@ func syncVocabSection(ctx *ObserveContext, section *html.Node) error {
 	// ——見出しの言葉が表の役割を宣言し、th の表示文字が列を宣言するので、本文から
 	// 機械語が消えます（2026-08-31 ユーザー:「THに表示される文字列が、すなわち列の
 	// データを表します。人に対しても機械に対しても有効」）。
+	// （「見出しの言葉が表の役割を宣言」は 2026-09-29 まで。いまは節の data-type 属性が宣言します。）
 	itemsType, itemsDef := dataType, def
 	if def.Items != "" {
 		if idef, ok := VocabDefByType(def.Items); ok {
