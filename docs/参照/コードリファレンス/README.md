@@ -1,6 +1,6 @@
 # コードリファレンス
 
-**対象コミット: `36357fe`（2026-10-14 作り直し・[全体地図.md](全体地図.md) と同じ測定）**
+**対象コミット: `2d640c7`（2026-10-14。`36357fe` で作り直したものを、同じ日の変更の分だけ測り直した・[全体地図.md](全体地図.md) と同じ測定）**
 
 実装の**いまの姿**を写した文書群です。設計の「なぜ」は各設計書と【考察】が正本です。ここは「いま何がどうなっているか」だけを扱います。
 
@@ -18,6 +18,9 @@
 - **通信の記録の親子は `親ページID`**（2026-10-09・`ext/comm/parent_link.go`）。新しいメールの読み込みはサーバーの裏で続けます（`ext/comm/mail/fetch_job.go`）。
   記録から作るページの口（`RegisterRecordMaker`）も入りました。道具は `tools/internal/wcms` を共有します。
 
+同じ 10-14 の `36357fe` のあとの変更（セッションを最後の操作から8時間に・`WCMS_DATA_DIR` と `WCMS_ADDR`・送った発注書の PDF・見積依頼のロットの列・
+データの初期化と開発メニューを外した）は、作り直さずにその分だけ直しました。一覧は [全体地図.md](全体地図.md) の冒頭にあります。
+
 ## まず `go doc`
 
 説明の本体は**コードの中**にあります。パッケージの冒頭コメントを読むのが最短です。
@@ -28,7 +31,8 @@ go doc ./internal/cms              # 中核（正本・語彙・3層・回覧）
 go doc ./internal/cms/page         # サイドカーと認可・添付の置き場
 go doc ./internal/cms/editlock     # 悲観ロック（10-12 から画面は使わない——道具のために残る）
 go doc ./internal/cms/htmldoc      # 本文のサニタイズ
-go doc ./internal/database         # cms.db（派生）・tables.db（表の写し・派生）・auth.db（正本）
+go doc ./internal/database         # cms.db（派生）・tables.db（表の写し・派生）・auth.db（正本）・データの場所（WCMS_DATA_DIR）
+go doc ./internal/auth             # セッション（最後の操作から8時間）・パスワード・監査
 
 go doc ./internal/cms SyncAPIHandler            # ブロック単位で合わせる保存の口
 go doc ./internal/cms LockPageBody              # ページごとの書き込みの錠
