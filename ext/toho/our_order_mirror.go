@@ -54,8 +54,22 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	// ⚠ ここでは「FAX・印刷用（資料を綴じる）」を出すかだけに使う（メールの添付の候補は送る欄の初期値）。
 	rows, _ := orderTableRows(el)
 	docs, _ := orderDocs(ctx.Viewer, rows)
-	appendFootHTML(el, span, "order-send-row", orderSendFormHTML(ctx.PageID, counts, docs))
+	appendFootHTML(el, span, "order-send-row", orderSendFormHTML(ctx.PageID, counts, docs, orderNoteBoxFor(ctx)))
 	return false, nil
+}
+
+// orderNoteBoxFor は備考の入力欄です（2026-10-14・見積書・見積依頼書と同じ部品 noteBoxHTML）。書ける人にだけ出し、
+// テンプレートの中では出しません。保存先は本文の見出し「備考」の節で、紙はそこを刷ります（readOrderDoc）。
+func orderNoteBoxFor(ctx *cms.MirrorContext) string {
+	pid := page.FormatID(ctx.PageID)
+	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) || cms.IsTemplateArea(pid) {
+		return ""
+	}
+	note := ""
+	if body, err := cms.ReadPageBody(pid); err == nil {
+		note = orderNoteOf(body)
+	}
+	return noteBoxHTML(pid, note, "/api/our-order/note", "備考（相手に伝えること——紙では明細の下に刷ります）")
 }
 
 // addOrderRowButtons は各行の末尾に、印を変えるボタンを足します。

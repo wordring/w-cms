@@ -54,6 +54,43 @@ func TestSaveAttachmentRecordsMeta(t *testing.T) {
 	_ = id
 }
 
+// TestOverwriteAttachmentKeepsTheID は、上書きが同じ保存名のまま中身と目録を置き換え（数は増えない）、
+// 無い添付・保存名でない名前は断ることを固定します（2026-10-14）。
+func TestOverwriteAttachmentKeepsTheID(t *testing.T) {
+	newTestFileDB(t)
+	newPage(t, "000203", "<h1>目録</h1>", page.PageMeta{Owner: "alice", Mode: "330"})
+	_, stored, err := SaveAttachmentFrom("000203", "alice", "紙 1.pdf", "pdf", []byte("%PDF-1.4 old"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := OverwriteAttachment("000203", "bob", stored, "紙 2.pdf", "pdf", []byte("%PDF-1.4 newer")); err != nil {
+		t.Fatalf("上書きできません: %v", err)
+	}
+	path, _ := page.AttachmentPath("000203", stored)
+	if b, _ := os.ReadFile(path); string(b) != "%PDF-1.4 newer" {
+		t.Errorf("中身が置き換わっていません: %q", b)
+	}
+	metas := ReadAttachmentMetas("000203")
+	if m := metas[stored]; len(metas) != 1 || m.Name != "紙 2.pdf" || m.By != "bob" || m.Size != 14 || m.Source != "pdf" {
+		t.Errorf("目録が書き直されていません: %+v", metas)
+	}
+	entries, _ := os.ReadDir(page.AttachmentDir("000203"))
+	files := 0
+	for _, e := range entries {
+		if !e.IsDir() && !IsAttachmentMetaFile(e.Name()) {
+			files++
+		}
+	}
+	if files != 1 {
+		t.Errorf("添付が %d 個あります（上書きなら1個のはず）", files)
+	}
+	for _, bad := range []string{"", "zzzz.pdf", "../000203.html", `files\x.pdf`, ".versions", AttachmentMetaFile} {
+		if err := OverwriteAttachment("000203", "bob", bad, "x.pdf", "pdf", []byte("x")); err == nil {
+			t.Errorf("%q を上書きしました（断るはず）", bad)
+		}
+	}
+}
+
 func TestUpdateAttachmentMetaKeepsName(t *testing.T) {
 	newTestFileDB(t)
 	newPage(t, "000202", "<h1>目録</h1>", page.PageMeta{Owner: "alice", Mode: "330"})

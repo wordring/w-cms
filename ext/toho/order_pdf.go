@@ -99,13 +99,22 @@ type madeOrderPDF struct {
 	AttachID string // 添付の識別子（4桁）
 	File     string // 保存名
 	ViewNote string // ページに表示できなかった理由（出せたなら空）
+	// Overwrote は、表示中のまだ送っていない PDF を上書きしたかです（発注書だけ・2026-10-14・order_pdf_sent.go）。
+	Overwrote bool
 }
 
 // makeOrderPDF は発注書のPDFを作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。
 //
-// `/api/order-pdf` と、メールで送る直前（送る欄の用件「発注書」・order_mail.go）が共有します。
+// `/api/order-pdf` と、メールで送るときにまだ PDF が無い場合（送る欄の用件「発注書」・order_mail.go）が共有します。
 // 断るときは応答を書いて false を返します。
+//
+// ⚠ **表示中の PDF がまだ送っていないものなら、新しく作らずにその添付を上書きします**（2026-10-14・【要求】
+// 発注フォルダ「PDF作成」ボタン:「送付前は、このボタンを押すたびに、古いPDFを上書きして」）。送ったものなら
+// 新しい版を作って表示を差し替えます（送った PDF は消さない——order_pdf_sent.go）。
 func makeOrderPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool) {
+	if made, done, ok := overwriteUnsentOrderPDF(w, user, pageID); done {
+		return made, ok
+	}
 	return makePaper(w, user, pageID, paperKind{
 		build: buildOrderPDF,
 		name:  func(body, _ string) string { return orderPaperTitleOf(body) },

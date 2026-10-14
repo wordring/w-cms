@@ -239,6 +239,8 @@
         // 送るときに作るファイル（発注書・見積書の PDF——2026-10-03 利用者:「見積書PDFも他と同じように表示し、ただし最初から
         // 添付に入っているようにするとわかりやすい」）。ほかの添付と同じ並びのいちばん上に印つきで出し、外せば作らない
         // （skip_generated）。作るのは送るとき——いつも最新の明細で。
+        // ⚠ 発注書は作り直さず、ページに表示している PDF を添える（2026-10-14・【要求】発注フォルダ「発注書を送信」）
+        // ——括弧の中の一言は用件が渡す（generated_note・空なら「送るときに作ります」）。
         let genCb = null;
         if (d.generated) {
             const lb = el('label', 'mc-attach-item mc-attach-generated');
@@ -247,7 +249,7 @@
             genCb.checked = true;
             genCb.setAttribute('data-mc-generated', '1');
             lb.appendChild(genCb);
-            lb.appendChild(document.createTextNode(' ' + d.generated + '（送るときに作ります）'));
+            lb.appendChild(document.createTextNode(' ' + d.generated + '（' + (d.generated_note || '送るときに作ります') + '）'));
             list.insertBefore(lb, list.firstChild);
         }
 

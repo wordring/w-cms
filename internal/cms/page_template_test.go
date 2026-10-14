@@ -50,6 +50,30 @@ func TestDraftAddsMissingTagsOnlyWithValue(t *testing.T) {
 	}
 }
 
+// EnsureTag は、欄が無ければ空の欄を可変タグの末尾へ足し、あれば値ごと残す（2026-10-14）。
+func TestDraftEnsureTagPutsAnEmptySlot(t *testing.T) {
+	d := NewPageDraft("t", `<h1>t</h1><dl data-type="tags"><dt>発注元</dt><dd>みなと商店</dd></dl><p>x</p>`)
+	d.EnsureTag("受取日")
+	d.EnsureTag("発注元") // 既にある欄は触らない
+	d.EnsureTag(" ")    // 名前が空なら何もしない
+	got := d.HTML()
+	want := `<h1>t</h1><dl data-type="tags"><dt>発注元</dt><dd>みなと商店</dd><dt>受取日</dt><dd><br/></dd></dl><p>x</p>`
+	if got != want {
+		t.Errorf("\n got %s\nwant %s", got, want)
+	}
+	// 2回呼んでも1つ。
+	d.EnsureTag("受取日")
+	if n := strings.Count(d.HTML(), "<dt>受取日</dt>"); n != 1 {
+		t.Errorf("欄が %d 個あります（1個のはず）", n)
+	}
+	// 可変タグが無ければ h1 の直後に作る。
+	d2 := NewPageDraft("t", `<h1>t</h1><p>y</p>`)
+	d2.EnsureTag("受取日")
+	if got := d2.HTML(); got != `<h1>t</h1><dl data-type="tags"><dt>受取日</dt><dd><br/></dd></dl><p>y</p>` {
+		t.Errorf("可変タグを h1 の直後に作っていません: %s", got)
+	}
+}
+
 // 表は見出しの言葉で列を合わせ、行をその場で要るだけ作る。テンプレートで列を並べ替えても・
 // 足しても崩れない。無い列は値があれば右端へ足し、見本の行は消す。
 func TestDraftFillsTableByHeaderWords(t *testing.T) {

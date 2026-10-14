@@ -199,6 +199,10 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 	//    ページの添付として残ります（`SaveAttachmentFrom`）。本文へ写すと二重になり、
 	//    あとから署名が変わったときに**紙と本文が食い違います**。
 	setHeaderTag(d.DraftBlock, OrderSignerTag, signerID)
+	// ⚠ **`納品日` は空の欄で置きます**（2026-10-14・【要求】発注フォルダの並びの 2「『発注書番号』『仕入先』
+	//    『発注日』『発注担当』『納品日』といったタグが並びます」）——届いた日は機械には分からないので、人が書く場所だけ
+	//    作ります。テンプレートに欄があればそのまま。紙には刷りません（設定 `order_print_heads` に無い）。
+	d.DraftBlock.EnsureTag(DeliveredAtTag)
 
 	rows := make([]map[string]string, 0, len(lines))
 	for _, ln := range lines {
@@ -239,6 +243,10 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 	}
 	return d.HTML(), nil
 }
+
+// DeliveredAtTag は発注書ページの、仕入先から品物が届いた日のタグです（2026-10-14・型は設定の語彙で date）。
+// 「納期」は予定や希望、「納品日」は確定した期日です（【要求】発注フォルダ）。
+const DeliveredAtTag = "納品日"
 
 // orderNoteHeading は発注書ページの備考欄の見出しです（本文とPDFで共有）。
 const orderNoteHeading = "備考"
