@@ -2,7 +2,8 @@
  *
  * 2026-08-06 に index.html のインライン <style> から切り出した。外部スタイルシートに
  * することで Content-Security-Policy から style-src 'unsafe-inline' を外せる
- * （docs/【考察】CSP強化.md §4）。カスタム要素の外観は components.css が持つ。
+ * （docs/旧文書/本文サニタイズ設計.md §6。当時の検討メモ【考察】CSP強化.md は、そこへ畳んで無くなった）。
+ * 当時はカスタム要素の外観を components.css が持っていたが、そのファイルはもう無い（assets/ に無い）。
  */
 
 /* デザイントークン（色・角丸）。色のリテラル重複をここへ集約する。
@@ -238,14 +239,16 @@ dl.pi dd { margin: 0; color: var(--text); word-break: break-all; }
 }
 .pi-parent-input.invalid { border-color: var(--danger); background: #fef2f2; }
 .pi-err { color: var(--danger); font-size: 12px; margin-top: 4px; }
-/* 編集モードの有無で親ページIDの表示／編集を切り替える */
+/* 書ける形（body[edit-mode]）かどうかで親ページIDの表示／編集を切り替える */
 .pi-parent-edit { display: none; }
 body[edit-mode] .pi-parent-view { display: none; }
 body[edit-mode] .pi-parent-edit { display: inline-block; }
 
-/* 編集モード（＝ロック保持中）でのみ操作させたい要素の汎用クラス。
+/* 書ける形（body[edit-mode]）でのみ操作させたい要素の汎用クラス。
    将来のエディタ内操作（画像/PDF等の保存・削除ボタンなど）は、UIゲートとして
-   .edit-only を付けるだけでよい（送信は lockedFetch、サーバーは RequireEditLock で検証）。
+   .edit-only を付けるだけでよい（送信は lockedFetch——書きかけを先に保存する。サーバーは RequirePageWrite で
+   書く権限を見る。RequireEditLock も通るが、断るのは道具が /api/lock で握っているときだけ）。
+   2026-10-12 までは「編集モード＝ロック保持中」で、lockedFetch がロックのトークンを付けていた。
    能力フラグ（owner/admin 等）にも依存する権限カードは JS の refreshPermsEditable で別途制御。 */
 .edit-only { display: none; }
 body[edit-mode] .edit-only { display: revert; }
@@ -434,8 +437,9 @@ body.anonymous .preview-section { display: none !important; }
     margin-bottom: 20px;
     /* sticky で上部に追従しつつ、スクロール方向に応じて出し入れする（headroom 型）。
        下スクロールで隠して本文を広く、上スクロールで再表示する。隠してもレイアウトは
-       ガタつかない（sticky 要素は元の流れ上の領域を保持するため）。編集モードの気付きは
-       トグル常駐ではなく「編集権を取得しました」等の緑トーストで補う（initHeadroom 参照）。 */
+       ガタつかない（sticky 要素は元の流れ上の領域を保持するため）。モードの気付きは
+       トグル常駐ではなくトーストで補う（initHeadroom 参照）。2026-10-12 までは「編集権を取得しました」の
+       緑トーストだった。いまは編集権を取らないので、出るのは閲覧へ替えたときの「閲覧モードにしました。」だけ。 */
     position: sticky;
     top: 0;
     z-index: 50;
@@ -1496,8 +1500,9 @@ body[edit-mode] #w-editor-content .rfq-quote-put, body[edit-mode] #w-editor-cont
 #w-editor-content .badge.ng { background: #fef2f2; color: #ef4444; }
 
 /* ── 鏡の印（section[data-mirror]・2026-09-27）──
- * 中身はサーバーが読むたびに描く（.vocab-chrome）。挿した直後はまだ空なので、編集モードでだけ
- * 印の名前を案内として出す（保存されるのは印だけ）。 */
+ * 中身はサーバーが読むたびに描く（.vocab-chrome）。挿した直後はまだ空なので、書ける形（body[edit-mode]）でだけ
+ * 印の名前を案内として出す（保存されるのは印だけ）。2026-10-12 から保存はブロックを去るときなので、案内の
+ * 「保存して」は「そのブロックを去って」。閲覧へ切り替えただけでは描き直さないことがある（ページを読み直すと出る）。 */
 body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     content: "🪞 " attr(data-mirror) "（保存して読み直すと、ここに鏡が出ます）";
     color: var(--text-muted);
@@ -2537,13 +2542,16 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .estimate-add-form input[type="text"] { width: 9em; }
 #w-editor-content .estimate-add-head { font-weight: 600; }
 #w-editor-content .estimate-total td { padding: 6px 8px; font-size: 1.05em; background: var(--bg-subtle, #f8fafc); }
-/* 見積明細の下の備考の欄（2026-10-03・estimate_note.go）——閲覧モードで書く。編集モードでは「備考」の節を直接直すので隠す。 */
+/* 見積明細の下の備考の欄（2026-10-03・estimate_note.go）——閲覧モードで書く。書ける形では「備考」の節を直接直すので隠す
+   （⚠ 2026-10-12 からパソコンは書ける形で開くので、初めは見えない）。 */
 #w-editor-content .estimate-note-row td { padding: 6px 8px; }
 #w-editor-content .estimate-note-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
 #w-editor-content .estimate-note-label { width: 100%; font-size: 0.85em; color: var(--text-muted, #6b7280); }
 #w-editor-content .estimate-note-input { flex: 1 1 320px; min-height: 4.5em; font: inherit; padding: 4px 6px; box-sizing: border-box; }
 body[edit-mode] #w-editor-content .estimate-note-row { display: none; }
-/* 見積依頼の返事（2026-10-05・rfq_reply.go）——「返事:」の行と 🤖 の案の表。閲覧モードだけ（編集中はサーバーが断る）。 */
+/* 見積依頼の返事（2026-10-05・rfq_reply.go）——「返事:」の行と 🤖 の案の表。閲覧モードだけ（書ける形では隠す）。
+   作ったときの理由は「編集中はサーバーが断る」だった。2026-10-12 からサーバーは書ける形のタブがあっても断らない
+   （gateWritablePage が断るのは、道具が /api/lock で握っているときだけ）——隠す理由はもう無いが、隠したまま。 */
 #w-editor-content .rfq-reply-actions td { padding: 4px 8px; font-size: 0.9em; }
 body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
 #w-editor-content .rfq-reply-sources { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }

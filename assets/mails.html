@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>w-cms メール一覧</title>
-<!-- メールの一覧（2026-09-29・ext/comm の GET /api/mails）。受信も送信も、In-Reply-To で返信の鎖に束ねて並べる。
+<!-- メールの一覧（2026-09-29・ext/comm の GET /api/mails）。受信も送信も、親ページID で返信の鎖に束ねて並べる
+     （2026-10-09 まではヘッダの In-Reply-To の鎖。mails.js の冒頭）。
      スタイル・スクリプトは外部ファイル（CSP strict のため）。見た目は「表を探す」（tables.css）を土台にする。 -->
 <link rel="stylesheet" href="/assets/tables.css">
 <link rel="stylesheet" href="/assets/mails.css">

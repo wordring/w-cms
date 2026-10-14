@@ -134,7 +134,7 @@ body.public {
     background: var(--pub-bg);
     border-radius: 0 var(--pub-radius) var(--pub-radius) 0;
     margin-right: 8px;
-    /* 折り返せない長い値（メッセージID）は1行に収めて末尾を `…` にする。
+    /* 折り返せない長い値（Message-ID など。2026-10-09 まではタグの名前が「メッセージID」）は1行に収めて末尾を `…` にする。
        マウスを載せているあいだだけ折り返して全部見せる（2026-09-04）。 */
     min-width: 0;
     max-width: 100%;

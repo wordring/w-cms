@@ -132,7 +132,8 @@
 <!-- enum 列の入力補助（選択肢メニュー）。項目は app.js がレジストリ定義から生成する。 -->
 <div id="w-enum-menu" class="enum-menu"></div>
 
-<!-- アプリ内通知（トースト）エリア。ロック関連・保存エラー等をここへ集約する。 -->
+<!-- アプリ内通知（トースト）エリア。保存エラー・ぶつかり・ページの更新の知らせ等をここへ集約する
+     （2026-10-12 まではロック関連〔編集権の取得・待機〕もここだった）。 -->
 <div id="w-toast-host" class="toast-host" aria-live="polite"></div>
 
 <main class="container">
@@ -183,7 +184,8 @@
             </section>
             <!-- 子ページ作成：試験的に最下部へ -->
             <button class="page-action-btn" id="w-create-subpage-btn">＋ 子ページを作成</button>
-            <!-- 削除はゴミ箱への移動（data/trash）。編集モードで write 権限があるときだけ出す -->
+            <!-- 削除はゴミ箱への移動（data/trash）。書ける形のときだけ出す（write 権限が無い人は書ける形に入れない。
+                 2026-10-12 までは「編集モード＝ロック保持」のとき） -->
             <button class="page-action-btn page-action-danger is-hidden" id="w-delete-page-btn">🗑 このページを削除</button>
         </aside>
 

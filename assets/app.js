@@ -576,9 +576,10 @@
         window.location.href = '/login';
     }
 
-    // 権限カードの編集可否は「編集モード（＝ロック保持）」かつサーバーが返す権限フラグ（can_chmod/
-    // can_chown）の両方で決まる。編集モードでないあいだは読み取り専用にして、権限変更もロックで
-    // 直列化し、他者との競合を避ける（親ページIDの編集と同じ方針）。
+    // 権限カードの編集可否は「書ける形（body[edit-mode]）」かつサーバーが返す権限フラグ（can_chmod/
+    // can_chown）の両方で決まる。閲覧モードのあいだは読み取り専用にする（親ページIDの編集と同じ方針）。
+    // 2026-10-12 まで、編集モード＝編集ロックを握っているときで、権限変更もそのロックで直列化していた。
+    // いまはブラウザは編集権を取らない（送る口 lockedFetch は書きかけを先に保存するだけ）。
     let permCanChmod = false, permCanChown = false, permCanPublish = false;
     function refreshPermsEditable() {
         const editMode = document.body.hasAttribute('edit-mode');
@@ -588,14 +589,16 @@
         setHidden(document.getElementById('w-pp-chown'), !(editMode && permCanChown));
         setHidden(document.getElementById('w-pp-save'), !canEditMeta);
         setHidden(document.getElementById('w-pp-mode-hint'), !canEditMeta);
-        // 権限はあるが閲覧モードのとき、「編集モードへ」の誘導を出す。
+        // 権限はあるが閲覧モードのとき、書ける形へ切り替える誘導（w-pp-view-hint）を出す。
         setHidden(document.getElementById('w-pp-view-hint'),
             !(!editMode && (permCanChmod || permCanChown || permCanPublish)));
-        // 匿名公開トグル：owner/admin にのみ行を見せ、編集モードでのみ操作可（chmod と同じ規律）。
+        // 匿名公開トグル：owner/admin にのみ行を見せ、書ける形でのみ操作可（chmod と同じ規律）。
         setHidden(document.getElementById('w-pp-public-row'), !permCanPublish);
         const pub = document.getElementById('w-pp-public');
         if (pub) pub.disabled = !(editMode && permCanPublish);
-        // 削除は破壊的なので、編集モード（＝ロック保持）で write 権限があるときだけ出す。
+        // 削除は破壊的なので、書ける形のときだけ出す（2026-10-12 までは「編集モード＝ロック保持」のとき）。
+        // ⚠ ここで見ているのは書ける形かどうかだけ。write 権限の無い人は書ける形に入れない（/api/sync が 403）ので、結果として
+        //    write 権限があるときだけになる。
         // トップページは消せないので、そこでは出さない（サーバーも 400 で拒否する）。
         setHidden(document.getElementById('w-delete-page-btn'),
             !(editMode && currentPageId && currentPageId !== '000000'));
@@ -605,7 +608,7 @@
         setHidden(document.getElementById('w-create-subpage-btn'), !editMode);
     }
 
-    // applyEditToggleVisibility は、編集権が無いユーザー（および匿名）から右上の編集スイッチを隠す。
+    // applyEditToggleVisibility は、書く権限（can_write）の無いユーザー（および匿名）から右上の「閲覧」スイッチを隠す。
     // 匿名は body.anonymous の CSS で隠れるため、ここでは認証済みユーザーの can_write を反映する。
     function applyEditToggleVisibility(canWrite) {
         setHidden(document.querySelector('.switch-container .switch'), !canWrite);
@@ -623,7 +626,7 @@
             document.getElementById('w-pp-owner').textContent = p.owner || '(なし)';
             document.getElementById('w-pp-group').value = p.group || '';
             document.getElementById('w-pp-mode').value = p.mode || '';
-            // chown は admin のみ、chmod/chgrp は owner か admin。さらに編集モード（＝ロック保持）の
+            // chown は admin のみ、chmod/chgrp は owner か admin。さらに書ける形の
             // ときだけ編集可能にする（refreshPermsEditable）。権限フラグは保持して再評価に使う。
             permCanChmod = !!p.can_chmod;
             permCanChown = !!p.can_chown;
@@ -631,7 +634,7 @@
             if (permCanChown) document.getElementById('w-pp-owner-input').value = p.owner || '';
             // 匿名公開の現在状態をトグルとヒントに反映する（認証認可設計.md 10章）。
             applyPublicState(!!p.public, !!p.effective_public);
-            // 編集権の無いユーザーからは右上の編集スイッチを隠す（サーバーも RequireEditLock で防御）。
+            // 書く権限の無いユーザーからは右上のスイッチを隠す（サーバーも RequirePageWrite で防御——/api/sync は 403）。
             applyEditToggleVisibility(!!p.can_write);
             refreshPermsEditable();
         } catch (e) { msg.style.color = '#dc2626'; msg.textContent = '権限の取得に失敗しました'; }
@@ -653,7 +656,7 @@
         }
     }
 
-    // setPublic は匿名公開フラグを切り替える（owner/admin、編集モード中のみ）。
+    // setPublic は匿名公開フラグを切り替える（owner/admin、書ける形のときのみ）。
     // 親が非公開のまま公開しようとするとサーバーが 403 を返すので、その旨を表示して元へ戻す。
     async function setPublic() {
         const cb = document.getElementById('w-pp-public');
@@ -1114,8 +1117,9 @@
     }
 
     // deletePage はページをゴミ箱（data/trash）へ移す。物理削除ではないので取り消せるが、
-    // 画面からは消えるので確認を挟む。ロックが要るので編集モードでのみ押せる
-    // （ボタン自体も applyMode が編集モードでだけ表示する）。
+    // 画面からは消えるので確認を挟む。書ける形でのみ押せる（ボタン自体も refreshPermsEditable——applyMode から
+    // 呼ばれる——が書ける形でだけ表示する）。2026-10-12 までは編集ロックが要るので編集モードだけだった。いまはロックを
+    // 取らない（サーバーの RequireEditLock は、道具が /api/lock で握っているときだけ断る）。
     async function deletePage() {
         if (!currentPageId) return;
         // ほかの人が開いていれば、確かめのダイアログに名前を出す（2026-10-12 利用者が選んだ形——それでも消せる）。
@@ -1165,7 +1169,8 @@
         return queueSync(true);
     }
 
-    // flushPendingSave は、待っている自動保存を今すぐ流して終わるまで待つ（業務のボタン・書ける形を出る前）。
+    // flushPendingSave は、まだ保存していない書きかけを今すぐ送って終わるまで待つ（業務のボタン・書ける形を出る前・
+    // タブを隠す／ページを去るとき）。
     async function flushPendingSave() {
         try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
     }
@@ -1225,8 +1230,9 @@
         const known = new Set(syncOrder);
         // ⚠ 受け取りに行くとき（pull——相手の保存の知らせ）は、**書いている最中のブロック**（キャレットがあり、まだ保存していない）を
         //    送らない（2026-10-12 昼 利用者:「保存は、ブロックを去る時とページを去る時に限定して、細かい通信を抑制してはどうでしょう？
-        //    一文字打っただけで競合を検出しマージしろと言われても困ります」）。並びには入れる。相手がそのブロックを書き換えていたら、
-        //    受け取ったときに並べる（applySyncResult の held）。
+        //    一文字打っただけで競合を検出しマージしろと言われても困ります」）。並びには入れる。相手がそのブロックを書き換えていても、
+        //    いまは受け取らない（applySyncResult の held）——並べるのは、このブロックを去って送ったとき。相手が消したときだけ、
+        //    その場で「消す」「残す」を聞く。
         const holdId = pull ? caretBlockId() : '';
         const held = new Set();
         const seqAtSend = editSeq;
@@ -1298,7 +1304,8 @@
 
     // applySyncResult はサーバーの応答（仕上がりの並び・指紋・描き直すブロック・ぶつかり）を画面へ当てる。
     //   - 描き直すブロック（相手が変えた・足した・合わせた）は、送ったあとにまた書いていれば**その場で並べる**（問い3）。
-    //     書いていなければ差し替える（相手の変更はアンドゥの履歴にも書き写す——アンドゥは自分の変更だけを戻す・問い2）。
+    //     書いていなければ差し替える（相手の変更はアンドゥの記録へ写す——アンドゥは自分の変更だけを戻す・問い2）。
+    //     書いている最中で送らなかったブロック（held）は受け取らない——並べるのは去って送ったとき（2026-10-12 昼）。
     //   - 仕上がりに無いブロック（相手が消した）は、送ったあとに書いていれば「消す」「残す」を聞く（問い6）。
     //   - 並びは仕上がりの並びにする（聞いているブロック・送ったあとに足したブロックはいまの位置の近くに残す）。
     function applySyncResult(data, sent, held) {
@@ -2507,32 +2514,33 @@
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
         refreshAnalyzedMarks();      // 解析済みの印（取得できたら描き直す）
-        refreshDrawingPreviews();    // 加工製品ページの図面をそのまま出す（閲覧モード限定）
+        refreshDrawingPreviews();    // ファイル表示の枠の右下をつまんで高さを変える配線（両方の形）
         restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
         decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
         openRFQReplyFromHash();      // 返事ページの「見積依頼書で単価を写す」から来たら 🤖 返事を読む の欄を開く（2026-10-05）
-        refreshFilingButton();      // 加工製品ページの整理（閲覧モード限定）
-        refreshMailChrome();         // 返信と「この記録への返信」（閲覧モード限定）
-        wireUnhandledActions();      // 未処理一覧の「不要」ボタン（閲覧モード限定）
+        // 「書ける形でも」の業務のボタンは、2026-10-12 まで閲覧モード限定だった（いまは押す前に書きかけを保存する）。
+        refreshFilingButton();      // 加工製品ページの整理（書ける形でも）
+        refreshMailChrome();         // 返信と「この記録への返信」（書ける形でも）
+        wireUnhandledActions();      // 未処理一覧の「不要」ボタン（書ける形でも）
         wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
         wireMailFetch();             // 「📥 新しいメールを読み込む」（その隣・2026-09-29）
-        refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）
-        refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・同上）
+        refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・書ける形でも）
+        refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・書ける形でも）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         refreshFormulaCells();       // 表のセルの式——閲覧では結果・編集では式（2026-10-04・並べ替え・印刷より先に）
         refreshHeadingFolds();       // 見出しを押して次の同じ段の見出しまで畳む（閲覧モード限定・表示だけ・2026-10-04）
         refreshTablePrint();         // どの表にも「🖨 この表を印刷」（閲覧モード限定・2026-10-02）
         refreshTableSort();          // 列の題を押して並べ替える（閲覧モード限定・表示だけ・2026-10-03）
-        wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」
-        foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（同上）
+        wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」（書ける形でも）
+        foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（閲覧モード限定）
         renderPresence();            // ほかの人のキャレットのあるブロック（書ける形だけ・2026-10-12 昼）
         updatePresence(false);
         decorateVocabBlocks(); // 形式名の札もモードに合わせて作り直す
         updateHtmlPreview();
-        refreshPermsEditable(); // 権限カードの編集可否を編集モードに合わせる
+        refreshPermsEditable(); // 権限カードの編集可否を書ける形かどうかに合わせる
         // 版の履歴は「戻す」ボタンの出し分けがモードに依るので描き直す。
-        // 閲覧モードへ戻った直後はサーバー側でロック解放のチェックポイントが打たれて
-        // いるので、一覧そのものも取り直す価値がある。
+        // 閲覧モードへ戻った直後は版の区切り（checkpointVersion——/api/version-checkpoint）が打たれて
+        // いるので、一覧そのものも取り直す価値がある（2026-10-12 までは、ロックを手放したときにサーバーが打っていた）。
         loadVersions();
     }
 
@@ -2545,8 +2553,9 @@
             await enterEditMode();
             return;
         }
-        // **書きかけを先に流します**（2026-09-15）。自動保存は1.5秒のデバウンスなので、
-        // 最後の入力から1.5秒以内に閲覧へ戻ると、その分がまだ送られていません。
+        // **書きかけを先に流します**（2026-09-15）。保存はブロックを去るとき・タブを隠すとき・ページを去るときだけ
+        // （2026-10-12 昼から。それまでは1.5秒のデバウンス）なので、キャレットを置いたまま閲覧へ戻ると、
+        // 最後の書きかけがまだ送られていない（送っている途中の）ことがあります。
         const wasEditing = document.body.hasAttribute('edit-mode');
         if (wasEditing) { await flushPendingSave(); await checkpointVersion(false); }
         syncReady = false;
@@ -2673,8 +2682,10 @@
     //     飾り付け（式の結果・畳み・並べ替え・札）で変わっている。ID ではなく中身で比べるのは、機械が作るページの
     //     ブロックは data-id を持たないから（2026-10-07 の職場: 1616 ページのうち全部のブロックに ID があるのは 93）。
     //   - ⚠ **入力中の欄があるブロックは差し替えない**（消えるので）——知らせを残して、終えてから押してもらう。
-    //   - 編集モードのタブは知らせを受けない（編集権は1人だけ・機械の書き換えも編集中は断られる）。編集に入ると
-    //     比べる相手は無くなり（populateEditor）、出るときに編集権を放す前に読み直して覚え直す（adoptViewSourceFromServer）。
+    //   - 書ける形のタブも知らせを受けるが、この比べ方は使わない——少し待って /api/sync で変わったブロックだけ受け取る
+    //     （openPageEvents・pullFromServer。2026-10-12 から。それまでの編集モードのタブは、編集権が1人だけだったので知らせを
+    //     受けなかった）。書ける形に入ると比べる相手は無くなり（populateEditor）、出るときに閲覧の描き方で読み直して
+    //     覚え直す（adoptViewSourceFromServer）。
     let viewSource = new WeakMap(); // 上の段の要素 → 前に読んだときのサーバーの描いた HTML
     let pageES = null;
     let pageCheckTimer = null;
@@ -2715,8 +2726,10 @@
         return Array.from(doc.body.children).filter(c => c.tagName.toLowerCase() !== 'script');
     }
 
-    // adoptViewSourceFromServer は、編集を終えるとき（編集権を放す前——ほかの人はまだ書けない）に、閲覧の描き方で
+    // adoptViewSourceFromServer は、書ける形から閲覧へ戻るとき（書きかけを送ったあと）に、閲覧の描き方で
     // 読み直して覚え直す。画面は編集したときの姿のまま（描き直さない）。
+    // ⚠ 2026-10-12 までは編集権を放す前に読んだので、そのあいだほかの人は書けなかった。いまはほかの人がいつでも書けるので、
+    //    読んだ直後の書き込みは次の知らせで比べる。
     async function adoptViewSourceFromServer() {
         try {
             const res = await fetch('/api/load?id=' + currentPageId + '&view=1');
@@ -2935,8 +2948,9 @@
             if (ev.type === 'hello') { othersPresence = ev.presence || []; renderPresence(); presenceSent = null; updatePresence(true); }
             if (ev.type === 'updated' && ev.tab === TAB_ID) return; // このタブ自身の保存
             if (document.body.hasAttribute('edit-mode')) {
-                // 書ける形では、ほかの人（業務のボタンを含む）の書き込みをその場で受け取る——書いている最中のブロックを
-                // 相手が書き換えていたら、受け取ったときに並べる（2026-10-12・問い3）。少し待つのは相手の保存が続くあいだ。
+                // 書ける形では、ほかの人（業務のボタンを含む）の書き込みをその場で受け取る。少し待つのは相手の保存が続くあいだ。
+                // 書いている最中のブロックは送らず、相手の版も受け取らない——並べるのは去って送ったとき（2026-10-12 昼。
+                // 未明の形〔問い3〕は受け取ったときに並べていた）。
                 if (ev.type === 'updated' || (ev.type === 'hello' && loadedUpdatedAt && ev.updated_at && ev.updated_at !== loadedUpdatedAt)) {
                     clearTimeout(editPullTimer);
                     editPullTimer = setTimeout(() => { pullFromServer(); }, 300);
@@ -3208,8 +3222,9 @@
     }
 
     // ── ブロック単位保存のための識別子 ──────────────────────────────────
-    // data-id は**任意**の属性。付いていればそのブロックだけを保存でき、
-    // 無ければ従来どおり全文保存になる（手で書いたHTMLもそのまま扱えるようにするため）。
+    // data-id は本文の上では**任意**の属性（手で書いたHTMLもそのまま扱えるようにするため）。
+    // 保存（/api/sync）はブロックを ID で当てるので、送る前に上の段のブロックへ振る（ensureBlockIds）。
+    // 2026-10-12 までは、付いていればそのブロックだけを保存（/api/save-block）、無ければ全文保存（/api/save）だった。
     //
     // `id` ではなく data-* にしているのは、本文がシェルと同じDOMへ合成されるため。
     // `id` を許すと本文から html-preview 等シェル側の要素を乗っ取れてしまい
@@ -3258,9 +3273,10 @@
 
     // ensureBlockIds は未採番のブロックへIDを振り、**重複も修復する**。変更した数を返す。
     //
-    // 既存ページは初回の編集時にここで採番され、その回の全文保存で正本へ永続化される。
+    // 既存ページは初回の編集時にここで採番され、そのブロックを /api/sync で送ったときに正本へ永続化される。
     // 重複修復が要るのは、ページ間でブロックをコピーするとIDが重複しうるため
-    // （重複したままだとサーバーが差し替え対象を特定できず 409 で全文保存に落ち続ける）。
+    // （重複したままだと、どのブロックかを ID で見分けられない。2026-10-12 までは、サーバーが差し替え対象を
+    // 特定できず 409 で全文保存に落ち続けた）。
     //
     // within を渡すと、入れ子へ振るのは**その上の段のブロックの中だけ**（2026-10-12）——書ける形がパソコンの既定になったので、
     // 開いて見ているだけで入れ子の表・行へ ID を振って保存すると、見ただけのページが書き換わる（更新日時が進み、ほかの人へ
@@ -3397,7 +3413,7 @@
     }
 
     // serializeBlocks は本文を「ブロックの配列」として返す。
-    // 全文保存にも、どのブロックが変わったかの判定にも同じ結果を使う。
+    // HTML ソースの表示にも、どのブロックが変わったかの判定（/api/sync で送るもの）にも同じ結果を使う。
     function serializeBlocks() {
         return topLevelBlocks().map(el => ({
             el,
@@ -4413,7 +4429,8 @@
     }
 
     // applyColType は選択された型を th の data-type へ反映する（空＝属性を外し推論に戻す）。
-    // 属性の変更は MutationObserver の attributeFilter に載っていないため、保存は明示的に蹴る。
+    // data-type は MutationObserver の attributeFilter に載っている（setupAutoSave）が、未保存の印は明示的にも付ける
+    // （triggerAutoSave——2026-10-12 昼から印を付けるだけ。送るのはブロックを去るときなど）。
     function applyColType() {
         const th = colPopoverTh;
         if (!th) return;
@@ -4504,8 +4521,8 @@
         document.getElementById('w-lp-href').focus();
     }
 
-    // applyLinkHref は欄の値をリンクへ書き戻す。属性の変更は MutationObserver の
-    // attributeFilter に載らないので、保存は明示的に蹴る（applyColType と同じ）。
+    // applyLinkHref は欄の値をリンクへ書き戻す。href は MutationObserver の attributeFilter に
+    // 載っているが、未保存の印は明示的にも付ける（applyColType と同じ・triggerAutoSave は印を付けるだけ）。
     function applyLinkHref() {
         const a = linkPopoverAnchor;
         if (!a || !a.isConnected) return;
@@ -4561,8 +4578,9 @@
         document.getElementById('w-fv-ref').focus();
     }
 
-    // applyFileViewRef は欄の値をブロックへ書き戻す。属性の変更は MutationObserver の
-    // attributeFilter に載らないので、保存は明示的に蹴る（applyLinkHref と同じ）。
+    // applyFileViewRef は欄の値をブロックへ書き戻す。data-ref は MutationObserver の
+    // attributeFilter に載らないので、未保存の印は明示的に付ける（triggerAutoSave——印を付けるだけ。
+    // 2026-10-12 昼までは、これで保存が走った）。
     function applyFileViewRef() {
         const sec = fileViewAnchor;
         if (!sec || !sec.isConnected) { hideFileViewPopover(); return; }
@@ -4571,7 +4589,7 @@
         else sec.removeAttribute(FILE_REF_ATTR);
         // **前の参照で描いた枠は消します**（コードレビュー #4）。サーバーが描いたクロームは
         // 保存の往復で作り直されないので、残すと札は新しい値・枠は古いPDF、という
-        // 食い違いが編集モードを出るまで続きます。消せば「配線した。枠は次に開いたとき」と
+        // 食い違いが閲覧モードへ戻るまで続きます。消せば「配線した。枠は次に開いたとき」と
         // 読めます（札が残るので空白にはならない）。
         sec.querySelectorAll(':scope > .vocab-chrome:not(.fv-wire):not(.fv-remove)').forEach(n => n.remove());
         decorateFileViews();
@@ -4588,7 +4606,8 @@
         if (!editor) return;
         const isEdit = document.body.hasAttribute('edit-mode');
         // **欄の相手が居なくなっていたら閉じる**（コードレビュー #6）。閲覧モードへ戻った・
-        // 本文が丸ごと差し替わった（解析の取り直し・ロック喪失）とき、欄だけが浮いたまま残ると、
+        // 本文やブロックが差し替わった（解析の取り直し・ほかの人の書き込みを受け取った——2026-10-12 までは
+        // ロック喪失も）とき、欄だけが浮いたまま残ると、
         // 打ったキーが `!sec.isConnected` で黙って捨てられます。
         if (fileViewAnchor && (!isEdit || !fileViewAnchor.isConnected)) hideFileViewPopover();
         // 形式は sectionDefOf で見ます（サーバーの vocabTypeOf と同じ規則）。⚠ 2026-09-29 から節の見出し
@@ -6356,9 +6375,11 @@
     //
     // ユーザー:「メールですが、In-reply-to をみて前後のメールにも移動できると便利です」。
     //
-    // 鎖はメールヘッダの `In-Reply-To` で、辿るのはサーバー（`/api/thread`）。
-    // **`📨 この記録への返信` とは別の鎖**です——あちらは w-cms 自身が送った返信、
-    // こちらはメールヘッダの親子なので、**受信どうしの返り**も繋がります。
+    // 鎖は `親ページID` のタグで、辿るのはサーバー（`/api/thread`・ext/comm/handler_thread.go）。
+    // 2026-10-09 まではメールヘッダの `In-Reply-To`（当時のタグの名前は `返信元メッセージID`）の鎖でした。
+    // `📨 この記録への返信`（`/api/replies`）も、いまは同じ `親ページID` を引きます——違いは、あちらが子のうち
+    // こちらから送った返信（向き＝送信）だけを出すことです。こちらは前（親）と次（子）の全部なので、
+    // **受信どうしの返り**も繋がります。
     //
     // **前後が無ければ何も出しません**（1通で終わる記録のほうが多い）。
     async function loadThread(box) {
@@ -7337,8 +7358,9 @@
     // **CSP strict なのでインラインの `onclick` は書けません**——サーバーが出せるのは
     // 印（`.vocab-chrome` と `data-page-id`）までで、動きはここが与えます。
     //
-    // ボタンは**閲覧モードだけ**に出します。編集モードで本文をいじっている最中に
-    // 行が消えると、何が起きたのか分かりません。
+    // ボタンは書ける形でも押せます（2026-10-12 から・【考察】編集モードの再考 §6 問い5）。
+    // それまでは**閲覧モードだけ**でした（編集モードで本文をいじっている最中に行が消えると、
+    // 何が起きたのか分からないため）。
     // ⚠ **ここに `hasExtension('comm')` は要りません**（2026-09-16 に確かめた）。
     // 押す相手（`.unhandled-mark`・まとめて片付け）は**サーバーが描いたもの**で、
     // 通信が無ければ `unhandled-intake` は語彙レジストリに載らず、鏡の引き金自体が
@@ -7350,7 +7372,7 @@
     function wireUnhandledActions() {
         const host = document.getElementById('w-editor-content');
         if (!host) return;
-        const editMode = false; // 書ける形でも押せる（2026-10-12・問い5——押す前に書きかけを保存する）
+        const editMode = false; // 書ける形でも押せる（2026-10-12・問い5。書き換えるのは一覧の行の先の記録ページで、このページの本文ではない——markHandled は書きかけを先に保存しない）
         host.querySelectorAll('.unhandled-mark').forEach(btn => {
             btn.disabled = editMode;
             if (btn.dataset.wired) return;
@@ -7572,7 +7594,9 @@
         notify(text, { type: (errs.length || failed) ? 'warn' : 'success', duration: 8000 });
         if (got['受信'] + got['送信'] > 0) {
             loadChildNav();
-            // 書きかけを消さない（取り込み側は reloadContent を編集モードでは呼ばない——引き継ぎの罠）。
+            // 書きかけを消さない（取り込み側は reloadContent を書ける形では呼ばない——引き継ぎの罠）。
+            // 2026-10-12 から書ける形の reloadContent は書きかけを先に保存して変わったブロックだけ受け取るので消えないが、
+            // 呼ばないままにしてある。
             if (!document.body.hasAttribute('edit-mode')) reloadContent();
         }
     }
@@ -7878,8 +7902,10 @@
             //
             // **丸ごとの再読み込みにはしません**——`reloadContent()` は本文を
             // 取り直すだけなので、通知・巻き上げ位置・開いているPDFの外側は残ります。
-            // 書きかけを失う心配も要りません: このボタンは**閲覧モードにしか出ない**
-            // ためです（`refreshAttachmentPreviews` が編集モードで早々に戻ります）。
+            // 書きかけを失う心配も要りません: 📎 の「🤖 解析」は閲覧モードにしか出ません
+            // （`refreshAttachmentPreviews` が書ける形で早々に戻ります）。「⋯」のメニューの解析
+            // （runAnalyzeFile）は書ける形でも押せますが、書ける形の `reloadContent()` は書きかけを先に
+            // 保存して、変わったブロックだけ受け取ります（2026-10-12 から）。
             if (born) {
                 await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
                 loadChildNav();        // 左レールの子ページ一覧
@@ -8042,7 +8068,9 @@
     // 改定図面とし、元々あった図面を古い図面として子ページにしたいのです」。整理の「図面追加」で並べた図面を、あとから
     // 整理の「図面改定」と同じ形へ組み替える（POST /api/drawing/supersede・ext/toho/drawing_supersede.go）。
     // 押した図面のファイルの図面が新しい図面。古い図面は選ぶ（2つなら残りの1つ）。両方の番号と名前を出して確かめる。
-    // 閲覧モードだけ（編集中はサーバーが断る——自分が開いていても）。
+    // 書ける形でも押せる（2026-10-12 から・canSupersedeFrom。押す前に書きかけを保存する——postJSON）。それまでは閲覧モードだけ
+    // だった（編集中はサーバーが断った——自分が開いていても）。いまサーバーは cms.RewriteBody で書き、断るのは道具が
+    // /api/lock で握っているときだけ。
 
     // drawingSections は本文の最上位の図面ブロック（見出し「図面」の h2 を持つ節）を本文の順に返します——サーバーの
     // `drawingSectionsOf` と同じ数え方（何番目かで指すので、数え方が食い違うと別の図面を旧版へ送る——番号の確かめが止める）。
@@ -9435,7 +9463,8 @@
         fd.append('page_id', currentPageId);
         fd.append('pdf_file', file);
         try {
-            // 添付の追加は本文編集と同じ編集ロックで直列化する（サーバーは他者保持中なら409）。
+            // 送る前に書きかけを保存する（lockedFetch）。2026-10-12 までは本文編集と同じ編集ロックで直列化していた。
+            // いまはブラウザはロックを取らない（サーバーが 409 で断るのは、道具が /api/lock で握っているときだけ）。
             const res = await lockedFetch('/api/upload-pdf', { method: 'POST', body: fd });
             const d = await readResult(res);
             if (!res.ok || !d.success) throw new Error(failMessage(res, d));
@@ -9495,7 +9524,8 @@
         fd.append('page_id', currentPageId);
         fd.append('image_file', file);
         try {
-            // 添付の追加は本文編集と同じ編集ロックで直列化する（他者保持中なら409）。
+            // 送る前に書きかけを保存する（lockedFetch）。2026-10-12 までは本文編集と同じ編集ロックで直列化していた
+            // （いまサーバーが 409 で断るのは、道具が /api/lock で握っているときだけ）。
             const res = await lockedFetch('/api/upload-image', { method: 'POST', body: fd });
             if (!res.ok) {
                 const msg = (await res.text().catch(() => '')).trim();
@@ -9570,8 +9600,9 @@
     // 動かすと「昨日と場所が違う」状態になり、覚えて選ぶ使い方ができなくなるためです。
 
     // slashItems はメニューの項目一覧（描画のもとになるデータ）。
-    // 殻に手書きされている h1・p は「基本」分類として最初に取り込みます
-    // （手書きが残るのはこの2つだけ、というエディタ仕様 §3.1 の分担を保つため）。
+    // 殻（index.html の #w-slash-menu）に手書きされている項目は「基本」分類として最初に取り込みます。
+    // いま手書きなのは h1〜h3・p・見出しの節・折りたたみ・画像・ファイルの7つ（エディタ仕様 §3.1 のころは h1・p の
+    // 2つだけでした）。表・定義リストはここで足し、語彙の形式はレジストリ（vocabDefs）から足します。
     let slashItems = [];
     let slashQuery = '';
 
@@ -10745,10 +10776,11 @@
         setupArrowNavigation(); // 矢印キーでブロックの端を越える（2026-10-12 午後）
 
         if (anon) {
-            // 匿名は読み取り専用。編集モードへは入らず、権限カード（loadPerms）は
+            // 匿名は読み取り専用。書ける形へは入らず、権限カード（loadPerms）は
             // 叩かない。ページ属性は /api/page-meta が実効公開なら匿名にも返すため、
-            // 左レールの「親ページへ」リンク表示のために loadPageMeta は呼ぶ
-            // （右レールの権限系表示は body.anonymous の CSS で非表示のまま）。
+            // loadPageMeta は呼ぶ。もとは左レールの「親ページへ」リンクのためだったが、それは 2026-09-03 に
+            // パンくず（サーバーが組む）へ置き換えた。いま loadPageMeta が書くのは右レールのページ情報で、
+            // 右レールは body.anonymous の CSS で丸ごと隠れている（見える効き目は無い）。
             // 子ページ一覧も実効公開の子だけをサーバー側で絞って返すため、匿名でも読み込む。
             applyMode();
             loadPageMeta();
@@ -10925,7 +10957,8 @@ function delegateClick(handlers) {
 //
 // 利用者:「利益率を変更できるようにしたいです」。足元の欄（サーバーが描いたクローム）の「変える」で、その表の
 // 「弊社利益」の行に率を書く（無ければ表の末尾に足す）——書けたらページを読み直して計算し直す。
-// ⚠ 編集モードでは表の「弊社利益」の行を直接直せる（欄は閲覧モードで使う）。
+// 欄は書ける人にだけ、閲覧モードでも書ける形でも出る。書ける形では表の「弊社利益」の行を直接直してもよい
+// （2026-10-12 までは「欄は閲覧モードで使う・編集モードでは行を直接直す」の分け方だった——estimate.go）。
 delegateClick([['.estimate-rate-set', async (btn) => {
     const form = btn.closest('.estimate-rate-form');
     const say = form && form.querySelector('.estimate-rate-say');

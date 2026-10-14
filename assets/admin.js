@@ -1,7 +1,8 @@
 // 管理コンソール（assets/admin.html）の本体スクリプト。
 //
 // 2026-08-06 に admin.html のインライン <script> から切り出した。外部ファイルにすることで
-// Content-Security-Policy から script-src 'unsafe-inline' を外せる（docs/【考察】CSP強化.md §4）。
+// Content-Security-Policy から script-src 'unsafe-inline' を外せる（docs/旧文書/本文サニタイズ設計.md §6。
+// 当時の検討メモ【考察】CSP強化.md は、そこへ畳んで無くなった）。
 // 併せて、行ごとに組み立てていた onclick="resetPw('...')" を data 属性＋イベント委譲へ置き換えた
 // （文字列としてJSを組み立てないので、ユーザー名に `'` が入っても壊れない）。
 
@@ -214,7 +215,8 @@ async function loadRequiredPages() {
         c.textContent = '— 未作成';
       }
       // **置き場はテンプレートからだけ作られます**（2026-09-27）。どのテンプレートから作るか、
-      // テンプレートが無いか（＝作れない・初期化のあと作り直せない）を出します。
+      // テンプレートが無いか（＝作れない・消えたあと作り直せない）を出します（2026-10-14 に管理画面の
+      // 「データの初期化」は外した。下の画面の文の「初期化のあと」は、そのころの言い方のまま）。
       const tp = document.createElement('div');
       tp.className = p.no_template ? 'dup-warn' : 'hint';
       if (p.template) {

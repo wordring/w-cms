@@ -2,7 +2,7 @@
  *
  * 2026-08-06 に admin.html のインライン <style> から切り出した。外部スタイルシートに
  * することで Content-Security-Policy から style-src 'unsafe-inline' を外せる
- * （docs/【考察】CSP強化.md §4）。
+ * （docs/旧文書/本文サニタイズ設計.md §6。当時の検討メモ【考察】CSP強化.md は、そこへ畳んで無くなった）。
  */
 
 body { font-family: sans-serif; background: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; }
