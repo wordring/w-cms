@@ -30,6 +30,8 @@ try {
     process.exit(2);
 }
 
+const { saveNow } = require(path.join(__dirname, 'lib'));
+
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const HEADED = process.argv.includes('--headed');
 
@@ -54,7 +56,13 @@ async function gotoNewPage(page, parent, template) {
 }
 
 // deleteCreatedPages は作ったページをゴミ箱へ（編集ロックは自分のものなので外してから）。
+// ⚠ 消す前に、開いているタブの保存を済ませてページを去る（2026-10-14）——10-12 から書ける形のタブは自分で /api/sync を
+//    送るので、送っている最中に消すと、消したはずのページが残った（サーバーで削除と保存が行き違う。題「後から足した見出し」が
+//    トップ直下に溜まっていた）。
 async function deleteCreatedPages(page) {
+    await saveNow(page).catch(() => {});
+    await page.goto('about:blank').catch(() => {});
+    await page.waitForTimeout(500);
     for (const id of createdPages) {
         const opts = { headers: { "Origin": BASE } };
         await page.request.post(BASE + "/api/lock/force?id=" + id, opts).catch(() => {});
@@ -81,8 +89,22 @@ async function selectContents(page, handle) {
     });
 }
 
+// ⚠ 押す前に、本文の外の mousedown で書式の帯を閉じる（2026-10-14）——10-07 から PC の帯はキャレットの行のすぐ上に出るので、
+// 表のデータ行にキャレットがあると、帯がすぐ上の見出しのセルに重なって押せない（帯は本文の外を押すと閉じる——app.js の
+// document の mousedown。表の帯・選択肢のメニューも同じく閉じ、押したセルで出直す）。キャレットも外す——残すと、押す前の
+// スクロールで帯が出直す。それでも、去ったブロックの保存の応答が帰ってきたときに帯が出直すことがある（流すと4回に1回ほど）
+// ——そのときは閉じ直して押し直す。
 async function caretInto(page, handle) {
-    await handle.click();
+    for (let i = 0; ; i++) {
+        await page.dispatchEvent('body', 'mousedown');
+        await page.evaluate(() => window.getSelection().removeAllRanges());
+        try {
+            await handle.click({ timeout: 3000 });
+            break;
+        } catch (e) {
+            if (i >= 3) throw e;
+        }
+    }
     await handle.evaluate(el => {
         const r = document.createRange();
         r.selectNodeContents(el);
@@ -93,7 +115,11 @@ async function caretInto(page, handle) {
     });
 }
 
+// ⚠ 先に「いま保存」する（2026-10-14）——10-12 昼から、画面はブロックを去るとき・タブを隠すとき・ページを去るときにだけ
+// 保存する（打っているあいだは「未保存」のまま）。1.5秒の自動保存を待つ形では「保存済」が来ず、8秒で止まっていた。
+// triggerAutoSave も「未保存」の印を付けるだけになったので、保存したときに出る告知を待つ所も、先にこれを呼ぶ。
 async function waitSaved(page) {
+    await saveNow(page);
     await page.waitForFunction(
         () => document.getElementById('w-save-status').innerText.includes('保存済'),
         null, { timeout: 8000 });
@@ -291,7 +317,7 @@ async function waitSaved(page) {
             applyMode(); // wrapInBlock は editable 化しない（既存経路では applyMode が担う）
         });
         const dl = page.locator('#w-editor-content dl[data-type="tags"]');
-        await dl.locator('dt').first().click();
+        await caretInto(page, dl.locator('dt').first()); // 帯を閉じてから押す（2026-10-14・caretInto の注）
         await page.waitForSelector('#w-dl-toolbar.active', { timeout: 4000 });
         check('dl: ツールバーが出る', true);
         await page.click('#w-dt-add');
@@ -303,11 +329,11 @@ async function waitSaved(page) {
         await page.keyboard.type('佐藤');
         const names = await dl.locator('dt').allInnerTexts();
         check('dl: 追加位置は現在項目の直後', names.join(',') === '希望納期,担当,納入場所');
-        await dl.locator('dt').nth(1).click(); // 「担当」
+        await caretInto(page, dl.locator('dt').nth(1)); // 「担当」
         await page.click('#w-dt-down');
         check('dl: 項目移動（多値の dd ごと）',
             (await dl.locator('dt').allInnerTexts()).join(',') === '希望納期,納入場所,担当');
-        await dl.locator('dt').nth(2).click();
+        await caretInto(page, dl.locator('dt').nth(2));
         await page.click('#w-dt-del');
         check('dl: 項目削除（dd も一緒に消える）',
             await dl.locator('dt').count() === 2 && await dl.locator('dd').count() === 2);
@@ -325,6 +351,7 @@ async function waitSaved(page) {
             wrapInBlock(t);
             triggerAutoSave();
         });
+        await saveNow(page); // triggerAutoSave は印を付けるだけ——告知は保存したときに出る（2026-10-14）
         await page.waitForFunction(
             () => document.getElementById('w-toast-host').innerText.includes('未定義の種別'),
             null, { timeout: 8000 });
@@ -407,6 +434,7 @@ async function waitSaved(page) {
             wrapInBlock(ok); wrapInBlock(bad);
             triggerAutoSave();
         });
+        await saveNow(page); // 同上（2026-10-14）
         await page.waitForFunction(
             () => document.getElementById('w-toast-host').innerText.includes('接頭辞は画面側の予約'),
             null, { timeout: 8000 });

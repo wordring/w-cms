@@ -63,7 +63,8 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
     ids.push(await makePage(), await makePage());
     console.log('    当て先: ' + ids.join(' / '));
 
-    await page.evaluate(() => { try { localStorage.removeItem('wcms.ui'); } catch (e) {} });
+    // 記録の置き場は `wcms.view`（物ごと・2026-09-28〜）。古い `wcms.ui` も消してから始める（2026-10-14）。
+    await page.evaluate(() => { try { localStorage.removeItem('wcms.ui'); localStorage.removeItem('wcms.view'); } catch (e) {} });
     await page.goto(BASE + '/' + ids[0]); await page.waitForTimeout(2500);
 
     const a = await page.evaluate(() => {
@@ -102,13 +103,23 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
     await page.mouse.move(box.x + box.width - 6, box.y + box.height + 250, { steps: 12 });
     await page.mouse.up();
     await page.waitForTimeout(400);
-    const b = await page.evaluate(() => ({
-      h: Math.round(document.querySelector('#w-editor-content .file-view').getBoundingClientRect().height),
-      saved: (JSON.parse(localStorage.getItem('wcms.ui') || '{}').drawing || {}).height,
-      pe: getComputedStyle(document.querySelector('#w-editor-content .file-view embed')).pointerEvents,
-    }));
+    // ⚠ 憶える形は「物ごと（ページ×添付）の縦横比」（2026-10-14 に試験を追いつかせた）——09-28〜29 から、記録は
+    //    `wcms.view` の pages[ページ番号].r['f:'+添付の参照]（高さ÷幅）で、`wcms.ui` の `drawing.height`（全部の枠で
+    //    1つの高さ）は使わない（app.js の wireDrawingResize・ViewState）。
+    const b = await page.evaluate((arg) => {
+      const w = document.querySelector('#w-editor-content .file-view');
+      const r = w.getBoundingClientRect();
+      const v = JSON.parse(localStorage.getItem('wcms.view') || '{}');
+      const p = (v.pages || {})[arg.id] || {};
+      return {
+        h: Math.round(r.height), w: r.width,
+        ratio: (p.r || {})['f:' + arg.ref],
+        pe: getComputedStyle(w.querySelector('embed')).pointerEvents,
+      };
+    }, { id: ids[0], ref: HOST + '-' + ATTACH });
     ok(b.h > a.h + 150, '高さが伸びた', a.h + ' → ' + b.h + 'px');
-    ok(typeof b.saved === 'number' && Math.abs(b.saved - b.h) <= 2, '高さを憶えた', 'saved=' + b.saved);
+    ok(typeof b.ratio === 'number' && Math.abs(b.ratio * b.w - b.h) <= 2, 'この枠の縦横比を憶えた',
+       'ratio=' + b.ratio + '（' + (typeof b.ratio === 'number' ? Math.round(b.ratio * b.w) + 'px' : '-') + '）');
     ok(b.pe !== 'none', '離したらPDFへの操作が戻る', b.pe);
 
     // ── 開き直しても同じ高さか
@@ -118,11 +129,14 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
       document.querySelector('#w-editor-content .file-view').getBoundingClientRect().height));
     ok(Math.abs(c - b.h) <= 2, '前の高さで開く', c + 'px');
 
-    // ── 別のページにも効くか（記憶は端末ごとで、ページには紐づかない）
+    // ── 別のページには効かないか（記憶は物ごと——同じ添付を指していても、別のページの枠は既定の高さのまま）
+    //    ⚠ 2026-10-14 に期待を逆にした——09-29 まで記憶は端末に1つで、ページをまたいで効いた（「別のページも同じ高さ」）。
+    //    1枚を変えるとほかの PDF まで変わったので、物ごとの縦横比だけになった（利用者:「一枚のPDFの大きさを変えると、
+    //    ページを再読み込みすると同じページのほかのPDFの大きさも変わってしまいます」）。
     await page.goto(BASE + '/' + ids[1]); await page.waitForTimeout(2500);
     const d = await page.evaluate(() => Math.round(
       document.querySelector('#w-editor-content .file-view').getBoundingClientRect().height));
-    ok(Math.abs(d - b.h) <= 2, '別のページも同じ高さ', d + 'px');
+    ok(Math.abs(d - a.h) <= 2, '別のページは既定の高さのまま（記憶は物ごと）', d + 'px');
   } finally {
     for (const i of ids) {
       const del = await page.evaluate(async (id) => {

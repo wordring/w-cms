@@ -12,7 +12,7 @@
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-fold-files.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, bodyOf } = require('./lib');
+const { login, makePage, deletePage, bodyOf, saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -35,8 +35,9 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
   };
   const saved = async () => {
-    // 自動保存（1.5秒のデバウンス）を待ってから正本を読む。
-    await page.waitForTimeout(2500);
+    // 書きかけをいま保存してから正本を読む（2026-10-14——10-12 昼から画面はブロックを去るときだけ保存するので、
+    // 1.5秒の自動保存を待つ形では、最後に打った「資料 2」が保存されないまま読んでいた）。
+    await saveNow(page);
     return bodyOf(page, id);
   };
   try {
@@ -72,6 +73,10 @@ const BODY = '<h1>【E2E】折りたたみ</h1>' +
       (await sum.evaluate(el => el.textContent)) === sumText &&
       (await fold.locator(':scope > p').first().textContent()).startsWith('先頭'));
     // 左端の ▸ を押したときは開閉する（閉じて・開く）。
+    // ⚠ 先にキャレットを題へ戻す（2026-10-14）——10-07 から PC の書式の帯はキャレットの行のすぐ上に出るので、
+    //    中身の先頭（題のすぐ下）にキャレットがあると、帯（↷ のボタン）が題の ▸ に重なって押せない。
+    await page.mouse.click(sb.x + sb.width - 10, sb.y + sb.height / 2);
+    await page.waitForTimeout(200);
     await page.mouse.click(sb.x + 6, sb.y + sb.height / 2);
     await page.waitForTimeout(150);
     const closed = !(await fold.evaluate(el => el.open));

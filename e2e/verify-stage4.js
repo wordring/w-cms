@@ -9,6 +9,8 @@ let chromium;
 try { ({ chromium } = createRequire(path.join(process.cwd(), 'noop.js'))('playwright')); }
 catch (e) { console.error('node_modules のあるディレクトリ（~/tools/wcms-e2e）から実行してください'); process.exit(2); }
 
+const { saveNow } = require(path.join(__dirname, 'lib'));
+
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 // gotoNewPage は子ページを作ってそのページへ遷移する。
@@ -46,7 +48,9 @@ function check(name, cond) { results.push(`${cond ? 'PASS' : 'FAIL'} ${name}`); 
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 }); }
 // 直前に飛んでいた保存の応答が「保存済」を上書きするため、1回の waitSaved では直近の
 // 変更の保存完了を保証できない。デバウンス（1.5秒）より長く待って2周目を掴む。
-async function settleSaved(page) { await waitSaved(page); await page.waitForTimeout(2000); await waitSaved(page); }
+// ⚠ 2026-10-14: 先に「いま保存」する——10-12 昼から、画面はブロックを去るとき・タブを隠すとき・ページを去るときにだけ
+//    保存する（1.5秒のデバウンスは無い）ので、待つだけでは「保存済」が来ず止まっていた（lib.js の saveNow）。
+async function settleSaved(page) { await saveNow(page); await waitSaved(page); await page.waitForTimeout(2000); await waitSaved(page); }
 async function openSlashMenu(page) {
     await page.evaluate(() => { const b = document.querySelectorAll('.editor-block'); b[b.length - 1].querySelector('.add-btn').click(); });
     await page.waitForSelector('#w-slash-menu.active', { timeout: 4000 });
@@ -244,7 +248,8 @@ async function openSlashMenu(page) {
 
         await page.goto(BASE + '/' + orderId);
         // 鏡の印は data-mirror（名前の見えない data-type の印は 2026-09-27 に廃止）
-        await page.locator('#w-editor-content section[data-mirror="手配状況リスト"] .vocab-chrome').waitFor({ timeout: 8000 });
+        // ⚠ .first()（2026-10-14）——行のある集計表には、2026-10-02 から「🖨 この表を印刷」（これも .vocab-chrome）が並ぶ。
+        await page.locator('#w-editor-content section[data-mirror="手配状況リスト"] .vocab-chrome').first().waitFor({ timeout: 8000 });
         check('手配集計のSSRに行が出る',
             (await page.locator('#w-editor-content .materials-table tbody tr').count()) >= 1);
 
@@ -280,6 +285,11 @@ async function openSlashMenu(page) {
     } catch (e) { check('実行が最後まで到達', false); console.error(e); }
     finally {
         // 作ったページを消す——落ちても残骸を残さない（子を先に・編集ロックを外してから）。
+        // ⚠ 先に開いているタブの保存を済ませてページを去る（2026-10-14）——書ける形のタブが /api/sync を送っている最中に
+        //    消すと、消したはずのページが残ることがある（verify-stage2 の deleteCreatedPages の注）。
+        await saveNow(page).catch(() => {});
+        await page.goto('about:blank').catch(() => {});
+        await page.waitForTimeout(500);
         for (const id of created.filter(Boolean).reverse()) {
             try {
                 await page.request.post(BASE + '/api/lock/force?id=' + id, { headers: { 'Origin': BASE } });
