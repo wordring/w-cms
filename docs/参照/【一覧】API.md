@@ -12,7 +12,7 @@ w-cms が提供するHTTPエンドポイントの、**実装済みリファレ�
 - **拡張の口**: 各プラグインの `Routes()` が正本です。
   - `main.go` は、`cms.PluginRoutes()` をループして登録するだけです。だから、**`main.go` を見ても出てきません**。
   - `-tags` で拡張を外すと、ルートごと消えます。
-  - 内訳は、次のとおりです（2026-10-13 に、各 `Routes()` の `Pattern:` の行を数えました。拡張の口は計75本です）。
+  - 内訳は、次のとおりです（2026-10-14 に、各 `Routes()` の `Pattern:` の行を数えました。拡張の口は計76本です）。
 
   | 拡張 | `Routes()` の正本 | 口 |
   |---|---|---|
@@ -21,7 +21,7 @@ w-cms が提供するHTTPエンドポイントの、**実装済みリファレ�
   | `ext/comm/mail`（メール） | [mail/plugin.go](../../ext/comm/mail/plugin.go) | 9本。`/api/mail/status`・`/api/mail/signin`・`/api/mail/import`・`/api/mail/fetch-new`・`/api/mail/fetch-new/status`・`/api/mail/send`・`/api/mail/compose`・`/api/mail/draft`・`/api/mail/attach` |
   | `ext/toho`（下請け業務） | [toho/materials.go](../../ext/toho/materials.go) | 56本。解析と整理: `/api/analyze-attachment`・`/api/analyzed`・`/api/compare-drawings`・`/api/filing-proposal`・`/api/filing-target`・`/api/filing-search`・`/api/filing-files-shown`・`/api/filing-attach`・`/api/file-drawings`・`/api/product-folder`・`/api/drawing/supersede`。受注と発注: `/api/required-materials`・`/api/order-item`・`/api/material-search`・`/api/order-pdf`・`/api/order-pdf-docs`・`/api/our-order/*`（9本）。見積: `/api/estimate-rate`・`/api/estimate-pdf`・`/api/estimate/*`（8本）。見積依頼: `/api/rfq-pdf`・`/api/rfq-pdf-docs`・`/api/rfq/*`（15本）・`/api/rfq-reply/*`（3本）。道具: `/api/table/append-rows` |
 
-  コアの口（`main.go`）は、58本です（`/api/` 配下の要認証が42本、そのほかが15本、WebDAV の `/dav/` が1本）。合わせて133本です。
+  コアの口（`main.go`）は、58本です（`/api/` 配下の要認証が42本、そのほかが15本、WebDAV の `/dav/` が1本）。合わせて134本です（2026-10-14: `/api/session` を足し、`/api/admin/reset` を消しました）。
 
   **起動ログで確かめられます。** `プラグインAPI登録: <パス>` が、1本ずつ出ます。
 
@@ -332,7 +332,6 @@ JSONにならなければ、本文をそのまま理由にします。
 | POST | `/api/admin/users/disable` | 有効・無効の切り替え |
 | GET/POST | `/api/admin/groups` | グループの一覧・作成 |
 | POST | `/api/admin/groups/members` | グループ所属の変更（`action` に `add`／`remove`。既定は `add`）。参照用のGETは無い |
-| POST | `/api/admin/reset` | **データの初期化**（2026-09-16。開発中の入れ直し用。利用者:「管理ページにデータの初期化ボタンが欲しいくらいです」）。要求は `{"confirm": "初期化"}`。**合言葉はサーバーでも見ます**（画面だけで守ると口を直に叩けば素通りする）。**消す前に `data/_reset-<日時>/` へ丸ごと移すので取り消せます**（`<控え>/master` を `data/master` へ戻すだけ）。消すのはページ・ゴミ箱・派生索引。**残すのは3つ**で、`data/mail`（メールのトークン）・`auth.db`（利用者）・`data/tls`（**各PCの信頼ストアに入れた証明書**）。加えて、**テンプレート**も残す（テンプレート置き場とその下のページ・添付と版ごと。2026-09-27 利用者:「データの初期化ではテンプレートだけ消さないでください」。控えは丸ごと取り、テンプレートだけ控えから写し戻す）。応答は `{success, summary{pages, backup_dir, rebuilt, kept_notice, templates}}`。監査記録は `data.reset`。正本は [reset_data.go](../../internal/cms/reset_data.go) |
 | GET/POST | `/api/admin/pages` | **拡張が要る置き場**（2026-09-16。トップ直下の通信箱・取引先・受注・テンプレート置き場）。GET は `{success, pages, templates}` を返す。`pages` は `{title, extension, why, page_id, exists, duplicates?, template?, no_template?}` の並びで、**載っている拡張のぶんだけ**出る（`-tags minimal` ではコアの1件）。`templates` は**機械が作るページのテンプレート**で、中身は `{title, extension, why, page_id?, problem?}`（2026-09-27 夕。`problem` は「無い」「2枚ある」）。`duplicates` は**同じ題の余りのページ**。普通は空で、在るときだけ画面が ⚠ を出す。このとき `page_id` は**いちばん古いもの**で、余りは誰からも使われない。POST は**足りないものだけ**作り、`{success, created, pages}` を返す（**冪等**。何度押しても増えない）。**起動時には作りません**。人が押したことが、そのページを置く意図（通信箱の 2026-09-05 の決定を保つ）。⚠ **置き場は同じ題のテンプレート（テンプレート置き場の下の葉）からだけ作ります**（2026-09-27。それまで本文を持っていた拡張のコードからは消した。利用者:「テンプレートが無ければ作れないまで行きます」）。`template` はそのテンプレートのページID、`no_template` はテンプレートが無いこと（作れない）。POST はテンプレートの無い置き場を作らず、ほかは作り続けて、最後に `{success: false, message, created}` で作れなかったものを返す。テンプレート置き場そのものは見出しだけで作る。監査記録は `required-page.create`。正本は [required_pages.go](../../internal/cms/required_pages.go) |
 | GET | `/api/admin/audit` | 監査ログの参照。直近200件。記録対象は認証イベント（`login`/`login.fail`/`logout`）・保存・ページ作成／削除・添付（`attach`/`attach.overwrite`）・親の付け替え・権限変更（公開切替 `publish`/`unpublish` を含む）・ロック強制解除・索引の全再構築・ユーザー／グループ管理・取り込み（`intake.create`/`intake.duplicate`）・PDF判定（`analyze-pdf`）（[認証認可設計.md](../旧文書/認証認可設計.md) §9.4） |
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え）。先頭で `config/settings.json` を読み直す。2026-09-25 から **`data/tables.db`（表の写し）も**作り直す |
