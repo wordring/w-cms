@@ -82,7 +82,7 @@
     <div class="card">
       <p class="hint">
         本文の<strong>キャプションのある表</strong>が、キャプションの名前の表として入っています
-        （列は見出し。<code>SELECT 品番 FROM 受注明細</code> と引けます）。同じ名前の表は列を統合するので、
+        （列は見出し。<code>SELECT 品番 FROM 受注明細表</code> と引けます）。同じ名前の表は列を統合するので、
         <strong>打ち間違えた見出しは黙って新しい列になります</strong>——ほかのページに無い列に ⚠ を付けます。
         <strong>跡</strong>は本文にはもう無い表・列で、データベース再構築で消えます。
       </p>
@@ -116,7 +116,7 @@
       </p>
       <!-- 表の列の名前を置き換える（2026-10-15）——設定の語彙で列の名前を変えたとき、既にあるページの表の見出しを揃える。 -->
       <div class="row row--gap-lg">
-        <input id="cr-caption" placeholder="表のキャプション（例: 受注明細）" aria-label="表のキャプション">
+        <input id="cr-caption" placeholder="表のキャプション（例: 受注明細表）" aria-label="表のキャプション">
         <input id="cr-from" placeholder="今の列の名前" aria-label="今の列の名前">
         <input id="cr-to" placeholder="新しい列の名前" aria-label="新しい列の名前">
         <button id="cr-go">表の列の名前を置き換える</button>

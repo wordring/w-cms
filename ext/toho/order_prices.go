@@ -167,7 +167,7 @@ func orderPricesHTML(list []orderPriceRow) string {
 	var b strings.Builder
 	b.WriteString(`<div class="vocab-chrome rfq-quotes order-prices" contenteditable="false"><p class="materials-title">🧾 受注・見積の単価</p>`)
 	if len(list) == 0 {
-		b.WriteString(`<p class="materials-empty">まだありません（受注明細・見積明細の弊社品番がこのページの行と、客先と品番が合う受注の行がここに並びます）。</p></div>`)
+		b.WriteString(`<p class="materials-empty">まだありません（受注明細表・見積明細表の弊社品番がこのページの行と、客先と品番が合う受注の行がここに並びます）。</p></div>`)
 		return b.String()
 	}
 	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>日付</th><th>種類</th><th>番号</th>` +
@@ -202,7 +202,7 @@ func orderPricesHTML(list []orderPriceRow) string {
 	}
 	b.WriteString(`</tbody></table></div>`)
 	if marked {
-		b.WriteString(`<p class="materials-empty">※ 受注明細の弊社品番は空で、客先と品番で当てた行（受注フォルダの受注残表を開くと、受注残の行は結ばれます）。</p>`)
+		b.WriteString(`<p class="materials-empty">※ 受注明細表の弊社品番は空で、客先と品番で当てた行（受注フォルダの受注残表を開くと、受注残の行は結ばれます）。</p>`)
 	}
 	b.WriteString(`</div>`)
 	return b.String()

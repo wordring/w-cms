@@ -113,6 +113,23 @@ func orderKindByName(name string) (orderKind, bool) {
 	return orderKind{}, false
 }
 
+// orderKindNameOfTable は、表の形式（vocabType）から運ぶ種類の名前を返します（無ければ空）。
+//
+// ⚠ **種類の名前と表のキャプションは別の言葉**です（2026-10-15 から表は「材料表」・種類は「材料」）
+// ——種類の値を表の表示名と比べないこと。設定の `from`（キャプション）を通して引きます。
+func orderKindNameOfTable(vocabType string) string {
+	name := displayNameOf(vocabType)
+	if name == "" {
+		return ""
+	}
+	for _, k := range OrderKinds() {
+		if strings.TrimSpace(k.From) == name {
+			return k.Kind
+		}
+	}
+	return ""
+}
+
 // OrderPrintColumns は紙に刷る列の候補を並び順どおりに返します（空なら既定の並び）。
 func OrderPrintColumns() []string {
 	stagesMu.RLock()

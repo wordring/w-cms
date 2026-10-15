@@ -177,7 +177,7 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 	}
 	lines = rfqLinesOfProduct(productID, lots)
 	if len(lines) == 0 {
-		return pid, lots, nil, http.StatusConflict, "/" + pid + " に材料・購入部品・外注加工の表がありません（集めるものがありません）"
+		return pid, lots, nil, http.StatusConflict, "/" + pid + " に材料表・購入部品表・外注加工表がありません（集めるものがありません）"
 	}
 	if s := strings.TrimSpace(it.ForOrder); s != "" {
 		order, ok := page.NormalizeID(strings.TrimPrefix(s, "/"))

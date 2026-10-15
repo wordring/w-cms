@@ -52,7 +52,7 @@ var businessVocab = []cms.VocabDef{
 	// にしてあるのは、受注明細の `状態`（未着手／加工中／納品済）と取り違えないため。
 	{
 		Type:        "part-materials",
-		DisplayName: "材料",
+		DisplayName: "材料表",
 		Category:    "業務",
 		Icon:        "🔩",
 		// 列はユーザーの実務どおり——**材料に「名前」は無く、材質・形状・寸法の
@@ -104,7 +104,7 @@ var businessVocab = []cms.VocabDef{
 		// 資料のブロック（開いたり閉じたりできる）を用意して」、列を外すかの問いに「外す」。列と折りたたみの
 		// 2か所に書くと食い違います。
 		Type:        "part-outsourcing",
-		DisplayName: "外注加工",
+		DisplayName: "外注加工表",
 		Category:    "業務",
 		Icon:        "🏭",
 		Element:     "table",
@@ -155,7 +155,7 @@ var businessVocab = []cms.VocabDef{
 		// 購入部品——**列は暫定**です。ユーザー:「購入品の項目はいまのところ
 		// はっきりしません」（2026-09-03）。実物を入れてみて決まったら直します。
 		Type:        "part-purchased",
-		DisplayName: "購入部品",
+		DisplayName: "購入部品表",
 		Category:    "業務",
 		Icon:        "📦",
 		Element:     "table",
@@ -175,7 +175,7 @@ var businessVocab = []cms.VocabDef{
 		// 項目もあります」）。買わないので手配の対象ではありませんが、構成には要り、
 		// 番号でも指せる必要があります。
 		Type:        "part-supplied",
-		DisplayName: "支給部品",
+		DisplayName: "支給部品表",
 		Category:    "業務",
 		Icon:        "🎁",
 		Element:     "table",
@@ -288,7 +288,7 @@ var businessVocab = []cms.VocabDef{
 		// **改訂明細**——スラッシュメニューに出すのはこちら（2026-09-27 から・上の注）。
 		// 解析が書く表と同じく `<caption>改訂明細</caption>` で名乗ります。
 		Type:        "drawing-revision-items",
-		DisplayName: "改訂明細",
+		DisplayName: "改訂明細表",
 		Category:    "業務",
 		Icon:        "🕐",
 		Element:     "table",
@@ -300,7 +300,7 @@ var businessVocab = []cms.VocabDef{
 	},
 	{
 		Type:        "client-order-items",
-		DisplayName: "受注明細",
+		DisplayName: "受注明細表",
 		Category:    "業務",
 		Icon:        "📩",
 		Element:     "table",
@@ -419,7 +419,7 @@ var businessVocab = []cms.VocabDef{
 	},
 	{
 		Type:        "our-order-items",
-		DisplayName: "部材発注明細",
+		DisplayName: "部材発注明細表",
 		Category:    "業務",
 		Icon:        "📤",
 		Element:     "table",
@@ -492,7 +492,7 @@ var businessVocab = []cms.VocabDef{
 		// **見積明細**（2026-10-01・estimate_doc.go）——顧客へ出す見積書ページの明細。受注明細と同じ名前・同じ型の列
 		// （品番で「前いくらで出したか」を引けるように）。機械が見積計算表から作るので、スラッシュメニューには出さない。
 		Type:        EstimateItemsType,
-		DisplayName: "見積明細",
+		DisplayName: "見積明細表",
 		Category:    "業務",
 		Icon:        "📄",
 		Element:     "table",
@@ -505,7 +505,7 @@ var businessVocab = []cms.VocabDef{
 		// 在庫で足りる・自社で作る・電話で買った などの理由と日付を残し、必要部材表から引く（発注部材表と同じ数え方）。
 		// 機械が作る表なのでスラッシュメニューには出さない。
 		Type:        SkipType,
-		DisplayName: "手配不要",
+		DisplayName: "手配不要表",
 		Category:    "業務",
 		Icon:        "🚫",
 		Element:     "table",

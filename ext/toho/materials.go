@@ -87,7 +87,7 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     EstimateTemplate,
 		Extension: "toho",
-		Why:       "見積表の「見積書に入れる」が見積書ページを作るときに写します。キャプション「見積明細」の表が要ります（タグ 見積番号・見積先・見積先担当・見積日・受渡期日・受渡場所・取引方法・有効期限・見積担当と、見出し「備考」の節は、あれば埋めます）。",
+		Why:       "見積表の「見積書に入れる」が見積書ページを作るときに写します。キャプション「見積明細表」の表が要ります（タグ 見積番号・見積先・見積先担当・見積日・受渡期日・受渡場所・取引方法・有効期限・見積担当と、見出し「備考」の節は、あれば埋めます）。",
 	})
 
 	// **機械が作るページもテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
@@ -95,12 +95,12 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     OrderPageTemplate,
 		Extension: "toho",
-		Why:       "発注書PDFの解析が受注ページを作るときに写します。キャプション「受注明細」の表が要ります（原本PDFのファイル表示・「顧客の発注書（読んだまま）」の枠は、あれば埋めます）。",
+		Why:       "発注書PDFの解析が受注ページを作るときに写します。キャプション「受注明細表」の表が要ります（原本PDFのファイル表示・「顧客の発注書（読んだまま）」の枠は、あれば埋めます）。",
 	})
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     ProductTemplate,
 		Extension: "toho",
-		Why:       "図面PDFの解析が加工製品ページを作るときに写します。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細」の表が要ります。",
+		Why:       "図面PDFの解析が加工製品ページを作るときに写します。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細表」の表が要ります。",
 	})
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     ProductsBoxTemplate,
@@ -110,7 +110,7 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     PurchaseOrderTemplate,
 		Extension: "toho",
-		Why:       "発注部材表の「部材発注書ページを作る」が写します。キャプション「部材発注明細」の表と、見出し「備考」の節が要ります。",
+		Why:       "発注部材表の「部材発注書ページを作る」が写します。キャプション「部材発注明細表」の表と、見出し「備考」の節が要ります。",
 	})
 }
 

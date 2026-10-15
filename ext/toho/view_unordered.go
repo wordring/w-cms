@@ -43,7 +43,7 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		//    買う道**がここです。⚠ **0件のときこそ、その道が要ります**——
 		//    早期に戻ると、**空の表から始める手段が画面から消えます**。
 		return head + `<p class="materials-empty">必要部材はありません` +
-			`（⚠ 受注明細に<strong>弊社品番</strong>が無い行は、ここに出ません）。` +
+			`（⚠ 受注明細表に<strong>弊社品番</strong>が無い行は、ここに出ません）。` +
 			`加工製品ページに無い部材は、上の<strong>臨時部材表</strong>に書くと、ここに並びます。` +
 			`</p>` +
 			unorderedFormHTML(user, pageIDInt)
@@ -254,7 +254,7 @@ func signerFieldHTML(user *auth.User) string {
 // 支給部品は名前だけでは材料と見分けにくく、**1枚の部材発注書は1社**なので、選ぶときに種類が要ります。
 func unorderedKindMark(u UnorderedItem) string {
 	k := strings.TrimSpace(u.Kind)
-	if k == "" || k == displayNameOf(partMaterialsType) || u.TempRow > 0 {
+	if k == "" || k == orderKindNameOfTable(partMaterialsType) || u.TempRow > 0 {
 		return ""
 	}
 	return `<span class="unorder-kind">` + stdhtml.EscapeString(k) + `</span> `

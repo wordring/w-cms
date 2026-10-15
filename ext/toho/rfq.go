@@ -141,7 +141,7 @@ func init() {
 		},
 		cms.VocabDef{
 			// テンプレート「部材見積依頼書」に人が置く表。
-			Type: RFQItemsType, DisplayName: "部材見積依頼明細", Category: "業務", Icon: "📨", Element: "table",
+			Type: RFQItemsType, DisplayName: "部材見積依頼明細表", Category: "業務", Icon: "📨", Element: "table",
 			Columns: rfqColumns(),
 		},
 		cms.VocabDef{

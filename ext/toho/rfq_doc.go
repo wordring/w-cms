@@ -51,7 +51,7 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     RFQTemplate,
 		Extension: "toho",
-		Why: "見積依頼部材表の「部材見積依頼書ページを作る」が写します。キャプション「部材見積依頼明細」の表が要ります（タグ 部材見積依頼番号・" +
+		Why: "見積依頼部材表の「部材見積依頼書ページを作る」が写します。キャプション「部材見積依頼明細表」の表が要ります（タグ 部材見積依頼番号・" +
 			"仕入先・部材見積依頼日・部材見積依頼担当・送付日・回答日と、見出し「備考」の節は、あれば埋めます）。",
 	})
 }
@@ -483,7 +483,7 @@ func RFQSetCellsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		tables := tablesOfType(nodes, RFQItemsType)
 		if len(tables) == 0 {
-			mismatch = "部材見積依頼明細の表がありません"
+			mismatch = "部材見積依頼明細表がありません"
 			return cur
 		}
 		rows := rowsOf(tables[0])

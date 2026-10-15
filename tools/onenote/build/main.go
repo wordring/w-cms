@@ -724,14 +724,15 @@ var bracketMarkRe = regexp.MustCompile(`^(?:【[^】]*】\s*)+`)
 
 // tableMap は ■見出し → 加工製品の表（キャプション）と、列の言い換え（ワンノートの見出し → w-cms の見出し）。
 var tableMap = map[string]struct {
+	Section string // テンプレートの入れ物（見出しの節）の名前
 	Caption string
 	Rename  map[string]string
 	Number  bool // 番号（1から）を振る
 }{
-	"材料":   {Caption: "材料"},
-	"外注加工": {Caption: "外注加工", Rename: map[string]string{"加工": "加工内容"}, Number: true},
-	"購入品":  {Caption: "購入部品"},
-	"支給品":  {Caption: "支給部品"},
+	"材料":   {Section: "材料", Caption: "材料表"},
+	"外注加工": {Section: "外注加工", Caption: "外注加工表", Rename: map[string]string{"加工": "加工内容"}, Number: true},
+	"購入品":  {Section: "購入部品", Caption: "購入部品表"},
+	"支給品":  {Section: "支給部品", Caption: "支給部品表"},
 }
 
 func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule partnerRule, pg *onePage, pr *pageRecord,
@@ -929,8 +930,8 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	blk.SetTag("図面名称", name)
 	blk.SetTag("装置名称", machine)
 	blk.SetTag("客先", cms.NormalizeNameForIngest(pl.Partner))
-	if _, err := d.FillTable("改訂明細", []string{"版", "図面番号", "受領日"}, [][]string{{"1", drawingNo, pg.Created}}); err == nil {
-		if t, ok := d.Table("改訂明細"); ok {
+	if _, err := d.FillTable("改訂明細表", []string{"版", "図面番号", "受領日"}, [][]string{{"1", drawingNo, pg.Created}}); err == nil {
+		if t, ok := d.Table("改訂明細表"); ok {
 			d.AssignBlockID(t)
 			for _, tr := range childRows(t) {
 				d.AssignBlockID(tr)
@@ -943,7 +944,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	before := true // 図面より前の節（不具合・参考図）は図面の前へ
 	// 図面の後ろの目印は改訂明細（図面ブロックのすぐ後ろの表）——図面と改訂明細の間に節を割り込ませない。
 	afterDrawing := blk.Node()
-	if t, ok := d.Table("改訂明細"); ok && t.Parent == blk.Node().Parent {
+	if t, ok := d.Table("改訂明細表"); ok && t.Parent == blk.Node().Parent {
 		afterDrawing = t
 	}
 	// 表の節（材料・外注加工…）が1つでも出たら、それより後ろのテンプレートに無い節はページの末尾へ——
@@ -968,7 +969,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			// 空でもテンプレートに入れ物のある節なら、並びの目印はそこへ進める——進めないと、あとの節が
 			// テンプレートの表（外注加工・購入部品…）より前に入る。
 			if m := tableMap[s.Name]; m.Caption != "" {
-				if box, ok := d.Container(m.Caption); ok {
+				if box, ok := d.Container(m.Section); ok {
 					anchor, before = box.Node(), false
 				}
 			}
@@ -1039,9 +1040,9 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			anchor = afterDrawing
 		case tableMap[s.Name].Caption != "":
 			m := tableMap[s.Name]
-			box, ok := d.Container(m.Caption)
+			box, ok := d.Container(m.Section)
 			if !ok {
-				note.warn("⚠ テンプレートに「" + m.Caption + "」の節がありません——表は落としました")
+				note.warn("⚠ テンプレートに「" + m.Section + "」の節がありません——表は落としました")
 				continue
 			}
 			// 表は**行き先を決めて集め**、ページの最後に1回で埋める（tables.go）。
@@ -1074,11 +1075,12 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 							appendHTML(box.Node(), plainTableS(it.Rows, it.Struck))
 							continue
 						}
-						if pc, pr, ok := partsList(rows); ok && dest == "購入部品" {
+						dest = dm.Caption // 設定に古い名前（「材料」など）が書いてあっても、いまのキャプションへ
+						if pc, pr, ok := partsList(rows); ok && dest == tableMap["購入品"].Caption {
 							fills.add(dest, pc, pr, false)
 							continue
 						}
-						if dest == "外注加工" {
+						if dest == tableMap["外注加工"].Caption {
 							rows = forOutsourcing(rows)
 						}
 						cols, vals := mapTable(rows, dm.Rename, dm.Number)
@@ -1088,7 +1090,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 					}
 					// 見出しの無い2列の表（品名｜〇個）は購入部品（利用者:「○○は、下の表が購入部品のようです」）。
 					if pc, pr, ok := partsList(rows); ok {
-						fills.add("購入部品", pc, pr, false)
+						fills.add(tableMap["購入品"].Caption, pc, pr, false)
 						note.ask("「" + s.Name + "」の見出しの無い2列の表（品名｜個数）を購入部品へ入れました——違っていれば" +
 							settingsName + " の「表の行き先」で直せます")
 						continue

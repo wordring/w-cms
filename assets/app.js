@@ -8133,7 +8133,7 @@
             old = others[i];
         }
         const ok = await askConfirm('「' + drawingLabel(old) + '」を旧版として子ページへ移し、\n「' + drawingLabel(mine) +
-            '」をこのページの最新の図面にします（改訂明細に1行足します）。', '旧版へ移す', 'やめる');
+            '」をこのページの最新の図面にします（改訂明細表に1行足します）。', '旧版へ移す', 'やめる');
         if (!ok) return;
         const pick = (s) => ({ index: all.indexOf(s), no: drawingTag(s, '図面番号') });
         const r = await postJSON('/api/drawing/supersede', { page_id: currentPageId, new: pick(mine), old: pick(old) });
@@ -12484,7 +12484,7 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
             return;
         }
         btn.disabled = true;
-        sayIn(box, '手配不要の表へ移しています…');
+        sayIn(box, '手配不要表へ移しています…');
         try {
             const r = await postJSON('/api/our-order/skip', {
                 page_id: form.getAttribute('data-unorder-page') || '',
@@ -12495,7 +12495,7 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
                 sayIn(box, '⚠ ' + (r.data.message || '不要にできませんでした'), 'proc-why-ng');
                 return;
             }
-            sayIn(box, r.data.rows + '行を手配不要の表へ移しました。読み直しています…');
+            sayIn(box, r.data.rows + '行を手配不要表へ移しました。読み直しています…');
             location.reload();
         } catch (err) {
             sayIn(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');

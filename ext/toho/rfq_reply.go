@@ -63,11 +63,11 @@ func readRFQTable(body string) (*rfqTableView, error) {
 	}
 	tables := tablesOfType(nodes, RFQItemsType)
 	if len(tables) == 0 {
-		return nil, errors.New("部材見積依頼明細の表がありません")
+		return nil, errors.New("部材見積依頼明細表がありません")
 	}
 	trs := rowsOf(tables[0])
 	if len(trs) == 0 {
-		return nil, errors.New("部材見積依頼明細に見出しの行がありません")
+		return nil, errors.New("部材見積依頼明細表に見出しの行がありません")
 	}
 	v := &rfqTableView{nodes: nodes, col: headerIndex(trs[0])}
 	for _, tr := range trs[1:] {
@@ -149,7 +149,7 @@ func markRFQAnswered(body, today string) (string, int, error) {
 		}
 		st := v.cell(tr, "状態")
 		if st == nil {
-			return body, 0, errors.New("部材見積依頼明細に「状態」の列がありません")
+			return body, 0, errors.New("部材見積依頼明細表に「状態」の列がありません")
 		}
 		if s := strings.TrimSpace(textOf(st)); s != "" && s != rfqLineUnanswered {
 			continue
@@ -191,7 +191,7 @@ func applyRFQReply(body, today string, lines []rfqReplyLine) (string, int, error
 	}
 	for _, need := range []string{"単価", "状態"} {
 		if _, ok := v.col[need]; !ok {
-			return body, 0, errors.New("部材見積依頼明細に「" + need + "」の列がありません")
+			return body, 0, errors.New("部材見積依頼明細表に「" + need + "」の列がありません")
 		}
 	}
 	for _, l := range lines {
@@ -221,7 +221,7 @@ func applyRFQReply(body, today string, lines []rfqReplyLine) (string, int, error
 		if note != "" {
 			c := v.cell(tr, "備考")
 			if c == nil {
-				return body, 0, errors.New("部材見積依頼明細に「備考」の列がありません")
+				return body, 0, errors.New("部材見積依頼明細表に「備考」の列がありません")
 			}
 			if cur := strings.TrimSpace(textOf(c)); cur != "" && !strings.Contains(cur, note) {
 				note = cur + "／" + note
@@ -475,7 +475,7 @@ func RFQReadReplyAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := v.replyRows()
 	if len(rows) == 0 {
-		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼明細に行がありません")
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼明細表に行がありません")
 		return
 	}
 	srcID, ok := page.NormalizeID(strings.TrimSpace(req.SourcePage))

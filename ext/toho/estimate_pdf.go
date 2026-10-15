@@ -47,7 +47,7 @@ func readEstimateDoc(body string) (head map[string]string, rows []map[string]str
 	}
 	tables := tablesOfType([]*html.Node{root}, EstimateItemsType)
 	if len(tables) == 0 {
-		return nil, nil, nil, errors.New("見積明細の表がありません")
+		return nil, nil, nil, errors.New("見積明細表がありません")
 	}
 	trs := rowsOf(tables[0])
 	if len(trs) < 2 {
@@ -123,7 +123,7 @@ func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, errors.New("見積明細に行がありません")
+		return nil, errors.New("見積明細表に行がありません")
 	}
 	p, err := startPaper(font)
 	if err != nil {
@@ -206,7 +206,7 @@ func makeEstimatePDF(w http.ResponseWriter, user *auth.User, pageID string) (mad
 		build: buildEstimatePDF,
 		name:  func(_, pageID string) string { return "御見積書 " + pageID },
 		audit: "estimate-pdf",
-		show:  showBelowItems(EstimateItemsType, "見積明細"),
+		show:  showBelowItems(EstimateItemsType, "見積明細表"),
 	})
 }
 

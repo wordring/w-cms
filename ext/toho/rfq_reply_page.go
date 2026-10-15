@@ -481,7 +481,7 @@ func rfqReplyMatchViewHTML(user *auth.User, pageIDInt int) string {
 		`<button type="button" class="chip-btn rfq-reply-link" data-reply="` + pid + `">結ぶ</button> <span class="rfq-reply-link-say"></span></p>`)
 	// 部材見積依頼の記録が無い返事（移行期）——この返事から部材見積依頼書ページを作る（2026-10-05・rfq_reply_make.go）。
 	b.WriteString(`<p class="unorder-help">部材見積依頼の記録が無い返事（移行期など）は: <button type="button" class="chip-btn rfq-reply-make" data-reply="` + pid +
-		`" title="読んだままの表を部材見積依頼明細の列に読み替えた案を出します（弊社品番は図面番号・品番から当てます）。直してから作ります">` +
+		`" title="読んだままの表を部材見積依頼明細表の列に読み替えた案を出します（弊社品番は図面番号・品番から当てます）。直してから作ります">` +
 		`この返事から部材見積依頼書ページを作る</button></p><div class="rfq-reply-make-panel"></div>`)
 	return b.String()
 }

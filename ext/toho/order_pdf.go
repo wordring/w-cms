@@ -122,7 +122,7 @@ func makeOrderPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOr
 		// ⚠ **作っただけでは、ページを開いても出てきません**（2026-09-22 ユーザー報告:
 		//    「発注書のページにPDFが表示されていません」）。添付として保存されるだけ
 		//    だったので、**本文に「ここで開く」マーカーを置きます**。
-		show: showBelowItems(ourOrderItemsType, "部材発注明細"),
+		show: showBelowItems(ourOrderItemsType, "部材発注明細表"),
 	})
 }
 
@@ -570,7 +570,7 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		walk(n)
 	}
 	if table == nil {
-		return nil, nil, nil, errors.New("部材発注明細の表がありません（このページは部材発注書ではないようです）")
+		return nil, nil, nil, errors.New("部材発注明細表がありません（このページは部材発注書ではないようです）")
 	}
 
 	// ⚠ **取り消した行は紙に刷りません**（2026-09-22）。出す紙は**いま注文する
@@ -582,15 +582,15 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 	//    「そんな注文は無かった」という紙になります。
 	//    行を読むのは資料を添える口と共通（`orderTableRows`・order_docs.go）。
 	if len(rowsOf(table)) < 2 {
-		return nil, nil, nil, errors.New("部材発注明細に行がありません")
+		return nil, nil, nil, errors.New("部材発注明細表に行がありません")
 	}
 	rows, cancelled := orderTableRows(table)
 	if len(rows) == 0 {
 		if cancelled > 0 {
-			return nil, nil, nil, errors.New("部材発注明細は全部取り消されています（" +
+			return nil, nil, nil, errors.New("部材発注明細表の行は全部取り消されています（" +
 				strconv.Itoa(cancelled) + "行）")
 		}
-		return nil, nil, nil, errors.New("部材発注明細に中身のある行がありません")
+		return nil, nil, nil, errors.New("部材発注明細表に中身のある行がありません")
 	}
 
 	// 紙に出す列を決める。⚠ **並びは設定 `order_print_columns`**（2026-09-28・種類ごとに要る列が

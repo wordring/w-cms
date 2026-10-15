@@ -198,13 +198,17 @@ func sharesColumns(a, b []string, min int) bool {
 }
 
 // tableByCaption は行き先の表（キャプション）の読み替えを引きます。
+//
+// 2026-10-15 に表のキャプションを「表」で終わる名前（材料 → 材料表 など）へ改めたので、
+// 「表の行き先」に書かれた古い名前（「表」の無い名前）も同じ表として引きます。
 func tableByCaption(caption string) (struct {
+	Section string
 	Caption string
 	Rename  map[string]string
 	Number  bool
 }, bool) {
 	for _, m := range tableMap {
-		if m.Caption == caption {
+		if m.Caption == caption || m.Caption == caption+"表" {
 			return m, true
 		}
 	}

@@ -78,7 +78,7 @@ func readRFQDoc(body string) (head map[string]string, rows []map[string]string, 
 	}
 	tables := tablesOfType([]*html.Node{root}, RFQItemsType)
 	if len(tables) == 0 {
-		return nil, nil, nil, errors.New("部材見積依頼明細の表がありません（このページは部材見積依頼書ではないようです）")
+		return nil, nil, nil, errors.New("部材見積依頼明細表がありません（このページは部材見積依頼書ではないようです）")
 	}
 	trs := rowsOf(tables[0])
 	if len(trs) >= 2 {
@@ -145,7 +145,7 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, errors.New("部材見積依頼明細に刷る行がありません（辞退の行は刷りません）")
+		return nil, errors.New("部材見積依頼明細表に刷る行がありません（辞退の行は刷りません）")
 	}
 	p, err := startPaper(font)
 	if err != nil {
@@ -200,7 +200,7 @@ func makeRFQPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrde
 		build: buildRFQPDF,
 		name:  func(_, pageID string) string { return "見積依頼書 " + pageID },
 		audit: "rfq-pdf",
-		show:  showBelowItems(RFQItemsType, "部材見積依頼明細"),
+		show:  showBelowItems(RFQItemsType, "部材見積依頼明細表"),
 	})
 }
 

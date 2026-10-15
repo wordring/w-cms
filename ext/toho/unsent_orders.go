@@ -99,7 +99,7 @@ func unsentOrdersViewHTML(user *auth.User, pageIDInt int) string {
 	if len(list) == 0 {
 		// ⚠ **0件も黙りません**——「全部出した」と「数えていない」を見分けるため。
 		return head + `<p class="materials-empty">未発注の部材発注書はありません` +
-			`（部材発注明細に「未発注」の行がある部材発注書ページが、ここに並びます）。</p>`
+			`（部材発注明細表に「未発注」の行がある部材発注書ページが、ここに並びます）。</p>`
 	}
 	var b strings.Builder
 	b.WriteString(head)

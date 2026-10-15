@@ -159,7 +159,7 @@ func showBelowItems(tableType, label string) func(user *auth.User, pageID, attac
 		}
 		if !changed {
 			// ⚠ **表が無ければ置き場所が決まりません。** 黙ると「作ったのに出ない」になるので、そう言います。
-			return "⚠ PDFは作りましたが、置き場所が分かりません（" + label + "の表がありません）。添付からは開けます。"
+			return "⚠ PDFは作りましたが、置き場所が分かりません（" + label + "がありません）。添付からは開けます。"
 		}
 		return ""
 	}

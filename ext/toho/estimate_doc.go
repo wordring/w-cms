@@ -327,7 +327,7 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !done {
-			cms.JSONFail(w, http.StatusConflict, "その見積書に見積明細の表がありません")
+			cms.JSONFail(w, http.StatusConflict, "その見積書に見積明細表がありません")
 			return
 		}
 		auth.Audit(user.Username, "estimate.add", estID+" ← "+productID)
