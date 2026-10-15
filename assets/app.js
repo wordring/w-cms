@@ -10953,32 +10953,35 @@ function delegateClick(handlers) {
     });
 }
 
-// ── 見積計算表の利益率を変える（2026-10-01・ext/toho/estimate.go）─────────────
+// ── 見積表に単価を記録する・ロットを写す（2026-10-15・ext/toho/estimate.go）─────────────
 //
-// 利用者:「利益率を変更できるようにしたいです」。足元の欄（サーバーが描いたクローム）の「変える」で、その表の
-// 「弊社利益」の行に率を書く（無ければ表の末尾に足す）——書けたらページを読み直して計算し直す。
-// 欄は書ける人にだけ、閲覧モードでも書ける形でも出る。書ける形では表の「弊社利益」の行を直接直してもよい
-// （2026-10-12 までは「欄は閲覧モードで使う・編集モードでは行を直接直す」の分け方だった——estimate.go）。
-delegateClick([['.estimate-rate-set', async (btn) => {
-    const form = btn.closest('.estimate-rate-form');
-    const say = form && form.querySelector('.estimate-rate-say');
-    const rate = Number(valueIn(form, '.estimate-rate-input'));
-    if (!form || !isFinite(rate) || rate < 0) { sayIn(say, '⚠ 率を数で書いてください'); return; }
+// 利用者:「結果の単価のみDBに入れるべき」「ロットごとに計算表を分けてはどうでしょう？」「提案通りの構成でお願いします」。
+// 見積表の足元（サーバーが描いたクローム）の「📌 この単価を記録」で、すぐ上の見積計算表から計算した原価・利益率・単価を
+// 見積表に書く（見積表が無い見積計算表の下では「📌 見積表を作って記録」——作ってから書く）。「⧉ このロットを写す」で
+// 見出し・見積計算表・見積表を組ごと写す。どちらも書けたらページを読み直す。利益率は見積表の欄を直接直す
+// （2026-10-01〜10-15 の「利益率を変える」欄と /api/estimate-rate はやめた）。
+delegateClick([
+    ['.estimate-record-go', (btn) => estimateBlockPost(btn, '/api/estimate/record', '.estimate-record-say', '記録しています…')],
+    ['.estimate-dup-go', (btn) => estimateBlockPost(btn, '/api/estimate/duplicate', '.estimate-dup-say', '写しています…')],
+]);
+
+async function estimateBlockPost(btn, url, sayClass, doing) {
+    const say = btn.parentElement && btn.parentElement.querySelector(sayClass);
     btn.disabled = true;
-    const r = await postJSON('/api/estimate-rate', {
+    sayIn(say, doing);
+    const r = await postJSON(url, {
         page_id: location.pathname.replace(/^\//, '').slice(0, 6),
-        index: Number(form.getAttribute('data-estimate-index')),
-        rate,
+        block: Number(btn.getAttribute('data-estimate-block')),
     }).catch(e => ({ ok: false, data: { message: String(e) } }));
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '書けませんでした')); return; }
     location.reload();
-}]]);
+}
 
 // ── 見積書（2026-10-01・ext/toho/estimate_doc.go・estimate_pdf.go）─────────────
 //
-// 利用者:「顧客へ見積書」「見積計算表から」「宛名は会社＋担当者」。見積計算表の足元の「見積書に入れる」で、その表の確定単価・
-// ロット・備考を見積書の見積明細へ写す（新しい見積書か、同じ客先の作りかけへ足す）。見積書の足元の「📄 PDFを作る」で紙を作る。
+// 利用者:「顧客へ見積書」「見積計算表から」「宛名は会社＋担当者」。見積表の足元の「見積書に入れる」で、その見積表の単価・
+// ロット・表面処理と備考を見積書の見積明細へ写す（2026-10-15 から見積表——それまでは見積計算表の確定単価）（新しい見積書か、同じ客先の作りかけへ足す）。見積書の足元の「📄 PDFを作る」で紙を作る。
 delegateClick([['.estimate-add-go', async (btn) => {
     const form = btn.closest('.estimate-add-form');
     const say = form && form.querySelector('.estimate-add-say');
@@ -11356,7 +11359,8 @@ function renderRFQReplyProposal(out, pageId, d) {
 // ── 見積回答の単価を見積計算表へ写す（2026-10-05・ext/toho/estimate_put.go）──────────────────
 //
 // 利用者の答え（【要求】部材見積依頼 §4 の未決5）:「見積計算表へ写すボタン」。加工製品ページの「💴 見積回答」の行の「計算表へ」→
-// どの見積計算表（ロット）・どの行（工程——無ければ新しい行）へ写すかを人が選ぶ → `数` に単価・`備考` に出所（見積 業者 日付）。
+// どの見積計算表（ロット）・どの行（工程——無ければ新しい行）へ写すかを人が選ぶ → `価格` に単価・`備考` に出所（見積 業者 日付）。
+// （2026-10-15 から列は `工程｜価格｜備考`・ロットは組の見積表のロット）
 // 行は「何の値段か」と同じ名前の工程があれば最初から選んでおく。いまの値を置き換えるときは確かめる。
 delegateClick([['.rfq-quote-put', (btn) => openQuotePutPanel(btn)]]);
 
@@ -11375,7 +11379,7 @@ async function openQuotePutPanel(btn) {
     const r = await getJSON('/api/estimate/rows?page_id=' + encodeURIComponent(pageId));
     if (!r.ok) { head.textContent = '⚠ ' + ((r.data && r.data.message) || '見積計算表を読めません'); return; }
     const tables = (r.data.tables || []).filter((t) => !t.why);
-    if (!tables.length) { head.textContent = '⚠ 写せる見積計算表がありません（「工程」「数」の列のある表に写せます）'; return; }
+    if (!tables.length) { head.textContent = '⚠ 写せる見積計算表がありません（「工程」「価格」の列のある表に写せます）'; return; }
     head.textContent = '「' + what + '」 ' + price + '円（' + note + '）を見積計算表へ写します:';
     const row = document.createElement('div');
     row.className = 'rfq-quote-put-form';
@@ -11405,7 +11409,7 @@ async function openQuotePutPanel(btn) {
         (t.rows || []).forEach((rw) => {
             const o = document.createElement('option');
             o.value = rw.step;
-            o.textContent = rw.step + (rw.num ? '（いま ' + rw.num + (rw.unit || '') + '）' : '');
+            o.textContent = rw.step + (rw.price ? '（いま ' + rw.price + '）' : '');
             rSel.appendChild(o);
             if (!picked && (rw.step === what || (what && (what.includes(rw.step) || rw.step.includes(what))))) picked = rw.step;
         });
@@ -11438,7 +11442,7 @@ async function openQuotePutPanel(btn) {
         const step = add ? newName.value.trim() : rSel.value;
         if (!step) { msg.textContent = ' ⚠ 新しい行の名前（工程）を書いてください'; return; }
         const cur = add ? null : (t.rows || []).find((rw) => rw.step === step);
-        if (cur && cur.num && !window.confirm('「' + step + '」のいまの値 ' + cur.num + (cur.unit || '') + ' を ' + val.value.trim() + ' 円に置き換えます。よろしいですか？')) return;
+        if (cur && cur.price && !window.confirm('「' + step + '」のいまの値 ' + cur.price + ' を ' + val.value.trim() + ' 円に置き換えます。よろしいですか？')) return;
         go.disabled = true;
         msg.textContent = ' 写しています…';
         const res = await postJSON('/api/estimate/put-cost', { page_id: pageId, index: t.index, step, add, value: val.value.trim(), note })
@@ -11512,7 +11516,7 @@ async function openQuotePutPanel(btn) {
                 lot,
             ] };
         });
-        list.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '見積計算表のロット', 'ロット'], rows,
+        list.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '見積表のロット', 'ロット'], rows,
             'data-rfq-folder-pick', 'rfq-folder-table'));
         const foot = cell('div');
         foot.className = 'matsearch-form';
@@ -11695,7 +11699,8 @@ async function openQuotePutPanel(btn) {
 // チェックを入れてボタンを押すと、見積もりページが出来て、対応する加工製品ページから確定単価を収集して見積明細表を作ります。
 // ボタンを押すとPDFが作られます」。
 //
-//   - 行は**見積計算表1枚につき1行**（ロット・確定単価・単価の行の備考）——確定単価の出ない表は選べない行にして理由を出す。
+//   - 行は**見積表1枚につき1行**（ロット・単価・表面処理と備考）——単価を記録していない表は選べない行にして理由を出す
+//     （2026-10-15 から見積表——それまでは見積計算表の確定単価）。
 //   - 見積先は一覧を出すたびにその装置の社名を入れ直す（担当者の候補もその会社の人）。番号の欄だけブラウザに憶える。
 //   - 見積明細は一覧の順（押した順ではない——並びが予想どおりになるように）。
 //   - 作れたらその見積書ページを開く——PDF はそのページの足元の「📄 PDFを作る」。
@@ -11736,12 +11741,12 @@ async function openQuotePutPanel(btn) {
             const name = (p.machine && p.machine !== data.title ? p.machine + ' ／ ' : '') + p.title + (p.migrating ? '（移行中）' : '');
             const part = p.part_no || (p.drawing_no ? '図番 ' + p.drawing_no : '');
             if (!(p.tables || []).length) {
-                rows.push({ pick: null, cells: [pageLink(p.id), name, part, '', '', '見積計算表なし'] });
+                rows.push({ pick: null, cells: [pageLink(p.id), name, part, '', '', '見積表なし'] });
                 return;
             }
             p.tables.forEach((t) => {
                 if (t.why) {
-                    rows.push({ pick: null, cells: [pageLink(p.id), name, part, '', '', '⚠ 確定単価が出ません: ' + t.why] });
+                    rows.push({ pick: null, cells: [pageLink(p.id), name, part, '', '', '⚠ 単価がありません: ' + t.why] });
                     return;
                 }
                 rows.push({ pick: p.id + ':' + t.index, cells: [pageLink(p.id), name, part,
@@ -11754,7 +11759,7 @@ async function openQuotePutPanel(btn) {
         head.textContent = '/' + data.folder + ' ' + (data.title || '') + ' の下の加工製品: ' + products.length + ' 件';
         box.appendChild(head);
         if (rows.length) {
-            box.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '数量（ロット）', '確定単価', '備考'], rows,
+            box.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '数量（ロット）', '単価', '備考'], rows,
                 'data-estf-pick', 'estimate-folder-table'));
         }
         const pickable = rows.some((x) => x.pick !== null);
@@ -11788,7 +11793,7 @@ async function openQuotePutPanel(btn) {
                 items.push({ product: v.slice(0, at), index: Number(v.slice(at + 1)) });
             });
             if (!items.length) {
-                sayIn(say, '⚠ 見積書に入れる見積計算表をチェックしてください', 'proc-why-ng');
+                sayIn(say, '⚠ 見積書に入れる見積表をチェックしてください', 'proc-why-ng');
                 return;
             }
             btn.disabled = true;

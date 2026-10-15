@@ -224,6 +224,9 @@ var businessVocab = []cms.VocabDef{
 		// 「見積計算表」で名乗っていて（09-28 利用者:「見積計算表はどうでしょう？」）、「見積もり」の表は0枚だった。
 		// 同じ列の形式が2つの名前に割れていたのを1つに。表の下に弊社利益と確定単価を出す（estimate.go）。
 		// `単位` は `text`（個・円・% が混ざる——設定の `table_vocabulary` の見積計算表と揃える）。
+		// ⚠ **2026-10-15 に列を `工程｜価格｜備考` に改めた**（estimate.go）——利用者:「見積もり計算表に総計は必要ないです」
+		// 「ロットごとに計算表を分けてはどうでしょう？」。行は加工製品1個あたりの原価の内訳だけ（ロット・単価・総計・
+		// 弊社利益の行は置かない）。ロット・表面処理・原価・利益率・単価は、すぐ後ろの**見積表**（下の part-estimate-record）へ。
 		Type:        "part-estimate",
 		DisplayName: "見積計算表",
 		Category:    "業務",
@@ -231,8 +234,25 @@ var businessVocab = []cms.VocabDef{
 		Element:     "table",
 		Columns: []cms.VocabColumn{
 			{Field: "step", Label: "工程", Type: cms.ColText},
-			{Field: "amount", Label: "数", Type: cms.ColNumber},
-			{Field: "unit", Label: "単位", Type: cms.ColText},
+			{Field: "price", Label: "価格", Type: cms.ColNumber},
+			{Field: "note", Label: "備考", Type: cms.ColText},
+		},
+	},
+	{
+		// 見積表——**見積計算表の結果**（2026-10-15）。利用者:「この計算表はもしかするとDBに入れる必要が無く、結果の単価のみ
+		// DBに入れるべきかもしれません。DBに入るべきは、弊社品番とロット、単価、表面処理の有無、更新日時になると思います」。
+		// 1行だけの表で、すぐ上の見積計算表と組になる（estimate.go）。単価は「📌 この単価を記録」で書く。
+		Type:        "part-estimate-record",
+		DisplayName: "見積表",
+		Category:    "業務",
+		Icon:        "🏷️",
+		Element:     "table",
+		Columns: []cms.VocabColumn{
+			{Field: "lot", Label: "ロット", Type: cms.ColNumber},
+			{Field: "surface", Label: "表面処理", Type: cms.ColText},
+			{Field: "cost", Label: "原価", Type: cms.ColNumber},
+			{Field: "rate", Label: "利益率", Type: cms.ColNumber},
+			{Field: "price", Label: "単価", Type: cms.ColNumber},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 		},
 	},

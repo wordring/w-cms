@@ -19,6 +19,7 @@ package toho
 
 import (
 	stdhtml "html"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -82,30 +83,31 @@ func (l estimateLine) values() map[string]string {
 	}
 }
 
-// estimateLineOf は加工製品ページの index 枚目（0から）の見積計算表から、見積明細の1行を組みます。
+// estimateLineOf は加工製品ページの index 枚目（0から）の見積表から、見積明細の1行を組みます。
 func estimateLineOf(productID int, index int) (estimateLine, error) {
 	opts, err := estimateOptionsOf(productID)
 	if err != nil {
 		return estimateLine{}, err
 	}
 	if index < 0 || index >= len(opts) {
-		return estimateLine{}, errString("その見積計算表が見つかりません（ページを開き直してください）")
+		return estimateLine{}, errString("その見積表が見つかりません（ページを開き直してください）")
 	}
 	if why := opts[index].Why; why != "" {
-		return estimateLine{}, errString("確定単価が出ていません: " + why)
+		return estimateLine{}, errString("単価がありません: " + why)
 	}
 	return opts[index].Line, nil
 }
 
-// estimateOption は加工製品ページの見積計算表1枚から組んだ見積明細の1行です（確定単価が出なければ Why に理由）。
+// estimateOption は加工製品ページの見積表1枚から組んだ見積明細の1行です（単価が無ければ Why に理由）。
 type estimateOption struct {
 	Index int
 	Line  estimateLine
 	Why   string
 }
 
-// estimateOptionsOf は加工製品ページの見積計算表を全部、表の順に見積明細の行にします（見積計算表が無ければ空）。
-// 1つの加工製品に見積計算表は何枚あってもよい（塗装あり・なし、ロットごと——【要求】見積 §4）ので、1枚ずつ組む。
+// estimateOptionsOf は加工製品ページの見積表を全部、表の順に見積明細の行にします（見積表が無ければ空）。
+// 1つの加工製品に見積表は何枚あってもよい（ロットごと・表面処理ごと——2026-10-15 の形・estimate.go）ので、1枚ずつ組む。
+// ⚠ 写すのは**見積表に記録した単価**です（見積計算表から毎回計算しない——2026-10-15 利用者:「結果の単価のみDBに入れるべき」）。
 func estimateOptionsOf(productID int) ([]estimateOption, error) {
 	body, err := cms.ReadPageBody(page.FormatID(productID))
 	if err != nil {
@@ -115,20 +117,18 @@ func estimateOptionsOf(productID int) ([]estimateOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	tables := tablesOfType(nodes, estimateType)
-	if len(tables) == 0 {
+	recs := tablesOfType(nodes, estimateRecordType)
+	if len(recs) == 0 {
 		return nil, nil
 	}
-	def, hasDef := EstimateProfitRate()
 	itemID, itemName := estimateItemNamesOf(productID)
-	out := make([]estimateOption, 0, len(tables))
-	for i, t := range tables {
-		r := estimateOf(t, def, hasDef)
-		if !r.OK {
-			out = append(out, estimateOption{Index: i, Why: r.Why})
+	out := make([]estimateOption, 0, len(recs))
+	for i, t := range recs {
+		ln, why := estimateLineFromRecord(estimateRecordOf(t))
+		if why != "" {
+			out = append(out, estimateOption{Index: i, Why: why})
 			continue
 		}
-		ln := estimateLineFromTable(t, r)
 		ln.ProductID = page.FormatID(productID)
 		ln.ItemID, ln.ItemName = itemID, itemName
 		out = append(out, estimateOption{Index: i, Line: ln})
@@ -136,35 +136,25 @@ func estimateOptionsOf(productID int) ([]estimateOption, error) {
 	return out, nil
 }
 
-// estimateLineFromTable は確定単価の出た見積計算表1枚から、見積明細の行の数量・単位・単価・備考を組みます。
-func estimateLineFromTable(t *html.Node, r estimateResult) estimateLine {
-	ln := estimateLine{Price: strconv.Itoa(r.Final), Unit: "個"}
-	// 数量はロットの行、備考は単価の行の備考（「塗装無し」など——見本の表にあった書き方）。
-	rows := rowsOf(t)
-	col := headerIndex(rows[0])
-	at := func(cells []string, label string) string {
-		if i, ok := col[label]; ok && i < len(cells) {
-			return strings.TrimSpace(cells[i])
-		}
-		return ""
+// estimateLineFromRecord は見積表の記録から、見積明細の行の数量（ロット）・単位・単価・備考（表面処理と備考）を組みます。
+func estimateLineFromRecord(r estimateRecord) (estimateLine, string) {
+	unit, ok := estimateNumber(r.Unit)
+	if !ok {
+		return estimateLine{}, "単価がまだ記録されていません（見積表の下の「📌 この単価を記録」）"
 	}
-	for _, tr := range rows[1:] {
-		cells := cellTexts(tr)
-		switch at(cells, "工程") {
-		case "ロット":
-			if v, ok := estimateNumber(at(cells, "数")); ok {
-				ln.Quantity = strconv.FormatFloat(v, 'f', -1, 64)
-				if u := at(cells, "単位"); u != "" {
-					ln.Unit = u
-				}
-			}
-		case estimateUnitPriceRow:
-			ln.Note = at(cells, "備考")
+	ln := estimateLine{Price: strconv.Itoa(int(math.Round(unit))), Unit: "個"}
+	if v, ok := estimateNumber(r.Lot); ok {
+		ln.Quantity = strconv.FormatFloat(v, 'f', -1, 64)
+	}
+	var note []string
+	for _, s := range []string{r.Surface, r.Note} {
+		if s = strings.TrimSpace(s); s != "" {
+			note = append(note, s)
 		}
 	}
-	return ln
+	ln.Note = strings.Join(note, "　")
+	return ln, ""
 }
-
 // estimateItemNamesOf は見積明細に書く品番・品名を加工製品ページのタグから引きます（品番→図面番号、品名→図面名称→題）。
 func estimateItemNamesOf(productID int) (itemID, itemName string) {
 	tags, _ := cms.TagsOfPage(database.DB, productID)

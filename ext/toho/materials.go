@@ -87,7 +87,7 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     EstimateTemplate,
 		Extension: "toho",
-		Why:       "見積計算表の「見積書に入れる」が見積書ページを作るときに写します。キャプション「見積明細」の表が要ります（タグ 見積番号・見積先・見積先担当・見積日・受渡期日・受渡場所・取引方法・有効期限・見積担当と、見出し「備考」の節は、あれば埋めます）。",
+		Why:       "見積表の「見積書に入れる」が見積書ページを作るときに写します。キャプション「見積明細」の表が要ります（タグ 見積番号・見積先・見積先担当・見積日・受渡期日・受渡場所・取引方法・有効期限・見積担当と、見出し「備考」の節は、あれば埋めます）。",
 	})
 
 	// **機械が作るページもテンプレートから作ります**（2026-09-27・テンプレート駆動の D）。
@@ -132,7 +132,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ——ルートも拡張と一緒に外れる（`-tags minimal` で消える）。
 		{Pattern: "/api/analyze-attachment", Handler: AnalyzeAttachmentAPIHandler},
 		// 見積計算表の弊社利益の率を書く（2026-10-01・estimate.go）。
-		{Pattern: "/api/estimate-rate", Handler: EstimateRateAPIHandler},
+		{Pattern: "/api/estimate/record", Handler: EstimateRecordAPIHandler},
+		{Pattern: "/api/estimate/duplicate", Handler: EstimateDuplicateAPIHandler},
 		// 見積回答の単価を見積計算表へ写す（2026-10-05・estimate_put.go）。
 		{Pattern: "/api/estimate/rows", Handler: EstimateRowsAPIHandler},
 		{Pattern: "/api/estimate/put-cost", Handler: EstimatePutCostAPIHandler},

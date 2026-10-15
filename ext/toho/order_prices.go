@@ -228,8 +228,8 @@ func estimateTablesIn(pageID int) int {
 
 // appendOrderPrices は支給部品の表から呼ばれます——見積計算表が無いページだけ、ここ（見積回答の後ろ）に出す。
 func appendOrderPrices(ctx *cms.MirrorContext, tbl *html.Node) {
-	if estimateTablesIn(ctx.PageID) > 0 {
-		return // 見積計算表の下に出す（placeOrderPricesAfterEstimate）
+	if estimateTablesIn(ctx.PageID) > 0 || estimateRecordsIn(ctx.PageID) > 0 {
+		return // 見積表か見積計算表の下に出す（placeOrderPricesAfterRecord・placeOrderPricesAfterEstimate）
 	}
 	insertOrderPrices(ctx, tbl, true)
 }
@@ -242,6 +242,28 @@ func placeOrderPricesAfterEstimate(ctx *cms.MirrorContext, tbl *html.Node) {
 	insertOrderPrices(ctx, tbl, false)
 }
 
+
+// 2026-10-15 から、見積計算表の結果は見積表（estimate.go）——売る値段は見積表にあるので、見積表があれば**最後の見積表の直後**に出す。
+// 見積表の無いページ（移す前の形）は、いままでどおり最後の見積計算表の直後。
+
+var estimateRecordCaptionRe = regexp.MustCompile(`<caption>\s*見積表\s*</caption>`)
+
+// estimateRecordsIn は、このページの見積表の枚数です（本文の正本ファイルのキャプションで数える）。
+func estimateRecordsIn(pageID int) int {
+	body, err := cms.ReadPageBody(page.FormatID(pageID))
+	if err != nil {
+		return 0
+	}
+	return len(estimateRecordCaptionRe.FindAllStringIndex(body, -1))
+}
+
+// placeOrderPricesAfterRecord は見積表から呼ばれます——最後の1枚の直後に出す。
+func placeOrderPricesAfterRecord(ctx *cms.MirrorContext, tbl *html.Node) {
+	if seen := ctx.Counter("order-prices-record"); seen+1 < estimateRecordsIn(ctx.PageID) {
+		return // まだ後ろに見積表がある
+	}
+	insertOrderPrices(ctx, tbl, false)
+}
 // insertOrderPrices は「受注の単価」を描きます（1ページに1回）。sectionEnd なら表を包む節の末尾、そうでなければ表の直後
 // （後ろに続く鏡は飛ばす）——⚠ 表の中へ div を入れない（HTMLパーサが表の外へ追い出す）。
 func insertOrderPrices(ctx *cms.MirrorContext, tbl *html.Node, sectionEnd bool) {

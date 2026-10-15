@@ -1,28 +1,37 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積計算表の確定単価——弊社利益を掛ける（2026-10-01）
+// 見積計算表と見積表——ロットごとの見積もり（2026-10-15 に形を改めた）
 //
-// 利用者:「加工製品ページの見積もり計算表の下に弊社利益を掛ける項目を作り確定単価としたいです。弊社利益はデフォルトで
-// 10％なので、単価に1.1をかければ良いのですが、利益率を変更できるようにしたいです。確定単価は目立つように太字です」
+// 2026-10-01 の形: 利用者:「加工製品ページの見積もり計算表の下に弊社利益を掛ける項目を作り確定単価としたいです。弊社利益は
+// デフォルトで10％なので、単価に1.1をかければ良いのですが、利益率を変更できるようにしたいです。確定単価は目立つように太字です」
 // 「単価*10%=○○円と表示したいです。この○○円は見積もりの集計で使うことになるかもしれません」「見積の時には、色を
 // 塗るか塗らないか、ロット数などで価格が変わることがあります。そのため、見積もり計算表は複数ある場合があります」。
+// ——ワンノートの ■見積もり（`工程｜数｜単位｜備考`・ロット・単価・総計・弊社利益の行が混ざる）の下に、鏡で確定単価を出していた。
 //
-// 見積計算表（ワンノートの ■見積もり・`工程｜数｜単位｜備考`）は**第1列が鍵の表**です——行が項目（ロット・材料・
-// ブランク・…・単価・総計）で、`数` がその値。表の下に**鏡で**2行を出します（本文には書かない）:
+// 2026-10-15 の形: 利用者:「加工製品ページには、見積もり計算表があります。この計算表はもしかするとDBに入れる必要が無く、
+// 結果の単価のみDBに入れるべきかもしれません。DBに入るべきは、弊社品番とロット、単価、表面処理の有無、更新日時になると
+// 思います。一方で、部材価格が変わると計算表を更新し、更新された単価をDBに追加する必要が出来ます」「ロットごとに計算表を
+// 分けてはどうでしょう？」「見積もり計算表に総計は必要ないです」「ロットごとに表を分けるのは東邦拡張の機能だと思います」。
+// 利用者の構成（「という構成はどうでしょう？」→ 筆者の提案を足して「提案通りの構成でお願いします」）:
 //
-//	弊社利益: 単価 365円 × 10% = 37円
-//	確定単価: 402円（太字）
+//	見積もり計算（H2）
+//	ロット1（H3）
+//	  見積計算表  工程｜価格｜備考          … 加工製品1個あたりの原価の内訳（総計の行は置かない）
+//	  見積表      ロット｜表面処理｜原価｜利益率｜単価｜備考  … 1行だけ。これが結果（DB に入る単価）
+//	ロット20（H3）
+//	  …
 //
-//   - **単価**は「単価」の行の数。空なら、単位が「円」の行（単価・総計・弊社利益は除く）を足したもの——ワンノートで
-//     単価を空のまま総計だけ書いた表があるため。足したときはそう書く。
-//   - **率**は表の「弊社利益」の行の数（%）。無ければ設定の既定（`extensions.toho.estimate_profit_rate`・10）。
-//     表ごとに変えられる——足元の欄で変えると、その行を書く（無ければ表の末尾に足す・`/api/estimate-rate`）。
-//   - 利益は**円未満を四捨五入**。確定単価＝単価＋利益。
-//   - 表が何枚あっても1枚ずつ（塗装あり・なし、ロットごとに表を分ける）。
-//   - ⚠ 鏡なので、人が単価や率を直せば次に開いたときに計算し直す（焼き込まない）。集計で使う日は、同じ関数
-//     （`estimateOf`）で表から計算する。
-//   - 列の違う見積計算表（`ロット20｜ロット40` を列にした表など）は計算できないので、そう書く。
+//   - **見積表は、すぐ上の見積計算表の結果です**（文書の順で組にする——見積計算表のあとに来た最初の見積表）。
+//     見出し（ロット1）は人のための名前で、機械が読むのは見積表のロット・表面処理の列だけ。
+//   - **原価＝見積計算表の価格の列の合計**（空は飛ばす・式は計算した値——コアの FormulaTableValues）。
+//     **利益は円未満を四捨五入**、単価＝原価＋利益（2026-10-01 と同じ計算）。利益率は見積表の利益率の欄、空なら設定の既定
+//     （`extensions.toho.estimate_profit_rate`・10）。
+//   - **単価は人が「📌 この単価を記録」を押したときに見積表へ書く**（鏡で毎回計算しない）——見積書に写すのも、受注の
+//     単価と並べるのも、記録した値。計算表を直して記録と合わなくなったら、見積表の下に「⚠ 合いません」と出す
+//     （部材の値段が変わったときの知らせ）。
+//   - 見積表が無い見積計算表の下には「📌 見積表を作って記録」を出す（押すと、計算表のすぐ後ろに見積表を足して記録する）。
+//   - 「⧉ このロットを写す」で、見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置く（ロット・原価・単価は空にする）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -38,100 +47,264 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 )
 
 // estimateType は見積計算表の形式です（vocab.go の part-estimate）。
 const estimateType = "part-estimate"
 
-// 見積計算表の行の名前（`工程` の列に書く言葉）。
+// estimateRecordType は見積表の形式です（vocab.go の part-estimate-record）。
+const estimateRecordType = "part-estimate-record"
+
+// 見積計算表・見積表の列の言葉。
 const (
-	estimateUnitPriceRow = "単価"
-	estimateTotalRow     = "総計"
-	estimateProfitRow    = "弊社利益"
-	estimateFinalRow     = "確定単価"
+	estimateStepCol    = "工程"
+	estimatePriceCol   = "価格"
+	estimateLotCol     = "ロット"
+	estimateSurfaceCol = "表面処理"
+	estimateCostCol    = "原価"
+	estimateRateCol    = "利益率"
+	estimateUnitCol    = "単価"
+	estimateNoteCol    = "備考"
 )
 
 func init() {
 	cms.RegisterMirror(estimateType, cms.MirrorHandlerFunc(func(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
-		ok, err := renderEstimate(ctx, el)
-		// 最後の見積計算表の直後に「🧾 受注・見積の単価」（2026-10-04・order_prices.go）——計算できなかった表でも。
-		if el.Data == "table" {
+		if el.Data != "table" {
+			return true, nil
+		}
+		renderEstimateCalc(ctx, el)
+		// 見積表の無いページ（移す前の形・見積計算表だけ）は、最後の見積計算表の直後に「🧾 受注・見積の単価」（order_prices.go）。
+		if estimateRecordsIn(ctx.PageID) == 0 {
 			placeOrderPricesAfterEstimate(ctx, el)
 		}
-		return ok, err
+		return true, nil
+	}))
+	cms.RegisterMirror(estimateRecordType, cms.MirrorHandlerFunc(func(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
+		if el.Data != "table" {
+			return true, nil
+		}
+		renderEstimateRecord(ctx, el)
+		placeOrderPricesAfterRecord(ctx, el)
+		return true, nil
 	}))
 }
 
-// estimateResult は見積計算表1枚の計算の結果です。
-type estimateResult struct {
-	OK        bool    // 計算できた
-	Why       string  // できなかった理由（OK でないとき）
-	UnitPrice float64 // 単価
-	Summed    bool    // 単価の行が空で、円の行を足した
-	Rate      float64 // 利益率（%）
-	RateSet   bool    // 表の「弊社利益」の行から読んだ（false なら既定）
-	Profit    int     // 利益（円・四捨五入）
-	Final     int     // 確定単価（円）
+// ── 組（見積計算表と見積表）─────────────────────────────────────────────
+
+// estimateBlock は見積計算表と、その結果の見積表の組です（どちらかが無いこともある）。
+type estimateBlock struct {
+	Calc   *html.Node
+	Record *html.Node
 }
 
-// estimateOf は見積計算表1枚を計算します（defaultRate は表に「弊社利益」の行が無いときの率）。
-func estimateOf(table *html.Node, defaultRate float64, hasDefault bool) estimateResult {
-	rows := rowsOf(table)
-	if len(rows) < 2 {
-		return estimateResult{Why: "行がありません"}
+// estimateBlocksOf は断片の見積計算表と見積表を文書の順に組にします——見積計算表が組を始め、そのあとの最初の見積表が
+// 組の結果。見積計算表の無い見積表は、それだけで1組。
+func estimateBlocksOf(nodes []*html.Node) []estimateBlock {
+	var out []estimateBlock
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "table" {
+			switch {
+			case isTableOfType(n, estimateType):
+				out = append(out, estimateBlock{Calc: n})
+				return
+			case isTableOfType(n, estimateRecordType):
+				if k := len(out) - 1; k >= 0 && out[k].Record == nil {
+					out[k].Record = n
+				} else {
+					out = append(out, estimateBlock{Record: n})
+				}
+				return
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
 	}
-	col := headerIndex(rows[0])
-	stepCol, okStep := col["工程"]
-	numCol, okNum := col["数"]
-	if !okStep || !okNum {
-		return estimateResult{Why: "この形の表（工程・数の列が無い）は計算できません"}
+	for _, n := range nodes {
+		walk(n)
 	}
-	unitCol, hasUnit := col["単位"]
-	var r estimateResult
-	unitPrice, unitSet := 0.0, false
-	sum, summed := 0.0, false
-	for _, tr := range rows[1:] {
-		cells := cellTexts(tr)
-		if stepCol >= len(cells) || numCol >= len(cells) {
+	return out
+}
+
+// estimateBlocksOfPage はページの本文（正本のファイル）を読んで組にします。
+func estimateBlocksOfPage(pageID string) ([]*html.Node, []estimateBlock, error) {
+	body, err := cms.ReadPageBody(pageID)
+	if err != nil {
+		return nil, nil, err
+	}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nodes, estimateBlocksOf(nodes), nil
+}
+
+// blockOfCalc・blockOfRecord は、k 枚目（0から）の見積計算表・見積表の組の番号を返します（無ければ -1）。
+func blockOfCalc(blocks []estimateBlock, k int) int {
+	for i, b := range blocks {
+		if b.Calc != nil {
+			if k == 0 {
+				return i
+			}
+			k--
+		}
+	}
+	return -1
+}
+
+func blockOfRecord(blocks []estimateBlock, k int) int {
+	for i, b := range blocks {
+		if b.Record != nil {
+			if k == 0 {
+				return i
+			}
+			k--
+		}
+	}
+	return -1
+}
+
+// ── 見積計算表の原価 ──────────────────────────────────────────────────
+
+// estimateCost は見積計算表1枚の原価（価格の列の合計）です。
+type estimateCost struct {
+	OK   bool
+	Why  string // 計算できなかった理由
+	Cost float64
+}
+
+// estimateCostOf は見積計算表の価格の列を足します（空は飛ばす・式は計算した値・数でないものがあれば理由を返す）。
+func estimateCostOf(calc *html.Node) estimateCost {
+	headers, rows := tableValues(calc)
+	if headers == nil {
+		return estimateCost{Why: "行がありません"}
+	}
+	col := map[string]int{}
+	for i, h := range headers {
+		if _, dup := col[h]; !dup {
+			col[h] = i
+		}
+	}
+	priceCol, ok := col[estimatePriceCol]
+	if !ok {
+		return estimateCost{Why: "この形の表（価格の列が無い）は計算できません"}
+	}
+	stepCol, hasStep := col[estimateStepCol]
+	sum, any := 0.0, false
+	for i, cells := range rows {
+		if priceCol >= len(cells) || strings.TrimSpace(cells[priceCol]) == "" {
 			continue
 		}
-		step := strings.TrimSpace(cells[stepCol])
-		v, ok := estimateNumber(cells[numCol])
-		switch step {
-		case estimateUnitPriceRow:
-			if ok {
-				unitPrice, unitSet = v, true
+		v, ok := estimateNumber(cells[priceCol])
+		if !ok {
+			name := strconv.Itoa(i+1) + "行目"
+			if hasStep && stepCol < len(cells) && strings.TrimSpace(cells[stepCol]) != "" {
+				name = strings.TrimSpace(cells[stepCol])
 			}
-		case estimateProfitRow:
-			if ok {
-				r.Rate, r.RateSet = v, true
-			}
-		case estimateTotalRow, estimateFinalRow:
-		default:
-			if ok && hasUnit && unitCol < len(cells) && strings.TrimSpace(cells[unitCol]) == "円" {
-				sum += v
-				summed = true
+			return estimateCost{Why: "「" + name + "」の価格が数ではありません（" + strings.TrimSpace(cells[priceCol]) + "）"}
+		}
+		sum += v
+		any = true
+	}
+	if !any {
+		return estimateCost{Why: "価格がまだありません（見積計算表の価格の列に、1個あたりの値段を書くと計算します）"}
+	}
+	return estimateCost{OK: true, Cost: sum}
+}
+
+// tableValues は表の見出しと、見出しより下の行の値を返します（式は計算した値——コアの FormulaTableValues）。
+// 見出しの無い表は headers が nil。
+func tableValues(t *html.Node) (headers []string, rows [][]string) {
+	trs := rowsOf(t)
+	if len(trs) == 0 {
+		return nil, nil
+	}
+	for _, s := range cellTexts(trs[0]) {
+		headers = append(headers, strings.TrimSpace(s))
+	}
+	for _, tr := range trs[1:] {
+		cells := cellTexts(tr)
+		for i := range cells {
+			cells[i] = strings.TrimSpace(cells[i])
+		}
+		rows = append(rows, cells)
+	}
+	return headers, cms.FormulaTableValues(headers, rows)
+}
+
+// ── 見積表 ──────────────────────────────────────────────────────────
+
+// estimateRecord は見積表の1行（記録）です。値は書いてある文字（式は計算した値）。
+type estimateRecord struct {
+	Lot, Surface, Cost, Rate, Unit, Note string
+}
+
+// estimateRecordOf は見積表の最初の行を読みます（行が無ければ空の記録）。
+func estimateRecordOf(rec *html.Node) estimateRecord {
+	headers, rows := tableValues(rec)
+	var r estimateRecord
+	if len(rows) == 0 {
+		return r
+	}
+	at := func(label string) string {
+		for i, h := range headers {
+			if h == label && i < len(rows[0]) {
+				return rows[0][i]
 			}
 		}
+		return ""
 	}
-	switch {
-	case unitSet:
-		r.UnitPrice = unitPrice
-	case summed:
-		r.UnitPrice, r.Summed = sum, true
-	default:
-		return estimateResult{Why: "単価がまだありません（「単価」の行か、単位が円の行に数を書くと計算します）"}
-	}
-	if !r.RateSet {
-		if !hasDefault {
-			return estimateResult{Why: "利益率の既定が設定されていません（設定の extensions.toho.estimate_profit_rate）"}
-		}
-		r.Rate = defaultRate
-	}
-	r.Profit = int(math.Round(r.UnitPrice * r.Rate / 100))
-	r.Final = int(math.Round(r.UnitPrice)) + r.Profit
-	r.OK = true
+	r.Lot, r.Surface, r.Cost = at(estimateLotCol), at(estimateSurfaceCol), at(estimateCostCol)
+	r.Rate, r.Unit, r.Note = at(estimateRateCol), at(estimateUnitCol), at(estimateNoteCol)
 	return r
+}
+
+// estimatePlan は組から計算した、記録すべき値です。
+type estimatePlan struct {
+	OK          bool
+	Why         string
+	Cost        float64
+	Rate        float64
+	RateDefault bool // 見積表の利益率が空で、設定の既定を使った
+	Profit      int  // 利益（円・四捨五入）
+	Unit        int  // 単価＝原価＋利益
+}
+
+// estimatePlanOf は組の見積計算表から原価を出し、見積表の利益率（空なら既定）で単価を計算します。
+func estimatePlanOf(b estimateBlock) estimatePlan {
+	if b.Calc == nil {
+		return estimatePlan{Why: "見積計算表がありません（この見積表のすぐ上に、見積計算表を置くと計算します）"}
+	}
+	c := estimateCostOf(b.Calc)
+	if !c.OK {
+		return estimatePlan{Why: c.Why}
+	}
+	p := estimatePlan{OK: true, Cost: c.Cost}
+	rate, ok := 0.0, false
+	if b.Record != nil {
+		rate, ok = estimateNumber(estimateRecordOf(b.Record).Rate)
+	}
+	if !ok {
+		def, hasDef := EstimateProfitRate()
+		if !hasDef {
+			return estimatePlan{Why: "利益率の既定が設定されていません（設定の extensions.toho.estimate_profit_rate）"}
+		}
+		rate, p.RateDefault = def, true
+	}
+	p.Rate = rate
+	p.Profit = int(math.Round(c.Cost * rate / 100))
+	p.Unit = int(math.Round(c.Cost)) + p.Profit
+	return p
+}
+
+// matches は見積表の記録が計算と合っているかです（原価・利益率・単価の3つ）。
+func (p estimatePlan) matches(r estimateRecord) bool {
+	cost, ok1 := estimateNumber(r.Cost)
+	rate, ok2 := estimateNumber(r.Rate)
+	unit, ok3 := estimateNumber(r.Unit)
+	return ok1 && ok2 && ok3 && math.Abs(cost-p.Cost) < 0.005 && math.Abs(rate-p.Rate) < 1e-9 && int(math.Round(unit)) == p.Unit
 }
 
 // estimateNumber は表の数を読みます（カンマ・全角・「円」「%」を許す）。空や数でないものは ok=false。
@@ -156,60 +329,126 @@ func yen(v float64) string { return comma(int(math.Round(v))) + "円" }
 // rateText は率を書きます（10 → 10・2.5 → 2.5）。
 func rateText(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 
-// renderEstimate は見積計算表の足元に、弊社利益と確定単価を出します（鏡）。
-func renderEstimate(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
-	if el.Data != "table" {
-		return true, nil
-	}
-	cms.DropChrome(el)
-	index := ctx.Counter(estimateType)
-	span := headerCellCount(el)
-	def, hasDef := EstimateProfitRate()
-	r := estimateOf(el, def, hasDef)
-	if !r.OK {
-		appendFootRow(el, span, "estimate-note", r.Why)
-		return true, nil
-	}
-	basis := "単価 " + yen(r.UnitPrice)
-	if r.Summed {
-		basis = "単価（円の行の合計） " + yen(r.UnitPrice)
-	}
-	rate := rateText(r.Rate) + "%"
-	if !r.RateSet {
+// ── 鏡 ──────────────────────────────────────────────────────────────
+
+// planText は計算の1行です（「計算表から: 原価 1,200円 × 利益率 10% = 利益 120円 → 単価 1,320円」）。
+func planText(p estimatePlan) string {
+	rate := rateText(p.Rate) + "%"
+	if p.RateDefault {
 		rate += "（既定）"
 	}
-	appendFootRow(el, span, "estimate-profit", estimateProfitRow+": "+basis+" × "+rate+" = "+comma(r.Profit)+"円")
-	appendFootHTML(el, span, "estimate-final", `<strong>`+estimateFinalRow+`: `+stdhtml.EscapeString(comma(r.Final))+`円</strong>`)
-	// 率を変える欄——書ける人にだけ（閲覧モードでも書ける形でも押せる。書ける形では表の「弊社利益」の行を直接直してもよい。
-	// 2026-10-12 までは「閲覧モードで押す・編集モードでは行を直接直す」の分け方だった）。
-	if ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID) {
-		appendFootHTML(el, span, "estimate-rate", `<span class="estimate-rate-form" data-estimate-index="`+
-			strconv.Itoa(index)+`">利益率 <input type="number" class="estimate-rate-input" min="0" step="0.1" value="`+
-			stdhtml.EscapeString(rateText(r.Rate))+`"> % <button type="button" class="estimate-rate-set">変える</button>`+
-			` <span class="estimate-rate-say"></span></span>`)
-		// 見積書に入れる（2026-10-01・estimate_doc.go）——確定単価・ロット・備考を見積書の見積明細へ写す。
-		appendFootHTML(el, span, "estimate-add", estimateAddFormHTML(ctx.Viewer, ctx.PageID, index))
-	}
-	return true, nil
+	return "計算表から: 原価 " + yen(p.Cost) + " × 利益率 " + rate + " = 利益 " + comma(p.Profit) + "円 → 単価 " + comma(p.Unit) + "円"
 }
 
-// EstimateRateAPIHandler は POST /api/estimate-rate です。入力: {page_id, index, rate}——ページの index 枚目
-// （0から・文書の順）の見積計算表の「弊社利益」の行に率を書きます（無ければ表の末尾に足す）。
-func EstimateRateAPIHandler(w http.ResponseWriter, r *http.Request) {
+// renderEstimateCalc は見積計算表の足元です——見積表があれば何も出さない（結果は見積表の下）。無ければ、計算と
+// 「📌 見積表を作って記録」。
+func renderEstimateCalc(ctx *cms.MirrorContext, el *html.Node) {
+	cms.DropChrome(el)
+	k := ctx.Counter(estimateType)
+	_, blocks, err := estimateBlocksOfPage(pageIDOf(ctx))
+	if err != nil {
+		return
+	}
+	bi := blockOfCalc(blocks, k)
+	if bi < 0 || blocks[bi].Record != nil {
+		return
+	}
+	span := headerCellCount(el)
+	p := estimatePlanOf(estimateBlock{Calc: el})
+	if !p.OK {
+		appendFootRow(el, span, "estimate-note", p.Why)
+		return
+	}
+	appendFootRow(el, span, "estimate-plan", planText(p))
+	if ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID) {
+		appendFootHTML(el, span, "estimate-record", estimateRecordButtonHTML(bi, "📌 見積表を作って記録",
+			"この見積計算表のすぐ後ろに見積表を足して、原価・利益率・単価を書きます（ロットと表面処理は書いてください）"))
+	}
+}
+
+// renderEstimateRecord は見積表の足元です——計算表から計算した値と、記録が合っているか・「📌 この単価を記録」・
+// 「⧉ このロットを写す」・「📄 見積書に入れる」。
+func renderEstimateRecord(ctx *cms.MirrorContext, el *html.Node) {
+	cms.DropChrome(el)
+	k := ctx.Counter(estimateRecordType)
+	_, blocks, err := estimateBlocksOfPage(pageIDOf(ctx))
+	if err != nil {
+		return
+	}
+	bi := blockOfRecord(blocks, k)
+	if bi < 0 {
+		return
+	}
+	span := headerCellCount(el)
+	b := estimateBlock{Calc: blocks[bi].Calc, Record: el} // 記録は見ている表から（計算表は正本から）
+	rec := estimateRecordOf(el)
+	p := estimatePlanOf(b)
+	canWrite := ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID)
+	switch {
+	case !p.OK:
+		appendFootRow(el, span, "estimate-note", p.Why)
+	case p.matches(rec):
+		appendFootRow(el, span, "estimate-plan", "✓ "+planText(p)+"（記録と合っています）")
+	default:
+		say := "⚠ 記録が計算表と合いません（記録の単価: " + orBlank(rec.Unit) + "）"
+		if strings.TrimSpace(rec.Unit) == "" {
+			say = "まだ記録していません"
+		}
+		appendFootRow(el, span, "estimate-plan", planText(p))
+		appendFootRow(el, span, "estimate-stale", say)
+		if canWrite {
+			appendFootHTML(el, span, "estimate-record", estimateRecordButtonHTML(bi, "📌 この単価を記録",
+				"見積計算表から計算した原価・利益率・単価を、この見積表に書きます"))
+		}
+	}
+	if canWrite {
+		appendFootHTML(el, span, "estimate-dup", `<button type="button" class="estimate-dup-go" data-estimate-block="`+
+			strconv.Itoa(bi)+`" title="見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置きます（ロット・原価・単価は空にします）">⧉ このロットを写す</button>`+
+			` <span class="estimate-dup-say"></span>`)
+		// 見積書に入れる（2026-10-01・estimate_doc.go）——見積表の単価・ロット・表面処理と備考を見積書の見積明細へ写す。
+		appendFootHTML(el, span, "estimate-add", estimateAddFormHTML(ctx.Viewer, ctx.PageID, k))
+	}
+}
+
+func orBlank(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "空"
+	}
+	return s
+}
+
+func estimateRecordButtonHTML(block int, label, title string) string {
+	return `<button type="button" class="estimate-record-go" data-estimate-block="` + strconv.Itoa(block) + `" title="` +
+		stdhtml.EscapeString(title) + `">` + stdhtml.EscapeString(label) + `</button> <span class="estimate-record-say"></span>`
+}
+
+// pageIDOf は鏡のページIDを6桁で返します。
+func pageIDOf(ctx *cms.MirrorContext) string { return page.FormatID(ctx.PageID) }
+
+// ── 記録する・写す ─────────────────────────────────────────────────────
+
+// EstimateRecordAPIHandler は POST /api/estimate/record です。入力: {page_id, block}——ページの block 番目（0から・文書の順）
+// の組の見積計算表から原価・利益率・単価を計算して、見積表に書きます（見積表が無ければ見積計算表のすぐ後ろに作る）。
+func EstimateRecordAPIHandler(w http.ResponseWriter, r *http.Request) {
+	estimateBlockAPI(w, r, "estimate.record", withEstimateRecord)
+}
+
+// EstimateDuplicateAPIHandler は POST /api/estimate/duplicate です。入力: {page_id, block}——その組（見出し・見積計算表・
+// 見積表）を写して、すぐ後ろに置きます。
+func EstimateDuplicateAPIHandler(w http.ResponseWriter, r *http.Request) {
+	estimateBlockAPI(w, r, "estimate.duplicate", withEstimateDuplicate)
+}
+
+func estimateBlockAPI(w http.ResponseWriter, r *http.Request, audit string, edit func(body string, block int) (string, error)) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
 		return
 	}
 	var req struct {
-		PageID string  `json:"page_id"`
-		Index  int     `json:"index"`
-		Rate   float64 `json:"rate"`
+		PageID string `json:"page_id"`
+		Block  int    `json:"block"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	if req.Rate < 0 || req.Rate >= 1000 || math.IsNaN(req.Rate) {
-		cms.JSONFail(w, http.StatusBadRequest, "利益率は 0 以上 1000 未満で書いてください")
 		return
 	}
 	pageID, ok := gateWritablePage(w, r, req.PageID)
@@ -221,64 +460,208 @@ func EstimateRateAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "本文を読めません: "+err.Error())
 		return
 	}
-	next, err := withEstimateRate(body, req.Index, req.Rate)
-	if err != nil {
+	// 先に確かめて理由を返す（書く直前にも同じ手で、そのときの本文に当てる——人の保存と重なっても消さない）。
+	if _, err := edit(body, req.Block); err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !rewriteBodyOrFail(w, pageID, user.Username, func(string) string { return next }) {
+	var lateErr error
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		next, err := edit(cur, req.Block)
+		if err != nil {
+			lateErr = err
+			return cur
+		}
+		return next
+	}) {
 		return
 	}
-	auth.Audit(user.Username, "estimate.rate", pageID+" #"+strconv.Itoa(req.Index)+" "+rateText(req.Rate)+"%")
+	if lateErr != nil {
+		cms.JSONFail(w, http.StatusConflict, lateErr.Error()+"（ページを開き直してください）")
+		return
+	}
+	auth.Audit(user.Username, audit, pageID+" #"+strconv.Itoa(req.Block))
 	json.NewEncoder(w).Encode(map[string]any{"success": true})
 }
 
-// withEstimateRate は本文の index 枚目の見積計算表の「弊社利益」の行に率を書いた本文を返します。
-func withEstimateRate(body string, index int, rate float64) (string, error) {
+// withEstimateRecord は本文の block 番目の組の見積表に、計算した原価・利益率・単価を書いた本文を返します。
+func withEstimateRecord(body string, block int) (string, error) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
-		return "", err
+		return "", errString("本文を読めません")
 	}
-	tables := tablesOfType(nodes, estimateType)
-	if index < 0 || index >= len(tables) {
+	blocks := estimateBlocksOf(nodes)
+	if block < 0 || block >= len(blocks) {
 		return "", errString("その見積計算表が見つかりません（ページを開き直してください）")
 	}
-	t := tables[index]
-	rows := rowsOf(t)
-	if len(rows) < 1 {
-		return "", errString("見積計算表に見出しがありません")
+	b := blocks[block]
+	p := estimatePlanOf(b)
+	if !p.OK {
+		return "", errString("記録できません: " + p.Why)
 	}
-	col := headerIndex(rows[0])
-	stepCol, okStep := col["工程"]
-	numCol, okNum := col["数"]
-	if !okStep || !okNum {
-		return "", errString("この形の表（工程・数の列が無い）には書けません")
+	rec := b.Record
+	if rec == nil {
+		rec = newEstimateRecordTable()
+		nodes = insertAfter(nodes, b.Calc, rec)
 	}
-	for _, tr := range rows[1:] {
-		cells := cellsOf(tr)
-		if stepCol < len(cells) && numCol < len(cells) && strings.TrimSpace(textOf(cells[stepCol])) == estimateProfitRow {
-			setCellText(cells[numCol], rateText(rate))
-			return htmldoc.Render(nodes), nil
+	trs := rowsOf(rec)
+	if len(trs) == 0 {
+		return "", errString("見積表に見出しがありません")
+	}
+	col := headerIndex(trs[0])
+	for _, need := range []string{estimateCostCol, estimateRateCol, estimateUnitCol} {
+		if _, ok := col[need]; !ok {
+			return "", errString("見積表に「" + need + "」の列がありません")
 		}
 	}
-	// 無ければ表の末尾に1行足す（見出しの列の数だけ・単位の列には %）。
-	unitCol, hasUnit := col["単位"]
-	n := len(cellsOf(rows[0]))
-	tr := &html.Node{Type: html.ElementNode, Data: "tr"}
-	for i := 0; i < n; i++ {
-		td := &html.Node{Type: html.ElementNode, Data: "td"}
-		switch {
-		case i == stepCol:
-			setCellText(td, estimateProfitRow)
-		case i == numCol:
-			setCellText(td, rateText(rate))
-		case hasUnit && i == unitCol:
-			setCellText(td, "%")
+	if len(trs) < 2 {
+		tr := &html.Node{Type: html.ElementNode, Data: "tr"}
+		for range cellsOf(trs[0]) {
+			tr.AppendChild(&html.Node{Type: html.ElementNode, Data: "td"})
 		}
-		tr.AppendChild(td)
+		trs[0].Parent.AppendChild(tr)
+		trs = append(trs, tr)
 	}
-	rows[len(rows)-1].Parent.AppendChild(tr)
+	cells := cellsOf(trs[1])
+	set := func(label, v string) {
+		if i := col[label]; i < len(cells) {
+			setCellText(cells[i], v)
+		}
+	}
+	set(estimateCostCol, cms.FormatFormulaNumber(p.Cost))
+	set(estimateRateCol, rateText(p.Rate))
+	set(estimateUnitCol, strconv.Itoa(p.Unit))
 	return htmldoc.Render(nodes), nil
+}
+
+// estimateRecordColumns は見積表の列です（vocab.go の宣言と同じ並び）。
+var estimateRecordColumns = []string{estimateLotCol, estimateSurfaceCol, estimateCostCol, estimateRateCol, estimateUnitCol, estimateNoteCol}
+
+// newEstimateRecordTable は空の見積表（見出しの行と空の1行）です。
+func newEstimateRecordTable() *html.Node {
+	var b strings.Builder
+	b.WriteString(`<table><caption>見積表</caption><tbody><tr>`)
+	for _, c := range estimateRecordColumns {
+		b.WriteString(`<th>` + c + `</th>`)
+	}
+	b.WriteString(`</tr><tr>`)
+	for range estimateRecordColumns {
+		b.WriteString(`<td></td>`)
+	}
+	b.WriteString(`</tr></tbody></table>`)
+	ns, _ := htmldoc.ParseFragment(b.String())
+	for _, n := range ns {
+		if n.Type == html.ElementNode && n.Data == "table" {
+			return n
+		}
+	}
+	return nil
+}
+
+// withEstimateDuplicate は本文の block 番目の組（すぐ前の見出し・見積計算表・見積表）を写して、組のすぐ後ろに置いた本文を返します。
+// 写しの見積表は、ロット・原価・単価を空にします（表面処理・利益率・備考は残す）。見出しは「（写し）」を付けます。
+func withEstimateDuplicate(body string, block int) (string, error) {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return "", errString("本文を読めません")
+	}
+	blocks := estimateBlocksOf(nodes)
+	if block < 0 || block >= len(blocks) {
+		return "", errString("その見積計算表が見つかりません（ページを開き直してください）")
+	}
+	b := blocks[block]
+	if b.Calc == nil {
+		return "", errString("見積計算表の無い見積表は写せません")
+	}
+	var copies []*html.Node
+	if h := prevElement(nodes, b.Calc); h != nil && h.Data == "h3" {
+		hc := cloneTree(h)
+		setCellText(hc, strings.TrimSpace(textOf(h))+"（写し）")
+		copies = append(copies, hc)
+	}
+	copies = append(copies, cloneTree(b.Calc))
+	last := b.Calc
+	if b.Record != nil {
+		rc := cloneTree(b.Record)
+		trs := rowsOf(rc)
+		if len(trs) >= 2 {
+			col := headerIndex(trs[0])
+			cells := cellsOf(trs[1])
+			for _, label := range []string{estimateLotCol, estimateCostCol, estimateUnitCol} {
+				if i, ok := col[label]; ok && i < len(cells) {
+					setCellText(cells[i], "")
+				}
+			}
+		}
+		copies = append(copies, rc)
+		last = b.Record
+	}
+	for i := len(copies) - 1; i >= 0; i-- {
+		nodes = insertAfter(nodes, last, copies[i])
+	}
+	return htmldoc.Render(nodes), nil
+}
+
+// insertAfter は ref のすぐ後ろに n を置きます。ref が断片の上の段（親が無い）なら、nodes の並びに差し込んだものを返します。
+func insertAfter(nodes []*html.Node, ref, n *html.Node) []*html.Node {
+	if ref.Parent != nil {
+		ref.Parent.InsertBefore(n, ref.NextSibling)
+		return nodes
+	}
+	for i, x := range nodes {
+		if x == ref {
+			out := append([]*html.Node{}, nodes[:i+1]...)
+			out = append(out, n)
+			return append(out, nodes[i+1:]...)
+		}
+	}
+	return append(nodes, n)
+}
+
+// prevElement は el のすぐ前の要素です（空白の文字は飛ばす・上の段なら nodes の並びで見る）。
+func prevElement(nodes []*html.Node, el *html.Node) *html.Node {
+	isBlank := func(n *html.Node) bool { return n.Type == html.TextNode && strings.TrimSpace(n.Data) == "" }
+	if el.Parent != nil {
+		for p := el.PrevSibling; p != nil; p = p.PrevSibling {
+			if isBlank(p) {
+				continue
+			}
+			if p.Type == html.ElementNode {
+				return p
+			}
+			return nil
+		}
+		return nil
+	}
+	for i, x := range nodes {
+		if x != el {
+			continue
+		}
+		for j := i - 1; j >= 0; j-- {
+			if isBlank(nodes[j]) {
+				continue
+			}
+			if nodes[j].Type == html.ElementNode {
+				return nodes[j]
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// cloneTree は要素を中身ごと写します。`data-id` は落とします（同じ番号が2つできないように——保存で振り直される）。
+func cloneTree(n *html.Node) *html.Node {
+	c := &html.Node{Type: n.Type, DataAtom: n.DataAtom, Data: n.Data, Namespace: n.Namespace}
+	for _, a := range n.Attr {
+		if a.Key != "data-id" {
+			c.Attr = append(c.Attr, a)
+		}
+	}
+	for ch := n.FirstChild; ch != nil; ch = ch.NextSibling {
+		c.AppendChild(cloneTree(ch))
+	}
+	return c
 }
 
 // errString は文だけのエラーです。

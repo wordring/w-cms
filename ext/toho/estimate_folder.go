@@ -47,8 +47,8 @@ func estimateFolderViewHTML(user *auth.User, pageIDInt int) string {
 	id := page.FormatID(pageIDInt)
 	var b strings.Builder
 	b.WriteString(`<h3 class="materials-title">📄 見積書を作る（装置フォルダから）</h3>`)
-	b.WriteString(`<p class="unorder-help">装置フォルダのページ番号を書いて「一覧を出す」を押すと、その下の加工製品の<strong>見積計算表</strong>が` +
-		`1枚1行で並びます（ロットと確定単価）。チェックして「見積書を作る」を押すと、見積書ページ（見積／年／月）ができて開きます——` +
+	b.WriteString(`<p class="unorder-help">装置フォルダのページ番号を書いて「一覧を出す」を押すと、その下の加工製品の<strong>見積表</strong>が` +
+		`1枚1行で並びます（ロットと単価）。チェックして「見積書を作る」を押すと、見積書ページ（見積／年／月）ができて開きます——` +
 		`PDF はそのページの「📄 PDFを作る」で。</p>`)
 	b.WriteString(`<div class="matsearch-form estimate-folder-form" data-w-remember="1">`)
 	b.WriteString(`<label class="matsearch-field"><span>装置フォルダ</span><input type="text" class="matsearch-input" data-estf="folder" placeholder="001234"/></label>`)
@@ -127,7 +127,7 @@ func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.Items) == 0 {
-		cms.JSONFail(w, http.StatusBadRequest, "見積書に入れる見積計算表をチェックしてください")
+		cms.JSONFail(w, http.StatusBadRequest, "見積書に入れる見積表をチェックしてください")
 		return
 	}
 	var lines []estimateLine
@@ -141,7 +141,7 @@ func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		ln, err := estimateLineOf(pageNum(pid), it.Index)
 		if err != nil {
 			// 1枚でも欠けるなら作らない（顧客へ出す紙が黙って欠けないように）。
-			cms.JSONFail(w, http.StatusConflict, "/"+pid+" の見積計算表（"+strconv.Itoa(it.Index+1)+"枚目）: "+err.Error())
+			cms.JSONFail(w, http.StatusConflict, "/"+pid+" の見積表（"+strconv.Itoa(it.Index+1)+"枚目）: "+err.Error())
 			return
 		}
 		lines = append(lines, ln)

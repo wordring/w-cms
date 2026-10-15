@@ -28,9 +28,9 @@ import (
 	"w-cms/internal/database"
 )
 
-// estimateLotsOf は加工製品ページの見積計算表に書いたロットを、表の順に返します（同じ数は1つ・読めなければ空）。
+// estimateLotsOf は加工製品ページの見積表に書いたロットを、表の順に返します（同じ数は1つ・読めなければ空）。
 //
-// ⚠ 読めるのは縦の形（「工程」の列に「ロット」の行）だけ——列にロットを並べた形は読めない（【要求】見積 §4）。
+// 2026-10-15 から、ロットは見積表のロットの列（見積計算表の「ロット」の行は無くなった——estimate.go）。
 func estimateLotsOf(productID int) []int {
 	body, err := cms.ReadPageBody(page.FormatID(productID))
 	if err != nil {
@@ -42,31 +42,14 @@ func estimateLotsOf(productID int) []int {
 	}
 	seen := map[int]bool{}
 	var out []int
-	for _, t := range tablesOfType(nodes, estimateType) {
-		rows := rowsOf(t)
-		if len(rows) < 2 {
-			continue
-		}
-		col := headerIndex(rows[0])
-		step, okStep := col["工程"]
-		num, okNum := col["数"]
-		if !okStep || !okNum {
-			continue
-		}
-		for _, tr := range rows[1:] {
-			cells := cellTexts(tr)
-			if step >= len(cells) || num >= len(cells) || strings.TrimSpace(cells[step]) != "ロット" {
-				continue
-			}
-			if v, ok := estimateNumber(cells[num]); ok && v >= 1 && v == float64(int(v)) && !seen[int(v)] {
-				seen[int(v)] = true
-				out = append(out, int(v))
-			}
+	for _, t := range tablesOfType(nodes, estimateRecordType) {
+		if v, ok := estimateNumber(estimateRecordOf(t).Lot); ok && v >= 1 && v == float64(int(v)) && !seen[int(v)] {
+			seen[int(v)] = true
+			out = append(out, int(v))
 		}
 	}
 	return out
 }
-
 // rfqLinesOfProduct は加工製品の構成部品を、lots のそれぞれの数で行にします（ロット × 部材の数量）。
 func rfqLinesOfProduct(productID int, lots []int) []ourOrderLine {
 	var out []ourOrderLine
@@ -186,11 +169,11 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 	if s := strings.TrimSpace(it.Lot); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < 1 {
-			return pid, nil, nil, http.StatusBadRequest, "/" + pid + " のロットは1以上の数で書いてください（空なら見積計算表のロット）"
+			return pid, nil, nil, http.StatusBadRequest, "/" + pid + " のロットは1以上の数で書いてください（空なら見積表のロット）"
 		}
 		lots = []int{n}
 	} else if lots = estimateLotsOf(productID); len(lots) == 0 {
-		lots = []int{1} // 見積計算表が無い・ロットが読めない——1個分
+		lots = []int{1} // 見積表が無い・ロットが読めない——1個分
 	}
 	lines = rfqLinesOfProduct(productID, lots)
 	if len(lines) == 0 {

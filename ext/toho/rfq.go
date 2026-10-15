@@ -412,11 +412,11 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 func rfqRequoteViewHTML(_ *auth.User, pageIDInt int) string {
 	return `<h3 class="materials-title">🔁 再部材見積依頼</h3>` +
 		`<p class="unorder-help">弊社品番（加工製品ページの番号）を書いて「集める」を押すと、その加工製品の材料・購入部品・外注加工が` +
-		`下の<strong>見積依頼必要部材表</strong>に入ります。数は<strong>ロット × 部材の数量</strong>——ロットが空なら見積計算表の` +
-		`ロット（見積計算表がロットごとに何枚もあれば、その数だけ行になる・無ければ1個分）。</p>` +
+		`下の<strong>見積依頼必要部材表</strong>に入ります。数は<strong>ロット × 部材の数量</strong>——ロットが空なら見積表の` +
+		`ロット（見積表がロットごとに何枚もあれば、その数だけ行になる・無ければ1個分）。</p>` +
 		`<div class="matsearch-form rfq-collect-form" data-rfq-page="` + page.FormatID(pageIDInt) + `">` +
 		`<label class="matsearch-field"><span>弊社品番</span><input type="text" class="matsearch-input" data-rfq="product" placeholder="001234"/></label>` +
-		`<label class="matsearch-field"><span>ロット</span><input type="number" min="1" class="matsearch-input" data-rfq="lot" placeholder="空なら見積計算表"/></label>` +
+		`<label class="matsearch-field"><span>ロット</span><input type="number" min="1" class="matsearch-input" data-rfq="lot" placeholder="空なら見積表"/></label>` +
 		`<button type="button" class="matsearch-go" data-rfq-collect="1">集める</button>` +
 		`</div><div class="unorder-result" data-rfq-collect-result="1"></div>` +
 		// 装置フォルダから選ぶ（2026-10-03）——利用者:「装置フォルダのページ番号を入力する欄を作り、その下にある加工製品を
@@ -424,7 +424,7 @@ func rfqRequoteViewHTML(_ *auth.User, pageIDInt int) string {
 		// （本文に残さない・app.js の wireRFQ）。番号はブラウザに憶える（data-w-remember）——入れたあとに読み直しても、
 		// 同じ装置の残りを続けて選べる。
 		`<p class="unorder-help">装置フォルダのページ番号を書いて「一覧を出す」を押すと、その下の加工製品が並びます。` +
-		`チェックしたものを、それぞれのロット（空なら見積計算表のロット）で見積依頼必要部材表へ入れます。</p>` +
+		`チェックしたものを、それぞれのロット（空なら見積表のロット）で見積依頼必要部材表へ入れます。</p>` +
 		`<div class="matsearch-form rfq-folder-form" data-rfq-page="` + page.FormatID(pageIDInt) + `" data-w-remember="1">` +
 		`<label class="matsearch-field"><span>装置フォルダ</span><input type="text" class="matsearch-input" data-rfq="folder" placeholder="001234"/></label>` +
 		`<button type="button" class="matsearch-go" data-rfq-folder="1">一覧を出す</button>` +

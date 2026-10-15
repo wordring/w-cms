@@ -5,15 +5,16 @@ package toho
 //
 // 【要求】部材見積依頼 §4 の未決5「貰った単価の行き先」——利用者の答え（2026-10-05）: 「最新単価に見積も出す」と
 // 「見積計算表へ写すボタン」の両方。こちらは後者——加工製品ページの「💴 見積回答」の行から、**人が選んだ**見積計算表の
-// **人が選んだ行**（無ければ新しい行）の `数` に単価を写し、`備考` に出所（見積 業者 日付）を書く。
+// **人が選んだ行**（無ければ新しい行）の `価格` に単価を写し、`備考` に出所（見積 業者 日付）を書く。
 //
-//	GET  /api/estimate/rows?page_id=   … そのページの見積計算表と、写せる行（工程の行——単価・総計・弊社利益・確定単価・ロットは除く）
+//	GET  /api/estimate/rows?page_id=   … そのページの見積計算表と、写せる行（工程の行）
 //	POST /api/estimate/put-cost        … {page_id, index, step, add, value, note}——index 枚目の表の工程 step の行に写す（add なら行を足す）
 //
 // ⚠ **どの行へ写すかは機械が決めない**——業者の単価は材料1枚・塗装1個あたりで、加工製品1個あたりに何枚・何個要るかは人が
 // 見る（見積計算表の行は加工製品1個ぶんの原価）。写したあと人が直せる。
 // ⚠ **出所を残す**（【要求】部材見積依頼 §3「混ぜて1つの数にせず、出所を必ず添える」）——備考に「見積 業者 日付」。前に写した
 // 「見積 …」の書き込みは置き換える（値と出所が食い違わないように）。人が書いたほかの備考は残す。
+// 2026-10-15 から見積計算表の列は `工程｜価格｜備考`（ロット・単価・総計の行は無い——ロットは組の見積表・estimate.go）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -27,26 +28,17 @@ import (
 	"w-cms/internal/cms/htmldoc"
 )
 
-// estimateLotRow は見積計算表のロットの行の名前です。
-const estimateLotRow = "ロット"
-
-// estimateFixedRows は写す先にしない行（計算の結果・条件の行）です。
-var estimateFixedRows = map[string]bool{
-	estimateUnitPriceRow: true, estimateTotalRow: true, estimateProfitRow: true, estimateFinalRow: true, estimateLotRow: true,
-}
-
 // estimateTableRows は見積計算表1枚の、写せる行の一覧です。
 type estimateTableRows struct {
 	Index int               `json:"index"`
-	Lot   string            `json:"lot"`
+	Lot   string            `json:"lot"` // 組の見積表のロット
 	Rows  []estimateCostRow `json:"rows"`
 	Why   string            `json:"why,omitempty"` // 写せない形の表の理由
 }
 
 type estimateCostRow struct {
-	Step string `json:"step"`
-	Num  string `json:"num"`
-	Unit string `json:"unit"`
+	Step  string `json:"step"`
+	Price string `json:"price"`
 }
 
 // estimateTablesOf は本文の見積計算表を読みます（列の違う表は Why を付けて行は空）。
@@ -55,9 +47,15 @@ func estimateTablesOf(body string) ([]estimateTableRows, error) {
 	if err != nil {
 		return nil, errString("本文を読めません")
 	}
+	lotOf := map[*html.Node]string{}
+	for _, b := range estimateBlocksOf(nodes) {
+		if b.Calc != nil && b.Record != nil {
+			lotOf[b.Calc] = estimateRecordOf(b.Record).Lot
+		}
+	}
 	var out []estimateTableRows
 	for i, t := range tablesOfType(nodes, estimateType) {
-		tr := estimateTableRows{Index: i, Rows: []estimateCostRow{}}
+		tr := estimateTableRows{Index: i, Lot: lotOf[t], Rows: []estimateCostRow{}}
 		rows := rowsOf(t)
 		if len(rows) == 0 {
 			tr.Why = "行がありません"
@@ -65,35 +63,27 @@ func estimateTablesOf(body string) ([]estimateTableRows, error) {
 			continue
 		}
 		col := headerIndex(rows[0])
-		stepCol, okStep := col["工程"]
-		numCol, okNum := col["数"]
-		if !okStep || !okNum {
-			tr.Why = "この形の表（工程・数の列が無い）には写せません"
+		stepCol, okStep := col[estimateStepCol]
+		priceCol, okPrice := col[estimatePriceCol]
+		if !okStep || !okPrice {
+			tr.Why = "この形の表（工程・価格の列が無い）には写せません"
 			out = append(out, tr)
 			continue
 		}
-		unitCol, hasUnit := col["単位"]
 		for _, r := range rows[1:] {
 			cells := cellTexts(r)
 			if stepCol >= len(cells) {
 				continue
 			}
 			step := strings.TrimSpace(cells[stepCol])
-			num := ""
-			if numCol < len(cells) {
-				num = strings.TrimSpace(cells[numCol])
-			}
-			if step == estimateLotRow {
-				tr.Lot = num
-			}
-			if step == "" || estimateFixedRows[step] {
+			if step == "" {
 				continue
 			}
-			unit := ""
-			if hasUnit && unitCol < len(cells) {
-				unit = strings.TrimSpace(cells[unitCol])
+			price := ""
+			if priceCol < len(cells) {
+				price = strings.TrimSpace(cells[priceCol])
 			}
-			tr.Rows = append(tr.Rows, estimateCostRow{Step: step, Num: num, Unit: unit})
+			tr.Rows = append(tr.Rows, estimateCostRow{Step: step, Price: price})
 		}
 		out = append(out, tr)
 	}
@@ -114,7 +104,7 @@ func mergeQuoteNote(existing, note string) string {
 	return strings.Join(keep, "／")
 }
 
-// withEstimateCost は本文の index 枚目の見積計算表の工程 step の行（add なら新しい行）に単価を写した本文を返します。
+// withEstimateCost は本文の index 枚目の見積計算表の工程 step の行（add なら新しい行を表の末尾に）に単価を写した本文を返します。
 func withEstimateCost(body string, index int, step string, add bool, value, note string) (string, error) {
 	step = strings.TrimSpace(step)
 	value = cleanPrice(value)
@@ -123,9 +113,6 @@ func withEstimateCost(body string, index int, step string, add bool, value, note
 	}
 	if step == "" {
 		return "", errString("写す行（工程）を選んでください")
-	}
-	if estimateFixedRows[step] {
-		return "", errString("「" + step + "」の行には写せません（工程の行を選ぶか、新しい行を足してください）")
 	}
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -140,13 +127,12 @@ func withEstimateCost(body string, index int, step string, add bool, value, note
 		return "", errString("見積計算表に見出しがありません")
 	}
 	col := headerIndex(rows[0])
-	stepCol, okStep := col["工程"]
-	numCol, okNum := col["数"]
-	if !okStep || !okNum {
-		return "", errString("この形の表（工程・数の列が無い）には写せません")
+	stepCol, okStep := col[estimateStepCol]
+	priceCol, okPrice := col[estimatePriceCol]
+	if !okStep || !okPrice {
+		return "", errString("この形の表（工程・価格の列が無い）には写せません")
 	}
-	unitCol, hasUnit := col["単位"]
-	noteCol, hasNote := col["備考"]
+	noteCol, hasNote := col[estimateNoteCol]
 	stepOf := func(tr *html.Node) string {
 		if cells := cellsOf(tr); stepCol < len(cells) {
 			return strings.TrimSpace(textOf(cells[stepCol]))
@@ -166,33 +152,18 @@ func withEstimateCost(body string, index int, step string, add bool, value, note
 	case !add && target == nil:
 		return "", errString("「" + step + "」の行が見つかりません（ページを開き直してください）")
 	case add:
-		// 新しい行は計算の結果の行（単価・総計・弊社利益・確定単価）の前へ——無ければ表の末尾。
 		target = &html.Node{Type: html.ElementNode, Data: "tr"}
 		for i := 0; i < len(cellsOf(rows[0])); i++ {
 			target.AppendChild(&html.Node{Type: html.ElementNode, Data: "td"})
 		}
 		setCellText(cellsOf(target)[stepCol], step)
-		var before *html.Node
-		for _, tr := range rows[1:] {
-			if s := stepOf(tr); s != estimateLotRow && estimateFixedRows[s] {
-				before = tr
-				break
-			}
-		}
-		if before != nil {
-			before.Parent.InsertBefore(target, before)
-		} else {
-			rows[len(rows)-1].Parent.AppendChild(target)
-		}
+		rows[len(rows)-1].Parent.AppendChild(target)
 	}
 	cells := cellsOf(target)
-	if numCol >= len(cells) {
-		return "", errString("「" + step + "」の行に数の欄がありません")
+	if priceCol >= len(cells) {
+		return "", errString("「" + step + "」の行に価格の欄がありません")
 	}
-	setCellText(cells[numCol], value)
-	if hasUnit && unitCol < len(cells) && strings.TrimSpace(textOf(cells[unitCol])) == "" {
-		setCellText(cells[unitCol], "円")
-	}
+	setCellText(cells[priceCol], value)
 	if hasNote && noteCol < len(cells) {
 		setCellText(cells[noteCol], mergeQuoteNote(textOf(cells[noteCol]), note))
 	}
