@@ -276,7 +276,7 @@ JSONにならなければ、本文をそのまま理由にします。
 - 東邦の口の大半です（§7 で「書き込みの関門」と書いた行）。
   入口は `requireWritableIdle`・`gateWritablePage`（[ext/toho/handler_gate.go](../../ext/toho/handler_gate.go)）です。
   対象ページの write・テンプレートの外・書き込みの関門を、この順で見ます。
-- メールの下書き（`/api/mail/draft`・`/api/mail/attach`）と、タグの値の置き換え（`/api/admin/tag-rename`）です。
+- メールの下書き（`/api/mail/draft`・`/api/mail/attach`）と、タグの値の置き換え（`/api/admin/tag-rename`）・表の列の名前の置き換え（`/api/admin/column-rename`）です。
 
 入れた当時の理由は、次のとおりです。
 
@@ -337,6 +337,7 @@ JSONにならなければ、本文をそのまま理由にします。
 | POST | `/api/rebuild-db` | `data/master` から `cms.db` を再構築（派生インデックスの洗い替え）。先頭で `config/settings.json` を読み直す。2026-09-25 から **`data/tables.db`（表の写し）も**作り直す |
 | GET | `/api/admin/tables` | **列の揃っていない表の一覧**（2026-09-25・DBの日本語化 §7 の2段目）。`{success, tables}` で `{name, pages, rows, needs_quote, leftover, suspects, columns[{name, pages, needs_quote, suspect, leftover}]}` の並び。**本文の見出し**を数え直す（値ではない）。`suspect` は2ページ以上ある表で1ページにしか無い見出し、`leftover` は本文にはもう無い表・列（再構築で消える）。正本は [tables_report.go](../../internal/cms/tables_report.go) |
 | POST | `/api/admin/tag-rename` | **タグの値を置き換える**（2026-10-01・admin）。要求は `{name, from, to, dry}`。可変タグ `name` の値が `from` のページ（索引 `PagesByTag` で引く）の**「名前：値」の組だけ**を `to` に書き換える（地の文・表・件名は触らない。同じページに `to` の組が既にあれば、古い組を消すだけ）。書くのは `RewriteBody`（版が残る・索引も直る）。**ロックを握られているページ（§3 の書き込みの関門。`editing` に数える）・テンプレートの中は飛ばす**。`dry` なら数えるだけ。応答は `{success, dry, result{found, changed, editing, template, missed}}`。監査記録は `tag.rename`。設定の語彙で選択肢の言葉を変えたときに使う（管理画面のメンテナンス）。正本は [tag_rename.go](../../internal/cms/tag_rename.go) |
+| POST | `/api/admin/column-rename` | **表の列の名前を置き換える**（2026-10-15・admin）。要求は `{caption, from, to, dry}`。キャプションが `caption` の表の**見出しのセル（`th`）だけ**を `from` から `to` に書き換える（セルの値・ほかの表・タグは触らない）。探すのは全ページの本文（キャプションで名乗る表は索引に載らないものもあるため）。同じ表に `to` の列が既にあればその表は書き換えない（`conflict`）。書くのは `RewriteBody`（版が残る・索引も直る）。**ロックを握られているページ・テンプレートの中は飛ばす**（テンプレートは人が直す）。`dry` なら数えるだけ。応答は `{success, dry, result{changed, editing, template, conflict}}`。監査記録は `column.rename`。設定の語彙で列の名前を変えたときに使う（管理画面のメンテナンス）。正本は [column_rename.go](../../internal/cms/column_rename.go) |
 
 ### 6.1. 表を探す（要認証・⚠ admin 限定ではない）
 
