@@ -96,14 +96,14 @@ func TestUpdateAttachmentMetaKeepsName(t *testing.T) {
 	newPage(t, "000202", "<h1>目録</h1>", page.PageMeta{Owner: "alice", Mode: "330"})
 	_, stored, _ := SaveAttachment("000202", "alice", "図面.dxf", []byte("0\n"))
 	before, _ := AttachmentMetaOf("000202", stored)
-	fresh := NewAttachmentMeta(stored, "bob", AttachmentSourceDav, []byte("0 NEW\n"))
+	fresh := NewAttachmentMeta(stored, "bob", AttachmentSourceLocalEdit, []byte("0 NEW\n"))
 	if err := UpdateAttachmentMeta("000202", stored, func(m *AttachmentMeta) {
 		m.By, m.Size, m.SHA256, m.Source = fresh.By, fresh.Size, fresh.SHA256, fresh.Source
 	}); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := AttachmentMetaOf("000202", stored)
-	if after.Name != "図面.dxf" || after.By != "bob" || after.Source != AttachmentSourceDav || after.SHA256 == before.SHA256 {
+	if after.Name != "図面.dxf" || after.By != "bob" || after.Source != AttachmentSourceLocalEdit || after.SHA256 == before.SHA256 {
 		t.Errorf("上書きの反映が違います: before=%+v after=%+v", before, after)
 	}
 }

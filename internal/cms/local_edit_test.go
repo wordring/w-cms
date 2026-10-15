@@ -45,7 +45,7 @@ func localEditFile(method, token, ifMatch, body string) *httptest.ResponseRecord
 // **前の中身は版に残り**、ETag が進む。⚠ WebDAV は Ctrl+S をアプリを閉じるまで送らなかった（2026-09-18）ので、
 // この口がローカルのアプリで編集する本命。
 func TestLocalEditRoundTrip(t *testing.T) {
-	setupDavTest(t)
+	setupAttachmentTest(t)
 	token, writable := startLocalEdit(t, "alice", "000101-a1b2")
 	if !writable {
 		t.Fatal("alice は部品Aの添付を書けるはず")
@@ -71,7 +71,7 @@ func TestLocalEditRoundTrip(t *testing.T) {
 	if rr := localEditFile("PUT", token, etag, "LATE"); rr.Code != http.StatusConflict {
 		t.Errorf("古い ETag の上書きを断っていません: %d", rr.Code)
 	}
-	// ⚠ 空の中身では差し替えない（開いただけで消えるのを防ぐ・WebDAV と同じ）。
+	// ⚠ 空の中身では差し替えない（開いただけで消えるのを防ぐ）。
 	if rr := localEditFile("PUT", token, put.Header().Get("ETag"), ""); rr.Code != http.StatusBadRequest {
 		t.Errorf("空の上書きを断っていません: %d", rr.Code)
 	}
@@ -88,7 +88,7 @@ func TestLocalEditRoundTrip(t *testing.T) {
 // TestLocalEditRespectsWritePermission は、書けない所（権限・読み取り専用の範囲）への上書きを断ることを固定します
 // ——読めるだけの人も、落として開くことはできる。
 func TestLocalEditRespectsWritePermission(t *testing.T) {
-	setupDavTest(t)
+	setupAttachmentTest(t)
 	token, writable := startLocalEdit(t, "bob", "000104-c3d4") // bob は「読むだけ」を読めるが書けない
 	if writable {
 		t.Fatal("bob は書けないはず")
@@ -101,7 +101,7 @@ func TestLocalEditRespectsWritePermission(t *testing.T) {
 		t.Errorf("書けない人の上書きを断っていません: %d", rr.Code)
 	}
 
-	withSettings(t, func(s *Settings) { s.WebDAVReadOnly = []string{"部品A"} })
+	withSettings(t, func(s *Settings) { s.AttachmentReadOnly = []string{"部品A"} })
 	token, writable = startLocalEdit(t, "alice", "000101-a1b2")
 	if writable {
 		t.Error("読み取り専用の範囲は書けないはず")
