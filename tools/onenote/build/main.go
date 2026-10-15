@@ -86,12 +86,24 @@ type placement struct {
 	Skip string `json:"移さない,omitempty"`
 }
 
+// tableDestRule は「表の行き先」の1件です（ワンノートのページをセクションと題で選ぶ）。
+type tableDestRule struct {
+	Section string              `json:"セクション,omitempty"`
+	Title   string              `json:"題"`
+	Tables  map[string][]string `json:"表"`
+}
+
 type settings struct {
 	Template string               `json:"テンプレート"`
 	Sections map[string]placement `json:"セクション"`
-	// TableDest は**人が決めた表の行き先**です（2026-09-29・tables.go）——w-cms のページ番号 → ■節 → その節の表ごとの
-	// 行き先（キャプション・「表のまま」・空は機械の決まりのまま）。例: {"001392": {"材料": ["材料表", "外注加工表", "外注加工表"]}}。
-	TableDest map[string]map[string][]string `json:"表の行き先,omitempty"`
+	// TableDest は**人が決めた表の行き先**です（2026-09-29・tables.go）——ワンノートのページ → ■節 → その節の表ごとの
+	// 行き先（キャプション・「表のまま」・空は機械の決まりのまま）。
+	// ⚠ **ページはセクション（階層）と題で選ぶ**（2026-10-15 利用者:「ページ番号依存の処理は問題があるので、原則に従い、
+	// ページ階層とタイトルによって処理を振り分けるよう変更して下さい」）。それまでは w-cms のページ番号で書いていて、
+	// 環境ごとに番号が違うので、家で作り直すと別の品物のページに当たった。例:
+	//	[{"セクション": "<セクション>", "題": "<ワンノートの題>", "表": {"材料": ["材料表", "外注加工表", "外注加工表"]}}]
+	// セクションを空にすると題だけで選ぶ（目録でその題が1つのときだけ）。
+	TableDest []tableDestRule `json:"表の行き先,omitempty"`
 	// PartNoIsDrawingNo は**品番に図面番号を入れる取引先**です（2026-09-28 利用者:「〈ある取引先〉に限っては、
 	// 加工製品の品番に図面番号を入れてください」）。品番は取引先ごとの取り決めなので、取引先の名前で決める
 	// （名前は実データなので、このファイルではなく設定のファイルに書く）。
@@ -222,7 +234,8 @@ func main() {
 		"印刷イメージの XPS を PDF にする mutool（無ければ PNG のまま）")
 	gemini := flag.Bool("gemini", true, "Gemini で図面の表題欄を読む（控えのあるファイルは呼ばない・GEMINI_API_KEY が要る）")
 	fresh := flag.Bool("fresh", false, "前に作った「移行中」のページをごみ箱へ移して作り直す（前に上げたファイルを残さない・ページ番号は変わる）")
-	onlyFlag := flag.String("only", "", "作り直すページを w-cms のページIDで絞る（カンマ区切り・報告は「製造の報告（一部）.md」）")
+	var onlyTitles stringList
+	flag.Var(&onlyTitles, "only", "作り直すワンノートのページを題で絞る（何度でも書ける・報告は「製造の報告（一部）.md」）")
 	stateFlag := flag.String("state", "", "製造の記録と報告を置く場所（既定は -dir と同じ——家でサンプルのデータを作るときは別の場所にする）")
 	flag.Parse()
 	// データの場所はサーバーと同じ決め方（WCMS_DATA_DIR・無ければ data）。本文と索引を読むので合わせる。
@@ -240,12 +253,17 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	for _, id := range strings.Split(*onlyFlag, ",") {
-		if id = strings.TrimSpace(id); id != "" {
+	// -only はワンノートの題で選ぶ（2026-10-15 まではページ番号だった——原則「ページ番号で探さない」）。
+	for _, t := range onlyTitles {
+		if t = strings.TrimSpace(t); t != "" {
+			if pageNumberRe.MatchString(t) {
+				fmt.Fprintln(os.Stderr, "失敗: -only はページ番号ではなく、ワンノートの題で書いてください（"+t+"）")
+				os.Exit(2)
+			}
 			if e.only == nil {
 				e.only = map[string]bool{}
 			}
-			e.only[fmt.Sprintf("%06s", strings.TrimLeft(id, "/"))] = true
+			e.only[t] = true
 		}
 	}
 	// 設定（語の型——図面番号は code）と索引（同じ図面番号のページを探す・読むだけ）。リポジトリの根で動かす。
@@ -289,7 +307,10 @@ func run(e *env, dry bool) error {
 	// 設定——無ければ、目録のセクションを並べた雛形を作って止まる（置き場は人が書く）。
 	var set settings
 	setPath := filepath.Join(root, settingsName)
-	if err := readJSON(setPath, &set); err != nil {
+	if err := readJSON(setPath, &set); err != nil && !os.IsNotExist(err) {
+		// ⚠ 読めない設定を雛形で上書きしない（2026-10-15——それまでは読めなければ雛形を書いていて、書き損じ1つで人の設定が消えた）。
+		return fmt.Errorf("%s を読めません（直してから、もう一度動かしてください）: %w", setPath, err)
+	} else if err != nil {
 		set = settings{Template: "加工製品", Sections: map[string]placement{}}
 		for _, p := range cat.Pages {
 			set.Sections[p.Section] = placement{}
@@ -299,16 +320,12 @@ func run(e *env, dry bool) error {
 		}
 		return fmt.Errorf("%s を作りました。セクションごとに取引先・装置名称（と、あれば区分）を書いてから、もう一度動かしてください", setPath)
 	}
-	e.tableDest = set.TableDest
+	destOf, err := tableDestsByPage(set.TableDest, cat)
+	if err != nil {
+		return err
+	}
 	var rec record
 	recPath := filepath.Join(e.state, recordName)
-	// 製造の記録を別の場所に置くとき（家のサンプル）は、root の記録（職場）を「表の行き先」の鍵を引くためだけに読む。
-	if filepath.Clean(e.state) != filepath.Clean(root) {
-		var shared record
-		if err := readJSON(filepath.Join(root, recordName), &shared); err == nil && shared.Pages != nil {
-			e.shared = &shared
-		}
-	}
 	if err := readJSON(recPath, &rec); err != nil || rec.Pages == nil {
 		rec = record{Pages: map[string]*pageRecord{}}
 	}
@@ -386,8 +403,8 @@ func run(e *env, dry bool) error {
 			continue
 		}
 		pr := rec.Pages[id]
-		// `-only` なら、そのページIDで作ったページだけ（ほかは黙って飛ばす——報告も別のファイル）。
-		if len(e.only) > 0 && (pr == nil || !e.only[pr.WCMS]) {
+		// `-only` なら、その題のワンノートのページだけ（ほかは黙って飛ばす——報告も別のファイル）。
+		if len(e.only) > 0 && !e.only[strings.TrimSpace(p.Title)] {
 			continue
 		}
 		if pr == nil {
@@ -401,12 +418,7 @@ func run(e *env, dry bool) error {
 		if len(p.LostInOneNote) > 0 {
 			note.warn("⚠ ワンノートでも失われているファイルがあります——入りません（" + strings.Join(p.LostInOneNote, "・") + "）")
 		}
-		e.destKey = ""
-		if e.shared != nil {
-			if sr := e.shared.Pages[id]; sr != nil {
-				e.destKey = sr.WCMS
-			}
-		}
+		e.dests = destOf[id]
 		rule, err := set.ruleFor(pl.Partner)
 		if err != nil {
 			return err
@@ -1069,11 +1081,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 				continue
 			}
 			// 表は**行き先を決めて集め**、ページの最後に1回で埋める（tables.go）。
-			destKey := pageID
-			if e.shared != nil {
-				destKey = e.destKey // 家のサンプル——職場で同じページを作ったときの番号で引く（無ければ空＝決まりのまま）
-			}
-			dests := e.tableDest[destKey][s.Name] // 人が決めた行き先（製造の設定.json の「表の行き先」）
+			dests := e.dests[s.Name] // 人が決めた行き先（製造の設定.json の「表の行き先」・セクションと題で選んだもの）
 			ti := 0
 			var primary []string // この節でテンプレートの表へ入れた最初の表の見出し
 			for _, it := range s.Items {

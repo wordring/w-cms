@@ -78,15 +78,12 @@ type env struct {
 	seen map[string]string
 	// machineNotes はこの回に書いた装置のページ → ワンノートの題（同じ装置のページに2つ書かない）。
 	machineNotes map[string]string
-	// tableDest は人が決めた表の行き先（製造の設定.json の「表の行き先」・tables.go）。
-	tableDest map[string]map[string][]string
+	// dests は、いま作っているページの人が決めた表の行き先です（■節 → その節の表ごとの行き先・製造の設定.json の
+	// 「表の行き先」をワンノートのセクションと題で引いたもの・tables.go）。無ければ nil（機械の決まりのまま）。
+	dests map[string][]string
 	// state は製造の記録と報告を置く場所です（既定は root——2026-10-15 に分けた。家でサンプルのデータを作るとき、
 	// 職場の製造の記録〔OneDrive で家にも届く〕を上書きしないため）。
 	state string
-	// shared は state が root と違うときの、root の製造の記録（読むだけ）です。「表の行き先」は w-cms のページ番号で
-	// 書いてあり、それは職場の番号なので、同じワンノートのページを職場で作ったときの番号で引きます（destKey）。
-	shared  *record
-	destKey string // いま作っているページの「表の行き先」の鍵（shared があるときだけ使う）
 
 	mutoolMissing bool
 	geminiOff     bool
