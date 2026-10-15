@@ -248,7 +248,7 @@ async function openSlashMenu(page) {
 
         await page.goto(BASE + '/' + orderId);
         // 鏡の印は data-mirror（名前の見えない data-type の印は 2026-09-27 に廃止）
-        // ⚠ .first()（2026-10-14）——行のある集計表には、2026-10-02 から「🖨 この表を印刷」（これも .vocab-chrome）が並ぶ。
+        // ⚠ .first()（2026-10-14）——行のある集計表には、2026-10-02 から「🖨 この表を印刷」（これも .vocab-chrome。10-15 から「⋯」）が並ぶ。
         await page.locator('#w-editor-content section[data-mirror="手配状況リスト"] .vocab-chrome').first().waitFor({ timeout: 8000 });
         check('手配集計のSSRに行が出る',
             (await page.locator('#w-editor-content .materials-table tbody tr').count()) >= 1);

@@ -55,7 +55,8 @@ const wait = (ms, v) => new Promise((res) => setTimeout(() => res(v), ms));
       const embeds = await page.evaluate(() => document.querySelectorAll('#w-editor-content embed, #w-editor-content iframe, #w-editor-content object').length);
       check(embeds > 0, 'ページに PDF の埋め込みがある（これが無いと試しにならない）', embeds + ' 個');
       // 押す（print() は一拍おいて呼ばれるので、click はすぐ戻る）→ 少し待ってページが応答するかを見る。
-      await Promise.race([page.locator('#w-editor-content .w-table-print').first().click().catch(() => {}), wait(4000)]);
+      await page.locator('#w-editor-content .w-table-menu-btn').first().click().catch(() => {}); // 2026-10-15 から「⋯」のメニューの中
+      await Promise.race([page.locator('#w-table-menu-list.active .file-menu-item', { hasText: 'この表を印刷' }).click().catch(() => {}), wait(4000)]);
       await page.waitForTimeout(500);
       const r = await Promise.race([page.evaluate(() => 'responded'), wait(4000, 'blocked')]);
       check(r === 'blocked', '押すと印刷の画面が開く（ページが止まる）', r === 'responded' ? 'ページが応答した＝開いていない' : '');
