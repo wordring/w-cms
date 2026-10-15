@@ -51,7 +51,7 @@ func TestUnorderedLeavesOutWhatIsOrdered(t *testing.T) {
 	}
 }
 
-// TestUnorderedSkipsDoneLines は、⚠ **完了した受注明細は手配の対象ではない**ことを
+// TestUnorderedSkipsDoneLines は、⚠ **完了した受注明細表は手配の対象ではない**ことを
 // 固定します（受注残表と同じ線引き）。
 func TestUnorderedSkipsDoneLines(t *testing.T) {
 	setupMaterialsPermsTest(t)
@@ -71,7 +71,7 @@ func TestUnorderedSkipsDoneLines(t *testing.T) {
 	}
 }
 
-// TestUnorderedSkipsShippedLines は、**出し終えた受注明細（数量 − 出荷済数量 ≤ 0）は手配の対象ではない**ことと、
+// TestUnorderedSkipsShippedLines は、**出し終えた受注明細表（数量 − 出荷済数量 ≤ 0）は手配の対象ではない**ことと、
 // 分納の途中の行は残ることを固定します（2026-10-01 利用者:「発注フォルダから、納品済みの品物用の部材を外しましょう」
 // ——受注残表と同じ線引き）。
 func TestUnorderedSkipsShippedLines(t *testing.T) {
@@ -98,7 +98,7 @@ func TestUnorderedSkipsShippedLines(t *testing.T) {
 // TestUnorderedHidesUnreadableProducts は、⚠ **読めない加工製品は出さない**ことを
 // 固定します。
 //
-// ⚠ 一覧は**全社の受注明細**を読みます——絞りを外すと、読めないはずの品名・寸法が
+// ⚠ 一覧は**全社の受注明細表**を読みます——絞りを外すと、読めないはずの品名・寸法が
 // **他人の画面に並びます**。しかもエラーは出ません。
 //
 // ⚠ **「0件になること」だけを見ません。** それでは「そもそも引けていない」と
@@ -343,7 +343,7 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	}
 }
 
-// TestOrderRowKeyInfersLegacyKind は、**種類の列が無い古い部材発注明細**を、鍵の列のどれかに値がある
+// TestOrderRowKeyInfersLegacyKind は、**種類の列が無い古い部材発注明細表**を、鍵の列のどれかに値がある
 // 最初の種類として読むことを固定します（2026-09-28 より前の紙——材料は材質・形状・寸法、
 // 購入部品は品名）。⚠ 読めないと、既に発注した部材が必要部材表に戻ります（二重発注）。
 func TestOrderRowKeyInfersLegacyKind(t *testing.T) {

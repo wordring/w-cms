@@ -48,7 +48,7 @@ func TestProductPageListsOrderPrices(t *testing.T) {
 		addPage(t, o.id, -1, "受注", o.owner, o.mode, o.public)
 		seedBody(t, page.FormatID(o.id), o.body)
 	}
-	// 出した見積（見積書ページの見積明細・送付済）と、別の加工製品の見積。
+	// 出した見積（見積書ページの見積明細表・送付済）と、別の加工製品の見積。
 	addPage(t, 707, -1, "見積", "root", "302", true)
 	seedBody(t, "000707", `<h1>見積　みなと商店</h1><dl data-type="tags"><dt>`+EstimateNoTag+`</dt><dd>000707</dd><dt>`+EstimateDateTag+
 		`</dt><dd>2026-08-15</dd><dt>`+EstimateSentTag+`</dt><dd>2026-08-16</dd></dl><table data-type="`+EstimateItemsType+`"><caption>見積明細表</caption><tbody>`+

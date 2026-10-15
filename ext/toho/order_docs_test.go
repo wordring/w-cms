@@ -61,7 +61,7 @@ func seedOrderDocs(t *testing.T) {
 		`<details><summary>資料２</summary><p>まだ無い</p></details>`)
 }
 
-// TestOrderDocsFollowsLineToFold は、部材発注明細の行（弊社品番＋番号）から加工製品ページの
+// TestOrderDocsFollowsLineToFold は、部材発注明細表の行（弊社品番＋番号）から加工製品ページの
 // 「資料 <番号>」の折りたたみへ辿り、中のファイルを集めることを固定します。
 //
 //   - 題は空白・全角半角を畳んで比べる（「資料２」も番号 2）

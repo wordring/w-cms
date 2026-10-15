@@ -18,7 +18,7 @@ import (
 // 部材見積依頼の返事（2026-10-05・rfq_reply.go）——回答を記録・🤖 返事を読む（候補・読む・書く）。
 // ⚠ **Gemini は呼びません**——読む口（rfqReadReplyAI）を偽物に差し替えて、何を渡したかと、返したものの扱いを見ます。
 
-// rfqReplyRowHTML は部材見積依頼明細の1行です。
+// rfqReplyRowHTML は部材見積依頼明細表の1行です。
 func rfqReplyRowHTML(mat, size, qty, price, note, state string) string {
 	return `<tr><td>000031</td><td>材料</td><td>` + mat + `</td><td>板</td><td>` + size + `</td><td>` + qty + `</td><td>枚</td><td>` +
 		price + `</td><td>` + note + `</td><td>` + state + `</td></tr>`

@@ -48,7 +48,7 @@ import (
 	"w-cms/internal/cms/htmldoc"
 )
 
-// 部材発注明細の `状態` の値です。
+// 部材発注明細表の `状態` の値です。
 const (
 	OrderLineUnsent    = "未発注"
 	OrderLineSent      = "発注済"
@@ -180,7 +180,7 @@ func isOrderLineStatus(s string) bool {
 	return false
 }
 
-// setOrderLineStatus は部材発注明細の `状態` 列を書き換え、書き換えた行数を返します。
+// setOrderLineStatus は部材発注明細表の `状態` 列を書き換え、書き換えた行数を返します。
 //
 // row が 0 なら**取消でない行すべて**。⚠ **取消の行は巻き込みません**——
 // まとめて「発注済」にする操作で、**取り消したはずのものが復活します**。

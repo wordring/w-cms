@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積書の紙（PDF）と、見積明細の足元（2026-10-01）
+// 見積書の紙（PDF）と、見積明細表の足元（2026-10-01）
 //
 // 紙の欄は利用者の見本（御見積書）の並び——題・日付・№・宛名（会社 担当者 様／御中）・「下記のとおり御見積申し上げます」・
 // 差出人（見積担当の「部材発注書の署名」——会社の住所・電話は部材発注書と同じ）・受渡期日・受渡場所・取引方法・有効期限・
@@ -215,7 +215,7 @@ func EstimatePDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	servePaper(w, r, makeEstimatePDF)
 }
 
-// renderEstimateItems は見積明細の足元に、合計（税抜）・PDF を作る・メールで送る を出します（鏡）。
+// renderEstimateItems は見積明細表の足元に、合計（税抜）・PDF を作る・メールで送る を出します（鏡）。
 func renderEstimateItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if el.Data != "table" {
 		return true, nil

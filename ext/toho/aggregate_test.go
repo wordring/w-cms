@@ -245,7 +245,7 @@ func TestRequiredMaterialsFollowsReferences(t *testing.T) {
 
 	admin := &auth.User{Username: "root", IsAdmin: true}
 
-	// 通信記録ページ（61）の上でも、参照を辿って受注明細が見える。
+	// 通信記録ページ（61）の上でも、参照を辿って受注明細表が見える。
 	list, err := RequiredMaterials(admin, 61)
 	if err != nil {
 		t.Fatalf("RequiredMaterials(61)エラー: %v", err)

@@ -7,7 +7,7 @@
 //
 //   ① 装置フォルダの番号で「一覧を出す」→ 見積計算表1枚1行（ロット・確定単価・備考）。計算できない表・表の無い加工製品は
 //      選べない行で理由が出る。見積先にその装置の客先が入る
-//   ② 2行を選んで「見積書を作る」→ 見積書ページが開き、見積明細に一覧の順で確定単価が入る。PDF のボタンがある
+//   ② 2行を選んで「見積書を作る」→ 見積書ページが開き、見積明細表に一覧の順で確定単価が入る。PDF のボタンがある
 //   ③ 開き直しても、憶えた番号で一覧がまた並ぶ
 //   ④ できた見積書は「未送付の見積書」に並び、「送付不要」を押すと外れる（見積書に送付不要のタグ）
 //
@@ -75,7 +75,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     await page.waitForSelector('.estimate-folder-table input[data-estf-pick]', { timeout: 8000 }).catch(() => {});
     check('③ 開き直しても憶えた番号で一覧がまた並ぶ', await page.locator('.estimate-folder-table input[data-estf-pick]').count() === 2);
 
-    // ② 40個の表 → 20個の表の順に押しても、見積明細は一覧の順（20個 → 40個）。
+    // ② 40個の表 → 20個の表の順に押しても、見積明細表は一覧の順（20個 → 40個）。
     await page.locator('input[data-estf-pick="' + p1 + ':1"]').check();
     await page.locator('input[data-estf-pick="' + p1 + ':0"]').check();
     await Promise.all([
@@ -92,7 +92,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     check('② 見積先が入る', raw.includes('<dt>見積先</dt><dd>【E2E】客先</dd>'));
     check('② 見積書の「📄 PDFを作る」がある', await page.locator('#w-editor-content .estimate-pdf-go').count() === 1);
 
-    // ⑤ 見積明細の下の備考の欄で書いて保存すると、「備考」の節に入る（2026-10-03）。
+    // ⑤ 見積明細表の下の備考の欄で書いて保存すると、「備考」の節に入る（2026-10-03）。
     const note = page.locator('#w-editor-content .estimate-note-input');
     check('⑤ 見積明細表の下に備考の欄がある', await note.count() === 1);
     await note.fill('E2E 塗装は別途\nE2E 納期はご相談');

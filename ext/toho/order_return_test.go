@@ -7,11 +7,11 @@ import (
 	"w-cms/internal/auth"
 )
 
-// 部材発注明細の行を「必要部材表」へ戻す（2026-09-24）。
+// 部材発注明細表の行を「必要部材表」へ戻す（2026-09-24）。
 // ユーザー:「ボタンを押すと、発注明細表から行が消え、必要部材表へ戻ります」
 // 「発注書の送付後でも押せます」。
 
-// returnTestBody は部材発注明細が3行ある部材発注書ページです。
+// returnTestBody は部材発注明細表が3行ある部材発注書ページです。
 func returnTestBody() string {
 	return `<h1>発注 みなと商店</h1>` +
 		`<dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd></dl>` +

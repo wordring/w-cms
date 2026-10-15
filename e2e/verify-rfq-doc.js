@@ -4,7 +4,7 @@
 //
 //   ① 見積依頼部材表の下に「部材見積依頼書ページを作る」の欄（差出人・仕入先・部材見積依頼日・備考）がある
 //   ② 仕入先が空なら断る
-//   ③ 入れて押すと部材見積依頼書ページが開く——タグ（部材見積依頼番号・仕入先・部材見積依頼日）・部材見積依頼明細（未回答・単価は空）・備考
+//   ③ 入れて押すと部材見積依頼書ページが開く——タグ（部材見積依頼番号・仕入先・部材見積依頼日）・部材見積依頼明細表（未回答・単価は空）・備考
 //   ④ 元の見積依頼部材表は消える
 //
 // 当て先（【E2E】の置き場と見積依頼部材表）は自分で作り、できた部材見積依頼書（本物の 部材見積依頼／年／月 の下）と、試験が作った
@@ -84,7 +84,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     const after = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), box);
     check('④ 元の見積依頼部材表は消える', !after.includes('<caption>見積依頼部材表</caption>'));
 
-    // ⑤ 部材見積依頼明細の下の備考の欄・PDF を作る・PDF の下の送る欄・送った（FAX・手渡し）（2026-10-03・段2の後半）。
+    // ⑤ 部材見積依頼明細表の下の備考の欄・PDF を作る・PDF の下の送る欄・送った（FAX・手渡し）（2026-10-03・段2の後半）。
     // ⚠ 送る口は画面の手前で止める（本物のメールは出さない）。
     await page.route('**/api/mail/send', (route) => route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ success: false, message: 'E2E で止めました' }) }));

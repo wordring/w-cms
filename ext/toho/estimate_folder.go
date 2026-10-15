@@ -108,7 +108,7 @@ func EstimateFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // EstimateFromFolderAPIHandler は POST /api/estimate/from-folder です。
 // 入力: {items: [{product, index}], client, person, signer}——選んだ見積計算表（加工製品ページと何枚目か・0から）を
-// 送られた順（画面は一覧の順）に見積明細へ入れた見積書ページを作ります。
+// 送られた順（画面は一覧の順）に見積明細表へ入れた見積書ページを作ります。
 func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {

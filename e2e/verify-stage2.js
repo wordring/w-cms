@@ -167,7 +167,7 @@ async function waitSaved(page) {
         check('レジストリ由来の項目がある', await vocabItem.count() === 1);
         check('サンプルの「検査記録」はメニューに無い',
             await page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:inspection-record"]').count() === 0);
-        // 改訂は**表の名前「改訂明細」で出す**（2026-09-27 利用者:「改訂履歴はキャプションだけで
+        // 改訂は**表の名前「改訂明細表」で出す**（2026-09-27 利用者:「改訂履歴はキャプションだけで
         // 良いです」「メニューの方も用語を統一したほうが良いのでは？」）。節の「改訂履歴」は出さない。
         check('用語の統一: 改訂明細表がメニューにあり、改訂履歴は無い',
             await page.locator('#w-slash-menu .slash-menu-item[data-type="vocab:drawing-revision-items"]').count() === 1 &&

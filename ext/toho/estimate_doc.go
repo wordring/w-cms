@@ -9,7 +9,7 @@ package toho
 // 金額〈税抜〉）・合計（税抜）・備考。正本は [【考察】見積の依頼と見積書.md] §3。
 //
 //	加工製品ページの見積計算表 ──「見積書に入れる」（客先・担当者・新しい見積書か作りかけへ足すか）
-//	   → 見積書ページ（見積／年／月・テンプレート「見積書」を写す）の見積明細に1行
+//	   → 見積書ページ（見積／年／月・テンプレート「見積書」を写す）の見積明細表に1行
 //	     （弊社品番・品番・品名・数量＝ロット・単位・単価＝確定単価・備考＝単価の行の備考）
 //
 //   - **単価はその時点の値で写して固定**します（出した紙の値は、あとで見積計算表を直しても変わらない）。
@@ -40,7 +40,7 @@ import (
 const (
 	// EstimateTemplate は見積書ページを作るテンプレートの題です。
 	EstimateTemplate = "見積書"
-	// EstimateItemsType は見積明細の表の形式です。
+	// EstimateItemsType は見積明細表の形式です。
 	EstimateItemsType = "estimate-items"
 
 	EstimateNoTag       = "見積番号"
@@ -58,7 +58,7 @@ const (
 // estimateHeads は見積書の紙の上に刷るタグ（並び順）です——見本の並び。
 var estimateHeads = []string{EstimateDueTag, EstimatePlaceTag, EstimateTradeTag, EstimateValidTag}
 
-// estimateItemColumns は見積明細の列です（受注明細と同じ名前・同じ型——「前いくらで出したか」を品番で引けるように）。
+// estimateItemColumns は見積明細表の列です（受注明細表と同じ名前・同じ型——「前いくらで出したか」を品番で引けるように）。
 func estimateItemColumns() []cms.VocabColumn {
 	return []cms.VocabColumn{
 		{Field: "our-item-id", Label: "弊社品番", Type: cms.ColRef},
@@ -71,7 +71,7 @@ func estimateItemColumns() []cms.VocabColumn {
 	}
 }
 
-// estimateLine は見積明細の1行です。
+// estimateLine は見積明細表の1行です。
 type estimateLine struct {
 	ProductID, ItemID, ItemName, Quantity, Unit, Price, Note string
 }
@@ -83,7 +83,7 @@ func (l estimateLine) values() map[string]string {
 	}
 }
 
-// estimateLineOf は加工製品ページの index 枚目（0から）の見積表から、見積明細の1行を組みます。
+// estimateLineOf は加工製品ページの index 枚目（0から）の見積表から、見積明細表の1行を組みます。
 func estimateLineOf(productID int, index int) (estimateLine, error) {
 	opts, err := estimateOptionsOf(productID)
 	if err != nil {
@@ -98,14 +98,14 @@ func estimateLineOf(productID int, index int) (estimateLine, error) {
 	return opts[index].Line, nil
 }
 
-// estimateOption は加工製品ページの見積表1枚から組んだ見積明細の1行です（単価が無ければ Why に理由）。
+// estimateOption は加工製品ページの見積表1枚から組んだ見積明細表の1行です（単価が無ければ Why に理由）。
 type estimateOption struct {
 	Index int
 	Line  estimateLine
 	Why   string
 }
 
-// estimateOptionsOf は加工製品ページの見積表を全部、表の順に見積明細の行にします（見積表が無ければ空）。
+// estimateOptionsOf は加工製品ページの見積表を全部、表の順に見積明細表の行にします（見積表が無ければ空）。
 // 1つの加工製品に見積表は何枚あってもよい（ロットごと・表面処理ごと——2026-10-15 の形・estimate.go）ので、1枚ずつ組む。
 // ⚠ 写すのは**見積表に記録した単価**です（見積計算表から毎回計算しない——2026-10-15 利用者:「結果の単価のみDBに入れるべき」）。
 func estimateOptionsOf(productID int) ([]estimateOption, error) {
@@ -136,7 +136,7 @@ func estimateOptionsOf(productID int) ([]estimateOption, error) {
 	return out, nil
 }
 
-// estimateLineFromRecord は見積表の記録から、見積明細の行の数量（ロット）・単位・単価・備考（表面処理と備考）を組みます。
+// estimateLineFromRecord は見積表の記録から、見積明細表の行の数量（ロット）・単位・単価・備考（表面処理と備考）を組みます。
 func estimateLineFromRecord(r estimateRecord) (estimateLine, string) {
 	unit, ok := estimateNumber(r.Unit)
 	if !ok {
@@ -155,7 +155,7 @@ func estimateLineFromRecord(r estimateRecord) (estimateLine, string) {
 	ln.Note = strings.Join(note, "　")
 	return ln, ""
 }
-// estimateItemNamesOf は見積明細に書く品番・品名を加工製品ページのタグから引きます（品番→図面番号、品名→図面名称→題）。
+// estimateItemNamesOf は見積明細表に書く品番・品名を加工製品ページのタグから引きます（品番→図面番号、品名→図面名称→題）。
 func estimateItemNamesOf(productID int) (itemID, itemName string) {
 	tags, _ := cms.TagsOfPage(database.DB, productID)
 	itemID = cms.FirstTag(tags, "品番")
@@ -198,7 +198,7 @@ func buildEstimateHTML(tmpl, pageID, client, person, date, signerID string, line
 	return d.HTML(), nil
 }
 
-// appendEstimateLine は見積書の本文の見積明細へ1行足します（空の取っ掛かりの行は取り除く・見出しに合わせて並べる）。
+// appendEstimateLine は見積書の本文の見積明細表へ1行足します（空の取っ掛かりの行は取り除く・見出しに合わせて並べる）。
 func appendEstimateLine(body string, ln estimateLine) (string, bool) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -343,7 +343,7 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "new": true})
 }
 
-// newEstimatePage は見積書ページを `見積／年／月` に作り、lines を見積明細に入れます（テンプレート「見積書」を写す）。
+// newEstimatePage は見積書ページを `見積／年／月` に作り、lines を見積明細表に入れます（テンプレート「見積書」を写す）。
 // 断ったときは w に書いて ok=false。client は社名を書く口（OrgNameForPage）を通した見積先です。
 // 見積計算表の「見積書に入れる」と、見積フォルダの「見積書を作る」（装置フォルダから選ぶ）が同じ道を通る。
 func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn, signerIn string, lines []estimateLine) (newID, client string, ok bool) {

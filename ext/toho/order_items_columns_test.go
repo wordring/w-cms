@@ -9,7 +9,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// 受注明細の列（2026-09-20）。
+// 受注明細表の列（2026-09-20）。
 //
 // ユーザー:「加工中に番号を使うので、受注の表に**弊社品番として製造製品のページIDを
 // 入れたい**です」「ついでに備考欄もお願いします」。納期は同日の決定
@@ -86,10 +86,10 @@ func TestOrderPageHeaderMatchesDeclaration(t *testing.T) {
 }
 
 // TestRevisionHeaderMatchesDeclaration は、**改訂履歴の見出しも宣言から組まれる**ことを
-// 固定します（受注明細と同じ番人）。
+// 固定します（受注明細表と同じ番人）。
 //
 // ⚠ 2026-09-21 まで `<th>版</th><th>図面番号</th><th>受領日</th>` を手書きしていました
-// ——列を足した日に、受注明細で起きたのと同じずれが黙って起きるところでした。
+// ——列を足した日に、受注明細表で起きたのと同じずれが黙って起きるところでした。
 func TestRevisionHeaderMatchesDeclaration(t *testing.T) {
 	j := &orderJudgment{DocType: "drawing", DrawingNo: "K120-1", DrawingName: "ブラケット"}
 	body := testProductPage("000001", "pdf001", j, nil)
@@ -104,7 +104,7 @@ func TestRevisionHeaderMatchesDeclaration(t *testing.T) {
 		}
 	}
 	// 見出し行のセル数と1版目の行のセル数が揃っていること。
-	// ⚠ **改訂明細の表の中だけ数えます**（2026-09-27）——加工製品はテンプレートを写して
+	// ⚠ **改訂明細表の中だけ数えます**（2026-09-27）——加工製品はテンプレートを写して
 	// 作るので、同じページに材料などの表の見出しも並びます。
 	at := strings.Index(body, "<caption>"+displayNameOf(revisionItemsType)+"</caption>")
 	if at < 0 {

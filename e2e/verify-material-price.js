@@ -54,7 +54,7 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
     await page.waitForTimeout(1200); // 印が付くのを待つ
 
     const r = await page.evaluate(() => {
-      // 材料の表は**キャプションで名乗る**（2026-09-26・DBの日本語化 5段目。それまでは
+      // 材料表は**キャプションで名乗る**（2026-09-26・DBの日本語化 5段目。それまでは
       // `<section><h2>材料</h2><table>` の見出し形で、表の写しに入らない形だった）。
       const cap = [...document.querySelectorAll('#w-editor-content table > caption')]
         .find((e) => e.textContent.trim() === '材料表');

@@ -405,7 +405,7 @@ func renderEstimateRecord(ctx *cms.MirrorContext, el *html.Node) {
 		appendFootHTML(el, span, "estimate-dup", `<button type="button" class="estimate-dup-go" data-estimate-block="`+
 			strconv.Itoa(bi)+`" title="見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置きます（ロット・原価・単価は空にします）">⧉ このロットを写す</button>`+
 			` <span class="estimate-dup-say"></span>`)
-		// 見積書に入れる（2026-10-01・estimate_doc.go）——見積表の単価・ロット・表面処理と備考を見積書の見積明細へ写す。
+		// 見積書に入れる（2026-10-01・estimate_doc.go）——見積表の単価・ロット・表面処理と備考を見積書の見積明細表へ写す。
 		appendFootHTML(el, span, "estimate-add", estimateAddFormHTML(ctx.Viewer, ctx.PageID, k))
 	}
 }

@@ -5,7 +5,7 @@ package toho
 //
 // 【要求】部材見積依頼 §4 の未決4「返事の取り込み」——利用者の答え（2026-10-05）: 返事は「見積依頼書に手書きで FAX」
 // 「業者の見積書 PDF をメール」「メールの本文に値段」の3通り。作るのは「回答を記録」と「🤖 返事を読む」の**両方**。
-// 返事の単価の置き場は**部材見積依頼明細の単価の列**（10-02 に決まっている——§2）。
+// 返事の単価の置き場は**部材見積依頼明細表の単価の列**（10-02 に決まっている——§2）。
 //
 //	POST /api/rfq/answered      … ✓ 回答を記録: 単価の入った未回答の行を「回答あり」に・回答日に今日（手で書いたあと押す）
 //	GET  /api/rfq/reply-sources … 🤖 で読む返事の候補——このページに置いたファイル（作った部材見積依頼書の PDF は除く）と、
@@ -46,10 +46,10 @@ var rfqReadReplyAI = cms.GeminiGenerateBlobs
 // rfqReplyMaxBytes は 🤖 に渡す返事のファイルの上限です（図面の見比べと同じ・Gemini の1回の要求に収まる大きさ）。
 const rfqReplyMaxBytes = 18 << 20
 
-// rfqReplyWhatLabels は「何の値段か」の文に並べる列です（部材見積依頼明細の列の名前）。
+// rfqReplyWhatLabels は「何の値段か」の文に並べる列です（部材見積依頼明細表の列の名前）。
 var rfqReplyWhatLabels = []string{"種類", "品番", "品名", "加工内容", "材質", "形状", "寸法", "表面", "仕様"}
 
-// rfqTableView は部材見積依頼書ページの本文の、部材見積依頼明細の表を読んだものです（書き換えは nodes を描き直す）。
+// rfqTableView は部材見積依頼書ページの本文の、部材見積依頼明細表を読んだものです（書き換えは nodes を描き直す）。
 type rfqTableView struct {
 	nodes []*html.Node
 	col   map[string]int

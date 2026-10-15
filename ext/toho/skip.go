@@ -6,7 +6,7 @@ package toho
 // 利用者:「必要部材表はチェックして発注部材表に入れますが、必要なくなった時に消すのはどうしましょう？」→（案を聞いて）
 // 「不要にする」ボタン。在庫で足りる・自社で作る・電話で買った——理由はさまざまで、どれも「この受注のぶんはもう買わない」。
 //
-//   - 必要部材表で行を選び「🚫 不要にする」（理由を書ける）→ 部材発注フォルダの「手配不要」の表に行が入る（受注・弊社品番・
+//   - 必要部材表で行を選び「🚫 不要にする」（理由を書ける）→ 部材発注フォルダの「手配不要表」に行が入る（受注・弊社品番・
 //     部材・数量・理由・日付）。必要部材表は発注部材表と同じく、この数を**受注ごとに**引く（procure_ledger.go）。
 //   - 表の行の「↩ 戻す」で外すと、必要部材表へ戻る（一覧は毎回計算する鏡なので、外せば戻る）。弊社品番の無い行
 //     （臨時部材表から来た行）は臨時部材表へ戻す。
@@ -28,14 +28,14 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// SkipType は手配不要の表の形式です。
+// SkipType は手配不要表の形式です。
 const SkipType = "procure-skip"
 
 func init() {
 	cms.RegisterMirror(SkipType, cms.MirrorHandlerFunc(renderSkipTable))
 }
 
-// skipColumns は手配不要の表の列です——発注の列のうち部材を言い当てるもの（単価・状態・仕様・支給・備考は除く）と、
+// skipColumns は手配不要表の列です——発注の列のうち部材を言い当てるもの（単価・状態・仕様・支給・備考は除く）と、
 // 理由・日付。
 func skipColumns() []cms.VocabColumn {
 	var out []cms.VocabColumn
@@ -51,7 +51,7 @@ func skipColumns() []cms.VocabColumn {
 		cms.VocabColumn{Field: "date", Label: "日付", Type: cms.ColDate})
 }
 
-// skipLineValue は手配不要の表のセルの値です（理由・日付のほかは発注の行と同じ）。
+// skipLineValue は手配不要表のセルの値です（理由・日付のほかは発注の行と同じ）。
 func skipLineValue(ln ourOrderLine, field, reason, date string) string {
 	switch field {
 	case "reason":
@@ -62,7 +62,7 @@ func skipLineValue(ln ourOrderLine, field, reason, date string) string {
 	return orderLineValue(ln, field)
 }
 
-// addSkipRows は本文の手配不要の表へ行を足します（無ければ必要部材表の目印の直後に作る・無ければ末尾）。
+// addSkipRows は本文の手配不要表へ行を足します（無ければ必要部材表の目印の直後に作る・無ければ末尾）。
 func addSkipRows(body string, lines []ourOrderLine, reason, date string) (string, int) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -115,7 +115,7 @@ func addSkipRows(body string, lines []ourOrderLine, reason, date string) (string
 	return htmldoc.Render(nodes), len(lines)
 }
 
-// takeSkipRow は手配不要の表の row 行目（見出しを除く・1始まり）を外し、外した行を返します。最後の1行なら表ごと消す。
+// takeSkipRow は手配不要表の row 行目（見出しを除く・1始まり）を外し、外した行を返します。最後の1行なら表ごと消す。
 func takeSkipRow(body string, row int) (string, ourOrderLine, bool) {
 	if row < 1 {
 		return body, ourOrderLine{}, false
@@ -144,7 +144,7 @@ func takeSkipRow(body string, row int) (string, ourOrderLine, bool) {
 }
 
 // SkipAPIHandler は POST /api/our-order/skip です。入力: {page_id, lines, reason}——page_id は必要部材表のあるページ
-// （部材発注フォルダ）。行を手配不要の表へ入れ、臨時部材表から来た行は臨時部材表から消します（移す）。
+// （部材発注フォルダ）。行を手配不要表へ入れ、臨時部材表から来た行は臨時部材表から消します（移す）。
 func SkipAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -187,7 +187,7 @@ func SkipAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, out)
 }
 
-// SkipRemoveAPIHandler は POST /api/our-order/skip/remove です。入力: {page_id, row}——手配不要の表から行を外す
+// SkipRemoveAPIHandler は POST /api/our-order/skip/remove です。入力: {page_id, row}——手配不要表から行を外す
 // （必要部材表へ戻る）。弊社品番の無い行は臨時部材表へ戻す（同じ保存で）。
 func SkipRemoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
@@ -227,7 +227,7 @@ func SkipRemoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID})
 }
 
-// renderSkipTable は手配不要の表の各行に「↩ 戻す」を足します（鏡・本文には残らない）。
+// renderSkipTable は手配不要表の各行に「↩ 戻す」を足します（鏡・本文には残らない）。
 func renderSkipTable(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if el.Data != "table" {
 		return true, nil

@@ -57,7 +57,7 @@ func init() {
 	// （ユーザー:「構成部品は図面の改定に伴って廃版になる場合があります」）。
 	//
 	// ⚠ **引き金ごとに鏡は1人**です（2人目を登録すると起動時に panic します）。
-	// 材料の表には2つ要る（廃版の印＋参考単価・2026-09-21）ので、**ここで束ねます**。
+	// 材料表には2つ要る（廃版の印＋参考単価・2026-09-21）ので、**ここで束ねます**。
 	for _, t := range []string{partMaterialsType, "part-outsourcing", "part-purchased", "part-supplied"} {
 		t := t
 		cms.RegisterMirror(t, cms.MirrorHandlerFunc(
@@ -66,7 +66,7 @@ func init() {
 					if _, err := markObsoleteRows(ctx, tbl); err != nil {
 						return true, err
 					}
-					// 支給部品の表（部品の表の最後）の下に「見積回答」（2026-10-04・rfq_quotes.go）。
+					// 支給部品表（部品の表の最後）の下に「見積回答」（2026-10-04・rfq_quotes.go）。
 					if t == "part-supplied" {
 						appendQuotesList(ctx, tbl)
 						appendOrderPrices(ctx, tbl) // 見積計算表の無いページはその後ろに「受注・見積の単価」（2026-10-04・order_prices.go）
@@ -87,7 +87,7 @@ func init() {
 // （`<section><h2>材料</h2>`）なら、中の**素の表**（自分で形式を名乗らない表）だけ。
 //
 // ⚠ **自分で名乗る表は配送係が別に届けます**（2026-09-27）。加工製品テンプレートは
-// `<section><h2>材料</h2><table><caption>材料</caption>` の形（見出しを残してキャプションを
+// `<section><h2>材料</h2><table><caption>材料表</caption>` の形（見出しを残してキャプションを
 // 付けた）で、節の中の表を全部拾っていたころは**節から1回・表から1回**鏡が走り、
 // **最新単価の列が2つ**出ていました（利用者:「材料の表に最新単価の列が二つあるのは何故ですか？」）。
 // 索引は 2026-09-21 に同じ二重を直していました（`eachPlainVocabTable`）——判定は同じ
@@ -132,7 +132,7 @@ func markObsoleteRows(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 
 // statusColumnIndex は見出し行から「区分」列の位置を返します（無ければ -1）。
 //
-// **「状態」ではなく「区分」**——受注明細の「状態」（未着手／加工中／納品済）は
+// **「状態」ではなく「区分」**——受注明細表の「状態」（未着手／加工中／納品済）は
 // **受注ごとの進捗**で、こちらは**定義そのものの現行／廃版**です。同じ語にすると
 // 混同されます（2026-09-03 ユーザーが実際に取り違えた）。進捗は加工製品ページではなく
 // 受注ページで見るもの、という線引きがここに現れています。

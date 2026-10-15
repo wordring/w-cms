@@ -66,7 +66,7 @@ func getDraft(t *testing.T, reply string) (int, []rfqReplyDraftRow) {
 	return rr.Code, out.Rows
 }
 
-// TestRFQReplyDraftAndMake は、読んだままの表を部材見積依頼明細の列に読み替えた案（弊社品番は図面番号で当てる・品名の無い行は上の行の
+// TestRFQReplyDraftAndMake は、読んだままの表を部材見積依頼明細表の列に読み替えた案（弊社品番は図面番号で当てる・品名の無い行は上の行の
 // 数量違い・合計の行は入れない）と、その案で部材見積依頼書ページを作り（回答あり・単価・回答日と部材見積依頼日・部材見積依頼／年／月）、返事を
 // 結んでその子へ移し、加工製品ページの「💴 見積回答」に並ぶ——を固定します。
 func TestRFQReplyDraftAndMake(t *testing.T) {

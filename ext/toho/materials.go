@@ -66,7 +66,7 @@ func init() {
 		Why:       "受注ページの置き場です（受注／年／月。年月は発注日）。整理を実行すると通信箱からここへ移ります。",
 	})
 	// ⚠ **弊社の部材発注書は受注ページの下に置けません**（2026-09-21 ユーザー訂正）
-	// ——発注は**納期のグループなどから**発行され、**受注明細の単位とは無関係**なので、
+	// ——発注は**納期のグループなどから**発行され、**受注明細表の単位とは無関係**なので、
 	// 1枚が複数の受注にまたがります。結びは参照で作ります（filing_order.go の定数）。
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     PurchaseOrderBoxTitle,
@@ -188,7 +188,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/estimate/from-folder", Handler: EstimateFromFolderAPIHandler},
 		// 未送付の見積書の「送った（FAX・手渡し）」「送付不要」（2026-10-03・estimate_unsent.go）。
 		{Pattern: "/api/estimate/mark", Handler: EstimateMarkAPIHandler},
-		// 見積書の備考を見積明細の下で書く（2026-10-03・estimate_note.go）。
+		// 見積書の備考を見積明細表の下で書く（2026-10-03・estimate_note.go）。
 		{Pattern: "/api/estimate/note", Handler: EstimateNoteAPIHandler},
 		{Pattern: "/api/rfq/needs/move", Handler: RFQNeedsMoveAPIHandler},
 		{Pattern: "/api/rfq/needs/remove", Handler: RFQNeedsRemoveAPIHandler},
@@ -204,7 +204,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 開いたときに結ぶ（backlog.go の linkBacklogRows・利用者「管理者メニューで直すのは編集者にとってきつそうです」）。
 		// 解析済みの印（添付ID → 生まれたページ）。読むだけで何も作りません。
 		{Pattern: "/api/analyzed", Handler: AnalyzedAPIHandler},
-		// 受注残表から受注明細の1セルを書き換える口（2026-09-21・order_edit.go）。
+		// 受注残表から受注明細表の1セルを書き換える口（2026-09-21・order_edit.go）。
 		// ⚠ **計算ビューで初めての「書ける鏡」**です——押した先が**別のページの
 		// 本文**になるので、行番号と `品番` の2つで照合し、いまの値とも突き合わせ、
 		// 編集ロックの関門を通します（2026-10-12 からは、道具が `/api/lock` で握っているときだけ断る）。
@@ -214,7 +214,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/order-pdf", Handler: OrderPDFAPIHandler},
 		{Pattern: "/api/order-pdf-docs", Handler: OrderPDFDocsAPIHandler}, // 資料を綴じた FAX・印刷用（2026-09-28）
 		// 材質・形状・寸法で材料を探す口（2026-09-21・dimension_search.go）。
-		// ⚠ **読めないページは混ぜません**——材料の表には誰でも行を書けるので、
+		// ⚠ **読めないページは混ぜません**——材料表には誰でも行を書けるので、
 		// 絞らないと読めない部材発注書の単価と仕入先が引けてしまいます。
 		{Pattern: "/api/material-search", Handler: MaterialSearchAPIHandler},
 		// 未手配の一覧から部材発注書を1枚作る口（2026-09-21・our_order_new.go）。
@@ -228,12 +228,12 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、
 		// ここから消せば**自動的に一覧へ戻ってきます**。
 		{Pattern: "/api/our-order/draft/remove", Handler: RemoveOrderDraftRowAPIHandler},
-		// 部材発注明細の1行の `状態` を書き換える口（2026-09-22・order_status.go）。
+		// 部材発注明細表の1行の `状態` を書き換える口（2026-09-22・order_status.go）。
 		// ⚠ **発注済みの印は行に付きます**（ユーザー:「発注書の表の**一品ずつに
 		// 発注済みの印**をつけます」）——1枚の紙の中でも、**1品だけ取り消す**・
 		// **1品だけ先に納まる**が起こるためです。
 		{Pattern: "/api/our-order/line-status", Handler: OrderLineStatusAPIHandler},
-		// 部材発注明細の1行を外して必要部材表へ戻す口（2026-09-24・order_return.go）。
+		// 部材発注明細表の1行を外して必要部材表へ戻す口（2026-09-24・order_return.go）。
 		// ⚠ **取消とは別**——取消は「もう発注しない」（行は残る）、戻すは
 		// 「この部材発注書では発注しない」（行が消え、必要部材表でまた選べる）。
 		{Pattern: "/api/our-order/return-row", Handler: OrderReturnRowAPIHandler},
@@ -346,7 +346,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	}
 	scope = kept
 
-	// 1. スコープの受注明細（品番・数量）を索引から読む。
+	// 1. スコープの受注明細表（品番・数量）を索引から読む。
 	//    **ページで絞る**のは変わりません——同じ発注書番号を別ページで使っても
 	//    混ざらない（硬い表のころ order_no のサブクエリで他ページの明細まで
 	//    拾った・設計総点検③）。広がったのは「どのページを見るか」だけです。
@@ -365,7 +365,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    「そのタグを持つページ」を逆引きしてから、そのページの部材表を読みます。
 	//    ⚠ 見るタグは設定の照合タグ（`product_code_tags`・図面番号／品番／部品番号）——
 	//    2026-09-27 まではレジストリ宣言（part-materials の RequiresTag＝部品番号）1つでしたが、
-	//    宣言を外しました（vocab.go）。受注明細の照合（`productByCode`）と同じ名前を見ます。
+	//    宣言を外しました（vocab.go）。受注明細表の照合（`productByCode`）と同じ名前を見ます。
 
 	// 同じ品番が明細に何度出ても、定義の引き直しは1度だけ。
 	defsFor := map[string][]cms.VocabRow{}
@@ -418,7 +418,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    **1文書＝1ページ**が規則なので（ユーザー:「発注書は一ページ一発注書で問題ない」）、
 	//    対応づけは**ページ1つ**で閉じます——ヘッダと明細を `block_no` で突き合わせていた
 	//    仕掛けは要らなくなりました（文書順に頼る対応づけが1つ消えた）。
-	//    スコープは受注明細と同じ（部材発注書が別ページに在っても拾う）。
+	//    スコープは受注明細表と同じ（部材発注書が別ページに在っても拾う）。
 	var ourItems []cms.VocabRow
 	supplierOf := map[int]string{} // ページ → 仕入先
 	for _, id := range scope {
@@ -472,7 +472,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 //
 // 材料に単独の「名前」の列はありません——ユーザーの実務では
 // **材質・形状・寸法の3つで決まります**（`SS400 板 t3.2 1000×500`）。
-// ③計算は部材発注明細の品名と突き合わせるので、ここで1つの文字列に繋ぎます。
+// ③計算は部材発注明細表の品名と突き合わせるので、ここで1つの文字列に繋ぎます。
 //
 // 古い形（部材名の1列だけ）で書かれた行も読めるようにしてあります
 // ——列を変える前に作られたページを黙って落とさないため。

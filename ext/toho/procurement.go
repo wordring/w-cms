@@ -19,7 +19,7 @@ package toho
 // ⚠ **スコープ（`RelatedPages`）に頼りません。** 部材発注書は `部材発注／年／月` に置かれ、
 // 受注ページからは `受注 →（弊社品番）→ 加工製品 →（弊社品番）→ 部材発注書` の**2段**です
 // ——深さ1の集計範囲では**黙って0件**になります。だから
-// `cms.VocabRowsOfType` で**全社の部材発注明細**を読み、`弊社品番` で束ねます
+// `cms.VocabRowsOfType` で**全社の部材発注明細表**を読み、`弊社品番` で束ねます
 // （材料の参考単価と同じやり方）。**置き場が変わっても壊れません。**
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -63,11 +63,11 @@ type ProcurementItem struct {
 	Values map[string]string `json:"values,omitempty"`
 }
 
-// ProcurementProduct は受注明細の1行（＝加工製品1種類）です。
+// ProcurementProduct は受注明細表の1行（＝加工製品1種類）です。
 type ProcurementProduct struct {
 	PageID    int               `json:"page_id"`
 	Title     string            `json:"title"`
-	ItemName  string            `json:"item_name"` // 受注明細の品名
+	ItemName  string            `json:"item_name"` // 受注明細表の品名
 	Qty       int               `json:"qty"`       // 受注数量
 	Migrating bool              `json:"migrating"`
 	Items     []ProcurementItem `json:"items"`

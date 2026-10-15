@@ -9,7 +9,7 @@ package toho
 // （「この前の t3.2 の角パイプ、いくらで買ったっけ」）。だから結果には
 // **単価・時点・仕入先**を添えます——[material_price.go] と同じ引き方です。
 //
-// ⚠ **読めないページは混ぜません**（`page.CanView`）。材料の表には誰でも行を
+// ⚠ **読めないページは混ぜません**（`page.CanView`）。材料表には誰でも行を
 // 書けるので、絞らないと**読めない部材発注書の単価と仕入先が引けてしまいます**。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ func (q MaterialQuery) Empty() bool {
 type MaterialHit struct {
 	PageID    int    `json:"page_id"`
 	PageTitle string `json:"page_title"`
-	Kind      string `json:"kind"`     // 材料 / 部材発注明細
+	Kind      string `json:"kind"`     // 材料 / 部材発注明細表
 	Material  string `json:"material"` // 材質
 	Shape     string `json:"shape"`    // 形状
 	Size      string `json:"size"`     // 寸法（書かれたまま）

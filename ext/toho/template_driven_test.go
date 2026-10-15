@@ -18,7 +18,7 @@ import (
 // 利用者:「テンプレートにはスラッシュメニューから表などの印を置き、コードはそれを埋めては
 // どうでしょう？」——**形はテンプレート、値と行の数は機械**。
 
-// 受注明細は**テンプレートの列の並び**に従い、見出しの言葉で値を合わせる。テンプレートに無い
+// 受注明細表は**テンプレートの列の並び**に従い、見出しの言葉で値を合わせる。テンプレートに無い
 // 列は値があれば右端へ足す。タグもテンプレートの並びのまま、無いものは末尾へ足す。
 func TestOrderPageFollowsTemplateColumns(t *testing.T) {
 	tmpl := `<h1>受注ページ</h1><dl data-type="tags"><dt>` + OrderClientTag + `</dt><dd><br/></dd></dl>` +
@@ -53,7 +53,7 @@ func TestOrderPageFollowsTemplateColumns(t *testing.T) {
 		t.Errorf("テンプレートに無いファイル表示を足しました:\n%s", body)
 	}
 
-	// 受注明細の表が無いテンプレートでは作らない（明細の行き場が無い）。
+	// 受注明細表が無いテンプレートでは作らない（明細の行き場が無い）。
 	_, err = buildOrderPageHTML(`<h1>受注ページ</h1>`, "000001", "pdf001", j)
 	var se *cms.TemplateSlotError
 	if !errors.As(err, &se) || !strings.Contains(err.Error(), "受注明細表") {
@@ -83,7 +83,7 @@ func TestOrderPageSourceTableGoesIntoTheFold(t *testing.T) {
 }
 
 // 加工製品は**図面ブロックを見出しで探す**——テンプレートで材料の節を図面より前に置いても、
-// 改定の合流が運ぶのは図面ブロック。改訂明細の1版目は行にブロックIDがあり、改定で版2になる。
+// 改定の合流が運ぶのは図面ブロック。改訂明細表の1版目は行にブロックIDがあり、改定で版2になる。
 func TestProductPageFromTemplateWithMaterialsFirst(t *testing.T) {
 	tmpl := `<h1>加工製品</h1><section><h2>材料</h2><table><caption>材料表</caption><tbody><tr><th>材質</th></tr></tbody></table></section>` +
 		`<section><h2>図面</h2><dl data-type="tags"><dt>図面番号</dt><dd><br/></dd></dl>` +
@@ -175,7 +175,7 @@ func TestNewOurOrderRefusesWithoutTemplateBeforeCreating(t *testing.T) {
 
 // TestProductPageRaisesNoPartNumberNotice は、テンプレートから作った加工製品ページを保存しても
 // 「見出しが合わないため『材料: 部品番号』が計算に読まれません」が**出ない**ことを固定します
-// （2026-09-27 利用者:「…と出るのは何故でしょう？」）。材料の表の宣言が、もう使っていない
+// （2026-09-27 利用者:「…と出るのは何故でしょう？」）。材料表の宣言が、もう使っていない
 // `部品番号` タグを要求していたための誤報でした（vocab.go）。
 func TestProductPageRaisesNoPartNumberNotice(t *testing.T) {
 	j := &orderJudgment{DocType: "drawing", DrawingNo: "K120-1", DrawingName: "ブラケット"}

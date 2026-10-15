@@ -1474,7 +1474,7 @@ body[edit-mode] #w-editor-content td.cell-formula-error { background: #fee2e2; c
 
 #w-editor-content table.materials-table .num { text-align: right; }
 #w-editor-content table.materials-table .status { text-align: center; }
-/* 加工製品ページの「貰った見積」（2026-10-04・ext/toho/rfq_quotes.go）——支給部品の表の下。
+/* 加工製品ページの「貰った見積」（2026-10-04・ext/toho/rfq_quotes.go）——支給部品表の下。
    列が8つあり欄（最大 666px）にぎりぎりなので、はみ出したときは表が自分の中で横スクロールします。
    「何の値段か」だけ折り返し、ほかは1行に保ちます（業者名や日付が途中で折れないように）。 */
 #w-editor-content .rfq-quotes { margin-top: 16px; }
@@ -2523,7 +2523,7 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .checksum-ng td { background: #fee2e2; }
 #w-editor-content .checksum-ok td { background: #dcfce7; color: #166534; }
 #w-editor-content .checksum-note td { color: var(--w-muted, #6b7280); font-style: italic; }
-/* 受注残高（2026-09-30・order_balance.go）——受注明細の足元のいちばん上。数字を読むので太く・右寄せにはしない（文になっている）。 */
+/* 受注残高（2026-09-30・order_balance.go）——受注明細表の足元のいちばん上。数字を読むので太く・右寄せにはしない（文になっている）。 */
 #w-editor-content .order-balance td {
     padding: 6px 8px;
     font-weight: 600;
@@ -2537,12 +2537,12 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .estimate-rate td { padding: 4px 8px; font-size: 0.9em; }
 #w-editor-content .estimate-rate-input { width: 5em; }
 #w-editor-content .estimate-note td { color: var(--w-muted, #6b7280); font-style: italic; }
-/* 見積書に入れる（見積計算表の足元）・見積明細の合計と PDF・メール（2026-10-01）。 */
+/* 見積書に入れる（見積計算表の足元）・見積明細表の合計と PDF・メール（2026-10-01）。 */
 #w-editor-content .estimate-add td, #w-editor-content .estimate-actions td { padding: 4px 8px; font-size: 0.9em; }
 #w-editor-content .estimate-add-form input[type="text"] { width: 9em; }
 #w-editor-content .estimate-add-head { font-weight: 600; }
 #w-editor-content .estimate-total td { padding: 6px 8px; font-size: 1.05em; background: var(--bg-subtle, #f8fafc); }
-/* 見積明細の下の備考の欄（2026-10-03・estimate_note.go）——閲覧モードで書く。書ける形では「備考」の節を直接直すので隠す
+/* 見積明細表の下の備考の欄（2026-10-03・estimate_note.go）——閲覧モードで書く。書ける形では「備考」の節を直接直すので隠す
    （⚠ 2026-10-12 からパソコンは書ける形で開くので、初めは見えない）。 */
 #w-editor-content .estimate-note-row td { padding: 6px 8px; }
 #w-editor-content .estimate-note-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }

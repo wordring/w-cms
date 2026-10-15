@@ -55,7 +55,7 @@ func TestRecordMakersListKindsByDirection(t *testing.T) {
 }
 
 // TestMakeProductFromMail は「加工製品ページ」で、テンプレートから空の加工製品ページがメールの記録の子にでき（受信元は
-// メールのページ全体・改訂明細の1版目・図面の枠は空）、開くページとして返り、印に出ることを固定します。
+// メールのページ全体・改訂明細表の1版目・図面の枠は空）、開くページとして返り、印に出ることを固定します。
 func TestMakeProductFromMail(t *testing.T) {
 	const id = "000018"
 	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})

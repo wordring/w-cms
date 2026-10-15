@@ -15,7 +15,7 @@ package toho
 // ── 送ったかどうかは本文が覚えます ──
 //
 // 送ると（メール・FAX・手渡し）、見出し「送った部材発注書」の節に1行足します——送った日・送り方・送った PDF への
-// リンク（メールなら控えのページへのリンクも）。節は表示中の PDF のすぐ下に置きます（無ければ部材発注明細の下）。
+// リンク（メールなら控えのページへのリンクも）。節は表示中の PDF のすぐ下に置きます（無ければ部材発注明細表の下）。
 // 「表示中の PDF を送ったか」は、この節にその PDF のリンクがあるかで決めます。
 //
 //	表示中の PDF が送っていないもの → 「PDF作成」はその添付を上書きする（ID も表示も変わらない）
@@ -172,7 +172,7 @@ func orderSentLineHTML(pageID, day, method, recordID string, files []sentOrderFi
 }
 
 // withOrderSentLine は記録の節の末尾に lineHTML を足します。節が無ければ作ります——置き場は表示中の PDF の
-// すぐ下（無ければ最初の部材発注明細の表の下、それも無ければ本文の末尾）。
+// すぐ下（無ければ最初の部材発注明細表の下、それも無ければ本文の末尾）。
 func withOrderSentLine(body, lineHTML string) (string, error) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -285,7 +285,7 @@ func OrderNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
 	serveDocNote(w, r, isOurOrderPage, "部材発注書ページではありません", "our-order.note")
 }
 
-// isOurOrderPage は部材発注書ページ（テンプレートの外で、部材発注明細の表を持つ）かです。
+// isOurOrderPage は部材発注書ページ（テンプレートの外で、部材発注明細表を持つ）かです。
 func isOurOrderPage(pageID string) bool {
 	if cms.IsTemplateArea(pageID) {
 		return false

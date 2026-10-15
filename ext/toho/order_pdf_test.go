@@ -412,7 +412,7 @@ func TestOrderNoteIsASectionNotATag(t *testing.T) {
 			t.Errorf("本文に %q がありません:\n%s", want, body)
 		}
 	}
-	// ⚠ **表の下**にあること（要求の並び: 部材発注明細 → 備考欄）。
+	// ⚠ **表の下**にあること（要求の並び: 部材発注明細表 → 備考欄）。
 	if strings.Index(body, "<h2>備考</h2>") < strings.Index(body, "</table>") {
 		t.Errorf("⚠ 備考欄が表より上にあります:\n%s", body)
 	}

@@ -7,7 +7,7 @@ package toho
 // ページを作る」に）「/001863 は弊社品番に結び付けられますか？」→（明細の品名欄の図面番号で3行とも加工製品ページに当たると答えて）
 // 「作る」・品名の無い最後の行は「（上の行の品物）の20個の単価」（上の行と同じ品物の数量違い）。
 //
-//	GET  /api/rfq-reply/draft?page_id=   … 返事ページの「業者の返事（読んだまま）」の表を、部材見積依頼明細の列に読み替えた**案**
+//	GET  /api/rfq-reply/draft?page_id=   … 返事ページの「業者の返事（読んだまま）」の表を、部材見積依頼明細表の列に読み替えた**案**
 //	                                       （弊社品番は品名・品番の欄の図面番号・品番から、加工製品ページが1つに決まれば当てる）
 //	POST /api/rfq-reply/make-rfq         … 人が直した案で部材見積依頼書ページを作り（回答あり・単価入り・回答日と部材見積依頼日は返事の
 //	                                       回答日——過去の見積もりの移しと同じ createAnsweredRFQPage）、返事ページを結んでその子へ移す
@@ -33,7 +33,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// replyColumnOf は業者の表の見出しを、部材見積依頼明細の列（ourOrderLine の鍵）へ読み替えます（読み替えない列は空）。
+// replyColumnOf は業者の表の見出しを、部材見積依頼明細表の列（ourOrderLine の鍵）へ読み替えます（読み替えない列は空）。
 func replyColumnOf(header string) string {
 	h := strings.Map(func(r rune) rune {
 		if r == ' ' || r == '　' || r == '\t' {
@@ -151,7 +151,7 @@ func readReplyTable(body string) (headers []string, rows [][]string) {
 	return headers, rows
 }
 
-// rfqReplyDraft は返事ページの読んだままの表を、部材見積依頼明細の行の案にします。
+// rfqReplyDraft は返事ページの読んだままの表を、部材見積依頼明細表の行の案にします。
 func rfqReplyDraft(user *auth.User, body string) []rfqReplyDraftRow {
 	headers, rows := readReplyTable(body)
 	cols := make([]string, len(headers))

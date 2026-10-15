@@ -43,7 +43,7 @@ const priceColLabel = "最新単価"
 
 // materialPrice は「その材料を最後にいくらで買ったか」です。
 type materialPrice struct {
-	Cost     int    // 単価（部材発注明細の `単価`）
+	Cost     int    // 単価（部材発注明細表の `単価`）
 	Date     string // 部材発注日（読めなければ空）
 	Supplier string // 仕入先
 	PageID   int    // 出所の部材発注書ページ
@@ -66,7 +66,7 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	si := headerIndexOf(head, "形状")
 	zi := headerIndexOf(head, "寸法")
 	if mi < 0 && si < 0 && zi < 0 {
-		return true, nil // 材料の表に見えない（人が列を入れ替えた等）
+		return true, nil // 材料表に見えない（人が列を入れ替えた等）
 	}
 
 	// ⚠ **移行の確認が済むまで引きません**（2026-09-21 ユーザー提案）。
@@ -169,7 +169,7 @@ func appendMigratingRow(table *html.Node, span int) {
 			MigratingTag+"」タグを消してください）")
 }
 
-// latestMaterialPrices は**全社の部材発注明細**から、材料ごとの最新単価を集めます。
+// latestMaterialPrices は**全社の部材発注明細表**から、材料ごとの最新単価を集めます。
 //
 // ⚠ **スコープは `RelatedPages` ではありません。** 前に同じ材料を買ったのは
 // まったく別の受注かもしれないので、**関係の有無にかかわらず記録すべて**を当たります。
@@ -236,7 +236,7 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 	return out, nil
 }
 
-// latestQuotedPrices は**全社の部材見積依頼明細**から、材料ごとのいちばん新しい「言われた値段」（回答ありの単価）を集めます
+// latestQuotedPrices は**全社の部材見積依頼明細表**から、材料ごとのいちばん新しい「言われた値段」（回答ありの単価）を集めます
 // （2026-10-05）。日付は部材見積依頼書の回答日（無ければ部材見積依頼日）、仕入先はそのページの仕入先。相見積もりで同じ日に
 // 何社もあれば、あとから作られたページ（newerPrice と同じ）。読めないページ・テンプレートの中は混ぜない。
 func latestQuotedPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]materialPrice, error) {

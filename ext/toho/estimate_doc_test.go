@@ -130,7 +130,7 @@ func TestEstimatePDFRoundTrips(t *testing.T) {
 
 // TestEstimateFromFolder は「見積書を作る」（装置フォルダから選ぶ・2026-10-03・estimate_folder.go）を固定します——
 // ① 装置フォルダの下の加工製品が見積計算表ごとに並ぶ（確定単価・ロット・確定単価の出ない表は理由・表の無い加工製品も並ぶ）
-// ② 送った表の順に見積明細が入った見積書ページができる（単価は確定単価・備考は単価の行の備考）
+// ② 送った表の順に見積明細表が入った見積書ページができる（単価は確定単価・備考は単価の行の備考）
 // ③ 選んだ表の1つでも確定単価が出なければ作らない（顧客へ出す紙が黙って欠けないように）
 func TestEstimateFromFolder(t *testing.T) {
 	const folder = "000030"
@@ -282,7 +282,7 @@ func TestEstimateUnsentList(t *testing.T) {
 	}
 }
 
-// TestEstimateNoteBox は見積明細の下の備考の欄（2026-10-03・estimate_note.go）を固定します——欄は見積明細の足元に出て、
+// TestEstimateNoteBox は見積明細表の下の備考の欄（2026-10-03・estimate_note.go）を固定します——欄は見積明細表の足元に出て、
 // 保存すると「備考」の節（PDF が刷るところ）が書き換わり、欄にも出る。空にすれば空の段落。見積書でないページには書かない。
 // 利用者:「見積書ページの見積明細テーブルの下に備考入力欄を付けると良いと思います」。
 func TestEstimateNoteBox(t *testing.T) {

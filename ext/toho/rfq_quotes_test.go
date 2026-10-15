@@ -12,7 +12,7 @@ import (
 
 // 加工製品ページの「見積回答」（2026-10-04・rfq_quotes.go）。
 
-// productWithSupplied は支給部品の表を持つ加工製品ページの本文です（テンプレートと同じ「見出しの節＋キャプション」の形）。
+// productWithSupplied は支給部品表を持つ加工製品ページの本文です（テンプレートと同じ「見出しの節＋キャプション」の形）。
 const productWithSupplied = `<h1>カバー</h1>` +
 	`<section><h2>支給部品</h2><table><caption>支給部品表</caption><tbody>` +
 	`<tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>` +

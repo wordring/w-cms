@@ -303,7 +303,7 @@ func TestRFQFolderProductsAndCollectMany(t *testing.T) {
 	}
 }
 
-// TestRFQNewDoc は部材見積依頼書ページを作る（2026-10-03・段2・rfq_doc.go）を固定します——見積依頼部材表の行が部材見積依頼明細へ
+// TestRFQNewDoc は部材見積依頼書ページを作る（2026-10-03・段2・rfq_doc.go）を固定します——見積依頼部材表の行が部材見積依頼明細表へ
 // （状態は未回答・⚠ 単価は空——業者に聞く前の値を紙に持ち込まない）、タグ（部材見積依頼番号＝ページ番号・仕入先・部材見積依頼日）と
 // 備考の節が入り、置き場は 部材見積依頼／年／月、元の見積依頼部材表は消える。仕入先が無ければ作らない。
 func TestRFQNewDoc(t *testing.T) {
@@ -434,7 +434,7 @@ func TestRFQDocFooterAndSend(t *testing.T) {
 }
 
 // TestRFQImportAnsweredQuote は過去の見積もりを移す口（2026-10-04・RFQImportAPIHandler）を固定します——管理者だけ・
-// 部材見積依頼明細に単価と「回答あり」・回答日と部材見積依頼日はその日・置き場は 部材見積依頼／その年／その月・備考の節。
+// 部材見積依頼明細表に単価と「回答あり」・回答日と部材見積依頼日はその日・置き場は 部材見積依頼／その年／その月・備考の節。
 func TestRFQImportAnsweredQuote(t *testing.T) {
 	const box = "000040"
 	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
@@ -474,7 +474,7 @@ func TestRFQImportAnsweredQuote(t *testing.T) {
 	}
 }
 
-// TestRFQFillItemNames は部材見積依頼明細の空の品番・品名を加工製品ページから埋めること（2026-10-04・fillRFQItemNames）を固定します——
+// TestRFQFillItemNames は部材見積依頼明細表の空の品番・品名を加工製品ページから埋めること（2026-10-04・fillRFQItemNames）を固定します——
 // 移す口（import）は自動で埋め、既に書いてある品名は残す。後始末の口（fill-names）は管理者だけ。
 // 利用者:「品番と品名の欄が埋まらない事には、人間には見てわかりません」。
 func TestRFQFillItemNames(t *testing.T) {
@@ -510,7 +510,7 @@ func TestRFQFillItemNames(t *testing.T) {
 	}
 }
 
-// TestRFQSetCellsChecksFirst は部材見積依頼明細のセルを確かめてから書き換える口（2026-10-04・RFQSetCellsAPIHandler）を固定します——
+// TestRFQSetCellsChecksFirst は部材見積依頼明細表のセルを確かめてから書き換える口（2026-10-04・RFQSetCellsAPIHandler）を固定します——
 // いまの値が合えば書き、1つでも合わなければ何も書かない（409）・管理者だけ。移した行の「数の無い行に入れた 1」を空欄に戻すのに使う。
 func TestRFQSetCellsChecksFirst(t *testing.T) {
 	const box = "000040"

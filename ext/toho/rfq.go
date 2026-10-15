@@ -15,9 +15,9 @@ package toho
 //	  │    ↓ 選んで・入れる先を選んで →「見積依頼部材表へ入れる」
 //	  ├ 見積依頼部材表               … 業者ごとに足し引き（↩ 戻す）
 //	  │    ↓ 仕入先・差出人を入れて →「部材見積依頼書ページを作る」               ← 段 2
-//	  └ 年／月／部材見積依頼 ○○商店     … 部材見積依頼書ページ（部材見積依頼明細・紙・送る）
+//	  └ 年／月／部材見積依頼 ○○商店     … 部材見積依頼書ページ（部材見積依頼明細表・紙・送る）
 //
-// ⚠ **発注の道具を共有します**（table_lines.go——表の種類を引数に）。列は部材発注明細と同じ（`orderItemColumns`）。
+// ⚠ **発注の道具を共有します**（table_lines.go——表の種類を引数に）。列は部材発注明細表と同じ（`orderItemColumns`）。
 // ⚠ **機械は依頼済みを数えません**——重複は赤くするだけ（利用者の決定・同じ日の朝の「行ごとに数える」は採らなかった）。
 // ⚠ **重複を見るのは見積依頼必要部材表の中だけ**（前に出した部材見積依頼書とは比べない・利用者:「見積依頼必要部材表に同時に
 //    同じもので同じロットが出ていたらに赤くしておけば十分」）。
@@ -44,17 +44,17 @@ const (
 	RFQTempPartsType = "rfq-temp-parts"
 	// RFQDraftType は見積依頼部材表です（業者ごとに足し引きする——機械だけが作る）。
 	RFQDraftType = "rfq-draft"
-	// RFQItemsType は部材見積依頼明細です（部材見積依頼書ページの明細——返事の単価もここ）。
+	// RFQItemsType は部材見積依頼明細表です（部材見積依頼書ページの明細——返事の単価もここ）。
 	RFQItemsType = "rfq-items"
 	// RFQRequoteViewType は再部材見積依頼のフォームです（弊社品番＋ロット →「集める」）。
 	RFQRequoteViewType = "rfq-requote"
 )
 
-// rfqLineStatuses は部材見積依頼明細の状態です（2026-10-02 利用者の選択「発注明細と同じ＋状態」）。
-// ⚠ **設定の語彙（table_vocabulary の見積依頼部材表・部材見積依頼明細）と同じ並び**——変えるときは両方。
+// rfqLineStatuses は部材見積依頼明細表の状態です（2026-10-02 利用者の選択「発注明細と同じ＋状態」）。
+// ⚠ **設定の語彙（table_vocabulary の見積依頼部材表・部材見積依頼明細表）と同じ並び**——変えるときは両方。
 func rfqLineStatuses() []string { return []string{"未回答", "回答あり", "辞退"} }
 
-// rfqColumns は見積依頼部材表・部材見積依頼明細の列です——部材発注明細と同じ列で、状態の選択肢だけ違う。
+// rfqColumns は見積依頼部材表・部材見積依頼明細表の列です——部材発注明細表と同じ列で、状態の選択肢だけ違う。
 // ⚠ **同じ宣言から作ります**（写して書くと、列を足した日に移すときに落ちる）。
 func rfqColumns() []cms.VocabColumn {
 	cols := orderItemColumns()
@@ -71,7 +71,7 @@ func rfqColumns() []cms.VocabColumn {
 // 【要求】部材見積依頼 §2:「重複とみなすのは、見積依頼必要部材表の中に、同じものが同じロットで同時に出ているときだけ」。
 // 重複をロットで見るには、行がロットを持っていなければなりません——再部材見積依頼フォーム（弊社品番＋ロット）と受注残表
 // （受注残の数）から集めた行に、集めたときのロットを残します。見積依頼部材表にも置くのは、「↩ 戻す」で戻した行が
-// ロットを失わないため。部材見積依頼明細（紙）には置きません（紙の列は部材発注書と同じ・数量で足りる）。
+// ロットを失わないため。部材見積依頼明細表（紙）には置きません（紙の列は部材発注書と同じ・数量で足りる）。
 // ⚠ 型は設定（`config/settings.json` の table_vocabulary）と同じ number——変えるときは両方。
 func rfqLotColumn() cms.VocabColumn {
 	return cms.VocabColumn{Field: "lot", Label: "ロット", Type: cms.ColNumber}
@@ -94,12 +94,12 @@ func withLotBeforeQuantity(cols []cms.VocabColumn) []cms.VocabColumn {
 	return out
 }
 
-// rfqDraftColumns は見積依頼部材表の列です——部材見積依頼明細の列（部材発注明細と同じ）に `ロット` を足したもの。
+// rfqDraftColumns は見積依頼部材表の列です——部材見積依頼明細表の列（部材発注明細表と同じ）に `ロット` を足したもの。
 func rfqDraftColumns() []cms.VocabColumn {
 	return withLotBeforeQuantity(rfqColumns())
 }
 
-// rfqNeedsColumns は見積依頼必要部材表の列です——部材発注明細の列から単価と状態を除き（まだ聞いていない）、`ロット` を足したもの。
+// rfqNeedsColumns は見積依頼必要部材表の列です——部材発注明細表の列から単価と状態を除き（まだ聞いていない）、`ロット` を足したもの。
 func rfqNeedsColumns() []cms.VocabColumn {
 	var out []cms.VocabColumn
 	for _, c := range orderItemColumns() {

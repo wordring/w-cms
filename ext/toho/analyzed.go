@@ -216,7 +216,7 @@ func isOrderPageTags(tags map[string][]string) bool {
 	return cms.FirstTag(tags, OrderNoTag) != "" || cms.FirstTag(tags, OrderClientTag) != ""
 }
 
-// 受注明細の列の名前です。⚠ **`vocab.go` の `Label` と揃えること**——索引も本文の
+// 受注明細表の列の名前です。⚠ **`vocab.go` の `Label` と揃えること**——索引も本文の
 // 書き換えも**見出しの表示文字**で引くので、ずれると黙って当たらなくなります。
 //
 // ⚠ **`OurItemNoTag` と `ItemNoTag` は別物です**（2026-09-20 ユーザー決定）:

@@ -46,7 +46,7 @@ func TestSupersedeDrawingMovesOldToChild(t *testing.T) {
 	if strings.Count(after, "<section") != strings.Count(after, "</section>") {
 		t.Errorf("⚠ 本文が釣り合っていません:\n%s", after)
 	}
-	// 新しい図面は古い図面のいた場所（改訂明細より上）。
+	// 新しい図面は古い図面のいた場所（改訂明細表より上）。
 	if i, j := strings.Index(after, "<dd>X2</dd>"), strings.Index(after, "<caption>改訂明細表</caption>"); i < 0 || j < 0 || i > j {
 		t.Errorf("新しい図面が改訂明細表より上にありません:\n%s", after)
 	}
@@ -59,7 +59,7 @@ func TestSupersedeDrawingMovesOldToChild(t *testing.T) {
 	if ob, _ := extractDrawingSections(oldBody); len(ob) != 1 || drawingNoOf(ob[0]) != "X1" || !strings.Contains(ob[0], "file-view") {
 		t.Errorf("旧版ページに古い図面がブロックごと入っていません:\n%s", oldBody)
 	}
-	// 改訂明細——X2 の行が足され、X1 の行は旧版ページへのリンク。
+	// 改訂明細表——X2 の行が足され、X1 の行は旧版ページへのリンク。
 	if !strings.Contains(after, "<td>X2</td>") {
 		t.Errorf("改訂明細表に X2 の行がありません:\n%s", after)
 	}
@@ -125,9 +125,9 @@ func TestSupersedeDrawingTakesOldPlace(t *testing.T) {
 	}
 }
 
-// TestSupersedeDrawingIndentedBody は、エディタで保存した本文（タグの dt と dd・改訂明細の tr と td のあいだに字下げ）でも
+// TestSupersedeDrawingIndentedBody は、エディタで保存した本文（タグの dt と dd・改訂明細表の tr と td のあいだに字下げ）でも
 // 図面番号を読めることを見ます（2026-10-04 に職場で「古い図面がこのページに見つかりません」——詰めた形しか読まなかった）。
-// 旧版の題に番号が入り、改訂明細の新しい行は版2（字下げされた行も数える）、古い行は旧版へのリンク。
+// 旧版の題に番号が入り、改訂明細表の新しい行は版2（字下げされた行も数える）、古い行は旧版へのリンク。
 func TestSupersedeDrawingIndentedBody(t *testing.T) {
 	const inbox = "000042"
 	setupFilingTest(t, inbox)

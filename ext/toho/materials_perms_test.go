@@ -100,7 +100,7 @@ func seedSecretMaterial(t *testing.T, orderPageID int, orderPagePublic bool, ord
 			t.Fatalf("SyncIndex(%d)エラー: %v", id, err)
 		}
 	}
-	// 部材定義はページ2。部品番号タグ SECRET-PART が受注明細の品番と結ぶ。
+	// 部材定義はページ2。部品番号タグ SECRET-PART が受注明細表の品番と結ぶ。
 	sync(2, `<h1>部品定義</h1>`+
 		`<dl data-type="tags"><dt>部品番号</dt><dd>SECRET-PART</dd><dt>客先</dt><dd>得意先</dd></dl>`+ // 客先＋品番で引く（2026-10-01）
 		`<table data-type="part-materials"><tbody>`+

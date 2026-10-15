@@ -3024,7 +3024,7 @@
     // **表ごとの例外**（設定の `table_vocabulary`・2026-09-26・DBの日本語化 4-2）。
     // 表の列の型と選択肢は `columnWord(表, 列)` が **例外 → vocabWords → 文字列** の順で
     // 引きます（サーバーの `ColumnWord` と同じ順）。
-    let tableWords = {};               // { "部材発注明細": { "状態": {type:"enum", values:[...]} }, ... }
+    let tableWords = {};               // { "部材発注明細表": { "状態": {type:"enum", values:[...]} }, ... }
     // **載っている拡張**（/api/tag-schema の `extensions`・2026-09-15）。拡張の画面はこの
     // ファイルに居るので、サーバーからビルドタグで外しても**ボタンは残り、押すと404が
     // エラーの通知になっていました**（「🤖 解析」「✉️ 返信」「未分類へ戻す」）。
@@ -3194,7 +3194,7 @@
         const t = table.getAttribute('data-type');
         if (t) return vocabDefs.find(v => v.type === t) || null;
         // 表は自分の <caption> で名乗れる（サーバーの vocabTypeOf ③と同じ規則）。
-        // ⚠ 機械が書く明細（受注明細・部材発注明細・発注部材表）はこの形で、`data-type` を
+        // ⚠ 機械が書く明細（受注明細表・部材発注明細表・発注部材表）はこの形で、`data-type` を
         // 書かない——ここで caption を見ないと、その表だけ列型の検証と折り返しが掛からない。
         const cap = table.querySelector(':scope > caption');
         if (cap) {
@@ -5382,7 +5382,7 @@
     //
     // ⚠ **それまでは登録（`vocabDefs` の列の宣言）から引いていました**——表の写し
     // （`data/tables.db`）はサーバーの `ColumnWord` で**語彙**を読むので、エディタと DB が
-    // **別の正本**を見ていました。実際に5か所ずれていて、エディタは受注明細の `最短納期` を
+    // **別の正本**を見ていました。実際に5か所ずれていて、エディタは受注明細表の `最短納期` を
     // 日付でないとして薄赤にしていました（登録は `date` のまま・語彙は 09-23 から `text`）。
     //
     // wordKey は名前を照らす形に畳みます（NFKC・前後と重なりの空白・ASCII の大小）。
@@ -10983,7 +10983,7 @@ async function estimateBlockPost(btn, url, sayClass, doing) {
 // ── 見積書（2026-10-01・ext/toho/estimate_doc.go・estimate_pdf.go）─────────────
 //
 // 利用者:「顧客へ見積書」「見積計算表から」「宛名は会社＋担当者」。見積表の足元の「見積書に入れる」で、その見積表の単価・
-// ロット・表面処理と備考を見積書の見積明細へ写す（2026-10-15 から見積表——それまでは見積計算表の確定単価）（新しい見積書か、同じ客先の作りかけへ足す）。見積書の足元の「📄 PDFを作る」で紙を作る。
+// ロット・表面処理と備考を見積書の見積明細表へ写す（2026-10-15 から見積表——それまでは見積計算表の確定単価）（新しい見積書か、同じ客先の作りかけへ足す）。見積書の足元の「📄 PDFを作る」で紙を作る。
 delegateClick([['.estimate-add-go', async (btn) => {
     const form = btn.closest('.estimate-add-form');
     const say = form && form.querySelector('.estimate-add-say');
@@ -11019,7 +11019,7 @@ delegateClick([['.estimate-add-go', async (btn) => {
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
     location.reload();
 }], ['.estimate-note-save', async (btn) => {
-    // 備考を見積明細の下で書く（2026-10-03・ext/toho/estimate_note.go）——利用者:「見積書ページの見積明細テーブルの下に
+    // 備考を見積明細表の下で書く（2026-10-03・ext/toho/estimate_note.go）——利用者:「見積書ページの見積明細テーブルの下に
     // 備考入力欄を付けると良いと思います」。保存先は見積書ページの「備考」の節（PDF はそこを刷る）。
     const box = btn.closest('.estimate-note-box');
     const input = box && box.querySelector('.estimate-note-input');
@@ -11070,7 +11070,7 @@ delegateClick([['.estimate-add-go', async (btn) => {
 // ── 部材見積依頼の返事（2026-10-05・段4の前半——ext/toho/rfq_reply.go）─────────────────────────
 //
 // 利用者:「両方」（✓ 回答を記録と 🤖 返事を読む）。返事は「見積依頼書に手書きで FAX」「業者の見積書 PDF をメール」「メールの
-// 本文に値段」。部材見積依頼明細の足元の「返事:」の行に2つのボタン——
+// 本文に値段」。部材見積依頼明細表の足元の「返事:」の行に2つのボタン——
 //   ✓ 回答を記録 … 手で単価を書いたあと押す。単価の入った未回答の行を回答あり・回答日に今日（/api/rfq/answered）
 //   🤖 返事を読む … 返事の候補（このページのファイル・題に「№ このページ」を含む受信メールの本文と添付）を選び、🤖 で読んだ
 //                   単価の**案**を表で見せる（/api/rfq/read-reply——何も書かない）。人が直して印の付いた行を書き込む
@@ -11117,7 +11117,7 @@ delegateClick([['.rfq-reply-link', async (btn) => {
     location.reload();
 }]]);
 
-// 返事ページの「この返事から部材見積依頼書ページを作る」（2026-10-05・移行期——ext/toho/rfq_reply_make.go）。読んだままの表を部材見積依頼明細の列に
+// 返事ページの「この返事から部材見積依頼書ページを作る」（2026-10-05・移行期——ext/toho/rfq_reply_make.go）。読んだままの表を部材見積依頼明細表の列に
 // 読み替えた案（GET /api/rfq-reply/draft——弊社品番は図面番号・品番から当てる）を表で出し、人が直して「部材見積依頼書ページを作る」
 // （POST /api/rfq-reply/make-rfq）→ できた部材見積依頼書へ移る（返事はその子へ）。
 delegateClick([['.rfq-reply-make', (btn) => openRFQReplyMakePanel(btn)]]);
@@ -11704,7 +11704,7 @@ async function openQuotePutPanel(btn) {
 //   - 行は**見積表1枚につき1行**（ロット・単価・表面処理と備考）——単価を記録していない表は選べない行にして理由を出す
 //     （2026-10-15 から見積表——それまでは見積計算表の確定単価）。
 //   - 見積先は一覧を出すたびにその装置の社名を入れ直す（担当者の候補もその会社の人）。番号の欄だけブラウザに憶える。
-//   - 見積明細は一覧の順（押した順ではない——並びが予想どおりになるように）。
+//   - 見積明細表は一覧の順（押した順ではない——並びが予想どおりになるように）。
 //   - 作れたらその見積書ページを開く——PDF はそのページの足元の「📄 PDFを作る」。
 (function wireEstimateFolder() {
     const partsOf = (el) => {
@@ -12079,7 +12079,7 @@ function printTable(table) {
 
 delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
 
-// ── 受注残表から受注明細を書き換える（2026-09-21）────────────────────────
+// ── 受注残表から受注明細表を書き換える（2026-09-21）────────────────────────
 //
 // ユーザー:「**受注トップページの受注残集計表を鏡にして受注ページの受注明細表が
 // 編集される**ようにしましょう」。
@@ -12474,7 +12474,7 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
 
     // ⚠ **document へ委譲します**——ビューはサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
-    // 必要部材表から「不要にする」（2026-10-01・サーバーの skip.go）——選んだ行を手配不要の表へ。理由は任意。
+    // 必要部材表から「不要にする」（2026-10-01・サーバーの skip.go）——選んだ行を手配不要表へ。理由は任意。
     async function skip(btn) {
         const at = pickedOf(btn);
         if (!at) return;
@@ -12504,7 +12504,7 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
         }
     }
 
-    // 手配不要の表から1行を外す＝必要部材表へ戻す（2026-10-01）。
+    // 手配不要表から1行を外す＝必要部材表へ戻す（2026-10-01）。
     async function removeSkipRow(btn) {
         btn.disabled = true;
         try {

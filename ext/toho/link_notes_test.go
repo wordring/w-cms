@@ -38,7 +38,7 @@ func seedProductPage(t *testing.T, idInt int, title, drawingNo string) {
 	}
 }
 
-// notesFor は受注明細の本文から気づきを取り出します。
+// notesFor は受注明細表の本文から気づきを取り出します。
 func notesFor(t *testing.T, body string) []string {
 	t.Helper()
 	nodes, err := htmldoc.ParseFragment(body)

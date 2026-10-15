@@ -8,7 +8,7 @@ package toho
 // まだつくっていないので、人間が送ったボタンを押すかもしれません**）」。
 //
 //	部材発注書ページ
-//	  ├ 部材発注明細（本文の表）
+//	  ├ 部材発注明細表（本文の表）
 //	  │    ├ 行ごとに [取消] [発注済]                 ← 印は行に付く（order_status.go）
 //	  │    └ 足元に  [📧 メール] [📠 FAX] [🤝 手渡し]  ← ここ
 //	  └ 添付: 発注書 20260922-201530.pdf
@@ -208,7 +208,7 @@ func signerLinesFor(head map[string]string, heading string) []string {
 	return SignatureOf(n, heading)
 }
 
-// orderSendFormHTML は部材発注明細の足元に出す「送る」欄です（鏡）。
+// orderSendFormHTML は部材発注明細表の足元に出す「送る」欄です（鏡）。
 //
 // ⚠ **3つの道を最初から見せます。** 隠すと、FAXしか使わない相手のときに
 // 「この画面では送れない」と読まれます。

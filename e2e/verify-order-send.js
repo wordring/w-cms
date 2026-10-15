@@ -35,7 +35,7 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店（送る）</h1>' +
   '<tr><td>999999</td><td>E2E-SEND-B</td><td>板</td><td>t1.5</td><td>1</td><td>枚</td><td>900</td><td>未発注</td></tr>' +
   '</tbody></table>';
 
-// statusesOf は本文の部材発注明細から `状態` の列を読みます（鏡の足元の行は除く）。
+// statusesOf は本文の部材発注明細表から `状態` の列を読みます（鏡の足元の行は除く）。
 async function statusesOf(page) {
   return page.evaluate(() => {
     const t = document.querySelector('table[data-type="our-order-items"]');

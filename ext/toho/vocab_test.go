@@ -59,7 +59,7 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		"required-materials", "drawing-revisions", "drawing-revision-items",
 		"part-outsourcing", "part-purchased", "part-supplied", "part-estimate",
 		// **発注部材表**（2026-09-22）——未発注の表から作り、人が足し引きしてから
-		// 部材発注書にする。⚠ **列は部材発注明細と同じ**（`orderItemColumns`）。
+		// 部材発注書にする。⚠ **列は部材発注明細表と同じ**（`orderItemColumns`）。
 		OrderDraftType,
 		// **部材発注書へのリンク**（2026-09-22）——発注部材表が化けた1行。
 		// ⚠ **2026-09-24 から新しくは作りません**（「未発注の部材発注書」に置き換え）。
@@ -73,9 +73,9 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		TempPartsType,
 		// **加工製品の一覧**（2026-09-29）——社名の下の「加工製品」の箱で、区分と装置名称で絞る鏡。
 		ProductListViewType,
-		// **手配不要**（2026-10-01）——必要部材表で「不要にする」を押した部材の記録（skip.go）。
+		// **手配不要表**（2026-10-01）——必要部材表で「不要にする」を押した部材の記録（skip.go）。
 		SkipType,
-		// **見積明細**（2026-10-01）——顧客へ出す見積書の明細（estimate_doc.go）。
+		// **見積明細表**（2026-10-01）——顧客へ出す見積書の明細（estimate_doc.go）。
 		EstimateItemsType,
 		// **見積表**（2026-10-15）——見積計算表の結果（ロット・表面処理・原価・利益率・単価）の1行（estimate.go）。
 		estimateRecordType,
@@ -90,7 +90,7 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 	}
 }
 
-// TestOrderDraftSharesColumnsWithOrderItems は、⚠ **発注部材表と部材発注明細の列が
+// TestOrderDraftSharesColumnsWithOrderItems は、⚠ **発注部材表と部材発注明細表の列が
 // 同じ**であることを固定します（2026-09-22）。
 //
 // ⚠ **片方だけ列を足すと、発注部材表から部材発注書へ移すときに落ちます**——しかも

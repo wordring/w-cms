@@ -6,7 +6,7 @@ import (
 	"w-cms/internal/cms/htmldoc"
 )
 
-// balanceTable は受注明細の表を1つ組んで返します。
+// balanceTable は受注明細表を1つ組んで返します。
 func balanceTable(t *testing.T, rows string) orderBalance {
 	t.Helper()
 	nodes, err := htmldoc.ParseFragment(`<table><caption>受注明細表</caption><tbody>` +

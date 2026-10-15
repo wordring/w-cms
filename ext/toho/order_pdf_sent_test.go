@@ -118,7 +118,7 @@ func TestOrderPDFOverwritesUntilSent(t *testing.T) {
 		!strings.Contains(b, today+"　"+sendByFax) {
 		t.Fatalf("送った PDF が記録されていません:\n%s", b)
 	}
-	// 記録の節は表示中の PDF のすぐ下（部材発注明細の表 → PDF → 記録）。
+	// 記録の節は表示中の PDF のすぐ下（部材発注明細表 → PDF → 記録）。
 	if iv, ir := strings.Index(b, `data-type="`+cms.FileViewType+`"`), strings.Index(b, orderSentHeading); iv < 0 || ir < iv ||
 		strings.Index(b, "</table>") > iv {
 		t.Errorf("記録の節の置き場所が違います:\n%s", b)
@@ -308,7 +308,7 @@ func TestAfterOrderMailRecordsTheMailedPDF(t *testing.T) {
 	}
 }
 
-// TestOrderNoteBox は、部材発注明細の足元に備考の欄（見積書と同じ部品）とその下の「PDF作成」が書ける人にだけ出て、
+// TestOrderNoteBox は、部材発注明細表の足元に備考の欄（見積書と同じ部品）とその下の「PDF作成」が書ける人にだけ出て、
 // 欄の口が本文の「備考」の節を書き換え、紙がそれを刷ることを固定します。
 func TestOrderNoteBox(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))

@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 受注残表から受注明細を編集する（2026-09-21）
+// 受注残表から受注明細表を編集する（2026-09-21）
 //
 // ユーザー:「**受注トップページの受注残集計表を鏡にして受注ページの受注明細表が
 // 編集される**ようにしましょう」「表の中はだいたい編集できる」。
@@ -58,7 +58,7 @@ var errCellConflict = errors.New("この行は別の場所で変わっていま�
 // OrderItemEditAPIHandler は POST /api/order-item です。
 //
 // 入力: {page_id, row, item_no, field, old, value}
-//   - row     … 受注明細の**データ行の番号**（見出しを除いて0から）
+//   - row     … 受注明細表の**データ行の番号**（見出しを除いて0から）
 //   - item_no … その行の `品番`（⚠ **行番号と2つで照合します**）
 //   - field   … 書き換える列（見出しの表示文字）
 //   - old     … いまの値（⚠ **食い違えば断ります**）
@@ -122,7 +122,7 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": true})
 }
 
-// setOrderItemCell は受注明細の1セルを書き換えた本文を返します。
+// setOrderItemCell は受注明細表の1セルを書き換えた本文を返します。
 //
 // ⚠ **照合は2つ**——行番号と、その行の `品番`。⚠ **いまの値も見ます**（食い違えば
 // `errCellConflict`）。3つとも通らないと1文字も書きません。

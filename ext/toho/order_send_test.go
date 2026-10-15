@@ -16,7 +16,7 @@ import (
 // **人間が発注済みの印をつける**と思います。大事なことは、**発注の取り消しもある**
 // ということです」。
 
-// orderPaper は部材発注明細1枚ぶんの本文を組みます（行は `状態` つき）。
+// orderPaper は部材発注明細表1枚ぶんの本文を組みます（行は `状態` つき）。
 func orderPaper(statuses ...string) string {
 	var b strings.Builder
 	b.WriteString(`<h1>発注 みなと商店</h1>`)
@@ -217,7 +217,7 @@ func TestOrderLinkMirrorReadsTheOrderPage(t *testing.T) {
 	}
 }
 
-// TestOurOrderMirrorPutsTheSendForm は、部材発注明細の足元に送信欄が出ることと、
+// TestOurOrderMirrorPutsTheSendForm は、部材発注明細表の足元に送信欄が出ることと、
 // ⚠ **それが本文に残らないクローム**であることを固定します。
 //
 // ⚠ **`vocab-chrome` が無いと、人が画面の表をコピーして貼ったとき本当の列として

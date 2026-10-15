@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 部材発注明細の行を「必要部材表」へ戻す（2026-09-24）
+// 部材発注明細表の行を「必要部材表」へ戻す（2026-09-24）
 //
 // ユーザー:「行の末尾には、『必要部材表』へ戻すボタンがあります。このボタンは
 // 編集モードでは消えます。ボタンを押すと、**発注明細表から行が消え**、必要部材表へ
@@ -88,11 +88,11 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "to": to})
 }
 
-// removeOrderRow は最初の部材発注明細から、`row` 番目のデータ行を取り除きます。
+// removeOrderRow は最初の部材発注明細表から、`row` 番目のデータ行を取り除きます。
 //
 // ⚠ **最後の1行を外しても表は残します**——発注部材表と違い、部材発注書ページは
 // **部材発注書そのもの**です。表ごと消すと、行を足し直す場所が無くなります。
-// ⚠ **2枚目以降の部材発注明細は見ません**（送信欄と同じく、1ページ1枚が前提）。
+// ⚠ **2枚目以降の部材発注明細表は見ません**（送信欄と同じく、1ページ1枚が前提）。
 func removeOrderRow(body string, row int) (string, bool) {
 	out, _, ok := takeOrderRow(body, row)
 	return out, ok

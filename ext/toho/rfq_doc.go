@@ -9,7 +9,7 @@ package toho
 //	見積依頼部材表（部材見積依頼の置き場・業者ごとに1枚）──足元の欄（差出人・仕入先・部材見積依頼日・備考）
 //	   →「部材見積依頼書ページを作る」→ 部材見積依頼書ページ（部材見積依頼／年／月・テンプレート「部材見積依頼書」を写す）
 //	     タグ: 部材見積依頼番号（ページ番号）・仕入先・部材見積依頼日・部材見積依頼担当（差出人）・送付日・回答日（空で始まる）
-//	     部材見積依頼明細: 見積依頼部材表の行（状態は「未回答」・単価は空——業者の返事を書く欄）
+//	     部材見積依頼明細表: 見積依頼部材表の行（状態は「未回答」・単価は空——業者の返事を書く欄）
 //	     備考の節: 欄の備考（「○○用」など——紙では明細の下）
 //	   → 元の見積依頼部材表は消す（中身は部材見積依頼書ページへ移った——発注部材表と同じ）
 //
@@ -270,8 +270,8 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 // RFQImportAPIHandler は POST /api/rfq/import です（2026-10-04・**管理者だけ**）——過去の見積もり（ワンノートから加工製品ページに
 // 入った「日付　業者　見積　ロット　価格」の行）を部材見積依頼書ページへ移す口。入力: {supplier, date, note, lines}（lines の cost が単価）。
 //
-// 利用者:「専用の見積依頼書ページを作り、そこに入れるようにしましょうか？」——業者の値段の置き場を部材見積依頼明細の単価の列1つに
-// そろえる（あとで作る単価表は部材見積依頼明細だけを読めばよい）。返事を貰った見積なので、単価に値段・状態は「回答あり」・
+// 利用者:「専用の見積依頼書ページを作り、そこに入れるようにしましょうか？」——業者の値段の置き場を部材見積依頼明細表の単価の列1つに
+// そろえる（あとで作る単価表は部材見積依頼明細表だけを読めばよい）。返事を貰った見積なので、単価に値段・状態は「回答あり」・
 // 回答日は date（部材見積依頼日も date——依頼した日は分からない）。置き場は 部材見積依頼／年／月（date の年月）。
 // 1回で1枚（業者×日付）。何枚も作り、二重に作らない記録を持つのは移す道具の仕事（実名を含む一覧を読むのでリポジトリの外）。
 func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +345,7 @@ func createAnsweredRFQPage(user *auth.User, supplier, date, note string, lines [
 	return newID, http.StatusOK, nil
 }
 
-// fillRFQItemNames は部材見積依頼明細の行のうち、品番・品名が空のセルを弊社品番の加工製品ページから埋めます（埋めたセルの数を返す）。
+// fillRFQItemNames は部材見積依頼明細表の行のうち、品番・品名が空のセルを弊社品番の加工製品ページから埋めます（埋めたセルの数を返す）。
 // 品番は加工製品の 品番（無ければ図面番号）、品名は 品名（無ければ図面名称・題）——estimateItemNamesOf と同じ引き方。
 // 利用者（2026-10-04）:「品番と品名の欄が埋まらない事には、人間には見てわかりません」——過去の見積もりを移した行は弊社品番（ページ番号）と
 // 「塗装」だけで、何の値段か読めなかった。⚠ 空のセルだけ埋める（元の行から読んだ品名「ホイールカバー（上）」などは残す）。
@@ -400,7 +400,7 @@ func fillRFQItemNames(body string) (string, int) {
 	return htmldoc.Render(nodes), filled
 }
 
-// RFQFillNamesAPIHandler は POST /api/rfq/fill-names です（2026-10-04・管理者だけ）——部材見積依頼書ページの部材見積依頼明細の空の品番・品名を
+// RFQFillNamesAPIHandler は POST /api/rfq/fill-names です（2026-10-04・管理者だけ）——部材見積依頼書ページの部材見積依頼明細表の空の品番・品名を
 // 加工製品ページから埋めます（過去の見積もりを移したページの後始末。新しく移すぶんは RFQImportAPIHandler が埋める）。
 func RFQFillNamesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
@@ -439,7 +439,7 @@ func RFQFillNamesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "filled": filled})
 }
 
-// RFQSetCellsAPIHandler は POST /api/rfq/set-cells です（2026-10-04・管理者だけ）——部材見積依頼明細（1枚目）のセルを、**いまの値を
+// RFQSetCellsAPIHandler は POST /api/rfq/set-cells です（2026-10-04・管理者だけ）——部材見積依頼明細表（1枚目）のセルを、**いまの値を
 // 確かめてから**書き換えます。入力: {page_id, edits: [{row（見出しを除いた何行目か・1始まり）, expect: {列: いまの値}, set: {列: 新しい値}}]}。
 // 1つでも合わなければ何も書きません（409・どこが違うかを返す）——人が直したあとの行を黙って上書きしないため。
 //

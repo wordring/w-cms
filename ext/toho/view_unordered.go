@@ -34,7 +34,7 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		return head + `<p class="view-error">集計データの取得に失敗しました。</p>`
 	}
 	if len(list) == 0 {
-		// ⚠ **0件も黙りません**——「手配し終えた」と「そもそも受注明細に弊社品番が
+		// ⚠ **0件も黙りません**——「手配し終えた」と「そもそも受注明細表に弊社品番が
 		//    無くて引けていない」は別物です。
 		//
 		// ⚠ **それでもフォームは出します**（2026-09-22 に実データで踏んだ）。
@@ -167,7 +167,7 @@ func unorderedFormHTML(user *auth.User, pageIDInt int) string {
 		`<button type="button" class="matsearch-go" data-unorder-draft="1">` +
 		`発注部材表へ入れる</button>` +
 		// 「不要にする」（2026-10-01・skip.go）——在庫で足りる・自社で作る など、この受注のぶんはもう買わない部材を
-		// 手配不要の表へ移す（理由は任意）。
+		// 手配不要表へ移す（理由は任意）。
 		`<span class="unorder-skip"><input type="text" class="matsearch-input" data-unorder="reason"` +
 		` placeholder="不要の理由（在庫あり など）"/>` +
 		`<button type="button" class="matsearch-go unorder-skip-go" data-unorder-skip="1">🚫 不要にする</button></span>` +

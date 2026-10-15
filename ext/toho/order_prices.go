@@ -4,10 +4,10 @@ package toho
 // 加工製品ページの「受注・見積の単価」（2026-10-04——初めは「受注の単価」・同じ日に見積の行も並べた）
 //
 // 利用者:「発注書から最新価格が分かるという目論見もあります」→ 問いへの答え「客先の注文の単価」→ 筆者の勧め（加工製品ページに
-// 「受注の単価」を並べる）に「次に進みましょう」。客先の注文（受注明細）の単価は**弊社の販売価格**で、加工製品ごとに
-// 「最後にいくらで受けたか」を引きたい。業者の値段の「💴 見積回答」（rfq_quotes.go）と同じ形の鏡で、支給部品の表の下に並べる。
+// 「受注の単価」を並べる）に「次に進みましょう」。客先の注文（受注明細表）の単価は**弊社の販売価格**で、加工製品ごとに
+// 「最後にいくらで受けたか」を引きたい。業者の値段の「💴 見積回答」（rfq_quotes.go）と同じ形の鏡で、支給部品表の下に並べる。
 //
-//   - 並べるのは、受注明細の行のうち **弊社品番がこのページ**の行と、**弊社品番は空でも、発注元がこのページの客先で品番が合う**
+//   - 並べるのは、受注明細表の行のうち **弊社品番がこのページ**の行と、**弊社品番は空でも、発注元がこのページの客先で品番が合う**
 //     行（受注の行を加工製品に結ぶときと同じ照合——productPagesForCustomer。品名でも絞る）。別の加工製品に結ばれた行は並べない。
 //     品番で当てた行には印（※）——人が結んだのではないことが分かるように。
 //   - 読める受注ページだけ。新しい順（発注日）。数量・単価・状態（納品済・完了など）も出す。鏡なので本文には書かない。
@@ -28,8 +28,8 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 見積の行も並べる（2026-10-04・利用者:「続きをお願いします」——筆者の挙げた続き「見積書の見積明細（出した見積の値段）も同じ所に
-// 並べる」）。どちらも**弊社が出した値段**なので1つの表に日付順で混ぜ、種類（受注・見積）の列で分ける。見積明細は見積書を作るときに
+// 見積の行も並べる（2026-10-04・利用者:「続きをお願いします」——筆者の挙げた続き「見積書の見積明細表（出した見積の値段）も同じ所に
+// 並べる」）。どちらも**弊社が出した値段**なので1つの表に日付順で混ぜ、種類（受注・見積）の列で分ける。見積明細表は見積書を作るときに
 // 弊社品番が必ず入るので、品番では当てない。見積の状態は 送付済（送付日）・送付不要・未送付。
 const (
 	orderPriceKindOrder    = "受注"
@@ -50,7 +50,7 @@ type orderPriceRow struct {
 	ByCode    bool // 弊社品番が空で、客先と品番で当てた
 }
 
-// orderPricesForProduct は、このページの受注明細の行を新しい順に返します（読める受注ページだけ）。
+// orderPricesForProduct は、このページの受注明細表の行を新しい順に返します（読める受注ページだけ）。
 func orderPricesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []orderPriceRow {
 	rows, err := cms.VocabRowsOfType(db, clientOrderItemsType)
 	if err != nil {
@@ -120,7 +120,7 @@ func calendarKey(d string) string {
 	return ""
 }
 
-// estimatePricesForProduct は、弊社品番がこのページの見積明細の行です（読める見積書ページだけ）。
+// estimatePricesForProduct は、弊社品番がこのページの見積明細表の行です（読める見積書ページだけ）。
 func estimatePricesForProduct(db cms.ReadOnlyDB, canView func(int) bool, productID int) []orderPriceRow {
 	rows, err := cms.VocabRowsOfType(db, EstimateItemsType)
 	if err != nil {
@@ -209,9 +209,9 @@ func orderPricesHTML(list []orderPriceRow) string {
 }
 
 // 置き場所（2026-10-04 利用者:「受注の単価は見積もり計算表の下が良いかもしれませんね」）——売る値段なので、確定単価の出る
-// 見積計算表のそばに。見積計算表があれば**最後の1枚の直後**、無ければ支給部品の表の下（見積回答の後ろ）。
+// 見積計算表のそばに。見積計算表があれば**最後の1枚の直後**、無ければ支給部品表の下（見積回答の後ろ）。
 //
-// ⚠ 本文の上の段の節どうしは、鏡からは互いに見えない（ParseFragment の上の段は親も兄弟も持たない）——支給部品の表を描くときに、
+// ⚠ 本文の上の段の節どうしは、鏡からは互いに見えない（ParseFragment の上の段は親も兄弟も持たない）——支給部品表を描くときに、
 // 後ろに見積計算表があるかは分からない。だから見積計算表の枚数を**本文の正本ファイル**で数えて分ける（estimateTablesIn）。
 // 版の表示など、描いている本文と正本の枚数が違うときは、置かれないか支給部品の下になるだけ（1ページに1回は Counter で守る）。
 
@@ -226,7 +226,7 @@ func estimateTablesIn(pageID int) int {
 	return len(estimateCaptionRe.FindAllStringIndex(body, -1))
 }
 
-// appendOrderPrices は支給部品の表から呼ばれます——見積計算表が無いページだけ、ここ（見積回答の後ろ）に出す。
+// appendOrderPrices は支給部品表から呼ばれます——見積計算表が無いページだけ、ここ（見積回答の後ろ）に出す。
 func appendOrderPrices(ctx *cms.MirrorContext, tbl *html.Node) {
 	if estimateTablesIn(ctx.PageID) > 0 || estimateRecordsIn(ctx.PageID) > 0 {
 		return // 見積表か見積計算表の下に出す（placeOrderPricesAfterRecord・placeOrderPricesAfterEstimate）

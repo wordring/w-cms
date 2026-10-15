@@ -81,7 +81,7 @@ func TestCaptionTablesGoToTablesDB(t *testing.T) {
 		`<tr><td>A100-B01-002</td><td>カバー</td><td>1,200</td></tr>` +
 		`</tbody></table>` +
 		`<table><tbody><tr><th>名前の無い表</th></tr><tr><td>入らない</td></tr></tbody></table>` +
-		// 同じページの2つ目の「受注明細」——列が1つ多い（統合される）
+		// 同じページの2つ目の「受注明細表」——列が1つ多い（統合される）
 		`<table><caption> 受注明細表 </caption><tbody>` +
 		`<tr><th>品番</th><th>備考</th></tr><tr><td>A100-B01-003</td><td>一行目<br>二行目</td></tr>` +
 		`</tbody></table>`

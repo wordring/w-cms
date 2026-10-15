@@ -177,7 +177,7 @@ type VocabDef struct {
 	View bool `json:"view,omitempty"`
 
 	// RequiresTag は「この形式が③計算で使う、ページ横断メタ（<dl data-type="tags"）の
-	// 見出し」です。部材定義が部品番号を鍵に受注明細と突き合わせるように、形式の外に
+	// 見出し」です。部材定義が部品番号を鍵に受注明細表と突き合わせるように、形式の外に
 	// 鍵がある場合に宣言します。
 	//
 	// これが無かったころ、鍵は③計算の側（いまの ext/toho/materials.go）に

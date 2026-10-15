@@ -98,7 +98,7 @@ func TestFileDrawingsAddsSecondDrawing(t *testing.T) {
 	if strings.Count(body, "<section") != strings.Count(body, "</section>") {
 		t.Errorf("⚠ 本文が釣り合っていません:\n%s", body)
 	}
-	// ⚠ 見る文字は `<caption>改訂明細</caption>`（2026-09-27 から解析はキャプションだけで書く）。
+	// ⚠ 見る文字は `<caption>改訂明細表</caption>`（2026-09-27 から解析はキャプションだけで書く）。
 	// 「改訂履歴」のまま見ていると、本文から消えたその文字は**いつでも含まれず、空振り**します。
 	first1 := cms.FirstBlockHTML(body)
 	if strings.Contains(first1, "<caption>改訂明細表</caption>") {

@@ -22,7 +22,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-// orderBalance は受注明細の表から数えた受注残高です。
+// orderBalance は受注明細表から数えた受注残高です。
 type orderBalance struct {
 	Amount  float64 // Σ 残数 × 単価（単価の読める行だけ）
 	Open    int     // 残のある行（完了を除く）
@@ -31,7 +31,7 @@ type orderBalance struct {
 	Done    int     // 完了の行（数えない）
 }
 
-// orderBalanceOf は受注明細の表（見出し行＋データ行）から受注残高を数えます。見出しに `数量` が無ければ ok=false。
+// orderBalanceOf は受注明細表（見出し行＋データ行）から受注残高を数えます。見出しに `数量` が無ければ ok=false。
 func orderBalanceOf(table *html.Node) (orderBalance, bool) {
 	var b orderBalance
 	rows := rowsOf(table)
@@ -137,7 +137,7 @@ func backlogTotalHTML(t backlogTotal) string {
 	return `<p class="backlog-total">` + yenLine(t.Amount) + `</p>`
 }
 
-// appendOrderBalance は受注明細の足元に受注残高の行を足します（数えられなければ何もしない）。
+// appendOrderBalance は受注明細表の足元に受注残高の行を足します（数えられなければ何もしない）。
 func appendOrderBalance(table *html.Node, span int) {
 	b, ok := orderBalanceOf(table)
 	if !ok || b.Rows == 0 {

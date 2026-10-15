@@ -17,11 +17,11 @@ func TestColumnWordPrefersTableException(t *testing.T) {
 		t.Fatalf("設定を読めません: %v", err)
 	}
 
-	// 既定——受注明細の `状態` は列の名前の選択肢（例外が無い）。
+	// 既定——受注明細表の `状態` は列の名前の選択肢（例外が無い）。
 	if w := ColumnWord("受注明細表", "状態"); w.Type != ColEnum || !contains(w.Values, "完了") || contains(w.Values, "取消") {
 		t.Errorf("受注明細表の状態は既定の選択肢のはず: %+v", w)
 	}
-	// 例外——部材発注明細の `状態` は表ごとの選択肢。
+	// 例外——部材発注明細表の `状態` は表ごとの選択肢。
 	if w := ColumnWord("部材発注明細表", "状態"); w.Type != ColEnum || !contains(w.Values, "取消") || contains(w.Values, "完了") {
 		t.Errorf("⚠ 部材発注明細表の状態に例外が効いていません: %+v", w)
 	}

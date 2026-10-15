@@ -88,7 +88,7 @@ func TestRemoveTempPartRowsTakesOnlyThoseRows(t *testing.T) {
 }
 
 // TestTempPartsAppearInRequiredParts は、⚠ **臨時部材が必要部材表に並ぶ**ことを、
-// 計算まで通して固定します。⚠ **受注明細が1件も無くても出ること**まで見ます
+// 計算まで通して固定します。⚠ **受注明細表が1件も無くても出ること**まで見ます
 // （受注の無い月に消耗品だけ買うことは普通にある）。
 func TestTempPartsAppearInRequiredParts(t *testing.T) {
 	setupMaterialsPermsTest(t)

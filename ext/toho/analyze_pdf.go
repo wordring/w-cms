@@ -17,7 +17,7 @@ package toho
 //	     <h1>受注 PO-xxx</h1>
 //	     <dl data-type="tags"> 発注書番号・発注元・発注日・納期・小計・税・合計・
 //	                          受信元: <ページID>-<添付ID>（押すと該当ブロックへ飛ぶ）
-//	     <details> 読んだままの表 ＋ <table><caption>受注明細</caption> 弊社の明細
+//	     <details> 読んだままの表 ＋ <table><caption>受注明細表</caption> 弊社の明細
 //	     （09-18 まではヘッダを機能見出しの節の素の dl に書いていた——`buildOrderPageHTML`）
 //
 // **起動は人の指先だけ**——「自動ではなくボタンのclickなどで解析が始まると良い」
@@ -342,7 +342,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 				"図面と判定しましたが、図面番号も図面名称も読み取れませんでした")
 			return
 		}
-		// ⚠ **本文を全部組んでから作り始めます**——テンプレートに図面ブロック・改訂明細が
+		// ⚠ **本文を全部組んでから作り始めます**——テンプレートに図面ブロック・改訂明細表が
 		// 無ければ、1枚も作らずに断ります（途中まで作って止まると、人が片付けることになる）。
 		made := []map[string]any{}
 		totalMatched := 0
@@ -598,7 +598,7 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 // OrderPageTemplate は受注ページを作るテンプレートの題です（2026-09-27）。
 //
 // ⚠ **受注ページの形はこのテンプレートが決めます**——タグの並び・原本PDFと写しの枠・
-// 受注明細の列の並び。機械が書くのは**題と値と行の数**だけです（利用者:「テンプレートには
+// 受注明細表の列の並び。機械が書くのは**題と値と行の数**だけです（利用者:「テンプレートには
 // スラッシュメニューから表などの印を置き、コードはそれを埋めてはどうでしょう？」）。
 // テンプレートが無ければ受注ページを作りません（`cms.ErrNoPageTemplate`）。
 const OrderPageTemplate = "受注ページ"
@@ -612,7 +612,7 @@ const OrderPageTemplate = "受注ページ"
 //   - **原本のPDF**——まだ配線されていないファイル表示の印へ（無ければ出さない）。
 //   - **顧客の発注書（読んだまま）**——その名前の畳める枠（または見出しの節）の中へ表を
 //     入れる。読めなければ枠ごと消す（無ければ出さない）。
-//   - **受注明細**——キャプション `受注明細` の表へ、見出しの言葉で列を合わせて明細の数だけ
+//   - **受注明細表**——キャプション `受注明細表` の表へ、見出しの言葉で列を合わせて明細の数だけ
 //     行を作る。⚠ **表が無ければ作らない**（明細の行き場が無い）。
 //
 // 行の `状態` は「未着手」で始まります（進捗の起点）。
@@ -810,7 +810,7 @@ func itemNoSourceNote(items []orderPDFItem) string {
 		`」を弊社の「` + html.EscapeString(itemNoLabel()) + `」に入れました。</p>`
 }
 
-// itemNoLabel は受注明細の `品番` 列の見出しを返します（宣言と同じ綴りを使うため）。
+// itemNoLabel は受注明細表の `品番` 列の見出しを返します（宣言と同じ綴りを使うため）。
 //
 // ⚠ **生の文字列で持つと、列を改名した日にこの注意書きが常に出ます**——
 // 「先方の『品番』を弊社の『品番』に入れました」という、意味の無い1行になります。
@@ -851,7 +851,7 @@ func setHeaderTag(b cms.DraftBlock, name string, values ...string) {
 // ProductTemplate は加工製品ページを作るテンプレートの題です（2026-09-27）。
 //
 // ⚠ **図面の解析はこのテンプレートを写して加工製品ページを作ります**——人が手で作るときに
-// 選ぶ雛形と同じもの。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細」の表が
+// 選ぶ雛形と同じもの。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細表」の表が
 // 要ります（無ければ作りません）。材料・外注加工などの表は写すだけです。
 const ProductTemplate = "加工製品"
 
@@ -863,7 +863,7 @@ const drawingHeading = "図面"
 //	<h1>P103-227-6 台座Assy</h1>
 //	<section><h2>図面</h2><dl data-type="tags"> 図面番号・図面名称・…・受信元・対応DXF </dl>
 //	  <section data-type="file-view" data-ref="…"></section></section>
-//	<table><caption>改訂明細</caption> … 1版目の行 </table>
+//	<table><caption>改訂明細表</caption> … 1版目の行 </table>
 //
 // **1通のメールの中でPDFとDXFを対応づけた結果**がこのページです。過去のページを
 // 図面番号で探して束ねることはしません——番号は別製品で衝突しうるので、
@@ -890,9 +890,9 @@ func buildProductPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment, m
 	return d.HTML(), nil
 }
 
-// fillFirstRevision は改訂明細の1版目を書きます（解析が作る加工製品ページと、メールから作る空の加工製品ページで同じ）。
+// fillFirstRevision は改訂明細表の1版目を書きます（解析が作る加工製品ページと、メールから作る空の加工製品ページで同じ）。
 func fillFirstRevision(d *cms.PageDraft, drawingNo string) error {
-	// 改訂明細（1版目）。
+	// 改訂明細表（1版目）。
 	//
 	// **行が社内コードの指し先です**——`ページID-行ID` で押せばその版へ飛びます
 	// （2026-09-03 ユーザー:「改訂履歴の項目を作り版にdata-idを割り当てれば良いのでは？」）。
@@ -986,7 +986,7 @@ func revisionRowHTML(rev int, drawingNo, existingBody string) string {
 }
 
 // revisionRowRe は改訂履歴の行（見出し行を除く）を数えるための正規表現です。
-// ⚠ 字下げを許す（2026-10-04）——エディタで保存した改訂明細は `<tr data-id="…">` の後ろで改行して `<td>` になり、
+// ⚠ 字下げを許す（2026-10-04）——エディタで保存した改訂明細表は `<tr data-id="…">` の後ろで改行して `<td>` になり、
 // 数えないと新しい行の版番号がずれる（revision.go の drawingNoRe と同じ注意）。
 var revisionRowRe = regexp.MustCompile(`<tr data-id="[0-9a-z]+">\s*<td>`)
 

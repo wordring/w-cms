@@ -6,8 +6,8 @@ package cms
 // 利用者:「見たままを実現するには、表のキャプションそのままのテーブルや表の列の名前
 // そのままの検索が欲しい」「表の種類が増えても一般的なルールで扱いたい」。
 //
-//	本文:  <table><caption>受注明細</caption><tr><th>品番</th><th>数量</th></tr>…
-//	DB:    SELECT 品番, 数量 FROM 受注明細 WHERE …          （data/tables.db）
+//	本文:  <table><caption>受注明細表</caption><tr><th>品番</th><th>数量</th></tr>…
+//	DB:    SELECT 品番, 数量 FROM 受注明細表 WHERE …          （data/tables.db）
 //
 // 規則（決定は同書 §6）:
 //

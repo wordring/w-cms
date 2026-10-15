@@ -8,7 +8,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// **品番から製造製品ページを特定し、受注明細の `弊社品番` を埋める**（2026-09-21）。
+// **品番から製造製品ページを特定し、受注明細表の `弊社品番` を埋める**（2026-09-21）。
 //
 // ユーザー:「弊社品番を入れるために、品番から製造製品ページを特定する必要があります」
 // 「**できれば機械的にやってほしいです**」。
@@ -30,7 +30,7 @@ func withProductCodeTags(t *testing.T, names ...string) {
 	})
 }
 
-// orderBody は受注明細を1つ持つ本文を組みます（`弊社品番` は空）。
+// orderBody は受注明細表を1つ持つ本文を組みます（`弊社品番` は空）。
 func orderBody(rows ...[2]string) string {
 	// 発注元を持つ（2026-10-01——客先＋品番で引くので、客先の分からない受注は結ばない）。
 	b := `<h1>受注 A-1</h1><dl data-type="tags"><dt>発注元</dt><dd>南北スポーツ</dd></dl><table data-type="` + clientOrderItemsType + `">` +

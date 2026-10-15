@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 品番から製造製品ページを特定し、受注明細の `弊社品番` を埋める（2026-09-21）
+// 品番から製造製品ページを特定し、受注明細表の `弊社品番` を埋める（2026-09-21）
 //
 // ユーザー:「**弊社品番を入れるために、品番から製造製品ページを特定する必要が
 // あります**」「仮に製造製品ページがまだつくられていない場合、検索しても何も出て
@@ -56,7 +56,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// fillOurItemNo は受注明細の空いている `弊社品番` を埋めます（埋めた行数を返す）。
+// fillOurItemNo は受注明細表の空いている `弊社品番` を埋めます（埋めた行数を返す）。
 //
 // ⚠ **空いている行だけ**です。人が入れた値は上書きしません——機械の推測より
 // 人の判断が上、という線引きはこのプロジェクトで一貫しています。
@@ -85,7 +85,7 @@ func fillOurItemNoNamed(body, code, name string, anyName bool, productPageID str
 	return htmldoc.Render(nodes), filled
 }
 
-// isOrderItemsTable は受注明細の表かを見ます（属性でも caption でも——`isTableOfType`）。
+// isOrderItemsTable は受注明細表かを見ます（属性でも caption でも——`isTableOfType`）。
 func isOrderItemsTable(t *html.Node) bool { return isTableOfType(t, clientOrderItemsType) }
 
 // fillTable は見出しから列を割り出し、当てはまる行を埋めます。
@@ -141,7 +141,7 @@ func fillTable(t *html.Node, wantNorm, nameKey string, anyName bool, productPage
 // （2026-10-12 からオートセーブは無く、「編集中」は道具が握っているときだけです。⚠ ただし `linkProductsToOrder` は
 // 本文を錠の外で読んで丸ごと書き戻すので、同じ瞬間の人の保存が消える窓が残っています——【考察】文書の食い違い §3.3。）
 
-// ItemNameTag は受注明細の品名の列です（食い違いの検査に使います）。
+// ItemNameTag は受注明細表の品名の列です（食い違いの検査に使います）。
 const ItemNameTag = "品名"
 
 // orderLinkNotes は結びについての気づきを返します（無ければ空）。
@@ -292,7 +292,7 @@ func LinkProductsToOrder(user *auth.User, orderPageID string) int {
 // orderLink は受注の行を加工製品ページへ結んだ1件です（品番ごと）。
 type orderLink struct {
 	Order   string `json:"order"`   // 受注ページ
-	Code    string `json:"code"`    // 受注明細の品番
+	Code    string `json:"code"`    // 受注明細表の品番
 	Product string `json:"product"` // 結んだ加工製品ページ
 	Title   string `json:"title"`   // その題（人が「本当にこれか」を見るため——【旧】の付いたページなど）
 	Rows    int    `json:"rows"`    // 埋めた行
@@ -342,10 +342,10 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	return links
 }
 
-// orderItemKey は受注明細の空いている行の「品番と品名」の組です。
+// orderItemKey は受注明細表の空いている行の「品番と品名」の組です。
 type orderItemKey struct{ Code, Name string }
 
-// orderItemKeysOf は受注明細の空いている行の「品番と品名」の組を集めます（同じ組は1つ・畳んだ形で比べる）。
+// orderItemKeysOf は受注明細表の空いている行の「品番と品名」の組を集めます（同じ組は1つ・畳んだ形で比べる）。
 func orderItemKeysOf(body string) []orderItemKey {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {

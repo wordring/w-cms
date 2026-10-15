@@ -6,7 +6,7 @@
 //
 // ⚠ 2026-10-14: 今の形に合わせて書き直しました。それまでは第3段の形（「顧客の発注書」の節＝見出し＋素のヘッダ dl＋
 // 素の明細表・「弊社の見積もり」の dl）を挿していましたが、その形式は 2026-09-18 に消えています（ヘッダはタグへ・
-// DB に入るのはタグと表だけ）。いまの後継は「受注明細」の表（2026-09-26 からキャプションで名乗る・09-27 から
+// DB に入るのはタグと表だけ）。いまの後継は「受注明細表」の表（2026-09-26 からキャプションで名乗る・09-27 から
 // スラッシュメニューに出す）です。見ていること（旧4項目が無い・file 容器が無い・機械語が本文に出ない・編集の
 // クロームが保存に漏れない・見出しの改名を告知する・パンくず）は同じです。作ったページは最後に消します。
 const { createRequire } = require('module');
@@ -89,15 +89,15 @@ async function openSlashMenu(page) {
         for (const t of ['m-file-client', 'm-file-our', 'm-our-estimate', 'm-supplier-estimate'])
             check(`旧 ${t} 項目が無い`, await page.locator(`#w-slash-menu [data-type="${t}"]`).count() === 0);
         // ⚠ 2026-10-14 に期待を改めた——「顧客の発注書」（ヘッダの節）は 2026-09-18 に消え（ヘッダはタグへ）、
-        //    明細の「受注明細」は 2026-09-27 からメニューに出す（それまでは hidden。テンプレートに人が置く印になった——
+        //    明細の「受注明細表」は 2026-09-27 からメニューに出す（それまでは hidden。テンプレートに人が置く印になった——
         //    ext/toho/vocab.go の client-order-items の注）。
         check('ヘッダだけの「顧客の発注書」はメニューに無い（2026-09-18 にタグへ）',
             await page.locator('#w-slash-menu [data-type="vocab:client-order"]').count() === 0);
         check('後継: 受注明細表がメニューにある（2026-09-27 から）',
             await page.locator('#w-slash-menu [data-type="vocab:client-order-items"]').count() === 1);
 
-        // 2. 受注明細の挿入 = **キャプションで名乗る素の表だけ**（2026-09-26・DBの日本語化 5段目）。
-        //    file 容器は廃止（PDF は添付のファイル表示が担う）。本文は <table><caption>受注明細</caption>…</table>。
+        // 2. 受注明細表の挿入 = **キャプションで名乗る素の表だけ**（2026-09-26・DBの日本語化 5段目）。
+        //    file 容器は廃止（PDF は添付のファイル表示が担う）。本文は <table><caption>受注明細表</caption>…</table>。
         await page.click('#w-slash-menu [data-type="vocab:client-order-items"]');
         const items = page.locator('#w-editor-content table')
             .filter({ has: page.locator('caption', { hasText: '受注明細表' }) }).first();
@@ -148,7 +148,7 @@ async function openSlashMenu(page) {
 
         // 5. 見出しの改名は「計算に読まれなくなった項目」として告知される（拒否はしない）。
         //    鍵は見出しの表示文字が運ぶので、改名すると③計算プラグインが読めなくなる。
-        //    ⚠ 2026-10-14: 改名するのは受注明細の列の見出し（ヘッダの dl はタグになり、タグは告知しない——2026-09-18）。
+        //    ⚠ 2026-10-14: 改名するのは受注明細表の列の見出し（ヘッダの dl はタグになり、タグは告知しない——2026-09-18）。
         await page.evaluate(() => {
             const cap = Array.from(document.querySelectorAll('#w-editor-content table > caption'))
                 .find(x => x.textContent.trim() === '受注明細表');

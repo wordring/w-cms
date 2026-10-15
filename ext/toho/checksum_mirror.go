@@ -6,7 +6,7 @@ package toho
 // ユーザー:「顧客の発注書に数量と単価があって、金額や総額もあるなら、検算が
 // 出来ると思います」。計算そのものは [checksum.go]、ここは**見せ方**です。
 //
-// ⚠ **引き金は弊社の受注明細で、原本ではありません。** 原本は `<details>` で
+// ⚠ **引き金は弊社の受注明細表で、原本ではありません。** 原本は `<details>` で
 // 畳まれているので、そちらに出すと**開くまで読まれない警告**になります。
 // 弊社の明細は常に見えていますし、**検算が守っているのはこの明細の数字**なので
 // 筋も通ります。
@@ -40,7 +40,7 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	span := headerCellCount(el)
 	// **受注残高**（2026-09-30 利用者:「受注ページに受注残高を出したい」・order_balance.go）——検算より先に、いちばん上に。
-	// ⚠ 引き金が同じ（受注明細の表）なので、別の鏡にせずここで足す（鏡は引き金1つにつき1つ）。
+	// ⚠ 引き金が同じ（受注明細表）なので、別の鏡にせずここで足す（鏡は引き金1つにつき1つ）。
 	appendOrderBalance(el, span)
 	renderChecksumRows(ctx, el, span)
 

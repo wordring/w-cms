@@ -36,7 +36,7 @@ import (
 
 // placeOrderPDFView は本文に「このPDFを開く」マーカーを置きます。
 //
-// 既にマーカーがあれば**参照を差し替え**、無ければ**部材発注明細の表の直後**に足します。
+// 既にマーカーがあれば**参照を差し替え**、無ければ**部材発注明細表の直後**に足します。
 // 戻り値の ok は、置けたか（本文が変わったか）です。
 func placeOrderPDFView(body, ref string) (string, bool) {
 	return placePDFView(body, ref, ourOrderItemsType)
@@ -56,7 +56,7 @@ func placePDFView(body, ref, tableType string) (string, bool) {
 		setAttr(el, cms.FileRefAttr, ref)
 		return htmldoc.Render(nodes), true
 	}
-	// ② 無ければ部材発注明細の表の直後へ。
+	// ② 無ければ部材発注明細表の直後へ。
 	tables := tablesOfType(nodes, tableType)
 	if len(tables) == 0 {
 		return body, false

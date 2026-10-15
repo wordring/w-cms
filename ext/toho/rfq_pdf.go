@@ -8,7 +8,7 @@ package toho
 // 「よろしくお願いします。」・「○○用」。
 //
 //	部材見積依頼書ページ
-//	  部材見積依頼明細 ── 足元（鏡）: 備考の欄・「📄 PDFを作る」
+//	  部材見積依頼明細表 ── 足元（鏡）: 備考の欄・「📄 PDFを作る」
 //	  （PDF のファイル表示——表の直後に機械が置く）
 //	  備考の節
 //	  「部材見積依頼を送る」（ビュー・テンプレートの末尾）: ✉️ メールで送る（用件「部材見積依頼」）・「送った（FAX・手渡し）」
@@ -44,7 +44,7 @@ const RFQMailPurpose = "部材見積依頼"
 // RFQSendViewType は部材見積依頼書ページの末尾に置く「部材見積依頼を送る」の形式名です。
 const RFQSendViewType = "rfq-send"
 
-// rfqLineDeclined は部材見積依頼明細の「辞退」——紙に刷らない。
+// rfqLineDeclined は部材見積依頼明細表の「辞退」——紙に刷らない。
 const rfqLineDeclined = "辞退"
 
 func init() {
@@ -274,7 +274,7 @@ func RFQSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "date": today})
 }
 
-// renderRFQItems は部材見積依頼明細の足元に、備考の欄と「📄 PDFを作る」を出します（鏡・書ける人にだけ）。
+// renderRFQItems は部材見積依頼明細表の足元に、備考の欄と「📄 PDFを作る」を出します（鏡・書ける人にだけ）。
 func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if el.Data != "table" {
 		return true, nil

@@ -53,7 +53,7 @@ var ErrNoPageTemplate = errors.New("ページを作るテンプレートがあ�
 // TemplateSlotError は、テンプレートに値を入れる器（表・見出しの節）が無いことを表します。
 type TemplateSlotError struct {
 	Template string // テンプレートの題
-	Slot     string // 無かったもの（「表『受注明細』」など）
+	Slot     string // 無かったもの（「表『受注明細表』」など）
 }
 
 func (e *TemplateSlotError) Error() string {
@@ -142,7 +142,7 @@ func DraftFromTemplate(title string) (*PageDraft, error) {
 // 写すときは `CopyTemplateBody` と同じくブロックID（`data-id`）を外します。加えて、
 // **定義リストと表の中の空白だけの文字**を落とします——エディタが字下げして保存した
 // テンプレートでも、`<dt>客先</dt><dd>` のように詰まった形になります（本文を文字列で
-// 探す読み手〔`replaceFirstFieldValue`・改訂明細の行を数える正規表現〕が、機械の
+// 探す読み手〔`replaceFirstFieldValue`・改訂明細表の行を数える正規表現〕が、機械の
 // 作ったページで空振りしないため）。
 type PageDraft struct {
 	DraftBlock
@@ -210,7 +210,7 @@ func (d *PageDraft) SetTitle(title string) {
 }
 
 // AssignBlockID は n にページの中で重ならないブロックIDを振り、そのIDを返します
-// （社内コードの指し先になる図面ブロック・改訂明細の行など）。
+// （社内コードの指し先になる図面ブロック・改訂明細表の行など）。
 func (d *PageDraft) AssignBlockID(n *html.Node) string {
 	id := page.RandomShortID(page.BlockIDsIn([]byte(d.HTML())))
 	setAttr(n, "data-id", id)
