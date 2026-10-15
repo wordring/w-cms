@@ -60,6 +60,7 @@ import (
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
+	"w-cms/tools/internal/estimatemig"
 	"w-cms/tools/internal/wcms"
 )
 
@@ -222,6 +223,7 @@ func main() {
 	gemini := flag.Bool("gemini", true, "Gemini で図面の表題欄を読む（控えのあるファイルは呼ばない・GEMINI_API_KEY が要る）")
 	fresh := flag.Bool("fresh", false, "前に作った「移行中」のページをごみ箱へ移して作り直す（前に上げたファイルを残さない・ページ番号は変わる）")
 	onlyFlag := flag.String("only", "", "作り直すページを w-cms のページIDで絞る（カンマ区切り・報告は「製造の報告（一部）.md」）")
+	stateFlag := flag.String("state", "", "製造の記録と報告を置く場所（既定は -dir と同じ——家でサンプルのデータを作るときは別の場所にする）")
 	flag.Parse()
 	// データの場所はサーバーと同じ決め方（WCMS_DATA_DIR・無ければ data）。本文と索引を読むので合わせる。
 	database.UseDataDirFromEnv()
@@ -230,6 +232,14 @@ func main() {
 		root = filepath.Join(wcms.Desktop(), "w-cms", "ワンノート", *notebook)
 	}
 	e := &env{root: root, mutool: *mutool, gemini: *gemini, fresh: *fresh, seen: map[string]string{}, machineNotes: map[string]string{}}
+	e.state = root
+	if *stateFlag != "" {
+		e.state = *stateFlag
+		if err := os.MkdirAll(e.state, 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, "失敗: 製造の記録の置き場を作れません:", err)
+			os.Exit(1)
+		}
+	}
 	for _, id := range strings.Split(*onlyFlag, ",") {
 		if id = strings.TrimSpace(id); id != "" {
 			if e.only == nil {
@@ -291,7 +301,14 @@ func run(e *env, dry bool) error {
 	}
 	e.tableDest = set.TableDest
 	var rec record
-	recPath := filepath.Join(root, recordName)
+	recPath := filepath.Join(e.state, recordName)
+	// 製造の記録を別の場所に置くとき（家のサンプル）は、root の記録（職場）を「表の行き先」の鍵を引くためだけに読む。
+	if filepath.Clean(e.state) != filepath.Clean(root) {
+		var shared record
+		if err := readJSON(filepath.Join(root, recordName), &shared); err == nil && shared.Pages != nil {
+			e.shared = &shared
+		}
+	}
 	if err := readJSON(recPath, &rec); err != nil || rec.Pages == nil {
 		rec = record{Pages: map[string]*pageRecord{}}
 	}
@@ -331,7 +348,7 @@ func run(e *env, dry bool) error {
 	var rep report
 	if dry {
 		// 下見は毎回作り直す（前の回の題のままの HTML が残ると、どれが今の結果か分からない）。
-		os.RemoveAll(filepath.Join(root, previewDir))
+		os.RemoveAll(filepath.Join(e.state, previewDir))
 	}
 	ids := make([]string, 0, len(cat.Pages))
 	for id := range cat.Pages {
@@ -384,6 +401,12 @@ func run(e *env, dry bool) error {
 		if len(p.LostInOneNote) > 0 {
 			note.warn("⚠ ワンノートでも失われているファイルがあります——入りません（" + strings.Join(p.LostInOneNote, "・") + "）")
 		}
+		e.destKey = ""
+		if e.shared != nil {
+			if sr := e.shared.Pages[id]; sr != nil {
+				e.destKey = sr.WCMS
+			}
+		}
 		rule, err := set.ruleFor(pl.Partner)
 		if err != nil {
 			return err
@@ -423,11 +446,11 @@ func run(e *env, dry bool) error {
 	if dry {
 		name = strings.TrimSuffix(name, ".md") + "（下見）.md" // 下見で本物の回の報告を上書きしない（2026-10-04）
 	}
-	if err := os.WriteFile(filepath.Join(root, name), []byte(rep.markdown(dry)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(e.state, name), []byte(rep.markdown(dry)), 0o644); err != nil {
 		return err
 	}
 	fmt.Println(rep.summary())
-	fmt.Println("報告:", filepath.Join(root, name))
+	fmt.Println("報告:", filepath.Join(e.state, name))
 	return nil
 }
 
@@ -969,8 +992,8 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			// 空でもテンプレートに入れ物のある節なら、並びの目印はそこへ進める——進めないと、あとの節が
 			// テンプレートの表（外注加工・購入部品…）より前に入る。
 			if m := tableMap[s.Name]; m.Caption != "" {
-				if box, ok := d.Container(m.Section); ok {
-					anchor, before = box.Node(), false
+				if box, ok := partsSinkFor(d, s.Name); ok {
+					anchor, before = box.anchor(), false
 				}
 			}
 			continue
@@ -1040,13 +1063,17 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			anchor = afterDrawing
 		case tableMap[s.Name].Caption != "":
 			m := tableMap[s.Name]
-			box, ok := d.Container(m.Section)
+			box, ok := partsSinkFor(d, s.Name)
 			if !ok {
-				note.warn("⚠ テンプレートに「" + m.Section + "」の節がありません——表は落としました")
+				note.warn("⚠ テンプレートに「" + m.Section + "」の節も「" + m.Caption + "」の表もありません——表は落としました")
 				continue
 			}
 			// 表は**行き先を決めて集め**、ページの最後に1回で埋める（tables.go）。
-			dests := e.tableDest[pageID][s.Name] // 人が決めた行き先（製造の設定.json の「表の行き先」）
+			destKey := pageID
+			if e.shared != nil {
+				destKey = e.destKey // 家のサンプル——職場で同じページを作ったときの番号で引く（無ければ空＝決まりのまま）
+			}
+			dests := e.tableDest[destKey][s.Name] // 人が決めた行き先（製造の設定.json の「表の行き先」）
 			ti := 0
 			var primary []string // この節でテンプレートの表へ入れた最初の表の見出し
 			for _, it := range s.Items {
@@ -1065,14 +1092,14 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 					}
 					ti++
 					if dest == keepPlain {
-						appendHTML(box.Node(), plainTableS(it.Rows, it.Struck))
+						box.add(plainTableS(it.Rows, it.Struck))
 						continue
 					}
 					if dest != "" {
 						dm, ok := tableByCaption(dest)
 						if !ok {
 							note.warn("⚠ 表の行き先「" + dest + "」はテンプレートの表ではありません——キャプションの無い表で残しました")
-							appendHTML(box.Node(), plainTableS(it.Rows, it.Struck))
+							box.add(plainTableS(it.Rows, it.Struck))
 							continue
 						}
 						dest = dm.Caption // 設定に古い名前（「材料」など）が書いてあっても、いまのキャプションへ
@@ -1106,11 +1133,11 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 						fills.add(m.Caption, cols, vals, m.Number)
 						continue
 					}
-					appendHTML(box.Node(), plainTableS(it.Rows, it.Struck))
+					box.add(plainTableS(it.Rows, it.Struck))
 					note.ask("「" + s.Name + "」に見出しの違う表があります——キャプションの無い表（DBに入らない）で残しました（行き先は " +
 						settingsName + " の「表の行き先」で決められます・ページ番号 " + pageID + "）")
 				case "text":
-					appendHTML(box.Node(), paragraphs(it.Text))
+					box.add(paragraphs(it.Text))
 					// 表の外の文——説明（※…）でなければ、表に入れるべき中身かもしれない（例: 購入品の
 					// 「カラー かなめ商会 530円」が ■材料 の下に文で書かれている）。機械は文から行を作らない。
 					// 利用者（2026-09-28）:「文で書かれた部品は人が表に入れます」——移すページの一覧として報告に出す。
@@ -1119,11 +1146,11 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 					}
 				case "image", "file":
 					if u, ok := up(s.Name, it); ok {
-						appendHTML(box.Node(), mediaHTML(pageID, u, it))
+						box.addDoc(mediaHTML(pageID, u, it))
 					}
 				}
 			}
-			anchor = box.Node()
+			anchor = box.anchor()
 			before = false
 		default:
 			nodes, err := htmldoc.ParseFragment(sectionHTML(pageID, s, up))
@@ -1157,8 +1184,21 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	}
 	fills.fill(d, note)
 	body := d.HTML()
+	// ■見積もり は、見積計算表と見積表の組（ロットごと）にする（2026-10-15・【要求】見積 §4a）——職場の235ページを移したのと
+	// 同じ変換（tools/internal/estimatemig）。移せない形の表の節は、見出し「見積計算表」の節のまま残す。
+	if r, err := estimatemig.ConvertPage(body); err != nil {
+		note.warn("⚠ 見積計算表を見積表の形にできません（もとの形で入れました）: " + err.Error())
+	} else {
+		body = r.Body
+		for _, why := range r.Skipped {
+			note.ask("■見積もり の節を見積表の形にしていません（" + why + "）——見出し「見積計算表」の節のまま入れました")
+		}
+		for _, n := range r.Notes {
+			note.info("見積計算表: " + n)
+		}
+	}
 	if dry {
-		out := filepath.Join(root, previewDir)
+		out := filepath.Join(e.state, previewDir)
 		os.MkdirAll(out, 0o755)
 		return os.WriteFile(filepath.Join(out, safeName(title, 80)+".html"), []byte(body), 0o644)
 	}
@@ -1298,7 +1338,7 @@ func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, 
 		b.WriteString(sectionHTML(pageID, s, up))
 	}
 	if dry {
-		out := filepath.Join(e.root, previewDir)
+		out := filepath.Join(e.state, previewDir)
 		os.MkdirAll(out, 0o755)
 		return os.WriteFile(filepath.Join(out, "装置 "+safeName(machine, 80)+".html"), []byte(b.String()), 0o644)
 	}
