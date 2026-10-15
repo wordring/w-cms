@@ -8,7 +8,7 @@
 // 見るのは3つ——どれも**画面からしか確かめられません**（Go の試験は配る辞書までしか見ない）:
 //   ① 受注明細の `納期` に `最短納期` と書いても薄赤にならない（語彙は `text`）
 //   ② 受注明細の `単位` の選択肢が6つ（語彙の既定。登録は2つだった）
-//   ③ `状態` は**表ごとの例外が先**——発注明細は `未発注…`、受注明細は既定の `未着手…`
+//   ③ `状態` は**表ごとの例外が先**——部材発注明細は `未発注…`、受注明細は既定の `未着手…`
 //
 // ⚠ **これは「画面に正しい答えが出るか」の番人で、「どちらの正本を読んでいるか」は
 // 見分けません。** 4-2 と同時に登録を語彙へ合わせたので（`TestRegistryAgreesWithVocabulary`
@@ -28,7 +28,7 @@ const BODY = '<h1>【E2E】列の語彙</h1>' +
   '<tr><th>品番</th><th>数量</th><th>単位</th><th>納期</th><th>状態</th></tr>' +
   '<tr><td>E2E-CW-1</td><td>2</td><td>個</td><td>最短納期</td><td>未着手</td></tr>' +
   '</tbody></table>' +
-  '<table><caption>発注明細</caption><tbody>' +
+  '<table><caption>部材発注明細</caption><tbody>' +
   '<tr><th>材質</th><th>数量</th><th>状態</th></tr>' +
   '<tr><td>E2E-CW-SS400</td><td>1</td><td>未発注</td></tr>' +
   '</tbody></table>';
@@ -65,7 +65,7 @@ const BODY = '<h1>【E2E】列の語彙</h1>' +
     const sel = await cellSel(caption, col);
     if (!sel) return null;
     // 前のセルで開いたメニューを閉じてから押す——開いたままだと、表の並びによっては次のセルに重なって押せない
-    // （2026-10-14・発注明細の足元に備考の欄が入って列の幅が変わり、受注明細の「状態」のメニューが重なった）。
+    // （2026-10-14・部材発注明細の足元に備考の欄が入って列の幅が変わり、受注明細の「状態」のメニューが重なった）。
     // メニューは本文の外を押すと閉じる（app.js の document の mousedown）。
     await page.dispatchEvent('body', 'mousedown');
     await page.click(sel);
@@ -102,9 +102,9 @@ const BODY = '<h1>【E2E】列の語彙</h1>' +
     say(orderState && orderState.includes('未着手') && !orderState.includes('未発注'),
       '受注明細の状態は既定の選択肢（' + JSON.stringify(orderState) + '）');
 
-    const ourState = await menuFor('発注明細', '状態');
+    const ourState = await menuFor('部材発注明細', '状態');
     say(ourState && ourState.includes('未発注') && !ourState.includes('未着手'),
-      '発注明細の状態は表の例外が先（' + JSON.stringify(ourState) + '）');
+      '部材発注明細の状態は表の例外が先（' + JSON.stringify(ourState) + '）');
 
     await page.evaluate(() => document.getElementById('w-mode-toggle').click());
     await page.waitForTimeout(800);

@@ -1,4 +1,4 @@
-// 発注書の「送る」欄と、行ごとの発注済みの印を**ブラウザから**確かめる（2026-09-22）。
+// 部材発注書の「送る」欄と、行ごとの発注済みの印を**ブラウザから**確かめる（2026-09-22）。
 //
 // ⚠ **この一週間で2度、API を叩くだけの確認では気づけない壊れ方が出ました**
 // （空の発注部材表が残る／画面が `into` を送っていない）。どちらも Playwright で
@@ -6,15 +6,15 @@
 // 確かめられません。**
 //
 // 見るのは4つ:
-//   ① 発注書ページに送信の欄が出る（メール・FAX・手渡し）
+//   ① 部材発注書ページに送信の欄が出る（メール・FAX・手渡し）
 //   ② 行ごとの「✓ 発注済」を押すと、本文の `状態` が変わる
 //   ③ 「✕ 取消」を押した行は、まとめ書きに巻き込まれない
-//   ④ 発注ページのリンクの「まだ発注していません」が、出したあと消える
+//   ④ 部材発注ページのリンクの「まだ発注していません」が、出したあと消える
 //
-// ⚠ **当て先は自分で作り、最後に消します**（2026-09-23）。09-22 までは `発注` の下から
-// 実物の発注書を探して**その行の印を書き換えていました**——1枚も無い環境（自宅）では
-// 「飛ばす」で終わり、あれば見本の紙が書き換わります。いまは `発注` の下に【E2E】の
-// 発注書を1枚置いて確かめ、消して帰ります（`発注` が無ければトップ直下・④は飛ばす）。
+// ⚠ **当て先は自分で作り、最後に消します**（2026-09-23）。09-22 までは `部材発注` の下から
+// 実物の部材発注書を探して**その行の印を書き換えていました**——1枚も無い環境（自宅）では
+// 「飛ばす」で終わり、あれば見本の紙が書き換わります。いまは `部材発注` の下に【E2E】の
+// 部材発注書を1枚置いて確かめ、消して帰ります（`部材発注` が無ければトップ直下・④は飛ばす）。
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-order-send.js
 const { chromium } = require('playwright');
@@ -24,18 +24,18 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 // ⚠ 2行とも `未発注` で始めます——① 1行目に「✓ 発注済」→ ③ 2行目に「✕ 取消」→
 //    「手渡し」のまとめ書き、の順に押すためです。
 // ⚠ **行に弊社品番を入れます**（無いページ `999999`・2026-09-28）——弊社品番の無い行を「必要部材表へ戻す」と、
-//    **本物の発注ページの臨時部材表へ書き込まれ**、流すたびに `E2E-SEND-A` の行が残っていました。弊社品番の
+//    **本物の部材発注ページの臨時部材表へ書き込まれ**、流すたびに `E2E-SEND-A` の行が残っていました。弊社品番の
 //    ある行は外すだけで、ほかのページへは何も書きません（order_return.go）。
 const ORDER_BODY = '<h1>【E2E】発注 テスト商店（送る）</h1>' +
-  '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-SEND</dd>' +
-  '<dt>仕入先</dt><dd>テスト商店</dd><dt>発注日</dt><dd>2026-09-23</dd></dl>' +
-  '<table data-type="our-order-items"><caption>発注明細</caption><tbody>' +
+  '<dl data-type="tags"><dt>部材発注書番号</dt><dd>E2E-SEND</dd>' +
+  '<dt>仕入先</dt><dd>テスト商店</dd><dt>部材発注日</dt><dd>2026-09-23</dd></dl>' +
+  '<table data-type="our-order-items"><caption>部材発注明細</caption><tbody>' +
   '<tr><th>弊社品番</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
   '<tr><td>999999</td><td>E2E-SEND-A</td><td>板</td><td>t3.2</td><td>2</td><td>枚</td><td>800</td><td>未発注</td></tr>' +
   '<tr><td>999999</td><td>E2E-SEND-B</td><td>板</td><td>t1.5</td><td>1</td><td>枚</td><td>900</td><td>未発注</td></tr>' +
   '</tbody></table>';
 
-// statusesOf は本文の発注明細から `状態` の列を読みます（鏡の足元の行は除く）。
+// statusesOf は本文の部材発注明細から `状態` の列を読みます（鏡の足元の行は除く）。
 async function statusesOf(page) {
   return page.evaluate(() => {
     const t = document.querySelector('table[data-type="our-order-items"]');
@@ -57,11 +57,11 @@ async function statusesOf(page) {
   page.on('pageerror', (e) => errs.push(e.message));
   await login(page, BASE);
 
-  // 置き場は `発注`（題が機能）。無ければトップ直下に置き、④だけ飛ばします。
+  // 置き場は `部材発注`（題が機能）。無ければトップ直下に置き、④だけ飛ばします。
   const top = await childrenOf(page, '000000');
-  const box = top.find((c) => (c.Title || c.title) === '発注');
+  const box = top.find((c) => (c.Title || c.title) === '部材発注');
   const boxID = box ? String(box.ID || box.id) : '';
-  if (!boxID) console.log('「発注」ページが無いので、当て先はトップ直下に置きます（④は飛ばします）');
+  if (!boxID) console.log('「部材発注」ページが無いので、当て先はトップ直下に置きます（④は飛ばします）');
 
   const found = await makePage(page, ORDER_BODY, boxID || '000000');
   if (!found) {
@@ -78,7 +78,7 @@ async function statusesOf(page) {
 
     // ① 送信の欄
     for (const [sel, name] of [
-      ['[data-mail-compose="発注書"]', 'メールの送る欄（部品・2026-09-30）'],
+      ['[data-mail-compose="部材発注書"]', 'メールの送る欄（部品・2026-09-30）'],
       ['[data-order-sent="FAX"]', 'FAXで送った'],
       ['[data-order-sent="手渡し"]', '手渡した'],
       ['.order-row-set', '行ごとの印のボタン'],
@@ -92,7 +92,7 @@ async function statusesOf(page) {
 
     const before = await statusesOf(page);
     if (!before || before.length < 2) {
-      console.log('✗ 発注明細に2行あるはずです: ' + JSON.stringify(before));
+      console.log('✗ 部材発注明細に2行あるはずです: ' + JSON.stringify(before));
       bad++;
     } else {
       console.log('  いまの状態: ' + JSON.stringify(before));
@@ -164,16 +164,16 @@ async function statusesOf(page) {
       }
     }
 
-    // ④ 発注ページのリンク——「まだ発注していません」が**本文に焼き込まれていない**こと
+    // ④ 部材発注ページのリンク——「まだ発注していません」が**本文に焼き込まれていない**こと
     //
-    // ⚠ **鏡が出ているかで見ます**（文字の有無ではなく）。まだ出していない発注書が
+    // ⚠ **鏡が出ているかで見ます**（文字の有無ではなく）。まだ出していない部材発注書が
     //    他にもあれば、その文は**正しく**残るからです。
     if (boxID) {
       await page.goto(BASE + '/' + boxID);
       await page.waitForTimeout(600);
       const n = await page.locator('section[data-type="our-order-link"]').count();
       if (n === 0) {
-        console.log('飛ばします: 発注ページに発注書へのリンクがありません');
+        console.log('飛ばします: 部材発注ページに部材発注書へのリンクがありません');
       } else if ((await page.locator('.order-link-state').count()) !== n) {
         console.log('✗ ⚠ リンクの進み具合が鏡になっていません（本文に焼き込まれている？）');
         bad++;

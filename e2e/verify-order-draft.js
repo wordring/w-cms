@@ -7,14 +7,14 @@
 // ⚠ **画面が値を送っているかは、画面からしか確かめられません。**
 //
 // ⚠ **未手配の行は自分で作ります**（2026-09-23）。加工製品ページ（材料表2行）と
-// 受注ページ（受注明細1行・`品番` で結ぶ）を置くと、`発注` の未手配の一覧に**その2行**が
+// 受注ページ（受注明細1行・`品番` で結ぶ）を置くと、`部材発注` の未手配の一覧に**その2行**が
 // 出ます。09-22 までは環境の実データ頼みで、自宅では「未手配の行がありません」で
 // 終わっていました。押すのは**自分の行だけ**（`data-product` で選ぶ）で、足す先も
 // **自分が作った表**です——職場の実データの行を発注部材表へ入れて帰らないため。
 // 最後に2枚とも消します（発注部材表は③で空になって消えます）。
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-order-draft.js
-//         （発注部材表を置けるページを WCMS_PAGE で指す。既定は「発注」を探す）
+//         （発注部材表を置けるページを WCMS_PAGE で指す。既定は「部材発注」を探す）
 const { chromium } = require('playwright');
 const { login, childrenOf, makePage, deletePage } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
@@ -46,18 +46,18 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
   page.on('pageerror', (e) => errs.push(e.message));
   await login(page, BASE);
 
-  // ⚠ **当て先は焼き込みません**——トップ直下で題が「発注」のページを探します。
+  // ⚠ **当て先は焼き込みません**——トップ直下で題が「部材発注」のページを探します。
   let target = process.env.WCMS_PAGE || '';
   if (target) {
     const m = /(\d{6})\s*$/.exec(target);
     target = m ? '/' + m[1] : '';
   }
   if (!target) {
-    const hit = (await childrenOf(page, '000000')).find((c) => (c.Title || c.title) === '発注');
+    const hit = (await childrenOf(page, '000000')).find((c) => (c.Title || c.title) === '部材発注');
     if (hit) target = '/' + (hit.ID || hit.id);
   }
   if (!target) {
-    console.log('飛ばします: 「発注」ページが見つかりません（まだ作っていないだけかもしれません）');
+    console.log('飛ばします: 「部材発注」ページが見つかりません（まだ作っていないだけかもしれません）');
     await browser.close();
     return;
   }
@@ -149,7 +149,7 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
         tallest: Math.max(0, ...rows.map((tr) => Math.round(tr.getBoundingClientRect().height))),
       };
     });
-    // 「発注書を作る」の欄は表の外（包む節の中・表の直後・2026-09-28 利用者:「テーブルの外のブロックに
+    // 「部材発注書を作る」の欄は表の外（包む節の中・表の直後・2026-09-28 利用者:「テーブルの外のブロックに
     // 出来ませんか？」）——表の中（tfoot）だと表の横スクロールに巻き込まれて右へ長く伸びる。
     const formAt = await page.evaluate(() => Array.from(document.querySelectorAll('.draft-form-box')).map((b) => ({
       inTable: !!b.closest('table'),
@@ -157,9 +157,9 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
         b.parentElement.querySelector(':scope > table > caption')),
     })));
     if (formAt.length === 0 || formAt.some((f) => f.inTable || !f.besideDraft)) {
-      console.log('✗ 「発注書を作る」の欄が表の外（包む節の中）にありません: ' + JSON.stringify(formAt));
+      console.log('✗ 「部材発注書を作る」の欄が表の外（包む節の中）にありません: ' + JSON.stringify(formAt));
       bad++;
-    } else console.log('✓ 「発注書を作る」の欄は表の外・包む節の中（' + formAt.length + ' 個）');
+    } else console.log('✓ 「部材発注書を作る」の欄は表の外・包む節の中（' + formAt.length + ' 個）');
     if (wrap.back < 0 || wrap.back > wrap.backLine) {
       console.log('✗ 「↩ 戻す」が折り返しています（高さ ' + wrap.back + 'px）');
       bad++;
@@ -187,7 +187,7 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
         console.log('✗ 全部戻したのに表が残っています（' + left + ' 枚）');
         bad++;
       } else console.log('✓ 全部戻す → 空の表は残らない（' + left + ' 枚）');
-      // ⚠ 包む節ごと消えること（2026-09-28・draftBoxOf）——表の無い節が残ると発注ページに溜まる。
+      // ⚠ 包む節ごと消えること（2026-09-28・draftBoxOf）——表の無い節が残ると部材発注ページに溜まる。
       const emptyBoxes = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content section'))
         .filter((s) => !s.hasAttribute('data-mirror') && !s.hasAttribute('data-type') && !s.closest('.vocab-chrome') &&
           !s.querySelector('table') && !s.textContent.trim()).length);

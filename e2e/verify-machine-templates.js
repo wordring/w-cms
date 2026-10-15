@@ -5,8 +5,8 @@
 // 管理画面で見えること**を見ます。
 //
 //   ① スラッシュメニューに「見出しの節」がある。挿すと <section><h2>…</h2> が本文に保存される
-//      （メールの「本文」「添付ファイル」・発注書の「備考」・加工製品の「図面」の器）
-//   ② 機械が行を入れる表（受注明細・発注明細）がスラッシュメニューに出る（2026-09-27 まで隠していた）
+//      （メールの「本文」「添付ファイル」・部材発注書の「備考」・加工製品の「図面」の器）
+//   ② 機械が行を入れる表（受注明細・部材発注明細）がスラッシュメニューに出る（2026-09-27 まで隠していた）
 //   ③ 管理画面に「機械が作るページのテンプレート」の表があり、行ごとに在る／無いが出る
 //
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
@@ -53,7 +53,7 @@ async function openSlashMenu(page) {
     const has = async t => (await page.locator(`#w-slash-menu .slash-menu-item[data-type="${t}"]`).count()) === 1;
     check('メニューに「見出しの節」がある', await has('section'));
     check('メニューに受注明細がある', await has('vocab:client-order-items'));
-    check('メニューに発注明細がある', await has('vocab:our-order-items'));
+    check('メニューに部材発注明細がある', await has('vocab:our-order-items'));
 
     // ① 見出しの節を挿して、見出しを打つ。
     await page.locator('#w-slash-menu .slash-menu-item[data-type="section"]').click();

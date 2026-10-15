@@ -1,4 +1,4 @@
-// 再見積依頼の「装置フォルダから選ぶ」（2026-10-03・ext/toho/rfq_api.go・assets/app.js の wireRFQ）を画面から確かめる。
+// 再部材見積依頼の「装置フォルダから選ぶ」（2026-10-03・ext/toho/rfq_api.go・assets/app.js の wireRFQ）を画面から確かめる。
 //
 // 利用者:「装置フォルダのページ番号を入力する欄を作り、その下にある加工製品を列挙する一時的な表を作ります。その表で
 // チェックした加工製品から見積依頼必要部材表に追加するように出来ると。作業がはかどります」。
@@ -24,7 +24,7 @@ const check = (label, ok, note = '') => {
 const row = (labels, tag) => '<tr>' + labels.map((l) => '<' + tag + '>' + l + '</' + tag + '>').join('') + '</tr>';
 const NEEDS = ['弊社品番', '受注', '種類', '番号', '品番', '品名', '加工内容', '材質', '形状', '寸法', '表面', '仕様', '支給', '数量', '単位', '備考'];
 const BOX = '<h1>【E2E】見積依頼の置き場（フォルダ）</h1>' +
-  '<section data-mirror="再見積依頼"></section>' +
+  '<section data-mirror="再部材見積依頼"></section>' +
   '<section><table><caption>見積依頼必要部材表</caption><tbody>' + row(NEEDS, 'th') + '<tr>' + '<td></td>'.repeat(NEEDS.length) + '</tr></tbody></table></section>';
 const FOLDER = '<h1>【E2E】装置フォルダ</h1><p>見積依頼の試験</p>';
 const tags = (no) => '<dl data-type="tags"><dt>品番</dt><dd>' + no + '</dd></dl>';

@@ -1,11 +1,11 @@
-// 外注加工の資料を発注書に添えることを画面から確かめる（2026-09-28・ext/toho/order_docs.go）。
+// 外注加工の資料を部材発注書に添えることを画面から確かめる（2026-09-28・ext/toho/order_docs.go）。
 //
 // 利用者:「加工製品のページに、外注加工ごとに資料のブロック（開いたり閉じたりできる）を用意して、
 // そこに保存したファイルをメールやFAX、印刷等に追加できるようにしてはどうでしょう？」。
 //
 //   ① 加工製品の「資料 1」の折りたたみに、書式の帯の 📎 で図面（A3 横のPDF）を上げる
-//   ② 発注書（行が 弊社品番＋番号 1 を指す）のメールの送る欄（部品）に、その図面の候補（チェック済み）が出る
-//   ③ 「📠 FAX・印刷用（資料を綴じる）」を押すと、発注書のうしろに図面を綴じた1本ができる
+//   ② 部材発注書（行が 弊社品番＋番号 1 を指す）のメールの送る欄（部品）に、その図面の候補（チェック済み）が出る
+//   ③ 「📠 FAX・印刷用（資料を綴じる）」を押すと、部材発注書のうしろに図面を綴じた1本ができる
 //   ④ メールの送信に図面が添付として載る——⚠ **送信の口は画面の中で差し止める**（本物のメールは出さない）
 //
 // 当て先は自分で作って最後に消します（トップ直下に2枚）。
@@ -47,16 +47,16 @@ const check = (label, ok, note = '') => {
     await chooser.setFiles([{ name: '図面A3.pdf', mimeType: 'application/pdf', buffer: minimalPDF() }]);
     await page.waitForFunction(() => document.querySelector(
       '#w-editor-content details section[data-type="file-view"][data-ref]'), null, { timeout: 8000 });
-    await saveNow(page); // 保存はブロックを去るときなので、発注書を開く前にいま保存する（2026-10-14）
+    await saveNow(page); // 保存はブロックを去るときなので、部材発注書を開く前にいま保存する（2026-10-14）
     check('図面が「資料 1」に入った', await page.locator('#w-editor-content details section[data-type="file-view"]').count() === 1);
 
     order = await makePage(page, '<h1>【E2E】資料の発注書</h1>' +
       '<dl data-type="tags"><dt>仕入先</dt><dd>ひかりレーザー</dd></dl>' +
-      '<table><caption>発注明細</caption><tbody>' +
+      '<table><caption>部材発注明細</caption><tbody>' +
       '<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>品名</th><th>加工内容</th><th>数量</th><th>状態</th></tr>' +
       '<tr><td>' + product + '</td><td>外注加工</td><td>1</td><td>ブラケット</td><td>レーザー切断</td><td>1</td><td>未発注</td></tr>' +
       '</tbody></table>');
-    check('発注書を作れた', !!order, order);
+    check('部材発注書を作れた', !!order, order);
 
     // ② メールの送る欄（部品・2026-09-30）を開くと、添付の候補に図面（チェック済み）
     await page.goto(BASE + '/' + order);
@@ -79,11 +79,11 @@ const check = (label, ok, note = '') => {
       return { ok: res.ok, pages: (s.match(/\/Type \/Page\s/g) || []).length, a3: /\/MediaBox \[\s*0 0 1190\.55/.test(s) };
     }, href);
     check('綴じた1本が開ける', info.ok, href);
-    check('発注書のうしろに図面が綴じてある（2ページ・A3 横のまま）', info.pages === 2 && info.a3, JSON.stringify(info));
+    check('部材発注書のうしろに図面が綴じてある（2ページ・A3 横のまま）', info.pages === 2 && info.a3, JSON.stringify(info));
 
     // ④ メールに図面が載る（⚠ 送信の口は差し止める——本物のメールは出さない）。
-    //    発注書のPDFはサーバーが足す（用件「発注書」——2026-10-14 からはページに表示中のPDF・無ければそのとき作る）ので、画面が送るのは
-    //    選んだ資料と用件だけ——ここでは「図面が選ばれて、用件が発注書であること」を見る。
+    //    部材発注書のPDFはサーバーが足す（用件「部材発注書」——2026-10-14 からはページに表示中のPDF・無ければそのとき作る）ので、画面が送るのは
+    //    選んだ資料と用件だけ——ここでは「図面が選ばれて、用件が部材発注書であること」を見る。
     let mailBody = null;
     await page.route('**/api/mail/send', async (route) => {
       mailBody = JSON.parse(route.request().postData() || '{}');
@@ -98,9 +98,9 @@ const check = (label, ok, note = '') => {
     await sendBtn.click();
     for (let i = 0; i < 50 && !mailBody; i++) await page.waitForTimeout(200);
     const files = (mailBody && mailBody.attachments || []).map((a) => a.page_id + '/' + a.file);
-    check('メールに図面が載る（発注書のPDFはサーバーが足す）', files.length === 1 &&
+    check('メールに図面が載る（部材発注書のPDFはサーバーが足す）', files.length === 1 &&
       files.some((f) => f.startsWith(product + '/')), JSON.stringify(files));
-    check('用件は発注書・元のページはこの発注書', mailBody && mailBody.purpose === '発注書' && mailBody.page_id === order,
+    check('用件は部材発注書・元のページはこの部材発注書', mailBody && mailBody.purpose === '部材発注書' && mailBody.page_id === order,
       JSON.stringify(mailBody && { purpose: mailBody.purpose, page_id: mailBody.page_id }));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

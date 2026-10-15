@@ -1,13 +1,13 @@
-// 見積依頼書ページを作る（2026-10-03・段2——ext/toho/rfq_doc.go・assets/app.js の wireRFQ）を画面から確かめる。
+// 部材見積依頼書ページを作る（2026-10-03・段2——ext/toho/rfq_doc.go・assets/app.js の wireRFQ）を画面から確かめる。
 //
-// 利用者:「見積依頼部材表の下で諸々入力してボタンを押すと「見積依頼ページ」が出来ます」（10-02 の答えでは名前は見積依頼書ページ）。
+// 利用者:「見積依頼部材表の下で諸々入力してボタンを押すと「見積依頼ページ」が出来ます」（10-02 の答えでは名前は部材見積依頼書ページ）。
 //
-//   ① 見積依頼部材表の下に「見積依頼書ページを作る」の欄（差出人・仕入先・見積依頼日・備考）がある
+//   ① 見積依頼部材表の下に「部材見積依頼書ページを作る」の欄（差出人・仕入先・部材見積依頼日・備考）がある
 //   ② 仕入先が空なら断る
-//   ③ 入れて押すと見積依頼書ページが開く——タグ（見積依頼番号・仕入先・見積依頼日）・見積依頼明細（未回答・単価は空）・備考
+//   ③ 入れて押すと部材見積依頼書ページが開く——タグ（部材見積依頼番号・仕入先・部材見積依頼日）・部材見積依頼明細（未回答・単価は空）・備考
 //   ④ 元の見積依頼部材表は消える
 //
-// 当て先（【E2E】の置き場と見積依頼部材表）は自分で作り、できた見積依頼書（本物の 見積依頼／年／月 の下）と、試験が作った
+// 当て先（【E2E】の置き場と見積依頼部材表）は自分で作り、できた部材見積依頼書（本物の 部材見積依頼／年／月 の下）と、試験が作った
 // 年月のフォルダは最後に消します。差出人（署名を持つ人）が居なければ飛ばします。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-rfq-doc.js
 const { chromium } = require('playwright');
@@ -46,7 +46,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
 
     // ①
     const form = page.locator('.rfq-doc-form');
-    check('① 見積依頼部材表の下に「見積依頼書ページを作る」の欄がある', await form.count() === 1);
+    check('① 見積依頼部材表の下に「部材見積依頼書ページを作る」の欄がある', await form.count() === 1);
     const signers = await form.locator('[data-unorder="signer"] option').evaluateAll((os) => os.map((o) => o.value).filter(Boolean));
     if (!signers.length) {
       console.log('— 差出人（署名を持つ人）が居ないので、作るところは飛ばします');
@@ -69,13 +69,13 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     ]);
     await page.waitForTimeout(1000);
     doc = (new URL(page.url())).pathname.replace(/^\//, '');
-    check('③ 見積依頼書ページが開く', /^\d{6}$/.test(doc) && doc !== box, page.url());
+    check('③ 部材見積依頼書ページが開く', /^\d{6}$/.test(doc) && doc !== box, page.url());
     const raw = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), doc);
-    check('③ 題は「見積依頼　仕入先」', raw.includes('<h1>見積依頼　【E2E】仕入先</h1>'), raw.slice(0, 80));
-    check('③ 見積依頼番号はページ番号・仕入先・見積依頼日のタグ', raw.includes('<dt>見積依頼番号</dt><dd>' + doc + '</dd>') &&
-      raw.includes('<dt>仕入先</dt><dd>【E2E】仕入先</dd>') && raw.includes('<dt>見積依頼日</dt><dd>2026-10-05</dd>'));
-    check('③ 見積依頼担当に差出人', raw.includes('<dt>見積依頼担当</dt><dd>' + signers[0] + '</dd>'));
-    check('③ 見積依頼明細に2行・どちらも未回答', raw.includes('E2E-RFQD-SS400') && raw.includes('E2E-RFQD-ボルト') &&
+    check('③ 題は「部材見積依頼　仕入先」', raw.includes('<h1>部材見積依頼　【E2E】仕入先</h1>'), raw.slice(0, 80));
+    check('③ 部材見積依頼番号はページ番号・仕入先・部材見積依頼日のタグ', raw.includes('<dt>部材見積依頼番号</dt><dd>' + doc + '</dd>') &&
+      raw.includes('<dt>仕入先</dt><dd>【E2E】仕入先</dd>') && raw.includes('<dt>部材見積依頼日</dt><dd>2026-10-05</dd>'));
+    check('③ 部材見積依頼担当に差出人', raw.includes('<dt>部材見積依頼担当</dt><dd>' + signers[0] + '</dd>'));
+    check('③ 部材見積依頼明細に2行・どちらも未回答', raw.includes('E2E-RFQD-SS400') && raw.includes('E2E-RFQD-ボルト') &&
       (raw.match(/>未回答</g) || []).length === 2);
     check('③ 単価は空（業者に聞く前の値を写さない）', !raw.includes('999'));
     check('③ 備考の節に「E2E用」', raw.includes('<p>E2E用</p>'));
@@ -84,14 +84,14 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     const after = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), box);
     check('④ 元の見積依頼部材表は消える', !after.includes('<caption>見積依頼部材表</caption>'));
 
-    // ⑤ 見積依頼明細の下の備考の欄・PDF を作る・PDF の下の送る欄・送った（FAX・手渡し）（2026-10-03・段2の後半）。
+    // ⑤ 部材見積依頼明細の下の備考の欄・PDF を作る・PDF の下の送る欄・送った（FAX・手渡し）（2026-10-03・段2の後半）。
     // ⚠ 送る口は画面の手前で止める（本物のメールは出さない）。
     await page.route('**/api/mail/send', (route) => route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ success: false, message: 'E2E で止めました' }) }));
     await page.goto(BASE + '/' + doc);
     await page.waitForTimeout(800);
     const noteBox = page.locator('#w-editor-content .estimate-note-save[data-note-url="/api/rfq/note"]');
-    check('⑤ 見積依頼明細の下に備考の欄', await noteBox.count() === 1);
+    check('⑤ 部材見積依頼明細の下に備考の欄', await noteBox.count() === 1);
     await page.locator('#w-editor-content .estimate-note-input').fill('E2E 標準2輪用');
     await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), noteBox.click()]);
     await page.waitForTimeout(1000);
@@ -102,13 +102,13 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     const order = await page.evaluate(() => {
       const root = document.getElementById('w-editor-content');
       const html = root.innerHTML;
-      return { table: html.indexOf('<caption>見積依頼明細</caption>'), pdf: html.search(/data-type="file-view"/), send: html.indexOf('見積依頼を送る') };
+      return { table: html.indexOf('<caption>部材見積依頼明細</caption>'), pdf: html.search(/data-type="file-view"/), send: html.indexOf('部材見積依頼を送る') };
     });
     check('⑤ PDF を作ると明細の下に出る', order.pdf > order.table && order.table >= 0, JSON.stringify(order));
     check('⑤ 送る欄は PDF の下', order.send > order.pdf, JSON.stringify(order));
     await page.waitForSelector('.mail-compose [data-mc="to"]', { timeout: 10000 }).catch(() => {});
     const genText = (await page.locator('.mail-compose .mc-attach-generated').textContent().catch(() => '')) || '';
-    check('⑤ 送る欄が開いていて、見積依頼書のPDFが添付に印つきで並ぶ', genText.includes('見積依頼書 ' + doc + '.pdf') &&
+    check('⑤ 送る欄が開いていて、部材見積依頼書のPDFが添付に印つきで並ぶ', genText.includes('見積依頼書 ' + doc + '.pdf') &&
       await page.locator('.mail-compose input[data-mc-generated]').isChecked().catch(() => false), genText);
     check('⑤ 件名は「見積依頼（№ ページ番号）」', (await page.locator('.mail-compose [data-mc="subject"]').inputValue().catch(() => '')) === '見積依頼（№ ' + doc + '）');
     await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('#w-editor-content .rfq-sent-go').click()]);
@@ -119,7 +119,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {
-    // 見積依頼書と、試験が作った年月のフォルダ（作った当て先より新しい番号で、空のもの）を消す。
+    // 部材見積依頼書と、試験が作った年月のフォルダ（作った当て先より新しい番号で、空のもの）を消す。
     const base = Number(box || 0);
     if (doc && doc !== box) {
       const up = await parentOf(page, doc).catch(() => '');

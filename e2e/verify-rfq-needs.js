@@ -4,7 +4,7 @@
 // 書き込みボタンを押す。…重複するものは見積依頼必要部材表に入れるが重複とわかるように背景を赤くします。そして消すことが
 // 出来るようにするのです」「見積依頼必要部材表のチェックボックスを選択して入れる先をえらびボタンを押し、見積依頼部材表に入れます」。
 //
-//   ① 再見積依頼フォームに弊社品番を書いて「集める」→ 見積計算表のロットごと（20・40）に部材が入る
+//   ① 再部材見積依頼フォームに弊社品番を書いて「集める」→ 見積計算表のロットごと（20・40）に部材が入る
 //   ② ロット20でもう一度集めると、同じもの・同じロットの行が赤＋「⚠ 重複」になる（2026-10-14 に「同じ数」から改めた）。臨時部材表の行も並ぶ
 //   ④ で戻した行もロットを持って戻る（見積依頼部材表にもロットの列がある）ので、⑤ の重複はロット20の4行のまま
 //   ③ 必要部材表の1行と臨時部材表の1行を選んで「見積依頼部材表へ入れる」→ 見積依頼部材表ができ、元から消える
@@ -27,8 +27,8 @@ const row = (labels, tag) => '<tr>' + labels.map((l) => '<' + tag + '>' + l + '<
 const TEMP = ['品番', '品名', '材質', '形状', '寸法', '表面', '数量', '単位', '備考'];
 const NEEDS = ['弊社品番', '受注', '種類', '番号', '品番', '品名', '加工内容', '材質', '形状', '寸法', '表面', '仕様', '支給', '数量', '単位', '備考'];
 const BOX = '<h1>【E2E】見積依頼の置き場</h1>' +
-  '<section data-mirror="再見積依頼"></section>' +
-  '<table><caption>見積依頼の臨時部材表</caption><tbody>' + row(TEMP, 'th') +
+  '<section data-mirror="再部材見積依頼"></section>' +
+  '<table><caption>部材見積依頼の臨時部材表</caption><tbody>' + row(TEMP, 'th') +
   '<tr><td></td><td></td><td>E2E-RFQ-真鍮</td><td>板</td><td>t1</td><td></td><td>3</td><td></td><td></td></tr></tbody></table>' +
   '<section><table><caption>見積依頼必要部材表</caption><tbody>' + row(NEEDS, 'th') + '<tr>' + '<td></td>'.repeat(NEEDS.length) + '</tr></tbody></table></section>';
 const PRODUCT = '<h1>【E2E】見積依頼の加工製品</h1>' +
@@ -97,7 +97,7 @@ const tableRows = (html, caption, n = 1) => {
     const draft = tableRows(body, '見積依頼部材表') || [];
     check('③ 見積依頼部材表に2行（必要部材表の行と臨時の行）', draft.length === 2 && draft.some((r) => r.includes('E2E-RFQ-真鍮')), draft.join(' / '));
     check('③ 元の表から消える', (tableRows(body, '見積依頼必要部材表') || []).length === 5 &&
-      (tableRows(body, '見積依頼の臨時部材表') || []).length === 0);
+      (tableRows(body, '部材見積依頼の臨時部材表') || []).length === 0);
 
     // ④ ↩ 戻す——2行とも戻すと表ごと消える。
     for (let i = 0; i < 2; i++) {

@@ -27,9 +27,9 @@ const MAT_BODY = '<h1>【E2E】材料の参考単価</h1>' +
   '</tbody></table>';
 
 const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
-  '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-PO</dd>' +
-  '<dt>仕入先</dt><dd>テスト商店</dd><dt>発注日</dt><dd>2026-08-19</dd></dl>' +
-  '<table data-type="our-order-items"><caption>発注明細</caption><tbody>' +
+  '<dl data-type="tags"><dt>部材発注書番号</dt><dd>E2E-PO</dd>' +
+  '<dt>仕入先</dt><dd>テスト商店</dd><dt>部材発注日</dt><dd>2026-08-19</dd></dl>' +
+  '<table data-type="our-order-items"><caption>部材発注明細</caption><tbody>' +
   '<tr><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
   '<tr><td>E2E-SS400</td><td>板</td><td>t3.2</td><td>2</td><td>枚</td><td>800</td><td>発注済</td></tr>' +
   '</tbody></table>';
@@ -44,7 +44,7 @@ const ORDER_BODY = '<h1>【E2E】発注 テスト商店</h1>' +
   const ids = [];
   const say = (ok, msg) => { console.log((ok ? '  OK ' : '  NG ') + msg); if (!ok) bad++; };
   try {
-    // ⚠ **発注書を先に作ります**（材料ページを描くときに索引へ入っている必要がある）。
+    // ⚠ **部材発注書を先に作ります**（材料ページを描くときに索引へ入っている必要がある）。
     const orderID = await makePage(page, ORDER_BODY);
     const matID = await makePage(page, MAT_BODY);
     if (!orderID || !matID) { console.log('NG ページを作れません'); process.exit(1); }

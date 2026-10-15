@@ -1,13 +1,13 @@
-// 見積依頼の記録が無い返事から見積依頼書ページを作る（2026-10-05・移行期——ext/toho/rfq_reply_make.go・assets/app.js）を画面から確かめる。
+// 部材見積依頼の記録が無い返事から部材見積依頼書ページを作る（2026-10-05・移行期——ext/toho/rfq_reply_make.go・assets/app.js）を画面から確かめる。
 //
 // 利用者:「移行期なので見積依頼の記録が無い。見積回答があります」→「作る」・品名の無い最後の行は「（上の行の品物）の20個の単価」。
 //
-//   ① 結ばれていない返事ページに「この返事から見積依頼書ページを作る」
-//   ② 押すと案の表——読んだままの表を見積依頼明細の列に読み替え、弊社品番は図面番号から当てて題を添える・品名の無い行は上の行の数量違い・
+//   ① 結ばれていない返事ページに「この返事から部材見積依頼書ページを作る」
+//   ② 押すと案の表——読んだままの表を部材見積依頼明細の列に読み替え、弊社品番は図面番号から当てて題を添える・品名の無い行は上の行の数量違い・
 //      合計の行は入れない
-//   ③ 人が直して「見積依頼書ページを作る」→ 直した中身（印の付いた行だけ）を送る
+//   ③ 人が直して「部材見積依頼書ページを作る」→ 直した中身（印の付いた行だけ）を送る
 //
-// ⚠ 「作る」口（/api/rfq-reply/make-rfq）は本物の見積依頼の置き場にページを作るので、試験のブラウザの中で止めて送る中身だけを見ます
+// ⚠ 「作る」口（/api/rfq-reply/make-rfq）は本物の部材見積依頼の置き場にページを作るので、試験のブラウザの中で止めて送る中身だけを見ます
 //    （作る側は Go の rfq_reply_make_test.go）。案を出す口は本物（読むだけ）。ページは自分で作り、最後に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-rfq-reply-make.js
 const { chromium } = require('playwright');
@@ -40,11 +40,11 @@ const check = (label, ok, note = '') => {
     await saveBody(prod, '<h1>【E2E】台座</h1><dl data-type="tags"><dt>品番</dt><dd>E2E-RM-0009_rev0</dd><dt>図面番号</dt><dd>E2E-RM-0009_rev0</dd></dl>');
     const mail = await makePage(page, '<h1>【E2E】御見積書</h1><p>x</p>', box);
     await saveBody(mail, '<h1>【E2E】御見積書</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd></dl><p>x</p>');
-    const reply = await makePage(page, '<h1>見積依頼の返事　【E2E】業者</h1><p>x</p>', mail);
+    const reply = await makePage(page, '<h1>部材見積依頼の返事　【E2E】業者</h1><p>x</p>', mail);
     const row = (...c) => '<tr><td>' + c.join('</td><td>') + '</td></tr>';
-    await saveBody(reply, '<h1>見積依頼の返事　【E2E】業者</h1><dl data-type="tags"><dt>仕入先</dt><dd>【E2E】業者</dd><dt>回答日</dt><dd>2026-08-25</dd>' +
-      '<dt>読んだ見積依頼番号</dt><dd>1104</dd><dt>見積依頼</dt><dd><br/></dd><dt>受信元</dt><dd>' + mail + '</dd></dl>' +
-      '<section data-mirror="見積依頼の返事の突き合わせ"></section>' +
+    await saveBody(reply, '<h1>部材見積依頼の返事　【E2E】業者</h1><dl data-type="tags"><dt>仕入先</dt><dd>【E2E】業者</dd><dt>回答日</dt><dd>2026-08-25</dd>' +
+      '<dt>読んだ部材見積依頼番号</dt><dd>1104</dd><dt>部材見積依頼</dt><dd><br/></dd><dt>受信元</dt><dd>' + mail + '</dd></dl>' +
+      '<section data-mirror="部材見積依頼の返事の突き合わせ"></section>' +
       '<details open><summary>業者の返事（読んだまま）</summary><table><tbody><tr><th>詳 細</th><th>数 量</th><th>単位</th><th>単 価</th><th>金 額</th></tr>' +
       row('台座 E2E-RM-0009_rev0/φ131*41L/SS400', '1', '', '43,000', '43,000') + row('', '20', '', '6,400', '128,000') +
       row('合計', '', '', '', '171,000') + '</tbody></table></details>');
@@ -52,7 +52,7 @@ const check = (label, ok, note = '') => {
     await page.goto(BASE + '/' + reply);
     const makeBtn = page.locator('#w-editor-content .rfq-reply-make');
     await makeBtn.waitFor({ timeout: 10000 }).catch(() => {});
-    check('① 「この返事から見積依頼書ページを作る」がある', (await makeBtn.count()) === 1);
+    check('① 「この返事から部材見積依頼書ページを作る」がある', (await makeBtn.count()) === 1);
     await makeBtn.click();
     await page.locator('#w-editor-content .rfq-reply-make-table').waitFor({ timeout: 8000 }).catch(() => {});
     const rows = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content .rfq-reply-make-table tr')).slice(1).map((tr) => ({
@@ -70,7 +70,7 @@ const check = (label, ok, note = '') => {
     const got = sent && (sent.rows || []).map((r) => r.product_id + '/' + r.quantity + '/' + r.cost);
     check('③ 直した中身を送る（返事ページ・行）', !!sent && sent.page_id === reply && JSON.stringify(got) === JSON.stringify([prod + '/1/43000', prod + '/20/6300']),
       JSON.stringify(sent && { page_id: sent.page_id, got }));
-    check('③ 作ったら見積依頼書へ移る', page.url().endsWith('/' + box), page.url());
+    check('③ 作ったら部材見積依頼書へ移る', page.url().endsWith('/' + box), page.url());
   } finally {
     const all = [];
     const walk = async (id) => { for (const k of (await childrenOf(page, id).catch(() => [])) || []) { await walk(k.ID); } all.push(id); };

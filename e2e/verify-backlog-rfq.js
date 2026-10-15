@@ -1,15 +1,15 @@
-// 受注残表から見積依頼へ送れるかを**ブラウザから**確かめる（2026-10-04・見積依頼の段3）。
+// 受注残表から部材見積依頼へ送れるかを**ブラウザから**確かめる（2026-10-04・見積依頼の段3）。
 //
 // 【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」「数は受注残の数量そのまま（数量 − 出荷済数量）× 部材の数量」
 // 「⚠ 受注残表は1枚ずつ印刷する表——選ぶ印を紙に出さないこと」。
 //
-//   ① 受注残表の右端に「見積依頼」の列——選ぶ欄は弊社品番・受注残・受注ページを持つ／弊社品番が空の行は選べない
+//   ① 受注残表の右端に「部材見積依頼」の列——選ぶ欄は弊社品番・受注残・受注ページを持つ／弊社品番が空の行は選べない
 //   ② 紙（印刷）には選ぶ列もボタンも出ない
 //   ③ 何も選ばずに押すと、選ぶように言う
 //   ④ 選んで押すと /api/rfq/collect へ {items:[{product, lot＝受注残, for_order}]}——送り先は送らない（サーバーが置き場を探す）・
-//      結果の一言と「見積依頼を開く」・選んだ印は外れる
+//      結果の一言と「部材見積依頼を開く」・選んだ印は外れる
 //
-// ⚠ **本物の見積依頼の置き場には書かない**——送る口（/api/rfq/collect）は試験のブラウザの中で止め、送った中身だけを見る。
+// ⚠ **本物の部材見積依頼の置き場には書かない**——送る口（/api/rfq/collect）は試験のブラウザの中で止め、送った中身だけを見る。
 // 受注残表は自分で作ったページ（印「受注残」）の下に置いた受注ページで出す。作ったページは最後に消す。
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-backlog-rfq.js
@@ -51,12 +51,12 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
     // ① 列と選ぶ欄
     const head = await page.evaluate(() => {
-      const th = Array.from(document.querySelectorAll('#w-editor-content .backlog-table th')).find((x) => x.textContent.trim() === '見積依頼');
+      const th = Array.from(document.querySelectorAll('#w-editor-content .backlog-table th')).find((x) => x.textContent.trim() === '部材見積依頼');
       return th ? th.className : null;
     });
-    check(head !== null && head.includes('no-print'), '受注残表の右端に「見積依頼」の列（紙に出さない印）', String(head));
+    check(head !== null && head.includes('no-print'), '受注残表の右端に「部材見積依頼」の列（紙に出さない印）', String(head));
     const picks = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content .backlog-table input[type=checkbox]'))
-      .filter((c) => c.classList.contains('backlog-rfq-pick') || c.title.includes('見積依頼'))
+      .filter((c) => c.classList.contains('backlog-rfq-pick') || c.title.includes('部材見積依頼'))
       .map((c) => ({ enabled: !c.disabled, product: c.dataset.product || '', lot: c.dataset.lot || '', order: c.dataset.order || '', title: c.title })));
     const ok = picks.find((p) => p.enabled);
     check(!!ok && ok.product === root && ok.lot === '7' && ok.order === order, '選ぶ欄は弊社品番・受注残（10 − 3 = 7）・受注ページを持つ', JSON.stringify(picks));
@@ -74,7 +74,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
       const f = document.getElementById('w-print-frame');
       const d = f && f.contentDocument;
       if (!d) return null;
-      const th = Array.from(d.querySelectorAll('#w-print-area th')).find((x) => x.textContent.trim() === '見積依頼');
+      const th = Array.from(d.querySelectorAll('#w-print-area th')).find((x) => x.textContent.trim() === '部材見積依頼');
       const pick = d.querySelector('#w-print-area .backlog-rfq-pick');
       return { th: th ? d.defaultView.getComputedStyle(th).display : 'なし', pick: pick ? d.defaultView.getComputedStyle(pick.closest('td')).display : 'なし',
         bar: !!d.querySelector('#w-print-area .backlog-rfq-bar') };
@@ -97,7 +97,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
       '選んだ行を {items:[{product, lot＝受注残, for_order}]} で送る（送り先は送らない）', JSON.stringify(sent));
     say = await page.textContent('#w-editor-content .backlog-rfq-say');
     const link = await page.getAttribute('#w-editor-content .backlog-rfq-say a', 'href').catch(() => null);
-    check(/2 行入れました/.test(say) && link === '/000050', '結果の一言と「見積依頼を開く」', say + ' ' + link);
+    check(/2 行入れました/.test(say) && link === '/000050', '結果の一言と「部材見積依頼を開く」', say + ' ' + link);
     check(!(await page.isChecked('#w-editor-content .backlog-rfq-pick')), '送ったら選んだ印は外れる');
   };
   try {

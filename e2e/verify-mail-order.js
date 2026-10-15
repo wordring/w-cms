@@ -3,7 +3,7 @@
 // 利用者:「発注書が無くても、メールから簡単に発注ページを作れませんか？」→ 受注ページ。
 // 利用者:「「受注ページ」「加工製品ページ」をコンボボックスで選択して「作成」ボタンを押せばいいかも」。
 //
-//   ① 受信メールの記録に「作るページ [受注ページ／加工製品ページ／見積依頼の返事ページ] [作成]」が出る（送信の控えには出ない。
+//   ① 受信メールの記録に「作るページ [受注ページ／加工製品ページ／部材見積依頼の返事ページ] [作成]」が出る（送信の控えには出ない。
 //      3つ目は 2026-10-05 に足された）
 //   ② 受注ページを選んで作成 → 口（POST /api/record-make）へこのページと種類を渡し、できたページを知らせる
 //      ——⚠ 口は差し止める（Gemini を呼ばない・本物の受注ページを作らない）
@@ -55,9 +55,9 @@ const record = (dir, subject) => '<h1>' + subject + '</h1><dl data-type="tags">'
     const sel = page.locator('#w-editor-content .record-make-kind');
     await sel.waitFor({ timeout: 8000 }).catch(() => {});
     const opts = await sel.locator('option').allTextContents().catch(() => []);
-    // 2026-10-14: 10-05 に「見積依頼の返事ページ」が足された（ext/toho/rfq_reply_page.go・【要求】見積依頼 §3）ので、選ぶ欄は3つ。
-    check('受信メールに「作るページ」の選ぶ欄（受注ページ・加工製品ページ・見積依頼の返事ページ）と「作成」',
-      opts.join('・') === '受注ページ・加工製品ページ・見積依頼の返事ページ' &&await page.locator('#w-editor-content .record-make-go').count() === 1, opts.join('・'));
+    // 2026-10-14: 10-05 に「部材見積依頼の返事ページ」が足された（ext/toho/rfq_reply_page.go・【要求】見積依頼 §3）ので、選ぶ欄は3つ。
+    check('受信メールに「作るページ」の選ぶ欄（受注ページ・加工製品ページ・部材見積依頼の返事ページ）と「作成」',
+      opts.join('・') === '受注ページ・加工製品ページ・部材見積依頼の返事ページ' &&await page.locator('#w-editor-content .record-make-go').count() === 1, opts.join('・'));
 
     // ② 受注ページ——口は差し止める
     let sent = null;

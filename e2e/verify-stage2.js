@@ -515,14 +515,14 @@ async function waitSaved(page) {
         // 絞り込みの語は**語彙に実在するもの**を使う。かつては「部材」だったが、
         // 2026-09-03 に「部材定義」を「材料」へ改名したときに何も当たらなくなった
         // （語彙の改名でE2Eが落ちる、という正しい落ち方をした）。
-        await page.keyboard.type('発注');
+        await page.keyboard.type('部材発注');
         await page.waitForTimeout(300);
         check('絞り込み中もメニューは開いたまま',
             await page.locator('#w-slash-menu.active').count() === 1);
         const filtered = await page.locator('#w-slash-menu .slash-menu-item:visible').count();
         check('打った文字で絞り込まれる', filtered > 0 && filtered < allItems);
         check('一致した項目が残る',
-            (await page.locator('#w-slash-menu .slash-menu-item:visible').first().innerText()).includes('発注'));
+            (await page.locator('#w-slash-menu .slash-menu-item:visible').first().innerText()).includes('部材発注'));
 
         // 矢印＋Enter で選べる（絞り込み後も操作は同じ）。
         // ⚠ 挿されるものは種類で形が違います（2026-09-26）——**表の種類はキャプションで名乗る表**、
@@ -541,7 +541,7 @@ async function waitSaved(page) {
         check('絞り込んだ項目を Enter で挿せる（' + picked + '）',
             !!picked && insertedNames.includes(picked));
         check('絞り込みの文字が本文に残らない',
-            !(await page.locator('#w-editor-content').innerText()).includes('/発注'));
+            !(await page.locator('#w-editor-content').innerText()).includes('/部材発注'));
 
         // よく使う項目は分類の先頭へ来る（1回使ったので、次に開くと先頭）。
         const sp2 = page.locator('#w-editor-content p').last();
