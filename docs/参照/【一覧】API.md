@@ -21,7 +21,7 @@ w-cms が提供するHTTPエンドポイントの、**実装済みリファレ�
   | `ext/comm/mail`（メール） | [mail/plugin.go](../../ext/comm/mail/plugin.go) | 9本。`/api/mail/status`・`/api/mail/signin`・`/api/mail/import`・`/api/mail/fetch-new`・`/api/mail/fetch-new/status`・`/api/mail/send`・`/api/mail/compose`・`/api/mail/draft`・`/api/mail/attach` |
   | `ext/toho`（下請け業務） | [toho/materials.go](../../ext/toho/materials.go) | 57本。解析と整理: `/api/analyze-attachment`・`/api/analyzed`・`/api/compare-drawings`・`/api/filing-proposal`・`/api/filing-target`・`/api/filing-search`・`/api/filing-files-shown`・`/api/filing-attach`・`/api/file-drawings`・`/api/product-folder`・`/api/drawing/supersede`。受注と部材発注: `/api/required-materials`・`/api/order-item`・`/api/material-search`・`/api/order-pdf`・`/api/order-pdf-docs`・`/api/our-order/*`（9本）。見積: `/api/estimate-pdf`・`/api/estimate/*`（10本）。部材見積依頼: `/api/rfq-pdf`・`/api/rfq-pdf-docs`・`/api/rfq/*`（15本）・`/api/rfq-reply/*`（3本）。道具: `/api/table/append-rows` |
 
-  コアの口（`main.go`）は、58本です（`/api/` 配下の要認証が42本、そのほかが15本、WebDAV の `/dav/` が1本）。合わせて134本です（2026-10-14: `/api/session` を足し、`/api/admin/reset` を消しました）。
+  コアの口（`main.go`）は、57本です（`/api/` 配下の要認証が42本、そのほかが15本）。合わせて133本です（2026-10-14: `/api/session` を足し、`/api/admin/reset` を消しました。2026-10-15: WebDAV の `/dav/` を消しました）。
 
   **起動ログで確かめられます。** `プラグインAPI登録: <パス>` が、1本ずつ出ます。
 
@@ -432,7 +432,7 @@ JSONにならなければ、本文をそのまま理由にします。
 | POST | `/api/table/append-rows` | **admin のみ**（対象ページの write・書き込みの関門） | **キャプションで名指した表の末尾に、行を足す**（[ext/toho/table_append.go](../../ext/toho/table_append.go)。移行の道具のための口）。要求は `{page_id, caption, rows:[{見出し: 値}]}`。そのページの、キャプションが `caption` の1枚目の表に足す。キャプションか行が無ければ400。足せなければ409（理由を返す）。応答は `{success, page_id, rows}`。監査記録は `table.append-rows` |
 | GET | `/api/suggest` | 要認証 | **入力候補**（2026-09-21。`?source=…&q=…`・コア [internal/cms/suggest.go](../../internal/cms/suggest.go)）。出どころは拡張が `cms.RegisterSuggestSource` で持ち込み、**コアは名前しか知らない**（`推奨業者` が最初の1つ・`ext/toho/suggest_partner.go`）。**知らない出どころは 404 ではなく空で返す**。拡張を外したビルドでは、その出どころが居ないのが正常で、画面は候補が出ないだけであるべき（拡張の出し分けと同じ考え方） |
 | GET | `/api/file-ref` | 要認証（指されたページの read） | **ファイルの ID を添付の組へ引く**（2026-10-01・コア [internal/cms/attachment_ref.go](../../internal/cms/attachment_ref.go)）。`?ref=ページID-添付ID`（添付の住所 `/ページID/添付ID.拡張子` も受ける）。応答は `{success, ref, page_id, file（保存名）, name（届いたときの名前）}`。**読めない・無いは同じ 404**、ID の形でなければ 400。使い手はメールの送る欄の「🔗 ID で添付を足す」（`assets/mail-compose.js`） |
-| POST | `/api/local-edit/start` | 要認証（指された添付の read） | **添付をローカルのアプリで編集するための鍵を出す**（2026-09-29・コア [internal/cms/local_edit.go](../../internal/cms/local_edit.go)。「📝 ローカル編集」）。要求は `{ref}`（「ページ番号-添付ID」）。応答は `{success, link, name, writable}`。`link` は `w-cms-edit:<w-cms のアドレス>#<鍵>` で、各 PC の常駐ヘルパー（`cmd/w-cms-edit`）が受け取る。鍵は、そのファイル1つに限る。12時間で切れる（使うたびに延びる）。サーバーの記憶だけなので、再起動で切れる。`writable` は、上書きできるか（WebDAV と同じ規則）。添付が無い・読めないは404。監査記録は `local-edit.start` |
+| POST | `/api/local-edit/start` | 要認証（指された添付の read） | **添付をローカルのアプリで編集するための鍵を出す**（2026-09-29・コア [internal/cms/local_edit.go](../../internal/cms/local_edit.go)。「📝 ローカル編集」）。要求は `{ref}`（「ページ番号-添付ID」）。応答は `{success, link, name, writable}`。`link` は `w-cms-edit:<w-cms のアドレス>#<鍵>` で、各 PC の常駐ヘルパー（`cmd/w-cms-edit`）が受け取る。鍵は、そのファイル1つに限る。12時間で切れる（使うたびに延びる）。サーバーの記憶だけなので、再起動で切れる。`writable` は、上書きできるか（ページへの書き込み権限と、設定 `attachment_readonly` の範囲で決まる）。添付が無い・読めないは404。監査記録は `local-edit.start` |
 | GET/PUT | `/api/local-edit/file` | **ログインの外**（`?token=` の鍵だけを確かめる。`RequireAuth` の外側） | **ヘルパーが、添付の中身を落とす・上げる**（2026-09-29・同上）。GET は、中身を返す（`ETag`・`X-WCMS-Name`・`X-WCMS-Writable` のヘッダつき）。PUT は、中身を上書きする。`If-Match` に、落としたときの ETag が要る（無ければ428）。いまの ETag と違えば409（ほかの人が先に書き換えた）。書けなければ403。前の中身は版に残る。権限は、鍵の持ち主の**いまの**権限で確かめ直す。鍵が切れていれば401。監査記録は `local-edit.write` |
 | GET | `/api/record-makers?page_id=` | 要認証（対象ページの read） | **記録から作れるページの種類**（2026-10-01・通信 [ext/comm/record_make.go](../../ext/comm/record_make.go)）。応答は `{success, kinds[{name, hint}], made[{page_id, title, kind}]}`。種類は拡張が `comm.RegisterRecordMaker` で登録する（東邦なら受信のメールに `受注ページ`・`加工製品ページ`）。記録（`チャネル` のタグ）でない・下書きなら空。書けない人には `kinds` を空で返し、`made`（もう作ったページの印）だけ返す |
 | POST | `/api/record-make` | 要認証（対象ページの write） | **記録からページを作る**（2026-10-01・同上）。要求は `{page_id, kind}`。その記録で選べない種類は 400。応答は `{success, pages[{page_id, title, kind}], say, open}`。`pages` が空なら作らなかった（`say` に理由）。`open` は人が続けて書くページ（画面が `?edit=true` を付けて、書ける形で開く）。東邦の `受注ページ`（[analyze_mail.go](../../ext/toho/analyze_mail.go)）は、件名・差出人・日付・本文（`comm.RecordBodyText`）を Gemini へ渡し、添付の解析と同じ形で受注ページを記録の子に作る（`受信元` はページ全体・PDF の枠は `DropFileView` で落とす・本文が無ければ 400・テンプレートが無ければ 409）。2026-10-01 の朝は `/api/analyze-mail-order` だった。`加工製品ページ`（[mail_product.go](../../ext/toho/mail_product.go)）は、テンプレートから空の加工製品ページを記録の子に作り（`客先` は差出人の取引先・`受信元` はページ全体・図面の枠は空・改訂明細表の1版目）、`open` で返す。監査記録は `analyze-mail`・`mail-product` |
@@ -507,14 +507,6 @@ JSONにならなければ、本文をそのまま理由にします。
 | `/assets/...` | 認証不要 | 殻の markup・CSS・JS（`index.html`・`app.css`/`app.js`・`boot.js`・`admin.*`・`login.css`・**`public.html`/`public.css`**）。**ディレクトリ一覧は無効**（`noDirListing`）。`Cache-Control: no-cache`＝毎回再検証（変わっていなければ304）。CSP strict 化（`'unsafe-inline'` 無し）により、スクリプト・スタイルはすべてここに置く |
 
 `/data/...` は、静的配信ではありません。認可付きのハンドラです（§2）。
-
-`/dav/...` は、**WebDAV の入口**です（`cms.DavHandler`・[internal/cms/webdav.go](../../internal/cms/webdav.go)）。上の表の口とは別の作りです。
-
-- `WCMS_DAV=1` のときだけ開きます。閉じているときは404です。
-- 認証は、Cookie ではなく HTTP Basic です。だから、`CSRFProtect` の外側に置いてあります。
-- 読むことと、既にあるファイルの上書きだけを通します。消す・作る・動かすは403です。
-- プロキシを通ってきた要求は、404で断ります。
-- 使い方は、[【ガイド】デプロイ・運用.md](【ガイド】デプロイ・運用.md) §6.2a にあります。
 
 ## 9. クローラ向け（2026-08-26）
 
