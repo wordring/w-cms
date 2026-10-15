@@ -4,7 +4,7 @@
 //   ① 材料表の「最新単価」——買った記録の無い材料に、回答ありの見積の値段が「見積」の印・業者・日付つきで出る
 //   ② 「💴 見積回答」の単価のある行に「計算表へ」
 //   ③ 押すと写す欄——表（ロット）と行（「何の値段か」と同じ工程を最初から選ぶ）と単価
-//   ④ 「写す」で見積計算表のその行の数に単価・備考に出所（見積 業者 日付）
+//   ④ 「写す」で見積計算表のその行の価格に単価・備考に出所（見積 業者 日付）
 //
 // 自分で作ったページ（入れ物・加工製品・部材見積依頼書）の上だけで動き、最後に全部消します。材料は実データに無い名前（E2E材）にする
 // ——最新単価は全社の発注を引くので、本物の材料だと買った値段が出て見積が出ない。
@@ -38,9 +38,9 @@ const check = (label, ok, note = '') => {
       '<tr><td>E2E材</td><td>板</td><td>t9.9</td><td>1</td></tr></tbody></table></section>' +
       '<section><h2>支給部品</h2><table><caption>支給部品</caption><tbody><tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>' +
       '<tr><td></td><td></td><td></td><td></td></tr></tbody></table></section>' +
-      '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>' +
-      '<tr><td>ロット</td><td>20</td><td>個</td><td></td></tr><tr><td>材料</td><td>1200</td><td>円</td><td></td></tr>' +
-      '<tr><td>塗装</td><td></td><td></td><td></td></tr><tr><td>単価</td><td></td><td>円</td><td></td></tr></tbody></table>');
+      '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
+      '<tr><td>材料</td><td>1200</td><td></td></tr><tr><td>塗装</td><td></td><td></td></tr></tbody></table>' +
+      '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>');
     const rfq = await makePage(page, '<h1>部材見積依頼　【E2E】業者</h1><p>x</p>', box);
     made.unshift(rfq);
     await saveBody(rfq, '<h1>部材見積依頼　【E2E】業者</h1><dl data-type="tags"><dt>部材見積依頼番号</dt><dd>' + rfq + '</dd>' +
@@ -76,7 +76,7 @@ const check = (label, ok, note = '') => {
       const t = Array.from(doc.querySelectorAll('table')).find((x) => (x.querySelector('caption') || {}).textContent === '見積計算表');
       return Array.from(t.querySelectorAll('tbody tr')).slice(1).map((tr) => Array.from(tr.children).map((c) => c.textContent).join('|'));
     }, prod);
-    check('④ 見積計算表の塗装の行に単価と出所', rows.includes('塗装|298|円|見積 【E2E】業者 2026-10-05'), JSON.stringify(rows));
+    check('④ 見積計算表の塗装の行に単価と出所', rows.includes('塗装|298|見積 【E2E】業者 2026-10-05'), JSON.stringify(rows));
   } finally {
     for (const id of made) await deletePage(page, id);
     const gone = await page.evaluate(async (ids) => Promise.all(ids.map(async (pid) => (await fetch('/api/load?id=' + pid)).status)), made);

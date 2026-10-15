@@ -20,7 +20,7 @@ import (
 const rfqProductID = 51
 const rfqBoxID = 50
 
-// seedRFQ は加工製品（材料2行・見積計算表2枚——ロット20とロット40）と、部材見積依頼の置き場を作ります。
+// seedRFQ は加工製品（材料2行・見積計算表と見積表2組——ロット20とロット40）と、部材見積依頼の置き場を作ります。
 func seedRFQ(t *testing.T) *auth.User {
 	t.Helper()
 	setupMaterialsPermsTest(t)
@@ -33,10 +33,8 @@ func seedRFQ(t *testing.T) *auth.User {
 		`<tr><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>2</td></tr>`+
 		`<tr><td>SUS304</td><td>丸棒</td><td>φ20*50</td><td>1</td></tr>`+
 		`</tbody></table>`+
-		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
-		`<tr><td>ロット</td><td>20</td><td>個</td><td></td></tr><tr><td>単価</td><td>500</td><td>円</td><td></td></tr></tbody></table>`+
-		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
-		`<tr><td>ロット</td><td>40</td><td>個</td><td></td></tr><tr><td>単価</td><td>450</td><td>円</td><td></td></tr></tbody></table>`)
+		calcTable([2]string{"材料", "500"})+recordTable("20", "", "500", "10", "550")+
+		calcTable([2]string{"材料", "450"})+recordTable("40", "", "450", "10", "495"))
 	writeBodyFile(t, rfqBoxID, `<h1>`+RFQBoxTitle+`</h1>`+
 		`<section data-mirror="再部材見積依頼"></section>`+
 		tableOfLinesHTML(RFQTempPartsType, nil, false)+
@@ -87,12 +85,12 @@ func boxBody(t *testing.T) string {
 	return body
 }
 
-// TestRFQCollectUsesEstimateLots は、⚠ **ロットが空なら見積計算表のロットごとに行になる**（ロット × 部材の数量）こと、
+// TestRFQCollectUsesEstimateLots は、⚠ **ロットが空なら見積表のロットごとに行になる**（ロット × 部材の数量）こと、
 // **ロットを書けばその数**であることを固定します。
 func TestRFQCollectUsesEstimateLots(t *testing.T) {
 	u := seedRFQ(t)
 	if got := estimateLotsOf(rfqProductID); len(got) != 2 || got[0] != 20 || got[1] != 40 {
-		t.Fatalf("見積計算表のロットが %v です（[20 40] のはず）", got)
+		t.Fatalf("見積表のロットが %v です（[20 40] のはず）", got)
 	}
 	code, out := postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051"})
 	if code != 200 || out["rows"] != float64(4) {

@@ -37,10 +37,8 @@ func seedEstimateProduct(t *testing.T, id string) {
 	t.Helper()
 	seedBody(t, id, `<h1>カバー</h1><dl data-type="tags"><dt>品番</dt><dd>K-1</dd><dt>品名</dt><dd>カバー</dd>`+
 		`<dt>客先</dt><dd>南北スポーツ</dd></dl>`+
-		estimateTable([3]string{"ロット", "20", "個"}, [3]string{"材料", "55", "円"}, [3]string{"板金", "310", "円"})+
-		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
-		`<tr><td>ロット</td><td>20</td><td>個</td><td></td></tr>`+
-		`<tr><td>単価</td><td>500</td><td>円</td><td>塗装あり</td></tr></tbody></table>`)
+		calcTable([2]string{"材料", "55"}, [2]string{"板金", "310"})+recordTable("20", "", "365", "10", "402")+
+		calcTable([2]string{"材料", "500"})+recordTable("20", "塗装あり", "500", "10", "550"))
 }
 
 // TestEstimateFromCalcTable は、見積計算表から新しい見積書を作り（見積／年／月・タグの既定値）、2枚目の表を同じ見積書へ
@@ -147,13 +145,10 @@ func TestEstimateFromFolder(t *testing.T) {
 	}
 	tag := func(no string) string { return `<dl data-type="tags"><dt>品番</dt><dd>` + no + `</dd></dl>` }
 	mk("000031", `<h1>取付ベース</h1>`+tag("A100-B01-1")+
-		estimateTable([3]string{"ロット", "20", "個"}, [3]string{"材料", "55", "円"}, [3]string{"板金", "310", "円"})+
-		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
-		`<tr><td>ロット</td><td>40</td><td>個</td><td></td></tr>`+
-		`<tr><td>単価</td><td>500</td><td>円</td><td>塗装あり</td></tr></tbody></table>`)
-	mk("000032", `<h1>ステー</h1>`+tag("A100-B01-2")+ // 列にロットを並べた形——計算できない
-		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>ロット20</th><th>ロット40</th></tr>`+
-		`<tr><td>単価</td><td>500</td><td>450</td></tr></tbody></table>`)
+		calcTable([2]string{"材料", "55"}, [2]string{"板金", "310"})+recordTable("20", "", "365", "10", "402")+
+		calcTable([2]string{"材料", "500"})+recordTable("40", "塗装あり", "500", "10", "550"))
+	mk("000032", `<h1>ステー</h1>`+tag("A100-B01-2")+ // 単価をまだ記録していない見積表——見積書に入れられない
+		calcTable([2]string{"材料", "500"})+recordTable("20"))
 	mk("000033", `<h1>補強板</h1>`+tag("A100-B01-3"))
 	root := &auth.User{Username: "root", IsAdmin: true}
 

@@ -144,7 +144,7 @@ async function openSlashMenu(page) {
         const est = page.locator('#w-editor-content table')
             .filter({ has: page.locator('caption', { hasText: '見積計算表' }) }).first();
         await est.waitFor({ timeout: 4000 });
-        check('見積計算表の骨格（4列）', await est.locator('tr').first().locator('th').count() === 4);
+        check('見積計算表の骨格（3列・工程｜価格｜備考）', await est.locator('tr').first().locator('th').count() === 3);
 
         // 5. 見出しの改名は「計算に読まれなくなった項目」として告知される（拒否はしない）。
         //    鍵は見出しの表示文字が運ぶので、改名すると③計算プラグインが読めなくなる。

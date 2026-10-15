@@ -186,12 +186,16 @@ async function waitSaved(page) {
         check('骨格: 見出し形の節で包まない',
             await table.evaluate((t) => !(t.parentElement && t.parentElement.tagName === 'SECTION')));
         const headers = await table.locator('tr').first().locator('th').allInnerTexts();
-        check('骨格: 見出しがレジストリの列定義どおり', headers.join(',') === '工程,数,単位,備考');
+        check('骨格: 見出しがレジストリの列定義どおり', headers.join(',') === '工程,価格,備考');
         check('骨格: データ行が1行ある', await table.locator('tr').count() === 2);
 
         // ── セル編集と保存往復（第1段の回帰） ──
         const cell = (r, c) => table.locator('tr').nth(r).locator('th, td').nth(c);
 
+        // 見積計算表は3列（2026-10-15 から 工程｜価格｜備考）——下の試験は4列で組んであるので、先に1列足す。
+        await caretInto(page, cell(0, 2));
+        await page.click('#w-tt-col-add');
+        await table.locator('tr').first().locator('th').nth(3).waitFor({ timeout: 4000 });
         // 見出しを打ち替える（上の注——型と選択肢は語彙が列の名前で決める）。
         const renamed = ['品番', '判定', '検査写真', '検査日'];
         for (let i = 0; i < renamed.length; i++) {

@@ -1,12 +1,14 @@
-// 見積計算表の弊社利益と確定単価（2026-10-01・ext/toho/estimate.go）を画面から確かめる。
+// 見積計算表と見積表（2026-10-15・ext/toho/estimate.go）を画面から確かめる。
 //
-// 利用者:「加工製品ページの見積もり計算表の下に弊社利益を掛ける項目を作り確定単価としたいです。弊社利益はデフォルトで
-// 10％…利益率を変更できるようにしたいです。確定単価は目立つように太字です」「単価*10%=○○円と表示したいです」
-// 「見積もり計算表は複数ある場合があります」。
+// 利用者:「この計算表はもしかするとDBに入れる必要が無く、結果の単価のみDBに入れるべきかもしれません」「見積もり計算表に
+// 総計は必要ないです」「ロットごとに計算表を分けてはどうでしょう？」「提案通りの構成でお願いします」。
 //
-//   ① 表の下に「弊社利益: 単価 365円 × 10%（既定）= 37円」と、太字の「確定単価: 402円」
-//   ② 表が2枚あれば、それぞれの下に出る
-//   ③ 足元の「利益率 [15] % 変える」で、その表に「弊社利益」の行ができて計算し直す（もう1枚は変わらない）
+//   ① 見積表の足元に「計算表から: 原価 365円 × 利益率 10%（既定） = 利益 37円 → 単価 402円」と「まだ記録していません」・📌
+//   ② 「📌 この単価を記録」で見積表に 原価・利益率・単価 が入り、足元が ✓（記録と合っています）
+//   ③ 見積表の無い見積計算表の下の「📌 見積表を作って記録」で、すぐ後ろに見積表ができる（原価 565・単価 622）
+//   ④ 記録と計算表が合わない見積表は「⚠ 記録が計算表と合いません」——価格の式（=材料*2）も計算に入る
+//   ⑤ 「⧉ このロットを写す」で、見出し（写し）・見積計算表・見積表が組ごと増える（写しのロット・単価は空）
+//   ⑥ 見積表の足元に「📄 見積書に入れる」
 //
 // 当て先はトップ直下に自分で作り、最後に消します。東邦の拡張が無い組では飛ばします。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-estimate.js
@@ -20,9 +22,11 @@ const check = (label, ok, note = '') => {
   if (!ok) fails++;
 };
 
-const table = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>' +
-  rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + (r[3] || '') + '</td></tr>').join('') +
+const calc = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
+  rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + (r[2] || '') + '</td></tr>').join('') +
   '</tbody></table>';
+const record = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>' +
+  [0, 1, 2, 3, 4, 5].map(i => '<td>' + (cells[i] || '') + '</td>').join('') + '</tr></tbody></table>';
 
 (async () => {
   const browser = await chromium.launch();
@@ -30,6 +34,24 @@ const table = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
   let id = '';
+  const open = async () => {
+    await page.goto(BASE + '/' + id);
+    await page.waitForSelector('#w-editor-content .estimate-plan', { timeout: 8000 }).catch(() => {});
+  };
+  const recs = async () => page.evaluate(() => [...document.querySelectorAll('#w-editor-content table')]
+    .filter(t => (t.querySelector('caption') || {}).textContent === '見積表')
+    .map(t => ({
+      cells: [...t.querySelectorAll('tbody tr')].slice(1, 2).map(tr => [...tr.children].map(c => c.textContent.trim()).join('|'))[0] || '',
+      plan: [...t.querySelectorAll('tfoot .estimate-plan')].map(x => x.textContent).join(' / '),
+      stale: [...t.querySelectorAll('tfoot .estimate-stale')].map(x => x.textContent).join(' / '),
+      rec: !!t.querySelector('tfoot .estimate-record-go'),
+      dup: !!t.querySelector('tfoot .estimate-dup-go'),
+      add: !!t.querySelector('tfoot .estimate-add-form'),
+    })));
+  const click = async (loc) => {
+    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), loc.click()]);
+    await page.waitForSelector('#w-editor-content .estimate-plan', { timeout: 8000 }).catch(() => {});
+  };
   try {
     await login(page, BASE);
     const exts = await page.evaluate(async () => (await (await fetch('/api/tag-schema')).json()).extensions || []);
@@ -38,39 +60,42 @@ const table = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th
       await browser.close();
       process.exit(0);
     }
-    id = await makePage(page, '<h1>【E2E】見積の品</h1>' +
-      table([['ロット', '20', '個'], ['材料', '55', '円'], ['板金', '310', '円'], ['単価', '365', '円', '塗装無し']]) +
-      table([['ロット', '20', '個'], ['材料', '55', '円'], ['板金', '310', '円'], ['塗装', '200', '円'], ['単価', '', '円', '塗装あり']]));
+    id = await makePage(page, '<h1>【E2E】見積の品</h1><h2>見積もり計算</h2>' +
+      '<h3>ロット1</h3>' + calc([['材料', '55'], ['板金', '310'], ['ブランク', '']]) + record(['1']) +
+      '<h3>ロット20</h3>' + calc([['材料', '55'], ['板金', '310'], ['塗装', '200']]) +
+      '<h3>ロット5</h3>' + calc([['材料', '100'], ['塗装', '=材料*2']]) + record(['5', '黒', '300', '10', '999']));
     check('当て先を作れた', !!id, id);
-    await page.goto(BASE + '/' + id);
-    await page.waitForSelector('#w-editor-content .estimate-final', { timeout: 8000 }).catch(() => {});
-    const foot = async () => page.evaluate(() => [...document.querySelectorAll('#w-editor-content table')].map(t => ({
-      profit: (t.querySelector('.estimate-profit') || {}).textContent || '',
-      final: (t.querySelector('.estimate-final strong') || {}).textContent || '',
-      bold: !!t.querySelector('.estimate-final strong') &&
-        Number(getComputedStyle(t.querySelector('.estimate-final strong')).fontWeight) >= 700,
-    })));
-    let f = await foot();
-    check('1枚目: 弊社利益の式', f[0] && f[0].profit === '弊社利益: 単価 365円 × 10%（既定） = 37円', JSON.stringify(f[0]));
-    check('1枚目: 確定単価は太字', f[0] && f[0].final === '確定単価: 402円' && f[0].bold, JSON.stringify(f[0]));
-    check('2枚目: 単価が空なら円の行を足す', f[1] && f[1].profit === '弊社利益: 単価（円の行の合計） 565円 × 10%（既定） = 57円' &&
-      f[1].final === '確定単価: 622円', JSON.stringify(f[1]));
+    await open();
+    let r = await recs();
+    check('① 見積表の足元に計算', r[0] && r[0].plan === '計算表から: 原価 365円 × 利益率 10%（既定） = 利益 37円 → 単価 402円', JSON.stringify(r[0]));
+    check('① まだ記録していない・📌・⧉・📄', r[0] && r[0].stale === 'まだ記録していません' && r[0].rec && r[0].dup && r[0].add, JSON.stringify(r[0]));
+    check('④ 合わない記録は ⚠（価格の式も計算に入る: 原価 300）', r[1] && r[1].plan.includes('原価 300円') &&
+      r[1].stale.includes('⚠ 記録が計算表と合いません（記録の単価: 999）'), JSON.stringify(r[1]));
+    const calcFoot = page.locator('#w-editor-content table:has(caption:text-is("見積計算表")) tfoot .estimate-record-go');
+    check('③ 見積表の無い見積計算表の下にだけ「📌 見積表を作って記録」', await calcFoot.count() === 1 &&
+      (await calcFoot.first().innerText()).includes('見積表を作って記録'));
 
-    // ③ 1枚目の率を 15% に
-    const form = page.locator('#w-editor-content .estimate-rate-form').first();
-    await form.locator('.estimate-rate-input').fill('15');
-    await Promise.all([
-      page.waitForNavigation({ timeout: 10000 }).catch(() => {}),
-      form.locator('.estimate-rate-set').click(),
-    ]);
-    await page.waitForSelector('#w-editor-content .estimate-final', { timeout: 8000 }).catch(() => {});
-    f = await foot();
-    check('率を変えると計算し直す', f[0] && f[0].profit === '弊社利益: 単価 365円 × 15% = 55円' && f[0].final === '確定単価: 420円',
-      JSON.stringify(f[0]));
-    check('もう1枚は変わらない', f[1] && f[1].final === '確定単価: 622円', JSON.stringify(f[1]));
-    const saved = await page.evaluate(async (pid) => (await (await fetch('/api/load?id=' + pid)).text()), id);
-    check('1枚目の表に「弊社利益」の行が入る（本文）', (saved.match(/<td>弊社利益<\/td>/g) || []).length === 1 &&
-      saved.includes('<td>弊社利益</td><td>15</td><td>%</td>'), '');
+    // ② 記録
+    await click(page.locator('#w-editor-content table:has(caption:text-is("見積表")) tfoot .estimate-record-go').first());
+    r = await recs();
+    check('② 見積表に 原価・利益率・単価', r[0] && r[0].cells === '1||365|10|402|', JSON.stringify(r[0]));
+    check('② 足元は ✓ 記録と合っています・📌 は消える', r[0] && r[0].plan.startsWith('✓ ') && r[0].plan.endsWith('（記録と合っています）') && !r[0].rec,
+      JSON.stringify(r[0]));
+
+    // ③ 見積表を作って記録
+    await click(page.locator('#w-editor-content table:has(caption:text-is("見積計算表")) tfoot .estimate-record-go').first());
+    r = await recs();
+    check('③ 見積表ができて記録される（原価 565・単価 622）', r.length === 3 && r[1].cells === '||565|10|622|', JSON.stringify(r));
+    const order = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content h3, #w-editor-content table > caption')]
+      .map(e => e.tagName === 'H3' ? e.textContent : '[' + e.textContent + ']').join(' '));
+    check('③ 見積表は見積計算表のすぐ後ろ', order.startsWith('ロット1 [見積計算表] [見積表] ロット20 [見積計算表] [見積表] ロット5'), order);
+
+    // ⑤ 写す
+    await click(page.locator('#w-editor-content .estimate-dup-go').first());
+    r = await recs();
+    const order2 = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content h3')].map(e => e.textContent).join(','));
+    check('⑤ 見出し（写し）と組が増える', r.length === 4 && order2 === 'ロット1,ロット1（写し）,ロット20,ロット5', order2);
+    check('⑤ 写しのロット・原価・単価は空（利益率は残す）', r[1] && r[1].cells === '|||10||', JSON.stringify(r[1]));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

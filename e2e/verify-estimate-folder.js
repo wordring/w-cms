@@ -27,14 +27,14 @@ const check = (label, ok, note = '') => {
 const BOX = '<h1>【E2E】見積の置き場（フォルダ）</h1><section data-mirror="未送付の見積書"></section><section data-mirror="見積書を作る"></section>';
 const FOLDER = '<h1>【E2E】見積の装置フォルダ</h1><dl data-type="tags"><dt>客先</dt><dd>【E2E】客先</dd></dl>';
 const tags = (no) => '<dl data-type="tags"><dt>品番</dt><dd>' + no + '</dd></dl>';
-const calc = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>' +
+const calc = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
   rows.map((r) => '<tr>' + r.map((c) => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
+const rec = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>' + cells.map((c) => '<td>' + c + '</td>').join('') + '</tr></tbody></table>';
 const P1 = '<h1>【E2E】見積の部品1</h1>' + tags('E2E-ESTF-1') +
-  calc([['ロット', '20', '個', ''], ['材料', '55', '円', ''], ['板金', '310', '円', '']]) +
-  calc([['ロット', '40', '個', ''], ['単価', '500', '円', '塗装あり']]);
+  calc([['材料', '55', ''], ['板金', '310', '']]) + rec(['20', '', '365', '10', '402', '']) +
+  calc([['材料', '500', '']]) + rec(['40', '塗装あり', '500', '10', '550', '']);
 const P2 = '<h1>【E2E】見積の部品2</h1>' + tags('E2E-ESTF-2') +
-  '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>ロット20</th><th>ロット40</th></tr>' +
-  '<tr><td>単価</td><td>500</td><td>450</td></tr></tbody></table>';
+  calc([['材料', '500', '']]) + rec(['20', '', '', '', '', '']); // 単価をまだ記録していない
 const P3 = '<h1>【E2E】見積の部品3</h1>' + tags('E2E-ESTF-3');
 
 const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/api/page-meta?id=' + x)).json()).parent_id, id);
@@ -63,10 +63,10 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     await page.locator('[data-estf-list]').click();
     await page.waitForSelector('.estimate-folder-table', { timeout: 8000 }).catch(() => {});
     const picks = await page.locator('.estimate-folder-table input[data-estf-pick]').evaluateAll((els) => els.map((e) => e.getAttribute('data-estf-pick')));
-    check('① 計算できる見積計算表だけ選べる（部品1の2枚）', picks.length === 2 && picks.includes(p1 + ':0') && picks.includes(p1 + ':1'), picks.join(','));
+    check('① 単価を記録した見積表だけ選べる（部品1の2枚）', picks.length === 2 && picks.includes(p1 + ':0') && picks.includes(p1 + ':1'), picks.join(','));
     const text = (await page.locator('[data-estf-box]').innerText()).replace(/\s+/g, ' ');
-    check('① ロットと確定単価が出る（20個 402円・40個 550円 塗装あり）', text.includes('402円') && text.includes('550円') && text.includes('塗装あり'), text.slice(0, 300));
-    check('① 計算できない表・表の無い加工製品も理由つきで並ぶ', text.includes('確定単価が出ません') && text.includes('見積計算表なし'));
+    check('① ロットと単価が出る（20個 402円・40個 550円 塗装あり）', text.includes('402円') && text.includes('550円') && text.includes('塗装あり'), text.slice(0, 300));
+    check('① 単価の無い見積表・表の無い加工製品も理由つきで並ぶ', text.includes('単価がありません') && text.includes('見積表なし'));
     check('① 見積先にその装置の客先が入る', await page.locator('[data-estf="client"]').inputValue() === '【E2E】客先');
     check('① 一時的な表は本文に入らない', !(await page.evaluate(() => document.getElementById('w-html-preview').value)).includes('E2E-ESTF'));
 

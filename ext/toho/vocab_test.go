@@ -77,6 +77,8 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		SkipType,
 		// **見積明細**（2026-10-01）——顧客へ出す見積書の明細（estimate_doc.go）。
 		EstimateItemsType,
+		// **見積表**（2026-10-15）——見積計算表の結果（ロット・表面処理・原価・利益率・単価）の1行（estimate.go）。
+		estimateRecordType,
 	}
 	if len(businessVocab) != len(want) {
 		t.Errorf("形式の数が変わりました: %d (期待 %d)", len(businessVocab), len(want))

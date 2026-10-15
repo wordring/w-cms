@@ -4,7 +4,7 @@
 // 書き込みボタンを押す。…重複するものは見積依頼必要部材表に入れるが重複とわかるように背景を赤くします。そして消すことが
 // 出来るようにするのです」「見積依頼必要部材表のチェックボックスを選択して入れる先をえらびボタンを押し、見積依頼部材表に入れます」。
 //
-//   ① 再部材見積依頼フォームに弊社品番を書いて「集める」→ 見積計算表のロットごと（20・40）に部材が入る
+//   ① 再部材見積依頼フォームに弊社品番を書いて「集める」→ 見積表のロットごと（20・40）に部材が入る
 //   ② ロット20でもう一度集めると、同じもの・同じロットの行が赤＋「⚠ 重複」になる（2026-10-14 に「同じ数」から改めた）。臨時部材表の行も並ぶ
 //   ④ で戻した行もロットを持って戻る（見積依頼部材表にもロットの列がある）ので、⑤ の重複はロット20の4行のまま
 //   ③ 必要部材表の1行と臨時部材表の1行を選んで「見積依頼部材表へ入れる」→ 見積依頼部材表ができ、元から消える
@@ -35,10 +35,10 @@ const PRODUCT = '<h1>【E2E】見積依頼の加工製品</h1>' +
   '<table><caption>材料</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
   '<tr><td>E2E-RFQ-鉄</td><td>板</td><td>t3.2*100*200</td><td>2</td></tr>' +
   '<tr><td>E2E-RFQ-SUS</td><td>丸棒</td><td>φ20*50</td><td>1</td></tr></tbody></table>' +
-  '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>' +
-  '<tr><td>ロット</td><td>20</td><td>個</td><td></td></tr></tbody></table>' +
-  '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>' +
-  '<tr><td>ロット</td><td>40</td><td>個</td><td></td></tr></tbody></table>';
+  '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td></td><td></td></tr></tbody></table>' +
+  '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>' +
+  '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td></td><td></td></tr></tbody></table>' +
+  '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>40</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>';
 
 // tableRows は本文 HTML の、キャプション caption の n 枚目の表の行（見出しを除く・空の行を除く）を文字の配列で返す。
 const tableRows = (html, caption, n = 1) => {
@@ -75,7 +75,7 @@ const tableRows = (html, caption, n = 1) => {
     await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('[data-rfq-collect]').click()]);
     await waitReload();
     let rows = tableRows(await bodyOf(page, box), '見積依頼必要部材表') || [];
-    check('① 見積計算表のロット（20・40）× 部材の数量で4行入る', rows.length === 4 &&
+    check('① 見積表のロット（20・40）× 部材の数量で4行入る', rows.length === 4 &&
       rows.some((r) => r.includes('E2E-RFQ-鉄') && r.includes('|40|')) && rows.some((r) => r.includes('E2E-RFQ-鉄') && r.includes('|80|')), rows.join(' / '));
 
     // ②

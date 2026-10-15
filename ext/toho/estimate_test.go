@@ -7,89 +7,167 @@ import (
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 )
 
-// estimateTable は見積計算表を1枚組みます（行は「工程・数・単位」）。
-func estimateTable(rows ...[3]string) string {
-	b := `<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`
+// 見積計算表と見積表（2026-10-15・estimate.go）——利用者:「見積もり計算表に総計は必要ないです」「ロットごとに計算表を
+// 分けてはどうでしょう？」「提案通りの構成でお願いします」。
+
+// calcTable は見積計算表を1枚組みます（行は「工程・価格」）。
+func calcTable(rows ...[2]string) string {
+	b := `<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>`
 	for _, r := range rows {
-		b += `<tr><td>` + r[0] + `</td><td>` + r[1] + `</td><td>` + r[2] + `</td><td></td></tr>`
+		b += `<tr><td>` + r[0] + `</td><td>` + r[1] + `</td><td></td></tr>`
 	}
 	return b + `</tbody></table>`
 }
 
-func firstTable(t *testing.T, body string) *html.Node {
+// recordTable は見積表を1枚組みます（ロット・表面処理・原価・利益率・単価・備考の1行）。
+func recordTable(cells ...string) string {
+	b := `<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>`
+	for i := 0; i < 6; i++ {
+		v := ""
+		if i < len(cells) {
+			v = cells[i]
+		}
+		b += `<td>` + v + `</td>`
+	}
+	return b + `</tr></tbody></table>`
+}
+
+func parseBody(t *testing.T, body string) []*html.Node {
 	t.Helper()
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := tablesOfType(nodes, estimateType)
-	if len(ts) == 0 {
-		t.Fatalf("見積計算表として読めません:\n%s", body)
-	}
-	return ts[0]
+	return nodes
 }
 
-// TestEstimateOfComputesFinalPrice は確定単価の計算を固定します（2026-10-01 利用者:「弊社利益はデフォルトで10％なので、
-// 単価に1.1をかければ良いのですが、利益率を変更できるようにしたいです」）。
-//
-//	単価の行がある → 単価 × 率（四捨五入）を足す／単価の行が空 → 円の行を足して単価に／「弊社利益」の行があればその率
-func TestEstimateOfComputesFinalPrice(t *testing.T) {
-	r := estimateOf(firstTable(t, estimateTable(
-		[3]string{"ロット", "20", "個"}, [3]string{"材料", "55", "円"}, [3]string{"板金", "310", "円"},
-		[3]string{"単価", "365", "円"}, [3]string{"総計", "", "円"})), 10, true)
-	if !r.OK || r.UnitPrice != 365 || r.Summed || r.RateSet || r.Profit != 37 || r.Final != 402 {
-		t.Errorf("単価の行から: %+v（利益 37・確定 402 のはず——36.5 は四捨五入）", r)
+// TestEstimateBlocksPairInOrder は、見積表がすぐ上の見積計算表と組になることを固定します（文書の順・見積計算表の無い見積表は1組）。
+func TestEstimateBlocksPairInOrder(t *testing.T) {
+	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "100"}) + recordTable("1") +
+		`<h3>ロット20</h3>` + calcTable([2]string{"材料", "80"}) + // 見積表がまだ無い
+		`<section><h3>ロット40</h3>` + calcTable([2]string{"材料", "70"}) + recordTable("40") + `</section>` +
+		recordTable("99") // 計算表の無い見積表
+	b := estimateBlocksOf(parseBody(t, body))
+	if len(b) != 4 {
+		t.Fatalf("組の数が %d（4のはず）", len(b))
 	}
-
-	r = estimateOf(firstTable(t, estimateTable(
-		[3]string{"ロット", "1", "個"}, [3]string{"材料", "620", "円"}, [3]string{"ブランク", "1,500", "円"},
-		[3]string{"単価", "", "円"}, [3]string{"総計", "4920", "円"})), 10, true)
-	if !r.OK || r.UnitPrice != 2120 || !r.Summed || r.Final != 2332 {
-		t.Errorf("単価が空なら円の行（ロット・総計は除く）を足す: %+v", r)
+	lot := func(i int) string {
+		if b[i].Record == nil {
+			return "-"
+		}
+		return estimateRecordOf(b[i].Record).Lot
 	}
-
-	r = estimateOf(firstTable(t, estimateTable(
-		[3]string{"単価", "1000", "円"}, [3]string{"弊社利益", "15", "%"})), 10, true)
-	if !r.OK || !r.RateSet || r.Rate != 15 || r.Profit != 150 || r.Final != 1150 {
-		t.Errorf("表の「弊社利益」の行の率を使う: %+v", r)
+	got := []string{lot(0), lot(1), lot(2), lot(3)}
+	if strings.Join(got, ",") != "1,-,40,99" || b[3].Calc != nil {
+		t.Errorf("組が違います: %v", got)
 	}
-
-	if r := estimateOf(firstTable(t, estimateTable([3]string{"ロット", "10", "個"}, [3]string{"単価", "", "円"})), 10, true); r.OK {
-		t.Errorf("単価が無いのに計算しています: %+v", r)
-	}
-	if r := estimateOf(firstTable(t, estimateTable([3]string{"単価", "100", "円"})), 0, false); r.OK || !strings.Contains(r.Why, "estimate_profit_rate") {
-		t.Errorf("既定の率が無いときはそう言うはず: %+v", r)
-	}
-	odd := `<table><caption>見積計算表</caption><tbody><tr><th>品名</th><th>ロット20</th><th>ロット40</th></tr>` +
-		`<tr><td>カバー</td><td>1200</td><td>1000</td></tr></tbody></table>`
-	if r := estimateOf(firstTable(t, odd), 10, true); r.OK || !strings.Contains(r.Why, "計算できません") {
-		t.Errorf("列の違う表は計算できないと言うはず: %+v", r)
+	if blockOfRecord(b, 2) != 3 || blockOfCalc(b, 1) != 1 || blockOfCalc(b, 3) != -1 {
+		t.Errorf("番号の引き方が違います")
 	}
 }
 
-// TestWithEstimateRateWritesRow は、率を書く口が「弊社利益」の行を直し（無ければ末尾に足し）、2枚目の表を
-// 取り違えないことを固定します（表は複数ある——塗装あり・なし、ロットごと）。
-func TestWithEstimateRateWritesRow(t *testing.T) {
-	body := `<h1>品</h1>` + estimateTable([3]string{"単価", "1000", "円"}) +
-		estimateTable([3]string{"単価", "2000", "円"}, [3]string{"弊社利益", "10", "%"})
-	got, err := withEstimateRate(body, 1, 12.5)
+// TestEstimateCostAndPlan は原価（価格の列の合計・空は飛ばす・式は計算した値）と、単価＝原価＋利益（四捨五入）を固定します。
+func TestEstimateCostAndPlan(t *testing.T) {
+	nodes := parseBody(t, calcTable([2]string{"材料", "1,200円"}, [2]string{"ブランク", ""}, [2]string{"塗装", "=材料/4"}))
+	c := estimateCostOf(tablesOfType(nodes, estimateType)[0])
+	if !c.OK || c.Cost != 1500 {
+		t.Fatalf("原価が違います: %+v", c)
+	}
+	// 数でない価格は理由を言う（黙って飛ばさない）。
+	bad := parseBody(t, calcTable([2]string{"材料", "100"}, [2]string{"塗装", "7000（8400）"}))
+	if c := estimateCostOf(tablesOfType(bad, estimateType)[0]); c.OK || !strings.Contains(c.Why, "「塗装」の価格が数ではありません") {
+		t.Errorf("数でない価格の理由が違います: %+v", c)
+	}
+	// 価格が全部空なら計算しない。
+	empty := parseBody(t, calcTable([2]string{"材料", ""}))
+	if c := estimateCostOf(tablesOfType(empty, estimateType)[0]); c.OK {
+		t.Errorf("価格が空なのに計算しました: %+v", c)
+	}
+
+	// 利益率は見積表の欄（12.5%）——365 × 12.5% = 45.625 → 46、単価 411。
+	blocks := estimateBlocksOf(parseBody(t, calcTable([2]string{"材料", "300"}, [2]string{"板金", "65"})+recordTable("20", "", "", "12.5")))
+	p := estimatePlanOf(blocks[0])
+	if !p.OK || p.Cost != 365 || p.Rate != 12.5 || p.RateDefault || p.Profit != 46 || p.Unit != 411 {
+		t.Errorf("計算が違います: %+v", p)
+	}
+	if p.matches(estimateRecordOf(blocks[0].Record)) {
+		t.Errorf("まだ記録していないのに合っているとしました")
+	}
+	if !p.matches(estimateRecord{Cost: "365", Rate: "12.5", Unit: "411"}) || p.matches(estimateRecord{Cost: "365", Rate: "12.5", Unit: "410"}) {
+		t.Errorf("記録との突き合わせが違います")
+	}
+	if p := estimatePlanOf(estimateBlock{Record: blocks[0].Record}); p.OK || !strings.Contains(p.Why, "見積計算表がありません") {
+		t.Errorf("計算表の無い見積表の理由が違います: %+v", p)
+	}
+}
+
+// TestWithEstimateRecord は「📌 この単価を記録」を固定します——見積表があればその行へ、無ければ見積計算表のすぐ後ろに作る。
+func TestWithEstimateRecord(t *testing.T) {
+	setupExtTest(t, "000030", page.PageMeta{Owner: "root", Mode: "330"})
+	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "塗装あり", "", "20", "999", "メモ") +
+		`<h3>ロット20</h3>` + calcTable([2]string{"材料", "900"}) + `<p>あと</p>`
+	got, err := withEstimateRecord(body, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(got, "<td>弊社利益</td>") != 1 || !strings.Contains(got, "<td>弊社利益</td><td>12.5</td>") {
-		t.Errorf("2枚目の表の行を直していません:\n%s", got)
+	r := estimateRecordOf(tablesOfType(parseBody(t, got), estimateRecordType)[0])
+	if r.Lot != "1" || r.Surface != "塗装あり" || r.Cost != "1000" || r.Rate != "20" || r.Unit != "1200" || r.Note != "メモ" {
+		t.Errorf("記録が違います（利益率は見積表の 20%%・ロットと表面処理と備考は残す）: %+v", r)
 	}
-	got, err = withEstimateRate(got, 0, 8)
+	// 見積表の無い組——見積計算表のすぐ後ろ（「あと」の段落より前）に作る。利益率は既定（10%）。
+	got, err = withEstimateRecord(got, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := strings.SplitN(got, "</table>", 2)[0]
-	if !strings.Contains(first, "<tr><td>弊社利益</td><td>8</td><td>%</td><td></td></tr>") {
-		t.Errorf("1枚目の表の末尾に行を足していません:\n%s", first)
+	recs := tablesOfType(parseBody(t, got), estimateRecordType)
+	if len(recs) != 2 {
+		t.Fatalf("見積表が作られていません:\n%s", got)
 	}
-	if _, err := withEstimateRate(body, 2, 10); err == nil {
-		t.Error("無い表へ書けたと言っています")
+	if r := estimateRecordOf(recs[1]); r.Cost != "900" || r.Rate != "10" || r.Unit != "990" || r.Lot != "" {
+		t.Errorf("作った見積表の記録が違います: %+v", r)
+	}
+	if strings.Index(got, "<caption>見積表</caption><tbody><tr><th>ロット") > strings.LastIndex(got, "<p>あと</p>") {
+		t.Errorf("見積表が見積計算表のすぐ後ろにありません:\n%s", got)
+	}
+	// 計算できない組は理由を返す。
+	if _, err := withEstimateRecord(calcTable([2]string{"材料", ""}), 0); err == nil || !strings.Contains(err.Error(), "記録できません") {
+		t.Errorf("計算できない組を記録しました: %v", err)
+	}
+	if _, err := withEstimateRecord(body, 5); err == nil {
+		t.Errorf("無い組に書きました")
+	}
+}
+
+// TestWithEstimateDuplicate は「⧉ このロットを写す」を固定します——見出し・見積計算表・見積表を写して組のすぐ後ろへ。
+// ロット・原価・単価は空にし、data-id は写さない。
+func TestWithEstimateDuplicate(t *testing.T) {
+	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` +
+		`<table data-id="ab12"><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>` +
+		`<tr data-id="cd34"><td>材料</td><td>100</td><td>板</td></tr></tbody></table>` +
+		recordTable("1", "黒", "100", "10", "110", "メモ") + `<h3>ロット20</h3>` + calcTable([2]string{"材料", "90"})
+	got, err := withEstimateDuplicate(body, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := parseBody(t, got)
+	if n := len(tablesOfType(nodes, estimateType)); n != 3 {
+		t.Fatalf("見積計算表が %d 枚（3のはず）:\n%s", n, got)
+	}
+	recs := tablesOfType(nodes, estimateRecordType)
+	if r := estimateRecordOf(recs[1]); r.Lot != "" || r.Cost != "" || r.Unit != "" || r.Surface != "黒" || r.Rate != "10" || r.Note != "メモ" {
+		t.Errorf("写しの見積表が違います: %+v", r)
+	}
+	if strings.Count(got, `data-id="ab12"`) != 1 || strings.Count(got, `data-id="cd34"`) != 1 {
+		t.Errorf("data-id を写しました:\n%s", got)
+	}
+	i1, i2 := strings.Index(got, "ロット1（写し）"), strings.Index(got, "<h3>ロット20</h3>")
+	if i1 < 0 || i1 > i2 {
+		t.Errorf("写しの見出しが組のすぐ後ろにありません:\n%s", got)
+	}
+	if strings.Count(got, "<td>板</td>") != 2 {
+		t.Errorf("見積計算表の中身を写していません:\n%s", got)
 	}
 }

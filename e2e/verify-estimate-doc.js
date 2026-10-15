@@ -2,8 +2,8 @@
 //
 // 利用者:「顧客へので良いです」→「見積計算表から」・宛名は「会社＋担当者」。
 //
-//   ① 加工製品ページの見積計算表の足元に「📄 見積書に入れる」（客先は加工製品の客先が入っている）
-//   ② 担当者を書いて「入れる」→ 新しい見積書ができ（見積／年／月）、見積明細に確定単価・ロット・品番・品名が入る
+//   ① 加工製品ページの見積表の足元に「📄 見積書に入れる」（2026-10-15 から見積表——それまでは見積計算表）（客先は加工製品の客先が入っている）
+//   ② 担当者を書いて「入れる」→ 新しい見積書ができ（見積／年／月）、見積明細に見積表の単価・ロット・品番・品名が入る
 //   ③ 見積書の足元に「合計（税抜）」・「📄 PDFを作る」・「✉️ メールで送る」（送らない）
 //   ④ 「PDFを作る」で紙ができ、見積書ページに開く
 //
@@ -35,14 +35,13 @@ const check = (label, ok, note = '') => {
     }
     product = await makePage(page, '<h1>【E2E】見積の品</h1><dl data-type="tags"><dt>品番</dt><dd>E2E-EST-1</dd>' +
       '<dt>品名</dt><dd>【E2E】カバー</dd><dt>客先</dt><dd>【E2E】客先</dd></dl>' +
-      '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>' +
-      '<tr><td>ロット</td><td>20</td><td>個</td><td></td></tr><tr><td>材料</td><td>55</td><td>円</td><td></td></tr>' +
-      '<tr><td>板金</td><td>310</td><td>円</td><td></td></tr><tr><td>単価</td><td>365</td><td>円</td><td>塗装無し</td></tr>' +
-      '</tbody></table>');
+      '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
+      '<tr><td>材料</td><td>55</td><td></td></tr><tr><td>板金</td><td>310</td><td></td></tr></tbody></table>' +
+      '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td>塗装無し</td><td>365</td><td>10</td><td>402</td><td></td></tr></tbody></table>');
     await page.goto(BASE + '/' + product);
     const form = page.locator('#w-editor-content .estimate-add-form');
     await form.waitFor({ timeout: 10000 }).catch(() => {});
-    check('① 見積計算表の足元に「見積書に入れる」', await form.count() === 1);
+    check('① 見積表の足元に「見積書に入れる」', await form.count() === 1);
     check('客先は加工製品の客先', (await form.locator('.estimate-add-client').inputValue()) === '【E2E】客先');
 
     // ②
@@ -63,7 +62,7 @@ const check = (label, ok, note = '') => {
       };
     });
     check('題は「見積　客先」', view.title === '見積　【E2E】客先', view.title);
-    check('見積明細に品番・品名・ロット・確定単価・備考', view.table.includes('E2E-EST-1') && view.table.includes('【E2E】カバー') &&
+    check('見積明細に品番・品名・ロット・単価・備考（表面処理）', view.table.includes('E2E-EST-1') && view.table.includes('【E2E】カバー') &&
       view.table.includes('20') && view.table.includes('402') && view.table.includes('塗装無し'), view.table.slice(0, 200));
     check('③ 合計（税抜）', view.total.includes('合計（税抜）: 8,040円'), view.total);
     check('メールで送る欄がある', await page.locator('#w-editor-content details.estimate-mail [data-mail-compose="見積書"]').count() === 1);
