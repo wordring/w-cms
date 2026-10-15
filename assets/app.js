@@ -191,6 +191,8 @@
         if (left < pad) left = pad;                        // それでも入らない→左端
         el.style.left = (left + window.scrollX) + 'px';
     }
+    // 外の段（表の「⋯」のメニュー——2026-10-15）からも同じ寄せ方を使えるように。
+    window.wcmsPlaceFloating = placeFloating;
 
     // ── 動かせるツールバー（2026-09-27 利用者:「表の編集時に、メニューが邪魔な場所に出がち
     // なので、メニューをドラッグして位置変更ができるようにしてください」） ──
@@ -2529,7 +2531,7 @@
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         refreshFormulaCells();       // 表のセルの式——閲覧では結果・編集では式（2026-10-04・並べ替え・印刷より先に）
         refreshHeadingFolds();       // 見出しを押して次の同じ段の見出しまで畳む（閲覧モード限定・表示だけ・2026-10-04）
-        refreshTablePrint();         // どの表にも「🖨 この表を印刷」（閲覧モード限定・2026-10-02）
+        refreshTableMenus();         // どの表にも「⋯」——開くと「🖨 この表を印刷」など（閲覧モード限定・2026-10-02・10-15 に「⋯」へ）
         refreshTableSort();          // 列の題を押して並べ替える（閲覧モード限定・表示だけ・2026-10-03）
         wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」（書ける形でも）
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（閲覧モード限定）
@@ -11901,7 +11903,7 @@ delegateClick([['.backlog-rfq-go', async (btn) => {
     }
 }]]);
 
-// printOnly は node（写し）だけを紙に刷ります。受注残表の印刷と、どの表にも付く「🖨 この表を印刷」が使います。
+// printOnly は node（写し）だけを紙に刷ります。受注残表の印刷と、どの表にも付く「⋯」の「🖨 この表を印刷」が使います。
 //
 // **見えない別の枠（iframe `#w-print-frame`）に写しを置き、その枠だけを刷ります**（2026-10-03）。枠の中は app.css を読み、
 // `body.w-printing-sheet` と `#w-print-area` の形で受注残表と同じ紙の決まり（`@media print`）が効きます。
@@ -11950,36 +11952,106 @@ function printOnly(node) {
     setTimeout(go, 2000);
 }
 
-// ── どの表にも「🖨 この表を印刷」（2026-10-02）────────────────────────────
+// ── どの表にも「⋯」——表の操作のメニュー（2026-10-02 の「🖨 この表を印刷」を 10-15 にメニューへ）──────────
 //
-// 利用者:「こういった表を印刷できるようになりませんか？」（Excel から貼った表）→「どの表にも『🖨 この表を印刷』」。
-// 受注残表の印刷（上）と同じ仕組みで、**その表の写しだけ**を刷ります。紙の頭にはページの題を置きます
-// （表のキャプションは表と一緒に出る）。
+// 2026-10-02 利用者:「こういった表を印刷できるようになりませんか？」（Excel から貼った表）→「どの表にも『🖨 この表を印刷』」。
+// 2026-10-15 利用者:「表に付く「この表を印刷」というボタンをよくある点3つのボタンに変えて開くメニューの中に納めてください。この点3つのボタンは
+// 表のキャプションと同じ高さの右側に配置できると良いと思います。表に対するコマンドは印刷以外にも増えると思うからです」。
 //
-// ⚠ **閲覧モードだけ**——編集モードでは出しません（`applyMode` が呼ぶたびに作り直す）。ボタンはクローム
+//   - 表の直前に高さ0の入れ物（.w-table-menu）を置き、「⋯」をキャプションの行の右端に重ねます（表は欄の幅いっぱいの
+//     ブロックなので、キャプションの行も欄の幅いっぱい）。キャプションの無い表では、表の上の右端に1行で置きます。
+//   - 押すとメニュー（#w-table-menu-list・placeFloating で寄せる）。項目は TABLE_MENU_ITEMS に足します（when で出す表を選ぶ）。
+//   - 印刷は**その表の写しだけ**を刷ります（受注残表の印刷と同じ printOnly）。紙の頭にはページの題を置きます。
+//
+// ⚠ **閲覧モードだけ**——書ける形では出しません（`applyMode` が呼ぶたびに作り直す）。入れ物はクローム
 //    （`.vocab-chrome`）なので保存されません。
+// ⚠ キャプションの中には入れません——キャプションの文字は表の名前で、読み手が文字で比べるため。
 // ⚠ **受注残表は自分のボタンを持つ**ので付けません。表の中の表にも付けません。
 // ⚠ 紙には操作の部品を出しません——ボタン・入力欄・選ぶ欄を外し、外して空になったサーバーのセル（「↩ 戻す」の列など）も
 //    外します。値の入ったサーバーのセル（最新単価など）は画面と同じに残します。
-function refreshTablePrint() {
-    document.querySelectorAll('#w-editor-content .w-table-print').forEach((b) => b.remove());
+const TABLE_MENU_ITEMS = [
+    { icon: '🖨', label: 'この表を印刷', run: (table) => printTable(table) },
+];
+
+function refreshTableMenus() {
+    closeTableMenu();
+    document.querySelectorAll('#w-editor-content .w-table-menu').forEach((b) => b.remove());
     if (document.body.hasAttribute('edit-mode')) return;
     document.querySelectorAll('#w-editor-content table').forEach((t) => {
         if (t.parentElement && t.parentElement.closest('table')) return;
         if (t.closest('.backlog-sheet')) return;
+        const box = document.createElement('div');
+        box.className = 'vocab-chrome w-table-menu' + (t.querySelector(':scope > caption') ? ' on-caption' : '');
+        box.contentEditable = 'false';
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'vocab-chrome w-table-print';
-        btn.contentEditable = 'false';
-        btn.textContent = '🖨 この表を印刷';
-        t.insertAdjacentElement('beforebegin', btn);
+        btn.className = 'w-table-menu-btn';
+        btn.textContent = '⋯';
+        btn.title = 'この表の操作（印刷…）';
+        btn.setAttribute('aria-haspopup', 'menu');
+        box.appendChild(btn);
+        t.insertAdjacentElement('beforebegin', box);
     });
+}
+
+// tableOfMenu は「⋯」の入れ物のすぐ後ろの表です。
+function tableOfMenu(btn) {
+    const box = btn.closest('.w-table-menu');
+    const t = box && box.nextElementSibling;
+    return t && t.tagName === 'TABLE' ? t : null;
+}
+
+// openTableMenu は「⋯」の下にメニューを開きます（もう一度押すか、外を押すか、Esc で閉じる）。
+function openTableMenu(btn) {
+    const table = tableOfMenu(btn);
+    if (!table) return;
+    let menu = document.getElementById('w-table-menu-list');
+    if (menu && menu.classList.contains('active') && menu.wcmsAnchor === btn) { closeTableMenu(); return; }
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'w-table-menu-list';
+        menu.className = 'file-menu w-table-menu-list';
+        menu.setAttribute('role', 'menu');
+        document.body.appendChild(menu);
+        document.addEventListener('mousedown', (e) => {
+            const m = document.getElementById('w-table-menu-list');
+            if (m && m.classList.contains('active') && !m.contains(e.target) && e.target !== m.wcmsAnchor) closeTableMenu();
+        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTableMenu(); });
+    }
+    menu.textContent = '';
+    menu.wcmsAnchor = btn;
+    TABLE_MENU_ITEMS.filter((it) => !it.when || it.when(table)).forEach((it) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'file-menu-item';
+        b.setAttribute('role', 'menuitem');
+        b.textContent = it.icon + ' ' + it.label;
+        b.addEventListener('mousedown', (e) => e.preventDefault());
+        b.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeTableMenu();
+            it.run(table);
+        });
+        menu.appendChild(b);
+    });
+    menu.classList.add('active');
+    // 右端の「⋯」から左へ開く（右へはみ出さないように placeFloating が寄せる）。
+    const r = btn.getBoundingClientRect();
+    const w = menu.getBoundingClientRect().width || 0;
+    if (window.wcmsPlaceFloating) window.wcmsPlaceFloating(menu, { left: r.right - w, bottom: r.bottom }, 4);
+}
+
+function closeTableMenu() {
+    const menu = document.getElementById('w-table-menu-list');
+    if (menu) { menu.classList.remove('active'); menu.wcmsAnchor = null; }
 }
 
 // printableTableCopy は表の写しから、紙に要らない操作の部品を外したものを返します。
 function printableTableCopy(table) {
     const copy = table.cloneNode(true);
-    copy.querySelectorAll('button, input, select, textarea, .w-table-print, .draft-form-box, .w-sort-mark')
+    copy.querySelectorAll('button, input, select, textarea, .w-table-menu, .draft-form-box, .w-sort-mark')
         .forEach((el) => el.remove());
     copy.querySelectorAll('th.vocab-chrome, td.vocab-chrome').forEach((c) => {
         if (!c.textContent.trim()) c.remove();
@@ -11990,9 +12062,8 @@ function printableTableCopy(table) {
     return copy;
 }
 
-delegateClick([['.w-table-print', (btn) => {
-    const table = btn.nextElementSibling;
-    if (!table || table.tagName !== 'TABLE') return;
+// printTable はその表の写しだけを紙に刷ります（紙の頭にページの題）。
+function printTable(table) {
     const sheet = document.createElement('div');
     sheet.className = 'w-print-sheet';
     const h1 = document.querySelector('#w-editor-content h1');
@@ -12004,7 +12075,9 @@ delegateClick([['.w-table-print', (btn) => {
     }
     sheet.appendChild(printableTableCopy(table));
     printOnly(sheet);
-}]]);
+}
+
+delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
 
 // ── 受注残表から受注明細を書き換える（2026-09-21）────────────────────────
 //

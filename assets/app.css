@@ -2662,8 +2662,8 @@ body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
     /* 紙では「受注」列のリンクの下線は邪魔なので消す（URLは出さない）。 */
     #w-print-area a { color: inherit; text-decoration: none; }
 
-    /* どの表にも付く「🖨 この表を印刷」（2026-10-02）——紙の頭にページの題、表は罫線つき。 */
-    .w-table-print { display: none !important; }
+    /* どの表にも付く「⋯」の「🖨 この表を印刷」（2026-10-02・10-15 に「⋯」へ）——紙の頭にページの題、表は罫線つき。 */
+    .w-table-menu, .w-table-menu-list { display: none !important; }
     #w-print-area .w-print-title { font-size: 12pt; font-weight: bold; margin: 0 0 6px; }
     #w-print-area .w-print-sheet table { border-collapse: collapse; width: 100%; }
     #w-print-area .w-print-sheet caption { text-align: left; font-weight: bold; margin-bottom: 4px; }
@@ -2675,20 +2675,40 @@ body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
     }
 }
 
-/* 「🖨 この表を印刷」——表の上の右端に小さく。毎日見る表で目立たないよう、指すまで薄く。 */
-#w-editor-content .w-table-print {
-    display: block;
-    margin: 4px 0 2px auto;
-    padding: 1px 8px;
-    font-size: 0.8em;
+/* 表の「⋯」（2026-10-15——それまでは表の上の「🖨 この表を印刷」）。利用者:「表のキャプションと同じ高さの右側に」。
+   表の直前の高さ0の入れ物から、表の上の端（キャプションの行）の右に重ねます。表は margin-top 8px なので top も 8px。
+   キャプションの無い表は、表の上の右端に1行で置きます。毎日見る表で目立たないよう、指すまで薄く。 */
+#w-editor-content .w-table-menu {
+    display: flex;
+    justify-content: flex-end;
+    margin: 4px 0 -4px;
+}
+#w-editor-content .w-table-menu.on-caption {
+    position: relative;
+    height: 0;
+    margin: 0;
+    z-index: 2;
+}
+#w-editor-content .w-table-menu.on-caption .w-table-menu-btn {
+    position: absolute;
+    right: 0;
+    top: 8px;
+}
+#w-editor-content .w-table-menu-btn {
+    padding: 0 8px;
+    font: inherit;
+    font-size: 0.9em;
+    line-height: 1.5;
     color: var(--text-muted, #6b7280);
-    background: transparent;
+    background: var(--bg-paper, #fff);
     border: 1px solid var(--w-border, #cbd5e1);
     border-radius: 4px;
     cursor: pointer;
     opacity: 0.6;
 }
-#w-editor-content .w-table-print:hover, #w-editor-content .w-table-print:focus { opacity: 1; }
+#w-editor-content .w-table-menu-btn:hover, #w-editor-content .w-table-menu-btn:focus { opacity: 1; }
+/* キャプションの右端に「⋯」が重なるので、長い名前が下に潜らないよう右を空ける（閲覧モードだけ）。 */
+body:not([edit-mode]) #w-editor-content caption { padding-right: 3em; }
 
 /* 列の題を押して並べ替える（閲覧モードだけ・表示だけ・2026-10-03）——押せる題は指したときだけ下線、並べた列に ▲▼。
    印は .vocab-chrome なので保存されません（並べ替えた行の並びも書き出しでは元に戻る——app.js の tableSortOriginal）。 */
