@@ -10,7 +10,7 @@ import (
 	"w-cms/internal/cms/htmldoc"
 )
 
-// 見積回答の単価を見積計算表へ写す（2026-10-05・estimate_put.go）——【要求】見積依頼 §4 の未決5「見積計算表へ写すボタン」。
+// 見積回答の単価を見積計算表へ写す（2026-10-05・estimate_put.go）——【要求】部材見積依頼 §4 の未決5「見積計算表へ写すボタン」。
 
 // estimatePutBody は見積計算表2枚の加工製品ページです（1枚目はロット20・2枚目はロット40）。
 func estimatePutBody() string {

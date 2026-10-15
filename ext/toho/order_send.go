@@ -216,7 +216,7 @@ func signerLinesFor(head map[string]string, heading string) []string {
 // ⚠ **メールの宛先・件名・本文・資料の候補はここで描きません**（2026-09-30 から送る欄の部品——
 // 用件「部材発注書」の初期値は order_mail.go）。docs は「FAX・印刷用（資料を綴じる）」を出すかだけに使う。
 //
-// noteBox は備考の入力欄です（書ける人にだけ・空なら出さない——2026-10-14・【要求】発注フォルダの並びの 4
+// noteBox は備考の入力欄です（書ける人にだけ・空なら出さない——2026-10-14・【要求】部材発注フォルダの並びの 4
 // 「『備考』入力欄のブロック。備考欄は複数行書けます。その下に『PDF作成』ボタンがあります」）。
 func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, noteBox string) string {
 	orderID := page.FormatID(pageIDInt)

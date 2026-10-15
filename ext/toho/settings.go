@@ -84,7 +84,7 @@ type settingsSection struct {
 	OrderKinds []orderKind `json:"order_kinds,omitempty"`
 
 	// OrderPrintColumns は**部材発注書の紙に刷る列**の候補と並び順です（2026-09-28）。どの行にも値の
-	// 無い列は刷りません（【要求】発注フォルダ「PDFを作成するときに空の項目を消す」）。`金額` は
+	// 無い列は刷りません（【要求】部材発注フォルダ「PDFを作成するときに空の項目を消す」）。`金額` は
 	// 計算の列。利用者:「実際に運用して見ないと私にはわかりません」——使ってみて直す1行。
 	// **未指定なら、それまでの並び**（品番・品名・材質・形状・寸法・表面・単位・数量・単価・金額）。
 	OrderPrintColumns []string `json:"order_print_columns,omitempty"`

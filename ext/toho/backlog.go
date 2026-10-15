@@ -320,7 +320,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 	var b strings.Builder
 	b.WriteString(backlogTotalHTML(backlogTotalOf(groups)))
 	b.WriteString(migNote)
-	// 選んだ行を部材見積依頼へ（2026-10-04・見積依頼の段3——【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」）。
+	// 選んだ行を部材見積依頼へ（2026-10-04・見積依頼の段3——【要求】部材見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」）。
 	// 紙には出さない（no-print——受注残表は1枚ずつ印刷する作業の紙・同 §4 の7「選ぶ印を紙に出さないこと」）。配線は assets/app.js。
 	b.WriteString(`<div class="backlog-rfq-bar no-print"><button type="button" class="backlog-rfq-go">☑ 選んだ行を部材見積依頼へ</button>` +
 		` <span class="backlog-rfq-say"></span></div>`)

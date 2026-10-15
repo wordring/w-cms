@@ -123,7 +123,7 @@ func TestRFQCollectUsesEstimateLots(t *testing.T) {
 }
 
 // TestRFQNeedsMarksDuplicates は、⚠ **同じもの・同じロットが表の中に2つ以上あれば赤（＋⚠ 重複）**、臨時部材表の行も並び、
-// 同じロットでなければ重複でないことを固定します（【要求】見積依頼 §2・2026-10-14 に「同じ数」から改めた）。
+// 同じロットでなければ重複でないことを固定します（【要求】部材見積依頼 §2・2026-10-14 に「同じ数」から改めた）。
 // ロットの分からない臨時部材表の行は、ロットの分かる行とは重ならず、臨時の行どうしは同じ数で重なる。
 func TestRFQNeedsMarksDuplicates(t *testing.T) {
 	u := seedRFQ(t)
@@ -374,7 +374,7 @@ func TestRFQPDFRoundTrips(t *testing.T) {
 		t.Fatalf("PDFを作れません: %v", err)
 	}
 	got := pdfTextOf(t, pdf)
-	// 宛名は見本の欄のとおり「（宛先） 様」（【要求】見積依頼 §1・2026-10-14——それまでは「御中」）。
+	// 宛名は見本の欄のとおり「（宛先） 様」（【要求】部材見積依頼 §1・2026-10-14——それまでは「御中」）。
 	for _, want := range []string{"2026年10月5日", "000310", "わかば鋼業　様", "御見積をお願いいたします", "SS400", "t6*80*120", "単価",
 		"よろしくお願いします。", "標準2輪用"} {
 		if !strings.Contains(got, want) {

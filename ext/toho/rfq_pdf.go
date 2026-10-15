@@ -159,7 +159,7 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 	y := pdfTop + 34
 
 	// ── 宛名 ──
-	// 宛名は見本の欄のとおり「（宛先） 様」（【要求】見積依頼 §1・2026-10-14 に「御中」から改めた）。
+	// 宛名は見本の欄のとおり「（宛先） 様」（【要求】部材見積依頼 §1・2026-10-14 に「御中」から改めた）。
 	y = pdfText(p, pdfLeft, y, 13, strings.TrimSpace(head[SupplierTag])+"　様")
 	p.SetLineWidth(0.6)
 	p.Line(pdfLeft, y-2, pdfLeft+260, y-2)
@@ -217,7 +217,7 @@ func RFQPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 // RFQPDFDocsAPIHandler は POST /api/rfq-pdf-docs です（入力: {page_id}）——部材見積依頼書のうしろに外注加工の資料（PDF のページ・
 // 画像）を綴じた **FAX・印刷用の1本**を作り、そのページの添付として残して開くURLを返します（2026-10-05）。
 //
-// 【要求】見積依頼 §1・§2「外注加工の見積依頼には図面を綴じる」「📠 FAX（図面を綴じた FAX・印刷用）」——部材発注書の
+// 【要求】部材見積依頼 §1・§2「外注加工の見積依頼には図面を綴じる」「📠 FAX（図面を綴じた FAX・印刷用）」——部材発注書の
 // `/api/order-pdf-docs`（order_docs.go）と同じ作り: 資料は明細の行（弊社品番＋番号）が指す加工製品ページの「資料 <番号>」、
 // 綴じるのは `bindOrderDocs`。⚠ **本文は触りません**（表示中の部材見積依頼書の PDF は差し替えない）——編集中でも断らない。
 // 辞退の行の資料は綴じない（readRFQDoc が外す）。

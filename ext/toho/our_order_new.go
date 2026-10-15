@@ -209,7 +209,7 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 	//    ページの添付として残ります（`SaveAttachmentFrom`）。本文へ写すと二重になり、
 	//    あとから署名が変わったときに**紙と本文が食い違います**。
 	setHeaderTag(d.DraftBlock, OrderSignerTag, signerID)
-	// ⚠ **`納品日` は空の欄で置きます**（2026-10-14・【要求】発注フォルダの並びの 2「『発注書番号』『仕入先』
+	// ⚠ **`納品日` は空の欄で置きます**（2026-10-14・【要求】部材発注フォルダの並びの 2「『発注書番号』『仕入先』
 	//    『発注日』『発注担当』『納品日』といったタグが並びます」）——届いた日は機械には分からないので、人が書く場所だけ
 	//    作ります。テンプレートに欄があればそのまま。紙には刷りません（設定 `order_print_heads` に無い）。
 	d.DraftBlock.EnsureTag(DeliveredAtTag)
@@ -255,7 +255,7 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 }
 
 // DeliveredAtTag は部材発注書ページの、仕入先から品物が届いた日のタグです（2026-10-14・型は設定の語彙で date）。
-// 「納期」は予定や希望、「納品日」は確定した期日です（【要求】発注フォルダ）。
+// 「納期」は予定や希望、「納品日」は確定した期日です（【要求】部材発注フォルダ）。
 const DeliveredAtTag = "納品日"
 
 // orderNoteHeading は部材発注書ページの備考欄の見出しです（本文とPDFで共有）。
@@ -263,7 +263,7 @@ const orderNoteHeading = "備考"
 
 // fillOrderNote は部材発注明細の下の**備考欄**（見出し「備考」の節）へ note を入れます（2026-09-24）。
 //
-// 要求（【要求】発注フォルダ）:「その下のブロックに『備考』入力欄があります。
+// 要求（【要求】部材発注フォルダ）:「その下のブロックに『備考』入力欄があります。
 // **備考欄は複数行書けます**」。⚠ **相手に伝えることを書く欄**です——行の `備考` 列
 // （他社が知る必要のないメモ）とは別で、こちらは**紙に刷ります**。
 //
