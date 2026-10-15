@@ -35,13 +35,13 @@ const MAT = 'E2E-SKIP-' + Date.now().toString(36).toUpperCase();
       process.exit(0);
     }
     const product = await makePage(page, '<h1>【E2E】加工製品（手配不要）</h1>' +
-      '<table><caption>材料</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
+      '<table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
       '<tr><td>' + MAT + '-A</td><td>板</td><td>t3.2</td><td>2</td></tr>' +
       '<tr><td>' + MAT + '-B</td><td>板</td><td>t1.5</td><td>1</td></tr></tbody></table>');
     made.push(product);
     const order = await makePage(page, '<h1>【E2E】受注（手配不要）</h1>' +
       '<dl data-type="tags"><dt>発注元</dt><dd>【E2E】客先</dd><dt>納期</dt><dd>2026-12-01</dd></dl>' +
-      '<table><caption>受注明細</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>' +
+      '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>' +
       '<tr><td>' + product + '</td><td></td><td>E2E カバー</td><td>3</td></tr></tbody></table>');
     made.push(order);
     const host = await makePage(page, '<h1>【E2E】必要部材表の置き場</h1><section data-mirror="必要部材表"></section>');
@@ -65,10 +65,10 @@ const MAT = 'E2E-SKIP-' + Date.now().toString(36).toUpperCase();
     check('② 不要にした行は必要部材表から消え、もう1行は残る', await page.locator(mine('-A')).count() === 0 &&
       await page.locator(mine('-B')).count() === 1);
     const skip = await page.evaluate(() => {
-      const t = [...document.querySelectorAll('#w-editor-content table')].find(x => (x.querySelector('caption') || {}).textContent === '手配不要');
+      const t = [...document.querySelectorAll('#w-editor-content table')].find(x => (x.querySelector('caption') || {}).textContent === '手配不要表');
       return t ? t.innerText : '';
     });
-    check('手配不要の表に理由・受注つきで入る', skip.includes('在庫あり（E2E）') && skip.includes(order) && skip.includes(MAT + '-A'),
+    check('手配不要表に理由・受注つきで入る', skip.includes('在庫あり（E2E）') && skip.includes(order) && skip.includes(MAT + '-A'),
       skip.replace(/\s+/g, ' ').slice(0, 200));
 
     // ③ 戻す
@@ -78,8 +78,8 @@ const MAT = 'E2E-SKIP-' + Date.now().toString(36).toUpperCase();
     ]);
     await page.waitForSelector('#w-editor-content .unorder-table', { timeout: 15000 }).catch(() => {});
     check('③ 戻すと必要部材表へ戻る', await page.locator(mine('-A')).count() === 1);
-    const left = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content caption')].some(c => c.textContent === '手配不要'));
-    check('空になった手配不要の表は消える', !left);
+    const left = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content caption')].some(c => c.textContent === '手配不要表'));
+    check('空になった手配不要表は消える', !left);
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

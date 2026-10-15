@@ -257,12 +257,12 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	syncBody(t, 31, `<h1>ブラケット</h1>`+
 		`<dl data-type="tags"><dt>図面番号</dt><dd>A100-B01-001</dd>`+
 		`<dt>図面名称</dt><dd>ブラケット</dd></dl>`+
-		`<section><h2>外注加工</h2><table><caption>外注加工</caption><tbody>`+
+		`<section><h2>外注加工</h2><table><caption>外注加工表</caption><tbody>`+
 		`<tr><th>番号</th><th>名称</th><th>加工内容</th><th>材質</th><th>表面</th><th>個数</th><th>支給</th><th>推奨業者</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
 		`<tr><td>1</td><td></td><td>レーザー切断</td><td>SS400</td><td></td><td>1</td><td>材料支給</td><td>ひかりレーザー</td><td></td><td></td><td></td></tr>`+
 		`<tr><td>2</td><td>カバー</td><td>塗装</td><td></td><td>緑</td><td>2</td><td></td><td></td><td></td><td></td><td></td></tr>`+
 		`</tbody></table></section>`+
-		`<section><h2>支給部品</h2><table><caption>支給部品</caption><tbody>`+
+		`<section><h2>支給部品</h2><table><caption>支給部品表</caption><tbody>`+
 		`<tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th><th>区分</th></tr>`+
 		`<tr><td>支給シャフト</td><td>φ20</td><td>1</td><td></td><td></td></tr>`+
 		`</tbody></table></section>`)
@@ -350,7 +350,7 @@ func TestOrderRowKeyInfersLegacyKind(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	syncBody(t, 31, `<h1>ブラケット</h1>`+
-		`<table><caption>購入部品</caption><tbody>`+
+		`<table><caption>購入部品表</caption><tbody>`+
 		`<tr><th>品名</th><th>仕様</th><th>個数</th></tr>`+
 		`<tr><td>六角ボルト</td><td></td><td>4</td></tr>`+
 		`</tbody></table>`)
@@ -377,16 +377,16 @@ func TestUnorderedLeavesOutObsoleteRows(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	syncBody(t, 31, `<h1>ブラケット</h1>`+
-		`<table><caption>材料</caption><tbody>`+
+		`<table><caption>材料表</caption><tbody>`+
 		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th><th>区分</th></tr>`+
 		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>1</td><td>現行</td></tr>`+
 		`<tr><td>鉄</td><td>丸棒</td><td>φ20*300</td><td>1</td><td>廃版</td></tr>`+
 		`</tbody></table>`+
-		`<table><caption>購入部品</caption><tbody>`+
+		`<table><caption>購入部品表</caption><tbody>`+
 		`<tr><th>品名</th><th>仕様</th><th>個数</th><th>区分</th></tr>`+
 		`<tr><td>古いボルト</td><td></td><td>4</td><td>廃版</td></tr>`+
 		`</tbody></table>`+
-		`<table><caption>外注加工</caption><tbody>`+
+		`<table><caption>外注加工表</caption><tbody>`+
 		`<tr><th>加工内容</th><th>個数</th><th>区分</th></tr>`+
 		`<tr><td>古い曲げ</td><td>1</td><td>廃版</td></tr>`+
 		`</tbody></table>`)

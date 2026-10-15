@@ -380,7 +380,7 @@ func TestOrderPDFIsShownOnThePage(t *testing.T) {
 	// ⚠ **表の「後」であること**（ユーザーの流れ:「新たな表の下に発注書を埋め込み
 	//    表示し」）。前に置くと、明細より先にPDFが出ます。
 	if strings.Index(out, "</table>") > strings.Index(out, `data-ref="000041-a1b2"`) {
-		t.Errorf("⚠ マーカーが部材発注明細の表より前にあります:\n%s", out)
+		t.Errorf("⚠ マーカーが部材発注明細表より前にあります:\n%s", out)
 	}
 	// ⚠ **サニタイズを通しても残ること。** ここが落ちると、**本文を保存した瞬間に
 	//    配線が消え**、PDFは黙って出なくなります（`class` が落ちるのと同じ形）。
@@ -417,7 +417,7 @@ func TestOrderPDFViewIsReplacedNotStacked(t *testing.T) {
 // 固定します。
 func TestOrderPDFViewNeedsTheTable(t *testing.T) {
 	if out, ok := placeOrderPDFView(`<h1>ただのページ</h1><p>本文</p>`, "000041-aaaa"); ok {
-		t.Errorf("⚠ 部材発注明細の無いページにマーカーを置いています:\n%s", out)
+		t.Errorf("⚠ 部材発注明細表の無いページにマーカーを置いています:\n%s", out)
 	}
 }
 
@@ -439,7 +439,7 @@ func showPage(t *testing.T, viewer *auth.User, pageID int, body string) string {
 func TestMarkOrderSentRewritesOrderDate(t *testing.T) {
 	body := `<h1>部材発注</h1><dl data-type="tags"><dt>` + PurchaseNoTag + `</dt><dd>000138</dd>` +
 		`<dt>` + PurchasedAtTag + `</dt><dd>2026-09-20</dd><dt>` + DueDateTag + `</dt><dd>2026-10-01</dd></dl>` +
-		`<table><caption>部材発注明細</caption><tbody><tr><th>品名</th><th>状態</th></tr>` +
+		`<table><caption>部材発注明細表</caption><tbody><tr><th>品名</th><th>状態</th></tr>` +
 		`<tr><td>A</td><td>未発注</td></tr><tr><td>B</td><td>取消</td></tr></tbody></table>`
 
 	got, n := markOrderSent(body, "2026-09-24")

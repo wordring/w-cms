@@ -15,7 +15,7 @@ import (
 
 func pricedOrderBody(no, client, date string, rows ...[5]string) string {
 	b := `<h1>受注 ` + no + `</h1><dl data-type="tags"><dt>` + OrderNoTag + `</dt><dd>` + no + `</dd><dt>` + OrderClientTag + `</dt><dd>` + client +
-		`</dd><dt>` + OrderedAtTag + `</dt><dd>` + date + `</dd></dl><table data-type="` + clientOrderItemsType + `"><caption>受注明細</caption><tbody>` +
+		`</dd><dt>` + OrderedAtTag + `</dt><dd>` + date + `</dd></dl><table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単価</th><th>状態</th></tr>`
 	for _, r := range rows {
 		b += `<tr><td>` + r[0] + `</td><td>` + r[1] + `</td><td>カバー</td><td>` + r[2] + `</td><td>` + r[3] + `</td><td>` + r[4] + `</td></tr>`
@@ -51,7 +51,7 @@ func TestProductPageListsOrderPrices(t *testing.T) {
 	// 出した見積（見積書ページの見積明細・送付済）と、別の加工製品の見積。
 	addPage(t, 707, -1, "見積", "root", "302", true)
 	seedBody(t, "000707", `<h1>見積　みなと商店</h1><dl data-type="tags"><dt>`+EstimateNoTag+`</dt><dd>000707</dd><dt>`+EstimateDateTag+
-		`</dt><dd>2026-08-15</dd><dt>`+EstimateSentTag+`</dt><dd>2026-08-16</dd></dl><table data-type="`+EstimateItemsType+`"><caption>見積明細</caption><tbody>`+
+		`</dt><dd>2026-08-15</dd><dt>`+EstimateSentTag+`</dt><dd>2026-08-16</dd></dl><table data-type="`+EstimateItemsType+`"><caption>見積明細表</caption><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>`+
 		`<tr><td>000701</td><td>K-1</td><td>カバー</td><td>50</td><td>個</td><td>480</td><td></td></tr>`+
 		`<tr><td>000799</td><td>K-9</td><td>別</td><td>50</td><td>個</td><td>666</td><td></td></tr></tbody></table>`)

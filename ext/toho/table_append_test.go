@@ -14,25 +14,25 @@ func TestAppendTableRows(t *testing.T) {
 	const id = "000050"
 	setupExtTest(t, id, page.PageMeta{Owner: "root", Mode: "330"})
 	seedBody(t, id, `<h1>取付ベース</h1>`+
-		`<table><caption>外注加工</caption><tbody><tr><th>番号</th><th>名称</th><th>加工内容</th><th>表面</th><th>個数</th><th>推奨業者</th><th>備考</th></tr>`+
+		`<table><caption>外注加工表</caption><tbody><tr><th>番号</th><th>名称</th><th>加工内容</th><th>表面</th><th>個数</th><th>推奨業者</th><th>備考</th></tr>`+
 		`<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>`+
-		`<table><caption>材料</caption><tbody><tr><th>材質</th><th>寸法</th></tr><tr><td>SS400</td><td>t6</td></tr></tbody></table>`)
+		`<table><caption>材料表</caption><tbody><tr><th>材質</th><th>寸法</th></tr><tr><td>SS400</td><td>t6</td></tr></tbody></table>`)
 	root := &auth.User{Username: "root", IsAdmin: true}
 	row := map[string]string{"番号": "1", "加工内容": "塗装", "表面": "緑", "推奨業者": "ふじ鍍金", "備考": "見積 2026-08-07"}
-	if code, _ := postRFQ(t, &auth.User{Username: "bob"}, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工", "rows": []map[string]string{row}}); code != 403 {
+	if code, _ := postRFQ(t, &auth.User{Username: "bob"}, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工表", "rows": []map[string]string{row}}); code != 403 {
 		t.Errorf("管理者でない人が足せてしまう: %d", code)
 	}
 	before := readPageBody(t, id)
-	if code, _ := postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工", "rows": []map[string]string{{"支給": "x"}}}); code != 409 {
+	if code, _ := postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工表", "rows": []map[string]string{{"支給": "x"}}}); code != 409 {
 		t.Errorf("表に無い列の値で %d", code)
 	}
-	if code, _ := postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "購入部品", "rows": []map[string]string{row}}); code != 409 {
+	if code, _ := postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "購入部品表", "rows": []map[string]string{row}}); code != 409 {
 		t.Errorf("無い表で %d", code)
 	}
 	if readPageBody(t, id) != before {
 		t.Fatal("断ったのに本文が変わりました")
 	}
-	if code, out := postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工", "rows": []map[string]string{row}}); code != 200 || out["rows"] != float64(1) {
+	if code, out := postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工表", "rows": []map[string]string{row}}); code != 200 || out["rows"] != float64(1) {
 		t.Fatalf("足せません: %d %v", code, out)
 	}
 	body := readPageBody(t, id)
@@ -47,7 +47,7 @@ func TestAppendTableRows(t *testing.T) {
 	}
 	// 2回目はある行（1行目）の後ろへ足す——ある行には触らない。
 	row2 := map[string]string{"番号": "2", "加工内容": "溶断"}
-	postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工", "rows": []map[string]string{row2}})
+	postRFQ(t, root, AppendTableRowsAPIHandler, map[string]any{"page_id": id, "caption": "外注加工表", "rows": []map[string]string{row2}})
 	if b := readPageBody(t, id); !strings.Contains(b, "<td>見積 2026-08-07</td></tr><tr><td>2</td><td></td><td>溶断</td>") {
 		t.Errorf("ある行の後ろへ足していません:\n%s", b)
 	}

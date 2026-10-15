@@ -86,11 +86,11 @@ func testProductTemplate() string {
 		"        <dt>図面番号</dt>\n        <dd><br/></dd>\n        <dt>図面名称</dt>\n        <dd><br/></dd>\n" +
 		"        <dt>装置名称</dt>\n        <dd><br/></dd>\n        <dt>客先</dt>\n        <dd><br/></dd>\n    </dl>\n" +
 		"    <section data-id=\"jcan\" data-ref=\"\" data-type=\"file-view\"></section>\n</section>\n" +
-		"<table data-id=\"yux2\"><caption>改訂明細</caption>\n        <tbody>\n            <tr>\n" +
+		"<table data-id=\"yux2\"><caption>改訂明細表</caption>\n        <tbody>\n            <tr>\n" +
 		"                <th>版</th>\n                <th>図面番号</th>\n                <th>受領日</th>\n            </tr>\n" +
 		"            <tr data-id=\"1mz9\">\n                <td>1</td>\n                <td></td>\n                <td></td>\n" +
 		"            </tr>\n        </tbody>\n    </table>\n" +
-		"<section data-id=\"hm1t\">\n    <h2>材料</h2>\n    <table data-id=\"z184\">\n        <caption>材料</caption>\n" +
+		"<section data-id=\"hm1t\">\n    <h2>材料</h2>\n    <table data-id=\"z184\">\n        <caption>材料表</caption>\n" +
 		"        <tbody>\n            <tr>\n                <th>材質</th>\n                <th>形状</th>\n" +
 		"                <th>寸法</th>\n                <th>個数</th>\n                <th>備考</th>\n                <th>区分</th>\n" +
 		"            </tr>\n            <tr data-id=\"j5rd\">\n                <td></td>\n                <td></td>\n" +

@@ -29,7 +29,7 @@ const BOX = '<h1>【E2E】見積依頼の置き場（フォルダ）</h1>' +
 const FOLDER = '<h1>【E2E】装置フォルダ</h1><p>見積依頼の試験</p>';
 const tags = (no) => '<dl data-type="tags"><dt>品番</dt><dd>' + no + '</dd></dl>';
 const PRODUCT1 = '<h1>【E2E】フォルダの部品1</h1>' + tags('E2E-RFQF-1') +
-  '<table><caption>材料</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
+  '<table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
   '<tr><td>E2E-RFQF-鉄</td><td>板</td><td>t2.3*50*60</td><td>2</td></tr></tbody></table>';
 const PRODUCT2 = '<h1>【E2E】フォルダの部品2</h1>' + tags('E2E-RFQF-2') + '<p>部材の表なし</p>';
 

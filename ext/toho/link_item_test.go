@@ -34,7 +34,7 @@ func withProductCodeTags(t *testing.T, names ...string) {
 func orderBody(rows ...[2]string) string {
 	// 発注元を持つ（2026-10-01——客先＋品番で引くので、客先の分からない受注は結ばない）。
 	b := `<h1>受注 A-1</h1><dl data-type="tags"><dt>発注元</dt><dd>南北スポーツ</dd></dl><table data-type="` + clientOrderItemsType + `">` +
-		`<caption>受注明細</caption><tbody>` +
+		`<caption>受注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>`
 	for _, r := range rows {
 		b += `<tr><td>` + r[0] + `</td><td>` + r[1] + `</td><td>ブラケット</td><td>100</td></tr>`
@@ -118,7 +118,7 @@ func TestFillOurItemNoFoldsCode(t *testing.T) {
 // 片方しか見ないと、**caption へ移した日に黙って埋まらなくなります**——エラーは
 // 出ないので、気づくのは「いつまでも空欄だ」と誰かが思ったときです。
 func TestFillOurItemNoFindsTableByCaption(t *testing.T) {
-	body := `<h1>受注 A-1</h1><table><caption>受注明細</caption><tbody>` +
+	body := `<h1>受注 A-1</h1><table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th></tr>` +
 		`<tr><td></td><td>K120-01-211</td></tr></tbody></table>`
 
@@ -200,7 +200,7 @@ func TestDrawingPageHasItemNoSlot(t *testing.T) {
 func TestOrderItemColumnLabelsMatchConstants(t *testing.T) {
 	def, ok := cms.VocabDefByType(clientOrderItemsType)
 	if !ok {
-		t.Fatal("受注明細の宣言がありません")
+		t.Fatal("受注明細表の宣言がありません")
 	}
 	found := map[string]bool{}
 	for _, c := range def.Columns {

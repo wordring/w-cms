@@ -14,7 +14,7 @@ func unsentPaper(supplier string, statuses ...string) string {
 	var b strings.Builder
 	b.WriteString(`<h1>部材発注　` + supplier + `</h1><dl data-type="tags"><dt>` + SupplierTag +
 		`</dt><dd>` + supplier + `</dd></dl>`)
-	b.WriteString(`<table><caption>部材発注明細</caption><tbody><tr><th>品名</th><th>数量</th><th>状態</th></tr>`)
+	b.WriteString(`<table><caption>部材発注明細表</caption><tbody><tr><th>品名</th><th>数量</th><th>状態</th></tr>`)
 	for _, st := range statuses {
 		b.WriteString(`<tr><td>ボルト</td><td>1</td><td>` + st + `</td></tr>`)
 	}

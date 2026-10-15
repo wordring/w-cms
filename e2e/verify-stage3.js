@@ -93,19 +93,19 @@ async function openSlashMenu(page) {
         //    ext/toho/vocab.go の client-order-items の注）。
         check('ヘッダだけの「顧客の発注書」はメニューに無い（2026-09-18 にタグへ）',
             await page.locator('#w-slash-menu [data-type="vocab:client-order"]').count() === 0);
-        check('後継: 受注明細がメニューにある（2026-09-27 から）',
+        check('後継: 受注明細表がメニューにある（2026-09-27 から）',
             await page.locator('#w-slash-menu [data-type="vocab:client-order-items"]').count() === 1);
 
         // 2. 受注明細の挿入 = **キャプションで名乗る素の表だけ**（2026-09-26・DBの日本語化 5段目）。
         //    file 容器は廃止（PDF は添付のファイル表示が担う）。本文は <table><caption>受注明細</caption>…</table>。
         await page.click('#w-slash-menu [data-type="vocab:client-order-items"]');
         const items = page.locator('#w-editor-content table')
-            .filter({ has: page.locator('caption', { hasText: '受注明細' }) }).first();
+            .filter({ has: page.locator('caption', { hasText: '受注明細表' }) }).first();
         await items.waitFor({ timeout: 4000 });
-        check('file容器なしで受注明細が挿さる', await page.locator('#w-editor-content section[data-type="file"]').count() === 0);
-        check('受注明細はキャプションが機能を宣言', (await items.locator('caption').first().innerText()).trim() === '受注明細');
-        check('受注明細に data-type は無い', await items.getAttribute('data-type') === null);
-        check('受注明細を節で包まない',
+        check('file容器なしで受注明細表が挿さる', await page.locator('#w-editor-content section[data-type="file"]').count() === 0);
+        check('受注明細表はキャプションが機能を宣言', (await items.locator('caption').first().innerText()).trim() === '受注明細表');
+        check('受注明細表に data-type は無い', await items.getAttribute('data-type') === null);
+        check('受注明細表を節で包まない',
             await items.evaluate(t => !(t.parentElement && t.parentElement.tagName === 'SECTION')));
         // 鍵は th の表示文字が運ぶ（機械キーの属性は 2026-08-20 に撤去）。
         const heads = (await items.locator('tr').first().locator('th').allInnerTexts()).map(t => t.trim());
@@ -131,7 +131,7 @@ async function openSlashMenu(page) {
         await waitSaved(page);
         check('sanitized 警告なし', await page.locator('[data-toast-id="sanitized"]').count() === 0);
         const preview = await page.locator('#w-html-preview').inputValue();
-        check('保存にキャプションが乗る', /<table(?![^>]*data-type)[^>]*>\s*<caption>受注明細<\/caption>/.test(preview));
+        check('保存にキャプションが乗る', /<table(?![^>]*data-type)[^>]*>\s*<caption>受注明細表<\/caption>/.test(preview));
         check('保存に打った値が乗る', preview.includes('SHAFT-01') && preview.includes('取付ベース'));
         check('本文から機械語が消えた（file容器も無い）', !preview.includes('data-type="client-order') && !preview.includes('data-type="file"'));
         check('編集クロームが保存に漏れない', !preview.includes('vocab-chrome') && !preview.includes('pdf-drop-zone') &&
@@ -151,7 +151,7 @@ async function openSlashMenu(page) {
         //    ⚠ 2026-10-14: 改名するのは受注明細の列の見出し（ヘッダの dl はタグになり、タグは告知しない——2026-09-18）。
         await page.evaluate(() => {
             const cap = Array.from(document.querySelectorAll('#w-editor-content table > caption'))
-                .find(x => x.textContent.trim() === '受注明細');
+                .find(x => x.textContent.trim() === '受注明細表');
             const th = Array.from(cap.parentElement.querySelectorAll('tr:first-child th'))
                 .find(x => x.textContent.trim() === '単価');
             th.textContent = '単価（税抜）';

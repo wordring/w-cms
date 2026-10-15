@@ -34,9 +34,9 @@ const check = (label, ok, note = '') => {
     const prod = await makePage(page, '<h1>【E2E】カバー</h1><p>x</p>', box);
     made.unshift(prod);
     await saveBody(prod, '<h1>【E2E】カバー</h1>' +
-      '<section><h2>材料</h2><table><caption>材料</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
+      '<section><h2>材料</h2><table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
       '<tr><td>E2E材</td><td>板</td><td>t9.9</td><td>1</td></tr></tbody></table></section>' +
-      '<section><h2>支給部品</h2><table><caption>支給部品</caption><tbody><tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>' +
+      '<section><h2>支給部品</h2><table><caption>支給部品表</caption><tbody><tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>' +
       '<tr><td></td><td></td><td></td><td></td></tr></tbody></table></section>' +
       '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
       '<tr><td>材料</td><td>1200</td><td></td></tr><tr><td>塗装</td><td></td><td></td></tr></tbody></table>' +
@@ -45,7 +45,7 @@ const check = (label, ok, note = '') => {
     made.unshift(rfq);
     await saveBody(rfq, '<h1>部材見積依頼　【E2E】業者</h1><dl data-type="tags"><dt>部材見積依頼番号</dt><dd>' + rfq + '</dd>' +
       '<dt>仕入先</dt><dd>【E2E】業者</dd><dt>回答日</dt><dd>2026-10-05</dd></dl>' +
-      '<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>加工内容</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単価</th><th>状態</th></tr>' +
+      '<table><caption>部材見積依頼明細表</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>加工内容</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単価</th><th>状態</th></tr>' +
       '<tr><td>' + prod + '</td><td>外注加工</td><td>塗装</td><td></td><td></td><td></td><td>20</td><td>298</td><td>回答あり</td></tr>' +
       '<tr><td>' + prod + '</td><td>材料</td><td></td><td>E2E材</td><td>板</td><td>t9.9</td><td>5</td><td>1500</td><td>回答あり</td></tr></tbody></table>');
 

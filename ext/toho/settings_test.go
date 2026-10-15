@@ -21,7 +21,7 @@ func TestSettingsRepoFileHasProductKinds(t *testing.T) {
 	}
 	// ⚠ **構成部品の表の `区分` は現行／廃版のまま**（表ごとの例外）——既定を加工製品の区分に
 	//    したので、例外が効いていないと材料表の「廃版」が薄赤になり、手配の除外も読めなくなる。
-	for _, table := range []string{"材料", "外注加工", "購入部品", "支給部品"} {
+	for _, table := range []string{"材料表", "外注加工表", "購入部品表", "支給部品表"} {
 		if got := strings.Join(cms.ColumnWord(table, ProductKindTag).Values, "・"); got != "現行・廃版" {
 			t.Errorf("%s の区分の選択肢が %q です（現行・廃版のはず）", table, got)
 		}

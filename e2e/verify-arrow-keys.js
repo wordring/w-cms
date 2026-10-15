@@ -26,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BODY = '<h1>【E2E】矢印キー</h1><p data-id="pa01">前の段落</p>' +
   '<table data-id="tb02"><tbody><tr><th>品</th><th>数</th></tr><tr><td>甲</td><td>1</td></tr><tr><td>乙</td><td>2</td></tr></tbody></table>' +
   '<p data-id="pb03">間の段落</p>' +
-  '<table data-id="tm04"><caption>材料</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr><tr><td>SS400</td><td>板</td><td>t3</td><td>2</td></tr></tbody></table>' +
+  '<table data-id="tm04"><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr><tr><td>SS400</td><td>板</td><td>t3</td><td>2</td></tr></tbody></table>' +
   '<ul data-id="ul05"><li>一つ目</li><li>二つ目</li></ul>' +
   '<dl data-type="tags" data-id="dl06"><dt>名前</dt><dd>みなと</dd><dt>区分</dt><dd>試作</dd></dl>' +
   '<section data-id="se07"><h2>節</h2><p>節の中</p></section>' +
@@ -96,7 +96,7 @@ const BODY = '<h1>【E2E】矢印キー</h1><p data-id="pa01">前の段落</p>' 
     await caretIn('[data-id="tm04"] tr:last-child td:nth-child(4)', true);
     const hasMirror = await page.evaluate(() => !!document.querySelector('#w-editor-content [data-id="tm04"] .vocab-chrome'));
     const c1 = await press('ArrowRight');
-    check('③ 材料の表の最後のセルの → は鏡の列を飛ばして次のブロックへ', hasMirror && c1.startsWith('ul05|LI|一つ目|0'), hasMirror + ' / ' + c1);
+    check('③ 材料表の最後のセルの → は鏡の列を飛ばして次のブロックへ', hasMirror && c1.startsWith('ul05|LI|一つ目|0'), hasMirror + ' / ' + c1);
 
     // ④
     await caretIn('[data-id="pa01"]', true);

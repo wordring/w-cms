@@ -26,7 +26,7 @@ func writeAndSync(t *testing.T, id, body string) {
 }
 
 func orderTable(heads ...string) string {
-	b := `<h1>p</h1><table><caption>受注明細</caption><tbody><tr>`
+	b := `<h1>p</h1><table><caption>受注明細表</caption><tbody><tr>`
 	for _, h := range heads {
 		b += `<th>` + h + `</th>`
 	}
@@ -71,7 +71,7 @@ func TestTablesReportFindsTypoColumn(t *testing.T) {
 	writeAndSync(t, "000062", orderTable("品 番", "品名", "備考")) // 打ち間違い
 	writeAndSync(t, "000063", `<h1>q</h1><table><caption>旧表</caption><tbody><tr><th>a</th></tr><tr><td>1</td></tr></tbody></table>`)
 
-	r := reportOf(t, "受注明細")
+	r := reportOf(t, "受注明細表")
 	if r.Pages != 3 || r.Rows != 3 {
 		t.Errorf("ページ %d・行 %d（3・3 のはず）", r.Pages, r.Rows)
 	}
@@ -90,7 +90,7 @@ func TestTablesReportFindsTypoColumn(t *testing.T) {
 	// 打ち間違いを直し、旧表を消す——DB には列と表が残る（跡）。
 	writeAndSync(t, "000062", orderTable("品番", "品名", "備考"))
 	writeAndSync(t, "000063", `<h1>q</h1><p>表を消した</p>`)
-	r = reportOf(t, "受注明細")
+	r = reportOf(t, "受注明細表")
 	if r.Suspects != 0 {
 		t.Errorf("直したのにまだ疑っています: %+v", r)
 	}

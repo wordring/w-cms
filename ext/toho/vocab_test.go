@@ -99,7 +99,7 @@ func TestOrderDraftSharesColumnsWithOrderItems(t *testing.T) {
 	draft := columnsOf(OrderDraftType)
 	items := columnsOf(ourOrderItemsType)
 	if len(draft) != len(items) {
-		t.Fatalf("列の数が違います: 発注部材表 %d / 部材発注明細 %d", len(draft), len(items))
+		t.Fatalf("列の数が違います: 発注部材表 %d / 部材発注明細表 %d", len(draft), len(items))
 	}
 	for i := range draft {
 		if draft[i].Label != items[i].Label || draft[i].Field != items[i].Field ||

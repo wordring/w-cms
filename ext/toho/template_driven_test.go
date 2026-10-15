@@ -22,7 +22,7 @@ import (
 // 列は値があれば右端へ足す。タグもテンプレートの並びのまま、無いものは末尾へ足す。
 func TestOrderPageFollowsTemplateColumns(t *testing.T) {
 	tmpl := `<h1>受注ページ</h1><dl data-type="tags"><dt>` + OrderClientTag + `</dt><dd><br/></dd></dl>` +
-		`<table><caption>受注明細</caption><tbody>` +
+		`<table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>品名</th><th>数量</th><th>弊社品番</th><th>状態</th><th>社内メモ</th></tr>` +
 		`<tr><td>見本</td><td></td><td></td><td></td><td></td></tr></tbody></table>`
 	j := &orderJudgment{IsClientOrder: true, OrderNo: "PO-1", Customer: "みなと商店", Items: []orderPDFItem{
@@ -56,8 +56,8 @@ func TestOrderPageFollowsTemplateColumns(t *testing.T) {
 	// 受注明細の表が無いテンプレートでは作らない（明細の行き場が無い）。
 	_, err = buildOrderPageHTML(`<h1>受注ページ</h1>`, "000001", "pdf001", j)
 	var se *cms.TemplateSlotError
-	if !errors.As(err, &se) || !strings.Contains(err.Error(), "受注明細") {
-		t.Errorf("受注明細の表が無いのに作りました: %v", err)
+	if !errors.As(err, &se) || !strings.Contains(err.Error(), "受注明細表") {
+		t.Errorf("受注明細表が無いのに作りました: %v", err)
 	}
 }
 
@@ -85,10 +85,10 @@ func TestOrderPageSourceTableGoesIntoTheFold(t *testing.T) {
 // 加工製品は**図面ブロックを見出しで探す**——テンプレートで材料の節を図面より前に置いても、
 // 改定の合流が運ぶのは図面ブロック。改訂明細の1版目は行にブロックIDがあり、改定で版2になる。
 func TestProductPageFromTemplateWithMaterialsFirst(t *testing.T) {
-	tmpl := `<h1>加工製品</h1><section><h2>材料</h2><table><caption>材料</caption><tbody><tr><th>材質</th></tr></tbody></table></section>` +
+	tmpl := `<h1>加工製品</h1><section><h2>材料</h2><table><caption>材料表</caption><tbody><tr><th>材質</th></tr></tbody></table></section>` +
 		`<section><h2>図面</h2><dl data-type="tags"><dt>図面番号</dt><dd><br/></dd></dl>` +
 		`<section data-type="file-view" data-ref=""></section></section>` +
-		`<table><caption>改訂明細</caption><tbody><tr><th>版</th><th>図面番号</th><th>受領日</th></tr>` +
+		`<table><caption>改訂明細表</caption><tbody><tr><th>版</th><th>図面番号</th><th>受領日</th></tr>` +
 		`<tr><td>1</td><td></td><td></td></tr></tbody></table>`
 	j := &orderJudgment{DocType: "drawing", DrawingNo: "K120-1", DrawingName: "ブラケット", Customer: "みなと商店"}
 	body, err := buildProductPageHTML(tmpl, "000001", "pdf001", j, []matchedDXF{{AttachID: "dxf001"}, {AttachID: "dxf002"}})
@@ -109,7 +109,7 @@ func TestProductPageFromTemplateWithMaterialsFirst(t *testing.T) {
 		t.Errorf("図面ブロックの取り出しが違います（最初の節を取っていないか・ブロックIDはあるか）:\n%s", blk)
 	}
 	if n := len(revisionRowRe.FindAllString(body, -1)); n != 1 {
-		t.Errorf("改訂明細の1版目が数えられません（行のブロックID）: %d\n%s", n, body)
+		t.Errorf("改訂明細表の1版目が数えられません（行のブロックID）: %d\n%s", n, body)
 	}
 	if !strings.Contains(InsertRevisionRow(body, "K120-1A"), "<td>2</td><td>K120-1A</td>") {
 		t.Errorf("改定で版2になりません:\n%s", InsertRevisionRow(body, "K120-1A"))

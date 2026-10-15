@@ -26,7 +26,7 @@ import (
 func TestOurOrderItemsCoverRealDocuments(t *testing.T) {
 	def, ok := cms.VocabDefByType("our-order-items")
 	if !ok {
-		t.Fatal("部材発注明細の宣言がありません")
+		t.Fatal("部材発注明細表の宣言がありません")
 	}
 	have := map[string]cms.ColumnType{}
 	for _, c := range def.Columns {

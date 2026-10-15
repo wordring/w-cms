@@ -24,7 +24,7 @@ import (
 func sentOrderBody(qty, status string) string {
 	return `<h1>部材発注　みなと商店</h1><dl data-type="tags"><dt>` + PurchaseNoTag + `</dt><dd>000070</dd>` +
 		`<dt>` + SupplierTag + `</dt><dd>みなと商店</dd><dt>` + PurchasedAtTag + `</dt><dd>2026-10-01</dd></dl>` +
-		`<table><caption>部材発注明細</caption><tbody>` +
+		`<table><caption>部材発注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
 		`<tr><td>000031</td><td>SS400</td><td>FB</td><td>t9*50*200</td><td>` + qty + `</td><td>本</td><td></td><td>` + status + `</td></tr>` +
 		`</tbody></table><section><h2>` + orderNoteHeading + `</h2><p><br/></p></section>`

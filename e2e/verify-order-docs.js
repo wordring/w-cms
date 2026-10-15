@@ -30,7 +30,7 @@ const check = (label, ok, note = '') => {
   try {
     await login(page, BASE);
     product = await makePage(page, '<h1>【E2E】資料の加工製品</h1>' +
-      '<table><caption>外注加工</caption><tbody><tr><th>番号</th><th>加工内容</th><th>個数</th></tr>' +
+      '<table><caption>外注加工表</caption><tbody><tr><th>番号</th><th>加工内容</th><th>個数</th></tr>' +
       '<tr><td>1</td><td>レーザー切断</td><td>1</td></tr></tbody></table>' +
       '<details open><summary>資料 1</summary><p>図面</p></details>');
     check('加工製品を作れた', !!product, product);
@@ -52,7 +52,7 @@ const check = (label, ok, note = '') => {
 
     order = await makePage(page, '<h1>【E2E】資料の発注書</h1>' +
       '<dl data-type="tags"><dt>仕入先</dt><dd>ひかりレーザー</dd></dl>' +
-      '<table><caption>部材発注明細</caption><tbody>' +
+      '<table><caption>部材発注明細表</caption><tbody>' +
       '<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>品名</th><th>加工内容</th><th>数量</th><th>状態</th></tr>' +
       '<tr><td>' + product + '</td><td>外注加工</td><td>1</td><td>ブラケット</td><td>レーザー切断</td><td>1</td><td>未発注</td></tr>' +
       '</tbody></table>');

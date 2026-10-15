@@ -228,18 +228,18 @@ func TestMirrorMarkerKeepsContentAndHeadingDoesNotMirror(t *testing.T) {
 // （2026-09-29 まではこの試験が「見出しで名乗る節」で同じことを確かめていた——見出しの形は廃止）。
 // ここが黙ると「改名で計算が読めなくなったのに告知ゼロ」という穴が再来する。
 func TestCaptionRenameIsNotified(t *testing.T) {
-	body := `<table><caption>受注明細</caption>` +
+	body := `<table><caption>受注明細表</caption>` +
 		`<tr><th>品番</th><th>品名（変更）</th><th>単価</th><th>数量</th><th>状態</th></tr>` + // 品名→品名（変更）
 		`<tr><td>A</td><td>B</td><td>1</td><td>2</td><td>未着手</td></tr></table>`
 
 	got := UnresolvedVocabFields(body)
 	found := false
 	for _, g := range got {
-		if g == "受注明細: 品名" {
+		if g == "受注明細表: 品名" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("改名告知に %q がありません: %v", "受注明細: 品名", got)
+		t.Errorf("改名告知に %q がありません: %v", "受注明細表: 品名", got)
 	}
 }

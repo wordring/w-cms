@@ -18,7 +18,7 @@ import (
 func rfqDocsBody(state string) string {
 	return `<h1>部材見積依頼　ひかりレーザー</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000050</dd><dt>` + SupplierTag +
 		`</dt><dd>ひかりレーザー</dd><dt>` + RFQDateTag + `</dt><dd>2026-10-05</dd></dl>` +
-		`<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
+		`<table><caption>部材見積依頼明細表</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
 		`<tr><td>000031</td><td>外注加工</td><td>1</td><td>レーザー切断</td><td>10</td><td>個</td><td></td><td>` + state + `</td></tr>` +
 		`</tbody></table><section><h2>備考</h2><p>標準2輪用</p></section>`
 }

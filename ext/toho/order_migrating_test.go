@@ -28,7 +28,7 @@ func TestBacklogSkipsMigratingOrders(t *testing.T) {
 	// 193 に「移行中」を付け直す。
 	body := `<h1>受注</h1><dl data-type="tags"><dt>発注元</dt><dd>あけぼの精工</dd>` +
 		`<dt>納期</dt><dd>2026-10-15</dd><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
-		`<table><caption>受注明細</caption><tbody>` +
+		`<table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		item("A-2", "移した注文", "10", "2026-10-15", "") + `</tbody></table>`

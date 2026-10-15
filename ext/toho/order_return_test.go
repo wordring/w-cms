@@ -15,7 +15,7 @@ import (
 func returnTestBody() string {
 	return `<h1>発注 みなと商店</h1>` +
 		`<dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd></dl>` +
-		`<table><caption>部材発注明細</caption><tbody>` +
+		`<table><caption>部材発注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>状態</th></tr>` +
 		`<tr><td>000031</td><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>6</td><td>発注済</td></tr>` +
 		`<tr><td>000031</td><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>3</td><td>未発注</td></tr>` +
@@ -35,7 +35,7 @@ func TestRemoveOrderRowTakesOnlyThatRow(t *testing.T) {
 	if strings.Contains(got, "t4.5*75*1090") {
 		t.Errorf("⚠ 2行目が残っています:\n%s", got)
 	}
-	for _, keep := range []string{"<th>弊社品番</th>", "t3.2*100*200", "t9*100*150", "<caption>部材発注明細</caption>"} {
+	for _, keep := range []string{"<th>弊社品番</th>", "t3.2*100*200", "t9*100*150", "<caption>部材発注明細表</caption>"} {
 		if !strings.Contains(got, keep) {
 			t.Errorf("⚠ %s まで消えました:\n%s", keep, got)
 		}
@@ -59,7 +59,7 @@ func TestRemoveOrderRowKeepsTheTable(t *testing.T) {
 			t.Fatalf("%d回目で外せません:\n%s", i+1, body)
 		}
 	}
-	if !strings.Contains(body, "<caption>部材発注明細</caption>") || !strings.Contains(body, "<th>弊社品番</th>") {
+	if !strings.Contains(body, "<caption>部材発注明細表</caption>") || !strings.Contains(body, "<th>弊社品番</th>") {
 		t.Errorf("⚠ 表ごと消えています:\n%s", body)
 	}
 }

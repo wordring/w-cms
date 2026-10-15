@@ -48,7 +48,7 @@ var testFixtureVocab = []VocabDef{
 	},
 	{
 		Type:        "client-order-items",
-		DisplayName: "受注明細",
+		DisplayName: "受注明細表",
 		Category:    "業務",
 		Icon:        "📩",
 		Element:     "table",

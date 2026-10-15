@@ -28,7 +28,7 @@ func rfqReplyRowHTML(mat, size, qty, price, note, state string) string {
 func rfqReplyBody(rows ...string) string {
 	return `<h1>部材見積依頼　わかば鋼業</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000050</dd><dt>` + SupplierTag +
 		`</dt><dd>わかば鋼業</dd><dt>` + RFQAnsweredTag + `</dt><dd><br/></dd></dl>` +
-		`<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th>` +
+		`<table><caption>部材見積依頼明細表</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th>` +
 		`<th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` + strings.Join(rows, "") + `</tbody></table>`
 }
 

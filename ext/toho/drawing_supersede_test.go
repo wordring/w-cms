@@ -47,8 +47,8 @@ func TestSupersedeDrawingMovesOldToChild(t *testing.T) {
 		t.Errorf("⚠ 本文が釣り合っていません:\n%s", after)
 	}
 	// 新しい図面は古い図面のいた場所（改訂明細より上）。
-	if i, j := strings.Index(after, "<dd>X2</dd>"), strings.Index(after, "<caption>改訂明細</caption>"); i < 0 || j < 0 || i > j {
-		t.Errorf("新しい図面が改訂明細より上にありません:\n%s", after)
+	if i, j := strings.Index(after, "<dd>X2</dd>"), strings.Index(after, "<caption>改訂明細表</caption>"); i < 0 || j < 0 || i > j {
+		t.Errorf("新しい図面が改訂明細表より上にありません:\n%s", after)
 	}
 	// 旧版の子ページ——題と、古い図面のブロックごと。
 	title, ok := findChildByTitle(dst, "旧版 X1 ブラケット")
@@ -61,10 +61,10 @@ func TestSupersedeDrawingMovesOldToChild(t *testing.T) {
 	}
 	// 改訂明細——X2 の行が足され、X1 の行は旧版ページへのリンク。
 	if !strings.Contains(after, "<td>X2</td>") {
-		t.Errorf("改訂明細に X2 の行がありません:\n%s", after)
+		t.Errorf("改訂明細表に X2 の行がありません:\n%s", after)
 	}
 	if !strings.Contains(after, `<a href="/`+oldPage+`">X1</a>`) {
-		t.Errorf("改訂明細の X1 が旧版ページへのリンクになっていません:\n%s", after)
+		t.Errorf("改訂明細表の X1 が旧版ページへのリンクになっていません:\n%s", after)
 	}
 	// 品名は変わっていないので、品名を2つにしない。
 	if strings.Count(after, "<dt>"+ItemNameTag+"</dt>") > 1 {
@@ -153,10 +153,10 @@ func TestSupersedeDrawingIndentedBody(t *testing.T) {
 	}
 	after, _ := cms.ReadPageBody(dst)
 	if !strings.Contains(after, "<td>2</td><td>P2</td>") {
-		t.Errorf("改訂明細の新しい行が版2になっていません（字下げされた行を数えていない）:\n%s", after)
+		t.Errorf("改訂明細表の新しい行が版2になっていません（字下げされた行を数えていない）:\n%s", after)
 	}
 	if !strings.Contains(after, `<a href="/`+oldPage+`">P1</a>`) {
-		t.Errorf("改訂明細の P1 が旧版ページへのリンクになっていません:\n%s", after)
+		t.Errorf("改訂明細表の P1 が旧版ページへのリンクになっていません:\n%s", after)
 	}
 }
 

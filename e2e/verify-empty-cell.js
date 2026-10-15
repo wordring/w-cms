@@ -20,7 +20,7 @@ const check = (label, ok, note = '') => {
 };
 
 const BODY = '<h1>【E2E】空のセル</h1>' +
-  '<table><caption>材料</caption><tbody>' +
+  '<table><caption>材料表</caption><tbody>' +
   '<tr><th>材質</th><th>形状</th><th>寸法</th></tr>' +
   '<tr><td>鉄</td><td>板</td><td>t3.2</td></tr>' +
   '<tr><td></td><td></td><td></td></tr>' +

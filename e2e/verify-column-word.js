@@ -24,11 +24,11 @@ const { login, makePage, deletePage } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 const BODY = '<h1>【E2E】列の語彙</h1>' +
-  '<table><caption>受注明細</caption><tbody>' +
+  '<table><caption>受注明細表</caption><tbody>' +
   '<tr><th>品番</th><th>数量</th><th>単位</th><th>納期</th><th>状態</th></tr>' +
   '<tr><td>E2E-CW-1</td><td>2</td><td>個</td><td>最短納期</td><td>未着手</td></tr>' +
   '</tbody></table>' +
-  '<table><caption>部材発注明細</caption><tbody>' +
+  '<table><caption>部材発注明細表</caption><tbody>' +
   '<tr><th>材質</th><th>数量</th><th>状態</th></tr>' +
   '<tr><td>E2E-CW-SS400</td><td>1</td><td>未発注</td></tr>' +
   '</tbody></table>';
@@ -82,10 +82,10 @@ const BODY = '<h1>【E2E】列の語彙</h1>' +
     await page.waitForTimeout(1200);
 
     // ① 閲覧モードで印が付く（validateTypedTables は閲覧でも走る）
-    const dueSel = await cellSel('受注明細', '納期');
+    const dueSel = await cellSel('受注明細表', '納期');
     const dueBad = dueSel && await page.$eval(dueSel, (c) => c.classList.contains('cell-invalid'));
-    say(dueSel && !dueBad, '受注明細の「最短納期」が薄赤にならない（納期は text）');
-    const qtySel = await cellSel('受注明細', '数量');
+    say(dueSel && !dueBad, '受注明細表の「最短納期」が薄赤にならない（納期は text）');
+    const qtySel = await cellSel('受注明細表', '数量');
     const qtyKnown = qtySel && await page.$eval(qtySel, (c) => c.classList.contains('cell-known'));
     say(!!qtyKnown, '数量は読めた印が付く（型の検査そのものは効いている）');
 
@@ -94,17 +94,17 @@ const BODY = '<h1>【E2E】列の語彙</h1>' +
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
     await page.waitForTimeout(600);
 
-    const units = await menuFor('受注明細', '単位');
+    const units = await menuFor('受注明細表', '単位');
     say(units && units.length === 6 && units.includes('kg'),
-      '受注明細の単位の選択肢が語彙の6つ（' + JSON.stringify(units) + '）');
+      '受注明細表の単位の選択肢が語彙の6つ（' + JSON.stringify(units) + '）');
 
-    const orderState = await menuFor('受注明細', '状態');
+    const orderState = await menuFor('受注明細表', '状態');
     say(orderState && orderState.includes('未着手') && !orderState.includes('未発注'),
-      '受注明細の状態は既定の選択肢（' + JSON.stringify(orderState) + '）');
+      '受注明細表の状態は既定の選択肢（' + JSON.stringify(orderState) + '）');
 
-    const ourState = await menuFor('部材発注明細', '状態');
+    const ourState = await menuFor('部材発注明細表', '状態');
     say(ourState && ourState.includes('未発注') && !ourState.includes('未着手'),
-      '部材発注明細の状態は表の例外が先（' + JSON.stringify(ourState) + '）');
+      '部材発注明細表の状態は表の例外が先（' + JSON.stringify(ourState) + '）');
 
     await page.evaluate(() => document.getElementById('w-mode-toggle').click());
     await page.waitForTimeout(800);

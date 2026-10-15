@@ -39,7 +39,7 @@ function rawBody(id) {
     await login(page, BASE);
     id = await makePage(page, '<h1>【E2E】ファイル表示を外す</h1>' +
       '<section><h2>データ</h2><p>中身</p></section>' +
-      '<section><h2>材料</h2><table><caption>材料</caption><tbody>' +
+      '<section><h2>材料</h2><table><caption>材料表</caption><tbody>' +
       '<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
       '<tr><td>鉄</td><td>FB</td><td>t3.2*50*100</td><td>1</td></tr></tbody></table></section>');
     check('当て先を作れた', !!id, id);

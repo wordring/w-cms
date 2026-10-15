@@ -50,7 +50,7 @@ func seedOrderDocs(t *testing.T) {
 	putAttachment(t, "000031", "ph01.png", tinyPNG)
 	putAttachment(t, "000031", "dx01.dxf", []byte("0\nSECTION\n0\nEOF\n"))
 	writeBodyFile(t, 31, `<h1>ブラケット</h1>`+
-		`<table><caption>外注加工</caption><tbody><tr><th>番号</th><th>加工内容</th><th>個数</th></tr>`+
+		`<table><caption>外注加工表</caption><tbody><tr><th>番号</th><th>加工内容</th><th>個数</th></tr>`+
 		`<tr><td>1</td><td>レーザー切断</td><td>1</td></tr><tr><td>2</td><td>塗装</td><td>1</td></tr></tbody></table>`+
 		`<details open><summary>資料 1</summary>`+
 		`<section data-type="file-view" data-ref="000040-dr01"></section>`+

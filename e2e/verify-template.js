@@ -85,7 +85,7 @@ const TEMPLATE_BODY =
     '<dl data-type="tags"><dt>発注書番号</dt><dd><br></dd>' +
     '<dt>発注元</dt><dd>得意先A</dd>' +
     '<dt>発注日</dt><dd><br></dd></dl>' +
-    '<table data-id="tp01" data-type="client-order-items"><caption>受注明細</caption><tbody>' +
+    '<table data-id="tp01" data-type="client-order-items"><caption>受注明細表</caption><tbody>' +
     '<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
     '<tr><td>SAMPLE-1</td><td>見本</td><td>100</td><td>1</td><td>未着手</td></tr>' +
     '</tbody></table>';

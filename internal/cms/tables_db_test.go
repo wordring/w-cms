@@ -59,7 +59,7 @@ func TestTableNameNormalizes(t *testing.T) {
 		"ﾌﾟﾚｰﾄ":      "プレート",
 		"  a   b  ": "a b",
 		"品 番":        "品 番", // 中の空白は消さない
-		"受注明細":       "受注明細",
+		"受注明細表":      "受注明細表",
 	} {
 		if got := TableName(in); got != want {
 			t.Errorf("TableName(%q) = %q（期待 %q）", in, got, want)
@@ -74,7 +74,7 @@ func TestCaptionTablesGoToTablesDB(t *testing.T) {
 	tdb := newTestTablesDB(t)
 
 	pageA := `<h1>受注A</h1>` +
-		`<table><caption>受注明細</caption><tbody>` +
+		`<table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>品番</th><th>品名</th><th>数量</th></tr>` +
 		`<tr><td>a100 b01 001</td><td>留めﾌﾟﾚｰﾄ</td><td>３</td></tr>` +
 		`<tr><td></td><td></td><td></td></tr>` + // 空の行は入れない（でも行番号は数える）
@@ -82,26 +82,26 @@ func TestCaptionTablesGoToTablesDB(t *testing.T) {
 		`</tbody></table>` +
 		`<table><tbody><tr><th>名前の無い表</th></tr><tr><td>入らない</td></tr></tbody></table>` +
 		// 同じページの2つ目の「受注明細」——列が1つ多い（統合される）
-		`<table><caption> 受注明細 </caption><tbody>` +
+		`<table><caption> 受注明細表 </caption><tbody>` +
 		`<tr><th>品番</th><th>備考</th></tr><tr><td>A100-B01-003</td><td>一行目<br>二行目</td></tr>` +
 		`</tbody></table>`
 	if err := SyncIndex("000010", pageA); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
 	}
-	pageB := `<h1>受注B</h1><table><caption>受注明細</caption><tbody>` +
+	pageB := `<h1>受注B</h1><table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>品番</th><th>Qty</th></tr><tr><td>K120-01-211</td><td>5</td></tr></tbody></table>` +
-		`<table><caption>受注明細</caption><tbody>` +
+		`<table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>品番</th><th>QTY</th></tr><tr><td>K120-01-212</td><td>6</td></tr></tbody></table>`
 	if err := SyncIndex("000011", pageB); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
 	}
 
 	tables := queryStrings(t, tdb, `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
-	if strings.Join(tables, ",") != "受注明細" {
-		t.Fatalf("表は「受注明細」1つのはず（名前の無い表は入らない）: %v", tables)
+	if strings.Join(tables, ",") != "受注明細表" {
+		t.Fatalf("表は「受注明細表」1つのはず（名前の無い表は入らない）: %v", tables)
 	}
 	// 列の統合——見出しの和集合。Qty と QTY は SQLite では同じ列（ASCII の大小を区別しない）。
-	cols := queryStrings(t, tdb, `SELECT name FROM pragma_table_info('受注明細')`)
+	cols := queryStrings(t, tdb, `SELECT name FROM pragma_table_info('受注明細表')`)
 	if got := strings.Join(cols, ","); got != "page_id,table_id,row_id,品番,品名,数量,備考,Qty" {
 		t.Errorf("列が違います: %s", got)
 	}
@@ -109,7 +109,7 @@ func TestCaptionTablesGoToTablesDB(t *testing.T) {
 	// 日本語の名前は**引用符なしで**引ける（これがやりたかったこと）。
 	got := queryStrings(t, tdb,
 		`SELECT 品番 || '|' || coalesce(品名,'') || '|' || coalesce(数量,'') || '|' || table_id || '|' || row_id
-		   FROM 受注明細 WHERE page_id = 10 ORDER BY table_id, row_id`)
+		   FROM 受注明細表 WHERE page_id = 10 ORDER BY table_id, row_id`)
 	want := []string{
 		"A100B01001|留めプレート|3|1|1", // code は畳む・text は NFKC・number は数
 		"A100-B01-002|カバー|1200|1|3",  // 空の行（2行目）を飛ばしても行番号は画面の位置のまま
@@ -119,14 +119,14 @@ func TestCaptionTablesGoToTablesDB(t *testing.T) {
 		t.Errorf("行が違います:\n%s\n（期待）\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 	// 数は**数として**入る（"8000" < "900" の事故を起こさない）。
-	if typ := queryStrings(t, tdb, `SELECT typeof(数量) FROM 受注明細 WHERE row_id = 3 AND page_id = 10`); len(typ) != 1 || typ[0] != "integer" {
+	if typ := queryStrings(t, tdb, `SELECT typeof(数量) FROM 受注明細表 WHERE row_id = 3 AND page_id = 10`); len(typ) != 1 || typ[0] != "integer" {
 		t.Errorf("数量が数として入っていません: %v", typ)
 	}
 	// <br> は改行として残る（複数行の備考を1行に潰さない）。
-	if note := queryStrings(t, tdb, `SELECT 備考 FROM 受注明細 WHERE page_id = 10 AND table_id = 2`); len(note) != 1 || note[0] != "一行目\n二行目" {
+	if note := queryStrings(t, tdb, `SELECT 備考 FROM 受注明細表 WHERE page_id = 10 AND table_id = 2`); len(note) != 1 || note[0] != "一行目\n二行目" {
 		t.Errorf("備考の改行が落ちています: %q", note)
 	}
-	if qty := queryStrings(t, tdb, `SELECT qty FROM 受注明細 WHERE page_id = 11 ORDER BY table_id`); strings.Join(qty, ",") != "5,6" {
+	if qty := queryStrings(t, tdb, `SELECT qty FROM 受注明細表 WHERE page_id = 11 ORDER BY table_id`); strings.Join(qty, ",") != "5,6" {
 		t.Errorf("Qty と QTY が同じ列に入っていません: %v", qty)
 	}
 }
@@ -207,7 +207,7 @@ func TestTablesDBExclusions(t *testing.T) {
 	t.Cleanup(func() { tablesExclusions = saved })
 	RegisterTablesExclusion(func(root *html.Node) bool { return HasTag(root, "試験の印") })
 
-	table := `<table><caption>材料</caption><tbody><tr><th>材質</th></tr><tr><td>鉄</td></tr></tbody></table>`
+	table := `<table><caption>材料表</caption><tbody><tr><th>材質</th></tr><tr><td>鉄</td></tr></tbody></table>`
 	// 値の無いタグでも「在るだけで止める」。
 	marked := `<h1>p</h1><dl data-type="tags"><dt>試験の印</dt><dd><br></dd></dl>` + table
 	if err := SyncIndex("000040", marked); err != nil {
@@ -220,7 +220,7 @@ func TestTablesDBExclusions(t *testing.T) {
 	if err := SyncIndex("000041", `<h1>q</h1>`+table); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
 	}
-	if got := queryStrings(t, tdb, `SELECT 材質 FROM 材料`); strings.Join(got, ",") != "鉄" {
+	if got := queryStrings(t, tdb, `SELECT 材質 FROM 材料表`); strings.Join(got, ",") != "鉄" {
 		t.Errorf("印の無いページの表が入っていません: %v", got)
 	}
 }
@@ -251,7 +251,7 @@ func TestSQLNamesForEditor(t *testing.T) {
 // TestIdentNeedsQuote は、引用符の要る名前の見分けを固定します（予約語は実際に試して決める）。
 func TestIdentNeedsQuote(t *testing.T) {
 	for name, want := range map[string]bool{
-		"品番": false, "受注明細": false, "顧客の発注書（読んだまま）": false, "Qty": false, "_x": false,
+		"品番": false, "受注明細表": false, "顧客の発注書（読んだまま）": false, "Qty": false, "_x": false,
 		"Order": true, "select": true, "受注 明細": true, "単価(円)": true, "1列": true, "": true,
 	} {
 		if got := identNeedsQuote(name); got != want {
@@ -267,7 +267,7 @@ func TestResetTablesDB(t *testing.T) {
 	if !tablesDBOutdated() {
 		t.Fatal("作ったばかりの写しは「古い」はず（初回に作り直すため）")
 	}
-	if err := SyncIndex("000050", `<h1>p</h1><table><caption>材料</caption><tbody><tr><th>材質</th></tr><tr><td>鉄</td></tr></tbody></table>`); err != nil {
+	if err := SyncIndex("000050", `<h1>p</h1><table><caption>材料表</caption><tbody><tr><th>材質</th></tr><tr><td>鉄</td></tr></tbody></table>`); err != nil {
 		t.Fatalf("SyncIndex: %v", err)
 	}
 	if err := ResetTablesDB(); err != nil {

@@ -45,7 +45,7 @@ func TestDataTypeBeatsCaption(t *testing.T) {
 	setupSaveTest(t)
 
 	body := `<h1>混在</h1>` +
-		`<table data-type="inspection-record"><caption>受注明細</caption><tbody>` +
+		`<table data-type="inspection-record"><caption>受注明細表</caption><tbody>` +
 		`<tr><th>品番</th><th>判定</th></tr>` +
 		`<tr><td>A1</td><td>合格</td></tr>` +
 		`</tbody></table>`

@@ -54,7 +54,7 @@ const check = (label, ok, note = '') => {
     await page.goto(BASE + '/' + est);
     await page.waitForSelector('#w-editor-content .estimate-total', { timeout: 10000 }).catch(() => {});
     const view = await page.evaluate(() => {
-      const t = [...document.querySelectorAll('#w-editor-content table')].find(x => (x.querySelector('caption') || {}).textContent === '見積明細');
+      const t = [...document.querySelectorAll('#w-editor-content table')].find(x => (x.querySelector('caption') || {}).textContent === '見積明細表');
       return {
         title: document.querySelector('#w-editor-content h1').textContent,
         table: t ? t.innerText.replace(/\s+/g, ' ') : '',
@@ -62,7 +62,7 @@ const check = (label, ok, note = '') => {
       };
     });
     check('題は「見積　客先」', view.title === '見積　【E2E】客先', view.title);
-    check('見積明細に品番・品名・ロット・単価・備考（表面処理）', view.table.includes('E2E-EST-1') && view.table.includes('【E2E】カバー') &&
+    check('見積明細表に品番・品名・ロット・単価・備考（表面処理）', view.table.includes('E2E-EST-1') && view.table.includes('【E2E】カバー') &&
       view.table.includes('20') && view.table.includes('402') && view.table.includes('塗装無し'), view.table.slice(0, 200));
     check('③ 合計（税抜）', view.total.includes('合計（税抜）: 8,040円'), view.total);
     check('メールで送る欄がある', await page.locator('#w-editor-content details.estimate-mail [data-mail-compose="見積書"]').count() === 1);

@@ -32,7 +32,7 @@ const BOX = '<h1>【E2E】見積依頼の置き場</h1>' +
   '<tr><td></td><td></td><td>E2E-RFQ-真鍮</td><td>板</td><td>t1</td><td></td><td>3</td><td></td><td></td></tr></tbody></table>' +
   '<section><table><caption>見積依頼必要部材表</caption><tbody>' + row(NEEDS, 'th') + '<tr>' + '<td></td>'.repeat(NEEDS.length) + '</tr></tbody></table></section>';
 const PRODUCT = '<h1>【E2E】見積依頼の加工製品</h1>' +
-  '<table><caption>材料</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
+  '<table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
   '<tr><td>E2E-RFQ-鉄</td><td>板</td><td>t3.2*100*200</td><td>2</td></tr>' +
   '<tr><td>E2E-RFQ-SUS</td><td>丸棒</td><td>φ20*50</td><td>1</td></tr></tbody></table>' +
   '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td></td><td></td></tr></tbody></table>' +

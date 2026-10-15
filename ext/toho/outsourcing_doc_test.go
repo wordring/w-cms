@@ -33,7 +33,7 @@ import (
 func TestOutsourcingHasNoDocColumn(t *testing.T) {
 	def, ok := cms.VocabDefByType("part-outsourcing")
 	if !ok {
-		t.Fatal("外注加工の宣言がありません")
+		t.Fatal("外注加工表の宣言がありません")
 	}
 	for _, c := range def.Columns {
 		if c.Label == "資料" {

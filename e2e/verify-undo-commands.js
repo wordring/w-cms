@@ -183,7 +183,7 @@ const MARK = 'E2E' + Date.now().toString(36).toUpperCase();
     // ⑩ 節の中を直して保存したあと、全部戻して待っても、やり直しが残る（利用者:「アンドゥし続けて、アンドゥバッファが空になると、
     //    リドゥバッファも空になっていませんか？」——保存の前に節の中の要素へ振った ID を「変更」として拾い、やり直しを消していた）
     id2 = await makePage(page, '<h1>' + MARK + ' 節</h1><p data-id="pa01">段落Aabcd</p><p data-id="pb02">段落B</p>' +
-      '<section data-id="se06"><h2>材料</h2><p>節の段落</p><table><caption>材料</caption><tbody><tr><th>品</th></tr><tr><td>鉄</td></tr></tbody></table></section>');
+      '<section data-id="se06"><h2>材料</h2><p>節の段落</p><table><caption>材料表</caption><tbody><tr><th>品</th></tr><tr><td>鉄</td></tr></tbody></table></section>');
     await page.goto(BASE + '/' + id2);
     await page.evaluate(() => { const t = document.getElementById('w-mode-toggle'); if (!t.checked) { t.checked = true; t.dispatchEvent(new Event('change', { bubbles: true })); } });
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });

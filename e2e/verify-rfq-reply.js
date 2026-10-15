@@ -58,7 +58,7 @@ const today = () => {
   const statusOf = async (id) => page.evaluate(async (pid) => {
     const html = await (await fetch('/api/load?id=' + pid)).text();
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    const t = Array.from(doc.querySelectorAll('table')).find((x) => (x.querySelector('caption') || {}).textContent === '部材見積依頼明細');
+    const t = Array.from(doc.querySelectorAll('table')).find((x) => (x.querySelector('caption') || {}).textContent === '部材見積依頼明細表');
     const trs = Array.from(t.querySelectorAll('tbody tr')).slice(1).filter((tr) => !tr.closest('tfoot'));
     const dd = Array.from(doc.querySelectorAll('dl[data-type="tags"] dt')).find((d) => d.textContent === '回答日');
     return { rows: trs.map((tr) => { const c = tr.querySelectorAll('td'); return c[7].textContent + '/' + c[9].textContent; }), answered: dd ? dd.nextElementSibling.textContent.trim() : '' };
@@ -74,7 +74,7 @@ const today = () => {
     await upload(rfq, '見積依頼書 ' + rfq + ' 20261005-000000.pdf');
     await saveBody(rfq, '<h1>部材見積依頼　【E2E】業者</h1><dl data-type="tags"><dt>部材見積依頼番号</dt><dd>' + rfq + '</dd>' +
       '<dt>仕入先</dt><dd>【E2E】業者</dd><dt>回答日</dt><dd><br/></dd></dl>' +
-      '<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>' +
+      '<table><caption>部材見積依頼明細表</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>' +
       row('SS400', 't6*80*120', '6', '900') + row('A5052', 't3*50*50', '2', '') + '</tbody></table>');
 
     await page.goto(BASE + '/' + rfq);

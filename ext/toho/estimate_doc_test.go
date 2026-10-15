@@ -105,7 +105,7 @@ func TestEstimatePDFRoundTrips(t *testing.T) {
 		`<dl data-type="tags"><dt>見積番号</dt><dd>000300</dd><dt>見積先</dt><dd>みなと商店</dd><dt>見積先担当</dt><dd>山川</dd>` +
 		`<dt>見積日</dt><dd>2026-10-01</dd><dt>受渡期日</dt><dd>受注後2週間</dd><dt>受渡場所</dt><dd>貴社</dd>` +
 		`<dt>取引方法</dt><dd>従来通り</dd><dt>有効期限</dt><dd>1カ月</dd></dl>` +
-		`<table><caption>見積明細</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>` +
+		`<table><caption>見積明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>` +
 		`<tr><td>000080</td><td>A100-B01-001</td><td>取付ブラケット</td><td>20</td><td>個</td><td>402</td><td>塗装無し</td></tr>` +
 		`</tbody></table><section><h2>備考</h2><p>レーザー加工穴でのお見積もりとなります。</p></section>`
 	pdf, err := buildEstimatePDF(body, nil)
@@ -208,7 +208,7 @@ func TestEstimateFromFolder(t *testing.T) {
 	first := strings.Index(body, "<td>000031</td><td>A100-B01-1</td><td>取付ベース</td><td>40</td><td>個</td><td>550</td><td>塗装あり</td>")
 	second := strings.Index(body, "<td>000031</td><td>A100-B01-1</td><td>取付ベース</td><td>20</td><td>個</td><td>402</td>")
 	if first < 0 || second < 0 || first > second {
-		t.Errorf("見積明細が送った順に入っていません:\n%s", body)
+		t.Errorf("見積明細表に送った順に入っていません:\n%s", body)
 	}
 	if !strings.Contains(body, "<dt>"+EstimateClientTag+"</dt><dd>みなと商店</dd>") {
 		t.Errorf("見積先が入っていません:\n%s", body)
@@ -297,7 +297,7 @@ func TestEstimateNoteBox(t *testing.T) {
 		return cms.RenderComputedViews(req, pageNum(est), readPageBody(t, est))
 	}
 	if html := show(); !strings.Contains(html, `class="estimate-note-input" rows="3"></textarea>`) {
-		t.Fatalf("見積明細の下に空の備考の欄がありません:\n%s", html)
+		t.Fatalf("見積明細表の下に空の備考の欄がありません:\n%s", html)
 	}
 	post := func(id, note string) int {
 		t.Helper()

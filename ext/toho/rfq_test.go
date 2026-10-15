@@ -344,7 +344,7 @@ func TestRFQNewDoc(t *testing.T) {
 		t.Errorf("単価が写っています（業者に聞く前の値）:\n%s", body)
 	}
 	if got := rfqRows(t, body, RFQItemsType, 1); len(got) != 2 || strings.Count(body, ">"+rfqLineUnanswered+"<") != 2 {
-		t.Errorf("部材見積依頼明細が2行・未回答ではありません: %+v", got)
+		t.Errorf("部材見積依頼明細表が2行・未回答ではありません: %+v", got)
 	}
 	// 置き場は 部材見積依頼／年／月。
 	meta, _ := page.ReadSidecar(id)
@@ -363,7 +363,7 @@ func TestRFQPDFRoundTrips(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 	body := `<h1>部材見積依頼　わかば鋼業</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000310</dd><dt>` + SupplierTag +
 		`</dt><dd>わかば鋼業</dd><dt>` + RFQDateTag + `</dt><dd>2026-10-05</dd></dl>` +
-		`<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
+		`<table><caption>部材見積依頼明細表</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
 		`<tr><td>000080</td><td>材料</td><td>SS400</td><td>板</td><td>t6*80*120</td><td>6</td><td>枚</td><td>999</td><td>未回答</td></tr>` +
 		`<tr><td>000081</td><td>材料</td><td>A5052</td><td>丸棒</td><td>φ30*50</td><td>2</td><td>本</td><td></td><td>辞退</td></tr>` +
 		`</tbody></table><section><h2>備考</h2><p>標準2輪用</p></section>`
@@ -409,7 +409,7 @@ func TestRFQDocFooterAndSend(t *testing.T) {
 		}
 	}
 	// 送る欄は PDF の下——ファイル表示は明細の直後、「部材見積依頼を送る」は末尾（テンプレートの最後）。
-	if strings.Index(shown, "部材見積依頼を送る") < strings.Index(shown, "<caption>部材見積依頼明細</caption>") {
+	if strings.Index(shown, "部材見積依頼を送る") < strings.Index(shown, "<caption>部材見積依頼明細表</caption>") {
 		t.Errorf("「部材見積依頼を送る」が明細より上にあります")
 	}
 	d, err := rfqMailDefaults(root, id)

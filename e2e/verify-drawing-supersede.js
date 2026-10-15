@@ -63,7 +63,7 @@ const check = (label, ok, note = '') => {
     const c = await upload(id, '【E2E】資料.pdf');
     check('添付を3つ置けた', !!a && !!b && !!c, [a, b, c].join(','));
     await saveBody(id, '<h1>【E2E】あとから改定</h1>' + drawing('E2E-A1', '試験の台', id + '-' + a) + drawing('E2E-A2', '試験の台', id + '-' + b) +
-      '<table>\n    <caption>改訂明細</caption>\n    <tbody>\n        <tr>\n            <th>版</th>\n            <th>図面番号</th>\n            <th>受領日</th>\n        </tr>\n' +
+      '<table>\n    <caption>改訂明細表</caption>\n    <tbody>\n        <tr>\n            <th>版</th>\n            <th>図面番号</th>\n            <th>受領日</th>\n        </tr>\n' +
       '        <tr data-id="e2r1">\n            <td>1</td>\n            <td>E2E-A1</td>\n            <td>2026-10-01</td>\n        </tr>\n    </tbody>\n</table>\n' +
       '<section><h2>データ</h2>' + fv(id + '-' + c) + '</section>');
 
@@ -108,9 +108,9 @@ const check = (label, ok, note = '') => {
     if (old) made.unshift(old.ID);
     check('③ 押した図面（A2）だけが残る', JSON.stringify(body.drawings) === '["A2"]', JSON.stringify(body.drawings));
     check('③ もう片方は「旧版 E2E-A1 試験の台」の子ページへ', !!old, JSON.stringify(kids));
-    check('③ 改訂明細の E2E-A1 は旧版ページへのリンク', !!old && body.link.includes('/' + old.ID + ' E2E-A1'), JSON.stringify(body.link));
+    check('③ 改訂明細表の E2E-A1 は旧版ページへのリンク', !!old && body.link.includes('/' + old.ID + ' E2E-A1'), JSON.stringify(body.link));
     const html = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);
-    check('③ 改訂明細に E2E-A2 の行（版2——字下げされた版1の行も数える）', /<td>2<\/td><td>E2E-A2<\/td>/.test(html));
+    check('③ 改訂明細表に E2E-A2 の行（版2——字下げされた版1の行も数える）', /<td>2<\/td><td>E2E-A2<\/td>/.test(html));
     if (old) {
       const oldHtml = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), old.ID);
       check('③ 旧版ページに古い図面（ファイルごと）', oldHtml.includes('E2E-A1') && oldHtml.includes(id + '-' + a), '');

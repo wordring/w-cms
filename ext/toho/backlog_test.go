@@ -24,7 +24,7 @@ func seedOrder(t *testing.T, idInt, rootInt int, client, due string, rows string
 		`<dt>発注書番号</dt><dd>PO-` + page.FormatID(idInt) + `</dd>` +
 		`<dt>発注元</dt><dd>` + client + `</dd>` +
 		`<dt>納期</dt><dd>` + due + `</dd></dl>` +
-		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細</caption><tbody>` +
+		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		rows + `</tbody></table>`
@@ -281,7 +281,7 @@ func TestBacklogDropsDoneRows(t *testing.T) {
 func TestBacklogStatusEnumHasDone(t *testing.T) {
 	def, ok := cms.VocabDefByType(clientOrderItemsType)
 	if !ok {
-		t.Fatal("受注明細の宣言がありません")
+		t.Fatal("受注明細表の宣言がありません")
 	}
 	for _, c := range def.Columns {
 		if c.Label != "状態" {
@@ -416,7 +416,7 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 	// 404 を「移行中」にする（受注残に並ばない——合計にも入らない）。
 	body := `<h1>受注</h1><dl data-type="tags"><dt>発注元</dt><dd>やまと工作所</dd>` +
 		`<dt>納期</dt><dd>2026-10-20</dd><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
-		`<table><caption>受注明細</caption><tbody>` +
+		`<table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		pricedItem("C-1", "移した注文", "9", "10000", "", "未着手") + `</tbody></table>`

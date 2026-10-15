@@ -24,7 +24,7 @@ import (
 func TestOrderItemColumns(t *testing.T) {
 	def, ok := cms.VocabDefByType("client-order-items")
 	if !ok {
-		t.Fatal("受注明細の形式が登録されていません")
+		t.Fatal("受注明細表の形式が登録されていません")
 	}
 	want := []struct {
 		label string
@@ -108,7 +108,7 @@ func TestRevisionHeaderMatchesDeclaration(t *testing.T) {
 	// 作るので、同じページに材料などの表の見出しも並びます。
 	at := strings.Index(body, "<caption>"+displayNameOf(revisionItemsType)+"</caption>")
 	if at < 0 {
-		t.Fatalf("改訂明細の表がありません:\n%s", body)
+		t.Fatalf("改訂明細表がありません:\n%s", body)
 	}
 	table := body[at : at+strings.Index(body[at:], "</table>")]
 	if head, row := strings.Count(table, "<th>"), strings.Count(revisionRowHTML(1, "K120-1", ""), "<td>"); head != row {
@@ -266,7 +266,7 @@ func TestOrderPageHasCaption(t *testing.T) {
 	}
 	// ⚠ **表示名と同じ言葉であること**——違う言葉だと、caption で形式を宣言する
 	// 書き方へ移った日に**その表だけ認識されなくなります**。
-	if !strings.Contains(body, "<caption>受注明細</caption>") {
+	if !strings.Contains(body, "<caption>受注明細表</caption>") {
 		t.Errorf("キャプションが表示名と違います:\n%s", body)
 	}
 }

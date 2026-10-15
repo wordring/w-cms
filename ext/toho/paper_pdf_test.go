@@ -25,7 +25,7 @@ func estimatePaperBody() string {
 	return `<h1>見積　みなと商店</h1>` +
 		`<dl data-type="tags"><dt>見積番号</dt><dd>000300</dd><dt>見積先</dt><dd>みなと商店</dd><dt>見積先担当</dt><dd>山川</dd>` +
 		`<dt>見積日</dt><dd>2026-10-01</dd><dt>受渡期日</dt><dd>受注後2週間</dd></dl>` +
-		`<table><caption>見積明細</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>` +
+		`<table><caption>見積明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>` +
 		`<tr><td>000080</td><td>A100-B01-001</td><td>取付ブラケット</td><td>20</td><td>個</td><td>402</td><td>塗装無し</td></tr>` +
 		`</tbody></table><section><h2>備考</h2><p>レーザー加工穴でのお見積もりとなります。</p></section>`
 }
@@ -101,7 +101,7 @@ func TestOrderPDFDocsHandler(t *testing.T) {
 	root := &auth.User{Username: "root"}
 	put := func(no string) {
 		writeBodyFile(t, 50, `<h1>部材発注</h1><dl data-type="tags"><dt>部材発注書番号</dt><dd>45</dd><dt>`+SupplierTag+`</dt><dd>ひかりレーザー</dd></dl>`+
-			`<table data-type="`+ourOrderItemsType+`"><caption>部材発注明細</caption><tbody>`+
+			`<table data-type="`+ourOrderItemsType+`"><caption>部材発注明細表</caption><tbody>`+
 			`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>単位</th><th>状態</th></tr>`+
 			`<tr><td>000031</td><td>外注加工</td><td>`+no+`</td><td>レーザー切断</td><td>1</td><td>個</td><td>未発注</td></tr>`+
 			`</tbody></table>`)

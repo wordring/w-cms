@@ -20,7 +20,7 @@ const check = (label, ok, note = '') => {
 };
 
 const EST = '<h1>見積　【E2E】客先</h1><dl data-type="tags"><dt>見積番号</dt><dd>E2E</dd><dt>見積先</dt><dd>【E2E】客先</dd></dl>' +
-  '<table><caption>見積明細</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>' +
+  '<table><caption>見積明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>' +
   '<tr><td></td><td>E2E-MC-1</td><td>【E2E】部品</td><td>2</td><td>個</td><td>500</td><td></td></tr></tbody></table>' +
   '<section><h2>備考</h2><p><br/></p></section>';
 

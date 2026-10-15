@@ -57,7 +57,7 @@ func TestDimensionIndexDoesNotDoubleCount(t *testing.T) {
 	// 節の見出しと caption の**両方**が `材料` を名乗る形。
 	syncBody(t, 11, `<h1>加工製品</h1>`+
 		`<section><h2>材料</h2>`+
-		`<table><caption>材料</caption><tbody>`+
+		`<table><caption>材料表</caption><tbody>`+
 		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
 		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>2</td></tr>`+
 		`</tbody></table></section>`)
@@ -89,7 +89,7 @@ func TestDimensionIndexIgnoresPlainTableUnderHeading(t *testing.T) {
 	// 同じ表にキャプションを付ければ読む。
 	syncBody(t, 12, `<h1>加工製品</h1>`+
 		`<section><h2>材料</h2>`+
-		`<table><caption>材料</caption><tbody>`+
+		`<table><caption>材料表</caption><tbody>`+
 		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
 		`<tr><td>鉄</td><td>チャンネル</td><td>C125*65*t6*507</td><td>2</td></tr>`+
 		`</tbody></table></section>`)

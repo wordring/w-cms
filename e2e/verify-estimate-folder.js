@@ -88,13 +88,13 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     const raw = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), est);
     const a = raw.indexOf('<td>20</td><td>個</td><td>402</td>');
     const b = raw.indexOf('<td>40</td><td>個</td><td>550</td><td>塗装あり</td>');
-    check('② 見積明細に一覧の順で確定単価が入る', a > 0 && b > a, 'a=' + a + ' b=' + b);
+    check('② 見積明細表に一覧の順で確定単価が入る', a > 0 && b > a, 'a=' + a + ' b=' + b);
     check('② 見積先が入る', raw.includes('<dt>見積先</dt><dd>【E2E】客先</dd>'));
     check('② 見積書の「📄 PDFを作る」がある', await page.locator('#w-editor-content .estimate-pdf-go').count() === 1);
 
     // ⑤ 見積明細の下の備考の欄で書いて保存すると、「備考」の節に入る（2026-10-03）。
     const note = page.locator('#w-editor-content .estimate-note-input');
-    check('⑤ 見積明細の下に備考の欄がある', await note.count() === 1);
+    check('⑤ 見積明細表の下に備考の欄がある', await note.count() === 1);
     await note.fill('E2E 塗装は別途\nE2E 納期はご相談');
     await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('#w-editor-content .estimate-note-save').click()]);
     await page.waitForTimeout(1000);

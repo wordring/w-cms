@@ -121,7 +121,7 @@ func pdfOrderBody(rows string) string {
 		`<dt>` + SupplierTag + `</dt><dd>株式会社みなと商店</dd>` +
 		`<dt>部材発注日</dt><dd>2026-08-19</dd>` +
 		`<dt>備考</dt><dd>急ぎでお願いします</dd></dl>` +
-		`<table data-type="our-order-items"><caption>部材発注明細</caption><tbody>` +
+		`<table data-type="our-order-items"><caption>部材発注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>材質</th><th>形状</th>` +
 		`<th>寸法</th><th>表面</th><th>数量</th><th>単位</th><th>単価</th>` +
 		`<th>備考</th><th>状態</th></tr>` + rows + `</tbody></table>`
@@ -227,7 +227,7 @@ func TestOrderPDFNeedsFont(t *testing.T) {
 func TestOrderPDFRefusesNonOrderPage(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 	if _, err := buildOrderPDF(`<h1>ただのページ</h1><p>本文</p>`, nil); err == nil {
-		t.Fatal("部材発注明細が無いのにPDFを作っています")
+		t.Fatal("部材発注明細表が無いのにPDFを作っています")
 	}
 }
 
@@ -428,7 +428,7 @@ func TestOrderPDFPrintsNoteLines(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 	rows := `<tr><td></td><td></td><td></td><td>SS400</td><td>板</td><td>t3.2</td>` +
 		`<td></td><td>2</td><td>枚</td><td>800</td><td>社内メモ</td><td>未発注</td></tr>`
-	table := `<table><caption>部材発注明細</caption><tbody>` +
+	table := `<table><caption>部材発注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>材質</th><th>形状</th>` +
 		`<th>寸法</th><th>表面</th><th>数量</th><th>単位</th><th>単価</th>` +
 		`<th>備考</th><th>状態</th></tr>` + rows + `</tbody></table>`
@@ -478,7 +478,7 @@ func kindOrderBody(rows string) string {
 	return `<h1>部材発注</h1><dl data-type="tags">` +
 		`<dt>部材発注書番号</dt><dd>45</dd>` +
 		`<dt>` + SupplierTag + `</dt><dd>株式会社みなと商店</dd></dl>` +
-		`<table data-type="our-order-items"><caption>部材発注明細</caption><tbody>` +
+		`<table data-type="our-order-items"><caption>部材発注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>品番</th><th>品名</th><th>加工内容</th>` +
 		`<th>仕様</th><th>支給</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` +
 		rows + `</tbody></table>`

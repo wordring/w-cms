@@ -29,7 +29,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 const ORDER_BODY = '<h1>【E2E】発注 テスト商店（送る）</h1>' +
   '<dl data-type="tags"><dt>部材発注書番号</dt><dd>E2E-SEND</dd>' +
   '<dt>仕入先</dt><dd>テスト商店</dd><dt>部材発注日</dt><dd>2026-09-23</dd></dl>' +
-  '<table data-type="our-order-items"><caption>部材発注明細</caption><tbody>' +
+  '<table data-type="our-order-items"><caption>部材発注明細表</caption><tbody>' +
   '<tr><th>弊社品番</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
   '<tr><td>999999</td><td>E2E-SEND-A</td><td>板</td><td>t3.2</td><td>2</td><td>枚</td><td>800</td><td>未発注</td></tr>' +
   '<tr><td>999999</td><td>E2E-SEND-B</td><td>板</td><td>t1.5</td><td>1</td><td>枚</td><td>900</td><td>未発注</td></tr>' +
@@ -92,7 +92,7 @@ async function statusesOf(page) {
 
     const before = await statusesOf(page);
     if (!before || before.length < 2) {
-      console.log('✗ 部材発注明細に2行あるはずです: ' + JSON.stringify(before));
+      console.log('✗ 部材発注明細表に2行あるはずです: ' + JSON.stringify(before));
       bad++;
     } else {
       console.log('  いまの状態: ' + JSON.stringify(before));

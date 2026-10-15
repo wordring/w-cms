@@ -36,7 +36,7 @@ const check = (label, ok, note = '') => {
     const rfq = await makePage(page, '<h1>部材見積依頼　' + SUP + '</h1><p>x</p>', box);
     await saveBody(rfq, '<h1>部材見積依頼　' + SUP + '</h1><dl data-type="tags"><dt>部材見積依頼番号</dt><dd>' + rfq + '</dd><dt>仕入先</dt><dd>' + SUP +
       '</dd><dt>部材見積依頼日</dt><dd>2026-10-05</dd><dt>回答日</dt><dd><br/></dd></dl>' +
-      '<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>' +
+      '<table><caption>部材見積依頼明細表</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>' +
       '<tr><td>000031</td><td>材料</td><td>SS400</td><td>板</td><td>t6*80*120</td><td>6</td><td>枚</td><td></td><td></td><td>未回答</td></tr></tbody></table>');
     const mail = await makePage(page, '<h1>お見積りの件</h1><p>x</p>', box);
     const lock = await page.request.post(BASE + '/api/lock?id=' + mail, { headers: { Origin: BASE } });

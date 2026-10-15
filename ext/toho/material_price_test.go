@@ -345,7 +345,7 @@ func TestMaterialPriceColumnOnceWhenHeadingAndCaption(t *testing.T) {
 	row := `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td><td>廃版</td></tr>`
 
 	both := showMaterials(t, root, `<h1>加工製品</h1><section><h2>材料</h2>`+
-		`<table><caption>材料</caption><tbody>`+head+row+`</tbody></table></section>`)
+		`<table><caption>材料表</caption><tbody>`+head+row+`</tbody></table></section>`)
 	if n := strings.Count(both, priceHeadCell); n != 1 {
 		t.Errorf("見出しの節＋キャプションの表に、最新単価の列が %d 個あります:\n%s", n, both)
 	}
@@ -382,7 +382,7 @@ func TestMaterialPriceShowsQuoteWhenNothingBought(t *testing.T) {
 		addPage(t, id, 0, "部材見積依頼　"+supplier, owner, mode, mode != "300")
 		syncBody(t, id, `<h1>部材見積依頼　`+supplier+`</h1><dl data-type="tags"><dt>`+RFQNoTag+`</dt><dd>`+fmt.Sprintf("%06d", id)+
 			`</dd><dt>`+SupplierTag+`</dt><dd>`+supplier+`</dd><dt>`+RFQAnsweredTag+`</dt><dd>`+answered+`</dd></dl>`+
-			`<table><caption>部材見積依頼明細</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th><th>状態</th></tr>`+
+			`<table><caption>部材見積依頼明細表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th><th>状態</th></tr>`+
 			strings.Join(lines, "")+`</tbody></table>`)
 	}
 	line := func(mat, size, price, state string) string {

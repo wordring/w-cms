@@ -67,7 +67,7 @@ func TestProcurementFindsOrdersOutsideScope(t *testing.T) {
 	}
 	p := list[0]
 	if p.PageID != 31 || p.Qty != 3 {
-		t.Fatalf("受注明細の読み取りが違います: page=%d qty=%d why=%q", p.PageID, p.Qty, p.Why)
+		t.Fatalf("受注明細表の読み取りが違います: page=%d qty=%d why=%q", p.PageID, p.Qty, p.Why)
 	}
 	if len(p.Items) != 2 {
 		t.Fatalf("購入品が %d 件です（2件のはず）: %#v", len(p.Items), p.Items)

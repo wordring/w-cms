@@ -25,7 +25,7 @@ const CODE = 'E2E-DRAFT-' + Date.now().toString(36).toUpperCase();
 const PRODUCT_BODY = '<h1>【E2E】加工製品（発注部材表）</h1>' +
   // 客先＋品番で引く（2026-10-01）——受注の発注元と同じ客先が要る。
   '<dl data-type="tags"><dt>部品番号</dt><dd>' + CODE + '</dd><dt>客先</dt><dd>テスト商店</dd></dl>' +
-  '<table><caption>材料</caption><tbody>' +
+  '<table><caption>材料表</caption><tbody>' +
   '<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th><th>備考</th></tr>' +
   '<tr><td>E2E-DRAFT-A</td><td>板</td><td>t3.2</td><td>2</td><td></td></tr>' +
   '<tr><td>E2E-DRAFT-B</td><td>板</td><td>t1.5</td><td>1</td><td></td></tr>' +
@@ -33,7 +33,7 @@ const PRODUCT_BODY = '<h1>【E2E】加工製品（発注部材表）</h1>' +
 const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1>' +
   '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-DRAFT-PO</dd>' +
   '<dt>発注元</dt><dd>テスト商店</dd><dt>発注日</dt><dd>2026-09-23</dd></dl>' +
-  '<table data-type="client-order-items"><caption>受注明細</caption><tbody>' +
+  '<table data-type="client-order-items"><caption>受注明細表</caption><tbody>' +
   '<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>状態</th></tr>' +
   '<tr><td></td><td>' + CODE + '</td><td>E2E ブラケット</td><td>2</td><td>未着手</td></tr>' +
   '</tbody></table>';

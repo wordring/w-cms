@@ -82,7 +82,7 @@ func TestMakeProductFromMail(t *testing.T) {
 		"<h1>" + blankProductTitle + "</h1>",
 		"<dt>" + SourceRefTag + "</dt><dd>" + id + "</dd>",
 		`<section data-ref="" data-type="file-view"></section>`,
-		"<caption>改訂明細</caption>",
+		"<caption>改訂明細表</caption>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("加工製品ページに %q がありません:\n%s", want, body)

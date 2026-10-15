@@ -58,13 +58,13 @@ func TestRevisionMergeKeepsSiblingBlocks(t *testing.T) {
 	// ⚠ **見る文字は `<caption>改訂明細</caption>`**（2026-09-27 から解析はキャプションだけで
 	// 書く・それまでは `<h2>改訂履歴</h2>` の節）。⚠ **「含まれないこと」の検査は、見る文字が
 	// 本文から消えると何もしなくても通ります**——書き方を変えたら、見る文字も同じ日に変えること。
-	const revMark = "<caption>改訂明細</caption>"
+	const revMark = "<caption>改訂明細表</caption>"
 	first := cms.FirstBlockHTML(after)
 	if strings.Contains(first, revMark) {
-		t.Errorf("⚠ 改訂明細が図面ブロックに飲み込まれています（図面を消すと一緒に消えます）:\n%s", first)
+		t.Errorf("⚠ 改訂明細表が図面ブロックに飲み込まれています（図面を消すと一緒に消えます）:\n%s", first)
 	}
 	if !strings.Contains(after, revMark) {
-		t.Errorf("改訂明細が消えています:\n%s", after)
+		t.Errorf("改訂明細表が消えています:\n%s", after)
 	}
 }
 

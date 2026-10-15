@@ -116,11 +116,11 @@ func TestSkipRemovesFromRequiredList(t *testing.T) {
 	body := `<h1>部材発注</h1><section data-type="` + UnorderedViewType + `"></section>`
 	out, n := addSkipRows(body, []ourOrderLine{{ProductID: "000041", ForOrder: "000042", Kind: "材料",
 		Material: "鉄", Shape: "板", Size: "t3.2*100*200", Quantity: "6"}}, "在庫あり", "2026-10-01")
-	if n != 1 || !strings.Contains(out, "<caption>手配不要</caption>") || !strings.Contains(out, "<td>在庫あり</td>") {
-		t.Fatalf("手配不要の表に入っていません:\n%s", out)
+	if n != 1 || !strings.Contains(out, "<caption>手配不要表</caption>") || !strings.Contains(out, "<td>在庫あり</td>") {
+		t.Fatalf("手配不要表に入っていません:\n%s", out)
 	}
-	if strings.Index(out, "<caption>手配不要</caption>") < strings.Index(out, UnorderedViewType) {
-		t.Errorf("手配不要の表は必要部材表の下のはず:\n%s", out)
+	if strings.Index(out, "<caption>手配不要表</caption>") < strings.Index(out, UnorderedViewType) {
+		t.Errorf("手配不要表は必要部材表の下のはず:\n%s", out)
 	}
 	syncBody(t, 60, out)
 	got := remainingByOrder(t)

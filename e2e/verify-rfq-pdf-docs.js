@@ -42,13 +42,13 @@ const check = (label, ok, note = '') => {
     const drawing = ((await up.json().catch(() => ({}))).id) || '';
     check('図面を置けた', !!drawing, drawing);
     await saveBody(prod, '<h1>【E2E】ブラケット</h1>' +
-      '<table><caption>外注加工</caption><tbody><tr><th>番号</th><th>加工内容</th><th>個数</th></tr><tr><td>1</td><td>レーザー切断</td><td>1</td></tr></tbody></table>' +
+      '<table><caption>外注加工表</caption><tbody><tr><th>番号</th><th>加工内容</th><th>個数</th></tr><tr><td>1</td><td>レーザー切断</td><td>1</td></tr></tbody></table>' +
       '<details open><summary>資料 1</summary><section data-type="file-view" data-ref="' + prod + '-' + drawing + '"></section></details>');
     const rfq = await makePage(page, '<h1>部材見積依頼　【E2E】業者</h1><p>x</p>', box);
     made.unshift(rfq);
     await saveBody(rfq, '<h1>部材見積依頼　【E2E】業者</h1><dl data-type="tags"><dt>部材見積依頼番号</dt><dd>' + rfq + '</dd>' +
       '<dt>仕入先</dt><dd>【E2E】業者</dd><dt>部材見積依頼日</dt><dd>2026-10-05</dd></dl>' +
-      '<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
+      '<table><caption>部材見積依頼明細表</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
       '<tr><td>' + prod + '</td><td>外注加工</td><td>1</td><td>レーザー切断</td><td>10</td><td>個</td><td></td><td>未回答</td></tr></tbody></table>' +
       '<section><h2>備考</h2><p>【E2E】</p></section><section data-mirror="部材見積依頼を送る"></section>');
 

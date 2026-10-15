@@ -14,7 +14,7 @@ import (
 
 // productWithSupplied は支給部品の表を持つ加工製品ページの本文です（テンプレートと同じ「見出しの節＋キャプション」の形）。
 const productWithSupplied = `<h1>カバー</h1>` +
-	`<section><h2>支給部品</h2><table><caption>支給部品</caption><tbody>` +
+	`<section><h2>支給部品</h2><table><caption>支給部品表</caption><tbody>` +
 	`<tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>` +
 	`<tr><td></td><td></td><td></td><td></td></tr></tbody></table></section>`
 
@@ -80,7 +80,7 @@ func TestReceivedQuotesHideUnreadableRFQ(t *testing.T) {
 	addPage(t, 60, 0, "部材見積依頼　ふじ鍍金", "alice", "300", false)
 	syncBody(t, 60, `<h1>部材見積依頼　ふじ鍍金</h1>`+
 		`<dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>ふじ鍍金</dd><dt>`+RFQAnsweredTag+`</dt><dd>2025-05-14</dd></dl>`+
-		`<table><caption>部材見積依頼明細</caption><tbody>`+
+		`<table><caption>部材見積依頼明細表</caption><tbody>`+
 		`<tr><th>弊社品番</th><th>種類</th><th>加工内容</th><th>数量</th><th>単価</th><th>状態</th></tr>`+
 		`<tr><td>000041</td><td>外注加工</td><td>塗装</td><td>20</td><td>298</td><td>`+rfqLineAnswered+`</td></tr>`+
 		`</tbody></table>`)

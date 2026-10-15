@@ -75,7 +75,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     check('③ 部材見積依頼番号はページ番号・仕入先・部材見積依頼日のタグ', raw.includes('<dt>部材見積依頼番号</dt><dd>' + doc + '</dd>') &&
       raw.includes('<dt>仕入先</dt><dd>【E2E】仕入先</dd>') && raw.includes('<dt>部材見積依頼日</dt><dd>2026-10-05</dd>'));
     check('③ 部材見積依頼担当に差出人', raw.includes('<dt>部材見積依頼担当</dt><dd>' + signers[0] + '</dd>'));
-    check('③ 部材見積依頼明細に2行・どちらも未回答', raw.includes('E2E-RFQD-SS400') && raw.includes('E2E-RFQD-ボルト') &&
+    check('③ 部材見積依頼明細表に2行・どちらも未回答', raw.includes('E2E-RFQD-SS400') && raw.includes('E2E-RFQD-ボルト') &&
       (raw.match(/>未回答</g) || []).length === 2);
     check('③ 単価は空（業者に聞く前の値を写さない）', !raw.includes('999'));
     check('③ 備考の節に「E2E用」', raw.includes('<p>E2E用</p>'));
@@ -91,7 +91,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     await page.goto(BASE + '/' + doc);
     await page.waitForTimeout(800);
     const noteBox = page.locator('#w-editor-content .estimate-note-save[data-note-url="/api/rfq/note"]');
-    check('⑤ 部材見積依頼明細の下に備考の欄', await noteBox.count() === 1);
+    check('⑤ 部材見積依頼明細表の下に備考の欄', await noteBox.count() === 1);
     await page.locator('#w-editor-content .estimate-note-input').fill('E2E 標準2輪用');
     await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), noteBox.click()]);
     await page.waitForTimeout(1000);
@@ -102,7 +102,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     const order = await page.evaluate(() => {
       const root = document.getElementById('w-editor-content');
       const html = root.innerHTML;
-      return { table: html.indexOf('<caption>部材見積依頼明細</caption>'), pdf: html.search(/data-type="file-view"/), send: html.indexOf('部材見積依頼を送る') };
+      return { table: html.indexOf('<caption>部材見積依頼明細表</caption>'), pdf: html.search(/data-type="file-view"/), send: html.indexOf('部材見積依頼を送る') };
     });
     check('⑤ PDF を作ると明細の下に出る', order.pdf > order.table && order.table >= 0, JSON.stringify(order));
     check('⑤ 送る欄は PDF の下', order.send > order.pdf, JSON.stringify(order));

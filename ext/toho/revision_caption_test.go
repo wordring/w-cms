@@ -22,7 +22,7 @@ func revisionBody(caption bool) string {
 	cap := ""
 	if caption {
 		open = `<table>`
-		cap = `<caption>改訂明細</caption>`
+		cap = `<caption>改訂明細表</caption>`
 	}
 	return `<h1>ブラケット</h1>` +
 		`<section data-id="aaaa"><h2>図面</h2>` +

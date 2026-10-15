@@ -77,12 +77,12 @@ func TestDraftEnsureTagPutsAnEmptySlot(t *testing.T) {
 // 表は見出しの言葉で列を合わせ、行をその場で要るだけ作る。テンプレートで列を並べ替えても・
 // 足しても崩れない。無い列は値があれば右端へ足し、見本の行は消す。
 func TestDraftFillsTableByHeaderWords(t *testing.T) {
-	tmpl := `<h1>t</h1><table><caption>受注明細</caption><tbody>` +
+	tmpl := `<h1>t</h1><table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>品名</th><th>弊社品番</th><th>社内メモ</th><th>数量</th></tr>` +
 		`<tr><td>見本</td><td></td><td></td><td></td></tr></tbody></table>`
 	d := NewPageDraft("受注ページ", tmpl)
 	cols := []string{"弊社品番", "品番", "品名", "数量", "単位", "状態"}
-	rows, err := d.FillTable("受注明細", cols, [][]string{
+	rows, err := d.FillTable("受注明細表", cols, [][]string{
 		{"", "", "ブラケット", "4", "", "未着手"},
 		{"", "", "台座", "2", "", "未着手"},
 		{"", "", "カバー", "1", "", "未着手"},
@@ -95,7 +95,7 @@ func TestDraftFillsTableByHeaderWords(t *testing.T) {
 	}
 	got := d.HTML()
 	// 品番・単位は値が無いので足さない。状態は値があるので右端へ足す。
-	want := `<h1>t</h1><table><caption>受注明細</caption><tbody>` +
+	want := `<h1>t</h1><table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>品名</th><th>弊社品番</th><th>社内メモ</th><th>数量</th><th>状態</th></tr>` +
 		`<tr><td>ブラケット</td><td></td><td></td><td>4</td><td>未着手</td></tr>` +
 		`<tr><td>台座</td><td></td><td></td><td>2</td><td>未着手</td></tr>` +
@@ -106,7 +106,7 @@ func TestDraftFillsTableByHeaderWords(t *testing.T) {
 
 	// 0件なら見本の行を残す（人が書けるように）。
 	d0 := NewPageDraft("受注ページ", tmpl)
-	if _, err := d0.FillTable("受注明細", cols, nil); err != nil {
+	if _, err := d0.FillTable("受注明細表", cols, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(d0.HTML(), "<td>見本</td>") {
@@ -117,9 +117,9 @@ func TestDraftFillsTableByHeaderWords(t *testing.T) {
 // 値を入れる器（表・見出しの節）が無ければ、作らずに断る。
 func TestDraftRefusesWithoutSlot(t *testing.T) {
 	d := NewPageDraft("受注ページ", `<h1>t</h1><table><caption>別の表</caption><tbody><tr><th>a</th></tr></tbody></table>`)
-	_, err := d.FillTable("受注明細", []string{"品名"}, [][]string{{"x"}})
+	_, err := d.FillTable("受注明細表", []string{"品名"}, [][]string{{"x"}})
 	var se *TemplateSlotError
-	if !errors.As(err, &se) || !strings.Contains(err.Error(), "受注明細") || !strings.Contains(err.Error(), "受注ページ") {
+	if !errors.As(err, &se) || !strings.Contains(err.Error(), "受注明細表") || !strings.Contains(err.Error(), "受注ページ") {
 		t.Errorf("表の無いテンプレートを断っていません: %v", err)
 	}
 	if _, err := d.RequireContainer("本文"); !errors.As(err, &se) {

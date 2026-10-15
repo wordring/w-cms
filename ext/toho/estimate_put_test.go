@@ -133,12 +133,12 @@ func TestEstimatePutCostAPIAndButton(t *testing.T) {
 	// 鏡から: このページの品物の見積（回答あり）があり、書ける人・見積計算表のあるページだけに「計算表へ」。
 	addPage(t, 50, 0, "部材見積依頼　ふじ鍍金", "root", "302", true)
 	writeBodyFile(t, 50, `<h1>部材見積依頼　ふじ鍍金</h1><dl data-type="tags"><dt>`+RFQNoTag+`</dt><dd>000050</dd><dt>`+SupplierTag+
-		`</dt><dd>ふじ鍍金</dd><dt>`+RFQAnsweredTag+`</dt><dd>2026-10-05</dd></dl><table><caption>部材見積依頼明細</caption><tbody>`+
+		`</dt><dd>ふじ鍍金</dd><dt>`+RFQAnsweredTag+`</dt><dd>2026-10-05</dd></dl><table><caption>部材見積依頼明細表</caption><tbody>`+
 		`<tr><th>弊社品番</th><th>種類</th><th>加工内容</th><th>数量</th><th>単価</th><th>状態</th></tr>`+
 		`<tr><td>000031</td><td>外注加工</td><td>塗装</td><td>20</td><td>298</td><td>`+rfqLineAnswered+`</td></tr></tbody></table>`)
 	show := func(u *auth.User) string {
 		return cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000031", nil), u), 31,
-			readPageBody(t, "000031")+`<section><h2>支給部品</h2><table><caption>支給部品</caption><tbody><tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>`+
+			readPageBody(t, "000031")+`<section><h2>支給部品</h2><table><caption>支給部品表</caption><tbody><tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>`+
 				`<tr><td></td><td></td><td></td><td></td></tr></tbody></table></section>`)
 	}
 	if got := show(root); !strings.Contains(got, `class="chip-btn rfq-quote-put"`) || !strings.Contains(got, "rfq-quote-put-panel") {
