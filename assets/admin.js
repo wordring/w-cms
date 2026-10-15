@@ -340,6 +340,38 @@ async function renameTagValue() {
   }
 }
 
+// 表の列の名前を置き換える（2026-10-15・/api/admin/column-rename）。先に dry で数えて確かめてから書く。
+async function renameColumn() {
+  const caption = val('cr-caption'), from = val('cr-from'), to = val('cr-to');
+  const el = document.getElementById('cr-msg');
+  const say = (color, text) => { el.style.color = color; el.textContent = text; };
+  if (!caption || !from || !to) { say('#dc2626', '表のキャプション・今の列の名前・新しい列の名前を書いてください'); return; }
+  const post = async (dry) => {
+    const res = await api('POST', '/api/admin/column-rename', { caption, from, to, dry });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+    return d.result || {};
+  };
+  // skipped は飛ばしたページの説明（編集中・テンプレート・新しい名前の列が既にある）。
+  const skipped = (r) => [
+    (r.editing || []).length ? '編集中で飛ばした ' + r.editing.join('・') : '',
+    (r.template || []).length ? 'テンプレートの中で飛ばした ' + r.template.join('・') + '（手で直してください）' : '',
+    (r.conflict || []).length ? '新しい名前の列が既にあって飛ばした ' + r.conflict.join('・') : '',
+  ].filter(Boolean).join(' / ');
+  try {
+    say('#64748b', '数えています…');
+    const pre = await post(true);
+    const n = (pre.changed || []).length;
+    if (n === 0) { say('#dc2626', `「${caption}」の表に「${from}」の列があるページはありません` + (skipped(pre) ? '（' + skipped(pre) + '）' : '')); return; }
+    if (!confirm(`${n} ページの「${caption}」の列「${from}」を「${to}」に置き換えます。よろしいですか？`)) { say('#64748b', ''); return; }
+    const r = await post(false);
+    say('#16a34a', `${(r.changed || []).length} ページを置き換えました` + (skipped(r) ? '（' + skipped(r) + '）' : '') + '。');
+    loadAudit();
+  } catch (e) {
+    say('#dc2626', '置き換えられませんでした: ' + e.message);
+  }
+}
+
 function val(id) { return document.getElementById(id).value.trim(); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function msg(id, res) {
@@ -357,6 +389,7 @@ function bindActions() {
   document.getElementById('gm-remove').addEventListener('click', () => groupMember('remove'));
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
   document.getElementById('tr-go').addEventListener('click', renameTagValue);
+  document.getElementById('cr-go').addEventListener('click', renameColumn);
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
   document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
   document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);

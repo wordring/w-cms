@@ -267,6 +267,8 @@ func buildHandler() http.Handler {
 	// タグの値を置き換える（選択肢の言葉を変えたとき・版が残る・admin限定・2026-10-01）。
 	// 「編集中は飛ばす」は 2026-10-12 から道具が握った直後だけ（tag_rename.go の冒頭）。
 	protected.HandleFunc("/api/admin/tag-rename", cms.TagRenameAPIHandler)
+	// 表の列の名前を置き換える（語彙で列の名前を変えたとき・キャプションで表を選ぶ・版が残る・admin限定・2026-10-15）。
+	protected.HandleFunc("/api/admin/column-rename", cms.ColumnRenameAPIHandler)
 	// 表を探す（検索画面 assets/tables.html と AI の口・DBの日本語化 §7 の3段目）。
 	// **読めるページの行だけ**返す。自由な SQL は受けない（tables_query.go）。
 	protected.HandleFunc("/api/tables", cms.TablesAPIHandler)
