@@ -20,7 +20,7 @@ import (
 func editBody() string {
 	return `<h1>受注</h1><table data-type="` + clientOrderItemsType + `">` +
 		`<caption>受注明細</caption><tbody>` +
-		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済み</th>` +
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th>` +
 		`<th>備考</th><th>状態</th><th>材料発注</th></tr>` +
 		`<tr><td></td><td>A-1</td><td>甲</td><td>100</td><td></td><td></td><td>未着手</td><td></td></tr>` +
 		`<tr><td></td><td>A-2</td><td>乙</td><td>50</td><td>10</td><td>急ぎ</td><td>加工中</td><td></td></tr>` +
@@ -29,7 +29,7 @@ func editBody() string {
 
 // TestSetOrderItemCellWrites は、**当たった行のそのセルだけ**が変わることを固定します。
 func TestSetOrderItemCellWrites(t *testing.T) {
-	got, err := setOrderItemCell(editBody(), 1, "A-2", "出荷済み", "10", "30")
+	got, err := setOrderItemCell(editBody(), 1, "A-2", "出荷済数量", "10", "30")
 	if err != nil {
 		t.Fatalf("書けません: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestSetOrderItemCellWrites(t *testing.T) {
 }
 
 // TestSetOrderItemCellClearsToEmpty は、**空へ戻せる**ことを固定します
-// （⚠ チェックを外す・出荷済みを消すのに要ります）。
+// （⚠ チェックを外す・出荷済数量を消すのに要ります）。
 func TestSetOrderItemCellClearsToEmpty(t *testing.T) {
 	body := strings.Replace(editBody(),
 		`<td>加工中</td><td></td>`, `<td>加工中</td><td>`+MarkDone+`</td>`, 1)
@@ -55,7 +55,7 @@ func TestSetOrderItemCellClearsToEmpty(t *testing.T) {
 		t.Fatalf("空に戻せません: %v", err)
 	}
 	// ⚠ **セルの形で見ます。** `strings.Contains(got, MarkDone)` だと、見出しの
-	// **`出荷済み`** に当たって毎回「残っている」と言います（最初そう書いて誤検出
+	// **`出荷済数量`** に当たって毎回「残っている」と言います（最初そう書いて誤検出
 	// しました）。**部分一致は、短い語ほど嘘をつきます。**
 	if strings.Contains(got, "<td>"+MarkDone+"</td>") {
 		t.Errorf("印が残っています:\n%s", got)
@@ -69,7 +69,7 @@ func TestSetOrderItemCellClearsToEmpty(t *testing.T) {
 // 番号は動きますが `品番` は動きません——その非対称を照合に使います。
 func TestSetOrderItemCellChecksItemNo(t *testing.T) {
 	// 0行目は A-1 なのに、A-2 のつもりで書こうとする。
-	_, err := setOrderItemCell(editBody(), 0, "A-2", "出荷済み", "", "30")
+	_, err := setOrderItemCell(editBody(), 0, "A-2", "出荷済数量", "", "30")
 	if err == nil {
 		t.Fatal("⚠ 品番が違う行に書いています（隣の受注を壊します）")
 	}
@@ -81,7 +81,7 @@ func TestSetOrderItemCellChecksItemNo(t *testing.T) {
 // ⚠ 黙って上書きすると、**二人が同じ表を見ているとき、後から押したほうが勝ちます**
 // ——しかも負けたほうは気づきません。
 func TestSetOrderItemCellChecksOldValue(t *testing.T) {
-	_, err := setOrderItemCell(editBody(), 1, "A-2", "出荷済み", "0", "30")
+	_, err := setOrderItemCell(editBody(), 1, "A-2", "出荷済数量", "0", "30")
 	if err == nil {
 		t.Fatal("⚠ いまの値を確かめずに上書きしています")
 	}
@@ -103,7 +103,7 @@ func TestSetOrderItemCellRefusesUnknownRow(t *testing.T) {
 // 固定します。
 //
 // ⚠ `品番` を残表から書き換えられると、**次の書き込みが照合に失敗するか、
-// 隣の行に当たります**（鍵が動くため）。`残` は `数量 - 出荷済み` の計算なので
+// 隣の行に当たります**（鍵が動くため）。`残` は `数量 - 出荷済数量` の計算なので
 // そもそも本文にありません。
 func TestEditableFieldsExcludeKeys(t *testing.T) {
 	for _, f := range []string{"弊社品番", "品番", "品名", "残", "受注"} {
@@ -112,7 +112,7 @@ func TestEditableFieldsExcludeKeys(t *testing.T) {
 		}
 	}
 	// 毎日押すものは書けること（⚠ ここが空だと、そもそも機能していません）。
-	for _, f := range []string{"出荷済み", "状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"出荷済数量", "状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
 		if !editableOrderFields[f] {
 			t.Errorf("%q が書けません（毎日押す列です）", f)
 		}

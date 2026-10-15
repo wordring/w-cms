@@ -1,6 +1,6 @@
 // 受注残表から見積依頼へ送れるかを**ブラウザから**確かめる（2026-10-04・見積依頼の段3）。
 //
-// 【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」「数は受注残の数量そのまま（数量 − 出荷済み）× 部材の数量」
+// 【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」「数は受注残の数量そのまま（数量 − 出荷済数量）× 部材の数量」
 // 「⚠ 受注残表は1枚ずつ印刷する表——選ぶ印を紙に出さないこと」。
 //
 //   ① 受注残表の右端に「見積依頼」の列——選ぶ欄は弊社品番・受注残・受注ページを持つ／弊社品番が空の行は選べない
@@ -38,7 +38,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     if (!root) { check(false, '当て先のページを作れません'); return; }
     order = await makePage(page, '<h1>受注 E2E-1</h1><dl data-type="tags"><dt>発注書番号</dt><dd>E2E-1</dd><dt>発注元</dt><dd>E2E商店</dd>' +
       '<dt>発注日</dt><dd>2026-10-04</dd><dt>納期</dt><dd>2026-10-31</dd></dl>' +
-      '<table><caption>受注明細</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済み</th><th>状態</th></tr>' +
+      '<table><caption>受注明細</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th></tr>' +
       `<tr><td>${root}</td><td>E2E-BL-1</td><td>E2E部品</td><td>10</td><td>3</td><td>未着手</td></tr>` +
       '<tr><td></td><td>E2E-BL-NONE</td><td>E2E部品2</td><td>5</td><td></td><td>未着手</td></tr></tbody></table>', root);
     if (!order) { check(false, '受注ページを作れません'); return; }

@@ -136,7 +136,7 @@ func collectSupplies(db cms.ReadOnlyDB, canView func(int) bool) map[string][]*su
 }
 
 // openOrderRows は手配の対象になる受注の行を集めます（受注残表と同じ線引き）——移行中の受注ページ・状態が完了・
-// 出し終えた（数量 − 出荷済み ≤ 0）・どの加工製品か分からない・読めない行は入れません。
+// 出し終えた（数量 − 出荷済数量 ≤ 0）・どの加工製品か分からない・読めない行は入れません。
 func openOrderRows(db cms.ReadOnlyDB, canView func(int) bool) ([]openOrderRow, error) {
 	orders, err := cms.VocabRowsOfType(db, clientOrderItemsType)
 	if err != nil {

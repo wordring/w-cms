@@ -28,12 +28,12 @@ func seedLedger(t *testing.T) {
 	setOrder(t, 42, "3", "", "2026-10-20")
 }
 
-// setOrder は受注ページ id の明細（加工製品 41 を qty 台・出荷済み shipped・納期 due）を書きます。
+// setOrder は受注ページ id の明細（加工製品 41 を qty 台・出荷済数量 shipped・納期 due）を書きます。
 func setOrder(t *testing.T, id int, qty, shipped, due string) {
 	t.Helper()
 	syncBody(t, id, `<h1>受注</h1>`+
 		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
-		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済み</th><th>納期</th></tr>`+
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>納期</th></tr>`+
 		`<tr><td>000041</td><td>K-9</td><td>カバー</td><td>`+qty+`</td><td>`+shipped+`</td><td>`+due+`</td></tr>`+
 		`</tbody></table>`)
 }

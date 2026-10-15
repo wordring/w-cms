@@ -10,7 +10,7 @@ import (
 func balanceTable(t *testing.T, rows string) orderBalance {
 	t.Helper()
 	nodes, err := htmldoc.ParseFragment(`<table><caption>受注明細</caption><tbody>` +
-		`<tr><th>品番</th><th>数量</th><th>単価</th><th>出荷済み</th><th>状態</th></tr>` + rows + `</tbody></table>`)
+		`<tr><th>品番</th><th>数量</th><th>単価</th><th>出荷済数量</th><th>状態</th></tr>` + rows + `</tbody></table>`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func balanceTable(t *testing.T, rows string) orderBalance {
 
 // TestOrderBalance は受注残高の数え方を固定します（2026-09-30 利用者:「受注ページに受注残高を出したい」）。
 //
-//   - 残数 × 単価の和（出荷済みを引く・出しすぎた行は0）
+//   - 残数 × 単価の和（出荷済数量を引く・出しすぎた行は0）
 //   - 完了の行は入れない（受注残表と同じ）
 //   - 単価の読めない行は金額に入れない（全部読めないなら 0円——2026-09-30 深夜 利用者:「シンプルに0円で大丈夫です」）
 func TestOrderBalance(t *testing.T) {

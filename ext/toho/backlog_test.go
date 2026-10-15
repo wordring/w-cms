@@ -26,7 +26,7 @@ func seedOrder(t *testing.T, idInt, rootInt int, client, due string, rows string
 		`<dt>納期</dt><dd>` + due + `</dd></dl>` +
 		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
-		`<th>単価</th><th>納期</th><th>出荷済み</th><th>備考</th><th>状態</th></tr>` +
+		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		rows + `</tbody></table>`
 	if err := cms.SyncIndex(page.FormatID(idInt), body); err != nil {
 		t.Fatalf("SyncIndex(%d): %v", idInt, err)
@@ -246,7 +246,7 @@ func dbExec(q string, args ...any) (any, error) { return database.DB.Exec(q, arg
 func TestBacklogDropsDoneRows(t *testing.T) {
 	setupExtTest(t, "000170", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 171, -1, "受注", "alice", "302", true)
-	// 3行とも**数の上では残っています**（出荷済みは空）。
+	// 3行とも**数の上では残っています**（出荷済数量は空）。
 	body := item("A-1", "まだ作る", "10", "2026-10-15", "") +
 		strings.Replace(item("A-2", "取りやめ", "10", "2026-10-15", ""),
 			"<td>未着手</td>", "<td>"+StatusDone+"</td>", 1) +
@@ -369,7 +369,7 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	out := cms.RenderComputedViews(req, 201,
 		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
-	for _, f := range []string{"出荷済み", "状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"出荷済数量", "状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
 		if !strings.Contains(out, `data-field="`+f+`"`) {
 			t.Errorf("%q を押せません:\n%s", f, out)
 		}
@@ -397,7 +397,7 @@ func pricedItem(itemNo, name, qty, price, shipped, status string) string {
 // TestBacklogViewShowsTotal は、受注フォルダのトップ（受注残表のいちばん上）に受注残高が出ることを固定します
 // （2026-09-30 夜 利用者:「受注残高は、受注フォルダのトップに入れて欲しいです」）。
 //
-//   - Σ 残 × 単価（出荷済みを引く）——数える行は**表に並んだ行と同じ**（出し切った行・完了の行・「移行中」の受注ページは入らない）
+//   - Σ 残 × 単価（出荷済数量を引く）——数える行は**表に並んだ行と同じ**（出し切った行・完了の行・「移行中」の受注ページは入らない）
 //   - 出すのは「受注残高: N円」だけ・単価の読めない行は金額に入れない（全部読めないなら 0円——2026-09-30 深夜 利用者:
 //     「シンプルに0円で大丈夫です」「（残のある行…）というのも無くて良いです」）
 //   - 表より上に出る
@@ -418,7 +418,7 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 		`<dt>納期</dt><dd>2026-10-20</dd><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
 		`<table><caption>受注明細</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
-		`<th>単価</th><th>納期</th><th>出荷済み</th><th>備考</th><th>状態</th></tr>` +
+		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		pricedItem("C-1", "移した注文", "9", "10000", "", "未着手") + `</tbody></table>`
 	if err := cms.SyncIndex(page.FormatID(404), body); err != nil {
 		t.Fatal(err)

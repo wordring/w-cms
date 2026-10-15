@@ -15,7 +15,7 @@ package toho
 // だけで、同じ納期の中の順は**人がその場で決める**ので記録しません
 // （[docs/考察/【考察】製造という軸.md] §2.1・§4）。
 //
-// ⚠ **残っている行だけ出します**（`数量 - 出荷済み > 0`）。全部出すと、納品済みの
+// ⚠ **残っている行だけ出します**（`数量 - 出荷済数量 > 0`）。全部出すと、納品済みの
 // 行に埋もれて「あと何を作るか」が見えません——**受注残表の役目はそこだけ**です。
 //
 // ⚠ **スコープは「このビューを置いたページの子孫」**です。受注箱に置けば全部、
@@ -350,7 +350,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 		// 欲しいです」——紙の列は下の注記の6つ＋装置名の7つ）。
 		b.WriteString(`<table class="backlog-table"><tbody>` +
 			`<tr><th>装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
-			`<th class="no-print">数量</th><th class="no-print">出荷済み</th>` +
+			`<th class="no-print">数量</th><th class="no-print">出荷済数量</th>` +
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
@@ -389,7 +389,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 				atomicCell(stdhtml.EscapeString(r.ItemName)) +
 				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
 				noPrintCell(strconv.Itoa(r.Quantity)) +
-				noPrintCell(numberFieldHTML("出荷済み", shippedCell(r.Shipped))) +
+				noPrintCell(numberFieldHTML("出荷済数量", shippedCell(r.Shipped))) +
 				`<td class="cell-atomic">` + st + `</td>` +
 				noPrintCell(checkFieldHTML("材料発注", r.MaterialOrdered)) +
 				noPrintCell(checkFieldHTML("納品書発行", r.DeliveryNote)) +
@@ -407,7 +407,7 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 }
 
 // rfqPickHTML は受注残の行を見積依頼へ送るために選ぶ欄です（2026-10-04・段3）。送るのは弊社品番（加工製品ページ）・
-// 受注残（数量 − 出荷済み）・受注ページ——見積依頼の置き場の見積依頼必要部材表に、受注残 × 部材の数量で入る（/api/rfq/collect）。
+// 受注残（数量 − 出荷済数量）・受注ページ——見積依頼の置き場の見積依頼必要部材表に、受注残 × 部材の数量で入る（/api/rfq/collect）。
 // 弊社品番が空の行（どの加工製品か分からない）と、残が無い行は選べない（理由を title に）。
 func rfqPickHTML(r backlogRow) string {
 	switch {
@@ -462,7 +462,7 @@ func refCellHTML(id string) string {
 	return `<a href="/` + stdhtml.EscapeString(id) + `">` + stdhtml.EscapeString(id) + `</a>`
 }
 
-// shippedCell は出荷済みを出します（0 は空欄——「まだ出していない」の見た目を揃える）。
+// shippedCell は出荷済数量を出します（0 は空欄——「まだ出していない」の見た目を揃える）。
 func shippedCell(n int) string {
 	if n == 0 {
 		return ""
@@ -553,7 +553,7 @@ func statusEnum() []string {
 	return nil
 }
 
-// numberFieldHTML は数を打つ欄です（出荷済み）。
+// numberFieldHTML は数を打つ欄です（出荷済数量）。
 func numberFieldHTML(field, cur string) string {
 	return `<input type="text" inputmode="numeric" class="order-edit order-num"` +
 		fieldAttrs(field, cur) + ` value="` + stdhtml.EscapeString(cur) + `"` +

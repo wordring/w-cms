@@ -44,7 +44,7 @@ const LONG_NOTE = '材質変更の連絡あり。先方の指示で板厚を変�
 const BODY = '<h1>表の折り返し</h1>' +
   '<table data-type="client-order-items"><caption>受注明細</caption><tbody>' +
   '<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>' +
-  '<th>単価</th><th>納期</th><th>出荷済み</th><th>備考</th><th>状態</th></tr>' +
+  '<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>' +
   '<tr><td>000123</td><td>K120-01-211</td><td>' + LONG_NAME + '</td><td>100</td><td>個</td>' +
   '<td>390</td><td>2026-10-15</td><td></td><td>' + LONG_NOTE + '</td><td>未着手</td></tr>' +
   '</tbody></table>';

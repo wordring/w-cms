@@ -169,7 +169,7 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 //
 // ForOrder はどの受注のための部材か（2026-10-04・段3——受注フォルダの受注残表から送るとき、受注ページの番号）。行の「受注」の
 // 列に入る（【要求】見積依頼 §2「見積依頼明細の『受注』の列は発注明細と同じく残し、受注残表から集めた部材に入る」）。
-// ロットにはその受注残（数量 − 出荷済み）を入れて送る——手配済みは引かない（同 §2）。
+// ロットにはその受注残（数量 − 出荷済数量）を入れて送る——手配済みは引かない（同 §2）。
 type rfqCollectItem struct {
 	Product  string `json:"product"`
 	Lot      string `json:"lot"`

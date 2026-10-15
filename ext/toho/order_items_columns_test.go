@@ -45,7 +45,7 @@ func TestOrderItemColumns(t *testing.T) {
 		{"納期", cms.ColText},
 		// ⚠ **分納があるので要ります**——「100個のうち40個だけ出した」は
 		// `状態` だけでは表せません。
-		{"出荷済み", cms.ColNumber},
+		{"出荷済数量", cms.ColNumber},
 		{"備考", cms.ColText}, // ⚠ 既存4表と同じく `状態` の手前。先方の `サイズ` もここ
 		{"状態", cms.ColEnum},
 		// ── 手続きの印（2026-09-21）──**本来は導出したい**が、今日は導出する元が
@@ -149,7 +149,7 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 
 	body := `<h1>受注</h1><table data-type="client-order-items"><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th>` +
-		`<th>単位</th><th>単価</th><th>納期</th><th>出荷済み</th>` +
+		`<th>単位</th><th>単価</th><th>納期</th><th>出荷済数量</th>` +
 		`<th>備考</th><th>状態</th></tr>` +
 		`<tr><td>000047</td><td>P103-227-6</td><td>ブラケット</td><td>100</td>` +
 		`<td>セット</td><td>390</td><td>2026-10-15</td><td>40</td>` +
@@ -166,7 +166,7 @@ func TestOrderItemsIndexNewColumns(t *testing.T) {
 		// **セットの行だけが黙って間違います**）。
 		{"単位", "セット"},
 		// ⚠ **分納の途中**——100セットのうち40セット出した、が索引に残ること。
-		{"出荷済み", "40"},
+		{"出荷済数量", "40"},
 		{"備考", "材質変更"},
 	} {
 		var got string
@@ -271,7 +271,7 @@ func TestOrderPageHasCaption(t *testing.T) {
 	}
 }
 
-// TestOrderPageShippedStartsEmpty は、**出荷済みが空で始まる**ことを固定します。
+// TestOrderPageShippedStartsEmpty は、**出荷済数量が空で始まる**ことを固定します。
 //
 // ⚠ 空が「まだ出していない」です（`0` と書く必要はありません）。解析が `0` を
 // 埋めると、**人が入れた 0 と見分けが付きません**。
@@ -286,6 +286,6 @@ func TestOrderPageShippedStartsEmpty(t *testing.T) {
 		t.Fatalf("明細の行がありません:\n%s", body)
 	}
 	if strings.Contains(rows[1], "<td>0</td>") {
-		t.Errorf("出荷済みに 0 を埋めています（人が入れた 0 と見分けが付きません）:\n%s", rows[1])
+		t.Errorf("出荷済数量に 0 を埋めています（人が入れた 0 と見分けが付きません）:\n%s", rows[1])
 	}
 }

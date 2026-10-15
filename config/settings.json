@@ -53,7 +53,7 @@
     "移行中": { "type": "enum", "values": ["確認待ち"] },
     "個数": { "type": "number" },
     "数": { "type": "number" },
-    "出荷済み": { "type": "number" },
+    "出荷済数量": { "type": "number" },
     "受領日": { "type": "date" },
     "資料": { "type": "ref" },
     "検査写真": { "type": "image" },
