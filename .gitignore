@@ -33,6 +33,8 @@ go.work.sum
 
 # ローカルのデータベースおよびアップロードデータ
 data/
+# 家のサンプルデータ（tools/sample-data.js・WCMS_DATA_DIR=data-sample）
+data-sample/
 # E2E の依存（playwright。数千ファイルなので追跡しない）
 e2e/node_modules/
 
