@@ -31,7 +31,7 @@ import (
 // 知らせるのは**本文を書く口**——画面の保存（/api/sync・notifyPageUpdatedFrom で書いたタブを添える——
 // 2026-10-12）・道具の保存（全文 /api/save・ブロック /api/save-block）・機械の
 // 書き換え（RewriteBody・SetPageH1／rewritePageBody）・版を戻す（RevertToVersion）——の、
-// 書き込みの直後です。添付の上書き（ローカル編集・WebDAV）は本文を変えないので知らせません。
+// 書き込みの直後です。添付の上書き（ローカル編集）は本文を変えないので知らせません。
 // 取り込みの UpdatePage（ext/comm）も知らせません（作った直後のページで、まだ誰も開いていないため）。
 //
 // 編集ロック（editlock）の SSE とは別の流れです——あちらは編集権を持つ人・待つ人のための

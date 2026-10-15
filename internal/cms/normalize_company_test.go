@@ -67,7 +67,7 @@ func TestFoldCompanyNameWithoutSettings(t *testing.T) {
 
 // withCompanyForms は設定を差し替え、**必ず戻します**。
 //
-// ⚠ `withSettings`（webdav_test.go）は後始末をしません。この漏れで、前の subtest の
+// ⚠ `withSettings`（settings_helper_test.go。2026-10-15 までは webdav_test.go）は後始末をしません。この漏れで、前の subtest の
 // 設定が次へ流れて別の試験が落ちたことがあります（2026-09-07）——同じ轍を踏まないよう、
 // ここは自分で戻す形にしています。
 func withCompanyForms(t *testing.T, apply func(*Settings)) {

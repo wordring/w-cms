@@ -3,6 +3,8 @@ package main
 // ─────────────────────────────────────────────────────────────────────────
 // HTTPS（2026-09-07）
 //
+// （2026-10-15 に WebDAV はやめました。下の「きっかけ」は当時の記録です。）
+//
 // **WebDAV のために要る**、というのが直接のきっかけです。Windows の WebDAV
 // クライアントは `BasicAuthLevel=1`（既定）のせいで**平文HTTPでは合言葉を送らず**、
 // `OPTIONS` を1回投げて諦めます（エラー67・認証の失敗としては報告されない。実測は
@@ -166,7 +168,5 @@ func printCertInstructions(certFile, keyFile string) {
 
   Import-Certificate -FilePath "%s" -CertStoreLocation Cert:\LocalMachine\Root
 
-  信頼させると、WebDAV の割り当ても通るようになります（平文HTTPで Basic を送らない
-  という Windows の既定は、HTTPS なら当てはまらないため）。
 `, certFile, keyFile, certFile, keyFile, listenURL(listenAddr(true), true), absCert)
 }
