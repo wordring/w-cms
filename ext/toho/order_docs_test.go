@@ -14,7 +14,7 @@ import (
 	"w-cms/internal/cms"
 )
 
-// 外注加工の資料を発注書に添える（2026-09-28・order_docs.go）。
+// 外注加工の資料を部材発注書に添える（2026-09-28・order_docs.go）。
 //
 // 下ごしらえ: 加工製品 31（誰でも読める）に「資料 1」「資料２」の折りたたみ、通信記録 40（誰でも読める）に
 // 顧客の図面、41（alice だけ）に読めない図面。見るのは bob（管理者でない）。
@@ -61,7 +61,7 @@ func seedOrderDocs(t *testing.T) {
 		`<details><summary>資料２</summary><p>まだ無い</p></details>`)
 }
 
-// TestOrderDocsFollowsLineToFold は、発注明細の行（弊社品番＋番号）から加工製品ページの
+// TestOrderDocsFollowsLineToFold は、部材発注明細の行（弊社品番＋番号）から加工製品ページの
 // 「資料 <番号>」の折りたたみへ辿り、中のファイルを集めることを固定します。
 //
 //   - 題は空白・全角半角を畳んで比べる（「資料２」も番号 2）
@@ -102,17 +102,17 @@ func TestOrderDocsFollowsLineToFold(t *testing.T) {
 	}
 }
 
-// TestOrderSendFormOffersDocs は、発注書のメールの**添付の候補に資料**（全部チェック済み）が並び、
+// TestOrderSendFormOffersDocs は、部材発注書のメールの**添付の候補に資料**（全部チェック済み）が並び、
 // 綴じられる資料があるときだけ送信欄に「📠 FAX・印刷用（資料を綴じる）」が出ることを固定します。
 //
-// ⚠ 2026-09-30 から資料のチェックは送る欄の部品が描きます——候補は用件「発注書」の初期値
+// ⚠ 2026-09-30 から資料のチェックは送る欄の部品が描きます——候補は用件「部材発注書」の初期値
 // （`orderMailDefaults`）で、送信欄の鏡は部品を置く場所（`data-mail-compose`）だけを持ちます。
 func TestOrderSendFormOffersDocs(t *testing.T) {
 	seedOrderDocs(t)
 	addPage(t, 50, 0, "発注 ひかりレーザー", "root", "302", true)
 	bob := &auth.User{Username: "bob"}
 	put := func(no string) string {
-		body := `<h1>発注</h1><table data-type="` + ourOrderItemsType + `"><tbody>` +
+		body := `<h1>部材発注</h1><table data-type="` + ourOrderItemsType + `"><tbody>` +
 			`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>状態</th></tr>` +
 			`<tr><td>000031</td><td>外注加工</td><td>` + no + `</td><td>レーザー切断</td><td>1</td><td>未発注</td></tr>` +
 			`</tbody></table>`
@@ -162,7 +162,7 @@ func TestOrderSendFormOffersDocs(t *testing.T) {
 	}
 }
 
-// TestBindOrderDocsKeepsSizes は、FAX・印刷用の1本が**発注書のうしろに資料を元の大きさで綴じる**
+// TestBindOrderDocsKeepsSizes は、FAX・印刷用の1本が**部材発注書のうしろに資料を元の大きさで綴じる**
 // ことと、⚠ **綴じられないものを飛ばして言う**（落ちない）ことを固定します。
 func TestBindOrderDocsKeepsSizes(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
@@ -185,7 +185,7 @@ func TestBindOrderDocsKeepsSizes(t *testing.T) {
 		t.Fatalf("綴じられません: %v", err)
 	}
 	pages := len(regexp.MustCompile(`/Type /Page\s`).FindAll(bound, -1))
-	if pages != 4 { // 発注書1 ＋ 図面2（A3 横）＋ 写真1
+	if pages != 4 { // 部材発注書1 ＋ 図面2（A3 横）＋ 写真1
 		t.Errorf("ページが %d 枚です（4枚のはず）", pages)
 	}
 	if !regexp.MustCompile(`/MediaBox \[\s*0 0 1190\.55`).Match(bound) {

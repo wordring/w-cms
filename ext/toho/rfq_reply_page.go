@@ -1,27 +1,27 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積依頼の返事ページ——通信記録の 🤖 解析から（2026-10-05）
+// 部材見積依頼の返事ページ——通信記録の 🤖 解析から（2026-10-05）
 //
 // 利用者:「見積依頼の返事は通信記録に入るので、解析ボタンを押して解析し、見積依頼の返事とわかれば、見積依頼の返事ページを
 // 作り、GeminiによってOCRして、どの見積依頼の返事か突き合わせる形になると思います」。問いへの答え（2026-10-05）:
 //   - 突き合わせは「**候補が1つなら自動で結ぶ**」（2つ以上・0なら人が選ぶ）
-//   - 見積依頼明細の単価へは「**案の表で確かめてから**」写す（rfq_reply.go の 🤖 返事を読む・案の表・書き込む）
-//   - 返事ページは突き合わせたら「**見積依頼書ページの子へ移す**」
+//   - 部材見積依頼明細の単価へは「**案の表で確かめてから**」写す（rfq_reply.go の 🤖 返事を読む・案の表・書き込む）
+//   - 返事ページは突き合わせたら「**部材見積依頼書ページの子へ移す**」
 //
 // 流れ:
 //
-//	通信記録（メール）── 🤖 解析（添付の PDF）／作るページ「見積依頼の返事ページ」（メールの本文）
-//	  └ 見積依頼の返事ページ（テンプレート「見積依頼の返事」）——仕入先・回答日・読んだ見積依頼番号・受信元・原本・読んだままの表
-//	     ↓ 候補（①紙に読めた№ ②メールの件名の№ ③こちらが送った見積依頼のメールへの返信のつながり ④同じ仕入先の回答待ち）
-//	     ↓ 1つなら結ぶ（タグ `見積依頼` に見積依頼書のページ番号・見積依頼書の子へ移す）——0・2つ以上なら返事ページで人が選ぶ
-//	見積依頼書ページ ── 「🤖 返事を読む」の候補のいちばん上に返事ページの原本 → 案の表 → 書き込む
+//	通信記録（メール）── 🤖 解析（添付の PDF）／作るページ「部材見積依頼の返事ページ」（メールの本文）
+//	  └ 部材見積依頼の返事ページ（テンプレート「部材見積依頼の返事」）——仕入先・回答日・読んだ部材見積依頼番号・受信元・原本・読んだままの表
+//	     ↓ 候補（①紙に読めた№ ②メールの件名の№ ③こちらが送った部材見積依頼のメールへの返信のつながり ④同じ仕入先の回答待ち）
+//	     ↓ 1つなら結ぶ（タグ `部材見積依頼` に部材見積依頼書のページ番号・部材見積依頼書の子へ移す）——0・2つ以上なら返事ページで人が選ぶ
+//	部材見積依頼書ページ ── 「🤖 返事を読む」の候補のいちばん上に返事ページの原本 → 案の表 → 書き込む
 //
 // ⚠ ①②③（番号とメールのつながり）は強い手掛かり、④（仕入先）は弱い手掛かり——①②③で候補があれば④は足さない。
-// ⚠ 自動で結ぶのは候補がちょうど1つで、**仕入先が食い違わない**ときだけ（紙の№の読み違いで、別の業者の見積依頼に
+// ⚠ 自動で結ぶのは候補がちょうど1つで、**仕入先が食い違わない**ときだけ（紙の№の読み違いで、別の業者の部材見積依頼に
 // 結ばないため——食い違えば候補として出して人が選ぶ）。
-// ⚠ 返事ページは `見積依頼番号` のタグを持たない（持つと見積依頼書ページと見分けられない——isRFQPage）。読んだ番号は
-// `読んだ見積依頼番号`、結んだ先は `見積依頼`。
+// ⚠ 返事ページは `部材見積依頼番号` のタグを持たない（持つと部材見積依頼書ページと見分けられない——isRFQPage）。読んだ番号は
+// `読んだ部材見積依頼番号`、結んだ先は `部材見積依頼`。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -45,18 +45,18 @@ import (
 )
 
 const (
-	// RFQReplyTemplate は見積依頼の返事ページを作るテンプレートの題です。
-	RFQReplyTemplate = "見積依頼の返事"
-	// RFQReplyLinkTag は返事ページが結ばれた見積依頼書（ページ番号）です。
-	RFQReplyLinkTag = "見積依頼"
-	// RFQReplyReadNoTag は返事から読めた見積依頼番号（紙の「№」）です——読めたままの値。
-	RFQReplyReadNoTag = "読んだ見積依頼番号"
+	// RFQReplyTemplate は部材見積依頼の返事ページを作るテンプレートの題です。
+	RFQReplyTemplate = "部材見積依頼の返事"
+	// RFQReplyLinkTag は返事ページが結ばれた部材見積依頼書（ページ番号）です。
+	RFQReplyLinkTag = "部材見積依頼"
+	// RFQReplyReadNoTag は返事から読めた部材見積依頼番号（紙の「№」）です——読めたままの値。
+	RFQReplyReadNoTag = "読んだ部材見積依頼番号"
 	// rfqReplySourceCaption は業者の返事を読んだままの表を入れる枠の題です。
 	rfqReplySourceCaption = "業者の返事（読んだまま）"
-	// RFQReplyMatchViewType は返事ページの「見積依頼書との突き合わせ」の欄です。
+	// RFQReplyMatchViewType は返事ページの「部材見積依頼書との突き合わせ」の欄です。
 	RFQReplyMatchViewType = "rfq-reply-match"
 	// RFQReplyMailKind はメールの「作るページ」の種類です。
-	RFQReplyMailKind = "見積依頼の返事ページ"
+	RFQReplyMailKind = "部材見積依頼の返事ページ"
 	// rfqReplyKind は解析済みの印などに出す種類の名前です。
 	rfqReplyKind = "返事"
 )
@@ -65,17 +65,17 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     RFQReplyTemplate,
 		Extension: "toho",
-		Why: "通信記録の 🤖 解析が業者の見積依頼の返事と判定したとき（とメールの「作るページ」）に写します。タグ 仕入先・回答日・" +
-			"読んだ見積依頼番号・見積依頼・受信元、原本のファイル表示、「業者の返事（読んだまま）」の枠、「見積依頼の返事の突き合わせ」の欄は、あれば埋めます。",
+		Why: "通信記録の 🤖 解析が業者の部材見積依頼の返事と判定したとき（とメールの「作るページ」）に写します。タグ 仕入先・回答日・" +
+			"読んだ部材見積依頼番号・部材見積依頼・受信元、原本のファイル表示、「業者の返事（読んだまま）」の枠、「部材見積依頼の返事の突き合わせ」の欄は、あれば埋めます。",
 	})
 	cms.RegisterVocab(cms.VocabDef{
-		Type: RFQReplyMatchViewType, DisplayName: "見積依頼の返事の突き合わせ", Category: "ビュー", Icon: "🔗", Element: "section",
+		Type: RFQReplyMatchViewType, DisplayName: "部材見積依頼の返事の突き合わせ", Category: "ビュー", Icon: "🔗", Element: "section",
 		View: true,
 	})
 	cms.RegisterView(RFQReplyMatchViewType, rfqReplyMatchViewHTML)
 	comm.RegisterRecordMaker(comm.RecordMaker{
 		Name: RFQReplyMailKind, Order: 30, Directions: []string{"受信"},
-		Hint: "🤖 本文を読んで見積依頼の返事ページを作ります（業者がメールの本文に単価を書いてきた返事）",
+		Hint: "🤖 本文を読んで部材見積依頼の返事ページを作ります（業者がメールの本文に単価を書いてきた返事）",
 		Make: makeRFQReplyFromMail,
 		Made: func(user *auth.User, pageID string) []comm.MadePage {
 			var out []comm.MadePage
@@ -96,7 +96,7 @@ type rfqReplyJudgment struct {
 	SourceTable    orderSourceTable `json:"-"`
 }
 
-// isRFQReplyTags は返事ページのタグか——`回答日` と `受信元` を持ち、`見積依頼番号` を持たない（見積依頼書ページは持つ）。
+// isRFQReplyTags は返事ページのタグか——`回答日` と `受信元` を持ち、`部材見積依頼番号` を持たない（部材見積依頼書ページは持つ）。
 func isRFQReplyTags(tags map[string][]string) bool {
 	return cms.FirstTag(tags, RFQAnsweredTag) != "" && cms.FirstTag(tags, SourceRefTag) != "" && cms.FirstTag(tags, RFQNoTag) == ""
 }
@@ -142,7 +142,7 @@ func mailDateOf(pageIDInt int) string {
 // buildRFQReplyPageHTML は返事ページの本文を、テンプレート tmpl を埋めて組みます。attachID が空ならメールの本文から。
 func buildRFQReplyPageHTML(tmpl, hostPageID, attachID, supplier, date string, r *rfqReplyJudgment) (string, error) {
 	d := cms.NewPageDraft(RFQReplyTemplate, tmpl)
-	title := "見積依頼の返事"
+	title := "部材見積依頼の返事"
 	if supplier != "" {
 		title += "　" + supplier
 	}
@@ -171,7 +171,7 @@ func buildRFQReplyPageHTML(tmpl, hostPageID, attachID, supplier, date string, r 
 // rfqNoRe は件名・紙の「№ 001864」を拾います（全角の数字も）。
 var rfqNoRe = regexp.MustCompile(`№\s*([0-9０-９]{1,6})`)
 
-// rfqPageOf は番号 raw（全角・前後の文字を許す）が読める見積依頼書ページなら、その6桁のページ番号を返します。
+// rfqPageOf は番号 raw（全角・前後の文字を許す）が読める部材見積依頼書ページなら、その6桁のページ番号を返します。
 func rfqPageOf(user *auth.User, raw string) (string, bool) {
 	var digits strings.Builder
 	for _, c := range cms.NormalizeText(raw) {
@@ -195,7 +195,7 @@ func sameCompany(a, b string) bool {
 	return cms.NormalizeText(cms.FoldCompanyName(a)) == cms.NormalizeText(cms.FoldCompanyName(b))
 }
 
-// rfqReplyCandidates は返事の候補の見積依頼書ページを返します（強い手掛かりがあればそれだけ・無ければ同じ仕入先の回答待ち）。
+// rfqReplyCandidates は返事の候補の部材見積依頼書ページを返します（強い手掛かりがあればそれだけ・無ければ同じ仕入先の回答待ち）。
 func rfqReplyCandidates(user *auth.User, hostPageID, readNo, supplier string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -205,16 +205,16 @@ func rfqReplyCandidates(user *auth.User, hostPageID, readNo, supplier string) []
 			out = append(out, id)
 		}
 	}
-	// ① 紙に読めた見積依頼番号。
+	// ① 紙に読めた部材見積依頼番号。
 	if strings.TrimSpace(readNo) != "" {
 		add(rfqPageOf(user, readNo))
 	}
 	if hostInt, err := strconv.Atoi(hostPageID); err == nil {
-		// ② メールの件名の「№」（見積依頼のメールの件名「見積依頼（№ …）」への返信）。
+		// ② メールの件名の「№」（部材見積依頼のメールの件名「見積依頼（№ …）」への返信）。
 		for _, m := range rfqNoRe.FindAllStringSubmatch(cms.PageTitleByID(hostInt), -1) {
 			add(rfqPageOf(user, m[1]))
 		}
-		// ③ こちらが送った見積依頼のメール（親ページID の先の控え——2026-10-09 まではメールの In-Reply-To で引いていた）の件名の「№」。
+		// ③ こちらが送った部材見積依頼のメール（親ページID の先の控え——2026-10-09 まではメールの In-Reply-To で引いていた）の件名の「№」。
 		if parent, err := strconv.Atoi(strings.TrimSpace(cms.PageTagValue(database.DB, hostInt, comm.ParentPageTag))); err == nil {
 			for _, m := range rfqNoRe.FindAllStringSubmatch(cms.PageTitleByID(parent), -1) {
 				add(rfqPageOf(user, m[1]))
@@ -224,7 +224,7 @@ func rfqReplyCandidates(user *auth.User, hostPageID, readNo, supplier string) []
 	if len(out) > 0 || strings.TrimSpace(supplier) == "" {
 		return out
 	}
-	// ④ 同じ仕入先で回答待ち（回答日の無い）見積依頼書——新しい順。
+	// ④ 同じ仕入先で回答待ち（回答日の無い）部材見積依頼書——新しい順。
 	rows, err := cms.TagRowsNamed(database.DB, SupplierTag)
 	if err != nil {
 		return out
@@ -244,7 +244,7 @@ func rfqReplyCandidates(user *auth.User, hostPageID, readNo, supplier string) []
 	return out
 }
 
-// linkRFQReply は返事ページを見積依頼書に結びます——タグ `見積依頼` に見積依頼書のページ番号を書き、見積依頼書の子へ移す。
+// linkRFQReply は返事ページを部材見積依頼書に結びます——タグ `部材見積依頼` に部材見積依頼書のページ番号を書き、部材見積依頼書の子へ移す。
 func linkRFQReply(user *auth.User, replyID, rfqID string) error {
 	if err := cms.RewriteBody(replyID, user.Username, func(b string) string {
 		return withTagValues(b, RFQReplyLinkTag, []string{rfqID}, true)
@@ -261,7 +261,7 @@ func linkRFQReply(user *auth.User, replyID, rfqID string) error {
 // rfqReplyMade は返事ページを作った結果です。
 type rfqReplyMade struct {
 	PageID     string
-	Linked     string   // 自動で結んだ見積依頼書（空なら結んでいない）
+	Linked     string   // 自動で結んだ部材見積依頼書（空なら結んでいない）
 	Candidates []string // 結ばなかったときの候補
 }
 
@@ -270,7 +270,7 @@ func makeRFQReply(user *auth.User, hostPageID, attachID string, r *rfqReplyJudgm
 	tmpl, err := cms.PageTemplateBody(RFQReplyTemplate)
 	if err != nil {
 		return rfqReplyMade{}, &comm.MakeError{Status: http.StatusConflict,
-			Message: "見積依頼の返事と判定しましたが、ページを作るテンプレートがありません: " + err.Error()}
+			Message: "部材見積依頼の返事と判定しましたが、ページを作るテンプレートがありません: " + err.Error()}
 	}
 	hostInt, _ := strconv.Atoi(hostPageID)
 	supplier := contacts.OrgNameForPage(user, r.Supplier)
@@ -309,15 +309,15 @@ func makeRFQReply(user *auth.User, hostPageID, attachID string, r *rfqReplyJudgm
 // rfqReplySay は作った結果の一言です。
 func rfqReplySay(m rfqReplyMade) string {
 	if m.Linked != "" {
-		return "見積依頼書 /" + m.Linked + " への返事として結び、その下へ移しました。見積依頼書の「🤖 返事を読む」で単価を確かめて写してください。"
+		return "部材見積依頼書 /" + m.Linked + " への返事として結び、その下へ移しました。部材見積依頼書の「🤖 返事を読む」で単価を確かめて写してください。"
 	}
 	if len(m.Candidates) > 1 {
-		return "どの見積依頼書への返事か、候補が " + strconv.Itoa(len(m.Candidates)) + " つあります——返事ページで選んでください。"
+		return "どの部材見積依頼書への返事か、候補が " + strconv.Itoa(len(m.Candidates)) + " つあります——返事ページで選んでください。"
 	}
-	return "どの見積依頼書への返事か分かりませんでした——返事ページで見積依頼番号を入れて結んでください。"
+	return "どの部材見積依頼書への返事か分かりませんでした——返事ページで部材見積依頼番号を入れて結んでください。"
 }
 
-// ── メールの本文から（作るページ「見積依頼の返事ページ」）──────────────────────────────
+// ── メールの本文から（作るページ「部材見積依頼の返事ページ」）──────────────────────────────
 
 // rfqReplyMailPrompt はメールの本文を返事として読ませる指示です。
 const rfqReplyMailPrompt = `（ここで渡すのはメールの件名・差出人・日付・本文です。）このメールが、当社が業者へ出した見積依頼への**業者の返事**（単価・見積を答えてきたもの）かを判定し、返事なら中身を読んでください。
@@ -369,7 +369,7 @@ func makeRFQReplyFromMail(user *auth.User, pageID string) (comm.MakeResult, erro
 		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadRequest, Message: "このメールには本文がありません（添付の 🤖 解析を使ってください）"}
 	}
 	if _, err := cms.PageTemplateBody(RFQReplyTemplate); err != nil {
-		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "見積依頼の返事ページのテンプレートがありません: " + err.Error()}
+		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "部材見積依頼の返事ページのテンプレートがありません: " + err.Error()}
 	}
 	j, err := judgeRFQReplyMail(mailForJudgment(idInt, cms.PageTitleByID(idInt), body))
 	if err != nil {
@@ -380,7 +380,7 @@ func makeRFQReplyFromMail(user *auth.User, pageID string) (comm.MakeResult, erro
 		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadGateway, Message: "読めませんでした: " + err.Error()}
 	}
 	if !j.IsRFQReply {
-		return comm.MakeResult{Say: "見積依頼の返事ではないと判定されました（ページは作っていません）。"}, nil
+		return comm.MakeResult{Say: "部材見積依頼の返事ではないと判定されました（ページは作っていません）。"}, nil
 	}
 	m, err := makeRFQReply(user, pageID, "", &j.rfqReplyJudgment)
 	if err != nil {
@@ -389,7 +389,7 @@ func makeRFQReplyFromMail(user *auth.User, pageID string) (comm.MakeResult, erro
 	return comm.MakeResult{Pages: []comm.MadePage{{PageID: m.PageID, Title: pageTitleOf(m.PageID), Kind: rfqReplyKind}}, Say: rfqReplySay(m)}, nil
 }
 
-// rfqReplyPageSources は、見積依頼書 rfqID に結んだ返事ページの原本を「🤖 返事を読む」の候補にします（新しい順）——
+// rfqReplyPageSources は、部材見積依頼書 rfqID に結んだ返事ページの原本を「🤖 返事を読む」の候補にします（新しい順）——
 // 添付から作った返事は元のメールのその添付、メールの本文から作った返事はそのメールの本文。
 func rfqReplyPageSources(user *auth.User, rfqID string) []rfqReplySource {
 	rows, err := database.DB.Query(`SELECT page_id FROM page_tags WHERE name = ? AND value = ? ORDER BY page_id DESC`, RFQReplyLinkTag, rfqID)
@@ -428,9 +428,9 @@ func rfqReplyPageSources(user *auth.User, rfqID string) []rfqReplySource {
 	return out
 }
 
-// ── 返事ページの「見積依頼書との突き合わせ」の欄・結ぶ口 ────────────────────────────
+// ── 返事ページの「部材見積依頼書との突き合わせ」の欄・結ぶ口 ────────────────────────────
 
-// rfqReplyMatchViewHTML は返事ページの突き合わせの欄です——結んでいれば見積依頼書へのリンク、結んでいなければ候補と番号の欄。
+// rfqReplyMatchViewHTML は返事ページの突き合わせの欄です——結んでいれば部材見積依頼書へのリンク、結んでいなければ候補と番号の欄。
 func rfqReplyMatchViewHTML(user *auth.User, pageIDInt int) string {
 	pid := page.FormatID(pageIDInt)
 	if user == nil || cms.IsTemplateArea(pid) {
@@ -441,25 +441,25 @@ func rfqReplyMatchViewHTML(user *auth.User, pageIDInt int) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(`<h3 class="materials-title">🔗 見積依頼書との突き合わせ</h3>`)
+	b.WriteString(`<h3 class="materials-title">🔗 部材見積依頼書との突き合わせ</h3>`)
 	rfqLabel := func(id string) string {
 		n := pageNum(id)
 		label := "/" + id + "　" + cms.PageTagValue(database.DB, n, SupplierTag)
 		if d := cms.PageTagValue(database.DB, n, RFQDateTag); d != "" {
-			label += "（見積依頼日 " + d + "）"
+			label += "（部材見積依頼日 " + d + "）"
 		}
 		return label
 	}
 	if linked := strings.TrimSpace(cms.FirstTag(tags, RFQReplyLinkTag)); linked != "" {
 		if n, err := strconv.Atoi(linked); err == nil && page.CanView(user, n) {
-			b.WriteString(`<p class="unorder-help">✅ この返事は見積依頼書 <a href="/` + stdhtml.EscapeString(page.FormatID(n)) + `">` +
+			b.WriteString(`<p class="unorder-help">✅ この返事は部材見積依頼書 <a href="/` + stdhtml.EscapeString(page.FormatID(n)) + `">` +
 				stdhtml.EscapeString(rfqLabel(page.FormatID(n))) + `</a> への返事です。 <a class="chip-btn" href="/` + stdhtml.EscapeString(page.FormatID(n)) +
-				`#rfq-reply">見積依頼書で単価を写す（🤖 返事を読む）</a></p>`)
+				`#rfq-reply">部材見積依頼書で単価を写す（🤖 返事を読む）</a></p>`)
 			return b.String()
 		}
 	}
 	if !canWritePage(user, pageIDInt) {
-		b.WriteString(`<p class="unorder-help">まだどの見積依頼書にも結ばれていません。</p>`)
+		b.WriteString(`<p class="unorder-help">まだどの部材見積依頼書にも結ばれていません。</p>`)
 		return b.String()
 	}
 	host := cms.FirstTag(tags, SourceRefTag)
@@ -468,25 +468,25 @@ func rfqReplyMatchViewHTML(user *auth.User, pageIDInt int) string {
 	}
 	cands := rfqReplyCandidates(user, host, cms.FirstTag(tags, RFQReplyReadNoTag), cms.FirstTag(tags, SupplierTag))
 	if len(cands) > 0 {
-		b.WriteString(`<p class="unorder-help">どの見積依頼書への返事かを選んでください（選ぶと、その見積依頼書の下へ移します）:</p><ul class="rfq-reply-cands">`)
+		b.WriteString(`<p class="unorder-help">どの部材見積依頼書への返事かを選んでください（選ぶと、その部材見積依頼書の下へ移します）:</p><ul class="rfq-reply-cands">`)
 		for _, id := range cands {
-			b.WriteString(`<li><button type="button" class="chip-btn rfq-reply-link" data-reply="` + pid + `" data-rfq="` + id + `">この見積依頼書への返事</button> ` +
+			b.WriteString(`<li><button type="button" class="chip-btn rfq-reply-link" data-reply="` + pid + `" data-rfq="` + id + `">この部材見積依頼書への返事</button> ` +
 				`<a href="/` + id + `">` + stdhtml.EscapeString(rfqLabel(id)) + `</a></li>`)
 		}
 		b.WriteString(`</ul>`)
 	} else {
-		b.WriteString(`<p class="unorder-help">どの見積依頼書への返事か分かりませんでした。</p>`)
+		b.WriteString(`<p class="unorder-help">どの部材見積依頼書への返事か分かりませんでした。</p>`)
 	}
-	b.WriteString(`<p class="unorder-help">見積依頼番号で結ぶ: <input type="text" class="rfq-reply-no" placeholder="001864"> ` +
+	b.WriteString(`<p class="unorder-help">部材見積依頼番号で結ぶ: <input type="text" class="rfq-reply-no" placeholder="001864"> ` +
 		`<button type="button" class="chip-btn rfq-reply-link" data-reply="` + pid + `">結ぶ</button> <span class="rfq-reply-link-say"></span></p>`)
-	// 見積依頼の記録が無い返事（移行期）——この返事から見積依頼書ページを作る（2026-10-05・rfq_reply_make.go）。
-	b.WriteString(`<p class="unorder-help">見積依頼の記録が無い返事（移行期など）は: <button type="button" class="chip-btn rfq-reply-make" data-reply="` + pid +
-		`" title="読んだままの表を見積依頼明細の列に読み替えた案を出します（弊社品番は図面番号・品番から当てます）。直してから作ります">` +
-		`この返事から見積依頼書ページを作る</button></p><div class="rfq-reply-make-panel"></div>`)
+	// 部材見積依頼の記録が無い返事（移行期）——この返事から部材見積依頼書ページを作る（2026-10-05・rfq_reply_make.go）。
+	b.WriteString(`<p class="unorder-help">部材見積依頼の記録が無い返事（移行期など）は: <button type="button" class="chip-btn rfq-reply-make" data-reply="` + pid +
+		`" title="読んだままの表を部材見積依頼明細の列に読み替えた案を出します（弊社品番は図面番号・品番から当てます）。直してから作ります">` +
+		`この返事から部材見積依頼書ページを作る</button></p><div class="rfq-reply-make-panel"></div>`)
 	return b.String()
 }
 
-// RFQReplyLinkAPIHandler は POST /api/rfq-reply/link です（入力: {page_id（返事ページ）, rfq（見積依頼番号）}）。
+// RFQReplyLinkAPIHandler は POST /api/rfq-reply/link です（入力: {page_id（返事ページ）, rfq（部材見積依頼番号）}）。
 func RFQReplyLinkAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -504,16 +504,16 @@ func RFQReplyLinkAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tags, err := cms.TagsOfPage(database.DB, pageNum(replyID)); err != nil || !isRFQReplyTags(tags) {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼の返事ページではありません")
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼の返事ページではありません")
 		return
 	}
 	rfqID, ok := rfqPageOf(user, req.RFQ)
 	if !ok {
-		cms.JSONFail(w, http.StatusNotFound, "見積依頼書が見つかりません（見積依頼番号 "+strings.TrimSpace(req.RFQ)+"）")
+		cms.JSONFail(w, http.StatusNotFound, "部材見積依頼書が見つかりません（部材見積依頼番号 "+strings.TrimSpace(req.RFQ)+"）")
 		return
 	}
 	if !canWritePage(user, pageNum(rfqID)) {
-		cms.JSONFail(w, http.StatusForbidden, "その見積依頼書の下へ移せません（書く権限がありません）")
+		cms.JSONFail(w, http.StatusForbidden, "その部材見積依頼書の下へ移せません（書く権限がありません）")
 		return
 	}
 	if err := linkRFQReply(user, replyID, rfqID); err != nil {

@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 未手配の一覧（2026-09-21）——ここから発注書を1枚作ります
+// 未手配の一覧（2026-09-21）——ここから部材発注書を1枚作ります
 //
 // ⚠ **受注を横断します。** ユーザー:「弊社の発注書は、**受注明細の単位とは無関係に、
 // 納期のグループなどから発行**されます」——**いま買わなければならないもの全部**を
@@ -11,7 +11,7 @@ package toho
 // 機械には決められません）。参考単価とその仕入先は**添えるだけ**。
 //
 // ⚠ **選ばれていない行は何もしません。** 既定は**未選択**で、押した行だけが
-// 発注書に入ります（整理の「二つ目の図面」と同じ流儀——既定で動かさない）。
+// 部材発注書に入ります（整理の「二つ目の図面」と同じ流儀——既定で動かさない）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -26,7 +26,7 @@ import (
 // UnorderedViewType はビューの形式名です。
 const UnorderedViewType = "unordered-items"
 
-// unorderedViewHTML は未手配の一覧と「発注書を作る」欄を描きます。
+// unorderedViewHTML は未手配の一覧と「部材発注書を作る」欄を描きます。
 func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 	head := `<h3 class="materials-title">🧾 必要部材表（受注横断）</h3>`
 	list, err := UnorderedItems(user)
@@ -53,11 +53,11 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 	b.WriteString(head)
 	b.WriteString(`<p class="unorder-help">行を選んで「発注部材表へ入れる」を押すと、` +
 		`下に<strong>発注部材表</strong>ができます` +
-		`——そこで<strong>足し引き</strong>してから発注書にします` +
+		`——そこで<strong>足し引き</strong>してから部材発注書にします` +
 		`（⚠ <strong>何も選ばずに押してもかまいません</strong>。` +
 		`加工製品ページに無い部材は、上の臨時部材表に書くとここに並びます）。` +
 		`並びは<strong>臨時部材が先頭</strong>、あとは<strong>納期順</strong>、同じ納期の中は<strong>装置順</strong>。` +
-		`⚠ 発注書は<strong>1枚に1社</strong>なので、` +
+		`⚠ 部材発注書は<strong>1枚に1社</strong>なので、` +
 		`<strong>同じ業者のものだけ</strong>を選んでください。</p>`)
 	b.WriteString(`<table class="materials-table unorder-table"><thead><tr>` +
 		`<th class="unorder-pick">選</th><th>納期</th><th>客先</th><th>装置</th><th>弊社品番</th>` +
@@ -97,7 +97,7 @@ func orDash(s string) string {
 	return s
 }
 
-// unorderedRowAttrs は行に「発注書へ入れる値」を持たせます。
+// unorderedRowAttrs は行に「部材発注書へ入れる値」を持たせます。
 //
 // ⚠ **画面が本文から値を読み直しません**——表示は丸めることがあるので、
 // **送る値は属性で持ちます**（受注残表の編集と同じ作り）。
@@ -154,7 +154,7 @@ func unorderedCostHTML(u UnorderedItem) string {
 
 // unorderedFormHTML は「発注部材表へ入れる」欄です。
 //
-// ⚠ **ここに「発注書を作る」は置きません**（2026-09-22 ユーザー訂正:「**発注部材表から
+// ⚠ **ここに「部材発注書を作る」は置きません**（2026-09-22 ユーザー訂正:「**発注部材表から
 // 発注書を作るので「発注書を作る」ボタンは発注部材表の下にあるはずです**」）。
 // **ボタンは、その相手の隣にあるべき**です——仕入先と差出人も発注部材表の足元で
 // 決めます（**1枚＝1社**が決まるのは、表を作り終えたときだから）。
@@ -196,7 +196,7 @@ func draftTargetHTML(pageIDInt int) string {
 	return b.String()
 }
 
-// unorderedCostValue は発注書へ送る単価です。
+// unorderedCostValue は部材発注書へ送る単価です。
 //
 // ⚠ **参考単価が無いときは空を送ります。** `0` と書くと、紙の上では
 // **「0円で発注した」**という意味になります——「まだ分からない」と「ただ」は
@@ -251,7 +251,7 @@ func signerFieldHTML(user *auth.User) string {
 }
 
 // unorderedKindMark は、材料以外の行に種類の小さな札を付けます（2026-09-28）——外注加工・購入部品・
-// 支給部品は名前だけでは材料と見分けにくく、**1枚の発注書は1社**なので、選ぶときに種類が要ります。
+// 支給部品は名前だけでは材料と見分けにくく、**1枚の部材発注書は1社**なので、選ぶときに種類が要ります。
 func unorderedKindMark(u UnorderedItem) string {
 	k := strings.TrimSpace(u.Kind)
 	if k == "" || k == displayNameOf(partMaterialsType) || u.TempRow > 0 {

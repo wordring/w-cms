@@ -18,7 +18,7 @@ const productWithSupplied = `<h1>カバー</h1>` +
 	`<tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th></tr>` +
 	`<tr><td></td><td></td><td></td><td></td></tr></tbody></table></section>`
 
-// TestProductPageListsReceivedQuotes は、⚠ **引けたときに業者・日付・ロット・単価・見積依頼書が出る**こと、新しい順に並ぶこと、
+// TestProductPageListsReceivedQuotes は、⚠ **引けたときに業者・日付・ロット・単価・部材見積依頼書が出る**こと、新しい順に並ぶこと、
 // 別の加工製品の行は出ないこと、出すのは節の中・表の後（表の中へ div を入れない）であることを固定します。
 func TestProductPageListsReceivedQuotes(t *testing.T) {
 	const box = "000040"
@@ -36,7 +36,7 @@ func TestProductPageListsReceivedQuotes(t *testing.T) {
 		code, out := postRFQ(t, root, RFQImportAPIHandler, in)
 		id, _ := out["page_id"].(string)
 		if code != 200 || id == "" {
-			t.Fatalf("見積依頼書を移せません: %d %v", code, out)
+			t.Fatalf("部材見積依頼書を移せません: %d %v", code, out)
 		}
 		ids = append(ids, id)
 	}
@@ -72,15 +72,15 @@ func TestProductPageListsReceivedQuotes(t *testing.T) {
 	}
 }
 
-// TestReceivedQuotesHideUnreadableRFQ は、⚠ **読めない見積依頼書の業者と単価を出さない**ことを固定します（見せ分け）。
+// TestReceivedQuotesHideUnreadableRFQ は、⚠ **読めない部材見積依頼書の業者と単価を出さない**ことを固定します（見せ分け）。
 func TestReceivedQuotesHideUnreadableRFQ(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
 	addPage(t, 41, 0, "カバー", "root", "302", true)
-	addPage(t, 60, 0, "見積依頼　ふじ鍍金", "alice", "300", false)
-	syncBody(t, 60, `<h1>見積依頼　ふじ鍍金</h1>`+
+	addPage(t, 60, 0, "部材見積依頼　ふじ鍍金", "alice", "300", false)
+	syncBody(t, 60, `<h1>部材見積依頼　ふじ鍍金</h1>`+
 		`<dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>ふじ鍍金</dd><dt>`+RFQAnsweredTag+`</dt><dd>2025-05-14</dd></dl>`+
-		`<table><caption>見積依頼明細</caption><tbody>`+
+		`<table><caption>部材見積依頼明細</caption><tbody>`+
 		`<tr><th>弊社品番</th><th>種類</th><th>加工内容</th><th>数量</th><th>単価</th><th>状態</th></tr>`+
 		`<tr><td>000041</td><td>外注加工</td><td>塗装</td><td>20</td><td>298</td><td>`+rfqLineAnswered+`</td></tr>`+
 		`</tbody></table>`)
@@ -92,9 +92,9 @@ func TestReceivedQuotesHideUnreadableRFQ(t *testing.T) {
 	}
 	mallory := &auth.User{Username: "mallory"}
 	if page.GetPerms(60).CanRead(mallory) {
-		t.Fatal("前提が崩れています: mallory は見積依頼書を読めてはいけません")
+		t.Fatal("前提が崩れています: mallory は部材見積依頼書を読めてはいけません")
 	}
 	if got := render(mallory); strings.Contains(got, "298円") || strings.Contains(got, "ふじ鍍金") {
-		t.Errorf("⚠ 読めない見積依頼書の業者と単価が出ています:\n%s", got)
+		t.Errorf("⚠ 読めない部材見積依頼書の業者と単価が出ています:\n%s", got)
 	}
 }

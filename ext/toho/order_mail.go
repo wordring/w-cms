@@ -1,19 +1,19 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 発注書をメールで送る——送る欄の用件「発注書」（2026-09-30）
+// 部材発注書をメールで送る——送る欄の用件「部材発注書」（2026-09-30）
 //
 // 利用者:「メール表示、メール送信、メール編集などを部品化したら良いと思います」。
 //
-// それまで発注書の送信の欄は、宛先・件名・本文の欄をこの拡張が自分で描き、送るときは画面が
+// それまで部材発注書の送信の欄は、宛先・件名・本文の欄をこの拡張が自分で描き、送るときは画面が
 // 「PDFを作る → 送る → 発注済みにする」の3段を順に呼んでいました（order_send.go の旧 orderSendFormHTML・
 // app.js の旧 sendMail）。いまは**メールを書く欄は1つの部品**（`assets/mail-compose.js`）で、ここは
 // その用件の中身だけを渡します（開発方針 §0「口はこちら、言葉は拡張から」・`comm.RegisterSendPurpose`）:
 //
-//	初期値   … 宛先の候補（連絡帳の仕入先）・件名（発注書番号入り）・本文（メールの署名入り）・
+//	初期値   … 宛先の候補（連絡帳の仕入先）・件名（部材発注書番号入り）・本文（メールの署名入り）・
 //	           外注加工の資料（印を付けて並べる）・連絡帳に宛先が無い／資料が無いの一言
-//	送る直前 … ページに表示している発注書のPDFを添える（まだ無いときだけ作って表示する・`makeOrderPDF`）
-//	送れた後 … 取消でない行を発注済みに・発注日を送った日に・送ったPDFを記録の節へ（`recordOrderSent`）
+//	送る直前 … ページに表示している部材発注書のPDFを添える（まだ無いときだけ作って表示する・`makeOrderPDF`）
+//	送れた後 … 取消でない行を発注済みに・部材発注日を送った日に・送ったPDFを記録の節へ（`recordOrderSent`）
 //
 // ⚠ **3段の順と「送れたのに印が付かなかった」の扱いは変えていません**——印を付けられなかったときは
 // 送れたことと一緒に理由を返し（`after_error`）、人が行ごとの「✓ 発注済」を押します。
@@ -37,7 +37,7 @@ import (
 )
 
 // OrderMailPurpose は送る欄の用件の名前です（下書きの `下書き` タグの値にもなる）。
-const OrderMailPurpose = "発注書"
+const OrderMailPurpose = "部材発注書"
 
 func init() {
 	comm.RegisterSendPurpose(OrderMailPurpose, comm.SendPurpose{
@@ -48,11 +48,11 @@ func init() {
 	})
 }
 
-// orderMailDefaults は発注書のメールの初期値です。
+// orderMailDefaults は部材発注書のメールの初期値です。
 func orderMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) {
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
-		return comm.ComposeDraft{}, errors.New("発注書のページを読めません: " + err.Error())
+		return comm.ComposeDraft{}, errors.New("部材発注書のページを読めません: " + err.Error())
 	}
 	head, rows, _, err := readOrderDoc(body)
 	if err != nil {
@@ -66,7 +66,7 @@ func orderMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error
 		Body:    orderMailBody(head, supplier, pageID),
 		// ⚠ **送るのはページに表示している PDF**（2026-10-14・【要求】発注フォルダ「発注書を送信」——送る直前に
 		//    作り直さない）。まだ無いときだけ送るときに作る（下書きを開いただけで添付を増やさない）。
-		SendNote: "印の付いた発注書のPDFは、このページに表示しているものを添えます（作り直しません——明細や備考を直したら、" +
+		SendNote: "印の付いた部材発注書のPDFは、このページに表示しているものを添えます（作り直しません——明細や備考を直したら、" +
 			"先に「PDF作成」を押してください。まだ無ければ送るときに作ります）。" +
 			"送れたら取消でない行を発注済みにし、送ったPDFをこのページの「" + orderSentHeading + "」に記録します。",
 		// 添えるPDFを添付の欄に印つきで並べる（2026-10-03・見積書と同じ）。
@@ -84,7 +84,7 @@ func orderMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error
 	return d, nil
 }
 
-// noteNoSupplierAddress は、仕入先の連絡先が連絡帳から引けなかったら送る欄に注意を添えます（発注書・見積依頼書）。
+// noteNoSupplierAddress は、仕入先の連絡先が連絡帳から引けなかったら送る欄に注意を添えます（部材発注書・部材見積依頼書）。
 //
 // ⚠ **引けなかったことを黙りません**——空欄だと「連絡帳に居ないから出せない」のか「引く仕掛けが壊れている」のかが
 // 分かりません。
@@ -96,7 +96,7 @@ func noteNoSupplierAddress(d *comm.ComposeDraft, supplier string) {
 }
 
 // attachLineDocs は、明細の行（弊社品番＋番号）が指す外注加工の資料を、全部に印を付けて送る欄の添付に並べます
-// （人が外せる）。資料が無い・読めない行は一言を添えます（発注書・見積依頼書——2026-10-09 に写しを寄せた）。
+// （人が外せる）。資料が無い・読めない行は一言を添えます（部材発注書・部材見積依頼書——2026-10-09 に写しを寄せた）。
 func attachLineDocs(d *comm.ComposeDraft, user *auth.User, rows []map[string]string) {
 	docs, notes := orderDocs(user, rows)
 	for _, doc := range docs {
@@ -106,7 +106,7 @@ func attachLineDocs(d *comm.ComposeDraft, user *auth.User, rows []map[string]str
 	d.Notes = append(d.Notes, notes...)
 }
 
-// prepareOrderMail は、送るときに添える発注書のPDFを返します——**ページに表示している PDF**です
+// prepareOrderMail は、送るときに添える部材発注書のPDFを返します——**ページに表示している PDF**です
 // （2026-10-14・【要求】発注フォルダ「発注書を送信」:「送るPDFは、発注書ページに表示している最新のPDFです
 // （送る直前に作り直しません）」）。まだ表示している PDF が無いときだけ、ここで作って表示します。
 //
@@ -132,8 +132,8 @@ func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]
 	return []comm.ComposeAttachment{{PageID: pageID, File: made.File, Name: orderMailFileName(pageID), Checked: true}}, true
 }
 
-// afterOrderMail は送れたあとに、取消でない行を発注済みにして発注日を送った日にし、送った PDF を記録の節
-// （「送った発注書」・order_pdf_sent.go）へ1行足します。送った PDF は、送信の控え（recordID）が添えたファイルの
+// afterOrderMail は送れたあとに、取消でない行を発注済みにして部材発注日を送った日にし、送った PDF を記録の節
+// （「送った部材発注書」・order_pdf_sent.go）へ1行足します。送った PDF は、送信の控え（recordID）が添えたファイルの
 // うち、このページの添付です（控えが無ければ表示中の PDF とみなします）。
 //
 // ⚠ **ここはもう応答を書けません**（メールは出たあと）——書けない・編集中なら理由を返し、送る欄が
@@ -141,7 +141,7 @@ func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]
 func afterOrderMail(user *auth.User, pageID, recordID string) error {
 	n, err := strconv.Atoi(pageID)
 	if err != nil {
-		return errors.New("発注書のページIDが不正です")
+		return errors.New("部材発注書のページIDが不正です")
 	}
 	if !page.GetPerms(n).CanWrite(user) || cms.IsTemplateArea(pageID) {
 		return errors.New("発注済みの印を付けられませんでした（このページを書き換える権限がありません）。行ごとの「✓ 発注済」を押してください。")

@@ -120,9 +120,9 @@ func TestProductPageFromTemplateWithMaterialsFirst(t *testing.T) {
 	}
 }
 
-// 発注書の備考は、書くときだけ「備考」の節が要る（紙に刷る言葉を黙って捨てない）。
+// 部材発注書の備考は、書くときだけ「備考」の節が要る（紙に刷る言葉を黙って捨てない）。
 func TestOurOrderNoteNeedsTheSection(t *testing.T) {
-	tmpl := `<h1>発注書</h1>` + emptyVocabTable(ourOrderItemsType)
+	tmpl := `<h1>部材発注書</h1>` + emptyVocabTable(ourOrderItemsType)
 	lines := []ourOrderLine{{ProductID: "000080", Material: "鉄"}}
 	if _, err := buildOurOrderHTML(tmpl, "000138", "みなと商店", "2026-09-27", "", "定尺で可", "", lines); err == nil {
 		t.Error("備考の節が無いのに備考を捨てて作りました")
@@ -150,10 +150,10 @@ func TestAnalyzeRefusesWithoutTemplateBeforeAsking(t *testing.T) {
 	}
 }
 
-// 発注書のテンプレートが無ければ、**ページを作る前に**断る（「作成中」のページを残さない）。
+// 部材発注書のテンプレートが無ければ、**ページを作る前に**断る（「作成中」のページを残さない）。
 func TestNewOurOrderRefusesWithoutTemplateBeforeCreating(t *testing.T) {
 	setupExtTest(t, "000012", page.PageMeta{Owner: "alice", Mode: "330"})
-	if _, err := cms.DeletePageToTrash("000908"); err != nil { // テンプレート「発注書」
+	if _, err := cms.DeletePageToTrash("000908"); err != nil { // テンプレート「部材発注書」
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(map[string]any{"supplier": "みなと商店",

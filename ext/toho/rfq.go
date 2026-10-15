@@ -1,25 +1,25 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積依頼——業者へ値段を聞く（2026-10-03・【要求】見積依頼・【考察】見積の依頼と見積書 §2.0c・§2.0d）
+// 部材見積依頼——業者へ値段を聞く（2026-10-03・【要求】見積依頼・【考察】見積の依頼と見積書 §2.0c・§2.0d）
 //
 // 利用者:「まず、見積もりを依頼する部材は見積依頼必要部材表に入ります。ここに入れるには、１.臨時部材表に書き込む。
 // 2.再見積依頼フォームの弊社品番テキストボックスに書き込みボタンを押す。…3．受注フォルダの受注残表を読み込み収集する。
 // 見積依頼が発注と異なるのは、ロットが同じ品物を重複して依頼する必要が無いことです。…重複するものは見積依頼必要部材表に
 // 入れるが重複とわかるように背景を赤くします。そして消すことが出来るようにするのです」。
 //
-//	見積依頼（トップ直下の置き場）
-//	  ├ 再見積依頼（フォーム）      … 弊社品番＋ロット →「集める」              ← この段（1）
-//	  ├ 見積依頼の臨時部材表         … 人が書く（行は見積依頼必要部材表にも並ぶ）
+//	部材見積依頼（トップ直下の置き場）
+//	  ├ 再部材見積依頼（フォーム）      … 弊社品番＋ロット →「集める」              ← この段（1）
+//	  ├ 部材見積依頼の臨時部材表         … 人が書く（行は見積依頼必要部材表にも並ぶ）
 //	  ├ 見積依頼必要部材表           … **本文の表**（集めた行が入る・人が数を直せる）——重複は赤＋⚠・「不要」で消す
 //	  │    ↓ 選んで・入れる先を選んで →「見積依頼部材表へ入れる」
 //	  ├ 見積依頼部材表               … 業者ごとに足し引き（↩ 戻す）
-//	  │    ↓ 仕入先・差出人を入れて →「見積依頼書ページを作る」               ← 段 2
-//	  └ 年／月／見積依頼 ○○商店     … 見積依頼書ページ（見積依頼明細・紙・送る）
+//	  │    ↓ 仕入先・差出人を入れて →「部材見積依頼書ページを作る」               ← 段 2
+//	  └ 年／月／部材見積依頼 ○○商店     … 部材見積依頼書ページ（部材見積依頼明細・紙・送る）
 //
-// ⚠ **発注の道具を共有します**（table_lines.go——表の種類を引数に）。列は発注明細と同じ（`orderItemColumns`）。
+// ⚠ **発注の道具を共有します**（table_lines.go——表の種類を引数に）。列は部材発注明細と同じ（`orderItemColumns`）。
 // ⚠ **機械は依頼済みを数えません**——重複は赤くするだけ（利用者の決定・同じ日の朝の「行ごとに数える」は採らなかった）。
-// ⚠ **重複を見るのは見積依頼必要部材表の中だけ**（前に出した見積依頼書とは比べない・利用者:「見積依頼必要部材表に同時に
+// ⚠ **重複を見るのは見積依頼必要部材表の中だけ**（前に出した部材見積依頼書とは比べない・利用者:「見積依頼必要部材表に同時に
 //    同じもので同じロットが出ていたらに赤くしておけば十分」）。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -36,25 +36,25 @@ import (
 )
 
 const (
-	// RFQBoxTitle は見積依頼の置き場（トップ直下）の題です。
-	RFQBoxTitle = "見積依頼"
+	// RFQBoxTitle は部材見積依頼の置き場（トップ直下）の題です。
+	RFQBoxTitle = "部材見積依頼"
 	// RFQNeedsType は見積依頼必要部材表です（本文の表——集めた行が入る）。
 	RFQNeedsType = "rfq-needs"
-	// RFQTempPartsType は見積依頼の臨時部材表です（人が書く——行は見積依頼必要部材表にも並ぶ）。
+	// RFQTempPartsType は部材見積依頼の臨時部材表です（人が書く——行は見積依頼必要部材表にも並ぶ）。
 	RFQTempPartsType = "rfq-temp-parts"
 	// RFQDraftType は見積依頼部材表です（業者ごとに足し引きする——機械だけが作る）。
 	RFQDraftType = "rfq-draft"
-	// RFQItemsType は見積依頼明細です（見積依頼書ページの明細——返事の単価もここ）。
+	// RFQItemsType は部材見積依頼明細です（部材見積依頼書ページの明細——返事の単価もここ）。
 	RFQItemsType = "rfq-items"
-	// RFQRequoteViewType は再見積依頼のフォームです（弊社品番＋ロット →「集める」）。
+	// RFQRequoteViewType は再部材見積依頼のフォームです（弊社品番＋ロット →「集める」）。
 	RFQRequoteViewType = "rfq-requote"
 )
 
-// rfqLineStatuses は見積依頼明細の状態です（2026-10-02 利用者の選択「発注明細と同じ＋状態」）。
-// ⚠ **設定の語彙（table_vocabulary の見積依頼部材表・見積依頼明細）と同じ並び**——変えるときは両方。
+// rfqLineStatuses は部材見積依頼明細の状態です（2026-10-02 利用者の選択「発注明細と同じ＋状態」）。
+// ⚠ **設定の語彙（table_vocabulary の見積依頼部材表・部材見積依頼明細）と同じ並び**——変えるときは両方。
 func rfqLineStatuses() []string { return []string{"未回答", "回答あり", "辞退"} }
 
-// rfqColumns は見積依頼部材表・見積依頼明細の列です——発注明細と同じ列で、状態の選択肢だけ違う。
+// rfqColumns は見積依頼部材表・部材見積依頼明細の列です——部材発注明細と同じ列で、状態の選択肢だけ違う。
 // ⚠ **同じ宣言から作ります**（写して書くと、列を足した日に移すときに落ちる）。
 func rfqColumns() []cms.VocabColumn {
 	cols := orderItemColumns()
@@ -69,9 +69,9 @@ func rfqColumns() []cms.VocabColumn {
 // rfqLotColumn は見積依頼必要部材表・見積依頼部材表の `ロット` の列です（2026-10-14）。
 //
 // 【要求】見積依頼 §2:「重複とみなすのは、見積依頼必要部材表の中に、同じものが同じロットで同時に出ているときだけ」。
-// 重複をロットで見るには、行がロットを持っていなければなりません——再見積依頼フォーム（弊社品番＋ロット）と受注残表
+// 重複をロットで見るには、行がロットを持っていなければなりません——再部材見積依頼フォーム（弊社品番＋ロット）と受注残表
 // （受注残の数）から集めた行に、集めたときのロットを残します。見積依頼部材表にも置くのは、「↩ 戻す」で戻した行が
-// ロットを失わないため。見積依頼明細（紙）には置きません（紙の列は発注書と同じ・数量で足りる）。
+// ロットを失わないため。部材見積依頼明細（紙）には置きません（紙の列は部材発注書と同じ・数量で足りる）。
 // ⚠ 型は設定（`config/settings.json` の table_vocabulary）と同じ number——変えるときは両方。
 func rfqLotColumn() cms.VocabColumn {
 	return cms.VocabColumn{Field: "lot", Label: "ロット", Type: cms.ColNumber}
@@ -94,12 +94,12 @@ func withLotBeforeQuantity(cols []cms.VocabColumn) []cms.VocabColumn {
 	return out
 }
 
-// rfqDraftColumns は見積依頼部材表の列です——見積依頼明細の列（発注明細と同じ）に `ロット` を足したもの。
+// rfqDraftColumns は見積依頼部材表の列です——部材見積依頼明細の列（部材発注明細と同じ）に `ロット` を足したもの。
 func rfqDraftColumns() []cms.VocabColumn {
 	return withLotBeforeQuantity(rfqColumns())
 }
 
-// rfqNeedsColumns は見積依頼必要部材表の列です——発注明細の列から単価と状態を除き（まだ聞いていない）、`ロット` を足したもの。
+// rfqNeedsColumns は見積依頼必要部材表の列です——部材発注明細の列から単価と状態を除き（まだ聞いていない）、`ロット` を足したもの。
 func rfqNeedsColumns() []cms.VocabColumn {
 	var out []cms.VocabColumn
 	for _, c := range orderItemColumns() {
@@ -111,7 +111,7 @@ func rfqNeedsColumns() []cms.VocabColumn {
 	return withLotBeforeQuantity(out)
 }
 
-// rfqTempColumns は見積依頼の臨時部材表の列です——発注の臨時部材表の列から単価を除いたもの。
+// rfqTempColumns は部材見積依頼の臨時部材表の列です——発注の臨時部材表の列から単価を除いたもの。
 func rfqTempColumns() []cms.VocabColumn {
 	var out []cms.VocabColumn
 	for _, c := range tempPartsColumns() {
@@ -126,12 +126,12 @@ func rfqTempColumns() []cms.VocabColumn {
 func init() {
 	cms.RegisterVocab(
 		cms.VocabDef{
-			// テンプレート「見積依頼」に人が置く表（スラッシュメニューに出す——テンプレート駆動）。
+			// テンプレート「部材見積依頼」に人が置く表（スラッシュメニューに出す——テンプレート駆動）。
 			Type: RFQNeedsType, DisplayName: "見積依頼必要部材表", Category: "業務", Icon: "📋", Element: "table",
 			Columns: rfqNeedsColumns(),
 		},
 		cms.VocabDef{
-			Type: RFQTempPartsType, DisplayName: "見積依頼の臨時部材表", Category: "業務", Icon: "🧺", Element: "table",
+			Type: RFQTempPartsType, DisplayName: "部材見積依頼の臨時部材表", Category: "業務", Icon: "🧺", Element: "table",
 			Columns: rfqTempColumns(),
 		},
 		cms.VocabDef{
@@ -140,12 +140,12 @@ func init() {
 			Hidden: true, Columns: rfqDraftColumns(),
 		},
 		cms.VocabDef{
-			// テンプレート「見積依頼書」に人が置く表。
-			Type: RFQItemsType, DisplayName: "見積依頼明細", Category: "業務", Icon: "📨", Element: "table",
+			// テンプレート「部材見積依頼書」に人が置く表。
+			Type: RFQItemsType, DisplayName: "部材見積依頼明細", Category: "業務", Icon: "📨", Element: "table",
 			Columns: rfqColumns(),
 		},
 		cms.VocabDef{
-			Type: RFQRequoteViewType, DisplayName: "再見積依頼", Category: "ビュー", Icon: "🔁", Element: "section",
+			Type: RFQRequoteViewType, DisplayName: "再部材見積依頼", Category: "ビュー", Icon: "🔁", Element: "section",
 			View: true,
 		},
 	)
@@ -155,7 +155,7 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     RFQBoxTitle,
 		Extension: "toho",
-		Why: "業者へ出す見積依頼の置き場です（見積依頼必要部材表 → 見積依頼部材表 → 業者ごとの見積依頼書ページ・見積依頼／年／月）。" +
+		Why: "業者へ出す部材見積依頼の置き場です（見積依頼必要部材表 → 見積依頼部材表 → 業者ごとの部材見積依頼書ページ・部材見積依頼／年／月）。" +
 			"弊社が顧客へ出す見積書は「見積」のほうです。",
 	})
 }
@@ -256,7 +256,7 @@ func appendRFQLines(body, vocabType string, n int, lines []ourOrderLine) (string
 	return appendLinesToTable(body, vocabType, n, lines)
 }
 
-// rfqTempPartsOf は本文の見積依頼の臨時部材表から、空でない行を読みます。
+// rfqTempPartsOf は本文の部材見積依頼の臨時部材表から、空でない行を読みます。
 func rfqTempPartsOf(body string) []tempPart {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -374,7 +374,7 @@ func renderRFQNeeds(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 func rfqNeedsFormHTML(pageID string, pageIDInt int) string {
 	var b strings.Builder
 	b.WriteString(`<p class="unorder-help">行を選んで「見積依頼部材表へ入れる」を押すと、下に<strong>見積依頼部材表</strong>ができます` +
-		`（見積依頼書は<strong>1枚に1社</strong>——同じ業者へ聞くものだけを選ぶ）。` +
+		`（部材見積依頼書は<strong>1枚に1社</strong>——同じ業者へ聞くものだけを選ぶ）。` +
 		`<strong>⚠ 重複</strong>は同じもの・同じロットが表の中に2つ以上あるもの（ロットの無い行は同じ数で見ます）——要らなければ選んで「不要」で消します。` +
 		`数は表を直接直せます（編集モード）。</p>`)
 	b.WriteString(`<div class="matsearch-form rfq-needs-form" data-rfq-page="` + pageID + `">`)
@@ -390,7 +390,7 @@ func rfqNeedsFormHTML(pageID string, pageIDInt int) string {
 	return b.String()
 }
 
-// renderRFQDraft は見積依頼部材表の各行に「↩ 戻す」を足します（鏡）。見積依頼書ページを作る欄は段2。
+// renderRFQDraft は見積依頼部材表の各行に「↩ 戻す」を足します（鏡）。部材見積依頼書ページを作る欄は段2。
 func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	idx := ctx.Counter(RFQDraftType) + 1
@@ -400,7 +400,7 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			` data-rfq-page="` + pageID + `" data-rfq-table="` + strconv.Itoa(idx) + `" data-rfq-row="` + strconv.Itoa(row) + `"` +
 			` title="見積依頼必要部材表へ戻します（この行を外します）">↩ 戻す</button>`
 	})
-	// 「見積依頼書ページを作る」の欄は表の外（包む節の中・表の直後）へ——発注部材表の「発注書を作る」と同じ（rfq_doc.go）。
+	// 「部材見積依頼書ページを作る」の欄は表の外（包む節の中・表の直後）へ——発注部材表の「部材発注書を作る」と同じ（rfq_doc.go）。
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
 	appendHTML(box, `<div class="vocab-chrome draft-form-box" contenteditable="false">`+
@@ -408,9 +408,9 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	return false, nil
 }
 
-// rfqRequoteViewHTML は再見積依頼のフォームです（弊社品番＋ロット →「集める」）。
+// rfqRequoteViewHTML は再部材見積依頼のフォームです（弊社品番＋ロット →「集める」）。
 func rfqRequoteViewHTML(_ *auth.User, pageIDInt int) string {
-	return `<h3 class="materials-title">🔁 再見積依頼</h3>` +
+	return `<h3 class="materials-title">🔁 再部材見積依頼</h3>` +
 		`<p class="unorder-help">弊社品番（加工製品ページの番号）を書いて「集める」を押すと、その加工製品の材料・購入部品・外注加工が` +
 		`下の<strong>見積依頼必要部材表</strong>に入ります。数は<strong>ロット × 部材の数量</strong>——ロットが空なら見積計算表の` +
 		`ロット（見積計算表がロットごとに何枚もあれば、その数だけ行になる・無ければ1個分）。</p>` +

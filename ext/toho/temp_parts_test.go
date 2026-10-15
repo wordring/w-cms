@@ -15,7 +15,7 @@ import (
 // おきます」。
 
 // ⚠ 必要部材表の印は `data-mirror`（名前の見えない `data-type` の印は 2026-09-27 に廃止）。
-const tempBoxBody = `<h1>発注</h1><p>弊社が出す発注書の置き場です。</p>` +
+const tempBoxBody = `<h1>部材発注</h1><p>弊社が出す部材発注書の置き場です。</p>` +
 	`<section data-mirror="必要部材表"></section>`
 
 func tempLine(name, qty string) ourOrderLine {
@@ -147,7 +147,7 @@ func TestTempRowsOnPicksOnlyThatPage(t *testing.T) {
 }
 
 // TestReturnWithoutProductGoesToTempParts は、⚠ **弊社品番の無い行を戻すと臨時部材表へ
-// 入る**ことを、発注フォルダの本文まで書いて固定します（2026-09-24 ユーザー報告:
+// 入る**ことを、部材発注フォルダの本文まで書いて固定します（2026-09-24 ユーザー報告:
 // 「必要部材表へ戻すを押すと発注明細から消えますが、必要部材表へは表示されません」）。
 //
 // ⚠ **弊社品番のある行は臨時部材表へ入れません**——計算の側に戻るので、入れると2か所に出ます。
@@ -168,7 +168,7 @@ func TestReturnWithoutProductGoesToTempParts(t *testing.T) {
 	}
 	b, err := os.ReadFile(page.BodyPath("000040"))
 	if err != nil {
-		t.Fatalf("発注フォルダを読めません: %v", err)
+		t.Fatalf("部材発注フォルダを読めません: %v", err)
 	}
 	if parts := tempPartsOf(string(b)); len(parts) != 1 || parts[0].Line.ItemName != "ボルト" {
 		t.Errorf("⚠ 臨時部材表に戻っていません: %#v\n%s", parts, b)
@@ -202,14 +202,14 @@ func TestDraftReturnOnTheSamePageMovesToTempParts(t *testing.T) {
 	}
 }
 
-// TestOrderCarriesItemIDAndSurface は、⚠ **品番と表面が発注部材表・発注書まで運ばれる**
-// ことを固定します——2026-09-25 まで運んでおらず、**塗装・鍍金の発注書で表面が
+// TestOrderCarriesItemIDAndSurface は、⚠ **品番と表面が発注部材表・部材発注書まで運ばれる**
+// ことを固定します——2026-09-25 まで運んでおらず、**塗装・鍍金の部材発注書で表面が
 // 落ちていました**。
 func TestOrderCarriesItemIDAndSurface(t *testing.T) {
 	ln := ourOrderLine{ItemID: "A100-B01-242", ItemName: "留めプレート", Color: "緑", Quantity: "20"}
 	for name, got := range map[string]string{
 		"発注部材表": orderDraftHTML([]ourOrderLine{ln}),
-		"発注書":   testOurOrder("000150", "ふじ鍍金", "2026-09-25", "", "", "", []ourOrderLine{ln}),
+		"部材発注書":   testOurOrder("000150", "ふじ鍍金", "2026-09-25", "", "", "", []ourOrderLine{ln}),
 	} {
 		for _, want := range []string{"<td>A100-B01-242</td>", "<td>緑</td>"} {
 			if !strings.Contains(got, want) {

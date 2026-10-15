@@ -10,7 +10,7 @@ package toho
 // 種類（材料・外注加工・購入部品・支給部品）ごとに、
 //
 //   - **from**    … 加工製品ページのどの表から（キャプション）
-//   - **columns** … 発注の表（発注部材表・発注明細）のどの列へ、何を運ぶか
+//   - **columns** … 発注の表（発注部材表・部材発注明細）のどの列へ、何を運ぶか
 //                  （右側は元の表の列の名前・`@タグ`〔加工製品ページのタグ〕・`@弊社品番`・`|` は「無ければ次」）
 //   - **key**     … 手配済みを数える鍵（発注の表の列の名前）
 //   - **display** … 必要部材表に出す名前（発注の表の列の名前・無ければ key）
@@ -120,7 +120,7 @@ func OrderPrintColumns() []string {
 	return orderPrintColumns
 }
 
-// RFQPrintColumns は見積依頼書の紙に刷る列の候補を並び順どおりに返します（2026-10-03）。未指定なら発注書の紙の列から
+// RFQPrintColumns は部材見積依頼書の紙に刷る列の候補を並び順どおりに返します（2026-10-03）。未指定なら部材発注書の紙の列から
 // `金額` を除いた並び。⚠ `単価` は必ず入れる（業者が書き込む欄——無ければ末尾に足す）。
 func RFQPrintColumns() []string {
 	stagesMu.RLock()
@@ -153,7 +153,7 @@ func OrderPrintHeads() []string {
 	if len(orderPrintHeads) > 0 {
 		return orderPrintHeads
 	}
-	return []string{"発注書番号", "発注日", "納期", "納品場所"}
+	return []string{"部材発注書番号", "部材発注日", "納期", "納品場所"}
 }
 
 // labelValue は表の行から、列の**見出しの名前**で値を読みます（登録された列は機械キーで入っている）。
@@ -213,7 +213,7 @@ func (k orderKind) perUnit(def cms.VocabDef, row cms.VocabRow) int {
 
 // keyOf は手配済みを数える鍵です——種類の名前＋鍵の列の値（畳んだ文字）。鍵の列が全部空なら空。
 //
-// ⚠ **発注部材表・発注書の行も同じ関数で鍵を作ります**（`orderRowKey`）——別の作り方をすると
+// ⚠ **発注部材表・部材発注書の行も同じ関数で鍵を作ります**（`orderRowKey`）——別の作り方をすると
 // 引き算が合わず、手配した部材が必要部材表に残ります（二重発注）。
 func (k orderKind) keyOf(vals map[string]string) string {
 	parts := make([]string, len(k.Key))
@@ -245,7 +245,7 @@ func (k orderKind) displayOf(vals map[string]string) string {
 	return strings.Join(parts, " ")
 }
 
-// orderRowKey は発注部材表・発注明細の1行の、手配済みを数える鍵です（`orderKind.keyOf` と同じ）。
+// orderRowKey は発注部材表・部材発注明細の1行の、手配済みを数える鍵です（`orderKind.keyOf` と同じ）。
 //
 // ⚠ **種類の無い古い行**（2026-09-28 より前）は、**鍵の列のどれかに値がある最初の種類**として読みます
 // ——材料の行（材質・形状・寸法）は材料、品名だけの行は購入部品になります（それまでの読み方と同じ）。

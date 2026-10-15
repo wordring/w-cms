@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// 発注書ページの本文を組む（2026-09-21）。§7b の「足りない1つ」。
+// 部材発注書ページの本文を組む（2026-09-21）。§7b の「足りない1つ」。
 //
 // ⚠ **`弊社品番` が書かれること**がいちばん大事です——無いと**どの加工製品のぶんか**を
 // 誰も辿れず、手配状況の鏡が**黙って未手配のまま**になります。
@@ -16,14 +16,14 @@ func TestBuildOurOrderWritesOurItemNo(t *testing.T) {
 			Size: "t4.5*75*1090", Quantity: "2", Cost: "860"}})
 
 	for _, want := range []string{
-		"<dt>" + OrderNoTag + "</dt><dd>000138</dd>", // ⚠ 番号はページ番号そのもの
+		"<dt>" + PurchaseNoTag + "</dt><dd>000138</dd>", // ⚠ 番号はページ番号そのもの
 		"<dt>" + SupplierTag + "</dt><dd>みなと商店</dd>",
-		"<dt>" + OrderedAtTag + "</dt><dd>2026-09-21</dd>",
+		"<dt>" + PurchasedAtTag + "</dt><dd>2026-09-21</dd>",
 		"<dt>" + DueDateTag + "</dt><dd>2026-09-30</dd>",
 		"<td>000080</td>", // ⚠ 弊社品番
 		"<td>t4.5*75*1090</td>",
 		"<td>未発注</td>", // ⚠ 紙はできたが、まだ出していない（order_status.go）
-		"<caption>発注明細</caption>",
+		"<caption>部材発注明細</caption>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("本文に %q がありません:\n%s", want, body)

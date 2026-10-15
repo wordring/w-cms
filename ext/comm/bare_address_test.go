@@ -3,7 +3,7 @@ package comm
 import "testing"
 
 // TestBareAddress は、送る口が宛先から素のアドレスだけを取り出すことを確かめます（SMTP の RCPT TO: は
-// 素のアドレスしか受けない・2026-10-09 にメールと発注書の写しを寄せた口の番人）。
+// 素のアドレスしか受けない・2026-10-09 にメールと部材発注書の写しを寄せた口の番人）。
 func TestBareAddress(t *testing.T) {
 	for in, want := range map[string]string{
 		"みなと商店 <order@example.invalid>":   "order@example.invalid",

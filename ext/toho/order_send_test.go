@@ -9,14 +9,14 @@ import (
 	"w-cms/internal/cms"
 )
 
-// 発注書を送る・発注済みの印（2026-09-22）
+// 部材発注書を送る・発注済みの印（2026-09-22）
 //
 // ユーザー:「**発注書の表の一品ずつに発注済みの印**をつけます。…**メールの送信など
 // 自明な時は、自動で印をつければ良い**し、発注書を印刷して手渡しするような場合は、
 // **人間が発注済みの印をつける**と思います。大事なことは、**発注の取り消しもある**
 // ということです」。
 
-// orderPaper は発注明細1枚ぶんの本文を組みます（行は `状態` つき）。
+// orderPaper は部材発注明細1枚ぶんの本文を組みます（行は `状態` つき）。
 func orderPaper(statuses ...string) string {
 	var b strings.Builder
 	b.WriteString(`<h1>発注 みなと商店</h1>`)
@@ -80,13 +80,13 @@ func TestSetOrderLineStatusSaysNothingChanged(t *testing.T) {
 //
 // ⚠ **09-22 は逆でした**（取り消すと自動で戻る）。この番人はその名残を捕まえます
 // ——戻る側に書き戻すと、**もう発注しないと決めた部材が必要部材表に再び並び**、
-// 同じものをもう一度発注書に入れてしまいます。戻したいときは「必要部材表へ戻す」。
+// 同じものをもう一度部材発注書に入れてしまいます。戻したいときは「必要部材表へ戻す」。
 func TestCancelledOrderStaysConsumed(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	viewer := &auth.User{Username: "root", IsAdmin: true}
 
-	// 下ごしらえの発注書（32）は 板 t3.2 を6本手配していて、必要数と同じです
+	// 下ごしらえの部材発注書（32）は 板 t3.2 を6本手配していて、必要数と同じです
 	// ——だから一覧には FB t4.5 の1件しか出ません（`unordered_test.go` の番人）。
 	before, err := UnorderedItems(viewer)
 	if err != nil {
@@ -96,10 +96,10 @@ func TestCancelledOrderStaysConsumed(t *testing.T) {
 		t.Fatalf("下ごしらえが違います（未手配 %d 件）: %#v", len(before), before)
 	}
 
-	// その発注書を取り消します。
+	// その部材発注書を取り消します。
 	syncBody(t, 32, `<h1>発注 みなと商店</h1>`+
 		`<dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>みなと商店</dd>`+
-		`<dt>`+OrderedAtTag+`</dt><dd>2026-09-21</dd></dl>`+
+		`<dt>`+PurchasedAtTag+`</dt><dd>2026-09-21</dd></dl>`+
 		`<table data-type="`+ourOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単価</th><th>状態</th></tr>`+
 		`<tr><td>000031</td><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>6</td><td>800</td>`+
@@ -138,7 +138,7 @@ func TestUnsentPriceIsNotABoughtPrice(t *testing.T) {
 
 	got := showMaterials(t, &auth.User{Username: "root", IsAdmin: true}, materialsBody(rows))
 	if strings.Contains(got, "800円") {
-		t.Errorf("⚠ まだ出していない発注書の単価が「最新単価」に出ています:\n%s", got)
+		t.Errorf("⚠ まだ出していない部材発注書の単価が「最新単価」に出ています:\n%s", got)
 	}
 	// 鏡は走っていて（列が出ている）、その行は空欄＝買った記録が無い（2026-09-27 から断り文は出さない）。
 	if !strings.Contains(got, priceHeadCell) || !strings.Contains(got, emptyPriceCell) {
@@ -174,7 +174,7 @@ func TestOrderSendState(t *testing.T) {
 // TestOrderLinkHasNoBakedState は、⚠ **「まだ発注していません」を本文に焼き込まない**
 // ことを固定します。
 //
-// ⚠ **出したら消えなければならない文**なので、本文に書くと**発注書を出したあとも
+// ⚠ **出したら消えなければならない文**なので、本文に書くと**部材発注書を出したあとも
 // 古いまま**残ります——そして直す人は現れません。
 func TestOrderLinkHasNoBakedState(t *testing.T) {
 	got := orderLinkHTML("000145", "みなと商店", 5)
@@ -188,7 +188,7 @@ func TestOrderLinkHasNoBakedState(t *testing.T) {
 	}
 }
 
-// TestOrderLinkMirrorReadsTheOrderPage は、⚠ **リンクが発注書ページから読み直す**
+// TestOrderLinkMirrorReadsTheOrderPage は、⚠ **リンクが部材発注書ページから読み直す**
 // ことを固定します。
 //
 // ⚠ **「⚠ が出ないこと」だけを見ません**——鏡が一度も走っていなくても通るためです。
@@ -196,7 +196,7 @@ func TestOrderLinkHasNoBakedState(t *testing.T) {
 func TestOrderLinkMirrorReadsTheOrderPage(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
-	addPage(t, 40, 0, "発注", "root", "302", true)
+	addPage(t, 40, 0, "部材発注", "root", "302", true)
 	addPage(t, 41, 0, "発注 みなと商店", "root", "302", true)
 
 	body := orderLinkHTML("000041", "みなと商店", 2)
@@ -217,7 +217,7 @@ func TestOrderLinkMirrorReadsTheOrderPage(t *testing.T) {
 	}
 }
 
-// TestOurOrderMirrorPutsTheSendForm は、発注明細の足元に送信欄が出ることと、
+// TestOurOrderMirrorPutsTheSendForm は、部材発注明細の足元に送信欄が出ることと、
 // ⚠ **それが本文に残らないクローム**であることを固定します。
 //
 // ⚠ **`vocab-chrome` が無いと、人が画面の表をコピーして貼ったとき本当の列として
@@ -354,7 +354,7 @@ func TestOrderPDFSaysWhenEverythingIsCancelled(t *testing.T) {
 			`<td>3</td><td>個</td><td>7000</td><td></td><td>` + OrderLineCancelled + `</td></tr>`)
 	_, _, _, err := readOrderDoc(body)
 	if err == nil {
-		t.Fatal("⚠ 全部取り消した発注書からPDFを作れてしまいます")
+		t.Fatal("⚠ 全部取り消した部材発注書からPDFを作れてしまいます")
 	}
 	if !strings.Contains(err.Error(), "取り消され") {
 		t.Errorf("理由が「取り消した」と言っていません: %v", err)
@@ -380,7 +380,7 @@ func TestOrderPDFIsShownOnThePage(t *testing.T) {
 	// ⚠ **表の「後」であること**（ユーザーの流れ:「新たな表の下に発注書を埋め込み
 	//    表示し」）。前に置くと、明細より先にPDFが出ます。
 	if strings.Index(out, "</table>") > strings.Index(out, `data-ref="000041-a1b2"`) {
-		t.Errorf("⚠ マーカーが発注明細の表より前にあります:\n%s", out)
+		t.Errorf("⚠ マーカーが部材発注明細の表より前にあります:\n%s", out)
 	}
 	// ⚠ **サニタイズを通しても残ること。** ここが落ちると、**本文を保存した瞬間に
 	//    配線が消え**、PDFは黙って出なくなります（`class` が落ちるのと同じ形）。
@@ -417,7 +417,7 @@ func TestOrderPDFViewIsReplacedNotStacked(t *testing.T) {
 // 固定します。
 func TestOrderPDFViewNeedsTheTable(t *testing.T) {
 	if out, ok := placeOrderPDFView(`<h1>ただのページ</h1><p>本文</p>`, "000041-aaaa"); ok {
-		t.Errorf("⚠ 発注明細の無いページにマーカーを置いています:\n%s", out)
+		t.Errorf("⚠ 部材発注明細の無いページにマーカーを置いています:\n%s", out)
 	}
 }
 
@@ -431,35 +431,35 @@ func showPage(t *testing.T, viewer *auth.User, pageID int, body string) string {
 	return cms.RenderComputedViews(req, pageID, body)
 }
 
-// TestMarkOrderSentRewritesOrderDate は、⚠ **送ったら `発注日` が送った日になる**ことを
+// TestMarkOrderSentRewritesOrderDate は、⚠ **送ったら `部材発注日` が送った日になる**ことを
 // 固定します（2026-09-24 ユーザー:「送信したときに発注日タグを書き換えましょう」）。
 //
 // ⚠ **再送（行がもう全部 `発注済`）でも書き換わること**まで見ます——行の数で
 // 分岐すると、再送した日が紙に載りません。
 func TestMarkOrderSentRewritesOrderDate(t *testing.T) {
-	body := `<h1>発注</h1><dl data-type="tags"><dt>` + OrderNoTag + `</dt><dd>000138</dd>` +
-		`<dt>` + OrderedAtTag + `</dt><dd>2026-09-20</dd><dt>` + DueDateTag + `</dt><dd>2026-10-01</dd></dl>` +
-		`<table><caption>発注明細</caption><tbody><tr><th>品名</th><th>状態</th></tr>` +
+	body := `<h1>部材発注</h1><dl data-type="tags"><dt>` + PurchaseNoTag + `</dt><dd>000138</dd>` +
+		`<dt>` + PurchasedAtTag + `</dt><dd>2026-09-20</dd><dt>` + DueDateTag + `</dt><dd>2026-10-01</dd></dl>` +
+		`<table><caption>部材発注明細</caption><tbody><tr><th>品名</th><th>状態</th></tr>` +
 		`<tr><td>A</td><td>未発注</td></tr><tr><td>B</td><td>取消</td></tr></tbody></table>`
 
 	got, n := markOrderSent(body, "2026-09-24")
 	if n != 1 {
 		t.Errorf("発注済にした行が %d です（1を期待・取消は巻き込まない）", n)
 	}
-	if !strings.Contains(got, "<dt>"+OrderedAtTag+"</dt><dd>2026-09-24</dd>") {
-		t.Errorf("⚠ 発注日が送った日になっていません:\n%s", got)
+	if !strings.Contains(got, "<dt>"+PurchasedAtTag+"</dt><dd>2026-09-24</dd>") {
+		t.Errorf("⚠ 部材発注日が送った日になっていません:\n%s", got)
 	}
 	// ⚠ 他の日付（納期）を書き換えないこと。
 	if !strings.Contains(got, "<dt>"+DueDateTag+"</dt><dd>2026-10-01</dd>") {
 		t.Errorf("⚠ 納期まで書き換えています:\n%s", got)
 	}
 
-	// 再送: 行はもう全部 発注済（または取消）。それでも発注日は再送した日。
+	// 再送: 行はもう全部 発注済（または取消）。それでも部材発注日は再送した日。
 	again, n2 := markOrderSent(got, "2026-09-26")
 	if n2 != 0 {
 		t.Errorf("再送で書き換えた行が %d です（0を期待）", n2)
 	}
-	if !strings.Contains(again, "<dt>"+OrderedAtTag+"</dt><dd>2026-09-26</dd>") {
-		t.Errorf("⚠ 再送した日が発注日に入っていません:\n%s", again)
+	if !strings.Contains(again, "<dt>"+PurchasedAtTag+"</dt><dd>2026-09-26</dd>") {
+		t.Errorf("⚠ 再送した日が部材発注日に入っていません:\n%s", again)
 	}
 }

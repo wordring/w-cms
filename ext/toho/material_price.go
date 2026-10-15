@@ -43,10 +43,10 @@ const priceColLabel = "最新単価"
 
 // materialPrice は「その材料を最後にいくらで買ったか」です。
 type materialPrice struct {
-	Cost     int    // 単価（発注明細の `単価`）
-	Date     string // 発注日（読めなければ空）
+	Cost     int    // 単価（部材発注明細の `単価`）
+	Date     string // 部材発注日（読めなければ空）
 	Supplier string // 仕入先
-	PageID   int    // 出所の発注書ページ
+	PageID   int    // 出所の部材発注書ページ
 }
 
 // renderMaterialPrices は材料表の右へ「最新単価・時点・仕入先」を足します。
@@ -86,7 +86,7 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		//    同じ判断）。
 		return true, nil
 	}
-	// 買った記録が無い行には、業者に聞いた値段（見積依頼の返事）を「見積」の印つきで出す（2026-10-05 利用者の答え——
+	// 買った記録が無い行には、業者に聞いた値段（部材見積依頼の返事）を「見積」の印つきで出す（2026-10-05 利用者の答え——
 	// 【要求】見積依頼 §4 の未決5「最新単価に見積も出す」・出所の順位2）。⚠ 買った値段（順位1）がある行には出さない
 	// ——言われた値段が買った値段を上書きしない。読めなければ見積を出さないだけ（買った値段は出す）。
 	quotes, _ := latestQuotedPrices(ctx.DB, ctx.Viewer)
@@ -169,13 +169,13 @@ func appendMigratingRow(table *html.Node, span int) {
 			MigratingTag+"」タグを消してください）")
 }
 
-// latestMaterialPrices は**全社の発注明細**から、材料ごとの最新単価を集めます。
+// latestMaterialPrices は**全社の部材発注明細**から、材料ごとの最新単価を集めます。
 //
 // ⚠ **スコープは `RelatedPages` ではありません。** 前に同じ材料を買ったのは
 // まったく別の受注かもしれないので、**関係の有無にかかわらず記録すべて**を当たります。
 //
 // ⚠ **読めないページは混ぜません。** 材料表には誰でも行を書けるので、絞らないと
-// **読めない発注書の単価と仕入先が引けてしまいます**（設計総点検で踏んだ穴と同じ形）。
+// **読めない部材発注書の単価と仕入先が引けてしまいます**（設計総点検で踏んだ穴と同じ形）。
 func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]materialPrice, error) {
 	rows, err := cms.VocabRowsOfType(db, ourOrderItemsType)
 	if err != nil {
@@ -185,15 +185,15 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 		return map[string]materialPrice{}, nil
 	}
 
-	// 発注日と仕入先は**発注書ページのタグ**です（明細の列ではありません）。
-	tags, err := cms.TagRowsNamed(db, OrderedAtTag, SupplierTag)
+	// 部材発注日と仕入先は**部材発注書ページのタグ**です（明細の列ではありません）。
+	tags, err := cms.TagRowsNamed(db, PurchasedAtTag, SupplierTag)
 	if err != nil {
 		return nil, err
 	}
 	dateOf, supplierOf := map[int]string{}, map[int]string{}
 	for _, t := range tags {
 		switch t.Name {
-		case OrderedAtTag:
+		case PurchasedAtTag:
 			if _, dup := dateOf[t.PageID]; !dup {
 				dateOf[t.PageID] = t.Value
 			}
@@ -236,8 +236,8 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 	return out, nil
 }
 
-// latestQuotedPrices は**全社の見積依頼明細**から、材料ごとのいちばん新しい「言われた値段」（回答ありの単価）を集めます
-// （2026-10-05）。日付は見積依頼書の回答日（無ければ見積依頼日）、仕入先はそのページの仕入先。相見積もりで同じ日に
+// latestQuotedPrices は**全社の部材見積依頼明細**から、材料ごとのいちばん新しい「言われた値段」（回答ありの単価）を集めます
+// （2026-10-05）。日付は部材見積依頼書の回答日（無ければ部材見積依頼日）、仕入先はそのページの仕入先。相見積もりで同じ日に
 // 何社もあれば、あとから作られたページ（newerPrice と同じ）。読めないページ・テンプレートの中は混ぜない。
 func latestQuotedPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]materialPrice, error) {
 	rows, err := cms.VocabRowsOfType(db, RFQItemsType)

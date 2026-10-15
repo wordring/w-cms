@@ -1,10 +1,10 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積依頼の口（2026-10-03・段1——rfq.go の絵）
+// 部材見積依頼の口（2026-10-03・段1——rfq.go の絵）
 //
-//	POST /api/rfq/collect        … 再見積依頼フォーム: 弊社品番＋ロットの部材を見積依頼必要部材表へ足す（items で何枚でも）
-//	GET  /api/rfq/folder-products … 装置フォルダの下の加工製品（再見積依頼の一時的な表・読むだけ）
+//	POST /api/rfq/collect        … 再部材見積依頼フォーム: 弊社品番＋ロットの部材を見積依頼必要部材表へ足す（items で何枚でも）
+//	GET  /api/rfq/folder-products … 装置フォルダの下の加工製品（再部材見積依頼の一時的な表・読むだけ）
 //	POST /api/rfq/needs/move     … 見積依頼必要部材表（と臨時部材表）の選んだ行を見積依頼部材表へ移す
 //	POST /api/rfq/needs/remove   … 選んだ行を消す（「不要」——記録は残さない・利用者:「人間が判断して必要なければ消します」）
 //	POST /api/rfq/draft/back     … 見積依頼部材表の行を見積依頼必要部材表へ戻す（↩ 戻す）
@@ -134,7 +134,7 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "集められるものがありません——"+strings.Join(skipped, "／"))
 		return
 	}
-	// 送り先が無ければ見積依頼の置き場（2026-10-04・段3——受注フォルダの受注残表から送るとき、画面は置き場の番号を知らない）。
+	// 送り先が無ければ部材見積依頼の置き場（2026-10-04・段3——受注フォルダの受注残表から送るとき、画面は置き場の番号を知らない）。
 	target := strings.TrimSpace(req.PageID)
 	if target == "" {
 		boxID, err := cms.EnsureTopLevelBox(RFQBoxTitle, user.Username)

@@ -1,14 +1,14 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 発注明細の鏡——行ごとの印と、足元の「送る」欄（2026-09-22）
+// 部材発注明細の鏡——行ごとの印と、足元の「送る」欄（2026-09-22）
 //
 // ⚠ **本文には何も書きません。** 足すのは**押すためのもの**だけで、印そのものは
 // 本文の `状態` の列にあります（`order_status.go`）。**鏡に印を持たせると、紙と
 // 画面で違うことが書いてある**状態が作れてしまいます。
 //
-// ⚠ **既にある発注書ページにも出ます。** 器（`<section>`）を本文に置く形ではなく、
-// **発注明細の表そのものを引き金**にしているためです——09-21 までに作った紙にも、
+// ⚠ **既にある部材発注書ページにも出ます。** 器（`<section>`）を本文に置く形ではなく、
+// **部材発注明細の表そのものを引き金**にしているためです——09-21 までに作った紙にも、
 // 今日から送信の欄が付きます。
 //
 // ⚠ **閲覧モードから押せることが肝**です。紙を出したあとに印を付けるのに、
@@ -32,9 +32,9 @@ func init() {
 	cms.RegisterMirror(ourOrderItemsType, cms.MirrorHandlerFunc(renderOurOrderChrome))
 }
 
-// renderOurOrderChrome は発注明細に、行ごとの印と足元の送信欄を足します。
+// renderOurOrderChrome は部材発注明細に、行ごとの印と足元の送信欄を足します。
 //
-// ⚠ **2枚目以降の発注明細には送信欄を出しません。** 発注書は**1枚に1社**なので、
+// ⚠ **2枚目以降の部材発注明細には送信欄を出しません。** 部材発注書は**1枚に1社**なので、
 // 1ページに明細が2つ並ぶのは**人が手で足したとき**だけです——そこに送信の
 // ボタンを2組出すと、**どちらを押したのか**が誰にも分からなくなります。
 func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
@@ -60,7 +60,7 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	return false, nil
 }
 
-// orderNoteBoxFor は備考の入力欄です（2026-10-14・見積書・見積依頼書と同じ部品 noteBoxHTML）。書ける人にだけ出し、
+// orderNoteBoxFor は備考の入力欄です（2026-10-14・見積書・部材見積依頼書と同じ部品 noteBoxHTML）。書ける人にだけ出し、
 // テンプレートの中では出しません。保存先は本文の見出し「備考」の節で、紙はそこを刷ります（readOrderDoc）。
 func orderNoteBoxFor(ctx *cms.MirrorContext) string {
 	pid := page.FormatID(ctx.PageID)
@@ -136,7 +136,7 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 // orderRowReturnButtonHTML は行末の「必要部材表へ戻す」ボタンです（2026-09-24）。
 //
 // ⚠ **どの段からも押せます**（ユーザー:「発注書の送付後でも押せます」）。
-// ⚠ **いつも確かめます**——押すと**行が発注書から消える**ので、押し間違いが
+// ⚠ **いつも確かめます**——押すと**行が部材発注書から消える**ので、押し間違いが
 // 本文から消えます。送付後は**相手に出した紙に載っている行**なので、そう書きます。
 // ⚠ **編集モードでは出しません**（`view-only`・ユーザー:「このボタンは編集モードでは
 // 消えます」）——編集中の本文から行を消すと、書きかけと食い違います。
@@ -144,17 +144,17 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 // 閲覧モードへ替えないと出ません（`assets/app.css` の `body[edit-mode] .view-only`。
 // 直すかは利用者に聞いています——【考察】文書の食い違い §3.1）。
 func orderRowReturnButtonHTML(orderID string, row int, status string) string {
-	ask := "この行を発注書から外して、必要部材表へ戻します。"
+	ask := "この行を部材発注書から外して、必要部材表へ戻します。"
 	switch strings.TrimSpace(status) {
 	case OrderLineSent, OrderLineDelivered, orderLineLegacySent:
-		ask = "⚠ この行は既に相手に送った発注書に載っています。\n" +
-			"外したら、訂正した発注書を再送してください。\n\n" + ask
+		ask = "⚠ この行は既に相手に送った部材発注書に載っています。\n" +
+			"外したら、訂正した部材発注書を再送してください。\n\n" + ask
 	}
 	return `<button type="button" class="chip-btn order-row-return view-only"` +
 		` data-order-page="` + stdhtml.EscapeString(orderID) + `"` +
 		` data-order-row="` + strconv.Itoa(row) + `"` +
 		` data-order-confirm="` + stdhtml.EscapeString(ask) + `"` +
-		` title="この行を発注書から外し、必要部材表でまた選べるようにします">↩ 必要部材表へ戻す</button>`
+		` title="この行を部材発注書から外し、必要部材表でまた選べるようにします">↩ 必要部材表へ戻す</button>`
 }
 
 // orderRowStatusButtonsHTML は `状態` を変えるボタンです（上の説明のとおり）。

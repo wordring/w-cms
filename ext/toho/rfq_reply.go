@@ -1,14 +1,14 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積依頼の返事を見積依頼書ページへ（2026-10-05・段4の前半）
+// 部材見積依頼の返事を部材見積依頼書ページへ（2026-10-05・段4の前半）
 //
 // 【要求】見積依頼 §4 の未決4「返事の取り込み」——利用者の答え（2026-10-05）: 返事は「見積依頼書に手書きで FAX」
 // 「業者の見積書 PDF をメール」「メールの本文に値段」の3通り。作るのは「回答を記録」と「🤖 返事を読む」の**両方**。
-// 返事の単価の置き場は**見積依頼明細の単価の列**（10-02 に決まっている——§2）。
+// 返事の単価の置き場は**部材見積依頼明細の単価の列**（10-02 に決まっている——§2）。
 //
 //	POST /api/rfq/answered      … ✓ 回答を記録: 単価の入った未回答の行を「回答あり」に・回答日に今日（手で書いたあと押す）
-//	GET  /api/rfq/reply-sources … 🤖 で読む返事の候補——このページに置いたファイル（作った見積依頼書の PDF は除く）と、
+//	GET  /api/rfq/reply-sources … 🤖 で読む返事の候補——このページに置いたファイル（作った部材見積依頼書の PDF は除く）と、
 //	                              題に「№ <このページ>」を含む受信メール（本文とその添付）
 //	POST /api/rfq/read-reply    … 🤖 返事を読む: 選んだ返事を Gemini に読ませ、行ごとの単価の**案**を返す（何も書かない）
 //	POST /api/rfq/apply-reply   … 人が確かめた案を書く（単価・状態〔回答あり／辞退〕・備考・回答日）
@@ -46,10 +46,10 @@ var rfqReadReplyAI = cms.GeminiGenerateBlobs
 // rfqReplyMaxBytes は 🤖 に渡す返事のファイルの上限です（図面の見比べと同じ・Gemini の1回の要求に収まる大きさ）。
 const rfqReplyMaxBytes = 18 << 20
 
-// rfqReplyWhatLabels は「何の値段か」の文に並べる列です（見積依頼明細の列の名前）。
+// rfqReplyWhatLabels は「何の値段か」の文に並べる列です（部材見積依頼明細の列の名前）。
 var rfqReplyWhatLabels = []string{"種類", "品番", "品名", "加工内容", "材質", "形状", "寸法", "表面", "仕様"}
 
-// rfqTableView は見積依頼書ページの本文の、見積依頼明細の表を読んだものです（書き換えは nodes を描き直す）。
+// rfqTableView は部材見積依頼書ページの本文の、部材見積依頼明細の表を読んだものです（書き換えは nodes を描き直す）。
 type rfqTableView struct {
 	nodes []*html.Node
 	col   map[string]int
@@ -63,11 +63,11 @@ func readRFQTable(body string) (*rfqTableView, error) {
 	}
 	tables := tablesOfType(nodes, RFQItemsType)
 	if len(tables) == 0 {
-		return nil, errors.New("見積依頼明細の表がありません")
+		return nil, errors.New("部材見積依頼明細の表がありません")
 	}
 	trs := rowsOf(tables[0])
 	if len(trs) == 0 {
-		return nil, errors.New("見積依頼明細に見出しの行がありません")
+		return nil, errors.New("部材見積依頼明細に見出しの行がありません")
 	}
 	v := &rfqTableView{nodes: nodes, col: headerIndex(trs[0])}
 	for _, tr := range trs[1:] {
@@ -149,7 +149,7 @@ func markRFQAnswered(body, today string) (string, int, error) {
 		}
 		st := v.cell(tr, "状態")
 		if st == nil {
-			return body, 0, errors.New("見積依頼明細に「状態」の列がありません")
+			return body, 0, errors.New("部材見積依頼明細に「状態」の列がありません")
 		}
 		if s := strings.TrimSpace(textOf(st)); s != "" && s != rfqLineUnanswered {
 			continue
@@ -191,7 +191,7 @@ func applyRFQReply(body, today string, lines []rfqReplyLine) (string, int, error
 	}
 	for _, need := range []string{"単価", "状態"} {
 		if _, ok := v.col[need]; !ok {
-			return body, 0, errors.New("見積依頼明細に「" + need + "」の列がありません")
+			return body, 0, errors.New("部材見積依頼明細に「" + need + "」の列がありません")
 		}
 	}
 	for _, l := range lines {
@@ -221,7 +221,7 @@ func applyRFQReply(body, today string, lines []rfqReplyLine) (string, int, error
 		if note != "" {
 			c := v.cell(tr, "備考")
 			if c == nil {
-				return body, 0, errors.New("見積依頼明細に「備考」の列がありません")
+				return body, 0, errors.New("部材見積依頼明細に「備考」の列がありません")
 			}
 			if cur := strings.TrimSpace(textOf(c)); cur != "" && !strings.Contains(cur, note) {
 				note = cur + "／" + note
@@ -238,14 +238,14 @@ func applyRFQReply(body, today string, lines []rfqReplyLine) (string, int, error
 	return withTagValues(htmldoc.Render(v.nodes), RFQAnsweredTag, []string{today}, true), n, nil
 }
 
-// gateRFQReply は口の入口です——書ける見積依頼書ページか（テンプレートの外・編集中でない）。
+// gateRFQReply は口の入口です——書ける部材見積依頼書ページか（テンプレートの外・編集中でない）。
 func gateRFQReply(w http.ResponseWriter, r *http.Request, raw string) (string, bool) {
 	pageID, ok := gateWritablePage(w, r, raw)
 	if !ok {
 		return "", false
 	}
 	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書ページではありません")
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
 		return "", false
 	}
 	return pageID, true
@@ -362,14 +362,14 @@ func RFQReplySourcesAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書ページではありません")
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
 		return
 	}
-	// 0. この見積依頼書に結んだ返事ページ（通信記録の 🤖 解析から・2026-10-05・rfq_reply_page.go）の原本——いちばん上に。
+	// 0. この部材見積依頼書に結んだ返事ページ（通信記録の 🤖 解析から・2026-10-05・rfq_reply_page.go）の原本——いちばん上に。
 	out := rfqReplyPageSources(user, pageID)
-	// 1. このページに置いたファイル（FAX の取り込み・写真・業者の見積書）——作った見積依頼書の PDF は除く。
+	// 1. このページに置いたファイル（FAX の取り込み・写真・業者の見積書）——作った部材見積依頼書の PDF は除く。
 	out = append(out, pageFileSources(pageID, "このページ: ", func(name string) bool { return strings.HasPrefix(name, "見積依頼書 ") })...)
-	// 2. 題に「№ <このページ>」を含む受信メール（見積依頼のメールの件名「見積依頼（№ …）」への返信）——新しい順。
+	// 2. 題に「№ <このページ>」を含む受信メール（部材見積依頼のメールの件名「見積依頼（№ …）」への返信）——新しい順。
 	rows, err := database.DB.Query(`SELECT id, title FROM pages WHERE title LIKE ? ORDER BY id DESC LIMIT 20`, "%№ "+pageID+"%")
 	if err == nil {
 		type m struct {
@@ -475,7 +475,7 @@ func RFQReadReplyAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := v.replyRows()
 	if len(rows) == 0 {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼明細に行がありません")
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼明細に行がありません")
 		return
 	}
 	srcID, ok := page.NormalizeID(strings.TrimSpace(req.SourcePage))

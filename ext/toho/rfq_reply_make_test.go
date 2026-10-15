@@ -12,7 +12,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// 見積依頼の記録が無い返事から見積依頼書ページを作る（2026-10-05・移行期——rfq_reply_make.go）。Gemini は呼びません（読んだままの表を読み替えるだけ）。
+// 部材見積依頼の記録が無い返事から部材見積依頼書ページを作る（2026-10-05・移行期——rfq_reply_make.go）。Gemini は呼びません（読んだままの表を読み替えるだけ）。
 
 func TestReplyColumnOf(t *testing.T) {
 	for h, want := range map[string]string{
@@ -26,7 +26,7 @@ func TestReplyColumnOf(t *testing.T) {
 	}
 }
 
-// seedReplyWithoutRFQ は、加工製品ページ2枚（品番 A100-B01-01・K120-77-3_rev0）と、見積依頼の記録の無い返事ページを作ります。
+// seedReplyWithoutRFQ は、加工製品ページ2枚（品番 A100-B01-01・K120-77-3_rev0）と、部材見積依頼の記録の無い返事ページを作ります。
 func seedReplyWithoutRFQ(t *testing.T) (reply, p1, p2 string) {
 	t.Helper()
 	product := func(title, code string) string {
@@ -41,7 +41,7 @@ func seedReplyWithoutRFQ(t *testing.T) (reply, p1, p2 string) {
 	mail := newReplyMail(t, "御見積書", "")
 	row := func(cells ...string) string { return "<tr><td>" + strings.Join(cells, "</td><td>") + "</td></tr>" }
 	var err error
-	reply, err = cms.CreateChildPage(mail, "root", `<h1>見積依頼の返事　わかば鋼業</h1><dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>わかば鋼業</dd><dt>`+
+	reply, err = cms.CreateChildPage(mail, "root", `<h1>部材見積依頼の返事　わかば鋼業</h1><dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>わかば鋼業</dd><dt>`+
 		RFQAnsweredTag+`</dt><dd>2026-08-25</dd><dt>`+RFQReplyReadNoTag+`</dt><dd>1104</dd><dt>`+RFQReplyLinkTag+`</dt><dd><br/></dd><dt>`+
 		SourceRefTag+`</dt><dd>`+mail+`-rp01</dd></dl>`+cms.ViewMarkerHTML(RFQReplyMatchViewType)+
 		`<details open><summary>`+rfqReplySourceCaption+`</summary><table><tbody><tr><th>詳 細</th><th>数 量</th><th>単位</th><th>単 価</th><th>金 額</th></tr>`+
@@ -66,8 +66,8 @@ func getDraft(t *testing.T, reply string) (int, []rfqReplyDraftRow) {
 	return rr.Code, out.Rows
 }
 
-// TestRFQReplyDraftAndMake は、読んだままの表を見積依頼明細の列に読み替えた案（弊社品番は図面番号で当てる・品名の無い行は上の行の
-// 数量違い・合計の行は入れない）と、その案で見積依頼書ページを作り（回答あり・単価・回答日と見積依頼日・見積依頼／年／月）、返事を
+// TestRFQReplyDraftAndMake は、読んだままの表を部材見積依頼明細の列に読み替えた案（弊社品番は図面番号で当てる・品名の無い行は上の行の
+// 数量違い・合計の行は入れない）と、その案で部材見積依頼書ページを作り（回答あり・単価・回答日と部材見積依頼日・部材見積依頼／年／月）、返事を
 // 結んでその子へ移し、加工製品ページの「💴 見積回答」に並ぶ——を固定します。
 func TestRFQReplyDraftAndMake(t *testing.T) {
 	setupExtTest(t, rfqReplyBox, page.PageMeta{Owner: "root", Mode: "330"})
@@ -103,22 +103,22 @@ func TestRFQReplyDraftAndMake(t *testing.T) {
 	code, out := postRFQ(t, rfqReplyRoot, RFQReplyMakeRFQAPIHandler, map[string]any{"page_id": reply, "rows": lines})
 	rfq, _ := out["page_id"].(string)
 	if code != 200 || rfq == "" {
-		t.Fatalf("見積依頼書ページを作れません: %d %v", code, out)
+		t.Fatalf("部材見積依頼書ページを作れません: %d %v", code, out)
 	}
 	body := readPageBody(t, rfq)
 	for _, s := range []string{"<dt>" + SupplierTag + "</dt><dd>わかば鋼業</dd>", "<dt>" + RFQAnsweredTag + "</dt><dd>2026-08-25</dd>",
 		"<dt>" + RFQDateTag + "</dt><dd>2026-08-25</dd>", ">6800<", ">43000<", ">6400<", ">" + rfqLineAnswered + "<", "/" + reply} {
 		if !strings.Contains(body, s) {
-			t.Errorf("見積依頼書ページに %q がありません:\n%s", s, body)
+			t.Errorf("部材見積依頼書ページに %q がありません:\n%s", s, body)
 		}
 	}
 	meta, _ := page.ReadSidecar(rfq)
 	month, _ := page.ReadSidecar(meta.ParentID)
 	if cms.PageTitleByID(pageNum(meta.ParentID)) != "08月" || cms.PageTitleByID(pageNum(month.ParentID)) != "2026年" {
-		t.Errorf("置き場が 見積依頼／2026年／08月 ではありません")
+		t.Errorf("置き場が 部材見積依頼／2026年／08月 ではありません")
 	}
 	if parentOf(t, reply) != rfq || !strings.Contains(readPageBody(t, reply), "<dt>"+RFQReplyLinkTag+"</dt><dd>"+rfq+"</dd>") {
-		t.Errorf("返事が見積依頼書に結ばれていません（親 %s）", parentOf(t, reply))
+		t.Errorf("返事が部材見積依頼書に結ばれていません（親 %s）", parentOf(t, reply))
 	}
 	if q := quotesForProduct(database.DB, rfqReplyRoot, pageNum(p2)); len(q) != 2 {
 		t.Errorf("アームの見積回答が %d 行です（1個と20個の2行）: %+v", len(q), q)
@@ -152,10 +152,10 @@ func TestRFQReplyMakeRefuses(t *testing.T) {
 	}
 	parent := parentOf(t, reply)
 	if !strings.Contains(readPageBody(t, reply), "<dt>"+RFQReplyLinkTag+"</dt><dd><br/></dd>") || cms.PageTagValue(database.DB, pageNum(parent), SupplierTag) != "" {
-		t.Errorf("断ったのに返事が結ばれたか、見積依頼書の下へ動きました（親 %s）", parent)
+		t.Errorf("断ったのに返事が結ばれたか、部材見積依頼書の下へ動きました（親 %s）", parent)
 	}
 	if v := rfqReplyMatchViewHTML(rfqReplyRoot, pageNum(reply)); !strings.Contains(v, `class="chip-btn rfq-reply-make"`) {
-		t.Errorf("結ばれていない返事ページに「この返事から見積依頼書ページを作る」がありません:\n%s", v)
+		t.Errorf("結ばれていない返事ページに「この返事から部材見積依頼書ページを作る」がありません:\n%s", v)
 	}
 }
 

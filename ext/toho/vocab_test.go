@@ -59,15 +59,15 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		"required-materials", "drawing-revisions", "drawing-revision-items",
 		"part-outsourcing", "part-purchased", "part-supplied", "part-estimate",
 		// **発注部材表**（2026-09-22）——未発注の表から作り、人が足し引きしてから
-		// 発注書にする。⚠ **列は発注明細と同じ**（`orderItemColumns`）。
+		// 部材発注書にする。⚠ **列は部材発注明細と同じ**（`orderItemColumns`）。
 		OrderDraftType,
-		// **発注書へのリンク**（2026-09-22）——発注部材表が化けた1行。
-		// ⚠ **2026-09-24 から新しくは作りません**（「未発注の発注書」に置き換え）。
+		// **部材発注書へのリンク**（2026-09-22）——発注部材表が化けた1行。
+		// ⚠ **2026-09-24 から新しくは作りません**（「未発注の部材発注書」に置き換え）。
 		//    宣言は残します——既にある本文の節が「知らない形式」にならないように。
 		OrderLinkType,
 		// ⚠ **ビューの器**（2026-09-21）——材質・形状・寸法で材料を探す欄。
 		MaterialSearchViewType, UnorderedViewType,
-		// **未発注の発注書**（2026-09-24）——DBから数える一覧。
+		// **未発注の部材発注書**（2026-09-24）——DBから数える一覧。
 		UnsentOrdersViewType,
 		// **臨時部材表**（2026-09-25）——加工製品ページに無い材料を人が書く表。
 		TempPartsType,
@@ -88,16 +88,16 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 	}
 }
 
-// TestOrderDraftSharesColumnsWithOrderItems は、⚠ **発注部材表と発注明細の列が
+// TestOrderDraftSharesColumnsWithOrderItems は、⚠ **発注部材表と部材発注明細の列が
 // 同じ**であることを固定します（2026-09-22）。
 //
-// ⚠ **片方だけ列を足すと、発注部材表から発注書へ移すときに落ちます**——しかも
+// ⚠ **片方だけ列を足すと、発注部材表から部材発注書へ移すときに落ちます**——しかも
 // エラーは出ません（索引は見出しの表示文字で引くので、黙ってずれるだけ）。
 func TestOrderDraftSharesColumnsWithOrderItems(t *testing.T) {
 	draft := columnsOf(OrderDraftType)
 	items := columnsOf(ourOrderItemsType)
 	if len(draft) != len(items) {
-		t.Fatalf("列の数が違います: 発注部材表 %d / 発注明細 %d", len(draft), len(items))
+		t.Fatalf("列の数が違います: 発注部材表 %d / 部材発注明細 %d", len(draft), len(items))
 	}
 	for i := range draft {
 		if draft[i].Label != items[i].Label || draft[i].Field != items[i].Field ||

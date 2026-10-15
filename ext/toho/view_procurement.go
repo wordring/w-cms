@@ -7,9 +7,9 @@ package toho
 // **どの加工製品のぶんか**が消えていました。ユーザーの要件:
 //
 //	「各受注ページに**各加工製品ごとの項目と購入品の表を集める**必要があり、
-//	 その表の列の一つとして、**発注書番号と発注書ページへのリンク**が必要」
+//	 その表の列の一つとして、**部材発注書番号と部材発注書ページへのリンク**が必要」
 //
-// ⚠ **`発注書番号` はページ番号です**（`弊社品番` と同じ形）——別に採番すると、
+// ⚠ **`部材発注書番号` はページ番号です**（`弊社品番` と同じ形）——別に採番すると、
 // 同じものに2つの名前ができます。
 //
 // ⚠ **古い集計（`RequiredMaterials`）は残してあります**——`/api/required-materials`
@@ -95,7 +95,7 @@ func procItemsTable(p ProcurementProduct) string {
 	var sb strings.Builder
 	sb.WriteString(`<table class="materials-table proc-table"><thead><tr>` +
 		`<th>購入品</th><th>種別</th><th class="num">一台</th><th class="num">必要</th>` +
-		`<th class="num">発注済</th><th class="num">残</th><th>発注書</th>` +
+		`<th class="num">発注済</th><th class="num">残</th><th>部材発注書</th>` +
 		`</tr></thead><tbody>`)
 	for _, it := range p.Items {
 		sb.WriteString(`<tr><td>` + stdhtml.EscapeString(it.Name) + `</td>` +
@@ -119,10 +119,10 @@ func procRemaining(it ProcurementItem) string {
 	return `<span class="badge ng">` + strconv.Itoa(it.Remaining) + `</span>`
 }
 
-// procOrderLinks は手配した発注書への link を並べます。
+// procOrderLinks は手配した部材発注書への link を並べます。
 //
-// ⚠ **`発注書番号` はページ番号**です（`弊社品番` と同じ形）。
-// ⚠ **0件を黙りません**——「まだ発注していない」と「発注書に弊社品番が書かれていない」
+// ⚠ **`部材発注書番号` はページ番号**です（`弊社品番` と同じ形）。
+// ⚠ **0件を黙りません**——「まだ発注していない」と「部材発注書に弊社品番が書かれていない」
 // は別物なので、後者に気づけるよう**理由の形**で出します。
 func procOrderLinks(it ProcurementItem) string {
 	// 発注部材表に入れた分・不要にした分（2026-10-01・procure_ledger.go）——紙にはまだなっていないが、手配は済んでいる。
@@ -137,7 +137,7 @@ func procOrderLinks(it ProcurementItem) string {
 		if len(notes) > 0 {
 			return strings.Join(notes, `<br/>`)
 		}
-		return `<span class="proc-none">⚠ 未手配（発注書に弊社品番がありますか）</span>`
+		return `<span class="proc-none">⚠ 未手配（部材発注書に弊社品番がありますか）</span>`
 	}
 	var parts []string
 	for _, o := range it.Orders {

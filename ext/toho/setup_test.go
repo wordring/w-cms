@@ -56,7 +56,7 @@ func setupExtTest(t *testing.T, id string, p page.PageMeta) {
 
 // seedBoxTemplates は置き場のテンプレートを用意します（2026-09-27 から、置き場は**同じ題の
 // テンプレートからだけ**作られる・`cms.EnsureTopLevelBox`）。整理や社名の候補の試験が
-// 取引先・受注・発注・連絡帳の置き場を作るので、その元を置いておきます。
+// 取引先・受注・部材発注・連絡帳の置き場を作るので、その元を置いておきます。
 // ID は試験のページと重ならない 0009xx を使います。
 func seedBoxTemplates(t *testing.T) {
 	t.Helper()
@@ -92,9 +92,9 @@ func seedBoxTemplates(t *testing.T) {
 	// 見積の置き場と見積書（2026-10-01）。
 	write("000911", "000901", "<h1>"+EstimateBoxTitle+"</h1>")
 	write("000912", "000901", testEstimateTemplate())
-	// 見積依頼の置き場と見積依頼書（2026-10-03）。
+	// 部材見積依頼の置き場と部材見積依頼書（2026-10-03）。
 	write("000913", "000901", "<h1>"+RFQBoxTitle+"</h1>")
 	write("000914", "000901", testRFQTemplate())
-	// 見積依頼の返事（2026-10-05・rfq_reply_page.go）。
+	// 部材見積依頼の返事（2026-10-05・rfq_reply_page.go）。
 	write("000915", "000901", testRFQReplyTemplate())
 }

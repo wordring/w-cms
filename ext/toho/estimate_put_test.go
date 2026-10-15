@@ -134,9 +134,9 @@ func TestEstimatePutCostAPIAndButton(t *testing.T) {
 		t.Errorf("書けない・見積計算表の無いページに「計算表へ」が出ています")
 	}
 	// 鏡から: このページの品物の見積（回答あり）があり、書ける人・見積計算表のあるページだけに「計算表へ」。
-	addPage(t, 50, 0, "見積依頼　ふじ鍍金", "root", "302", true)
-	writeBodyFile(t, 50, `<h1>見積依頼　ふじ鍍金</h1><dl data-type="tags"><dt>`+RFQNoTag+`</dt><dd>000050</dd><dt>`+SupplierTag+
-		`</dt><dd>ふじ鍍金</dd><dt>`+RFQAnsweredTag+`</dt><dd>2026-10-05</dd></dl><table><caption>見積依頼明細</caption><tbody>`+
+	addPage(t, 50, 0, "部材見積依頼　ふじ鍍金", "root", "302", true)
+	writeBodyFile(t, 50, `<h1>部材見積依頼　ふじ鍍金</h1><dl data-type="tags"><dt>`+RFQNoTag+`</dt><dd>000050</dd><dt>`+SupplierTag+
+		`</dt><dd>ふじ鍍金</dd><dt>`+RFQAnsweredTag+`</dt><dd>2026-10-05</dd></dl><table><caption>部材見積依頼明細</caption><tbody>`+
 		`<tr><th>弊社品番</th><th>種類</th><th>加工内容</th><th>数量</th><th>単価</th><th>状態</th></tr>`+
 		`<tr><td>000031</td><td>外注加工</td><td>塗装</td><td>20</td><td>298</td><td>`+rfqLineAnswered+`</td></tr></tbody></table>`)
 	show := func(u *auth.User) string {

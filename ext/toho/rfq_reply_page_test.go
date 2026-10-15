@@ -12,15 +12,15 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 見積依頼の返事ページ（2026-10-05・rfq_reply_page.go）——通信記録の 🤖 解析が返事と判定したら返事ページを作り、
-// どの見積依頼書への返事かを突き合わせる（候補が1つで仕入先も合えば結んで見積依頼書の子へ・それ以外は人が選ぶ）。
+// 部材見積依頼の返事ページ（2026-10-05・rfq_reply_page.go）——通信記録の 🤖 解析が返事と判定したら返事ページを作り、
+// どの部材見積依頼書への返事かを突き合わせる（候補が1つで仕入先も合えば結んで部材見積依頼書の子へ・それ以外は人が選ぶ）。
 // ⚠ **Gemini は呼びません**——判定（judgeOrderPDF・judgeRFQReplyMail）を偽物に差し替えます。
 
 const rfqReplyBox = "000040"
 
 var rfqReplyRoot = &auth.User{Username: "root", IsAdmin: true}
 
-// newRFQDoc は回答待ちの見積依頼書ページを1枚作って、そのページ番号を返します。
+// newRFQDoc は回答待ちの部材見積依頼書ページを1枚作って、そのページ番号を返します。
 func newRFQDoc(t *testing.T, supplier string) string {
 	t.Helper()
 	seedBody(t, rfqReplyBox, `<h1>`+RFQBoxTitle+`</h1>`+tableOfLinesHTML(RFQDraftType, []ourOrderLine{
@@ -29,7 +29,7 @@ func newRFQDoc(t *testing.T, supplier string) string {
 	_, out := postRFQ(t, rfqReplyRoot, RFQNewDocAPIHandler, map[string]any{"page_id": rfqReplyBox, "table": 1, "supplier": supplier})
 	id, _ := out["page_id"].(string)
 	if id == "" {
-		t.Fatalf("見積依頼書ページを作れません: %v", out)
+		t.Fatalf("部材見積依頼書ページを作れません: %v", out)
 	}
 	return id
 }
@@ -47,7 +47,7 @@ func newReplyMail(t *testing.T, subject, bodyText string) string {
 	return id
 }
 
-// stubReply は解析の判定を「見積依頼の返事」に差し替えます。
+// stubReply は解析の判定を「部材見積依頼の返事」に差し替えます。
 func stubReply(t *testing.T, rfqNo, supplier string) {
 	t.Helper()
 	stubJudge(t, func(_ []byte) (*orderJudgment, error) {
@@ -83,8 +83,8 @@ func parentOf(t *testing.T, id string) string {
 	return m.ParentID
 }
 
-// TestAnalyzeRFQReplyLinksByNumber は、紙の№で見積依頼書が1つに決まり仕入先も合えば——返事ページを作り（題・タグ・原本・
-// 読んだままの表）、結んで（タグ 見積依頼）見積依頼書の子へ移し、見積依頼書の「🤖 返事を読む」の候補のいちばん上に原本が出る——
+// TestAnalyzeRFQReplyLinksByNumber は、紙の№で部材見積依頼書が1つに決まり仕入先も合えば——返事ページを作り（題・タグ・原本・
+// 読んだままの表）、結んで（タグ 部材見積依頼）部材見積依頼書の子へ移し、部材見積依頼書の「🤖 返事を読む」の候補のいちばん上に原本が出る——
 // を固定します。解析済みの印は「返事」。
 func TestAnalyzeRFQReplyLinksByNumber(t *testing.T) {
 	setupExtTest(t, rfqReplyBox, page.PageMeta{Owner: "root", Mode: "330"})
@@ -95,13 +95,13 @@ func TestAnalyzeRFQReplyLinksByNumber(t *testing.T) {
 
 	out := analyzeReply(t, mail)
 	if out.LinkedRFQ != rfq {
-		t.Fatalf("№ %s の見積依頼書に結んでいません: %+v（もう1枚は %s）", rfq, out, other)
+		t.Fatalf("№ %s の部材見積依頼書に結んでいません: %+v（もう1枚は %s）", rfq, out, other)
 	}
 	if got := parentOf(t, out.PageID); got != rfq {
-		t.Errorf("返事ページが見積依頼書の子へ移っていません（親 %s）", got)
+		t.Errorf("返事ページが部材見積依頼書の子へ移っていません（親 %s）", got)
 	}
 	body := readPageBody(t, out.PageID)
-	for _, want := range []string{"<h1>見積依頼の返事　わかば鋼業</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2026-10-04</dd>",
+	for _, want := range []string{"<h1>部材見積依頼の返事　わかば鋼業</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2026-10-04</dd>",
 		"<dt>" + RFQReplyLinkTag + "</dt><dd>" + rfq + "</dd>", "<dt>" + SourceRefTag + "</dt><dd>" + mail + "-rp01</dd>",
 		`data-ref="` + mail + `-rp01"`, "SS400 t6", "1,200"} {
 		if !strings.Contains(body, want) {
@@ -109,18 +109,18 @@ func TestAnalyzeRFQReplyLinksByNumber(t *testing.T) {
 		}
 	}
 	if strings.Contains(body, "<dt>"+RFQNoTag+"</dt>") {
-		t.Errorf("⚠ 返事ページが見積依頼番号のタグを持っています（見積依頼書と見分けられない）")
+		t.Errorf("⚠ 返事ページが部材見積依頼番号のタグを持っています（部材見積依頼書と見分けられない）")
 	}
 	if kindOfPage(pageNum(out.PageID)) != rfqReplyKind {
 		t.Errorf("解析済みの印が %q です", kindOfPage(pageNum(out.PageID)))
 	}
 	srcs := rfqReplyPageSources(rfqReplyRoot, rfq)
 	if len(srcs) != 1 || srcs[0].PageID != mail || srcs[0].File != "rp01.pdf" || !strings.HasPrefix(srcs[0].Label, "返事ページ: ") {
-		t.Errorf("見積依頼書の候補に返事ページの原本がありません: %+v", srcs)
+		t.Errorf("部材見積依頼書の候補に返事ページの原本がありません: %+v", srcs)
 	}
-	// 結んだあとの欄は見積依頼書へのリンク（単価を写す道）。
+	// 結んだあとの欄は部材見積依頼書へのリンク（単価を写す道）。
 	if v := rfqReplyMatchViewHTML(rfqReplyRoot, pageNum(out.PageID)); !strings.Contains(v, `href="/`+rfq+`#rfq-reply"`) {
-		t.Errorf("結んだ返事ページに見積依頼書で単価を写すリンクがありません:\n%s", v)
+		t.Errorf("結んだ返事ページに部材見積依頼書で単価を写すリンクがありません:\n%s", v)
 	}
 }
 
@@ -132,7 +132,7 @@ func TestAnalyzeRFQReplyNeedsHumanWhenUnsure(t *testing.T) {
 	w1 := newRFQDoc(t, "わかば鋼業")
 	w2 := newRFQDoc(t, "わかば鋼業")
 
-	// ① №の先は ふじ鍍金 の見積依頼——返事は わかば鋼業（№の読み違い）→ 結ばない・候補に出す。
+	// ① №の先は ふじ鍍金 の部材見積依頼——返事は わかば鋼業（№の読み違い）→ 結ばない・候補に出す。
 	mail := newReplyMail(t, "お見積り", "")
 	stubReply(t, fuji, "わかば鋼業")
 	out := analyzeReply(t, mail)
@@ -155,24 +155,24 @@ func TestAnalyzeRFQReplyNeedsHumanWhenUnsure(t *testing.T) {
 		t.Fatalf("人が選んで結べません: %d %v", code, res)
 	}
 	if parentOf(t, out2.PageID) != w2 || !strings.Contains(readPageBody(t, out2.PageID), "<dt>"+RFQReplyLinkTag+"</dt><dd>"+w2+"</dd>") {
-		t.Errorf("結んだのに見積依頼書の子へ移っていないか、タグがありません")
+		t.Errorf("結んだのに部材見積依頼書の子へ移っていないか、タグがありません")
 	}
-	// 見積依頼書でない番号・返事ページでないページは結ばない。
+	// 部材見積依頼書でない番号・返事ページでないページは結ばない。
 	if code, _ := postRFQ(t, rfqReplyRoot, RFQReplyLinkAPIHandler, map[string]any{"page_id": out2.PageID, "rfq": mail}); code != 404 {
-		t.Errorf("見積依頼書でない番号へ結ぼうとして %d", code)
+		t.Errorf("部材見積依頼書でない番号へ結ぼうとして %d", code)
 	}
 	if code, _ := postRFQ(t, rfqReplyRoot, RFQReplyLinkAPIHandler, map[string]any{"page_id": mail, "rfq": w1}); code != 400 {
 		t.Errorf("返事ページでないページを結ぼうとして %d", code)
 	}
 
-	// ③ 件名の№（見積依頼のメールへの返信）→ 1つに決まり仕入先も合う → 結ぶ。
+	// ③ 件名の№（部材見積依頼のメールへの返信）→ 1つに決まり仕入先も合う → 結ぶ。
 	mail3 := newReplyMail(t, "RE: 見積依頼（№ "+w1+"）", "")
 	stubReply(t, "", "わかば鋼業")
 	if out3 := analyzeReply(t, mail3); out3.LinkedRFQ != w1 {
 		t.Errorf("件名の№で結んでいません: %+v", out3)
 	}
 
-	// ④ 件名に№が無くても、こちらが送った見積依頼のメール（控え）への返信なら、控えの件名の№で結ぶ。
+	// ④ 件名に№が無くても、こちらが送った部材見積依頼のメール（控え）への返信なら、控えの件名の№で結ぶ。
 	sent, err := cms.CreateChildPage(rfqReplyBox, "root", `<h1>見積依頼（№ `+w2+`）</h1><dl data-type="tags"><dt>`+comm.DirectionTag+
 		`</dt><dd>`+comm.DirectionOut+`</dd><dt>`+comm.MessageIDTag+`</dt><dd>&lt;rfq-`+w2+`@example.jp&gt;</dd></dl>`)
 	if err != nil {
@@ -193,11 +193,11 @@ func TestAnalyzeRFQReplyNeedsHumanWhenUnsure(t *testing.T) {
 	}
 	stubReply(t, "", "わかば鋼業")
 	if out4 := analyzeReply(t, mail4); out4.LinkedRFQ != w2 {
-		t.Errorf("送った見積依頼のメールへの返信のつながりで結んでいません: %+v", out4)
+		t.Errorf("送った部材見積依頼のメールへの返信のつながりで結んでいません: %+v", out4)
 	}
 }
 
-// TestRFQReplyFromMailBody は、メールの「作るページ」の「見積依頼の返事ページ」——本文を読んで（原本の枠は作らない・受信元は
+// TestRFQReplyFromMailBody は、メールの「作るページ」の「部材見積依頼の返事ページ」——本文を読んで（原本の枠は作らない・受信元は
 // メールのページ全体）返事ページを作り、返事でなければ作らない——を固定します。
 func TestRFQReplyFromMailBody(t *testing.T) {
 	setupExtTest(t, rfqReplyBox, page.PageMeta{Owner: "root", Mode: "330"})
@@ -230,7 +230,7 @@ func TestRFQReplyFromMailBody(t *testing.T) {
 		t.Errorf("メールから作った返事ページが %v です", made)
 	}
 	if srcs := rfqReplyPageSources(rfqReplyRoot, rfq); len(srcs) != 1 || srcs[0].PageID != mail || srcs[0].File != "" {
-		t.Errorf("見積依頼書の候補にメールの本文がありません: %+v", srcs)
+		t.Errorf("部材見積依頼書の候補にメールの本文がありません: %+v", srcs)
 	}
 	// 返事でなければ作らない。
 	judgeRFQReplyMail = func(string) (*rfqReplyMailJudgment, error) { return parseRFQReplyMail(`{"is_rfq_reply":false}`) }
@@ -239,17 +239,17 @@ func TestRFQReplyFromMailBody(t *testing.T) {
 	}
 }
 
-// TestRFQReplyMatchViewOnlyOnReplyPages は、突き合わせの欄が返事ページにだけ出ることを固定します（見積依頼書・テンプレートには出ない）。
+// TestRFQReplyMatchViewOnlyOnReplyPages は、突き合わせの欄が返事ページにだけ出ることを固定します（部材見積依頼書・テンプレートには出ない）。
 func TestRFQReplyMatchViewOnlyOnReplyPages(t *testing.T) {
 	setupExtTest(t, rfqReplyBox, page.PageMeta{Owner: "root", Mode: "330"})
 	rfq := newRFQDoc(t, "わかば鋼業")
 	if v := rfqReplyMatchViewHTML(rfqReplyRoot, pageNum(rfq)); v != "" {
-		t.Errorf("見積依頼書に突き合わせの欄が出ています:\n%s", v)
+		t.Errorf("部材見積依頼書に突き合わせの欄が出ています:\n%s", v)
 	}
 	if v := rfqReplyMatchViewHTML(rfqReplyRoot, 915); v != "" {
 		t.Errorf("テンプレートに突き合わせの欄が出ています:\n%s", v)
 	}
-	// 回答日と受信元を持っても、見積依頼番号を持つページ（見積依頼書）は返事ページではない（人がタグを足した見積依頼書など）。
+	// 回答日と受信元を持っても、部材見積依頼番号を持つページ（部材見積依頼書）は返事ページではない（人がタグを足した部材見積依頼書など）。
 	if err := cms.RewriteBody(rfq, "root", func(b string) string {
 		b = withTagValues(b, RFQAnsweredTag, []string{"2026-10-05"}, true)
 		return withTagValues(b, SourceRefTag, []string{rfqReplyBox}, false)
@@ -257,7 +257,7 @@ func TestRFQReplyMatchViewOnlyOnReplyPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if v := rfqReplyMatchViewHTML(rfqReplyRoot, pageNum(rfq)); v != "" || kindOfPage(pageNum(rfq)) == rfqReplyKind {
-		t.Errorf("見積依頼番号を持つページを返事ページと見ています:\n%s", v)
+		t.Errorf("部材見積依頼番号を持つページを返事ページと見ています:\n%s", v)
 	}
 	_ = httptest.NewRequest
 }

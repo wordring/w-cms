@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 発注書のPDF発行（2026-09-21）
+// 部材発注書のPDF発行（2026-09-21）
 //
 // ユーザー:「**PDFを発行出来ることはMUSTです。** 発注書はPDFで送付し**7年保存**する
 // 必要があるそうです」「ボタンを押したら印刷出来たいです。**メールで発注を増やしたい**
@@ -42,7 +42,7 @@ var ErrNoPDFFont = errors.New(
 		"（config/settings.json の extensions.toho.pdf_font に .ttf のパスを書いてください。" +
 		"⚠ .ttc は読めません）")
 
-// 紙の寸法（A4・単位はポイント）。実物の発注書に寄せています。
+// 紙の寸法（A4・単位はポイント）。実物の部材発注書に寄せています。
 const (
 	// ⚠ **余白を詰めました**（2026-09-22 → 09-23）。A4 は幅 595pt なので、
 	//    32pt は約 11mm——**家庭用・業務用どちらのプリンタでも入る**範囲です。
@@ -91,21 +91,21 @@ type orderPDFColumn struct {
 //
 // できたPDFを**そのページの添付として保存**し、開くためのURLを返します。
 func OrderPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
-	servePaper(w, r, makeOrderPDF) // 口の形は見積書・見積依頼書と同じ（paper_pdf.go）
+	servePaper(w, r, makeOrderPDF) // 口の形は見積書・部材見積依頼書と同じ（paper_pdf.go）
 }
 
-// madeOrderPDF は作った発注書のPDFです。
+// madeOrderPDF は作った部材発注書のPDFです。
 type madeOrderPDF struct {
 	AttachID string // 添付の識別子（4桁）
 	File     string // 保存名
 	ViewNote string // ページに表示できなかった理由（出せたなら空）
-	// Overwrote は、表示中のまだ送っていない PDF を上書きしたかです（発注書だけ・2026-10-14・order_pdf_sent.go）。
+	// Overwrote は、表示中のまだ送っていない PDF を上書きしたかです（部材発注書だけ・2026-10-14・order_pdf_sent.go）。
 	Overwrote bool
 }
 
-// makeOrderPDF は発注書のPDFを作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。
+// makeOrderPDF は部材発注書のPDFを作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。
 //
-// `/api/order-pdf` と、メールで送るときにまだ PDF が無い場合（送る欄の用件「発注書」・order_mail.go）が共有します。
+// `/api/order-pdf` と、メールで送るときにまだ PDF が無い場合（送る欄の用件「部材発注書」・order_mail.go）が共有します。
 // 断るときは応答を書いて false を返します。
 //
 // ⚠ **表示中の PDF がまだ送っていないものなら、新しく作らずにその添付を上書きします**（2026-10-14・【要求】
@@ -122,11 +122,11 @@ func makeOrderPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOr
 		// ⚠ **作っただけでは、ページを開いても出てきません**（2026-09-22 ユーザー報告:
 		//    「発注書のページにPDFが表示されていません」）。添付として保存されるだけ
 		//    だったので、**本文に「ここで開く」マーカーを置きます**。
-		show: showBelowItems(ourOrderItemsType, "発注明細"),
+		show: showBelowItems(ourOrderItemsType, "部材発注明細"),
 	})
 }
 
-// buildOrderPDF は発注書ページの本文からPDFを組みます。
+// buildOrderPDF は部材発注書ページの本文からPDFを組みます。
 func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	font, err := paperFont()
 	if err != nil {
@@ -161,10 +161,10 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	// ── ヘッダ（設定 `order_print_heads`）──
 	// ⚠ **ページがそのタグを持っていれば、空でも見出しを刷ります**（2026-09-28）——法で決まった
 	// 記載事項（検査完了期日・支払期日・支払方法）を「念のため記載して空欄運用」するため（利用者）。
-	// 持っていないタグ（それより前の発注書）は刷りません。
+	// 持っていないタグ（それより前の部材発注書）は刷りません。
 	for _, k := range OrderPrintHeads() {
 		if v, ok := head[k]; ok {
-			y = pdfText(p, pdfLeft, y, pdfFontSz, k+"： "+v)
+			y = pdfText(p, pdfLeft, y, pdfFontSz, paperHeadLabel(k)+"： "+v)
 		}
 	}
 	y += 6
@@ -190,6 +190,14 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 		pdfNote(p, y, orderNoteHeading, strings.Split(n, "\n"))
 	}
 	return finishPaper(p)
+}
+
+// paperHeadLabel は紙に刷るタグの名前です——頭の `部材` を外します（2026-10-15）。
+//
+// ⚠ **業者に見えるものは変えません**（2026-10-15 利用者の決定）——ページのタグは `部材発注書番号`・`部材発注日`
+// になりましたが、紙はいままでどおり `発注書番号：`・`発注日：` と刷ります。
+func paperHeadLabel(tag string) string {
+	return strings.TrimPrefix(tag, "部材")
 }
 
 // pdfInk は1つの文字列を書きます。
@@ -510,10 +518,10 @@ func comma(n int) string {
 	return r
 }
 
-// readOrderDoc は発注書ページの本文から、ヘッダ・明細・**紙に出す列**を読み出します。
+// readOrderDoc は部材発注書ページの本文から、ヘッダ・明細・**紙に出す列**を読み出します。
 //
-// ⚠ **全行が空の列は落とします**（ユーザーの実物に合わせて）。材料の発注書に `表面` は
-// 出ず、塗装の発注書に `材質` は出ません——**形式は1つのまま、紙だけ種類ごとに違う**
+// ⚠ **全行が空の列は落とします**（ユーザーの実物に合わせて）。材料の部材発注書に `表面` は
+// 出ず、塗装の部材発注書に `材質` は出ません——**形式は1つのまま、紙だけ種類ごとに違う**
 // 形にするための仕掛けです。受注残表の印刷で「画面と紙で別のHTMLを組まない」と
 // 決めたのと同じ考えで、**組むのは1つ、落とすのは出すとき**。
 //
@@ -562,7 +570,7 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 		walk(n)
 	}
 	if table == nil {
-		return nil, nil, nil, errors.New("発注明細の表がありません（このページは発注書ではないようです）")
+		return nil, nil, nil, errors.New("部材発注明細の表がありません（このページは部材発注書ではないようです）")
 	}
 
 	// ⚠ **取り消した行は紙に刷りません**（2026-09-22）。出す紙は**いま注文する
@@ -574,15 +582,15 @@ func readOrderDoc(body string) (head map[string]string, rows []map[string]string
 	//    「そんな注文は無かった」という紙になります。
 	//    行を読むのは資料を添える口と共通（`orderTableRows`・order_docs.go）。
 	if len(rowsOf(table)) < 2 {
-		return nil, nil, nil, errors.New("発注明細に行がありません")
+		return nil, nil, nil, errors.New("部材発注明細に行がありません")
 	}
 	rows, cancelled := orderTableRows(table)
 	if len(rows) == 0 {
 		if cancelled > 0 {
-			return nil, nil, nil, errors.New("発注明細は全部取り消されています（" +
+			return nil, nil, nil, errors.New("部材発注明細は全部取り消されています（" +
 				strconv.Itoa(cancelled) + "行）")
 		}
-		return nil, nil, nil, errors.New("発注明細に中身のある行がありません")
+		return nil, nil, nil, errors.New("部材発注明細に中身のある行がありません")
 	}
 
 	// 紙に出す列を決める。⚠ **並びは設定 `order_print_columns`**（2026-09-28・種類ごとに要る列が

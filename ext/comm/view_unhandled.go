@@ -107,7 +107,7 @@ type unhandledRow struct {
 	From        string
 	Attachments string // 添付の数（無ければ空）
 	Direction   string // 向き（受信／送信。メモや社内案件では空）
-	Draft       string // 下書きなら用件（返信・新規・発注書）——まだ送っていない（2026-09-30）
+	Draft       string // 下書きなら用件（返信・新規・部材発注書）——まだ送っていない（2026-09-30）
 }
 
 // UnhandledIntakes は未処理の通信記録を新しい順に返します（総数も返す）。

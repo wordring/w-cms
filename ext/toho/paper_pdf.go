@@ -3,7 +3,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 // 紙の PDF に共通の段取り（2026-10-09）
 //
-// 発注書（order_pdf.go）・見積書（estimate_pdf.go）・見積依頼書（rfq_pdf.go）の3つが、同じ段取りを写していた:
+// 部材発注書（order_pdf.go）・見積書（estimate_pdf.go）・部材見積依頼書（rfq_pdf.go）の3つが、同じ段取りを写していた:
 // フォントの確かめ → 紙を始める → 差出人を右に → 備考を紙の幅で折って刷る → 書き出す／作って添付に残しページに
 // 表示する／口の前口上と応答。紙ごとに違うのは中身（題・宛名・明細）だけなので、段取りをここに寄せる。
 // 資料を綴じた1本（order_docs.go）も同じ口の形。
@@ -114,7 +114,7 @@ type paperKind struct {
 
 // stampedPDFName は添付の名前です——⚠ **日時を入れます**（同じページで作り直すたびに増えるので、どれがいつのものか
 // 分からないと困る・添付は上書きされない）。
-// （発注書だけは 2026-10-14 から、まだ送っていない表示中の PDF を作り直すと、その添付を上書きします——
+// （部材発注書だけは 2026-10-14 から、まだ送っていない表示中の PDF を作り直すと、その添付を上書きします——
 // order_pdf_sent.go の `overwriteUnsentOrderPDF`。名前の日時も作り直した時刻へ替わります。）
 func stampedPDFName(head string) string {
 	return head + " " + time.Now().Format("20060102-150405") + ".pdf"
@@ -192,7 +192,7 @@ func servePaper(w http.ResponseWriter, r *http.Request, makeFn func(w http.Respo
 	if made.ViewNote != "" {
 		out["view_note"] = made.ViewNote
 	}
-	if made.Overwrote { // 発注書の、まだ送っていない PDF を上書きした（order_pdf_sent.go）
+	if made.Overwrote { // 部材発注書の、まだ送っていない PDF を上書きした（order_pdf_sent.go）
 		out["overwrote"] = true
 	}
 	json.NewEncoder(w).Encode(out)

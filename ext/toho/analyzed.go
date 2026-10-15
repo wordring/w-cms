@@ -62,7 +62,7 @@ const (
 	SubtotalTag = "小計"
 	TaxTag      = "消費税"
 	TotalTag    = "合計金額"
-	// SupplierTag は**弊社の発注書**の相手です（材料屋・加工業者）。⚠ 見積もりや
+	// SupplierTag は**弊社の部材発注書**の相手です（材料屋・加工業者）。⚠ 見積もりや
 	// 部材の表にも `仕入先` の列がありますが、**あちらは行ごとの値**で別物です。
 	SupplierTag = "仕入先"
 )
@@ -202,7 +202,7 @@ func kindOfPage(pageIDInt int) string {
 		return "受注"
 	}
 	if isRFQReplyTags(tags) {
-		return rfqReplyKind // 見積依頼の返事ページ（2026-10-05・rfq_reply_page.go）
+		return rfqReplyKind // 部材見積依頼の返事ページ（2026-10-05・rfq_reply_page.go）
 	}
 	return ""
 }

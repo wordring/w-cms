@@ -121,7 +121,7 @@ type RequiredPageStatus struct {
 //
 // ⚠ **「トップ直下に1枚だけ」を守る側が使います**（`refuseDuplicateBoxTitle`）。
 // コアに業務語を書かずに済むよう、判定は**名簿**を通します——拡張が足した置き場
-// （受注・発注・取引先）にも同じ規則が効きます。
+// （受注・部材発注・取引先）にも同じ規則が効きます。
 func IsRequiredPageTitle(title string) bool {
 	_, ok := requiredPageRegistry[strings.TrimSpace(title)]
 	return ok

@@ -6,7 +6,7 @@ import (
 	"w-cms/internal/cms"
 )
 
-// **自社の発注書の明細は、実物7枚から採った1つの形**（2026-09-21）。
+// **自社の部材発注書の明細は、実物7枚から採った1つの形**（2026-09-21）。
 //
 // 実物（材料2／加工2／塗装2／鍍金1）の見出し:
 //
@@ -21,12 +21,12 @@ import (
 // TestOurOrderItemsCoverRealDocuments は、**実物の列がすべて入っている**ことを
 // 固定します。
 //
-// ⚠ **1つでも欠けると、その種類の発注書が組めません**——そして欠けたことは
+// ⚠ **1つでも欠けると、その種類の部材発注書が組めません**——そして欠けたことは
 // 「なぜか列が出ない」という形でしか現れません。
 func TestOurOrderItemsCoverRealDocuments(t *testing.T) {
 	def, ok := cms.VocabDefByType("our-order-items")
 	if !ok {
-		t.Fatal("発注明細の宣言がありません")
+		t.Fatal("部材発注明細の宣言がありません")
 	}
 	have := map[string]cms.ColumnType{}
 	for _, c := range def.Columns {
@@ -40,7 +40,7 @@ func TestOurOrderItemsCoverRealDocuments(t *testing.T) {
 		"備考", "状態", "弊社品番", // 弊社の管理
 	} {
 		if _, ok := have[want]; !ok {
-			t.Errorf("⚠ 実物にある列 %q がありません（その種類の発注書が組めません）", want)
+			t.Errorf("⚠ 実物にある列 %q がありません（その種類の部材発注書が組めません）", want)
 		}
 	}
 }
@@ -126,7 +126,7 @@ func TestOrderLineMeaning(t *testing.T) {
 		{OrderLineDelivered, false, true},
 		{OrderLineCancelled, true, false},
 		// ⚠ **2026-09-22 より前の紙**。当時は「紙を作る＝発注した」だったので、
-		//    `未発注` に読むと**既に出した発注書が全部「まだ出していない」に化けます**。
+		//    `未発注` に読むと**既に出した部材発注書が全部「まだ出していない」に化けます**。
 		{"未納品", false, true},
 		{"", false, false},
 		{" 取消 ", true, false},

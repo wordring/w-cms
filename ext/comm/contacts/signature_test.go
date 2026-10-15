@@ -13,8 +13,8 @@ import (
 	"w-cms/internal/cms"
 )
 
-// orderSig は試験で使う2つ目の見出しです（発注書の署名——東邦の言葉なのでここでは文字で持つ）。
-const orderSig = "発注書の署名"
+// orderSig は試験で使う2つ目の見出しです（部材発注書の署名——東邦の言葉なのでここでは文字で持つ）。
+const orderSig = "部材発注書の署名"
 
 // TestSignatureLinesReadsTheSectionAsWritten は、⚠ **書いたとおりの行が、書いた順で読めること**を固定します。
 func TestSignatureLinesReadsTheSectionAsWritten(t *testing.T) {
@@ -27,7 +27,7 @@ func TestSignatureLinesReadsTheSectionAsWritten(t *testing.T) {
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("署名が %v です（%v を期待）", got, want)
 	}
-	// ⚠ **見出しは書きません**——「発注書の署名」と印字された紙が出ます。
+	// ⚠ **見出しは書きません**——「部材発注書の署名」と印字された紙が出ます。
 	for _, ln := range got {
 		if strings.Contains(ln, orderSig) {
 			t.Errorf("⚠ 見出しが署名に混ざっています: %v", got)
@@ -50,12 +50,12 @@ func TestSignatureLinesSplitsOnBR(t *testing.T) {
 }
 
 // TestSignatureLinesPicksTheRightSection は、⚠ **別の節を拾わない**ことを固定します
-// （取り違えると、発注書にメールの署名が刷られます——どちらも署名なので、見ても気づきにくい）。
+// （取り違えると、部材発注書にメールの署名が刷られます——どちらも署名なので、見ても気づきにくい）。
 func TestSignatureLinesPicksTheRightSection(t *testing.T) {
 	body := `<section><h2>` + MailSignatureHeading + `</h2><p>メール用です</p></section>` +
-		`<section><h2>` + orderSig + `</h2><p>発注書用です</p></section>`
-	if got := SignatureLines(body, orderSig); len(got) != 1 || got[0] != "発注書用です" {
-		t.Errorf("発注書の署名が %v です", got)
+		`<section><h2>` + orderSig + `</h2><p>部材発注書用です</p></section>`
+	if got := SignatureLines(body, orderSig); len(got) != 1 || got[0] != "部材発注書用です" {
+		t.Errorf("部材発注書の署名が %v です", got)
 	}
 	if got := SignatureLines(body, MailSignatureHeading); len(got) != 1 || got[0] != "メール用です" {
 		t.Errorf("メールの署名が %v です", got)
@@ -87,7 +87,7 @@ func TestSignatureLinesReadsPlainHeadings(t *testing.T) {
 		`<h2 data-id="ukio">` + MailSignatureHeading + `</h2>` +
 		`<p data-id="b0vs">メール用です</p>`
 	if got := SignatureLines(body, orderSig); strings.Join(got, "|") != "みらい産業|担当： 山田 太郎" {
-		t.Errorf("発注書の署名が %v です（次の見出しの手前まで・見出しの太字は外して当てる）", got)
+		t.Errorf("部材発注書の署名が %v です（次の見出しの手前まで・見出しの太字は外して当てる）", got)
 	}
 	if got := SignatureLines(body, MailSignatureHeading); strings.Join(got, "|") != "メール用です" {
 		t.Errorf("メールの署名が %v です", got)

@@ -14,13 +14,13 @@ import (
 // 購入品は複数あります。…その表の列の一つとして、**発注書番号と発注書ページへの
 // リンク**が必要になると思います」。
 //
-// ⚠ **スコープに頼っていないこと**がいちばん大事です——発注書は `発注／年／月` に
+// ⚠ **スコープに頼っていないこと**がいちばん大事です——部材発注書は `部材発注／年／月` に
 // あり、受注ページからは**2段**なので、`RelatedPages`（深さ1）では**黙って0件**に
-// なります。ここでは**参照でつながっていない発注書**を当てて、それを固定します。
+// なります。ここでは**参照でつながっていない部材発注書**を当てて、それを固定します。
 
-// seedProcurement は 受注ページ(30) / 加工製品(31) / 発注書(32) を用意します。
+// seedProcurement は 受注ページ(30) / 加工製品(31) / 部材発注書(32) を用意します。
 //
-// ⚠ **発注書は受注ページとどこにも繋がっていません**（`発注／年／月` に置かれる想定）。
+// ⚠ **部材発注書は受注ページとどこにも繋がっていません**（`部材発注／年／月` に置かれる想定）。
 func seedProcurement(t *testing.T, orderOwner, orderMode string, orderPublic bool) {
 	t.Helper()
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
@@ -34,10 +34,10 @@ func seedProcurement(t *testing.T, orderOwner, orderMode string, orderPublic boo
 		`<tr><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>2</td></tr>`+
 		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>1</td></tr>`+
 		`</tbody></table>`)
-	// 発注書——⚠ **弊社品番で加工製品を指します**（受注ページは指していません）。
+	// 部材発注書——⚠ **弊社品番で加工製品を指します**（受注ページは指していません）。
 	syncBody(t, 32, `<h1>発注 みなと商店</h1>`+
 		`<dl data-type="tags"><dt>`+SupplierTag+`</dt><dd>みなと商店</dd>`+
-		`<dt>`+OrderedAtTag+`</dt><dd>2026-09-21</dd></dl>`+
+		`<dt>`+PurchasedAtTag+`</dt><dd>2026-09-21</dd></dl>`+
 		`<table data-type="`+ourOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単価</th></tr>`+
 		`<tr><td>000031</td><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>6</td><td>800</td></tr>`+
@@ -49,10 +49,10 @@ func seedProcurement(t *testing.T, orderOwner, orderMode string, orderPublic boo
 		`</tbody></table>`)
 }
 
-// TestProcurementFindsOrdersOutsideScope は、⚠ **参照でつながっていない発注書でも
+// TestProcurementFindsOrdersOutsideScope は、⚠ **参照でつながっていない部材発注書でも
 // 引ける**ことを固定します。
 //
-// ⚠ **これがこの機能の心臓です。** 発注書は `発注／年／月` に置かれ、受注ページとは
+// ⚠ **これがこの機能の心臓です。** 部材発注書は `部材発注／年／月` に置かれ、受注ページとは
 // 直接つながりません。`RelatedPages`（深さ1）に頼ると**黙って0件**になります。
 func TestProcurementFindsOrdersOutsideScope(t *testing.T) {
 	setupMaterialsPermsTest(t)
@@ -86,9 +86,9 @@ func TestProcurementFindsOrdersOutsideScope(t *testing.T) {
 		t.Errorf("必要6・発注済6・残0 のはずです: %#v", *plate)
 	}
 	if len(plate.Orders) != 1 || plate.Orders[0].PageID != 32 {
-		t.Fatalf("⚠ 発注書に結べていません（スコープに頼っていませんか）: %#v", plate.Orders)
+		t.Fatalf("⚠ 部材発注書に結べていません（スコープに頼っていませんか）: %#v", plate.Orders)
 	}
-	// ⚠ **手配していないほうは黙らない**（残1・発注書なし）。
+	// ⚠ **手配していないほうは黙らない**（残1・部材発注書なし）。
 	for _, it := range p.Items {
 		if strings.Contains(it.Name, "t4.5") && len(it.Orders) != 0 {
 			t.Errorf("⚠ 無関係な発注に結んでいます: %#v", it)
@@ -96,7 +96,7 @@ func TestProcurementFindsOrdersOutsideScope(t *testing.T) {
 	}
 }
 
-// TestProcurementHidesUnreadableOrders は、⚠ **読めない発注書は混ぜない**ことを
+// TestProcurementHidesUnreadableOrders は、⚠ **読めない部材発注書は混ぜない**ことを
 // 固定します。
 //
 // ⚠ **これは変異試験が見つけた穴です**（2026-09-21）——可視判定を外しても、
@@ -104,12 +104,12 @@ func TestProcurementFindsOrdersOutsideScope(t *testing.T) {
 // 測っています」。
 func TestProcurementHidesUnreadableOrders(t *testing.T) {
 	setupMaterialsPermsTest(t)
-	// 発注書は alice 専有（mallory は読めない）。
+	// 部材発注書は alice 専有（mallory は読めない）。
 	seedProcurement(t, "alice", "300", false)
 
 	mallory := &auth.User{Username: "mallory"}
 	if page.GetPerms(32).CanRead(mallory) {
-		t.Fatal("前提が崩れています: mallory は発注書を読めてはいけません")
+		t.Fatal("前提が崩れています: mallory は部材発注書を読めてはいけません")
 	}
 	list, err := ProcurementByProduct(mallory, 30)
 	if err != nil {
@@ -120,10 +120,10 @@ func TestProcurementHidesUnreadableOrders(t *testing.T) {
 	}
 	for _, it := range list[0].Items {
 		if len(it.Orders) != 0 {
-			t.Fatalf("⚠ 読めない発注書が出ています: %#v", it.Orders)
+			t.Fatalf("⚠ 読めない部材発注書が出ています: %#v", it.Orders)
 		}
 		if it.Ordered != 0 {
-			t.Errorf("⚠ 読めない発注書の数量が積まれています: %#v", it)
+			t.Errorf("⚠ 読めない部材発注書の数量が積まれています: %#v", it)
 		}
 	}
 }

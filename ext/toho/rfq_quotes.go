@@ -3,15 +3,15 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 // 加工製品ページの「見積回答」（2026-10-04）
 //
-// 利用者:「進めてください」（筆者の勧め——加工製品ページに「貰った見積」の一覧を置き、そのページの見積依頼明細の行を業者・
-// 日付・ロット・単価で並べる）。業者の値段は見積依頼明細の単価の列1か所にそろえた（過去の見積もりを移したものも、これから
+// 利用者:「進めてください」（筆者の勧め——加工製品ページに「貰った見積」の一覧を置き、そのページの部材見積依頼明細の行を業者・
+// 日付・ロット・単価で並べる）。業者の値段は部材見積依頼明細の単価の列1か所にそろえた（過去の見積もりを移したものも、これから
 // 届く返事も）ので、ここはそれを**加工製品の側から引いて並べるだけ**（鏡——本文には書かない）。
 // 見出しは同じ日に「見積回答」へ改めた（利用者:「ほかと衝突が無ければ、貰った見積もりの見出しを見積回答に変えたい」——
-// コード・設定・文書に同じ語は無く、見積依頼明細の状態〔未回答・回答あり〕・回答日と言葉がそろう）。
+// コード・設定・文書に同じ語は無く、部材見積依頼明細の状態〔未回答・回答あり〕・回答日と言葉がそろう）。
 //
 //   - 置き場所は**部品の表の最後（支給部品の表）の下**——部品の表（材料・外注加工・購入部品・支給部品）の鏡（drawing_mirror.go）に
 //     相乗りする。ページに支給部品の表が無ければ出ない（テンプレートには在る）。
-//   - 並べるのは、弊社品番がこのページの行（読める見積依頼書ページだけ）。新しい順（回答日、無ければ見積依頼日）。
+//   - 並べるのは、弊社品番がこのページの行（読める部材見積依頼書ページだけ）。新しい順（回答日、無ければ部材見積依頼日）。
 //     返事の来ていない行（未回答）も「回答待ち」として並べる——依頼中だと分かるように。辞退は「辞退」。
 //   - 相見積もりは1つにまとめない（業者ごとに1行——【要求】見積依頼 §3「買ってもいない会社の値段が最新単価を上書きしないように」）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ import (
 // quoteRow は「見積回答」の1行です。
 type quoteRow struct {
 	RFQPage int
-	Date    string // 回答日（無ければ見積依頼日）
+	Date    string // 回答日（無ければ部材見積依頼日）
 	Vendor  string
 	Kind    string
 	What    string // 何の値段か（加工内容・材質 形状 寸法・品名）
@@ -43,7 +43,7 @@ type quoteRow struct {
 	Status  string
 }
 
-// quotesForProduct は、弊社品番が productID の見積依頼明細の行を新しい順に返します（読める見積依頼書ページだけ）。
+// quotesForProduct は、弊社品番が productID の部材見積依頼明細の行を新しい順に返します（読める部材見積依頼書ページだけ）。
 func quotesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []quoteRow {
 	rows, err := cms.VocabRowsOfType(db, RFQItemsType)
 	if err != nil {
@@ -94,7 +94,7 @@ func quotesListHTML(list []quoteRow, productID string) string {
 	var b strings.Builder
 	b.WriteString(`<div class="vocab-chrome rfq-quotes" contenteditable="false"><p class="materials-title">💴 見積回答</p>`)
 	if len(list) == 0 {
-		b.WriteString(`<p class="materials-empty">まだありません（見積依頼書に業者の返事〔単価〕が入ると、ここに並びます）。</p></div>`)
+		b.WriteString(`<p class="materials-empty">まだありません（部材見積依頼書に業者の返事〔単価〕が入ると、ここに並びます）。</p></div>`)
 		return b.String()
 	}
 	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>日付</th><th>業者</th><th>種類</th><th>何の値段か</th>` +
@@ -115,7 +115,7 @@ func quotesListHTML(list []quoteRow, productID string) string {
 		if price != "" && !strings.HasSuffix(price, "円") {
 			price += "円"
 		}
-		// 日付がそのまま見積依頼書へのリンク（列を1つ減らす——欄は最大 666px）。日付が無ければページ番号。
+		// 日付がそのまま部材見積依頼書へのリンク（列を1つ減らす——欄は最大 666px）。日付が無ければページ番号。
 		id := page.FormatID(q.RFQPage)
 		label := q.Date
 		if label == "" {

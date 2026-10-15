@@ -7,7 +7,7 @@ package toho
 //   加工製品ページに無い材料（消耗品・工具・社内用など）は、この表に手で書きます。
 //   書いた行は、下の必要部材表に並びます（客先の欄に「臨時部材」と出ます）。
 //   必要部材表でチェックして発注部材表へ入れると、この表から消えます。
-//   弊社品番の無い行を発注部材表や発注書から戻すと、この表へ戻ってきます。
+//   弊社品番の無い行を発注部材表や部材発注書から戻すと、この表へ戻ってきます。
 //   行が無いときも、空の表を表示しておきます。
 //
 // ⚠ **行が在る＝まだ発注していない**。発注済みの計算（引き算）には入れません
@@ -17,11 +17,11 @@ package toho
 //
 // ⚠ **なぜ要るか**: 必要部材表は**表示のたびに計算**する鏡で、どこにも保存して
 // いません。弊社品番の無い行は計算の鎖（受注明細→弊社品番→材料表）に乗らないので、
-// 発注書から戻すと**消えるだけ**でした（2026-09-24 ユーザー報告:「必要部材表へ戻すを
+// 部材発注書から戻すと**消えるだけ**でした（2026-09-24 ユーザー報告:「必要部材表へ戻すを
 // 押すと発注明細から消えますが、必要部材表へは表示されません」）。
 //
-// ⚠ **置き場は発注フォルダ（トップ直下の「発注」）1か所**です。発注書ページ
-// （`発注／年／月`）から戻す行も、そこへ書きます。
+// ⚠ **置き場は部材発注フォルダ（トップ直下の「部材発注」）1か所**です。部材発注書ページ
+// （`部材発注／年／月`）から戻す行も、そこへ書きます。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -99,7 +99,7 @@ func emptyRowHTML(vocabType string) string {
 // lineOfRow は表の1行を、見出しの表示文字で読んで1行ぶんにします。
 //
 // ⚠ **鍵は見出しの表示文字**です（列の並びは表ごとに違ってよい）。
-// 発注書・発注部材表・臨時部材表のどれから読んでも同じ形になります。
+// 部材発注書・発注部材表・臨時部材表のどれから読んでも同じ形になります。
 func lineOfRow(head, tr *html.Node) ourOrderLine {
 	idx := headerIndex(head)
 	cells := cellTexts(tr)
@@ -113,7 +113,7 @@ func lineOfRow(head, tr *html.Node) ourOrderLine {
 		ProductID: at("弊社品番"), ForOrder: at("受注"), ItemID: at("品番"), ItemName: at("品名"),
 		Material: at("材質"), Shape: at("形状"), Size: at("寸法"), Color: at("表面"),
 		Quantity: at("数量"), Unit: at("単位"), Cost: at("単価"), Note: at("備考"),
-		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・見積依頼の表は発注明細と同じ列——行を移しても落とさない）。
+		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・部材見積依頼の表は部材発注明細と同じ列——行を移しても落とさない）。
 		Kind: at("種類"), No: at("番号"), Work: at("加工内容"), Spec: at("仕様"), Supplied: at("支給"),
 		// ロットは見積依頼必要部材表・見積依頼部材表だけの列（2026-10-14・rfq.go）——列の無い表では空。
 		Lot: at("ロット"),
@@ -272,19 +272,19 @@ func removeTempPartRows(body string, rows []int) (string, int) {
 	return htmldoc.Render(nodes), removed
 }
 
-// purchaseOrderBoxID は発注フォルダ（トップ直下の「発注」）のページIDです（作りません）。
+// purchaseOrderBoxID は部材発注フォルダ（トップ直下の「部材発注」）のページIDです（作りません）。
 func purchaseOrderBoxID() (string, bool) {
 	return cms.TopLevelPageByTitle(PurchaseOrderBoxTitle)
 }
 
-// errBoxBusy は「発注フォルダを誰かが編集中」です。
-var errBoxBusy = errors.New("発注フォルダを誰かが編集中です（編集が終わってから、もう一度押してください）")
+// errBoxBusy は「部材発注フォルダを誰かが編集中」です。
+var errBoxBusy = errors.New("部材発注フォルダを誰かが編集中です（編集が終わってから、もう一度押してください）")
 
-// returnToTempParts は行を発注フォルダの臨時部材表へ書きます（発注書ページから戻すとき）。
+// returnToTempParts は行を部材発注フォルダの臨時部材表へ書きます（部材発注書ページから戻すとき）。
 //
-// ⚠ **発注フォルダを誰かが編集中なら断ります**——オートセーブと黙って上書きし合います。
+// ⚠ **部材発注フォルダを誰かが編集中なら断ります**——オートセーブと黙って上書きし合います。
 // （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ。人の保存とは `cms.RewriteBody` の錠で順に並ぶ。）
-// ⚠ 発注フォルダが無ければ作ります（置き場の箱・`EnsureTopLevelBox`）。
+// ⚠ 部材発注フォルダが無ければ作ります（置き場の箱・`EnsureTopLevelBox`）。
 func returnToTempParts(user *auth.User, ln ourOrderLine) error {
 	boxID, err := cms.EnsureTopLevelBox(PurchaseOrderBoxTitle, user.Username)
 	if err != nil {
@@ -402,7 +402,7 @@ func tempRowsElsewhere(lines []ourOrderLine, curPage string) map[string][]int {
 func takeTempRowsElsewhere(user *auth.User, lines []ourOrderLine, curPage string) string {
 	for p, rows := range tempRowsElsewhere(lines, curPage) {
 		if _, open := editlock.Locks.EditorOpen(pageNum(p)); open {
-			return "⚠ 臨時部材表から行を消せませんでした（発注フォルダを誰かが編集中です）。手で消してください"
+			return "⚠ 臨時部材表から行を消せませんでした（部材発注フォルダを誰かが編集中です）。手で消してください"
 		}
 		if err := cms.RewriteBody(p, user.Username, func(cur string) string {
 			out, _ := removeTempPartRows(cur, rows)

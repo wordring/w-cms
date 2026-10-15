@@ -15,24 +15,24 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 見積依頼の返事（2026-10-05・rfq_reply.go）——回答を記録・🤖 返事を読む（候補・読む・書く）。
+// 部材見積依頼の返事（2026-10-05・rfq_reply.go）——回答を記録・🤖 返事を読む（候補・読む・書く）。
 // ⚠ **Gemini は呼びません**——読む口（rfqReadReplyAI）を偽物に差し替えて、何を渡したかと、返したものの扱いを見ます。
 
-// rfqReplyRowHTML は見積依頼明細の1行です。
+// rfqReplyRowHTML は部材見積依頼明細の1行です。
 func rfqReplyRowHTML(mat, size, qty, price, note, state string) string {
 	return `<tr><td>000031</td><td>材料</td><td>` + mat + `</td><td>板</td><td>` + size + `</td><td>` + qty + `</td><td>枚</td><td>` +
 		price + `</td><td>` + note + `</td><td>` + state + `</td></tr>`
 }
 
-// rfqReplyBody は見積依頼書ページ（000050）の本文です。
+// rfqReplyBody は部材見積依頼書ページ（000050）の本文です。
 func rfqReplyBody(rows ...string) string {
-	return `<h1>見積依頼　わかば鋼業</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000050</dd><dt>` + SupplierTag +
+	return `<h1>部材見積依頼　わかば鋼業</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000050</dd><dt>` + SupplierTag +
 		`</dt><dd>わかば鋼業</dd><dt>` + RFQAnsweredTag + `</dt><dd><br/></dd></dl>` +
-		`<table><caption>見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th>` +
+		`<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th>` +
 		`<th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` + strings.Join(rows, "") + `</tbody></table>`
 }
 
-// seedRFQReply は見積依頼書ページ 50（root）と返事のメールを置きます。
+// seedRFQReply は部材見積依頼書ページ 50（root）と返事のメールを置きます。
 //
 //	60 … 「RE: 見積依頼（№ 000050）」受信（root）——本文と添付の見積書
 //	61 … 「見積依頼（№ 000050）」送信（root）——候補に出ない
@@ -42,7 +42,7 @@ func seedRFQReply(t *testing.T, body string) {
 	t.Setenv("GEMINI_API_KEY", "")
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
-	addPage(t, 50, 0, "見積依頼　わかば鋼業", "root", "302", true)
+	addPage(t, 50, 0, "部材見積依頼　わかば鋼業", "root", "302", true)
 	writeBodyFile(t, 50, body)
 	mail := func(id int, owner, mode, title, dir, text string) {
 		addPage(t, id, 0, title, owner, mode, mode != "300")
@@ -213,7 +213,7 @@ func TestRFQReadReplyGuessesWithoutWriting(t *testing.T) {
 	}
 }
 
-// TestRFQReplySources は 🤖 で読む返事の候補——このページのファイル（作った見積依頼書の PDF は除く）と、題に
+// TestRFQReplySources は 🤖 で読む返事の候補——このページのファイル（作った部材見積依頼書の PDF は除く）と、題に
 // 「№ <このページ>」を含む**受信**メールの本文と添付（読めるものだけ）——を固定します。
 func TestRFQReplySources(t *testing.T) {
 	seedRFQReply(t, rfqReplyBody(rfqReplyRowHTML("SS400", "t6*80*120", "6", "", "", rfqLineUnanswered)))

@@ -51,7 +51,7 @@ type ReplyRequest struct {
 // SendRequest は送る欄からの1通です（2026-09-30 に用件と下書きを足した）。
 //
 //   - Purpose・PageID … 用件（`comm.RegisterSendPurpose`）と、その元のページ。用件が
-//     「返信として送る」なら元のページが返信元になり、送る直前の仕事（発注書なら PDF を作って添える）と
+//     「返信として送る」なら元のページが返信元になり、送る直前の仕事（部材発注書なら PDF を作って添える）と
 //     送れたあとの仕事（発注済みにする）もここで走ります。空なら昔の形（source_page_id だけ）。
 //   - DraftID … 下書きから送るとき。送れたら下書きはごみ箱へ（控えは送った日に新しく作る）。
 type SendRequest struct {
@@ -143,7 +143,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//
 	// 送信の控えはテンプレート「通信記録（送信メール）」を写して作ります。送ったあとで
 	// 「テンプレートが無くて控えを作れない」と分かると、**出た事実が記録に残りません**
-	// ——だから控えが作れないなら、1通も送りません（発注書のメールもこの口を通ります）。
+	// ——だから控えが作れないなら、1通も送りません（部材発注書のメールもこの口を通ります）。
 	tmpl, err := cms.PageTemplateBody(SentTemplate)
 	if err == nil {
 		_, err = sentRecordBody(tmpl, "", source, "", "", time.Now(), req)
@@ -153,7 +153,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 送る直前の仕事（発注書なら PDF を作って添える）。断るときは用件の側が応答を書いています。
+	// 送る直前の仕事（部材発注書なら PDF を作って添える）。断るときは用件の側が応答を書いています。
 	if purpose.Prepare != nil && !sreq.SkipGenerated {
 		extra, ok := purpose.Prepare(w, r, purposePageID)
 		if !ok {
@@ -197,7 +197,7 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["page_id"] = pageID
 	}
-	// 3. 送れたあとの仕事（発注書なら発注済みにする）。⚠ **失敗しても「送れていない」とは言いません**
+	// 3. 送れたあとの仕事（部材発注書なら発注済みにする）。⚠ **失敗しても「送れていない」とは言いません**
 	// ——黙るともう一度送ってしまうので、送れたことと、できなかったことを両方返します。
 	if purpose.AfterSent != nil {
 		if err := purpose.AfterSent(user, purposePageID, pageID); err != nil {

@@ -123,12 +123,12 @@ func TestSpliceNodesNested(t *testing.T) {
 }
 
 // TestOrderDraftMirrorPutsBackButtonsAndForm は、発注部材表の鏡が**行ごとの「戻す」**と
-// **足元の「発注書を作る」**を出し、どちらもクロームであることを固定します
+// **足元の「部材発注書を作る」**を出し、どちらもクロームであることを固定します
 // （09-22 に書かれた鏡で、番人が無かった）。
 func TestOrderDraftMirrorPutsBackButtonsAndForm(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
-	addPage(t, 40, 0, "発注", "root", "302", true)
+	addPage(t, 40, 0, "部材発注", "root", "302", true)
 
 	body := orderDraftHTML([]ourOrderLine{
 		{ProductID: "000031", Material: "SS400", Shape: "板", Size: "t3.2", Quantity: "2"},
@@ -140,7 +140,7 @@ func TestOrderDraftMirrorPutsBackButtonsAndForm(t *testing.T) {
 		`<th class="vocab-chrome draft-row-act"></th>`, // 見出し行にも1つ（列がずれない）
 		`class="vocab-chrome draft-row-act"><button`,   // データ行の「戻す」
 		`data-draft-table="1"`, `data-draft-row="1"`,
-		`data-draft-go="1"`, "発注書を作る", // 足元の欄
+		`data-draft-go="1"`, "部材発注書を作る", // 足元の欄
 		`class="vocab-chrome draft-form-box"`, // 欄は表の外（包む節の中・2026-09-28）
 	} {
 		if !strings.Contains(got, want) {
@@ -149,6 +149,6 @@ func TestOrderDraftMirrorPutsBackButtonsAndForm(t *testing.T) {
 	}
 	// ⚠ **欄は表の外**（包む節の中・表の直後）——表の中（tfoot）だと表の横スクロールに巻き込まれる。
 	if strings.Index(got, "draft-form-box") < strings.Index(got, "</table>") || strings.Contains(got, "<tfoot") {
-		t.Errorf("⚠ 「発注書を作る」の欄が表の中にあります:\n%s", got)
+		t.Errorf("⚠ 「部材発注書を作る」の欄が表の中にあります:\n%s", got)
 	}
 }

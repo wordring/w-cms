@@ -8,14 +8,14 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 未手配の一覧（2026-09-21）——発注書を作る起点です。
+// 未手配の一覧（2026-09-21）——部材発注書を作る起点です。
 //
 // ⚠ **受注を横断します。** ユーザー:「弊社の発注書は、**受注明細の単位とは無関係に、
 // 納期のグループなどから発行**されます」。だから番人も「1つの受注ページの中で
 // 正しいか」ではなく、**全社を読んでいるか**を見ます。
 //
 // 下ごしらえは [procurement_test.go] の `seedProcurement` を借ります
-// （受注30／加工製品31／発注書32。⚠ **発注書はどことも繋がっていません**）。
+// （受注30／加工製品31／部材発注書32。⚠ **部材発注書はどことも繋がっていません**）。
 
 // TestUnorderedLeavesOutWhatIsOrdered は、⚠ **手配済みを出さない**ことと
 // **未手配を落とさない**ことを、同じ下ごしらえで一度に固定します。
@@ -44,7 +44,7 @@ func TestUnorderedLeavesOutWhatIsOrdered(t *testing.T) {
 	if u.ProductPageID != 31 || u.OrderPageID != 30 {
 		t.Errorf("辿り先が違います: %#v", u)
 	}
-	// ⚠ **材質・形状・寸法が埋まること。** これが無いと発注書に書けず、
+	// ⚠ **材質・形状・寸法が埋まること。** これが無いと部材発注書に書けず、
 	//    品名（3つの焼き直し）を書く羽目になります。
 	if u.Material != "鉄" || u.Shape != "FB" || u.Size != "t4.5*75*1090" {
 		t.Errorf("⚠ 材料の3つ組が埋まっていません: %#v", u)
@@ -212,9 +212,9 @@ func TestUnorderedSubtractsWhatIsInTheDraft(t *testing.T) {
 		t.Fatalf("前提が崩れています（残3が1件のはず）: %#v", before)
 	}
 
-	// 発注部材表を持つページを1枚（⚠ **発注ページでなくてもよい**——横断で読みます）。
-	addPage(t, 60, 0, "発注", "root", "302", true)
-	syncBody(t, 60, `<h1>発注</h1>`+orderDraftHTML([]ourOrderLine{
+	// 発注部材表を持つページを1枚（⚠ **部材発注ページでなくてもよい**——横断で読みます）。
+	addPage(t, 60, 0, "部材発注", "root", "302", true)
+	syncBody(t, 60, `<h1>部材発注</h1>`+orderDraftHTML([]ourOrderLine{
 		{ProductID: "000031", Material: "鉄", Shape: "FB", Size: "t4.5*75*1090", Quantity: "1"},
 	}))
 
@@ -228,7 +228,7 @@ func TestUnorderedSubtractsWhatIsInTheDraft(t *testing.T) {
 	}
 
 	// 残りも入れたら、消えること。
-	syncBody(t, 60, `<h1>発注</h1>`+orderDraftHTML([]ourOrderLine{
+	syncBody(t, 60, `<h1>部材発注</h1>`+orderDraftHTML([]ourOrderLine{
 		{ProductID: "000031", Material: "鉄", Shape: "FB", Size: "t4.5*75*1090", Quantity: "3"},
 	}))
 	after, err := UnorderedItems(root)
@@ -244,7 +244,7 @@ func TestUnorderedSubtractsWhatIsInTheDraft(t *testing.T) {
 // （2026-09-27・09-28 に種類ごとの運び方を設定へ）。
 //
 // 利用者:「外注加工の表を埋めてみましたが、発注ページに出ません」——集計が材料と購入部品だけを
-// 数えていました。外注先へも発注書で頼むので、同じ道（必要部材表 → 発注部材表 → 発注書）に乗せます。
+// 数えていました。外注先へも部材発注書で頼むので、同じ道（必要部材表 → 発注部材表 → 部材発注書）に乗せます。
 // ⚠ **支給部品も出します**（2026-09-28 利用者:「支給品は購入しませんが、支給願いという形で
 // 発注します」——09-27 は「出さない」でした）。形はテンプレートと同じ「見出しの節＋キャプションの表」。
 //
@@ -316,7 +316,7 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 		t.Errorf("支給部品の行が違います: %#v", *supplied)
 	}
 
-	// 発注書に同じ種類・番号・加工内容で入れれば、手配済みとして消える（発注部材表・発注書と同じ鍵）。
+	// 部材発注書に同じ種類・番号・加工内容で入れれば、手配済みとして消える（発注部材表・部材発注書と同じ鍵）。
 	// ⚠ 番号が違えば別の外注加工——塗装は残る。
 	addPage(t, 33, 0, "発注 ひかりレーザー", "root", "302", true)
 	syncBody(t, 33, `<h1>発注 ひかりレーザー</h1>`+
@@ -332,7 +332,7 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	var stillPaint bool
 	for _, u := range list {
 		if u.Kind == "外注加工" && u.Values["加工内容"] == "レーザー切断" {
-			t.Errorf("⚠ 発注書に入れた外注加工がまだ出ています: %#v", u)
+			t.Errorf("⚠ 部材発注書に入れた外注加工がまだ出ています: %#v", u)
 		}
 		if u.Kind == "外注加工" && u.Values["加工内容"] == "塗装" {
 			stillPaint = true
@@ -343,7 +343,7 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	}
 }
 
-// TestOrderRowKeyInfersLegacyKind は、**種類の列が無い古い発注明細**を、鍵の列のどれかに値がある
+// TestOrderRowKeyInfersLegacyKind は、**種類の列が無い古い部材発注明細**を、鍵の列のどれかに値がある
 // 最初の種類として読むことを固定します（2026-09-28 より前の紙——材料は材質・形状・寸法、
 // 購入部品は品名）。⚠ 読めないと、既に発注した部材が必要部材表に戻ります（二重発注）。
 func TestOrderRowKeyInfersLegacyKind(t *testing.T) {
@@ -366,7 +366,7 @@ func TestOrderRowKeyInfersLegacyKind(t *testing.T) {
 	}
 	for _, u := range list {
 		if u.Kind == "購入部品" {
-			t.Errorf("⚠ 種類の無い古い発注明細が購入部品として数えられていません: %#v", u)
+			t.Errorf("⚠ 種類の無い古い部材発注明細が購入部品として数えられていません: %#v", u)
 		}
 	}
 }

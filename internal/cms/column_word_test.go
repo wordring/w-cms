@@ -21,25 +21,25 @@ func TestColumnWordPrefersTableException(t *testing.T) {
 	if w := ColumnWord("受注明細", "状態"); w.Type != ColEnum || !contains(w.Values, "完了") || contains(w.Values, "取消") {
 		t.Errorf("受注明細の状態は既定の選択肢のはず: %+v", w)
 	}
-	// 例外——発注明細の `状態` は表ごとの選択肢。
-	if w := ColumnWord("発注明細", "状態"); w.Type != ColEnum || !contains(w.Values, "取消") || contains(w.Values, "完了") {
-		t.Errorf("⚠ 発注明細の状態に例外が効いていません: %+v", w)
+	// 例外——部材発注明細の `状態` は表ごとの選択肢。
+	if w := ColumnWord("部材発注明細", "状態"); w.Type != ColEnum || !contains(w.Values, "取消") || contains(w.Values, "完了") {
+		t.Errorf("⚠ 部材発注明細の状態に例外が効いていません: %+v", w)
 	}
 	// 名前は正規化して照らす（前後の空白・全角）。
-	if w := ColumnWord("　発注明細 ", "状態"); !contains(w.Values, "取消") {
+	if w := ColumnWord("　部材発注明細 ", "状態"); !contains(w.Values, "取消") {
 		t.Errorf("表の名前の揺れで例外が外れています: %+v", w)
 	}
 	// 例外の無い列は既定へ落ちる。語彙に無い列は文字列。
-	if w := ColumnWord("発注明細", "数量"); w.Type != ColNumber {
+	if w := ColumnWord("部材発注明細", "数量"); w.Type != ColNumber {
 		t.Errorf("例外の無い列が既定に落ちていません: %+v", w)
 	}
-	if w := ColumnWord("発注明細", "見たことのない列"); w.Type != ColText {
+	if w := ColumnWord("部材発注明細", "見たことのない列"); w.Type != ColText {
 		t.Errorf("語彙に無い列は文字列のはず: %+v", w)
 	}
 	// ⚠ **写しを返す**——受け取った側が書き換えても設定は壊れない。
-	w := ColumnWord("発注明細", "状態")
+	w := ColumnWord("部材発注明細", "状態")
 	w.Values[0] = "書き換えた"
-	if ColumnWord("発注明細", "状態").Values[0] == "書き換えた" {
+	if ColumnWord("部材発注明細", "状態").Values[0] == "書き換えた" {
 		t.Error("⚠ 設定の選択肢を直に返しています")
 	}
 }
@@ -52,8 +52,8 @@ func TestTableVocabularyIsValidated(t *testing.T) {
 		tv   map[string]map[string]VocabWord
 		want string
 	}{
-		{"選択肢の無い enum", map[string]map[string]VocabWord{"発注明細": {"状態": {Type: ColEnum}}}, "選択肢がありません"},
-		{"知らない型", map[string]map[string]VocabWord{"発注明細": {"状態": {Type: "color"}}}, "未知の列型"},
+		{"選択肢の無い enum", map[string]map[string]VocabWord{"部材発注明細": {"状態": {Type: ColEnum}}}, "選択肢がありません"},
+		{"知らない型", map[string]map[string]VocabWord{"部材発注明細": {"状態": {Type: "color"}}}, "未知の列型"},
 		{"空の表の名前", map[string]map[string]VocabWord{" ": {"状態": {Type: ColText}}}, "空の表の名前"},
 	} {
 		s := Settings{Vocabulary: map[string]VocabWord{}, TableVocabulary: c.tv}

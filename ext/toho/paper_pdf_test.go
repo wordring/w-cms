@@ -17,7 +17,7 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 紙の PDF を作る口——発注書（/api/order-pdf）・見積書（/api/estimate-pdf）・見積依頼書（/api/rfq-pdf）と、資料を綴じた発注書
+// 紙の PDF を作る口——部材発注書（/api/order-pdf）・見積書（/api/estimate-pdf）・部材見積依頼書（/api/rfq-pdf）と、資料を綴じた部材発注書
 // （/api/order-pdf-docs）——の振る舞いを固定します（2026-10-09 に、口が写していた段取りを paper_pdf.go へ寄せたときの番人）。
 
 // estimatePaperBody は見積書ページの本文です（TestEstimatePDFRoundTrips と同じ見本）。
@@ -46,9 +46,9 @@ func TestPaperPDFHandlers(t *testing.T) {
 		body    string
 		prefix  string
 	}{
-		{"発注書", 60, OrderPDFAPIHandler, orderBody, orderPaperTitleOf(orderBody) + " "},
+		{"部材発注書", 60, OrderPDFAPIHandler, orderBody, orderPaperTitleOf(orderBody) + " "},
 		{"見積書", 61, EstimatePDFAPIHandler, estimatePaperBody(), "御見積書 000061 "},
-		{"見積依頼書", 62, RFQPDFAPIHandler, rfqDocsBody(rfqLineUnanswered), "見積依頼書 000062 "},
+		{"部材見積依頼書", 62, RFQPDFAPIHandler, rfqDocsBody(rfqLineUnanswered), "見積依頼書 000062 "},
 	}
 	for _, c := range cases {
 		pid := page.FormatID(c.id)
@@ -92,16 +92,16 @@ func TestPaperPDFHandlers(t *testing.T) {
 	}
 }
 
-// TestOrderPDFDocsHandler は、発注書のうしろに外注加工の資料を綴じた1本を作って添付に残し、綴じなかったものを言うこと・
-// 資料が無ければ 400 を固定します（見積依頼書の同じ口は rfq_pdf_docs_test.go）。
+// TestOrderPDFDocsHandler は、部材発注書のうしろに外注加工の資料を綴じた1本を作って添付に残し、綴じなかったものを言うこと・
+// 資料が無ければ 400 を固定します（部材見積依頼書の同じ口は rfq_pdf_docs_test.go）。
 func TestOrderPDFDocsHandler(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 	seedOrderDocs(t)
 	addPage(t, 50, 0, "発注 ひかりレーザー", "root", "302", true)
 	root := &auth.User{Username: "root"}
 	put := func(no string) {
-		writeBodyFile(t, 50, `<h1>発注</h1><dl data-type="tags"><dt>発注書番号</dt><dd>45</dd><dt>`+SupplierTag+`</dt><dd>ひかりレーザー</dd></dl>`+
-			`<table data-type="`+ourOrderItemsType+`"><caption>発注明細</caption><tbody>`+
+		writeBodyFile(t, 50, `<h1>部材発注</h1><dl data-type="tags"><dt>部材発注書番号</dt><dd>45</dd><dt>`+SupplierTag+`</dt><dd>ひかりレーザー</dd></dl>`+
+			`<table data-type="`+ourOrderItemsType+`"><caption>部材発注明細</caption><tbody>`+
 			`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>加工内容</th><th>数量</th><th>単位</th><th>状態</th></tr>`+
 			`<tr><td>000031</td><td>外注加工</td><td>`+no+`</td><td>レーザー切断</td><td>1</td><td>個</td><td>未発注</td></tr>`+
 			`</tbody></table>`)
@@ -117,7 +117,7 @@ func TestOrderPDFDocsHandler(t *testing.T) {
 		t.Fatalf("添付に残っていないか、URL が違います: %v", out)
 	}
 	if bound, err := os.ReadFile(path); err != nil || len(regexp.MustCompile(`/Type /Page\s`).FindAll(bound, -1)) != 4 {
-		t.Errorf("綴じたページの数が違います（発注書1＋図面2＋写真1 のはず）: %v", err)
+		t.Errorf("綴じたページの数が違います（部材発注書1＋図面2＋写真1 のはず）: %v", err)
 	}
 	if m := cms.ReadAttachmentMetas("000050")[file]; !strings.Contains(m.Name, "＋資料 ") {
 		t.Errorf("添付の名前 = %q", m.Name)
@@ -171,7 +171,7 @@ func TestPaperSteps(t *testing.T) {
 	}
 }
 
-// TestMarkSentByMail は、メールで送ったあとに送付日へ今日を書くこと（見積書・見積依頼書の送る欄の後始末）と、書けない人・
+// TestMarkSentByMail は、メールで送ったあとに送付日へ今日を書くこと（見積書・部材見積依頼書の送る欄の後始末）と、書けない人・
 // テンプレートの中では書かずに理由を返すことを固定します（2026-10-09 に2つの写しを寄せた markSentByMail の番人）。
 func TestMarkSentByMail(t *testing.T) {
 	setupMaterialsPermsTest(t)
@@ -191,7 +191,7 @@ func TestMarkSentByMail(t *testing.T) {
 	if b := mustBody(t, "000061"); !regexp.MustCompile(`<dt>` + EstimateSentTag + `</dt>\s*<dd>` + today + `</dd>`).MatchString(b) {
 		t.Errorf("送付日に今日（%s）が入っていません:\n%s", today, b)
 	}
-	if err := markSentByMail(&auth.User{Username: "root"}, "x", "見積依頼書", "rfq.sent"); err == nil || !strings.Contains(err.Error(), "見積依頼書のページIDが不正です") {
+	if err := markSentByMail(&auth.User{Username: "root"}, "x", "部材見積依頼書", "rfq.sent"); err == nil || !strings.Contains(err.Error(), "部材見積依頼書のページIDが不正です") {
 		t.Errorf("ページIDが不正なのに: %v", err)
 	}
 }
@@ -205,7 +205,7 @@ func mustBody(t *testing.T, id string) string {
 	return b
 }
 
-// TestDocKindsAndSender は、紙のページの見分け方（テンプレートの中の見本は見積書・見積依頼書と見ない）・差出人の確かめ
+// TestDocKindsAndSender は、紙のページの見分け方（テンプレートの中の見本は見積書・部材見積依頼書と見ない）・差出人の確かめ
 // （署名を持つ人の中に居なければ空）・連絡帳に宛先が無いときの注意を固定します（2026-10-09 に写しを寄せた口の番人）。
 func TestDocKindsAndSender(t *testing.T) {
 	setupMaterialsPermsTest(t)

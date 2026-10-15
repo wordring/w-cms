@@ -1,15 +1,15 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積依頼の記録が無い返事から、見積依頼書ページを作る（2026-10-05・移行期）
+// 部材見積依頼の記録が無い返事から、部材見積依頼書ページを作る（2026-10-05・移行期）
 //
 // 利用者:「移行期なので見積依頼の記録が無い。見積回答があります。これはどうしたら良いですか？」→（筆者の勧め「返事から見積依頼書
 // ページを作る」に）「/001863 は弊社品番に結び付けられますか？」→（明細の品名欄の図面番号で3行とも加工製品ページに当たると答えて）
 // 「作る」・品名の無い最後の行は「（上の行の品物）の20個の単価」（上の行と同じ品物の数量違い）。
 //
-//	GET  /api/rfq-reply/draft?page_id=   … 返事ページの「業者の返事（読んだまま）」の表を、見積依頼明細の列に読み替えた**案**
+//	GET  /api/rfq-reply/draft?page_id=   … 返事ページの「業者の返事（読んだまま）」の表を、部材見積依頼明細の列に読み替えた**案**
 //	                                       （弊社品番は品名・品番の欄の図面番号・品番から、加工製品ページが1つに決まれば当てる）
-//	POST /api/rfq-reply/make-rfq         … 人が直した案で見積依頼書ページを作り（回答あり・単価入り・回答日と見積依頼日は返事の
+//	POST /api/rfq-reply/make-rfq         … 人が直した案で部材見積依頼書ページを作り（回答あり・単価入り・回答日と部材見積依頼日は返事の
 //	                                       回答日——過去の見積もりの移しと同じ createAnsweredRFQPage）、返事ページを結んでその子へ移す
 //
 // ⚠ **Gemini は呼びません**——読んだままの表は解析のときに読んであるので、列の見出しで当社の列へ並べ替えるだけ（見出しは業者ごとに違う
@@ -33,7 +33,7 @@ import (
 	"w-cms/internal/database"
 )
 
-// replyColumnOf は業者の表の見出しを、見積依頼明細の列（ourOrderLine の鍵）へ読み替えます（読み替えない列は空）。
+// replyColumnOf は業者の表の見出しを、部材見積依頼明細の列（ourOrderLine の鍵）へ読み替えます（読み替えない列は空）。
 func replyColumnOf(header string) string {
 	h := strings.Map(func(r rune) rune {
 		if r == ' ' || r == '　' || r == '\t' {
@@ -151,7 +151,7 @@ func readReplyTable(body string) (headers []string, rows [][]string) {
 	return headers, rows
 }
 
-// rfqReplyDraft は返事ページの読んだままの表を、見積依頼明細の行の案にします。
+// rfqReplyDraft は返事ページの読んだままの表を、部材見積依頼明細の行の案にします。
 func rfqReplyDraft(user *auth.User, body string) []rfqReplyDraftRow {
 	headers, rows := readReplyTable(body)
 	cols := make([]string, len(headers))
@@ -197,7 +197,7 @@ func rfqReplyDraft(user *auth.User, body string) []rfqReplyDraftRow {
 	return out
 }
 
-// replyPageOrFail は書ける見積依頼の返事ページか、まだ見積依頼書に結ばれていないかを確かめます（断るときは応答を書く）。
+// replyPageOrFail は書ける部材見積依頼の返事ページか、まだ部材見積依頼書に結ばれていないかを確かめます（断るときは応答を書く）。
 func replyPageOrFail(w http.ResponseWriter, r *http.Request, raw string, mustWrite bool) (string, map[string][]string, bool) {
 	var id string
 	var ok bool
@@ -213,11 +213,11 @@ func replyPageOrFail(w http.ResponseWriter, r *http.Request, raw string, mustWri
 	}
 	tags, err := cms.TagsOfPage(database.DB, pageNum(id))
 	if err != nil || !isRFQReplyTags(tags) {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼の返事ページではありません")
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼の返事ページではありません")
 		return "", nil, false
 	}
 	if strings.TrimSpace(cms.FirstTag(tags, RFQReplyLinkTag)) != "" {
-		cms.JSONFail(w, http.StatusConflict, "この返事はもう見積依頼書に結ばれています")
+		cms.JSONFail(w, http.StatusConflict, "この返事はもう部材見積依頼書に結ばれています")
 		return "", nil, false
 	}
 	return id, tags, true
@@ -236,7 +236,7 @@ func RFQReplyDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := rfqReplyDraft(auth.CurrentUser(r), body)
 	if len(rows) == 0 {
-		cms.JSONFail(w, http.StatusBadRequest, "業者の返事（読んだまま）の表がありません（見積依頼書の明細は手で書いてください）")
+		cms.JSONFail(w, http.StatusBadRequest, "業者の返事（読んだまま）の表がありません（部材見積依頼書の明細は手で書いてください）")
 		return
 	}
 	if rows == nil {
@@ -295,7 +295,7 @@ func RFQReplyMakeRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	note := strings.TrimSpace(req.Note)
 	if note == "" {
-		note = "見積依頼の記録の無い返事（/" + replyID + "）から作った見積依頼書——見積依頼日は返事の回答日"
+		note = "部材見積依頼の記録の無い返事（/" + replyID + "）から作った部材見積依頼書——部材見積依頼日は返事の回答日"
 	}
 	newID, code, err := createAnsweredRFQPage(user, supplier, cms.FirstTag(tags, RFQAnsweredTag), note, lines)
 	if err != nil {
@@ -304,7 +304,7 @@ func RFQReplyMakeRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "rfq-reply.make-rfq", newID+" ← "+replyID+" "+strconv.Itoa(len(lines))+"行")
 	if err := linkRFQReply(user, replyID, newID); err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "見積依頼書ページ /"+newID+" は作りましたが、返事を結べません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "部材見積依頼書ページ /"+newID+" は作りましたが、返事を結べません: "+err.Error())
 		return
 	}
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "rows": len(lines)})

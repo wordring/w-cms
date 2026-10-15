@@ -69,7 +69,7 @@ func oldRow(material, shape, size, qty string) string {
 // 重複は数で見て、集めた行を足すと `数量` の前にロットの列が足されて（古い行は空）、ロットが落ちないことを固定します。
 func TestRFQOldNeedsTableStillReads(t *testing.T) {
 	u := seedRFQ(t)
-	old := `<h1>` + RFQBoxTitle + `</h1>` + `<section data-mirror="再見積依頼"></section>` +
+	old := `<h1>` + RFQBoxTitle + `</h1>` + `<section data-mirror="再部材見積依頼"></section>` +
 		tableOfLinesHTML(RFQTempPartsType, nil, false) +
 		oldRFQNeedsHTML(oldRow("鉄", "板", "t3.2*100*200", "10"), oldRow("鉄", "板", "t3.2*100*200", "10"), oldRow("SUS304", "丸棒", "φ20*50", "5"))
 	writeBodyFile(t, rfqBoxID, old)

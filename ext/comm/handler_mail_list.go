@@ -41,7 +41,7 @@ type MailListItem struct {
 	Parent      string   `json:"parent"`      // 親ページID（スレッドの親——画面はこれで木を組む・2026-10-09）
 	Attachments string   `json:"attachments"` // 添付の数（無ければ空）
 	Handled     string   `json:"handled"`     // 対応（済／不要）。空は未処理
-	Draft       string   `json:"draft"`       // 下書きなら用件（返信・新規・発注書）。送った記録は空（2026-09-30）
+	Draft       string   `json:"draft"`       // 下書きなら用件（返信・新規・部材発注書）。送った記録は空（2026-09-30）
 }
 
 // MailList は user が読めるメールの記録を、新しい順に返します。

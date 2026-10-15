@@ -38,7 +38,7 @@ func setOrder(t *testing.T, id int, qty, shipped, due string) {
 		`</tbody></table>`)
 }
 
-// setPurchase は発注書ページ id に、板を qty 枚（受注 forOrder のため・空なら書かない）の行を書きます。
+// setPurchase は部材発注書ページ id に、板を qty 枚（受注 forOrder のため・空なら書かない）の行を書きます。
 func setPurchase(t *testing.T, id int, qty, forOrder string) {
 	t.Helper()
 	addPage(t, id, 0, "発注 わかば鋼業", "root", "302", true)
@@ -112,8 +112,8 @@ func TestLedgerSurplusBecomesStock(t *testing.T) {
 // 利用者:「必要なくなった時に消すのはどうしましょう？」）。
 func TestSkipRemovesFromRequiredList(t *testing.T) {
 	seedLedger(t)
-	addPage(t, 60, 0, "発注", "root", "302", true)
-	body := `<h1>発注</h1><section data-type="` + UnorderedViewType + `"></section>`
+	addPage(t, 60, 0, "部材発注", "root", "302", true)
+	body := `<h1>部材発注</h1><section data-type="` + UnorderedViewType + `"></section>`
 	out, n := addSkipRows(body, []ourOrderLine{{ProductID: "000041", ForOrder: "000042", Kind: "材料",
 		Material: "鉄", Shape: "板", Size: "t3.2*100*200", Quantity: "6"}}, "在庫あり", "2026-10-01")
 	if n != 1 || !strings.Contains(out, "<caption>手配不要</caption>") || !strings.Contains(out, "<td>在庫あり</td>") {

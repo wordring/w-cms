@@ -124,8 +124,8 @@ func TestDimensionIndexIsWashed(t *testing.T) {
 func TestDimensionIndexSkipsTablesWithoutSize(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
-	addPage(t, 14, 0, "発注書", "root", "302", true)
-	syncBody(t, 14, `<h1>発注書</h1>`+
+	addPage(t, 14, 0, "部材発注書", "root", "302", true)
+	syncBody(t, 14, `<h1>部材発注書</h1>`+
 		`<table data-type="`+ourOrderItemsType+`"><tbody>`+
 		`<tr><th>品名</th><th>数量</th><th>単価</th></tr>`+
 		`<tr><td>カラー</td><td>2</td><td>530</td></tr>`+

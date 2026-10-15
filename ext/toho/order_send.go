@@ -1,14 +1,14 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 発注書を送る——メール・FAX・手渡し（2026-09-22）
+// 部材発注書を送る——メール・FAX・手渡し（2026-09-22）
 //
 // ユーザー:「発注書ページで**送信方法を選んで**、メールの場合は**メールを書くボックス**
 // が出て送信します。FAXの場合は、FAXのページを揃えて送信します。（**FAXサーバーは
 // まだつくっていないので、人間が送ったボタンを押すかもしれません**）」。
 //
-//	発注書ページ
-//	  ├ 発注明細（本文の表）
+//	部材発注書ページ
+//	  ├ 部材発注明細（本文の表）
 //	  │    ├ 行ごとに [取消] [発注済]                 ← 印は行に付く（order_status.go）
 //	  │    └ 足元に  [📧 メール] [📠 FAX] [🤝 手渡し]  ← ここ
 //	  └ 添付: 発注書 20260922-201530.pdf
@@ -103,16 +103,16 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 // markOrderSent は「送った」ことを本文へ反映し、`発注済` にした行数を返します。
 //
 // ① 取消でない行を `発注済` に（`setOrderLineStatus` の row=0）
-// ② **`発注日` を送った日に書き換える**（2026-09-24 ユーザー:「発注書ページのPDFは
+// ② **`部材発注日` を送った日に書き換える**（2026-09-24 ユーザー:「発注書ページのPDFは
 //    一度に送信されるので、発注日は一つです。**送信したときに発注日タグを書き換え
 //    ましょう**」）。
 //
 // ⚠ **行が1つも変わらなくても ② はします**——再送では行がもう `発注済` のことがあり、
-// それでも発注日は再送した日です。
-// ⚠ 置き場（`発注／年／月`）は作った月のまま動かしません（ユーザー:「ずれて良いです」）。
+// それでも部材発注日は再送した日です。
+// ⚠ 置き場（`部材発注／年／月`）は作った月のまま動かしません（ユーザー:「ずれて良いです」）。
 func markOrderSent(body, day string) (string, int) {
 	out, n := setOrderLineStatus(body, 0, OrderLineSent)
-	return replaceFirstFieldValue(out, OrderedAtTag, day), n
+	return replaceFirstFieldValue(out, PurchasedAtTag, day), n
 }
 
 // supplierAddresses は仕入先の題から、メールアドレスの候補を集めます。
@@ -157,9 +157,9 @@ func mailAddressesOfPage(pageID int) []string {
 	return tags[contacts.EmailTag]
 }
 
-// orderMailSubject は発注書メールの件名です。
+// orderMailSubject は部材発注書メールの件名です。
 //
-// ⚠ **発注書番号を入れます**——相手が問い合わせてきたとき、**件名だけで紙を
+// ⚠ **部材発注書番号を入れます**——相手が問い合わせてきたとき、**件名だけで紙を
 // 特定できます**。
 func orderMailSubject(orderID, supplier string) string {
 	s := "発注書の送付（" + orderID + "）"
@@ -171,7 +171,7 @@ func orderMailSubject(orderID, supplier string) string {
 
 // orderMailBody はメールの下書きです。
 //
-// ⚠ **署名は「メールの署名」から引きます**（`発注書の署名` ではありません）。
+// ⚠ **署名は「メールの署名」から引きます**（`部材発注書の署名` ではありません）。
 // 紙の右上に刷る署名と、メールの末尾に置く署名は**同じ人でも別の文面**です。
 //
 // ⚠ **引けなくても黙って空にしません**——署名の無いメールが出てしまうので、
@@ -196,10 +196,10 @@ func orderMailBody(head map[string]string, supplier, orderID string) string {
 	return b.String()
 }
 
-// signerLinesFor は発注書ページのタグ（`発注担当`）から、その人の署名を読みます。
+// signerLinesFor は部材発注書ページのタグ（`部材発注担当`）から、その人の署名を読みます。
 //
 // ⚠ **読めるかは見ません**——メールの下書きは、書いている人自身がその署名を
-// 選んだ発注書ページで組むものです。紙に刷る側（`senderLines`）は見ます。
+// 選んだ部材発注書ページで組むものです。紙に刷る側（`senderLines`）は見ます。
 func signerLinesFor(head map[string]string, heading string) []string {
 	n, ok := signerPage(head)
 	if !ok {
@@ -208,13 +208,13 @@ func signerLinesFor(head map[string]string, heading string) []string {
 	return SignatureOf(n, heading)
 }
 
-// orderSendFormHTML は発注明細の足元に出す「送る」欄です（鏡）。
+// orderSendFormHTML は部材発注明細の足元に出す「送る」欄です（鏡）。
 //
 // ⚠ **3つの道を最初から見せます。** 隠すと、FAXしか使わない相手のときに
 // 「この画面では送れない」と読まれます。
 //
 // ⚠ **メールの宛先・件名・本文・資料の候補はここで描きません**（2026-09-30 から送る欄の部品——
-// 用件「発注書」の初期値は order_mail.go）。docs は「FAX・印刷用（資料を綴じる）」を出すかだけに使う。
+// 用件「部材発注書」の初期値は order_mail.go）。docs は「FAX・印刷用（資料を綴じる）」を出すかだけに使う。
 //
 // noteBox は備考の入力欄です（書ける人にだけ・空なら出さない——2026-10-14・【要求】発注フォルダの並びの 4
 // 「『備考』入力欄のブロック。備考欄は複数行書けます。その下に『PDF作成』ボタンがあります」）。
@@ -232,14 +232,14 @@ func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, n
 	// 2026-10-14 から備考の欄の下に置き、名前を要求の「PDF作成」にそろえた。送る前は前の PDF を上書きし、
 	// 送ったあとは新しい版を作る（order_pdf_sent.go）。
 	b.WriteString(`<div class="order-pdf-row"><button type="button" class="chip-btn" data-order-pdf="1"` +
-		` title="発注書のPDFを作って、このページに表示します（送る前は前のPDFを上書きし、送ったあとは新しい版を作ります）">` +
+		` title="部材発注書のPDFを作って、このページに表示します（送る前は前のPDFを上書きし、送ったあとは新しい版を作ります）">` +
 		`📄 PDF作成</button></div>`)
 	b.WriteString(`<div class="order-send-ways">`)
 	// 資料を綴じた FAX・印刷用（2026-09-28・order_docs.go）——**綴じられる資料があるときだけ**。
-	// ⚠ 発注書のPDF（7年保存の正本）とは別の1本（利用者の選択）。
+	// ⚠ 部材発注書のPDF（7年保存の正本）とは別の1本（利用者の選択）。
 	if hasPrintableDoc(docs) {
 		b.WriteString(`<button type="button" class="chip-btn" data-order-pdf-docs="1"` +
-			` title="発注書のうしろに外注加工の資料（PDF・画像）を綴じた1本を作ります。発注書のPDFはそのまま"` +
+			` title="部材発注書のうしろに外注加工の資料（PDF・画像）を綴じた1本を作ります。部材発注書のPDFはそのまま"` +
 			`>📠 FAX・印刷用（資料を綴じる）</button>`)
 	}
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByFax +
@@ -253,7 +253,7 @@ func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, n
 	// ⚠ **`<details>` で畳みます**——素のHTMLだけで開閉できるので、CSP strict の
 	//    下でも動きます（受注ページの原本と同じ手）。
 	// ⚠ **中身は送る欄の部品が描きます**（2026-09-30・`assets/mail-compose.js`）——開いたときに
-	//    用件「発注書」の初期値（order_mail.go）を引いて、宛先・件名・本文・資料・下書きの保存を出す。
+	//    用件「部材発注書」の初期値（order_mail.go）を引いて、宛先・件名・本文・資料・下書きの保存を出す。
 	b.WriteString(`<details class="order-mail"><summary>📧 メールで送る</summary>`)
 	b.WriteString(`<div class="mail-compose-host" data-mail-compose="` + stdhtml.EscapeString(OrderMailPurpose) +
 		`" data-mail-page="` + orderID + `"></div>`)

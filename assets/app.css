@@ -2211,7 +2211,7 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content tr.rfq-temp-row.rfq-dup > td { background: #fee2e2; }
 #w-editor-content .rfq-temp-mark { margin-left: 4px; color: var(--text-muted, #64748b); font-size: 0.85em; white-space: nowrap; }
 #w-editor-content td.rfq-pick, #w-editor-content th.rfq-pick { white-space: nowrap; }
-/* 再見積依頼の「装置フォルダから選ぶ」一時的な表（2026-10-03・画面だけ——app.js の listFolder）。ロットの欄は数字が入る幅だけ。 */
+/* 再部材見積依頼の「装置フォルダから選ぶ」一時的な表（2026-10-03・画面だけ——app.js の listFolder）。ロットの欄は数字が入る幅だけ。 */
 #w-editor-content .rfq-folder-table input.rfq-folder-lot { width: 6em; }
 /* 見積書を作る（装置フォルダから・2026-10-03）——見積先などの欄は一覧に選べる行が出るまで隠す（.matsearch-form の display に勝たせる）。 */
 #w-editor-content .estimate-folder-make[hidden] { display: none; }
@@ -2549,7 +2549,7 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .estimate-note-label { width: 100%; font-size: 0.85em; color: var(--text-muted, #6b7280); }
 #w-editor-content .estimate-note-input { flex: 1 1 320px; min-height: 4.5em; font: inherit; padding: 4px 6px; box-sizing: border-box; }
 body[edit-mode] #w-editor-content .estimate-note-row { display: none; }
-/* 見積依頼の返事（2026-10-05・rfq_reply.go）——「返事:」の行と 🤖 の案の表。閲覧モードだけ（書ける形では隠す）。
+/* 部材見積依頼の返事（2026-10-05・rfq_reply.go）——「返事:」の行と 🤖 の案の表。閲覧モードだけ（書ける形では隠す）。
    作ったときの理由は「編集中はサーバーが断る」だった。2026-10-12 からサーバーは書ける形のタブがあっても断らない
    （gateWritablePage が断るのは、道具が /api/lock で握っているときだけ）——隠す理由はもう無いが、隠したまま。 */
 #w-editor-content .rfq-reply-actions td { padding: 4px 8px; font-size: 0.9em; }
@@ -2559,7 +2559,7 @@ body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
 #w-editor-content .rfq-reply-table { margin: 6px 0; font-size: 0.95em; }
 #w-editor-content .rfq-reply-table td, #w-editor-content .rfq-reply-table th { padding: 2px 6px; }
 #w-editor-content .rfq-reply-price { width: 7em; }
-/* 返事から見積依頼書ページを作る案の表（2026-10-05・rfq_reply_make.go）。 */
+/* 返事から部材見積依頼書ページを作る案の表（2026-10-05・rfq_reply_make.go）。 */
 #w-editor-content .rfq-reply-make-table input[type="text"] { width: 5.5em; }
 #w-editor-content .rfq-reply-make-table input.rfq-mk-name, #w-editor-content .rfq-reply-make-table input.rfq-mk-note { width: 14em; }
 #w-editor-content .rfq-mk-hint { font-size: 0.8em; color: var(--text-muted, #6b7280); }
@@ -2596,7 +2596,7 @@ body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
 /* ── 受注残表（2026-09-21）──────────────────────────────────────────────
    顧客×納期の組ごとに1枚。⚠ **1枚が1回の納品の単位**（ユーザー決定）なので、
    そのまま渡せる見た目にしておく。 */
-/* 受注残表から見積依頼へ（2026-10-04・見積依頼の段3・app.js）——受注残高の下のボタンと結果の一言。紙には出さない（no-print）。 */
+/* 受注残表から部材見積依頼へ（2026-10-04・見積依頼の段3・app.js）——受注残高の下のボタンと結果の一言。紙には出さない（no-print）。 */
 .backlog-rfq-bar { margin: 8px 0 12px; }
 .backlog-rfq-bar .backlog-rfq-say p { display: inline; margin: 0 0 0 8px; font-size: 13px; }
 
@@ -2850,7 +2850,7 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
 #w-editor-content .proc-none { color: var(--text-muted, #6b7280); font-style: italic; }
 
 /* ── 未手配の一覧（2026-09-21）──────────────────────────────────────────
-   ⚠ **受注を横断する表**です。ここから発注書を1枚作ります。 */
+   ⚠ **受注を横断する表**です。ここから部材発注書を1枚作ります。 */
 #w-editor-content .unorder-help {
     margin: 0 0 8px;
     color: var(--text-muted, #6b7280);
@@ -2864,7 +2864,7 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
 #w-editor-content table.unorder-table th,
 #w-editor-content table.unorder-table td { white-space: nowrap; }
 #w-editor-content .unorder-cost { white-space: nowrap; }
-/* 材料以外の行の種類の札（外注加工・購入部品・支給部品・2026-09-28）。1枚の発注書は1社なので、
+/* 材料以外の行の種類の札（外注加工・購入部品・支給部品・2026-09-28）。1枚の部材発注書は1社なので、
    選ぶときに種類が要る。色だけに頼らず、札の文字で種類を言う。 */
 #w-editor-content .unorder-kind {
     display: inline-block;
@@ -2879,7 +2879,7 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
 #w-editor-content .unorder-form { margin-top: 10px; }
 #w-editor-content .unorder-result { margin-top: 8px; font-size: 0.95em; }
 
-/* ── 発注書を送る・発注済みの印（2026-09-22）──────────────────────────────
+/* ── 部材発注書を送る・発注済みの印（2026-09-22）──────────────────────────────
    ユーザー:「発注書ページで**送信方法を選んで**…」「**発注書の表の一品ずつに
    発注済みの印**をつけます」。⚠ **印は本文の `状態` の列**で、ここに出るのは
    **押すためのもの**だけです（`.vocab-chrome`）。 */
@@ -2902,7 +2902,7 @@ body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !importan
    揃わず、表が読みにくくなります。 */
 #w-editor-content .order-row-act,
 #w-editor-content .draft-row-act { white-space: nowrap; }
-/* 発注部材表の「発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
+/* 発注部材表の「部材発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
 #w-editor-content .draft-form-box { margin: 4px 0 16px; }
 #w-editor-content .order-link-state { margin-left: 6px; }
 /* ページの更新の知らせで差し替えたブロック（2026-10-07）——しばらく薄い黄色で示して消える。色だけに頼らず左の線も付ける。 */

@@ -1,13 +1,13 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 外注加工の資料を発注書に添える（2026-09-28）
+// 外注加工の資料を部材発注書に添える（2026-09-28）
 //
 // 利用者:「加工製品のページに、外注加工ごとに資料のブロック（開いたり閉じたりできる）を用意して、
 // そこに保存したファイルをメールやFAX、印刷等に追加できるようにしてはどうでしょう？顧客の図面も
 // そこに入っているならそのまま渡します」。決まった形（【考察】部材の種類ごとの発注項目 §12）:
 //
-//	加工製品ページ                                   発注書ページ（発注明細）
+//	加工製品ページ                                   部材発注書ページ（部材発注明細）
 //	  外注加工の表  番号 1 | レーザー切断 …           弊社品番 000235 | 番号 1 | …
 //	  ▼ 資料 1   ← 題の「1」が番号                          │
 //	     📄 図面.pdf（通信記録の添付を指す）   ←─────────────┘ 行の 弊社品番＋番号 で辿る
@@ -17,10 +17,10 @@ package toho
 //     （表が caption で名乗るのと同じ）。中のファイルはコアの `cms.FileRefsIn` が拾う
 //     （ファイル表示の印・📎 リンク・画像）。**指す先は別のページでもよい**。
 //   - **メール**: 送信欄に候補を並べ、全部チェックした状態で出す（人が外せる）。
-//   - **FAX・印刷**: 発注書のうしろに PDF のページと画像を綴じた**別の1本**を作る
-//     （`/api/order-pdf-docs`）。⚠ **発注書のPDF（7年保存の正本）には綴じない**。
+//   - **FAX・印刷**: 部材発注書のうしろに PDF のページと画像を綴じた**別の1本**を作る
+//     （`/api/order-pdf-docs`）。⚠ **部材発注書のPDF（7年保存の正本）には綴じない**。
 //     ⚠ 紙にできない形式（DXF・CAD・Excel・ZIP）は綴じられないので、そう言う。
-//   - 新しい列は要らない——発注明細の行は `弊社品番` と `番号` を持つ（§11）。
+//   - 新しい列は要らない——部材発注明細の行は `弊社品番` と `番号` を持つ（§11）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -49,7 +49,7 @@ import (
 // docsFoldWord は資料の折りたたみの題の言葉です（「資料 1」の「資料」）。
 const docsFoldWord = "資料"
 
-// orderDoc は発注書に添える資料のファイル1つです。
+// orderDoc は部材発注書に添える資料のファイル1つです。
 type orderDoc struct {
 	PageID string // 添付のあるページ（6桁）
 	File   string // 保存名
@@ -66,7 +66,7 @@ func (d orderDoc) printable() bool {
 	return false
 }
 
-// orderTableRows は発注明細の表から、中身のある行を見出し→値で返します。
+// orderTableRows は部材発注明細の表から、中身のある行を見出し→値で返します。
 // **取り消した行は数えるだけで返しません**（紙に刷らない・資料も添えない——order_status.go）。
 func orderTableRows(table *html.Node) (rows []map[string]string, cancelled int) {
 	trs := rowsOf(table)
@@ -98,7 +98,7 @@ func orderTableRows(table *html.Node) (rows []map[string]string, cancelled int) 
 	return rows, cancelled
 }
 
-// orderDocs は発注明細の行から資料を集めます。notes は人に見せる一言（資料の無い行・読めないファイル）。
+// orderDocs は部材発注明細の行から資料を集めます。notes は人に見せる一言（資料の無い行・読めないファイル）。
 //
 // 行が指すのは **`弊社品番` のページの「資料 <番号>」の折りたたみ**。番号の無い行（材料・購入部品）は
 // 見ません。同じ行が2度出ても、同じファイルが2つの行から指されても、1つにします。
@@ -202,8 +202,8 @@ func hasPrintableDoc(docs []orderDoc) bool {
 
 // OrderPDFDocsAPIHandler は POST /api/order-pdf-docs です（入力: {page_id}）。
 //
-// 発注書のうしろに資料（PDF のページ・画像）を綴じた **FAX・印刷用の1本**を作り、そのページの添付として
-// 保存して開くURLを返します。⚠ **本文は触りません**（表示中の発注書のPDFは差し替えない）——
+// 部材発注書のうしろに資料（PDF のページ・画像）を綴じた **FAX・印刷用の1本**を作り、そのページの添付として
+// 保存して開くURLを返します。⚠ **本文は触りません**（表示中の部材発注書のPDFは差し替えない）——
 // だから編集中でも断りません（write 権限とテンプレートの外、だけを見る）。
 func OrderPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	serveBoundPaper(w, r, boundKind{
@@ -217,7 +217,7 @@ func OrderPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// boundKind は資料を綴じた1本（FAX・印刷用）の、紙の種類ごとに違うところです（発注書・見積依頼書）。
+// boundKind は資料を綴じた1本（FAX・印刷用）の、紙の種類ごとに違うところです（部材発注書・部材見積依頼書）。
 type boundKind struct {
 	check func(pageID string) string                          // 作れないページなら理由（nil か空なら作る）
 	rows  func(body string) ([]map[string]string, error)       // 明細の行（資料はその行が指す加工製品ページのもの）
@@ -289,7 +289,7 @@ func serveBoundPaper(w http.ResponseWriter, r *http.Request, k boundKind) {
 	})
 }
 
-// bindOrderDocs は発注書のPDFのうしろに資料を綴じます。skipped は綴じなかったものの一言。
+// bindOrderDocs は部材発注書のPDFのうしろに資料を綴じます。skipped は綴じなかったものの一言。
 //
 // ⚠ **資料のページは元の大きさのまま**綴じます（A3 の図面を A4 に縮めない——縮めるかは
 // 印刷・FAX の側が決める）。⚠ **読めないPDFは飛ばします**——gofpdi は壊れた・暗号化された
@@ -299,7 +299,7 @@ func bindOrderDocs(orderPDF []byte, docs []orderDoc) ([]byte, []string, error) {
 	p := &gopdf.GoPdf{}
 	p.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
 	if err := importPDFPages(p, orderPDF); err != nil {
-		return nil, nil, fmt.Errorf("発注書のPDFを読み直せません: %w", err)
+		return nil, nil, fmt.Errorf("部材発注書のPDFを読み直せません: %w", err)
 	}
 	var skipped []string
 	for _, d := range docs {

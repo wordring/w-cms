@@ -8,7 +8,7 @@ import (
 
 // 機械が作るページのテンプレート（2026-09-27〜）の、試験で使う写しです。
 //
-// 形は**職場のテンプレート**（テンプレート／東邦／{受注ページ・発注書・加工製品}）と同じに
+// 形は**職場のテンプレート**（テンプレート／東邦／{受注ページ・部材発注書・加工製品}）と同じに
 // しています。`seedBoxTemplates` がこれをテンプレート置き場へ置き、本文を直に組む試験は
 // 下の `testOrderPage` などを通します（テンプレートを埋める本物の口を通る）。
 
@@ -61,7 +61,7 @@ func testRFQTemplate() string {
 		`<section><h2>` + rfqNoteHeading + `</h2><p><br/></p></section>` + cms.ViewMarkerHTML(RFQSendViewType)
 }
 
-// testRFQReplyTemplate は見積依頼の返事ページのテンプレートです（2026-10-05・職場のテンプレート／東邦／見積依頼の返事と同じ形）。
+// testRFQReplyTemplate は部材見積依頼の返事ページのテンプレートです（2026-10-05・職場のテンプレート／東邦／部材見積依頼の返事と同じ形）。
 func testRFQReplyTemplate() string {
 	return `<h1>` + RFQReplyTemplate + `</h1>` +
 		emptyTagsDL(SupplierTag, RFQAnsweredTag, RFQReplyReadNoTag, RFQReplyLinkTag) +
@@ -72,7 +72,7 @@ func testRFQReplyTemplate() string {
 
 func testPurchaseOrderTemplate() string {
 	return `<h1>` + PurchaseOrderTemplate + `</h1>` +
-		emptyTagsDL(OrderNoTag, SupplierTag, OrderedAtTag, DueDateTag, OrderSignerTag) +
+		emptyTagsDL(PurchaseNoTag, SupplierTag, PurchasedAtTag, DueDateTag, OrderSignerTag) +
 		emptyVocabTable(ourOrderItemsType) +
 		`<section><h2>` + orderNoteHeading + `</h2><p><br/></p></section>`
 }
@@ -116,7 +116,7 @@ func testProductPage(hostPageID, attachID string, j *orderJudgment, matches []ma
 	return body
 }
 
-// testOurOrder は試験用のテンプレートで発注書ページの本文を組みます。
+// testOurOrder は試験用のテンプレートで部材発注書ページの本文を組みます。
 func testOurOrder(pageID, supplier, orderAt, due, note, signerID string, lines []ourOrderLine) string {
 	body, err := buildOurOrderHTML(testPurchaseOrderTemplate(), pageID, supplier, orderAt, due, note, signerID, lines)
 	if err != nil {

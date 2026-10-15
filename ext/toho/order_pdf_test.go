@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// **発注書のPDF発行**（2026-09-21）。ユーザー:「**PDFを発行出来ることはMUSTです。**
+// **部材発注書のPDF発行**（2026-09-21）。ユーザー:「**PDFを発行出来ることはMUSTです。**
 // 発注書はPDFで送付し**7年保存**する必要があるそうです」。
 //
 // ⚠ **「落ちなかった」では足りません。** 作ったPDFの `ToUnicode` を読み返して、
@@ -114,14 +114,14 @@ func utf16beOf(hex string) string {
 	return string(out)
 }
 
-// pdfOrderBody は発注書ページの本文を組みます。
+// pdfOrderBody は部材発注書ページの本文を組みます。
 func pdfOrderBody(rows string) string {
-	return `<h1>発注</h1><dl data-type="tags">` +
-		`<dt>発注書番号</dt><dd>44</dd>` +
+	return `<h1>部材発注</h1><dl data-type="tags">` +
+		`<dt>部材発注書番号</dt><dd>44</dd>` +
 		`<dt>` + SupplierTag + `</dt><dd>株式会社みなと商店</dd>` +
-		`<dt>発注日</dt><dd>2026-08-19</dd>` +
+		`<dt>部材発注日</dt><dd>2026-08-19</dd>` +
 		`<dt>備考</dt><dd>急ぎでお願いします</dd></dl>` +
-		`<table data-type="our-order-items"><caption>発注明細</caption><tbody>` +
+		`<table data-type="our-order-items"><caption>部材発注明細</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>材質</th><th>形状</th>` +
 		`<th>寸法</th><th>表面</th><th>数量</th><th>単位</th><th>単価</th>` +
 		`<th>備考</th><th>状態</th></tr>` + rows + `</tbody></table>`
@@ -149,6 +149,16 @@ func TestOrderPDFRoundTrips(t *testing.T) {
 			t.Errorf("⚠ PDFに %q が入っていません。読み返した中身:\n%s", want, got)
 		}
 	}
+	// ⚠ **紙は業者に見えるので `部材` を刷りません**（2026-10-15——ページのタグは `部材発注書番号`・`部材発注日`、
+	//    紙はいままでどおり `発注書番号：`・`発注日：`・paperHeadLabel）。
+	for _, want := range []string{"発注書番号： 44", "発注日： 2026-08-19"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("⚠ PDFに %q が入っていません。読み返した中身:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "部材") {
+		t.Errorf("⚠ 業者に渡す紙に「部材」が刷られています。読み返した中身:\n%s", got)
+	}
 	// ⚠ **金額は2回出ます**（明細の行と、合計）。**数えて確かめること**——
 	// 1回でも出ていれば通る書き方だと、**明細の金額を消しても合計のほうで通って
 	// しまいます**（変異試験で実際に空振りしました・2026-09-21）。
@@ -160,12 +170,12 @@ func TestOrderPDFRoundTrips(t *testing.T) {
 
 // TestOrderPDFDropsEmptyColumns は、⚠ **使わない列を紙に出さない**ことを固定します。
 //
-// ⚠ **形式は1つのまま、紙だけ種類ごとに違う**——材料の発注書に `表面` は出ず、
-// 塗装の発注書に `材質` は出ません。これが「まとめる方法」の実体です。
+// ⚠ **形式は1つのまま、紙だけ種類ごとに違う**——材料の部材発注書に `表面` は出ず、
+// 塗装の部材発注書に `材質` は出ません。これが「まとめる方法」の実体です。
 func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 
-	// 材料の発注書（`品番`・`品名`・`表面` は空）。
+	// 材料の部材発注書（`品番`・`品名`・`表面` は空）。
 	mat, err := buildOrderPDF(pdfOrderBody(
 		`<tr><td></td><td></td><td></td><td>鉄</td><td>板</td><td>t3.2</td>`+
 			`<td></td><td>5</td><td>枚</td><td>800</td><td></td><td>未納品</td></tr>`), nil)
@@ -173,10 +183,10 @@ func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 		t.Fatalf("材料: %v", err)
 	}
 	if s := pdfTextOf(t, mat); strings.Contains(s, "表面") {
-		t.Errorf("⚠ 材料の発注書に `色` の列が出ています:\n%s", s)
+		t.Errorf("⚠ 材料の部材発注書に `色` の列が出ています:\n%s", s)
 	}
 
-	// 塗装の発注書（`材質`・`形状`・`寸法` は空）。
+	// 塗装の部材発注書（`材質`・`形状`・`寸法` は空）。
 	paint, err := buildOrderPDF(pdfOrderBody(
 		`<tr><td>000036</td><td>K120-01-242</td><td>押さえプレート</td>`+
 			`<td></td><td></td><td></td><td>緑</td><td>20</td><td>個</td><td>160</td>`+
@@ -186,7 +196,7 @@ func TestOrderPDFDropsEmptyColumns(t *testing.T) {
 	}
 	s := pdfTextOf(t, paint)
 	if strings.Contains(s, "材質") {
-		t.Errorf("⚠ 塗装の発注書に `材質` の列が出ています:\n%s", s)
+		t.Errorf("⚠ 塗装の部材発注書に `材質` の列が出ています:\n%s", s)
 	}
 	if !strings.Contains(s, "緑") || !strings.Contains(s, "K120-01-242") {
 		t.Errorf("塗装に要る列が出ていません:\n%s", s)
@@ -213,11 +223,11 @@ func TestOrderPDFNeedsFont(t *testing.T) {
 	}
 }
 
-// TestOrderPDFRefusesNonOrderPage は、**発注書でないページを断る**ことを固定します。
+// TestOrderPDFRefusesNonOrderPage は、**部材発注書でないページを断る**ことを固定します。
 func TestOrderPDFRefusesNonOrderPage(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 	if _, err := buildOrderPDF(`<h1>ただのページ</h1><p>本文</p>`, nil); err == nil {
-		t.Fatal("発注明細が無いのにPDFを作っています")
+		t.Fatal("部材発注明細が無いのにPDFを作っています")
 	}
 }
 
@@ -264,7 +274,7 @@ func usedCols(rows []map[string]string) []orderPDFColumn {
 	return out
 }
 
-// TestOrderPDFTypeIsBigEnoughForFax は、⚠ **ふつうの発注書が 9pt より大きく組まれる**
+// TestOrderPDFTypeIsBigEnoughForFax は、⚠ **ふつうの部材発注書が 9pt より大きく組まれる**
 // ことを固定します。
 //
 // ⚠ **これがこの変更の目的そのものです。** 「入るなら大きく」なので、
@@ -280,7 +290,7 @@ func TestOrderPDFTypeIsBigEnoughForFax(t *testing.T) {
 	}
 	cols, size := fitTableColumns(p, usedCols(rows), rows, pdfRight-pdfLeft)
 	if size <= 9 {
-		t.Errorf("⚠ 材料の発注書が %.1fpt です（9pt より大きいことを期待——FAXで潰れます）", size)
+		t.Errorf("⚠ 材料の部材発注書が %.1fpt です（9pt より大きいことを期待——FAXで潰れます）", size)
 	}
 	total := 0.0
 	for _, c := range cols {
@@ -402,7 +412,7 @@ func TestOrderNoteIsASectionNotATag(t *testing.T) {
 			t.Errorf("本文に %q がありません:\n%s", want, body)
 		}
 	}
-	// ⚠ **表の下**にあること（要求の並び: 発注明細 → 備考欄）。
+	// ⚠ **表の下**にあること（要求の並び: 部材発注明細 → 備考欄）。
 	if strings.Index(body, "<h2>備考</h2>") < strings.Index(body, "</table>") {
 		t.Errorf("⚠ 備考欄が表より上にあります:\n%s", body)
 	}
@@ -418,11 +428,11 @@ func TestOrderPDFPrintsNoteLines(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 	rows := `<tr><td></td><td></td><td></td><td>SS400</td><td>板</td><td>t3.2</td>` +
 		`<td></td><td>2</td><td>枚</td><td>800</td><td>社内メモ</td><td>未発注</td></tr>`
-	table := `<table><caption>発注明細</caption><tbody>` +
+	table := `<table><caption>部材発注明細</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>材質</th><th>形状</th>` +
 		`<th>寸法</th><th>表面</th><th>数量</th><th>単位</th><th>単価</th>` +
 		`<th>備考</th><th>状態</th></tr>` + rows + `</tbody></table>`
-	head := `<h1>発注</h1><dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd></dl>`
+	head := `<h1>部材発注</h1><dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd></dl>`
 
 	// 新しい形: 節（段落と <br> の両方で区切る）。
 	body := head + table + `<section><h2>備考</h2><p>訂正版（2026-09-24 送付分を破棄し、本書に差し替えてください）</p>` +
@@ -452,7 +462,7 @@ func TestOrderPDFPrintsNoteLines(t *testing.T) {
 	}
 
 	// 古い形: タグの 備考（09-23 までの紙）も読む。
-	old := `<h1>発注</h1><dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd>` +
+	old := `<h1>部材発注</h1><dl data-type="tags"><dt>` + SupplierTag + `</dt><dd>みなと商店</dd>` +
 		`<dt>備考</dt><dd>昔のタグ</dd></dl>` + table
 	pdf2, err := buildOrderPDF(old, nil)
 	if err != nil {
@@ -463,12 +473,12 @@ func TestOrderPDFPrintsNoteLines(t *testing.T) {
 	}
 }
 
-// kindOrderBody は種類の列を持つ発注書の本文です（2026-09-28 からの形）。
+// kindOrderBody は種類の列を持つ部材発注書の本文です（2026-09-28 からの形）。
 func kindOrderBody(rows string) string {
-	return `<h1>発注</h1><dl data-type="tags">` +
-		`<dt>発注書番号</dt><dd>45</dd>` +
+	return `<h1>部材発注</h1><dl data-type="tags">` +
+		`<dt>部材発注書番号</dt><dd>45</dd>` +
 		`<dt>` + SupplierTag + `</dt><dd>株式会社みなと商店</dd></dl>` +
-		`<table data-type="our-order-items"><caption>発注明細</caption><tbody>` +
+		`<table data-type="our-order-items"><caption>部材発注明細</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>種類</th><th>番号</th><th>品番</th><th>品名</th><th>加工内容</th>` +
 		`<th>仕様</th><th>支給</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` +
 		rows + `</tbody></table>`
@@ -565,16 +575,16 @@ func TestOrderPaperTitle(t *testing.T) {
 	}
 }
 
-// TestOrderPDFPrintsBlankHeads は、**発注書ページが持つタグは空でも見出しを刷る**ことを固定します
+// TestOrderPDFPrintsBlankHeads は、**部材発注書ページが持つタグは空でも見出しを刷る**ことを固定します
 // （2026-09-28 利用者:「法で決まった記載事項（検査完了期日・支払期日など）は念のため記載して空欄運用」）。
-// ⚠ 持っていないタグ（それより前の発注書）は刷らない——空の見出しが古い紙にまで増えないように。
+// ⚠ 持っていないタグ（それより前の部材発注書）は刷らない——空の見出しが古い紙にまで増えないように。
 func TestOrderPDFPrintsBlankHeads(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
 
 	row := `<tr><td></td><td></td><td></td><td>鉄</td><td>板</td><td>t3.2</td>` +
 		`<td></td><td>5</td><td>枚</td><td>800</td><td></td><td>未発注</td></tr>`
-	withHeads := strings.Replace(pdfOrderBody(row), `<dt>発注日</dt><dd>2026-08-19</dd>`,
-		`<dt>発注日</dt><dd>2026-08-19</dd><dt>検査完了期日</dt><dd><br/></dd>`+
+	withHeads := strings.Replace(pdfOrderBody(row), `<dt>部材発注日</dt><dd>2026-08-19</dd>`,
+		`<dt>部材発注日</dt><dd>2026-08-19</dd><dt>検査完了期日</dt><dd><br/></dd>`+
 			`<dt>支払期日</dt><dd><br/></dd><dt>支払方法</dt><dd>銀行振込</dd>`, 1)
 	if withHeads == pdfOrderBody(row) {
 		t.Fatal("下ごしらえの置き換えが当たっていません")

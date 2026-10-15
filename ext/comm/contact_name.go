@@ -48,8 +48,8 @@ func splitMailbox(v string) (name, addr string) {
 
 // BareAddress は `名前 <アドレス>` からアドレスだけを取り出します（山括弧が無ければ全体）。
 //
-// ⚠ **SMTP の `RCPT TO:` は素のアドレスしか受けません**——送る口（メールの送る欄・発注書や見積書を送る欄）は
-// 宛先をここに通す。2026-10-09 に、メールの送る欄（`bareAddr`）と発注書の送る欄（`bareMailAddress`）の写しを寄せた。
+// ⚠ **SMTP の `RCPT TO:` は素のアドレスしか受けません**——送る口（メールの送る欄・部材発注書や見積書を送る欄）は
+// 宛先をここに通す。2026-10-09 に、メールの送る欄（`bareAddr`）と部材発注書の送る欄（`bareMailAddress`）の写しを寄せた。
 func BareAddress(s string) string {
 	v := strings.TrimSpace(s)
 	if i := strings.LastIndex(v, "<"); i >= 0 {

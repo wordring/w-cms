@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 発注書ページを1枚作る（2026-09-21）
+// 部材発注書ページを1枚作る（2026-09-21）
 //
 // §7b の「足りない1つ」です:
 //
@@ -11,16 +11,16 @@ package toho
 //	      ↓
 //	  ⚠ 人が仕入先を決める（相見積もりを見て）        ← 機械にはできない
 //	      ↓
-//	自社の発注書ページ `仕入先` タグ＋明細            ← **ここ**
+//	自社の部材発注書ページ `仕入先` タグ＋明細            ← **ここ**
 //
-// ⚠ **置き場は `発注／年／月`**（2026-09-21 ユーザー決定）。受注ページの下には
+// ⚠ **置き場は `部材発注／年／月`**（2026-09-21 ユーザー決定）。受注ページの下には
 // 置けません——発注は**納期のグループなどから**発行され、**1枚が複数の受注に
 // またがります**。
 //
 // ⚠ **`弊社品番` を必ず書きます。** これが無いと、**どの加工製品のぶんか**を
 // 誰も辿れません——手配状況の鏡はこの列で束ねています。
 //
-// ⚠ **発注書番号はページ番号そのもの**です（同日決定）。別に採番すると、
+// ⚠ **部材発注書番号はページ番号そのもの**です（同日決定）。別に採番すると、
 // 同じものに2つの名前ができます。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -35,14 +35,14 @@ import (
 	"w-cms/internal/cms"
 )
 
-// ourOrderLine は発注書へ入れる1行です（画面から送られてくる形）。
+// ourOrderLine は部材発注書へ入れる1行です（画面から送られてくる形）。
 type ourOrderLine struct {
 	ProductID string `json:"product_id"` // 弊社品番（加工製品ページ）
 	// ForOrder は「どの受注ページのための部材か」（2026-10-01・procure_ledger.go——受注ごとに数える）。
 	ForOrder string `json:"for_order,omitempty"`
 	// ItemID・Color は `品番`・`表面`（2026-09-25 に足した）。⚠ それまで運んでいなかった
-	// ので、**発注部材表から発注書を作ると品番と表面が落ちていました**（塗装・鍍金の
-	// 発注書で「緑」が消える）。
+	// ので、**発注部材表から部材発注書を作ると品番と表面が落ちていました**（塗装・鍍金の
+	// 部材発注書で「緑」が消える）。
 	ItemID   string `json:"item_id"`
 	Material string `json:"material"`
 	Shape    string `json:"shape"`
@@ -58,7 +58,7 @@ type ourOrderLine struct {
 	Supplied string `json:"supplied,omitempty"`
 	Quantity string `json:"quantity"`
 	// Lot は「どのロットのための数か」（2026-10-14・見積依頼必要部材表と見積依頼部材表だけの列 `ロット`——rfq.go）。
-	// 見積依頼の重複を「同じもの・同じロット」で見るために運びます。発注の表には列が無いので書かれません。
+	// 部材見積依頼の重複を「同じもの・同じロット」で見るために運びます。発注の表には列が無いので書かれません。
 	Lot      string `json:"lot,omitempty"`
 	Unit     string `json:"unit"`
 	Cost     string `json:"cost"`
@@ -71,8 +71,8 @@ type ourOrderLine struct {
 
 // NewOurOrderAPIHandler は POST /api/our-order/new です。
 //
-// ⚠ **仕入先が無ければ作りません。** 1枚＝1社が発注書の単位で、あとから足せる
-// ものではありません（相手が決まっていないなら、それは発注書ではなく手配メモです）。
+// ⚠ **仕入先が無ければ作りません。** 1枚＝1社が部材発注書の単位で、あとから足せる
+// ものではありません（相手が決まっていないなら、それは部材発注書ではなく手配メモです）。
 func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -87,9 +87,9 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Lines    []ourOrderLine `json:"lines"`
 		// DraftPage / DraftIndex は「**どの発注部材表から作ったか**」です（2026-09-22）。
 		//
-		// ⚠ **作り終えたら、その表は消します**——中身は発注書ページへ移ったので、
-		// **残すと古い写しになり、次の発注のときに混ざります**。⚠ 09-22 は発注書への
-		// リンクに化けさせていましたが、2026-09-24 に「未発注の発注書」の一覧（DBから
+		// ⚠ **作り終えたら、その表は消します**——中身は部材発注書ページへ移ったので、
+		// **残すと古い写しになり、次の発注のときに混ざります**。⚠ 09-22 は部材発注書への
+		// リンクに化けさせていましたが、2026-09-24 に「未発注の部材発注書」の一覧（DBから
 		// 数える）ができたので、本文にリンクを残すのをやめました（ユーザー:「発注フォルダ
 		// ページに『⚠ まだ発注していません（4行）』と言ったゴミが残っています」）。
 		DraftPage  string `json:"draft_page"`
@@ -100,7 +100,7 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	supplier := strings.TrimSpace(req.Supplier)
 	if supplier == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "仕入先を入れてください（発注書は1枚に1社です）")
+		cms.JSONFail(w, http.StatusBadRequest, "仕入先を入れてください（部材発注書は1枚に1社です）")
 		return
 	}
 	if len(req.Lines) == 0 {
@@ -114,12 +114,12 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ⚠ **送られてきた差出人をそのまま信じません**——署名を持つ人の中に居るかを確かめます（trustedSigner）。
 	signerID := trustedSigner(user, req.Signer)
-	// ⚠ **本文はテンプレート「発注書」を写して組みます**（2026-09-27）。**ページを作る前に**
-	//    テンプレートと器（発注明細の表・備考の節）を確かめます——作ってから断ると、
+	// ⚠ **本文はテンプレート「部材発注書」を写して組みます**（2026-09-27）。**ページを作る前に**
+	//    テンプレートと器（部材発注明細の表・備考の節）を確かめます——作ってから断ると、
 	//    題が「作成中」のページが置き場に残ります。
 	tmpl, err := cms.PageTemplateBody(PurchaseOrderTemplate)
 	if err != nil {
-		cms.JSONFail(w, http.StatusConflict, "発注書ページを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusConflict, "部材発注書ページを作れません: "+err.Error())
 		return
 	}
 	build := func(pageID string) (string, error) {
@@ -127,11 +127,11 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 			strings.TrimSpace(req.Due), strings.TrimSpace(req.Note), signerID, req.Lines)
 	}
 	if _, err := build(""); err != nil {
-		cms.JSONFail(w, http.StatusConflict, "発注書ページを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusConflict, "部材発注書ページを作れません: "+err.Error())
 		return
 	}
 
-	// ⚠ **置き場は `発注／年／月`**（年月は発注日）。無ければ作ります。
+	// ⚠ **置き場は `部材発注／年／月`**（年月は部材発注日）。無ければ作ります。
 	boxID, err := cms.EnsureTopLevelBox(PurchaseOrderBoxTitle, user.Username)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError,
@@ -145,12 +145,12 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "発注書ページを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "部材発注書ページを作れません: "+err.Error())
 		return
 	}
 	body, err := build(newID)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "発注書ページを組めません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "部材発注書ページを組めません: "+err.Error())
 		return
 	}
 	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
@@ -160,8 +160,8 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		strconv.Itoa(len(req.Lines))+"行")
 
 	// ⚠ **元の発注部材表は消します**（2026-09-24。09-22 はリンクに化けさせていました）。
-	//    発注書は発注フォルダの「未発注の発注書」がDBから並べるので、本文にリンクは要りません。
-	//    ⚠ **失敗しても発注書は取り消しません**——**紙のほうが重い**ので、
+	//    部材発注書は部材発注フォルダの「未発注の部材発注書」がDBから並べるので、本文にリンクは要りません。
+	//    ⚠ **失敗しても部材発注書は取り消しません**——**紙のほうが重い**ので、
 	//    「表が残ってしまった」は人が消せば済みます。理由を添えるだけにします。
 	out := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
 	if note := removeDraftAfterOrder(user, req.DraftPage, req.DraftIndex); note != "" {
@@ -170,25 +170,35 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, out)
 }
 
-// PurchaseOrderTemplate は発注書ページを作るテンプレートの題です（2026-09-27）。
+// PurchaseOrderTemplate は部材発注書ページを作るテンプレートの題です（2026-09-27）。
 //
-// ⚠ **発注書ページの形はこのテンプレートが決めます**——タグの並び・発注明細の列の並び・
+// ⚠ **部材発注書ページの形はこのテンプレートが決めます**——タグの並び・部材発注明細の列の並び・
 // 備考欄。機械が書くのは題と値と行の数だけで、テンプレートが無ければ作りません。
-// キャプション「発注明細」の表が要ります。備考を書くときは見出し「備考」の節も要ります。
-const PurchaseOrderTemplate = "発注書"
+// キャプション「部材発注明細」の表が要ります。備考を書くときは見出し「備考」の節も要ります。
+const PurchaseOrderTemplate = "部材発注書"
 
-// buildOurOrderHTML は発注書ページの本文を、テンプレート tmpl を埋めて組みます。
+// 部材発注書ページ（弊社から業者への注文）の可変タグの名前です（2026-10-15 に受注ページのタグと分けた）。
+//
+// ⚠ **受注ページの `発注書番号`・`発注日`（`OrderNoTag`・`OrderedAtTag`）とは別のタグ**です——あちらは
+// 客先の注文の番号と日付。2026-10-15 の利用者の決定（「発注」を「部材発注」に）で、業者の側だけ名前を改めた。
+// ⚠ **紙には `部材` を外した名前で刷ります**（`paperHeadLabel`——業者に見えるものは変えない）。
+const (
+	PurchaseNoTag  = "部材発注書番号"
+	PurchasedAtTag = "部材発注日"
+)
+
+// buildOurOrderHTML は部材発注書ページの本文を、テンプレート tmpl を埋めて組みます。
 //
 // ⚠ **列は見出しの言葉で合わせます**（`fillVocabTable`）——テンプレートで列を並べ替えても
 // 崩れず、テンプレートに無い列は値があれば右端へ足します。
 func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID string, lines []ourOrderLine) (string, error) {
 	d := cms.NewPageDraft(PurchaseOrderTemplate, tmpl)
-	d.SetTitle("発注　" + supplier)
-	// ⚠ **発注書番号はページ番号そのもの**（別に採番しない）。
+	d.SetTitle("部材発注　" + supplier)
+	// ⚠ **部材発注書番号はページ番号そのもの**（別に採番しない）。
 	// ⚠ **タグは受注ページと同じ口で書きます**（`setHeaderTag`——日付は正規形へ）。
-	setHeaderTag(d.DraftBlock, OrderNoTag, pageID)
+	setHeaderTag(d.DraftBlock, PurchaseNoTag, pageID)
 	setHeaderTag(d.DraftBlock, SupplierTag, supplier)
-	setHeaderTag(d.DraftBlock, OrderedAtTag, orderAt)
+	setHeaderTag(d.DraftBlock, PurchasedAtTag, orderAt)
 	setHeaderTag(d.DraftBlock, DueDateTag, due)
 	// ⚠ **備考はタグにしません**（2026-09-24 ユーザー:「発注書ページに『備考』タグが
 	//    ありますが、要求に『備考』タグはありません」）——要求は**表の下の備考欄**で、
@@ -244,14 +254,14 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 	return d.HTML(), nil
 }
 
-// DeliveredAtTag は発注書ページの、仕入先から品物が届いた日のタグです（2026-10-14・型は設定の語彙で date）。
+// DeliveredAtTag は部材発注書ページの、仕入先から品物が届いた日のタグです（2026-10-14・型は設定の語彙で date）。
 // 「納期」は予定や希望、「納品日」は確定した期日です（【要求】発注フォルダ）。
 const DeliveredAtTag = "納品日"
 
-// orderNoteHeading は発注書ページの備考欄の見出しです（本文とPDFで共有）。
+// orderNoteHeading は部材発注書ページの備考欄の見出しです（本文とPDFで共有）。
 const orderNoteHeading = "備考"
 
-// fillOrderNote は発注明細の下の**備考欄**（見出し「備考」の節）へ note を入れます（2026-09-24）。
+// fillOrderNote は部材発注明細の下の**備考欄**（見出し「備考」の節）へ note を入れます（2026-09-24）。
 //
 // 要求（【要求】発注フォルダ）:「その下のブロックに『備考』入力欄があります。
 // **備考欄は複数行書けます**」。⚠ **相手に伝えることを書く欄**です——行の `備考` 列

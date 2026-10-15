@@ -41,9 +41,9 @@ func init() {
 	cms.RegisterView("required-materials", procurementViewHTML)
 	// 材料を探す欄（2026-09-21・view_material_search.go）。
 	cms.RegisterView(MaterialSearchViewType, materialSearchViewHTML)
-	// 未手配の一覧（2026-09-21・view_unordered.go）。ここから発注書を1枚作ります。
+	// 未手配の一覧（2026-09-21・view_unordered.go）。ここから部材発注書を1枚作ります。
 	cms.RegisterView(UnorderedViewType, unorderedViewHTML)
-	// 未発注の発注書（2026-09-24・unsent_orders.go）。DBから毎回数える鏡。
+	// 未発注の部材発注書（2026-09-24・unsent_orders.go）。DBから毎回数える鏡。
 	cms.RegisterView(UnsentOrdersViewType, unsentOrdersViewHTML)
 	// 加工製品の一覧（2026-09-29・product_list.go）。区分と装置名称で絞って見る鏡。
 	cms.RegisterView(ProductListViewType, productListViewHTML)
@@ -65,13 +65,13 @@ func init() {
 		Extension: "toho",
 		Why:       "受注ページの置き場です（受注／年／月。年月は発注日）。整理を実行すると通信箱からここへ移ります。",
 	})
-	// ⚠ **弊社の発注書は受注ページの下に置けません**（2026-09-21 ユーザー訂正）
+	// ⚠ **弊社の部材発注書は受注ページの下に置けません**（2026-09-21 ユーザー訂正）
 	// ——発注は**納期のグループなどから**発行され、**受注明細の単位とは無関係**なので、
 	// 1枚が複数の受注にまたがります。結びは参照で作ります（filing_order.go の定数）。
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     PurchaseOrderBoxTitle,
 		Extension: "toho",
-		Why:       "弊社が出す発注書の置き場です（発注／年／月。年月は発注日）。⚠ 受注ページの下には置けません——発注は納期のグループなどから発行され、受注明細の単位とは無関係だからです。受注との結びは参照で作ります。未手配の一覧（発注書を作る画面）もここに出ます。",
+		Why:       "弊社が出す部材発注書の置き場です（部材発注／年／月。年月は部材発注日）。⚠ 受注ページの下には置けません——発注は納期のグループなどから発行され、受注明細の単位とは無関係だからです。受注との結びは参照で作ります。未手配の一覧（部材発注書を作る画面）もここに出ます。",
 	})
 
 	// **見積の置き場**（2026-10-01 利用者:「トップ直下に見積フォルダを作りましょう」・【考察】見積の依頼と見積書 §4）——
@@ -80,7 +80,7 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     EstimateBoxTitle,
 		Extension: "toho",
-		Why:       "顧客へ出す見積書の置き場です。業者への見積依頼はトップ直下の「見積依頼」に置きます（ここには置きません）。",
+		Why:       "顧客へ出す見積書の置き場です。業者への部材見積依頼はトップ直下の「部材見積依頼」に置きます（ここには置きません）。",
 	})
 
 	// 見積書ページ（2026-10-01・estimate_doc.go）——見積計算表の「見積書に入れる」が写す。
@@ -110,7 +110,7 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     PurchaseOrderTemplate,
 		Extension: "toho",
-		Why:       "発注部材表の「発注書ページを作る」が写します。キャプション「発注明細」の表と、見出し「備考」の節が要ります。",
+		Why:       "発注部材表の「部材発注書ページを作る」が写します。キャプション「部材発注明細」の表と、見出し「備考」の節が要ります。",
 	})
 }
 
@@ -152,12 +152,12 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 整理の「ほかのファイル」（2026-10-08・filing_files.go）——添付を表示しているページ・添付を足す。
 		{Pattern: "/api/filing-files-shown", Handler: FilingFilesShownAPIHandler},
 		{Pattern: "/api/filing-attach", Handler: FilingAttachAPIHandler},
-		// 見積依頼（2026-10-03・段1——rfq.go・rfq_api.go）。
+		// 部材見積依頼（2026-10-03・段1——rfq.go・rfq_api.go）。
 		{Pattern: "/api/rfq/collect", Handler: RFQCollectAPIHandler},
 		{Pattern: "/api/rfq/folder-products", Handler: RFQFolderProductsAPIHandler},
-		// 見積依頼書ページを作る（2026-10-03・段2——rfq_doc.go）。
+		// 部材見積依頼書ページを作る（2026-10-03・段2——rfq_doc.go）。
 		{Pattern: "/api/rfq/new", Handler: RFQNewDocAPIHandler},
-		// 過去の見積もりを見積依頼書ページへ移す（2026-10-04・管理者だけ——rfq_doc.go）。
+		// 過去の見積もりを部材見積依頼書ページへ移す（2026-10-04・管理者だけ——rfq_doc.go）。
 		{Pattern: "/api/rfq/import", Handler: RFQImportAPIHandler},
 		{Pattern: "/api/rfq/fill-names", Handler: RFQFillNamesAPIHandler},
 		{Pattern: "/api/rfq/set-cells", Handler: RFQSetCellsAPIHandler},
@@ -167,18 +167,18 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/table/append-rows", Handler: AppendTableRowsAPIHandler},
 		// 並べた図面の片方を旧版へ——あとから改定にする（2026-10-04・drawing_supersede.go）。
 		{Pattern: "/api/drawing/supersede", Handler: DrawingSupersedeAPIHandler},
-		// 見積依頼書の紙・備考・送った（FAX・手渡し）（2026-10-03・段2の後半——rfq_pdf.go）。
+		// 部材見積依頼書の紙・備考・送った（FAX・手渡し）（2026-10-03・段2の後半——rfq_pdf.go）。
 		{Pattern: "/api/rfq-pdf", Handler: RFQPDFAPIHandler},
 		{Pattern: "/api/rfq-pdf-docs", Handler: RFQPDFDocsAPIHandler}, // 資料を綴じた FAX・印刷用（2026-10-05）
 		{Pattern: "/api/rfq/note", Handler: RFQNoteAPIHandler},
-		// 見積依頼の返事——回答を記録・🤖 返事を読む（候補・読む・書く）（2026-10-05・段4の前半——rfq_reply.go）。
+		// 部材見積依頼の返事——回答を記録・🤖 返事を読む（候補・読む・書く）（2026-10-05・段4の前半——rfq_reply.go）。
 		{Pattern: "/api/rfq/answered", Handler: RFQAnsweredAPIHandler},
 		{Pattern: "/api/rfq/reply-sources", Handler: RFQReplySourcesAPIHandler},
 		{Pattern: "/api/rfq/read-reply", Handler: RFQReadReplyAPIHandler},
 		{Pattern: "/api/rfq/apply-reply", Handler: RFQApplyReplyAPIHandler},
-		// 見積依頼の返事ページを見積依頼書に結ぶ（2026-10-05・rfq_reply_page.go）。
+		// 部材見積依頼の返事ページを部材見積依頼書に結ぶ（2026-10-05・rfq_reply_page.go）。
 		{Pattern: "/api/rfq-reply/link", Handler: RFQReplyLinkAPIHandler},
-		// 見積依頼の記録が無い返事から見積依頼書ページを作る（2026-10-05・移行期——rfq_reply_make.go）。
+		// 部材見積依頼の記録が無い返事から部材見積依頼書ページを作る（2026-10-05・移行期——rfq_reply_make.go）。
 		{Pattern: "/api/rfq-reply/draft", Handler: RFQReplyDraftAPIHandler},
 		{Pattern: "/api/rfq-reply/make-rfq", Handler: RFQReplyMakeRFQAPIHandler},
 		{Pattern: "/api/rfq/sent", Handler: RFQSentAPIHandler},
@@ -208,16 +208,16 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 本文**になるので、行番号と `品番` の2つで照合し、いまの値とも突き合わせ、
 		// 編集ロックの関門を通します（2026-10-12 からは、道具が `/api/lock` で握っているときだけ断る）。
 		{Pattern: "/api/order-item", Handler: OrderItemEditAPIHandler},
-		// 発注書のPDFを作って、そのページの添付として残す口（2026-09-21・order_pdf.go）。
+		// 部材発注書のPDFを作って、そのページの添付として残す口（2026-09-21・order_pdf.go）。
 		// ⚠ **7年保存がこれで済みます**——ファイルがページと一緒に残り、版も監査も付きます。
 		{Pattern: "/api/order-pdf", Handler: OrderPDFAPIHandler},
 		{Pattern: "/api/order-pdf-docs", Handler: OrderPDFDocsAPIHandler}, // 資料を綴じた FAX・印刷用（2026-09-28）
 		// 材質・形状・寸法で材料を探す口（2026-09-21・dimension_search.go）。
 		// ⚠ **読めないページは混ぜません**——材料の表には誰でも行を書けるので、
-		// 絞らないと読めない発注書の単価と仕入先が引けてしまいます。
+		// 絞らないと読めない部材発注書の単価と仕入先が引けてしまいます。
 		{Pattern: "/api/material-search", Handler: MaterialSearchAPIHandler},
-		// 未手配の一覧から発注書を1枚作る口（2026-09-21・our_order_new.go）。
-		// ⚠ **仕入先が無ければ作りません**——1枚＝1社が発注書の単位です。
+		// 未手配の一覧から部材発注書を1枚作る口（2026-09-21・our_order_new.go）。
+		// ⚠ **仕入先が無ければ作りません**——1枚＝1社が部材発注書の単位です。
 		{Pattern: "/api/our-order/new", Handler: NewOurOrderAPIHandler},
 		// 未発注の表から**発注部材表**を1つ作る口（2026-09-22・order_draft.go）。
 		// ⚠ **行が0でも作ります**——空の表から始められることが、加工製品ページに
@@ -227,20 +227,20 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、
 		// ここから消せば**自動的に一覧へ戻ってきます**。
 		{Pattern: "/api/our-order/draft/remove", Handler: RemoveOrderDraftRowAPIHandler},
-		// 発注明細の1行の `状態` を書き換える口（2026-09-22・order_status.go）。
+		// 部材発注明細の1行の `状態` を書き換える口（2026-09-22・order_status.go）。
 		// ⚠ **発注済みの印は行に付きます**（ユーザー:「発注書の表の**一品ずつに
 		// 発注済みの印**をつけます」）——1枚の紙の中でも、**1品だけ取り消す**・
 		// **1品だけ先に納まる**が起こるためです。
 		{Pattern: "/api/our-order/line-status", Handler: OrderLineStatusAPIHandler},
-		// 発注明細の1行を外して必要部材表へ戻す口（2026-09-24・order_return.go）。
+		// 部材発注明細の1行を外して必要部材表へ戻す口（2026-09-24・order_return.go）。
 		// ⚠ **取消とは別**——取消は「もう発注しない」（行は残る）、戻すは
-		// 「この発注書では発注しない」（行が消え、必要部材表でまた選べる）。
+		// 「この部材発注書では発注しない」（行が消え、必要部材表でまた選べる）。
 		{Pattern: "/api/our-order/return-row", Handler: OrderReturnRowAPIHandler},
-		// 発注書を出したことを反映する口（2026-09-22・order_send.go）。
+		// 部材発注書を出したことを反映する口（2026-09-22・order_send.go）。
 		// ⚠ **取消でない行すべて**に `発注済` を付けます。メールは送信の成功が
 		// その事実、FAX・手渡しは**人が押したこと**がその事実です。
 		{Pattern: "/api/our-order/sent", Handler: OrderSentAPIHandler},
-		// 発注書の備考の欄を保存する口（2026-10-14・order_pdf_sent.go——見積書の /api/estimate/note と同じ形）。
+		// 部材発注書の備考の欄を保存する口（2026-10-14・order_pdf_sent.go——見積書の /api/estimate/note と同じ形）。
 		{Pattern: "/api/our-order/note", Handler: OrderNoteAPIHandler},
 	}
 }
@@ -399,7 +399,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 			} else {
 				// **仕入先と単価は定義側から採りません**（2026-09-03 ユーザー:
 				// 「仕入れ先は複数あります」「単価は外してよいと思います」）。
-				// 埋まるのは発注実績が付いたとき——発注書のヘッダから仕入先が来ます。
+				// 埋まるのは発注実績が付いたとき——部材発注書のヘッダから仕入先が来ます。
 				materialsMap[name] = &RequiredMaterialResponse{
 					MaterialName:  name,
 					TotalRequired: totalReq,
@@ -412,12 +412,12 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	// 3. 同じページの発注実績から発注済数を積む。
 	//    仕入先は明細ではなくヘッダ（名前：値）にあるので、同じページの
 	//    our-order ブロックから引きます。**対応づけは block_no**——索引の
-	//    ブロック番号は形式ごとの文書順連番なので、1つの発注書セクションが
+	//    ブロック番号は形式ごとの文書順連番なので、1つの部材発注書セクションが
 	//    ⚠ **仕入先はページの可変タグです**（2026-09-18 にヘッダから移した）。
 	//    **1文書＝1ページ**が規則なので（ユーザー:「発注書は一ページ一発注書で問題ない」）、
 	//    対応づけは**ページ1つ**で閉じます——ヘッダと明細を `block_no` で突き合わせていた
 	//    仕掛けは要らなくなりました（文書順に頼る対応づけが1つ消えた）。
-	//    スコープは受注明細と同じ（発注書が別ページに在っても拾う）。
+	//    スコープは受注明細と同じ（部材発注書が別ページに在っても拾う）。
 	var ourItems []cms.VocabRow
 	supplierOf := map[int]string{} // ページ → 仕入先
 	for _, id := range scope {
@@ -471,7 +471,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 //
 // 材料に単独の「名前」の列はありません——ユーザーの実務では
 // **材質・形状・寸法の3つで決まります**（`SS400 板 t3.2 1000×500`）。
-// ③計算は発注明細の品名と突き合わせるので、ここで1つの文字列に繋ぎます。
+// ③計算は部材発注明細の品名と突き合わせるので、ここで1つの文字列に繋ぎます。
 //
 // 古い形（部材名の1列だけ）で書かれた行も読めるようにしてあります
 // ——列を変える前に作られたページを黙って落とさないため。

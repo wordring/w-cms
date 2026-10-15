@@ -45,7 +45,7 @@ func estimateNoteBoxHTML(pid, note string) string {
 	return noteBoxHTML(pid, note, "/api/estimate/note", "備考（紙では明細の下に刷ります）")
 }
 
-// noteBoxHTML は明細の足元の備考の欄です（見積書・見積依頼書——保存する口 url だけが違う）。
+// noteBoxHTML は明細の足元の備考の欄です（見積書・部材見積依頼書——保存する口 url だけが違う）。
 func noteBoxHTML(pid, note, url, label string) string {
 	return `<div class="estimate-note-box"><span class="estimate-note-label">` + stdhtml.EscapeString(label) + `</span>` +
 		`<textarea class="estimate-note-input" rows="3">` + stdhtml.EscapeString(note) + `</textarea>` +
@@ -119,7 +119,7 @@ func isEstimatePage(pageID string) bool {
 	return !cms.IsTemplateArea(pageID) && cms.PageTagValue(database.DB, pageNum(pageID), EstimateNoTag) != ""
 }
 
-// serveDocNote は紙のページ（見積書・見積依頼書）の「備考」の節を書き換える口（POST・入力 {page_id, note}）の共通の形です。
+// serveDocNote は紙のページ（見積書・部材見積依頼書）の「備考」の節を書き換える口（POST・入力 {page_id, note}）の共通の形です。
 // isDoc がそのページの種類か、notDoc はそうでないときの断りの文、audit は監査の名前（2026-10-09 に2つの写しを寄せた）。
 func serveDocNote(w http.ResponseWriter, r *http.Request, isDoc func(pageID string) bool, notDoc, audit string) {
 	user, ok := cms.GateJSONPost(w, r)
@@ -143,7 +143,7 @@ func serveDocNote(w http.ResponseWriter, r *http.Request, isDoc func(pageID stri
 	}
 	var failed error
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, err := withEstimateNote(cur, req.Note) // 見出し「備考」の節——見積書と見積依頼書は同じ形
+		out, err := withEstimateNote(cur, req.Note) // 見出し「備考」の節——見積書と部材見積依頼書は同じ形
 		if err != nil {
 			failed = err
 			return cur

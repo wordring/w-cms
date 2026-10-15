@@ -2517,7 +2517,7 @@
         refreshDrawingPreviews();    // ファイル表示の枠の右下をつまんで高さを変える配線（両方の形）
         restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
         decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
-        openRFQReplyFromHash();      // 返事ページの「見積依頼書で単価を写す」から来たら 🤖 返事を読む の欄を開く（2026-10-05）
+        openRFQReplyFromHash();      // 返事ページの「部材見積依頼書で単価を写す」から来たら 🤖 返事を読む の欄を開く（2026-10-05）
         // 「書ける形でも」の業務のボタンは、2026-10-12 まで閲覧モード限定だった（いまは押す前に書きかけを保存する）。
         refreshFilingButton();      // 加工製品ページの整理（書ける形でも）
         refreshMailChrome();         // 返信と「この記録への返信」（書ける形でも）
@@ -3022,7 +3022,7 @@
     // **表ごとの例外**（設定の `table_vocabulary`・2026-09-26・DBの日本語化 4-2）。
     // 表の列の型と選択肢は `columnWord(表, 列)` が **例外 → vocabWords → 文字列** の順で
     // 引きます（サーバーの `ColumnWord` と同じ順）。
-    let tableWords = {};               // { "発注明細": { "状態": {type:"enum", values:[...]} }, ... }
+    let tableWords = {};               // { "部材発注明細": { "状態": {type:"enum", values:[...]} }, ... }
     // **載っている拡張**（/api/tag-schema の `extensions`・2026-09-15）。拡張の画面はこの
     // ファイルに居るので、サーバーからビルドタグで外しても**ボタンは残り、押すと404が
     // エラーの通知になっていました**（「🤖 解析」「✉️ 返信」「未分類へ戻す」）。
@@ -3192,7 +3192,7 @@
         const t = table.getAttribute('data-type');
         if (t) return vocabDefs.find(v => v.type === t) || null;
         // 表は自分の <caption> で名乗れる（サーバーの vocabTypeOf ③と同じ規則）。
-        // ⚠ 機械が書く明細（受注明細・発注明細・発注部材表）はこの形で、`data-type` を
+        // ⚠ 機械が書く明細（受注明細・部材発注明細・発注部材表）はこの形で、`data-type` を
         // 書かない——ここで caption を見ないと、その表だけ列型の検証と折り返しが掛からない。
         const cap = table.querySelector(':scope > caption');
         if (cap) {
@@ -3590,7 +3590,7 @@
             newEl = buildPlainDl([{ label: '' }]);
         } else if (type === 'section') {
             // **見出しの節**（2026-09-27）——見出しの言葉が節の名前になる。テンプレートでは
-            // **機械が中身を入れる器**です（メールの「本文」「添付ファイル」・発注書の「備考」・
+            // **機械が中身を入れる器**です（メールの「本文」「添付ファイル」・部材発注書の「備考」・
             // 加工製品の「図面」）。利用者の選択:「見出しの節」。機械語は書かない（見出しが名乗る）。
             // ⚠ 見出しと段落には空の改行を入れる——空の要素は高さが無く、カーソルを置けない
             //    （見出しに打ったつもりの字が段落へ入った・2026-09-27 に E2E で踏んだ）。
@@ -7771,7 +7771,7 @@
                 if (!made.length && d.page_id) made = [{ page_id: d.page_id, title: d.title }];
                 return { kind: 'drawing', made: made, matchedDxf: d.matched_dxf || 0 };
             }
-            // 見積依頼の返事（2026-10-05・ext/toho/rfq_reply_page.go）——返事ページを作り、どの見積依頼書への返事かを突き合わせた。
+            // 部材見積依頼の返事（2026-10-05・ext/toho/rfq_reply_page.go）——返事ページを作り、どの部材見積依頼書への返事かを突き合わせた。
             if (d.doc_type === 'rfq_reply' && d.page_id) {
                 return { kind: 'rfq_reply', made: [{ page_id: d.page_id, title: d.title }], say: d.say || '', linked: d.linked_rfq || '' };
             }
@@ -7816,8 +7816,8 @@
                 else none.push(todo[i].path);
             }
             const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
-                (orders ? '・受注ページ ' + orders + '枚' : '') + (replies ? '・見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
-            if (none.length) lines.push('発注書・図面・見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・'));
+                (orders ? '・受注ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
+            if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・'));
             if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
             if (drawings) lines.push('📁 整理で行き先を決めてください。');
             notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
@@ -7877,11 +7877,11 @@
                 born = true;
             } else if (d.kind === 'rfq_reply') {
                 const p = d.made[0];
-                notify('見積依頼の返事ページを作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' + d.say,
+                notify('部材見積依頼の返事ページを作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' + d.say,
                     { type: d.linked ? 'success' : 'warn', duration: 0, id: 'analyze-pdf' });
                 born = true;
             } else if (d.kind === 'none') {
-                notify('発注書・図面・見積依頼の返事のどれでもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
+                notify('発注書・図面・部材見積依頼の返事のどれでもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
             } else {
                 const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
                 notify((d.made.length > 1
@@ -8886,7 +8886,7 @@
     //   - ⚠ **並べ替えた並びを本文に保存させない**——行は DOM の上で動かすので、書き出し（serializeChildren）は並べ替えた
     //     `tbody` を**元の並び**で書く（tableSortOriginal）。編集モードへ入るときは元の並びへ戻す（編集中に行を足すと
     //     「元の並び」が定まらないため・編集は本文の並びで）。
-    //   - 行のボタン（発注・見積依頼の ↩ 戻す、受注残表の欄など）は行番号を属性で持つので、並べ替えても押す先はずれない。
+    //   - 行のボタン（発注・部材見積依頼の ↩ 戻す、受注残表の欄など）は行番号を属性で持つので、並べ替えても押す先はずれない。
     //   - 並べるのは見出しの行（最初の行が全部 th）のある表だけ——縦の表（見積計算表）や、結合したセル（colspan・rowspan）の
     //     ある表は並べない。`tbody` ごとに並べる（臨時部材の行のような別の `tbody` は混ぜない）・足元（tfoot）は動かさない。
     //     選ぶ欄・ボタンだけの見出し（チェックの列など）と空の見出しは押せない。
@@ -10801,7 +10801,7 @@
 // ── 鏡のボタンに共通の道具（2026-09-23 に寄せた）─────────────────────────
 //
 // 09-21〜22 に足した5つの配線（受注残の印刷・受注残からの書き戻し・材料を探す・
-// 未手配→発注部材表→発注書・発注書を送る）が、**同じ数行をそれぞれ写していました**
+// 未手配→発注部材表→部材発注書・部材発注書を送る）が、**同じ数行をそれぞれ写していました**
 // ——JSON を POST して `success` を見る（6回）・欄に1文を出す（2回）・入力欄の値を
 // 読む（3回）・document へ委譲した click を `closest` で振り分ける（4回）。
 // ここへ寄せ、以後はここを通します。
@@ -10829,7 +10829,7 @@ async function postJSON(url, body) {
     return { ok: res.ok && !!data.success, status: res.status, data };
 }
 
-// sayBoundPDF は、資料を綴じた1本（FAX・印刷用）ができたことを欄に出し、開くリンクを添えます（発注書・見積依頼書——
+// sayBoundPDF は、資料を綴じた1本（FAX・印刷用）ができたことを欄に出し、開くリンクを添えます（部材発注書・部材見積依頼書——
 // 2026-10-09 に2つの写しを寄せた）。⚠ **綴じなかったものを黙りません**——紙にできない形式・読めないPDF・資料の無い行。
 function sayBoundPDF(box, data) {
     const p = sayIn(box, '📠 FAX・印刷用を作りました（このページの添付にも残ります）: ');
@@ -10878,7 +10878,7 @@ async function getJSON(url) {
 
 // ── 装置フォルダから選ぶ一時的な表（2026-10-03）────────────────────────────
 //
-// 再見積依頼（wireRFQ）と見積書を作る（wireEstimateFolder）が同じ形で組みます。表は画面だけ（鏡の中のクローム・本文に残さない）。
+// 再部材見積依頼（wireRFQ）と見積書を作る（wireEstimateFolder）が同じ形で組みます。表は画面だけ（鏡の中のクローム・本文に残さない）。
 //   headers: 見出しの文字（先頭の選ぶ欄は除く）
 //   rows:    { pick: 選ぶ欄の値（null なら選べない行）, cells: 文字か要素の並び }
 //   attr:    選ぶ欄の属性名（値が pick）——見出しの「全部選ぶ」（data-pick-all="attr"）が、その表の attr の欄を全部入れ・外す。
@@ -11022,7 +11022,7 @@ delegateClick([['.estimate-add-go', async (btn) => {
     if (!input) return;
     btn.disabled = true;
     sayIn(say, '保存しています…');
-    // 保存する口は欄が持つ（見積書は /api/estimate/note・見積依頼書は /api/rfq/note——2026-10-03）。
+    // 保存する口は欄が持つ（見積書は /api/estimate/note・部材見積依頼書は /api/rfq/note——2026-10-03）。
     const url = btn.getAttribute('data-note-url') || '/api/estimate/note';
     const r = await postJSON(url, { page_id: btn.getAttribute('data-estimate-page') || '', note: input.value })
         .catch(e => ({ ok: false, data: { message: String(e) } }));
@@ -11030,7 +11030,7 @@ delegateClick([['.estimate-add-go', async (btn) => {
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '備考を保存できませんでした')); return; }
     location.reload();
 }], ['.rfq-pdf-go', async (btn) => {
-    // 見積依頼書の「📄 PDFを作る」（2026-10-03・ext/toho/rfq_pdf.go）——作ったら読み直す（PDF は明細の下に出る）。
+    // 部材見積依頼書の「📄 PDFを作る」（2026-10-03・ext/toho/rfq_pdf.go）——作ったら読み直す（PDF は明細の下に出る）。
     const say = btn.parentElement && btn.parentElement.querySelector('.rfq-pdf-say');
     btn.disabled = true;
     sayIn(say, 'PDFを作っています…');
@@ -11040,18 +11040,18 @@ delegateClick([['.estimate-add-go', async (btn) => {
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
     location.reload();
 }], ['.rfq-pdf-docs-go', async (btn) => {
-    // 見積依頼書の「📠 FAX・印刷用（資料を綴じる）」（2026-10-05・ext/toho/rfq_pdf.go）——発注書の makePDFWithDocs と同じ。
-    // 見積依頼書の PDF（表示中のもの）は差し替えないので読み直さず、できた1本へのリンクを出す（押して印刷・FAX）。
+    // 部材見積依頼書の「📠 FAX・印刷用（資料を綴じる）」（2026-10-05・ext/toho/rfq_pdf.go）——部材発注書の makePDFWithDocs と同じ。
+    // 部材見積依頼書の PDF（表示中のもの）は差し替えないので読み直さず、できた1本へのリンクを出す（押して印刷・FAX）。
     const say = btn.parentElement && btn.parentElement.querySelector('.rfq-pdf-docs-say');
     btn.disabled = true;
-    sayIn(say, '見積依頼書に資料を綴じています…');
+    sayIn(say, '部材見積依頼書に資料を綴じています…');
     const r = await postJSON('/api/rfq-pdf-docs', { page_id: btn.getAttribute('data-rfq-page') || '' })
         .catch(e => ({ ok: false, data: { message: String(e) } }));
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '綴じられませんでした')); return; }
     sayBoundPDF(say, r.data);
 }], ['.rfq-sent-go', async (btn) => {
-    // 見積依頼書を FAX・手渡しで送った（2026-10-03）——送付日に今日。
+    // 部材見積依頼書を FAX・手渡しで送った（2026-10-03）——送付日に今日。
     if (!window.confirm('FAX・手渡しで送ったことにして、送付日に今日の日付を書きます。よろしいですか？')) return;
     const say = btn.parentElement && btn.parentElement.querySelector('.rfq-sent-say');
     btn.disabled = true;
@@ -11062,10 +11062,10 @@ delegateClick([['.estimate-add-go', async (btn) => {
     location.reload();
 }]]);
 
-// ── 見積依頼の返事（2026-10-05・段4の前半——ext/toho/rfq_reply.go）─────────────────────────
+// ── 部材見積依頼の返事（2026-10-05・段4の前半——ext/toho/rfq_reply.go）─────────────────────────
 //
 // 利用者:「両方」（✓ 回答を記録と 🤖 返事を読む）。返事は「見積依頼書に手書きで FAX」「業者の見積書 PDF をメール」「メールの
-// 本文に値段」。見積依頼明細の足元の「返事:」の行に2つのボタン——
+// 本文に値段」。部材見積依頼明細の足元の「返事:」の行に2つのボタン——
 //   ✓ 回答を記録 … 手で単価を書いたあと押す。単価の入った未回答の行を回答あり・回答日に今日（/api/rfq/answered）
 //   🤖 返事を読む … 返事の候補（このページのファイル・題に「№ このページ」を含む受信メールの本文と添付）を選び、🤖 で読んだ
 //                   単価の**案**を表で見せる（/api/rfq/read-reply——何も書かない）。人が直して印の付いた行を書き込む
@@ -11081,7 +11081,7 @@ delegateClick([['.rfq-answered-go', async (btn) => {
     location.reload();
 }], ['.rfq-read-go', (btn) => openRFQReplyPanel(btn)]]);
 
-// openRFQReplyFromHash は、返事ページの「見積依頼書で単価を写す（🤖 返事を読む）」（`/見積依頼書#rfq-reply`）から来たとき、
+// openRFQReplyFromHash は、返事ページの「部材見積依頼書で単価を写す（🤖 返事を読む）」（`/部材見積依頼書#rfq-reply`）から来たとき、
 // 「🤖 返事を読む」の欄を開きます（2026-10-05・ext/toho/rfq_reply_page.go）——候補のいちばん上が結んだ返事の原本。読むのは人が押す。
 // 一度開いたら印（#rfq-reply）を消す（描き直しのたびに開き直さない）。
 function openRFQReplyFromHash() {
@@ -11093,13 +11093,13 @@ function openRFQReplyFromHash() {
     btn.scrollIntoView({ block: 'center' });
 }
 
-// 返事ページの「この見積依頼書への返事」「結ぶ」（2026-10-05・/api/rfq-reply/link）——結ぶと見積依頼書の子へ移る。
+// 返事ページの「この部材見積依頼書への返事」「結ぶ」（2026-10-05・/api/rfq-reply/link）——結ぶと部材見積依頼書の子へ移る。
 delegateClick([['.rfq-reply-link', async (btn) => {
     const row = btn.parentElement;
     const input = row && row.querySelector('.rfq-reply-no');
     const rfq = btn.getAttribute('data-rfq') || (input ? input.value.trim() : '');
     const say = row && row.querySelector('.rfq-reply-link-say');
-    if (!rfq) { sayIn(say, '⚠ 見積依頼番号を入れてください'); return; }
+    if (!rfq) { sayIn(say, '⚠ 部材見積依頼番号を入れてください'); return; }
     btn.disabled = true;
     const r = await postJSON('/api/rfq-reply/link', { page_id: btn.getAttribute('data-reply') || '', rfq })
         .catch(e => ({ ok: false, data: { message: String(e) } }));
@@ -11112,9 +11112,9 @@ delegateClick([['.rfq-reply-link', async (btn) => {
     location.reload();
 }]]);
 
-// 返事ページの「この返事から見積依頼書ページを作る」（2026-10-05・移行期——ext/toho/rfq_reply_make.go）。読んだままの表を見積依頼明細の列に
-// 読み替えた案（GET /api/rfq-reply/draft——弊社品番は図面番号・品番から当てる）を表で出し、人が直して「見積依頼書ページを作る」
-// （POST /api/rfq-reply/make-rfq）→ できた見積依頼書へ移る（返事はその子へ）。
+// 返事ページの「この返事から部材見積依頼書ページを作る」（2026-10-05・移行期——ext/toho/rfq_reply_make.go）。読んだままの表を部材見積依頼明細の列に
+// 読み替えた案（GET /api/rfq-reply/draft——弊社品番は図面番号・品番から当てる）を表で出し、人が直して「部材見積依頼書ページを作る」
+// （POST /api/rfq-reply/make-rfq）→ できた部材見積依頼書へ移る（返事はその子へ）。
 delegateClick([['.rfq-reply-make', (btn) => openRFQReplyMakePanel(btn)]]);
 
 const RFQ_REPLY_MAKE_COLS = [
@@ -11133,7 +11133,7 @@ async function openRFQReplyMakePanel(btn) {
     const r = await getJSON('/api/rfq-reply/draft?page_id=' + encodeURIComponent(replyId));
     if (!r.ok) { head.textContent = '⚠ ' + ((r.data && r.data.message) || '案を作れません'); return; }
     head.textContent = '仕入先 ' + (r.data.supplier || '（無し）') + '・回答日 ' + (r.data.date || '（無し）') +
-        ' の見積依頼書ページを作ります。弊社品番（加工製品ページの番号）・種類・品物を直してから「作る」を押してください（入れない行は印を外す）:';
+        ' の部材見積依頼書ページを作ります。弊社品番（加工製品ページの番号）・種類・品物を直してから「作る」を押してください（入れない行は印を外す）:';
     const table = document.createElement('table');
     table.className = 'rfq-reply-table rfq-reply-make-table';
     const hr = document.createElement('tr');
@@ -11176,7 +11176,7 @@ async function openRFQReplyMakePanel(btn) {
     const go = document.createElement('button');
     go.type = 'button';
     go.className = 'chip-btn rfq-reply-make-go';
-    go.textContent = '見積依頼書ページを作る';
+    go.textContent = '部材見積依頼書ページを作る';
     const msg = document.createElement('span');
     msg.className = 'rfq-reply-make-say';
     panel.append(go, document.createTextNode(' '), msg);
@@ -11449,9 +11449,9 @@ async function openQuotePutPanel(btn) {
     });
 }
 
-// ── 見積依頼（2026-10-03・段1——ext/toho/rfq.go・rfq_api.go）───────────────────────
+// ── 部材見積依頼（2026-10-03・段1——ext/toho/rfq.go・rfq_api.go）───────────────────────
 //
-// 再見積依頼フォームの「集める」・見積依頼必要部材表の「見積依頼部材表へ入れる」「不要（消す）」・見積依頼部材表の「↩ 戻す」。
+// 再部材見積依頼フォームの「集める」・見積依頼必要部材表の「見積依頼部材表へ入れる」「不要（消す）」・見積依頼部材表の「↩ 戻す」。
 // ⚠ **行は行番号で送ります**（サーバーが本文から読む——表示は丸めることがあるので値は送らない）。押したら読み直す。
 // ⚠ 欄は表を包む節の中（表の直後）か、包まれていなければ表の足元（tfoot）——どちらからでも表を探す（発注部材表で
 //    「欄を含む表」だけを探して黙って何もしなかった前科——2026-10-02）。
@@ -11639,7 +11639,7 @@ async function openQuotePutPanel(btn) {
             sayIn(box, (r.data.products || []).length + ' 件・' + r.data.rows + ' 行を見積依頼必要部材表へ入れました。読み直しています…');
             location.reload();
         }],
-        // 見積依頼書ページを作る（2026-10-03・段2——ext/toho/rfq_doc.go）。行はサーバーが本文から読む（表の番号だけ送る）。
+        // 部材見積依頼書ページを作る（2026-10-03・段2——ext/toho/rfq_doc.go）。行はサーバーが本文から読む（表の番号だけ送る）。
         ['[data-rfq-doc-go]', async (btn) => {
             const form = btn.closest('.rfq-doc-form');
             if (!form) return;
@@ -11653,7 +11653,7 @@ async function openQuotePutPanel(btn) {
                 note: valueIn(form, '[data-rfqdoc="note"]'),
             };
             if (!body.supplier) {
-                sayIn(box, '⚠ 仕入先を入れてください（見積依頼書は1枚に1社です）', 'proc-why-ng');
+                sayIn(box, '⚠ 仕入先を入れてください（部材見積依頼書は1枚に1社です）', 'proc-why-ng');
                 return;
             }
             if (!body.signer) {
@@ -11661,15 +11661,15 @@ async function openQuotePutPanel(btn) {
                 return;
             }
             btn.disabled = true;
-            sayIn(box, '見積依頼書ページを作っています…');
+            sayIn(box, '部材見積依頼書ページを作っています…');
             const r = await postJSON('/api/rfq/new', body);
             btn.disabled = false;
             if (!r.ok) {
-                sayIn(box, '⚠ ' + (r.data.message || '見積依頼書ページを作れませんでした'), 'proc-why-ng');
+                sayIn(box, '⚠ ' + (r.data.message || '部材見積依頼書ページを作れませんでした'), 'proc-why-ng');
                 return;
             }
             if (r.data.draft_note) alert(r.data.draft_note);
-            sayIn(box, '見積依頼書ページ /' + r.data.page_id + ' を作りました（' + r.data.rows + ' 行）。開いています…');
+            sayIn(box, '部材見積依頼書ページ /' + r.data.page_id + ' を作りました（' + r.data.rows + ' 行）。開いています…');
             location.href = '/' + r.data.page_id;
         }],
         ['.rfq-draft-back', async (btn) => {
@@ -11861,17 +11861,17 @@ delegateClick([['.backlog-print', (btn) => {
     printOnly(copy);
 }]]);
 
-// ── 受注残表から見積依頼へ（2026-10-04・見積依頼の段3） ────────────────────
+// ── 受注残表から部材見積依頼へ（2026-10-04・見積依頼の段3） ────────────────────
 //
-// 【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」。受注残表の「見積依頼」の欄で選んだ行
-// （弊社品番・受注残・受注ページ——サーバーが描いた data-*）を /api/rfq/collect へ送り、見積依頼の置き場の見積依頼必要部材表に
+// 【要求】見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」。受注残表の「部材見積依頼」の欄で選んだ行
+// （弊社品番・受注残・受注ページ——サーバーが描いた data-*）を /api/rfq/collect へ送り、部材見積依頼の置き場の見積依頼必要部材表に
 // 入れる。数は受注残 × 部材の数量（手配済みは引かない）・行の「受注」の列にその受注ページ・送り先はサーバーが探す。
 // 選ぶ欄とボタンは紙に出さない（no-print——受注残表は1枚ずつ印刷する作業の紙）。
 delegateClick([['.backlog-rfq-go', async (btn) => {
     const say = btn.parentElement.querySelector('.backlog-rfq-say');
     const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-rfq-pick:checked'));
     if (!picks.length) {
-        sayIn(say, '受注残表の右端の「見積依頼」の欄で、送る行を選んでください。', 'warn');
+        sayIn(say, '受注残表の右端の「部材見積依頼」の欄で、送る行を選んでください。', 'warn');
         return;
     }
     const items = picks.map((c) => ({ product: c.dataset.product, lot: c.dataset.lot, for_order: c.dataset.order }));
@@ -11879,7 +11879,7 @@ delegateClick([['.backlog-rfq-go', async (btn) => {
     try {
         const r = await postJSON('/api/rfq/collect', { items });
         if (!r.ok) {
-            sayIn(say, (r.data && r.data.message) || ('見積依頼へ送れませんでした（' + r.status + '）'), 'warn');
+            sayIn(say, (r.data && r.data.message) || ('部材見積依頼へ送れませんでした（' + r.status + '）'), 'warn');
             return;
         }
         picks.forEach((c) => { c.checked = false; });
@@ -11887,7 +11887,7 @@ delegateClick([['.backlog-rfq-go', async (btn) => {
         const p = sayIn(say, `見積依頼必要部材表へ ${r.data.rows} 行入れました（受注残 ${picks.length} 行から）${skipped}　`);
         const a = document.createElement('a');
         a.href = '/' + r.data.page_id;
-        a.textContent = '見積依頼を開く';
+        a.textContent = '部材見積依頼を開く';
         p.appendChild(a);
     } catch (e) {
         sayIn(say, '通信に失敗しました: ' + e.message, 'warn');
@@ -12199,7 +12199,7 @@ delegateClick([['.w-table-print', (btn) => {
     });
 })();
 
-// ── 未手配の一覧から発注書を作る（2026-09-21）────────────────────────────
+// ── 未手配の一覧から部材発注書を作る（2026-09-21）────────────────────────────
 //
 // ユーザー:「弊社の発注書は、**受注明細の単位とは無関係に、納期のグループなどから
 // 発行**されます」。⚠ **だから起点は受注ページではなく、受注横断の未手配の一覧**です。
@@ -12238,7 +12238,7 @@ delegateClick([['.w-table-print', (btn) => {
         };
     }
 
-    // 発注部材表の足元から**発注書ページ**を作る（2026-09-22・ユーザーの流れ）。
+    // 発注部材表の足元から**部材発注書ページ**を作る（2026-09-22・ユーザーの流れ）。
     //
     // ⚠ **ボタンは発注部材表の下に居ます**——「発注部材表から発注書を作るので
     //    『発注書を作る』ボタンは発注部材表の下にあるはずです」（ユーザー訂正）。
@@ -12267,13 +12267,13 @@ delegateClick([['.w-table-print', (btn) => {
         const body = {
             supplier: val('supplier'), order_at: val('order_at'),
             due: val('due'), note: val('note'), signer: val('signer'), lines,
-            // ⚠ **どの表から作ったか**——作り終えたら、その表はこの発注書ページへの
+            // ⚠ **どの表から作ったか**——作り終えたら、その表はこの部材発注書ページへの
             //    リンクに化けます（ユーザー決定）。
             draft_page: form.getAttribute('data-draft-page') || '',
             draft_index: form.getAttribute('data-draft-index') || '',
         };
         if (!body.supplier) {
-            sayIn(box,'⚠ 仕入先を入れてください（発注書は1枚に1社です）', 'proc-why-ng');
+            sayIn(box,'⚠ 仕入先を入れてください（部材発注書は1枚に1社です）', 'proc-why-ng');
             return;
         }
         if (!body.signer) {
@@ -12281,14 +12281,14 @@ delegateClick([['.w-table-print', (btn) => {
             return;
         }
         go.disabled = true;
-        sayIn(box,'発注書を作っています…');
+        sayIn(box,'部材発注書を作っています…');
         try {
             const r = await postJSON('/api/our-order/new', body);
             if (!r.ok) {
-                sayIn(box,'⚠ ' + (r.data.message || '発注書を作れませんでした'), 'proc-why-ng');
+                sayIn(box,'⚠ ' + (r.data.message || '部材発注書を作れませんでした'), 'proc-why-ng');
                 return;
             }
-            sayIn(box,'発注書ができました（' + r.data.page_id + '）。読み直しています…');
+            sayIn(box,'部材発注書ができました（' + r.data.page_id + '）。読み直しています…');
             location.reload();
         } catch (err) {
             sayIn(box,'⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
@@ -12297,7 +12297,7 @@ delegateClick([['.w-table-print', (btn) => {
         }
     }
 
-    // draftTableOf は「発注書を作る」の欄が属する発注部材表を返します（無ければ null）。
+    // draftTableOf は「部材発注書を作る」の欄が属する発注部材表を返します（無ければ null）。
     //
     // 欄は表を包む節（`<section>`）の中、表の直後に居ます（サーバーの `draftBoxOf`）。
     function draftTableOf(form) {
@@ -12305,7 +12305,7 @@ delegateClick([['.w-table-print', (btn) => {
         return sec ? sec.querySelector(':scope > table') : null;
     }
 
-    // draftLinesOf は発注部材表の中身を、発注書へ送る形で読みます。
+    // draftLinesOf は発注部材表の中身を、部材発注書へ送る形で読みます。
     //
     // ⚠ **人が書き換えた値を読みます**——だから属性（`data-*`）ではなく**セルの文字**
     //    です。未発注の表とは逆で、あちらは機械が出した値なので属性から読みます。
@@ -12323,13 +12323,13 @@ delegateClick([['.w-table-print', (btn) => {
             if (tr.closest('tfoot')) continue;
             const cells = [...tr.children];
             // ⚠ **品番・表面も運びます**（2026-09-25）——それまで送っておらず、
-            //    発注書で**品番と表面（塗装の色・鍍金）が落ちていました**。
+            //    部材発注書で**品番と表面（塗装の色・鍍金）が落ちていました**。
             const ln = {
                 product_id: at(cells, '弊社品番'), for_order: at(cells, '受注'), item_id: at(cells, '品番'),
                 item_name: at(cells, '品名'),
                 material: at(cells, '材質'), shape: at(cells, '形状'), size: at(cells, '寸法'),
                 color: at(cells, '表面'),
-                // 種類・番号・加工内容・仕様・支給も運ぶ（2026-09-28）——運ばないと、発注書で落ちる。
+                // 種類・番号・加工内容・仕様・支給も運ぶ（2026-09-28）——運ばないと、部材発注書で落ちる。
                 kind: at(cells, '種類'), no: at(cells, '番号'), work: at(cells, '加工内容'),
                 spec: at(cells, '仕様'), supplied: at(cells, '支給'),
                 quantity: at(cells, '数量'), unit: at(cells, '単位'),
@@ -12481,7 +12481,7 @@ delegateClick([['.w-table-print', (btn) => {
     }
 })();
 
-// ── 発注書を送る・発注済みの印を付ける（2026-09-22）──────────────────────
+// ── 部材発注書を送る・発注済みの印を付ける（2026-09-22）──────────────────────
 //
 // ユーザー:「発注書ページで**送信方法を選んで**、メールの場合は**メールを書く
 // ボックス**が出て送信します。FAXの場合は、FAXのページを揃えて送信します。
@@ -12520,7 +12520,7 @@ delegateClick([['.w-table-print', (btn) => {
         location.reload();
     }
 
-    // 行を発注書から外して、必要部材表へ戻す（2026-09-24）。
+    // 行を部材発注書から外して、必要部材表へ戻す（2026-09-24）。
     //
     // ⚠ **いつも確かめます**（行が本文から消えるため）。確認の文はサーバーが書きます
     //    ——送付後の行には「再送してください」が付きます。
@@ -12540,7 +12540,7 @@ delegateClick([['.w-table-print', (btn) => {
         location.reload();
     }
 
-    // 発注書のPDFを作って、ページに表示する（2026-09-22）。
+    // 部材発注書のPDFを作って、ページに表示する（2026-09-22）。
     //
     // ⚠ **押す道がありませんでした**——口は 09-21 から在ったのに、呼ぶボタンが
     //    どこにも無く、API を直に叩いて確かめただけでした。
@@ -12564,7 +12564,7 @@ delegateClick([['.w-table-print', (btn) => {
             }
             note.defaultValue = note.value;
         }
-        sayIn(box,'発注書のPDFを作っています…');
+        sayIn(box,'部材発注書のPDFを作っています…');
         const r = await postJSON('/api/order-pdf', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
         }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
@@ -12583,13 +12583,13 @@ delegateClick([['.w-table-print', (btn) => {
         location.reload();
     }
 
-    // 資料を綴じた FAX・印刷用の1本（2026-09-28・order_docs.go）。発注書のPDF（表示中の正本）は
+    // 資料を綴じた FAX・印刷用の1本（2026-09-28・order_docs.go）。部材発注書のPDF（表示中の正本）は
     // 差し替えないので、ページは開き直さず、できた1本へのリンクを欄に出します（押して印刷・FAX）。
     async function makePDFWithDocs(btn) {
         const root = btn.closest('.order-send');
         const box = root ? root.querySelector('[data-order-result]') : null;
         btn.disabled = true;
-        sayIn(box, '発注書に資料を綴じています…');
+        sayIn(box, '部材発注書に資料を綴じています…');
         const r = await postJSON('/api/order-pdf-docs', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
         }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
@@ -12606,7 +12606,7 @@ delegateClick([['.w-table-print', (btn) => {
         const root = btn.closest('.order-send');
         const box = root ? root.querySelector('[data-order-result]') : null;
         const method = btn.getAttribute('data-order-sent') || '';
-        if (!confirm(method + 'で発注書を送りましたか？（取消でない行すべてを発注済みにします）')) return;
+        if (!confirm(method + 'で部材発注書を送りましたか？（取消でない行すべてを発注済みにします）')) return;
         btn.disabled = true;
         sayIn(box,'印を付けています…');
         const r = await postJSON('/api/our-order/sent', {
@@ -12630,7 +12630,7 @@ delegateClick([['.w-table-print', (btn) => {
         ['[data-order-pdf-docs]', makePDFWithDocs],
         ['[data-order-sent]', markSent],
         // メールで送る欄は部品です（2026-09-30・assets/mail-compose.js——「PDFを作る → 送る → 発注済みにする」は
-        // サーバーの用件「発注書」が受け持つ・ext/toho/order_mail.go）。
+        // サーバーの用件「部材発注書」が受け持つ・ext/toho/order_mail.go）。
     ]);
 })();
 

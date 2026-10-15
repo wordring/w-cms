@@ -1,22 +1,22 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 見積依頼書の紙（PDF）・備考の欄・送る（2026-10-03・見積依頼の段2の後半）
+// 部材見積依頼書の紙（PDF）・備考の欄・送る（2026-10-03・見積依頼の段2の後半）
 //
 // 利用者:「何時ものように見積依頼明細からPDFを作り送付です。見積依頼明細の下に備考を書き込む欄が必要です。
 // PDFの下に発送項目（メールを書くボックス）」。見本（見積依頼の Word）は 日付・題・宛名・差出人・材質 形状 寸法 個数 の表・
 // 「よろしくお願いします。」・「○○用」。
 //
-//	見積依頼書ページ
-//	  見積依頼明細 ── 足元（鏡）: 備考の欄・「📄 PDFを作る」
+//	部材見積依頼書ページ
+//	  部材見積依頼明細 ── 足元（鏡）: 備考の欄・「📄 PDFを作る」
 //	  （PDF のファイル表示——表の直後に機械が置く）
 //	  備考の節
-//	  「見積依頼を送る」（ビュー・テンプレートの末尾）: ✉️ メールで送る（用件「見積依頼」）・「送った（FAX・手渡し）」
+//	  「部材見積依頼を送る」（ビュー・テンプレートの末尾）: ✉️ メールで送る（用件「部材見積依頼」）・「送った（FAX・手渡し）」
 //
-//   - 紙: 題「見積依頼書」・日付（見積依頼日）・№（見積依頼番号）・仕入先 様・差出人（見積依頼担当の署名——発注書と同じ節）・
+//   - 紙: 題「見積依頼書」・日付（部材見積依頼日）・№（部材見積依頼番号）・仕入先 様・差出人（部材見積依頼担当の署名——部材発注書と同じ節）・
 //     明細（列は設定 `rfq_print_columns`——どの行にも値の無い列は刷らない、⚠ **単価はいつも空欄で刷る**〔業者が書き込む〕・
 //     金額は刷らない）・「よろしくお願いします。」・備考。**辞退の行は刷らない**。
-//   - メールの添付は発注書と同じ——送るときに作る PDF（印つき・外せば作らない）と、外注加工の資料（行の 弊社品番＋番号）。
+//   - メールの添付は部材発注書と同じ——送るときに作る PDF（印つき・外せば作らない）と、外注加工の資料（行の 弊社品番＋番号）。
 //   - 送れたら（メール）、または「送った（FAX・手渡し）」で、`送付日` に今日。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -38,19 +38,19 @@ import (
 	"w-cms/internal/database"
 )
 
-// RFQMailPurpose は送る欄の用件「見積依頼」です。
-const RFQMailPurpose = "見積依頼"
+// RFQMailPurpose は送る欄の用件「部材見積依頼」です。
+const RFQMailPurpose = "部材見積依頼"
 
-// RFQSendViewType は見積依頼書ページの末尾に置く「見積依頼を送る」の形式名です。
+// RFQSendViewType は部材見積依頼書ページの末尾に置く「部材見積依頼を送る」の形式名です。
 const RFQSendViewType = "rfq-send"
 
-// rfqLineDeclined は見積依頼明細の「辞退」——紙に刷らない。
+// rfqLineDeclined は部材見積依頼明細の「辞退」——紙に刷らない。
 const rfqLineDeclined = "辞退"
 
 func init() {
 	cms.RegisterMirror(RFQItemsType, cms.MirrorHandlerFunc(renderRFQItems))
 	cms.RegisterVocab(cms.VocabDef{
-		Type: RFQSendViewType, DisplayName: "見積依頼を送る", Category: "ビュー", Icon: "✉️", Element: "section",
+		Type: RFQSendViewType, DisplayName: "部材見積依頼を送る", Category: "ビュー", Icon: "✉️", Element: "section",
 		View: true,
 	})
 	cms.RegisterView(RFQSendViewType, rfqSendViewHTML)
@@ -62,7 +62,7 @@ func init() {
 	})
 }
 
-// readRFQDoc は見積依頼書ページの本文から、タグ・明細（見出しの名前で・辞退は除く）・備考を読みます。
+// readRFQDoc は部材見積依頼書ページの本文から、タグ・明細（見出しの名前で・辞退は除く）・備考を読みます。
 func readRFQDoc(body string) (head map[string]string, rows []map[string]string, note []string, err error) {
 	nodes, perr := htmldoc.ParseFragment(body)
 	if perr != nil {
@@ -78,7 +78,7 @@ func readRFQDoc(body string) (head map[string]string, rows []map[string]string, 
 	}
 	tables := tablesOfType([]*html.Node{root}, RFQItemsType)
 	if len(tables) == 0 {
-		return nil, nil, nil, errors.New("見積依頼明細の表がありません（このページは見積依頼書ではないようです）")
+		return nil, nil, nil, errors.New("部材見積依頼明細の表がありません（このページは部材見積依頼書ではないようです）")
 	}
 	trs := rowsOf(tables[0])
 	if len(trs) >= 2 {
@@ -134,7 +134,7 @@ func rfqPaperColumns(rows []map[string]string) []orderPDFColumn {
 	return cols
 }
 
-// buildRFQPDF は見積依頼書ページの本文から PDF を組みます。
+// buildRFQPDF は部材見積依頼書ページの本文から PDF を組みます。
 func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 	font, err := paperFont()
 	if err != nil {
@@ -145,7 +145,7 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, errors.New("見積依頼明細に刷る行がありません（辞退の行は刷りません）")
+		return nil, errors.New("部材見積依頼明細に刷る行がありません（辞退の行は刷りません）")
 	}
 	p, err := startPaper(font)
 	if err != nil {
@@ -167,7 +167,7 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 	y = pdfText(p, pdfLeft, y, pdfFontSz, "下記につきまして、御見積をお願いいたします。")
 	y = pdfText(p, pdfLeft, y, pdfFontSz, "単価をご記入のうえ、ご返送くださいますようお願いいたします。")
 
-	// ── 差出人（右）——見積依頼担当の署名（発注書の署名と同じ節）──
+	// ── 差出人（右）——部材見積依頼担当の署名（部材発注書の署名と同じ節）──
 	y = pdfSender(p, pdfTop+34, y, senderLines(map[string]string{OrderSignerTag: head[RFQSignerTag]}, viewer))
 	y += 10
 
@@ -194,17 +194,17 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 	return finishPaper(p)
 }
 
-// makeRFQPDF は見積依頼書の PDF を作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。断るときは応答を書いて false。
+// makeRFQPDF は部材見積依頼書の PDF を作って添付に残し、ページに表示します（関門は呼ぶ側が通す）。断るときは応答を書いて false。
 func makeRFQPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool) {
 	return makePaper(w, user, pageID, paperKind{
 		build: buildRFQPDF,
 		name:  func(_, pageID string) string { return "見積依頼書 " + pageID },
 		audit: "rfq-pdf",
-		show:  showBelowItems(RFQItemsType, "見積依頼明細"),
+		show:  showBelowItems(RFQItemsType, "部材見積依頼明細"),
 	})
 }
 
-// isRFQPage は見積依頼書ページか（テンプレートの外で、見積依頼番号のタグを持つ）です。
+// isRFQPage は部材見積依頼書ページか（テンプレートの外で、部材見積依頼番号のタグを持つ）です。
 func isRFQPage(pageID string) bool {
 	return !cms.IsTemplateArea(pageID) && cms.PageTagValue(database.DB, pageNum(pageID), RFQNoTag) != ""
 }
@@ -214,18 +214,18 @@ func RFQPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 	servePaper(w, r, makeRFQPDF)
 }
 
-// RFQPDFDocsAPIHandler は POST /api/rfq-pdf-docs です（入力: {page_id}）——見積依頼書のうしろに外注加工の資料（PDF のページ・
+// RFQPDFDocsAPIHandler は POST /api/rfq-pdf-docs です（入力: {page_id}）——部材見積依頼書のうしろに外注加工の資料（PDF のページ・
 // 画像）を綴じた **FAX・印刷用の1本**を作り、そのページの添付として残して開くURLを返します（2026-10-05）。
 //
-// 【要求】見積依頼 §1・§2「外注加工の見積依頼には図面を綴じる」「📠 FAX（図面を綴じた FAX・印刷用）」——発注書の
+// 【要求】見積依頼 §1・§2「外注加工の見積依頼には図面を綴じる」「📠 FAX（図面を綴じた FAX・印刷用）」——部材発注書の
 // `/api/order-pdf-docs`（order_docs.go）と同じ作り: 資料は明細の行（弊社品番＋番号）が指す加工製品ページの「資料 <番号>」、
-// 綴じるのは `bindOrderDocs`。⚠ **本文は触りません**（表示中の見積依頼書の PDF は差し替えない）——編集中でも断らない。
+// 綴じるのは `bindOrderDocs`。⚠ **本文は触りません**（表示中の部材見積依頼書の PDF は差し替えない）——編集中でも断らない。
 // 辞退の行の資料は綴じない（readRFQDoc が外す）。
 func RFQPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	serveBoundPaper(w, r, boundKind{
 		check: func(pageID string) string {
 			if !isRFQPage(pageID) {
-				return "見積依頼書のページではありません"
+				return "部材見積依頼書のページではありません"
 			}
 			return ""
 		},
@@ -239,9 +239,9 @@ func RFQPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RFQNoteAPIHandler は POST /api/rfq/note です（入力: {page_id, note}）——見積依頼書ページの「備考」の節を書き換えます。
+// RFQNoteAPIHandler は POST /api/rfq/note です（入力: {page_id, note}）——部材見積依頼書ページの「備考」の節を書き換えます。
 func RFQNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
-	serveDocNote(w, r, isRFQPage, "見積依頼書ページではありません", "rfq.note")
+	serveDocNote(w, r, isRFQPage, "部材見積依頼書ページではありません", "rfq.note")
 }
 
 // RFQSentAPIHandler は POST /api/rfq/sent です（入力: {page_id}）——FAX・手渡しで送ったとき、`送付日` に今日を書きます。
@@ -261,7 +261,7 @@ func RFQSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "見積依頼書ページではありません")
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
 		return
 	}
 	today := time.Now().Format("2006-01-02")
@@ -274,7 +274,7 @@ func RFQSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "date": today})
 }
 
-// renderRFQItems は見積依頼明細の足元に、備考の欄と「📄 PDFを作る」を出します（鏡・書ける人にだけ）。
+// renderRFQItems は部材見積依頼明細の足元に、備考の欄と「📄 PDFを作る」を出します（鏡・書ける人にだけ）。
 func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if el.Data != "table" {
 		return true, nil
@@ -305,7 +305,7 @@ func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	return false, nil
 }
 
-// rfqSendViewHTML は見積依頼書ページの末尾の「見積依頼を送る」です（PDF の下——利用者:「PDFの下に発送項目」）。
+// rfqSendViewHTML は部材見積依頼書ページの末尾の「部材見積依頼を送る」です（PDF の下——利用者:「PDFの下に発送項目」）。
 func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 	pid := page.FormatID(pageIDInt)
 	if user == nil || !canWritePage(user, pageIDInt) || cms.IsTemplateArea(pid) {
@@ -314,7 +314,7 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 	sent := cms.PageTagValue(database.DB, pageIDInt, EstimateSentTag)
 	answered := cms.PageTagValue(database.DB, pageIDInt, RFQAnsweredTag)
 	var b strings.Builder
-	b.WriteString(`<h3 class="materials-title">✉️ 見積依頼を送る</h3>`)
+	b.WriteString(`<h3 class="materials-title">✉️ 部材見積依頼を送る</h3>`)
 	// 送る欄は、まだ送っていなくて返事も来ていないときだけ最初から開く（返事の来た見積——過去の見積もりを移したものも——は閉じておく）。
 	open := ` open`
 	if strings.TrimSpace(sent) != "" {
@@ -332,7 +332,7 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 		if _, rows, _, err := readRFQDoc(body); err == nil {
 			if docs, _ := orderDocs(user, rows); hasPrintableDoc(docs) {
 				b.WriteString(`<p class="unorder-help">FAX・印刷: <button type="button" class="chip-btn rfq-pdf-docs-go" data-rfq-page="` + pid +
-					`" title="見積依頼書のうしろに外注加工の資料（PDF・画像）を綴じた1本を作ります。見積依頼書のPDFはそのまま">` +
+					`" title="部材見積依頼書のうしろに外注加工の資料（PDF・画像）を綴じた1本を作ります。部材見積依頼書のPDFはそのまま">` +
 					`📠 FAX・印刷用（資料を綴じる）</button> <span class="rfq-pdf-docs-say"></span></p>`)
 			}
 		}
@@ -346,7 +346,7 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 func rfqMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) {
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
-		return comm.ComposeDraft{}, errors.New("見積依頼書のページを読めません: " + err.Error())
+		return comm.ComposeDraft{}, errors.New("部材見積依頼書のページを読めません: " + err.Error())
 	}
 	head, rows, _, err := readRFQDoc(body)
 	if err != nil {
@@ -364,12 +364,12 @@ func rfqMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) 
 		To:        supplierAddresses(user, supplier),
 		Subject:   "見積依頼（№ " + head[RFQNoTag] + "）",
 		Body:      b.String(),
-		SendNote:  "印の付いた見積依頼書のPDFは送るときに作って添付し（このページの添付にも残ります）、送れたら「" + EstimateSentTag + "」のタグに今日の日付を書きます。",
+		SendNote:  "印の付いた部材見積依頼書のPDFは送るときに作って添付し（このページの添付にも残ります）、送れたら「" + EstimateSentTag + "」のタグに今日の日付を書きます。",
 		Generated: "見積依頼書 " + pageID + ".pdf",
 		Reload:    true,
 	}
 	noteNoSupplierAddress(&d, supplier)
-	// 外注加工の資料（行の 弊社品番＋番号 の「資料 <番号>」）——発注書と同じ。
+	// 外注加工の資料（行の 弊社品番＋番号 の「資料 <番号>」）——部材発注書と同じ。
 	attachLineDocs(&d, user, rows)
 	return d, nil
 }
@@ -387,5 +387,5 @@ func prepareRFQMail(w http.ResponseWriter, r *http.Request, pageID string) ([]co
 }
 
 func afterRFQMail(user *auth.User, pageID, _ string) error {
-	return markSentByMail(user, pageID, "見積依頼書", "rfq.sent")
+	return markSentByMail(user, pageID, "部材見積依頼書", "rfq.sent")
 }

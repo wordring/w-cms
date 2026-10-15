@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 未発注の発注書（2026-09-24）
+// 未発注の部材発注書（2026-09-24）
 //
 // 要求（【要求】発注フォルダ）:「ここには未だ発注されていない発注書ページへのリンクを
 // 表示します。DBから『未発注の発注書』を探します。作業者はここを見て残りの作業を進め
@@ -9,7 +9,7 @@ package toho
 // 定義:「『未発注の発注書』を探すには、発注明細表のDBから状態が『未発注』の行の集合を
 // 作り、その集合が持つページIDの集合を抽出します」。
 //
-// ⚠ **鏡です**（本文には空のマーカーだけ）——索引から毎回数えるので、発注書ページを
+// ⚠ **鏡です**（本文には空のマーカーだけ）——索引から毎回数えるので、部材発注書ページを
 // 消せば（索引から行が消えて）**リンクも自動で消えます**。本文にリンクを書く形
 // （発注部材表が化けるリンク・`our-order-link`）と違い、**消し忘れが起きません**。
 // ─────────────────────────────────────────────────────────────────────────
@@ -26,10 +26,10 @@ import (
 	"w-cms/internal/database"
 )
 
-// UnsentOrdersViewType は「未発注の発注書」の形式名です。
+// UnsentOrdersViewType は「未発注の部材発注書」の形式名です。
 const UnsentOrdersViewType = "unsent-orders"
 
-// UnsentOrder は未発注の行を持つ発注書ページ1枚です。
+// UnsentOrder は未発注の行を持つ部材発注書ページ1枚です。
 type UnsentOrder struct {
 	PageID   int
 	Title    string
@@ -42,13 +42,13 @@ type UnsentOrder struct {
 //
 // ⚠ **空欄も未発注に数えます**——人が手で足した行は `状態` が空のことがあり、
 // それも**まだ出していない**ことに変わりありません。数えないと、その行だけの
-// 発注書が**一覧から黙って消えます**。
+// 部材発注書が**一覧から黙って消えます**。
 func orderLineUnsent(status string) bool {
 	s := strings.TrimSpace(status)
 	return s == OrderLineUnsent || s == ""
 }
 
-// UnsentOrders は、閲覧者に見える発注書のうち、未発注の行を持つものを返します。
+// UnsentOrders は、閲覧者に見える部材発注書のうち、未発注の行を持つものを返します。
 func UnsentOrders(user *auth.User) ([]UnsentOrder, error) {
 	db := database.DB
 	rows, err := cms.VocabRowsOfType(db, ourOrderItemsType)
@@ -89,22 +89,22 @@ func UnsentOrders(user *auth.User) ([]UnsentOrder, error) {
 	return out, nil
 }
 
-// unsentOrdersViewHTML は「未発注の発注書」の一覧を描きます。
+// unsentOrdersViewHTML は「未発注の部材発注書」の一覧を描きます。
 func unsentOrdersViewHTML(user *auth.User, pageIDInt int) string {
-	head := `<h3 class="materials-title">📮 未発注の発注書</h3>`
+	head := `<h3 class="materials-title">📮 未発注の部材発注書</h3>`
 	list, err := UnsentOrders(user)
 	if err != nil {
 		return head + `<p class="view-error">集計データの取得に失敗しました。</p>`
 	}
 	if len(list) == 0 {
 		// ⚠ **0件も黙りません**——「全部出した」と「数えていない」を見分けるため。
-		return head + `<p class="materials-empty">未発注の発注書はありません` +
-			`（発注明細に「未発注」の行がある発注書ページが、ここに並びます）。</p>`
+		return head + `<p class="materials-empty">未発注の部材発注書はありません` +
+			`（部材発注明細に「未発注」の行がある部材発注書ページが、ここに並びます）。</p>`
 	}
 	var b strings.Builder
 	b.WriteString(head)
 	b.WriteString(`<table class="materials-table unsent-table"><thead><tr>` +
-		`<th>発注書</th><th>仕入先</th><th class="num">未発注</th></tr></thead><tbody>`)
+		`<th>部材発注書</th><th>仕入先</th><th class="num">未発注</th></tr></thead><tbody>`)
 	for _, o := range list {
 		id := page.FormatID(o.PageID)
 		title := o.Title

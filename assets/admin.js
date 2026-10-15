@@ -246,7 +246,7 @@ async function loadRequiredPages() {
 }
 
 // renderPageTemplates は「機械が作るページのテンプレート」の表を描きます（2026-09-27）。
-// 解析・取り込み・発注書のボタンは、この題のテンプレートを写してページを作ります——
+// 解析・取り込み・部材発注書のボタンは、この題のテンプレートを写してページを作ります——
 // **無いと作れない**ので、どれが欠けているかをここで見せます。
 function renderPageTemplates(list) {
   const tb = document.querySelector('#pagetmpl-table tbody');

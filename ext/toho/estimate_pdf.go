@@ -4,9 +4,9 @@ package toho
 // 見積書の紙（PDF）と、見積明細の足元（2026-10-01）
 //
 // 紙の欄は利用者の見本（御見積書）の並び——題・日付・№・宛名（会社 担当者 様／御中）・「下記のとおり御見積申し上げます」・
-// 差出人（見積担当の「発注書の署名」——会社の住所・電話は発注書と同じ）・受渡期日・受渡場所・取引方法・有効期限・
+// 差出人（見積担当の「部材発注書の署名」——会社の住所・電話は部材発注書と同じ）・受渡期日・受渡場所・取引方法・有効期限・
 // 「下記価格には消費税は含んでおりません。税率 ○％」・明細（摘要・数量・単価・金額〈税抜〉）・合計（税抜）・備考。
-// 刷る道具（字の大きさ・列幅・改ページ）は発注書の紙（order_pdf.go）と共有します。
+// 刷る道具（字の大きさ・列幅・改ページ）は部材発注書の紙（order_pdf.go）と共有します。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -91,7 +91,7 @@ func estimateAmount(r map[string]string) (int, bool) {
 	return int(q*p + 0.5), true
 }
 
-// estimateTotal は明細の合計（税抜）です。金額の出ない行があれば ok=false（合計を刷らない——発注書と同じ）。
+// estimateTotal は明細の合計（税抜）です。金額の出ない行があれば ok=false（合計を刷らない——部材発注書と同じ）。
 func estimateTotal(rows []map[string]string) (int, bool) {
 	total := 0
 	for _, r := range rows {
@@ -149,7 +149,7 @@ func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
 	y += 6
 	y = pdfText(p, pdfLeft, y, pdfFontSz, "下記のとおり御見積申し上げます")
 
-	// ── 差出人（右）——見積担当の署名（発注書の署名と同じ節）──
+	// ── 差出人（右）——見積担当の署名（部材発注書の署名と同じ節）──
 	y = pdfSender(p, pdfTop+34, y, senderLines(map[string]string{OrderSignerTag: head[EstimateSignerTag]}, viewer))
 	y += 8
 

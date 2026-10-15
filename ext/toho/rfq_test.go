@@ -15,12 +15,12 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 見積依頼の段1（2026-10-03・rfq.go・rfq_api.go）——再見積依頼で集める・重複の赤・見積依頼部材表へ移す・不要・↩ 戻す。
+// 見積依頼の段1（2026-10-03・rfq.go・rfq_api.go）——再部材見積依頼で集める・重複の赤・見積依頼部材表へ移す・不要・↩ 戻す。
 
 const rfqProductID = 51
 const rfqBoxID = 50
 
-// seedRFQ は加工製品（材料2行・見積計算表2枚——ロット20とロット40）と、見積依頼の置き場を作ります。
+// seedRFQ は加工製品（材料2行・見積計算表2枚——ロット20とロット40）と、部材見積依頼の置き場を作ります。
 func seedRFQ(t *testing.T) *auth.User {
 	t.Helper()
 	setupMaterialsPermsTest(t)
@@ -38,7 +38,7 @@ func seedRFQ(t *testing.T) *auth.User {
 		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>数</th><th>単位</th><th>備考</th></tr>`+
 		`<tr><td>ロット</td><td>40</td><td>個</td><td></td></tr><tr><td>単価</td><td>450</td><td>円</td><td></td></tr></tbody></table>`)
 	writeBodyFile(t, rfqBoxID, `<h1>`+RFQBoxTitle+`</h1>`+
-		`<section data-mirror="再見積依頼"></section>`+
+		`<section data-mirror="再部材見積依頼"></section>`+
 		tableOfLinesHTML(RFQTempPartsType, nil, false)+
 		tableOfLinesHTML(RFQNeedsType, nil, true))
 	return &auth.User{Username: "root", IsAdmin: true}
@@ -194,7 +194,7 @@ func TestRFQMoveRemoveAndBack(t *testing.T) {
 	if got := rfqRows(t, body, RFQTempPartsType, 1); len(got) != 0 {
 		t.Errorf("移した臨時部材が臨時部材表に残っています: %+v", got)
 	}
-	if !strings.Contains(body, "<caption>見積依頼の臨時部材表</caption>") || !strings.Contains(body, "<caption>見積依頼必要部材表</caption>") {
+	if !strings.Contains(body, "<caption>部材見積依頼の臨時部材表</caption>") || !strings.Contains(body, "<caption>見積依頼必要部材表</caption>") {
 		t.Errorf("空になっても表は残るはず")
 	}
 	// 2枚目へ足す・1枚目へ足す。
@@ -305,9 +305,9 @@ func TestRFQFolderProductsAndCollectMany(t *testing.T) {
 	}
 }
 
-// TestRFQNewDoc は見積依頼書ページを作る（2026-10-03・段2・rfq_doc.go）を固定します——見積依頼部材表の行が見積依頼明細へ
-// （状態は未回答・⚠ 単価は空——業者に聞く前の値を紙に持ち込まない）、タグ（見積依頼番号＝ページ番号・仕入先・見積依頼日）と
-// 備考の節が入り、置き場は 見積依頼／年／月、元の見積依頼部材表は消える。仕入先が無ければ作らない。
+// TestRFQNewDoc は部材見積依頼書ページを作る（2026-10-03・段2・rfq_doc.go）を固定します——見積依頼部材表の行が部材見積依頼明細へ
+// （状態は未回答・⚠ 単価は空——業者に聞く前の値を紙に持ち込まない）、タグ（部材見積依頼番号＝ページ番号・仕入先・部材見積依頼日）と
+// 備考の節が入り、置き場は 部材見積依頼／年／月、元の見積依頼部材表は消える。仕入先が無ければ作らない。
 func TestRFQNewDoc(t *testing.T) {
 	const box = "000040"
 	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
@@ -327,11 +327,11 @@ func TestRFQNewDoc(t *testing.T) {
 		"supplier": "わかば鋼業", "date": "2026-10-05", "note": "標準2輪用"})
 	id, _ := out["page_id"].(string)
 	if code != 200 || id == "" || out["rows"] != float64(2) {
-		t.Fatalf("見積依頼書ページを作れません: %d %v", code, out)
+		t.Fatalf("部材見積依頼書ページを作れません: %d %v", code, out)
 	}
 	body := readPageBody(t, id)
 	for _, want := range []string{
-		"<h1>見積依頼　わかば鋼業</h1>",
+		"<h1>部材見積依頼　わかば鋼業</h1>",
 		"<dt>" + RFQNoTag + "</dt><dd>" + id + "</dd>",
 		"<dt>" + SupplierTag + "</dt><dd>わかば鋼業</dd>",
 		"<dt>" + RFQDateTag + "</dt><dd>2026-10-05</dd>",
@@ -339,33 +339,33 @@ func TestRFQNewDoc(t *testing.T) {
 		">SS400<", ">六角ボルト<", ">" + rfqLineUnanswered + "<",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("見積依頼書ページに %q がありません:\n%s", want, body)
+			t.Errorf("部材見積依頼書ページに %q がありません:\n%s", want, body)
 		}
 	}
 	if strings.Contains(body, "1200") {
 		t.Errorf("単価が写っています（業者に聞く前の値）:\n%s", body)
 	}
 	if got := rfqRows(t, body, RFQItemsType, 1); len(got) != 2 || strings.Count(body, ">"+rfqLineUnanswered+"<") != 2 {
-		t.Errorf("見積依頼明細が2行・未回答ではありません: %+v", got)
+		t.Errorf("部材見積依頼明細が2行・未回答ではありません: %+v", got)
 	}
-	// 置き場は 見積依頼／年／月。
+	// 置き場は 部材見積依頼／年／月。
 	meta, _ := page.ReadSidecar(id)
 	month, _ := page.ReadSidecar(meta.ParentID)
 	if cms.PageTitleByID(pageNum(meta.ParentID)) != "10月" || cms.PageTitleByID(pageNum(month.ParentID)) != "2026年" {
-		t.Errorf("置き場が 見積依頼／2026年／10月 ではありません: %s ← %s", cms.PageTitleByID(pageNum(meta.ParentID)), cms.PageTitleByID(pageNum(month.ParentID)))
+		t.Errorf("置き場が 部材見積依頼／2026年／10月 ではありません: %s ← %s", cms.PageTitleByID(pageNum(meta.ParentID)), cms.PageTitleByID(pageNum(month.ParentID)))
 	}
 	if after := readPageBody(t, box); strings.Contains(after, "<caption>見積依頼部材表</caption>") {
 		t.Errorf("元の見積依頼部材表が残っています:\n%s", after)
 	}
 }
 
-// TestRFQPDFRoundTrips は見積依頼書の紙（2026-10-03・rfq_pdf.go）を読み返して確かめます——題・日付・№・仕入先 御中・明細・
+// TestRFQPDFRoundTrips は部材見積依頼書の紙（2026-10-03・rfq_pdf.go）を読み返して確かめます——題・日付・№・仕入先 御中・明細・
 // 「よろしくお願いします。」・備考が刷られ、⚠ **単価は空欄**（本文に値があっても刷らない——業者が書き込む欄）、辞退の行は刷らない。
 func TestRFQPDFRoundTrips(t *testing.T) {
 	withPDFFont(t, systemJPFont(t))
-	body := `<h1>見積依頼　わかば鋼業</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000310</dd><dt>` + SupplierTag +
+	body := `<h1>部材見積依頼　わかば鋼業</h1><dl data-type="tags"><dt>` + RFQNoTag + `</dt><dd>000310</dd><dt>` + SupplierTag +
 		`</dt><dd>わかば鋼業</dd><dt>` + RFQDateTag + `</dt><dd>2026-10-05</dd></dl>` +
-		`<table><caption>見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
+		`<table><caption>部材見積依頼明細</caption><tbody><tr><th>弊社品番</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>` +
 		`<tr><td>000080</td><td>材料</td><td>SS400</td><td>板</td><td>t6*80*120</td><td>6</td><td>枚</td><td>999</td><td>未回答</td></tr>` +
 		`<tr><td>000081</td><td>材料</td><td>A5052</td><td>丸棒</td><td>φ30*50</td><td>2</td><td>本</td><td></td><td>辞退</td></tr>` +
 		`</tbody></table><section><h2>備考</h2><p>標準2輪用</p></section>`
@@ -388,7 +388,7 @@ func TestRFQPDFRoundTrips(t *testing.T) {
 	}
 }
 
-// TestRFQDocFooterAndSend は見積依頼書ページの足元（備考の欄・PDF を作る）と末尾の「見積依頼を送る」、送る用件の初期値
+// TestRFQDocFooterAndSend は部材見積依頼書ページの足元（備考の欄・PDF を作る）と末尾の「部材見積依頼を送る」、送る用件の初期値
 // （送るときに作る PDF・件名）、備考の保存、「送った（FAX・手渡し）」の送付日を固定します（2026-10-03）。
 func TestRFQDocFooterAndSend(t *testing.T) {
 	const box = "000040"
@@ -400,19 +400,19 @@ func TestRFQDocFooterAndSend(t *testing.T) {
 	_, out := postRFQ(t, root, RFQNewDocAPIHandler, map[string]any{"page_id": box, "table": 1, "supplier": "わかば鋼業"})
 	id, _ := out["page_id"].(string)
 	if id == "" {
-		t.Fatalf("見積依頼書ページを作れません: %v", out)
+		t.Fatalf("部材見積依頼書ページを作れません: %v", out)
 	}
 	body := readPageBody(t, id)
 	req := auth.WithUser(httptest.NewRequest("GET", "/"+id, nil), root)
 	shown := cms.RenderComputedViews(req, pageNum(id), body)
 	for _, want := range []string{`data-note-url="/api/rfq/note"`, `class="chip-btn rfq-pdf-go"`, `data-mail-compose="` + RFQMailPurpose + `"`, `rfq-sent-go`} {
 		if !strings.Contains(shown, want) {
-			t.Errorf("見積依頼書ページに %q がありません:\n%s", want, shown)
+			t.Errorf("部材見積依頼書ページに %q がありません:\n%s", want, shown)
 		}
 	}
-	// 送る欄は PDF の下——ファイル表示は明細の直後、「見積依頼を送る」は末尾（テンプレートの最後）。
-	if strings.Index(shown, "見積依頼を送る") < strings.Index(shown, "<caption>見積依頼明細</caption>") {
-		t.Errorf("「見積依頼を送る」が明細より上にあります")
+	// 送る欄は PDF の下——ファイル表示は明細の直後、「部材見積依頼を送る」は末尾（テンプレートの最後）。
+	if strings.Index(shown, "部材見積依頼を送る") < strings.Index(shown, "<caption>部材見積依頼明細</caption>") {
+		t.Errorf("「部材見積依頼を送る」が明細より上にあります")
 	}
 	d, err := rfqMailDefaults(root, id)
 	if err != nil || d.Generated != "見積依頼書 "+id+".pdf" || d.Subject != "見積依頼（№ "+id+"）" {
@@ -431,12 +431,12 @@ func TestRFQDocFooterAndSend(t *testing.T) {
 		t.Errorf("送付日が入っていません:\n%s", readPageBody(t, id))
 	}
 	if code, _ := postRFQ(t, root, RFQSentAPIHandler, map[string]any{"page_id": box}); code != 400 {
-		t.Errorf("見積依頼書でないページに送付日を書こうとして %d", code)
+		t.Errorf("部材見積依頼書でないページに送付日を書こうとして %d", code)
 	}
 }
 
 // TestRFQImportAnsweredQuote は過去の見積もりを移す口（2026-10-04・RFQImportAPIHandler）を固定します——管理者だけ・
-// 見積依頼明細に単価と「回答あり」・回答日と見積依頼日はその日・置き場は 見積依頼／その年／その月・備考の節。
+// 部材見積依頼明細に単価と「回答あり」・回答日と部材見積依頼日はその日・置き場は 部材見積依頼／その年／その月・備考の節。
 func TestRFQImportAnsweredQuote(t *testing.T) {
 	const box = "000040"
 	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
@@ -454,11 +454,11 @@ func TestRFQImportAnsweredQuote(t *testing.T) {
 		t.Fatalf("移せません: %d %v", code, out)
 	}
 	body := readPageBody(t, id)
-	for _, want := range []string{"<h1>見積依頼　ふじ鍍金</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2025-05-14</dd>",
+	for _, want := range []string{"<h1>部材見積依頼　ふじ鍍金</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2025-05-14</dd>",
 		"<dt>" + RFQDateTag + "</dt><dd>2025-05-14</dd>", ">298<", ">" + rfqLineAnswered + "<", ">塗装<", ">緑<",
 		"<p>ワンノートから移した過去の見積</p>"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("移した見積依頼書ページに %q がありません:\n%s", want, body)
+			t.Errorf("移した部材見積依頼書ページに %q がありません:\n%s", want, body)
 		}
 	}
 	meta, _ := page.ReadSidecar(id)
@@ -476,7 +476,7 @@ func TestRFQImportAnsweredQuote(t *testing.T) {
 	}
 }
 
-// TestRFQFillItemNames は見積依頼明細の空の品番・品名を加工製品ページから埋めること（2026-10-04・fillRFQItemNames）を固定します——
+// TestRFQFillItemNames は部材見積依頼明細の空の品番・品名を加工製品ページから埋めること（2026-10-04・fillRFQItemNames）を固定します——
 // 移す口（import）は自動で埋め、既に書いてある品名は残す。後始末の口（fill-names）は管理者だけ。
 // 利用者:「品番と品名の欄が埋まらない事には、人間には見てわかりません」。
 func TestRFQFillItemNames(t *testing.T) {
@@ -512,7 +512,7 @@ func TestRFQFillItemNames(t *testing.T) {
 	}
 }
 
-// TestRFQSetCellsChecksFirst は見積依頼明細のセルを確かめてから書き換える口（2026-10-04・RFQSetCellsAPIHandler）を固定します——
+// TestRFQSetCellsChecksFirst は部材見積依頼明細のセルを確かめてから書き換える口（2026-10-04・RFQSetCellsAPIHandler）を固定します——
 // いまの値が合えば書き、1つでも合わなければ何も書かない（409）・管理者だけ。移した行の「数の無い行に入れた 1」を空欄に戻すのに使う。
 func TestRFQSetCellsChecksFirst(t *testing.T) {
 	const box = "000040"

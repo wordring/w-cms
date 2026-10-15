@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 発注部材表の足元に「発注書を作る」を出す（2026-09-22）
+// 発注部材表の足元に「部材発注書を作る」を出す（2026-09-22）
 //
 // ユーザー:「**発注部材表から発注書を作るので「発注書を作る」ボタンは発注部材表の下に
 // あるはずです**」。
@@ -12,7 +12,7 @@ package toho
 //
 // ⚠ **表が何枚あってもかまいません**（同日のユーザー訂正）。**1枚＝1社**なので、
 // **業者ごとに同時に進める**のが普通の形です——だから**それぞれの表に**自分の
-// 「発注書を作る」が付きます。
+// 「部材発注書を作る」が付きます。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -30,7 +30,7 @@ func init() {
 	cms.RegisterMirror(OrderDraftType, cms.MirrorHandlerFunc(renderOrderDraftForm))
 }
 
-// renderOrderDraftForm は発注部材表の足元に、発注書を作る欄を足します。
+// renderOrderDraftForm は発注部材表の足元に、部材発注書を作る欄を足します。
 //
 // ⚠ **鏡なので本文には残りません**（`.vocab-chrome`）——人が画面の表をコピーして
 // 貼っても、入力欄が本文に焼き付くことはありません。
@@ -43,7 +43,7 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	//    ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、ここから消せば
 	//    **自動的に戻ってきます**。戻す先へ何かを書く必要はありません。
 	addDraftRowButtons(el, page.FormatID(ctx.PageID), idx)
-	// 「発注書を作る」の欄は**表の外（包む節の中・表の直後）**へ（2026-09-28・`draftBoxOf`）。
+	// 「部材発注書を作る」の欄は**表の外（包む節の中・表の直後）**へ（2026-09-28・`draftBoxOf`）。
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
 	appendHTML(box, `<div class="vocab-chrome draft-form-box" contenteditable="false">`+
@@ -73,10 +73,10 @@ func draftIndexOf(ctx *cms.MirrorContext) int {
 	return ctx.Counter(OrderDraftType) + 1
 }
 
-// draftFormHTML は「発注書を作る」の欄です。
+// draftFormHTML は「部材発注書を作る」の欄です。
 //
 // ⚠ **仕入先と差出人はここで決めます**——未発注の表ではありません。
-// **発注書は1枚に1社**で、その1社が決まるのは**この表を作り終えたとき**だからです。
+// **部材発注書は1枚に1社**で、その1社が決まるのは**この表を作り終えたとき**だからです。
 func draftFormHTML(user *auth.User, pageID string, idx int) string {
 	f := func(id, label, ph, typ string) string {
 		return searchFieldHTML("draft", id, label, ph, typ)
@@ -85,9 +85,9 @@ func draftFormHTML(user *auth.User, pageID string, idx int) string {
 		stdhtml.EscapeString(pageID) + `" data-draft-index="` + strconv.Itoa(idx) + `">` +
 		signerFieldHTML(user) +
 		f("supplier", "仕入先", "みなと商店", "text") +
-		f("order_at", "発注日", "", "date") +
+		f("order_at", "部材発注日", "", "date") +
 		f("due", "納期", "", "date") +
 		f("note", "備考", "定尺で結構です", "text") +
-		`<button type="button" class="matsearch-go" data-draft-go="1">発注書を作る</button>` +
+		`<button type="button" class="matsearch-go" data-draft-go="1">部材発注書を作る</button>` +
 		`</div><div class="unorder-result" data-draft-result="1"></div>`
 }

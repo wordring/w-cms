@@ -9,7 +9,7 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// 発注書の差出人＝連絡帳の担当者ページの署名（2026-09-22）。
+// 部材発注書の差出人＝連絡帳の担当者ページの署名（2026-09-22）。
 //
 // ⚠ **署名は「項目」ではなく「文面」です**（ユーザー決定）。だから行の並びとして
 // 読み、**書いたとおりの順で**紙に刷ります。
@@ -41,7 +41,7 @@ func TestDefaultSignerMatchesLoginName(t *testing.T) {
 	}
 }
 
-// TestBuildOurOrderWritesSigner は、⚠ **誰が出したかを発注書ページに残す**ことを
+// TestBuildOurOrderWritesSigner は、⚠ **誰が出したかを部材発注書ページに残す**ことを
 // 固定します（2026-09-22）。
 //
 // ⚠ **署名の文面は焼き込みません**——出した紙の正本はPDF（このページの添付）で、
@@ -174,7 +174,7 @@ func TestSignersHidesUnreadablePeople(t *testing.T) {
 // 固定します。
 //
 // ⚠ **これが最後の砦です。** 口（`NewOurOrderAPIHandler`）も差出人を検めますが、
-// **`発注担当` のタグは人が本文で書き換えられます**——write 権限のある人が任意の
+// **`部材発注担当` のタグは人が本文で書き換えられます**——write 権限のある人が任意の
 // ページIDを書けば、口を通らずにここへ届きます。
 func TestSenderLinesHidesUnreadableSignature(t *testing.T) {
 	setupMaterialsPermsTest(t)

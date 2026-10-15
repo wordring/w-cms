@@ -116,7 +116,7 @@ type orderJudgment struct {
 	// 2024-11 の注文書）。**1枚につき1ページ**作ります——発注書番号も発注日も小計も、紙ごとに違うからです。
 	// 各要素は上の発注書の項目（order_no・customer・…・items）を持ちます。
 	Orders []orderJudgment `json:"orders"`
-	// RFQReply は**業者の見積依頼の返事**と判定したときの中身です（2026-10-05・rfq_reply_page.go——doc_type が "rfq_reply"）。
+	// RFQReply は**業者の部材見積依頼の返事**と判定したときの中身です（2026-10-05・rfq_reply_page.go——doc_type が "rfq_reply"）。
 	// 利用者:「見積依頼の返事は通信記録に入るので、解析ボタンを押して解析し、見積依頼の返事とわかれば、見積依頼の返事ページを作り」。
 	RFQReply *rfqReplyJudgment `json:"rfq_reply"`
 }
@@ -306,8 +306,8 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		j.Orders[i].Customer = contacts.OrgNameForPage(user, j.Orders[i].Customer)
 	}
 
-	// **見積依頼の返事の枝**（2026-10-05・rfq_reply_page.go）——返事ページを記録の子に作り、どの見積依頼書への返事かを
-	// 突き合わせる（候補が1つなら結んで見積依頼書の子へ移す）。テンプレートは判定のあとで引く——受注・図面の解析を、返事の
+	// **部材見積依頼の返事の枝**（2026-10-05・rfq_reply_page.go）——返事ページを記録の子に作り、どの部材見積依頼書への返事かを
+	// 突き合わせる（候補が1つなら結んで部材見積依頼書の子へ移す）。テンプレートは判定のあとで引く——受注・図面の解析を、返事の
 	// テンプレートが無い環境でも止めないため（無ければ返事と判定した時点で断る）。
 	if j.DocType == "rfq_reply" && j.RFQReply != nil {
 		m, err := makeRFQReply(user, pageID, attachID, j.RFQReply)
@@ -316,7 +316,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 			if errors.As(err, &me) {
 				cms.JSONFail(w, me.Status, me.Message)
 			} else {
-				cms.JSONFail(w, http.StatusInternalServerError, "見積依頼の返事ページを作れません: "+err.Error())
+				cms.JSONFail(w, http.StatusInternalServerError, "部材見積依頼の返事ページを作れません: "+err.Error())
 			}
 			return
 		}

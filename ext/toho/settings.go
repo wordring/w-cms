@@ -42,7 +42,7 @@ type settingsSection struct {
 	// **未指定なら結びません**（既定の一覧はありません）。
 	ProductCodeTags []string `json:"product_code_tags,omitempty"`
 
-	// PDFFont は**発注書のPDFに埋め込む日本語フォント**（`.ttf` のパス）です
+	// PDFFont は**部材発注書のPDFに埋め込む日本語フォント**（`.ttf` のパス）です
 	// （2026-09-21）。
 	//
 	// ⚠ **日本語のPDFはフォントを埋め込まないと読めません。** そして**同梱できるかは
@@ -69,7 +69,7 @@ type settingsSection struct {
 	// **どちらが好みかは人が決めます。**
 	PDFFontFace int `json:"pdf_font_face,omitempty"`
 
-	// Company は**発注書の差出人**です（2026-09-21）。実物の発注書に入っていた項目。
+	// Company は**部材発注書の差出人**です（2026-09-21）。実物の部材発注書に入っていた項目。
 	//
 	// ⚠ **設定に置きます。** 自社を表すページを作る案もありますが、`取引：自社` の
 	// タグは 2026-09-18 に全廃しており（誰も読んでいなかった）、**同じものを2度作る**
@@ -83,21 +83,21 @@ type settingsSection struct {
 	// **未指定なら必要部材表に何も出しません**（既定の種類はありません）。
 	OrderKinds []orderKind `json:"order_kinds,omitempty"`
 
-	// OrderPrintColumns は**発注書の紙に刷る列**の候補と並び順です（2026-09-28）。どの行にも値の
+	// OrderPrintColumns は**部材発注書の紙に刷る列**の候補と並び順です（2026-09-28）。どの行にも値の
 	// 無い列は刷りません（【要求】発注フォルダ「PDFを作成するときに空の項目を消す」）。`金額` は
 	// 計算の列。利用者:「実際に運用して見ないと私にはわかりません」——使ってみて直す1行。
 	// **未指定なら、それまでの並び**（品番・品名・材質・形状・寸法・表面・単位・数量・単価・金額）。
 	OrderPrintColumns []string `json:"order_print_columns,omitempty"`
 
-	// RFQPrintColumns は**見積依頼書の紙に刷る列**の候補と並び順です（2026-10-03・rfq_pdf.go）。発注書と同じく、どの行にも
+	// RFQPrintColumns は**部材見積依頼書の紙に刷る列**の候補と並び順です（2026-10-03・rfq_pdf.go）。部材発注書と同じく、どの行にも
 	// 値の無い列は刷らない——ただし `単価` は**いつも空欄で刷る**（業者が書き込む欄）。`金額` は刷らない。
-	// **未指定なら発注書の紙の列（order_print_columns）から `金額` を除いた並び**。
+	// **未指定なら部材発注書の紙の列（order_print_columns）から `金額` を除いた並び**。
 	RFQPrintColumns []string `json:"rfq_print_columns,omitempty"`
 
-	// OrderPrintHeads は**発注書の紙の上に刷るタグ**と並び順です（2026-09-28）。発注書ページが
+	// OrderPrintHeads は**部材発注書の紙の上に刷るタグ**と並び順です（2026-09-28）。部材発注書ページが
 	// そのタグを持っていれば、**値が空でも見出しだけ刷ります**——法で決まった記載事項（検査完了期日・
 	// 支払期日・支払方法）を「念のため記載して空欄運用」するため（利用者）。持っていないタグは刷らない。
-	// **未指定なら、それまでの4つ**（発注書番号・発注日・納期・納品場所）。
+	// **未指定なら、それまでの4つ**（部材発注書番号・部材発注日・納期・納品場所）。
 	OrderPrintHeads []string `json:"order_print_heads,omitempty"`
 
 	// EstimateProfitRate は見積計算表の**弊社利益の既定の率**（%）です（2026-10-01・estimate.go）。利用者:「弊社利益は
@@ -114,7 +114,7 @@ type settingsSection struct {
 	TaxRate *float64 `json:"tax_rate,omitempty"`
 }
 
-// companyInfo は発注書に刷る差出人です（実物の見出しに合わせた項目）。
+// companyInfo は部材発注書に刷る差出人です（実物の見出しに合わせた項目）。
 type companyInfo struct {
 	Name    string `json:"name"`
 	Zip     string `json:"zip"`
@@ -264,14 +264,14 @@ func TaxRate() (float64, bool) {
 	return *taxRate, true
 }
 
-// PDFFont は発注書のPDFへ埋め込むフォントのパスを返します（未設定なら空）。
+// PDFFont は部材発注書のPDFへ埋め込むフォントのパスを返します（未設定なら空）。
 func PDFFont() string {
 	stagesMu.RLock()
 	defer stagesMu.RUnlock()
 	return pdfFont
 }
 
-// Company は発注書の差出人を返します。
+// Company は部材発注書の差出人を返します。
 func Company() companyInfo {
 	stagesMu.RLock()
 	defer stagesMu.RUnlock()

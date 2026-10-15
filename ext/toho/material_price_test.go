@@ -22,7 +22,7 @@ import (
 // 土台は materials_perms_test.go の helper を借ります（同じパッケージ・ファイルDB）。
 // ⚠ ファイルDBなのは `page.CanView` を通るためです——`:memory:` は接続ごとに別のDBです。
 
-// seedMaterialAndOrder は、材料ページ（10）と発注書ページを用意します。
+// seedMaterialAndOrder は、材料ページ（10）と部材発注書ページを用意します。
 func seedMaterialAndOrder(t *testing.T, materialRows string, orders ...orderSeed) {
 	t.Helper()
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
@@ -33,7 +33,7 @@ func seedMaterialAndOrder(t *testing.T, materialRows string, orders ...orderSeed
 		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>`+
 		materialRows+`</tbody></table>`)
 	for _, o := range orders {
-		addPage(t, o.ID, 0, "発注書", o.Owner, o.Mode, o.Public)
+		addPage(t, o.ID, 0, "部材発注書", o.Owner, o.Mode, o.Public)
 		syncBody(t, o.ID, o.Body())
 	}
 }
@@ -59,9 +59,9 @@ func (o orderSeed) Body() string {
 	// ⚠ **`状態` の列を足すので、行にもセルを1つ足します**——列がずれると
 	//    `headerIndex` が単価を別の列から読みます。
 	rows := strings.ReplaceAll(o.Rows, "</tr>", "<td>"+st+"</td></tr>")
-	return `<h1>発注書</h1>` +
+	return `<h1>部材発注書</h1>` +
 		`<dl data-type="tags">` +
-		`<dt>` + OrderedAtTag + `</dt><dd>` + o.Date + `</dd>` +
+		`<dt>` + PurchasedAtTag + `</dt><dd>` + o.Date + `</dd>` +
 		`<dt>` + SupplierTag + `</dt><dd>` + o.Supplier + `</dd></dl>` +
 		`<table data-type="` + ourOrderItemsType + `"><tbody>` +
 		`<tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th><th>状態</th></tr>` +
@@ -275,8 +275,8 @@ func TestMaterialPriceMapHasNoEmptyKey(t *testing.T) {
 	}
 }
 
-// TestMaterialPriceHidesUnreadableOrders は、⚠ **読めない発注書の単価は出ない**ことを
-// 固定します。材料表には誰でも行を書けるので、絞らないと**読めない発注書の単価と
+// TestMaterialPriceHidesUnreadableOrders は、⚠ **読めない部材発注書の単価は出ない**ことを
+// 固定します。材料表には誰でも行を書けるので、絞らないと**読めない部材発注書の単価と
 // 仕入先が引けてしまいます**（設計総点検で踏んだ穴と同じ形）。
 func TestMaterialPriceHidesUnreadableOrders(t *testing.T) {
 	setupMaterialsPermsTest(t)
@@ -289,11 +289,11 @@ func TestMaterialPriceHidesUnreadableOrders(t *testing.T) {
 
 	mallory := &auth.User{Username: "mallory"}
 	if page.GetPerms(20).CanRead(mallory) {
-		t.Fatal("前提が崩れています: mallory は発注書を読めてはいけません")
+		t.Fatal("前提が崩れています: mallory は部材発注書を読めてはいけません")
 	}
 	got := showMaterials(t, mallory, materialsBody(rows))
 	if strings.Contains(got, "800円") || strings.Contains(got, "みなと商店") {
-		t.Fatalf("⚠ 読めない発注書の単価と仕入先が出ています:\n%s", got)
+		t.Fatalf("⚠ 読めない部材発注書の単価と仕入先が出ています:\n%s", got)
 	}
 	if !strings.Contains(got, priceHeadCell) || !strings.Contains(got, emptyPriceCell) {
 		t.Errorf("欄そのものは出すこと（読めないことは知らせない・C案——買っていない行と同じ空欄）:\n%s", got)
@@ -365,12 +365,12 @@ func TestMaterialPriceColumnOnceWhenHeadingAndCaption(t *testing.T) {
 	}
 }
 
-// TestMaterialPriceShowsQuoteWhenNothingBought は、買った記録の無い行に**業者に聞いた値段**（見積依頼明細の回答あり）を
+// TestMaterialPriceShowsQuoteWhenNothingBought は、買った記録の無い行に**業者に聞いた値段**（部材見積依頼明細の回答あり）を
 // 「見積」の印・日付（回答日）・仕入先つきで出すことを固定します（2026-10-05——【要求】見積依頼 §4 の未決5「最新単価に見積も出す」）。
 //
 //   - ⚠ 買った値段がある行には出さない（言われた値段が買った値段を上書きしない）
 //   - いちばん新しい見積（回答日）——古い見積は出さない
-//   - 回答待ち（未回答）・読めない見積依頼書は混ぜない
+//   - 回答待ち（未回答）・読めない部材見積依頼書は混ぜない
 func TestMaterialPriceShowsQuoteWhenNothingBought(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	rows := `<tr><td>SUS304</td><td>板</td><td>t1.5</td><td>4</td></tr><tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td></tr>`
@@ -379,10 +379,10 @@ func TestMaterialPriceShowsQuoteWhenNothingBought(t *testing.T) {
 		Rows: `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>800</td></tr>`,
 	})
 	quote := func(id int, owner, mode, supplier, answered string, lines ...string) {
-		addPage(t, id, 0, "見積依頼　"+supplier, owner, mode, mode != "300")
-		syncBody(t, id, `<h1>見積依頼　`+supplier+`</h1><dl data-type="tags"><dt>`+RFQNoTag+`</dt><dd>`+fmt.Sprintf("%06d", id)+
+		addPage(t, id, 0, "部材見積依頼　"+supplier, owner, mode, mode != "300")
+		syncBody(t, id, `<h1>部材見積依頼　`+supplier+`</h1><dl data-type="tags"><dt>`+RFQNoTag+`</dt><dd>`+fmt.Sprintf("%06d", id)+
 			`</dd><dt>`+SupplierTag+`</dt><dd>`+supplier+`</dd><dt>`+RFQAnsweredTag+`</dt><dd>`+answered+`</dd></dl>`+
-			`<table><caption>見積依頼明細</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th><th>状態</th></tr>`+
+			`<table><caption>部材見積依頼明細</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>単価</th><th>状態</th></tr>`+
 			strings.Join(lines, "")+`</tbody></table>`)
 	}
 	line := func(mat, size, price, state string) string {
@@ -401,7 +401,7 @@ func TestMaterialPriceShowsQuoteWhenNothingBought(t *testing.T) {
 	}
 	for _, not := range []string{"700円", "1,400円", "1,600円", "1,700円", "あけぼの精工"} {
 		if strings.Contains(got, not) {
-			t.Errorf("⚠ 最新単価に %q が出ています（買った値段がある行・古い見積・回答待ち・読めない見積依頼書は出さない）:\n%s", not, got)
+			t.Errorf("⚠ 最新単価に %q が出ています（買った値段がある行・古い見積・回答待ち・読めない部材見積依頼書は出さない）:\n%s", not, got)
 		}
 	}
 }
