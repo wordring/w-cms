@@ -14,8 +14,8 @@ package cms
 //   - **鍵はそのファイル1つに限る・使い捨て**（`POST /api/local-edit/start` がログインした人に出す）。ヘルパーは
 //     ブラウザのログインを持たないので、鍵でだけ確かめる（`/api/local-edit/file` はログインの外）。鍵は推測できない
 //     長さの乱数・12時間で切れる（使うたびに延びる）・サーバーの記憶だけ（再起動で切れる——画面から開き直す）。
-//   - **書けるか**は WebDAV と同じ規則（ページへの書き込み権限・`webdav_readonly` の範囲——通信箱の下は届いた事実の
-//     証拠なので書き換えない）。上書きの手順も WebDAV と同じ（空なら差し替えない → いまの中身を版に残す →
+//   - **書けるか**は attachment_write.go の規則（ページへの書き込み権限・`attachment_readonly` の範囲——通信箱の下は届いた事実の
+//     証拠なので書き換えない。2026-09-07 に WebDAV のために作った決まり）。上書きの手順（空なら差し替えない → いまの中身を版に残す →
 //     差し替える → 目録を進める → ページの更新時刻 → 監査 `local-edit.write`）。
 //   - **ほかの人が先に書き換えていたら上書きしない**（ヘルパーは落としたときの ETag を If-Match で送る。違えば 409）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ func LocalEditStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageID, _ := page.NormalizeID(fr.PageID)
-	writable := davFS{user: user}.canWriteAttachment(pageID) == nil
+	writable := canWriteAttachment(user, pageID) == nil
 	token, err := newLocalEditToken()
 	if err != nil {
 		JSONFail(w, http.StatusInternalServerError, "鍵を作れません")
@@ -192,7 +192,7 @@ func LocalEditFileAPIHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("ETag", fileETag(content))
 		w.Header().Set("X-WCMS-Name", url.PathEscape(display))
-		w.Header().Set("X-WCMS-Writable", boolString(davFS{user: user}.canWriteAttachment(g.pageID) == nil))
+		w.Header().Set("X-WCMS-Writable", boolString(canWriteAttachment(user, g.pageID) == nil))
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(content)
 	case http.MethodPut:
@@ -231,10 +231,10 @@ func boolString(b bool) string {
 	return "0"
 }
 
-// writeLocalEdit は添付を上書きします（WebDAV の上書きと同じ手順・webdav_write.go）。新しい ETag を返す。
+// writeLocalEdit は添付を上書きします（書けるか・版を積むは attachment_write.go）。新しい ETag を返す。
 func writeLocalEdit(user *auth.User, pageID, stored, realPath, ifMatch string, body io.Reader) (string, error) {
-	if err := (davFS{user: user}).canWriteAttachment(pageID); err != nil {
-		return "", httpError{code: http.StatusForbidden, msg: "この添付は書き換えられません（権限か、読み取り専用の範囲——設定 webdav_readonly）"}
+	if err := canWriteAttachment(user, pageID); err != nil {
+		return "", httpError{code: http.StatusForbidden, msg: "この添付は書き換えられません（権限か、読み取り専用の範囲——設定 attachment_readonly）"}
 	}
 	if strings.TrimSpace(ifMatch) == "" {
 		return "", httpError{code: http.StatusPreconditionRequired, msg: "If-Match が要ります"}
@@ -247,7 +247,7 @@ func writeLocalEdit(user *auth.User, pageID, stored, realPath, ifMatch string, b
 	if int64(len(content)) > limit {
 		return "", httpError{code: http.StatusRequestEntityTooLarge, msg: "大きすぎます（設定 max_upload_mib）"}
 	}
-	// ⚠ 空なら差し替えない（開いただけで消えるのが、いちばん取り返しのつかない壊れ方——webdav_write.go と同じ）。
+	// ⚠ 空なら差し替えない（開いただけで消えるのが、いちばん取り返しのつかない壊れ方——2026-09-07 に WebDAV で実測した）。
 	if len(content) == 0 {
 		return "", httpError{code: http.StatusBadRequest, msg: "中身が空です（差し替えません）"}
 	}

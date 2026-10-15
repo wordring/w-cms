@@ -7,14 +7,14 @@ package cms
 // 保存日時等が書き込まれていると良いと思います」。
 //
 // 添付の保存名はサーバー採番のID（`kokl.pdf`）で、**元の名前を知っているのは本文の
-// リンク文字だけ**でした。`files/` を見ても、WebDAV の一覧を見ても、何のファイルかは
+// リンク文字だけ**でした。`files/` を見ても、何のファイルかは
 // 分かりません。ここに**保存した時点の事実**を書き留めます。
 //
 // ── 本文との棲み分け（正本は2つにしない）──
 //
 //   - 本文のリンク文字は**表示名**——人が書き換えてよい
 //   - `meta.json` は**届いた事実**——機械が保存時に書き、人は触らない（監査記録と同じ性格。
-//     違いは、ページと一緒に動くこと：ゴミ箱・控え・WebDAV）
+//     違いは、ページと一緒に動くこと：ゴミ箱・控え）
 //
 // 同じ名前が2か所にあっても競合しません。片方は「いま何と呼ぶか」、もう片方は
 // 「何が届いたか」で、問いが違います。
@@ -34,13 +34,13 @@ package cms
 //
 // 鍵は**保存名**（ファイル名＝URL＝`data-id` の3役）。`source` は由来——人が落とした
 // `upload`、メールの添付 `mail:<受信原本の保存名>`、ZIP の中身 `zip:<ZIPの保存名>/<中のパス>`、
-// WebDAV の上書き `dav`。`sha256` は「同じファイルか」を後で確かめる手掛かりです。
+// 「📝 ローカル編集」の上書き `local-edit`（2026-10-15 までの WebDAV の上書きは `dav`——古い目録に残ります）。`sha256` は「同じファイルか」を後で確かめる手掛かりです。
 //
 // ── 守り ──
 //
 //   - **配信しません**——`.json` は添付にならない拡張子で（設定の検査）、配信の口
-//     （`ServeCleanAttachment`・`DataFileHandler`）と WebDAV の一覧はこの名前を素通しします。
-//   - **書き手は1か所**（`SaveAttachmentFrom`）＋ WebDAV の上書き。読み書きは1プロセス内の
+//     （`ServeCleanAttachment`・`DataFileHandler`）はこの名前を素通しします。
+//   - **書き手は1か所**（`SaveAttachmentFrom`）＋「📝 ローカル編集」の上書き。読み書きは1プロセス内の
 //     ロックで直列化し、書くのは原子的（`WriteFileAtomic`）。
 //   - 書けなくても添付の保存は失敗にしません（監査に `attach.meta-failed` を残す）——
 //     失敗を返すと利用者が押し直し、同じファイルが2つになるほうが害が大きい。
@@ -70,7 +70,6 @@ const AttachmentMetaFile = "meta.json"
 // AttachmentSourceUpload 等は `source` の書き方です。
 const (
 	AttachmentSourceUpload = "upload" // 人がページへ落とした
-	AttachmentSourceDav    = "dav"    // WebDAV で上書きした
 	// メールの添付は "mail:<受信原本の保存名>"、ZIP の中身は "zip:<ZIPの保存名>/<中のパス>"
 	// （書くのは ext/comm の取り込み）。
 )
@@ -212,7 +211,7 @@ func UpdateAttachmentMeta(pageID, storedName string, fn func(*AttachmentMeta)) e
 
 // AttachmentDisplayName は、目録にあれば届いたときの名前、無ければ保存名を返します。
 //
-// 読み手（ファイル表示・WebDAV）はこれを通します——目録が無い古い添付でも壊れません。
+// 読み手（ファイル表示）はこれを通します——目録が無い古い添付でも壊れません。
 func AttachmentDisplayName(pageID, storedName string) string {
 	if m, ok := AttachmentMetaOf(pageID, storedName); ok && strings.TrimSpace(m.Name) != "" {
 		return m.Name

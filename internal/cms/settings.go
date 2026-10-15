@@ -8,9 +8,10 @@ package cms
 // §8.2 と §9 の決定ログ D-5）。「文書（ファイル）が主」の原則の、設定への適用です。
 //
 // 住人は**7つ**——見出し語の辞書（`vocabulary`）・添付の上限と拡張子・
-// **拡張が持ち込む節**（`extensions`）・文字の置き換え表・WebDAV に見せない題・
-// WebDAV で書ける題
+// **拡張が持ち込む節**（`extensions`）・文字の置き換え表・添付を書き換えられない題・
+// 法人格の表
 // （**足したらこの数も直すこと**。WebDAV の2つが抜けたまま残っていました。
+// 2026-10-15 に WebDAV をやめて `webdav_hidden` が消え、`webdav_readonly` は `attachment_readonly` になりました。
 // 2026-09-15 に `装置の段` が `extensions.toho` へ出たので、3つ目を書き替えました
 // ——**数は7のままなので、内訳を読まないと気づけない形**でした）。
 // ユーザーの決定（2026-08-30）:「**運用中に増やしてDB再構築します**」——語を増やす
@@ -149,13 +150,6 @@ type Settings struct {
 	// **足したらDB再構築で効きます**——見出し語の辞書と同じ流儀。
 	CharFolding map[string]string `json:"char_folding,omitempty"`
 
-	// WebDAVHidden は WebDAV に見せないページの題です（トップ直下でなくても効きます）。
-	//
-	// ユーザー:「設定で見せないとするもの以外は見せて良いのでは？」（2026-09-07）。
-	// **コアは業務の言葉を知りません**——`通信箱` を名前で特別扱いするコードを書くと、
-	// 仕組みの側に語彙が漏れます。未指定なら**全部見せます**。
-	WebDAVHidden []string `json:"webdav_hidden,omitempty"`
-
 	// CompanyForms は社名から落とす**法人格**です（`株式会社`・`(株)`・`有限会社` …）。
 	//
 	// ユーザー:「見たままと裏の動作が一致してほしいので、できればページを作る時に
@@ -174,12 +168,13 @@ type Settings struct {
 	// **未指定なら何も落としません**（既定の表はありません——設定が唯一の正本）。
 	CompanyForms []string `json:"company_forms,omitempty"`
 
-	// WebDAVReadOnly は WebDAV から**書き換えられない**ページの題です（祖先まで効きます）。
+	// AttachmentReadOnly は添付を**書き換えられない**ページの題です（祖先まで効きます・「📝 ローカル編集」の上書き）。
+	// 2026-10-15 までは WebDAV のための `webdav_readonly` でした（WebDAV はやめた——attachment_write.go）。
 	//
 	// ユーザー:「編集するCADファイルは弊社の物です。メール由来のものではありません」
 	// （2026-09-07）——届いた添付は**届いた事実の証拠**なので書き換えさせません。
 	// コアが `通信箱` を名前で知ってはいけないので、**題を設定に書いてもらいます**。
-	WebDAVReadOnly []string `json:"webdav_readonly,omitempty"`
+	AttachmentReadOnly []string `json:"attachment_readonly,omitempty"`
 }
 
 // settings は読み込み済みの設定です。**nil のあいだは設定が空のものとして振る舞います**
@@ -607,48 +602,19 @@ func newCharFolder(m map[string]string) *strings.Replacer {
 	return strings.NewReplacer(pairs...)
 }
 
-// WebDAVHidden は WebDAV に見せないページの題です（設定 `webdav_hidden`）。
-//
-// ユーザー:「通信箱も取引先もプラグインの領域ですが、クリックして開くは w-cms 本体の
-// 機能なので、**設定で見せないとするもの以外は見せて良いのでは？**」（2026-09-07）。
-//
-// **コアは業務の言葉を知りません。** `通信箱` を特別扱いするコードを書くと、
-// 仕組みの側に語彙が漏れます——見せる／見せないは運用者が名前で指定します。
-// 既定は**空**（全部見せる）。
-func WebDAVHidden() []string {
+// AttachmentReadOnly は添付を書き換えられないページの題です（設定 `attachment_readonly`）。
+func AttachmentReadOnly() []string {
 	settingsMu.RLock()
 	defer settingsMu.RUnlock()
 	if settings == nil {
 		return nil
 	}
-	return settings.WebDAVHidden
+	return settings.AttachmentReadOnly
 }
 
-// hiddenWebDAVTitles は引きやすい形（集合）で返します。
-func hiddenWebDAVTitles() map[string]bool {
-	list := WebDAVHidden()
-	out := make(map[string]bool, len(list))
-	for _, t := range list {
-		if v := strings.TrimSpace(t); v != "" {
-			out[v] = true
-		}
-	}
-	return out
-}
-
-// WebDAVReadOnly は WebDAV から書き換えられないページの題です（設定 `webdav_readonly`）。
-func WebDAVReadOnly() []string {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return nil
-	}
-	return settings.WebDAVReadOnly
-}
-
-// readOnlyWebDAVTitles は引きやすい形（集合）で返します。
-func readOnlyWebDAVTitles() map[string]bool {
-	list := WebDAVReadOnly()
+// readOnlyAttachmentTitles は引きやすい形（集合）で返します。
+func readOnlyAttachmentTitles() map[string]bool {
+	list := AttachmentReadOnly()
 	out := make(map[string]bool, len(list))
 	for _, t := range list {
 		if v := strings.TrimSpace(t); v != "" {

@@ -36,7 +36,6 @@ func effectiveSettingsLine(cert, key string) string {
 		ext = strings.Join(exts, ",")
 	}
 	return "有効な設定: 待ち受け " + listen +
-		"・WebDAV " + onOff(cms.DavEnabled()) +
 		"・Secure Cookie " + onOff(auth.SecureCookies()) +
 		"・データ " + filepath.ToSlash(database.DataDir()) + "/・設定 " + cms.SettingsPath +
 		"・Gemini のキー " + has("GEMINI_API_KEY") +
