@@ -224,7 +224,9 @@ func captionTablesOf(root *html.Node) []captionTable {
 		for _, c := range rowCells(rows[0]) {
 			ct.Headers = append(ct.Headers, TableName(TextWithBreaks(c)))
 		}
-		for i, tr := range rows[1:] {
+		all := make([][]string, 0, len(rows)-1)
+		blanks := make([]bool, 0, len(rows)-1)
+		for _, tr := range rows[1:] {
 			var cells []string
 			blank := true
 			for _, c := range rowCells(tr) {
@@ -234,9 +236,14 @@ func captionTablesOf(root *html.Node) []captionTable {
 				}
 				cells = append(cells, v)
 			}
-			if !blank {
-				// 式のセル（`=個数*単価`）は計算した値を入れる（2026-10-04・formula.go）——画面に見える値と DB で探せる値を揃える。
-				ct.Rows = append(ct.Rows, tableRow{No: i + 1, Cells: FormulaCellValues(ct.Headers, cells)})
+			all = append(all, cells)
+			blanks = append(blanks, blank)
+		}
+		// 式のセル（`=個数*単価`）は計算した値を入れる（2026-10-04・formula.go）——画面に見える値と DB で探せる値を揃える。
+		// 縦の式（ほかの行を指す・合計）があるので、表の全部の行で計算する（2026-10-15）。
+		for i, cells := range FormulaTableValues(ct.Headers, all) {
+			if !blanks[i] {
+				ct.Rows = append(ct.Rows, tableRow{No: i + 1, Cells: cells})
 			}
 		}
 		out = append(out, ct)
