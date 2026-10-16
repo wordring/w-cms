@@ -11425,7 +11425,10 @@ async function openQuotePutPanel(btn) {
     if (!r.ok) { head.textContent = '⚠ ' + ((r.data && r.data.message) || '見積計算表を読めません'); return; }
     const tables = (r.data.tables || []).filter((t) => !t.why);
     if (!tables.length) { head.textContent = '⚠ 写せる見積計算表がありません（「工程」「価格」の列のある表に写せます）'; return; }
-    head.textContent = '「' + what + '」 ' + price + '円（' + note + '）を見積計算表へ写します:';
+    // 写す先——いちばん新しい見積計算書があれば、そのページ（2026-10-17・サーバーが page_id で返す）。
+    const target = (r.data && r.data.page_id) || pageId;
+    head.textContent = '「' + what + '」 ' + price + '円（' + note + '）を' +
+        (target !== pageId ? '見積計算書「' + (r.data.title || target) + '」の' : '') + '見積計算表へ写します:';
     const row = document.createElement('div');
     row.className = 'rfq-quote-put-form';
     const label = (text, el) => { const l = document.createElement('label'); l.append(document.createTextNode(text), el); return l; };
@@ -11490,7 +11493,7 @@ async function openQuotePutPanel(btn) {
         if (cur && cur.price && !window.confirm('「' + step + '」のいまの値 ' + cur.price + ' を ' + val.value.trim() + ' 円に置き換えます。よろしいですか？')) return;
         go.disabled = true;
         msg.textContent = ' 写しています…';
-        const res = await postJSON('/api/estimate/put-cost', { page_id: pageId, index: t.index, step, add, value: val.value.trim(), note })
+        const res = await postJSON('/api/estimate/put-cost', { page_id: target, index: t.index, step, add, value: val.value.trim(), note })
             .catch((e) => ({ ok: false, data: { message: String(e) } }));
         go.disabled = false;
         if (!res.ok) { msg.textContent = ' ⚠ ' + ((res.data && res.data.message) || '写せませんでした'); return; }

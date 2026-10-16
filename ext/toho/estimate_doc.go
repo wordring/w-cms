@@ -105,11 +105,15 @@ type estimateOption struct {
 	Why   string
 }
 
-// estimateOptionsOf は加工製品ページの見積表を全部、表の順に見積明細表の行にします（見積表が無ければ空）。
+// estimateOptionsOf はページ pageID の見積表を全部、表の順に見積明細表の行にします（見積表が無ければ空）。
 // 1つの加工製品に見積表は何枚あってもよい（ロットごと・表面処理ごと——2026-10-15 の形・estimate.go）ので、1枚ずつ組む。
 // ⚠ 写すのは**見積表に記録した単価**です（見積計算表から毎回計算しない——2026-10-15 利用者:「結果の単価のみDBに入れるべき」）。
-func estimateOptionsOf(productID int) ([]estimateOption, error) {
-	body, err := cms.ReadPageBody(page.FormatID(productID))
+//
+// pageID は加工製品ページか見積計算書（2026-10-16〜・estimate_calc_doc.go）です。見積計算書なら、行の弊社品番・品番・品名は
+// その `弊社品番` の加工製品ページから引きます。
+func estimateOptionsOf(pageID int) ([]estimateOption, error) {
+	productID := productOfEstimatePage(pageID)
+	body, err := cms.ReadPageBody(page.FormatID(pageID))
 	if err != nil {
 		return nil, err
 	}

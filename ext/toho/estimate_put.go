@@ -26,6 +26,7 @@ import (
 
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 )
 
 // estimateTableRows は見積計算表1枚の、写せる行の一覧です。
@@ -171,10 +172,18 @@ func withEstimateCost(body string, index int, step string, add bool, value, note
 }
 
 // EstimateRowsAPIHandler は GET /api/estimate/rows?page_id= です。
+//
+// page_id が加工製品ページで、その品物の見積計算書があれば、**いちばん新しい見積計算書**の見積計算表を返します（2026-10-17・
+// estimate_calc_doc.go）。応答の `page_id` が写す先のページです（画面はそこへ put-cost する）。
 func EstimateRowsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	pageID, _, _, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
+	pageID, pageInt, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
 	if !ok {
 		return
+	}
+	if pageKindOf(pageInt) == PageKindProduct {
+		if src := estimateSourceOf(user, pageInt); src != pageInt {
+			pageID = page.FormatID(src)
+		}
 	}
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
@@ -190,7 +199,7 @@ func EstimateRowsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "このページに見積計算表がありません")
 		return
 	}
-	cms.WriteJSON(w, map[string]any{"success": true, "tables": tables})
+	cms.WriteJSON(w, map[string]any{"success": true, "tables": tables, "page_id": pageID, "title": cms.PageTitleByID(pageNum(pageID))})
 }
 
 // EstimatePutCostAPIHandler は POST /api/estimate/put-cost です（入力: {page_id, index, step, add, value, note}）。

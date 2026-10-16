@@ -172,7 +172,7 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 			return pid, nil, nil, http.StatusBadRequest, "/" + pid + " のロットは1以上の数で書いてください（空なら見積表のロット）"
 		}
 		lots = []int{n}
-	} else if lots = estimateLotsOf(productID); len(lots) == 0 {
+	} else if lots = estimateLotsOf(estimateSourceOf(user, productID)); len(lots) == 0 { // いちばん新しい見積計算書のロット（無ければ加工製品ページ・2026-10-17）
 		lots = []int{1} // 見積表が無い・ロットが読めない——1個分
 	}
 	lines = rfqLinesOfProduct(productID, lots)
@@ -198,7 +198,7 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 // 選んだものは `/api/rfq/collect` の items で送る。並びと「加工製品ページかどうか」は「加工製品の一覧」と同じ
 // （`productListRows`——改定で子ページへ移った旧版は出さない）。どのページの番号でもよい（その下を全部見る）。
 func RFQFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	_, fid, rows, ok := folderProductsOrFail(w, r)
+	user, fid, rows, ok := folderProductsOrFail(w, r)
 	if !ok {
 		return
 	}
@@ -208,7 +208,7 @@ func RFQFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]product, 0, len(rows))
 	for _, p := range rows {
-		lots := estimateLotsOf(p.PageID)
+		lots := estimateLotsOf(estimateSourceOf(user, p.PageID)) // いちばん新しい見積計算書のロット（無ければ加工製品ページ・2026-10-17）
 		if lots == nil {
 			lots = []int{}
 		}

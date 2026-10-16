@@ -281,3 +281,36 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "estimate-calc.new", newID+" for "+pid+" from "+from)
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "from": from})
 }
+
+// ── 読む先（2026-10-17）─────────────────────────────────────────────────
+//
+// 見積の値段を読む所は、**その品物のいちばん新しい見積計算書**を読みます。無ければ、いままでどおり加工製品ページ
+// （利用者:「合わないもの・受注が無いものは、加工製品ページに今のまま残します」——移していない品物はそのまま動く）。
+//   - 見積書を作る（装置フォルダから・estimate_folder.go）の一覧と作る口
+//   - 「💴 見積回答」の「計算表へ」（estimate_put.go の EstimateRowsAPIHandler——写す先のページを返す）
+//   - 再見積依頼のロット（rfq_api.go の estimateLotsOf の呼び手）
+// 見積表の「見積書に入れる」は、**押した表のあるページ**のままです（見ている表から入れる）。
+
+// estimateSourceOf は、加工製品 productID の見積を読むページを返します——いちばん新しい見積計算書、無ければ productID。
+func estimateSourceOf(user *auth.User, productID int) int {
+	if list := estimateCalcsOf(user, productID); len(list) > 0 {
+		return list[0].PageID
+	}
+	return productID
+}
+
+// productOfEstimatePage は、見積表のあるページが表す加工製品のページ番号を返します——見積計算書なら `弊社品番` のページ、
+// それ以外（加工製品ページ）はそのページ。
+func productOfEstimatePage(pageID int) int {
+	if pageKindOf(pageID) != PageKindOurEstimateCalc {
+		return pageID
+	}
+	tags, err := cms.TagsOfPage(database.DB, pageID)
+	if err != nil {
+		return pageID
+	}
+	if id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(cms.FirstTag(tags, OurItemNoTag)), "/")); ok {
+		return pageNum(id)
+	}
+	return pageID
+}

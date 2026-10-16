@@ -1,6 +1,7 @@
 package toho
 
 import (
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -88,9 +89,27 @@ func TestEstimateCalcNewCopiesLatest(t *testing.T) {
 		}
 	}
 
+	// 読む先（2026-10-17）——いちばん新しい見積計算書。
+	if src := estimateSourceOf(u, 802); page.FormatID(src) != second {
+		t.Errorf("読む先がいちばん新しい見積計算書ではありません: %d", src)
+	}
+	// 見積計算書の見積表から組む見積明細表の行は、弊社品番が加工製品ページ（見積計算書ではない）。
+	opts, err := estimateOptionsOf(pageNum(second))
+	if err != nil || len(opts) != 1 || opts[0].Line.ProductID != "000802" || opts[0].Line.Price != "700" {
+		t.Errorf("見積計算書の見積表の行が違います: %+v %v", opts, err)
+	}
+	if lots := estimateLotsOf(estimateSourceOf(u, 802)); len(lots) != 1 || lots[0] != 1 {
+		t.Errorf("見積計算書のロットが読めません: %v", lots)
+	}
+	// 「計算表へ」の読む口は、加工製品ページを渡されても見積計算書を返す（写す先）。
+	rr := httptest.NewRecorder()
+	EstimateRowsAPIHandler(rr, auth.WithUser(httptest.NewRequest("GET", "/api/estimate/rows?page_id=000802", nil), u))
+	if !strings.Contains(rr.Body.String(), `"page_id":"`+second+`"`) {
+		t.Errorf("計算表への写す先が見積計算書ではありません: %s", rr.Body.String())
+	}
+
 	// 加工製品ページでないページからは作らない。
 	if code, _ := postRFQ(t, u, EstimateCalcNewAPIHandler, map[string]any{"product": first}); code != 400 {
 		t.Errorf("見積計算書から見積計算書を作れてしまいます: %d", code)
 	}
-	_ = auth.User{}
 }

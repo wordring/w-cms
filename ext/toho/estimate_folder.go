@@ -88,7 +88,8 @@ func EstimateFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	out := make([]product, 0, len(rows))
 	for _, p := range rows {
 		item := product{folderProduct: folderProductOf(p), Tables: []table{}}
-		opts, _ := estimateOptionsOf(p.PageID)
+		// いちばん新しい見積計算書の見積表を読む（無ければ加工製品ページ・2026-10-17・estimate_calc_doc.go）。
+		opts, _ := estimateOptionsOf(estimateSourceOf(user, p.PageID))
 		for _, o := range opts {
 			item.Tables = append(item.Tables, table{Index: o.Index, Quantity: o.Line.Quantity, Unit: o.Line.Unit,
 				Price: o.Line.Price, Note: o.Line.Note, Why: o.Why})
@@ -138,7 +139,8 @@ func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusNotFound, "加工製品ページが見つかりません: "+it.Product)
 			return
 		}
-		ln, err := estimateLineOf(pageNum(pid), it.Index)
+		// 一覧と同じ読む先（いちばん新しい見積計算書・無ければ加工製品ページ）の index 枚目。
+		ln, err := estimateLineOf(estimateSourceOf(user, pageNum(pid)), it.Index)
 		if err != nil {
 			// 1枚でも欠けるなら作らない（顧客へ出す紙が黙って欠けないように）。
 			cms.JSONFail(w, http.StatusConflict, "/"+pid+" の見積表（"+strconv.Itoa(it.Index+1)+"枚目）: "+err.Error())
