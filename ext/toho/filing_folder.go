@@ -24,23 +24,6 @@ import (
 	"w-cms/internal/cms/editlock"
 )
 
-// findMachineFolder は `製造／社名／加工製品／装置名称` の装置のページを、作らずに探します。
-func findMachineFolder(customer, machine string) (string, bool) {
-	boxID, ok := CustomerBoxPageID()
-	if !ok {
-		return "", false
-	}
-	customerID, ok := findChildByTitle(boxID, customer)
-	if !ok {
-		return "", false
-	}
-	productsID, ok := findChildByTitle(customerID, ProductsBoxTitle)
-	if !ok {
-		return "", false
-	}
-	return findChildByTitle(productsID, machine)
-}
-
 // fileViewRefRe は本文の中のファイル表示が指すもの（`data-ref`）です。
 var fileViewRefRe = regexp.MustCompile(`data-ref="([^"]+)"`)
 
@@ -54,7 +37,7 @@ func fileToMachineFolder(user *auth.User, pageID string, row filingRequest) fili
 	if _, refused, ok := filingSourceGate(user, pageID); !ok {
 		return refused
 	}
-	where := customer + "／" + ProductsBoxTitle + "／" + machine
+	where := customer + "／" + machine
 	folderID, ok := findMachineFolder(customer, machine)
 	if !ok {
 		return filingResult{PageID: pageID, Outcome: "skipped",

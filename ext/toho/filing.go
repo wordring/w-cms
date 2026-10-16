@@ -175,8 +175,9 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := boxID
-	for _, title := range []string{customer, ProductsBoxTitle, machine} {
-		next, found := findChildByTitle(id, title)
+	// 木は `製造台帳／社名／装置名称`（2026-10-16 に「加工製品」の箱をなくした）。フォルダだけを辿る（findFolderChild）。
+	for _, title := range []string{customer, machine} {
+		next, found := findFolderChild(id, title)
 		if !found {
 			json.NewEncoder(w).Encode(out)
 			return
@@ -245,15 +246,12 @@ func productCandidates(user *auth.User, customer, drawingNo, name string) []prod
 	if customer == "" || !ok {
 		return out
 	}
-	partnerID, found := findChildByTitle(boxID, customer)
+	partnerID, found := findFolderChild(boxID, customer)
 	if !found {
 		return out
 	}
-	productsID, found := findChildByTitle(partnerID, ProductsBoxTitle)
-	if !found {
-		return out
-	}
-	hostID, err := strconv.Atoi(productsID)
+	// 社名の下を全部探す（2026-10-16 に「加工製品」の箱をなくした——装置の下にも、社名の直下にも加工製品がある）。
+	hostID, err := strconv.Atoi(partnerID)
 	if err != nil {
 		return out
 	}
@@ -415,13 +413,13 @@ func visibleCustomerChildren(user *auth.User) []cms.ChildPage {
 
 // machineNames は、既にある装置名称を**顧客ごと**に返します（画面の候補用）。
 //
-// 木は `製造／社名／加工製品／装置名称` なので、装置は顧客の**孫**です（2026-09-29 までは
-// 真ん中が段〔現行・旧型・試作〕で、段をまたいで集めていました）。
+// 木は `製造台帳／社名／装置名称` なので、装置は顧客の**子**です（2026-10-16 に「加工製品」の箱をなくした。
+// それまでは孫・2026-09-29 までは真ん中が段〔現行・旧型・試作〕でした）。
 //
-// ⚠ **ただし「顧客の孫」だけでは広すぎます。** 社名ページの子は加工製品の箱だけではなく、
-// `担当者`（窓口の人を集める箱）も並びます——そこの孫は**人の名前**なので、
-// 絞らないと `小澤 美智子` が装置の候補に出ます（2026-09-14 に実データで発見）。
-// **真ん中の世代は「加工製品」の箱に限ります**。`担当者` を名指しで除くやり方は採りません
+// ⚠ **ただし「顧客の子」だけでは広すぎます。** 社名の直下には加工製品ページも並びます（装置名の分からない品物）。
+// だから **`ページ種類：装置` のフォルダか、`ページ種類` を持たないページ（人が作ったフォルダ）だけ**にします。
+// 加工製品ページ・ほかの種類のページは候補に出しません。かつて社名の子に `担当者`（窓口の人を集める箱）があり、
+// 絞らないと人の名前が装置の候補に出ました（2026-09-14 に実データで発見）——名指しで除くやり方は採りません
 // （箱が増えるたびに除外が増え、いつか漏れます）。
 //
 // **候補を出すだけで、合わせるのは人**です。完全一致でしか階層は繋がらないので
@@ -436,16 +434,16 @@ func machineNames(user *auth.User) map[string][]string {
 	if err != nil {
 		return out
 	}
-	// **3世代を1回のクエリで取ります**。行を読みながら別のクエリを投げると
+	// **2世代を1回のクエリで取ります**。行を読みながら別のクエリを投げると
 	// `:memory:` DBでカーソルが接続を握ったままになり、**絞り込みが静かに全部落ちます**
 	// （2026-09-03 に本番コードで踏んだ罠）。
 	rows, err := database.DB.Query(`
 		SELECT cust.id, COALESCE(cust.title, ''), mach.id, COALESCE(mach.title, '')
 		  FROM pages cust
-		  JOIN pages box  ON box.parent_id  = cust.id
-		  JOIN pages mach ON mach.parent_id = box.id
-		 WHERE cust.parent_id = ? AND box.title = ?
-		 ORDER BY cust.title ASC, mach.title ASC`, boxInt, ProductsBoxTitle)
+		  JOIN pages mach ON mach.parent_id = cust.id
+		 WHERE cust.parent_id = ?
+		   AND NOT EXISTS (SELECT 1 FROM page_tags t WHERE t.page_id = mach.id AND t.name = ? AND t.value <> ?)
+		 ORDER BY cust.title ASC, mach.title ASC`, boxInt, PageKindTag, PageKindMachine)
 	if err != nil {
 		return out
 	}
@@ -479,7 +477,7 @@ func machineNames(user *auth.User) map[string][]string {
 			seen[h.cust] = map[string]bool{}
 		}
 		if seen[h.cust][h.mach] {
-			continue // 同じ題の加工製品の箱が2枚あると、同じ装置名が2回来る
+			continue // 同じ題の社名のフォルダが2枚あると、同じ装置名が2回来る
 		}
 		seen[h.cust][h.mach] = true
 		out[h.cust] = append(out[h.cust], h.mach)
@@ -710,12 +708,15 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// ページIDなので切れません。**人が選んだ社名で引きます**（機械が推した組織ではなく）
 	// ——整理の画面は「機械が出して人が直す」場所なので、**打ち替えた結果が正**です。
 	//
-	// **社名と装置のあいだは「加工製品」の箱**です（2026-09-29 に段をやめた・product_tree.go）。
+	// **装置は社名の直下**です（2026-10-16 に「加工製品」の箱をなくした・product_tree.go）。
 	machineID, err := ensureProductPath(user, customer, machine)
 	if err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: err.Error()}
 	}
-	where := customer + "／" + ProductsBoxTitle + "／" + machine + "／" + name
+	where := customer + "／" + machine + "／" + name
+	if machine == "" {
+		where = customer + "／" + name // 装置名の分からない品物は社名の直下
+	}
 	// kindsNote は区分を書いた結果を知らせる一言です（書けなくても整理は済んでいる）。
 	kindsNote := func(target string, replace bool) string {
 		if err := setProductKinds(user, target, kinds, replace); err != nil {

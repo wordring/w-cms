@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 )
 
 // TestWithTagValues は区分のタグを本文へ書く規則を固定します（2026-09-29）。
@@ -83,12 +84,11 @@ func TestProductListShowsProductsAndKinds(t *testing.T) {
 		Merge: "revision"})
 
 	boxID, _ := CustomerBoxPageID()
-	custID, _ := findChildByTitle(boxID, "南北スポーツ")
-	productsID, ok := findChildByTitle(custID, ProductsBoxTitle)
+	custID, ok := findChildByTitle(boxID, "南北スポーツ")
 	if !ok {
-		t.Fatal("加工製品の箱がありません")
+		t.Fatal("社名のページがありません")
 	}
-	host := mustAtoi(t, productsID)
+	host := mustAtoi(t, custID) // 2026-10-16 から、加工製品は社名の下（「加工製品」の箱は無い）
 	rows, err := productListRows(u, host)
 	if err != nil {
 		t.Fatal(err)
@@ -146,14 +146,24 @@ func TestProductFolderAPI(t *testing.T) {
 	}
 	boxID, _ := CustomerBoxPageID()
 	custID, _ := findChildByTitle(boxID, "みなと商店")
-	productsID, _ := findChildByTitle(custID, ProductsBoxTitle)
-	machID, ok := findChildByTitle(productsID, "標準2輪")
+	machID, ok := findChildByTitle(custID, "標準2輪")
 	if !ok || machID != first["page_id"] {
-		t.Errorf("製造／みなと商店／加工製品／標準2輪 になっていません: %v", first)
+		t.Errorf("製造台帳／みなと商店／標準2輪 になっていません: %v", first)
 	}
-	// 装置名称が空なら箱を返す（まとめを書く先などに使う）。
-	if _, box := call("みなと商店", ""); box["page_id"] != productsID {
-		t.Errorf("装置名称が空なのに箱を返しません: %v", box)
+	if body, _ := cms.ReadPageBody(machID); !strings.Contains(body, "<dt>"+PageKindTag+"</dt><dd>"+PageKindMachine+"</dd>") {
+		t.Errorf("装置のフォルダが「%s：%s」を名乗っていません: %s", PageKindTag, PageKindMachine, body)
+	}
+	// 装置名称が空なら社名のページを返す（装置名の分からないメーカーもある・2026-10-16）。
+	if _, c := call("みなと商店", ""); c["page_id"] != custID {
+		t.Errorf("装置名称が空なのに社名のページを返しません: %v", c)
+	}
+	// 社名の直下に同じ題の加工製品ページがあっても、装置のフォルダと取り違えない（findFolderChild）。
+	if _, err := cms.CreateChildPage(custID, "alice", `<h1>別の装置</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindProduct+`</dd></dl>`); err != nil {
+		t.Fatal(err)
+	}
+	if _, m := call("みなと商店", "別の装置"); m["page_id"] == "" || readPageBody(t, m["page_id"].(string)) == "" ||
+		!strings.Contains(readPageBody(t, m["page_id"].(string)), "<dd>"+PageKindMachine+"</dd>") {
+		t.Errorf("同じ題の加工製品ページを装置のフォルダと取り違えました: %v", m)
 	}
 	if code, _ := call("", "標準2輪"); code != 400 {
 		t.Errorf("社名が空なのに %d です", code)

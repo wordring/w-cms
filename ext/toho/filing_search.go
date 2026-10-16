@@ -55,11 +55,11 @@ func FilingSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "results": hits})
 }
 
-// searchProducts は取引先の「加工製品」の下から、q を含むページを探します。
+// searchProducts は製造台帳の社名の下から、q を含むページを探します。
 //
 // 当てるのは、題・装置名称・ほかの名前（品名・図面名称）の**文字**（全角半角を畳んで含むか）と、図面番号・品番の
 // **符牒**（区切り・大小も外して含むか）、それにページ番号（`001234`・`/001234` のちょうど一致）。
-// withFolders なら、装置のページ（加工製品の箱の直下——題か装置のページ番号で当てる）も返します（2026-10-08）。
+// withFolders なら、装置のページ（社名の直下のフォルダ——題か装置のページ番号で当てる）も返します（2026-10-08）。
 func searchProducts(user *auth.User, customer, q string, limit int, withFolders bool) []productHit {
 	out := []productHit{}
 	q = strings.TrimSpace(q)
@@ -96,14 +96,14 @@ func searchProducts(user *auth.User, customer, q string, limit int, withFolders 
 		if !page.CanView(user, p.ID) {
 			continue
 		}
-		productsID, found := findChildByTitle(page.FormatID(p.ID), ProductsBoxTitle)
-		if !found {
-			continue
-		}
+		// 社名の下を探す（2026-10-16 に「加工製品」の箱をなくした——装置のフォルダも加工製品ページも社名の直下）。
 		if withFolders {
-			folders, _ := cms.ChildPages(database.DB, pageNum(productsID))
+			folders, _ := cms.ChildPages(database.DB, p.ID)
 			for _, fd := range folders {
 				id := page.FormatID(fd.ID)
+				if isProductPage(fd.ID) {
+					continue // 社名の直下の加工製品ページは、下の rows が拾う
+				}
 				if !page.CanView(user, fd.ID) || !((isID && id == wantID) || textHit(fd.Title)) {
 					continue
 				}
@@ -115,7 +115,7 @@ func searchProducts(user *auth.User, customer, q string, limit int, withFolders 
 				}
 			}
 		}
-		rows, err := productListRows(user, pageNum(productsID))
+		rows, err := productListRows(user, p.ID)
 		if err != nil {
 			continue
 		}

@@ -108,7 +108,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     // 顧客ページが無いので、**壊れたのではなく前提が無い**——飛ばします（2026-09-16）。
     const hasCustomerPage = await page.evaluate(async (name) => {
       const top = await (await fetch('/api/children?parent_id=000000')).json().catch(() => []);
-      const box = (top || []).find(c => (c.Title || '').trim() === '製造');
+      const box = (top || []).find(c => (c.Title || '').trim() === '製造台帳');
       if (!box) return false;
       const kids = await (await fetch('/api/children?parent_id=' + box.ID)).json().catch(() => []);
       return (kids || []).some(c => (c.Title || '').trim() === name);
@@ -119,8 +119,8 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
       console.log('  — 顧客ページ（' + r.custValue + '）がまだありません。装置の候補はこの環境では出ないので飛ばします');
     }
 
-    // **候補が「加工製品の箱の下に在るもの」だけであること**を、木を辿って確かめます
-    // （2026-09-29 に段〔現行・旧型・試作〕のフォルダをやめ、社名の下は「加工製品」の箱に）。
+    // **候補が「社名の直下の装置のフォルダ」だけであること**を、木を辿って確かめます
+    // （2026-09-29 に段〔現行・旧型・試作〕のフォルダをやめ、2026-10-16 に「加工製品」の箱もなくした）。
     //
     // もとは `φ410 2輪` という**実データの装置名を決め打ち**にしていました。
     // データを入れ直すと消えるうえ（2026-09-13 に実際に消えた）、**混ざりものを
@@ -131,17 +131,18 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
         const res = await fetch('/api/children?parent_id=' + id);
         return res.ok ? (await res.json() || []) : [];
       };
-      const box = (await kids('000000')).find(p => p.Title === '製造');
-      if (!box) return { ok: false, why: '製造ページがありません' };
+      const box = (await kids('000000')).find(p => p.Title === '製造台帳');
+      if (!box) return { ok: false, why: '製造台帳ページがありません' };
       const cust = (await kids(box.ID)).find(p => p.Title === '南北スポーツ機械');
       if (!cust) return { ok: false, why: '顧客ページがありません' };
       const boxes = await kids(cust.ID);
       const machines = [];
       const others = [];
       for (const s of boxes) {
-        const names = (await kids(s.ID)).map(p => p.Title);
-        // 加工製品の箱の下＝装置、それ以外の箱（担当者など）の下＝装置ではない。
-        (s.Title === '加工製品' ? machines : others).push(...names);
+        // 2026-10-16 から装置は社名の直下。`ページ種類：装置` か種類の無いフォルダ＝装置、加工製品ページなど＝装置ではない。
+        const html = await (await fetch('/api/load?id=' + s.ID)).text();
+        const kind = (html.match(/<dt>\s*ページ種類\s*<\/dt>\s*<dd>([^<]*)<\/dd>/) || [])[1] || '';
+        (kind === '装置' || kind === '' ? machines : others).push(s.Title);
       }
       return {
         ok: true,
@@ -152,9 +153,9 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     if (!legit.ok) {
       console.log('  — 木を辿れませんでした（' + legit.why + '）。この項目は飛ばします');
     } else {
-      ok(legit.stray.length === 0, '加工製品の箱の下に無いもの（担当者の人名など）が混じらない',
+      ok(legit.stray.length === 0, '装置のフォルダでないもの（加工製品ページなど）が混じらない',
          legit.stray.join(' / '));
-      ok(legit.missing.length === 0, '加工製品の箱の下の装置はすべて候補にある', legit.missing.join(' / '));
+      ok(legit.missing.length === 0, '社名の直下の装置はすべて候補にある', legit.missing.join(' / '));
     }
 
     // 顧客名を別の会社へ打ち替えると、候補が入れ替わる（空になる）

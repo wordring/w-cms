@@ -64,7 +64,10 @@ func (m *machineLookup) machineOf(orderID int, ourItemNo, itemNo, itemName strin
 	return "", false
 }
 
-// ofProduct は加工製品ページの置き場の装置名です——親の題（親の親が「加工製品」の箱のとき）。
+// ofProduct は加工製品ページの置き場の装置名です——親の題（親が装置のフォルダのとき）。
+//
+// 装置のフォルダは `ページ種類：装置` か、種類の無い親で、その親が社名（製造台帳の直下）のもの（2026-10-16 に
+// 「加工製品」の箱をなくした。それまでは「親の親が加工製品の箱」で見分けていた）。社名の直下の加工製品には装置名がありません。
 func (m *machineLookup) ofProduct(ourItemNo string) string {
 	id, ok := page.NormalizeID(strings.TrimSpace(ourItemNo))
 	if !ok {
@@ -74,11 +77,8 @@ func (m *machineLookup) ofProduct(ourItemNo string) string {
 		return v
 	}
 	v := ""
-	if meta, ok := page.ReadSidecar(id); ok && meta.ParentID != "" {
-		if pm, ok := page.ReadSidecar(meta.ParentID); ok && pm.ParentID != "" &&
-			strings.TrimSpace(pageTitleOf(pm.ParentID)) == ProductsBoxTitle {
-			v = strings.TrimSpace(pageTitleOf(meta.ParentID))
-		}
+	if meta, ok := page.ReadSidecar(id); ok && meta.ParentID != "" && isMachineFolder(meta.ParentID) {
+		v = strings.TrimSpace(pageTitleOf(meta.ParentID))
 	}
 	m.product[id] = v
 	return v

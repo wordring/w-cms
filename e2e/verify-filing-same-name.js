@@ -50,7 +50,7 @@ const drawingBlock = (no, name) =>
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造台帳') || {}).ID || '';
     if (!box || !partners) {
       console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
@@ -58,10 +58,10 @@ const drawingBlock = (no, name) =>
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 既にある加工製品（製造／【E2E】の会社／加工製品／【E2E】装置／【E2E】取付ベース）。
+    // 既にある加工製品（製造台帳／【E2E】の会社／【E2E】装置／【E2E】取付ベース）。
     // 取引先の決まりは「品番の決め方：図面番号」だけ（品名の決め方は書かない）。
     cust = await makePage(page, '<h1>' + CUSTOMER + '</h1><dl data-type="tags"><dt>品番の決め方</dt><dd>図面番号</dd></dl>', partners);
-    const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
+    const prodBox = cust; // 2026-10-16 から「加工製品」の箱は無い（装置は社名の直下）
     const mach = await makePage(page, '<h1>' + MACHINE + '</h1>', prodBox);
     const first = await makePage(page, '<h1>' + NAME + '</h1>' + drawingBlock('E2E-SN-1', NAME), mach);
 

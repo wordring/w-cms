@@ -171,8 +171,8 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 		t.Fatalf("移動になっていません: %+v", results)
 	}
 
-	// 「製造」の下に顧客名、その下に装置名称、その下に加工製品ページ
-	// （2026-09-05 ユーザー決定。トップ直下が名簿になるのを避けた）。
+	// 「製造台帳」の下に顧客名、その下に装置名称、その下に加工製品ページ
+	// （2026-09-05 ユーザー決定。トップ直下が名簿になるのを避けた。2026-10-16 に「加工製品」の箱をなくした）。
 	boxID, ok := findChildByTitle(cms.TopPageID, CustomerBoxTitle)
 	if !ok {
 		t.Fatalf("「%s」ページが作られていません", CustomerBoxTitle)
@@ -181,20 +181,20 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	if !ok {
 		t.Fatalf("顧客名ページが「%s」の下に作られていません", CustomerBoxTitle)
 	}
-	// 社名と装置のあいだは「加工製品」の箱（2026-09-29 に段のフォルダをやめた）。
+	// 段のフォルダ（2026-09-29 にやめた）も、「加工製品」の箱（2026-10-16 にやめた）も作らない。装置は社名の直下。
 	if _, ok := findChildByTitle(custID, "試作"); ok {
 		t.Errorf("段のページ（試作）が作られています——区分はタグです")
 	}
-	boxOfProducts, ok := findChildByTitle(custID, ProductsBoxTitle)
-	if !ok {
-		t.Fatalf("「%s」の箱が作られていません", ProductsBoxTitle)
+	if _, ok := findChildByTitle(custID, "加工製品"); ok {
+		t.Errorf("「加工製品」の箱が作られています——装置は社名の直下です")
 	}
-	// 箱はテンプレートから作る（一覧の鏡を持つ）。
-	if body, _ := cms.ReadPageBody(boxOfProducts); !strings.Contains(body, "<h1>"+ProductsBoxTitle+"</h1>") ||
-		!strings.Contains(body, "加工製品の一覧") {
-		t.Errorf("箱がテンプレートの形ではありません: %s", body)
+	// 社名と装置のフォルダは `ページ種類` を名乗る。
+	for id, want := range map[string]string{custID: PageKindCompany} {
+		if body, _ := cms.ReadPageBody(id); !strings.Contains(body, "<dt>"+PageKindTag+"</dt><dd>"+want+"</dd>") {
+			t.Errorf("%s のフォルダが「%s：%s」を名乗っていません: %s", want, PageKindTag, want, body)
+		}
 	}
-	machID, ok := findChildByTitle(boxOfProducts, "標準2輪")
+	machID, ok := findChildByTitle(custID, "標準2輪")
 	if !ok {
 		t.Fatalf("人が打ち替えた装置名称が使われていません（推奨値のままになっている疑い）")
 	}
@@ -211,7 +211,7 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 	if got := strings.Join(tags[ProductKindTag], "・"); got != "試作・見積" {
 		t.Errorf("区分のタグが %q です（試作・見積 のはず）", got)
 	}
-	if !strings.Contains(results[0].Message, "南北スポーツ機械／加工製品／標準2輪／取付ベース") {
+	if !strings.Contains(results[0].Message, "南北スポーツ機械／標準2輪／取付ベース") {
 		t.Errorf("知らせに行き先がありません: %s", results[0].Message)
 	}
 }

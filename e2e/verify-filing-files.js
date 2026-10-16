@@ -54,7 +54,7 @@ const MACHINE = '【E2E】ファイルの装置';
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造台帳') || {}).ID || '';
     if (!box || !partners) {
       console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
@@ -62,9 +62,9 @@ const MACHINE = '【E2E】ファイルの装置';
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 製造／【E2E】ファイルの会社／加工製品／【E2E】ファイルの装置／【E2E】ファイルの部品
+    // 製造台帳／【E2E】ファイルの会社／【E2E】ファイルの装置／【E2E】ファイルの部品
     cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
-    const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
+    const prodBox = cust; // 2026-10-16 から「加工製品」の箱は無い（装置は社名の直下）
     const folder = await makePage(page, '<h1>' + MACHINE + '</h1><p>装置の説明</p>', prodBox);
     // 加工製品ページと見なされるのはタグ（図面番号など）を持つページだけ（productListRows）。
     const part = await makePage(page, '<h1>【E2E】ファイルの部品</h1><dl data-type="tags"><dt>図面番号</dt><dd>E2E-FFL-9</dd></dl><p>x</p>', folder);

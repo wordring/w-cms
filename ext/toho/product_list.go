@@ -190,8 +190,8 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 //   - 社名: 上へたどって最初の `ページ種類：社名` のフォルダの題。
 //
 // ⚠ **フォルダの種類に頼りすぎない**（利用者）——機械が新しく作るフォルダには、まだ `ページ種類` が付きません
-// （【考察】全体の設計 §5.3 の3番で足す）。種類の無いフォルダは、木の形で読みます。トップ直下の「製造」の子なら社名、
-// それ以外で社名の下にあれば装置名称です（社名の下の「加工製品」の箱〔なくす予定・§4.4〕は除く）。
+// 種類の無いフォルダは、木の形で読みます。トップ直下の「製造台帳」の子なら社名、社名の直下にあれば装置名称です
+// （2026-10-16 に「加工製品」の箱をなくした）。
 func productListAll(user *auth.User) ([]productListRow, error) {
 	db := database.DB
 	type pg struct {
@@ -287,7 +287,7 @@ func productListAll(user *auth.User) ([]productListRow, error) {
 			switch k := kindOf(par); {
 			case k == PageKindMachine:
 				row.Machine = pages[par].title
-			case k == "" && company != 0 && par != company && pages[par].title != ProductsBoxTitle:
+			case k == "" && company != 0 && par != company && pages[par].parent == company:
 				row.Machine = pages[par].title
 			}
 		}

@@ -54,8 +54,7 @@ func TestRevisionKeepsBothNames(t *testing.T) {
 
 	boxID, _ := CustomerBoxPageID()
 	custID, _ := findChildByTitle(boxID, "南北スポーツ")
-	productsID, _ := findChildByTitle(custID, ProductsBoxTitle)
-	host := mustAtoi(t, productsID)
+	host := mustAtoi(t, custID) // 2026-10-16 から、加工製品は社名の下（「加工製品」の箱は無い）
 	rows, err := productListRows(u, host)
 	if err != nil {
 		t.Fatal(err)

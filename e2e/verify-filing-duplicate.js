@@ -77,7 +77,7 @@ const drawingBlock = (ref, source) =>
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造台帳') || {}).ID || '';
     if (!box || !partners) {
       console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
@@ -85,12 +85,12 @@ const drawingBlock = (ref, source) =>
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 既にある加工製品（製造／【E2E】の会社／加工製品／【E2E】装置／品目）。
+    // 既にある加工製品（製造台帳／【E2E】の会社／【E2E】装置／品目）。
     const cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
-    const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
+    const prodBox = cust; // 2026-10-16 から「加工製品」の箱は無い（装置は社名の直下）
     const mach = await makePage(page, '<h1>【E2E】装置</h1>', prodBox);
     product = await makePage(page, '<h1>' + NAME + '</h1>', mach);
-    made.push(product, mach, prodBox, cust);
+    made.push(product, mach, cust);
     const pid = await upload(page, product, 'e2e-dup.pdf', '%PDF-1.4 e2e 同じ図面');
     await saveBody(page, product, '<h1>' + NAME + '</h1>' + drawingBlock(product + '-' + pid, ''));
     check('既にある加工製品を作れた', !!product && !!pid, product + '-' + pid);

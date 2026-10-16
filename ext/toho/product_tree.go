@@ -1,7 +1,20 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 加工製品の木——`製造／社名／加工製品／装置名称／品目`（2026-09-29。2026-10-16 に根を `取引先` から `製造` へ）
+// 加工製品の木——`製造台帳／社名／（装置名称）／品目`（2026-10-16）
+//
+// 利用者:「製造台帳の下に社名フォルダ、その下にオプションで装置名フォルダ、その下に加工製品ページとしたいです
+// （装置名が分からないメーカーもあるので）」「トップ直下を製造台帳…としてはどうでしょう？」（【考察】全体の設計 §4.4）。
+//
+//   - 根は「製造台帳」（2026-10-16 の夕方までは「取引先」、夜までは「製造」）。
+//   - **社名の下の「加工製品」の箱はなくしました。** 装置名称のフォルダも加工製品ページも、社名の直下に並びます。
+//     装置名称は無くてもかまいません（そのときは社名の直下）。
+//   - 社名・装置名称のフォルダは `ページ種類`（社名・装置）を持って作ります。⚠ **装置名称のフォルダを探すときは、
+//     加工製品ページを外します**（社名の直下に、同じ題の加工製品ページが並びうるため——findFolderChild）。
+//   - 一覧は、スラッシュメニューから「加工製品の一覧」を挿した所に出ます（どこに挿しても全社の分・product_list.go）。
+//     利用者:「加工製品の一覧は、スラッシュメニューから一覧のタグを書き込んだ場所に出ると良いと思います」。
+//
+// 以下は、それまでの形（`製造／社名／加工製品／装置名称／品目`・2026-09-29）の記録です。
 //
 // 利用者:「試作フォルダについてですが、**フォルダで分けるのをやめて、試作のタグを
 // つけるように**変更したいと思います」「〈取引先〉／加工製品／装置名称／品目にしたい
@@ -39,14 +52,11 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/editlock"
+	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 const (
-	// ProductsBoxTitle は社名ページの下で加工製品をまとめる箱の題です。
-	ProductsBoxTitle = "加工製品"
-	// ProductsBoxTemplate はその箱を作るときに写すテンプレートの題です（「加工製品」は
-	// 加工製品ページのテンプレート〔ProductTemplate〕の題なので、別の名前にしています）。
-	ProductsBoxTemplate = "製造の加工製品"
 	// ProductKindTag は加工製品の区分（試作・見積・旧型…）のタグ名です。
 	ProductKindTag = "区分"
 )
@@ -79,31 +89,108 @@ func cleanProductKinds(in []string) (out []string, bad string) {
 	return out, ""
 }
 
-// ensureProductsBox は社名ページの下の「加工製品」を返し、無ければテンプレートから作ります。
+// isProductPage は、ページが加工製品ページ（旧版を含む）を名乗っているかを返します（`ページ種類` で）。
+func isProductPage(id int) bool {
+	tags, err := cms.TagsOfPage(database.DB, id)
+	if err != nil {
+		return false
+	}
+	k := strings.TrimSpace(cms.FirstTag(tags, PageKindTag))
+	return k == PageKindProduct || k == PageKindProductOld
+}
+
+// isMachineFolder は、ページが製造台帳の装置名称のフォルダかを返します。
 //
-// ⚠ **テンプレートが無ければ作りません**（テンプレート駆動・2026-09-27 利用者:「テンプレートが
-// 無ければ作れないまで行きます」）——箱の作業面（加工製品の一覧）をコードに焼かないためです。
-func ensureProductsBox(user *auth.User, customerID string) (string, error) {
-	if id, ok := findChildByTitle(customerID, ProductsBoxTitle); ok {
+// `ページ種類：装置` なら装置。種類の無いページは、親が社名（`ページ種類：社名`、または製造台帳の直下）で、
+// 加工製品ページでもないものを装置とみなします（人が作ったフォルダ）。⚠ フォルダの種類には頼りすぎない（利用者）。
+func isMachineFolder(id string) bool {
+	idInt, err := strconv.Atoi(id)
+	if err != nil {
+		return false
+	}
+	tags, err := cms.TagsOfPage(database.DB, idInt)
+	if err != nil {
+		return false
+	}
+	switch strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) {
+	case PageKindMachine:
+		return true
+	case "":
+	default:
+		return false
+	}
+	meta, ok := page.ReadSidecar(id)
+	if !ok || meta.ParentID == "" {
+		return false
+	}
+	return isCompanyFolder(meta.ParentID)
+}
+
+// isCompanyFolder は、ページが製造台帳の社名のフォルダか（`ページ種類：社名`、または製造台帳の直下）を返します。
+func isCompanyFolder(id string) bool {
+	idInt, err := strconv.Atoi(id)
+	if err != nil {
+		return false
+	}
+	if tags, err := cms.TagsOfPage(database.DB, idInt); err == nil {
+		switch strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) {
+		case PageKindCompany:
+			return true
+		case "":
+		default:
+			return false
+		}
+	}
+	boxID, ok := CustomerBoxPageID()
+	meta, found := page.ReadSidecar(id)
+	return ok && found && meta.ParentID == boxID
+}
+
+// findFolderChild は親の子から、題が完全一致する**フォルダ**（加工製品ページではないもの）を1つ探します。
+//
+// 社名の直下には、装置名称のフォルダと加工製品ページが並びます（2026-10-16）。同じ題の加工製品ページを
+// 装置名称のフォルダと取り違えないよう、`ページ種類` が加工製品のページを外します。
+func findFolderChild(parentID, title string) (string, bool) {
+	parentInt, err := strconv.Atoi(parentID)
+	if err != nil {
+		return "", false
+	}
+	kids, err := cms.ChildPages(database.DB, parentInt)
+	if err != nil {
+		return "", false
+	}
+	for _, k := range kids {
+		if k.Title == title && !isProductPage(k.ID) {
+			return page.FormatID(k.ID), true
+		}
+	}
+	return "", false
+}
+
+// ensureKindFolder は親の下に題 title のフォルダ（`ページ種類：kind`）を探し、無ければ作ります。
+func ensureKindFolder(user *auth.User, parentID, title, kind string) (string, error) {
+	if id, ok := findFolderChild(parentID, title); ok {
 		return id, nil
 	}
-	parentInt, err := strconv.Atoi(customerID)
+	parentInt, err := strconv.Atoi(parentID)
 	if err != nil {
 		return "", err
 	}
 	if !canWritePage(user, parentInt) {
-		return "", errors.New("社名のページへ書き込む権限がありません")
+		return "", errors.New("親ページへ書き込む権限がありません")
 	}
-	d, err := cms.DraftFromTemplate(ProductsBoxTemplate)
+	// ⚠ **`cms.EnsureFolder` は使いません**——あれは題だけで探し直すので、社名の直下に同じ題の加工製品ページが
+	// あると、それを「もうある」と返してしまいます（2026-10-16 に試験で見つけた）。探すのは上の findFolderChild だけ。
+	newID, err := cms.CreateChildPage(parentID, user.Username, kindFolderBody(title, kind))
 	if err != nil {
 		return "", err
 	}
-	d.SetTitle(ProductsBoxTitle)
-	return cms.CreateChildPage(customerID, user.Username, d.HTML())
+	auth.Audit(user.Username, "product.folder", newID+" under "+parentID+" ("+title+")")
+	return newID, nil
 }
 
-// ensureProductPath は `製造／社名／加工製品／装置名称` を辿り、無ければ作って、
-// 装置名称のページを返します（machine が空なら「加工製品」の箱）。
+// ensureProductPath は `製造台帳／社名／装置名称` を辿り、無ければ作って、
+// 装置名称のページを返します（machine が空なら社名のページ——装置名の分からないメーカーもある）。
 //
 // **木の形を知っているのはここだけ**です——整理（filing.go）も、ワンノートの移植の道具
 // （`/api/product-folder` 経由）もこれを通ります。形を2か所に持つと、片方だけ古い形で
@@ -115,23 +202,32 @@ func ensureProductPath(user *auth.User, customer, machine string) (string, error
 	if err != nil {
 		return "", fmt.Errorf("「%s」ページを用意できません: %w", CustomerBoxTitle, err)
 	}
-	customerID, err := ensureChildPage(user, boxID, customer)
+	customerID, err := ensureKindFolder(user, boxID, customer, PageKindCompany)
 	if err != nil {
 		return "", fmt.Errorf("顧客名ページを用意できません: %w", err)
 	}
 	linkPartner(user, customerID, customer)
-	productsID, err := ensureProductsBox(user, customerID)
-	if err != nil {
-		return "", fmt.Errorf("「%s」ページを用意できません: %w", ProductsBoxTitle, err)
-	}
 	if machine == "" {
-		return productsID, nil
+		return customerID, nil
 	}
-	machineID, err := ensureChildPage(user, productsID, machine)
+	machineID, err := ensureKindFolder(user, customerID, machine, PageKindMachine)
 	if err != nil {
 		return "", fmt.Errorf("装置名称ページを用意できません: %w", err)
 	}
 	return machineID, nil
+}
+
+// findMachineFolder は `製造台帳／社名／装置名称` の装置のページを、作らずに探します。
+func findMachineFolder(customer, machine string) (string, bool) {
+	boxID, ok := CustomerBoxPageID()
+	if !ok {
+		return "", false
+	}
+	customerID, ok := findFolderChild(boxID, customer)
+	if !ok {
+		return "", false
+	}
+	return findFolderChild(customerID, machine)
 }
 
 // setProductKinds は加工製品ページの `区分` のタグを kinds に揃えます。
@@ -218,8 +314,8 @@ func pageTagListEnd(body string) int {
 }
 
 // ProductFolderAPIHandler は POST /api/product-folder です（2026-09-29）。
-// 入力: {customer, machine}。`製造／社名／加工製品／装置名称` を用意して、そのページIDを返します
-// （machine が空なら「加工製品」の箱）。
+// 入力: {customer, machine}。`製造台帳／社名／装置名称` を用意して、そのページIDを返します
+// （machine が空なら社名のページ）。
 //
 // **ワンノートの移植の道具のための口**です（tools/onenote/build）。道具は外から HTTP で
 // ページを作るので、それまで木の道を自分で辿っていました——**段をやめた日に、道具だけが

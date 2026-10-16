@@ -44,7 +44,7 @@ const drawingBlock = (no, name, machine, ref) =>
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造台帳') || {}).ID || '';
     if (!box || !partners) {
       console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
@@ -52,9 +52,9 @@ const drawingBlock = (no, name, machine, ref) =>
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 既にある装置のページ（製造／【E2E】装置の会社／加工製品／【E2E】装置フォルダ）——中に手で貼ったファイル表示が1つ。
+    // 既にある装置のページ（製造台帳／【E2E】装置の会社／【E2E】装置フォルダ）——中に手で貼ったファイル表示が1つ。
     cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
-    const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
+    const prodBox = cust; // 2026-10-16 から「加工製品」の箱は無い（装置は社名の直下）
     const folder = await makePage(page, '<h1>' + MACHINE + '</h1><p>装置の説明</p><section data-type="file-view" data-ref="000000-zzzz"></section>', prodBox);
 
     // 受信メールの記録と、解析が作った仮のページ——組立図。
@@ -86,7 +86,7 @@ const drawingBlock = (no, name, machine, ref) =>
     const gone = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).status, asm);
     check('② 装置のページに図面が入る', fbody.includes('E2E-FF-00A') && fbody.includes('装置の説明'), fbody.replace(/\s+/g, ' ').slice(0, 200));
     check('② 加工製品ページはできず、解析で作ったページは消える', kids.length === 0 && gone === 404, JSON.stringify({ kids, gone }));
-    check('② 知らせに行き先', t2.includes(CUSTOMER + '／加工製品／' + MACHINE), t2.slice(0, 200));
+    check('② 知らせに行き先', t2.includes(CUSTOMER + '／' + MACHINE), t2.slice(0, 200));
 
     // ③ 同じファイルの表示が既にある（装置のページに手で貼った 000000-zzzz）。
     const same = await makePage(page, '<h1>E2E-FF-00B 組立図2</h1>' + drawingBlock('E2E-FF-00B', '【E2E】組立図2', MACHINE, '000000-zzzz'), record);

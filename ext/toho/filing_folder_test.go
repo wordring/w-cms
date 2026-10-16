@@ -52,7 +52,7 @@ func TestFileToMachineFolderAddsDrawing(t *testing.T) {
 	if _, ok := page.ReadSidecar(asm); ok {
 		t.Error("解析で作ったページが残っています（ごみ箱へ移すはず）")
 	}
-	if !strings.Contains(res[0].Message, "みらい産業／加工製品／テスト装置") {
+	if !strings.Contains(res[0].Message, "みらい産業／テスト装置") {
 		t.Errorf("知らせに行き先がありません: %s", res[0].Message)
 	}
 }

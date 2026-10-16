@@ -58,7 +58,7 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     CustomerBoxTitle,
 		Extension: "toho",
-		Why:       "加工製品の階層の根です（社名／加工製品／装置名称／図面名称）。整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
+		Why:       "加工製品の台帳の根です（社名／装置名称／加工製品。装置名称は無くてもよい）。整理を実行すると、通信記録の下にできた加工製品ページがここへ移ります。相手の連絡先は「連絡帳」のほうです。",
 	})
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     OrderBoxTitle,
@@ -102,11 +102,7 @@ func init() {
 		Extension: "toho",
 		Why:       "図面PDFの解析が加工製品ページを作るときに写します。見出し「図面」の節（図面ブロック）と、キャプション「改訂明細表」の表が要ります。",
 	})
-	cms.RegisterPageTemplate(cms.PageTemplate{
-		Title:     ProductsBoxTemplate,
-		Extension: "toho",
-		Why:       "整理（とワンノートの移植）が、社名の下に「加工製品」の箱を作るときに写します（題は「加工製品」になります）。鏡「加工製品の一覧」を置いておくと、区分（試作・見積・旧型）や装置名称で絞って見られます。",
-	})
+	// テンプレート「製造の加工製品」（社名の下の「加工製品」の箱）は 2026-10-16 にやめました（箱をなくした・product_tree.go）。
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     PurchaseOrderTemplate,
 		Extension: "toho",

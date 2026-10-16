@@ -48,7 +48,7 @@ const drawingBlock = (no, name, machine) =>
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造台帳') || {}).ID || '';
     if (!box || !partners) {
       console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
@@ -56,9 +56,9 @@ const drawingBlock = (no, name, machine) =>
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 既にある加工製品（製造／【E2E】探す会社／加工製品／【E2E】探す装置／【E2E】探す部品・図面 E2E-FS-1）。
+    // 既にある加工製品（製造台帳／【E2E】探す会社／【E2E】探す装置／【E2E】探す部品・図面 E2E-FS-1）。
     cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
-    const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
+    const prodBox = cust; // 2026-10-16 から「加工製品」の箱は無い（装置は社名の直下）
     const mach = await makePage(page, '<h1>' + MACHINE + '</h1>', prodBox);
     const first = await makePage(page, '<h1>' + NAME + '</h1>' + drawingBlock('E2E-FS-1', NAME, MACHINE), mach);
 

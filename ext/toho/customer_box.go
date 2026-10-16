@@ -36,7 +36,10 @@ import (
 
 // CustomerBoxTitle は加工製品の階層の根（トップ直下）の名前です。
 // **h1（ページ名）が正**——通信箱・テンプレート置き場と同じ「名前が機能」の型。
-const CustomerBoxTitle = "製造"
+//
+// 2026-10-16 夜に「製造」から「製造台帳」へ改めました（利用者:「トップ直下を製造台帳、年月下を製造記録としては
+// どうでしょう？」——品物の台帳と、弊社の動きの記録〔記録／年／月／製造記録〕を名前で分ける）。同じ日の夕方までは「取引先」。
+const CustomerBoxTitle = "製造台帳"
 
 // CustomerBoxPageID はトップ直下の製造ページを返します（無ければ ok=false）。
 func CustomerBoxPageID() (string, bool) { return cms.TopLevelPageByTitle(CustomerBoxTitle) }
