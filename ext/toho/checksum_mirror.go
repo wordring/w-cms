@@ -38,6 +38,8 @@ func init() {
 // renderOrderChecksum は明細の足元に、**検算の結果と結びの気づき**を出します。
 func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
+	// **赤字の警告**（2026-10-17・order_loss.go）——行の末尾に「見積との差」。⚠ 足元の行の colspan が列の数に合うよう、先に足す。
+	appendLossColumn(ctx, el)
 	span := headerCellCount(el)
 	// **受注残高**（2026-09-30 利用者:「受注ページに受注残高を出したい」・order_balance.go）——検算より先に、いちばん上に。
 	// ⚠ 引き金が同じ（受注明細表）なので、別の鏡にせずここで足す（鏡は引き金1つにつき1つ）。

@@ -103,6 +103,8 @@ type backlogRow struct {
 	MaterialOrdered string
 	DeliveryNote    string
 	Invoice         string
+	// Loss は赤字の見立ての1文です（2026-10-17・order_loss.go——受注の単価が見積の単価を下回る行だけ。空なら赤字でない）。
+	Loss string
 }
 
 // backlogGroup は「顧客×納期」1組＝**1回の納品の単位**です。
@@ -151,6 +153,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	byKey := map[string]*backlogGroup{}
 	migrating := 0
 	machines := newMachineLookup()
+	losses := newLossLookup(db, user) // 赤字の警告（2026-10-17・order_loss.go）
 	for _, id := range pageIDs {
 		// ⚠ **読めないページは黙って落とします**（見せ分け・C案）。
 		if !page.CanView(user, id) {
@@ -223,6 +226,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				MaterialOrdered: strings.TrimSpace(r.Values["material-ordered"]),
 				DeliveryNote:    strings.TrimSpace(r.Values["delivery-note"]),
 				Invoice:         strings.TrimSpace(r.Values["invoice"]),
+				Loss:            backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice),
 			})
 		}
 	}
@@ -387,11 +391,12 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			// ⚠ **鍵の列と計算の列は部品にしません**（`弊社品番`・`品番`・`品名`・`残`）。
 			// 鍵を書き換えると**次の書き込みが隣の行に当たります**。
 			st := statusOptionsHTML(r.Status)
-			b.WriteString(`<tr` + rowAttrs(r) + `>` +
+			// 赤字の行は薄赤と ⚠（2026-10-17・利用者:「2か所で良いと思います。」——受注ページの明細と、この受注残表）。
+			b.WriteString(`<tr` + rowAttrs(r) + lossRowAttr(r) + `>` +
 				machineCellHTML(r) +
 				ourItemCellHTML(r.OurItemNo) +
 				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
-				atomicCell(stdhtml.EscapeString(r.ItemName)) +
+				atomicCell(stdhtml.EscapeString(r.ItemName)+lossNoteHTML(r)) +
 				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
 				noPrintCell(strconv.Itoa(r.Quantity)) +
 				noPrintCell(numberFieldHTML("出荷済数量", shippedCell(r.Shipped))) +

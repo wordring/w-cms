@@ -2624,6 +2624,12 @@ body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
    納期別の表の弊社品番セルの背景を薄赤くする程度で十分」。薄赤は `ref-missing` と同じ色・
    同じ意味（機械が「このままでは困る」と言っている）。判定は backlog.go の ourItemCellHTML。 */
 #w-editor-content td.backlog-no-item { background: #fee2e2; }
+/* 赤字の行（2026-10-17・ext/toho/order_loss.go）——受注の単価が見積の単価を下回る。利用者:「赤字は警告して欲しいです」
+   「2か所で良いと思います。」。⚠ 色だけで分けない——品名の後ろに「⚠ 赤字 …」の文も出す（backlog-loss-note）。 */
+#w-editor-content tr.backlog-loss > td { background: #fee2e2; }
+#w-editor-content .backlog-loss-note { display: block; color: #b91c1c; font-size: 0.85em; white-space: normal; }
+/* 受注明細表の「見積との差」（同じ日）——赤字の行だけ文が入る。 */
+#w-editor-content td.order-loss-ng { color: #b91c1c; background: #fee2e2; white-space: normal; min-width: 12em; }
 
 /* ── 印刷（2026-09-21）────────────────────────────────────────────────
    ⚠ **隠す側を列挙する形は失敗しました**（同日）。`.rail` や `.site-footer` を
