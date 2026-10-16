@@ -7,7 +7,7 @@ package toho
 // →（2026-10-03）「見積依頼部材表の下で諸々入力してボタンを押すと「見積依頼ページ」が出来ます」。
 //
 //	見積依頼部材表（部材見積依頼の置き場・業者ごとに1枚）──足元の欄（差出人・仕入先・部材見積依頼日・備考）
-//	   →「部材見積依頼書ページを作る」→ 部材見積依頼書ページ（部材見積依頼／年／月・テンプレート「部材見積依頼書」を写す）
+//	   →「部材見積依頼書ページを作る」→ 部材見積依頼書ページ（記録／年／月／製造記録・テンプレート「部材見積依頼書」を写す）
 //	     タグ: 部材見積依頼番号（ページ番号）・仕入先・部材見積依頼日・部材見積依頼担当（差出人）・送付日・回答日（空で始まる）
 //	     部材見積依頼明細表: 見積依頼部材表の行（状態は「未回答」・単価は空——業者の返事を書く欄）
 //	     備考の節: 欄の備考（「○○用」など——紙では明細の下）
@@ -269,7 +269,7 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 //
 // 利用者:「専用の見積依頼書ページを作り、そこに入れるようにしましょうか？」——業者の値段の置き場を部材見積依頼明細表の単価の列1つに
 // そろえる（あとで作る単価表は部材見積依頼明細表だけを読めばよい）。返事を貰った見積なので、単価に値段・状態は「回答あり」・
-// 回答日は date（部材見積依頼日も date——依頼した日は分からない）。置き場は 部材見積依頼／年／月（date の年月）。
+// 回答日は date（部材見積依頼日も date——依頼した日は分からない）。置き場は 記録／年／月／製造記録（date の年月）。
 // 1回で1枚（業者×日付）。何枚も作り、二重に作らない記録を持つのは移す道具の仕事（実名を含む一覧を読むのでリポジトリの外）。
 func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
@@ -298,7 +298,7 @@ func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "rows": len(req.Lines)})
 }
 
-// createAnsweredRFQPage は返事の来た部材見積依頼書ページを `部材見積依頼／年／月` に1枚作ります——単価入り・回答あり・回答日と部材見積依頼日は date
+// createAnsweredRFQPage は返事の来た部材見積依頼書ページを `記録／年／月／製造記録` に1枚作ります——単価入り・回答あり・回答日と部材見積依頼日は date
 // （過去の見積もりの移し〔RFQImportAPIHandler〕と、移行期の返事から作る〔rfq_reply_make.go〕が共有する・2026-10-05 に切り出した）。
 // 断るときは HTTP の状態とともに返す。
 func createAnsweredRFQPage(user *auth.User, supplier, date, note string, lines []ourOrderLine) (string, int, error) {

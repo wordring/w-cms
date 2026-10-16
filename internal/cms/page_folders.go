@@ -3,7 +3,7 @@ package cms
 // ページの木を作る汎用の道具（2026-09-15 に intake.go から分けた）。
 //
 // **通信箱のためだけのものではありません**——下請け（ext/toho）の解析・整理・改訂、
-// アドレス帳（ext/comm/contacts）の取引先ページ、受注の `受注／年／月` がみな使います。
+// アドレス帳（ext/comm/contacts）の取引先ページ、拡張が組む年月のフォルダ（東邦の `記録／年／月`）がみな使います。
 // intake.go（通信箱の取り込み）に同居していたので、通信の語彙を `ext/comm` へ移すと
 // これらがまとめて壊れるところでした（組み替えの3段目の下ごしらえ・
 // docs/考察/【考察】通信拡張と下請け拡張への組み替え.md §3.2）。
@@ -157,7 +157,7 @@ func EnsureTopLevelBox(title, owner string) (string, error) {
 
 // EnsureDateFolders は root の下に年フォルダ・月フォルダを用意し、月フォルダを返します。
 //
-// 通信箱の取り込みが使う ensureDateFolderUnder と**同じ芯**です——受注の置き場も
+// 通信箱の取り込みが使う ensureDateFolderUnder と**同じ芯**です——受注の置き場も（2026-10-16 までは）
 // 年月で並べる（2026-09-06 ユーザー決定）ので、作法を2つ持たないよう口を開けました。
 func EnsureDateFolders(rootID, owner string, t time.Time) (string, error) {
 	return ensureDateFolderUnder(rootID, owner, t)

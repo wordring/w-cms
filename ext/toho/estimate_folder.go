@@ -9,7 +9,7 @@ package toho
 //
 //	見積フォルダ（トップ直下の「見積」）のビュー「見積書を作る」── 装置フォルダの番号 →「一覧を出す」
 //	   → 一時的な表（画面だけ・folder_pick.go）: 見積計算表1枚につき1行（ロット・確定単価・単価の行の備考）
-//	   → チェック・見積先・担当者・差出人 →「見積書を作る」→ 見積書ページ（見積／年／月）を開く
+//	   → チェック・見積先・担当者・差出人 →「見積書を作る」→ 見積書ページ（記録／年／月／依頼・2026-10-16 から）を開く
 //	   → そのページの足元の「📄 PDFを作る」（estimate_pdf.go）
 //
 //   - 行は**見積計算表ごと**——1つの加工製品に見積計算表は何枚もある（塗装あり・なし、ロットごと・【要求】見積 §4）。
@@ -48,7 +48,7 @@ func estimateFolderViewHTML(user *auth.User, pageIDInt int) string {
 	var b strings.Builder
 	b.WriteString(`<h3 class="materials-title">📄 見積書を作る（装置フォルダから）</h3>`)
 	b.WriteString(`<p class="unorder-help">装置フォルダのページ番号を書いて「一覧を出す」を押すと、その下の加工製品の<strong>見積表</strong>が` +
-		`1枚1行で並びます（ロットと単価）。チェックして「見積書を作る」を押すと、見積書ページ（見積／年／月）ができて開きます——` +
+		`1枚1行で並びます（ロットと単価）。チェックして「見積書を作る」を押すと、見積書ページ（記録／年／月／依頼）ができて開きます——` +
 		`PDF はそのページの「📄 PDFを作る」で。</p>`)
 	b.WriteString(`<div class="matsearch-form estimate-folder-form" data-w-remember="1">`)
 	b.WriteString(`<label class="matsearch-field"><span>装置フォルダ</span><input type="text" class="matsearch-input" data-estf="folder" placeholder="001234"/></label>`)

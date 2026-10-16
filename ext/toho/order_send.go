@@ -109,7 +109,7 @@ func OrderSentAPIHandler(w http.ResponseWriter, r *http.Request) {
 //
 // ⚠ **行が1つも変わらなくても ② はします**——再送では行がもう `発注済` のことがあり、
 // それでも部材発注日は再送した日です。
-// ⚠ 置き場（`部材発注／年／月`）は作った月のまま動かしません（ユーザー:「ずれて良いです」）。
+// ⚠ 置き場（`記録／年／月／製造記録`。2026-10-16 までは `部材発注／年／月`）は作った月のまま動かしません（ユーザー:「ずれて良いです」）。
 func markOrderSent(body, day string) (string, int) {
 	out, n := setOrderLineStatus(body, 0, OrderLineSent)
 	return replaceFirstFieldValue(out, PurchasedAtTag, day), n

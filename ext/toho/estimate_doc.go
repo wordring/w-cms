@@ -9,7 +9,7 @@ package toho
 // 金額〈税抜〉）・合計（税抜）・備考。正本は [【考察】見積の依頼と見積書.md] §3。
 //
 //	加工製品ページの見積計算表 ──「見積書に入れる」（客先・担当者・新しい見積書か作りかけへ足すか）
-//	   → 見積書ページ（見積／年／月・テンプレート「見積書」を写す）の見積明細表に1行
+//	   → 見積書ページ（記録／年／月／依頼・テンプレート「見積書」を写す）の見積明細表に1行
 //	     （弊社品番・品番・品名・数量＝ロット・単位・単価＝確定単価・備考＝単価の行の備考）
 //
 //   - **単価はその時点の値で写して固定**します（出した紙の値は、あとで見積計算表を直しても変わらない）。
@@ -281,7 +281,7 @@ func estimatesFor(user *auth.User, client string, limit int) []estimatePage {
 
 // AddToEstimateAPIHandler は POST /api/estimate/add です。入力: {product, index, into, client, person, signer}——
 // 加工製品ページ product の index 枚目（0から）の見積計算表を、見積書へ1行入れます。into が空なら新しい見積書を作ります
-// （見積／年／月）。
+// （記録／年／月／依頼）。
 func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -343,7 +343,7 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "new": true})
 }
 
-// newEstimatePage は見積書ページを `見積／年／月` に作り、lines を見積明細表に入れます（テンプレート「見積書」を写す）。
+// newEstimatePage は見積書ページを `記録／年／月／依頼` に作り、lines を見積明細表に入れます（テンプレート「見積書」を写す）。
 // 断ったときは w に書いて ok=false。client は社名を書く口（OrgNameForPage）を通した見積先です。
 // 見積計算表の「見積書に入れる」と、見積フォルダの「見積書を作る」（装置フォルダから選ぶ）が同じ道を通る。
 func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn, signerIn string, lines []estimateLine) (newID, client string, ok bool) {
