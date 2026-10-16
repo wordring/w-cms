@@ -98,4 +98,7 @@ func seedBoxTemplates(t *testing.T) {
 	write("000915", "000901", testRFQReplyTemplate())
 	// 書類の置き場「記録」（2026-10-16・record_box.go——記録／年／月／依頼・製造記録）。
 	write("000916", "000901", "<h1>"+RecordBoxTitle+"</h1>")
+	// 見積計算書（2026-10-16・estimate_calc_doc.go）。
+	write("000917", "000901", "<h1>"+EstimateCalcTemplate+`</h1><dl data-type="tags"><dt>`+OurItemNoTag+`</dt><dd><br/></dd><dt>`+
+		EstimateCalcDateTag+`</dt><dd><br/></dd><dt>`+PageKindTag+`</dt><dd>`+PageKindOurEstimateCalc+`</dd></dl>`)
 }

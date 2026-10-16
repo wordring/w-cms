@@ -10978,6 +10978,33 @@ function delegateClick(handlers) {
 // 見積表に書く（見積表が無い見積計算表の下では「📌 見積表を作って記録」——作ってから書く）。「⧉ このロットを写す」で
 // 見出し・見積計算表・見積表を組ごと写す。どちらも書けたらページを読み直す。利益率は見積表の欄を直接直す
 // （2026-10-01〜10-15 の「利益率を変える」欄と /api/estimate-rate はやめた）。
+// ── 見積計算書を作る（2026-10-16・ext/toho/estimate_calc_doc.go）──────────────────────────
+//
+// 利用者:「新しい見積計算書を作るボタンから始めてみましょう」。加工製品ページの「🧮 見積計算書」（サーバーが描いたクローム）の
+// 「➕ 新しい見積計算書を作る」で、いちばん新しい見積計算書（無ければこのページの「見積もり計算」）を写した見積計算書を
+// 記録／年／月／製造記録 に作り、そのページを開く。
+delegateClick([
+    ['.estimate-calc-new', async (btn) => {
+        const say = btn.parentElement && btn.parentElement.querySelector('.estimate-calc-say');
+        btn.disabled = true;
+        sayIn(say, '作っています…');
+        let r;
+        try {
+            r = await postJSON('/api/estimate-calc/new', { product: btn.getAttribute('data-ecalc-new') || '' });
+        } catch (e) {
+            sayIn(say, '⚠ 通信に失敗しました: ' + e, 'proc-why-ng');
+            btn.disabled = false;
+            return;
+        }
+        if (!r.ok) {
+            sayIn(say, '⚠ ' + ((r.data && r.data.message) || ('作れませんでした（' + r.status + '）')), 'proc-why-ng');
+            btn.disabled = false;
+            return;
+        }
+        location.href = '/' + r.data.page_id;
+    }],
+]);
+
 delegateClick([
     ['.estimate-record-go', (btn) => estimateBlockPost(btn, '/api/estimate/record', '.estimate-record-say', '記録しています…')],
     ['.estimate-dup-go', (btn) => estimateBlockPost(btn, '/api/estimate/duplicate', '.estimate-dup-say', '写しています…')],

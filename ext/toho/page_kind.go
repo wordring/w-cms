@@ -18,7 +18,12 @@ package toho
 //     （【要求】w-cmsとは §1「ページの種類をコードや DB に固定しません」）。
 // ─────────────────────────────────────────────────────────────────────────
 
-import "strings"
+import (
+	"strings"
+
+	"w-cms/internal/cms"
+	"w-cms/internal/database"
+)
 
 const (
 	// PageKindTag はページの種類を名乗るタグの名前です。
@@ -63,4 +68,13 @@ func issuerTitle(kind, title string) string {
 		}
 	}
 	return title
+}
+
+// pageKindOf はページの `ページ種類` の値を返します（無ければ空）。
+func pageKindOf(id int) string {
+	tags, err := cms.TagsOfPage(database.DB, id)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cms.FirstTag(tags, PageKindTag))
 }

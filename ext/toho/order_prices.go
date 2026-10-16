@@ -270,7 +270,15 @@ func insertOrderPrices(ctx *cms.MirrorContext, tbl *html.Node, sectionEnd bool) 
 	if ctx.Counter("order-prices") > 0 || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
 		return
 	}
+	// 見積計算書のページ（2026-10-16・estimate_calc_doc.go）には出さない——受注・見積の単価は品物の台帳（加工製品ページ）の鏡。
+	// 加工製品ページでは、上に「🧮 見積計算書」（最新の計算と過去の計算・新しく作るボタン）を添える。
 	frag := orderPricesHTML(orderPricesForProduct(ctx.DB, ctx.Viewer, ctx.PageID))
+	switch pageKindOf(ctx.PageID) {
+	case PageKindOurEstimateCalc:
+		return
+	case PageKindProduct:
+		frag = estimateCalcsHTML(ctx.PageID, estimateCalcsOf(ctx.Viewer, ctx.PageID)) + frag
+	}
 	if p := tbl.Parent; sectionEnd && p != nil && p.Data == "section" {
 		appendHTML(p, frag)
 		return
