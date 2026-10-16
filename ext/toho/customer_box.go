@@ -41,10 +41,10 @@ import (
 // どうでしょう？」——品物の台帳と、弊社の動きの記録〔記録／年／月／製造記録〕を名前で分ける）。同じ日の夕方までは「取引先」。
 const CustomerBoxTitle = "製造台帳"
 
-// CustomerBoxPageID はトップ直下の製造ページを返します（無ければ ok=false）。
+// CustomerBoxPageID はトップ直下の製造台帳ページを返します（無ければ ok=false）。
 func CustomerBoxPageID() (string, bool) { return cms.TopLevelPageByTitle(CustomerBoxTitle) }
 
-// EnsureCustomerBox は製造ページを返し、**無ければ作ります**。
+// EnsureCustomerBox は製造台帳ページを返し、**無ければ作ります**。
 //
 // ただの置き場なので、無いからと整理を行き止まりにする理由がありません
 // （アドレス帳の箱と同じ扱い）。管理画面の「置き場」からも作れます。

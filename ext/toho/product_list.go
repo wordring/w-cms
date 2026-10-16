@@ -39,7 +39,7 @@ import (
 const ProductListViewType = "product-list"
 
 // productListDepth は下へ辿る世代の上限です（加工製品／装置名称／品目／旧版 で足りる。
-// 製造の根に置いたときの 社名／加工製品 の2段も入れて余裕を持たせる）。
+// 製造台帳の根に置いたときの 社名 の段も入れて余裕を持たせる）。
 const productListDepth = 8
 
 // productListRow は一覧の1行（加工製品ページ1枚）です。
@@ -242,7 +242,7 @@ func productListAll(user *auth.User) ([]productListRow, error) {
 
 	kindOf := func(id int) string { return strings.TrimSpace(firstOf(tags[id][PageKindTag])) }
 	isTop := func(id int) bool { p, ok := pages[id]; return ok && p.parent == 0 }
-	// 種類の無いフォルダを木の形で読む——トップ直下の「製造」の子なら社名。
+	// 種類の無いフォルダを木の形で読む——トップ直下の「製造台帳」の子なら社名。
 	untaggedCompany := func(id int) bool {
 		p, ok := pages[id]
 		if !ok || kindOf(id) != "" {
@@ -282,7 +282,7 @@ func productListAll(user *auth.User) ([]productListRow, error) {
 		if company != 0 && canView(company) {
 			row.Company = pages[company].title
 		}
-		// 装置名称——親が装置のフォルダなら。種類の無い親は、社名の下にあって社名でも箱でもないものだけ。
+		// 装置名称——親が装置のフォルダなら。種類の無い親は、社名の直下にあるものだけ。
 		if par := p.parent; par != 0 && canView(par) {
 			switch k := kindOf(par); {
 			case k == PageKindMachine:

@@ -193,7 +193,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 整理を待つ図面と既にある加工製品の図面を、Gemini に見比べさせる口（2026-09-30・filing_duplicate.go）。
 		// 押したときだけ呼ぶ——同じファイルなら Gemini を呼ばずに答える。
 		{Pattern: "/api/compare-drawings", Handler: CompareDrawingsAPIHandler},
-		// 加工製品の置き場（製造／社名／加工製品／装置名称）を用意する口（2026-09-29・
+		// 加工製品の置き場（製造台帳／社名／装置名称）を用意する口（2026-09-29・
 		// ワンノートの移植の道具が使う。木の形を知るのは product_tree.go の1つ）。
 		{Pattern: "/api/product-folder", Handler: ProductFolderAPIHandler},
 		// ⚠ 受注の行を結び直す管理者の口（/api/order-items/relink）は 2026-10-01 に外した——受注フォルダを

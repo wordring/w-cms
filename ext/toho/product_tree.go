@@ -342,8 +342,8 @@ func ProductFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := ensureProductPath(user, customer, machine)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, cms.ErrNoPageTemplate) {
-			status = http.StatusConflict // テンプレートを置けば通る（ほかの「テンプレートが無い」と同じ 409）
+		if errors.Is(err, cms.ErrNoPageTemplate) || errors.Is(err, cms.ErrNoBoxTemplate) {
+			status = http.StatusConflict // テンプレートを置けば通る（ほかの「テンプレートが無い」と同じ 409。置き場「製造台帳」のテンプレートも）
 		}
 		cms.JSONFail(w, status, err.Error())
 		return
