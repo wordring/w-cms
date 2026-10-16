@@ -135,7 +135,11 @@ func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []str
 	if _, taken := findChildByTitle(dstPageID, title); taken {
 		title += "（" + time.Now().In(time.Local).Format("2006-01-02") + "）"
 	}
-	body := "<h1>" + htmlEscape(title) + "</h1>" + strings.Join(blocks, "")
+	// **旧版は `ページ種類：加工製品の旧版` を名乗ります**（2026-10-16・page_kind.go）——木の形に頼らずに
+	// 最新版と見分けるためです。
+	var kind strings.Builder
+	cms.WriteTag(&kind, PageKindTag, PageKindProductOld)
+	body := "<h1>" + htmlEscape(title) + "</h1>" + `<dl data-type="tags">` + kind.String() + `</dl>` + strings.Join(blocks, "")
 	return cms.CreateChildPage(dstPageID, user.Username, body)
 }
 

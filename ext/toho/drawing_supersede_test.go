@@ -59,6 +59,10 @@ func TestSupersedeDrawingMovesOldToChild(t *testing.T) {
 	if ob, _ := extractDrawingSections(oldBody); len(ob) != 1 || drawingNoOf(ob[0]) != "X1" || !strings.Contains(ob[0], "file-view") {
 		t.Errorf("旧版ページに古い図面がブロックごと入っていません:\n%s", oldBody)
 	}
+	// 旧版は `ページ種類：加工製品の旧版` を名乗る（2026-10-16）——木の形に頼らずに最新版と見分けるため。
+	if !strings.Contains(oldBody, "<dt>"+PageKindTag+"</dt><dd>"+PageKindProductOld+"</dd>") {
+		t.Errorf("旧版ページに「%s：%s」がありません:\n%s", PageKindTag, PageKindProductOld, oldBody)
+	}
 	// 改訂明細表——X2 の行が足され、X1 の行は旧版ページへのリンク。
 	if !strings.Contains(after, "<td>X2</td>") {
 		t.Errorf("改訂明細表に X2 の行がありません:\n%s", after)
