@@ -162,8 +162,10 @@ const check = (label, ok, note = '') => {
     // ④ 鏡の中の絞り込みの欄を憶える（2026-09-30・data-w-remember）——利用者:「チェックボタンの状態をブラウザに記憶しては
     //    どうでしょうか？汎用的な機構としてです」。加工製品の一覧の区分の印と文字を変え、開き直しても戻り、**表も絞られている**こと。
     host = await makePage(page, '<h1>【E2E】加工製品の一覧の記録</h1><section data-mirror="加工製品の一覧"></section>');
-    kids.push(await makePage(page, '<h1>【E2E】通常の品</h1><dl data-type="tags"><dt>図面番号</dt><dd>E2E-PL-001</dd></dl>', host));
-    kids.push(await makePage(page, '<h1>【E2E】試作の品</h1><dl data-type="tags"><dt>図面番号</dt><dd>E2E-PL-002</dd>' +
+    // ⚠ 加工製品の一覧は `ページ種類：加工製品` のページを全部集める（2026-10-16）——本物の加工製品も並ぶので、
+    //    文字の絞り込み（E2E-PL）でこの試験の2行に絞ってから見る。
+    kids.push(await makePage(page, '<h1>【E2E】通常の品</h1><dl data-type="tags"><dt>ページ種類</dt><dd>加工製品</dd><dt>図面番号</dt><dd>E2E-PL-001</dd></dl>', host));
+    kids.push(await makePage(page, '<h1>【E2E】試作の品</h1><dl data-type="tags"><dt>ページ種類</dt><dd>加工製品</dd><dt>図面番号</dt><dd>E2E-PL-002</dd>' +
       '<dt>区分</dt><dd>試作</dd></dl>', host));
     check('一覧の当て先を作れた', !!host && kids.every(Boolean), host + ' ' + kids.join(','));
     const plist = () => page.evaluate(() => {
@@ -189,7 +191,7 @@ const check = (label, ok, note = '') => {
     const pa = await plist();
     check('開き直しても「通常」の印は外れたまま・文字も残る', !pa.normal && pa.text === 'E2E-PL', JSON.stringify(pa));
     check('戻した印で表も絞られている（印だけ戻っていない）',
-      pa.shown.includes('試作の品') && !pa.shown.includes('通常の品') && pa.count.includes('全 2 件'), JSON.stringify(pa));
+      pa.shown.includes('試作の品') && !pa.shown.includes('通常の品') && /^1 件（全 \d+ 件）$/.test(pa.count), JSON.stringify(pa));
     await page.evaluate((h) => {
       const c = JSON.parse(localStorage.getItem('wcms.view'));
       delete c.pages[h];

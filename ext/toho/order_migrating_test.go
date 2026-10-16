@@ -26,7 +26,8 @@ func TestBacklogSkipsMigratingOrders(t *testing.T) {
 	seedOrder(t, 193, 191, "あけぼの精工", "2026-10-15",
 		item("A-2", "移した注文", "10", "2026-10-15", ""))
 	// 193 に「移行中」を付け直す。
-	body := `<h1>受注</h1><dl data-type="tags"><dt>発注元</dt><dd>あけぼの精工</dd>` +
+	body := `<h1>受注</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindCustomerOrder + `</dd>` +
+		`<dt>発注元</dt><dd>あけぼの精工</dd>` +
 		`<dt>納期</dt><dd>2026-10-15</dd><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
 		`<table><caption>受注明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
@@ -36,7 +37,7 @@ func TestBacklogSkipsMigratingOrders(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gs, mig := backlogScan(adminUser(), 191)
+	gs, mig := backlogScan(adminUser())
 	if mig != 1 {
 		t.Errorf("移行中で飛ばした枚数が %d です（1のはず）", mig)
 	}

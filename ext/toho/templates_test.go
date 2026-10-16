@@ -27,6 +27,12 @@ func emptyTagsDL(names ...string) string {
 	return b.String()
 }
 
+// kindTagsDL は emptyTagsDL の末尾に `ページ種類` を足したものです（2026-10-16——職場のテンプレートは、道具が
+// 可変タグの末尾へ書き足した形）。
+func kindTagsDL(kind string, names ...string) string {
+	return strings.TrimSuffix(emptyTagsDL(names...), `</dl>`) + `<dt>` + PageKindTag + `</dt><dd>` + kind + `</dd></dl>`
+}
+
 // emptyVocabTable はキャプション・見出しの行・空の見本の行だけの表です（スラッシュメニューで挿す形）。
 func emptyVocabTable(vocabType string) string {
 	var row strings.Builder
@@ -39,7 +45,7 @@ func emptyVocabTable(vocabType string) string {
 
 func testOrderPageTemplate() string {
 	return `<h1>` + OrderPageTemplate + `</h1>` +
-		emptyTagsDL(OrderNoTag, OrderClientTag, OrderedAtTag, DueDateTag, SubtotalTag, TaxTag, TotalTag, SourceRefTag) +
+		kindTagsDL(PageKindCustomerOrder, OrderNoTag, OrderClientTag, OrderedAtTag, DueDateTag, SubtotalTag, TaxTag, TotalTag, SourceRefTag) +
 		`<details><summary>` + sourcePDFCaption + `</summary><section data-type="file-view" data-ref=""></section></details>` +
 		`<details><summary>` + sourceTableCaption + `</summary><p><br/></p></details>` +
 		emptyVocabTable(clientOrderItemsType)
@@ -48,7 +54,7 @@ func testOrderPageTemplate() string {
 // testEstimateTemplate は見積書ページのテンプレートです（2026-10-01・職場のテンプレート／東邦／見積書と同じ形）。
 func testEstimateTemplate() string {
 	return `<h1>` + EstimateTemplate + `</h1>` +
-		emptyTagsDL(EstimateNoTag, EstimateClientTag, EstimatePersonTag, EstimateDateTag, EstimateDueTag,
+		kindTagsDL("弊社見積書", EstimateNoTag, EstimateClientTag, EstimatePersonTag, EstimateDateTag, EstimateDueTag,
 			EstimatePlaceTag, EstimateTradeTag, EstimateValidTag, EstimateSignerTag) +
 		emptyVocabTable(EstimateItemsType) +
 		`<section><h2>` + estimateNoteHeading + `</h2><p><br/></p></section>`
@@ -56,7 +62,7 @@ func testEstimateTemplate() string {
 
 func testRFQTemplate() string {
 	return `<h1>` + RFQTemplate + `</h1>` +
-		emptyTagsDL(RFQNoTag, SupplierTag, RFQDateTag, RFQSignerTag, EstimateSentTag, RFQAnsweredTag) +
+		kindTagsDL("弊社部材見積依頼書", RFQNoTag, SupplierTag, RFQDateTag, RFQSignerTag, EstimateSentTag, RFQAnsweredTag) +
 		emptyVocabTable(RFQItemsType) +
 		`<section><h2>` + rfqNoteHeading + `</h2><p><br/></p></section>` + cms.ViewMarkerHTML(RFQSendViewType)
 }
@@ -64,7 +70,7 @@ func testRFQTemplate() string {
 // testRFQReplyTemplate は部材見積依頼の返事ページのテンプレートです（2026-10-05・職場のテンプレート／東邦／部材見積依頼の返事と同じ形）。
 func testRFQReplyTemplate() string {
 	return `<h1>` + RFQReplyTemplate + `</h1>` +
-		emptyTagsDL(SupplierTag, RFQAnsweredTag, RFQReplyReadNoTag, RFQReplyLinkTag) +
+		kindTagsDL("業者見積書", SupplierTag, RFQAnsweredTag, RFQReplyReadNoTag, RFQReplyLinkTag) +
 		cms.ViewMarkerHTML(RFQReplyMatchViewType) +
 		`<details><summary>業者の返事（原本）</summary><section data-type="file-view" data-ref=""></section></details>` +
 		`<details open><summary>` + rfqReplySourceCaption + `</summary><p><br/></p></details>`
@@ -72,7 +78,7 @@ func testRFQReplyTemplate() string {
 
 func testPurchaseOrderTemplate() string {
 	return `<h1>` + PurchaseOrderTemplate + `</h1>` +
-		emptyTagsDL(PurchaseNoTag, SupplierTag, PurchasedAtTag, DueDateTag, OrderSignerTag) +
+		kindTagsDL("弊社部材発注書", PurchaseNoTag, SupplierTag, PurchasedAtTag, DueDateTag, OrderSignerTag) +
 		emptyVocabTable(ourOrderItemsType) +
 		`<section><h2>` + orderNoteHeading + `</h2><p><br/></p></section>`
 }
@@ -81,7 +87,7 @@ func testPurchaseOrderTemplate() string {
 // 保存した形のまま**にしてあります（字下げが機械の作るページに残らないことも確かめるため）。
 func testProductTemplate() string {
 	return "<h1 data-id=\"0gg4\">加工製品</h1>\n" +
-		"<dl data-id=\"vui2\" data-type=\"tags\">\n    <dt>品番</dt>\n    <dd><br/></dd>\n</dl>\n" +
+		"<dl data-id=\"vui2\" data-type=\"tags\">\n    <dt>品番</dt>\n    <dd><br/></dd>\n<dt>" + PageKindTag + "</dt><dd>" + PageKindProduct + "</dd></dl>\n" +
 		"<section data-id=\"oyut\">\n    <h2>図面</h2>\n    <dl data-id=\"gt6x\" data-type=\"tags\">\n" +
 		"        <dt>図面番号</dt>\n        <dd><br/></dd>\n        <dt>図面名称</dt>\n        <dd><br/></dd>\n" +
 		"        <dt>装置名称</dt>\n        <dd><br/></dd>\n        <dt>客先</dt>\n        <dd><br/></dd>\n    </dl>\n" +

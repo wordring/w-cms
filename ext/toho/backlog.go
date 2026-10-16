@@ -18,9 +18,11 @@ package toho
 // ⚠ **残っている行だけ出します**（`数量 - 出荷済数量 > 0`）。全部出すと、納品済みの
 // 行に埋もれて「あと何を作るか」が見えません——**受注残表の役目はそこだけ**です。
 //
-// ⚠ **スコープは「このビューを置いたページの子孫」**です。受注箱に置けば全部、
-// `受注／2026年／09月` に置けばその月だけ。**箱を名前で決め打ちしません**
-// ——決め打ちすると、置き場所を変えた日に黙って空になります。
+// ⚠ **集めるのは `ページ種類：顧客発注書` のページ全部です**（2026-10-16・page_kind.go）。
+// **どこに置いても同じものが見えます**（利用者:「どこにタグを置いても場所に依存せずみられる必要があります」・
+// 【考察】全体の設計 §4.3）。それまでは「このビューを置いたページの子孫」でした——受注ページを
+// 記録の年月（`記録／年／月／依頼`）へ移すと、受注フォルダの受注残表が黙って空になるためです。
+// **箱も木の場所も見ません**——整理を待って通信記録の下にある受注ページも並びます。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -111,9 +113,9 @@ type backlogGroup struct {
 	Rows   []backlogRow
 }
 
-// backlogGroups は指定ページの子孫から受注残を集め、顧客×納期で束ねて返します。
-func backlogGroups(user *auth.User, rootID int) []backlogGroup {
-	gs, _ := backlogScan(user, rootID)
+// backlogGroups は受注ページ（`ページ種類：顧客発注書`）から受注残を集め、顧客×納期で束ねて返します。
+func backlogGroups(user *auth.User) []backlogGroup {
+	gs, _ := backlogScan(user)
 	return gs
 }
 
@@ -123,12 +125,17 @@ func backlogGroups(user *auth.User, rootID int) []backlogGroup {
 // 移すと、**納め済みの注文**も受注ページになります。確かめる前に受注残へ並ぶと、終わった仕事が
 // 「残っている」に化けます。加工製品ページの「移行中」と同じく、**印が在るだけで止め**、人が
 // 確かめて印を消したら並びます。⚠ **黙っては欠かさず、枚数を知らせます**（backlogViewHTML）。
-func backlogScan(user *auth.User, rootID int) ([]backlogGroup, int) {
+//
+// ⚠ **受注明細表を持っていても、`ページ種類：顧客発注書` の無いページは数えません**——種類はタグで名乗る
+// 決まりです（2026-10-16）。今のページには道具で書き足しました（`デスクトップ\w-cms\道具\ページ種類_20261016\`）。
+func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	db := database.DB
 	// ⚠ **先に読み切ってから解釈します**——行を読みながら別のクエリを投げると、
 	// `:memory:` では別の空DBに当たります（2026-09-03 に本番で踏んだ罠）。
 	rows, err := db.Query(
-		`SELECT DISTINCT page_id FROM vocab_index WHERE data_type = ?`, clientOrderItemsType)
+		`SELECT DISTINCT v.page_id FROM vocab_index v
+		  JOIN page_tags t ON t.page_id = v.page_id AND t.name = ? AND t.value = ?
+		 WHERE v.data_type = ?`, PageKindTag, PageKindCustomerOrder, clientOrderItemsType)
 	if err != nil {
 		return nil, 0
 	}
@@ -145,10 +152,6 @@ func backlogScan(user *auth.User, rootID int) ([]backlogGroup, int) {
 	migrating := 0
 	machines := newMachineLookup()
 	for _, id := range pageIDs {
-		// ⚠ **子孫だけ**（自分自身は受注ページではないので含めない）。
-		if !cms.IsDescendantOf(db, id, rootID) {
-			continue
-		}
 		// ⚠ **読めないページは黙って落とします**（見せ分け・C案）。
 		if !page.CanView(user, id) {
 			continue
@@ -299,12 +302,14 @@ func linkBacklogRows(user *auth.User, groups []backlogGroup) int {
 }
 
 // backlogViewHTML は受注残表を組みます（サーバー事前描画）。
-func backlogViewHTML(user *auth.User, pageIDInt int) string {
-	groups, migrating := backlogScan(user, pageIDInt)
+//
+// ⚠ **置いたページは見ません**（2026-10-16）——どこに置いても同じ受注残が出ます。
+func backlogViewHTML(user *auth.User, _ int) string {
+	groups, migrating := backlogScan(user)
 	// 空いている `弊社品番` を、いま在る加工製品ページで埋めてから描く（linkBacklogRows）。
 	// 書いたら読み直す——索引は書いたときに直っている（RewriteBody → SyncIndex）。
 	if linkBacklogRows(user, groups) > 0 {
-		groups, migrating = backlogScan(user, pageIDInt)
+		groups, migrating = backlogScan(user)
 	}
 	// ⚠ **移行中で飛ばした受注ページの枚数を言います**——言わないと「移した注文が出てこない」を
 	//    集計の壊れと見分けられません。
@@ -314,8 +319,8 @@ func backlogViewHTML(user *auth.User, pageIDInt int) string {
 			` 枚は入れていません（確かめたら、そのページの「` + MigratingTag + `」のタグを消すと並びます）。</p>`
 	}
 	if len(groups) == 0 {
-		return `<p class="child-list-empty">受注残はありません（このページの下に、` +
-			`まだ出していない明細がありません）。</p>` + migNote
+		return `<p class="child-list-empty">受注残はありません（受注ページ〔` + PageKindTag + `：` + PageKindCustomerOrder +
+			`〕に、まだ出していない明細がありません）。</p>` + migNote
 	}
 	var b strings.Builder
 	b.WriteString(backlogTotalHTML(backlogTotalOf(groups)))

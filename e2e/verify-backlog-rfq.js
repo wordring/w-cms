@@ -36,7 +36,9 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   const sent = [];
   const run = async () => {
     if (!root) { check(false, '当て先のページを作れません'); return; }
-    order = await makePage(page, '<h1>受注 E2E-1</h1><dl data-type="tags"><dt>発注書番号</dt><dd>E2E-1</dd><dt>発注元</dt><dd>E2E商店</dd>' +
+    // ⚠ 受注残表は `ページ種類：顧客発注書` のページを全部集める（2026-10-16）——本物の受注の行も並ぶので、
+    //    下の確かめは**この試験の受注ページの行だけ**を見る（data-order で絞る）。
+    order = await makePage(page, '<h1>受注 E2E-1</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-1</dd><dt>発注元</dt><dd>E2E商店</dd>' +
       '<dt>発注日</dt><dd>2026-10-04</dd><dt>納期</dt><dd>2026-10-31</dd></dl>' +
       '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th></tr>' +
       `<tr><td>${root}</td><td>E2E-BL-1</td><td>E2E部品</td><td>10</td><td>3</td><td>未着手</td></tr>` +
@@ -57,14 +59,15 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     check(head !== null && head.includes('no-print'), '受注残表の右端に「部材見積依頼」の列（紙に出さない印）', String(head));
     const picks = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content .backlog-table input[type=checkbox]'))
       .filter((c) => c.classList.contains('backlog-rfq-pick') || c.title.includes('部材見積依頼'))
-      .map((c) => ({ enabled: !c.disabled, product: c.dataset.product || '', lot: c.dataset.lot || '', order: c.dataset.order || '', title: c.title })));
+      .map((c) => ({ enabled: !c.disabled, product: c.dataset.product || '', lot: c.dataset.lot || '', order: c.dataset.order || '', title: c.title, sheet: (c.closest('section.backlog-sheet') || {}).textContent || '' })))
+      .then((all) => all.filter((p) => p.order === order || p.sheet.includes('E2E商店')));
     const ok = picks.find((p) => p.enabled);
     check(!!ok && ok.product === root && ok.lot === '7' && ok.order === order, '選ぶ欄は弊社品番・受注残（10 − 3 = 7）・受注ページを持つ', JSON.stringify(picks));
     check(picks.some((p) => !p.enabled && /弊社品番が空/.test(p.title)), '弊社品番が空の行は選べない（理由を出す）', JSON.stringify(picks));
 
     // ② 紙には出ない——受注残表の 🖨 は1枚の写しを見えない枠（#w-print-frame）に置いて刷る。枠の中で、印刷の見た目のとき
     //    選ぶ列が消えること・送るボタン（表の外）は写しに入らないことを見る。
-    await page.click('#w-editor-content .backlog-print');
+    await page.locator('#w-editor-content section.backlog-sheet', { hasText: 'E2E商店' }).locator('.backlog-print').click();
     await page.waitForFunction(() => {
       const f = document.getElementById('w-print-frame');
       return f && f.getAttribute('data-printed') === '1';
@@ -89,7 +92,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     check(/選んでください/.test(say) && sent.length === 0, '何も選ばずに押すと選ぶように言う（送らない）', say);
 
     // ④ 選んで押す
-    await page.check('#w-editor-content .backlog-rfq-pick');
+    await page.check(`#w-editor-content .backlog-rfq-pick[data-order="${order}"]`);
     await page.click('#w-editor-content .backlog-rfq-go');
     await page.waitForFunction(() => /行入れました/.test((document.querySelector('#w-editor-content .backlog-rfq-say') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
     const body = sent[0] || {};

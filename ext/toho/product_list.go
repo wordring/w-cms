@@ -8,10 +8,16 @@ package toho
 // 見積だけを**見る**場所が要ります——フォルダを開けば並んでいた、の代わりです。
 //
 // **鏡です**（本文には `<section data-mirror="加工製品の一覧"></section>` だけ）。
-// 置いたページの下にある加工製品ページを索引から毎回集めるので、整理で増えても・
-// 区分を直しても、書き直す手間がありません。置き場は「製造の加工製品」のテンプレート
-// （社名の下の「加工製品」の箱）ですが、**どこに置いてもその下を集めます**（製造の根に
-// 置けば全社の分）。
+// 加工製品ページを索引から毎回集めるので、整理で増えても・区分を直しても、書き直す手間がありません。
+//
+// ⚠ **集めるのは `ページ種類：加工製品` のページ全部です**（2026-10-16・page_kind.go）。**どこに置いても
+// 同じものが見えます**（利用者:「加工製品の一覧のビューはどこにおいても機能するようにフォルダではなくDBから
+// 一覧を作ってはどうでしょう」・【考察】全体の設計 §4.3・§4.4）。それまでは「置いたページの下」でした。
+// 会社ごとに見るのは、**欄の「社名」で絞ります**（絞り込みはページごとにブラウザが憶える）。
+// 旧版は `ページ種類：加工製品の旧版` なので、木の形を見ずに外れます。
+//
+// 整理の候補探し（filing.go・filing_search.go・folder_pick.go）は、いまも「その会社・フォルダの下」を
+// 探します（`productListRows`）——あれは一覧ではなく、置き場の中の相手を探す道具だからです。
 //
 // **絞り込みは画面の中だけ**で行います（`app.js` の「加工製品の一覧」）——1社の加工製品は
 // 数百枚なので全部を描いて隠すほうが速く、打つたびにサーバーへ聞く理由がありません。
@@ -40,6 +46,7 @@ const productListDepth = 8
 type productListRow struct {
 	PageID    int
 	Title     string
+	Company   string // 社名のフォルダの題（productListAll だけが埋める。整理を待つページは空）
 	Machine   string // 親のページの題（装置名称）
 	// DrawingNo・PartNo は**全部の値**を「・」で繋いだものです——1ページに図面が何枚もあれば図面番号も
 	// その数だけあり（図面1枚ごとに図面ブロック・2026-09-29）、品番も2つ持つページがあります（利用者:
@@ -176,37 +183,212 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 	return out, nil
 }
 
+// productListAll は `ページ種類：加工製品` のページを全部、社名・装置名称・題の順で返します（一覧のビューが使う）。
+//
+// 社名と装置名称は**行に添えるだけ**です（絞り込みと並べ替えのため）——どのページを並べるかは、タグだけで決めます。
+//   - 装置名称: 親のフォルダが `ページ種類：装置` ならその題。
+//   - 社名: 上へたどって最初の `ページ種類：社名` のフォルダの題。
+//
+// ⚠ **フォルダの種類に頼りすぎない**（利用者）——機械が新しく作るフォルダには、まだ `ページ種類` が付きません
+// （【考察】全体の設計 §5.3 の3番で足す）。種類の無いフォルダは、木の形で読みます。トップ直下の「製造」の子なら社名、
+// それ以外で社名の下にあれば装置名称です（社名の下の「加工製品」の箱〔なくす予定・§4.4〕は除く）。
+func productListAll(user *auth.User) ([]productListRow, error) {
+	db := database.DB
+	type pg struct {
+		parent int
+		title  string
+	}
+	// **先に読み切ってから絞ります**（行を読みながら別のクエリを投げない・:memory: の罠）。
+	pages := map[int]pg{}
+	rows, err := db.Query(`SELECT id, COALESCE(parent_id, 0), COALESCE(title, '') FROM pages`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id int
+		var x pg
+		if err := rows.Scan(&id, &x.parent, &x.title); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		pages[id] = x
+	}
+	rows.Close()
+
+	names := append(productListTags(), PageKindTag)
+	marks := strings.TrimSuffix(strings.Repeat("?,", len(names)), ",")
+	args := make([]any, 0, len(names))
+	for _, n := range names {
+		args = append(args, n)
+	}
+	tags := map[int]map[string][]string{}
+	trows, err := db.Query(`SELECT page_id, name, value FROM page_tags WHERE name IN (`+marks+`) ORDER BY page_id, seq`, args...)
+	if err != nil {
+		return nil, err
+	}
+	for trows.Next() {
+		var id int
+		var name, value string
+		if err := trows.Scan(&id, &name, &value); err != nil {
+			trows.Close()
+			return nil, err
+		}
+		if tags[id] == nil {
+			tags[id] = map[string][]string{}
+		}
+		tags[id][name] = append(tags[id][name], value)
+	}
+	trows.Close()
+
+	kindOf := func(id int) string { return strings.TrimSpace(firstOf(tags[id][PageKindTag])) }
+	isTop := func(id int) bool { p, ok := pages[id]; return ok && p.parent == 0 }
+	// 種類の無いフォルダを木の形で読む——トップ直下の「製造」の子なら社名。
+	untaggedCompany := func(id int) bool {
+		p, ok := pages[id]
+		if !ok || kindOf(id) != "" {
+			return false
+		}
+		box, ok := pages[p.parent]
+		return ok && isTop(p.parent) && box.title == CustomerBoxTitle
+	}
+	isCompany := func(id int) bool { return kindOf(id) == PageKindCompany || untaggedCompany(id) }
+	companyOf := func(id int) int {
+		cur := pages[id].parent
+		for n := 0; cur != 0 && n < productListDepth; n++ {
+			if isCompany(cur) {
+				return cur
+			}
+			cur = pages[cur].parent
+		}
+		return 0
+	}
+
+	canView := viewCheck(user)
+	var out []productListRow
+	for id, t := range tags {
+		if strings.TrimSpace(firstOf(t[PageKindTag])) != PageKindProduct || cms.IsTemplateArea(formatID(id)) || !canView(id) {
+			continue
+		}
+		p := pages[id]
+		row := productListRow{
+			PageID:    id,
+			Title:     p.title,
+			DrawingNo: joinUnique(t[DrawingNoTag]),
+			PartNo:    joinUnique(t["品番"]),
+			Migrating: len(t[MigratingTag]) > 0,
+		}
+		row.Names = otherNames(p.title, t[ItemNameTag], t[DrawingNameTag])
+		company := companyOf(id)
+		if company != 0 && canView(company) {
+			row.Company = pages[company].title
+		}
+		// 装置名称——親が装置のフォルダなら。種類の無い親は、社名の下にあって社名でも箱でもないものだけ。
+		if par := p.parent; par != 0 && canView(par) {
+			switch k := kindOf(par); {
+			case k == PageKindMachine:
+				row.Machine = pages[par].title
+			case k == "" && company != 0 && par != company && pages[par].title != ProductsBoxTitle:
+				row.Machine = pages[par].title
+			}
+		}
+		row.Kinds, _ = cleanProductKinds(t[ProductKindTag])
+		if row.Kinds == nil && len(t[ProductKindTag]) > 0 {
+			// 選択肢に無い値（設定から消した区分など）も、黙って落とさずそのまま見せます。
+			row.Kinds = append([]string{}, t[ProductKindTag]...)
+		}
+		out = append(out, row)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if (a.Company == "") != (b.Company == "") {
+			return b.Company == "" // 社名の分からないもの（整理を待つページ）は最後
+		}
+		if a.Company != b.Company {
+			return a.Company < b.Company
+		}
+		if (a.Machine == "") != (b.Machine == "") {
+			return b.Machine == "" // 装置の分からないものは、その社の最後
+		}
+		if a.Machine != b.Machine {
+			return a.Machine < b.Machine
+		}
+		if a.Title != b.Title {
+			return a.Title < b.Title
+		}
+		return a.PageID < b.PageID
+	})
+	return out, nil
+}
+
+// hasNoCompany は、社名の分からない行（整理を待つページ）があるかを返します。
+func hasNoCompany(list []productListRow) bool {
+	for _, r := range list {
+		if r.Company == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// firstOf は並びの最初の値を返します（無ければ空）。
+func firstOf(vals []string) string {
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[0]
+}
+
 // productListViewHTML は「加工製品の一覧」を描きます（絞り込みの欄つき）。
-func productListViewHTML(user *auth.User, pageIDInt int) string {
+//
+// ⚠ **置いたページは見ません**（2026-10-16）——どこに置いても同じ一覧が出ます。会社は欄の「社名」で絞ります。
+func productListViewHTML(user *auth.User, _ int) string {
 	head := `<h3 class="materials-title">🗂 加工製品の一覧</h3>`
-	list, err := productListRows(user, pageIDInt)
+	list, err := productListAll(user)
 	if err != nil {
 		return head + `<p class="view-error">一覧を作れませんでした。</p>`
 	}
 	if len(list) == 0 {
 		// ⚠ **0件も黙りません**——「無い」と「数えていない」を見分けるため。
-		return head + `<p class="materials-empty">この下に加工製品のページはまだありません` +
-			`（整理を実行すると、装置名称ごとにここへ並びます）。</p>`
+		return head + `<p class="materials-empty">加工製品のページ（` + PageKindTag + `：` + PageKindProduct + `）はまだありません` +
+			`（整理を実行すると、社名・装置名称ごとにここへ並びます）。</p>`
 	}
 	esc := stdhtml.EscapeString
 	var b strings.Builder
 	b.WriteString(head)
 
 	// ── 絞り込みの欄 ──
+	companies := []string{}
 	machines := []string{}
 	seen := map[string]bool{}
+	seenCompany := map[string]bool{}
 	for _, r := range list {
+		if r.Company != "" && !seenCompany[r.Company] {
+			seenCompany[r.Company] = true
+			companies = append(companies, r.Company)
+		}
 		if r.Machine != "" && !seen[r.Machine] {
 			seen[r.Machine] = true
 			machines = append(machines, r.Machine)
 		}
 	}
+	sort.Strings(machines) // 社名の順に並んだ一覧から拾うので、装置名称だけで並べ直す
 	// data-w-remember: この欄の値をブラウザに憶えて、開き直したときに戻す（2026-09-30・assets/app.js の rememberKeyOf）。
 	// 絞り込みは見る人の都合なので憶えてよい——⚠ 本文へ書き戻す欄には付けないこと。
 	b.WriteString(`<div class="matsearch-form plist-form" data-plist-form="1" data-w-remember="1">`)
 	b.WriteString(`<label class="matsearch-field"><span>文字で絞る</span>` +
 		`<input type="search" class="matsearch-input plist-text" data-plist-text="1"` +
 		` placeholder="品目・図面番号・品番"/></label>`)
+	// 社名（2026-10-16）——一覧はどこに置いても全社の分なので、会社ごとに見るのはここで絞る。
+	// 値の「-」は社名の分からないもの（整理を待つページ）。
+	b.WriteString(`<label class="matsearch-field"><span>社名</span>` +
+		`<select class="matsearch-input" data-plist-company="1"><option value="">すべて</option>`)
+	for _, c := range companies {
+		b.WriteString(`<option value="` + esc(c) + `">` + esc(c) + `</option>`)
+	}
+	if hasNoCompany(list) {
+		b.WriteString(`<option value="-">（整理を待つもの）</option>`)
+	}
+	b.WriteString(`</select></label>`)
 	b.WriteString(`<label class="matsearch-field"><span>装置名称</span>` +
 		`<select class="matsearch-input" data-plist-machine="1"><option value="">すべて</option>`)
 	for _, m := range machines {
@@ -231,7 +413,7 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 
 	// ── 表 ──
 	b.WriteString(`<table class="materials-table plist-table"><thead><tr>` +
-		`<th>装置名称</th><th>品目</th><th>品番</th><th>区分</th></tr></thead><tbody>`)
+		`<th>社名</th><th>装置名称</th><th>品目</th><th>品番</th><th>区分</th></tr></thead><tbody>`)
 	for _, r := range list {
 		id := formatID(r.PageID)
 		title := r.Title
@@ -242,9 +424,14 @@ func productListViewHTML(user *auth.User, pageIDInt int) string {
 		if r.Migrating {
 			mig = "1"
 		}
-		text := strings.Join(append([]string{r.Machine, title, r.DrawingNo, r.PartNo}, r.Names...), " ")
-		b.WriteString(`<tr data-plist-row="1" data-machine="` + esc(r.Machine) + `" data-kinds="` +
+		text := strings.Join(append([]string{r.Company, r.Machine, title, r.DrawingNo, r.PartNo}, r.Names...), " ")
+		company := r.Company
+		if company == "" {
+			company = "-"
+		}
+		b.WriteString(`<tr data-plist-row="1" data-company="` + esc(company) + `" data-machine="` + esc(r.Machine) + `" data-kinds="` +
 			esc(strings.Join(r.Kinds, "\t")) + `" data-migrating="` + mig + `" data-text="` + esc(text) + `">`)
+		b.WriteString(`<td class="plist-wrap">` + esc(r.Company) + `</td>`)
 		b.WriteString(`<td class="plist-wrap">` + esc(r.Machine) + `</td>`)
 		b.WriteString(`<td class="plist-wrap"><a href="/` + id + `">` + esc(title) + `</a>`)
 		if len(r.Names) > 0 {

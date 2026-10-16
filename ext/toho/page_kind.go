@@ -21,6 +21,15 @@ package toho
 const (
 	// PageKindTag はページの種類を名乗るタグの名前です。
 	PageKindTag = "ページ種類"
+	// PageKindCustomerOrder は受注ページ（客先から届いた発注書）の値です——受注残表が集めます（backlog.go）。
+	PageKindCustomerOrder = "顧客発注書"
+	// PageKindProduct は加工製品ページ（品物の台帳）の値です——加工製品の一覧が集めます（product_list.go）。
+	PageKindProduct = "加工製品"
+	// PageKindCompany・PageKindMachine は製造台帳の社名と装置名のフォルダの値です。
+	// ⚠ **フォルダの種類には頼りすぎないこと**（利用者:「依存しすぎないよう注意したほうがよいと思います」）——
+	// 加工製品の一覧が、行に添える社名・装置名を探すのに使うだけです。
+	PageKindCompany = "社名"
+	PageKindMachine = "装置"
 	// PageKindProductOld は図面改定で子へ移った旧版の加工製品ページの値です
 	// （いまは「親も加工製品なら旧版」と木の形で見分けている——`productListRows`）。
 	PageKindProductOld = "加工製品の旧版"

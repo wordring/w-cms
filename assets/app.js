@@ -12729,6 +12729,8 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
         const table = wrap ? wrap.querySelector('table.plist-table') : null;
         if (!table) return;
         const terms = norm(valueIn(form, '[data-plist-text]')).split(/\s+/).filter(Boolean);
+        // 社名（2026-10-16）——一覧はどこに置いても全社の分なので、会社ごとに見るのはこの欄。「-」は社名の分からない行。
+        const company = valueIn(form, '[data-plist-company]');
         const machine = valueIn(form, '[data-plist-machine]');
         const boxes = Array.from(form.querySelectorAll('[data-plist-kind]'));
         const known = new Set(boxes.map(b => b.dataset.plistKind).filter(Boolean));
@@ -12743,6 +12745,7 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
             // 「通常」に数えます——黙って一覧から消えるほうが悪いので。
             const kinds = (tr.dataset.kinds || '').split('\t').filter(k => known.has(k));
             let ok = kinds.length ? kinds.some(k => picked.has(k)) : picked.has('');
+            if (ok && company && tr.dataset.company !== company) ok = false;
             if (ok && machine && tr.dataset.machine !== machine) ok = false;
             if (ok && migOnly && tr.dataset.migrating !== '1') ok = false;
             if (ok && terms.length) {

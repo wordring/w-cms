@@ -19,7 +19,9 @@ import (
 func seedOrderUnder(t *testing.T, idInt, rootInt int, rows ...[2]string) {
 	t.Helper()
 	addPage(t, idInt, rootInt, "受注", "alice", "302", true)
-	seedBody(t, page.FormatID(idInt), orderBody(rows...))
+	// 受注ページは `ページ種類：顧客発注書` を名乗る（2026-10-16——受注残表はこれで集める）。
+	body := strings.Replace(orderBody(rows...), `</dl>`, `<dt>`+PageKindTag+`</dt><dd>`+PageKindCustomerOrder+`</dd></dl>`, 1)
+	seedBody(t, page.FormatID(idInt), body)
 }
 
 // TestBacklogLinksLaterProductWhenOpened は、**受注が先・加工製品ページが後**でも、受注フォルダを開けば
@@ -54,7 +56,7 @@ func TestBacklogLinksLaterProductWhenOpened(t *testing.T) {
 		t.Errorf("⚠ 人が入れた弊社品番を書き換えています:\n%s", other)
 	}
 
-	groups, _ := backlogScan(adminUser(), 601)
+	groups, _ := backlogScan(adminUser())
 	if n := linkBacklogRows(adminUser(), groups); n != 0 {
 		t.Errorf("2回目で %d 行書き換えています", n)
 	}

@@ -21,6 +21,7 @@ func seedOrder(t *testing.T, idInt, rootInt int, client, due string, rows string
 	t.Helper()
 	addPage(t, idInt, rootInt, "受注", "alice", "302", true)
 	body := `<h1>受注</h1><dl data-type="tags">` +
+		`<dt>` + PageKindTag + `</dt><dd>` + PageKindCustomerOrder + `</dd>` +
 		`<dt>発注書番号</dt><dd>PO-` + page.FormatID(idInt) + `</dd>` +
 		`<dt>発注元</dt><dd>` + client + `</dd>` +
 		`<dt>納期</dt><dd>` + due + `</dd></dl>` +
@@ -53,7 +54,7 @@ func TestBacklogGroupsByClientAndDue(t *testing.T) {
 	seedOrder(t, 104, 101, "やまと工作所", "2026-10-15",
 		item("B-1", "シャフト", "10", "2026-10-15", ""))
 
-	gs := backlogGroups(adminUser(), 101)
+	gs := backlogGroups(adminUser())
 	if len(gs) != 3 {
 		t.Fatalf("組が %d です（顧客×納期で3組を期待）: %+v", len(gs), gs)
 	}
@@ -77,7 +78,7 @@ func TestBacklogDropsShippedRows(t *testing.T) {
 		item("A-1", "出し切った", "100", "2026-10-15", "100")+
 			item("A-2", "半分だけ", "100", "2026-10-15", "40"))
 
-	gs := backlogGroups(adminUser(), 111)
+	gs := backlogGroups(adminUser())
 	if len(gs) != 1 || len(gs[0].Rows) != 1 {
 		t.Fatalf("残っている行だけになっていません: %+v", gs)
 	}
@@ -100,7 +101,7 @@ func TestBacklogPutsUnreadableDueFirst(t *testing.T) {
 	seedOrder(t, 123, 121, "あけぼの精工", "最短納期",
 		item("A-9", "大至急", "5", "最短納期", ""))
 
-	gs := backlogGroups(adminUser(), 121)
+	gs := backlogGroups(adminUser())
 	if len(gs) != 2 {
 		t.Fatalf("組が %d です: %+v", len(gs), gs)
 	}
@@ -147,20 +148,47 @@ func TestBacklogMarksEmptyOurItemNo(t *testing.T) {
 	}
 }
 
-// TestBacklogScopeIsDescendantsOnly は、⚠ **置いたページの子孫だけ**を見ることを
-// 固定します。
+// TestBacklogCollectsByPageKind は、⚠ **受注残表が `ページ種類：顧客発注書` のページを、置き場所に関係なく
+// 集める**ことを固定します（2026-10-16 利用者:「どこにタグを置いても場所に依存せずみられる必要があります」）。
 //
-// ⚠ 箱を名前で決め打ちすると、置き場所を変えた日に**黙って空**になります。
-func TestBacklogScopeIsDescendantsOnly(t *testing.T) {
+//   - 別の箱に置いた受注ページも並ぶ（それまでは「置いたページの子孫だけ」——受注ページを記録の年月へ
+//     移すと、受注フォルダの受注残表が黙って空になった）。
+//   - 受注明細表を持っていても、`ページ種類` の無いページは並ばない（種類はタグで名乗る）。
+//   - どのページに置いても、同じものが出る。
+func TestBacklogCollectsByPageKind(t *testing.T) {
 	setupExtTest(t, "000130", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 131, -1, "受注", "alice", "302", true)
 	addPage(t, 132, -1, "よその箱", "alice", "302", true)
 	seedOrder(t, 133, 131, "あけぼの精工", "2026-10-15", item("A-1", "中", "10", "2026-10-15", ""))
 	seedOrder(t, 134, 132, "あけぼの精工", "2026-10-15", item("B-1", "外", "10", "2026-10-15", ""))
+	// 受注明細表はあるが、ページ種類の無いページ。
+	addPage(t, 135, 131, "種類なし", "alice", "302", true)
+	body := `<h1>種類なし</h1><dl data-type="tags"><dt>発注元</dt><dd>あけぼの精工</dd>` +
+		`<dt>納期</dt><dd>2026-10-15</dd></dl>` +
+		`<table><caption>受注明細表</caption><tbody>` +
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
+		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
+		item("C-1", "種類なしの品", "10", "2026-10-15", "") + `</tbody></table>`
+	if err := cms.SyncIndex(page.FormatID(135), body); err != nil {
+		t.Fatal(err)
+	}
 
-	gs := backlogGroups(adminUser(), 131)
-	if len(gs) != 1 || len(gs[0].Rows) != 1 || gs[0].Rows[0].ItemName != "中" {
-		t.Errorf("⚠ よその箱の受注まで拾っています: %+v", gs)
+	gs := backlogGroups(adminUser())
+	names := map[string]bool{}
+	for _, g := range gs {
+		for _, r := range g.Rows {
+			names[r.ItemName] = true
+		}
+	}
+	if !names["中"] || !names["外"] {
+		t.Errorf("⚠ ページ種類で名乗る受注ページが、置き場所によって欠けています: %+v", gs)
+	}
+	if names["種類なしの品"] {
+		t.Errorf("⚠ ページ種類の無いページの行まで拾っています: %+v", gs)
+	}
+	// どこに置いても同じ——受注の箱でも、よその箱でも。
+	if a, b := backlogViewHTML(adminUser(), 131), backlogViewHTML(adminUser(), 132); a != b {
+		t.Errorf("⚠ 置いたページで中身が変わっています")
 	}
 }
 
@@ -180,7 +208,7 @@ func TestBacklogRespectsVisibility(t *testing.T) {
 		t.Fatalf("権限の更新: %v", err)
 	}
 
-	gs := backlogGroups(&auth.User{Username: "bob"}, 141)
+	gs := backlogGroups(&auth.User{Username: "bob"})
 	joined := ""
 	for _, g := range gs {
 		for _, r := range g.Rows {
@@ -254,7 +282,7 @@ func TestBacklogDropsDoneRows(t *testing.T) {
 			"<td>未着手</td>", "<td>納品済</td>", 1)
 	seedOrder(t, 172, 171, "あけぼの精工", "2026-10-15", body)
 
-	gs := backlogGroups(adminUser(), 171)
+	gs := backlogGroups(adminUser())
 	got := map[string]bool{}
 	for _, g := range gs {
 		for _, r := range g.Rows {
