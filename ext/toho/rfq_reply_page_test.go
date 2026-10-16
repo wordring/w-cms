@@ -101,7 +101,7 @@ func TestAnalyzeRFQReplyLinksByNumber(t *testing.T) {
 		t.Errorf("返事ページが部材見積依頼書の子へ移っていません（親 %s）", got)
 	}
 	body := readPageBody(t, out.PageID)
-	for _, want := range []string{"<h1>部材見積依頼の返事　わかば鋼業</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2026-10-04</dd>",
+	for _, want := range []string{"<h1>【業者】部材見積依頼の返事　わかば鋼業</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2026-10-04</dd>",
 		"<dt>" + RFQReplyLinkTag + "</dt><dd>" + rfq + "</dd>", "<dt>" + SourceRefTag + "</dt><dd>" + mail + "-rp01</dd>",
 		`data-ref="` + mail + `-rp01"`, "SS400 t6", "1,200"} {
 		if !strings.Contains(body, want) {

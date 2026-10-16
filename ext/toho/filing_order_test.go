@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
@@ -54,12 +55,11 @@ func postOrders(t *testing.T, u *auth.User, ids []string) []filingResult {
 	return res.Results
 }
 
-// TestFileOrderGoesToOrderBoxByOrderDate は、受注ページが **発注日の年月**へ
-// 収まることを固定します（2026-09-06 ユーザー決定）。
+// TestFileOrderGoesToRecordByCreatedDate は、受注ページが **`記録／年／月／依頼`（受注ページを作った日の年月）**へ
+// 収まることを固定します（2026-10-16 利用者:「その文書を作成した日のフォルダで良いと思います」）。
 //
-// 受け取った日で並べると、月末に届いた前月ぶんが翌月に混ざります——ここが効かないと
-// 「先月の受注」が月をまたいで散ります。
-func TestFileOrderGoesToOrderBoxByOrderDate(t *testing.T) {
+// それまでは `受注／年／月`（発注日の年月・2026-09-06 ユーザー決定）でした。発注日が昔でも、作った日の月に入ります。
+func TestFileOrderGoesToRecordByCreatedDate(t *testing.T) {
 	const inbox = "000012"
 	setupFilingTest(t, inbox)
 	orderID := makeOrderPage(t, inbox, "250401-203", "南北スポーツ機械", "2024-09-13")
@@ -69,21 +69,14 @@ func TestFileOrderGoesToOrderBoxByOrderDate(t *testing.T) {
 		t.Fatalf("移動になっていません: %+v", results)
 	}
 
-	boxID, ok := findChildByTitle(cms.TopPageID, OrderBoxTitle)
-	if !ok {
-		t.Fatalf("「%s」ページが作られていません", OrderBoxTitle)
+	if got, want := placeOf(orderID), recordPath(RecordRequestFolder, orderFolderDateOf(pageNum(orderID))); got != want {
+		t.Errorf("置き場が %s です（%s のはず）", got, want)
 	}
-	yearID, ok := findChildByTitle(boxID, "2024年")
-	if !ok {
-		t.Fatalf("年フォルダが発注日から作られていません")
+	if strings.Contains(placeOf(orderID), "2024年") {
+		t.Errorf("発注日（2024-09-13）の年月に入っています: %s", placeOf(orderID))
 	}
-	monthID, ok := findChildByTitle(yearID, "09月")
-	if !ok {
-		t.Fatalf("月フォルダが発注日から作られていません")
-	}
-	meta, _ := page.ReadSidecar(orderID)
-	if meta.ParentID != monthID {
-		t.Errorf("親が付け替わっていません: %+v", meta)
+	if _, ok := findChildByTitle(cms.TopPageID, OrderBoxTitle); ok {
+		t.Errorf("「%s」の箱に年月を作っています（書類は記録へ）", OrderBoxTitle)
 	}
 }
 

@@ -329,7 +329,7 @@ func TestRFQNewDoc(t *testing.T) {
 	}
 	body := readPageBody(t, id)
 	for _, want := range []string{
-		"<h1>部材見積依頼　わかば鋼業</h1>",
+		"<h1>【弊社】部材見積依頼　わかば鋼業</h1>",
 		"<dt>" + RFQNoTag + "</dt><dd>" + id + "</dd>",
 		"<dt>" + SupplierTag + "</dt><dd>わかば鋼業</dd>",
 		"<dt>" + RFQDateTag + "</dt><dd>2026-10-05</dd>",
@@ -346,11 +346,9 @@ func TestRFQNewDoc(t *testing.T) {
 	if got := rfqRows(t, body, RFQItemsType, 1); len(got) != 2 || strings.Count(body, ">"+rfqLineUnanswered+"<") != 2 {
 		t.Errorf("部材見積依頼明細表が2行・未回答ではありません: %+v", got)
 	}
-	// 置き場は 部材見積依頼／年／月。
-	meta, _ := page.ReadSidecar(id)
-	month, _ := page.ReadSidecar(meta.ParentID)
-	if cms.PageTitleByID(pageNum(meta.ParentID)) != "10月" || cms.PageTitleByID(pageNum(month.ParentID)) != "2026年" {
-		t.Errorf("置き場が 部材見積依頼／2026年／10月 ではありません: %s ← %s", cms.PageTitleByID(pageNum(meta.ParentID)), cms.PageTitleByID(pageNum(month.ParentID)))
+	// 置き場は 記録／年／月／製造記録（2026-10-16・月は作った日——部材見積依頼日ではない）。
+	if got, want := placeOf(id), recordPath(RecordWorkFolder, time.Now()); got != want {
+		t.Errorf("置き場が %s です（%s のはず）", got, want)
 	}
 	if after := readPageBody(t, box); strings.Contains(after, "<caption>見積依頼部材表</caption>") {
 		t.Errorf("元の見積依頼部材表が残っています:\n%s", after)
@@ -452,17 +450,16 @@ func TestRFQImportAnsweredQuote(t *testing.T) {
 		t.Fatalf("移せません: %d %v", code, out)
 	}
 	body := readPageBody(t, id)
-	for _, want := range []string{"<h1>部材見積依頼　ふじ鍍金</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2025-05-14</dd>",
+	for _, want := range []string{"<h1>【弊社】部材見積依頼　ふじ鍍金</h1>", "<dt>" + RFQAnsweredTag + "</dt><dd>2025-05-14</dd>",
 		"<dt>" + RFQDateTag + "</dt><dd>2025-05-14</dd>", ">298<", ">" + rfqLineAnswered + "<", ">塗装<", ">緑<",
 		"<p>ワンノートから移した過去の見積</p>"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("移した部材見積依頼書ページに %q がありません:\n%s", want, body)
 		}
 	}
-	meta, _ := page.ReadSidecar(id)
-	month, _ := page.ReadSidecar(meta.ParentID)
-	if cms.PageTitleByID(pageNum(meta.ParentID)) != "05月" || cms.PageTitleByID(pageNum(month.ParentID)) != "2025年" {
-		t.Errorf("置き場がその日の年月ではありません: %s ← %s", cms.PageTitleByID(pageNum(meta.ParentID)), cms.PageTitleByID(pageNum(month.ParentID)))
+	// 過去の見積を移す口なので、月は見積の日（記録／2025年／05月／製造記録・2026-10-16）。
+	if got := placeOf(id); got != "記録／2025年／05月／製造記録" {
+		t.Errorf("置き場がその日の年月ではありません: %s", got)
 	}
 	// 返事の来た見積なので、送る欄は閉じておき回答日を出す（まだのものだけ開く）。
 	shown := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/"+id, nil), root), pageNum(id), body)

@@ -112,10 +112,9 @@ func TestRFQReplyDraftAndMake(t *testing.T) {
 			t.Errorf("部材見積依頼書ページに %q がありません:\n%s", s, body)
 		}
 	}
-	meta, _ := page.ReadSidecar(rfq)
-	month, _ := page.ReadSidecar(meta.ParentID)
-	if cms.PageTitleByID(pageNum(meta.ParentID)) != "08月" || cms.PageTitleByID(pageNum(month.ParentID)) != "2026年" {
-		t.Errorf("置き場が 部材見積依頼／2026年／08月 ではありません")
+	// 返事から過去の見積依頼を起こす口なので、月は返事の日（記録／2026年／08月／製造記録・2026-10-16）。
+	if got := placeOf(rfq); got != "記録／2026年／08月／製造記録" {
+		t.Errorf("置き場が 記録／2026年／08月／製造記録 ではありません: %s", got)
 	}
 	if parentOf(t, reply) != rfq || !strings.Contains(readPageBody(t, reply), "<dt>"+RFQReplyLinkTag+"</dt><dd>"+rfq+"</dd>") {
 		t.Errorf("返事が部材見積依頼書に結ばれていません（親 %s）", parentOf(t, reply))

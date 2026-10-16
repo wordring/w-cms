@@ -637,7 +637,7 @@ func buildOrderPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment) (st
 	// 規則です（ユーザー:「発注書は一ページ一発注書で問題ない」）——ヘッダがページの
 	// タグになるので、1ページに2つの発注書は置けません。
 	d := cms.NewPageDraft(OrderPageTemplate, tmpl)
-	d.SetTitle(title)
+	d.SetTitle(issuerTitle(PageKindCustomerOrder, title)) // 題の頭に【顧客】（2026-10-16・page_kind.go）
 	setHeaderTag(d.DraftBlock, OrderNoTag, cms.NormalizeNameForIngest(j.OrderNo))
 	setHeaderTag(d.DraftBlock, OrderClientTag, cms.NormalizeNameForIngest(j.Customer))
 	setHeaderTag(d.DraftBlock, OrderedAtTag, j.OrderDate)

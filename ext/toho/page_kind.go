@@ -18,6 +18,8 @@ package toho
 //     （【要求】w-cmsとは §1「ページの種類をコードや DB に固定しません」）。
 // ─────────────────────────────────────────────────────────────────────────
 
+import "strings"
+
 const (
 	// PageKindTag はページの種類を名乗るタグの名前です。
 	PageKindTag = "ページ種類"
@@ -33,4 +35,32 @@ const (
 	// PageKindProductOld は図面改定で子へ移った旧版の加工製品ページの値です
 	// （いまは「親も加工製品なら旧版」と木の形で見分けている——`productListRows`）。
 	PageKindProductOld = "加工製品の旧版"
+	// 弊社・業者の書類の値です（題の頭を決めるのに使う——issuerTitle）。
+	PageKindOurEstimate = "弊社見積書"
+	PageKindOurRFQ      = "弊社部材見積依頼書"
+	PageKindOurPurchase = "弊社部材発注書"
+	PageKindVendorQuote = "業者見積書"
 )
+
+// issuerTitle は題の頭に、その紙を出した側（【顧客】【弊社】【業者】）を付けます（2026-10-16）。
+//
+// 利用者:「ページの見分けがつきやすいように【弊社】【業者】【顧客】という接頭辞を付けてはどうでしょう？」
+// （【考察】全体の設計 §4.6）。出した側は `ページ種類` の値の頭の語です（`顧客発注書`・`弊社見積書`・`業者見積書`）。
+//
+//   - ⚠ **人のための目印です。** 機械は題で見分けません（引き継ぎの罠「題で判断しない」）——人が題を直して
+//     接頭辞が外れても、機械は困りません。
+//   - テンプレートの題には入れられません（テンプレートは題で探す——`cms.PageTemplateBody`）。だから、機械が題を
+//     決めるところで付けます。
+//   - もう付いていれば、二重に付けません。
+func issuerTitle(kind, title string) string {
+	for _, w := range []string{"顧客", "弊社", "業者"} {
+		if strings.HasPrefix(kind, w) {
+			p := "【" + w + "】"
+			if strings.HasPrefix(title, p) {
+				return title
+			}
+			return p + title
+		}
+	}
+	return title
+}

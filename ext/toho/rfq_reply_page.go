@@ -146,7 +146,7 @@ func buildRFQReplyPageHTML(tmpl, hostPageID, attachID, supplier, date string, r 
 	if supplier != "" {
 		title += "　" + supplier
 	}
-	d.SetTitle(title)
+	d.SetTitle(issuerTitle(PageKindVendorQuote, title)) // 題の頭に【業者】（2026-10-16・page_kind.go）
 	setHeaderTag(d.DraftBlock, SupplierTag, supplier)
 	setHeaderTag(d.DraftBlock, RFQAnsweredTag, date)
 	setHeaderTag(d.DraftBlock, RFQReplyReadNoTag, cms.NormalizeNameForIngest(r.RFQNo))

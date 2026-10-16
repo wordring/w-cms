@@ -3,7 +3,7 @@
 // 利用者:「顧客へので良いです」→「見積計算表から」・宛名は「会社＋担当者」。
 //
 //   ① 加工製品ページの見積表の足元に「📄 見積書に入れる」（2026-10-15 から見積表——それまでは見積計算表）（客先は加工製品の客先が入っている）
-//   ② 担当者を書いて「入れる」→ 新しい見積書ができ（見積／年／月）、見積明細表に見積表の単価・ロット・品番・品名が入る
+//   ② 担当者を書いて「入れる」→ 新しい見積書ができ（記録／年／月／依頼）、見積明細表に見積表の単価・ロット・品番・品名が入る
 //   ③ 見積書の足元に「合計（税抜）」・「📄 PDFを作る」・「✉️ メールで送る」（送らない）
 //   ④ 「PDFを作る」で紙ができ、見積書ページに開く
 //
@@ -61,16 +61,16 @@ const check = (label, ok, note = '') => {
         total: (document.querySelector('#w-editor-content .estimate-total') || {}).textContent || '',
       };
     });
-    check('題は「見積　客先」', view.title === '見積　【E2E】客先', view.title);
+    check('題は「【弊社】見積　客先」（2026-10-16 から題の頭に【弊社】）', view.title === '【弊社】見積　【E2E】客先', view.title);
     check('見積明細表に品番・品名・ロット・単価・備考（表面処理）', view.table.includes('E2E-EST-1') && view.table.includes('【E2E】カバー') &&
       view.table.includes('20') && view.table.includes('402') && view.table.includes('塗装無し'), view.table.slice(0, 200));
     check('③ 合計（税抜）', view.total.includes('合計（税抜）: 8,040円'), view.total);
     check('メールで送る欄がある', await page.locator('#w-editor-content details.estimate-mail [data-mail-compose="見積書"]').count() === 1);
-    // 置き場は 見積／年／月——親を3段たどって題を見る。
+    // 置き場は 記録／年／月／依頼（2026-10-16 から）——親を4段たどって題を見る。
     const chain = await page.evaluate(async (id) => {
       const out = [];
       let cur = id;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         cur = (await (await fetch('/api/page-meta?id=' + cur)).json()).parent_id;
         const html = await (await fetch('/api/load?id=' + cur)).text();
         const m = html.match(/<h1[^>]*>([^<]*)<\/h1>/);
@@ -78,7 +78,7 @@ const check = (label, ok, note = '') => {
       }
       return out;
     }, est);
-    check('置き場は 見積／年／月', /^\d{2}月$/.test(chain[0]) && /^\d{4}年$/.test(chain[1]) && chain[2] === '見積', chain.join(' ← '));
+    check('置き場は 記録／年／月／依頼', chain[0] === '依頼' && /^\d{2}月$/.test(chain[1]) && /^\d{4}年$/.test(chain[2]) && chain[3] === '記録', chain.join(' ← '));
 
     // ④ PDF
     await Promise.all([
@@ -92,13 +92,13 @@ const check = (label, ok, note = '') => {
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {
-    // 見積書と、空になった年月のフォルダを消す（作ったのが試験なら）。
+    // 見積書と、空になった依頼・年月のフォルダを消す（作ったのが試験なら）。
     if (est) {
       const meta = await page.evaluate(async (id) => (await (await fetch('/api/page-meta?id=' + id)).json()).parent_id, est).catch(() => '');
       await deletePage(page, est).catch(() => {});
       let folder = meta;
       // ⚠ 試験が作ったフォルダだけ（当て先より新しい番号）——実運用の空の年月フォルダは消さない（2026-10-03）。
-      for (let i = 0; i < 2 && folder && Number(folder) > Number(product || 0); i++) {
+      for (let i = 0; i < 3 && folder && Number(folder) > Number(product || 0); i++) {
         const kids = await childrenOf(page, folder).catch(() => [1]);
         if (kids.length !== 0) break;
         const up = await page.evaluate(async (id) => (await (await fetch('/api/page-meta?id=' + id)).json()).parent_id, folder).catch(() => '');

@@ -67,7 +67,7 @@ func TestAnalyzePDFWithSeveralOrdersMakesPagePerSheet(t *testing.T) {
 	}
 	for i, want := range []struct{ no, item, other string }{{"PO-1", "ブラケット", "カバー"}, {"PO-2", "カバー", "ブラケット"}} {
 		body := readPageBody(t, res.Pages[i].PageID)
-		if !strings.Contains(body, "<h1>受注 "+want.no+"</h1>") || !strings.Contains(body, "<td>"+want.item+"</td>") ||
+		if !strings.Contains(body, "<h1>【顧客】受注 "+want.no+"</h1>") || !strings.Contains(body, "<td>"+want.item+"</td>") ||
 			strings.Contains(body, "<td>"+want.other+"</td>") {
 			t.Errorf("%s のページの明細が違う（混ざっている）:\n%s", want.no, body)
 		}

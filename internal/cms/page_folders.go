@@ -74,12 +74,37 @@ func SetSortKey(pageID, key string) {
 
 // ensureDateFolderUnder は root の下に「年／月」を必要なだけ作ります。
 func ensureDateFolderUnder(rootID, owner string, t time.Time) (string, error) {
-	local := t.In(time.Local)
-	year, err := ensureFolderUnder(rootID, owner, local.Format("2006年"))
+	y, m := DateFolderTitles(t)
+	year, err := ensureFolderUnder(rootID, owner, y)
 	if err != nil {
 		return "", err
 	}
-	return ensureFolderUnder(year, owner, local.Format("01月"))
+	return ensureFolderUnder(year, owner, m)
+}
+
+// DateFolderTitles は年・月フォルダの題を返します（`2026年`・`09月`。IsDateFolderTitle と同じ形）。
+//
+// 拡張が自分で年月のフォルダを組むときに使います（2026-10-16・東邦の「記録」——フォルダの本文に
+// 拡張の言葉〔`ページ種類`〕を入れるため。コアはその言葉を知りません）。形はここ1か所に置きます。
+func DateFolderTitles(t time.Time) (year, month string) {
+	local := t.In(time.Local)
+	return local.Format("2006年"), local.Format("01月")
+}
+
+// EnsureFolder は親の下に題 title の子を探し、無ければ本文 bodyHTML で作ります（一致は完全一致だけ）。
+//
+// bodyHTML は作るときだけ使います（既にあれば触りません）。本文に何を入れるか（タグなど）は呼び手の言葉です
+// ——コアは置き方だけを持ちます（2026-10-16）。
+func EnsureFolder(parentID, owner, title, bodyHTML string) (string, error) {
+	if id, found := FindChildByTitle(parentID, title); found {
+		return id, nil
+	}
+	newID, err := CreateChildPage(parentID, owner, bodyHTML)
+	if err != nil {
+		return "", err
+	}
+	auth.Audit(owner, "intake.folder", newID+" under "+parentID+" ("+title+")")
+	return newID, nil
 }
 
 // IsDateFolderTitle は年・月フォルダの題かを返します（`2026年` / `09月`）。
@@ -108,15 +133,7 @@ func IsDateFolderTitle(title string) bool {
 // の対象は「この取り込みで作った記録ページ」に限る、という最小権限の線を崩さない
 // ためです（そもそもここは IntakeContext を通らない）。
 func ensureFolderUnder(parentID, owner, title string) (string, error) {
-	if id, found := FindChildByTitle(parentID, title); found {
-		return id, nil
-	}
-	newID, err := CreateChildPage(parentID, owner, "<h1>"+html.EscapeString(title)+"</h1>")
-	if err != nil {
-		return "", err
-	}
-	auth.Audit(owner, "intake.folder", newID+" under "+parentID+" ("+title+")")
-	return newID, nil
+	return EnsureFolder(parentID, owner, title, "<h1>"+html.EscapeString(title)+"</h1>")
 }
 
 // EnsureTopLevelBox は題の一致するトップ直下のページを返し、無ければ作ります。

@@ -179,7 +179,7 @@ func buildEstimateHTML(tmpl, pageID, client, person, date, signerID string, line
 	if strings.TrimSpace(client) == "" {
 		title = "見積（客先未定）"
 	}
-	d.SetTitle(title)
+	d.SetTitle(issuerTitle(PageKindOurEstimate, title)) // 題の頭に【弊社】（2026-10-16・page_kind.go）
 	setHeaderTag(d.DraftBlock, EstimateNoTag, pageID)
 	setHeaderTag(d.DraftBlock, EstimateClientTag, client)
 	setHeaderTag(d.DraftBlock, EstimatePersonTag, person)
@@ -372,14 +372,10 @@ func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn,
 		cms.JSONFail(w, http.StatusConflict, "見積書ページを作れません: "+err.Error())
 		return "", "", false
 	}
-	boxID, err := cms.EnsureTopLevelBox(EstimateBoxTitle, user.Username)
+	// 置き場は `記録／年／月／依頼`（2026-10-16・record_box.go。月は作った日）。
+	monthID, err := recordFolder(user.Username, RecordRequestFolder, now)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+EstimateBoxTitle+"」ページを用意できません: "+err.Error())
-		return "", "", false
-	}
-	monthID, err := cms.EnsureDateFolders(boxID, user.Username, now)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "年月のフォルダを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordRequestFolder, now)+"」を用意できません: "+err.Error())
 		return "", "", false
 	}
 	newID, err = cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")

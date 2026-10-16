@@ -91,14 +91,14 @@ func orderChildrenOf(user *auth.User, parentIDInt int) ([]orderRow, error) {
 			continue // 受注ページではない（加工製品ページなど）
 		}
 		orderedAt := cms.FirstTag(tags, OrderedAtTag)
-		when := orderDateOf(c.ID, orderedAt)
+		when := orderFolderDateOf(c.ID)
 		out = append(out, orderRow{
 			PageID:      formatID(c.ID),
 			Title:       c.Title,
 			OrderNo:     cms.FirstTag(tags, OrderNoTag),
 			ClientName:  suggestOrderClient(user, cms.FirstTag(tags, OrderClientTag)),
 			OrderedAt:   strings.TrimSpace(orderedAt),
-			Destination: OrderBoxTitle + "／" + when.Format("2006年") + "／" + when.Format("01月"),
+			Destination: recordPath(RecordRequestFolder, when),
 		})
 	}
 	return out, nil
@@ -128,38 +128,22 @@ func suggestOrderClient(user *auth.User, read string) string {
 	return contacts.OrgNameForPage(user, read)
 }
 
-// orderDateOf は受注ページの年月を決める日付を返します。
+// orderFolderDateOf は受注ページの年月を決める日付——**受注ページを作った日**を返します（2026-10-16）。
 //
-// **発注日が第一**——受け取った日で並べると、月末に届いた前月ぶんが翌月に混ざります。
-// 読めなければページの更新時刻、それも読めなければ現在時刻（止めない）。
-func orderDateOf(pageIDInt int, ordered string) time.Time {
-	if t, ok := parseOrderDate(ordered); ok {
-		return t
-	}
-	var updated string
-	database.DB.QueryRow(`SELECT COALESCE(updated_at, '') FROM pages WHERE id = ?`,
-		pageIDInt).Scan(&updated)
-	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(updated)); err == nil {
-		return t.In(time.Local)
-	}
-	return time.Now()
-}
-
-// parseOrderDate は発注日の文字列を読みます。
-//
-// 索引の値は取り込みのときに正規化されている（D-3）ので `2024-09-13` の形が本命ですが、
-// **読めなかった値は生のまま入る**（取り込みは情報を捨てない）ので、素直な形も見ます。
-func parseOrderDate(v string) (time.Time, bool) {
-	s := strings.TrimSpace(v)
-	if s == "" {
-		return time.Time{}, false
-	}
-	for _, layout := range []string{"2006-01-02", "2006/01/02", "2006年01月02日"} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t, true
+// それまでは発注日が第一でした（「受け取った日で並べると、月末に届いた前月ぶんが翌月に混ざります」）。
+// 利用者:「その文書を作成した日のフォルダで良いと思います。（つまり、一つのフォルダにたくさん入ると見づらいから
+// 分けるだけです）」——月に意味を持たせないので、発注日を読む必要がなくなりました（【考察】全体の設計 §4.2）。
+// 作った日が読めなければ更新時刻、それも読めなければ現在時刻（止めない）。
+func orderFolderDateOf(pageIDInt int) time.Time {
+	var created, updated string
+	database.DB.QueryRow(`SELECT COALESCE(created_at, ''), COALESCE(updated_at, '') FROM pages WHERE id = ?`,
+		pageIDInt).Scan(&created, &updated)
+	for _, v := range []string{created, updated} {
+		if t, err := time.Parse(time.RFC3339, strings.TrimSpace(v)); err == nil {
+			return t.In(time.Local)
 		}
 	}
-	return time.Time{}, false
+	return time.Now()
 }
 
 // orderRequest は「実行」で送られてくる受注ページ1行です。
@@ -203,16 +187,12 @@ func fileOneOrder(user *auth.User, row orderRequest) filingResult {
 			Message: "このページは編集中です（" + holder + "）。閉じてからもう一度お試しください"}
 	}
 
-	boxID, err := cms.EnsureTopLevelBox(OrderBoxTitle, user.Username)
+	// 置き場は `記録／年／月／依頼`（2026-10-16・record_box.go）。**月は受注ページを作った日**です。
+	when := orderFolderDateOf(idInt)
+	monthID, err := recordFolder(user.Username, RecordRequestFolder, when)
 	if err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "「" + OrderBoxTitle + "」ページを用意できません: " + err.Error()}
-	}
-	when := orderDateOf(idInt, cms.FirstTag(tags, OrderedAtTag))
-	monthID, err := cms.EnsureDateFolders(boxID, user.Username, when)
-	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "年月のフォルダを用意できません: " + err.Error()}
+			Message: "「" + recordPath(RecordRequestFolder, when) + "」を用意できません: " + err.Error()}
 	}
 	if _, _, err := cms.SetPageParent(user, pageID, monthID); err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
@@ -225,7 +205,7 @@ func fileOneOrder(user *auth.User, row orderRequest) filingResult {
 		auth.Audit(user.Username, "file-order.client-failed", pageID+": "+err.Error())
 	}
 	auth.Audit(user.Username, "file-order.move", pageID+" -> "+monthID)
-	msg := OrderBoxTitle + "／" + when.Format("2006年") + "／" + when.Format("01月") + " へ収めました"
+	msg := recordPath(RecordRequestFolder, when) + " へ収めました"
 	// ⚠ **ここでは受注の行を結びません**（2026-10-01 に外した）。結ぶのは受注ページを作ったとき（🤖解析）と、
 	// **受注フォルダを開いたとき**（backlog.go の `linkBacklogRows`）の2つだけ——利用者:「単純化しましょう」
 	// 「受注フォルダを中心に作業するので問題ないはずです」。収めた受注は、次に受注フォルダを開いたときに結ばれる。

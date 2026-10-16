@@ -76,7 +76,7 @@ func rfqDocFormHTML(user *auth.User, pageID string, idx int) string {
 // answered なら返事を貰った見積（過去の見積もりの移し——RFQImportAPIHandler）: 単価を写し、状態は「回答あり」、回答日は date。
 func buildRFQDocHTML(tmpl, pageID, supplier, date, note, signerID string, lines []ourOrderLine, answered bool) (string, error) {
 	d := cms.NewPageDraft(RFQTemplate, tmpl)
-	d.SetTitle("部材見積依頼　" + supplier)
+	d.SetTitle(issuerTitle(PageKindOurRFQ, "部材見積依頼　"+supplier)) // 題の頭に【弊社】（2026-10-16・page_kind.go）
 	setHeaderTag(d.DraftBlock, RFQNoTag, pageID)
 	setHeaderTag(d.DraftBlock, SupplierTag, supplier)
 	setHeaderTag(d.DraftBlock, RFQDateTag, date)
@@ -226,14 +226,11 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "部材見積依頼書ページを作れません: "+err.Error())
 		return
 	}
-	boxID, err := cms.EnsureTopLevelBox(RFQBoxTitle, user.Username)
+	// 置き場は `記録／年／月／製造記録`（2026-10-16・record_box.go）。**月は作った日**（部材見積依頼日ではない）。
+	now := time.Now()
+	monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+RFQBoxTitle+"」ページを用意できません: "+err.Error())
-		return
-	}
-	monthID, err := cms.EnsureDateFolders(boxID, user.Username, when)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "年月のフォルダを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
 		return
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
@@ -321,13 +318,11 @@ func createAnsweredRFQPage(user *auth.User, supplier, date, note string, lines [
 	if _, err := build(""); err != nil {
 		return "", http.StatusConflict, errString("部材見積依頼書ページを作れません: " + err.Error())
 	}
-	boxID, err := cms.EnsureTopLevelBox(RFQBoxTitle, user.Username)
+	// 置き場は `記録／年／月／製造記録`（2026-10-16）。⚠ **月は返事の日**です——返事から過去の見積依頼を起こす口なので、
+	// 過去の書類と同じく、その書類の年月に入れます（【考察】全体の設計 §4.2）。
+	monthID, err := recordFolder(user.Username, RecordWorkFolder, when)
 	if err != nil {
-		return "", http.StatusInternalServerError, errString("「" + RFQBoxTitle + "」ページを用意できません: " + err.Error())
-	}
-	monthID, err := cms.EnsureDateFolders(boxID, user.Username, when)
-	if err != nil {
-		return "", http.StatusInternalServerError, errString("年月のフォルダを作れません: " + err.Error())
+		return "", http.StatusInternalServerError, errString("「" + recordPath(RecordWorkFolder, when) + "」を用意できません: " + err.Error())
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
 	if err != nil {

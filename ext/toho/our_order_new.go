@@ -131,16 +131,12 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ⚠ **置き場は `部材発注／年／月`**（年月は部材発注日）。無ければ作ります。
-	boxID, err := cms.EnsureTopLevelBox(PurchaseOrderBoxTitle, user.Username)
+	// ⚠ **置き場は `記録／年／月／製造記録`**（2026-10-16・record_box.go）。**月は作った日**です（部材発注日ではない——
+	// 利用者:「その文書を作成した日のフォルダで良いと思います」）。無ければ作ります。
+	now := time.Now()
+	monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError,
-			"「"+PurchaseOrderBoxTitle+"」ページを用意できません: "+err.Error())
-		return
-	}
-	monthID, err := cms.EnsureDateFolders(boxID, user.Username, when)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "年月のフォルダを作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
 		return
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
@@ -193,7 +189,7 @@ const (
 // 崩れず、テンプレートに無い列は値があれば右端へ足します。
 func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID string, lines []ourOrderLine) (string, error) {
 	d := cms.NewPageDraft(PurchaseOrderTemplate, tmpl)
-	d.SetTitle("部材発注　" + supplier)
+	d.SetTitle(issuerTitle(PageKindOurPurchase, "部材発注　"+supplier)) // 題の頭に【弊社】（2026-10-16・page_kind.go）
 	// ⚠ **部材発注書番号はページ番号そのもの**（別に採番しない）。
 	// ⚠ **タグは受注ページと同じ口で書きます**（`setHeaderTag`——日付は正規形へ）。
 	setHeaderTag(d.DraftBlock, PurchaseNoTag, pageID)

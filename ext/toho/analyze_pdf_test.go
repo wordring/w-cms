@@ -91,7 +91,7 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 		Title         string `json:"title"`
 	}
 	json.Unmarshal(rr.Body.Bytes(), &res)
-	if !res.Success || !res.IsClientOrder || res.Title != "受注 PO-2026-001" {
+	if !res.Success || !res.IsClientOrder || res.Title != "【顧客】受注 PO-2026-001" {
 		t.Fatalf("応答が違います: %+v body=%s", res, rr.Body.String())
 	}
 
@@ -101,7 +101,7 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 	}
 	html := string(body)
 	for _, want := range []string{
-		"<h1>受注 PO-2026-001</h1>",
+		"<h1>【顧客】受注 PO-2026-001</h1>",
 		// ⚠ **ヘッダは可変タグ、明細は表**（2026-09-18）。機能見出しの節はやめました
 		// ——「タグと表だけがDBに入る」。
 		`<dl data-type="tags">`,

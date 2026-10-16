@@ -97,4 +97,6 @@ func seedBoxTemplates(t *testing.T) {
 	write("000914", "000901", testRFQTemplate())
 	// 部材見積依頼の返事（2026-10-05・rfq_reply_page.go）。
 	write("000915", "000901", testRFQReplyTemplate())
+	// 書類の置き場「記録」（2026-10-16・record_box.go——記録／年／月／依頼・製造記録）。
+	write("000916", "000901", "<h1>"+RecordBoxTitle+"</h1>")
 }

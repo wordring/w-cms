@@ -56,7 +56,7 @@ func TestEstimateFromCalcTable(t *testing.T) {
 	}
 	body := readPageBody(t, est)
 	for _, want := range []string{
-		"<h1>見積　南北スポーツ</h1>",
+		"<h1>【弊社】見積　南北スポーツ</h1>",
 		"<dt>" + EstimateNoTag + "</dt><dd>" + est + "</dd>",
 		"<dt>" + EstimateClientTag + "</dt><dd>南北スポーツ</dd>",
 		"<dt>" + EstimatePersonTag + "</dt><dd>潮田</dd>",
@@ -70,11 +70,9 @@ func TestEstimateFromCalcTable(t *testing.T) {
 			t.Errorf("見積書に %q がありません:\n%s", want, body)
 		}
 	}
-	// 置き場は 見積／年／月。
-	meta, _ := page.ReadSidecar(est)
-	month := cms.PageTitleByID(pageNum(meta.ParentID))
-	if month != time.Now().Format("01")+"月" {
-		t.Errorf("見積書の置き場が年月のフォルダではありません: 親の題 %q", month)
+	// 置き場は 記録／年／月／依頼（2026-10-16・月は作った日）。
+	if got, want := placeOf(est), recordPath(RecordRequestFolder, time.Now()); got != want {
+		t.Errorf("見積書の置き場が %q です（%q のはず）", got, want)
 	}
 
 	// 2枚目の表（単価 500・塗装あり）を同じ見積書へ。

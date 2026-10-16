@@ -7,7 +7,7 @@
 //   ③ 入れて押すと部材見積依頼書ページが開く——タグ（部材見積依頼番号・仕入先・部材見積依頼日）・部材見積依頼明細表（未回答・単価は空）・備考
 //   ④ 元の見積依頼部材表は消える
 //
-// 当て先（【E2E】の置き場と見積依頼部材表）は自分で作り、できた部材見積依頼書（本物の 部材見積依頼／年／月 の下）と、試験が作った
+// 当て先（【E2E】の置き場と見積依頼部材表）は自分で作り、できた部材見積依頼書（本物の 記録／年／月／製造記録 の下）と、試験が作った
 // 年月のフォルダは最後に消します。差出人（署名を持つ人）が居なければ飛ばします。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-rfq-doc.js
 const { chromium } = require('playwright');
@@ -71,7 +71,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     doc = (new URL(page.url())).pathname.replace(/^\//, '');
     check('③ 部材見積依頼書ページが開く', /^\d{6}$/.test(doc) && doc !== box, page.url());
     const raw = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), doc);
-    check('③ 題は「部材見積依頼　仕入先」', raw.includes('<h1>部材見積依頼　【E2E】仕入先</h1>'), raw.slice(0, 80));
+    check('③ 題は「【弊社】部材見積依頼　仕入先」（2026-10-16 から題の頭に【弊社】）', raw.includes('<h1>【弊社】部材見積依頼　【E2E】仕入先</h1>'), raw.slice(0, 80));
     check('③ 部材見積依頼番号はページ番号・仕入先・部材見積依頼日のタグ', raw.includes('<dt>部材見積依頼番号</dt><dd>' + doc + '</dd>') &&
       raw.includes('<dt>仕入先</dt><dd>【E2E】仕入先</dd>') && raw.includes('<dt>部材見積依頼日</dt><dd>2026-10-05</dd>'));
     check('③ 部材見積依頼担当に差出人', raw.includes('<dt>部材見積依頼担当</dt><dd>' + signers[0] + '</dd>'));
@@ -119,13 +119,14 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {
-    // 部材見積依頼書と、試験が作った年月のフォルダ（作った当て先より新しい番号で、空のもの）を消す。
+    // 部材見積依頼書と、試験が作った製造記録・年月のフォルダ（作った当て先より新しい番号で、空のもの）を消す
+    // （2026-10-16 から 記録／年／月／製造記録 の3段）。
     const base = Number(box || 0);
     if (doc && doc !== box) {
       const up = await parentOf(page, doc).catch(() => '');
       await deletePage(page, doc).catch(() => {});
       let f = up;
-      for (let i = 0; i < 2 && f && Number(f) > base; i++) {
+      for (let i = 0; i < 3 && f && Number(f) > base; i++) {
         const kids = await childrenOf(page, f).catch(() => [1]);
         if (kids.length !== 0) break;
         const next = await parentOf(page, f).catch(() => '');
