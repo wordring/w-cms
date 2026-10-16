@@ -165,7 +165,8 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 取引先の決まり（2026-10-01・partner_rules.go）——画面の「図面番号を品番に」「図面名称を品名に」の印の初期値。
 	rule := partnerRuleFor(customer)
 	out["rule"] = map[string]any{"part_no": rule.PartNoIsDrawingNo, "item_name": rule.ItemNameIsDrawingName}
-	if customer == "" || machine == "" || name == "" {
+	// 装置名称は空でもよい（2026-10-16 利用者:「装置名は新仕様とし…」——装置名の分からない品物は社名の直下）。
+	if customer == "" || name == "" {
 		json.NewEncoder(w).Encode(out) // まだ埋まっていない——「無い」と同じ扱い
 		return
 	}
@@ -175,8 +176,12 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := boxID
-	// 木は `製造台帳／社名／装置名称`（2026-10-16 に「加工製品」の箱をなくした）。フォルダだけを辿る（findFolderChild）。
-	for _, title := range []string{customer, machine} {
+	// 木は `製造台帳／社名／（装置名称）`（2026-10-16 に「加工製品」の箱をなくした）。フォルダだけを辿る（findFolderChild）。
+	path := []string{customer}
+	if machine != "" {
+		path = append(path, machine)
+	}
+	for _, title := range path {
 		next, found := findFolderChild(id, title)
 		if !found {
 			json.NewEncoder(w).Encode(out)
@@ -534,6 +539,10 @@ type filingRequest struct {
 	// 既定は false——**偽の改定を黙って作らない**ため（2026-09-03 ユーザー:
 	// 「同じ図面名称を2回整理すると改定になるのはちょっとマズいと思います」）。
 	ConfirmRevision bool `json:"confirm_revision"`
+	// ConfirmNoMachine は「その会社に装置名のフォルダがあるが、装置名称を空のまま社名の直下に入れてよい」の確認です
+	// （2026-10-16 利用者:「装置名のフォルダがあるのに、装置名を空にしている場合は、警告して保存の可否を問い合わせてください」）。
+	// ⚠ **ConfirmRevision とは別の印です**——1つの印を使い回すと、こちらで「はい」と答えた行が、図面改定の確かめまで飛ばします。
+	ConfirmNoMachine bool `json:"confirm_no_machine"`
 	// Merge は**行き先に同じ題のページがあったとき、どうするか**です（2026-09-20）。
 	//
 	//	""・"new"   … 行き先に無ければ新規の加工製品ページ。**在れば動かしません**（人が決めるまで通信箱に置いたまま）
@@ -567,6 +576,9 @@ type filingResult struct {
 	Outcome  string `json:"outcome"`
 	Message  string `json:"message"`
 	TargetID string `json:"target_id,omitempty"` // 改定のときは合流先
+	// Confirm は needs_confirm のとき、何の確かめか（"no_machine"＝装置名称が空・2026-10-16）。空なら図面の確かめ
+	// （画面は「承知のうえで進める」〔confirm_revision〕の印を付けて送り直す）。
+	Confirm string `json:"confirm,omitempty"`
 }
 
 // FileDrawingsAPIHandler は POST /api/file-drawings です。
@@ -651,11 +663,14 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	machine := cms.NormalizeNameForIngest(row.MachineName)
 	name := cms.NormalizeNameForIngest(row.DrawingName)
 
-	// **空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
+	// **顧客名・製品名称の空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
 	// （通信箱が保留の置き場。空の顧客ページを増やさない）。
-	if customer == "" || machine == "" || name == "" {
+	// ⚠ **装置名称は空でもよい**（2026-10-16 利用者:「装置名は新仕様とし、文書も修正して下さい」——【考察】全体の設計 §4.4
+	// 「その下にオプションで装置名フォルダ」「装置名が分からないメーカーもあるので」）。空なら社名の直下に置きます。
+	// それまでは装置名称の空も保留の意思表示でした。
+	if customer == "" || name == "" {
 		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "顧客名・装置名称・製品名称のどれかが空なので、そのままにしました"}
+			Message: "顧客名・製品名称のどちらかが空なので、そのままにしました"}
 	}
 	// **区分は表引きで閉じます**——「試作」と「試作品」が混ざると、絞るときに
 	// 静かに取りこぼします（設定の語彙 `区分` が正本）。
@@ -667,6 +682,15 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	idInt, refused, ok := filingSourceGate(user, pageID)
 	if !ok {
 		return refused
+	}
+	// **装置名称が空でも、その会社に装置名のフォルダがあれば、先に聞きます**（2026-10-16 利用者:「装置名のフォルダが
+	// あるのに、装置名を空にしている場合は、警告して保存の可否を問い合わせてください」）。何も書く前に聞きます。
+	if machine == "" && !row.ConfirmNoMachine {
+		if names := machineFoldersOf(user, customer); len(names) > 0 {
+			return filingResult{PageID: pageID, Outcome: "needs_confirm", Confirm: "no_machine",
+				Message: "「" + customer + "」には装置名のフォルダが " + strconv.Itoa(len(names)) + " つあります（" + strings.Join(firstN(names, 5), "・") +
+					"）。装置名称が空のままです。装置名称を入れずに、社名の直下に入れますか？"}
+		}
 	}
 
 	// **人が直した値を、図面ブロックにも書き戻します**（2026-09-11 ユーザー:「整理で

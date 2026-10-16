@@ -6551,7 +6551,8 @@
         head.className = 'filing-head';
         // 欄の名前はページの名前（2026-10-08 利用者:「『顧客名』『装置名称』『（加工）製品名称』がページ名の意味ではないでしょうか？」
         // ——それまで3つ目は「図面名称」と呼んでいたが、入れるのは加工製品ページの題）。
-        head.textContent = '行き先: 製造台帳／顧客名／装置名称／製品名称。空欄の図面は動かしません。';
+        // 装置名称は空でもよい（2026-10-16——社名の直下に置く）。顧客名・製品名称が空なら動かさない。
+        head.textContent = '行き先: 製造台帳／顧客名／装置名称／製品名称（装置名称は空でもよく、そのときは顧客名の直下）。顧客名か製品名称が空の図面は動かしません。';
         if (rows.length) panel.appendChild(head);
 
         // **既にある取引先を候補に出します。** 実データの初回で、アドレス帳が作った
@@ -7284,6 +7285,9 @@
             machine_name: i.fields.machine_name.value,
             drawing_name: i.fields.drawing_name.value,
             confirm_revision: i.box.checked,
+            // 装置名のフォルダがある会社で、装置名称を空のまま社名の直下に入れてよいか（2026-10-16・下の確かめのダイアログで聞く）。
+            // ⚠ 図面の確かめ（confirm_revision）とは別の印——使い回すと、こちらの「はい」が図面改定の確かめまで飛ばす。
+            confirm_no_machine: !!i.noMachineOK,
             // 行き先に同じ題のページがあったとき、改定か二つ目の図面か（2026-09-20）。
             // ⚠ **選ばれていなければ空**です——サーバーはそのとき動かしません。
             merge: (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '',
@@ -7315,8 +7319,11 @@
             if (skipNote) lines.push(skipNote);
             // **確認待ちの行は表を閉じない**——チェックを出して、人が判断してから
             // もう一度実行してもらう（偽の改定を黙って作らないための関門）。
+            // ⚠ 装置名称が空の確かめ（confirm === 'no_machine'）は、この「承知のうえで進める」の印を出さない——
+            //    あの印は図面の確かめ（confirm_revision）のもので、押しても装置名の確かめにはならない。ダイアログだけで聞く。
             const pending = new Set(results
-                .filter(r => r.outcome === 'needs_confirm').map(r => r.page_id));
+                .filter(r => r.outcome === 'needs_confirm' && r.confirm !== 'no_machine').map(r => r.page_id));
+            const noMachine = results.filter(r => r.outcome === 'needs_confirm' && r.confirm === 'no_machine').length;
             inputs.forEach(i => { i.confirm.hidden = !pending.has(i.page_id); });
             // **選択待ちの行も表を閉じません**（2026-09-20）。打ち替えのたびの
             // 問い合わせで既に出ているはずですが、⚠ **聞けなかったとき**（通信が
@@ -7324,7 +7331,7 @@
             const choosing = new Set(results
                 .filter(r => r.outcome === 'needs_choice').map(r => r.page_id));
             inputs.forEach(i => { if (choosing.has(i.page_id)) i.choice.hidden = false; });
-            const stay = pending.size + choosing.size;
+            const stay = pending.size + choosing.size + noMachine;
             notify(lines.join('\n') || '対象がありませんでした。',
                 { type: stay ? 'warn' : 'success', duration: 0, id: 'filing' });
             // **確かめが要る行は、1行ずつダイアログで聞く**（2026-10-03）——進めるなら印を付けてその行だけ送り直す。
@@ -7333,6 +7340,15 @@
             for (const r of results.filter(x => x.outcome === 'needs_confirm')) {
                 const i = inputs.find(x => x.page_id === r.page_id);
                 if (!i) continue;
+                // 装置名称が空の確かめ（2026-10-16 利用者:「装置名のフォルダがあるのに、装置名を空にしている場合は、警告して
+                // 保存の可否を問い合わせてください」）——「はい」なら、その印だけを付けて送り直す。
+                if (r.confirm === 'no_machine') {
+                    if (await askConfirm(r.message, '社名の直下に入れる', 'やめる')) {
+                        i.noMachineOK = true;
+                        again.push(i);
+                    }
+                    continue;
+                }
                 const m = (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '';
                 const yes = m === 'drawing' ? '追加する' : m === 'revision' ? '改定する' : m === 'folder' ? '足す' : '進める';
                 if (await askConfirm(r.message, yes, 'やめる')) {

@@ -217,6 +217,37 @@ func ensureProductPath(user *auth.User, customer, machine string) (string, error
 	return machineID, nil
 }
 
+// machineFoldersOf は、社名 customer の直下にある装置名のフォルダの題を返します（読めるものだけ・作らない）。
+func machineFoldersOf(user *auth.User, customer string) []string {
+	boxID, ok := CustomerBoxPageID()
+	if !ok {
+		return nil
+	}
+	customerID, ok := findFolderChild(boxID, customer)
+	if !ok {
+		return nil
+	}
+	kids, err := cms.ChildPages(database.DB, pageNum(customerID))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, k := range kids {
+		if page.CanView(user, k.ID) && isMachineFolder(page.FormatID(k.ID)) {
+			out = append(out, k.Title)
+		}
+	}
+	return out
+}
+
+// firstN は並びの頭 n 個を返します。
+func firstN(vals []string, n int) []string {
+	if len(vals) > n {
+		return vals[:n]
+	}
+	return vals
+}
+
 // findMachineFolder は `製造台帳／社名／装置名称` の装置のページを、作らずに探します。
 func findMachineFolder(customer, machine string) (string, bool) {
 	boxID, ok := CustomerBoxPageID()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -237,6 +238,78 @@ func TestFileDrawingsSkipsEmptyFields(t *testing.T) {
 	meta, _ := page.ReadSidecar(partID)
 	if meta.ParentID != inbox {
 		t.Errorf("空欄なのに親が変わりました: %+v", meta)
+	}
+}
+
+// TestFileDrawingsWithoutMachineGoesUnderCompany は、**装置名称が空なら社名の直下へ収める**ことを固定します
+// （2026-10-16 利用者:「装置名は新仕様とし、文書も修正して下さい」——「その下にオプションで装置名フォルダ」
+// 「装置名が分からないメーカーもあるので」）。顧客名・製品名称の空は、いまも保留です（上の試験）。
+func TestFileDrawingsWithoutMachineGoesUnderCompany(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	partID := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "", "みなと商店")
+
+	results := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{
+		PageID: partID, Customer: "みなと商店", MachineName: "", DrawingName: "取付ベース",
+	}})
+	if len(results) != 1 || results[0].Outcome != "moved" {
+		t.Fatalf("装置名称が空なのに収めていません: %+v", results)
+	}
+	boxID, _ := CustomerBoxPageID()
+	custID, ok := findChildByTitle(boxID, "みなと商店")
+	if !ok {
+		t.Fatal("社名のページが作られていません")
+	}
+	if meta, _ := page.ReadSidecar(partID); meta.ParentID != custID {
+		t.Errorf("社名の直下に収まっていません（親 %s・社名 %s）", meta.ParentID, custID)
+	}
+	if !strings.Contains(results[0].Message, "みなと商店／取付ベース") {
+		t.Errorf("知らせの行き先が違います: %s", results[0].Message)
+	}
+	// 行き先の確かめ（filing-target）も、装置名称なしで同じページを見つける。
+	rr := httptest.NewRecorder()
+	FilingTargetAPIHandler(rr, auth.WithUser(httptest.NewRequest("GET",
+		"/api/filing-target?customer="+url.QueryEscape("みなと商店")+"&machine=&name="+url.QueryEscape("取付ベース"), nil),
+		&auth.User{Username: "alice"}))
+	if !strings.Contains(rr.Body.String(), `"exists":true`) {
+		t.Errorf("装置名称なしの行き先が「無い」になっています: %s", rr.Body.String())
+	}
+}
+
+// TestFileDrawingsAsksWhenCompanyHasMachines は、**その会社に装置名のフォルダがあるのに装置名称が空なら、
+// 何も書かずに確かめを返し、「はい」（ConfirmNoMachine）で社名の直下へ収める**ことを固定します
+// （2026-10-16 利用者:「装置名のフォルダがあるのに、装置名を空にしている場合は、警告して保存の可否を問い合わせてください」）。
+// ⚠ 図面の確かめの印（ConfirmRevision）では通らないこと——別の印です。
+func TestFileDrawingsAsksWhenCompanyHasMachines(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	u := &auth.User{Username: "alice"}
+	if _, err := ensureProductPath(u, "みなと商店", "標準2輪"); err != nil { // 装置名のフォルダが1つある会社
+		t.Fatal(err)
+	}
+	partID := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "", "みなと商店")
+	row := filingRequest{PageID: partID, Customer: "みなと商店", MachineName: "", DrawingName: "取付ベース"}
+
+	res := postFiling(t, u, []filingRequest{row})
+	if len(res) != 1 || res[0].Outcome != "needs_confirm" || res[0].Confirm != "no_machine" || !strings.Contains(res[0].Message, "標準2輪") {
+		t.Fatalf("装置名のフォルダがあるのに確かめを返しません: %+v", res)
+	}
+	if meta, _ := page.ReadSidecar(partID); meta.ParentID != inbox {
+		t.Errorf("確かめの前に動かしています: %+v", meta)
+	}
+	row.ConfirmRevision = true // 図面の確かめの印では通らない
+	if res := postFiling(t, u, []filingRequest{row}); len(res) != 1 || res[0].Confirm != "no_machine" {
+		t.Errorf("図面の確かめの印で、装置名の確かめを飛ばしました: %+v", res)
+	}
+	row.ConfirmRevision, row.ConfirmNoMachine = false, true
+	res = postFiling(t, u, []filingRequest{row})
+	if len(res) != 1 || res[0].Outcome != "moved" {
+		t.Fatalf("「はい」で収めていません: %+v", res)
+	}
+	boxID, _ := CustomerBoxPageID()
+	custID, _ := findChildByTitle(boxID, "みなと商店")
+	if meta, _ := page.ReadSidecar(partID); meta.ParentID != custID {
+		t.Errorf("社名の直下に収まっていません（親 %s）", meta.ParentID)
 	}
 }
 
