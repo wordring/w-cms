@@ -171,7 +171,7 @@ func TestFileDrawingsUsesEditedValues(t *testing.T) {
 		t.Fatalf("移動になっていません: %+v", results)
 	}
 
-	// 「取引先」の下に顧客名、その下に装置名称、その下に加工製品ページ
+	// 「製造」の下に顧客名、その下に装置名称、その下に加工製品ページ
 	// （2026-09-05 ユーザー決定。トップ直下が名簿になるのを避けた）。
 	boxID, ok := findChildByTitle(cms.TopPageID, CustomerBoxTitle)
 	if !ok {
@@ -487,7 +487,7 @@ func TestSenderAddressOfFollowsSourceRef(t *testing.T) {
 // TestFilingLinksToContactsBook は、整理が**2つの木を参照タグで結ぶ**ことを
 // 固定します（2026-09-16）。
 //
-// 2026-09-16 にアドレス帳（`連絡帳`）と加工製品の階層（`取引先`）を別の木に分けました。
+// 2026-09-16 にアドレス帳（`連絡帳`）と加工製品の階層（`取引先`。いまの `製造`）を別の木に分けました。
 // **題だけで結んでいると、どちらかを改名した日に切れます**——加工製品の階層のフォルダ名も
 // 連絡帳の社名も、人が直すものです。参照はページIDなので切れません。
 //

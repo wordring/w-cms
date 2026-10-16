@@ -20,7 +20,7 @@ func seedPartners(t *testing.T, secretOwner string) {
 	addPage(t, 51, 50, "ひかりレーザー", "root", "302", true)
 	addPage(t, 52, 50, "ふじ鍍金", "root", "302", true)
 	addPage(t, 53, 50, "秘密の外注先", secretOwner, "300", false)
-	addPage(t, 54, 0, "よそのページ", "root", "302", true) // 取引先の下ではない
+	addPage(t, 54, 0, "よそのページ", "root", "302", true) // 製造の下ではない
 	for _, p := range []struct {
 		id    int
 		title string
@@ -30,7 +30,7 @@ func seedPartners(t *testing.T, secretOwner string) {
 	}
 }
 
-// TestSuggestPartnersReturnsPartnerBoxChildren は、**取引先の下の社名だけ**が
+// TestSuggestPartnersReturnsPartnerBoxChildren は、**製造の下の社名だけ**が
 // 候補になることを固定します。
 func TestSuggestPartnersReturnsPartnerBoxChildren(t *testing.T) {
 	setupMaterialsPermsTest(t)
@@ -43,13 +43,13 @@ func TestSuggestPartnersReturnsPartnerBoxChildren(t *testing.T) {
 			t.Errorf("候補に %q がありません: %s", want, joined)
 		}
 	}
-	// ⚠ **取引先の下でないページは候補にしません**（誰でも作れる普通のページ）。
+	// ⚠ **製造の下でないページは候補にしません**（誰でも作れる普通のページ）。
 	if strings.Contains(joined, "よそのページ") {
-		t.Errorf("⚠ 取引先の下でないページが候補に出ています: %s", joined)
+		t.Errorf("⚠ 製造の下でないページが候補に出ています: %s", joined)
 	}
 	// ⚠ **箱そのものも候補にしません。**
 	if strings.Contains(joined, CustomerBoxTitle) {
-		t.Errorf("⚠ 取引先の箱そのものが候補に出ています: %s", joined)
+		t.Errorf("⚠ 製造の箱そのものが候補に出ています: %s", joined)
 	}
 }
 

@@ -7,7 +7,7 @@
 //   ③ 装置のページに同じファイルの表示が既にあると確かめのダイアログ——「やめる」なら入らない、「足す」なら入る
 //   ④ 装置名称が既にある装置でなければ断る（作らない・解析で作ったページは残る）
 //
-// 当て先は全部自分で作って最後に消します（取引先の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
+// 当て先は全部自分で作って最後に消します（製造の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-filing-folder.js
 const { chromium } = require('playwright');
 const { login, makePage, deletePage, childrenOf, bodyOf, findMailbox } = require('./lib');
@@ -44,15 +44,15 @@ const drawingBlock = (no, name, machine, ref) =>
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
     if (!box || !partners) {
-      console.log('通信箱か取引先が無いので飛ばします');
+      console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
       process.exit(0);
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 既にある装置のページ（取引先／【E2E】装置の会社／加工製品／【E2E】装置フォルダ）——中に手で貼ったファイル表示が1つ。
+    // 既にある装置のページ（製造／【E2E】装置の会社／加工製品／【E2E】装置フォルダ）——中に手で貼ったファイル表示が1つ。
     cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
     const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
     const folder = await makePage(page, '<h1>' + MACHINE + '</h1><p>装置の説明</p><section data-type="file-view" data-ref="000000-zzzz"></section>', prodBox);
@@ -121,7 +121,7 @@ const drawingBlock = (no, name, machine, ref) =>
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
     await cleanup();
     const partnersAfter = (await childrenOf(page, partners)).map(c => c.ID).join(',');
-    check('取引先の子が元どおり', partnersAfter === partnersBefore);
+    check('製造の子が元どおり', partnersAfter === partnersBefore);
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {

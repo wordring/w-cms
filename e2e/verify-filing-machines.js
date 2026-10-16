@@ -108,7 +108,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     // 顧客ページが無いので、**壊れたのではなく前提が無い**——飛ばします（2026-09-16）。
     const hasCustomerPage = await page.evaluate(async (name) => {
       const top = await (await fetch('/api/children?parent_id=000000')).json().catch(() => []);
-      const box = (top || []).find(c => (c.Title || '').trim() === '取引先');
+      const box = (top || []).find(c => (c.Title || '').trim() === '製造');
       if (!box) return false;
       const kids = await (await fetch('/api/children?parent_id=' + box.ID)).json().catch(() => []);
       return (kids || []).some(c => (c.Title || '').trim() === name);
@@ -131,8 +131,8 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
         const res = await fetch('/api/children?parent_id=' + id);
         return res.ok ? (await res.json() || []) : [];
       };
-      const box = (await kids('000000')).find(p => p.Title === '取引先');
-      if (!box) return { ok: false, why: '取引先ページがありません' };
+      const box = (await kids('000000')).find(p => p.Title === '製造');
+      if (!box) return { ok: false, why: '製造ページがありません' };
       const cust = (await kids(box.ID)).find(p => p.Title === '南北スポーツ機械');
       if (!cust) return { ok: false, why: '顧客ページがありません' };
       const boxes = await kids(cust.ID);

@@ -20,7 +20,7 @@ func TestFilingWritesPartnerRules(t *testing.T) {
 	u := &auth.User{Username: "alice"}
 	boxID, err := EnsureCustomerBox(u)
 	if err != nil {
-		t.Fatalf("取引先の箱を作れません: %v", err)
+		t.Fatalf("製造の箱を作れません: %v", err)
 	}
 	if _, err := cms.CreateChildPage(boxID, "alice", `<h1>南北スポーツ</h1><dl data-type="tags">`+
 		`<dt>`+PartNoRuleTag+`</dt><dd>図面番号</dd><dt>`+ItemNameRuleTag+`</dt><dd>図面名称</dd></dl>`); err != nil {

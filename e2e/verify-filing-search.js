@@ -9,7 +9,7 @@
 //   ③ 同じ図面番号（版の印だけ違う）を図面追加すると、確かめのダイアログ——「やめる」なら入らない、「追加する」なら入る
 //   ④ 「何もしない」を選ぶと、実行しても動かさない（このメールの下にそのまま残る）
 //
-// 当て先は全部自分で作って最後に消します（取引先の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
+// 当て先は全部自分で作って最後に消します（製造の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-filing-search.js
 const { chromium } = require('playwright');
 const { login, makePage, deletePage, findMailbox, childrenOf, bodyOf } = require('./lib');
@@ -48,15 +48,15 @@ const drawingBlock = (no, name, machine) =>
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
     if (!box || !partners) {
-      console.log('通信箱か取引先が無いので飛ばします');
+      console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
       process.exit(0);
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 既にある加工製品（取引先／【E2E】探す会社／加工製品／【E2E】探す装置／【E2E】探す部品・図面 E2E-FS-1）。
+    // 既にある加工製品（製造／【E2E】探す会社／加工製品／【E2E】探す装置／【E2E】探す部品・図面 E2E-FS-1）。
     cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
     const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
     const mach = await makePage(page, '<h1>' + MACHINE + '</h1>', prodBox);
@@ -136,7 +136,7 @@ const drawingBlock = (no, name, machine) =>
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
     await cleanup();
     const partnersAfter = (await childrenOf(page, partners)).map(c => c.ID).join(',');
-    check('取引先の子が元どおり', partnersAfter === partnersBefore);
+    check('製造の子が元どおり', partnersAfter === partnersBefore);
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {

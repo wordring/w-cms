@@ -8,7 +8,7 @@
 //      「重複」は選ばれていない——人が選ぶ
 //   ③ 実行すると2枚ともごみ箱へ、既にある加工製品にこのメールの受信元が2つ足され、添付の「解析済み」が加工製品を指す
 //
-// 当て先は全部自分で作って最後に消します——取引先の下に【E2E】の会社（加工製品／装置／品目）、通信箱の下に
+// 当て先は全部自分で作って最後に消します——製造の下に【E2E】の会社（加工製品／装置／品目）、通信箱の下に
 // 受信メールの記録と、解析が作ったのと同じ形の仮のページ2枚。本物の加工製品には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-filing-duplicate.js
 const { chromium } = require('playwright');
@@ -77,15 +77,15 @@ const drawingBlock = (ref, source) =>
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
     if (!box || !partners) {
-      console.log('通信箱か取引先が無いので飛ばします');
+      console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
       process.exit(0);
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 既にある加工製品（取引先／【E2E】の会社／加工製品／【E2E】装置／品目）。
+    // 既にある加工製品（製造／【E2E】の会社／加工製品／【E2E】装置／品目）。
     const cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
     const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
     const mach = await makePage(page, '<h1>【E2E】装置</h1>', prodBox);
@@ -150,10 +150,10 @@ const drawingBlock = (ref, source) =>
       JSON.stringify(an.analyzed || {}));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
 
-    // 後片付けのあと、取引先の子が元どおりか。
+    // 後片付けのあと、製造の子が元どおりか。
     await cleanup();
     const partnersAfter = (await childrenOf(page, partners)).map(c => c.ID).join(',');
-    check('取引先の子が元どおり', partnersAfter === partnersBefore);
+    check('製造の子が元どおり', partnersAfter === partnersBefore);
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {

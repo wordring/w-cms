@@ -56,7 +56,7 @@ func setupExtTest(t *testing.T, id string, p page.PageMeta) {
 
 // seedBoxTemplates は置き場のテンプレートを用意します（2026-09-27 から、置き場は**同じ題の
 // テンプレートからだけ**作られる・`cms.EnsureTopLevelBox`）。整理や社名の候補の試験が
-// 取引先・受注・部材発注・連絡帳の置き場を作るので、その元を置いておきます。
+// 製造・受注・部材発注・連絡帳の置き場を作るので、その元を置いておきます。
 // ID は試験のページと重ならない 0009xx を使います。
 func seedBoxTemplates(t *testing.T) {
 	t.Helper()

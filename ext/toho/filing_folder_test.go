@@ -14,7 +14,7 @@ import (
 // 整理の「装置のページへ」（filing_folder.go・2026-10-08）の番人です。
 // 利用者:「メールの整理について、図面をフォルダページに追加したいのですが、出来ません」（組立図）。
 
-// folderSetup は取引先・加工製品・装置のページを、ふつうの整理（新規）で作って装置のページの ID を返します。
+// folderSetup は製造・社名・加工製品・装置のページを、ふつうの整理（新規）で作って装置のページの ID を返します。
 func folderSetup(t *testing.T, inbox string) string {
 	t.Helper()
 	setupFilingTest(t, inbox)

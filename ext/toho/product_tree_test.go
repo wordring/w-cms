@@ -115,9 +115,9 @@ func TestProductListShowsProductsAndKinds(t *testing.T) {
 			t.Errorf("一覧に %q がありません:\n%s", want, html)
 		}
 	}
-	// 社名の上（取引先の根）に置いても、その下を全部集める。
+	// 社名の上（製造の根）に置いても、その下を全部集める。
 	if all, _ := productListRows(u, mustAtoi(t, boxID)); len(all) != 2 {
-		t.Errorf("取引先の根から集めると %d 行です（2のはず）", len(all))
+		t.Errorf("製造の根から集めると %d 行です（2のはず）", len(all))
 	}
 }
 
@@ -149,7 +149,7 @@ func TestProductFolderAPI(t *testing.T) {
 	productsID, _ := findChildByTitle(custID, ProductsBoxTitle)
 	machID, ok := findChildByTitle(productsID, "標準2輪")
 	if !ok || machID != first["page_id"] {
-		t.Errorf("取引先／みなと商店／加工製品／標準2輪 になっていません: %v", first)
+		t.Errorf("製造／みなと商店／加工製品／標準2輪 になっていません: %v", first)
 	}
 	// 装置名称が空なら箱を返す（まとめを書く先などに使う）。
 	if _, box := call("みなと商店", ""); box["page_id"] != productsID {

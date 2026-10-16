@@ -85,7 +85,7 @@ func TestFilingTargetCreatesNothing(t *testing.T) {
 	setupFilingTest(t, inbox)
 	u := &auth.User{Username: "alice"}
 
-	// ⚠ **先に1枚整理して「取引先」の箱を作っておきます。** 箱が無いと問い合わせは
+	// ⚠ **先に1枚整理して「製造」の箱を作っておきます。** 箱が無いと問い合わせは
 	// 辿る前に戻るので、**作る作らない以前にループへ入りません**——最初それで
 	// 「作らない」試験が**変異させても通って**いました（測っていたのは早期戻りでした）。
 	seed := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")

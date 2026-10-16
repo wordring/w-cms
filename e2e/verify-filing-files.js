@@ -10,7 +10,7 @@
 //   ④ 同じページへもう一度押すと「⚠ 既にあります」
 //   ⑤ 図面の欄の3つ目は「製品名称」・区分の印は無い
 //
-// 当て先は全部自分で作って最後に消します（取引先の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
+// 当て先は全部自分で作って最後に消します（製造の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-filing-files.js
 const { chromium } = require('playwright');
 const { login, makePage, deletePage, childrenOf, bodyOf, findMailbox } = require('./lib');
@@ -54,15 +54,15 @@ const MACHINE = '【E2E】ファイルの装置';
     await login(page, BASE);
     const box = await findMailbox(page);
     const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
+    const partners = (top.find(c => (c.Title || '').trim() === '製造') || {}).ID || '';
     if (!box || !partners) {
-      console.log('通信箱か取引先が無いので飛ばします');
+      console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
       process.exit(0);
     }
     const partnersBefore = (await childrenOf(page, partners)).map(c => c.ID).join(',');
 
-    // 取引先／【E2E】ファイルの会社／加工製品／【E2E】ファイルの装置／【E2E】ファイルの部品
+    // 製造／【E2E】ファイルの会社／加工製品／【E2E】ファイルの装置／【E2E】ファイルの部品
     cust = await makePage(page, '<h1>' + CUSTOMER + '</h1>', partners);
     const prodBox = await makePage(page, '<h1>加工製品</h1>', cust);
     const folder = await makePage(page, '<h1>' + MACHINE + '</h1><p>装置の説明</p>', prodBox);
@@ -139,7 +139,7 @@ const MACHINE = '【E2E】ファイルの装置';
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
     await cleanup();
     const partnersAfter = (await childrenOf(page, partners)).map(c => c.ID).join(',');
-    check('取引先の子が元どおり', partnersAfter === partnersBefore);
+    check('製造の子が元どおり', partnersAfter === partnersBefore);
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {

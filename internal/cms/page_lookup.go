@@ -92,7 +92,7 @@ func EnsureChildByTitle(parentID, owner, title, bodyHTML string) (string, error)
 }
 
 // TopLevelPageByTitle はトップ直下の題一致ページを返します
-// （通信箱・テンプレート置き場・取引先が共有する——「名前が機能」という同じ仕様）。
+// （通信箱・テンプレート置き場・製造が共有する——「名前が機能」という同じ仕様）。
 //
 // **2枚あったら、いちばん古いものを返します**（2026-09-16 に `ORDER BY id` を足した）。
 // それまで `LIMIT 1` だけだったので、**どちらが返るかは決まっていませんでした**

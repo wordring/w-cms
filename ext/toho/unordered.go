@@ -172,7 +172,7 @@ func isDateLike(s string) bool {
 
 // machineOf は加工製品ページの装置名称を返します。
 //
-// ⚠ **階層（`取引先／社名／段／装置名称／図面名称`）からは辿りません**——ワンノートから
+// ⚠ **階層（`製造／社名／段／装置名称／図面名称`）からは辿りません**——ワンノートから
 // 移したページはまだ階層に入っていないことがあり、**タグのほうが確かです**。
 func machineOf(db cms.ReadOnlyDB, productID int) string {
 	tags, err := cms.TagsOfPage(db, productID)

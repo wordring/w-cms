@@ -123,7 +123,7 @@ func ensureFolderUnder(parentID, owner, title string) (string, error) {
 //
 // **箱を作るのはコア、名前を決めるのは使う側**です。通信箱（MailBoxTitle）は
 // 「そこへ落とすと取り込みが走る」機能の入口なので人が意図して置きますが、
-// **ただの置き場（取引先・受注など）は行き止まりにする理由がありません**。
+// **ただの置き場（製造・受注など）は行き止まりにする理由がありません**。
 // 業務の言葉（「受注」）を持つのは拡張の側で、ここには置きません。
 func EnsureTopLevelBox(title, owner string) (string, error) {
 	if id, ok := TopLevelPageByTitle(title); ok {
