@@ -2628,6 +2628,8 @@ body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
    「2か所で良いと思います。」。⚠ 色だけで分けない——品名の後ろに「⚠ 赤字 …」の文も出す（backlog-loss-note）。 */
 #w-editor-content tr.backlog-loss > td { background: #fee2e2; }
 #w-editor-content .backlog-loss-note { display: block; color: #b91c1c; font-size: 0.85em; white-space: normal; }
+/* まだ埋まっていない段（2026-10-17・backlog.go の backlogGaps）——知らせるだけなので、赤にしない（茶色の文字だけ）。 */
+#w-editor-content td.backlog-gap { color: #92400e; }
 /* 受注明細表の「見積との差」（同じ日）——赤字の行だけ文が入る。 */
 #w-editor-content td.order-loss-ng { color: #b91c1c; background: #fee2e2; white-space: normal; min-width: 12em; }
 

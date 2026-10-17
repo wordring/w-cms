@@ -370,7 +370,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">製造完了</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
-			`<th>備考</th><th class="no-print">受注</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
+			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">受注</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -415,6 +415,8 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				noPrintCell(checkFieldHTML("請求書発行", r.Invoice)) +
 				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。
 				`<td class="cell-wrap">` + textFieldHTML("備考", r.Note) + `</td>` +
+				// まだ埋まっていない段（2026-10-17・直す順の10番）——知らせるだけで、止めない。
+				`<td class="cell-atomic no-print backlog-gap">` + stdhtml.EscapeString(strings.Join(backlogGaps(r), "・")) + `</td>` +
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
 				noPrintCell(rfqPickHTML(r)) +
@@ -488,6 +490,27 @@ func shippedCell(n int) string {
 		return ""
 	}
 	return strconv.Itoa(n)
+}
+
+// backlogGaps は、その行でまだ埋まっていない段を返します（2026-10-17・【考察】全体の設計 §3.3・§3.4・直す順の10番）。
+//
+// 2026-10-16 利用者:「段の順を強制しない。欠けた段は、あとから埋められる。価格は、決まった所に書く。で良いです。」
+//
+//   - 発注書番号 … 受注ページの `発注書番号` が空（発注書なしの製造依頼。あとから発注書が来れば書く）
+//   - 単価       … 受注明細の `単価` が空か読めない（価格は、決まったときに書く）
+//
+// ⚠ **知らせるだけです。** 色も赤にしません（赤は「このままでは困る」——弊社品番の空き・赤字）。
+// 弊社品番の空きは、弊社品番のセルの薄赤がすでに知らせているので、ここには並べません。
+// 見積の無い注文・納品書の無い行は、ふつうに起きる形なので出しません（見積なしの注文がある・受注残の行はまだ納めていない）。
+func backlogGaps(r backlogRow) []string {
+	var gaps []string
+	if strings.TrimSpace(r.OrderNo) == "" {
+		gaps = append(gaps, OrderNoTag)
+	}
+	if !r.HasPrice {
+		gaps = append(gaps, "単価")
+	}
+	return gaps
 }
 
 // orderLabel は受注の見出しです（発注書番号があればそれ、無ければページID）。

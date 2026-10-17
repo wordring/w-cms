@@ -51,6 +51,13 @@ const madeCell = (page, id) => page.evaluate(async (pid) => {
       return { at: ths.indexOf('製造完了') - ths.indexOf('材料発注'), cls: th ? th.className : null };
     });
     check('① 「製造完了」の欄が材料発注の右・紙に出さない', head.at === 1 && (head.cls || '').includes('no-print'), JSON.stringify(head));
+    // 「まだ無いもの」（2026-10-17・backlogGaps）——この受注明細には単価の列が無いので「単価」。紙には出さない。
+    const gap = await page.evaluate((oid) => {
+      const th = [...document.querySelectorAll('#w-editor-content .backlog-table th')].find((x) => x.textContent.trim() === 'まだ無いもの');
+      const td = document.querySelector('#w-editor-content tr[data-order-page="' + oid + '"] td.backlog-gap');
+      return { th: th ? th.className : null, td: td ? td.textContent.trim() : null };
+    }, order);
+    check('④ 「まだ無いもの」に「単価」・紙に出さない', gap.td === '単価' && (gap.th || '').includes('no-print'), JSON.stringify(gap));
     const box = row.locator('input[data-field="製造完了"]');
     check('① 行に「製造完了」のチェックがある', (await box.count()) === 1);
 
