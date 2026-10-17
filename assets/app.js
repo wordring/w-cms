@@ -11061,6 +11061,16 @@ delegateClick([['.estimate-add-go', async (btn) => {
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
     location.reload();
+}], ['.delivery-pdf-go', async (btn) => {
+    // 納品書の紙（2026-10-17・ext/toho/delivery_pdf.go）——作ると、ページに表示し、発行日に今日を書く（未発行 → 発行済）。
+    const say = btn.parentElement && btn.parentElement.querySelector('.delivery-pdf-say');
+    btn.disabled = true;
+    sayIn(say, 'PDFを作っています…');
+    const r = await postJSON('/api/delivery-pdf', { page_id: btn.getAttribute('data-delivery-page') || '' })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    location.reload();
 }], ['.estimate-note-save', async (btn) => {
     // 備考を見積明細表の下で書く（2026-10-03・ext/toho/estimate_note.go）——利用者:「見積書ページの見積明細テーブルの下に
     // 備考入力欄を付けると良いと思います」。保存先は見積書ページの「備考」の節（PDF はそこを刷る）。

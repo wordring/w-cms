@@ -76,6 +76,19 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
       let cur = dlv;
       for (let i = 0; i < 4; i++) { cur = await parentOf(page, cur); chain.push(await titleOf(page, cur)); }
       check('④ 置き場は 記録／年／月／製造記録', chain[0] === '製造記録' && /^\d{2}月$/.test(chain[1]) && /^\d{4}年$/.test(chain[2]) && chain[3] === '記録', chain.join(' ← '));
+
+      // ⑤ 紙（2026-10-17・delivery_pdf.go）——足元に「状態: 未発行」。「📄 PDFを作る」で PDF がページに出て、発行日に今日・「発行済」。
+      await page.goto(BASE + '/' + dlv);
+      const state0 = (await page.textContent('#w-editor-content .delivery-state').catch(() => '')) || '';
+      check('⑤ 作ったときは「未発行」', state0.includes('未発行'), state0);
+      await Promise.all([
+        page.waitForNavigation({ timeout: 20000 }).catch(() => {}),
+        page.locator('#w-editor-content .delivery-pdf-go').click(),
+      ]);
+      await page.waitForSelector('#w-editor-content section[data-type="file-view"]', { timeout: 15000 }).catch(() => {});
+      const fv = await page.locator('#w-editor-content section[data-type="file-view"]').getAttribute('data-ref').catch(() => '');
+      const state1 = (await page.textContent('#w-editor-content .delivery-state').catch(() => '')) || '';
+      check('⑤ PDFを作ると、ページに出て「発行済」', !!fv && fv.startsWith(dlv + '-') && state1.includes('発行済'), (fv || '') + ' ' + state1);
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

@@ -73,3 +73,35 @@ func TestDeliveryNewFromBacklogRows(t *testing.T) {
 		t.Errorf("品番の違う行で作れてしまいます: %d", code)
 	}
 }
+
+// TestDeliveryPDFRoundTrips は納品書の紙に欄が刷られることを、読み返して確かめます（単価が全部ある・決まっていない行がある）。
+func TestDeliveryPDFRoundTrips(t *testing.T) {
+	withPDFFont(t, systemJPFont(t))
+	doc := func(rows string) string {
+		return `<h1>【弊社】納品書　あけぼの精工</h1><dl data-type="tags"><dt>` + DeliveryNoTag + `</dt><dd>000870</dd>` +
+			`<dt>` + DeliveryClientTag + `</dt><dd>あけぼの精工</dd><dt>` + DeliveredAtTag + `</dt><dd>2026-10-20</dd></dl>` +
+			`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>受注</th><th>発注書番号</th><th>品番</th><th>品名</th>` +
+			`<th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>` + rows + `</tbody></table>`
+	}
+	priced := `<tr><td>000777</td><td>000862</td><td>PO-1</td><td>A-1</td><td>ブラケット</td><td>10</td><td>個</td><td>1500</td><td></td></tr>`
+	pdf, err := buildDeliveryPDF(doc(priced), nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	got := pdfTextOf(t, pdf)
+	for _, want := range []string{"2026年10月20日", "000870", "あけぼの精工", "御中", "下記のとおり納品いたします", "PO-1", "A-1", "ブラケット", "15,000", "小計", "合計"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("⚠ PDFに %q が入っていません:\n%s", want, got)
+		}
+	}
+	// 単価の決まっていない行があれば、合計を刷らず、そう書く（0 にしない）。
+	open := priced + `<tr><td>000778</td><td>000863</td><td>PO-2</td><td>B-1</td><td>シャフト</td><td>5</td><td>個</td><td></td><td></td></tr>`
+	pdf2, err := buildDeliveryPDF(doc(open), nil)
+	if err != nil {
+		t.Fatalf("PDFを作れません: %v", err)
+	}
+	got2 := pdfTextOf(t, pdf2)
+	if strings.Contains(got2, "合計　") || !strings.Contains(got2, "単価の決まっていない品") || !strings.Contains(got2, "注文番号") {
+		t.Errorf("⚠ 決まっていない単価の行がある紙が違います（合計を刷らない・注文番号は列）:\n%s", got2)
+	}
+}
