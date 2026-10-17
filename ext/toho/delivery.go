@@ -129,15 +129,21 @@ func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
 }
 
 // buildDeliveryHTML は納品書ページの本文を、テンプレート tmpl を埋めて組みます。
-func buildDeliveryHTML(tmpl, pageID, client string, lines []deliveryLine) (string, error) {
+func buildDeliveryHTML(tmpl, pageID, client, signer string, lines []deliveryLine) (string, error) {
 	d := cms.NewPageDraft(DeliveryTemplate, tmpl)
 	d.SetTitle(issuerTitle(PageKindOurDelivery, "納品書　"+client))
 	setHeaderTag(d.DraftBlock, DeliveryNoTag, pageID)
 	setHeaderTag(d.DraftBlock, DeliveryClientTag, client)
 	d.SetTag(PageKindTag, PageKindOurDelivery)
-	// 納品日・発行日・納品担当・納品場所は人が書く欄（空で置く）。発行日が空＝未発行。
-	for _, t := range []string{DeliveredAtTag, DeliveryIssuedTag, DeliverySignerTag, DeliveryPlaceTag} {
+	// 納品日・発行日・納品場所は人が書く欄（空で置く）。発行日が空＝未発行。
+	for _, t := range []string{DeliveredAtTag, DeliveryIssuedTag, DeliveryPlaceTag} {
 		d.DraftBlock.EnsureTag(t)
+	}
+	// 納品担当は、作った人の連絡帳のページ（署名のある人・ログイン名と同じ題）を初めに入れる（2026-10-17——空だと紙に差出人が出ない）。
+	if signer != "" {
+		setHeaderTag(d.DraftBlock, DeliverySignerTag, signer)
+	} else {
+		d.DraftBlock.EnsureTag(DeliverySignerTag)
 	}
 	rows := make([]map[string]string, 0, len(lines))
 	for _, ln := range lines {
@@ -189,7 +195,11 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "納品書ページを作れません: "+err.Error())
 		return
 	}
-	if _, err := buildDeliveryHTML(tmpl, "", client, lines); err != nil {
+	signer := ""
+	if s, ok := DefaultSigner(user, Signers(user)); ok {
+		signer = page.FormatID(s.PageID)
+	}
+	if _, err := buildDeliveryHTML(tmpl, "", client, signer, lines); err != nil {
 		cms.JSONFail(w, http.StatusConflict, "納品書ページを作れません: "+err.Error())
 		return
 	}
@@ -204,7 +214,7 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, "納品書ページを作れません: "+err.Error())
 		return
 	}
-	body, err := buildDeliveryHTML(tmpl, newID, client, lines)
+	body, err := buildDeliveryHTML(tmpl, newID, client, signer, lines)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "納品書ページを組めません: "+err.Error())
 		return

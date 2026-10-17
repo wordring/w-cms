@@ -103,4 +103,6 @@ func seedBoxTemplates(t *testing.T) {
 		EstimateCalcDateTag+`</dt><dd><br/></dd><dt>`+PageKindTag+`</dt><dd>`+PageKindOurEstimateCalc+`</dd></dl>`)
 	// 納品書（2026-10-17・delivery.go）。
 	write("000918", "000901", "<h1>"+DeliveryTemplate+"</h1>"+kindTagsDL(PageKindOurDelivery, DeliveryNoTag, DeliveryClientTag, DeliveredAtTag, DeliveryIssuedTag)+emptyVocabTable(DeliveryItemsType))
+	// 請求書（2026-10-17・invoice.go）。
+	write("000919", "000901", "<h1>"+InvoiceTemplate+"</h1>"+kindTagsDL(PageKindOurInvoice, InvoiceNoTag, DeliveryClientTag, InvoiceDateTag, InvoicePeriodTag)+emptyVocabTable(InvoiceItemsType))
 }

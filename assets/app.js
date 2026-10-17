@@ -11071,6 +11071,29 @@ delegateClick([['.estimate-add-go', async (btn) => {
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
     location.reload();
+}], ['.invoice-pdf-go', async (btn) => {
+    // 請求書の紙（2026-10-17・ext/toho/invoice_pdf.go）——作ると、ページに表示し、発行日に今日を書く（未発行 → 発行済）。
+    const say = btn.parentElement && btn.parentElement.querySelector('.invoice-pdf-say');
+    btn.disabled = true;
+    sayIn(say, 'PDFを作っています…');
+    const r = await postJSON('/api/invoice-pdf', { page_id: btn.getAttribute('data-invoice-page') || '' })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    location.reload();
+}], ['.invoice-make', async (btn) => {
+    // 「請求書を作る」（2026-10-17・ext/toho/invoice.go）——その客先の、締めまでの請求書にしていない行で請求書ページを作って開く。
+    const row = btn.closest('.invoice-make-row');
+    const say = row && row.querySelector('.invoice-make-say');
+    const close = row && row.querySelector('.invoice-close');
+    if (!row || !close || !close.value) { sayIn(say, '締めの日付を選んでください'); return; }
+    btn.disabled = true;
+    sayIn(say, '作っています…');
+    const r = await postJSON('/api/invoice/new', { client: row.getAttribute('data-client') || '', close: close.value })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '請求書を作れませんでした')); return; }
+    location.href = r.data.url;
 }], ['.estimate-note-save', async (btn) => {
     // 備考を見積明細表の下で書く（2026-10-03・ext/toho/estimate_note.go）——利用者:「見積書ページの見積明細テーブルの下に
     // 備考入力欄を付けると良いと思います」。保存先は見積書ページの「備考」の節（PDF はそこを刷る）。
