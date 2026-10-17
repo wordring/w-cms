@@ -162,6 +162,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/estimate/import", Handler: EstimateImportAPIHandler},
 		// 見積計算書を作る（2026-10-16・estimate_calc_doc.go——加工製品ページの「🧮 見積計算書」の「➕ 新しい見積計算書を作る」）。
 		{Pattern: "/api/estimate-calc/new", Handler: EstimateCalcNewAPIHandler},
+		// 納品書を作る（2026-10-17・delivery.go——受注残表の「🚚 選んだ行で納品書を作る」）。
+		{Pattern: "/api/delivery/new", Handler: DeliveryNewAPIHandler},
 		// 表の末尾へ行を足す（2026-10-04・管理者だけ——見積から加工製品の外注加工に塗装の行を足す道具が使う・table_append.go）。
 		{Pattern: "/api/table/append-rows", Handler: AppendTableRowsAPIHandler},
 		// 並べた図面の片方を旧版へ——あとから改定にする（2026-10-04・drawing_supersede.go）。

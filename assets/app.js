@@ -11914,6 +11914,88 @@ delegateClick([['.backlog-print', (btn) => {
     printOnly(copy);
 }]]);
 
+// ── 受注残表から納品書を作る（2026-10-17・ext/toho/delivery.go） ──────────────────
+//
+// 利用者:「分納はよくあります。」「納品書をまとめることはあります。まとめない場合もあります。」。受注残表の「納品」の欄で選んだ
+// 行（受注ページ・行・品番・残——サーバーが描いた data-*）について、今回納める数（残りが初めから入っていて直せる）の欄を開き、
+// 「納品書を作る」で /api/delivery/new へ送って、できた納品書ページを開く。⚠ 1枚に1社（客先の違う行は画面でも止める）。
+delegateClick([
+    ['.backlog-dlv-go', (btn) => {
+        const bar = btn.parentElement;
+        const say = bar.querySelector('.backlog-dlv-say');
+        const panel = bar.querySelector('.backlog-dlv-panel');
+        const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-dlv-pick:checked'));
+        if (!picks.length) {
+            sayIn(say, '受注残表の右端の「納品」の欄で、納める行を選んでください。', 'warn');
+            return;
+        }
+        const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
+        if (clients.length > 1) {
+            sayIn(say, '納品書は1枚に1社です（' + clients.join('・') + ' が混ざっています）。', 'warn');
+            return;
+        }
+        sayIn(say, '');
+        panel.textContent = '';
+        const head = document.createElement('p');
+        head.textContent = '「' + (clients[0] || '（発注元なし）') + '」への納品書——今回納める数を確かめてください:';
+        panel.appendChild(head);
+        const table = document.createElement('table');
+        table.className = 'materials-table backlog-dlv-table';
+        const tr0 = document.createElement('tr');
+        ['品番', '品名', '残', '今回納める数'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
+        table.appendChild(tr0);
+        picks.forEach((c) => {
+            const tr = document.createElement('tr');
+            [c.dataset.item, c.dataset.name, c.dataset.remaining].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
+            const td = document.createElement('td');
+            const inp = document.createElement('input');
+            inp.type = 'number';
+            inp.min = '1';
+            inp.value = c.dataset.remaining || '';
+            inp.className = 'backlog-dlv-qty';
+            inp.dataset.order = c.dataset.order;
+            inp.dataset.row = c.dataset.row;
+            inp.dataset.item = c.dataset.item || '';
+            td.appendChild(inp);
+            tr.appendChild(td);
+            table.appendChild(tr);
+        });
+        panel.appendChild(table);
+        const make = document.createElement('button');
+        make.type = 'button';
+        make.className = 'backlog-dlv-make';
+        make.textContent = '🚚 納品書を作る';
+        panel.appendChild(make);
+        const msg = document.createElement('span');
+        msg.className = 'backlog-dlv-msg';
+        panel.appendChild(msg);
+        panel.hidden = false;
+    }],
+    ['.backlog-dlv-make', async (btn) => {
+        const panel = btn.closest('.backlog-dlv-panel');
+        const msg = panel.querySelector('.backlog-dlv-msg');
+        const items = Array.from(panel.querySelectorAll('.backlog-dlv-qty')).map((i) => ({
+            order: i.dataset.order, row: Number(i.dataset.row), item: i.dataset.item, qty: i.value.trim(),
+        }));
+        btn.disabled = true;
+        msg.textContent = ' 作っています…';
+        let r;
+        try {
+            r = await postJSON('/api/delivery/new', { items });
+        } catch (e) {
+            msg.textContent = ' ⚠ 通信に失敗しました: ' + e;
+            btn.disabled = false;
+            return;
+        }
+        if (!r.ok) {
+            msg.textContent = ' ⚠ ' + ((r.data && r.data.message) || ('作れませんでした（' + r.status + '）'));
+            btn.disabled = false;
+            return;
+        }
+        location.href = '/' + r.data.page_id;
+    }],
+]);
+
 // ── 受注残表から部材見積依頼へ（2026-10-04・見積依頼の段3） ────────────────────
 //
 // 【要求】部材見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」。受注残表の「部材見積依頼」の欄で選んだ行

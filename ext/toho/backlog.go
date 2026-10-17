@@ -332,7 +332,10 @@ func backlogViewHTML(user *auth.User, _ int) string {
 	// 選んだ行を部材見積依頼へ（2026-10-04・見積依頼の段3——【要求】部材見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」）。
 	// 紙には出さない（no-print——受注残表は1枚ずつ印刷する作業の紙・同 §4 の7「選ぶ印を紙に出さないこと」）。配線は assets/app.js。
 	b.WriteString(`<div class="backlog-rfq-bar no-print"><button type="button" class="backlog-rfq-go">☑ 選んだ行を部材見積依頼へ</button>` +
-		` <span class="backlog-rfq-say"></span></div>`)
+		` <span class="backlog-rfq-say"></span>` +
+		// 選んだ行で納品書を作る（2026-10-17・delivery.go）——押すと、選んだ行と今回納める数（残りが初めから入っていて直せる）の欄が開く。
+		` <button type="button" class="backlog-dlv-go">🚚 選んだ行で納品書を作る</button> <span class="backlog-dlv-say"></span>` +
+		`<div class="backlog-dlv-panel" hidden></div></div>`)
 	for i, g := range groups {
 		b.WriteString(`<section class="backlog-sheet" data-backlog="` + strconv.Itoa(i) + `">`)
 		title := g.Client
@@ -363,7 +366,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
-			`<th>備考</th><th class="no-print">受注</th><th class="no-print">部材見積依頼</th></tr>`)
+			`<th>備考</th><th class="no-print">受注</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -409,6 +412,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
 				noPrintCell(rfqPickHTML(r)) +
+				noPrintCell(deliveryPickHTML(r, g.Client)) +
 				`</tr>`)
 		}
 		b.WriteString(`</tbody></table></section>`)
