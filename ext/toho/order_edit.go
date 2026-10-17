@@ -47,6 +47,7 @@ var editableOrderFields = map[string]bool{
 	"状態":    true,
 	"備考":    true,
 	"材料発注":  true,
+	"製造完了":  true,
 	"納品書発行": true,
 	"請求書発行": true,
 }

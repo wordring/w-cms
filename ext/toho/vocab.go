@@ -413,6 +413,10 @@ var businessVocab = []cms.VocabDef{
 			// ⚠ **`集金` は今回入れません**（ユーザー決定）。書面が残らないことがあり、
 			// 導出へ移す道が原理的に無いので、入れるなら別の考えが要ります。
 			{Field: "material-ordered", Label: "材料発注", Type: cms.ColEnum, Enum: []string{MarkDone}},
+			// **製造完了**（2026-10-17・【考察】全体の設計 §3.6a・直す順の9番）——進み具合は「製造完了」だけ。書くのは作業者本人か監督者。
+			// 2026-10-16 利用者:「では、作業の進捗は工数を測定したいときだけにして、もっと大雑把に製造完了だけにします。」
+			// ほかの手続きの印と同じ `済` か空。誰がいつ押したかは監査（`order-item.edit`）と版に残る。工程ごとの記録・工数は後回し。
+			{Field: "made", Label: "製造完了", Type: cms.ColEnum, Enum: []string{MarkDone}},
 			{Field: "delivery-note", Label: "納品書発行", Type: cms.ColEnum, Enum: []string{MarkDone}},
 			{Field: "invoice", Label: "請求書発行", Type: cms.ColEnum, Enum: []string{MarkDone}},
 		},

@@ -53,7 +53,7 @@ const BacklogViewType = "order-backlog"
 // ときに押すのが `完了` です。**機械の数より人の判断が上。**
 const StatusDone = "完了"
 
-// MarkDone は手続きの印の「済」です（材料発注・納品書発行・請求書発行）。
+// MarkDone は手続きの印の「済」です（材料発注・製造完了・納品書発行・請求書発行）。
 //
 // ⚠ **空が「まだ」、`済` が「もう済んだ」**の2値です。`0`/`1` のような機械の値を
 // 使わないのは、**本文は人が読む正本**だからです——表を開いた人が、辞書を引かずに
@@ -101,6 +101,7 @@ type backlogRow struct {
 	// 手続きの印（`済` か空）。⚠ **今日は人が押すだけです**——導出する元がまだ
 	// ありません（[vocab.go] の宣言に経緯）。
 	MaterialOrdered string
+	Made            string // 製造完了（2026-10-17）
 	DeliveryNote    string
 	Invoice         string
 	// Loss は赤字の見立ての1文です（2026-10-17・order_loss.go——受注の単価が見積の単価を下回る行だけ。空なら赤字でない）。
@@ -226,6 +227,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				Status:          strings.TrimSpace(r.Values["status"]),
 				Note:            strings.TrimSpace(r.Values["note"]),
 				MaterialOrdered: strings.TrimSpace(r.Values["material-ordered"]),
+				Made:            strings.TrimSpace(r.Values["made"]),
 				DeliveryNote:    strings.TrimSpace(r.Values["delivery-note"]),
 				Invoice:         strings.TrimSpace(r.Values["invoice"]),
 				Loss:            backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice),
@@ -366,7 +368,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`<tr><th>装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th class="no-print">数量</th><th class="no-print">出荷済数量</th>` +
 			`<th>状態</th>` +
-			`<th class="no-print">材料発注</th><th class="no-print">納品書発行</th>` +
+			`<th class="no-print">材料発注</th><th class="no-print">製造完了</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
 			`<th>備考</th><th class="no-print">受注</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
 		for _, r := range g.Rows {
@@ -408,6 +410,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				`<td class="cell-atomic no-print" title="納品書から数えた数">` + shippedCell(r.Shipped) + `</td>` +
 				`<td class="cell-atomic">` + st + `</td>` +
 				noPrintCell(checkFieldHTML("材料発注", r.MaterialOrdered)) +
+				noPrintCell(checkFieldHTML("製造完了", r.Made)) + // 2026-10-17（紙の列は利用者の決めた7つのまま）
 				noPrintCell(checkFieldHTML("納品書発行", r.DeliveryNote)) +
 				noPrintCell(checkFieldHTML("請求書発行", r.Invoice)) +
 				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。

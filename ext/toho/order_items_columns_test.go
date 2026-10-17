@@ -52,6 +52,7 @@ func TestOrderItemColumns(t *testing.T) {
 		// 無い（材料発注は行ごとに出せない／納品書と請求書は機能がまだ無い）。
 		// ⚠ **導出が入っても欄は残ります**——人が上書きできる必要があるため。
 		{"材料発注", cms.ColEnum},
+		{"製造完了", cms.ColEnum},
 		{"納品書発行", cms.ColEnum},
 		{"請求書発行", cms.ColEnum},
 	}

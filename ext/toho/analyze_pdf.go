@@ -751,7 +751,7 @@ func buildOrderPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment) (st
 			"due": cms.CanonicalForIngest(DueDateTag, j.DueDate),
 			// 出荷済数量は空が「まだ出していない」。⚠ **分納があるので要ります**
 			// ——「100個のうち40個だけ出した」は `状態` だけでは表せません。
-			// ⚠ **手続きの印は空で始めます**（材料発注・納品書発行・請求書発行）。
+			// ⚠ **手続きの印は空で始めます**（材料発注・製造完了・納品書発行・請求書発行）。
 			// 解析には分かりません——どれも**これから人がやること**です。
 			"status": "未着手",
 		})
