@@ -39,7 +39,7 @@ const madeCell = (page, id) => page.evaluate(async (pid) => {
     order = await makePage(page, '<h1>受注 E2E-MADE</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-MADE-1</dd>' +
       '<dt>発注元</dt><dd>【E2E】製造完了の客先</dd><dt>発注日</dt><dd>2026-10-17</dd><dt>納期</dt><dd>2026-12-31</dd></dl>' +
       '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th><th>材料発注</th><th>製造完了</th><th>納品書発行</th></tr>' +
-      '<tr><td></td><td>E2E-MADE-A</td><td>【E2E】部品</td><td>5</td><td></td><td>加工中</td><td></td><td></td><td></td></tr></tbody></table>', root);
+      '<tr><td></td><td>E2E-MADE-A</td><td>【E2E】部品</td><td>5</td><td></td><td>未着手</td><td></td><td></td><td></td></tr></tbody></table>', root);
     check('当て先を作れた', !!root && !!order);
 
     await page.goto(BASE + '/' + root);

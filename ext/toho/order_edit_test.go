@@ -23,7 +23,7 @@ func editBody() string {
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th>` +
 		`<th>備考</th><th>状態</th><th>材料発注</th></tr>` +
 		`<tr><td></td><td>A-1</td><td>甲</td><td>100</td><td></td><td></td><td>未着手</td><td></td></tr>` +
-		`<tr><td></td><td>A-2</td><td>乙</td><td>50</td><td>10</td><td>急ぎ</td><td>加工中</td><td></td></tr>` +
+		`<tr><td></td><td>A-2</td><td>乙</td><td>50</td><td>10</td><td>急ぎ</td><td>納品済</td><td></td></tr>` +
 		`</tbody></table>`
 }
 
@@ -49,7 +49,7 @@ func TestSetOrderItemCellWrites(t *testing.T) {
 // （⚠ チェックを外す・出荷済数量を消すのに要ります）。
 func TestSetOrderItemCellClearsToEmpty(t *testing.T) {
 	body := strings.Replace(editBody(),
-		`<td>加工中</td><td></td>`, `<td>加工中</td><td>`+MarkDone+`</td>`, 1)
+		`<td>納品済</td><td></td>`, `<td>納品済</td><td>`+MarkDone+`</td>`, 1)
 	got, err := setOrderItemCell(body, 1, "A-2", "材料発注", MarkDone, "")
 	if err != nil {
 		t.Fatalf("空に戻せません: %v", err)

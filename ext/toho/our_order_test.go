@@ -88,7 +88,7 @@ func TestOurOrderItemsMatchClientOrderNames(t *testing.T) {
 // 固定します（2026-09-22 ユーザー決定:「発注書の表の**一品ずつに発注済みの印**を
 // つけます」）。
 //
-// ⚠ 受注明細表の `状態`（未着手／加工中／検査中／納品済／完了）と**別物**です——
+// ⚠ 受注明細表の `状態`（未着手／納品済／完了）と**別物**です——
 // こちらは**弊社が出した紙が、いまどこまで進んだか**です。
 func TestOurOrderStatusIsTheOrderMark(t *testing.T) {
 	def, _ := cms.VocabDefByType("our-order-items")
