@@ -154,6 +154,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	migrating := 0
 	machines := newMachineLookup()
 	losses := newLossLookup(db, user) // 赤字の警告（2026-10-17・order_loss.go）
+	// 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go——受注明細表の欄は読まない）。
+	shippedBy := newShippedLookup(db)
 	for _, id := range pageIDs {
 		// ⚠ **読めないページは黙って落とします**（見せ分け・C案）。
 		if !page.CanView(user, id) {
@@ -177,7 +179,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 		}
 		for _, r := range items {
 			qty := r.Num("quantity")
-			shipped := r.Num("shipped")
+			shipped := int(shippedBy.of(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]))
 			rem := qty - shipped
 			// ⚠ **残っている行だけ**。`数量` が読めない行（0）も落ちます——
 			// 数が無ければ「あと何個」が言えないので、残表には載せられません。
@@ -402,7 +404,8 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				atomicCell(stdhtml.EscapeString(r.ItemName)+lossNoteHTML(r)) +
 				`<td class="cell-atomic backlog-remaining">` + strconv.Itoa(r.Remaining) + `</td>` +
 				noPrintCell(strconv.Itoa(r.Quantity)) +
-				noPrintCell(numberFieldHTML("出荷済数量", shippedCell(r.Shipped))) +
+				// 出荷済数量は納品書から数えるので、ここでは書けない（2026-10-17）。
+				`<td class="cell-atomic no-print" title="納品書から数えた数">` + shippedCell(r.Shipped) + `</td>` +
 				`<td class="cell-atomic">` + st + `</td>` +
 				noPrintCell(checkFieldHTML("材料発注", r.MaterialOrdered)) +
 				noPrintCell(checkFieldHTML("納品書発行", r.DeliveryNote)) +

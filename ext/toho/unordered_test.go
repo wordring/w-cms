@@ -85,11 +85,13 @@ func TestUnorderedSkipsShippedLines(t *testing.T) {
 	}
 	user := &auth.User{Username: "root", IsAdmin: true}
 
-	syncBody(t, 30, order("3"))
+	// 出荷済数量は納品書から数える（2026-10-17）——欄は空のまま、納品書で3個・1個。
+	syncBody(t, 30, order(""))
+	seedDelivery(t, 35, [3]string{"000030", "K-1", "3"})
 	if list, err := UnorderedItems(user); err != nil || len(list) != 0 {
 		t.Fatalf("⚠ 出し終えた行から必要部材が出ています: %v %#v", err, list)
 	}
-	syncBody(t, 30, order("1"))
+	seedDelivery(t, 35, [3]string{"000030", "K-1", "1"})
 	if list, err := UnorderedItems(user); err != nil || len(list) != 1 || list[0].Remaining != 3 {
 		t.Fatalf("分納の途中（3個のうち1個出した）の行が消えています: %v %#v", err, list)
 	}

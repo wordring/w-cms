@@ -44,7 +44,6 @@ import (
 // ⚠ `残` は `数量 - 出荷済数量` の計算なので、そもそも本文にありません。
 var editableOrderFields = map[string]bool{
 	"数量":    true,
-	"出荷済数量":  true,
 	"状態":    true,
 	"備考":    true,
 	"材料発注":  true,

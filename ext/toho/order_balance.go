@@ -32,7 +32,9 @@ type orderBalance struct {
 }
 
 // orderBalanceOf は受注明細表（見出し行＋データ行）から受注残高を数えます。見出しに `数量` が無ければ ok=false。
-func orderBalanceOf(table *html.Node) (orderBalance, bool) {
+//
+// shippedOf は品番と品名から納めた数を返します（2026-10-17 から出荷済数量は納品書から数える——delivery_shipped.go。表の欄は読まない）。
+func orderBalanceOf(table *html.Node, shippedOf func(itemNo, itemName string) float64) (orderBalance, bool) {
 	var b orderBalance
 	rows := rowsOf(table)
 	if len(rows) == 0 {
@@ -43,7 +45,8 @@ func orderBalanceOf(table *html.Node) (orderBalance, bool) {
 	if !okQty {
 		return b, false
 	}
-	iShip, okShip := head["出荷済数量"]
+	iItem, okItem := head[ItemNoTag]
+	iName, okName := head["品名"]
 	iPrice, okPrice := head["単価"]
 	iSt, okSt := head["状態"]
 	for _, tr := range rows[1:] {
@@ -66,7 +69,7 @@ func orderBalanceOf(table *html.Node) (orderBalance, bool) {
 		if !ok {
 			continue // 数量の読めない行は残を数えられない
 		}
-		shipped, _ := parseMoney(at(iShip, okShip))
+		shipped := shippedOf(at(iItem, okItem), at(iName, okName))
 		rem := math.Max(qty-shipped, 0)
 		if rem == 0 {
 			continue
@@ -138,8 +141,8 @@ func backlogTotalHTML(t backlogTotal) string {
 }
 
 // appendOrderBalance は受注明細表の足元に受注残高の行を足します（数えられなければ何もしない）。
-func appendOrderBalance(table *html.Node, span int) {
-	b, ok := orderBalanceOf(table)
+func appendOrderBalance(table *html.Node, span int, shippedOf func(itemNo, itemName string) float64) {
+	b, ok := orderBalanceOf(table, shippedOf)
 	if !ok || b.Rows == 0 {
 		return
 	}

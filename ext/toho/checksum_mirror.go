@@ -29,6 +29,7 @@ import (
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
 )
 
 func init() {
@@ -40,10 +41,14 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	// **赤字の警告**（2026-10-17・order_loss.go）——行の末尾に「見積との差」。⚠ 足元の行の colspan が列の数に合うよう、先に足す。
 	appendLossColumn(ctx, el)
+	// **出荷済数量は納品書から数える**（2026-10-17・delivery_shipped.go）——欄にクロームで出し、受注残高もそれで数える。
+	shipped := newShippedLookup(ctx.DB)
+	order := page.FormatID(ctx.PageID)
+	showShippedInOrderTable(ctx, el)
 	span := headerCellCount(el)
 	// **受注残高**（2026-09-30 利用者:「受注ページに受注残高を出したい」・order_balance.go）——検算より先に、いちばん上に。
 	// ⚠ 引き金が同じ（受注明細表）なので、別の鏡にせずここで足す（鏡は引き金1つにつき1つ）。
-	appendOrderBalance(el, span)
+	appendOrderBalance(el, span, func(itemNo, itemName string) float64 { return shipped.of(order, itemNo, itemName) })
 	renderChecksumRows(ctx, el, span)
 
 	// **結びについての気づきも同じ足元に出します**（2026-09-21・[link_item.go]）。

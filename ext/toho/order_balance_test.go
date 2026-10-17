@@ -14,7 +14,14 @@ func balanceTable(t *testing.T, rows string) orderBalance {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, ok := orderBalanceOf(nodes[0])
+	// 2026-10-17 から出荷済数量は納品書から数える——この試験では、表の「出荷済数量」の列を納品書から数えた数の代わりに渡す。
+	shipped := map[string]float64{}
+	for _, tr := range rowsOf(nodes[0])[1:] {
+		if v, ok := estimateNumber(cellText(tr, 3)); ok {
+			shipped[cellText(tr, 0)] = v
+		}
+	}
+	b, ok := orderBalanceOf(nodes[0], func(item, _ string) float64 { return shipped[item] })
 	if !ok {
 		t.Fatal("数えられません")
 	}

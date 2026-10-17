@@ -32,7 +32,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   };
 
   const root = await makePage(page, '<h1>【E2E】受注残から見積依頼</h1><section data-mirror="受注残"></section>');
-  let order = '';
+  let order = '', dlv = '';
   const sent = [];
   const run = async () => {
     if (!root) { check(false, '当て先のページを作れません'); return; }
@@ -41,9 +41,14 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     order = await makePage(page, '<h1>受注 E2E-1</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-1</dd><dt>発注元</dt><dd>E2E商店</dd>' +
       '<dt>発注日</dt><dd>2026-10-04</dd><dt>納期</dt><dd>2026-10-31</dd></dl>' +
       '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th></tr>' +
-      `<tr><td>${root}</td><td>E2E-BL-1</td><td>E2E部品</td><td>10</td><td>3</td><td>未着手</td></tr>` +
+      `<tr><td>${root}</td><td>E2E-BL-1</td><td>E2E部品</td><td>10</td><td></td><td>未着手</td></tr>` +
       '<tr><td></td><td>E2E-BL-NONE</td><td>E2E部品2</td><td>5</td><td></td><td>未着手</td></tr></tbody></table>', root);
     if (!order) { check(false, '受注ページを作れません'); return; }
+    // 出荷済数量は納品書から数える（2026-10-17）——3個を納めた納品書を置く（残は 10 − 3 = 7）。
+    dlv = await makePage(page, '<h1>【E2E】納品書</h1><dl data-type="tags"><dt>ページ種類</dt><dd>弊社納品書</dd></dl>' +
+      '<table><caption>納品明細表</caption><tbody><tr><th>受注</th><th>品番</th><th>品名</th><th>数量</th></tr>' +
+      `<tr><td>${order}</td><td>E2E-BL-1</td><td>E2E部品</td><td>3</td></tr></tbody></table>`, root);
+    if (!dlv) { check(false, '納品書ページを作れません'); return; }
     await page.route('**/api/rfq/collect', async (route) => {
       sent.push(JSON.parse(route.request().postData() || '{}'));
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, rows: 2, page_id: '000050', skipped: [] }) });
@@ -106,10 +111,11 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   try {
     await run();
   } finally {
+    if (dlv) await deletePage(page, dlv);
     if (order) await deletePage(page, order);
     if (root) {
       await deletePage(page, root);
-      const gone = await page.evaluate(async (ids) => Promise.all(ids.map(async (pid) => (await fetch('/api/load?id=' + pid)).status)), [root, order].filter(Boolean));
+      const gone = await page.evaluate(async (ids) => Promise.all(ids.map(async (pid) => (await fetch('/api/load?id=' + pid)).status)), [root, order, dlv].filter(Boolean));
       check(gone.every((s) => s === 404), '作ったページを消した', gone.join(','));
     }
   }

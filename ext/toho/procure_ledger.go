@@ -147,6 +147,7 @@ func openOrderRows(db cms.ReadOnlyDB, canView func(int) bool) ([]openOrderRow, e
 		migrating   bool
 	}
 	heads := map[int]head{}
+	shippedBy := newShippedLookup(db) // 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go）
 	headOf := func(id int) head {
 		if h, ok := heads[id]; ok {
 			return h
@@ -170,7 +171,7 @@ func openOrderRows(db cms.ReadOnlyDB, canView func(int) bool) ([]openOrderRow, e
 		if strings.TrimSpace(o.Values["status"]) == StatusDone {
 			continue
 		}
-		if cms.VocabQuantity(o)-cms.VocabNumber(o.Values["shipped"]) <= 0 {
+		if float64(cms.VocabQuantity(o))-shippedBy.of(page.FormatID(o.PageID), o.Values["item-id"], o.Values["item-name"]) <= 0 { // 出荷済数量は納品書から（2026-10-17）
 			continue
 		}
 		pid, ok := productOfOrderRow(db, o)

@@ -89,6 +89,15 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
       const fv = await page.locator('#w-editor-content section[data-type="file-view"]').getAttribute('data-ref').catch(() => '');
       const state1 = (await page.textContent('#w-editor-content .delivery-state').catch(() => '')) || '';
       check('⑤ PDFを作ると、ページに出て「発行済」', !!fv && fv.startsWith(dlv + '-') && state1.includes('発行済'), (fv || '') + ' ' + state1);
+
+      // ⑥ 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go）——受注ページの欄に 8・受注残表の残は 20 − 8 = 12。
+      const view = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), order);
+      const m = view.match(/class="vocab-chrome shipped-mirror"[^>]*>([^<]*)</);
+      check('⑥ 受注ページの出荷済数量に、納品書から数えた 8 が出る', !!m && m[1] === '8', m ? m[1] : view.slice(0, 200));
+      await page.goto(BASE + '/' + root);
+      await page.waitForSelector('#w-editor-content .backlog-table', { timeout: 10000 }).catch(() => {});
+      const rem = await page.locator('#w-editor-content tr[data-order-page="' + order + '"] .backlog-remaining').textContent().catch(() => '');
+      check('⑥ 受注残表の残は 12', (rem || '').trim() === '12', rem);
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

@@ -75,8 +75,11 @@ func TestBacklogDropsShippedRows(t *testing.T) {
 	setupExtTest(t, "000110", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 111, -1, "受注", "alice", "302", true)
 	seedOrder(t, 112, 111, "あけぼの精工", "2026-10-15",
-		item("A-1", "出し切った", "100", "2026-10-15", "100")+
-			item("A-2", "半分だけ", "100", "2026-10-15", "40"))
+		item("A-1", "出し切った", "100", "2026-10-15", "")+
+			item("A-2", "半分だけ", "100", "2026-10-15", ""))
+	// 出荷済数量は納品書から数える（2026-10-17）——A-1 は100個・A-2 は2枚で40個。
+	seedDelivery(t, 113, [3]string{"000112", "A-1", "100"}, [3]string{"000112", "A-2", "30"})
+	seedDelivery(t, 114, [3]string{"000112", "A-2", "10"})
 
 	gs := backlogGroups(adminUser())
 	if len(gs) != 1 || len(gs[0].Rows) != 1 {
@@ -397,13 +400,14 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	out := cms.RenderComputedViews(req, 201,
 		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
-	for _, f := range []string{"出荷済数量", "状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
 		if !strings.Contains(out, `data-field="`+f+`"`) {
 			t.Errorf("%q を押せません:\n%s", f, out)
 		}
 	}
 	// ⚠ 鍵の列は部品にしない。
-	for _, f := range []string{"品番", "品名", "弊社品番"} {
+	// 出荷済数量は納品書から数える（2026-10-17）——残表から書かせない。
+	for _, f := range []string{"品番", "品名", "弊社品番", "出荷済数量"} {
 		if strings.Contains(out, `data-field="`+f+`"`) {
 			t.Errorf("⚠ 鍵の列 %q を編集できるようにしています（照合が壊れます）", f)
 		}
@@ -433,9 +437,10 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 	setupExtTest(t, "000400", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 401, -1, "受注", "alice", "302", true)
 	seedOrder(t, 402, 401, "あけぼの精工", "2026-10-15",
-		pricedItem("A-1", "半分だけ", "10", "100", "4", "未着手")+ // 残6 × 100 = 600
+		pricedItem("A-1", "半分だけ", "10", "100", "", "未着手")+ // 残6 × 100 = 600
 			pricedItem("A-2", "単価なし", "5", "", "", "未着手")+ // 残5・単価なし（金額に入らない）
-			pricedItem("A-3", "出し切った", "3", "999", "3", "未着手")) // 残0（入らない）
+			pricedItem("A-3", "出し切った", "3", "999", "", "未着手"))
+	seedDelivery(t, 405, [3]string{"000402", "A-1", "4"}, [3]string{"000402", "A-3", "3"}) // 出荷済数量は納品書から（2026-10-17） // 残0（入らない）
 	seedOrder(t, 403, 401, "やまと工作所", "2026-10-20",
 		pricedItem("B-1", "シャフト", "2", "1,500", "", "未着手")+ // 残2 × 1,500 = 3,000
 			pricedItem("B-2", "取りやめ", "5", "100", "", StatusDone)) // 完了（入らない）
