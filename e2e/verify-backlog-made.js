@@ -3,8 +3,7 @@
 // 2026-10-16 利用者:「では、作業の進捗は工数を測定したいときだけにして、もっと大雑把に製造完了だけにします。」
 //
 //   ① 受注残表に「製造完了」の欄がある（材料発注の右・紙に出さない）
-//   ② 押すと、受注ページの受注明細表の「製造完了」に「済」が入る
-//   ③ もう一度押して外すと、空に戻る
+//   ② 2026-10-19 から、受注残表の製造完了は鏡（製造ページで付ける）——押せるチェックは無い（製造ページの確かめは verify-mfg-page.js）
 //
 // 当て先は全部自分で作って最後に消します（受注残表を置いたページ・受注ページ）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-backlog-made.js
@@ -58,15 +57,8 @@ const madeCell = (page, id) => page.evaluate(async (pid) => {
       return { th: th ? th.className : null, td: td ? td.textContent.trim() : null };
     }, order);
     check('④ 「まだ無いもの」に「単価」・紙に出さない', gap.td === '単価' && (gap.th || '').includes('no-print'), JSON.stringify(gap));
-    const box = row.locator('input[data-field="製造完了"]');
-    check('① 行に「製造完了」のチェックがある', (await box.count()) === 1);
-
-    await box.check();
-    await page.waitForTimeout(1500);
-    check('② 押すと案件ページの「製造完了」に「済」', (await madeCell(page, order)) === '済', String(await madeCell(page, order)));
-    await box.uncheck();
-    await page.waitForTimeout(1500);
-    check('③ 外すと空に戻る', (await madeCell(page, order)) === '', String(await madeCell(page, order)));
+    check('② 受注残表の行に「製造完了」の押せるチェックは無い（製造ページで付ける）', (await row.locator('input[data-field="製造完了"]').count()) === 0);
+    check('② 案件ページの「製造完了」の欄は空のまま', (await madeCell(page, order)) === '', String(await madeCell(page, order)));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

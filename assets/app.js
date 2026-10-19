@@ -12999,3 +12999,85 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
     document.addEventListener('input', onEvent);
     document.addEventListener('change', onEvent);
 })();
+
+// ── 製造ページの作業の帯（2026-10-19・ext/toho/mfg_view.go）────────────────────────────────
+//
+// 利用者:「一つの製造ページに案件の見積もり依頼、部材発注、製造記録（工数など）、納品書、請求書を並べるのはどうですか？」。
+// 製造明細表の「製造完了」のチェックは /api/mfg/made へ（行番号・品番・いまの値の3つで照合）。「納品」の欄で選んだ行は、
+// 今回納める数（まだ納めていない数が初めから入っていて直せる）を確かめて、/api/delivery/new へ mfg（この製造ページ）を添えて送る
+// ——納品書はこの製造ページの子にできる。
+delegateClick([
+    ['.mfg-made', async (box) => {
+        const page = (location.pathname.match(/\/(\d{6})/) || [])[1] || '';
+        const want = box.checked ? '済' : '';
+        box.disabled = true;
+        const r = await postJSON('/api/mfg/made', {
+            page_id: page, row: Number(box.dataset.row), item_no: box.dataset.item || '', old: box.dataset.old || '', value: want,
+        }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+        box.disabled = false;
+        if (!r.ok) {
+            box.checked = !box.checked;
+            alert('⚠ ' + ((r.data && r.data.message) || '製造完了を書けませんでした'));
+            return;
+        }
+        box.dataset.old = want;
+    }],
+    ['.mfg-dlv-go', (btn) => {
+        const cell = btn.parentElement;
+        const say = cell.querySelector('.mfg-dlv-say');
+        const panel = cell.querySelector('.mfg-dlv-panel');
+        const table = btn.closest('table');
+        const picks = Array.from((table || document).querySelectorAll('.mfg-dlv-pick:checked'));
+        if (!picks.length) {
+            sayIn(say, '製造明細表の右の「納品」の欄で、納める行を選んでください。', 'warn');
+            return;
+        }
+        sayIn(say, '');
+        panel.textContent = '';
+        const t = document.createElement('table');
+        t.className = 'materials-table backlog-dlv-table';
+        const tr0 = document.createElement('tr');
+        ['品番', '品名', 'まだ納めていない数', '今回納める数'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
+        t.appendChild(tr0);
+        picks.forEach((c) => {
+            const tr = document.createElement('tr');
+            [c.dataset.item, c.dataset.name, c.dataset.left].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
+            const td = document.createElement('td');
+            const inp = document.createElement('input');
+            inp.type = 'number';
+            inp.min = '1';
+            inp.value = c.dataset.left || '';
+            inp.className = 'mfg-dlv-qty';
+            inp.dataset.order = c.dataset.order;
+            inp.dataset.item = c.dataset.item || '';
+            inp.dataset.name = c.dataset.name || '';
+            td.appendChild(inp);
+            tr.appendChild(td);
+            t.appendChild(tr);
+        });
+        panel.appendChild(t);
+        const make = document.createElement('button');
+        make.type = 'button';
+        make.className = 'mfg-dlv-make';
+        make.dataset.mfg = btn.dataset.mfg || '';
+        make.textContent = '🚚 納品書を作る';
+        panel.appendChild(make);
+        const msg = document.createElement('span');
+        msg.className = 'mfg-dlv-msg';
+        panel.appendChild(msg);
+        panel.hidden = false;
+    }],
+    ['.mfg-dlv-make', async (btn) => {
+        const panel = btn.closest('.mfg-dlv-panel');
+        const msg = panel.querySelector('.mfg-dlv-msg');
+        const items = Array.from(panel.querySelectorAll('.mfg-dlv-qty')).map((i) => ({
+            order: i.dataset.order, row: -1, item: i.dataset.item, name: i.dataset.name, qty: i.value.trim(),
+        }));
+        btn.disabled = true;
+        sayIn(msg, '納品書を作っています…');
+        const r = await postJSON('/api/delivery/new', { items, mfg: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+        btn.disabled = false;
+        if (!r.ok) { sayIn(msg, '⚠ ' + ((r.data && r.data.message) || '納品書を作れませんでした')); return; }
+        location.href = '/' + r.data.page_id;
+    }],
+]);

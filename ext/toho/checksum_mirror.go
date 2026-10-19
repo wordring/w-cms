@@ -45,6 +45,8 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	shipped := newShippedLookup(ctx.DB)
 	order := page.FormatID(ctx.PageID)
 	showShippedInOrderTable(ctx, el)
+	// 製造完了は製造ページから数える（2026-10-19・mfg_view.go）。
+	showMadeInOrderTable(ctx, el, newMfgLookup())
 	span := headerCellCount(el)
 	// **受注残高**（2026-09-30 利用者:「受注ページに受注残高を出したい」・order_balance.go）——検算より先に、いちばん上に。
 	// ⚠ 引き金が同じ（受注明細表）なので、別の鏡にせずここで足す（鏡は引き金1つにつき1つ）。

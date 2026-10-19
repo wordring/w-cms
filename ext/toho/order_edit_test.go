@@ -113,7 +113,7 @@ func TestEditableFieldsExcludeKeys(t *testing.T) {
 		}
 	}
 	// 毎日押すものは書けること（⚠ ここが空だと、そもそも機能していません）。
-	for _, f := range []string{"状態", "備考", "材料発注", "製造完了", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
 		if !editableOrderFields[f] {
 			t.Errorf("%q が書けません（毎日押す列です）", f)
 		}

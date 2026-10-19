@@ -47,7 +47,6 @@ var editableOrderFields = map[string]bool{
 	"状態":    true,
 	"備考":    true,
 	"材料発注":  true,
-	"製造完了":  true,
 	"納品書発行": true,
 	"請求書発行": true,
 }
@@ -127,13 +126,19 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 // ⚠ **照合は2つ**——行番号と、その行の `品番`。⚠ **いまの値も見ます**（食い違えば
 // `errCellConflict`）。3つとも通らないと1文字も書きません。
 func setOrderItemCell(body string, row int, itemNo, field, oldVal, newVal string) (string, error) {
+	return setItemTableCell(body, clientOrderItemsType, row, itemNo, field, oldVal, newVal)
+}
+
+// setItemTableCell は、形式 vocabType の明細表（ページに1つ）の1セルを書き換えた本文を返します（照合は setOrderItemCell と同じ3つ）。
+// 2026-10-19 から製造明細表の「製造完了」にも使う（mfg_view.go）。
+func setItemTableCell(body, vocabType string, row int, itemNo, field, oldVal, newVal string) (string, error) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
 		return "", errors.New("本文を読めません")
 	}
-	tables := tablesOfType(nodes, clientOrderItemsType)
+	tables := tablesOfType(nodes, vocabType)
 	if len(tables) == 0 {
-		return "", errors.New("案件明細表が見つかりません")
+		return "", errors.New(displayNameOf(vocabType) + "が見つかりません")
 	}
 
 	rows := rowsOf(tables[0])

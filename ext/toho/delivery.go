@@ -83,6 +83,8 @@ type deliveryPick struct {
 	Row   int    `json:"row"`   // 受注明細表のデータ行の番号（索引の RowNo）
 	Item  string `json:"item"`  // 品番（行の取り違えを防ぐ照合）
 	Qty   string `json:"qty"`   // 今回納める数
+	// Name は品名です。Row が負のとき（製造ページから——案件明細の行番号を持たない）、品番か、品番が空なら品名で行を探す（2026-10-19）。
+	Name string `json:"name"`
 }
 
 // deliveryLine は納品明細表の1行です。
@@ -104,6 +106,14 @@ func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
 	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
 	if err != nil {
 		return deliveryLine{}, "案件明細表を読めません: /" + id
+	}
+	if p.Row < 0 {
+		for _, r := range rows {
+			if shippedKey(id, r.Values["item-id"], r.Values["item-name"]) == shippedKey(id, p.Item, p.Name) {
+				p.Row = r.RowNo
+				break
+			}
+		}
 	}
 	for _, r := range rows {
 		if r.RowNo != p.Row {
@@ -166,9 +176,20 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Items []deliveryPick `json:"items"`
+		// Mfg は製造ページ（2026-10-19・mfg_view.go）。あれば、納品書をその子に作る（無ければ 記録／年／月／製造記録）。
+		Mfg string `json:"mfg"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
+	}
+	mfgID := ""
+	if strings.TrimSpace(req.Mfg) != "" {
+		id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.Mfg), "/"))
+		if !ok || pageKindOf(pageNum(id)) != PageKindMfg || !canWritePage(user, pageNum(id)) {
+			cms.JSONFail(w, http.StatusBadRequest, "製造ページが見つからないか、書けません: "+req.Mfg)
+			return
+		}
+		mfgID = id
 	}
 	if len(req.Items) == 0 {
 		cms.JSONFail(w, http.StatusBadRequest, "納める行を1つ以上選んでください")
@@ -203,13 +224,18 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "納品書ページを作れません: "+err.Error())
 		return
 	}
-	now := time.Now()
-	monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-		return
+	// 置き場は製造ページの子（製造ページから作ったとき）か、記録／年／月／製造記録。
+	parentID := mfgID
+	if parentID == "" {
+		now := time.Now()
+		monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
+			return
+		}
+		parentID = monthID
 	}
-	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	newID, err := cms.CreateChildPage(parentID, user.Username, "<h1>作成中</h1>")
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "納品書ページを作れません: "+err.Error())
 		return

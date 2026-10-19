@@ -400,7 +400,7 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	out := cms.RenderComputedViews(req, 201,
 		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
-	for _, f := range []string{"状態", "備考", "材料発注", "製造完了", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
 		if !strings.Contains(out, `data-field="`+f+`"`) {
 			t.Errorf("%q を押せません:\n%s", f, out)
 		}

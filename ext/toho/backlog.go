@@ -233,7 +233,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				Status:          strings.TrimSpace(r.Values["status"]),
 				Note:            strings.TrimSpace(r.Values["note"]),
 				MaterialOrdered: strings.TrimSpace(r.Values["material-ordered"]),
-				Made:            strings.TrimSpace(r.Values["made"]),
+				Made:            madeText(mfgBy.doneOf(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty), // 製造ページから（2026-10-19）
 				DeliveryNote:    strings.TrimSpace(r.Values["delivery-note"]),
 				Invoice:         strings.TrimSpace(r.Values["invoice"]),
 				Loss:            backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice),
@@ -420,7 +420,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				`<td class="cell-atomic no-print" title="納品書から数えた数">` + shippedCell(r.Shipped) + `</td>` +
 				`<td class="cell-atomic">` + st + `</td>` +
 				noPrintCell(checkFieldHTML("材料発注", r.MaterialOrdered)) +
-				noPrintCell(checkFieldHTML("製造完了", r.Made)) + // 2026-10-17（紙の列は利用者の決めた7つのまま）
+				`<td class="cell-atomic no-print" title="製造ページの製造完了から数えた">` + stdhtml.EscapeString(r.Made) + `</td>` + // 2026-10-19 から鏡（製造ページで付ける）
 				noPrintCell(checkFieldHTML("納品書発行", r.DeliveryNote)) +
 				noPrintCell(checkFieldHTML("請求書発行", r.Invoice)) +
 				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。

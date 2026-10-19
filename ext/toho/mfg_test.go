@@ -1,9 +1,12 @@
 package toho
 
 import (
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 )
 
@@ -85,5 +88,57 @@ func TestMfgNewFromBacklogRows(t *testing.T) {
 		{"order": "000972", "row": 2, "item": "A-3", "qty": "1"}, {"order": "000973", "row": 0, "item": "B-1", "qty": "1"},
 	}}); code != 400 || !strings.Contains(out["message"].(string), "1社") {
 		t.Errorf("⚠ 客先の違う行を1つの製造に混ぜています: %d %v", code, out)
+	}
+}
+
+// TestMfgMadeAndDeliveryFromMfgPage は（2026-10-19・作る順の2番）、
+//   - 製造ページの「製造完了」を /api/mfg/made で書ける（済・空のほかは断る・いまの値が違えば 409）
+//   - 案件明細の製造完了は鏡——製造完了の製造に入った数が全部なら「済」、一部なら「N/M」（案件残表にも出る）
+//   - 製造ページから作った納品書は、その製造ページの子にでき、製造明細表の「納品」の欄の残りが減る
+//
+// ことを固定します。
+func TestMfgMadeAndDeliveryFromMfgPage(t *testing.T) {
+	setupExtTest(t, "000980", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	addPage(t, 981, -1, "案件", "alice", "302", true)
+	seedOrder(t, 982, 981, "あけぼの精工", "2026-11-01", item("A-1", "ブラケット", "100", "2026-11-01", ""))
+
+	code, out := postRFQ(t, u, MfgNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000982", "row": 0, "item": "A-1", "qty": "40"}}})
+	if code != 200 {
+		t.Fatalf("製造ページを作れません: %d %v", code, out)
+	}
+	mfg := out["page_id"].(string)
+
+	// 製造完了を付ける。
+	if code, out := postRFQ(t, u, MfgMadeAPIHandler, map[string]any{"page_id": mfg, "row": 0, "item_no": "A-1", "old": "", "value": "済"}); code != 200 {
+		t.Fatalf("製造完了を書けません: %d %v", code, out)
+	}
+	if body := readPageBody(t, mfg); !strings.Contains(body, "<td>済</td>") {
+		t.Errorf("⚠ 製造明細表に「済」が入っていません:\n%s", body)
+	}
+	if code, _ := postRFQ(t, u, MfgMadeAPIHandler, map[string]any{"page_id": mfg, "row": 0, "item_no": "A-1", "old": "", "value": "済"}); code != 409 {
+		t.Errorf("⚠ いまの値が違うのに書けます: %d", code)
+	}
+	if code, _ := postRFQ(t, u, MfgMadeAPIHandler, map[string]any{"page_id": mfg, "row": 0, "item_no": "A-1", "old": "済", "value": "半分"}); code != 400 {
+		t.Errorf("⚠ 済・空のほかを書けます: %d", code)
+	}
+	// 案件残表の製造完了は 40/100（製造完了の製造に入ったのは40）。
+	if view := backlogViewHTML(u, 981); !strings.Contains(view, `title="製造ページの製造完了から数えた">40/100</td>`) {
+		t.Errorf("⚠ 案件残表の製造完了が 40/100 になっていません:\n%s", view)
+	}
+
+	// 製造ページから納品書（行番号の代わりに品番で探す）——製造ページの子にできる。
+	code, out = postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "items": []map[string]any{{"order": "000982", "row": -1, "item": "A-1", "name": "ブラケット", "qty": "15"}}})
+	if code != 200 {
+		t.Fatalf("製造ページから納品書を作れません: %d %v", code, out)
+	}
+	dlv := out["page_id"].(string)
+	if got := placeOf(dlv); got != MfgBoxTitle+"／ブラケット" {
+		t.Errorf("納品書の置き場が %s です（製造ページの子のはず）", got)
+	}
+	// 製造明細表の「納品」の欄は、残り 25（40 − 15）。
+	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/"+mfg, nil), u), pageNum(mfg), readPageBody(t, mfg))
+	if !strings.Contains(got, `data-left="25"`) || !strings.Contains(got, "製造完了: 1 / 1 行") {
+		t.Errorf("⚠ 製造ページの「納品」の残りが 25 になっていないか、製造完了の数がありません:\n%s", got)
 	}
 }

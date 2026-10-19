@@ -84,12 +84,13 @@ func init() {
 // mfgLookup は描画1回ぶんの「受注ページ×品番（品番が空なら品名） → 製造に入れた数・製造ページ」です。
 type mfgLookup struct {
 	qty   map[string]float64
+	done  map[string]float64 // 製造完了（済）の行の数（2026-10-19・案件明細の製造完了の鏡）
 	pages map[string][]string
 }
 
 // newMfgLookup は、製造ページ（`ページ種類：製造`・テンプレートの外）の製造明細表の行を全部数えます。
 func newMfgLookup() *mfgLookup {
-	m := &mfgLookup{qty: map[string]float64{}, pages: map[string][]string{}}
+	m := &mfgLookup{qty: map[string]float64{}, done: map[string]float64{}, pages: map[string][]string{}}
 	rows, err := cms.VocabRowsOfType(database.DB, MfgItemsType)
 	if err != nil {
 		return m
@@ -110,12 +111,20 @@ func newMfgLookup() *mfgLookup {
 		}
 		k := shippedKey(r.Values["order"], r.Values["item-id"], r.Values["item-name"])
 		m.qty[k] += q
+		if strings.TrimSpace(r.Values["made"]) == MarkDone {
+			m.done[k] += q
+		}
 		id := page.FormatID(r.PageID)
 		if ps := m.pages[k]; len(ps) == 0 || ps[len(ps)-1] != id {
 			m.pages[k] = append(ps, id)
 		}
 	}
 	return m
+}
+
+// doneOf は、その案件明細の行のうち、製造完了（済）の製造に入った数です。
+func (m *mfgLookup) doneOf(order, itemNo, itemName string) float64 {
+	return m.done[shippedKey(order, itemNo, itemName)]
 }
 
 func (m *mfgLookup) of(order, itemNo, itemName string) (float64, []string) {
