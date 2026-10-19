@@ -3521,18 +3521,7 @@
             const sec = document.createElement('section');
             sec.setAttribute('data-type', def.type);
             if (def.columns && def.columns.length) {
-                const dl = document.createElement('dl');
-                def.columns.forEach(col => {
-                    const dt = document.createElement('dt');
-                    dt.textContent = col.label;
-                    const dd = document.createElement('dd');
-                    const v = defaultFieldValue(col);
-                    if (v) dd.textContent = v;
-                    else dd.appendChild(document.createElement('br')); // 空 dd のキャレット足場（emptyEditable 参照）
-                    dl.appendChild(dt);
-                    dl.appendChild(dd);
-                });
-                sec.appendChild(dl);
+                sec.appendChild(buildPlainDl(def.columns)); // 空 dd にはキャレットの足場の br（emptyEditable 参照）
             }
             if (def.items) {
                 const itemsDef = vocabDefs.find(v => v.type === def.items);
@@ -3664,12 +3653,7 @@
             }
         }
         
-        if (typeof newEl.render === 'function') {
-            newEl.render();
-        }
-        enhanceFileSections();
-        decorateVocabBlocks();
-        updateHtmlPreview();
+        afterComponentPlaced(newEl);
 
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
             newEl.focus();
@@ -3680,6 +3664,16 @@
         }
 
         return newEl;
+    }
+
+    // afterComponentPlaced は、本文に置いた新しいブロックを描き、飾り付けとプレビューを整えます（挿す・置き換えるの2つの道で共通・2026-10-20 にまとめた）。
+    function afterComponentPlaced(newEl) {
+        if (typeof newEl.render === 'function') {
+            newEl.render();
+        }
+        enhanceFileSections();
+        decorateVocabBlocks();
+        updateHtmlPreview();
     }
 
     // applySlashChoice はスラッシュメニューの選択を実行します。
@@ -3705,12 +3699,7 @@
         contentWrapper.innerHTML = '';
         contentWrapper.appendChild(newEl);
 
-        if (typeof newEl.render === 'function') {
-            newEl.render();
-        }
-        enhanceFileSections();
-        decorateVocabBlocks();
-        updateHtmlPreview();
+        afterComponentPlaced(newEl);
         
         if (isEdit && (newEl.tagName === 'H1' || newEl.tagName === 'H2' || newEl.tagName === 'H3' || newEl.tagName === 'P')) {
             newEl.focus();
