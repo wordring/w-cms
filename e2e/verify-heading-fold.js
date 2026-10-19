@@ -124,6 +124,18 @@ const ALL = ['HF-前書き', 'HF-A本文', 'HF-A表', 'HF-A1', 'HF-A1本文', 'H
     await page.waitForFunction(() => !document.body.hasAttribute('edit-mode'), null, { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
     check(same(await hidden(), ['HF-C1', 'HF-C1本文', 'HF-C本文']), '閲覧へ戻ると畳んだ形に戻る', JSON.stringify(await hidden()));
+
+    // ⑧ 読み直しても畳んだ形（2026-10-19 から、この端末に憶える——ViewState の欄 h）。
+    //    利用者:「コアの機能で、見出しから次の見出しまで折り畳むことが出来、状態をブラウザに記憶出来てたはずですが、今は再読み込みすると状態が再現できません」
+    await page.reload();
+    await page.waitForSelector('#w-editor-content h2', { timeout: 8000 });
+    await page.waitForTimeout(800);
+    check(same(await hidden(), ['HF-C1', 'HF-C1本文', 'HF-C本文']), '読み直しても畳んだ形（この端末に憶える）', JSON.stringify(await hidden()));
+    await head('HF-C').click();
+    await page.reload();
+    await page.waitForSelector('#w-editor-content h2', { timeout: 8000 });
+    await page.waitForTimeout(800);
+    check(same(await hidden(), []), '開いて読み直すと開いた形（開いたことも憶える）', JSON.stringify(await hidden()));
   };
   try {
     await run();

@@ -8432,6 +8432,7 @@
     //   - 鏡の中の**絞り込みの欄**も憶える（2026-09-30・欄 `i`・下の rememberKeyOf）——利用者:「チェックボタンの状態を
     //     ブラウザに記憶してはどうでしょうか？汎用的な機構としてです」。
     //   - 表の**並べ替え**も憶える（2026-10-03・欄 `s`・下の「表の列の題を押して並べ替える」）。
+    //   - **見出しで畳んだ形**も憶える（2026-10-19・欄 `h`・下の「見出しで畳む」）。
     const VIEW_KEY = 'wcms.view';
     const VIEW_MAX_PAGES = 2000;
     const ViewState = (() => {
@@ -8462,8 +8463,8 @@
         function page(id, create) {
             const c = load();
             let p = c.pages[id];
-            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {}, i: {}, s: {} };
-            if (p) { p.r = p.r || {}; p.o = p.o || {}; p.i = p.i || {}; p.s = p.s || {}; }
+            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {}, i: {}, s: {}, h: {} };
+            if (p) { p.r = p.r || {}; p.o = p.o || {}; p.i = p.i || {}; p.s = p.s || {}; p.h = p.h || {}; }
             return p;
         }
         return {
@@ -8487,6 +8488,13 @@
                 const p = page(id, true);
                 p.t = Date.now();
                 p.i[key] = value;
+                persist();
+            },
+            // setHeading は見出しで畳んだかを憶えます（畳んだ見出しだけを持つ——開いたら忘れる）。
+            setHeading(id, key, folded) {
+                const p = page(id, true);
+                p.t = Date.now();
+                if (folded) p.h[key] = 1; else delete p.h[key];
                 persist();
             },
             // setSort は表の並べ替え（列の見出しの文字と向き）を憶えます。null なら忘れる（元の並び）。
@@ -9140,7 +9148,9 @@
     //
     //   - **閲覧モードだけ・表示だけ**——本文の見出しを押すと、その下を**次の同じ段か上の段の見出しの手前まで**隠す
     //     （H2 なら次の H2 か H1 まで——上の段の見出しを越えて隠すと、別の章が消える）。もう一度押すと開く。本文は書き換えない
-    //     （`class` は書き出さない）。編集モードでは全部見える（CSS）。憶えない——開き直すと開いた形。
+    //     （`class` は書き出さない）。編集モードでは全部見える（CSS）。
+    //     ⚠ 2026-10-19 から、畳んだ形を**この端末に憶える**（ViewState の欄 `h`——開き直しても畳んだまま）。それまでは憶えなかった。
+    //     2026-10-19 利用者:「コアの機能で、見出しから次の見出しまで折り畳むことが出来、状態をブラウザに記憶出来てたはずですが、今は再読み込みすると状態が再現できません」
     //   - 節（`<section>`）の**最初の見出し**なら、節の残りと、節の後ろの続き（次の見出しまで）も隠す——見出しの下に節が来る形
     //     （`<section><h2>材料</h2><table>…</section>`）でも、見出しを並べただけの形でも同じに畳める。節の途中の見出しは、
     //     その節の終わりまで。
@@ -9197,10 +9207,14 @@
         });
     }
 
-    // foldedHeadingKeys は、このページを開いているあいだ畳んだ見出しです（ページ・段・文字・同じ見出しの何番目か）。
-    // 編集から戻ると、保存の返事（エコーバック）で見出しの要素が作り直されて印が消えるので、ここから付け直す。
-    // ⚠ ブラウザには憶えない——開き直すと開いた形（利用者は並べ替えでも「記憶は必要ない」）。
-    const foldedHeadingKeys = new Set();
+    // 畳んだ見出しは ViewState（このページの欄 `h`）に憶えます（段・文字・同じ見出しの何番目か）。編集から戻ると、保存の返事
+    // （エコーバック）で見出しの要素が作り直されて印が消えるので、描き直しの巡りのたびにここから付け直す（refreshHeadingFolds）。
+    // ⚠ 2026-10-19 までは、このページを開いているあいだだけ（Set）で、ブラウザには憶えていなかった——開き直すと開いた形に戻った。
+    //   2026-10-19 利用者:「コアの機能で、見出しから次の見出しまで折り畳むことが出来、状態をブラウザに記憶出来てたはずですが、今は再読み込みすると状態が再現できません」
+    function headingFolded(key) {
+        const st = ViewState.get(currentPageId);
+        return !!(st && st.h && st.h[key]);
+    }
     const HEADING_SELECTOR = '#w-editor-content h1, #w-editor-content h2, #w-editor-content h3, #w-editor-content h4, #w-editor-content h5, #w-editor-content h6';
 
     function headingKey(h) {
@@ -9210,7 +9224,7 @@
             if (x === h) break;
             if (x.tagName === h.tagName && x.textContent.trim() === text) nth++;
         }
-        return currentPageId + '|' + h.tagName + '|' + text + '|' + nth;
+        return h.tagName + '|' + text + '|' + nth; // ページは ViewState の側で分かれる
     }
 
     // refreshHeadingFolds は描き直しの巡りのたびに呼ばれます——押せる見出しに印を付け、畳んだ形を求め直す。
@@ -9218,7 +9232,7 @@
         document.querySelectorAll(HEADING_SELECTOR).forEach(h => {
             const ok = isFoldableHeading(h);
             h.classList.toggle('w-foldable', ok);
-            h.classList.toggle('w-heading-folded', ok && foldedHeadingKeys.has(headingKey(h)));
+            h.classList.toggle('w-heading-folded', ok && headingFolded(headingKey(h)));
         });
         applyHeadingFolds();
     }
@@ -9231,8 +9245,7 @@
         const sel = window.getSelection && window.getSelection();
         if (sel && !sel.isCollapsed && h.contains(sel.anchorNode)) return; // 見出しの文字を選んでいるときは畳まない
         const key = headingKey(h);
-        if (h.classList.toggle('w-heading-folded')) foldedHeadingKeys.add(key);
-        else foldedHeadingKeys.delete(key);
+        ViewState.setHeading(currentPageId, key, h.classList.toggle('w-heading-folded'));
         applyHeadingFolds();
     });
 
