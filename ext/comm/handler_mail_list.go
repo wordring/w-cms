@@ -85,7 +85,9 @@ func MailList(user *auth.User) ([]MailListItem, error) {
 		case AttachmentCountTag:
 			it.Attachments = r.Value
 		case HandledTag:
-			it.Handled = r.Value
+			if r.Value != HandledPending { // 空は未処理（2026-10-19 から未処理もタグの値で持つが、答えの形は変えない）
+				it.Handled = r.Value
+			}
 		case DraftTag:
 			it.Draft = r.Value
 		}

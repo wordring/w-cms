@@ -463,8 +463,9 @@ func TestEmlIntakeOwnMailBecomesSent(t *testing.T) {
 		t.Fatalf("取り込みエラー: %v", err)
 	}
 	in, _ := os.ReadFile(filepath.Join(page.GetPageDir(inID), inID+".html"))
+	// 受信は未処理から始まる（2026-10-19 から `対応：未処理` と書く——それまでは対応のタグが無かった）。
 	if !strings.Contains(string(in), "<dt>"+DirectionTag+"</dt><dd>"+DirectionIn+"</dd>") ||
-		strings.Contains(string(in), "<dt>"+HandledTag+"</dt>") {
+		!strings.Contains(string(in), "<dt>"+HandledTag+"</dt><dd>"+HandledPending+"</dd>") {
 		t.Errorf("他人からのメールが受信の記録になっていません:\n%s", in)
 	}
 }

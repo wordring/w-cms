@@ -159,6 +159,7 @@ func memoBodyHTML(tmpl, channel, title, direction string, phone, counterpart str
 	d.SetTitle(title)
 	d.SetTag(DirectionTag, direction) // 空なら書かれない（メモ）
 	d.SetTag(ChannelTag, channel)
+	d.SetTag(HandledTag, HandledPending) // 記録は未処理から始まる（2026-10-19 からタグの値で持つ）
 	// **日時は向きに応じて片方だけ。** 両方書くと「どちらが本当か」が生まれます。
 	switch direction {
 	case DirectionOut:

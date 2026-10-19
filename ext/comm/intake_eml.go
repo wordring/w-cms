@@ -193,6 +193,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 		d.SetTag(HandledTag, HandledNotNeeded)
 	} else {
 		d.SetTag(DirectionTag, DirectionIn)
+		d.SetTag(HandledTag, HandledPending) // 届いたものは未処理から始まる（2026-10-19 からタグの値で持つ）
 	}
 	d.SetTag(ChannelTag, ChannelMail)
 	d.SetTag(FromTag, addressTagValues(msg.Header.Get("From"))...)

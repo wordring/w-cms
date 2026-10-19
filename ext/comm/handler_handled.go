@@ -54,7 +54,7 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		PageIDs []string `json:"page_ids"`
-		Value   string   `json:"value"` // 済 / 不要（省略時は 済）
+		Value   string   `json:"value"` // 未処理 / 済 / 不要（省略時は 済）
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -65,10 +65,10 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// **値は表引きで閉じます**——自由に書けると `済` と `完了` が混ざり、
 	// あとから「何件が不要だったか」を数えられなくなります。
-	// `未処理` は印を外す（2026-09-30——メールのページで対応を選べるようにした日に足した）。
+	// `未処理` は 2026-09-30 に足した（メールのページで対応を選べるようにした日）。2026-10-19 から、印を外すのではなく `対応：未処理` と書く。
 	value := strings.TrimSpace(req.Value)
 	switch value {
-	case HandledNotNeeded, HandledUndo:
+	case HandledNotNeeded, HandledPending:
 	default:
 		value = HandledDone
 	}
@@ -105,14 +105,13 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "handled": done, "failed": failed})
 }
 
-// HandledUndo は「印を外して未処理に戻す」の指示です（タグの値ではない・2026-09-30）。
-const HandledUndo = "未処理"
-
 // handledPairRe は本文の `対応` のタグ（dt と dd の組）です（字下げ・属性・空の dd も拾う）。
 var handledPairRe = regexp.MustCompile(`(?s)<dt[^>]*>\s*` + regexp.QuoteMeta(html.EscapeString(HandledTag)) +
 	`\s*</dt>\s*<dd[^>]*>.*?</dd>`)
 
-// SetHandled は `対応` の印を value にします（済 / 不要）。value が HandledUndo なら外して未処理に戻します
+// SetHandled は `対応` の印を value にします（未処理 / 済 / 不要）。
+// ⚠ 2026-10-19 から、未処理も `対応：未処理` と書きます（それまでは印を外していた——2026-10-09 利用者:「メールページには、「対応」未処理、済、不要というタグ風のものがあるのですが、これもタグそのものにしては」）。
+// 以下は 2026-09-30 の説明です
 // （2026-09-30 利用者:「そのメールへの対応が終わったかどうかは、受信フォルダではなく、メールページで選択したいです」
 // ——一覧の「済」「不要」は付けるだけだった〔旧 MarkHandled・既に付いていれば何もしない〕が、メールのページでは
 // 付け替えも戻すもできる）。付ける先は最初の可変タグの並びで、無ければ h1 の直後に新しく作ります——**タグは
@@ -122,14 +121,11 @@ var handledPairRe = regexp.MustCompile(`(?s)<dt[^>]*>\s*` + regexp.QuoteMeta(htm
 // （2026-10-12 から、ブラウザは編集権を取らないので、この関門が断るのは道具〔`/api/lock`〕が握っているときだけです。
 // 人の保存とぶつからないのは、`cms.RewriteBody` がページごとの書き込みの錠〔`cms.LockPageBody`〕の中で書くからです。）
 func SetHandled(pageID, author, value string) error {
-	if value != HandledUndo && value != HandledDone && value != HandledNotNeeded {
-		return errors.New("対応の値は " + HandledDone + "・" + HandledNotNeeded + "・" + HandledUndo + " のどれかです")
+	if value != HandledPending && value != HandledDone && value != HandledNotNeeded {
+		return errors.New("対応の値は " + HandledPending + "・" + HandledDone + "・" + HandledNotNeeded + " のどれかです")
 	}
 	return cms.RewriteBody(pageID, author, func(current string) string {
 		out := handledPairRe.ReplaceAllString(current, "")
-		if value == HandledUndo {
-			return out
-		}
 		pair := `<dt>` + html.EscapeString(HandledTag) + `</dt><dd>` + html.EscapeString(value) + `</dd>`
 		if at := cms.EndOfFirstTagList(out); at >= 0 {
 			return out[:at] + pair + out[at:]

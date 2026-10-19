@@ -222,6 +222,7 @@ func draftRecordBody(tmpl, from, purpose, sourcePageID string, req ReplyRequest)
 	d.SetTag(comm.DirectionTag, comm.DirectionOut)
 	d.SetTag(comm.ChannelTag, comm.ChannelMail)
 	d.SetTag(comm.DraftTag, purpose)
+	d.SetTag(comm.HandledTag, comm.HandledPending) // 下書きは未処理の一覧に並ぶ（書きかけを忘れない・2026-10-19 からタグの値で持つ）
 	d.SetTag(comm.DraftSourceTag, sourcePageID)
 	d.SetTag(comm.FromTag, from)
 	d.SetTag(comm.ToTag, cleanAddrs(req.To)...)

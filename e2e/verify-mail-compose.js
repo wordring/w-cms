@@ -71,7 +71,7 @@ const check = (label, ok, note = '') => {
       const b = document.querySelector('#w-editor-content .mail-handled-btn.is-current');
       return b && b.textContent.includes('未処理');
     }, null, { timeout: 8000 }).catch(() => {});
-    check('「未処理」で印が外れる', (await current()) === '● 未処理', await current());
+    check('「未処理」で札が未処理になる（2026-10-19 から本文は 対応：未処理）', (await current()) === '● 未処理', await current());
     check('未処理の一覧へ戻る', (await listedInBox()) === 1);
 
     // ① 返信の送る欄

@@ -50,11 +50,13 @@ func TestSetHandledReplacesAndUndoes(t *testing.T) {
 		t.Errorf("済 → 不要 に付け替わっていません（印は1つのはず）:\n%s", got)
 	}
 
-	if err := SetHandled(id, "alice", HandledUndo); err != nil {
+	// 未処理は、2026-10-19 から印を外すのではなく `対応：未処理` と書く（印は1つのまま）。
+	if err := SetHandled(id, "alice", HandledPending); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(); strings.Contains(got, HandledTag) {
-		t.Errorf("外したのに印が残っています:\n%s", got)
+	if got := read(); strings.Count(got, "<dt>"+HandledTag+"</dt>") != 1 || !strings.Contains(got, "<dd>"+HandledPending+"</dd>") ||
+		strings.Contains(got, "<dd>"+HandledNotNeeded+"</dd>") {
+		t.Errorf("不要 → 未処理 に付け替わっていません（印は1つのはず）:\n%s", got)
 	}
 	if !strings.Contains(read(), "<dt>"+ChannelTag+"</dt>") {
 		t.Errorf("ほかのタグまで消えています:\n%s", read())
@@ -69,7 +71,7 @@ func TestSetHandledReplacesAndUndoes(t *testing.T) {
 		found = found || r.PageID == id
 	}
 	if !found {
-		t.Errorf("外したのに未処理の一覧に戻っていません")
+		t.Errorf("未処理にしたのに未処理の一覧に戻っていません")
 	}
 
 	if err := SetHandled(id, "alice", "完了"); err == nil {

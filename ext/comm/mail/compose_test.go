@@ -157,8 +157,8 @@ func TestDraftRoundTrips(t *testing.T) {
 	if got := tags[comm.DraftSourceTag]; len(got) != 1 || got[0] != "000200" {
 		t.Errorf("下書きの元が %v です", got)
 	}
-	// ⚠ **対応の印は付けない**（未処理に並ぶ——書きかけを忘れない）・`返信元` もまだ付けない。
-	if len(tags[comm.HandledTag]) > 0 || len(tags[comm.ParentPageTag]) > 0 || len(tags[comm.SentAtTag]) > 0 {
+	// ⚠ **対応は未処理**（未処理に並ぶ——書きかけを忘れない。2026-10-19 から `対応：未処理` と書く）・`返信元` もまだ付けない。
+	if h := tags[comm.HandledTag]; len(h) != 1 || h[0] != comm.HandledPending || len(tags[comm.ParentPageTag]) > 0 || len(tags[comm.SentAtTag]) > 0 {
 		t.Errorf("下書きに送った印が付いています: %v", tags)
 	}
 

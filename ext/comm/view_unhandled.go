@@ -5,7 +5,10 @@ package comm
 //
 // ユーザー:「未処理のメールやFAXを一覧できる方法が必要かも」。
 //
-//	未処理 = 通信箱の下のページで、`対応` の印が付いていないもの（年月フォルダを除く）
+//	未処理 = 通信箱の下のページで、`対応` の印が付いていないか、`対応：未処理` のもの（年月フォルダを除く）
+//
+// ⚠ 2026-10-19 から、未処理もタグの値（`対応：未処理`）で持ちます（2026-10-09 利用者:「メールページには、「対応」未処理、済、不要というタグ風のものがあるのですが、これもタグそのものにしては」）。
+// 新しく作る記録には `対応：未処理` を書き、それより前の記録にも道具で書き足しました。タグの無い記録も、いままでどおり未処理です。
 //
 // **決めるのは人の印だけです**（2026-09-05 に2度改めた末の形）。機械が推し量る材料を
 // 2つとも捨てました:
@@ -69,12 +72,13 @@ import (
 // HandledTag は「対応」の印です。値が `不要` なら未処理の一覧から外れます。
 const HandledTag = "対応"
 
-// HandledDone / HandledNotNeeded は `対応` の値です。
+// HandledPending / HandledDone / HandledNotNeeded は `対応` の値です（設定の語彙 `対応` の選択肢と同じ）。
 //
 // **印は「済んだ」の宣言であり、責任が次へ移った印**です（2026-09-05 ユーザー:
 // 「通信箱は受注処理など次の作業に割り振った時点で処理済みとし、**処理の責任は
 // 次の作業に移ります**」）。だから2つ要ります:
 //
+//	未処理 …… まだ手を付けていない（2026-10-19 からタグの値。それまでは「タグが無い」で表していた）。
 //	済    …… 次の作業へ割り振った（受注ページを作った、部品へ落とした…）。
 //	          **責任はそちらへ移り**、移った先が印を付けるまで作業待ちに残る。
 //	不要  …… 何も生まれない（案内・お礼・広告）。ここで終わり。
@@ -82,6 +86,7 @@ const HandledTag = "対応"
 // **一覧は値を見ません**（どちらでも外れます）。区別が要るのは、あとから
 // 「何件が不要だったか」を数えたくなったときのためです。
 const (
+	HandledPending   = "未処理"
 	HandledDone      = "済"
 	HandledNotNeeded = "不要"
 )
@@ -154,13 +159,13 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		                  WHERE g.page_id = p.id AND g.name = ? LIMIT 1), '')
 		  FROM pages p
 		 WHERE NOT EXISTS (SELECT 1 FROM page_tags h
-		                    WHERE h.page_id = p.id AND h.name = ?)
+		                    WHERE h.page_id = p.id AND h.name = ? AND TRIM(h.value) <> ?)
 		 ORDER BY 4 DESC, p.id DESC`
 
 	// ⚠ **`?` は現れた順に対応します**——SELECT の途中に欄を足したら、ここへ同じ
 	// 位置で足すこと。名前が1つずれても SQL は通り、**その欄だけ静かに空**になります。
 	dbRows, err := database.DB.Query(q,
-		ChannelTag, ReceivedAtTag, FromTag, AttachmentCountTag, DirectionTag, DraftTag, HandledTag)
+		ChannelTag, ReceivedAtTag, FromTag, AttachmentCountTag, DirectionTag, DraftTag, HandledTag, HandledPending)
 	if err != nil {
 		return nil, 0, err
 	}
