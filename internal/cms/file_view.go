@@ -104,8 +104,7 @@ func init() {
 		// スラッシュメニューが挿すのは空の `<section data-type="file-view">` で、
 		// エディタがその場に配線の札を出します（assets/app.js の `decorateFileViews`。
 		// 札を押すと `openFileViewPopover` が欄を開き、`applyFileViewRef` が書き戻す）。
-		// ⚠ エディタ側では `usesHeadingForm` の例外に入れておくこと——見出し形で挿すと
-		// `data-type` が付かず、札の絞り込みから外れます。
+		// （以前はエディタ側の `usesHeadingForm` の例外に入れていた。見出しで形式を名乗る読み方と一緒に 2026-09-29 に消えた。）
 	})
 	RegisterMirror(FileViewType, MirrorHandlerFunc(renderFileView))
 }
@@ -171,7 +170,7 @@ const (
 // **ここに無い形式も受けます**（`kindOther`）——CADもExcelもZIPも、開く口は出します。
 //
 // ⚠ **この表は配信側（page.setAttachmentHeaders）の帰結であって、独立した判断ではありません。**
-// 配信が `inline` で返す形式（PDF・ラスタ画像・SVG）だけが、その場に描けます。
+// 配信が `inline` で返す形式（PDF・ラスタ画像）と、`<img>` で描ける SVG（配信は attachment だが、画像としては読める）だけが、その場に描けます。
 // それ以外は `application/octet-stream`＋`Content-Disposition: attachment`＋`nosniff` で
 // 配られるので、ここで「描ける」と宣言しても**ブラウザは描きません**——2026-09-15 に
 // `.txt/.csv/.log/.md` を `<embed>` で出す枝を足して、そうなりました（しかもその拡張子は

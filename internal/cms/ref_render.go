@@ -46,7 +46,6 @@ import (
 // refValueRe は参照値の文法です（6桁のページID・ハイフン類・英数字のブロックID）。
 var refValueRe = regexp.MustCompile(`^([0-9]{6})[-‐−－ーｰ]([0-9A-Za-z]+)$`)
 
-// parseRefValue は参照値を（ページID, ブロックID）へ分解します。文法外は ok=false。
 // SplitRefList は参照のセルの値を、空白・「、」・「,」・「，」で区切って並べます（空は落とす・2026-10-19）。
 // 2026-10-19 利用者:「資料の置き場をページ内に一つにして、資料一つ一つにいつものIDを付けましょう。ページID-いつものIDで資料を特定し、その連結IDを空白文字や「、」で区切って表の該当セルに羅列しておけば良いのでは？」
 // 参照の列は、1つのセルに参照をいくつも並べて書けます（例 `001436-fhea、001436-k2pq`）。
@@ -60,6 +59,7 @@ func SplitRefList(s string) []string {
 	})
 }
 
+// parseRefValue は参照値を（ページID, ブロックID）へ分解します。文法外は ok=false。
 func parseRefValue(s string) (pageID, blockID string, ok bool) {
 	m := refValueRe.FindStringSubmatch(strings.TrimSpace(s))
 	if m == nil {

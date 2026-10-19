@@ -77,10 +77,10 @@ func init() {
 	})
 }
 
-// deliveryPick は受注残表で選んだ1行です（どの受注のどの行か・今回納める数）。
+// deliveryPick は案件残表で選んだ1行です（どの案件のどの行か・今回納める数）。
 type deliveryPick struct {
-	Order string `json:"order"` // 受注ページ
-	Row   int    `json:"row"`   // 受注明細表のデータ行の番号（索引の RowNo）
+	Order string `json:"order"` // 案件ページ
+	Row   int    `json:"row"`   // 案件明細表のデータ行の番号（索引の RowNo）
 	Item  string `json:"item"`  // 品番（行の取り違えを防ぐ照合）
 	Qty   string `json:"qty"`   // 今回納める数
 	// Name は品名です。Row が負のとき（製造ページから——案件明細の行番号を持たない）、品番か、品番が空なら品名で行を探す（2026-10-19）。
