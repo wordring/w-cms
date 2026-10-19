@@ -147,3 +147,22 @@ func TestAppendToDraftFollowsHeader(t *testing.T) {
 		t.Errorf("見出しに合わせて足していません:\n%s", got)
 	}
 }
+
+// TestLedgerPartlyClosedOrderKeepsItsPurchase は、一部の行だけ閉じた受注ページで、閉じた行のために買った分が在庫として
+// 別の受注へ漏れないことを固定します（2026-10-20）。受注A の1行目は完了（2台・板4枚）、2行目は開いている（1台・板2枚）。
+// 受注A のために6枚買った——2行目に2枚、完了した1行目に4枚で、余りは無い。それまではページごと「開いている」と見て
+// 閉じた行の分を引かず、4枚が在庫として受注B に回っていた（B の残が 2 と出た）。行を閉じるのは `状態：完了`（出荷済数量は 2026-10-17 から納品書で数える）。
+func TestLedgerPartlyClosedOrderKeepsItsPurchase(t *testing.T) {
+	seedLedger(t)
+	syncBody(t, 40, `<h1>受注</h1>`+
+		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>状態</th><th>納期</th></tr>`+
+		`<tr><td>000041</td><td>K-9</td><td>カバー</td><td>2</td><td>完了</td><td>2026-10-10</td></tr>`+
+		`<tr><td>000041</td><td>K-9</td><td>カバー</td><td>1</td><td></td><td>2026-10-10</td></tr>`+
+		`</tbody></table>`)
+	setPurchase(t, 50, "6", "000040")
+	got := remainingByOrder(t)
+	if got[40] != 0 || got[42] != 6 {
+		t.Errorf("⚠ 受注A のための6枚は受注A の中で使い切るはず: %v（A 0・B 6）", got)
+	}
+}

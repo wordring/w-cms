@@ -405,3 +405,22 @@ func TestMaterialPriceShowsQuoteWhenNothingBought(t *testing.T) {
 		}
 	}
 }
+
+// TestMaterialPriceComparesFoldedDates は、部材発注日を畳んでから新しさを比べることを固定します（2026-10-20）。
+// `2025/11/02` は `2025-12-01` より古い——それまでは文字で比べていたので（`/` は `-` より大きい）、古いほうを最新単価にしていた。
+func TestMaterialPriceComparesFoldedDates(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	rows := `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>2</td></tr>`
+	seedMaterialAndOrder(t, rows,
+		orderSeed{ID: 20, Owner: "root", Mode: "302", Public: true,
+			Date: "2025/11/02", Supplier: "たちばな鋼材",
+			Rows: `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>760</td></tr>`},
+		orderSeed{ID: 21, Owner: "root", Mode: "302", Public: true,
+			Date: "2025-12-01", Supplier: "みなと商店",
+			Rows: `<tr><td>SS400</td><td>板</td><td>t3.2</td><td>800</td></tr>`},
+	)
+	got := showMaterials(t, &auth.User{Username: "root", IsAdmin: true}, materialsBody(rows))
+	if !strings.Contains(got, "800円") || strings.Contains(got, "760円") {
+		t.Errorf("⚠ 斜線で書いた新しい発注を採っていません:\n%s", got)
+	}
+}

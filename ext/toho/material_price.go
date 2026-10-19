@@ -195,7 +195,13 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 		switch t.Name {
 		case PurchasedAtTag:
 			if _, dup := dateOf[t.PageID]; !dup {
-				dateOf[t.PageID] = t.Value
+				// 畳んでから持ちます（2026-10-20）——人が `2024/1/5` と書いた紙を、文字の大小で比べて最新単価を取り違えていた
+				// （見積の単価の latestQuotedPrices は畳んでいる）。
+				d := strings.TrimSpace(t.Value)
+				if norm, ok := cms.NormalizeValue(cms.ColDate, d); ok {
+					d = norm
+				}
+				dateOf[t.PageID] = d
 			}
 		case SupplierTag:
 			if _, dup := supplierOf[t.PageID]; !dup {

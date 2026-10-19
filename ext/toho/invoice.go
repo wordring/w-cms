@@ -177,13 +177,18 @@ type invoiceLine struct {
 	RowNo                                                                              int
 }
 
-// invoiceKey は納品書の行と請求明細の行を結ぶ鍵です（納品書ページと品番。品番が空なら品名）。
-func invoiceKey(delivery, itemNo, itemName string) string {
-	return shippedKey(delivery, itemNo, itemName)
+// invoiceKey は納品書の行と請求明細の行を結ぶ鍵です（納品書ページ・案件・品番。品番が空なら品名）。
+//
+// ⚠ **案件も鍵に入れます**（2026-10-20）——1枚の納品書には別々の案件の行を混ぜてよい（delivery.go）ので、「納品書と品番」だけだと、
+// 案件Aの品番Xを請求書に載せた時点で、同じ納品書の案件Bの品番X（単価がまだだった行）まで請求済みと見なされ、二度と請求書に出なかった。
+func invoiceKey(delivery, order, itemNo, itemName string) string {
+	return strings.TrimPrefix(strings.TrimSpace(delivery), "/") + "|" + shippedKey(order, itemNo, itemName)
 }
 
 // billedKeys は、請求書（`ページ種類：弊社請求書`）に載った納品書の行の鍵です。
-func billedKeys() map[string]bool {
+// issuedOnly なら、発行した（`発行日` のある）請求書に載った行だけです（2026-10-20・製造ページを閉じるとき）。
+// 新しい請求書に載せる行を選ぶときは、まだ紙を作っていない請求書に載った行も「載っている」と数えます（二重に載せない）。
+func billedKeys(issuedOnly bool) map[string]bool {
 	out := map[string]bool{}
 	rows, err := cms.VocabRowsOfType(database.DB, InvoiceItemsType)
 	if err != nil {
@@ -194,10 +199,14 @@ func billedKeys() map[string]bool {
 		ok, seen := kinds[r.PageID]
 		if !seen {
 			ok = !cms.IsTemplateArea(page.FormatID(r.PageID)) && pageKindOf(r.PageID) == PageKindOurInvoice
+			if ok && issuedOnly {
+				tags, err := cms.TagsOfPage(database.DB, r.PageID)
+				ok = err == nil && strings.TrimSpace(cms.FirstTag(tags, DeliveryIssuedTag)) != ""
+			}
 			kinds[r.PageID] = ok
 		}
 		if ok {
-			out[invoiceKey(r.Values["delivery"], r.Values["item-id"], r.Values["item-name"])] = true
+			out[invoiceKey(r.Values["delivery"], r.Values["order"], r.Values["item-id"], r.Values["item-name"])] = true
 		}
 	}
 	return out
@@ -211,7 +220,7 @@ func unbilledLines(user *auth.User) (lines map[string][]invoiceLine, noPrice map
 	if err != nil {
 		return
 	}
-	billed := billedKeys()
+	billed := billedKeys(false)
 	type head struct {
 		ok           bool
 		client, date string
@@ -240,7 +249,7 @@ func unbilledLines(user *auth.User) (lines map[string][]invoiceLine, noPrice map
 		}
 		dlv := page.FormatID(r.PageID)
 		v := r.Values
-		if billed[invoiceKey(dlv, v["item-id"], v["item-name"])] {
+		if billed[invoiceKey(dlv, v["order"], v["item-id"], v["item-name"])] {
 			continue
 		}
 		if q, ok := estimateNumber(v["quantity"]); !ok || q <= 0 {

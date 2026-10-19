@@ -5,6 +5,7 @@ package toho
 //
 // ユーザー:「同じ部品のページが既にあれば、その図面は改定図面」（2026-09-03）。
 // 顧客名／装置名称の下では図面名称が一意なので、**ページが在ること自体が改定の合図**です。
+// （2026-09-20 から、改定か図面追加か〔mergeAsDrawing〕は人が選びます。2026-10-01 から、同じ題の別の品物もあります——filing.go。）
 //
 // **旧版は最新版の子ページになります**（2026-09-06 ユーザー:「旧版を最も新しい版の
 // 子にしてはどうでしょう。ワンノートではページが子を持てなかったので、出来ません
@@ -87,10 +88,22 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	// **ブロックIDが衝突しないようにする**——`ページID-ブロックID` はその改定の
 	// 社内コードなので、1つのページの中で重複したら指し先が定まりません
 	// （4桁 base36 なので確率は低いが、低いことと起きないことは違う）。
-	block = reassignBlockIDIfTaken(block, dstBody)
 	newNo := drawingNoOf(block)
-	if err := cms.RewriteBody(dstPageID, user.Username, func(string) string {
-		body := cms.InsertAfterH1(dstBody, block)
+	if rebuildBeforeWrite != nil {
+		rebuildBeforeWrite(dstPageID) // 試験だけ（読んでから書くまでのあいだに、ほかの人の保存を挟む）
+	}
+	// ⚠ **錠の中で読み直した本文から組みます**（2026-10-20）——錠の外で読んだ dstBody から組んで書くと、
+	// 読んでから書くまでのあいだのほかの人の保存が消えます（rebuildBody と同じ形）。
+	// そのあいだに図面ブロックそのものが変わっていたら、旧版へ運んだものと食い違うので、書かずに断ります。
+	var moved error
+	if err := cms.RewriteBody(dstPageID, user.Username, func(cur string) string {
+		curOld, curRest := extractDrawingSections(cur)
+		if strings.Join(curOld, "") != strings.Join(oldBlocks, "") {
+			moved = errors.New("合流先の図面が、このあいだに変わりました。もう一度やり直してください")
+			return cur
+		}
+		blk := reassignBlockIDIfTaken(block, curRest)
+		body := cms.InsertAfterH1(curRest, blk)
 		// ⚠ **リンクを先に付けてから行を足す**（2026-10-04）——図面番号を変えない改定では、足した新しい行も同じ
 		// 番号なので、足してから探すと**新しい行が旧版へのリンクになっていた**（新しい行は先頭に入るため）。
 		if oldPageID != "" {
@@ -109,6 +122,12 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		return body
 	}); err != nil {
 		return err
+	}
+	if moved != nil {
+		if oldPageID != "" {
+			cms.DeletePageToTrash(oldPageID) // 作ったばかりの旧版ページを片付ける（図面は合流先に残ったまま）
+		}
+		return moved
 	}
 
 	// 3. 合流し終えてから仮のページを片付ける。
@@ -430,9 +449,12 @@ func mergeAsDrawing(user *auth.User, srcPageID, dstPageID string) error {
 	// **ブロックIDが衝突しないようにする**——`ページID-ブロックID` は社内コードなので、
 	// 1つのページの中で重複したら指し先が定まりません（改定の合流と同じ作法）。
 	block = reassignBlockIDIfTaken(block, dstBody)
-
-	if err := cms.RewriteBody(dstPageID, user.Username, func(string) string {
-		return insertAfterDrawings(dstBody, block)
+	if rebuildBeforeWrite != nil {
+		rebuildBeforeWrite(dstPageID) // 試験だけ
+	}
+	// ⚠ 錠の中で読み直した本文へ足します（2026-10-20・mergeAsRevision と同じ理由）。
+	if err := cms.RewriteBody(dstPageID, user.Username, func(cur string) string {
+		return insertAfterDrawings(cur, reassignBlockIDIfTaken(block, cur))
 	}); err != nil {
 		return err
 	}

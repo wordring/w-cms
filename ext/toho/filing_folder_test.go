@@ -126,3 +126,26 @@ func TestFilingSkipsUnwritableOrOpen(t *testing.T) {
 		}
 	}
 }
+
+// TestMachineFolderWithDrawingKeepsProducts は、「装置のページへ」で図面を入れた装置の下の加工製品が、整理の候補から
+// 消えないことを固定します（2026-10-20）。それまでは、図面番号のタグを持った装置のフォルダが加工製品と数えられ、
+// その子の加工製品が全部「旧版」として外れていた（productListRows）。
+func TestMachineFolderWithDrawingKeepsProducts(t *testing.T) {
+	const inbox = "000013"
+	folderSetup(t, inbox)
+	asm := makeDrawingPageFrom(t, inbox, "pdf002", "A100-00A", "組立図", "テスト装置", "みらい産業")
+	res := postFiling(t, &auth.User{Username: "alice"}, []filingRequest{{PageID: asm, Customer: "みらい産業",
+		MachineName: "テスト装置", DrawingName: "", Merge: "folder"}})
+	if len(res) != 1 || res[0].Outcome != "added" {
+		t.Fatalf("装置のページへ足していません: %+v", res)
+	}
+	got := productCandidates(&auth.User{Username: "alice"}, "みらい産業", "A100-B01-001", "取付ベース")
+	if len(got) == 0 {
+		t.Fatalf("⚠ 装置の下の加工製品が候補から消えました")
+	}
+	for _, c := range got {
+		if c.Title == "テスト装置" {
+			t.Errorf("⚠ 装置のフォルダが加工製品の候補に入っています: %+v", c)
+		}
+	}
+}

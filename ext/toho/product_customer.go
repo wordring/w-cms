@@ -87,6 +87,12 @@ func productPagesForCustomer(db cms.ReadOnlyDB, customer, code, name string) []i
 	}
 	var out, filed []int
 	for _, id := range pagesByAnyTag(db, ProductCodeTags(), code) {
+		// ⚠ **改定で子ページへ移った旧版は候補にしません**（2026-10-20）——旧版は古い図面ブロック（図面番号）を持つので、
+		// 図面番号を変えない改定のあとは候補が2枚になって結べず、番号が変わった改定のあとに古い番号で注文が来ると旧版に結ばれていた。
+		// 加工製品を言い当てる番号は、いまの版だけが持つ（revision.go の oldVersionSnapshot・整理の sameCodeProducts と同じ）。
+		if isOldVersionPage(db, id) {
+			continue
+		}
 		if foldCustomer(productCustomerOf(db, id)) == want {
 			out = append(out, id)
 			if isFiledProduct(db, id) {
@@ -112,6 +118,12 @@ func productPagesForCustomer(db cms.ReadOnlyDB, customer, code, name string) []i
 		}
 	}
 	return out
+}
+
+// isOldVersionPage は、ページが `ページ種類：加工製品の旧版` かです。
+func isOldVersionPage(db cms.ReadOnlyDB, id int) bool {
+	tags, err := cms.TagsOfPage(db, id)
+	return err == nil && strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindProductOld
 }
 
 // itemNameKey は品名を比べる形にします（空白・ハイフン類・長音・全角半角・大小を畳む）。

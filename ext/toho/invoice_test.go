@@ -14,6 +14,11 @@ import (
 func seedIssuedDelivery(t *testing.T, id, parent int, client, delivered, issued string, rows ...[5]string) {
 	t.Helper()
 	addPage(t, id, parent, "納品書", "alice", "302", true)
+	syncBody(t, id, issuedDeliveryBody(client, delivered, issued, rows...))
+}
+
+// issuedDeliveryBody は seedIssuedDelivery の本文です。
+func issuedDeliveryBody(client, delivered, issued string, rows ...[5]string) string {
 	body := `<h1>【弊社】納品書　` + client + `</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindOurDelivery + `</dd>` +
 		`<dt>` + DeliveryClientTag + `</dt><dd>` + client + `</dd><dt>` + DeliveredAtTag + `</dt><dd>` + delivered + `</dd>` +
 		`<dt>` + DeliveryIssuedTag + `</dt><dd>` + issued + `</dd></dl>` +
@@ -22,7 +27,7 @@ func seedIssuedDelivery(t *testing.T, id, parent int, client, delivered, issued 
 	for _, r := range rows {
 		body += `<tr><td></td><td>` + r[0] + `</td><td>PO-1</td><td>` + r[1] + `</td><td>` + r[2] + `</td><td>` + r[3] + `</td><td>個</td><td>` + r[4] + `</td><td></td></tr>`
 	}
-	syncBody(t, id, body+`</tbody></table>`)
+	return body + `</tbody></table>`
 }
 
 // TestClosingDates は締め日の読み方と、締めの日付の数え方を固定します。
@@ -147,5 +152,49 @@ func TestInvoicePDFRoundTrips(t *testing.T) {
 	open := priced + `<tr><td>2026-10-06</td><td>000953</td><td>000900</td><td>PO-1</td><td></td><td>B-1</td><td>シャフト</td><td>1</td><td>個</td><td></td><td></td></tr>`
 	if _, err := buildInvoicePDF(doc(open), nil); err == nil || !strings.Contains(err.Error(), "単価") {
 		t.Errorf("⚠ 単価の決まっていない行があるのに紙を作ります: %v", err)
+	}
+}
+
+// TestInvoiceKeyIncludesOrder は、1枚の納品書に別々の案件の同じ品番が載っているとき、片方を請求書に載せても、もう片方
+// （単価があとで決まった行）が次の請求書に載ることを固定します（2026-10-20）。それまでは請求済みの鍵が「納品書と品番」だけで、
+// 案件を見ていなかったので、もう片方は二度と請求書に出なかった。
+func TestInvoiceKeyIncludesOrder(t *testing.T) {
+	setupExtTest(t, "000950", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	addPage(t, 951, -1, "記録の外", "alice", "302", true)
+	seedIssuedDelivery(t, 952, 951, "あけぼの精工", "2026-09-25", "2026-09-25",
+		[5]string{"000900", "X-1", "ブラケット", "10", "100"}, [5]string{"000901", "X-1", "ブラケット", "4", ""})
+	if code, out := postRFQ(t, u, InvoiceNewAPIHandler, map[string]any{"client": "あけぼの精工", "close": "2026-09-30"}); code != 200 || out["rows"].(float64) != 1 {
+		t.Fatalf("1枚目を作れません: %d %v", code, out)
+	}
+	// 案件 000901 の行の単価が決まった。
+	syncBody(t, 952, issuedDeliveryBody("あけぼの精工", "2026-09-25", "2026-09-25",
+		[5]string{"000900", "X-1", "ブラケット", "10", "100"}, [5]string{"000901", "X-1", "ブラケット", "4", "120"}))
+	code, out := postRFQ(t, u, InvoiceNewAPIHandler, map[string]any{"client": "あけぼの精工", "close": "2026-09-30"})
+	if code != 200 || out["rows"].(float64) != 1 {
+		t.Fatalf("⚠ 案件 000901 の行が2枚目に載りません: %d %v", code, out)
+	}
+	if body := readPageBody(t, out["page_id"].(string)); !strings.Contains(body, "<td>000901</td>") || !strings.Contains(body, "<td>120</td>") {
+		t.Errorf("⚠ 2枚目の行が案件 000901 の行ではありません:\n%s", body)
+	}
+}
+
+// TestBilledKeysIssuedOnly は、製造ページを閉じるときに数える「請求済み」が、発行した（`発行日` のある）請求書だけであることを
+// 固定します（2026-10-20）。それまでは、まだ紙を作っていない請求書に載っただけの行も数えて製造ページを記録へ移し、
+// 案件明細の「請求書発行」の印（発行済だけを数える）と食い違っていた。新しい請求書に載せる行を選ぶときは、紙の無い請求書も数える。
+func TestBilledKeysIssuedOnly(t *testing.T) {
+	setupExtTest(t, "000950", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 951, -1, "記録の外", "alice", "302", true)
+	seedIssuedDelivery(t, 952, 951, "あけぼの精工", "2026-09-25", "2026-09-25", [5]string{"000900", "X-1", "ブラケット", "10", "100"})
+	code, out := postRFQ(t, adminUser(), InvoiceNewAPIHandler, map[string]any{"client": "あけぼの精工", "close": "2026-09-30"})
+	if code != 200 {
+		t.Fatalf("請求書を作れません: %d %v", code, out)
+	}
+	key := invoiceKey("000952", "000900", "X-1", "ブラケット")
+	if !billedKeys(false)[key] {
+		t.Errorf("紙の無い請求書に載った行を、新しい請求書の選びで数えていません（二重に載る）")
+	}
+	if billedKeys(true)[key] {
+		t.Errorf("⚠ 紙の無い請求書に載っただけの行を、発行した請求書の行と数えています")
 	}
 }

@@ -30,6 +30,8 @@ package toho
 //   - **単価は人が「📌 この単価を記録」を押したときに見積表へ書く**（鏡で毎回計算しない）——見積書に写すのも、受注の
 //     単価と並べるのも、記録した値。計算表を直して記録と合わなくなったら、見積表の下に「⚠ 合いません」と出す
 //     （部材の値段が変わったときの知らせ）。
+//     2026-10-19 から、テンプレート「見積計算書」の見積表の単価に式（`=ROUND(原価*(1+利益率/100))`）があれば、📌 は原価と
+//     利益率だけを書き、単価には式を書く（計算した数は書かない——withEstimateRecord・templateRecordFormulas）。
 //   - 見積表が無い見積計算表の下には「📌 見積表を作って記録」を出す（押すと、計算表のすぐ後ろに見積表を足して記録する）。
 //   - 「⧉ このロットを写す」で、見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置く（ロット・原価・単価は空にする）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -304,7 +306,14 @@ func (p estimatePlan) matches(r estimateRecord) bool {
 	cost, ok1 := estimateNumber(r.Cost)
 	rate, ok2 := estimateNumber(r.Rate)
 	unit, ok3 := estimateNumber(r.Unit)
-	return ok1 && ok2 && ok3 && math.Abs(cost-p.Cost) < 0.005 && math.Abs(rate-p.Rate) < 1e-9 && int(math.Round(unit)) == p.Unit
+	if !(ok1 && ok2 && ok3 && math.Abs(cost-p.Cost) < 0.005 && math.Abs(rate-p.Rate) < 1e-9) {
+		return false
+	}
+	// ⚠ **単価は2つの丸め方のどちらでも合っているとします**（2026-10-20）——計算は「原価の円＋利益の円」で丸めますが、
+	// テンプレート「見積計算書」の単価の式 `=ROUND(原価*(1+利益率/100))` はまとめて1回だけ丸めます（2026-10-19・📌 は式を残す）。
+	// 原価 50・利益率 15 だと、計算は 58、式は 57 になり、📌 で記録した直後なのに「⚠ 記録が計算表と合いません」が出ていた。
+	u := int(math.Round(unit))
+	return u == p.Unit || u == int(math.Round(p.Cost*(1+p.Rate/100)))
 }
 
 // estimateNumber は表の数を読みます（カンマ・全角・「円」「%」を許す）。空や数でないものは ok=false。

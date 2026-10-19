@@ -10,11 +10,12 @@ package toho
 //	必要   … 開いている受注の行（完了でない・出し終えていない・移行中でない）× 加工製品の構成部品の表
 //	手当て … 部材発注明細表（部材発注書の行・取消も含む）・発注部材表（入れた分）・手配不要表（不要にした分）
 //
-//   - 手当ての行が `受注`（受注ページ）を持っていれば、**まずその受注の必要に**当てます（受注が閉じていても——納め
+//   - 手当ての行が `受注`（受注ページ。2026-10-19 から列の名前は `案件`・機械キーは for-order のまま）を持っていれば、**まずその受注の必要に**当てます（受注が閉じていても——納め
 //     終えた注文のために買った分は、その注文で使った）。
 //   - **余りは在庫**です（2026-10-01 利用者:「部材は在庫がある場合があります」「必要数より購入数のほうが多ければ、在庫に
 //     なります」）——その受注の必要を超えて買った分（部材発注明細表・発注部材表）は、ほかの受注の必要へ回ります。
-//   - `受注` の無い行（2026-10-01 より前の部材発注書・発注部材表に手で書いた行）も、在庫と同じく回ります。
+//   - `受注` の無い行（2026-10-01 より前の部材発注書・発注部材表に手で書いた行。2026-10-19 より前は、発注部材表から
+//     作った部材発注書でもこの列が落ちていた——our_order_new.go）も、在庫と同じく回ります。
 //   - 回すのは、開いている受注の残りへ**納期の早い順に1回だけ**（同じ手当てを2つの受注に二重に当てない）。
 //   - 当てる順は 部材発注明細表 → 発注部材表 → 手配不要表（紙になったものから）。⚠ 手配不要の余りは在庫にしない（買っていない）。
 //
@@ -250,13 +251,11 @@ func buildLedger(db cms.ReadOnlyDB, canView func(int) bool, open []openOrderRow)
 	}
 	// 2. 閉じた受注（完了・出し終えた・移行中）のために書かれた手当ては、その受注の必要で使ったものとして減らす
 	//    （余りだけが在庫になる）。
-	openPages := map[int]bool{}
-	for _, o := range open {
-		openPages[o.row.PageID] = true
-	}
+	//    ⚠ **閉じた行は、行ごとに見ます**（2026-10-20）——一部の行だけ閉じた受注ページ（ある加工製品は完了・ほかは開いている）を
+	//    ページごと飛ばしていたので、閉じた行のために買った分が余りとして在庫に回り、別の受注の必要に当たっていた。
 	for pk, list := range l.supplies {
 		for _, s := range list {
-			if s.forOrder == 0 || openPages[s.forOrder] || s.left <= 0 {
+			if s.forOrder == 0 || s.left <= 0 {
 				continue
 			}
 			s.left -= closedTake(db, s.forOrder, pk, s.left, l)
@@ -280,7 +279,7 @@ func buildLedger(db cms.ReadOnlyDB, canView func(int) bool, open []openOrderRow)
 	return l
 }
 
-// closedTake は閉じた受注ページ（帳簿の当て先でない）の、その部材の必要（受注の行 × 構成部品の表）から、手当て avail を
+// closedTake は受注ページの閉じた行（帳簿の当て先でない行・2026-10-20 からは開いている行の混ざったページも）の、その部材の必要（受注の行 × 構成部品の表）から、手当て avail を
 // 当てた数を返します。同じ受注ページ・同じ部材の手当てが何行あっても、必要は1回だけ引く（残りを覚えておく）。
 func closedTake(db cms.ReadOnlyDB, orderPage int, pk string, avail int, l *procLedger) int {
 	if l.closed == nil {
@@ -291,6 +290,9 @@ func closedTake(db cms.ReadOnlyDB, orderPage int, pk string, avail int, l *procL
 		m = map[string]int{}
 		if rows, err := cms.VocabTableRowsOf(db, orderPage, clientOrderItemsType); err == nil {
 			for _, r := range rows {
+				if l.isOpen(r) {
+					continue // 開いている行の必要は、手順1で当てた（ここで二度引かない）
+				}
 				pid, ok := productOfOrderRow(db, r)
 				if !ok {
 					continue

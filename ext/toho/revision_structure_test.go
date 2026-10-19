@@ -1,11 +1,13 @@
 package toho
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/database"
 )
 
 // 改定の合流が、**行き先の構造を壊さない**ことを固定します（2026-09-20）。
@@ -122,5 +124,25 @@ func TestExtractDrawingSectionsLeavesBalancedRest(t *testing.T) {
 	}
 	if !strings.Contains(rest, "改訂履歴") {
 		t.Errorf("残りから改訂履歴が消えています: %s", rest)
+	}
+}
+
+// TestRevisionOldPageIsNotLinkCandidate は、図面番号を変えない改定のあとも、客先＋品番の候補が新しい版の1枚だけであることを
+// 固定します（2026-10-20）。旧版も古い図面ブロック（同じ図面番号）を持つので、それまでは候補が2枚になり、案件の行が結べなかった。
+func TestRevisionOldPageIsNotLinkCandidate(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "R7", "ブラケット", "装置A", "客A")
+	src := makeDrawingPageFrom(t, inbox, "pdf-b", "R7", "ブラケット", "装置A", "客A")
+	if err := mergeAsRevision(user, src, dst); err != nil {
+		t.Fatalf("mergeAsRevision: %v", err)
+	}
+	if _, ok := findChildByTitle(dst, "旧版 R7 ブラケット"); !ok {
+		t.Fatalf("旧版の子ページがありません（試験の前提）")
+	}
+	got := productPagesForCustomer(database.DB, "客A", "R7", "")
+	if len(got) != 1 || fmt.Sprintf("%06d", got[0]) != dst {
+		t.Errorf("⚠ 候補が新しい版の1枚ではありません: %v（新しい版 %s）", got, dst)
 	}
 }

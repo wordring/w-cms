@@ -17,7 +17,7 @@ package toho
 // やめた・木の形は product_tree.go が正本）。ワンノートの製造部品ページの形に、
 // 決定を足したもの:
 //
-//   - **顧客名ページは `製造` の下**（2026-09-05・トップ直下をやめた。2026-10-16 までの名前は `取引先`）
+//   - **顧客名ページは `製造台帳` の下**（2026-09-05・トップ直下をやめた。2026-10-16 の夕方までの名前は `取引先`、夜までは `製造`）
 //   - ~~装置名称の上に段（現行・旧型・試作…）~~ → **2026-09-29 に `区分` のタグへ**。
 //     利用者:「フォルダで分けるのをやめて、試作のタグをつけるように変更したい」。
 //     段のフォルダは1つしか選べず、「試作かつ見積もり」を表せませんでした。
@@ -32,6 +32,7 @@ package toho
 //
 // 移した先に同名の加工製品ページが在れば、その図面は**改定図面**です（ユーザー）。
 // 顧客名／装置名称の下では図面名称が一意なので、**ページが在ること自体が改定の合図**。
+// （2026-09-20 から、改定か図面追加かは人が選びます。2026-10-01 から、同じ題の別の品物も「新規」で隣に置けます——fileOneDrawing。）
 // **旧版は最新版の子ページになります**（2026-09-06 ユーザー:「旧版を最も新しい版の
 // 子にしてはどうでしょう。ワンノートではページが子を持てなかったので、出来ません
 // でしたが、CMSでは可能では？」）。もとは同じページに積み上げて古いものに赤枠を
@@ -130,9 +131,9 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 絞っていますが（`machines`）、図面名称は顧客×装置の数だけあるので配れません。
 // だから**打ち替えのたびに聞きます**。
 //
-// ⚠ **調べるだけで、1枚も作りません。** `ensureChildPage` は無ければ作るので使わず、
-// `findChildByTitle` だけで辿ります——**問い合わせただけで空の顧客ページが増える**のは
-// いちばん質の悪い副作用です。
+// ⚠ **調べるだけで、1枚も作りません。** 無ければ作る関数（当時の `ensureChildPage`・2026-10-19 に消した・
+// いまの `ensureProductPath`）は使わず、フォルダだけを辿る `findFolderChild` で探します——**問い合わせただけで
+// 空の顧客ページが増える**のはいちばん質の悪い副作用です。
 //
 // ⚠ **読めないページは「無い」と答えます**（見せ分け・C案）。存在を漏らさないためで、
 // 匿名に「読めない」と「存在しない」を区別させない方針と同じです。
@@ -242,7 +243,7 @@ func sameDrawingKey(no string) string {
 	return cms.NormalizeCode(revSuffix.ReplaceAllString(no, ""))
 }
 
-// productCandidates は取引先の「加工製品」の下から、番号（図面番号・品番——版の印は除く）と名前（題・品名・図面名称）の両方が
+// productCandidates は取引先の社名のフォルダの下（2026-10-16 までは社名の下の「加工製品」の箱の下）から、番号（図面番号・品番——版の印は除く）と名前（題・品名・図面名称）の両方が
 // 合うページを探し、無ければどちらかが合うページを返します（5件まで・読めるものだけ・旧版の子ページは除く）。
 func productCandidates(user *auth.User, customer, drawingNo, name string) []productCandidate {
 	out := []productCandidate{}
@@ -391,7 +392,7 @@ func partnerNames(user *auth.User) []string {
 	return out
 }
 
-// visibleCustomerChildren は `製造` の直下（社名ページ）のうち、読めて題のあるものを
+// visibleCustomerChildren は `製造台帳` の直下（社名ページ）のうち、読めて題のあるものを
 // ID順で返します（整理の候補と、連絡帳と未接続の相手の一覧が共有します）。
 func visibleCustomerChildren(user *auth.User) []cms.ChildPage {
 	boxID, ok := CustomerBoxPageID()
@@ -427,7 +428,7 @@ func visibleCustomerChildren(user *auth.User) []cms.ChildPage {
 // （箱が増えるたびに除外が増え、いつか漏れます）。
 //
 // **候補を出すだけで、合わせるのは人**です。完全一致でしか階層は繋がらないので
-// （findChildByTitle）、揺れを機械が吸収すると別の装置が1つに潰れます。
+// （findFolderChild）、揺れを機械が吸収すると別の装置が1つに潰れます。
 func machineNames(user *auth.User) map[string][]string {
 	out := map[string][]string{}
 	boxID, ok := CustomerBoxPageID()
@@ -726,10 +727,11 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 
 	// **顧客名ページは「製造台帳」の下**です（2026-09-05 ユーザー決定。2026-10-16 の夕方までの名前は「取引先」、夜までは「製造」）。アドレス帳が
 	// 作る相手ページと**同じ場所・同じ1枚**——連絡先を見るページと部品を見るページを
-	// 分けないため（EnsureCustomerBox の説明が正本）。
+	// 分けないため（2026-09-05 の決定）。⚠ 2026-09-16 にこの決定を覆し、連絡先は別の木（`連絡帳`）へ分けました
+	// ——同じ会社のページが2枚になります（customer_box.go の冒頭が正本）。
 	//
 	// **2つの木を参照タグで結びます**（2026-09-16）。`製造台帳／社名` のページから
-	// `連絡帳／組織` を指す `相手` のタグを1つ書きます（`ensureProductPath` の中の
+	// `連絡帳／組織` を指す `連絡帳` のタグ（2026-09-17 までの名前は `相手`）を1つ書きます（`ensureProductPath` の中の
 	// `linkPartner`）。⚠ **題だけで結んでいると、改名した日に切れます**——参照は
 	// ページIDなので切れません。**人が選んだ社名で引きます**（機械が推した組織ではなく）
 	// ——整理の画面は「機械が出して人が直す」場所なので、**打ち替えた結果が正**です。
@@ -1041,12 +1043,21 @@ func replaceFirstFieldValue(body, field, value string) string {
 	// **空欄は `<br/>` です**（サニタイズが空の `dd` に入れる）。実データの7枚のうち
 	// 3枚の `客先` がこの形で、`[^<]*` だけで見ていたときは**素通りしていました**
 	// ——行は在るのに値が無く、索引にも入らないので `客先` で永久に引けません。
-	re := regexp.MustCompile(`<dt>` + regexp.QuoteMeta(field) + `</dt><dd>(<br\s*/?>|[^<]*)</dd>`)
+	// ⚠ **`</dt>` と `<dd>` のあいだの字下げを許します**（2026-10-20）——人が一度保存したページは字下げされ（罠の節）、
+	// 詰めた形だけを見ていたときは、整理で直した客先・装置名称・発注元が黙って書き戻されていなかった。
+	re := regexp.MustCompile(`<dt>` + regexp.QuoteMeta(field) + `</dt>\s*<dd>(<br\s*/?>|[^<]*)</dd>`)
 	loc := re.FindStringSubmatchIndex(body)
 	if loc == nil {
 		return body
 	}
 	return body[:loc[2]] + htmlEscape(value) + body[loc[3]:]
+}
+
+// hasTagPair は、本文に「name：value」のタグ（`<dt>name</dt><dd>value</dd>`）があるかです。字下げを許します（2026-10-20）
+// ——詰めた形だけで見ていたときは、人が保存した社名のページで「もう結んである」が見えず、整理のたびに `連絡帳` のタグが増えていた。
+func hasTagPair(body, name, value string) bool {
+	re := regexp.MustCompile(`<dt>\s*` + regexp.QuoteMeta(name) + `\s*</dt>\s*<dd>\s*` + regexp.QuoteMeta(value) + `\s*</dd>`)
+	return re.MatchString(body)
 }
 
 // findChildByTitle は親の子から題が完全一致するものを1つ探します。
@@ -1115,7 +1126,7 @@ func linkPartner(user *auth.User, customerID, title string) {
 		return
 	}
 	// 既に結ばれていれば何もしない（同じタグを2つ並べない）。
-	if strings.Contains(body, "<dt>"+contacts.ContactsRefTag+"</dt><dd>"+partnerID+"</dd>") {
+	if hasTagPair(body, contacts.ContactsRefTag, partnerID) {
 		return
 	}
 	if idInt, err := strconv.Atoi(customerID); err == nil {
@@ -1124,7 +1135,7 @@ func linkPartner(user *auth.User, customerID, title string) {
 		}
 	}
 	_ = cms.RewriteBody(customerID, user.Username, func(current string) string {
-		if strings.Contains(current, "<dt>"+contacts.ContactsRefTag+"</dt><dd>"+partnerID+"</dd>") {
+		if hasTagPair(current, contacts.ContactsRefTag, partnerID) {
 			return current
 		}
 		pair := "<dt>" + contacts.ContactsRefTag + "</dt><dd>" + partnerID + "</dd>"

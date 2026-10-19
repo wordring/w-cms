@@ -16,12 +16,16 @@ package toho
 //   - **行は本文から読みます**（画面は表の番号だけ送る——ほかの部材見積依頼の口と同じ）。
 //   - **単価は空で写します**——見積依頼部材表に単価があっても、それは業者に聞く前の値（移すときにも空にしている）。
 //   - 部材見積依頼番号は**ページ番号**（部材発注書番号・見積番号と同じ）。
-//   - 紙（PDF）と送る道は次の段（【要求】部材見積依頼 §2）。
+//   - 紙（PDF）と送る道は次の段（【要求】部材見積依頼 §2）——同じ 2026-10-03 に作った（rfq_pdf.go）。
+//
+// 置き場「部材見積依頼」は 2026-10-19 になくした（rfq.go の RFQBoxTitle）。見積依頼部材表は置いたページ（ふつうは製造ページ）に
+// あり、そこが製造ページなら、部材見積依頼書ページはその子にできる（mfgParentOr）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
 	stdhtml "html"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -251,7 +255,15 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 元の見積依頼部材表を消す（中身は部材見積依頼書ページへ移った）。⚠ 失敗しても部材見積依頼書は取り消さない——理由を添えるだけ。
 	out := map[string]any{"success": true, "page_id": newID, "rows": len(lines)}
 	removed := false
+	// ⚠ **消すのは、作ったときと同じ中身の表だけ**です（2026-10-20）——行は錠の外で読んだので、そのあいだに二度押し・ほかの人の
+	// 作成で表の番号がずれる・行が足されると、別の業者の見積依頼部材表や、あとから足した行まで消えていた。中身が違えば残して知らせます。
+	if rebuildBeforeWrite != nil {
+		rebuildBeforeWrite(boxPage) // 試験だけ（読んでから片付けるまでのあいだに、ほかの人の書き込みを挟む）
+	}
 	if err := cms.RewriteBody(boxPage, user.Username, func(cur string) string {
+		if now, ok := rfqDraftLinesOf(cur, req.Table); !ok || !reflect.DeepEqual(now, lines) {
+			return cur
+		}
 		next, _, ok := takeTableRows(cur, RFQDraftType, req.Table, tableRowNumbers(cur, RFQDraftType, req.Table), true)
 		removed = ok
 		if !ok {

@@ -136,3 +136,94 @@ func TestOrderItemEditKeepsConcurrentSave(t *testing.T) {
 func item2(itemNo, name, qty string) string {
 	return `<tr><td></td><td>` + itemNo + `</td><td>` + name + `</td><td>` + qty + `</td><td></td></tr>`
 }
+
+// TestMergeRevisionKeepsConcurrentSave は、整理の図面改定（mergeAsRevision）が合流先を書き換えるあいだのほかの人の保存が残ることを固定します（2026-10-20）。
+// それまでは錠の外で読んだ合流先の本文から組んで書いていたので、そのあいだの保存が消えた。
+func TestMergeRevisionKeepsConcurrentSave(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "Q1", "ブラケット", "装置A", "客A")
+	src := makeDrawingPageFrom(t, inbox, "pdf-b", "Q2", "ブラケット", "装置A", "客A")
+	hit := betweenReadAndWrite(t, appendBob)
+	if err := mergeAsRevision(user, src, dst); err != nil {
+		t.Fatalf("mergeAsRevision: %v", err)
+	}
+	if hit() != 1 {
+		t.Fatalf("ほかの人の保存を挟めていません（%d 回）", hit())
+	}
+	body := readPageBody(t, dst)
+	if !strings.Contains(body, "bob の書き込み") || !strings.Contains(body, "Q2") {
+		t.Errorf("⚠ 新しい図面とほかの人の保存の両方が残っていません:\n%s", body)
+	}
+}
+
+// TestMergeRevisionRefusesWhenDrawingMoved は、そのあいだに合流先の図面そのものが変わったら、書かずに断り、
+// 作りかけた旧版ページを片付けることを固定します（旧版へ運んだ図面と、合流先に残る図面が食い違わないように）。
+func TestMergeRevisionRefusesWhenDrawingMoved(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "Q1", "ブラケット", "装置A", "客A")
+	src := makeDrawingPageFrom(t, inbox, "pdf-b", "Q2", "ブラケット", "装置A", "客A")
+
+	betweenReadAndWrite(t, func(cur string) string { return strings.Replace(cur, "<dd>Q1</dd>", "<dd>Q1-bob</dd>", 1) })
+	if err := mergeAsRevision(user, src, dst); err == nil {
+		t.Fatalf("図面が変わったのに断りませんでした")
+	}
+	body := readPageBody(t, dst)
+	if !strings.Contains(body, "Q1-bob") || strings.Contains(body, "Q2") {
+		t.Errorf("⚠ 断ったのに合流先が変わっています:\n%s", body)
+	}
+	if _, ok := findChildByTitle(dst, "旧版 Q1 ブラケット"); ok {
+		t.Errorf("⚠ 作りかけた旧版ページが残っています")
+	}
+	if _, err := cms.ReadPageBody(src); err != nil {
+		t.Errorf("⚠ 断ったのに仮のページが片付けられました")
+	}
+
+}
+
+// TestMergeDrawingKeepsConcurrentSave は、図面追加（mergeAsDrawing）でも同じことを固定します。
+func TestMergeDrawingKeepsConcurrentSave(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "Q1", "ブラケット", "装置A", "客A")
+	src := makeDrawingPageFrom(t, inbox, "pdf-b", "Q3", "溶接図", "装置A", "客A")
+	hit := betweenReadAndWrite(t, appendBob)
+	if err := mergeAsDrawing(user, src, dst); err != nil {
+		t.Fatalf("mergeAsDrawing: %v", err)
+	}
+	if hit() != 1 {
+		t.Fatalf("ほかの人の保存を挟めていません（%d 回）", hit())
+	}
+	body := readPageBody(t, dst)
+	if !strings.Contains(body, "bob の書き込み") || !strings.Contains(body, "Q3") || !strings.Contains(body, "Q1") {
+		t.Errorf("⚠ 足した図面とほかの人の保存の両方が残っていません:\n%s", body)
+	}
+}
+
+// TestRFQNewDocKeepsOtherDraftTable は、部材見積依頼書を作ったあとの片付けが、読んでから片付けるまでのあいだに表の番号がずれても、
+// 別の業者の見積依頼部材表を消さないことを固定します（2026-10-20）。それまでは錠の中で「その番号の表」をそのまま消していた。
+func TestRFQNewDocKeepsOtherDraftTable(t *testing.T) {
+	const box = "000040"
+	setupExtTest(t, box, page.PageMeta{Owner: "root", Mode: "330"})
+	first := tableOfLinesHTML(RFQDraftType, []ourOrderLine{{Kind: "購入部品", ItemID: "M8-20", ItemName: "六角ボルト", Quantity: "10", Unit: "本"}}, true)
+	second := tableOfLinesHTML(RFQDraftType, []ourOrderLine{{Kind: "購入部品", ItemID: "M6-10", ItemName: "なべ小ねじ", Quantity: "40", Unit: "本"}}, true)
+	seedBody(t, box, `<h1>`+RFQBoxTitle+`</h1>`+first+second)
+	// ほかの人が先に1枚目から作って片付けた（2枚目が1枚目になる）。
+	betweenReadAndWrite(t, func(cur string) string { return strings.Replace(cur, first, "", 1) })
+	code, out := postRFQ(t, &auth.User{Username: "root", IsAdmin: true}, RFQNewDocAPIHandler,
+		map[string]any{"page_id": box, "table": 1, "supplier": "わかば鋼業"})
+	if code != 200 {
+		t.Fatalf("部材見積依頼書を作れません: %d %v", code, out)
+	}
+	after := readPageBody(t, box)
+	if !strings.Contains(after, "なべ小ねじ") {
+		t.Errorf("⚠ 別の見積依頼部材表が消えました:\n%s", after)
+	}
+	if out["draft_note"] == nil {
+		t.Errorf("片付けられなかったことを知らせていません: %v", out)
+	}
+}

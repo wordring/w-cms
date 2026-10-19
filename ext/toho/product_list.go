@@ -39,8 +39,8 @@ import (
 // ProductListViewType は「加工製品の一覧」の形式名です。
 const ProductListViewType = "product-list"
 
-// productListDepth は下へ辿る世代の上限です（加工製品／装置名称／品目／旧版 で足りる。
-// 製造台帳の根に置いたときの 社名 の段も入れて余裕を持たせる）。
+// productListDepth は下へ辿る世代の上限です（社名／装置名称／品目／旧版 で足りる——2026-10-16 に社名の下の
+// 「加工製品」の箱をなくした。製造台帳の根から辿るときも入るよう、余裕を持たせる）。
 const productListDepth = 8
 
 // productListRow は一覧の1行（加工製品ページ1枚）です。
@@ -104,7 +104,7 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 	}
 	rows.Close()
 
-	names := productListTags()
+	names := append(productListTags(), PageKindTag)
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(names)), ",")
 	args := []any{hostID, productListDepth}
 	for _, n := range names {
@@ -117,10 +117,16 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 		return nil, err
 	}
 
+	// ⚠ **`ページ種類` があれば、それで決めます**（2026-10-20）——「装置のページへ」で図面ブロックを入れた装置のフォルダは
+	// `図面番号` のタグを持つので、タグだけで決めると装置が加工製品に数えられ、その下の加工製品が全部「旧版」として外れていた。
+	// 種類の無いページ（人が作ったもの・それより前のもの）だけを、タグで読みます。
 	isProduct := func(id int) bool {
 		t := tags[id]
+		if k := strings.TrimSpace(cms.FirstTag(t, PageKindTag)); k != "" {
+			return k == PageKindProduct || k == PageKindProductOld
+		}
 		for _, n := range names {
-			if n == ProductKindTag || n == MigratingTag {
+			if n == ProductKindTag || n == MigratingTag || n == PageKindTag {
 				continue // 区分・移行中だけでは加工製品とは言えない
 			}
 			if len(t[n]) > 0 {
@@ -163,7 +169,8 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 //   - 装置名称: 親のフォルダが `ページ種類：装置` ならその題。
 //   - 社名: 上へたどって最初の `ページ種類：社名` のフォルダの題。
 //
-// ⚠ **フォルダの種類に頼りすぎない**（利用者）——機械が新しく作るフォルダには、まだ `ページ種類` が付きません
+// ⚠ **フォルダの種類に頼りすぎない**（利用者）——人が作ったフォルダや、それより前に作ったフォルダには `ページ種類` が
+// 付いていません（機械が新しく作るフォルダには、2026-10-16 夜から付けます——product_tree.go の ensureKindFolder・kindFolderBody）。
 // 種類の無いフォルダは、木の形で読みます。トップ直下の「製造台帳」の子なら社名、社名の直下にあれば装置名称です
 // （2026-10-16 に「加工製品」の箱をなくした）。
 func productListAll(user *auth.User) ([]productListRow, error) {

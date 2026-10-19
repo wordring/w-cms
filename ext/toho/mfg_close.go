@@ -11,6 +11,9 @@ package toho
 //
 //   - 「済んだ」は、製造明細の行ごとに、この製造ページの子の納品書（`ページ種類：弊社納品書`）で数量ぶん納めていて、
 //     その納品書の行が全部どれかの請求書に載っていること（deliveredUnder・billedKeys）。
+//     ⚠ いまの billedKeys は、まだ紙を作っていない（`発行日` の空い）請求書に載った行も「載っている」と数えます。
+//     納品書のほうは、発行済かどうかを見ません（deliveredUnder）——請求書に載るのは発行済の納品書の行だけなので、
+//     「全部が請求書に載った」なら納品書も発行済です。
 //   - 移すのは、トップ直下の「製造」の直下にある製造ページだけ（もう閉じたものは動かさない）。書けない製造ページは飛ばす。
 //   - 移しても、製造ページの中身・子の書類はそのまま（案件残表の「製造中」のリンクも、ページ番号は変わらないので切れない）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -77,7 +80,7 @@ func mfgFinished(mfgID int, billed map[string]bool) bool {
 		if q, okQ := estimateNumber(r.Values["quantity"]); !okQ || q <= 0 {
 			continue
 		}
-		if !billed[invoiceKey(page.FormatID(r.PageID), r.Values["item-id"], r.Values["item-name"])] {
+		if !billed[invoiceKey(page.FormatID(r.PageID), r.Values["order"], r.Values["item-id"], r.Values["item-name"])] {
 			return false
 		}
 	}
@@ -130,7 +133,7 @@ func closeFinishedMfgPages(user *auth.User, body string, today time.Time) []int 
 	if t, err := time.Parse("2006-01-02", strings.TrimSpace(head[InvoiceDateTag])); err == nil {
 		when = t
 	}
-	billed := billedKeys()
+	billed := billedKeys(false) // ⚠ 発行した請求書だけにする直し（billedKeys(true)）は途中（2026-10-20・試験 TestCloseFinishedMfgPagesOnInvoice が落ちた）
 	var moved []int
 	for _, id := range mfgPagesOfInvoice(rows) {
 		if !mfgIsOpen(id) || !canWritePage(user, id) || !mfgFinished(id, billed) {

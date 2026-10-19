@@ -117,6 +117,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 // ⚠ **名前から材質・形状・寸法を切り出しません**（`materialNameOf` が空白で繋いだ
 // ものなので、`鉄 角パイプ □75*75` を割り戻すと**空白を含む値で壊れます**）。
 // 材料表をもう一度読んで、**名前が一致する行**から採ります。
+// （2026-09-28 からは材料表を読み直さず、集計が組んだ値〔`u.Values`〕から採ります——下の ⚠。db と productID は使っていません。）
 func fillUnorderedMaterial(db cms.ReadOnlyDB, productID int, u *UnorderedItem,
 	prices map[string]materialPrice) {
 	// ⚠ 2026-09-28 から、3つ組は**集計が種類の columns から組んだ値**（`Values`）から採ります
@@ -142,6 +143,11 @@ func sortUnordered(list []UnorderedItem) {
 		ad, bd := isDateLike(a.Due), isDateLike(b.Due)
 		if ad != bd {
 			return !ad // 日付でないほうが先
+		}
+		// 日付は畳んでから比べます（2026-10-20）——納期は text 型なので、`2026/10/05` と `2026-10-20` を文字で比べると
+		// 斜線のほうが後ろに並んでいた（帳簿が当てる順 dueSortKey とも食い違っていた）。
+		if ka, kb := dueSortKey(a.Due), dueSortKey(b.Due); ka != kb {
+			return ka < kb
 		}
 		if a.Due != b.Due {
 			return a.Due < b.Due
