@@ -254,6 +254,9 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // deliveryPickHTML は受注残表の1行の「納品」の選ぶ欄です（残りが無い行は選べない）。
 func deliveryPickHTML(r backlogRow, client string) string {
+	if r.Quote {
+		return `<input type="checkbox" disabled title="見積の依頼です（注文が来たら納品できます）">`
+	}
 	if r.Remaining <= 0 {
 		return `<input type="checkbox" disabled title="案件残がありません">`
 	}

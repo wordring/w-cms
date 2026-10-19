@@ -154,8 +154,10 @@ func openOrderRows(db cms.ReadOnlyDB, canView func(int) bool) ([]openOrderRow, e
 		}
 		tags, err := cms.TagsOfPage(db, id)
 		_, mig := tags[MigratingTag]
+		// 見積の依頼（`ページ種類：顧客見積依頼`）は、まだ注文ではないので手配の対象にしない（2026-10-19）——移行中と同じく止める。
+		quote := strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindCustomerQuote
 		h := head{client: cms.FirstTag(tags, OrderClientTag), due: cms.FirstTag(tags, DueDateTag),
-			migrating: mig || err != nil} // 読めないときも止める側（isMigrating と同じ）
+			migrating: mig || quote || err != nil} // 読めないときも止める側（isMigrating と同じ）
 		heads[id] = h
 		return h
 	}

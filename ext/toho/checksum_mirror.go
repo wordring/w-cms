@@ -39,6 +39,11 @@ func init() {
 // renderOrderChecksum は明細の足元に、**検算の結果と結びの気づき**を出します。
 func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
+	// **見積の依頼の案件**（2026-10-19）——まだ注文ではないので、受注残高・赤字・検算は出さず、そう添えるだけ。
+	if pageKindOf(ctx.PageID) == PageKindCustomerQuote {
+		appendFootRow(el, headerCellCount(el), "order-checksum checksum-note", "見積の依頼の案件です（まだ注文ではないので、受注残高・赤字の知らせ・必要部材表には入りません）")
+		return true, nil
+	}
 	// **赤字の警告**（2026-10-17・order_loss.go）——行の末尾に「見積との差」。⚠ 足元の行の colspan が列の数に合うよう、先に足す。
 	appendLossColumn(ctx, el)
 	// **出荷済数量は納品書から数える**（2026-10-17・delivery_shipped.go）——欄にクロームで出し、受注残高もそれで数える。

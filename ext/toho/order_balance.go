@@ -124,7 +124,7 @@ func backlogTotalOf(gs []backlogGroup) backlogTotal {
 	for _, g := range gs {
 		for _, r := range g.Rows {
 			t.Rows++
-			if r.HasPrice {
+			if r.HasPrice && !r.Quote { // 見積の依頼は、まだ注文ではないので入れない（2026-10-19）
 				t.Amount += float64(r.Remaining) * r.Price
 			}
 		}

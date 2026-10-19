@@ -85,7 +85,7 @@ func orderPricesForProduct(db cms.ReadOnlyDB, user *auth.User, productID int) []
 			}
 			byCode = true
 		}
-		if !canView(r.PageID) || cms.IsTemplateArea(page.FormatID(r.PageID)) {
+		if !canView(r.PageID) || cms.IsTemplateArea(page.FormatID(r.PageID)) || pageKindOf(r.PageID) == PageKindCustomerQuote { // 見積の依頼は受注の単価ではない（2026-10-19）
 			continue
 		}
 		h, ok := heads[r.PageID]

@@ -172,7 +172,7 @@ func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machin
 		return mfgLine{}, "案件ページの番号が読めません: " + p.Order
 	}
 	pid := pageNum(id)
-	if !page.CanView(user, pid) || pageKindOf(pid) != PageKindCustomerOrder {
+	if k := pageKindOf(pid); !page.CanView(user, pid) || (k != PageKindCustomerOrder && k != PageKindCustomerQuote) { // 見積の依頼からも始められる（2026-10-19）
 		return mfgLine{}, "案件ページが見つかりません: /" + id
 	}
 	tags, err := cms.TagsOfPage(database.DB, pid)

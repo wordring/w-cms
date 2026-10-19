@@ -106,6 +106,8 @@ type backlogRow struct {
 	Invoice         string
 	// Loss は赤字の見立ての1文です（2026-10-17・order_loss.go——受注の単価が見積の単価を下回る行だけ。空なら赤字でない）。
 	Loss string
+	// Quote は見積の依頼の案件（`ページ種類：顧客見積依頼`・2026-10-19）の行か——受注残高・赤字に入れず、納品できない。
+	Quote bool
 	// InMfg は製造ページに入れた数、MfgPages はその製造ページです（2026-10-19・mfg.go）。
 	InMfg    int
 	MfgPages []string
@@ -140,8 +142,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	// `:memory:` では別の空DBに当たります（2026-09-03 に本番で踏んだ罠）。
 	rows, err := db.Query(
 		`SELECT DISTINCT v.page_id FROM vocab_index v
-		  JOIN page_tags t ON t.page_id = v.page_id AND t.name = ? AND t.value = ?
-		 WHERE v.data_type = ?`, PageKindTag, PageKindCustomerOrder, clientOrderItemsType)
+		  JOIN page_tags t ON t.page_id = v.page_id AND t.name = ? AND t.value IN (?, ?)
+		 WHERE v.data_type = ?`, PageKindTag, PageKindCustomerOrder, PageKindCustomerQuote, clientOrderItemsType)
 	if err != nil {
 		return nil, 0
 	}
@@ -175,6 +177,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 			continue
 		}
 		client := cms.FirstTag(tags, OrderClientTag)
+		quote := strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindCustomerQuote
 		pageDue := cms.FirstTag(tags, DueDateTag)
 		orderNo := cms.FirstTag(tags, OrderNoTag)
 
@@ -236,7 +239,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				Made:            madeText(mfgBy.doneOf(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty), // 製造ページから（2026-10-19）
 				DeliveryNote:    strings.TrimSpace(r.Values["delivery-note"]),
 				Invoice:         strings.TrimSpace(r.Values["invoice"]),
-				Loss:            backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice),
+				Loss:            quoteless(quote, backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice)),
+				Quote:           quote,
 				InMfg:           inMfg,
 				MfgPages:        mfgPages,
 			})
@@ -526,10 +530,14 @@ func backlogGaps(r backlogRow) []string {
 
 // orderLabel は受注の見出しです（発注書番号があればそれ、無ければページID）。
 func orderLabel(r backlogRow) string {
+	label := r.OrderPageID
 	if r.OrderNo != "" {
-		return r.OrderNo
+		label = r.OrderNo
 	}
-	return r.OrderPageID
+	if r.Quote {
+		return "見積 " + label // 見積の依頼の案件（2026-10-19）
+	}
+	return label
 }
 
 // ── 編集できる部品（2026-09-21）──────────────────────────────────────────
@@ -619,4 +627,12 @@ func textFieldHTML(field, cur string) string {
 	return `<input type="text" class="order-edit order-text"` +
 		fieldAttrs(field, cur) + ` value="` + stdhtml.EscapeString(cur) + `"` +
 		` aria-label="` + stdhtml.EscapeString(field) + `">`
+}
+
+// quoteless は見積の依頼の行なら赤字の見立てを消します（まだ注文ではないので赤字ではない・2026-10-19）。
+func quoteless(quote bool, loss string) string {
+	if quote {
+		return ""
+	}
+	return loss
 }

@@ -56,8 +56,9 @@ const record = (dir, subject) => '<h1>' + subject + '</h1><dl data-type="tags">'
     await sel.waitFor({ timeout: 8000 }).catch(() => {});
     const opts = await sel.locator('option').allTextContents().catch(() => []);
     // 2026-10-14: 10-05 に「部材見積依頼の返事ページ」が足された（ext/toho/rfq_reply_page.go・【要求】部材見積依頼 §3）ので、選ぶ欄は3つ。
-    check('受信メールに「作るページ」の選ぶ欄（案件ページ・加工製品ページ・部材見積依頼の返事ページ）と「作成」',
-      opts.join('・') === '案件ページ・加工製品ページ・部材見積依頼の返事ページ' &&await page.locator('#w-editor-content .record-make-go').count() === 1, opts.join('・'));
+    // 2026-10-19: 「見積依頼ページ」が足された（ext/toho/quote_case.go）ので、選ぶ欄は4つ。
+    check('受信メールに「作るページ」の選ぶ欄（案件ページ・見積依頼ページ・加工製品ページ・部材見積依頼の返事ページ）と「作成」',
+      opts.join('・') === '案件ページ・見積依頼ページ・加工製品ページ・部材見積依頼の返事ページ' &&await page.locator('#w-editor-content .record-make-go').count() === 1, opts.join('・'));
 
     // ② 受注ページ——口は差し止める
     let sent = null;

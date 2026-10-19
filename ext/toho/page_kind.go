@@ -30,6 +30,10 @@ const (
 	PageKindTag = "ページ種類"
 	// PageKindCustomerOrder は受注ページ（客先から届いた発注書）の値です——受注残表が集めます（backlog.go）。
 	PageKindCustomerOrder = "顧客発注書"
+	// PageKindCustomerQuote は見積の依頼の案件ページの値です（2026-10-19・【考察】製造ページ §7 の答え）——案件残表に並ぶが、
+	// まだ注文ではないので、受注残高・赤字・必要部材表・受注の単価には入らず、納品書も作れない（isQuoteCase）。
+	// 2026-10-19 利用者:「見積もりは、見積もりを受注したということにして、受注ページに並べてそこから作るのはどうですか？」
+	PageKindCustomerQuote = "顧客見積依頼"
 	// PageKindProduct は加工製品ページ（品物の台帳）の値です——加工製品の一覧が集めます（product_list.go）。
 	PageKindProduct = "加工製品"
 	// PageKindCompany・PageKindMachine は製造台帳の社名と装置名のフォルダの値です。
