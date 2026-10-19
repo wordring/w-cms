@@ -10,6 +10,7 @@
 //   ⑤ 「📦 この製造の部材を発注部材表へ」——製造ページに発注部材表（材料 2個/台 × 8台 = 16）。「部材発注書を作る」で、部材発注書も製造ページの子にできる
 //   ⑥ 「📨 この製造の部材を見積依頼必要部材表へ」——製造ページに見積依頼必要部材表（ロット 8・案件つき）
 //   ⑦ 「見積計算」の欄の「➕ 見積計算書」——見積計算書が製造ページの子にでき、欄にリンクが出る
+//   ⑧ 「📁 この製造を閉じる」——記録／年／月／製造記録へ移り、足元に「閉じています」
 //
 // 当て先は全部自分で作って最後に消します（案件残表を置いたページ・案件ページ・製造ページ・納品書）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-page.js
@@ -146,6 +147,22 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
         const link = await page.locator('#w-editor-content td.mfg-calc a[href="/' + calc + '"]').count();
         check('⑦ 製造ページの「見積計算」の欄にリンク', link === 1);
       }
+    }
+    // ⑧ 「📁 この製造を閉じる」（2026-10-19・mfg_close.go）——確かめのダイアログで「はい」、記録／年／月／製造記録へ移る。
+    if (mfg) {
+      await page.goto(BASE + '/' + mfg);
+      const close = page.locator('#w-editor-content .mfg-close-go');
+      await close.waitFor({ timeout: 8000 }).catch(() => {});
+      page.once('dialog', (d) => d.accept());
+      await Promise.all([
+        page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
+        close.click().catch(() => {}),
+      ]);
+      const p8 = await parentOf(page, mfg);
+      const t8 = await page.evaluate(async (pid) => ((await (await fetch('/api/load?id=' + pid)).text()).match(/<h1[^>]*>([^<]*)</) || [, ''])[1], p8);
+      check('⑧ 閉じると 記録／年／月／製造記録 へ移る', t8 === '製造記録', String(p8) + ' ' + t8);
+      const v8 = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), mfg);
+      check('⑧ 閉じた製造ページの足元に「閉じています」', v8.includes('この製造は閉じています') && !v8.includes('mfg-close-go'));
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

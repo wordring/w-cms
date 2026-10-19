@@ -206,6 +206,10 @@ func makeInvoicePDF(w http.ResponseWriter, user *auth.User, pageID string) (made
 	}); err != nil {
 		made.ViewNote = strings.TrimSpace(made.ViewNote + "（発行日を書けませんでした: " + err.Error() + "）")
 	}
+	// 済んだ製造ページを記録へ（2026-10-19・mfg_close.go——請求書の発行のとき）。移したかは請求明細表の足元に出る。
+	if body, err := cms.ReadPageBody(pageID); err == nil {
+		closeFinishedMfgPages(user, body, time.Now())
+	}
 	return made, true
 }
 
@@ -233,6 +237,15 @@ func renderInvoiceItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			`円　<strong>合計: `+comma(sub+tax)+`円</strong>`)
 	} else if len(rows) > 0 {
 		appendFootRow(el, span, "estimate-note", "⚠ 単価の決まっていない行があります（紙を作れません——単価を決めるか、行を外してください）")
+	}
+	// この請求書の製造ページ（2026-10-19・mfg_close.go）——記録へ移したか、まだ製造にあるか。
+	for _, id := range mfgPagesOfInvoice(rows) {
+		link := `<a href="/` + page.FormatID(id) + `">` + stdhtml.EscapeString(cms.PageTitleByID(id)) + `</a>`
+		if mfgIsOpen(id) {
+			appendFootHTML(el, span, "estimate-note", `製造 `+link+` はまだ「`+MfgBoxTitle+`」にあります（納め終えていない行か、請求書に載っていない納品書があります）`)
+		} else {
+			appendFootHTML(el, span, "estimate-note", `製造 `+link+` は記録へ移しました`)
+		}
 	}
 	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
 		return false, nil

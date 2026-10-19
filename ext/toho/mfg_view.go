@@ -140,6 +140,14 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		}
 		appendFootHTML(el, span, "mfg-actions", parts+dlv)
 	}
+	// 閉じる（2026-10-19・mfg_close.go）——「製造」の直下にあるあいだだけ。閉じた製造ページには、そう添える。
+	switch {
+	case !mfgIsOpen(ctx.PageID):
+		appendFootRow(el, span, "mfg-closed", "この製造は閉じています（記録へ移しました）")
+	case writable:
+		appendFootHTML(el, span, "mfg-close-row", `<button type="button" class="chip-btn mfg-close-go" data-mfg="`+stdhtml.EscapeString(page.FormatID(ctx.PageID))+
+			`">📁 この製造を閉じる（記録へ移す）</button> <span class="mfg-close-say"></span>`)
+	}
 	return false, nil
 }
 

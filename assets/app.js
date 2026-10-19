@@ -13096,6 +13096,19 @@ delegateClick([['.mfg-parts-go', async (btn) => {
     location.reload();
 }]]);
 
+// 製造ページの「📁 この製造を閉じる」（2026-10-19・ext/toho/mfg_close.go）——確かめてから、記録／年／月／製造記録へ移して読み直す。
+delegateClick([['.mfg-close-go', async (btn) => {
+    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-close-say');
+    if (!confirm('この製造ページを「記録／年／月／製造記録」へ移します（中身と下の書類はそのままです）。よろしいですか？\n' +
+        '納め終えて請求書を発行した製造は、請求書の PDF を作ったときに自動で移ります。')) return;
+    btn.disabled = true;
+    sayIn(say, '移しています…');
+    const r = await postJSON('/api/mfg/close', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '移せませんでした')); return; }
+    location.reload();
+}]]);
+
 // 製造ページの「📨 この製造の部材を見積依頼必要部材表へ」（2026-10-19・ext/toho/mfg_more.go）——入れたら読み直す（表はこの製造ページの中）。
 delegateClick([['.mfg-rfq-go', async (btn) => {
     const say = btn.parentElement && btn.parentElement.querySelector('.mfg-rfq-say');
