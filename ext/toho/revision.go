@@ -68,13 +68,14 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		return err
 	}
 
-	// 1. いま載っている図面ブロックを外し、旧版ページへ移す。
+	// 1. いま載っている図面ブロックを外し、旧版ページへ移す。旧版ページには、そのときのページの写し（工程・部材など）も残す（2026-10-19）。
 	oldBlocks, rest := extractDrawingSections(dstBody)
+	snapshot := oldVersionSnapshot(dstBody)
 	oldPageID, oldNo, oldName := "", "", ""
 	if len(oldBlocks) > 0 {
 		oldNo = drawingNoOf(oldBlocks[0])
 		oldName = drawingNameOf(oldBlocks[0])
-		oldPageID, err = createOldVersionPage(user, dstPageID, oldNo, oldBlocks)
+		oldPageID, err = createOldVersionPage(user, dstPageID, oldNo, oldBlocks, snapshot)
 		if err != nil {
 			return err
 		}
@@ -121,7 +122,11 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 //
 // 題は `旧版 <図面番号> <図面名称>`（2026-09-06 ユーザー決定）。同じ題の兄弟が
 // 既に居れば受領日を添えます——**図面番号が変わらない改定**が実際にあるためです。
-func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []string) (string, error) {
+//
+// **旧版ページには、図面のほかに、そのときの加工製品ページの写し（工程・部材などの節と表）も入れます**（2026-10-19）。
+// 利用者:「図面を改定する場合、旧図面の加工製品ページは、工程や部材の項目が消えるのですが、新ページと旧ページの両方に
+// 残してほしいです。つまり、大きな差異は図面のみにして、そこから新図面のページを編集します」。写しは snapshot（`oldVersionSnapshot`）。
+func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []string, snapshot string) (string, error) {
 	// 名前は**その版の図面に書いてある名前**（2026-10-01）——改定で品名が変わることがあるので、加工製品ページの
 	// 題（いまの名前とは限らない）ではなく、運ぶ図面ブロックの `図面名称` を先に見ます。
 	name := ""
@@ -139,9 +144,25 @@ func createOldVersionPage(user *auth.User, dstPageID, oldNo string, blocks []str
 	// 最新版と見分けるためです。
 	var kind strings.Builder
 	cms.WriteTag(&kind, PageKindTag, PageKindProductOld)
-	body := "<h1>" + htmlEscape(title) + "</h1>" + `<dl data-type="tags">` + kind.String() + `</dl>` + strings.Join(blocks, "")
+	body := "<h1>" + htmlEscape(title) + "</h1>" + `<dl data-type="tags">` + kind.String() + `</dl>` + strings.Join(blocks, "") + snapshot
 	return cms.CreateChildPage(dstPageID, user.Username, body)
 }
+
+// oldVersionSnapshot は、旧版ページに写す加工製品ページの中身です（2026-10-19）——図面ブロックを全部除き、題（h1）と、
+// 題の直下のタグの並び（品番・品名・区分・ページ種類 など）も除いた残り（工程・部材の節と表・改訂履歴・メモ）。
+//
+// ⚠ **題の直下のタグは写しません**——品番・弊社品番・品名のタグが2枚にあると、品番で引いたときに旧版も当たり、案件の行が
+// 結べなくなります（加工製品を言い当てる番号は、いまの版だけが持つ）。図面ブロックは旧版へ別に運ぶ（運ぶのは古い図面だけ）。
+func oldVersionSnapshot(body string) string {
+	_, rest := extractDrawingSections(body)
+	rest = leadingH1.ReplaceAllString(rest, "")
+	return leadingTags.ReplaceAllString(rest, "")
+}
+
+var (
+	leadingH1   = regexp.MustCompile(`^\s*<h1\b[^>]*>[\s\S]*?</h1>`)
+	leadingTags = regexp.MustCompile(`^\s*<dl data-type="tags"[^>]*>[\s\S]*?</dl>`)
+)
 
 // extractDrawingSections は本文から図面ブロックを取り出し、残りの本文と一緒に返します。
 //

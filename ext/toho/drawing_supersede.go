@@ -78,7 +78,7 @@ func supersedeDrawing(user *auth.User, pageID string, newPick, oldPick drawingPi
 	}
 
 	oldNo, oldName := drawingNoOf(oldSec), drawingNameOf(oldSec)
-	oldPageID, err := createOldVersionPage(user, pageID, oldNo, []string{oldSec})
+	oldPageID, err := createOldVersionPage(user, pageID, oldNo, []string{oldSec}, oldVersionSnapshot(body))
 	if err != nil {
 		return "", err
 	}

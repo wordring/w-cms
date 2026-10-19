@@ -211,3 +211,45 @@ func TestSupersedeDrawingRefuses(t *testing.T) {
 		t.Errorf("断ったのに旧版ページができています")
 	}
 }
+
+// TestOldVersionKeepsPartsAndSteps は（2026-10-19）、改定したとき旧版ページにも工程・部材の節と表が残り、
+// 加工製品ページ（新しい版）にも残ること、題の直下のタグ（品番など）は旧版へ写さないことを固定します。
+// 利用者:「図面を改定する場合、旧図面の加工製品ページは、工程や部材の項目が消えるのですが、新ページと旧ページの両方に残してほしいです。」
+func TestOldVersionKeepsPartsAndSteps(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := twoDrawingPage(t, inbox, "X1", "ブラケット", "X2", "ブラケット")
+	parts := `<section><h2>工程</h2><p>曲げ 2か所</p></section>` +
+		`<table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>` +
+		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>1</td></tr></tbody></table>`
+	if err := cms.RewriteBody(dst, "alice", func(cur string) string { return cur + parts }); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := cms.ReadPageBody(dst)
+	topTags := leadingTags.FindString(leadingH1.ReplaceAllString(before, ""))
+
+	oldPage, err := supersedeDrawing(user, dst, drawingPick{1, "X2"}, drawingPick{0, "X1"})
+	if err != nil {
+		t.Fatalf("supersedeDrawing: %v", err)
+	}
+	after, _ := cms.ReadPageBody(dst)
+	oldBody, _ := cms.ReadPageBody(oldPage)
+	for _, want := range []string{"<h2>工程</h2>", "曲げ 2か所", "<caption>材料表</caption>", "t4.5*75*1090"} {
+		if !strings.Contains(oldBody, want) {
+			t.Errorf("⚠ 旧版ページに %q が残っていません:\n%s", want, oldBody)
+		}
+		if !strings.Contains(after, want) {
+			t.Errorf("⚠ 加工製品ページから %q が消えています:\n%s", want, after)
+		}
+	}
+	if ob, _ := extractDrawingSections(oldBody); len(ob) != 1 || drawingNoOf(ob[0]) != "X1" {
+		t.Errorf("⚠ 旧版ページの図面は古い X1 だけのはず:\n%s", oldBody)
+	}
+	if topTags != "" && strings.Contains(oldBody, strings.TrimSpace(topTags)) {
+		t.Errorf("⚠ 題の直下のタグ（品番など）を旧版へ写しています:\n%s", oldBody)
+	}
+	if strings.Count(oldBody, "<section") != strings.Count(oldBody, "</section>") {
+		t.Errorf("⚠ 旧版ページの本文が釣り合っていません:\n%s", oldBody)
+	}
+}
