@@ -138,11 +138,10 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 // ⚠ **どの段からも押せます**（ユーザー:「発注書の送付後でも押せます」）。
 // ⚠ **いつも確かめます**——押すと**行が部材発注書から消える**ので、押し間違いが
 // 本文から消えます。送付後は**相手に出した紙に載っている行**なので、そう書きます。
-// ⚠ **編集モードでは出しません**（`view-only`・ユーザー:「このボタンは編集モードでは
-// 消えます」）——編集中の本文から行を消すと、書きかけと食い違います。
-// ⚠ 2026-10-12 から、パソコンは書ける形（`body[edit-mode]`）で開くので、この `view-only` により
-// 閲覧モードへ替えないと出ません（`assets/app.css` の `body[edit-mode] .view-only`。
-// 直すかは利用者に聞いています——【考察】文書の食い違い §3.1）。
+// 2026-10-19 から書ける形でも出します（それまでは `view-only` で、閲覧モードだけ。ユーザー:「このボタンは編集モードでは
+// 消えます」——編集モードがあったころの決め）。編集モードをやめ、業務のボタンは書ける形でも押せる決まりになったので
+// （【考察】編集モードの再考 §6）。押す前に書きかけを保存し（postJSON）、サーバーは書き込みの錠の中で行を外す。
+// 2026-10-19 利用者:「順にお願いします」（筆者の案「画面に残る古い文と、隠れたままのボタン」——【考察】文書の食い違い §3.1）
 func orderRowReturnButtonHTML(orderID string, row int, status string) string {
 	ask := "この行を部材発注書から外して、必要部材表へ戻します。"
 	switch strings.TrimSpace(status) {
@@ -150,7 +149,7 @@ func orderRowReturnButtonHTML(orderID string, row int, status string) string {
 		ask = "⚠ この行は既に相手に送った部材発注書に載っています。\n" +
 			"外したら、訂正した部材発注書を再送してください。\n\n" + ask
 	}
-	return `<button type="button" class="chip-btn order-row-return view-only"` +
+	return `<button type="button" class="chip-btn order-row-return"` +
 		` data-order-page="` + stdhtml.EscapeString(orderID) + `"` +
 		` data-order-row="` + strconv.Itoa(row) + `"` +
 		` data-order-confirm="` + stdhtml.EscapeString(ask) + `"` +

@@ -125,7 +125,7 @@ func renderFileView(ctx *MirrorContext, el *html.Node) (bool, error) {
 	ref := strings.TrimSpace(Attr(el, FileRefAttr))
 	if ref == "" {
 		appendChrome(el, `<p class="view-error">`+
-			`ファイル表示に参照がありません（編集モードでこの枠を選び、`+
+			`ファイル表示に参照がありません（書ける形で、枠の上の「📄 ファイル表示：参照を設定してください」を押し、`+
 			`「参照」の欄へ「ページID-添付ID」を貼ってください）。</p>`)
 		return false, nil
 	}

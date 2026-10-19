@@ -115,7 +115,7 @@ func TestReturnedRowAppearsInRequiredParts(t *testing.T) {
 }
 
 // TestReturnButtonIsOnEveryRow は、⚠ **どの段からも戻せる**こと・**いつも確かめる**
-// こと・**編集モードでは出ない**ことを固定します。
+// こと・**書ける形でも出る**こと（2026-10-19 から。それまでは view-only で閲覧モードだけ）を固定します。
 func TestReturnButtonIsOnEveryRow(t *testing.T) {
 	for _, st := range []string{OrderLineUnsent, "", OrderLineSent, OrderLineDelivered,
 		OrderLineCancelled, orderLineLegacySent} {
@@ -124,8 +124,8 @@ func TestReturnButtonIsOnEveryRow(t *testing.T) {
 			t.Errorf("⚠ 状態 %q の行に「必要部材表へ戻す」がありません:\n%s", st, got)
 			continue
 		}
-		if !strings.Contains(got, "view-only") {
-			t.Errorf("⚠ 状態 %q の戻すボタンが編集モードでも出ます:\n%s", st, got)
+		if strings.Contains(got, "view-only") {
+			t.Errorf("⚠ 状態 %q の戻すボタンが書ける形で隠れます（view-only）:\n%s", st, got)
 		}
 		if !strings.Contains(got, `data-order-row="3"`) {
 			t.Errorf("⚠ 状態 %q の戻すボタンが行を指していません:\n%s", st, got)

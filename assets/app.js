@@ -6034,7 +6034,7 @@
                     });
                     const d = await res.json().catch(() => ({}));
                     if (!res.ok || !d.success || !d.handled) {
-                        notify(d.message || '対応を変えられませんでした（編集中・権限が無い など）', { type: 'warn' });
+                        notify(d.message || '対応を変えられませんでした（書く権限が無い など）', { type: 'warn' });
                         b.disabled = false;
                         return;
                     }

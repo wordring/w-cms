@@ -372,7 +372,7 @@ func rfqNeedsFormHTML(pageID string, pageIDInt int) string {
 	b.WriteString(`<p class="unorder-help">行を選んで「見積依頼部材表へ入れる」を押すと、下に<strong>見積依頼部材表</strong>ができます` +
 		`（部材見積依頼書は<strong>1枚に1社</strong>——同じ業者へ聞くものだけを選ぶ）。` +
 		`<strong>⚠ 重複</strong>は同じもの・同じロットが表の中に2つ以上あるもの（ロットの無い行は同じ数で見ます）——要らなければ選んで「不要」で消します。` +
-		`数は表を直接直せます（編集モード）。</p>`)
+		`数は表を直接直せます（書ける形で）。</p>`)
 	b.WriteString(`<div class="matsearch-form rfq-needs-form" data-rfq-page="` + pageID + `">`)
 	b.WriteString(`<label class="matsearch-field"><span>入れる先</span><select class="matsearch-input" data-rfq="into">` +
 		`<option value="">新しく作る</option>`)

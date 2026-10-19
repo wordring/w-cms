@@ -1486,7 +1486,7 @@ body[edit-mode] #w-editor-content td.cell-formula-error { background: #fee2e2; c
 #w-editor-content .rfq-quote-put-form { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 0.9em; }
 #w-editor-content .rfq-quote-put-name { width: 12em; }
 #w-editor-content .rfq-quote-put-value { width: 6em; }
-body[edit-mode] #w-editor-content .rfq-quote-put, body[edit-mode] #w-editor-content .rfq-quote-put-panel { display: none; }
+/* ⚠ 2026-10-19 まで書ける形では隠していた（編集モードのころの決め）。業務のボタンは書ける形でも押せる決まりなので、いまは出す。 */
 
 #w-editor-content .badge {
     padding: 4px 8px;
@@ -2542,18 +2542,15 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
 #w-editor-content .estimate-add-form input[type="text"] { width: 9em; }
 #w-editor-content .estimate-add-head { font-weight: 600; }
 #w-editor-content .estimate-total td { padding: 6px 8px; font-size: 1.05em; background: var(--bg-subtle, #f8fafc); }
-/* 見積明細表の下の備考の欄（2026-10-03・estimate_note.go）——閲覧モードで書く。書ける形では「備考」の節を直接直すので隠す
-   （⚠ 2026-10-12 からパソコンは書ける形で開くので、初めは見えない）。 */
+/* 見積明細表の下の備考の欄（2026-10-03・estimate_note.go）。2026-10-19 から書ける形でも出す（それまでは閲覧モードだけ）。 */
 #w-editor-content .estimate-note-row td { padding: 6px 8px; }
 #w-editor-content .estimate-note-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
 #w-editor-content .estimate-note-label { width: 100%; font-size: 0.85em; color: var(--text-muted, #6b7280); }
 #w-editor-content .estimate-note-input { flex: 1 1 320px; min-height: 4.5em; font: inherit; padding: 4px 6px; box-sizing: border-box; }
-body[edit-mode] #w-editor-content .estimate-note-row { display: none; }
 /* 部材見積依頼の返事（2026-10-05・rfq_reply.go）——「返事:」の行と 🤖 の案の表。閲覧モードだけ（書ける形では隠す）。
    作ったときの理由は「編集中はサーバーが断る」だった。2026-10-12 からサーバーは書ける形のタブがあっても断らない
    （gateWritablePage が断るのは、道具が /api/lock で握っているときだけ）——隠す理由はもう無いが、隠したまま。 */
 #w-editor-content .rfq-reply-actions td { padding: 4px 8px; font-size: 0.9em; }
-body[edit-mode] #w-editor-content .rfq-reply-actions { display: none; }
 #w-editor-content .rfq-reply-sources { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
 #w-editor-content .rfq-reply-id { width: 22em; max-width: 100%; }
 #w-editor-content .rfq-reply-table { margin: 6px 0; font-size: 0.95em; }

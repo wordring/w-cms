@@ -45,7 +45,7 @@ func RequireLockToken(w http.ResponseWriter, r *http.Request, idStr, token strin
 		return false
 	}
 	if !Locks.Validate(pageID, u.Username, token) {
-		http.Error(w, "編集権がありません（他の人に移ったか期限切れです）。変更を退避して再読込してください。", http.StatusConflict)
+		http.Error(w, "ロックのトークンが合いません（ほかの道具が取り直したか、期限切れです）。もう一度ロックを取ってください。", http.StatusConflict)
 		return false
 	}
 	return true

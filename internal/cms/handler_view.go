@@ -109,7 +109,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		if !exists {
 			defaultHTML := `<h1>w-cms Wiki トップページ</h1>
 <p>ここはすべての起点となるトップページです。</p>
-<p>右上のスイッチで「編集モード」に切り替えると、Notionのようにブロックベースで編集できます。子ページは左のサイドパネルから辿れます。</p>`
+<p>パソコンでは、開いたページをそのまま書けます（右上の「閲覧」を入れると、読むだけの形になります）。Notionのようにブロックベースで編集できます。子ページは左のサイドパネルから辿れます。</p>`
 
 			pageDir := page.GetPageDir("000000")
 			os.MkdirAll(pageDir, 0755)

@@ -413,7 +413,7 @@ func productListViewHTML(user *auth.User, _ int) string {
 
 	// ── 表 ──
 	b.WriteString(`<table class="materials-table plist-table"><thead><tr>` +
-		`<th>社名</th><th>装置名称</th><th>品目</th><th>品番</th><th>区分</th></tr></thead><tbody>`)
+		`<th>社名</th><th>装置名称</th><th>製品名称</th><th>品番</th><th>区分</th></tr></thead><tbody>`)
 	for _, r := range list {
 		id := formatID(r.PageID)
 		title := r.Title

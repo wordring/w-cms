@@ -216,7 +216,7 @@ async function loadRequiredPages() {
       }
       // **置き場はテンプレートからだけ作られます**（2026-09-27）。どのテンプレートから作るか、
       // テンプレートが無いか（＝作れない・消えたあと作り直せない）を出します（2026-10-14 に管理画面の
-      // 「データの初期化」は外した。下の画面の文の「初期化のあと」は、そのころの言い方のまま）。
+      // 「データの初期化」は外した。下の画面の文は 2026-10-19 に「消したときに」へ直した）。
       const tp = document.createElement('div');
       tp.className = p.no_template ? 'dup-warn' : 'hint';
       if (p.template) {
@@ -227,7 +227,7 @@ async function loadRequiredPages() {
         tp.appendChild(a3);
       } else if (p.no_template) {
         tp.textContent = '⚠ テンプレートがありません——テンプレート置き場の下に、題が「' + p.title +
-          '」のテンプレートを作ってください（無いと' + (p.exists ? '初期化のあと作り直せません' : '作れません') + '）';
+          '」のテンプレートを作ってください（無いと' + (p.exists ? '消したときに作り直せません' : '作れません') + '）';
       }
       if (tp.childNodes.length) c.appendChild(tp);
     });
