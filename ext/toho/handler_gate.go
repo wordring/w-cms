@@ -110,6 +110,42 @@ func failCellEdit(w http.ResponseWriter, err error) {
 	cms.JSONFail(w, code, err.Error())
 }
 
+// rebuildBody は、既にあるページの本文を build で組み直して書きます（2026-10-19 夜・【考察】文書の食い違い §3.3 の形）。
+//
+// body は呼び手が錠の外で読んだ本文です。まずそれで組んでみて、断られたら（buildErr）、または変わらなければ、書きません
+// （`RewriteBody` は変わらなくても版を足すので、ここで止める）。
+// ⚠ **書くときは、錠の中で読み直した本文から組み直します**——錠の外で組んだものを書くと、読んでから書くまでのあいだの
+// ほかの人の保存が消えます。錠の中で組めなければ（そのあいだに行が動いた・値が変わった）、何も変えずに buildErr を返します。
+// writeErr は書けなかったときだけです（呼び手は 500 にする）。
+func rebuildBody(pageID, author, body string, build func(cur string) (string, error)) (changed bool, buildErr, writeErr error) {
+	next, err := build(body)
+	if err != nil {
+		return false, err, nil
+	}
+	if next == body {
+		return false, nil, nil
+	}
+	if rebuildBeforeWrite != nil {
+		rebuildBeforeWrite(pageID) // 試験だけ（読んでから書くまでのあいだに、ほかの人の保存を挟む）
+	}
+	writeErr = cms.RewriteBody(pageID, author, func(cur string) string {
+		fixed, err := build(cur)
+		if err != nil {
+			buildErr = err
+			return cur
+		}
+		changed = fixed != cur
+		return fixed
+	})
+	if writeErr != nil {
+		return false, nil, writeErr
+	}
+	return changed, buildErr, nil
+}
+
+// rebuildBeforeWrite は試験だけが使う口です（rebuildBody が錠の外で組んでから、錠の中で書くまでのあいだに呼ぶ）。ふだんは nil。
+var rebuildBeforeWrite func(pageID string)
+
 // rewriteBodyOrFail は本文を書き換えます。書けなければ 500 を返して false。
 func rewriteBodyOrFail(w http.ResponseWriter, pageID, username string, fn func(string) string) bool {
 	if err := cms.RewriteBody(pageID, username, fn); err != nil {

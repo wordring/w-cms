@@ -12,12 +12,12 @@ package toho
 // 受注ページはそのまま作業待ちに並びます——メール1通が2行にも3行にもなる。
 // 家を与えると、移した時点で一覧から自然に外れます。
 //
-// **移すのは人の操作**（同日ユーザー決定）。行き先は発注日だけで決まるので直す欄は
+// **移すのは人の操作**（同日ユーザー決定）。行き先は日付だけで決まるので直す欄は
 // ありませんが、**いつ動かすかは人が決めます**——解析の直後に機械が動かすと、
 // 判定を間違えた受注ページが黙って通信箱の外へ出てしまい、気づく機会が無くなります。
 //
-// 年月は**発注日**で決めます（受け取った日ではなく）。読めなければページの更新時刻。
-// 発注書に日付が無いことは実際にあり、そのとき取り込みを止める理由はありません。
+// 年月は、もとは**発注日**で決めていました（受け取った日ではなく）。2026-10-16 から、置き場は `記録／年／月／依頼` で、
+// 年月は**その案件ページを作った日**です（`orderFolderDateOf`——作った時刻、読めなければ更新時刻。【考察】全体の設計 §4.2）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -64,7 +64,7 @@ const EstimateBoxTitle = "見積"
 
 // orderRow は整理の画面に出す受注ページ1枚ぶんです。
 //
-// 行き先（`Destination`）は**発注日だけで決まる**ので直せません。⚠ **`ClientName`
+// 行き先（`Destination`）は**日付だけで決まる**ので直せません（2026-10-16 からは作った日・`orderFolderDateOf`）。⚠ **`ClientName`
 // だけは直せます**（2026-09-20・3箇所を同じマナーに揃えた最後の1つ）。
 type orderRow struct {
 	PageID      string `json:"page_id"`
@@ -235,9 +235,10 @@ func syncOrderClient(user *auth.User, pageID, client string) error {
 	if err != nil {
 		return err
 	}
-	fixed := replaceFirstFieldValue(body, OrderClientTag, client)
-	if fixed == body {
-		return nil // **変わらないなら書きません**——版と更新日時を無駄に進めない
-	}
-	return cms.RewriteBody(pageID, user.Username, func(string) string { return fixed })
+	// **変わらないなら書きません**——版と更新日時を無駄に進めない。
+	// ⚠ 書くときは、錠の中で読み直した本文から組み直します（2026-10-19 夜・rebuildBody）。
+	_, _, err = rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
+		return replaceFirstFieldValue(cur, OrderClientTag, client), nil
+	})
+	return err
 }

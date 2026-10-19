@@ -1,7 +1,7 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 受注残表から受注明細表を編集する（2026-09-21）
+// 案件残表から案件明細表を編集する（2026-09-21。2026-10-19 までの名前は受注残表・受注明細表）
 //
 // ユーザー:「**受注トップページの受注残集計表を鏡にして受注ページの受注明細表が
 // 編集される**ようにしましょう」「表の中はだいたい編集できる」。
@@ -17,7 +17,7 @@ package toho
 //  3. **編集ロックの関門**——その受注ページをエディタで開いている人が居れば断る
 //     （オートセーブと上書き合戦になるため。2026-09-14 の決定）。
 //     2026-10-12 からブラウザは編集権を取らないので、断るのは道具（`/api/lock`）が握っているときだけ。
-//     人の保存とは `cms.RewriteBody` の書き込みの錠で順に並びます。
+//     人の保存とは `cms.RewriteBody` の書き込みの錠で順に並びます。2026-10-19 夜から、照合も錠の中で読み直した本文でやり直します（rebuildBody）。
 //  4. **書ける列を宣言で絞る**。`残` は計算、`弊社品番`・`品番`・`品名` は**行を
 //     言い当てる鍵**なので、ここからは触らせません（鍵を書き換えると 1. が壊れます）。
 //
@@ -96,19 +96,23 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusNotFound, "案件ページを読めません: "+err.Error())
 		return
 	}
-	fixed, err := setOrderItemCell(body, req.Row, req.ItemNo, req.Field, req.Old, req.Value)
+	// 値が同じなら書きません（版と更新日時を無駄に進めない）。
+	// ⚠ 照合（行番号・品番・いまの値）も、書くときは錠の中で読み直した本文でやり直します（2026-10-19 夜・rebuildBody）
+	// ——錠の外で組んだものを書くと、読んでから書くまでのあいだのほかの人の保存が消えます。
+	changed, cellErr, err := rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
+		return setOrderItemCell(cur, req.Row, req.ItemNo, req.Field, req.Old, req.Value)
+	})
 	if err != nil {
-		// ⚠ **食い違いは 409**（相手が悪いのではなく、状態がずれている）。
-		failCellEdit(w, err)
-		return
-	}
-	if fixed == body {
-		// 値が同じなら書きません（版と更新日時を無駄に進めない）。
-		json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": false})
-		return
-	}
-	if err := cms.RewriteBody(pageID, user.Username, func(string) string { return fixed }); err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
+		return
+	}
+	if cellErr != nil {
+		// ⚠ **食い違いは 409**（相手が悪いのではなく、状態がずれている）。
+		failCellEdit(w, cellErr)
+		return
+	}
+	if !changed {
+		json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": false})
 		return
 	}
 	auth.Audit(user.Username, "order-item.edit",
