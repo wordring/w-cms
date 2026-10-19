@@ -5948,8 +5948,6 @@
     const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
     // DRAFT_TAG は下書きの印のタグです（ext/comm/compose.go の comm.DraftTag と同じ言葉・2026-09-30）。
     const DRAFT_TAG = '下書き';
-    // HANDLED_TAG は対応の印のタグです（ext/comm/view_unhandled.go の HandledTag と同じ言葉）。
-    const HANDLED_TAG = '対応';
 
     // recordMakeControl はメールの記録の「作るページ [選ぶ] [作成]」です（2026-10-01・ext/comm/record_make.go）。
     // 利用者:「メールから作るボタンは「受注ページ作成」「加工製品ページ作成」「返信」ページのタイプは増える可能性があるので
@@ -6045,49 +6043,6 @@
         }
     }
 
-    // handledControl はメールのページの「対応: 未処理・済・不要」の札です（2026-09-30）。押すと
-    // POST /api/intake/handled（`未処理` は印を外す）で書き、ページを読み直してタグの表示も揃える。
-    function handledControl(current) {
-        const wrap = document.createElement('p');
-        wrap.className = 'mail-handled';
-        const head = document.createElement('span');
-        head.className = 'mail-handled-head';
-        head.textContent = '対応:';
-        wrap.appendChild(head);
-        const now = current || '未処理';
-        [['未処理', '返信や次の作業がまだ'], ['済', '次の作業へ割り振った（責任はそちらへ）'],
-         ['不要', '何も生まれない（案内・お礼など）']].forEach(([value, hint]) => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'chip-btn mail-handled-btn' + (value === now ? ' is-current' : '');
-            b.textContent = (value === now ? '● ' : '') + value;
-            b.title = hint;
-            b.disabled = value === now;
-            b.addEventListener('click', async () => {
-                b.disabled = true;
-                try {
-                    const res = await fetch('/api/intake/handled', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ page_ids: [currentPageId], value }),
-                    });
-                    const d = await res.json().catch(() => ({}));
-                    if (!res.ok || !d.success || !d.handled) {
-                        notify(d.message || '対応を変えられませんでした（書く権限が無い など）', { type: 'warn' });
-                        b.disabled = false;
-                        return;
-                    }
-                    notify('対応を「' + value + '」にしました', { type: 'success', duration: 3000 });
-                    reloadContent();
-                } catch (e) {
-                    notify('対応を変えられませんでした: ' + e.message, { type: 'warn' });
-                    b.disabled = false;
-                }
-            });
-            wrap.appendChild(b);
-        });
-        return wrap;
-    }
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
 
     // analyzedMap は「添付ID → 解析で生まれたページ」。印を出すために持ちます。
@@ -6433,10 +6388,8 @@
         box.className = 'vocab-chrome mail-chrome';
         box.setAttribute('contenteditable', 'false');
 
-        // 対応（2026-09-30 利用者:「そのメールへの対応が終わったかどうかは、受信フォルダではなく、メールページで
-        // 選択したいです」）——未処理・済・不要のどれかを押す。いまの値は押せない（押しても変わらない）。
-        // 下書き（まだ送っていない）には出さない——送ると送った日の控えが作られ、そちらは送った時点で「不要」。
-        if (!tagValue(DRAFT_TAG)) box.appendChild(handledControl(tagValue(HANDLED_TAG)));
+        // 対応は、2026-09-30 からここに「対応: 未処理・済・不要」の札を出していました。2026-10-19 に外しました
+        // （2026-10-19 利用者:「「対応」の札はなくして、タグだけにしてください。」）——対応は本文のタグ `対応`（設定の語彙の選択肢）だけで、書ける形でタグの値を選んで替える。
         // この記録から作るページ（2026-10-01・選べる種類は拡張が登録する——受信だけ・下書きには出さないもサーバーが決める）。
         if (!tagValue(DRAFT_TAG)) box.appendChild(recordMakeControl());
 

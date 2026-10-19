@@ -14,7 +14,7 @@
 // 当て先（受信メールの記録と、ファイルを置くページ）は通信箱の下に自分で作り、最後に下書きと一緒に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mail-compose.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, findMailbox } = require('./lib');
+const { login, makePage, deletePage, findMailbox, saveNow } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -40,38 +40,47 @@ const check = (label, ok, note = '') => {
     }
     record = await makePage(page, '<h1>【E2E】見積のお願い</h1><dl data-type="tags">' +
       '<dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd>' +
-      '<dt>差出人</dt><dd>試験 &lt;e2e@invalid.example&gt;</dd></dl>' +
+      '<dt>差出人</dt><dd>試験 &lt;e2e@invalid.example&gt;</dd><dt>対応</dt><dd>未処理</dd></dl>' +
       '<section><h2>本文</h2><pre>E2E の本文です\n2行目</pre></section>', box);
     check('受信メールの記録を作れた', !!record, record);
 
     // ⓪ 対応はメールのページで選ぶ（2026-09-30 利用者:「そのメールへの対応が終わったかどうかは、受信フォルダではなく、
-    // メールページで選択したいです」）——未処理 → 不要 → 未処理 と押し、印と未処理の一覧が付いてくる
-    const current = async () => (await page.locator('#w-editor-content .mail-handled-btn.is-current').textContent() || '').trim();
+    // メールページで選択したいです」）——2026-10-19 から、札ではなく本文のタグ `対応`（語彙の選択肢）で選ぶ
+    // （利用者:「「対応」の札はなくして、タグだけにしてください。」）。書ける形でタグの値を 不要 → 未処理 と選び、未処理の一覧が付いてくる。
     const listedInBox = async () => {
       await page.goto(BASE + '/' + box);
       await page.waitForSelector('#w-editor-content .unhandled-table', { timeout: 8000 }).catch(() => {});
       return page.locator('#w-editor-content .unhandled-table tr[data-page-id="' + record + '"]').count();
     };
+    const pickHandled = async (value) => {
+      await page.goto(BASE + '/' + record + '?edit=true');
+      await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
+      await page.waitForTimeout(500);
+      const dd = await page.evaluate(() => {
+        const dt = [...document.querySelectorAll('#w-editor-content dl[data-type="tags"] > dt')].find((x) => x.textContent.trim() === '対応');
+        if (!dt || !dt.nextElementSibling) return null;
+        dt.nextElementSibling.setAttribute('data-e2e', 'handled');
+        return '[data-e2e="handled"]';
+      });
+      if (!dd) return [];
+      await page.click(dd);
+      await page.waitForSelector('#w-enum-menu.active button', { timeout: 5000 }).catch(() => {});
+      const items = await page.$$eval('#w-enum-menu.active button', (bs) => bs.map((b) => b.textContent.trim()));
+      await page.locator('#w-enum-menu.active button', { hasText: value }).first().click().catch(() => {});
+      await saveNow(page);
+      return items;
+    };
     await page.goto(BASE + '/' + record);
-    await page.waitForSelector('#w-editor-content .mail-handled', { timeout: 8000 });
-    check('対応の札が出て、いまは未処理', (await current()) === '● 未処理', await current());
-    await page.locator('#w-editor-content .mail-handled-btn', { hasText: '不要' }).click();
-    await page.waitForFunction(() => {
-      const b = document.querySelector('#w-editor-content .mail-handled-btn.is-current');
-      return b && b.textContent.includes('不要');
-    }, null, { timeout: 8000 }).catch(() => {});
-    check('「不要」を押すと札が不要になる', (await current()) === '● 不要', await current());
+    await page.waitForSelector('#w-editor-content dl[data-type="tags"]', { timeout: 8000 });
+    check('対応の札は出ない（タグだけ）', await page.locator('#w-editor-content .mail-handled').count() === 0);
+    const items = await pickHandled('不要');
+    check('書ける形で、対応のタグに選択肢（未処理・済・不要）が出る', ['未処理', '済', '不要'].every((v) => items.includes(v)), JSON.stringify(items));
     const tagged = await page.evaluate(async (id) => (await (await fetch('/api/load?id=' + id)).text()), record);
-    check('本文のタグに 対応：不要（1つだけ）', (tagged.match(/<dt>対応<\/dt>/g) || []).length === 1 && tagged.includes('<dd>不要</dd>'));
+    check('本文のタグに 対応：不要（1つだけ）', (tagged.match(/<dt>\s*対応\s*<\/dt>/g) || []).length === 1 && /<dd>\s*不要\s*<\/dd>/.test(tagged));
     check('未処理の一覧から消える', (await listedInBox()) === 0);
-    await page.goto(BASE + '/' + record);
-    await page.waitForSelector('#w-editor-content .mail-handled', { timeout: 8000 });
-    await page.locator('#w-editor-content .mail-handled-btn', { hasText: '未処理' }).click();
-    await page.waitForFunction(() => {
-      const b = document.querySelector('#w-editor-content .mail-handled-btn.is-current');
-      return b && b.textContent.includes('未処理');
-    }, null, { timeout: 8000 }).catch(() => {});
-    check('「未処理」で札が未処理になる（2026-10-19 から本文は 対応：未処理）', (await current()) === '● 未処理', await current());
+    await pickHandled('未処理');
+    const back = await page.evaluate(async (id) => (await (await fetch('/api/load?id=' + id)).text()), record);
+    check('本文のタグが 対応：未処理 に戻る', /<dt>\s*対応\s*<\/dt>\s*<dd>\s*未処理\s*<\/dd>/.test(back));
     check('未処理の一覧へ戻る', (await listedInBox()) === 1);
 
     // ① 返信の送る欄
@@ -156,7 +165,7 @@ const check = (label, ok, note = '') => {
     check('下書きのページで送る欄が開いている', (await val('body')).startsWith('E2E の下書きです。'), JSON.stringify((await val('body')).slice(0, 40)));
     check('件名も戻る', (await val('subject')) === 'RE: 【E2E】見積のお願い');
     check('返信ボタンではなく下書きの欄', await page.locator('#w-editor-content .mail-reply-open').count() === 0);
-    check('下書きには対応の札を出さない', await page.locator('#w-editor-content .mail-handled').count() === 0);
+    check('下書きにも対応の札は無い（2026-10-19 から札は無い）', await page.locator('#w-editor-content .mail-handled').count() === 0);
     const keptPick = page.locator('#w-editor-content .mail-compose [data-mc-file="' + doc + '/' + docFile + '"]');
     check('ID で足した添付が下書きに残る（印付き）', (await keptPick.count()) === 1 && (await keptPick.isChecked()));
     await page.locator('#w-editor-content .mail-compose [data-mc="subject"]').fill('RE: 【E2E】見積のお願い（直した）');
