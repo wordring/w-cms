@@ -142,3 +142,41 @@ func TestMfgMadeAndDeliveryFromMfgPage(t *testing.T) {
 		t.Errorf("⚠ 製造ページの「納品」の残りが 25 になっていないか、製造完了の数がありません:\n%s", got)
 	}
 }
+
+// TestMfgPartLinesCapsToMfgQty は（2026-10-19・作る順の3番）、製造ページの部材が
+//   - まだ手配していない分（発注済みの板は出ない）で、この製造で作る数ぶんまで（FB は残り3だが、製造は2個なので2）
+//   - 案件（for-order）と弊社品番を運ぶ
+//
+// ことを固定します。
+func TestMfgPartLinesCapsToMfgQty(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	addPage(t, 33, 0, "ブラケット", "root", "302", true)
+	syncBody(t, 33, `<h1>ブラケット</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`+
+		`<table><caption>製造明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
+		`<tr><td>000031</td><td>000030</td><td>K-1</td><td>ブラケット</td><td>2</td></tr></tbody></table>`)
+	lines, skipped, err := mfgPartLines(&auth.User{Username: "root", IsAdmin: true}, 33)
+	if err != nil || skipped != 0 {
+		t.Fatalf("数えられません: %v（飛ばした %d）", err, skipped)
+	}
+	if len(lines) != 1 || lines[0].Shape != "FB" || lines[0].Quantity != "2" || lines[0].ForOrder != "000030" || lines[0].ProductID != "000031" {
+		t.Errorf("⚠ 製造の部材が違います（FB を2・案件 000030・弊社品番 000031 だけのはず）: %+v", lines)
+	}
+}
+
+// TestOurOrderFromMfgDraftGoesUnderMfgPage は、製造ページの発注部材表から作った部材発注書が、その製造ページの子にできることを固定します。
+func TestOurOrderFromMfgDraftGoesUnderMfgPage(t *testing.T) {
+	setupExtTest(t, "000990", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 991, -1, "ブラケット", "alice", "302", true)
+	syncBody(t, 991, `<h1>ブラケット</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`)
+	code, out := postRFQ(t, adminUser(), NewOurOrderAPIHandler, map[string]any{
+		"supplier": "みなと商店", "draft_page": "000991", "draft_index": "1",
+		"lines": []map[string]any{{"product_id": "000031", "for_order": "000030", "material": "鉄", "shape": "FB", "size": "t4.5*75*1090", "quantity": "2"}},
+	})
+	if code != 200 {
+		t.Fatalf("部材発注書を作れません: %d %v", code, out)
+	}
+	if got := placeOf(out["page_id"].(string)); got != "ブラケット" {
+		t.Errorf("⚠ 部材発注書の置き場が %s です（製造ページの子のはず）", got)
+	}
+}

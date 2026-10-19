@@ -33,6 +33,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
 )
 
 // ourOrderLine は部材発注書へ入れる1行です（画面から送られてくる形）。
@@ -133,13 +134,21 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ⚠ **置き場は `記録／年／月／製造記録`**（2026-10-16・record_box.go）。**月は作った日**です（部材発注日ではない——
 	// 利用者:「その文書を作成した日のフォルダで良いと思います」）。無ければ作ります。
-	now := time.Now()
-	monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-		return
+	// 2026-10-19 から、発注部材表が製造ページ（`ページ種類：製造`）にあれば、部材発注書はその製造ページの子に作る（mfg_view.go）。
+	parentID := ""
+	if id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.DraftPage), "/")); ok && pageKindOf(pageNum(id)) == PageKindMfg && canWritePage(user, pageNum(id)) {
+		parentID = id
 	}
-	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	if parentID == "" {
+		now := time.Now()
+		monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
+			return
+		}
+		parentID = monthID
+	}
+	newID, err := cms.CreateChildPage(parentID, user.Username, "<h1>作成中</h1>")
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "部材発注書ページを作れません: "+err.Error())
 		return

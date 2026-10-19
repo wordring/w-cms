@@ -7,11 +7,12 @@
 //   ② 案件残表の製造完了は 8/20（製造完了の製造に入ったのは8）・案件ページの製造完了の欄にも 8/20 の鏡
 //   ③ 「納品」の欄で選んで「🚚 選んだ行で納品書を作る」——今回納める数の欄（まだ納めていない 8 が入っている）を 5 にして作る
 //   ④ 納品書はこの製造ページの子にできる・製造ページの「納品」の欄は 残り 3
+//   ⑤ 「📦 この製造の部材を発注部材表へ」——製造ページに発注部材表（材料 2個/台 × 8台 = 16）。「部材発注書を作る」で、部材発注書も製造ページの子にできる
 //
 // 当て先は全部自分で作って最後に消します（案件残表を置いたページ・案件ページ・製造ページ・納品書）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-page.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage } = require('./lib');
+const { login, makePage, deletePage, childrenOf } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -26,14 +27,16 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
   const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 900 } });
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
-  let root = '', order = '', mfg = '', dlv = '';
+  let root = '', order = '', mfg = '', dlv = '', product = '';
   try {
     await login(page, BASE);
     root = await makePage(page, '<h1>【E2E】製造ページの帯</h1><section data-mirror="案件残"></section>');
+    product = await makePage(page, '<h1>【E2E】製造ページの品物</h1><table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
+      '<tr><td>【E2E】鉄</td><td>FB</td><td>t9*99*999</td><td>2</td></tr></tbody></table>', root);
     order = await makePage(page, '<h1>【E2E】製造ページの案件</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-MP-1</dd>' +
       '<dt>発注元</dt><dd>【E2E】製造ページの客先</dd><dt>納期</dt><dd>2026-12-31</dd></dl>' +
       '<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>状態</th><th>製造完了</th></tr>' +
-      '<tr><td></td><td>E2E-MP-A</td><td>【E2E】部品</td><td>20</td><td>個</td><td>未着手</td><td></td></tr></tbody></table>', root);
+      '<tr><td>' + product + '</td><td>E2E-MP-A</td><td>【E2E】部品</td><td>20</td><td>個</td><td>未着手</td><td></td></tr></tbody></table>', root);
     const made = await page.evaluate(async (oid) => {
       const r = await fetch('/api/mfg/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: [{ order: oid, row: 0, item: 'E2E-MP-A', qty: '8' }] }) });
@@ -86,12 +89,40 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
       });
       check('④ 製造ページの「納品」の欄は 残り 3', (left || '').includes('残り 3'), String(left));
     }
+    // ⑤
+    if (mfg) {
+      await page.goto(BASE + '/' + mfg);
+      await Promise.all([
+        page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
+        page.click('#w-editor-content .mfg-parts-go'),
+      ]);
+      await page.waitForSelector('#w-editor-content .draft-form', { timeout: 10000 }).catch(() => {});
+      const draft = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), mfg);
+      check('⑤ 製造ページに発注部材表（【E2E】鉄 FB を 16）', draft.includes('<caption>発注部材表</caption>') && draft.includes('【E2E】鉄') && />\s*16\s*</.test(draft), draft.replace(/\s+/g, ' ').slice(-600));
+      const signer = page.locator('#w-editor-content .draft-form select[data-unorder="signer"] option');
+      if ((await signer.count()) < 2) {
+        console.log('- ⑤ 差出人（署名のある人）が連絡帳に無いので、部材発注書を作る所は飛ばします');
+      } else {
+        await page.selectOption('#w-editor-content .draft-form select[data-unorder="signer"]', { index: 1 });
+        await page.fill('#w-editor-content .draft-form input[data-draft="supplier"]', '【E2E】部材の業者');
+        await Promise.all([
+          page.waitForNavigation({ timeout: 20000 }).catch(() => {}),
+          page.click('#w-editor-content .draft-form [data-draft-go]'),
+        ]);
+        const kids = await childrenOf(page, mfg).catch(() => []);
+        const titles = [];
+        for (const k of kids) titles.push(await page.evaluate(async (pid) => ((await (await fetch('/api/load?id=' + pid)).text()).match(/<h1[^>]*>([^<]*)</) || [, ''])[1], k.ID || k.id || k));
+        check('⑤ 部材発注書も製造ページの子', titles.some((t) => t.includes('部材発注書') || t.includes('【E2E】部材の業者')), titles.join(' | '));
+      }
+    }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {
+    if (mfg) for (const k of await childrenOf(page, mfg).catch(() => [])) await deletePage(page, k.ID || k.id || k).catch(() => {});
     if (dlv) await deletePage(page, dlv).catch(() => {});
     if (mfg) await deletePage(page, mfg).catch(() => {});
+    if (product) await deletePage(page, product).catch(() => {});
     if (order) await deletePage(page, order).catch(() => {});
     if (root) await deletePage(page, root).catch(() => {});
     await browser.close();

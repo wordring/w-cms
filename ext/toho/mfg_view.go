@@ -121,10 +121,16 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	span := headerCellCount(el)
 	appendFootRow(el, span, "mfg-state", "製造完了: "+strconv.Itoa(done)+" / "+strconv.Itoa(total)+" 行")
-	if writable && open > 0 {
-		appendFootHTML(el, span, "mfg-actions",
-			`<button type="button" class="chip-btn mfg-dlv-go" data-mfg="`+stdhtml.EscapeString(page.FormatID(ctx.PageID))+`">🚚 選んだ行で納品書を作る</button> `+
-				`<span class="mfg-dlv-say"></span><div class="mfg-dlv-panel" hidden></div>`)
+	if writable {
+		pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
+		// 部材を発注部材表へ（2026-10-19・作る順の3番）——この製造の、まだ手配していない部材を、この製造ページの発注部材表へ。
+		parts := `<button type="button" class="chip-btn mfg-parts-go" data-mfg="` + pid + `">📦 この製造の部材を発注部材表へ</button> <span class="mfg-parts-say"></span>`
+		dlv := ""
+		if open > 0 {
+			dlv = ` <button type="button" class="chip-btn mfg-dlv-go" data-mfg="` + pid + `">🚚 選んだ行で納品書を作る</button> ` +
+				`<span class="mfg-dlv-say"></span><div class="mfg-dlv-panel" hidden></div>`
+		}
+		appendFootHTML(el, span, "mfg-actions", parts+dlv)
 	}
 	return false, nil
 }
@@ -248,4 +254,95 @@ func showMadeInOrderTable(ctx *cms.MirrorContext, el *html.Node, mfg *mfgLookup)
 				{Key: "title", Val: "製造ページの製造完了から数えた（人は書きません）"}},
 			FirstChild: &html.Node{Type: html.TextNode, Data: text}})
 	}
+}
+
+// mfgPartLines は製造ページ mfgID の製造明細の行ごとに、まだ手配していない部材を、この製造で作る数ぶんまで集めます（2026-10-19・作る順の3番）。
+//
+// 部材の数は「必要部材表と同じ残り（案件の行ごとに、発注した・発注部材表に入れた・不要にした分を引いた数）」と
+// 「この製造で作る数 × 1個あたりの数」の小さいほう。弊社品番（加工製品）の無い行は飛ばします（skipped に数える）。
+func mfgPartLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int, err error) {
+	rows, err := cms.VocabTableRowsOf(database.DB, mfgID, MfgItemsType)
+	if err != nil {
+		return nil, 0, err
+	}
+	items, err := UnorderedItems(user)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, r := range rows {
+		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
+		order, okO := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
+		qty, okQ := estimateNumber(r.Values["quantity"])
+		if !ok || !okO || !okQ || qty <= 0 {
+			skipped++
+			continue
+		}
+		need := map[string]int{}
+		for _, it := range productNeeds(database.DB, pageNum(pid), int(qty)) {
+			need[it.Key] += it.Required
+		}
+		for _, u := range items {
+			if u.TempRow > 0 || page.FormatID(u.OrderPageID) != order || page.FormatID(u.ProductPageID) != pid {
+				continue
+			}
+			q := u.Remaining
+			if n, has := need[u.Key]; has && n < q {
+				q = n
+			}
+			if q <= 0 {
+				continue
+			}
+			v := u.Values
+			lines = append(lines, ourOrderLine{
+				ProductID: pid, ForOrder: order, Kind: u.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], Work: v["加工内容"],
+				Material: u.Material, Shape: u.Shape, Size: u.Size, Color: v["表面"], Spec: v["仕様"], Supplied: v["支給"],
+				Quantity: strconv.Itoa(q), Cost: unorderedCostValue(u),
+			})
+		}
+	}
+	return lines, skipped, nil
+}
+
+// MfgPartsAPIHandler は POST /api/mfg/parts です。入力: {page_id}（製造ページ）。
+// この製造の、まだ手配していない部材を、製造ページの本文に新しい発注部材表として入れます（部材発注書はその表の「部材発注書を作る」から——製造ページの子にできる）。
+func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		PageID string `json:"page_id"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID {
+		return
+	}
+	if pageKindOf(pageNum(pageID)) != PageKindMfg {
+		cms.JSONFail(w, http.StatusBadRequest, "製造ページではありません")
+		return
+	}
+	lines, skipped, err := mfgPartLines(user, pageNum(pageID))
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "部材を数えられません: "+err.Error())
+		return
+	}
+	if len(lines) == 0 {
+		msg := "この製造で発注する部材はありません（手配済みか、加工製品の部材の表に行がありません）"
+		if skipped > 0 {
+			msg += "。弊社品番の無い行が " + strconv.Itoa(skipped) + " 行あります"
+		}
+		cms.JSONFail(w, http.StatusBadRequest, msg)
+		return
+	}
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		out, _, _ := putLinesIntoDraft(cur, "", lines)
+		return out
+	}) {
+		return
+	}
+	auth.Audit(user.Username, "mfg.parts", pageID+" "+strconv.Itoa(len(lines))+"行")
+	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(lines), "skipped": skipped})
 }

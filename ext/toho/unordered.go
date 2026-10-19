@@ -47,6 +47,8 @@ type UnorderedItem struct {
 	Migrating     bool   `json:"migrating"`       // ⚠ 移行の確認前
 	// Values は発注の表の列ごとの値（2026-09-28・種類の columns から）——画面が発注部材表へ運ぶ。
 	Values map[string]string `json:"values,omitempty"`
+	// Key は部材の鍵（種類＋鍵の列・order_kinds.go の keyOf）です（2026-10-19・製造ページの部材発注が、製造の数ぶんに抑えるのに使う）。
+	Key string `json:"-"`
 
 	// 以下は**臨時部材表から来た行**だけが持ちます（2026-09-25・temp_parts.go）。
 	// TempRow > 0 なら臨時部材の行で、発注部材表へ入れると臨時部材表から消えます。
@@ -98,7 +100,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 				OrderPageID: o.row.PageID, OrderTitle: cms.PageTitleByID(o.row.PageID),
 				Client: o.client, Due: o.due,
 				ProductPageID: o.pid, ProductTitle: cms.PageTitleByID(o.pid), Machine: machine,
-				Name: it.Name, Kind: it.Kind, Remaining: rem, Migrating: mig, Values: it.Values,
+				Name: it.Name, Kind: it.Kind, Remaining: rem, Migrating: mig, Values: it.Values, Key: it.Key,
 			}
 			fillUnorderedMaterial(db, o.pid, &u, prices)
 			out = append(out, u)

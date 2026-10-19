@@ -13081,3 +13081,16 @@ delegateClick([
         location.href = '/' + r.data.page_id;
     }],
 ]);
+
+// 製造ページの「📦 この製造の部材を発注部材表へ」（2026-10-19・ext/toho/mfg_view.go の MfgPartsAPIHandler）——この製造の、まだ手配して
+// いない部材（この製造で作る数ぶんまで）を、この製造ページに新しい発注部材表として入れる。部材発注書はその表の「部材発注書を作る」から
+// （製造ページの子にできる）。
+delegateClick([['.mfg-parts-go', async (btn) => {
+    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-parts-say');
+    btn.disabled = true;
+    sayIn(say, '部材を数えています…');
+    const r = await postJSON('/api/mfg/parts', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '発注部材表へ入れられませんでした')); return; }
+    location.reload();
+}]]);
