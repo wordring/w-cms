@@ -7903,7 +7903,7 @@
             }
             const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
                 (orders ? '・案件ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
-            if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・'));
+            if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・') + '\n' + BY_HAND_REPLY_HINT);
             if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
             if (drawings) lines.push('📁 整理で行き先を決めてください。');
             notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
@@ -7967,7 +7967,7 @@
                     { type: d.linked ? 'success' : 'warn', duration: 0, id: 'analyze-pdf' });
                 born = true;
             } else if (d.kind === 'none') {
-                notify('発注書・図面・部材見積依頼の返事のどれでもないと判定されました（ページは作っていません）。', { type: 'warn', duration: 8000 });
+                notify('発注書・図面・部材見積依頼の返事のどれでもないと判定されました（ページは作っていません）。\n' + BY_HAND_REPLY_HINT, { type: 'warn', duration: 0 });
             } else {
                 const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
                 notify((d.made.length > 1
@@ -10944,6 +10944,10 @@
 // postJSON は JSON を POST して `{ ok, status, data }` を返します。
 // `ok` は **HTTP が 2xx で、かつ本文の `success` が真**のとき。⚠ **通信の失敗は
 // 投げます**（呼ぶ側が「通信に失敗しました」と言い分けるため・握り潰さない）。
+// BY_HAND_REPLY_HINT は 🤖 解析が「どれでもない」と答えたときに添える、手で作る道です（2026-10-19・ext/toho/rfq_reply_page.go）。
+// 利用者:「このようなエクセル形式でも解析できるようにならないでしょうか？ならない場合、手作業で見積もり回答書を作れるとありがたいです」
+const BY_HAND_REPLY_HINT = '業者の値段の表なら、メールの「作るページ」の「部材見積依頼の返事ページ（手で書く）」で手で作れます。';
+
 async function postJSON(url, body) {
     // 書ける形で押したときは、書きかけを先に保存してから送る（2026-10-12・問い5——直してすぐ押せる。ボタンが読む本文に
     // 直した中身が入っているように）。
