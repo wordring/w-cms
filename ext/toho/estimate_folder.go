@@ -149,7 +149,7 @@ func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		lines = append(lines, ln)
 		from = append(from, pid+"#"+strconv.Itoa(it.Index+1))
 	}
-	newID, client, ok := newEstimatePage(w, user, req.Client, req.Person, req.Signer, lines)
+	newID, client, ok := newEstimatePage(w, user, req.Client, req.Person, req.Signer, lines, "")
 	if !ok {
 		return
 	}

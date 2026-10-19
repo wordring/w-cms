@@ -13094,3 +13094,23 @@ delegateClick([['.mfg-parts-go', async (btn) => {
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '発注部材表へ入れられませんでした')); return; }
     location.reload();
 }]]);
+
+// 製造ページの「📄 この製造の見積書を作る」（2026-10-19・ext/toho/quote_done.go）——見積の依頼の行から見積書をこの製造ページの子に作って開く。
+delegateClick([['.mfg-estimate-go', async (btn) => {
+    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-estimate-say');
+    btn.disabled = true;
+    sayIn(say, '見積書を作っています…');
+    const r = await postJSON('/api/mfg/estimate', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok || !r.data || !r.data.page_id) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '見積書を作れませんでした')); return; }
+    if (r.data.missing > 0) {
+        // 単価の無い行があれば、そう言ってから開く（押すと開く）。
+        sayIn(say, (r.data.message || '') + ' ');
+        const link = document.createElement('a');
+        link.href = '/' + r.data.page_id;
+        link.textContent = '見積書を開く';
+        if (say) say.appendChild(link);
+        return;
+    }
+    location.href = '/' + r.data.page_id;
+}]]);

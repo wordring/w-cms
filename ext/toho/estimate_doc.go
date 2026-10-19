@@ -68,18 +68,21 @@ func estimateItemColumns() []cms.VocabColumn {
 		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
 		{Field: "price", Label: "単価", Type: cms.ColNumber},
 		{Field: "note", Label: "備考", Type: cms.ColText},
+		// order はどの案件への見積か（2026-10-19・quote_done.go）——製造ページから作るときに写す。見積を出すと、その案件の行が完了になる。
+		{Field: "order", Label: "案件", Type: cms.ColRef},
 	}
 }
 
 // estimateLine は見積明細表の1行です。
 type estimateLine struct {
 	ProductID, ItemID, ItemName, Quantity, Unit, Price, Note string
+	Order                                                    string // 案件（2026-10-19）
 }
 
 func (l estimateLine) values() map[string]string {
 	return map[string]string{
 		"our-item-id": l.ProductID, "item-id": l.ItemID, "item-name": l.ItemName,
-		"quantity": l.Quantity, "unit": l.Unit, "price": l.Price, "note": l.Note,
+		"quantity": l.Quantity, "unit": l.Unit, "price": l.Price, "note": l.Note, "order": l.Order,
 	}
 }
 
@@ -339,7 +342,7 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 新しい見積書。
-	newID, client, ok := newEstimatePage(w, user, req.Client, req.Person, req.Signer, []estimateLine{ln})
+	newID, client, ok := newEstimatePage(w, user, req.Client, req.Person, req.Signer, []estimateLine{ln}, "")
 	if !ok {
 		return
 	}
@@ -350,7 +353,8 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 // newEstimatePage は見積書ページを `記録／年／月／依頼` に作り、lines を見積明細表に入れます（テンプレート「見積書」を写す）。
 // 断ったときは w に書いて ok=false。client は社名を書く口（OrgNameForPage）を通した見積先です。
 // 見積計算表の「見積書に入れる」と、見積フォルダの「見積書を作る」（装置フォルダから選ぶ）が同じ道を通る。
-func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn, signerIn string, lines []estimateLine) (newID, client string, ok bool) {
+// parent が空でなければ、そのページ（製造ページ・2026-10-19）の子に作ります。
+func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn, signerIn string, lines []estimateLine, parent string) (newID, client string, ok bool) {
 	// 差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける）。
 	signerID := ""
 	if want := strings.TrimSpace(signerIn); want != "" {
@@ -376,11 +380,14 @@ func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn,
 		cms.JSONFail(w, http.StatusConflict, "見積書ページを作れません: "+err.Error())
 		return "", "", false
 	}
-	// 置き場は `記録／年／月／依頼`（2026-10-16・record_box.go。月は作った日）。
-	monthID, err := recordFolder(user.Username, RecordRequestFolder, now)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordRequestFolder, now)+"」を用意できません: "+err.Error())
-		return "", "", false
+	// 置き場は `記録／年／月／依頼`（2026-10-16・record_box.go。月は作った日）。製造ページから作るときは、その子（2026-10-19）。
+	monthID := parent
+	if monthID == "" {
+		monthID, err = recordFolder(user.Username, RecordRequestFolder, now)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordRequestFolder, now)+"」を用意できません: "+err.Error())
+			return "", "", false
+		}
 	}
 	newID, err = cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
 	if err != nil {

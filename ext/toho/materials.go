@@ -165,6 +165,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 納品書を作る（2026-10-17・delivery.go——受注残表の「🚚 選んだ行で納品書を作る」）。
 		{Pattern: "/api/delivery/new", Handler: DeliveryNewAPIHandler},
 		{Pattern: "/api/delivery-pdf", Handler: DeliveryPDFAPIHandler}, // 納品書の紙（2026-10-17・delivery_pdf.go）
+		{Pattern: "/api/mfg/estimate", Handler: MfgEstimateAPIHandler}, // 製造の見積書（2026-10-19・quote_done.go）
 		{Pattern: "/api/mfg/parts", Handler: MfgPartsAPIHandler},       // 製造の部材を発注部材表へ（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/made", Handler: MfgMadeAPIHandler},         // 製造完了（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/new", Handler: MfgNewAPIHandler},           // 製造ページ（2026-10-19・mfg.go）

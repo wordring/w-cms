@@ -125,6 +125,10 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 		// 部材を発注部材表へ（2026-10-19・作る順の3番）——この製造の、まだ手配していない部材を、この製造ページの発注部材表へ。
 		parts := `<button type="button" class="chip-btn mfg-parts-go" data-mfg="` + pid + `">📦 この製造の部材を発注部材表へ</button> <span class="mfg-parts-say"></span>`
+		// 見積の依頼の行があれば、この製造の見積書（2026-10-19・quote_done.go）。
+		if mfgHasQuoteRows(el) {
+			parts = `<button type="button" class="chip-btn mfg-estimate-go" data-mfg="` + pid + `">📄 この製造の見積書を作る</button> <span class="mfg-estimate-say"></span> ` + parts
+		}
 		dlv := ""
 		if open > 0 {
 			dlv = ` <button type="button" class="chip-btn mfg-dlv-go" data-mfg="` + pid + `">🚚 選んだ行で納品書を作る</button> ` +

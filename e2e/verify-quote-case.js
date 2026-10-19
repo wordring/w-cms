@@ -5,6 +5,8 @@
 //   ① 受信の記録の「作るページ」に「見積依頼ページ」——作ると、見積依頼ページ（ページ種類：顧客見積依頼）が 記録／年／月／依頼 にできて開く
 //   ② 案件残表に「見積」として並ぶ・納品の欄は押せない・製造の欄は選べる
 //   ③ 案件ページの足元は「見積の依頼の案件です」（受注残高は出さない）
+//   ④ 製造を始めて、製造ページの「📄 この製造の見積書を作る」——見積書が製造ページの子にでき、行に案件が写る（2026-10-19・quote_done.go）
+//   ⑤ 見積書に送付日を付けると、案件残表から外れ、案件ページの足元に「完了」と出る
 //
 // 当て先は全部自分で作って最後に消します（記録・見積依頼ページ・案件残表を置いたページ）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-quote-case.js
@@ -28,7 +30,7 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
   const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 900 } });
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
-  let mail = '', quote = '', root = '';
+  let mail = '', quote = '', root = '', mfg = '', est = '';
   try {
     await login(page, BASE);
     const box = await findMailbox(page);
@@ -80,6 +82,7 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
           label: [...tr.querySelectorAll('a')].map((a) => a.textContent.trim()).find((t) => t.startsWith('見積')) || '',
           dlv: !!tr.querySelector('input[disabled][title^="見積の依頼です"]'),
           mfg: !!tr.querySelector('.backlog-mfg-pick'),
+          row: Number((tr.querySelector('.backlog-mfg-pick') || { dataset: {} }).dataset.row || 0),
         };
       }, row);
       check('② 案件残表に「見積」として並ぶ・納品は押せない・製造は選べる', !!r && r.label.startsWith('見積') && r.dlv && r.mfg, JSON.stringify(r));
@@ -87,11 +90,48 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
       // ③
       const view = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), quote);
       check('③ 案件ページの足元は「見積の依頼の案件です」・受注残高は出さない', view.includes('見積の依頼の案件です') && !view.includes('受注残高:'), view.replace(/\s+/g, ' ').slice(-300));
+
+      // ④ 製造を始めて（口で）、製造ページのボタンを画面で押す。
+      const mr = await page.evaluate(async ([q, rowNo]) => {
+        const r = await fetch('/api/mfg/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: [{ order: q, row: rowNo, item: 'E2E-QC-1', qty: '50' }] }) });
+        return { status: r.status, data: await r.json().catch(() => ({})) };
+      }, [quote, (r && r.row) || 0]);
+      mfg = (mr.data && mr.data.page_id) || '';
+      check('④ 製造ページを始められた', mr.status === 200 && !!mfg, JSON.stringify(mr));
+      if (mfg) {
+        await page.goto(BASE + '/' + mfg);
+        const go = page.locator('#w-editor-content .mfg-estimate-go');
+        await go.waitFor({ timeout: 8000 }).catch(() => {});
+        check('④ 製造ページに「この製造の見積書を作る」', await go.count() === 1);
+        await go.click().catch(() => {});
+        // 弊社品番の無い行なので、単価が無いと言って、開くリンクを出す。
+        const link = page.locator('#w-editor-content .mfg-estimate-say a');
+        await link.waitFor({ timeout: 10000 }).catch(() => {});
+        const sayText = await page.locator('#w-editor-content .mfg-estimate-say').textContent().catch(() => '');
+        est = ((await link.getAttribute('href').catch(() => '')) || '').replace(/^\//, '');
+        check('④ 見積書ができて、単価の無い行を知らせる', !!est && sayText.includes('単価の無い行が 1 行'), sayText);
+        if (est) {
+          const pe = await parentOf(page, est);
+          check('④ 見積書は製造ページの子', String(pe) === mfg, String(pe));
+          const eb = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), est);
+          check('④ 見積明細表の行に案件が写る', eb.includes('<th>案件</th>') && eb.includes('>' + quote + '<') && eb.includes('E2E-QC-1'), eb.replace(/\s+/g, ' ').slice(0, 600));
+          // ⑤ 送付日を付ける（口で）。
+          const mk = await page.evaluate(async (pid) => (await fetch('/api/estimate/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pid, mark: 'sent' }) })).status, est);
+          check('⑤ 送付日を付けた', mk === 200, String(mk));
+          await page.goto(BASE + '/' + root);
+          await page.waitForSelector('#w-editor-content table', { timeout: 10000 }).catch(() => {});
+          check('⑤ 見積を出したので、案件残表から外れる', await page.locator(row).count() === 0);
+          const v2 = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), quote);
+          check('⑤ 案件ページの足元に「完了」', v2.includes('を出したので完了です'), v2.replace(/\s+/g, ' ').slice(-300));
+        }
+      }
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {
+    if (est) await deletePage(page, est).catch(() => {});
+    if (mfg) await deletePage(page, mfg).catch(() => {});
     if (quote) await deletePage(page, quote).catch(() => {});
     if (root) await deletePage(page, root).catch(() => {});
     if (mail) await deletePage(page, mail).catch(() => {});

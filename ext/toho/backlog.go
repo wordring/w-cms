@@ -163,6 +163,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	// 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go——受注明細表の欄は読まない）。
 	shippedBy := newShippedLookup(db)
 	mfgBy := newMfgLookup() // 製造ページに入れた数（2026-10-19・mfg.go）
+	quoted := newQuotedLookup(db) // 見積を出した見積の依頼の行（2026-10-19・quote_done.go）
 	for _, id := range pageIDs {
 		// ⚠ **読めないページは黙って落とします**（見せ分け・C案）。
 		if !page.CanView(user, id) {
@@ -198,6 +199,10 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 			// （2026-09-21 ユーザー決定）。**機械の数より人の判断が上**という
 			// 線引きは、このプロジェクトで一貫しています。
 			if strings.TrimSpace(r.Values["status"]) == StatusDone {
+				continue
+			}
+			// 見積の依頼は、見積書を出したら完了（2026-10-19 利用者:「見積依頼の案件は見積提出で完了です」）。
+			if quote && quoted.of(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]) > 0 {
 				continue
 			}
 			due := strings.TrimSpace(r.Values["due"])

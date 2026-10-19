@@ -41,7 +41,8 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	// **見積の依頼の案件**（2026-10-19）——まだ注文ではないので、受注残高・赤字・検算は出さず、そう添えるだけ。
 	if pageKindOf(ctx.PageID) == PageKindCustomerQuote {
-		appendFootRow(el, headerCellCount(el), "order-checksum checksum-note", "見積の依頼の案件です（まだ注文ではないので、受注残高・赤字の知らせ・必要部材表には入りません）")
+		// 見積書を出したら完了（2026-10-19・quote_done.go）。
+		appendFootRow(el, headerCellCount(el), "order-checksum checksum-note", quoteCaseNote(ctx, el))
 		return true, nil
 	}
 	// **赤字の警告**（2026-10-17・order_loss.go）——行の末尾に「見積との差」。⚠ 足元の行の colspan が列の数に合うよう、先に足す。
@@ -52,6 +53,8 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	showShippedInOrderTable(ctx, el)
 	// 製造完了は製造ページから数える（2026-10-19・mfg_view.go）。
 	showMadeInOrderTable(ctx, el, newMfgLookup())
+	// 前に出した見積の単価と見積書へのリンク（2026-10-19・quote_done.go——見積の依頼の案件とは直接つながない）。
+	showQuoteInOrderTable(ctx, el)
 	span := headerCellCount(el)
 	// **受注残高**（2026-09-30 利用者:「受注ページに受注残高を出したい」・order_balance.go）——検算より先に、いちばん上に。
 	// ⚠ 引き金が同じ（受注明細表）なので、別の鏡にせずここで足す（鏡は引き金1つにつき1つ）。
