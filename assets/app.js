@@ -7352,6 +7352,9 @@
             // 装置名のフォルダがある会社で、装置名称を空のまま社名の直下に入れてよいか（2026-10-16・下の確かめのダイアログで聞く）。
             // ⚠ 図面の確かめ（confirm_revision）とは別の印——使い回すと、こちらの「はい」が図面改定の確かめまで飛ばす。
             confirm_no_machine: !!i.noMachineOK,
+            // 同じ客先に同じ品番の加工製品ページが既にあるが、別の品物として作る（2026-10-19・下の確かめのダイアログで聞く）。
+            // ⚠ これも別の印——図面の確かめ・装置名の確かめとは混ぜない。
+            confirm_same_code: !!i.sameCodeOK,
             // 行き先に同じ題のページがあったとき、改定か二つ目の図面か（2026-09-20）。
             // ⚠ **選ばれていなければ空**です——サーバーはそのとき動かしません。
             merge: (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '',
@@ -7385,9 +7388,11 @@
             // もう一度実行してもらう（偽の改定を黙って作らないための関門）。
             // ⚠ 装置名称が空の確かめ（confirm === 'no_machine'）は、この「承知のうえで進める」の印を出さない——
             //    あの印は図面の確かめ（confirm_revision）のもので、押しても装置名の確かめにはならない。ダイアログだけで聞く。
+            //    同じ品番の確かめ（confirm === 'same_code'・2026-10-19）も同じ——ダイアログだけで聞く。
+            const ownDialog = (r) => r.confirm === 'no_machine' || r.confirm === 'same_code';
             const pending = new Set(results
-                .filter(r => r.outcome === 'needs_confirm' && r.confirm !== 'no_machine').map(r => r.page_id));
-            const noMachine = results.filter(r => r.outcome === 'needs_confirm' && r.confirm === 'no_machine').length;
+                .filter(r => r.outcome === 'needs_confirm' && !ownDialog(r)).map(r => r.page_id));
+            const noMachine = results.filter(r => r.outcome === 'needs_confirm' && ownDialog(r)).length;
             inputs.forEach(i => { i.confirm.hidden = !pending.has(i.page_id); });
             // **選択待ちの行も表を閉じません**（2026-09-20）。打ち替えのたびの
             // 問い合わせで既に出ているはずですが、⚠ **聞けなかったとき**（通信が
@@ -7409,6 +7414,16 @@
                 if (r.confirm === 'no_machine') {
                     if (await askConfirm(r.message, '社名の直下に入れる', 'やめる')) {
                         i.noMachineOK = true;
+                        again.push(i);
+                    }
+                    continue;
+                }
+                // 同じ客先に同じ品番の加工製品ページが既にある（2026-10-19 利用者:「とすると、二つの加工製品ページが同じ品番を持つのはマズいので、
+                // 加工製品ページを作る前にチェックし、編集者に選択させる必要があります」）——「作る」ならその印だけを付けて送り直す。
+                // やめたら表に残る（整理の欄で図面追加・図面改定・重複〔取り込まない〕を選び直す）。
+                if (r.confirm === 'same_code') {
+                    if (await askConfirm(r.message, '別の品物として作る', 'やめる')) {
+                        i.sameCodeOK = true;
                         again.push(i);
                     }
                     continue;

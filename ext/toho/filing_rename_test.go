@@ -103,7 +103,10 @@ func TestCandidatesPreferNumberAndName(t *testing.T) {
 	a := makeDrawingPage(t, inbox, "K9-1", "台座", "標準2輪", "南北スポーツ")
 	postFiling(t, u, []filingRequest{secondRow(a, "台座", "")})
 	b := makeDrawingPageFrom(t, inbox, "pdf009", "K9-1", "台座カバー", "標準2輪", "南北スポーツ")
-	postFiling(t, u, []filingRequest{secondRow(b, "台座カバー", "")})
+	// 同じ客先に同じ図面番号の2枚目なので、「別の品物として作る」を選んで置く（2026-10-19・filing_same_code.go）。
+	rowB := secondRow(b, "台座カバー", "")
+	rowB.ConfirmSameCode = true
+	postFiling(t, u, []filingRequest{rowB})
 
 	ids := func(cs []productCandidate) string {
 		var out []string

@@ -37,22 +37,43 @@ func foldCustomer(name string) string {
 
 // productCustomerOf は加工製品ページの客先の名前です（置き場の社名・置き場の外なら `客先` タグ・分からなければ空）。
 func productCustomerOf(db cms.ReadOnlyDB, id int) string {
-	if boxStr, ok := CustomerBoxPageID(); ok {
-		if box, err := strconv.Atoi(boxStr); err == nil {
-			cur := id
-			for depth := 0; depth < 12 && cur > 0; depth++ {
-				var parent int
-				if err := db.QueryRow(`SELECT COALESCE(parent_id, 0) FROM pages WHERE id = ?`, cur).Scan(&parent); err != nil {
-					break
-				}
-				if parent == box {
-					return cms.PageTitleByID(cur) // 製造台帳の直下＝社名のページ
-				}
-				cur = parent
-			}
-		}
+	if folder := customerFolderOf(db, id); folder > 0 {
+		return cms.PageTitleByID(folder) // 製造台帳の直下＝社名のページ
 	}
 	return cms.PageTagValue(db, id, ClientNameTag)
+}
+
+// customerFolderOf は、加工製品ページが製造台帳の下にあれば、その社名のページ（製造台帳の直下の先祖）を返します（無ければ 0）。
+func customerFolderOf(db cms.ReadOnlyDB, id int) int {
+	boxStr, ok := CustomerBoxPageID()
+	if !ok {
+		return 0
+	}
+	box, err := strconv.Atoi(boxStr)
+	if err != nil {
+		return 0
+	}
+	cur := id
+	for depth := 0; depth < 12 && cur > 0; depth++ {
+		var parent int
+		if err := db.QueryRow(`SELECT COALESCE(parent_id, 0) FROM pages WHERE id = ?`, cur).Scan(&parent); err != nil {
+			return 0
+		}
+		if parent == box {
+			if cur == id {
+				return 0 // 社名のページそのもの
+			}
+			return cur
+		}
+		cur = parent
+	}
+	return 0
+}
+
+// isFiledProduct は、加工製品ページが整理を済ませた（製造台帳の社名の下にある）かです。
+// 整理を待つページ（通信箱の下）・移行の途中のページは false。
+func isFiledProduct(db cms.ReadOnlyDB, id int) bool {
+	return customerFolderOf(db, id) > 0
 }
 
 // productPagesForCustomer は、その客先の加工製品ページのうち番号の当たるものを返します（客先が空なら何も返さない）。
@@ -64,11 +85,20 @@ func productPagesForCustomer(db cms.ReadOnlyDB, customer, code, name string) []i
 	if want == "" || strings.TrimSpace(code) == "" {
 		return nil
 	}
-	var out []int
+	var out, filed []int
 	for _, id := range pagesByAnyTag(db, ProductCodeTags(), code) {
 		if foldCustomer(productCustomerOf(db, id)) == want {
 			out = append(out, id)
+			if isFiledProduct(db, id) {
+				filed = append(filed, id)
+			}
 		}
+	}
+	// **整理を済ませたページがあれば、そちらだけ**を見ます（2026-10-19）——同じ図面が2通目で届くと、🤖解析が整理を待つ
+	// ページをもう1枚作ります。それも数えると「同じ客先に2枚」になり、整理で片付けるまで受注の行が結ばれませんでした
+	// （【要求】東邦拡張 §12 の「⚠ いま」）。整理を待つページは、まだ人が置き場を決めていない下書きです。
+	if len(filed) > 0 {
+		out = filed
 	}
 	if key := itemNameKey(name); key != "" && len(out) > 0 {
 		var named []int

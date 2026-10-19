@@ -543,6 +543,9 @@ type filingRequest struct {
 	// （2026-10-16 利用者:「装置名のフォルダがあるのに、装置名を空にしている場合は、警告して保存の可否を問い合わせてください」）。
 	// ⚠ **ConfirmRevision とは別の印です**——1つの印を使い回すと、こちらで「はい」と答えた行が、図面改定の確かめまで飛ばします。
 	ConfirmNoMachine bool `json:"confirm_no_machine"`
+	// ConfirmSameCode は「同じ客先に同じ品番の加工製品ページが既にあるが、別の品物として新しく作る」の確認です
+	// （2026-10-19・filing_same_code.go）。⚠ ConfirmRevision・ConfirmNoMachine とは別の印です。
+	ConfirmSameCode bool `json:"confirm_same_code"`
 	// Merge は**行き先に同じ題のページがあったとき、どうするか**です（2026-09-20）。
 	//
 	//	""・"new"   … 行き先に無ければ新規の加工製品ページ。**在れば動かしません**（人が決めるまで通信箱に置いたまま）
@@ -576,7 +579,7 @@ type filingResult struct {
 	Outcome  string `json:"outcome"`
 	Message  string `json:"message"`
 	TargetID string `json:"target_id,omitempty"` // 改定のときは合流先
-	// Confirm は needs_confirm のとき、何の確かめか（"no_machine"＝装置名称が空・2026-10-16）。空なら図面の確かめ
+	// Confirm は needs_confirm のとき、何の確かめか（"no_machine"＝装置名称が空・2026-10-16／"same_code"＝同じ客先に同じ品番・2026-10-19）。空なら図面の確かめ
 	// （画面は「承知のうえで進める」〔confirm_revision〕の印を付けて送り直す）。
 	Confirm string `json:"confirm,omitempty"`
 }
@@ -851,6 +854,20 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 		return filingResult{PageID: pageID, Outcome: "needs_choice",
 			Message: "「" + where + "」はまだありません。図面改定・図面追加は、既にある加工製品を行き先にしてください" +
 				"（候補を押すと欄に入ります）。新しく作るなら「新規」を選んでください"}
+	}
+	// **同じ客先に同じ品番の加工製品ページが既にあれば、作る前に確かめます**（2026-10-19・filing_same_code.go）。
+	// 2026-10-01 利用者:「とすると、二つの加工製品ページが同じ品番を持つのはマズいので、加工製品ページを作る前にチェックし、
+	// 編集者に選択させる必要があります」。
+	if hits, codes := sameCodeProducts(database.DB, user, idInt, customer); len(hits) > 0 {
+		if !row.ConfirmSameCode {
+			return filingResult{PageID: pageID, Outcome: "needs_confirm", Confirm: "same_code",
+				TargetID: page.FormatID(hits[0]), Message: sameCodeMessage(customer, hits, codes)}
+		}
+		var ids []string
+		for _, h := range hits {
+			ids = append(ids, page.FormatID(h))
+		}
+		auth.Audit(user.Username, "file-drawing.same-code-accepted", pageID+" beside "+strings.Join(ids, ","))
 	}
 	if err := movePage(user, pageID, machineID, name); err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
