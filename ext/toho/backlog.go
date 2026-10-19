@@ -164,6 +164,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	shippedBy := newShippedLookup(db)
 	mfgBy := newMfgLookup() // 製造ページに入れた数（2026-10-19・mfg.go）
 	quoted := newQuotedLookup(db) // 見積を出した見積の依頼の行（2026-10-19・quote_done.go）
+	// 納品書発行・請求書発行の印は、発行済の納品書・請求書から数える（2026-10-19・issued_marks.go——人は書かない）。
+	issuedDlv, issuedInv := newIssuedDeliveryLookup(db), newIssuedInvoiceLookup(db)
 	for _, id := range pageIDs {
 		// ⚠ **読めないページは黙って落とします**（見せ分け・C案）。
 		if !page.CanView(user, id) {
@@ -242,8 +244,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				Note:            strings.TrimSpace(r.Values["note"]),
 				MaterialOrdered: strings.TrimSpace(r.Values["material-ordered"]),
 				Made:            madeText(mfgBy.doneOf(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty), // 製造ページから（2026-10-19）
-				DeliveryNote:    strings.TrimSpace(r.Values["delivery-note"]),
-				Invoice:         strings.TrimSpace(r.Values["invoice"]),
+				DeliveryNote:    madeText(issuedDlv.of(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty),
+				Invoice:         madeText(issuedInv.of(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty),
 				Loss:            quoteless(quote, backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice)),
 				Quote:           quote,
 				InMfg:           inMfg,
@@ -430,8 +432,9 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				`<td class="cell-atomic">` + st + `</td>` +
 				noPrintCell(checkFieldHTML("材料発注", r.MaterialOrdered)) +
 				`<td class="cell-atomic no-print" title="製造ページの製造完了から数えた">` + stdhtml.EscapeString(r.Made) + `</td>` + // 2026-10-19 から鏡（製造ページで付ける）
-				noPrintCell(checkFieldHTML("納品書発行", r.DeliveryNote)) +
-				noPrintCell(checkFieldHTML("請求書発行", r.Invoice)) +
+				// 2026-10-19 から鏡（発行済の納品書・請求書から数える・issued_marks.go）。
+				`<td class="cell-atomic no-print" title="発行済の納品書から数えた">` + stdhtml.EscapeString(r.DeliveryNote) + `</td>` +
+				`<td class="cell-atomic no-print" title="発行済の請求書から数えた">` + stdhtml.EscapeString(r.Invoice) + `</td>` +
 				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。
 				`<td class="cell-wrap">` + textFieldHTML("備考", r.Note) + `</td>` +
 				// まだ埋まっていない段（2026-10-17・直す順の10番）——知らせるだけで、止めない。

@@ -400,14 +400,15 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	out := cms.RenderComputedViews(req, 201,
 		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
-	for _, f := range []string{"状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"状態", "備考", "材料発注"} {
 		if !strings.Contains(out, `data-field="`+f+`"`) {
 			t.Errorf("%q を押せません:\n%s", f, out)
 		}
 	}
 	// ⚠ 鍵の列は部品にしない。
 	// 出荷済数量は納品書から数える（2026-10-17）——残表から書かせない。
-	for _, f := range []string{"品番", "品名", "弊社品番", "出荷済数量"} {
+	// 納品書発行・請求書発行は発行済の納品書・請求書から数える（2026-10-19・issued_marks.go）——残表から書かせない。
+	for _, f := range []string{"品番", "品名", "弊社品番", "出荷済数量", "納品書発行", "請求書発行"} {
 		if strings.Contains(out, `data-field="`+f+`"`) {
 			t.Errorf("⚠ 鍵の列 %q を編集できるようにしています（照合が壊れます）", f)
 		}

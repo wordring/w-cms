@@ -107,13 +107,14 @@ func TestSetOrderItemCellRefusesUnknownRow(t *testing.T) {
 // そもそも本文にありません。
 func TestEditableFieldsExcludeKeys(t *testing.T) {
 	// 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go）——残表からも書かせない。
-	for _, f := range []string{"弊社品番", "品番", "品名", "残", "受注", "出荷済数量"} {
+	// 納品書発行・請求書発行も、2026-10-19 から発行済の納品書・請求書から数える（issued_marks.go）。
+	for _, f := range []string{"弊社品番", "品番", "品名", "残", "受注", "出荷済数量", "納品書発行", "請求書発行"} {
 		if editableOrderFields[f] {
 			t.Errorf("⚠ %q を残表から書けるようにしています", f)
 		}
 	}
 	// 毎日押すものは書けること（⚠ ここが空だと、そもそも機能していません）。
-	for _, f := range []string{"状態", "備考", "材料発注", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"状態", "備考", "材料発注"} {
 		if !editableOrderFields[f] {
 			t.Errorf("%q が書けません（毎日押す列です）", f)
 		}
