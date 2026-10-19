@@ -28,18 +28,24 @@ import (
 // 「資料 <番号>」へ（order_docs.go・利用者:「外す」）。**それまでの本文の `資料` の列は、設定の語彙
 // （`資料` は `ref`）で型が決まるので、押して飛べるまま**です（下の TestOutsourcingDocCellLinks）。
 
-// TestOutsourcingHasNoDocColumn は、外注加工の宣言に `資料` の列が**無い**ことを固定します
-// （資料の置き場は折りたたみ1つ——列と2か所に書くと食い違う）。
-func TestOutsourcingHasNoDocColumn(t *testing.T) {
+// TestOutsourcingHasDocColumn は、外注加工の宣言に `資料` の列が**参照（ref）で在る**ことを固定します。
+//
+// ⚠ 2026-09-28 に外し、2026-10-19 に戻しました。利用者:「資料の置き場をページ内に一つにして、資料一つ一つにいつものIDを付けましょう。ページID-いつものIDで資料を特定し、その連結IDを空白文字や「、」で区切って表の該当セルに羅列しておけば良いのでは？」
+// 部材発注書はこの列を読みます（order_docs.go の docsCellOfLine）。参照でないと、並べた ID がリンクになりません。
+func TestOutsourcingHasDocColumn(t *testing.T) {
 	def, ok := cms.VocabDefByType("part-outsourcing")
 	if !ok {
 		t.Fatal("外注加工表の宣言がありません")
 	}
 	for _, c := range def.Columns {
-		if c.Label == "資料" {
-			t.Fatal("⚠ `資料` の列が宣言に戻っています（資料は折りたたみ「資料 <番号>」へ・order_docs.go）")
+		if c.Label == docsColumnLabel {
+			if c.Type != cms.ColRef {
+				t.Fatalf("⚠ `資料` の列が参照ではありません: %v", c.Type)
+			}
+			return
 		}
 	}
+	t.Fatal("⚠ 外注加工表の宣言に `資料` の列がありません（部材発注書が資料を読めない・order_docs.go）")
 }
 
 // TestOutsourcingDocCellLinks は、**実際にリンクになる**ことを固定します。

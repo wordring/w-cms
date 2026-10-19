@@ -196,3 +196,49 @@ func TestBindOrderDocsKeepsSizes(t *testing.T) {
 		t.Errorf("綴じなかったものを言っていません: %v", skipped)
 	}
 }
+
+// TestOrderDocsReadsDocsColumn は、部材発注明細表の行から、加工製品ページの外注加工表の**当たる行の「資料」の列**
+// （ファイルの ID を並べたもの）を読むことを固定します（2026-10-19）。
+//
+// 利用者:「資料の置き場をページ内に一つにして、資料一つ一つにいつものIDを付けましょう。ページID-いつものIDで資料を特定し、その連結IDを空白文字や「、」で区切って表の該当セルに羅列しておけば良いのでは？」
+//
+//   - 行は手配済みを数える鍵（番号＋加工内容）で当てる——**番号の無い行も当たる**
+//   - 並べた ID は「、」・空白のどちらで区切ってもよい。ID の形でないものは、そう言う
+//   - 列が空の行は、それまでの折りたたみ「資料 <番号>」を読む（移行のあいだ）
+//   - ⚠ 読めないページのファイルは渡さない
+func TestOrderDocsReadsDocsColumn(t *testing.T) {
+	seedOrderDocs(t)
+	body := `<h1>ブラケット</h1>` +
+		`<table><caption>外注加工表</caption><tbody><tr><th>番号</th><th>加工内容</th><th>個数</th><th>資料</th></tr>` +
+		`<tr><td>1</td><td>レーザー切断</td><td>1</td><td></td></tr>` +
+		`<tr><td></td><td>塗装</td><td>1</td><td>000040-dr01、000031-dx01 000041-se01 メモ</td></tr></tbody></table>` +
+		`<details open><summary>資料 1</summary><p><img src="/000031/ph01.png"></p></details>`
+	writeBodyFile(t, 31, body)
+	if err := cms.SyncIndex("000031", body); err != nil {
+		t.Fatal(err)
+	}
+	rows := []map[string]string{
+		{"弊社品番": "000031", "種類": "外注加工", "番号": "", "加工内容": "塗装"},
+		{"弊社品番": "000031", "種類": "外注加工", "番号": "1", "加工内容": "レーザー切断"},
+		{"弊社品番": "000031", "種類": "外注加工", "番号": "", "加工内容": "曲げ"},
+		{"弊社品番": "000031", "種類": "材料", "材質": "鉄"},
+	}
+	docs, notes := orderDocs(&auth.User{Username: "bob"}, rows)
+	var got []string
+	for _, d := range docs {
+		got = append(got, d.Line+" "+d.PageID+"/"+d.File)
+	}
+	want := []string{"000031（塗装） 000040/dr01.pdf", "000031（塗装） 000031/dx01.dxf", "000031-1 000031/ph01.png"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("集めた資料が違います:\n got  %v\n want %v", got, want)
+	}
+	joined := strings.Join(notes, "\n")
+	for _, w := range []string{"000041-se01 を読めません", "資料 メモ はファイルの ID", "000031（曲げ） は資料がありません"} {
+		if !strings.Contains(joined, w) {
+			t.Errorf("一言 %q がありません: %v", w, notes)
+		}
+	}
+	if strings.Contains(joined, "鉄") {
+		t.Errorf("⚠ 資料の列を持たない種類（材料）の行まで資料を探しています: %v", notes)
+	}
+}

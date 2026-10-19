@@ -160,3 +160,46 @@ func TestTableRefSkipsChromeRows(t *testing.T) {
 		t.Errorf("鏡の行が消えています:\n%s", got)
 	}
 }
+
+// TestTableRefCellListsSeveral は、**参照の列の1つのセルに、参照をいくつも並べて書ける**ことを固定します（2026-10-19）。
+//
+// 利用者:「資料の置き場をページ内に一つにして、資料一つ一つにいつものIDを付けましょう。ページID-いつものIDで資料を特定し、その連結IDを空白文字や「、」で区切って表の該当セルに羅列しておけば良いのでは？」
+// 区切りは空白・「、」・「,」・「，」です。1つずつがリンクになり、「、」で区切って見せます。
+func TestTableRefCellListsSeveral(t *testing.T) {
+	setupSaveTest(t)
+	mustPage(t, 47)
+	mustPage(t, 48)
+
+	row := func(v string) string {
+		return `<h1>受注</h1><table data-type="client-order-items"><tbody>` + orderItemsHeader +
+			`<tr><td>` + v + `</td><td>P1</td><td>板</td><td>1</td>` +
+			`<td>1</td><td></td><td></td><td>未着手</td></tr></tbody></table>`
+	}
+	for _, v := range []string{"000047-ab12、000048-cd34", "000047-ab12 000048-cd34", "000047-ab12,　000048-cd34"} {
+		got := RenderReferenceLinks(row(v))
+		if !strings.Contains(got, `<a href="/000047#ab12" class="ref-link">000047-ab12</a>、<a href="/000048#cd34" class="ref-link">000048-cd34</a>`) {
+			t.Errorf("%q: 並べた参照が1つずつのリンクになっていません:\n%s", v, got)
+		}
+		if strings.Contains(got, `ref-missing`) {
+			t.Errorf("%q: どれも在るのに薄赤です:\n%s", v, got)
+		}
+	}
+
+	// 1つでも無いページ・形の合わない値があれば、セルは薄赤。在る方はリンクのまま。
+	got := RenderReferenceLinks(row("000047-ab12、000999-zz99、メモ"))
+	if !strings.Contains(got, `ref-missing`) || !strings.Contains(got, `000999-zz99、メモ`) {
+		t.Errorf("無いページを指す値が知らされていません:\n%s", got)
+	}
+	if !strings.Contains(got, `href="/000047#ab12"`) {
+		t.Errorf("在る方の参照までリンクでなくなっています:\n%s", got)
+	}
+}
+
+// TestSplitRefList は区切りの読み方を固定します。
+func TestSplitRefList(t *testing.T) {
+	got := SplitRefList(" 000047-ab12、、000048-cd34，000049-ef56,000050　000051 ")
+	want := []string{"000047-ab12", "000048-cd34", "000049-ef56", "000050", "000051"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("SplitRefList = %q, want %q", got, want)
+	}
+}

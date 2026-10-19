@@ -103,6 +103,12 @@ var businessVocab = []cms.VocabDef{
 		// （中にファイルを置く・部材発注書のメール／FAX・印刷に添える——order_docs.go）。利用者:「外注加工ごとに
 		// 資料のブロック（開いたり閉じたりできる）を用意して」、列を外すかの問いに「外す」。列と折りたたみの
 		// 2か所に書くと食い違います。
+		//
+		// ⚠ **2026-10-19 に `資料` の列を戻しました**（こんどは、ファイルの ID を並べる列）。利用者:
+		// 「資料の置き場をページ内に一つにして、資料一つ一つにいつものIDを付けましょう。ページID-いつものIDで資料を特定し、その連結IDを空白文字や「、」で区切って表の該当セルに羅列しておけば良いのでは？」
+		// 資料はページ内の1か所（折りたたみ「資料」など）に置き、表のセルには、そのファイルの ID
+		// （ページ番号-添付ID・「🔗 ID」で写せる）を並べます。部材発注書は、行に当たる外注加工表の行のこのセルを読みます
+		// （order_docs.go）。セルが空の行は、それまでの折りたたみ「資料 <番号>」を読みます（移行のあいだ）。
 		Type:        "part-outsourcing",
 		DisplayName: "外注加工表",
 		Category:    "業務",
@@ -147,6 +153,7 @@ var businessVocab = []cms.VocabDef{
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
 			{Field: "supplied", Label: "支給", Type: cms.ColText},
 			{Field: "vendor", Label: "推奨業者", Type: cms.ColText, Suggest: PartnerSuggestSource},
+			{Field: "docs", Label: docsColumnLabel, Type: cms.ColRef},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},

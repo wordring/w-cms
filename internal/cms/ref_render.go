@@ -35,6 +35,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/net/html"
 
@@ -46,6 +47,19 @@ import (
 var refValueRe = regexp.MustCompile(`^([0-9]{6})[-‐−－ーｰ]([0-9A-Za-z]+)$`)
 
 // parseRefValue は参照値を（ページID, ブロックID）へ分解します。文法外は ok=false。
+// SplitRefList は参照のセルの値を、空白・「、」・「,」・「，」で区切って並べます（空は落とす・2026-10-19）。
+// 2026-10-19 利用者:「資料の置き場をページ内に一つにして、資料一つ一つにいつものIDを付けましょう。ページID-いつものIDで資料を特定し、その連結IDを空白文字や「、」で区切って表の該当セルに羅列しておけば良いのでは？」
+// 参照の列は、1つのセルに参照をいくつも並べて書けます（例 `001436-fhea、001436-k2pq`）。
+func SplitRefList(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		switch r {
+		case '、', ',', '，':
+			return true
+		}
+		return unicode.IsSpace(r)
+	})
+}
+
 func parseRefValue(s string) (pageID, blockID string, ok bool) {
 	m := refValueRe.FindStringSubmatch(strings.TrimSpace(s))
 	if m == nil {
@@ -134,6 +148,44 @@ func RenderReferenceLinks(bodyHTML string) string {
 }
 
 // linkRefDD は dd の中身を参照リンクへ置き換えます（表示文字は元の値のまま）。
+// linkRefList は、参照をいくつも並べたセルを、1つずつのリンク（「、」で区切る）に描き直します。
+// 形の合わない値・無いページを指す値があれば、セルに ref-missing の印と、どれかを添えます。
+func linkRefList(cell *html.Node, refs []string) bool {
+	for cell.FirstChild != nil {
+		cell.RemoveChild(cell.FirstChild)
+	}
+	var bad []string
+	for i, r := range refs {
+		if i > 0 {
+			cell.AppendChild(&html.Node{Type: html.TextNode, Data: "、"})
+		}
+		pageID, blockID, ok := parseRefValue(r)
+		if !ok {
+			if m := pageIDOnlyRe.FindStringSubmatch(r); m != nil {
+				pageID, blockID, ok = m[1], "", true
+			}
+		}
+		if !ok || !pageExists(pageID) {
+			bad = append(bad, r)
+			cell.AppendChild(&html.Node{Type: html.TextNode, Data: r})
+			continue
+		}
+		span := &html.Node{Type: html.ElementNode, Data: "span"}
+		span.AppendChild(&html.Node{Type: html.TextNode, Data: r})
+		linkRefDD(span, pageID, blockID)
+		for span.FirstChild != nil {
+			c := span.FirstChild
+			span.RemoveChild(c)
+			cell.AppendChild(c)
+		}
+	}
+	if len(bad) > 0 {
+		setAttr(cell, "class", "ref-missing")
+		setAttr(cell, "title", "参照の形でないか、ページが見つからない値があります: "+strings.Join(bad, "、"))
+	}
+	return true
+}
+
 func linkRefDD(dd *html.Node, pageID, blockID string) {
 	text := strings.TrimSpace(nodeText(dd))
 	for dd.FirstChild != nil {
@@ -356,6 +408,13 @@ func linkRefCells(table *html.Node) bool {
 		}
 		for i, cell := range rowCells(row) {
 			if i >= len(refCol) || !refCol[i] {
+				continue
+			}
+			// 参照をいくつも並べたセル（2026-10-19）——1つずつリンクにする。
+			if refs := SplitRefList(nodeText(cell)); len(refs) > 1 {
+				if linkRefList(cell, refs) {
+					changed = true
+				}
 				continue
 			}
 			pageID, blockID, ok := parseRefValue(nodeText(cell))

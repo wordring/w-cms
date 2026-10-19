@@ -21,6 +21,17 @@ package toho
 //     （`/api/order-pdf-docs`）。⚠ **部材発注書のPDF（7年保存の正本）には綴じない**。
 //     ⚠ 紙にできない形式（DXF・CAD・Excel・ZIP）は綴じられないので、そう言う。
 //   - 新しい列は要らない——部材発注明細表の行は `弊社品番` と `番号` を持つ（§11）。
+//
+// ⚠ **2026-10-19 から、資料は外注加工表の「資料」の列で指します**（【考察】部材の種類ごとの発注項目 §12a）。
+// 利用者:「資料の置き場をページ内に一つにして、資料一つ一つにいつものIDを付けましょう。ページID-いつものIDで資料を特定し、その連結IDを空白文字や「、」で区切って表の該当セルに羅列しておけば良いのでは？」
+//
+//	加工製品ページ
+//	  外注加工表  番号 1 | レーザー切断 | … | 資料 000040-dr01、000235-k2pq
+//	  ▼ 資料     ← 置き場はページ内に1つ（中のファイルの ID を「🔗 ID」で写してセルに並べる）
+//
+//   - 部材発注明細表の行（`弊社品番`＋`種類`）から、その種類の元の表（設定 `order_kinds` の from）の行を、
+//     **手配済みを数える鍵と同じ鍵**で当てます（外注加工なら 番号＋加工内容）。番号の無い行も当たります。
+//   - そのセルが空なら、それまでの折りたたみ「資料 <番号>」を読みます（移行のあいだ）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -44,10 +55,14 @@ import (
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // docsFoldWord は資料の折りたたみの題の言葉です（「資料 1」の「資料」）。
 const docsFoldWord = "資料"
+
+// docsColumnLabel は、元の表（外注加工表など）で資料のファイルの ID を並べる列の名前です（2026-10-19）。
+const docsColumnLabel = "資料"
 
 // orderDoc は部材発注書に添える資料のファイル1つです。
 type orderDoc struct {
@@ -100,28 +115,57 @@ func orderTableRows(table *html.Node) (rows []map[string]string, cancelled int) 
 
 // orderDocs は部材発注明細表の行から資料を集めます。notes は人に見せる一言（資料の無い行・読めないファイル）。
 //
-// 行が指すのは **`弊社品番` のページの「資料 <番号>」の折りたたみ**。番号の無い行（材料・購入部品）は
-// 見ません。同じ行が2度出ても、同じファイルが2つの行から指されても、1つにします。
+// 行が指すのは、**`弊社品番` のページの元の表の行の「資料」の列**（並べたファイルの ID・2026-10-19 から）。
+// そのセルが空なら、**「資料 <番号>」の折りたたみ**です（それまでの形）。
+// 資料の列を持たない種類（材料など）で番号の無い行は見ません。
+// 同じ行が2度出ても、同じファイルが2つの行から指されても、1つにします。
 func orderDocs(user *auth.User, rows []map[string]string) (docs []orderDoc, notes []string) {
 	seenLine := map[string]bool{}
 	seenFile := map[string]bool{}
 	for _, r := range rows {
 		no := strings.TrimSpace(r["番号"])
 		pid, ok := page.NormalizeID(strings.TrimSpace(r[OurItemNoTag]))
-		if no == "" || !ok {
+		if !ok {
+			continue
+		}
+		cell, hasColumn := docsCellOfLine(user, pid, r)
+		if no == "" && !hasColumn {
 			continue
 		}
 		line := orderLineNo(pid, no)
+		if no == "" {
+			line = pid + "（" + strings.TrimSpace(r["加工内容"]+" "+r["品名"]) + "）"
+		}
 		if seenLine[line] {
 			continue
 		}
 		seenLine[line] = true
-		fold := docsFoldIn(user, pid, no)
-		if fold == nil {
-			notes = append(notes, line+" は資料がありません（加工製品ページに「"+docsFoldWord+" "+no+"」の折りたたみが無い）")
-			continue
+		var refs []cms.FileRef
+		if ids := cms.SplitRefList(cell); len(ids) > 0 {
+			for _, s := range ids {
+				ref, ok := cms.ParseFileRef(s)
+				if !ok {
+					notes = append(notes, line+" の資料 "+s+" はファイルの ID（ページ番号-添付ID）ではありません")
+					continue
+				}
+				refs = append(refs, ref)
+			}
+		} else {
+			var fold *html.Node
+			if no != "" {
+				fold = docsFoldIn(user, pid, no)
+			}
+			if fold == nil {
+				if no != "" {
+					notes = append(notes, line+" は資料がありません（外注加工表の「"+docsColumnLabel+"」が空で、加工製品ページに「"+docsFoldWord+" "+no+"」の折りたたみも無い）")
+				} else {
+					notes = append(notes, line+" は資料がありません（外注加工表の「"+docsColumnLabel+"」が空）")
+				}
+				continue
+			}
+			refs = cms.FileRefsIn(fold)
 		}
-		for _, ref := range cms.FileRefsIn(fold) {
+		for _, ref := range refs {
 			stored, name, ok := cms.AttachmentOfRef(user, ref)
 			if !ok {
 				notes = append(notes, line+" の資料 "+ref.PageID+"-"+ref.ID+" を読めません")
@@ -145,6 +189,52 @@ func orderLineNo(productID, no string) string {
 		return no
 	}
 	return productID + "-" + no
+}
+
+// docsCellOfLine は、部材発注明細表の行 r に当たる、加工製品ページ pid の元の表の行の「資料」のセルを返します。
+// hasColumn は、その種類の元の表が「資料」の列を持つか（持たない種類は資料を添えない）。
+//
+// 当て方は、**手配済みを数える鍵と同じ**です（設定 `order_kinds` の key・`orderKind.keyOf`）——
+// 必要部材表から発注書へ運んだ行は、その鍵で元の行と結ばれているからです。読めないページは見ません。
+func docsCellOfLine(user *auth.User, pid string, r map[string]string) (cell string, hasColumn bool) {
+	k, ok := orderKindByName(r["種類"])
+	if !ok {
+		return "", false
+	}
+	def, ok := cms.VocabDefByHeading(k.From)
+	if !ok {
+		return "", false
+	}
+	for _, c := range def.Columns {
+		if c.Label == docsColumnLabel {
+			hasColumn = true
+		}
+	}
+	if !hasColumn {
+		return "", false
+	}
+	idInt, err := strconv.Atoi(pid)
+	if err != nil || !page.CanView(user, idInt) {
+		return "", true
+	}
+	want := k.keyOf(r)
+	if want == "" {
+		return "", true
+	}
+	src, err := cms.VocabTableRowsOf(database.DB, idInt, def.Type)
+	if err != nil {
+		return "", true
+	}
+	var tags map[string][]string
+	for _, m := range src {
+		if tags == nil {
+			tags, _ = cms.TagsOfPage(database.DB, idInt)
+		}
+		if k.keyOf(k.valuesOf(def, m, tags, idInt)) == want {
+			return labelValue(def, m, docsColumnLabel), true
+		}
+	}
+	return "", true
 }
 
 // docsFoldIn は加工製品ページの「資料 <番号>」の折りたたみを返します（読めない・無いなら nil）。
