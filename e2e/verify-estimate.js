@@ -22,6 +22,13 @@ const check = (label, ok, note = '') => {
   if (!ok) fails++;
 };
 
+// 単価の欄は、テンプレート「見積計算書」の見積表に式があれば式（2026-10-19・=ROUND(原価*(1+利益率/100))）、無ければ数。
+// ⚠ 環境（テンプレート）しだいなので、どちらでも通す——数なら期待の数、式なら式の字（値は足元の「記録と合っています」で確かめる）。
+const unitOk = (got, want) => got === want || /^[=＝]/.test(got);
+const cellsOk = (cells, want) => {
+  const g = (cells || '').split('|'), w = want.split('|');
+  return g.length === w.length && g.every((v, i) => (i === 4 ? (w[4] === '' ? (v === '' || /^[=＝]/.test(v)) : unitOk(v, w[4])) : v === w[i]));
+};
 const calc = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
   rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + (r[2] || '') + '</td></tr>').join('') +
   '</tbody></table>';
@@ -78,14 +85,14 @@ const record = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロ
     // ② 記録
     await click(page.locator('#w-editor-content table:has(caption:text-is("見積表")) tfoot .estimate-record-go').first());
     r = await recs();
-    check('② 見積表に 原価・利益率・単価', r[0] && r[0].cells === '1||365|10|402|', JSON.stringify(r[0]));
+    check('② 見積表に 原価・利益率・単価', r[0] && cellsOk(r[0].cells, '1||365|10|402|'), JSON.stringify(r[0]));
     check('② 足元は ✓ 記録と合っています・📌 は消える', r[0] && r[0].plan.startsWith('✓ ') && r[0].plan.endsWith('（記録と合っています）') && !r[0].rec,
       JSON.stringify(r[0]));
 
     // ③ 見積表を作って記録
     await click(page.locator('#w-editor-content table:has(caption:text-is("見積計算表")) tfoot .estimate-record-go').first());
     r = await recs();
-    check('③ 見積表ができて記録される（原価 565・単価 622）', r.length === 3 && r[1].cells === '||565|10|622|', JSON.stringify(r));
+    check('③ 見積表ができて記録される（原価 565・単価 622）', r.length === 3 && cellsOk(r[1].cells, '||565|10|622|') && r[1].plan.endsWith('（記録と合っています）'), JSON.stringify(r));
     const order = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content h3, #w-editor-content table > caption')]
       .map(e => e.tagName === 'H3' ? e.textContent : '[' + e.textContent + ']').join(' '));
     check('③ 見積表は見積計算表のすぐ後ろ', order.startsWith('ロット1 [見積計算表] [見積表] ロット20 [見積計算表] [見積表] ロット5'), order);
@@ -95,7 +102,7 @@ const record = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロ
     r = await recs();
     const order2 = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content h3')].map(e => e.textContent).join(','));
     check('⑤ 見出し（写し）と組が増える', r.length === 4 && order2 === 'ロット1,ロット1（写し）,ロット20,ロット5', order2);
-    check('⑤ 写しのロット・原価・単価は空（利益率は残す）', r[1] && r[1].cells === '|||10||', JSON.stringify(r[1]));
+    check('⑤ 写しのロット・原価・単価は空（利益率は残す・単価の式は残す）', r[1] && cellsOk(r[1].cells, '|||10||'), JSON.stringify(r[1]));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

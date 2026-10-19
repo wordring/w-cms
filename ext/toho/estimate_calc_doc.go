@@ -262,9 +262,6 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		content, from = estimateSectionOf(body), pid
 	}
-	if strings.TrimSpace(content) == "" {
-		content = "<h2>" + estimateSectionHeading + "</h2><p><br/></p>"
-	}
 	tmpl, err := cms.PageTemplateBody(EstimateCalcTemplate)
 	if err != nil {
 		cms.JSONFail(w, http.StatusConflict, err.Error())
@@ -276,7 +273,19 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	d.SetTag(OurItemNoTag, pid)
 	d.SetTag(EstimateCalcDateTag, now.Format("2006-01-02"))
 	d.SetTag(PageKindTag, PageKindOurEstimateCalc) // テンプレートも持っているが、機械が作る種類なので値を確かに書く
-	body := d.HTML() + content
+	// テンプレートの「見積もり計算」の節（2026-10-19——工程の行と、見積表の単価の式を置ける）は、写す中身が無いときだけ使う。
+	// 写す中身があるときは二重にしない（テンプレートの節を外す）。
+	head := d.HTML()
+	if tsec := estimateSectionOf(head); tsec != "" {
+		head = strings.Replace(head, tsec, "", 1)
+		if strings.TrimSpace(content) == "" {
+			content = tsec
+		}
+	}
+	if strings.TrimSpace(content) == "" {
+		content = "<h2>" + estimateSectionHeading + "</h2><p><br/></p>"
+	}
+	body := head + content
 	monthID := parent
 	if monthID == "" {
 		monthID, err = recordFolder(user.Username, RecordWorkFolder, now)

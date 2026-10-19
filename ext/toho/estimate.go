@@ -530,8 +530,53 @@ func withEstimateRecord(body string, block int) (string, error) {
 	}
 	set(estimateCostCol, cms.FormatFormulaNumber(p.Cost))
 	set(estimateRateCol, rateText(p.Rate))
-	set(estimateUnitCol, strconv.Itoa(p.Unit))
+	// 原価と利益率のほかの列は、式なら残し、テンプレート「見積計算書」の見積表に式があればそれを写す（2026-10-19）。
+	// 2026-10-19 利用者:「この式をテンプレートに書いておく方式はどうでしょう？」「出来るだけハードコーディングを無くしたいです」
+	// 式はコードに書かない——テンプレートに無ければ、いままでどおり単価に計算した数を書く。
+	isFormulaAt := func(label string) bool {
+		i, ok := col[label]
+		return ok && i < len(cells) && cms.IsFormula(strings.TrimSpace(textOf(cells[i])))
+	}
+	for label, f := range templateRecordFormulas() {
+		if label == estimateCostCol || label == estimateRateCol || isFormulaAt(label) {
+			continue
+		}
+		set(label, f)
+	}
+	if !isFormulaAt(estimateUnitCol) {
+		set(estimateUnitCol, strconv.Itoa(p.Unit))
+	}
 	return htmldoc.Render(nodes), nil
+}
+
+// templateRecordFormulas は、テンプレート「見積計算書」の本文の最初の見積表の1行目にある式を、列の見出しごとに返します
+// （2026-10-19——見積表の単価の式 `=ROUND(原価*(1+利益率/100))` などを、コードに書かずにテンプレートに置く）。
+// テンプレートが無い・見積表が無い・式が無ければ空。
+func templateRecordFormulas() map[string]string {
+	body, err := cms.PageTemplateBody(EstimateCalcTemplate)
+	if err != nil {
+		return nil
+	}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return nil
+	}
+	recs := tablesOfType(nodes, estimateRecordType)
+	if len(recs) == 0 {
+		return nil
+	}
+	trs := rowsOf(recs[0])
+	if len(trs) < 2 {
+		return nil
+	}
+	head, cells := cellTexts(trs[0]), cellTexts(trs[1])
+	out := map[string]string{}
+	for i, h := range head {
+		if i < len(cells) && cms.IsFormula(strings.TrimSpace(cells[i])) {
+			out[strings.TrimSpace(h)] = strings.TrimSpace(cells[i])
+		}
+	}
+	return out
 }
 
 // estimateRecordColumns は見積表の列です（vocab.go の宣言と同じ並び）。
@@ -559,7 +604,7 @@ func newEstimateRecordTable() *html.Node {
 }
 
 // withEstimateDuplicate は本文の block 番目の組（すぐ前の見出し・見積計算表・見積表）を写して、組のすぐ後ろに置いた本文を返します。
-// 写しの見積表は、ロット・原価・単価を空にします（表面処理・利益率・備考は残す）。見出しは「（写し）」を付けます。
+// 写しの見積表は、ロット・原価・単価を空にします（表面処理・利益率・備考は残す。式のセルは空にしない）。見出しは「（写し）」を付けます。
 func withEstimateDuplicate(body string, block int) (string, error) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -588,7 +633,8 @@ func withEstimateDuplicate(body string, block int) (string, error) {
 			col := headerIndex(trs[0])
 			cells := cellsOf(trs[1])
 			for _, label := range []string{estimateLotCol, estimateCostCol, estimateUnitCol} {
-				if i, ok := col[label]; ok && i < len(cells) {
+				// 式は残す（2026-10-19——単価の式 =ROUND(原価*(1+利益率/100)) などは、写しでも同じ式で計算する）。
+				if i, ok := col[label]; ok && i < len(cells) && !cms.IsFormula(strings.TrimSpace(textOf(cells[i]))) {
 					setCellText(cells[i], "")
 				}
 			}
