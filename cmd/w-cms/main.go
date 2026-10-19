@@ -18,6 +18,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -160,7 +161,13 @@ func main() {
 	case cert != "" && key != "":
 		addr := listenAddr(true)
 		log.Println("w-cms 起動: " + listenURL(addr, true))
-		if err := http.ListenAndServeTLS(addr, cert, key, handler); err != nil {
+		// 証明書と鍵のファイルが替わったら、次の接続から読み直す（2026-10-19・cert_reload.go——更新のたびに起こし直さない）。
+		reloader, err := newCertReloader(cert, key)
+		if err != nil {
+			log.Fatalf("証明書を読めません: %v", err)
+		}
+		srv := &http.Server{Addr: addr, Handler: handler, TLSConfig: &tls.Config{GetCertificate: reloader.GetCertificate}}
+		if err := srv.ListenAndServeTLS("", ""); err != nil {
 			log.Fatalf("サーバー終了: %v", err)
 		}
 	case cert != "" || key != "":

@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -60,7 +61,11 @@ type settingsSection struct {
 	//
 	// **未指定ならPDFを作りません**（起動は止めません——Gemini キーと同じ扱いで、
 	// 画面に「設定されていません」と出します）。
-	PDFFont string `json:"pdf_font,omitempty"`
+	//
+	// **候補を並べて書けます**（2026-10-19）——`["C:/Windows/Fonts/….ttc", "/usr/share/fonts/….ttf"]` の形。紙を作るとき、
+	// 並びの先頭から**在るもの**を使います（1つの設定で Windows の機械と Ubuntu のサーバー機の両方に効くように——
+	// 【考察】職場のサーバー機と社外からの接続 §2.1・§5）。1つだけなら、いままでどおり文字列でも書けます。
+	PDFFont fontPaths `json:"pdf_font,omitempty"`
 
 	// PDFFontFace は `.ttc` の中の何番目の書体かです（既定は0）。
 	//
@@ -130,7 +135,7 @@ var (
 	// 「番号のタグは新しいがフォントは古い」という中途半端な瞬間ができます。
 	stagesMu          sync.RWMutex
 	productCodeTags   []string
-	pdfFont           string
+	pdfFonts          []string // 紙の書体の候補（並び順・2026-10-19）
 	pdfFontFace       int
 	companyInf        companyInfo
 	orderKinds        []orderKind
@@ -174,11 +179,16 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 	// ⚠ **拡張子だけ見ます**（在るかどうかは見ません——設定を読むのはDB再構築でも
 	// 走るので、そのときファイルが一時的に見えない環境で起動を止めたくありません）。
 	// ⚠ **`.ttc` も通します**（2026-09-23）——1書体を取り出して渡すので読めます。
-	if f := strings.TrimSpace(s.PDFFont); f != "" {
+	var fonts []string
+	for _, f := range s.PDFFont {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
 		low := strings.ToLower(f)
 		if !strings.HasSuffix(low, ".ttf") && !strings.HasSuffix(low, ".ttc") {
-			return nil, fmt.Errorf("pdf_font は .ttf か .ttc を指してください（%q）", s.PDFFont)
+			return nil, fmt.Errorf("pdf_font は .ttf か .ttc を指してください（%q）", f)
 		}
+		fonts = append(fonts, f)
 	}
 	if r := s.EstimateProfitRate; r != nil && (*r < 0 || *r >= 1000) {
 		return nil, fmt.Errorf("estimate_profit_rate は 0 以上 1000 未満の %%（%v）", *r)
@@ -205,7 +215,6 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 		}
 	}
 	codeTags := s.ProductCodeTags
-	font := strings.TrimSpace(s.PDFFont)
 	face := s.PDFFontFace
 	company := s.Company
 	rate := s.EstimateProfitRate
@@ -219,7 +228,7 @@ func parseSettings(raw json.RawMessage) (func(), error) {
 	return func() {
 		stagesMu.Lock()
 		productCodeTags = codeTags
-		pdfFont = font
+		pdfFonts = fonts
 		pdfFontFace = face
 		companyInf = company
 		orderKinds = kinds
@@ -264,11 +273,39 @@ func TaxRate() (float64, bool) {
 	return *taxRate, true
 }
 
-// PDFFont は部材発注書のPDFへ埋め込むフォントのパスを返します（未設定なら空）。
+// PDFFont は紙（PDF）へ埋め込むフォントのパスを返します——候補の並びの先頭から、在るもの（未設定なら空）。
+// どれも無ければ先頭の候補を返します（紙を作る側が「無い」と、その場所を添えて断る——paper_pdf.go）。
 func PDFFont() string {
 	stagesMu.RLock()
-	defer stagesMu.RUnlock()
-	return pdfFont
+	fonts := pdfFonts
+	stagesMu.RUnlock()
+	for _, f := range fonts {
+		if _, err := os.Stat(f); err == nil {
+			return f
+		}
+	}
+	if len(fonts) > 0 {
+		return fonts[0]
+	}
+	return ""
+}
+
+// fontPaths は pdf_font の値です——文字列1つでも、文字列の並びでも書ける（2026-10-19）。
+type fontPaths []string
+
+// UnmarshalJSON は文字列か文字列の並びを読みます。
+func (f *fontPaths) UnmarshalJSON(b []byte) error {
+	var one string
+	if err := json.Unmarshal(b, &one); err == nil {
+		*f = fontPaths{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return fmt.Errorf("pdf_font は文字列か、文字列の並びです: %w", err)
+	}
+	*f = many
+	return nil
 }
 
 // Company は部材発注書の差出人を返します。

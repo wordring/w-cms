@@ -24,12 +24,12 @@ import (
 func withPDFFont(t *testing.T, path string) {
 	t.Helper()
 	stagesMu.Lock()
-	old := pdfFont
-	pdfFont = path
+	old := pdfFonts
+	pdfFonts = []string{path}
 	stagesMu.Unlock()
 	t.Cleanup(func() {
 		stagesMu.Lock()
-		pdfFont = old
+		pdfFonts = old
 		stagesMu.Unlock()
 	})
 }

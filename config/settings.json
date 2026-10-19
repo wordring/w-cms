@@ -157,7 +157,11 @@
         "品番",
         "部品番号"
       ],
-      "pdf_font": "C:/Windows/Fonts/BIZ-UDGothicB.ttc",
+      "pdf_font": [
+        "C:/Windows/Fonts/BIZ-UDGothicB.ttc",
+        "/usr/share/fonts/truetype/fonts-morisawa-bizud-gothic/BIZUDGothic-Bold.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
+      ],
       "pdf_font_face": 0,
       "estimate_profit_rate": 10,
       "estimate_tags": { "取引方法": "従来通り", "有効期限": "1カ月" },

@@ -39,8 +39,8 @@ import (
 // 何をすればよいかを画面に出します。
 var ErrNoPDFFont = errors.New(
 	"PDF用の日本語フォントが設定されていません" +
-		"（config/settings.json の extensions.toho.pdf_font に .ttf のパスを書いてください。" +
-		"⚠ .ttc は読めません）")
+		"（config/settings.json の extensions.toho.pdf_font に .ttf か .ttc のパスを書いてください。" +
+		"候補を並べて書くと、在るものを使います）")
 
 // 紙の寸法（A4・単位はポイント）。実物の部材発注書に寄せています。
 const (

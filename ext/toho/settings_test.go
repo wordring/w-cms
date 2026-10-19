@@ -2,6 +2,8 @@ package toho
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,12 +64,12 @@ func TestSettingsAbsentSectionClearsValues(t *testing.T) {
 	//    宣言を外した日に `TestRequiredMaterialsViewRenders` が全体で流したときだけ落ちました。
 	stagesMu.RLock()
 	savedTags, savedFont, savedFace, savedCompany :=
-		productCodeTags, pdfFont, pdfFontFace, companyInf
+		productCodeTags, pdfFonts, pdfFontFace, companyInf
 	savedKinds, savedPrint, savedHeads := orderKinds, orderPrintColumns, orderPrintHeads
 	stagesMu.RUnlock()
 	t.Cleanup(func() {
 		stagesMu.Lock()
-		productCodeTags, pdfFont, pdfFontFace, companyInf =
+		productCodeTags, pdfFonts, pdfFontFace, companyInf =
 			savedTags, savedFont, savedFace, savedCompany
 		orderKinds, orderPrintColumns, orderPrintHeads = savedKinds, savedPrint, savedHeads
 		stagesMu.Unlock()
@@ -82,3 +84,51 @@ func TestSettingsAbsentSectionClearsValues(t *testing.T) {
 	}
 }
 
+
+// TestPDFFontCandidates は pdf_font の候補の並び（2026-10-19）を固定します——並びの先頭から在るものを使い、
+// どれも無ければ先頭（紙を作る側が場所を添えて断る）。1つだけの文字列も、いままでどおり読める。
+func TestPDFFontCandidates(t *testing.T) {
+	restoreToho(t)
+	dir := t.TempDir()
+	have := filepath.Join(dir, "have.ttf")
+	if err := os.WriteFile(have, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.ToSlash(filepath.Join(dir, "missing.ttc"))
+	for _, tc := range []struct {
+		raw, want string
+	}{
+		{`{"pdf_font": ["` + missing + `", "` + filepath.ToSlash(have) + `"]}`, filepath.ToSlash(have)},
+		{`{"pdf_font": "` + filepath.ToSlash(have) + `"}`, filepath.ToSlash(have)},
+		{`{"pdf_font": ["` + missing + `"]}`, missing},
+	} {
+		apply, err := parseSettings(json.RawMessage(tc.raw))
+		if err != nil {
+			t.Fatalf("%s: 読めません: %v", tc.raw, err)
+		}
+		apply()
+		if got := PDFFont(); got != tc.want {
+			t.Errorf("%s: PDFFont() = %q（期待 %q）", tc.raw, got, tc.want)
+		}
+	}
+	if _, err := parseSettings(json.RawMessage(`{"pdf_font": ["a.ttf", "b.otf"]}`)); err == nil {
+		t.Errorf("⚠ .ttf・.ttc でない候補を通しました")
+	}
+}
+
+// restoreToho は、試験が parseSettings の apply で書き換える東邦の設定を、試験のあとに全部戻します（節の全部——2026-09-27 の罠）。
+func restoreToho(t *testing.T) {
+	t.Helper()
+	stagesMu.RLock()
+	tags, fonts, face, company := productCodeTags, pdfFonts, pdfFontFace, companyInf
+	kinds, print, rfq, heads := orderKinds, orderPrintColumns, rfqPrintColumns, orderPrintHeads
+	rate, etags, tax := estimateRate, estimateTags, taxRate
+	stagesMu.RUnlock()
+	t.Cleanup(func() {
+		stagesMu.Lock()
+		productCodeTags, pdfFonts, pdfFontFace, companyInf = tags, fonts, face, company
+		orderKinds, orderPrintColumns, rfqPrintColumns, orderPrintHeads = kinds, print, rfq, heads
+		estimateRate, estimateTags, taxRate = rate, etags, tax
+		stagesMu.Unlock()
+	})
+}
