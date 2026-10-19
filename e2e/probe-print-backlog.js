@@ -46,7 +46,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     }
   }
   if (!target) {
-    console.log('飛ばします: 受注残表を置いたページが見つかりません（まだ置いていないだけかもしれません）');
+    console.log('飛ばします: 案件残表を置いたページが見つかりません（まだ置いていないだけかもしれません）');
     await browser.close();
     return;
   }
@@ -55,7 +55,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
   await page.waitForTimeout(400);
   const sheets = await page.locator('.backlog-sheet').count();
   if (sheets === 0) {
-    console.log('飛ばします: ' + target + ' に受注残表がありません');
+    console.log('飛ばします: ' + target + ' に案件残表がありません');
     await browser.close();
     return;
   }

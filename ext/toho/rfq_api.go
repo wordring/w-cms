@@ -182,7 +182,7 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 	if s := strings.TrimSpace(it.ForOrder); s != "" {
 		order, ok := page.NormalizeID(strings.TrimPrefix(s, "/"))
 		if !ok {
-			return pid, lots, nil, http.StatusBadRequest, "受注ページの番号が読めません: " + s
+			return pid, lots, nil, http.StatusBadRequest, "案件ページの番号が読めません: " + s
 		}
 		for i := range lines {
 			lines[i].ForOrder = order

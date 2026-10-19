@@ -397,7 +397,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 	for _, o := range sheets {
 		body, err := buildOrderPageHTML(orderTmpl, pageID, attachID, o)
 		if err != nil {
-			cms.JSONFail(w, http.StatusConflict, "受注ページを作れません: "+err.Error())
+			cms.JSONFail(w, http.StatusConflict, "案件ページを作れません: "+err.Error())
 			return
 		}
 		bodies = append(bodies, body)
@@ -409,7 +409,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		if err != nil {
 			// ⚠ できたぶんは残す（図面の枝と同じ——捨てると押し直しで二重にできる）。
 			cms.JSONFail(w, http.StatusInternalServerError,
-				"受注ページを作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
+				"案件ページを作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
 			return
 		}
 		auth.Audit(user.Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
@@ -601,7 +601,7 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 // 受注明細表の列の並び。機械が書くのは**題と値と行の数**だけです（利用者:「テンプレートには
 // スラッシュメニューから表などの印を置き、コードはそれを埋めてはどうでしょう？」）。
 // テンプレートが無ければ受注ページを作りません（`cms.ErrNoPageTemplate`）。
-const OrderPageTemplate = "受注ページ"
+const OrderPageTemplate = "案件ページ"
 
 // buildOrderPageHTML は受注ページの本文を、テンプレート tmpl を埋めて組みます。
 //
@@ -617,12 +617,12 @@ const OrderPageTemplate = "受注ページ"
 //
 // 行の `状態` は「未着手」で始まります（進捗の起点）。
 func buildOrderPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment) (string, error) {
-	title := "受注 " + cms.NormalizeNameForIngest(j.OrderNo)
+	title := "発注書 " + cms.NormalizeNameForIngest(j.OrderNo)
 	if cms.NormalizeNameForIngest(j.OrderNo) == "" {
 		if cms.NormalizeNameForIngest(j.Customer) != "" {
-			title = "受注（" + cms.NormalizeNameForIngest(j.Customer) + "）"
+			title = "発注書（" + cms.NormalizeNameForIngest(j.Customer) + "）"
 		} else {
-			title = "受注（番号不明）"
+			title = "発注書（番号不明）"
 		}
 	}
 

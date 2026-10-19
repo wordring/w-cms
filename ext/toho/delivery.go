@@ -47,7 +47,7 @@ const (
 func deliveryItemColumns() []cms.VocabColumn {
 	return []cms.VocabColumn{
 		{Field: "our-item-id", Label: OurItemNoTag, Type: cms.ColRef},
-		{Field: "order", Label: "受注", Type: cms.ColRef},
+		{Field: "order", Label: "案件", Type: cms.ColRef},
 		{Field: "order-no", Label: OrderNoTag, Type: cms.ColCode},
 		{Field: "item-id", Label: ItemNoTag, Type: cms.ColCode},
 		{Field: "item-name", Label: "品名", Type: cms.ColText},
@@ -72,7 +72,7 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     DeliveryTemplate,
 		Extension: "toho",
-		Why: "受注残表の「🚚 選んだ行で納品書を作る」が、納品書ページ（記録／年／月／製造記録）を作るときに写します。" +
+		Why: "案件残表の「🚚 選んだ行で納品書を作る」が、納品書ページ（記録／年／月／製造記録）を作るときに写します。" +
 			"キャプション「納品明細表」の表が要ります（タグ 納品書番号・客先・納品日・発行日・納品担当・納品場所・ページ種類〔弊社納品書〕は、あれば埋めます）。",
 	})
 }
@@ -95,15 +95,15 @@ type deliveryLine struct {
 func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
 	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(p.Order), "/"))
 	if !ok {
-		return deliveryLine{}, "受注ページの番号が読めません: " + p.Order
+		return deliveryLine{}, "案件ページの番号が読めません: " + p.Order
 	}
 	pid := pageNum(id)
 	if !page.CanView(user, pid) || pageKindOf(pid) != PageKindCustomerOrder {
-		return deliveryLine{}, "受注ページが見つかりません: /" + id
+		return deliveryLine{}, "案件ページが見つかりません: /" + id
 	}
 	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
 	if err != nil {
-		return deliveryLine{}, "受注明細表を読めません: /" + id
+		return deliveryLine{}, "案件明細表を読めません: /" + id
 	}
 	for _, r := range rows {
 		if r.RowNo != p.Row {
@@ -111,7 +111,7 @@ func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
 		}
 		v := r.Values
 		if strings.TrimSpace(v["item-id"]) != strings.TrimSpace(p.Item) {
-			return deliveryLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（受注フォルダを開き直してください）"
+			return deliveryLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（案件フォルダを開き直してください）"
 		}
 		tags, _ := cms.TagsOfPage(database.DB, pid)
 		qty := strings.TrimSpace(p.Qty)
@@ -125,7 +125,7 @@ func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
 			Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)),
 		}, ""
 	}
-	return deliveryLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（受注フォルダを開き直してください）"
+	return deliveryLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（案件フォルダを開き直してください）"
 }
 
 // buildDeliveryHTML は納品書ページの本文を、テンプレート tmpl を埋めて組みます。
@@ -229,7 +229,7 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 // deliveryPickHTML は受注残表の1行の「納品」の選ぶ欄です（残りが無い行は選べない）。
 func deliveryPickHTML(r backlogRow, client string) string {
 	if r.Remaining <= 0 {
-		return `<input type="checkbox" disabled title="受注残がありません">`
+		return `<input type="checkbox" disabled title="案件残がありません">`
 	}
 	return `<input type="checkbox" class="backlog-dlv-pick" title="この行を納品書に載せる" data-order="` + stdhtml.EscapeString(r.OrderPageID) +
 		`" data-row="` + strconv.Itoa(r.RowNo) + `" data-item="` + stdhtml.EscapeString(r.ItemNo) + `" data-name="` +

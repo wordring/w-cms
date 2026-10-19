@@ -49,7 +49,7 @@ func TestRFQDupKeyLooksAtLot(t *testing.T) {
 func oldRFQNeedsHTML(rows ...string) string {
 	var b strings.Builder
 	b.WriteString(`<section><table><caption>見積依頼必要部材表</caption><tbody>` +
-		`<tr><th>弊社品番</th><th>受注</th><th>種類</th><th>番号</th><th>品番</th><th>品名</th><th>加工内容</th><th>材質</th>` +
+		`<tr><th>弊社品番</th><th>案件</th><th>種類</th><th>番号</th><th>品番</th><th>品名</th><th>加工内容</th><th>材質</th>` +
 		`<th>形状</th><th>寸法</th><th>表面</th><th>仕様</th><th>支給</th><th>数量</th><th>単位</th><th>備考</th></tr>`)
 	for _, r := range rows {
 		b.WriteString(r)
@@ -124,7 +124,7 @@ func TestRFQOldDraftKeepsLot(t *testing.T) {
 	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"})
 	// ロットの列の無い見積依頼部材表を1枚置く（当時の宣言の見出し）。
 	oldDraft := `<section><table><caption>見積依頼部材表</caption><tbody>` +
-		`<tr><th>弊社品番</th><th>受注</th><th>種類</th><th>番号</th><th>品番</th><th>品名</th><th>加工内容</th><th>材質</th>` +
+		`<tr><th>弊社品番</th><th>案件</th><th>種類</th><th>番号</th><th>品番</th><th>品名</th><th>加工内容</th><th>材質</th>` +
 		`<th>形状</th><th>寸法</th><th>表面</th><th>仕様</th><th>支給</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>` +
 		`<tr><td></td><td></td><td>購入部品</td><td></td><td>M8-20</td><td>六角ボルト</td><td></td><td></td><td></td><td></td>` +
 		`<td></td><td></td><td></td><td>10</td><td>本</td><td></td><td></td><td></td></tr></tbody></table></section>`

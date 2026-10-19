@@ -185,7 +185,7 @@ function buildZip(files) { // files: [{name, data}]
         check('PDFリンクの横に解析ボタンが出る', await page.locator('p .attach-analyze').count() === 1);
         check('ZIP目録には解析ボタンが出ない（目録は読むだけ）', await page.locator('.attach-zip-list .attach-analyze').count() === 0);
         await page.locator('p .attach-analyze').click();
-        await page.waitForFunction(() => /GEMINI_API_KEY|発注書ではない|解析できませんでした|受注ページを作りました/
+        await page.waitForFunction(() => /GEMINI_API_KEY|発注書ではない|解析できませんでした|案件ページを作りました/
             .test(document.getElementById('w-toast-host').innerText), null, { timeout: 30000 });
         check('解析の応答が通知される', true);
 

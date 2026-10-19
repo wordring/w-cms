@@ -79,18 +79,18 @@ func TestLossShowsOnOrderPageAndBacklog(t *testing.T) {
 	// 受注ページ——行の末尾に「見積との差」（赤字の行だけ文）。
 	orderBody := func(rows string) string {
 		return `<h1>受注</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindCustomerOrder + `</dd><dt>発注元</dt><dd>あけぼの精工</dd></dl>` +
-			`<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
+			`<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 			`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` + rows + `</tbody></table>`
 	}
 	body := orderBody(row("30", "550"))
 	req := auth.WithUser(httptest.NewRequest("GET", "/000894", nil), adminUser())
 	view := cms.RenderComputedViews(req, 894, body)
 	if !strings.Contains(view, "見積との差") || !strings.Contains(view, "⚠ 赤字 50円（見積 600円・ロット20）") {
-		t.Errorf("受注ページの明細に赤字の文がありません:\n%s", view)
+		t.Errorf("案件ページの明細に赤字の文がありません:\n%s", view)
 	}
 	body2 := orderBody(row("30", "700"))
 	if v := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000895", nil), adminUser()), 895, body2); strings.Contains(v, "見積との差") {
-		t.Errorf("赤字の無い受注ページに列を足しています")
+		t.Errorf("赤字の無い案件ページに列を足しています")
 	}
 	gs := backlogGroups(adminUser())
 	var lossRows, okRows int
@@ -99,7 +99,7 @@ func TestLossShowsOnOrderPageAndBacklog(t *testing.T) {
 			if r.Loss != "" {
 				lossRows++
 				if !strings.Contains(r.Loss, "赤字 50円") {
-					t.Errorf("受注残の赤字の文が違います: %q", r.Loss)
+					t.Errorf("案件残の赤字の文が違います: %q", r.Loss)
 				}
 			} else {
 				okRows++
@@ -107,10 +107,10 @@ func TestLossShowsOnOrderPageAndBacklog(t *testing.T) {
 		}
 	}
 	if lossRows != 1 || okRows != 1 {
-		t.Errorf("受注残の赤字の行が %d・そうでない行が %d です（1と1のはず）", lossRows, okRows)
+		t.Errorf("案件残の赤字の行が %d・そうでない行が %d です（1と1のはず）", lossRows, okRows)
 	}
 	out := backlogViewHTML(adminUser(), 893)
 	if !strings.Contains(out, `class="backlog-loss"`) || !strings.Contains(out, "backlog-loss-note") {
-		t.Errorf("受注残表に赤字の印がありません")
+		t.Errorf("案件残表に赤字の印がありません")
 	}
 }

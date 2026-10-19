@@ -15,7 +15,7 @@ import (
 
 func pricedOrderBody(no, client, date string, rows ...[5]string) string {
 	b := `<h1>受注 ` + no + `</h1><dl data-type="tags"><dt>` + OrderNoTag + `</dt><dd>` + no + `</dd><dt>` + OrderClientTag + `</dt><dd>` + client +
-		`</dd><dt>` + OrderedAtTag + `</dt><dd>` + date + `</dd></dl><table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+		`</dd><dt>` + OrderedAtTag + `</dt><dd>` + date + `</dd></dl><table data-type="` + clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単価</th><th>状態</th></tr>`
 	for _, r := range rows {
 		b += `<tr><td>` + r[0] + `</td><td>` + r[1] + `</td><td>カバー</td><td>` + r[2] + `</td><td>` + r[3] + `</td><td>` + r[4] + `</td></tr>`

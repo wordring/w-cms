@@ -17,7 +17,7 @@ import (
 func seedDelivery(t *testing.T, id int, rows ...[3]string) {
 	t.Helper()
 	body := `<h1>【弊社】納品書</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindOurDelivery + `</dd></dl>` +
-		`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>受注</th><th>発注書番号</th><th>品番</th><th>品名</th>` +
+		`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>発注書番号</th><th>品番</th><th>品名</th>` +
 		`<th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>`
 	for _, r := range rows {
 		body += `<tr><td></td><td>` + r[0] + `</td><td></td><td>` + r[1] + `</td><td></td><td>` + r[2] + `</td><td>個</td><td></td><td></td></tr>`
@@ -36,7 +36,7 @@ func TestShippedCountsDeliveries(t *testing.T) {
 	seedDelivery(t, 881, [3]string{"000890", "A-1", "4"}, [3]string{"000891", "A-1", "100"})
 	seedDelivery(t, 882, [3]string{"000890", "a-1", "3"}) // 品番の揺れは畳む
 	// ページ種類の無いページ（写しなど）は数えない。
-	syncBody(t, 883, `<h1>写し</h1><table><caption>納品明細表</caption><tbody><tr><th>受注</th><th>品番</th><th>数量</th></tr>`+
+	syncBody(t, 883, `<h1>写し</h1><table><caption>納品明細表</caption><tbody><tr><th>案件</th><th>品番</th><th>数量</th></tr>`+
 		`<tr><td>000890</td><td>A-1</td><td>50</td></tr></tbody></table>`)
 
 	look := newShippedLookup(database.DB)
@@ -49,21 +49,21 @@ func TestShippedCountsDeliveries(t *testing.T) {
 
 	// 品番が空の行は品名で結ぶ（品番の空いた行どうしの数を重ねない）。
 	syncBody(t, 884, `<h1>【弊社】納品書</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindOurDelivery+`</dd></dl>`+
-		`<table><caption>納品明細表</caption><tbody><tr><th>受注</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
+		`<table><caption>納品明細表</caption><tbody><tr><th>案件</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
 		`<tr><td>000892</td><td></td><td>ブラケット(L)</td><td>200</td></tr><tr><td>000892</td><td></td><td>カバー</td><td>50</td></tr></tbody></table>`)
 	look = newShippedLookup(database.DB)
 	if l, v := look.of("000892", "", "ブラケット(L)"), look.of("000892", "", "カバー"); l != 200 || v != 50 {
 		t.Errorf("⚠ 品番の空いた行が品名で分かれていません: ブラケット(L) %v・カバー %v（200・50 を期待）", l, v)
 	}
 
-	order := `<h1>受注</h1><table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+	order := `<h1>受注</h1><table data-type="` + clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単価</th><th>出荷済数量</th><th>状態</th></tr>` +
 		`<tr><td></td><td>A-1</td><td>甲</td><td>10</td><td>100</td><td>9</td><td>未着手</td></tr></tbody></table>`
 	syncBody(t, 890, order)
 	out := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000890", nil), adminUser()), 890, order)
 	for _, want := range []string{"shipped-mirror", ">7（⚠ 欄に書いた 9 は使いません", "受注残高: 300円"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("⚠ 受注ページに %q がありません:\n%s", want, out)
+			t.Errorf("⚠ 案件ページに %q がありません:\n%s", want, out)
 		}
 	}
 }

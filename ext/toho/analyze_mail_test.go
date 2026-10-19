@@ -64,8 +64,8 @@ func TestAnalyzeMailCreatesOrderPage(t *testing.T) {
 		Pages []comm.MadePage `json:"pages"`
 	}
 	json.Unmarshal(rr.Body.Bytes(), &made)
-	if len(made.Pages) != 1 || made.Pages[0].PageID == "" || made.Pages[0].Kind != "受注" {
-		t.Fatalf("受注ページができていません: %s", rr.Body.String())
+	if len(made.Pages) != 1 || made.Pages[0].PageID == "" || made.Pages[0].Kind != "案件" {
+		t.Fatalf("案件ページができていません: %s", rr.Body.String())
 	}
 	res := made.Pages[0]
 	body := readPageBody(t, res.PageID)
@@ -79,10 +79,10 @@ func TestAnalyzeMailCreatesOrderPage(t *testing.T) {
 		t.Errorf("⚠ 原本の PDF の枠が残っています（空の枠は「参照がありません」になる）:\n%s", body)
 	}
 	if meta, _ := page.ReadSidecar(res.PageID); meta.ParentID != id {
-		t.Errorf("受注ページがメールの記録の子になっていません: 親=%s", meta.ParentID)
+		t.Errorf("案件ページがメールの記録の子になっていません: 親=%s", meta.ParentID)
 	}
 	if marks := mailOrderPages(&auth.User{Username: "alice"}, id); len(marks) != 1 || marks[0].PageID != res.PageID {
-		t.Errorf("メールの記録から作った受注ページの印が引けません: %+v", marks)
+		t.Errorf("メールの記録から作った案件ページの印が引けません: %+v", marks)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestAnalyzeMailRefusesNonOrder(t *testing.T) {
 		t.Fatalf("注文ではないメールの答えが違います: %d %s", rr.Code, rr.Body.String())
 	}
 	if marks := mailOrderPages(&auth.User{Username: "alice"}, id); len(marks) != 0 {
-		t.Errorf("注文ではないのに受注ページを作っています: %+v", marks)
+		t.Errorf("注文ではないのに案件ページを作っています: %+v", marks)
 	}
 
 	seedBody(t, id, "<h1>ただのページ</h1><pre>K120-3 5個</pre>")

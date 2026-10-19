@@ -33,7 +33,7 @@ const PRODUCT_BODY = '<h1>【E2E】加工製品（発注部材表）</h1>' +
 const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1>' +
   '<dl data-type="tags"><dt>発注書番号</dt><dd>E2E-DRAFT-PO</dd>' +
   '<dt>発注元</dt><dd>テスト商店</dd><dt>発注日</dt><dd>2026-09-23</dd></dl>' +
-  '<table data-type="client-order-items"><caption>受注明細表</caption><tbody>' +
+  '<table data-type="client-order-items"><caption>案件明細表</caption><tbody>' +
   '<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>状態</th></tr>' +
   '<tr><td></td><td>' + CODE + '</td><td>E2E ブラケット</td><td>2</td><td>未着手</td></tr>' +
   '</tbody></table>';

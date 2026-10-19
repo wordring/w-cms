@@ -393,7 +393,7 @@ func TestLinkByCodeAndNameFirst(t *testing.T) {
 	user := &auth.User{Username: "root", IsAdmin: true}
 
 	body := `<h1>受注 A-2</h1><dl data-type="tags"><dt>発注元</dt><dd>南北スポーツ</dd></dl><table data-type="` +
-		clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+		clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>` +
 		`<tr><td></td><td>K120-05</td><td>カバー 左</td><td>2</td></tr>` +
 		`<tr><td></td><td>K120-05</td><td>ｶﾊﾞｰ右</td><td>2</td></tr>` +

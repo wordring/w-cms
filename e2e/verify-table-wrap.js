@@ -42,7 +42,7 @@ const LONG_NAME = '受けブラケット組立て用ロングプレート';
 const LONG_NOTE = '材質変更の連絡あり。先方の指示で板厚を変更。次回以降もこの指示が続くかは未確認です。';
 
 const BODY = '<h1>表の折り返し</h1>' +
-  '<table data-type="client-order-items"><caption>受注明細表</caption><tbody>' +
+  '<table data-type="client-order-items"><caption>案件明細表</caption><tbody>' +
   '<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>' +
   '<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>' +
   '<tr><td>000123</td><td>K120-01-211</td><td>' + LONG_NAME + '</td><td>100</td><td>個</td>' +
@@ -109,7 +109,7 @@ const BODY = '<h1>表の折り返し</h1>' +
     // 読む人に分かる形にする——E2E の既存の流儀）。
     const backlogPage = await findBacklogPage(page, BASE);
     if (!backlogPage) {
-      console.log('  -- 受注残表を置いたページが無いので飛ばします');
+      console.log('  -- 案件残表を置いたページが無いので飛ばします');
     } else {
       await page.setViewportSize({ width: 1000, height: 900 });
       await page.goto(BASE + backlogPage);
@@ -130,9 +130,9 @@ const BODY = '<h1>表の折り返し</h1>' +
           overflowX: getComputedStyle(t).overflowX,
         };
       });
-      const say = (ok, msg) => { console.log((ok ? '  OK 受注残 ' : '  NG 受注残 ') + msg); if (!ok) bad++; };
-      if (!r) console.log('  -- 受注残表が描かれていないので飛ばします');
-      else if (r.empty) console.log('  -- 受注残が0行なので飛ばします');
+      const say = (ok, msg) => { console.log((ok ? '  OK 案件残 ' : '  NG 案件残 ') + msg); if (!ok) bad++; };
+      if (!r) console.log('  -- 案件残表が描かれていないので飛ばします');
+      else if (r.empty) console.log('  -- 案件残が0行なので飛ばします');
       else {
         say(r.othersNowrap, '備考以外は1行');
         say(r.noteWrap === 'normal', '備考は折り返す（' + r.noteWrap + '）');

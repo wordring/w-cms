@@ -34,10 +34,10 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
   let root = '', order = '', mfg = '';
   try {
     await login(page, BASE);
-    root = await makePage(page, '<h1>【E2E】受注残から製造</h1><section data-mirror="受注残"></section>');
+    root = await makePage(page, '<h1>【E2E】案件残から製造</h1><section data-mirror="案件残"></section>');
     order = await makePage(page, '<h1>受注 E2E-MFG</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-MFG-1</dd>' +
       '<dt>発注元</dt><dd>【E2E】製造の客先</dd><dt>発注日</dt><dd>2026-10-19</dd><dt>納期</dt><dd>2026-12-31</dd></dl>' +
-      '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
+      '<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>状態</th></tr>' +
       '<tr><td></td><td>E2E-MFG-A</td><td>【E2E】製造の部品</td><td>20</td><td>個</td><td>1500</td><td>未着手</td></tr></tbody></table>', root);
     check('当て先を作れた', !!root && !!order);
 
@@ -49,7 +49,7 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
       const th = Array.from(document.querySelectorAll('#w-editor-content .backlog-table th')).find((x) => x.textContent.trim() === '製造');
       return th ? th.className : null;
     });
-    check('① 受注残表に「製造」の欄（紙に出さない印）', head !== null && head.includes('no-print'), String(head));
+    check('① 案件残表に「製造」の欄（紙に出さない印）', head !== null && head.includes('no-print'), String(head));
     check('① 表の上に「🏭 選んだ行で製造開始」', (await page.locator('#w-editor-content .backlog-mfg-go').count()) === 1);
     // ②
     await page.click('#w-editor-content .backlog-mfg-go');
@@ -72,7 +72,7 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
     if (mfg) {
       const raw = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), mfg);
       check('④ 題は品名（装置名が無いので）', raw.includes('<h1>【E2E】製造の部品</h1>'), raw.slice(0, 120));
-      check('④ 製造明細表に受注明細の写しと直した数（8）', raw.includes('<caption>製造明細表</caption>') && raw.includes('E2E-MFG-A') &&
+      check('④ 製造明細表に案件明細の写しと直した数（8）', raw.includes('<caption>製造明細表</caption>') && raw.includes('E2E-MFG-A') &&
         />\s*8\s*</.test(raw) && raw.includes(order) && raw.includes('<dd>製造</dd>'), raw.replace(/\s+/g, ' ').slice(0, 500));
       const p1 = await parentOf(page, mfg);
       const p2 = await parentOf(page, p1);
@@ -86,7 +86,7 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
         const pick = tr && tr.querySelector('.backlog-mfg-pick');
         return { link: link ? link.getAttribute('href') : null, free: pick ? pick.dataset.free : null };
       }, row);
-      check('⑤ 受注残表に「製造中」のリンクと、残りの 12', cell.link === '/' + mfg && cell.free === '12', JSON.stringify(cell));
+      check('⑤ 案件残表に「製造中」のリンクと、残りの 12', cell.link === '/' + mfg && cell.free === '12', JSON.stringify(cell));
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

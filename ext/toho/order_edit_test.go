@@ -19,7 +19,7 @@ import (
 // editBody は受注明細表を2行持つ本文を組みます。
 func editBody() string {
 	return `<h1>受注</h1><table data-type="` + clientOrderItemsType + `">` +
-		`<caption>受注明細表</caption><tbody>` +
+		`<caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th>` +
 		`<th>備考</th><th>状態</th><th>材料発注</th></tr>` +
 		`<tr><td></td><td>A-1</td><td>甲</td><td>100</td><td></td><td></td><td>未着手</td><td></td></tr>` +

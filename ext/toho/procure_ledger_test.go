@@ -44,7 +44,7 @@ func setPurchase(t *testing.T, id int, qty, forOrder string) {
 	addPage(t, id, 0, "発注 わかば鋼業", "root", "302", true)
 	syncBody(t, id, `<h1>発注 わかば鋼業</h1>`+
 		`<table data-type="`+ourOrderItemsType+`"><tbody>`+
-		`<tr><th>弊社品番</th><th>受注</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th></tr>`+
+		`<tr><th>弊社品番</th><th>案件</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th></tr>`+
 		`<tr><td>000041</td><td>`+forOrder+`</td><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>`+qty+`</td></tr>`+
 		`</tbody></table>`)
 }

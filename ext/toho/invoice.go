@@ -56,7 +56,7 @@ func invoiceItemColumns() []cms.VocabColumn {
 	return []cms.VocabColumn{
 		{Field: "delivered-at", Label: DeliveredAtTag, Type: cms.ColDate},
 		{Field: "delivery", Label: "納品書", Type: cms.ColRef},
-		{Field: "order", Label: "受注", Type: cms.ColRef},
+		{Field: "order", Label: "案件", Type: cms.ColRef},
 		{Field: "order-no", Label: OrderNoTag, Type: cms.ColCode},
 		{Field: "our-item-id", Label: OurItemNoTag, Type: cms.ColRef},
 		{Field: "item-id", Label: ItemNoTag, Type: cms.ColCode},

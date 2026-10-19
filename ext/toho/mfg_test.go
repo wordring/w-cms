@@ -66,7 +66,7 @@ func TestMfgNewFromBacklogRows(t *testing.T) {
 
 	view := backlogViewHTML(u, 971)
 	if !strings.Contains(view, `<a class="backlog-mfg-link" href="/`+id+`">製造中</a>`) || !strings.Contains(view, `data-free="60"`) {
-		t.Errorf("⚠ 受注残表に「製造中」と、残りの 60 が出ていません:\n%s", view)
+		t.Errorf("⚠ 案件残表に「製造中」と、残りの 60 が出ていません:\n%s", view)
 	}
 
 	// まだ製造に入っていない数（60）より多くは入れられない。

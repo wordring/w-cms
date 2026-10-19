@@ -47,7 +47,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   // 加工製品の置き場「製造」（2026-10-16 までの題は「取引先」）は東邦の業務の持ち物（ext/toho/materials.go）。
   ok(titles.includes('製造台帳') === has('toho'),
      has('toho') ? '下請けが載っている → 製造が出る' : '下請けが無い → 製造は出ない');
-  ok(titles.includes('受注') === has('toho'),
+  ok(titles.includes('案件') === has('toho'),
      has('toho') ? '下請けが載っている → 受注が出る' : '下請けが無い → 受注は出ない');
 
   // **理由は必ず添える**（押す人が、押してよいかを自分で判断できるように）。

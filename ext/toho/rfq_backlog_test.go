@@ -27,17 +27,17 @@ func TestRFQCollectFromBacklog(t *testing.T) {
 	got := map[string]string{}
 	for _, r := range rows {
 		if r.ForOrder != "000060" {
-			t.Errorf("⚠ 行の「受注」の列に受注ページが入っていません: %+v", r)
+			t.Errorf("⚠ 行の「受注」の列に案件ページが入っていません: %+v", r)
 		}
 		got[r.Material] = r.Quantity
 	}
 	if got["鉄"] != "6" || got["SUS304"] != "3" {
-		t.Errorf("数が受注残 × 部材の数量ではありません（鉄 3×2=6・SUS304 3×1=3）: %v", got)
+		t.Errorf("数が案件残 × 部材の数量ではありません（鉄 3×2=6・SUS304 3×1=3）: %v", got)
 	}
 	if code, _ := postRFQ(t, u, RFQCollectAPIHandler, map[string]any{
 		"items": []map[string]string{{"product": "000051", "lot": "3", "for_order": "受注"}},
 	}); code != 409 && code != 400 {
-		t.Errorf("読めない受注ページの番号なのに %d", code)
+		t.Errorf("読めない案件ページの番号なのに %d", code)
 	}
 }
 
@@ -55,10 +55,10 @@ func TestBacklogRFQPick(t *testing.T) {
 		`<input type="checkbox" disabled title="弊社品番が空なので部材見積依頼へ送れません">`,
 		`<div class="backlog-rfq-bar no-print"><button type="button" class="backlog-rfq-go">`} {
 		if !strings.Contains(out, want) {
-			t.Errorf("受注残表に %q がありません:\n%s", want, out)
+			t.Errorf("案件残表に %q がありません:\n%s", want, out)
 		}
 	}
-	if got := rfqPickHTML(backlogRow{OurItemNo: "000777", Remaining: 0, OrderPageID: "000602"}); !strings.Contains(got, "受注残がありません") {
+	if got := rfqPickHTML(backlogRow{OurItemNo: "000777", Remaining: 0, OrderPageID: "000602"}); !strings.Contains(got, "案件残がありません") {
 		t.Errorf("残が無い行は選べないはず: %s", got)
 	}
 }

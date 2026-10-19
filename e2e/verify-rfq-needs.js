@@ -25,7 +25,7 @@ const check = (label, ok, note = '') => {
 
 const row = (labels, tag) => '<tr>' + labels.map((l) => '<' + tag + '>' + l + '</' + tag + '>').join('') + '</tr>';
 const TEMP = ['品番', '品名', '材質', '形状', '寸法', '表面', '数量', '単位', '備考'];
-const NEEDS = ['弊社品番', '受注', '種類', '番号', '品番', '品名', '加工内容', '材質', '形状', '寸法', '表面', '仕様', '支給', '数量', '単位', '備考'];
+const NEEDS = ['弊社品番', '案件', '種類', '番号', '品番', '品名', '加工内容', '材質', '形状', '寸法', '表面', '仕様', '支給', '数量', '単位', '備考'];
 const BOX = '<h1>【E2E】見積依頼の置き場</h1>' +
   '<section data-mirror="再部材見積依頼"></section>' +
   '<table><caption>部材見積依頼の臨時部材表</caption><tbody>' + row(TEMP, 'th') +

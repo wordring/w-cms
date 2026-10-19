@@ -56,21 +56,21 @@ const record = (dir, subject) => '<h1>' + subject + '</h1><dl data-type="tags">'
     await sel.waitFor({ timeout: 8000 }).catch(() => {});
     const opts = await sel.locator('option').allTextContents().catch(() => []);
     // 2026-10-14: 10-05 に「部材見積依頼の返事ページ」が足された（ext/toho/rfq_reply_page.go・【要求】部材見積依頼 §3）ので、選ぶ欄は3つ。
-    check('受信メールに「作るページ」の選ぶ欄（受注ページ・加工製品ページ・部材見積依頼の返事ページ）と「作成」',
-      opts.join('・') === '受注ページ・加工製品ページ・部材見積依頼の返事ページ' &&await page.locator('#w-editor-content .record-make-go').count() === 1, opts.join('・'));
+    check('受信メールに「作るページ」の選ぶ欄（案件ページ・加工製品ページ・部材見積依頼の返事ページ）と「作成」',
+      opts.join('・') === '案件ページ・加工製品ページ・部材見積依頼の返事ページ' &&await page.locator('#w-editor-content .record-make-go').count() === 1, opts.join('・'));
 
     // ② 受注ページ——口は差し止める
     let sent = null;
     await page.route('**/api/record-make', async (route) => {
       sent = JSON.parse(route.request().postData() || '{}');
       await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ success: true, pages: [{ page_id: '999998', title: '受注（試験）', kind: '受注' }], say: '加工製品と 1 行を結びました。' }) });
+        body: JSON.stringify({ success: true, pages: [{ page_id: '999998', title: '受注（試験）', kind: '案件' }], say: '加工製品と 1 行を結びました。' }) });
     });
-    await sel.selectOption('受注ページ');
+    await sel.selectOption('案件ページ');
     await page.locator('#w-editor-content .record-make-go').click();
     for (let i = 0; i < 40 && !sent; i++) await page.waitForTimeout(200);
-    check('このページと種類を口へ渡す', !!sent && sent.page_id === inMail && sent.kind === '受注ページ', JSON.stringify(sent));
-    const toast = page.locator('.toast, #w-toasts, [id^="w-toast"]').filter({ hasText: '受注ページを作りました' });
+    check('このページと種類を口へ渡す', !!sent && sent.page_id === inMail && sent.kind === '案件ページ', JSON.stringify(sent));
+    const toast = page.locator('.toast, #w-toasts, [id^="w-toast"]').filter({ hasText: '案件ページを作りました' });
     await toast.first().waitFor({ timeout: 5000 }).catch(() => {});
     check('できたページを知らせる', await toast.count() > 0);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
@@ -82,7 +82,7 @@ const record = (dir, subject) => '<h1>' + subject + '</h1><dl data-type="tags">'
     await page.goto(BASE + '/' + inMail);
     const mark = page.locator('#w-editor-content .record-make a[href="/' + order + '"]');
     await mark.waitFor({ timeout: 8000 }).catch(() => {});
-    check('作った受注ページの印（✓ 受注）が横に出る', await mark.count() === 1 && ((await mark.textContent()) || '').includes('受注'));
+    check('作った案件ページの印（✓ 受注）が横に出る', await mark.count() === 1 && ((await mark.textContent()) || '').includes('案件'));
 
     // ④ 加工製品ページ——本当に作る（Gemini は呼ばない）
     await page.locator('#w-editor-content .record-make-kind').selectOption('加工製品ページ');

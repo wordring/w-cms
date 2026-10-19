@@ -20,7 +20,7 @@ const check = (label, ok, note = '') => {
 const madeCell = (page, id) => page.evaluate(async (pid) => {
   const raw = await (await fetch('/api/load?id=' + pid)).text();
   const doc = new DOMParser().parseFromString(raw, 'text/html');
-  const t = [...doc.querySelectorAll('table')].find((x) => (x.querySelector('caption') || {}).textContent === '受注明細表');
+  const t = [...doc.querySelectorAll('table')].find((x) => (x.querySelector('caption') || {}).textContent === '案件明細表');
   if (!t) return null;
   const rows = [...t.querySelectorAll('tr')];
   const i = [...rows[0].children].findIndex((c) => c.textContent.trim() === '製造完了');
@@ -35,10 +35,10 @@ const madeCell = (page, id) => page.evaluate(async (pid) => {
   let root = '', order = '';
   try {
     await login(page, BASE);
-    root = await makePage(page, '<h1>【E2E】受注残の製造完了</h1><section data-mirror="受注残"></section>');
+    root = await makePage(page, '<h1>【E2E】案件残の製造完了</h1><section data-mirror="案件残"></section>');
     order = await makePage(page, '<h1>受注 E2E-MADE</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-MADE-1</dd>' +
       '<dt>発注元</dt><dd>【E2E】製造完了の客先</dd><dt>発注日</dt><dd>2026-10-17</dd><dt>納期</dt><dd>2026-12-31</dd></dl>' +
-      '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th><th>材料発注</th><th>製造完了</th><th>納品書発行</th></tr>' +
+      '<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th><th>材料発注</th><th>製造完了</th><th>納品書発行</th></tr>' +
       '<tr><td></td><td>E2E-MADE-A</td><td>【E2E】部品</td><td>5</td><td></td><td>未着手</td><td></td><td></td><td></td></tr></tbody></table>', root);
     check('当て先を作れた', !!root && !!order);
 
@@ -63,7 +63,7 @@ const madeCell = (page, id) => page.evaluate(async (pid) => {
 
     await box.check();
     await page.waitForTimeout(1500);
-    check('② 押すと受注ページの「製造完了」に「済」', (await madeCell(page, order)) === '済', String(await madeCell(page, order)));
+    check('② 押すと案件ページの「製造完了」に「済」', (await madeCell(page, order)) === '済', String(await madeCell(page, order)));
     await box.uncheck();
     await page.waitForTimeout(1500);
     check('③ 外すと空に戻る', (await madeCell(page, order)) === '', String(await madeCell(page, order)));

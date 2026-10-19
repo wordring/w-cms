@@ -21,8 +21,8 @@ import (
 // 受注明細表は**テンプレートの列の並び**に従い、見出しの言葉で値を合わせる。テンプレートに無い
 // 列は値があれば右端へ足す。タグもテンプレートの並びのまま、無いものは末尾へ足す。
 func TestOrderPageFollowsTemplateColumns(t *testing.T) {
-	tmpl := `<h1>受注ページ</h1><dl data-type="tags"><dt>` + OrderClientTag + `</dt><dd><br/></dd></dl>` +
-		`<table><caption>受注明細表</caption><tbody>` +
+	tmpl := `<h1>案件ページ</h1><dl data-type="tags"><dt>` + OrderClientTag + `</dt><dd><br/></dd></dl>` +
+		`<table><caption>案件明細表</caption><tbody>` +
 		`<tr><th>品名</th><th>数量</th><th>弊社品番</th><th>状態</th><th>社内メモ</th></tr>` +
 		`<tr><td>見本</td><td></td><td></td><td></td><td></td></tr></tbody></table>`
 	j := &orderJudgment{IsClientOrder: true, OrderNo: "PO-1", Customer: "みなと商店", Items: []orderPDFItem{
@@ -54,10 +54,10 @@ func TestOrderPageFollowsTemplateColumns(t *testing.T) {
 	}
 
 	// 受注明細表が無いテンプレートでは作らない（明細の行き場が無い）。
-	_, err = buildOrderPageHTML(`<h1>受注ページ</h1>`, "000001", "pdf001", j)
+	_, err = buildOrderPageHTML(`<h1>案件ページ</h1>`, "000001", "pdf001", j)
 	var se *cms.TemplateSlotError
-	if !errors.As(err, &se) || !strings.Contains(err.Error(), "受注明細表") {
-		t.Errorf("受注明細表が無いのに作りました: %v", err)
+	if !errors.As(err, &se) || !strings.Contains(err.Error(), "案件明細表") {
+		t.Errorf("案件明細表が無いのに作りました: %v", err)
 	}
 }
 
@@ -137,7 +137,7 @@ func TestAnalyzeRefusesWithoutTemplateBeforeAsking(t *testing.T) {
 	const id = "000012"
 	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	putAttachment(t, id, "abc123.pdf", []byte("%PDF-1.4 fake"))
-	if _, err := cms.DeletePageToTrash("000907"); err != nil { // テンプレート「受注ページ」
+	if _, err := cms.DeletePageToTrash("000907"); err != nil { // テンプレート「案件ページ」
 		t.Fatal(err)
 	}
 	stubJudge(t, func([]byte) (*orderJudgment, error) {

@@ -41,7 +41,7 @@ const MAT = 'E2E-SKIP-' + Date.now().toString(36).toUpperCase();
     made.push(product);
     const order = await makePage(page, '<h1>【E2E】受注（手配不要）</h1>' +
       '<dl data-type="tags"><dt>発注元</dt><dd>【E2E】客先</dd><dt>納期</dt><dd>2026-12-01</dd></dl>' +
-      '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>' +
+      '<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>' +
       '<tr><td>' + product + '</td><td></td><td>E2E カバー</td><td>3</td></tr></tbody></table>');
     made.push(order);
     const host = await makePage(page, '<h1>【E2E】必要部材表の置き場</h1><section data-mirror="必要部材表"></section>');

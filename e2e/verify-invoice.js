@@ -38,7 +38,7 @@ const rowSel = '#w-editor-content tr.invoice-make-row[data-client="' + CLIENT + 
     root = await makePage(page, '<h1>【E2E】請求書を作る</h1><section data-mirror="請求書を作る"></section>');
     dlv = await makePage(page, '<h1>【弊社】納品書　' + CLIENT + '</h1><dl data-type="tags"><dt>ページ種類</dt><dd>弊社納品書</dd>' +
       '<dt>客先</dt><dd>' + CLIENT + '</dd><dt>納品日</dt><dd>2026-09-25</dd><dt>発行日</dt><dd>2026-09-25</dd></dl>' +
-      '<table><caption>納品明細表</caption><tbody><tr><th>受注</th><th>発注書番号</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th></tr>' +
+      '<table><caption>納品明細表</caption><tbody><tr><th>案件</th><th>発注書番号</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th></tr>' +
       '<tr><td>000001</td><td>E2E-PO</td><td>E2E-INV-A</td><td>【E2E】部品A</td><td>2</td><td>個</td><td>1500</td></tr>' +
       '<tr><td>000001</td><td>E2E-PO</td><td>E2E-INV-B</td><td>【E2E】部品B</td><td>1</td><td>個</td><td></td></tr></tbody></table>', root);
     check('当て先を作れた', !!root && !!dlv);

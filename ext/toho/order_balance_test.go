@@ -9,7 +9,7 @@ import (
 // balanceTable は受注明細表を1つ組んで返します。
 func balanceTable(t *testing.T, rows string) orderBalance {
 	t.Helper()
-	nodes, err := htmldoc.ParseFragment(`<table><caption>受注明細表</caption><tbody>` +
+	nodes, err := htmldoc.ParseFragment(`<table><caption>案件明細表</caption><tbody>` +
 		`<tr><th>品番</th><th>数量</th><th>単価</th><th>出荷済数量</th><th>状態</th></tr>` + rows + `</tbody></table>`)
 	if err != nil {
 		t.Fatal(err)

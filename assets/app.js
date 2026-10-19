@@ -7048,7 +7048,7 @@
         if (orders.length) {
             const oHead = document.createElement('p');
             oHead.className = 'filing-head';
-            oHead.textContent = '受注ページは「受注」の年月へ収めます（外すものは印を外す）。';
+            oHead.textContent = '案件ページは「記録」の年月へ収めます（外すものは印を外す）。';
             panel.appendChild(oHead);
 
             const oTable = document.createElement('table');
@@ -7834,7 +7834,7 @@
                 else none.push(todo[i].path);
             }
             const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
-                (orders ? '・受注ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
+                (orders ? '・案件ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
             if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・'));
             if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
             if (drawings) lines.push('📁 整理で行き先を決めてください。');
@@ -7903,8 +7903,8 @@
             } else {
                 const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
                 notify((d.made.length > 1
-                    ? '受注ページを ' + d.made.length + '枚 作りました（このPDFに発注書が' + d.made.length + '枚入っていました）:\n'
-                    : '受注ページを作りました: ') + list, { type: 'success', duration: 0, id: 'analyze-pdf' });
+                    ? '案件ページを ' + d.made.length + '枚 作りました（このPDFに発注書が' + d.made.length + '枚入っていました）:\n'
+                    : '案件ページを作りました: ') + list, { type: 'success', duration: 0, id: 'analyze-pdf' });
                 born = true;
             }
             btn.disabled = false;
@@ -8049,7 +8049,7 @@
         items.push({ icon: '⬇', label: '保存', title: '届いたときの名前で保存します', run: () => downloadFile(info.url, info.name) });
         switch (info.kind) {
         case 'pdf':
-            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '解析（受注・図面を読む）', run: () => runAnalyzeFile(pid, file) });
+            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '解析（発注書・図面を読む）', run: () => runAnalyzeFile(pid, file) });
             items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
             break;
         case 'xlsx':
@@ -11959,7 +11959,7 @@ delegateClick([
         const panel = bar.querySelector('.backlog-dlv-panel');
         const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-dlv-pick:checked'));
         if (!picks.length) {
-            sayIn(say, '受注残表の右端の「納品」の欄で、納める行を選んでください。', 'warn');
+            sayIn(say, '案件残表の右端の「納品」の欄で、納める行を選んでください。', 'warn');
             return;
         }
         const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
@@ -12013,7 +12013,7 @@ delegateClick([
         const panel = bar.querySelector('.backlog-mfg-panel');
         const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-mfg-pick:checked'));
         if (!picks.length) {
-            sayIn(say, '受注残表の「製造」の欄で、製造を始める行を選んでください。', 'warn');
+            sayIn(say, '案件残表の「製造」の欄で、製造を始める行を選んでください。', 'warn');
             return;
         }
         const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
@@ -12106,7 +12106,7 @@ delegateClick([['.backlog-rfq-go', async (btn) => {
     const say = btn.parentElement.querySelector('.backlog-rfq-say');
     const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-rfq-pick:checked'));
     if (!picks.length) {
-        sayIn(say, '受注残表の右端の「部材見積依頼」の欄で、送る行を選んでください。', 'warn');
+        sayIn(say, '案件残表の右端の「部材見積依頼」の欄で、送る行を選んでください。', 'warn');
         return;
     }
     const items = picks.map((c) => ({ product: c.dataset.product, lot: c.dataset.lot, for_order: c.dataset.order }));
@@ -12119,7 +12119,7 @@ delegateClick([['.backlog-rfq-go', async (btn) => {
         }
         picks.forEach((c) => { c.checked = false; });
         const skipped = (r.data.skipped || []).length ? '——送れなかったもの: ' + r.data.skipped.join('／') : '';
-        const p = sayIn(say, `見積依頼必要部材表へ ${r.data.rows} 行入れました（受注残 ${picks.length} 行から）${skipped}　`);
+        const p = sayIn(say, `見積依頼必要部材表へ ${r.data.rows} 行入れました（案件残 ${picks.length} 行から）${skipped}　`);
         const a = document.createElement('a');
         a.href = '/' + r.data.page_id;
         a.textContent = '部材見積依頼を開く';
@@ -12631,7 +12631,7 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
             // ⚠ **品番・表面も運びます**（2026-09-25）——それまで送っておらず、
             //    部材発注書で**品番と表面（塗装の色・鍍金）が落ちていました**。
             const ln = {
-                product_id: at(cells, '弊社品番'), for_order: at(cells, '受注'), item_id: at(cells, '品番'),
+                product_id: at(cells, '弊社品番'), for_order: at(cells, '案件'), item_id: at(cells, '品番'),
                 item_name: at(cells, '品名'),
                 material: at(cells, '材質'), shape: at(cells, '形状'), size: at(cells, '寸法'),
                 color: at(cells, '表面'),

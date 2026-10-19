@@ -47,7 +47,7 @@ const (
 func mfgItemColumns() []cms.VocabColumn {
 	return []cms.VocabColumn{
 		{Field: "our-item-id", Label: OurItemNoTag, Type: cms.ColRef},
-		{Field: "order", Label: "受注", Type: cms.ColRef},
+		{Field: "order", Label: "案件", Type: cms.ColRef},
 		{Field: "item-id", Label: ItemNoTag, Type: cms.ColCode},
 		{Field: "item-name", Label: "品名", Type: cms.ColText},
 		{Field: "machine", Label: "装置名", Type: cms.ColText},
@@ -68,13 +68,13 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     MfgBoxTitle,
 		Extension: "toho",
-		Why: "進んでいる案件の置き場です（製造／製造ページ）。受注残表の「🏭 製造開始」が、この下に製造ページを作ります。" +
+		Why: "進んでいる案件の置き場です（製造／製造ページ）。案件残表の「🏭 製造開始」が、この下に製造ページを作ります。" +
 			"案件が終わると、製造ページは記録の年月へ移ります。",
 	})
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     MfgTemplate,
 		Extension: "toho",
-		Why: "受注残表の「🏭 製造開始」が、製造ページ（製造／…）を作るときに写します。" +
+		Why: "案件残表の「🏭 製造開始」が、製造ページ（製造／…）を作るときに写します。" +
 			"キャプション「製造明細表」の表が要ります（タグ 製造番号・客先・始めた日・ページ種類〔製造〕は、あれば埋めます）。",
 	})
 }
@@ -160,19 +160,19 @@ type mfgLine struct {
 func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machineLookup) (mfgLine, string) {
 	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(p.Order), "/"))
 	if !ok {
-		return mfgLine{}, "受注ページの番号が読めません: " + p.Order
+		return mfgLine{}, "案件ページの番号が読めません: " + p.Order
 	}
 	pid := pageNum(id)
 	if !page.CanView(user, pid) || pageKindOf(pid) != PageKindCustomerOrder {
-		return mfgLine{}, "受注ページが見つかりません: /" + id
+		return mfgLine{}, "案件ページが見つかりません: /" + id
 	}
 	tags, err := cms.TagsOfPage(database.DB, pid)
 	if err != nil {
-		return mfgLine{}, "受注ページを読めません: /" + id
+		return mfgLine{}, "案件ページを読めません: /" + id
 	}
 	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
 	if err != nil {
-		return mfgLine{}, "受注明細表を読めません: /" + id
+		return mfgLine{}, "案件明細表を読めません: /" + id
 	}
 	for _, r := range rows {
 		if r.RowNo != p.Row {
@@ -180,7 +180,7 @@ func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machin
 		}
 		v := r.Values
 		if strings.TrimSpace(v["item-id"]) != strings.TrimSpace(p.Item) {
-			return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（受注フォルダを開き直してください）"
+			return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（案件フォルダを開き直してください）"
 		}
 		q, okQ := estimateNumber(p.Qty)
 		if !okQ || q <= 0 {
@@ -202,7 +202,7 @@ func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machin
 			Unit: strings.TrimSpace(v["unit"]), Due: due, Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)), Free: free,
 		}, ""
 	}
-	return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（受注フォルダを開き直してください）"
+	return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（案件フォルダを開き直してください）"
 }
 
 // mfgTitle は製造ページの題です——「装置名、装置名…」（同じ名前は1つ）。装置名の無い行は品名。長くなったら「…ほか N」。

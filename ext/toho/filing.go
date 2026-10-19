@@ -94,7 +94,7 @@ func FilingProposalAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// ものを片付ける」なので、ボタンを2つに分ける理由がありません。
 	orders, err := orderChildrenOf(user, idInt)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "受注の一覧を作れません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "案件の一覧を作れません: "+err.Error())
 		return
 	}
 	// 区分の選択肢も返します——**選べる値は設定（語彙 `区分`）が持つ**ので、画面に

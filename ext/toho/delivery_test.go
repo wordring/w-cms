@@ -80,7 +80,7 @@ func TestDeliveryPDFRoundTrips(t *testing.T) {
 	doc := func(rows string) string {
 		return `<h1>【弊社】納品書　あけぼの精工</h1><dl data-type="tags"><dt>` + DeliveryNoTag + `</dt><dd>000870</dd>` +
 			`<dt>` + DeliveryClientTag + `</dt><dd>あけぼの精工</dd><dt>` + DeliveredAtTag + `</dt><dd>2026-10-20</dd></dl>` +
-			`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>受注</th><th>発注書番号</th><th>品番</th><th>品名</th>` +
+			`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>発注書番号</th><th>品番</th><th>品名</th>` +
 			`<th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>` + rows + `</tbody></table>`
 	}
 	priced := `<tr><td>000777</td><td>000862</td><td>PO-1</td><td>A-1</td><td>ブラケット</td><td>10</td><td>個</td><td>1500</td><td></td></tr>`

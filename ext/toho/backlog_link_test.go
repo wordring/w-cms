@@ -49,7 +49,7 @@ func TestBacklogLinksLaterProductWhenOpened(t *testing.T) {
 	}
 	body, err := cms.ReadPageBody("000602")
 	if err != nil || !strings.Contains(body, "000604") {
-		t.Errorf("受注ページに書き戻されていません（%v）:\n%s", err, body)
+		t.Errorf("案件ページに書き戻されていません（%v）:\n%s", err, body)
 	}
 	other, _ := cms.ReadPageBody("000603")
 	if !strings.Contains(other, "000777") || strings.Contains(other, "000604") {
@@ -78,7 +78,7 @@ func TestBacklogLinkSkipsEditingAndReadOnly(t *testing.T) {
 		t.Errorf("書けない人が開いたのに薄赤が消えています:\n%s", out)
 	}
 	if body, _ := cms.ReadPageBody("000612"); strings.Contains(body, "000613") {
-		t.Errorf("⚠ 書けない人が開いただけで受注ページを書き換えています:\n%s", body)
+		t.Errorf("⚠ 書けない人が開いただけで案件ページを書き換えています:\n%s", body)
 	}
 
 	// 誰かが編集中なら、書ける人が開いても飛ばす。
@@ -88,7 +88,7 @@ func TestBacklogLinkSkipsEditingAndReadOnly(t *testing.T) {
 	t.Cleanup(func() { editlock.Locks.ForceRelease(612) })
 	backlogViewHTML(adminUser(), 611)
 	if body, _ := cms.ReadPageBody("000612"); strings.Contains(body, "000613") {
-		t.Errorf("⚠ 編集中の受注ページを書き換えています:\n%s", body)
+		t.Errorf("⚠ 編集中の案件ページを書き換えています:\n%s", body)
 	}
 
 	// 編集が終われば、次に開いたときに結ぶ。

@@ -52,7 +52,7 @@ async function openSlashMenu(page) {
     await openSlashMenu(page);
     const has = async t => (await page.locator(`#w-slash-menu .slash-menu-item[data-type="${t}"]`).count()) === 1;
     check('メニューに「見出しの節」がある', await has('section'));
-    check('メニューに受注明細表がある', await has('vocab:client-order-items'));
+    check('メニューに案件明細表がある', await has('vocab:client-order-items'));
     check('メニューに部材発注明細表がある', await has('vocab:our-order-items'));
 
     // ① 見出しの節を挿して、見出しを打つ。

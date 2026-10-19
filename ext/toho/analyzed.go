@@ -199,7 +199,7 @@ func kindOfPage(pageIDInt int) string {
 		return "図面"
 	}
 	if isOrderPageTags(tags) {
-		return "受注"
+		return "案件"
 	}
 	if isRFQReplyTags(tags) {
 		return rfqReplyKind // 部材見積依頼の返事ページ（2026-10-05・rfq_reply_page.go）

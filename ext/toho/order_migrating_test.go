@@ -29,7 +29,7 @@ func TestBacklogSkipsMigratingOrders(t *testing.T) {
 	body := `<h1>受注</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindCustomerOrder + `</dd>` +
 		`<dt>発注元</dt><dd>あけぼの精工</dd>` +
 		`<dt>納期</dt><dd>2026-10-15</dd><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
-		`<table><caption>受注明細表</caption><tbody>` +
+		`<table><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		item("A-2", "移した注文", "10", "2026-10-15", "") + `</tbody></table>`
@@ -42,10 +42,10 @@ func TestBacklogSkipsMigratingOrders(t *testing.T) {
 		t.Errorf("移行中で飛ばした枚数が %d です（1のはず）", mig)
 	}
 	if len(gs) != 1 || len(gs[0].Rows) != 1 || gs[0].Rows[0].ItemName != "いまの注文" {
-		t.Fatalf("移行中の受注ページの行が受注残に出ています: %+v", gs)
+		t.Fatalf("移行中の案件ページの行が案件残に出ています: %+v", gs)
 	}
 	html := backlogViewHTML(adminUser(), 191)
-	if !strings.Contains(html, "受注ページ 1 枚は入れていません") {
+	if !strings.Contains(html, "案件ページ 1 枚は入れていません") {
 		t.Errorf("飛ばした枚数を知らせていません:\n%s", html)
 	}
 }
@@ -70,6 +70,6 @@ func TestUnorderedSkipsMigratingOrders(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(list) != 0 {
-		t.Errorf("移行中の受注ページの行が必要部材表に出ています: %#v", list)
+		t.Errorf("移行中の案件ページの行が必要部材表に出ています: %#v", list)
 	}
 }

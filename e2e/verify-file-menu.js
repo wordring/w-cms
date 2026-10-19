@@ -98,7 +98,7 @@ const check = (label, ok, note = '') => {
       await page.goto(BASE + '/' + mail);
       await page.locator('#w-editor-content .file-menu-btn').first().waitFor({ timeout: 10000 }).catch(() => {});
       const mm = await menuOf(mail + '-' + mpdf);
-      check('⑤ メールのページの PDF に 🤖 解析', mm.includes('解析（受注・図面を読む）'), mm);
+      check('⑤ メールのページの PDF に 🤖 解析', mm.includes('解析（発注書・図面を読む）'), mm);
     } else {
       console.log('通信箱か東邦の拡張が無いので ⑤ は飛ばします');
     }

@@ -31,7 +31,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     else { console.log('✗ ' + msg + (detail ? '（' + detail + '）' : '')); bad++; }
   };
 
-  const root = await makePage(page, '<h1>【E2E】受注残から見積依頼</h1><section data-mirror="受注残"></section>');
+  const root = await makePage(page, '<h1>【E2E】案件残から見積依頼</h1><section data-mirror="案件残"></section>');
   let order = '', dlv = '';
   const sent = [];
   const run = async () => {
@@ -40,13 +40,13 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     //    下の確かめは**この試験の受注ページの行だけ**を見る（data-order で絞る）。
     order = await makePage(page, '<h1>受注 E2E-1</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-1</dd><dt>発注元</dt><dd>E2E商店</dd>' +
       '<dt>発注日</dt><dd>2026-10-04</dd><dt>納期</dt><dd>2026-10-31</dd></dl>' +
-      '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th></tr>' +
+      '<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th></tr>' +
       `<tr><td>${root}</td><td>E2E-BL-1</td><td>E2E部品</td><td>10</td><td></td><td>未着手</td></tr>` +
       '<tr><td></td><td>E2E-BL-NONE</td><td>E2E部品2</td><td>5</td><td></td><td>未着手</td></tr></tbody></table>', root);
-    if (!order) { check(false, '受注ページを作れません'); return; }
+    if (!order) { check(false, '案件ページを作れません'); return; }
     // 出荷済数量は納品書から数える（2026-10-17）——3個を納めた納品書を置く（残は 10 − 3 = 7）。
     dlv = await makePage(page, '<h1>【E2E】納品書</h1><dl data-type="tags"><dt>ページ種類</dt><dd>弊社納品書</dd></dl>' +
-      '<table><caption>納品明細表</caption><tbody><tr><th>受注</th><th>品番</th><th>品名</th><th>数量</th></tr>' +
+      '<table><caption>納品明細表</caption><tbody><tr><th>案件</th><th>品番</th><th>品名</th><th>数量</th></tr>' +
       `<tr><td>${order}</td><td>E2E-BL-1</td><td>E2E部品</td><td>3</td></tr></tbody></table>`, root);
     if (!dlv) { check(false, '納品書ページを作れません'); return; }
     await page.route('**/api/rfq/collect', async (route) => {
@@ -61,13 +61,13 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
       const th = Array.from(document.querySelectorAll('#w-editor-content .backlog-table th')).find((x) => x.textContent.trim() === '部材見積依頼');
       return th ? th.className : null;
     });
-    check(head !== null && head.includes('no-print'), '受注残表の右端に「部材見積依頼」の列（紙に出さない印）', String(head));
+    check(head !== null && head.includes('no-print'), '案件残表の右端に「部材見積依頼」の列（紙に出さない印）', String(head));
     const picks = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content .backlog-table input[type=checkbox]'))
       .filter((c) => c.classList.contains('backlog-rfq-pick') || c.title.includes('部材見積依頼'))
       .map((c) => ({ enabled: !c.disabled, product: c.dataset.product || '', lot: c.dataset.lot || '', order: c.dataset.order || '', title: c.title, sheet: (c.closest('section.backlog-sheet') || {}).textContent || '' })))
       .then((all) => all.filter((p) => p.order === order || p.sheet.includes('E2E商店')));
     const ok = picks.find((p) => p.enabled);
-    check(!!ok && ok.product === root && ok.lot === '7' && ok.order === order, '選ぶ欄は弊社品番・受注残（10 − 3 = 7）・受注ページを持つ', JSON.stringify(picks));
+    check(!!ok && ok.product === root && ok.lot === '7' && ok.order === order, '選ぶ欄は弊社品番・案件残（10 − 3 = 7）・案件ページを持つ', JSON.stringify(picks));
     check(picks.some((p) => !p.enabled && /弊社品番が空/.test(p.title)), '弊社品番が空の行は選べない（理由を出す）', JSON.stringify(picks));
 
     // ② 紙には出ない——受注残表の 🖨 は1枚の写しを見えない枠（#w-print-frame）に置いて刷る。枠の中で、印刷の見た目のとき
@@ -88,7 +88,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
         bar: !!d.querySelector('#w-print-area .backlog-rfq-bar') };
     });
     await page.emulateMedia({ media: 'screen' });
-    check(!!printed && printed.th === 'none' && printed.pick === 'none' && !printed.bar, '紙（受注残表の 🖨）には選ぶ列も送るボタンも出ない', JSON.stringify(printed));
+    check(!!printed && printed.th === 'none' && printed.pick === 'none' && !printed.bar, '紙（案件残表の 🖨）には選ぶ列も送るボタンも出ない', JSON.stringify(printed));
 
     // ③ 選ばずに押す
     await page.click('#w-editor-content .backlog-rfq-go');
@@ -102,7 +102,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     await page.waitForFunction(() => /行入れました/.test((document.querySelector('#w-editor-content .backlog-rfq-say') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
     const body = sent[0] || {};
     check(sent.length === 1 && !body.page_id && JSON.stringify(body.items) === JSON.stringify([{ product: root, lot: '7', for_order: order }]),
-      '選んだ行を {items:[{product, lot＝受注残, for_order}]} で送る（送り先は送らない）', JSON.stringify(sent));
+      '選んだ行を {items:[{product, lot＝案件残, for_order}]} で送る（送り先は送らない）', JSON.stringify(sent));
     say = await page.textContent('#w-editor-content .backlog-rfq-say');
     const link = await page.getAttribute('#w-editor-content .backlog-rfq-say a', 'href').catch(() => null);
     check(/2 行入れました/.test(say) && link === '/000050', '結果の一言と「部材見積依頼を開く」', say + ' ' + link);

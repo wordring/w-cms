@@ -78,14 +78,14 @@ async function cleanup(page) {
 // ⚠ **題は【E2E】を付けます**（2026-09-27）。機械が作るページ（受注ページ・部材発注書・加工製品）も
 // テンプレートを**題で**引くようになったので、「受注ページ」という題の見本を置くと本物の
 // テンプレートと2枚になり、**発注書PDFの解析が止まります**（同じ題が2枚は選べない）。
-const LEAF_TITLE = '【E2E】受注ページ';
+const LEAF_TITLE = '【E2E】案件ページ';
 const BRANCH_TITLE = '【E2E】業務';
 const TEMPLATE_BODY =
     '<h1>' + LEAF_TITLE + '</h1>' +
     '<dl data-type="tags"><dt>発注書番号</dt><dd><br></dd>' +
     '<dt>発注元</dt><dd>得意先A</dd>' +
     '<dt>発注日</dt><dd><br></dd></dl>' +
-    '<table data-id="tp01" data-type="client-order-items"><caption>受注明細表</caption><tbody>' +
+    '<table data-id="tp01" data-type="client-order-items"><caption>案件明細表</caption><tbody>' +
     '<tr><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
     '<tr><td>SAMPLE-1</td><td>見本</td><td>100</td><td>1</td><td>未着手</td></tr>' +
     '</tbody></table>';
@@ -160,7 +160,7 @@ async function findOrMakeTemplateBox(page) {
         const items = await page.locator('#w-template-menu button').allTextContents();
         const groups = await page.locator('#w-template-menu .template-menu-group').allTextContents();
         check('メニューに「空のページ」が出る', items.includes('空のページ'));
-        check('メニューに葉（受注ページ）が出る', items.includes(LEAF_TITLE));
+        check('メニューに葉（案件ページ）が出る', items.includes(LEAF_TITLE));
         check('枝（業務）はボタンでなく見出し', !items.includes(BRANCH_TITLE) && groups.includes(BRANCH_TITLE));
         await page.keyboard.press('Escape');
         check('Escape でメニューが閉じる',

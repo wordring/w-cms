@@ -125,7 +125,7 @@ func TestChecksumMirrorSitsInTheTable(t *testing.T) {
 // ⚠ 手で作った受注ページに毎回「検算できません」と出ると、ただの雑音です。
 func TestChecksumMirrorStaysSilentWithoutMaterial(t *testing.T) {
 	body := `<h1>受注</h1><dl data-type="tags"><dt>発注書番号</dt><dd>A-1</dd></dl>` +
-		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+		`<table data-type="` + clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>数量</th></tr>` +
 		`<tr><td></td><td>K1</td><td>3</td></tr></tbody></table>`
 
@@ -165,7 +165,7 @@ func TestChecksumMirrorReadsTagsNotHeaders(t *testing.T) {
 		`<tr><th>品名</th><th>数量</th><th>単価</th><th>金額</th></tr>` +
 		`<tr><td>ブラケット</td><td>100</td><td>390</td><td>39000</td></tr>` +
 		`</tbody></table></details>` +
-		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+		`<table data-type="` + clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>品番</th><th>数量</th></tr><tr><td>K1</td><td>100</td></tr></tbody></table>`
 
 	got := render(t, body)
@@ -186,7 +186,7 @@ func TestChecksumMirrorReadsOldCaptionForm(t *testing.T) {
 		`<tr><th>品名</th><th>数量</th><th>単価</th><th>金額</th></tr>` +
 		`<tr><td>ブラケット</td><td>100</td><td>390</td><td>39000</td></tr>` +
 		`</tbody></table>` +
-		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+		`<table data-type="` + clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>品番</th><th>数量</th></tr><tr><td>K1</td><td>100</td></tr></tbody></table>`
 	if got := render(t, body); !strings.Contains(got, "検算: 合っています") {
 		t.Errorf("古い本文（caption の写し）で検算が働いていません:\n%s", got)

@@ -32,10 +32,10 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
   let root = '', order = '', dlv = '';
   try {
     await login(page, BASE);
-    root = await makePage(page, '<h1>【E2E】受注残から納品書</h1><section data-mirror="受注残"></section>');
+    root = await makePage(page, '<h1>【E2E】案件残から納品書</h1><section data-mirror="案件残"></section>');
     order = await makePage(page, '<h1>受注 E2E-DLV</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-DLV-1</dd>' +
       '<dt>発注元</dt><dd>【E2E】納品先</dd><dt>発注日</dt><dd>2026-10-17</dd><dt>納期</dt><dd>2026-12-31</dd></dl>' +
-      '<table><caption>受注明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>出荷済数量</th><th>状態</th></tr>' +
+      '<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>出荷済数量</th><th>状態</th></tr>' +
       '<tr><td></td><td>E2E-DLV-A</td><td>【E2E】部品A</td><td>20</td><td>個</td><td>1500</td><td></td><td>未着手</td></tr></tbody></table>', root);
     check('当て先を作れた', !!root && !!order);
 
@@ -47,7 +47,7 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
       const th = Array.from(document.querySelectorAll('#w-editor-content .backlog-table th')).find((x) => x.textContent.trim() === '納品');
       return th ? th.className : null;
     });
-    check('① 受注残表の右端に「納品」の欄（紙に出さない印）', head !== null && head.includes('no-print'), String(head));
+    check('① 案件残表の右端に「納品」の欄（紙に出さない印）', head !== null && head.includes('no-print'), String(head));
     check('① 表の上に「🚚 選んだ行で納品書を作る」', (await page.locator('#w-editor-content .backlog-dlv-go').count()) === 1);
     // ②
     await page.click('#w-editor-content .backlog-dlv-go');
@@ -70,7 +70,7 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
     if (dlv) {
       const raw = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), dlv);
       check('④ 題は「【弊社】納品書　<客先>」', raw.includes('<h1>【弊社】納品書　【E2E】納品先</h1>'), raw.slice(0, 120));
-      check('④ 明細は受注明細の写し・数は直した数（8）', raw.includes('<caption>納品明細表</caption>') && raw.includes('E2E-DLV-A') &&
+      check('④ 明細は案件明細の写し・数は直した数（8）', raw.includes('<caption>納品明細表</caption>') && raw.includes('E2E-DLV-A') &&
         raw.includes('【E2E】部品A') && />\s*8\s*</.test(raw) && raw.includes('1500') && raw.includes('E2E-DLV-1'), raw.replace(/\s+/g, ' ').slice(0, 400));
       const chain = [];
       let cur = dlv;
@@ -93,11 +93,11 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
       // ⑥ 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go）——受注ページの欄に 8・受注残表の残は 20 − 8 = 12。
       const view = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), order);
       const m = view.match(/class="vocab-chrome shipped-mirror"[^>]*>([^<]*)</);
-      check('⑥ 受注ページの出荷済数量に、納品書から数えた 8 が出る', !!m && m[1] === '8', m ? m[1] : view.slice(0, 200));
+      check('⑥ 案件ページの出荷済数量に、納品書から数えた 8 が出る', !!m && m[1] === '8', m ? m[1] : view.slice(0, 200));
       await page.goto(BASE + '/' + root);
       await page.waitForSelector('#w-editor-content .backlog-table', { timeout: 10000 }).catch(() => {});
       const rem = await page.locator('#w-editor-content tr[data-order-page="' + order + '"] .backlog-remaining').textContent().catch(() => '');
-      check('⑥ 受注残表の残は 12', (rem || '').trim() === '12', rem);
+      check('⑥ 案件残表の残は 12', (rem || '').trim() === '12', rem);
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

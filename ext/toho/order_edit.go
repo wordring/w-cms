@@ -95,7 +95,7 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "受注ページを読めません: "+err.Error())
+		cms.JSONFail(w, http.StatusNotFound, "案件ページを読めません: "+err.Error())
 		return
 	}
 	fixed, err := setOrderItemCell(body, req.Row, req.ItemNo, req.Field, req.Old, req.Value)
@@ -133,7 +133,7 @@ func setOrderItemCell(body string, row int, itemNo, field, oldVal, newVal string
 	}
 	tables := tablesOfType(nodes, clientOrderItemsType)
 	if len(tables) == 0 {
-		return "", errors.New("受注明細表が見つかりません")
+		return "", errors.New("案件明細表が見つかりません")
 	}
 
 	rows := rowsOf(tables[0])
@@ -153,7 +153,7 @@ func setOrderItemCell(body string, row int, itemNo, field, oldVal, newVal string
 		// **機構を増やさない**ほうが良いという判断です。運用に入ったあとで同じことが
 		// 起きたら、そのとき**移行として1度だけ**走らせる形を考えること
 		// ——書き込みのたびに表の形を変える口を常設すると、想定外の列が生えます。
-		return "", errors.New(field + " の列がこのページの受注明細表にありません" +
+		return "", errors.New(field + " の列がこのページの案件明細表にありません" +
 			"（あとから宣言に足した列は、解析し直すまで出ません）")
 	}
 	cells := cellsOf(rows[row+1])

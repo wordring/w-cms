@@ -23,7 +23,7 @@ func TestBacklogShowsGaps(t *testing.T) {
 	addPage(t, 943, 941, "受注", "alice", "302", true)
 	body := `<h1>受注</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindCustomerOrder + `</dd>` +
 		`<dt>発注書番号</dt><dd><br/></dd><dt>発注元</dt><dd>やまと工作所</dd><dt>納期</dt><dd>2026-11-05</dd></dl>` +
-		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+		`<table data-type="` + clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		pricedItem("B-1", "電話で頼まれた", "1", "", "", "未着手") + `</tbody></table>`

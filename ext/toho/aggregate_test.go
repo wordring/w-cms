@@ -260,7 +260,7 @@ func TestRequiredMaterialsFollowsReferences(t *testing.T) {
 		t.Fatalf("RequiredMaterials(62)エラー: %v", err)
 	}
 	if len(list) != 1 || list[0].TotalRequired != 2 {
-		t.Fatalf("受注ページの集計が想定と違います: %+v", list)
+		t.Fatalf("案件ページの集計が想定と違います: %+v", list)
 	}
 
 	// **無関係なページは巻き込まない**——部品定義ページ（63）は誰も参照していない。

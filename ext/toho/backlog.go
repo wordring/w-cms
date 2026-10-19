@@ -66,7 +66,7 @@ const MarkDone = "済"
 func init() {
 	cms.RegisterVocab(cms.VocabDef{
 		Type:        BacklogViewType,
-		DisplayName: "受注残",
+		DisplayName: "案件残",
 		Category:    "ビュー",
 		Icon:        "📋",
 		Element:     "section",
@@ -331,11 +331,11 @@ func backlogViewHTML(user *auth.User, _ int) string {
 	//    集計の壊れと見分けられません。
 	migNote := ""
 	if migrating > 0 {
-		migNote = `<p class="materials-empty">※「` + MigratingTag + `」の受注ページ ` + strconv.Itoa(migrating) +
+		migNote = `<p class="materials-empty">※「` + MigratingTag + `」の案件ページ ` + strconv.Itoa(migrating) +
 			` 枚は入れていません（確かめたら、そのページの「` + MigratingTag + `」のタグを消すと並びます）。</p>`
 	}
 	if len(groups) == 0 {
-		return `<p class="child-list-empty">受注残はありません（受注ページ〔` + PageKindTag + `：` + PageKindCustomerOrder +
+		return `<p class="child-list-empty">案件残はありません（案件ページ〔` + PageKindTag + `：` + PageKindCustomerOrder +
 			`〕に、まだ出していない明細がありません）。</p>` + migNote
 	}
 	var b strings.Builder
@@ -380,7 +380,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">製造完了</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
-			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">受注</th><th class="no-print">製造</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
+			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">案件</th><th class="no-print">製造</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -447,7 +447,7 @@ func rfqPickHTML(r backlogRow) string {
 	case strings.TrimSpace(r.OurItemNo) == "":
 		return `<input type="checkbox" disabled title="弊社品番が空なので部材見積依頼へ送れません">`
 	case r.Remaining <= 0:
-		return `<input type="checkbox" disabled title="受注残がありません">`
+		return `<input type="checkbox" disabled title="案件残がありません">`
 	}
 	return `<input type="checkbox" class="backlog-rfq-pick" title="この行の部材を部材見積依頼へ" data-product="` +
 		stdhtml.EscapeString(r.OurItemNo) + `" data-lot="` + strconv.Itoa(r.Remaining) + `" data-order="` +

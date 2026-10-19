@@ -38,7 +38,7 @@ import (
 // **業務の言葉なので拡張が持ちます**——コアが持つのは「トップ直下に題で箱を
 // 用意する」仕組みだけ（`cms.EnsureTopLevelBox`）。通信箱・テンプレート置き場と
 // 同じく **h1（ページ名）が正**です。
-const OrderBoxTitle = "受注"
+const OrderBoxTitle = "案件"
 
 // PurchaseOrderBoxTitle は**弊社の部材発注書**の置き場（トップ直下）の名前です。
 //
@@ -177,7 +177,7 @@ func fileOneOrder(user *auth.User, row orderRequest) filingResult {
 	// ⚠ 見るのは `発注書番号` か `発注元` のタグです（2026-09-18 にヘッダから移した・09-30 に `発注元` も——isOrderPageTags）。
 	tags, err := cms.TagsOfPage(database.DB, idInt)
 	if err != nil || !isOrderPageTags(tags) {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: "受注ページではありません"}
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: "案件ページではありません"}
 	}
 	// **開いている人が居たら、その行は飛ばします**——下で本文を読んで・変えて・書くので、
 	// エディタが開いているとオートセーブと上書きし合います（`fileOneDrawing` と同じ作法）。

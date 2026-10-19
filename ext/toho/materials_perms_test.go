@@ -174,7 +174,7 @@ func TestRequiredMaterialsViewHidesFromAnonymous(t *testing.T) {
 	seedSecretMaterial(t, 1, true, "alice")
 
 	if !page.EffectivePublic(1) {
-		t.Fatal("前提が崩れています: 受注ページは実効公開であるべきです")
+		t.Fatal("前提が崩れています: 案件ページは実効公開であるべきです")
 	}
 
 	req := httptest.NewRequest("GET", "/1", nil) // Cookieなし＝匿名

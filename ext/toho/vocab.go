@@ -300,7 +300,7 @@ var businessVocab = []cms.VocabDef{
 	},
 	{
 		Type:        "client-order-items",
-		DisplayName: "受注明細表",
+		DisplayName: "案件明細表",
 		Category:    "業務",
 		Icon:        "📩",
 		Element:     "table",
@@ -652,7 +652,7 @@ func orderItemColumns() []cms.VocabColumn {
 		// ⚠ **受注（どの受注ページのための部材か）は 2026-10-01 に足しました**（procure_ledger.go）——利用者:「受注ごとに
 		//    数える」。必要部材表から運ぶときに入る。無い行（それまでの行・手で書いた行）は通算の手当てとして数える。
 		//    紙には刷らない（order_print_columns に無い）。臨時部材表には入れない（tempPartsColumns）。
-		{Field: "for-order", Label: "受注", Type: cms.ColRef},
+		{Field: "for-order", Label: "案件", Type: cms.ColRef},
 		// ⚠ **種類・番号・加工内容・仕様・支給は 2026-09-28 に足しました**（【考察】部材の種類ごとの
 		//    発注項目 §3・§9）——材料・外注加工・購入部品・支給部品で要る項目が違うので、表は
 		//    **すべての項目の集合**（【要求】部材発注フォルダ）。紙に刷るかは設定（order_print_columns）。

@@ -145,7 +145,7 @@ func TestFilingProposalSkipsNonDrawings(t *testing.T) {
 	makeDrawingPage(t, inbox, "A-1", "部品A", "装置X", "客先Y")
 	if _, err := cms.CreateChildPage(inbox, "alice",
 		testOrderPage(inbox, "pdf002", sampleJudgment)); err != nil {
-		t.Fatalf("受注ページを作れません: %v", err)
+		t.Fatalf("案件ページを作れません: %v", err)
 	}
 
 	rows := getProposal(t, &auth.User{Username: "alice"}, inbox)

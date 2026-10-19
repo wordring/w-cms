@@ -43,7 +43,7 @@ func init() {
 	cms.RegisterRequiredPage(cms.RequiredPage{
 		Title:     RecordBoxTitle,
 		Extension: "toho",
-		Why: "書類の置き場です（記録／年／月／依頼・製造記録。月は書類を作った日）。依頼は客先から来るもの（受注ページ・見積書）、" +
+		Why: "書類の置き場です（記録／年／月／依頼・製造記録。月は書類を作った日）。依頼は客先から来るもの（案件ページ・見積書）、" +
 			"製造記録は弊社の動き（部材見積依頼書・部材発注書）です。",
 	})
 }

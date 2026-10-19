@@ -25,7 +25,7 @@ func seedOrder(t *testing.T, idInt, rootInt int, client, due string, rows string
 		`<dt>発注書番号</dt><dd>PO-` + page.FormatID(idInt) + `</dd>` +
 		`<dt>発注元</dt><dd>` + client + `</dd>` +
 		`<dt>納期</dt><dd>` + due + `</dd></dl>` +
-		`<table data-type="` + clientOrderItemsType + `"><caption>受注明細表</caption><tbody>` +
+		`<table data-type="` + clientOrderItemsType + `"><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		rows + `</tbody></table>`
@@ -168,7 +168,7 @@ func TestBacklogCollectsByPageKind(t *testing.T) {
 	addPage(t, 135, 131, "種類なし", "alice", "302", true)
 	body := `<h1>種類なし</h1><dl data-type="tags"><dt>発注元</dt><dd>あけぼの精工</dd>` +
 		`<dt>納期</dt><dd>2026-10-15</dd></dl>` +
-		`<table><caption>受注明細表</caption><tbody>` +
+		`<table><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		item("C-1", "種類なしの品", "10", "2026-10-15", "") + `</tbody></table>`
@@ -184,7 +184,7 @@ func TestBacklogCollectsByPageKind(t *testing.T) {
 		}
 	}
 	if !names["中"] || !names["外"] {
-		t.Errorf("⚠ ページ種類で名乗る受注ページが、置き場所によって欠けています: %+v", gs)
+		t.Errorf("⚠ ページ種類で名乗る案件ページが、置き場所によって欠けています: %+v", gs)
 	}
 	if names["種類なしの品"] {
 		t.Errorf("⚠ ページ種類の無いページの行まで拾っています: %+v", gs)
@@ -237,7 +237,7 @@ func TestBacklogViewSaysSoWhenEmpty(t *testing.T) {
 	req = auth.WithUser(req, adminUser())
 	out := cms.RenderComputedViews(req, 151,
 		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
-	if !strings.Contains(out, "受注残はありません") {
+	if !strings.Contains(out, "案件残はありません") {
 		t.Errorf("空の理由を言っていません:\n%s", out)
 	}
 }
@@ -312,7 +312,7 @@ func TestBacklogDropsDoneRows(t *testing.T) {
 func TestBacklogStatusEnumHasDone(t *testing.T) {
 	def, ok := cms.VocabDefByType(clientOrderItemsType)
 	if !ok {
-		t.Fatal("受注明細表の宣言がありません")
+		t.Fatal("案件明細表の宣言がありません")
 	}
 	for _, c := range def.Columns {
 		if c.Label != "状態" {
@@ -449,7 +449,7 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 	// 404 を「移行中」にする（受注残に並ばない——合計にも入らない）。
 	body := `<h1>受注</h1><dl data-type="tags"><dt>発注元</dt><dd>やまと工作所</dd>` +
 		`<dt>納期</dt><dd>2026-10-20</dd><dt>` + MigratingTag + `</dt><dd>確認待ち</dd></dl>` +
-		`<table><caption>受注明細表</caption><tbody>` +
+		`<table><caption>案件明細表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単位</th>` +
 		`<th>単価</th><th>納期</th><th>出荷済数量</th><th>備考</th><th>状態</th></tr>` +
 		pricedItem("C-1", "移した注文", "9", "10000", "", "未着手") + `</tbody></table>`
@@ -473,6 +473,6 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 	seedOrder(t, 412, 411, "あけぼの精工", "2026-10-15", pricedItem("A-1", "単価なし", "5", "", "", "未着手"))
 	out = backlogViewHTML(adminUser(), 411)
 	if !strings.Contains(out, `<p class="backlog-total">受注残高: 0円</p>`) {
-		t.Errorf("単価の無い受注残を 0円と言っていません:\n%s", out)
+		t.Errorf("単価の無い案件残を 0円と言っていません:\n%s", out)
 	}
 }

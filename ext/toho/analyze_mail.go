@@ -74,13 +74,13 @@ func mailForJudgment(pageIDInt int, title, body string) string {
 }
 
 // MailOrderKind はメールの記録から作るページの種類「受注ページ」です（2026-10-01・comm の選ぶ欄に出る）。
-const MailOrderKind = "受注ページ"
+const MailOrderKind = "案件ページ"
 
 func init() {
 	// 利用者:「「受注ページ」「加工製品ページ」をコンボボックスで選択して「作成」ボタンを押せばいいかも」（2026-10-01）。
 	comm.RegisterRecordMaker(comm.RecordMaker{
 		Name: MailOrderKind, Order: 10, Directions: []string{"受信"},
-		Hint: "🤖 本文を読んで受注ページを作ります（発注書の PDF が付いていない注文のメール）",
+		Hint: "🤖 本文を読んで案件ページを作ります（発注書の PDF が付いていない注文のメール）",
 		Make: makeOrderFromMail,
 		Made: func(user *auth.User, pageID string) []comm.MadePage {
 			var out []comm.MadePage
@@ -133,7 +133,7 @@ func makeOrderFromMail(user *auth.User, pageID string) (comm.MakeResult, error) 
 		}
 		b, err := buildOrderPageHTML(orderTmpl, pageID, "", o)
 		if err != nil {
-			return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "受注ページを作れません: " + err.Error()}
+			return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "案件ページを作れません: " + err.Error()}
 		}
 		bodies = append(bodies, b)
 	}
@@ -142,11 +142,11 @@ func makeOrderFromMail(user *auth.User, pageID string) (comm.MakeResult, error) 
 	for _, b := range bodies {
 		newID, err := cms.CreateChildPage(pageID, user.Username, b)
 		if err != nil {
-			return res, errors.New("受注ページを作れません（" + strconv.Itoa(len(res.Pages)) + "枚目まで作成済み）: " + err.Error())
+			return res, errors.New("案件ページを作れません（" + strconv.Itoa(len(res.Pages)) + "枚目まで作成済み）: " + err.Error())
 		}
 		auth.Audit(user.Username, "analyze-mail", newID+" from "+pageID)
 		linked += LinkProductsToOrder(user, newID)
-		res.Pages = append(res.Pages, comm.MadePage{PageID: newID, Title: pageTitleOf(newID), Kind: "受注"})
+		res.Pages = append(res.Pages, comm.MadePage{PageID: newID, Title: pageTitleOf(newID), Kind: "案件"})
 	}
 	if linked > 0 {
 		res.Say = "加工製品と " + strconv.Itoa(linked) + " 行を結びました。"
@@ -170,10 +170,10 @@ func mailOrderPages(user *auth.User, pageID string) []analyzedResult {
 	rows.Close()
 	var out []analyzedResult
 	for _, id := range ids {
-		if !page.CanView(user, id) || kindOfPage(id) != "受注" {
+		if !page.CanView(user, id) || kindOfPage(id) != "案件" {
 			continue
 		}
-		out = append(out, analyzedResult{Kind: "受注", PageID: formatID(id), Title: pageTitleOf(formatID(id))})
+		out = append(out, analyzedResult{Kind: "案件", PageID: formatID(id), Title: pageTitleOf(formatID(id))})
 	}
 	return out
 }

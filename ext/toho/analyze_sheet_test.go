@@ -56,9 +56,9 @@ func TestAnalyzeSheetCreatesOrderPage(t *testing.T) {
 	}
 	json.Unmarshal(rr.Body.Bytes(), &res)
 	if !res.IsClientOrder || res.PageID == "" {
-		t.Fatalf("受注ページができていません: %s", rr.Body.String())
+		t.Fatalf("案件ページができていません: %s", rr.Body.String())
 	}
 	if body := readPageBody(t, res.PageID); !strings.Contains(body, "<td>K120-3</td>") || !strings.Contains(body, id+"-list") {
-		t.Errorf("受注ページの明細・原本の参照が違います:\n%s", body)
+		t.Errorf("案件ページの明細・原本の参照が違います:\n%s", body)
 	}
 }

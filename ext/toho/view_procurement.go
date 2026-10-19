@@ -38,7 +38,7 @@ func procurementViewHTML(user *auth.User, pageIDInt int) string {
 		return head + `<p class="view-error">集計データの取得に失敗しました。</p>`
 	}
 	if len(list) == 0 {
-		return head + `<p class="materials-empty">受注明細がありません。</p>`
+		return head + `<p class="materials-empty">案件明細がありません。</p>`
 	}
 	var sb strings.Builder
 	sb.WriteString(head)

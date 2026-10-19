@@ -17,7 +17,7 @@ func seedIssuedDelivery(t *testing.T, id, parent int, client, delivered, issued 
 	body := `<h1>【弊社】納品書　` + client + `</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindOurDelivery + `</dd>` +
 		`<dt>` + DeliveryClientTag + `</dt><dd>` + client + `</dd><dt>` + DeliveredAtTag + `</dt><dd>` + delivered + `</dd>` +
 		`<dt>` + DeliveryIssuedTag + `</dt><dd>` + issued + `</dd></dl>` +
-		`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>受注</th><th>発注書番号</th><th>品番</th><th>品名</th>` +
+		`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>発注書番号</th><th>品番</th><th>品名</th>` +
 		`<th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>`
 	for _, r := range rows {
 		body += `<tr><td></td><td>` + r[0] + `</td><td>PO-1</td><td>` + r[1] + `</td><td>` + r[2] + `</td><td>` + r[3] + `</td><td>個</td><td>` + r[4] + `</td><td></td></tr>`
@@ -128,7 +128,7 @@ func TestInvoicePDFRoundTrips(t *testing.T) {
 		return `<h1>【弊社】請求書　あけぼの精工</h1><dl data-type="tags"><dt>` + InvoiceNoTag + `</dt><dd>000960</dd>` +
 			`<dt>` + DeliveryClientTag + `</dt><dd>あけぼの精工</dd><dt>` + InvoiceDateTag + `</dt><dd>2026-10-31</dd>` +
 			`<dt>` + InvoicePeriodTag + `</dt><dd>2026年10月1日〜2026年10月31日</dd><dt>` + PayTermsTag + `</dt><dd>翌月末 手形</dd></dl>` +
-			`<table><caption>請求明細表</caption><tbody><tr><th>納品日</th><th>納品書</th><th>受注</th><th>発注書番号</th><th>弊社品番</th>` +
+			`<table><caption>請求明細表</caption><tbody><tr><th>納品日</th><th>納品書</th><th>案件</th><th>発注書番号</th><th>弊社品番</th>` +
 			`<th>品番</th><th>品名</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th></tr>` + rows + `</tbody></table>`
 	}
 	// 333円 × 3 = 999円 → 消費税 99.9 → 100円（1回だけ丸める）。

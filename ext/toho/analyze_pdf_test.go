@@ -91,28 +91,28 @@ func TestAnalyzePDFCreatesOrderPage(t *testing.T) {
 		Title         string `json:"title"`
 	}
 	json.Unmarshal(rr.Body.Bytes(), &res)
-	if !res.Success || !res.IsClientOrder || res.Title != "【顧客】受注 PO-2026-001" {
+	if !res.Success || !res.IsClientOrder || res.Title != "【顧客】発注書 PO-2026-001" {
 		t.Fatalf("応答が違います: %+v body=%s", res, rr.Body.String())
 	}
 
 	body, err := os.ReadFile(filepath.Join(page.GetPageDir(res.PageID), res.PageID+".html"))
 	if err != nil {
-		t.Fatalf("受注ページを読めません: %v", err)
+		t.Fatalf("案件ページを読めません: %v", err)
 	}
 	html := string(body)
 	for _, want := range []string{
-		"<h1>【顧客】受注 PO-2026-001</h1>",
+		"<h1>【顧客】発注書 PO-2026-001</h1>",
 		// ⚠ **ヘッダは可変タグ、明細は表**（2026-09-18）。機能見出しの節はやめました
 		// ——「タグと表だけがDBに入る」。
 		`<dl data-type="tags">`,
 		"<dt>発注元</dt><dd>南北スポーツ</dd>",
-		"<table><caption>受注明細表</caption>",
+		"<table><caption>案件明細表</caption>",
 		"<td>ブラケット</td>",
 		"<td>未着手</td>",
 		"<dt>受信元</dt><dd>" + id + "-abc123</dd>",
 	} {
 		if !strings.Contains(html, want) {
-			t.Errorf("受注ページに %q がありません:\n%s", want, html)
+			t.Errorf("案件ページに %q がありません:\n%s", want, html)
 		}
 	}
 	// 親子と権限。
@@ -393,7 +393,7 @@ func TestAnalyzeFoldsClientCompanyForm(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &res)
 	body, err := os.ReadFile(filepath.Join(page.GetPageDir(res.PageID), res.PageID+".html"))
 	if err != nil {
-		t.Fatalf("受注ページを読めません: %v", err)
+		t.Fatalf("案件ページを読めません: %v", err)
 	}
 	if got := string(body); !strings.Contains(got, "<dt>発注元</dt><dd>南北スポーツ</dd>") {
 		t.Errorf("発注元から法人格が落ちていません:\n%s", got)

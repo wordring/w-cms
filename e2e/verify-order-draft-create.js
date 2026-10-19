@@ -17,7 +17,7 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 // 発注部材表は機械が節で包んで作る形（`draftBoxOf`）と同じにします。
 const BODY = '<h1>【E2E】発注部材表から発注書を作る</h1>' +
   '<section><table><caption>発注部材表</caption><tbody>' +
-  '<tr><th>弊社品番</th><th>受注</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>' +
+  '<tr><th>弊社品番</th><th>案件</th><th>種類</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>単位</th><th>単価</th><th>備考</th><th>状態</th></tr>' +
   '<tr><td></td><td></td><td>材料</td><td>E2E-CREATE-A</td><td>板</td><td>t3.2</td><td>4</td><td>枚</td><td></td><td></td><td></td></tr>' +
   '</tbody></table></section>';
 

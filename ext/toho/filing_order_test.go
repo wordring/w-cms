@@ -22,7 +22,7 @@ func makeOrderPage(t *testing.T, inboxID, no, client, orderedAt string) string {
 	}
 	id, err := cms.CreateChildPage(inboxID, "alice", testOrderPage(inboxID, "pdf001", j))
 	if err != nil {
-		t.Fatalf("受注ページを作れません: %v", err)
+		t.Fatalf("案件ページを作れません: %v", err)
 	}
 	return id
 }
@@ -114,12 +114,12 @@ func TestFileOrderWithoutNumber(t *testing.T) {
 	idInt, _ := strconv.Atoi(inbox)
 	rows, err := orderChildrenOf(u, idInt)
 	if err != nil || len(rows) != 1 || rows[0].PageID != orderID {
-		t.Fatalf("番号の無い受注ページが整理に出ていません: %+v %v", rows, err)
+		t.Fatalf("番号の無い案件ページが整理に出ていません: %+v %v", rows, err)
 	}
 	if res := postOrders(t, u, []string{orderID}); len(res) != 1 || res[0].Outcome != "moved" {
-		t.Fatalf("番号の無い受注ページを収めていません: %+v", res)
+		t.Fatalf("番号の無い案件ページを収めていません: %+v", res)
 	}
-	if k := kindOfPage(mustAtoi(t, orderID)); k != "受注" {
-		t.Errorf("添付の印が「受注」になりません: %q", k)
+	if k := kindOfPage(mustAtoi(t, orderID)); k != "案件" {
+		t.Errorf("添付の印が「案件」になりません: %q", k)
 	}
 }

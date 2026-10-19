@@ -239,7 +239,7 @@ async function openSlashMenu(page) {
             '<h1>【E2E】受注A</h1>' +
             '<dl data-type="tags"><dt>発注書番号</dt><dd>PO-E2E</dd>' +
             '<dt>発注元</dt><dd>得意先A</dd><dt>発注日</dt><dd>2026-08-25</dd></dl>' +
-            '<table><caption>受注明細表</caption><tbody>' +
+            '<table><caption>案件明細表</caption><tbody>' +
             '<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>単価</th><th>数量</th><th>状態</th></tr>' +
             '<tr><td>' + partId + '</td><td>E2E-X1</td><td>部品X1</td><td>1000</td><td>3</td><td>未着手</td></tr>' +
             '</tbody></table>' +
@@ -273,7 +273,7 @@ async function openSlashMenu(page) {
         //       覆いかぶさってクリックが届かない。見出しへ寄って引っ込めてから狙う。
         await page.locator('#w-editor-content h1').first().click();
         await page.waitForTimeout(400);
-        await page.locator('#w-editor-content table:has(> caption:text-is("受注明細表")) td').first().click();
+        await page.locator('#w-editor-content table:has(> caption:text-is("案件明細表")) td').first().click();
         await page.waitForTimeout(400);
         check('本文の表では行操作ツールバーが出る',
             (await page.locator('#w-table-toolbar.active').count()) === 1);
