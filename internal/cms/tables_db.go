@@ -325,6 +325,7 @@ func syncCaptionTables(id string, pageID int, root *html.Node) error {
 	if db == nil {
 		return nil
 	}
+	markTablesWritten() // 表のセルの候補を、暇になったら数え直す（cell_choices.go）
 	var tables []captionTable
 	if root != nil && !excludedFromTables(id, root) {
 		tables = captionTablesOf(root)

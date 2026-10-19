@@ -157,6 +157,8 @@ func main() {
 	// いま何が効いているかを1行（秘密は有無だけ・startup_line.go）。
 	log.Println(effectiveSettingsLine(cert, key))
 	// 待ち受けは WCMS_ADDR（無ければ :8080、TLS のときは :8443——listen.go）。
+	// 表のセルの候補を、暇なときに数え直す見張り（2026-10-19・cell_choices.go。設定 cell_choices が無ければ数えない）。
+	cms.StartCellChoicesSurvey()
 	switch {
 	case cert != "" && key != "":
 		addr := listenAddr(true)
@@ -256,6 +258,9 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/suggest", cms.SuggestAPIHandler)
 	// タグの値の候補——DB にある値を多い順に（読めるページだけ・2026-10-19・tag_values.go）。
 	protected.HandleFunc("/api/tag-values", cms.TagValuesAPIHandler)
+	// 表のセルの候補——値が数個に決まっている列を、暇なときに数えて置いたもの（読めるページだけ・2026-10-19・cell_choices.go）。
+	protected.HandleFunc("/api/cell-values", cms.CellChoicesAPIHandler)
+	protected.HandleFunc("/api/admin/cell-values/survey", cms.CellChoicesSurveyAPIHandler)
 
 	// 権限管理（owner/admin）
 	protected.HandleFunc("/api/page-perms", cms.PagePermsHandler)

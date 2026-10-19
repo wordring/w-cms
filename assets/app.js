@@ -5597,7 +5597,10 @@
         // その数の順に並べ替える）。参照・日付・画像のタグは出さない（ページ番号や日付を選んでも役に立たない）。
         const tagLabel = tagDD ? tagLabelOf(tagDD) : '';
         const tagSuggest = !!tagLabel && TAG_VALUE_SKIP_TYPES.indexOf((col && col.type) || '') === -1;
-        if (!isEnum && !isImage && !suggestFrom && !tagSuggest) { hideEnumMenu(); return; }
+        // 表のセルは、値が数個に決まっている列なら、サーバーが暇なときに数えた候補を出す（2026-10-19・internal/cms/cell_choices.go）。
+        // 選択肢・画像・候補の出どころを持つ列は、いままでどおり（そちらが先）。どの列が数個に決まっているかはサーバーが決める。
+        const cellKey = (td && !isEnum && !isImage && !suggestFrom) ? cellChoiceKey(td) : null;
+        if (!isEnum && !isImage && !suggestFrom && !tagSuggest && !cellKey) { hideEnumMenu(); return; }
         if (cell === enumMenuCell) return; // 同じセル内のキャレット移動では作り直さない
 
         enumMenuCell = cell;
@@ -5612,10 +5615,12 @@
             });
             menu.appendChild(b);
         }
+        if (cellKey) { fillCellChoiceMenu(menu, td, cellKey); return; } // 候補は届いてから開く
         if (tagSuggest) fillTagValueMenu(menu, cell, tagLabel, isEnum ? col.enum : []);
         else if (isEnum) col.enum.forEach(v => {
             const b = document.createElement('button');
             b.type = 'button';
+            b.dataset.choice = '1'; // 打った字で絞る対象（filterEnumMenu）
             b.textContent = v;
             b.addEventListener('click', () => {
                 cell.textContent = v;      // childList の変化で MutationObserver → 自動保存が走る
@@ -5676,6 +5681,7 @@
         list.forEach(({ v, n }) => {
             const b = document.createElement('button');
             b.type = 'button';
+            b.dataset.choice = '1'; // 打った字で絞る対象（filterEnumMenu）
             b.textContent = v;
             b.title = n ? n + ' ページで使っています' : 'まだ使っていません';
             b.addEventListener('click', () => {
@@ -5687,6 +5693,82 @@
             });
             menu.appendChild(b);
         });
+        menu.classList.add('active'); // 開くときは全部を見せる（絞るのは打ったとき——filterEnumMenu）
+        placeFloating(menu, cell.getBoundingClientRect(), 2);
+    }
+
+    // cellChoiceKey は表のデータセルの {table, column}（キャプションと列の見出し）です。キャプションの無い表・見出しの行は null。
+    function cellChoiceKey(td) {
+        const table = td.closest('table');
+        if (!table || !table.rows.length) return null;
+        const row = td.closest('tr');
+        if (!row || row === table.rows[0] || row.closest('thead')) return null;
+        const cap = table.querySelector(':scope > caption');
+        const tableName = cap ? cap.textContent.trim() : '';
+        const th = cellAt(table.rows[0], colIndexOf(td));
+        const column = th ? th.textContent.trim() : '';
+        if (!tableName || !column) return null;
+        return { table: tableName, column };
+    }
+
+    // cellChoiceCache は「表＋列」ごとの候補（/api/cell-values の答え）です——ページを開いているあいだ、同じ列は1回だけ聞く。
+    const cellChoiceCache = new Map();
+
+    // fillCellChoiceMenu は表のセルの候補を、使っている行の多い順にボタンで並べます（2026-10-19）。
+    //   2026-10-19 利用者:「表のセルの候補は、サーバーが暇なときに DB を数えて置いておく形で作ってください。値が数個に決まっている列だけに出し、何個までかは設定に置いてください。」
+    //   - 候補はサーバーが暇なときに数えたもの（読めるページだけ）。数個に決まっていない列・まだ数えていない列は何も出さない。
+    //   - ⚠ 候補は縛りではない（手で打てる）。⚠ 遅れて届くので、セルが変わっていたら捨てる（fillTagValueMenu と同じ）。
+    async function fillCellChoiceMenu(menu, td, key) {
+        menu.classList.remove('active');
+        const k = key.table + '|' + key.column;
+        let p = cellChoiceCache.get(k);
+        if (!p) {
+            p = fetch('/api/cell-values?table=' + encodeURIComponent(key.table) + '&column=' + encodeURIComponent(key.column))
+                .then(r => r.json()).then(d => (d && d.values) || []).catch(() => null);
+            cellChoiceCache.set(k, p);
+        }
+        const got = await p;
+        if (enumMenuCell !== td) return; // 別のセルへ移っていたら捨てる
+        if (got === null) cellChoiceCache.delete(k); // 通信の失敗は覚えない
+        if (!got || !got.length) { hideEnumMenu(); enumMenuCell = td; return; }
+        got.forEach(({ value, count }) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.dataset.choice = '1';
+            b.textContent = value;
+            b.title = count + ' 行で使っています';
+            b.addEventListener('click', () => {
+                td.textContent = value;    // childList の変化で MutationObserver → 自動保存が走る
+                validateCell(td);
+                placeCaretAtEnd(td);
+                hideEnumMenu();
+                enumMenuCell = td;         // 同じセルに居るあいだ開き直さない（enum のボタンと同じ）
+            });
+            menu.appendChild(b);
+        });
+        menu.classList.add('active'); // 開くときは全部を見せる（絞るのは打ったとき）
+        placeFloating(menu, td.getBoundingClientRect(), 2);
+    }
+
+    // filterEnumMenu は、候補のボタンを、いまセルに打ってある字で絞ります（オートコンプリート・2026-10-19）。
+    //   2026-10-19 利用者:「これをオートコンプリートのようにコンボボックスで選ぶように出来ないでしょうか？」「オートコンプリートはコアの機能です」
+    //   - 打った字を含む候補だけを見せる（全角半角・大小は畳む）。空なら全部。合うものが無ければメニューを閉じる。
+    //   - 絞るのは候補のボタン（data-choice）だけ。画像を選ぶボタンや出どころの候補には触らない。
+    function filterEnumMenu() {
+        const menu = document.getElementById('w-enum-menu');
+        const cell = enumMenuCell;
+        if (!menu || !cell || !cell.isConnected) return;
+        const buttons = Array.from(menu.querySelectorAll('button[data-choice]'));
+        if (!buttons.length) return;
+        const fold = (t) => (t || '').normalize('NFKC').toLowerCase().trim();
+        const q = fold(cell.textContent);
+        let shown = 0;
+        buttons.forEach(b => {
+            const hit = !q || fold(b.textContent).includes(q);
+            b.hidden = !hit;
+            if (hit) shown++;
+        });
+        if (!shown) { menu.classList.remove('active'); return; }
         menu.classList.add('active');
         placeFloating(menu, cell.getBoundingClientRect(), 2);
     }
@@ -10055,6 +10137,8 @@
         // enum の選択肢メニュー。クリックで選択が飛ぶと対象セルを見失うため mousedown を止める。
         const emenu = document.getElementById('w-enum-menu');
         if (emenu) emenu.addEventListener('mousedown', e => e.preventDefault());
+        // 打つたびに、候補をいまの字で絞る（オートコンプリート・2026-10-19——filterEnumMenu）。
+        editor.addEventListener('input', () => { if (enumMenuCell) filterEnumMenu(); });
 
         editor.addEventListener('input', (e) => {
             if (!document.body.hasAttribute('edit-mode')) return;

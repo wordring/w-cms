@@ -150,6 +150,12 @@
   "attachment_readonly": [
     "通信箱"
   ],
+  "cell_choices": {
+    "max_values": 8,
+    "min_rows": 5,
+    "idle_minutes": 5,
+    "skip_types": ["ref", "date", "datetime", "image", "email", "number"]
+  },
   "extensions": {
     "toho": {
       "product_code_tags": [

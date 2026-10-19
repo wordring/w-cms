@@ -175,6 +175,9 @@ type Settings struct {
 	// （2026-09-07）——届いた添付は**届いた事実の証拠**なので書き換えさせません。
 	// コアが `通信箱` を名前で知ってはいけないので、**題を設定に書いてもらいます**。
 	AttachmentReadOnly []string `json:"attachment_readonly,omitempty"`
+
+	// CellChoices は表のセルの候補の数え方です（2026-10-19・cell_choices.go）。無ければ候補を数えません。
+	CellChoices *CellChoicesSettings `json:"cell_choices,omitempty"`
 }
 
 // settings は読み込み済みの設定です。**nil のあいだは設定が空のものとして振る舞います**
@@ -389,6 +392,9 @@ func (s Settings) validate(path string) error {
 				return err
 			}
 		}
+	}
+	if err := validateCellChoices(path, s.CellChoices); err != nil {
+		return err
 	}
 	if s.MaxUploadMiB < 0 {
 		return fmt.Errorf("%s: max_upload_mib が負です", path)
