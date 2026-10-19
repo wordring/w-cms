@@ -139,7 +139,7 @@ func main() {
 	// サーバーの起動
 	// **載っている拡張の名簿は拡張が自分で名乗ります**（cms.RegisterExtension・2026-09-15）。
 	// ビルドタグの付け外しは目に見えないので、「入っているつもりで入っていない」を起動時に
-	// 確かめられるようにしておきます——タグを忘れたビルドは、受注ページ生成も部材計算も
+	// 確かめられるようにしておきます——タグを忘れたビルドは、案件ページ生成（2026-10-19 までの名前は受注ページ）も部材計算も
 	// 無いまま普通に起動します。同じ名簿が /api/tag-schema で画面にも渡ります。
 	if exts := cms.Extensions(); len(exts) == 0 {
 		log.Println("拡張セット: なし（素の w-cms）")
@@ -152,7 +152,7 @@ func main() {
 	}
 	// **HTTPS は証明書と鍵がそろったときだけ**。片方だけ置かれていたら設定の
 	// 書きかけなので止める——黙って平文へ落ちると「HTTPSのつもりで平文だった」が
-	// 起きます（Cookie と Basic の合言葉が素で流れる）。
+	// 起きます（Cookie とログインの合言葉が素で流れる。2026-10-15 までは WebDAV の Basic の合言葉も）。
 	cert, key := tlsCertPath(), tlsKeyPath()
 	// いま何が効いているかを1行（秘密は有無だけ・startup_line.go）。
 	log.Println(effectiveSettingsLine(cert, key))
@@ -269,7 +269,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/groups", auth.GroupsAPIHandler)
 	protected.HandleFunc("/api/admin/groups/members", auth.GroupMembersAPIHandler)
 	protected.HandleFunc("/api/admin/audit", auth.AuditAPIHandler)
-	// 拡張が要る置き場（通信箱・製造・受注・テンプレート置き場）を作る口。
+	// 拡張が要る置き場（通信箱・連絡帳・製造台帳・案件・製造・記録・テンプレート置き場——2026-10-19 の並び。名簿は各拡張の RegisterRequiredPage）を作る口。
 	// **押すのは人**——起動時に自動で作らない理由は required_pages.go の冒頭。
 	protected.HandleFunc("/api/admin/pages", cms.RequiredPagesAPIHandler)
 	// 「列の揃っていない表」の一覧（data/tables.db・DBの日本語化 §7 の2段目・admin限定）。

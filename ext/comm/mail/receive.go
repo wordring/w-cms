@@ -42,6 +42,8 @@ const headerFetchChunk = 200
 //
 // 新しい順にするのは、取り込み側が「新しいものから見て、古いものへ向かって
 // 取り込む」という既存の段取りに乗っているためです（import.go）。
+// （いまの import.go は、この一覧を**後ろから**——古いものから——たどって取り込みます。スレッドの親が先に入るように。
+// 新しい順で返すのは、opt.Max で切るときに新しい側を残すためです。）
 func (s *imapSession) list(opt ListOptions) ([]MessageRef, error) {
 	uids, err := s.searchUIDs(opt.Since)
 	if err != nil {

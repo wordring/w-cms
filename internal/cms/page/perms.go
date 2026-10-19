@@ -419,7 +419,7 @@ func RequireAdmin(w http.ResponseWriter, r *http.Request) bool {
 //
 // ここは**ブラウザに解釈させない**ことも仕事です。ページのディレクトリにHTMLやSVGが
 // あると、同一オリジンの文書として配信された時点で保存型XSSになります（本文の
-// サニタイズを通らない経路）。入口は拡張子で絞ってあります（safeAttachmentName）が、
+// サニタイズを通らない経路）。入口は拡張子で絞ってあります（cms.SafeAttachmentName）が、
 // 過去に置かれたファイルやバックアップ復元に備えて配信側でも守ります。
 func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// path.Clean で ".." を解決し、ディレクトリトラバーサルを防ぐ。

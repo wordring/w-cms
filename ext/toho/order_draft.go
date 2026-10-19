@@ -15,6 +15,10 @@ package toho
 //	  │    ↓ 編集して → [部材発注書作成]
 //	  └ 2026年／09月／発注 みなと商店
 //
+// （図は 2026-09-22 の形です。いまは、必要部材表〔もとの「未発注の表」〕と発注部材表の置き場がトップ直下の「製造」
+// 〔2026-10-19 までは「部材発注」〕か製造ページで、部材発注書ページは `記録／年／月／製造記録`〔製造ページから作れば
+// その子〕に「【弊社】部材発注　みなと商店」の題でできます——our_order_new.go。）
+//
 // ── なぜ本文に書いてよいのか ───────────────────────────────────────────
 //
 // ⚠ **人が足し引きした結果は「推測」ではなく「事実」だからです。**
@@ -42,6 +46,8 @@ import (
 // NewOrderDraftAPIHandler は POST /api/our-order/draft です。
 //
 // 部材発注ページの本文へ**発注部材表を1つ**足します（入力: {page_id, lines}）。
+// （page_id は必要部材表のあるページ——2026-10-19 からはトップ直下の「製造」。製造ページの「部材を発注部材表へ」は
+// 別の口 `/api/mfg/parts`〔mfg_view.go〕です。）
 //
 // ⚠ **行が0でも作ります**（ユーザー:「必要なければ何もクリックしなくても」）——
 // **空の表から始められる**ことが、加工製品ページに無い部材（消耗品・治具）だけを
@@ -99,7 +105,7 @@ func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "order-draft.create",
 		pageID+" "+strconv.Itoa(len(req.Lines))+"行 into="+into)
 	out := map[string]any{"success": true, "page_id": pageID, "rows": rows, "into": into}
-	// 別のページの臨時部材表から来た行（必要部材表を部材発注フォルダ以外に置いたとき）。
+	// 別のページの臨時部材表から来た行（必要部材表を部材発注フォルダ以外に置いたとき。2026-10-19 からは「製造」以外）。
 	if note := takeTempRowsElsewhere(user, req.Lines, pageID); note != "" {
 		out["temp_note"] = note
 	}
@@ -157,13 +163,6 @@ func CountOrderDrafts(pageID int) int {
 	return len(tablesOfType(nodes, OrderDraftType))
 }
 
-// orderDraftHTML は発注部材表のHTMLを組みます。
-//
-// ⚠ **見出し行は宣言から組みます**（`headerRowHTML`）——手書きに戻すと、列を足した日に
-// **足した列がどこからも読めません**。
-//
-// ⚠ **行が0でも表の骨は出します**——人がそこへ書き足せるように。**空の表は
-// 「作れなかった」ではなく「これから書く」**です。
 // putLinesIntoDraft は行を発注部材表へ入れた本文を返します（口の本文を変える部分）。
 // into が空なら新しい表を作り（置き場は placeNewDraft）、そうでなければ指した表へ足します。
 // 戻り値は（新しい本文・入れた行数・行き先が見つかったか）。見つからなければ本文はそのまま。
@@ -189,6 +188,14 @@ func placeNewDraft(body, tableHTML string) string {
 	return placeNewTableAfterLast(body, OrderDraftType, tableHTML)
 }
 
+// orderDraftHTML は発注部材表のHTMLを組みます。
+//
+// ⚠ **見出し行は宣言から組みます**（`headerRowHTML`）——手書きに戻すと、列を足した日に
+// **足した列がどこからも読めません**。
+//
+// ⚠ **行が0でも表の骨は出します**——人がそこへ書き足せるように。**空の表は
+// 「作れなかった」ではなく「これから書く」**です。
+// （この説明は putLinesIntoDraft の上に離れて残っていたので、2026-10-20 にここへ戻しました。）
 func orderDraftHTML(lines []ourOrderLine) string {
 	// ⚠ **節（`<section>`）で包みます**（2026-09-28・`draftBoxOf`）——「部材発注書を作る」の欄を表の外に出すため。
 	return tableOfLinesHTML(OrderDraftType, lines, true)
@@ -254,7 +261,8 @@ func orderLineValue(ln ourOrderLine, field string) string {
 		return strings.TrimSpace(ln.Note)
 	case "status":
 		// ⚠ **発注部材表には「状態」を書きません**——まだ発注していないので、
-		//    `未納品` と書くと**もう注文したように見えます**。
+		//    `未納品` と書くと**もう注文したように見えます**（部材発注書の行の既定は 2026-09-22 から `未発注`——
+		//    our_order_new.go。発注部材表はそれも書きません）。
 		return ""
 	}
 	return ""
@@ -281,7 +289,7 @@ func isTableOfTypeInBody(body, vocabType string) bool {
 // ページが出来て、実際に発注するまで発注ページに発注書ページへのリンクが残れば良い
 // のでは？」）でリンクに化けさせていましたが、**本文に書いたリンクは出しても消しても
 // 残り**、「⚠ まだ発注していません（4行）」がゴミとして溜まりました（ユーザー報告）。
-// いまは部材発注フォルダの「未発注の部材発注書」（`unsent_orders.go`）が**DBから毎回数える**ので、
+// いまは部材発注フォルダ（2026-10-19 からはトップ直下の「製造」）の「未発注の部材発注書」（`unsent_orders.go`）が**DBから毎回数える**ので、
 // 出せば消え、部材発注書を消せば消えます。
 //
 // ⚠ **うまくいかなくても部材発注書は取り消しません**——**紙のほうが重い**ので、
@@ -373,7 +381,7 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ⚠ **弊社品番の無い行は臨時部材表へ戻します**（2026-09-25）——必要部材表の計算に
-	//    乗らないので、外すだけだと**消えます**。臨時部材表は部材発注フォルダにあります。
+	//    乗らないので、外すだけだと**消えます**。臨時部材表は部材発注フォルダにあります（2026-10-19 からはトップ直下の「製造」）。
 	//    同じページなら同じ保存で、別のページなら**先に臨時部材表へ足してから**外します
 	//    （途中で失敗したとき、行が消えるより2か所に残るほうへ倒す）。
 	boxID, hasBox := purchaseOrderBoxID()

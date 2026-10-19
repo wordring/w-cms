@@ -12,6 +12,10 @@ package toho
 //	   → 見積書ページ（記録／年／月／依頼・テンプレート「見積書」を写す）の見積明細表に1行
 //	     （弊社品番・品番・品名・数量＝ロット・単位・単価＝確定単価・備考＝単価の行の備考）
 //
+// 2026-10-15 からは、写す元は**見積表**（見積計算表の結果の1行・estimate.go）です——欄は見積表の足元、数量＝見積表のロット、
+// 単価＝見積表に記録した単価、備考＝見積表の表面処理と備考。2026-10-16 からは、見積表は見積計算書のページにも置かれ、
+// 行の弊社品番・品番・品名はその `弊社品番` の加工製品ページから引きます（estimateOptionsOf）。
+//
 //   - **単価はその時点の値で写して固定**します（出した紙の値は、あとで見積計算表を直しても変わらない）。
 //   - **見積番号はページ番号**（部材発注書番号と同じ）。見積日は作った日。取引方法・有効期限は設定の既定（estimate_tags）。
 //   - 見積担当（差出人）は連絡帳の署名を持つ人——初期値はログイン名と同じ題の人（部材発注書と同じ）。
@@ -86,7 +90,7 @@ func (l estimateLine) values() map[string]string {
 	}
 }
 
-// estimateLineOf は加工製品ページの index 枚目（0から）の見積表から、見積明細表の1行を組みます。
+// estimateLineOf はページ productID（加工製品ページか見積計算書）の index 枚目（0から）の見積表から、見積明細表の1行を組みます。
 func estimateLineOf(productID int, index int) (estimateLine, error) {
 	opts, err := estimateOptionsOf(productID)
 	if err != nil {
@@ -287,8 +291,9 @@ func estimatesFor(user *auth.User, client string, limit int) []estimatePage {
 }
 
 // AddToEstimateAPIHandler は POST /api/estimate/add です。入力: {product, index, into, client, person, signer}——
-// 加工製品ページ product の index 枚目（0から）の見積計算表を、見積書へ1行入れます。into が空なら新しい見積書を作ります
-// （記録／年／月／依頼）。
+// ページ product の index 枚目（0から）の見積表を、見積書へ1行入れます。into が空なら新しい見積書を作ります
+// （記録／年／月／依頼）。product は押した見積表のあるページ（加工製品ページか見積計算書——2026-10-16〜）で、
+// 2026-10-15 までは見積計算表の確定単価でした。
 func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -352,7 +357,8 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // newEstimatePage は見積書ページを `記録／年／月／依頼` に作り、lines を見積明細表に入れます（テンプレート「見積書」を写す）。
 // 断ったときは w に書いて ok=false。client は社名を書く口（OrgNameForPage）を通した見積先です。
-// 見積計算表の「見積書に入れる」と、見積フォルダの「見積書を作る」（装置フォルダから選ぶ）が同じ道を通る。
+// 見積表の「見積書に入れる」と、ビュー「見積書を作る」（装置フォルダから選ぶ・estimate_folder.go）と、製造ページの
+// 「見積書を作る」（quote_done.go）が同じ道を通る。
 // parent が空でなければ、そのページ（製造ページ・2026-10-19）の子に作ります。
 func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn, signerIn string, lines []estimateLine, parent string) (newID, client string, ok bool) {
 	// 差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける）。
@@ -402,7 +408,8 @@ func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn,
 	return newID, client, true
 }
 
-// estimateAddFormHTML は見積計算表の足元の「見積書に入れる」欄です（書ける人にだけ出す）。
+// estimateAddFormHTML は見積表の足元の「見積書に入れる」欄です（書ける人にだけ出す）。productID は見積表のあるページ
+// （加工製品ページか見積計算書）で、index はそのページの何枚目の見積表か（0から）。
 func estimateAddFormHTML(user *auth.User, productID int, index int) string {
 	db := database.DB
 	client := productCustomerOf(db, productID)

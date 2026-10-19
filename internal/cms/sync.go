@@ -339,11 +339,12 @@ func dropAllTables(db *sql.DB) error {
 	return nil
 }
 
-// RebuildIfNeeded は、次のいずれかのときにデータベースを全再構築します。
+// RebuildIfNeeded は、data/master にHTMLファイルがあり、次のいずれかのときにデータベースを全再構築します。
 //   - 前回の再構築が完了していない（中断の印が残っている）
-//   - pages テーブルが空でかつ data/master にHTMLファイルが存在する場合に、
+//   - 表の写し（data/tables.db）が今の作り方で作られていない（tablesDBOutdated）
+//   - pages テーブルが空
 //
-// データベースを全再構築します。バックアップからファイル（data/master）だけを復元した状態で
+// バックアップからファイル（data/master）だけを復元した状態で
 // アプリを起動するだけでDBが自動再生成されるようにするための、起動時フックです。
 func RebuildIfNeeded() error {
 	if !hasHTMLFiles(page.MasterDir()) {

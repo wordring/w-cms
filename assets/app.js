@@ -21,7 +21,8 @@
     // セクションを足すだけで済む。`_v` でバージョン管理し、スキーマ変更時は migrate を1本足す。
     //   UI.get('rails.left', true)   // ドットパスで取得（無ければ既定値）
     //   UI.set('rails.left', false)  // 階層を掘って保存＋永続化
-    // FOUC 防止のため、<head> のインラインscriptも同じ `wcms.ui` を読む（旧キーfallback付き）。
+    // FOUC 防止のため、<head> で先に読む /assets/boot.js も同じ `wcms.ui` を読む（旧キーfallback付き。
+    // もとはインラインの script だったが、CSP strict 化で外部ファイルへ移した）。
     const UI = (() => {
         const KEY = 'wcms.ui';
         const VERSION = 1;
@@ -206,6 +207,8 @@
     // 覚えるので、ページを開き直してもそこに出ます（この閲覧者のこのブラウザだけ）。
     // **つまみをダブルクリックすると、元の「行に付いて回る」出し方へ戻ります。**
     // ⚠ つまみを押しただけ（動かさない）では留めません——クリックで勝手に固まらないように。
+    // ⚠ 2026-10-19 からは、パソコンでは2つのツールバーとも本文の上の固定の帯に入ります（initFixedBar・つまみは隠れる）。
+    //    行に付いて回る出し方とつまみで動かすのは、指で触る端末だけです。
     const TOOLBAR_EDGE = 4;
 
     // clampToViewport はツールバーが画面（ビューポート）の中に収まる位置を返します。
@@ -604,7 +607,7 @@
         // トップページは消せないので、そこでは出さない（サーバーも 400 で拒否する）。
         setHidden(document.getElementById('w-delete-page-btn'),
             !(editMode && currentPageId && currentPageId !== '000000'));
-        // 子ページ作成も「書く系」なので編集モードだけに出す（2026-08-31 ユーザー:
+        // 子ページ作成も「書く系」なので書ける形だけに出す（2026-10-12 までは編集モードだけ。2026-08-31 ユーザー:
         // 「閲覧モードで子ページ作成ボタンが出ているのは不思議」——読む画面に作る
         // ボタンが混ざらないよう、削除と同じ規律に揃えた）。
         setHidden(document.getElementById('w-create-subpage-btn'), !editMode);
@@ -3784,7 +3787,8 @@
 
     // deleteBlock はブロックを丸ごと削除する。確認ダイアログは出さない——
     // 行削除（tableRowDelete）と同じ流儀で、編集中のアンドゥ（Ctrl+Z）で戻せるため。
-    // 保存は本文DOMの変化を setupAutoSave の MutationObserver が拾って走る。
+    // 保存は、本文DOMの変化で setupAutoSave の MutationObserver が未保存の印を付け、🗑 を押した操作のあとの拾い
+    // （setupHistoryHooks の click——コマンドにしてすぐ保存）が送る（2026-10-12 昼まではオブザーバの自動保存が走った）。
     // 削除で本文が空になったら空の段落を1つ補い、書き続けられる場所を残す。
     function deleteBlock(block) {
         const neighbor = block.previousElementSibling || block.nextElementSibling;
@@ -4163,7 +4167,8 @@
     // セルの値はブロックの contenteditable がそのまま担い（値＝中身＝表示される文字）、
     // 行・列の追加・削除・並べ替えをこのツールバーで補う。ボタンを表の中へ挿すと
     // シリアライザが中身を本文として拾ってしまうため、クロームは本文DOMの外
-    // （#w-table-toolbar・シェル直下）に置き、キャレットのある行に追従させる。
+    // （#w-table-toolbar・シェル直下）に置き、キャレットのある行に追従させる（2026-10-19 からパソコンでは
+    // 本文の上の固定の帯の中——initFixedBar。追従するのは指で触る端末だけ）。
     let currentTableRow = null;
     let currentTableCell = null; // 列操作・列設定の対象列は「キャレットのあるセル」から決める
 
@@ -5541,7 +5546,8 @@
     }
 
     // ── enum 列の入力補助（選択肢メニュー）────────────────────────────────
-    // 選択肢はレジストリ宣言から取る（原則3: レジストリがあれば向上・無くても編集可能）。
+    // 選択肢は設定の語彙から取る（2026-09-26 からは登録の宣言ではなく `columnWord`・上の「列の型と選択肢は設定の語彙から」。
+    // 原則3: 語彙があれば向上・無くても編集可能）。2026-10-19 からはオートコンプリートの候補も同じメニューに出す。
     let enumMenuCell = null;
 
     function hideEnumMenu() {
@@ -5559,6 +5565,8 @@
     // **タグの値（可変タグの dd）にも enum の選択肢を出す**（2026-10-09 利用者:「タグにはコンボボックスで候補を出す設定が
     // 無かったでしょうか？」→「enum のタグ全部に出す」——【要求】タグと表 §11「タグの値にも、型に応じた入力補助を」）。
     // 選択肢は表のセルと同じ設定の語彙（`vocabWords` の `values`）。タグには enum だけ（image・候補の出どころは表のセルだけ）。
+    // ⚠ 2026-10-19 からは、タグの値にはオートコンプリートの候補も出す（下の fillTagValueMenu——enum なら選択肢を数の順に）。
+    //    候補の出どころ（suggest）は同じ日に外した。画像を選ぶボタンは、いまも表のセルだけ。
     function updateEnumMenu() {
         const menu = document.getElementById('w-enum-menu');
         if (!menu) return;
@@ -5611,7 +5619,7 @@
             b.dataset.choice = '1'; // 打った字で絞る対象（filterEnumMenu）
             b.textContent = v;
             b.addEventListener('click', () => {
-                cell.textContent = v;      // childList の変化で MutationObserver → 自動保存が走る
+                cell.textContent = v;      // childList の変化で MutationObserver が未保存の印・押したあとの拾い（setupHistoryHooks の click）が保存する
                 if (td) validateCell(td);
                 else markTagVocabulary();  // 選択肢の中にあるかの印（tag-known）を付け直す
                 placeCaretAtEnd(cell);
@@ -5687,7 +5695,7 @@
             b.textContent = v;
             b.title = n ? n + ' ページで使っています' : 'まだ使っていません';
             b.addEventListener('click', () => {
-                cell.textContent = v;      // childList の変化で MutationObserver → 自動保存が走る
+                cell.textContent = v;      // childList の変化で MutationObserver が未保存の印・押したあとの拾い（setupHistoryHooks の click）が保存する
                 markTagVocabulary();       // 選択肢の中にあるかの印（tag-known）を付け直す
                 placeCaretAtEnd(cell);
                 hideEnumMenu();
@@ -5732,7 +5740,7 @@
             b.textContent = value;
             b.title = count + ' 行で使っています';
             b.addEventListener('click', () => {
-                td.textContent = value;    // childList の変化で MutationObserver → 自動保存が走る
+                td.textContent = value;    // childList の変化で MutationObserver が未保存の印・押したあとの拾い（setupHistoryHooks の click）が保存する
                 validateCell(td);
                 placeCaretAtEnd(td);
                 hideEnumMenu();
@@ -5747,7 +5755,7 @@
     // filterEnumMenu は、候補のボタンを、いまセルに打ってある字で絞ります（オートコンプリート・2026-10-19）。
     //   2026-10-19 利用者:「これをオートコンプリートのようにコンボボックスで選ぶように出来ないでしょうか？」「オートコンプリートはコアの機能です」
     //   - 打った字を含む候補だけを見せる（全角半角・大小は畳む）。空なら全部。合うものが無ければメニューを閉じる。
-    //   - 絞るのは候補のボタン（data-choice）だけ。画像を選ぶボタンや出どころの候補には触らない。
+    //   - 絞るのは候補のボタン（data-choice）だけ。画像を選ぶボタンには触らない（出どころの候補〔suggest〕は同じ日に外した）。
     function filterEnumMenu() {
         const menu = document.getElementById('w-enum-menu');
         const cell = enumMenuCell;
@@ -5840,7 +5848,7 @@
             });
             sec.appendChild(zone);
             // 「🤖 PDFから明細を解析」（/api/parse-pdf）は 2026-10-01 に口ごと片付けた——押す道が無くなっていた
-            // （File を宣言する形式が無い）。PDF を読むのは添付の「🤖 解析」（受注ページ・加工製品ページを作る）。
+            // （File を宣言する形式が無い）。PDF を読むのは添付の「🤖 解析」（案件ページ〔2026-10-19 まで受注ページ〕・加工製品ページを作る）。
         });
     }
 
@@ -6010,7 +6018,7 @@
         return wrap;
     }
 
-    // makeFromRecord は選んだ種類のページを作ります（POST /api/record-make）。受注ページは Gemini が本文を読むので時間がかかる。
+    // makeFromRecord は選んだ種類のページを作ります（POST /api/record-make）。案件ページ（2026-10-19 まで受注ページ）は Gemini が本文を読むので時間がかかる。
     async function makeFromRecord(kind, btn) {
         btn.disabled = true;
         btn.textContent = '作っています…';
@@ -6112,7 +6120,7 @@
                 if (zb) copyRef.insertAdjacentElement('afterend', zb);
             }
             if (kind === 'pdf' && hasExtension('toho')) {
-                // 判定→受注ページ生成はボタン起動だけ（人間ゲート型・2026-09-01）。
+                // 判定→案件ページ（2026-10-19 まで受注ページ）の生成はボタン起動だけ（人間ゲート型・2026-09-01）。
                 // **解析は下請けの持ち物**——載っていなければボタンを出さない（2026-09-15）。
                 if (a.parentElement) {
                     const ab = makeAnalyzeButton(m[1], m[2] + '.pdf');
@@ -6239,7 +6247,9 @@
     // ただし**手数が非対称**でした: 分類は1クリック、取り消しは編集モードに入って
     // タグの組を消して保存。**押し間違いの取り消しが、いちばん面倒**という形です。
     //
-    // そこで、取引先の下のページでは `メールアドレス` の隣に小さな口を出します。
+    // そこで、取引先の下のページでは `メールアドレス` の隣に小さな口を出します（2026-09-16 から連絡先の置き場は
+    // 「連絡帳」で、サーバーの口〔/api/contacts/unfile〕も連絡帳の下のページだけを受け付けます。⚠ この画面は置き場を
+    // 確かめず、`メールアドレス` のタグがあるページならどこでも出します）。
     // 押すとそのタグだけ外れ、未登録の一覧へ戻ります。**ページは消しません**
     // （空になったら、そう伝えるだけ）。
     const EMAIL_TAG = 'メールアドレス';
@@ -6561,7 +6571,7 @@
             const d = await res.json();
             if (!d.success) return;
             rows = d.rows || [];
-            // 受注ページも同じ画面で片付けます（行き先は発注日で決まるので欄は無い）。
+            // 案件ページ（2026-10-19 まで受注ページ）も同じ画面で片付けます（行き先は発注日で決まる——記録／年／月／依頼——ので欄は無い）。
             orders = d.orders || [];
             // **区分の選択肢はサーバーが持ちます**（設定の語彙「区分」・2026-09-29 に段から替えた）。
             // 画面に書き写すと、語を足した日に片方だけ古くなります。
@@ -6592,7 +6602,8 @@
     }
 
     // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
-    // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます。
+    // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます（2026-09-29 からは試作も区分のタグで、
+    // 題に【試作】を付けなくてよい。区分は加工製品ページで付ける——下の kindBoxes）。
     function buildFilingPanel(rows, orders, kinds, partners, machines, files) {
         const panel = document.createElement('div');
         panel.className = 'vocab-chrome filing-chrome filing-panel';

@@ -281,7 +281,7 @@ func parentCreatesCycle(childID, newParentID int) bool {
 // 妥当なら ("", 0)、不正なら (ユーザー向けメッセージ, HTTPステータス) を返します。
 //
 // ルール（子ページ作成 NewPageAPIHandler と同じポリシー）:
-//   - 親を空（トップレベル）にするには admin 権限が必要
+//   - 親を空（トップレベル）にできるのはトップページだけ（admin でも、ほかのページは不可）
 //   - 親IDは数値かつ実在するページであること
 //   - 自分自身や自分の子孫を親に指定できない（循環防止）
 //   - 新しい親ページへの write 権限が必要
@@ -318,7 +318,8 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 }
 
 // ValidateParentAPIHandler は、編集中ページの親ページ変更が妥当かを返します（クライアントの即時検証用）。
-// 権威的な検証は保存API側でも行われます。対象ページのwrite権限を前提とします。
+// 権威的な検証は付け替えの口（SetParentAPIHandler → SetPageParent）でも行われます（保存APIは親を扱いません）。
+// 対象ページのwrite権限を前提とします。
 func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	id, childID, ok := queryPageID(w, r)
 	if !ok {
@@ -336,9 +337,6 @@ func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, map[string]any{"ok": true})
 }
 
-// SetParentAPIHandler は編集中ページの親ページを付け替えます（親はサイドカーが正本）。
-// 対象ページの write 権限に加え、変更先の妥当性（実在・循環・新しい親への write、
-// トップレベル化は admin）を検証してからサイドカーへ反映し、pages インデックスを更新します。
 // resyncSubtree はページとその配下すべての索引を本文から同期し直します
 // （親の付け替えでテンプレート領域へ出入りしたときに使う）。
 func resyncSubtree(rootID string) {
@@ -369,6 +367,9 @@ func resyncSubtree(rootID string) {
 	}
 }
 
+// SetParentAPIHandler は編集中ページの親ページを付け替えます（親はサイドカーが正本）。
+// 対象ページの write 権限に加え、変更先の妥当性（実在・循環・新しい親への write。
+// トップレベル化はトップページだけ——validateParentChange）を検証してからサイドカーへ反映し、pages インデックスを更新します。
 func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

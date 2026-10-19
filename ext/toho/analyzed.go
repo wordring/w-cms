@@ -89,7 +89,7 @@ const SourceRefTag = "受信元"
 
 // analyzedResult は添付1件から生まれたページです。
 type analyzedResult struct {
-	Kind   string `json:"kind"`    // 図面 / 受注
+	Kind   string `json:"kind"`    // 図面 / 案件（2026-10-19 までは「受注」）/ 返事（部材見積依頼の返事・rfqReplyKind）——kindOfPage
 	PageID string `json:"page_id"` // 生まれたページ
 	Title  string `json:"title"`
 }
@@ -187,7 +187,8 @@ func analyzedAttachments(user *auth.User, pageID string) (map[string]analyzedRes
 	return out, nil
 }
 
-// kindOfPage はそのページが図面ページか受注ページかを返します（どちらでもなければ空）。
+// kindOfPage はそのページが図面ページ（"図面"）か案件ページ（"案件"）か部材見積依頼の返事ページか（rfqReplyKind）を返します
+// （どれでもなければ空）。
 func kindOfPage(pageIDInt int) string {
 	// ⚠ **どちらもタグで見ます**（2026-09-18 に業務ブロックのヘッダから可変タグへ移した）。
 	// 索引は1度だけ読みます。
@@ -216,7 +217,7 @@ func isOrderPageTags(tags map[string][]string) bool {
 	return cms.FirstTag(tags, OrderNoTag) != "" || cms.FirstTag(tags, OrderClientTag) != ""
 }
 
-// 受注明細表の列の名前です。⚠ **`vocab.go` の `Label` と揃えること**——索引も本文の
+// 案件明細表（2026-10-19 までの名前は受注明細表）の列の名前です。⚠ **`vocab.go` の `Label` と揃えること**——索引も本文の
 // 書き換えも**見出しの表示文字**で引くので、ずれると黙って当たらなくなります。
 //
 // ⚠ **`OurItemNoTag` と `ItemNoTag` は別物です**（2026-09-20 ユーザー決定）:

@@ -50,7 +50,7 @@ import (
 
 // pageEvent は購読者へ送る1件です。
 type pageEvent struct {
-	Type      string `json:"type"` // hello（つないだ直後）・updated（本文が書き換わった）
+	Type      string `json:"type"` // hello（つないだ直後）・updated（本文が書き換わった）・presence（キャレットの場所——2026-10-12 昼）
 	By        string `json:"by,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 	// Tab は書いたタブ（2026-10-12）——書ける形のタブは自分の保存の知らせを受けても読み直さない。

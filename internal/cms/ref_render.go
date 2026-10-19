@@ -71,6 +71,7 @@ func parseRefValue(s string) (pageID, blockID string, ok bool) {
 // RenderReferenceLinks は本文中の dl（名前：値）の値のうち、参照の文法に
 // 一致するものをリンクへ合成して返します。指す先のページが無ければ
 // `ref-missing` の印を付けます（見た目は assets の CSS が担う）。
+// 2026-09-20 からは、登録された表の**参照の列**のセルも同じようにリンクにします（linkRefCells）。
 func RenderReferenceLinks(bodyHTML string) string {
 	// 早道: dl も table も無ければ参照は無い（普通のページにパースの費用を掛けない）。
 	if !strings.Contains(bodyHTML, "<dl") && !strings.Contains(bodyHTML, "<table") {
@@ -147,7 +148,6 @@ func RenderReferenceLinks(bodyHTML string) string {
 	return htmldoc.Render(nodes)
 }
 
-// linkRefDD は dd の中身を参照リンクへ置き換えます（表示文字は元の値のまま）。
 // linkRefList は、参照をいくつも並べたセルを、1つずつのリンク（「、」で区切る）に描き直します。
 // 形の合わない値・無いページを指す値があれば、セルに ref-missing の印と、どれかを添えます。
 func linkRefList(cell *html.Node, refs []string) bool {
@@ -186,6 +186,7 @@ func linkRefList(cell *html.Node, refs []string) bool {
 	return true
 }
 
+// linkRefDD は dd（表のセルにも使う）の中身を参照リンクへ置き換えます（表示文字は元の値のまま）。
 func linkRefDD(dd *html.Node, pageID, blockID string) {
 	text := strings.TrimSpace(nodeText(dd))
 	for dd.FirstChild != nil {

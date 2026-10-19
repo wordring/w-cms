@@ -225,7 +225,7 @@ func writeBody(w http.ResponseWriter, id, htmlBody string) (updatedAt string, ok
 // ——特別な意味を持つのは**トップ直下の1枚**だからです。
 //
 // ⚠ **題は名簿から採ります**（`RequiredPage` の登録）。コアに業務語を書かないための
-// 口で、拡張が足した置き場（受注・部材発注・製造）にも同じ規則が効きます。
+// 口で、拡張が足した置き場（案件・製造・記録など。2026-10-19 までは受注・部材発注も）にも同じ規則が効きます。
 func refuseDuplicateBoxTitle(id, htmlBody string) (string, bool) {
 	meta, ok := page.ReadSidecar(id)
 	if !ok || meta.ParentID != TopPageID {

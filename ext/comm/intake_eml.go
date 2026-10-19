@@ -10,7 +10,8 @@ package comm
 //	                     受信日時（ISO 8601・ローカル時刻＋オフセット）・
 //	                     Message-ID・In-Reply-To（ヘッダの写し）・親ページID（スレッドの親）</dl>
 //	                     （2026-10-09 までは「メッセージID」「返信元メッセージID」の名前で、親ページID は無かった）
-//	本文（text/plain を段落へ）
+//	                     （ほかに 向き・チャネル・添付の数・対応〔受信は `未処理`・2026-10-19 から〕も書く）
+//	本文（text/plain を `本文` の節の `<pre>` 1つへ——2026-09-05 までは段落へ割っていた）
 //	📎 添付（files/ へ保存・リンクは生成ID・download 属性が元名を運ぶ。
 //	        人が落とす口と同じ検査を通し、ZIP は中身も1つずつ添付にする——2026-09-17）
 //	📧 受信原本（生の .eml。解釈で落ちるものがあるので原本を残す＝やり直せる）
@@ -208,7 +209,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 		d.SetTag(ReceivedAtTag, dateISO)
 	}
 	// 重複検知の鍵。**見える文字として置く**——専用テーブルは無く、索引の逆引き
-	// （pagesByTag）が判定そのものになる。人にとっては普段読まない値だが、
+	// （`cms.PagesByTag`——ExistingMailRecord）が判定そのものになる。人にとっては普段読まない値だが、
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
 	// ⚠ テンプレートに欄が無くても足します（`SetTag`）——無いと重複検知が黙って効かない。
 	d.SetTag(MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
@@ -407,7 +408,8 @@ func PlainTextBlockHTML(text string) string {
 // `download` 属性（保存名）はファイル名だけです。
 //
 // 数は**保存したブロックの数**です（ZIP 1つ＋中の13件なら 14）。**0 なら空を返します**
-// ——WriteTag が空を書かないので、添付の無い記録にはタグが付きません。
+// ——タグを書く `SetTag`（テンプレートの下書き。2026-09-27 までは WriteTag）が空を書かないので、添付の無い記録には
+// タグが付きません（テンプレートに空の欄があれば、空の欄のまま残ります）。
 func saveMailAttachments(ctx *IntakeContext, pageID, rawName string, parts []emlPart) (string, string, error) {
 	var b strings.Builder
 	n := 0

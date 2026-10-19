@@ -144,7 +144,7 @@ func takeSkipRow(body string, row int) (string, ourOrderLine, bool) {
 }
 
 // SkipAPIHandler は POST /api/our-order/skip です。入力: {page_id, lines, reason}——page_id は必要部材表のあるページ
-// （部材発注フォルダ）。行を手配不要表へ入れ、臨時部材表から来た行は臨時部材表から消します（移す）。
+// （部材発注フォルダ。2026-10-19 からはトップ直下の「製造」）。行を手配不要表へ入れ、臨時部材表から来た行は臨時部材表から消します（移す）。
 func SkipAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {

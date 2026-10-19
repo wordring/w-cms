@@ -440,7 +440,7 @@ func run(e *env, dry bool) error {
 			}
 		}
 	}
-	// 受注の行（`弊社品番` の空いているもの）は、**受注フォルダを開いたときに**サーバーが結ぶ（2026-10-01——それまでは
+	// 受注の行（`弊社品番` の空いているもの）は、**受注フォルダを開いたときに**サーバーが結ぶ（2026-10-19 から「案件」の行・「案件」のフォルダ。2026-10-01——それまでは
 	// ここから管理者の口 /api/order-items/relink を呼んでいた。利用者:「単純化しましょう」）。
 	if !dry {
 		rep.notes = append(rep.notes, "受注の行の弊社品番は、受注フォルダを開いたときに結ばれます（候補がちょうど1件の行だけ）。")
@@ -945,7 +945,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	d := cms.NewPageDraft(tmplTitle, tmpl)
 	d.SetTitle(title)
 	if rule.PartNo == "図面番号" {
-		d.SetTag("品番", drawingNo) // この取引先の品番は図面番号（題の下のタグ——受注明細表の品番と結ぶ）
+		d.SetTag("品番", drawingNo) // この取引先の品番は図面番号（題の下のタグ——案件明細表〔2026-10-19 までは受注明細表〕の品番と結ぶ）
 	}
 	if rule.ItemName == "図面名称" {
 		d.SetTag("品名", name) // この取引先の品名は図面名称（題の下のタグ）

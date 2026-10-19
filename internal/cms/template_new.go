@@ -32,7 +32,8 @@ import (
 // CopyTemplateBody はテンプレートの本文を、新しいページの本文として写します。
 //
 // 値はそのまま写します（空欄は空欄のまま）。変えるのはブロックIDを外すことだけです。
-// 呼ぶ側（loadTemplateBody）がサニタイズ済みの本文を渡します。
+// 新規作成の口（loadTemplateBody）はサニタイズ済みの本文を渡します。置き場を作る口（boxBodyFromTemplate）は
+// 正本のファイルをそのまま渡し、サニタイズは書く側（CreateChildPage）が掛けます。
 func CopyTemplateBody(bodyHTML string) string {
 	nodes, err := htmldoc.ParseFragment(bodyHTML)
 	if err != nil {

@@ -63,7 +63,8 @@
 
 <!-- 表の行・列操作ツールバー（汎用表エディタの編集クローム）。
      ボタンを表の中へ挿すとシリアライザが中身を本文として拾ってしまうため、
-     クロームは必ず本文DOMの外に置く。表示位置は app.js がキャレット位置から決める。 -->
+     クロームは必ず本文DOMの外に置く。表示位置は app.js がキャレット位置から決める
+     （2026-10-19 からパソコンでは本文の上の固定の帯の中——app.js の initFixedBar。キャレットに付いて回るのは指で触る端末だけ）。 -->
 <div id="w-table-toolbar" class="table-toolbar">
     <button type="button" id="w-tt-add" title="行を下に追加">＋行</button>
     <button type="button" id="w-tt-up" title="行を上へ移動">↑</button>
@@ -77,7 +78,8 @@
     <button type="button" id="w-tt-col-cfg" title="列の設定（型）">⚙</button>
 </div>
 
-<!-- 定義リスト（dl data-type）の項目操作ツールバー。項目＝dt と後続の dd の組。 -->
+<!-- 定義リスト（dl data-type）の項目操作ツールバー。項目＝dt と後続の dd の組。
+     いまは素の dl（見出し形・D-2）を含む全部の dl で出す（app.js の updateDlToolbar）。 -->
 <div id="w-dl-toolbar" class="table-toolbar">
     <button type="button" id="w-dt-add" title="項目を下に追加">＋項目</button>
     <button type="button" id="w-dt-val" title="値（dd）を追加（多値）">＋値</button>
@@ -129,7 +131,8 @@
      （「テンプレート」フォルダ配下のツリー。枝は分類の見出し・葉はテンプレート）。 -->
 <div id="w-template-menu" class="enum-menu template-menu"></div>
 
-<!-- enum 列の入力補助（選択肢メニュー）。項目は app.js がレジストリ定義から生成する。 -->
+<!-- enum 列の入力補助（選択肢メニュー）。項目は app.js が生成する——選択肢は設定の語彙から（2026-09-26 までは
+     レジストリ定義から）、2026-10-19 からは表のセルとタグの値のオートコンプリートの候補（/api/autocomplete）も。 -->
 <div id="w-enum-menu" class="enum-menu"></div>
 
 <!-- アプリ内通知（トースト）エリア。保存エラー・ぶつかり・ページの更新の知らせ等をここへ集約する

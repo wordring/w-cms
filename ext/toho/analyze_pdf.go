@@ -3,8 +3,8 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 // PDFの判定→受注ページ生成——ボタン起動（東邦の業務・2026-09-01）
 //
-// 添付PDFを Gemini で判定し、**顧客が発行した発注書**なら受注ページを
-// そのページの子として生成します。
+// 添付PDFを Gemini で判定し、**顧客が発行した発注書**なら受注ページ（2026-10-19 からの名前は案件ページ）を
+// そのページの子として生成します。図面なら加工製品ページ、業者の見積の返事なら返事ページです。
 //
 // ⚠ **ZIP の中の PDF は、ここでは扱いません**（2026-09-17）。メールの取り込みが
 // ZIP を展開して中身を1つずつ添付にするので（`ext/comm/intake_eml.go`）、解析が見る
@@ -297,7 +297,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 	// まま、居なければ法人格を落とした形。⚠ **生の社名は原本の写しに残ります**
 	// （「顧客の発注書（読んだまま）」）ので、食い違えば人が見比べられます。
 	//
-	// ⚠ **図面の枝も同じ値を使います**——`客先` は置き場所（社名／段／装置名称）に
+	// ⚠ **図面の枝も同じ値を使います**——`客先` は置き場所（製造台帳／社名／装置名称）に
 	// 効くので、ここで揃えないと**受注ページと加工製品ページで社名が食い違います**。
 	j.Customer = contacts.OrgNameForPage(user, j.Customer)
 	for i := range j.Drawings {
@@ -643,7 +643,7 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	return &j, nil
 }
 
-// OrderPageTemplate は受注ページを作るテンプレートの題です（2026-09-27）。
+// OrderPageTemplate は受注ページ（2026-10-19 からの名前は案件ページ）を作るテンプレートの題です（2026-09-27）。
 //
 // ⚠ **受注ページの形はこのテンプレートが決めます**——タグの並び・原本PDFと写しの枠・
 // 受注明細表の列の並び。機械が書くのは**題と値と行の数**だけです（利用者:「テンプレートには
@@ -858,7 +858,7 @@ func itemNoSourceNote(items []orderPDFItem) string {
 		`」を弊社の「` + html.EscapeString(itemNoLabel()) + `」に入れました。</p>`
 }
 
-// itemNoLabel は受注明細表の `品番` 列の見出しを返します（宣言と同じ綴りを使うため）。
+// itemNoLabel は案件明細表（2026-10-19 までの名前は受注明細表）の `品番` 列の見出しを返します（宣言と同じ綴りを使うため）。
 //
 // ⚠ **生の文字列で持つと、列を改名した日にこの注意書きが常に出ます**——
 // 「先方の『品番』を弊社の『品番』に入れました」という、意味の無い1行になります。
@@ -1005,7 +1005,7 @@ func fillDrawingBlock(d *cms.PageDraft, j *orderJudgment, hostPageID, attachID s
 	// 図面のどこにも書かれていないからです。置き場は H1 の下（テンプレートが持つ）。
 	setHeaderTag(blk, DrawingNoTag, cms.NormalizeNameForIngest(j.DrawingNo))
 	setHeaderTag(blk, DrawingNameTag, cms.NormalizeNameForIngest(j.DrawingName))
-	// 装置名称・客先は置き場所（社名／段／装置名称／図面名称）に効く項目。
+	// 装置名称・客先は置き場所（製造台帳／社名／装置名称／図面名称）に効く項目。
 	setHeaderTag(blk, MachineNameTag, cms.NormalizeNameForIngest(j.MachineName))
 	setHeaderTag(blk, ClientNameTag, cms.NormalizeNameForIngest(j.Customer))
 	ref := hostPageID + "-" + attachID

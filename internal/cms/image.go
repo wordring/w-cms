@@ -35,7 +35,8 @@ import (
 )
 
 // allowedImageExts は画像添付として保存を許す拡張子です（要件 §2.6）。
-// 実際に保存されるかは中身の種別と一致するかで決まる（extMatchesKind）。
+// 実際に保存されるかは中身の種別と一致するかで決まる（checkImageContent が extKinds と照らす。
+// 以前ここに書いていた extMatchesKind という関数はありません）。
 var allowedImageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true, ".svg": true,
 }

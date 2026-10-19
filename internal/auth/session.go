@@ -146,7 +146,7 @@ const SessionAPIPath = "/api/session"
 // EventSource のように印（ヘッダ）を付けられないものも入ります。
 var passivePaths = map[string]bool{
 	"/api/page-events": true, // ページの更新の知らせの購読（タブを開いているあいだずっと）
-	"/api/lock-events": true, // 編集ロックの知らせの購読
+	"/api/lock-events": true, // 編集ロックの知らせの購読（2026-10-12 から画面は張らない——道具のための口が残っている）
 	"/api/presence":    true, // キャレットのあるブロックの知らせ（キャレットが動くと自動に飛ぶ）
 }
 

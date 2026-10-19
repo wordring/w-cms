@@ -141,7 +141,8 @@ func hasViewMarker(bodyHTML string) bool {
 		if !def.View && strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {
 			return true
 		}
-		// 機能見出し（D-2）: 表示名が本文に現れたら歩く価値がある。
+		// 表示名が本文に現れたら歩く価値がある——鏡の印 `data-mirror="表示名"` と、表の `<caption>`
+		// （機能見出し〔D-2〕で名乗る読み方は 2026-09-29 に廃止。いま表示名で名乗るのはこの2つ）。
 		// 早道は「無ければ確実に無い」ことだけ保証すればよく、
 		// 偽陽性（表示名が地の文に出てくる）はパース1回の費用で済む。
 		if strings.Contains(bodyHTML, def.DisplayName) {

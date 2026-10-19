@@ -109,7 +109,7 @@ type madeOrderPDF struct {
 // 断るときは応答を書いて false を返します。
 //
 // ⚠ **表示中の PDF がまだ送っていないものなら、新しく作らずにその添付を上書きします**（2026-10-14・【要求】
-// 発注フォルダ「PDF作成」ボタン:「送付前は、このボタンを押すたびに、古いPDFを上書きして」）。送ったものなら
+// 部材発注フォルダ「PDF作成」ボタン:「送付前は、このボタンを押すたびに、古いPDFを上書きして」）。送ったものなら
 // 新しい版を作って表示を差し替えます（送った PDF は消さない——order_pdf_sent.go）。
 func makeOrderPDF(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool) {
 	if made, done, ok := overwriteUnsentOrderPDF(w, user, pageID); done {

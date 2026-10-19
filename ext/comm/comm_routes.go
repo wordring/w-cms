@@ -26,14 +26,14 @@ func (commPlugin) Tables() []string { return nil }
 // Routes は通信の口です。
 func (commPlugin) Routes() []cms.Route {
 	return []cms.Route{
-		// この記録への返信（w-cms が送った返信の一覧）。
+		// この記録への返信（こちらが送った返信の一覧——親ページID がこの記録を指す送信の記録。Outlook から送って取り込んだ返信も入る）。
 		{Pattern: "/api/replies", Handler: RepliesAPIHandler},
-		// スレッドの前後（In-Reply-To の鎖）。`/api/replies` とは別の鎖で、
-		// **受信どうしの返り**も繋がる（handler_thread.go の冒頭に違いを書いた）。
+		// スレッドの前後（親と子）。2026-10-09 から `/api/replies` と同じ `親ページID` の鎖で、違いは
+		// **受信どうしの返り**も出すこと（handler_thread.go の冒頭に違いを書いた。それまでは In-Reply-To の鎖）。
 		{Pattern: "/api/thread", Handler: ThreadAPIHandler},
-		// メールの一覧（受信も送信も・スレッドは画面が In-Reply-To で組む・2026-09-29）。
+		// メールの一覧（受信も送信も・スレッドは画面が `親ページID` で組む——2026-10-09 までは In-Reply-To・2026-09-29）。
 		{Pattern: "/api/mails", Handler: MailListAPIHandler},
-		// 未処理の一覧から「対応：不要」を付ける（まとめて押せる）。
+		// 未処理の一覧・メールのページから `対応` を付ける（済・不要・未処理。まとめて押せる）。
 		{Pattern: "/api/intake/handled", Handler: MarkHandledAPIHandler},
 		// 手で記録を作る（電話・FAX・メール・メモ。FAXサーバーが繋がれば自動で増える）。
 		{Pattern: "/api/intake/memo", Handler: NewMemoAPIHandler},

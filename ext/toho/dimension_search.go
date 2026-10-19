@@ -44,7 +44,7 @@ func (q MaterialQuery) Empty() bool {
 type MaterialHit struct {
 	PageID    int    `json:"page_id"`
 	PageTitle string `json:"page_title"`
-	Kind      string `json:"kind"`     // 材料 / 部材発注明細表
+	Kind      string `json:"kind"`     // 材料表 / 部材発注明細表（形式の表示名）
 	Material  string `json:"material"` // 材質
 	Shape     string `json:"shape"`    // 形状
 	Size      string `json:"size"`     // 寸法（書かれたまま）

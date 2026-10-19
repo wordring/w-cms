@@ -34,7 +34,7 @@ import (
 type MadePage struct {
 	PageID string `json:"page_id"`
 	Title  string `json:"title"`
-	Kind   string `json:"kind"` // 印に出す短い名前（「受注」「加工製品」）
+	Kind   string `json:"kind"` // 印に出す短い名前（「案件」「加工製品」——2026-10-19 までは「受注」）
 }
 
 // MakeResult は作った結果です。
@@ -54,7 +54,7 @@ func (e *MakeError) Error() string { return e.Message }
 
 // RecordMaker は記録から作れるページの種類です。
 type RecordMaker struct {
-	Name  string // 選ぶ欄に出す名前（「受注ページ」）
+	Name  string // 選ぶ欄に出す名前（「案件ページ」——2026-10-19 までは「受注ページ」）
 	Hint  string // 選ぶ欄の説明（何を読んで何を作るか）
 	Order int    // 並び（小さいほど先）
 	// Directions は出す向き（受信・送信）。空ならどちらにも出す。

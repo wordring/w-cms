@@ -53,7 +53,7 @@ var ErrNoPageTemplate = errors.New("ページを作るテンプレートがあ�
 // TemplateSlotError は、テンプレートに値を入れる器（表・見出しの節）が無いことを表します。
 type TemplateSlotError struct {
 	Template string // テンプレートの題
-	Slot     string // 無かったもの（「表『受注明細表』」など）
+	Slot     string // 無かったもの（「表『案件明細表』」など。2026-10-19 までの名前は受注明細表）
 }
 
 func (e *TemplateSlotError) Error() string {
@@ -535,7 +535,7 @@ func (b DraftBlock) SetFileView(ref string) bool {
 // DropFileView は範囲の中の**まだ配線されていない**最初のファイル表示を消します（2026-10-01）。包んでいる
 // 折りたたみ・節にほかの中身が無ければ（題・見出しだけなら）、それごと消します。無ければ何もせず false。
 //
-// 原本のファイルが無い文書を同じテンプレートから作るとき（メールの本文から作る受注ページ——PDF の枠が要らない）に、
+// 原本のファイルが無い文書を同じテンプレートから作るとき（メールの本文から作る案件ページ〔2026-10-19 までは受注ページ〕——PDF の枠が要らない）に、
 // 空の枠（「参照がありません」）を残さないため。
 func (b DraftBlock) DropFileView() bool {
 	fv := findFirst(b.n, func(n *html.Node) bool {

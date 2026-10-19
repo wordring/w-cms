@@ -44,7 +44,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// ——そこで新しいページを作ると、会社ページが2枚になります。
 		PageID string `json:"page_id"`
 		// PersonName があれば、その会社の**担当者ページ**へ入れます
-		// （`取引先／社名／担当者／氏名`・2026-09-13）。連絡先は1人にタグが何個も
+		// （いまは `連絡帳／組織／人`・2026-09-16。2026-09-13 は `取引先／社名／担当者／氏名`）。連絡先は1人にタグが何個も
 		// ぶら下がるので（メール・電話・役職）、**人ごとの器**が要ります。
 		// 空なら会社の口として社名ページへ（`order@…` のような人でないもの）。
 		PersonName string `json:"person_name"`
@@ -274,7 +274,7 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	idInt, _ := strconv.Atoi(pageID) // NormalizeID を通った値は必ず数
-	// **取引先の下だけ**（ここは連絡先の分類を取り消す口で、本文の一般的な編集口では
+	// **連絡帳の下だけ**（2026-09-16 までは取引先。ここは連絡先の分類を取り消す口で、本文の一般的な編集口では
 	// ありません。よそのページのタグを消せる道を増やさない）。
 	if _, _, inPartner := PartnerOfPage(idInt); !inPartner {
 		cms.JSONFail(w, http.StatusBadRequest, "「"+ContactsBoxTitle+"」の下のページではありません")
@@ -321,6 +321,8 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 // **畳んだ一致で探します**——本文には大文字混じりで書かれていることがあるためです
 // （`normalizeEmail` は小文字化と前後の空白落としだけ）。
 // 空になった可変タグの `dl` も畳みます（空の箱を残さない）。
+// ⚠ **詰めた形（`</dt><dd>`）しか探しません**——エディタで一度保存したページは `</dt>` と `<dd>` のあいだが
+// 字下げされるので当たらず、「そのアドレスはこのページにありません」と断ります（2026-10-20 に見つけた・直していない）。
 func removeEmailTag(body, addr string, removed *int) string {
 	re := regexp.MustCompile(`<dt>` + regexp.QuoteMeta(EmailTag) + `</dt><dd>([^<]*)</dd>`)
 	out := re.ReplaceAllStringFunc(body, func(m string) string {

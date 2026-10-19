@@ -26,8 +26,9 @@ import (
 //   - 鍵 = 見出し（th / dt）の表示文字
 //   - 型 = th の data-type 明示 > レジストリ宣言 > 語→型推論辞書 > text
 // 正規化値（norm_value）は解釈できた値だけ**併記**し、生テキスト（value）が
-// 常に正本です。未知の data-type もそのまま索引に載ります（オプトインの規約は
-// data-type の有無だけ。素の table / dl は索引しません）。
+// 常に正本です。2026-09-20 からは、**登録された形式だけ**を索引に載せます（未知の data-type・
+// 未登録の caption の表は載りません——下の OnElement）。それまでは「未知の data-type も
+// そのまま索引に載る（オプトインの規約は data-type の有無だけ）」でした。素の table / dl は索引しません。
 //
 // 「ファイルから再生成できないデータを持たせない」不変条件（アーキテクチャと
 // DBスキーマ §8.1）は本テーブルにも適用されます——DELETE→INSERT の洗い替えのみ。
@@ -220,9 +221,9 @@ func (vocabIndexPlugin) OnElement(ctx *ObserveContext, el *html.Node) (bool, err
 	// （2026-09-29 に節の見出しで名乗る読み方は廃止しました。いまワンノートから移した表は、
 	// 自分の `<caption>` で同じ登録の言葉を名乗ります。）
 	//
-	// ⚠ **運用者が自分の表を足す道は、いまコードにしかありません**（`RegisterVocab` を
-	// 呼ぶのはプラグインだけ）。`settings.json` から形式を足せるようにするのが対の宿題です
-	// （同文書 §2.6）。それまでは、登録されていない表は**見えるが索引されない**。
+	// ⚠ **運用者が自分の表を足す道は、設定の `vocab_formats` です**（同日に開けた対の道——
+	// settings.go の VocabFormats・vocab.go の SetSettingsVocabFormats。同文書 §2.6）。
+	// コードでは `RegisterVocab`（拡張の init）。どちらにも無い表は**見えるが索引されない**。
 	def, known := VocabDefByType(dataType)
 	if !known {
 		return true, nil
@@ -381,6 +382,24 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, blockI
 	return nil
 }
 
+// tagSeqOf は、タグならページ通しの番号を配る関数を、そうでなければ nil を返します。
+//
+// 数えるのは `ObserveContext` です——観察係はページ間で使い回される singleton なので、
+// そちらに持たせると番号がページをまたいで漏れます（walk.go の Counter の説明）。
+func tagSeqOf(ctx *ObserveContext, dataType string) seqCounter {
+	if dataType != TagsDataType {
+		return nil
+	}
+	return func() int { return ctx.Counter("page_tags:seq") }
+}
+
+// seqCounter は次の通し番号を返す関数です（タグのときだけ渡します）。
+//
+// **タグの番号はページ通し**にします（2026-09-13）。`dl` ごとに 0 へ戻すと、
+// 1ページに `dl` が2つあったとき番号が衝突し、主鍵にできません。
+// nil なら `dl` ごとの連番（業務ブロックはこれまでどおり `block_no` と対で使う）。
+type seqCounter func() int
+
 // syncVocabDL は1つの <dl data-type> を索引へ書き込みます。
 // dt が鍵（自由語）、後続の dd が値です。
 //
@@ -400,26 +419,11 @@ func syncVocabTable(tx *sql.Tx, pageID int, dataType string, blockNo int, blockI
 // 正本は docs/考察/【考察】タグ表と業務ブロック表の分離.md §8。
 // **このコメントは 2026-09-14 まで「唯一の行き先」と言い続けていました**
 // ——同じファイルの53行目と正面から食い違ったまま。「親ページID」を
-// 取り込まない旧ガードも同時に消えた——親はサイドカーが正本で、この語を親として
-// 解釈するコードはもう無い（書けば普通のタグとして索引に載るだけ・不活性）。
-// tagSeqOf は、タグならページ通しの番号を配る関数を、そうでなければ nil を返します。
-//
-// 数えるのは `ObserveContext` です——観察係はページ間で使い回される singleton なので、
-// そちらに持たせると番号がページをまたいで漏れます（walk.go の Counter の説明）。
-func tagSeqOf(ctx *ObserveContext, dataType string) seqCounter {
-	if dataType != TagsDataType {
-		return nil
-	}
-	return func() int { return ctx.Counter("page_tags:seq") }
-}
-
-// seqCounter は次の通し番号を返す関数です（タグのときだけ渡します）。
-//
-// **タグの番号はページ通し**にします（2026-09-13）。`dl` ごとに 0 へ戻すと、
-// 1ページに `dl` が2つあったとき番号が衝突し、主鍵にできません。
-// nil なら `dl` ごとの連番（業務ブロックはこれまでどおり `block_no` と対で使う）。
-type seqCounter func() int
-
+// 取り込まない旧ガードも同時に消えた——ページの親はサイドカーが正本で、コアはこの語を
+// ページの親として解釈しない（書けば普通のタグとして索引に載る）。
+// （2026-10-09 から、通信の拡張が `親ページID` を**通信記録の親子**（どの記録への返信か）の参照タグとして
+// 書き・読みます——設定の語彙で `ref`。ページの親〔サイドカー〕とは別の線です。）
+// （このコメントは 2026-10-20 まで、tagSeqOf の上に離れて置かれていました。）
 func syncVocabDL(tx *sql.Tx, pageID int, dataType string, blockNo int, blockID string, def VocabDef, dl *html.Node, nextSeq seqCounter) error {
 	rowNo := 0
 	var firstErr error

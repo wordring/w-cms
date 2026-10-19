@@ -252,7 +252,7 @@ func TagRowsNamed(db ReadOnlyDB, names ...string) ([]TagRow, error) {
 //
 // 硬いドメイン表を廃したことで、**ページ横断の突き合わせはこの逆引きになります**。
 // 部材定義が部品番号でつながるように、鍵が形式の外（ページ全体のタグ）にある
-// 形式で使います。索引 idx_page_tags_field_value が効きます。
+// 形式で使います。索引 idx_page_tags_name_value（vocab_index.go の Schema）が効きます。
 //
 // 生テキスト（value）に対して引きます——正規化値ではなく生が正本だからです
 // （docs/旧文書/アーキテクチャとDBスキーマ.md §9.1）。

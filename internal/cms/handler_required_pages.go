@@ -5,8 +5,9 @@ package cms
 //	GET  /api/admin/pages … いま何が要り、どれが在るか
 //	POST /api/admin/pages … 足りないものを作る（冪等）
 //
-// **admin だけ**です。トップ直下にページを作る操作なので、既存の規律
-// （「`/api/new-page` の親がトップならadmin」）と同じ線に合わせます。
+// **admin だけ**です。トップ直下にページを作る操作なので、既存の線に合わせます
+// （`/api/new-page` は親への write を要り、トップページは admin 所有・ほかの人は読むだけ〔mode 302〕なので、
+// トップ直下に作れるのは事実上 admin だけ——専用の確かめがあるわけではありません）。
 
 import (
 	"encoding/json"

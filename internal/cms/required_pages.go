@@ -74,6 +74,7 @@ var requiredPageRegistry = map[string]RequiredPage{}
 // **題が鍵**です——同じ題を2つの拡張が要求することはありえます（どちらも
 // 「取引先」を使う、など）が、**本文が2通りになると先に押したほうが勝つ**という
 // 説明のつかない形になるので、重複はその場で落とします。
+// （2026-09-27 から本文はテンプレートが持つので、いま2通りになりうるのは「何のために要るか」〔Why〕と持ち主の拡張です。）
 func RegisterRequiredPage(p RequiredPage) {
 	title := strings.TrimSpace(p.Title)
 	if title == "" {
@@ -109,6 +110,16 @@ type RequiredPageStatus struct {
 	NoTemplate bool   `json:"no_template,omitempty"`
 }
 
+// IsRequiredPageTitle は、その題が**登録された置き場**のものかを返します。
+//
+// ⚠ **「トップ直下に1枚だけ」を守る側が使います**（`refuseDuplicateBoxTitle`）。
+// コアに業務語を書かずに済むよう、判定は**名簿**を通します——拡張が足した置き場
+// （案件・製造・記録など。2026-10-19 までは受注・部材発注も）にも同じ規則が効きます。
+func IsRequiredPageTitle(title string) bool {
+	_, ok := requiredPageRegistry[strings.TrimSpace(title)]
+	return ok
+}
+
 // RequiredPages は登録された置き場の**宣言**を並び順つきで返します。
 //
 // **DBを引きません**——「何が要るか」は起動時に確定しており、ページが在るかどうか
@@ -117,16 +128,6 @@ type RequiredPageStatus struct {
 //
 // **載っている拡張のぶんだけ**出ます——`-tags minimal` の素の w-cms では
 // コアの置き場（テンプレート）しか登録されないので、表もそれだけになります。
-// IsRequiredPageTitle は、その題が**登録された置き場**のものかを返します。
-//
-// ⚠ **「トップ直下に1枚だけ」を守る側が使います**（`refuseDuplicateBoxTitle`）。
-// コアに業務語を書かずに済むよう、判定は**名簿**を通します——拡張が足した置き場
-// （受注・部材発注・製造）にも同じ規則が効きます。
-func IsRequiredPageTitle(title string) bool {
-	_, ok := requiredPageRegistry[strings.TrimSpace(title)]
-	return ok
-}
-
 func RequiredPages() []RequiredPage {
 	out := make([]RequiredPage, 0, len(requiredPageRegistry))
 	for _, p := range requiredPageRegistry {

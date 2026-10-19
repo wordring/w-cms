@@ -44,7 +44,8 @@ const TempPartsType = "temp-parts"
 // tempPartsClient は必要部材表で、臨時部材表から来た行の「客先」の欄に出す言葉です。
 const tempPartsClient = "臨時部材"
 
-// tempPartsColumns は臨時部材表の列です——発注部材表の列から `弊社品番` と `状態` を除いたもの。
+// tempPartsColumns は臨時部材表の列です——発注部材表の列から `弊社品番` と `状態` を除いたもの
+// （`案件`〔2026-10-01 に足した列・2026-10-19 までの名前は `受注`〕と、下の種類・番号などの5つも除きます）。
 //
 // ⚠ `弊社品番` を除くのは、弊社品番のある部材は**計算の側**（必要部材表）に出るから。
 // ⚠ `状態` を除くのは、この表に**在ること自体**が「まだ発注していない」だから。
@@ -224,6 +225,7 @@ func insertTempPartsTable(nodes []*html.Node, tableHTML string) string {
 }
 
 // isRequiredPartsMarker は必要部材表の目印（属性形・見出し形）かを返します。
+// （鏡は 2026-09-27 から `data-type` で、2026-09-28 から見出しで名乗れず、`<section data-mirror="必要部材表">` の印だけです——コアの VocabTypeOf。）
 func isRequiredPartsMarker(n *html.Node) bool {
 	if n.Type != html.ElementNode || n.Data != "section" {
 		return false
@@ -279,12 +281,12 @@ func purchaseOrderBoxID() (string, bool) {
 	return cms.TopLevelPageByTitle(MfgBoxTitle)
 }
 
-// errBoxBusy は「部材発注フォルダを誰かが編集中」です。
+// errBoxBusy は「部材発注フォルダを誰かが編集中」です（2026-10-19 からはトップ直下の「製造」——文面もそう言う）。
 var errBoxBusy = errors.New("「製造」のページを誰かが編集中です（編集が終わってから、もう一度押してください）")
 
-// returnToTempParts は行を部材発注フォルダの臨時部材表へ書きます（部材発注書ページから戻すとき）。
+// returnToTempParts は行を部材発注フォルダの臨時部材表へ書きます（部材発注書ページから戻すとき。2026-10-19 からは「製造」）。
 //
-// ⚠ **部材発注フォルダを誰かが編集中なら断ります**——オートセーブと黙って上書きし合います。
+// ⚠ **部材発注フォルダ（いまは「製造」）を誰かが編集中なら断ります**——オートセーブと黙って上書きし合います。
 // （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ。人の保存とは `cms.RewriteBody` の錠で順に並ぶ。）
 // ⚠ 「製造」のページが無ければ作ります（置き場の箱・`EnsureTopLevelBox`。2026-10-19 までは「部材発注」）。
 func returnToTempParts(user *auth.User, ln ourOrderLine) error {
@@ -364,6 +366,8 @@ func nonEmpty(vs ...string) []string {
 }
 
 // takeTempParts は発注部材表へ入れた行を、臨時部材表から消します（移す）。
+// （いまは関数 takeTempParts はありません——同じページの分は tempRowsOn が行番号を返し、書き換え関数の中で
+// removeTempPartRows が消します。別のページの分は下の takeTempRowsElsewhere です。）
 //
 // lines のうち TempRow を持つものだけを、ページごとにまとめて消します。
 // ⚠ **本文を書いているページ（curPage）と同じなら、書き換え関数の中で消せる**よう

@@ -120,6 +120,8 @@ func placeNewTableAfterLast(body, vocabType, tableHTML string) string {
 //
 // dropEmpty なら、抜いて空になった表を節ごと消します（発注部材表・見積依頼部材表——空の表が溜まらないように）。
 // そうでなければ空の行を1つ置いて表を残します（必要部材表・臨時部材表——「行が無いときも空の表を表示」）。
+// （いま dropEmpty=false で呼ぶのは、部材見積依頼の見積依頼必要部材表と臨時部材表です——rfq_api.go。発注の側の
+// 必要部材表は鏡で、本文の表ではありません。）
 func takeTableRows(body, vocabType string, n int, rows []int, dropEmpty bool) (string, []ourOrderLine, bool) {
 	if n < 1 || len(rows) == 0 {
 		return body, nil, false

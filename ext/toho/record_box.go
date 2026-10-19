@@ -35,8 +35,10 @@ const (
 	// RecordBoxTitle は書類を年月で入れる置き場の題です（トップ直下）。
 	RecordBoxTitle = "記録"
 	// RecordRequestFolder は月の下の、客先から来るもの（受注ページ・見積書）のフォルダの題です。
+	// （2026-10-19 から、受注ページは案件ページ。見積の依頼の案件ページもここ——quote_case.go。）
 	RecordRequestFolder = "依頼"
 	// RecordWorkFolder は月の下の、弊社の動き（部材見積依頼書・部材発注書）のフォルダの題です。
+	// （2026-10-17〜19 から、見積計算書・納品書・請求書・閉じた製造ページもここ——上の頭の注記と同じ。）
 	RecordWorkFolder = "製造記録"
 )
 

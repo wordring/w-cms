@@ -53,7 +53,7 @@ var addressFields = []string{comm.FromTag, comm.ToTag, comm.CcTag, comm.ReplyToT
 //   - 同じ人が2つのドメインを使うと**別の行に散ります**（実データに実例あり）。
 //
 // 会社を1枚に保つ仕事は、**まとめることではなく推薦がやります**（`Suggest`）——
-// 既にある取引先のドメインと一致すれば、**その相手へ足す**のが初期の提案になります。
+// 既にある連絡帳の組織（2026-09-16 までは取引先）のドメインと一致すれば、**その相手へ足す**のが初期の提案になります。
 type UnknownContact struct {
 	Address string // sato@example-sports.co.jp
 	Domain  string // example-sports.co.jp（推薦の手掛かり・表示にも使う）
@@ -61,7 +61,7 @@ type UnknownContact struct {
 	Count   int    // 索引に出てきた回数（多い順に並べるため）
 
 	// SuggestPageID は「既にある相手へ足す」の初期選択です（空なら新規登録）。
-	// **同じドメインのアドレスが既に取引先ページに載っているとき**に埋まります。
+	// **同じドメインのアドレスが既に連絡帳の組織か人のページに載っているとき**（か `ドメイン` タグの持ち主が1つのとき）に埋まります。
 	SuggestPageID string
 	// SuggestTitle はその相手の題（画面が「○○へ足す」と書けるように）。
 	SuggestTitle string
@@ -154,7 +154,7 @@ func UnknownContacts(user *auth.User) ([]UnknownContact, error) {
 		if c.Name == "" {
 			c.Name = addr // 表示名が無ければアドレスそのもの
 		}
-		// ① **既にある相手が最優先**。同じドメインのアドレスが取引先ページに載って
+		// ① **既にある相手が最優先**。同じドメインのアドレスが連絡帳のページに載って
 		//    いれば、新しくページを作るのではなく**そこへ足す**のが正しい操作です。
 		//    実データで、南北スポーツ機械の3アドレスが「未登録」として並び、
 		//    目立つのが新規作成のボタンだったせいで**会社が2枚になりかけました**。
@@ -245,10 +245,10 @@ func ownersByDomainTag(user *auth.User) map[string][]PartnerRef {
 	return out
 }
 
-// partnerRefByDomain は取引先ページ1件の参照です（推薦に使う）。
+// partnerRefByDomain は連絡帳の組織ページ（2026-09-16 までは取引先ページ）1件の参照です（推薦に使う）。
 type partnerRefByDomain struct{ PageID, Title string }
 
-// partnersByDomain は「そのドメインのアドレスが載っている取引先」をドメインごとに返します。
+// partnersByDomain は「そのドメインのアドレスが載っている組織」をドメインごとに返します。
 //
 // **ドメインは手掛かりであって決定ではありません**——自社の工場長だけ別プロバイダの
 // アドレスを使っている実例があるので、ここで返すのは**初期の提案**だけです。
@@ -256,7 +256,7 @@ type partnerRefByDomain struct{ PageID, Title string }
 func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 	out := map[string]partnerRefByDomain{}
 	// **木ぜんたいから引き、会社へ丸めます**——アドレスが載っているのは社名ページとは
-	// 限りません（`取引先／社名／担当者／氏名`）。2026-09-13 に連絡先を人ごとの
+	// 限りません（人のページ `連絡帳／組織／人`。2026-09-16 までは `取引先／社名／担当者／氏名`）。2026-09-13 に連絡先を人ごとの
 	// ページへ分けたときからの決まりです。
 	// **先に読み切ってから絞ります**（`cms.TagRowsNamed`）。
 	found, err := cms.TagRowsNamed(database.DB, EmailTag)
@@ -323,8 +323,8 @@ func looksLikeCompany(name string) bool {
 
 // knownEmails は既にページに登録済みのアドレスを集めます。
 //
-// **「取引先の下に在る」ことまで見ます**（2026-09-13）。もとは `メールアドレス` タグを
-// 持つページがどこかに在れば登録済みと数えていました。すると**連絡先ページを取引先の
+// **「連絡帳の下に在る」ことまで見ます**（2026-09-13。当時の箱の名前は取引先）。もとは `メールアドレス` タグを
+// 持つページがどこかに在れば登録済みと数えていました。すると**連絡先ページを箱の
 // 外へ動かしたとき、アドレスが行方不明になります**——未登録の一覧には出てこないのに、
 // 照合（`PartnerTitleForAddress`）は会社へ丸められないので答えられない。
 // **片付いた顔をして効かない**、いちばん気づきにくい壊れ方です（同日に実測）。
@@ -344,7 +344,7 @@ func knownEmails() (map[string]bool, error) {
 			continue
 		}
 		if _, _, ok := PartnerOfPage(h.PageID); !ok {
-			continue // 取引先の外に書かれたアドレスは「登録済み」ではない
+			continue // 連絡帳の外に書かれたアドレスは「登録済み」ではない
 		}
 		known[a] = true
 	}

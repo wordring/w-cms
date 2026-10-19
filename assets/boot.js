@@ -11,6 +11,7 @@ try {
     var ui = JSON.parse(localStorage.getItem('wcms.ui') || 'null');
     var rails = (ui && ui.rails) || JSON.parse(localStorage.getItem('wcms.rails') || '{}');
     // 目次は右レールのカードになった（2026-08-31）ので、独立レールは左右の2本。
+    // （2026-09-01 からは目次は左レールの先頭カード——index.html。独立レールが左右の2本なのは同じ。）
     if (rails.left === false) document.documentElement.classList.add('left-collapsed');
     if (rails.right === false) document.documentElement.classList.add('right-collapsed');
 } catch (e) { /* localStorage 不可時は既定（両レールとも開く） */ }

@@ -33,7 +33,8 @@ import (
 	"w-cms/internal/database"
 )
 
-// OrderBoxTitle は受注ページの置き場（トップ直下）の名前です。
+// OrderBoxTitle は受注ページの置き場（トップ直下）の名前です。2026-10-16 から案件ページ自体は `記録／年／月／依頼` へ収め、
+// この箱は作業面（案件残表）になりました（materials.go の登録の Why）。2026-10-19 に「受注」から「案件」へ改名。
 //
 // **業務の言葉なので拡張が持ちます**——コアが持つのは「トップ直下に題で箱を
 // 用意する」仕組みだけ（`cms.EnsureTopLevelBox`）。通信箱・テンプレート置き場と
@@ -60,6 +61,7 @@ const PurchaseOrderBoxTitle = "部材発注"
 // ⚠ 置き場は 2026-10-19 になくした（未送付の見積書・見積書を作るのビューは、トップ直下の「製造」へ移した）。
 // 置くのは**顧客へ出す見積書**——業者への部材見積依頼はトップ直下の「部材見積依頼」（2026-10-02 利用者:「見積依頼のフォルダはトップ直下の
 // 見積依頼に変更します」・それまでは発注のくくりとしていた——利用者:「顧客への見積もりとは、別のくくり」）。
+// 置き場「部材見積依頼」も 2026-10-19 になくした（部材見積依頼は製造ページから作る）。
 const EstimateBoxTitle = "見積"
 
 // orderRow は整理の画面に出す受注ページ1枚ぶんです。
@@ -72,7 +74,7 @@ type orderRow struct {
 	OrderNo     string `json:"order_no"`
 	ClientName  string `json:"client_name"`
 	OrderedAt   string `json:"ordered_at"`  // 発注日（読めたときだけ）
-	Destination string `json:"destination"` // 「受注／2024年／09月」
+	Destination string `json:"destination"` // 「記録／2026年／10月／依頼」の形（recordPath・2026-10-16 まではそれまでの「受注／2024年／09月」）
 }
 
 // orderChildrenOf は、そのページの子のうち**発注書ブロックを持つもの**を集めます。
@@ -115,6 +117,8 @@ func orderChildrenOf(user *auth.User, parentIDInt int) ([]orderRow, error) {
 // **完全一致**で2つの木を結ぶので、揃えないと**黙って結ばれません**。こちらは
 // `発注元` を引く読み手がまだ1人も居ないので（`fileOneOrder` が見るのは
 // `発注書番号` と `発注日` だけ）、**いま直しても何も起きません**。
+// （2026-10-01 からは読み手がいます——案件の行を加工製品へ結ぶとき、`発注元` を客先として引きます〔link_item.go・lookup.go の
+// productOfOrderRow〕。比べ方は法人格を畳んだ形〔product_customer.go の foldCustomer〕です。）
 //
 // それでも入口で揃えるのは、**効くのが横断検索が入ったとき**だからです
 // （w-cms を作り始めた動機の1つ・[要件定義書.md] §4.4）。そのとき揃っていない

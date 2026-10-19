@@ -16,6 +16,12 @@ package toho
 //   - 確定単価が出ない表は選べない行にして理由を出す。見積計算表の無い加工製品も並べて「無い」と出す（黙って抜かない）。
 //   - 選んだ表のどれか1つでも確定単価が出なければ見積書を作らない——顧客へ出す紙が黙って欠けないように。
 //   - 見積書を作る道は見積計算表の「見積書に入れる」と同じ（newEstimatePage）——単価はその時点の値で写して固定。
+//
+// いまの形（上は 2026-10-03 の形）:
+//   - 2026-10-15 から、行は**見積表ごと**（ロット・見積表に記録した単価・表面処理と備考）——確定単価は見積表の単価になった。
+//     単価を記録していない見積表は選べない行にして理由を出す。
+//   - 2026-10-17 から、読むのはその品物の**いちばん新しい見積計算書**の見積表（無ければ加工製品ページ・estimateSourceOf）。
+//   - 2026-10-19 に置き場「見積」をなくし、このビューはトップ直下の「製造」へ移した（作業面ごと）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -67,7 +73,8 @@ func estimateFolderViewHTML(user *auth.User, pageIDInt int) string {
 }
 
 // EstimateFolderProductsAPIHandler は GET /api/estimate/folder-products?folder=001234 です（読むだけ）。
-// 加工製品ごとに見積計算表を表の順に返し、見積先（装置フォルダの社名）とその会社の担当者の候補を添えます。
+// 加工製品ごとに見積表（いちばん新しい見積計算書の・無ければ加工製品ページの）を表の順に返し、見積先（装置フォルダの社名）と
+// その会社の担当者の候補を添えます。
 func EstimateFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, fid, rows, ok := folderProductsOrFail(w, r)
 	if !ok {
@@ -108,7 +115,7 @@ func EstimateFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // EstimateFromFolderAPIHandler は POST /api/estimate/from-folder です。
-// 入力: {items: [{product, index}], client, person, signer}——選んだ見積計算表（加工製品ページと何枚目か・0から）を
+// 入力: {items: [{product, index}], client, person, signer}——選んだ見積表（加工製品ページと、読む先〔estimateSourceOf〕の何枚目か・0から）を
 // 送られた順（画面は一覧の順）に見積明細表へ入れた見積書ページを作ります。
 func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)

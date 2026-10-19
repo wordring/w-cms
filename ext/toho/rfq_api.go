@@ -28,7 +28,8 @@ import (
 	"w-cms/internal/database"
 )
 
-// estimateLotsOf は加工製品ページの見積表に書いたロットを、表の順に返します（同じ数は1つ・読めなければ空）。
+// estimateLotsOf はページ productID の見積表に書いたロットを、表の順に返します（同じ数は1つ・読めなければ空）。
+// 呼び手は読む先（estimateSourceOf——いちばん新しい見積計算書、無ければ加工製品ページ）を渡します（2026-10-17〜）。
 //
 // 2026-10-15 から、ロットは見積表のロットの列（見積計算表の「ロット」の行は無くなった——estimate.go）。
 func estimateLotsOf(productID int) []int {
@@ -144,11 +145,13 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, res)
 }
 
-// rfqCollectItem は集める加工製品1つです（弊社品番＝加工製品ページの番号・ロット——空なら見積計算表のロット）。
+// rfqCollectItem は集める加工製品1つです（弊社品番＝加工製品ページの番号・ロット——空なら見積表のロット・2026-10-15〜）。
 //
 // ForOrder はどの受注のための部材か（2026-10-04・段3——受注フォルダの受注残表から送るとき、受注ページの番号）。行の「受注」の
 // 列に入る（【要求】部材見積依頼 §2「見積依頼明細の『受注』の列は発注明細と同じく残し、受注残表から集めた部材に入る」）。
 // ロットにはその受注残（数量 − 出荷済数量）を入れて送る——手配済みは引かない（同 §2）。
+// ⚠ 2026-10-19 に、案件残表（受注残表の改名）から送る欄を外したので、いまの画面は for_order を送りません（受け口だけ残る）。
+// 「受注」の列も「案件」に改名済み——製造ページから集めるときは mfg_more.go が行の「案件」を写します。
 type rfqCollectItem struct {
 	Product  string `json:"product"`
 	Lot      string `json:"lot"`

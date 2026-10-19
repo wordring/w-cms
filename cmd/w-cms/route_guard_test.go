@@ -38,7 +38,7 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/save-block", "POST", 401, "ブロック保存"},
 		{"/api/upload-pdf", "POST", 401, "添付アップロード（PDF）"},
 		{"/api/upload-image", "POST", 401, "添付アップロード（画像）"},
-		{"/api/analyze-attachment", "POST", 401, "添付PDFの判定→受注ページ生成（外部LLMへ送る）"},
+		{"/api/analyze-attachment", "POST", 401, "添付PDFの判定→案件ページ生成（外部LLMへ送る）"},
 		{"/api/new-page", "POST", 401, "ページ作成"},
 		{"/api/delete-page", "POST", 401, "ページ削除"},
 		{"/api/set-parent", "POST", 401, "親の付け替え"},
@@ -52,7 +52,7 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/mail/fetch-new/status", "GET", 401, "メールの読み込みの様子"},
 		{"/api/mail/send", "POST", 401, "メール送信"},
 		{"/api/replies", "GET", 401, "この記録への返信の逆引き"},
-		{"/api/thread", "GET", 401, "スレッドの前後（In-Reply-To の鎖）"},
+		{"/api/thread", "GET", 401, "スレッドの前後（親ページID の鎖・2026-10-09 までは In-Reply-To）"},
 		{"/api/autocomplete", "GET", 401, "表のセルとタグの値の候補（2026-10-19 に /api/tag-values から替えた）"},
 		{"/api/page-perms", "POST", 401, "権限変更"},
 		{"/api/page-chown", "POST", 401, "所有者変更（admin）"},
@@ -73,7 +73,7 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/admin/tag-rename", "POST", 401, "タグの値を置き換える（admin）"},
 		{"/api/admin/column-rename", "POST", 401, "表の列の名前を置き換える（admin）"},
 		{"/api/record-makers", "GET", 401, "記録から作れるページの種類"},
-		{"/api/record-make", "POST", 401, "記録からページを作る（受注ページは外部LLMへ送る）"},
+		{"/api/record-make", "POST", 401, "記録からページを作る（案件ページは外部LLMへ送る）"},
 		{"/api/tables", "GET", 401, "探せる表の一覧"},
 		{"/api/tables/query", "POST", 401, "表を探す"},
 		{"/api/file-ref", "GET", 401, "ファイルの ID を添付の組へ引く"},
@@ -151,6 +151,11 @@ func TestCSRFProtectIsWired(t *testing.T) {
 // TestStateChangingRoutesRejectGET は、状態を変える経路が GET で動かないことを
 // 固定します。CSRFProtect は GET を検証しないので、GET を受けると防御が
 // 素通りされます（本文へ <img src="/api/logout"> を保存する保存型CSRF）。
+//
+// ⚠ protected（RequireAuth の下）の口は、未認証の GET がハンドラより先に 401 で止まるので、
+// ここでは**ハンドラ自身のメソッド確認を見ていません**（確認を外しても緑のまま）。ここで本当に効くのは
+// root に直に置いた口（/api/login）だけです。ハンドラ自身の確認は、ハンドラを直接呼ぶ
+// internal/cms/method_guard_test.go（TestStateChangingHandlersRejectGET）と internal/auth/method_guard_test.go が見ます。
 func TestStateChangingRoutesRejectGET(t *testing.T) {
 	h := buildHandler()
 

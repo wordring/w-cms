@@ -212,10 +212,11 @@ func (materialsPlugin) Routes() []cms.Route {
 		// ⚠ **読めないページは混ぜません**——材料表には誰でも行を書けるので、
 		// 絞らないと読めない部材発注書の単価と仕入先が引けてしまいます。
 		{Pattern: "/api/material-search", Handler: MaterialSearchAPIHandler},
-		// 未手配の一覧から部材発注書を1枚作る口（2026-09-21・our_order_new.go）。
+		// 未手配の一覧から部材発注書を1枚作る口（2026-09-21・our_order_new.go）。2026-09-22 からは発注部材表の足元の
+		// 「部材発注書を作る」が呼びます（order_draft_mirror.go）。
 		// ⚠ **仕入先が無ければ作りません**——1枚＝1社が部材発注書の単位です。
 		{Pattern: "/api/our-order/new", Handler: NewOurOrderAPIHandler},
-		// 未発注の表から**発注部材表**を1つ作る口（2026-09-22・order_draft.go）。
+		// 未発注の表（いまの名前は必要部材表）から**発注部材表**を1つ作る口（2026-09-22・order_draft.go）。
 		// ⚠ **行が0でも作ります**——空の表から始められることが、加工製品ページに
 		// 無い部材（消耗品・治具）だけを買うときの道です。
 		{Pattern: "/api/our-order/draft", Handler: NewOrderDraftAPIHandler},
@@ -409,6 +410,7 @@ func RequiredMaterials(user *auth.User, pageIDInt int) ([]RequiredMaterialRespon
 	//    仕入先は明細ではなくヘッダ（名前：値）にあるので、同じページの
 	//    our-order ブロックから引きます。**対応づけは block_no**——索引の
 	//    ブロック番号は形式ごとの文書順連番なので、1つの部材発注書セクションが
+	//    （↑ここまでは 2026-09-18 より前の説明で、文が途中で切れています。いまは下のとおり。）
 	//    ⚠ **仕入先はページの可変タグです**（2026-09-18 にヘッダから移した）。
 	//    **1文書＝1ページ**が規則なので（ユーザー:「発注書は一ページ一発注書で問題ない」）、
 	//    対応づけは**ページ1つ**で閉じます——ヘッダと明細を `block_no` で突き合わせていた

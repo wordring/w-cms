@@ -41,8 +41,9 @@ const (
 	// 加工製品の一覧が、行に添える社名・装置名を探すのに使うだけです。
 	PageKindCompany = "社名"
 	PageKindMachine = "装置"
-	// PageKindProductOld は図面改定で子へ移った旧版の加工製品ページの値です
-	// （いまは「親も加工製品なら旧版」と木の形で見分けている——`productListRows`）。
+	// PageKindProductOld は図面改定で子へ移った旧版の加工製品ページの値です（revision.go の createOldVersionPage が書く）。
+	// 加工製品の一覧（`productListAll`）と同じ品番の確かめ（`sameCodeProducts`）はこの値で外します。置き場の下を探す
+	// `productListRows` は、いまも「親も加工製品なら旧版」と木の形で見分けます。
 	PageKindProductOld = "加工製品の旧版"
 	// 弊社・業者の書類の値です（題の頭を決めるのに使う——issuerTitle）。
 	PageKindOurEstimate = "弊社見積書"

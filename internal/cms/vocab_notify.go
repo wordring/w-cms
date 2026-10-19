@@ -27,8 +27,9 @@ import (
 // UnknownVocabTypes は本文中の table/dl が持つ data-type のうち、レジストリに
 // 未定義のものを重複なくソートして返します。
 //
-// 未知の data-type は**通します**（決定ログ: 値は不活性で害がなく、索引に載るだけ。
-// 落とす方式はレジストリを安全性の門に変質させる）。この関数は保存時の**告知**
+// 未知の data-type は**通します**（決定ログ: 値は不活性で害がない。落とす方式はレジストリを
+// 安全性の門に変質させる）。⚠ 決定ログの当時は「索引に載るだけ」でしたが、2026-09-20 からは
+// 未知の形式は**索引にも載りません**（vocab_index.go の OnElement）。この関数は保存時の**告知**
 // （拒否ではなくエコーバックの流儀）のために使います。
 func UnknownVocabTypes(htmlStr string) []string {
 	nodes, err := htmldoc.ParseFragment(htmlStr)
@@ -99,8 +100,9 @@ func UnresolvedVocabFields(htmlStr string) []string {
 	needsTag := map[string]VocabDef{}
 	for _, root := range nodes {
 		WalkElements(root, func(n *html.Node) {
-			// 形式の解決は索引と同じ vocabTypeOf——data-type が正、無ければ機能見出し
-			// （D-2）。ここが索引側とずれると「索引には載るのに告知されない」ズレになる。
+			// 形式の解決は索引と同じ vocabTypeOf——data-type が正、無ければ表は自分の `<caption>`、
+			// 鏡は `data-mirror`（機能見出し〔D-2〕で名乗る読み方は 2026-09-29 に廃止）。
+			// ここが索引側とずれると「索引には載るのに告知されない」ズレになる。
 			def, ok := VocabDefByType(vocabTypeOf(n))
 			if !ok {
 				return
@@ -162,8 +164,9 @@ func UnresolvedVocabFields(htmlStr string) []string {
 	return out
 }
 
-// hasTagsList は本文にページのタグ（セクション外の素の dl。属性でも可）が
-// 1つでもあるかを返します。
+// hasTagsList は本文にページのタグ（`<dl data-type="tags">`）が1つでもあるかを返します。
+// （「セクション外の素の dl もタグ」という位置の規則は試して撤回しました——walk.go の vocabTypeOf。
+// タグは data-type="tags" の明示だけです。）
 // RequiresTag の告知を「タグを使っているのに鍵が引けない」場合に限るための徴候判定。
 func hasTagsList(nodes []*html.Node) bool {
 	found := false

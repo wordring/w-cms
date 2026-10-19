@@ -11,7 +11,8 @@ import (
 )
 
 // ページ権限の管理API（フェーズ3）。サイドカー（正本）を書き換えてから
-// page_perms を更新します。これらのAPIのみがサイドカーを書き換えます。
+// page_perms を更新します。サイドカーの**権限の欄**（owner・group・mode・public）を書き換えるのは、これらのAPIだけです
+// （更新日時・親・並び順キーは、保存・付け替え・並べ替えの口が別に書きます——page.WriteSidecar の注記）。
 
 // PagePermsHandler は GET で現在の権限を返し、POST で mode / group を変更します（chmod / chgrp）。
 // GET: read 権限。POST: 対象ページの owner または admin（認証認可設計.md 3.5節）。
