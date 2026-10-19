@@ -227,11 +227,15 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 置き場は `記録／年／月／製造記録`（2026-10-16・record_box.go）。**月は作った日**（部材見積依頼日ではない）。
+	// 見積依頼部材表が製造ページにあれば、その製造ページの子（2026-10-19・mfg_more.go）。
 	now := time.Now()
-	monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-		return
+	monthID := mfgParentOr(user, boxPage)
+	if monthID == "" {
+		monthID, err = recordFolder(user.Username, RecordWorkFolder, now)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
+			return
+		}
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
 	if err != nil {

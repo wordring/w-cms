@@ -10990,7 +10990,8 @@ delegateClick([
         sayIn(say, '作っています…');
         let r;
         try {
-            r = await postJSON('/api/estimate-calc/new', { product: btn.getAttribute('data-ecalc-new') || '' });
+            // 製造ページの「見積計算」の欄から押したときは、その製造ページの子に作る（2026-10-19・ext/toho/mfg_more.go）。
+            r = await postJSON('/api/estimate-calc/new', { product: btn.getAttribute('data-ecalc-new') || '', mfg: btn.getAttribute('data-mfg') || '' });
         } catch (e) {
             sayIn(say, '⚠ 通信に失敗しました: ' + e, 'proc-why-ng');
             btn.disabled = false;
@@ -13092,6 +13093,17 @@ delegateClick([['.mfg-parts-go', async (btn) => {
     const r = await postJSON('/api/mfg/parts', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '発注部材表へ入れられませんでした')); return; }
+    location.reload();
+}]]);
+
+// 製造ページの「📨 この製造の部材を見積依頼必要部材表へ」（2026-10-19・ext/toho/mfg_more.go）——入れたら読み直す（表はこの製造ページの中）。
+delegateClick([['.mfg-rfq-go', async (btn) => {
+    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-rfq-say');
+    btn.disabled = true;
+    sayIn(say, '部材を集めています…');
+    const r = await postJSON('/api/mfg/rfq', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '見積依頼必要部材表へ入れられませんでした')); return; }
     location.reload();
 }]]);
 

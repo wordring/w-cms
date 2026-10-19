@@ -209,7 +209,8 @@ func calcContentOf(body string) string {
 	return firstTagListRe.ReplaceAllString(body, "")
 }
 
-// EstimateCalcNewAPIHandler は POST /api/estimate-calc/new です。入力: {product}。新しい見積計算書を作り、そのページIDを返します。
+// EstimateCalcNewAPIHandler は POST /api/estimate-calc/new です。入力: {product, mfg}。新しい見積計算書を作り、そのページIDを返します。
+// mfg（書ける製造ページ）があれば、その子に作ります（2026-10-19・mfg_more.go）。
 func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -217,9 +218,17 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Product string `json:"product"`
+		Mfg     string `json:"mfg"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
+	}
+	parent := ""
+	if strings.TrimSpace(req.Mfg) != "" {
+		if parent = mfgParentOr(user, req.Mfg); parent == "" {
+			cms.JSONFail(w, http.StatusBadRequest, "書ける製造ページではありません: "+req.Mfg)
+			return
+		}
 	}
 	pid, okID := page.NormalizeID(strings.TrimSpace(req.Product))
 	if !okID {
@@ -268,10 +277,13 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	d.SetTag(EstimateCalcDateTag, now.Format("2006-01-02"))
 	d.SetTag(PageKindTag, PageKindOurEstimateCalc) // テンプレートも持っているが、機械が作る種類なので値を確かに書く
 	body := d.HTML() + content
-	monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-		return
+	monthID := parent
+	if monthID == "" {
+		monthID, err = recordFolder(user.Username, RecordWorkFolder, now)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
+			return
+		}
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, body)
 	if err != nil {

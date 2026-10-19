@@ -119,12 +119,16 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			td.AppendChild(&html.Node{Type: html.TextNode, Data: "残り " + fmtQty(left)})
 		}
 	}
+	// 見積計算の欄（2026-10-19・mfg_more.go）——⚠ 足元の行の colspan が列の数に合うよう、足元より先に足す。
+	appendMfgCalcColumn(ctx, el, writable)
 	span := headerCellCount(el)
 	appendFootRow(el, span, "mfg-state", "製造完了: "+strconv.Itoa(done)+" / "+strconv.Itoa(total)+" 行")
 	if writable {
 		pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 		// 部材を発注部材表へ（2026-10-19・作る順の3番）——この製造の、まだ手配していない部材を、この製造ページの発注部材表へ。
 		parts := `<button type="button" class="chip-btn mfg-parts-go" data-mfg="` + pid + `">📦 この製造の部材を発注部材表へ</button> <span class="mfg-parts-say"></span>`
+		// 部材の見積を頼む（2026-10-19・mfg_more.go）——この製造の部材を、この製造ページの見積依頼必要部材表へ。
+		parts += ` <button type="button" class="chip-btn mfg-rfq-go" data-mfg="` + pid + `">📨 この製造の部材を見積依頼必要部材表へ</button> <span class="mfg-rfq-say"></span>`
 		// 見積の依頼の行があれば、この製造の見積書（2026-10-19・quote_done.go）。
 		if mfgHasQuoteRows(el) {
 			parts = `<button type="button" class="chip-btn mfg-estimate-go" data-mfg="` + pid + `">📄 この製造の見積書を作る</button> <span class="mfg-estimate-say"></span> ` + parts

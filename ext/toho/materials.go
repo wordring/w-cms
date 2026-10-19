@@ -166,6 +166,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/delivery/new", Handler: DeliveryNewAPIHandler},
 		{Pattern: "/api/delivery-pdf", Handler: DeliveryPDFAPIHandler}, // 納品書の紙（2026-10-17・delivery_pdf.go）
 		{Pattern: "/api/mfg/estimate", Handler: MfgEstimateAPIHandler}, // 製造の見積書（2026-10-19・quote_done.go）
+		{Pattern: "/api/mfg/rfq", Handler: MfgRFQAPIHandler}, // 製造の部材を見積依頼必要部材表へ（2026-10-19・mfg_more.go）
 		{Pattern: "/api/mfg/parts", Handler: MfgPartsAPIHandler},       // 製造の部材を発注部材表へ（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/made", Handler: MfgMadeAPIHandler},         // 製造完了（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/new", Handler: MfgNewAPIHandler},           // 製造ページ（2026-10-19・mfg.go）

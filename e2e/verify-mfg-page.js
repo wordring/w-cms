@@ -8,6 +8,8 @@
 //   ③ 「納品」の欄で選んで「🚚 選んだ行で納品書を作る」——今回納める数の欄（まだ納めていない 8 が入っている）を 5 にして作る
 //   ④ 納品書はこの製造ページの子にできる・製造ページの「納品」の欄は 残り 3
 //   ⑤ 「📦 この製造の部材を発注部材表へ」——製造ページに発注部材表（材料 2個/台 × 8台 = 16）。「部材発注書を作る」で、部材発注書も製造ページの子にできる
+//   ⑥ 「📨 この製造の部材を見積依頼必要部材表へ」——製造ページに見積依頼必要部材表（ロット 8・案件つき）
+//   ⑦ 「見積計算」の欄の「➕ 見積計算書」——見積計算書が製造ページの子にでき、欄にリンクが出る
 //
 // 当て先は全部自分で作って最後に消します（案件残表を置いたページ・案件ページ・製造ページ・納品書）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-page.js
@@ -31,7 +33,7 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
   try {
     await login(page, BASE);
     root = await makePage(page, '<h1>【E2E】製造ページの帯</h1><section data-mirror="案件残"></section>');
-    product = await makePage(page, '<h1>【E2E】製造ページの品物</h1><table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
+    product = await makePage(page, '<h1>【E2E】製造ページの品物</h1><dl data-type="tags"><dt>ページ種類</dt><dd>加工製品</dd></dl><table><caption>材料表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>個数</th></tr>' +
       '<tr><td>【E2E】鉄</td><td>FB</td><td>t9*99*999</td><td>2</td></tr></tbody></table>', root);
     order = await makePage(page, '<h1>【E2E】製造ページの案件</h1><dl data-type="tags"><dt>ページ種類</dt><dd>顧客発注書</dd><dt>発注書番号</dt><dd>E2E-MP-1</dd>' +
       '<dt>発注元</dt><dd>【E2E】製造ページの客先</dd><dt>納期</dt><dd>2026-12-31</dd></dl>' +
@@ -113,6 +115,36 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
         const titles = [];
         for (const k of kids) titles.push(await page.evaluate(async (pid) => ((await (await fetch('/api/load?id=' + pid)).text()).match(/<h1[^>]*>([^<]*)</) || [, ''])[1], k.ID || k.id || k));
         check('⑤ 部材発注書も製造ページの子', titles.some((t) => t.includes('部材発注書') || t.includes('【E2E】部材の業者')), titles.join(' | '));
+      }
+    }
+    // ⑥ 「📨 この製造の部材を見積依頼必要部材表へ」（2026-10-19・mfg_more.go）——ロットは製造明細の数量（8）。
+    if (mfg) {
+      await page.goto(BASE + '/' + mfg);
+      await Promise.all([
+        page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
+        page.click('#w-editor-content .mfg-rfq-go'),
+      ]);
+      const body6 = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), mfg);
+      const at = body6.indexOf('<caption>見積依頼必要部材表</caption>');
+      const tbl = at < 0 ? '' : body6.slice(at, body6.indexOf('</table>', at));
+      check('⑥ 製造ページに見積依頼必要部材表（【E2E】鉄 FB・ロット 8・案件つき）', tbl.includes('【E2E】鉄') && />\s*8\s*</.test(tbl) && tbl.includes(order), tbl.replace(/\s+/g, ' ').slice(0, 600));
+    }
+    // ⑦ 「見積計算」の欄の「➕ 見積計算書」——見積計算書がこの製造ページの子にできて開く。
+    if (mfg) {
+      await page.goto(BASE + '/' + mfg);
+      const add = page.locator('#w-editor-content .estimate-calc-new[data-mfg="' + mfg + '"]');
+      await add.first().waitFor({ timeout: 8000 }).catch(() => {});
+      check('⑦ 製造明細表に「➕ 見積計算書」', (await add.count()) === 1);
+      await Promise.all([
+        page.waitForURL((u) => !u.pathname.endsWith('/' + mfg), { timeout: 15000 }).catch(() => {}),
+        add.first().click().catch(() => {}),
+      ]);
+      const calc = (page.url().match(/\/(\d{6})(?:[?#]|$)/) || [])[1] || '';
+      check('⑦ 見積計算書ができて開く・製造ページの子', !!calc && calc !== mfg && String(await parentOf(page, calc)) === mfg, page.url());
+      if (calc) {
+        await page.goto(BASE + '/' + mfg);
+        const link = await page.locator('#w-editor-content td.mfg-calc a[href="/' + calc + '"]').count();
+        check('⑦ 製造ページの「見積計算」の欄にリンク', link === 1);
       }
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
