@@ -235,9 +235,10 @@ func syncOrderClient(user *auth.User, pageID, client string) error {
 	if err != nil {
 		return err
 	}
-	fixed := replaceFirstFieldValue(body, OrderClientTag, client)
-	if fixed == body {
-		return nil // **変わらないなら書きません**——版と更新日時を無駄に進めない
-	}
-	return cms.RewriteBody(pageID, user.Username, func(string) string { return fixed })
+	// **変わらないなら書きません**——版と更新日時を無駄に進めない。
+	// ⚠ 書くときは、錠の中で読み直した本文から組み直します（2026-10-19 夜・rebuildBody）。
+	_, _, err = rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
+		return replaceFirstFieldValue(cur, OrderClientTag, client), nil
+	})
+	return err
 }

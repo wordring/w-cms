@@ -96,19 +96,23 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusNotFound, "案件ページを読めません: "+err.Error())
 		return
 	}
-	fixed, err := setOrderItemCell(body, req.Row, req.ItemNo, req.Field, req.Old, req.Value)
+	// 値が同じなら書きません（版と更新日時を無駄に進めない）。
+	// ⚠ 照合（行番号・品番・いまの値）も、書くときは錠の中で読み直した本文でやり直します（2026-10-19 夜・rebuildBody）
+	// ——錠の外で組んだものを書くと、読んでから書くまでのあいだのほかの人の保存が消えます。
+	changed, cellErr, err := rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
+		return setOrderItemCell(cur, req.Row, req.ItemNo, req.Field, req.Old, req.Value)
+	})
 	if err != nil {
-		// ⚠ **食い違いは 409**（相手が悪いのではなく、状態がずれている）。
-		failCellEdit(w, err)
-		return
-	}
-	if fixed == body {
-		// 値が同じなら書きません（版と更新日時を無駄に進めない）。
-		json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": false})
-		return
-	}
-	if err := cms.RewriteBody(pageID, user.Username, func(string) string { return fixed }); err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
+		return
+	}
+	if cellErr != nil {
+		// ⚠ **食い違いは 409**（相手が悪いのではなく、状態がずれている）。
+		failCellEdit(w, cellErr)
+		return
+	}
+	if !changed {
+		json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": false})
 		return
 	}
 	auth.Audit(user.Username, "order-item.edit",

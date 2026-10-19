@@ -972,25 +972,27 @@ func syncDrawingFields(user *auth.User, pageID, customer, machine, name string) 
 	if err != nil {
 		return err
 	}
-	fixed := body
-	for _, f := range []struct{ field, value string }{
-		{ClientNameTag, customer},
-		{MachineNameTag, machine},
-		{DrawingNameTag, name},
-	} {
-		// ⚠ **空は「消したい」ではありません**（2026-09-20）。渡さなかった項目は
-		// 触らない、という意味です——空で上書きすると、**二つ目の図面として追加する
-		// とき、溶接図の図面名称が消えます**（呼ぶ側が名称だけ渡さない形にしている）。
-		// 受注の `syncOrderClient` と同じ約束です。
-		if strings.TrimSpace(f.value) == "" {
-			continue
+	// **変わらないなら書きません**——版と更新日時を無駄に進めない。
+	// ⚠ 書くときは、錠の中で読み直した本文から組み直します（2026-10-19 夜・rebuildBody）。
+	_, _, err = rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
+		fixed := cur
+		for _, f := range []struct{ field, value string }{
+			{ClientNameTag, customer},
+			{MachineNameTag, machine},
+			{DrawingNameTag, name},
+		} {
+			// ⚠ **空は「消したい」ではありません**（2026-09-20）。渡さなかった項目は
+			// 触らない、という意味です——空で上書きすると、**二つ目の図面として追加する
+			// とき、溶接図の図面名称が消えます**（呼ぶ側が名称だけ渡さない形にしている）。
+			// 受注の `syncOrderClient` と同じ約束です。
+			if strings.TrimSpace(f.value) == "" {
+				continue
+			}
+			fixed = setDrawingField(fixed, f.field, f.value)
 		}
-		fixed = setDrawingField(fixed, f.field, f.value)
-	}
-	if fixed == body {
-		return nil // **変わらないなら書きません**——版と更新日時を無駄に進めない
-	}
-	return cms.RewriteBody(pageID, user.Username, func(string) string { return fixed })
+		return fixed, nil
+	})
+	return err
 }
 
 // setDrawingField は図面ブロックの項目を書き換えます。**無ければ足します**。
