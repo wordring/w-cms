@@ -2528,6 +2528,7 @@
         wireMailFetch();             // 「📥 新しいメールを読み込む」（その隣・2026-09-29）
         refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・書ける形でも）
         refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・書ける形でも）
+        if (toggle.checked) ensureIdleContextToolbar(); // 固定の帯の文字の帯を、触る前から見せる（2026-10-19）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         refreshFormulaCells();       // 表のセルの式——閲覧では結果・編集では式（2026-10-04・並べ替え・印刷より先に）
         refreshHeadingFolds();       // 見出しを押して次の同じ段の見出しまで畳む（閲覧モード限定・表示だけ・2026-10-04）
@@ -4210,6 +4211,7 @@
         currentTableRow = row;
         currentTableCell = el && el.closest ? el.closest('td, th') : null;
         bar.classList.add('active');
+        if (fixedBars()) return; // 本文の上の固定の帯の中（2026-10-19・initFixedBar）——置き直さない
 
         // 行の右横へ。入りきらなければ行の左上へ退避する。
         // ⚠ 人がつまみで動かしていれば、その位置に留める（placeToolbar・2026-09-27）。
@@ -5212,6 +5214,7 @@
 
         currentDlNode = item;
         bar.classList.add('active');
+        if (fixedBars()) return; // 本文の上の固定の帯の中（2026-10-19・initFixedBar）——置き直さない
         const rect = item.getBoundingClientRect();
         let top, left;
         if (getComputedStyle(item.parentElement).display === 'flex') {
@@ -9983,6 +9986,8 @@
             sel.addRange(range);
         }, true);
 
+        initFixedBar(); // パソコンでは3つの帯を本文の上に固定する（2026-10-19）
+
         // 行操作ツールバーのボタン。mousedown を止めないとクリックで選択が崩れ、
         // どの行への操作か（currentTableRow）が失われる。
         const tbar = document.getElementById('w-table-toolbar');
@@ -10719,6 +10724,7 @@
     function positionContextToolbar(block) {
         const toolbar = document.getElementById('w-context-toolbar');
         if (!toolbar || toolbar.classList.contains('is-docked') || !toolbar.classList.contains('active')) return;
+        if (fixedBars()) return; // 本文の上の固定の帯の中（2026-10-19・initFixedBar）——置き直さない
         const sel = window.getSelection();
         const n = sel && sel.rangeCount ? sel.anchorNode : null;
         const at = n && (n.nodeType === 1 ? n : n.parentElement);
@@ -10735,6 +10741,58 @@
         const blockRect = (block || line).getBoundingClientRect();
         toolbar.style.top = (top + window.scrollY) + 'px';
         toolbar.style.left = (Math.max(blockRect.left, 0) + window.scrollX + 20) + 'px';
+    }
+
+    // ── 帯を本文の上に固定する（2026-10-19・パソコンだけ） ─────────────────────────
+    //
+    // 2026-10-12 利用者:「ブロックエディタのメニューが編集の邪魔をすることがあります。テーブルの編集では、列の見出しを見ながら書くことが多いからです。いっそのこと、普通のアプリケーションのように。メニューを上部に固定してしまってはどうでしょう？」
+    //   - パソコン（指で触らない端末）では、文字の帯（#w-context-toolbar）・表の行と列の帯（#w-table-toolbar）・
+    //     タグの項目の帯（#w-dl-toolbar）を、本文のすぐ上の1本（#w-fixed-bar）へ入れる。帯はキャレットの近くに浮かず、
+    //     本文に重ならない（列の見出しを隠さない）。1本は流れの中で場所を取り、スクロールしても上に留まる（sticky）。
+    //   - キャレットの場所に合う組だけが押せる。合わない組は薄くして押せない（隠すと、表に入るたびに1本の高さが変わって
+    //     本文がずれるため）。
+    //   - 選択肢・スラッシュのメニューは、選ぶものなので、いままでどおりキャレットの近く。
+    //   - スマホ・タブレット（指で触る端末）は、いままでどおり画面の上のドック（is-docked）。
+    function fixedBars() { return document.body.classList.contains('w-fixed-bars'); }
+
+    function initFixedBar() {
+        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return; // 指で触る端末はドックのまま
+        const content = document.getElementById('w-editor-content');
+        if (!content || document.getElementById('w-fixed-bar')) return;
+        const strip = document.createElement('div');
+        strip.id = 'w-fixed-bar';
+        strip.className = 'fixed-bar';
+        strip.addEventListener('mousedown', e => e.preventDefault()); // 帯のすき間を押してもキャレットを本文に残す
+        ['w-context-toolbar', 'w-table-toolbar', 'w-dl-toolbar'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('pinned');
+            el.style.top = '';
+            el.style.left = '';
+            strip.appendChild(el);
+        });
+        content.parentElement.insertBefore(strip, content);
+        document.body.classList.add('w-fixed-bars');
+        // ヘッダーが出ているときはその下・隠れたら画面の上（ヘッダーはスクロールで出入りする——initHeadroom）。
+        const header = document.querySelector('.header');
+        const place = () => {
+            strip.style.top = (header && !header.classList.contains('header--hidden') ? header.offsetHeight : 0) + 'px';
+        };
+        place();
+        if (header) new MutationObserver(place).observe(header, { attributes: true, attributeFilter: ['class'] });
+        window.addEventListener('resize', place);
+    }
+
+    // ensureIdleContextToolbar は、固定の帯の文字の帯がまだ空なら、最初のブロックで組んで押せない形にしておきます
+    // （触る前から帯の並びが見えて、触ったときに1本の高さが変わらないように）。
+    function ensureIdleContextToolbar() {
+        if (!fixedBars()) return;
+        const toolbar = document.getElementById('w-context-toolbar');
+        if (!toolbar || toolbar.childElementCount) return;
+        const first = document.querySelector('#w-editor-content .editor-block');
+        if (!first) return;
+        showContextToolbarForBlock(first);
+        hideContextToolbar();
     }
 
     function hideContextToolbar() {

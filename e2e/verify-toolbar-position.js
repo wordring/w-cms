@@ -3,10 +3,14 @@
 // 利用者:「帯が出ません」→「一番下では出ます。ブロックを追加する丸に+も一番下しか出ません」——写真を何十枚も持つ節は高さが
 // 7万px にもなり、帯をブロックの上端の上に置いていたので、その下の方を触ると帯は画面のはるか上（実測 -68,624px）に出ていた。
 //
-//   ① PC: 背の高い節の下の方の段落を押すと、帯はその行のすぐ上に見える（画面の中・ほかの物に隠れない）
-//   ② PC: 同じ節の中でキャレットを別の段落へ移すと、帯もついてくる
-//   ③ PC: 画面のいちばん上の行（ヘッダーの下）を押すと、帯は行の下に出る（ヘッダーに隠れない）
-//   ④ スマホ（375px・390px）: 帯は上端に1列で、ボタンが全部画面に入る
+// 2026-10-19 から、PC の帯は本文の上に固定した1本（#w-fixed-bar）の中です（app.js の initFixedBar）。
+// 利用者:「…テーブルの編集では、列の見出しを見ながら書くことが多いからです。いっそのこと、普通のアプリケーションのように。
+// メニューを上部に固定してしまってはどうでしょう？」——それまでの①〜③（帯が行のすぐ上についてくる）は、固定の形に書き直した。
+//
+//   ① PC: 背の高い節の下の方の段落を押すと、文字の帯は固定の1本の中で押せる（画面の中・押した行に重ならない）
+//   ② PC: 同じ節の中でキャレットを別の段落へ移しても、1本は動かない（行についてこない）・押した行に重ならない
+//   ③ PC: 表のセルを押すと、表の帯が同じ1本の中で押せる（行の横に浮かない）・押したセルに重ならない。文字の帯は押せるまま、タグの帯は押せない
+//   ④ スマホ（375px・390px）: 帯は上端に1列で、ボタンが全部画面に入る（固定の1本は無い）
 //
 // ページは自分で作り、最後に消します。本物の置き場には書きません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-toolbar-position.js
@@ -31,15 +35,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 背の高い節（段落 150 個——節そのものが1つの上の段のブロック）と、その後ろの段落。
   let body = '<h1>【E2E】帯の場所</h1><section data-id="ss01"><h2>写真の節</h2>';
   for (let i = 0; i < 150; i++) body += '<p>行' + i + '</p>';
-  body += '</section><p data-id="zz09">最後の段落</p>';
+  body += '</section><p data-id="zz09">最後の段落</p>' +
+    '<table><caption>見本の表</caption><tbody><tr><th>品名</th><th>数量</th></tr><tr><td>板</td><td>2</td></tr></tbody></table><p>あと</p>';
+  // st は固定の1本（strip）と、押した行（sel）の位置・各帯の押せる／押せないを返す。
   const st = (pg, sel) => pg.evaluate((s) => {
-    const t = document.getElementById('w-context-toolbar');
-    const r = t.getBoundingClientRect();
+    const strip = document.getElementById('w-fixed-bar');
+    const r = strip ? strip.getBoundingClientRect() : { top: -1, bottom: -1, width: 0 };
     const c = document.querySelector(s).getBoundingClientRect();
-    const at = r.width ? document.elementFromPoint(r.left + 12, r.top + r.height / 2) : null;
-    return { active: t.classList.contains('active'), top: Math.round(r.top), bottom: Math.round(r.bottom), lineTop: Math.round(c.top), lineBottom: Math.round(c.bottom),
+    const t = document.getElementById('w-context-toolbar');
+    const tr = t.getBoundingClientRect();
+    const at = tr.width ? document.elementFromPoint(tr.left + 12, tr.top + tr.height / 2) : null;
+    const on = (id) => document.getElementById(id).classList.contains('active');
+    return { inStrip: !!strip && t.parentElement === strip && document.getElementById('w-table-toolbar').parentElement === strip,
+      ctx: on('w-context-toolbar'), table: on('w-table-toolbar'), dl: on('w-dl-toolbar'),
+      top: Math.round(r.top), bottom: Math.round(r.bottom), lineTop: Math.round(c.top), lineBottom: Math.round(c.bottom),
       seen: at ? (t.contains(at) ? '帯' : at.tagName) : 'なし', vh: innerHeight };
   }, sel);
+  const clear = (x) => x.lineTop >= x.bottom - 1 || x.lineBottom <= x.top + 1; // 押した行と1本が重ならない
   try {
     await login(page, BASE);
     id = await makePage(page, body);
@@ -53,31 +65,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.click(p140);
     await sleep(400);
     const s1 = await st(page, p140);
-    check('① 背の高い節の下の方を押すと、帯はその行のすぐ上に見える', s1.active && s1.seen === '帯' && s1.top >= 0 && s1.bottom <= s1.lineTop + 2 && s1.lineTop - s1.bottom < 30,
-      JSON.stringify(s1));
+    check('① 背の高い節の下の方を押すと、文字の帯は固定の1本の中で押せる（画面の中・行に重ならない）',
+      s1.inStrip && s1.ctx && s1.seen === '帯' && s1.top >= 0 && s1.bottom <= s1.vh && clear(s1), JSON.stringify(s1));
 
     // ② 矢印キーで同じ節の中の5行下へ（マウスで押すと選択がいったん外れて帯を出し直すので、置き直しの枝を通らない）。
     const p145 = '#w-editor-content section[data-id="ss01"] p:nth-of-type(146)';
     for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
     await sleep(400);
     const s2 = await st(page, p145);
-    check('② 同じ節の中で別の段落へ移ると、帯もついてくる', s2.active && s2.seen === '帯' && s2.bottom <= s2.lineTop + 2 && s2.lineTop - s2.bottom < 30, JSON.stringify(s2));
+    check('② 同じ節の中で別の段落へ移っても、1本は動かない・行に重ならない', s2.ctx && s2.top === s1.top && clear(s2), JSON.stringify(s2));
 
-    // ③ 画面のいちばん上の行——ヘッダーを出してから、そのすぐ下の行を押す。
-    await page.mouse.move(700, 500);
-    await page.mouse.wheel(0, -300);
-    await sleep(600);
-    const topSel = await page.evaluate(() => {
-      const h = document.querySelector('header.header').getBoundingClientRect().bottom;
-      const ps = Array.from(document.querySelectorAll('#w-editor-content section[data-id="ss01"] p'));
-      const el = ps.find((e) => e.getBoundingClientRect().top > Math.max(h, 0) + 2);
-      el.setAttribute('data-probe', 'top');
-      return '[data-probe="top"]';
-    });
-    await page.click(topSel);
+    // ③ 表のセル——表の帯が同じ1本の中で押せる（行の横に浮かない）。
+    const cell = '#w-editor-content table tr:nth-of-type(2) > td:first-of-type'; // td の属性は本文で落ちるので、形で指す
+    await page.locator(cell).scrollIntoViewIfNeeded();
+    await page.click(cell);
     await sleep(400);
-    const s3 = await st(page, topSel);
-    check('③ 画面のいちばん上の行では、帯は行の下に出る（ヘッダーに隠れない）', s3.active && s3.seen === '帯' && s3.top >= s3.lineBottom - 2, JSON.stringify(s3));
+    const s3 = await st(page, cell);
+    check('③ 表のセルでは、表の帯が同じ1本の中で押せる・セルに重ならない（文字の帯は押せる・タグの帯は押せない）',
+      s3.inStrip && s3.table && s3.ctx && !s3.dl && clear(s3), JSON.stringify(s3));
     await page.goto(BASE + '/000000');
     await sleep(500);
 
@@ -96,13 +101,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const out = Array.from(t.querySelectorAll('button')).filter((b) => { const q = b.getBoundingClientRect(); return q.left < r.left || q.right > r.right + 0.5; }).map((b) => b.textContent);
         return { top: Math.round(r.top), height: Math.round(r.height), buttons: t.querySelectorAll('button').length, out };
       });
-      check('④ スマホ ' + w + 'px: 帯は上端に1列で、ボタンが全部入る', s4.top <= 20 && s4.height <= 56 && s4.buttons >= 12 && s4.out.length === 0, JSON.stringify(s4));
+      const noStrip = await pp.evaluate(() => !document.getElementById('w-fixed-bar'));
+      check('④ スマホ ' + w + 'px: 帯は上端に1列で、ボタンが全部入る（固定の1本は無い）', s4.top <= 20 && s4.height <= 56 && s4.buttons >= 12 && s4.out.length === 0 && noStrip, JSON.stringify(s4));
       await pp.goto(BASE + '/000000').catch(() => {});
       await phone.close();
     }
   } finally {
     await page.goto(BASE + '/000000').catch(() => {});
     await deletePage(page, id);
+    // ⚠ 2026-10-19 に、消したはずのページが残ったことが2回あった（去った直後の消し方が間に合わない——試験の側の間合い）。
+    //    残っていたら少し待ってもう一度消す（実運用の木に試験のページを残さない）。
+    if (await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).status, id).catch(() => 0) === 200) {
+      await sleep(800);
+      await deletePage(page, id);
+    }
     const st2 = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).status, id);
     check('作ったページを消した', st2 === 404, String(st2));
   }

@@ -9,6 +9,9 @@
 //   ④ つまみのダブルクリックで元の「行に付いて回る」出し方へ戻る
 //   ⑤ つまみを押しただけ（動かさない）では留まらない
 //
+// ⚠ 2026-10-19 から、パソコンの帯は本文の上の固定の1本の中で、つまみは出ません（app.js の initFixedBar）。
+// 浮いて動かせる帯は、指で触る端末（タブレット）に残るので、この試験はその端末（isMobile・hasTouch）で流します。
+//
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-toolbar-drag.js
 const { chromium } = require('playwright');
@@ -29,7 +32,7 @@ const BODY = '<h1>【E2E】ツールバーを動かす</h1>' +
 
 (async () => {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 } });
+  const page = await (await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 }, isMobile: true, hasTouch: true })).newPage();
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
   let id = '';

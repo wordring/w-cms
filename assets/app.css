@@ -914,6 +914,43 @@ body[edit-mode] .block-content p:empty::before {
     background: #334155;
 }
 
+/* ── 帯を本文の上に固定する（2026-10-19・パソコンだけ——app.js の initFixedBar） ─────────────
+ * 文字の帯・表の行と列の帯・タグの項目の帯を、本文のすぐ上の1本に入れる。流れの中で場所を取り（本文に重ならない）、
+ * スクロールしても上に留まる。キャレットの場所に合わない組は薄くして押せない（隠すと1本の高さが変わって本文がずれる）。 */
+#w-fixed-bar { display: none; }
+body.w-fixed-bars[edit-mode] #w-fixed-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: #1e293b;
+    border-radius: 6px;
+    padding: 4px 6px;
+    margin: 0 0 10px;
+    transition: top 0.25s ease;
+}
+body.w-fixed-bars #w-fixed-bar .context-toolbar,
+body.w-fixed-bars #w-fixed-bar .table-toolbar,
+body.w-fixed-bars #w-fixed-bar .table-toolbar.pinned {
+    position: static;
+    display: flex;
+    box-shadow: none;
+    padding: 0;
+    z-index: auto;
+    max-width: none;
+    background: transparent;
+}
+body.w-fixed-bars #w-fixed-bar .context-toolbar:not(.active),
+body.w-fixed-bars #w-fixed-bar .table-toolbar:not(.active) {
+    opacity: 0.35;
+    pointer-events: none;
+}
+body.w-fixed-bars #w-fixed-bar .toolbar-grip { display: none; }
+body.w-fixed-bars #w-fixed-bar .table-toolbar { border-left: 1px solid #475569; padding-left: 10px; }
+
 /* ── 汎用表エディタ v1（docs/考察/【考察】語彙モデル.md §5.2） ─────────────────
  * 行操作ツールバーは context-toolbar と同じ流儀の編集クローム。
  * 本文DOMの外（シェル直下）に置き、位置は app.js がキャレットの行から決める。
