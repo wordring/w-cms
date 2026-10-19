@@ -233,3 +233,18 @@ func TestRFQReplyDraftReadsTheSuppliersPrice(t *testing.T) {
 		t.Fatalf("案 = %+v", rows)
 	}
 }
+
+// TestWithTagValuesUsesTheExistingTagList は、エディタで保存した（data-id の付いた）タグの並びに、タグを足して1つの並びのままに
+// することを固定します（2026-10-19——/001807 で h1 の下に2つ目の並びができた）。
+func TestWithTagValuesUsesTheExistingTagList(t *testing.T) {
+	body := `<h1 data-id="5cdj">部材見積依頼</h1><dl data-type="tags" data-id="7yob"><dt>` + RFQDateTag + `</dt><dd>2026-08-07</dd>` +
+		`<dt>` + SupplierTag + `</dt><dd>ふじ鍍金</dd></dl><table><tbody><tr><th>品名</th></tr></tbody></table>`
+	got := withTagValues(body, RFQDateTag, []string{"2026-07-17"}, true)
+	if n := strings.Count(got, `data-type="tags"`); n != 1 {
+		t.Fatalf("タグの並びが %d 個になりました:\n%s", n, got)
+	}
+	root := wrapInDiv(mustFragment(t, got))
+	if v := cms.TagValue(root, RFQDateTag); v != "2026-07-17" {
+		t.Errorf("部材見積依頼日 = %q:\n%s", v, got)
+	}
+}

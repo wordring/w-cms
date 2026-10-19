@@ -20,6 +20,7 @@ package cms
 import (
 	"html"
 	"os"
+	"regexp"
 	"strings"
 
 	"w-cms/internal/cms/page"
@@ -237,10 +238,24 @@ func WriteTag(b *strings.Builder, name, value string) {
 	b.WriteString("<dt>" + html.EscapeString(name) + "</dt><dd>" + html.EscapeString(value) + "</dd>")
 }
 
+// tagListOpenRe は可変タグの並びの開きタグです——ほかの属性があっても当たる（エディタで保存した本文は `data-id` を持つ）。
+var tagListOpenRe = regexp.MustCompile(`<dl\b[^>]*\sdata-type="tags"[^>]*>`)
+
+// FirstTagListOpen は最初の可変タグの並びの開きタグの位置です（無ければ -1）。
+func FirstTagListOpen(body string) int {
+	if loc := tagListOpenRe.FindStringIndex(body); loc != nil {
+		return loc[0]
+	}
+	return -1
+}
+
 // EndOfFirstTagList は最初の可変タグの並びの終わり（`</dl>` の位置）を返します。
 // 見つからなければ -1。
+//
+// ⚠ 2026-10-19 まで `<dl data-type="tags">` を文字どおりに探していたので、エディタで保存して `data-id` の付いた並びを
+// 見落とし、タグを足す道具（拡張の withTagValues など）が h1 の下に2つ目の並びを作っていた。
 func EndOfFirstTagList(body string) int {
-	i := strings.Index(body, `<dl data-type="tags">`)
+	i := FirstTagListOpen(body)
 	if i < 0 {
 		return -1
 	}

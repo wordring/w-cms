@@ -1016,7 +1016,7 @@ func setDrawingField(body, field, value string) string {
 	if h2 < 0 {
 		return body
 	}
-	open := strings.Index(body[h2:], `<dl data-type="tags">`)
+	open := cms.FirstTagListOpen(body[h2:]) // 属性（data-id）付きの並びにも当たる
 	if open < 0 {
 		return body
 	}
