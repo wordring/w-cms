@@ -170,18 +170,8 @@ func showBelowItems(tableType, label string) func(user *auth.User, pageID, attac
 // 添付を足し、本文にも PDF を開くマーカーを置くので、write 権限と編集中でないこと（gateWritablePage）を見ます
 // （⚠ 2026-09-22 から本文も触るようになったので関門が要る——`handler_gate.go`）。
 func servePaper(w http.ResponseWriter, r *http.Request, makeFn func(w http.ResponseWriter, user *auth.User, pageID string) (madeOrderPDF, bool)) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, pageID, ok := gatePagePost(w, r)
 	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
 		return
 	}
 	made, ok := makeFn(w, user, pageID)

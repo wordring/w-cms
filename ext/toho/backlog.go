@@ -607,13 +607,6 @@ func statusEnum() []string {
 	return nil
 }
 
-// numberFieldHTML は数を打つ欄です（出荷済数量）。
-func numberFieldHTML(field, cur string) string {
-	return `<input type="text" inputmode="numeric" class="order-edit order-num"` +
-		fieldAttrs(field, cur) + ` value="` + stdhtml.EscapeString(cur) + `"` +
-		` aria-label="` + stdhtml.EscapeString(field) + `">`
-}
-
 // textFieldHTML は自由文の欄です（備考）。
 func textFieldHTML(field, cur string) string {
 	return `<input type="text" class="order-edit order-text"` +

@@ -182,17 +182,11 @@ func withOrderSentLine(body, lineHTML string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root := &html.Node{Type: html.ElementNode, Data: "div"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
+	root := wrapInDiv(nodes)
 	all := []*html.Node{root}
 	sec := orderSentRecord(all)
 	if sec == nil {
-		sec = &html.Node{Type: html.ElementNode, Data: "section"}
-		h := &html.Node{Type: html.ElementNode, Data: "h2"}
-		h.AppendChild(&html.Node{Type: html.TextNode, Data: orderSentHeading})
-		sec.AppendChild(h)
+		sec = headedSection(orderSentHeading)
 		anchor := firstFileView(all)
 		if anchor == nil {
 			if ts := tablesOfType(all, ourOrderItemsType); len(ts) > 0 {
@@ -208,11 +202,7 @@ func withOrderSentLine(body, lineHTML string) (string, error) {
 	for _, n := range line {
 		sec.AppendChild(n)
 	}
-	var out []*html.Node
-	for c := root.FirstChild; c != nil; c = c.NextSibling {
-		out = append(out, c)
-	}
-	return htmldoc.Render(out), nil
+	return htmldoc.Render(childrenOf(root)), nil
 }
 
 // recordOrderSent は「送った」ことを本文へ反映します——行を発注済みに・部材発注日を送った日に（markOrderSent）・

@@ -58,18 +58,10 @@ func withEstimateNote(body, note string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root := &html.Node{Type: html.ElementNode, Data: "div"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
-	sec := findElement([]*html.Node{root}, func(n *html.Node) bool {
-		return n.Data == "section" && sectionHeadingText(n) == estimateNoteHeading
-	})
+	root := wrapInDiv(nodes)
+	sec := headedSectionIn(root, estimateNoteHeading)
 	if sec == nil {
-		sec = &html.Node{Type: html.ElementNode, Data: "section"}
-		h := &html.Node{Type: html.ElementNode, Data: "h2"}
-		h.AppendChild(&html.Node{Type: html.TextNode, Data: estimateNoteHeading})
-		sec.AppendChild(h)
+		sec = headedSection(estimateNoteHeading)
 		root.AppendChild(sec)
 	}
 	isHeading := func(c *html.Node) bool {
@@ -100,11 +92,7 @@ func withEstimateNote(body, note string) (string, error) {
 		p.AppendChild(&html.Node{Type: html.ElementNode, Data: "br"})
 		sec.AppendChild(p)
 	}
-	var out []*html.Node
-	for c := root.FirstChild; c != nil; c = c.NextSibling {
-		out = append(out, c)
-	}
-	return htmldoc.Render(out), nil
+	return htmldoc.Render(childrenOf(root)), nil
 }
 
 // EstimateNoteAPIHandler は POST /api/estimate/note です。入力: {page_id, note}——見積書ページの「備考」の節を書き換えます。

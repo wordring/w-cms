@@ -156,18 +156,10 @@ func makeOrderFromMail(user *auth.User, pageID string) (comm.MakeResult, error) 
 
 // mailOrderPages は、メールの記録の本文から作った受注ページ（`受信元` がそのページ全体）を返します（読めるものだけ）。
 func mailOrderPages(user *auth.User, pageID string) []analyzedResult {
-	rows, err := database.DB.Query(`SELECT page_id FROM page_tags WHERE name = ? AND value = ?`, SourceRefTag, pageID)
+	ids, err := cms.PagesByTag(database.DB, SourceRefTag, pageID)
 	if err != nil {
 		return nil
 	}
-	var ids []int
-	for rows.Next() {
-		var id int
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
-		}
-	}
-	rows.Close()
 	var out []analyzedResult
 	for _, id := range ids {
 		if !page.CanView(user, id) || kindOfPage(id) != "案件" {

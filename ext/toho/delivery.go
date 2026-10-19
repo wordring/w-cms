@@ -93,21 +93,24 @@ type deliveryLine struct {
 	Client                                                              string
 }
 
-// deliveryLineOf は選んだ1行を、受注明細表の索引から納品明細の行にします（読めない・合わないなら理由）。
-func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
+// pickedOrderRow は、案件残表（か製造ページ）で選んだ1行 p を、案件ページの案件明細表の索引から探します（読めない・合わないなら理由）。
+// ok は、その行を持ってよい案件ページの種類か。byName なら、p.Row が負のとき品番（空なら品名）で行を探します（製造ページから作る納品書）。
+// ⚠ 見つけた行の品番が p.Item と違えば断ります（行の取り違えを防ぐ照合）。
+// 2026-10-19 に寄せた（納品書と製造ページを作る口が、同じ探し方と同じ断りの文を写していた）。
+func pickedOrderRow(user *auth.User, p deliveryPick, kindOK func(string) bool, byName bool) (string, cms.VocabRow, string) {
 	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(p.Order), "/"))
 	if !ok {
-		return deliveryLine{}, "案件ページの番号が読めません: " + p.Order
+		return "", cms.VocabRow{}, "案件ページの番号が読めません: " + p.Order
 	}
 	pid := pageNum(id)
-	if !page.CanView(user, pid) || pageKindOf(pid) != PageKindCustomerOrder {
-		return deliveryLine{}, "案件ページが見つかりません: /" + id
+	if !page.CanView(user, pid) || !kindOK(pageKindOf(pid)) {
+		return "", cms.VocabRow{}, "案件ページが見つかりません: /" + id
 	}
 	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
 	if err != nil {
-		return deliveryLine{}, "案件明細表を読めません: /" + id
+		return "", cms.VocabRow{}, "案件明細表を読めません: /" + id
 	}
-	if p.Row < 0 {
+	if byName && p.Row < 0 {
 		for _, r := range rows {
 			if shippedKey(id, r.Values["item-id"], r.Values["item-name"]) == shippedKey(id, p.Item, p.Name) {
 				p.Row = r.RowNo
@@ -119,23 +122,41 @@ func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
 		if r.RowNo != p.Row {
 			continue
 		}
-		v := r.Values
-		if strings.TrimSpace(v["item-id"]) != strings.TrimSpace(p.Item) {
-			return deliveryLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（案件フォルダを開き直してください）"
+		if strings.TrimSpace(r.Values["item-id"]) != strings.TrimSpace(p.Item) {
+			return "", cms.VocabRow{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（案件フォルダを開き直してください）"
 		}
-		tags, _ := cms.TagsOfPage(database.DB, pid)
-		qty := strings.TrimSpace(p.Qty)
-		if n, ok := estimateNumber(qty); !ok || n <= 0 {
-			return deliveryLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回納める数が読めません: " + qty
-		}
-		return deliveryLine{
-			OurItemNo: strings.TrimSpace(v["our-item-id"]), Order: id, OrderNo: strings.TrimSpace(cms.FirstTag(tags, OrderNoTag)),
-			ItemNo: strings.TrimSpace(v["item-id"]), ItemName: strings.TrimSpace(v["item-name"]), Qty: qty,
-			Unit: strings.TrimSpace(v["unit"]), Price: strings.TrimSpace(v["price"]),
-			Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)),
-		}, ""
+		return id, r, ""
 	}
-	return deliveryLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（案件フォルダを開き直してください）"
+	return "", cms.VocabRow{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（案件フォルダを開き直してください）"
+}
+
+// oneClient は、行の客先が1つにそろっているかを見ます（client は今までの客先・空なら初めの行）。
+// そろっていなければ、混ざった2つの名前を返します（断りの文は呼び手が組む）。
+func oneClient(client, next string) (string, bool) {
+	if client == "" {
+		return next, true
+	}
+	return client, cms.NormalizeText(next) == cms.NormalizeText(client)
+}
+
+// deliveryLineOf は選んだ1行を、受注明細表の索引から納品明細の行にします（読めない・合わないなら理由）。
+func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
+	id, r, why := pickedOrderRow(user, p, func(k string) bool { return k == PageKindCustomerOrder }, true)
+	if why != "" {
+		return deliveryLine{}, why
+	}
+	v := r.Values
+	tags, _ := cms.TagsOfPage(database.DB, pageNum(id))
+	qty := strings.TrimSpace(p.Qty)
+	if n, ok := estimateNumber(qty); !ok || n <= 0 {
+		return deliveryLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回納める数が読めません: " + qty
+	}
+	return deliveryLine{
+		OurItemNo: strings.TrimSpace(v["our-item-id"]), Order: id, OrderNo: strings.TrimSpace(cms.FirstTag(tags, OrderNoTag)),
+		ItemNo: strings.TrimSpace(v["item-id"]), ItemName: strings.TrimSpace(v["item-name"]), Qty: qty,
+		Unit: strings.TrimSpace(v["unit"]), Price: strings.TrimSpace(v["price"]),
+		Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)),
+	}, ""
 }
 
 // buildDeliveryHTML は納品書ページの本文を、テンプレート tmpl を埋めて組みます。
@@ -203,9 +224,8 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusConflict, why)
 			return
 		}
-		if client == "" {
-			client = ln.Client
-		} else if cms.NormalizeText(ln.Client) != cms.NormalizeText(client) {
+		var same bool
+		if client, same = oneClient(client, ln.Client); !same {
 			cms.JSONFail(w, http.StatusBadRequest, "納品書は1枚に1社です（「"+client+"」と「"+ln.Client+"」が混ざっています）")
 			return
 		}
@@ -225,15 +245,10 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 置き場は製造ページの子（製造ページから作ったとき）か、記録／年／月／製造記録。
-	parentID := mfgID
-	if parentID == "" {
-		now := time.Now()
-		monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-			return
-		}
-		parentID = monthID
+	parentID, err := recordFolderOr(mfgID, user.Username, RecordWorkFolder, time.Now())
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	newID, err := cms.CreateChildPage(parentID, user.Username, "<h1>作成中</h1>")
 	if err != nil {

@@ -228,14 +228,10 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 置き場は `記録／年／月／製造記録`（2026-10-16・record_box.go）。**月は作った日**（部材見積依頼日ではない）。
 	// 見積依頼部材表が製造ページにあれば、その製造ページの子（2026-10-19・mfg_more.go）。
-	now := time.Now()
-	monthID := mfgParentOr(user, boxPage)
-	if monthID == "" {
-		monthID, err = recordFolder(user.Username, RecordWorkFolder, now)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-			return
-		}
+	monthID, err := recordFolderOr(mfgParentOr(user, boxPage), user.Username, RecordWorkFolder, time.Now())
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
 	if err != nil {
@@ -324,9 +320,9 @@ func createAnsweredRFQPage(user *auth.User, supplier, date, note string, lines [
 	}
 	// 置き場は `記録／年／月／製造記録`（2026-10-16）。⚠ **月は返事の日**です——返事から過去の見積依頼を起こす口なので、
 	// 過去の書類と同じく、その書類の年月に入れます（【考察】全体の設計 §4.2）。
-	monthID, err := recordFolder(user.Username, RecordWorkFolder, when)
+	monthID, err := recordFolderOr("", user.Username, RecordWorkFolder, when)
 	if err != nil {
-		return "", http.StatusInternalServerError, errString("「" + recordPath(RecordWorkFolder, when) + "」を用意できません: " + err.Error())
+		return "", http.StatusInternalServerError, err
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
 	if err != nil {
@@ -420,8 +416,7 @@ func RFQFillNamesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
-	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
+	if !requireRFQPage(w, pageID) {
 		return
 	}
 	filled := 0
@@ -468,8 +463,7 @@ func RFQSetCellsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
-	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
+	if !requireRFQPage(w, pageID) {
 		return
 	}
 	var mismatch string

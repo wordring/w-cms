@@ -319,8 +319,7 @@ func MfgEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
-	if pageKindOf(pageNum(pageID)) != PageKindMfg {
-		cms.JSONFail(w, http.StatusBadRequest, "製造ページではありません")
+	if !requireMfgPage(w, pageID) {
 		return
 	}
 	lines, missing, err := mfgEstimateLines(user, pageNum(pageID))

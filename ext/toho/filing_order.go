@@ -192,10 +192,9 @@ func fileOneOrder(user *auth.User, row orderRequest) filingResult {
 
 	// 置き場は `記録／年／月／依頼`（2026-10-16・record_box.go）。**月は受注ページを作った日**です。
 	when := orderFolderDateOf(idInt)
-	monthID, err := recordFolder(user.Username, RecordRequestFolder, when)
+	monthID, err := recordFolderOr("", user.Username, RecordRequestFolder, when)
 	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "「" + recordPath(RecordRequestFolder, when) + "」を用意できません: " + err.Error()}
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: err.Error()}
 	}
 	if _, _, err := cms.SetPageParent(user, pageID, monthID); err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}

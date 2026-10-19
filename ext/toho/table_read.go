@@ -212,6 +212,49 @@ func addRowChromeCells(table *html.Node, class string, inner func(row int, tr *h
 	}
 }
 
+// wrapInDiv は断片のノード列を1つの div の子にして返します（本文全体を1つの根から辿り、節を足せるように）。
+// 書き戻すときは childrenOf(root) を描画します。2026-10-19 に寄せた（紙の本文を読む7か所が同じ4行を写していた）。
+func wrapInDiv(nodes []*html.Node) *html.Node {
+	root := &html.Node{Type: html.ElementNode, Data: "div"}
+	for _, n := range nodes {
+		root.AppendChild(n)
+	}
+	return root
+}
+
+// childrenOf は根の子を並べて返します（wrapInDiv で包んだ本文を書き戻すとき）。
+func childrenOf(root *html.Node) []*html.Node {
+	var out []*html.Node
+	for c := root.FirstChild; c != nil; c = c.NextSibling {
+		out = append(out, c)
+	}
+	return out
+}
+
+// headedSection は、見出し（h2）が heading の、まだ中身の無い節を作ります。
+func headedSection(heading string) *html.Node {
+	sec := &html.Node{Type: html.ElementNode, Data: "section"}
+	h := &html.Node{Type: html.ElementNode, Data: "h2"}
+	h.AppendChild(&html.Node{Type: html.TextNode, Data: heading})
+	sec.AppendChild(h)
+	return sec
+}
+
+// headedSectionIn は、根の下で見出しが heading の最初の節を返します（無ければ nil）。
+func headedSectionIn(root *html.Node, heading string) *html.Node {
+	return findElement([]*html.Node{root}, func(n *html.Node) bool {
+		return n.Data == "section" && sectionHeadingText(n) == heading
+	})
+}
+
+// noteSectionLines は、見出しが heading の節（見積書・部材見積依頼書の「備考」）の行を返します（節が無ければ nil）。
+func noteSectionLines(root *html.Node, heading string) []string {
+	if sec := headedSectionIn(root, heading); sec != nil {
+		return noteLinesOf(sec)
+	}
+	return nil
+}
+
 // findElement は断片の中から、条件に合う最初の要素を文書順で返します（無ければ nil）。
 func findElement(nodes []*html.Node, pred func(*html.Node) bool) *html.Node {
 	var found *html.Node

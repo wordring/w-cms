@@ -68,10 +68,7 @@ func readRFQDoc(body string) (head map[string]string, rows []map[string]string, 
 	if perr != nil {
 		return nil, nil, nil, errors.New("本文を読めません")
 	}
-	root := &html.Node{Type: html.ElementNode, Data: "div"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
+	root := wrapInDiv(nodes)
 	head = map[string]string{}
 	for _, k := range []string{RFQNoTag, SupplierTag, RFQDateTag, RFQSignerTag, EstimateSentTag, RFQAnsweredTag} {
 		head[k] = strings.TrimSpace(cms.TagValue(root, k))
@@ -80,35 +77,12 @@ func readRFQDoc(body string) (head map[string]string, rows []map[string]string, 
 	if len(tables) == 0 {
 		return nil, nil, nil, errors.New("部材見積依頼明細表がありません（このページは部材見積依頼書ではないようです）")
 	}
-	trs := rowsOf(tables[0])
-	if len(trs) >= 2 {
-		labels := cellTexts(trs[0])
-		for _, tr := range trs[1:] {
-			if tr.Parent != nil && tr.Parent.Data == "tfoot" {
-				continue
-			}
-			r := map[string]string{}
-			any := false
-			for i, v := range cellTexts(tr) {
-				if i >= len(labels) {
-					break
-				}
-				r[strings.TrimSpace(labels[i])] = strings.TrimSpace(v)
-				if strings.TrimSpace(v) != "" {
-					any = true
-				}
-			}
-			if any && r["状態"] != rfqLineDeclined {
-				rows = append(rows, r)
-			}
+	for _, r := range itemRowsOf(tables[0]) {
+		if r["状態"] != rfqLineDeclined {
+			rows = append(rows, r)
 		}
 	}
-	if sec := findElement([]*html.Node{root}, func(n *html.Node) bool {
-		return n.Data == "section" && sectionHeadingText(n) == rfqNoteHeading
-	}); sec != nil {
-		note = noteLinesOf(sec)
-	}
-	return head, rows, note, nil
+	return head, rows, noteSectionLines(root, rfqNoteHeading), nil
 }
 
 // rfqPaperColumns は紙に刷る列です——設定の並びで、どの行にも値の無い列は落とし、単価はいつも残す（空欄で刷る）。
@@ -246,22 +220,11 @@ func RFQNoteAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // RFQSentAPIHandler は POST /api/rfq/sent です（入力: {page_id}）——FAX・手渡しで送ったとき、`送付日` に今日を書きます。
 func RFQSentAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, pageID, ok := gatePagePost(w, r)
 	if !ok {
 		return
 	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
+	if !requireRFQPage(w, pageID) {
 		return
 	}
 	today := time.Now().Format("2006-01-02")

@@ -37,10 +37,7 @@ func readEstimateDoc(body string) (head map[string]string, rows []map[string]str
 		return nil, nil, nil, perr
 	}
 	head = map[string]string{}
-	root := &html.Node{Type: html.ElementNode, Data: "div"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
+	root := wrapInDiv(nodes)
 	for _, k := range []string{EstimateNoTag, EstimateClientTag, EstimatePersonTag, EstimateDateTag, EstimateDueTag,
 		EstimatePlaceTag, EstimateTradeTag, EstimateValidTag, EstimateSignerTag} {
 		head[k] = strings.TrimSpace(cms.TagValue(root, k))
@@ -49,36 +46,10 @@ func readEstimateDoc(body string) (head map[string]string, rows []map[string]str
 	if len(tables) == 0 {
 		return nil, nil, nil, errors.New("見積明細表がありません")
 	}
-	trs := rowsOf(tables[0])
-	if len(trs) < 2 {
-		return head, nil, nil, nil
+	if len(rowsOf(tables[0])) < 2 {
+		return head, nil, nil, nil // 見出しだけの表なら、備考も読まない（前からの形）
 	}
-	labels := cellTexts(trs[0])
-	for _, tr := range trs[1:] {
-		if tr.Parent != nil && tr.Parent.Data == "tfoot" {
-			continue
-		}
-		cells := cellTexts(tr)
-		r := map[string]string{}
-		empty := true
-		for i, l := range labels {
-			if i < len(cells) {
-				r[strings.TrimSpace(l)] = strings.TrimSpace(cells[i])
-				if strings.TrimSpace(cells[i]) != "" {
-					empty = false
-				}
-			}
-		}
-		if !empty {
-			rows = append(rows, r)
-		}
-	}
-	if sec := findElement([]*html.Node{root}, func(n *html.Node) bool {
-		return n.Data == "section" && sectionHeadingText(n) == estimateNoteHeading
-	}); sec != nil {
-		note = noteLinesOf(sec)
-	}
-	return head, rows, note, nil
+	return head, itemRowsOf(tables[0]), noteSectionLines(root, estimateNoteHeading), nil
 }
 
 // estimateAmount は1行の金額（数量×単価・税抜）です。どちらかが数でなければ ok=false。

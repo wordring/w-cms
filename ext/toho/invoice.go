@@ -443,10 +443,9 @@ func InvoiceNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "請求書ページを作れません: "+err.Error())
 		return
 	}
-	now := time.Now()
-	monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
+	monthID, err := recordFolderOr("", user.Username, RecordWorkFolder, time.Now())
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")

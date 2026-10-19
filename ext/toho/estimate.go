@@ -484,17 +484,26 @@ func estimateBlockAPI(w http.ResponseWriter, r *http.Request, audit string, edit
 	json.NewEncoder(w).Encode(map[string]any{"success": true})
 }
 
-// withEstimateRecord は本文の block 番目の組の見積表に、計算した原価・利益率・単価を書いた本文を返します。
-func withEstimateRecord(body string, block int) (string, error) {
+// estimateBlockAt は本文を読んで、block 番目の組（見積計算表と見積表）を返します（読めない・無ければ、人に見せる断り）。
+// 2026-10-19 に寄せた（記録する口と写す口が同じ9行を写していた）。
+func estimateBlockAt(body string, block int) ([]*html.Node, estimateBlock, error) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
-		return "", errString("本文を読めません")
+		return nil, estimateBlock{}, errString("本文を読めません")
 	}
 	blocks := estimateBlocksOf(nodes)
 	if block < 0 || block >= len(blocks) {
-		return "", errString("その見積計算表が見つかりません（ページを開き直してください）")
+		return nil, estimateBlock{}, errString("その見積計算表が見つかりません（ページを開き直してください）")
 	}
-	b := blocks[block]
+	return nodes, blocks[block], nil
+}
+
+// withEstimateRecord は本文の block 番目の組の見積表に、計算した原価・利益率・単価を書いた本文を返します。
+func withEstimateRecord(body string, block int) (string, error) {
+	nodes, b, err := estimateBlockAt(body, block)
+	if err != nil {
+		return "", err
+	}
 	p := estimatePlanOf(b)
 	if !p.OK {
 		return "", errString("記録できません: " + p.Why)
@@ -606,15 +615,10 @@ func newEstimateRecordTable() *html.Node {
 // withEstimateDuplicate は本文の block 番目の組（すぐ前の見出し・見積計算表・見積表）を写して、組のすぐ後ろに置いた本文を返します。
 // 写しの見積表は、ロット・原価・単価を空にします（表面処理・利益率・備考は残す。式のセルは空にしない）。見出しは「（写し）」を付けます。
 func withEstimateDuplicate(body string, block int) (string, error) {
-	nodes, err := htmldoc.ParseFragment(body)
+	nodes, b, err := estimateBlockAt(body, block)
 	if err != nil {
-		return "", errString("本文を読めません")
+		return "", err
 	}
-	blocks := estimateBlocksOf(nodes)
-	if block < 0 || block >= len(blocks) {
-		return "", errString("その見積計算表が見つかりません（ページを開き直してください）")
-	}
-	b := blocks[block]
 	if b.Calc == nil {
 		return "", errString("見積計算表の無い見積表は写せません")
 	}

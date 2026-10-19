@@ -148,25 +148,14 @@ func closeFinishedMfgPages(user *auth.User, body string, today time.Time) []int 
 // MfgCloseAPIHandler は POST /api/mfg/close です。入力: {page_id}（製造ページ）。
 // 製造ページを `記録／年／月／製造記録`（今日の年月）へ移します（「この製造を閉じる」——済んでいなくても閉じられる）。
 func MfgCloseAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, pageID, ok := gatePagePost(w, r)
 	if !ok {
 		return
 	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
+	if !requireMfgPage(w, pageID) {
 		return
 	}
 	id := pageNum(pageID)
-	if pageKindOf(id) != PageKindMfg {
-		cms.JSONFail(w, http.StatusBadRequest, "製造ページではありません")
-		return
-	}
 	if !mfgIsOpen(id) {
 		cms.JSONFail(w, http.StatusConflict, "この製造はもう閉じています（「"+MfgBoxTitle+"」の下にありません）")
 		return

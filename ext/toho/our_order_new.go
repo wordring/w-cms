@@ -139,14 +139,10 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.DraftPage), "/")); ok && pageKindOf(pageNum(id)) == PageKindMfg && canWritePage(user, pageNum(id)) {
 		parentID = id
 	}
-	if parentID == "" {
-		now := time.Now()
-		monthID, err := recordFolder(user.Username, RecordWorkFolder, now)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-			return
-		}
-		parentID = monthID
+	parentID, err = recordFolderOr(parentID, user.Username, RecordWorkFolder, time.Now())
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	newID, err := cms.CreateChildPage(parentID, user.Username, "<h1>作成中</h1>")
 	if err != nil {

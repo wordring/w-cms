@@ -244,8 +244,7 @@ func gateRFQReply(w http.ResponseWriter, r *http.Request, raw string) (string, b
 	if !ok {
 		return "", false
 	}
-	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
+	if !requireRFQPage(w, pageID) {
 		return "", false
 	}
 	return pageID, true
@@ -361,8 +360,7 @@ func RFQReplySourcesAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !isRFQPage(pageID) {
-		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
+	if !requireRFQPage(w, pageID) {
 		return
 	}
 	// 0. この部材見積依頼書に結んだ返事ページ（通信記録の 🤖 解析から・2026-10-05・rfq_reply_page.go）の原本——いちばん上に。

@@ -73,10 +73,9 @@ func makeQuoteCaseFromRecord(user *auth.User, pageID string) (comm.MakeResult, e
 		client, _ = contacts.PartnerTitleForAddress(user, addr)
 	}
 	body := buildQuoteCaseHTML(tmpl, pageTitleOf(pageID), client, pageID)
-	now := time.Now()
-	folder, err := recordFolder(user.Username, RecordRequestFolder, now)
+	folder, err := recordFolderOr("", user.Username, RecordRequestFolder, time.Now())
 	if err != nil {
-		return comm.MakeResult{}, errors.New("「" + recordPath(RecordRequestFolder, now) + "」を用意できません: " + err.Error())
+		return comm.MakeResult{}, err
 	}
 	newID, err := cms.CreateChildPage(folder, user.Username, body)
 	if err != nil {
@@ -89,18 +88,10 @@ func makeQuoteCaseFromRecord(user *auth.User, pageID string) (comm.MakeResult, e
 
 // quoteCasesFrom は、その記録から作った見積の依頼の案件ページ（受信元がその記録）を返します（読めるものだけ）。
 func quoteCasesFrom(user *auth.User, pageID string) []string {
-	rows, err := database.DB.Query(`SELECT page_id FROM page_tags WHERE name = ? AND value = ?`, SourceRefTag, pageID)
+	ids, err := cms.PagesByTag(database.DB, SourceRefTag, pageID)
 	if err != nil {
 		return nil
 	}
-	var ids []int
-	for rows.Next() {
-		var id int
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
-		}
-	}
-	rows.Close()
 	var out []string
 	for _, id := range ids {
 		if page.CanView(user, id) && pageKindOf(id) == PageKindCustomerQuote {

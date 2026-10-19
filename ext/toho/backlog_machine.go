@@ -21,8 +21,6 @@ import (
 
 	stdhtml "html"
 
-	"golang.org/x/net/html"
-
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
@@ -99,10 +97,7 @@ func (m *machineLookup) ofSource(orderID int) *sourceMachineIndex {
 	if err != nil {
 		return idx
 	}
-	root := &html.Node{Type: html.ElementNode, Data: "div"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
+	root := wrapInDiv(nodes)
 	src, ok := sourceTableIn(root)
 	if !ok {
 		return idx

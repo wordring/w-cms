@@ -14,7 +14,6 @@ package toho
 
 import (
 	"encoding/json"
-	"errors"
 	stdhtml "html"
 	"net/http"
 	"strconv"
@@ -189,8 +188,7 @@ func MfgMadeAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "製造完了は「"+MarkDone+"」か空です")
 		return
 	}
-	if pageKindOf(pageNum(pageID)) != PageKindMfg {
-		cms.JSONFail(w, http.StatusBadRequest, "製造ページではありません")
+	if !requireMfgPage(w, pageID) {
 		return
 	}
 	if !requireWritableIdle(w, r, pageID) {
@@ -203,11 +201,7 @@ func MfgMadeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fixed, err := setItemTableCell(body, MfgItemsType, req.Row, req.ItemNo, "製造完了", req.Old, strings.TrimSpace(req.Value))
 	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, errCellConflict) {
-			code = http.StatusConflict
-		}
-		cms.JSONFail(w, code, err.Error())
+		failCellEdit(w, err)
 		return
 	}
 	if fixed != body {
@@ -322,22 +316,11 @@ func mfgPartLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int
 // MfgPartsAPIHandler は POST /api/mfg/parts です。入力: {page_id}（製造ページ）。
 // この製造の、まだ手配していない部材を、製造ページの本文に新しい発注部材表として入れます（部材発注書はその表の「部材発注書を作る」から——製造ページの子にできる）。
 func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, pageID, ok := gatePagePost(w, r)
 	if !ok {
 		return
 	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-	if pageKindOf(pageNum(pageID)) != PageKindMfg {
-		cms.JSONFail(w, http.StatusBadRequest, "製造ページではありません")
+	if !requireMfgPage(w, pageID) {
 		return
 	}
 	lines, skipped, err := mfgPartLines(user, pageNum(pageID))

@@ -18,8 +18,10 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"errors"
 	"net/http"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
@@ -58,6 +60,54 @@ func gateWritablePage(w http.ResponseWriter, r *http.Request, raw string) (strin
 		return "", false
 	}
 	return pageID, true
+}
+
+// gatePagePost は、入力が {page_id} だけの口の前口上です（POST・JSON → 本文を読む → gateWritablePage）。
+// 2026-10-19 に寄せた（製造ページ・紙・送った印の口が、同じ13行を写していた）。
+func gatePagePost(w http.ResponseWriter, r *http.Request) (*auth.User, string, bool) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return nil, "", false
+	}
+	var req struct {
+		PageID string `json:"page_id"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return nil, "", false
+	}
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID {
+		return nil, "", false
+	}
+	return user, pageID, true
+}
+
+// requireMfgPage は、製造ページ（`ページ種類：製造`）でなければ 400 を返して false です。
+func requireMfgPage(w http.ResponseWriter, pageID string) bool {
+	if pageKindOf(pageNum(pageID)) != PageKindMfg {
+		cms.JSONFail(w, http.StatusBadRequest, "製造ページではありません")
+		return false
+	}
+	return true
+}
+
+// requireRFQPage は、部材見積依頼書ページでなければ 400 を返して false です。
+func requireRFQPage(w http.ResponseWriter, pageID string) bool {
+	if !isRFQPage(pageID) {
+		cms.JSONFail(w, http.StatusBadRequest, "部材見積依頼書ページではありません")
+		return false
+	}
+	return true
+}
+
+// failCellEdit は、表のセルを書き換えられなかったときの返事です。
+// ⚠ **食い違い（errCellConflict）は 409**（相手が悪いのではなく、状態がずれている）・ほかは 400。
+func failCellEdit(w http.ResponseWriter, err error) {
+	code := http.StatusBadRequest
+	if errors.Is(err, errCellConflict) {
+		code = http.StatusConflict
+	}
+	cms.JSONFail(w, code, err.Error())
 }
 
 // rewriteBodyOrFail は本文を書き換えます。書けなければ 500 を返して false。

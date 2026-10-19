@@ -25,6 +25,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"database/sql"
 	stdhtml "html"
 	"sort"
 	"strconv"
@@ -109,26 +110,12 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 	for _, n := range names {
 		args = append(args, n)
 	}
-	tags := map[int]map[string][]string{}
-	trows, err := db.Query(sub+`
+	tags, err := scanTagsByPage(db.Query(sub+`
 		SELECT t.page_id, t.name, t.value FROM page_tags t JOIN sub ON sub.id = t.page_id
-		 WHERE t.name IN (`+marks+`) ORDER BY t.page_id, t.seq`, args...)
+		 WHERE t.name IN (`+marks+`) ORDER BY t.page_id, t.seq`, args...))
 	if err != nil {
 		return nil, err
 	}
-	for trows.Next() {
-		var id int
-		var name, value string
-		if err := trows.Scan(&id, &name, &value); err != nil {
-			trows.Close()
-			return nil, err
-		}
-		if tags[id] == nil {
-			tags[id] = map[string][]string{}
-		}
-		tags[id][name] = append(tags[id][name], value)
-	}
-	trows.Close()
 
 	isProduct := func(id int) bool {
 		t := tags[id]
@@ -148,22 +135,9 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 		if !isProduct(p.id) || isProduct(p.parent) || !canView(p.id) {
 			continue
 		}
-		t := tags[p.id]
-		row := productListRow{
-			PageID:    p.id,
-			Title:     p.title,
-			DrawingNo: joinUnique(t[DrawingNoTag]),
-			PartNo:    joinUnique(t["品番"]),
-			Migrating: len(t[MigratingTag]) > 0,
-		}
-		row.Names = otherNames(p.title, t[ItemNameTag], t[DrawingNameTag])
+		row := newProductListRow(p.id, p.title, tags[p.id])
 		if p.parent != hostID && canView(p.parent) {
 			row.Machine = p.ptit
-		}
-		row.Kinds, _ = cleanProductKinds(t[ProductKindTag])
-		if row.Kinds == nil && len(t[ProductKindTag]) > 0 {
-			// 選択肢に無い値（設定から消した区分など）も、黙って落とさずそのまま見せます。
-			row.Kinds = append([]string{}, t[ProductKindTag]...)
 		}
 		out = append(out, row)
 	}
@@ -221,24 +195,10 @@ func productListAll(user *auth.User) ([]productListRow, error) {
 	for _, n := range names {
 		args = append(args, n)
 	}
-	tags := map[int]map[string][]string{}
-	trows, err := db.Query(`SELECT page_id, name, value FROM page_tags WHERE name IN (`+marks+`) ORDER BY page_id, seq`, args...)
+	tags, err := scanTagsByPage(db.Query(`SELECT page_id, name, value FROM page_tags WHERE name IN (`+marks+`) ORDER BY page_id, seq`, args...))
 	if err != nil {
 		return nil, err
 	}
-	for trows.Next() {
-		var id int
-		var name, value string
-		if err := trows.Scan(&id, &name, &value); err != nil {
-			trows.Close()
-			return nil, err
-		}
-		if tags[id] == nil {
-			tags[id] = map[string][]string{}
-		}
-		tags[id][name] = append(tags[id][name], value)
-	}
-	trows.Close()
 
 	kindOf := func(id int) string { return strings.TrimSpace(firstOf(tags[id][PageKindTag])) }
 	isTop := func(id int) bool { p, ok := pages[id]; return ok && p.parent == 0 }
@@ -270,14 +230,7 @@ func productListAll(user *auth.User) ([]productListRow, error) {
 			continue
 		}
 		p := pages[id]
-		row := productListRow{
-			PageID:    id,
-			Title:     p.title,
-			DrawingNo: joinUnique(t[DrawingNoTag]),
-			PartNo:    joinUnique(t["品番"]),
-			Migrating: len(t[MigratingTag]) > 0,
-		}
-		row.Names = otherNames(p.title, t[ItemNameTag], t[DrawingNameTag])
+		row := newProductListRow(id, p.title, t)
 		company := companyOf(id)
 		if company != 0 && canView(company) {
 			row.Company = pages[company].title
@@ -290,11 +243,6 @@ func productListAll(user *auth.User) ([]productListRow, error) {
 			case k == "" && company != 0 && par != company && pages[par].parent == company:
 				row.Machine = pages[par].title
 			}
-		}
-		row.Kinds, _ = cleanProductKinds(t[ProductKindTag])
-		if row.Kinds == nil && len(t[ProductKindTag]) > 0 {
-			// 選択肢に無い値（設定から消した区分など）も、黙って落とさずそのまま見せます。
-			row.Kinds = append([]string{}, t[ProductKindTag]...)
 		}
 		out = append(out, row)
 	}
@@ -318,6 +266,46 @@ func productListAll(user *auth.User) ([]productListRow, error) {
 		return a.PageID < b.PageID
 	})
 	return out, nil
+}
+
+// scanTagsByPage は (page_id, name, value) の行を、ページ → タグの名前 → 値の並びに読みます（問い合わせの誤りもそのまま返す）。
+// 2026-10-19 に寄せた（置き場の下の一覧と全社の一覧が、同じ読み方を写していた）。
+func scanTagsByPage(trows *sql.Rows, err error) (map[int]map[string][]string, error) {
+	if err != nil {
+		return nil, err
+	}
+	defer trows.Close()
+	tags := map[int]map[string][]string{}
+	for trows.Next() {
+		var id int
+		var name, value string
+		if err := trows.Scan(&id, &name, &value); err != nil {
+			return nil, err
+		}
+		if tags[id] == nil {
+			tags[id] = map[string][]string{}
+		}
+		tags[id][name] = append(tags[id][name], value)
+	}
+	return tags, nil
+}
+
+// newProductListRow は、加工製品ページ1枚のタグから一覧の行を組みます（社名と装置名は呼び手が入れる）。
+func newProductListRow(id int, title string, t map[string][]string) productListRow {
+	row := productListRow{
+		PageID:    id,
+		Title:     title,
+		DrawingNo: joinUnique(t[DrawingNoTag]),
+		PartNo:    joinUnique(t["品番"]),
+		Migrating: len(t[MigratingTag]) > 0,
+	}
+	row.Names = otherNames(title, t[ItemNameTag], t[DrawingNameTag])
+	row.Kinds, _ = cleanProductKinds(t[ProductKindTag])
+	if row.Kinds == nil && len(t[ProductKindTag]) > 0 {
+		// 選択肢に無い値（設定から消した区分など）も、黙って落とさずそのまま見せます。
+		row.Kinds = append([]string{}, t[ProductKindTag]...)
+	}
+	return row
 }
 
 // hasNoCompany は、社名の分からない行（整理を待つページ）があるかを返します。

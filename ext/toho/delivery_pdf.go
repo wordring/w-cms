@@ -39,10 +39,7 @@ func readDeliveryDoc(body string) (head map[string]string, rows []map[string]str
 	if perr != nil {
 		return nil, nil, perr
 	}
-	root := &html.Node{Type: html.ElementNode, Data: "div"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
+	root := wrapInDiv(nodes)
 	head = map[string]string{}
 	for _, k := range []string{DeliveryNoTag, DeliveryClientTag, DeliveredAtTag, DeliveryIssuedTag, DeliverySignerTag, DeliveryPlaceTag} {
 		head[k] = strings.TrimSpace(cms.TagValue(root, k))
@@ -199,16 +196,38 @@ func makeDeliveryPDF(w http.ResponseWriter, user *auth.User, pageID string) (mad
 	if !ok {
 		return made, false
 	}
+	stampIssuedToday(&made, user, pageID, func(cur string) string {
+		head, _, err := readDeliveryDoc(cur)
+		if err != nil {
+			return ""
+		}
+		return head[DeliveryIssuedTag]
+	})
+	return made, true
+}
+
+// stampIssuedToday は、紙を作ったページの `発行日` に今日を書きます（空のときだけ——issued が今の発行日を読む）。
+// 書けなければ made の表示の断りに添えます。納品書と請求書が同じ8行を写していたので寄せた（2026-10-19）。
+func stampIssuedToday(made *madeOrderPDF, user *auth.User, pageID string, issued func(body string) string) {
 	today := time.Now().Format("2006-01-02")
 	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		if head, _, err := readDeliveryDoc(cur); err == nil && head[DeliveryIssuedTag] != "" {
+		if issued(cur) != "" {
 			return cur
 		}
 		return withTagValues(cur, DeliveryIssuedTag, []string{today}, false)
 	}); err != nil {
 		made.ViewNote = strings.TrimSpace(made.ViewNote + "（発行日を書けませんでした: " + err.Error() + "）")
 	}
-	return made, true
+}
+
+// appendIssuedStateRow は、明細の表の足元に「状態: 未発行／発行済（日付）」の行を足します（本文の `発行日` を読む）。
+func appendIssuedStateRow(el *html.Node, span int) {
+	issued := strings.TrimSpace(cms.TagValue(rootOf(el), DeliveryIssuedTag))
+	state := "未発行（紙をまだ作っていません）"
+	if issued != "" {
+		state = "発行済（" + issued + "）"
+	}
+	appendFootRow(el, span, "delivery-state", "状態: "+state)
 }
 
 // DeliveryPDFAPIHandler は POST /api/delivery-pdf です（入力: {page_id}）。
@@ -224,12 +243,7 @@ func renderDeliveryItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	span := headerCellCount(el)
 	rows := itemRowsOf(el)
-	issued := strings.TrimSpace(cms.TagValue(rootOf(el), DeliveryIssuedTag))
-	state := "未発行（紙をまだ作っていません）"
-	if issued != "" {
-		state = "発行済（" + issued + "）"
-	}
-	appendFootRow(el, span, "delivery-state", "状態: "+state)
+	appendIssuedStateRow(el, span)
 	if sub, ok, _ := deliveryTotals(rows); ok {
 		appendFootHTML(el, span, "estimate-total", `<strong>小計（税抜）: `+comma(sub)+`円</strong>`)
 	} else if len(rows) > 0 {

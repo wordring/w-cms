@@ -59,22 +59,11 @@ func mfgRFQLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int,
 // MfgRFQAPIHandler は POST /api/mfg/rfq です。入力: {page_id}（製造ページ）。
 // この製造の部材を、製造ページの本文の見積依頼必要部材表へ入れます（表が無ければ作る）。
 func MfgRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, pageID, ok := gatePagePost(w, r)
 	if !ok {
 		return
 	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-	if pageKindOf(pageNum(pageID)) != PageKindMfg {
-		cms.JSONFail(w, http.StatusBadRequest, "製造ページではありません")
+	if !requireMfgPage(w, pageID) {
 		return
 	}
 	lines, skipped, err := mfgRFQLines(user, pageNum(pageID))

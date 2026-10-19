@@ -46,7 +46,6 @@ package toho
 
 import (
 	"encoding/json"
-	"errors"
 	stdhtml "html"
 	"net/http"
 	"regexp"
@@ -1053,21 +1052,6 @@ func replaceFirstFieldValue(body, field, value string) string {
 // ——名寄せは人の仕事です（欄を直せば済む）。
 func findChildByTitle(parentID, title string) (string, bool) {
 	return cms.FindChildByTitle(parentID, title)
-}
-
-// ensureChildPage は題の一致する子を返し、無ければ作ります。
-func ensureChildPage(user *auth.User, parentID, title string) (string, error) {
-	if id, found := findChildByTitle(parentID, title); found {
-		return id, nil
-	}
-	parentInt, err := strconv.Atoi(parentID)
-	if err != nil {
-		return "", err
-	}
-	if !canWritePage(user, parentInt) {
-		return "", errors.New("親ページへ書き込む権限がありません")
-	}
-	return cms.CreateChildPage(parentID, user.Username, "<h1>"+htmlEscape(title)+"</h1>")
 }
 
 // canWritePage は書き込み権限の素の判定です（HTTPの口を通さない版）。

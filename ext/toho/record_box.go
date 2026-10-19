@@ -23,6 +23,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"errors"
 	stdhtml "html"
 	"time"
 
@@ -66,6 +67,20 @@ func recordFolder(owner, sub string, t time.Time) (string, error) {
 		return "", err
 	}
 	return cms.EnsureFolder(monthID, owner, sub, kindFolderBody(sub, sub))
+}
+
+// recordFolderOr は、parent があればそれを、無ければ `記録／年／月／<sub>` を用意して返します（parent は製造ページなど）。
+// 用意できなければ、人に見せる断り（「記録／…」を用意できません: …）を持った誤りを返します。
+// 2026-10-19 に寄せた（書類を作る9か所が、同じ断りの文と「無ければ記録へ」の分かれ道を写していた）。
+func recordFolderOr(parent, owner, sub string, t time.Time) (string, error) {
+	if parent != "" {
+		return parent, nil
+	}
+	id, err := recordFolder(owner, sub, t)
+	if err != nil {
+		return "", errors.New("「" + recordPath(sub, t) + "」を用意できません: " + err.Error())
+	}
+	return id, nil
 }
 
 // recordPath は人に見せる行き先（`記録／2026年／10月／依頼`）です。

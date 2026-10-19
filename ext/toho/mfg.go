@@ -168,51 +168,36 @@ type mfgLine struct {
 
 // mfgLineOf は受注残表で選んだ1行を、受注明細表の索引から製造明細の行にします（読めない・合わないなら理由）。
 func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machineLookup) (mfgLine, string) {
-	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(p.Order), "/"))
-	if !ok {
-		return mfgLine{}, "案件ページの番号が読めません: " + p.Order
+	// 見積の依頼からも始められる（2026-10-19）。
+	id, r, why := pickedOrderRow(user, p, func(k string) bool { return k == PageKindCustomerOrder || k == PageKindCustomerQuote }, false)
+	if why != "" {
+		return mfgLine{}, why
 	}
 	pid := pageNum(id)
-	if k := pageKindOf(pid); !page.CanView(user, pid) || (k != PageKindCustomerOrder && k != PageKindCustomerQuote) { // 見積の依頼からも始められる（2026-10-19）
-		return mfgLine{}, "案件ページが見つかりません: /" + id
-	}
 	tags, err := cms.TagsOfPage(database.DB, pid)
 	if err != nil {
 		return mfgLine{}, "案件ページを読めません: /" + id
 	}
-	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
-	if err != nil {
-		return mfgLine{}, "案件明細表を読めません: /" + id
+	v := r.Values
+	q, okQ := estimateNumber(p.Qty)
+	if !okQ || q <= 0 {
+		return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回作る数が読めません: " + p.Qty
 	}
-	for _, r := range rows {
-		if r.RowNo != p.Row {
-			continue
-		}
-		v := r.Values
-		if strings.TrimSpace(v["item-id"]) != strings.TrimSpace(p.Item) {
-			return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（案件フォルダを開き直してください）"
-		}
-		q, okQ := estimateNumber(p.Qty)
-		if !okQ || q <= 0 {
-			return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回作る数が読めません: " + p.Qty
-		}
-		inMfg, _ := mfg.of(id, v["item-id"], v["item-name"])
-		free := r.Num("quantity") - int(inMfg)
-		if int(q) > free {
-			return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」は、まだ製造に入っていない数が " + strconv.Itoa(free) + " です（" + p.Qty + " は多すぎます）"
-		}
-		due := strings.TrimSpace(v["due"])
-		if due == "" {
-			due = cms.FirstTag(tags, DueDateTag)
-		}
-		machine, _ := machines.machineOf(pid, v["our-item-id"], v["item-id"], v["item-name"])
-		return mfgLine{
-			OurItemNo: strings.TrimSpace(v["our-item-id"]), Order: id, ItemNo: strings.TrimSpace(v["item-id"]),
-			ItemName: strings.TrimSpace(v["item-name"]), Machine: strings.TrimSpace(machine), Qty: strings.TrimSpace(p.Qty),
-			Unit: strings.TrimSpace(v["unit"]), Due: due, Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)), Free: free,
-		}, ""
+	inMfg, _ := mfg.of(id, v["item-id"], v["item-name"])
+	free := r.Num("quantity") - int(inMfg)
+	if int(q) > free {
+		return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」は、まだ製造に入っていない数が " + strconv.Itoa(free) + " です（" + p.Qty + " は多すぎます）"
 	}
-	return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（案件フォルダを開き直してください）"
+	due := strings.TrimSpace(v["due"])
+	if due == "" {
+		due = cms.FirstTag(tags, DueDateTag)
+	}
+	machine, _ := machines.machineOf(pid, v["our-item-id"], v["item-id"], v["item-name"])
+	return mfgLine{
+		OurItemNo: strings.TrimSpace(v["our-item-id"]), Order: id, ItemNo: strings.TrimSpace(v["item-id"]),
+		ItemName: strings.TrimSpace(v["item-name"]), Machine: strings.TrimSpace(machine), Qty: strings.TrimSpace(p.Qty),
+		Unit: strings.TrimSpace(v["unit"]), Due: due, Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)), Free: free,
+	}, ""
 }
 
 // mfgTitle は製造ページの題です——「装置名、装置名…」（同じ名前は1つ）。装置名の無い行は品名。長くなったら「…ほか N」。
@@ -293,9 +278,8 @@ func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusConflict, why)
 			return
 		}
-		if client == "" {
-			client = ln.Client
-		} else if cms.NormalizeText(ln.Client) != cms.NormalizeText(client) {
+		var same bool
+		if client, same = oneClient(client, ln.Client); !same {
 			cms.JSONFail(w, http.StatusBadRequest, "1つの製造は1社です（「"+client+"」と「"+ln.Client+"」が混ざっています）")
 			return
 		}

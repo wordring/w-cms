@@ -286,13 +286,10 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		content = "<h2>" + estimateSectionHeading + "</h2><p><br/></p>"
 	}
 	body := head + content
-	monthID := parent
-	if monthID == "" {
-		monthID, err = recordFolder(user.Username, RecordWorkFolder, now)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "「"+recordPath(RecordWorkFolder, now)+"」を用意できません: "+err.Error())
-			return
-		}
+	monthID, err := recordFolderOr(parent, user.Username, RecordWorkFolder, now)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, body)
 	if err != nil {

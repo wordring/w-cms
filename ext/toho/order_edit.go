@@ -99,11 +99,7 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 	fixed, err := setOrderItemCell(body, req.Row, req.ItemNo, req.Field, req.Old, req.Value)
 	if err != nil {
 		// ⚠ **食い違いは 409**（相手が悪いのではなく、状態がずれている）。
-		code := http.StatusBadRequest
-		if errors.Is(err, errCellConflict) {
-			code = http.StatusConflict
-		}
-		cms.JSONFail(w, code, err.Error())
+		failCellEdit(w, err)
 		return
 	}
 	if fixed == body {

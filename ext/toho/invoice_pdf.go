@@ -45,10 +45,7 @@ func readInvoiceDoc(body string) (head map[string]string, rows []map[string]stri
 	if perr != nil {
 		return nil, nil, perr
 	}
-	root := &html.Node{Type: html.ElementNode, Data: "div"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
+	root := wrapInDiv(nodes)
 	head = map[string]string{}
 	for _, k := range []string{InvoiceNoTag, DeliveryClientTag, InvoiceDateTag, InvoicePeriodTag, PayTermsTag, DeliveryIssuedTag, InvoiceSignerTag} {
 		head[k] = strings.TrimSpace(cms.TagValue(root, k))
@@ -197,15 +194,13 @@ func makeInvoicePDF(w http.ResponseWriter, user *auth.User, pageID string) (made
 	if !ok {
 		return made, false
 	}
-	today := time.Now().Format("2006-01-02")
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
-		if head, _, err := readInvoiceDoc(cur); err == nil && head[DeliveryIssuedTag] != "" {
-			return cur
+	stampIssuedToday(&made, user, pageID, func(cur string) string {
+		head, _, err := readInvoiceDoc(cur)
+		if err != nil {
+			return ""
 		}
-		return withTagValues(cur, DeliveryIssuedTag, []string{today}, false)
-	}); err != nil {
-		made.ViewNote = strings.TrimSpace(made.ViewNote + "（発行日を書けませんでした: " + err.Error() + "）")
-	}
+		return head[DeliveryIssuedTag]
+	})
 	// 済んだ製造ページを記録へ（2026-10-19・mfg_close.go——請求書の発行のとき）。移したかは請求明細表の足元に出る。
 	if body, err := cms.ReadPageBody(pageID); err == nil {
 		closeFinishedMfgPages(user, body, time.Now())
@@ -226,12 +221,7 @@ func renderInvoiceItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	span := headerCellCount(el)
 	rows := itemRowsOf(el)
-	issued := strings.TrimSpace(cms.TagValue(rootOf(el), DeliveryIssuedTag))
-	state := "未発行（紙をまだ作っていません）"
-	if issued != "" {
-		state = "発行済（" + issued + "）"
-	}
-	appendFootRow(el, span, "delivery-state", "状態: "+state)
+	appendIssuedStateRow(el, span)
 	if sub, tax, label, ok := invoiceTotals(rows); ok {
 		appendFootHTML(el, span, "estimate-total", `小計（税抜）: `+comma(sub)+`円　`+stdhtml.EscapeString(label)+`: `+comma(tax)+
 			`円　<strong>合計: `+comma(sub+tax)+`円</strong>`)
