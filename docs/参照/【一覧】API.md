@@ -443,10 +443,8 @@ JSONにならなければ、本文をそのまま理由にします。
 | POST | `/api/rfq/fill-names` | **admin のみ**（対象ページの write・書き込みの関門） | **部材見積依頼明細表の空の品番・品名を、加工製品ページから埋める**（2026-10-04・同上。移したページの後始末）。要求は `{page_id}`。部材見積依頼書ページでなければ400。応答は `{success, page_id, filled}`。監査記録は `rfq.fill-names` |
 | POST | `/api/rfq/set-cells` | **admin のみ**（対象ページの write・書き込みの関門） | **部材見積依頼明細表のセルを、いまの値を確かめてから書き換える**（2026-10-04・同上。移したページの後始末）。要求は `{page_id, edits:[{row, expect:{列: いまの値}, set:{列: 新しい値}}]}`（`row` は見出しを除いた何行目か・1始まり）。**1つでも合わなければ、何も書かない**（409。どこが違うかを返す）。応答は `{success, page_id, changed}`。監査記録は `rfq.set-cells` |
 | POST | `/api/table/append-rows` | **admin のみ**（対象ページの write・書き込みの関門） | **キャプションで名指した表の末尾に、行を足す**（[ext/toho/table_append.go](../../ext/toho/table_append.go)。移行の道具のための口）。要求は `{page_id, caption, rows:[{見出し: 値}]}`。そのページの、キャプションが `caption` の1枚目の表に足す。キャプションか行が無ければ400。足せなければ409（理由を返す）。応答は `{success, page_id, rows}`。監査記録は `table.append-rows` |
-| GET | `/api/cell-values` | 要認証 | **表のセルの候補**（2026-10-19・`?table=<キャプション>&column=<見出し>`・コア [internal/cms/cell_choices.go](../../internal/cms/cell_choices.go)）。サーバーが暇なときに `data/tables.db` を数えて置いた、値が数個に決まっている列の候補を、読めるページの行の数の多い順に返す（数えていない・数個に決まっていない列は空）。応答は `{success, values:[{value, count}], surveyed_at}`。数え方は設定 `cell_choices`（無ければ数えない）。画面は表のセルの候補（`fillCellChoiceMenu`）に使う |
-| POST | `/api/admin/cell-values/survey` | admin | **表のセルの候補をいま数える**（2026-10-19・暇を待たない）。応答は `{success, columns}`（候補の付いた列の数）。設定 `cell_choices` が無ければ `success:false` |
-| GET | `/api/tag-values` | 要認証 | **タグの値の候補**（2026-10-19・`?name=…`・コア [internal/cms/tag_values.go](../../internal/cms/tag_values.go)）。その名前のタグの値を、使っているページの数の多い順に返す（同じ数なら値の順・最大30）。数えるのは読めるページだけ・テンプレートの中は数えない。応答は `{success, name, values:[{value, count}]}`。画面はタグの値の候補（`fillTagValueMenu`）に使う |
-| GET | `/api/suggest` | 要認証 | **入力候補**（2026-09-21。`?source=…&q=…`・コア [internal/cms/suggest.go](../../internal/cms/suggest.go)）。出どころは拡張が `cms.RegisterSuggestSource` で持ち込み、**コアは名前しか知らない**（`推奨業者` が最初の1つ・`ext/toho/suggest_partner.go`）。**知らない出どころは 404 ではなく空で返す**。拡張を外したビルドでは、その出どころが居ないのが正常で、画面は候補が出ないだけであるべき（拡張の出し分けと同じ考え方） |
+| GET | `/api/autocomplete` | 要認証 | **オートコンプリートの候補の一覧**（2026-10-19・コア [internal/cms/autocomplete.go](../../internal/cms/autocomplete.go)）。サーバーが暇なときに数えて `data/autocomplete.json` に置いた、何度も入力された定型的な値を、読めるページだけで数え直して返す。応答は `{success, surveyed_at, cells:{<キャプション>:{<列の見出し>:[{value, count}]}}, tags:{<名前>:[{value, count}]}}`（多い順・最大 `max_values`）。数え方は設定 `autocomplete`（無ければ数えない）。エディタはページを開いたあと1回だけ読む（`loadAutocomplete`）。それまでの `/api/tag-values`・`/api/cell-values`・`/api/suggest` は、これに統一して外した |
+| POST | `/api/admin/autocomplete/survey` | admin | **オートコンプリートの候補をいま数える**（2026-10-19・暇を待たない・`data/autocomplete.json` も書き直す）。応答は `{success, columns, tags}`（候補の付いた表の列とタグの数）。設定 `autocomplete` が無ければ `success:false` |
 | GET | `/api/file-ref` | 要認証（指されたページの read） | **ファイルの ID を添付の組へ引く**（2026-10-01・コア [internal/cms/attachment_ref.go](../../internal/cms/attachment_ref.go)）。`?ref=ページID-添付ID`（添付の住所 `/ページID/添付ID.拡張子` も受ける）。応答は `{success, ref, page_id, file（保存名）, name（届いたときの名前）}`。**読めない・無いは同じ 404**、ID の形でなければ 400。使い手はメールの送る欄の「🔗 ID で添付を足す」（`assets/mail-compose.js`） |
 | POST | `/api/local-edit/start` | 要認証（指された添付の read） | **添付をローカルのアプリで編集するための鍵を出す**（2026-09-29・コア [internal/cms/local_edit.go](../../internal/cms/local_edit.go)。「📝 ローカル編集」）。要求は `{ref}`（「ページ番号-添付ID」）。応答は `{success, link, name, writable}`。`link` は `w-cms-edit:<w-cms のアドレス>#<鍵>` で、各 PC の常駐ヘルパー（`cmd/w-cms-edit`）が受け取る。鍵は、そのファイル1つに限る。12時間で切れる（使うたびに延びる）。サーバーの記憶だけなので、再起動で切れる。`writable` は、上書きできるか（ページへの書き込み権限と、設定 `attachment_readonly` の範囲で決まる）。添付が無い・読めないは404。監査記録は `local-edit.start` |
 | GET/PUT | `/api/local-edit/file` | **ログインの外**（`?token=` の鍵だけを確かめる。`RequireAuth` の外側） | **ヘルパーが、添付の中身を落とす・上げる**（2026-09-29・同上）。GET は、中身を返す（`ETag`・`X-WCMS-Name`・`X-WCMS-Writable` のヘッダつき）。PUT は、中身を上書きする。`If-Match` に、落としたときの ETag が要る（無ければ428）。いまの ETag と違えば409（ほかの人が先に書き換えた）。書けなければ403。前の中身は版に残る。権限は、鍵の持ち主の**いまの**権限で確かめ直す。鍵が切れていれば401。監査記録は `local-edit.write` |
@@ -512,9 +510,9 @@ JSONにならなければ、本文をそのまま理由にします。
   `/api/estimate-pdf`・`/api/estimate/*`・`/api/rfq-pdf`・`/api/rfq-pdf-docs`・
   `/api/rfq/*`・`/api/rfq-reply/*`・`/api/table/append-rows`
 
-上の表のうち、コアの口は、`/api/tag-schema`・`/api/upload-*`・`/api/suggest`・`/api/file-ref`・
+上の表のうち、コアの口は、`/api/tag-schema`・`/api/upload-*`・`/api/autocomplete`・`/api/file-ref`・
 `/api/local-edit/*`・`/api/zip-list`・`/api/qr`・`/api/reorder` です。
-`/api/suggest` は、**候補の出どころ**を、拡張が差し込みます。
+（2026-10-19 まであった `/api/suggest`〔候補の出どころを拡張が差し込む口〕は、オートコンプリートに統一して外しました。）
 
 ## 8. 静的配信
 
