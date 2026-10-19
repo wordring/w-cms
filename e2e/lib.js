@@ -138,6 +138,19 @@ async function childrenOf(page, pageID) {
 }
 
 // bodyOf はサニタイズ済みの本文HTMLを返します（`/api/load` は生のHTML）。
+// deleteTree はページとその子孫を全部消します（子から先に）。試験で作った木の後片付けに使います。
+// 2026-10-19 に寄せた（整理の試験6本が同じ4行を写していた）。
+async function deleteTree(page, id) {
+  for (const c of await childrenOf(page, id)) await deleteTree(page, c.ID);
+  await deletePage(page, id);
+}
+
+// topChildID はトップ直下で題が title のページの番号です（無ければ空）。「製造台帳」などの置き場を探すのに使います。
+async function topChildID(page, title) {
+  const top = await childrenOf(page, '000000');
+  return (top.find((c) => (c.Title || '').trim() === title) || {}).ID || '';
+}
+
 async function bodyOf(page, pageID) {
   return page.evaluate(async (id) => {
     const res = await fetch('/api/load?id=' + encodeURIComponent(id));
@@ -234,6 +247,8 @@ async function findPageWithTag(page, tagName, opts = {}) {
 }
 
 module.exports = {
+  deleteTree,
+  topChildID,
   MAILBOX_TITLE, CHANNEL_TAG,
   login, childrenOf, bodyOf, findMailbox, findRecordWithPDF, findThreadPair, findPageWithTag,
   makePage, deletePage, writeBody, minimalPDF, saveNow,

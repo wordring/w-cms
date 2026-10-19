@@ -10,7 +10,7 @@
 // 当て先は全部自分で作って最後に消します（製造台帳の下の【E2E】の会社と加工製品・できた見積計算書と、試験が作った空のフォルダ）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-estimate-calc.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, childrenOf } = require('./lib');
+const { login, makePage, deletePage, childrenOf, topChildID } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -32,8 +32,7 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
   let cust = '', product = '', calc = '';
   try {
     await login(page, BASE);
-    const top = await childrenOf(page, '000000');
-    const ledger = (top.find(c => (c.Title || '').trim() === '製造台帳') || {}).ID || '';
+    const ledger = await topChildID(page, '製造台帳');
     if (!ledger) { console.log('製造台帳が無いので飛ばします'); await browser.close(); process.exit(0); }
     cust = await makePage(page, '<h1>【E2E】見積計算の会社</h1><dl data-type="tags"><dt>ページ種類</dt><dd>社名</dd></dl>', ledger);
     product = await makePage(page, '<h1>【E2E】見積計算の部品</h1><dl data-type="tags"><dt>ページ種類</dt><dd>加工製品</dd></dl>' +

@@ -12,7 +12,7 @@
 // 当て先は全部自分で作って最後に消します（製造の下の【E2E】の会社・通信箱の下の記録）。本物の加工製品には触りません。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-filing-search.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, findMailbox, childrenOf, bodyOf } = require('./lib');
+const { login, makePage, findMailbox, childrenOf, bodyOf, deleteTree, topChildID } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -35,10 +35,7 @@ const drawingBlock = (no, name, machine) =>
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
   let record = '', cust = '';
-  const wipe = async (id) => {
-    for (const c of await childrenOf(page, id)) await wipe(c.ID);
-    await deletePage(page, id);
-  };
+  const wipe = (id) => deleteTree(page, id);
   const cleanup = async () => {
     if (record) await wipe(record);
     if (cust) await wipe(cust);
@@ -47,8 +44,7 @@ const drawingBlock = (no, name, machine) =>
   try {
     await login(page, BASE);
     const box = await findMailbox(page);
-    const top = await childrenOf(page, '000000');
-    const partners = (top.find(c => (c.Title || '').trim() === '製造台帳') || {}).ID || '';
+    const partners = await topChildID(page, '製造台帳');
     if (!box || !partners) {
       console.log('通信箱か製造が無いので飛ばします');
       await browser.close();
