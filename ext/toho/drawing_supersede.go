@@ -68,11 +68,11 @@ func supersedeDrawing(user *auth.User, pageID string, newPick, oldPick drawingPi
 	if err != nil {
 		return "", err
 	}
-	oldSec, oldOpen, oldEnd, ok := drawingSectionAt(body, oldPick)
+	oldSec, _, _, ok := drawingSectionAt(body, oldPick)
 	if !ok {
 		return "", errors.New("古い図面がこのページに見つかりません（ページが変わったかもしれません——開き直してください）")
 	}
-	newSec, newOpen, newEnd, ok := drawingSectionAt(body, newPick)
+	newSec, _, _, ok := drawingSectionAt(body, newPick)
 	if !ok {
 		return "", errors.New("新しい図面がこのページに見つかりません（ページが変わったかもしれません——開き直してください）")
 	}
@@ -83,6 +83,44 @@ func supersedeDrawing(user *auth.User, pageID string, newPick, oldPick drawingPi
 		return "", err
 	}
 
+	// ⚠ **書くときは、錠の中で読み直した本文から組み直します**（2026-10-19・【考察】文書の食い違い §3.3）——それまでは錠の外で
+	// 読んだ本文から組んだものを書いていたので、そのあいだのほかの書き込みが消える窓があった。読み直した本文で図面が
+	// 見つからなければ（そのあいだに図面が動いた）、何も書かずに断る（旧版ページは残る——人が見て消す）。
+	newNo := drawingNoOf(newSec)
+	if supersedeBeforeWrite != nil {
+		supersedeBeforeWrite(pageID) // 試験だけ（旧版ページを作ってから書くまでのあいだに、ほかの人の保存を挟む）
+	}
+	var buildErr error
+	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+		next, err := supersededBody(cur, pageID, newPick, oldPick, oldNo, oldName, oldPageID)
+		if err != nil {
+			buildErr = err
+			return cur
+		}
+		return next
+	}); err != nil {
+		return oldPageID, err
+	}
+	if buildErr != nil {
+		return oldPageID, buildErr
+	}
+	auth.Audit(user.Username, "drawing.supersede", pageID+": "+oldNo+" → "+newNo+"（旧版 "+oldPageID+"）")
+	return oldPageID, nil
+}
+
+// supersedeBeforeWrite は試験だけが使う口です（旧版ページを作ってから、錠の中で書くまでのあいだに呼ぶ）。ふだんは nil。
+var supersedeBeforeWrite func(pageID string)
+
+// supersededBody は本文 body の新しい図面を古い図面の場所へ移し、改訂明細と品名を直した本文を返します（図面が見つからなければ断る）。
+func supersededBody(body, pageID string, newPick, oldPick drawingPick, oldNo, oldName, oldPageID string) (string, error) {
+	_, oldOpen, oldEnd, ok := drawingSectionAt(body, oldPick)
+	if !ok {
+		return "", errors.New("古い図面がこのページに見つかりません（ページが変わったかもしれません——開き直してください。旧版ページ " + oldPageID + " はできています）")
+	}
+	newSec, newOpen, newEnd, ok := drawingSectionAt(body, newPick)
+	if !ok {
+		return "", errors.New("新しい図面がこのページに見つかりません（ページが変わったかもしれません——開き直してください。旧版ページ " + oldPageID + " はできています）")
+	}
 	// 新しい図面を古い図面の場所へ。新しい図面が既に上にあるなら、古い図面を外すだけ。
 	var next string
 	if newOpen > oldOpen {
@@ -90,18 +128,13 @@ func supersedeDrawing(user *auth.User, pageID string, newPick, oldPick drawingPi
 	} else {
 		next = body[:oldOpen] + body[oldEnd:]
 	}
-	newNo := drawingNoOf(newSec)
 	// リンクを先に付けてから行を足す——番号を変えない改定で新しい行にリンクが付かないように（mergeAsRevision と同じ）。
 	next = linkRevisionRow(next, oldNo, oldPageID)
-	next = InsertRevisionRow(next, newNo)
+	next = InsertRevisionRow(next, drawingNoOf(newSec))
 	if names := renamedItemNames(oldName, pageTitleOf(pageID), drawingNameOf(newSec)); len(names) > 0 {
 		next = withTagValues(next, ItemNameTag, names, false)
 	}
-	if err := cms.RewriteBody(pageID, user.Username, func(string) string { return next }); err != nil {
-		return oldPageID, err
-	}
-	auth.Audit(user.Username, "drawing.supersede", pageID+": "+oldNo+" → "+newNo+"（旧版 "+oldPageID+"）")
-	return oldPageID, nil
+	return next, nil
 }
 
 // DrawingSupersedeAPIHandler は POST /api/drawing/supersede です

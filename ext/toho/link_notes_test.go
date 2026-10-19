@@ -424,3 +424,25 @@ func TestLinkByCodeAndNameFirst(t *testing.T) {
 		t.Errorf("品番だけで結んだ行の品名の食い違いを知らせていません: %v", notes)
 	}
 }
+
+// TestLinkProductsToOrderKeepsConcurrentSave は、受注の行を結ぶあいだにほかの人が受注ページを保存しても、その保存が消えないことを
+// 固定します（2026-10-19・【考察】文書の食い違い §3.3）——それまでは錠の外で読んだ本文を丸ごと書き戻していた。
+func TestLinkProductsToOrderKeepsConcurrentSave(t *testing.T) {
+	setupExtTest(t, "000090", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	seedProductPage(t, 91, "K120-01-211 留めブラケット", "K120-01-211")
+	seedBody(t, "000090", orderBody([2]string{"", "K120-01-211"}))
+	linkBeforeWrite = func(id string) {
+		if err := cms.RewriteBody(id, "bob", func(cur string) string { return cur + "<p>bob の書き込み</p>" }); err != nil {
+			t.Fatalf("ほかの人の保存: %v", err)
+		}
+	}
+	t.Cleanup(func() { linkBeforeWrite = nil })
+	if n := LinkProductsToOrder(&auth.User{Username: "root", IsAdmin: true}, "000090"); n != 1 {
+		t.Fatalf("埋めた行が %d です（1を期待）", n)
+	}
+	body, _ := cms.ReadPageBody("000090")
+	if !strings.Contains(body, "000091") || !strings.Contains(body, "bob の書き込み") {
+		t.Errorf("結びとほかの人の保存の両方が残っていません:\n%s", body)
+	}
+}

@@ -21,6 +21,11 @@ import (
 
 // folderProductsOrFail は ?folder= のページの下にある加工製品ページを返します。断ったときは w に書いて ok=false。
 func folderProductsOrFail(w http.ResponseWriter, r *http.Request) (user *auth.User, fid string, rows []productListRow, ok bool) {
+	// 読むだけの口なので GET だけ（2026-10-19・【考察】文書の食い違い §3.3——それまではメソッドを見ていなかった）。
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return nil, "", nil, false
+	}
 	user = auth.CurrentUser(r)
 	if user == nil {
 		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")

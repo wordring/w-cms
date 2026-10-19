@@ -171,7 +171,15 @@ func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Since  string `json:"since"`
 	}
 	// 本体が空でも既定で動きます（50件）。
-	json.NewDecoder(r.Body).Decode(&req)
+	// ⚠ 本体の大きさに上限を置きます（2026-10-19・【考察】文書の食い違い §3.3——それまでは上限なしで読んでいた）。欄は3つだけなので小さくてよい。
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			cms.JSONFail(w, http.StatusRequestEntityTooLarge, "リクエスト本文が大きすぎます")
+			return
+		}
+	}
 
 	// ⚠ **要求が切れても、始めた1回分は最後まで取り込みます**（2026-10-09——ページを閉じると途中で止まっていた）。
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)

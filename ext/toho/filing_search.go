@@ -44,6 +44,11 @@ type productHit struct {
 //
 // 同じ取引先（`customer`）のものを先に、ほかの取引先のものを後に返します（取引先を打ち間違えていても見つかるように）。
 func FilingSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
+	// 読むだけの口なので GET だけ（2026-10-19・【考察】文書の食い違い §3.3——それまではメソッドを見ていなかった）。
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	user := auth.CurrentUser(r)
 	if user == nil {

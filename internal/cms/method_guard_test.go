@@ -47,6 +47,10 @@ func TestStateChangingHandlersRejectGET(t *testing.T) {
 		{"添付（汎用）", "/api/upload-file", UploadFileHandler},
 		{"添付（画像）", "/api/upload-image", UploadImageHandler},
 		{"添付（PDF）", "/api/upload-pdf", UploadPDFHandler},
+		// 2026-10-12 の3つの口（ハンドラは POST 以外を断っていたが、番人に入っていなかった——【考察】文書の食い違い §3.3・2026-10-19 に足した）。
+		{"ブロック単位の保存", "/api/sync", SyncAPIHandler},
+		{"版の区切り", "/api/version-checkpoint?id=000001", VersionCheckpointAPIHandler},
+		{"居場所の知らせ", "/api/presence", PresenceAPIHandler},
 		// 連絡先の口（`/api/contacts/…`）は `ext/comm/contacts` の、通信の口
 		// （`/api/intake/…`）は `ext/comm` の試験が見ます（2026-09-15 に移設。
 		// ハンドラがこのパッケージから出たため）。

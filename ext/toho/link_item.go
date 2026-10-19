@@ -311,6 +311,39 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	// ⚠ **客先＋品番で引きます**（2026-10-01・product_customer.go——会社が違えば同じ品番がありうる）。
 	idInt, _ := strconv.Atoi(id)
 	customer := cms.PageTagValue(database.DB, idInt, OrderClientTag)
+	// まず錠の外で、結ぶものがあるかだけを見ます（無ければ書かない——RewriteBody は変わらなくても版を足す）。
+	if _, links := linkOrderBody(id, body, customer); len(links) == 0 {
+		return nil
+	}
+	// ⚠ **書くときは、錠の中で読み直した本文から組み直します**（2026-10-19・【考察】文書の食い違い §3.3）——それまでは錠の外で
+	// 読んだ本文を丸ごと書き戻していたので、そのあいだにほかの人が受注ページを保存すると、その保存が消える窓があった。
+	// ⚠ **書き込みは1回にまとめます**——行ごとに書くと版が7つ増えます。
+	if linkBeforeWrite != nil {
+		linkBeforeWrite(id) // 試験だけ（読んでから書くまでのあいだに、ほかの人の保存を挟む）
+	}
+	var links []orderLink
+	if err := cms.RewriteBody(id, user.Username, func(cur string) string {
+		fixed, got := linkOrderBody(id, cur, customer)
+		links = got
+		return fixed
+	}); err != nil {
+		return nil
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	// 監査は書けてから（書けなかった結びを「結んだ」と残さない）。
+	for _, l := range links {
+		auth.Audit(user.Username, "order-item.linked", id+" "+l.Code+" -> "+l.Product)
+	}
+	return links
+}
+
+// linkBeforeWrite は試験だけが使う口です（錠の外で読んでから、錠の中で書くまでのあいだに呼ぶ）。ふだんは nil。
+var linkBeforeWrite func(orderPageID string)
+
+// linkOrderBody は受注ページの本文 body の空いている `弊社品番` を、客先 customer の加工製品ページで埋めた本文と、結んだものを返します。
+func linkOrderBody(id, body, customer string) (string, []orderLink) {
 	var links []orderLink
 	// 品番と品名の組ごとに照合します（2026-10-01 利用者:「最初に品番と品名で行うべきです」——product_customer.go）。
 	for _, k := range orderItemKeysOf(body) {
@@ -328,18 +361,7 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 		body = fixed
 		links = append(links, orderLink{Order: id, Code: code, Product: target, Title: cms.PageTitleByID(cands[0]), Rows: n})
 	}
-	if len(links) == 0 {
-		return nil
-	}
-	// ⚠ **書き込みは1回にまとめます**——行ごとに書くと版が7つ増えます。
-	if err := cms.RewriteBody(id, user.Username, func(string) string { return body }); err != nil {
-		return nil
-	}
-	// 監査は書けてから（書けなかった結びを「結んだ」と残さない）。
-	for _, l := range links {
-		auth.Audit(user.Username, "order-item.linked", id+" "+l.Code+" -> "+l.Product)
-	}
-	return links
+	return body, links
 }
 
 // orderItemKey は受注明細表の空いている行の「品番と品名」の組です。

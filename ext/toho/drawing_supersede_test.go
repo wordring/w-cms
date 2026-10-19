@@ -253,3 +253,25 @@ func TestOldVersionKeepsPartsAndSteps(t *testing.T) {
 		t.Errorf("⚠ 旧版ページの本文が釣り合っていません:\n%s", oldBody)
 	}
 }
+
+// TestSupersedeDrawingKeepsConcurrentSave は、あとから改定にするあいだにほかの人がページを保存しても、その保存が消えないことを
+// 固定します（2026-10-19・【考察】文書の食い違い §3.3）——それまでは錠の外で読んだ本文から組んだものを書いていた。
+func TestSupersedeDrawingKeepsConcurrentSave(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := twoDrawingPage(t, inbox, "X1", "ブラケット", "X2", "ブラケット")
+	supersedeBeforeWrite = func(id string) {
+		if err := cms.RewriteBody(id, "bob", func(cur string) string { return cur + "<p>bob の書き込み</p>" }); err != nil {
+			t.Fatalf("ほかの人の保存: %v", err)
+		}
+	}
+	t.Cleanup(func() { supersedeBeforeWrite = nil })
+	if _, err := supersedeDrawing(user, dst, drawingPick{1, "X2"}, drawingPick{0, "X1"}); err != nil {
+		t.Fatalf("supersedeDrawing: %v", err)
+	}
+	after, _ := cms.ReadPageBody(dst)
+	if nos := drawingNosOf(after); strings.Join(nos, ",") != "X2" || !strings.Contains(after, "bob の書き込み") {
+		t.Errorf("改定とほかの人の保存の両方が残っていません（図面 %v）:\n%s", nos, after)
+	}
+}

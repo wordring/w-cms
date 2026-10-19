@@ -110,7 +110,11 @@ func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if parent.Valid {
 		parentStr = page.FormatID(int(parent.Int64))
 		// 親ページの見出し（h1）。左レールの「↑ 親ページへ」リンクに表示する。
-		parentTitle = PageTitleByID(int(parent.Int64))
+		// ⚠ **親が読める人にだけ返します**（2026-10-19・設計総点検 §3.1 の残り・【考察】文書の食い違い §3.3）——それまでは、読めない
+		// 親の題まで返していた。親の番号は返す（リンクを踏んだ先で、親の読み権限が通常どおり断る）。
+		if page.CanView(auth.CurrentUser(r), int(parent.Int64)) {
+			parentTitle = PageTitleByID(int(parent.Int64))
+		}
 	}
 
 	WriteJSON(w, map[string]any{
