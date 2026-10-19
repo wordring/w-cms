@@ -5590,7 +5590,11 @@
         //    ——揃うのは採ったときだけで、手打ちは止められません。それでも意味が
         //    あるのは**打つより選ぶほうが速い**からです。速ければ揃います。
         const suggestFrom = (col && col.suggest) || '';
-        if (!isEnum && !isImage && !suggestFrom) { hideEnumMenu(); return; }
+        // タグの値は、DB にある値を多い順に出す（2026-10-19・internal/cms/tag_values.go——どのタグにも。enum なら語彙の選択肢を
+        // その数の順に並べ替える）。参照・日付・画像のタグは出さない（ページ番号や日付を選んでも役に立たない）。
+        const tagLabel = tagDD ? tagLabelOf(tagDD) : '';
+        const tagSuggest = !!tagLabel && TAG_VALUE_SKIP_TYPES.indexOf((col && col.type) || '') === -1;
+        if (!isEnum && !isImage && !suggestFrom && !tagSuggest) { hideEnumMenu(); return; }
         if (cell === enumMenuCell) return; // 同じセル内のキャレット移動では作り直さない
 
         enumMenuCell = cell;
@@ -5605,7 +5609,8 @@
             });
             menu.appendChild(b);
         }
-        if (isEnum) col.enum.forEach(v => {
+        if (tagSuggest) fillTagValueMenu(menu, cell, tagLabel, isEnum ? col.enum : []);
+        else if (isEnum) col.enum.forEach(v => {
             const b = document.createElement('button');
             b.type = 'button';
             b.textContent = v;
@@ -5622,9 +5627,65 @@
             menu.appendChild(b);
         });
         if (suggestFrom) fillSuggestMenu(menu, cell, suggestFrom);
+        if (tagSuggest) return; // タグの候補は届いてから開く（fillTagValueMenu——空の枠を先に出さない）
         menu.classList.add('active');
         const rect = cell.getBoundingClientRect();
         placeFloating(menu, rect, 2);
+    }
+
+    // TAG_VALUE_SKIP_TYPES は、DB の値を候補に出さないタグの型です（2026-10-19）。
+    const TAG_VALUE_SKIP_TYPES = ['ref', 'date', 'datetime', 'image'];
+
+    // tagLabelOf はタグの値（dd）のすぐ前の dt の名前です（無ければ空）。
+    function tagLabelOf(dd) {
+        const dt = dd.previousElementSibling;
+        return dt && dt.tagName === 'DT' ? dt.textContent.trim() : '';
+    }
+
+    // tagValueCache はタグの名前ごとの候補（/api/tag-values の答え）です——ページを開いているあいだ、同じ名前は1回だけ聞く。
+    const tagValueCache = new Map();
+
+    // fillTagValueMenu はタグの値の候補を、DB にある値の多い順にボタンで並べます（2026-10-19）。
+    //   2026-10-19 利用者:「この値の数を数えて多い方から順に、ページ種類のタグを編集するときに値のコンボボックスとして出します。」
+    //   - enum のタグ（enumValues がある）は、語彙の選択肢を DB の数の順に並べる（まだ無い選択肢は、語彙の順で後ろに）。
+    //   - それ以外のタグは、DB にある値（読めるページだけ・最大30）。0件なら何も出さない。
+    //   - ⚠ 候補は縛りではない（手で打てる）。⚠ 遅れて届くので、セルが変わっていたら捨てる（fillSuggestMenu と同じ）。
+    async function fillTagValueMenu(menu, cell, label, enumValues) {
+        menu.classList.remove('active'); // 前のセルの枠を、届くまで隠す（中身はもう空）
+        let p = tagValueCache.get(label);
+        if (!p) {
+            p = fetch('/api/tag-values?name=' + encodeURIComponent(label))
+                .then(r => r.json()).then(d => (d && d.values) || []).catch(() => null);
+            tagValueCache.set(label, p);
+        }
+        const got = await p;
+        if (enumMenuCell !== cell) return; // 別のセルへ移っていたら捨てる
+        if (got === null) tagValueCache.delete(label); // 通信の失敗は覚えない（次にまた聞く）
+        const counts = new Map((got || []).map(x => [x.value, x.count]));
+        let list;
+        if (enumValues.length) {
+            list = enumValues.map((v, i) => ({ v, n: counts.get(v) || 0, i }))
+                .sort((a, b) => (b.n - a.n) || (a.i - b.i)).map(x => ({ v: x.v, n: x.n }));
+        } else {
+            list = (got || []).map(x => ({ v: x.value, n: x.count }));
+        }
+        if (!list.length) { hideEnumMenu(); enumMenuCell = cell; return; }
+        list.forEach(({ v, n }) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = v;
+            b.title = n ? n + ' ページで使っています' : 'まだ使っていません';
+            b.addEventListener('click', () => {
+                cell.textContent = v;      // childList の変化で MutationObserver → 自動保存が走る
+                markTagVocabulary();       // 選択肢の中にあるかの印（tag-known）を付け直す
+                placeCaretAtEnd(cell);
+                hideEnumMenu();
+                enumMenuCell = cell;       // 同じセルに居るあいだ開き直さない（enum のボタンと同じ）
+            });
+            menu.appendChild(b);
+        });
+        menu.classList.add('active');
+        placeFloating(menu, cell.getBoundingClientRect(), 2);
     }
 
     // tagValueColumn はタグの値（dd）の {label, type, enum, suggest} を、すぐ前の dt の名前で設定の語彙から引きます

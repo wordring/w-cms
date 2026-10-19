@@ -254,6 +254,8 @@ func buildHandler() http.Handler {
 	// ⚠ **認証が要ります**——候補にはページの題が出るためです。出どころは拡張が
 	// `cms.RegisterSuggestSource` で持ち込み、**コアは名前しか知りません**。
 	protected.HandleFunc("/api/suggest", cms.SuggestAPIHandler)
+	// タグの値の候補——DB にある値を多い順に（読めるページだけ・2026-10-19・tag_values.go）。
+	protected.HandleFunc("/api/tag-values", cms.TagValuesAPIHandler)
 
 	// 権限管理（owner/admin）
 	protected.HandleFunc("/api/page-perms", cms.PagePermsHandler)
