@@ -176,6 +176,10 @@ func TestOurOrderFromMfgDraftGoesUnderMfgPage(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("部材発注書を作れません: %d %v", code, out)
 	}
+	// 案件（for-order）も部材発注明細表へ写す（2026-10-19）。
+	if body := readPageBody(t, out["page_id"].(string)); !strings.Contains(body, "<td>000030</td>") {
+		t.Errorf("⚠ 部材発注明細表に案件 000030 が写っていません:\n%s", body)
+	}
 	if got := placeOf(out["page_id"].(string)); got != "ブラケット" {
 		t.Errorf("⚠ 部材発注書の置き場が %s です（製造ページの子のはず）", got)
 	}

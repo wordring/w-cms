@@ -226,7 +226,10 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 		//    同じことが紙の上で2回言われ、**直すときに食い違います**。
 		//    購入部品は逆で、**品名が同一性そのもの**なので残します。
 		rows = append(rows, map[string]string{
+			// for-order は案件（どの案件のための部材か）——2026-10-19 から写す。それまでは発注部材表から部材発注書へ移すときに落ち、
+			// 手配済みの数え方（procure_ledger.go）は案件の無い発注を「在庫」として納期の早い案件から当てていた。紙には刷らない。
 			"our-item-id": ln.ProductID,
+			"for-order":   ln.ForOrder,
 			"kind":        ln.Kind,
 			"no":          ln.No,
 			"work":        ln.Work,
