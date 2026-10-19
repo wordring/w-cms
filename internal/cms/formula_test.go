@@ -228,3 +228,36 @@ func TestFormulaTableValuesForDB(t *testing.T) {
 		t.Errorf("縦の合計が値になっていません: %q", got)
 	}
 }
+
+// TestFormulaRound は ROUND（2026-10-19）を固定します——整数に四捨五入（0.5 は 0 から遠い方へ）・大小文字を問わない・
+// 空なら空・中のエラーはそのまま・閉じていなければ理由。見積表の単価 =ROUND(原価*(1+利益率/100)) の形。
+// 利用者:「式の結果に円未満が出ますが、ROUNDという関数を用意しては？」
+func TestFormulaRound(t *testing.T) {
+	headers := []string{"原価", "利益率", "単価"}
+	for _, c := range []struct {
+		name  string
+		cells []string
+		value string
+		err   string
+	}{
+		{"見積表の単価", []string{"62727", "10", "=ROUND(原価*(1+利益率/100))"}, "69000", ""},
+		{"切り捨てる側", []string{"100.4", "", "=ROUND(原価)"}, "100", ""},
+		{"0.5 は上へ", []string{"100.5", "", "=round(原価)"}, "101", ""},
+		{"負の 0.5 は 0 から遠い方へ", []string{"-100.5", "", "=ROUND(原価)"}, "-101", ""},
+		{"式の中で使える", []string{"10.4", "2", "=ROUND(原価)*利益率"}, "20", ""},
+		{"空なら空", []string{"", "10", "=ROUND(原価*(1+利益率/100))"}, "", ""},
+		{"中のエラーはそのまま", []string{"多数", "10", "=ROUND(原価)"}, "", "「原価」が数ではありません"},
+		{"閉じていない", []string{"1", "10", "=ROUND(原価"}, "", "ROUND の中は式1つです"},
+	} {
+		r := EvalRowFormulas(headers, c.cells)[2]
+		if c.err != "" {
+			if !strings.Contains(r.Err, c.err) {
+				t.Errorf("%s: エラーが %q（%q を含むはず）", c.name, r.Err, c.err)
+			}
+			continue
+		}
+		if r.Err != "" || r.Value != c.value {
+			t.Errorf("%s: 値 %q エラー %q（期待 %q）", c.name, r.Value, r.Err, c.value)
+		}
+	}
+}

@@ -36,6 +36,9 @@ package cms
 //   - 合計は**空のセルを飛ばします**（表計算ソフトと同じ）。全部が空なら結果も空。数でないセルがあればエラー
 //     （黙って飛ばすと、打ち損じた値が合計から消える）。
 //   - ⚠ 表計算ソフトの再発明にしない（§4.1）——関数を足すのは、要るものが出てからにする。
+//   - **`ROUND(式)`**（2026-10-19）——式の値を整数に四捨五入する（0.5 は 0 から遠い方へ——表計算ソフトの ROUND と同じ）。
+//     利用者:「式の結果に円未満が出ますが、ROUNDという関数を用意しては？」（見積表の単価 `=ROUND(原価*(1+利益率/100))`）。
+//     桁の引数は受けない——`,` は数の桁区切り（`1,000`）として読むので、`ROUND(x, 0)` と区別できない。空なら空、エラーはそのまま。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -305,6 +308,17 @@ type fBin struct {
 	l, r fNode
 }
 
+// fRound は `ROUND(式)` です（整数に四捨五入）。
+type fRound struct{ x fNode }
+
+func (n fRound) eval(e *tableEval, at fPos) formulaValue {
+	v := n.x.eval(e, at)
+	if v.err != "" || v.blank {
+		return v
+	}
+	return formulaValue{num: math.Round(v.num)}
+}
+
 // fSum は `合計(…)` です。kind は "" （中身なし）・"上"・"one"（名前1つ）・"range"（名前:名前）。
 type fSum struct {
 	kind string
@@ -469,6 +483,9 @@ const errFormulaCycle = "式が循環しています"
 // formulaSumName は合計の関数の名前です（利用者「SUMは必要ないです」——これ1つだけ）。
 const formulaSumName = "合計"
 
+// formulaRoundName は四捨五入の関数の名前です（2026-10-19 利用者「ROUNDという関数を用意しては？」）。大文字と小文字は区別しない。
+const formulaRoundName = "ROUND"
+
 type fTok struct {
 	kind rune // 'n' 数・'i' 名前・演算と括弧と範囲はその字（+ - * / ( ) :）
 	num  float64
@@ -586,7 +603,7 @@ func formulaNumber(w string) (float64, bool) {
 }
 
 // parseFormula は `=` の後ろを木にします（expr := term (±term)*・term := factor (×÷factor)*・
-// factor := ±factor | 数 | 名前 | 合計(…) | (expr)）。
+// factor := ±factor | 数 | 名前 | 合計(…) | ROUND(expr) | (expr)）。
 func parseFormula(s string) (fNode, error) {
 	toks, err := tokenizeFormula(s)
 	if err != nil {
@@ -683,6 +700,18 @@ func (p *fParser) factor() (fNode, error) {
 		t := p.toks[p.i]
 		if t.axis == "" && t.name == formulaSumName && p.peekAt(1) == '(' {
 			return p.sum()
+		}
+		if t.axis == "" && strings.EqualFold(t.name, formulaRoundName) && p.peekAt(1) == '(' {
+			p.i += 2 // ROUND (
+			x, err := p.expr()
+			if err != nil {
+				return nil, err
+			}
+			if p.peek() != ')' {
+				return nil, errors.New("式が読めません（ROUND の中は式1つです。括弧が閉じていません）")
+			}
+			p.i++
+			return fRound{x: x}, nil
 		}
 		p.i++
 		return fName{name: t.name, axis: t.axis}, nil
