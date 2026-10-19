@@ -522,11 +522,8 @@ func RFQReadReplyAPIHandler(w http.ResponseWriter, r *http.Request) {
 	prompt := strings.NewReplacer("%ROWS%", list.String(), "%TEXT%", text).Replace(rfqReplyPrompt)
 	resp, err := rfqReadReplyAI(prompt, blobs...)
 	if err != nil {
-		if errors.Is(err, cms.ErrNoGeminiKey) {
-			cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
-			return
-		}
-		cms.JSONFail(w, http.StatusBadGateway, "読めませんでした: "+err.Error())
+		code, msg := aiFailure(err, "読めませんでした")
+		cms.JSONFail(w, code, msg)
 		return
 	}
 	guesses, summary, err := parseRFQReply(resp, len(rows))

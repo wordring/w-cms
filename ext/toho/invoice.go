@@ -457,17 +457,11 @@ func InvoiceNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	newID, err := newBuiltPage(monthID, user.Username, "請求書", func(newID string) (string, error) {
+		return buildInvoiceHTML(tmpl, newID, client, close, period, terms.PayTerms, signer, lines)
+	})
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "請求書ページを作れません: "+err.Error())
-		return
-	}
-	body, err := buildInvoiceHTML(tmpl, newID, client, close, period, terms.PayTerms, signer, lines)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "請求書ページを組めません: "+err.Error())
-		return
-	}
-	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	auth.Audit(user.Username, "invoice.new", newID+" "+client+" "+close+" "+strconv.Itoa(len(lines))+"行")

@@ -395,11 +395,8 @@ func CompareDrawingsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	text, err := cms.GeminiGenerateBlobs(prompt,
 		genai.Blob{MIMEType: "application/pdf", Data: a}, genai.Blob{MIMEType: "application/pdf", Data: b})
 	if err != nil {
-		if errors.Is(err, cms.ErrNoGeminiKey) {
-			cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
-			return
-		}
-		cms.JSONFail(w, http.StatusBadGateway, "見比べられませんでした: "+err.Error())
+		code, msg := aiFailure(err, "見比べられませんでした")
+		cms.JSONFail(w, code, msg)
 		return
 	}
 	v, err := parseCompareVerdict(text)

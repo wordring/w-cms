@@ -361,16 +361,8 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 「見積書を作る」（quote_done.go）が同じ道を通る。
 // parent が空でなければ、そのページ（製造ページ・2026-10-19）の子に作ります。
 func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn, signerIn string, lines []estimateLine, parent string) (newID, client string, ok bool) {
-	// 差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける）。
-	signerID := ""
-	if want := strings.TrimSpace(signerIn); want != "" {
-		for _, sg := range Signers(user) {
-			if page.FormatID(sg.PageID) == want {
-				signerID = want
-				break
-			}
-		}
-	}
+	// 差出人は署名を持つ人の中に居るかを確かめる（口は誰でも叩ける——trustedSigner）。
+	signerID := trustedSigner(user, signerIn)
 	client = contacts.OrgNameForPage(user, strings.TrimSpace(clientIn))
 	person := strings.Join(strings.Fields(personIn), " ")
 	tmpl, err := cms.PageTemplateBody(EstimateTemplate)
@@ -392,17 +384,9 @@ func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn,
 		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return "", "", false
 	}
-	newID, err = cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	newID, err = newBuiltPage(monthID, user.Username, "見積書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "見積書ページを作れません: "+err.Error())
-		return "", "", false
-	}
-	body, err := build(newID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "見積書ページを組めません: "+err.Error())
-		return "", "", false
-	}
-	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return "", "", false
 	}
 	return newID, client, true

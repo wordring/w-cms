@@ -154,3 +154,32 @@ func rewriteBodyOrFail(w http.ResponseWriter, pageID, username string, fn func(s
 	}
 	return true
 }
+
+// newBuiltPage は parentID の子に「作成中」のページを作り、その番号で build した本文を書きます（2026-10-20 にまとめた）。
+//
+// 書類の番号（見積書番号・部材発注書番号 など）はページ番号なので、先にページを作ってから組みます。name は断り文に出す
+// 書類の名前（「納品書」なら「納品書ページを作れません」）。作れない・組めない・書けないときは、その理由の誤りを返します
+// （呼び手は 500 にする）。⚠ 組めなかったときも、作った「作成中」のページは残ります（まとめる前と同じ）。
+func newBuiltPage(parentID, author, name string, build func(pageID string) (string, error)) (string, error) {
+	newID, err := cms.CreateChildPage(parentID, author, "<h1>作成中</h1>")
+	if err != nil {
+		return "", errors.New(name + "ページを作れません: " + err.Error())
+	}
+	body, err := build(newID)
+	if err != nil {
+		return "", errors.New(name + "ページを組めません: " + err.Error())
+	}
+	if err := cms.RewriteBody(newID, author, func(string) string { return body }); err != nil {
+		return "", errors.New("本文を書けません: " + err.Error())
+	}
+	return newID, nil
+}
+
+// aiFailure は、Gemini に読ませられなかったときの状態の番号と断り文です（2026-10-20 に5つの写しをまとめた）。
+// 鍵が無ければ 503 と設定の案内、ほかは 502 と what（「解析に失敗しました」など）に理由を添えた文。
+func aiFailure(err error, what string) (int, string) {
+	if errors.Is(err, cms.ErrNoGeminiKey) {
+		return http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。"
+	}
+	return http.StatusBadGateway, what + ": " + err.Error()
+}

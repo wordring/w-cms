@@ -52,25 +52,13 @@ import (
 // **順序に意味があります**——旧版ページを先に作り、次に加工製品ページを書き換え、
 // 最後に仮のページを片付けます。途中で失敗しても、図面がどこにも無い状態は生まれません。
 func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
-	srcBody, err := cms.ReadPageBody(srcPageID)
-	if err != nil {
-		return err
-	}
-	block := drawingBlockOf(srcBody)
-	if strings.TrimSpace(block) == "" {
-		return errors.New("移す図面ブロックが見つかりません")
-	}
-	dstInt, err := strconv.Atoi(dstPageID)
-	if err != nil || !canWritePage(user, dstInt) {
-		return errors.New("合流先へ書き込む権限がありません")
-	}
-	dstBody, err := cms.ReadPageBody(dstPageID)
+	block, dstBody, err := mergeInputs(user, srcPageID, dstPageID)
 	if err != nil {
 		return err
 	}
 
 	// 1. いま載っている図面ブロックを外し、旧版ページへ移す。旧版ページには、そのときのページの写し（工程・部材など）も残す（2026-10-19）。
-	oldBlocks, rest := extractDrawingSections(dstBody)
+	oldBlocks, _ := extractDrawingSections(dstBody) // 合流先に残す本文は、錠の中で読み直してから組む（下）
 	snapshot := oldVersionSnapshot(dstBody)
 	oldPageID, oldNo, oldName := "", "", ""
 	if len(oldBlocks) > 0 {
@@ -80,7 +68,6 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		if err != nil {
 			return err
 		}
-		dstBody = rest
 	}
 
 	// 2. 新しい図面ブロックを見出しの直後へ。
@@ -135,6 +122,28 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		return err
 	}
 	return nil
+}
+
+// mergeInputs は、合流（mergeAsRevision・mergeAsDrawing）の前に、仮のページの図面ブロックと合流先の本文を読みます
+// （合流先に書けるかも確かめる）。2026-10-20 に2つの写しをまとめた。
+func mergeInputs(user *auth.User, srcPageID, dstPageID string) (block, dstBody string, err error) {
+	srcBody, err := cms.ReadPageBody(srcPageID)
+	if err != nil {
+		return "", "", err
+	}
+	block = drawingBlockOf(srcBody)
+	if strings.TrimSpace(block) == "" {
+		return "", "", errors.New("移す図面ブロックが見つかりません")
+	}
+	dstInt, err := strconv.Atoi(dstPageID)
+	if err != nil || !canWritePage(user, dstInt) {
+		return "", "", errors.New("合流先へ書き込む権限がありません")
+	}
+	dstBody, err = cms.ReadPageBody(dstPageID)
+	if err != nil {
+		return "", "", err
+	}
+	return block, dstBody, nil
 }
 
 // createOldVersionPage は旧版の子ページを作り、そのIDを返します。
@@ -430,19 +439,7 @@ func checkRevision(srcPageID, dstPageID string, confirmed bool) (reason string, 
 // 履歴の持ち方は**未決**なので、間違った行を足すより足さないほうを選びました。
 // 由来は運ぶブロックの中の `受信元` が持っているので、出所は失われません。
 func mergeAsDrawing(user *auth.User, srcPageID, dstPageID string) error {
-	srcBody, err := cms.ReadPageBody(srcPageID)
-	if err != nil {
-		return err
-	}
-	block := drawingBlockOf(srcBody)
-	if strings.TrimSpace(block) == "" {
-		return errors.New("移す図面ブロックが見つかりません")
-	}
-	dstInt, err := strconv.Atoi(dstPageID)
-	if err != nil || !canWritePage(user, dstInt) {
-		return errors.New("合流先へ書き込む権限がありません")
-	}
-	dstBody, err := cms.ReadPageBody(dstPageID)
+	block, dstBody, err := mergeInputs(user, srcPageID, dstPageID)
 	if err != nil {
 		return err
 	}

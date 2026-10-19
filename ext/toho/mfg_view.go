@@ -73,7 +73,7 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if oi < 0 || qi < 0 {
 		return false, nil
 	}
-	writable := ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID) && !cms.IsTemplateArea(page.FormatID(ctx.PageID))
+	writable := writableMirror(ctx)
 	at := func(tr *html.Node, i int) string {
 		if i < 0 {
 			return ""

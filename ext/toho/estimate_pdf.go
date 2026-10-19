@@ -215,15 +215,14 @@ func renderEstimateItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	} else if len(rows) > 0 {
 		appendFootRow(el, span, "estimate-note", "合計を出せません（数量か単価の無い行があります）")
 	}
-	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
+	if !writableMirror(ctx) {
 		return false, nil
 	}
 	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 	// 備考の欄（2026-10-03・estimate_note.go）——合計の下・PDF を作るの上（備考を書いてから紙にするので）。
 	appendFootHTML(el, span, "estimate-note-row", estimateNoteBoxHTML(pid, estimateNoteOf(page.FormatID(ctx.PageID))))
 	appendFootHTML(el, span, "estimate-actions",
-		`<button type="button" class="chip-btn estimate-pdf-go" data-estimate-page="`+pid+`">📄 PDFを作る</button> `+
-			`<span class="estimate-pdf-say"></span>`+
+		pdfButtonHTML("estimate", page.FormatID(ctx.PageID))+
 			`<details class="estimate-mail"><summary>✉️ メールで送る</summary>`+
 			`<div data-mail-compose="`+EstimateMailPurpose+`" data-mail-page="`+pid+`"></div></details>`)
 	return false, nil

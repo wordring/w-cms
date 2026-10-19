@@ -237,12 +237,9 @@ func renderInvoiceItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			appendFootHTML(el, span, "estimate-note", `製造 `+link+` は記録へ移しました`)
 		}
 	}
-	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
+	if !writableMirror(ctx) {
 		return false, nil
 	}
-	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
-	appendFootHTML(el, span, "delivery-actions",
-		`<button type="button" class="chip-btn invoice-pdf-go" data-invoice-page="`+pid+`">📄 PDFを作る</button> `+
-			`<span class="invoice-pdf-say"></span>`)
+	appendFootHTML(el, span, "delivery-actions", pdfButtonHTML("invoice", page.FormatID(ctx.PageID)))
 	return false, nil
 }

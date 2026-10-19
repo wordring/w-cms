@@ -449,24 +449,17 @@ func parseRFQReplyMail(resp string) (*rfqReplyMailJudgment, error) {
 
 // makeRFQReplyFromMail はメールの記録の本文を読んで返事ページを作ります（comm の口 POST /api/record-make から）。
 func makeRFQReplyFromMail(user *auth.User, pageID string) (comm.MakeResult, error) {
-	idInt, _ := strconv.Atoi(pageID)
-	body, err := cms.ReadPageBody(pageID)
+	mail, err := mailTextForAI(pageID, "このメールには本文がありません（添付の 🤖 解析を使ってください）")
 	if err != nil {
-		return comm.MakeResult{}, errors.New("本文を読めません: " + err.Error())
-	}
-	if strings.TrimSpace(comm.RecordBodyText(body)) == "" {
-		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadRequest, Message: "このメールには本文がありません（添付の 🤖 解析を使ってください）"}
+		return comm.MakeResult{}, err
 	}
 	if _, err := cms.PageTemplateBody(RFQReplyTemplate); err != nil {
 		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "部材見積依頼の返事ページのテンプレートがありません: " + err.Error()}
 	}
-	j, err := judgeRFQReplyMail(mailForJudgment(idInt, cms.PageTitleByID(idInt), body))
+	j, err := judgeRFQReplyMail(mail)
 	if err != nil {
-		if errors.Is(err, cms.ErrNoGeminiKey) {
-			return comm.MakeResult{}, &comm.MakeError{Status: http.StatusServiceUnavailable,
-				Message: "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。"}
-		}
-		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadGateway, Message: "読めませんでした: " + err.Error()}
+		code, msg := aiFailure(err, "読めませんでした")
+		return comm.MakeResult{}, &comm.MakeError{Status: code, Message: msg}
 	}
 	if !j.IsRFQReply {
 		return comm.MakeResult{Say: "部材見積依頼の返事ではないと判定されました（ページは作っていません）。"}, nil

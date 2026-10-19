@@ -93,29 +93,36 @@ func init() {
 	})
 }
 
-// makeOrderFromMail はメールの記録の本文を読んで受注ページを作ります（comm の口 POST /api/record-make から）。
-// 権限（write）と、記録であること（`チャネル` のタグ）は口が先に確かめている。
-func makeOrderFromMail(user *auth.User, pageID string) (comm.MakeResult, error) {
+// mailTextForAI は、メールの記録 pageID を Gemini に渡す文（mailForJudgment）にします（2026-10-20 に2つの写しをまとめた）。
+// 本文が無ければ 400 の断り（emptyMsg がその文）。
+func mailTextForAI(pageID, emptyMsg string) (string, error) {
 	idInt, _ := strconv.Atoi(pageID)
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
-		return comm.MakeResult{}, errors.New("本文を読めません: " + err.Error())
+		return "", errors.New("本文を読めません: " + err.Error())
 	}
 	if strings.TrimSpace(comm.RecordBodyText(body)) == "" {
-		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadRequest, Message: "このメールには本文がありません"}
+		return "", &comm.MakeError{Status: http.StatusBadRequest, Message: emptyMsg}
+	}
+	return mailForJudgment(idInt, cms.PageTitleByID(idInt), body), nil
+}
+
+// makeOrderFromMail はメールの記録の本文を読んで受注ページを作ります（comm の口 POST /api/record-make から）。
+// 権限（write）と、記録であること（`チャネル` のタグ）は口が先に確かめている。
+func makeOrderFromMail(user *auth.User, pageID string) (comm.MakeResult, error) {
+	mail, err := mailTextForAI(pageID, "このメールには本文がありません")
+	if err != nil {
+		return comm.MakeResult{}, err
 	}
 	// テンプレートは**聞く前に**確かめる（聞いたあとで無いと分かると、有料の問い合わせが無駄になる）。
 	orderTmpl, err := cms.PageTemplateBody(OrderPageTemplate)
 	if err != nil {
 		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "解析の結果を書くテンプレートがありません: " + err.Error()}
 	}
-	j, err := judgeOrderMail(mailForJudgment(idInt, cms.PageTitleByID(idInt), body))
+	j, err := judgeOrderMail(mail)
 	if err != nil {
-		if errors.Is(err, cms.ErrNoGeminiKey) {
-			return comm.MakeResult{}, &comm.MakeError{Status: http.StatusServiceUnavailable,
-				Message: "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。"}
-		}
-		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusBadGateway, Message: "解析に失敗しました: " + err.Error()}
+		code, msg := aiFailure(err, "解析に失敗しました")
+		return comm.MakeResult{}, &comm.MakeError{Status: code, Message: msg}
 	}
 	if !j.IsClientOrder {
 		return comm.MakeResult{Say: "注文のメールではないと判定されました（ページは作っていません）。"}, nil
@@ -123,6 +130,7 @@ func makeOrderFromMail(user *auth.User, pageID string) (comm.MakeResult, error) 
 	sheets := j.orderList()
 	// 発注元は本文の会社名を揃えて（連絡帳の題へ）、読めなければ差出人のアドレスから取引先を引く。
 	partner := ""
+	idInt, _ := strconv.Atoi(pageID)
 	if addr := recordSenderAddress(idInt); addr != "" {
 		partner, _ = contacts.PartnerTitleForAddress(user, addr)
 	}

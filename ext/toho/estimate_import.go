@@ -121,17 +121,9 @@ func importedEstimatePage(w http.ResponseWriter, user *auth.User, when time.Time
 		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return "", false
 	}
-	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	newID, err := newBuiltPage(monthID, user.Username, "見積書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "見積書ページを作れません: "+err.Error())
-		return "", false
-	}
-	body, err := build(newID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "見積書ページを組めません: "+err.Error())
-		return "", false
-	}
-	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return "", false
 	}
 	return newID, true

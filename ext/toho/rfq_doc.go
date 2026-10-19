@@ -237,17 +237,9 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	newID, err := newBuiltPage(monthID, user.Username, "部材見積依頼書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "部材見積依頼書ページを作れません: "+err.Error())
-		return
-	}
-	body, err := build(newID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "部材見積依頼書ページを組めません: "+err.Error())
-		return
-	}
-	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	auth.Audit(user.Username, "rfq.new", newID+" "+supplier+" "+strconv.Itoa(len(lines))+"行 ← "+boxPage+"#"+strconv.Itoa(req.Table))
@@ -346,18 +338,17 @@ func createAnsweredRFQPage(user *auth.User, supplier, asked, date, note string, 
 	if err != nil {
 		return "", http.StatusInternalServerError, err
 	}
-	newID, err := cms.CreateChildPage(monthID, user.Username, "<h1>作成中</h1>")
+	newID, err := newBuiltPage(monthID, user.Username, "部材見積依頼書", func(newID string) (string, error) {
+		body, err := build(newID)
+		if err != nil {
+			return "", err
+		}
+		// 品番・品名が空の行は加工製品ページから埋める（利用者:「品番と品名の欄が埋まらない事には、人間には見てわかりません」）。
+		body, _ = fillRFQItemNames(body)
+		return body, nil
+	})
 	if err != nil {
-		return "", http.StatusInternalServerError, errString("部材見積依頼書ページを作れません: " + err.Error())
-	}
-	body, err := build(newID)
-	if err != nil {
-		return "", http.StatusInternalServerError, errString("部材見積依頼書ページを組めません: " + err.Error())
-	}
-	// 品番・品名が空の行は加工製品ページから埋める（利用者:「品番と品名の欄が埋まらない事には、人間には見てわかりません」）。
-	body, _ = fillRFQItemNames(body)
-	if err := cms.RewriteBody(newID, user.Username, func(string) string { return body }); err != nil {
-		return "", http.StatusInternalServerError, errString("本文を書けません: " + err.Error())
+		return "", http.StatusInternalServerError, errString(err.Error())
 	}
 	return newID, http.StatusOK, nil
 }

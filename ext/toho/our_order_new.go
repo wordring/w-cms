@@ -144,17 +144,9 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	newID, err := cms.CreateChildPage(parentID, user.Username, "<h1>作成中</h1>")
+	newID, err := newBuiltPage(parentID, user.Username, "部材発注書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "部材発注書ページを作れません: "+err.Error())
-		return
-	}
-	body, err := build(newID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "部材発注書ページを組めません: "+err.Error())
-		return
-	}
-	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	auth.Audit(user.Username, "our-order-new", newID+" "+supplier+" "+

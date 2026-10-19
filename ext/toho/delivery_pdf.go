@@ -15,7 +15,6 @@ package toho
 
 import (
 	"errors"
-	stdhtml "html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -249,12 +248,9 @@ func renderDeliveryItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	} else if len(rows) > 0 {
 		appendFootRow(el, span, "estimate-note", "小計を出せません（単価の決まっていない行があります）")
 	}
-	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
+	if !writableMirror(ctx) {
 		return false, nil
 	}
-	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
-	appendFootHTML(el, span, "delivery-actions",
-		`<button type="button" class="chip-btn delivery-pdf-go" data-delivery-page="`+pid+`">📄 PDFを作る</button> `+
-			`<span class="delivery-pdf-say"></span>`)
+	appendFootHTML(el, span, "delivery-actions", pdfButtonHTML("delivery", page.FormatID(ctx.PageID)))
 	return false, nil
 }

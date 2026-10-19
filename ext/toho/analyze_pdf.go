@@ -276,11 +276,8 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		j, err = judgeOrderPDF(pdf)
 	}
 	if err != nil {
-		if errors.Is(err, cms.ErrNoGeminiKey) {
-			cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに GEMINI_API_KEY 環境変数が設定されていません。設定してから起動し直してください。")
-			return
-		}
-		cms.JSONFail(w, http.StatusBadGateway, "解析に失敗しました: "+err.Error())
+		code, msg := aiFailure(err, "解析に失敗しました")
+		cms.JSONFail(w, code, msg)
 		return
 	}
 	attachID := strings.TrimSuffix(fileName, filepath.Ext(fileName))

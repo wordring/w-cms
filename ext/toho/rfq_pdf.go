@@ -245,7 +245,7 @@ func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		return true, nil
 	}
 	cms.DropChrome(el)
-	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
+	if !writableMirror(ctx) {
 		return false, nil
 	}
 	span := headerCellCount(el)
@@ -258,8 +258,7 @@ func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	appendFootHTML(el, span, "estimate-note-row", noteBoxHTML(pid, note, "/api/rfq/note", "備考（「○○用」など——紙では明細の下に刷ります）"))
 	appendFootHTML(el, span, "estimate-actions",
-		`<button type="button" class="chip-btn rfq-pdf-go" data-rfq-page="`+pid+`">📄 PDFを作る</button> `+
-			`<span class="rfq-pdf-say"></span>`)
+		pdfButtonHTML("rfq", pid))
 	// 業者の返事（2026-10-05・rfq_reply.go）——手で単価を書いたら「回答を記録」・返事の FAX／PDF／メールを 🤖 で読む。
 	appendFootHTML(el, span, "rfq-reply-actions",
 		`返事: <button type="button" class="chip-btn rfq-answered-go" data-rfq-page="`+pid+`"`+

@@ -64,7 +64,7 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 // テンプレートの中では出しません。保存先は本文の見出し「備考」の節で、紙はそこを刷ります（readOrderDoc）。
 func orderNoteBoxFor(ctx *cms.MirrorContext) string {
 	pid := page.FormatID(ctx.PageID)
-	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) || cms.IsTemplateArea(pid) {
+	if !writableMirror(ctx) {
 		return ""
 	}
 	note := ""
@@ -144,8 +144,7 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 // 2026-10-19 利用者:「順にお願いします」（筆者の案「画面に残る古い文と、隠れたままのボタン」——【考察】文書の食い違い §3.1）
 func orderRowReturnButtonHTML(orderID string, row int, status string) string {
 	ask := "この行を部材発注書から外して、必要部材表へ戻します。"
-	switch strings.TrimSpace(status) {
-	case OrderLineSent, OrderLineDelivered, orderLineLegacySent:
+	if orderLineSent(status) { // 出した行（発注済・納品済・それまでの未納品——order_status.go の決まり）
 		ask = "⚠ この行は既に相手に送った部材発注書に載っています。\n" +
 			"外したら、訂正した部材発注書を再送してください。\n\n" + ask
 	}
