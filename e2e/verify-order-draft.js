@@ -53,11 +53,11 @@ const ORDER_BODY = '<h1>【E2E】受注 テスト商店（発注部材表）</h1
     target = m ? '/' + m[1] : '';
   }
   if (!target) {
-    const hit = (await childrenOf(page, '000000')).find((c) => (c.Title || c.title) === '部材発注');
+    const hit = (await childrenOf(page, '000000')).find((c) => (c.Title || c.title) === '製造'); // 2026-10-19 から必要部材表はトップ直下の「製造」（置き場「部材発注」はなくした）
     if (hit) target = '/' + (hit.ID || hit.id);
   }
   if (!target) {
-    console.log('飛ばします: 「部材発注」ページが見つかりません（まだ作っていないだけかもしれません）');
+    console.log('飛ばします: 「製造」ページが見つかりません（まだ作っていないだけかもしれません）');
     await browser.close();
     return;
   }

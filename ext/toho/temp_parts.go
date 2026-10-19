@@ -272,21 +272,23 @@ func removeTempPartRows(body string, rows []int) (string, int) {
 	return htmldoc.Render(nodes), removed
 }
 
-// purchaseOrderBoxID は部材発注フォルダ（トップ直下の「部材発注」）のページIDです（作りません）。
+// purchaseOrderBoxID は臨時部材表を置くページ——トップ直下の「製造」のページIDです（作りません）。
+// 2026-10-19 から（それまではトップ直下の「部材発注」。置き場ごとなくし、作業面を「製造」へ移した）。
+// 2026-10-19 利用者:「部材発注、見積もり、部材見積依頼には子ページが無いのでフォルダを削除できるのでは？」
 func purchaseOrderBoxID() (string, bool) {
-	return cms.TopLevelPageByTitle(PurchaseOrderBoxTitle)
+	return cms.TopLevelPageByTitle(MfgBoxTitle)
 }
 
 // errBoxBusy は「部材発注フォルダを誰かが編集中」です。
-var errBoxBusy = errors.New("部材発注フォルダを誰かが編集中です（編集が終わってから、もう一度押してください）")
+var errBoxBusy = errors.New("「製造」のページを誰かが編集中です（編集が終わってから、もう一度押してください）")
 
 // returnToTempParts は行を部材発注フォルダの臨時部材表へ書きます（部材発注書ページから戻すとき）。
 //
 // ⚠ **部材発注フォルダを誰かが編集中なら断ります**——オートセーブと黙って上書きし合います。
 // （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ。人の保存とは `cms.RewriteBody` の錠で順に並ぶ。）
-// ⚠ 部材発注フォルダが無ければ作ります（置き場の箱・`EnsureTopLevelBox`）。
+// ⚠ 「製造」のページが無ければ作ります（置き場の箱・`EnsureTopLevelBox`。2026-10-19 までは「部材発注」）。
 func returnToTempParts(user *auth.User, ln ourOrderLine) error {
-	boxID, err := cms.EnsureTopLevelBox(PurchaseOrderBoxTitle, user.Username)
+	boxID, err := cms.EnsureTopLevelBox(MfgBoxTitle, user.Username)
 	if err != nil {
 		return err
 	}
@@ -402,7 +404,7 @@ func tempRowsElsewhere(lines []ourOrderLine, curPage string) map[string][]int {
 func takeTempRowsElsewhere(user *auth.User, lines []ourOrderLine, curPage string) string {
 	for p, rows := range tempRowsElsewhere(lines, curPage) {
 		if _, open := editlock.Locks.EditorOpen(pageNum(p)); open {
-			return "⚠ 臨時部材表から行を消せませんでした（部材発注フォルダを誰かが編集中です）。手で消してください"
+			return "⚠ 臨時部材表から行を消せませんでした（「製造」のページを誰かが編集中です）。手で消してください"
 		}
 		if err := cms.RewriteBody(p, user.Username, func(cur string) string {
 			out, _ := removeTempPartRows(cur, rows)

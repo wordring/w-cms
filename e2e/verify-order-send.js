@@ -57,11 +57,11 @@ async function statusesOf(page) {
   page.on('pageerror', (e) => errs.push(e.message));
   await login(page, BASE);
 
-  // 置き場は `部材発注`（題が機能）。無ければトップ直下に置き、④だけ飛ばします。
+  // 置き場は `製造`（題が機能・2026-10-19 から。それまでは `部材発注`——未発注の部材発注書の一覧はいまここ）。無ければトップ直下に置き、④だけ飛ばします。
   const top = await childrenOf(page, '000000');
-  const box = top.find((c) => (c.Title || c.title) === '部材発注');
+  const box = top.find((c) => (c.Title || c.title) === '製造');
   const boxID = box ? String(box.ID || box.id) : '';
-  if (!boxID) console.log('「部材発注」ページが無いので、当て先はトップ直下に置きます（④は飛ばします）');
+  if (!boxID) console.log('「製造」ページが無いので、当て先はトップ直下に置きます（④は飛ばします）');
 
   const found = await makePage(page, ORDER_BODY, boxID || '000000');
   if (!found) {

@@ -15,7 +15,7 @@ import (
 // おきます」。
 
 // ⚠ 必要部材表の印は `data-mirror`（名前の見えない `data-type` の印は 2026-09-27 に廃止）。
-const tempBoxBody = `<h1>部材発注</h1><p>弊社が出す部材発注書の置き場です。</p>` +
+const tempBoxBody = `<h1>製造</h1><p>案件をまたぐ作業面（2026-10-19 から臨時部材表はここ）。</p>` +
 	`<section data-mirror="必要部材表"></section>`
 
 func tempLine(name, qty string) ourOrderLine {
@@ -93,7 +93,7 @@ func TestRemoveTempPartRowsTakesOnlyThoseRows(t *testing.T) {
 func TestTempPartsAppearInRequiredParts(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
-	addPage(t, 40, 0, PurchaseOrderBoxTitle, "root", "302", true)
+	addPage(t, 40, 0, MfgBoxTitle, "root", "302", true)
 	body, _ := addTempParts(tempBoxBody, []ourOrderLine{
 		{ItemName: "ウエス", Quantity: "3", Unit: "袋", Cost: "500"},
 		{Material: "SS400", Shape: "FB", Size: "t6*50*1000", Color: "生地"}, // 数量が空
@@ -154,7 +154,7 @@ func TestTempRowsOnPicksOnlyThatPage(t *testing.T) {
 func TestReturnWithoutProductGoesToTempParts(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
-	addPage(t, 40, 0, PurchaseOrderBoxTitle, "root", "302", true)
+	addPage(t, 40, 0, MfgBoxTitle, "root", "302", true)
 	writeBodyFile(t, 40, tempBoxBody)
 	user := &auth.User{Username: "root", IsAdmin: true}
 
