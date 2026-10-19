@@ -350,12 +350,12 @@ func backlogViewHTML(user *auth.User, _ int) string {
 	var b strings.Builder
 	b.WriteString(backlogTotalHTML(backlogTotalOf(groups)))
 	b.WriteString(migNote)
-	// 選んだ行を部材見積依頼へ（2026-10-04・見積依頼の段3——【要求】部材見積依頼 §2「受注フォルダの受注残表から集める——選んだものだけ」）。
-	// 紙には出さない（no-print——受注残表は1枚ずつ印刷する作業の紙・同 §4 の7「選ぶ印を紙に出さないこと」）。配線は assets/app.js。
-	b.WriteString(`<div class="backlog-rfq-bar no-print"><button type="button" class="backlog-rfq-go">☑ 選んだ行を部材見積依頼へ</button>` +
-		` <span class="backlog-rfq-say"></span>` +
+	// 選んだ行で作業を始める帯。紙には出さない（no-print——案件残表は1枚ずつ印刷する作業の紙）。配線は assets/app.js。
+	// ⚠ 「☑ 選んだ行を部材見積依頼へ」（2026-10-04〜）は 2026-10-19 に外した——部材見積依頼は製造ページから（mfg_more.go）。
+	// 2026-10-19 利用者:「案件残表の「部材見積依頼」の欄を外して、部材見積依頼の置き場を消してください」
+	b.WriteString(`<div class="backlog-rfq-bar no-print">` +
 		// 選んだ行で納品書を作る（2026-10-17・delivery.go）——押すと、選んだ行と今回納める数（残りが初めから入っていて直せる）の欄が開く。
-		` <button type="button" class="backlog-dlv-go">🚚 選んだ行で納品書を作る</button> <span class="backlog-dlv-say"></span>` +
+		`<button type="button" class="backlog-dlv-go">🚚 選んだ行で納品書を作る</button> <span class="backlog-dlv-say"></span>` +
 		// 選んだ行で製造を始める（2026-10-19・mfg.go）——押すと、選んだ行と今回作る数（まだ製造に入っていない数が初めから入っていて直せる）の欄が開く。
 		` <button type="button" class="backlog-mfg-go">🏭 選んだ行で製造開始</button> <span class="backlog-mfg-say"></span>` +
 		`<div class="backlog-dlv-panel" hidden></div><div class="backlog-mfg-panel" hidden></div></div>`)
@@ -389,7 +389,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">製造完了</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
-			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">案件</th><th class="no-print">製造</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
+			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">案件</th><th class="no-print">製造</th><th class="no-print">納品</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -439,28 +439,12 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
 				noPrintCell(mfgCellHTML(r, g.Client)) +
-				noPrintCell(rfqPickHTML(r)) +
 				noPrintCell(deliveryPickHTML(r, g.Client)) +
 				`</tr>`)
 		}
 		b.WriteString(`</tbody></table></section>`)
 	}
 	return b.String()
-}
-
-// rfqPickHTML は受注残の行を部材見積依頼へ送るために選ぶ欄です（2026-10-04・段3）。送るのは弊社品番（加工製品ページ）・
-// 受注残（数量 − 出荷済数量）・受注ページ——部材見積依頼の置き場の見積依頼必要部材表に、受注残 × 部材の数量で入る（/api/rfq/collect）。
-// 弊社品番が空の行（どの加工製品か分からない）と、残が無い行は選べない（理由を title に）。
-func rfqPickHTML(r backlogRow) string {
-	switch {
-	case strings.TrimSpace(r.OurItemNo) == "":
-		return `<input type="checkbox" disabled title="弊社品番が空なので部材見積依頼へ送れません">`
-	case r.Remaining <= 0:
-		return `<input type="checkbox" disabled title="案件残がありません">`
-	}
-	return `<input type="checkbox" class="backlog-rfq-pick" title="この行の部材を部材見積依頼へ" data-product="` +
-		stdhtml.EscapeString(r.OurItemNo) + `" data-lot="` + strconv.Itoa(r.Remaining) + `" data-order="` +
-		stdhtml.EscapeString(r.OrderPageID) + `">`
 }
 
 // atomicCell は折り返さないセルを組みます（中身は組み済みのHTML）。

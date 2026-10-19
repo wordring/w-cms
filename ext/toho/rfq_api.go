@@ -117,15 +117,11 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "集められるものがありません——"+strings.Join(skipped, "／"))
 		return
 	}
-	// 送り先が無ければ部材見積依頼の置き場（2026-10-04・段3——受注フォルダの受注残表から送るとき、画面は置き場の番号を知らない）。
+	// 送り先は要る（2026-10-19 から。それまでは、空なら部材見積依頼の置き場——案件残表から送るときの道。置き場ごとなくした）。
 	target := strings.TrimSpace(req.PageID)
 	if target == "" {
-		boxID, err := cms.EnsureTopLevelBox(RFQBoxTitle, user.Username)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "「"+RFQBoxTitle+"」ページを用意できません: "+err.Error())
-			return
-		}
-		target = boxID
+		cms.JSONFail(w, http.StatusBadRequest, "見積依頼必要部材表を置くページがありません（page_id）")
+		return
 	}
 	pageID, okID := gateWritablePage(w, r, target)
 	if !okID {

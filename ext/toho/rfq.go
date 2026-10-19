@@ -36,7 +36,9 @@ import (
 )
 
 const (
-	// RFQBoxTitle は部材見積依頼の置き場（トップ直下）の題です。
+	// RFQBoxTitle は部材見積依頼の置き場（トップ直下）の題でした。⚠ 置き場は 2026-10-19 になくした（登録も外した）——
+	// 部材見積依頼は製造ページから（mfg_more.go）。見積依頼の表と欄（見積依頼必要部材表・再部材見積依頼 など）は、置いたページで働く。
+	// 2026-10-19 利用者:「案件残表の「部材見積依頼」の欄を外して、部材見積依頼の置き場を消してください」
 	RFQBoxTitle = "部材見積依頼"
 	// RFQNeedsType は見積依頼必要部材表です（本文の表——集めた行が入る）。
 	RFQNeedsType = "rfq-needs"
@@ -152,12 +154,6 @@ func init() {
 	cms.RegisterView(RFQRequoteViewType, rfqRequoteViewHTML)
 	cms.RegisterMirror(RFQNeedsType, cms.MirrorHandlerFunc(renderRFQNeeds))
 	cms.RegisterMirror(RFQDraftType, cms.MirrorHandlerFunc(renderRFQDraft))
-	cms.RegisterRequiredPage(cms.RequiredPage{
-		Title:     RFQBoxTitle,
-		Extension: "toho",
-		Why: "業者へ出す部材見積依頼の作業面です（見積依頼必要部材表 → 見積依頼部材表 → 業者ごとの部材見積依頼書ページ）。部材見積依頼書は記録／年／月／製造記録にできます（2026-10-16 から。それより前のものはこの下にあります）。" +
-			"弊社が顧客へ出す見積書は「見積」のほうです。",
-	})
 }
 
 // rfqLineFromValues は、加工製品の構成部品の1行の値（列の名前ごと——`productNeeds` の Values）を1行にします。
