@@ -139,16 +139,12 @@
         (nodes || []).forEach(n => {
             const isLeaf = !n.children || !n.children.length;
             if (isLeaf) {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.textContent = n.title;
+                const b = makeButton('', n.title);
                 b.style.paddingLeft = (10 + depth * 12) + 'px';
                 b.addEventListener('click', () => { hideTemplateMenu(); openNewPage(n.id); });
                 host.appendChild(b);
             } else {
-                const g = document.createElement('div');
-                g.className = 'template-menu-group';
-                g.textContent = n.title;
+                const g = makeEl('div', 'template-menu-group', n.title);
                 g.style.paddingLeft = (10 + depth * 12) + 'px';
                 host.appendChild(g);
                 appendTemplateNodes(host, n.children, depth + 1);
@@ -246,9 +242,7 @@
     // reposition はダブルクリックで元の出し方へ戻したあとに置き直す関数です。
     function makeToolbarDraggable(bar, name, reposition) {
         if (!bar || bar.querySelector('.toolbar-grip')) return;
-        const grip = document.createElement('span');
-        grip.className = 'toolbar-grip';
-        grip.textContent = '⠿';
+        const grip = makeEl('span', 'toolbar-grip', '⠿');
         grip.title = 'ドラッグで移動（その位置に留まります）／ダブルクリックで元の出し方へ';
         bar.insertBefore(grip, bar.firstChild);
 
@@ -300,15 +294,11 @@
         if (!menu || !btn) { openNewPage(''); return; }
 
         menu.textContent = ''; // 前回の項目を消す
-        const blank = document.createElement('button');
-        blank.type = 'button';
-        blank.textContent = '空のページ';
+        const blank = makeButton('', '空のページ');
         blank.addEventListener('click', () => { hideTemplateMenu(); openNewPage(''); });
         menu.appendChild(blank);
 
-        const sep = document.createElement('div');
-        sep.className = 'template-menu-group';
-        sep.textContent = 'テンプレートから';
+        const sep = makeEl('div', 'template-menu-group', 'テンプレートから');
         menu.appendChild(sep);
 
         appendTemplateNodes(menu, tree, 0);
@@ -418,8 +408,7 @@
                 li.dataset.pageId = p.ID;
                 // ドラッグで並べ替えられる（結果は並び順キーとして保存される）。
                 li.draggable = true;
-                const a = document.createElement('a');
-                a.className = 'child-nav-link';
+                const a = makeEl('a', 'child-nav-link');
                 a.href = '/' + p.ID;
                 a.textContent = '📄 ' + (p.Title || p.ID);
                 a.title = p.Title || p.ID;
@@ -478,11 +467,7 @@
         const order = Array.from(list.querySelectorAll('li[data-page-id]'))
             .map(li => li.dataset.pageId);
         try {
-            const res = await fetch('/api/reorder?parent=' + encodeURIComponent(currentPageId), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ order: order }),
-            });
+            const res = await fetch('/api/reorder?parent=' + encodeURIComponent(currentPageId), jsonPost({ order: order }));
             const d = await res.json();
             if (!d.success) throw new Error(d.message || res.status);
         } catch (e) {
@@ -534,9 +519,7 @@
         }
         headings.forEach(({ el, text }) => {
             const li = document.createElement('li');
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'toc-nav-link';
+            const btn = makeButton('toc-nav-link');
             btn.dataset.level = el.tagName.slice(1); // "H2" -> "2"
             btn.textContent = text;
             btn.title = text;
@@ -668,11 +651,7 @@
         const msg = document.getElementById('w-pp-msg');
         const want = cb.checked;
         try {
-            const res = await lockedFetch('/api/page-perms?id=' + currentPageId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ public: want }),
-            });
+            const res = await lockedFetch('/api/page-perms?id=' + currentPageId, jsonPost({ public: want }));
             if (!res.ok) {
                 cb.checked = !want; // 失敗したのでUIを元に戻す
                 const t = await res.text();
@@ -765,41 +744,28 @@
             const versions = await res.json();
             list.textContent = '';
             if (!versions.length) {
-                const li = document.createElement('li');
-                li.className = 'version-empty';
-                li.textContent = 'まだ履歴がありません。';
+                const li = makeEl('li', 'version-empty', 'まだ履歴がありません。');
                 list.appendChild(li);
                 return;
             }
             versions.forEach((v, idx) => {
-                const li = document.createElement('li');
-                li.className = 'version-item';
+                const li = makeEl('li', 'version-item');
                 li.dataset.version = v.id;
 
-                const when = document.createElement('span');
-                when.className = 'version-when';
-                when.textContent = formatDateTime(v.at);
+                const when = makeEl('span', 'version-when', formatDateTime(v.at));
                 li.appendChild(when);
 
-                const who = document.createElement('span');
-                who.className = 'version-who';
-                who.textContent = v.by || '—';
+                const who = makeEl('span', 'version-who', v.by || '—');
                 li.appendChild(who);
 
                 // 先頭（＝いまの内容）に戻すボタンは出さない。押しても何も起きず、
                 // 「戻せなかった」ように見えるだけなので。
                 if (isEdit && idx > 0) {
                     // ブロックごとに見て戻す（2026-10-12 利用者が選んだ形——ほかの人の書き込みを消さずに、そこだけ戻す・問い8）。
-                    const look = document.createElement('button');
-                    look.type = 'button';
-                    look.className = 'rail-btn version-blocks';
-                    look.textContent = 'ブロックごとに見る';
+                    const look = makeButton('rail-btn version-blocks', 'ブロックごとに見る');
                     look.addEventListener('click', () => openVersionBlocks(v));
                     li.appendChild(look);
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.className = 'rail-btn version-revert';
-                    btn.textContent = 'この版に戻す';
+                    const btn = makeButton('rail-btn version-revert', 'この版に戻す');
                     btn.addEventListener('click', () => revertToVersion(v));
                     li.appendChild(btn);
                 }
@@ -838,27 +804,18 @@
             }
         });
         const middle = (done) => {
-            const box = document.createElement('div');
-            box.className = 'w-version-blocks';
+            const box = makeEl('div', 'w-version-blocks');
             if (!diffs.length) {
-                const p = document.createElement('p');
-                p.textContent = 'この版といまで違うブロックはありません。';
+                const p = makeEl('p', '', 'この版といまで違うブロックはありません。');
                 box.appendChild(p);
                 return box;
             }
             diffs.forEach(d => {
-                const item = document.createElement('div');
-                item.className = 'w-version-block';
-                const label = document.createElement('p');
-                label.className = 'w-version-block-label';
-                label.textContent = d.kind === 'changed' ? '⚠ いまと中身が違うブロック（この版のときの中身）' : '⚠ いまは無いブロック（この版のときの中身）';
-                const view = document.createElement('div');
-                view.className = 'w-version-block-view';
+                const item = makeEl('div', 'w-version-block');
+                const label = makeEl('p', 'w-version-block-label', d.kind === 'changed' ? '⚠ いまと中身が違うブロック（この版のときの中身）' : '⚠ いまは無いブロック（この版のときの中身）');
+                const view = makeEl('div', 'w-version-block-view');
                 view.appendChild(document.importNode(d.b.el, true));
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'w-version-block-revert';
-                btn.textContent = 'このブロックだけ戻す';
+                const btn = makeButton('w-version-block-revert', 'このブロックだけ戻す');
                 btn.addEventListener('click', () => {
                     revertOneBlock(d, old);
                     btn.disabled = true;
@@ -907,11 +864,7 @@
             + '（いまの内容も履歴に残るので、戻すことができます）')) return;
         msg.textContent = '戻しています…';
         try {
-            const res = await lockedFetch('/api/revert', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_id: currentPageId, version: v.id }),
-            });
+            const res = await lockedFetch('/api/revert', jsonPost({ page_id: currentPageId, version: v.id }));
             const d = await readResult(res);
             if (!res.ok || !d.success) throw new Error(failMessage(res, d));
             msg.textContent = '';
@@ -962,11 +915,7 @@
         const group = document.getElementById('w-pp-group').value;
         const msg = document.getElementById('w-pp-msg');
         try {
-            const res = await lockedFetch('/api/page-perms?id=' + currentPageId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: mode, group: group })
-            });
+            const res = await lockedFetch('/api/page-perms?id=' + currentPageId, jsonPost({ mode: mode, group: group }));
             if (res.ok) { msg.style.color = '#16a34a'; msg.textContent = '保存しました。'; }
             else { msg.style.color = '#dc2626'; msg.textContent = '失敗: ' + (await res.text()); }
         } catch (e) {
@@ -979,11 +928,7 @@
         const msg = document.getElementById('w-pp-msg');
         if (!owner) { msg.style.color = '#dc2626'; msg.textContent = '所有者を入力してください'; return; }
         try {
-            const res = await lockedFetch('/api/page-chown?id=' + currentPageId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ owner: owner })
-            });
+            const res = await lockedFetch('/api/page-chown?id=' + currentPageId, jsonPost({ owner: owner }));
             if (res.ok) {
                 document.getElementById('w-pp-owner').textContent = owner;
                 msg.style.color = '#16a34a'; msg.textContent = '所有者を変更しました。';
@@ -1471,16 +1416,12 @@
         closeConflict(id);
         const wrap = el.closest('.editor-block');
         const who = c.by ? '「' + c.by + '」さん' : 'ほかの人';
-        const panel = document.createElement('div');
-        panel.className = 'vocab-chrome w-conflict';
+        const panel = makeEl('div', 'vocab-chrome w-conflict');
         panel.contentEditable = 'false';
-        const head = document.createElement('p');
-        head.className = 'w-conflict-head';
-        const actions = document.createElement('div');
-        actions.className = 'w-conflict-actions';
+        const head = makeEl('p', 'w-conflict-head');
+        const actions = makeEl('div', 'w-conflict-actions');
         const button = (label, cls, fn) => {
-            const b = document.createElement('button');
-            b.type = 'button';
+            const b = makeButton('');
             b.className = 'w-conflict-btn ' + cls;
             b.textContent = label;
             b.addEventListener('click', fn);
@@ -1496,8 +1437,7 @@
             head.textContent = '⚠ ' + who + 'がこのブロックを書き換えました。上が相手の版、下があなたの版です。' +
                 '相手の書いたことを取り込んで「これで決める」を押してください。';
             theirs = elementFromHTML(c.html || '');
-            const box = document.createElement('div');
-            box.className = 'w-conflict-theirs';
+            const box = makeEl('div', 'w-conflict-theirs');
             if (theirs) box.appendChild(theirs);
             panel.appendChild(head);
             panel.appendChild(box);
@@ -2599,11 +2539,7 @@
     async function loadForEditing() {
         let res, d;
         try {
-            res = await fetch('/api/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_id: currentPageId, full: true, tab: TAB_ID }),
-            });
+            res = await fetch('/api/sync', jsonPost({ page_id: currentPageId, full: true, tab: TAB_ID }));
             d = await readResult(res);
         } catch (e) {
             notify('書ける形にできませんでした（通信エラー）。', { type: 'error', id: 'mode' });
@@ -2987,14 +2923,11 @@
         span.textContent = message;
         el.appendChild(span);
         if (opts.action) {
-            const b = document.createElement('button');
-            b.textContent = opts.action.label;
+            const b = makeEl('button', '', opts.action.label);
             b.onclick = () => { dismissEl(el); opts.action.onClick(); };
             el.appendChild(b);
         }
-        const close = document.createElement('button');
-        close.className = 'toast-close';
-        close.textContent = '✕';
+        const close = makeEl('button', 'toast-close', '✕');
         close.onclick = () => dismissEl(el);
         el.appendChild(close);
         host.appendChild(el);
@@ -3454,8 +3387,7 @@
     function buildPlainDl(columns) {
         const dl = document.createElement('dl');
         (columns || []).forEach(col => {
-            const dt = document.createElement('dt');
-            dt.textContent = col.label;
+            const dt = makeEl('dt', '', col.label);
             const dd = document.createElement('dd');
             const v = defaultFieldValue(col);
             if (v) dd.textContent = v;
@@ -3474,8 +3406,7 @@
         const head = document.createElement('tr');
         const row = document.createElement('tr');
         (columns || []).forEach(col => {
-            const th = document.createElement('th');
-            th.textContent = col.label;
+            const th = makeEl('th', '', col.label);
             head.appendChild(th);
             row.appendChild(document.createElement('td'));
         });
@@ -3493,8 +3424,7 @@
     // ⚠ `data-type` は書きません（機械が書く表と同じ・09-23）——名前は見える文字だけが持つ。
     function buildCaptionTable(name, columns) {
         const table = buildPlainTable(columns);
-        const cap = document.createElement('caption');
-        cap.textContent = name;
+        const cap = makeEl('caption', '', name);
         table.insertBefore(cap, table.firstChild);
         return table;
     }
@@ -3533,8 +3463,7 @@
             const dl = document.createElement('dl');
             dl.setAttribute('data-type', def.type);
             (def.columns || []).forEach(col => {
-                const dt = document.createElement('dt');
-                dt.textContent = col.label;
+                const dt = makeEl('dt', '', col.label);
                 // 空の dd には <br> の足場が要る（emptyEditable のコメント参照）
                 const dd = emptyEditable('dd');
                 dl.appendChild(dt);
@@ -3795,19 +3724,16 @@
     function wrapInBlock(element) {
         if (element.classList && element.classList.contains('editor-block')) return element;
         
-        const block = document.createElement('div');
-        block.className = 'editor-block';
+        const block = makeEl('div', 'editor-block');
         
-        const controls = document.createElement('div');
-        controls.className = 'block-controls';
+        const controls = makeEl('div', 'block-controls');
         controls.contentEditable = 'false';
         
         // ＋はブロックの**下端の境界線上**に出す（2026-08-31 ユーザー要望「上ぞろえだと
         // 離れた位置にブロックが出来るように感じる」）。挿入されるのはこのブロックの
         // 直後なので、ボタンの出る場所＝新しいブロックが生まれる場所になる。
         // コントロール帯（⠿ 🗑）はブロック自身への操作なので上ぞろえのまま分ける。
-        const addBtn = document.createElement('button');
-        addBtn.className = 'add-btn';
+        const addBtn = makeEl('button', 'add-btn');
         addBtn.contentEditable = 'false';
         addBtn.textContent = '＋';
         addBtn.title = 'ここにブロックを追加';
@@ -3822,15 +3748,12 @@
             }
         };
         
-        const dragHandle = document.createElement('div');
-        dragHandle.className = 'drag-handle';
+        const dragHandle = makeEl('div', 'drag-handle');
         dragHandle.innerHTML = '⠿';
         dragHandle.draggable = true;
         dragHandle.title = 'ドラッグして移動';
 
-        const delBtn = document.createElement('button');
-        delBtn.className = 'delete-btn';
-        delBtn.textContent = '🗑';
+        const delBtn = makeEl('button', 'delete-btn', '🗑');
         delBtn.title = 'ブロックを削除';
         delBtn.onclick = () => deleteBlock(block);
 
@@ -3838,8 +3761,7 @@
         controls.appendChild(delBtn);
         block.appendChild(addBtn); // 境界の住人（.block-content の外＝保存対象外）
         
-        const contentWrapper = document.createElement('div');
-        contentWrapper.className = 'block-content';
+        const contentWrapper = makeEl('div', 'block-content');
         
         if (element.parentNode) {
             element.parentNode.insertBefore(block, element);
@@ -3934,19 +3856,12 @@
         bar.id = 'w-inner-controls';
         bar.className = 'inner-controls';
         bar.contentEditable = 'false';
-        const drag = document.createElement('div');
-        drag.className = 'drag-handle';
-        drag.textContent = '⠿';
+        const drag = makeEl('div', 'drag-handle', '⠿');
         drag.title = 'ドラッグして移動（節や折りたたみの外へも・中へも）';
         drag.draggable = true;
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'delete-btn';
-        del.textContent = '🗑';
+        const del = makeButton('delete-btn', '🗑');
         del.title = 'この要素を削除（Ctrl+Z で戻せます）';
-        const add = document.createElement('button');
-        add.type = 'button';
-        add.textContent = '＋';
+        const add = makeButton('', '＋');
         add.title = 'この下に追加';
         [del, add].forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
         del.addEventListener('click', () => { const el = innerHover; hideInnerBar(); if (el) deleteInner(el); });
@@ -4002,8 +3917,7 @@
     // ⚠ 置き換えるのは**その段落1つ**（chooseSlashItem の currentSlashNested）——上の段の置き換えを
     //    通すと、包んでいる節ごと置き換わる。
     function addAfterInner(el) {
-        const p = document.createElement('p');
-        p.textContent = '/';
+        const p = makeEl('p', '', '/');
         el.parentElement.insertBefore(p, el.nextSibling);
         const host = p.closest('[contenteditable="true"]');
         if (host) host.focus({ preventScroll: true });
@@ -4646,9 +4560,7 @@
             // 添付に残ります（別の表示から指せる・版にも残る）。確認は出しません（ブロックの 🗑 と同じ——
             // 編集中のアンドゥで戻せる）。
             if (!sec.querySelector(':scope > .fv-remove')) {
-                const rm = document.createElement('button');
-                rm.type = 'button';
-                rm.className = 'vocab-chrome fv-remove';
+                const rm = makeButton('vocab-chrome fv-remove');
                 rm.contentEditable = 'false';
                 rm.textContent = '✕ 外す';
                 rm.title = 'このファイル表示を本文から外します（ファイルは添付に残ります・Ctrl+Z で戻せます）';
@@ -4722,8 +4634,7 @@
     }
 
     function carouselButton(cls, text, title, onClick) {
-        const b = document.createElement('button');
-        b.type = 'button';
+        const b = makeButton('');
         b.className = cls;
         b.contentEditable = 'false';
         b.textContent = text;
@@ -4820,12 +4731,9 @@
             if (isEdit) {
                 if (nav) nav.remove();
                 if (!editBar) {
-                    const bar = document.createElement('div');
-                    bar.className = 'vocab-chrome car-edit-bar';
+                    const bar = makeEl('div', 'vocab-chrome car-edit-bar');
                     bar.contentEditable = 'false';
-                    const label = document.createElement('span');
-                    label.className = 'car-label';
-                    label.textContent = '🎠 カルーセル';
+                    const label = makeEl('span', 'car-label', '🎠 カルーセル');
                     bar.append(label,
                         carouselButton('car-add', '🖼 画像を足す', '画像を選んで、このカルーセルの末尾へ足します', () => addImagesToCarousel(car)),
                         carouselButton('car-take', '⬇ すぐ下の画像を入れる', 'このカルーセルのすぐ下に続く画像（画像だけの段落）を中へ移します', () => takeImagesBelow(car)));
@@ -4835,11 +4743,9 @@
             }
             if (editBar) editBar.remove();
             if (!nav) {
-                const bar = document.createElement('div');
-                bar.className = 'vocab-chrome car-nav';
+                const bar = makeEl('div', 'vocab-chrome car-nav');
                 bar.hidden = true;
-                const count = document.createElement('span');
-                count.className = 'car-count';
+                const count = makeEl('span', 'car-count');
                 bar.append(
                     carouselButton('car-prev', '‹', '前の画像', () => pageCarousel(car, -1)),
                     count,
@@ -4886,8 +4792,7 @@
         box.setAttribute('aria-modal', 'true');
         box.setAttribute('aria-label', '画像の拡大表示');
         const btn = (cls, text, label, fn) => {
-            const b = document.createElement('button');
-            b.type = 'button';
+            const b = makeButton('');
             b.className = cls;
             b.textContent = text;
             b.title = label;
@@ -4895,15 +4800,11 @@
             b.addEventListener('click', e => { e.stopPropagation(); fn(); });
             return b;
         };
-        const fig = document.createElement('figure');
-        fig.className = 'lb-figure';
-        const img = document.createElement('img');
-        img.className = 'lb-img';
-        const cap = document.createElement('figcaption');
-        cap.className = 'lb-caption';
+        const fig = makeEl('figure', 'lb-figure');
+        const img = makeEl('img', 'lb-img');
+        const cap = makeEl('figcaption', 'lb-caption');
         fig.append(img, cap);
-        const count = document.createElement('div');
-        count.className = 'lb-count';
+        const count = makeEl('div', 'lb-count');
         box.append(btn('lb-close', '✕', '閉じる（Esc）', closeLightbox),
             btn('lb-prev', '‹', '前の画像（←）', () => showLightbox(lightboxAt - 1)),
             fig,
@@ -5591,9 +5492,7 @@
         enumMenuCell = cell;
         menu.textContent = ''; // 前のセルの中身を消す
         if (isImage) {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.textContent = '🖼 画像を選ぶ';
+            const b = makeButton('', '🖼 画像を選ぶ');
             b.addEventListener('click', () => {
                 hideEnumMenu();
                 pickImageFiles(files => { if (files.length) insertImageIntoCell(cell, files[0]); });
@@ -5603,8 +5502,7 @@
         if (cellKey) { fillCellChoiceMenu(menu, td, cellKey); return; } // 候補は届いてから開く
         if (tagSuggest) fillTagValueMenu(menu, cell, tagLabel, isEnum ? col.enum : []);
         else if (isEnum) col.enum.forEach(v => {
-            const b = document.createElement('button');
-            b.type = 'button';
+            const b = makeButton('');
             b.dataset.choice = '1'; // 打った字で絞る対象（filterEnumMenu）
             b.textContent = v;
             b.addEventListener('click', () => {
@@ -5678,8 +5576,7 @@
         }
         if (!list.length) { hideEnumMenu(); enumMenuCell = cell; return; }
         list.forEach(({ v, n }) => {
-            const b = document.createElement('button');
-            b.type = 'button';
+            const b = makeButton('');
             b.dataset.choice = '1'; // 打った字で絞る対象（filterEnumMenu）
             b.textContent = v;
             b.title = n ? n + ' ページで使っています' : 'まだ使っていません';
@@ -5723,8 +5620,7 @@
         const got = (cols && cols.get(autoFold(key.column))) || [];
         if (!got.length) { hideEnumMenu(); enumMenuCell = td; return; }
         got.forEach(({ value, count }) => {
-            const b = document.createElement('button');
-            b.type = 'button';
+            const b = makeButton('');
             b.dataset.choice = '1';
             b.textContent = value;
             b.title = count + ' 行で使っています';
@@ -5808,8 +5704,7 @@
             const isEdit = document.body.hasAttribute('edit-mode');
 
             if (src && src.toLowerCase().endsWith('.pdf') && currentPageId) {
-                const embed = document.createElement('embed');
-                embed.className = 'vocab-chrome file-preview';
+                const embed = makeEl('embed', 'vocab-chrome file-preview');
                 // リンクがあればその href（新旧どちらの置き場でも正しい）。
                 // 無ければ旧data-src互換（ページフォルダ直下）。
                 const link = sec.querySelector('a[href]');
@@ -5821,8 +5716,7 @@
             }
             if (!isEdit) return;
 
-            const zone = document.createElement('div');
-            zone.className = 'vocab-chrome pdf-drop-zone';
+            const zone = makeEl('div', 'vocab-chrome pdf-drop-zone');
             zone.contentEditable = 'false';
             zone.textContent = src ? '📎 PDFを差し替えるにはここへドロップ' : '📎 PDFをここへドロップして添付';
             zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('is-dragover'); });
@@ -5916,9 +5810,7 @@
         setFolded(true);
 
         let open = false;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'vocab-chrome tag-detail-toggle';
+        const btn = makeButton('vocab-chrome tag-detail-toggle');
         btn.title = folded.map(p => p.dt.textContent.trim()).join('・');
         const label = () => open ? '▾ 隠す' : '▸ 詳細（' + folded.length + '件）';
         btn.textContent = label();
@@ -5954,11 +5846,9 @@
     // もう作ったページは横に「✓ 案件」「✓ 加工製品」などの印で並べる（作り直しはできる）。
     // 種類が1つも無く、印も無ければ何も出さない（書けない人には選ぶ欄を出さず、印だけ）。
     function recordMakeControl() {
-        const wrap = document.createElement('p');
-        wrap.className = 'record-make';
+        const wrap = makeEl('p', 'record-make');
         wrap.hidden = true;
-        const marks = document.createElement('span');
-        marks.className = 'record-make-marks';
+        const marks = makeEl('span', 'record-make-marks');
         const showMarks = (list) => {
             marks.textContent = '';
             (list || []).forEach(r => {
@@ -5976,10 +5866,8 @@
                 const kinds = d.kinds || [];
                 if (!kinds.length && !(d.made || []).length) return;
                 if (kinds.length) {
-                    const label = document.createElement('label');
-                    label.textContent = '作るページ ';
-                    const sel = document.createElement('select');
-                    sel.className = 'record-make-kind';
+                    const label = makeEl('label', '', '作るページ ');
+                    const sel = makeEl('select', 'record-make-kind');
                     kinds.forEach(k => {
                         const o = document.createElement('option');
                         o.value = k.name;
@@ -5991,10 +5879,7 @@
                     sel.addEventListener('change', hint);
                     hint();
                     label.appendChild(sel);
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.className = 'record-make-go';
-                    btn.textContent = '作成';
+                    const btn = makeButton('record-make-go', '作成');
                     btn.addEventListener('click', () => makeFromRecord(sel.value, btn));
                     wrap.appendChild(label);
                     wrap.appendChild(document.createTextNode(' '));
@@ -6013,11 +5898,7 @@
         btn.textContent = '作っています…';
         let born = false, open = '';
         try {
-            const res = await fetch('/api/record-make', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_id: currentPageId, kind }),
-            });
+            const res = await fetch('/api/record-make', jsonPost({ page_id: currentPageId, kind }));
             const d = await readResult(res);
             if (!res.ok || !d || !d.success) {
                 notify(kind + 'を作れませんでした: ' + failMessage(res, d), { type: 'alert', duration: 0, id: 'record-make' });
@@ -6072,8 +5953,7 @@
     // ユーザー:「一度解析したファイルには解析済みの印と『図面』などの解析結果を
     // 付けては？」「添付ファイルのボタンの横あたりで良いのでは？」（2026-09-06）。
     function makeAnalyzedMark(r) {
-        const mark = document.createElement('a');
-        mark.className = 'vocab-chrome attach-expand attach-analyzed';
+        const mark = makeEl('a', 'vocab-chrome attach-expand attach-analyzed');
         mark.href = '/' + r.page_id;
         mark.textContent = '✓ ' + r.kind;
         mark.title = (r.title || r.page_id) + ' を作りました（押すと開きます）';
@@ -6089,10 +5969,7 @@
             const m = ATTACH_PREVIEW_RE.exec(a.getAttribute('href') || '');
             if (!m) return;
             const kind = m[3];
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'vocab-chrome attach-expand';
-            btn.textContent = kind === 'pdf' ? '▶ 表示' : '▶ 中身';
+            const btn = makeButton('vocab-chrome attach-expand', kind === 'pdf' ? '▶ 表示' : '▶ 中身');
             btn.addEventListener('click', () => toggleAttachPreview(a, btn, m));
             a.insertAdjacentElement('afterend', btn);
             // **参照を写せるようにします**（2026-09-14）。ユーザー:「PDFがほかの部品の
@@ -6162,10 +6039,7 @@
     // 同じ値は `受信元` タグの中身でもあるので、参照を手で書きたい場面すべてに効きます。
     function makeCopyRefButton(pageID, attachID) {
         const ref = pageID + '-' + attachID;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'vocab-chrome attach-expand attach-copyref';
-        btn.textContent = '🔗 参照';
+        const btn = makeButton('vocab-chrome attach-expand attach-copyref', '🔗 参照');
         btn.title = copyRefTitle(ref);
         btn.addEventListener('click', () => copyFileRef(ref));
         return btn;
@@ -6256,9 +6130,7 @@
             if (!dd || dd.tagName.toLowerCase() !== 'dd') return;
             const addr = dd.textContent.trim();
             if (!addr) return;
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'vocab-chrome chip-btn contact-unfile';
+            const btn = makeButton('vocab-chrome chip-btn contact-unfile');
             btn.contentEditable = 'false'; // 書ける形では dd が書けるので、札の字に打てないように（2026-10-12）
             btn.textContent = '未分類へ戻す';
             btn.title = addr + ' をこのページから外し、「未登録の連絡先」へ戻します'
@@ -6271,11 +6143,7 @@
     async function unfileContact(btn, addr, dt, dd) {
         btn.disabled = true;
         try {
-            const res = await fetch('/api/contacts/unfile', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_id: currentPageId, address: addr }),
-            });
+            const res = await fetch('/api/contacts/unfile', jsonPost({ page_id: currentPageId, address: addr }));
             const data = await res.json();
             if (!data.success) {
                 notify(data.message || '戻せませんでした', { type: 'warn' });
@@ -6306,14 +6174,12 @@
         const number = tagValue(PHONE_TAG);
         if (!number) return;
 
-        const box = document.createElement('div');
-        box.className = 'vocab-chrome phone-chrome';
+        const box = makeEl('div', 'vocab-chrome phone-chrome');
         box.setAttribute('contenteditable', 'false');
 
         // 発信そのものはブラウザ任せ（素の <a href="tel:">）。JSで横取りすると、
         // ソフトフォンへの受け渡しを壊しかねない。
-        const call = document.createElement('a');
-        call.className = 'phone-call';
+        const call = makeEl('a', 'phone-call');
         call.href = 'tel:' + number.replace(/[^0-9+]/g, '');
         call.textContent = '☎ ' + number + ' へかける';
         box.appendChild(call);
@@ -6325,8 +6191,7 @@
         // （チェックは既定でオンなので、掛けるたびに必ず出る）。
         let check = null;
         if (hasExtension('comm')) {
-            const label = document.createElement('label');
-            label.className = 'phone-record';
+            const label = makeEl('label', 'phone-record');
             check = document.createElement('input');
             check.type = 'checkbox';
             check.checked = true; // **既定はオン**——「かけたのに記録が無い」ほうが後で困る
@@ -6345,17 +6210,13 @@
     // createCallRecord は発信の記録を作り、書けるように開きます。
     async function createCallRecord(number) {
         try {
-            const res = await fetch('/api/intake/memo', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            const res = await fetch('/api/intake/memo', jsonPost({
                     channel: '電話',
                     direction: '送信',
                     phone: number,
                     counterpart: currentPageId,
                     title: (document.querySelector('#w-editor-content h1') || {}).textContent || '',
-                }),
-            });
+                }));
             const data = await res.json();
             if (!data.success) {
                 notify(data.message || '発信の記録を作れませんでした', { type: 'warn' });
@@ -6384,8 +6245,7 @@
         // 通信記録かどうかは「チャネル」のタグで判る（受信も送信も持つ）。
         if (!tagValue(CHANNEL_TAG)) return;
 
-        const box = document.createElement('div');
-        box.className = 'vocab-chrome mail-chrome';
+        const box = makeEl('div', 'vocab-chrome mail-chrome');
         box.setAttribute('contenteditable', 'false');
 
         // 対応は、2026-09-30 からここに「対応: 未処理・済・不要」の札を出していました。2026-10-19 に外しました
@@ -6402,16 +6262,12 @@
         // （開いたらすぐ直して送れる・送ったら下書きはごみ箱へ行き、控えのページへ移る）。
         const compose = window.wcmsMailCompose;
         if (hasExtension('comm/mail') && compose) {
-            const slot = document.createElement('div');
-            slot.className = 'mail-compose-host';
+            const slot = makeEl('div', 'mail-compose-host');
             if (tagValue(DRAFT_TAG)) {
                 box.appendChild(slot);
                 compose.open(slot, { draftId: currentPageId });
             } else {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'mail-reply-open';
-                btn.textContent = '✉️ 返信';
+                const btn = makeButton('mail-reply-open', '✉️ 返信');
                 btn.addEventListener('click', () => {
                     if (slot.firstChild) { slot.textContent = ''; return; } // もう一度押すと畳む
                     compose.open(slot, { purpose: '返信', pageId: currentPageId });
@@ -6448,11 +6304,8 @@
         } catch (e) { return; }
         if (!prev && !next.length) return;
 
-        const wrap = document.createElement('div');
-        wrap.className = 'mail-thread';
-        const head = document.createElement('p');
-        head.className = 'mail-thread-head';
-        head.textContent = '🧵 やりとりの前後';
+        const wrap = makeEl('div', 'mail-thread');
+        const head = makeEl('p', 'mail-thread-head', '🧵 やりとりの前後');
         wrap.appendChild(head);
 
         const ul = document.createElement('ul');
@@ -6466,8 +6319,7 @@
     // threadItem はスレッド1件ぶんの行を作ります（矢印つきの札＋題＋日時）。
     function threadItem(label, r) {
         const li = document.createElement('li');
-        const tag = document.createElement('span');
-        tag.className = 'mail-thread-dir';
+        const tag = makeEl('span', 'mail-thread-dir');
         // 向きの記号は通信箱の一覧と同じ流儀（←受信 / →送信）。
         tag.textContent = label + (r.direction === '送信' ? '（送信）' : r.direction === '受信' ? '（受信）' : '');
         li.appendChild(tag);
@@ -6477,9 +6329,7 @@
         a.title = r.title || r.page_id;
         li.appendChild(a);
         if (r.when) {
-            const when = document.createElement('span');
-            when.className = 'mail-thread-when';
-            when.textContent = ' ' + String(r.when).slice(0, 16).replace('T', ' ');
+            const when = makeEl('span', 'mail-thread-when', ' ' + String(r.when).slice(0, 16).replace('T', ' '));
             li.appendChild(when);
         }
         return li;
@@ -6496,27 +6346,20 @@
         } catch (e) { return; }
         if (!replies.length) return;
 
-        const wrap = document.createElement('div');
-        wrap.className = 'mail-replies';
-        const head = document.createElement('p');
-        head.className = 'mail-replies-head';
-        head.textContent = '📨 この記録への返信（本体は送信箱にあります）';
+        const wrap = makeEl('div', 'mail-replies');
+        const head = makeEl('p', 'mail-replies-head', '📨 この記録への返信（本体は送信箱にあります）');
         wrap.appendChild(head);
         const ul = document.createElement('ul');
         replies.forEach(r => {
             const li = document.createElement('li');
-            const when = document.createElement('span');
-            when.className = 'mail-replies-when';
-            when.textContent = (r.sent_at || '').slice(0, 16) + ' ';
+            const when = makeEl('span', 'mail-replies-when', (r.sent_at || '').slice(0, 16) + ' ');
             const a = document.createElement('a');
             a.href = '/' + r.page_id;
             a.textContent = r.title || r.page_id;
             li.appendChild(when);
             li.appendChild(a);
             if (r.to) {
-                const to = document.createElement('span');
-                to.className = 'mail-replies-to';
-                to.textContent = ' → ' + r.to;
+                const to = makeEl('span', 'mail-replies-to', ' → ' + r.to);
                 li.appendChild(to);
             }
             ul.appendChild(li);
@@ -6574,9 +6417,7 @@
         } catch (e) { return; }
         if (!rows.length && !orders.length && !files.length) return;
 
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'vocab-chrome filing-chrome filing-open';
+        const btn = makeButton('vocab-chrome filing-chrome filing-open');
         const n = rows.length + orders.length;
         btn.textContent = '📁 整理（' + (n ? n + '件' : '') + (n && files.length ? '・' : '') + (files.length ? 'ファイル ' + files.length : '') + '）';
         btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, kinds, partners, machines, files));
@@ -6594,15 +6435,13 @@
     // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます（2026-09-29 からは試作も区分のタグで、
     // 題に【試作】を付けなくてよい。区分は加工製品ページで付ける——下の kindBoxes）。
     function buildFilingPanel(rows, orders, kinds, partners, machines, files) {
-        const panel = document.createElement('div');
-        panel.className = 'vocab-chrome filing-chrome filing-panel';
+        const panel = makeEl('div', 'vocab-chrome filing-chrome filing-panel');
         panel.setAttribute('contenteditable', 'false');
 
         // ⚠ **言葉は短く・1枚ずつ縦に**（2026-09-30 利用者:「入力欄が見えなくなるくらい、横幅が狭くなります。
         //    横にたくさんの項目がありすぎるのと、チェックボックスの説明が長すぎます」）——それまでは6列の表で、
         //    欄が 50px 台まで押しつぶされ、選択肢の説明が1文字ずつ縦に折れていました。
-        const head = document.createElement('p');
-        head.className = 'filing-head';
+        const head = makeEl('p', 'filing-head');
         // 欄の名前はページの名前（2026-10-08 利用者:「『顧客名』『装置名称』『（加工）製品名称』がページ名の意味ではないでしょうか？」
         // ——それまで3つ目は「図面名称」と呼んでいたが、入れるのは加工製品ページの題）。
         // 装置名称は空でもよい（2026-10-16——社名の直下に置く）。顧客名・製品名称が空なら動かさない。
@@ -6626,29 +6465,22 @@
         }
 
         // 図面1枚ごとにカード（見出し＝図面番号・欄は1行に1つで横幅いっぱい）。
-        const list = document.createElement('div');
-        list.className = 'filing-cards';
+        const list = makeEl('div', 'filing-cards');
 
         const inputs = [];
         rows.forEach((row, rowIndex) => {
-            const card = document.createElement('div');
-            card.className = 'filing-card';
+            const card = makeEl('div', 'filing-card');
             card.dataset.pageId = row.page_id;
-            const no = document.createElement('p');
-            no.className = 'filing-no';
-            no.textContent = '📄 ' + (row.drawing_no || '（図面番号なし）');
+            const no = makeEl('p', 'filing-no', '📄 ' + (row.drawing_no || '（図面番号なし）'));
             card.appendChild(no);
-            const grid = document.createElement('div');
-            grid.className = 'filing-grid';
+            const grid = makeEl('div', 'filing-grid');
             card.appendChild(grid);
 
             const fields = {};
             // 顧客名・装置名称・図面名称は自由入力（1行に1つ・見出しは左）、区分は印。
             const addText = (key, labelText, value) => {
-                const lb = document.createElement('label');
-                lb.className = 'filing-field';
-                const span = document.createElement('span');
-                span.textContent = labelText;
+                const lb = makeEl('label', 'filing-field');
+                const span = makeEl('span', '', labelText);
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.value = value || '';
@@ -6698,14 +6530,11 @@
             // あっても良いのかもしれません」）——新規のときだけ効く（出すのも新規のときだけ）。初期値は取引先のページの決まり
             // （`品番の決め方：図面番号`・`品名の決め方：図面名称`・サーバーが行き先と一緒に返す）。人が触ったら、顧客を打ち替えても戻さない。
             // 弊社品番（このページの番号）は印が無くても書く。
-            const tdRules = document.createElement('div');
-            tdRules.className = 'filing-field filing-kinds filing-rules';
-            const rulesHead = document.createElement('span');
-            rulesHead.textContent = '品番・品名';
+            const tdRules = makeEl('div', 'filing-field filing-kinds filing-rules');
+            const rulesHead = makeEl('span', '', '品番・品名');
             rulesHead.title = '新しく置く加工製品の題の下のタグ（空いているときだけ書く・弊社品番はいつも書く）';
             tdRules.appendChild(rulesHead);
-            const rulesWrap = document.createElement('div');
-            rulesWrap.className = 'filing-kinds-boxes';
+            const rulesWrap = makeEl('div', 'filing-kinds-boxes');
             tdRules.appendChild(rulesWrap);
             const ruleBox = (text) => {
                 const label = document.createElement('label');
@@ -6721,8 +6550,7 @@
             tdRules.hidden = true;
             grid.appendChild(tdRules);
 
-            const tdConfirm = document.createElement('div');
-            tdConfirm.className = 'filing-card-foot';
+            const tdConfirm = makeEl('div', 'filing-card-foot');
 
             // ── 新規・図面追加・図面改定（2026-09-30 からいつも出す）──
             //
@@ -6741,20 +6569,15 @@
             //
             // ⚠ 行き先の題は打ち替えるたびに聞き直す（ユーザー:「編集者が微妙に書き換える」2026-09-20）。
             // ⚠ 行き先が別のページへ変わったら、改定・追加の選択は外す（前の相手のつもりで選んだものを持ち越さない）。
-            const choiceWrap = document.createElement('div');
-            choiceWrap.className = 'filing-choice';
-            const choiceNote = document.createElement('p');
-            choiceNote.className = 'filing-choice-note';
+            const choiceWrap = makeEl('div', 'filing-choice');
+            const choiceNote = makeEl('p', 'filing-choice-note');
             // 同じ図面が既にあるときの知らせ（2026-09-30 利用者:「同じものがあるということを提示して欲しいのと、
             // 同じものがあるので取り込まない選択肢が欲しいです」）——サーバーが候補に付けた印（同じ図面番号・同じファイル）から。
-            const dupWrap = document.createElement('div');
-            dupWrap.className = 'filing-dups';
+            const dupWrap = makeEl('div', 'filing-dups');
             dupWrap.hidden = true;
-            const candWrap = document.createElement('div');
-            candWrap.className = 'filing-candidates';
+            const candWrap = makeEl('div', 'filing-candidates');
             // 同じ題の加工製品が何枚もあるときの、図面追加・図面改定の行き先（2026-10-01）。
-            const sameWrap = document.createElement('div');
-            sameWrap.className = 'filing-candidates filing-same';
+            const sameWrap = makeEl('div', 'filing-candidates filing-same');
             const mergeName = 'w-filing-merge-' + rowIndex;
             const mergeInputs = {};
             const mergeLabels = {};
@@ -6770,8 +6593,7 @@
              // ページはこのメールの下にそのまま残る（あとで整理できる・要らなければページを消す）。
              ['skip', '何もしない', '今回は整理しません——解析で作ったページはこのメールの下にそのまま残ります（あとで整理できます）']]
                 .forEach(([val, text, hint]) => {
-                    const label = document.createElement('label');
-                    label.className = 'filing-merge-opt';
+                    const label = makeEl('label', 'filing-merge-opt');
                     label.title = hint;
                     const radio = document.createElement('input');
                     radio.type = 'radio';
@@ -6788,19 +6610,15 @@
             // 「どの加工製品に追加するか人間が指定する必要があります」）——品番・品名・図面番号・題・ページ番号で既にある
             // 加工製品を探す（`/api/filing-search`・同じ取引先が先）。押すと、上の候補を押したときと同じく欄（取引先・装置名称・
             // 図面名称）に入り、そのページが行き先になる。二つ目の図面（溶接図など）は番号も名前も違うので、機械の候補に出ない。
-            const searchWrap = document.createElement('div');
-            searchWrap.className = 'filing-search';
+            const searchWrap = makeEl('div', 'filing-search');
             searchWrap.hidden = true;
-            const searchLabel = document.createElement('label');
-            searchLabel.className = 'filing-search-label';
-            searchLabel.textContent = '行き先を探す: ';
+            const searchLabel = makeEl('label', 'filing-search-label', '行き先を探す: ');
             const searchInput = document.createElement('input');
             searchInput.type = 'search';
             searchInput.className = 'filing-search-input';
             searchInput.placeholder = '品番・品名・図面番号・題・ページ番号';
             searchLabel.appendChild(searchInput);
-            const searchOut = document.createElement('div');
-            searchOut.className = 'filing-candidates filing-search-out';
+            const searchOut = makeEl('div', 'filing-candidates filing-search-out');
             searchWrap.append(searchLabel, searchOut);
             choiceWrap.appendChild(choiceNote);
             choiceWrap.appendChild(dupWrap);
@@ -6864,8 +6682,7 @@
                 dupWrap.replaceChildren();
                 dupWrap.hidden = !dups.length;
                 dups.forEach(c => {
-                    const line = document.createElement('p');
-                    line.className = 'filing-dup';
+                    const line = makeEl('p', 'filing-dup');
                     const a = document.createElement('a');
                     a.href = '/' + c.page_id;
                     a.target = '_blank';
@@ -6875,22 +6692,14 @@
                         : '同じファイルから作られています（1つのPDFに別の図面が入っていることもあります）';
                     line.append('⚠ 同じ図面が既にあります: ', a, '。' + why);
                     if (c.same_no && !c.same_file) {
-                        const b = document.createElement('button');
-                        b.type = 'button';
-                        b.className = 'chip-btn filing-compare';
-                        b.textContent = '🤖 中身を比べる';
+                        const b = makeButton('chip-btn filing-compare', '🤖 中身を比べる');
                         b.title = '2つのPDFを Gemini に見比べさせます（数十秒かかります）';
-                        const out = document.createElement('span');
-                        out.className = 'filing-compare-out';
+                        const out = makeEl('span', 'filing-compare-out');
                         b.addEventListener('click', async () => {
                             b.disabled = true;
                             out.textContent = ' 見比べています…';
                             try {
-                                const res = await fetch('/api/compare-drawings', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ page_id: row.page_id, with: c.page_id }),
-                                });
+                                const res = await fetch('/api/compare-drawings', jsonPost({ page_id: row.page_id, with: c.page_id }));
                                 const d = await res.json().catch(() => ({}));
                                 if (!res.ok || !d.success) throw new Error(d.message || res.status);
                                 const diffs = (d.differences || []).join('・');
@@ -6948,13 +6757,10 @@
                 // 同じ題が何枚もあるなら、図面追加・図面改定の行き先を押して決める。
                 sameWrap.replaceChildren();
                 if (target.same.length > 1) {
-                    const head = document.createElement('span');
-                    head.className = 'filing-cand-head';
-                    head.textContent = '図面追加・図面改定の行き先:';
+                    const head = makeEl('span', 'filing-cand-head', '図面追加・図面改定の行き先:');
                     sameWrap.appendChild(head);
                     target.same.forEach(s => {
-                        const b = document.createElement('button');
-                        b.type = 'button';
+                        const b = makeButton('');
                         b.className = 'chip-btn filing-same-pick' + (s.page_id === chosenTarget ? ' is-chosen' : '');
                         b.textContent = (s.page_id === chosenTarget ? '✓ ' : '') + '/' + s.page_id +
                             '（図面: ' + ((s.drawing_nos || []).join('・') || 'なし') + '）';
@@ -6988,15 +6794,10 @@
                 candWrap.replaceChildren();
                 const cands = all.filter(c => !target.same.some(s => s.page_id === c.page_id));
                 if (cands.length) {
-                    const head = document.createElement('span');
-                    head.className = 'filing-cand-head';
-                    head.textContent = '既にある加工製品:';
+                    const head = makeEl('span', 'filing-cand-head', '既にある加工製品:');
                     candWrap.appendChild(head);
                     cands.forEach(c => {
-                        const b = document.createElement('button');
-                        b.type = 'button';
-                        b.className = 'chip-btn filing-cand';
-                        b.textContent = (c.machine ? c.machine + '／' : '') + c.title;
+                        const b = makeButton('chip-btn filing-cand', (c.machine ? c.machine + '／' : '') + c.title);
                         b.title = '行き先をここにする（図面: ' + (c.drawing_nos || 'なし') + '・/' + c.page_id + '）';
                         b.addEventListener('click', () => {
                             chosenTarget = c.page_id; // 同じ題が何枚もあっても、押したこのページが行き先
@@ -7038,13 +6839,10 @@
                 if (seq !== searchSeq) return; // 打ち替えた——古い答えは捨てる
                 searchOut.replaceChildren();
                 const hits = (d && d.results) || [];
-                const head = document.createElement('span');
-                head.className = 'filing-cand-head';
-                head.textContent = hits.length ? '見つかった加工製品（押すと行き先）:' : '見つかりません';
+                const head = makeEl('span', 'filing-cand-head', hits.length ? '見つかった加工製品（押すと行き先）:' : '見つかりません');
                 searchOut.appendChild(head);
                 hits.forEach(h => {
-                    const b = document.createElement('button');
-                    b.type = 'button';
+                    const b = makeButton('');
                     b.className = 'chip-btn filing-search-pick' + (h.page_id === chosenTarget ? ' is-chosen' : '');
                     b.textContent = (h.page_id === chosenTarget ? '✓ ' : '') +
                         [h.customer, h.machine, h.title].filter(Boolean).join('／') + '（/' + h.page_id + '）';
@@ -7077,8 +6875,7 @@
             // あります: 図面番号が既存の版と同じ／**同じ添付から来た同じ図面番号**
             // （本来あってはならないが、先方の誤りで実在する。2026-09-20）。
             // どちらなのかは実行が返す文が言います。
-            const confirm = document.createElement('label');
-            confirm.className = 'filing-confirm';
+            const confirm = makeEl('label', 'filing-confirm');
             confirm.hidden = true;
             const box = document.createElement('input');
             box.type = 'checkbox';
@@ -7100,17 +6897,13 @@
         // なので、図面と同じ列に並べると空欄ばかりの行になります。
         const pickedOrders = [];
         if (orders.length) {
-            const oHead = document.createElement('p');
-            oHead.className = 'filing-head';
-            oHead.textContent = '案件ページは「記録」の年月へ収めます（外すものは印を外す）。';
+            const oHead = makeEl('p', 'filing-head', '案件ページは「記録」の年月へ収めます（外すものは印を外す）。');
             panel.appendChild(oHead);
 
-            const oTable = document.createElement('table');
-            oTable.className = 'filing-table filing-orders';
+            const oTable = makeEl('table', 'filing-table filing-orders');
             const oTrh = document.createElement('tr');
             ['', '発注書番号', '発注元', '発注日', '行き先'].forEach(t => {
-                const th = document.createElement('th');
-                th.textContent = t;
+                const th = makeEl('th', '', t);
                 oTrh.appendChild(th);
             });
             oTable.appendChild(oTrh);
@@ -7124,8 +6917,7 @@
                 box.setAttribute('aria-label', '収める');
                 tdBox.appendChild(box);
                 tr.appendChild(tdBox);
-                const tdNo = document.createElement('td');
-                tdNo.textContent = o.order_no || '（番号なし）';
+                const tdNo = makeEl('td', '', o.order_no || '（番号なし）');
                 tr.appendChild(tdNo);
 
                 // **発注元だけは直せます**（2026-09-20）。初期値はサーバーが連絡帳へ
@@ -7141,8 +6933,7 @@
                 tr.appendChild(tdClient);
 
                 [o.ordered_at || '（日付なし）', o.destination || ''].forEach(v => {
-                    const td = document.createElement('td');
-                    td.textContent = v;
+                    const td = makeEl('td', '', v);
                     tr.appendChild(td);
                 });
                 pickedOrders.push({ page_id: o.page_id, client: client, box: box });
@@ -7151,10 +6942,7 @@
             panel.appendChild(oTable);
         }
 
-        const run = document.createElement('button');
-        run.type = 'button';
-        run.className = 'filing-run';
-        run.textContent = '実行';
+        const run = makeButton('filing-run', '実行');
         run.addEventListener('click', () => runFiling(inputs, pickedOrders, run, panel));
         // 「ほかのファイル」の段（2026-10-08）——それぞれ「＋ …」で動くので、実行ボタンは図面か受注があるときだけ。
         if ((files || []).length) panel.appendChild(buildFilingFiles(files));
@@ -7168,36 +6956,24 @@
     // ページにならない添付。添付ごとに「行き先を探す」（加工製品ページと装置のページ——`folders=1`）→「＋ …」で、そのページの末尾に
     // ファイル表示を足す（添付はこのメールに置いたまま・指すだけ）。どのページがもう表示しているかは、欄を開いたときに1回だけ探す（重い）。
     function buildFilingFiles(files) {
-        const wrap = document.createElement('div');
-        wrap.className = 'filing-files';
-        const head = document.createElement('p');
-        head.className = 'filing-head';
-        head.textContent = '📎 ほかのファイル——行き先を探して押すと、そのページにファイル表示を足します（添付はこのメールに置いたまま）。';
+        const wrap = makeEl('div', 'filing-files');
+        const head = makeEl('p', 'filing-head', '📎 ほかのファイル——行き先を探して押すと、そのページにファイル表示を足します（添付はこのメールに置いたまま）。');
         wrap.appendChild(head);
         const shownBoxes = {};
         files.forEach(f => {
-            const card = document.createElement('div');
-            card.className = 'filing-card filing-file';
+            const card = makeEl('div', 'filing-card filing-file');
             card.dataset.attach = f.id;
-            const name = document.createElement('p');
-            name.className = 'filing-no';
-            name.textContent = '📎 ' + f.name;
-            const shown = document.createElement('p');
-            shown.className = 'filing-file-shown';
-            shown.textContent = '表示しているページ: 調べています…';
+            const name = makeEl('p', 'filing-no', '📎 ' + f.name);
+            const shown = makeEl('p', 'filing-file-shown', '表示しているページ: 調べています…');
             shownBoxes[f.ref] = { box: shown, list: [] };
-            const label = document.createElement('label');
-            label.className = 'filing-search-label';
-            label.textContent = '行き先を探す: ';
+            const label = makeEl('label', 'filing-search-label', '行き先を探す: ');
             const input = document.createElement('input');
             input.type = 'search';
             input.className = 'filing-search-input';
             input.placeholder = '品番・品名・図面番号・題・装置名・ページ番号';
             label.appendChild(input);
-            const out = document.createElement('div');
-            out.className = 'filing-candidates filing-search-out';
-            const note = document.createElement('p');
-            note.className = 'filing-file-note';
+            const out = makeEl('div', 'filing-candidates filing-search-out');
+            const note = makeEl('p', 'filing-file-note');
             note.hidden = true;
             card.append(name, shown, label, out, note);
             let timer = null;
@@ -7212,15 +6988,11 @@
                 } catch (e) { return; }
                 if (input.value.trim() !== q) return; // 打ち替えた——古い答えは出さない
                 if (!hits.length) {
-                    const p = document.createElement('p');
-                    p.className = 'filing-search-none';
-                    p.textContent = '見つかりません';
+                    const p = makeEl('p', 'filing-search-none', '見つかりません');
                     out.appendChild(p);
                 }
                 hits.forEach(h => {
-                    const b = document.createElement('button');
-                    b.type = 'button';
-                    b.className = 'chip-btn filing-file-add';
+                    const b = makeButton('chip-btn filing-file-add');
                     b.textContent = '＋ ' + (h.kind === 'folder' ? '📁 ' : '') + (h.customer ? h.customer + '／' : '') +
                         (h.machine ? h.machine + '／' : '') + h.title + '（/' + h.page_id + '）';
                     b.title = h.kind === 'folder' ? '装置のページの末尾にファイル表示を足します' : '加工製品ページの末尾にファイル表示を足します';
@@ -7291,17 +7063,12 @@
     // Promise を返します。⚠ 既定の釦（focus）は帯の最初の釦（「やめる」）——Enter で黙って進まない。Esc は cancelValue。
     function openDialog(message, middle, buttons, cancelValue) {
         return new Promise((resolve) => {
-            const dlg = document.createElement('dialog');
-            dlg.className = 'w-confirm';
-            const p = document.createElement('p');
-            p.className = 'w-confirm-msg';
-            p.textContent = message;
+            const dlg = makeEl('dialog', 'w-confirm');
+            const p = makeEl('p', 'w-confirm-msg', message);
             const done = (v) => { if (dlg.open) dlg.close(); dlg.remove(); resolve(v); };
-            const bar = document.createElement('div');
-            bar.className = 'w-confirm-bar';
+            const bar = makeEl('div', 'w-confirm-bar');
             const btns = buttons.map(([label, value, cls]) => {
-                const b = document.createElement('button');
-                b.type = 'button';
+                const b = makeButton('');
                 if (cls) b.className = cls;
                 b.textContent = label;
                 b.addEventListener('click', () => done(value));
@@ -7357,17 +7124,13 @@
             item_name_from_drawing: !!(i.rules && i.rules.itemName.checked),
         }));
         try {
-            const res = await fetch('/api/file-drawings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            const res = await fetch('/api/file-drawings', jsonPost({
                     rows: payload,
                     // ⚠ **もとはIDの配列でした**（2026-09-20 に変えた）——発注元が
                     // 直せるようになったので値を運びます（サーバーは `orderRequest`）。
                     orders: (pickedOrders || []).filter(o => o.box.checked)
                         .map(o => ({ page_id: o.page_id, client: o.client.value })),
-                }),
-            });
+                }));
             const d = await res.json();
             if (!d.success) throw new Error(d.message || res.status);
             // 何が起きたかを必ず見せる（黙って動かさない）。
@@ -7530,8 +7293,7 @@
     function wireMailFetch() {
         const memo = document.getElementById('w-memo-create');
         if (!memo || !hasExtension('comm/mail') || document.getElementById('w-mail-fetch')) return;
-        const btn = document.createElement('button');
-        btn.type = 'button';
+        const btn = makeButton('');
         btn.id = 'w-mail-fetch';
         btn.textContent = '📥 新しいメールを読み込む';
         btn.title = '受信箱と送信済みの箱から、まだ通信箱に入っていないメールを取り込みます';
@@ -7570,8 +7332,7 @@
         }
         if (!st || !st.success || !st.configured || st.address) return;
         if (document.getElementById('w-mail-signin')) return;
-        const btn = document.createElement('button');
-        btn.type = 'button';
+        const btn = makeButton('');
         btn.id = 'w-mail-signin';
         btn.textContent = '✉️ メールにサインイン';
         btn.title = 'メールにサインインしていません（サインインは利用者ごと）。押すと Microsoft の画面でサインインします';
@@ -7603,9 +7364,7 @@
         a.target = '_blank';
         a.rel = 'noopener';
         a.textContent = 'Microsoft の画面を開く';
-        const code = document.createElement('strong');
-        code.className = 'mail-signin-code';
-        code.textContent = d.user_code;
+        const code = makeEl('strong', 'mail-signin-code', d.user_code);
         box.append('① ', a, '　② 番号 ', code, ' を入れて、メールのアカウントでサインイン（このページはそのまま待ちます）');
         // 済むのを待つ（番号の期限まで・3秒おき）。
         const until = Date.now() + (Number(d.expires_in) || 900) * 1000;
@@ -7695,15 +7454,11 @@
         if (!sel) return;
         btn.disabled = true;
         try {
-            const res = await fetch('/api/intake/memo', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            const res = await fetch('/api/intake/memo', jsonPost({
                     channel: sel.value,
                     direction: (dir && !dir.disabled) ? dir.value : '',
                     title: title ? title.value : '',
-                }),
-            });
+                }));
             const data = await res.json();
             if (!data.success) {
                 notify(data.message || '記録を作れませんでした', { type: 'warn' });
@@ -7776,11 +7531,7 @@
         if (cand && cand.id) body.page_id = cand.id; else body.name = org;
         go.disabled = true;
         try {
-            const res = await fetch('/api/contacts/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
+            const res = await fetch('/api/contacts/register', jsonPost(body));
             const data = await res.json();
             if (!data.success) {
                 notify(data.message || '登録できませんでした', { type: 'warn' });
@@ -7812,11 +7563,7 @@
         if (!pageIds.length) return;
         btn.disabled = true;
         try {
-            const res = await fetch('/api/intake/handled', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_ids: pageIds, value: value || '済' }),
-            });
+            const res = await fetch('/api/intake/handled', jsonPost({ page_ids: pageIds, value: value || '済' }));
             const data = await res.json();
             if (!data.success) {
                 notify(data.message || '片付けられませんでした', { type: 'warn' });
@@ -7845,11 +7592,7 @@
     // 返すのは {kind: 'drawing'|'order'|'none', made: [{page_id, title}], matchedDxf} か {error}。
     async function analyzeOne(pageId, file) {
         try {
-            const res = await fetch('/api/analyze-attachment', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page_id: pageId, file: file }),
-            });
+            const res = await fetch('/api/analyze-attachment', jsonPost({ page_id: pageId, file: file }));
             const d = await res.json().catch(() => ({}));
             if (!res.ok || !d.success) return { error: d.message || String(res.status) };
             if (d.doc_type === 'drawing' && ((d.pages || []).length || d.page_id)) {
@@ -7878,9 +7621,7 @@
     function makeZipAnalyzeButton(pageId, pdfs) {
         const todo = pdfs.filter(p => !analyzedMap[p.id]);
         if (!todo.length) return null;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'vocab-chrome attach-expand attach-analyze attach-analyze-zip';
+        const btn = makeButton('vocab-chrome attach-expand attach-analyze attach-analyze-zip');
         const skipped = pdfs.length - todo.length;
         const label = '🤖 中のPDFをまとめて解析（' + todo.length + '件）';
         btn.textContent = label;
@@ -7924,10 +7665,7 @@
     // 押すと /api/analyze-attachment が Gemini で判定し、発注書なら受注ページを
     // このページの子として作る。結果は通知で知らせる（本文は変えない）。
     function makeAnalyzeButton(pageId, file) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'vocab-chrome attach-expand attach-analyze';
-        btn.textContent = '🤖 解析';
+        const btn = makeButton('vocab-chrome attach-expand attach-analyze', '🤖 解析');
         btn.addEventListener('click', async () => {
             btn.disabled = true;
             btn.textContent = '🤖 解析中…';
@@ -8060,9 +7798,7 @@
             if (!head || !data || head.querySelector('.file-menu-btn')) return;
             // 「⋯」1つ（2026-10-01）——押すと形式に合った操作のメニュー（🔗 ID・⬇ 保存・📝 ローカル編集・🤖 解析…・openFileMenu）。
             // それまでは「🔗 ID」と「📝 ローカル編集」を全部の形式に並べていた。頭の行（summary）の中なので、押しても畳まない。
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'vocab-chrome file-menu-btn';
+            const btn = makeButton('vocab-chrome file-menu-btn');
             btn.contentEditable = 'false';
             btn.textContent = '⋯';
             btn.title = 'このファイルの操作（ID を写す・保存・ローカル編集…）';
@@ -8192,12 +7928,9 @@
     // askChoice は選ぶダイアログを出し、選んだ番号を返します（やめたら -1）。⚠ 既定は「やめる」・Esc も「やめる」。
     function askChoice(message, labels) {
         return openDialog(message, (done) => {
-            const list = document.createElement('div');
-            list.className = 'w-choice-list';
+            const list = makeEl('div', 'w-choice-list');
             labels.forEach((label, i) => {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.textContent = label;
+                const b = makeButton('', label);
                 b.addEventListener('click', () => done(i));
                 list.appendChild(b);
             });
@@ -8283,8 +8016,7 @@
         if (!host) return;
         const open = host.querySelector('.attach-preview');
         if (open) { open.remove(); return; }
-        const wrap = document.createElement('div');
-        wrap.className = 'vocab-chrome attach-preview';
+        const wrap = makeEl('div', 'vocab-chrome attach-preview');
         wrap.contentEditable = 'false';
         wrap.textContent = '読み込み中…';
         (host.querySelector(':scope > .vocab-chrome') || host).appendChild(wrap);
@@ -8294,11 +8026,7 @@
     async function startLocalEdit(ref, btn) {
         btn.disabled = true;
         try {
-            const res = await fetch('/api/local-edit/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ref }),
-            });
+            const res = await fetch('/api/local-edit/start', jsonPost({ ref }));
             const d = await res.json().catch(() => ({}));
             if (!res.ok || !d.success) {
                 notify(d.message || ('ローカル編集できません（' + res.status + '）'), { type: 'warn' });
@@ -9062,8 +8790,7 @@
         const th = header.children[col];
         if (th) {
             th.classList.add('w-sorted');
-            const mark = document.createElement('span');
-            mark.className = 'vocab-chrome w-sort-mark';
+            const mark = makeEl('span', 'vocab-chrome w-sort-mark');
             mark.contentEditable = 'false';
             mark.textContent = dir > 0 ? '▲' : '▼';
             th.appendChild(mark);
@@ -9365,8 +9092,7 @@
             btn.textContent = kind === 'pdf' ? '▶ 表示' : '▶ 中身';
             return;
         }
-        const wrap = document.createElement('div');
-        wrap.className = 'vocab-chrome attach-preview';
+        const wrap = makeEl('div', 'vocab-chrome attach-preview');
         if (kind === 'pdf') {
             const embed = document.createElement('embed');
             embed.src = m[0]; // 正規表現に一致した href そのもの（導出の規律）
@@ -9388,15 +9114,11 @@
             if (!d || !d.success) throw new Error('zip-list failed');
             wrap.textContent = '';
             if (!d.entries.length) { wrap.textContent = '（空のZIPです）'; return; }
-            const ul = document.createElement('ul');
-            ul.className = 'attach-zip-list';
+            const ul = makeEl('ul', 'attach-zip-list');
             for (const e of d.entries) {
                 const li = document.createElement('li');
-                const name = document.createElement('span');
-                name.textContent = e.name;
-                const size = document.createElement('span');
-                size.className = 'attach-zip-size';
-                size.textContent = fmtBytes(e.size);
+                const name = makeEl('span', '', e.name);
+                const size = makeEl('span', 'attach-zip-size', fmtBytes(e.size));
                 li.appendChild(name);
                 // 目録は読むだけ。中のファイルは取り込みが展開して添付にしているので、
                 // 解析・表示はその添付のブロックから行う（2026-09-17）。
@@ -9404,8 +9126,7 @@
                 ul.appendChild(li);
             }
             if (d.truncated) {
-                const li = document.createElement('li');
-                li.textContent = '…他 ' + (d.total - d.entries.length) + ' 件';
+                const li = makeEl('li', '', '…他 ' + (d.total - d.entries.length) + ' 件');
                 ul.appendChild(li);
             }
             wrap.appendChild(ul);
@@ -9757,17 +9478,13 @@
         });
 
         if (order.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'slash-menu-empty';
-            empty.textContent = '「' + q + '」に当たる形式はありません';
+            const empty = makeEl('div', 'slash-menu-empty', '「' + q + '」に当たる形式はありません');
             menu.appendChild(empty);
             return;
         }
 
         order.forEach(cat => {
-            const head = document.createElement('div');
-            head.className = 'slash-menu-group';
-            head.textContent = cat;
+            const head = makeEl('div', 'slash-menu-group', cat);
             menu.appendChild(head);
 
             groups[cat]
@@ -9775,11 +9492,9 @@
                 // 基本は決まった並びのまま（slashBasicOrder）。ほかの分類は使った回数の多い順。
                 .sort((a, b) => cat === '基本' ? 0 : slashUseCount(b.type) - slashUseCount(a.type))
                 .forEach(item => {
-                    const el = document.createElement('div');
-                    el.className = 'slash-menu-item';
+                    const el = makeEl('div', 'slash-menu-item');
                     el.setAttribute('data-type', item.type);
-                    const icon = document.createElement('b');
-                    icon.textContent = item.icon;
+                    const icon = makeEl('b', '', item.icon);
                     el.appendChild(icon);
                     el.appendChild(document.createTextNode(' ' + item.label));
                     el.addEventListener('click', () => chooseSlashItem(item.type));
@@ -10614,8 +10329,7 @@
                 toolbar.appendChild(b);
             });
             {
-                const sep = document.createElement('span');
-                sep.className = 'ctx-sep';
+                const sep = makeEl('span', 'ctx-sep');
                 toolbar.appendChild(sep);
             }
             // 見出し・段落だけでなく、リストや引用の中の文字も装飾できる。
@@ -10661,12 +10375,10 @@
             // 文字のブロックの種類を替える・下にブロックを足す（2026-10-07 利用者:「既存の文字列ブロックを見出しに変えたり
             // 段落に変えたりしたい」「スラッシュを入力するのは、日本語環境ではめんどう」）。下の「ブロックの種類を替える」。
             {
-                const sep = document.createElement('span');
-                sep.className = 'ctx-sep';
+                const sep = makeEl('span', 'ctx-sep');
                 toolbar.appendChild(sep);
                 BLOCK_TYPE_CHOICES.forEach(([tag, label, title]) => {
-                    const b = document.createElement('button');
-                    b.className = 'ctx-type';
+                    const b = makeEl('button', 'ctx-type');
                     b.dataset.tag = tag;
                     b.innerText = label;
                     b.title = title + 'にする';
@@ -10975,11 +10687,31 @@ function sayBoundPDF(box, data) {
     a.textContent = data.file || '開く';
     p.appendChild(a);
     (data.skipped || []).forEach((s) => {
-        const q = document.createElement('p');
-        q.className = 'proc-why-ng';
-        q.textContent = '⚠ ' + s;
+        const q = makeEl('p', 'proc-why-ng', '⚠ ' + s);
         box.appendChild(q);
     });
+}
+
+// makeEl は要素を作り、class（空なら付けない）と、text を渡したときは文字を付けます（2026-10-20・同じ3行の写しを1行に）。
+// ⚠ 文字は textContent です（innerHTML へ文字列を入れない決まり）。
+function makeEl(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (arguments.length > 2) e.textContent = text;
+    return e;
+}
+
+// jsonPost は、JSON を POST する fetch の options です（2026-10-20・同じ4行の写しをまとめた）。書きかけの保存を先に流す
+// postJSON と違い、options を組むだけです（保存の口・ロックを通す lockedFetch からも使う）。
+function jsonPost(body) {
+    return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+
+// makeButton は type="button" のボタンを作ります（フォームを送らない・2026-10-20・同じ連なりの写しを1行に）。引数は makeEl と同じ。
+function makeButton(cls, text) {
+    const b = arguments.length > 1 ? makeEl('button', cls, text) : makeEl('button', cls);
+    b.type = 'button';
+    return b;
 }
 
 // sayIn は欄の中身をその1文だけにします（欄が無ければ何もしない）。
@@ -11325,15 +11057,13 @@ async function openRFQReplyMakePanel(btn) {
     if (!panel) return;
     if (panel.childElementCount) { panel.textContent = ''; return; }
     const replyId = btn.getAttribute('data-reply') || '';
-    const head = document.createElement('p');
-    head.textContent = '返事の表を読み替えています…';
+    const head = makeEl('p', '', '返事の表を読み替えています…');
     panel.appendChild(head);
     const r = await getJSON('/api/rfq-reply/draft?page_id=' + encodeURIComponent(replyId));
     if (!r.ok) { head.textContent = '⚠ ' + ((r.data && r.data.message) || '案を作れません'); return; }
     head.textContent = '仕入先 ' + (r.data.supplier || '（無し）') + '・回答日 ' + (r.data.date || '（無し）') +
         ' の部材見積依頼書ページを作ります。弊社品番（加工製品ページの番号）・種類・品物を直してから「作る」を押してください（入れない行は印を外す）:';
-    const table = document.createElement('table');
-    table.className = 'rfq-reply-table rfq-reply-make-table';
+    const table = makeEl('table', 'rfq-reply-table rfq-reply-make-table');
     const hr = document.createElement('tr');
     ['入れる'].concat(RFQ_REPLY_MAKE_COLS.map((c) => c[1])).forEach((h) => { const th = document.createElement('th'); th.textContent = h; hr.appendChild(th); });
     table.appendChild(hr);
@@ -11361,9 +11091,7 @@ async function openRFQReplyMakePanel(btn) {
             inputs[key] = el;
             const c = td(el);
             if (key === 'product_id' && row.product_title) {
-                const hint = document.createElement('div');
-                hint.className = 'rfq-mk-hint';
-                hint.textContent = row.product_title;
+                const hint = makeEl('div', 'rfq-mk-hint', row.product_title);
                 c.appendChild(hint);
             }
         });
@@ -11371,12 +11099,8 @@ async function openRFQReplyMakePanel(btn) {
         lines.push({ use, inputs, row });
     });
     panel.appendChild(table);
-    const go = document.createElement('button');
-    go.type = 'button';
-    go.className = 'chip-btn rfq-reply-make-go';
-    go.textContent = '部材見積依頼書ページを作る';
-    const msg = document.createElement('span');
-    msg.className = 'rfq-reply-make-say';
+    const go = makeButton('chip-btn rfq-reply-make-go', '部材見積依頼書ページを作る');
+    const msg = makeEl('span', 'rfq-reply-make-say');
     panel.append(go, document.createTextNode(' '), msg);
     go.addEventListener('click', async () => {
         const rows = lines.filter((l) => l.use.checked).map((l) => {
@@ -11409,11 +11133,9 @@ async function openRFQReplyPanel(btn) {
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '返事の候補を出せません')); return; }
     if (say) say.textContent = '';
     const sources = r.data.sources || [];
-    const head = document.createElement('p');
-    head.textContent = '🤖 読む返事を選んでください（FAX の取り込み・写真・業者の見積書はこのページに置くと並びます）:';
+    const head = makeEl('p', '', '🤖 読む返事を選んでください（FAX の取り込み・写真・業者の見積書はこのページに置くと並びます）:');
     panel.appendChild(head);
-    const list = document.createElement('div');
-    list.className = 'rfq-reply-sources';
+    const list = makeEl('div', 'rfq-reply-sources');
     const radio = (value, checked) => {
         const rb = document.createElement('input');
         rb.type = 'radio';
@@ -11437,13 +11159,9 @@ async function openRFQReplyPanel(btn) {
     other.append(otherRadio, document.createTextNode(' ほか: '), idIn);
     list.appendChild(other);
     panel.appendChild(list);
-    const go = document.createElement('button');
-    go.type = 'button';
-    go.className = 'chip-btn rfq-reply-read';
-    go.textContent = '🤖 読む';
+    const go = makeButton('chip-btn rfq-reply-read', '🤖 読む');
     panel.appendChild(go);
-    const out = document.createElement('div');
-    out.className = 'rfq-reply-result';
+    const out = makeEl('div', 'rfq-reply-result');
     panel.appendChild(out);
     go.addEventListener('click', async () => {
         const picked = list.querySelector('input[type=radio]:checked');
@@ -11477,23 +11195,18 @@ async function openRFQReplyPanel(btn) {
 // renderRFQReplyProposal は 🤖 の案を表にします——人が直して、印の付いた行を書き込む。
 function renderRFQReplyProposal(out, pageId, d) {
     out.textContent = '';
-    const note = document.createElement('p');
-    note.className = 'proc-why-ng';
-    note.textContent = '⚠ 🤖 は読み違えることがあります。返事と見比べて、直してから書き込んでください。';
+    const note = makeEl('p', 'proc-why-ng', '⚠ 🤖 は読み違えることがあります。返事と見比べて、直してから書き込んでください。');
     out.appendChild(note);
     if (d.summary) {
-        const p = document.createElement('p');
-        p.textContent = '🤖 ' + d.summary;
+        const p = makeEl('p', '', '🤖 ' + d.summary);
         out.appendChild(p);
     }
     const byRow = {};
     (d.guesses || []).forEach((g) => { byRow[g.row] = g; });
-    const table = document.createElement('table');
-    table.className = 'rfq-reply-table';
+    const table = makeEl('table', 'rfq-reply-table');
     const hr = document.createElement('tr');
     ['書く', '行', '何の値段か', 'いまの単価', '読んだ単価', '辞退', '備考'].forEach((h) => {
-        const th = document.createElement('th');
-        th.textContent = h;
+        const th = makeEl('th', '', h);
         hr.appendChild(th);
     });
     table.appendChild(hr);
@@ -11529,12 +11242,8 @@ function renderRFQReplyProposal(out, pageId, d) {
         lines.push({ row, use, price, declined, memo });
     });
     out.appendChild(table);
-    const apply = document.createElement('button');
-    apply.type = 'button';
-    apply.className = 'chip-btn rfq-reply-apply';
-    apply.textContent = '✍ 印の付いた行を書き込む';
-    const msg = document.createElement('span');
-    msg.className = 'rfq-reply-apply-say';
+    const apply = makeButton('chip-btn rfq-reply-apply', '✍ 印の付いた行を書き込む');
+    const msg = makeEl('span', 'rfq-reply-apply-say');
     out.append(apply, document.createTextNode(' '), msg);
     apply.addEventListener('click', async () => {
         const send = lines.filter((l) => l.use.checked).map((l) => ({
@@ -11568,8 +11277,7 @@ async function openQuotePutPanel(btn) {
     const what = btn.getAttribute('data-what') || '';
     const note = btn.getAttribute('data-note') || '';
     panel.textContent = '';
-    const head = document.createElement('p');
-    head.textContent = '見積計算表を読んでいます…';
+    const head = makeEl('p', '', '見積計算表を読んでいます…');
     panel.appendChild(head);
     const r = await getJSON('/api/estimate/rows?page_id=' + encodeURIComponent(pageId));
     if (!r.ok) { head.textContent = '⚠ ' + ((r.data && r.data.message) || '見積計算表を読めません'); return; }
@@ -11579,19 +11287,16 @@ async function openQuotePutPanel(btn) {
     const target = (r.data && r.data.page_id) || pageId;
     head.textContent = '「' + what + '」 ' + price + '円（' + note + '）を' +
         (target !== pageId ? '見積計算書「' + (r.data.title || target) + '」の' : '') + '見積計算表へ写します:';
-    const row = document.createElement('div');
-    row.className = 'rfq-quote-put-form';
+    const row = makeEl('div', 'rfq-quote-put-form');
     const label = (text, el) => { const l = document.createElement('label'); l.append(document.createTextNode(text), el); return l; };
-    const tSel = document.createElement('select');
-    tSel.className = 'rfq-quote-put-table';
+    const tSel = makeEl('select', 'rfq-quote-put-table');
     tables.forEach((t) => {
         const o = document.createElement('option');
         o.value = String(t.index);
         o.textContent = (t.index + 1) + '枚目' + (t.lot ? '（ロット ' + t.lot + '）' : '');
         tSel.appendChild(o);
     });
-    const rSel = document.createElement('select');
-    rSel.className = 'rfq-quote-put-row';
+    const rSel = makeEl('select', 'rfq-quote-put-row');
     const newName = document.createElement('input');
     newName.type = 'text';
     newName.className = 'rfq-quote-put-name';
@@ -11621,17 +11326,10 @@ async function openQuotePutPanel(btn) {
     tSel.addEventListener('change', fill);
     rSel.addEventListener('change', () => { newName.hidden = rSel.value !== '__new'; });
     fill();
-    const go = document.createElement('button');
-    go.type = 'button';
-    go.className = 'chip-btn rfq-quote-put-go';
-    go.textContent = '写す';
-    const cancel = document.createElement('button');
-    cancel.type = 'button';
-    cancel.className = 'chip-btn';
-    cancel.textContent = 'やめる';
+    const go = makeButton('chip-btn rfq-quote-put-go', '写す');
+    const cancel = makeButton('chip-btn', 'やめる');
     cancel.addEventListener('click', () => { panel.textContent = ''; });
-    const msg = document.createElement('span');
-    msg.className = 'rfq-quote-put-say';
+    const msg = makeEl('span', 'rfq-quote-put-say');
     row.append(label('表: ', tSel), label(' 行: ', rSel), newName, label(' 単価: ', val), document.createTextNode(' 円 '), go, cancel, msg);
     panel.appendChild(row);
     go.addEventListener('click', async () => {
@@ -11953,8 +11651,7 @@ async function openQuotePutPanel(btn) {
             });
         });
         box.replaceChildren();
-        const head = document.createElement('p');
-        head.textContent = '/' + data.folder + ' ' + (data.title || '') + ' の下の加工製品: ' + products.length + ' 件';
+        const head = makeEl('p', '', '/' + data.folder + ' ' + (data.title || '') + ' の下の加工製品: ' + products.length + ' 件');
         box.appendChild(head);
         if (rows.length) {
             box.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '数量（ロット）', '単価', '備考'], rows,
@@ -12084,11 +11781,9 @@ function openPickQtyPanel(btn, cfg) {
     }
     sayIn(say, '');
     panel.textContent = '';
-    const head = document.createElement('p');
-    head.textContent = cfg.head(clients[0] || '（発注元なし）');
+    const head = makeEl('p', '', cfg.head(clients[0] || '（発注元なし）'));
     panel.appendChild(head);
-    const table = document.createElement('table');
-    table.className = 'materials-table backlog-dlv-table';
+    const table = makeEl('table', 'materials-table backlog-dlv-table');
     const tr0 = document.createElement('tr');
     cfg.cols.forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
     table.appendChild(tr0);
@@ -12109,8 +11804,7 @@ function openPickQtyPanel(btn, cfg) {
         table.appendChild(tr);
     });
     panel.appendChild(table);
-    const make = document.createElement('button');
-    make.type = 'button';
+    const make = makeButton('');
     make.className = cfg.cls + '-make';
     make.textContent = cfg.make;
     panel.appendChild(make);
@@ -12267,10 +11961,7 @@ function refreshTableMenus() {
         const box = document.createElement('div');
         box.className = 'vocab-chrome w-table-menu' + (t.querySelector(':scope > caption') ? ' on-caption' : '');
         box.contentEditable = 'false';
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'w-table-menu-btn';
-        btn.textContent = '⋯';
+        const btn = makeButton('w-table-menu-btn', '⋯');
         btn.title = 'この表の操作（印刷…）';
         btn.setAttribute('aria-haspopup', 'menu');
         box.appendChild(btn);
@@ -12300,9 +11991,7 @@ function floatingMenu(id, className, close) {
 
 function fillMenuItems(menu, items, pick) {
     items.forEach((it) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'file-menu-item';
+        const b = makeButton('file-menu-item');
         b.setAttribute('role', 'menuitem');
         b.textContent = it.icon + ' ' + it.label;
         if (it.title) b.title = it.title;
@@ -12360,13 +12049,10 @@ function printableTableCopy(table) {
 
 // printTable はその表の写しだけを紙に刷ります（紙の頭にページの題）。
 function printTable(table) {
-    const sheet = document.createElement('div');
-    sheet.className = 'w-print-sheet';
+    const sheet = makeEl('div', 'w-print-sheet');
     const h1 = document.querySelector('#w-editor-content h1');
     if (h1 && h1.textContent.trim()) {
-        const title = document.createElement('p');
-        title.className = 'w-print-title';
-        title.textContent = h1.textContent.trim();
+        const title = makeEl('p', 'w-print-title', h1.textContent.trim());
         sheet.appendChild(title);
     }
     sheet.appendChild(printableTableCopy(table));
@@ -12493,18 +12179,14 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
     function renderHits(box, hits) {
         box.textContent = '';
         if (!hits || hits.length === 0) {
-            const p = document.createElement('p');
-            p.className = 'matsearch-empty';
-            p.textContent = '見つかりませんでした（条件を緩めてみてください）';
+            const p = makeEl('p', 'matsearch-empty', '見つかりませんでした（条件を緩めてみてください）');
             box.appendChild(p);
             return;
         }
-        const table = document.createElement('table');
-        table.className = 'matsearch-table';
+        const table = makeEl('table', 'matsearch-table');
         const head = document.createElement('tr');
         ['材質', '形状', '寸法', '最新単価', '出所', 'ページ'].forEach((h) => {
-            const th = document.createElement('th');
-            th.textContent = h;
+            const th = makeEl('th', '', h);
             head.appendChild(th);
         });
         table.appendChild(head);
@@ -12525,9 +12207,7 @@ delegateClick([['.w-table-menu-btn', (btn) => openTableMenu(btn)]]);
             if (h.migrating) {
                 // ⚠ **移行の確認前だと分かるようにします**（表引きは止めてあるが、
                 //    探して見つかること自体は本当なので、隠さずに印を付ける）。
-                const mark = document.createElement('span');
-                mark.className = 'matsearch-migrating';
-                mark.textContent = ' ⚠ 移行の確認前';
+                const mark = makeEl('span', 'matsearch-migrating', ' ⚠ 移行の確認前');
                 td.appendChild(mark);
             }
             tr.appendChild(td);
@@ -13102,8 +12782,7 @@ delegateClick([
         }
         sayIn(say, '');
         panel.textContent = '';
-        const t = document.createElement('table');
-        t.className = 'materials-table backlog-dlv-table';
+        const t = makeEl('table', 'materials-table backlog-dlv-table');
         const tr0 = document.createElement('tr');
         ['品番', '品名', 'まだ納めていない数', '今回納める数'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
         t.appendChild(tr0);
@@ -13124,14 +12803,11 @@ delegateClick([
             t.appendChild(tr);
         });
         panel.appendChild(t);
-        const make = document.createElement('button');
-        make.type = 'button';
-        make.className = 'mfg-dlv-make';
+        const make = makeButton('mfg-dlv-make');
         make.dataset.mfg = btn.dataset.mfg || '';
         make.textContent = '🚚 納品書を作る';
         panel.appendChild(make);
-        const msg = document.createElement('span');
-        msg.className = 'mfg-dlv-msg';
+        const msg = makeEl('span', 'mfg-dlv-msg');
         panel.appendChild(msg);
         panel.hidden = false;
     }],
