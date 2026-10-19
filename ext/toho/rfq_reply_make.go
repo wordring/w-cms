@@ -50,9 +50,12 @@ func replyColumnOf(header string) string {
 		return false
 	}
 	switch {
+	case strings.HasPrefix(h, "参考"):
+		// 当社が示した参考の値段（2026-10-19——解析が見出しの頭に「参考：」を付ける）。業者の答えではない。
+		return ""
 	case has("金額", "合計", "小計"):
 		return ""
-	case has("単価"):
+	case has("単価", "価格"):
 		return "cost"
 	case has("単位"):
 		return "unit"
@@ -76,6 +79,26 @@ func replyColumnOf(header string) string {
 		return "item_name"
 	}
 	return ""
+}
+
+// keepOneCostColumn は、単価に当たる列が2つ以上あるとき、1つだけを残します（ほかは読み替えない）——値段をつないで読まないため。
+// 見出しに「単価」がある列を先に選び、それでも2つ以上なら**いちばん右**（業者は送った表の右に答えの列を足してくる）。
+// 2026-10-19（業者が、当社の示した価格の列の右に「希望価格」の列を足して返してきた表計算）。
+func keepOneCostColumn(headers, cols []string) {
+	pick := -1
+	for i, c := range cols {
+		if c != "cost" {
+			continue
+		}
+		if pick < 0 || strings.Contains(cms.NormalizeText(headers[i]), "単価") || !strings.Contains(cms.NormalizeText(headers[pick]), "単価") {
+			pick = i
+		}
+	}
+	for i, c := range cols {
+		if c == "cost" && i != pick {
+			cols[i] = ""
+		}
+	}
 }
 
 // replyTotalRe は品物ではない行（合計・小計・消費税・値引）の品名です。
@@ -158,6 +181,7 @@ func rfqReplyDraft(user *auth.User, body string) []rfqReplyDraftRow {
 	for i, h := range headers {
 		cols[i] = replyColumnOf(h)
 	}
+	keepOneCostColumn(headers, cols)
 	var out []rfqReplyDraftRow
 	for _, cells := range rows {
 		v := map[string]string{}
@@ -293,11 +317,17 @@ func RFQReplyMakeRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "返事ページに仕入先がありません（仕入先のタグを書いてください）")
 		return
 	}
+	// 返事が、こちらの送ったメールへの返信なら、部材見積依頼日はその送った日（2026-10-19 利用者:「送った日 07-17 にする」）。
+	asked, sentID := replyAskedDate(tags)
 	note := strings.TrimSpace(req.Note)
 	if note == "" {
 		note = "部材見積依頼の記録の無い返事（/" + replyID + "）から作った部材見積依頼書——部材見積依頼日は返事の回答日"
+		if asked != "" {
+			note = "部材見積依頼の記録の無い返事（/" + replyID + "）から作った部材見積依頼書——部材見積依頼日は、見積を頼んだメール（/" +
+				page.FormatID(sentID) + "）を送った日"
+		}
 	}
-	newID, code, err := createAnsweredRFQPage(user, supplier, cms.FirstTag(tags, RFQAnsweredTag), note, lines)
+	newID, code, err := createAnsweredRFQPage(user, supplier, asked, cms.FirstTag(tags, RFQAnsweredTag), note, lines)
 	if err != nil {
 		cms.JSONFail(w, code, err.Error())
 		return

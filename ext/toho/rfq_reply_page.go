@@ -40,6 +40,7 @@ import (
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -85,6 +86,38 @@ func init() {
 			return out
 		},
 	})
+	// 手で書く返事ページ（2026-10-19）——利用者:「このようなエクセル形式でも解析できるようにならないでしょうか？ならない場合、手作業で
+	// 見積もり回答書を作れるとありがたいです」。🤖 を呼ばず、空の「業者の返事（読んだまま）」の表を置いた返事ページを作る。人が表に
+	// 品番・品名・数量・単価を書き、突き合わせの欄で部材見積依頼書に結ぶか、その表から部材見積依頼書ページを作る。
+	comm.RegisterRecordMaker(comm.RecordMaker{
+		Name: RFQReplyByHandKind, Order: 31, Directions: []string{"受信"},
+		Hint: "✍ 空の表の部材見積依頼の返事ページを作ります（🤖 を使わずに、単価を手で書く）",
+		Make: makeRFQReplyByHand, // 作ったページの印は「部材見積依頼の返事ページ」の側に並ぶ（同じ rfqReplyPagesFrom）
+	})
+}
+
+// RFQReplyByHandKind はメールの「作るページ」の種類（手で書く返事ページ）です。
+const RFQReplyByHandKind = "部材見積依頼の返事ページ（手で書く）"
+
+// rfqReplyByHandHeaders は手で書く返事ページの表の見出しです（返事から部材見積依頼書ページを作るときの読み替え〔replyColumnOf〕に当たる名前）。
+var rfqReplyByHandHeaders = []string{"品番", "品名", "数量", "単位", "単価", "備考"}
+
+// makeRFQReplyByHand は、メールの記録 pageID の子に、空の表の返事ページを作ります（仕入先は差出人のアドレス、回答日はメールの日付）。
+func makeRFQReplyByHand(user *auth.User, pageID string) (comm.MakeResult, error) {
+	if _, err := cms.PageTemplateBody(RFQReplyTemplate); err != nil {
+		return comm.MakeResult{}, &comm.MakeError{Status: http.StatusConflict, Message: "部材見積依頼の返事ページのテンプレートがありません: " + err.Error()}
+	}
+	empty := make([]string, len(rfqReplyByHandHeaders))
+	r := &rfqReplyJudgment{SourceTable: orderSourceTable{Headers: rfqReplyByHandHeaders, Rows: [][]string{empty}}}
+	m, err := makeRFQReply(user, pageID, "", r)
+	if err != nil {
+		return comm.MakeResult{}, err
+	}
+	say := "返事ページを作りました。「業者の返事（読んだまま）」の表に品番・品名・数量・単価を書いてください（行は足せます）。"
+	if m.Linked != "" {
+		say += rfqReplySay(m)
+	}
+	return comm.MakeResult{Pages: []comm.MadePage{{PageID: m.PageID, Title: pageTitleOf(m.PageID), Kind: rfqReplyKind}}, Say: say, Open: m.PageID}, nil
 }
 
 // rfqReplyJudgment は返事から読んだもの（解析の判定 `rfq_reply` と、メールの本文の読みが同じ形）です。
@@ -255,7 +288,61 @@ func linkRFQReply(user *auth.User, replyID, rfqID string) error {
 		return err
 	}
 	auth.Audit(user.Username, "rfq-reply.link", replyID+" → "+rfqID)
+	// 返事が、こちらの送ったメールへの返信なら、部材見積依頼書の日付をその送った日に合わせる（2026-10-19）——部材見積依頼日は
+	// 送った日より後ではありえない（過去の見積もりを移したページは、回答日を部材見積依頼日にも入れていた）。送付日は空のときだけ。
+	if tags, err := cms.TagsOfPage(database.DB, pageNum(replyID)); err == nil {
+		if asked, _ := replyAskedDate(tags); asked != "" {
+			if err := cms.RewriteBody(rfqID, user.Username, func(b string) string {
+				return withAskedDate(b, asked)
+			}); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// withAskedDate は部材見積依頼書の本文の日付を、見積を頼んだメールを送った日 asked（YYYY-MM-DD）に合わせます——部材見積依頼日が
+// 空か asked より後なら asked に、送付日が空なら asked に。それ以外は触りません（人が書いた日付を潰さない）。
+func withAskedDate(body, asked string) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body
+	}
+	root := wrapInDiv(nodes)
+	if cur := strings.TrimSpace(cms.TagValue(root, RFQDateTag)); cur == "" || cur > asked {
+		body = withTagValues(body, RFQDateTag, []string{asked}, true)
+	}
+	if strings.TrimSpace(cms.TagValue(root, EstimateSentTag)) == "" {
+		body = withTagValues(body, EstimateSentTag, []string{asked}, true)
+	}
+	return body
+}
+
+// replyAskedDate は、返事ページ（タグ tags）の原本のメールが、こちらの送ったメールへの返信なら、その送った日（YYYY-MM-DD）と
+// 送ったメールのページ番号を返します（2026-10-19）。返事の原本は `受信元`（「記録」か「記録-添付」）。分からなければ空。
+func replyAskedDate(tags map[string][]string) (string, int) {
+	host := strings.TrimSpace(cms.FirstTag(tags, SourceRefTag))
+	if i := strings.Index(host, "-"); i > 0 {
+		host = host[:i]
+	}
+	hostID, err := strconv.Atoi(host)
+	if err != nil {
+		return "", 0
+	}
+	sent, ok := sentMailOf(hostID)
+	if !ok {
+		return "", 0
+	}
+	at := strings.TrimSpace(cms.PageTagValue(database.DB, sent, comm.SentAtTag))
+	if len(at) < 10 {
+		return "", 0
+	}
+	day, err := time.Parse("2006-01-02", at[:10])
+	if err != nil {
+		return "", 0
+	}
+	return day.Format("2006-01-02"), sent
 }
 
 // rfqReplyMade は返事ページを作った結果です。

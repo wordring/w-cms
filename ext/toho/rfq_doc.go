@@ -289,7 +289,7 @@ func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	newID, code, err := createAnsweredRFQPage(user, req.Supplier, req.Date, req.Note, req.Lines)
+	newID, code, err := createAnsweredRFQPage(user, req.Supplier, "", req.Date, req.Note, req.Lines)
 	if err != nil {
 		cms.JSONFail(w, code, err.Error())
 		return
@@ -300,8 +300,9 @@ func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // createAnsweredRFQPage は返事の来た部材見積依頼書ページを `記録／年／月／製造記録` に1枚作ります——単価入り・回答あり・回答日と部材見積依頼日は date
 // （過去の見積もりの移し〔RFQImportAPIHandler〕と、移行期の返事から作る〔rfq_reply_make.go〕が共有する・2026-10-05 に切り出した）。
+// asked が日付（YYYY-MM-DD）なら、部材見積依頼日と送付日はそれ（返事が、こちらの送ったメールへの返信のとき——送った日・2026-10-19）。
 // 断るときは HTTP の状態とともに返す。
-func createAnsweredRFQPage(user *auth.User, supplier, date, note string, lines []ourOrderLine) (string, int, error) {
+func createAnsweredRFQPage(user *auth.User, supplier, asked, date, note string, lines []ourOrderLine) (string, int, error) {
 	supplier = strings.TrimSpace(supplier)
 	when, err := time.Parse("2006-01-02", strings.TrimSpace(date))
 	if supplier == "" || err != nil || len(lines) == 0 {
@@ -312,8 +313,17 @@ func createAnsweredRFQPage(user *auth.User, supplier, date, note string, lines [
 		return "", http.StatusConflict, errString("部材見積依頼書ページを作れません: " + err.Error())
 	}
 	day := when.Format("2006-01-02")
+	askedDay := ""
+	if a, err := time.Parse("2006-01-02", strings.TrimSpace(asked)); err == nil {
+		askedDay = a.Format("2006-01-02")
+	}
 	build := func(pageID string) (string, error) {
-		return buildRFQDocHTML(tmpl, pageID, supplier, day, note, "", lines, true)
+		body, err := buildRFQDocHTML(tmpl, pageID, supplier, day, note, "", lines, true)
+		if err != nil || askedDay == "" {
+			return body, err
+		}
+		body = withTagValues(body, RFQDateTag, []string{askedDay}, true)
+		return withTagValues(body, EstimateSentTag, []string{askedDay}, true), nil
 	}
 	if _, err := build(""); err != nil {
 		return "", http.StatusConflict, errString("部材見積依頼書ページを作れません: " + err.Error())

@@ -50,6 +50,7 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // orderJudgment は Gemini の判定＋抽出結果です（プロンプトと同じ形）。
@@ -270,7 +271,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 			cms.JSONFail(w, http.StatusBadRequest, terr.Error())
 			return
 		}
-		j, err = judgeOrderSheet(text)
+		j, err = judgeOrderSheet(sheetMailContext(pageID) + text)
 	} else {
 		j, err = judgeOrderPDF(pdf)
 	}
@@ -463,6 +464,8 @@ const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応
                   には「№」で見積依頼番号が刷ってあります
                   ⚠ 図面に「50ヶ @ 2,900」のような**数量と単価の書き込み**（手書きを含む）があれば、表題欄があっても "drawing" では
                   なく "rfq_reply" です（業者が図面を見て値段を答えてきたもの）
+                  ⚠ 当社が送った品物の一覧（図面番号・品名・数量など）に、**業者が単価や希望価格の列を書き足して返してきた表**も
+                  "rfq_reply" です（№ も宛名も無い、値段の入った表だけのことがあります）
   - "other"     : 上記以外（当社が発行した見積書・請求書・納品書・カタログ・案内など）
 次の形式のJSONオブジェクトのみを出力してください（マークダウンのコードブロック修飾は付けない）:
 {
@@ -484,6 +487,9 @@ const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応
 }
 ⚠ rfq_reply の source_table には、品物の欄（品名・材質・寸法・数量など）と、業者が書き込んだ単価・金額・備考を**書かれているまま**
 入れてください。手書きの数字も読んで入れてください。**計算はしないでください**（書かれていない欄は空文字）。
+⚠ rfq_reply の表に値段の列が2つ以上あるときは、**業者が答えた値段**の列の見出しの頭に「単価：」を、**当社が示した参考の値段**
+（参考価格・ほかの業者の価格・昨年の価格など）の列の見出しの頭に「参考：」を付けてください（例: 「単価：希望価格」「参考：昨年価格」）。
+見出しの無い列には、中身から短い見出しを付けてください（例: 色）。表の途中に見出しの行が繰り返されていたら、その行は入れないでください。
 ⚠ rfq_reply の rfq_no は**当社の見積依頼書の「№」**だけです。業者が自分の見積書に付けた番号（「見積No.」など）は入れないで
 ください（空文字にします）。
 ⚠ **図面への書き込みで答えてきたとき**は、図面1枚を1行にしてください——headers は ["図面番号", "図面名称", "数量", "単価", "備考"]、
@@ -549,6 +555,48 @@ const sheetPreamble = `（ここで渡すのはPDFではなく、表計算（Exc
 表が見出しで区切られていくつもあるときも、1つの注文なら orders の要素は1つにして、明細を全部入れてください。）
 
 `
+
+// sheetMailContext は、表計算が**届いたメールの記録の添付**なら、そのメールの件名・差出人・日付・本文を、判定に添える前書きに
+// します（2026-10-19）。メールの記録でなければ空です。
+//
+// 利用者（2026-10-19）:「…は見積回答ですが、xlsxの解析で発注書・図面・部材見積依頼の回答のいずれでもないと出ます。単なる単価の
+// 入った表に過ぎないからかもしれませんが、ここから見積もりの返答を作りたいです」——表計算は表しか持たないので、何の表か（客先の
+// 注文か・業者の見積の返事か）を、メールの文脈で判断させる。返事のメール（`親ページID` の先がこちらの送ったメール）なら、
+// 送ったメールも添える（こちらが図面と品物の一覧を送って値段を頼んだ、と読めるように）。
+func sheetMailContext(pageID string) string {
+	id, err := strconv.Atoi(pageID)
+	if err != nil {
+		return ""
+	}
+	tags, err := cms.TagsOfPage(database.DB, id)
+	if err != nil || cms.FirstTag(tags, comm.DirectionTag) != comm.DirectionIn {
+		return ""
+	}
+	body, err := cms.ReadPageBody(pageID)
+	if err != nil {
+		return ""
+	}
+	out := "（この表計算は、当社に届いた次のメールの添付です。何の表かは、メールの文脈も見て判断してください。）\n" +
+		mailForJudgment(id, cms.PageTitleByID(id), body) + "\n"
+	if sent, ok := sentMailOf(id); ok {
+		if sbody, err := cms.ReadPageBody(page.FormatID(sent)); err == nil {
+			out += "\n（このメールは、当社が送った次のメールへの返信です。）\n" + mailForJudgment(sent, cms.PageTitleByID(sent), sbody) + "\n"
+		}
+	}
+	return out + "\n（ここから表計算です。）\n"
+}
+
+// sentMailOf は、記録 recordID が返信なら、その親（`親ページID`）の**こちらが送ったメールの控え**を返します（親が受信なら false）。
+func sentMailOf(recordID int) (int, bool) {
+	parent, err := strconv.Atoi(strings.TrimSpace(cms.PageTagValue(database.DB, recordID, comm.ParentPageTag)))
+	if err != nil || parent <= 0 {
+		return 0, false
+	}
+	if cms.PageTagValue(database.DB, parent, comm.DirectionTag) != comm.DirectionOut {
+		return 0, false
+	}
+	return parent, true
+}
 
 func judgeOrderSheetWithGemini(text string) (*orderJudgment, error) {
 	respText, err := cms.GeminiGenerateBlobs(sheetPreamble+orderJudgePrompt,
