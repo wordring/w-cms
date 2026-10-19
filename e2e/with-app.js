@@ -19,7 +19,8 @@ for (const pair of (process.env.ASSETS || '').split(',').filter(Boolean)) {
   const [name, file] = pair.split('=');
   swaps[name.trim()] = fs.readFileSync(file.trim(), 'utf8');
 }
-const typeOf = (name) => (name.endsWith('.css') ? 'text/css' : 'application/javascript') + '; charset=utf-8';
+// 型は名前の末尾で決める（2026-10-19 に .html を足した——admin.html を JavaScript の型で返すと、画面が組み上がらなかった）。
+const typeOf = (name) => (name.endsWith('.css') ? 'text/css' : name.endsWith('.html') ? 'text/html' : 'application/javascript') + '; charset=utf-8';
 let served = 0;
 const hook = async (ctx) => {
   for (const [name, body] of Object.entries(swaps)) {
