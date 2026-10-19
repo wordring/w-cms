@@ -8232,38 +8232,11 @@
 
     // openFileMenu は「⋯」の下にメニューを開きます（もう一度押すか、外を押すか、Esc で閉じる）。
     function openFileMenu(anchor, info) {
-        let menu = document.getElementById('w-file-menu');
-        if (menu && menu.classList.contains('active') && menu.wcmsAnchor === anchor) { closeFileMenu(); return; }
-        if (!menu) {
-            menu = document.createElement('div');
-            menu.id = 'w-file-menu';
-            menu.className = 'file-menu';
-            menu.setAttribute('role', 'menu');
-            document.body.appendChild(menu);
-            document.addEventListener('mousedown', e => {
-                const m = document.getElementById('w-file-menu');
-                if (m && m.classList.contains('active') && !m.contains(e.target) && e.target !== m.wcmsAnchor) closeFileMenu();
-            });
-            document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFileMenu(); });
-        }
+        const menu = floatingMenu('w-file-menu', 'file-menu', closeFileMenu);
+        if (menu.classList.contains('active') && menu.wcmsAnchor === anchor) { closeFileMenu(); return; }
         menu.textContent = '';
         menu.wcmsAnchor = anchor;
-        fileMenuItems(info).forEach(it => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'file-menu-item';
-            b.setAttribute('role', 'menuitem');
-            b.textContent = it.icon + ' ' + it.label;
-            if (it.title) b.title = it.title;
-            b.addEventListener('mousedown', e => e.preventDefault());
-            b.addEventListener('click', e => {
-                e.preventDefault();
-                e.stopPropagation();
-                closeFileMenu();
-                it.run(anchor);
-            });
-            menu.appendChild(b);
-        });
+        fillMenuItems(menu, fileMenuItems(info), (it) => { closeFileMenu(); it.run(anchor); });
         menu.classList.add('active');
         placeFloating(menu, anchor.getBoundingClientRect(), 4);
     }
@@ -12086,117 +12059,89 @@ delegateClick([['.backlog-print', (btn) => {
     printOnly(copy);
 }]]);
 
+// openPickQtyPanel は、案件残表で選んだ行（`.<cls>-pick:checked`）と、今回の数の欄（初めは data-<qty> の数・直せる）を
+// 欄 `.<cls>-panel` に開きます。押すボタンは `.<cls>-make`、数の欄は `.<cls>-qty`、知らせは `.<cls>-msg` です。
+// ⚠ 1回に1社（客先の違う行は画面でも止める）。納品書〔10-17〕と製造〔10-19〕が同じ組み立てを写していたので寄せた（2026-10-19）。
+// 表の class はどちらも `backlog-dlv-table`（見た目は納品書の欄と同じ）。
+function openPickQtyPanel(btn, cfg) {
+    const bar = btn.parentElement;
+    const say = bar.querySelector('.' + cfg.cls + '-say');
+    const panel = bar.querySelector('.' + cfg.cls + '-panel');
+    const picks = Array.from(document.querySelectorAll('#w-editor-content .' + cfg.cls + '-pick:checked'));
+    if (!picks.length) {
+        sayIn(say, cfg.none, 'warn');
+        return;
+    }
+    const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
+    if (clients.length > 1) {
+        sayIn(say, cfg.mixed(clients.join('・')), 'warn');
+        return;
+    }
+    sayIn(say, '');
+    panel.textContent = '';
+    const head = document.createElement('p');
+    head.textContent = cfg.head(clients[0] || '（発注元なし）');
+    panel.appendChild(head);
+    const table = document.createElement('table');
+    table.className = 'materials-table backlog-dlv-table';
+    const tr0 = document.createElement('tr');
+    cfg.cols.forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
+    table.appendChild(tr0);
+    picks.forEach((c) => {
+        const tr = document.createElement('tr');
+        [c.dataset.item, c.dataset.name, c.dataset[cfg.qty]].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
+        const td = document.createElement('td');
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.min = '1';
+        inp.value = c.dataset[cfg.qty] || '';
+        inp.className = cfg.cls + '-qty';
+        inp.dataset.order = c.dataset.order;
+        inp.dataset.row = c.dataset.row;
+        inp.dataset.item = c.dataset.item || '';
+        td.appendChild(inp);
+        tr.appendChild(td);
+        table.appendChild(tr);
+    });
+    panel.appendChild(table);
+    const make = document.createElement('button');
+    make.type = 'button';
+    make.className = cfg.cls + '-make';
+    make.textContent = cfg.make;
+    panel.appendChild(make);
+    const msg = document.createElement('span');
+    msg.className = cfg.cls + '-msg';
+    panel.appendChild(msg);
+    panel.hidden = false;
+}
+
 // ── 受注残表から納品書を作る（2026-10-17・ext/toho/delivery.go） ──────────────────
 //
 // 利用者:「分納はよくあります。」「納品書をまとめることはあります。まとめない場合もあります。」。受注残表の「納品」の欄で選んだ
 // 行（受注ページ・行・品番・残——サーバーが描いた data-*）について、今回納める数（残りが初めから入っていて直せる）の欄を開き、
 // 「納品書を作る」で /api/delivery/new へ送って、できた納品書ページを開く。⚠ 1枚に1社（客先の違う行は画面でも止める）。
 delegateClick([
-    ['.backlog-dlv-go', (btn) => {
-        const bar = btn.parentElement;
-        const say = bar.querySelector('.backlog-dlv-say');
-        const panel = bar.querySelector('.backlog-dlv-panel');
-        const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-dlv-pick:checked'));
-        if (!picks.length) {
-            sayIn(say, '案件残表の右端の「納品」の欄で、納める行を選んでください。', 'warn');
-            return;
-        }
-        const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
-        if (clients.length > 1) {
-            sayIn(say, '納品書は1枚に1社です（' + clients.join('・') + ' が混ざっています）。', 'warn');
-            return;
-        }
-        sayIn(say, '');
-        panel.textContent = '';
-        const head = document.createElement('p');
-        head.textContent = '「' + (clients[0] || '（発注元なし）') + '」への納品書——今回納める数を確かめてください:';
-        panel.appendChild(head);
-        const table = document.createElement('table');
-        table.className = 'materials-table backlog-dlv-table';
-        const tr0 = document.createElement('tr');
-        ['品番', '品名', '残', '今回納める数'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
-        table.appendChild(tr0);
-        picks.forEach((c) => {
-            const tr = document.createElement('tr');
-            [c.dataset.item, c.dataset.name, c.dataset.remaining].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
-            const td = document.createElement('td');
-            const inp = document.createElement('input');
-            inp.type = 'number';
-            inp.min = '1';
-            inp.value = c.dataset.remaining || '';
-            inp.className = 'backlog-dlv-qty';
-            inp.dataset.order = c.dataset.order;
-            inp.dataset.row = c.dataset.row;
-            inp.dataset.item = c.dataset.item || '';
-            td.appendChild(inp);
-            tr.appendChild(td);
-            table.appendChild(tr);
-        });
-        panel.appendChild(table);
-        const make = document.createElement('button');
-        make.type = 'button';
-        make.className = 'backlog-dlv-make';
-        make.textContent = '🚚 納品書を作る';
-        panel.appendChild(make);
-        const msg = document.createElement('span');
-        msg.className = 'backlog-dlv-msg';
-        panel.appendChild(msg);
-        panel.hidden = false;
-    }],
-    ['.backlog-mfg-go', (btn) => {
-        // 受注残表から製造を始める（2026-10-19・ext/toho/mfg.go）——利用者:「受注残表でチェックして製造開始ボタンを押すと、
-        // 製造フォルダに入るのはどうですか？」。選んだ行（「製造」の欄）と今回作る数（まだ製造に入っていない数が初めから入っていて直せる）。
-        // ⚠ 1つの製造は1社（客先の違う行は画面でも止める）。
-        const bar = btn.parentElement;
-        const say = bar.querySelector('.backlog-mfg-say');
-        const panel = bar.querySelector('.backlog-mfg-panel');
-        const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-mfg-pick:checked'));
-        if (!picks.length) {
-            sayIn(say, '案件残表の「製造」の欄で、製造を始める行を選んでください。', 'warn');
-            return;
-        }
-        const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
-        if (clients.length > 1) {
-            sayIn(say, '1つの製造は1社です（' + clients.join('・') + ' が混ざっています）。', 'warn');
-            return;
-        }
-        sayIn(say, '');
-        panel.textContent = '';
-        const head = document.createElement('p');
-        head.textContent = '「' + (clients[0] || '（発注元なし）') + '」の製造——今回作る数を確かめてください:';
-        panel.appendChild(head);
-        const table = document.createElement('table');
-        table.className = 'materials-table backlog-dlv-table';
-        const tr0 = document.createElement('tr');
-        ['品番', '品名', 'まだ製造に入っていない数', '今回作る数'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
-        table.appendChild(tr0);
-        picks.forEach((c) => {
-            const tr = document.createElement('tr');
-            [c.dataset.item, c.dataset.name, c.dataset.free].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
-            const td = document.createElement('td');
-            const inp = document.createElement('input');
-            inp.type = 'number';
-            inp.min = '1';
-            inp.value = c.dataset.free || '';
-            inp.className = 'backlog-mfg-qty';
-            inp.dataset.order = c.dataset.order;
-            inp.dataset.row = c.dataset.row;
-            inp.dataset.item = c.dataset.item || '';
-            td.appendChild(inp);
-            tr.appendChild(td);
-            table.appendChild(tr);
-        });
-        panel.appendChild(table);
-        const make = document.createElement('button');
-        make.type = 'button';
-        make.className = 'backlog-mfg-make';
-        make.textContent = '🏭 製造を始める';
-        panel.appendChild(make);
-        const msg = document.createElement('span');
-        msg.className = 'backlog-mfg-msg';
-        panel.appendChild(msg);
-        panel.hidden = false;
-    }],
+    ['.backlog-dlv-go', (btn) => openPickQtyPanel(btn, {
+        cls: 'backlog-dlv',
+        none: '案件残表の右端の「納品」の欄で、納める行を選んでください。',
+        mixed: (names) => '納品書は1枚に1社です（' + names + ' が混ざっています）。',
+        head: (client) => '「' + client + '」への納品書——今回納める数を確かめてください:',
+        cols: ['品番', '品名', '残', '今回納める数'],
+        qty: 'remaining',
+        make: '🚚 納品書を作る',
+    })],
+    // 受注残表から製造を始める（2026-10-19・ext/toho/mfg.go）——利用者:「受注残表でチェックして製造開始ボタンを押すと、
+    // 製造フォルダに入るのはどうですか？」。選んだ行（「製造」の欄）と今回作る数（まだ製造に入っていない数が初めから入っていて直せる）。
+    // ⚠ 1つの製造は1社（客先の違う行は画面でも止める）。
+    ['.backlog-mfg-go', (btn) => openPickQtyPanel(btn, {
+        cls: 'backlog-mfg',
+        none: '案件残表の「製造」の欄で、製造を始める行を選んでください。',
+        mixed: (names) => '1つの製造は1社です（' + names + ' が混ざっています）。',
+        head: (client) => '「' + client + '」の製造——今回作る数を確かめてください:',
+        cols: ['品番', '品名', 'まだ製造に入っていない数', '今回作る数'],
+        qty: 'free',
+        make: '🏭 製造を始める',
+    })],
     ['.backlog-mfg-make', async (btn) => {
         const panel = btn.closest('.backlog-mfg-panel');
         const msg = panel.querySelector('.backlog-mfg-msg');
@@ -12328,6 +12273,44 @@ function refreshTableMenus() {
     });
 }
 
+// floatingMenu は「⋯」から開く浮いたメニューの入れ物です（無ければ作る）。外を押すか Esc で close を呼びます。
+// fillMenuItems は項目（icon・label・title）のボタンを並べ、押すと pick(it) を呼びます。
+// ⚠ ボタンの mousedown は止めます——キャレット（書きかけの場所）を動かさないため。
+// 2026-10-19 に寄せた（ファイルの「⋯」〔10-01〕と表の「⋯」〔10-15〕が同じ組み立てを写していた）。
+function floatingMenu(id, className, close) {
+    let menu = document.getElementById(id);
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = id;
+    menu.className = className;
+    menu.setAttribute('role', 'menu');
+    document.body.appendChild(menu);
+    document.addEventListener('mousedown', (e) => {
+        const m = document.getElementById(id);
+        if (m && m.classList.contains('active') && !m.contains(e.target) && e.target !== m.wcmsAnchor) close();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    return menu;
+}
+
+function fillMenuItems(menu, items, pick) {
+    items.forEach((it) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'file-menu-item';
+        b.setAttribute('role', 'menuitem');
+        b.textContent = it.icon + ' ' + it.label;
+        if (it.title) b.title = it.title;
+        b.addEventListener('mousedown', (e) => e.preventDefault());
+        b.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            pick(it);
+        });
+        menu.appendChild(b);
+    });
+}
+
 // tableOfMenu は「⋯」の入れ物のすぐ後ろの表です。
 function tableOfMenu(btn) {
     const box = btn.closest('.w-table-menu');
@@ -12339,37 +12322,11 @@ function tableOfMenu(btn) {
 function openTableMenu(btn) {
     const table = tableOfMenu(btn);
     if (!table) return;
-    let menu = document.getElementById('w-table-menu-list');
-    if (menu && menu.classList.contains('active') && menu.wcmsAnchor === btn) { closeTableMenu(); return; }
-    if (!menu) {
-        menu = document.createElement('div');
-        menu.id = 'w-table-menu-list';
-        menu.className = 'file-menu w-table-menu-list';
-        menu.setAttribute('role', 'menu');
-        document.body.appendChild(menu);
-        document.addEventListener('mousedown', (e) => {
-            const m = document.getElementById('w-table-menu-list');
-            if (m && m.classList.contains('active') && !m.contains(e.target) && e.target !== m.wcmsAnchor) closeTableMenu();
-        });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTableMenu(); });
-    }
+    const menu = floatingMenu('w-table-menu-list', 'file-menu w-table-menu-list', closeTableMenu);
+    if (menu.classList.contains('active') && menu.wcmsAnchor === btn) { closeTableMenu(); return; }
     menu.textContent = '';
     menu.wcmsAnchor = btn;
-    TABLE_MENU_ITEMS.filter((it) => !it.when || it.when(table)).forEach((it) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'file-menu-item';
-        b.setAttribute('role', 'menuitem');
-        b.textContent = it.icon + ' ' + it.label;
-        b.addEventListener('mousedown', (e) => e.preventDefault());
-        b.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            closeTableMenu();
-            it.run(table);
-        });
-        menu.appendChild(b);
-    });
+    fillMenuItems(menu, TABLE_MENU_ITEMS.filter((it) => !it.when || it.when(table)), (it) => { closeTableMenu(); it.run(table); });
     menu.classList.add('active');
     // 右端の「⋯」から左へ開く（右へはみ出さないように placeFloating が寄せる）。
     const r = btn.getBoundingClientRect();

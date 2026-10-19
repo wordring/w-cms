@@ -314,30 +314,12 @@ async function renameTagValue() {
   const el = document.getElementById('tr-msg');
   const say = (color, text) => { el.style.color = color; el.textContent = text; };
   if (!name || !from || !to) { say('#dc2626', 'タグの名前・今の値・新しい値を書いてください'); return; }
-  const post = async (dry) => {
-    const res = await api('POST', '/api/admin/tag-rename', { name, from, to, dry });
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
-    return d.result || {};
-  };
   // skipped は飛ばしたページの説明（編集中・テンプレート・本文に組が無い）。
-  const skipped = (r) => [
+  await dryThenRename(say, '/api/admin/tag-rename', { name, from, to }, (r) => [
     (r.editing || []).length ? '編集中で飛ばした ' + r.editing.join('・') : '',
     (r.template || []).length ? 'テンプレートの中で飛ばした ' + r.template.join('・') : '',
     (r.missed || []).length ? '本文に組が無かった ' + r.missed.join('・') : '',
-  ].filter(Boolean).join(' / ');
-  try {
-    say('#64748b', '数えています…');
-    const pre = await post(true);
-    const n = (pre.changed || []).length;
-    if (n === 0) { say('#dc2626', `「${name}：${from}」のページはありません` + (skipped(pre) ? '（' + skipped(pre) + '）' : '')); return; }
-    if (!confirm(`${n} ページの「${name}：${from}」を「${name}：${to}」に置き換えます。よろしいですか？`)) { say('#64748b', ''); return; }
-    const r = await post(false);
-    say('#16a34a', `${(r.changed || []).length} ページを置き換えました` + (skipped(r) ? '（' + skipped(r) + '）' : '') + '。');
-    loadAudit();
-  } catch (e) {
-    say('#dc2626', '置き換えられませんでした: ' + e.message);
-  }
+  ], `「${name}：${from}」のページはありません`, (n) => `${n} ページの「${name}：${from}」を「${name}：${to}」に置き換えます。よろしいですか？`);
 }
 
 // 表の列の名前を置き換える（2026-10-15・/api/admin/column-rename）。先に dry で数えて確かめてから書く。
@@ -346,24 +328,31 @@ async function renameColumn() {
   const el = document.getElementById('cr-msg');
   const say = (color, text) => { el.style.color = color; el.textContent = text; };
   if (!caption || !from || !to) { say('#dc2626', '表のキャプション・今の列の名前・新しい列の名前を書いてください'); return; }
+  // skipped は飛ばしたページの説明（編集中・テンプレート・新しい名前の列が既にある）。
+  await dryThenRename(say, '/api/admin/column-rename', { caption, from, to }, (r) => [
+    (r.editing || []).length ? '編集中で飛ばした ' + r.editing.join('・') : '',
+    (r.template || []).length ? 'テンプレートの中で飛ばした ' + r.template.join('・') + '（手で直してください）' : '',
+    (r.conflict || []).length ? '新しい名前の列が既にあって飛ばした ' + r.conflict.join('・') : '',
+  ], `「${caption}」の表に「${from}」の列があるページはありません`, (n) => `${n} ページの「${caption}」の列「${from}」を「${to}」に置き換えます。よろしいですか？`);
+}
+
+// dryThenRename は、置き換えの口（endpoint）を先に dry で叩いて数を見せ、確かめてから書きます（タグの値・表の列の名前）。
+// skippedOf は飛ばしたページの説明の並び、none は1枚も当たらないときの文、ask(n) は確かめの文です。
+// 2026-10-19 に寄せた（タグの値〔10-01〕と表の列の名前〔10-15〕が同じ流れを写していた）。
+async function dryThenRename(say, endpoint, body, skippedOf, none, ask) {
   const post = async (dry) => {
-    const res = await api('POST', '/api/admin/column-rename', { caption, from, to, dry });
+    const res = await api('POST', endpoint, Object.assign({}, body, { dry }));
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
     return d.result || {};
   };
-  // skipped は飛ばしたページの説明（編集中・テンプレート・新しい名前の列が既にある）。
-  const skipped = (r) => [
-    (r.editing || []).length ? '編集中で飛ばした ' + r.editing.join('・') : '',
-    (r.template || []).length ? 'テンプレートの中で飛ばした ' + r.template.join('・') + '（手で直してください）' : '',
-    (r.conflict || []).length ? '新しい名前の列が既にあって飛ばした ' + r.conflict.join('・') : '',
-  ].filter(Boolean).join(' / ');
+  const skipped = (r) => skippedOf(r).filter(Boolean).join(' / ');
   try {
     say('#64748b', '数えています…');
     const pre = await post(true);
     const n = (pre.changed || []).length;
-    if (n === 0) { say('#dc2626', `「${caption}」の表に「${from}」の列があるページはありません` + (skipped(pre) ? '（' + skipped(pre) + '）' : '')); return; }
-    if (!confirm(`${n} ページの「${caption}」の列「${from}」を「${to}」に置き換えます。よろしいですか？`)) { say('#64748b', ''); return; }
+    if (n === 0) { say('#dc2626', none + (skipped(pre) ? '（' + skipped(pre) + '）' : '')); return; }
+    if (!confirm(ask(n))) { say('#64748b', ''); return; }
     const r = await post(false);
     say('#16a34a', `${(r.changed || []).length} ページを置き換えました` + (skipped(r) ? '（' + skipped(r) + '）' : '') + '。');
     loadAudit();
