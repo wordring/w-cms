@@ -12004,6 +12004,73 @@ delegateClick([
         panel.appendChild(msg);
         panel.hidden = false;
     }],
+    ['.backlog-mfg-go', (btn) => {
+        // 受注残表から製造を始める（2026-10-19・ext/toho/mfg.go）——利用者:「受注残表でチェックして製造開始ボタンを押すと、
+        // 製造フォルダに入るのはどうですか？」。選んだ行（「製造」の欄）と今回作る数（まだ製造に入っていない数が初めから入っていて直せる）。
+        // ⚠ 1つの製造は1社（客先の違う行は画面でも止める）。
+        const bar = btn.parentElement;
+        const say = bar.querySelector('.backlog-mfg-say');
+        const panel = bar.querySelector('.backlog-mfg-panel');
+        const picks = Array.from(document.querySelectorAll('#w-editor-content .backlog-mfg-pick:checked'));
+        if (!picks.length) {
+            sayIn(say, '受注残表の「製造」の欄で、製造を始める行を選んでください。', 'warn');
+            return;
+        }
+        const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
+        if (clients.length > 1) {
+            sayIn(say, '1つの製造は1社です（' + clients.join('・') + ' が混ざっています）。', 'warn');
+            return;
+        }
+        sayIn(say, '');
+        panel.textContent = '';
+        const head = document.createElement('p');
+        head.textContent = '「' + (clients[0] || '（発注元なし）') + '」の製造——今回作る数を確かめてください:';
+        panel.appendChild(head);
+        const table = document.createElement('table');
+        table.className = 'materials-table backlog-dlv-table';
+        const tr0 = document.createElement('tr');
+        ['品番', '品名', 'まだ製造に入っていない数', '今回作る数'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
+        table.appendChild(tr0);
+        picks.forEach((c) => {
+            const tr = document.createElement('tr');
+            [c.dataset.item, c.dataset.name, c.dataset.free].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
+            const td = document.createElement('td');
+            const inp = document.createElement('input');
+            inp.type = 'number';
+            inp.min = '1';
+            inp.value = c.dataset.free || '';
+            inp.className = 'backlog-mfg-qty';
+            inp.dataset.order = c.dataset.order;
+            inp.dataset.row = c.dataset.row;
+            inp.dataset.item = c.dataset.item || '';
+            td.appendChild(inp);
+            tr.appendChild(td);
+            table.appendChild(tr);
+        });
+        panel.appendChild(table);
+        const make = document.createElement('button');
+        make.type = 'button';
+        make.className = 'backlog-mfg-make';
+        make.textContent = '🏭 製造を始める';
+        panel.appendChild(make);
+        const msg = document.createElement('span');
+        msg.className = 'backlog-mfg-msg';
+        panel.appendChild(msg);
+        panel.hidden = false;
+    }],
+    ['.backlog-mfg-make', async (btn) => {
+        const panel = btn.closest('.backlog-mfg-panel');
+        const msg = panel.querySelector('.backlog-mfg-msg');
+        const items = Array.from(panel.querySelectorAll('.backlog-mfg-qty')).map((i) => ({
+            order: i.dataset.order, row: Number(i.dataset.row), item: i.dataset.item, qty: i.value,
+        }));
+        btn.disabled = true;
+        sayIn(msg, '製造ページを作っています…');
+        const r = await postJSON('/api/mfg/new', { items }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+        btn.disabled = false;
+        if (!r.ok) { sayIn(msg, '⚠ ' + ((r.data && r.data.message) || '製造ページを作れませんでした')); return; }
+        location.href = r.data.url;
+    }],
     ['.backlog-dlv-make', async (btn) => {
         const panel = btn.closest('.backlog-dlv-panel');
         const msg = panel.querySelector('.backlog-dlv-msg');

@@ -1,0 +1,325 @@
+package toho
+
+// ─────────────────────────────────────────────────────────────────────────
+// 製造ページ——1つの案件を1枚にまとめる（2026-10-19・【考察】製造ページ・作る順の1番）
+//
+//	2026-10-18 利用者:「受注残表でチェックして製造開始ボタンを押すと、製造フォルダに入るのはどうですか？」
+//	2026-10-19 利用者:「製造フォルダはトップ直下に一つ、その下に受注ページでチェックを入れて作った製造ページがいくつかあり、
+//	請求書発行時点で製造ページは記録フォルダ以下の年月以下に移動するというのはどうでしょうか？」
+//	2026-10-19 利用者:「一つの案件は一社で良いです 残りの数の一部だけで案件を始めまることがあります」
+//	2026-10-19 利用者:「3．製造ページの題名は「装置名、装置名・・・」（長くなったら短縮）を基本に、装置名が無い場合、品名で置き換えてはどうでしょう」
+//
+//   - 置き場はトップ直下の「製造」（テンプレートから作る）。その下に製造ページ（`ページ種類：製造`）。年月では分けない。
+//   - 受注残表で行を選んで「🏭 製造開始」——今回作る数を直せる（一部だけで始めてよい）。1枚に1社。
+//   - 製造ページの「製造明細表」に、受注明細の行を写す（受注・品番・品名・装置名・数量・単位・納期）。
+//   - 受注残表の行には「製造中」と、その製造ページへのリンク。まだどの製造にも入っていない数だけ、次の製造に入れられる。
+// ─────────────────────────────────────────────────────────────────────────
+
+import (
+	stdhtml "html"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"w-cms/internal/auth"
+	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
+)
+
+const (
+	// MfgBoxTitle は製造ページの置き場の題です（トップ直下）。
+	MfgBoxTitle = "製造"
+	// MfgTemplate は製造ページのテンプレートの題です。
+	MfgTemplate = "製造ページ"
+	// MfgItemsType は製造明細表の形式です。
+	MfgItemsType = "mfg-items"
+	// 製造ページのタグ。
+	MfgNoTag    = "製造番号"
+	MfgStartTag = "始めた日"
+	PageKindMfg = "製造"
+	// mfgTitleMax は題の長さの目安（字数）です。超えたら「…ほか N」に縮める。
+	mfgTitleMax = 30
+)
+
+func mfgItemColumns() []cms.VocabColumn {
+	return []cms.VocabColumn{
+		{Field: "our-item-id", Label: OurItemNoTag, Type: cms.ColRef},
+		{Field: "order", Label: "受注", Type: cms.ColRef},
+		{Field: "item-id", Label: ItemNoTag, Type: cms.ColCode},
+		{Field: "item-name", Label: "品名", Type: cms.ColText},
+		{Field: "machine", Label: "装置名", Type: cms.ColText},
+		{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
+		{Field: "due", Label: "納期", Type: cms.ColText},
+		{Field: "made", Label: "製造完了", Type: cms.ColEnum, Enum: []string{MarkDone}},
+		{Field: "note", Label: "備考", Type: cms.ColText},
+	}
+}
+
+func init() {
+	cms.RegisterVocab(cms.VocabDef{
+		// **製造明細表**——製造ページの、この案件で作る品物。機械が受注明細の行から作るので、スラッシュメニューには出さない。
+		Type: MfgItemsType, DisplayName: "製造明細表", Category: "業務", Icon: "🏭", Element: "table", Hidden: true,
+		Columns: mfgItemColumns(),
+	})
+	cms.RegisterRequiredPage(cms.RequiredPage{
+		Title:     MfgBoxTitle,
+		Extension: "toho",
+		Why: "進んでいる案件の置き場です（製造／製造ページ）。受注残表の「🏭 製造開始」が、この下に製造ページを作ります。" +
+			"案件が終わると、製造ページは記録の年月へ移ります。",
+	})
+	cms.RegisterPageTemplate(cms.PageTemplate{
+		Title:     MfgTemplate,
+		Extension: "toho",
+		Why: "受注残表の「🏭 製造開始」が、製造ページ（製造／…）を作るときに写します。" +
+			"キャプション「製造明細表」の表が要ります（タグ 製造番号・客先・始めた日・ページ種類〔製造〕は、あれば埋めます）。",
+	})
+}
+
+// ── どの製造に、どれだけ入っているか ───────────────────────────────────────
+
+// mfgLookup は描画1回ぶんの「受注ページ×品番（品番が空なら品名） → 製造に入れた数・製造ページ」です。
+type mfgLookup struct {
+	qty   map[string]float64
+	pages map[string][]string
+}
+
+// newMfgLookup は、製造ページ（`ページ種類：製造`・テンプレートの外）の製造明細表の行を全部数えます。
+func newMfgLookup() *mfgLookup {
+	m := &mfgLookup{qty: map[string]float64{}, pages: map[string][]string{}}
+	rows, err := cms.VocabRowsOfType(database.DB, MfgItemsType)
+	if err != nil {
+		return m
+	}
+	kinds := map[int]bool{}
+	for _, r := range rows {
+		ok, seen := kinds[r.PageID]
+		if !seen {
+			ok = !cms.IsTemplateArea(page.FormatID(r.PageID)) && pageKindOf(r.PageID) == PageKindMfg
+			kinds[r.PageID] = ok
+		}
+		if !ok {
+			continue
+		}
+		q, okQ := estimateNumber(r.Values["quantity"])
+		if !okQ || q <= 0 {
+			continue
+		}
+		k := shippedKey(r.Values["order"], r.Values["item-id"], r.Values["item-name"])
+		m.qty[k] += q
+		id := page.FormatID(r.PageID)
+		if ps := m.pages[k]; len(ps) == 0 || ps[len(ps)-1] != id {
+			m.pages[k] = append(ps, id)
+		}
+	}
+	return m
+}
+
+func (m *mfgLookup) of(order, itemNo, itemName string) (float64, []string) {
+	k := shippedKey(order, itemNo, itemName)
+	return m.qty[k], m.pages[k]
+}
+
+// ── 受注残表の「製造」の欄 ──────────────────────────────────────────────
+
+// mfgCellHTML は受注残表の1行の「製造」の欄です——製造中なら製造ページへのリンク、まだ入れられる数があれば選ぶ欄。
+func mfgCellHTML(r backlogRow, client string) string {
+	var b strings.Builder
+	for i, p := range r.MfgPages {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(`<a class="backlog-mfg-link" href="/` + stdhtml.EscapeString(p) + `">製造中</a>`)
+	}
+	free := r.Quantity - r.InMfg
+	if free <= 0 {
+		return b.String()
+	}
+	if b.Len() > 0 {
+		b.WriteString(" ")
+	}
+	b.WriteString(`<input type="checkbox" class="backlog-mfg-pick" title="この行で製造を始める（まだ製造に入っていない数 ` + strconv.Itoa(free) + `）"` +
+		` data-order="` + stdhtml.EscapeString(r.OrderPageID) + `" data-row="` + strconv.Itoa(r.RowNo) + `" data-item="` + stdhtml.EscapeString(r.ItemNo) +
+		`" data-name="` + stdhtml.EscapeString(r.ItemName) + `" data-free="` + strconv.Itoa(free) + `" data-client="` + stdhtml.EscapeString(client) + `">`)
+	return b.String()
+}
+
+// ── 製造ページを作る ────────────────────────────────────────────────────
+
+// mfgLine は製造明細表の1行です。
+type mfgLine struct {
+	OurItemNo, Order, ItemNo, ItemName, Machine, Qty, Unit, Due string
+	Client                                                      string
+	Free                                                        int // まだどの製造にも入っていない数
+}
+
+// mfgLineOf は受注残表で選んだ1行を、受注明細表の索引から製造明細の行にします（読めない・合わないなら理由）。
+func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machineLookup) (mfgLine, string) {
+	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(p.Order), "/"))
+	if !ok {
+		return mfgLine{}, "受注ページの番号が読めません: " + p.Order
+	}
+	pid := pageNum(id)
+	if !page.CanView(user, pid) || pageKindOf(pid) != PageKindCustomerOrder {
+		return mfgLine{}, "受注ページが見つかりません: /" + id
+	}
+	tags, err := cms.TagsOfPage(database.DB, pid)
+	if err != nil {
+		return mfgLine{}, "受注ページを読めません: /" + id
+	}
+	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
+	if err != nil {
+		return mfgLine{}, "受注明細表を読めません: /" + id
+	}
+	for _, r := range rows {
+		if r.RowNo != p.Row {
+			continue
+		}
+		v := r.Values
+		if strings.TrimSpace(v["item-id"]) != strings.TrimSpace(p.Item) {
+			return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目の品番が変わっています（受注フォルダを開き直してください）"
+		}
+		q, okQ := estimateNumber(p.Qty)
+		if !okQ || q <= 0 {
+			return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回作る数が読めません: " + p.Qty
+		}
+		inMfg, _ := mfg.of(id, v["item-id"], v["item-name"])
+		free := r.Num("quantity") - int(inMfg)
+		if int(q) > free {
+			return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」は、まだ製造に入っていない数が " + strconv.Itoa(free) + " です（" + p.Qty + " は多すぎます）"
+		}
+		due := strings.TrimSpace(v["due"])
+		if due == "" {
+			due = cms.FirstTag(tags, DueDateTag)
+		}
+		machine, _ := machines.machineOf(pid, v["our-item-id"], v["item-id"], v["item-name"])
+		return mfgLine{
+			OurItemNo: strings.TrimSpace(v["our-item-id"]), Order: id, ItemNo: strings.TrimSpace(v["item-id"]),
+			ItemName: strings.TrimSpace(v["item-name"]), Machine: strings.TrimSpace(machine), Qty: strings.TrimSpace(p.Qty),
+			Unit: strings.TrimSpace(v["unit"]), Due: due, Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)), Free: free,
+		}, ""
+	}
+	return mfgLine{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（受注フォルダを開き直してください）"
+}
+
+// mfgTitle は製造ページの題です——「装置名、装置名…」（同じ名前は1つ）。装置名の無い行は品名。長くなったら「…ほか N」。
+func mfgTitle(lines []mfgLine) string {
+	var names []string
+	seen := map[string]bool{}
+	for _, l := range lines {
+		n := l.Machine
+		if n == "" {
+			n = l.ItemName
+		}
+		if n == "" {
+			n = l.ItemNo
+		}
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		names = append(names, n)
+	}
+	if len(names) == 0 {
+		return "製造"
+	}
+	title := names[0]
+	for i, n := range names[1:] {
+		next := title + "、" + n
+		if len([]rune(next)) > mfgTitleMax {
+			return title + "、ほか " + strconv.Itoa(len(names)-1-i)
+		}
+		title = next
+	}
+	return title
+}
+
+// buildMfgHTML は製造ページの本文を、テンプレート tmpl を埋めて組みます。
+func buildMfgHTML(tmpl, pageID, client, start string, lines []mfgLine) (string, error) {
+	d := cms.NewPageDraft(MfgTemplate, tmpl)
+	d.SetTitle(mfgTitle(lines))
+	setHeaderTag(d.DraftBlock, MfgNoTag, pageID)
+	setHeaderTag(d.DraftBlock, DeliveryClientTag, client)
+	setHeaderTag(d.DraftBlock, MfgStartTag, start)
+	d.SetTag(PageKindTag, PageKindMfg)
+	rows := make([]map[string]string, 0, len(lines))
+	for _, l := range lines {
+		rows = append(rows, map[string]string{
+			"our-item-id": l.OurItemNo, "order": l.Order, "item-id": l.ItemNo, "item-name": l.ItemName, "machine": l.Machine,
+			"quantity": l.Qty, "unit": l.Unit, "due": l.Due,
+		})
+	}
+	if _, err := fillVocabTable(d.DraftBlock, MfgItemsType, rows); err != nil {
+		return "", err
+	}
+	return d.HTML(), nil
+}
+
+// MfgNewAPIHandler は POST /api/mfg/new です。入力: {items:[{order, row, item, qty}]}。製造ページを作り、そのIDを返します。
+func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Items []deliveryPick `json:"items"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	if len(req.Items) == 0 {
+		cms.JSONFail(w, http.StatusBadRequest, "製造を始める行を1つ以上選んでください")
+		return
+	}
+	mfg, machines := newMfgLookup(), newMachineLookup()
+	var lines []mfgLine
+	client := ""
+	for _, p := range req.Items {
+		ln, why := mfgLineOf(user, p, mfg, machines)
+		if why != "" {
+			cms.JSONFail(w, http.StatusConflict, why)
+			return
+		}
+		if client == "" {
+			client = ln.Client
+		} else if cms.NormalizeText(ln.Client) != cms.NormalizeText(client) {
+			cms.JSONFail(w, http.StatusBadRequest, "1つの製造は1社です（「"+client+"」と「"+ln.Client+"」が混ざっています）")
+			return
+		}
+		lines = append(lines, ln)
+	}
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].Due < lines[j].Due })
+	tmpl, err := cms.PageTemplateBody(MfgTemplate)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "製造ページを作れません: "+err.Error())
+		return
+	}
+	start := time.Now().Format("2006-01-02")
+	if _, err := buildMfgHTML(tmpl, "", client, start, lines); err != nil {
+		cms.JSONFail(w, http.StatusConflict, "製造ページを作れません: "+err.Error())
+		return
+	}
+	boxID, err := cms.EnsureTopLevelBox(MfgBoxTitle, user.Username)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "「"+MfgBoxTitle+"」を用意できません: "+err.Error())
+		return
+	}
+	newID, err := cms.CreateChildPage(boxID, user.Username, "<h1>作成中</h1>")
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "製造ページを作れません: "+err.Error())
+		return
+	}
+	body, err := buildMfgHTML(tmpl, newID, client, start, lines)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "製造ページを組めません: "+err.Error())
+		return
+	}
+	if !rewriteBodyOrFail(w, newID, user.Username, func(string) string { return body }) {
+		return
+	}
+	auth.Audit(user.Username, "mfg.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "url": "/" + newID})
+}

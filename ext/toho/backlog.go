@@ -106,6 +106,9 @@ type backlogRow struct {
 	Invoice         string
 	// Loss は赤字の見立ての1文です（2026-10-17・order_loss.go——受注の単価が見積の単価を下回る行だけ。空なら赤字でない）。
 	Loss string
+	// InMfg は製造ページに入れた数、MfgPages はその製造ページです（2026-10-19・mfg.go）。
+	InMfg    int
+	MfgPages []string
 }
 
 // backlogGroup は「顧客×納期」1組＝**1回の納品の単位**です。
@@ -157,6 +160,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	losses := newLossLookup(db, user) // 赤字の警告（2026-10-17・order_loss.go）
 	// 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go——受注明細表の欄は読まない）。
 	shippedBy := newShippedLookup(db)
+	mfgBy := newMfgLookup() // 製造ページに入れた数（2026-10-19・mfg.go）
 	for _, id := range pageIDs {
 		// ⚠ **読めないページは黙って落とします**（見せ分け・C案）。
 		if !page.CanView(user, id) {
@@ -206,6 +210,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				g = &backlogGroup{Client: client, Due: due, DueISO: iso}
 				byKey[key] = g
 			}
+			inMfgF, mfgPages := mfgBy.of(page.FormatID(id), r.Values["item-id"], r.Values["item-name"])
+			inMfg := int(inMfgF)
 			machine, fromProduct := machines.machineOf(id, r.Values["our-item-id"], r.Values["item-id"], r.Values["item-name"])
 			price, hasPrice := parseMoney(r.Values["price"])
 			g.Rows = append(g.Rows, backlogRow{
@@ -231,6 +237,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				DeliveryNote:    strings.TrimSpace(r.Values["delivery-note"]),
 				Invoice:         strings.TrimSpace(r.Values["invoice"]),
 				Loss:            backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice),
+				InMfg:           inMfg,
+				MfgPages:        mfgPages,
 			})
 		}
 	}
@@ -339,7 +347,9 @@ func backlogViewHTML(user *auth.User, _ int) string {
 		` <span class="backlog-rfq-say"></span>` +
 		// 選んだ行で納品書を作る（2026-10-17・delivery.go）——押すと、選んだ行と今回納める数（残りが初めから入っていて直せる）の欄が開く。
 		` <button type="button" class="backlog-dlv-go">🚚 選んだ行で納品書を作る</button> <span class="backlog-dlv-say"></span>` +
-		`<div class="backlog-dlv-panel" hidden></div></div>`)
+		// 選んだ行で製造を始める（2026-10-19・mfg.go）——押すと、選んだ行と今回作る数（まだ製造に入っていない数が初めから入っていて直せる）の欄が開く。
+		` <button type="button" class="backlog-mfg-go">🏭 選んだ行で製造開始</button> <span class="backlog-mfg-say"></span>` +
+		`<div class="backlog-dlv-panel" hidden></div><div class="backlog-mfg-panel" hidden></div></div>`)
 	for i, g := range groups {
 		b.WriteString(`<section class="backlog-sheet" data-backlog="` + strconv.Itoa(i) + `">`)
 		title := g.Client
@@ -370,7 +380,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`<th>状態</th>` +
 			`<th class="no-print">材料発注</th><th class="no-print">製造完了</th><th class="no-print">納品書発行</th>` +
 			`<th class="no-print">請求書発行</th>` +
-			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">受注</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
+			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">受注</th><th class="no-print">製造</th><th class="no-print">部材見積依頼</th><th class="no-print">納品</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -419,6 +429,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				`<td class="cell-atomic no-print backlog-gap">` + stdhtml.EscapeString(strings.Join(backlogGaps(r), "・")) + `</td>` +
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
+				noPrintCell(mfgCellHTML(r, g.Client)) +
 				noPrintCell(rfqPickHTML(r)) +
 				noPrintCell(deliveryPickHTML(r, g.Client)) +
 				`</tr>`)
