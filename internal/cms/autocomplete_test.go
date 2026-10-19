@@ -206,3 +206,19 @@ func TestAutocompleteSavedAsJSON(t *testing.T) {
 		t.Errorf("一覧が違います: %+v", list)
 	}
 }
+
+// TestAutocompleteReadsBodiesNotTablesCopy は、表の候補を本文から数え、表の写し（data/tables.db）に頼らないことを固定します（2026-10-19）。
+// 利用者:「材料の形状や外注加工等の推奨業者に候補が出ないのは何故？」——写しは `移行中` のページを入れないので、ワンノートから
+// 移した加工製品ページの値が1つも数えられていなかった。ここでは写しを空にしても候補が出ることを見る。
+func TestAutocompleteReadsBodiesNotTablesCopy(t *testing.T) {
+	seedAutocompletePages(t)
+	if err := ResetTablesDB(); err != nil {
+		t.Fatal(err)
+	}
+	if err := SurveyAutocomplete(); err != nil {
+		t.Fatal(err)
+	}
+	if got := CellChoiceCounts(alice, "加工表", "表面"); autoValues(got) != "黒:4,白:2" {
+		t.Errorf("写しを空にしたら候補が消えました（本文から数えていない）: %s", autoValues(got))
+	}
+}

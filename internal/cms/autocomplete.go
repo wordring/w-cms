@@ -11,8 +11,12 @@ package cms
 // 入力される定型的な値をDBから拾って決定する仕組みを作りましょう。」
 // 「オートコンプリートの候補一覧はJSON形式で保存しても良いかもしれませんね。それならエディタから読み込むのも容易です」
 //
-//   - 数えるのは、表のセル（data/tables.db・キャプションのある表の写し）と、タグの値（cms.db の page_tags）。
+//   - 数えるのは、表のセル（各ページの本文のキャプションのある表）と、タグの値（cms.db の page_tags）。
 //     表はキャプション＋列の見出し、タグは名前で、1つの「欄」として数える。テンプレートの中は数えない。
+//     ⚠ 表は data/tables.db（表の写し）からではなく、本文から数える（2026-10-19）——写しは `移行中` のページを入れない
+//     （確かめる前の移行のデータを集計に混ぜない・RegisterTablesExclusion）ので、ワンノートから移した加工製品ページの
+//     材料表の形状・外注加工表の推奨業者が、1つも数えられていなかった（利用者:「材料の形状や外注加工等の推奨業者に候補が出ないのは何故？」）。
+//     人が打った値は、確かめる前でも入力の候補としては役に立つ。集計と検索は、いままでどおり写しを読む（移行中を混ぜない）。
 //   - **暇なとき**——索引が最後に書き換わってから、設定 `autocomplete.idle_minutes` 分だけ何も書かれなかったら数え直す
 //     （書き換わっていなければ数え直さない）。
 //   - **定型の値**——`min_value_count` 回以上入力された値（表は行の数・タグはページの数）。1回しか入力されたことが無い値は出さない。
@@ -29,7 +33,6 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,6 +44,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/html"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -207,75 +212,74 @@ func loadAutocompleteFile() error {
 	return nil
 }
 
-// surveyTableCells は data/tables.db の表の列を数えます（テンプレートの中の表は、写しに入らない）。
+// surveyTableCells は、各ページの本文のキャプションのある表を、列ごとに数えます（テンプレートの中は数えない・移行中も数える）。
 func surveyTableCells(cfg *AutocompleteSettings, skip map[string]bool, out map[string]map[string][]autoChoice) error {
-	db := database.TablesDB
-	if db == nil {
-		return nil
-	}
-	tx, err := db.Begin()
+	// ⚠ **先に読み切ってから本文を読みます**（行を読みながら別の問い合わせを投げない——:memory: の罠）。
+	rows, err := database.DB.Query(`SELECT id FROM pages`)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	existing, err := existingTables(tx)
-	if err != nil {
-		return err
+	var ids []int
+	for rows.Next() {
+		var id int
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
 	}
-	for _, t := range existing {
-		if !t.Ours {
+	rows.Close()
+	// 表の名前 → 列の名前 → 値 → ページ → 行の数（名前は本文に書いたまま——captionTablesOf が正規化した形）。
+	counts := map[string]map[string]map[string]map[int]int{}
+	for _, id := range ids {
+		pid := page.FormatID(id)
+		if IsTemplateArea(pid) {
 			continue
 		}
-		cols, err := tableColumns(tx, t.Name)
-		if err != nil {
-			return err
+		body, err := ReadPageBody(pid)
+		if err != nil || !strings.Contains(body, "<caption") {
+			continue
 		}
-		for _, col := range cols {
-			if isSystemColumn(col) || skip[string(ColumnWord(t.Name, col).Type)] {
-				continue
-			}
-			byValue, err := countColumn(tx, t.Name, col)
-			if err != nil {
-				return err
-			}
-			if choices := steadyChoices(byValue, cfg); choices != nil {
-				if out[t.Name] == nil {
-					out[t.Name] = map[string][]autoChoice{}
+		root, err := html.Parse(strings.NewReader(body))
+		if err != nil {
+			continue
+		}
+		for _, ct := range captionTablesOf(root) {
+			for ci, col := range ct.Headers {
+				if col == "" || isSystemColumn(col) || skip[string(ColumnWord(ct.Name, col).Type)] {
+					continue
 				}
-				out[t.Name][col] = choices
+				for _, r := range ct.Rows {
+					if ci >= len(r.Cells) {
+						continue
+					}
+					v := strings.TrimSpace(r.Cells[ci])
+					if v == "" {
+						continue
+					}
+					if counts[ct.Name] == nil {
+						counts[ct.Name] = map[string]map[string]map[int]int{}
+					}
+					if counts[ct.Name][col] == nil {
+						counts[ct.Name][col] = map[string]map[int]int{}
+					}
+					if counts[ct.Name][col][v] == nil {
+						counts[ct.Name][col][v] = map[int]int{}
+					}
+					counts[ct.Name][col][v][id]++
+				}
+			}
+		}
+	}
+	for table, cols := range counts {
+		for col, byValue := range cols {
+			if choices := steadyChoices(byValue, cfg); choices != nil {
+				if out[table] == nil {
+					out[table] = map[string][]autoChoice{}
+				}
+				out[table][col] = choices
 			}
 		}
 	}
 	return nil
-}
-
-// countColumn は1列の値を、値 → ページ → 行の数で数えます（空のセルは数えない）。
-// ⚠ 式のセルは、写しに計算した結果が入っている（`=1+1` なら 2）ので、結果の値として数える。
-func countColumn(tx *sql.Tx, table, col string) (map[string]map[int]int, error) {
-	// ⚠ 名前は quoteIdent を通す（tables_db.go の冒頭）。
-	rows, err := tx.Query(`SELECT ` + colPageID + `, ` + quoteIdent(col) + ` FROM ` + quoteIdent(table) +
-		` WHERE ` + quoteIdent(col) + ` IS NOT NULL`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	byValue := map[string]map[int]int{}
-	for rows.Next() {
-		var pid int
-		var raw any
-		if err := rows.Scan(&pid, &raw); err != nil {
-			return nil, err
-		}
-		v := strings.TrimSpace(autoText(raw))
-		if v == "" {
-			continue
-		}
-		if byValue[v] == nil {
-			byValue[v] = map[int]int{}
-		}
-		byValue[v][pid]++
-	}
-	return byValue, rows.Err()
 }
 
 // surveyTags は page_tags のタグの値を、名前ごとに数えます（ページの数で数える・テンプレートの中は数えない）。
@@ -370,24 +374,6 @@ func pageKeys(pages map[int]int) map[string]int {
 		out[page.FormatID(id)] = n
 	}
 	return out
-}
-
-// autoText は写しの値を文字にします（数は書いたままの形に近く——1.0 ではなく 1）。
-func autoText(raw any) string {
-	switch v := raw.(type) {
-	case nil:
-		return ""
-	case string:
-		return v
-	case []byte:
-		return string(v)
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	default:
-		return fmt.Sprint(v)
-	}
 }
 
 // TagValueCount は候補の値1つと、それを使っている行（タグはページ）の数です。
