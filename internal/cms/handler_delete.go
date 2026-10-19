@@ -93,7 +93,13 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // moveToTrash はページのフォルダを data/trash へ移し、移動先パスを返します。
 // 同じIDが既にゴミ箱にある（削除→復元→再削除）場合は連番を付けて上書きを避けます。
+//
+// ⚠ **ページごとの書き込みの錠（body_lock.go）の中で移します**（2026-10-19）——錠の外で移すと、保存が読んでから書くまでの
+// あいだにフォルダが消え、保存が本文だけのフォルダを作り直して、消したはずのページが残った（【考察】文書の食い違い §3.4。
+// 家の試験で、索引だけの幽霊のページと、ごみ箱へ移らないページができた）。保存の側は、錠の中でページが在るかを見る（writeBody）。
+// ⚠ 呼び手は、同じページの錠を持ったまま呼ばないこと（再入できない）。
 func moveToTrash(id string) (string, error) {
+	defer LockPageBody(id)()
 	src := page.GetPageDir(id)
 	if _, err := os.Stat(src); os.IsNotExist(err) {
 		// フォルダが失われている（手動削除・過去の中断など）。ここで止めると

@@ -192,13 +192,18 @@ func writeBody(w http.ResponseWriter, id, htmlBody string) (updatedAt string, ok
 		http.Error(w, why, http.StatusConflict)
 		return "", false
 	}
+	// ⚠ **消されたページへは書きません**（2026-10-19・handler_delete.go の moveToTrash）——呼び手は錠の中で読んでから来るが、
+	// ここでもう一度見る。フォルダを作り直すと、ごみ箱へ移したはずのページが本文だけで生き返る（それまでは MkdirAll していた）。
+	pageDir := page.GetPageDir(id)
+	if _, err := os.Stat(filepath.Join(pageDir, id+".meta.json")); err != nil {
+		http.Error(w, "このページは削除されています（保存しませんでした）", http.StatusNotFound)
+		return "", false
+	}
 	updatedAt, err := page.BumpUpdatedAt(id)
 	if err != nil {
 		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
 		return "", false
 	}
-	pageDir := page.GetPageDir(id)
-	os.MkdirAll(pageDir, 0755)
 	if err := page.WriteFileAtomic(filepath.Join(pageDir, id+".html"), []byte(htmlBody), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return "", false
