@@ -150,9 +150,11 @@
   "attachment_readonly": [
     "通信箱"
   ],
-  "cell_choices": {
-    "max_values": 8,
+  "autocomplete": {
+    "min_value_count": 2,
+    "min_share": 0.8,
     "min_rows": 5,
+    "max_values": 30,
     "idle_minutes": 5,
     "skip_types": ["ref", "date", "datetime", "image", "email", "number"]
   },

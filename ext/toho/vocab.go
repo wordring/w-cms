@@ -137,6 +137,10 @@ var businessVocab = []cms.VocabDef{
 		// （顧客名のコンボボックスと同じ手）——⚠ **揃うのは採ったときだけ**で、
 		// 手打ちは止められません。
 		//
+		// ⚠ 2026-10-19 に、取引先の題から候補を出す仕組み（Suggest・suggest_partner.go）を外しました。利用者:「いま、表の推奨業者に
+		// 候補が出る仕組みがあると思いますが、これは冗長です。削除してオートコンプリートのコンボボックスで統一しましょう。」——いまの候補は、
+		// この列に何度も入力された定型的な値です（コアの autocomplete.go）。
+		//
 		// ⚠ **2026-09-28 に列を足しました**（【考察】部材の種類ごとの発注項目 §9.2・利用者:「足してよい」）:
 		//   - **番号**——1つの加工製品に外注加工が複数ありうるので、行ごとの連番（利用者:「個別に番号を
 		//     割り当てる必要があります」）。紙には「弊社品番-番号」（例 000235-1）で出す。**使い回さない**。
@@ -152,7 +156,7 @@ var businessVocab = []cms.VocabDef{
 			{Field: "color", Label: "表面", Type: cms.ColText},
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
 			{Field: "supplied", Label: "支給", Type: cms.ColText},
-			{Field: "vendor", Label: "推奨業者", Type: cms.ColText, Suggest: PartnerSuggestSource},
+			{Field: "vendor", Label: "推奨業者", Type: cms.ColText},
 			{Field: "docs", Label: docsColumnLabel, Type: cms.ColRef},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
@@ -172,7 +176,7 @@ var businessVocab = []cms.VocabDef{
 			{Field: "item-name", Label: "品名", Type: cms.ColText},
 			{Field: "spec", Label: "仕様", Type: cms.ColText},
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
-			{Field: "vendor", Label: "推奨業者", Type: cms.ColText, Suggest: PartnerSuggestSource},
+			{Field: "vendor", Label: "推奨業者", Type: cms.ColText},
 			{Field: "note", Label: "備考", Type: cms.ColText},
 			{Field: "status", Label: "区分", Type: cms.ColEnum, Enum: []string{"現行", "廃版"}},
 		},

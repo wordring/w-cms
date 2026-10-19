@@ -8,7 +8,8 @@
 //   ③ 候補を押すとセルに入る
 //   ④ 値がばらばらの列（品名）には出ない
 //
-// 暇を待たずに、管理者の口（/api/admin/cell-values/survey）で数えさせます（読むだけ・本文は書かない）。
+// 暇を待たずに、管理者の口（/api/admin/autocomplete/survey）で数えさせます（読むだけ・本文は書かない）。
+// ⚠ 2026-10-19 夜から、候補は「何度も入力された定型的な値」だけ（表面は黒3・白2で、どちらも2回以上）。
 // 当て先は自分で作って最後に消します（トップ直下に1枚）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-cell-choices.js
 const { chromium } = require('playwright');
@@ -38,7 +39,7 @@ const CAP = '【E2E】候補の表';
       '</tbody></table>');
     check('当て先を作れた', !!id, id);
     const surveyed = await page.evaluate(async () => {
-      const r = await fetch('/api/admin/cell-values/survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const r = await fetch('/api/admin/autocomplete/survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       return r.status + ' ' + (await r.text()).slice(0, 200);
     });
     check('管理者の口で数えた', /"success":true/.test(surveyed), surveyed);
@@ -75,7 +76,7 @@ const CAP = '【E2E】候補の表';
     // ④ 品名のセル
     await page.click('#w-editor-content table tr:nth-of-type(8) > td:nth-of-type(1)');
     await sleep(800);
-    check('④ 値がばらばらの列（品名）には出ない', (await shown()).length === 0, JSON.stringify(await shown()));
+    check('④ 行ごとに違う値を書く列（品名・どの値も1回）には出ない', (await shown()).length === 0, JSON.stringify(await shown()));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

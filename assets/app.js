@@ -5324,15 +5324,6 @@
 
     // ── 型検証（通知のみ・拒否しない）と enum の入力補助（語彙モデル §5.1・§5.2）──
     // 列型の決定順序はサーバー（vocab_index.go の resolveColumnType）と同じ:
-    // findVocabColumn は形式定義から鍵に対応する列を探す。サーバー側の columnFor
-    // （internal/cms/vocab.go）と**同じ規則**で、Label でも Field でも引ける
-    // （本文が運ぶ鍵は見出しの表示文字＝Label 側だが、レジストリ由来の機械キーでも
-    // 引けるようにしておくと、AI応答など機械キー起点の照合が同じ関数で済む）。
-    function findVocabColumn(def, key) {
-        if (!def || !key) return null;
-        return (def.columns || []).find(c => (c.field && c.field === key) || c.label === key) || null;
-    }
-
     // th の data-type 明示 > 設定の語彙（表の例外 → 列の名前・`columnWord`・2026-09-26 から） > text。
     // code は「畳んで比較する文字」（図面番号・発注書番号）。見た目も入力補助も
     // text と同じで、違うのはサーバー側の索引の畳み方だけ——だから検証は要らない。
@@ -5436,8 +5427,8 @@
     // resolveCellColumn はセルの属する列の {type, enum} を解決する（データ行の td 用）。
     //
     // 型は **`th[data-type]` の明示 → 語彙（`columnWord`）→ 文字列**。選択肢も語彙から。
-    // ⚠ **どの表を検証するか**（下の `def` の関門）と **`suggest`** はまだ登録を読みます
-    // ——前者は 4-4（引き金をキャプションで）、後者は語彙に置き場が無く 4-5 までに決める。
+    // ⚠ **どの表を検証するか**（下の `def` の関門）はまだ登録を読みます（4-4——引き金をキャプションで）。
+    // 2026-10-19 に `suggest`（候補の出どころ）を外しました——候補はオートコンプリート（fillCellChoiceMenu）だけです。
     function resolveCellColumn(cell) {
         const table = cell.closest('table');
         if (!table || !table.rows.length) return null;
@@ -5448,13 +5439,9 @@
         const key = th.textContent.trim();
         const explicit = th.getAttribute('data-type');
         const word = columnWord(tableNameOf(table), key);
-        const col = findVocabColumn(def, key); // `suggest` だけのため（上の注）
         const type = (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) ? explicit : word.type;
         // `label` は見出しの表示文字（＝項目の鍵）。折り返しの判定に使う。
-        // `suggest` は**候補の出どころの名前**（2026-09-21）——`enum` と違って
-        // 候補が**データから来る**列（`推奨業者` など）。
-        return { label: key, type, enum: word.values,
-                 suggest: (col && col.suggest) || '' };
+        return { label: key, type, enum: word.values };
     }
 
     // 値の解釈可否。サーバーの NormalizeValue と同じ規則（全角→半角・通貨記号と
@@ -5592,15 +5579,16 @@
         // ⚠ **候補は縛りではありません**（2026-09-21）。採らずに手で打てます
         //    ——揃うのは採ったときだけで、手打ちは止められません。それでも意味が
         //    あるのは**打つより選ぶほうが速い**からです。速ければ揃います。
-        const suggestFrom = (col && col.suggest) || '';
-        // タグの値は、DB にある値を多い順に出す（2026-10-19・internal/cms/tag_values.go——どのタグにも。enum なら語彙の選択肢を
-        // その数の順に並べ替える）。参照・日付・画像のタグは出さない（ページ番号や日付を選んでも役に立たない）。
+        // オートコンプリート（2026-10-19・internal/cms/autocomplete.go）——何度も入力された定型的な値を、サーバーが暇なときに
+        // DB から拾って置いておく。どの欄に出すか（定型の欄か・数えない型か）はサーバーが決める（画面は聞くだけ）。
+        //   - タグの値: その名前のタグの候補（enum なら語彙の選択肢を、その数の順に並べ替える）。
+        //   - 表のセル: キャプション＋列の見出しの候補。選択肢（enum）・画像の列は、いままでどおり（そちらが先）。
+        // 2026-10-19 利用者:「いま、表の推奨業者に候補が出る仕組みがあると思いますが、これは冗長です。削除してオートコンプリートの
+        // コンボボックスで統一しましょう。」——それまでの候補の出どころ（suggest・/api/suggest）は外した。
         const tagLabel = tagDD ? tagLabelOf(tagDD) : '';
-        const tagSuggest = !!tagLabel && TAG_VALUE_SKIP_TYPES.indexOf((col && col.type) || '') === -1;
-        // 表のセルは、値が数個に決まっている列なら、サーバーが暇なときに数えた候補を出す（2026-10-19・internal/cms/cell_choices.go）。
-        // 選択肢・画像・候補の出どころを持つ列は、いままでどおり（そちらが先）。どの列が数個に決まっているかはサーバーが決める。
-        const cellKey = (td && !isEnum && !isImage && !suggestFrom) ? cellChoiceKey(td) : null;
-        if (!isEnum && !isImage && !suggestFrom && !tagSuggest && !cellKey) { hideEnumMenu(); return; }
+        const tagSuggest = !!tagLabel;
+        const cellKey = (td && !isEnum && !isImage) ? cellChoiceKey(td) : null;
+        if (!isEnum && !isImage && !tagSuggest && !cellKey) { hideEnumMenu(); return; }
         if (cell === enumMenuCell) return; // 同じセル内のキャレット移動では作り直さない
 
         enumMenuCell = cell;
@@ -5634,15 +5622,11 @@
             });
             menu.appendChild(b);
         });
-        if (suggestFrom) fillSuggestMenu(menu, cell, suggestFrom);
         if (tagSuggest) return; // タグの候補は届いてから開く（fillTagValueMenu——空の枠を先に出さない）
         menu.classList.add('active');
         const rect = cell.getBoundingClientRect();
         placeFloating(menu, rect, 2);
     }
-
-    // TAG_VALUE_SKIP_TYPES は、DB の値を候補に出さないタグの型です（2026-10-19）。
-    const TAG_VALUE_SKIP_TYPES = ['ref', 'date', 'datetime', 'image'];
 
     // tagLabelOf はタグの値（dd）のすぐ前の dt の名前です（無ければ空）。
     function tagLabelOf(dd) {
@@ -5650,25 +5634,43 @@
         return dt && dt.tagName === 'DT' ? dt.textContent.trim() : '';
     }
 
-    // tagValueCache はタグの名前ごとの候補（/api/tag-values の答え）です——ページを開いているあいだ、同じ名前は1回だけ聞く。
-    const tagValueCache = new Map();
+    // ── オートコンプリートの候補の一覧（2026-10-19・internal/cms/autocomplete.go）──────────────────────
+    // サーバーが暇なときに数えて data/autocomplete.json に置いた一覧を、ページを開いたあと1回だけ読む（欄ごとに聞かない）。
+    //   2026-10-19 利用者:「オートコンプリートの候補一覧はJSON形式で保存しても良いかもしれませんね。それならエディタから読み込むのも容易です」
+    // 答えは読めるページだけを数えたもの。表はキャプション→列の見出し、タグは名前で引く（名前は畳んで比べる——autoFold）。
+    let autocompleteList = null;
+    function loadAutocomplete() {
+        if (!autocompleteList) {
+            autocompleteList = fetch('/api/autocomplete').then(r => r.json()).then(d => {
+                const cells = new Map(), tags = new Map();
+                Object.entries((d && d.cells) || {}).forEach(([t, cols]) => {
+                    const m = new Map();
+                    Object.entries(cols || {}).forEach(([c, vs]) => m.set(autoFold(c), vs || []));
+                    cells.set(autoFold(t), m);
+                });
+                Object.entries((d && d.tags) || {}).forEach(([n, vs]) => tags.set(n.trim(), vs || []));
+                return { cells, tags };
+            }).catch(() => { autocompleteList = null; return null; }); // 通信の失敗は覚えない（次にまた聞く）
+        }
+        return autocompleteList;
+    }
+
+    // autoFold は欄の名前を比べる形にします（サーバーの TableName＋ASCII の大小と同じ——全角半角を畳み、続いた空白は1つ）。
+    function autoFold(name) {
+        return (name || '').normalize('NFKC').trim().replace(/\s+/g, ' ').replace(/[A-Z]/g, c => c.toLowerCase());
+    }
 
     // fillTagValueMenu はタグの値の候補を、DB にある値の多い順にボタンで並べます（2026-10-19）。
+    //   ⚠ 同じ日の夜から、候補は「何度も入力された定型的な値」だけ（サーバーが暇なときに数える・internal/cms/autocomplete.go）。
     //   2026-10-19 利用者:「この値の数を数えて多い方から順に、ページ種類のタグを編集するときに値のコンボボックスとして出します。」
     //   - enum のタグ（enumValues がある）は、語彙の選択肢を DB の数の順に並べる（まだ無い選択肢は、語彙の順で後ろに）。
-    //   - それ以外のタグは、DB にある値（読めるページだけ・最大30）。0件なら何も出さない。
-    //   - ⚠ 候補は縛りではない（手で打てる）。⚠ 遅れて届くので、セルが変わっていたら捨てる（fillSuggestMenu と同じ）。
+    //   - それ以外のタグは、DB にある定型の値（読めるページだけ・最大は設定の max_values）。0件なら何も出さない。
+    //   - ⚠ 候補は縛りではない（手で打てる）。⚠ 遅れて届くので、セルが変わっていたら捨てる。
     async function fillTagValueMenu(menu, cell, label, enumValues) {
         menu.classList.remove('active'); // 前のセルの枠を、届くまで隠す（中身はもう空）
-        let p = tagValueCache.get(label);
-        if (!p) {
-            p = fetch('/api/tag-values?name=' + encodeURIComponent(label))
-                .then(r => r.json()).then(d => (d && d.values) || []).catch(() => null);
-            tagValueCache.set(label, p);
-        }
-        const got = await p;
+        const all = await loadAutocomplete();
         if (enumMenuCell !== cell) return; // 別のセルへ移っていたら捨てる
-        if (got === null) tagValueCache.delete(label); // 通信の失敗は覚えない（次にまた聞く）
+        const got = all ? (all.tags.get(label.trim()) || []) : [];
         const counts = new Map((got || []).map(x => [x.value, x.count]));
         let list;
         if (enumValues.length) {
@@ -5711,26 +5713,18 @@
         return { table: tableName, column };
     }
 
-    // cellChoiceCache は「表＋列」ごとの候補（/api/cell-values の答え）です——ページを開いているあいだ、同じ列は1回だけ聞く。
-    const cellChoiceCache = new Map();
-
     // fillCellChoiceMenu は表のセルの候補を、使っている行の多い順にボタンで並べます（2026-10-19）。
     //   2026-10-19 利用者:「表のセルの候補は、サーバーが暇なときに DB を数えて置いておく形で作ってください。値が数個に決まっている列だけに出し、何個までかは設定に置いてください。」
-    //   - 候補はサーバーが暇なときに数えたもの（読めるページだけ）。数個に決まっていない列・まだ数えていない列は何も出さない。
+    //   2026-10-19 利用者:「オートコンプリートのコンボボックスは、一回しか入力されたことが無い値は出さないようにしましょう。何度も入力される定型的な値をDBから拾って決定する仕組みを作りましょう。」
+    //   - 候補はサーバーが暇なときに数えた定型の値（何度も入力された値・読めるページだけ）。定型の欄でない列・まだ数えていない列は何も出さない。
     //   - ⚠ 候補は縛りではない（手で打てる）。⚠ 遅れて届くので、セルが変わっていたら捨てる（fillTagValueMenu と同じ）。
     async function fillCellChoiceMenu(menu, td, key) {
         menu.classList.remove('active');
-        const k = key.table + '|' + key.column;
-        let p = cellChoiceCache.get(k);
-        if (!p) {
-            p = fetch('/api/cell-values?table=' + encodeURIComponent(key.table) + '&column=' + encodeURIComponent(key.column))
-                .then(r => r.json()).then(d => (d && d.values) || []).catch(() => null);
-            cellChoiceCache.set(k, p);
-        }
-        const got = await p;
+        const all = await loadAutocomplete();
         if (enumMenuCell !== td) return; // 別のセルへ移っていたら捨てる
-        if (got === null) cellChoiceCache.delete(k); // 通信の失敗は覚えない
-        if (!got || !got.length) { hideEnumMenu(); enumMenuCell = td; return; }
+        const cols = all && all.cells.get(autoFold(key.table));
+        const got = (cols && cols.get(autoFold(key.column))) || [];
+        if (!got.length) { hideEnumMenu(); enumMenuCell = td; return; }
         got.forEach(({ value, count }) => {
             const b = document.createElement('button');
             b.type = 'button';
@@ -5773,7 +5767,7 @@
         placeFloating(menu, cell.getBoundingClientRect(), 2);
     }
 
-    // tagValueColumn はタグの値（dd）の {label, type, enum, suggest} を、すぐ前の dt の名前で設定の語彙から引きます
+    // tagValueColumn はタグの値（dd）の {label, type, enum} を、すぐ前の dt の名前で設定の語彙から引きます
     // （resolveCellColumn のタグ版・語彙に無い名前は null）。
     function tagValueColumn(dd) {
         const dt = dd.previousElementSibling;
@@ -5781,47 +5775,7 @@
         const label = dt.textContent.trim();
         const word = vocabWords[label];
         if (!word) return null;
-        return { label, type: word.type || (word.values ? 'enum' : ''), enum: word.values || [], suggest: '' };
-    }
-
-    // fillSuggestMenu は出どころから候補を取り、ボタンで並べます。
-    //
-    // ⚠ **`innerHTML` へ文字列を入れません**（候補はページの題＝人が書いた文字）。
-    // ⚠ **0件でも黙りません**——「候補が出ない」と「まだ登録していない」は別物です。
-    // ⚠ **遅れて届くので、セルが変わっていたら捨てます**（別のセルへ候補を出さない）。
-    async function fillSuggestMenu(menu, cell, source) {
-        const note = document.createElement('span');
-        note.className = 'enum-menu-note';
-        note.textContent = '候補を探しています…';
-        menu.appendChild(note);
-        let items = [];
-        try {
-            const res = await fetch('/api/suggest?source=' + encodeURIComponent(source) +
-                '&q=' + encodeURIComponent(cell.textContent.trim()));
-            const d = await res.json().catch(() => ({}));
-            items = (d && d.items) || [];
-        } catch (e) { /* 通信の失敗は「候補なし」と同じ扱い */ }
-        if (enumMenuCell !== cell) return; // 別のセルへ移っていたら捨てる
-        note.remove();
-        if (items.length === 0) {
-            const empty = document.createElement('span');
-            empty.className = 'enum-menu-note';
-            empty.textContent = '候補がありません（取引先に登録すると出ます）';
-            menu.appendChild(empty);
-            return;
-        }
-        items.forEach((v) => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.textContent = v;
-            b.addEventListener('click', () => {
-                cell.textContent = v;
-                validateCell(cell);
-                placeCaretAtEnd(cell);
-                hideEnumMenu();
-            });
-            menu.appendChild(b);
-        });
+        return { label, type: word.type || (word.values ? 'enum' : ''), enum: word.values || [] };
     }
 
     // ── PDF付きブロックのエンハンサ（語彙モデル §3: マーカー要素へ振る舞いを配線） ──

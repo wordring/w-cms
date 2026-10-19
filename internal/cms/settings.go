@@ -176,8 +176,8 @@ type Settings struct {
 	// コアが `通信箱` を名前で知ってはいけないので、**題を設定に書いてもらいます**。
 	AttachmentReadOnly []string `json:"attachment_readonly,omitempty"`
 
-	// CellChoices は表のセルの候補の数え方です（2026-10-19・cell_choices.go）。無ければ候補を数えません。
-	CellChoices *CellChoicesSettings `json:"cell_choices,omitempty"`
+	// Autocomplete はオートコンプリート（表のセルとタグの値の候補）の数え方です（2026-10-19・autocomplete.go）。無ければ候補を数えません。
+	Autocomplete *AutocompleteSettings `json:"autocomplete,omitempty"`
 }
 
 // settings は読み込み済みの設定です。**nil のあいだは設定が空のものとして振る舞います**
@@ -393,7 +393,7 @@ func (s Settings) validate(path string) error {
 			}
 		}
 	}
-	if err := validateCellChoices(path, s.CellChoices); err != nil {
+	if err := validateAutocomplete(path, s.Autocomplete); err != nil {
 		return err
 	}
 	if s.MaxUploadMiB < 0 {

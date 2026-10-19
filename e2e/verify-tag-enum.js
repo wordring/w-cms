@@ -8,11 +8,13 @@
 //   ③ 空の値（`移行中` の <br>）でも出て、選べる
 //   ④ どのページにも値の無いタグでは出ない
 //   ⑤ 閲覧モードでは出ない
-//   ⑥ 選択肢の無いタグでも、DB にある値を多い順に出す（2026-10-19・/api/tag-values）
+//   ⑥ 選択肢の無いタグでも、DB にある値を多い順に出す（2026-10-19・オートコンプリート・/api/autocomplete）
 //      ——利用者:「この値の数を数えて多い方から順に、ページ種類のタグを編集するときに値のコンボボックスとして出します。」
 //      ① の enum の選択肢も、DB の数の順に並ぶ。
+//      ⚠ 同じ日の夜から、1回しか入力されていない値は出さない（利用者:「オートコンプリートのコンボボックスは、一回しか入力されたことが無い
+//      値は出さないようにしましょう。」）。候補はサーバーが暇なときに数えるので、ここでは管理者の口で、いま数えさせる。
 //
-// 当て先はトップ直下に自分で作るページ（試すページ1枚と、⑥の値を持たせる3枚）で、最後に消します。
+// 当て先はトップ直下に自分で作るページ（試すページ1枚と、⑥の値を持たせる6枚）で、最後に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-tag-enum.js
 const { chromium } = require('playwright');
 const { login, makePage, deletePage } = require('./lib');
@@ -81,12 +83,17 @@ const caretIn = (page, sel) => page.$eval(sel, (el) => {
   const helpers = [];
   try {
     await login(page, BASE);
-    // ⑥ の値を持たせるページ（赤 2枚・青 1枚）——試すページより先に作る。
-    for (const v of ['赤', '青', '赤']) {
+    // ⑥ の値を持たせるページ（赤 3枚・青 2枚・黄 1枚）——試すページより先に作る。黄は1回だけなので候補に出ない。
+    for (const v of ['赤', '青', '赤', '黄', '青', '赤']) {
       helpers.push(await makePage(page, '<h1>' + MARK + ' 色の見本</h1><dl data-type="tags"><dt>' + COLOR + '</dt><dd>' + v + '</dd></dl>'));
     }
     id = await makePage(page, BODY);
     check('ページを作った', !!id, id);
+    const surveyed = await page.evaluate(async () => {
+      const r = await fetch('/api/admin/autocomplete/survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      return r.status + ' ' + (await r.text()).slice(0, 200);
+    });
+    check('管理者の口で、いま数えた', /"success":true/.test(surveyed), surveyed);
 
     await page.goto(BASE + '/' + id + '?edit=true');
     await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
@@ -97,7 +104,7 @@ const caretIn = (page, sel) => page.$eval(sel, (el) => {
     const items = await menuWait(page);
     // 並びは DB の数の順（同じ数なら語彙の順）——数は口から取って、期待を組む。
     const vocab = ['在籍', '休職', '出向', '退社'];
-    const counts = await page.evaluate(async () => (await (await fetch('/api/tag-values?name=' + encodeURIComponent('在籍'))).json()).values || []);
+    const counts = await page.evaluate(async () => ((await (await fetch('/api/autocomplete')).json()).tags || {})['在籍'] || []);
     const n = (v) => (counts.find((x) => x.value === v) || { count: 0 }).count;
     const want = vocab.map((v, i) => ({ v, i })).sort((a, b) => (n(b.v) - n(a.v)) || (a.i - b.i)).map((x) => x.v);
     check('① enum のタグの値で語彙の選択肢が、DB の数の順に出る',
@@ -129,7 +136,7 @@ const caretIn = (page, sel) => page.$eval(sel, (el) => {
     // ⑥
     await caretIn(page, await ddOf(page, COLOR));
     const colors = await menuWait(page);
-    check('⑥ 選択肢の無いタグでも、DB の値が多い順に出る（赤 2・青 1）', JSON.stringify(colors) === JSON.stringify(['赤', '青']), JSON.stringify(colors));
+    check('⑥ 選択肢の無いタグでも、DB の定型の値が多い順に出る（赤 3・青 2——1回だけの黄は出ない）', JSON.stringify(colors) === JSON.stringify(['赤', '青']), JSON.stringify(colors));
     await page.locator('#w-enum-menu button', { hasText: '青' }).click();
     check('⑥ 選ぶと値が替わる', (await page.$eval(await ddOf(page, COLOR), (d) => d.textContent.trim())) === '青');
 

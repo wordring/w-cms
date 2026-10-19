@@ -20,6 +20,7 @@ import (
 // コア（pages / page_perms）を同期したあと、配送係（walk.go）が本文を1回歩いて
 // 観察係（汎用索引 vocab_index）へ要素を届けます。
 func SyncIndex(id string, htmlContent string) error {
+	markIndexWritten() // オートコンプリートの候補を、暇になったら数え直す（autocomplete.go）
 	// 手順1: HTMLをノード木にパースする
 	root, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
