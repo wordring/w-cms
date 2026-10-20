@@ -30,6 +30,9 @@ import (
 func init() {
 	// **名簿に載る**（起動ログと画面の出し分け。internal/cms/extensions.go）。
 	cms.RegisterExtension("toho", "東邦の業務")
+	// **画面の JS も東邦の持ち物**です（2026-10-20・docs/考察/【考察】画面の JS のコアと拡張.md）——見積・部材見積依頼・案件残表・
+	// 部材発注・製造ページなどの鏡の配線。載っているときだけ殻が読み込む。
+	cms.RegisterScript("toho", "ext/toho/assets/toho.js")
 	cms.Register(materialsPlugin{})
 	// 計算ビューの描画も自分で登録する（形式の宣言と対）。
 	// ⚠ **描き方を 2026-09-21 に作り直しました**（view_procurement.go）。
