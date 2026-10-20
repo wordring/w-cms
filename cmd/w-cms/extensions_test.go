@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"w-cms/internal/extgen"
@@ -21,7 +22,8 @@ func TestExtensionMountsAreGenerated(t *testing.T) {
 	want := extgen.Files("w-cms", exts)
 	for name, body := range want {
 		got, err := os.ReadFile(name)
-		if err != nil || string(got) != body {
+		// 改行は畳んで比べる（Windows で取り出すと CRLF になる——git の autocrlf）。
+		if err != nil || strings.ReplaceAll(string(got), "\r\n", "\n") != body {
 			t.Errorf("⚠ 取り付け口 %s が古いか、ありません——`go generate ./cmd/w-cms` を流してください", name)
 		}
 	}
