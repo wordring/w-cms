@@ -397,44 +397,11 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	if row.Merge == "folder" {
 		return fileToMachineFolder(user, pageID, row)
 	}
-	// **人が打った値もここで正規化します**（2026-09-06 ユーザー:「顧客名、装置名称、
-	// 図面名称の値を早期に正規化したいです」）。この3つはそのままページの題になり、
-	// **題の完全一致が階層の同一性**なので、揃えないと同じ装置のページが2枚できます。
-	// 「人が打った値は見た目のまま」（normalize_text.go）の例外はここだけ——
-	// 本文の中身ではなく、木の鍵だからです。
-	customer := cms.NormalizeNameForIngest(row.Customer)
-	machine := cms.NormalizeNameForIngest(row.MachineName)
-	name := cms.NormalizeNameForIngest(row.DrawingName)
-
-	// **顧客名・製品名称の空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
-	// （通信箱が保留の置き場。空の顧客ページを増やさない）。
-	// ⚠ **装置名称は空でもよい**（2026-10-16 利用者:「装置名は新仕様とし、文書も修正して下さい」——【考察】全体の設計 §4.4
-	// 「その下にオプションで装置名フォルダ」「装置名が分からないメーカーもあるので」）。空なら社名の直下に置きます。
-	// それまでは装置名称の空も保留の意思表示でした。
-	if customer == "" || name == "" {
-		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "顧客名・製品名称のどちらかが空なので、そのままにしました"}
-	}
-	// **区分は表引きで閉じます**——「試作」と「試作品」が混ざると、絞るときに
-	// 静かに取りこぼします（設定の語彙 `区分` が正本）。
-	kinds, bad := cleanProductKinds(row.Kinds)
-	if bad != "" {
-		return filingResult{PageID: pageID, Outcome: "skipped",
-			Message: "区分「" + bad + "」は選べません（" + strings.Join(ProductKinds(), "・") + "）"}
-	}
-	idInt, refused, ok := filingSourceGate(user, pageID)
+	in, refused, ok := readFilingInput(user, pageID, row)
 	if !ok {
 		return refused
 	}
-	// **装置名称が空でも、その会社に装置名のフォルダがあれば、先に聞きます**（2026-10-16 利用者:「装置名のフォルダが
-	// あるのに、装置名を空にしている場合は、警告して保存の可否を問い合わせてください」）。何も書く前に聞きます。
-	if machine == "" && !row.ConfirmNoMachine {
-		if names := machineFoldersOf(user, customer); len(names) > 0 {
-			return filingResult{PageID: pageID, Outcome: "needs_confirm", Confirm: "no_machine",
-				Message: "「" + customer + "」には装置名のフォルダが " + strconv.Itoa(len(names)) + " つあります（" + strings.Join(firstN(names, 5), "・") +
-					"）。装置名称が空のままです。装置名称を入れずに、社名の直下に入れますか？"}
-		}
-	}
+	customer, machine, name := in.customer, in.machine, in.name
 
 	// **人が直した値を、図面ブロックにも書き戻します**（2026-09-11 ユーザー:「整理で
 	// 治した客先名は図面ブロックの索引にも反映させます。検索するときに困るからです」）。
@@ -485,16 +452,6 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	if machine == "" {
 		where = customer + "／" + name // 装置名の分からない品物は社名の直下
 	}
-	// kindsNote は区分を書いた結果を知らせる一言です（書けなくても整理は済んでいる）。
-	kindsNote := func(target string, replace bool) string {
-		if err := setProductKinds(user, target, kinds, replace); err != nil {
-			return "／⚠ 区分を書けませんでした: " + err.Error()
-		}
-		if len(kinds) > 0 {
-			return "（区分: " + strings.Join(kinds, "・") + "）"
-		}
-		return ""
-	}
 
 	// **行き先に同じ題のページがあるとき**——改定か、二つ目の図面か（2026-09-20）。
 	//
@@ -509,85 +466,163 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// **何枚も**ありえるので、図面追加・図面改定の相手は人が押した候補（`Target`）で決めます（1枚だけなら題で引く）。
 	sameTitle := childrenByTitle(machineID, name, pageID)
 	if len(sameTitle) > 0 && row.Merge != "new" {
-		if row.Merge != "drawing" && row.Merge != "revision" {
-			// **未選択なら動かしません。** ⚠ どちらかを既定にすると、見ないまま
-			// 押した人がその既定に従います——溶接図が黙って旧版になるのが、
-			// それまでの振る舞いでした。
-			return filingResult{PageID: pageID, Outcome: "needs_choice", TargetID: sameTitle[0],
-				// 言葉は画面の選択肢と同じ（2026-09-30 利用者の案「図面改定」「図面追加」）。
-				Message: "「" + name + "」は既にあります。「図面改定」か「図面追加」か、同じ名前の別の品物なら「新規」を選んでください"}
-		}
-		existing, why := pickMergeTarget(sameTitle, row.Target, name)
-		if why != "" {
-			return filingResult{PageID: pageID, Outcome: "needs_choice", Message: why}
-		}
-		// ⚠ **同じ添付・同じ図面番号は「疑わしい」**——止めずに人へ確認します
-		// （2026-09-20 ユーザー:「実は、同じ添付同じPDFの中に同じ図面番号で別図面が
-		// 入っているものがありました」）。**機械には重複を判定できません**ので、
-		// 最後の砦は「人が確認の文を読む」ことだけになりました。
-		suspicious, err := suspiciousSameSource(pageID, existing)
-		if err != nil {
-			return filingResult{PageID: pageID, Outcome: "skipped",
-				Message: "合流先を調べられません: " + err.Error()}
-		}
-		if suspicious && !row.ConfirmRevision {
-			return filingResult{PageID: pageID, Outcome: "needs_confirm", TargetID: existing,
-				Message: "「" + name + "」に、同じ添付から作られた同じ図面番号の図面が既にあります。" +
-					"⚠ 本来、同じ図番で別の図面はあってはならないので、" +
-					"二重に整理した可能性が高いです。" +
-					"先方の誤りで**実際に別の図面**なら、「承知のうえで進める」にチェックして実行してください"}
-		}
-		if suspicious {
-			// ⚠ **通したことを残します。** 本来あってはならない形（同じ図番で別図面）を
-			// 人の判断で受け入れた、という事実は、あとから「なぜ同じ番号が2枚あるのか」を
-			// 調べる人にとって唯一の手掛かりです。
-			auth.Audit(user.Username, "file-drawing.same-number-accepted", pageID+" -> "+existing)
-		}
-		// **図面追加で同じ図面が在る・図面改定で同じ図面が無い**ときは、人に確かめます（2026-10-03 利用者:「図面追加で同じ図面が
-		// 在ったら警告、図面改定で同じ図面が無ければ警告ということになります。警告ダイアログが出て、追加するかやめるか選んでは
-		// どうでしょうか」）。「同じ図面」は版の印を除いた図面番号が同じ図面（`sameDrawingKey`）。図面番号が読めていなければ
-		// 判断しない。画面は確認の文をダイアログに出し、進めるなら `confirm_revision` を付けて送り直す。
-		if !row.ConfirmRevision && (row.Merge == "drawing" || row.Merge == "revision") {
-			if msg := mergeMismatch(pageID, existing, row.Merge, name); msg != "" {
-				return filingResult{PageID: pageID, Outcome: "needs_confirm", TargetID: existing, Message: msg}
-			}
-		}
+		return fileIntoSameTitle(user, row, in, sameTitle, where)
+	}
+	return fileAsNewProduct(user, row, in, machineID, where, sameTitle)
+}
 
-		switch row.Merge {
-		case "drawing":
-			// ⚠ **図面名称は書き戻しません**（上の `syncDrawingFields` は
-			// `mergeDrawing` のとき名称を飛ばしています）。欄の値は**行き先を決める
-			// ため**のもので、運ぶブロックの中身（溶接図自身の名前と番号）はそのまま。
-			if err := mergeAsDrawing(user, pageID, existing); err != nil {
-				return filingResult{PageID: pageID, Outcome: "skipped",
-					Message: "図面追加できません: " + err.Error()}
-			}
-			auth.Audit(user.Username, "file-drawing.add", pageID+" -> "+existing)
-			return filingResult{PageID: pageID, Outcome: "added", TargetID: existing,
-				Message: where + " へ二つ目の図面として並べました" + kindsNote(existing, false)}
+// filingInput は整理の1行を正規化して確かめた値です（readFilingInput が組む・2026-10-20 に fileOneDrawing から分けた）。
+type filingInput struct {
+	pageID                  string
+	idInt                   int
+	customer, machine, name string
+	kinds                   []string
+}
 
-		case "revision":
-			// **偽の改定を作らない**——図面番号が同じものは人に確認する。
-			if reason, needsConfirm, err := checkRevision(pageID, existing, row.ConfirmRevision); err != nil {
-				return filingResult{PageID: pageID, Outcome: "skipped",
-					Message: "合流先を調べられません: " + err.Error()}
-			} else if reason != "" {
-				outcome := "skipped"
-				if needsConfirm {
-					outcome = "needs_confirm"
-				}
-				return filingResult{PageID: pageID, Outcome: outcome, TargetID: existing, Message: reason}
-			}
-			if err := mergeAsRevision(user, pageID, existing); err != nil {
-				return filingResult{PageID: pageID, Outcome: "skipped",
-					Message: "改定として合流できません: " + err.Error()}
-			}
-			auth.Audit(user.Username, "file-drawing.revision", pageID+" -> "+existing)
-			return filingResult{PageID: pageID, Outcome: "revision", TargetID: existing,
-				Message: where + " の改定図面として合流しました" + kindsNote(existing, false)}
+// readFilingInput は整理の1行の値を正規化して確かめます（空欄・区分・権限と編集中・装置名称の空の問い合わせ）。
+// 通らなければ、そのまま返す結果と false。
+func readFilingInput(user *auth.User, pageID string, row filingRequest) (filingInput, filingResult, bool) {
+	// **人が打った値もここで正規化します**（2026-09-06 ユーザー:「顧客名、装置名称、
+	// 図面名称の値を早期に正規化したいです」）。この3つはそのままページの題になり、
+	// **題の完全一致が階層の同一性**なので、揃えないと同じ装置のページが2枚できます。
+	// 「人が打った値は見た目のまま」（normalize_text.go）の例外はここだけ——
+	// 本文の中身ではなく、木の鍵だからです。
+	customer := cms.NormalizeNameForIngest(row.Customer)
+	machine := cms.NormalizeNameForIngest(row.MachineName)
+	name := cms.NormalizeNameForIngest(row.DrawingName)
+
+	// **顧客名・製品名称の空欄は「まだ決められない」の意思表示**——移さずに置いたままにします
+	// （通信箱が保留の置き場。空の顧客ページを増やさない）。
+	// ⚠ **装置名称は空でもよい**（2026-10-16 利用者:「装置名は新仕様とし、文書も修正して下さい」——【考察】全体の設計 §4.4
+	// 「その下にオプションで装置名フォルダ」「装置名が分からないメーカーもあるので」）。空なら社名の直下に置きます。
+	// それまでは装置名称の空も保留の意思表示でした。
+	if customer == "" || name == "" {
+		return filingInput{}, filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "顧客名・製品名称のどちらかが空なので、そのままにしました"}, false
+	}
+	// **区分は表引きで閉じます**——「試作」と「試作品」が混ざると、絞るときに
+	// 静かに取りこぼします（設定の語彙 `区分` が正本）。
+	kinds, bad := cleanProductKinds(row.Kinds)
+	if bad != "" {
+		return filingInput{}, filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "区分「" + bad + "」は選べません（" + strings.Join(ProductKinds(), "・") + "）"}, false
+	}
+	idInt, refused, ok := filingSourceGate(user, pageID)
+	if !ok {
+		return filingInput{}, refused, false
+	}
+	// **装置名称が空でも、その会社に装置名のフォルダがあれば、先に聞きます**（2026-10-16 利用者:「装置名のフォルダが
+	// あるのに、装置名を空にしている場合は、警告して保存の可否を問い合わせてください」）。何も書く前に聞きます。
+	if machine == "" && !row.ConfirmNoMachine {
+		if names := machineFoldersOf(user, customer); len(names) > 0 {
+			return filingInput{}, filingResult{PageID: pageID, Outcome: "needs_confirm", Confirm: "no_machine",
+				Message: "「" + customer + "」には装置名のフォルダが " + strconv.Itoa(len(names)) + " つあります（" + strings.Join(firstN(names, 5), "・") +
+					"）。装置名称が空のままです。装置名称を入れずに、社名の直下に入れますか？"}, false
+		}
+	}
+	return filingInput{pageID: pageID, idInt: idInt, customer: customer, machine: machine, name: name, kinds: kinds}, filingResult{}, true
+}
+
+// filingKindsNote は区分を書いた結果を知らせる一言です（書けなくても整理は済んでいる）。
+func filingKindsNote(user *auth.User, target string, kinds []string, replace bool) string {
+	if err := setProductKinds(user, target, kinds, replace); err != nil {
+		return "／⚠ 区分を書けませんでした: " + err.Error()
+	}
+	if len(kinds) > 0 {
+		return "（区分: " + strings.Join(kinds, "・") + "）"
+	}
+	return ""
+}
+
+// fileIntoSameTitle は、行き先に同じ題のページがあるときの整理です（図面追加・図面改定——2026-10-20 に fileOneDrawing から分けた）。
+// row.Merge が未選択なら、人に選ばせます。
+func fileIntoSameTitle(user *auth.User, row filingRequest, in filingInput, sameTitle []string, where string) filingResult {
+	pageID, name := in.pageID, in.name
+	kindsNote := func(target string, replace bool) string { return filingKindsNote(user, target, in.kinds, replace) }
+	if row.Merge != "drawing" && row.Merge != "revision" {
+		// **未選択なら動かしません。** ⚠ どちらかを既定にすると、見ないまま
+		// 押した人がその既定に従います——溶接図が黙って旧版になるのが、
+		// それまでの振る舞いでした。
+		return filingResult{PageID: pageID, Outcome: "needs_choice", TargetID: sameTitle[0],
+			// 言葉は画面の選択肢と同じ（2026-09-30 利用者の案「図面改定」「図面追加」）。
+			Message: "「" + name + "」は既にあります。「図面改定」か「図面追加」か、同じ名前の別の品物なら「新規」を選んでください"}
+	}
+	existing, why := pickMergeTarget(sameTitle, row.Target, name)
+	if why != "" {
+		return filingResult{PageID: pageID, Outcome: "needs_choice", Message: why}
+	}
+	// ⚠ **同じ添付・同じ図面番号は「疑わしい」**——止めずに人へ確認します
+	// （2026-09-20 ユーザー:「実は、同じ添付同じPDFの中に同じ図面番号で別図面が
+	// 入っているものがありました」）。**機械には重複を判定できません**ので、
+	// 最後の砦は「人が確認の文を読む」ことだけになりました。
+	suspicious, err := suspiciousSameSource(pageID, existing)
+	if err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped",
+			Message: "合流先を調べられません: " + err.Error()}
+	}
+	if suspicious && !row.ConfirmRevision {
+		return filingResult{PageID: pageID, Outcome: "needs_confirm", TargetID: existing,
+			Message: "「" + name + "」に、同じ添付から作られた同じ図面番号の図面が既にあります。" +
+				"⚠ 本来、同じ図番で別の図面はあってはならないので、" +
+				"二重に整理した可能性が高いです。" +
+				"先方の誤りで**実際に別の図面**なら、「承知のうえで進める」にチェックして実行してください"}
+	}
+	if suspicious {
+		// ⚠ **通したことを残します。** 本来あってはならない形（同じ図番で別図面）を
+		// 人の判断で受け入れた、という事実は、あとから「なぜ同じ番号が2枚あるのか」を
+		// 調べる人にとって唯一の手掛かりです。
+		auth.Audit(user.Username, "file-drawing.same-number-accepted", pageID+" -> "+existing)
+	}
+	// **図面追加で同じ図面が在る・図面改定で同じ図面が無い**ときは、人に確かめます（2026-10-03 利用者:「図面追加で同じ図面が
+	// 在ったら警告、図面改定で同じ図面が無ければ警告ということになります。警告ダイアログが出て、追加するかやめるか選んでは
+	// どうでしょうか」）。「同じ図面」は版の印を除いた図面番号が同じ図面（`sameDrawingKey`）。図面番号が読めていなければ
+	// 判断しない。画面は確認の文をダイアログに出し、進めるなら `confirm_revision` を付けて送り直す。
+	if !row.ConfirmRevision && (row.Merge == "drawing" || row.Merge == "revision") {
+		if msg := mergeMismatch(pageID, existing, row.Merge, name); msg != "" {
+			return filingResult{PageID: pageID, Outcome: "needs_confirm", TargetID: existing, Message: msg}
 		}
 	}
 
+	switch row.Merge {
+	case "drawing":
+		// ⚠ **図面名称は書き戻しません**（上の `syncDrawingFields` は
+		// `mergeDrawing` のとき名称を飛ばしています）。欄の値は**行き先を決める
+		// ため**のもので、運ぶブロックの中身（溶接図自身の名前と番号）はそのまま。
+		if err := mergeAsDrawing(user, pageID, existing); err != nil {
+			return filingResult{PageID: pageID, Outcome: "skipped",
+				Message: "図面追加できません: " + err.Error()}
+		}
+		auth.Audit(user.Username, "file-drawing.add", pageID+" -> "+existing)
+		return filingResult{PageID: pageID, Outcome: "added", TargetID: existing,
+			Message: where + " へ二つ目の図面として並べました" + kindsNote(existing, false)}
+
+	case "revision":
+		// **偽の改定を作らない**——図面番号が同じものは人に確認する。
+		if reason, needsConfirm, err := checkRevision(pageID, existing, row.ConfirmRevision); err != nil {
+			return filingResult{PageID: pageID, Outcome: "skipped",
+				Message: "合流先を調べられません: " + err.Error()}
+		} else if reason != "" {
+			outcome := "skipped"
+			if needsConfirm {
+				outcome = "needs_confirm"
+			}
+			return filingResult{PageID: pageID, Outcome: outcome, TargetID: existing, Message: reason}
+		}
+		if err := mergeAsRevision(user, pageID, existing); err != nil {
+			return filingResult{PageID: pageID, Outcome: "skipped",
+				Message: "改定として合流できません: " + err.Error()}
+		}
+		auth.Audit(user.Username, "file-drawing.revision", pageID+" -> "+existing)
+		return filingResult{PageID: pageID, Outcome: "revision", TargetID: existing,
+			Message: where + " の改定図面として合流しました" + kindsNote(existing, false)}
+	}
+	return filingResult{PageID: pageID, Outcome: "needs_choice", Message: "図面改定か図面追加を選んでください"} // 上の switch のどれかで戻る
+}
+
+// fileAsNewProduct は、新しい加工製品として行き先へ置く整理です（2026-10-20 に fileOneDrawing から分けた）。
+func fileAsNewProduct(user *auth.User, row filingRequest, in filingInput, machineID, where string, sameTitle []string) filingResult {
+	pageID, idInt, customer, name := in.pageID, in.idInt, in.customer, in.name
+	kindsNote := func(target string, replace bool) string { return filingKindsNote(user, target, in.kinds, replace) }
 	// ⚠ **改定・追加を選んだのに行き先が無いときは、作りません**（2026-09-30）——それまでは黙って新しい加工製品
 	// ページになっていました（改定のつもりが新規・画面の選択肢がいつも出ていた間は実際に起こり得た）。相手は候補を
 	// 押すか、装置名称・図面名称を既にあるページに合わせて決めます。

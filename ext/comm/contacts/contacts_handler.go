@@ -74,38 +74,9 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	person := cms.NormalizeNameForIngest(req.PersonName)
 	doms := normalizeDomains(req.Domains)
 
-	// ── 行き先の組織を決める（2026-09-17 に3つの道を1本にした）──
-	//
-	// ① `page_id` で名指し ② 題の完全一致で既にある組織 ③ 無ければ新しく作る。
-	// **②が要るのは、組織がコンボボックスになったから**——候補に無い名前を打っても、
-	// 同じ題の組織が既にあればそこへ寄せます（会社ページを2枚にしない）。
-	// 揺れは吸収しません（`PartnerByTitle` は完全一致・2枚あれば引かない）。
-	target := strings.TrimSpace(req.PageID)
-	orgTitle := ""
-	if target != "" {
-		norm, ok := page.NormalizeID(target)
-		if !ok {
-			cms.JSONFail(w, http.StatusBadRequest, "相手ページのIDが不正です")
-			return
-		}
-		idInt, err := strconv.Atoi(norm)
-		if err != nil || !isPartnerPage(idInt) {
-			// **箱の外へは足しません**（ドメインの逆引きが別物を拾うため）。
-			cms.JSONFail(w, http.StatusBadRequest, "「"+ContactsBoxTitle+"」の下のページを選んでください")
-			return
-		}
-		target, orgTitle = norm, cms.PageTitleByID(idInt)
-	} else {
-		// **相手ページの題も早期に正規化します**（2026-09-06）。加工製品の階層の顧客名と
-		// 題で結ぶので、こちらだけ畳まないと食い違います。
-		orgTitle = cms.NormalizeNameForIngest(req.Name)
-		if orgTitle == "" {
-			cms.JSONFail(w, http.StatusBadRequest, "組織の名前を入れてください（社名か「"+PersonalOrgTitle+"」）")
-			return
-		}
-		if id, ok := PartnerByTitle(user, orgTitle); ok {
-			target = id
-		}
+	target, orgTitle, ok := resolveContactOrg(w, user, req.PageID, req.Name)
+	if !ok {
+		return
 	}
 	// 「個人」は人の器です。ドメイン（共有のもの）は付けません。
 	personal := orgTitle == PersonalOrgTitle
@@ -117,67 +88,16 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		doms = nil
 	}
 
-	// ⚠ **作り始める前に、要るテンプレートを確かめます**（2026-09-27・テンプレート駆動の D）
-	// ——組織を作ったあとで人のテンプレートが無いと分かると、組織だけが残ります。
-	var need []string
-	if target == "" {
-		need = append(need, OrgTemplate)
-	}
-	if person != "" {
-		if _, found := cms.FindChildByTitle(target, cms.NormalizeNameForIngest(person)); target == "" || !found {
-			need = append(need, PersonTemplate)
-		}
-	}
-	for _, tt := range need {
-		if _, err := cms.PageTemplateBody(tt); err != nil {
-			cms.JSONFail(w, http.StatusConflict, "連絡先を登録できません: "+err.Error())
-			return
-		}
+	if !requireContactTemplates(w, target, person) {
+		return
 	}
 
 	created := false
 	if target == "" {
-		// ── 新しい組織ページを作る ──
-		// **相手ページは「連絡帳」の下**。箱がまだ無いときはトップへ1枚足すので、
-		// **トップへの書き込み**が要ります。
-		needParent := cms.TopPageID
-		if id, ok := ContactsBoxPageID(); ok {
-			needParent = id
-		}
-		if !page.RequirePageWrite(w, r, needParent) {
-			return
-		}
-		boxID, err := EnsureContactsBox(user)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "「"+ContactsBoxTitle+"」ページを作れません: "+err.Error())
-			return
-		}
-		// **本文はテンプレート「連絡帳の組織」を写して組みます**（2026-09-27）——電話番号など
-		// **人が書く欄**はテンプレートが持ちます（それまでは空の段落1つ:「書く場所が見えて
-		// いれば、人は書きます」）。機械が入れるのは題と、ここで分かったアドレス・ドメインだけ。
-		d, err := cms.DraftFromTemplate(OrgTemplate)
-		if err != nil {
-			cms.JSONFail(w, http.StatusConflict, "相手ページを作れません: "+err.Error())
-			return
-		}
-		d.SetTitle(orgTitle)
-		// 担当者が居なければ、アドレスは組織の口として組織のページへ（人が居れば下で人へ）。
-		if person == "" {
-			d.SetTag(EmailTag, addrs...)
-		}
-		// **組織の連絡先**（2026-09-16）。これがあると、同じドメインの**新しい人**からの
-		// 初メールも、この組織に結びつきます。⚠ 共有ドメインに付けると、そのドメインの
-		// 他人まで引き寄せます——だから**人が組織のページで書きます**（2026-09-17 に画面の
-		// チェックを外した。口はここに残っている）。
-		d.SetTag(DomainTag, doms...)
-		target, err = cms.CreateChildPage(boxID, user.Username, d.HTML())
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
+		if target, ok = createContactOrg(w, r, user, orgTitle, person, addrs, doms); !ok {
 			return
 		}
 		created = true
-		auth.Audit(user.Username, "contact.register",
-			target+" "+strings.Join(addrs, ",")+domainsForAudit(doms))
 	} else if !page.RequirePageWrite(w, r, target) {
 		return
 	}
@@ -237,6 +157,112 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"added": added, "domains_added": domainsAdded,
 		"merged": !created, "created": created,
 	})
+}
+
+// resolveContactOrg は登録の行き先の組織を決めます（2026-10-20 に RegisterContactAPIHandler から分けた）。
+// target が空なら新しく作る組織（題は orgTitle）。通らなければ断りを書いて false。
+func resolveContactOrg(w http.ResponseWriter, user *auth.User, pageID, name string) (target, orgTitle string, ok bool) {
+	// ── 行き先の組織を決める（2026-09-17 に3つの道を1本にした）──
+	//
+	// ① `page_id` で名指し ② 題の完全一致で既にある組織 ③ 無ければ新しく作る。
+	// **②が要るのは、組織がコンボボックスになったから**——候補に無い名前を打っても、
+	// 同じ題の組織が既にあればそこへ寄せます（会社ページを2枚にしない）。
+	// 揺れは吸収しません（`PartnerByTitle` は完全一致・2枚あれば引かない）。
+	target = strings.TrimSpace(pageID)
+	if target != "" {
+		norm, ok := page.NormalizeID(target)
+		if !ok {
+			cms.JSONFail(w, http.StatusBadRequest, "相手ページのIDが不正です")
+			return "", "", false
+		}
+		idInt, err := strconv.Atoi(norm)
+		if err != nil || !isPartnerPage(idInt) {
+			// **箱の外へは足しません**（ドメインの逆引きが別物を拾うため）。
+			cms.JSONFail(w, http.StatusBadRequest, "「"+ContactsBoxTitle+"」の下のページを選んでください")
+			return "", "", false
+		}
+		target, orgTitle = norm, cms.PageTitleByID(idInt)
+	} else {
+		// **相手ページの題も早期に正規化します**（2026-09-06）。加工製品の階層の顧客名と
+		// 題で結ぶので、こちらだけ畳まないと食い違います。
+		orgTitle = cms.NormalizeNameForIngest(name)
+		if orgTitle == "" {
+			cms.JSONFail(w, http.StatusBadRequest, "組織の名前を入れてください（社名か「"+PersonalOrgTitle+"」）")
+			return "", "", false
+		}
+		if id, ok := PartnerByTitle(user, orgTitle); ok {
+			target = id
+		}
+	}
+	return target, orgTitle, true
+}
+
+// requireContactTemplates は、作る前に要るテンプレートがあるかを確かめます（無ければ断りを書いて false）。
+func requireContactTemplates(w http.ResponseWriter, target, person string) bool {
+	// ⚠ **作り始める前に、要るテンプレートを確かめます**（2026-09-27・テンプレート駆動の D）
+	// ——組織を作ったあとで人のテンプレートが無いと分かると、組織だけが残ります。
+	var need []string
+	if target == "" {
+		need = append(need, OrgTemplate)
+	}
+	if person != "" {
+		if _, found := cms.FindChildByTitle(target, cms.NormalizeNameForIngest(person)); target == "" || !found {
+			need = append(need, PersonTemplate)
+		}
+	}
+	for _, tt := range need {
+		if _, err := cms.PageTemplateBody(tt); err != nil {
+			cms.JSONFail(w, http.StatusConflict, "連絡先を登録できません: "+err.Error())
+			return false
+		}
+	}
+	return true
+}
+
+// createContactOrg は新しい組織ページを「連絡帳」の下に作ります（2026-10-20 に RegisterContactAPIHandler から分けた）。
+// 作れなければ断りを書いて false。
+func createContactOrg(w http.ResponseWriter, r *http.Request, user *auth.User, orgTitle, person string, addrs, doms []string) (string, bool) {
+	// ── 新しい組織ページを作る ──
+	// **相手ページは「連絡帳」の下**。箱がまだ無いときはトップへ1枚足すので、
+	// **トップへの書き込み**が要ります。
+	needParent := cms.TopPageID
+	if id, ok := ContactsBoxPageID(); ok {
+		needParent = id
+	}
+	if !page.RequirePageWrite(w, r, needParent) {
+		return "", false
+	}
+	boxID, err := EnsureContactsBox(user)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "「"+ContactsBoxTitle+"」ページを作れません: "+err.Error())
+		return "", false
+	}
+	// **本文はテンプレート「連絡帳の組織」を写して組みます**（2026-09-27）——電話番号など
+	// **人が書く欄**はテンプレートが持ちます（それまでは空の段落1つ:「書く場所が見えて
+	// いれば、人は書きます」）。機械が入れるのは題と、ここで分かったアドレス・ドメインだけ。
+	d, err := cms.DraftFromTemplate(OrgTemplate)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "相手ページを作れません: "+err.Error())
+		return "", false
+	}
+	d.SetTitle(orgTitle)
+	// 担当者が居なければ、アドレスは組織の口として組織のページへ（人が居れば下で人へ）。
+	if person == "" {
+		d.SetTag(EmailTag, addrs...)
+	}
+	// **組織の連絡先**（2026-09-16）。これがあると、同じドメインの**新しい人**からの
+	// 初メールも、この組織に結びつきます。⚠ 共有ドメインに付けると、そのドメインの
+	// 他人まで引き寄せます——だから**人が組織のページで書きます**（2026-09-17 に画面の
+	// チェックを外した。口はここに残っている）。
+	d.SetTag(DomainTag, doms...)
+	target, err := cms.CreateChildPage(boxID, user.Username, d.HTML())
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "相手ページを作れません: "+err.Error())
+		return "", false
+	}
+	auth.Audit(user.Username, "contact.register",
+		target+" "+strings.Join(addrs, ",")+domainsForAudit(doms))
+	return target, true
 }
 
 // UnfileContactAPIHandler は POST /api/contacts/unfile です。

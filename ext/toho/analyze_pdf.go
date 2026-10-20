@@ -325,58 +325,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
 	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
 	if !j.IsClientOrder && j.DocType == "drawing" {
-		// ⚠ **1枚につき1ページ作ります**（2026-09-20 ユーザー決定）。1つのPDFに
-		// 複数の図面が入っていることがあり、しかも**別々の製造製品**かもしれません
-		// ——最初から1ページにまとめると、別物だったときに人が切り離せません
-		// （分ける操作がない）。まとめるのは整理で人が決めます
-		// （「二つ目の図面として追加」）。
-		drawings := j.drawingList()
-		if len(drawings) == 0 {
-			// 図面と判定したのに1枚も取れなかった——**黙って0ページで終わらない**。
-			cms.JSONFail(w, http.StatusBadGateway,
-				"図面と判定しましたが、図面番号も図面名称も読み取れませんでした")
-			return
-		}
-		// ⚠ **本文を全部組んでから作り始めます**——テンプレートに図面ブロック・改訂明細表が
-		// 無ければ、1枚も作らずに断ります（途中まで作って止まると、人が片付けることになる）。
-		made := []map[string]any{}
-		totalMatched := 0
-		bodies := make([]string, 0, len(drawings))
-		for _, d := range drawings {
-			dj := d.asJudgment()
-			matches := MatchDXFAttachments(pageID, dj.DrawingNo)
-			totalMatched += len(matches)
-			body, err := buildProductPageHTML(productTmpl, pageID, attachID, dj, matches)
-			if err != nil {
-				cms.JSONFail(w, http.StatusConflict, "加工製品ページを作れません: "+err.Error())
-				return
-			}
-			bodies = append(bodies, body)
-		}
-		for _, body := range bodies {
-			newID, err := cms.CreateChildPage(pageID, user.Username, body)
-			if err != nil {
-				// ⚠ **途中で失敗しても、できたぶんは残します**——作れた図面まで
-				// 捨てると、人はもう一度解析するしかなくなり、**通ったぶんが二重に
-				// できます**。何枚できたかを返して、人に見てもらいます。
-				cms.JSONFail(w, http.StatusInternalServerError,
-					"加工製品ページを作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
-				return
-			}
-			auth.Audit(user.Username, "analyze-drawing", newID+" from "+pageID+"/"+fileName)
-			made = append(made, map[string]any{"page_id": newID, "title": pageTitleOf(newID)})
-		}
-		out := map[string]any{
-			"success": true, "is_client_order": false, "doc_type": "drawing",
-			"pages": made, "matched_dxf": totalMatched,
-		}
-		// **1枚のときは今までどおりの形も返します**——画面が `page_id` を読んで
-		// いるので、応答の形を変えただけで表示が壊れないように。
-		if len(made) == 1 {
-			out["page_id"] = made[0]["page_id"]
-			out["title"] = made[0]["title"]
-		}
-		json.NewEncoder(w).Encode(out)
+		answerDrawings(w, user, pageID, fileName, attachID, productTmpl, j)
 		return
 	}
 	if !j.IsClientOrder {
@@ -385,6 +334,61 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		return
 	}
 
+	answerOrders(w, user, pageID, fileName, attachID, orderTmpl, j)
+}
+
+// answerDrawings は図面と判定した PDF から、図面1枚につき1枚の加工製品ページを記録の子に作って答えます
+// （2026-10-20 に analyzeWithTemplates から分けた）。
+func answerDrawings(w http.ResponseWriter, user *auth.User, pageID, fileName, attachID, productTmpl string, j *orderJudgment) {
+	// ⚠ **1枚につき1ページ作ります**（2026-09-20 ユーザー決定）。1つのPDFに
+	// 複数の図面が入っていることがあり、しかも**別々の製造製品**かもしれません
+	// ——最初から1ページにまとめると、別物だったときに人が切り離せません
+	// （分ける操作がない）。まとめるのは整理で人が決めます
+	// （「二つ目の図面として追加」）。
+	drawings := j.drawingList()
+	if len(drawings) == 0 {
+		// 図面と判定したのに1枚も取れなかった——**黙って0ページで終わらない**。
+		cms.JSONFail(w, http.StatusBadGateway,
+			"図面と判定しましたが、図面番号も図面名称も読み取れませんでした")
+		return
+	}
+	// ⚠ **本文を全部組んでから作り始めます**——テンプレートに図面ブロック・改訂明細表が
+	// 無ければ、1枚も作らずに断ります（途中まで作って止まると、人が片付けることになる）。
+	totalMatched := 0
+	bodies := make([]string, 0, len(drawings))
+	for _, d := range drawings {
+		dj := d.asJudgment()
+		matches := MatchDXFAttachments(pageID, dj.DrawingNo)
+		totalMatched += len(matches)
+		body, err := buildProductPageHTML(productTmpl, pageID, attachID, dj, matches)
+		if err != nil {
+			cms.JSONFail(w, http.StatusConflict, "加工製品ページを作れません: "+err.Error())
+			return
+		}
+		bodies = append(bodies, body)
+	}
+	made, ok := createAnalyzedPages(w, user, pageID, bodies, "加工製品ページ", func(newID string) {
+		auth.Audit(user.Username, "analyze-drawing", newID+" from "+pageID+"/"+fileName)
+	})
+	if !ok {
+		return
+	}
+	out := map[string]any{
+		"success": true, "is_client_order": false, "doc_type": "drawing",
+		"pages": made, "matched_dxf": totalMatched,
+	}
+	// **1枚のときは今までどおりの形も返します**——画面が `page_id` を読んで
+	// いるので、応答の形を変えただけで表示が壊れないように。
+	if len(made) == 1 {
+		out["page_id"] = made[0]["page_id"]
+		out["title"] = made[0]["title"]
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+// answerOrders は顧客の発注書と判定したものから、発注書1枚につき1枚の案件ページを記録の子に作って答えます
+// （2026-10-20 に analyzeWithTemplates から分けた）。
+func answerOrders(w http.ResponseWriter, user *auth.User, pageID, fileName, attachID, orderTmpl string, j *orderJudgment) {
 	// ⚠ **発注書1枚につき1ページ**（2026-09-30・`orderList`）。図面の枝と同じく、**本文を全部組んでから作り始めます**
 	// ——テンプレートに足りない印があれば1枚も作らずに断る（途中まで作って止まると、人が片付けることになる）。
 	sheets := j.orderList()
@@ -397,16 +401,8 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		}
 		bodies = append(bodies, body)
 	}
-	made := []map[string]any{}
 	linked := 0
-	for _, body := range bodies {
-		newID, err := cms.CreateChildPage(pageID, user.Username, body)
-		if err != nil {
-			// ⚠ できたぶんは残す（図面の枝と同じ——捨てると押し直しで二重にできる）。
-			cms.JSONFail(w, http.StatusInternalServerError,
-				"案件ページを作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
-			return
-		}
+	made, ok := createAnalyzedPages(w, user, pageID, bodies, "案件ページ", func(newID string) {
 		auth.Audit(user.Username, "analyze-pdf", newID+" from "+pageID+"/"+fileName)
 		// ⚠ **作った直後に、いま在る加工製品ページと結びます**（2026-09-21・[link_item.go]）。
 		// **図面が先に届いていた場合、ここで結ばないと一度も埋まりません**——図面の整理は
@@ -415,7 +411,9 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		// ⚠ **解析の失敗にはしません**——結べなくても受注ページは正しく作れています。
 		// 埋まった行数は画面へ返し、人が「何が起きたか」を見られるようにします。
 		linked += LinkProductsToOrder(user, newID)
-		made = append(made, map[string]any{"page_id": newID, "title": pageTitleOf(newID)})
+	})
+	if !ok {
+		return
 	}
 	// **1枚のときは今までどおりの形**（`page_id`・`title`）——画面がそれを読んでいる。2枚以上は `pages` も。
 	out := map[string]any{
@@ -426,6 +424,25 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		out["pages"] = made
 	}
 	json.NewEncoder(w).Encode(out)
+}
+
+// createAnalyzedPages は、組み上がった本文 bodies を記録 pageID の子に順に作り、作ったページ（page_id・title）を返します
+// （図面の枝と案件の枝が写していた——2026-10-20 に寄せた）。after は1枚作るたびに呼ぶ（監査・結び）。
+// ⚠ **途中で失敗しても、できたぶんは残します**——作れたページまで捨てると、人はもう一度解析するしかなくなり、
+// **通ったぶんが二重にできます**。何枚目まで作れたかを断りに入れて、人に見てもらいます（断りを書いて false）。
+func createAnalyzedPages(w http.ResponseWriter, user *auth.User, pageID string, bodies []string, what string, after func(newID string)) ([]map[string]any, bool) {
+	made := []map[string]any{}
+	for _, body := range bodies {
+		newID, err := cms.CreateChildPage(pageID, user.Username, body)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError,
+				what+"を作れません（"+strconv.Itoa(len(made))+"枚目まで作成済み）: "+err.Error())
+			return nil, false
+		}
+		after(newID)
+		made = append(made, map[string]any{"page_id": newID, "title": pageTitleOf(newID)})
+	}
+	return made, true
 }
 
 // loadPDFForAnalysis は解析対象のPDFの中身を読みます。
