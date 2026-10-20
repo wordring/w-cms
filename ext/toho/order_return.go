@@ -20,6 +20,7 @@ package toho
 
 import (
 	"net/http"
+	"reflect"
 	"strconv"
 
 	"w-cms/internal/auth"
@@ -58,27 +59,50 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//    「必要部材表へ戻すを押すと発注明細から消えますが、必要部材表へは表示されません」）。
 	//    ⚠ **先に臨時部材表へ足してから、部材発注書から外します**——途中で失敗したとき、
 	//    行が**消える**より**2か所に残る**ほうへ倒すためです（残ったほうは人が消せる）。
-	returned := false
-	if cur, err := cms.ReadPageBody(pageID); err == nil {
-		if _, ln, ok := takeOrderRow(cur, req.Row); ok && needsTempParts(ln) {
-			if err := returnToTempParts(user, ln); err != nil {
-				cms.JSONFail(w, http.StatusConflict, "臨時部材表へ戻せません: "+err.Error())
-				return
-			}
-			returned = true
-		}
+	cur, err := cms.ReadPageBody(pageID)
+	if err != nil {
+		cms.JSONFail(w, http.StatusNotFound, "部材発注書のページを読めません: "+err.Error())
+		return
 	}
-	removed := false
+	_, first, ok := takeOrderRow(cur, req.Row)
+	if !ok {
+		cms.JSONFail(w, http.StatusConflict, "戻す行がありません（画面を読み直してください）")
+		return
+	}
+	returned := false
+	if needsTempParts(first) {
+		if err := returnToTempParts(user, first); err != nil {
+			cms.JSONFail(w, http.StatusConflict, "臨時部材表へ戻せません: "+err.Error())
+			return
+		}
+		returned = true
+	}
+	// ⚠ **外すのは、読んだときと同じ中身の行だけ**です（2026-10-20）——行は錠の外で読んで臨時部材表へ写したので、そのあいだに
+	//    ほかの人の保存で行がずれると、番号だけで外すと**写した行とは別の行が消えていた**。中身が違えば外さずに断ります。
+	removed, moved := false, false
+	if rebuildBeforeWrite != nil {
+		rebuildBeforeWrite(pageID) // 試験だけ（読んでから書くまでのあいだに、ほかの人の保存を挟む）
+	}
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, _, ok := takeOrderRow(cur, req.Row)
-		removed = ok
+		out, ln, ok := takeOrderRow(cur, req.Row)
+		if !ok {
+			return cur
+		}
+		if !reflect.DeepEqual(ln, first) {
+			moved = true
+			return cur
+		}
+		removed = true
 		return out
 	}) {
 		return
 	}
-	if !removed {
-		cms.JSONFail(w, http.StatusConflict,
-			"戻す行がありません（画面を読み直してください）")
+	if moved || !removed {
+		msg := "戻す行が変わっています（画面を読み直してください）"
+		if returned {
+			msg += "。臨時部材表へは写しました——部材発注書に残った行と重なっていれば、片方を消してください"
+		}
+		cms.JSONFail(w, http.StatusConflict, msg)
 		return
 	}
 	to := "必要部材表"

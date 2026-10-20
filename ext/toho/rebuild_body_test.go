@@ -227,3 +227,38 @@ func TestRFQNewDocKeepsOtherDraftTable(t *testing.T) {
 		t.Errorf("片付けられなかったことを知らせていません: %v", out)
 	}
 }
+
+// TestOrderReturnRowRefusesShiftedRow は、「必要部材表へ戻す」で、読んでから外すまでのあいだにほかの人の保存で行がずれたら、
+// 番号だけで別の行を外さずに 409 で断ることを固定します（order_return.go・2026-10-20）。
+func TestOrderReturnRowRefusesShiftedRow(t *testing.T) {
+	setupExtTest(t, "000152", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	seedBody(t, "000152", returnTestBody())
+
+	// bob が、表の先頭に行を1つ足す（2行目だった FB がずれて3行目に）。
+	hit := betweenReadAndWrite(t, func(cur string) string {
+		return strings.Replace(cur, "<tr><td>000031</td><td>鉄</td><td>板</td>",
+			"<tr><td>000031</td><td>鉄</td><td>丸棒</td><td>φ10</td><td>1</td><td>未発注</td></tr><tr><td>000031</td><td>鉄</td><td>板</td>", 1)
+	})
+	if code, out := postRFQ(t, u, OrderReturnRowAPIHandler, map[string]any{"page_id": "000152", "row": 2}); code != 409 {
+		t.Errorf("⚠ ずれた行を外しています（409 のはず）: %d %v", code, out)
+	}
+	if hit() != 1 {
+		t.Fatalf("ほかの人の保存を挟めていません（%d 回）", hit())
+	}
+	body := readPageBody(t, "000152")
+	for _, keep := range []string{"t3.2*100*200", "t4.5*75*1090", "t9*100*150", "φ10"} {
+		if !strings.Contains(body, keep) {
+			t.Errorf("⚠ %s の行が消えています:\n%s", keep, body)
+		}
+	}
+
+	// ずれていなければ、指した行を外す。
+	rebuildBeforeWrite = nil
+	if code, out := postRFQ(t, u, OrderReturnRowAPIHandler, map[string]any{"page_id": "000152", "row": 3}); code != 200 {
+		t.Fatalf("外せません: %d %v", code, out)
+	}
+	if body := readPageBody(t, "000152"); strings.Contains(body, "t4.5*75*1090") || !strings.Contains(body, "φ10") {
+		t.Errorf("指した行（FB）だけを外していません:\n%s", body)
+	}
+}

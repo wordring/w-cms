@@ -32,6 +32,7 @@ package toho
 import (
 	"errors"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -386,6 +387,8 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//    （途中で失敗したとき、行が消えるより2か所に残るほうへ倒す）。
 	boxID, hasBox := purchaseOrderBoxID()
 	sameBox := hasBox && samePage(boxID, pageID)
+	// copied は、別のページの臨時部材表へ先に写した行です（無ければ nil）。
+	var copied *ourOrderLine
 	if !sameBox {
 		if cur, err := cms.ReadPageBody(pageID); err == nil {
 			if _, ln, ok := takeDraftRow(cur, req.Table, req.Row); ok && needsTempParts(ln) {
@@ -393,21 +396,33 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 					cms.JSONFail(w, http.StatusConflict, "臨時部材表へ戻せません: "+err.Error())
 					return
 				}
+				copied = &ln
 			}
 		}
 	}
-	done := false
+	// ⚠ **写した行を外すときは、写したときと同じ中身の行だけ**です（2026-10-20）——行は錠の外で読んだので、そのあいだに
+	//    ほかの人の保存で行がずれると、番号だけで外すと写した行とは別の行が消えていた。中身が違えば外さずに断ります。
+	done, moved := false, false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		out, ln, ok := takeDraftRow(cur, req.Table, req.Row)
-		done = ok
 		if !ok {
 			return cur
 		}
+		if copied != nil && !reflect.DeepEqual(ln, *copied) {
+			moved = true
+			return cur
+		}
+		done = true
 		if sameBox && needsTempParts(ln) {
 			out, _ = addTempParts(out, []ourOrderLine{ln})
 		}
 		return out
 	}) {
+		return
+	}
+	if moved {
+		cms.JSONFail(w, http.StatusConflict,
+			"その行が変わっています（画面を読み直してください）。臨時部材表へは写しました——発注部材表に残った行と重なっていれば、片方を消してください")
 		return
 	}
 	if !done {
