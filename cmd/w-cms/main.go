@@ -305,6 +305,8 @@ func buildHandler() http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		assets.ServeHTTP(w, r)
 	}))
+	// 拡張の画面の JS（2026-10-20・internal/cms/ext_scripts.go）——登録した1本ずつだけを、ディスクから配る。
+	root.HandleFunc(cms.ExtScriptPrefix, cms.ExtScriptHandler)
 	root.HandleFunc("/login", auth.LoginPageHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 

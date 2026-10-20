@@ -309,6 +309,8 @@
      window.wcmsMailCompose を呼ぶときには揃っている。 -->
 <script src="/assets/mail-compose.js"></script>
 <script src="/assets/app.js"></script>
+<!-- 拡張の画面の JS（2026-10-20・サーバーが登録された分だけ差し込む——internal/cms/ext_scripts.go）。コアの app.js のあとに読む。 -->
+<!--WCMS_EXT_SCRIPTS-->
 <!-- セッションの失効の5分前に告知する（2026-10-14・【要求】権限 §1）。app.js に頼らない（書きかけの有無だけ window.wcmsHasUnsaved で聞く）。 -->
 <script src="/assets/session.js"></script>
 
