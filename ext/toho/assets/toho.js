@@ -4,7 +4,7 @@
 // 材料を探す・必要部材表から部材発注書・部材発注書を送る・加工製品の一覧・製造ページ の、鏡（サーバーが描いたクローム）の配線です。
 //
 // ⚠ **コアの中身には手を出しません**——使うのは app.js が渡す window.wcms だけ。サーバーは東邦の拡張が載っているときだけ
-// この JS を読み込ませる（ext/toho/plugin.go の cms.RegisterScript）。
+// この JS を読み込ませる（置き場の決まりで拾う・internal/cms/ext_scripts.go——2026-10-20 夕までは cms.RegisterScript で名乗っていた）。
 // ⚠ **鏡の配線は、サーバーが描いた属性だけで動くように書きます**・**配線は document へ委譲します**（コアの「鏡のボタンに共通の道具」と同じ決まり）。
 // ⚠ **`innerHTML` へ文字列を入れません**（createElement＋textContent・保存型XSSの前科）。
 (function () {
@@ -1984,16 +1984,16 @@ delegateClick([['.mfg-estimate-go', async (btn) => {
 w.onChrome(openRFQReplyFromHash);
 
 // ── 版 4 から東邦の JS が持つ部分（2026-10-20 に app.js の前半から移した）——加工製品ページの整理の欄・🤖 解析と解析済みの印・
-// あとから改定にする。コアの添付の札とファイルの「⋯」には、onAttachment・onFileMenu の口で足す。
+// あとから改定にする。ファイルの「⋯」には onFileMenu の口で足す（🤖 解析のボタンは記録の箱の中・2026-10-20 夕から）。
 if (w.version >= 4) {
 const { askConfirm, askChoice, openDialog, readResult, failMessage, jsonPost, tagValue, hasExtension, reloadContent, loadChildNav } = w;
-const makeAnalyzedMark = w.analyzedMark;
 const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ・ext/comm の ChannelTag と同じ言葉）
 // BY_HAND_REPLY_HINT は 🤖 解析が「どれでもない」と答えたときに添える、手で作る道です（2026-10-19・ext/toho/rfq_reply_page.go）。
 // 利用者:「このようなエクセル形式でも解析できるようにならないでしょうか？ならない場合、手作業で見積もり回答書を作れるとありがたいです」
 const BY_HAND_REPLY_HINT = '業者の値段の表なら、メールの「作るページ」の「部材見積依頼の返事ページ（手で書く）」で手で作れます。';
 
-// analyzedMap は「添付ID → 解析で生まれたページ」。印を出すために持ちます。
+// analyzedMap は「添付ID → 解析で生まれたページ」。ZIP のまとめて解析で、解析済みを飛ばすために持ちます
+// （解析済みの印は、サーバーが記録の箱に描く・ext/toho/record_sections.go）。
 //
 // **印そのものは保存していません**——解析が書いた `受信元` の逆引きです。
 // だから、間違った解析をゴミ箱へ入れれば印も消え、もう一度解析できます。
@@ -2002,8 +2002,8 @@ let analyzedMap = {};
 // zipPDFs は「ZIP の添付ID → 中のPDF（[{id, file, path}]・中のパスの順）」（2026-09-30・まとめて解析）。
 let zipPDFs = {};
 
-// refreshAnalyzedMarks は解析済みの一覧を取り直し、印を描き直します。
-async function refreshAnalyzedMarks() {
+// loadAnalyzeState は解析済みの一覧と ZIP の中の PDF を取り直し、記録の箱の 🤖 解析の置き場にボタンを組みます。
+async function loadAnalyzeState() {
     if (!w.pageId()) return;
     if (!hasExtension('toho')) { analyzedMap = {}; zipPDFs = {}; return; } // 下請けが無ければ問わない（404を出さない）
     try {
@@ -2880,7 +2880,7 @@ function makeZipAnalyzeButton(pageId, pdfs) {
     return btn;
 }
 
-// makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付）。
+// makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF・表計算の添付）。
 // ⚠ ZIP の中の PDF には出しません（2026-09-17）——取り込みが ZIP を展開して中身を
 // 1つずつ添付にするので、解析はページ直下の PDF だけを見ます（`entry` 引数は廃止）。
 // 押すと /api/analyze-attachment が Gemini で判定し、発注書なら受注ページを
@@ -2948,10 +2948,9 @@ function makeAnalyzeButton(pageId, file) {
         //
         // **丸ごとの再読み込みにはしません**——`reloadContent()` は本文を
         // 取り直すだけなので、通知・巻き上げ位置・開いているPDFの外側は残ります。
-        // 書きかけを失う心配も要りません: 📎 の「🤖 解析」は閲覧モードにしか出ません
-        // （`refreshAttachmentPreviews` が書ける形で早々に戻ります）。「⋯」のメニューの解析
-        // （runAnalyzeFile）は書ける形でも押せますが、書ける形の `reloadContent()` は書きかけを先に
-        // 保存して、変わったブロックだけ受け取ります（2026-10-12 から）。
+        // 書きかけを失う心配も要りません: 記録の箱の「🤖 解析」も「⋯」のメニューの解析（runAnalyzeFile）も
+        // 書ける形で押せますが、書ける形の `reloadContent()` は書きかけを先に保存して、変わったブロックだけ
+        // 受け取ります（2026-10-12 から）。
         if (born) {
             await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
             loadChildNav();        // 左レールの子ページ一覧
@@ -3021,7 +3020,7 @@ async function supersedeDrawingFrom(host) {
     loadChildNav();
 }
 
-// runAnalyzeFile は添付1つを 🤖 解析します（📎 の「🤖 解析」と同じ口と知らせ——makeAnalyzeButton）。
+// runAnalyzeFile は添付1つを 🤖 解析します（記録の箱の「🤖 解析」と同じ口と知らせ——makeAnalyzeButton）。
 function runAnalyzeFile(pageId, file) {
     notify('🤖 解析しています…', { type: 'info', duration: 0, id: 'analyze-pdf' });
     makeAnalyzeButton(pageId, file).click();
@@ -3072,7 +3071,7 @@ w.onFileMenu((info, items, f) => {
     }
 });
 
-w.onChrome(refreshAnalyzedMarks);
+w.onChrome(loadAnalyzeState);
 w.onChrome(refreshFilingButton);
 }
 })();

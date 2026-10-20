@@ -1,7 +1,7 @@
 // 連絡帳の拡張の画面——「未分類へ戻す」と、未登録の連絡先の「組織」「担当者」「登録」（2026-10-20 に assets/app.js から移した・docs/考察/【考察】画面の JS のコアと拡張.md）。
 //
 // ⚠ **コアの中身には手を出しません**——使うのは app.js が渡す window.wcms だけ。サーバーはこの拡張が載っているときだけ
-// この JS を読み込ませる（ext/comm/contacts/plugin.go の cms.RegisterScript）。
+// この JS を読み込ませる（置き場の決まりで拾う・internal/cms/ext_scripts.go——2026-10-20 夕までは cms.RegisterScript で名乗っていた）。
 // ⚠ **`innerHTML` へ文字列を入れません**（createElement＋textContent・保存型XSSの前科）。
 (function () {
 'use strict';
@@ -24,7 +24,6 @@ const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, fai
 // 確かめず、`メールアドレス` のタグがあるページならどこでも出します）。
 // 押すとそのタグだけ外れ、未登録の一覧へ戻ります。**ページは消しません**
 // （空になったら、そう伝えるだけ）。
-const EMAIL_TAG = 'メールアドレス';
 
 
 async function unfileContact(btn, addr, dt, dd) {

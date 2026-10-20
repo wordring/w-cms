@@ -1,20 +1,15 @@
 // 通信の拡張の画面（2026-10-20 に assets/app.js から移した・docs/考察/【考察】画面の JS のコアと拡張.md）。
 //
-// 通信の記録ページ（`チャネル` のタグがあるページ）の下に出す箱です——「作るページ」（記録から作るページ・ext/comm/record_make.go）・
-// 「✉️ 返信」（メールの拡張・ext/comm/mail/assets/mail-compose.js の送る欄）・「🧵 やりとりの前後」（/api/thread）・
-// 「📨 この記録への返信」（/api/replies）。
+// 通信の記録ページの「記録の箱」（本文の印 <section data-mirror="記録の箱">・中身はサーバーが描く——ext/comm/record_box.go）の
+// 「作成」と、☎ かける（`電話番号` のタグの飾り・ext/comm/phone_decor.go）・通信箱の未処理と「＋ 記録する」の配線です。
 //
 // ⚠ **コアの中身には手を出しません**——使うのは app.js が渡す window.wcms だけ。サーバーは通信の拡張が載っているときだけ
-// この JS を読み込ませる（ext/comm/comm_routes.go の cms.RegisterScript）。
+// この JS を読み込ませる（置き場の決まりで拾う・internal/cms/ext_scripts.go——2026-10-20 夕までは cms.RegisterScript で名乗っていた）。
 // ⚠ **`innerHTML` へ文字列を入れません**（createElement＋textContent・保存型XSSの前科）。
 (function () {
 'use strict';
 const w = window.wcms;
 if (!w) return; // コアが古い（読み込む順が崩れた）——何もしない
-
-const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
-// DRAFT_TAG は下書きの印のタグです（ext/comm/compose.go の comm.DraftTag と同じ言葉・2026-09-30）。
-const DRAFT_TAG = '下書き';
 
 
 // makeFromRecord は選んだ種類のページを作ります（POST /api/record-make）。案件ページ（2026-10-19 まで受注ページ）は Gemini が本文を読むので時間がかかる。
@@ -75,7 +70,6 @@ const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, fai
 //
 // `tel:` はサニタイザが元から許すスキームなので、**ソフトフォンがあれば今日から
 // 押せます**。CTI の発信APIへ変えるときも、記録の形は変わりません。
-const PHONE_TAG = '電話番号';
 
 
 // createCallRecord は発信の記録を作り、書けるように開きます。

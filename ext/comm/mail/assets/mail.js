@@ -1,7 +1,7 @@
 // メールの拡張の画面——通信箱の「📥 新しいメールを読み込む」とメールのサインイン（2026-10-20 に assets/app.js から移した・docs/考察/【考察】画面の JS のコアと拡張.md）。
 //
 // ⚠ **コアの中身には手を出しません**——使うのは app.js が渡す window.wcms だけ。サーバーはこの拡張が載っているときだけ
-// この JS を読み込ませる（ext/comm/mail/plugin.go の cms.RegisterScript）。
+// この JS を読み込ませる（置き場の決まりで拾う・internal/cms/ext_scripts.go——2026-10-20 夕までは cms.RegisterScript で名乗っていた）。
 // ⚠ **`innerHTML` へ文字列を入れません**（createElement＋textContent・保存型XSSの前科）。
 (function () {
 'use strict';

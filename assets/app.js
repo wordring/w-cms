@@ -5823,18 +5823,6 @@
 
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
 
-    // makeAnalyzedMark は「✓ 図面」の印を作ります（押すと生まれたページへ飛ぶ）。
-    //
-    // ユーザー:「一度解析したファイルには解析済みの印と『図面』などの解析結果を
-    // 付けては？」「添付ファイルのボタンの横あたりで良いのでは？」（2026-09-06）。
-    function makeAnalyzedMark(r) {
-        const mark = makeEl('a', 'vocab-chrome attach-expand attach-analyzed');
-        mark.href = '/' + r.page_id;
-        mark.textContent = '✓ ' + r.kind;
-        mark.title = (r.title || r.page_id) + ' を作りました（押すと開きます）';
-        return mark;
-    }
-
     function refreshAttachmentPreviews() {
         document.querySelectorAll('#w-editor-content .attach-expand, #w-editor-content .attach-preview')
             .forEach(el => el.remove());
@@ -5855,7 +5843,7 @@
             // 値は添付IDを手で調べないと書けませんでした。
             const copyRef = makeCopyRefButton(m[1], m[2]);
             btn.insertAdjacentElement('afterend', copyRef);
-            // 拡張が札を足す口（2026-10-20・window.wcms.onAttachment）——東邦の「🤖 解析」「中のPDFをまとめて解析」（ext/toho/assets/toho.js）。
+            // 拡張が添付の札を足す口（2026-10-20・window.wcms.onAttachment）。
             runAttachmentHooks({ link: a, pageId: m[1], attachId: m[2], ext: kind, viewButton: btn, refButton: copyRef });
         });
         // PDF・ZIP 以外の添付（STEP・DXF・Excel …）にも「🔗 参照」（2026-10-01 利用者:「STEPファイルも加工製品ページで参照して
@@ -8945,7 +8933,7 @@ window.wcms = Object.freeze({
     onAttachment(fn) { attachmentHooks.push(fn); },
     // onFileMenu は「ファイルの ⋯ に項目を足す」口です。fn(info, items, { pageId, attachId, file }) が items を足し替える。
     onFileMenu(fn) { fileMenuHooks.push(fn); },
-    // refreshAttachments は添付の札を描き直します（拡張が解析済みの印を取り直したあとなど）。
+    // refreshAttachments は添付の札を描き直します（拡張が札の材料を取り直したあとなど）。
     refreshAttachments: () => refreshAttachmentPreviews(),
     askConfirm: (message, yes, no) => askConfirm(message, yes, no),
     askChoice: (message, labels) => askChoice(message, labels),
@@ -8961,7 +8949,6 @@ window.wcms = Object.freeze({
     notify: (message, opts) => notify(message, opts),
     reloadContent: () => reloadContent(),
     loadChildNav: () => loadChildNav(),
-    analyzedMark: (r) => makeAnalyzedMark(r),
 });
 
 // sayIn は欄の中身をその1文だけにします（欄が無ければ何もしない）。
