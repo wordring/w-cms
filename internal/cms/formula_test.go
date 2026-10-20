@@ -38,7 +38,7 @@ func TestEvalRowFormulas(t *testing.T) {
 		{"空の式", []string{"板", "100", "3", "="}, 3, "", "式が空です"},
 	}
 	for _, c := range cases {
-		got := EvalRowFormulas(headers, c.cells)
+		got := evalRowFormulas(headers, c.cells)
 		r := got[c.col]
 		if !r.Formula {
 			t.Errorf("%s: 式と読まれていません", c.name)
@@ -55,14 +55,14 @@ func TestEvalRowFormulas(t *testing.T) {
 		}
 	}
 	// 式でないセルは触らない。
-	if r := EvalRowFormulas(headers, []string{"板", "100"}); r[0].Formula || r[1].Formula {
+	if r := evalRowFormulas(headers, []string{"板", "100"}); r[0].Formula || r[1].Formula {
 		t.Errorf("式でないセルが式と読まれています: %+v", r)
 	}
 }
 
 // TestFormulaCellValues は DB へ入れる値——計算できたら値、できなければ書いたまま——を固定します。
 func TestFormulaCellValues(t *testing.T) {
-	got := FormulaCellValues([]string{"単価", "個数", "価格", "税込"}, []string{"12.5", "3", "=個数*単価", "=価格*不明"})
+	got := formulaCellValues([]string{"単価", "個数", "価格", "税込"}, []string{"12.5", "3", "=個数*単価", "=価格*不明"})
 	if strings.Join(got, "|") != "12.5|3|37.5|=価格*不明" {
 		t.Errorf("DB へ入れる値が違います: %q", got)
 	}
@@ -249,7 +249,7 @@ func TestFormulaRound(t *testing.T) {
 		{"中のエラーはそのまま", []string{"多数", "10", "=ROUND(原価)"}, "", "「原価」が数ではありません"},
 		{"閉じていない", []string{"1", "10", "=ROUND(原価"}, "", "ROUND の中は式1つです"},
 	} {
-		r := EvalRowFormulas(headers, c.cells)[2]
+		r := evalRowFormulas(headers, c.cells)[2]
 		if c.err != "" {
 			if !strings.Contains(r.Err, c.err) {
 				t.Errorf("%s: エラーが %q（%q を含むはず）", c.name, r.Err, c.err)

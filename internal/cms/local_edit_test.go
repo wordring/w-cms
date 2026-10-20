@@ -64,7 +64,7 @@ func TestLocalEditRoundTrip(t *testing.T) {
 	if b, _ := os.ReadFile(fp); !strings.Contains(string(b), "EDITED") {
 		t.Errorf("中身が差し替わっていません: %q", b)
 	}
-	if v := AttachmentVersions("000101", "a1b2.dxf"); len(v) != 1 {
+	if v := attachmentVersions("000101", "a1b2.dxf"); len(v) != 1 {
 		t.Errorf("前の中身が版に残っていません: %v", v)
 	}
 	// ⚠ 古い ETag のままの上書き（ほかの誰かが先に書き換えた）は断る——黙って上書きしない。

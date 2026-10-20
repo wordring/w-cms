@@ -102,12 +102,12 @@ func TestResolvePartnerRefusesWhenAmbiguous(t *testing.T) {
 		t.Fatalf("2社が持つドメインで1つに決めてしまいました: %s %q", id, title)
 	}
 	// **候補としては両方出ます**（人が選べるように）。
-	refs, truncated := PartnerCandidates(u, "who@shared.example.jp", 10)
+	refs, truncated := partnerCandidates(u, "who@shared.example.jp", 10)
 	if len(refs) != 2 || truncated {
 		t.Fatalf("候補が2件出ません: %+v truncated=%v", refs, truncated)
 	}
 	// ⚠ **件数制限は必須**——ヤフーのようなドメインでは候補が1万件になりえます。
-	refs, truncated = PartnerCandidates(u, "who@shared.example.jp", 1)
+	refs, truncated = partnerCandidates(u, "who@shared.example.jp", 1)
 	if len(refs) != 1 || !truncated {
 		t.Errorf("件数制限が効いていません: %+v truncated=%v", refs, truncated)
 	}

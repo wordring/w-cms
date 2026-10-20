@@ -32,7 +32,6 @@ import (
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 )
 
@@ -146,17 +145,17 @@ func afterOrderMail(user *auth.User, pageID, recordID string) error {
 	if !page.GetPerms(n).CanWrite(user) || cms.IsTemplateArea(pageID) {
 		return errors.New("発注済みの印を付けられませんでした（このページを書き換える権限がありません）。行ごとの「✓ 発注済」を押してください。")
 	}
-	if holder, open := editlock.Locks.EditorOpen(n); open {
-		return errors.New("発注済みの印を付けられませんでした（このページは編集中です（" + holder + "））。編集が終わったら行ごとの「✓ 発注済」を押してください。")
-	}
 	changed := 0
 	sentOn := time.Now().Format("2006-01-02")
 	files := mailedOrderFiles(user, pageID, recordID)
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+	if err := cms.RewriteBodyUnlessHeld(pageID, user.Username, func(cur string) string {
 		out, c := recordOrderSent(cur, user, pageID, sentOn, sendByMail, recordID, files)
 		changed = c
 		return out
 	}); err != nil {
+		if held := (*cms.HeldError)(nil); errors.As(err, &held) {
+			return errors.New("発注済みの印を付けられませんでした（" + held.Error() + "）。編集が終わったら行ごとの「✓ 発注済」を押してください。")
+		}
 		return errors.New("発注済みの印を付けられませんでした: " + err.Error() + "　行ごとの「✓ 発注済」を押してください。")
 	}
 	auth.Audit(user.Username, "our-order.sent", pageID+" "+sendByMail+" "+strconv.Itoa(changed)+"行")

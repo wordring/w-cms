@@ -24,11 +24,9 @@ package comm
 
 import (
 	"regexp"
-	"strconv"
 	"strings"
 
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -79,7 +77,7 @@ func withParentTag(body, parentID string) (string, bool) {
 	if strings.Contains(body, "<dt>"+ParentPageTag+"</dt>") {
 		return body, false
 	}
-	at := cms.EndOfFirstTagList(body)
+	at := cms.PageTagListEnd(body) // 節の中の並び（添付の図面ブロックなど）には足さない
 	if at < 0 {
 		return body, false
 	}
@@ -91,41 +89,13 @@ func withParentTag(body, parentID string) (string, bool) {
 // addParent は記録 childID に 親ページID を書き足します。誰かが開いて編集していれば飛ばします（false——次の回で）。
 // （2026-10-12 から、飛ばすのは道具〔`/api/lock`〕が握っているときだけです。）
 func addParent(childID int, parentID, by string) bool {
-	if _, open := editlock.Locks.EditorOpen(childID); open {
-		return false
-	}
 	added := false
-	err := cms.RewriteBody(page.FormatID(childID), by, func(cur string) string {
+	err := cms.RewriteBodyUnlessHeld(page.FormatID(childID), by, func(cur string) string {
 		out, ok := withParentTag(cur, parentID)
 		added = ok
 		return out
 	})
 	return err == nil && added
-}
-
-// LinkChildrenOf は、Message-ID が msgID の記録 parentID を、親ページID の無い子（In-Reply-To が msgID）に書き足します。
-// 書き足した数を返します（編集中の子は飛ばす——次の読み込みで FixRecordTags が拾う）。
-// ⚠ いまはどこからも呼ばれていません（親があとから来た子への書き足しは、`FixRecordTags` の②が受け持っています）。
-func LinkChildrenOf(parentID, msgID, by string) int {
-	msgID = strings.TrimSpace(msgID)
-	self, err := strconv.Atoi(parentID)
-	if msgID == "" || err != nil {
-		return 0
-	}
-	ids, err := cms.PagesByTag(database.DB, InReplyToTag, msgID)
-	if err != nil {
-		return 0
-	}
-	n := 0
-	for _, child := range ids {
-		if child == self || cms.PageTagValue(database.DB, child, ParentPageTag) != "" {
-			continue
-		}
-		if addParent(child, parentID, by) {
-			n++
-		}
-	}
-	return n
 }
 
 // legacyDtRe は古い名前のタグの見出し（`<dt>…</dt>`——中の空白は許す）です。
@@ -160,11 +130,8 @@ func FixRecordTags(by string) (renamed, linked int, err error) {
 	}
 	rows.Close()
 	for _, id := range olds {
-		if _, open := editlock.Locks.EditorOpen(id); open {
-			continue
-		}
 		changed := false
-		if cms.RewriteBody(page.FormatID(id), by, func(cur string) string {
+		if cms.RewriteBodyUnlessHeld(page.FormatID(id), by, func(cur string) string {
 			out := renameLegacyTags(cur)
 			changed = out != cur
 			return out

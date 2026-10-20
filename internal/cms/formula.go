@@ -123,14 +123,14 @@ func FormulaTableValues(headers []string, rows [][]string) [][]string {
 	return out
 }
 
-// EvalRowFormulas は、1行だけの表として式を計算します（ほかの行を指す式は、その行が無いのでエラーになります）。
+// evalRowFormulas は、1行だけの表として式を計算します（ほかの行を指す式は、その行が無いのでエラーになります）。
 // 表の全部の行が手元にあるときは EvalTableFormulas を使うこと。
-func EvalRowFormulas(headers, cells []string) []FormulaResult {
+func evalRowFormulas(headers, cells []string) []FormulaResult {
 	return EvalTableFormulas(headers, [][]string{cells})[0]
 }
 
-// FormulaCellValues は、1行だけの表として FormulaTableValues を通します。
-func FormulaCellValues(headers, cells []string) []string {
+// formulaCellValues は、1行だけの表として FormulaTableValues を通します。
+func formulaCellValues(headers, cells []string) []string {
 	return FormulaTableValues(headers, [][]string{cells})[0]
 }
 

@@ -13,7 +13,6 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	stdhtml "html"
 	"net/http"
 	"strconv"
@@ -194,27 +193,7 @@ func MfgMadeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireWritableIdle(w, r, pageID) {
 		return
 	}
-	body, err := cms.ReadPageBody(pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "製造ページを読めません: "+err.Error())
-		return
-	}
-	// ⚠ 照合（行番号・品番・いまの値）も、書くときは錠の中で読み直した本文でやり直します（2026-10-19 夜・rebuildBody）。
-	changed, cellErr, err := rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
-		return setItemTableCell(cur, MfgItemsType, req.Row, req.ItemNo, "製造完了", req.Old, strings.TrimSpace(req.Value))
-	})
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
-		return
-	}
-	if cellErr != nil {
-		failCellEdit(w, cellErr)
-		return
-	}
-	if changed {
-		auth.Audit(user.Username, "mfg.made", pageID+" 行"+req.ItemNo+" 製造完了="+req.Value)
-	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": changed})
+	editItemCell(w, user, pageID, MfgItemsType, req.Row, req.ItemNo, "製造完了", req.Old, strings.TrimSpace(req.Value), "製造ページ", "mfg.made")
 }
 
 // madeText は案件明細の1行の製造完了の見せ方です（2026-10-19）——全部の数が製造完了の製造に入ったら「済」、一部なら「N/M」、無ければ空。

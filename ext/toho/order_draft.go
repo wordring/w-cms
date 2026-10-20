@@ -30,6 +30,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,7 +39,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
@@ -309,11 +309,8 @@ func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string
 	// ⚠ **開いている人が居たら触りません**——オートセーブと上書きし合います。
 	// （2026-10-12 から、ブラウザは編集権を取らないので、触らないのは道具〔`/api/lock`〕が握っているときだけ。
 	// 人の保存とは `cms.RewriteBody` の錠で順に並びます。）
-	if _, open := editlock.Locks.EditorOpen(pageNum(pageID)); open {
-		return "⚠ 元の発注部材表はそのままです（誰かが部材発注ページを編集中です）"
-	}
 	done := false
-	if werr := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+	if werr := cms.RewriteBodyUnlessHeld(pageID, user.Username, func(cur string) string {
 		out, ok := replaceDraftTable(cur, n, "")
 		done = ok
 		if !ok {
@@ -321,6 +318,9 @@ func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string
 		}
 		return out
 	}); werr != nil {
+		if held := (*cms.HeldError)(nil); errors.As(werr, &held) {
+			return "⚠ 元の発注部材表はそのままです（誰かが部材発注ページを編集中です）"
+		}
 		return "⚠ 元の発注部材表を片付けられません: " + werr.Error()
 	}
 	if !done {

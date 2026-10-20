@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strings"
 
+	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 )
 
@@ -55,6 +56,26 @@ func InsertAfterH1(body, fragment string) string {
 // ——改訂履歴へ1行足す、のような「読んで・変えて・書く」を、保存経路と同じ
 // 順序（サニタイズ・更新日時・版・索引）で通すため。
 func RewriteBody(pageID, author string, rewrite func(current string) string) error {
+	return rewritePageBody(pageID, author, rewrite)
+}
+
+// HeldError は、道具（`/api/lock` → `/api/save`）がページの編集権を握っていたので書かなかったことを表します。
+// Holder は握っている人です。
+type HeldError struct{ Holder string }
+
+func (e *HeldError) Error() string { return "このページは編集中です（" + e.Holder + "）" }
+
+// RewriteBodyUnlessHeld は、道具がページを握っていれば書かずに *HeldError を返し、そうでなければ RewriteBody で書きます。
+//
+// 2026-10-12 からブラウザは編集権を取らないので、断るのは道具が一瞬握っているときだけです（人の保存とは書き込みの錠で並ぶ）。
+// それまで拡張の9か所が「editlock.Locks.EditorOpen を見てから RewriteBody」を写していたのを、2026-10-20 にここへ寄せました。
+// 握られていたときの言い方は呼ぶ側が決めます（`errors.As(err, &held)`）。
+func RewriteBodyUnlessHeld(pageID, author string, rewrite func(current string) string) error {
+	if n, ok := pageNumber(pageID); ok {
+		if holder, open := editlock.Locks.EditorOpen(n); open {
+			return &HeldError{Holder: holder}
+		}
+	}
 	return rewritePageBody(pageID, author, rewrite)
 }
 
@@ -264,4 +285,30 @@ func EndOfFirstTagList(body string) int {
 		return -1
 	}
 	return i + end
+}
+
+// PageTagListEnd は**ページの**可変タグの並び（最初の節より前のもの）の `</dl>` の位置を返します（無ければ -1）。
+// EndOfFirstTagList と違って、節の中の並び（図面ブロックのタグなど）には当たりません——ページのタグを、ブロックのタグへ混ぜないため。
+// 2026-10-20 に東邦の pageTagListEnd をここへ上げた（拡張の5か所がタグを足すのに EndOfFirstTagList を写していた）。
+func PageTagListEnd(body string) int {
+	at := EndOfFirstTagList(body)
+	if at < 0 {
+		return -1
+	}
+	if sec := strings.Index(body, "<section"); sec >= 0 && sec < at {
+		return -1
+	}
+	return at
+}
+
+// AddPageTags は、ページの可変タグの並びの末尾に pairs（組み上がった `<dt>…</dt><dd>…</dd>`・エスケープは呼ぶ側）を足した本文を
+// 返します。並びが無ければ h1 の直後に新しく作ります。
+func AddPageTags(body, pairs string) string {
+	if pairs == "" {
+		return body
+	}
+	if at := PageTagListEnd(body); at >= 0 {
+		return body[:at] + pairs + body[at:]
+	}
+	return InsertAfterH1(body, `<dl data-type="tags">`+pairs+`</dl>`)
 }

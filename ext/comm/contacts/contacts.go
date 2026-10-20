@@ -368,7 +368,7 @@ func ContactPageForAddress(user *auth.User, addr string) (pageID, title string, 
 //
 // ⚠ **同じドメインを複数の組織が持つと、1つに決まりません。** そのときは
 // `ResolvePartner` が ok=false を返し、**候補を人に選ばせます**
-// （`PartnerCandidates`。2026-09-16 ユーザー:「コンボボックスで選択できる候補が
+// （`partnerCandidates`。2026-09-16 ユーザー:「コンボボックスで選択できる候補が
 // 複数あるということでどうでしょう」）。
 const DomainTag = "ドメイン"
 
@@ -381,7 +381,7 @@ const DomainTag = "ドメイン"
 // 決定ではない**という位置づけは変わりません。
 //
 // **1つに決まらなければ ok=false** です——同じドメインを2つの組織が持っていたら、
-// 機械には選べません（`PartnerCandidates` が候補を返し、人が選びます）。
+// 機械には選べません（`partnerCandidates` が候補を返し、人が選びます）。
 //
 // 載っているのが人のページでも、**答えるのは組織**です（`PartnerOfPage` で丸める）
 // ——整理が欲しいのは会社の名前だからです。
@@ -399,13 +399,13 @@ func ResolvePartner(user *auth.User, addr string) (pageID string, title string, 
 	return "", "", false
 }
 
-// PartnerCandidates はアドレスから引ける**組織の候補**を返します（0件も普通）。
+// partnerCandidates はアドレスから引ける**組織の候補**を返します（0件も普通）。
 //
 // `limit` を超えたら打ち切り、`truncated` を立てます。⚠ **件数制限は必須です**
 // （2026-09-16 ユーザー:「ヤフーのようなドメインでは、候補が1万件ということも
 // あり得ます…あまりに多い場合、コンボボックスにはすべての候補は出せませんから、
 // 自分で入力するしかないのです」）。**選べない長さの一覧は、選択肢ではありません。**
-func PartnerCandidates(user *auth.User, addr string, limit int) (refs []PartnerRef, truncated bool) {
+func partnerCandidates(user *auth.User, addr string, limit int) (refs []PartnerRef, truncated bool) {
 	exact, domain := partnerHits(user, addr)
 	all := append(exact, domain...)
 	seen := map[int]bool{}
@@ -549,13 +549,7 @@ func addContactTags(pageID, author, tagName string, values []string) (int, error
 			pairs.WriteString(dt + dd)
 			added++
 		}
-		if pairs.Len() == 0 {
-			return current
-		}
-		if at := cms.EndOfFirstTagList(current); at >= 0 {
-			return current[:at] + pairs.String() + current[at:]
-		}
-		return cms.InsertAfterH1(current, `<dl data-type="tags">`+pairs.String()+`</dl>`)
+		return cms.AddPageTags(current, pairs.String())
 	})
 	if err != nil {
 		return 0, err

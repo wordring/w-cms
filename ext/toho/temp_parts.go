@@ -33,7 +33,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
@@ -294,13 +293,14 @@ func returnToTempParts(user *auth.User, ln ourOrderLine) error {
 	if err != nil {
 		return err
 	}
-	if _, open := editlock.Locks.EditorOpen(pageNum(boxID)); open {
-		return errBoxBusy
-	}
-	return cms.RewriteBody(boxID, user.Username, func(cur string) string {
+	err = cms.RewriteBodyUnlessHeld(boxID, user.Username, func(cur string) string {
 		out, _ := addTempParts(cur, []ourOrderLine{ln})
 		return out
 	})
+	if held := (*cms.HeldError)(nil); errors.As(err, &held) {
+		return errBoxBusy
+	}
+	return err
 }
 
 // TempPartItems は臨時部材表の行を、必要部材表に並べる形にします。
@@ -407,13 +407,13 @@ func tempRowsElsewhere(lines []ourOrderLine, curPage string) map[string][]int {
 // takeTempRowsElsewhere は別のページの臨時部材表から行を消します。
 func takeTempRowsElsewhere(user *auth.User, lines []ourOrderLine, curPage string) string {
 	for p, rows := range tempRowsElsewhere(lines, curPage) {
-		if _, open := editlock.Locks.EditorOpen(pageNum(p)); open {
-			return "⚠ 臨時部材表から行を消せませんでした（「製造」のページを誰かが編集中です）。手で消してください"
-		}
-		if err := cms.RewriteBody(p, user.Username, func(cur string) string {
+		if err := cms.RewriteBodyUnlessHeld(p, user.Username, func(cur string) string {
 			out, _ := removeTempPartRows(cur, rows)
 			return out
 		}); err != nil {
+			if held := (*cms.HeldError)(nil); errors.As(err, &held) {
+				return "⚠ 臨時部材表から行を消せませんでした（「製造」のページを誰かが編集中です）。手で消してください"
+			}
 			return "⚠ 臨時部材表から行を消せませんでした: " + err.Error()
 		}
 	}

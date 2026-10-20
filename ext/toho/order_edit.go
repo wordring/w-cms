@@ -91,33 +91,37 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	editItemCell(w, user, pageID, clientOrderItemsType, req.Row, req.ItemNo, req.Field, req.Old, req.Value, "案件ページ", "order-item.edit")
+}
+
+// editItemCell は、形式 vocabType の明細表の1セルを書き換えて答えます（案件明細の口と製造完了の口〔mfg_view.go〕が写していた
+// 後半を 2026-10-20 に寄せた）。関門（書けるか・道具が握っていないか）は呼ぶ側が先に通します。
+//   - 値が同じなら書きません（版と更新日時を無駄に進めない）。
+//   - ⚠ 照合（行番号・品番・いまの値）は、書くときに錠の中で読み直した本文でやり直します（2026-10-19 夜・rebuildBody）
+//     ——錠の外で組んだものを書くと、読んでから書くまでのあいだのほかの人の保存が消えます。
+//   - ⚠ **食い違いは 409**（相手が悪いのではなく、状態がずれている・failCellEdit）。
+//   - 変わったら監査に audit を残します（「ページ 行品番 列=値」）。what は読めないときの断りに入れるページの名前。
+func editItemCell(w http.ResponseWriter, user *auth.User, pageID, vocabType string, row int, itemNo, field, oldVal, newVal, what, audit string) {
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {
-		cms.JSONFail(w, http.StatusNotFound, "案件ページを読めません: "+err.Error())
+		cms.JSONFail(w, http.StatusNotFound, what+"を読めません: "+err.Error())
 		return
 	}
-	// 値が同じなら書きません（版と更新日時を無駄に進めない）。
-	// ⚠ 照合（行番号・品番・いまの値）も、書くときは錠の中で読み直した本文でやり直します（2026-10-19 夜・rebuildBody）
-	// ——錠の外で組んだものを書くと、読んでから書くまでのあいだのほかの人の保存が消えます。
 	changed, cellErr, err := rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
-		return setOrderItemCell(cur, req.Row, req.ItemNo, req.Field, req.Old, req.Value)
+		return setItemTableCell(cur, vocabType, row, itemNo, field, oldVal, newVal)
 	})
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
 		return
 	}
 	if cellErr != nil {
-		// ⚠ **食い違いは 409**（相手が悪いのではなく、状態がずれている）。
 		failCellEdit(w, cellErr)
 		return
 	}
-	if !changed {
-		json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": false})
-		return
+	if changed {
+		auth.Audit(user.Username, audit, pageID+" 行"+itemNo+" "+field+"="+newVal)
 	}
-	auth.Audit(user.Username, "order-item.edit",
-		pageID+" 行"+req.ItemNo+" "+req.Field+"="+req.Value)
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": true})
+	json.NewEncoder(w).Encode(map[string]any{"success": true, "changed": changed})
 }
 
 // setOrderItemCell は受注明細表の1セルを書き換えた本文を返します。

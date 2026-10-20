@@ -92,10 +92,10 @@ func TestAutocompleteTagsCountPages(t *testing.T) {
 	if err := SurveyAutocomplete(); err != nil {
 		t.Fatal(err)
 	}
-	if got := TagValueCounts(alice, "種類"); autoValues(got) != "部品:4,装置:2" {
+	if got := tagValueCounts(alice, "種類"); autoValues(got) != "部品:4,装置:2" {
 		t.Errorf("種類の候補が違います: %s", autoValues(got))
 	}
-	if got := TagValueCounts(alice, "品名"); len(got) != 0 {
+	if got := tagValueCounts(alice, "品名"); len(got) != 0 {
 		t.Errorf("ページごとに違う品名に候補を出しています: %s", autoValues(got))
 	}
 }

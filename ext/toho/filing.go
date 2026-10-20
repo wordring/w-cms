@@ -1129,19 +1129,11 @@ func linkPartner(user *auth.User, customerID, title string) {
 	if hasTagPair(body, contacts.ContactsRefTag, partnerID) {
 		return
 	}
-	if idInt, err := strconv.Atoi(customerID); err == nil {
-		if _, open := editlock.Locks.EditorOpen(idInt); open {
-			return // 開いている人が居る。次の整理で書けばよい
-		}
-	}
-	_ = cms.RewriteBody(customerID, user.Username, func(current string) string {
+	// 道具が握っていれば書かない（次の整理で書けばよい）。
+	_ = cms.RewriteBodyUnlessHeld(customerID, user.Username, func(current string) string {
 		if hasTagPair(current, contacts.ContactsRefTag, partnerID) {
 			return current
 		}
-		pair := "<dt>" + contacts.ContactsRefTag + "</dt><dd>" + partnerID + "</dd>"
-		if at := cms.EndOfFirstTagList(current); at >= 0 {
-			return current[:at] + pair + current[at:]
-		}
-		return cms.InsertAfterH1(current, `<dl data-type="tags">`+pair+`</dl>`)
+		return cms.AddPageTags(current, "<dt>"+contacts.ContactsRefTag+"</dt><dd>"+partnerID+"</dd>")
 	})
 }

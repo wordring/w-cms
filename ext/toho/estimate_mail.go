@@ -20,7 +20,6 @@ import (
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 )
 
@@ -126,13 +125,13 @@ func markSentByMail(user *auth.User, pageID, paper, audit string) error {
 	if !page.GetPerms(n).CanWrite(user) || cms.IsTemplateArea(pageID) {
 		return errors.New("送付日を書けませんでした（このページを書き換える権限がありません）")
 	}
-	if holder, open := editlock.Locks.EditorOpen(n); open {
-		return errors.New("送付日を書けませんでした（このページは編集中です（" + holder + "））")
-	}
 	today := time.Now().Format("2006-01-02")
-	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
+	if err := cms.RewriteBodyUnlessHeld(pageID, user.Username, func(cur string) string {
 		return withTagValues(cur, EstimateSentTag, []string{today}, true)
 	}); err != nil {
+		if held := (*cms.HeldError)(nil); errors.As(err, &held) {
+			return errors.New("送付日を書けませんでした（" + held.Error() + "）")
+		}
 		return errors.New("送付日を書けませんでした: " + err.Error())
 	}
 	auth.Audit(user.Username, audit, pageID+" mail")

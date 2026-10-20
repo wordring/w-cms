@@ -461,8 +461,8 @@ func CellChoiceCounts(user *auth.User, table, column string) []TagValueCount {
 	return []TagValueCount{}
 }
 
-// TagValueCounts は名前 name のタグの候補です（数えていない・定型でないタグは空）。
-func TagValueCounts(user *auth.User, name string) []TagValueCount {
+// tagValueCounts は名前 name のタグの候補です（数えていない・定型でないタグは空）。
+func tagValueCounts(user *auth.User, name string) []TagValueCount {
 	if vs, ok := AutocompleteFor(user).Tags[strings.TrimSpace(name)]; ok {
 		return vs
 	}

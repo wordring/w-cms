@@ -51,7 +51,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/editlock"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -270,8 +269,7 @@ func findMachineFolder(customer, machine string) (string, bool) {
 // ⚠ **編集中のページには書きません**（オートセーブと上書きし合う・競合対策 §9）。
 // （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ。人の保存とは `cms.RewriteBody` の錠で順に並ぶ。）
 func setProductKinds(user *auth.User, pageID string, kinds []string, replace bool) error {
-	idInt, err := strconv.Atoi(pageID)
-	if err != nil {
+	if _, err := strconv.Atoi(pageID); err != nil {
 		return err
 	}
 	body, err := cms.ReadPageBody(pageID)
@@ -281,10 +279,7 @@ func setProductKinds(user *auth.User, pageID string, kinds []string, replace boo
 	if next := withTagValues(body, ProductKindTag, kinds, replace); next == body {
 		return nil // 変わらない——版を増やさない
 	}
-	if holder, open := editlock.Locks.EditorOpen(idInt); open {
-		return errors.New("このページは編集中です（" + holder + "）")
-	}
-	return cms.RewriteBody(pageID, user.Username, func(current string) string {
+	return cms.RewriteBodyUnlessHeld(pageID, user.Username, func(current string) string {
 		return withTagValues(current, ProductKindTag, kinds, replace)
 	})
 }
@@ -322,26 +317,9 @@ func withTagValues(body, name string, values []string, replace bool) string {
 			body = body[:loc[0]] + pair + body[loc[1]:]
 			continue
 		}
-		if at := pageTagListEnd(body); at >= 0 {
-			body = body[:at] + pair + body[at:]
-			continue
-		}
-		body = cms.InsertAfterH1(body, `<dl data-type="tags">`+pair+`</dl>`)
+		body = cms.AddPageTags(body, pair) // 図面ブロックの中の並びへ、ページの区分を混ぜない（cms.PageTagListEnd）
 	}
 	return body
-}
-
-// pageTagListEnd は**ページの**可変タグの並び（最初の節より前のもの）の `</dl>` の位置を返します。
-// 無ければ -1——図面ブロックの中の並びへ、ページの区分を混ぜないためです。
-func pageTagListEnd(body string) int {
-	at := cms.EndOfFirstTagList(body)
-	if at < 0 {
-		return -1
-	}
-	if sec := strings.Index(body, "<section"); sec >= 0 && sec < at {
-		return -1
-	}
-	return at
 }
 
 // ProductFolderAPIHandler は POST /api/product-folder です（2026-09-29）。

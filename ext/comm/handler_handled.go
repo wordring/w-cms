@@ -127,11 +127,7 @@ func SetHandled(pageID, author, value string) error {
 	}
 	return cms.RewriteBody(pageID, author, func(current string) string {
 		out := handledPairRe.ReplaceAllString(current, "")
-		pair := `<dt>` + html.EscapeString(HandledTag) + `</dt><dd>` + html.EscapeString(value) + `</dd>`
-		if at := cms.EndOfFirstTagList(out); at >= 0 {
-			return out[:at] + pair + out[at:]
-		}
-		return cms.InsertAfterH1(out, `<dl data-type="tags">`+pair+`</dl>`)
+		return cms.AddPageTags(out, `<dt>`+html.EscapeString(HandledTag)+`</dt><dd>`+html.EscapeString(value)+`</dd>`)
 	})
 }
 

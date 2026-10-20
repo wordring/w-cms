@@ -136,8 +136,8 @@ func saveAttachmentVersion(pageID, name string) error {
 	return err
 }
 
-// AttachmentVersions は添付の版を新しい順に返します（画面や復元の口が使えます）。
-func AttachmentVersions(pageID, name string) []string {
+// attachmentVersions は添付の版を新しい順に返します（画面や復元の口が使えます）。
+func attachmentVersions(pageID, name string) []string {
 	dir := filepath.Join(page.AttachmentDir(pageID), attachmentVersionsDir, name)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
