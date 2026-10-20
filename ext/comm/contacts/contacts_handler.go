@@ -104,7 +104,8 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **開いている人が居たら断ります**（2026-09-14）。本文を読んで・変えて・書くので、
 	// エディタが開いているとオートセーブと上書きし合います。
 	// （2026-10-12 から、断るのは道具〔`/api/lock`〕が握っているときだけ——ファイルの冒頭。）
-	if !editlock.RefuseWhileEditing(w, target) {
+	// テンプレートの中へは書かない（2026-10-20 にほかの口とそろえた——コアの RefuseTemplateArea）。
+	if !cms.RefuseTemplateArea(w, target) || !editlock.RefuseWhileEditing(w, target) {
 		return
 	}
 
@@ -124,7 +125,7 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		dest, destTitle = pid, orgTitle+"／"+person
-		if !editlock.RefuseWhileEditing(w, dest) {
+		if !cms.RefuseTemplateArea(w, dest) || !editlock.RefuseWhileEditing(w, dest) {
 			return
 		}
 		added, err = AddContactAddresses(dest, user.Username, addrs)
@@ -309,7 +310,8 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
-	if !editlock.RefuseWhileEditing(w, pageID) {
+	// テンプレートの中へは書かない（2026-10-20 にほかの口とそろえた——コアの RefuseTemplateArea）。
+	if !cms.RefuseTemplateArea(w, pageID) || !editlock.RefuseWhileEditing(w, pageID) {
 		return
 	}
 

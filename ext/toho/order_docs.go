@@ -331,8 +331,9 @@ func serveBoundPaper(w http.ResponseWriter, r *http.Request, k boundKind) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	pageID, ok := cms.PageIDOrFail(w, req.PageID)
-	if !ok || !page.RequirePageWrite(w, r, pageID) || !cms.RefuseTemplateArea(w, pageID) {
+	// 書ける・テンプレートの外・道具が握っていない（2026-10-20 まで、道具が握っているかを見ていなかった——ほかの口と同じ gateWritablePage に）。
+	pageID, ok := gateWritablePage(w, r, req.PageID)
+	if !ok {
 		return
 	}
 	if k.check != nil {
