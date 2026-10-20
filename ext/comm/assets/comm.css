@@ -146,3 +146,179 @@
     align-items: center;
     gap: 4px;
 }
+
+/* ── 2026-10-20 夕に assets/app.css から移した規則（この拡張だけが作る class・id の見た目）。 */
+/* 読むための列は広めに。ここが潰れると一覧の用を成しません。 */
+@media (max-width: 760px) {
+#w-editor-content .unhandled-subject {
+        min-width: 14em;
+    }
+}
+
+#w-editor-content .materials-title {
+    font-size: 16px;
+    margin: 8px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #f1f5f9;
+}
+
+#w-editor-content table.materials-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: left;
+}
+
+#w-editor-content table.materials-table th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    padding: 10px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+#w-editor-content table.materials-table td {
+    padding: 10px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+#w-editor-content table.materials-table .num { text-align: right; }
+
+#w-editor-content table.materials-table .status { text-align: center; }
+
+/* ⚠ 2026-10-19 まで書ける形では隠していた（編集モードのころの決め）。業務のボタンは書ける形でも押せる決まりなので、いまは出す。 */
+#w-editor-content .badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+#w-editor-content .badge.ok { background: #ecfdf5; color: #10b981; }
+
+#w-editor-content .badge.ng { background: #fef2f2; color: #ef4444; }
+
+/* 未処理の一覧を「作業面」にする（2026-09-05）。1行1件・新しい順で、
+ * チャネルは記号・添付は 📎n・行の右端に「不要」。**この表は読むためでなく
+ * 片付けるためのもの**なので、行の高さを詰めて件数が視野に入るようにする。 */
+/* **詳細度に注意**——`#w-editor-content table.materials-table td` が padding:10px を
+ * 持っているので、`table` を含めないと勝てません（`.unhandled-table td` だけでは
+ * 効かず、行が広いままでした・2026-09-05）。 */
+#w-editor-content table.unhandled-table td {
+    padding: 2px 6px;
+    line-height: 1.5;
+    vertical-align: middle;
+    border-bottom: none; /* 1行1件の列なので、罫線より詰まりのほうが読みやすい */
+}
+
+#w-editor-content table.unhandled-table tr:hover td { background: #f8fafc; }
+
+#w-editor-content .unhandled-pick,
+#w-editor-content .unhandled-channel,
+#w-editor-content .unhandled-clip,
+#w-editor-content .unhandled-act {
+    width: 1%;
+    white-space: nowrap;
+}
+
+/* ⚠ **題の欄が読める幅を持つこと**——相手の欄を1行にした日、折り返さない列（印・記号・日時・相手・添付・
+ * ボタン）に幅を取られて、題が 75px の短冊になった（実測）。細い列は中身の幅まで細らせ（全体の td の下限 3em を
+ * 外す）、添付の数は題の後ろへ移し、残りを題に回す。⚠ 題の下限を大きくすると、表が枠（文書の欄）より広くなり、
+ * 右端の「済」「不要」がスクロールしないと見えなくなる（16em で実際にそうなった）——下限は枠に収まる程度。 */
+#w-editor-content table.unhandled-table td.unhandled-subject { min-width: 9em; }
+
+#w-editor-content table.unhandled-table td.unhandled-pick,
+#w-editor-content table.unhandled-table td.unhandled-channel,
+#w-editor-content table.unhandled-table td.unhandled-clip,
+#w-editor-content table.unhandled-table td.unhandled-act { min-width: 0; }
+
+#w-editor-content .unhandled-clip { color: var(--text-muted); }
+
+#w-editor-content .chip-btn {
+    /* 小さなボタンの文字は**折り返さない**（2026-09-28 利用者:「発注部材表の戻すボタンの文字が折り返されて
+       行の高さが大きくなりすぎます」——列の多い表でボタンの列が細らされ、「↩ 戻す」が2行になっていた）。 */
+    white-space: nowrap;
+    padding: 1px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-paper);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+#w-editor-content .chip-btn:hover:not(:disabled) { background: var(--border); }
+
+#w-editor-content .chip-btn:disabled { opacity: .4; cursor: default; }
+
+#w-editor-content .chip-btn + .chip-btn { margin-left: 4px; }
+
+#w-editor-content #w-unhandled-bulk-done,
+#w-editor-content #w-unhandled-bulk-skip {
+    padding: 3px 12px;
+    font-size: 13px;
+    background: var(--bg-paper);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#w-editor-content #w-unhandled-bulk-done:disabled,
+#w-editor-content #w-unhandled-bulk-skip:disabled { opacity: .4; cursor: default; }
+
+#w-editor-content #w-memo-create {
+    padding: 3px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+    background: var(--bg-paper);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#w-editor-content #w-memo-create:hover:not(:disabled) { background: var(--border); }
+
+#w-editor-content #w-memo-create:disabled { opacity: .4; cursor: default; }
+
+#w-editor-content table.contacts-table td.unhandled-clip { width: 3.5em; }
+
+#w-editor-content .contact-addr {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
+
+/* 推薦（「○○へ足す」）は主役。**正しい操作を目立たせる**ためで、
+   実データでここが埋もれていたせいで会社が2枚になりかけた。 */
+#w-editor-content .chip-btn.chip-primary {
+    border-color: var(--accent, #2a6);
+    color: var(--accent, #2a6);
+    font-weight: 600;
+}
+
+/* ⚠ **通信箱の未処理の表では普通のセルに戻す**（2026-09-30）——上の規則は連絡帳の表のためのものだが、同じ名前の
+   セルに掛かって td が flex になり、**セルとして働かず幅が 0.7px**（「済」「不要」が重なって2段になっていた）。 */
+#w-editor-content table.unhandled-table td.unhandled-act { display: table-cell; }
+
+/* 解析済みの印。ボタンの隣に並ぶが**押すと飛ぶリンク**なので、
+   ボタンと見分けが付くよう枠を持たせず色で示す。 */
+#w-editor-content .attach-analyzed {
+    margin-left: 4px;
+    padding: 1px 6px;
+    font-size: 12px;
+    color: var(--accent, #2a6);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+#w-editor-content .attach-analyzed:hover { text-decoration: underline; }
+
+/* 「未分類へ戻す」（2026-09-13）。タグの値の隣に小さく置く——**押し間違いの
+   取り消し**なので、目立たせすぎると今度はこちらを誤爆する。 */
+#w-editor-content .chip-btn.contact-unfile {
+    margin-left: 8px;
+    padding: 0 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}

@@ -527,3 +527,20 @@
 #w-editor-content .filing-file-note.is-ok { color: #166534; }
 #w-editor-content .filing-file-note.is-warn { color: #b91c1c; }
 #w-editor-content .filing-search-none { margin: 4px 0; font-size: 12px; color: #64748b; }
+
+/* ── 2026-10-20 夕に assets/app.css から移した規則（この拡張だけが作る class・id の見た目）。 */
+#w-editor-content .materials-empty {
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 8px 0;
+}
+
+#w-editor-content table.rfq-quotes-table td.what { white-space: normal; min-width: 10em; }
+
+.backlog-sheet {
+    margin: 0 0 1.75rem;
+    break-inside: avoid;
+}
+
+/* 発注部材表の「部材発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
+#w-editor-content .draft-form-box { margin: 4px 0 16px; }

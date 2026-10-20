@@ -41,3 +41,11 @@
     line-height: 1.4;
 }
 #w-editor-content .contact-display { font-weight: 600; }
+
+/* ── 2026-10-20 夕に assets/app.css から移した規則（この拡張だけが作る class・id の見た目）。 */
+/* 読むための列は広めに。ここが潰れると一覧の用を成しません。 */
+@media (max-width: 760px) {
+#w-editor-content td.contact-who {
+        min-width: 14em;
+    }
+}

@@ -131,7 +131,6 @@ html.right-collapsed .rail-right { display: none; }
 .rail-toggle-group-left .rail-toggle { border-left: none; border-radius: 0 8px 8px 0; }
 .rail-toggle-group-right .rail-toggle { border-right: none; border-radius: 8px 0 0 8px; }
 @media (prefers-reduced-motion: reduce) { .rail-toggle { transition: none; } }
-.spacer { flex: 1 1 auto; }
 
 /* 子ページナビ（左レール） */
 ul.child-nav { list-style: none; margin: 0; padding: 0; }
@@ -244,16 +243,6 @@ dl.pi dd { margin: 0; color: var(--text); word-break: break-all; }
 body[edit-mode] .pi-parent-view { display: none; }
 body[edit-mode] .pi-parent-edit { display: inline-block; }
 
-/* 書ける形（body[edit-mode]）でのみ操作させたい要素の汎用クラス。
-   将来のエディタ内操作（画像/PDF等の保存・削除ボタンなど）は、UIゲートとして
-   .edit-only を付けるだけでよい（送信は lockedFetch——書きかけを先に保存する。サーバーは RequirePageWrite で
-   書く権限を見る。RequireEditLock も通るが、断るのは道具が /api/lock で握っているときだけ）。
-   2026-10-12 までは「編集モード＝ロック保持中」で、lockedFetch がロックのトークンを付けていた。
-   能力フラグ（owner/admin 等）にも依存する権限カードは JS の refreshPermsEditable で別途制御。 */
-.edit-only { display: none; }
-body[edit-mode] .edit-only { display: revert; }
-body[edit-mode] .view-only { display: none; }
-
 /* 匿名（未ログイン）で公開ページを閲覧している状態。編集クロームを隠し、
    純粋な読み取り専用ビューにする（認証認可設計.md 10.5）。右サイドパネル（属性・権限・
    編集操作）・編集スイッチ・ログアウト/管理リンク等の認証前提UIを非表示にする。
@@ -286,7 +275,6 @@ body.anonymous .preview-section { display: none !important; }
     color: #fff;
 }
 .rail-btn:hover { background: var(--accent-strong); }
-.rail-btn.secondary { background: var(--border); color: var(--text-muted); }
 .rail-row { margin-top: 8px; }
 .rail-hint { color: var(--text-dim); font-size: 11px; }
 
@@ -379,12 +367,6 @@ body.anonymous .preview-section { display: none !important; }
     #w-editor-content th,
     #w-editor-content td {
         min-width: 4em;
-    }
-    /* 読むための列は広めに。ここが潰れると一覧の用を成しません。 */
-    #w-editor-content .unhandled-subject,
-    #w-editor-content .contact-addrs,
-    #w-editor-content td.contact-who {
-        min-width: 14em;
     }
     .rail-left {
         position: fixed;
@@ -626,13 +608,6 @@ input:checked + .slider:before {
     resize: vertical;
     font-family: inherit;
     font-size: inherit;
-}
-/* エディタツールバー */
-.editor-toolbar {
-    display: none !important;
-}
-body[edit-mode] .editor-toolbar {
-    display: flex !important;
 }
 body[edit-mode] #w-editor-content {
     border-top-left-radius: 0 !important;
@@ -1096,15 +1071,6 @@ body.w-fixed-bars #w-fixed-bar .table-toolbar { border-left: 1px solid #475569; 
 }
 
 .enum-menu button:hover { background: #eff6ff; }
-/* 候補の状態を伝える一行（2026-09-21）。⚠ **0件でも黙らない**——「候補が出ない」と
-   「まだ登録していない」は別物で、後者なら**登録すれば出る**と分かる必要がある。 */
-.enum-menu .enum-menu-note {
-    display: block;
-    padding: 6px 10px;
-    color: var(--text-muted, #6b7280);
-    font-size: 0.85em;
-    white-space: nowrap;
-}
 
 /* テンプレート選択メニュー（子ページ作成）。.enum-menu の見た目を借り、
  * 分類の見出し（枝）だけを足す。階層の字下げは段数が可変なので app.js が
@@ -1458,7 +1424,6 @@ body[edit-mode] #w-editor-content td.cell-formula-error { background: #fee2e2; c
 }
 
 #w-editor-content .child-list-empty,
-#w-editor-content .materials-empty,
 #w-editor-content .view-template-note,
 #w-editor-content .view-error {
     color: var(--text-muted);
@@ -1481,49 +1446,6 @@ body[edit-mode] #w-editor-content td.cell-formula-error { background: #fee2e2; c
     /* 名前と表がくっつくと見出しに見えないので、少しだけ離します。 */
     padding-bottom: 4px;
 }
-
-#w-editor-content .materials-title {
-    font-size: 16px;
-    margin: 8px 0 12px;
-    padding-bottom: 8px;
-    border-bottom: 2px solid #f1f5f9;
-}
-
-#w-editor-content table.materials-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    text-align: left;
-}
-
-#w-editor-content table.materials-table th {
-    background: #f8fafc;
-    color: #475569;
-    font-weight: 600;
-    padding: 10px;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-#w-editor-content table.materials-table td {
-    padding: 10px;
-    border-bottom: 1px solid #f1f5f9;
-}
-
-#w-editor-content table.materials-table .num { text-align: right; }
-#w-editor-content table.materials-table .status { text-align: center; }
-#w-editor-content table.rfq-quotes-table td.what { white-space: normal; min-width: 10em; }
-/* ⚠ 2026-10-19 まで書ける形では隠していた（編集モードのころの決め）。業務のボタンは書ける形でも押せる決まりなので、いまは出す。 */
-
-#w-editor-content .badge {
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-weight: bold;
-    font-size: 11px;
-    white-space: nowrap;
-}
-
-#w-editor-content .badge.ok { background: #ecfdf5; color: #10b981; }
-#w-editor-content .badge.ng { background: #fef2f2; color: #ef4444; }
 
 /* ── 鏡の印（section[data-mirror]・2026-09-27）──
  * 中身はサーバーが読むたびに描く（.vocab-chrome）。挿した直後はまだ空なので、書ける形（body[edit-mode]）でだけ
@@ -1916,77 +1838,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
     border-radius: 4px;
 }
 
-/* 未処理の一覧を「作業面」にする（2026-09-05）。1行1件・新しい順で、
- * チャネルは記号・添付は 📎n・行の右端に「不要」。**この表は読むためでなく
- * 片付けるためのもの**なので、行の高さを詰めて件数が視野に入るようにする。 */
-/* **詳細度に注意**——`#w-editor-content table.materials-table td` が padding:10px を
- * 持っているので、`table` を含めないと勝てません（`.unhandled-table td` だけでは
- * 効かず、行が広いままでした・2026-09-05）。 */
-#w-editor-content table.unhandled-table td {
-    padding: 2px 6px;
-    line-height: 1.5;
-    vertical-align: middle;
-    border-bottom: none; /* 1行1件の列なので、罫線より詰まりのほうが読みやすい */
-}
-#w-editor-content table.unhandled-table tr:hover td { background: #f8fafc; }
-#w-editor-content .unhandled-pick,
-#w-editor-content .unhandled-channel,
-#w-editor-content .unhandled-clip,
-#w-editor-content .unhandled-act {
-    width: 1%;
-    white-space: nowrap;
-}
-/* ⚠ **題の欄が読める幅を持つこと**——相手の欄を1行にした日、折り返さない列（印・記号・日時・相手・添付・
- * ボタン）に幅を取られて、題が 75px の短冊になった（実測）。細い列は中身の幅まで細らせ（全体の td の下限 3em を
- * 外す）、添付の数は題の後ろへ移し、残りを題に回す。⚠ 題の下限を大きくすると、表が枠（文書の欄）より広くなり、
- * 右端の「済」「不要」がスクロールしないと見えなくなる（16em で実際にそうなった）——下限は枠に収まる程度。 */
-#w-editor-content table.unhandled-table td.unhandled-subject { min-width: 9em; }
-#w-editor-content table.unhandled-table td.unhandled-pick,
-#w-editor-content table.unhandled-table td.unhandled-channel,
-#w-editor-content table.unhandled-table td.unhandled-clip,
-#w-editor-content table.unhandled-table td.unhandled-act { min-width: 0; }
-#w-editor-content .unhandled-clip    { color: var(--text-muted); }
-#w-editor-content .chip-btn {
-    /* 小さなボタンの文字は**折り返さない**（2026-09-28 利用者:「発注部材表の戻すボタンの文字が折り返されて
-       行の高さが大きくなりすぎます」——列の多い表でボタンの列が細らされ、「↩ 戻す」が2行になっていた）。 */
-    white-space: nowrap;
-    padding: 1px 10px;
-    font-size: 12px;
-    color: var(--text-muted);
-    background: var(--bg-paper);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    cursor: pointer;
-}
-#w-editor-content .chip-btn:hover:not(:disabled) { background: var(--border); }
-#w-editor-content .chip-btn:disabled { opacity: .4; cursor: default; }
-#w-editor-content .chip-btn + .chip-btn { margin-left: 4px; }
-#w-editor-content #w-unhandled-bulk-done,
-#w-editor-content #w-unhandled-bulk-skip {
-    padding: 3px 12px;
-    font-size: 13px;
-    background: var(--bg-paper);
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    cursor: pointer;
-}
-#w-editor-content #w-unhandled-bulk-done:disabled,
-#w-editor-content #w-unhandled-bulk-skip:disabled { opacity: .4; cursor: default; }
-#w-editor-content #w-memo-create {
-    padding: 3px 12px;
-    font-size: 13px;
-    white-space: nowrap;
-    background: var(--bg-paper);
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    cursor: pointer;
-}
-#w-editor-content #w-memo-create:hover:not(:disabled) { background: var(--border); }
-#w-editor-content #w-memo-create:disabled { opacity: .4; cursor: default; }
-
-/* 「✉️ メールにサインイン」（2026-10-02・サインインしていないときだけ）と、押したあとの案内（番号とリンク）。 */
-#w-editor-content #w-mail-signin { white-space: nowrap; cursor: pointer; }
-
 
 /* 平文メールの本文は `<pre>` 1つで入ります（2026-09-05）——空行・字下げ・引用の
  * `>` の位置に意味があるためです。**折り返しはここが受け持ちます**——横スクロールに
@@ -2037,38 +1888,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content .block-content > section { padding-top: 10px; padding-bottom: 10px; }
 /* 📎 添付・📧 原本のリンク行。**本文から離す**が、添付どうしは近くまとめる。 */
 #w-editor-content .block-content > p { padding-top: 5px; padding-bottom: 5px; }
-#w-editor-content table.contacts-table td.unhandled-clip { width: 3.5em; }
-#w-editor-content .contact-addrs {
-    font-size: 12px;
-    color: var(--text-muted);
-    overflow-wrap: anywhere;
-}
-#w-editor-content .contact-addr {
-    font-size: 12px;
-    color: var(--text-muted);
-    overflow-wrap: anywhere;
-}
-/* 推薦（「○○へ足す」）は主役。**正しい操作を目立たせる**ためで、
-   実データでここが埋もれていたせいで会社が2枚になりかけた。 */
-#w-editor-content .chip-btn.chip-primary {
-    border-color: var(--accent, #2a6);
-    color: var(--accent, #2a6);
-    font-weight: 600;
-}
-/* ⚠ **通信箱の未処理の表では普通のセルに戻す**（2026-09-30）——上の規則は連絡帳の表のためのものだが、同じ名前の
-   セルに掛かって td が flex になり、**セルとして働かず幅が 0.7px**（「済」「不要」が重なって2段になっていた）。 */
-#w-editor-content table.unhandled-table td.unhandled-act { display: table-cell; }
-/* 解析済みの印。ボタンの隣に並ぶが**押すと飛ぶリンク**なので、
-   ボタンと見分けが付くよう枠を持たせず色で示す。 */
-#w-editor-content .attach-analyzed {
-    margin-left: 4px;
-    padding: 1px 6px;
-    font-size: 12px;
-    color: var(--accent, #2a6);
-    text-decoration: none;
-    white-space: nowrap;
-}
-#w-editor-content .attach-analyzed:hover { text-decoration: underline; }
 
 /* ページ情報カードのQR（2026-09-10）。**スマホで開くための橋**なので、
    指で狙える大きさ（実測で読める下限より十分上）を確保します。
@@ -2090,15 +1909,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
     font-size: 11px;
     color: var(--muted);
     word-break: break-all;
-}
-
-/* 「未分類へ戻す」（2026-09-13）。タグの値の隣に小さく置く——**押し間違いの
-   取り消し**なので、目立たせすぎると今度はこちらを誤爆する。 */
-#w-editor-content .chip-btn.contact-unfile {
-    margin-left: 8px;
-    padding: 0 6px;
-    font-size: 11px;
-    color: var(--text-muted);
 }
 
 /* タグの値が表にあるか（2026-09-13 ユーザー:「語彙に無いものは背景色で区別すれば
@@ -2138,19 +1948,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     text-decoration: underline dotted var(--border-strong);
     text-underline-offset: 3px;
-}
-
-/* 見積計算表の足元（2026-10-01・estimate.go）——弊社利益の式、確定単価（太く・少し大きく）、率を変える欄。 */
-#w-editor-content .estimate-profit td { padding: 4px 8px; background: var(--bg-subtle, #f8fafc); }
-#w-editor-content .estimate-final td { padding: 6px 8px; font-size: 1.1em; background: var(--bg-subtle, #f8fafc); }
-#w-editor-content .estimate-final strong { font-weight: 700; }
-#w-editor-content .estimate-rate td { padding: 4px 8px; font-size: 0.9em; }
-#w-editor-content .estimate-rate-input { width: 5em; }
-.backlog-rfq-bar .backlog-rfq-say p { display: inline; margin: 0 0 0 8px; font-size: 13px; }
-
-.backlog-sheet {
-    margin: 0 0 1.75rem;
-    break-inside: avoid;
 }
 
 /* ── 印刷（2026-09-21）────────────────────────────────────────────────
@@ -2247,9 +2044,6 @@ body:not([edit-mode]) #w-editor-content .w-foldable.w-heading-folded::before { c
 body:not([edit-mode]) #w-editor-content .w-foldable.w-heading-folded::after { content: ' …'; color: var(--text-muted); font-weight: 400; }
 body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !important; }
 #w-editor-content .w-sort-mark { margin-left: 4px; font-size: 0.75em; color: var(--accent-strong, #2563eb); }
-.order-num { width: 5em; text-align: right; }
-/* 発注部材表の「部材発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
-#w-editor-content .draft-form-box { margin: 4px 0 16px; }
 /* ページの更新の知らせで差し替えたブロック（2026-10-07）——しばらく薄い黄色で示して消える。色だけに頼らず左の線も付ける。 */
 /* ほかの人のキャレットのあるブロック（2026-10-12 昼・app.js renderPresence）——彩度の低い黄色の背景だけ
  * （利用者:「置いただけで背景色を黄色系の彩度の低い色にしては？説明が多すぎるのでシンプルに」）。名前はマウスを載せると出る。 */

@@ -3,3 +3,7 @@
 
 #w-editor-content .mail-signin-box { font-size: 13px; white-space: normal; }
 #w-editor-content .mail-signin-code { font-size: 1.15em; letter-spacing: 0.08em; }
+
+/* ── 2026-10-20 夕に assets/app.css から移した規則（この拡張だけが作る class・id の見た目）。 */
+/* 「✉️ メールにサインイン」（2026-10-02・サインインしていないときだけ）と、押したあとの案内（番号とリンク）。 */
+#w-editor-content #w-mail-signin { white-space: nowrap; cursor: pointer; }
