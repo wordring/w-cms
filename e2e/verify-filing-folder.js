@@ -55,7 +55,7 @@ const drawingBlock = (no, name, machine, ref) =>
 
     // 受信メールの記録と、解析が作った仮のページ——組立図。
     record = await makePage(page, '<h1>【E2E】装置のページへ</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd>' +
-      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-ff@invalid.example&gt;</dd></dl>', box);
+      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-ff@invalid.example&gt;</dd></dl><section data-mirror="記録の箱"></section>', box);
     const asm = await makePage(page, '<h1>E2E-FF-00A 組立図</h1>' + drawingBlock('E2E-FF-00A', '【E2E】組立図', MACHINE), record);
     check('当て先を作れた', !!folder && !!record && !!asm);
 

@@ -53,7 +53,7 @@ const drawingBlock = (no, name) =>
     const mach = await makePage(page, '<h1>' + MACHINE + '</h1><dl data-type="tags"><dt>ページ種類</dt><dd>装置</dd></dl>', cust);
     // 受信メールの記録と、解析が作った仮のページ（装置名称が空）。
     record = await makePage(page, '<h1>【E2E】装置名なしの図面</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd>' +
-      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-nm@invalid.example&gt;</dd></dl>', box);
+      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-nm@invalid.example&gt;</dd></dl><section data-mirror="記録の箱"></section>', box);
     const part = await makePage(page, '<h1>E2E-NM-1 ' + NAME + '</h1><dl data-type="tags"><dt>ページ種類</dt><dd>加工製品</dd></dl>' +
       drawingBlock('E2E-NM-1', NAME), record);
     check('当て先を作れた', !!cust && !!mach && !!record && !!part);

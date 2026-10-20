@@ -67,7 +67,7 @@ const MACHINE = '【E2E】ファイルの装置';
 
     // 図面の無い記録（添付は 3D データと受信原本）。
     record = await makePage(page, '<h1>【E2E】ほかのファイル</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd>' +
-      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-ffiles@invalid.example&gt;</dd></dl><p>本文</p>', box);
+      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-ffiles@invalid.example&gt;</dd></dl><p>本文</p><section data-mirror="記録の箱"></section>', box);
     const up1 = await upload(record, '取付データ.x_t', 'solid');
     const up2 = await upload(record, 'mail.eml', 'From: x');
     check('当て先を作れた', !!part && up1.status === 200 && up2.status === 200, JSON.stringify([up1, up2]));
@@ -120,7 +120,7 @@ const MACHINE = '【E2E】ファイルの装置';
     check('④b 開き直しても「表示しているページ」に装置のページ（サーバーが探す）', shown2.includes(MACHINE), shown2);
 
     // ⑤ 図面の欄（別の記録に解析で作ったような図面のページを置く）。
-    record2 = await makePage(page, '<h1>【E2E】図面の欄</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd></dl><p>本文</p>', box);
+    record2 = await makePage(page, '<h1>【E2E】図面の欄</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd></dl><p>本文</p><section data-mirror="記録の箱"></section>', box);
     await makePage(page, '<h1>E2E-FFL-1 【E2E】部品</h1><section><h2>図面</h2><dl data-type="tags"><dt>図面番号</dt><dd>E2E-FFL-1</dd><dt>図面名称</dt>' +
       '<dd>【E2E】部品</dd><dt>装置名称</dt><dd>' + MACHINE + '</dd><dt>客先</dt><dd>' + CUSTOMER + '</dd></dl></section>', record2);
     await page.goto(BASE + '/' + record2);

@@ -41,7 +41,7 @@ const check = (label, ok, note = '') => {
     record = await makePage(page, '<h1>【E2E】見積のお願い</h1><dl data-type="tags">' +
       '<dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd>' +
       '<dt>差出人</dt><dd>試験 &lt;e2e@invalid.example&gt;</dd><dt>対応</dt><dd>未処理</dd></dl>' +
-      '<section><h2>本文</h2><pre>E2E の本文です\n2行目</pre></section>', box);
+      '<section><h2>本文</h2><pre>E2E の本文です\n2行目</pre></section><section data-mirror="記録の箱"></section>', box);
     check('受信メールの記録を作れた', !!record, record);
 
     // ⓪ 対応はメールのページで選ぶ（2026-09-30 利用者:「そのメールへの対応が終わったかどうかは、受信フォルダではなく、

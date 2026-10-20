@@ -63,7 +63,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   // 加工製品ページに出しても行き場がないため（2026-09-03 ユーザー指摘）。
   await save(recordID, '<h1>[検証用] 装置名称の候補</h1>'
     + '<dl data-type="tags"><dt>チャネル</dt><dd>メール</dd>'
-    + '<dt>向き</dt><dd>受信</dd></dl>');
+    + '<dt>向き</dt><dd>受信</dd></dl><section data-mirror="記録の箱"></section>');
   await save(partID,
     // ⚠ **ヘッダは可変タグ**（2026-09-18 に素の定義リストから移した）。
     // 素の `<dl>` はもうDBに入りません——「タグと表だけがDBに入る」。

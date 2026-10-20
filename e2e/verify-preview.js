@@ -10,7 +10,7 @@ let chromium;
 try { ({ chromium } = createRequire(path.join(process.cwd(), 'noop.js'))('playwright')); }
 catch (e) { console.error('node_modules のあるディレクトリ（e2e/）から実行してください'); process.exit(2); }
 
-const { saveNow } = require('./lib');
+const { writeBody, deletePage } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 const results = []; let failCount = 0;
@@ -79,6 +79,7 @@ function buildZip(files) { // files: [{name, data}]
     const errs = []; const cspViolations = [];
     page.on('pageerror', e => errs.push(String(e)));
     page.on('console', m => { const t = m.text(); if (/Content.Security.Policy|Refused to/i.test(t)) cspViolations.push(t); });
+    let pageId = '';
     try {
         // 開いたときの形は閲覧（2026-10-12——パソコンの既定が書ける形になった・lib.js の login と同じ）。
         await page.context().addInitScript(() => { try { localStorage.setItem('wcms.mode', 'view'); } catch (e) {} });
@@ -87,7 +88,7 @@ function buildZip(files) { // files: [{name, data}]
         await page.click('button[type=submit]');
         await page.waitForURL('**/000000**', { timeout: 8000 });
 
-        const pageId = await gotoNewPage(page, '000000');
+        pageId = await gotoNewPage(page, '000000');
         await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
 
         // 閲覧モードへ戻してブラウザのロックを手放し、APIで添付を置く。
@@ -120,28 +121,18 @@ function buildZip(files) { // files: [{name, data}]
         const zipName = (await up2.json()).file_name;
         await page.request.post(BASE + '/api/unlock?id=' + pageId + '&token=' + token, { headers: { 'Origin': BASE } });
 
-        // リンクブロックを本文へ足す（編集モードで書いて保存）。
+        // 本文を書く: 通信記録の形（`チャネル` のタグ）にして、添付のリンクと記録の箱の印を置く。
+        // 🤖 解析のボタンは、2026-10-20 から本文の添付の横ではなく、記録の箱の「🤖 解析」の一覧に出る（ext/toho/record_sections.go）。
+        await writeBody(page, pageId, '<h1>【E2E】添付の展開</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd></dl>' +
+            '<p><a href="/' + pageId + '/' + pdfName + '" download="order.pdf">📎 order.pdf</a></p>' +
+            '<p><a href="/' + pageId + '/' + zipName + '" download="parts.zip">📎 parts.zip</a></p>' +
+            '<section data-mirror="記録の箱"></section>');
+        await page.goto(BASE + '/' + pageId);
         await setEditMode(page, true);
-        await page.evaluate(({ pid, pdf, zip }) => {
-            const target = document.querySelector('#w-editor-content .block-content > *');
-            const mk = (file, label) => {
-                const p = document.createElement('p');
-                const a = document.createElement('a');
-                a.href = '/' + pid + '/' + file;
-                a.setAttribute('download', label);
-                a.textContent = '📎 ' + label;
-                p.appendChild(a);
-                return p;
-            };
-            target.after(mk(pdf, 'order.pdf'), mk(zip, 'parts.zip'));
-        }, { pid: pageId, pdf: pdfName, zip: zipName });
-        await page.evaluate(() => document.querySelector('#w-editor-content [contenteditable]')
-            .dispatchEvent(new InputEvent('input', { bubbles: true })));
-        await saveNow(page); // 保存はブロックを去るときなので、いま保存させる（2026-10-12 から）
-        await page.waitForFunction(() => document.getElementById('w-save-status').innerText.includes('保存済'), null, { timeout: 8000 });
 
         // 編集モードでは展開ボタンが出ない。
-        check('編集モードに展開ボタンは無い', await page.locator('.attach-expand').count() === 0);
+        // 記録の箱の 🤖 解析（同じ attach-expand の印）は書ける形でも出る（業務のボタンは書ける形でも押せる・2026-10-12）。▶ だけを数える。
+        check('編集モードに展開ボタンは無い', await page.locator('.attach-expand:not(.attach-analyze):not(.attach-copyref):not(.attach-analyzed)').count() === 0);
 
         // 閲覧モードでボタンが出る。
         //
@@ -182,9 +173,11 @@ function buildZip(files) { // files: [{name, data}]
         // 押すと /api/analyze-attachment の応答が通知される。サーバーにキーが無ければ
         // 「GEMINI_API_KEY」の設定案内、あれば偽PDFの判定結果（発注書ではない／解析失敗）
         // ——どれでも配線の検証としては十分（判定そのものはGoテストが偽物判定で固定）。
-        check('PDFリンクの横に解析ボタンが出る', await page.locator('p .attach-analyze').count() === 1);
+        const boxPdf = '.mail-chrome .analyze-slot[data-file="' + pdfName + '"] .attach-analyze';
+        check('記録の箱の 🤖 解析に PDF のボタンが出る', await page.locator(boxPdf).count() === 1);
+        check('本文の添付の横には解析ボタンが出ない（記録の箱へ移した）', await page.locator('#w-editor-content p .attach-analyze').count() === 0);
         check('ZIP目録には解析ボタンが出ない（目録は読むだけ）', await page.locator('.attach-zip-list .attach-analyze').count() === 0);
-        await page.locator('p .attach-analyze').click();
+        await page.locator(boxPdf).click();
         await page.waitForFunction(() => /GEMINI_API_KEY|発注書ではない|解析できませんでした|案件ページを作りました/
             .test(document.getElementById('w-toast-host').innerText), null, { timeout: 30000 });
         check('解析の応答が通知される', true);
@@ -202,6 +195,7 @@ function buildZip(files) { // files: [{name, data}]
     } catch (e) {
         check('例外なし: ' + e.message, false);
     } finally {
+        if (pageId) await deletePage(page, pageId); // 作ったページを消す（2026-10-20 まで残していた）
         await browser.close();
     }
     console.log(results.join('\n'));

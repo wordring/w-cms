@@ -25,7 +25,7 @@ const check = (label, ok, note = '') => {
 const record = (dir, subject) => '<h1>' + subject + '</h1><dl data-type="tags">' +
   '<dt>向き</dt><dd>' + dir + '</dd><dt>チャネル</dt><dd>メール</dd>' +
   '<dt>差出人</dt><dd>試験 &lt;e2e@invalid.example&gt;</dd></dl>' +
-  '<section><h2>本文</h2><pre>K120-3 取付ベース 5個 お願いします。</pre></section>';
+  '<section><h2>本文</h2><pre>K120-3 取付ベース 5個 お願いします。</pre></section><section data-mirror="記録の箱"></section>';
 
 (async () => {
   const browser = await chromium.launch();

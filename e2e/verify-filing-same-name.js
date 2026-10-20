@@ -63,7 +63,7 @@ const drawingBlock = (no, name) =>
 
     // 受信メールの記録と、解析が作ったのと同じ形の仮のページ（同じ品名・別の図面番号）。
     record = await makePage(page, '<h1>【E2E】同じ品名の図面</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd>' +
-      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-sn@invalid.example&gt;</dd></dl>', box);
+      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-sn@invalid.example&gt;</dd></dl><section data-mirror="記録の箱"></section>', box);
     const other = await makePage(page, '<h1>E2E-SN-2 ' + NAME + '</h1>' + drawingBlock('E2E-SN-2', NAME), record);
     check('当て先を作れた', !!first && !!record && !!other);
 

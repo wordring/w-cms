@@ -96,7 +96,7 @@ const drawingBlock = (ref, source) =>
 
     // 受信メールの記録と、解析が作ったのと同じ形の仮のページ2枚。
     record = await makePage(page, '<h1>【E2E】図面の送付</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd>' +
-      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-dup@invalid.example&gt;</dd></dl>', box);
+      '<dt>チャネル</dt><dd>メール</dd><dt>差出人</dt><dd>試験 &lt;e2e-dup@invalid.example&gt;</dd></dl><section data-mirror="記録の箱"></section>', box);
     const same = await upload(page, record, 'e2e-dup.pdf', '%PDF-1.4 e2e 同じ図面');
     const remade = await upload(page, record, 'e2e-dup-remade.pdf', '%PDF-1.4 e2e 作り直した図面');
     const draftSame = await makePage(page, '<h1>' + NO + ' ' + NAME + '</h1>' + drawingBlock(record + '-' + same, record + '-' + same), record);
