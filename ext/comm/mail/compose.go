@@ -238,6 +238,32 @@ func draftRecordBody(tmpl, from, purpose, sourcePageID string, req ReplyRequest)
 	return d.HTML(), nil
 }
 
+// redraftBody は、既にある下書きのページの本文 cur を、送る欄の中身で書き換えた本文を返します（2026-10-20）。
+// 送る欄が持つもの（題・差出人・宛先・CC・用件・元のページ・本文・添付の控え）だけを入れ替え、それ以外——人が下書きの
+// ページに直に書き足したもの（ほかのタグ・段落・`対応` の印）——は残します。ブロックIDも残す（cms.EditBody）。
+// それまでは送る欄の中身からテンプレートで丸ごと組み直していたので、人が直に書いたものが次の保存で消えていた。
+func redraftBody(cur, from, purpose, sourcePageID string, req ReplyRequest) (string, error) {
+	subject := strings.TrimSpace(req.Subject)
+	if subject == "" {
+		subject = "（件名なし）"
+	}
+	d := cms.EditBody(cur)
+	d.SetTitle(subject)
+	d.ReplaceTag(comm.DraftTag, purpose)
+	d.ReplaceTag(comm.DraftSourceTag, sourcePageID)
+	d.ReplaceTag(comm.FromTag, from)
+	d.ReplaceTag(comm.ToTag, cleanAddrs(req.To)...)
+	d.ReplaceTag(comm.CcTag, cleanAddrs(req.Cc)...)
+	// ⚠ `<pre>` の直後の改行は1つ落ちる（draftRecordBody と同じ補い）。
+	if strings.HasPrefix(strings.ReplaceAll(req.Body, "\r\n", "\n"), "\n") {
+		req.Body = "\n" + req.Body
+	}
+	if err := fillMailBodyWith(d, req, true); err != nil {
+		return "", err
+	}
+	return d.HTML(), nil
+}
+
 // mailReady は user がいま送れるか（メールの拡張が入っていて、サインイン済みか）です。
 func mailReady(user *auth.User) bool {
 	m, ok := comm.CurrentMailer()
@@ -335,9 +361,9 @@ type DraftRequest struct {
 // （オートセーブと黙って上書きし合う・機械が既存ページを書き換えるときの関門）。
 // 2026-10-12 からブラウザは編集権を取らないので、断るのは道具（`/api/lock`）が握っているときだけです。
 // 人の保存とは、本文を書く口の書き込みの錠（`cms.LockPageBody`）で順に並びます。
-// ⚠ ただし並ぶだけで、合わせはしません——書き換えは**送る欄の中身から本文を丸ごと組み直す**（いまの本文を読まない）
-// ので、人が下書きのページに直に書いたもの（タグの値の替え・足した段落など）は、次にこの口で保存すると消えます
-// （2026-10-20 に確かめた。直していない）。
+// 書き換えは、錠の中で読んだいまの本文から、送る欄が持つものだけを入れ替えます（redraftBody・2026-10-20 夕から）。
+// 人が下書きのページに直に書き足したもの（ほかのタグ・段落など）は残ります。それまでは送る欄の中身から本文を丸ごと
+// 組み直していたので、次にこの口で保存すると消えていました（2026-10-20 に確かめた）。
 func DraftSaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -356,28 +382,42 @@ func DraftSaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	tmpl, err := cms.PageTemplateBody(SentTemplate)
-	if err != nil {
-		cms.JSONFail(w, http.StatusConflict, "下書きを作るテンプレートがありません: "+err.Error())
-		return
-	}
-	body, err := draftRecordBody(tmpl, SignedInAddress(user.Username), strings.TrimSpace(req.Purpose), source, req.ReplyRequest)
-	if err != nil {
-		cms.JSONFail(w, http.StatusConflict, "下書きを組めません: "+err.Error())
-		return
-	}
+	from, purpose := SignedInAddress(user.Username), strings.TrimSpace(req.Purpose)
 
 	if raw := strings.TrimSpace(req.DraftID); raw != "" {
 		id, ok := checkDraftWritable(w, r, user, raw)
 		if !ok {
 			return
 		}
-		if err := cms.RewriteBody(id, user.Username, func(string) string { return body }); err != nil {
+		var buildErr error
+		if err := cms.RewriteBody(id, user.Username, func(cur string) string {
+			next, err := redraftBody(cur, from, purpose, source, req.ReplyRequest)
+			if err != nil {
+				buildErr = err
+				return cur
+			}
+			return next
+		}); err != nil {
 			cms.JSONFail(w, http.StatusInternalServerError, "下書きを保存できません: "+err.Error())
+			return
+		}
+		if buildErr != nil {
+			cms.JSONFail(w, http.StatusConflict, "下書きを組めません: "+buildErr.Error())
 			return
 		}
 		auth.Audit(user.Username, "mail.draft", id+" "+req.Subject)
 		cms.WriteJSON(w, map[string]any{"success": true, "draft_id": id})
+		return
+	}
+
+	tmpl, err := cms.PageTemplateBody(SentTemplate)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "下書きを作るテンプレートがありません: "+err.Error())
+		return
+	}
+	body, err := draftRecordBody(tmpl, from, purpose, source, req.ReplyRequest)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, "下書きを組めません: "+err.Error())
 		return
 	}
 
@@ -409,7 +449,8 @@ func checkDraftWritable(w http.ResponseWriter, r *http.Request, user *auth.User,
 		cms.JSONFail(w, http.StatusConflict, "このページは下書きではありません")
 		return "", false
 	}
-	if !editlock.RefuseWhileEditing(w, id) {
+	// テンプレートの中へは書かない（2026-10-20 にほかの口とそろえた——コアの RefuseTemplateArea）。
+	if !cms.RefuseTemplateArea(w, id) || !editlock.RefuseWhileEditing(w, id) {
 		return "", false
 	}
 	return id, true

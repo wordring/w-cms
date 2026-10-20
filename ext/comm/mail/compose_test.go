@@ -340,3 +340,60 @@ func TestSendSkipsGeneratedWhenUnchecked(t *testing.T) {
 		t.Errorf("印を外したのに添えています: %v", got)
 	}
 }
+
+// TestDraftResaveKeepsWhatPeopleWrote は、人が下書きのページに直に書き足したもの（段落・ほかのタグ・ブロックID）が、
+// 送る欄からもう一度保存しても残ることを固定します（redraftBody・2026-10-20）。送る欄が持つもの（宛先・CC・本文・添付）は
+// 送る欄の中身にそろう——減らした宛先・空にした CC・外した添付は残らない。
+func TestDraftResaveKeepsWhatPeopleWrote(t *testing.T) {
+	setupMailTest(t)
+	seedSourceMail(t)
+	req := map[string]any{
+		"purpose": comm.PurposeReply, "page_id": "000200",
+		"to": []string{"yamada@example.jp", "sato@example.jp"}, "cc": []string{"cc@example.jp"},
+		"subject": "RE: 見積の件", "body": "一回目の本文",
+		"attachments": []map[string]string{{"page_id": "000200", "file": "ab12.pdf", "name": "見積.pdf"}},
+	}
+	code, out := callJSON(t, DraftSaveAPIHandler, "POST", "/api/mail/draft", req, alice)
+	if code != 200 {
+		t.Fatalf("下書きを保存できません: %d %v", code, out)
+	}
+	draftID, _ := out["draft_id"].(string)
+	n, _ := strconv.Atoi(draftID)
+
+	// 人が下書きのページに直に書き足す（段落と、ほかのタグ）。
+	if err := cms.RewriteBody(draftID, "alice", func(cur string) string {
+		cur = strings.Replace(cur, "</dl>", "<dt>メモ</dt><dd>電話でも伝える</dd></dl>", 1)
+		return cur + `<p data-id="h1x9">人が書いた段落</p>`
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req["draft_id"] = draftID
+	req["to"] = []string{"yamada@example.jp"}
+	req["cc"] = []string{}
+	req["body"] = "二回目の本文"
+	req["attachments"] = []map[string]string{}
+	if code, out := callJSON(t, DraftSaveAPIHandler, "POST", "/api/mail/draft", req, alice); code != 200 {
+		t.Fatalf("書き換えが %d %v です", code, out)
+	}
+	b, _ := cms.ReadPageBody(draftID)
+	if !strings.Contains(b, `<p data-id="h1x9">人が書いた段落</p>`) {
+		t.Errorf("⚠ 人が書いた段落（ブロックIDごと）が消えました:\n%s", b)
+	}
+	tags, _ := cms.TagsOfPage(database.DB, n)
+	if got := tags["メモ"]; len(got) != 1 || got[0] != "電話でも伝える" {
+		t.Errorf("⚠ 人が足したタグが消えました: %v", got)
+	}
+	if got := tags[comm.ToTag]; len(got) != 1 || got[0] != "yamada@example.jp" {
+		t.Errorf("宛先が送る欄の中身にそろっていません: %v", got)
+	}
+	if got := tags[comm.CcTag]; len(got) != 0 {
+		t.Errorf("空にした CC が残っています: %v", got)
+	}
+	if !strings.Contains(b, "二回目の本文") || strings.Contains(b, "一回目の本文") {
+		t.Errorf("本文が送る欄の中身にそろっていません:\n%s", b)
+	}
+	if strings.Contains(b, "ab12.pdf") {
+		t.Errorf("外した添付の控えが残っています:\n%s", b)
+	}
+}

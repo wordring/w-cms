@@ -301,6 +301,12 @@ func sentRecordBody(tmpl, from, sourcePageID, sourceMsgID, messageID string, now
 // fillMailBody は本文（`本文` の節の `<pre>`）と添付のリンク（`添付ファイル` の節）を書きます。
 // 送信の控えと下書きが共有します（2026-09-30——同じ形でないと、下書きを開き直したときに読み戻せない）。
 func fillMailBody(d *cms.PageDraft, req ReplyRequest) error {
+	return fillMailBodyWith(d, req, false)
+}
+
+// fillMailBodyWith は fillMailBody の芯です。clearEmpty なら、空の本文・添付の無いときに節の中身を空にします
+// （既にある下書きを書き換えるとき——消した本文や外した添付が残らないように。2026-10-20）。
+func fillMailBodyWith(d *cms.PageDraft, req ReplyRequest, clearEmpty bool) error {
 	// 本文は平文のまま `<pre>` へ。HTMLメールは作らないので、**見たままが送った中身**です
 	// ——段落に割ると空行と字下げが落ち、控えが「送ったもの」と違う形になります
 	// （受信側と同じ扱い・2026-09-05）。
@@ -310,6 +316,8 @@ func fillMailBody(d *cms.PageDraft, req ReplyRequest) error {
 			return err
 		}
 		sec.SetContent(pre)
+	} else if sec, ok := d.Container(comm.MailBodyHeading); ok && clearEmpty {
+		sec.SetContent("")
 	}
 
 	// **何を添えたかも控えに残します。** リンクは**元のページのファイルを指します**
@@ -335,6 +343,8 @@ func fillMailBody(d *cms.PageDraft, req ReplyRequest) error {
 			return err
 		}
 		sec.SetContent(files.String())
+	} else if sec, ok := d.Container(comm.MailFilesHeading); ok && clearEmpty {
+		sec.SetContent("")
 	}
 	return nil
 }

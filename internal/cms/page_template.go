@@ -172,6 +172,22 @@ func NewPageDraft(templateTitle, body string) *PageDraft {
 	return d
 }
 
+// EditBody は、既にあるページの本文を、テンプレートと同じ口（SetTitle・SetTag・ReplaceTag・Container…）で書き換える
+// ための下書きです（2026-10-20）。NewPageDraft と違って、ブロックID（data-id）も字下げの空白も残します——既にある
+// ページを書き換えるので、ブロックへの参照と、開いている画面のブロックの突き合わせを壊さないため。
+// 機械が送る欄の中身で下書きを書き換えるとき（人が下書きのページに直に書き足したものは残す）に使います。
+func EditBody(body string) *PageDraft {
+	root := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
+	if nodes, err := htmldoc.ParseFragment(body); err == nil {
+		for _, n := range nodes {
+			root.AppendChild(n)
+		}
+	}
+	d := &PageDraft{root: root}
+	d.DraftBlock = DraftBlock{d: d, n: root}
+	return d
+}
+
 // layoutOnly は、中の空白だけの文字に意味が無い要素です。
 var layoutOnly = map[string]bool{
 	"dl": true, "table": true, "thead": true, "tbody": true, "tfoot": true, "tr": true,
@@ -344,6 +360,64 @@ func (b DraftBlock) SetTag(name string, values ...string) {
 		dt, dd := tagPair(name, v)
 		dl.AppendChild(dt)
 		dl.AppendChild(dd)
+	}
+}
+
+// ReplaceTag は範囲の中のタグ `name` の値を values にそろえます（2026-10-20）。SetTag と違って、余った値の組は消し、
+// values が空なら組ごと消します。最初の組の場所は保ちます（無ければ SetTag と同じく最初の可変タグの末尾へ）。
+// 既にあるページの値を、送る欄など人が直した値に置き換えるとき（EditBody）に使います。
+func (b DraftBlock) ReplaceTag(name string, values ...string) {
+	name = strings.TrimSpace(name)
+	var vals []string
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			vals = append(vals, v)
+		}
+	}
+	type pair struct{ dt, dd *html.Node }
+	var pairs []pair
+	walkDrafts(b.n, func(n *html.Node) bool {
+		if n.Data != "dl" || Attr(n, "data-type") != TagsDataType {
+			return true
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type != html.ElementNode || c.Data != "dt" || strings.TrimSpace(nodeText(c)) != name {
+				continue
+			}
+			for dd := c.NextSibling; dd != nil; dd = dd.NextSibling {
+				if dd.Type != html.ElementNode {
+					continue
+				}
+				if dd.Data == "dd" {
+					pairs = append(pairs, pair{c, dd})
+				}
+				break
+			}
+		}
+		return false // dl の中へは降りない
+	})
+	if len(pairs) == 0 {
+		b.SetTag(name, vals...)
+		return
+	}
+	drop := pairs[1:]
+	if len(vals) == 0 {
+		drop = pairs
+	}
+	for _, p := range drop {
+		p.dt.Parent.RemoveChild(p.dt)
+		p.dd.Parent.RemoveChild(p.dd)
+	}
+	if len(vals) == 0 {
+		return
+	}
+	setNodeText(pairs[0].dd, vals[0])
+	after := pairs[0].dd
+	for _, v := range vals[1:] {
+		dt, dd := tagPair(name, v)
+		insertAfter(after, dt)
+		insertAfter(dt, dd)
+		after = dd
 	}
 }
 
