@@ -179,4 +179,21 @@ async function watchMailFetch(btn, run) {
 }
 
 w.onChrome(wireMailFetch);
+
+// 記録の箱の「✉️ 返信」（2026-10-20 からサーバーが描く・ext/comm/mail/record_section.go）。押すと送る欄を開き、もう一度押すと畳む。
+w.delegateClick([['.mail-chrome .mail-reply-open', (btn) => {
+    const slot = btn.nextElementSibling;
+    const compose = window.wcmsMailCompose;
+    if (!slot || !compose) return;
+    if (slot.firstChild) { slot.textContent = ''; return; }
+    compose.open(slot, { purpose: '返信', pageId: btn.getAttribute('data-page') });
+}]]);
+// 下書きのページでは、下書きを開いた送る欄を最初から出す（開いたらすぐ直して送れる）。
+w.onChrome(() => {
+    const compose = window.wcmsMailCompose;
+    if (!compose) return;
+    document.querySelectorAll('#w-editor-content .mail-compose-host[data-compose-draft]').forEach((host) => {
+        if (!host.firstChild) compose.open(host, { draftId: host.getAttribute('data-compose-draft') });
+    });
+});
 })();

@@ -2015,20 +2015,19 @@ async function refreshAnalyzedMarks() {
         analyzedMap = {}; // 印が出ないだけ——解析そのものは押せる
         zipPDFs = {};
     }
-    w.refreshAttachments();
+    fillAnalyzeSlots();
 }
 
 async function refreshFilingButton() {
     document.querySelectorAll('#w-editor-content .filing-chrome').forEach(el => el.remove());
     // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
     if (!w.pageId()) return;
-    const host = document.getElementById('w-editor-content');
+    // 置き場は記録の箱の中（2026-10-20・サーバーが描く——ext/toho/record_sections.go）。通信記録でなければ置き場が無い。
+    const host = document.querySelector('#w-editor-content .mail-chrome .filing-slot');
     if (!host) return;
-    if (!hasExtension('toho')) return; // 整理は下請けの持ち物（2026-09-15）
     // **整理が意味を持つのは通信記録だけ**——解析で図面ページが生まれた元のページ。
     // 年フォルダや加工製品ページに出しても行き場がない（2026-09-03 ユーザー指摘。
     // それまでは閲覧モードの全ページに出ていた）。
-    if (!tagValue(CHANNEL_TAG)) return;
 
     // **整理するものが実際にあるときだけ出します。** 押してから「ありません」と
     // 言うより、出さないほうが親切です。
@@ -3042,28 +3041,23 @@ async function runZipAnalyze(pageId, zipID) {
     }
 }
 
-// 添付の札（閲覧モード）: PDF に「🤖 解析」・ZIP に「中のPDFをまとめて解析」・表計算（.xlsx）に「🤖 解析」。解析済みなら隣に結果の印。
-// それまで app.js の refreshAttachmentPreviews が持っていた（並びは同じ: PDF は ▶ 表示 の右、ZIP は 🔗 参照 の右、xlsx はリンクの右）。
-w.onAttachment((at) => {
-    if (at.ext === 'zip') {
-        if ((zipPDFs[at.attachId] || []).length) {
-            const zb = makeZipAnalyzeButton(at.pageId, zipPDFs[at.attachId]);
-            if (zb) at.refButton.insertAdjacentElement('afterend', zb);
+// 🤖 解析のボタン（2026-10-20 から記録の箱の「🤖 解析」の置き場へ——置き場と解析済みの印はサーバーが描く・ext/toho/record_sections.go）。
+// それまでは本文の添付のリンクの横に足していた（コアの onAttachment の口）。
+function fillAnalyzeSlots() {
+    document.querySelectorAll('#w-editor-content .mail-chrome .analyze-slot').forEach((slot) => {
+        if (slot.firstChild) return;
+        const pid = slot.getAttribute('data-page');
+        const zip = slot.getAttribute('data-zip');
+        if (zip) {
+            const zb = (zipPDFs[zip] || []).length ? makeZipAnalyzeButton(pid, zipPDFs[zip]) : null;
+            if (zb) slot.appendChild(zb);
+            return;
         }
-        return;
-    }
-    if (at.ext !== 'pdf' && at.ext !== 'xlsx') return;
-    // 判定→案件ページの生成はボタン起動だけ（人間ゲート型・2026-09-01）。
-    if (!at.link.parentElement) return;
-    const ab = makeAnalyzeButton(at.pageId, at.attachId + '.' + at.ext);
-    (at.viewButton || at.link).insertAdjacentElement('afterend', ab);
-    // **解析済みなら、その隣に結果の印**（2026-09-06）。ボタンは消しません——読み違いはあるので、押し直せる余地を残します。
-    const done = analyzedMap[at.attachId];
-    if (done) {
-        ab.textContent = '🤖 再解析';
-        ab.insertAdjacentElement('afterend', makeAnalyzedMark(done));
-    }
-});
+        const ab = makeAnalyzeButton(pid, slot.getAttribute('data-file'));
+        if (slot.hasAttribute('data-done')) ab.textContent = '🤖 再解析';
+        slot.appendChild(ab);
+    });
+}
 
 // ファイルの「⋯」: メールのページの添付に「🤖 解析」、図面が2つ以上並んだページの図面に「📐 この図面で改定する」。
 w.onFileMenu((info, items, f) => {

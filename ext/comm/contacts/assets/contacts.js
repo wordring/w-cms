@@ -26,28 +26,6 @@ const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, fai
 // （空になったら、そう伝えるだけ）。
 const EMAIL_TAG = 'メールアドレス';
 
-function refreshContactUnfile() {
-    document.querySelectorAll('#w-editor-content .contact-unfile').forEach(el => el.remove());
-    // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
-    if (!hasExtension('comm/contacts')) return; // アドレス帳の持ち物（2026-09-15）
-    const host = document.getElementById('w-editor-content');
-    if (!host || !w.pageId()) return;
-
-    host.querySelectorAll('dl[data-type="tags"] > dt').forEach(dt => {
-        if (dt.textContent.trim() !== EMAIL_TAG) return;
-        const dd = dt.nextElementSibling;
-        if (!dd || dd.tagName.toLowerCase() !== 'dd') return;
-        const addr = dd.textContent.trim();
-        if (!addr) return;
-        const btn = makeButton('vocab-chrome chip-btn contact-unfile');
-        btn.contentEditable = 'false'; // 書ける形では dd が書けるので、札の字に打てないように（2026-10-12）
-        btn.textContent = '未分類へ戻す';
-        btn.title = addr + ' をこのページから外し、「未登録の連絡先」へ戻します'
-            + '（ページは消しません）';
-        btn.addEventListener('click', () => unfileContact(btn, addr, dt, dd));
-        dd.appendChild(btn);
-    });
-}
 
 async function unfileContact(btn, addr, dt, dd) {
     btn.disabled = true;
@@ -152,6 +130,11 @@ async function submitContactRow(td) {
     }
 }
 
-w.onChrome(refreshContactUnfile);
+// 「未分類へ戻す」は、2026-10-20 から `メールアドレス` のタグの飾りをサーバーが描く（ext/comm/contacts/unfile_decor.go）。
+w.delegateClick([['.contact-unfile', (btn) => {
+    const dd = btn.closest('dd');
+    const dt = dd && dd.previousElementSibling;
+    if (dd && dt) unfileContact(btn, btn.getAttribute('data-addr') || '', dt, dd);
+}]]);
 w.onChrome(wireContactRegister);
 })();
