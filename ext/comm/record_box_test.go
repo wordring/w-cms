@@ -46,3 +46,16 @@ func TestRecordBoxRendersSectionsInOrder(t *testing.T) {
 		t.Errorf("⚠ 通信記録でないページに箱を描いています:\n%s", n)
 	}
 }
+
+// 「✓ 種類」の印（MadeMarkHTML）——作るページと東邦の 🤖 解析が共有する。題は空なら番号で、値はエスケープする。
+func TestMadeMarkHTMLEscapes(t *testing.T) {
+	got := MadeMarkHTML("000123", `<b>題</b>`, "図面")
+	for _, want := range []string{`href="/000123"`, `&lt;b&gt;題&lt;/b&gt; を作りました`, `>✓ 図面</a>`, `class="vocab-chrome attach-analyzed"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q がありません: %s", want, got)
+		}
+	}
+	if !strings.Contains(MadeMarkHTML("000123", " ", "図面"), `title="000123 を作りました`) {
+		t.Errorf("題が空のときは番号で名乗るはず: %s", MadeMarkHTML("000123", " ", "図面"))
+	}
+}

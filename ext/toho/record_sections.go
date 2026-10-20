@@ -78,8 +78,7 @@ func analyzeSectionHTML(user *auth.User, pageIDInt int, draft bool) string {
 			mark := ""
 			if r, ok := done[m[2]]; ok {
 				attrs += ` data-done="1"`
-				mark = ` <a class="vocab-chrome attach-analyzed" href="/` + stdhtml.EscapeString(r.PageID) + `" title="` +
-					stdhtml.EscapeString(firstNonEmptyText(r.Title, r.PageID)+" を作りました（押すと開きます）") + `">✓ ` + stdhtml.EscapeString(r.Kind) + `</a>`
+				mark = ` ` + comm.MadeMarkHTML(r.PageID, r.Title, r.Kind)
 			}
 			items.WriteString(`<li><a href="/` + pageID + `/` + stdhtml.EscapeString(file) + `" target="_blank" rel="noopener">` +
 				stdhtml.EscapeString(name) + `</a> <span class="analyze-slot"` + attrs + `></span>` + mark + `</li>`)
@@ -89,11 +88,4 @@ func analyzeSectionHTML(user *auth.User, pageIDInt int, draft bool) string {
 		return ""
 	}
 	return `<div class="record-files"><p class="record-files-head">🤖 解析（添付）</p><ul>` + items.String() + `</ul></div>`
-}
-
-func firstNonEmptyText(a, b string) string {
-	if strings.TrimSpace(a) != "" {
-		return a
-	}
-	return b
 }

@@ -95,8 +95,7 @@ func recordMakeHTML(user *auth.User, pageIDInt int, draft bool) string {
 		}
 		if m.Made != nil {
 			for _, p := range m.Made(user, pageID) {
-				marks.WriteString(` <a class="vocab-chrome attach-analyzed" href="/` + stdhtml.EscapeString(p.PageID) + `" title="` +
-					stdhtml.EscapeString(firstNonEmpty(p.Title, p.PageID)+" を作りました（押すと開きます）") + `">✓ ` + stdhtml.EscapeString(p.Kind) + `</a>`)
+				marks.WriteString(` ` + MadeMarkHTML(p.PageID, p.Title, p.Kind))
 			}
 		}
 	}
@@ -171,6 +170,13 @@ func repliesHTML(user *auth.User, pageIDInt int, draft bool) string {
 	}
 	b.WriteString(`</ul></div>`)
 	return b.String()
+}
+
+// MadeMarkHTML は「✓ 種類」の印です（記録から作ったページ・解析で生まれたページ。押すとそのページへ飛ぶ）。
+// 記録の箱の中で、作るページ（ここ）と東邦の 🤖 解析（ext/toho/record_sections.go）が使います。
+func MadeMarkHTML(pageID, title, kind string) string {
+	return `<a class="vocab-chrome attach-analyzed" href="/` + stdhtml.EscapeString(pageID) + `" title="` +
+		stdhtml.EscapeString(firstNonEmpty(title, pageID)+" を作りました（押すと開きます）") + `">✓ ` + stdhtml.EscapeString(kind) + `</a>`
 }
 
 func firstNonEmpty(a, b string) string {
