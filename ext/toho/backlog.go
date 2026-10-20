@@ -371,7 +371,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 		` <button type="button" class="backlog-mfg-go">🏭 選んだ行で製造開始</button> <span class="backlog-mfg-say"></span>` +
 		`<div class="backlog-dlv-panel" hidden></div><div class="backlog-mfg-panel" hidden></div></div>`)
 	for i, g := range groups {
-		b.WriteString(`<section class="backlog-sheet" data-backlog="` + strconv.Itoa(i) + `">`)
+		b.WriteString(`<section class="backlog-sheet w-no-table-menu" data-backlog="` + strconv.Itoa(i) + `">`) // 自分の印刷のボタンを持つ（コアの表の「⋯」を付けない）
 		title := g.Client
 		if title == "" {
 			title = "（発注元なし）"

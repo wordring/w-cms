@@ -464,7 +464,7 @@ func TestBacklogViewShowsTotal(t *testing.T) {
 	if i < 0 {
 		t.Fatalf("受注残高の行がありません（%q を期待）:\n%s", want, out)
 	}
-	if j := strings.Index(out, `class="backlog-sheet"`); j < 0 || i > j {
+	if j := strings.Index(out, `class="backlog-sheet w-no-table-menu"`); j < 0 || i > j {
 		t.Errorf("受注残高が表より上にありません:\n%s", out)
 	}
 

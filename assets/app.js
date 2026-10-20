@@ -2456,13 +2456,11 @@
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
-        refreshDrawingPreviews();    // ファイル表示の枠の右下をつまんで高さを変える配線（両方の形）
+        wireFileViewResizes();    // ファイル表示の枠の右下をつまんで高さを変える配線（両方の形）
         restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
         decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
         // 「書ける形でも」の業務のボタンは、2026-10-12 まで閲覧モード限定だった（いまは押す前に書きかけを保存する）。
-        runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20）——東邦の解析済みの印と整理の欄（ext/toho/assets/toho.js）・
-                                     // 通信の記録の箱・☎ 発信・未処理の一覧・「＋ 記録する」
-                                     // （ext/comm/assets/comm.js）・メールの読み込み（ext/comm/mail/assets/mail.js）・連絡先（ext/comm/contacts/assets/contacts.js）
+        runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20。何を足すかは各拡張の assets/*.js）
         if (toggle.checked) ensureIdleContextToolbar(); // 固定の帯の文字の帯を、触る前から見せる（2026-10-19）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         refreshFormulaCells();       // 表のセルの式——閲覧では結果・編集では式（2026-10-04・並べ替え・印刷より先に）
@@ -5882,12 +5880,12 @@
     // ID（`ページ番号-添付ID`）の貼り先は2つ——📄 ファイル表示の欄（スラッシュメニューで挿して札を押す）と、メールの
     // 送る欄の「🔗 ID で添付を足す」（mail-compose.js・サーバーの GET /api/file-ref が添付の組へ引く）。
     // ⚠ const にしない（本文を描く処理がこの行より上で先に走りうる——関数の宣言は先に立つ）。
-    function copyRefTitle(ref) { return ref + ' を写します（メールの「🔗 ID で添付を足す」や、別のページの 📄 ファイル表示 の欄へ貼れます）'; }
+    function copyRefTitle(ref) { return ref + ' を写します（別のページの 📄 ファイル表示 の欄や、ID で添付を足せる欄へ貼れます）'; }
 
     async function copyFileRef(ref) {
         try {
             await navigator.clipboard.writeText(ref);
-            notify(ref + ' を写しました。メールの添付や 📄 ファイル表示 の欄へ貼れます。',
+            notify(ref + ' を写しました。📄 ファイル表示 の欄や、ID で添付を足せる欄へ貼れます。',
                 { type: 'success', duration: 6000, id: 'copyref' });
         } catch (e) {
             // **写せない環境でも詰ませません**——値そのものを見せて、手で選べるように。
@@ -5896,13 +5894,8 @@
         }
     }
 
-    // ── メールの返信と「この記録への返信」ののぞき見（2026-09-03）──────────
-    //
-    // ユーザー:「返信の本体は送信箱にあるのはどうでしょう？そして、返信元のメールから
-    // ものぞき見できるのが良いかと」——返信の本体は送信箱に立ち、ここは**参照で
-    // 見えるだけ**です。返信元の本文は一切変わりません（通信記録は届いたときのまま）。
-    //
-    // DOM生成は createElement + textContent（innerHTML へ文字列を入れない）。
+    // ── 本文のタグを読む ───────────────────────────────────────────────
+    // （2026-10-20 まで、この下にメールの返信ののぞき見があった——いまは通信の記録の箱・ext/comm/record_box.go）
 
     // tagValue は本文のタグ（<dt>名前</dt><dd>値</dd>）から値を1つ読みます。
     function tagValue(name) {
@@ -5917,15 +5910,8 @@
         return '';
     }
 
-    // ── 加工製品ページの整理（提案→人が直す→実行）───────────────────────────
-    //
-    // ユーザー:「各図面の行き場所について、解析から得られた推奨値を提示して、
-    // ユーザーがそれを書き直して実行ボタンを押す形はどうですか？」
-    // 「顧客名を書く欄に推奨値を入れてユーザーが修正してはどうでしょう」
-    //
-    // **提案は何も作りません**——顧客名・装置名称のページが生まれるのは実行のときだけ。
-    // 「見積もりや試作の場合があるので、フォルダ名はユーザーが確認したほうが良い」ため。
-    // DOM生成は createElement + textContent（innerHTML へ文字列を入れない）。
+    // ── 確かめ・選ぶダイアログ ─────────────────────────────────────────────
+    // （2026-10-20 まで、この下に加工製品ページの整理があった——いまは東邦の拡張・ext/toho/assets/toho.js）
 
     // askConfirm は確かめのダイアログを出し、進めるなら true を返します（2026-10-03 利用者:「警告ダイアログが出て、追加するか
     // やめるか選んではどうでしょうか」）。⚠ 既定の釦は「やめる」（Enter で黙って進まない）。Esc も「やめる」。
@@ -5977,7 +5963,7 @@
     //
     // ユーザー:「PDFを表示するタグが必要に思います」「表示するという意図を伝える
     // 名前が良いと思います」（2026-09-14）。
-    function refreshDrawingPreviews() {
+    function wireFileViewResizes() {
         document.querySelectorAll('#w-editor-content .file-view').forEach(wrap => {
             // **同じ枠へ二度配線しません**——`applyMode()` はモードを切り替えるたびに
             // 走りますが、サーバーが描いた枠はDOMに残ったままなので、印を付けないと
@@ -5986,11 +5972,11 @@
             const body = wrap.querySelector('.file-view-body');
             if (!body) return;
             wrap.dataset.wResize = '1';
-            wireDrawingResize(wrap, body);
+            wireFileViewResize(wrap, body);
         });
     }
 
-    // 図面枠の大きさは**見る人が決めます**（2026-09-10 ユーザー:「PDFインライン表示の
+    // ファイル表示の枠（図面の PDF など）の大きさは**見る人が決めます**（2026-09-10 ユーザー:「PDFインライン表示の
     // 大きさを変えられるように出来ますか？」）。枠の右下をつまんで縦に伸ばすと、
     // **次に開いたときも同じ高さ**です。
     //
@@ -5999,9 +5985,9 @@
     // **本文にもサーバーにも残しません**——枠はクロームで、A3の図面を大きく見たいか
     // 一覧しやすく小さくしたいかは**見る人と画面の都合**だからです。他の人の画面を
     // 動かしてしまわない、という意味でもあります。
-    const DRAWING_H_MIN = 200;   // これ以下だと図面が判別できない
-    const DRAWING_H_MAX = 4000;  // 壊れた値でページを埋めない柵
-    const DRAWING_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
+    const FILE_VIEW_H_MIN = 200;   // これ以下だと図面が判別できない
+    const FILE_VIEW_H_MAX = 4000;  // 壊れた値でページを埋めない柵
+    const FILE_VIEW_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
 
     // ── 「📝 ローカル編集」（2026-09-29） ───────────────────────────────
     //
@@ -6367,7 +6353,7 @@
             if (!r) return;
             const w = wrap.getBoundingClientRect().width;
             if (w <= 0) return;
-            wrap.style.height = Math.min(DRAWING_H_MAX, Math.max(DRAWING_H_MIN, Math.round(w * r))) + 'px';
+            wrap.style.height = Math.min(FILE_VIEW_H_MAX, Math.max(FILE_VIEW_H_MIN, Math.round(w * r))) + 'px';
         });
     }
 
@@ -7185,7 +7171,7 @@
         }).observe(viewContent);
     }
 
-    function wireDrawingResize(wrap, embed) {
+    function wireFileViewResize(wrap, embed) {
         // ⚠ **記録の無い枠は CSS の既定（70vh）のまま**（2026-09-29）。それまでは「最後につまんだ高さ」（UI設定の
         //    `drawing.height`）を全部の枠に当てていたので、1枚の大きさを変えると、開き直したときに同じページのほかの
         //    PDF まで同じ高さになった（利用者:「一枚のPDFの大きさを変えると、ページを再読み込みすると同じページの
@@ -7196,7 +7182,7 @@
             // **つまみの上で押したときだけ**反応します。PDFの中の操作（スクロール・
             // 拡大）を横取りしないためで、隅から離れた押下はそのまま通します。
             const r = wrap.getBoundingClientRect();
-            if (e.clientX < r.right - DRAWING_GRIP || e.clientY < r.bottom - DRAWING_GRIP) return;
+            if (e.clientX < r.right - FILE_VIEW_GRIP || e.clientY < r.bottom - FILE_VIEW_GRIP) return;
             dragging = true;
             // **引いているあいだ PDF へマウスを渡しません**——プラグインが受け取ると、
             // ポインタが枠の中へ入った瞬間にドラッグが切れます。
@@ -7208,7 +7194,7 @@
             dragging = false;
             const rect = wrap.getBoundingClientRect();
             const px = Math.round(rect.height);
-            if (px >= DRAWING_H_MIN && px <= DRAWING_H_MAX) {
+            if (px >= FILE_VIEW_H_MIN && px <= FILE_VIEW_H_MAX) {
                 // この枠の縦横比（物ごと・2026-09-28）。ほかの枠には使わない。
                 const k = viewKeyOf(wrap);
                 if (k && rect.width > 0) ViewState.setRatio(currentPageId, k, px / rect.width);
@@ -8993,8 +8979,8 @@ async function getJSON(url) {
 // ⚠ **閲覧モードだけ**——書ける形では出しません（`applyMode` が呼ぶたびに作り直す）。入れ物はクローム
 //    （`.vocab-chrome`）なので保存されません。
 // ⚠ キャプションの中には入れません——キャプションの文字は表の名前で、読み手が文字で比べるため。
-// ⚠ **案件残表（2026-10-19 までの名前は受注残表）は自分のボタンを持つ**ので付けません。表の中の表にも付けません。
-// ⚠ 紙には操作の部品を出しません——ボタン・入力欄・選ぶ欄を外し、外して空になったサーバーのセル（「↩ 戻す」の列など）も
+// ⚠ 印 `w-no-table-menu` の中の表（自分のボタンを持つ表・拡張が付ける）には付けません。表の中の表にも付けません。
+// ⚠ 紙には操作の部品を出しません——ボタン・入力欄・選ぶ欄と、拡張が印 `w-no-print` を付けた欄を外し、外して空になったサーバーのセル（「↩ 戻す」の列など）も
 //    外します。値の入ったサーバーのセル（最新単価など）は画面と同じに残します。
 const TABLE_MENU_ITEMS = [
     { icon: '🖨', label: 'この表を印刷', run: (table) => printTable(table) },
@@ -9006,7 +8992,7 @@ function refreshTableMenus() {
     if (document.body.hasAttribute('edit-mode')) return;
     document.querySelectorAll('#w-editor-content table').forEach((t) => {
         if (t.parentElement && t.parentElement.closest('table')) return;
-        if (t.closest('.backlog-sheet')) return;
+        if (t.closest('.w-no-table-menu')) return; // 自分の操作を持つ表（拡張が印を付ける——例: 東邦の案件残表）
         const box = document.createElement('div');
         box.className = 'vocab-chrome w-table-menu' + (t.querySelector(':scope > caption') ? ' on-caption' : '');
         box.contentEditable = 'false';
@@ -9085,7 +9071,7 @@ function closeTableMenu() {
 // printableTableCopy は表の写しから、紙に要らない操作の部品を外したものを返します。
 function printableTableCopy(table) {
     const copy = table.cloneNode(true);
-    copy.querySelectorAll('button, input, select, textarea, .w-table-menu, .draft-form-box, .w-sort-mark')
+    copy.querySelectorAll('button, input, select, textarea, .w-table-menu, .w-no-print, .w-sort-mark')
         .forEach((el) => el.remove());
     copy.querySelectorAll('th.vocab-chrome, td.vocab-chrome').forEach((c) => {
         if (!c.textContent.trim()) c.remove();

@@ -46,7 +46,7 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	// 「部材発注書を作る」の欄は**表の外（包む節の中・表の直後）**へ（2026-09-28・`draftBoxOf`）。
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
-	appendHTML(box, `<div class="vocab-chrome draft-form-box" contenteditable="false">`+
+	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+
 		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx)+`</div>`)
 	return false, nil
 }

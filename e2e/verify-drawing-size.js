@@ -105,7 +105,7 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
     await page.waitForTimeout(400);
     // ⚠ 憶える形は「物ごと（ページ×添付）の縦横比」（2026-10-14 に試験を追いつかせた）——09-28〜29 から、記録は
     //    `wcms.view` の pages[ページ番号].r['f:'+添付の参照]（高さ÷幅）で、`wcms.ui` の `drawing.height`（全部の枠で
-    //    1つの高さ）は使わない（app.js の wireDrawingResize・ViewState）。
+    //    1つの高さ）は使わない（app.js の wireFileViewResize・ViewState）。
     const b = await page.evaluate((arg) => {
       const w = document.querySelector('#w-editor-content .file-view');
       const r = w.getBoundingClientRect();
