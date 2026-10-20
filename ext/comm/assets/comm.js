@@ -240,4 +240,232 @@ async function loadReplies(box) {
 }
 
 w.onChrome(refreshMailChrome);
+
+// ── 版 3 から通信の JS が持つ部分（2026-10-20 に app.js から移した）——☎ 発信・未処理の一覧の「済」「不要」・「＋ 記録する」。
+if (w.version >= 3) {
+const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, failMessage, tagValue, hasExtension, reloadContent, loadChildNav } = w;
+
+// ── 電話をかける（tel: リンク・2026-09-05）───────────────────────────
+//
+// ユーザー:「CMSから電話をかける時にページを作るかチェックボックスがあっても
+// 良いと思います」。**発信はもともと人が意図してする操作**なので、そこに
+// チェック1つを足すのがいちばん安い歯止めになります（着信のように歯止めを
+// あとから足す必要がない）。
+//
+// 発信の記録は `向き：送信` なので、**作業待ちには並びません**——かけた電話は
+// 済んだ出来事です。特別扱いのコードは1行も要りません。
+//
+// `tel:` はサニタイザが元から許すスキームなので、**ソフトフォンがあれば今日から
+// 押せます**。CTI の発信APIへ変えるときも、記録の形は変わりません。
+const PHONE_TAG = '電話番号';
+
+function refreshPhoneChrome() {
+    document.querySelectorAll('#w-editor-content .phone-chrome').forEach(el => el.remove());
+    // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
+    const host = document.getElementById('w-editor-content');
+    if (!host || !w.pageId()) return;
+    const number = tagValue(PHONE_TAG);
+    if (!number) return;
+
+    const box = makeEl('div', 'vocab-chrome phone-chrome');
+    box.setAttribute('contenteditable', 'false');
+
+    // 発信そのものはブラウザ任せ（素の <a href="tel:">）。JSで横取りすると、
+    // ソフトフォンへの受け渡しを壊しかねない。
+    const call = makeEl('a', 'phone-call');
+    call.href = 'tel:' + number.replace(/[^0-9+]/g, '');
+    call.textContent = '☎ ' + number + ' へかける';
+    box.appendChild(call);
+
+    // **かけること自体は通信拡張の持ち物ではありません**（2026-09-16）。
+    // `tel:` はただのリンクなので、通信を外した組でも掛けられます。外れるのは
+    // 「記録を作る」だけ——こちらは `/api/intake/memo` を叩くので、通信が無いと
+    // **押した瞬間に「発信の記録を作れませんでした」の通知**が出ます
+    // （チェックは既定でオンなので、掛けるたびに必ず出る）。
+    let check = null;
+    if (hasExtension('comm')) {
+        const label = makeEl('label', 'phone-record');
+        check = document.createElement('input');
+        check.type = 'checkbox';
+        check.checked = true; // **既定はオン**——「かけたのに記録が無い」ほうが後で困る
+        label.appendChild(check);
+        label.appendChild(document.createTextNode(' 記録を作る'));
+        box.appendChild(label);
+    }
+
+    call.addEventListener('click', () => {
+        if (!check || !check.checked) return;
+        createCallRecord(number);
+    });
+    host.appendChild(box);
+}
+
+// createCallRecord は発信の記録を作り、書けるように開きます。
+async function createCallRecord(number) {
+    try {
+        const res = await fetch('/api/intake/memo', jsonPost({
+                channel: '電話',
+                direction: '送信',
+                phone: number,
+                counterpart: w.pageId(),
+                title: (document.querySelector('#w-editor-content h1') || {}).textContent || '',
+            }));
+        const data = await res.json();
+        if (!data.success) {
+            notify(data.message || '発信の記録を作れませんでした', { type: 'warn' });
+            return;
+        }
+        notify('発信の記録を作りました。開いて内容を書けます。',
+            { type: 'success', duration: 8000 });
+        location.href = '/' + data.page_id + '?edit=true';
+    } catch (e) {
+        notify('発信の記録を作れませんでした: ' + e.message, { type: 'warn' });
+    }
+}
+
+// ── 未処理の一覧の操作（2026-09-05）────────────────────────────────
+//
+// サーバーが描いた表（view_unhandled.go）に、click を配線するだけの役です。
+// **CSP strict なのでインラインの `onclick` は書けません**——サーバーが出せるのは
+// 印（`.vocab-chrome` と `data-page-id`）までで、動きはここが与えます。
+//
+// ボタンは書ける形でも押せます（2026-10-12 から・【考察】編集モードの再考 §6 問い5）。
+// それまでは**閲覧モードだけ**でした（編集モードで本文をいじっている最中に行が消えると、
+// 何が起きたのか分からないため）。
+// ⚠ **ここに `hasExtension('comm')` は要りません**（2026-09-16 に確かめた）。
+// 押す相手（`.unhandled-mark`・まとめて片付け）は**サーバーが描いたもの**で、
+// 通信が無ければ `unhandled-intake` は語彙レジストリに載らず、鏡の引き金自体が
+// 立ちません——本文に `<section><h2>未処理の受信</h2></section>` が書いてあっても
+// 空のまま出るので、この関数は何も見つけずに帰ります。**同じ理由で `wireNewRecord`
+// にも要りません**（「＋ 記録する」も同じビューが描いています）。
+// 出し分けが要るのは「JSが自分で作るクローム」だけ——通信の記録の箱（2026-10-20 から ext/comm/assets/comm.js・それまでは
+// `refreshMailChrome`）と電話の「記録を作る」がそれです。
+function wireUnhandledActions() {
+    const host = document.getElementById('w-editor-content');
+    if (!host) return;
+    const editMode = false; // 書ける形でも押せる（2026-10-12・問い5。書き換えるのは一覧の行の先の記録ページで、このページの本文ではない——markHandled は書きかけを先に保存しない）
+    host.querySelectorAll('.unhandled-mark').forEach(btn => {
+        btn.disabled = editMode;
+        if (btn.dataset.wired) return;
+        btn.dataset.wired = '1';
+        btn.addEventListener('click',
+            () => markHandled([btn.dataset.pageId], btn, btn.dataset.value));
+    });
+    host.querySelectorAll('#w-unhandled-bulk-done, #w-unhandled-bulk-skip').forEach(bulk => {
+        bulk.disabled = editMode;
+        if (bulk.dataset.wired) return;
+        bulk.dataset.wired = '1';
+        bulk.addEventListener('click', () => {
+            const picked = Array.from(
+                host.querySelectorAll('.unhandled-check:checked')
+            ).map(c => c.dataset.pageId);
+            if (!picked.length) {
+                notify('片付けるものを選んでください', { type: 'warn' });
+                return;
+            }
+            markHandled(picked, bulk, bulk.dataset.value);
+        });
+    });
+}
+
+// wireNewRecord は「＋ 記録する」を配線します（電話・FAX・メール・メモ）。
+//
+// ユーザー:「いずれFAXサーバーを接続したら、自動的にチャネルがFAXになります」
+// ——手で作る道と機械が作る道が**同じ形のページ**に落ちるので、ここは
+// 「チャネルを選んで作る」以上のことをしません。作ったら開いて書き始められる
+// ように、そのページへ移ります。
+function wireNewRecord() {
+    const btn = document.getElementById('w-memo-create');
+    if (!btn || btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    const title = document.getElementById('w-memo-title');
+    const dir = document.getElementById('w-memo-direction');
+    const sel = document.getElementById('w-memo-channel');
+    // **メモには向きがありません。** 選べてしまうと「どちらでもない」を
+    // どちらかで書くことになるので、伏せます。
+    const syncDirection = () => {
+        if (!dir || !sel) return;
+        const off = sel.value === 'メモ';
+        dir.disabled = off;
+        dir.style.opacity = off ? '0.4' : '';
+    };
+    if (sel) sel.addEventListener('change', syncDirection);
+    syncDirection();
+    btn.addEventListener('click', () => createRecord(btn));
+    // 用件を打って Enter でも作れる（電話中に押す操作なので、手数を減らす）。
+    if (title) {
+        title.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); createRecord(btn); }
+        });
+    }
+}
+
+async function createRecord(btn) {
+    const sel = document.getElementById('w-memo-channel');
+    const dir = document.getElementById('w-memo-direction');
+    const title = document.getElementById('w-memo-title');
+    if (!sel) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/intake/memo', jsonPost({
+                channel: sel.value,
+                direction: (dir && !dir.disabled) ? dir.value : '',
+                title: title ? title.value : '',
+            }));
+        const data = await res.json();
+        if (!data.success) {
+            notify(data.message || '記録を作れませんでした', { type: 'warn' });
+            return;
+        }
+        // **作ったら開く。** 記録は書くために作るので、一覧に戻す意味がない。
+        location.href = '/' + data.page_id + '?edit=true';
+    } catch (e) {
+        notify('記録を作れませんでした: ' + e.message, { type: 'warn' });
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// markHandled は `対応` の印を付け、片付いた行をその場で消します。
+//
+// 値は「済」（次の作業へ割り振った——**責任はそちらへ移る**）か「不要」
+// （何も生まれない）。**行を消すのは見た目だけ**で、正本は本文のタグです。
+// 次にページを開けばサーバーが描き直すので、ここでの見せ方がずれても壊れません。
+async function markHandled(pageIds, btn, value) {
+    // **空のIDは送りません。** 配列に undefined が混じると、サーバーは
+    // 「権限がありません」と数えるしかなく、押した人には理由が分かりません
+    // （実際にボタンのクラス取り違えでこれが出ました・2026-09-05）。
+    pageIds = (pageIds || []).filter(id => id);
+    if (!pageIds.length) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/intake/handled', jsonPost({ page_ids: pageIds, value: value || '済' }));
+        const data = await res.json();
+        if (!data.success) {
+            notify(data.message || '片付けられませんでした', { type: 'warn' });
+            return;
+        }
+        const host = document.getElementById('w-editor-content');
+        pageIds.forEach(id => {
+            const row = host && host.querySelector('tr[data-page-id="' + id + '"]');
+            if (row) row.remove();
+        });
+        if (data.failed) {
+            notify(data.handled + '件を「' + (value || '済') + '」にしました（' +
+                data.failed + '件は権限がありません）', { type: 'warn' });
+        } else {
+            notify(data.handled + '件を「' + (value || '済') + '」にしました',
+                { type: 'success', duration: 4000 });
+        }
+    } catch (e) {
+        notify('片付けられませんでした: ' + e.message, { type: 'warn' });
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+w.onChrome(refreshPhoneChrome);
+w.onChrome(wireUnhandledActions);
+w.onChrome(wireNewRecord);
+}
 })();

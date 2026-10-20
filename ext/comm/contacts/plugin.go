@@ -56,6 +56,8 @@ func init() {
 	// **名簿に載る**（起動ログと画面の出し分け——「未分類へ戻す」はこの名前を見て出る）。
 	// toho の import で連れてこられた場合も、ここで名乗るので名簿から漏れません。
 	cms.RegisterExtension("comm/contacts", "アドレス帳")
+	// **画面の JS も連絡帳の持ち物**です（2026-10-20）——「未分類へ戻す」と、未登録の連絡先の「組織」「担当者」「登録」。
+	cms.RegisterScript("comm/contacts", "ext/comm/contacts/assets/contacts.js")
 	cms.Register(contactsPlugin{})
 }
 

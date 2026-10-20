@@ -1056,7 +1056,6 @@
             { type: 'warn', duration: 10000, id: 'unresolved-fields' });
     }
 
-
     // notifyStrippedIDs は「殻が独占する接頭辞つきの id を剥がした」ことの告知。
     // 本文の id は自由だが、この接頭辞だけは画面側（シェル）の名前空間なので侵させない。
     function notifyStrippedIDs(ids) {
@@ -2464,19 +2463,14 @@
         decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
         // 「書ける形でも」の業務のボタンは、2026-10-12 まで閲覧モード限定だった（いまは押す前に書きかけを保存する）。
         refreshFilingButton();      // 加工製品ページの整理（書ける形でも）
-        runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20——通信の記録の箱は ext/comm/assets/comm.js）
-        wireUnhandledActions();      // 未処理一覧の「不要」ボタン（書ける形でも）
-        wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
-        wireMailFetch();             // 「📥 新しいメールを読み込む」（その隣・2026-09-29）
-        refreshPhoneChrome();        // ☎ 発信（電話番号のタグがあるページ・書ける形でも）
-        refreshContactUnfile();      // 「未分類へ戻す」（メールアドレスのタグの隣・書ける形でも）
+        runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20）——通信の記録の箱・☎ 発信・未処理の一覧・「＋ 記録する」
+                                     // （ext/comm/assets/comm.js）・メールの読み込み（ext/comm/mail/assets/mail.js）・連絡先（ext/comm/contacts/assets/contacts.js）
         if (toggle.checked) ensureIdleContextToolbar(); // 固定の帯の文字の帯を、触る前から見せる（2026-10-19）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
         refreshFormulaCells();       // 表のセルの式——閲覧では結果・編集では式（2026-10-04・並べ替え・印刷より先に）
         refreshHeadingFolds();       // 見出しを押して次の同じ段の見出しまで畳む（閲覧モード限定・表示だけ・2026-10-04）
         refreshTableMenus();         // どの表にも「⋯」——開くと「🖨 この表を印刷」など（閲覧モード限定・2026-10-02・10-15 に「⋯」へ）
         refreshTableSort();          // 列の題を押して並べ替える（閲覧モード限定・表示だけ・2026-10-03）
-        wireContactRegister();       // 未登録の連絡先の「組織」「担当者」「登録」（書ける形でも）
         foldMachineTags();           // 機械に向けたタグを「詳細」へ畳む（閲覧モード限定）
         renderPresence();            // ほかの人のキャレットのあるブロック（書ける形だけ・2026-10-12 昼）
         updatePresence(false);
@@ -2903,7 +2897,6 @@
             else if (ev.type === 'hello' && loadedUpdatedAt && ev.updated_at && ev.updated_at !== loadedUpdatedAt) schedulePageCheck('');
         };
     }
-
 
     // ── アプリ内通知（トースト） ────────────────────────────────────────────
     // notify(message, {type, duration, id, action}) でトーストを出す。
@@ -5940,8 +5933,6 @@
         });
     }
 
-
-
     // makeCopyRefButton は添付の参照（`ページID-添付ID`）を写すボタンを作ります。
     //
     // **これが「ほかのページに出す」の入口**です。写した値を、行き先のページで
@@ -5998,149 +5989,6 @@
             if (dd && dd.tagName === 'DD') return dd.textContent.trim();
         }
         return '';
-    }
-
-    // ── 電話をかける（tel: リンク・2026-09-05）───────────────────────────
-    //
-    // ユーザー:「CMSから電話をかける時にページを作るかチェックボックスがあっても
-    // 良いと思います」。**発信はもともと人が意図してする操作**なので、そこに
-    // チェック1つを足すのがいちばん安い歯止めになります（着信のように歯止めを
-    // あとから足す必要がない）。
-    //
-    // 発信の記録は `向き：送信` なので、**作業待ちには並びません**——かけた電話は
-    // 済んだ出来事です。特別扱いのコードは1行も要りません。
-    //
-    // `tel:` はサニタイザが元から許すスキームなので、**ソフトフォンがあれば今日から
-    // 押せます**。CTI の発信APIへ変えるときも、記録の形は変わりません。
-    const PHONE_TAG = '電話番号';
-
-    // ── 分類の取り消し（2026-09-13）─────────────────────────────────────
-    //
-    // ユーザー:「間違えてアドレスを分類した場合、どうやって未分類に戻しますか？」。
-    //
-    // **仕組みとしては前からできました**——未登録の一覧は「どこにも `メールアドレス`
-    // タグが無いアドレス」という索引からの派生なので、タグを外せば戻ります。
-    // ただし**手数が非対称**でした: 分類は1クリック、取り消しは編集モードに入って
-    // タグの組を消して保存。**押し間違いの取り消しが、いちばん面倒**という形です。
-    //
-    // そこで、取引先の下のページでは `メールアドレス` の隣に小さな口を出します（2026-09-16 から連絡先の置き場は
-    // 「連絡帳」で、サーバーの口〔/api/contacts/unfile〕も連絡帳の下のページだけを受け付けます。⚠ この画面は置き場を
-    // 確かめず、`メールアドレス` のタグがあるページならどこでも出します）。
-    // 押すとそのタグだけ外れ、未登録の一覧へ戻ります。**ページは消しません**
-    // （空になったら、そう伝えるだけ）。
-    const EMAIL_TAG = 'メールアドレス';
-
-    function refreshContactUnfile() {
-        document.querySelectorAll('#w-editor-content .contact-unfile').forEach(el => el.remove());
-        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
-        if (!hasExtension('comm/contacts')) return; // アドレス帳の持ち物（2026-09-15）
-        const host = document.getElementById('w-editor-content');
-        if (!host || !currentPageId) return;
-
-        host.querySelectorAll('dl[data-type="tags"] > dt').forEach(dt => {
-            if (dt.textContent.trim() !== EMAIL_TAG) return;
-            const dd = dt.nextElementSibling;
-            if (!dd || dd.tagName.toLowerCase() !== 'dd') return;
-            const addr = dd.textContent.trim();
-            if (!addr) return;
-            const btn = makeButton('vocab-chrome chip-btn contact-unfile');
-            btn.contentEditable = 'false'; // 書ける形では dd が書けるので、札の字に打てないように（2026-10-12）
-            btn.textContent = '未分類へ戻す';
-            btn.title = addr + ' をこのページから外し、「未登録の連絡先」へ戻します'
-                + '（ページは消しません）';
-            btn.addEventListener('click', () => unfileContact(btn, addr, dt, dd));
-            dd.appendChild(btn);
-        });
-    }
-
-    async function unfileContact(btn, addr, dt, dd) {
-        btn.disabled = true;
-        try {
-            const res = await fetch('/api/contacts/unfile', jsonPost({ page_id: currentPageId, address: addr }));
-            const data = await res.json();
-            if (!data.success) {
-                notify(data.message || '戻せませんでした', { type: 'warn' });
-                return;
-            }
-            // 見た目だけ先に消します。正本は本文で、次に開けば描き直されます。
-            dd.remove();
-            dt.remove();
-            if (data.empty) {
-                // **消しません**——空になったことだけ伝えます（消すかは人が決める）。
-                notify(addr + ' を未分類へ戻しました。このページは空になりました'
-                    + '（要らなければ削除してください）。', { type: 'info', duration: 8000 });
-            } else {
-                notify(addr + ' を未分類へ戻しました', { type: 'success', duration: 5000 });
-            }
-        } catch (e) {
-            notify('戻せませんでした: ' + e.message, { type: 'warn' });
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    function refreshPhoneChrome() {
-        document.querySelectorAll('#w-editor-content .phone-chrome').forEach(el => el.remove());
-        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
-        const host = document.getElementById('w-editor-content');
-        if (!host || !currentPageId) return;
-        const number = tagValue(PHONE_TAG);
-        if (!number) return;
-
-        const box = makeEl('div', 'vocab-chrome phone-chrome');
-        box.setAttribute('contenteditable', 'false');
-
-        // 発信そのものはブラウザ任せ（素の <a href="tel:">）。JSで横取りすると、
-        // ソフトフォンへの受け渡しを壊しかねない。
-        const call = makeEl('a', 'phone-call');
-        call.href = 'tel:' + number.replace(/[^0-9+]/g, '');
-        call.textContent = '☎ ' + number + ' へかける';
-        box.appendChild(call);
-
-        // **かけること自体は通信拡張の持ち物ではありません**（2026-09-16）。
-        // `tel:` はただのリンクなので、通信を外した組でも掛けられます。外れるのは
-        // 「記録を作る」だけ——こちらは `/api/intake/memo` を叩くので、通信が無いと
-        // **押した瞬間に「発信の記録を作れませんでした」の通知**が出ます
-        // （チェックは既定でオンなので、掛けるたびに必ず出る）。
-        let check = null;
-        if (hasExtension('comm')) {
-            const label = makeEl('label', 'phone-record');
-            check = document.createElement('input');
-            check.type = 'checkbox';
-            check.checked = true; // **既定はオン**——「かけたのに記録が無い」ほうが後で困る
-            label.appendChild(check);
-            label.appendChild(document.createTextNode(' 記録を作る'));
-            box.appendChild(label);
-        }
-
-        call.addEventListener('click', () => {
-            if (!check || !check.checked) return;
-            createCallRecord(number);
-        });
-        host.appendChild(box);
-    }
-
-    // createCallRecord は発信の記録を作り、書けるように開きます。
-    async function createCallRecord(number) {
-        try {
-            const res = await fetch('/api/intake/memo', jsonPost({
-                    channel: '電話',
-                    direction: '送信',
-                    phone: number,
-                    counterpart: currentPageId,
-                    title: (document.querySelector('#w-editor-content h1') || {}).textContent || '',
-                }));
-            const data = await res.json();
-            if (!data.success) {
-                notify(data.message || '発信の記録を作れませんでした', { type: 'warn' });
-                return;
-            }
-            notify('発信の記録を作りました。開いて内容を書けます。',
-                { type: 'success', duration: 8000 });
-            location.href = '/' + data.page_id + '?edit=true';
-        } catch (e) {
-            notify('発信の記録を作れませんでした: ' + e.message, { type: 'warn' });
-        }
     }
 
     // ── 加工製品ページの整理（提案→人が直す→実行）───────────────────────────
@@ -6975,392 +6823,6 @@
         }
         run.disabled = false;
         run.textContent = '実行';
-    }
-
-    // ── 未処理の一覧の操作（2026-09-05）────────────────────────────────
-    //
-    // サーバーが描いた表（view_unhandled.go）に、click を配線するだけの役です。
-    // **CSP strict なのでインラインの `onclick` は書けません**——サーバーが出せるのは
-    // 印（`.vocab-chrome` と `data-page-id`）までで、動きはここが与えます。
-    //
-    // ボタンは書ける形でも押せます（2026-10-12 から・【考察】編集モードの再考 §6 問い5）。
-    // それまでは**閲覧モードだけ**でした（編集モードで本文をいじっている最中に行が消えると、
-    // 何が起きたのか分からないため）。
-    // ⚠ **ここに `hasExtension('comm')` は要りません**（2026-09-16 に確かめた）。
-    // 押す相手（`.unhandled-mark`・まとめて片付け）は**サーバーが描いたもの**で、
-    // 通信が無ければ `unhandled-intake` は語彙レジストリに載らず、鏡の引き金自体が
-    // 立ちません——本文に `<section><h2>未処理の受信</h2></section>` が書いてあっても
-    // 空のまま出るので、この関数は何も見つけずに帰ります。**同じ理由で `wireNewRecord`
-    // にも要りません**（「＋ 記録する」も同じビューが描いています）。
-    // 出し分けが要るのは「JSが自分で作るクローム」だけ——通信の記録の箱（2026-10-20 から ext/comm/assets/comm.js・それまでは
-    // `refreshMailChrome`）と電話の「記録を作る」がそれです。
-    function wireUnhandledActions() {
-        const host = document.getElementById('w-editor-content');
-        if (!host) return;
-        const editMode = false; // 書ける形でも押せる（2026-10-12・問い5。書き換えるのは一覧の行の先の記録ページで、このページの本文ではない——markHandled は書きかけを先に保存しない）
-        host.querySelectorAll('.unhandled-mark').forEach(btn => {
-            btn.disabled = editMode;
-            if (btn.dataset.wired) return;
-            btn.dataset.wired = '1';
-            btn.addEventListener('click',
-                () => markHandled([btn.dataset.pageId], btn, btn.dataset.value));
-        });
-        host.querySelectorAll('#w-unhandled-bulk-done, #w-unhandled-bulk-skip').forEach(bulk => {
-            bulk.disabled = editMode;
-            if (bulk.dataset.wired) return;
-            bulk.dataset.wired = '1';
-            bulk.addEventListener('click', () => {
-                const picked = Array.from(
-                    host.querySelectorAll('.unhandled-check:checked')
-                ).map(c => c.dataset.pageId);
-                if (!picked.length) {
-                    notify('片付けるものを選んでください', { type: 'warn' });
-                    return;
-                }
-                markHandled(picked, bulk, bulk.dataset.value);
-            });
-        });
-    }
-
-    // wireNewRecord は「＋ 記録する」を配線します（電話・FAX・メール・メモ）。
-    //
-    // ユーザー:「いずれFAXサーバーを接続したら、自動的にチャネルがFAXになります」
-    // ——手で作る道と機械が作る道が**同じ形のページ**に落ちるので、ここは
-    // 「チャネルを選んで作る」以上のことをしません。作ったら開いて書き始められる
-    // ように、そのページへ移ります。
-    function wireNewRecord() {
-        const btn = document.getElementById('w-memo-create');
-        if (!btn || btn.dataset.wired) return;
-        btn.dataset.wired = '1';
-        const title = document.getElementById('w-memo-title');
-        const dir = document.getElementById('w-memo-direction');
-        const sel = document.getElementById('w-memo-channel');
-        // **メモには向きがありません。** 選べてしまうと「どちらでもない」を
-        // どちらかで書くことになるので、伏せます。
-        const syncDirection = () => {
-            if (!dir || !sel) return;
-            const off = sel.value === 'メモ';
-            dir.disabled = off;
-            dir.style.opacity = off ? '0.4' : '';
-        };
-        if (sel) sel.addEventListener('change', syncDirection);
-        syncDirection();
-        btn.addEventListener('click', () => createRecord(btn));
-        // 用件を打って Enter でも作れる（電話中に押す操作なので、手数を減らす）。
-        if (title) {
-            title.addEventListener('keydown', e => {
-                if (e.key === 'Enter') { e.preventDefault(); createRecord(btn); }
-            });
-        }
-    }
-
-    // ── 通信箱の「📥 新しいメールを読み込む」（2026-09-29） ─────────────────
-    //
-    // 利用者:「通信箱に最新のメールを読み込むボタンもお願いします」。「＋ 記録する」（通信箱の未処理の一覧の欄）の
-    // 隣に置く。押すと**受信箱と送信済みの箱**から、まだ入っていないメールだけを取り込む（重複は Message-ID で弾く）。
-    // 送信済みのメールは差出人が自分なので「送信」の記録になる。メールの拡張（comm/mail）が載っていなければ出さない。
-    //
-    // ⚠ **読み込みはサーバーの裏で続きます**（2026-10-09 利用者:「新しいメールの読み込みは、ページを閉じても継続するように
-    //    してください」——ext/comm/mail/fetch_job.go）。押すと POST /api/mail/fetch-new で始め、画面は
-    //    GET /api/mail/fetch-new/status で様子を見に行くだけ。新しいメールが尽きるまで読むので「もう一度押す」は要らない。
-    //    それまでは画面が箱ごとに /api/mail/import を呼び、ページを閉じると途中で止まっていた。開いたときに読み込みが
-    //    動いていれば、その続きを見る（ボタンが「読み込み中…」になり、終わったら知らせる）。
-    function wireMailFetch() {
-        const memo = document.getElementById('w-memo-create');
-        if (!memo || !hasExtension('comm/mail') || document.getElementById('w-mail-fetch')) return;
-        const btn = makeButton('');
-        btn.id = 'w-mail-fetch';
-        btn.textContent = '📥 新しいメールを読み込む';
-        btn.title = '受信箱と送信済みの箱から、まだ通信箱に入っていないメールを取り込みます';
-        memo.insertAdjacentElement('afterend', btn);
-        btn.addEventListener('click', () => fetchNewMail(btn));
-        wireMailSignIn(btn);
-        resumeMailFetch(btn);
-    }
-
-    // resumeMailFetch は、開いたときに裏の読み込みが動いていれば、その様子を見続けます（閉じたあいだも続いていた回）。
-    async function resumeMailFetch(btn) {
-        let st = null;
-        try {
-            st = ((await (await fetch('/api/mail/fetch-new/status')).json()) || {}).status;
-        } catch (e) {
-            return;
-        }
-        if (st && st.running) watchMailFetch(btn, st.run);
-    }
-
-    // wireMailSignIn は「✉️ メールにサインイン」を「📥 新しいメールを読み込む」の隣に置きます（2026-10-02）。
-    //
-    // 利用者:「メールの画面からもう一度サインインを教えてください」——サインインの口（`POST /api/mail/signin`・
-    // デバイスコード）はあったが、**押す道が画面のどこにも無かった**（最初のサインインは口を直に叩いていた）。
-    // 新しい利用者で入るとサインインが要る（保管は利用者ごと）ので、画面から始められるようにする。
-    //
-    // ⚠ **サインインしていないときだけ出す**（`/api/mail/status`）。押すと Microsoft の画面へのリンクと番号を出し、
-    //    そこでサインインし終えるのを待って（status を数秒おきに見る）、済んだら消える。パスワードは w-cms を通らない。
-    async function wireMailSignIn(after) {
-        if (document.getElementById('w-mail-signin')) return;
-        let st;
-        try {
-            st = await (await fetch('/api/mail/status')).json();
-        } catch (e) {
-            return;
-        }
-        if (!st || !st.success || !st.configured || st.address) return;
-        if (document.getElementById('w-mail-signin')) return;
-        const btn = makeButton('');
-        btn.id = 'w-mail-signin';
-        btn.textContent = '✉️ メールにサインイン';
-        btn.title = 'メールにサインインしていません（サインインは利用者ごと）。押すと Microsoft の画面でサインインします';
-        const box = document.createElement('span');
-        box.id = 'w-mail-signin-box';
-        box.className = 'mail-signin-box';
-        after.insertAdjacentElement('afterend', btn);
-        btn.insertAdjacentElement('afterend', box);
-        btn.addEventListener('click', () => startMailSignIn(btn, box));
-    }
-
-    async function startMailSignIn(btn, box) {
-        btn.disabled = true;
-        box.textContent = 'サインインの番号をもらっています…';
-        let d;
-        try {
-            const res = await fetch('/api/mail/signin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-            d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
-        } catch (e) {
-            box.textContent = '⚠ サインインを始められません: ' + e.message;
-            btn.disabled = false;
-            return;
-        }
-        // 案内: リンクを開いて番号を入れる（別のタブ）。
-        box.textContent = '';
-        const a = document.createElement('a');
-        a.href = d.verification_uri;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.textContent = 'Microsoft の画面を開く';
-        const code = makeEl('strong', 'mail-signin-code', d.user_code);
-        box.append('① ', a, '　② 番号 ', code, ' を入れて、メールのアカウントでサインイン（このページはそのまま待ちます）');
-        // 済むのを待つ（番号の期限まで・3秒おき）。
-        const until = Date.now() + (Number(d.expires_in) || 900) * 1000;
-        while (Date.now() < until) {
-            await new Promise((r) => setTimeout(r, 3000));
-            let st;
-            try {
-                st = await (await fetch('/api/mail/status', { headers: BG_HEADERS })).json(); // 待つあいだの見張り——操作ではない
-            } catch (e) {
-                continue;
-            }
-            if (st && st.address) {
-                btn.remove();
-                box.textContent = '✓ ' + st.address + ' でサインインしました';
-                notify('メールにサインインしました（' + st.address + '）', { type: 'success', duration: 8000 });
-                return;
-            }
-        }
-        box.textContent = '⚠ 番号の期限が切れました。もう一度押してください';
-        btn.disabled = false;
-    }
-
-    async function fetchNewMail(btn) {
-        btn.disabled = true;
-        let r;
-        try {
-            r = await postJSON('/api/mail/fetch-new', {});
-        } catch (e) {
-            r = { ok: false, data: { message: '通信に失敗しました: ' + e.message } };
-        }
-        if (!r.ok || !r.data.status) {
-            btn.disabled = false;
-            notify((r.data && r.data.message) || 'メールの読み込みを始められませんでした', { type: 'warn', duration: 8000 });
-            return;
-        }
-        watchMailFetch(btn, r.data.status.run);
-    }
-
-    // watchMailFetch は裏の読み込み（回 run）の様子を2秒おきに見て、ボタンに読み込んだ数を出し、終わったら知らせます。
-    // ⚠ 見ているのは画面だけ——ページを閉じても読み込みは続きます（ボタンの title でもそう言う）。
-    async function watchMailFetch(btn, run) {
-        if (btn.dataset.watching === String(run)) return; // 同じ回を二重に見ない
-        btn.dataset.watching = String(run);
-        const label = '📥 新しいメールを読み込む';
-        const title = btn.title;
-        btn.disabled = true;
-        btn.title = '読み込みはサーバーで続いています——ページを閉じても止まりません';
-        const count = (st, folder) => ((st.folders || {})[folder] || {}).imported || 0;
-        let st = null;
-        for (;;) {
-            try {
-                // 2秒おきの見張り——操作ではない（読み込みが何時間続いてもセッションを延ばさない）。
-                st = ((await (await fetch('/api/mail/fetch-new/status', { headers: BG_HEADERS })).json()) || {}).status;
-            } catch (e) {
-                st = null; // 一時の通信の失敗——続けて見る
-            }
-            if (st && st.run === run && !st.running) break;
-            if (st && st.run !== run) break; // 別の回に替わった（ほかの画面から押し直した）——ここでは見るのをやめる
-            btn.textContent = '📥 読み込み中…' + (st ? '（' + (count(st, '受信') + count(st, '送信')) + ' 通）' : '');
-            await new Promise((res) => setTimeout(res, 2000));
-        }
-        delete btn.dataset.watching;
-        btn.disabled = false;
-        btn.textContent = label;
-        btn.title = title;
-        if (!st || st.run !== run) return;
-        const got = { 受信: count(st, '受信'), 送信: count(st, '送信') };
-        const failed = ['受信', '送信'].reduce((n, f) => n + (((st.folders || {})[f] || {}).failed || 0), 0);
-        const errs = st.errors || [];
-        let text = '受信 ' + got['受信'] + ' 通・送信 ' + got['送信'] + ' 通を読み込みました';
-        if (failed) text += '（失敗 ' + failed + ' 通）';
-        if (errs.length) text += '——' + errs.join(' / ');
-        notify(text, { type: (errs.length || failed) ? 'warn' : 'success', duration: 8000 });
-        if (got['受信'] + got['送信'] > 0) {
-            loadChildNav();
-            // 書きかけを消さない（取り込み側は reloadContent を書ける形では呼ばない——引き継ぎの罠）。
-            // 2026-10-12 から書ける形の reloadContent は書きかけを先に保存して変わったブロックだけ受け取るので消えないが、
-            // 呼ばないままにしてある。
-            if (!document.body.hasAttribute('edit-mode')) reloadContent();
-        }
-    }
-
-    async function createRecord(btn) {
-        const sel = document.getElementById('w-memo-channel');
-        const dir = document.getElementById('w-memo-direction');
-        const title = document.getElementById('w-memo-title');
-        if (!sel) return;
-        btn.disabled = true;
-        try {
-            const res = await fetch('/api/intake/memo', jsonPost({
-                    channel: sel.value,
-                    direction: (dir && !dir.disabled) ? dir.value : '',
-                    title: title ? title.value : '',
-                }));
-            const data = await res.json();
-            if (!data.success) {
-                notify(data.message || '記録を作れませんでした', { type: 'warn' });
-                return;
-            }
-            // **作ったら開く。** 記録は書くために作るので、一覧に戻す意味がない。
-            location.href = '/' + data.page_id + '?edit=true';
-        } catch (e) {
-            notify('記録を作れませんでした: ' + e.message, { type: 'warn' });
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    // ── 未登録の連絡先を相手ページにする（2026-09-05）─────────────────────
-    //
-    // ユーザー:「アドレス帳のようなものを作って、メールから人物や電話番号、
-    // メールアドレスを収集しましょう」。集めるのは取り込みが既にやっているので、
-    // ここは**人が名前を直して、どの取引かを押す**だけです。
-    //
-    // **顧客と仕入先は両方ありえます**（「顧客であり、仕入れ先である場合もあります」）
-    // ——押した順に `取引` のタグが増えるので、あとから足せます。
-    function wireContactRegister() {
-        const host = document.getElementById('w-editor-content');
-        if (!host) return;
-        const editMode = false; // 書ける形でも押せる（2026-10-12・問い5）
-        // **行の道具は2つの欄＋「登録」**（2026-09-17）。組織の欄が候補（datalist）の
-        // どれかに一致すれば既にある組織へ、無ければ新しい組織を作ります。
-        host.querySelectorAll('.contact-form').forEach(td => {
-            td.querySelectorAll('button, input').forEach(el => { el.disabled = editMode; });
-            if (td.dataset.wired) return;
-            td.dataset.wired = '1';
-            const go = td.querySelector('.contact-go');
-            if (go) go.addEventListener('click', () => submitContactRow(td));
-        });
-    }
-
-    // contactOrgCandidate は、組織の欄の文字が候補（datalist）に一致すればその候補を返します。
-    // **完全一致だけ**——揺れを画面が吸収すると、別の会社へ足すことになります。
-    function contactOrgCandidate(td) {
-        const org = td.querySelector('.contact-org');
-        const text = org ? org.value.trim() : '';
-        const list = org ? org.list : null;
-        if (!text || !list) return null;
-        for (const opt of list.options) {
-            if (opt.value === text) return { id: opt.dataset.id || '', title: opt.value };
-        }
-        return null;
-    }
-
-    // submitContactRow は「登録」——1つの口（/api/contacts/register）へ、組織と担当者を渡します。
-    // 組織が候補に一致すれば page_id、無ければ name（サーバーが同じ題の組織を探して寄せる）。
-    async function submitContactRow(td) {
-        const row = td.closest('tr');
-        const orgEl = td.querySelector('.contact-org');
-        const personEl = td.querySelector('.contact-person');
-        const go = td.querySelector('.contact-go');
-        const org = orgEl ? orgEl.value.trim() : '';
-        const person = personEl ? personEl.value.trim() : '';
-        if (!org) {
-            notify('組織を入れてください（社名か「' + (td.dataset.personalTitle || '個人') + '」）', { type: 'warn' });
-            if (orgEl) orgEl.focus();
-            return;
-        }
-        const cand = contactOrgCandidate(td);
-        const body = {
-            addresses: (go.dataset.addresses || '').split(',').filter(Boolean),
-            person_name: person,
-        };
-        if (cand && cand.id) body.page_id = cand.id; else body.name = org;
-        go.disabled = true;
-        try {
-            const res = await fetch('/api/contacts/register', jsonPost(body));
-            const data = await res.json();
-            if (!data.success) {
-                notify(data.message || '登録できませんでした', { type: 'warn' });
-                return;
-            }
-            // 行を消すのは見た目だけ。正本は相手ページのタグで、次に開けば描き直される。
-            if (row) row.remove();
-            notify(data.created
-                ? '「' + data.title + '」を登録しました'
-                : '「' + data.title + '」へ' + (data.added || 0) + '件足しました',
-                { type: 'success', duration: 6000 });
-        } catch (e) {
-            notify('登録できませんでした: ' + e.message, { type: 'warn' });
-        } finally {
-            go.disabled = false;
-        }
-    }
-
-    // markHandled は `対応` の印を付け、片付いた行をその場で消します。
-    //
-    // 値は「済」（次の作業へ割り振った——**責任はそちらへ移る**）か「不要」
-    // （何も生まれない）。**行を消すのは見た目だけ**で、正本は本文のタグです。
-    // 次にページを開けばサーバーが描き直すので、ここでの見せ方がずれても壊れません。
-    async function markHandled(pageIds, btn, value) {
-        // **空のIDは送りません。** 配列に undefined が混じると、サーバーは
-        // 「権限がありません」と数えるしかなく、押した人には理由が分かりません
-        // （実際にボタンのクラス取り違えでこれが出ました・2026-09-05）。
-        pageIds = (pageIds || []).filter(id => id);
-        if (!pageIds.length) return;
-        btn.disabled = true;
-        try {
-            const res = await fetch('/api/intake/handled', jsonPost({ page_ids: pageIds, value: value || '済' }));
-            const data = await res.json();
-            if (!data.success) {
-                notify(data.message || '片付けられませんでした', { type: 'warn' });
-                return;
-            }
-            const host = document.getElementById('w-editor-content');
-            pageIds.forEach(id => {
-                const row = host && host.querySelector('tr[data-page-id="' + id + '"]');
-                if (row) row.remove();
-            });
-            if (data.failed) {
-                notify(data.handled + '件を「' + (value || '済') + '」にしました（' +
-                    data.failed + '件は権限がありません）', { type: 'warn' });
-            } else {
-                notify(data.handled + '件を「' + (value || '済') + '」にしました',
-                    { type: 'success', duration: 4000 });
-            }
-        } catch (e) {
-            notify('片付けられませんでした: ' + e.message, { type: 'warn' });
-        } finally {
-            btn.disabled = false;
-        }
     }
 
     // analyzeOne は添付1つを解析します（「🤖 解析」と「まとめて解析」が共有する・2026-09-30 に切り出した）。
@@ -10554,8 +10016,9 @@ function runChromeHooks() {
 }
 
 window.wcms = Object.freeze({
-    // version は、拡張の JS が「この口が揃ったコアか」を見るための番号です（2 から東邦の配線を app.js に持たない——東邦の JS が持つ）。
-    version: 2,
+    // version は、拡張の JS が「この口が揃ったコアか」を見るための番号です（2 から東邦の鏡の配線、3 から通信・メール・連絡先の
+    // 前半の部分を app.js に持たない——拡張の JS が持つ）。
+    version: 3,
     // onChrome は「モードを切り替えるたび・読み直したたびに、飾りを付け直す」口です。もう描いたあとに登録されたら、すぐ1度呼ぶ。
     onChrome(fn) { chromeHooks.push(fn); if (chromeReady) runChromeHook(fn); },
     pageId: () => currentPageId,
@@ -10564,6 +10027,7 @@ window.wcms = Object.freeze({
     hasExtension: (id) => hasExtension(id),
     makeEl, makeButton, jsonPost, postJSON, getJSON, sayIn, valueIn, delegateClick, printOnly,
     readResult: (res) => readResult(res),
+    bgHeaders: BG_HEADERS, // 画面が裏で自動に送る要求の印（利用者の操作ではない——セッションを延ばさない）
     failMessage: (res, d) => failMessage(res, d),
     notify: (message, opts) => notify(message, opts),
     reloadContent: () => reloadContent(),

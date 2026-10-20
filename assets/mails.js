@@ -230,7 +230,7 @@
     ['ml-dir', 'ml-unhandled', 'ml-flat'].forEach((id) => $(id).addEventListener('change', again));
     $('ml-more').addEventListener('click', () => { shown += PAGE; render(); });
 
-    // 新しいメール（送る欄の部品・2026-09-30・assets/mail-compose.js）。もう一度押すと畳む。
+    // 新しいメール（送る欄の部品・2026-09-30・ext/comm/mail/assets/mail-compose.js——2026-10-20 に移した）。もう一度押すと畳む。
     const composeHost = $('ml-compose');
     $('ml-new').addEventListener('click', () => {
         if (composeHost.firstChild) { composeHost.textContent = ''; return; }

@@ -23,6 +23,9 @@
 // ⚠ **インラインの script/style・on*= は書けません**（CSP strict）——配線は addEventListener。
 (function () {
     'use strict';
+    // 2度読み込まれたら、2度目は何もしない（2026-10-20 に置き場を移したとき、入れ替えの途中で殻の古い <script> と、拡張が
+    // 登録した <script> の両方から読まれることがある——送る欄を2度配線しない）。
+    if (window.wcmsMailCompose) return;
 
     function el(tag, cls, text) {
         const e = document.createElement(tag);

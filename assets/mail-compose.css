@@ -1,4 +1,4 @@
-/* メールの送る欄（部品・assets/mail-compose.js・2026-09-30）。
+/* メールの送る欄（部品・ext/comm/mail/assets/mail-compose.js〔2026-10-20 に assets/ から移した〕・2026-09-30）。
  * エディタのページ（app.css の中）とメール一覧（mails.html）の両方で使うので、色は app.css の変数を
  * 読み、無ければ同じ値に落とす。インラインの style は書かない（CSP strict）。 */
 
