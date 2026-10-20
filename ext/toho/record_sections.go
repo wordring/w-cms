@@ -2,14 +2,15 @@ package toho
 
 // 記録の箱に東邦が足す節（2026-10-20・ext/comm/record_box.go・docs/考察/【考察】画面の JS のコアと拡張.md §4.5）。
 //
-//   - 整理の欄の置き場（filing-slot）——中身は東邦の JS が /api/filing-proposal を引いて組む（整理するものがあるときだけ出す）。
-//   - 🤖 解析——記録の添付（PDF・表計算・中に PDF のある ZIP）を並べ、解析済みなら結果の印を添える。ボタンは東邦の JS が
-//     置き場（analyze-slot）に組む。それまでは東邦の JS が、本文の添付のリンクの横にボタンを足していた（2026-10-20 利用者の
-//     「この案で進めてください」で、箱の中の一覧へ移した）。
+//   - 「📁 整理（N件）」のボタン（整理するものがあるときだけ）——押すと東邦の JS が /api/filing-proposal を引いて行き先の表を組む。
+//   - 🤖 解析——記録の添付（PDF・表計算・中に PDF のある ZIP）を並べ、ボタン（🤖 解析／🤖 再解析／まとめて解析）と、解析済みなら
+//     結果の印を描く。押したときの働きは東邦の JS が document へ委ねて配線する。それまでは東邦の JS が、本文の添付のリンクの横に
+//     ボタンを足していた（2026-10-20 利用者の「この案で進めてください」で、箱の中の一覧へ移した。同じ夕方、ボタンもサーバーが描く形に）。
 
 import (
 	stdhtml "html"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -26,11 +27,34 @@ func init() {
 	comm.RegisterRecordSection(comm.RecordSection{Order: 40, Render: analyzeSectionHTML})
 }
 
+// filingSlotHTML は「📁 整理（N件・ファイル M）」です。**整理するものが実際にあるときだけ出します**——押してから「ありません」と
+// 言うより、出さないほうが親切です。押したときに候補（/api/filing-proposal）を引いて行き先の表を組むのは東邦の JS。
+// 2026-10-20 夕までは、JS がページを開くたびに候補を全部引いて、このボタンを組んでいた。
 func filingSlotHTML(user *auth.User, pageIDInt int, draft bool) string {
 	if draft {
 		return ""
 	}
-	return `<div class="filing-slot" data-page="` + page.FormatID(pageIDInt) + `"></div>`
+	pageID := page.FormatID(pageIDInt)
+	rows, _ := drawingChildrenOf(user, pageIDInt)
+	orders, _ := orderChildrenOf(user, pageIDInt)
+	files := mailFilesOf(pageID)
+	n := len(rows) + len(orders)
+	if n == 0 && len(files) == 0 {
+		return ""
+	}
+	label := "📁 整理（"
+	if n > 0 {
+		label += strconv.Itoa(n) + "件"
+	}
+	if n > 0 && len(files) > 0 {
+		label += "・"
+	}
+	if len(files) > 0 {
+		label += "ファイル " + strconv.Itoa(len(files))
+	}
+	label += "）"
+	return `<div class="filing-slot"><button type="button" class="vocab-chrome filing-chrome filing-open" data-page="` + pageID + `">` +
+		label + `</button></div>`
 }
 
 var recordAttachRe = regexp.MustCompile(`^/([0-9]{6})/([0-9a-z]+)\.(pdf|xlsx|zip)$`)
@@ -62,30 +86,59 @@ func analyzeSectionHTML(user *auth.User, pageIDInt int, draft bool) string {
 			if m == nil || m[1] != pageID || seen[m[2]] {
 				return
 			}
-			if m[3] == "zip" && len(zips[m[2]]) == 0 {
-				return // 中に PDF の無い ZIP は解析するものが無い
+			file := m[2] + "." + m[3]
+			var btn string
+			if m[3] == "zip" {
+				btn = zipAnalyzeButtonHTML(pageID, m[2], zips[m[2]], done)
+				if btn == "" {
+					return // 中に PDF の無い ZIP・中の PDF が全部解析済みの ZIP は、解析するものが無い
+				}
+			} else {
+				label := "🤖 解析"
+				if _, ok := done[m[2]]; ok {
+					label = "🤖 再解析" // 読み違いはあるので、解析済みでも押し直せる
+				}
+				btn = `<button type="button" class="vocab-chrome attach-analyze" data-page="` + pageID +
+					`" data-file="` + stdhtml.EscapeString(file) + `">` + label + `</button>`
 			}
 			seen[m[2]] = true
 			name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(textOf(el)), "📎"))
 			if name == "" {
-				name = m[2] + "." + m[3]
-			}
-			file := m[2] + "." + m[3]
-			attrs := ` data-page="` + pageID + `" data-file="` + stdhtml.EscapeString(file) + `"`
-			if m[3] == "zip" {
-				attrs += ` data-zip="` + m[2] + `"`
+				name = file
 			}
 			mark := ""
 			if r, ok := done[m[2]]; ok {
-				attrs += ` data-done="1"`
 				mark = ` ` + comm.MadeMarkHTML(r.PageID, r.Title, r.Kind)
 			}
 			items.WriteString(`<li><a href="/` + pageID + `/` + stdhtml.EscapeString(file) + `" target="_blank" rel="noopener">` +
-				stdhtml.EscapeString(name) + `</a> <span class="analyze-slot"` + attrs + `></span>` + mark + `</li>`)
+				stdhtml.EscapeString(name) + `</a> ` + btn + mark + `</li>`)
 		})
 	}
 	if items.Len() == 0 {
 		return ""
 	}
 	return `<div class="record-files"><p class="record-files-head">🤖 解析（添付）</p><ul>` + items.String() + `</ul></div>`
+}
+
+// zipAnalyzeButtonHTML は ZIP の「🤖 中のPDFをまとめて解析（N件）」です（2026-09-30 利用者:「添付ファイルのPDFについて、
+// ZIPの場合まとめて解析するオプションが欲しいです」）。⚠ **解析済みのものは数えない**（押し直しで同じページを二重に作らない
+// ——読み違いの解析し直しは1件ずつの「🤖 再解析」で）。解析するものが無ければ空。
+// 2026-10-20 夕までは東邦の JS が /api/analyzed を引いて組んでいた（いまは押したときだけ引き直す）。
+func zipAnalyzeButtonHTML(pageID, zipID string, pdfs []zipPDF, done map[string]analyzedResult) string {
+	todo := 0
+	for _, p := range pdfs {
+		if _, ok := done[p.ID]; !ok {
+			todo++
+		}
+	}
+	if todo == 0 {
+		return ""
+	}
+	title := "中のPDFを1つずつ順に解析します（Gemini を " + strconv.Itoa(todo) + "回呼びます・1件に数十秒）"
+	if skipped := len(pdfs) - todo; skipped > 0 {
+		title += "。解析済みの " + strconv.Itoa(skipped) + "件は飛ばします"
+	}
+	return `<button type="button" class="vocab-chrome attach-analyze attach-analyze-zip" data-page="` + pageID +
+		`" data-zip="` + stdhtml.EscapeString(zipID) + `" title="` + stdhtml.EscapeString(title) + `">🤖 中のPDFをまとめて解析（` +
+		strconv.Itoa(todo) + `件）</button>`
 }

@@ -1986,89 +1986,41 @@ w.onChrome(openRFQReplyFromHash);
 // ── 版 4 から東邦の JS が持つ部分（2026-10-20 に app.js の前半から移した）——加工製品ページの整理の欄・🤖 解析と解析済みの印・
 // あとから改定にする。ファイルの「⋯」には onFileMenu の口で足す（🤖 解析のボタンは記録の箱の中・2026-10-20 夕から）。
 if (w.version >= 4) {
-const { askConfirm, askChoice, openDialog, readResult, failMessage, jsonPost, tagValue, hasExtension, reloadContent, loadChildNav } = w;
-const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ・ext/comm の ChannelTag と同じ言葉）
+const { askConfirm, askChoice, jsonPost, hasExtension, reloadContent, loadChildNav } = w;
 // BY_HAND_REPLY_HINT は 🤖 解析が「どれでもない」と答えたときに添える、手で作る道です（2026-10-19・ext/toho/rfq_reply_page.go）。
 // 利用者:「このようなエクセル形式でも解析できるようにならないでしょうか？ならない場合、手作業で見積もり回答書を作れるとありがたいです」
 const BY_HAND_REPLY_HINT = '業者の値段の表なら、メールの「作るページ」の「部材見積依頼の返事ページ（手で書く）」で手で作れます。';
 
-// analyzedMap は「添付ID → 解析で生まれたページ」。ZIP のまとめて解析で、解析済みを飛ばすために持ちます
-// （解析済みの印は、サーバーが記録の箱に描く・ext/toho/record_sections.go）。
-//
-// **印そのものは保存していません**——解析が書いた `受信元` の逆引きです。
-// だから、間違った解析をゴミ箱へ入れれば印も消え、もう一度解析できます。
-let analyzedMap = {};
-
-// zipPDFs は「ZIP の添付ID → 中のPDF（[{id, file, path}]・中のパスの順）」（2026-09-30・まとめて解析）。
-let zipPDFs = {};
-
-// loadAnalyzeState は解析済みの一覧と ZIP の中の PDF を取り直し、記録の箱の 🤖 解析の置き場にボタンを組みます。
-async function loadAnalyzeState() {
-    if (!w.pageId()) return;
-    if (!hasExtension('toho')) { analyzedMap = {}; zipPDFs = {}; return; } // 下請けが無ければ問わない（404を出さない）
-    try {
-        const res = await fetch('/api/analyzed?page_id=' + encodeURIComponent(w.pageId()));
-        const d = await res.json();
-        analyzedMap = (d && d.success && d.analyzed) ? d.analyzed : {};
-        zipPDFs = (d && d.success && d.zip_pdfs) ? d.zip_pdfs : {};
-    } catch (e) {
-        analyzedMap = {}; // 印が出ないだけ——解析そのものは押せる
-        zipPDFs = {};
-    }
-    fillAnalyzeSlots();
-}
-
-async function refreshFilingButton() {
-    document.querySelectorAll('#w-editor-content .filing-chrome').forEach(el => el.remove());
-    // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
-    if (!w.pageId()) return;
-    // 置き場は記録の箱の中（2026-10-20・サーバーが描く——ext/toho/record_sections.go）。通信記録でなければ置き場が無い。
-    const host = document.querySelector('#w-editor-content .mail-chrome .filing-slot');
-    if (!host) return;
-    // **整理が意味を持つのは通信記録だけ**——解析で図面ページが生まれた元のページ。
-    // 年フォルダや加工製品ページに出しても行き場がない（2026-09-03 ユーザー指摘。
-    // それまでは閲覧モードの全ページに出ていた）。
-
-    // **整理するものが実際にあるときだけ出します。** 押してから「ありません」と
-    // 言うより、出さないほうが親切です。
-    let rows = [];
-    let orders = [];
-    let kinds = [];
-    let partners = [];
-    let machines = {};
-    let files = [];
-    try {
-        const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(w.pageId()));
-        const d = await res.json();
-        if (!d.success) return;
-        rows = d.rows || [];
-        // 案件ページ（2026-10-19 まで受注ページ）も同じ画面で片付けます（行き先は発注日で決まる——記録／年／月／依頼——ので欄は無い）。
-        orders = d.orders || [];
-        // **区分の選択肢はサーバーが持ちます**（設定の語彙「区分」・2026-09-29 に段から替えた）。
-        // 画面に書き写すと、語を足した日に片方だけ古くなります。
-        kinds = d.kinds || [];
-        // 既にある取引先の名前——顧客名の入力候補に出します。
-        partners = d.partners || [];
-        // 既にある装置名称（顧客ごと）——装置名称の入力候補に出します。
-        machines = d.machines || {};
-        // 記録の添付（2026-10-08・ext/toho/filing_files.go——図面以外のファイルも、行き先を探して足す）。
-        files = d.files || [];
-    } catch (e) { return; }
-    if (!rows.length && !orders.length && !files.length) return;
-
-    const btn = makeButton('vocab-chrome filing-chrome filing-open');
-    const n = rows.length + orders.length;
-    btn.textContent = '📁 整理（' + (n ? n + '件' : '') + (n && files.length ? '・' : '') + (files.length ? 'ファイル ' + files.length : '') + '）';
-    btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, kinds, partners, machines, files));
-    host.appendChild(btn);
-}
-
-// toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
-function toggleFilingPanel(btn, rows, orders, kinds, partners, machines, files) {
+// 「📁 整理（N件）」を押したとき（2026-10-20 夕から、ボタンと件数はサーバーが描く——ext/toho/record_sections.go。それまでは
+// ページを開くたびにこの JS が候補を全部引いて、ボタンを組んでいた）。押すと候補を引いて、行き先の表を出し入れします。
+// 書ける形でも押せる（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
+// **整理が意味を持つのは通信記録だけ**——解析で図面ページが生まれた元のページ（2026-09-03 ユーザー指摘。それまでは
+// 閲覧モードの全ページに出ていた）。だからボタンは記録の箱の中にだけ出る。
+w.delegateClick([['.mail-chrome .filing-open', async (btn) => {
     const existing = document.querySelector('.filing-panel');
     if (existing) { existing.remove(); return; }
-    btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, kinds, partners, machines, files));
-}
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(btn.getAttribute('data-page') || w.pageId()));
+        const d = await res.json();
+        if (!d.success) { notify('整理の候補を読めません: ' + (d.message || res.status), { type: 'warn' }); return; }
+        btn.insertAdjacentElement('afterend', buildFilingPanel(
+            d.rows || [],
+            // 案件ページ（2026-10-19 まで受注ページ）も同じ画面で片付けます（行き先は発注日で決まる——記録／年／月／依頼——ので欄は無い）。
+            d.orders || [],
+            // **区分の選択肢はサーバーが持ちます**（設定の語彙「区分」・2026-09-29 に段から替えた）。
+            // 画面に書き写すと、語を足した日に片方だけ古くなります。
+            d.kinds || [],
+            d.partners || [],  // 既にある取引先の名前——顧客名の入力候補に出します。
+            d.machines || {},  // 既にある装置名称（顧客ごと）——装置名称の入力候補に出します。
+            // 記録の添付（2026-10-08・ext/toho/filing_files.go——図面以外のファイルも、行き先を探して足す）。
+            d.files || []));
+    } catch (e) {
+        notify('整理の候補を読めません: ' + e.message, { type: 'warn' });
+    } finally {
+        btn.disabled = false;
+    }
+}]]);
 
 // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
 // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます（2026-09-29 からは試作も区分のタグで、
@@ -2834,134 +2786,134 @@ async function analyzeOne(pageId, file) {
     }
 }
 
-// makeZipAnalyzeButton は ZIP の隣の「🤖 中のPDFをまとめて解析」です（2026-09-30 利用者:「添付ファイルのPDFに
+// runZipAnalyze は ZIP の「🤖 中のPDFをまとめて解析」の働きです（2026-09-30 利用者:「添付ファイルのPDFに
 // ついて、ZIPの場合まとめて解析するオプションが欲しいです」）。中のPDFを**1つずつ順に**「🤖 解析」と同じ口で
 // 解析し、最後に1つの知らせにまとめる。⚠ **解析済みのものは飛ばす**（押し直しで同じページを二重に作らない——
 // 読み違いの解析し直しは1件ずつの「🤖 再解析」で）。途中でページを離れると止まるが、押し直せば残りから続く。
-// 解析済みしか無ければ出さない。
-function makeZipAnalyzeButton(pageId, pdfs) {
-    const todo = pdfs.filter(p => !analyzedMap[p.id]);
-    if (!todo.length) return null;
-    const btn = makeButton('vocab-chrome attach-expand attach-analyze attach-analyze-zip');
+// ボタン（解析済みを除いた件数つき）はサーバーが描く（record_sections.go・2026-10-20 夕から）。押すたびに /api/analyzed を
+// 引き直す。btn は無くてもよい（「⋯」のメニューから——進み具合は知らせに出す）。
+async function runZipAnalyze(pageId, zipID, btn) {
+    let pdfs = [], analyzed = {};
+    try {
+        const d = await (await fetch('/api/analyzed?page_id=' + encodeURIComponent(pageId))).json();
+        analyzed = (d && d.analyzed) || {};
+        pdfs = ((d && d.zip_pdfs) || {})[zipID] || [];
+    } catch (e) {
+        notify('まとめて解析できません: ' + e.message, { type: 'warn' });
+        return;
+    }
+    const todo = pdfs.filter(p => !analyzed[p.id]);
+    if (!todo.length) { notify(pdfs.length ? '中のPDFは解析済みです。' : 'この ZIP の中に PDF はありません。', { duration: 6000 }); return; }
     const skipped = pdfs.length - todo.length;
-    const label = '🤖 中のPDFをまとめて解析（' + todo.length + '件）';
-    btn.textContent = label;
-    btn.title = '中のPDFを1つずつ順に解析します（Gemini を ' + todo.length + '回呼びます・1件に数十秒）' +
-        (skipped ? '。解析済みの ' + skipped + '件は飛ばします' : '');
-    btn.addEventListener('click', async () => {
-        if (!confirm('中のPDF ' + todo.length + '件を順に解析します（Gemini を ' + todo.length +
-            '回呼びます・1件に数十秒）。' + (skipped ? '解析済みの ' + skipped + '件は飛ばします。' : '') +
-            '途中でページを離れると止まります（押し直せば残りから）。')) return;
-        btn.disabled = true;
-        let drawings = 0, orders = 0, replies = 0;
-        const none = [], failed = [];
-        for (let i = 0; i < todo.length; i++) {
-            btn.textContent = '🤖 解析中… ' + (i + 1) + '/' + todo.length;
-            const r = await analyzeOne(pageId, todo[i].file);
-            if (r.error) failed.push(todo[i].path + '（' + r.error + '）');
-            else if (r.kind === 'drawing') drawings += r.made.length;
-            else if (r.kind === 'order') orders += r.made.length;
-            else if (r.kind === 'rfq_reply') replies += r.made.length;
-            else none.push(todo[i].path);
-        }
-        const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
-            (orders ? '・案件ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
-        if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・') + '\n' + BY_HAND_REPLY_HINT);
-        if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
-        if (drawings) lines.push('📁 整理で行き先を決めてください。');
-        notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
-        btn.disabled = false;
-        btn.textContent = label;
-        if (drawings || orders || replies) {
-            await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
-            loadChildNav();        // 左レールの子ページ一覧
-        }
-    });
-    return btn;
+    const label = btn ? btn.textContent : '';
+    const say = (t) => { if (btn) btn.textContent = t; else notify(t, { type: 'info', duration: 0, id: 'analyze-pdf' }); };
+    if (!confirm('中のPDF ' + todo.length + '件を順に解析します（Gemini を ' + todo.length +
+        '回呼びます・1件に数十秒）。' + (skipped ? '解析済みの ' + skipped + '件は飛ばします。' : '') +
+        '途中でページを離れると止まります（押し直せば残りから）。')) return;
+    if (btn) btn.disabled = true;
+    let drawings = 0, orders = 0, replies = 0;
+    const none = [], failed = [];
+    for (let i = 0; i < todo.length; i++) {
+        say('🤖 解析中… ' + (i + 1) + '/' + todo.length);
+        const r = await analyzeOne(pageId, todo[i].file);
+        if (r.error) failed.push(todo[i].path + '（' + r.error + '）');
+        else if (r.kind === 'drawing') drawings += r.made.length;
+        else if (r.kind === 'order') orders += r.made.length;
+        else if (r.kind === 'rfq_reply') replies += r.made.length;
+        else none.push(todo[i].path);
+    }
+    const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
+        (orders ? '・案件ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
+    if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・') + '\n' + BY_HAND_REPLY_HINT);
+    if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
+    if (drawings) lines.push('📁 整理で行き先を決めてください。');
+    notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    if (drawings || orders || replies) {
+        await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
+        loadChildNav();        // 左レールの子ページ一覧
+    }
 }
 
-// makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF・表計算の添付）。
+// runAnalyze は添付1つ（PDF・表計算）を 🤖 解析します（記録の箱の「🤖 解析」「🤖 再解析」と「⋯」のメニューが使う。
+// ボタンはサーバーが描く——record_sections.go・2026-10-20 夕から。btn は無くてもよい）。
 // ⚠ ZIP の中の PDF には出しません（2026-09-17）——取り込みが ZIP を展開して中身を
 // 1つずつ添付にするので、解析はページ直下の PDF だけを見ます（`entry` 引数は廃止）。
 // 押すと /api/analyze-attachment が Gemini で判定し、発注書なら受注ページを
 // このページの子として作る。結果は通知で知らせる（本文は変えない）。
-function makeAnalyzeButton(pageId, file) {
-    const btn = makeButton('vocab-chrome attach-expand attach-analyze', '🤖 解析');
-    btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        btn.textContent = '🤖 解析中…';
-        // **ページが生まれたか**。生まれたときだけ画面を取り直します（下）。
-        let born = false;
-        const d = await analyzeOne(pageId, file);
-        if (d.error) {
-            notify('解析できませんでした: ' + d.error, { type: 'alert', duration: 0, id: 'analyze-pdf' });
-        } else if (d.kind === 'drawing') {
-            // 図面と判定された枝。同じページのDXFと図面番号で突き合わせた
-            // 結果も知らせる（0件も普通——PDFだけの図面はよくある）。
-            //
-            // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）。
-            // 1枚につき1ページ作るので、**できた全部を見せます**——`page_id`
-            // （1枚目）だけ見せていると、3枚できても画面には1枚しか出ず、
-            // **押した直後の手応えが嘘になります**（子ページ一覧には出るので
-            // 消えはしませんが、気づくのは後からです）。
-            var made = d.made;
-            var msg = made.length > 1
-                ? '加工製品ページを ' + made.length + '枚 作りました（このPDFに図面が'
-                  + made.length + '枚入っていました）:\n'
-                : '加工製品ページを作りました: ';
-            msg += made.map(function (p) {
-                return (p.title || p.page_id) + '（/' + p.page_id + '）';
-            }).join('\n');
-            if (made.length > 1) {
-                msg += '\n同じ品物の別図面（部品図と溶接図など）なら、📁 整理で'
-                    + '「二つ目の図面として追加」を選ぶと1ページにまとめられます。';
-            }
-            if (d.matchedDxf > 0) {
-                msg += '\n図面番号の一致したDXF ' + d.matchedDxf + '件と結びました。';
-            }
-            notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
-            born = true;
-        } else if (d.kind === 'rfq_reply') {
-            const p = d.made[0];
-            notify('部材見積依頼の返事ページを作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' + d.say,
-                { type: d.linked ? 'success' : 'warn', duration: 0, id: 'analyze-pdf' });
-            born = true;
-        } else if (d.kind === 'none') {
-            notify('発注書・図面・部材見積依頼の返事のどれでもないと判定されました（ページは作っていません）。\n' + BY_HAND_REPLY_HINT, { type: 'warn', duration: 0 });
-        } else {
-            const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
-            notify((d.made.length > 1
-                ? '案件ページを ' + d.made.length + '枚 作りました（このPDFに発注書が' + d.made.length + '枚入っていました）:\n'
-                : '案件ページを作りました: ') + list, { type: 'success', duration: 0, id: 'analyze-pdf' });
-            born = true;
+async function runAnalyze(pageId, file, btn) {
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '🤖 解析中…'; }
+    // **ページが生まれたか**。生まれたときだけ画面を取り直します（下）。
+    let born = false;
+    const d = await analyzeOne(pageId, file);
+    if (d.error) {
+        notify('解析できませんでした: ' + d.error, { type: 'alert', duration: 0, id: 'analyze-pdf' });
+    } else if (d.kind === 'drawing') {
+        // 図面と判定された枝。同じページのDXFと図面番号で突き合わせた
+        // 結果も知らせる（0件も普通——PDFだけの図面はよくある）。
+        //
+        // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）。
+        // 1枚につき1ページ作るので、**できた全部を見せます**——`page_id`
+        // （1枚目）だけ見せていると、3枚できても画面には1枚しか出ず、
+        // **押した直後の手応えが嘘になります**（子ページ一覧には出るので
+        // 消えはしませんが、気づくのは後からです）。
+        var made = d.made;
+        var msg = made.length > 1
+            ? '加工製品ページを ' + made.length + '枚 作りました（このPDFに図面が'
+              + made.length + '枚入っていました）:\n'
+            : '加工製品ページを作りました: ';
+        msg += made.map(function (p) {
+            return (p.title || p.page_id) + '（/' + p.page_id + '）';
+        }).join('\n');
+        if (made.length > 1) {
+            msg += '\n同じ品物の別図面（部品図と溶接図など）なら、📁 整理で'
+                + '「二つ目の図面として追加」を選ぶと1ページにまとめられます。';
         }
-        btn.disabled = false;
-        btn.textContent = '🤖 解析';
+        if (d.matchedDxf > 0) {
+            msg += '\n図面番号の一致したDXF ' + d.matchedDxf + '件と結びました。';
+        }
+        notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
+        born = true;
+    } else if (d.kind === 'rfq_reply') {
+        const p = d.made[0];
+        notify('部材見積依頼の返事ページを作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' + d.say,
+            { type: d.linked ? 'success' : 'warn', duration: 0, id: 'analyze-pdf' });
+        born = true;
+    } else if (d.kind === 'none') {
+        notify('発注書・図面・部材見積依頼の返事のどれでもないと判定されました（ページは作っていません）。\n' + BY_HAND_REPLY_HINT, { type: 'warn', duration: 0 });
+    } else {
+        const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
+        notify((d.made.length > 1
+            ? '案件ページを ' + d.made.length + '枚 作りました（このPDFに発注書が' + d.made.length + '枚入っていました）:\n'
+            : '案件ページを作りました: ') + list, { type: 'success', duration: 0, id: 'analyze-pdf' });
+        born = true;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = label; }
 
-        // **生まれた子ページを画面へ出す**（2026-09-14 ユーザー:「解析終了後に、
-        // 加工製品ページが子ページになりますが、ページに反映されない」）。
-        //
-        // 古くなるのは**2か所**です——左レールの子ページ一覧と、本文の
-        // 「子ページ一覧の鏡」（`<section><h2>子ページ一覧</h2></section>`・サーバーが
-        // 中身を埋める計算ビュー）。通知だけでは、押した人は自分で読み込み直す
-        // ことになります。
-        //
-        // **丸ごとの再読み込みにはしません**——`reloadContent()` は本文を
-        // 取り直すだけなので、通知・巻き上げ位置・開いているPDFの外側は残ります。
-        // 書きかけを失う心配も要りません: 記録の箱の「🤖 解析」も「⋯」のメニューの解析（runAnalyzeFile）も
-        // 書ける形で押せますが、書ける形の `reloadContent()` は書きかけを先に保存して、変わったブロックだけ
-        // 受け取ります（2026-10-12 から）。
-        if (born) {
-            await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
-            loadChildNav();        // 左レールの子ページ一覧
-        }
-    });
-    return btn;
+    // **生まれた子ページを画面へ出す**（2026-09-14 ユーザー:「解析終了後に、
+    // 加工製品ページが子ページになりますが、ページに反映されない」）。
+    //
+    // 古くなるのは**2か所**です——左レールの子ページ一覧と、本文の
+    // 「子ページ一覧の鏡」（`<section><h2>子ページ一覧</h2></section>`・サーバーが
+    // 中身を埋める計算ビュー）。通知だけでは、押した人は自分で読み込み直す
+    // ことになります。
+    //
+    // **丸ごとの再読み込みにはしません**——`reloadContent()` は本文を
+    // 取り直すだけなので、通知・巻き上げ位置・開いているPDFの外側は残ります。
+    // 書きかけを失う心配も要りません: 記録の箱の「🤖 解析」も「⋯」のメニューの解析（runAnalyzeFile）も
+    // 書ける形で押せますが、書ける形の `reloadContent()` は書きかけを先に保存して、変わったブロックだけ
+    // 受け取ります（2026-10-12 から）。
+    if (born) {
+        await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
+        loadChildNav();        // 左レールの子ページ一覧
+    }
 }
 
-// analyzableHere は、そのファイルを 🤖 解析してよい所か——メールのページで、ファイルがそのページの添付のとき。
+// analyzableHere は、そのファイルを 🤖 解析してよい所か——通信記録（記録の箱がある）で、ファイルがそのページの添付のとき。
+// （2026-10-20 夕までは `チャネル` のタグを読んでいた——いまは記録の機能はどれも記録の箱の印で決まる。）
 function analyzableHere(pageOfFile) {
-    return hasExtension('toho') && !!tagValue(CHANNEL_TAG) && pageOfFile === w.pageId();
+    return hasExtension('toho') && !!document.querySelector('#w-editor-content .mail-chrome') && pageOfFile === w.pageId();
 }
 
 // drawingSections は本文の最上位の図面ブロック（見出し「図面」の h2 を持つ節）を本文の順に返します——サーバーの
@@ -3020,43 +2972,20 @@ async function supersedeDrawingFrom(host) {
     loadChildNav();
 }
 
-// runAnalyzeFile は添付1つを 🤖 解析します（記録の箱の「🤖 解析」と同じ口と知らせ——makeAnalyzeButton）。
+// runAnalyzeFile は添付1つを 🤖 解析します（記録の箱の「🤖 解析」と同じ口と知らせ——runAnalyze）。
 function runAnalyzeFile(pageId, file) {
     notify('🤖 解析しています…', { type: 'info', duration: 0, id: 'analyze-pdf' });
-    makeAnalyzeButton(pageId, file).click();
+    runAnalyze(pageId, file, null);
 }
 
-// runZipAnalyze は ZIP の中のPDFをまとめて解析します（どの PDF が中にあるかは /api/analyzed が知っている）。
-async function runZipAnalyze(pageId, zipID) {
-    try {
-        const d = await (await fetch('/api/analyzed?page_id=' + encodeURIComponent(pageId))).json();
-        analyzedMap = (d && d.analyzed) || analyzedMap;
-        const pdfs = ((d && d.zip_pdfs) || {})[zipID] || [];
-        const btn = pdfs.length ? makeZipAnalyzeButton(pageId, pdfs) : null;
-        if (!btn) { notify(pdfs.length ? '中のPDFは解析済みです。' : 'この ZIP の中に PDF はありません。', { duration: 6000 }); return; }
-        btn.click();
-    } catch (e) {
-        notify('まとめて解析できません: ' + e.message, { type: 'warn' });
-    }
-}
-
-// 🤖 解析のボタン（2026-10-20 から記録の箱の「🤖 解析」の置き場へ——置き場と解析済みの印はサーバーが描く・ext/toho/record_sections.go）。
-// それまでは本文の添付のリンクの横に足していた（コアの onAttachment の口）。
-function fillAnalyzeSlots() {
-    document.querySelectorAll('#w-editor-content .mail-chrome .analyze-slot').forEach((slot) => {
-        if (slot.firstChild) return;
-        const pid = slot.getAttribute('data-page');
-        const zip = slot.getAttribute('data-zip');
-        if (zip) {
-            const zb = (zipPDFs[zip] || []).length ? makeZipAnalyzeButton(pid, zipPDFs[zip]) : null;
-            if (zb) slot.appendChild(zb);
-            return;
-        }
-        const ab = makeAnalyzeButton(pid, slot.getAttribute('data-file'));
-        if (slot.hasAttribute('data-done')) ab.textContent = '🤖 再解析';
-        slot.appendChild(ab);
-    });
-}
+// 記録の箱の「🤖 解析」「🤖 再解析」「まとめて解析」の配線（ボタンと解析済みの印はサーバーが描く・ext/toho/record_sections.go——
+// 2026-10-20 夕から。それまではこの JS が /api/analyzed を引いて、置き場にボタンを組んでいた）。
+w.delegateClick([['.mail-chrome .attach-analyze', (btn) => {
+    const pid = btn.getAttribute('data-page');
+    const zip = btn.getAttribute('data-zip');
+    if (zip) runZipAnalyze(pid, zip, btn);
+    else runAnalyze(pid, btn.getAttribute('data-file'), btn);
+}]]);
 
 // ファイルの「⋯」: メールのページの添付に「🤖 解析」、図面が2つ以上並んだページの図面に「📐 この図面で改定する」。
 w.onFileMenu((info, items, f) => {
@@ -3071,7 +3000,5 @@ w.onFileMenu((info, items, f) => {
     }
 });
 
-w.onChrome(loadAnalyzeState);
-w.onChrome(refreshFilingButton);
 }
 })();

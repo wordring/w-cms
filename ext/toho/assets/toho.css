@@ -544,3 +544,17 @@
 
 /* 発注部材表の「部材発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
 #w-editor-content .draft-form-box { margin: 4px 0 16px; }
+
+/* 記録の箱の「🤖 解析」「🤖 再解析」「まとめて解析」（2026-10-20 夕からサーバーが描く・record_sections.go）。見た目は添付の札（コアの .attach-expand）と
+   同じだが、その class は付けない——コアは添付の札を描き直すたびに .attach-expand を全部消すため。 */
+#w-editor-content .attach-analyze {
+    margin-left: 8px;
+    padding: 1px 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-paper);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+}
+#w-editor-content .attach-analyze:hover { background: var(--border); }

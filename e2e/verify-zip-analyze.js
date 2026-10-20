@@ -6,7 +6,7 @@
 //   ② ZIP の隣に「🤖 中のPDFをまとめて解析（2件）」が出る
 //   ③ 押すと中のPDFを中のパスの順に1つずつ解析し、最後に1つの知らせにまとめる
 //      （解析の口は差し止める——Gemini は呼ばない・ページも作らない）
-//   ④ 解析済みのPDFは飛ばす（1件を解析済みに見せると「（1件）」になり、その1件だけを解析する）
+//   ④ 解析済みのPDFは飛ばす（押したときに1件を解析済みに見せると、残りの1件だけを解析する・ボタンの件数はサーバーが描く）
 //
 // 当て先（メールの記録）は自分で作って最後に消します。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-zip-analyze.js
@@ -161,7 +161,8 @@ function buildZip(files) {
     });
     await page.goto(BASE + '/' + record);
     await zb.waitFor({ timeout: 8000 });
-    check('④ 解析済みを除いて「（1件）」', (await zb.textContent()).includes('（1件）'), await zb.textContent());
+    // ボタンの件数（解析済みを除いた数）は 2026-10-20 夕からサーバーが描く（record_sections.go の zipAnalyzeButtonHTML・Go の試験）。
+    // ここでは、押したときに引き直した解析済みを飛ばすことを見る（/api/analyzed は試験のブラウザの中だけで差し替えている）。
     await zb.click();
     await page.locator('.toast', { hasText: 'まとめて解析しました（1件）' }).waitFor({ timeout: 15000 });
     check('④ 解析済みでない1件だけを解析した', asked.length === 1 && asked[0] === files[1].file, JSON.stringify(asked));

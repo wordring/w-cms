@@ -94,7 +94,7 @@ const check = (label, ok, note = '') => {
       made.unshift(mail);
       const mpdf = await upload(mail, '【E2E】届いた図面.pdf', Buffer.from('%PDF-1.4 e2e mail'), true);
       await saveBody(mail, '<h1>【E2E】図面の送付</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd></dl>' +
-        fv(mail + '-' + mpdf));
+        fv(mail + '-' + mpdf) + '<section data-mirror="記録の箱"></section>'); // 通信記録の印（2026-10-20 夕から、⋯ の 🤖 解析は記録の箱のあるページだけ）
       await page.goto(BASE + '/' + mail);
       await page.locator('#w-editor-content .file-menu-btn').first().waitFor({ timeout: 10000 }).catch(() => {});
       const mm = await menuOf(mail + '-' + mpdf);

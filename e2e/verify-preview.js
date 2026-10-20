@@ -173,7 +173,7 @@ function buildZip(files) { // files: [{name, data}]
         // 押すと /api/analyze-attachment の応答が通知される。サーバーにキーが無ければ
         // 「GEMINI_API_KEY」の設定案内、あれば偽PDFの判定結果（発注書ではない／解析失敗）
         // ——どれでも配線の検証としては十分（判定そのものはGoテストが偽物判定で固定）。
-        const boxPdf = '.mail-chrome .analyze-slot[data-file="' + pdfName + '"] .attach-analyze';
+        const boxPdf = '.mail-chrome .attach-analyze[data-file="' + pdfName + '"]';
         check('記録の箱の 🤖 解析に PDF のボタンが出る', await page.locator(boxPdf).count() === 1);
         check('本文の添付の横には解析ボタンが出ない（記録の箱へ移した）', await page.locator('#w-editor-content p .attach-analyze').count() === 0);
         check('ZIP目録には解析ボタンが出ない（目録は読むだけ）', await page.locator('.attach-zip-list .attach-analyze').count() === 0);
