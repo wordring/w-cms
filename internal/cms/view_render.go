@@ -136,6 +136,14 @@ func hasViewMarker(bodyHTML string) bool {
 		if !def.View && !HasMirror(def.Type) {
 			continue
 		}
+		// タグの並びは、飾りの登録された名前のタグがあるときだけ歩く（2026-10-20・tag_decor.go）——タグはほとんどのページにあるので、
+		// 名前で絞らないと、鏡の無いページまで毎回パースして描き直すことになる。
+		if def.Type == TagsDataType {
+			if hasDecoratedTag(bodyHTML) {
+				return true
+			}
+			continue
+		}
 		// 属性で見分けるのは鏡**でない**形式だけ（ファイル表示など）——鏡の
 		// `data-type` の印は 2026-09-27 に廃止したので、見ても鏡は描かれません。
 		if !def.View && strings.Contains(bodyHTML, `data-type="`+def.Type+`"`) {
