@@ -1,4 +1,4 @@
-// メールの一覧（assets/mails.html・2026-09-29）を画面から確かめる。
+// メールの一覧（2026-09-29・2026-10-20 から ext/comm/assets/pages/mails.html）を画面から確かめる。
 //
 // 利用者:「過去のメールを一覧で見る方法を作れませんか？受信送信両方、そしてIn reply toによる返信の連鎖も一覧性があるように」。
 //
@@ -47,7 +47,7 @@ const rec = (title, pairs) => '<h1>' + title + '</h1><dl data-type="tags">' +
     await page.waitForTimeout(800);
     check('上のメニューに「✉️ メール一覧」が出る', await page.locator('#w-mails-link').isVisible());
 
-    await page.goto(BASE + '/assets/mails.html');
+    await page.goto(BASE + '/assets/ext/comm/pages/mails.html');
     await page.waitForFunction(() => document.querySelectorAll('#ml-body tr').length > 0, null, { timeout: 20000 });
     await page.fill('#ml-q', MARK);
     await page.waitForTimeout(300);

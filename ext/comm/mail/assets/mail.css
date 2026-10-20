@@ -1,0 +1,5 @@
+/* メールの拡張の画面の見た目（2026-10-20 に assets/app.css から分けた・docs/考察/【考察】画面の JS のコアと拡張.md）。
+   サーバーは、この拡張が載っているときだけ、殻のコアの app.css のあとに読み込ませる（internal/cms/ext_scripts.go の置き場の決まり）。 */
+
+#w-editor-content .mail-signin-box { font-size: 13px; white-space: normal; }
+#w-editor-content .mail-signin-code { font-size: 1.15em; letter-spacing: 0.08em; }

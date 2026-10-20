@@ -1,4 +1,4 @@
-/* メールの一覧（assets/mails.html・2026-09-29）。土台は tables.css。インラインの style は書かない（CSP strict）
+/* メールの一覧（2026-09-29・2026-10-20 から通信の拡張の画面 ext/comm/assets/pages/mails.html）。土台は tables.css。インラインの style は書かない（CSP strict）
  * ——字下げの深さだけは描画のあとに CSSOM で当てる（mails.js）。 */
 
 label { font-size: 13px; color: #475569; }

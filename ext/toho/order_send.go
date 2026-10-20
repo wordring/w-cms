@@ -252,7 +252,7 @@ func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, n
 	//
 	// ⚠ **`<details>` で畳みます**——素のHTMLだけで開閉できるので、CSP strict の
 	//    下でも動きます（受注ページの原本と同じ手）。
-	// ⚠ **中身は送る欄の部品が描きます**（2026-09-30・`assets/mail-compose.js`）——開いたときに
+	// ⚠ **中身は送る欄の部品が描きます**（2026-09-30・`ext/comm/mail/assets/mail-compose.js`）——開いたときに
 	//    用件「部材発注書」の初期値（order_mail.go）を引いて、宛先・件名・本文・資料・下書きの保存を出す。
 	b.WriteString(`<details class="order-mail"><summary>📧 メールで送る</summary>`)
 	b.WriteString(`<div class="mail-compose-host" data-mail-compose="` + stdhtml.EscapeString(OrderMailPurpose) +

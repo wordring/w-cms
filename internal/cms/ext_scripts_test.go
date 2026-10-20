@@ -18,6 +18,8 @@ func TestExtAssetsDiscoveredServedAndInjected(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	os.MkdirAll(filepath.Join(dir, "pages"), 0o755)
+	os.WriteFile(filepath.Join(dir, "pages", "list.css"), []byte("label{}"), 0o644) // 別の画面の見た目——配るが、殻へは差し込まない
 	for name, body := range map[string]string{"a.js": "window.probe = 1;", "a.css": ".probe{}", "page.html": "<p>probe</p>", "secret.txt": "secret"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -38,7 +40,7 @@ func TestExtAssetsDiscoveredServedAndInjected(t *testing.T) {
 		ExtScriptHandler(rr, httptest.NewRequest(method, url, nil))
 		return rr
 	}
-	for url, typ := range map[string]string{"/assets/ext/probe/sub/a.js": "javascript", "/assets/ext/probe/sub/a.css": "text/css", "/assets/ext/probe/sub/page.html": "text/html"} {
+	for url, typ := range map[string]string{"/assets/ext/probe/sub/a.js": "javascript", "/assets/ext/probe/sub/a.css": "text/css", "/assets/ext/probe/sub/page.html": "text/html", "/assets/ext/probe/sub/pages/list.css": "text/css"} {
 		rr := get("GET", url)
 		if rr.Code != 200 || !strings.Contains(rr.Header().Get("Content-Type"), typ) {
 			t.Errorf("%s を配りません: %d %s", url, rr.Code, rr.Header().Get("Content-Type"))

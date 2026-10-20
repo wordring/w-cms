@@ -1,0 +1,43 @@
+/* 連絡帳の拡張の画面の見た目（2026-10-20 に assets/app.css から分けた・docs/考察/【考察】画面の JS のコアと拡張.md）。
+   サーバーは、この拡張が載っているときだけ、殻のコアの app.css のあとに読み込ませる（internal/cms/ext_scripts.go の置き場の決まり）。 */
+
+/* 未登録の連絡先（2026-09-17 に「組織」「担当者」の2欄へ畳んだ）。
+   表は固定幅の割り付け——操作の欄に長い文（ドメインの説明）が入るので、自動割り付けだと
+   操作の列が幅を食って名前の列が1文字ずつ折れる（実際にそうなった）。セルは表のセルのまま、
+   中の div を flex にする（td を flex にするとセルとして働かない）。 */
+#w-editor-content table.contacts-table { table-layout: fixed; width: 100%; }
+#w-editor-content table.contacts-table td.contact-who { width: 30%; }
+#w-editor-content td.contact-act { vertical-align: top; }
+#w-editor-content .contact-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 4px 8px;
+    min-width: 0;
+}
+#w-editor-content .contact-field {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+#w-editor-content .contact-field input {
+    width: 13em;
+    max-width: 100%;
+    padding: 2px 6px;
+    font-size: 13px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg-paper);
+    color: var(--text);
+}
+#w-editor-content .contact-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
+
+/* 1行1アドレスの並び（2026-09-13）。表示名を上、アドレスを下に置く。
+   もとは1行に3人ぶんのアドレスが入っていて、誰の行なのか読めなかった。 */
+#w-editor-content td.contact-who {
+    width: 34%;
+    line-height: 1.4;
+}
+#w-editor-content .contact-display { font-weight: 600; }

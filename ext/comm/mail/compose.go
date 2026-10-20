@@ -5,7 +5,7 @@ package mail
 //
 // 利用者:「メール表示、メール送信、メール編集などを部品化したら良いと思います」「メール編集は下書きのことです」。
 //
-// 画面の送る欄（`assets/mail-compose.js`）は1つで、ここは**その欄に出す中身**を返す口です:
+// 画面の送る欄（`ext/comm/mail/assets/mail-compose.js`）は1つで、ここは**その欄に出す中身**を返す口です:
 //
 //	GET  /api/mail/compose?purpose=返信&page_id=… … 用件の初期値（宛先・件名・署名入りの本文・添付の候補）
 //	GET  /api/mail/compose?draft=…                 … 保存した下書き

@@ -9,6 +9,7 @@ package cms
 //
 //   - 拡張の名前はパッケージの道と揃えてあるので（`comm/mail` なら `ext/comm/mail`）、載っている拡張ごとに
 //     `ext/<名前>/assets/` を見ます。拾うのは `.js`・`.css`・`.html` の3種類だけで、`/assets/ext/<名前>/<ファイル>` として配ります。
+//     その下のフォルダ（1段だけ・例: `assets/pages/`）のファイルは、配るだけで殻へは差し込みません（拡張の別の画面のため）。
 //   - 編集用の殻には、`.js` を `<script src>`（WCMS_EXT_SCRIPTS の印・コアの app.js のあと）、`.css` を `<link>`（WCMS_EXT_STYLES の印・
 //     コアの app.css のあと）で差し込みます。`.html` は、その拡張の画面として配るだけです（例: メールの一覧）。
 //   - **コアの JS は拡張の JS を名指ししません**——拡張の JS は、コアの app.js が渡す `window.wcms` だけを使います。
@@ -33,6 +34,8 @@ type extAsset struct {
 	URL  string // 配るアドレス（/assets/ext/<拡張>/<ファイル>）
 	Path string // ディスクの場所
 	Type string // 配るときの Content-Type
+	// PageOnly は、assets/ の下のフォルダ（例: pages/）のファイルです。配るだけで、殻へは差し込みません。
+	PageOnly bool
 }
 
 // ExtScriptPrefix は拡張の画面のファイルを配るアドレスの頭です。
@@ -84,8 +87,26 @@ func discoverExtAssets() map[string]extAsset {
 			continue // 画面のファイルを持たない拡張
 		}
 		for _, f := range ents {
+			if f.IsDir() {
+				// 下のフォルダ（例: pages/）のファイルは、配るだけで殻へは差し込まない——拡張の別の画面（メールの一覧など）の
+				// 見た目と働きで、殻に入れると編集の画面まで変わるため（2026-10-20）。1段だけ見る。
+				sub := filepath.Join(dir, f.Name())
+				subEnts, err := os.ReadDir(sub)
+				if err != nil {
+					continue
+				}
+				for _, g := range subEnts {
+					typ, ok := extAssetTypes[strings.ToLower(filepath.Ext(g.Name()))]
+					if g.IsDir() || !ok {
+						continue
+					}
+					url := ExtScriptPrefix + e.ID + "/" + f.Name() + "/" + g.Name()
+					out[url] = extAsset{URL: url, Path: filepath.Join(sub, g.Name()), Type: typ, PageOnly: true}
+				}
+				continue
+			}
 			typ, ok := extAssetTypes[strings.ToLower(filepath.Ext(f.Name()))]
-			if f.IsDir() || !ok {
+			if !ok {
 				continue
 			}
 			url := ExtScriptPrefix + e.ID + "/" + f.Name()
@@ -99,8 +120,8 @@ func discoverExtAssets() map[string]extAsset {
 // extAssetURLs は、拾ったファイルのうち拡張子 ext のものの配るアドレスを順に返します（殻に差し込む順＝拡張の名前・ファイルの名前の順）。
 func extAssetURLs(ext string) []string {
 	var out []string
-	for u := range discoverExtAssets() {
-		if strings.EqualFold(path.Ext(u), ext) {
+	for u, a := range discoverExtAssets() {
+		if !a.PageOnly && strings.EqualFold(path.Ext(u), ext) {
 			out = append(out, u)
 		}
 	}

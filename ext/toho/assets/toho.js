@@ -1642,7 +1642,7 @@ delegateClick([
 //
 // ⚠ **送信の口は作っていません**——メールは `/api/mail/send` が既に在り、
 //    添付つきで送れて**通信箱に控えが残ります**。
-// ⚠ **メールを書く欄は部品です**（2026-09-30・assets/mail-compose.js）——ここに残るのは行ごとの印・
+// ⚠ **メールを書く欄は部品です**（2026-09-30・ext/comm/mail/assets/mail-compose.js）——ここに残るのは行ごとの印・
 //    PDFを作る・FAX・手渡しのボタンだけ。
 (function wireOurOrderSend() {
     // 行1つの印を変える（発注済・納品済・取消・戻す）。
@@ -1780,7 +1780,7 @@ delegateClick([
         ['[data-order-pdf]', makePDF],
         ['[data-order-pdf-docs]', makePDFWithDocs],
         ['[data-order-sent]', markSent],
-        // メールで送る欄は部品です（2026-09-30・assets/mail-compose.js——「PDFを作る → 送る → 発注済みにする」は
+        // メールで送る欄は部品です（2026-09-30・ext/comm/mail/assets/mail-compose.js——「PDFを作る → 送る → 発注済みにする」は
         // サーバーの用件「部材発注書」が受け持つ・ext/toho/order_mail.go）。
     ]);
 })();

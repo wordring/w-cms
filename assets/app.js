@@ -8876,10 +8876,17 @@ function printOnly(node) {
     document.body.appendChild(frame);
 
     const doc = frame.contentDocument;
-    const link = doc.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = new URL('/assets/app.css', location.href).href;
-    doc.head.appendChild(link);
+    // 紙の決まりは、殻の CSS を全部写して読む（2026-10-20——拡張の CSS〔ext/<拡張>/assets/*.css〕にも紙の決まりがあるため。
+    // それまでは /assets/app.css の1本だけだった）。待つのは、いちばん後ろの1本（全部が読み終わった合図の代わり）。
+    const sheets = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map((l) => l.href);
+    if (!sheets.length) sheets.push(new URL('/assets/app.css', location.href).href);
+    let link = null;
+    sheets.forEach((href) => {
+        link = doc.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        doc.head.appendChild(link);
+    });
     doc.title = document.title;
     doc.body.className = 'w-printing-sheet';
     const area = doc.createElement('div');

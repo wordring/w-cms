@@ -1,7 +1,7 @@
 // 通信の拡張の画面（2026-10-20 に assets/app.js から移した・docs/考察/【考察】画面の JS のコアと拡張.md）。
 //
 // 通信の記録ページ（`チャネル` のタグがあるページ）の下に出す箱です——「作るページ」（記録から作るページ・ext/comm/record_make.go）・
-// 「✉️ 返信」（メールの拡張・assets/mail-compose.js の送る欄）・「🧵 やりとりの前後」（/api/thread）・
+// 「✉️ 返信」（メールの拡張・ext/comm/mail/assets/mail-compose.js の送る欄）・「🧵 やりとりの前後」（/api/thread）・
 // 「📨 この記録への返信」（/api/replies）。
 //
 // ⚠ **コアの中身には手を出しません**——使うのは app.js が渡す window.wcms だけ。サーバーは通信の拡張が載っているときだけ
@@ -127,7 +127,7 @@ function refreshMailChrome() {
     // **「✉️ 返信」だけがメール拡張の持ち物**です（2026-09-15）。同じ箱の「🧵 やりとりの
     // 前後」と「📨 この記録への返信」は記録を読むだけなので、メールを外しても出します。
     //
-    // ⚠ **書く欄は部品です**（2026-09-30・assets/mail-compose.js）——用件「返信」の初期値
+    // ⚠ **書く欄は部品です**（2026-09-30・ext/comm/mail/assets/mail-compose.js）——用件「返信」の初期値
     // （宛先・RE: の件名・署名・引用・添付の候補）はサーバーが組みます。
     // ⚠ **下書きのページ**（`下書き` のタグ）では、返信の代わりに**下書きを開いた送る欄**を出します
     // （開いたらすぐ直して送れる・送ったら下書きはごみ箱へ行き、控えのページへ移る）。
@@ -478,7 +478,7 @@ if (w.version >= 4) {
     else if (tables) {
         const link = w.makeEl('a', 'admin-link tables-link', '✉️ メール一覧');
         link.id = 'w-mails-link';
-        link.href = '/assets/mails.html';
+        link.href = '/assets/ext/comm/pages/mails.html'; // メールの一覧の画面も通信の持ち物（2026-10-20 から ext/comm/assets/pages/）
         tables.insertAdjacentElement('afterend', link);
     }
 }

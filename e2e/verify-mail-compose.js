@@ -182,7 +182,7 @@ const check = (label, ok, note = '') => {
     check('「📝 下書き」の印', (await row.locator('.unhandled-draft').count()) === 1);
 
     // ④ メール一覧
-    await page.goto(BASE + '/assets/mails.html');
+    await page.goto(BASE + '/assets/ext/comm/pages/mails.html');
     await page.waitForFunction(() => document.querySelectorAll('#ml-body tr').length > 0, null, { timeout: 15000 });
     const listed = await page.evaluate((id) => {
       const a = document.querySelector('#ml-body a[href="/' + id + '"]');

@@ -1,0 +1,148 @@
+/* 通信の拡張の画面の見た目（2026-10-20 に assets/app.css から分けた・docs/考察/【考察】画面の JS のコアと拡張.md）。
+   サーバーは、この拡張が載っているときだけ、殻のコアの app.css のあとに読み込ませる（internal/cms/ext_scripts.go の置き場の決まり）。 */
+
+/* メールの返信と「この記録への返信」——閲覧モードのクローム。
+   返信の本体は送信箱にあり、ここは参照で見えるだけ（返信元の本文は変わらない）。 */
+.mail-chrome {
+    margin: 1.5rem 0 0.5rem;
+}
+/* この記録から作るページ（2026-10-01・選ぶ欄と「作成」・作った印〔✓ 受注・✓ 加工製品〕は横に並ぶ）。 */
+.record-make { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
+.record-make[hidden] { display: none; } /* 種類も印も無いときは出さない（display: flex が hidden に勝つため） */
+.record-make-kind { font: inherit; padding: 0.2rem 0.3rem; }
+.record-make-go { padding: 0.3rem 0.9rem; font: inherit; cursor: pointer; }
+.record-make-go:disabled { opacity: 0.6; cursor: wait; }
+
+.mail-reply-open {
+    padding: 0.35rem 1rem;
+    font: inherit;
+    cursor: pointer;
+}
+/* 返信を書く欄は部品です（2026-09-30・ext/comm/mail/assets/mail-compose.css）。 */
+
+.mail-replies {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--w-accent, #3b82f6);
+    background: var(--w-surface-alt, #fafafa);
+}
+
+.mail-replies-head {
+    margin: 0 0 0.3rem;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.mail-replies ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.mail-replies-when,
+.mail-replies-to {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* やりとりの前後（In-Reply-To の鎖・2026-09-14）。
+ * 「この記録への返信」と**隣り合って出る**ので、同じ寸法にそろえたうえで
+ * 帯の色だけ変えます——別の鎖であることが、読まなくても分かるように。 */
+.mail-thread {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--w-accent-2, #a855f7);
+    background: var(--w-surface-alt, #fafafa);
+}
+
+.mail-thread-head {
+    margin: 0 0 0.3rem;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.mail-thread ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.mail-thread-dir {
+    font-size: 0.85em;
+    opacity: 0.8;
+    margin-right: 0.4em;
+}
+
+.mail-thread-when {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+#w-editor-content .unhandled-channel { font-size: 15px; text-align: center; }
+#w-editor-content .unhandled-when    { white-space: nowrap; color: var(--text-muted); }
+/* 相手は短くして出す（連絡帳の名前 → メールの名前 → アドレス・長ければ「…」・2026-09-30）ので1行に収める。
+ * 元の値はマウスを載せると出る（title）。 */
+#w-editor-content .unhandled-from    { color: var(--text-muted); white-space: nowrap; }
+#w-editor-content .unhandled-subject { overflow-wrap: anywhere; }
+/* 下書き（2026-09-30）——まだ送っていないメール。📝 の印も付く（色だけに頼らない）。 */
+#w-editor-content .unhandled-draft { font-size: 12px; color: #5b21b6; white-space: nowrap; }
+#w-editor-content .unhandled-bulk { margin: 8px 0 0; }
+
+/* 手で記録を作る一行（電話・FAX・メール・メモ）。**一覧が空でも出る**——片付いた日に
+ * ボタンごと消えると、電話が鳴ったときに置き場所が見つからない。 */
+#w-editor-content .unhandled-new {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 6px 0 10px;
+    /* **折り返す。** 選択2つ＋題の欄＋ボタンで、スマホ幅（320px）には収まりません
+       ——折り返さないと**ページ全体が横スクロール**になります（2026-09-07 に実測。
+       文書は401px、画面は320px でした）。 */
+    flex-wrap: wrap;
+}
+#w-editor-content .unhandled-new input {
+    /* 題の欄は残り幅を使い、無理なら折り返した行の幅いっぱいに。 */
+    flex: 1 1 12em;
+    min-width: 0;
+}
+#w-editor-content .unhandled-new select,
+#w-editor-content .unhandled-new input {
+    padding: 3px 8px;
+    font-size: 13px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg-paper);
+    color: var(--text);
+}
+#w-editor-content .unhandled-new input { flex: 1 1 auto; min-width: 0; max-width: 24em; }
+
+/* ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）。返信のクロームと同じ
+ * 「本文の外に出す帯」で、記録を作るかはチェック1つで決める。 */
+#w-editor-content .phone-chrome {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+#w-editor-content .phone-call {
+    padding: 3px 12px;
+    font-size: 13px;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--bg-paper);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+#w-editor-content .phone-call:hover { background: var(--border); }
+#w-editor-content .phone-record {
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+/* 操作の欄は**折り返す**。畳んでも中身は広いので、はみ出させない
+   （推薦つきの行で［顧客］が画面外へ出ていた）。 */
+#w-editor-content td.unhandled-act {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}

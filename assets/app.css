@@ -1511,18 +1511,7 @@ body[edit-mode] #w-editor-content td.cell-formula-error { background: #fee2e2; c
 
 #w-editor-content table.materials-table .num { text-align: right; }
 #w-editor-content table.materials-table .status { text-align: center; }
-/* 加工製品ページの「貰った見積」（2026-10-04・ext/toho/rfq_quotes.go）——支給部品表の下。
-   列が8つあり欄（最大 666px）にぎりぎりなので、はみ出したときは表が自分の中で横スクロールします。
-   「何の値段か」だけ折り返し、ほかは1行に保ちます（業者名や日付が途中で折れないように）。 */
-#w-editor-content .rfq-quotes { margin-top: 16px; }
-#w-editor-content .rfq-quotes-scroll { overflow-x: auto; }
-#w-editor-content table.rfq-quotes-table th,
-#w-editor-content table.rfq-quotes-table td { padding: 6px 8px; white-space: nowrap; }
 #w-editor-content table.rfq-quotes-table td.what { white-space: normal; min-width: 10em; }
-/* 見積回答の「計算表へ」の欄（2026-10-05・estimate_put.go）——どの表・どの行へ写すかを選ぶ。 */
-#w-editor-content .rfq-quote-put-form { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 0.9em; }
-#w-editor-content .rfq-quote-put-name { width: 12em; }
-#w-editor-content .rfq-quote-put-value { width: 6em; }
 /* ⚠ 2026-10-19 まで書ける形では隠していた（編集モードのころの決め）。業務のボタンは書ける形でも押せる決まりなので、いまは出す。 */
 
 #w-editor-content .badge {
@@ -1893,160 +1882,6 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     text-decoration: none;
 }
 
-/* 加工製品ページの整理（提案→人が直す→実行）——閲覧モードのクローム。
-   機械は推奨値を入れるだけで、決めるのは人（「顧客は適当」なので、
-   名前が全部読めていても確認が要る）。 */
-.filing-open {
-    display: block;
-    margin: 1.5rem 0 0.5rem;
-}
-
-.filing-panel {
-    border: 1px solid var(--w-border, #ccc);
-    border-radius: 6px;
-    padding: 0.75rem 1rem 1rem;
-    margin: 0.5rem 0 1.5rem;
-    background: var(--w-surface-alt, #fafafa);
-}
-
-.filing-head {
-    margin: 0 0 0.5rem;
-    font-size: 0.9em;
-    opacity: 0.85;
-}
-
-.filing-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.filing-table th {
-    text-align: left;
-    font-size: 0.85em;
-    font-weight: 600;
-    padding: 0.2rem 0.4rem;
-    opacity: 0.7;
-}
-
-.filing-table td {
-    padding: 0.2rem 0.4rem;
-    vertical-align: middle;
-}
-
-.filing-table input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.3rem 0.4rem;
-    font: inherit;
-}
-
-.filing-no {
-    white-space: nowrap;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.85em;
-    opacity: 0.8;
-}
-
-/* 図面1枚ごとのカード（2026-09-30 利用者:「入力欄が見えなくなるくらい、横幅が狭くなります。横にたくさんの
-   項目がありすぎる」）——6列の表をやめ、欄は1行に1つで横幅いっぱい。見出しは左の細い列。 */
-.filing-cards { display: flex; flex-direction: column; gap: 0.6rem; }
-.filing-card {
-    border: 1px solid var(--border, #e2e8f0);
-    border-radius: 6px;
-    padding: 0.5rem 0.75rem;
-    background: var(--bg-paper, #fff);
-}
-.filing-card .filing-no { margin: 0 0 0.35rem; }
-.filing-grid { display: grid; gap: 0.3rem; }
-.filing-field {
-    display: grid;
-    grid-template-columns: 5em 1fr;
-    align-items: center;
-    gap: 0.5rem;
-}
-.filing-field > span { font-size: 0.85em; color: var(--text-muted, #475569); }
-.filing-field input[type="text"] {
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    padding: 0.3rem 0.4rem;
-    font: inherit;
-}
-.filing-kinds-boxes { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; }
-/* 「図面番号を品番に」「図面名称を品名に」は新規のときだけ出す（2026-10-01）——display: grid が hidden に勝つため。 */
-.filing-field[hidden] { display: none; }
-.filing-card-foot { margin-top: 0.3rem; }
-/* 受注ページの表の「発注元」の欄は、押しつぶされない幅を持たせる。 */
-.filing-orders input { min-width: 9em; }
-/* スマホ幅——見出しを上に置いて、欄を横いっぱいに使う。 */
-@media (max-width: 560px) {
-    .filing-field { grid-template-columns: 1fr; gap: 0.1rem; }
-}
-
-.filing-run {
-    margin-top: 0.75rem;
-    padding: 0.4rem 1.2rem;
-    font: inherit;
-    cursor: pointer;
-}
-
-/* 「改定として合流」の確認——実行が確認を求めたときだけ現れる。
-   最初から見せると「押せば通る」と学習され、偽の改定を止める意味が薄れる。 */
-.filing-confirm {
-    white-space: nowrap;
-    font-size: 0.85em;
-    color: var(--w-danger, #c0392b);
-}
-
-/* 行き先に同じ題のページがあったときの選択（2026-09-20）。
-   **改定か、同じ品物の二つ目の図面（部品図と溶接図）か**——機械には区別できないので
-   人が選ぶ。打ち替えのたびに `/api/filing-target` へ聞いて、在れば現れる。
-   ⚠ **どちらも既定で選ばない**（既定を置くと、見ないまま押した人がそれに従う）。 */
-.filing-choice {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.2em 1.2em;
-    font-size: 0.9em;
-}
-/* ⚠ **`hidden` を打ち消さないこと**（2026-09-30 に見つけた）——上の `display: flex` が勝って、既にページが
-   無いのに選択肢が出ていた（「既にあるときだけ出す」が効いていなかった）。 */
-.filing-choice[hidden],
-.filing-confirm[hidden],
-.filing-merge-opt[hidden],
-.filing-dups[hidden] { display: none; }
-
-/* 同じ図面が既にあるときの知らせ（2026-09-30）——「⚠ 同じ図面が既にあります: 装置／題（同じ図面番号・同じファイルです）」。 */
-.filing-dups { flex-basis: 100%; }
-.filing-dup {
-    margin: 0.15em 0;
-    color: var(--w-danger, #c0392b);
-}
-.filing-dup a { color: inherit; font-weight: 600; }
-.filing-compare-out { color: var(--text, #1e293b); }
-
-.filing-choice-note {
-    flex-basis: 100%;
-    margin: 0;
-    color: var(--w-danger, #c0392b);
-}
-/* 既にある加工製品の候補（2026-09-30）——押すと装置名称・図面名称の欄に入る。 */
-.filing-candidates {
-    flex-basis: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-}
-.filing-candidates:empty { display: none; }
-.filing-cand-head { font-size: 0.9em; color: var(--text-muted, #475569); margin-right: 2px; }
-/* 図面追加・図面改定の行き先を探す（2026-10-03）——押したものは「✓」と太字・枠（色だけで分けない）。 */
-.filing-search { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; }
-.filing-search[hidden] { display: none; }
-.filing-search-label { font-size: 0.9em; }
-.filing-search-input { width: min(28em, 100%); max-width: 100%; box-sizing: border-box; }
-.filing-search-pick.is-chosen { font-weight: bold; border-width: 2px; }
-
 /* 確かめのダイアログ（2026-10-03・app.js の askConfirm）——「追加する／改定する」と「やめる」。 */
 dialog.w-confirm {
     max-width: min(36em, calc(100vw - 32px));
@@ -2064,26 +1899,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 /* 選ぶダイアログ（askChoice・2026-10-04）——選ぶものを縦に並べる。 */
 .w-choice-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
 .w-choice-list button { padding: 6px 12px; text-align: left; cursor: pointer; }
-/* 同じ題の加工製品が何枚もあるときの行き先（2026-10-01）——押したものは「✓」と太字・枠（色だけで分けない）。 */
-.filing-same-pick.is-chosen { font-weight: bold; outline: 2px solid var(--accent, #2563eb); }
-
-/* 選択肢の言葉は短い（図面改定・図面追加）ので1行に並べる。詳しい説明は title。 */
-.filing-merge-opt {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3em;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-/* 廃版の構成部品——**行は消さない**（外注加工に出した紙に社内コードが載っている
-   ので、消すと指し先が消える）。薄く見せて、有効な行と見分けが付くようにする。
-   印は表示のときだけ付く（class はサニタイズで落ちるので保存されない）。 */
-#w-editor-content .row-obsolete {
-    opacity: 0.55;
-    text-decoration: line-through;
-    text-decoration-color: var(--w-danger, #c0392b);
-}
 
 /* 左レールの並べ替え——ドラッグ中の見え方。落とした結果は並び順キーとして
    保存される（サイドカーが正本）。 */
@@ -2099,81 +1914,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
     outline: 2px solid var(--w-accent, #3b82f6);
     outline-offset: -2px;
     border-radius: 4px;
-}
-
-/* メールの返信と「この記録への返信」——閲覧モードのクローム。
-   返信の本体は送信箱にあり、ここは参照で見えるだけ（返信元の本文は変わらない）。 */
-.mail-chrome {
-    margin: 1.5rem 0 0.5rem;
-}
-/* この記録から作るページ（2026-10-01・選ぶ欄と「作成」・作った印〔✓ 受注・✓ 加工製品〕は横に並ぶ）。 */
-.record-make { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
-.record-make[hidden] { display: none; } /* 種類も印も無いときは出さない（display: flex が hidden に勝つため） */
-.record-make-kind { font: inherit; padding: 0.2rem 0.3rem; }
-.record-make-go { padding: 0.3rem 0.9rem; font: inherit; cursor: pointer; }
-.record-make-go:disabled { opacity: 0.6; cursor: wait; }
-
-.mail-reply-open {
-    padding: 0.35rem 1rem;
-    font: inherit;
-    cursor: pointer;
-}
-/* 返信を書く欄は部品です（2026-09-30・assets/mail-compose.css）。 */
-
-.mail-replies {
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-left: 3px solid var(--w-accent, #3b82f6);
-    background: var(--w-surface-alt, #fafafa);
-}
-
-.mail-replies-head {
-    margin: 0 0 0.3rem;
-    font-size: 0.85em;
-    opacity: 0.8;
-}
-
-.mail-replies ul {
-    margin: 0;
-    padding-left: 1.2rem;
-}
-
-.mail-replies-when,
-.mail-replies-to {
-    font-size: 0.85em;
-    opacity: 0.7;
-}
-
-/* やりとりの前後（In-Reply-To の鎖・2026-09-14）。
- * 「この記録への返信」と**隣り合って出る**ので、同じ寸法にそろえたうえで
- * 帯の色だけ変えます——別の鎖であることが、読まなくても分かるように。 */
-.mail-thread {
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-left: 3px solid var(--w-accent-2, #a855f7);
-    background: var(--w-surface-alt, #fafafa);
-}
-
-.mail-thread-head {
-    margin: 0 0 0.3rem;
-    font-size: 0.85em;
-    opacity: 0.8;
-}
-
-.mail-thread ul {
-    margin: 0;
-    padding-left: 1.2rem;
-}
-
-.mail-thread-dir {
-    font-size: 0.85em;
-    opacity: 0.8;
-    margin-right: 0.4em;
-}
-
-.mail-thread-when {
-    font-size: 0.85em;
-    opacity: 0.7;
 }
 
 /* 未処理の一覧を「作業面」にする（2026-09-05）。1行1件・新しい順で、
@@ -2196,11 +1936,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
     width: 1%;
     white-space: nowrap;
 }
-#w-editor-content .unhandled-channel { font-size: 15px; text-align: center; }
-#w-editor-content .unhandled-when    { white-space: nowrap; color: var(--text-muted); }
-/* 相手は短くして出す（連絡帳の名前 → メールの名前 → アドレス・長ければ「…」・2026-09-30）ので1行に収める。
- * 元の値はマウスを載せると出る（title）。 */
-#w-editor-content .unhandled-from    { color: var(--text-muted); white-space: nowrap; }
 /* ⚠ **題の欄が読める幅を持つこと**——相手の欄を1行にした日、折り返さない列（印・記号・日時・相手・添付・
  * ボタン）に幅を取られて、題が 75px の短冊になった（実測）。細い列は中身の幅まで細らせ（全体の td の下限 3em を
  * 外す）、添付の数は題の後ろへ移し、残りを題に回す。⚠ 題の下限を大きくすると、表が枠（文書の欄）より広くなり、
@@ -2210,9 +1945,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content table.unhandled-table td.unhandled-channel,
 #w-editor-content table.unhandled-table td.unhandled-clip,
 #w-editor-content table.unhandled-table td.unhandled-act { min-width: 0; }
-#w-editor-content .unhandled-subject { overflow-wrap: anywhere; }
-/* 下書き（2026-09-30）——まだ送っていないメール。📝 の印も付く（色だけに頼らない）。 */
-#w-editor-content .unhandled-draft { font-size: 12px; color: #5b21b6; white-space: nowrap; }
 #w-editor-content .unhandled-clip    { color: var(--text-muted); }
 #w-editor-content .chip-btn {
     /* 小さなボタンの文字は**折り返さない**（2026-09-28 利用者:「発注部材表の戻すボタンの文字が折り返されて
@@ -2229,19 +1961,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content .chip-btn:hover:not(:disabled) { background: var(--border); }
 #w-editor-content .chip-btn:disabled { opacity: .4; cursor: default; }
 #w-editor-content .chip-btn + .chip-btn { margin-left: 4px; }
-
-/* 見積依頼必要部材表（2026-10-03・ext/toho/rfq.go）——重複は薄い赤＋「⚠ 重複」（色だけで分けない）、臨時部材表の行は薄い灰。 */
-#w-editor-content tr.rfq-dup > td { background: #fee2e2; }
-#w-editor-content .rfq-dup-mark { margin-left: 4px; color: #b91c1c; font-size: 0.85em; white-space: nowrap; }
-#w-editor-content tr.rfq-temp-row > td { background: var(--bg-subtle, #f8fafc); }
-#w-editor-content tr.rfq-temp-row.rfq-dup > td { background: #fee2e2; }
-#w-editor-content .rfq-temp-mark { margin-left: 4px; color: var(--text-muted, #64748b); font-size: 0.85em; white-space: nowrap; }
-#w-editor-content td.rfq-pick, #w-editor-content th.rfq-pick { white-space: nowrap; }
-/* 再部材見積依頼の「装置フォルダから選ぶ」一時的な表（2026-10-03・画面だけ——app.js の listFolder）。ロットの欄は数字が入る幅だけ。 */
-#w-editor-content .rfq-folder-table input.rfq-folder-lot { width: 6em; }
-/* 見積書を作る（装置フォルダから・2026-10-03）——見積先などの欄は一覧に選べる行が出るまで隠す（.matsearch-form の display に勝たせる）。 */
-#w-editor-content .estimate-folder-make[hidden] { display: none; }
-#w-editor-content .unhandled-bulk { margin: 8px 0 0; }
 #w-editor-content #w-unhandled-bulk-done,
 #w-editor-content #w-unhandled-bulk-skip {
     padding: 3px 12px;
@@ -2253,34 +1972,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 }
 #w-editor-content #w-unhandled-bulk-done:disabled,
 #w-editor-content #w-unhandled-bulk-skip:disabled { opacity: .4; cursor: default; }
-
-/* 手で記録を作る一行（電話・FAX・メール・メモ）。**一覧が空でも出る**——片付いた日に
- * ボタンごと消えると、電話が鳴ったときに置き場所が見つからない。 */
-#w-editor-content .unhandled-new {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    margin: 6px 0 10px;
-    /* **折り返す。** 選択2つ＋題の欄＋ボタンで、スマホ幅（320px）には収まりません
-       ——折り返さないと**ページ全体が横スクロール**になります（2026-09-07 に実測。
-       文書は401px、画面は320px でした）。 */
-    flex-wrap: wrap;
-}
-#w-editor-content .unhandled-new input {
-    /* 題の欄は残り幅を使い、無理なら折り返した行の幅いっぱいに。 */
-    flex: 1 1 12em;
-    min-width: 0;
-}
-#w-editor-content .unhandled-new select,
-#w-editor-content .unhandled-new input {
-    padding: 3px 8px;
-    font-size: 13px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    background: var(--bg-paper);
-    color: var(--text);
-}
-#w-editor-content .unhandled-new input { flex: 1 1 auto; min-width: 0; max-width: 24em; }
 #w-editor-content #w-memo-create {
     padding: 3px 12px;
     font-size: 13px;
@@ -2295,34 +1986,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 
 /* 「✉️ メールにサインイン」（2026-10-02・サインインしていないときだけ）と、押したあとの案内（番号とリンク）。 */
 #w-editor-content #w-mail-signin { white-space: nowrap; cursor: pointer; }
-#w-editor-content .mail-signin-box { font-size: 13px; white-space: normal; }
-#w-editor-content .mail-signin-code { font-size: 1.15em; letter-spacing: 0.08em; }
-
-/* ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）。返信のクロームと同じ
- * 「本文の外に出す帯」で、記録を作るかはチェック1つで決める。 */
-#w-editor-content .phone-chrome {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    margin: 12px 0 0;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-}
-#w-editor-content .phone-call {
-    padding: 3px 12px;
-    font-size: 13px;
-    text-decoration: none;
-    color: var(--text);
-    background: var(--bg-paper);
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-}
-#w-editor-content .phone-call:hover { background: var(--border); }
-#w-editor-content .phone-record {
-    font-size: 12px;
-    color: var(--text-muted);
-    cursor: pointer;
-}
 
 
 /* 平文メールの本文は `<pre>` 1つで入ります（2026-09-05）——空行・字下げ・引用の
@@ -2374,53 +2037,12 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
 #w-editor-content .block-content > section { padding-top: 10px; padding-bottom: 10px; }
 /* 📎 添付・📧 原本のリンク行。**本文から離す**が、添付どうしは近くまとめる。 */
 #w-editor-content .block-content > p { padding-top: 5px; padding-bottom: 5px; }
-
-/* 未登録の連絡先（2026-09-17 に「組織」「担当者」の2欄へ畳んだ）。
-   表は固定幅の割り付け——操作の欄に長い文（ドメインの説明）が入るので、自動割り付けだと
-   操作の列が幅を食って名前の列が1文字ずつ折れる（実際にそうなった）。セルは表のセルのまま、
-   中の div を flex にする（td を flex にするとセルとして働かない）。 */
-#w-editor-content table.contacts-table { table-layout: fixed; width: 100%; }
-#w-editor-content table.contacts-table td.contact-who { width: 30%; }
 #w-editor-content table.contacts-table td.unhandled-clip { width: 3.5em; }
-#w-editor-content td.contact-act { vertical-align: top; }
-#w-editor-content .contact-form {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 4px 8px;
-    min-width: 0;
-}
-#w-editor-content .contact-field {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 11px;
-    color: var(--text-muted);
-}
-#w-editor-content .contact-field input {
-    width: 13em;
-    max-width: 100%;
-    padding: 2px 6px;
-    font-size: 13px;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    background: var(--bg-paper);
-    color: var(--text);
-}
-#w-editor-content .contact-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
 #w-editor-content .contact-addrs {
     font-size: 12px;
     color: var(--text-muted);
     overflow-wrap: anywhere;
 }
-
-/* 1行1アドレスの並び（2026-09-13）。表示名を上、アドレスを下に置く。
-   もとは1行に3人ぶんのアドレスが入っていて、誰の行なのか読めなかった。 */
-#w-editor-content td.contact-who {
-    width: 34%;
-    line-height: 1.4;
-}
-#w-editor-content .contact-display { font-weight: 600; }
 #w-editor-content .contact-addr {
     font-size: 12px;
     color: var(--text-muted);
@@ -2432,14 +2054,6 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
     border-color: var(--accent, #2a6);
     color: var(--accent, #2a6);
     font-weight: 600;
-}
-/* 操作の欄は**折り返す**。畳んでも中身は広いので、はみ出させない
-   （推薦つきの行で［顧客］が画面外へ出ていた）。 */
-#w-editor-content td.unhandled-act {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
 }
 /* ⚠ **通信箱の未処理の表では普通のセルに戻す**（2026-09-30）——上の規則は連絡帳の表のためのものだが、同じ名前の
    セルに掛かって td が flex になり、**セルとして働かず幅が 0.7px**（「済」「不要」が重なって2段になっていた）。 */
@@ -2526,135 +2140,18 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     text-underline-offset: 3px;
 }
 
-/* 発注書の検算（2026-09-20・鏡型）。表の足元（tfoot）に1行ずつ出る。
-   ⚠ 薄赤は `ref-missing` と同じ意味——「機械が疑わしいと言っている」であって、
-   間違いが確定したという意味ではない（決めるのは人）。
-
-   **薄い緑＝確かめて合った**（2026-09-21 ユーザー:「検算に合格の色は緑系統が
-   良いのでは？」）。全体の色の規約に3色目が増えた:
-     薄い青 … 機械が読む   薄い赤 … 疑わしい・未定義   薄い緑 … 確かめて合った
-   それまで合格は灰色の文字だけで、「検算して合った」と「ただの注記」が同じ見え方だった。
-
-   ⚠ **色だけに頼らないこと。** 赤と緑は赤緑色覚でいちばん近づく組み合わせ——
-   e2e/probe-phone.js と同じ計算で ΔE は正常視 24.4／2型 11.1／1型 9.5 で、
-   同スクリプトの物差し（10以上で別の色・2以下でほぼ同じ）のちょうど境目。
-   ⚠ ただし後退ではない——それまでの白地＋灰文字は赤との差が 8.5／9.5 だった。
-   ⚠ **`ref-missing` の薄赤×薄青（18.3／色覚下でも 17〜21）とは事情が違う**
-   ——あちらは色だけで足りるが、ここは足りない。だから行の頭に `⚠` と `✓` を
-   付けてある（checksum_mirror.go）。**印の形は色覚にも白黒印刷にも影響されない。** */
-#w-editor-content .order-checksum td {
-    font-size: 0.9em;
-    padding: 6px 8px;
-}
-#w-editor-content .checksum-ng td { background: #fee2e2; }
-#w-editor-content .checksum-ok td { background: #dcfce7; color: #166534; }
-#w-editor-content .checksum-note td { color: var(--w-muted, #6b7280); font-style: italic; }
-/* 受注残高（2026-09-30・order_balance.go）——受注明細表の足元のいちばん上。数字を読むので太く・右寄せにはしない（文になっている）。 */
-#w-editor-content .order-balance td {
-    padding: 6px 8px;
-    font-weight: 600;
-    background: var(--bg-subtle, #f8fafc);
-}
-
 /* 見積計算表の足元（2026-10-01・estimate.go）——弊社利益の式、確定単価（太く・少し大きく）、率を変える欄。 */
 #w-editor-content .estimate-profit td { padding: 4px 8px; background: var(--bg-subtle, #f8fafc); }
 #w-editor-content .estimate-final td { padding: 6px 8px; font-size: 1.1em; background: var(--bg-subtle, #f8fafc); }
 #w-editor-content .estimate-final strong { font-weight: 700; }
 #w-editor-content .estimate-rate td { padding: 4px 8px; font-size: 0.9em; }
 #w-editor-content .estimate-rate-input { width: 5em; }
-#w-editor-content .estimate-note td { color: var(--w-muted, #6b7280); font-style: italic; }
-/* 見積書に入れる（見積計算表の足元）・見積明細表の合計と PDF・メール（2026-10-01）。 */
-#w-editor-content .estimate-add td, #w-editor-content .estimate-actions td { padding: 4px 8px; font-size: 0.9em; }
-#w-editor-content .estimate-add-form input[type="text"] { width: 9em; }
-#w-editor-content .estimate-add-head { font-weight: 600; }
-#w-editor-content .estimate-total td { padding: 6px 8px; font-size: 1.05em; background: var(--bg-subtle, #f8fafc); }
-/* 見積明細表の下の備考の欄（2026-10-03・estimate_note.go）。2026-10-19 から書ける形でも出す（それまでは閲覧モードだけ）。 */
-#w-editor-content .estimate-note-row td { padding: 6px 8px; }
-#w-editor-content .estimate-note-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
-#w-editor-content .estimate-note-label { width: 100%; font-size: 0.85em; color: var(--text-muted, #6b7280); }
-#w-editor-content .estimate-note-input { flex: 1 1 320px; min-height: 4.5em; font: inherit; padding: 4px 6px; box-sizing: border-box; }
-/* 部材見積依頼の返事（2026-10-05・rfq_reply.go）——「返事:」の行と 🤖 の案の表。閲覧モードだけ（書ける形では隠す）。
-   作ったときの理由は「編集中はサーバーが断る」だった。2026-10-12 からサーバーは書ける形のタブがあっても断らない
-   （gateWritablePage が断るのは、道具が /api/lock で握っているときだけ）——隠す理由はもう無いが、隠したまま。 */
-#w-editor-content .rfq-reply-actions td { padding: 4px 8px; font-size: 0.9em; }
-#w-editor-content .rfq-reply-sources { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
-#w-editor-content .rfq-reply-id { width: 22em; max-width: 100%; }
-#w-editor-content .rfq-reply-table { margin: 6px 0; font-size: 0.95em; }
-#w-editor-content .rfq-reply-table td, #w-editor-content .rfq-reply-table th { padding: 2px 6px; }
-#w-editor-content .rfq-reply-price { width: 7em; }
-/* 返事から部材見積依頼書ページを作る案の表（2026-10-05・rfq_reply_make.go）。 */
-#w-editor-content .rfq-reply-make-table input[type="text"] { width: 5.5em; }
-#w-editor-content .rfq-reply-make-table input.rfq-mk-name, #w-editor-content .rfq-reply-make-table input.rfq-mk-note { width: 14em; }
-#w-editor-content .rfq-mk-hint { font-size: 0.8em; color: var(--text-muted, #6b7280); }
-#w-editor-content .rfq-reply-note { width: 12em; }
-
-/* ── 材料の参考単価（2026-09-21）────────────────────────────────────────
-   材料表の右に足す「最新単価」。⚠ **本文ではなく鏡**なので、**人が書いた列と
-   見分けが付く必要があります**——左に区切り線を入れ、文字を少し落として
-   「ここから先はサーバーが足したもの」と分かる形にする。
-   ⚠ 色は使いません（人が書いた列の背景と喧嘩するのと、色覚に頼らないため）。
-
-   ⚠ **1列に畳んであります。** 最初は「最新単価・時点・仕入先」の3列にしましたが、
-   **実測で必ずはみ出しました**——文書の欄は **1920px の画面でも 666px** までしか
-   広がらず（左右のレールぶん）、材料表の素の幅が 529px、3列が 256px でした。
-   **スクロールしないと見えない鏡は、無いのとあまり変わりません。** */
-#w-editor-content .mat-price {
-    border-left: 2px solid var(--w-border, #d1d5db);
-    color: var(--w-muted, #6b7280);
-    font-size: 0.92em;
-    /* ⚠ **表のセルに `max-width` は効きません**（auto レイアウトは中身で幅を決める）。
-       細くするのは**組み立て側**の仕事で、時点と仕入先を別の行に分けてあります。 */
-    white-space: nowrap;
-}
-#w-editor-content th.mat-price { font-weight: 500; }
-#w-editor-content .mat-price-cost { display: block; color: var(--text, #111827); }
-/* 出所（時点・仕入先）。⚠ **小さくしても消さない**——いつの・誰からの値段か
-   分からない数は、ワンノートの `単価（ロット1）みなと` と同じ問題を作り直します。 */
-#w-editor-content .mat-price-src { display: block; font-size: 0.85em; line-height: 1.35; }
-/* ⚠ **断り文は折り返させます。** `nowrap` のままだと
-   「⚠ 買った記録がありません」の1行幅（実測200px）で列が決まり、**値のある行より
-   断り文のほうが列を広げます**——畳んだ意味が消えます（実際に一度そうなりました）。 */
-#w-editor-content .mat-price-none { font-style: italic; white-space: normal; }
-
-/* ── 受注残表（2026-09-21）──────────────────────────────────────────────
-   顧客×納期の組ごとに1枚。⚠ **1枚が1回の納品の単位**（ユーザー決定）なので、
-   そのまま渡せる見た目にしておく。 */
-/* 受注残表から部材見積依頼へ（2026-10-04・見積依頼の段3・app.js）——受注残高の下のボタンと結果の一言。紙には出さない（no-print）。 */
-.backlog-rfq-bar { margin: 8px 0 12px; }
 .backlog-rfq-bar .backlog-rfq-say p { display: inline; margin: 0 0 0 8px; font-size: 13px; }
 
 .backlog-sheet {
     margin: 0 0 1.75rem;
     break-inside: avoid;
 }
-.backlog-title {
-    margin: 0 0 0.35rem;
-    font-size: 1.05rem;
-}
-.backlog-warn {
-    margin-left: 0.6em;
-    font-size: 0.85rem;
-    color: var(--w-danger, #c0392b);
-}
-.backlog-print { margin-bottom: 0.4rem; }
-/* 受注フォルダのトップの受注残高（2026-09-30 夜・order_balance.go の backlogTotalHTML）——表の上の1行。 */
-.backlog-total { margin: 0 0 1rem; font-weight: 600; }
-/* ⚠ **幅を与えません。** 表は `#w-editor-content table` で
-   `display:block; overflow-x:auto` のスクロール枠になっているので、`width:100%` を
-   置くと中身なりに伸びられず、列が潰れます（幅はセルに与える——上の注意と同じ）。 */
-.backlog-remaining { font-weight: 600; }
-/* 弊社品番が空のセル（2026-09-25）——ユーザー:「弊社品番なしの警告は受注フォルダページの
-   納期別の表の弊社品番セルの背景を薄赤くする程度で十分」。薄赤は `ref-missing` と同じ色・
-   同じ意味（機械が「このままでは困る」と言っている）。判定は backlog.go の ourItemCellHTML。 */
-#w-editor-content td.backlog-no-item { background: #fee2e2; }
-/* 赤字の行（2026-10-17・ext/toho/order_loss.go）——受注の単価が見積の単価を下回る。利用者:「赤字は警告して欲しいです」
-   「2か所で良いと思います。」。⚠ 色だけで分けない——品名の後ろに「⚠ 赤字 …」の文も出す（backlog-loss-note）。 */
-#w-editor-content tr.backlog-loss > td { background: #fee2e2; }
-#w-editor-content .backlog-loss-note { display: block; color: #b91c1c; font-size: 0.85em; white-space: normal; }
-/* まだ埋まっていない段（2026-10-17・backlog.go の backlogGaps）——知らせるだけなので、赤にしない（茶色の文字だけ）。 */
-#w-editor-content td.backlog-gap { color: #92400e; }
-/* 受注明細表の「見積との差」（同じ日）——赤字の行だけ文が入る。 */
-#w-editor-content td.order-loss-ng { color: #b91c1c; background: #fee2e2; white-space: normal; min-width: 12em; }
 
 /* ── 印刷（2026-09-21）────────────────────────────────────────────────
    ⚠ **隠す側を列挙する形は失敗しました**（同日）。`.rail` や `.site-footer` を
@@ -2677,19 +2174,6 @@ body[edit-mode] #w-editor-content dl[data-type="tags"] > dt.tag-name-known {
     body.w-printing-sheet #w-print-area { display: block !important; }
 
     body, .container { margin: 0; padding: 0; background: #fff; }
-    .backlog-print { display: none !important; }
-    /* ⚠ **紙に出す列は5つだけ**（2026-09-21 ユーザー:「品番、品名、残、状態、備考
-       だけで良いです」）。**見出しと値の両方**に印が要ります——片方だけだと
-       紙で1つずつずれます。顧客名と納期の見出し（`.backlog-title`）は紙にも出します。
-       その後 `弊社品番`（09-21）と `装置名`（09-30 夜・利用者:「装置名は紙にも出して欲しいです」）を足して、いまは7つ。 */
-    #w-print-area .no-print { display: none !important; }
-
-    .backlog-table { border-collapse: collapse; width: 100%; }
-    .backlog-table th, .backlog-table td {
-        border: 1px solid #999;
-        padding: 3px 6px;
-        font-size: 10.5pt;
-    }
     /* 紙では「受注」列のリンクの下線は邪魔なので消す（URLは出さない）。 */
     #w-print-area a { color: inherit; text-decoration: none; }
 
@@ -2763,199 +2247,9 @@ body:not([edit-mode]) #w-editor-content .w-foldable.w-heading-folded::before { c
 body:not([edit-mode]) #w-editor-content .w-foldable.w-heading-folded::after { content: ' …'; color: var(--text-muted); font-weight: 400; }
 body:not([edit-mode]) #w-editor-content .w-fold-hidden { display: none !important; }
 #w-editor-content .w-sort-mark { margin-left: 4px; font-size: 0.75em; color: var(--accent-strong, #2563eb); }
-
-/* ── 受注残表の編集（2026-09-21）────────────────────────────────────────
-   ⚠ **クロームの中の部品**なので保存されません。見た目は控えめに——毎日見る表で
-   枠が目立つと、数字より枠を読むことになります。 */
-.order-edit {
-    font: inherit;
-    border: 1px solid transparent;
-    background: transparent;
-    padding: 1px 3px;
-    max-width: 100%;
-}
-.order-edit:hover, .order-edit:focus {
-    border-color: var(--w-border, #cbd5e1);
-    background: #fff;
-}
 .order-num { width: 5em; text-align: right; }
-.order-text { width: 16em; }
-.order-check { width: 1.1em; height: 1.1em; }
-/* 保存できた／できなかったの合図。⚠ **色だけに頼りません**——失敗は `title` に
-   理由が入り、トーストにも出ます（色覚と白黒印刷の両方で効くように）。 */
-.order-edit-ok { background: #dcfce7 !important; }
-.order-edit-ng { background: #fee2e2 !important; border-color: #c0392b !important; }
-/* 保存できなかった理由は**そのセルの中に**出す。⚠ `title` は指で触る画面では
-   出ないので、見える文字にする。 */
-.order-edit-msg {
-    display: block;
-    font-size: 0.8em;
-    color: var(--w-danger, #c0392b);
-    white-space: normal;
-    max-width: 18em;
-}
-
-/* ── 材料を探す（2026-09-21）────────────────────────────────────────────
-   ユーザー:「あとで**材質形状寸法で検索**したいときがあります」。
-   ⚠ **欄はサーバーが描く**（ext/toho/view_material_search.go）。ここは見た目だけ。 */
-#w-editor-content .matsearch-title { margin: 0 0 4px; }
-#w-editor-content .matsearch-help {
-    margin: 0 0 10px;
-    color: var(--text-muted, #6b7280);
-    font-size: 0.9em;
-}
-/* ⚠ **狭い画面で折り返すこと**（`flex-wrap` が無いとページ全体が横スクロールする
-   ——2026-09-07 に「＋ 記録する」の行で1度踏んだ）。 */
-#w-editor-content .matsearch-form {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: flex-end;
-    margin-bottom: 10px;
-}
-#w-editor-content .matsearch-field {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 0.85em;
-    color: var(--text-muted, #6b7280);
-}
-#w-editor-content .matsearch-input {
-    width: 9em;
-    padding: 4px 6px;
-    border: 1px solid var(--border, #cbd5e1);
-    border-radius: var(--radius, 4px);
-    font-size: 1rem;
-}
-#w-editor-content .matsearch-go {
-    padding: 6px 14px;
-    border: 1px solid var(--border, #cbd5e1);
-    border-radius: var(--radius, 4px);
-    background: var(--bg-subtle, #f1f5f9);
-    cursor: pointer;
-}
-#w-editor-content .matsearch-go:disabled { opacity: 0.6; cursor: progress; }
-#w-editor-content .matsearch-table { width: 100%; }
-/* ⚠ **結果のセルは折り返しません**（表の折り返しの方針と同じ——寸法は1つの値で、
-   途中で折ると `□75*75*t3.2` と `*120` に割れて読みにくい）。はみ出すぶんは
-   **表自身が横スクロール**して受けます（ページは揺らさない）。 */
-#w-editor-content .matsearch-table th,
-#w-editor-content .matsearch-table td { white-space: nowrap; }
-#w-editor-content .matsearch-cost { text-align: right; white-space: nowrap; }
-/* ⚠ **「記録なし」を薄く**——数と見分けが付く必要がある（色だけに頼らず `⚠` も付く）。 */
-#w-editor-content .matsearch-none,
-#w-editor-content .matsearch-src { color: var(--text-muted, #6b7280); font-size: 0.9em; }
-#w-editor-content .matsearch-migrating { color: var(--text-muted, #6b7280); font-size: 0.85em; }
-#w-editor-content .matsearch-empty { color: var(--text-muted, #6b7280); font-style: italic; }
-
-/* ── 加工製品の一覧（2026-09-29・ext/toho/product_list.go）─────────────────────
-   段のフォルダの代わりに、区分（試作・見積・旧型）と装置名称で絞って見る。
-   欄は「材料を探す」の形（.matsearch-form）を借り、足りないものだけここに書く。 */
-#w-editor-content .plist-text { width: 14em; }
-#w-editor-content .plist-kinds {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 10px;
-    align-items: center;
-    margin: 0;
-    padding: 2px 8px 4px;
-    border: 1px solid var(--border, #cbd5e1);
-    border-radius: var(--radius, 4px);
-    font-size: 0.9em;
-}
-#w-editor-content .plist-kinds legend {
-    padding: 0 4px;
-    font-size: 0.85em;
-    color: var(--text-muted, #6b7280);
-}
-#w-editor-content .plist-kinds label,
-#w-editor-content .plist-migrating-only { white-space: nowrap; font-size: 0.9em; }
-#w-editor-content .plist-count { color: var(--text-muted, #6b7280); font-size: 0.9em; }
-/* 番号・区分は折り返さない（途中で割ると読み違える）。**題と装置名称は折り返す**——
-   長い題（【追加工】…）で図面番号が表の外へ押し出されていた（2026-09-29 に実データで確認）。 */
-#w-editor-content .plist-table td { white-space: nowrap; }
-#w-editor-content .plist-table td.plist-wrap { white-space: normal; min-width: 8em; }
-#w-editor-content .plist-names { color: var(--text-muted, #6b7280); font-size: 0.85em; } /* 題と違う名前（改定で変わった品名など・2026-10-01） */
-/* 品番が無い行は図面番号を代わりに出す（2026-10-01）——品番と見分けられるよう薄く・「（図番）」の印。 */
-#w-editor-content .plist-dwg { color: var(--text-muted, #6b7280); }
-#w-editor-content .plist-dwg small { margin-left: 2px; font-size: 0.8em; }
-
-/* 整理の画面の区分の印（2026-09-29・段の選択の代わり）。 */
-.filing-kinds label { display: inline-block; margin-right: 8px; white-space: nowrap; }
-
-/* ── 手配状況（加工製品ごと・2026-09-21 に作り直し）──────────────────────
-   ⚠ **形が変わりました**——材料名の合算 → **加工製品ごと**。ユーザー:「各受注ページに
-   各加工製品ごとの項目と購入品の表を集める必要があり、その表の列の一つとして、
-   発注書番号と発注書ページへのリンクが必要」。 */
-#w-editor-content .proc-product { margin: 0 0 18px; }
-#w-editor-content .proc-name { margin: 0 0 6px; font-size: 1.05em; }
-#w-editor-content .proc-qty { color: var(--text-muted, #6b7280); font-weight: normal; }
-/* ⚠ **移行の確認前だと分かるように**——材料表がワンノートの形のままなら、
-   必要数そのものが当てになりません。 */
-#w-editor-content .proc-migrating,
-#w-editor-content .proc-why { color: var(--text-muted, #6b7280); font-size: 0.85em; }
-#w-editor-content .proc-why-ng { color: #b91c1c; }
-#w-editor-content .proc-orders { font-size: 0.9em; }
-#w-editor-content .proc-oqty { color: var(--text-muted, #6b7280); }
-/* ⚠ **未手配を黙らない**（空欄だと「発注済み」に見える）。色だけに頼らず `⚠` も付く。 */
-#w-editor-content .proc-none { color: var(--text-muted, #6b7280); font-style: italic; }
-
-/* ── 未手配の一覧（2026-09-21）──────────────────────────────────────────
-   ⚠ **受注を横断する表**です。ここから部材発注書を1枚作ります。 */
-#w-editor-content .unorder-help {
-    margin: 0 0 8px;
-    color: var(--text-muted, #6b7280);
-    font-size: 0.9em;
-}
-#w-editor-content .unorder-pick { width: 2.5em; text-align: center; }
-/* **必要部材表のセルは折り返さない**（2026-09-28 利用者:「必要部材表（受注横断）のセルの文字が折り返され、
-   行の高さが大きくなりすぎます」）。表を本文の欄（666px まで）に収めようと列が細らされ、客先・装置・品名が
-   4〜7行に折れて1行が 121px になっていた（実測）。折り返さず、**表の中で横へスクロール**する——本文の表と
-   同じ形（`#w-editor-content table` の overflow-x・自由文の列だけ折る決まり）。この表に自由文の列は無い。 */
-#w-editor-content table.unorder-table th,
-#w-editor-content table.unorder-table td { white-space: nowrap; }
-#w-editor-content .unorder-cost { white-space: nowrap; }
-/* 材料以外の行の種類の札（外注加工・購入部品・支給部品・2026-09-28）。1枚の部材発注書は1社なので、
-   選ぶときに種類が要る。色だけに頼らず、札の文字で種類を言う。 */
-#w-editor-content .unorder-kind {
-    display: inline-block;
-    padding: 0 4px;
-    margin-right: 2px;
-    border: 1px solid #94a3b8;
-    border-radius: 3px;
-    font-size: 0.8em;
-    color: #475569;
-    white-space: nowrap;
-}
-#w-editor-content .unorder-form { margin-top: 10px; }
-#w-editor-content .unorder-result { margin-top: 8px; font-size: 0.95em; }
-
-/* ── 部材発注書を送る・発注済みの印（2026-09-22）──────────────────────────────
-   ユーザー:「発注書ページで**送信方法を選んで**…」「**発注書の表の一品ずつに
-   発注済みの印**をつけます」。⚠ **印は本文の `状態` の列**で、ここに出るのは
-   **押すためのもの**だけです（`.vocab-chrome`）。 */
-#w-editor-content .order-send { margin-top: 10px; }
-#w-editor-content .order-send-state { margin: 0 0 8px; }
-/* ⚠ **狭い画面で折り返すこと**（`flex-wrap` が無いとページ全体が横スクロールする）。 */
-#w-editor-content .order-send-ways {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-/* 備考の欄とその下の「PDF作成」（2026-10-14・our_order_mirror.go——部品は見積書の備考の欄と同じ）。 */
-#w-editor-content .order-send .estimate-note-box { margin-bottom: 6px; }
-#w-editor-content .order-pdf-row { margin-bottom: 8px; }
-#w-editor-content .order-mail { margin-top: 4px; }
-#w-editor-content .order-mail > summary { cursor: pointer; }
-/* 中のメールを書く欄は部品（2026-09-30・assets/mail-compose.css）——資料のチェックもその添付の候補。 */
-/* ⚠ **行ごとのボタンは折り返しません**——2つ並ぶだけなので、折ると行の高さが
-   揃わず、表が読みにくくなります。 */
-#w-editor-content .order-row-act,
-#w-editor-content .draft-row-act { white-space: nowrap; }
 /* 発注部材表の「部材発注書を作る」の欄——表の外（包む節の中・表の直後・2026-09-28）。表の横スクロールに巻き込まれない。 */
 #w-editor-content .draft-form-box { margin: 4px 0 16px; }
-#w-editor-content .order-link-state { margin-left: 6px; }
 /* ページの更新の知らせで差し替えたブロック（2026-10-07）——しばらく薄い黄色で示して消える。色だけに頼らず左の線も付ける。 */
 /* ほかの人のキャレットのあるブロック（2026-10-12 昼・app.js renderPresence）——彩度の低い黄色の背景だけ
  * （利用者:「置いただけで背景色を黄色系の彩度の低い色にしては？説明が多すぎるのでシンプルに」）。名前はマウスを載せると出る。 */
@@ -3042,14 +2336,6 @@ body.w-lightbox-open { overflow: hidden; }
 .context-toolbar button.ctx-type.is-active { background: #2563eb; }
 .context-toolbar button:disabled { opacity: 0.4; cursor: default; }
 .context-toolbar button:disabled:hover { background: transparent; }
-
-/* 整理の「📎 ほかのファイル」（2026-10-08・assets/app.js の buildFilingFiles）。色だけに頼らず ✓ / ⚠ を頭に付ける（文で）。 */
-#w-editor-content .filing-files { margin-top: 12px; }
-#w-editor-content .filing-file-shown { margin: 2px 0 6px; font-size: 12px; color: #475569; }
-#w-editor-content .filing-file-note { margin: 4px 0 0; font-size: 13px; }
-#w-editor-content .filing-file-note.is-ok { color: #166534; }
-#w-editor-content .filing-file-note.is-warn { color: #b91c1c; }
-#w-editor-content .filing-search-none { margin: 4px 0; font-size: 12px; color: #64748b; }
 
 /* ── 版から「このブロックだけ戻す」（2026-10-12・【考察】編集モードの再考 §6 問い8）── */
 dialog.w-confirm .w-version-blocks { max-height: 60vh; overflow: auto; margin: 8px 0; }

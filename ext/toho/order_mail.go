@@ -7,7 +7,7 @@ package toho
 //
 // それまで部材発注書の送信の欄は、宛先・件名・本文の欄をこの拡張が自分で描き、送るときは画面が
 // 「PDFを作る → 送る → 発注済みにする」の3段を順に呼んでいました（order_send.go の旧 orderSendFormHTML・
-// app.js の旧 sendMail）。いまは**メールを書く欄は1つの部品**（`assets/mail-compose.js`）で、ここは
+// app.js の旧 sendMail）。いまは**メールを書く欄は1つの部品**（`ext/comm/mail/assets/mail-compose.js`）で、ここは
 // その用件の中身だけを渡します（開発方針 §0「口はこちら、言葉は拡張から」・`comm.RegisterSendPurpose`）:
 //
 //	初期値   … 宛先の候補（連絡帳の仕入先）・件名（部材発注書番号入り）・本文（メールの署名入り）・
