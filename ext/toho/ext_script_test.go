@@ -1,25 +1,22 @@
 package toho
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"w-cms/internal/cms"
 )
 
-// TestTohoRegistersItsScript は、東邦の拡張が自分の画面の JS を登録し、そのファイルがあることを固定します（2026-10-20）。
+// TestTohoRegistersItsScript は、この拡張の画面の JS が、置き場の決まり（ext/toho/assets/）で拾われて配られることを固定します（2026-10-20）。
 func TestTohoRegistersItsScript(t *testing.T) {
-	found := false
+	cms.SetExtAssetRoot("../..") // 試験はこのパッケージのフォルダで走る
+	t.Cleanup(func() { cms.SetExtAssetRoot(".") })
+	got := map[string]bool{}
 	for _, u := range cms.ExtScriptURLs() {
-		if u == "/assets/ext/toho/toho.js" {
-			found = true
+		got[u] = true
+	}
+	for _, u := range []string{"/assets/ext/toho/toho.js"} {
+		if !got[u] {
+			t.Errorf("画面の JS %s が拾われていません: %v", u, cms.ExtScriptURLs())
 		}
-	}
-	if !found {
-		t.Fatalf("東邦の画面の JS が登録されていません: %v", cms.ExtScriptURLs())
-	}
-	if _, err := os.Stat(filepath.Join("assets", "toho.js")); err != nil {
-		t.Errorf("東邦の画面の JS がありません: %v", err)
 	}
 }

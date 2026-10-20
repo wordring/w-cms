@@ -95,6 +95,7 @@ func RenderPageShell(bodyHTML, breadcrumbHTML, title string) (string, error) {
 	out := strings.Replace(shell, contentPlaceholder, bodyHTML, 1)
 	out = strings.Replace(out, breadcrumbPlaceholder, breadcrumbHTML, 1)
 	out = strings.Replace(out, extScriptsPlaceholder, extScriptTags(), 1) // 拡張の画面の JS（ext_scripts.go）
+	out = strings.Replace(out, extStylesPlaceholder, extStyleTags(), 1)   // 拡張の画面の CSS（同じ）
 
 	if t := strings.TrimSpace(title); t != "" {
 		out = strings.Replace(out, titlePlaceholder,

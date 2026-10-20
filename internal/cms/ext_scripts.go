@@ -1,68 +1,120 @@
 package cms
 
 // ─────────────────────────────────────────────────────────────────────────
-// 拡張の画面の JS（2026-10-20・docs/考察/【考察】画面の JS のコアと拡張.md）
+// 拡張の画面のファイル（JS・CSS・HTML）（2026-10-20・docs/考察/【考察】画面の JS のコアと拡張.md）
 //
-// 拡張の画面の働きは、その拡張のフォルダの JS に置きます（例: `ext/comm/assets/comm.js`）。拡張は `init()` で
-// RegisterScript を呼んで名乗り、サーバーは `/assets/ext/<拡張>/<ファイル>` として配り、編集用の殻に
-// `<script src>` を差し込みます（WCMS_EXT_SCRIPTS の印の位置・コアの app.js のあと）。
+// 拡張の画面の働きと見た目は、その拡張のフォルダの `assets/` に置きます（例: `ext/comm/assets/comm.js`・`ext/toho/assets/toho.css`）。
+// **置き場の決まりで拾います**——拡張は `init()` で `RegisterExtension` を呼ぶだけでよく、ファイルを1本ずつ名乗りません
+// （2026-10-20 利用者:「できれば、拡張をフォルダに入れてビルドすると入るような仕組みが良いです」）。
 //
+//   - 拡張の名前はパッケージの道と揃えてあるので（`comm/mail` なら `ext/comm/mail`）、載っている拡張ごとに
+//     `ext/<名前>/assets/` を見ます。拾うのは `.js`・`.css`・`.html` の3種類だけで、`/assets/ext/<名前>/<ファイル>` として配ります。
+//   - 編集用の殻には、`.js` を `<script src>`（WCMS_EXT_SCRIPTS の印・コアの app.js のあと）、`.css` を `<link>`（WCMS_EXT_STYLES の印・
+//     コアの app.css のあと）で差し込みます。`.html` は、その拡張の画面として配るだけです（例: メールの一覧）。
 //   - **コアの JS は拡張の JS を名指ししません**——拡張の JS は、コアの app.js が渡す `window.wcms` だけを使います。
-//   - ビルドで外した拡張は登録しないので、その JS も配られません（サーバーの口は無いのにボタンだけ残る、が起きない）。
-//   - `assets/` と同じく**ディスクから**配ります（入れ替えなしで直せる・`no-cache`）。配るのは登録した1本だけで、
-//     同じフォルダのほかのファイルは配りません。
+//   - ビルドで外した拡張は名簿に載らないので、そのファイルも配られません（サーバーの口は無いのにボタンだけ残る、が起きない）。
+//   - `assets/` と同じく**ディスクから**配ります（入れ替えなしで直せる・`no-cache`）。拾うのは起動して最初に使うとき1度だけ
+//     （ファイルを足したら起動し直す）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
 	stdhtml "html"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
-// extScript は登録された拡張の JS 1本です。
-type extScript struct {
+// extAsset は拾った拡張の画面のファイル1本です。
+type extAsset struct {
 	URL  string // 配るアドレス（/assets/ext/<拡張>/<ファイル>）
-	Path string // ディスクの場所（リポジトリの根から）
+	Path string // ディスクの場所
+	Type string // 配るときの Content-Type
 }
 
-// extScripts は登録された JS です（配るアドレスが鍵）。**`init()` の中からだけ**登録します。
-var extScripts = map[string]extScript{}
-
-// ExtScriptPrefix は拡張の JS を配るアドレスの頭です。
+// ExtScriptPrefix は拡張の画面のファイルを配るアドレスの頭です。
 const ExtScriptPrefix = "/assets/ext/"
 
-// extScriptsPlaceholder は、編集用の殻に拡張の `<script>` を差し込む印です。
-const extScriptsPlaceholder = "<!--WCMS_EXT_SCRIPTS-->"
+// extScriptsPlaceholder・extStylesPlaceholder は、編集用の殻に拡張の `<script>`・`<link>` を差し込む印です。
+const (
+	extScriptsPlaceholder = "<!--WCMS_EXT_SCRIPTS-->"
+	extStylesPlaceholder  = "<!--WCMS_EXT_STYLES-->"
+)
 
-// RegisterScript は拡張 extID の画面の JS を登録します（拡張の `init()` から呼ぶ）。file はリポジトリの根からの場所
-// （例: `ext/comm/assets/comm.js`）で、`/assets/ext/<extID>/<ファイル名>` として配られます。
-// 同じアドレスを2度登録するのは取り付けの誤りなので止めます。
-func RegisterScript(extID, file string) {
-	name := filepath.Base(file)
-	if extID == "" || strings.Contains(extID, "..") || !strings.HasSuffix(name, ".js") {
-		panic("拡張の JS の登録が正しくありません: " + extID + " " + file)
-	}
-	url := ExtScriptPrefix + extID + "/" + name
-	if _, dup := extScripts[url]; dup {
-		panic("拡張の JS " + url + " が2度登録されました")
-	}
-	extScripts[url] = extScript{URL: url, Path: filepath.FromSlash(file)}
+// extAssetTypes は拾うファイルの種類です（ほかは置いてあっても配らない）。
+var extAssetTypes = map[string]string{
+	".js":   "application/javascript; charset=utf-8",
+	".css":  "text/css; charset=utf-8",
+	".html": "text/html; charset=utf-8",
 }
 
-// ExtScriptURLs は登録された JS の配るアドレスを順に返します（殻に差し込む順＝拡張の名前の順）。
-func ExtScriptURLs() []string {
-	out := make([]string, 0, len(extScripts))
-	for u := range extScripts {
-		out = append(out, u)
+var (
+	// extAssetRoot は拡張のフォルダを探す根です（ふだんはリポジトリの根＝作業の場所）。試験だけが SetExtAssetRoot で替える。
+	extAssetRoot = "."
+	extAssetMu   sync.Mutex
+	extAssets    map[string]extAsset // 配るアドレス → ファイル（拾うのは1度だけ）
+)
+
+// SetExtAssetRoot は拡張のフォルダを探す根を替え、拾い直させます（試験だけ——パッケージの試験は自分のフォルダで走るため）。
+func SetExtAssetRoot(root string) {
+	extAssetMu.Lock()
+	defer extAssetMu.Unlock()
+	extAssetRoot = root
+	extAssets = nil
+}
+
+// discoverExtAssets は、載っている拡張ごとに `ext/<名前>/assets/` の JS・CSS・HTML を拾います。
+func discoverExtAssets() map[string]extAsset {
+	extAssetMu.Lock()
+	defer extAssetMu.Unlock()
+	if extAssets != nil {
+		return extAssets
+	}
+	out := map[string]extAsset{}
+	for _, e := range Extensions() {
+		if e.ID == "" || strings.Contains(e.ID, "..") {
+			continue
+		}
+		dir := filepath.Join(extAssetRoot, "ext", filepath.FromSlash(e.ID), "assets")
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			continue // 画面のファイルを持たない拡張
+		}
+		for _, f := range ents {
+			typ, ok := extAssetTypes[strings.ToLower(filepath.Ext(f.Name()))]
+			if f.IsDir() || !ok {
+				continue
+			}
+			url := ExtScriptPrefix + e.ID + "/" + f.Name()
+			out[url] = extAsset{URL: url, Path: filepath.Join(dir, f.Name()), Type: typ}
+		}
+	}
+	extAssets = out
+	return out
+}
+
+// extAssetURLs は、拾ったファイルのうち拡張子 ext のものの配るアドレスを順に返します（殻に差し込む順＝拡張の名前・ファイルの名前の順）。
+func extAssetURLs(ext string) []string {
+	var out []string
+	for u := range discoverExtAssets() {
+		if strings.EqualFold(path.Ext(u), ext) {
+			out = append(out, u)
+		}
 	}
 	sort.Strings(out)
 	return out
 }
 
-// extScriptTags は殻へ差し込む `<script>` の並びです。
+// ExtScriptURLs は拡張の JS の配るアドレスを順に返します。
+func ExtScriptURLs() []string { return extAssetURLs(".js") }
+
+// ExtStyleURLs は拡張の CSS の配るアドレスを順に返します。
+func ExtStyleURLs() []string { return extAssetURLs(".css") }
+
+// extScriptTags・extStyleTags は殻へ差し込む `<script>`・`<link>` の並びです。
 func extScriptTags() string {
 	var b strings.Builder
 	for _, u := range ExtScriptURLs() {
@@ -71,18 +123,26 @@ func extScriptTags() string {
 	return b.String()
 }
 
-// ExtScriptHandler は GET /assets/ext/… です。登録した JS だけを、ディスクから配ります（ほかは 404）。
+func extStyleTags() string {
+	var b strings.Builder
+	for _, u := range ExtStyleURLs() {
+		b.WriteString(`<link rel="stylesheet" href="` + stdhtml.EscapeString(u) + `">`)
+	}
+	return b.String()
+}
+
+// ExtScriptHandler は GET /assets/ext/… です。拾ったファイルだけを、ディスクから配ります（ほかは 404）。
 func ExtScriptHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	s, ok := extScripts[path.Clean(r.URL.Path)]
+	a, ok := discoverExtAssets()[path.Clean(r.URL.Path)]
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache") // assets/ と同じ（使う前に毎回確かめる・変わっていなければ 304）
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	http.ServeFile(w, r, s.Path)
+	w.Header().Set("Content-Type", a.Type)
+	http.ServeFile(w, r, a.Path)
 }

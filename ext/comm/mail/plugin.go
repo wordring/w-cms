@@ -22,11 +22,10 @@ import (
 
 func init() {
 	// **名簿に載る**（起動ログと画面の出し分け——「✉️ 返信」はこの名前を見て出る）。
+	// 取り付け口のビルドタグ（internal/extgen が読む）——`-tags nomail` でメールだけ外せる（通信箱は残る）。
+	//w-cms:build !minimal && !nomail
 	cms.RegisterExtension("comm/mail", "メール送受信・IMAP／SMTP")
-	// **画面の JS もメールの持ち物**です（2026-10-20・docs/考察/【考察】画面の JS のコアと拡張.md）——送る欄の部品と、
-	// 通信箱の「📥 新しいメールを読み込む」・メールのサインイン。載っているときだけ殻が読み込む（メール一覧 mails.html は直に読む）。
-	cms.RegisterScript("comm/mail", "ext/comm/mail/assets/mail-compose.js")
-	cms.RegisterScript("comm/mail", "ext/comm/mail/assets/mail.js")
+	// 画面の JS・CSS は、この拡張のフォルダの assets/ に置けば拾われます（2026-10-20・internal/cms/ext_scripts.go の置き場の決まり）。
 	comm.RegisterMailer(oauthMailer{})
 	// 自分が出したメールの `.eml` を通信箱へ入れたとき「送信」の記録にするため（2026-09-28）。
 	comm.RegisterOwnAddresses(signedInAddresses)

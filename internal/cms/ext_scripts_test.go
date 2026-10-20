@@ -5,58 +5,73 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
 
-// 拡張の画面の JS（ext_scripts.go・2026-10-20）——登録した1本だけを配り、殻に差し込むことを固定します。
-func TestExtScriptServedAndInjected(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "probe.js")
-	if err := os.WriteFile(file, []byte("window.probe = 1;"), 0o644); err != nil {
+// 拡張の画面のファイル（ext_scripts.go・2026-10-20）——載っている拡張の ext/<名前>/assets/ から JS・CSS・HTML だけを拾って配り、
+// 殻に差し込むことを固定します（置き場の決まり・1本ずつ名乗らない）。
+func TestExtAssetsDiscoveredServedAndInjected(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "ext", "probe", "sub", "assets")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "secret.js"), []byte("secret"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	saved := extScripts
-	extScripts = map[string]extScript{}
-	t.Cleanup(func() { extScripts = saved })
-	RegisterScript("probe", filepath.ToSlash(file))
-
-	get := func(url string) *httptest.ResponseRecorder {
-		rr := httptest.NewRecorder()
-		ExtScriptHandler(rr, httptest.NewRequest("GET", url, nil))
-		return rr
-	}
-	if rr := get("/assets/ext/probe/probe.js"); rr.Code != 200 || !strings.Contains(rr.Body.String(), "window.probe") {
-		t.Fatalf("登録した JS を配りません: %d %s", rr.Code, rr.Body.String())
-	}
-	for _, url := range []string{"/assets/ext/probe/secret.js", "/assets/ext/probe/../probe/secret.js", "/assets/ext/other/probe.js"} {
-		if rr := get(url); rr.Code != http.StatusNotFound {
-			t.Errorf("⚠ 登録していない %s を配っています: %d", url, rr.Code)
+	for name, body := range map[string]string{"a.js": "window.probe = 1;", "a.css": ".probe{}", "page.html": "<p>probe</p>", "secret.txt": "secret"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-	rr := httptest.NewRecorder()
-	ExtScriptHandler(rr, httptest.NewRequest("POST", "/assets/ext/probe/probe.js", nil))
-	if rr.Code != http.StatusMethodNotAllowed {
+	// 載っていない拡張のフォルダは拾わない。
+	other := filepath.Join(root, "ext", "notloaded", "assets")
+	os.MkdirAll(other, 0o755)
+	os.WriteFile(filepath.Join(other, "x.js"), []byte("x"), 0o644)
+
+	savedReg := extensionRegistry
+	extensionRegistry = map[string]ExtensionInfo{"probe/sub": {ID: "probe/sub", Name: "試験"}}
+	SetExtAssetRoot(root)
+	t.Cleanup(func() { extensionRegistry = savedReg; SetExtAssetRoot(".") })
+
+	get := func(method, url string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		ExtScriptHandler(rr, httptest.NewRequest(method, url, nil))
+		return rr
+	}
+	for url, typ := range map[string]string{"/assets/ext/probe/sub/a.js": "javascript", "/assets/ext/probe/sub/a.css": "text/css", "/assets/ext/probe/sub/page.html": "text/html"} {
+		rr := get("GET", url)
+		if rr.Code != 200 || !strings.Contains(rr.Header().Get("Content-Type"), typ) {
+			t.Errorf("%s を配りません: %d %s", url, rr.Code, rr.Header().Get("Content-Type"))
+		}
+	}
+	for _, url := range []string{"/assets/ext/probe/sub/secret.txt", "/assets/ext/probe/sub/../sub/secret.txt", "/assets/ext/notloaded/x.js"} {
+		if rr := get("GET", url); rr.Code != http.StatusNotFound {
+			t.Errorf("⚠ 配ってはいけない %s を配っています: %d", url, rr.Code)
+		}
+	}
+	if rr := get("POST", "/assets/ext/probe/sub/a.js"); rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST を断っていません: %d", rr.Code)
 	}
-	if got := extScriptTags(); got != `<script src="/assets/ext/probe/probe.js"></script>` {
-		t.Errorf("殻へ差し込む形が違います: %s", got)
+	if got := extScriptTags(); got != `<script src="/assets/ext/probe/sub/a.js"></script>` {
+		t.Errorf("殻へ差し込む JS の形が違います: %s", got)
+	}
+	if got := extStyleTags(); got != `<link rel="stylesheet" href="/assets/ext/probe/sub/a.css">` {
+		t.Errorf("殻へ差し込む CSS の形が違います: %s", got)
 	}
 }
 
-// TestShellHasExtScriptsMarker は、編集用の殻に拡張の JS を差し込む印があり、コアの app.js のあとにあることを固定します。
-func TestShellHasExtScriptsMarker(t *testing.T) {
+// TestShellHasExtMarkers は、編集用の殻に拡張の JS・CSS を差し込む印があり、それぞれコアの app.js・app.css のあとにあることを固定します。
+func TestShellHasExtMarkers(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "assets", "index.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(b)
-	at, app := strings.Index(s, extScriptsPlaceholder), strings.Index(s, `<script src="/assets/app.js">`)
-	if at < 0 || app < 0 || at < app {
-		t.Errorf("殻の印が無いか、app.js より前にあります（印 %d・app.js %d）", at, app)
+	for _, c := range [][2]string{{extScriptsPlaceholder, `<script src="/assets/app.js">`}, {extStylesPlaceholder, `href="/assets/app.css"`}} {
+		at, core := strings.Index(s, c[0]), strings.Index(s, c[1])
+		if at < 0 || core < 0 || at < core {
+			t.Errorf("殻の印 %s が無いか、コアの %s より前にあります（印 %d・コア %d）", c[0], c[1], at, core)
+		}
 	}
 }
 
@@ -67,8 +82,9 @@ func TestCoreJSDoesNotNameExtensionJS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	code := regexp.MustCompile(`(?m)//.*$`).ReplaceAllString(string(b), "")
 	for _, name := range []string{"wcmsMailCompose", "/assets/ext/"} {
-		if strings.Contains(string(b), name) {
+		if strings.Contains(code, name) {
 			t.Errorf("⚠ コアの app.js が拡張の JS（%s）を名指ししています", name)
 		}
 	}
