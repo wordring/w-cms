@@ -7775,6 +7775,23 @@
         // 節・折りたたみの中の要素の ⠿・🗑・＋（2026-09-29）。
         setupInnerBlocks();
 
+        wireFoldSummaryTyping(editor);
+        wireFloatingBars(editor);
+        wireTypingKeys(editor);
+        wirePointer(editor);
+        wireDropAndPaste(editor);
+
+        // 項目の click / mouseenter は renderSlashMenu が項目を作るたびに配線する
+        // （絞り込みのたびに作り直すので、ここで一度だけ配線すると外れてしまう）。
+        //
+        // メニュー自体の mousedown は止める。クリックでキャレットが飛ぶと、
+        // どのブロックへ挿すのか（currentSlashBlock）を見失うため。
+        const smenu = document.getElementById('w-slash-menu');
+        if (smenu) smenu.addEventListener('mousedown', e => e.preventDefault());
+    }
+
+    // wireFoldSummaryTyping は折りたたみの題（summary）を打てるようにです（2026-10-20 に setupEditorEvents から分けた）。
+    function wireFoldSummaryTyping(editor) {
         // ── 折りたたみの題（summary）を打てるように（2026-09-28） ──
         // ⚠ ブラウザは summary を押すと開閉します——編集モードで題の文字を押すたびに閉じ、
         //    中の「＋ ファイル」の札まで隠れていました（E2E で踏んだ）。**左端の ▸ を押したときだけ**
@@ -7812,7 +7829,10 @@
         }, true);
 
         initFixedBar(); // パソコンでは3つの帯を本文の上に固定する（2026-10-19）
+    }
 
+    // wireFloatingBars は浮かぶ帯と欄（表の行・タグ・列の型・リンク・ファイル表示・候補）の配線です（2026-10-20 に setupEditorEvents から分けた）。
+    function wireFloatingBars(editor) {
         // 行操作ツールバーのボタン。mousedown を止めないとクリックで選択が崩れ、
         // どの行への操作か（currentTableRow）が失われる。
         const tbar = document.getElementById('w-table-toolbar');
@@ -7867,7 +7887,10 @@
         if (emenu) emenu.addEventListener('mousedown', e => e.preventDefault());
         // 打つたびに、候補をいまの字で絞る（オートコンプリート・2026-10-19——filterEnumMenu）。
         editor.addEventListener('input', () => { if (enumMenuCell) filterEnumMenu(); });
+    }
 
+    // wireTypingKeys は打つ・キーを押すときの配線（スラッシュメニュー・ブロックの区切り など）です（2026-10-20 に setupEditorEvents から分けた）。
+    function wireTypingKeys(editor) {
         editor.addEventListener('input', (e) => {
             if (!document.body.hasAttribute('edit-mode')) return;
             const target = e.target;
@@ -7957,7 +7980,10 @@
             // ↑ ↓ ← → でブロックの端を越えるのは setupArrowNavigation（2026-10-12 午後——ここで ↑ ↓ のたびに前・次のブロックへ
             // フォーカスを移していたのはやめた）。
         });
+    }
 
+    // wirePointer はページ全体の click・selectionchange・mousedown（メニューと帯を閉じる・帯を出す）です（2026-10-20 に setupEditorEvents から分けた）。
+    function wirePointer(editor) {
         document.addEventListener('click', (e) => {
             // ⚠ 中の要素の帯（＋）はスラッシュメニューを開く側——閉じない（2026-09-29 に E2E で踏んだ）。
             // 帯（文字の帯）の「＋」も開く側（2026-10-07）。
@@ -8017,7 +8043,10 @@
                 hideFileViewPopover();
             }
         });
+    }
 
+    // wireDropAndPaste はファイルのドロップと貼り付けです（2026-10-20 に setupEditorEvents から分けた）。
+    function wireDropAndPaste(editor) {
         // 本文へ画像ファイルをドロップしたら添付して挿す（要件 §2.6 の入口の1つ）。
         // ファイル容器のドロップゾーン（PDF）はそちらが処理するので手を出さない。
         editor.addEventListener('dragover', e => {
@@ -8109,14 +8138,6 @@
             }
             insertFilesAfter(named, fileInsertPointAt(at));
         });
-
-        // 項目の click / mouseenter は renderSlashMenu が項目を作るたびに配線する
-        // （絞り込みのたびに作り直すので、ここで一度だけ配線すると外れてしまう）。
-        //
-        // メニュー自体の mousedown は止める。クリックでキャレットが飛ぶと、
-        // どのブロックへ挿すのか（currentSlashBlock）を見失うため。
-        const smenu = document.getElementById('w-slash-menu');
-        if (smenu) smenu.addEventListener('mousedown', e => e.preventDefault());
     }
 
     function updateContextToolbar() {

@@ -214,194 +214,8 @@
         body.setAttribute('data-mc', 'body');
         form.appendChild(body);
 
-        // 添付の候補——印の付いたものだけ送る（回すかどうかは人が決める）。
-        const picks = [];
-        form.appendChild(el('p', 'mc-attach-head', '📎 添付（印を付けたものを送ります）'));
-        const list = el('div', 'mc-attach');
-        form.appendChild(list);
-        // addPick は候補を1つ足します（同じファイルが既にあれば印を付けるだけ）。足したら true。
-        const addPick = (a, checked) => {
-            const key = a.page_id + '/' + a.file;
-            const had = picks.find((p) => p.key === key);
-            if (had) {
-                had.cb.checked = true;
-                return false;
-            }
-            const lb = el('label', 'mc-attach-item');
-            const cb = el('input');
-            cb.type = 'checkbox';
-            cb.checked = !!checked;
-            cb.setAttribute('data-mc-file', key);
-            lb.appendChild(cb);
-            lb.appendChild(document.createTextNode(' ' + (a.name || a.file)));
-            list.appendChild(lb);
-            picks.push({ key, cb, ref: { page_id: a.page_id, file: a.file, name: a.name || a.file } });
-            return true;
-        };
-        (d.attachments || []).forEach((a) => addPick(a, !!a.checked));
-        // 送るときに作るファイル（部材発注書・見積書の PDF——2026-10-03 利用者:「見積書PDFも他と同じように表示し、ただし最初から
-        // 添付に入っているようにするとわかりやすい」）。ほかの添付と同じ並びのいちばん上に印つきで出し、外せば作らない
-        // （skip_generated）。作るのは送るとき——いつも最新の明細で。
-        // ⚠ 部材発注書は作り直さず、ページに表示している PDF を添える（2026-10-14・【要求】部材発注フォルダ「部材発注書を送信」）
-        // ——括弧の中の一言は用件が渡す（generated_note・空なら「送るときに作ります」）。
-        let genCb = null;
-        if (d.generated) {
-            const lb = el('label', 'mc-attach-item mc-attach-generated');
-            genCb = el('input');
-            genCb.type = 'checkbox';
-            genCb.checked = true;
-            genCb.setAttribute('data-mc-generated', '1');
-            lb.appendChild(genCb);
-            lb.appendChild(document.createTextNode(' ' + d.generated + '（' + (d.generated_note || '送るときに作ります') + '）'));
-            list.insertBefore(lb, list.firstChild);
-        }
-
-        // 「🔗 ID で添付を足す」（2026-10-01 利用者:「メール送信にファイル添付が無いです。PDFや画像の表示にIDが
-        // 在ると思いますが、それをクリック程度で簡単にクリップボードへコピーできると、…メールに添付できるのでは」）
-        // ——ファイル表示・写真の「🔗」で写した ID（`ページ番号-添付ID`）を貼ると、サーバーが添付の組へ引いて
-        // （GET /api/file-ref・読めるファイルだけ）印を付けて並べる。貼った時点で足す（Enter・ボタンでも）。
-        // いくつでも（空白・「,」区切り）。添付の住所（`/000235/ab12.pdf`）も受ける。
-        const addRow = el('div', 'mc-attach-add');
-        const idInput = el('input', 'mc-input mc-attach-id');
-        idInput.type = 'text';
-        idInput.placeholder = '🔗 ファイルの ID を貼る（例 000235-ab12）';
-        idInput.setAttribute('data-mc-attach-id', '1');
-        const addBtn = el('button', 'mc-attach-add-btn', '添付に足す');
-        addBtn.type = 'button';
-        addRow.appendChild(idInput);
-        addRow.appendChild(addBtn);
-        form.appendChild(addRow);
-        const addMsg = el('div', 'mc-attach-msg');
-        addMsg.setAttribute('data-mc-attach-msg', '1');
-        form.appendChild(addMsg);
-        let adding = false;
-        const addByIDs = async () => {
-            const ids = idInput.value.split(/[\s,、;；]+/).map((x) => x.trim()).filter(Boolean);
-            if (!ids.length || adding) return;
-            adding = true;
-            addBtn.disabled = true;
-            addMsg.textContent = '';
-            const left = [];
-            for (const id of ids) {
-                let r;
-                try {
-                    r = await getJSON('/api/file-ref?ref=' + encodeURIComponent(id));
-                } catch (e) {
-                    add(addMsg, '⚠ ' + id + ': 通信に失敗しました', 'mc-ng');
-                    left.push(id);
-                    continue;
-                }
-                if (!r.ok) {
-                    add(addMsg, '⚠ ' + (r.data.message || id + ' を引けません（' + r.status + '）'), 'mc-ng');
-                    left.push(id);
-                    continue;
-                }
-                const a = { page_id: r.data.page_id, file: r.data.file, name: r.data.name };
-                add(addMsg, (addPick(a, true) ? '✓ 足しました: ' : '✓ 既に並んでいます（印を付けました）: ') + a.name, 'mc-ok');
-            }
-            idInput.value = left.join(' '); // 引けなかったものだけ残す（直して押し直せる）
-            addBtn.disabled = false;
-            adding = false;
-        };
-        addBtn.addEventListener('click', addByIDs);
-        idInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.isComposing) {
-                e.preventDefault();
-                addByIDs();
-            }
-        });
-        // 貼った時点で足す（値が入るのは paste の後なので、1拍おく）。
-        idInput.addEventListener('paste', () => setTimeout(addByIDs, 0));
-
-        // 「💻 パソコンから添付」（2026-10-04 利用者:「新しいメールを作成するときに、ローカルコンピュータから添付したいです。
-        // 返信などの時も同様です」）——選ぶか、この欄へドロップする。置き場は**下書きのページ**（まだ下書きでなければ先に
-        // 保存する）——POST /api/mail/attach。置いたら印つきで並べ、下書きにも書き留める（開き直しても並ぶ）。送ると控えの
-        // ページへ写る（ext/comm/mail/compose_attach.go——下書きは送るとごみ箱へ行くので）。
-        const localRow = el('div', 'mc-attach-local');
-        const localBtn = el('button', 'mc-attach-local-btn', '💻 パソコンから添付');
-        localBtn.type = 'button';
-        const localInput = el('input');
-        localInput.type = 'file';
-        localInput.multiple = true;
-        localInput.hidden = true;
-        localInput.setAttribute('data-mc-local', '1');
-        localRow.appendChild(localBtn);
-        localRow.appendChild(localInput);
-        localRow.appendChild(el('span', 'mc-attach-local-note', 'この欄へドロップしても足せます（下書きに置きます）'));
-        form.insertBefore(localRow, addMsg);
-        let uploading = false;
-        // ensureDraft は下書きが無ければ保存して作ります（ファイルの置き場が要る）。
-        const ensureDraft = async () => {
-            if (state.draftId) return true;
-            const r = await postJSON('/api/mail/draft', collect());
-            if (!r.ok || !r.data.draft_id) {
-                add(addMsg, '⚠ 下書きを作れないので、ファイルを置けません: ' + (r.data.message || r.status), 'mc-ng');
-                return false;
-            }
-            state.draftId = r.data.draft_id;
-            head.textContent = '📝 下書き（' + (d.purpose || '') + '）';
-            add(addMsg, '📝 ファイルを置くため、下書きに保存しました（通信箱の未処理に並びます）: /' + state.draftId, 'mc-note');
-            return true;
-        };
-        const uploadLocal = async (fileList) => {
-            const files = Array.from(fileList || []);
-            if (!files.length || uploading) return;
-            uploading = true;
-            localBtn.disabled = true;
-            addMsg.textContent = '';
-            try {
-                if (!(await ensureDraft())) return;
-                let added = 0;
-                for (const f of files) {
-                    const fd = new FormData();
-                    fd.append('draft_id', state.draftId);
-                    fd.append('file', f, f.name);
-                    let res, data = {};
-                    try {
-                        res = await fetch('/api/mail/attach', { method: 'POST', credentials: 'same-origin', body: fd });
-                        data = await res.json().catch(() => ({}));
-                    } catch (e) {
-                        add(addMsg, '⚠ ' + f.name + ': 通信に失敗しました', 'mc-ng');
-                        continue;
-                    }
-                    if (!res.ok || !data.success) {
-                        add(addMsg, '⚠ ' + (data.message || f.name + ' を置けません（' + res.status + '）'), 'mc-ng');
-                        continue;
-                    }
-                    addPick({ page_id: data.page_id, file: data.file, name: data.name }, true);
-                    add(addMsg, '✓ 足しました: ' + data.name, 'mc-ok');
-                    added++;
-                }
-                if (added) {
-                    const r = await postJSON('/api/mail/draft', collect());
-                    if (!r.ok) add(addMsg, '⚠ 下書きに書き留められませんでした（送れば添わります）: ' + (r.data.message || r.status), 'mc-ng');
-                }
-            } finally {
-                uploading = false;
-                localBtn.disabled = false;
-                localInput.value = '';
-            }
-        };
-        localBtn.addEventListener('click', () => localInput.click());
-        localInput.addEventListener('change', () => uploadLocal(localInput.files));
-        const carriesFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
-        form.addEventListener('dragover', (e) => {
-            if (!carriesFiles(e)) return;
-            e.preventDefault();
-            e.stopPropagation(); // 本文へのドロップ（ページの添付になる）へ渡さない
-            form.classList.add('mc-drop');
-        });
-        form.addEventListener('dragleave', (e) => {
-            if (!form.contains(e.relatedTarget)) form.classList.remove('mc-drop');
-        });
-        form.addEventListener('drop', (e) => {
-            if (!carriesFiles(e)) return;
-            e.preventDefault();
-            e.stopPropagation();
-            form.classList.remove('mc-drop');
-            uploadLocal(e.dataTransfer.files);
-        });
-        if (d.send_note) add(form, d.send_note, 'mc-note');
+        // 添付の欄（候補・ID で足す・パソコンから・ドロップ——buildAttachArea・2026-10-20 に render から分けた）。
+        const { picks, genCb } = buildAttachArea(form, d, state, head, () => collect());
 
         const bar = el('div', 'mc-bar');
         const sendBtn = el('button', 'mc-send', '送信');
@@ -497,6 +311,200 @@
                 setTimeout(() => location.reload(), 1200);
             }
         });
+    }
+
+    // buildAttachArea は送る欄の「📎 添付」を組んで form に足し、送るときに読む候補（picks）と、送るときに作るファイルの印（genCb・
+    // 無ければ null）を返します（2026-10-20 に render から分けた）。collect は送る欄の中身を集める関数（下書きに保存するときに使う）。
+    function buildAttachArea(form, d, state, head, collect) {
+    // 添付の候補——印の付いたものだけ送る（回すかどうかは人が決める）。
+    const picks = [];
+    form.appendChild(el('p', 'mc-attach-head', '📎 添付（印を付けたものを送ります）'));
+    const list = el('div', 'mc-attach');
+    form.appendChild(list);
+    // addPick は候補を1つ足します（同じファイルが既にあれば印を付けるだけ）。足したら true。
+    const addPick = (a, checked) => {
+        const key = a.page_id + '/' + a.file;
+        const had = picks.find((p) => p.key === key);
+        if (had) {
+            had.cb.checked = true;
+            return false;
+        }
+        const lb = el('label', 'mc-attach-item');
+        const cb = el('input');
+        cb.type = 'checkbox';
+        cb.checked = !!checked;
+        cb.setAttribute('data-mc-file', key);
+        lb.appendChild(cb);
+        lb.appendChild(document.createTextNode(' ' + (a.name || a.file)));
+        list.appendChild(lb);
+        picks.push({ key, cb, ref: { page_id: a.page_id, file: a.file, name: a.name || a.file } });
+        return true;
+    };
+    (d.attachments || []).forEach((a) => addPick(a, !!a.checked));
+    // 送るときに作るファイル（部材発注書・見積書の PDF——2026-10-03 利用者:「見積書PDFも他と同じように表示し、ただし最初から
+    // 添付に入っているようにするとわかりやすい」）。ほかの添付と同じ並びのいちばん上に印つきで出し、外せば作らない
+    // （skip_generated）。作るのは送るとき——いつも最新の明細で。
+    // ⚠ 部材発注書は作り直さず、ページに表示している PDF を添える（2026-10-14・【要求】部材発注フォルダ「部材発注書を送信」）
+    // ——括弧の中の一言は用件が渡す（generated_note・空なら「送るときに作ります」）。
+    let genCb = null;
+    if (d.generated) {
+        const lb = el('label', 'mc-attach-item mc-attach-generated');
+        genCb = el('input');
+        genCb.type = 'checkbox';
+        genCb.checked = true;
+        genCb.setAttribute('data-mc-generated', '1');
+        lb.appendChild(genCb);
+        lb.appendChild(document.createTextNode(' ' + d.generated + '（' + (d.generated_note || '送るときに作ります') + '）'));
+        list.insertBefore(lb, list.firstChild);
+    }
+
+    // 「🔗 ID で添付を足す」（2026-10-01 利用者:「メール送信にファイル添付が無いです。PDFや画像の表示にIDが
+    // 在ると思いますが、それをクリック程度で簡単にクリップボードへコピーできると、…メールに添付できるのでは」）
+    // ——ファイル表示・写真の「🔗」で写した ID（`ページ番号-添付ID`）を貼ると、サーバーが添付の組へ引いて
+    // （GET /api/file-ref・読めるファイルだけ）印を付けて並べる。貼った時点で足す（Enter・ボタンでも）。
+    // いくつでも（空白・「,」区切り）。添付の住所（`/000235/ab12.pdf`）も受ける。
+    const addRow = el('div', 'mc-attach-add');
+    const idInput = el('input', 'mc-input mc-attach-id');
+    idInput.type = 'text';
+    idInput.placeholder = '🔗 ファイルの ID を貼る（例 000235-ab12）';
+    idInput.setAttribute('data-mc-attach-id', '1');
+    const addBtn = el('button', 'mc-attach-add-btn', '添付に足す');
+    addBtn.type = 'button';
+    addRow.appendChild(idInput);
+    addRow.appendChild(addBtn);
+    form.appendChild(addRow);
+    const addMsg = el('div', 'mc-attach-msg');
+    addMsg.setAttribute('data-mc-attach-msg', '1');
+    form.appendChild(addMsg);
+    let adding = false;
+    const addByIDs = async () => {
+        const ids = idInput.value.split(/[\s,、;；]+/).map((x) => x.trim()).filter(Boolean);
+        if (!ids.length || adding) return;
+        adding = true;
+        addBtn.disabled = true;
+        addMsg.textContent = '';
+        const left = [];
+        for (const id of ids) {
+            let r;
+            try {
+                r = await getJSON('/api/file-ref?ref=' + encodeURIComponent(id));
+            } catch (e) {
+                add(addMsg, '⚠ ' + id + ': 通信に失敗しました', 'mc-ng');
+                left.push(id);
+                continue;
+            }
+            if (!r.ok) {
+                add(addMsg, '⚠ ' + (r.data.message || id + ' を引けません（' + r.status + '）'), 'mc-ng');
+                left.push(id);
+                continue;
+            }
+            const a = { page_id: r.data.page_id, file: r.data.file, name: r.data.name };
+            add(addMsg, (addPick(a, true) ? '✓ 足しました: ' : '✓ 既に並んでいます（印を付けました）: ') + a.name, 'mc-ok');
+        }
+        idInput.value = left.join(' '); // 引けなかったものだけ残す（直して押し直せる）
+        addBtn.disabled = false;
+        adding = false;
+    };
+    addBtn.addEventListener('click', addByIDs);
+    idInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.isComposing) {
+            e.preventDefault();
+            addByIDs();
+        }
+    });
+    // 貼った時点で足す（値が入るのは paste の後なので、1拍おく）。
+    idInput.addEventListener('paste', () => setTimeout(addByIDs, 0));
+
+    // 「💻 パソコンから添付」（2026-10-04 利用者:「新しいメールを作成するときに、ローカルコンピュータから添付したいです。
+    // 返信などの時も同様です」）——選ぶか、この欄へドロップする。置き場は**下書きのページ**（まだ下書きでなければ先に
+    // 保存する）——POST /api/mail/attach。置いたら印つきで並べ、下書きにも書き留める（開き直しても並ぶ）。送ると控えの
+    // ページへ写る（ext/comm/mail/compose_attach.go——下書きは送るとごみ箱へ行くので）。
+    const localRow = el('div', 'mc-attach-local');
+    const localBtn = el('button', 'mc-attach-local-btn', '💻 パソコンから添付');
+    localBtn.type = 'button';
+    const localInput = el('input');
+    localInput.type = 'file';
+    localInput.multiple = true;
+    localInput.hidden = true;
+    localInput.setAttribute('data-mc-local', '1');
+    localRow.appendChild(localBtn);
+    localRow.appendChild(localInput);
+    localRow.appendChild(el('span', 'mc-attach-local-note', 'この欄へドロップしても足せます（下書きに置きます）'));
+    form.insertBefore(localRow, addMsg);
+    let uploading = false;
+    // ensureDraft は下書きが無ければ保存して作ります（ファイルの置き場が要る）。
+    const ensureDraft = async () => {
+        if (state.draftId) return true;
+        const r = await postJSON('/api/mail/draft', collect());
+        if (!r.ok || !r.data.draft_id) {
+            add(addMsg, '⚠ 下書きを作れないので、ファイルを置けません: ' + (r.data.message || r.status), 'mc-ng');
+            return false;
+        }
+        state.draftId = r.data.draft_id;
+        head.textContent = '📝 下書き（' + (d.purpose || '') + '）';
+        add(addMsg, '📝 ファイルを置くため、下書きに保存しました（通信箱の未処理に並びます）: /' + state.draftId, 'mc-note');
+        return true;
+    };
+    const uploadLocal = async (fileList) => {
+        const files = Array.from(fileList || []);
+        if (!files.length || uploading) return;
+        uploading = true;
+        localBtn.disabled = true;
+        addMsg.textContent = '';
+        try {
+            if (!(await ensureDraft())) return;
+            let added = 0;
+            for (const f of files) {
+                const fd = new FormData();
+                fd.append('draft_id', state.draftId);
+                fd.append('file', f, f.name);
+                let res, data = {};
+                try {
+                    res = await fetch('/api/mail/attach', { method: 'POST', credentials: 'same-origin', body: fd });
+                    data = await res.json().catch(() => ({}));
+                } catch (e) {
+                    add(addMsg, '⚠ ' + f.name + ': 通信に失敗しました', 'mc-ng');
+                    continue;
+                }
+                if (!res.ok || !data.success) {
+                    add(addMsg, '⚠ ' + (data.message || f.name + ' を置けません（' + res.status + '）'), 'mc-ng');
+                    continue;
+                }
+                addPick({ page_id: data.page_id, file: data.file, name: data.name }, true);
+                add(addMsg, '✓ 足しました: ' + data.name, 'mc-ok');
+                added++;
+            }
+            if (added) {
+                const r = await postJSON('/api/mail/draft', collect());
+                if (!r.ok) add(addMsg, '⚠ 下書きに書き留められませんでした（送れば添わります）: ' + (r.data.message || r.status), 'mc-ng');
+            }
+        } finally {
+            uploading = false;
+            localBtn.disabled = false;
+            localInput.value = '';
+        }
+    };
+    localBtn.addEventListener('click', () => localInput.click());
+    localInput.addEventListener('change', () => uploadLocal(localInput.files));
+    const carriesFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+    form.addEventListener('dragover', (e) => {
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        e.stopPropagation(); // 本文へのドロップ（ページの添付になる）へ渡さない
+        form.classList.add('mc-drop');
+    });
+    form.addEventListener('dragleave', (e) => {
+        if (!form.contains(e.relatedTarget)) form.classList.remove('mc-drop');
+    });
+    form.addEventListener('drop', (e) => {
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        form.classList.remove('mc-drop');
+        uploadLocal(e.dataTransfer.files);
+    });
+    if (d.send_note) add(form, d.send_note, 'mc-note');
+        return { picks, genCb };
     }
 
     // `<details>` の中の置き場は、開いたときに描く（⚠ toggle は泡立たないので捕捉で拾う）。
