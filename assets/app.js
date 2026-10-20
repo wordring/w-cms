@@ -554,8 +554,7 @@
             // 検索画面（表を探す・2026-09-25）はログインした人なら誰でも使える
             // （サーバーが読めるページの行だけ返す）。匿名には出さない。
             setHidden(document.getElementById('w-tables-link'), false);
-            // メールの一覧（2026-09-29）は通信の拡張の持ち物——載っていなければ出さない（語彙の読み込みのあとでも見直す）。
-            setHidden(document.getElementById('w-mails-link'), !hasExtension('comm'));
+            // メールの一覧（2026-09-29）の入口は、2026-10-20 から通信の拡張の JS が足す（ext/comm/assets/comm.js）。
         } catch (e) { /* 通信エラー等は無視（編集UIは権限取得時に再判定） */ }
     }
 
@@ -2457,13 +2456,12 @@
 
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
-        refreshAnalyzedMarks();      // 解析済みの印（取得できたら描き直す）
         refreshDrawingPreviews();    // ファイル表示の枠の右下をつまんで高さを変える配線（両方の形）
         restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
         decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
         // 「書ける形でも」の業務のボタンは、2026-10-12 まで閲覧モード限定だった（いまは押す前に書きかけを保存する）。
-        refreshFilingButton();      // 加工製品ページの整理（書ける形でも）
-        runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20）——通信の記録の箱・☎ 発信・未処理の一覧・「＋ 記録する」
+        runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20）——東邦の解析済みの印と整理の欄（ext/toho/assets/toho.js）・
+                                     // 通信の記録の箱・☎ 発信・未処理の一覧・「＋ 記録する」
                                      // （ext/comm/assets/comm.js）・メールの読み込み（ext/comm/mail/assets/mail.js）・連絡先（ext/comm/contacts/assets/contacts.js）
         if (toggle.checked) ensureIdleContextToolbar(); // 固定の帯の文字の帯を、触る前から見せる（2026-10-19）
         markTagVocabulary();         // タグの名前と値が語彙にあるかを色で示す（拒否はしない）
@@ -2981,9 +2979,6 @@
             tableWords = (d && d.table_vocabulary) || {};
             sqlNames = (d && d.sql_names) || null;
             loadedExtensions = (d && Array.isArray(d.extensions)) ? new Set(d.extensions) : null;
-            // 通信の拡張が無ければメールの一覧の入口を下げる（ログインの確かめより後に届くことがある）。
-            const mailsLink = document.getElementById('w-mails-link');
-            if (mailsLink && !hasExtension('comm')) setHidden(mailsLink, true);
             // **列型の一覧はサーバーが持ちます**（手書きだと型を足した日に古くなる）。
             // 空で返ってきたら初期値を守ります——「明示した型が全部無視される」より、
             // 一手前の一覧で動いているほうが害が小さいためです。
@@ -3366,12 +3361,11 @@
     // <dl data-type>（dt/dd の組）を機械的に生成する。DOM生成は createElement ＋
     // textContent 代入（DOMが自動エスケープする）で行い、文字列置換＋innerHTML の
     // テンプレート機構は持ち込まない（Web Components 廃止決定・語彙モデル §7）。
-    // defaultFieldValue は骨格生成時に埋める既定値。日付は今日、発注書番号は
-    // 一意な仮番号（空のまま複数の発注書を作ると見分けが付かないため。
-    // 旧 createComponentElement の 'PO-' 採番と同じ理由）。
+    // defaultFieldValue は骨格生成時に埋める既定値。日付は今日。
+    // （それまでは発注書番号の列 `order-no` に仮番号 `PO-…` を埋める枝もあった。その列はもう無く、通らない枝で、コアの画面に
+    // 業務の語を持ち込んでいたので、2026-10-20 に外した。）
     function defaultFieldValue(col) {
         if (col.type === 'date') return new Date().toISOString().split('T')[0];
-        if (col.field === 'order-no') return 'PO-' + Date.now().toString().slice(-6);
         return '';
     }
 
@@ -5826,33 +5820,8 @@
     // そのまま embed.src に流してはならない。
     // PDFの中身が悪意を持つ危険は埋め込み方によらず同じなので、開くかどうかの
     // 判断を人に残す（自動では開かない）。ZIPは目録だけ（/api/zip-list・展開はしない）。
-    const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
 
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
-
-    // analyzedMap は「添付ID → 解析で生まれたページ」。印を出すために持ちます。
-    //
-    // **印そのものは保存していません**——解析が書いた `受信元` の逆引きです。
-    // だから、間違った解析をゴミ箱へ入れれば印も消え、もう一度解析できます。
-    let analyzedMap = {};
-    // zipPDFs は「ZIP の添付ID → 中のPDF（[{id, file, path}]・中のパスの順）」（2026-09-30・まとめて解析）。
-    let zipPDFs = {};
-
-    // refreshAnalyzedMarks は解析済みの一覧を取り直し、印を描き直します。
-    async function refreshAnalyzedMarks() {
-        if (!currentPageId) return;
-        if (!hasExtension('toho')) { analyzedMap = {}; zipPDFs = {}; return; } // 下請けが無ければ問わない（404を出さない）
-        try {
-            const res = await fetch('/api/analyzed?page_id=' + encodeURIComponent(currentPageId));
-            const d = await res.json();
-            analyzedMap = (d && d.success && d.analyzed) ? d.analyzed : {};
-            zipPDFs = (d && d.success && d.zip_pdfs) ? d.zip_pdfs : {};
-        } catch (e) {
-            analyzedMap = {}; // 印が出ないだけ——解析そのものは押せる
-            zipPDFs = {};
-        }
-        refreshAttachmentPreviews();
-    }
 
     // makeAnalyzedMark は「✓ 図面」の印を作ります（押すと生まれたページへ飛ぶ）。
     //
@@ -5886,26 +5855,8 @@
             // 値は添付IDを手で調べないと書けませんでした。
             const copyRef = makeCopyRefButton(m[1], m[2]);
             btn.insertAdjacentElement('afterend', copyRef);
-            // ZIP には「中のPDFをまとめて解析」（2026-09-30）——中身は取り込みで1つずつ添付になっている。
-            if (kind === 'zip' && hasExtension('toho') && (zipPDFs[m[2]] || []).length) {
-                const zb = makeZipAnalyzeButton(m[1], zipPDFs[m[2]]);
-                if (zb) copyRef.insertAdjacentElement('afterend', zb);
-            }
-            if (kind === 'pdf' && hasExtension('toho')) {
-                // 判定→案件ページ（2026-10-19 まで受注ページ）の生成はボタン起動だけ（人間ゲート型・2026-09-01）。
-                // **解析は下請けの持ち物**——載っていなければボタンを出さない（2026-09-15）。
-                if (a.parentElement) {
-                    const ab = makeAnalyzeButton(m[1], m[2] + '.pdf');
-                    btn.insertAdjacentElement('afterend', ab);
-                    // **解析済みなら、その隣に結果の印**（2026-09-06）。
-                    // ボタンは消しません——読み違いはあるので、押し直せる余地を残します。
-                    const done = analyzedMap[m[2]];
-                    if (done) {
-                        ab.textContent = '🤖 再解析';
-                        ab.insertAdjacentElement('afterend', makeAnalyzedMark(done));
-                    }
-                }
-            }
+            // 拡張が札を足す口（2026-10-20・window.wcms.onAttachment）——東邦の「🤖 解析」「中のPDFをまとめて解析」（ext/toho/assets/toho.js）。
+            runAttachmentHooks({ link: a, pageId: m[1], attachId: m[2], ext: kind, viewButton: btn, refButton: copyRef });
         });
         // PDF・ZIP 以外の添付（STEP・DXF・Excel …）にも「🔗 参照」（2026-10-01 利用者:「STEPファイルも加工製品ページで参照して
         // ダウンロードできるようにしたい」）——写した ID を加工製品ページの 📄 ファイル表示へ貼ると、そこから保存できる。
@@ -5914,22 +5865,9 @@
             const m = /^\/([0-9]{6})\/([0-9a-z]+)\.([0-9a-z_]+)$/.exec(a.getAttribute('href') || '');
             // PDF・ZIP は上で付けた。画像は写真の「🔗 ID」がある（decorateLocalEdit と同じ札を二重にしない）。
             if (!m || /^(pdf|zip|jpe?g|png|gif|webp|svg|bmp)$/.test(m[3])) return;
-            a.insertAdjacentElement('afterend', makeCopyRefButton(m[1], m[2]));
-        });
-        // 表計算（.xlsx）にも「🤖 解析」（2026-09-30 利用者:「ハッキリと受注したとわかる場合は、受注ページにして良い」
-        // ——Excel の注文リスト。サーバーが文字にして判定する）。表示のボタンは無い（開くのはリンクで）。
-        if (!hasExtension('toho')) return;
-        document.querySelectorAll('#w-editor-content a[href]').forEach(a => {
-            if (a.closest('.vocab-chrome')) return;
-            const m = /^\/([0-9]{6})\/([0-9a-z]+)\.xlsx$/.exec(a.getAttribute('href') || '');
-            if (!m) return;
-            const ab = makeAnalyzeButton(m[1], m[2] + '.xlsx');
-            a.insertAdjacentElement('afterend', ab);
-            const done = analyzedMap[m[2]];
-            if (done) {
-                ab.textContent = '🤖 再解析';
-                ab.insertAdjacentElement('afterend', makeAnalyzedMark(done));
-            }
+            const copyRef = makeCopyRefButton(m[1], m[2]);
+            a.insertAdjacentElement('afterend', copyRef);
+            runAttachmentHooks({ link: a, pageId: m[1], attachId: m[2], ext: m[3], viewButton: null, refButton: copyRef });
         });
     }
 
@@ -6001,680 +5939,6 @@
     // 「見積もりや試作の場合があるので、フォルダ名はユーザーが確認したほうが良い」ため。
     // DOM生成は createElement + textContent（innerHTML へ文字列を入れない）。
 
-    async function refreshFilingButton() {
-        document.querySelectorAll('#w-editor-content .filing-chrome').forEach(el => el.remove());
-        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
-        if (!currentPageId) return;
-        const host = document.getElementById('w-editor-content');
-        if (!host) return;
-        if (!hasExtension('toho')) return; // 整理は下請けの持ち物（2026-09-15）
-        // **整理が意味を持つのは通信記録だけ**——解析で図面ページが生まれた元のページ。
-        // 年フォルダや加工製品ページに出しても行き場がない（2026-09-03 ユーザー指摘。
-        // それまでは閲覧モードの全ページに出ていた）。
-        if (!tagValue(CHANNEL_TAG)) return;
-
-        // **整理するものが実際にあるときだけ出します。** 押してから「ありません」と
-        // 言うより、出さないほうが親切です。
-        let rows = [];
-        let orders = [];
-        let kinds = [];
-        let partners = [];
-        let machines = {};
-        let files = [];
-        try {
-            const res = await fetch('/api/filing-proposal?page_id=' + encodeURIComponent(currentPageId));
-            const d = await res.json();
-            if (!d.success) return;
-            rows = d.rows || [];
-            // 案件ページ（2026-10-19 まで受注ページ）も同じ画面で片付けます（行き先は発注日で決まる——記録／年／月／依頼——ので欄は無い）。
-            orders = d.orders || [];
-            // **区分の選択肢はサーバーが持ちます**（設定の語彙「区分」・2026-09-29 に段から替えた）。
-            // 画面に書き写すと、語を足した日に片方だけ古くなります。
-            kinds = d.kinds || [];
-            // 既にある取引先の名前——顧客名の入力候補に出します。
-            partners = d.partners || [];
-            // 既にある装置名称（顧客ごと）——装置名称の入力候補に出します。
-            machines = d.machines || {};
-            // 記録の添付（2026-10-08・ext/toho/filing_files.go——図面以外のファイルも、行き先を探して足す）。
-            files = d.files || [];
-        } catch (e) { return; }
-        if (!rows.length && !orders.length && !files.length) return;
-
-        const btn = makeButton('vocab-chrome filing-chrome filing-open');
-        const n = rows.length + orders.length;
-        btn.textContent = '📁 整理（' + (n ? n + '件' : '') + (n && files.length ? '・' : '') + (files.length ? 'ファイル ' + files.length : '') + '）';
-        btn.addEventListener('click', () => toggleFilingPanel(btn, rows, orders, kinds, partners, machines, files));
-        host.appendChild(btn);
-    }
-
-    // toggleFilingPanel は行き先の表を出し入れします（候補は取得済み）。
-    function toggleFilingPanel(btn, rows, orders, kinds, partners, machines, files) {
-        const existing = document.querySelector('.filing-panel');
-        if (existing) { existing.remove(); return; }
-        btn.insertAdjacentElement('afterend', buildFilingPanel(rows, orders, kinds, partners, machines, files));
-    }
-
-    // buildFilingPanel は行き先の表を組みます。**全部の欄が編集できます**
-    // ——試作の「【試作】…」は機械には決められないので、ここで人が打ちます（2026-09-29 からは試作も区分のタグで、
-    // 題に【試作】を付けなくてよい。区分は加工製品ページで付ける——下の kindBoxes）。
-    function buildFilingPanel(rows, orders, kinds, partners, machines, files) {
-        const panel = makeEl('div', 'vocab-chrome filing-chrome filing-panel');
-        panel.setAttribute('contenteditable', 'false');
-
-        // ⚠ **言葉は短く・1枚ずつ縦に**（2026-09-30 利用者:「入力欄が見えなくなるくらい、横幅が狭くなります。
-        //    横にたくさんの項目がありすぎるのと、チェックボックスの説明が長すぎます」）——それまでは6列の表で、
-        //    欄が 50px 台まで押しつぶされ、選択肢の説明が1文字ずつ縦に折れていました。
-        const head = makeEl('p', 'filing-head');
-        // 欄の名前はページの名前（2026-10-08 利用者:「『顧客名』『装置名称』『（加工）製品名称』がページ名の意味ではないでしょうか？」
-        // ——それまで3つ目は「図面名称」と呼んでいたが、入れるのは加工製品ページの題）。
-        // 装置名称は空でもよい（2026-10-16——社名の直下に置く）。顧客名・製品名称が空なら動かさない。
-        head.textContent = '行き先: 製造台帳／顧客名／装置名称／製品名称（装置名称は空でもよく、そのときは顧客名の直下）。顧客名か製品名称が空の図面は動かしません。';
-        if (rows.length) panel.appendChild(head);
-
-        // **既にある取引先を候補に出します。** 実データの初回で、アドレス帳が作った
-        // 「南北スポーツ機械」と、整理で打った「株式会社南北スポーツ機械」が
-        // 同じ会社で2枚になりました。題の一致は完全一致のままにして（機械が名寄せすると
-        // 別の顧客が1つに潰れる）、**人が既にある名前を選べる**ようにして解きます。
-        const listID = 'w-filing-partners';
-        if ((partners || []).length) {
-            const dl = document.createElement('datalist');
-            dl.id = listID;
-            partners.forEach(name => {
-                const op = document.createElement('option');
-                op.value = name;
-                dl.appendChild(op);
-            });
-            panel.appendChild(dl);
-        }
-
-        // 図面1枚ごとにカード（見出し＝図面番号・欄は1行に1つで横幅いっぱい）。
-        const list = makeEl('div', 'filing-cards');
-
-        const inputs = [];
-        rows.forEach((row, rowIndex) => {
-            const card = makeEl('div', 'filing-card');
-            card.dataset.pageId = row.page_id;
-            const no = makeEl('p', 'filing-no', '📄 ' + (row.drawing_no || '（図面番号なし）'));
-            card.appendChild(no);
-            const grid = makeEl('div', 'filing-grid');
-            card.appendChild(grid);
-
-            const fields = {};
-            // 顧客名・装置名称・図面名称は自由入力（1行に1つ・見出しは左）、区分は印。
-            const addText = (key, labelText, value) => {
-                const lb = makeEl('label', 'filing-field');
-                const span = makeEl('span', '', labelText);
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.value = value || '';
-                input.setAttribute('aria-label', key);
-                lb.append(span, input);
-                grid.appendChild(lb);
-                fields[key] = input;
-            };
-            addText('customer', '顧客名', row.customer);
-            if ((partners || []).length) {
-                fields.customer.setAttribute('list', listID);
-            }
-
-            addText('machine_name', '装置名称', row.machine_name);
-            // **装置名称の候補は、その行の顧客のぶんだけ**（2026-09-11）。
-            // 顧客名で解いたのと同じ問題が一段下に残っていました——1通のメールの
-            // 5枚が `φ410 2輪` / `2輪シュート改良` / `φ410-2輪` / `2軸シュート改良`
-            // （輪→軸の誤読）に割れ、そのまま流すと1台の装置が4フォルダに散ります。
-            //
-            // **行ごとに作り直します**——顧客名の欄は人がその場で打ち替えるので、
-            // パネルを開いた時点の顧客で固定すると、打ち替えたあと候補が嘘になります。
-            const machineListID = 'w-filing-machines-' + rowIndex;
-            const machineList = document.createElement('datalist');
-            machineList.id = machineListID;
-            panel.appendChild(machineList);
-            fields.machine_name.setAttribute('list', machineListID);
-            const fillMachines = () => {
-                machineList.replaceChildren();
-                const names = (machines || {})[fields.customer.value.trim()] || [];
-                names.forEach(name => {
-                    const op = document.createElement('option');
-                    op.value = name;
-                    machineList.appendChild(op);
-                });
-            };
-            fillMachines();
-            fields.customer.addEventListener('input', fillMachines);
-            fields.customer.addEventListener('change', fillMachines);
-            addText('drawing_name', '製品名称', row.drawing_name); // 加工製品ページの題（2026-10-08 に「図面名称」から改めた）
-
-            // **区分は整理では選びません**（2026-10-08 利用者:「試作や見積もりによるフォルダ分けが無くなったので、整理ブロックで入力する
-            // 必要はなくなりました」——09-29 から区分は加工製品ページのタグで、行き先の木を分けない）。区分を付けるのは加工製品ページで。
-            // 送る値は空（サーバーは区分を書かない——kindsNote は空なら何も言わない）。
-            const kindBoxes = [];
-
-            // 「図面番号を品番に」「図面名称を品名に」（2026-10-01 利用者:「図面名称を品名、図面番号を品番にするチェックボックスが
-            // あっても良いのかもしれません」）——新規のときだけ効く（出すのも新規のときだけ）。初期値は取引先のページの決まり
-            // （`品番の決め方：図面番号`・`品名の決め方：図面名称`・サーバーが行き先と一緒に返す）。人が触ったら、顧客を打ち替えても戻さない。
-            // 弊社品番（このページの番号）は印が無くても書く。
-            const tdRules = makeEl('div', 'filing-field filing-kinds filing-rules');
-            const rulesHead = makeEl('span', '', '品番・品名');
-            rulesHead.title = '新しく置く加工製品の題の下のタグ（空いているときだけ書く・弊社品番はいつも書く）';
-            tdRules.appendChild(rulesHead);
-            const rulesWrap = makeEl('div', 'filing-kinds-boxes');
-            tdRules.appendChild(rulesWrap);
-            const ruleBox = (text) => {
-                const label = document.createElement('label');
-                const box = document.createElement('input');
-                box.type = 'checkbox';
-                box.addEventListener('change', () => { box.dataset.touched = '1'; });
-                label.appendChild(box);
-                label.appendChild(document.createTextNode(' ' + text));
-                rulesWrap.appendChild(label);
-                return box;
-            };
-            const ruleBoxes = { partNo: ruleBox('図面番号を品番に'), itemName: ruleBox('図面名称を品名に') };
-            tdRules.hidden = true;
-            grid.appendChild(tdRules);
-
-            const tdConfirm = makeEl('div', 'filing-card-foot');
-
-            // ── 新規・図面追加・図面改定（2026-09-30 からいつも出す）──
-            //
-            // 利用者:「既存の加工製品に図面を追加する場合、既存の加工製品の図面が修正され、新しい図面に変更する場合、
-            // 全くの新規図面で加工製品ページを新設する場合があるからです」。それまでは「行き先に同じ題のページが
-            // あるときだけ」改定・追加を出していた（09-20）——装置名称が読めていない図面（今回の rev1）では行き先が
-            // 引けず、改定の相手を探す手掛かりが画面に無かった。いまは3つをいつも出し、**既にある加工製品の候補**
-            // （同じ取引先で図面番号〔版の印は除く〕か題が同じ）を押すと欄に入る。
-            //
-            //   行き先に同じ題のページが無い … 既定は「新規」。改定・追加を選んだら「相手を決めてください」
-            //                                    （サーバーも作らずに断る——黙って新規にしない）
-            //   行き先に同じ題のページが在る … 改定か追加か、同じ名前の別の品物なら新規かを**人が選ぶ**（既定を置かない——
-            //                                    溶接図が黙って旧版になるのが、それまでの振る舞いだった）。2026-10-01 までは
-            //                                    「新規」を選べなかった（利用者:「実際には同じ品名があります」）
-            //   同じ題のページが何枚も在る   … 改定・追加の行き先を押して決める（`target`——押すまでサーバーも動かさない）
-            //
-            // ⚠ 行き先の題は打ち替えるたびに聞き直す（ユーザー:「編集者が微妙に書き換える」2026-09-20）。
-            // ⚠ 行き先が別のページへ変わったら、改定・追加の選択は外す（前の相手のつもりで選んだものを持ち越さない）。
-            const choiceWrap = makeEl('div', 'filing-choice');
-            const choiceNote = makeEl('p', 'filing-choice-note');
-            // 同じ図面が既にあるときの知らせ（2026-09-30 利用者:「同じものがあるということを提示して欲しいのと、
-            // 同じものがあるので取り込まない選択肢が欲しいです」）——サーバーが候補に付けた印（同じ図面番号・同じファイル）から。
-            const dupWrap = makeEl('div', 'filing-dups');
-            dupWrap.hidden = true;
-            const candWrap = makeEl('div', 'filing-candidates');
-            // 同じ題の加工製品が何枚もあるときの、図面追加・図面改定の行き先（2026-10-01）。
-            const sameWrap = makeEl('div', 'filing-candidates filing-same');
-            const mergeName = 'w-filing-merge-' + rowIndex;
-            const mergeInputs = {};
-            const mergeLabels = {};
-            // 言葉は利用者の案（2026-09-30:「『図面改定』と『図面追加』をご提案します」）。詳しくはマウスを載せたときに。
-            // 「重複（取り込まない）」は同じ図面が既にあるときだけ出す。
-            [['new', '新規', '新しい加工製品ページとして置きます'],
-             ['drawing', '図面追加', '既にある加工製品に、二つ目の図面として足します（部品図と溶接図など）'],
-             ['revision', '図面改定', '既にある加工製品の図面を差し替えます（いまの図面は旧版として子ページへ）'],
-             // 装置のページへ（2026-10-08 利用者:「図面をフォルダページに追加したいのですが、出来ません」）——組立図など装置全体の図面。
-             ['folder', '装置のページへ', '装置名称のページ（加工製品のフォルダ）に図面を足します——加工製品ページは作りません（組立図など）'],
-             ['duplicate', '重複（取り込まない）', '同じ図面が既にあるので取り込みません（解析で作ったページはごみ箱へ・既にある加工製品にこのメールの受信元を書き足します）'],
-             // **何もしない**（2026-10-03 利用者:「図面を解析しても何もしない選択肢も必要です」）——実行で送らない。解析で作った
-             // ページはこのメールの下にそのまま残る（あとで整理できる・要らなければページを消す）。
-             ['skip', '何もしない', '今回は整理しません——解析で作ったページはこのメールの下にそのまま残ります（あとで整理できます）']]
-                .forEach(([val, text, hint]) => {
-                    const label = makeEl('label', 'filing-merge-opt');
-                    label.title = hint;
-                    const radio = document.createElement('input');
-                    radio.type = 'radio';
-                    radio.name = mergeName;
-                    radio.value = val;
-                    label.appendChild(radio);
-                    label.appendChild(document.createTextNode(' ' + text));
-                    choiceWrap.appendChild(label);
-                    mergeInputs[val] = radio;
-                    mergeLabels[val] = label;
-                });
-            mergeLabels.duplicate.hidden = true;
-            // **図面追加・図面改定の行き先を探す**（2026-10-03 利用者:「図面を追加してもどこに入れるか入力する欄が無い」
-            // 「どの加工製品に追加するか人間が指定する必要があります」）——品番・品名・図面番号・題・ページ番号で既にある
-            // 加工製品を探す（`/api/filing-search`・同じ取引先が先）。押すと、上の候補を押したときと同じく欄（取引先・装置名称・
-            // 図面名称）に入り、そのページが行き先になる。二つ目の図面（溶接図など）は番号も名前も違うので、機械の候補に出ない。
-            const searchWrap = makeEl('div', 'filing-search');
-            searchWrap.hidden = true;
-            const searchLabel = makeEl('label', 'filing-search-label', '行き先を探す: ');
-            const searchInput = document.createElement('input');
-            searchInput.type = 'search';
-            searchInput.className = 'filing-search-input';
-            searchInput.placeholder = '品番・品名・図面番号・題・ページ番号';
-            searchLabel.appendChild(searchInput);
-            const searchOut = makeEl('div', 'filing-candidates filing-search-out');
-            searchWrap.append(searchLabel, searchOut);
-            choiceWrap.appendChild(choiceNote);
-            choiceWrap.appendChild(dupWrap);
-            choiceWrap.appendChild(sameWrap);
-            choiceWrap.appendChild(candWrap);
-            choiceWrap.appendChild(searchWrap);
-            tdConfirm.appendChild(choiceWrap);
-
-            let target = { exists: false, page_id: '', same: [] };
-            // chosenTarget は人が押した行き先のページ（同じ題が何枚もあるとき・候補を押したとき）。
-            let chosenTarget = '';
-            // keepMergeOnce は「人が行き先を押した」印です——次の聞き直しで行き先が変わっても、図面追加・図面改定の選択を外さない
-            // （2026-10-03——外していたので、図面追加を選んで行き先を探して押すと選択が消え、実行で「選んでください」と断られた）。
-            let keepMergeOnce = false;
-            const ambiguous = () => target.same.length > 1 && !target.same.some(s => s.page_id === chosenTarget);
-            // dup は「重複」の相手（同じ図面番号か同じファイルの加工製品のうち、いちばん強いもの）。
-            let dup = null;
-            // 人が自分で選んだら、聞き直しのたびの初期値で上書きしない。
-            let userPicked = false;
-            const picked = () => Object.keys(mergeInputs).find(k => mergeInputs[k].checked) || '';
-            const explain = () => {
-                const m = picked();
-                tdRules.hidden = m !== 'new';
-                searchWrap.hidden = m !== 'drawing' && m !== 'revision';
-                if (m === 'skip') {
-                    choiceNote.textContent = '整理しません——解析で作ったこのページは、このメールの下にそのまま残します';
-                } else if (m === 'folder') {
-                    // 装置のページへ（2026-10-08・ext/toho/filing_folder.go）——行き先は取引先と装置名称の欄で決まる。
-                    const mn = fields.machine_name.value.trim();
-                    choiceNote.textContent = mn
-                        ? '装置「' + mn + '」のページにこの図面を足します（加工製品ページは作りません・製品名称の欄は使いません）'
-                        : '⚠ 装置名称を入れてください（既にある装置のページに足します）';
-                } else if (m === 'duplicate' && dup) {
-                    choiceNote.textContent = '取り込みません——解析で作ったこのページはごみ箱へ移し、「' +
-                        (dup.machine ? dup.machine + '／' : '') + dup.title + '」にこのメールの受信元を書き足します';
-                } else if (target.exists && m === 'new') {
-                    choiceNote.textContent = '⚠ 「' + target.title + '」は既に' + (target.same.length > 1 ? ' ' + target.same.length + ' 枚' : '') +
-                        'あります——同じ名前の別の品物として、隣に新しく置きます';
-                } else if (target.exists && (m === 'drawing' || m === 'revision') && ambiguous()) {
-                    choiceNote.textContent = '⚠ 「' + target.title + '」が ' + target.same.length + ' 枚あります。下から行き先を押してください';
-                } else if (target.exists) {
-                    const nos = target.same.length > 1 ? '（' + target.same.length + ' 枚）' : target.nos ? '（図面: ' + target.nos + '）' : '';
-                    choiceNote.textContent = '⚠ 行き先の「' + target.title + '」は既にあります' + nos +
-                        (m === 'drawing' || m === 'revision' ? '。' : dup ? '。図面追加・図面改定・重複か、同じ名前の別の品物なら新規を選んでください'
-                            : '。図面追加・図面改定か、同じ名前の別の品物なら新規を選んでください');
-                } else if (m === 'drawing' || m === 'revision') {
-                    choiceNote.textContent = '⚠ 行き先に同じ加工製品がありません。下の候補を押すか、装置名称・製品名称を合わせてください';
-                } else {
-                    choiceNote.textContent = '';
-                }
-                choiceNote.hidden = !choiceNote.textContent;
-            };
-            Object.values(mergeInputs).forEach(r => r.addEventListener('change', () => {
-                userPicked = true;
-                explain();
-            }));
-
-            // showDups は「同じ図面が既にある」の知らせです。同じファイルでなく番号だけ同じなら、中身を Gemini に
-            // 見比べさせるボタンを添える（押したときだけ・利用者:「PDFの中身も比較してくれるなら」）。
-            const showDups = (dups) => {
-                dupWrap.replaceChildren();
-                dupWrap.hidden = !dups.length;
-                dups.forEach(c => {
-                    const line = makeEl('p', 'filing-dup');
-                    const a = document.createElement('a');
-                    a.href = '/' + c.page_id;
-                    a.target = '_blank';
-                    a.textContent = (c.machine ? c.machine + '／' : '') + c.title;
-                    const why = c.same_no && c.same_file ? '同じ図面番号・同じファイルです'
-                        : c.same_no ? '同じ図面番号ですが、ファイルの中身は違います（図番を変えない改定か、PDFを作り直しただけかもしれません）'
-                        : '同じファイルから作られています（1つのPDFに別の図面が入っていることもあります）';
-                    line.append('⚠ 同じ図面が既にあります: ', a, '。' + why);
-                    if (c.same_no && !c.same_file) {
-                        const b = makeButton('chip-btn filing-compare', '🤖 中身を比べる');
-                        b.title = '2つのPDFを Gemini に見比べさせます（数十秒かかります）';
-                        const out = makeEl('span', 'filing-compare-out');
-                        b.addEventListener('click', async () => {
-                            b.disabled = true;
-                            out.textContent = ' 見比べています…';
-                            try {
-                                const res = await fetch('/api/compare-drawings', jsonPost({ page_id: row.page_id, with: c.page_id }));
-                                const d = await res.json().catch(() => ({}));
-                                if (!res.ok || !d.success) throw new Error(d.message || res.status);
-                                const diffs = (d.differences || []).join('・');
-                                out.textContent = d.same
-                                    ? ' ✓ 同じ図面です' + (d.summary ? '（' + d.summary + '）' : '')
-                                    : ' ⚠ 違いがあります: ' + (diffs || d.summary || '（詳しくは言えませんでした）');
-                            } catch (e) {
-                                out.textContent = ' 見比べられませんでした: ' + e.message;
-                            }
-                            b.disabled = false;
-                        });
-                        line.append(' ', b, out);
-                    }
-                    dupWrap.appendChild(line);
-                });
-            };
-
-            let targetTimer = null;
-            const askTarget = async () => {
-                const q = new URLSearchParams({
-                    customer: fields.customer.value.trim(),
-                    machine: fields.machine_name.value.trim(),
-                    name: fields.drawing_name.value.trim(),
-                    drawing_no: row.drawing_no || '',
-                    // 整理を待つこのページ——サーバーが候補に「同じ図面番号」「同じファイル」の印を付ける（2026-09-30）。
-                    page_id: row.page_id,
-                });
-                let d = null;
-                try {
-                    const res = await fetch('/api/filing-target?' + q.toString());
-                    d = await res.json();
-                } catch (e) { d = null; }
-                const was = target.page_id;
-                target = d && d.exists
-                    ? { exists: true, page_id: d.page_id || '', title: d.title || '', nos: (d.drawing_nos || []).join('・'),
-                        same: d.same || [] }
-                    : { exists: false, page_id: '', same: [] };
-                // 行き先が変わったら、前の相手のつもりの改定・追加は外す。
-                const keepMerge = keepMergeOnce;
-                keepMergeOnce = false;
-                // ⚠ 行き先が「無い → 在る」に変わっただけなら外さない（前の相手が居ないので、持ち越すものが無い——開いた直後に
-                //    図面追加を押すと、最初の聞き直しの答えで選択が消えていた・2026-10-03）。
-                if (target.page_id !== was && was !== '' && !keepMerge && (picked() === 'drawing' || picked() === 'revision')) {
-                    mergeInputs.drawing.checked = false;
-                    mergeInputs.revision.checked = false;
-                }
-                // 「図面番号を品番に」「図面名称を品名に」の初期値は取引先の決まり（人が触ったものはそのまま）。
-                const rule = (d && d.rule) || {};
-                if (!ruleBoxes.partNo.dataset.touched) ruleBoxes.partNo.checked = !!rule.part_no;
-                if (!ruleBoxes.itemName.dataset.touched) ruleBoxes.itemName.checked = !!rule.item_name;
-                // 押した行き先が、もう同じ題の中に無ければ外す（欄を打ち替えた）。
-                if (chosenTarget && !target.same.some(s => s.page_id === chosenTarget)) chosenTarget = '';
-                // 同じ題のページが在るとき「新規」の既定は外す（同じ名前の別の品物なら人が選ぶ・2026-10-01 から選べる）。
-                if (target.exists && !userPicked && mergeInputs.new.checked) mergeInputs.new.checked = false;
-                // 同じ題が何枚もあるなら、図面追加・図面改定の行き先を押して決める。
-                sameWrap.replaceChildren();
-                if (target.same.length > 1) {
-                    const head = makeEl('span', 'filing-cand-head', '図面追加・図面改定の行き先:');
-                    sameWrap.appendChild(head);
-                    target.same.forEach(s => {
-                        const b = makeButton('');
-                        b.className = 'chip-btn filing-same-pick' + (s.page_id === chosenTarget ? ' is-chosen' : '');
-                        b.textContent = (s.page_id === chosenTarget ? '✓ ' : '') + '/' + s.page_id +
-                            '（図面: ' + ((s.drawing_nos || []).join('・') || 'なし') + '）';
-                        b.title = 'この「' + target.title + '」を行き先にする（押すと開かずに選ぶ・中身は /' + s.page_id + ' で見る）';
-                        b.addEventListener('click', () => {
-                            chosenTarget = s.page_id;
-                            askTarget(); // 印を描き直す
-                        });
-                        sameWrap.appendChild(b);
-                    });
-                }
-                // 同じ図面が既にあるか（2026-09-30）——「重複（取り込まない）」はそのときだけ出す。相手は同じ番号で
-                // 同じファイルのものを第一に、次に同じ番号。同じ番号で同じファイルなら、人が選ぶ前の初期値にする。
-                const all = (d && d.candidates) || [];
-                const dups = all.filter(c => c.same_no || c.same_file);
-                const rank = c => (c.same_no ? 2 : 0) + (c.same_file ? 1 : 0);
-                dup = dups.slice().sort((x, y) => rank(y) - rank(x))[0] || null;
-                showDups(dups);
-                mergeLabels.duplicate.hidden = !dup;
-                if (!dup && mergeInputs.duplicate.checked) {
-                    mergeInputs.duplicate.checked = false;
-                    userPicked = false;
-                }
-                if (!userPicked && dup && dup.same_no && dup.same_file) {
-                    mergeInputs.duplicate.checked = true;
-                } else if (!userPicked && mergeInputs.duplicate.checked) {
-                    mergeInputs.duplicate.checked = false; // 初期値で選んでいたが、もう言い切れない
-                }
-                if (!target.exists && !picked()) mergeInputs.new.checked = true;
-                // 既にある加工製品の候補（押すと装置名称・図面名称の欄へ入り、行き先を聞き直す）。
-                candWrap.replaceChildren();
-                const cands = all.filter(c => !target.same.some(s => s.page_id === c.page_id));
-                if (cands.length) {
-                    const head = makeEl('span', 'filing-cand-head', '既にある加工製品:');
-                    candWrap.appendChild(head);
-                    cands.forEach(c => {
-                        const b = makeButton('chip-btn filing-cand', (c.machine ? c.machine + '／' : '') + c.title);
-                        b.title = '行き先をここにする（図面: ' + (c.drawing_nos || 'なし') + '・/' + c.page_id + '）';
-                        b.addEventListener('click', () => {
-                            chosenTarget = c.page_id; // 同じ題が何枚もあっても、押したこのページが行き先
-                            keepMergeOnce = true;     // 人が押した行き先——図面追加・図面改定の選択は外さない
-                            fields.machine_name.value = c.machine || '';
-                            fields.drawing_name.value = c.title || '';
-                            fields.machine_name.dispatchEvent(new Event('change'));
-                            askTarget();
-                        });
-                        candWrap.appendChild(b);
-                    });
-                }
-                explain();
-            };
-            const askTargetSoon = () => {
-                if (targetTimer) clearTimeout(targetTimer);
-                targetTimer = setTimeout(askTarget, 400);
-            };
-            ['customer', 'machine_name', 'drawing_name'].forEach(key => {
-                fields[key].addEventListener('input', askTargetSoon);
-                fields[key].addEventListener('change', askTargetSoon);
-            });
-            askTargetSoon();
-
-            // 行き先を探す（上の searchWrap）——打つたびに少し待って聞く。押した結果が行き先になる。
-            let searchTimer = null;
-            let searchSeq = 0;
-            const runSearch = async () => {
-                const qv = searchInput.value.trim();
-                const seq = ++searchSeq;
-                if (!qv) { searchOut.replaceChildren(); return; }
-                let d = null;
-                try {
-                    const res = await fetch('/api/filing-search?' + new URLSearchParams({
-                        customer: fields.customer.value.trim(), q: qv,
-                    }).toString());
-                    d = await res.json();
-                } catch (e) { d = null; }
-                if (seq !== searchSeq) return; // 打ち替えた——古い答えは捨てる
-                searchOut.replaceChildren();
-                const hits = (d && d.results) || [];
-                const head = makeEl('span', 'filing-cand-head', hits.length ? '見つかった加工製品（押すと行き先）:' : '見つかりません');
-                searchOut.appendChild(head);
-                hits.forEach(h => {
-                    const b = makeButton('');
-                    b.className = 'chip-btn filing-search-pick' + (h.page_id === chosenTarget ? ' is-chosen' : '');
-                    b.textContent = (h.page_id === chosenTarget ? '✓ ' : '') +
-                        [h.customer, h.machine, h.title].filter(Boolean).join('／') + '（/' + h.page_id + '）';
-                    b.title = '行き先をここにする（図面: ' + (h.drawing_nos || 'なし') + (h.part_nos ? '・品番: ' + h.part_nos : '') + '）';
-                    b.addEventListener('click', () => {
-                        chosenTarget = h.page_id;
-                        keepMergeOnce = true; // 人が押した行き先——図面追加・図面改定の選択は外さない
-                        fields.customer.value = h.customer || fields.customer.value;
-                        fields.machine_name.value = h.machine || '';
-                        fields.drawing_name.value = h.title || '';
-                        fields.customer.dispatchEvent(new Event('change'));
-                        fields.machine_name.dispatchEvent(new Event('change'));
-                        askTarget();
-                        runSearch(); // 印（✓）を描き直す
-                    });
-                    searchOut.appendChild(b);
-                });
-            };
-            searchInput.addEventListener('input', () => {
-                if (searchTimer) clearTimeout(searchTimer);
-                searchTimer = setTimeout(runSearch, 300);
-            });
-
-            // 「改定として合流」の確認——**既定は隠しておき、実行が確認を求めた
-            // ときだけ出します**。最初から出すと「押せば通る」と学習されてしまい、
-            // 偽の改定を止める意味が薄れます。
-            //
-            // ⚠ **上の選択とは別の問い**です。あちらは「改定か二つ目の図面か」、
-            // こちらは「疑わしい点を承知のうえで進めるか」——⚠ **疑わしさは2種類**
-            // あります: 図面番号が既存の版と同じ／**同じ添付から来た同じ図面番号**
-            // （本来あってはならないが、先方の誤りで実在する。2026-09-20）。
-            // どちらなのかは実行が返す文が言います。
-            const confirm = makeEl('label', 'filing-confirm');
-            confirm.hidden = true;
-            const box = document.createElement('input');
-            box.type = 'checkbox';
-            confirm.appendChild(box);
-            confirm.appendChild(document.createTextNode(' 承知のうえで進める'));
-            tdConfirm.appendChild(confirm);
-            card.appendChild(tdConfirm);
-
-            inputs.push({
-                page_id: row.page_id, fields: fields, confirm: confirm, box: box,
-                merge: mergeInputs, choice: choiceWrap, kinds: kindBoxes, dupOf: () => (dup ? dup.page_id : ''),
-                target: () => chosenTarget, rules: ruleBoxes,
-            });
-            list.appendChild(card);
-        });
-        if (rows.length) panel.appendChild(list);
-
-        // **受注ページは別の表**です。直せるのは発注元だけ（行き先は発注日で決まる）
-        // なので、図面と同じ列に並べると空欄ばかりの行になります。
-        const pickedOrders = [];
-        if (orders.length) {
-            const oHead = makeEl('p', 'filing-head', '案件ページは「記録」の年月へ収めます（外すものは印を外す）。');
-            panel.appendChild(oHead);
-
-            const oTable = makeEl('table', 'filing-table filing-orders');
-            const oTrh = document.createElement('tr');
-            ['', '発注書番号', '発注元', '発注日', '行き先'].forEach(t => {
-                const th = makeEl('th', '', t);
-                oTrh.appendChild(th);
-            });
-            oTable.appendChild(oTrh);
-
-            orders.forEach(o => {
-                const tr = document.createElement('tr');
-                const tdBox = document.createElement('td');
-                const box = document.createElement('input');
-                box.type = 'checkbox';
-                box.checked = true;
-                box.setAttribute('aria-label', '収める');
-                tdBox.appendChild(box);
-                tr.appendChild(tdBox);
-                const tdNo = makeEl('td', '', o.order_no || '（番号なし）');
-                tr.appendChild(tdNo);
-
-                // **発注元だけは直せます**（2026-09-20）。初期値はサーバーが連絡帳へ
-                // 寄せた題で、候補は図面の行と同じ `datalist` を共有します
-                // ——同じ問い（どの会社か）に2つの候補一覧を出す理由がありません。
-                const tdClient = document.createElement('td');
-                const client = document.createElement('input');
-                client.type = 'text';
-                client.value = o.client_name || '';
-                client.setAttribute('aria-label', 'client');
-                if ((partners || []).length) client.setAttribute('list', listID);
-                tdClient.appendChild(client);
-                tr.appendChild(tdClient);
-
-                [o.ordered_at || '（日付なし）', o.destination || ''].forEach(v => {
-                    const td = makeEl('td', '', v);
-                    tr.appendChild(td);
-                });
-                pickedOrders.push({ page_id: o.page_id, client: client, box: box });
-                oTable.appendChild(tr);
-            });
-            panel.appendChild(oTable);
-        }
-
-        const run = makeButton('filing-run', '実行');
-        run.addEventListener('click', () => runFiling(inputs, pickedOrders, run, panel));
-        // 「ほかのファイル」の段（2026-10-08）——それぞれ「＋ …」で動くので、実行ボタンは図面か受注があるときだけ。
-        if ((files || []).length) panel.appendChild(buildFilingFiles(files));
-        if (rows.length || orders.length) panel.appendChild(run);
-        return panel;
-    }
-
-    // buildFilingFiles は整理の「📎 ほかのファイル」の段です（2026-10-08・ext/toho/filing_files.go）。
-    //
-    // 利用者:「図面以外のファイルでも、ここで相手を検索して追加できるとありがたいですね」——仕様書・3Dデータなど、🤖 解析で加工製品
-    // ページにならない添付。添付ごとに「行き先を探す」（加工製品ページと装置のページ——`folders=1`）→「＋ …」で、そのページの末尾に
-    // ファイル表示を足す（添付はこのメールに置いたまま・指すだけ）。どのページがもう表示しているかは、欄を開いたときに1回だけ探す（重い）。
-    function buildFilingFiles(files) {
-        const wrap = makeEl('div', 'filing-files');
-        const head = makeEl('p', 'filing-head', '📎 ほかのファイル——行き先を探して押すと、そのページにファイル表示を足します（添付はこのメールに置いたまま）。');
-        wrap.appendChild(head);
-        const shownBoxes = {};
-        files.forEach(f => {
-            const card = makeEl('div', 'filing-card filing-file');
-            card.dataset.attach = f.id;
-            const name = makeEl('p', 'filing-no', '📎 ' + f.name);
-            const shown = makeEl('p', 'filing-file-shown', '表示しているページ: 調べています…');
-            shownBoxes[f.ref] = { box: shown, list: [] };
-            const label = makeEl('label', 'filing-search-label', '行き先を探す: ');
-            const input = document.createElement('input');
-            input.type = 'search';
-            input.className = 'filing-search-input';
-            input.placeholder = '品番・品名・図面番号・題・装置名・ページ番号';
-            label.appendChild(input);
-            const out = makeEl('div', 'filing-candidates filing-search-out');
-            const note = makeEl('p', 'filing-file-note');
-            note.hidden = true;
-            card.append(name, shown, label, out, note);
-            let timer = null;
-            const search = async () => {
-                const q = input.value.trim();
-                out.replaceChildren();
-                if (!q) return;
-                let hits = [];
-                try {
-                    const res = await fetch('/api/filing-search?' + new URLSearchParams({ q: q, folders: '1' }));
-                    hits = ((await res.json()).results) || [];
-                } catch (e) { return; }
-                if (input.value.trim() !== q) return; // 打ち替えた——古い答えは出さない
-                if (!hits.length) {
-                    const p = makeEl('p', 'filing-search-none', '見つかりません');
-                    out.appendChild(p);
-                }
-                hits.forEach(h => {
-                    const b = makeButton('chip-btn filing-file-add');
-                    b.textContent = '＋ ' + (h.kind === 'folder' ? '📁 ' : '') + (h.customer ? h.customer + '／' : '') +
-                        (h.machine ? h.machine + '／' : '') + h.title + '（/' + h.page_id + '）';
-                    b.title = h.kind === 'folder' ? '装置のページの末尾にファイル表示を足します' : '加工製品ページの末尾にファイル表示を足します';
-                    b.addEventListener('click', () => addFilingFile(f, h, note, shownBoxes[f.ref]));
-                    out.appendChild(b);
-                });
-            };
-            input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 300); });
-            wrap.appendChild(card);
-        });
-        (async () => {
-            let shown = {};
-            try {
-                const d = await (await fetch('/api/filing-files-shown?page_id=' + encodeURIComponent(currentPageId))).json();
-                shown = d.shown || {};
-            } catch (e) { /* 分からなければ空のまま */ }
-            Object.entries(shownBoxes).forEach(([ref, s]) => { s.list = shown[ref] || []; renderFilingShown(s); });
-        })();
-        return wrap;
-    }
-
-    // renderFilingShown は「表示しているページ: …」を描きます（題へのリンク）。
-    function renderFilingShown(s) {
-        s.box.replaceChildren();
-        s.box.appendChild(document.createTextNode('表示しているページ: '));
-        if (!s.list.length) { s.box.appendChild(document.createTextNode('まだありません')); return; }
-        s.list.forEach((p, i) => {
-            if (i) s.box.appendChild(document.createTextNode('・'));
-            const a = document.createElement('a');
-            a.href = '/' + p.page_id;
-            a.textContent = p.title || ('/' + p.page_id);
-            s.box.appendChild(a);
-        });
-    }
-
-    // addFilingFile は「＋ …」——選んだページの末尾にファイル表示を足します（同じページに同じ添付は足さない——サーバーが断る）。
-    async function addFilingFile(f, h, note, s) {
-        note.hidden = false;
-        let r;
-        try {
-            r = await postJSON('/api/filing-attach', { page_id: currentPageId, attach: f.id, target: h.page_id });
-        } catch (e) {
-            note.className = 'filing-file-note is-warn';
-            note.textContent = '⚠ 足せませんでした（通信に失敗しました）';
-            return;
-        }
-        if (!r.ok) {
-            note.className = 'filing-file-note is-warn';
-            note.textContent = '⚠ ' + ((r.data && r.data.message) || ('足せませんでした（' + r.status + '）'));
-            return;
-        }
-        note.className = 'filing-file-note is-ok';
-        note.textContent = '✓ 「' + (r.data.title || h.title) + '」に足しました';
-        if (s && !s.list.some(p => p.page_id === r.data.page_id)) {
-            s.list.push({ page_id: r.data.page_id, title: r.data.title || h.title });
-            renderFilingShown(s);
-        }
-    }
-
     // askConfirm は確かめのダイアログを出し、進めるなら true を返します（2026-10-03 利用者:「警告ダイアログが出て、追加するか
     // やめるか選んではどうでしょうか」）。⚠ 既定の釦は「やめる」（Enter で黙って進まない）。Esc も「やめる」。
     function askConfirm(message, yesLabel, noLabel) {
@@ -6705,275 +5969,6 @@
             dlg.showModal();
             btns[0].focus();
         });
-    }
-
-    // keep は「ほかの行がまだ残っている」——確かめて送り直すときに、済んだ行だけを見て表を閉じないため。
-    async function runFiling(inputs, pickedOrders, run, panel, keep) {
-        // 「何もしない」の行は送らない（2026-10-03）——解析で作ったページはこのメールの下にそのまま残る。
-        const mergeOf = (i) => (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '';
-        const skipped = inputs.filter(i => mergeOf(i) === 'skip');
-        inputs = inputs.filter(i => mergeOf(i) !== 'skip');
-        const skipNote = skipped.length ? '「何もしない」の ' + skipped.length + ' 枚は、このメールの下にそのまま残しました。' : '';
-        if (!inputs.length && !(pickedOrders || []).some(o => o.box.checked)) {
-            notify(skipNote || '対象がありませんでした。', { type: 'success', duration: 0, id: 'filing' });
-            if (!keep) panel.remove();
-            return;
-        }
-        run.disabled = true;
-        run.textContent = '実行中…';
-        const payload = inputs.map(i => ({
-            page_id: i.page_id,
-            customer: i.fields.customer.value,
-            // 区分（2026-09-29）——印の付いたものだけ。空なら通常の製品。
-            kinds: (i.kinds || []).filter(b => b.checked).map(b => b.value),
-            machine_name: i.fields.machine_name.value,
-            drawing_name: i.fields.drawing_name.value,
-            confirm_revision: i.box.checked,
-            // 装置名のフォルダがある会社で、装置名称を空のまま社名の直下に入れてよいか（2026-10-16・下の確かめのダイアログで聞く）。
-            // ⚠ 図面の確かめ（confirm_revision）とは別の印——使い回すと、こちらの「はい」が図面改定の確かめまで飛ばす。
-            confirm_no_machine: !!i.noMachineOK,
-            // 同じ客先に同じ品番の加工製品ページが既にあるが、別の品物として作る（2026-10-19・下の確かめのダイアログで聞く）。
-            // ⚠ これも別の印——図面の確かめ・装置名の確かめとは混ぜない。
-            confirm_same_code: !!i.sameCodeOK,
-            // 行き先に同じ題のページがあったとき、改定か二つ目の図面か（2026-09-20）。
-            // ⚠ **選ばれていなければ空**です——サーバーはそのとき動かしません。
-            merge: (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '',
-            // 重複（取り込まない）の相手（2026-09-30）。
-            duplicate_of: i.dupOf ? i.dupOf() : '',
-            // 図面追加・図面改定の行き先（同じ題が何枚もあるとき・候補を押したとき・2026-10-01）。空なら題で引く。
-            target: i.target ? i.target() : '',
-            // 「図面番号を品番に」「図面名称を品名に」（新規のときだけ効く・2026-10-01）。
-            part_no_from_drawing: !!(i.rules && i.rules.partNo.checked),
-            item_name_from_drawing: !!(i.rules && i.rules.itemName.checked),
-        }));
-        try {
-            const res = await fetch('/api/file-drawings', jsonPost({
-                    rows: payload,
-                    // ⚠ **もとはIDの配列でした**（2026-09-20 に変えた）——発注元が
-                    // 直せるようになったので値を運びます（サーバーは `orderRequest`）。
-                    orders: (pickedOrders || []).filter(o => o.box.checked)
-                        .map(o => ({ page_id: o.page_id, client: o.client.value })),
-                }));
-            const d = await res.json();
-            if (!d.success) throw new Error(d.message || res.status);
-            // 何が起きたかを必ず見せる（黙って動かさない）。
-            const results = d.results || [];
-            const lines = results.map(r => r.message).filter(Boolean);
-            if (skipNote) lines.push(skipNote);
-            // **確認待ちの行は表を閉じない**——チェックを出して、人が判断してから
-            // もう一度実行してもらう（偽の改定を黙って作らないための関門）。
-            // ⚠ 装置名称が空の確かめ（confirm === 'no_machine'）は、この「承知のうえで進める」の印を出さない——
-            //    あの印は図面の確かめ（confirm_revision）のもので、押しても装置名の確かめにはならない。ダイアログだけで聞く。
-            //    同じ品番の確かめ（confirm === 'same_code'・2026-10-19）も同じ——ダイアログだけで聞く。
-            const ownDialog = (r) => r.confirm === 'no_machine' || r.confirm === 'same_code';
-            const pending = new Set(results
-                .filter(r => r.outcome === 'needs_confirm' && !ownDialog(r)).map(r => r.page_id));
-            const noMachine = results.filter(r => r.outcome === 'needs_confirm' && ownDialog(r)).length;
-            inputs.forEach(i => { i.confirm.hidden = !pending.has(i.page_id); });
-            // **選択待ちの行も表を閉じません**（2026-09-20）。打ち替えのたびの
-            // 問い合わせで既に出ているはずですが、⚠ **聞けなかったとき**（通信が
-            // 切れた・打った直後に押した）はここが最後の関門です。
-            const choosing = new Set(results
-                .filter(r => r.outcome === 'needs_choice').map(r => r.page_id));
-            inputs.forEach(i => { if (choosing.has(i.page_id)) i.choice.hidden = false; });
-            const stay = pending.size + choosing.size + noMachine;
-            notify(lines.join('\n') || '対象がありませんでした。',
-                { type: stay ? 'warn' : 'success', duration: 0, id: 'filing' });
-            // **確かめが要る行は、1行ずつダイアログで聞く**（2026-10-03）——進めるなら印を付けてその行だけ送り直す。
-            // やめた行は表に残る（「承知のうえで進める」のチェックも出ている——あとで選び直せる）。
-            const again = [];
-            for (const r of results.filter(x => x.outcome === 'needs_confirm')) {
-                const i = inputs.find(x => x.page_id === r.page_id);
-                if (!i) continue;
-                // 装置名称が空の確かめ（2026-10-16 利用者:「装置名のフォルダがあるのに、装置名を空にしている場合は、警告して
-                // 保存の可否を問い合わせてください」）——「はい」なら、その印だけを付けて送り直す。
-                if (r.confirm === 'no_machine') {
-                    if (await askConfirm(r.message, '社名の直下に入れる', 'やめる')) {
-                        i.noMachineOK = true;
-                        again.push(i);
-                    }
-                    continue;
-                }
-                // 同じ客先に同じ品番の加工製品ページが既にある（2026-10-19 利用者:「とすると、二つの加工製品ページが同じ品番を持つのはマズいので、
-                // 加工製品ページを作る前にチェックし、編集者に選択させる必要があります」）——「作る」ならその印だけを付けて送り直す。
-                // やめたら表に残る（整理の欄で図面追加・図面改定・重複〔取り込まない〕を選び直す）。
-                if (r.confirm === 'same_code') {
-                    if (await askConfirm(r.message, '別の品物として作る', 'やめる')) {
-                        i.sameCodeOK = true;
-                        again.push(i);
-                    }
-                    continue;
-                }
-                const m = (Object.keys(i.merge || {}).find(k => i.merge[k].checked)) || '';
-                const yes = m === 'drawing' ? '追加する' : m === 'revision' ? '改定する' : m === 'folder' ? '足す' : '進める';
-                if (await askConfirm(r.message, yes, 'やめる')) {
-                    i.box.checked = true;
-                    again.push(i);
-                }
-            }
-            if (again.length) {
-                run.disabled = false;
-                run.textContent = '実行';
-                await runFiling(again, [], run, panel, keep || stay > again.length);
-                return;
-            }
-            if (!stay && !keep) panel.remove();
-        } catch (e) {
-            notify('整理を実行できませんでした: ' + e, { type: 'alert', duration: 0, id: 'filing' });
-        }
-        run.disabled = false;
-        run.textContent = '実行';
-    }
-
-    // analyzeOne は添付1つを解析します（「🤖 解析」と「まとめて解析」が共有する・2026-09-30 に切り出した）。
-    // 返すのは {kind: 'drawing'|'order'|'none', made: [{page_id, title}], matchedDxf} か {error}。
-    async function analyzeOne(pageId, file) {
-        try {
-            const res = await fetch('/api/analyze-attachment', jsonPost({ page_id: pageId, file: file }));
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || !d.success) return { error: d.message || String(res.status) };
-            if (d.doc_type === 'drawing' && ((d.pages || []).length || d.page_id)) {
-                // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）——1枚につき1ページ。
-                let made = d.pages || [];
-                if (!made.length && d.page_id) made = [{ page_id: d.page_id, title: d.title }];
-                return { kind: 'drawing', made: made, matchedDxf: d.matched_dxf || 0 };
-            }
-            // 部材見積依頼の返事（2026-10-05・ext/toho/rfq_reply_page.go）——返事ページを作り、どの部材見積依頼書への返事かを突き合わせた。
-            if (d.doc_type === 'rfq_reply' && d.page_id) {
-                return { kind: 'rfq_reply', made: [{ page_id: d.page_id, title: d.title }], say: d.say || '', linked: d.linked_rfq || '' };
-            }
-            if (!d.is_client_order) return { kind: 'none', made: [] };
-            // 1つのPDFに発注書が何枚も入っていれば1枚につき1ページ（2026-09-30・`pages`）。
-            return { kind: 'order', made: (d.pages || []).length ? d.pages : [{ page_id: d.page_id, title: d.title }] };
-        } catch (e) {
-            return { error: String(e) };
-        }
-    }
-
-    // makeZipAnalyzeButton は ZIP の隣の「🤖 中のPDFをまとめて解析」です（2026-09-30 利用者:「添付ファイルのPDFに
-    // ついて、ZIPの場合まとめて解析するオプションが欲しいです」）。中のPDFを**1つずつ順に**「🤖 解析」と同じ口で
-    // 解析し、最後に1つの知らせにまとめる。⚠ **解析済みのものは飛ばす**（押し直しで同じページを二重に作らない——
-    // 読み違いの解析し直しは1件ずつの「🤖 再解析」で）。途中でページを離れると止まるが、押し直せば残りから続く。
-    // 解析済みしか無ければ出さない。
-    function makeZipAnalyzeButton(pageId, pdfs) {
-        const todo = pdfs.filter(p => !analyzedMap[p.id]);
-        if (!todo.length) return null;
-        const btn = makeButton('vocab-chrome attach-expand attach-analyze attach-analyze-zip');
-        const skipped = pdfs.length - todo.length;
-        const label = '🤖 中のPDFをまとめて解析（' + todo.length + '件）';
-        btn.textContent = label;
-        btn.title = '中のPDFを1つずつ順に解析します（Gemini を ' + todo.length + '回呼びます・1件に数十秒）' +
-            (skipped ? '。解析済みの ' + skipped + '件は飛ばします' : '');
-        btn.addEventListener('click', async () => {
-            if (!confirm('中のPDF ' + todo.length + '件を順に解析します（Gemini を ' + todo.length +
-                '回呼びます・1件に数十秒）。' + (skipped ? '解析済みの ' + skipped + '件は飛ばします。' : '') +
-                '途中でページを離れると止まります（押し直せば残りから）。')) return;
-            btn.disabled = true;
-            let drawings = 0, orders = 0, replies = 0;
-            const none = [], failed = [];
-            for (let i = 0; i < todo.length; i++) {
-                btn.textContent = '🤖 解析中… ' + (i + 1) + '/' + todo.length;
-                const r = await analyzeOne(pageId, todo[i].file);
-                if (r.error) failed.push(todo[i].path + '（' + r.error + '）');
-                else if (r.kind === 'drawing') drawings += r.made.length;
-                else if (r.kind === 'order') orders += r.made.length;
-                else if (r.kind === 'rfq_reply') replies += r.made.length;
-                else none.push(todo[i].path);
-            }
-            const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
-                (orders ? '・案件ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
-            if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・') + '\n' + BY_HAND_REPLY_HINT);
-            if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
-            if (drawings) lines.push('📁 整理で行き先を決めてください。');
-            notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
-            btn.disabled = false;
-            btn.textContent = label;
-            if (drawings || orders || replies) {
-                await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
-                loadChildNav();        // 左レールの子ページ一覧
-            }
-        });
-        return btn;
-    }
-
-    // makeAnalyzeButton は「🤖 解析」ボタンを作ります（PDF添付）。
-    // ⚠ ZIP の中の PDF には出しません（2026-09-17）——取り込みが ZIP を展開して中身を
-    // 1つずつ添付にするので、解析はページ直下の PDF だけを見ます（`entry` 引数は廃止）。
-    // 押すと /api/analyze-attachment が Gemini で判定し、発注書なら受注ページを
-    // このページの子として作る。結果は通知で知らせる（本文は変えない）。
-    function makeAnalyzeButton(pageId, file) {
-        const btn = makeButton('vocab-chrome attach-expand attach-analyze', '🤖 解析');
-        btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            btn.textContent = '🤖 解析中…';
-            // **ページが生まれたか**。生まれたときだけ画面を取り直します（下）。
-            let born = false;
-            const d = await analyzeOne(pageId, file);
-            if (d.error) {
-                notify('解析できませんでした: ' + d.error, { type: 'alert', duration: 0, id: 'analyze-pdf' });
-            } else if (d.kind === 'drawing') {
-                // 図面と判定された枝。同じページのDXFと図面番号で突き合わせた
-                // 結果も知らせる（0件も普通——PDFだけの図面はよくある）。
-                //
-                // ⚠ **1つのPDFに図面が複数入っていることがあります**（2026-09-20）。
-                // 1枚につき1ページ作るので、**できた全部を見せます**——`page_id`
-                // （1枚目）だけ見せていると、3枚できても画面には1枚しか出ず、
-                // **押した直後の手応えが嘘になります**（子ページ一覧には出るので
-                // 消えはしませんが、気づくのは後からです）。
-                var made = d.made;
-                var msg = made.length > 1
-                    ? '加工製品ページを ' + made.length + '枚 作りました（このPDFに図面が'
-                      + made.length + '枚入っていました）:\n'
-                    : '加工製品ページを作りました: ';
-                msg += made.map(function (p) {
-                    return (p.title || p.page_id) + '（/' + p.page_id + '）';
-                }).join('\n');
-                if (made.length > 1) {
-                    msg += '\n同じ品物の別図面（部品図と溶接図など）なら、📁 整理で'
-                        + '「二つ目の図面として追加」を選ぶと1ページにまとめられます。';
-                }
-                if (d.matchedDxf > 0) {
-                    msg += '\n図面番号の一致したDXF ' + d.matchedDxf + '件と結びました。';
-                }
-                notify(msg, { type: 'success', duration: 0, id: 'analyze-pdf' });
-                born = true;
-            } else if (d.kind === 'rfq_reply') {
-                const p = d.made[0];
-                notify('部材見積依頼の返事ページを作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' + d.say,
-                    { type: d.linked ? 'success' : 'warn', duration: 0, id: 'analyze-pdf' });
-                born = true;
-            } else if (d.kind === 'none') {
-                notify('発注書・図面・部材見積依頼の返事のどれでもないと判定されました（ページは作っていません）。\n' + BY_HAND_REPLY_HINT, { type: 'warn', duration: 0 });
-            } else {
-                const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
-                notify((d.made.length > 1
-                    ? '案件ページを ' + d.made.length + '枚 作りました（このPDFに発注書が' + d.made.length + '枚入っていました）:\n'
-                    : '案件ページを作りました: ') + list, { type: 'success', duration: 0, id: 'analyze-pdf' });
-                born = true;
-            }
-            btn.disabled = false;
-            btn.textContent = '🤖 解析';
-
-            // **生まれた子ページを画面へ出す**（2026-09-14 ユーザー:「解析終了後に、
-            // 加工製品ページが子ページになりますが、ページに反映されない」）。
-            //
-            // 古くなるのは**2か所**です——左レールの子ページ一覧と、本文の
-            // 「子ページ一覧の鏡」（`<section><h2>子ページ一覧</h2></section>`・サーバーが
-            // 中身を埋める計算ビュー）。通知だけでは、押した人は自分で読み込み直す
-            // ことになります。
-            //
-            // **丸ごとの再読み込みにはしません**——`reloadContent()` は本文を
-            // 取り直すだけなので、通知・巻き上げ位置・開いているPDFの外側は残ります。
-            // 書きかけを失う心配も要りません: 📎 の「🤖 解析」は閲覧モードにしか出ません
-            // （`refreshAttachmentPreviews` が書ける形で早々に戻ります）。「⋯」のメニューの解析
-            // （runAnalyzeFile）は書ける形でも押せますが、書ける形の `reloadContent()` は書きかけを先に
-            // 保存して、変わったブロックだけ受け取ります（2026-10-12 から）。
-            if (born) {
-                await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
-                loadChildNav();        // 左レールの子ページ一覧
-            }
-        });
-        return btn;
     }
 
     // ── サーバーが描いた「ファイル表示」の枠に、大きさの記憶を配線する ──────
@@ -7076,11 +6071,6 @@
         return (m && FILE_KIND_BY_EXT[m[1].toLowerCase()]) || 'other';
     }
 
-    // analyzableHere は、そのファイルを 🤖 解析してよい所か——メールのページで、ファイルがそのページの添付のとき。
-    function analyzableHere(pageOfFile) {
-        return hasExtension('toho') && !!tagValue(CHANNEL_TAG) && pageOfFile === currentPageId;
-    }
-
     function fileMenuItems(info) {
         const ref = info.ref || '';
         const pid = ref.split('-')[0];
@@ -7091,11 +6081,9 @@
         items.push({ icon: '⬇', label: '保存', title: '届いたときの名前で保存します', run: () => downloadFile(info.url, info.name) });
         switch (info.kind) {
         case 'pdf':
-            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '解析（発注書・図面を読む）', run: () => runAnalyzeFile(pid, file) });
             items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
             break;
         case 'xlsx':
-            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '解析（注文リストを読む）', run: () => runAnalyzeFile(pid, file) });
             items.push({ icon: '📝', label: 'Excel で開く', run: b => startLocalEdit(ref, b) });
             break;
         case 'image':
@@ -7107,18 +6095,14 @@
             break;
         case 'zip':
             items.push({ icon: '🗂', label: '中身を見る', run: () => toggleZipListIn(info.host, pid, file) });
-            if (analyzableHere(pid)) items.push({ icon: '🤖', label: '中のPDFをまとめて解析', run: () => runZipAnalyze(pid, aid) });
             break;
         case 'media':
             break;
         default:
             items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
         }
-        // 図面が2つ以上並んだページの図面のファイル（2026-10-04）——あとから改定にする（supersedeDrawingFrom）。
-        if (canSupersedeFrom(info.host)) {
-            items.push({ icon: '📐', label: 'この図面で改定する（前の図面を旧版へ）',
-                title: 'この図面を最新の図面にして、選んだ前の図面を旧版の子ページへ移します', run: () => supersedeDrawingFrom(info.host) });
-        }
+        // 拡張が項目を足す口（2026-10-20・window.wcms.onFileMenu）——東邦の「🤖 解析」「📐 この図面で改定する」（ext/toho/assets/toho.js）。
+        fileMenuHooks.forEach((fn) => { try { fn(info, items, { pageId: pid, attachId: aid, file }); } catch (e) { console.error('拡張の項目が落ちました:', e); } });
         return items;
     }
 
@@ -7132,36 +6116,6 @@
     // だった（編集中はサーバーが断った——自分が開いていても）。いまサーバーは cms.RewriteBody で書き、断るのは道具が
     // /api/lock で握っているときだけ。
 
-    // drawingSections は本文の最上位の図面ブロック（見出し「図面」の h2 を持つ節）を本文の順に返します——サーバーの
-    // `drawingSectionsOf` と同じ数え方（何番目かで指すので、数え方が食い違うと別の図面を旧版へ送る——番号の確かめが止める）。
-    // ⚠ 閲覧の画面では節がブロックの枠（div.block-content）に包まれている——`#w-editor-content > section` では拾えない。
-    function drawingSections() {
-        const content = document.getElementById('w-editor-content');
-        if (!content) return [];
-        return Array.from(content.querySelectorAll('section')).filter(s =>
-            !(s.parentElement && s.parentElement.closest('#w-editor-content section')) &&
-            Array.from(s.querySelectorAll('h2')).some(h => h.textContent.trim() === '図面'));
-    }
-
-    function canSupersedeFrom(host) {
-        // 書ける形でも押せる（2026-10-12・問い5）。
-        if (!host || !hasExtension('toho')) return false;
-        const all = drawingSections();
-        return all.length >= 2 && all.some(s => s.contains(host));
-    }
-
-    // drawingTag は図面ブロックのタグの値です（dt/dd から）。
-    function drawingTag(sec, name) {
-        const dt = Array.from(sec.querySelectorAll(':scope > dl[data-type="tags"] > dt')).find(d => d.textContent.trim() === name);
-        const dd = dt && dt.nextElementSibling;
-        return dd ? dd.textContent.trim() : '';
-    }
-
-    // drawingLabel は図面ブロックの「図面番号 名称」です。
-    function drawingLabel(sec) {
-        return [drawingTag(sec, '図面番号'), drawingTag(sec, '図面名称')].filter(Boolean).join(' ') || '（番号の無い図面）';
-    }
-
     // askChoice は選ぶダイアログを出し、選んだ番号を返します（やめたら -1）。⚠ 既定は「やめる」・Esc も「やめる」。
     function askChoice(message, labels) {
         return openDialog(message, (done) => {
@@ -7173,32 +6127,6 @@
             });
             return list;
         }, [['やめる', -1]], -1);
-    }
-
-    async function supersedeDrawingFrom(host) {
-        const all = drawingSections();
-        const mine = all.find(s => s.contains(host));
-        const others = all.filter(s => s !== mine);
-        if (!mine || !others.length) return;
-        let old = others[0];
-        if (others.length > 1) {
-            const i = await askChoice('「' + drawingLabel(mine) + '」で改定する前の図面はどれですか？（選んだ図面を旧版の子ページへ移します）',
-                others.map(drawingLabel));
-            if (i < 0) return;
-            old = others[i];
-        }
-        const ok = await askConfirm('「' + drawingLabel(old) + '」を旧版として子ページへ移し、\n「' + drawingLabel(mine) +
-            '」をこのページの最新の図面にします（改訂明細表に1行足します）。', '旧版へ移す', 'やめる');
-        if (!ok) return;
-        const pick = (s) => ({ index: all.indexOf(s), no: drawingTag(s, '図面番号') });
-        const r = await postJSON('/api/drawing/supersede', { page_id: currentPageId, new: pick(mine), old: pick(old) });
-        if (!r.ok) {
-            notify((r.data && r.data.message) || ('旧版へ移せません（' + r.status + '）'), { type: 'warn', duration: 0 });
-            return;
-        }
-        notify('前の図面を「' + (r.data.title || '旧版') + '」へ移しました。', { type: 'success' });
-        await reloadContent();
-        loadChildNav();
     }
 
     // openFileMenu は「⋯」の下にメニューを開きます（もう一度押すか、外を押すか、Esc で閉じる）。
@@ -7226,26 +6154,6 @@
         document.body.appendChild(a);
         a.click();
         a.remove();
-    }
-
-    // runAnalyzeFile は添付1つを 🤖 解析します（📎 の「🤖 解析」と同じ口と知らせ——makeAnalyzeButton）。
-    function runAnalyzeFile(pageId, file) {
-        notify('🤖 解析しています…', { type: 'info', duration: 0, id: 'analyze-pdf' });
-        makeAnalyzeButton(pageId, file).click();
-    }
-
-    // runZipAnalyze は ZIP の中のPDFをまとめて解析します（どの PDF が中にあるかは /api/analyzed が知っている）。
-    async function runZipAnalyze(pageId, zipID) {
-        try {
-            const d = await (await fetch('/api/analyzed?page_id=' + encodeURIComponent(pageId))).json();
-            analyzedMap = (d && d.analyzed) || analyzedMap;
-            const pdfs = ((d && d.zip_pdfs) || {})[zipID] || [];
-            const btn = pdfs.length ? makeZipAnalyzeButton(pageId, pdfs) : null;
-            if (!btn) { notify(pdfs.length ? '中のPDFは解析済みです。' : 'この ZIP の中に PDF はありません。', { duration: 6000 }); return; }
-            btn.click();
-        } catch (e) {
-            notify('まとめて解析できません: ' + e.message, { type: 'warn' });
-        }
     }
 
     // toggleZipListIn はファイル表示の下に ZIP の中身の一覧を開け閉めします。
@@ -9894,9 +8802,6 @@
 // postJSON は JSON を POST して `{ ok, status, data }` を返します。
 // `ok` は **HTTP が 2xx で、かつ本文の `success` が真**のとき。⚠ **通信の失敗は
 // 投げます**（呼ぶ側が「通信に失敗しました」と言い分けるため・握り潰さない）。
-// BY_HAND_REPLY_HINT は 🤖 解析が「どれでもない」と答えたときに添える、手で作る道です（2026-10-19・ext/toho/rfq_reply_page.go）。
-// 利用者:「このようなエクセル形式でも解析できるようにならないでしょうか？ならない場合、手作業で見積もり回答書を作れるとありがたいです」
-const BY_HAND_REPLY_HINT = '業者の値段の表なら、メールの「作るページ」の「部材見積依頼の返事ページ（手で書く）」で手で作れます。';
 
 async function postJSON(url, body) {
     // 書ける形で押したときは、書きかけを先に保存してから送る（2026-10-12・問い5——直してすぐ押せる。ボタンが読む本文に
@@ -10003,6 +8908,14 @@ function printOnly(node) {
 // 足すときは要る分だけ（口が増えすぎると約束が太る）。凍らせて、拡張が書き換えられないようにします。
 const chromeHooks = [];
 let chromeReady = false;
+const attachmentHooks = [];
+const fileMenuHooks = [];
+
+// runAttachmentHooks は、添付のリンク1つごとに、拡張が札を足す口を呼びます（refreshAttachmentPreviews から・閲覧モードだけ）。
+// at は { link, pageId, attachId, ext, viewButton（▶ 表示・無ければ null）, refButton（🔗 参照） }。
+function runAttachmentHooks(at) {
+    attachmentHooks.forEach((fn) => { try { fn(at); } catch (e) { console.error('拡張の札が落ちました:', e); } });
+}
 
 // runChromeHook は拡張の飾りを1つ呼びます。⚠ 拡張が落ちても、コアの画面は止めません。
 function runChromeHook(fn) {
@@ -10017,10 +8930,19 @@ function runChromeHooks() {
 
 window.wcms = Object.freeze({
     // version は、拡張の JS が「この口が揃ったコアか」を見るための番号です（2 から東邦の鏡の配線、3 から通信・メール・連絡先の
-    // 前半の部分を app.js に持たない——拡張の JS が持つ）。
-    version: 3,
+    // 前半の部分、4 から東邦の整理の欄・🤖 解析・あとから改定を app.js に持たない——拡張の JS が持つ）。
+    version: 4,
     // onChrome は「モードを切り替えるたび・読み直したたびに、飾りを付け直す」口です。もう描いたあとに登録されたら、すぐ1度呼ぶ。
     onChrome(fn) { chromeHooks.push(fn); if (chromeReady) runChromeHook(fn); },
+    // onAttachment は「添付のリンクに札を足す」口です（閲覧モードで、添付の札を描き直すたびに呼ぶ）。
+    onAttachment(fn) { attachmentHooks.push(fn); },
+    // onFileMenu は「ファイルの ⋯ に項目を足す」口です。fn(info, items, { pageId, attachId, file }) が items を足し替える。
+    onFileMenu(fn) { fileMenuHooks.push(fn); },
+    // refreshAttachments は添付の札を描き直します（拡張が解析済みの印を取り直したあとなど）。
+    refreshAttachments: () => refreshAttachmentPreviews(),
+    askConfirm: (message, yes, no) => askConfirm(message, yes, no),
+    askChoice: (message, labels) => askChoice(message, labels),
+    openDialog: (message, middle, buttons, cancel) => openDialog(message, middle, buttons, cancel),
     pageId: () => currentPageId,
     editorContent: () => document.getElementById('w-editor-content'),
     tagValue: (name) => tagValue(name),

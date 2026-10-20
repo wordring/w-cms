@@ -468,4 +468,18 @@ w.onChrome(refreshPhoneChrome);
 w.onChrome(wireUnhandledActions);
 w.onChrome(wireNewRecord);
 }
+
+// ── 版 4 から: 上のメニューの「✉️ メール一覧」（2026-09-29 の入口）。それまでは殻（index.html）に置き、コアが通信の拡張の有無で出し分けていた。
+// この JS は通信の拡張が載っているときだけ読み込まれるので、ここで足せば出し分けは要らない。⚠ 殻の id は接頭辞 w- を独占する決まり。
+if (w.version >= 4) {
+    const tables = document.getElementById('w-tables-link');
+    const old = document.getElementById('w-mails-link'); // 入れ替えの途中で、殻にまだ古い入口が残っていれば、それを見せる
+    if (old) old.classList.remove('is-hidden');
+    else if (tables) {
+        const link = w.makeEl('a', 'admin-link tables-link', '✉️ メール一覧');
+        link.id = 'w-mails-link';
+        link.href = '/assets/mails.html';
+        tables.insertAdjacentElement('afterend', link);
+    }
+}
 })();
