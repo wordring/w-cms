@@ -349,6 +349,57 @@ func storedFormOf(s, id string) (storedBlock, bool) {
 	return storedBlock{}, false
 }
 
+// syncLockedResult は、/api/sync の錠の中の仕事の結果です。
+type syncLockedResult struct {
+	current   []storedBlock // 合わせる前の本文のブロック
+	plan      syncPlan
+	finalBody string // 合わせたあとの本文（書いたときはサニタイズと名札のあと）
+	updatedAt string
+	written   bool
+}
+
+// syncLocked は /api/sync の、ページごとの書き込みの錠の中の仕事です（読む → 合わせる → 書く → 版 → 索引）。
+// 錠は defer で外します——2026-10-20 まではここが SyncAPIHandler の中にあって、早く戻る5か所で手で外していた
+// （戻る道を足したときに外し忘れると、そのページへの保存がずっと止まる）。断ったときは応答を書いて ok=false。
+func syncLocked(w http.ResponseWriter, id string, user *auth.User, username string, req SyncRequest,
+	mine map[string]storedBlock, sanitized map[string]bool) (res syncLockedResult, ok bool) {
+	defer LockPageBody(id)()
+	original, err := os.ReadFile(page.BodyPath(id))
+	if err != nil {
+		http.Error(w, "本文を読み込めませんでした", http.StatusNotFound)
+		return res, false
+	}
+	current, err := splitStoredBlocks(string(original))
+	if err != nil {
+		http.Error(w, "本文を読めませんでした", http.StatusInternalServerError)
+		return res, false
+	}
+	// ID の無いブロックへは中身から決まる ID を振る——振っただけでは書かない（block_sync.go の ensureStoredBlockIDs）。
+	ensureStoredBlockIDs(current)
+	plan := planSync(current, req, mine, sanitized)
+	res = syncLockedResult{current: current, plan: plan, finalBody: joinStoredBlocks(plan.final)}
+	if plan.dirty {
+		res.finalBody = FillFileViewNames(user, Sanitize(res.finalBody))
+		// writeBody が「トップ直下の置き場の題は1枚だけ」も見る（断れば 409 を書いて ok=false）。
+		ua, ok := writeBody(w, id, res.finalBody)
+		if !ok {
+			return res, false
+		}
+		res.updatedAt = ua
+		if err := RecordVersion(id, username, res.finalBody, false); err != nil {
+			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
+		}
+		if !syncBody(w, id, res.finalBody) {
+			return res, false
+		}
+		noteBlockWriters(id, username, string(original), res.finalBody)
+		res.written = true
+	} else if meta, ok := page.ReadSidecar(id); ok {
+		res.updatedAt = meta.UpdatedAt
+	}
+	return res, true
+}
+
 // SyncAPIHandler は POST /api/sync です。
 func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -386,48 +437,11 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 		safeChanged += b.HTML
 	}
 
-	unlock := LockPageBody(id)
-	original, err := os.ReadFile(page.BodyPath(id))
-	if err != nil {
-		unlock()
-		http.Error(w, "本文を読み込めませんでした", http.StatusNotFound)
+	locked, ok := syncLocked(w, id, user, username, req, mine, sanitized)
+	if !ok {
 		return
 	}
-	current, err := splitStoredBlocks(string(original))
-	if err != nil {
-		unlock()
-		http.Error(w, "本文を読めませんでした", http.StatusInternalServerError)
-		return
-	}
-	// ID の無いブロックへは中身から決まる ID を振る——振っただけでは書かない（block_sync.go の ensureStoredBlockIDs）。
-	ensureStoredBlockIDs(current)
-	plan := planSync(current, req, mine, sanitized)
-
-	finalBody := joinStoredBlocks(plan.final)
-	updatedAt := ""
-	written := false
-	if plan.dirty {
-		finalBody = FillFileViewNames(user, Sanitize(finalBody))
-		// writeBody が「トップ直下の置き場の題は1枚だけ」も見る（断れば 409 を書いて ok=false）。
-		ua, ok := writeBody(w, id, finalBody)
-		if !ok {
-			unlock()
-			return
-		}
-		updatedAt = ua
-		if err := RecordVersion(id, username, finalBody, false); err != nil {
-			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
-		}
-		if !syncBody(w, id, finalBody) {
-			unlock()
-			return
-		}
-		noteBlockWriters(id, username, string(original), finalBody)
-		written = true
-	} else if meta, ok := page.ReadSidecar(id); ok {
-		updatedAt = meta.UpdatedAt
-	}
-	unlock()
+	current, plan, finalBody, updatedAt, written := locked.current, locked.plan, locked.finalBody, locked.updatedAt, locked.written
 
 	if written {
 		auth.AuditRequest(r, "save", id)
