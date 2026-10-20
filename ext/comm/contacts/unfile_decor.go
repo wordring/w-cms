@@ -7,22 +7,15 @@ package contacts
 import (
 	stdhtml "html"
 
-	"golang.org/x/net/html"
-
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/htmldoc"
 )
 
 func init() {
 	cms.RegisterTagDecorator(EmailTag, unfileDecoration)
 }
 
-func unfileDecoration(ctx *cms.MirrorContext, value string) []*html.Node {
-	nodes, err := htmldoc.ParseFragment(`<button type="button" class="vocab-chrome chip-btn contact-unfile" contenteditable="false"` +
+func unfileDecoration(ctx *cms.MirrorContext, value string) string {
+	return `<button type="button" class="vocab-chrome chip-btn contact-unfile" contenteditable="false"` +
 		` data-addr="` + stdhtml.EscapeString(value) + `"` +
-		` title="` + stdhtml.EscapeString(value+" をこのページから外し、「未登録の連絡先」へ戻します（ページは消しません）") + `">未分類へ戻す</button>`)
-	if err != nil {
-		return nil
-	}
-	return nodes
+		` title="` + stdhtml.EscapeString(value+" をこのページから外し、「未登録の連絡先」へ戻します（ページは消しません）") + `">未分類へ戻す</button>`
 }

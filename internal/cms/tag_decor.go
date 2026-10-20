@@ -10,6 +10,7 @@ package cms
 // 描くときに、登録された飾りを値の欄（dd）の末尾へ足します——本文の印はタグそのもの。
 //
 //   - 飾りは**本文ではありません**。拡張は `vocab-chrome` の印を付けて返し、保存のときに落ちます（StripChrome・画面の保存の巡り）。
+//   - 飾りは HTML の文字列で返します（RegisterView と同じ形）。⚠ 値は拡張がエスケープしてから連結すること（保存型XSSの前科）。
 //   - 鏡なので、閲覧と書ける形の両方で描かれます（/api/load と ?view=1）。押したときの働きは、拡張の JS が document へ委ねて配線する。
 //   - 鏡型の引き金は1つに1人なので、`tags` の引き金はコアが持ち、拡張の飾りはここへ登録します。
 // ─────────────────────────────────────────────────────────────────────────
@@ -18,10 +19,12 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"w-cms/internal/cms/htmldoc"
 )
 
-// TagDecorator は、タグの値 value に足す飾り（値の欄の末尾に足すノード）を返します。足さないなら nil。
-type TagDecorator func(ctx *MirrorContext, value string) []*html.Node
+// TagDecorator は、タグの値 value に足す飾り（値の欄の末尾に足す HTML）を返します。足さないなら空。
+type TagDecorator func(ctx *MirrorContext, value string) string
 
 // tagDecorators は名前 → 飾りです。**`init()` の中からだけ**登録します。
 var tagDecorators = map[string][]TagDecorator{}
@@ -60,7 +63,15 @@ func decorateTags(ctx *MirrorContext, el *html.Node) (bool, error) {
 			continue
 		}
 		for _, fn := range fns {
-			for _, n := range fn(ctx, value) {
+			frag := fn(ctx, value)
+			if frag == "" {
+				continue
+			}
+			nodes, err := htmldoc.ParseFragment(frag)
+			if err != nil {
+				continue // 飾りが組めないだけ——本文はそのまま描く
+			}
+			for _, n := range nodes {
 				dd.AppendChild(n)
 			}
 		}

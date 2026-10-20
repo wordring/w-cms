@@ -11,10 +11,7 @@ import (
 	stdhtml "html"
 	"regexp"
 
-	"golang.org/x/net/html"
-
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/htmldoc"
 )
 
 var notDialable = regexp.MustCompile(`[^0-9+]`)
@@ -23,16 +20,12 @@ func init() {
 	cms.RegisterTagDecorator(PhoneTag, phoneDecoration)
 }
 
-func phoneDecoration(ctx *cms.MirrorContext, value string) []*html.Node {
+func phoneDecoration(ctx *cms.MirrorContext, value string) string {
 	dial := notDialable.ReplaceAllString(value, "")
 	if dial == "" {
-		return nil
+		return ""
 	}
-	nodes, err := htmldoc.ParseFragment(`<span class="vocab-chrome phone-chrome" contenteditable="false">` +
+	return `<span class="vocab-chrome phone-chrome" contenteditable="false">` +
 		`<a class="phone-call" href="tel:` + stdhtml.EscapeString(dial) + `" data-number="` + stdhtml.EscapeString(value) + `">☎ かける</a> ` +
-		`<label class="phone-record"><input type="checkbox" checked> 記録を作る</label></span>`)
-	if err != nil {
-		return nil
-	}
-	return nodes
+		`<label class="phone-record"><input type="checkbox" checked> 記録を作る</label></span>`
 }
