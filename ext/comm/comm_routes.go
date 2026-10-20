@@ -16,6 +16,9 @@ type commPlugin struct{}
 func init() {
 	// **名簿に載る**（起動ログと画面の出し分け・internal/cms/extensions.go）。
 	cms.RegisterExtension("comm", "通信")
+	// **画面の JS も通信の持ち物**です（2026-10-20・docs/考察/【考察】画面の JS のコアと拡張.md）——記録ページの箱
+	// （作るページ・返信・やりとりの前後・この記録への返信）。載っているときだけ殻が読み込む。
+	cms.RegisterScript("comm", "ext/comm/assets/comm.js")
 	cms.Register(commPlugin{})
 }
 

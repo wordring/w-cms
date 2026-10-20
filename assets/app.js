@@ -2465,7 +2465,7 @@
         openRFQReplyFromHash();      // 返事ページの「部材見積依頼書で単価を写す」から来たら 🤖 返事を読む の欄を開く（2026-10-05）
         // 「書ける形でも」の業務のボタンは、2026-10-12 まで閲覧モード限定だった（いまは押す前に書きかけを保存する）。
         refreshFilingButton();      // 加工製品ページの整理（書ける形でも）
-        refreshMailChrome();         // 返信と「この記録への返信」（書ける形でも）
+        runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20——通信の記録の箱は ext/comm/assets/comm.js）
         wireUnhandledActions();      // 未処理一覧の「不要」ボタン（書ける形でも）
         wireNewRecord();             // 「＋ 記録する」（電話・FAX・メール・メモ）
         wireMailFetch();             // 「📥 新しいメールを読み込む」（その隣・2026-09-29）
@@ -5835,92 +5835,6 @@
     // PDFの中身が悪意を持つ危険は埋め込み方によらず同じなので、開くかどうかの
     // 判断を人に残す（自動では開かない）。ZIPは目録だけ（/api/zip-list・展開はしない）。
     const CHANNEL_TAG = 'チャネル'; // 通信記録の目印（受信も送信も持つ）
-    // DRAFT_TAG は下書きの印のタグです（ext/comm/compose.go の comm.DraftTag と同じ言葉・2026-09-30）。
-    const DRAFT_TAG = '下書き';
-
-    // recordMakeControl はメールの記録の「作るページ [選ぶ] [作成]」です（2026-10-01・ext/comm/record_make.go）。
-    // 利用者:「メールから作るボタンは「受注ページ作成」「加工製品ページ作成」「返信」ページのタイプは増える可能性があるので
-    // 「受注ページ」「加工製品ページ」をコンボボックスで選択して「作成」ボタンを押せばいいかも」。
-    // 選べる種類は**拡張が登録する**（`GET /api/record-makers`——東邦の拡張なら 案件ページ・見積依頼ページ・加工製品ページ・
-    // 部材見積依頼の返事ページ・同じく手で書くもの〔2026-10-19〕）。この画面は種類の名前も作り方も知らない。
-    // もう作ったページは横に「✓ 案件」「✓ 加工製品」などの印で並べる（作り直しはできる）。
-    // 種類が1つも無く、印も無ければ何も出さない（書けない人には選ぶ欄を出さず、印だけ）。
-    function recordMakeControl() {
-        const wrap = makeEl('p', 'record-make');
-        wrap.hidden = true;
-        const marks = makeEl('span', 'record-make-marks');
-        const showMarks = (list) => {
-            marks.textContent = '';
-            (list || []).forEach(r => {
-                marks.appendChild(document.createTextNode(' '));
-                // ⚠ `attach-expand` を外す——添付の札を描き直す refreshAttachmentPreviews が本文の中の `.attach-expand` を
-                // 全部消すので、問い合わせの答えが先に着くと印が消えていた（2026-10-01・E2E で間欠に落ちた）。
-                const mark = makeAnalyzedMark(r);
-                mark.classList.remove('attach-expand');
-                marks.appendChild(mark);
-            });
-        };
-        fetch('/api/record-makers?page_id=' + encodeURIComponent(currentPageId))
-            .then(r => r.json()).then(d => {
-                if (!d || !d.success) return;
-                const kinds = d.kinds || [];
-                if (!kinds.length && !(d.made || []).length) return;
-                if (kinds.length) {
-                    const label = makeEl('label', '', '作るページ ');
-                    const sel = makeEl('select', 'record-make-kind');
-                    kinds.forEach(k => {
-                        const o = document.createElement('option');
-                        o.value = k.name;
-                        o.textContent = k.name;
-                        o.title = k.hint || '';
-                        sel.appendChild(o);
-                    });
-                    const hint = () => { sel.title = (kinds.find(k => k.name === sel.value) || {}).hint || ''; };
-                    sel.addEventListener('change', hint);
-                    hint();
-                    label.appendChild(sel);
-                    const btn = makeButton('record-make-go', '作成');
-                    btn.addEventListener('click', () => makeFromRecord(sel.value, btn));
-                    wrap.appendChild(label);
-                    wrap.appendChild(document.createTextNode(' '));
-                    wrap.appendChild(btn);
-                }
-                wrap.appendChild(marks);
-                showMarks(d.made);
-                wrap.hidden = false;
-            }).catch(() => {});
-        return wrap;
-    }
-
-    // makeFromRecord は選んだ種類のページを作ります（POST /api/record-make）。案件ページ（2026-10-19 まで受注ページ）は Gemini が本文を読むので時間がかかる。
-    async function makeFromRecord(kind, btn) {
-        btn.disabled = true;
-        btn.textContent = '作っています…';
-        let born = false, open = '';
-        try {
-            const res = await fetch('/api/record-make', jsonPost({ page_id: currentPageId, kind }));
-            const d = await readResult(res);
-            if (!res.ok || !d || !d.success) {
-                notify(kind + 'を作れませんでした: ' + failMessage(res, d), { type: 'alert', duration: 0, id: 'record-make' });
-            } else if (!(d.pages || []).length) {
-                notify(d.say || 'ページは作りませんでした。', { type: 'warn', duration: 8000, id: 'record-make' });
-            } else {
-                notify(kind + 'を作りました: ' + d.pages.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n') +
-                    (d.say ? '\n' + d.say : ''), { type: 'success', duration: 0, id: 'record-make' });
-                born = true;
-                open = d.open || '';
-            }
-        } catch (e) {
-            notify(kind + 'を作れませんでした: ' + e.message, { type: 'alert', duration: 0, id: 'record-make' });
-        }
-        btn.disabled = false;
-        btn.textContent = '作成';
-        if (open) { location.href = '/' + open + '?edit=true'; return; } // 人が続けて書くページは開く
-        if (born) {
-            await reloadContent(); // 子ページ一覧の鏡と、この欄（印つき）を描き直す
-            loadChildNav();        // 左レールの子ページ一覧
-        }
-    }
 
     const ATTACH_PREVIEW_RE = /^\/([0-9]{6})\/([0-9a-z]+)\.(pdf|zip)$/;
 
@@ -6228,144 +6142,6 @@
         } catch (e) {
             notify('発信の記録を作れませんでした: ' + e.message, { type: 'warn' });
         }
-    }
-
-    function refreshMailChrome() {
-        document.querySelectorAll('#w-editor-content .mail-chrome').forEach(el => el.remove());
-        // 書ける形でも出す（2026-10-12——業務のボタンは書ける形でも押せる・【考察】編集モードの再考 §6 問い5）。
-        // **箱ごと通信の持ち物**です（2026-09-16）。中の「🧵 やりとりの前後」と
-        // 「📨 この記録への返信」は `/api/thread`・`/api/replies` を叩くので、通信が
-        // 無いと**通信記録ページを開くたびに 404 を2本**出します（どちらも失敗を
-        // 黙って飲むので、画面には何も出ないまま要求だけが飛ぶ）。
-        // ⚠ メール（`comm/mail`）だけを外した組では、この箱は**出ます**——読むだけの
-        // 2つは通信の口で、外れるのは中の「✉️ 返信」だけ。
-        if (!hasExtension('comm')) return;
-        const host = document.getElementById('w-editor-content');
-        if (!host || !currentPageId) return;
-        // 通信記録かどうかは「チャネル」のタグで判る（受信も送信も持つ）。
-        if (!tagValue(CHANNEL_TAG)) return;
-
-        const box = makeEl('div', 'vocab-chrome mail-chrome');
-        box.setAttribute('contenteditable', 'false');
-
-        // 対応は、2026-09-30 からここに「対応: 未処理・済・不要」の札を出していました。2026-10-19 に外しました
-        // （2026-10-19 利用者:「「対応」の札はなくして、タグだけにしてください。」）——対応は本文のタグ `対応`（設定の語彙の選択肢）だけで、書ける形でタグの値を選んで替える。
-        // この記録から作るページ（2026-10-01・選べる種類は拡張が登録する——受信だけ・下書きには出さないもサーバーが決める）。
-        if (!tagValue(DRAFT_TAG)) box.appendChild(recordMakeControl());
-
-        // **「✉️ 返信」だけがメール拡張の持ち物**です（2026-09-15）。同じ箱の「🧵 やりとりの
-        // 前後」と「📨 この記録への返信」は記録を読むだけなので、メールを外しても出します。
-        //
-        // ⚠ **書く欄は部品です**（2026-09-30・assets/mail-compose.js）——用件「返信」の初期値
-        // （宛先・RE: の件名・署名・引用・添付の候補）はサーバーが組みます。
-        // ⚠ **下書きのページ**（`下書き` のタグ）では、返信の代わりに**下書きを開いた送る欄**を出します
-        // （開いたらすぐ直して送れる・送ったら下書きはごみ箱へ行き、控えのページへ移る）。
-        const compose = window.wcmsMailCompose;
-        if (hasExtension('comm/mail') && compose) {
-            const slot = makeEl('div', 'mail-compose-host');
-            if (tagValue(DRAFT_TAG)) {
-                box.appendChild(slot);
-                compose.open(slot, { draftId: currentPageId });
-            } else {
-                const btn = makeButton('mail-reply-open', '✉️ 返信');
-                btn.addEventListener('click', () => {
-                    if (slot.firstChild) { slot.textContent = ''; return; } // もう一度押すと畳む
-                    compose.open(slot, { purpose: '返信', pageId: currentPageId });
-                });
-                box.appendChild(btn);
-                box.appendChild(slot);
-            }
-        }
-        host.appendChild(box);
-
-        loadThread(box);
-        loadReplies(box);
-    }
-
-    // ── スレッドの前後へ移る（2026-09-14）──────────────────────────────
-    //
-    // ユーザー:「メールですが、In-reply-to をみて前後のメールにも移動できると便利です」。
-    //
-    // 鎖は `親ページID` のタグで、辿るのはサーバー（`/api/thread`・ext/comm/handler_thread.go）。
-    // 2026-10-09 まではメールヘッダの `In-Reply-To`（当時のタグの名前は `返信元メッセージID`）の鎖でした。
-    // `📨 この記録への返信`（`/api/replies`）も、いまは同じ `親ページID` を引きます——違いは、あちらが子のうち
-    // こちらから送った返信（向き＝送信）だけを出すことです。こちらは前（親）と次（子）の全部なので、
-    // **受信どうしの返り**も繋がります。
-    //
-    // **前後が無ければ何も出しません**（1通で終わる記録のほうが多い）。
-    async function loadThread(box) {
-        let prev = null, next = [];
-        try {
-            const res = await fetch('/api/thread?page_id=' + encodeURIComponent(currentPageId));
-            const d = await res.json();
-            if (!d.success) return;
-            prev = d.prev || null;
-            next = d.next || [];
-        } catch (e) { return; }
-        if (!prev && !next.length) return;
-
-        const wrap = makeEl('div', 'mail-thread');
-        const head = makeEl('p', 'mail-thread-head', '🧵 やりとりの前後');
-        wrap.appendChild(head);
-
-        const ul = document.createElement('ul');
-        if (prev) ul.appendChild(threadItem('↑ 返信元', prev));
-        // 次は複数ありえます（同じメールに2人が別々に返信した、など）。
-        next.forEach(n => ul.appendChild(threadItem('↓ この記録への返り', n)));
-        wrap.appendChild(ul);
-        box.appendChild(wrap);
-    }
-
-    // threadItem はスレッド1件ぶんの行を作ります（矢印つきの札＋題＋日時）。
-    function threadItem(label, r) {
-        const li = document.createElement('li');
-        const tag = makeEl('span', 'mail-thread-dir');
-        // 向きの記号は通信箱の一覧と同じ流儀（←受信 / →送信）。
-        tag.textContent = label + (r.direction === '送信' ? '（送信）' : r.direction === '受信' ? '（受信）' : '');
-        li.appendChild(tag);
-        const a = document.createElement('a');
-        a.href = '/' + r.page_id;
-        a.textContent = r.title || r.page_id;
-        a.title = r.title || r.page_id;
-        li.appendChild(a);
-        if (r.when) {
-            const when = makeEl('span', 'mail-thread-when', ' ' + String(r.when).slice(0, 16).replace('T', ' '));
-            li.appendChild(when);
-        }
-        return li;
-    }
-
-    // loadReplies は「この記録への返信」を逆引きして並べます（送信箱にある本体への案内）。
-    async function loadReplies(box) {
-        let replies = [];
-        try {
-            const res = await fetch('/api/replies?page_id=' + encodeURIComponent(currentPageId));
-            const d = await res.json();
-            if (!d.success) return;
-            replies = d.replies || [];
-        } catch (e) { return; }
-        if (!replies.length) return;
-
-        const wrap = makeEl('div', 'mail-replies');
-        const head = makeEl('p', 'mail-replies-head', '📨 この記録への返信（本体は送信箱にあります）');
-        wrap.appendChild(head);
-        const ul = document.createElement('ul');
-        replies.forEach(r => {
-            const li = document.createElement('li');
-            const when = makeEl('span', 'mail-replies-when', (r.sent_at || '').slice(0, 16) + ' ');
-            const a = document.createElement('a');
-            a.href = '/' + r.page_id;
-            a.textContent = r.title || r.page_id;
-            li.appendChild(when);
-            li.appendChild(a);
-            if (r.to) {
-                const to = makeEl('span', 'mail-replies-to', ' → ' + r.to);
-                li.appendChild(to);
-            }
-            ul.appendChild(li);
-        });
-        wrap.appendChild(ul);
-        box.appendChild(wrap);
     }
 
     // ── 加工製品ページの整理（提案→人が直す→実行）───────────────────────────
@@ -7217,8 +6993,8 @@
     // 立ちません——本文に `<section><h2>未処理の受信</h2></section>` が書いてあっても
     // 空のまま出るので、この関数は何も見つけずに帰ります。**同じ理由で `wireNewRecord`
     // にも要りません**（「＋ 記録する」も同じビューが描いています）。
-    // 出し分けが要るのは「JSが自分で作るクローム」だけ——`refreshMailChrome` と
-    // 電話の「記録を作る」がそれです。
+    // 出し分けが要るのは「JSが自分で作るクローム」だけ——通信の記録の箱（2026-10-20 から ext/comm/assets/comm.js・それまでは
+    // `refreshMailChrome`）と電話の「記録を作る」がそれです。
     function wireUnhandledActions() {
         const host = document.getElementById('w-editor-content');
         if (!host) return;
@@ -10713,6 +10489,42 @@ function makeButton(cls, text) {
     b.type = 'button';
     return b;
 }
+
+// ── 拡張の画面が使う口と道具（2026-10-20・docs/考察/【考察】画面の JS のコアと拡張.md）──────────────
+//
+// 拡張の JS（ext/<拡張>/assets/*.js・サーバーが登録された分だけ読み込む——internal/cms/ext_scripts.go）は、ここで渡す
+// window.wcms だけを使います。⚠ **コアは拡張の JS を名指ししません**（向きは「拡張 → コア」の1つ）。
+// 足すときは要る分だけ（口が増えすぎると約束が太る）。凍らせて、拡張が書き換えられないようにします。
+const chromeHooks = [];
+let chromeReady = false;
+
+// runChromeHook は拡張の飾りを1つ呼びます。⚠ 拡張が落ちても、コアの画面は止めません。
+function runChromeHook(fn) {
+    try { fn(); } catch (e) { console.error('拡張の飾りが落ちました:', e); }
+}
+
+// runChromeHooks は、モードを切り替えるたび（applyMode）に、拡張が登録した飾りを付け直します。
+function runChromeHooks() {
+    chromeReady = true;
+    chromeHooks.forEach(runChromeHook);
+}
+
+window.wcms = Object.freeze({
+    version: 1,
+    // onChrome は「モードを切り替えるたび・読み直したたびに、飾りを付け直す」口です。もう描いたあとに登録されたら、すぐ1度呼ぶ。
+    onChrome(fn) { chromeHooks.push(fn); if (chromeReady) runChromeHook(fn); },
+    pageId: () => currentPageId,
+    editorContent: () => document.getElementById('w-editor-content'),
+    tagValue: (name) => tagValue(name),
+    hasExtension: (id) => hasExtension(id),
+    makeEl, makeButton, jsonPost, postJSON, sayIn,
+    readResult: (res) => readResult(res),
+    failMessage: (res, d) => failMessage(res, d),
+    notify: (message, opts) => notify(message, opts),
+    reloadContent: () => reloadContent(),
+    loadChildNav: () => loadChildNav(),
+    analyzedMark: (r) => makeAnalyzedMark(r),
+});
 
 // sayIn は欄の中身をその1文だけにします（欄が無ければ何もしない）。
 function sayIn(box, text, cls) {
