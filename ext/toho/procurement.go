@@ -24,6 +24,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"math"
 	"strconv"
 	"strings"
 
@@ -195,8 +196,10 @@ func productNeeds(db cms.ReadOnlyDB, productID, orderQty int) []ProcurementItem 
 				continue // 鍵の列が全部空の行（書きかけ）は数えない
 			}
 			per := k.perUnit(def, m)
-			out = append(out, ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: per, Key: key,
-				Values: vals, Required: per * orderQty, Remaining: per * orderQty, Vendor: labelValue(def, m, vendorLabel)})
+			// 要る数は「1台あたり × 台数」を切り上げる（1台あたり 0.5 枚 × 3台 = 1.5 → 2枚）。表に出す1台あたりも切り上げた整数。
+			need := int(math.Ceil(per*float64(orderQty) - 1e-9))
+			out = append(out, ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: int(math.Ceil(per - 1e-9)), Key: key,
+				Values: vals, Required: need, Remaining: need, Vendor: labelValue(def, m, vendorLabel)})
 		}
 	}
 	return out

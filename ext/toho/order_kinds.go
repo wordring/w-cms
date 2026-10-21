@@ -216,7 +216,10 @@ func (k orderKind) valuesOf(def cms.VocabDef, row cms.VocabRow, tags map[string]
 }
 
 // perUnit は1台あたりの個数です（元の表の列が空なら1——`cms.VocabQuantity` と同じ）。
-func (k orderKind) perUnit(def cms.VocabDef, row cms.VocabRow) int {
+//
+// ⚠ 小数（0.5 枚・1.5 本）もそのまま読む——整数として読んで 0 にしていて、その材料は発注の要るものに出なかった
+// （2026-10-22 の見直し）。読めない字は 0（数えない）。
+func (k orderKind) perUnit(def cms.VocabDef, row cms.VocabRow) float64 {
 	src, ok := k.Columns[orderQtyLabel]
 	if !ok {
 		return 1
@@ -225,7 +228,11 @@ func (k orderKind) perUnit(def cms.VocabDef, row cms.VocabRow) int {
 	if v == "" {
 		return 1
 	}
-	return cms.VocabNumber(v)
+	f, ok := estimateNumber(v)
+	if !ok || f < 0 {
+		return 0
+	}
+	return f
 }
 
 // keyOf は手配済みを数える鍵です——種類の名前＋鍵の列の値（畳んだ文字）。鍵の列が全部空なら空。

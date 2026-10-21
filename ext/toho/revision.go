@@ -61,6 +61,11 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 
 	// 1. いま載っている図面ブロックを外し、旧版ページへ移す。旧版ページには、そのときのページの写し（工程・部材など）も残す（2026-10-19）。
 	oldBlocks, _ := extractDrawingSections(dstBody) // 合流先に残す本文は、錠の中で読み直してから組む（下）
+	// 図面が2つ以上（部品図と溶接図など）あると、どれの改定かを機械では決められない——全部を旧版へ移すと、いまも使う
+	// 図面まで消えた（2026-10-22 の見直し）。図面追加で入れてから、ページの「📐 この図面で改定する」で人が選ぶ。
+	if len(oldBlocks) > 1 {
+		return errors.New("合流先に図面が " + strconv.Itoa(len(oldBlocks)) + " つあり、どれの改定か決められません。「図面追加」で入れてから、そのページの図面の「⋯」→「📐 この図面で改定する」で選んでください")
+	}
 	snapshot := oldVersionSnapshot(dstBody)
 	oldPageID, oldNo, oldName := "", "", ""
 	if len(oldBlocks) > 0 {
@@ -110,6 +115,9 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		}
 		return body
 	}); err != nil {
+		if oldPageID != "" {
+			cms.DeletePageToTrash(oldPageID) // 書けなかった——作ったばかりの旧版ページを片付ける（図面は合流先に残ったまま）
+		}
 		return err
 	}
 	if moved != nil {
@@ -587,7 +595,12 @@ func InsertRevisionRow(bodyHTML, drawingNo string) string {
 		return bodyHTML
 	}
 	insertAt := at + head + len("</tr>")
-	rev := len(revisionRowRe.FindAllString(bodyHTML, -1)) + 1
+	// 数えるのは改訂明細表の行だけ（本文全体で数えると、ほかの表の行も数えて版の番号が飛んだ・2026-10-22 の見直し）。
+	table := bodyHTML[at:]
+	if end := strings.Index(table, "</table>"); end >= 0 {
+		table = table[:end]
+	}
+	rev := len(revisionRowRe.FindAllString(table, -1)) + 1
 	return bodyHTML[:insertAt] + revisionRowHTML(rev, drawingNo, bodyHTML) + bodyHTML[insertAt:]
 }
 

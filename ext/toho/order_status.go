@@ -225,6 +225,11 @@ func setOrderLineStatus(body string, row int, value string) (string, int) {
 			if row == 0 && orderLineCancelled(cur) {
 				continue // まとめ書きは取消を起こさない
 			}
+			// まとめて「発注済」にするとき（送った・送り直した）、納品済の行は戻さない（送り直すと、届いた行が発注済に戻った・
+			// 2026-10-22 の見直し）。
+			if row == 0 && value == OrderLineSent && cur == OrderLineDelivered {
+				continue
+			}
 			if cur == value {
 				continue
 			}
