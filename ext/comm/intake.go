@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"w-cms/internal/cms"
 
@@ -347,6 +348,39 @@ type IntakeResult struct {
 	Duplicate bool // 既に取り込み済みだった
 }
 
+// intakeRefLocks は、取り込みの印ごとのロックです（使っている人がいなくなったら捨てる）。
+var intakeRefLocks = struct {
+	sync.Mutex
+	m map[string]*intakeRefLock
+}{m: map[string]*intakeRefLock{}}
+
+type intakeRefLock struct {
+	sync.Mutex
+	users int
+}
+
+// lockIntakeRef は印 key のロックを取り、外す関数を返します。
+func lockIntakeRef(key string) func() {
+	intakeRefLocks.Lock()
+	l := intakeRefLocks.m[key]
+	if l == nil {
+		l = &intakeRefLock{}
+		intakeRefLocks.m[key] = l
+	}
+	l.users++
+	intakeRefLocks.Unlock()
+	l.Lock()
+	return func() {
+		l.Unlock()
+		intakeRefLocks.Lock()
+		l.users--
+		if l.users == 0 {
+			delete(intakeRefLocks.m, key)
+		}
+		intakeRefLocks.Unlock()
+	}
+}
+
 // IntakeFile は通信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
 //
 // HTTPの口（serveIntake）と、メールの取り込み（ext/comm/mail）が共有します
@@ -365,6 +399,10 @@ func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResul
 	// 重複検知は**取り込み係を呼ぶ前**に行う（作ってから消すのではなく、作らない）。
 	if f, ok := h.(SourceRefFinder); ok {
 		if name, value, found := f.SourceRef(fileName, content); found {
+			// 確かめてから作るまでを、同じ印（Message-ID など）ごとに1つずつ通す——同じ代表のメール箱を2人が同時に
+			// 読み込むと、どちらも「まだ無い」と見て2枚作るため（2026-10-22 の見直し）。
+			unlock := lockIntakeRef(name + "=" + value)
+			defer unlock()
 			existing, dup := ExistingIntakePage(name, value)
 			if !dup && name == MessageIDTag {
 				existing, dup = ExistingMailRecord(value) // 直す前の記録（古い名前）も見る——parent_link.go

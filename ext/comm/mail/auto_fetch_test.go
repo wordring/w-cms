@@ -15,7 +15,7 @@ import (
 func TestAutoFetchInterval(t *testing.T) {
 	c := autoFetchSettings{DayStartHour: 8, DayEndHour: 20, DayMinutes: 5, NightMinutes: 60, WeekendAsNight: true}
 	at := func(s string) time.Time {
-		v, err := time.ParseInLocation("2006-01-02 15:04", s, time.Local)
+		v, err := time.ParseInLocation("2006-01-02 15:04", s, officeZone)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -34,6 +34,10 @@ func TestAutoFetchInterval(t *testing.T) {
 	} {
 		if got := autoFetchInterval(c, at(tc.when)); got != tc.want {
 			t.Errorf("%s の間隔が %v です（%v を期待）", tc.when, got, tc.want)
+		}
+		// サーバーの時刻の帯が UTC でも、同じ瞬間なら同じ間隔（日本の時刻で決める）。
+		if got := autoFetchInterval(c, at(tc.when).UTC()); got != tc.want {
+			t.Errorf("⚠ %s（UTC で渡す）の間隔が %v です（%v を期待）", tc.when, got, tc.want)
 		}
 	}
 }

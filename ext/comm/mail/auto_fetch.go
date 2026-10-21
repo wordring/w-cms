@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 )
 
@@ -91,8 +92,14 @@ func autoFetchConfig() *autoFetchSettings {
 	return &c
 }
 
-// autoFetchInterval は、時刻 now の読み込みの間隔です（平日の日中か、それ以外か）。
+// officeZone は日中・土日を決める時刻の帯です（日本の時刻・夏時間は無い）。
+// ⚠ サーバーの時刻の帯には頼らない——Ubuntu のサーバー機は UTC のことがあり、そのままだと「8〜20時」が日本の17〜5時になる
+// （2026-10-22 の見直し）。
+var officeZone = time.FixedZone("JST", 9*60*60)
+
+// autoFetchInterval は、時刻 now の読み込みの間隔です（平日の日中か、それ以外か。日本の時刻で決める）。
 func autoFetchInterval(c autoFetchSettings, now time.Time) time.Duration {
+	now = now.In(officeZone)
 	h := now.Hour()
 	weekend := now.Weekday() == time.Saturday || now.Weekday() == time.Sunday
 	if (!weekend || !c.WeekendAsNight) && h >= c.DayStartHour && h < c.DayEndHour {
@@ -107,6 +114,7 @@ func autoFetchAddress() string {
 }
 
 // autoFetchUser は、代表のアドレスでサインインしている w-cms の利用者です（いなければ空）。2人以上なら、名前の順で先の人。
+// 無効にした利用者は使いません（取り込んだ記録の書き手になるため）。
 func autoFetchUser(address string) string {
 	if address == "" {
 		return ""
@@ -121,9 +129,13 @@ func autoFetchUser(address string) string {
 			continue
 		}
 		u := usernameOfTokenFile(strings.TrimSuffix(name, ".json"))
-		if u != "" && strings.EqualFold(strings.TrimSpace(SignedInAddress(u)), address) {
-			return u
+		if u == "" || !strings.EqualFold(strings.TrimSpace(SignedInAddress(u)), address) {
+			continue
 		}
+		if usr, err := auth.LookupUser(u); err != nil || usr == nil {
+			continue
+		}
+		return u
 	}
 	return ""
 }
