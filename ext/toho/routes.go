@@ -51,6 +51,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/mfg/close", Handler: MfgCloseAPIHandler}, // 製造を閉じる（記録へ・2026-10-19・mfg_close.go）
 		{Pattern: "/api/mfg/rfq", Handler: MfgRFQAPIHandler}, // 製造の部材を見積依頼必要部材表へ（2026-10-19・mfg_more.go）
 		{Pattern: "/api/mfg/parts", Handler: MfgPartsAPIHandler},       // 製造の部材を発注部材表へ（2026-10-19・mfg_view.go）
+		{Pattern: "/api/mfg/skip", Handler: MfgSkipAPIHandler},              // 発注部材表の行を手配不要表へ（2026-10-21・mfg_skip.go）
+		{Pattern: "/api/mfg/skip/remove", Handler: MfgSkipRemoveAPIHandler}, // 手配不要表の行を外す（2026-10-21・mfg_skip.go）
 		{Pattern: "/api/mfg/made", Handler: MfgMadeAPIHandler},         // 製造完了（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/new", Handler: MfgNewAPIHandler},           // 製造ページ（2026-10-19・mfg.go）
 		{Pattern: "/api/mfg/wait", Handler: MfgWaitAPIHandler},         // 製造待ちへ入れる（2026-10-21・mfg_wait.go）

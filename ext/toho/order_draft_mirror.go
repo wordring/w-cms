@@ -45,7 +45,7 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	//    未手配の一覧へ戻す方法がありません**」）。
 	//    ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、ここから消せば
 	//    **自動的に戻ってきます**。戻す先へ何かを書く必要はありません。
-	addDraftRowButtons(el, page.FormatID(ctx.PageID), idx)
+	addDraftRowButtons(el, page.FormatID(ctx.PageID), idx, pageKindOf(ctx.PageID) == PageKindMfg)
 	// 「部材発注書を作る」の欄は**表の外（包む節の中・表の直後）**へ（2026-09-28・`draftBoxOf`）。
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
@@ -58,9 +58,16 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 //
 // ⚠ **鏡なので本文には残りません**（`.vocab-chrome`）。⚠ **見出し行にも1つ足します**
 // ——足さないと**列がずれて見えます**（見出しが1つ足りない表になる）。
-func addDraftRowButtons(table *html.Node, pageID string, idx int) {
+// mfg なら（製造ページの発注部材表）、「🚫 不要」も足します（手配不要表へ移す・2026-10-21・mfg_skip.go）。
+func addDraftRowButtons(table *html.Node, pageID string, idx int, mfg bool) {
 	addRowChromeCells(table, "draft-row-act", func(row int, _ *html.Node) string {
-		return `<button type="button" class="chip-btn draft-row-back"` +
+		skip := ""
+		if mfg {
+			skip = `<button type="button" class="chip-btn draft-row-skip"` +
+				` data-draft-page="` + stdhtml.EscapeString(pageID) + `" data-draft-table="` + strconv.Itoa(idx) + `" data-draft-row="` + strconv.Itoa(row) + `"` +
+				` title="この部材はこの製造では手配しません（理由と日付つきで手配不要表へ移します）">🚫 不要</button>`
+		}
+		return skip + `<button type="button" class="chip-btn draft-row-back"` +
 			` data-draft-page="` + stdhtml.EscapeString(pageID) + `"` +
 			` data-draft-table="` + strconv.Itoa(idx) + `"` +
 			` data-draft-row="` + strconv.Itoa(row) + `"` +

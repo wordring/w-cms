@@ -1514,8 +1514,54 @@ delegateClick([
     delegateClick([
         ['[data-draft-go]', create],
         ['.draft-join-pick', pickJoin],
+        ['.draft-row-skip', skipDraftRow],
+        ['.skip-row-back', removeSkipRow],
         ['.draft-row-back', removeDraftRow],
     ]);
+
+    // 製造ページの発注部材表の行を手配不要表へ（2026-10-21・ext/toho/mfg_skip.go）——理由は任意。
+    async function skipDraftRow(btn) {
+        const reason = window.prompt('この部材を、この製造では手配しません。理由（任意）: 在庫で足りる・自社で作る など', '');
+        if (reason === null) return;
+        btn.disabled = true;
+        try {
+            const r = await postJSON('/api/mfg/skip', {
+                page_id: btn.getAttribute('data-draft-page') || '',
+                table: Number(btn.getAttribute('data-draft-table') || 0),
+                row: Number(btn.getAttribute('data-draft-row') || 0),
+                reason,
+            });
+            if (!r.ok) {
+                alert('⚠ ' + (r.data.message || '手配不要にできませんでした'));
+                btn.disabled = false;
+                return;
+            }
+            location.reload();
+        } catch (err) {
+            alert('⚠ 通信に失敗しました: ' + err);
+            btn.disabled = false;
+        }
+    }
+
+    // 手配不要表から1行を外す（2026-10-21・ext/toho/mfg_skip.go）——また発注部材表へ出せるようになる。
+    async function removeSkipRow(btn) {
+        btn.disabled = true;
+        try {
+            const r = await postJSON('/api/mfg/skip/remove', {
+                page_id: btn.getAttribute('data-skip-page') || '',
+                row: Number(btn.getAttribute('data-skip-row') || 0),
+            });
+            if (!r.ok) {
+                alert('⚠ ' + (r.data.message || '戻せませんでした'));
+                btn.disabled = false;
+                return;
+            }
+            location.reload();
+        } catch (err) {
+            alert('⚠ 通信に失敗しました: ' + err);
+            btn.disabled = false;
+        }
+    }
 
     // 相乗りの候補を押すと、欄にその部材発注書のページ番号が入る（2026-10-21・ext/toho/order_join.go）。
     function pickJoin(btn) {

@@ -127,7 +127,8 @@ func collectSupplies(db cms.ReadOnlyDB, canView func(int) bool) map[string][]*su
 	}
 	read(ourOrderItemsType, supplyOrdered)
 	read(OrderDraftType, supplyDrafted)
-	// （手配不要表〔supplySkipped〕を読む道は、2026-10-21 に手配不要表ごと外した——作り直すまで数えない。）
+	// 手配不要表（2026-10-21 午後に製造ページの中へ作り直した・mfg_skip.go）。
+	read(SkipType, supplySkipped)
 	for _, list := range out {
 		sort.SliceStable(list, func(i, j int) bool { return list[i].kind < list[j].kind })
 	}
