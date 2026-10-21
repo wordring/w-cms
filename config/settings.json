@@ -24,6 +24,7 @@
     "弊社品番": { "type": "ref" },
     "案件": { "type": "ref" },
     "製造": { "type": "ref" },
+    "内訳": { "type": "text" },
     "見積番号": { "type": "code" },
     "見積日": { "type": "date" },
     "見積担当": { "type": "ref" },

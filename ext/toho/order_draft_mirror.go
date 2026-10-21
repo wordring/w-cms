@@ -39,6 +39,8 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	// この表が何枚目かを数えます（画面が「どの表から作るか」を送るため）。
 	idx := draftIndexOf(ctx)
+	// 仕入先の初めの値は、表の「推奨業者」が1社にそろっていればその社（2026-10-21・§6.3）。行ごとの「外す」を足す前に読む。
+	vendor := draftVendorOf(el)
 	// ⚠ **行ごとに「戻す」を付けます**（2026-09-22 ユーザー:「**発注部材表から
 	//    未手配の一覧へ戻す方法がありません**」）。
 	//    ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、ここから消せば
@@ -48,7 +50,7 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
 	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+
-		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx)+`</div>`)
+		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx, vendor)+`</div>`)
 	return false, nil
 }
 
@@ -66,6 +68,31 @@ func addDraftRowButtons(table *html.Node, pageID string, idx int) {
 	})
 }
 
+// draftVendorOf は、発注部材表の「推奨業者」の列の値が1社にそろっていればその社を、そうでなければ空を返します。
+func draftVendorOf(table *html.Node) string {
+	rows := rowsOf(table)
+	if len(rows) < 2 {
+		return ""
+	}
+	vi := headerIndexOf(rows[0], vendorLabel)
+	if vi < 0 {
+		return ""
+	}
+	one := ""
+	for _, tr := range rows[1:] {
+		v := strings.TrimSpace(cellText(tr, vi))
+		switch {
+		case v == "":
+			return ""
+		case one == "":
+			one = v
+		case v != one:
+			return ""
+		}
+	}
+	return one
+}
+
 // draftIndexOf は、その表がページの何枚目の発注部材表かを返します（1始まり）。
 //
 // ⚠ **鏡は表ごとに呼ばれる**ので、自分が何枚目かは自分では分かりません。
@@ -78,14 +105,15 @@ func draftIndexOf(ctx *cms.MirrorContext) int {
 //
 // ⚠ **仕入先と差出人はここで決めます**——未発注の表ではありません。
 // **部材発注書は1枚に1社**で、その1社が決まるのは**この表を作り終えたとき**だからです。
-func draftFormHTML(user *auth.User, pageID string, idx int) string {
+// supplier は仕入先の欄の初めの値です（空なら空の欄）。
+func draftFormHTML(user *auth.User, pageID string, idx int, supplier string) string {
 	f := func(id, label, ph, typ string) string {
 		return searchFieldHTML("draft", id, label, ph, typ)
 	}
 	return `<div class="matsearch-form draft-form" data-draft-page="` +
 		stdhtml.EscapeString(pageID) + `" data-draft-index="` + strconv.Itoa(idx) + `">` +
 		signerFieldHTML(user) +
-		f("supplier", "仕入先", "みなと商店", "text") +
+		strings.Replace(f("supplier", "仕入先", "みなと商店", "text"), `/></label>`, ` value="`+stdhtml.EscapeString(supplier)+`"/></label>`, 1) +
 		f("order_at", "部材発注日", "", "date") +
 		f("due", "納期", "", "date") +
 		f("note", "備考", "定尺で結構です", "text") +

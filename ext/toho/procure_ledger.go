@@ -107,24 +107,22 @@ func collectSupplies(db cms.ReadOnlyDB, canView func(int) bool) map[string][]*su
 			if !canView(r.PageID) {
 				continue
 			}
-			productID, ok := page.NormalizeID(strings.TrimSpace(r.Values["our-item-id"]))
-			if !ok || productID == "" {
-				continue // 弊社品番の無い行は、どの加工製品のぶんか語らない（混ぜない）
-			}
 			key := orderRowKey(def, r)
 			if key == "" {
 				continue
 			}
-			q := cms.VocabQuantity(r)
-			s := &supply{kind: kind, qty: q, left: q}
-			if id, ok := page.NormalizeID(strings.TrimSpace(r.Values["for-order"])); ok && id != "" {
-				s.forOrder = pageNum(id)
+			// 1行が、いくつかの案件・加工製品のぶんを持つことがある（内訳・2026-10-21・order_merge.go）——ぶんごとに手当てを分ける。
+			for _, e := range rowSupplies(r) {
+				s := &supply{kind: kind, qty: e.Qty, left: e.Qty}
+				if e.Order != "" {
+					s.forOrder = pageNum(e.Order)
+				}
+				if kind == supplyOrdered {
+					s.doc = ProcurementOrder{PageID: r.PageID, Title: cms.PageTitleByID(r.PageID)}
+				}
+				k := procKey(pageNum(e.Product), key)
+				out[k] = append(out[k], s)
 			}
-			if kind == supplyOrdered {
-				s.doc = ProcurementOrder{PageID: r.PageID, Title: cms.PageTitleByID(r.PageID)}
-			}
-			k := procKey(pageNum(productID), key)
-			out[k] = append(out[k], s)
 		}
 	}
 	read(ourOrderItemsType, supplyOrdered)
@@ -134,6 +132,45 @@ func collectSupplies(db cms.ReadOnlyDB, canView func(int) bool) map[string][]*su
 		sort.SliceStable(list, func(i, j int) bool { return list[i].kind < list[j].kind })
 	}
 	return out
+}
+
+// rowSupplies は部材発注明細・発注部材表の1行を、案件×加工製品のぶんに分けます（数は行の数量）。
+//
+//   - 内訳（`案件/弊社品番:数`）が読めれば、そのぶんごと。人が数量を内訳の合計より増やしたら（定尺に丸めた など）、
+//     増えたぶんは案件の無い手当て（在庫）として最初の加工製品に足す。減らしたら、後ろのぶんから減らす。
+//   - 内訳が無ければ（読めなければ）、弊社品番と案件の列の1つ。弊社品番の無い行は、どの加工製品のぶんか語らないので数えない（混ぜない）。
+func rowSupplies(r cms.VocabRow) []breakdownEntry {
+	q := cms.VocabQuantity(r)
+	if es, ok := parseBreakdown(r.Values["breakdown"]); ok {
+		sum := 0
+		for _, e := range es {
+			sum += e.Qty
+		}
+		switch {
+		case q > sum:
+			es = append(es, breakdownEntry{Product: es[0].Product, Qty: q - sum})
+		case q < sum:
+			cut := sum - q
+			for i := len(es) - 1; i >= 0 && cut > 0; i-- {
+				d := es[i].Qty
+				if d > cut {
+					d = cut
+				}
+				es[i].Qty -= d
+				cut -= d
+			}
+		}
+		return es
+	}
+	productID, ok := page.NormalizeID(strings.TrimSpace(r.Values["our-item-id"]))
+	if !ok || productID == "" {
+		return nil
+	}
+	e := breakdownEntry{Product: productID, Qty: q}
+	if id, ok := page.NormalizeID(strings.TrimSpace(r.Values["for-order"])); ok && id != "" {
+		e.Order = id
+	}
+	return []breakdownEntry{e}
 }
 
 // openOrderRows は手配の対象になる受注の行を集めます（受注残表と同じ線引き）——移行中の受注ページ・状態が完了・

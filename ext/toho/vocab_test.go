@@ -94,6 +94,12 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 func TestOrderDraftSharesColumnsWithOrderItems(t *testing.T) {
 	draft := columnsOf(OrderDraftType)
 	items := columnsOf(ourOrderItemsType)
+	// 例外は1つ——発注部材表の右端の「推奨業者」（2026-10-21・§6.3）。仕入先の欄の初めの値に使うだけで、部材発注書では仕入先のタグになる。
+	if n := len(draft); n > 0 && draft[n-1].Label == vendorLabel {
+		draft = draft[:n-1]
+	} else {
+		t.Errorf("⚠ 発注部材表の右端に「%s」がありません", vendorLabel)
+	}
 	if len(draft) != len(items) {
 		t.Fatalf("列の数が違います: 発注部材表 %d / 部材発注明細表 %d", len(draft), len(items))
 	}

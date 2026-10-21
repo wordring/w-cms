@@ -160,6 +160,10 @@ func orderLineValue(ln ourOrderLine, field string) string {
 		return strings.TrimSpace(ln.ForOrder)
 	case "mfg":
 		return strings.TrimSpace(ln.Mfg)
+	case "breakdown":
+		return strings.TrimSpace(ln.Breakdown)
+	case "vendor":
+		return strings.TrimSpace(ln.Vendor)
 	case "item-id":
 		return strings.TrimSpace(ln.ItemID)
 	case "kind":

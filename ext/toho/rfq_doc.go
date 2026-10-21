@@ -94,6 +94,7 @@ func buildRFQDocHTML(tmpl, pageID, supplier, date, note, signerID string, lines 
 			"our-item-id": ln.ProductID,
 			"for-order":   ln.ForOrder,
 			"mfg":         ln.Mfg,
+			"breakdown":   ln.Breakdown,
 			"kind":        ln.Kind,
 			"no":          ln.No,
 			"work":        ln.Work,

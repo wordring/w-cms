@@ -1493,6 +1493,8 @@ delegateClick([
                 spec: at(cells, '仕様'), supplied: at(cells, '支給'),
                 quantity: at(cells, '数量'), unit: at(cells, '単位'),
                 cost: at(cells, '単価'), note: at(cells, '備考'),
+                // 製造・内訳も運ぶ（2026-10-21・ext/toho/order_merge.go）——内訳は1行にまとめた行の案件×加工製品ごとの数で、運ばないと手配済みの数え方が案件を見失う。
+                mfg: at(cells, '製造'), breakdown: at(cells, '内訳'),
             };
             // 空の行（書き足す取っ掛かりとして置いた1行）は送りません。
             if (Object.values(ln).every((v) => !v)) continue;

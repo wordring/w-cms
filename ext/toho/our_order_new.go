@@ -42,6 +42,10 @@ type ourOrderLine struct {
 	ForOrder string `json:"for_order,omitempty"`
 	// Mfg は「どの製造ページの分か」（2026-10-21・明細の列「製造」）。製造ページの発注部材表から作ると、作る口が埋めます。
 	Mfg string `json:"mfg,omitempty"`
+	// Breakdown は1行にまとめた行の内訳（`案件/弊社品番:数` を「、」で・2026-10-21・order_merge.go）。
+	Breakdown string `json:"breakdown,omitempty"`
+	// Vendor は推奨業者（発注部材表だけの列・2026-10-21）。
+	Vendor string `json:"vendor,omitempty"`
 	// ItemID・Color は `品番`・`表面`（2026-09-25 に足した）。⚠ それまで運んでいなかった
 	// ので、**発注部材表から部材発注書を作ると品番と表面が落ちていました**（塗装・鍍金の
 	// 部材発注書で「緑」が消える）。
@@ -219,6 +223,7 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 			"our-item-id": ln.ProductID,
 			"for-order":   ln.ForOrder,
 			"mfg":         ln.Mfg,
+			"breakdown":   ln.Breakdown,
 			"kind":        ln.Kind,
 			"no":          ln.No,
 			"work":        ln.Work,

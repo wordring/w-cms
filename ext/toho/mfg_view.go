@@ -272,8 +272,12 @@ func mfgPartLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int
 			continue
 		}
 		need := map[string]int{}
+		vendor := map[string]string{}
 		for _, it := range productNeeds(database.DB, pageNum(pid), int(qty)) {
 			need[it.Key] += it.Required
+			if vendor[it.Key] == "" {
+				vendor[it.Key] = it.Vendor
+			}
 		}
 		for _, u := range items {
 			if u.TempRow > 0 || page.FormatID(u.OrderPageID) != order || page.FormatID(u.ProductPageID) != pid {
@@ -287,10 +291,15 @@ func mfgPartLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int
 				continue
 			}
 			v := u.Values
+			// 仕入先の初めの値は、部材の表の推奨業者（2026-10-21・§6.3）。材料表には推奨業者の列が無いので、前に買った仕入先。
+			vend := strings.TrimSpace(vendor[u.Key])
+			if vend == "" {
+				vend = strings.TrimSpace(u.Supplier)
+			}
 			lines = append(lines, ourOrderLine{
 				ProductID: pid, ForOrder: order, Mfg: page.FormatID(mfgID), Kind: u.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], Work: v["加工内容"],
 				Material: u.Material, Shape: u.Shape, Size: u.Size, Color: v["表面"], Spec: v["仕様"], Supplied: v["支給"],
-				Quantity: strconv.Itoa(q), Cost: unorderedCostValue(u),
+				Quantity: strconv.Itoa(q), Cost: unorderedCostValue(u), Vendor: vend,
 			})
 		}
 	}
@@ -320,14 +329,19 @@ func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, msg)
 		return
 	}
+	// 同じ部材は1行にまとめ（内訳つき）、推奨業者ごとに発注部材表を分ける（2026-10-21・order_merge.go）。
+	lines = mergeOrderLines(lines)
+	groups := splitByVendor(lines)
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, _, _ := putLinesIntoDraft(cur, "", lines)
-		return out
+		for _, g := range groups {
+			cur, _, _ = putLinesIntoDraft(cur, "", g)
+		}
+		return cur
 	}) {
 		return
 	}
-	auth.Audit(user.Username, "mfg.parts", pageID+" "+strconv.Itoa(len(lines))+"行")
-	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(lines), "skipped": skipped})
+	auth.Audit(user.Username, "mfg.parts", pageID+" "+strconv.Itoa(len(lines))+"行・"+strconv.Itoa(len(groups))+"表")
+	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(lines), "tables": len(groups), "skipped": skipped})
 }
 
 // unorderedCostValue は部材発注書へ送る単価です。

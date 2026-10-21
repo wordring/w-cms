@@ -58,6 +58,8 @@ type ProcurementItem struct {
 	// ⚠ **未手配の一覧が「発注部材表に入っている分」を引くのに使います**
 	// （2026-09-22）——**同じ鍵**（`procKey`）で束ねないと、**引き算が合いません**。
 	Key string `json:"-"`
+	// Vendor は部材の表の「推奨業者」です（2026-10-21・§6.3——発注部材表の仕入先の初めの値。列の無い表〔材料表〕は空）。
+	Vendor string `json:"-"`
 	// Values は発注の表の列ごとの値です（2026-09-28・種類の columns から組む）——必要部材表の行が
 	// 発注部材表へ運ぶ値。数量は含まない（残要手配数を運ぶ）。
 	Values map[string]string `json:"values,omitempty"`
@@ -194,7 +196,7 @@ func productNeeds(db cms.ReadOnlyDB, productID, orderQty int) []ProcurementItem 
 			}
 			per := k.perUnit(def, m)
 			out = append(out, ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: per, Key: key,
-				Values: vals, Required: per * orderQty, Remaining: per * orderQty})
+				Values: vals, Required: per * orderQty, Remaining: per * orderQty, Vendor: labelValue(def, m, vendorLabel)})
 		}
 	}
 	return out
