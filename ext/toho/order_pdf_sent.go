@@ -127,7 +127,7 @@ func overwriteUnsentOrderPDF(w http.ResponseWriter, user *auth.User, pageID stri
 	}
 	stored, _, shown := shownOrderPDF(user, pageID, body)
 	if !shown || !strings.EqualFold(stored[strings.LastIndexByte(stored, '.')+1:], "pdf") ||
-		shownPDFWasSent(body, pageID, attachIDOf(stored)) {
+		shownPDFWasSent(body, pageID, attachIDOf(stored)) || isOrderSending(pageID) {
 		return madeOrderPDF{}, false, false
 	}
 	pdf, err := buildOrderPDF(body, user)

@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/ext/comm/contacts"
@@ -99,16 +100,19 @@ func closingDayOf(v string) (int, bool) {
 	if err != nil || n < 1 || n > 31 {
 		return 0, false
 	}
-	if n >= 28 {
-		return 0, true // 28日より後は、短い月で末日と同じになるので末日として扱う
+	if n == 31 {
+		return 0, true // 31日締めは末日と同じ
 	}
+	// 28〜30日はそのまま（その日が無い月は末日——closingIn）。2026-10-22 の見直しまで末日に丸めていて、31日のある月の
+	// 30日締めで、31日の納品がその月の請求に入っていた。
 	return n, true
 }
 
-// closingIn は y年m月の締め日です（day 0 は末日）。
+// closingIn は y年m月の締め日です（day 0 は末日。その日が無い月〔2月の30日など〕も末日）。
 func closingIn(y int, m time.Month, day int) time.Time {
-	if day == 0 {
-		return time.Date(y, m+1, 0, 0, 0, 0, 0, time.Local)
+	last := time.Date(y, m+1, 0, 0, 0, 0, 0, time.Local)
+	if day == 0 || day > last.Day() {
+		return last
 	}
 	return time.Date(y, m, day, 0, 0, 0, 0, time.Local)
 }
@@ -424,12 +428,25 @@ func InvoiceNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	close := closeT.Format("2006-01-02")
+	// まだ請求していない行を数えてから請求書を作るまでを、1つずつ通す（二度押し・2人が同時に作ると、同じ行を2枚の
+	// 請求書に入れた・2026-10-22 の見直し）。
+	invoiceNewMu.Lock()
+	defer invoiceNewMu.Unlock()
 	all, noPrice := unbilledLines(user)
 	var mine []invoiceLine
-	for c, ls := range all {
+	// 客先の名前が揺れた2つ（全角と半角など）が同じ客先なら、両方の行を入れる（どちらか一方だけを、決まらない順で選んでいた）。
+	clients := make([]string, 0, len(all))
+	for c := range all {
+		clients = append(clients, c)
+	}
+	sort.Strings(clients)
+	for _, c := range clients {
+		ls := all[c]
 		if cms.NormalizeText(c) == cms.NormalizeText(client) {
-			mine = ls
-			client = c
+			if mine == nil {
+				client = c // 名前は、並べて最初のもの（いつも同じ）
+			}
+			mine = append(mine, ls...)
 		}
 	}
 	lines, later := linesUntil(mine, close)
@@ -468,3 +485,6 @@ func InvoiceNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "url": "/" + newID,
 		"rows": len(lines), "later": later, "no_price": noPrice[client]})
 }
+
+// invoiceNewMu は請求書づくり（InvoiceNewAPIHandler）を1つずつ通すロックです。
+var invoiceNewMu sync.Mutex

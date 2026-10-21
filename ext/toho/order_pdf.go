@@ -21,6 +21,7 @@ package toho
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -177,7 +178,8 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	if allPriced(rows) {
 		total := 0
 		for _, r := range rows {
-			total += cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"])
+			a, _ := orderLineAmount(r)
+			total += a
 		}
 		pdfTextRight(p, pdfRight, y, 11, "合計金額（税抜）　"+comma(total)+" 円")
 		y += pdfLine
@@ -329,7 +331,11 @@ func pdfCellValue(r map[string]string, c orderPDFColumn) string {
 		if strings.TrimSpace(r["単価"]) == "" {
 			return ""
 		}
-		return comma(cms.VocabNumber(r["数量"]) * cms.VocabNumber(r["単価"]))
+		a, ok := orderLineAmount(r)
+		if !ok {
+			return ""
+		}
+		return comma(a)
 	}
 	// 外注加工の番号は **弊社品番-番号** で刷ります（2026-09-28・`000235-1`）——番号は
 	// 加工製品ごとの連番なので、弊社品番が無いと外注先から問い合わせを受けても引けません。
@@ -340,9 +346,43 @@ func pdfCellValue(r map[string]string, c orderPDFColumn) string {
 	}
 	v := r[c.Label]
 	if c.Right && v != "" {
-		return comma(cms.VocabNumber(v))
+		if f, ok := estimateNumber(v); ok {
+			return commaDecimal(f)
+		}
+		return v // 数として読めない字は、そのまま刷る（0 にしない）
 	}
 	return v
+}
+
+// orderLineAmount は1行の金額（数量 × 単価・円に四捨五入）です。どちらかが読めなければ ok=false。
+//
+// ⚠ 小数（単価 12.5 円・数量 2.5 kg）を整数として読み、0 と刷っていた（7年残す紙・2026-10-22 の見直し）。
+func orderLineAmount(r map[string]string) (int, bool) {
+	q, okQ := estimateNumber(r["数量"])
+	p, okP := estimateNumber(r["単価"])
+	if !okQ || !okP {
+		return 0, false
+	}
+	return int(math.Round(q * p)), true
+}
+
+// commaDecimal は数を「1,234.5」の形にします（小数は書かれた桁まで・整数なら小数点を付けない）。
+func commaDecimal(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	intPart, frac, hasFrac := strings.Cut(s, ".")
+	neg := strings.HasPrefix(intPart, "-")
+	n, err := strconv.Atoi(strings.TrimPrefix(intPart, "-"))
+	if err != nil {
+		return s
+	}
+	out := comma(n)
+	if neg {
+		out = "-" + out
+	}
+	if hasFrac {
+		out += "." + frac
+	}
+	return out
 }
 
 // fitTableColumns は中身を測って、**列幅**と**字の大きさ**を決めます。
@@ -677,7 +717,8 @@ func orderPaperTitleOf(body string) string {
 // 書いてある行だけ足した合計は**その紙の注文の合計ではない**ので、嘘の数字になります。
 func allPriced(rows []map[string]string) bool {
 	for _, r := range rows {
-		if strings.TrimSpace(r["単価"]) == "" {
+		// 単価のほか、数量も読めなければ合計を出さない（読めない行を 0 円として足した合計を刷らない・2026-10-22 の見直し）。
+		if _, ok := orderLineAmount(r); !ok {
 			return false
 		}
 	}

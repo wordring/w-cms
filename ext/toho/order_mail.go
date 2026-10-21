@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/ext/comm"
@@ -121,6 +122,7 @@ func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]
 	// 探しやすい（09-22 の画面の送り方と同じ名前）。
 	if body, err := cms.ReadPageBody(pageID); err == nil {
 		if stored, _, shown := shownOrderPDF(user, pageID, body); shown {
+			markOrderSending(pageID)
 			return []comm.ComposeAttachment{{PageID: pageID, File: stored, Name: orderMailFileName(pageID), Checked: true}}, true
 		}
 	}
@@ -128,7 +130,24 @@ func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]
 	if !ok {
 		return nil, false
 	}
+	markOrderSending(pageID)
 	return []comm.ComposeAttachment{{PageID: pageID, File: made.File, Name: orderMailFileName(pageID), Checked: true}}, true
+}
+
+// orderSending は、送っている最中の部材発注書です（ページ → 送り始めた時刻）。そのあいだ「PDF作成」は上書きせずに
+// 新しい版を作る——送っている PDF を上書きすると、残した PDF と相手に届いた PDF が違った（2026-10-22 の見直し）。
+// 送れたら外す（afterOrderMail）。送れなかったときは、orderSendingFor で消える。
+var orderSending sync.Map
+
+// orderSendingFor は、送り始めてから送れたか分かるまでの、長くて十分な時間です。
+const orderSendingFor = 10 * time.Minute
+
+func markOrderSending(pageID string) { orderSending.Store(pageID, time.Now()) }
+
+// isOrderSending は、いま送っている最中かです。
+func isOrderSending(pageID string) bool {
+	v, ok := orderSending.Load(pageID)
+	return ok && time.Since(v.(time.Time)) < orderSendingFor
 }
 
 // afterOrderMail は送れたあとに、取消でない行を発注済みにして部材発注日を送った日にし、送った PDF を記録の節
@@ -138,6 +157,7 @@ func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]
 // ⚠ **ここはもう応答を書けません**（メールは出たあと）——書けない・編集中なら理由を返し、送る欄が
 // 「送りましたが、発注済みの印を付けられませんでした」と人に伝えます。
 func afterOrderMail(user *auth.User, pageID, recordID string) error {
+	defer orderSending.Delete(pageID)
 	n, err := strconv.Atoi(pageID)
 	if err != nil {
 		return errors.New("部材発注書のページIDが不正です")
