@@ -10,6 +10,8 @@
 - 出る前に切れた着信は、記録にしません。
 - `-open` を付けると、記録をそのパソコンのブラウザで開きます（電話機のそばのパソコンで動かすとき）。
 
+ND6 は、w-cms と同じ Ubuntu のサーバー機につなぎます（2026-10-21 利用者の答え）。下の 2 の形です。電話に出た人は、スマホやパソコンの w-cms の画面の帯で「🔕 知らせを受ける」を押しておくと、出た電話の記録の知らせを受け、押してその記録を開けます。
+
 ## 1. w-cms の側
 
 秘密の設定（`w-cms.env`）に、次の2つ（別の機械から呼ぶなら3つ）を書いて、w-cms を起こし直します。
@@ -27,7 +29,7 @@
 4. systemd に載せます: `w-cms-phone.service` → `/etc/systemd/system/`。`sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-phone`。
 5. 確かめます: `journalctl -u w-cms-phone -f` に「/dev/aloha-nd6 を開きました」。ND6 の「PC TEST」（機能ボタン）で、番号 `012345678900` の電文が届きます（記録は受話器を上げたときだけできるので、テストの電文では記録はできません）。
 
-## 3. Windows（電話機のそばのパソコン）で動かすとき
+## 3. Windows（電話機のそばのパソコン）で動かすとき（いまは使わない）
 
 1. 製造元のドライバを入れて、デバイスマネージャーの「ポート」で ND6 の COM 番号（例 COM3）を見ます。
 2. 組み立てます: `GOOS=windows go build -o w-cms-phone.exe ./cmd/w-cms-phone`。
