@@ -158,6 +158,7 @@ func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
 	}
 	y = pdfTable(p, y, cols, cells)
 	y += 4
+	y = pdfRoom(p, y, pdfLine) // 合計の行が入らなければ次の紙へ
 	if total, ok := estimateTotal(rows); ok {
 		pdfTextRight(p, pdfRight, y, 11, "合計（税抜）　"+comma(total)+" 円")
 		y += pdfLine

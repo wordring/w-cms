@@ -305,8 +305,14 @@ func parseSourceTable(raw json.RawMessage) orderSourceTable {
 	out := orderSourceTable{Headers: direct.Headers}
 	for _, r := range direct.Rows {
 		// ②-a 行が配列（頼んだ形）。
-		var cells []string
-		if err := json.Unmarshal(r, &cells); err == nil {
+		// 値は文字のほか、数・真偽・null で来ることがある（[1,"ブラケット",100,1200]）——1つずつ文字にする
+		// （文字の配列としてしか読まず、数の混じった行が黙って消えていた・2026-10-22 の見直し）。
+		var anyCells []any
+		if err := json.Unmarshal(r, &anyCells); err == nil {
+			cells := make([]string, len(anyCells))
+			for i, c := range anyCells {
+				cells[i] = jsonCellText(c)
+			}
 			out.Rows = append(out.Rows, cells)
 			continue
 		}

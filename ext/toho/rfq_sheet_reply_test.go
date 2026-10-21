@@ -49,16 +49,16 @@ func TestSheetMailContextTellsTheMail(t *testing.T) {
 	setupExtTest(t, "000500", page.PageMeta{Owner: "root", Mode: "302"})
 	seedPage(t, "000600", cms.TopPageID, sentMailBody("塗装のお見積りのお願い", "2026-07-17T16:39:09+09:00", "図面と参考価格の一覧を送ります"))
 	seedPage(t, "000601", cms.TopPageID, replyMailBody("RE: 塗装のお見積りのお願い", "000600", "希望単価を追記しました"))
-	got := sheetMailContext("000601")
+	got := sheetMailContext(adminUser(), "000601")
 	for _, want := range []string{"RE: 塗装のお見積りのお願い", "希望単価を追記しました", "当社が送った次のメールへの返信", "図面と参考価格の一覧を送ります"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("判定に添える文に %q がありません:\n%s", want, got)
 		}
 	}
-	if got := sheetMailContext("000600"); got != "" {
+	if got := sheetMailContext(adminUser(), "000600"); got != "" {
 		t.Errorf("送ったメールの控えに文脈を足しています: %q", got)
 	}
-	if got := sheetMailContext("000500"); got != "" {
+	if got := sheetMailContext(adminUser(), "000500"); got != "" {
 		t.Errorf("メールの記録でないページに文脈を足しています: %q", got)
 	}
 }

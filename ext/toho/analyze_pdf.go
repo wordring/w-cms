@@ -32,6 +32,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -270,7 +271,7 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 			cms.JSONFail(w, http.StatusBadRequest, terr.Error())
 			return
 		}
-		j, err = judgeOrderSheet(sheetMailContext(pageID) + text)
+		j, err = judgeOrderSheet(sheetMailContext(auth.CurrentUser(r), pageID) + text)
 	} else if mime, ok := analyzeImageMIME[strings.ToLower(filepath.Ext(fileName))]; ok {
 		j, err = judgeOrderImage(mime, pdf)
 	} else {
@@ -593,7 +594,9 @@ const sheetPreamble = `（ここで渡すのはPDFではなく、表計算（Exc
 // 入った表に過ぎないからかもしれませんが、ここから見積もりの返答を作りたいです」——表計算は表しか持たないので、何の表か（客先の
 // 注文か・業者の見積の返事か）を、メールの文脈で判断させる。返事のメール（`親ページID` の先がこちらの送ったメール）なら、
 // 送ったメールも添える（こちらが図面と品物の一覧を送って値段を頼んだ、と読めるように）。
-func sheetMailContext(pageID string) string {
+//
+// 元の送ったメールは、押した人が読めるときだけ添える（読めないメールの中身を Gemini へ渡していた・2026-10-22 の見直し）。
+func sheetMailContext(user *auth.User, pageID string) string {
 	id, err := strconv.Atoi(pageID)
 	if err != nil {
 		return ""
@@ -608,7 +611,7 @@ func sheetMailContext(pageID string) string {
 	}
 	out := "（この表計算は、当社に届いた次のメールの添付です。何の表かは、メールの文脈も見て判断してください。）\n" +
 		mailForJudgment(id, cms.PageTitleByID(id), body) + "\n"
-	if sent, ok := sentMailOf(id); ok {
+	if sent, ok := sentMailOf(id); ok && page.CanView(user, sent) {
 		if sbody, err := cms.ReadPageBody(page.FormatID(sent)); err == nil {
 			out += "\n（このメールは、当社が送った次のメールへの返信です。）\n" + mailForJudgment(sent, cms.PageTitleByID(sent), sbody) + "\n"
 		}
@@ -644,7 +647,22 @@ func judgeOrderSheetWithGemini(text string) (*orderJudgment, error) {
 // ——返答を貼れば同じ道を通るようにしておきます。
 func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	var j orderJudgment
-	if err := json.Unmarshal([]byte(cms.StripJSONFence(respText)), &j); err != nil {
+	data := []byte(cms.StripJSONFence(respText))
+	err := json.Unmarshal(data, &j)
+	// 頼んだのは文字だが、数で返す（"quantity": 5）ことがある——数を文字に直して読み直し、それでも合わない欄があれば
+	// 読めた分で進む（1つの欄のために、発注書番号も明細も全部捨てて Gemini を呼び直させていた・2026-10-22 の見直し）。
+	var te *json.UnmarshalTypeError
+	if errors.As(err, &te) {
+		if fixed, ok := stringifyJSONNumbers(data); ok {
+			j = orderJudgment{}
+			if err = json.Unmarshal(fixed, &j); errors.As(err, &te) {
+				err = nil
+			}
+		} else {
+			err = nil
+		}
+	}
+	if err != nil {
 		// ⚠ **返ってきたものの頭を添えます**（2026-09-20）。それまでは Go の
 		// 型エラーだけを返していて、**何が返ったのか分からないまま**でした
 		// ——実データで「解析に失敗しました」と出たとき、原因を当てられませんでした。
@@ -671,4 +689,33 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 		j.RFQReply.SourceTable = parseSourceTable(j.RFQReply.SourceTableRaw)
 	}
 	return &j, nil
+}
+
+// stringifyJSONNumbers は、JSON の中の数を全部、同じ字の文字に直します（数の字はそのまま——桁を丸めない）。
+// 読めない JSON なら ok=false。
+func stringifyJSONNumbers(data []byte) ([]byte, bool) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var tree any
+	if err := dec.Decode(&tree); err != nil {
+		return nil, false
+	}
+	var walk func(v any) any
+	walk = func(v any) any {
+		switch t := v.(type) {
+		case json.Number:
+			return t.String()
+		case []any:
+			for i := range t {
+				t[i] = walk(t[i])
+			}
+		case map[string]any:
+			for k := range t {
+				t[k] = walk(t[k])
+			}
+		}
+		return v
+	}
+	out, err := json.Marshal(walk(tree))
+	return out, err == nil
 }

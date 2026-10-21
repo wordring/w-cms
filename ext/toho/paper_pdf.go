@@ -188,3 +188,13 @@ func servePaper(w http.ResponseWriter, r *http.Request, makeFn func(w http.Respo
 	}
 	json.NewEncoder(w).Encode(out)
 }
+
+// pdfRoom は、y から高さ need が紙に入らなければ次の紙へ移り、書き始める y を返します
+// （表のすぐ下の合計が、印刷できない下の余白に落ちていた・2026-10-22 の見直し）。
+func pdfRoom(p *gopdf.GoPdf, y, need float64) float64 {
+	if y+need > pdfBottom {
+		p.AddPage()
+		return pdfTop
+	}
+	return y
+}

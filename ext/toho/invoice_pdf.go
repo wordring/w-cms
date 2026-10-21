@@ -168,6 +168,7 @@ func buildInvoicePDF(body string, viewer *auth.User) ([]byte, error) {
 	}
 	y = pdfTable(p, y, cols, cells)
 	y += 6
+	y = pdfRoom(p, y, 3*pdfLine) // 合計の3行が入らなければ次の紙へ
 	rate := ""
 	if r, ok := TaxRate(); ok {
 		rate = "（" + rateText(r) + "%対象）"

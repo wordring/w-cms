@@ -84,6 +84,11 @@ func ParseDXFTexts(content []byte) []dxfText {
 		kind, text, x, y, h = "", "", 0, 0, 0
 	}
 	for sc.Scan() {
+		// 文字の数に上限（表題欄の文字は多くて数百。何十万もの文字を持つ図面で、値とラベルの突き合わせ〔数の2乗〕が
+		// 解析の要求を長く止めた・2026-10-22 の見直し）。
+		if len(out) >= maxDXFTexts {
+			break
+		}
 		code := strings.TrimSpace(sc.Text())
 		if !sc.Scan() {
 			break
@@ -238,3 +243,6 @@ var labelSet = func() map[string]bool {
 	}
 	return m
 }()
+
+// maxDXFTexts は、DXF から拾う文字の数の上限です（ParseDXFTexts）。
+const maxDXFTexts = 5000

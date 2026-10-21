@@ -167,16 +167,20 @@ func buildDeliveryPDF(body string, viewer *auth.User) ([]byte, error) {
 	}
 	y = pdfTable(p, y, cols, cells)
 	y += 6
+	y = pdfRoom(p, y, 3*pdfLine) // 合計の3行が入らなければ次の紙へ
 	if okTotal {
-		tax := 0
-		label := "消費税"
 		if rate, ok := TaxRate(); ok {
-			tax = int(float64(sub)*rate/100 + 0.5)
-			label = "消費税（" + rateText(rate) + "%）"
-		}
-		for _, ln := range [][2]string{{"小計", comma(sub)}, {label, comma(tax)}, {"合計", comma(sub + tax)}} {
-			pdfTextRight(p, pdfRight, y, 11, ln[0]+"　"+ln[1]+" 円")
+			tax := int(float64(sub)*rate/100 + 0.5)
+			label := "消費税（" + rateText(rate) + "%）"
+			for _, ln := range [][2]string{{"小計", comma(sub)}, {label, comma(tax)}, {"合計", comma(sub + tax)}} {
+				pdfTextRight(p, pdfRight, y, 11, ln[0]+"　"+ln[1]+" 円")
+				y += pdfLine
+			}
+		} else {
+			// 税率が決まっていなければ、消費税と合計を書かない（「消費税 0 円」と書くと、事実でないことが紙に載る）。
+			pdfTextRight(p, pdfRight, y, 11, "小計　"+comma(sub)+" 円")
 			y += pdfLine
+			pdfText(p, pdfLeft, y, pdfFontSz, "※ 消費税率が設定されていないため、消費税と合計は記載していません。")
 		}
 	} else if anyPrice {
 		pdfText(p, pdfLeft, y, pdfFontSz, "※ 単価の決まっていない品があるため、合計は記載していません。")

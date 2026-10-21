@@ -326,7 +326,8 @@ func estimateNumber(s string) (float64, bool) {
 		s = norm
 	}
 	v, err := strconv.ParseFloat(strings.ReplaceAll(s, ",", ""), 64)
-	if err != nil {
+	// 「NaN」「Inf」は数とみなさない（紙の金額や納めた数が壊れた値になる・2026-10-22 の見直し）。
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0, false
 	}
 	return v, true
