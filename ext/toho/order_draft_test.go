@@ -55,13 +55,16 @@ func TestOrderDraftStartsEmpty(t *testing.T) {
 // ⚠ 人は表を見て「これでよい」と判断し、そのまま紙になると思っています。**違っていたら、
 // どちらを信じてよいか分かりません。**
 func TestOrderDraftFollowsTheSameRulesAsThePaper(t *testing.T) {
-	// 材料の行（品名は焼き直しなので書かない・単価0は書かない）。
+	// 材料の行（品名は焼き直しなので書かない）。人が書いた単価 0 は、表にも紙にも 0 のまま（2026-10-21 から——「0円とは別」）。
 	ln := ourOrderLine{ProductID: "000080", Material: "鉄", Size: "t4.5",
 		ItemName: "鉄 t4.5", Quantity: "2", Cost: "0"}
 	draft := orderDraftHTML([]ourOrderLine{ln})
 	paper := testOurOrder("000200", "みなと商店", "2026-09-22", "", "", "",
 		[]ourOrderLine{ln})
-	for _, bad := range []string{"鉄 t4.5</td>", "<td>0</td>"} {
+	if !strings.Contains(draft, "<td>0</td>") || !strings.Contains(paper, "<td>0</td>") {
+		t.Errorf("⚠ 人が書いた単価 0 が、表か紙で消えています:\n%s\n%s", draft, paper)
+	}
+	for _, bad := range []string{"鉄 t4.5</td>"} {
 		if strings.Contains(draft, bad) {
 			t.Errorf("⚠ 発注部材表に %q が出ています（紙には出ません）:\n%s", bad, draft)
 		}

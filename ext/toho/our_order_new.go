@@ -265,20 +265,17 @@ func fillOrderNote(d *cms.PageDraft, note string) error {
 	return nil
 }
 
-// moneyOrEmpty は単価を書き出します。
+// costCell は単価を書き出します（人が表に書いたとおり）。
 //
-// ⚠ **`0` は書きません。** 紙の上の `0` は**「0円で発注した」**という意味で、
-// **「まだ分からない」とは別のこと**です——⚠ **仕入先は紙に書いてあるとおりに
-// 読みます**。空欄なら「あとで決める」と伝わります。
+// ⚠ **`0` も書きます**（2026-10-21 から。それまでは `0` を空に落としていた）。紙の上の `0` は**「0円で発注した」**、
+// 空欄は**「まだ分からない」**で、別のことです——人が `0` と書いたなら、それは「0円」です。
 //
-// ⚠ **送り元でも落としていますが、ここでも落とします。** この口は画面以外からも
-// 叩けるので、**紙に出る手前が最後の砦**です。
-func moneyOrEmpty(s string) string {
-	v := strings.TrimSpace(s)
-	if n, err := strconv.Atoi(v); err == nil && n == 0 {
-		return ""
-	}
-	return v
+// > 2026-09-22 利用者:「価格を入れないという選択肢もあると便利です。（0円とは別がありがたい）」
+//
+// 「参考単価が無い」を `0` にしないのは、**送り元**の仕事です（機械が集めるとき——mfg_view.go の `unorderedCostValue`）。
+// ここで落とすと、人が発注部材表に書いた `0` まで空になります（【要求】製造 §4 の「⚠ いま」に書いていた食い違い）。
+func costCell(s string) string {
+	return strings.TrimSpace(s)
 }
 
 // itemNameOf は、その行に書く `品名` を返します。
@@ -323,7 +320,7 @@ func ourOrderRowValues(ln ourOrderLine) map[string]string {
 		"color":       ln.Color,
 		"quantity":    ln.Quantity,
 		"unit":        ln.Unit,
-		"cost":        moneyOrEmpty(ln.Cost),
+		"cost":        costCell(ln.Cost),
 		"note":        ln.Note,
 		// ⚠ **状態は「未発注」から始めます**（2026-09-22）。紙はできましたが、
 		//    **まだ外へ出ていません**——メール・FAX・手渡しのどれかで出したときに

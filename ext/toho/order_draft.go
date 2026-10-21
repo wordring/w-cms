@@ -155,7 +155,7 @@ func orderLineValue(ln ourOrderLine, field string) string {
 	case "unit":
 		return strings.TrimSpace(ln.Unit)
 	case "cost":
-		return moneyOrEmpty(ln.Cost)
+		return costCell(ln.Cost)
 	case "note":
 		return strings.TrimSpace(ln.Note)
 	case "status":

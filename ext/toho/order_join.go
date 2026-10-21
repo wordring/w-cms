@@ -29,7 +29,7 @@ import (
 // joinKey は相乗りで「同じ部材の行」と見る鍵です（数量・案件・弊社品番・製造・内訳・推奨業者は見ない）。
 func joinKey(ln ourOrderLine) string {
 	parts := []string{ln.Kind, ln.No, ln.ItemID, itemNameOf(ln), ln.Work, ln.Material, ln.Shape, ln.Size, ln.Color,
-		ln.Spec, ln.Supplied, ln.Unit, moneyOrEmpty(ln.Cost), ln.Note}
+		ln.Spec, ln.Supplied, ln.Unit, costCell(ln.Cost), ln.Note}
 	for i, p := range parts {
 		parts[i] = cms.NormalizeText(strings.TrimSpace(p))
 	}

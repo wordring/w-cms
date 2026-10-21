@@ -114,7 +114,7 @@ func buildRFQDocHTML(tmpl, pageID, supplier, date, note, signerID string, lines 
 			"status": rfqLineUnanswered,
 		}
 		if answered {
-			row["cost"] = moneyOrEmpty(ln.Cost)
+			row["cost"] = costCell(ln.Cost)
 			row["status"] = rfqLineAnswered
 		}
 		rows = append(rows, row)

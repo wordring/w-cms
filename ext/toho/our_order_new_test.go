@@ -73,21 +73,24 @@ func TestBuildOurOrderHeaderComesFromDeclaration(t *testing.T) {
 	}
 }
 
-// TestBuildOurOrderNeverWritesZeroPrice は、⚠ **単価に `0` を書かない**ことを
-// 固定します。
+// TestBuildOurOrderKeepsZeroButNotUnknown は、単価の「0」と「空」を分けて運ぶことを固定します（2026-10-21）。
 //
-// ⚠ **紙の `0` は「0円で発注した」という意味**です。参考単価が引けなかった
-// （＝まだ分からない）ことを `0` と書くと、**仕入先は書いてあるとおりに読みます**。
-func TestBuildOurOrderNeverWritesZeroPrice(t *testing.T) {
-	body := testOurOrder("000139", "みなと商店", "2026-09-21", "", "", "",
-		[]ourOrderLine{{ProductID: "000080", Material: "鉄", Size: "t4.5", Quantity: "6", Cost: "0"}})
-	if strings.Contains(body, "<td>0</td>") {
-		t.Errorf("⚠ 単価に 0 が書かれています（0円で発注したと読まれます）:\n%s", body)
+//   - ⚠ **人が書いた `0` は `0` のまま**部材発注書に書く（「0円とは別がありがたい」——2026-09-22 利用者）。
+//     それまでは `0` を空に落としていて、自社への発注で「0円」と書けませんでした。
+//   - 空は空のまま（「まだ分からない」）。値のある単価も、そのまま。
+//   - ⚠ **参考単価が無いことを `0` にしないのは送り元**（`unorderedCostValue`）——紙の `0` は「0円で発注した」と読まれます。
+func TestBuildOurOrderKeepsZeroButNotUnknown(t *testing.T) {
+	for _, tc := range []struct{ cost, want string }{{"0", "<td>0</td>"}, {"860", "<td>860</td>"}} {
+		body := testOurOrder("000139", "みなと商店", "2026-09-21", "", "", "",
+			[]ourOrderLine{{ProductID: "000080", Material: "鉄", Size: "t4.5", Quantity: "6", Cost: tc.cost}})
+		if !strings.Contains(body, tc.want) {
+			t.Errorf("⚠ 人が書いた単価 %q が部材発注書に残っていません:\n%s", tc.cost, body)
+		}
 	}
-	// ⚠ **値のある単価まで落とさないこと**（これが無いと「全部空にする」でも通ります）。
-	ok := testOurOrder("000139", "みなと商店", "2026-09-21", "", "", "",
-		[]ourOrderLine{{ProductID: "000080", Material: "鉄", Size: "t4.5", Quantity: "6", Cost: "860"}})
-	if !strings.Contains(ok, "<td>860</td>") {
-		t.Errorf("⚠ 値のある単価まで落としています:\n%s", ok)
+	if got := unorderedCostValue(UnorderedItem{Cost: 0}); got != "" {
+		t.Errorf("⚠ 参考単価の無い部材に %q を送ります（空を送ること——0 は「0円で発注した」と読まれる）", got)
+	}
+	if got := unorderedCostValue(UnorderedItem{Cost: 860}); got != "860" {
+		t.Errorf("参考単価 860 が %q になりました", got)
 	}
 }
