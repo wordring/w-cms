@@ -42,10 +42,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/database"
 )
 
 // 部材発注明細表の `状態` の値です。
@@ -156,6 +158,9 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		out, n := setOrderLineStatus(cur, req.Row, value)
 		changed = n
+		if n > 0 && value == OrderLineDelivered && strings.TrimSpace(cms.PageTagValue(database.DB, pageNum(pageID), DeliveredAtTag)) == "" {
+			out = fillDeliveredAtWhenAllIn(out, time.Now().In(time.Local).Format("2006-01-02"))
+		}
 		return out
 	}) {
 		return
@@ -226,4 +231,53 @@ func setOrderLineStatus(body string, row int, value string) (string, int) {
 		return body, 0
 	}
 	return htmldoc.Render(nodes), changed
+}
+
+// fillDeliveredAtWhenAllIn は、部材発注明細表の取消でない行が全部「納品済」になったら、部材発注書の `納品日` に today を書きます
+// （2026-10-21 夜——業者からの納品は部材発注書ページで受け取る）。`納品日` が既に書いてあるページでは呼びません（呼び手が見る——人が書いた日・分納の最初の日は変えない）。
+//
+// > 2026-10-21 利用者:「部材発注書は納品作業ではなく、発注作業です。業者からの納品は部材発注ページに納めます」
+func fillDeliveredAtWhenAllIn(body, today string) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body
+	}
+	tables := tablesOfType(nodes, ourOrderItemsType)
+	if len(tables) == 0 {
+		return body
+	}
+	live := 0
+	for _, t := range tables {
+		rows := rowsOf(t)
+		if len(rows) < 2 {
+			continue
+		}
+		si := headerIndexOf(rows[0], "状態")
+		if si < 0 {
+			return body
+		}
+		for _, tr := range rows[1:] {
+			cells := cellTexts(tr)
+			if len(cells) == 0 || isHeaderRow(tr) {
+				continue
+			}
+			st := ""
+			if si < len(cells) {
+				st = strings.TrimSpace(cells[si])
+			}
+			if orderLineCancelled(st) {
+				continue
+			}
+			if st != OrderLineDelivered {
+				return body
+			}
+			live++
+		}
+	}
+	if live == 0 {
+		return body
+	}
+	d := cms.EditBody(body)
+	d.ReplaceTag(DeliveredAtTag, today)
+	return d.HTML()
 }
