@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"w-cms/internal/database"
@@ -59,6 +60,9 @@ var (
 // Authenticate はユーザー名とパスワードを検証し、成功すれば User を返します。
 // 失敗回数のロックアウト判定・記録も行います。
 func Authenticate(username, password string) (*User, error) {
+	// 同じ名前の試行は1つずつ通す——確かめ（0.3〜0.5秒）のあいだに並べて送ると、待ちとロックアウトを
+	// 4つずつ抜けられた（2026-10-22 の見直し）。
+	defer lockLoginName(username)()
 	if locked, _ := isLockedOut(username); locked {
 		return nil, ErrLockedOut
 	}
@@ -88,6 +92,38 @@ func Authenticate(username, password string) (*User, error) {
 
 	clearFailures(username)
 	return loadUser(username, isAdmin != 0, primaryGroup.String)
+}
+
+// loginNameLocks は、ログインの名前ごとのロックです（使っている人がいなくなったら捨てる——でたらめの名前で増え続けない）。
+var loginNameLocks = struct {
+	sync.Mutex
+	m map[string]*loginNameLock
+}{m: map[string]*loginNameLock{}}
+
+type loginNameLock struct {
+	sync.Mutex
+	users int
+}
+
+// lockLoginName は名前 name のロックを取り、外す関数を返します。
+func lockLoginName(name string) func() {
+	loginNameLocks.Lock()
+	l := loginNameLocks.m[name]
+	if l == nil {
+		l = &loginNameLock{}
+		loginNameLocks.m[name] = l
+	}
+	l.users++
+	loginNameLocks.Unlock()
+	l.Lock()
+	return func() {
+		l.Unlock()
+		loginNameLocks.Lock()
+		if l.users--; l.users == 0 {
+			delete(loginNameLocks.m, name)
+		}
+		loginNameLocks.Unlock()
+	}
 }
 
 // loadUser は所属グループを解決して User を組み立てます。

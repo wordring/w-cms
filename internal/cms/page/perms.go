@@ -439,7 +439,7 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// 本文と属性サイドカーは「添付ファイル」ではない。本文は画面／API が、属性は
 	// /api/page-meta と権限APIが、それぞれの認可のもとで返す。ここからは配らない。
 	name := parts[len(parts)-1]
-	if strings.EqualFold(name, pageID+".html") || strings.EqualFold(filepath.Ext(name), ".json") {
+	if aliasedFileName(name) || strings.EqualFold(name, pageID+".html") || strings.EqualFold(filepath.Ext(name), ".json") {
 		// .json は本文の属性サイドカーか添付の目録（files/meta.json）で、どちらも配らない。
 		http.NotFound(w, r)
 		return
@@ -489,6 +489,13 @@ func setAttachmentHeaders(w http.ResponseWriter, name string) {
 	}
 }
 
+// aliasedFileName は、Windows が別の名前のファイルとして開く名前かです（末尾の点・空白、ストリーム名の「:」）。
+// ⚠ 「000001.meta.json.」や「meta.json::$DATA」は拡張子の検査を抜けて、Windows では本物の .json を開く
+// （配らないはずの属性と目録が配られていた・2026-10-22 の見直し）。添付の名前にこれらは来ない。
+func aliasedFileName(name string) bool {
+	return strings.ContainsRune(name, ':') || strings.HasSuffix(name, ".") || strings.HasSuffix(name, " ")
+}
+
 // ServeCleanAttachment はきれいなURL（/<ページID>/<ファイル名>）の配信口です
 // （2026-08-31 ユーザー決定「実際に保存される場所を推測されたくない」）。
 // RootHandler がページURLの下の2区画パスをここへ回す。読むのは files/ だけ
@@ -498,7 +505,7 @@ func setAttachmentHeaders(w http.ResponseWriter, name string) {
 func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name string, notFound http.HandlerFunc) {
 	// `.json` は添付にならない拡張子（設定の検査が弾く）。files/ に在る .json は添付の
 	// 目録（`meta.json`・cms.AttachmentMetaFile）なので配らない（2026-09-17）。
-	if strings.ContainsAny(name, "/\\") || name == "" || strings.HasPrefix(name, ".") ||
+	if strings.ContainsAny(name, "/\\") || name == "" || strings.HasPrefix(name, ".") || aliasedFileName(name) ||
 		strings.EqualFold(filepath.Ext(name), ".json") {
 		notFound(w, r)
 		return

@@ -72,3 +72,21 @@ func TestEmbedURLsLimitedToDataDir(t *testing.T) {
 		}
 	})
 }
+
+// srcset は候補を1つずつ確かめ、逆スラッシュの宛先は通さない（2026-10-22 の見直し）。
+func TestEmbedSrcsetAndBackslash(t *testing.T) {
+	for _, src := range []string{
+		`<video><source srcset="/data/master/00/000001/a.png 1x, /api/logout 2x"></video>`,
+		`<img src="\evil.example/x.png">`,
+		`<img src="\api\logout">`,
+	} {
+		out := Sanitize(src)
+		if strings.Contains(out, "logout") || strings.Contains(out, "evil") {
+			t.Errorf("⚠ 宛先が残りました: %s → %s", src, out)
+		}
+	}
+	ok := `<video><source srcset="/data/master/00/000001/a.png 1x, /data/master/00/000001/b.png 2x"></video>`
+	if out := Sanitize(ok); !strings.Contains(out, "b.png") {
+		t.Errorf("添付だけの srcset が落ちました: %s", out)
+	}
+}

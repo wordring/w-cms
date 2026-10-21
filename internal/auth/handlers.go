@@ -6,6 +6,7 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"os"
 	"net/url"
 	"strings"
 )
@@ -54,9 +55,11 @@ func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	// 戻り先を持ち回る。匿名の404画面から来た人を、ログインしたその足で
 	// 目的のページへ返すため（要件定義書 §2.1 の「404統一」と対になる決定）。
 	next := safeNextPath(r.URL.Query().Get("next"))
-	body := strings.Replace(loginPageHTML, "%next%", html.EscapeString(next), 1)
+	// 先に知らせを入れてから戻り先を入れる（戻り先に「%s」が入っていると、知らせが value の中へ入って欄が壊れた・2026-10-22 の見直し）。
+	body := strings.Replace(loginPageHTML, "%s", errMsg, 1)
+	body = strings.Replace(body, "%next%", html.EscapeString(next), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(strings.Replace(body, "%s", errMsg, 1)))
+	w.Write([]byte(body))
 }
 
 // safeNextPath はログイン後の戻り先を検証します。**同一サイト内の絶対パスだけ**を
@@ -246,10 +249,45 @@ func remoteHost(r *http.Request) string {
 }
 
 // isTrustedProxy は、そのアドレスを「前段のプロキシ」とみなすかを返します。
+//
+// 信じるのは、ループバックと、環境変数 WCMS_TRUSTED_PROXIES に書いたアドレスの範囲（CIDR をカンマで並べる。
+// 例: VPS からのトンネルの相手 10.8.0.1/32）だけです。
+// ⚠ 2026-10-22 まで、プライベートのアドレスを全部信じていた——職場の LAN のパソコンやスマホは直に来るので、
+// だれでも X-Forwarded-For で監査の接続元を偽れた（見直しで見つけた）。
 func isTrustedProxy(host string) bool {
 	ip := net.ParseIP(host)
 	if ip == nil {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	if ip.IsLoopback() {
+		return true
+	}
+	for _, n := range trustedProxyNets() {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// trustedProxyNets は WCMS_TRUSTED_PROXIES の範囲です（読めない書き方は飛ばす）。
+func trustedProxyNets() []*net.IPNet {
+	var out []*net.IPNet
+	for _, s := range strings.Split(os.Getenv("WCMS_TRUSTED_PROXIES"), ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if !strings.Contains(s, "/") {
+			if strings.Contains(s, ":") {
+				s += "/128"
+			} else {
+				s += "/32"
+			}
+		}
+		if _, n, err := net.ParseCIDR(s); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
 }

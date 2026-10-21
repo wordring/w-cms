@@ -186,3 +186,29 @@ func TestStaleHolderStolenOnAcquire(t *testing.T) {
 		t.Errorf("保持者が接続を失っているのに bob が取得できません: %+v", r)
 	}
 }
+
+// 道具が /api/unlock の前に落ちて残ったロックは、寿命を過ぎたら捨てる（ほかの人の操作が 409 で止まり続けないように・2026-10-22 の見直し）。
+func TestAbandonedLockExpires(t *testing.T) {
+	m := newLockManager()
+	m.TryAcquire(1, "tool", "")
+	if m.Validate(1, "bob", "") {
+		t.Fatal("取った直後のロックを、ほかの人が通りました")
+	}
+	m.mu.Lock()
+	m.locks[1].acquiredAt = time.Now().Add(-unattendedLockTTL - time.Second)
+	m.mu.Unlock()
+	if !m.Validate(1, "bob", "") {
+		t.Error("⚠ 寿命を過ぎたロックで、ほかの人が止められます")
+	}
+	m.TryAcquire(2, "tool", "")
+	m.mu.Lock()
+	m.locks[2].acquiredAt = time.Now().Add(-unattendedLockTTL - time.Second)
+	m.mu.Unlock()
+	m.tick(time.Now())
+	m.mu.Lock()
+	_, still := m.locks[2]
+	m.mu.Unlock()
+	if still {
+		t.Error("⚠ 見回りが寿命を過ぎたロックを捨てません")
+	}
+}

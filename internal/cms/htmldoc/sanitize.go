@@ -407,7 +407,7 @@ func filterAttrs(attrs []html.Attribute, allowed map[string]bool) []html.Attribu
 		if linkURLAttributes[key] && !safeLinkURL(a.Val) {
 			continue
 		}
-		if embedURLAttributes[key] && !safeEmbedURL(a.Val) {
+		if key == "srcset" && !safeSrcset(a.Val) || key != "srcset" && embedURLAttributes[key] && !safeEmbedURL(a.Val) {
 			continue
 		}
 		out = append(out, html.Attribute{Key: key, Val: a.Val})
@@ -472,6 +472,10 @@ func safeEmbedURL(v string) bool {
 	if s == "" {
 		return true
 	}
+	// 逆スラッシュは、ブラウザが「/」と読む（2つ重ねると外の宛先・1つなら /api/… になる）。
+	if strings.ContainsRune(s, '\\') {
+		return false
+	}
 	if !isRelativeURL(s) {
 		return false
 	}
@@ -499,6 +503,21 @@ func safeEmbedURL(v string) bool {
 		// （/<ページID6桁>/<ファイル名>。2026-08-31「実際に保存される場所を
 		// 推測されたくない」）。どちらも認可つきのハンドラが配る。
 		return strings.HasPrefix(s, dataDirPrefix) || attachmentURLRe.MatchString(s)
+	}
+	return true
+}
+
+// safeSrcset は srcset（「URL 幅, URL 幅, …」）の候補のURLを1つずつ確かめます。
+// ⚠ 全体を1つのURLとして見ると、2つ目の候補に /api/… を書けた（2026-10-22 の見直し）。
+func safeSrcset(v string) bool {
+	for _, cand := range strings.Split(v, ",") {
+		f := strings.Fields(cand)
+		if len(f) == 0 {
+			continue
+		}
+		if !safeEmbedURL(f[0]) {
+			return false
+		}
 	}
 	return true
 }

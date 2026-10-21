@@ -54,7 +54,16 @@ var (
 	lockGraceDuration = 2 * time.Minute
 	// holderConnectGrace は取得直後、保持者が SSE 接続するまでの猶予（接続前に誤って奪われないため）。
 	holderConnectGrace = 10 * time.Second
+	// unattendedLockTTL は、接続していない保持者（道具が /api/lock → /api/save で書くとき）のロックの寿命です。
+	// 最後に取ったか保存してから、これだけ過ぎたら捨てる——道具が /api/unlock の前に落ちると、ロックが
+	// いつまでも残り、ほかの人の添付・削除・権限の変更が 409 で止まっていた（2026-10-22 の見直し）。
+	unattendedLockTTL = 5 * time.Minute
 )
+
+// abandoned は、接続していない保持者のロックが寿命を過ぎたかです。
+func abandoned(l *pageLock, now time.Time) bool {
+	return l != nil && !l.holderConn && now.Sub(l.acquiredAt) > unattendedLockTTL
+}
 
 // lockEvent は SSE で push する状態通知です（JSONで送る）。
 //
@@ -244,6 +253,10 @@ func (m *lockManager) Validate(pageID int, user, token string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	l := m.locks[pageID]
+	if abandoned(l, now) {
+		delete(m.locks, pageID)
+		l = nil
+	}
 	if l == nil {
 		return true
 	}
@@ -353,6 +366,9 @@ func (m *lockManager) tick(now time.Time) {
 	for id, l := range m.locks {
 		waiter := m.anyWaiter(id)
 		switch {
+		case abandoned(l, now):
+			delete(m.locks, id) // 接続していない保持者が寿命を過ぎた → 捨てる
+			m.broadcast(id, now)
 		case waiter && !m.holderPresent(l, now):
 			delete(m.locks, id) // 保持者不在＋待機者あり → 明け渡し
 			m.broadcast(id, now)
