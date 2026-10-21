@@ -7,14 +7,15 @@
 //
 // 見るのは4つ:
 //   ① 部材発注書ページに送信の欄が出る（メール・FAX・手渡し）
-//   ② 行ごとの「✓ 発注済」を押すと、本文の `状態` が変わる
+//   ② 行の先頭のチェックで選び、表の下の「✓ 発注済」を押すと、本文の `状態` が変わる（2026-10-21 夕から——表の中にボタンを置かない）
 //   ③ 「✕ 取消」を押した行は、まとめ書きに巻き込まれない
 //   ④ 部材発注ページのリンクの「まだ発注していません」が、出したあと消える
 //
 // ⚠ **当て先は自分で作り、最後に消します**（2026-09-23）。09-22 までは `部材発注` の下から
 // 実物の部材発注書を探して**その行の印を書き換えていました**——1枚も無い環境（自宅）では
 // 「飛ばす」で終わり、あれば見本の紙が書き換わります。いまは `部材発注` の下に【E2E】の
-// 部材発注書を1枚置いて確かめ、消して帰ります（`部材発注` が無ければトップ直下・④は飛ばす）。
+// 部材発注書を1枚置いて確かめ、消して帰ります。2026-10-21 からは、当て先をトップ直下に置き、置き場「製造」は④で読むだけです
+// （本物の置き場の子を増やさない）。
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-order-send.js
 const { chromium } = require('playwright');
@@ -57,13 +58,13 @@ async function statusesOf(page) {
   page.on('pageerror', (e) => errs.push(e.message));
   await login(page, BASE);
 
-  // 置き場は `製造`（題が機能・2026-10-19 から。それまでは `部材発注`——未発注の部材発注書の一覧はいまここ）。無ければトップ直下に置き、④だけ飛ばします。
+  // 置き場は `製造`（題が機能・2026-10-19 から。それまでは `部材発注`——未発注の部材発注書の一覧はいまここ）。④で読むだけで、当て先はトップ直下に置きます。
   const top = await childrenOf(page, '000000');
   const box = top.find((c) => (c.Title || c.title) === '製造');
   const boxID = box ? String(box.ID || box.id) : '';
-  if (!boxID) console.log('「製造」ページが無いので、当て先はトップ直下に置きます（④は飛ばします）');
+  if (!boxID) console.log('「製造」ページが無いので、④は飛ばします');
 
-  const found = await makePage(page, ORDER_BODY, boxID || '000000');
+  const found = await makePage(page, ORDER_BODY, '000000');
   if (!found) {
     console.log('✗ 当て先を作れません');
     await browser.close();
@@ -81,7 +82,8 @@ async function statusesOf(page) {
       ['[data-mail-compose="部材発注書"]', 'メールの送る欄（部品・2026-09-30）'],
       ['[data-order-sent="FAX"]', 'FAXで送った'],
       ['[data-order-sent="手渡し"]', '手渡した'],
-      ['.order-row-set', '行ごとの印のボタン'],
+      ['.order-pick', '行の先頭のチェック'],
+      ['.order-bar .order-sel-act', '表の下の行の操作'],
     ]) {
       if ((await page.locator(sel).count()) === 0) {
         console.log('✗ ' + name + ' が出ていません（' + sel + '）');
@@ -97,71 +99,58 @@ async function statusesOf(page) {
     } else {
       console.log('  いまの状態: ' + JSON.stringify(before));
 
+      // act は、rows（1始まり）の行を選んで、表の下の操作 name を押します。押すと読み直しになるので、待ってから状態を読みます。
+      const act = async (rows, name, onDialog) => {
+        await page.goto(BASE + '/' + found);
+        await page.waitForSelector('#w-editor-content .order-pick', { timeout: 8000 }).catch(() => {});
+        for (const r of rows) await page.locator('#w-editor-content .order-pick[data-row="' + r + '"]').check();
+        // ⚠ 確かめの窓が出なかったときに、待ち受けを次の操作まで残さない（残すと、次の窓に二重に応えて落ちる）。
+        if (onDialog) page.once('dialog', onDialog);
+        await Promise.all([page.waitForNavigation({ timeout: 8000 }).catch(() => {}),
+          page.click('#w-editor-content .order-sel-act[data-act="' + name + '"]')]);
+        if (onDialog) page.off('dialog', onDialog);
+        await page.waitForTimeout(500);
+        return statusesOf(page);
+      };
+
       // ② 1行目に「✓ 発注済」
-      const setBtn = page.locator('.order-row-set[data-order-row="1"][data-order-status="発注済"]');
-      if ((await setBtn.count()) === 0) {
-        console.log('✗ 1行目に「✓ 発注済」が出ていません（' + before[0] + '）');
+      const after = await act([1], 'sent');
+      if (!after || after[0] !== '発注済') {
+        console.log('✗ 1行目が発注済になっていません: ' + JSON.stringify(after));
         bad++;
-      } else {
-        await setBtn.first().click();
-        await page.waitForTimeout(1500);
-        const after = await statusesOf(page);
-        if (!after || after[0] !== '発注済') {
-          console.log('✗ 1行目が発注済になっていません: ' + JSON.stringify(after));
-          bad++;
-        } else console.log('✓ 行ごとの「発注済」が本文に入る');
+      } else console.log('✓ 選んだ行の「発注済」が本文に入る');
 
-        // ③ 2行目を取消（未発注からなので確認は出ない）→ 手渡しのまとめ書きに
-        //    巻き込まれないこと
-        const cancel = page.locator('.order-row-set[data-order-row="2"][data-order-status="取消"]');
-        if ((await cancel.count()) === 0) {
-          console.log('✗ 2行目に「✕ 取消」が出ていません');
-          bad++;
-        } else {
-          await cancel.first().click();
-          await page.waitForTimeout(1500);
-          page.once('dialog', (d) => d.accept());
-          await page.locator('[data-order-sent="手渡し"]').first().click();
-          await page.waitForTimeout(1800);
-          const done = await statusesOf(page);
-          if (!done || done[1] !== '取消') {
-            console.log('✗ ⚠ まとめ書きが取消の行を巻き込んでいます: ' + JSON.stringify(done));
-            bad++;
-          } else console.log('✓ まとめ書きが取消を巻き込まない');
-
-          // ⑤ 1行目（発注済）を「↩ 発注から外す」（2026-10-21 までの名前は「必要部材表へ戻す」）（2026-09-24）——確認に「再送」が
-          //    出て、行が本文から消えること。⚠ **編集モードでは出ないこと**も見ます。
-          await page.evaluate(() => document.getElementById('w-mode-toggle').click());
-          await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
-          const shownInEdit = await page.locator('.order-row-return').first().isVisible().catch(() => false);
-          await page.evaluate(() => document.getElementById('w-mode-toggle').click());
-          await page.waitForFunction(() => !document.body.hasAttribute('edit-mode'), null, { timeout: 8000 });
-          if (shownInEdit) {
-            console.log('✗ ⚠ 編集モードでも「↩ 発注から外す」が出ています');
-            bad++;
-          } else console.log('✓ 編集モードでは「↩ 発注から外す」が出ない');
-
-          const ret = page.locator('.order-row-return[data-order-row="1"]');
-          if ((await ret.count()) === 0) {
-            console.log('✗ 1行目に「↩ 発注から外す」が出ていません');
-            bad++;
-          } else {
-            let asked = '';
-            page.once('dialog', (d) => { asked = d.message(); d.accept(); });
-            await ret.first().click();
-            await page.waitForTimeout(1800);
-            const left = await statusesOf(page);
-            if (!asked.includes('再送')) {
-              console.log('✗ 送付後の行を戻す確認に「再送」がありません: ' + JSON.stringify(asked));
-              bad++;
-            }
-            if (!left || left.length !== 1 || left[0] !== '取消') {
-              console.log('✗ 戻した行が本文から消えていません: ' + JSON.stringify(left));
-              bad++;
-            } else console.log('✓ 「↩ 発注から外す」で行が消える（確認に再送の案内）');
-          }
-        }
+      // ③ 2行目を取消（未発注からなので確認は出ない）→ 手渡しのまとめ書きに巻き込まれないこと
+      let askedCancel = '';
+      await act([2], 'cancel', (d) => { askedCancel = d.message(); d.accept(); });
+      if (askedCancel) {
+        console.log('✗ 発注前の行の取消で確認が出ました: ' + JSON.stringify(askedCancel));
+        bad++;
       }
+      await page.goto(BASE + '/' + found);
+      await page.waitForSelector('[data-order-sent="手渡し"]', { timeout: 8000 }).catch(() => {});
+      page.once('dialog', (d) => d.accept());
+      await Promise.all([page.waitForNavigation({ timeout: 8000 }).catch(() => {}),
+        page.locator('[data-order-sent="手渡し"]').first().click()]);
+      await page.waitForTimeout(800);
+      const done = await statusesOf(page);
+      if (!done || done[1] !== '取消') {
+        console.log('✗ ⚠ まとめ書きが取消の行を巻き込んでいます: ' + JSON.stringify(done));
+        bad++;
+      } else console.log('✓ まとめ書きが取消を巻き込まない');
+
+      // ⑤ 1行目（発注済）を「↩ 発注から外す」（2026-10-21 までの名前は「必要部材表へ戻す」）——確認に「再送」が出て、行が本文から消えること。
+      //    （2026-10-21 夕から、行の操作は閲覧モードでも書ける形でも出る——【要求】製造 §8。編集モードで隠れることは見ない）
+      let asked = '';
+      const left = await act([1], 'return', (d) => { asked = d.message(); d.accept(); });
+      if (!asked.includes('再送')) {
+        console.log('✗ 送付後の行を外す確認に「再送」がありません: ' + JSON.stringify(asked));
+        bad++;
+      }
+      if (!left || left.length !== 1 || left[0] !== '取消') {
+        console.log('✗ 外した行が本文から消えていません: ' + JSON.stringify(left));
+        bad++;
+      } else console.log('✓ 「↩ 発注から外す」で行が消える（確認に再送の案内）');
     }
 
     // ④ 部材発注ページのリンク——「まだ発注していません」が**本文に焼き込まれていない**こと
