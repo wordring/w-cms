@@ -81,13 +81,17 @@ func unsendButtonHTML(c OrderSendCounts) string {
 }
 
 // mfgExtraLines は製造ページ mfgID の製造明細の行ごとに、その加工製品の部材を、手配済みを引かずに全部集めます（備考は「追加」）。
-func mfgExtraLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int, err error) {
+// sel が nil でなければ、選んだ行（0始まり）だけ（2026-10-21 夕）。
+func mfgExtraLines(user *auth.User, mfgID int, sel map[int]bool) (lines []ourOrderLine, skipped int, err error) {
 	rows, err := cms.VocabTableRowsOf(database.DB, mfgID, MfgItemsType)
 	if err != nil {
 		return nil, 0, err
 	}
 	mfg := page.FormatID(mfgID)
-	for _, r := range rows {
+	for i, r := range rows {
+		if sel != nil && !sel[i] {
+			continue
+		}
 		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
 		order, _ := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
 		qty, okQ := estimateNumber(r.Values["quantity"])
@@ -100,42 +104,11 @@ func mfgExtraLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped in
 			lines = append(lines, ourOrderLine{
 				ProductID: pid, ForOrder: order, Mfg: mfg, Kind: it.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], Work: v["加工内容"],
 				Material: v["材質"], Shape: v["形状"], Size: v["寸法"], Color: v["表面"], Spec: v["仕様"], Supplied: v["支給"],
-				Quantity: strconv.Itoa(it.Required), Vendor: strings.TrimSpace(it.Vendor), Note: ExtraNote,
+				Quantity: strconv.Itoa(it.Required), Vendor: strings.TrimSpace(it.Vendor), Note: ExtraNote, Lot: fmtQty(qty),
 			})
 		}
 	}
 	return lines, skipped, nil
 }
 
-// MfgExtraAPIHandler は POST /api/mfg/extra です。入力: {page_id}（製造ページ）。この製造の部材を、手配済みを引かずに
-// 発注部材表へ出します（備考は「追加」・同じ部材は1行に・推奨業者ごとの表——「📦」と同じ並べ方）。
-func MfgExtraAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, pageID, ok := gatePagePost(w, r)
-	if !ok {
-		return
-	}
-	if !requireMfgPage(w, pageID) {
-		return
-	}
-	lines, skipped, err := mfgExtraLines(user, pageNum(pageID))
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "部材を数えられません: "+err.Error())
-		return
-	}
-	if len(lines) == 0 {
-		cms.JSONFail(w, http.StatusBadRequest, "この製造の加工製品に、部材の表の行がありません")
-		return
-	}
-	lines = mergeOrderLines(lines)
-	groups := splitByVendor(lines)
-	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		for _, g := range groups {
-			cur, _, _ = putLinesIntoDraft(cur, "", g)
-		}
-		return cur
-	}) {
-		return
-	}
-	auth.Audit(user.Username, "mfg.extra", pageID+" "+strconv.Itoa(len(lines))+"行・"+strconv.Itoa(len(groups))+"表")
-	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(lines), "tables": len(groups), "skipped": skipped})
-}
+// （「➕ 追加の発注」の API /api/mfg/extra は 2026-10-21 夕に /api/mfg/parts の extra へ寄せた——追加の行は必要部材表へ出す・mfg_work.go。）

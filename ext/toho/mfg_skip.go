@@ -60,7 +60,7 @@ func skipLineValue(ln ourOrderLine, field, reason, date string) string {
 	return orderLineValue(ln, field)
 }
 
-// addSkipRows は本文の手配不要表へ行を足します（無ければ、最後の発注部材表のあと・無ければ末尾に作る）。
+// addSkipRows は本文の手配不要表へ行を足します（無ければ、見出し「部材作業」の下に作る・見出しも無ければ末尾に足す）。
 func addSkipRows(body string, lines []ourOrderLine, reason, date string) (string, int) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -78,7 +78,7 @@ func addSkipRows(body string, lines []ourOrderLine, reason, date string) (string
 			b.WriteString(`</tr>`)
 		}
 		b.WriteString(`</tbody></table>`)
-		return placeNewTableAfterLast(body, OrderDraftType, b.String()), len(lines)
+		return placeUnderHeading(body, MfgHeadParts, b.String()), len(lines) // 「部材作業」の見出しの下（2026-10-21 夕）
 	}
 	table := tables[0]
 	tbody := lastChild(table, "tbody")
@@ -215,10 +215,12 @@ func renderSkipTable(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if ctx.Viewer == nil || !canWritePage(ctx.Viewer, ctx.PageID) {
 		return false, nil
 	}
+	// 2026-10-21 夕から、行の先頭にチェック・「↩ 戻す」は表の下（表の中にボタンを置かない）。
 	pageID := page.FormatID(ctx.PageID)
-	addRowChromeCells(el, "skip-row-act", func(row int, _ *html.Node) string {
-		return `<button type="button" class="chip-btn skip-row-back" data-skip-page="` + stdhtml.EscapeString(pageID) +
-			`" data-skip-row="` + strconv.Itoa(row) + `" title="手配不要表から外します（「📦 この製造の部材を発注部材表へ」で、また出せます）">↩ 戻す</button>`
+	prependRowChromeCells(el, "skip-pick-cell", func(n int, _ *html.Node) string {
+		return pickHTML("skip-pick", map[string]string{"row": strconv.Itoa(n + 1)})
 	})
+	appendBarAfter(el, "mfg-skip-bar", `<span data-mfg="`+stdhtml.EscapeString(pageID)+`"></span>`+
+		barButton("skip-sel-back", "↩ 戻す", "選んだ行を手配不要表から外します（製造明細表の「部材」で、また集められます）")+`<span class="mfg-bar-say"></span>`)
 	return false, nil
 }

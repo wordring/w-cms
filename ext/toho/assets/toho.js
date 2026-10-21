@@ -1180,17 +1180,6 @@ delegateClick([
         busy: '戻しています…', fail: '戻せませんでした',
         done: () => location.reload(),
     })],
-    // 製造ページの製造明細表の「↩ 製造待ちへ」——その行だけを取り消す（作った書類は残る）。
-    ['.mfg-back-go', async (btn) => {
-        if (!confirm('この行を製造明細から外して、「製造」の製造待ちへ戻します（この製造で作った書類はそのまま残ります）。よろしいですか？')) return;
-        btn.disabled = true;
-        const r = await postJSON('/api/mfg/back', {
-            page_id: btn.dataset.mfg || '', row: Number(btn.dataset.row), item: btn.dataset.item || '',
-        }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-        btn.disabled = false;
-        if (!r.ok) { alert('⚠ ' + ((r.data && r.data.message) || '戻せませんでした')); return; }
-        location.reload();
-    }],
 ]);
 
 // （受注残表から部材見積依頼へ送る「☑ 選んだ行を部材見積依頼へ」は 2026-10-19 に外した——部材見積依頼は製造ページから・ext/toho/mfg_more.go。）
@@ -1510,59 +1499,16 @@ delegateClick([
 
     // （必要部材表の「発注部材表を作る」「不要にする」と、手配不要表の「↩ 戻す」は、2026-10-21 に表ごと外した——
     //  利用者:「臨時部材表と手配不要表もなくし、必要部材表もなくしてください。」「一度無くして、適切な形で作り直します」）
-    // （手配不要表は同じ日の午後に製造ページの中へ作り直した——下の skipDraftRow・removeSkipRow・ext/toho/mfg_skip.go。）
+    // （手配不要表は同じ日の午後に製造ページの中へ作り直した——下の draftRowsAct と、製造ページの帯の .skip-sel-back・ext/toho/mfg_skip.go。2026-10-21 夕から、行のボタンは表の下）
 
     delegateClick([
         ['[data-draft-go]', create],
         ['.draft-join-pick', pickJoin],
-        ['.draft-row-skip', skipDraftRow],
-        ['.skip-row-back', removeSkipRow],
-        ['.draft-row-back', removeDraftRow],
+        ['.draft-sel-skip', (btn) => draftRowsAct(btn, 'skip')],
+        ['.draft-sel-back', (btn) => draftRowsAct(btn, 'back')],
     ]);
 
-    // 製造ページの発注部材表の行を手配不要表へ（2026-10-21・ext/toho/mfg_skip.go）——理由は任意。
-    async function skipDraftRow(btn) {
-        const reason = window.prompt('この部材を、この製造では手配しません。理由（任意）: 在庫で足りる・自社で作る など', '');
-        if (reason === null) return;
-        btn.disabled = true;
-        try {
-            const r = await postJSON('/api/mfg/skip', {
-                page_id: btn.getAttribute('data-draft-page') || '',
-                table: Number(btn.getAttribute('data-draft-table') || 0),
-                row: Number(btn.getAttribute('data-draft-row') || 0),
-                reason,
-            });
-            if (!r.ok) {
-                alert('⚠ ' + (r.data.message || '手配不要にできませんでした'));
-                btn.disabled = false;
-                return;
-            }
-            location.reload();
-        } catch (err) {
-            alert('⚠ 通信に失敗しました: ' + err);
-            btn.disabled = false;
-        }
-    }
 
-    // 手配不要表から1行を外す（2026-10-21・ext/toho/mfg_skip.go）——また発注部材表へ出せるようになる。
-    async function removeSkipRow(btn) {
-        btn.disabled = true;
-        try {
-            const r = await postJSON('/api/mfg/skip/remove', {
-                page_id: btn.getAttribute('data-skip-page') || '',
-                row: Number(btn.getAttribute('data-skip-row') || 0),
-            });
-            if (!r.ok) {
-                alert('⚠ ' + (r.data.message || '戻せませんでした'));
-                btn.disabled = false;
-                return;
-            }
-            location.reload();
-        } catch (err) {
-            alert('⚠ 通信に失敗しました: ' + err);
-            btn.disabled = false;
-        }
-    }
 
     // 相乗りの候補を押すと、欄にその部材発注書のページ番号が入る（2026-10-21・ext/toho/order_join.go）。
     function pickJoin(btn) {
@@ -1571,30 +1517,28 @@ delegateClick([
         if (input) input.value = btn.getAttribute('data-join') || '';
     }
 
-    // 発注部材表から1行を外す＝**未手配の一覧へ戻す**（2026-09-22）。
-    //
-    // ユーザー:「**発注部材表から未手配の一覧へ戻す方法がありません**」
-    //
-    // ⚠ **戻す先へ何かを書く必要はありません**——一覧は**毎回計算される鏡**なので、
-    //    ここから消せば**自動的に戻ってきます**。
-    async function removeDraftRow(btn) {
-        btn.disabled = true;
-        try {
-            const r = await postJSON('/api/our-order/draft/remove', {
-                page_id: btn.getAttribute('data-draft-page') || '',
-                table: Number(btn.getAttribute('data-draft-table') || 0),
-                row: Number(btn.getAttribute('data-draft-row') || 0),
-            });
-            if (!r.ok) {
-                alert('⚠ ' + (r.data.message || '戻せませんでした'));
-                btn.disabled = false;
-                return;
-            }
-            location.reload();
-        } catch (err) {
-            alert('⚠ 通信に失敗しました: ' + err);
-            btn.disabled = false;
+    // 発注部材表の下の「選んだ行を: 🚫 不要／↩ 外す」（2026-10-21 夕——表の中にボタンを置かない）。行は下から送る（行番号がずれないように）。
+    // 外す＝もとの必要部材表へは何も書かない（「部材」で、また集められる）。不要＝手配不要表へ移す（/api/mfg/skip）。
+    async function draftRowsAct(btn, what) {
+        const box = btn.closest('.draft-form-box');
+        const say = box ? box.querySelector('.draft-row-say') : null;
+        const table = box ? draftTableOf(box) : null;
+        const rows = table ? Array.from(table.querySelectorAll('.draft-pick:checked')).map((c) => Number(c.dataset.row)).sort((x, y) => y - x) : [];
+        if (!rows.length) { sayIn(say, '発注部材表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
+        let reason = '';
+        if (what === 'skip') {
+            reason = window.prompt('選んだ部材を、この製造では手配しません。理由（任意）: 在庫で足りる・自社で作る など', '');
+            if (reason === null) return;
         }
+        const page = btn.getAttribute('data-draft-page') || '';
+        const tableNo = Number(btn.getAttribute('data-draft-table') || 0);
+        btn.disabled = true;
+        for (const row of rows) {
+            const r = await postJSON(what === 'skip' ? '/api/mfg/skip' : '/api/our-order/draft/remove', { page_id: page, table: tableNo, row, reason })
+                .catch((e) => ({ ok: false, data: { message: String(e) } }));
+            if (!r.ok) { btn.disabled = false; sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'できませんでした')); return; }
+        }
+        location.reload();
     }
 })();
 
@@ -1831,108 +1775,145 @@ delegateClick([
     document.addEventListener('change', onEvent);
 })();
 
-// ── 製造ページの作業の帯（2026-10-19・ext/toho/mfg_view.go）────────────────────────────────
+// ── 製造ページの作業（2026-10-21 夕・ext/toho/mfg_work.go）────────────────────────────────────
 //
-// 利用者:「一つの製造ページに案件の見積もり依頼、部材発注、製造記録（工数など）、納品書、請求書を並べるのはどうですか？」。
-// 製造明細表の「製造完了」のチェックは /api/mfg/made へ（行番号・品番・いまの値の3つで照合）。「納品」の欄で選んだ行は、
-// 今回納める数（まだ納めていない数が初めから入っていて直せる）を確かめて、/api/delivery/new へ mfg（この製造ページ）を添えて送る
-// ——納品書は記録にでき、明細の「製造」の列にこの製造ページが入る（2026-10-21）。
+// 利用者:「製造明細表を作業開始という見出しの下にいれ、行の先頭にチェックボックスを付け」「表の下にあるボタンを押すとその作業を開始する
+// マナーにしたいです」。表の中には値と行の先頭のチェックだけ、ボタンは表の下の帯（サーバーが表の直後に置く .mfg-bar）。
+// 帯は、すぐ前の表のチェックした行に効く。製造ページの番号は帯の中の [data-mfg]。
+function mfgBarOf(btn) {
+    const bar = btn.closest('.mfg-bar');
+    const table = bar ? bar.previousElementSibling : null;
+    const pageEl = bar ? bar.querySelector('[data-mfg]') : null;
+    return {
+        bar, table: table && table.tagName === 'TABLE' ? table : null,
+        mfg: pageEl ? pageEl.getAttribute('data-mfg') || '' : '',
+        say: bar ? bar.querySelector('.mfg-bar-say') : null,
+    };
+}
+function mfgPicked(ctx, sel) {
+    return ctx.table ? Array.from(ctx.table.querySelectorAll(sel + ':checked')) : [];
+}
+async function mfgPost(ctx, btn, url, body, busy, fail) {
+    btn.disabled = true;
+    sayIn(ctx.say, busy);
+    const r = await postJSON(url, body).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(ctx.say, '⚠ ' + ((r.data && r.data.message) || fail)); return null; }
+    return r.data || {};
+}
+const MFG_NONE = '製造明細表の行の先頭のチェックで、行を選んでください。';
+const NEEDS_NONE = '必要部材表の行の先頭のチェックで、行を選んでください。';
+const mfgItems = (picks) => picks.map((c) => ({ row: Number(c.dataset.row), item: c.dataset.item || '' }));
+
 delegateClick([
-    ['.mfg-made', async (box) => {
-        const page = (location.pathname.match(/\/(\d{6})/) || [])[1] || '';
-        const want = box.checked ? '済' : '';
-        box.disabled = true;
-        const r = await postJSON('/api/mfg/made', {
-            page_id: page, row: Number(box.dataset.row), item_no: box.dataset.item || '', old: box.dataset.old || '', value: want,
-        }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-        box.disabled = false;
-        if (!r.ok) {
-            box.checked = !box.checked;
-            alert('⚠ ' + ((r.data && r.data.message) || '製造完了を書けませんでした'));
+    // 作業開始の帯——「部材」「追加の発注」は必要部材表へ、「納品」は納品表へ（どれも作ったら読み直す）。
+    ['.mfg-act-parts', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const picks = mfgPicked(ctx, '.mfg-pick');
+        if (!picks.length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
+        if (await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items: mfgItems(picks) }, '部材を集めています…', '部材を集められませんでした')) location.reload();
+    }],
+    ['.mfg-act-extra', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const picks = mfgPicked(ctx, '.mfg-pick');
+        if (!picks.length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
+        if (!confirm('選んだ行の部材を、手配済みを引かずに必要部材表へ足します（備考は「追加」）。よろしいですか？')) return;
+        if (await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items: mfgItems(picks), extra: true }, '部材を集めています…', '部材を集められませんでした')) location.reload();
+    }],
+    ['.mfg-act-dlv', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const picks = mfgPicked(ctx, '.mfg-pick');
+        if (!picks.length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
+        if (await mfgPost(ctx, btn, '/api/mfg/delivery-draft', { page_id: ctx.mfg, items: mfgItems(picks) }, '納品表を作っています…', '納品表を作れませんでした')) location.reload();
+    }],
+    // 製造完了——選んだ行の「製造完了」に「済」を書く（1行ずつ /api/mfg/made・行番号・品番・いまの値で照合）。
+    ['.mfg-act-made', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const picks = mfgPicked(ctx, '.mfg-pick').filter((c) => (c.dataset.made || '') !== '済');
+        if (!mfgPicked(ctx, '.mfg-pick').length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
+        for (const c of picks) {
+            const ok = await mfgPost(ctx, btn, '/api/mfg/made', { page_id: ctx.mfg, row: Number(c.dataset.row), item_no: c.dataset.item || '', old: c.dataset.made || '', value: '済' },
+                '製造完了を書いています…', '製造完了を書けませんでした');
+            if (!ok) return;
+        }
+        location.reload();
+    }],
+    // 見積計算書——選んだ行の加工製品ごとに作る（1つなら開く）。
+    ['.mfg-act-calc', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const products = Array.from(new Set(mfgPicked(ctx, '.mfg-pick').map((c) => c.dataset.product || '').filter(Boolean)));
+        if (!products.length) { sayIn(ctx.say, '弊社品番のある行を選んでください。', 'warn'); return; }
+        let last = '';
+        for (const p of products) {
+            const d = await mfgPost(ctx, btn, '/api/estimate-calc/new', { product: p, mfg: ctx.mfg }, '見積計算書を作っています…', '見積計算書を作れませんでした');
+            if (!d) return;
+            last = d.page_id || '';
+        }
+        if (products.length === 1 && last) location.href = '/' + last; else location.reload();
+    }],
+    // 見積書——この製造の見積の依頼の行から（2026-10-19・ext/toho/quote_done.go）。
+    ['.mfg-act-estimate', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const d = await mfgPost(ctx, btn, '/api/mfg/estimate', { page_id: ctx.mfg }, '見積書を作っています…', '見積書を作れませんでした');
+        if (!d || !d.page_id) return;
+        if (d.missing > 0) {
+            sayIn(ctx.say, (d.message || '') + ' ');
+            const link = document.createElement('a');
+            link.href = '/' + d.page_id;
+            link.textContent = '見積書を開く';
+            if (ctx.say) ctx.say.appendChild(link);
             return;
         }
-        box.dataset.old = want;
+        location.href = '/' + d.page_id;
     }],
-    ['.mfg-dlv-go', (btn) => {
-        const cell = btn.parentElement;
-        const say = cell.querySelector('.mfg-dlv-say');
-        const panel = cell.querySelector('.mfg-dlv-panel');
-        const table = btn.closest('table');
-        const picks = Array.from((table || document).querySelectorAll('.mfg-dlv-pick:checked'));
-        if (!picks.length) {
-            sayIn(say, '製造明細表の右の「納品」の欄で、納める行を選んでください。', 'warn');
-            return;
+    // 取り消し——選んだ行を製造待ちへ戻す（下の行から——行番号がずれないように）。
+    ['.mfg-act-back', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const picks = mfgPicked(ctx, '.mfg-pick').sort((x, y) => Number(y.dataset.row) - Number(x.dataset.row));
+        if (!picks.length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
+        if (!confirm('選んだ ' + picks.length + ' 行を製造明細から外して、「製造」の製造待ちへ戻します（この製造で作った書類はそのまま残ります）。よろしいですか？')) return;
+        for (const c of picks) {
+            const ok = await mfgPost(ctx, btn, '/api/mfg/back', { page_id: ctx.mfg, row: Number(c.dataset.row), item: c.dataset.item || '' }, '戻しています…', '戻せませんでした');
+            if (!ok) return;
         }
-        sayIn(say, '');
-        panel.textContent = '';
-        const t = makeEl('table', 'materials-table backlog-dlv-table');
-        const tr0 = document.createElement('tr');
-        ['品番', '品名', 'まだ納めていない数', '今回納める数'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
-        t.appendChild(tr0);
-        picks.forEach((c) => {
-            const tr = document.createElement('tr');
-            [c.dataset.item, c.dataset.name, c.dataset.left].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
-            const td = document.createElement('td');
-            const inp = document.createElement('input');
-            inp.type = 'number';
-            inp.min = '1';
-            inp.value = c.dataset.left || '';
-            inp.className = 'mfg-dlv-qty';
-            inp.dataset.order = c.dataset.order;
-            inp.dataset.item = c.dataset.item || '';
-            inp.dataset.name = c.dataset.name || '';
-            td.appendChild(inp);
-            tr.appendChild(td);
-            t.appendChild(tr);
-        });
-        panel.appendChild(t);
-        const make = makeButton('mfg-dlv-make');
-        make.dataset.mfg = btn.dataset.mfg || '';
-        make.textContent = '🚚 納品書を作る';
-        panel.appendChild(make);
-        const msg = makeEl('span', 'mfg-dlv-msg');
-        panel.appendChild(msg);
-        panel.hidden = false;
+        location.reload();
     }],
-    ['.mfg-dlv-make', async (btn) => {
-        const panel = btn.closest('.mfg-dlv-panel');
-        const msg = panel.querySelector('.mfg-dlv-msg');
-        const items = Array.from(panel.querySelectorAll('.mfg-dlv-qty')).map((i) => ({
-            order: i.dataset.order, row: -1, item: i.dataset.item, name: i.dataset.name, qty: i.value.trim(),
-        }));
-        btn.disabled = true;
-        sayIn(msg, '納品書を作っています…');
-        const r = await postJSON('/api/delivery/new', { items, mfg: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-        btn.disabled = false;
-        if (!r.ok) { sayIn(msg, '⚠ ' + ((r.data && r.data.message) || '納品書を作れませんでした')); return; }
-        location.href = '/' + r.data.page_id;
+    // 手配不要表の帯の「↩ 戻す」——選んだ行を外す（下の行から）。
+    ['.skip-sel-back', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const rows = mfgPicked(ctx, '.skip-pick').map((c) => Number(c.dataset.row)).sort((x, y) => y - x);
+        if (!rows.length) { sayIn(ctx.say, '手配不要表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
+        for (const row of rows) {
+            if (!await mfgPost(ctx, btn, '/api/mfg/skip/remove', { page_id: ctx.mfg, row }, '戻しています…', '戻せませんでした')) return;
+        }
+        location.reload();
+    }],
+    // 必要部材表の帯——「発注」「見積もり」「不要」「外す」（/api/mfg/needs）。
+    ...[['.mfg-needs-order', 'order'], ['.mfg-needs-quote', 'quote'], ['.mfg-needs-skip', 'skip'], ['.mfg-needs-drop', 'drop']].map(([sel, action]) => [sel, async (btn) => {
+        const ctx = mfgBarOf(btn);
+        const rows = mfgPicked(ctx, '.mfg-needs-pick').map((c) => Number(c.dataset.row));
+        if (!rows.length) { sayIn(ctx.say, NEEDS_NONE, 'warn'); return; }
+        let reason = '';
+        if (action === 'skip') {
+            reason = window.prompt('選んだ部材を、この製造では手配しません。理由（任意）: 在庫で足りる・自社で作る など', '');
+            if (reason === null) return;
+        }
+        if (await mfgPost(ctx, btn, '/api/mfg/needs', { page_id: ctx.mfg, rows, action, reason }, '書いています…', 'できませんでした')) location.reload();
+    }]),
+    // 納品表の帯——「納品書を作る」。表のいまの値（人が直した数量）で /api/delivery/new へ送り、作れたら納品書を開く（納品表はサーバーが消す）。
+    ['.mfg-dlvdraft-make', async (btn) => {
+        const ctx = mfgBarOf(btn);
+        if (!ctx.table) return;
+        const rows = Array.from(ctx.table.querySelectorAll('tr')).filter((tr) => !tr.closest('tfoot'));
+        const head = rows.length ? Array.from(rows[0].children).map((c) => c.textContent.trim()) : [];
+        const at = (cells, label) => { const i = head.indexOf(label); return i >= 0 && cells[i] ? cells[i].textContent.trim() : ''; };
+        const items = rows.slice(1).map((tr) => Array.from(tr.children)).filter((cells) => at(cells, '数量') !== '')
+            .map((cells) => ({ order: at(cells, '案件'), row: -1, item: at(cells, '品番'), name: at(cells, '品名'), qty: at(cells, '数量') }));
+        if (!items.length) { sayIn(ctx.say, '納品表に数量のある行がありません。', 'warn'); return; }
+        const d = await mfgPost(ctx, btn, '/api/delivery/new', { items, mfg: ctx.mfg, from_draft: true }, '納品書を作っています…', '納品書を作れませんでした');
+        if (d && d.page_id) location.href = '/' + d.page_id;
     }],
 ]);
-
-// 製造ページの「📦 この製造の部材を発注部材表へ」（2026-10-19・ext/toho/mfg_view.go の MfgPartsAPIHandler）——この製造の、まだ手配して
-// いない部材（この製造で作る数ぶんまで）を、この製造ページに新しい発注部材表として入れる。部材発注書はその表の「部材発注書を作る」から
-// （記録にでき、明細の「製造」の列にこの製造ページが入る・2026-10-21）。
-delegateClick([['.mfg-parts-go', async (btn) => {
-    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-parts-say');
-    btn.disabled = true;
-    sayIn(say, '部材を数えています…');
-    const r = await postJSON('/api/mfg/parts', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '発注部材表へ入れられませんでした')); return; }
-    location.reload();
-}]]);
-
-// 製造ページの「➕ 追加の発注」（2026-10-21・ext/toho/order_unsend.go）——手配済みを引かずに、備考「追加」で発注部材表へ。
-delegateClick([['.mfg-extra-go', async (btn) => {
-    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-extra-say');
-    if (!confirm('この製造の部材を、手配済みを引かずに全部、発注部材表へ出します（備考は「追加」）。\n要らない行は「↩ 外す」で外し、数を直してください。よろしいですか？')) return;
-    btn.disabled = true;
-    sayIn(say, '部材を集めています…');
-    const r = await postJSON('/api/mfg/extra', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '発注部材表へ入れられませんでした')); return; }
-    location.reload();
-}]]);
 
 // 製造ページの「📁 この製造を閉じる」（2026-10-19・ext/toho/mfg_close.go）——確かめてから、記録／年／月／製造記録へ移して読み直す。
 delegateClick([['.mfg-close-go', async (btn) => {
@@ -1945,37 +1926,6 @@ delegateClick([['.mfg-close-go', async (btn) => {
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '移せませんでした')); return; }
     location.reload();
-}]]);
-
-// 製造ページの「📨 この製造の部材を見積依頼必要部材表へ」（2026-10-19・ext/toho/mfg_more.go）——入れたら読み直す（表はこの製造ページの中）。
-delegateClick([['.mfg-rfq-go', async (btn) => {
-    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-rfq-say');
-    btn.disabled = true;
-    sayIn(say, '部材を集めています…');
-    const r = await postJSON('/api/mfg/rfq', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '見積依頼必要部材表へ入れられませんでした')); return; }
-    location.reload();
-}]]);
-
-// 製造ページの「📄 この製造の見積書を作る」（2026-10-19・ext/toho/quote_done.go）——見積の依頼の行から見積書を作って開く（置き場は記録・2026-10-21）。
-delegateClick([['.mfg-estimate-go', async (btn) => {
-    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-estimate-say');
-    btn.disabled = true;
-    sayIn(say, '見積書を作っています…');
-    const r = await postJSON('/api/mfg/estimate', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok || !r.data || !r.data.page_id) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '見積書を作れませんでした')); return; }
-    if (r.data.missing > 0) {
-        // 単価の無い行があれば、そう言ってから開く（押すと開く）。
-        sayIn(say, (r.data.message || '') + ' ');
-        const link = document.createElement('a');
-        link.href = '/' + r.data.page_id;
-        link.textContent = '見積書を開く';
-        if (say) say.appendChild(link);
-        return;
-    }
-    location.href = '/' + r.data.page_id;
 }]]);
 
 // 返事ページの「部材見積依頼書で単価を写す」から来たら、🤖 返事を読む の欄を開く（モードを切り替えるたび——それまでは applyMode が名指しで呼んでいた）。

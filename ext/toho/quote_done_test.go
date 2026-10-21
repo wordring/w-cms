@@ -78,7 +78,7 @@ func TestMfgEstimateCompletesQuoteCase(t *testing.T) {
 	}
 	mfg := out["page_id"].(string)
 	req := auth.WithUser(httptest.NewRequest("GET", "/"+mfg, nil), u)
-	if got := cms.RenderComputedViews(req, pageNum(mfg), readPageBody(t, mfg)); !strings.Contains(got, "mfg-estimate-go") {
+	if got := cms.RenderComputedViews(req, pageNum(mfg), readPageBody(t, mfg)); !strings.Contains(got, "mfg-act-estimate") {
 		t.Errorf("⚠ 製造ページに「この製造の見積書を作る」がありません:\n%s", got)
 	}
 

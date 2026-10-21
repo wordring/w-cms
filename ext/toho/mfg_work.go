@@ -1,0 +1,527 @@
+package toho
+
+// ─────────────────────────────────────────────────────────────────────────
+// 製造ページの作業（2026-10-21 夕・【考察】製造単位の部材発注 §7）
+//
+//	2026-10-21 利用者:「製造明細表を修正しましょう。この表はご法度のはずの一緒にボタンを入れています。」
+//	「製造明細表を作業開始という見出しの下にいれ、行の先頭にチェックボックスを付け、選択した行について,」
+//	「表の下にあるボタンを押すとその作業を開始するマナーにしたいです。部材、納品があります。部材を押すと必要部材を収集して表を作ります。
+//	この表にもチェックボックスがあり、選択したものを表の下のボタンで作業開始します。ボタンは発注と見積もりがあるはずです。
+//	納品を押すと納品表が作られます。この表を編集して、その下にあるボタンを押すと納品書が作成されます。」
+//	「発注、見積もりなどの作業はそれぞれ見出しの下に置き開閉できるようにしておきましょう」
+//	「発注作業、見積依頼作業などの見出しでも良いかもしれません柄」
+//
+//   - 製造ページの本文は、見出し（h2）ごとの作業に分ける: 作業開始（製造明細表）・部材作業（必要部材表・手配不要表）・
+//     発注作業（発注部材表）・見積依頼作業（見積依頼部材表）・納品作業（納品表）。閲覧モードでは見出しを押して畳める（コア）。
+//   - 表の中には本文の値と、行の先頭のチェックだけを置く。ボタンは表の外（表の下）に置く（鏡・保存しない）。
+//   - 必要部材表は本文の表。「部材」を押すたびに、選んだ製造明細の行のぶんで作り直す（手配済みに数えない——押し直しても二重にならない）。
+//     「発注」は選んだ行を推奨業者ごとの発注部材表へ移す。「見積もり」は見積依頼部材表へ写す（必要部材表には残す）。「不要」は手配不要表へ。
+//   - 納品表は本文の表。「納品」を押すと、選んだ行のまだ納めていない数で作り直す。人が数量を直して「納品書を作る」を押すと
+//     納品書ができ（/api/delivery/new）、納品表は消える。
+// ─────────────────────────────────────────────────────────────────────────
+
+import (
+	stdhtml "html"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"golang.org/x/net/html"
+
+	"w-cms/internal/auth"
+	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
+)
+
+// 製造ページの作業の見出し（h2）です。
+const (
+	MfgHeadStart    = "作業開始"
+	MfgHeadParts    = "部材作業"
+	MfgHeadOrder    = "発注作業"
+	MfgHeadQuote    = "見積依頼作業"
+	MfgHeadDelivery = "納品作業"
+)
+
+// MfgNeedsType は製造ページの必要部材表、MfgDeliveryDraftType は納品表の形式です。
+const (
+	MfgNeedsType         = "mfg-needs"
+	MfgDeliveryDraftType = "mfg-delivery-draft"
+)
+
+// mfgNeedsColumns は必要部材表の列です——部材発注明細表の列から状態を除き、ロットと推奨業者を足したもの。
+func mfgNeedsColumns() []cms.VocabColumn {
+	var out []cms.VocabColumn
+	for _, c := range orderItemColumns() {
+		if c.Field == "status" {
+			continue
+		}
+		out = append(out, c)
+	}
+	return append(withLotBeforeQuantity(out), cms.VocabColumn{Field: "vendor", Label: vendorLabel, Type: cms.ColText})
+}
+
+// mfgDeliveryDraftColumns は納品表の列です（数量は今回納める数——人が直す）。
+func mfgDeliveryDraftColumns() []cms.VocabColumn {
+	return []cms.VocabColumn{
+		{Field: "our-item-id", Label: OurItemNoTag, Type: cms.ColRef},
+		{Field: "order", Label: "案件", Type: cms.ColRef},
+		{Field: "item-id", Label: ItemNoTag, Type: cms.ColCode},
+		{Field: "item-name", Label: "品名", Type: cms.ColText},
+		{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
+		{Field: "note", Label: "備考", Type: cms.ColText},
+	}
+}
+
+func init() {
+	cms.RegisterVocab(cms.VocabDef{
+		// **必要部材表**（2026-10-21 夕・製造ページの「部材」で作る本文の表）。手配済みには数えない。
+		Type: MfgNeedsType, DisplayName: "必要部材表", Category: "業務", Icon: "🧾", Element: "table", Hidden: true,
+		Columns: mfgNeedsColumns(),
+	})
+	cms.RegisterVocab(cms.VocabDef{
+		// **納品表**（2026-10-21 夕・製造ページの「納品」で作る本文の表）。「納品書を作る」で納品書になって消える。
+		Type: MfgDeliveryDraftType, DisplayName: "納品表", Category: "業務", Icon: "🚚", Element: "table", Hidden: true,
+		Columns: mfgDeliveryDraftColumns(),
+	})
+	cms.RegisterMirror(MfgNeedsType, cms.MirrorHandlerFunc(renderMfgNeeds))
+	cms.RegisterMirror(MfgDeliveryDraftType, cms.MirrorHandlerFunc(renderMfgDeliveryDraft))
+}
+
+// ── 見出しの下に置く ─────────────────────────────────────────────────────
+
+// headingText は h1〜h6 の文字です（見出しでなければ空）。
+func headingLevel(n *html.Node) int {
+	if n.Type != html.ElementNode || len(n.Data) != 2 || n.Data[0] != 'h' || n.Data[1] < '1' || n.Data[1] > '6' {
+		return 0
+	}
+	return int(n.Data[1] - '0')
+}
+
+// placeUnderHeading は、本文の h2「heading」の節の末尾（次の h1・h2 の前）へ fragment を置きます。
+// 見出しが無ければ、本文の末尾に h2 を足してから置きます。
+func placeUnderHeading(body, heading, fragment string) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body + "<h2>" + stdhtml.EscapeString(heading) + "</h2>" + fragment
+	}
+	repl, err := htmldoc.ParseFragment(fragment)
+	if err != nil {
+		return body
+	}
+	at := -1
+	for i, n := range nodes {
+		if headingLevel(n) == 2 && strings.TrimSpace(textOf(n)) == heading {
+			at = i
+			break
+		}
+	}
+	var out []*html.Node
+	if at < 0 {
+		h := &html.Node{Type: html.ElementNode, Data: "h2"}
+		h.AppendChild(&html.Node{Type: html.TextNode, Data: heading})
+		out = append(append(append(out, nodes...), h), repl...)
+		return htmldoc.Render(out)
+	}
+	end := len(nodes)
+	for j := at + 1; j < len(nodes); j++ {
+		if l := headingLevel(nodes[j]); l == 1 || l == 2 {
+			end = j
+			break
+		}
+	}
+	out = append(out, nodes[:end]...)
+	out = append(out, repl...)
+	out = append(out, nodes[end:]...)
+	return htmldoc.Render(out)
+}
+
+// dropTablesOfType は本文から vocabType の表を全部外します（表を包む節があれば節ごと）。
+func dropTablesOfType(body, vocabType string) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body
+	}
+	tables := tablesOfType(nodes, vocabType)
+	if len(tables) == 0 {
+		return body
+	}
+	root := wrapInDiv(nodes)
+	for _, t := range tables {
+		target := t
+		if p := t.Parent; p != nil && p.Data == "section" && len(tablesOfType(childrenOf(p), vocabType)) == 1 && onlyTableIn(p) {
+			target = p
+		}
+		if target.Parent != nil {
+			target.Parent.RemoveChild(target)
+		}
+	}
+	return htmldoc.Render(childrenOf(root))
+}
+
+// onlyTableIn は節 p の中身が表1つ（と空白）だけかです。
+func onlyTableIn(p *html.Node) bool {
+	n := 0
+	for c := p.FirstChild; c != nil; c = c.NextSibling {
+		switch {
+		case c.Type == html.TextNode && strings.TrimSpace(c.Data) == "":
+		case c.Type == html.ElementNode && c.Data == "table":
+			n++
+		default:
+			return false
+		}
+	}
+	return n == 1
+}
+
+// ensureStartHeading は、製造明細表の前に見出し「作業開始」が無ければ足します（新しい製造ページ・テンプレートに見出しが無いとき）。
+func ensureStartHeading(body string) string {
+	if strings.Contains(body, "<h2>"+MfgHeadStart+"</h2>") {
+		return body
+	}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body
+	}
+	for i, n := range nodes {
+		if n.Type == html.ElementNode && n.Data == "table" && isTableOfType(n, MfgItemsType) {
+			h := &html.Node{Type: html.ElementNode, Data: "h2"}
+			h.AppendChild(&html.Node{Type: html.TextNode, Data: MfgHeadStart})
+			out := append(append(append([]*html.Node{}, nodes[:i]...), h), nodes[i:]...)
+			return htmldoc.Render(out)
+		}
+	}
+	return body
+}
+
+// ── 表の先頭のチェックと、表の下の帯 ───────────────────────────────────────
+
+// prependRowChromeCells は表の各行の先頭にセルを足します（見出し行は空の th・データ行は inner(row 0始まり, tr) の HTML）。
+func prependRowChromeCells(table *html.Node, class string, inner func(n int, tr *html.Node) string) {
+	for i, tr := range rowsOf(table) {
+		cell := &html.Node{Type: html.ElementNode, Data: "td",
+			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome " + class}, {Key: "contenteditable", Val: "false"}}}
+		if i == 0 {
+			cell.Data = "th"
+		} else if s := inner(i-1, tr); s != "" {
+			appendHTML(cell, s)
+		}
+		tr.InsertBefore(cell, tr.FirstChild)
+	}
+}
+
+// appendBarAfter は表 el の直後に帯（鏡の div）を置きます。
+func appendBarAfter(el *html.Node, class, innerHTML string) {
+	if el.Parent == nil {
+		return
+	}
+	div := &html.Node{Type: html.ElementNode, Data: "div",
+		Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome w-no-print mfg-bar " + class}, {Key: "contenteditable", Val: "false"}}}
+	appendHTML(div, innerHTML)
+	el.Parent.InsertBefore(div, el.NextSibling)
+}
+
+// pickHTML は行の先頭のチェックです。
+func pickHTML(class string, attrs map[string]string) string {
+	var b strings.Builder
+	b.WriteString(`<input type="checkbox" class="` + class + `" aria-label="この行を選ぶ"`)
+	for _, k := range []string{"row", "item", "name", "order", "left", "made", "product"} {
+		if v, ok := attrs[k]; ok {
+			b.WriteString(` data-` + k + `="` + stdhtml.EscapeString(v) + `"`)
+		}
+	}
+	b.WriteString(`>`)
+	return b.String()
+}
+
+func barButton(class, label, title string) string {
+	return `<button type="button" class="chip-btn ` + class + `" title="` + stdhtml.EscapeString(title) + `">` + label + `</button> `
+}
+
+// ── 必要部材表と納品表の鏡 ─────────────────────────────────────────────────
+
+func renderMfgNeeds(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
+	if el.Data != "table" {
+		return true, nil
+	}
+	cms.DropChrome(el)
+	if !writableMirror(ctx) || pageKindOf(ctx.PageID) != PageKindMfg {
+		return false, nil
+	}
+	prependRowChromeCells(el, "mfg-needs-pick-cell", func(n int, tr *html.Node) string {
+		return pickHTML("mfg-needs-pick", map[string]string{"row": strconv.Itoa(n + 1)})
+	})
+	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
+	appendBarAfter(el, "mfg-needs-bar", `<span data-mfg="`+pid+`"></span>`+
+		barButton("mfg-needs-order", "🛒 発注", "選んだ行を、推奨業者ごとの発注部材表へ移します（「発注作業」の見出しの下）")+
+		barButton("mfg-needs-quote", "📨 見積もり", "選んだ行を、見積依頼部材表へ写します（「見積依頼作業」の見出しの下・必要部材表には残す）")+
+		barButton("mfg-needs-skip", "🚫 不要", "選んだ行を、この製造では手配しません（理由と日付つきで手配不要表へ）")+
+		barButton("mfg-needs-drop", "↩ 外す", "選んだ行を必要部材表から外します（「部材」でまた集められます）")+
+		`<span class="mfg-bar-say"></span>`)
+	return false, nil
+}
+
+func renderMfgDeliveryDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
+	if el.Data != "table" {
+		return true, nil
+	}
+	cms.DropChrome(el)
+	if !writableMirror(ctx) || pageKindOf(ctx.PageID) != PageKindMfg {
+		return false, nil
+	}
+	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
+	appendBarAfter(el, "mfg-dlvdraft-bar", `<span data-mfg="`+pid+`"></span>`+
+		barButton("mfg-dlvdraft-make", "🚚 納品書を作る", "この納品表（数量を直してから）で納品書を作ります。作ると納品表は消えます")+
+		`<span class="mfg-bar-say"></span>`)
+	return false, nil
+}
+
+// ── 製造明細の選んだ行 ─────────────────────────────────────────────────────
+
+// mfgPick は画面で選んだ製造明細の行です（row は見出しを除いた0始まり・item は品番〔照合〕）。
+type mfgPick struct {
+	Row  int    `json:"row"`
+	Item string `json:"item"`
+}
+
+// pickedMfgRows は、選んだ行を製造明細の索引の行番号の集合にします（品番が合わない行があれば理由）。
+func pickedMfgRows(mfgID int, picks []mfgPick) (map[int]bool, string) {
+	rows, err := cms.VocabTableRowsOf(database.DB, mfgID, MfgItemsType)
+	if err != nil {
+		return nil, "製造明細を読めません: " + err.Error()
+	}
+	if len(picks) == 0 {
+		return nil, "製造明細表の行の先頭のチェックで、行を選んでください"
+	}
+	sel := map[int]bool{}
+	for _, p := range picks {
+		if p.Row < 0 || p.Row >= len(rows) || strings.TrimSpace(rows[p.Row].Values["item-id"]) != strings.TrimSpace(p.Item) {
+			return nil, "選んだ行が見つかりません（ページを読み直してください）"
+		}
+		sel[p.Row] = true
+	}
+	return sel, ""
+}
+
+// MfgPartsAPIHandler は POST /api/mfg/parts です。入力: {page_id, items:[{row, item}], extra}（製造ページ）。
+// 選んだ製造明細の行の、まだ手配していない部材を集めて、「部材作業」の見出しの下に必要部材表を作り直します。
+// extra なら、手配済みを引かずに全部を、備考「追加」で必要部材表へ足します（追加の発注・order_unsend.go）。
+func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		PageID string    `json:"page_id"`
+		Items  []mfgPick `json:"items"`
+		Extra  bool      `json:"extra"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID || !requireMfgPage(w, pageID) {
+		return
+	}
+	sel, why := pickedMfgRows(pageNum(pageID), req.Items)
+	if why != "" {
+		cms.JSONFail(w, http.StatusBadRequest, why)
+		return
+	}
+	var lines []ourOrderLine
+	var skipped int
+	var err error
+	if req.Extra {
+		lines, skipped, err = mfgExtraLines(user, pageNum(pageID), sel)
+	} else {
+		lines, skipped, err = mfgPartLines(user, pageNum(pageID), sel)
+	}
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "部材を数えられません: "+err.Error())
+		return
+	}
+	if len(lines) == 0 {
+		msg := "選んだ行で手配する部材はありません（手配済みか、加工製品の部材の表に行がありません）"
+		if skipped > 0 {
+			msg += "。弊社品番の無い行が " + strconv.Itoa(skipped) + " 行あります"
+		}
+		cms.JSONFail(w, http.StatusBadRequest, msg)
+		return
+	}
+	lines = mergeOrderLines(lines)
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		if req.Extra {
+			if out, _, ok := appendLinesToTable(cur, MfgNeedsType, 1, lines); ok {
+				return out
+			}
+		} else {
+			cur = dropTablesOfType(cur, MfgNeedsType)
+		}
+		return placeUnderHeading(cur, MfgHeadParts, tableOfLinesHTML(MfgNeedsType, lines, false))
+	}) {
+		return
+	}
+	what := "mfg.parts"
+	if req.Extra {
+		what = "mfg.extra"
+	}
+	auth.Audit(user.Username, what, pageID+" "+strconv.Itoa(len(lines))+"行")
+	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(lines), "skipped": skipped})
+}
+
+// MfgNeedsAPIHandler は POST /api/mfg/needs です。入力: {page_id, rows:[1始まり], action, reason}。
+// action は order（発注部材表へ移す）・quote（見積依頼部材表へ写す）・skip（手配不要表へ移す）・drop（外す）。
+func MfgNeedsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		PageID string `json:"page_id"`
+		Rows   []int  `json:"rows"`
+		Action string `json:"action"`
+		Reason string `json:"reason"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID || !requireMfgPage(w, pageID) {
+		return
+	}
+	if len(req.Rows) == 0 {
+		cms.JSONFail(w, http.StatusBadRequest, "必要部材表の行の先頭のチェックで、行を選んでください")
+		return
+	}
+	switch req.Action {
+	case "order", "quote", "skip", "drop":
+	default:
+		cms.JSONFail(w, http.StatusBadRequest, "作業が分かりません: "+req.Action)
+		return
+	}
+	n := 0
+	done := false
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		keep := req.Action == "quote" // 見積もりは写すだけ（必要部材表に残す）
+		out, lines, ok := takeTableRows(cur, MfgNeedsType, 1, req.Rows, true)
+		if !ok || len(lines) == 0 {
+			return cur
+		}
+		if keep {
+			out = cur
+		}
+		switch req.Action {
+		case "order":
+			for _, g := range splitByVendor(lines) {
+				out = placeUnderHeading(out, MfgHeadOrder, orderDraftHTML(g))
+			}
+		case "quote":
+			if merged, _, ok := appendLinesToTable(out, RFQDraftType, 1, lines); ok {
+				out = merged
+			} else {
+				out = placeUnderHeading(out, MfgHeadQuote, tableOfLinesHTML(RFQDraftType, lines, true))
+			}
+		case "skip":
+			reason := strings.Join(strings.Fields(req.Reason), " ")
+			out, _ = addSkipRows(out, lines, reason, time.Now().Format("2006-01-02"))
+		}
+		n, done = len(lines), true
+		return out
+	}) {
+		return
+	}
+	if !done {
+		cms.JSONFail(w, http.StatusConflict, "選んだ行が見つかりません（ページを読み直してください）")
+		return
+	}
+	auth.Audit(user.Username, "mfg.needs."+req.Action, pageID+" "+strconv.Itoa(n)+"行")
+	cms.WriteJSON(w, map[string]any{"success": true, "rows": n})
+}
+
+// MfgDeliveryDraftAPIHandler は POST /api/mfg/delivery-draft です。入力: {page_id, items:[{row, item}]}（製造ページ）。
+// 選んだ製造明細の行の、まだ納めていない数で、「納品作業」の見出しの下に納品表を作り直します。
+func MfgDeliveryDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := cms.GateJSONPost(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		PageID string    `json:"page_id"`
+		Items  []mfgPick `json:"items"`
+	}
+	if !cms.DecodeJSONBody(w, r, &req) {
+		return
+	}
+	pageID, okID := gateWritablePage(w, r, req.PageID)
+	if !okID || !requireMfgPage(w, pageID) {
+		return
+	}
+	sel, why := pickedMfgRows(pageNum(pageID), req.Items)
+	if why != "" {
+		cms.JSONFail(w, http.StatusBadRequest, why)
+		return
+	}
+	rows, _ := cms.VocabTableRowsOf(database.DB, pageNum(pageID), MfgItemsType)
+	delivered := deliveredUnder(pageNum(pageID))
+	var data []map[string]string
+	for i, r := range rows {
+		if !sel[i] {
+			continue
+		}
+		v := r.Values
+		if pageKindOf(pageNumOrZero(v["order"])) != PageKindCustomerOrder {
+			continue // 見積の依頼・自社案件は納品しない
+		}
+		qty, okQ := estimateNumber(v["quantity"])
+		if !okQ {
+			continue
+		}
+		left := qty - delivered[shippedKey(v["order"], v["item-id"], v["item-name"])]
+		if left <= 0 {
+			continue
+		}
+		data = append(data, map[string]string{
+			"our-item-id": v["our-item-id"], "order": v["order"], "item-id": v["item-id"], "item-name": v["item-name"],
+			"quantity": fmtQty(left), "unit": v["unit"],
+		})
+	}
+	if len(data) == 0 {
+		cms.JSONFail(w, http.StatusBadRequest, "選んだ行に、まだ納めていない数がありません（見積の依頼・自社案件の行は納品しません）")
+		return
+	}
+	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
+		cur = dropTablesOfType(cur, MfgDeliveryDraftType)
+		return placeUnderHeading(cur, MfgHeadDelivery, deliveryDraftHTML(data))
+	}) {
+		return
+	}
+	auth.Audit(user.Username, "mfg.delivery-draft", pageID+" "+strconv.Itoa(len(data))+"行")
+	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(data)})
+}
+
+// deliveryDraftHTML は納品表の HTML です（見出し行は宣言から）。
+func deliveryDraftHTML(data []map[string]string) string {
+	var b strings.Builder
+	b.WriteString(`<table><caption>` + stdhtml.EscapeString(displayNameOf(MfgDeliveryDraftType)) + `</caption><tbody>` + headerRowHTML(MfgDeliveryDraftType))
+	for _, v := range data {
+		b.WriteString(`<tr>`)
+		for _, c := range columnsOf(MfgDeliveryDraftType) {
+			b.WriteString(`<td>` + stdhtml.EscapeString(v[c.Field]) + `</td>`)
+		}
+		b.WriteString(`</tr>`)
+	}
+	b.WriteString(`</tbody></table>`)
+	return b.String()
+}
+
+// pageNumOrZero は参照の値をページ番号にします（読めなければ 0）。
+func pageNumOrZero(v string) int {
+	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v), "/"))
+	if !ok {
+		return 0
+	}
+	return pageNum(id)
+}

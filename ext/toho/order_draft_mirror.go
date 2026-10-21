@@ -45,34 +45,28 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	//    未手配の一覧へ戻す方法がありません**」）。
 	//    ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、ここから消せば
 	//    **自動的に戻ってきます**。戻す先へ何かを書く必要はありません。
-	addDraftRowButtons(el, page.FormatID(ctx.PageID), idx, pageKindOf(ctx.PageID) == PageKindMfg)
+	// 2026-10-21 夕から、行ごとのボタンは表の中に置かない——行の先頭にチェック、「不要」「外す」は表の下の欄（利用者:「この表はご法度のはずの一緒にボタンを入れています」）。
+	prependRowChromeCells(el, "draft-pick-cell", func(n int, _ *html.Node) string {
+		return pickHTML("draft-pick", map[string]string{"row": strconv.Itoa(n + 1)})
+	})
+	rowBar := draftRowBarHTML(page.FormatID(ctx.PageID), idx, pageKindOf(ctx.PageID) == PageKindMfg)
 	// 「部材発注書を作る」の欄は**表の外（包む節の中・表の直後）**へ（2026-09-28・`draftBoxOf`）。
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
-	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+
+	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+rowBar+
 		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx, vendor)+`</div>`)
 	return false, nil
 }
 
-// addDraftRowButtons は各行の末尾に「戻す」のセルを足します。
-//
-// ⚠ **鏡なので本文には残りません**（`.vocab-chrome`）。⚠ **見出し行にも1つ足します**
-// ——足さないと**列がずれて見えます**（見出しが1つ足りない表になる）。
-// mfg なら（製造ページの発注部材表）、「🚫 不要」も足します（手配不要表へ移す・2026-10-21・mfg_skip.go）。
-func addDraftRowButtons(table *html.Node, pageID string, idx int, mfg bool) {
-	addRowChromeCells(table, "draft-row-act", func(row int, _ *html.Node) string {
-		skip := ""
-		if mfg {
-			skip = `<button type="button" class="chip-btn draft-row-skip"` +
-				` data-draft-page="` + stdhtml.EscapeString(pageID) + `" data-draft-table="` + strconv.Itoa(idx) + `" data-draft-row="` + strconv.Itoa(row) + `"` +
-				` title="この部材はこの製造では手配しません（理由と日付つきで手配不要表へ移します）">🚫 不要</button>`
-		}
-		return skip + `<button type="button" class="chip-btn draft-row-back"` +
-			` data-draft-page="` + stdhtml.EscapeString(pageID) + `"` +
-			` data-draft-table="` + strconv.Itoa(idx) + `"` +
-			` data-draft-row="` + strconv.Itoa(row) + `"` +
-			` title="この行を発注部材表から外します（製造ページの「📦 この製造の部材を発注部材表へ」で、また入れられます）">↩ 外す</button>`
-	})
+// draftRowBarHTML は発注部材表の下の、選んだ行への操作です（2026-10-21 夕）——「↩ 外す」（発注部材表から外す・「部材」でまた集められる）と、
+// 製造ページなら「🚫 不要」（手配不要表へ移す・mfg_skip.go）。
+func draftRowBarHTML(pageID string, idx int, mfg bool) string {
+	attrs := ` data-draft-page="` + stdhtml.EscapeString(pageID) + `" data-draft-table="` + strconv.Itoa(idx) + `"`
+	out := `<div class="draft-row-bar">選んだ行を: `
+	if mfg {
+		out += `<button type="button" class="chip-btn draft-sel-skip"` + attrs + ` title="この製造では手配しません（理由と日付つきで手配不要表へ移します）">🚫 不要</button> `
+	}
+	return out + `<button type="button" class="chip-btn draft-sel-back"` + attrs + ` title="発注部材表から外します（製造明細表の「部材」で、また集められます）">↩ 外す</button> <span class="draft-row-say"></span></div>`
 }
 
 // draftVendorOf は、発注部材表の「推奨業者」の列の値が1社にそろっていればその社を、そうでなければ空を返します。

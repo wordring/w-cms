@@ -14,8 +14,9 @@ import (
 
 // 製造ページから部材見積依頼・見積計算書を作る（2026-10-19・mfg_more.go）。
 
-// TestMfgRFQLines は、製造の部材をロット＝製造明細の数量で集め、案件と弊社品番を運ぶことを固定します（手配済みは引かない）。
-func TestMfgRFQLines(t *testing.T) {
+// TestMfgPartLinesCarryLot は、製造の部材を集めるとき、ロット＝製造明細の数量・案件・弊社品番を運ぶことを固定します（2026-10-21 夕——
+// 必要部材表の「📨 見積もり」が見積依頼部材表へ写すのにロットが要る）。弊社品番の無い行は飛ばす。
+func TestMfgPartLinesCarryLot(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	addPage(t, 33, 0, "ブラケット", "root", "302", true)
@@ -23,7 +24,7 @@ func TestMfgRFQLines(t *testing.T) {
 		`<table><caption>製造明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
 		`<tr><td>000031</td><td>000030</td><td>K-1</td><td>ブラケット</td><td>2</td></tr>`+
 		`<tr><td></td><td>000030</td><td>K-2</td><td>弊社品番の無い行</td><td>5</td></tr></tbody></table>`)
-	lines, skipped, err := mfgRFQLines(&auth.User{Username: "root", IsAdmin: true}, 33)
+	lines, skipped, err := mfgPartLines(&auth.User{Username: "root", IsAdmin: true}, 33, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,13 @@ func TestRFQDocAndCalcUnderMfgPage(t *testing.T) {
 		t.Errorf("⚠ 見積計算書のタグ「製造」が %q です（000991 のはず）", got)
 	}
 	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000991", nil), u), 991, readPageBody(t, "000991"))
-	for _, want := range []string{"見積計算</th>", `<a href="/` + calc + `">🧮 /` + calc, `data-ecalc-new="000992" data-mfg="000991"`, "mfg-rfq-go"} {
+	// 2026-10-21 夕から、表の中に操作は置かない——見積計算書は「この製造の書類」に並び、作るボタンは表の下の帯（選んだ行の加工製品）。
+	for _, bad := range []string{"見積計算</th>", "mfg-rfq-go", "mfg-dlv-pick", "mfg-back-go"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("⚠ 製造ページに、もう無い %q があります", bad)
+		}
+	}
+	for _, want := range []string{`<a href="/` + calc + `">`, `class="chip-btn mfg-act-calc"`, `data-product="000992"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("⚠ 製造ページに %q がありません:\n%s", want, got)
 		}

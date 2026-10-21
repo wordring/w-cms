@@ -27,8 +27,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
-
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
@@ -445,13 +443,3 @@ func mfgWaitViewHTML(user *auth.User, _ int) string {
 }
 
 // ── 製造明細表の「↩ 製造待ちへ」 ─────────────────────────────────────────
-
-// appendMfgBackCell は製造明細表の行 tr の末尾に「↩ 製造待ちへ」のボタンのセル（鏡）を足します（n はデータ行の番号）。
-func appendMfgBackCell(tr *html.Node, pageID string, n int, item string, show bool) {
-	td := priceCell(tr, "td", "mfg-back")
-	if !show {
-		return
-	}
-	appendRawChrome(td, `<button type="button" class="chip-btn mfg-back-go" title="この行を製造明細から外して、製造待ちへ戻す"`+
-		` data-mfg="`+stdhtml.EscapeString(pageID)+`" data-row="`+strconv.Itoa(n)+`" data-item="`+stdhtml.EscapeString(item)+`">↩ 製造待ちへ</button>`)
-}

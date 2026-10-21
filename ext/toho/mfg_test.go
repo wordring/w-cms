@@ -160,7 +160,7 @@ func TestMfgPartLinesCapsToMfgQty(t *testing.T) {
 	syncBody(t, 33, `<h1>ブラケット</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`+
 		`<table><caption>製造明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
 		`<tr><td>000031</td><td>000030</td><td>K-1</td><td>ブラケット</td><td>2</td></tr></tbody></table>`)
-	lines, skipped, err := mfgPartLines(&auth.User{Username: "root", IsAdmin: true}, 33)
+	lines, skipped, err := mfgPartLines(&auth.User{Username: "root", IsAdmin: true}, 33, nil)
 	if err != nil || skipped != 0 {
 		t.Fatalf("数えられません: %v（飛ばした %d）", err, skipped)
 	}

@@ -49,10 +49,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/delivery-pdf", Handler: DeliveryPDFAPIHandler}, // 納品書の紙（2026-10-17・delivery_pdf.go）
 		{Pattern: "/api/mfg/estimate", Handler: MfgEstimateAPIHandler}, // 製造の見積書（2026-10-19・quote_done.go）
 		{Pattern: "/api/mfg/close", Handler: MfgCloseAPIHandler}, // 製造を閉じる（記録へ・2026-10-19・mfg_close.go）
-		{Pattern: "/api/mfg/rfq", Handler: MfgRFQAPIHandler}, // 製造の部材を見積依頼必要部材表へ（2026-10-19・mfg_more.go）
-		{Pattern: "/api/mfg/parts", Handler: MfgPartsAPIHandler},       // 製造の部材を発注部材表へ（2026-10-19・mfg_view.go）
+		{Pattern: "/api/mfg/parts", Handler: MfgPartsAPIHandler},                  // 選んだ製造明細の行の部材を必要部材表へ（2026-10-21 夕・mfg_work.go）
+		{Pattern: "/api/mfg/needs", Handler: MfgNeedsAPIHandler},                  // 必要部材表の選んだ行を発注・見積もり・不要・外す（2026-10-21 夕・mfg_work.go）
+		{Pattern: "/api/mfg/delivery-draft", Handler: MfgDeliveryDraftAPIHandler}, // 選んだ製造明細の行で納品表を作る（2026-10-21 夕・mfg_work.go）
 		{Pattern: "/api/mfg/skip", Handler: MfgSkipAPIHandler},              // 発注部材表の行を手配不要表へ（2026-10-21・mfg_skip.go）
-		{Pattern: "/api/mfg/extra", Handler: MfgExtraAPIHandler},            // 追加の発注（2026-10-21・order_unsend.go）
 		{Pattern: "/api/our-order/unsend", Handler: OrderUnsendAPIHandler}, // 送ったことを取り消す（2026-10-21・order_unsend.go）
 		{Pattern: "/api/mfg/skip/remove", Handler: MfgSkipRemoveAPIHandler}, // 手配不要表の行を外す（2026-10-21・mfg_skip.go）
 		{Pattern: "/api/mfg/made", Handler: MfgMadeAPIHandler},         // 製造完了（2026-10-19・mfg_view.go）

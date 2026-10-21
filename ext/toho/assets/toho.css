@@ -548,3 +548,9 @@
 #w-editor-content .mfg-docs li { margin: 2px 0; }
 #w-editor-content .mfg-docs-meta,
 #w-editor-content .mfg-docs-none { color: #6b7280; font-size: 0.9em; }
+/* 製造ページの作業（2026-10-21 夕・mfg_work.go）——表の下の帯と、行の先頭のチェックの列。表の中には操作を置かない。 */
+#w-editor-content .mfg-bar { margin: 4px 0 14px; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+#w-editor-content .mfg-bar .mfg-state { color: #6b7280; font-size: 0.9em; margin-right: 6px; }
+#w-editor-content td.mfg-pick-cell, #w-editor-content th.mfg-pick-cell,
+#w-editor-content td.mfg-needs-pick-cell, #w-editor-content th.mfg-needs-pick-cell { width: 1.8em; text-align: center; }
+#w-editor-content .mfg-page-end { margin-top: 18px; padding-top: 8px; border-top: 1px solid #e5e7eb; }

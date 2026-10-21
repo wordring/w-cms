@@ -11,85 +11,16 @@ package toho
 //   - 製造明細表の右の「見積計算」の欄（鏡）——この製造の見積計算書（タグ「製造」）へのリンクと「➕」。押すと、その加工製品の
 //     新しい見積計算書を記録に作り、タグ「製造」にこの製造ページを書く（`/api/estimate-calc/new` の `mfg`）。見積の値段は、いちばん新しい見積計算書から
 //     読むので（estimateSourceOf）、ここで作った見積計算書が「この製造の見積書を作る」の単価になる。
+//   - （2026-10-21 夕に、表の中の操作をやめた——「📨」と「見積計算」の欄は外した。見積もりは必要部材表の「📨 見積もり」から、
+//     見積計算書は製造明細表の下の「🧮 見積計算書」から作る・mfg_work.go。ここに残るのは、書類に製造ページを書く道具だけ。）
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	stdhtml "html"
-	"net/http"
-	"strconv"
 	"strings"
 
-	"golang.org/x/net/html"
-
 	"w-cms/internal/auth"
-	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
-
-// mfgRFQLines は製造ページ mfgID の製造明細の行ごとに、その加工製品の部材を、ロット＝製造明細の数量で集めます。
-// 弊社品番の無い行・部材の表の無い加工製品は飛ばします（skipped に数える）。
-func mfgRFQLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int, err error) {
-	rows, err := cms.VocabTableRowsOf(database.DB, mfgID, MfgItemsType)
-	if err != nil {
-		return nil, 0, err
-	}
-	for _, r := range rows {
-		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
-		qty, okQ := estimateNumber(r.Values["quantity"])
-		if !ok || !okQ || qty < 1 || !page.CanView(user, pageNum(pid)) {
-			skipped++
-			continue
-		}
-		ls := rfqLinesOfProduct(pageNum(pid), []int{int(qty)})
-		if len(ls) == 0 {
-			skipped++
-			continue
-		}
-		if order, okO := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/")); okO {
-			for i := range ls {
-				ls[i].ForOrder = order
-			}
-		}
-		lines = append(lines, withMfg(ls, page.FormatID(mfgID))...)
-	}
-	return lines, skipped, nil
-}
-
-// MfgRFQAPIHandler は POST /api/mfg/rfq です。入力: {page_id}（製造ページ）。
-// この製造の部材を、製造ページの本文の見積依頼必要部材表へ入れます（表が無ければ作る）。
-func MfgRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, pageID, ok := gatePagePost(w, r)
-	if !ok {
-		return
-	}
-	if !requireMfgPage(w, pageID) {
-		return
-	}
-	lines, skipped, err := mfgRFQLines(user, pageNum(pageID))
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "製造明細を読めません: "+err.Error())
-		return
-	}
-	if len(lines) == 0 {
-		msg := "この製造で見積を頼む部材はありません（加工製品の部材の表に行がありません）"
-		if skipped > 0 {
-			msg += "。弊社品番の無い行・部材の表の無い行が " + strconv.Itoa(skipped) + " 行あります"
-		}
-		cms.JSONFail(w, http.StatusBadRequest, msg)
-		return
-	}
-	added := 0
-	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		var out string
-		out, added = appendRFQNeeds(cur, lines)
-		return out
-	}) {
-		return
-	}
-	auth.Audit(user.Username, "mfg.rfq", pageID+" "+strconv.Itoa(added)+"行")
-	cms.WriteJSON(w, map[string]any{"success": true, "rows": added, "skipped": skipped})
-}
 
 // mfgParentOr は、page_id が書ける製造ページならその番号を、そうでなければ空を返します（作る書類の「製造」の列に書くか）。
 func mfgParentOr(user *auth.User, id string) string {
@@ -112,59 +43,4 @@ func withMfg(lines []ourOrderLine, mfg string) []ourOrderLine {
 		}
 	}
 	return lines
-}
-
-// calcsUnder は、加工製品 productID の見積計算書のうち、製造ページ parent の分（タグ「製造」・それより前は子）のもの（新しい順）を返します。
-func calcsUnder(user *auth.User, productID int, parent string) []estimateCalc {
-	var out []estimateCalc
-	mfg := pageNum(parent)
-	for _, c := range estimateCalcsOf(user, productID) {
-		if v := cms.PageTagValue(database.DB, c.PageID, MfgRefTag); strings.TrimSpace(v) != "" {
-			// 2026-10-21 から、見積計算書はタグ「製造」で製造ページを指す（置き場は記録）。
-			if refersTo(v, mfg) {
-				out = append(out, c)
-			}
-			continue
-		}
-		if childOf(c.PageID, mfg) { // それまでの形——製造ページの子
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// appendMfgCalcColumn は製造明細表の右に「見積計算」の欄を足します（鏡）——この製造の見積計算書へのリンクと「➕」。
-func appendMfgCalcColumn(ctx *cms.MirrorContext, el *html.Node, writable bool) {
-	rows := rowsOf(el)
-	if len(rows) < 2 {
-		return
-	}
-	pi := headerIndexOf(rows[0], OurItemNoTag)
-	priceCell(rows[0], "th", "mfg-calc").AppendChild(&html.Node{Type: html.TextNode, Data: "見積計算"})
-	mfg := page.FormatID(ctx.PageID)
-	for _, tr := range rows[1:] {
-		td := priceCell(tr, "td", "mfg-calc")
-		if pi < 0 {
-			continue
-		}
-		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(cellText(tr, pi)), "/"))
-		if !ok || ctx.Viewer == nil || !page.CanView(ctx.Viewer, pageNum(pid)) {
-			continue
-		}
-		var b strings.Builder
-		if list := calcsUnder(ctx.Viewer, pageNum(pid), mfg); len(list) > 0 {
-			label := "🧮 /" + page.FormatID(list[0].PageID)
-			if list[0].Date != "" {
-				label += "（" + list[0].Date + "）"
-			}
-			b.WriteString(`<a href="/` + page.FormatID(list[0].PageID) + `">` + stdhtml.EscapeString(label) + `</a> `)
-		}
-		if writable {
-			b.WriteString(`<button type="button" class="chip-btn estimate-calc-new" data-ecalc-new="` + pid + `" data-mfg="` + mfg +
-				`" title="この加工製品の新しい見積計算書を作ります（置き場は記録の年月・この製造ページとはタグ「製造」でつながる）">➕ 見積計算書</button><span class="estimate-calc-say"></span>`)
-		}
-		if b.Len() > 0 {
-			appendRawChrome(td, b.String())
-		}
-	}
 }

@@ -122,9 +122,9 @@ func TestSpliceNodesNested(t *testing.T) {
 	}
 }
 
-// TestOrderDraftMirrorPutsBackButtonsAndForm は、発注部材表の鏡が**行ごとの「戻す」**と
-// **足元の「部材発注書を作る」**を出し、どちらもクロームであることを固定します
-// （09-22 に書かれた鏡で、番人が無かった）。
+// TestOrderDraftMirrorPutsBackButtonsAndForm は、発注部材表の鏡が**行の先頭のチェック**と、表の外の**「↩ 外す」**と
+// **「部材発注書を作る」**を出し、どれもクロームであることを固定します（09-22 に書かれた鏡で、番人が無かった。
+// 2026-10-21 夕から、行ごとのボタンは表の中に置かない）。
 func TestOrderDraftMirrorPutsBackButtonsAndForm(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
@@ -137,9 +137,9 @@ func TestOrderDraftMirrorPutsBackButtonsAndForm(t *testing.T) {
 	got := showPage(t, &auth.User{Username: "root", IsAdmin: true}, 40, body)
 
 	for _, want := range []string{
-		`<th class="vocab-chrome draft-row-act"></th>`, // 見出し行にも1つ（列がずれない）
-		`class="vocab-chrome draft-row-act"><button`,   // データ行の「戻す」
-		`data-draft-table="1"`, `data-draft-row="1"`,
+		`<th class="vocab-chrome draft-pick-cell" contenteditable="false"></th>`, // 見出し行にも1つ（列がずれない）
+		`class="draft-pick" aria-label="この行を選ぶ" data-row="1"`,               // データ行の先頭のチェック
+		`class="chip-btn draft-sel-back" data-draft-page="000040" data-draft-table="1"`, // 表の外の「↩ 外す」
 		`data-draft-go="1"`, "部材発注書を作る", // 足元の欄
 		`class="vocab-chrome draft-form-box w-no-print"`, // 欄は表の外（包む節の中・2026-09-28）
 	} {
@@ -148,7 +148,7 @@ func TestOrderDraftMirrorPutsBackButtonsAndForm(t *testing.T) {
 		}
 	}
 	// ⚠ **欄は表の外**（包む節の中・表の直後）——表の中（tfoot）だと表の横スクロールに巻き込まれる。
-	if strings.Index(got, "draft-form-box") < strings.Index(got, "</table>") || strings.Contains(got, "<tfoot") {
+	if strings.Index(got, "draft-form-box") < strings.Index(got, "</table>") || strings.Contains(got, "<tfoot") || strings.Index(got, "draft-sel-back") < strings.Index(got, "</table>") {
 		t.Errorf("⚠ 「部材発注書を作る」の欄が表の中にあります:\n%s", got)
 	}
 }

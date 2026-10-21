@@ -43,19 +43,6 @@ import (
 	"w-cms/internal/cms/page"
 )
 
-// appendToDraft は本文の `into` 枚目の発注部材表へ行を足します。
-//
-// ⚠ **表は木で数えます**——`data-type` でも `<caption>` でも名乗れるので、
-// 文字列で探すと**キャプションで名乗った表を見落とします**。
-func appendToDraft(body, into string, lines []ourOrderLine) (out string, added int, ok bool) {
-	n, err := strconv.Atoi(into)
-	if err != nil {
-		return body, 0, false
-	}
-	// 足す道具は表の種類を引数にした共有のもの（table_lines.go・2026-10-03——見積依頼部材表も使う）。
-	return appendLinesToTable(body, OrderDraftType, n, lines)
-}
-
 // fieldsOfHeader は表の見出し行の列を、宣言の機械キー（Field）で返します（宣言に無い見出しは空——値を入れない）。
 // 見出し行が無ければ宣言の並びです。
 func fieldsOfHeader(table *html.Node, vocabType string) []string {
@@ -92,31 +79,6 @@ func CountOrderDrafts(pageID int) int {
 		return 0
 	}
 	return len(tablesOfType(nodes, OrderDraftType))
-}
-
-// putLinesIntoDraft は行を発注部材表へ入れた本文を返します（口の本文を変える部分）。
-// into が空なら新しい表を作り（置き場は placeNewDraft）、そうでなければ指した表へ足します。
-// 戻り値は（新しい本文・入れた行数・行き先が見つかったか）。見つからなければ本文はそのまま。
-func putLinesIntoDraft(cur, into string, lines []ourOrderLine) (string, int, bool) {
-	if into == "" {
-		return placeNewDraft(cur, orderDraftHTML(lines)), len(lines), true
-	}
-	merged, n, ok := appendToDraft(cur, into, lines)
-	if !ok {
-		return cur, 0, false
-	}
-	return merged, n, true
-}
-
-// placeNewDraft は新しい発注部材表を**すでにある発注部材表のうち最後のものの直後**へ置きます。
-// 無ければ本文の末尾です。
-//
-// ⚠ **位置をコードで決めない**（2026-09-27・テンプレート駆動の C。利用者:「コードに『この位置に
-// この鏡』と言ったことをハードコーディングするのではなく…」）——それまでは**いつも末尾**で、
-// 人が発注部材表を必要部材表のすぐ下などへ並べ替えても、新しい表は離れた末尾にできていました。
-// 人が並べた場所に、新しいものも並びます。
-func placeNewDraft(body, tableHTML string) string {
-	return placeNewTableAfterLast(body, OrderDraftType, tableHTML)
 }
 
 // orderDraftHTML は発注部材表のHTMLを組みます。

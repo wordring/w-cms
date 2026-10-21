@@ -207,6 +207,8 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Items []deliveryPick `json:"items"`
 		// Mfg は製造ページ（2026-10-19・mfg_view.go）。あれば、明細の「製造」の列に書く（2026-10-21 から、納品書はいつも 記録／年／月／製造記録 に作る）。
 		Mfg string `json:"mfg"`
+		// FromDraft は、製造ページの納品表から作ったか（2026-10-21 夕・mfg_work.go）。作れたら、その納品表を消す。
+		FromDraft bool `json:"from_draft"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -267,7 +269,14 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "delivery.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")
-	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "url": "/" + newID})
+	out := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
+	// 製造ページの納品表から作ったなら、その納品表を消す（2026-10-21 夕）。⚠ 消せなくても納品書は取り消さない——理由を添えるだけ。
+	if req.FromDraft && mfgID != "" {
+		if err := cms.RewriteBody(mfgID, user.Username, func(cur string) string { return dropTablesOfType(cur, MfgDeliveryDraftType) }); err != nil {
+			out["draft_note"] = "⚠ 製造ページの納品表を消せませんでした: " + err.Error()
+		}
+	}
+	cms.WriteJSON(w, out)
 }
 
 // deliveryPickHTML は受注残表の1行の「納品」の選ぶ欄です（残りが無い行は選べない）。

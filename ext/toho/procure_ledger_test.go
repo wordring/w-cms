@@ -113,7 +113,7 @@ func TestAppendToDraftFollowsHeader(t *testing.T) {
 	old := `<section><table><caption>発注部材表</caption><tbody>` +
 		`<tr><th>弊社品番</th><th>材質</th><th>数量</th></tr>` +
 		`<tr><td>000041</td><td>鉄</td><td>2</td></tr></tbody></table></section>`
-	got, n, ok := appendToDraft(old, "1", []ourOrderLine{{ProductID: "000041", ForOrder: "000042", Material: "SUS", Quantity: "5"}})
+	got, n, ok := appendLinesToTable(old, OrderDraftType, 1, []ourOrderLine{{ProductID: "000041", ForOrder: "000042", Material: "SUS", Quantity: "5"}})
 	if !ok || n != 1 || !strings.Contains(got, "<tr><td>000041</td><td>SUS</td><td>5</td></tr>") {
 		t.Errorf("見出しに合わせて足していません:\n%s", got)
 	}
