@@ -48,7 +48,7 @@ type MaterialHit struct {
 	Material  string `json:"material"` // 材質
 	Shape     string `json:"shape"`    // 形状
 	Size      string `json:"size"`     // 寸法（書かれたまま）
-	Cost      int    `json:"cost"`     // 最新単価（引けなければ 0）
+	Cost      float64 `json:"cost"`    // 最新単価（引けなければ 0・小数も持つ）
 	At        string `json:"at"`       // その単価の時点
 	Supplier  string `json:"supplier"` // その単価の仕入先
 	Migrating bool   `json:"migrating"`

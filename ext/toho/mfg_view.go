@@ -337,7 +337,7 @@ func unorderedCostValue(u UnorderedItem) string {
 	if u.Cost <= 0 {
 		return ""
 	}
-	return strconv.Itoa(u.Cost)
+	return strconv.FormatFloat(u.Cost, 'f', -1, 64)
 }
 
 // mfgSupplied は、製造ページ mfg のために手当てした数を「案件|弊社品番|部材の鍵」ごとに数えます（2026-10-21 夕）。

@@ -102,6 +102,10 @@ func TTCFace(data []byte, index int) ([]byte, error) {
 	if index < 0 || index >= n {
 		return nil, fmt.Errorf("書体 %d はありません（このコレクションには %d 書体）", index, n)
 	}
+	// 目次の欄がファイルの中にあるか（書体の数はファイルが名乗る——途中で切れたファイルで panic していた・2026-10-22 の見直し）。
+	if 16+4*index > len(data) {
+		return nil, errors.New("書体の目次が壊れています（ファイルが途中で切れているかもしれません）")
+	}
 	off := binary.BigEndian.Uint32(data[12+4*index : 16+4*index])
 	if int(off)+12 > len(data) {
 		return nil, errors.New("書体の位置がファイルの外を指しています")

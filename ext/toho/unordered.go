@@ -42,7 +42,7 @@ type UnorderedItem struct {
 	Name          string `json:"name"`            // 表示用の名前
 	Kind          string `json:"kind"`            // 種類（設定 order_kinds の kind）
 	Remaining     int    `json:"remaining"`       // 残要手配数
-	Cost          int    `json:"cost"`            // 参考単価（引けなければ 0）
+	Cost          float64 `json:"cost"`           // 参考単価（引けなければ 0・小数も持つ）
 	Supplier      string `json:"supplier"`        // その単価の仕入先
 	Migrating     bool   `json:"migrating"`       // ⚠ 移行の確認前
 	// Values は発注の表の列ごとの値（2026-09-28・種類の columns から）——画面が発注部材表へ運ぶ。

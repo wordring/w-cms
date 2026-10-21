@@ -43,7 +43,7 @@ const priceColLabel = "最新単価"
 
 // materialPrice は「その材料を最後にいくらで買ったか」です。
 type materialPrice struct {
-	Cost     int    // 単価（部材発注明細表の `単価`）
+	Cost     float64 // 単価（部材発注明細表の `単価`。小数も持つ——整数にして、152.5 円を 152 円と次の部材発注書へ写していた・2026-10-22 の見直し）
 	Date     string // 部材発注日（読めなければ空）
 	Supplier string // 仕入先
 	PageID   int    // 出所の部材発注書ページ
@@ -118,7 +118,7 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			if q, ok := quotes[key]; ok {
 				// ⚠ **「見積」と書きます**——買った値段と見分けが付かないと、言われた値段を相場として見積もる。
 				//    色だけで分けない（文字の印）。
-				appendPriceValue(tr, "見積 "+comma(q.Cost)+"円", strings.TrimSpace(q.Date), strings.TrimSpace(q.Supplier))
+				appendPriceValue(tr, "見積 "+commaDecimal(q.Cost)+"円", strings.TrimSpace(q.Date), strings.TrimSpace(q.Supplier))
 				continue
 			}
 			appendPriceEmpty(tr) // 空欄＝買った記録が無い（上の説明・2026-09-27）
@@ -126,7 +126,7 @@ func renderMaterialPrices(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			// ⚠ **出所を必ず添えます**（時点と仕入先）。値段だけ出すと、
 			//    **いつの・誰からの値段か分からない数**になり、ワンノートの
 			//    `単価（ロット1）みなと` と同じ問題を作り直すことになります。
-			appendPriceValue(tr, comma(p.Cost)+"円",
+			appendPriceValue(tr, commaDecimal(p.Cost)+"円",
 				strings.TrimSpace(p.Date), strings.TrimSpace(p.Supplier))
 		}
 	}
@@ -228,7 +228,7 @@ func latestMaterialPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]mate
 		if key == "" {
 			continue // 鍵にならない行（空の鍵で引き当てない）
 		}
-		cost := r.Num("cost")
+		cost, _ := estimateNumber(r.Values["cost"])
 		if cost <= 0 {
 			continue // 単価の無い行は「いくらで買ったか」を語れない
 		}
@@ -271,7 +271,7 @@ func latestQuotedPrices(db cms.ReadOnlyDB, viewer *auth.User) (map[string]materi
 			continue
 		}
 		key := materialKeyOf(r.Values["material"], r.Values["shape"], r.Values["size"])
-		cost := r.Num("cost")
+		cost, _ := estimateNumber(r.Values["cost"])
 		if key == "" || cost <= 0 {
 			continue
 		}

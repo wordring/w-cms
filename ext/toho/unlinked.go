@@ -92,7 +92,7 @@ func UnlinkedCustomers(user *auth.User) []UnlinkedCustomer {
 			continue // 結びついている
 		}
 		// **メールが来ている証拠**を1つ探します（無ければ黙る）。
-		addr := anySenderUnder(h.ID, 0)
+		addr := anySenderUnder(h.ID, 0, viewCheck(user))
 		if addr == "" {
 			continue // FAXだけ・電話だけの客先。**正当に連絡先ゼロ**
 		}
@@ -120,19 +120,28 @@ func hasContactsRef(pageIDInt int) bool {
 // **深さは3段**（いまは社名／装置名称／図面名称／旧版——2026-09-29 までは社名／段／装置名称／図面名称）。⚠ 全部を辿ると社名の数×部品の数に
 // なるので、**1つ見つけたら止めます**——要るのは「メールが来ている」という事実だけで、
 // 何通来たかではありません。
-func anySenderUnder(pageIDInt, depth int) string {
-	if depth > 3 {
+//
+// 見るのは、見る人 ok が読めるページと、読める通信記録の差出人だけ（社名のページだけを確かめて、その下の読めない
+// 加工製品ページ・通信記録の差出人まで出していた・2026-10-22 の見直し）。
+func anySenderUnder(pageIDInt, depth int, ok func(int) bool) string {
+	if depth > 3 || !ok(pageIDInt) {
 		return ""
 	}
-	if addr := senderAddressOf(pageIDInt); addr != "" {
-		return addr
+	ref := strings.TrimSpace(cms.PageTagValue(database.DB, pageIDInt, SourceRefTag))
+	if i := strings.Index(ref, "-"); i > 0 {
+		ref = ref[:i]
+	}
+	if srcID, err := strconv.Atoi(ref); err == nil && ok(srcID) {
+		if addr := recordSenderAddress(srcID); addr != "" {
+			return addr
+		}
 	}
 	kids, err := cms.ChildPages(database.DB, pageIDInt)
 	if err != nil {
 		return ""
 	}
 	for _, k := range kids {
-		if addr := anySenderUnder(k.ID, depth+1); addr != "" {
+		if addr := anySenderUnder(k.ID, depth+1, ok); addr != "" {
 			return addr
 		}
 	}
