@@ -121,6 +121,8 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	appendMfgCalcColumn(ctx, el, writable)
 	span := headerCellCount(el)
 	appendFootRow(el, span, "mfg-state", "製造完了: "+strconv.Itoa(done)+" / "+strconv.Itoa(total)+" 行")
+	// この製造の書類（2026-10-21・mfg_docs.go）——書類は記録の年月にあり、明細の「製造」の列でこの製造ページを指す。
+	appendFootHTML(el, span, "mfg-docs-row", mfgDocsHTML(mfgDocs(ctx.Viewer, ctx.PageID)))
 	if writable {
 		pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 		// 部材を発注部材表へ（2026-10-19・作る順の3番）——この製造の、まだ手配していない部材を、この製造ページの発注部材表へ。

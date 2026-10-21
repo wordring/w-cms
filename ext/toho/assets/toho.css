@@ -543,3 +543,8 @@
 /* 案件残表と製造待ちの表の下の帯（「🏭 製造」・「▶ 開始」「↩ 案件へ戻す」）。 */
 #w-editor-content .backlog-wait-bar,
 #w-editor-content .mfgwait-bar { margin: 4px 0 14px; }
+/* 製造ページの「この製造の書類」（2026-10-21・mfg_docs.go）——製造明細表の足元。書類は記録の年月にあり、ここからリンクで開く。 */
+#w-editor-content .mfg-docs ul { margin: 4px 0 0; padding-left: 1.2em; }
+#w-editor-content .mfg-docs li { margin: 2px 0; }
+#w-editor-content .mfg-docs-meta,
+#w-editor-content .mfg-docs-none { color: #6b7280; font-size: 0.9em; }
