@@ -9,7 +9,7 @@ package toho
 //	  2. 移す先は `記録／年／月／製造記録`（年月は請求書の請求日）
 //	  3. 手でも閉じられる（「この製造を閉じる」——見積だけで終わった製造は請求書が無い）
 //
-//   - 「済んだ」は、製造明細の行ごとに、この製造ページの子の納品書（`ページ種類：弊社納品書`）で数量ぶん納めていて、
+//   - 「済んだ」は、製造明細の行ごとに、この製造の納品書（`ページ種類：弊社納品書`・mfgDeliveryRows）で数量ぶん納めていて、
 //     その納品書の行が全部どれかの請求書に載っていること（deliveredUnder・billedKeys）。
 //     ⚠ いまの billedKeys は、まだ紙を作っていない（`発行日` の空い）請求書に載った行も「載っている」と数えます。
 //     納品書のほうは、発行済かどうかを見ません（deliveredUnder）——請求書に載るのは発行済の納品書の行だけなので、
@@ -61,22 +61,8 @@ func mfgFinished(mfgID int, billed map[string]bool) bool {
 	if !some {
 		return false
 	}
-	// 子の納品書の行が、全部どれかの請求書に載っているか。
-	dl, err := cms.VocabRowsOfType(database.DB, DeliveryItemsType)
-	if err != nil {
-		return false
-	}
-	mine := map[int]bool{}
-	for _, r := range dl {
-		ok, seen := mine[r.PageID]
-		if !seen {
-			meta, has := page.ReadSidecar(page.FormatID(r.PageID))
-			ok = has && meta.ParentID == page.FormatID(mfgID) && pageKindOf(r.PageID) == PageKindOurDelivery
-			mine[r.PageID] = ok
-		}
-		if !ok {
-			continue
-		}
+	// この製造の納品書の行が、全部どれかの請求書に載っているか。
+	for _, r := range mfgDeliveryRows(mfgID) {
 		if q, okQ := estimateNumber(r.Values["quantity"]); !okQ || q <= 0 {
 			continue
 		}
@@ -87,26 +73,29 @@ func mfgFinished(mfgID int, billed map[string]bool) bool {
 	return true
 }
 
-// mfgPagesOfInvoice は、請求書の請求明細の行が指す納品書の親の製造ページ（重複なし・番号の順）を返します。
+// mfgPagesOfInvoice は、請求書の請求明細の行が指す納品書の製造ページ（重複なし・番号の順）を返します。
 // rows は請求明細表の行（見出しの表示文字が鍵——itemRowsOf）。
+// 納品書の製造ページは、納品明細の「製造」の列（2026-10-21 から）。列が空の納品書は、親が製造ページならそれ（それまでの形）。
 func mfgPagesOfInvoice(rows []map[string]string) []int {
 	seen := map[int]bool{}
+	read := map[string]bool{}
 	var out []int
-	for _, v := range rows {
-		dlv, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v["納品書"]), "/"))
-		if !ok {
-			continue
-		}
-		meta, has := page.ReadSidecar(dlv)
-		if !has || meta.ParentID == "" {
-			continue
-		}
-		id := pageNum(meta.ParentID)
+	add := func(id int) {
 		if seen[id] || pageKindOf(id) != PageKindMfg {
-			continue
+			return
 		}
 		seen[id] = true
 		out = append(out, id)
+	}
+	for _, v := range rows {
+		dlv, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v["納品書"]), "/"))
+		if !ok || read[dlv] {
+			continue
+		}
+		read[dlv] = true
+		for _, id := range mfgsOfDoc(pageNum(dlv), DeliveryItemsType) {
+			add(id)
+		}
 	}
 	sort.Ints(out)
 	return out

@@ -93,6 +93,7 @@ func buildRFQDocHTML(tmpl, pageID, supplier, date, note, signerID string, lines 
 		row := map[string]string{
 			"our-item-id": ln.ProductID,
 			"for-order":   ln.ForOrder,
+			"mfg":         ln.Mfg,
 			"kind":        ln.Kind,
 			"no":          ln.No,
 			"work":        ln.Work,
@@ -203,6 +204,8 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lines, found := rfqDraftLinesOf(cur, req.Table)
+	// 見積依頼部材表が製造ページにあれば、明細の「製造」の列にその製造ページを書く（2026-10-21）。
+	lines = withMfg(lines, mfgParentOr(user, boxPage))
 	if !found {
 		cms.JSONFail(w, http.StatusConflict, "その見積依頼部材表が見つかりません（ページを読み直してください）")
 		return
@@ -231,8 +234,8 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 置き場は `記録／年／月／製造記録`（2026-10-16・record_box.go）。**月は作った日**（部材見積依頼日ではない）。
-	// 見積依頼部材表が製造ページにあれば、その製造ページの子（2026-10-19・mfg_more.go）。
-	monthID, err := recordFolderOr(mfgParentOr(user, boxPage), user, RecordWorkFolder, time.Now())
+	// 見積依頼部材表が製造ページにあっても、置き場は記録です（2026-10-21。2026-10-19〜20 は製造ページの子に作っていた）。
+	monthID, err := recordFolderOr("", user, RecordWorkFolder, time.Now())
 	if err != nil {
 		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return

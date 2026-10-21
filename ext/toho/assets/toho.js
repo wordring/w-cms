@@ -115,7 +115,7 @@ delegateClick([
         sayIn(say, '作っています…');
         let r;
         try {
-            // 製造ページの「見積計算」の欄から押したときは、その製造ページの子に作る（2026-10-19・ext/toho/mfg_more.go）。
+            // 製造ページの「見積計算」の欄から押したときは、mfg を送る——サーバーがタグ「製造」にその製造ページを書く（2026-10-21。それまでは子に作っていた）。
             r = await postJSON('/api/estimate-calc/new', { product: btn.getAttribute('data-ecalc-new') || '', mfg: btn.getAttribute('data-mfg') || '' });
         } catch (e) {
             sayIn(say, '⚠ 通信に失敗しました: ' + e, 'proc-why-ng');
@@ -1754,7 +1754,7 @@ delegateClick([
 // 利用者:「一つの製造ページに案件の見積もり依頼、部材発注、製造記録（工数など）、納品書、請求書を並べるのはどうですか？」。
 // 製造明細表の「製造完了」のチェックは /api/mfg/made へ（行番号・品番・いまの値の3つで照合）。「納品」の欄で選んだ行は、
 // 今回納める数（まだ納めていない数が初めから入っていて直せる）を確かめて、/api/delivery/new へ mfg（この製造ページ）を添えて送る
-// ——納品書はこの製造ページの子にできる。
+// ——納品書は記録にでき、明細の「製造」の列にこの製造ページが入る（2026-10-21）。
 delegateClick([
     ['.mfg-made', async (box) => {
         const page = (location.pathname.match(/\/(\d{6})/) || [])[1] || '';
@@ -1829,7 +1829,7 @@ delegateClick([
 
 // 製造ページの「📦 この製造の部材を発注部材表へ」（2026-10-19・ext/toho/mfg_view.go の MfgPartsAPIHandler）——この製造の、まだ手配して
 // いない部材（この製造で作る数ぶんまで）を、この製造ページに新しい発注部材表として入れる。部材発注書はその表の「部材発注書を作る」から
-// （製造ページの子にできる）。
+// （記録にでき、明細の「製造」の列にこの製造ページが入る・2026-10-21）。
 delegateClick([['.mfg-parts-go', async (btn) => {
     const say = btn.parentElement && btn.parentElement.querySelector('.mfg-parts-say');
     btn.disabled = true;
@@ -1864,7 +1864,7 @@ delegateClick([['.mfg-rfq-go', async (btn) => {
     location.reload();
 }]]);
 
-// 製造ページの「📄 この製造の見積書を作る」（2026-10-19・ext/toho/quote_done.go）——見積の依頼の行から見積書をこの製造ページの子に作って開く。
+// 製造ページの「📄 この製造の見積書を作る」（2026-10-19・ext/toho/quote_done.go）——見積の依頼の行から見積書を作って開く（置き場は記録・2026-10-21）。
 delegateClick([['.mfg-estimate-go', async (btn) => {
     const say = btn.parentElement && btn.parentElement.querySelector('.mfg-estimate-say');
     btn.disabled = true;

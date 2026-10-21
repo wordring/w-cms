@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -128,14 +129,17 @@ func TestMfgMadeAndDeliveryFromMfgPage(t *testing.T) {
 		t.Errorf("⚠ 案件残表の製造完了が 40/100 になっていません:\n%s", view)
 	}
 
-	// 製造ページから納品書（行番号の代わりに品番で探す）——製造ページの子にできる。
+	// 製造ページから納品書（行番号の代わりに品番で探す）——置き場は記録で、明細の「製造」にこの製造ページ（2026-10-21）。
 	code, out = postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "items": []map[string]any{{"order": "000982", "row": -1, "item": "A-1", "name": "ブラケット", "qty": "15"}}})
 	if code != 200 {
 		t.Fatalf("製造ページから納品書を作れません: %d %v", code, out)
 	}
 	dlv := out["page_id"].(string)
-	if got := placeOf(dlv); got != MfgBoxTitle+"／ブラケット" {
-		t.Errorf("納品書の置き場が %s です（製造ページの子のはず）", got)
+	if got, want := placeOf(dlv), recordPath(RecordWorkFolder, time.Now()); got != want {
+		t.Errorf("納品書の置き場が %s です（%s のはず）", got, want)
+	}
+	if body := readPageBody(t, dlv); !strings.Contains(body, "<td>000982</td><td>"+mfg+"</td>") {
+		t.Errorf("⚠ 納品明細表の「製造」に %s がありません:\n%s", mfg, body)
 	}
 	// 製造明細表の「納品」の欄は、残り 25（40 − 15）。
 	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/"+mfg, nil), u), pageNum(mfg), readPageBody(t, mfg))
@@ -181,7 +185,10 @@ func TestOurOrderFromMfgDraftGoesUnderMfgPage(t *testing.T) {
 	if body := readPageBody(t, out["page_id"].(string)); !strings.Contains(body, "<td>000030</td>") {
 		t.Errorf("⚠ 部材発注明細表に案件 000030 が写っていません:\n%s", body)
 	}
-	if got := placeOf(out["page_id"].(string)); got != "ブラケット" {
-		t.Errorf("⚠ 部材発注書の置き場が %s です（製造ページの子のはず）", got)
+	if got, want := placeOf(out["page_id"].(string)), recordPath(RecordWorkFolder, time.Now()); got != want {
+		t.Errorf("⚠ 部材発注書の置き場が %s です（%s のはず）", got, want)
+	}
+	if body := readPageBody(t, out["page_id"].(string)); !strings.Contains(body, "<td>000030</td><td>000991</td>") {
+		t.Errorf("⚠ 部材発注明細表の「製造」に 000991 がありません:\n%s", body)
 	}
 }

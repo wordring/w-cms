@@ -4,10 +4,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // 製造ページから部材見積依頼・見積計算書を作る（2026-10-19・mfg_more.go）。
@@ -62,8 +64,12 @@ func TestRFQDocAndCalcUnderMfgPage(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("部材見積依頼書を作れません: %d %v", code, out)
 	}
-	if got := placeOf(out["page_id"].(string)); got != "ブラケット" {
-		t.Errorf("⚠ 部材見積依頼書の置き場が %s です（製造ページの子のはず）", got)
+	// 2026-10-21 から、置き場は記録で、明細の「製造」の列にこの製造ページを書く。
+	if got, want := placeOf(out["page_id"].(string)), recordPath(RecordWorkFolder, time.Now()); got != want {
+		t.Errorf("⚠ 部材見積依頼書の置き場が %s です（%s のはず）", got, want)
+	}
+	if body := readPageBody(t, out["page_id"].(string)); !strings.Contains(body, "<td>000030</td><td>000991</td>") {
+		t.Errorf("⚠ 部材見積依頼明細表の「製造」に 000991 がありません:\n%s", body)
 	}
 
 	if code, _ := postRFQ(t, u, EstimateCalcNewAPIHandler, map[string]any{"product": "000992", "mfg": "000992"}); code != 400 {
@@ -74,8 +80,11 @@ func TestRFQDocAndCalcUnderMfgPage(t *testing.T) {
 		t.Fatalf("見積計算書を作れません: %d %v", code, out)
 	}
 	calc := out["page_id"].(string)
-	if got := placeOf(calc); got != "ブラケット" {
-		t.Errorf("⚠ 見積計算書の置き場が %s です（製造ページの子のはず）", got)
+	if got, want := placeOf(calc), recordPath(RecordWorkFolder, time.Now()); got != want {
+		t.Errorf("⚠ 見積計算書の置き場が %s です（%s のはず）", got, want)
+	}
+	if got := cms.PageTagValue(database.DB, pageNum(calc), MfgRefTag); got != "000991" {
+		t.Errorf("⚠ 見積計算書のタグ「製造」が %q です（000991 のはず）", got)
 	}
 	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000991", nil), u), 991, readPageBody(t, "000991"))
 	for _, want := range []string{"見積計算</th>", `<a href="/` + calc + `">🧮 /` + calc, `data-ecalc-new="000992" data-mfg="000991"`, "mfg-rfq-go"} {

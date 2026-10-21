@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -86,8 +87,12 @@ func TestMfgEstimateCompletesQuoteCase(t *testing.T) {
 		t.Fatalf("見積書を作れません: %d %v", code, out)
 	}
 	est := out["page_id"].(string)
-	if meta, ok := page.ReadSidecar(est); !ok || meta.ParentID != mfg {
-		t.Errorf("⚠ 見積書が製造ページの子にありません: %+v", meta)
+	// 2026-10-21 から、置き場は記録で、明細の「製造」の列にこの製造ページを書く。
+	if got, want := placeOf(est), recordPath(RecordRequestFolder, time.Now()); got != want {
+		t.Errorf("⚠ 見積書の置き場が %s です（%s のはず）", got, want)
+	}
+	if body := readPageBody(t, est); !strings.Contains(body, "<td>"+mfg+"</td>") {
+		t.Errorf("⚠ 見積明細表の「製造」に %s がありません:\n%s", mfg, body)
 	}
 	if m, _ := out["missing"].(float64); m != 1 {
 		t.Errorf("⚠ 単価の無い行の数が %v です（1 のはず）", out["missing"])

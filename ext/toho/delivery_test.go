@@ -46,8 +46,8 @@ func TestDeliveryNewFromBacklogRows(t *testing.T) {
 		"<dt>" + PageKindTag + "</dt><dd>" + PageKindOurDelivery + "</dd>",
 		"<dt>" + DeliveryIssuedTag + "</dt><dd><br/></dd>",
 		"<caption>納品明細表</caption>",
-		"<td>000862</td><td>PO-000862</td><td>A-1</td><td>ブラケット</td><td>10</td><td>個</td><td>1500</td>",
-		"<td>000863</td><td>PO-000863</td><td>B-1</td><td>シャフト</td><td>10</td><td>個</td><td>800</td>",
+		"<td>000862</td><td></td><td>PO-000862</td><td>A-1</td><td>ブラケット</td><td>10</td><td>個</td><td>1500</td>",
+		"<td>000863</td><td></td><td>PO-000863</td><td>B-1</td><td>シャフト</td><td>10</td><td>個</td><td>800</td>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("納品書に %q がありません:\n%s", want, body)

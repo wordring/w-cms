@@ -221,7 +221,7 @@ func lineOfRow(head, tr *html.Node) ourOrderLine {
 		return ""
 	}
 	return ourOrderLine{
-		ProductID: at("弊社品番"), ForOrder: at("案件"), ItemID: at("品番"), ItemName: at("品名"),
+		ProductID: at("弊社品番"), ForOrder: at("案件"), Mfg: at(MfgRefTag), ItemID: at("品番"), ItemName: at("品名"),
 		Material: at("材質"), Shape: at("形状"), Size: at("寸法"), Color: at("表面"),
 		Quantity: at("数量"), Unit: at("単位"), Cost: at("単価"), Note: at("備考"),
 		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・部材見積依頼の表は部材発注明細表と同じ列——行を移しても落とさない）。

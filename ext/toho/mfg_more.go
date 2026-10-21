@@ -7,9 +7,9 @@ package toho
 //
 //   - 製造明細表の足元の「📨 この製造の部材を見積依頼必要部材表へ」（`/api/mfg/rfq`）——製造明細の行ごとに、その加工製品の部材を
 //     ロット＝製造明細の数量で集め、この製造ページの本文の見積依頼必要部材表へ入れる（行の「案件」も写す）。あとはいつもの流れ
-//     （選んで見積依頼部材表へ → 部材見積依頼書ページを作る）。部材見積依頼書は、この製造ページの子にできる（`/api/rfq/new-doc`）。
-//   - 製造明細表の右の「見積計算」の欄（鏡）——この製造ページの子の見積計算書へのリンクと「➕」。押すと、その加工製品の
-//     新しい見積計算書を、この製造ページの子に作る（`/api/estimate-calc/new` の `mfg`）。見積の値段は、いちばん新しい見積計算書から
+//     （選んで見積依頼部材表へ → 部材見積依頼書ページを作る）。部材見積依頼書は記録に作り、明細の「製造」の列にこの製造ページを書く（`/api/rfq/new`・2026-10-21。それまでは製造ページの子）。
+//   - 製造明細表の右の「見積計算」の欄（鏡）——この製造の見積計算書（タグ「製造」）へのリンクと「➕」。押すと、その加工製品の
+//     新しい見積計算書を記録に作り、タグ「製造」にこの製造ページを書く（`/api/estimate-calc/new` の `mfg`）。見積の値段は、いちばん新しい見積計算書から
 //     読むので（estimateSourceOf）、ここで作った見積計算書が「この製造の見積書を作る」の単価になる。
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ func mfgRFQLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int,
 				ls[i].ForOrder = order
 			}
 		}
-		lines = append(lines, ls...)
+		lines = append(lines, withMfg(ls, page.FormatID(mfgID))...)
 	}
 	return lines, skipped, nil
 }
@@ -91,7 +91,7 @@ func MfgRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "rows": added, "skipped": skipped})
 }
 
-// mfgParentOr は、page_id が書ける製造ページならその番号を、そうでなければ空を返します（作る書類を製造ページの子に置くか）。
+// mfgParentOr は、page_id が書ける製造ページならその番号を、そうでなければ空を返します（作る書類の「製造」の列に書くか）。
 func mfgParentOr(user *auth.User, id string) string {
 	pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(id), "/"))
 	if !ok || pageKindOf(pageNum(pid)) != PageKindMfg || !canWritePage(user, pageNum(pid)) {
@@ -100,18 +100,40 @@ func mfgParentOr(user *auth.User, id string) string {
 	return pid
 }
 
-// calcsUnder は、加工製品 productID の見積計算書のうち、ページ parent の子のもの（新しい順）を返します。
+// withMfg は、行の「製造」が空なら mfg（製造ページの番号・空なら何もしない）を入れます（2026-10-21・書類は記録に置き、製造ページとは列でつながる）。
+// 人が書いた「製造」は上書きしません。
+func withMfg(lines []ourOrderLine, mfg string) []ourOrderLine {
+	if mfg == "" {
+		return lines
+	}
+	for i := range lines {
+		if strings.TrimSpace(lines[i].Mfg) == "" {
+			lines[i].Mfg = mfg
+		}
+	}
+	return lines
+}
+
+// calcsUnder は、加工製品 productID の見積計算書のうち、製造ページ parent の分（タグ「製造」・それより前は子）のもの（新しい順）を返します。
 func calcsUnder(user *auth.User, productID int, parent string) []estimateCalc {
 	var out []estimateCalc
+	mfg := pageNum(parent)
 	for _, c := range estimateCalcsOf(user, productID) {
-		if meta, ok := page.ReadSidecar(page.FormatID(c.PageID)); ok && meta.ParentID == parent {
+		if v := cms.PageTagValue(database.DB, c.PageID, MfgRefTag); strings.TrimSpace(v) != "" {
+			// 2026-10-21 から、見積計算書はタグ「製造」で製造ページを指す（置き場は記録）。
+			if refersTo(v, mfg) {
+				out = append(out, c)
+			}
+			continue
+		}
+		if childOf(c.PageID, mfg) { // それまでの形——製造ページの子
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
-// appendMfgCalcColumn は製造明細表の右に「見積計算」の欄を足します（鏡）——この製造ページの子の見積計算書へのリンクと「➕」。
+// appendMfgCalcColumn は製造明細表の右に「見積計算」の欄を足します（鏡）——この製造の見積計算書へのリンクと「➕」。
 func appendMfgCalcColumn(ctx *cms.MirrorContext, el *html.Node, writable bool) {
 	rows := rowsOf(el)
 	if len(rows) < 2 {

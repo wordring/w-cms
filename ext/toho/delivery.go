@@ -9,7 +9,7 @@ package toho
 // 筆者の案（2026-10-17・利用者は「一点だけ確認です」と仮納品書を足して了承——【考察】全体の設計 §3.6・直す順の8番）:
 //
 //   - 置き場は `記録／年／月／製造記録`（月は作った日）。題は「【弊社】納品書　<客先>」。納品書番号はページ番号そのもの。
-//     （2026-10-19 から、製造ページから作ったときはその製造ページの子——DeliveryNewAPIHandler の `mfg`。）
+//     （2026-10-19 から、製造ページから作れる——DeliveryNewAPIHandler の `mfg`。2026-10-21 から置き場はいつも記録で、明細の「製造」の列にその製造ページを書く。）
 //   - **受注残表で行を選んで作る**。1枚に1社（客先の違う行は混ぜない）、別々の受注の行は混ぜてよい。今回納める数は残りが初め
 //     から入っていて、直せる。品番・品名・単位・単価・発注書番号は**受注明細から写す**（人が品番を写さない）。
 //     （2026-10-19 から、受注残表は案件残表・受注明細は案件明細。製造ページの製造明細表の「納品」の欄からも作れる——mfg_view.go。）
@@ -52,6 +52,8 @@ func deliveryItemColumns() []cms.VocabColumn {
 	return []cms.VocabColumn{
 		{Field: "our-item-id", Label: OurItemNoTag, Type: cms.ColRef},
 		{Field: "order", Label: "案件", Type: cms.ColRef},
+		// mfg はどの製造ページの分か（2026-10-21・【考察】製造単位の部材発注 §6.1）——書類は記録の年月に置くので、製造ページとは、この列でつながる。紙には刷らない。
+		{Field: "mfg", Label: "製造", Type: cms.ColRef},
 		{Field: "order-no", Label: OrderNoTag, Type: cms.ColCode},
 		{Field: "item-id", Label: ItemNoTag, Type: cms.ColCode},
 		{Field: "item-name", Label: "品名", Type: cms.ColText},
@@ -95,6 +97,7 @@ type deliveryPick struct {
 type deliveryLine struct {
 	OurItemNo, Order, OrderNo, ItemNo, ItemName, Qty, Unit, Price, Note string
 	Client                                                              string
+	Mfg                                                                 string // 製造ページ（2026-10-21）
 }
 
 // pickedOrderRow は、案件残表（か製造ページ）で選んだ1行 p を、案件ページの案件明細表の索引から探します（読めない・合わないなら理由）。
@@ -183,7 +186,7 @@ func buildDeliveryHTML(tmpl, pageID, client, signer string, lines []deliveryLine
 	rows := make([]map[string]string, 0, len(lines))
 	for _, ln := range lines {
 		rows = append(rows, map[string]string{
-			"our-item-id": ln.OurItemNo, "order": ln.Order, "order-no": ln.OrderNo, "item-id": ln.ItemNo,
+			"our-item-id": ln.OurItemNo, "order": ln.Order, "mfg": ln.Mfg, "order-no": ln.OrderNo, "item-id": ln.ItemNo,
 			"item-name": ln.ItemName, "quantity": ln.Qty, "unit": ln.Unit, "price": ln.Price, "note": ln.Note,
 		})
 	}
@@ -194,7 +197,7 @@ func buildDeliveryHTML(tmpl, pageID, client, signer string, lines []deliveryLine
 }
 
 // DeliveryNewAPIHandler は POST /api/delivery/new です。入力: {items:[{order, row, item, qty}]}。納品書ページを作り、そのIDを返します。
-// （2026-10-19 から、製造ページからは {items:[{order, row:-1, item, name, qty}], mfg}——行番号の代わりに品番か品名で行を探し、納品書を製造ページの子に作る。）
+// （2026-10-19 から、製造ページからは {items:[{order, row:-1, item, name, qty}], mfg}——行番号の代わりに品番か品名で行を探し、明細の「製造」の列にその製造ページを書く（2026-10-21 から置き場は記録・明細の「製造」の列でつながる）。）
 func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -202,7 +205,7 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Items []deliveryPick `json:"items"`
-		// Mfg は製造ページ（2026-10-19・mfg_view.go）。あれば、納品書をその子に作る（無ければ 記録／年／月／製造記録）。
+		// Mfg は製造ページ（2026-10-19・mfg_view.go）。あれば、明細の「製造」の列に書く（2026-10-21 から、納品書はいつも 記録／年／月／製造記録 に作る）。
 		Mfg string `json:"mfg"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
@@ -234,6 +237,7 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusBadRequest, "納品書は1枚に1社です（「"+client+"」と「"+ln.Client+"」が混ざっています）")
 			return
 		}
+		ln.Mfg = mfgID
 		lines = append(lines, ln)
 	}
 	tmpl, err := cms.PageTemplateBody(DeliveryTemplate)
@@ -249,8 +253,8 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "納品書ページを作れません: "+err.Error())
 		return
 	}
-	// 置き場は製造ページの子（製造ページから作ったとき）か、記録／年／月／製造記録。
-	parentID, err := recordFolderOr(mfgID, user, RecordWorkFolder, time.Now())
+	// 置き場は 記録／年／月／製造記録（2026-10-21 から、製造ページから作っても——製造ページとは明細の「製造」の列でつながる）。
+	parentID, err := recordFolderOr("", user, RecordWorkFolder, time.Now())
 	if err != nil {
 		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return

@@ -40,6 +40,9 @@ const (
 	MfgNoTag    = "製造番号"
 	MfgStartTag = "始めた日"
 	PageKindMfg = "製造"
+	// MfgRefTag は、書類がどの製造ページの分かを書く列とタグの名前です（2026-10-21・【考察】製造単位の部材発注 §6.1）。
+	// 書類は記録の年月に置くので、製造ページとは、明細の列（見積計算書はタグ）でつながる。列の宣言の Label も同じ文字。
+	MfgRefTag = "製造"
 	// mfgTitleMax は題の長さの目安（字数）です。超えたら「…ほか N」に縮める。
 	mfgTitleMax = 30
 )
@@ -270,4 +273,80 @@ func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "mfg.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "url": "/" + newID})
+}
+
+// refersTo は、参照の値 v（`002050`・`/002050` など）がページ id を指すかです。
+func refersTo(v string, id int) bool {
+	pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v), "/"))
+	return ok && pageNum(pid) == id
+}
+
+// childOf は、ページ docID の親がページ parent かです（2026-10-20 までの、製造ページの子に作った書類を見分ける）。
+func childOf(docID, parent int) bool {
+	meta, ok := page.ReadSidecar(page.FormatID(docID))
+	return ok && meta.ParentID == page.FormatID(parent)
+}
+
+// mfgDeliveryRows は、製造ページ mfg の分の納品明細の行（`ページ種類：弊社納品書` のページだけ）を返します。
+//
+// 「この製造の分」は、行の「製造」の列がこの製造ページを指す行です（2026-10-21 から。納品書は記録の年月に置く）。
+// 列が空の行は、納品書が製造ページの子なら、この製造の分と読みます（2026-10-20 までに作った納品書）。
+func mfgDeliveryRows(mfg int) []cms.VocabRow {
+	rows, err := cms.VocabRowsOfType(database.DB, DeliveryItemsType)
+	if err != nil {
+		return nil
+	}
+	kind := map[int]bool{}
+	child := map[int]bool{}
+	var out []cms.VocabRow
+	for _, r := range rows {
+		ok, seen := kind[r.PageID]
+		if !seen {
+			ok = pageKindOf(r.PageID) == PageKindOurDelivery
+			kind[r.PageID] = ok
+		}
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(r.Values["mfg"]) != "" {
+			if refersTo(r.Values["mfg"], mfg) {
+				out = append(out, r)
+			}
+			continue
+		}
+		c, seenC := child[r.PageID]
+		if !seenC {
+			c = childOf(r.PageID, mfg)
+			child[r.PageID] = c
+		}
+		if c {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// mfgsOfDoc は、書類 docID（明細の形式 dataType）が指す製造ページの番号を返します（明細の「製造」の列・重複なし）。
+// 列が1つも書かれていなければ、親が製造ページならその番号（2026-10-20 までの形）。
+func mfgsOfDoc(docID int, dataType string) []int {
+	rows, _ := cms.VocabTableRowsOf(database.DB, docID, dataType)
+	seen := map[int]bool{}
+	var out []int
+	for _, r := range rows {
+		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["mfg"]), "/"))
+		if !ok || seen[pageNum(pid)] {
+			continue
+		}
+		seen[pageNum(pid)] = true
+		out = append(out, pageNum(pid))
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if meta, ok := page.ReadSidecar(page.FormatID(docID)); ok && meta.ParentID != "" {
+		if id := pageNum(meta.ParentID); pageKindOf(id) == PageKindMfg {
+			return []int{id}
+		}
+	}
+	return nil
 }

@@ -8,8 +8,8 @@ package toho
 //
 //   - 製造明細表の「製造完了」の欄に、押せるチェック（鏡）。押すと本文の欄に「済」を書く（`/api/mfg/made`・版が残る）。
 //   - 製造明細表の右に「納品」の欄（鏡）——この製造ページで、まだ納めていない数があれば選べる。
-//     表の足元の「🚚 選んだ行で納品書を作る」で、納品書をこの製造ページの子に作る（`/api/delivery/new` の `mfg`）。
-//   - 「まだ納めていない数」は、製造明細の数量から、この製造ページの子の納品書（`ページ種類：弊社納品書`）の数を引いた数。
+//     表の足元の「🚚 選んだ行で納品書を作る」で、納品書を作る（`/api/delivery/new` の `mfg`）（2026-10-21 から置き場は記録・明細の「製造」の列でつながる）。
+//   - 「まだ納めていない数」は、製造明細の数量から、この製造の納品書（`ページ種類：弊社納品書`・mfgDeliveryRows）の数を引いた数。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -31,24 +31,11 @@ func init() {
 	cms.RegisterMirror(MfgItemsType, cms.MirrorHandlerFunc(renderMfgItems))
 }
 
-// deliveredUnder は、ページ parent の子の納品書（`ページ種類：弊社納品書`）の行の数を、案件ページ×品番（品番が空なら品名）で足します。
-func deliveredUnder(parent int) map[string]float64 {
+// deliveredUnder は、製造ページ mfg の分の納品書（`ページ種類：弊社納品書`）の行の数を、案件ページ×品番（品番が空なら品名）で足します。
+// どの行が「この製造の分」かは mfgDeliveryRows（明細の「製造」の列・それより前の納品書は製造ページの子かどうか）。
+func deliveredUnder(mfg int) map[string]float64 {
 	out := map[string]float64{}
-	rows, err := cms.VocabRowsOfType(database.DB, DeliveryItemsType)
-	if err != nil {
-		return out
-	}
-	mine := map[int]bool{}
-	for _, r := range rows {
-		ok, seen := mine[r.PageID]
-		if !seen {
-			meta, has := page.ReadSidecar(page.FormatID(r.PageID))
-			ok = has && meta.ParentID == page.FormatID(parent) && pageKindOf(r.PageID) == PageKindOurDelivery
-			mine[r.PageID] = ok
-		}
-		if !ok {
-			continue
-		}
+	for _, r := range mfgDeliveryRows(mfg) {
 		if q, okQ := estimateNumber(r.Values["quantity"]); okQ && q > 0 {
 			out[shippedKey(r.Values["order"], r.Values["item-id"], r.Values["item-name"])] += q
 		}
@@ -299,7 +286,7 @@ func mfgPartLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int
 			}
 			v := u.Values
 			lines = append(lines, ourOrderLine{
-				ProductID: pid, ForOrder: order, Kind: u.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], Work: v["加工内容"],
+				ProductID: pid, ForOrder: order, Mfg: page.FormatID(mfgID), Kind: u.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], Work: v["加工内容"],
 				Material: u.Material, Shape: u.Shape, Size: u.Size, Color: v["表面"], Spec: v["仕様"], Supplied: v["支給"],
 				Quantity: strconv.Itoa(q), Cost: unorderedCostValue(u),
 			})
@@ -309,7 +296,7 @@ func mfgPartLines(user *auth.User, mfgID int) (lines []ourOrderLine, skipped int
 }
 
 // MfgPartsAPIHandler は POST /api/mfg/parts です。入力: {page_id}（製造ページ）。
-// この製造の、まだ手配していない部材を、製造ページの本文に新しい発注部材表として入れます（部材発注書はその表の「部材発注書を作る」から——製造ページの子にできる）。
+// この製造の、まだ手配していない部材を、製造ページの本文に新しい発注部材表として入れます（部材発注書はその表の「部材発注書を作る」から（2026-10-21 から置き場は記録・明細の「製造」の列でつながる））。
 func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, pageID, ok := gatePagePost(w, r)
 	if !ok {

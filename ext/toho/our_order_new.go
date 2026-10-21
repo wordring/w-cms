@@ -33,7 +33,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/page"
 )
 
 // ourOrderLine は部材発注書へ入れる1行です（画面から送られてくる形）。
@@ -41,6 +40,8 @@ type ourOrderLine struct {
 	ProductID string `json:"product_id"` // 弊社品番（加工製品ページ）
 	// ForOrder は「どの受注ページのための部材か」（2026-10-01・procure_ledger.go——受注ごとに数える）。
 	ForOrder string `json:"for_order,omitempty"`
+	// Mfg は「どの製造ページの分か」（2026-10-21・明細の列「製造」）。製造ページの発注部材表から作ると、作る口が埋めます。
+	Mfg string `json:"mfg,omitempty"`
 	// ItemID・Color は `品番`・`表面`（2026-09-25 に足した）。⚠ それまで運んでいなかった
 	// ので、**発注部材表から部材発注書を作ると品番と表面が落ちていました**（塗装・鍍金の
 	// 部材発注書で「緑」が消える）。
@@ -112,6 +113,8 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if t, err := time.Parse("2006-01-02", strings.TrimSpace(req.OrderAt)); err == nil {
 		when = t
 	}
+	// 発注部材表が製造ページにあれば、明細の「製造」の列にその製造ページを書く（2026-10-21）。
+	req.Lines = withMfg(req.Lines, mfgParentOr(user, req.DraftPage))
 
 	// ⚠ **送られてきた差出人をそのまま信じません**——署名を持つ人の中に居るかを確かめます（trustedSigner）。
 	signerID := trustedSigner(user, req.Signer)
@@ -134,12 +137,9 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ⚠ **置き場は `記録／年／月／製造記録`**（2026-10-16・record_box.go）。**月は作った日**です（部材発注日ではない——
 	// 利用者:「その文書を作成した日のフォルダで良いと思います」）。無ければ作ります。
-	// 2026-10-19 から、発注部材表が製造ページ（`ページ種類：製造`）にあれば、部材発注書はその製造ページの子に作る（mfg_view.go）。
-	parentID := ""
-	if id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.DraftPage), "/")); ok && pageKindOf(pageNum(id)) == PageKindMfg && canWritePage(user, pageNum(id)) {
-		parentID = id
-	}
-	parentID, err = recordFolderOr(parentID, user, RecordWorkFolder, time.Now())
+	// 発注部材表が製造ページ（`ページ種類：製造`）にあっても、置き場は記録です（2026-10-21。2026-10-19〜20 は製造ページの子に作っていた）。
+	// 製造ページとは、明細の「製造」の列でつながる（下の withMfg で、作る前に埋める）。
+	parentID, err := recordFolderOr("", user, RecordWorkFolder, time.Now())
 	if err != nil {
 		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
@@ -218,6 +218,7 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 			// 手配済みの数え方（procure_ledger.go）は案件の無い発注を「在庫」として納期の早い案件から当てていた。紙には刷らない。
 			"our-item-id": ln.ProductID,
 			"for-order":   ln.ForOrder,
+			"mfg":         ln.Mfg,
 			"kind":        ln.Kind,
 			"no":          ln.No,
 			"work":        ln.Work,

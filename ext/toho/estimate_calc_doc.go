@@ -10,7 +10,7 @@ package toho
 // （【考察】全体の設計 §4.5・直す順の6番）。
 //
 //   - **見積計算書**は1回の計算です。置き場は `記録／年／月／製造記録`（月は作った日。2026-10-19 から、製造ページの「見積計算」の
-//     欄から作ると、その製造ページの子——mfg_more.go）、題は「【弊社】見積計算書　<品物の題>」。
+//     欄から作ると、タグ「製造」にその製造ページ——mfg_more.go。2026-10-20 までは製造ページの子）、題は「【弊社】見積計算書　<品物の題>」。
 //     タグは `ページ種類：弊社見積計算書`・`弊社品番`（加工製品ページへの参照）・`見積計算日`（テンプレート「見積計算書」が持つ）。
 //   - 中身は加工製品ページと同じ形（見出し「見積もり計算」・ロットごとの見積計算表と見積表）——鏡と「📌 この単価を記録」
 //     「⧉ このロットを写す」は、置かれたページの表だけを扱うので、そのまま働きます（estimate.go）。
@@ -211,7 +211,8 @@ func calcContentOf(body string) string {
 }
 
 // EstimateCalcNewAPIHandler は POST /api/estimate-calc/new です。入力: {product, mfg}。新しい見積計算書を作り、そのページIDを返します。
-// mfg（書ける製造ページ）があれば、その子に作ります（2026-10-19・mfg_more.go）。
+// mfg（書ける製造ページ）があれば、タグ「製造」にその製造ページを書きます（2026-10-21 から。それまでは製造ページの子に作っていた・mfg_more.go）。
+// 置き場はいつも 記録／年／月／製造記録 です。
 func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -274,6 +275,9 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	d.SetTag(OurItemNoTag, pid)
 	d.SetTag(EstimateCalcDateTag, now.Format("2006-01-02"))
 	d.SetTag(PageKindTag, PageKindOurEstimateCalc) // テンプレートも持っているが、機械が作る種類なので値を確かに書く
+	if parent != "" {
+		d.SetTag(MfgRefTag, parent)
+	}
 	// テンプレートの「見積もり計算」の節（2026-10-19——工程の行と、見積表の単価の式を置ける）は、写す中身が無いときだけ使う。
 	// 写す中身があるときは二重にしない（テンプレートの節を外す）。
 	head := d.HTML()
@@ -287,7 +291,7 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		content = "<h2>" + estimateSectionHeading + "</h2><p><br/></p>"
 	}
 	body := head + content
-	monthID, err := recordFolderOr(parent, user, RecordWorkFolder, now)
+	monthID, err := recordFolderOr("", user, RecordWorkFolder, now)
 	if err != nil {
 		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
