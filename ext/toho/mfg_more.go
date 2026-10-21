@@ -161,7 +161,7 @@ func appendMfgCalcColumn(ctx *cms.MirrorContext, el *html.Node, writable bool) {
 		}
 		if writable {
 			b.WriteString(`<button type="button" class="chip-btn estimate-calc-new" data-ecalc-new="` + pid + `" data-mfg="` + mfg +
-				`" title="この加工製品の新しい見積計算書を、この製造ページの下に作ります">➕ 見積計算書</button><span class="estimate-calc-say"></span>`)
+				`" title="この加工製品の新しい見積計算書を作ります（置き場は記録の年月・この製造ページとはタグ「製造」でつながる）">➕ 見積計算書</button><span class="estimate-calc-say"></span>`)
 		}
 		if b.Len() > 0 {
 			appendRawChrome(td, b.String())
