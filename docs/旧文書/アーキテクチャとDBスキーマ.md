@@ -169,7 +169,7 @@ w-cms は、エディタが作るHTMLの文書と、Go が管理する SQLite �
 > 2026-09-21 から、手配の集計は加工製品ごとの `ProcurementByProduct`（[ext/toho/procurement.go](../../ext/toho/procurement.go)）です。
 > `GET /api/required-materials` は残っていますが、呼ぶのは E2E の `e2e/verify-template.js` だけです。
 > 品番で加工製品ページを探すときに見るタグも、`部品番号` 1つではなく、設定の照合タグ `product_code_tags`（図面番号・品番・部品番号）です（2026-09-27 から）。
-> 業務の正本は [【要求】案件.md](../拡張/東邦/【要求】案件.md) §4 と [【要求】部材発注フォルダ.md](../拡張/東邦/【要求】部材発注フォルダ.md) です。
+> 業務の正本は [【要求】案件.md](../拡張/東邦/【要求】案件.md) §4 と [【要求】製造.md](../拡張/東邦/【要求】製造.md) §8 です。
 
 動的に必要な部材数を計算するロジックは `RequiredMaterials(user, pageID)`（`ext/toho/materials.go`）に
 あり、**2つの出口**から使われます（部品単位ではなく、対象ページ単位で計算します）。
