@@ -120,7 +120,15 @@ type backlogRow struct {
 	// InMfg は製造ページに入れた数、MfgPages はその製造ページです（2026-10-19・mfg.go）。
 	InMfg    int
 	MfgPages []string
+	// Waiting は「製造」へ入れて、まだ開始していない数です（案件明細の「製造待ち」の欄・2026-10-21・mfg_wait.go）。
+	Waiting int
 }
+
+// freeForMfg は、まだ製造に入っていない数です（数量 − 製造ページに入れた数 − 製造待ち）。
+func (r backlogRow) freeForMfg() int { return r.Quantity - r.InMfg - r.Waiting }
+
+// allInMfg は、全部が製造に入った行か（製造待ちか製造中——案件残表では打ち消し線で残す・2026-10-21 利用者の答え）。
+func (r backlogRow) allInMfg() bool { return r.freeForMfg() <= 0 && r.InMfg+r.Waiting > 0 }
 
 // backlogGroup は「顧客×納期」1組＝**1回の納品の単位**です。
 type backlogGroup struct {
@@ -259,6 +267,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				Quote:           quote,
 				InMfg:           inMfg,
 				MfgPages:        mfgPages,
+				Waiting:         int(waitOf(r.Values)),
 			})
 		}
 	}
@@ -359,6 +368,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`〕に、まだ出していない明細がありません）。</p>` + migNote
 	}
 	var b strings.Builder
+	mfgBox, _ := cms.TopLevelPageByTitle(MfgBoxTitle) // 「進み」の製造待ちのリンクの先（2026-10-21）
 	b.WriteString(backlogTotalHTML(backlogTotalOf(groups)))
 	b.WriteString(migNote)
 	// 選んだ行で作業を始める帯。紙には出さない（no-print——案件残表は1枚ずつ印刷する作業の紙）。配線は assets/app.js。
@@ -367,9 +377,9 @@ func backlogViewHTML(user *auth.User, _ int) string {
 	b.WriteString(`<div class="backlog-rfq-bar no-print">` +
 		// 選んだ行で納品書を作る（2026-10-17・delivery.go）——押すと、選んだ行と今回納める数（残りが初めから入っていて直せる）の欄が開く。
 		`<button type="button" class="backlog-dlv-go">🚚 選んだ行で納品書を作る</button> <span class="backlog-dlv-say"></span>` +
-		// 選んだ行で製造を始める（2026-10-19・mfg.go）——押すと、選んだ行と今回作る数（まだ製造に入っていない数が初めから入っていて直せる）の欄が開く。
-		` <button type="button" class="backlog-mfg-go">🏭 選んだ行で製造開始</button> <span class="backlog-mfg-say"></span>` +
-		`<div class="backlog-dlv-panel" hidden></div><div class="backlog-mfg-panel" hidden></div></div>`)
+		// （「🏭 選んだ行で製造開始」〔2026-10-19〕は 2026-10-21 に外した——表の先頭のチェックと、表の下の「🏭 製造」で製造待ちへ入れ、
+		// 「製造」の置き場で開始する・mfg_wait.go。利用者:「チェックしてボタンを押すと「製造」フォルダへ入ります」）
+		`<div class="backlog-dlv-panel" hidden></div></div>`)
 	for i, g := range groups {
 		b.WriteString(`<section class="backlog-sheet w-no-table-menu" data-backlog="` + strconv.Itoa(i) + `">`) // 自分の印刷のボタンを持つ（コアの表の「⋯」を付けない）
 		title := g.Client
@@ -394,13 +404,14 @@ func backlogViewHTML(user *auth.User, _ int) string {
 		// ずれます**（列が消えるのは値の側だけなので、いちばん気づきにくい壊れ方）。
 		// 装置名は左端（2026-09-30 利用者:「受注残の表に装置名も入れたい」）。紙にも出す（同日夜 利用者:「装置名は紙にも出して
 		// 欲しいです」——紙の列は下の注記の6つ＋装置名の7つ）。
+		// 2026-10-21 から: 先頭の列は製造へ入れるチェック（紙には出さない）。状態・材料発注・製造完了・納品書発行・請求書発行の5列と
+		// 「製造」の列は、「進み」の1列にまとめた（利用者の答え「「進み」1列にまとめる」——自動で出し、人は書かない）。
+		// 人が付ける「完了」（もう案件残に出さない）は、案件ページの案件明細表の「状態」で付ける。
 		b.WriteString(`<table class="backlog-table"><tbody>` +
-			`<tr><th>装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
+			`<tr><th class="no-print">製造</th><th>装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th class="no-print">数量</th><th class="no-print">出荷済数量</th>` +
-			`<th>状態</th>` +
-			`<th class="no-print">材料発注</th><th class="no-print">製造完了</th><th class="no-print">納品書発行</th>` +
-			`<th class="no-print">請求書発行</th>` +
-			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">案件</th><th class="no-print">製造</th><th class="no-print">納品</th></tr>`)
+			`<th>進み</th>` +
+			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">案件</th><th class="no-print">納品</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -427,9 +438,10 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			//
 			// ⚠ **鍵の列と計算の列は部品にしません**（`弊社品番`・`品番`・`品名`・`残`）。
 			// 鍵を書き換えると**次の書き込みが隣の行に当たります**。
-			st := statusOptionsHTML(r.Status)
 			// 赤字の行は薄赤と ⚠（2026-10-17・利用者:「2か所で良いと思います。」——受注ページの明細と、この受注残表）。
-			b.WriteString(`<tr` + rowAttrs(r) + lossRowAttr(r) + `>` +
+			// 全部が製造に入った行は打ち消し線（2026-10-21）。
+			b.WriteString(`<tr` + rowAttrs(r) + backlogRowAttr(r) + `>` +
+				noPrintCell(waitPickHTML(r)) +
 				machineCellHTML(r) +
 				ourItemCellHTML(r.OurItemNo) +
 				atomicCell(stdhtml.EscapeString(r.ItemNo)) +
@@ -438,25 +450,89 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				noPrintCell(strconv.Itoa(r.Quantity)) +
 				// 出荷済数量は納品書から数えるので、ここでは書けない（2026-10-17）。
 				`<td class="cell-atomic no-print" title="納品書から数えた数">` + shippedCell(r.Shipped) + `</td>` +
-				`<td class="cell-atomic">` + st + `</td>` +
-				noPrintCell(checkFieldHTML("材料発注", r.MaterialOrdered)) +
-				`<td class="cell-atomic no-print" title="製造ページの製造完了から数えた">` + stdhtml.EscapeString(r.Made) + `</td>` + // 2026-10-19 から鏡（製造ページで付ける）
-				// 2026-10-19 から鏡（発行済の納品書・請求書から数える・issued_marks.go）。
-				`<td class="cell-atomic no-print" title="発行済の納品書から数えた">` + stdhtml.EscapeString(r.DeliveryNote) + `</td>` +
-				`<td class="cell-atomic no-print" title="発行済の請求書から数えた">` + stdhtml.EscapeString(r.Invoice) + `</td>` +
+				`<td class="cell-atomic" title="製造待ち・製造ページ・発行済の納品書と請求書から数えた（人は書きません）">` + progressHTML(r, mfgBox) + `</td>` +
 				// ⚠ **備考だけ折り返します**（自由文なので1行に保つと表が果てしなく伸びる）。
 				`<td class="cell-wrap">` + textFieldHTML("備考", r.Note) + `</td>` +
 				// まだ埋まっていない段（2026-10-17・直す順の10番）——知らせるだけで、止めない。
 				`<td class="cell-atomic no-print backlog-gap">` + stdhtml.EscapeString(strings.Join(backlogGaps(r), "・")) + `</td>` +
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
-				noPrintCell(mfgCellHTML(r, g.Client)) +
 				noPrintCell(deliveryPickHTML(r, g.Client)) +
 				`</tr>`)
 		}
-		b.WriteString(`</tbody></table></section>`)
+		b.WriteString(`</tbody></table>`)
+		// 表の下の「🏭 製造」（2026-10-21・mfg_wait.go）——この表で先頭にチェックした行を、「製造」の製造待ちへ入れる。紙には出さない。
+		b.WriteString(`<div class="backlog-wait-bar no-print"><button type="button" class="chip-btn backlog-wait-go">🏭 製造</button> ` +
+			`<span class="backlog-wait-say"></span></div></section>`)
 	}
 	return b.String()
+}
+
+// backlogRowAttr は行の class と title です——赤字の行（薄赤・2026-10-17）と、全部が製造に入った行（打ち消し線・2026-10-21）。
+// ⚠ 色と線だけで分けない（赤字は品名の後ろに ⚠ の文、製造は「進み」の列に文で出す）。
+func backlogRowAttr(r backlogRow) string {
+	var cls []string
+	title := ""
+	if r.Loss != "" {
+		cls, title = append(cls, "backlog-loss"), r.Loss
+	}
+	if r.allInMfg() {
+		cls = append(cls, "backlog-in-mfg")
+		if title == "" {
+			title = "全部が製造に入っています（製造待ちか製造中）"
+		}
+	}
+	if len(cls) == 0 {
+		return ""
+	}
+	return ` class="` + strings.Join(cls, " ") + `" title="` + stdhtml.EscapeString(title) + `"`
+}
+
+// waitPickHTML は先頭の列の、製造へ入れるチェックです（まだ製造に入っていない数がある行だけ・2026-10-21）。
+func waitPickHTML(r backlogRow) string {
+	free := r.freeForMfg()
+	if free <= 0 {
+		return ""
+	}
+	return `<input type="checkbox" class="backlog-wait-pick" title="製造へ入れる（まだ製造に入っていない数 ` + strconv.Itoa(free) + `）"` +
+		` data-order="` + stdhtml.EscapeString(r.OrderPageID) + `" data-row="` + strconv.Itoa(r.RowNo) + `" data-item="` + stdhtml.EscapeString(r.ItemNo) + `">`
+}
+
+// progressHTML は「進み」の列です（2026-10-21——状態・材料発注・製造完了・納品書発行・請求書発行と「製造」の列をまとめた）。
+// 製造待ち（「製造」の置き場へのリンク）・製造中（製造ページへのリンク）・製造完了・納品書・請求書を、あるものだけ「・」で並べます。
+// どれも無ければ「未着手」。人は書きません（ほかの書類から数える）。mfgBox は「製造」の置き場のページ番号（無ければ空）。
+func progressHTML(r backlogRow, mfgBox string) string {
+	link := func(id, text string) string {
+		if id == "" {
+			return stdhtml.EscapeString(text)
+		}
+		return `<a class="backlog-mfg-link" href="/` + stdhtml.EscapeString(id) + `">` + stdhtml.EscapeString(text) + `</a>`
+	}
+	var parts []string
+	if r.Waiting > 0 {
+		parts = append(parts, link(mfgBox, MfgWaitLabel+" "+strconv.Itoa(r.Waiting)))
+	}
+	if r.Made != "" {
+		text := "製造完了"
+		if r.Made != MarkDone {
+			text += " " + r.Made
+		}
+		parts = append(parts, stdhtml.EscapeString(text))
+	}
+	if r.Made != MarkDone {
+		for _, p := range r.MfgPages {
+			parts = append(parts, link(p, "製造中"))
+		}
+	}
+	for _, m := range []struct{ name, v string }{{"納品書", r.DeliveryNote}, {"請求書", r.Invoice}} {
+		if m.v != "" {
+			parts = append(parts, stdhtml.EscapeString(m.name+" "+m.v))
+		}
+	}
+	if len(parts) == 0 {
+		return "未着手"
+	}
+	return strings.Join(parts, "・")
 }
 
 // atomicCell は折り返さないセルを組みます（中身は組み済みのHTML）。
@@ -567,54 +643,7 @@ func fieldAttrs(field, cur string) string {
 		` data-old="` + stdhtml.EscapeString(cur) + `"`
 }
 
-// checkFieldHTML は手続きの印のチェックボックスです（`済` か空の2値）。
-func checkFieldHTML(field, cur string) string {
-	checked := ""
-	if strings.TrimSpace(cur) == MarkDone {
-		checked = " checked"
-	}
-	return `<input type="checkbox" class="order-edit order-check"` +
-		fieldAttrs(field, cur) + checked + ` aria-label="` + stdhtml.EscapeString(field) + `">`
-}
-
-// statusOptionsHTML は状態の選択肢です（⚠ **選択肢は宣言から**——画面に書き写すと、
-// 語を足した日に片方が古くなります）。
-func statusOptionsHTML(cur string) string {
-	var b strings.Builder
-	b.WriteString(`<select class="order-edit order-status"` + fieldAttrs("状態", cur) + `>`)
-	seen := false
-	for _, v := range statusEnum() {
-		sel := ""
-		if v == cur {
-			sel, seen = " selected", true
-		}
-		b.WriteString(`<option` + sel + `>` + stdhtml.EscapeString(v) + `</option>`)
-	}
-	// ⚠ **一覧に無い値も残します**（語彙は入力補助であって検査ではない・§7.1）。
-	// 落とすと、人が打った値が開いた瞬間に消えます。
-	if !seen && strings.TrimSpace(cur) != "" {
-		b.WriteString(`<option selected>` + stdhtml.EscapeString(cur) + `</option>`)
-	}
-	if strings.TrimSpace(cur) == "" {
-		b.WriteString(`<option selected value=""></option>`)
-	}
-	b.WriteString(`</select>`)
-	return b.String()
-}
-
-// statusEnum は `状態` の選択肢を宣言から返します。
-func statusEnum() []string {
-	def, ok := cms.VocabDefByType(clientOrderItemsType)
-	if !ok {
-		return nil
-	}
-	for _, c := range def.Columns {
-		if c.Label == "状態" {
-			return c.Enum
-		}
-	}
-	return nil
-}
+// （手続きの印のチェック〔checkFieldHTML〕と状態の選択肢〔statusOptionsHTML〕は、2026-10-21 に「進み」の1列へまとめたので外した。）
 
 // textFieldHTML は自由文の欄です（備考）。
 func textFieldHTML(field, cur string) string {

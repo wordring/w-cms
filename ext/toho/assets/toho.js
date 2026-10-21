@@ -1106,31 +1106,7 @@ delegateClick([
         qty: 'remaining',
         make: '🚚 納品書を作る',
     })],
-    // 受注残表から製造を始める（2026-10-19・ext/toho/mfg.go）——利用者:「受注残表でチェックして製造開始ボタンを押すと、
-    // 製造フォルダに入るのはどうですか？」。選んだ行（「製造」の欄）と今回作る数（まだ製造に入っていない数が初めから入っていて直せる）。
-    // ⚠ 1つの製造は1社（客先の違う行は画面でも止める）。
-    ['.backlog-mfg-go', (btn) => openPickQtyPanel(btn, {
-        cls: 'backlog-mfg',
-        none: '案件残表の「製造」の欄で、製造を始める行を選んでください。',
-        mixed: (names) => '1つの製造は1社です（' + names + ' が混ざっています）。',
-        head: (client) => '「' + client + '」の製造——今回作る数を確かめてください:',
-        cols: ['品番', '品名', 'まだ製造に入っていない数', '今回作る数'],
-        qty: 'free',
-        make: '🏭 製造を始める',
-    })],
-    ['.backlog-mfg-make', async (btn) => {
-        const panel = btn.closest('.backlog-mfg-panel');
-        const msg = panel.querySelector('.backlog-mfg-msg');
-        const items = Array.from(panel.querySelectorAll('.backlog-mfg-qty')).map((i) => ({
-            order: i.dataset.order, row: Number(i.dataset.row), item: i.dataset.item, qty: i.value,
-        }));
-        btn.disabled = true;
-        sayIn(msg, '製造ページを作っています…');
-        const r = await postJSON('/api/mfg/new', { items }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-        btn.disabled = false;
-        if (!r.ok) { sayIn(msg, '⚠ ' + ((r.data && r.data.message) || '製造ページを作れませんでした')); return; }
-        location.href = r.data.url;
-    }],
+    // （受注残表の「🏭 選んだ行で製造開始」〔2026-10-19〕は 2026-10-21 に外した——表の先頭のチェックと「🏭 製造」で製造待ちへ・下の配線。）
     ['.backlog-dlv-make', async (btn) => {
         const panel = btn.closest('.backlog-dlv-panel');
         const msg = panel.querySelector('.backlog-dlv-msg');
@@ -1153,6 +1129,67 @@ delegateClick([
             return;
         }
         location.href = '/' + r.data.page_id;
+    }],
+]);
+
+// ── 案件残表から製造待ちへ・製造待ちから開始・取り消し（2026-10-21・ext/toho/mfg_wait.go）─────────────────
+//
+// 利用者:「チェックしてボタンを押すと「製造」フォルダへ入ります」「ここで開始した案件は製造のひとまとまりとなります。
+// ただし、開始した案件はいつでも単体で取り消せるようにします。」「製造フォルダの表に入った案件もキャンセルして案件フォルダに戻すことが出来ます。」
+// 押した表（1つの表が1つの客先・納期）の中で、先頭にチェックした行だけを送る。サーバーが行番号と品番で照合する。
+function checkedRowsIn(btn, sel) {
+    const sheet = btn.closest('.backlog-sheet');
+    return Array.from((sheet || document).querySelectorAll(sel + ':checked')).map((c) => ({
+        order: c.dataset.order || '', row: Number(c.dataset.row), item: c.dataset.item || '',
+    }));
+}
+
+async function sendCheckedRows(btn, cfg) {
+    const say = btn.parentElement && btn.parentElement.querySelector(cfg.say);
+    const items = checkedRowsIn(btn, cfg.pick);
+    if (!items.length) { sayIn(say, cfg.none, 'warn'); return; }
+    if (cfg.confirm && !confirm(cfg.confirm(items.length))) return;
+    btn.disabled = true;
+    sayIn(say, cfg.busy);
+    const r = await postJSON(cfg.url, { items }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || cfg.fail)); return; }
+    cfg.done(r.data || {});
+}
+
+delegateClick([
+    // 案件残表の表の下の「🏭 製造」——先頭にチェックした行を、「製造」の製造待ちへ入れる。
+    ['.backlog-wait-go', (btn) => sendCheckedRows(btn, {
+        pick: '.backlog-wait-pick', say: '.backlog-wait-say', url: '/api/mfg/wait',
+        none: 'この表の先頭のチェックで、製造へ入れる行を選んでください。',
+        busy: '製造へ入れています…', fail: '製造へ入れられませんでした',
+        done: () => location.reload(),
+    })],
+    // 「製造」の製造待ちの表の「▶ 選んだ行で開始」——製造ページ（1社）を作って開く。
+    ['.mfgwait-start-go', (btn) => sendCheckedRows(btn, {
+        pick: '.mfgwait-pick', say: '.mfgwait-say', url: '/api/mfg/start',
+        none: 'この表の先頭のチェックで、開始する行を選んでください。',
+        busy: '製造ページを作っています…', fail: '開始できませんでした',
+        done: (d) => { if (d.warning) alert(d.warning); location.href = d.url || ('/' + d.page_id); },
+    })],
+    // 「製造」の製造待ちの表の「↩ 選んだ行を案件へ戻す」。
+    ['.mfgwait-back-go', (btn) => sendCheckedRows(btn, {
+        pick: '.mfgwait-pick', say: '.mfgwait-say', url: '/api/mfg/unwait',
+        none: 'この表の先頭のチェックで、案件へ戻す行を選んでください。',
+        confirm: (n) => '選んだ ' + n + ' 行を製造待ちから外して、案件残表へ戻します。よろしいですか？',
+        busy: '戻しています…', fail: '戻せませんでした',
+        done: () => location.reload(),
+    })],
+    // 製造ページの製造明細表の「↩ 製造待ちへ」——その行だけを取り消す（作った書類は残る）。
+    ['.mfg-back-go', async (btn) => {
+        if (!confirm('この行を製造明細から外して、「製造」の製造待ちへ戻します（この製造で作った書類はそのまま残ります）。よろしいですか？')) return;
+        btn.disabled = true;
+        const r = await postJSON('/api/mfg/back', {
+            page_id: btn.dataset.mfg || '', row: Number(btn.dataset.row), item: btn.dataset.item || '',
+        }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+        btn.disabled = false;
+        if (!r.ok) { alert('⚠ ' + ((r.data && r.data.message) || '戻せませんでした')); return; }
+        location.reload();
     }],
 ]);
 

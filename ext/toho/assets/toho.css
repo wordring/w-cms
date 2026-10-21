@@ -558,3 +558,10 @@
     cursor: pointer;
 }
 #w-editor-content .attach-analyze:hover { background: var(--border); }
+
+/* 案件残表の、全部が製造に入った行（2026-10-21・ext/toho/mfg_wait.go）——表に残して打ち消し線。利用者:「それとわかるように打ち消し栓を入れるなどしましょう」。
+   ⚠ 線だけで分けない——「進み」の列に「製造待ち N」「製造中」と文でも出す。 */
+#w-editor-content tr.backlog-in-mfg > td { text-decoration: line-through; color: #6b7280; }
+/* 案件残表と製造待ちの表の下の帯（「🏭 製造」・「▶ 開始」「↩ 案件へ戻す」）。 */
+#w-editor-content .backlog-wait-bar,
+#w-editor-content .mfgwait-bar { margin: 4px 0 14px; }

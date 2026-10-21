@@ -19,12 +19,9 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	stdhtml "html"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -136,29 +133,7 @@ func (m *mfgLookup) of(order, itemNo, itemName string) (float64, []string) {
 	return m.qty[k], m.pages[k]
 }
 
-// ── 受注残表の「製造」の欄 ──────────────────────────────────────────────
-
-// mfgCellHTML は受注残表の1行の「製造」の欄です——製造中なら製造ページへのリンク、まだ入れられる数があれば選ぶ欄。
-func mfgCellHTML(r backlogRow, client string) string {
-	var b strings.Builder
-	for i, p := range r.MfgPages {
-		if i > 0 {
-			b.WriteString(" ")
-		}
-		b.WriteString(`<a class="backlog-mfg-link" href="/` + stdhtml.EscapeString(p) + `">製造中</a>`)
-	}
-	free := r.Quantity - r.InMfg
-	if free <= 0 {
-		return b.String()
-	}
-	if b.Len() > 0 {
-		b.WriteString(" ")
-	}
-	b.WriteString(`<input type="checkbox" class="backlog-mfg-pick" title="この行で製造を始める（まだ製造に入っていない数 ` + strconv.Itoa(free) + `）"` +
-		` data-order="` + stdhtml.EscapeString(r.OrderPageID) + `" data-row="` + strconv.Itoa(r.RowNo) + `" data-item="` + stdhtml.EscapeString(r.ItemNo) +
-		`" data-name="` + stdhtml.EscapeString(r.ItemName) + `" data-free="` + strconv.Itoa(free) + `" data-client="` + stdhtml.EscapeString(client) + `">`)
-	return b.String()
-}
+// （受注残表の「製造」の欄〔mfgCellHTML〕は 2026-10-21 に外した——先頭のチェックと「進み」の列へ・mfg_wait.go・backlog.go。）
 
 // ── 製造ページを作る ────────────────────────────────────────────────────
 
@@ -288,27 +263,9 @@ func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		lines = append(lines, ln)
 	}
-	sort.SliceStable(lines, func(i, j int) bool { return lines[i].Due < lines[j].Due })
-	tmpl, err := cms.PageTemplateBody(MfgTemplate)
+	newID, code, err := createMfgPage(user, client, lines)
 	if err != nil {
-		cms.JSONFail(w, http.StatusConflict, "製造ページを作れません: "+err.Error())
-		return
-	}
-	start := time.Now().Format("2006-01-02")
-	if _, err := buildMfgHTML(tmpl, "", client, start, lines); err != nil {
-		cms.JSONFail(w, http.StatusConflict, "製造ページを作れません: "+err.Error())
-		return
-	}
-	boxID, err := cms.EnsureTopLevelBox(MfgBoxTitle, user.Username)
-	if err != nil {
-		cms.JSONFail(w, http.StatusConflict, "「"+MfgBoxTitle+"」を用意できません: "+err.Error())
-		return
-	}
-	newID, err := newBuiltPage(boxID, user, "製造", func(newID string) (string, error) {
-		return buildMfgHTML(tmpl, newID, client, start, lines)
-	})
-	if err != nil {
-		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
+		cms.JSONFail(w, code, err.Error())
 		return
 	}
 	auth.Audit(user.Username, "mfg.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")

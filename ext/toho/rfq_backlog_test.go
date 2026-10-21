@@ -60,7 +60,7 @@ func TestBacklogRFQPick(t *testing.T) {
 			t.Errorf("⚠ 案件残表に %q が残っています:\n%s", gone, out)
 		}
 	}
-	for _, want := range []string{"backlog-mfg-go", "backlog-dlv-go"} {
+	for _, want := range []string{"backlog-wait-go", "backlog-dlv-go"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("⚠ 案件残表の帯から %q まで消えています:\n%s", want, out)
 		}

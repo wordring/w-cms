@@ -55,6 +55,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/mfg/parts", Handler: MfgPartsAPIHandler},       // 製造の部材を発注部材表へ（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/made", Handler: MfgMadeAPIHandler},         // 製造完了（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/new", Handler: MfgNewAPIHandler},           // 製造ページ（2026-10-19・mfg.go）
+		{Pattern: "/api/mfg/wait", Handler: MfgWaitAPIHandler},         // 製造待ちへ入れる（2026-10-21・mfg_wait.go）
+		{Pattern: "/api/mfg/unwait", Handler: MfgUnwaitAPIHandler},     // 製造待ちから案件へ戻す（同）
+		{Pattern: "/api/mfg/start", Handler: MfgStartAPIHandler},       // 製造待ちから開始する（同）
+		{Pattern: "/api/mfg/back", Handler: MfgBackAPIHandler},         // 製造明細から製造待ちへ戻す（同）
 		{Pattern: "/api/invoice/new", Handler: InvoiceNewAPIHandler},   // 請求書（2026-10-17・invoice.go）
 		{Pattern: "/api/invoice-pdf", Handler: InvoicePDFAPIHandler},  // 請求書の紙（同・invoice_pdf.go）
 		// 表の末尾へ行を足す（2026-10-04・管理者だけ——見積から加工製品の外注加工に塗装の行を足す道具が使う・table_append.go）。

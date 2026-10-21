@@ -400,7 +400,9 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	out := cms.RenderComputedViews(req, 201,
 		`<h1>受注</h1>`+cms.ViewMarkerHTML(BacklogViewType))
 
-	for _, f := range []string{"状態", "備考", "材料発注"} {
+	// （2026-10-21 から、状態・材料発注などの5列は「進み」の1列にまとめ、残表からは書かせない——押せるのは備考だけ。
+	// 人が付ける「完了」は案件ページの案件明細表の「状態」で付ける。利用者の答え「「進み」1列にまとめる」。）
+	for _, f := range []string{"備考"} {
 		if !strings.Contains(out, `data-field="`+f+`"`) {
 			t.Errorf("%q を押せません:\n%s", f, out)
 		}
@@ -408,15 +410,14 @@ func TestBacklogEditControlsCoverDailyFields(t *testing.T) {
 	// ⚠ 鍵の列は部品にしない。
 	// 出荷済数量は納品書から数える（2026-10-17）——残表から書かせない。
 	// 納品書発行・請求書発行は発行済の納品書・請求書から数える（2026-10-19・issued_marks.go）——残表から書かせない。
-	for _, f := range []string{"品番", "品名", "弊社品番", "出荷済数量", "納品書発行", "請求書発行"} {
+	for _, f := range []string{"品番", "品名", "弊社品番", "出荷済数量", "状態", "材料発注", "製造完了", "納品書発行", "請求書発行"} {
 		if strings.Contains(out, `data-field="`+f+`"`) {
-			t.Errorf("⚠ 鍵の列 %q を編集できるようにしています（照合が壊れます）", f)
+			t.Errorf("⚠ 列 %q を残表から書けるようにしています", f)
 		}
 	}
-	// ⚠ **選択肢は宣言から**（画面に書き写さない）。`完了` が出ていること。
-	if !strings.Contains(out, `<option>`+StatusDone+`</option>`) &&
-		!strings.Contains(out, `<option selected>`+StatusDone+`</option>`) {
-		t.Errorf("状態の選択肢に %q がありません:\n%s", StatusDone, out)
+	// 5列をまとめた「進み」の列（何も始まっていない行は「未着手」）。
+	if !strings.Contains(out, `<th>進み</th>`) || !strings.Contains(out, `>未着手</td>`) {
+		t.Errorf("「進み」の列がありません:\n%s", out)
 	}
 }
 

@@ -81,12 +81,21 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	delivered := deliveredUnder(ctx.PageID)
 	priceCell(head, "th", "mfg-dlv").AppendChild(&html.Node{Type: html.TextNode, Data: "納品"})
+	// 「↩ 製造待ちへ」（2026-10-21・mfg_wait.go）——開始した案件を1つずつ取り消す。「製造」の直下にあるあいだだけ。
+	back := writable && mfgIsOpen(ctx.PageID)
+	pid := page.FormatID(ctx.PageID)
+	if back {
+		priceCell(head, "th", "mfg-back").AppendChild(&html.Node{Type: html.TextNode, Data: "取り消し"})
+	}
 	done, total, open := 0, 0, 0
 	for n, tr := range rows[1:] {
 		cells := cellsOf(tr)
 		qty, okQ := estimateNumber(at(tr, qi))
 		if !okQ {
 			priceCell(tr, "td", "mfg-dlv")
+			if back {
+				appendMfgBackCell(tr, pid, n, "", false)
+			}
 			continue
 		}
 		total++
@@ -115,6 +124,10 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 				`" data-left="`+fmtQty(left)+`"> 残り `+fmtQty(left))
 		default:
 			td.AppendChild(&html.Node{Type: html.TextNode, Data: "残り " + fmtQty(left)})
+		}
+		if back {
+			// この製造で納めた分がある行は戻せない（mfg_wait.go の MfgBackAPIHandler）——ボタンを出さない。
+			appendMfgBackCell(tr, pid, n, at(tr, ii), left >= qty)
 		}
 	}
 	// 見積計算の欄（2026-10-19・mfg_more.go）——⚠ 足元の行の colspan が列の数に合うよう、足元より先に足す。

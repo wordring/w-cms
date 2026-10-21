@@ -36,7 +36,8 @@ func TestIssuedMarksFromDeliveryAndInvoice(t *testing.T) {
 	invoice(936, "", "3") // 未発行の請求書
 
 	view := backlogViewHTML(u, 931)
-	for _, want := range []string{`title="発行済の納品書から数えた">6/10</td>`, `title="発行済の請求書から数えた">6/10</td>`} {
+	// 2026-10-21 から、案件残表では「進み」の1列に並ぶ。
+	for _, want := range []string{`納品書 6/10`, `請求書 6/10`} {
 		if !strings.Contains(view, want) {
 			t.Errorf("⚠ 案件残表に %q がありません（未発行は数えない）:\n%s", want, view)
 		}

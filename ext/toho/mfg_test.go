@@ -68,7 +68,8 @@ func TestMfgNewFromBacklogRows(t *testing.T) {
 	}
 
 	view := backlogViewHTML(u, 971)
-	if !strings.Contains(view, `<a class="backlog-mfg-link" href="/`+id+`">製造中</a>`) || !strings.Contains(view, `data-free="60"`) {
+	// 「進み」に製造中のリンク、先頭のチェックに、まだ製造に入っていない数（2026-10-21 から）。
+	if !strings.Contains(view, `<a class="backlog-mfg-link" href="/`+id+`">製造中</a>`) || !strings.Contains(view, `まだ製造に入っていない数 60`) {
 		t.Errorf("⚠ 案件残表に「製造中」と、残りの 60 が出ていません:\n%s", view)
 	}
 
@@ -123,7 +124,7 @@ func TestMfgMadeAndDeliveryFromMfgPage(t *testing.T) {
 		t.Errorf("⚠ 済・空のほかを書けます: %d", code)
 	}
 	// 案件残表の製造完了は 40/100（製造完了の製造に入ったのは40）。
-	if view := backlogViewHTML(u, 981); !strings.Contains(view, `title="製造ページの製造完了から数えた">40/100</td>`) {
+	if view := backlogViewHTML(u, 981); !strings.Contains(view, `製造完了 40/100`) {
 		t.Errorf("⚠ 案件残表の製造完了が 40/100 になっていません:\n%s", view)
 	}
 

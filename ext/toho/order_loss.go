@@ -176,13 +176,7 @@ func backlogLossText(l *lossLookup, ourItemNo string, qty int, price float64, ha
 	return ""
 }
 
-// lossRowAttr は赤字の行に付ける印です（薄赤・CSS は assets/app.css の backlog-loss）。⚠ 色だけで分けない（品名の後ろに ⚠ の文も出す）。
-func lossRowAttr(r backlogRow) string {
-	if r.Loss == "" {
-		return ""
-	}
-	return ` class="backlog-loss" title="` + stdhtml.EscapeString(r.Loss) + `"`
-}
+// （赤字の行の印〔薄赤・backlog-loss〕は、2026-10-21 から backlog.go の backlogRowAttr が、製造に入った行の打ち消し線と一緒に付けます。）
 
 // lossNoteHTML は品名の後ろに添える赤字の文です（紙には出さない）。
 func lossNoteHTML(r backlogRow) string {
