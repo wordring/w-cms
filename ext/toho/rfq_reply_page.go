@@ -523,6 +523,8 @@ func rfqReplyMatchViewHTML(user *auth.User, pageIDInt int) string {
 		return ""
 	}
 	var b strings.Builder
+	// 返事ページから Gemini に読ませる欄（2026-10-21 夜・rfq_reply_ocr.go）——結んだあとも出す（表を読み直せる）。
+	b.WriteString(`<h3 class="materials-title">🤖 返事を読む</h3>` + rfqReplyOCRPanelHTML(user, pid, tags))
 	b.WriteString(`<h3 class="materials-title">🔗 部材見積依頼書との突き合わせ</h3>`)
 	rfqLabel := func(id string) string {
 		n := pageNum(id)

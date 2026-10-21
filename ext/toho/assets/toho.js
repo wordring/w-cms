@@ -319,6 +319,26 @@ delegateClick([['.rfq-reply-link', async (btn) => {
     location.reload();
 }]]);
 
+// 返事ページの「🤖 Gemini で読む（OCR）」（2026-10-21 夜・/api/rfq-reply/ocr——ext/toho/rfq_reply_ocr.go）。選んだ返事（原本か、このページに置いた
+// PDF・画像）を読ませ、「業者の返事（読んだまま）」の表を置き換える。表があるときは置き換える前に確かめる。読み終えたら読み直す。
+delegateClick([['.rfq-reply-ocr', async (btn) => {
+    const row = btn.parentElement;
+    const sel = row && row.querySelector('.rfq-reply-ocr-src');
+    const say = row && row.querySelector('.rfq-reply-ocr-say');
+    const [sourcePage, sourceFile] = ((sel && sel.value) || '|').split('|');
+    const has = [...document.querySelectorAll('#w-editor-content details summary')]
+        .some((s) => s.textContent.trim() === '業者の返事（読んだまま）' && s.parentElement.querySelector('table td'));
+    if (has && !confirm('「業者の返事（読んだまま）」の表を、Gemini が読んだもので置き換えます（前の中身は版に残ります）。よろしいですか？')) return;
+    btn.disabled = true;
+    sayIn(say, '🤖 読んでいます…（数十秒かかることがあります）');
+    const r = await postJSON('/api/rfq-reply/ocr', { page_id: btn.getAttribute('data-reply') || '', source_page: sourcePage, source_file: sourceFile })
+        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '読めませんでした'), 'proc-why-ng'); return; }
+    sayIn(say, (r.data && r.data.say) || '読みました');
+    setTimeout(() => location.reload(), 1200);
+}]]);
+
 // 返事ページの「この返事から部材見積依頼書ページを作る」（2026-10-05・移行期——ext/toho/rfq_reply_make.go）。読んだままの表を部材見積依頼明細表の列に
 // 読み替えた案（GET /api/rfq-reply/draft——弊社品番は図面番号・品番から当てる）を表で出し、人が直して「部材見積依頼書ページを作る」
 // （POST /api/rfq-reply/make-rfq）→ できた部材見積依頼書へ移る（返事はその子へ）。

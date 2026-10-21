@@ -78,6 +78,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/rfq/apply-reply", Handler: RFQApplyReplyAPIHandler},
 		// 部材見積依頼の返事ページを部材見積依頼書に結ぶ（2026-10-05・rfq_reply_page.go）。
 		{Pattern: "/api/rfq-reply/link", Handler: RFQReplyLinkAPIHandler},
+		{Pattern: "/api/rfq-reply/ocr", Handler: RFQReplyOCRAPIHandler}, // 返事ページから Gemini で読む（2026-10-21 夜・rfq_reply_ocr.go）
 		// 部材見積依頼の記録が無い返事から部材見積依頼書ページを作る（2026-10-05・移行期——rfq_reply_make.go）。
 		{Pattern: "/api/rfq-reply/draft", Handler: RFQReplyDraftAPIHandler},
 		{Pattern: "/api/rfq-reply/make-rfq", Handler: RFQReplyMakeRFQAPIHandler},
