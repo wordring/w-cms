@@ -1292,7 +1292,9 @@ func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, 
 		}
 		pageID = id
 		note.wcms = pageID
-		if body, _ := c.readBody(pageID); !machinePageWritable(body) {
+		// 本文を読めなければ書かない（読めない＝この機械のデータとサーバーが違うかもしれない——読めないのを「空」とみなして、
+		// 人の書いたページを上書きしかねなかった・2026-10-22 の見直し）。
+		if body, ok := c.readBody(pageID); !ok || !machinePageWritable(body) {
 			note.warn("⚠ 装置のページ（/" + pageID + "）に人が書いた中身があるので触りません——このページの中身は人が移す")
 			return nil
 		}
@@ -1541,6 +1543,11 @@ func editedSince(id, since string) (bool, string) {
 		return false, ""
 	}
 	limit := t0.Add(5 * time.Second)
+	// 本文がこの機械に無ければ、「人が直した」とみなす（データの場所がサーバーと違うと、版の履歴も無いので、確かめが
+	// 黙って効かなくなっていた・2026-10-22 の見直し）。
+	if _, err := os.Stat(page.BodyPath(id)); err != nil {
+		return true, "（この機械に本文がありません——データの場所がサーバーと違うかもしれません）"
+	}
 	dir := filepath.Join(page.GetPageDir(id), "versions")
 	ents, _ := os.ReadDir(dir)
 	var last time.Time

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -170,7 +171,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("証明書を読めません: %v", err)
 		}
-		srv := &http.Server{Addr: addr, Handler: handler, TLSConfig: &tls.Config{GetCertificate: reloader.GetCertificate}}
+		srv := newServer(addr, handler)
+		srv.TLSConfig = &tls.Config{GetCertificate: reloader.GetCertificate}
 		if err := srv.ListenAndServeTLS("", ""); err != nil {
 			log.Fatalf("サーバー終了: %v", err)
 		}
@@ -179,10 +181,17 @@ func main() {
 	default:
 		addr := listenAddr(false)
 		log.Println("w-cms 起動: " + listenURL(addr, false))
-		if err := http.ListenAndServe(addr, handler); err != nil {
+		if err := newServer(addr, handler).ListenAndServe(); err != nil {
 			log.Fatalf("サーバー終了: %v", err)
 		}
 	}
+}
+
+// newServer はサーバーの器です——頭を読み終えるまで・待っている接続の、時間の上限を置く（上限が無いと、ゆっくり送る
+// 接続で窓口を塞がれる。社外から入れる前に要る・2026-10-22 の見直し）。
+// ⚠ 書き終えるまでの上限（WriteTimeout）は置かない——ページの更新の通知（SSE）は、ずっと流し続けるため。
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 15 * time.Second, IdleTimeout: 2 * time.Minute}
 }
 
 // buildHandler はルート表を組み立て、CSRF と CSP のミドルウェアで包んだ最終的な

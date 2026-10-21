@@ -19,6 +19,8 @@ import (
 // 固定します（アプリで開く所は除く——窓が出るため）。⚠ WebDAV は Ctrl+S をアプリを閉じるまで送らなかったので、
 // 「保存のたびに届く」がこの道具のいちばんの約束。
 func TestWatchUploadsOnSave(t *testing.T) {
+	missingLimit = 2 * time.Second // 消してから名前を替える保存を待つ長さ（ふだんは60秒）——見張りを始める前に替える
+	defer func() { missingLimit = 60 * time.Second }()
 	var mu sync.Mutex
 	content := []byte("v1")
 	tag := func(b []byte) string { s := sha256.Sum256(b); return `"` + hex.EncodeToString(s[:8]) + `"` }
@@ -74,7 +76,7 @@ func TestWatchUploadsOnSave(t *testing.T) {
 		t.Errorf("上がった中身が違います: %v", got)
 	}
 	mu.Unlock()
-	os.Remove(local) // 手元のファイルが無くなると見張りは終わる
+	os.Remove(local) // 手元のファイルが無くなったまま missingLimit たつと、見張りは終わる
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):

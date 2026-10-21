@@ -103,7 +103,10 @@ func run(user, root, since string, max int, boxes []string) error {
 	catPath := filepath.Join(acct, "目録.json")
 	var cat catalog
 	if b, err := os.ReadFile(catPath); err == nil {
-		json.Unmarshal(b, &cat)
+		// 壊れた目録を空として読んで書き戻すと、それまでの記録が全部消える——止める（2026-10-22 の見直し）。
+		if err := json.Unmarshal(b, &cat); err != nil {
+			return fmt.Errorf("目録 %s が読めません（直すか、控えから戻してください）: %v", catPath, err)
+		}
 	}
 	if cat.Boxes == nil {
 		cat.Boxes = map[string]*boxRecord{}
@@ -270,7 +273,22 @@ func lock(dir string) (func(), error) {
 		if err == nil {
 			fmt.Fprintf(f, "%d %s\n", os.Getpid(), time.Now().Format(time.RFC3339))
 			f.Close()
-			return func() { os.Remove(p) }, nil
+			// 動いているあいだは、10分ごとに印の時刻を進める（落とすのは6時間まで続くことがあり、3時間で「前の回の残り」と
+			// みなされて、2つ目の回が同じ目録を書き換えていた・2026-10-22 の見直し）。
+			done := make(chan struct{})
+			go func() {
+				t := time.NewTicker(10 * time.Minute)
+				defer t.Stop()
+				for {
+					select {
+					case <-done:
+						return
+					case now := <-t.C:
+						os.Chtimes(p, now, now)
+					}
+				}
+			}()
+			return func() { close(done); os.Remove(p) }, nil
 		}
 		if st, serr := os.Stat(p); serr == nil && time.Since(st.ModTime()) > 3*time.Hour {
 			os.Remove(p)

@@ -93,11 +93,11 @@ func edit(link string, allowed []string) error {
 		return err
 	}
 	fileURL := base + "/api/local-edit/file?token=" + url.QueryEscape(token)
-	res, err := http.Get(fileURL)
+	res, err := httpClient.Get(fileURL)
 	if err != nil {
 		return fmt.Errorf("w-cms に繋がりません（%s）: %v", base, err)
 	}
-	content, _ := io.ReadAll(res.Body)
+	content, _ := io.ReadAll(io.LimitReader(res.Body, maxEditBytes))
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("落とせません（%d）: %s", res.StatusCode, strings.TrimSpace(string(content)))
@@ -143,6 +143,7 @@ func watch(local, fileURL, base, etag string, last []byte) error {
 		lastMod, lastSize = st.ModTime(), st.Size()
 	}
 	lastActive := time.Now()
+	var missingSince time.Time
 	for {
 		time.Sleep(time.Second)
 		if time.Since(lastActive) > idleLimit {
@@ -151,9 +152,18 @@ func watch(local, fileURL, base, etag string, last []byte) error {
 		}
 		st, err := os.Stat(local)
 		if err != nil {
-			logf("見張りを終える（%s が無くなった）", local)
-			return nil
+			// 消してから名前を替えて保存するアプリ（Office・一部の CAD）は、一瞬ファイルが無い——すぐにはやめない
+			// （1回の見回りが当たると見張りを終え、そのあとの Ctrl+S が w-cms へ入らなかった・2026-10-22 の見直し）。
+			if missingSince.IsZero() {
+				missingSince = time.Now()
+			}
+			if time.Since(missingSince) > missingLimit {
+				logf("見張りを終える（%s が %v 無いまま）", local, missingLimit)
+				return nil
+			}
+			continue
 		}
+		missingSince = time.Time{}
 		if st.ModTime().Equal(lastMod) && st.Size() == lastSize {
 			continue
 		}
@@ -203,11 +213,11 @@ func put(fileURL, base, etag string, content []byte) (string, error) {
 	req.Header.Set("If-Match", etag)
 	req.Header.Set("Origin", base) // w-cms の CSRF の守り（同じオリジンか）を通す
 	req.Header.Set("Content-Type", "application/octet-stream")
-	res, err := http.DefaultClient.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
-	msg, _ := io.ReadAll(res.Body)
+	msg, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	res.Body.Close()
 	switch res.StatusCode {
 	case http.StatusNoContent, http.StatusOK:
@@ -218,6 +228,15 @@ func put(fileURL, base, etag string, content []byte) (string, error) {
 	}
 	return "", fmt.Errorf("%d %s", res.StatusCode, strings.TrimSpace(string(msg)))
 }
+
+// httpClient は w-cms と話す口です（時間の上限つき——応えないサーバーで、見張りがいつまでも止まらないように）。
+var httpClient = &http.Client{Timeout: 5 * time.Minute}
+
+// maxEditBytes は落とすファイルの大きさの上限です。
+const maxEditBytes = 512 << 20
+
+// missingLimit は、ファイルが無いまま見張りを続ける長さです（試験で短くする）。
+var missingLimit = 60 * time.Second
 
 // cleanOld は7日より前に落とした置き場を片付けます（見張りの終わったもの）。
 func cleanOld() {

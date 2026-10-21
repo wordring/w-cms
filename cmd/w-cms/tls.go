@@ -111,6 +111,13 @@ func generateSelfSignedCert(dir string) (certFile, keyFile string, err error) {
 		IsCA:        true,
 		DNSNames:    hosts,
 		IPAddresses: ips,
+		// ⚠ ただし、名乗れる名前をこの機械の名前とアドレスに限る（名前の制約）。限らないと、鍵（key.pem）を手にした人が、
+		// 銀行や M365 など、どの名前の証明書でも作れて、この証明書を信頼した全部のパソコンで通信を盗み見られた
+		// （2026-10-22 の見直し）。下に証明書を作らせない（MaxPathLenZero）。
+		MaxPathLenZero:              true,
+		PermittedDNSDomainsCritical: true,
+		PermittedDNSDomains:         hosts,
+		PermittedIPRanges:           ipRanges(ips),
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -170,4 +177,17 @@ func printCertInstructions(certFile, keyFile string) {
   Import-Certificate -FilePath "%s" -CertStoreLocation Cert:\LocalMachine\Root
 
 `, certFile, keyFile, certFile, keyFile, listenURL(listenAddr(true), true), absCert)
+}
+
+// ipRanges は、アドレスの1つずつを、その1つだけの範囲（/32・/128）にします（証明書の名前の制約に使う）。
+func ipRanges(ips []net.IP) []*net.IPNet {
+	var out []*net.IPNet
+	for _, ip := range ips {
+		if v4 := ip.To4(); v4 != nil {
+			out = append(out, &net.IPNet{IP: v4, Mask: net.CIDRMask(32, 32)})
+		} else if ip != nil {
+			out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)})
+		}
+	}
+	return out
 }

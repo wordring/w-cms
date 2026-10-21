@@ -43,10 +43,19 @@ func Login(timeout time.Duration) (*Client, error) {
 		base = "https://localhost:8443"
 	}
 	jar, _ := cookiejar.New(nil)
+	// 証明書を確かめないのは、同じ機械の中（localhost・127.0.0.1・::1）だけ——ほかの機械へ繋ぐときに確かめないと、
+	// 管理者のパスワードとセッションを途中で盗み見られる（2026-10-22 の見直し）。ほかの機械の自己署名の証明書は、
+	// その機械の信頼ストアに入れてから使う。
+	insecure := false
+	if u, err := url.Parse(base); err == nil {
+		switch u.Hostname() {
+		case "localhost", "127.0.0.1", "::1":
+			insecure = true
+		}
+	}
 	c := &Client{base: base, hc: &http.Client{
-		Jar: jar,
-		// 手元のサーバーは自己署名の証明書（ローカル検証のため確かめない）。
-		Transport:     &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+		Jar:           jar,
+		Transport:     &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Timeout:       timeout,
 	}}
