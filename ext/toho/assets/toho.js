@@ -1430,12 +1430,15 @@ delegateClick([
             //    リンクに化けます（ユーザー決定）。
             draft_page: form.getAttribute('data-draft-page') || '',
             draft_index: form.getAttribute('data-draft-index') || '',
+            // 相乗りする部材発注書（2026-10-21・ext/toho/order_join.go）——空なら新しく作る。
+            join: val('join'),
         };
         if (!body.supplier) {
             sayIn(box,'⚠ 仕入先を入れてください（部材発注書は1枚に1社です）', 'proc-why-ng');
             return;
         }
-        if (!body.signer) {
+        // 相乗りするときは、差出人はその部材発注書のもの（選ばなくてよい）。
+        if (!body.signer && !body.join) {
             sayIn(box,'⚠ 差出人を選んでください（紙に刷る署名です）', 'proc-why-ng');
             return;
         }
@@ -1447,7 +1450,9 @@ delegateClick([
                 sayIn(box,'⚠ ' + (r.data.message || '部材発注書を作れませんでした'), 'proc-why-ng');
                 return;
             }
-            sayIn(box,'部材発注書ができました（' + r.data.page_id + '）。読み直しています…');
+            sayIn(box, r.data.joined
+                ? '部材発注書 /' + r.data.page_id + ' に足しました（新しい行 ' + r.data.added + '・数を足した行 ' + r.data.summed + '）。読み直しています…'
+                : '部材発注書ができました（' + r.data.page_id + '）。読み直しています…');
             location.reload();
         } catch (err) {
             sayIn(box,'⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
@@ -1508,8 +1513,16 @@ delegateClick([
 
     delegateClick([
         ['[data-draft-go]', create],
+        ['.draft-join-pick', pickJoin],
         ['.draft-row-back', removeDraftRow],
     ]);
+
+    // 相乗りの候補を押すと、欄にその部材発注書のページ番号が入る（2026-10-21・ext/toho/order_join.go）。
+    function pickJoin(btn) {
+        const form = btn.closest('.draft-form');
+        const input = form ? form.querySelector('[data-draft="join"]') : null;
+        if (input) input.value = btn.getAttribute('data-join') || '';
+    }
 
     // 発注部材表から1行を外す＝**未手配の一覧へ戻す**（2026-09-22）。
     //

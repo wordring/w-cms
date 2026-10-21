@@ -92,10 +92,10 @@ func entriesOf(ln ourOrderLine) ([]breakdownEntry, bool) {
 	return []breakdownEntry{{Order: order, Product: prod, Qty: qty}}, true
 }
 
-// sameLineKey は「数量・案件・弊社品番・内訳のほかが全部同じ」かを見る鍵です（表記の揺れは畳む）。
+// sameLineKey は「数量・案件・弊社品番・製造・内訳のほかが全部同じ」かを見る鍵です（表記の揺れは畳む）。
 func sameLineKey(ln ourOrderLine) string {
 	parts := []string{ln.Kind, ln.No, ln.ItemID, ln.ItemName, ln.Work, ln.Material, ln.Shape, ln.Size, ln.Color,
-		ln.Spec, ln.Supplied, ln.Unit, ln.Cost, ln.Note, ln.Vendor, ln.Mfg, ln.Lot}
+		ln.Spec, ln.Supplied, ln.Unit, ln.Cost, ln.Note, ln.Vendor, ln.Lot}
 	for i, p := range parts {
 		parts[i] = cms.NormalizeText(strings.TrimSpace(p))
 	}
@@ -122,6 +122,7 @@ func mergeOrderLines(lines []ourOrderLine) []ourOrderLine {
 		k := sameLineKey(ln)
 		if g := byKey[k]; g != nil {
 			g.entries = append(g.entries, es...)
+			g.line.Mfg = joinRefs(g.line.Mfg, ln.Mfg)
 			continue
 		}
 		g := &group{line: ln, entries: append([]breakdownEntry(nil), es...), first: i}

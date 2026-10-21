@@ -114,6 +114,8 @@ func draftFormHTML(user *auth.User, pageID string, idx int, supplier string) str
 		stdhtml.EscapeString(pageID) + `" data-draft-index="` + strconv.Itoa(idx) + `">` +
 		signerFieldHTML(user) +
 		strings.Replace(f("supplier", "仕入先", "みなと商店", "text"), `/></label>`, ` value="`+stdhtml.EscapeString(supplier)+`"/></label>`, 1) +
+		// 相乗り（2026-10-21・order_join.go）——ページ番号を書けば、新しく作らずその部材発注書に足す。候補は同じ仕入先のまだ送っていない部材発注書。
+		joinFieldHTML(user, supplier) +
 		f("order_at", "部材発注日", "", "date") +
 		f("due", "納期", "", "date") +
 		f("note", "備考", "定尺で結構です", "text") +

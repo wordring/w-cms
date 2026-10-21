@@ -275,10 +275,14 @@ func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "url": "/" + newID})
 }
 
-// refersTo は、参照の値 v（`002050`・`/002050` など）がページ id を指すかです。
+// refersTo は、参照の値 v（`002050`・`/002050` など。「、」で並べたものも——相乗りした行・order_join.go）がページ id を指すかです。
 func refersTo(v string, id int) bool {
-	pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v), "/"))
-	return ok && pageNum(pid) == id
+	for _, p := range splitRefs(v) {
+		if pid, ok := page.NormalizeID(strings.TrimPrefix(p, "/")); ok && pageNum(pid) == id {
+			return true
+		}
+	}
+	return false
 }
 
 // childOf は、ページ docID の親がページ parent かです（2026-10-20 までの、製造ページの子に作った書類を見分ける）。
@@ -333,12 +337,14 @@ func mfgsOfDoc(docID int, dataType string) []int {
 	seen := map[int]bool{}
 	var out []int
 	for _, r := range rows {
-		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["mfg"]), "/"))
-		if !ok || seen[pageNum(pid)] {
-			continue
+		for _, p := range splitRefs(r.Values["mfg"]) {
+			pid, ok := page.NormalizeID(strings.TrimPrefix(p, "/"))
+			if !ok || seen[pageNum(pid)] {
+				continue
+			}
+			seen[pageNum(pid)] = true
+			out = append(out, pageNum(pid))
 		}
-		seen[pageNum(pid)] = true
-		out = append(out, pageNum(pid))
 	}
 	if len(out) > 0 {
 		return out

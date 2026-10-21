@@ -100,6 +100,8 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// ページに『⚠ まだ発注していません（4行）』と言ったゴミが残っています」）。
 		DraftPage  string `json:"draft_page"`
 		DraftIndex string `json:"draft_index"`
+		// Join は相乗りする部材発注書のページ番号です（2026-10-21・order_join.go）。あれば新しく作らず、その部材発注書に足す。
+		Join string `json:"join"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -119,6 +121,10 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 発注部材表が製造ページにあれば、明細の「製造」の列にその製造ページを書く（2026-10-21）。
 	req.Lines = withMfg(req.Lines, mfgParentOr(user, req.DraftPage))
+	if strings.TrimSpace(req.Join) != "" {
+		joinOurOrder(w, user, req.Join, supplier, req.Lines, req.DraftPage, req.DraftIndex)
+		return
+	}
 
 	// ⚠ **送られてきた差出人をそのまま信じません**——署名を持つ人の中に居るかを確かめます（trustedSigner）。
 	signerID := trustedSigner(user, req.Signer)
@@ -213,39 +219,7 @@ func buildOurOrderHTML(tmpl, pageID, supplier, orderAt, due, note, signerID stri
 
 	rows := make([]map[string]string, 0, len(lines))
 	for _, ln := range lines {
-		// ⚠ **材料の行に `品名` は書きません。** 材料に単独の名前は無く、
-		//    **材質・形状・寸法の3つで決まります**——`鉄 FB t4.5*75*1090` と書くと、
-		//    同じことが紙の上で2回言われ、**直すときに食い違います**。
-		//    購入部品は逆で、**品名が同一性そのもの**なので残します。
-		rows = append(rows, map[string]string{
-			// for-order は案件（どの案件のための部材か）——2026-10-19 から写す。それまでは発注部材表から部材発注書へ移すときに落ち、
-			// 手配済みの数え方（procure_ledger.go）は案件の無い発注を「在庫」として納期の早い案件から当てていた。紙には刷らない。
-			"our-item-id": ln.ProductID,
-			"for-order":   ln.ForOrder,
-			"mfg":         ln.Mfg,
-			"breakdown":   ln.Breakdown,
-			"kind":        ln.Kind,
-			"no":          ln.No,
-			"work":        ln.Work,
-			"spec":        ln.Spec,
-			"supplied":    ln.Supplied,
-			"item-id":     ln.ItemID,
-			"item-name":   itemNameOf(ln),
-			"material":    ln.Material,
-			"shape":       ln.Shape,
-			"size":        ln.Size,
-			"color":       ln.Color,
-			"quantity":    ln.Quantity,
-			"unit":        ln.Unit,
-			"cost":        moneyOrEmpty(ln.Cost),
-			"note":        ln.Note,
-			// ⚠ **状態は「未発注」から始めます**（2026-09-22）。紙はできましたが、
-			//    **まだ外へ出ていません**——メール・FAX・手渡しのどれかで出したときに
-			//    `発注済` へ進みます（[order_status.go](order_status.go)）。
-			//    ⚠ **それまでの既定は `未納品` でした**——「紙を作る＝発注した」と
-			//    読む形で、**出す前の紙と出した紙が見分けられません**でした。
-			"status": OrderLineUnsent,
-		})
+		rows = append(rows, ourOrderRowValues(ln))
 	}
 	if _, err := fillVocabTable(d.DraftBlock, ourOrderItemsType, rows); err != nil {
 		return "", err
@@ -321,4 +295,41 @@ func itemNameOf(ln ourOrderLine) string {
 		return ""
 	}
 	return strings.TrimSpace(ln.ItemName)
+}
+
+// ourOrderRowValues は部材発注明細表の1行の値です（列の機械キー → 値）。部材発注書を作るときと、相乗りで行を足すとき（order_join.go）が使う。
+func ourOrderRowValues(ln ourOrderLine) map[string]string {
+	// ⚠ **材料の行に `品名` は書きません。** 材料に単独の名前は無く、
+	//    **材質・形状・寸法の3つで決まります**——`鉄 FB t4.5*75*1090` と書くと、
+	//    同じことが紙の上で2回言われ、**直すときに食い違います**。
+	//    購入部品は逆で、**品名が同一性そのもの**なので残します。
+	return map[string]string{
+		// for-order は案件（どの案件のための部材か）——2026-10-19 から写す。それまでは発注部材表から部材発注書へ移すときに落ち、
+		// 手配済みの数え方（procure_ledger.go）は案件の無い発注を「在庫」として納期の早い案件から当てていた。紙には刷らない。
+		"our-item-id": ln.ProductID,
+		"for-order":   ln.ForOrder,
+		"mfg":         ln.Mfg,
+		"breakdown":   ln.Breakdown,
+		"kind":        ln.Kind,
+		"no":          ln.No,
+		"work":        ln.Work,
+		"spec":        ln.Spec,
+		"supplied":    ln.Supplied,
+		"item-id":     ln.ItemID,
+		"item-name":   itemNameOf(ln),
+		"material":    ln.Material,
+		"shape":       ln.Shape,
+		"size":        ln.Size,
+		"color":       ln.Color,
+		"quantity":    ln.Quantity,
+		"unit":        ln.Unit,
+		"cost":        moneyOrEmpty(ln.Cost),
+		"note":        ln.Note,
+		// ⚠ **状態は「未発注」から始めます**（2026-09-22）。紙はできましたが、
+		//    **まだ外へ出ていません**——メール・FAX・手渡しのどれかで出したときに
+		//    `発注済` へ進みます（[order_status.go](order_status.go)）。
+		//    ⚠ **それまでの既定は `未納品` でした**——「紙を作る＝発注した」と
+		//    読む形で、**出す前の紙と出した紙が見分けられません**でした。
+		"status": OrderLineUnsent,
+	}
 }
