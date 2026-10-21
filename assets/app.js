@@ -974,8 +974,11 @@
         el.style.color = color;
     }
 
+    // saveFailed は、いちばん新しい保存が失敗したままか（成功すると外す）——ページを去る前に確かめる（beforeunload）。
+    let saveFailed = false;
     function onSaveFailed(err) {
         if (err) console.error(err);
+        saveFailed = true;
         setSaveStatus("❌ 保存エラー", "#ef4444");
     }
 
@@ -1123,8 +1126,11 @@
 
     // flushPendingSave は、まだ保存していない書きかけを今すぐ送って終わるまで待つ（業務のボタン・書ける形を出る前・
     // タブを隠す／ページを去るとき）。
+    // 返すのは、書きかけが残っていないか（保存できた・決めていない2つの版が無い）——業務のボタン（postJSON）と、閲覧へ戻るときに見る
+    // （失敗しても先へ進んでいたので、直したつもりの中身が入らないまま業務のボタンが動き、閲覧へ戻ると書きかけが消えた・2026-10-22 の見直し）。
     async function flushPendingSave() {
         try { await saveToServer(); } catch (e) { /* 失敗は onSaveFailed が知らせている */ }
+        return !(unsaved || syncConflicts.size > 0 || saveFailed);
     }
     // saveNow は、操作（帯・メニュー・⠿ 🗑 ＋）・アンドゥとリドゥ・ぶつかりを決めたあとにすぐ保存する（ブロックの形を変えるので、
     // ブロックを去るのを待たない——2026-10-12 昼）。
@@ -1145,6 +1151,11 @@
         return fetch(url, { method: 'POST' }).catch(() => {});
     }
     window.addEventListener('pagehide', () => checkpointVersion(true));
+    // 決めていない2つの版・失敗したままの保存があれば、去る前に確かめる（そのまま閉じると消える・2026-10-22 の見直し）。
+    // ふだんの書きかけは、去るときに送る（setupSaveOnLeave）ので確かめない。
+    window.addEventListener('beforeunload', (e) => {
+        if (syncConflicts.size > 0 || saveFailed) { e.preventDefault(); e.returnValue = ''; }
+    });
 
     function queueSync(pull) {
         const run = syncChain.then(() => runSync(pull));
@@ -1220,11 +1231,19 @@
             });
             // タブを隠したとき・ページを去るときの保存は、ページが閉じても届くように keepalive（中身が 64KB を超えると使えない）。
             // ⚠ ページを去るとき（pagehide）は、visibilityState がまだ visible のことがある——印（leavingPage）でも見る。
-            const keepalive = (document.visibilityState === 'hidden' || leavingPage) && body.length < 60000;
+            // ⚠ 上限はバイトで数える（和文は1字3バイト——字の数で見ていて、大きな表で keepalive が断られ、保存できなかった・
+            //    2026-10-22 の見直し）。
+            const keepalive = (document.visibilityState === 'hidden' || leavingPage) && new Blob([body]).size < 60000;
             // 受け取りに行くだけ（自分の変更を送らない）ときは、知らせを受けて自動に飛ぶ要求——セッションを延ばさない（2026-10-14）。
             const headers = (pull && !changes.length) ? Object.assign({ 'Content-Type': 'application/json' }, BG_HEADERS)
                 : { 'Content-Type': 'application/json' };
-            res = await fetch('/api/sync', { method: 'POST', headers, body, keepalive });
+            try {
+                res = await fetch('/api/sync', { method: 'POST', headers, body, keepalive });
+            } catch (err) {
+                // keepalive で断られたら（ほかの keepalive と合わせて上限を超えた など）、ページを去るのでなければ普通に送り直す。
+                if (!keepalive || leavingPage) throw err;
+                res = await fetch('/api/sync', { method: 'POST', headers, body });
+            }
             data = await readResult(res);
         } catch (e) { onSaveFailed(e); return; }
         if (!res.ok || !data || !data.success) {
@@ -1233,6 +1252,7 @@
             return;
         }
         dismissToast('save-failed');
+        saveFailed = false;
         unsaved = held.size > 0 || editSeq !== seqAtSend;
         applySyncResult(data, sent, held);
         if (data.written) syncWrote = true;
@@ -1898,8 +1918,9 @@
                 if (cur !== from && cur !== null) {
                     if (to === null) { keptOne = true; return; } // 相手が書き換えたブロックは消さない
                     const base = syncBase.get(c.id);
-                    const el = blockElementById(c.id);
-                    theirs.push({ id: c.id, html: el ? el.outerHTML : cur, h: base ? base.h : '' });
+                    // 相手の版は、保存の形（cur）で並べる——画面の要素（outerHTML）を写すと、書ける印や画面の部品まで写り、
+                    // 「相手の版」の枠に打てて（打ったものは捨てられる）、選ぶと部品まで本文に入った（2026-10-22 の見直し）。
+                    theirs.push({ id: c.id, html: cur, h: base ? base.h : '' });
                 }
                 want.set(c.id, to);
             });
@@ -2496,7 +2517,18 @@
         // （2026-10-12 昼から。それまでは1.5秒のデバウンス）なので、キャレットを置いたまま閲覧へ戻ると、
         // 最後の書きかけがまだ送られていない（送っている途中の）ことがあります。
         const wasEditing = document.body.hasAttribute('edit-mode');
-        if (wasEditing) { await flushPendingSave(); await checkpointVersion(false); }
+        if (wasEditing) {
+            // 書きかけを保存できなかった・決めていない2つの版があるなら、閲覧へ戻らない（戻ると、読み直しで書きかけが消えた・
+            // 2026-10-22 の見直し）。
+            if (!(await flushPendingSave())) {
+                toggle.checked = true;
+                if (e && e.type === 'change') rememberMode('edit');
+                notify('⚠ 保存できていない書きかけか、決めていない2つの版があるので、書ける形のままにしました（保存の印を見て、もう一度お試しください）。',
+                    { type: 'warn', duration: 8000, id: 'mode' });
+                return;
+            }
+            await checkpointVersion(false);
+        }
         syncReady = false;
         // ページの更新の通知が比べる相手を覚え直す（閲覧の描き方で——2026-10-07）。
         // ⚠ 書ける形から出るときだけ——ページを開いたときもここを通る（閲覧で始まる）が、そのときは開いたときの姿を
@@ -8805,7 +8837,10 @@
 async function postJSON(url, body) {
     // 書ける形で押したときは、書きかけを先に保存してから送る（2026-10-12・問い5——直してすぐ押せる。ボタンが読む本文に
     // 直した中身が入っているように）。
-    if (window.wcmsFlushSave) await window.wcmsFlushSave();
+    // 保存できなかったら送らない（直したつもりの中身が入らないまま、業務の操作が古い本文で動いた・2026-10-22 の見直し）。
+    if (window.wcmsFlushSave && (await window.wcmsFlushSave()) === false) {
+        return { ok: false, status: 0, data: { message: '書きかけを保存できなかったので、送っていません（保存の印・決めていない2つの版を確かめて、もう一度押してください）' } };
+    }
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
