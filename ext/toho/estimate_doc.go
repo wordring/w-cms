@@ -224,6 +224,9 @@ func appendEstimateLine(body string, ln estimateLine) (string, bool) {
 	}
 	t := tables[0]
 	rows := rowsOf(t)
+	if len(rows) == 0 {
+		return body, false // 見出しの行も無い表（見出しが分からないので足せない・2026-10-22 の見直しまで panic していた）
+	}
 	for _, tr := range rows[1:] {
 		empty := true
 		for _, c := range cellTexts(tr) {

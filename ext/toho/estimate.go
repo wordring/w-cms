@@ -194,9 +194,14 @@ func estimateCostOf(calc *html.Node) estimateCost {
 		return estimateCost{Why: "この形の表（価格の列が無い）は計算できません"}
 	}
 	stepCol, hasStep := col[estimateStepCol]
+	_, raw := tableRawValues(calc)
 	sum, any := 0.0, false
 	for i, cells := range rows {
 		if priceCol >= len(cells) || strings.TrimSpace(cells[priceCol]) == "" {
+			continue
+		}
+		// 合計の式（=合計(…)）の行は足さない——ほかの行の価格の合計なので、足すと原価が倍になった（2026-10-22 の見直し）。
+		if i < len(raw) && priceCol < len(raw[i]) && cms.IsFormula(raw[i][priceCol]) && (strings.Contains(raw[i][priceCol], "合計(") || strings.Contains(raw[i][priceCol], "合計（")) {
 			continue
 		}
 		v, ok := estimateNumber(cells[priceCol])
@@ -219,6 +224,15 @@ func estimateCostOf(calc *html.Node) estimateCost {
 // tableValues は表の見出しと、見出しより下の行の値を返します（式は計算した値——コアの FormulaTableValues）。
 // 見出しの無い表は headers が nil。
 func tableValues(t *html.Node) (headers []string, rows [][]string) {
+	headers, rows = tableRawValues(t)
+	if headers == nil {
+		return nil, nil
+	}
+	return headers, cms.FormulaTableValues(headers, rows)
+}
+
+// tableRawValues は tableValues の、式を計算する前の値です（セルに書かれた字のまま）。
+func tableRawValues(t *html.Node) (headers []string, rows [][]string) {
 	trs := rowsOf(t)
 	if len(trs) == 0 {
 		return nil, nil
@@ -233,7 +247,7 @@ func tableValues(t *html.Node) (headers []string, rows [][]string) {
 		}
 		rows = append(rows, cells)
 	}
-	return headers, cms.FormulaTableValues(headers, rows)
+	return headers, rows
 }
 
 // ── 見積表 ──────────────────────────────────────────────────────────

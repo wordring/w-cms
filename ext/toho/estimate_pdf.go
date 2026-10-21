@@ -10,6 +10,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"math"
 	"errors"
 	"fmt"
 	stdhtml "html"
@@ -59,20 +60,26 @@ func estimateAmount(r map[string]string) (int, bool) {
 	if !okQ || !okP {
 		return 0, false
 	}
-	return int(q*p + 0.5), true
+	return int(math.Round(q*p)), true // 負（値引き）も正しく丸める（int(x+0.5) は 0 の向きへ切り捨て、−1500 が −1499 になった・2026-10-22 の見直し）
 }
 
 // estimateTotal は明細の合計（税抜）です。金額の出ない行があれば ok=false（合計を刷らない——部材発注書と同じ）。
 func estimateTotal(rows []map[string]string) (int, bool) {
-	total := 0
+	total, counted := 0, 0
 	for _, r := range rows {
+		// 品名・単価・数量の無い行（「※運賃別途」だけの備考の行など）は数えない——画面はそうしていて、紙（PDF）だけが
+		// 数えて合計を出せずにいた（画面と紙で合計が違った・2026-10-22 の見直し）。
+		if strings.TrimSpace(r["品名"]+r["単価"]+r["数量"]) == "" {
+			continue
+		}
 		a, ok := estimateAmount(r)
 		if !ok {
 			return 0, false
 		}
 		total += a
+		counted++
 	}
-	return total, len(rows) > 0
+	return total, counted > 0
 }
 
 // jpDate は YYYY-MM-DD を「YYYY年M月D日」にします（読めなければそのまま）。

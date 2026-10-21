@@ -30,6 +30,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/database"
 )
 
 // mergeAsRevision は改定図面を既存の加工製品ページへ合流させます。
@@ -128,6 +129,13 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 // mergeInputs は、合流（mergeAsRevision・mergeAsDrawing）の前に、仮のページの図面ブロックと合流先の本文を読みます
 // （合流先に書けるかも確かめる）。2026-10-20 に2つの写しをまとめた。
 func mergeInputs(user *auth.User, srcPageID, dstPageID string) (block, dstBody string, err error) {
+	// 合流したあと、元のページはごみ箱へ移す——子ページがあると、子は消えた親を指したまま木から落ちる（取り込まない扱い
+	// 〔filing_duplicate.go〕は断っていたが、合流の道は確かめていなかった・2026-10-22 の見直し）。何か書く前に断る。
+	if srcInt, err := strconv.Atoi(srcPageID); err == nil {
+		if kids, err := cms.ChildPages(database.DB, srcInt); err != nil || len(kids) > 0 {
+			return "", "", errors.New("このページには子ページがあるので、合流できません（先に子ページを動かしてください）")
+		}
+	}
 	srcBody, err := cms.ReadPageBody(srcPageID)
 	if err != nil {
 		return "", "", err

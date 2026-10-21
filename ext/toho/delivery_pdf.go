@@ -14,6 +14,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"math"
 	"errors"
 	"net/http"
 	"strconv"
@@ -170,7 +171,7 @@ func buildDeliveryPDF(body string, viewer *auth.User) ([]byte, error) {
 	y = pdfRoom(p, y, 3*pdfLine) // 合計の3行が入らなければ次の紙へ
 	if okTotal {
 		if rate, ok := TaxRate(); ok {
-			tax := int(float64(sub)*rate/100 + 0.5)
+			tax := int(math.Round(float64(sub) * rate / 100))
 			label := "消費税（" + rateText(rate) + "%）"
 			for _, ln := range [][2]string{{"小計", comma(sub)}, {label, comma(tax)}, {"合計", comma(sub + tax)}} {
 				pdfTextRight(p, pdfRight, y, 11, ln[0]+"　"+ln[1]+" 円")

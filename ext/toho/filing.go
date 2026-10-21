@@ -465,6 +465,14 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// 実際には同じ品名があります」）——「新規」を選べば、同じ題のページが在っても隣に置きます。そのため行き先に同じ題が
 	// **何枚も**ありえるので、図面追加・図面改定の相手は人が押した候補（`Target`）で決めます（1枚だけなら題で引く）。
 	sameTitle := childrenByTitle(machineID, name, pageID)
+	// 読めないページは候補にしない（番号を「選んでください」に並べ、図面番号を確かめの文に書いていた・2026-10-22 の見直し）。
+	visible := sameTitle[:0]
+	for _, sid := range sameTitle {
+		if n, err := strconv.Atoi(sid); err == nil && page.CanView(user, n) {
+			visible = append(visible, sid)
+		}
+	}
+	sameTitle = visible
 	if len(sameTitle) > 0 && row.Merge != "new" {
 		return fileIntoSameTitle(user, row, in, sameTitle, where)
 	}

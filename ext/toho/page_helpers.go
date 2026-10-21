@@ -50,12 +50,14 @@ func htmlEscape(s string) string { return stdhtml.EscapeString(s) }
 // 題を揃えるのは、**題がページ名だから**——整理の画面で図面名称を直したのに
 // ページの題が古いままだと、次に同じ部品が来たとき「既にある」の判定
 // （＝改定図面の合図）が効きません。
+//
+// 先に動かしてから題を替える（題を替えてから動かすと、動かせなかったとき、題だけ替わったページが通信箱に残った・
+// 2026-10-22 の見直し）。
 func movePage(user *auth.User, pageID, newParent, title string) error {
-	if err := cms.SetPageH1(pageID, user.Username, htmlEscape(title)); err != nil {
+	if _, _, err := cms.SetPageParent(user, pageID, newParent); err != nil {
 		return err
 	}
-	_, _, err := cms.SetPageParent(user, pageID, newParent)
-	return err
+	return cms.SetPageH1(pageID, user.Username, htmlEscape(title))
 }
 
 // bodyTagValue は本文 body のタグ name の値です（索引ではなく本文を読む——ロックの中で「空か」を見るとき）。

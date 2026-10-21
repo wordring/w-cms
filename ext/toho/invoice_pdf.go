@@ -18,6 +18,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"math"
 	"errors"
 	stdhtml "html"
 	"net/http"
@@ -62,7 +63,7 @@ func invoiceTotals(rows []map[string]string) (sub, tax int, label string, ok boo
 	sub, ok, _ = deliveryTotals(rows)
 	label = "消費税"
 	if rate, has := TaxRate(); has {
-		tax = int(float64(sub)*rate/100 + 0.5)
+		tax = int(math.Round(float64(sub) * rate / 100))
 		label = "消費税（" + rateText(rate) + "%）"
 	}
 	return sub, tax, label, ok

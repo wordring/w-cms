@@ -48,6 +48,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -168,6 +169,10 @@ func findFolderChild(parentID, title string) (string, bool) {
 
 // ensureKindFolder は親の下に題 title のフォルダ（`ページ種類：kind`）を探し、無ければ作ります。
 func ensureKindFolder(user *auth.User, parentID, title, kind string) (string, error) {
+	// 探して無ければ作る、を1つずつ通す（2つの整理が同時に新しい客先・装置を作ると、同じ題のフォルダが2つできた・
+	// 2026-10-22 の見直し）。
+	kindFolderMu.Lock()
+	defer kindFolderMu.Unlock()
 	if id, ok := findFolderChild(parentID, title); ok {
 		return id, nil
 	}
@@ -359,3 +364,6 @@ func ProductFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": id})
 }
+
+// kindFolderMu は ensureKindFolder の「探して無ければ作る」を1つずつ通すロックです。
+var kindFolderMu sync.Mutex
