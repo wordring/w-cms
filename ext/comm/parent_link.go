@@ -60,17 +60,30 @@ func ParentRecordOf(inReplyTo string, self int) string {
 	if inReplyTo == "" {
 		return ""
 	}
-	ids, err := cms.PagesByTag(database.DB, MessageIDTag, inReplyTo)
-	if err != nil {
-		return ""
+	// 値そのままで引き、無ければ中の <…> を1つずつ引く（「<a@x> <b@y>」「<a@x> (コメント)」の形でも親へつながる・
+	// 2026-10-22 の見直し）。
+	tries := []string{inReplyTo}
+	for _, m := range angleIDRe.FindAllString(inReplyTo, -1) {
+		if m != inReplyTo {
+			tries = append(tries, m)
+		}
 	}
-	for _, id := range ids {
-		if id != self {
-			return page.FormatID(id)
+	for _, v := range tries {
+		ids, err := cms.PagesByTag(database.DB, MessageIDTag, v)
+		if err != nil {
+			continue
+		}
+		for _, id := range ids {
+			if id != self {
+				return page.FormatID(id)
+			}
 		}
 	}
 	return ""
 }
+
+// angleIDRe は、ヘッダの中の <…> の1つです（Message-ID の形）。
+var angleIDRe = regexp.MustCompile(`<[^<>\s]+>`)
 
 // withParentTag は本文の最初の可変タグの並びに 親ページID を足した本文を返します（既にあるか、並びが無ければ何もしない）。
 func withParentTag(body, parentID string) (string, bool) {

@@ -217,14 +217,15 @@ async function markHandled(pageIds, btn, value) {
             notify(data.message || '片付けられませんでした', { type: 'warn' });
             return;
         }
+        // 消すのは、印を付けられた行だけ（done_ids）。付けられなかった行まで消すと、付いたと思い込む（2026-10-22 の見直し）。
         const host = document.getElementById('w-editor-content');
-        pageIds.forEach(id => {
+        (Array.isArray(data.done_ids) ? data.done_ids : (data.failed ? [] : pageIds)).forEach(id => {
             const row = host && host.querySelector('tr[data-page-id="' + id + '"]');
             if (row) row.remove();
         });
         if (data.failed) {
             notify(data.handled + '件を「' + (value || '済') + '」にしました（' +
-                data.failed + '件は権限がありません）', { type: 'warn' });
+                data.failed + '件は付けられませんでした——権限が無いか、通信箱の記録でないか、道具が開いています）', { type: 'warn' });
         } else {
             notify(data.handled + '件を「' + (value || '済') + '」にしました',
                 { type: 'success', duration: 4000 });

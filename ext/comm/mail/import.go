@@ -114,7 +114,12 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 		}
 		// ファイル名は取り込み係が拡張子で担当を決めるためのもの。
 		// 題は本文（件名）から作られるので、ここは形だけで足ります。
-		res, handled, err := comm.IntakeFile(inboxID, username, "mail.eml", raw)
+		// 向きは読んだ箱で決める（送信済みの箱なら送信・ほかは受信——差出人では決めない）。
+		direction := comm.DirectionIn
+		if opt.Folder == FolderSent {
+			direction = comm.DirectionOut
+		}
+		res, handled, err := comm.IntakeFileAs(inboxID, username, "mail.eml", raw, direction)
 		if err != nil || !handled {
 			if err != nil {
 				log.Printf("メールを取り込めませんでした subject=%q: %v", r.Subject, err)

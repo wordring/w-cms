@@ -272,8 +272,9 @@ func intakeHandlerFor(ext string) IntakeHandler {
 
 // IntakeContext は取り込み係に渡す最小権限の道具です。
 type IntakeContext struct {
-	InboxID  string // 通信箱のページID（作るページの親）
-	Uploader string // 操作した人（新ページの所有者になる）
+	InboxID   string // 通信箱のページID（作るページの親）
+	Uploader  string // 操作した人（新ページの所有者になる）
+	Direction string // 向きが分かっていれば DirectionIn／DirectionOut（メールの読み込みが、読んだ箱から渡す）。空なら中身から決める
 
 	// created はこの取り込みで作ったページのID（作成順）。SaveAttachment と
 	// UpdatePage の対象をここに限ることで、「既存ページの改変は渡さない」の線を
@@ -392,6 +393,13 @@ func lockIntakeRef(key string) func() {
 // 2026-09-15 まで checkIntakeContent という名前でコアの非公開関数でした）。
 // 担当が居ない拡張子なら ok=false を返します。
 func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResult, bool, error) {
+	return IntakeFileAs(inboxID, uploader, fileName, content, "")
+}
+
+// IntakeFileAs は IntakeFile の、向き（DirectionIn／DirectionOut）が分かっているときの形です（空なら中身から決める）。
+// メールの読み込みは、どの箱から読んだかで向きを渡します——差出人で決めると、受信の箱に届いた自分のアドレスを名乗るメール
+// （なりすまし・複合機のスキャンの送り先・同じアドレスを使う人）が「送信・対応 不要」になり、未処理に出なかった（2026-10-22 の見直し）。
+func IntakeFileAs(inboxID, uploader, fileName string, content []byte, direction string) (IntakeResult, bool, error) {
 	h := intakeHandlerFor(strings.ToLower(filepath.Ext(fileName)))
 	if h == nil {
 		return IntakeResult{}, false, nil // 担当なし＝ただの添付
@@ -413,7 +421,7 @@ func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResul
 			}
 		}
 	}
-	ctx := &IntakeContext{InboxID: inboxID, Uploader: uploader}
+	ctx := &IntakeContext{InboxID: inboxID, Uploader: uploader, Direction: direction}
 	pageID, title, err := h.OnFile(ctx, fileName, content)
 	if err != nil {
 		return IntakeResult{}, true, err

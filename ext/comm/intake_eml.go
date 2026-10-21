@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -178,6 +179,13 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// （メールの拡張が口に載せる・サインインしているアドレス）。形は w-cms が送ったときの控えと同じ——
 	// 送信のテンプレート・`向き：送信`・`送信日時`・`対応：不要`（送るという仕事はその場で終わっている）。
 	out := isOwnAddress(msg.Header.Get("From"))
+	// 読んだ箱が分かっていれば、それで決める（受信の箱に届いた「自分のアドレス」を名乗るメールを、送信にしない）。
+	switch ctx.Direction {
+	case DirectionIn:
+		out = false
+	case DirectionOut:
+		out = true
+	}
 	tmplName := MailInTemplate
 	if out {
 		tmplName = MailOutTemplate
@@ -247,6 +255,16 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	if err != nil {
 		return "", "", err
 	}
+	// このあとで失敗したら、作りかけのページをごみ箱へ移す——題だけでタグの無いページが未処理に残り、Message-ID が
+	// 無いので重複にも数えられず、次の読み込みでまた作りかけができた（2026-10-22 の見直し）。
+	finished := false
+	defer func() {
+		if !finished {
+			if _, derr := cms.DeletePageToTrash(pageID); derr != nil {
+				log.Printf("作りかけのメールの記録 /%s を片付けられません: %v", pageID, derr)
+			}
+		}
+	}()
 
 	// 添付の数。**一覧で「発注書が付いているか」を見るため**に索引へ載せます
 	// （2026-09-05）——本文を開かないと分からない値だと、100件の一覧を出すたびに
@@ -284,6 +302,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	if err := ctx.UpdatePage(pageID, d.HTML()); err != nil {
 		return "", "", err
 	}
+	finished = true
 	return pageID, subject, nil
 }
 
@@ -505,6 +524,19 @@ func zipBaseName(name string) string {
 // collectParts は MIME を展開して（本文候補と添付の）平らな一覧にします。
 // multipart は入れ子ごと辿り、text/* は宣言された文字コードから UTF-8 へ復号します。
 func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {
+	n := 0
+	return collectPartsAt(contentType, cte, body, 0, &n)
+}
+
+// 入れ子の深さとパートの数の上限です（ふつうのメールは深さ3〜4・パートは数十）。
+// ⚠ 上限が無いと、数十 MiB のメールに何十万段の入れ子を書くだけで、読み手の作業用の領域と CPU を使い切った
+// （自動の読み込みは5分ごとに同じメールを読み直す・2026-10-22 の見直し）。超えたら、そこまでに読めた分で止める。
+const (
+	maxMIMEDepth = 12
+	maxMIMEParts = 500
+)
+
+func collectPartsAt(contentType, cte string, body io.Reader, depth int, count *int) ([]emlPart, error) {
 	if contentType == "" {
 		contentType = "text/plain"
 	}
@@ -518,9 +550,15 @@ func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {
 		if boundary == "" {
 			return nil, fmt.Errorf("multipart に boundary がありません")
 		}
+		if depth >= maxMIMEDepth {
+			return nil, fmt.Errorf("multipart の入れ子が深すぎます（%d 段まで）", maxMIMEDepth)
+		}
 		mr := multipart.NewReader(body, boundary)
 		var out []emlPart
 		for {
+			if *count >= maxMIMEParts {
+				break
+			}
 			p, err := mr.NextPart()
 			if err == io.EOF {
 				break
@@ -528,11 +566,16 @@ func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {
 			if err != nil {
 				return out, nil // 途中で壊れていても、読めた分は取り込む
 			}
-			sub, err := collectParts(p.Header.Get("Content-Type"),
-				p.Header.Get("Content-Transfer-Encoding"), p)
+			*count++
+			sub, err := collectPartsAt(p.Header.Get("Content-Type"),
+				p.Header.Get("Content-Transfer-Encoding"), p, depth+1, count)
 			if err == nil {
 				// パート自身のファイル名（添付の印）を優先する
-				if fn := partFileName(p); fn != "" {
+				fn := partFileName(p)
+				if fn == "" {
+					fn = unnamedPartName(p, sub, *count)
+				}
+				if fn != "" {
 					for i := range sub {
 						if sub[i].fileName == "" {
 							sub[i].fileName = fn
@@ -555,9 +598,10 @@ func collectParts(contentType, cte string, body io.Reader) ([]emlPart, error) {
 		r = quotedprintable.NewReader(r)
 	}
 	raw, err := io.ReadAll(r)
-	if err != nil {
+	if err != nil && len(raw) == 0 {
 		return nil, err
 	}
+	// 途中で読めなくなっても、読めた分は残す（末尾の半端な字など）。
 	if strings.HasPrefix(mediaType, "text/") {
 		if cs := params["charset"]; cs != "" && !strings.EqualFold(cs, "utf-8") {
 			if dec, err := charsetReader(cs, strings.NewReader(string(raw))); err == nil {
@@ -593,11 +637,14 @@ func partFileName(p *multipart.Part) string {
 }
 
 // newBase64Reader は改行入りの base64 本文を読むリーダーです。
+//
+// 寛く読む——base64 の字（A〜Z・a〜z・0〜9・+・/）だけを拾い、詰め物（=）は無くてもよい。
+// ⚠ 厳しく読むと、空白の混じった・詰め物の無い添付が黙って消えた（単一パートのメールは、取り込みごと失敗した・2026-10-22 の見直し）。
 func newBase64Reader(r io.Reader) io.Reader {
-	return base64.NewDecoder(base64.StdEncoding, &newlineStripper{r: r})
+	return base64.NewDecoder(base64.RawStdEncoding, &newlineStripper{r: r})
 }
 
-// newlineStripper は CR/LF を読み飛ばします（MIME の base64 は 76 桁で折られる）。
+// newlineStripper は base64 の字のほか（CR/LF・空白・詰め物の = など）を読み飛ばします（MIME の base64 は 76 桁で折られる）。
 type newlineStripper struct{ r io.Reader }
 
 func (n *newlineStripper) Read(p []byte) (int, error) {
@@ -606,7 +653,7 @@ func (n *newlineStripper) Read(p []byte) (int, error) {
 		m, err := n.r.Read(buf)
 		w := 0
 		for _, c := range buf[:m] {
-			if c != '\r' && c != '\n' {
+			if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '+' || c == '/' {
 				p[w] = c
 				w++
 			}
@@ -615,4 +662,36 @@ func (n *newlineStripper) Read(p []byte) (int, error) {
 			return w, err
 		}
 	}
+}
+
+// unnamedPartName は、名前の無い添付に付ける名前です（添付でなければ空）。
+//
+// 名前（filename・name）の無いパートでも、文字でない中身（application/pdf・画像 など）と、「添付」と名乗るパートは
+// 添付として残す——名前で見分けていたので、名前を付けない FAX の受け口やメールソフトの PDF が黙って消えた（2026-10-22 の見直し）。
+// 名前は「添付-<番号>」に、種類から決まる拡張子を付けます。
+func unnamedPartName(p *multipart.Part, sub []emlPart, n int) string {
+	if len(sub) != 1 {
+		return "" // 入れ子の multipart は、その中で決める
+	}
+	mt := sub[0].mediaType
+	disp, _, _ := mime.ParseMediaType(p.Header.Get("Content-Disposition"))
+	if strings.HasPrefix(mt, "text/") && !strings.EqualFold(disp, "attachment") {
+		return "" // 本文の候補（text/plain・text/html）
+	}
+	ext := ""
+	switch mt {
+	case "application/pdf":
+		ext = ".pdf"
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/png":
+		ext = ".png"
+	case "message/rfc822":
+		ext = ".eml"
+	default:
+		if exts, err := mime.ExtensionsByType(mt); err == nil && len(exts) > 0 {
+			ext = exts[0]
+		}
+	}
+	return "添付-" + strconv.Itoa(n) + ext
 }

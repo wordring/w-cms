@@ -33,9 +33,7 @@ package comm
 
 import (
 	"errors"
-	"html"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"w-cms/internal/cms"
@@ -74,7 +72,10 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 		value = HandledDone
 	}
 
+	inbox, haveInbox := MailBoxPageID()
+	inboxInt, _ := strconv.Atoi(inbox)
 	done, failed := 0, 0
+	var doneIDs []string
 	for _, raw := range req.PageIDs {
 		pageID, ok := page.NormalizeID(raw)
 		if !ok {
@@ -85,6 +86,11 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// まとめて押したときに、押せたものは押せたままにしておくほうが親切です。
 		idInt, err := strconv.Atoi(pageID)
 		if err != nil || !page.GetPerms(idInt).CanWrite(user) {
+			failed++
+			continue
+		}
+		// 印を付けるのは通信箱の中の記録だけ（業務のページの「対応」の欄まで書き換えない・2026-10-22 の見直し）。
+		if !haveInbox || !isDescendantOf(idInt, inboxInt) {
 			failed++
 			continue
 		}
@@ -102,13 +108,11 @@ func MarkHandledAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		auth.Audit(user.Username, "intake.handled", pageID+" ("+value+")")
 		done++
+		doneIDs = append(doneIDs, pageID)
 	}
-	cms.WriteJSON(w, map[string]any{"success": true, "handled": done, "failed": failed})
+	// done_ids: 印を付けられた記録（画面は、これだけを一覧から外す——付けられなかった行まで消していた）。
+	cms.WriteJSON(w, map[string]any{"success": true, "handled": done, "failed": failed, "done_ids": doneIDs})
 }
-
-// handledPairRe は本文の `対応` のタグ（dt と dd の組）です（字下げ・属性・空の dd も拾う）。
-var handledPairRe = regexp.MustCompile(`(?s)<dt[^>]*>\s*` + regexp.QuoteMeta(html.EscapeString(HandledTag)) +
-	`\s*</dt>\s*<dd[^>]*>.*?</dd>`)
 
 // SetHandled は `対応` の印を value にします（未処理 / 済 / 不要）。
 // ⚠ 2026-10-19 から、未処理も `対応：未処理` と書きます（それまでは印を外していた——2026-10-09 利用者:「メールページには、「対応」未処理、済、不要というタグ風のものがあるのですが、これもタグそのものにしては」）。
@@ -125,9 +129,11 @@ func SetHandled(pageID, author, value string) error {
 	if value != HandledPending && value != HandledDone && value != HandledNotNeeded {
 		return errors.New("対応の値は " + HandledPending + "・" + HandledDone + "・" + HandledNotNeeded + " のどれかです")
 	}
+	// タグの並びの中の「対応」だけを書き換える（2026-10-22 の見直しまでは、本文のどこの dl の「対応」の組も消していた）。
 	return cms.RewriteBody(pageID, author, func(current string) string {
-		out := handledPairRe.ReplaceAllString(current, "")
-		return cms.AddPageTags(out, `<dt>`+html.EscapeString(HandledTag)+`</dt><dd>`+html.EscapeString(value)+`</dd>`)
+		d := cms.EditBody(current)
+		d.SetTag(HandledTag, value)
+		return d.HTML()
 	})
 }
 
