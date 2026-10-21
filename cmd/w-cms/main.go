@@ -289,6 +289,11 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/local-edit/start", cms.LocalEditStartAPIHandler)
 	// ファイルの ID（`ページ番号-添付ID`）を添付の組へ引く（メールの添付に足す——2026-10-01）。
 	protected.HandleFunc("/api/file-ref", cms.FileRefAPIHandler)
+	// この端末で知らせを受ける（Web Push・2026-10-21 夜・internal/cms/webpush.go）。
+	protected.HandleFunc("/api/push/key", cms.PushKeyAPIHandler)
+	protected.HandleFunc("/api/push/subscribe", cms.PushSubscribeAPIHandler)
+	protected.HandleFunc("/api/push/unsubscribe", cms.PushUnsubscribeAPIHandler)
+	protected.HandleFunc("/api/push/test", cms.PushTestAPIHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
 	// 前置き /api/machine/ の口は、機械専用の入口（2026-10-21 夜・internal/auth/machine.go——ログインではなく鍵で通す）。
@@ -317,6 +322,8 @@ func buildHandler() http.Handler {
 	// 拡張の画面の JS（2026-10-20・internal/cms/ext_scripts.go）——登録した1本ずつだけを、ディスクから配る。
 	root.HandleFunc(cms.ExtScriptPrefix, cms.ExtScriptHandler)
 	root.HandleFunc("/login", auth.LoginPageHandler)
+	// 知らせを受けて出すブラウザの裏の働き（Service Worker）——「/」の直下に置かないとほかのページに働かない（2026-10-21 夜）。
+	root.HandleFunc("/sw.js", cms.ServiceWorkerHandler)
 	root.HandleFunc("/api/login", auth.LoginAPIHandler)
 
 	// クローラ向けの2本（要件定義書 §4.4）。載せるのは実効公開のページだけで、
