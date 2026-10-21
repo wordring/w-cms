@@ -117,23 +117,16 @@ func TestReturnedRowAppearsInRequiredParts(t *testing.T) {
 // TestReturnButtonIsOnEveryRow は、⚠ **どの段からも戻せる**こと・**いつも確かめる**
 // こと・**書ける形でも出る**こと（2026-10-19 から。それまでは view-only で閲覧モードだけ）を固定します。
 func TestReturnButtonIsOnEveryRow(t *testing.T) {
+	// 2026-10-21 夕から、行の末尾のボタンではなく、行の先頭のチェック（data-can）と表の下の「↩ 発注から外す」（orderRowActions）。
 	for _, st := range []string{OrderLineUnsent, "", OrderLineSent, OrderLineDelivered,
 		OrderLineCancelled, orderLineLegacySent} {
-		got := orderRowButtonsHTML("000041", 3, st)
-		if !strings.Contains(got, "order-row-return") {
-			t.Errorf("⚠ 状態 %q の行に「必要部材表へ戻す」がありません:\n%s", st, got)
+		ret, ok := orderRowActions(st)[orderActReturn]
+		if !ok {
+			t.Errorf("⚠ 状態 %q の行を「発注から外す」ことができません", st)
 			continue
 		}
-		if strings.Contains(got, "view-only") {
-			t.Errorf("⚠ 状態 %q の戻すボタンが書ける形で隠れます（view-only）:\n%s", st, got)
-		}
-		if !strings.Contains(got, `data-order-row="3"`) {
-			t.Errorf("⚠ 状態 %q の戻すボタンが行を指していません:\n%s", st, got)
-		}
-		// ⚠ 戻すボタンだけを切り出して確かめます（取消の確認と混ざらないように）。
-		ret := got[strings.Index(got, `class="chip-btn order-row-return`):]
-		if !strings.Contains(ret, "data-order-confirm=") {
-			t.Errorf("⚠ 状態 %q の戻すボタンが確かめずに行を消します:\n%s", st, ret)
+		if ret == "" {
+			t.Errorf("⚠ 状態 %q の行を、確かめずに外します", st)
 		}
 		sent := st == OrderLineSent || st == OrderLineDelivered || st == orderLineLegacySent
 		if asksResend := strings.Contains(ret, "再送"); asksResend != sent {

@@ -1559,49 +1559,38 @@ delegateClick([
 // ⚠ **メールを書く欄は部品です**（2026-09-30・ext/comm/mail/assets/mail-compose.js）——ここに残るのは行ごとの印・
 //    PDFを作る・FAX・手渡しのボタンだけ。
 (function wireOurOrderSend() {
-    // 行1つの印を変える（発注済・納品済・取消・戻す）。
+    // 部材発注明細表の下の「選んだ行を: ✓ 発注済／📦 納品済／↩ 取消をやめる／✕ 取消／↩ 発注から外す」（2026-10-21 夕——表の中に
+    // ボタンを置かない）。行の先頭のチェックが、その行に効く操作（data-can）と押す前に確かめる文（data-ask-*）を持つ
+    // ——どの状態に何が効くか、いつ確かめるかはサーバーが決める（our_order_mirror.go の orderRowActions）。効かない行は飛ばす。
     //
     // ⚠ **紙が外へ出たあとの取消は、押しただけでは終わりません**（ユーザー:「電話などで
     //    材料屋に取り消しを依頼して、**OKが出たら**取り消しボタンを押します」）。
-    //    サーバーが `data-order-confirm` を付けた手は、**押す前に確かめます**——
-    //    確かめずに押せると「押したから片付いた」と読まれ、**材料屋には注文が
-    //    残ったまま**になります。⚠ **発注前は確認を出しません**（「単純に取り消します」）。
-    async function setRowStatus(btn) {
-        const ask = btn.getAttribute('data-order-confirm') || '';
-        if (ask && !confirm(ask)) return;
+    //    ⚠ **発注前は確認を出しません**（「単純に取り消します」）。「発注から外す」はいつも確かめる（行が本文から消える）。
+    async function rowAct(btn) {
+        const bar = btn.closest('.order-bar');
+        const say = bar ? bar.querySelector('.order-row-say') : null;
+        const table = bar ? tableBefore(bar) : null;
+        const act = btn.getAttribute('data-act') || '';
+        const picks = table ? Array.from(table.querySelectorAll('.order-pick:checked')) : [];
+        if (!picks.length) { sayIn(say, '部材発注明細表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
+        const ok = picks.filter((c) => (c.dataset.can || '').split(' ').includes(act));
+        if (!ok.length) { sayIn(say, '選んだ行には、この操作はできません（いまの状態では効きません）。', 'warn'); return; }
+        const askKey = act === 'cancel' ? 'askCancel' : act === 'return' ? 'askReturn' : '';
+        const asks = askKey ? Array.from(new Set(ok.map((c) => c.dataset[askKey] || '').filter(Boolean))) : [];
+        if (asks.length && !confirm((ok.length > 1 ? '選んだ ' + ok.length + ' 行について:\n\n' : '') + asks.join('\n\n―――\n\n'))) return;
+        const page = btn.getAttribute('data-order-page') || '';
+        // 外すと行が消えるので、下の行から送る（行番号がずれないように）。
+        const rows = ok.map((c) => Number(c.dataset.row)).sort((x, y) => y - x);
         btn.disabled = true;
-        const r = await postJSON('/api/our-order/line-status', {
-            page_id: btn.getAttribute('data-order-page') || '',
-            row: Number(btn.getAttribute('data-order-row') || 0),
-            value: btn.getAttribute('data-order-status') || '',
-        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
-        if (!r.ok) {
-            alert('⚠ ' + (r.data.message || '印を変えられませんでした'));
-            btn.disabled = false;
-            return;
+        sayIn(say, '書いています…');
+        for (const row of rows) {
+            const r = act === 'return'
+                ? await postJSON('/api/our-order/return-row', { page_id: page, row }).catch((e) => ({ ok: false, data: { message: String(e) } }))
+                : await postJSON('/api/our-order/line-status', { page_id: page, row, value: btn.getAttribute('data-order-status') || '' })
+                    .catch((e) => ({ ok: false, data: { message: String(e) } }));
+            if (!r.ok) { btn.disabled = false; sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'できませんでした'), 'proc-why-ng'); return; }
         }
-        // ⚠ **本文が変わったので読み直します**——印は本文の列なので、画面で
-        //    組み立てず、サーバーが描いたものを受け取ります。
-        location.reload();
-    }
-
-    // 行を部材発注書から外して、必要部材表へ戻す（2026-09-24。2026-10-21 から必要部材表は無く、外した部材は製造ページの「📦」でまた出せる）。
-    //
-    // ⚠ **いつも確かめます**（行が本文から消えるため）。確認の文はサーバーが書きます
-    //    ——送付後の行には「再送してください」が付きます。
-    async function returnRow(btn) {
-        const ask = btn.getAttribute('data-order-confirm') || '';
-        if (ask && !confirm(ask)) return;
-        btn.disabled = true;
-        const r = await postJSON('/api/our-order/return-row', {
-            page_id: btn.getAttribute('data-order-page') || '',
-            row: Number(btn.getAttribute('data-order-row') || 0),
-        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
-        if (!r.ok) {
-            alert('⚠ ' + (r.data.message || '戻せませんでした'));
-            btn.disabled = false;
-            return;
-        }
+        // ⚠ **本文が変わったので読み直します**——印は本文の列なので、画面で組み立てず、サーバーが描いたものを受け取ります。
         location.reload();
     }
 
@@ -1708,8 +1697,7 @@ delegateClick([
     // ⚠ **document へ委譲します**——鏡はサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
     delegateClick([
-        ['.order-row-set', setRowStatus],
-        ['.order-row-return', returnRow],
+        ['.order-sel-act', rowAct],
         ['[data-order-pdf]', makePDF],
         ['[data-order-pdf-docs]', makePDFWithDocs],
         ['[data-order-sent]', markSent],

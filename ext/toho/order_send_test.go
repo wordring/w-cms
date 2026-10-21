@@ -235,12 +235,20 @@ func TestOurOrderMirrorPutsTheSendForm(t *testing.T) {
 	for _, want := range []string{
 		"FAXで送った", "手渡した", "メールで送る",
 		`data-mail-compose="` + OrderMailPurpose + `"`, // メールの送る欄（部品・2026-09-30）
-		`data-order-status="` + OrderLineSent + `"`, // 行ごとの「発注済」
-		`class="vocab-chrome order-row-act"`,
+		`data-act="sent" data-order-status="` + OrderLineSent + `"`, // 表の下の「✓ 発注済」（2026-10-21 夕から、行の末尾のボタンではない）
+		`class="order-pick" aria-label="この行を選ぶ" data-row="1"`,   // 行の先頭のチェック
+		`class="vocab-chrome order-pick-cell"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("⚠ 鏡に %q がありません:\n%s", want, got)
 		}
+	}
+	// ⚠ 表の中にボタンを置かない（2026-10-21 夕）——送る欄も行の操作も、表の後ろ。
+	if i, j := strings.Index(got, "FAXで送った"), strings.Index(got, "</table>"); i < j {
+		t.Errorf("⚠ 送る欄が表の中にあります")
+	}
+	if i, j := strings.Index(got, "order-sel-act"), strings.Index(got, "</table>"); i < j {
+		t.Errorf("⚠ 行の操作が表の中にあります")
 	}
 }
 
@@ -257,16 +265,22 @@ func TestOurOrderMirrorPutsTheSendForm(t *testing.T) {
 func TestCancelIsReachableFromEveryStage(t *testing.T) {
 	for _, st := range []string{OrderLineUnsent, OrderLineSent, OrderLineDelivered,
 		orderLineLegacySent, ""} {
-		got := orderRowButtonsHTML("000041", 1, st)
-		if !strings.Contains(got, `data-order-status="`+OrderLineCancelled+`"`) {
-			t.Errorf("⚠ 状態 %q から取り消せません:\n%s", st, got)
+		if _, ok := orderRowActions(st)[orderActCancel]; !ok {
+			t.Errorf("⚠ 状態 %q から取り消せません", st)
 		}
 	}
-	// ⚠ **取消からは「取消」を出しません**——押しても何も変わらないボタンは、
-	//    押した人に「効かなかった」と読まれます。
-	if got := orderRowButtonsHTML("000041", 1, OrderLineCancelled); strings.Contains(
-		got, `data-order-status="`+OrderLineCancelled+`"`) {
-		t.Errorf("⚠ 取消の行にもう一度「取消」が出ています:\n%s", got)
+	// ⚠ **取消からは「取消」を効かせません**——押しても何も変わらない操作は、
+	//    押した人に「効かなかった」と読まれます。取消の行に効くのは「取消をやめる」。
+	acts := orderRowActions(OrderLineCancelled)
+	if _, ok := acts[orderActCancel]; ok {
+		t.Errorf("⚠ 取消の行にもう一度「取消」が効きます")
+	}
+	if _, ok := acts[orderActUnsent]; !ok {
+		t.Errorf("⚠ 取消の行に「取消をやめる」が効きません")
+	}
+	// 次の一手だけ——未発注の行に「納品済」は効かない。
+	if _, ok := orderRowActions(OrderLineUnsent)[orderActDelivered]; ok {
+		t.Errorf("⚠ 未発注の行に「納品済」が効きます（紙の上の状態と関係なく押せてしまう）")
 	}
 }
 
@@ -291,22 +305,16 @@ func TestCancelAsksOnlyAfterThePaperWentOut(t *testing.T) {
 		{orderLineLegacySent, true},
 		{OrderLineDelivered, true},
 	} {
-		// ⚠ **取消ボタンだけを切り出して見ます**（2026-09-24）——行末の「必要部材表へ
-		//    戻す」は**いつも**確かめるので、行全体を見ると未発注でも「確認あり」になります。
-		all := orderRowButtonsHTML("000041", 1, tc.status)
-		at := strings.Index(all, `data-order-status="`+OrderLineCancelled+`"`)
-		if at < 0 {
-			t.Fatalf("状態 %q に取消がありません:\n%s", tc.status, all)
+		// ⚠ **取消の確かめだけを見ます**——「発注から外す」は**いつも**確かめるので、まとめて見ると未発注でも「確認あり」になります。
+		got, ok := orderRowActions(tc.status)[orderActCancel]
+		if !ok {
+			t.Fatalf("状態 %q に取消がありません", tc.status)
 		}
-		got := all[at:]
-		got = got[:strings.Index(got, "</button>")]
-		if asks := strings.Contains(got, "data-order-confirm="); asks != tc.asks {
-			t.Errorf("状態 %q の確認が %v です（%v を期待）:\n%s",
-				tc.status, asks, tc.asks, got)
+		if asks := got != ""; asks != tc.asks {
+			t.Errorf("状態 %q の確認が %v です（%v を期待）:\n%s", tc.status, asks, tc.asks, got)
 		}
 		// ⚠ **取り消したらどうなるかを書くこと**——「また出てきません」が
 		//    無いと、09-22 までの意味（戻る）で読まれ、**誰も買わないまま納期が来ます**。
-		// （2026-10-21 に必要部材表を外したので、文は「製造ページの「📦 …」にも、また出てきません」になった。）
 		if tc.asks && !strings.Contains(got, "また出てきません") {
 			t.Errorf("状態 %q の確認に、戻り先が書かれていません:\n%s", tc.status, got)
 		}
