@@ -1,0 +1,14 @@
+# FAX モデム（プラネックス PL-US56K2（A））の udev の決まり（2026-10-21 夜・docs/考察/【考察】通信箱の改善.md §7.4）。
+# 置き場所: /etc/udev/rules.d/99-faxmodem.rules → `sudo udevadm control --reload && sudo udevadm trigger`
+#
+# ⚠ このモデムの USB の識別番号（idVendor・idProduct）は、調べた範囲では分かりませんでした。実機をつないで次で確かめ、
+#    下の XXXX と YYYY を書き換えてください（行頭の # を外す）。
+#      lsusb                                   … 例 「ID 0572:1329 Conexant Systems ...」なら 0572 が idVendor・1329 が idProduct
+#      udevadm info -a -n /dev/ttyACM0 | grep -E 'idVendor|idProduct|serial'
+#    /dev/ttyACM0 が出なければ、Linux の標準の USB モデム（CDC-ACM）として動かない型です（その場合は別のモデムを考えます）。
+
+# 1. 決まった名前 /dev/faxmodem を付ける（HylaFAX はこの名前で使う。差し直しても名前が変わらない）。
+#SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="YYYY", SYMLINK+="faxmodem", GROUP="dialout", MODE="0660", TAG+="systemd"
+
+# 2. USB の省電力（オートサスペンド）を切る——眠ったまま着信を取りこぼさないように。
+#ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="XXXX", ATTR{idProduct}=="YYYY", TEST=="power/control", ATTR{power/control}="on"

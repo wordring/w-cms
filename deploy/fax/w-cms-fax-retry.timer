@@ -1,0 +1,11 @@
+# w-cms へ渡せなかった FAX を、5分ごとに送り直す（2026-10-21 夜）。
+# 置き場所: /etc/systemd/system/w-cms-fax-retry.timer → `sudo systemctl enable --now w-cms-fax-retry.timer`
+[Unit]
+Description=w-cms へ渡せなかった FAX を5分ごとに送り直す
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,21 @@
+# HylaFAX の受け手（faxgetty）を、モデム /dev/faxmodem で動かす systemd の設定（2026-10-21 夜）。
+# 置き場所: /etc/systemd/system/faxgetty-faxmodem.service → `sudo systemctl daemon-reload && sudo systemctl enable --now faxgetty-faxmodem`
+#
+# USB の電源が切れてモデムが消えたら、BindsTo で faxgetty も止まり、モデムが戻ったら（udev の TAG+="systemd" で）また起きます。
+# faxgetty そのものが落ちたら Restart=always で起こし直します。
+# ⚠ Ubuntu のパッケージ hylafax-server が自前で faxgetty を起こす設定（/etc/inittab 相当）を持っているなら、二重に起こさないこと。
+
+[Unit]
+Description=HylaFAX faxgetty（/dev/faxmodem）
+BindsTo=dev-faxmodem.device
+After=dev-faxmodem.device hylafax.service
+Wants=hylafax.service
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/faxgetty faxmodem
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=dev-faxmodem.device multi-user.target

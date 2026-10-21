@@ -1,0 +1,66 @@
+#!/bin/sh
+# HylaFAX が FAX を受けたときに呼ぶスクリプト（2026-10-21 夜・docs/考察/【考察】通信箱の改善.md §7.4）。
+#
+# 受けた FAX（TIFF）を PDF にして、w-cms の機械専用の入口 POST /api/machine/fax へ渡します。w-cms は通信箱に
+# チャネル FAX の記録を作り、FAX を添付に置いて本文に表示します（判定の 🤖 解析は人が押す）。
+#
+# 置き場所: /var/spool/hylafax/bin/faxrcvd-wcms（実行できるように chmod 755）。HylaFAX の設定 etc/config.faxmodem に
+#   FaxRcvdCmd: bin/faxrcvd-wcms
+# と書きます。HylaFAX は「qfile devID commID error-msg [CallID1 CallID2 ...]」を渡してきます。
+#
+# 鍵と行き先は /etc/w-cms/fax.env（持ち主 root・HylaFAX の利用者が読めるように組は uucp・0640）:
+#   WCMS_MACHINE_TOKEN=<w-cms と同じ鍵>
+#   WCMS_BASE=https://localhost:8443
+#
+# w-cms が応えないときは、PDF を /var/spool/w-cms-fax/ に残します（w-cms-fax-retry が5分ごとに送り直す）。FAX の原本（TIFF）は
+# HylaFAX の recvq にも残ります。
+#
+# ⚠ 送ってきた番号（発信者番号・相手の FAX が名乗る TSI）は、相手が好きに書ける文字です。数字と + と空白だけに絞り、
+#    curl には --form-string で渡し（-F だと「@」で始まる値がファイルとして読まれる）、覚え書きはシェルに取り込みません。
+#
+# 要るもの: tiff2pdf（パッケージ libtiff-tools）・curl・faxinfo（hylafax-server）。
+
+set -u
+QFILE="$1"
+COMMID=$(printf '%s' "${3:-unknown}" | tr -cd '0-9A-Za-z')
+CIDNUMBER="${5:-}"
+
+. /etc/w-cms/fax.env
+BASE="${WCMS_BASE:-https://localhost:8443}"
+PENDING=/var/spool/w-cms-fax
+mkdir -p "$PENDING"
+
+cd /var/spool/hylafax || exit 1
+
+# 送ってきた番号: 発信者番号（モデムが受けられたとき）が無ければ、相手の FAX が名乗った番号（TSI）。
+FROM="$CIDNUMBER"
+if [ -z "$FROM" ]; then
+	FROM=$(faxinfo -n "$QFILE" 2>/dev/null | sed -n 's/^ *Sender: *//p' | head -n 1)
+fi
+FROM=$(printf '%s' "$FROM" | tr -cd '0-9+ ' | cut -c1-32)
+AT=$(date -Iseconds)
+
+PDF="$PENDING/fax-$COMMID.pdf"
+if ! tiff2pdf -o "$PDF" "$QFILE"; then
+	logger -t faxrcvd-wcms "FAX $COMMID を PDF にできません"
+	exit 1
+fi
+# 送り直しのための覚え（ただの文字として置く）。
+printf '%s' "$FROM" > "$PDF.from"
+printf '%s' "$AT" > "$PDF.at"
+
+# 送る（5回まで・10秒おき）。自分で作った証明書なので -k（同じ機械の中だけの通り道）。
+i=0
+while [ $i -lt 5 ]; do
+	if curl -fsS -k -H "Authorization: Bearer $WCMS_MACHINE_TOKEN" \
+		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" \
+		"$BASE/api/machine/fax" > /dev/null; then
+		rm -f "$PDF" "$PDF.from" "$PDF.at"
+		logger -t faxrcvd-wcms "FAX $COMMID を w-cms へ渡しました"
+		exit 0
+	fi
+	i=$((i + 1))
+	sleep 10
+done
+logger -t faxrcvd-wcms "FAX $COMMID を w-cms へ渡せません——$PDF に残して、あとで送り直します"
+exit 0

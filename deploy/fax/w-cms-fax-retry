@@ -1,0 +1,22 @@
+#!/bin/sh
+# w-cms へ渡せなかった FAX（/var/spool/w-cms-fax/ の PDF）を、もう一度渡すスクリプト（2026-10-21 夜）。
+# 置き場所: /usr/local/bin/w-cms-fax-retry（chmod 755）。w-cms-fax-retry.timer が5分ごとに動かします。
+#
+# ⚠ 覚え書き（番号と時刻）は、ただの文字として読みます（シェルに取り込まない——番号は相手が書ける文字）。
+
+set -u
+. /etc/w-cms/fax.env
+BASE="${WCMS_BASE:-https://localhost:8443}"
+PENDING=/var/spool/w-cms-fax
+
+for PDF in "$PENDING"/fax-*.pdf; do
+	[ -e "$PDF" ] || continue
+	FROM=$(cat "$PDF.from" 2>/dev/null | tr -cd '0-9+ ')
+	AT=$(cat "$PDF.at" 2>/dev/null | tr -cd '0-9T:+-')
+	if curl -fsS -k -H "Authorization: Bearer $WCMS_MACHINE_TOKEN" \
+		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" \
+		"$BASE/api/machine/fax" > /dev/null; then
+		rm -f "$PDF" "$PDF.from" "$PDF.at"
+		logger -t w-cms-fax-retry "送り直しました: $PDF"
+	fi
+done

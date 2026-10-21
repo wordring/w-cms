@@ -1,0 +1,8 @@
+# w-cms へ渡せなかった FAX を送り直す（w-cms-fax-retry.timer から5分ごと・2026-10-21 夜）。
+# 置き場所: /etc/systemd/system/w-cms-fax-retry.service
+[Unit]
+Description=w-cms へ渡せなかった FAX を送り直す
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/w-cms-fax-retry
