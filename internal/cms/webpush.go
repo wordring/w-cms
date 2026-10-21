@@ -43,13 +43,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"w-cms/internal/auth"
@@ -152,7 +156,8 @@ func loadVAPID() (*ecdsa.PrivateKey, error) {
 		return vapidKey.key, nil
 	}
 	path := filepath.Join(pushDir(), "vapid.pem")
-	if b, err := os.ReadFile(path); err == nil {
+	b, err := os.ReadFile(path)
+	if err == nil {
 		if blk, _ := pem.Decode(b); blk != nil {
 			if k, err := x509.ParseECPrivateKey(blk.Bytes); err == nil {
 				vapidKey.key = k
@@ -160,6 +165,11 @@ func loadVAPID() (*ecdsa.PrivateKey, error) {
 			}
 		}
 		return nil, errors.New("送り手の鍵 " + path + " が読めません")
+	}
+	// 作るのは、ファイルが無いときだけ。ほかの読めない理由（ウイルス対策が一瞬つかんでいる など）で作り直すと、
+	// 鍵が替わって、どの端末の受け口も黙って使えなくなる（2026-10-22 の見直し）。
+	if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("送り手の鍵 %s が読めません: %w", path, err)
 	}
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -219,13 +229,21 @@ func vapidHeader(k *ecdsa.PrivateKey, endpoint string, now time.Time) (string, e
 
 // ── 受け口の覚え ───────────────────────────────────────────────────────
 
-func loadPushSubs() map[string][]pushSubscription {
+// loadPushSubs は受け口の覚えを読みます。ファイルが無ければ空です。
+// ⚠ 読めない・壊れているときは誤りを返す——空として読んで書き戻すと、ほかの人の受け口が全部消える（2026-10-22 の見直し）。
+func loadPushSubs() (map[string][]pushSubscription, error) {
 	out := map[string][]pushSubscription{}
 	b, err := os.ReadFile(filepath.Join(pushDir(), "subscriptions.json"))
-	if err == nil {
-		json.Unmarshal(b, &out)
+	if errors.Is(err, fs.ErrNotExist) {
+		return out, nil
 	}
-	return out
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, fmt.Errorf("subscriptions.json が読めません: %w", err)
+	}
+	return out, nil
 }
 
 func savePushSubs(m map[string][]pushSubscription) error {
@@ -242,13 +260,61 @@ func savePushSubs(m map[string][]pushSubscription) error {
 // ── 送る ──────────────────────────────────────────────────────────────
 
 // pushHTTP は送るときの HTTP の口です（試験で差し替える）。
-var pushHTTP = &http.Client{Timeout: 20 * time.Second}
+//
+// 届け先（endpoint）は、利用者のブラウザが渡してくる URL です。サーバーがそこへ POST するので、社内の機械
+// （このサーバー自身・ルーター・電話や FAX の機械）を指されても届かないようにします（2026-10-22 の見直し）:
+//   - 内側のアドレス（ループバック・プライベート・リンクローカル など）へはつながない。
+//   - 転送（3xx）には従わない（外の https から内側の http へ回されないため）。
+var pushHTTP = &http.Client{
+	Timeout: 20 * time.Second,
+	Transport: &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, Control: refuseInsideAddress}).DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
+	},
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// refuseInsideAddress は、つなぐ直前のアドレスが内側なら断ります（名前を引いたあとの IP で見る）。
+func refuseInsideAddress(network, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return fmt.Errorf("届け先のアドレスが読めません: %s", host)
+	}
+	ip = ip.Unmap()
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast() || !ip.IsGlobalUnicast() {
+		return fmt.Errorf("届け先が内側のアドレス（%s）です", ip)
+	}
+	if ip.Is4() && ip.As4()[0] == 100 && ip.As4()[1]&0xc0 == 64 { // 100.64.0.0/10（キャリアの内側）
+		return fmt.Errorf("届け先が内側のアドレス（%s）です", ip)
+	}
+	return nil
+}
+
+// pushText は通知の題・本文を短くします（暗号のレコードは1つ・4096バイトまでなので、長い件名で溢れないように）。
+func pushText(s string, max int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= max {
+		return string(r)
+	}
+	return string(r[:max-1]) + "…"
+}
 
 // SendPush は利用者 username の全部の端末へ通知を送ります（届け先が「もう無い」と答えた受け口は捨てる）。送れた端末の数を返します。
 func SendPush(username string, m PushMessage) int {
 	pushMu.Lock()
-	subs := append([]pushSubscription{}, loadPushSubs()[username]...)
+	all, err := loadPushSubs()
 	pushMu.Unlock()
+	if err != nil {
+		log.Printf("通知を送れません（受け口の覚え）: %v", err)
+		return 0
+	}
+	subs := all[username]
 	if len(subs) == 0 {
 		return 0
 	}
@@ -257,6 +323,7 @@ func SendPush(username string, m PushMessage) int {
 		log.Printf("通知を送れません（送り手の鍵）: %v", err)
 		return 0
 	}
+	m.Title, m.Body = pushText(m.Title, 80), pushText(m.Body, 300)
 	payload, _ := json.Marshal(m)
 	sent := 0
 	var gone []string
@@ -273,7 +340,12 @@ func SendPush(username string, m PushMessage) int {
 	}
 	if len(gone) > 0 {
 		pushMu.Lock()
-		all := loadPushSubs()
+		defer pushMu.Unlock()
+		all, err := loadPushSubs()
+		if err != nil {
+			log.Printf("もう無い受け口を捨てられません: %v", err)
+			return sent
+		}
 		var keep []pushSubscription
 		for _, s := range all[username] {
 			drop := false
@@ -285,8 +357,9 @@ func SendPush(username string, m PushMessage) int {
 			}
 		}
 		all[username] = keep
-		savePushSubs(all)
-		pushMu.Unlock()
+		if err := savePushSubs(all); err != nil {
+			log.Printf("もう無い受け口を捨てられません: %v", err)
+		}
 	}
 	return sent
 }
@@ -342,8 +415,13 @@ func sendOnePush(k *ecdsa.PrivateKey, s pushSubscription, payload []byte) (int, 
 func PushSubscribers() []string {
 	pushMu.Lock()
 	defer pushMu.Unlock()
+	all, err := loadPushSubs()
+	if err != nil {
+		log.Printf("通知を受ける人を読めません: %v", err)
+		return nil
+	}
 	var out []string
-	for u, subs := range loadPushSubs() {
+	for u, subs := range all {
 		if len(subs) > 0 {
 			out = append(out, u)
 		}
@@ -387,14 +465,19 @@ func PushSubscribeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
-	u, err := url.Parse(strings.TrimSpace(req.Endpoint))
-	if err != nil || u.Scheme != "https" || u.Host == "" || req.Keys.P256dh == "" || req.Keys.Auth == "" {
+	req.Endpoint = strings.TrimSpace(req.Endpoint)
+	u, err := url.Parse(req.Endpoint)
+	if err != nil || u.Scheme != "https" || u.Host == "" || len(req.Endpoint) > 2048 || !pushKeyLen(req.Keys.P256dh, 65) || !pushKeyLen(req.Keys.Auth, 16) {
 		JSONFail(w, http.StatusBadRequest, "受け口が読めません（https の endpoint と keys が要ります）")
 		return
 	}
 	pushMu.Lock()
 	defer pushMu.Unlock()
-	all := loadPushSubs()
+	all, err := loadPushSubs()
+	if err != nil {
+		JSONFail(w, http.StatusInternalServerError, "受け口の覚えが読めません: "+err.Error())
+		return
+	}
 	// 同じ端末（endpoint）は、どの利用者の下からも外してから入れ直す（端末を別の人が使い始めたとき）。
 	for name, subs := range all {
 		var keep []pushSubscription
@@ -429,19 +512,33 @@ func PushUnsubscribeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pushMu.Lock()
 	defer pushMu.Unlock()
-	all := loadPushSubs()
-	var keep []pushSubscription
-	for _, s := range all[user.Username] {
-		if s.Endpoint != req.Endpoint {
-			keep = append(keep, s)
-		}
+	all, err := loadPushSubs()
+	if err != nil {
+		JSONFail(w, http.StatusInternalServerError, "受け口の覚えが読めません: "+err.Error())
+		return
 	}
-	all[user.Username] = keep
+	// endpoint を持っているのは、その端末のブラウザだけ——だれの下にあっても外す（共用のパソコンで、前の人の受け口が残らないように）。
+	for name, subs := range all {
+		var keep []pushSubscription
+		for _, s := range subs {
+			if s.Endpoint != req.Endpoint {
+				keep = append(keep, s)
+			}
+		}
+		all[name] = keep
+	}
 	if err := savePushSubs(all); err != nil {
 		JSONFail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	auth.Audit(user.Username, "push.unsubscribe", "")
 	WriteJSON(w, map[string]any{"success": true})
+}
+
+// pushKeyLen は、base64url の鍵が n バイトに解けるかです。
+func pushKeyLen(s string, n int) bool {
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(strings.TrimSpace(s), "="))
+	return err == nil && len(b) == n
 }
 
 // PushTestAPIHandler は POST /api/push/test です——自分の端末へ試しの通知を送ります。

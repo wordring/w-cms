@@ -559,6 +559,10 @@
     }
 
     async function logout() {
+        // ログアウトの前に片付けること（この端末の通知の受け口を捨てる など・assets/push.js）。
+        if (typeof window.wcmsBeforeLogout === 'function') {
+            try { await window.wcmsBeforeLogout(); } catch (e) {}
+        }
         try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
         window.location.href = '/login';
     }

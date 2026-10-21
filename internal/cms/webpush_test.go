@@ -10,6 +10,8 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -120,10 +122,55 @@ func TestSendPushPostsAndDropsGone(t *testing.T) {
 	}
 	status = http.StatusGone
 	SendPush("alice", PushMessage{Title: "t"})
-	if len(loadPushSubs()["alice"]) != 0 {
+	if all, err := loadPushSubs(); err != nil || len(all["alice"]) != 0 {
 		t.Errorf("⚠ 「もう無い」と答えた受け口を捨てていません")
 	}
 	if got := PushSubscribers(); len(got) != 0 {
 		t.Errorf("受け口の無い人が通知を受ける人に残っています: %v", got)
+	}
+}
+
+// 届け先が内側のアドレスなら、つながない（利用者が渡す endpoint で、社内の機械へ POST させないため・2026-10-22 の見直し）。
+func TestPushRefusesInsideAddresses(t *testing.T) {
+	for _, a := range []string{"127.0.0.1:443", "[::1]:443", "10.0.0.5:443", "192.168.179.4:8443", "172.16.0.1:443", "169.254.1.1:443", "100.64.0.1:443", "0.0.0.0:443", "[::ffff:127.0.0.1]:443", "[fe80::1]:443"} {
+		if err := refuseInsideAddress("tcp", a, nil); err == nil {
+			t.Errorf("⚠ 内側のアドレス %s へつなごうとします", a)
+		}
+	}
+	for _, a := range []string{"142.250.196.106:443", "[2404:6800:4004:80a::200a]:443"} {
+		if err := refuseInsideAddress("tcp", a, nil); err != nil {
+			t.Errorf("外のアドレス %s を断りました: %v", a, err)
+		}
+	}
+}
+
+// 受け口の覚えが壊れていたら、空として読まない（読んで書き戻すと、ほかの人の受け口が全部消える）。
+func TestPushSubsCorruptFileIsAnError(t *testing.T) {
+	database.SetDataDir(t.TempDir())
+	if err := os.MkdirAll(pushDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pushDir(), "subscriptions.json"), []byte("{壊れた"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadPushSubs(); err == nil {
+		t.Fatal("⚠ 壊れた覚えを空として読みました")
+	}
+	if PushSubscribers() != nil {
+		t.Error("⚠ 壊れた覚えから、通知を受ける人を返しました")
+	}
+	if b, _ := os.ReadFile(filepath.Join(pushDir(), "subscriptions.json")); string(b) != "{壊れた" {
+		t.Errorf("⚠ 壊れた覚えを書き換えました: %q", b)
+	}
+}
+
+// 受け口の鍵は、決まった長さのときだけ覚える（壊れた受け口は、送るたびに失敗して残り続けるため）。
+func TestPushKeyLen(t *testing.T) {
+	k := base64.RawURLEncoding.EncodeToString(make([]byte, 65))
+	if !pushKeyLen(k, 65) || !pushKeyLen(k+"=", 65) {
+		t.Errorf("65バイトの鍵を断りました")
+	}
+	if pushKeyLen("abc", 65) || pushKeyLen(k, 16) || pushKeyLen("", 16) {
+		t.Errorf("⚠ 長さの違う鍵を通しました")
 	}
 }

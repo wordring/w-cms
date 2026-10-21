@@ -72,4 +72,11 @@
         }
     });
     current().then((s) => show(!!s)).catch(() => btn.remove());
+
+    // ログアウトの前に、この端末の受け口を捨てる（共用のパソコンで、前の人の通知が届き続けないように・2026-10-22 の見直し）。
+    // app.js の logout が、サーバーのログアウトより先に待つ（2秒で諦める）。
+    window.wcmsBeforeLogout = async () => {
+        if (!btn.dataset.on) return;
+        await Promise.race([turnOff(), new Promise((r) => setTimeout(r, 2000))]);
+    };
 })();
