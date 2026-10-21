@@ -65,7 +65,7 @@ func GeminiGenerateBlobs(prompt string, blobs ...genai.Blob) (string, error) {
 		return "", err
 	}
 	var out strings.Builder
-	if len(resp.Candidates) > 0 {
+	if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil { // 安全の濾しで止められると Content が nil（2026-10-22 の見直し）
 		for _, part := range resp.Candidates[0].Content.Parts {
 			if t, ok := part.(genai.Text); ok {
 				out.WriteString(string(t))

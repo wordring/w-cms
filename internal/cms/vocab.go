@@ -26,6 +26,7 @@ package cms
 import (
 	"regexp"
 	"sort"
+	"sync"
 	"strconv"
 	"strings"
 	"time"
@@ -271,14 +272,32 @@ var vocabRegistry = []VocabDef{
 // 同じ `Type` の二重登録は**その場で落とします**。黙って後勝ちにすると、どちらの
 // 宣言が効いているのか画面からは分からず、列の型だけが静かに変わります。
 func RegisterVocab(defs ...VocabDef) {
+	vocabMu.Lock()
+	defer vocabMu.Unlock()
+	next := append([]VocabDef{}, vocabRegistry...)
 	for _, d := range defs {
-		for _, existing := range vocabRegistry {
+		for _, existing := range next {
 			if existing.Type == d.Type {
 				panic("語彙の形式名が重複しています: " + d.Type)
 			}
 		}
-		vocabRegistry = append(vocabRegistry, d)
+		next = append(next, d)
 	}
+	vocabRegistry = next
+}
+
+// vocabMu は vocabRegistry を守ります。
+//
+// ⚠ 設定は動いているあいだに読み直される（DB の作り直し）——そのとき書き手は新しい配列を作ってから差し替え、
+// 読み手は vocabList で今の配列を受け取る。並べた配列をその場で書き換えると、読んでいる最中の人に壊れた定義が見える
+// （2026-10-22 の見直し）。
+var vocabMu sync.RWMutex
+
+// vocabList は、いまの語彙の一覧です（受け取った配列は書き換えられない）。
+func vocabList() []VocabDef {
+	vocabMu.RLock()
+	defer vocabMu.RUnlock()
+	return vocabRegistry
 }
 
 // settingsVocabCount は、いまレジストリの末尾に載っている**設定由来の形式の数**です。
@@ -296,6 +315,13 @@ var settingsVocabCount int
 // **自分自身を「コードの宣言と衝突している」と判定**します——実データの再構築が
 // HTTP 500 で落ちて気づきました（2026-09-20）。
 func codeDeclaredVocabType(t string) bool {
+	vocabMu.RLock()
+	defer vocabMu.RUnlock()
+	return codeDeclaredVocabTypeLocked(t)
+}
+
+// codeDeclaredVocabTypeLocked は codeDeclaredVocabType の本体です（vocabMu を持って呼ぶ）。
+func codeDeclaredVocabTypeLocked(t string) bool {
 	end := len(vocabRegistry) - settingsVocabCount
 	for i := 0; i < end; i++ {
 		if vocabRegistry[i].Type == t {
@@ -314,17 +340,22 @@ func codeDeclaredVocabType(t string) bool {
 // ⚠ **末尾に固めて置くのが前提**です。コードの宣言は `init()` の時点で出揃い、
 // そのあとに設定が来るので、この順は崩れません。崩すと外す範囲がずれます。
 func SetSettingsVocabFormats(defs []VocabDef) {
+	vocabMu.Lock()
+	defer vocabMu.Unlock()
 	if settingsVocabCount > 0 {
 		vocabRegistry = vocabRegistry[:len(vocabRegistry)-settingsVocabCount]
 		settingsVocabCount = 0
 	}
+	// 新しい配列に作ってから差し替える（読んでいる人の配列は書き換えない）。
+	next := append([]VocabDef{}, vocabRegistry...)
+	defer func() { vocabRegistry = next }()
 	for _, d := range defs {
-		if codeDeclaredVocabType(d.Type) {
+		if codeDeclaredVocabTypeLocked(d.Type) {
 			// 検査（`Settings.validate`）で弾いているはずですが、ここでも黙って
 			// 後勝ちにはしません——**どちらが効いているのか分からなくなる**ためです。
 			continue
 		}
-		vocabRegistry = append(vocabRegistry, d)
+		next = append(next, d)
 		settingsVocabCount++
 	}
 }
@@ -332,15 +363,16 @@ func SetSettingsVocabFormats(defs []VocabDef) {
 // VocabDefs は登録済みの全形式定義を Type 順で返します（/api/tag-schema の応答が
 // 呼び出しごとに変わらないようにするため）。
 func VocabDefs() []VocabDef {
-	out := make([]VocabDef, len(vocabRegistry))
-	copy(out, vocabRegistry)
+	list := vocabList()
+	out := make([]VocabDef, len(list))
+	copy(out, list)
 	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
 	return out
 }
 
 // VocabDefByType は data-type の値で形式定義を探します。
 func VocabDefByType(t string) (VocabDef, bool) {
-	for _, d := range vocabRegistry {
+	for _, d := range vocabList() {
 		if d.Type == t {
 			return d, true
 		}
@@ -362,7 +394,7 @@ func VocabDefByHeading(word string) (VocabDef, bool) {
 	if word == "" {
 		return VocabDef{}, false
 	}
-	for _, d := range vocabRegistry {
+	for _, d := range vocabList() {
 		if d.DisplayName == word {
 			return d, true
 		}

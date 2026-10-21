@@ -202,3 +202,61 @@ func TestStripImageMetadataRemovesPNGText(t *testing.T) {
 		t.Errorf("除去後のPNGが壊れています: %v", err)
 	}
 }
+
+// 大きさを偽った小さな JPEG を復号しない（数百バイトで何 GB も取らせ、サーバーを落とせるため・2026-10-22 の見直し）。
+func TestStripJPEGRefusesHugeDeclaredSize(t *testing.T) {
+	src := jpegBytes(t, 8, 4)
+	// SOF0（FF C0）の高さ・幅を 60000×60000 に書き換える。
+	i := bytes.Index(src, []byte{0xFF, 0xC0})
+	if i < 0 {
+		t.Fatal("テスト素材に SOF0 がありません")
+	}
+	binary.BigEndian.PutUint16(src[i+5:], 60000)
+	binary.BigEndian.PutUint16(src[i+7:], 60000)
+	if _, err := StripImageMetadata("jpeg", src); err == nil || !bytes.Contains([]byte(err.Error()), []byte("大きすぎ")) {
+		t.Fatalf("⚠ 大きさを偽った JPEG を断りません: %v", err)
+	}
+}
+
+// webpChunk は WebP（RIFF）の塊を組み立てます（奇数長なら詰め物を足す）。
+func webpChunk(typ string, data []byte, pad bool) []byte {
+	b := append([]byte(typ), 0, 0, 0, 0)
+	binary.LittleEndian.PutUint32(b[4:], uint32(len(data)))
+	b = append(b, data...)
+	if pad && len(data)%2 == 1 {
+		b = append(b, 0)
+	}
+	return b
+}
+
+func webpFile(chunks ...[]byte) []byte {
+	body := []byte("WEBP")
+	for _, c := range chunks {
+		body = append(body, c...)
+	}
+	out := append([]byte("RIFF"), 0, 0, 0, 0)
+	binary.LittleEndian.PutUint32(out[4:], uint32(len(body)))
+	return append(out, body...)
+}
+
+// WebP の EXIF は、最後の塊の詰め物が省かれていても落とす。途中で切れたファイルは、元のまま通さずに断る。
+func TestStripWebPChunks(t *testing.T) {
+	vp8x := webpChunk("VP8X", []byte{0x0C, 0, 0, 0, 0, 0, 0, 0, 0, 0}, true)
+	exif := webpChunk("EXIF", []byte("Exif\x00\x00GPS"), true)
+	last := webpChunk("VP8L", []byte{1, 2, 3}, false) // 詰め物なし
+	out, err := StripImageMetadata("webp", webpFile(vp8x, exif, last))
+	if err != nil {
+		t.Fatalf("詰め物の無い WebP を断りました: %v", err)
+	}
+	if bytes.Contains(out, []byte("GPS")) || bytes.Contains(out, []byte("EXIF")) {
+		t.Error("⚠ EXIF が残っています")
+	}
+	if out[20]&0x0C != 0 {
+		t.Errorf("⚠ VP8X の印に EXIF・XMP が残っています: %#x", out[20])
+	}
+	cut := webpFile(vp8x, exif, webpChunk("VP8L", []byte{1, 2, 3, 4, 5, 6}, true))
+	cut = cut[:len(cut)-3]
+	if _, err := StripImageMetadata("webp", cut); err == nil {
+		t.Error("⚠ 途中で切れた WebP を通しました（EXIF が残る）")
+	}
+}

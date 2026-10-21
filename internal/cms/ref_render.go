@@ -36,6 +36,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 
@@ -259,11 +260,11 @@ func linkEmailDD(dd *html.Node) bool {
 	}
 
 	// 生の値の中で、アドレスの部分だけを差し替えます。
-	at := strings.LastIndex(strings.ToLower(text), addr)
+	at, end := lastIndexFold(text, addr)
 	if at < 0 {
 		return false
 	}
-	before, after := text[:at], text[at+len(addr):]
+	before, after := text[:at], text[end:]
 
 	for dd.FirstChild != nil {
 		dd.RemoveChild(dd.FirstChild)
@@ -277,12 +278,34 @@ func linkEmailDD(dd *html.Node) bool {
 		{Key: "class", Val: "ref-link"},
 		{Key: "title", Val: title + " のページへ"},
 	}
-	a.AppendChild(&html.Node{Type: html.TextNode, Data: text[at : at+len(addr)]})
+	a.AppendChild(&html.Node{Type: html.TextNode, Data: text[at:end]})
 	dd.AppendChild(a)
 	if after != "" {
 		dd.AppendChild(&html.Node{Type: html.TextNode, Data: after})
 	}
 	return true
+}
+
+// lastIndexFold は、text の中で大小を問わず sub に合う最後の所を、text の中の位置 [at, end) で返します（無ければ -1）。
+// ⚠ strings.ToLower(text) の中の位置で text を切らない——小文字にするとバイトの長さが変わる字（Ⱥ など）があり、
+// 差出人の名前に混ぜるだけで描くたびに panic した（2026-10-22 の見直し）。
+func lastIndexFold(text, sub string) (int, int) {
+	n := utf8.RuneCountInString(sub)
+	for i := len(text) - 1; i >= 0; i-- {
+		if !utf8.RuneStart(text[i]) {
+			continue
+		}
+		j, k := i, 0
+		for j < len(text) && k < n {
+			_, w := utf8.DecodeRuneInString(text[j:])
+			j += w
+			k++
+		}
+		if k == n && strings.EqualFold(text[i:j], sub) {
+			return i, j
+		}
+	}
+	return -1, -1
 }
 
 // pageExists は派生索引でページの存在を引きます（描画のたびに呼ぶので索引で足りる。

@@ -261,3 +261,19 @@ func TestFormulaRound(t *testing.T) {
 		}
 	}
 }
+
+// 長すぎる式・深すぎる入れ子は、読まずに断る（スタックが溢れてサーバーが落ちないように・2026-10-22 の見直し）。
+func TestFormulaRefusesHugeOrDeepInput(t *testing.T) {
+	if _, err := parseFormula(strings.Repeat("(", 200) + "1" + strings.Repeat(")", 200)); err == nil {
+		t.Error("⚠ 200 段の入れ子を読みました")
+	}
+	if _, err := parseFormula(strings.Repeat("-", 300) + "1"); err == nil {
+		t.Error("⚠ 300 個の符号の入れ子を読みました")
+	}
+	if _, err := parseFormula(strings.Repeat("(", 3_000_000)); err == nil {
+		t.Error("⚠ 300 万字の式を読みました")
+	}
+	if n, err := parseFormula("((1+2)*3)"); err != nil || n == nil {
+		t.Errorf("ふつうの式が読めません: %v", err)
+	}
+}

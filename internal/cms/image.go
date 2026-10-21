@@ -177,6 +177,15 @@ func StripImageMetadata(kind string, content []byte) ([]byte, error) {
 // stripJPEG は EXIF の向きを画素へ反映してから再符号化します。
 // 復号→再符号化なので、EXIF・XMP・ICC を含む全メタデータが落ちます。
 func stripJPEG(content []byte) ([]byte, error) {
+	// 先に大きさだけ読む——数百バイトのファイルが 65535×65535 を名乗ると、復号が何 GB も取ってサーバーが落ちる
+	// （メールの添付は自動で取り込むので、外のだれでも送れる・2026-10-22 の見直し）。
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(content))
+	if err != nil {
+		return nil, fmt.Errorf("JPEGとして読めません: %v", err)
+	}
+	if err := checkImageSize(cfg.Width, cfg.Height); err != nil {
+		return nil, err
+	}
 	orientation := jpegOrientation(content)
 	img, err := jpeg.Decode(bytes.NewReader(content))
 	if err != nil {
@@ -190,6 +199,20 @@ func stripJPEG(content []byte) ([]byte, error) {
 		return nil, fmt.Errorf("JPEGを書き出せません: %v", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// 復号してよい画像の大きさです（スマホの写真は 5000 万画素ほど・紙の図面のスキャンも収まる）。
+const (
+	maxImageSide   = 20000
+	maxImagePixels = 80_000_000
+)
+
+// checkImageSize は、復号する前に大きさを確かめます。
+func checkImageSize(w, h int) error {
+	if w <= 0 || h <= 0 || w > maxImageSide || h > maxImageSide || w*h > maxImagePixels {
+		return fmt.Errorf("画像が大きすぎます（%d×%d）。%d 万画素・1辺 %d 画素までにしてください", w, h, maxImagePixels/10000, maxImageSide)
+	}
+	return nil
 }
 
 // jpegOrientation は APP1（Exif）から Orientation タグ（0x0112）を読みます。
@@ -358,12 +381,24 @@ func stripWebPChunks(content []byte) ([]byte, error) {
 		typ := content[i : i+4]
 		size := int(binary.LittleEndian.Uint32(content[i+4 : i+8]))
 		padded := size + size%2 // RIFF の塊は偶数長へ詰められる
-		if size < 0 || i+8+padded > len(content) {
-			// 末尾が切れている場合は触らずそのまま返す（壊すより無害）。
-			return content, nil
+		if size < 0 || i+8+size > len(content) {
+			// 中身が切れている——元のまま返すと EXIF（位置）が残るので、断る（2026-10-22 の見直し）。
+			return nil, errors.New("WebPファイルが途中で切れています")
+		}
+		chunk := content[i : i+8+size]
+		if i+8+padded > len(content) {
+			// 最後の塊の詰め物（1バイト）を省くエンコーダがある——足して続ける。
+			chunk = append(append([]byte{}, chunk...), 0)
+		} else {
+			chunk = content[i : i+8+padded]
 		}
 		if !webpMetaChunks[string(typ)] {
-			body.Write(content[i : i+8+padded])
+			if string(typ) == "VP8X" && size >= 1 {
+				// 拡張形式の印から「EXIF・XMP がある」を消す（塊を落としたので）。
+				chunk = append([]byte{}, chunk...)
+				chunk[8] &^= 0x0C
+			}
+			body.Write(chunk)
 		}
 		i += 8 + padded
 	}

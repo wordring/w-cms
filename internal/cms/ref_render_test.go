@@ -143,3 +143,20 @@ func TestOrderNumberIsNotMistakenForReference(t *testing.T) {
 		t.Errorf("可変タグの参照が扱われていません:\n%s", got)
 	}
 }
+
+// 小文字にすると長さの変わる字が名前にあっても、アドレスの位置を取り違えない（描くたびに panic していた・2026-10-22 の見直し）。
+func TestLastIndexFold(t *testing.T) {
+	for _, tc := range []struct{ text, sub, want string }{
+		{"ȺȺ <Known@X.jp>", "known@x.jp", "Known@X.jp"},
+		{"KK <a@b.jp>", "a@b.jp", "a@b.jp"},
+		{"山田 <a@b.jp> a@b.jp", "a@b.jp", "a@b.jp"},
+	} {
+		at, end := lastIndexFold(tc.text, tc.sub)
+		if at < 0 || tc.text[at:end] != tc.want {
+			t.Errorf("%q の中の %q: %d〜%d", tc.text, tc.sub, at, end)
+		}
+	}
+	if at, _ := lastIndexFold("名前だけ", "a@b.jp"); at != -1 {
+		t.Errorf("無いのに %d を返しました", at)
+	}
+}

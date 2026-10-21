@@ -331,6 +331,10 @@ func syncCaptionTables(id string, pageID int, root *html.Node) error {
 		tables = captionTablesOf(root)
 	}
 
+	// 違うページの同期どうしも1つずつ通す——読んでから書く取引は、間にほかの取引が書くと
+	// SQLITE_BUSY_SNAPSHOT で落ち（待っても直らない）、そのページの表の写しが古いまま残るため（2026-10-22 の見直し）。
+	tablesSyncMu.Lock()
+	defer tablesSyncMu.Unlock()
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -558,3 +562,6 @@ func SQLNames() map[string]any {
 		"system_suffix":  systemColumnSuffix,
 	}
 }
+
+// tablesSyncMu は tables.db への同期を1つずつ通すロックです（syncCaptionTables）。
+var tablesSyncMu sync.Mutex

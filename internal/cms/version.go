@@ -96,6 +96,9 @@ func init() {
 	// 画面の書き終わりの区切りは VersionCheckpointAPIHandler（handler_version.go）が打つ。
 	editlock.OnRelease = func(pageIDInt int, username string) {
 		id := page.FormatID(pageIDInt)
+		// 読んで版にするまでを、ページの書き込みのロックの中で（人の保存と重なると、古い本文が最新の版になる・2026-10-22 の見直し）。
+		// 呼ばれるのは /api/unlock からだけで、本文のロックを持ったまま呼ばれることは無い。
+		defer LockPageBody(id)()
 		body, err := os.ReadFile(page.BodyPath(id))
 		if err != nil {
 			return // 本文が無いページ（削除直後など）は放っておく
@@ -322,10 +325,21 @@ func ReadVersion(pageID, version string) ([]byte, error) {
 		return nil, fmt.Errorf("版を読めません: %v", err)
 	}
 	defer zr.Close()
-	// 版は本文HTMLなので、保存時の上限（8MiB）を超えることは無い。
 	// 壊れた・細工された gzip で無制限に展開しないよう上限を掛ける。
-	return io.ReadAll(io.LimitReader(zr, maxJSONBodyBytes))
+	// ⚠ 上限を超えたら黙って切らずに断る——機械が書いた本文は 8MiB を超えることがあり、切ったまま戻すと
+	// 後ろが消える（2026-10-22 の見直し）。上限は、ふだんの本文よりずっと大きく取る。
+	b, err := io.ReadAll(io.LimitReader(zr, maxVersionBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("版を読めません: %v", err)
+	}
+	if len(b) > maxVersionBytes {
+		return nil, fmt.Errorf("版が大きすぎて読めません（%d MiB まで）", maxVersionBytes>>20)
+	}
+	return b, nil
 }
+
+// maxVersionBytes は、版を開くときの上限です（展開したあとの大きさ）。
+const maxVersionBytes = 64 << 20
 
 // RevertToVersion は選んだ版を現在の本文として書き戻します。
 //

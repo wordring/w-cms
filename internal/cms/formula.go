@@ -43,6 +43,7 @@ package cms
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -604,7 +605,13 @@ func formulaNumber(w string) (float64, bool) {
 
 // parseFormula は `=` の後ろを木にします（expr := term (±term)*・term := factor (×÷factor)*・
 // factor := ±factor | 数 | 名前 | 合計(…) | ROUND(expr) | (expr)）。
+//
+// ⚠ 長さと入れ子に上限がある——上限が無いと、「=((((…」を数百万字書いた1つのセルで、読むたびに（保存・表示・DB の作り直し）
+// スタックが溢れてサーバーが落ちる（Go では拾えない・2026-10-22 の見直し）。
 func parseFormula(s string) (fNode, error) {
+	if len(s) > maxFormulaBytes {
+		return nil, fmt.Errorf("式が長すぎます（%d バイトまで）", maxFormulaBytes)
+	}
 	toks, err := tokenizeFormula(s)
 	if err != nil {
 		return nil, err
@@ -627,9 +634,16 @@ func parseFormula(s string) (fNode, error) {
 	return n, nil
 }
 
+// 式の長さと入れ子の上限です（表のセルの式には十分）。
+const (
+	maxFormulaBytes = 4000
+	maxFormulaDepth = 100
+)
+
 type fParser struct {
-	toks []fTok
-	i    int
+	toks  []fTok
+	i     int
+	depth int // factor の入れ子の深さ
 }
 
 func (p *fParser) peek() rune {
@@ -681,6 +695,11 @@ func (p *fParser) term() (fNode, error) {
 }
 
 func (p *fParser) factor() (fNode, error) {
+	p.depth++
+	defer func() { p.depth-- }()
+	if p.depth > maxFormulaDepth {
+		return nil, errors.New("式の入れ子が深すぎます")
+	}
 	switch p.peek() {
 	case '-':
 		p.i++
