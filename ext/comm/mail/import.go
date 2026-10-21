@@ -39,6 +39,8 @@ type ImportSummary struct {
 	Duplicate int      `json:"duplicate"` // 既に取り込み済みだった件数
 	Failed    int      `json:"failed"`    // 取り込めなかった件数
 	Titles    []string `json:"titles"`    // 取り込んだものの題（先頭のいくつか）
+	// New は新しく取り込んだ記録（ページ番号と題）です（2026-10-21 夜・届いたことを知らせるため——fetch_job.go）。
+	New []comm.Arrival `json:"-"`
 }
 
 // importMax は1回の取り込みの上限です。**押すたびに少しずつ**進める形にして、
@@ -125,6 +127,7 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 			continue
 		}
 		sum.Imported++
+		sum.New = append(sum.New, comm.Arrival{PageID: res.PageID, Title: res.Title, Channel: comm.ChannelMail})
 		if len(sum.Titles) < 20 {
 			sum.Titles = append(sum.Titles, res.Title)
 		}

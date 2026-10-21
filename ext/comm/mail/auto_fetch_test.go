@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"w-cms/internal/database"
 )
 
 // TestAutoFetchInterval は自動の読み込みの間隔を固定します（2026-10-21 夜・【考察】通信箱の改善 §7.1）。
@@ -59,7 +61,8 @@ func TestAutoFetchSettingsAndReasons(t *testing.T) {
 		t.Errorf("⚠ 代表のアドレスが無いのに動くか、わけが違います: %+v", st)
 	}
 	t.Setenv("WCMS_MAIL_AUTO_ADDRESS", " Daihyo@Example.COM ")
-	t.Setenv("WCMS_DATA_DIR", t.TempDir()) // サインインの保管は空
+	database.SetDataDir(t.TempDir()) // サインインの保管は空
+	t.Cleanup(func() { database.SetDataDir("") })
 	st := autoFetchNow(time.Now())
 	if !st.Enabled || st.Address != "daihyo@example.com" || st.User != "" || !strings.Contains(st.Reason, "サインインしている人がいません") {
 		t.Errorf("⚠ サインインしている人がいないときの様子が違います: %+v", st)

@@ -123,6 +123,7 @@ func runFetch(username string, st *FetchStatus) {
 		f()
 	}
 	total := FetchFolderStatus{}
+	var arrived []comm.Arrival // 受信の箱に新しく入った記録（終わったら知らせる——notifyMailArrivals）
 	// 取り込み済みの記録を今の形へ（古い名前のタグを新しい名前へ・親ページID の無い子に親を書き足す）。**読み込みの前に1回**
 	// （直す前の記録と見分けて二重に入れないため）、**後に1回**（この回で親があとから入った子へ書き足すため——受信の箱を
 	// 先に読むので、こちらが送ったメール〔親〕は相手の返信〔子〕より後に入る）。
@@ -145,6 +146,7 @@ func runFetch(username string, st *FetchStatus) {
 			update(func() { st.Errors = append(st.Errors, fmt.Sprint("途中で止まりました: ", p)) })
 		}
 		fix() // この回で親があとから入った子へ親ページID を書き足す
+		notifyMailArrivals(arrived)
 		update(func() {
 			st.Running = false
 			st.Folder = ""
@@ -173,6 +175,9 @@ func runFetch(username string, st *FetchStatus) {
 				}
 			})
 			total.Imported += sum.Imported
+			if folder != FolderSent {
+				arrived = append(arrived, sum.New...)
+			}
 			total.Duplicate += sum.Duplicate
 			total.Failed += sum.Failed
 			if err != nil {
@@ -220,4 +225,21 @@ func MailFetchStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 		out = st
 	}
 	cms.WriteJSON(w, map[string]any{"success": true, "status": out})
+}
+
+// mailArrivalBurst は、1回の読み込みで1通ずつ知らせる上限です。それより多ければ「メールが N 通届きました」の1つにまとめる
+// （初めての読み込みで、過去のメールを何百通も入れたときに、知らせが鳴り続けないように）。
+const mailArrivalBurst = 3
+
+// notifyMailArrivals は、受信の箱に新しく入った記録を知らせます（2026-10-21 夜・comm.NotifyArrival——スマホへの知らせなど）。
+func notifyMailArrivals(arrived []comm.Arrival) {
+	switch {
+	case len(arrived) == 0:
+	case len(arrived) <= mailArrivalBurst:
+		for _, a := range arrived {
+			comm.NotifyArrival(a)
+		}
+	default:
+		comm.NotifyArrival(comm.Arrival{Title: fmt.Sprintf("メールが %d 通届きました", len(arrived)), Channel: comm.ChannelMail})
+	}
 }
