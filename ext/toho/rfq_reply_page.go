@@ -281,12 +281,17 @@ func rfqReplyCandidates(user *auth.User, hostPageID, readNo, supplier string) []
 
 // linkRFQReply は返事ページを部材見積依頼書に結びます——タグ `部材見積依頼` に部材見積依頼書のページ番号を書き、部材見積依頼書の子へ移す。
 func linkRFQReply(user *auth.User, replyID, rfqID string) error {
+	// 先に動かしてから、結んだ印を書く——印を先に書くと、部材見積依頼書に書けない人のとき動かせずに「結んだ」印だけが
+	// 残り、結ぶのも作るのも「もう結ばれています」で断られた（2026-10-22 の見直し）。
+	if !canWritePage(user, pageNum(rfqID)) {
+		return errors.New("部材見積依頼書 /" + rfqID + " に書けません")
+	}
+	if _, _, err := cms.SetPageParent(user, replyID, rfqID); err != nil {
+		return err
+	}
 	if err := cms.RewriteBody(replyID, user.Username, func(b string) string {
 		return withTagValues(b, RFQReplyLinkTag, []string{rfqID}, true)
 	}); err != nil {
-		return err
-	}
-	if _, _, err := cms.SetPageParent(user, replyID, rfqID); err != nil {
 		return err
 	}
 	auth.Audit(user.Username, "rfq-reply.link", replyID+" → "+rfqID)

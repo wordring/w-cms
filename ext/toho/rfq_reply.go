@@ -485,11 +485,17 @@ func RFQReadReplyAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var blobs []genai.Blob
 	text := ""
 	if f := strings.TrimSpace(req.SourceFile); f != "" {
-		mime, okExt := rfqReadableExt[strings.ToLower(filepath.Ext(f))]
 		stored, _, okRef := cms.AttachmentOfRef(user, cms.FileRef{PageID: srcID, ID: strings.TrimSuffix(f, filepath.Ext(f))})
+		// 種類は、置いてあるファイルの名前で決める（画面が送った名前で決めていたので、表計算などを PDF と名乗らせて
+		// Gemini へ渡せた・2026-10-22 の見直し）。大きさは読む前に見る。
+		mime, okExt := rfqReadableExt[strings.ToLower(filepath.Ext(stored))]
 		path, okPath := page.AttachmentPath(srcID, stored)
 		if !okExt || !okRef || !okPath {
 			cms.JSONFail(w, http.StatusNotFound, "返事のファイルが見つかりません（PDF・画像だけ読めます）")
+			return
+		}
+		if fi, err := os.Stat(path); err == nil && fi.Size() > rfqReplyMaxBytes {
+			cms.JSONFail(w, http.StatusRequestEntityTooLarge, "返事のファイルが大きすぎます（18MBまで）")
 			return
 		}
 		data, err := os.ReadFile(path)

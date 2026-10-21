@@ -284,6 +284,10 @@ func RFQReplyMakeRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
+	// 「まだ結ばれていないか」の確かめから結ぶまでを1つずつ通す（二度押しで、同じ返事から部材見積依頼書が2枚でき、
+	// 見積回答に同じ値段が2つずつ並んだ・2026-10-22 の見直し）。
+	rfqNewDocMu.Lock()
+	defer rfqNewDocMu.Unlock()
 	replyID, tags, ok := replyPageOrFail(w, r, req.PageID, true)
 	if !ok {
 		return
@@ -296,6 +300,11 @@ func RFQReplyMakeRFQAPIHandler(w http.ResponseWriter, r *http.Request) {
 			norm, okID := page.NormalizeID(pid)
 			if !okID {
 				cms.JSONFail(w, http.StatusBadRequest, "弊社品番「"+pid+"」がページ番号ではありません")
+				return
+			}
+			// 見られない加工製品ページは指せない（題・品番を写し、その加工製品の見積回答に出てしまう・2026-10-22 の見直し）。
+			if !page.CanView(user, pageNum(norm)) {
+				cms.JSONFail(w, http.StatusNotFound, "弊社品番 /"+norm+" のページが見つかりません")
 				return
 			}
 			ln.ProductID = norm

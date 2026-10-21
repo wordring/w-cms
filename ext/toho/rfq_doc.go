@@ -27,8 +27,10 @@ import (
 	stdhtml "html"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/html"
@@ -200,14 +202,20 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
+	// 読んでから表を片付けるまでを1つずつ通す（二度押しで、同じ行の部材見積依頼書が2枚できた・2026-10-22 の見直し）。
+	rfqNewDocMu.Lock()
+	defer rfqNewDocMu.Unlock()
 	cur, err := cms.ReadPageBody(boxPage)
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "本文を読めません: "+err.Error())
 		return
 	}
 	lines, found := rfqDraftLinesOf(cur, req.Table)
+	// 片付けるときに比べるのは、表から読んだままの行（下の withMfg は行を書き換える——比べると製造ページでは
+	// いつも違って見え、表が残って二度作らせていた・2026-10-22 の見直し）。
+	orig := slices.Clone(lines)
 	// 見積依頼部材表が製造ページにあれば、明細の「製造」の列にその製造ページを書く（2026-10-21）。
-	lines = withMfg(lines, mfgParentOr(user, boxPage))
+	lines = withMfg(slices.Clone(lines), mfgParentOr(user, boxPage))
 	if !found {
 		cms.JSONFail(w, http.StatusConflict, "その見積依頼部材表が見つかりません（ページを読み直してください）")
 		return
@@ -258,7 +266,7 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		rebuildBeforeWrite(boxPage) // 試験だけ（読んでから片付けるまでのあいだに、ほかの人の書き込みを挟む）
 	}
 	if err := cms.RewriteBody(boxPage, user.Username, func(cur string) string {
-		if now, ok := rfqDraftLinesOf(cur, req.Table); !ok || !reflect.DeepEqual(now, lines) {
+		if now, ok := rfqDraftLinesOf(cur, req.Table); !ok || !reflect.DeepEqual(now, orig) {
 			return cur
 		}
 		next, _, ok := takeTableRows(cur, RFQDraftType, req.Table, tableRowNumbers(cur, RFQDraftType, req.Table), true)
@@ -548,3 +556,6 @@ func RFQSetCellsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "rfq.set-cells", pageID+" "+strconv.Itoa(changed)+"セル")
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "changed": changed})
 }
+
+// rfqNewDocMu は部材見積依頼書づくり（RFQNewDocAPIHandler）を1つずつ通すロックです。
+var rfqNewDocMu sync.Mutex
