@@ -6,13 +6,13 @@
 //   ① 製造ページの製造明細表の「製造完了」にチェック——押すと本文の欄に「済」
 //   ② 案件残表の製造完了は 8/20（製造完了の製造に入ったのは8）・案件ページの製造完了の欄にも 8/20 の鏡
 //   ③ 「納品」の欄で選んで「🚚 選んだ行で納品書を作る」——今回納める数の欄（まだ納めていない 8 が入っている）を 5 にして作る
-//   ④ 納品書はこの製造ページの子にできる・製造ページの「納品」の欄は 残り 3
-//   ⑤ 「📦 この製造の部材を発注部材表へ」——製造ページに発注部材表（材料 2個/台 × 8台 = 16）。「部材発注書を作る」で、部材発注書も製造ページの子にできる
+//   ④ 納品書は 記録／年／月／製造記録 にでき（2026-10-21 から）、製造ページの「この製造の書類」に並ぶ・「納品」の欄は 残り 3
+//   ⑤ 「📦 この製造の部材を発注部材表へ」——製造ページに発注部材表（材料 2個/台 × 8台 = 16）。「部材発注書を作る」で、部材発注書は記録にでき、明細の「製造」の列にこの製造ページ・「この製造の書類」に並ぶ
 //   ⑥ 「📨 この製造の部材を見積依頼必要部材表へ」——製造ページに見積依頼必要部材表（ロット 8・案件つき）
-//   ⑦ 「見積計算」の欄の「➕ 見積計算書」——見積計算書が製造ページの子にでき、欄にリンクが出る
+//   ⑦ 「見積計算」の欄の「➕ 見積計算書」——見積計算書は記録にでき（タグ「製造」）、欄にリンクが出る
 //   ⑧ 「📁 この製造を閉じる」——記録／年／月／製造記録へ移り、足元に「閉じています」
 //
-// 当て先は全部自分で作って最後に消します（案件残表を置いたページ・案件ページ・製造ページ・納品書）。
+// 当て先は全部自分で作って最後に消します（案件残表を置いたページ・案件ページ・製造ページと、記録に置いた書類——「この製造の書類」から拾う）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-page.js
 const { chromium } = require('playwright');
 const { login, makePage, deletePage, childrenOf } = require('./lib');
@@ -24,6 +24,14 @@ const check = (label, ok, note = '') => {
   if (!ok) fails++;
 };
 const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch('/api/page-meta?id=' + pid)).json()).parent_id, id);
+const titleOf = (page, id) => page.evaluate(async (pid) => ((await (await fetch('/api/load?id=' + pid)).text()).match(/<h1[^>]*>([^<]*)</) || [, ''])[1], id);
+// 製造ページの「この製造の書類」に並ぶページ番号（2026-10-21・ext/toho/mfg_docs.go）。
+const docsOf = (page, id) => page.evaluate(async (pid) => {
+  const v = await (await fetch('/api/load?view=1&id=' + pid)).text();
+  const at = v.indexOf('class="mfg-docs"');
+  if (at < 0) return [];
+  return [...v.slice(at, v.indexOf('</div>', at)).matchAll(/href="\/(\d{6})"/g)].map((m) => m[1]);
+}, id);
 
 (async () => {
   const browser = await chromium.launch();
@@ -31,6 +39,7 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e)));
   let root = '', order = '', mfg = '', dlv = '', product = '';
+  const docs = new Set(); // 記録に置いた書類（最後に消す）
   try {
     await login(page, BASE);
     root = await makePage(page, '<h1>【E2E】製造ページの帯</h1><section data-mirror="案件残"></section>');
@@ -61,10 +70,11 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
     await page.goto(BASE + '/' + root);
     await page.waitForSelector('#w-editor-content tr[data-order-page="' + order + '"]', { timeout: 10000 }).catch(() => {});
     const bl = await page.evaluate((oid) => {
-      const td = document.querySelector('#w-editor-content tr[data-order-page="' + oid + '"] td[title="製造ページの製造完了から数えた"]');
-      return td ? td.textContent.trim() : null;
+      // 2026-10-21 から、製造完了は「進み」の列に文で出る（「製造完了 8/20」）。
+      const tr = document.querySelector('#w-editor-content tr[data-order-page="' + oid + '"]');
+      return tr ? tr.textContent.replace(/s+/g, ' ').trim() : null;
     }, order);
-    check('② 案件残表の製造完了は 8/20', bl === '8/20', String(bl));
+    check('② 案件残表の「進み」に 製造完了 8/20', (bl || '').includes('製造完了 8/20'), String(bl));
     const view = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), order);
     const m = view.match(/class="vocab-chrome made-mirror"[^>]*>([^<]*)</);
     check('② 案件ページの製造完了の欄にも 8/20 の鏡', !!m && m[1] === '8/20', m ? m[1] : '');
@@ -84,7 +94,9 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
     dlv = (page.url().match(/\/(\d{6})(?:[?#]|$)/) || [])[1] || '';
     check('④ 納品書ページが開く', !!dlv && dlv !== mfg, page.url());
     if (dlv) {
-      check('④ 納品書は製造ページの子', (await parentOf(page, dlv)) === mfg);
+      docs.add(dlv);
+      check('④ 納品書は 記録／年／月／製造記録', (await titleOf(page, await parentOf(page, dlv))) === '製造記録');
+      check('④ 製造ページの「この製造の書類」に納品書', (await docsOf(page, mfg)).includes(dlv));
       await page.goto(BASE + '/' + mfg);
       const left = await page.evaluate(() => {
         const td = document.querySelector('#w-editor-content td.mfg-dlv');
@@ -112,10 +124,18 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
           page.waitForNavigation({ timeout: 20000 }).catch(() => {}),
           page.click('#w-editor-content .draft-form [data-draft-go]'),
         ]);
-        const kids = await childrenOf(page, mfg).catch(() => []);
-        const titles = [];
-        for (const k of kids) titles.push(await page.evaluate(async (pid) => ((await (await fetch('/api/load?id=' + pid)).text()).match(/<h1[^>]*>([^<]*)</) || [, ''])[1], k.ID || k.id || k));
-        check('⑤ 部材発注書も製造ページの子', titles.some((t) => t.includes('部材発注書') || t.includes('【E2E】部材の業者')), titles.join(' | '));
+        const listed = await docsOf(page, mfg);
+        let po = '';
+        for (const d of listed) {
+          docs.add(d);
+          if ((await titleOf(page, d)).includes('【E2E】部材の業者')) po = d;
+        }
+        check('⑤ 製造ページの「この製造の書類」に部材発注書', !!po, listed.join(','));
+        if (po) {
+          check('⑤ 部材発注書は 記録／年／月／製造記録', (await titleOf(page, await parentOf(page, po))) === '製造記録');
+          const body5 = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), po);
+          check('⑤ 部材発注明細表の「製造」にこの製造ページ', body5.includes('<th>製造</th>') && body5.includes('>' + mfg + '<'), body5.replace(/\s+/g, ' ').slice(-500));
+        }
       }
     }
     // ⑥ 「📨 この製造の部材を見積依頼必要部材表へ」（2026-10-19・mfg_more.go）——ロットは製造明細の数量（8）。
@@ -141,7 +161,8 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
         add.first().click().catch(() => {}),
       ]);
       const calc = (page.url().match(/\/(\d{6})(?:[?#]|$)/) || [])[1] || '';
-      check('⑦ 見積計算書ができて開く・製造ページの子', !!calc && calc !== mfg && String(await parentOf(page, calc)) === mfg, page.url());
+      if (calc && calc !== mfg) docs.add(calc);
+      check('⑦ 見積計算書ができて開く・記録／年／月／製造記録', !!calc && calc !== mfg && (await titleOf(page, await parentOf(page, calc))) === '製造記録', page.url());
       if (calc) {
         await page.goto(BASE + '/' + mfg);
         const link = await page.locator('#w-editor-content td.mfg-calc a[href="/' + calc + '"]').count();
@@ -168,6 +189,8 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
   } catch (e) {
     check('例外なく流れた', false, String(e));
   } finally {
+    if (mfg) for (const d of await docsOf(page, mfg).catch(() => [])) docs.add(d);
+    for (const d of docs) await deletePage(page, d).catch(() => {});
     if (mfg) for (const k of await childrenOf(page, mfg).catch(() => [])) await deletePage(page, k.ID || k.id || k).catch(() => {});
     if (dlv) await deletePage(page, dlv).catch(() => {});
     if (mfg) await deletePage(page, mfg).catch(() => {});
