@@ -344,7 +344,7 @@ func productListViewHTML(user *auth.User, _ int) string {
 	}
 	if len(list) == 0 {
 		// ⚠ **0件も黙りません**——「無い」と「数えていない」を見分けるため。
-		return head + `<p class="materials-empty">加工製品のページ（` + PageKindTag + `：` + PageKindProduct + `）はまだありません` +
+		return head + `<p class="materials-empty w-view-empty">加工製品のページ（` + PageKindTag + `：` + PageKindProduct + `）はまだありません` +
 			`（整理を実行すると、社名・装置名称ごとにここへ並びます）。</p>`
 	}
 	esc := stdhtml.EscapeString
@@ -442,7 +442,7 @@ func productListViewHTML(user *auth.User, _ int) string {
 			`<td>` + esc(strings.Join(r.Kinds, "・")) + `</td></tr>`)
 	}
 	b.WriteString(`</tbody></table>`)
-	b.WriteString(`<p class="materials-empty plist-none" data-plist-none="1" hidden>当てはまる加工製品はありません。</p>`)
+	b.WriteString(`<p class="materials-empty w-view-empty plist-none" data-plist-none="1" hidden>当てはまる加工製品はありません。</p>`)
 	return b.String()
 }
 

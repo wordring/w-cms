@@ -95,7 +95,7 @@ func estimateUnsentViewHTML(user *auth.User, _ int) string {
 	}
 	if len(list) == 0 {
 		// ⚠ **0件も黙りません**——「全部送った」と「数えていない」を見分けるため。
-		return head + `<p class="materials-empty">未送付の見積書はありません` +
+		return head + `<p class="materials-empty w-view-empty">未送付の見積書はありません` +
 			`（見積書ページを作ると、送るか「送付不要」にするまでここに並びます）。</p>`
 	}
 	var b strings.Builder

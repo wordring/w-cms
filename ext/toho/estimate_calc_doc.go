@@ -125,7 +125,7 @@ func estimateCalcsHTML(productID int, list []estimateCalc) string {
 	b.WriteString(`<h3 class="materials-title">🧮 見積計算書</h3>`)
 	lots := func(c estimateCalc) string {
 		if len(c.Lots) == 0 {
-			return `<span class="materials-empty">（見積表がありません）</span>`
+			return `<span class="materials-empty w-view-empty">（見積表がありません）</span>`
 		}
 		var parts []string
 		for _, l := range c.Lots {
@@ -144,7 +144,7 @@ func estimateCalcsHTML(productID int, list []estimateCalc) string {
 		return strings.Join(parts, "・")
 	}
 	if len(list) == 0 {
-		b.WriteString(`<p class="materials-empty">見積計算書はまだありません（このページの見積計算表は、加工製品ページに置いた計算です）。</p>`)
+		b.WriteString(`<p class="materials-empty w-view-empty">見積計算書はまだありません（このページの見積計算表は、加工製品ページに置いた計算です）。</p>`)
 	} else {
 		latest := list[0]
 		date := latest.Date

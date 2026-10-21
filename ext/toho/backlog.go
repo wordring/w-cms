@@ -351,7 +351,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 	//    集計の壊れと見分けられません。
 	migNote := ""
 	if migrating > 0 {
-		migNote = `<p class="materials-empty">※「` + MigratingTag + `」の案件ページ ` + strconv.Itoa(migrating) +
+		migNote = `<p class="materials-empty w-view-empty">※「` + MigratingTag + `」の案件ページ ` + strconv.Itoa(migrating) +
 			` 枚は入れていません（確かめたら、そのページの「` + MigratingTag + `」のタグを消すと並びます）。</p>`
 	}
 	if len(groups) == 0 {

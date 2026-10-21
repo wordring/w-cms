@@ -42,7 +42,7 @@ func unorderedViewHTML(user *auth.User, pageIDInt int) string {
 		//    すると発注部材表が開き」——**加工製品ページに無い部材（消耗品・治具）だけを
 		//    買う道**がここです。⚠ **0件のときこそ、その道が要ります**——
 		//    早期に戻ると、**空の表から始める手段が画面から消えます**。
-		return head + `<p class="materials-empty">必要部材はありません` +
+		return head + `<p class="materials-empty w-view-empty">必要部材はありません` +
 			`（⚠ 案件明細表に<strong>弊社品番</strong>が無い行は、ここに出ません）。` +
 			`加工製品ページに無い部材は、上の<strong>臨時部材表</strong>に書くと、ここに並びます。` +
 			`</p>` +

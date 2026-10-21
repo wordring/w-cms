@@ -94,7 +94,7 @@ func quotesListHTML(list []quoteRow, productID string) string {
 	var b strings.Builder
 	b.WriteString(`<div class="vocab-chrome rfq-quotes" contenteditable="false"><p class="materials-title">💴 見積回答</p>`)
 	if len(list) == 0 {
-		b.WriteString(`<p class="materials-empty">まだありません（部材見積依頼書に業者の返事〔単価〕が入ると、ここに並びます）。</p></div>`)
+		b.WriteString(`<p class="materials-empty w-view-empty">まだありません（部材見積依頼書に業者の返事〔単価〕が入ると、ここに並びます）。</p></div>`)
 		return b.String()
 	}
 	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>日付</th><th>業者</th><th>種類</th><th>何の値段か</th>` +

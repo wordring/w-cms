@@ -159,7 +159,7 @@ body.public {
 .public-content .child-list { list-style: none; padding-left: 0; }
 .public-content .child-list li { margin: 6px 0; }
 .public-content .child-list-empty,
-.public-content .materials-empty,
+.public-content .w-view-empty,
 .public-content .view-error { color: var(--pub-muted); }
 
 .public-content blockquote {
