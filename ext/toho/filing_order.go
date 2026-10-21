@@ -196,7 +196,7 @@ func fileOneOrder(user *auth.User, row orderRequest) filingResult {
 
 	// 置き場は `記録／年／月／依頼`（2026-10-16・record_box.go）。**月は受注ページを作った日**です。
 	when := orderFolderDateOf(idInt)
-	monthID, err := recordFolderOr("", user.Username, RecordRequestFolder, when)
+	monthID, err := recordFolderOr("", user, RecordRequestFolder, when)
 	if err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: err.Error()}
 	}

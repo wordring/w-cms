@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
@@ -117,10 +118,11 @@ func TestIssuedStateRowSaysIssued(t *testing.T) {
 func TestRecordFolderOrPrefersParentAndExplains(t *testing.T) {
 	setupExtTest(t, "000500", page.PageMeta{Owner: "root", Mode: "302"})
 	when := time.Date(2026, 10, 19, 9, 0, 0, 0, time.Local)
-	if got, err := recordFolderOr("000500", "root", RecordWorkFolder, when); err != nil || got != "000500" {
+	rootUser := &auth.User{Username: "root", IsAdmin: true}
+	if got, err := recordFolderOr("000500", rootUser, RecordWorkFolder, when); err != nil || got != "000500" {
 		t.Fatalf("parent があるとき = %q, %v", got, err)
 	}
-	got, err := recordFolderOr("", "root", RecordWorkFolder, when)
+	got, err := recordFolderOr("", rootUser, RecordWorkFolder, when)
 	if err != nil || got == "" || got == "000500" {
 		t.Fatalf("parent が無いとき = %q, %v", got, err)
 	}
@@ -142,7 +144,7 @@ func TestRecordFolderOrPrefersParentAndExplains(t *testing.T) {
 			cur = meta.ParentID
 		}
 	}
-	_, err = recordFolderOr("", "root", RecordRequestFolder, when)
+	_, err = recordFolderOr("", rootUser, RecordRequestFolder, when)
 	if err == nil || !strings.Contains(err.Error(), "「"+recordPath(RecordRequestFolder, when)+"」を用意できません: ") {
 		t.Fatalf("置き場を作れないときの断り = %v", err)
 	}

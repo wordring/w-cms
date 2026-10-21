@@ -232,14 +232,14 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 置き場は `記録／年／月／製造記録`（2026-10-16・record_box.go）。**月は作った日**（部材見積依頼日ではない）。
 	// 見積依頼部材表が製造ページにあれば、その製造ページの子（2026-10-19・mfg_more.go）。
-	monthID, err := recordFolderOr(mfgParentOr(user, boxPage), user.Username, RecordWorkFolder, time.Now())
+	monthID, err := recordFolderOr(mfgParentOr(user, boxPage), user, RecordWorkFolder, time.Now())
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
-	newID, err := newBuiltPage(monthID, user.Username, "部材見積依頼書", build)
+	newID, err := newBuiltPage(monthID, user, "部材見積依頼書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
 	auth.Audit(user.Username, "rfq.new", newID+" "+supplier+" "+strconv.Itoa(len(lines))+"行 ← "+boxPage+"#"+strconv.Itoa(req.Table))
@@ -334,11 +334,11 @@ func createAnsweredRFQPage(user *auth.User, supplier, asked, date, note string, 
 	}
 	// 置き場は `記録／年／月／製造記録`（2026-10-16）。⚠ **月は返事の日**です——返事から過去の見積依頼を起こす口なので、
 	// 過去の書類と同じく、その書類の年月に入れます（【考察】全体の設計 §4.2）。
-	monthID, err := recordFolderOr("", user.Username, RecordWorkFolder, when)
+	monthID, err := recordFolderOr("", user, RecordWorkFolder, when)
 	if err != nil {
-		return "", http.StatusInternalServerError, err
+		return "", createFailStatus(err, http.StatusInternalServerError), err
 	}
-	newID, err := newBuiltPage(monthID, user.Username, "部材見積依頼書", func(newID string) (string, error) {
+	newID, err := newBuiltPage(monthID, user, "部材見積依頼書", func(newID string) (string, error) {
 		body, err := build(newID)
 		if err != nil {
 			return "", err
@@ -348,7 +348,7 @@ func createAnsweredRFQPage(user *auth.User, supplier, asked, date, note string, 
 		return body, nil
 	})
 	if err != nil {
-		return "", http.StatusInternalServerError, errString(err.Error())
+		return "", createFailStatus(err, http.StatusInternalServerError), errString(err.Error())
 	}
 	return newID, http.StatusOK, nil
 }

@@ -379,14 +379,14 @@ func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn,
 		return "", "", false
 	}
 	// 置き場は `記録／年／月／依頼`（2026-10-16・record_box.go。月は作った日）。製造ページから作るときは、その子（2026-10-19）。
-	monthID, err := recordFolderOr(parent, user.Username, RecordRequestFolder, now)
+	monthID, err := recordFolderOr(parent, user, RecordRequestFolder, now)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return "", "", false
 	}
-	newID, err = newBuiltPage(monthID, user.Username, "見積書", build)
+	newID, err = newBuiltPage(monthID, user, "見積書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return "", "", false
 	}
 	return newID, client, true

@@ -452,16 +452,16 @@ func InvoiceNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "請求書ページを作れません: "+err.Error())
 		return
 	}
-	monthID, err := recordFolderOr("", user.Username, RecordWorkFolder, time.Now())
+	monthID, err := recordFolderOr("", user, RecordWorkFolder, time.Now())
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
-	newID, err := newBuiltPage(monthID, user.Username, "請求書", func(newID string) (string, error) {
+	newID, err := newBuiltPage(monthID, user, "請求書", func(newID string) (string, error) {
 		return buildInvoiceHTML(tmpl, newID, client, close, period, terms.PayTerms, signer, lines)
 	})
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
 	auth.Audit(user.Username, "invoice.new", newID+" "+client+" "+close+" "+strconv.Itoa(len(lines))+"行")

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -30,7 +31,7 @@ func placeOf(pageID string) string {
 func TestRecordFolderMakesTaggedFolders(t *testing.T) {
 	setupExtTest(t, "000500", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	when := time.Date(2026, 10, 16, 12, 0, 0, 0, time.Local)
-	id, err := recordFolder("alice", RecordRequestFolder, when)
+	id, err := recordFolder(&auth.User{Username: "alice"}, RecordRequestFolder, when)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,10 +48,10 @@ func TestRecordFolderMakesTaggedFolders(t *testing.T) {
 		cur = meta.ParentID
 	}
 	// 2回目は同じフォルダ。製造記録は同じ月の下の別のフォルダ。
-	if again, _ := recordFolder("alice", RecordRequestFolder, when); again != id {
+	if again, _ := recordFolder(&auth.User{Username: "alice"}, RecordRequestFolder, when); again != id {
 		t.Errorf("2回目に別のフォルダを返しました: %s と %s", id, again)
 	}
-	work, _ := recordFolder("alice", RecordWorkFolder, when)
+	work, _ := recordFolder(&auth.User{Username: "alice"}, RecordWorkFolder, when)
 	if a, b := placeOf(work), placeOf(id); work == id || a != b {
 		t.Errorf("製造記録が同じ月の下にありません: %s（%s）と %s（%s）", work, a, id, b)
 	}

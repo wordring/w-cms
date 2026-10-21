@@ -114,7 +114,7 @@ func mfgPagesOfInvoice(rows []map[string]string) []int {
 
 // moveMfgToRecord は製造ページを `記録／年／月／製造記録`（年月は t）へ移します。
 func moveMfgToRecord(user *auth.User, mfgID int, t time.Time) error {
-	monthID, err := recordFolder(user.Username, RecordWorkFolder, t)
+	monthID, err := recordFolder(user, RecordWorkFolder, t)
 	if err != nil {
 		return err
 	}

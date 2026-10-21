@@ -139,14 +139,14 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.DraftPage), "/")); ok && pageKindOf(pageNum(id)) == PageKindMfg && canWritePage(user, pageNum(id)) {
 		parentID = id
 	}
-	parentID, err = recordFolderOr(parentID, user.Username, RecordWorkFolder, time.Now())
+	parentID, err = recordFolderOr(parentID, user, RecordWorkFolder, time.Now())
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
-	newID, err := newBuiltPage(parentID, user.Username, "部材発注書", build)
+	newID, err := newBuiltPage(parentID, user, "部材発注書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
 	auth.Audit(user.Username, "our-order-new", newID+" "+supplier+" "+

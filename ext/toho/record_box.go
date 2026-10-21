@@ -24,10 +24,11 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"errors"
+	"fmt"
 	stdhtml "html"
 	"time"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 )
 
@@ -55,9 +56,14 @@ func init() {
 // recordFolder は `記録／年／月／<sub>` を必要なだけ作り、いちばん下のフォルダのIDを返します（sub は依頼か製造記録）。
 //
 // 新しく作るフォルダには `ページ種類`（年・月・依頼・製造記録）を入れます。既にあるフォルダには触りません。
-func recordFolder(owner, sub string, t time.Time) (string, error) {
+// ⚠ user が「記録」へ書けなければ、フォルダを作る前に errNoWrite を返します（2026-10-21。書けない人が空のフォルダを残さない）。
+func recordFolder(user *auth.User, sub string, t time.Time) (string, error) {
+	owner := user.Username
 	boxID, err := cms.EnsureTopLevelBox(RecordBoxTitle, owner)
 	if err != nil {
+		return "", err
+	}
+	if err := requireWriteTo(user, boxID); err != nil {
 		return "", err
 	}
 	y, m := cms.DateFolderTitles(t)
@@ -75,13 +81,17 @@ func recordFolder(owner, sub string, t time.Time) (string, error) {
 // recordFolderOr は、parent があればそれを、無ければ `記録／年／月／<sub>` を用意して返します（parent は製造ページなど）。
 // 用意できなければ、人に見せる断り（「記録／…」を用意できません: …）を持った誤りを返します。
 // 2026-10-19 に寄せた（書類を作る9か所が、同じ断りの文と「無ければ記録へ」の分かれ道を写していた）。
-func recordFolderOr(parent, owner, sub string, t time.Time) (string, error) {
+// ⚠ user が parent（無ければ「記録」）へ書けなければ errNoWrite を返します（2026-10-21・呼び手は createFailStatus で 403 に）。
+func recordFolderOr(parent string, user *auth.User, sub string, t time.Time) (string, error) {
 	if parent != "" {
+		if err := requireWriteTo(user, parent); err != nil {
+			return "", err
+		}
 		return parent, nil
 	}
-	id, err := recordFolder(owner, sub, t)
+	id, err := recordFolder(user, sub, t)
 	if err != nil {
-		return "", errors.New("「" + recordPath(sub, t) + "」を用意できません: " + err.Error())
+		return "", fmt.Errorf("「%s」を用意できません: %w", recordPath(sub, t), err)
 	}
 	return id, nil
 }

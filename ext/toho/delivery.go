@@ -250,16 +250,16 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 置き場は製造ページの子（製造ページから作ったとき）か、記録／年／月／製造記録。
-	parentID, err := recordFolderOr(mfgID, user.Username, RecordWorkFolder, time.Now())
+	parentID, err := recordFolderOr(mfgID, user, RecordWorkFolder, time.Now())
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
-	newID, err := newBuiltPage(parentID, user.Username, "納品書", func(newID string) (string, error) {
+	newID, err := newBuiltPage(parentID, user, "納品書", func(newID string) (string, error) {
 		return buildDeliveryHTML(tmpl, newID, client, signer, lines)
 	})
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
 	auth.Audit(user.Username, "delivery.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")

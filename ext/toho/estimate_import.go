@@ -116,14 +116,14 @@ func EstimateImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 // ⚠ **月は見積の日付です**（作った日ではない）——過去の書類を移す口だからです。利用者:「過去の書類はいまは言っている
 // 年月から動かしません。動かすと9月のフォルダが肥大化するからです」（【考察】全体の設計 §4.2）。
 func importedEstimatePage(w http.ResponseWriter, user *auth.User, when time.Time, build func(pageID string) (string, error)) (string, bool) {
-	monthID, err := recordFolderOr("", user.Username, RecordRequestFolder, when)
+	monthID, err := recordFolderOr("", user, RecordRequestFolder, when)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return "", false
 	}
-	newID, err := newBuiltPage(monthID, user.Username, "見積書", build)
+	newID, err := newBuiltPage(monthID, user, "見積書", build)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return "", false
 	}
 	return newID, true

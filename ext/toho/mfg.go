@@ -304,11 +304,11 @@ func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "「"+MfgBoxTitle+"」を用意できません: "+err.Error())
 		return
 	}
-	newID, err := newBuiltPage(boxID, user.Username, "製造", func(newID string) (string, error) {
+	newID, err := newBuiltPage(boxID, user, "製造", func(newID string) (string, error) {
 		return buildMfgHTML(tmpl, newID, client, start, lines)
 	})
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
 	auth.Audit(user.Username, "mfg.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")

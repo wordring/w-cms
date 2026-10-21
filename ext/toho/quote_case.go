@@ -13,6 +13,7 @@ package toho
 
 import (
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -73,9 +74,9 @@ func makeQuoteCaseFromRecord(user *auth.User, pageID string) (comm.MakeResult, e
 		client, _ = contacts.PartnerTitleForAddress(user, addr)
 	}
 	body := buildQuoteCaseHTML(tmpl, pageTitleOf(pageID), client, pageID)
-	folder, err := recordFolderOr("", user.Username, RecordRequestFolder, time.Now())
+	folder, err := recordFolderOr("", user, RecordRequestFolder, time.Now())
 	if err != nil {
-		return comm.MakeResult{}, err
+		return comm.MakeResult{}, &comm.MakeError{Status: createFailStatus(err, http.StatusInternalServerError), Message: err.Error()}
 	}
 	newID, err := cms.CreateChildPage(folder, user.Username, body)
 	if err != nil {

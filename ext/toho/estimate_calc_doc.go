@@ -287,9 +287,9 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		content = "<h2>" + estimateSectionHeading + "</h2><p><br/></p>"
 	}
 	body := head + content
-	monthID, err := recordFolderOr(parent, user.Username, RecordWorkFolder, now)
+	monthID, err := recordFolderOr(parent, user, RecordWorkFolder, now)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return
 	}
 	newID, err := cms.CreateChildPage(monthID, user.Username, body)

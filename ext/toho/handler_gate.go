@@ -155,12 +155,47 @@ func rewriteBodyOrFail(w http.ResponseWriter, pageID, username string, fn func(s
 	return true
 }
 
+// errNoWrite は、ページを作る先（置き場・製造ページ など）に書く権限が無いときの誤りです（2026-10-21）。
+// 呼び手は createFailStatus で 403 にします。
+//
+// 2026-10-21 利用者:「直します」——書類を作る API が、作る先へ書けるかを見ていなかった
+// （ログインしていれば、書けない置き場の下にも書類を作れた。【考察】文書の食い違い §7.2）。
+// コアの「新しいページ」（NewPageAPIHandler）と同じく、親ページへの write を求めます。
+type errNoWrite struct{ pageID string }
+
+func (e *errNoWrite) Error() string {
+	return "「" + pageTitleOf(e.pageID) + "」に書く権限がないので、ページを作れません"
+}
+
+// requireWriteTo は、user が pageID へ書けなければ errNoWrite を返します。
+func requireWriteTo(user *auth.User, pageID string) error {
+	if !canWritePage(user, pageNum(pageID)) {
+		return &errNoWrite{pageID: pageID}
+	}
+	return nil
+}
+
+// createFailStatus は、ページを作れなかった誤りを返すときの状態の番号です（書く権限が無ければ 403、ほかは fallback）。
+func createFailStatus(err error, fallback int) int {
+	var nw *errNoWrite
+	if errors.As(err, &nw) {
+		return http.StatusForbidden
+	}
+	return fallback
+}
+
 // newBuiltPage は parentID の子に「作成中」のページを作り、その番号で build した本文を書きます（2026-10-20 にまとめた）。
 //
 // 書類の番号（見積書番号・部材発注書番号 など）はページ番号なので、先にページを作ってから組みます。name は断り文に出す
 // 書類の名前（「納品書」なら「納品書ページを作れません」）。作れない・組めない・書けないときは、その理由の誤りを返します
-// （呼び手は 500 にする）。⚠ 組めなかったときも、作った「作成中」のページは残ります（まとめる前と同じ）。
-func newBuiltPage(parentID, author, name string, build func(pageID string) (string, error)) (string, error) {
+// （呼び手は createFailStatus で、書く権限が無ければ 403・ほかは 500 にする）。
+// ⚠ 組めなかったときも、作った「作成中」のページは残ります（まとめる前と同じ）。
+// ⚠ user が parentID へ書けなければ、何も作らずに errNoWrite を返します（2026-10-21）。
+func newBuiltPage(parentID string, user *auth.User, name string, build func(pageID string) (string, error)) (string, error) {
+	if err := requireWriteTo(user, parentID); err != nil {
+		return "", err
+	}
+	author := user.Username
 	newID, err := cms.CreateChildPage(parentID, author, "<h1>作成中</h1>")
 	if err != nil {
 		return "", errors.New(name + "ページを作れません: " + err.Error())
