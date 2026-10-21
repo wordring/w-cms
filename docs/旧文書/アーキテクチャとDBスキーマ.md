@@ -1,6 +1,17 @@
 # アーキテクチャとDBスキーマ仕様
 
-w-cms は、フロントエンドのエディタが生成するHTMLドキュメント（**マーカー付き標準HTML** ＝ `<table|dl|section data-type>`、または節の機能見出し・表の `<caption>` で形式を名乗る標準HTML。計算ビューは見出しだけで名乗る。項目の鍵は見出しの表示文字が運ぶ）と、バックエンドのGoが管理するSQLiteデータベースを連携させることで動作します。このドキュメントでは、そのバックエンド側の詳細な構造とデータの持ち方について解説します。
+w-cms は、エディタが作るHTMLの文書と、Go が管理する SQLite のデータベースを連携させて動きます。
+この文書は、そのバックエンド側の構造と、データの持ち方を説明します。
+
+文書は、**マーカー付き標準HTML** です。
+書いた当時は、`<table|dl|section data-type>`、または節の機能見出し・表の `<caption>` で形式を名乗る標準HTML でした。計算ビューは見出しだけで名乗る形でした。項目の鍵は、見出しの表示文字が運びます。
+（いまは、表は `<caption>` で種類を示し、鏡（計算ビュー）は `<section data-mirror="表示名">` の印で示します。節の見出しで示す形は、2026-09-28〜29 に廃止しました。古い本文の `data-type` 属性は、いまも読みます。）
+
+> **この文書は旧文書です。** 【要求】へ移し終えたら消す予定です（[開発方針.md](../開発方針.md) §2）。
+> いまの要求の正本は、[【要求】タグと表.md](../【要求】タグと表.md)（タグと表が DB に入る仕組み・索引の表）・
+> [【要求】運用.md](../【要求】運用.md)（正本はファイル・設定・管理）・[【要求】ページとエディタ.md](../【要求】ページとエディタ.md)（保存と同時編集）です。
+> 実装の今の姿は、各パッケージの `go doc` と [コードリファレンス/](../参照/コードリファレンス/README.md) にあります。
+> 本文には、書いた当時の形が多く残っています。とくに、編集ロックと全文の保存は、2026-10-12 にブロック単位の保護と `POST /api/sync` へ替わりました（§4 の注記）。
 
 > **カスタム要素（`<m-*>`）は全廃**（2026-08-20 に移行完了）。本文で扱える語彙は
 > [cms/htmldoc/sanitize.go](../../internal/cms/htmldoc/sanitize.go) の `structuralElements`＋
@@ -16,18 +27,18 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 システムの中核は、HTMLという「非構造化（あるいは半構造化）データ」を、データベース上の「構造化データ（インデックス）」に同期させる処理にあります。
 
 ### Goバックエンドの構成（`internal/`）
-*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。それ以外のテーブル（現在は `vocab_index` だけ）はプラグイン機構の `Schema()` が定義します。
-*   **`cms/editlock/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/editlock/handler.go`（4.3 参照）。
+*   **`database/sqlite.go`**: 物理フォルダの確保と、Pure Go実装のSQLiteの初期化を行います。接続はDSNの `_pragma` で開き、全接続に `busy_timeout`・`foreign_keys` を、DBに `journal_mode=WAL` を適用します（同時書き込みのロック衝突を緩和）。**コアテーブル（`pages` / `page_perms`）のみ**を作成します（`CreateCoreTables`）。それ以外のテーブル（現在は `vocab_index` だけ）はプラグイン機構の `Schema()` が定義します。（いまは `vocab_index` と `page_tags` の2つです。拡張の観察係が持つ表もあります。たとえば `ext/toho` の `material_dimensions` です。表の写し `data/tables.db` は、別のファイルです。）
+*   **`cms/editlock/lock.go`**: 同時編集の**悲観ロック**（ページ単位・競合トリガー方式）。プロセス内 mutex 付き map で保持する揮発的なランタイム状態で、**presence は SSE 接続で判定**し状態変化を push する（`StartLockReaper` の1秒ティッカーが猶予満了を評価）。HTTP/SSE エンドポイントは `cms/editlock/handler.go`（4.3 参照）。（いまは、画面はこのロックを取りません。2026-10-12 に編集モードをやめ、同じブロックを2人が書いたときに両方の版を並べる「ブロック単位の保護」へ替えました。ロックが効くのは、道具が `/api/lock` → `/api/save` で書くときだけです。正本は [【要求】ページとエディタ.md](../【要求】ページとエディタ.md) §3 の「道具のために残っているページ単位のロック」です。）
 *   **`cms/plugin.go`**: **プラグイン機構**の中核。`Plugin` インターフェース（`Name` / `Schema` / `Tables` の3メソッド＝テーブルの所有）と、本文を読む観察係 `Observer`（`Plugin`＋`Triggers` / `OnPageStart` / `OnElement`。旧 `Sync(tx, pageID, root)` は 2026-08-26 の回覧化で廃止）、レジストリ（`Register` / `Observers`）、スキーマ一括適用（`ApplySchema`）と**既存DBとのずれ検出**（`DriftedSchemaTables`。8.3）、ルート集約（`PluginRoutes`）、およびDOM操作ヘルパー（`Attr` / `WalkElements` / `TagValue` など）を提供します。走査そのものはコアの配送係 `cms/walk.go` が担います（[パーサとプラグイン.md](パーサとプラグイン.md)）。**語彙集約（必須メソッド `Tags` と `PluginTags`）は 2026-08-20 に撤去**——全プラグインが nil を返す状態になったため機構ごと外しました（下の「語彙の正本」参照）。
-*   **`cms/plugin_*.go`**: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）と、観察係なら引き金（`Triggers`）・洗い替え（`OnPageStart`）・要素ごとの読み取り（`OnElement`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](../参照/【ガイド】プラグイン開発.md) 参照）。**コアに計算プラグインはもう1つも残っていません**——③計算は拡張へ移りました（[ext/toho/materials.go](../../ext/toho/materials.go)。テーブルを持たず `vocab_index` を読む。D-1・§2）。
+*   **`cms/plugin_*.go`**（いまは、この名前のファイルはありません。コアの観察係は `vocab_index.go` の汎用索引だけで、ほかの登録は拡張の `ext/` にあります）: 1ファイル＝1**計算**ユースケース。各プラグインが自分のテーブル定義（`Schema`）・所有テーブル（`Tables`）と、観察係なら引き金（`Triggers`）・洗い替え（`OnPageStart`）・要素ごとの読み取り（`OnElement`）を持ち、`init()` で自己登録します。**本文の語彙は持ちません**——仕事は「マーカー付き標準HTMLを読んで自分のテーブルへ同期する」ことに絞られています（[【ガイド】プラグイン開発.md](../参照/【ガイド】プラグイン開発.md) 参照）。**コアに計算プラグインはもう1つも残っていません**——③計算は拡張へ移りました（[ext/toho/materials.go](../../ext/toho/materials.go)。テーブルを持たず `vocab_index` を読む。D-1・§2）。
 *   **`cms/htmldoc/sanitize.go`**: 本文サニタイザ（純粋なHTML部品。import は `x/net/html`＋標準のみ）で、**本文で扱えるHTMLの語彙の唯一の正本**（`structuralElements`＋`data-*` マーカー）。`cms/sanitize.go` は薄いラッパで、`htmldoc.New()` の結果をパッケージ変数として持ちます。依存は `cms → htmldoc` の一方向（**逆向きに import しないこと**）。
-*   **`cms/vocab.go` / `cms/vocab_index.go`**: 語彙モデル3層の①と②。`vocab.go` が形式定義の宣言テーブル（`vocabRegistry`。編集支援・型推論・正規化の語彙であって**安全性の門ではない**）、`vocab_index.go` が全 `table[data-type]` / `dl[data-type]` と、形式を持つ `section` の素の `dl`／`table`（`syncVocabSection`。機能見出し形・D-2）を縦持ちで索引する汎用同期（プラグイン機構へ相乗り）。読む側の入口は `cms/vocab_query.go`（`VocabTableRowsOf` / `VocabBlocksOf` / `PagesByTag`）。
+*   **`cms/vocab.go` / `cms/vocab_index.go`**: 語彙モデル3層の①と②。`vocab.go` が形式定義の宣言テーブル（`vocabRegistry`。編集支援・型推論・正規化の語彙であって**安全性の門ではない**）、`vocab_index.go` が全 `table[data-type]` / `dl[data-type]` と、形式を持つ `section` の素の `dl`／`table`（`syncVocabSection`。機能見出し形・D-2）を縦持ちで索引する汎用同期（プラグイン機構へ相乗り）。（いまは、素の `dl` は 2026-09-18 から索引に入りません。節の見出しで形式を示す読み方も 2026-09-29 に廃止したので、節が形式を持つのは `data-type` 属性があるときだけです。）読む側の入口は `cms/vocab_query.go`（`VocabTableRowsOf` / `VocabBlocksOf` / `PagesByTag`）。
 *   **`cms/view_render.go`**: 計算ビュー（表示専用）の**サーバー事前描画**。本文中の鏡の印（`<section data-mirror="表示名"></section>`）へ中身を埋めます（4.4 参照）。コードが印を書くときの口 `ViewMarkerHTML` と属性名の定数 `MirrorAttr` もここにあります。
 *   **`cms/parser.go`**: `x/net/html` を用いて、HTML本文（＝ページの内容）から**タイトルのみ**を抽出します（`PageTitle`。旧 `ParseCore`／`CorePage` は 2026-08-30 に関数1つへ畳んだ）。親ページID・作成/更新情報などの**属性はHTMLではなくサイドカーが正本**のため、ここでは扱いません。マーカー由来のデータの抽出は②汎用索引（`vocab_index.go`）が担当します。
 *   **`cms/sync.go`**: `SyncIndex` がコア（pages / page_perms）を同期した後、同じトランザクション内で登録済みの全観察係の `OnPageStart`（当該ページ分の `DELETE`）を呼び、配送係（`walkers.walkObserve`）が本文を1回歩いて引き金に当たった要素を `OnElement` へ届け（`INSERT`）、最後に `PageFinisher` を実装する観察係の `OnPageEnd` を呼びます。テンプレート領域（`IsTemplateArea`）のページでは要素イベントを1つも発火しないので、古い行は消え新しい行は入りません。`RebuildDatabase` は設定ファイルを読み直したうえで全テーブルをDROPしてからコア＋全プラグインのスキーマを作り直し、`data/master` 配下の全HTMLを再同期します（詳細は「8. データの正本性と全再構築」を参照）。
 
 > **削除は `data/trash` への移動**（物理削除ではない。取り消せることが要件——[【考察】通信記録処理.md](../考察/【考察】通信記録処理.md) §2.7④）。`RebuildDatabase` が走査するのは `data/master` だけなので、フォルダを移すだけで索引からも消えます。逆に、ゴミ箱から `data/master` へ戻して再構築すれば復元できます（復元UIは未実装）。
-*   **`cms/handler_*.go`**: コアのHTTPハンドラ。関心ごとに `handler_save.go`（保存）・`handler_view.go`（画面とページ本文API）・`handler_tree.go`（木構造：新規作成・子一覧・親の付け替え）・`handler_meta.go`（属性・語彙・DB再構築）・`handler_delete.go`（ゴミ箱への削除）・`handler_template.go`（テンプレート一覧）・`handler_version.go`（版の一覧・取得・リバート）・`handler_sitemap.go`（`sitemap.xml` / `robots.txt`）へ分けています。集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
+*   **`cms/handler_*.go`**: コアのHTTPハンドラ。関心ごとに `handler_save.go`（保存）・`handler_view.go`（画面とページ本文API）・`handler_tree.go`（木構造：新規作成・子一覧・親の付け替え）・`handler_meta.go`（属性・語彙・DB再構築）・`handler_delete.go`（ゴミ箱への削除）・`handler_template.go`（テンプレート一覧）・`handler_version.go`（版の一覧・取得・リバート）・`handler_sitemap.go`（`sitemap.xml` / `robots.txt`）へ分けています。（いまは、このほかに `handler_sync.go`（画面の保存 `POST /api/sync`・2026-10-12）・`handler_reorder.go`（子ページの並べ替え）・`handler_required_pages.go`（足りない置き場を作る）・`handler_gate.go`（入口の共通の確かめ）があります。）集計API（例: `/api/required-materials`）は各プラグインが `RouteProvider` として提供し、`main.go` が `cms.PluginRoutes()` 経由で登録します。
 *   **`cms/page/`**: ページの実体を扱うパッケージ。保存ディレクトリの決定（`GetPageDir`）、属性サイドカーの読み書き、Unix風の認可（`RequirePageWrite` 等）、`/data/` 配下の添付配信ゲート（`DataFileHandler`）。**ハンドラ層（`cms`）と編集ロック（`cms/editlock`）の両方がここに依存し、逆向きの依存はありません。**
 
 ---
@@ -42,6 +53,7 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 > 作成されます——現在それを持つのは汎用索引のプラグイン（`vocabIndexPlugin`）だけで、
 > **`vocab_index` と `page_tags` の2つ**を宣言します（`Tables()`）。ドメイン表は
 > D-1（§9）で全廃されました（③計算は `ext/toho/materials.go` へ移り、テーブルを持ちません）。
+> （いまは拡張にも、表を持つ観察係が1つあります。`ext/toho` の `dimensionPlugin` が、材料の寸法を分けて `material_dimensions` に入れます。2026-09-21 から。[dimension_index.go](../../ext/toho/dimension_index.go)）
 >
 > 汎用索引も例外ではなく、テーブル作成は
 > [cms/vocab_index.go](../../internal/cms/vocab_index.go) の `Schema()` が担います
@@ -153,6 +165,12 @@ w-cms は、フロントエンドのエディタが生成するHTMLドキュメ�
 
 ## 3. 部材手配計算APIの仕様
 
+> **この章は、書いた当時の形です。** いまの画面は `RequiredMaterials` を使いません。
+> 2026-09-21 から、手配の集計は加工製品ごとの `ProcurementByProduct`（[ext/toho/procurement.go](../../ext/toho/procurement.go)）です。
+> `GET /api/required-materials` は残っていますが、呼ぶのは E2E の `e2e/verify-template.js` だけです。
+> 品番で加工製品ページを探すときに見るタグも、`部品番号` 1つではなく、設定の照合タグ `product_code_tags`（図面番号・品番・部品番号）です（2026-09-27 から）。
+> 業務の正本は [【要求】案件.md](../拡張/東邦/【要求】案件.md) §4 と [【要求】部材発注フォルダ.md](../拡張/東邦/【要求】部材発注フォルダ.md) です。
+
 動的に必要な部材数を計算するロジックは `RequiredMaterials(user, pageID)`（`ext/toho/materials.go`）に
 あり、**2つの出口**から使われます（部品単位ではなく、対象ページ単位で計算します）。
 
@@ -201,6 +219,13 @@ DBスキーマは変わりません**。
 > 本章はそのうち保存・読込まわりの**動作の詳細**を扱う。
 
 エディタ（フロントエンド）とファイルシステム・DBを連携させるため、以下の2つのAPIを提供します。
+
+> **いまの保存は、この章と違います**（2026-10-12 から）。
+> 画面は編集ロックを取らず、保存は `POST /api/sync` の1本です。ブロックごとに、画面が知っている版と比べて合わせます。
+> 同じブロックを2人が同時に書くと、そのブロックの上に両方の版が並びます。
+> 保存するのは、ブロックを去るとき・タブを隠すとき・ページを去るときです（1.5秒の自動保存は、同じ日にやめました）。
+> 下の `POST /api/save`・`POST /api/save-block` は、いまは道具のために残っています（`/api/lock` → `/api/save` の順で使う）。
+> 正本は [【要求】ページとエディタ.md](../【要求】ページとエディタ.md) の「オートセーブ」と §3、決めたことは [【考察】編集モードの再考.md](../考察/【考察】編集モードの再考.md) §6 です。
 
 ### 4.1. Save API (`POST /api/save`)
 フロントエンドからのオートセーブを受け付け、物理ファイルの上書き保存とDB同期を行います。
@@ -276,6 +301,7 @@ DBスキーマは変わりません**。
 ### 4.2. Load API (`GET /api/load?id={page_id}`)
 ページ本文（生HTML）を返します。**初期表示には使いません**（4.2.1 のサーバー合成が担当）。
 用途は編集ロック起点の載せ替え2経路のみです。
+（いまは編集ロックの載せ替えがありません。閲覧モードの画面が、ほかの人の書き込みを読み直すときに `GET /api/load?view=1` を使います。`view=1` のときだけ、参照リンクとアンカーも合成して、開いたときと同じ描き方にします。これは 2026-10-07 からです。書ける形の画面の載せ替えは、`POST /api/sync` の応答で、変わったブロックだけを受け取ります。）
 
 *   **使われる場面**:
     1.  編集権を失ったときの再読込（`reloadContent()`）。編集モードへ入るときは
@@ -323,12 +349,18 @@ DBスキーマは変わりません**。
 
 ### 4.3. 編集ロック API（同時編集の競合対策）
 
+> **いまは、画面はこのロックを取りません**（2026-10-12 から）。同時編集は、ブロック単位の保護で扱います。
+> 同じブロックを2人が同時に書くと、そのブロックの上に両方の版が並び、人が選びます。
+> このロックが効くのは、道具が `/api/lock` → `/api/save` で書くときだけです。
+> 下の `RequireEditLock` の確かめは、いまも6か所に残っています。ただ、ブラウザがロックを握らないので、ほとんどの場合はそのまま通ります。
+> 正本は [【要求】ページとエディタ.md](../【要求】ページとエディタ.md) §3 です。
+
 同一ページの同時編集による lost update を防ぐ**ページ単位の悲観ロック**（競合トリガー方式・**SSEプッシュ**）。要点だけ記す——設計の全体像と決定の経緯は [【考察】同時編集の競合対策.md](../考察/【考察】同時編集の競合対策.md)、エンドポイントの一覧（`/api/lock`・`/api/lock-events`・`/api/unlock`・`/api/lock/force` と、同じロックで直列化される計10本）は [【一覧】API.md](../参照/【一覧】API.md) §3 が正本。
 
 *   **状態の置き場**: プロセス内 mutex 付き map の揮発的なランタイム状態（サイドカーにもDBにも永続化しない。再起動で消えるのは許容）。実装は `internal/cms/editlock/lock.go`（コア）と `editlock/handler.go`（HTTP/SSE）。
 *   **保持者の識別**はユーザーではなく**エディタ個体（トークン）**——同じユーザーの別タブも競合として検知する。**presence は SSE 接続の生存**で判定する（ポーリングしない）。
 *   **ロック応答に本文は同梱しない**——取得後にフロントが `GET /api/load` を読んで載せ替える（計算ビューのサーバー事前描画を通すため。2026-08-20 変更。4.2）。
-*   **直列化の共通ゲート `RequireEditLock`**: 本文保存以外の状態変更（権限・所有者・親付け替え・削除・リバート・添付追加）は `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `editlock.Locks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは `lockedFetch()` が同梱し、409 を `handleLockLost` に集約する。通信箱への到着だけは取り込み係へ回り本文を変えないのでロックを通さない——**コアは通信箱を名指しせず**、write を確かめたあと・ロックを確かめる前に `interceptUpload` が登録済みの受け口へ尋ねる（[upload_intercept.go](../../internal/cms/upload_intercept.go)・`upload_file.go`／`pdf_handler.go`。受け口を積むのは `ext/comm`・2026-09-15）。
+*   **直列化の共通ゲート `RequireEditLock`**: 本文保存以外の状態変更（権限・所有者・親付け替え・削除・リバート・添付追加）は `X-Lock-Token` ヘッダ（無ければ `token` クエリ）のトークンを `editlock.Locks.Validate` で検証し、**他者保持中／トークン失効なら 409**、ロックが無ければ許可（保存と同一規約）。フロントは `lockedFetch()` が同梱し、409 を `handleLockLost` に集約する。通信箱への到着だけは取り込み係へ回り本文を変えないのでロックを通さない——**コアは通信箱を名指しせず**、write を確かめたあと・ロックを確かめる前に `interceptUpload` が登録済みの受け口へ尋ねる（`internal/cms/upload_intercept.go`・`upload_file.go`／`pdf_handler.go`。受け口を積むのは `ext/comm`・2026-09-15）。（いまは `upload_intercept.go` がありません。2026-09-30 に、通信箱へファイルを落としても記録を作らない形にしました。`.eml` の取り込みは `POST /api/intake/eml` です。）
 *   **有効期間**: 無競合なら無期限。待機者の SSE 接続から **2分**の猶予で強制明け渡し（満了後は早い者勝ち）。保持者の SSE 切断で待機者がいれば即解放、待機者の切断で猶予キャンセル（取得直後〜SSE接続までは `holderConnectGrace`≈10秒で present 扱い）。猶予満了の評価は `StartLockReaper` の1秒ティッカー。
 
 ### 4.4. 計算ビューのサーバー事前描画（`RenderComputedViews`）
@@ -356,7 +388,7 @@ DBスキーマは変わりません**。
     ⚠ **名前の見えない属性の印 `<section data-type="child-list">` は
     2026-09-27 に廃止**——読まれず、鏡は描かれません（`vocabTypeOf` と `hasViewMarker` が計算ビューの
     `data-type` を見ない）。⚠ **同日午前だけ使った見出しの節 `<section><h2>子ページ一覧</h2></section>` は、
-    両方の環境を移し終えるまで読みます**（移し替えは `tools/migrate-view-markers.js`）。
+    両方の環境を移し終えるまで読みます**（移し替えは `tools/migrate-view-markers.js`）。（いまは読みません。鏡を見出しで示す形は 2026-09-28 に廃止しました。`vocabTypeOf` のコメントにあります。移し替えの道具も、いまはリポジトリにありません。）
 *   **埋める入口は2つ**: 画面の `RootHandler`（`GET /{id}`）と `LoadAPIHandler`（`GET /api/load`）。
     どちらも `RenderComputedViews(r, pageID, body)` を通します。画面側は**サニタイズの後**に
     呼びます（埋める中身は `class` を持つため、先に埋めるとサニタイザに落とされる）。
@@ -369,10 +401,10 @@ DBスキーマは変わりません**。
 *   **中身は閲覧者で変わる**: 子ページ一覧は `/api/children` と同じ絞り込み
     （`visibleChildren`。認証済みは read 権限・匿名は実効公開）。手配集計は
     `/api/required-materials` と同じ集計（`RequiredMaterials`）。**APIと画面で同じ関数**を
-    使うので結果が食い違いません。タイトル等の利用者入力は `html.EscapeString` を通します。
+    使うので結果が食い違いません。（いまは、画面の手配集計は加工製品ごとの `procurementViewHTML`〔`ProcurementByProduct`〕で、`RequiredMaterials` とは別です。§3 の注記。）タイトル等の利用者入力は `html.EscapeString` を通します。
 *   **更新は再読み込み**: 編集中に子ページを作る・発注を変えても表示は自動更新されません
     （描画ロジックを Go と JS の2箇所に持たないための割り切り）。挿入直後の印は空なので、
-    編集モードでだけ CSS `::before` が案内「🪞 表示名（保存して読み直すと、ここに鏡が出ます）」を
+    編集モード（いまは書ける形）でだけ CSS `::before` が案内「🪞 表示名（保存して読み直すと、ここに鏡が出ます）」を
     出します（[app.css](../../assets/app.css) の `section[data-mirror]:empty`・保存されない。
     属性の印に出していた同種の案内は 2026-09-27 午前に印とともに撤去し、午後に `data-mirror` 用に戻した）。
 *   **効果**: 閲覧はゼロJSで完結し、JSを実行しないクローラにも中身が読めます
@@ -442,7 +474,10 @@ DBスキーマは変わりません**。
 
 保存済みのPDFをGoogleのGemini API（`gemini-3.5-flash` モデル）に直接送信し、画像や複雑なレイアウトからでも完璧に明細を抽出して返すエンドポイントです。
 
-> **この口は 2026-09-16 に `ext/toho`（下請け業務）へ移りました**（[ext/toho/parse_pdf.go](../../ext/toho/parse_pdf.go)）。
+> **いまは、この API はありません。** 2026-10-01 に、押す道の無い `/api/parse-pdf` を、ボタンごと片付けました。
+> PDF を読むのは、添付の「🤖 解析」（`POST /api/analyze-attachment`・§5.3）です。下の記述は、当時の記録です。
+>
+> **この口は 2026-09-16 に `ext/toho`（下請け業務）へ移りました**（`ext/toho/parse_pdf.go`・いまはありません）。
 > ユーザー:「PDF解析は業務に密着せざるを得ないので、ext/toho ではないでしょうか？
 > さらに立ち入った解析をするようになると、弊社独自の拡張になるやもしれません」。
 > プロンプトが「このPDFは発注書または見積書です」と業務そのものを語る口が、
@@ -495,6 +530,9 @@ DBスキーマは変わりません**。
 ※旧バージョン（正規表現ベース）のテキスト抽出機能は廃止されました。
 
 ### 5.3. 添付の判定→受注ページ生成 API (`POST /api/analyze-attachment`)
+
+（いまは、「受注ページ」は「案件ページ」です。2026-10-19 に改名しました。本文を組む `buildOrderPageHTML` は `ext/toho/analyze_order_page.go` にあります。
+解析が作るものも増えています。客先の発注書のほか、図面から加工製品ページ、業者の返事から見積依頼の返事ページを作ります。正本は [【要求】案件.md](../拡張/東邦/【要求】案件.md) §1 と [【要求】部材見積依頼.md](../拡張/東邦/【要求】部材見積依頼.md) §3 です。）
 
 添付PDF（かつては ZIP 添付の中の PDF も——2026-09-17 に撤去。取り込みが ZIP を展開して中身を
 添付にするため、解析が ZIP を覗く必要が無くなった）を Gemini で「顧客が発行した発注書か」判定し、発注書なら
@@ -549,7 +587,7 @@ clickなどで解析が始まると良い」。正本は [【考察】通信記�
 フロントエンド（`assets/app.js` の `createSubpage`）で「＋ 子ページを作成」ボタンが押された際のフローは、`NewPageAPIHandler` がサーバー側で完結させます（DOM構造・イベント面の詳細は [エディタ仕様.md](エディタ仕様.md) 6.2参照）。
 1. フロントエンドは `/api/new-page?parent={現在のページID}` を **POST** で呼び出します（form の POST＋`target=_blank`。GET は 405——`CSRFProtect` が GET を検証しないため、GET のままだと本文に `<img src="/api/new-page?parent=…">` を書くだけで閲覧者にページを作らせられた）。`parent` は必須です（**親なし＝トップレベルのページが許されるのはトップページ（`000000`）のみ**で、それは初回起動時に自動生成済みのため、新規作成では `parent` を省略できません。admin でも例外はありません）。
 2. バックエンドは `reserveNewPageID()`（6.1）で `pages` への `INSERT` 自動採番により新しいページIDを原子的に確定します。
-3. 初期HTMLは「内容」のみ（`<h1>新しいページ</h1>` と `<p>`。子ページ一覧は左サイドパネルが担うため本文には埋め込まない——必要ならスラッシュメニューから `<section data-mirror="子ページ一覧"></section>` を後から挿せる）を生成して物理ファイルへ書き込みます。親ページID・作成者・作成日時などの属性は `EnsureSidecar()` でサイドカー `<id>.meta.json` に記録し（作成者＝所有者、作成日時・更新日時はサイドカーが刻む）、続けて `SyncIndex` でDBへ同期します（親・作成情報はサイドカーから読まれます）。テンプレート指定（`template` パラメータ）があれば、採番の**前**に検証して読んだ本文を `FreshenTemplateBody` で新規化したものを使います（[【考察】ページテンプレート.md](../考察/【考察】ページテンプレート.md) §4）。
+3. 初期HTMLは「内容」のみ（`<h1>新しいページ</h1>` と `<p>`。子ページ一覧は左サイドパネルが担うため本文には埋め込まない——必要ならスラッシュメニューから `<section data-mirror="子ページ一覧"></section>` を後から挿せる）を生成して物理ファイルへ書き込みます。親ページID・作成者・作成日時などの属性は `EnsureSidecar()` でサイドカー `<id>.meta.json` に記録し（作成者＝所有者、作成日時・更新日時はサイドカーが刻む）、続けて `SyncIndex` でDBへ同期します（親・作成情報はサイドカーから読まれます）。テンプレート指定（`template` パラメータ）があれば、採番の**前**に検証して読んだ本文を `FreshenTemplateBody` で新規化したものを使います（[【考察】ページテンプレート.md](../考察/【考察】ページテンプレート.md) §4）。（いまは新規化をしません。2026-09-25 から、テンプレートは純粋なコピーです。使う関数は `CopyTemplateBody` です。決めたことは【考察】ページテンプレート §9 にあります。[【要求】テンプレート.md](../【要求】テンプレート.md) は、まだ下書きだけです。）
 4. レスポンスとして `/{新しいID}?edit=true` へ302リダイレクトします。ID発番・ファイル生成・DB同期・リダイレクトが単一のリクエストでアトミックに完結するため、フロントエンドが後から個別に `saveToServer()` を呼ぶ必要はありません。
 
 ### 6.3. 過去に発生したトラブル（廃止済みテーブルで起きた事例・教訓のみ）
@@ -628,6 +666,13 @@ DBファイル自体は削除せず、接続を開いたまま全テーブルを
 ＋汎用索引1本（`vocab_index`）＋設定ファイル1本（`config/settings.json`）**——
 **ドメイン語彙を持つテーブルは1つも残りません**。§8.4 の「スキーマは速さでなく柔軟性のために
 設計する」を具体化したものです。**D-1・D-2・D-4・D-5 は実装済み**（D-1 は 2026-08-30〜31 の2段階で完了。D-2 は読み側・エディタの挿入とも 2026-08-31。D-4 は §9.3）。**D-3 も実装済み**——「認識できた形式は背景色で示す」は 2026-09-01、「正規化はPDF取り込み時に行う」は 2026-09-04（`cms.CanonicalForIngest`。和暦・ドット区切り・助数詞・万円/千円まで読む。正本は [【一覧】日付形式と数詞.md](../参照/【一覧】日付形式と数詞.md) §4）。
+
+> **下の決定ログは、当時の言葉のまま残します。** そのあと変わったものは次のとおりです。
+>
+> - D-1 で吸収した `page_tags` は、2026-09-13 にタグ専用の表として戻しました（§2）。いまの索引は `vocab_index` と `page_tags` の2つです。
+> - D-2 の機能見出しは、2026-09-29 に廃止しました。表は `<caption>` で、鏡は `data-mirror` の印で種類を示します（[【要求】タグと表.md](../【要求】タグと表.md) §13）。
+> - 表の写し `data/tables.db` が、2026-09-25 に加わりました（§8.1）。
+> - この表と §9.2 の表にある【要求】w-cmsとは の節番号（§2・§4.5・§7）は、当時の番号です。いまは §1「特定用途向けに拡張できる」にあたります。
 
 | 判断 | 決定 | 理由 |
 |---|---|---|
@@ -782,6 +827,14 @@ D-3 の「認識できた形式は背景色で示す」と同じ描画時の合�
 **正本はファイル。DBには置きません。** `cms.db` は全再構築で全テーブルが消える派生索引
 （§8.2）なので、設定をDBにだけ置くと設定も消えます。実装は
 [cms/settings.go](../../internal/cms/settings.go)。
+
+> **この節の住人の一覧は、書いた当時のものです。** 2026-10-21 に数えると、`Settings` 構造体のフィールドは10です
+> （`vocabulary`・`table_vocabulary`・`vocab_formats`・`max_upload_mib`・`attachment_extensions`・`extensions`・`char_folding`・`company_forms`・`attachment_readonly`・`autocomplete`）。
+> 変わった主なものは次のとおりです。
+>
+> - WebDAV は 2026-10-15 にやめました。`webdav_hidden` は消え、`webdav_readonly` は `attachment_readonly` になりました。
+> - 装置の段 `machine_stages` は 2026-09-29 になくなりました。加工製品の木は、2026-10-16 から `製造台帳／社名／（装置名称）` です。
+> - 正本は [【要求】運用.md](../【要求】運用.md) §3 です。
 
 **住人は7つ**（`Settings` 構造体のフィールド数。実際の値は
 [config/settings.json](../../config/settings.json)）——見出し語の辞書（`vocabulary`。1語につき
