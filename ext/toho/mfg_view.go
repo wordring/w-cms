@@ -340,3 +340,15 @@ func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "mfg.parts", pageID+" "+strconv.Itoa(len(lines))+"行")
 	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(lines), "skipped": skipped})
 }
+
+// unorderedCostValue は部材発注書へ送る単価です。
+//
+// ⚠ **参考単価が無いときは空を送ります。** `0` と書くと、紙の上では
+// **「0円で発注した」**という意味になります——「まだ分からない」と「ただ」は
+// 別のことで、⚠ **仕入先は紙に書いてあるとおりに読みます**。
+func unorderedCostValue(u UnorderedItem) string {
+	if u.Cost <= 0 {
+		return ""
+	}
+	return strconv.Itoa(u.Cost)
+}

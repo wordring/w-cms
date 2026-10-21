@@ -32,7 +32,6 @@ package toho
 import (
 	"errors"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -43,75 +42,6 @@ import (
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
-
-// NewOrderDraftAPIHandler は POST /api/our-order/draft です。
-//
-// 部材発注ページの本文へ**発注部材表を1つ**足します（入力: {page_id, lines}）。
-// （page_id は必要部材表のあるページ——2026-10-19 からはトップ直下の「製造」。製造ページの「部材を発注部材表へ」は
-// 別の口 `/api/mfg/parts`〔mfg_view.go〕です。）
-//
-// ⚠ **行が0でも作ります**（ユーザー:「必要なければ何もクリックしなくても」）——
-// **空の表から始められる**ことが、加工製品ページに無い部材（消耗品・治具）だけを
-// 買うときの道です。
-func NewOrderDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string         `json:"page_id"`
-		Lines  []ourOrderLine `json:"lines"`
-		// Into は足す先の発注部材表（**何枚目か**・1始まり）。空なら**新しく作ります**。
-		//
-		// ⚠ **既定が「新しく作る」なのは、黙って混ぜるほうが危ないから**です——
-		// 部材発注書は**1枚に1社**なので、別の業者の行が混ざると**紙にしてから気づきます**。
-		Into string `json:"into"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	// 本文へ表を足すので write と、誰も編集していないことが要ります（`handler_gate.go`）。
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
-		return
-	}
-
-	// ⚠ **発注部材表は何枚あってもかまいません**（2026-09-22 ユーザー訂正）。
-	//    **1枚＝1社**なので、**業者ごとに同時に進める**のが普通の形です——
-	//    ⚠ **最初の実装は2枚目を 409 で断っていました。実務が回りません。**
-	//
-	//    だから**新しく作るのか、どれかに足すのか**を人が選びます。
-	into := strings.TrimSpace(req.Into)
-	rows := 0
-	found := into == "" // 新規なら「行き先が見つかった」扱い
-	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		// ⚠ **臨時部材表から来た行は、臨時部材表から消します**（2026-09-25・移す）。
-		//    同じページにある分はここで一緒に消します（別の保存にすると、その間に
-		//    行が**2か所に在る**瞬間ができます）。行番号は消す前の本文のものなので、
-		//    **先に消してから**表を足します（発注部材表の位置は臨時部材表と無関係）。
-		if rows := tempRowsOn(req.Lines, pageID); len(rows) > 0 {
-			cur, _ = removeTempPartRows(cur, rows)
-		}
-		var out string
-		out, rows, found = putLinesIntoDraft(cur, into, req.Lines)
-		return out
-	}) {
-		return
-	}
-	if !found {
-		cms.JSONFail(w, http.StatusConflict,
-			"足す先の発注部材表が見つかりません（画面を読み直してください）")
-		return
-	}
-	auth.Audit(user.Username, "order-draft.create",
-		pageID+" "+strconv.Itoa(len(req.Lines))+"行 into="+into)
-	out := map[string]any{"success": true, "page_id": pageID, "rows": rows, "into": into}
-	// 別のページの臨時部材表から来た行（必要部材表を部材発注フォルダ以外に置いたとき。2026-10-19 からは「製造」以外）。
-	if note := takeTempRowsElsewhere(user, req.Lines, pageID); note != "" {
-		out["temp_note"] = note
-	}
-	cms.WriteJSON(w, out)
-}
 
 // appendToDraft は本文の `into` 枚目の発注部材表へ行を足します。
 //
@@ -381,48 +311,17 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
-	// ⚠ **弊社品番の無い行は臨時部材表へ戻します**（2026-09-25）——必要部材表の計算に
-	//    乗らないので、外すだけだと**消えます**。臨時部材表は部材発注フォルダにあります（2026-10-19 からはトップ直下の「製造」）。
-	//    同じページなら同じ保存で、別のページなら**先に臨時部材表へ足してから**外します
-	//    （途中で失敗したとき、行が消えるより2か所に残るほうへ倒す）。
-	boxID, hasBox := purchaseOrderBoxID()
-	sameBox := hasBox && samePage(boxID, pageID)
-	// copied は、別のページの臨時部材表へ先に写した行です（無ければ nil）。
-	var copied *ourOrderLine
-	if !sameBox {
-		if cur, err := cms.ReadPageBody(pageID); err == nil {
-			if _, ln, ok := takeDraftRow(cur, req.Table, req.Row); ok && needsTempParts(ln) {
-				if err := returnToTempParts(user, ln); err != nil {
-					cms.JSONFail(w, createFailStatus(err, http.StatusConflict), "臨時部材表へ戻せません: "+err.Error())
-					return
-				}
-				copied = &ln
-			}
-		}
-	}
-	// ⚠ **写した行を外すときは、写したときと同じ中身の行だけ**です（2026-10-20）——行は錠の外で読んだので、そのあいだに
-	//    ほかの人の保存で行がずれると、番号だけで外すと写した行とは別の行が消えていた。中身が違えば外さずに断ります。
-	done, moved := false, false
+	// （弊社品番の無い行を臨時部材表へ戻す道は、2026-10-21 に臨時部材表ごと外した——いまは外すだけ。
+	// 利用者:「臨時部材表と手配不要表もなくし、必要部材表もなくしてください。」「一度無くして、適切な形で作り直します」）
+	done := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, ln, ok := takeDraftRow(cur, req.Table, req.Row)
+		out, _, ok := takeDraftRow(cur, req.Table, req.Row)
 		if !ok {
 			return cur
 		}
-		if copied != nil && !reflect.DeepEqual(ln, *copied) {
-			moved = true
-			return cur
-		}
 		done = true
-		if sameBox && needsTempParts(ln) {
-			out, _ = addTempParts(out, []ourOrderLine{ln})
-		}
 		return out
 	}) {
-		return
-	}
-	if moved {
-		cms.JSONFail(w, http.StatusConflict,
-			"その行が変わっています（画面を読み直してください）。臨時部材表へは写しました——発注部材表に残った行と重なっていれば、片方を消してください")
 		return
 	}
 	if !done {
@@ -457,11 +356,3 @@ func takeDraftRow(body string, n, row int) (string, ourOrderLine, bool) {
 	return out, lines[0], true
 }
 
-// needsTempParts は「外した行を臨時部材表へ戻すべきか」を返します。
-//
-// ⚠ **弊社品番の無い行だけ**です。弊社品番のある行は必要部材表の**計算**に
-// 乗るので、外せば自動で戻ります（臨時部材表へも書くと**2か所に出ます**）。
-// ⚠ 空の取っ掛かりの行は戻しません。
-func needsTempParts(ln ourOrderLine) bool {
-	return strings.TrimSpace(ln.ProductID) == "" && !lineIsEmpty(ln)
-}

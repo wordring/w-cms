@@ -266,3 +266,20 @@ func TestNewDraftGoesAfterTheLastDraft(t *testing.T) {
 		t.Errorf("発注部材表が無いときは末尾に置くはず:\n%s", got)
 	}
 }
+
+// TestOrderCarriesItemIDAndSurface は、⚠ **品番と表面が発注部材表・部材発注書まで運ばれる**
+// ことを固定します——2026-09-25 まで運んでおらず、**塗装・鍍金の部材発注書で表面が
+// 落ちていました**。
+func TestOrderCarriesItemIDAndSurface(t *testing.T) {
+	ln := ourOrderLine{ItemID: "A100-B01-242", ItemName: "留めプレート", Color: "緑", Quantity: "20"}
+	for name, got := range map[string]string{
+		"発注部材表": orderDraftHTML([]ourOrderLine{ln}),
+		"部材発注書":   testOurOrder("000150", "ふじ鍍金", "2026-09-25", "", "", "", []ourOrderLine{ln}),
+	} {
+		for _, want := range []string{"<td>A100-B01-242</td>", "<td>緑</td>"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("⚠ %s に %s がありません:\n%s", name, want, got)
+			}
+		}
+	}
+}

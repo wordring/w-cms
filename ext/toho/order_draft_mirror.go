@@ -18,6 +18,7 @@ package toho
 import (
 	stdhtml "html"
 	"strconv"
+	"strings"
 
 	"golang.org/x/net/html"
 
@@ -61,7 +62,7 @@ func addDraftRowButtons(table *html.Node, pageID string, idx int) {
 			` data-draft-page="` + stdhtml.EscapeString(pageID) + `"` +
 			` data-draft-table="` + strconv.Itoa(idx) + `"` +
 			` data-draft-row="` + strconv.Itoa(row) + `"` +
-			` title="必要部材表へ戻します（この行を外します）">↩ 戻す</button>`
+			` title="この行を発注部材表から外します（製造ページの「📦 この製造の部材を発注部材表へ」で、また入れられます）">↩ 外す</button>`
 	})
 }
 
@@ -90,4 +91,46 @@ func draftFormHTML(user *auth.User, pageID string, idx int) string {
 		f("note", "備考", "定尺で結構です", "text") +
 		`<button type="button" class="matsearch-go" data-draft-go="1">部材発注書を作る</button>` +
 		`</div><div class="unorder-result" data-draft-result="1"></div>`
+}
+
+// signerFieldHTML は差出人を選ぶ欄です（2026-09-22）。
+//
+// ユーザー:「担当者によって変わるので**都度選ぶ**しかないのでは？」——だから
+// **毎回ここで選びます**。
+//
+// ⚠ **候補はサーバーが描きます**（`<select>`）。`推奨業者` のような打ちながらの候補に
+// しないのは、差出人が**打つものではなく選ぶもの**だからです——連絡帳に居る人しか
+// なれません。（2026-10-19 に推奨業者の候補の仕組みは外し、表のセルの候補はコアのオートコンプリートに統一しました——vocab.go。）
+//
+// ⚠ **初期値はログイン名と同じ題の人**（`DefaultSigner`）。当たらなければ**未選択**で、
+// 人が選びます。⚠ **勝手に先頭の人を選ばないこと**——**誰の名前で紙が出るか**は、
+// 黙って決めてよいことではありません。
+func signerFieldHTML(user *auth.User) string {
+	list := Signers(user)
+	def, hasDef := DefaultSigner(user, list)
+
+	var b strings.Builder
+	b.WriteString(`<label class="matsearch-field"><span>差出人</span>`)
+	b.WriteString(`<select class="matsearch-input" data-unorder="signer">`)
+	b.WriteString(`<option value="">（選んでください）</option>`)
+	for _, sg := range list {
+		sel := ""
+		if hasDef && sg.PageID == def.PageID {
+			sel = ` selected`
+		}
+		label := sg.Title
+		if sg.Org != "" {
+			label += "（" + sg.Org + "）"
+		}
+		b.WriteString(`<option value="` + page.FormatID(sg.PageID) + `"` + sel + `>` +
+			stdhtml.EscapeString(label) + `</option>`)
+	}
+	b.WriteString(`</select></label>`)
+	if len(list) == 0 {
+		// ⚠ **0件も黙りません**——「誰も居ない」と「連絡帳を作っていない」は別です。
+		b.WriteString(`<p class="unorder-help">⚠ 差出人の候補がありません` +
+			`（連絡帳の担当者ページに「<strong>` + OrderSignatureHeading +
+			`</strong>」の見出しで署名を書くと、ここに出ます）。</p>`)
+	}
+	return b.String()
 }

@@ -281,11 +281,3 @@ func orderRowKey(def cms.VocabDef, row cms.VocabRow) string {
 	}
 	return ""
 }
-
-// orderLineAttrs は、発注の表の列の名前と、画面の行が運ぶ属性（`data-*`）・`ourOrderLine` の
-// JSON の名前の対応です（必要部材表の行 → 画面 → 発注部材表）。
-var orderLineAttrs = []struct{ Label, Attr string }{
-	{"種類", "kind"}, {"番号", "no"}, {"品番", "itemid"}, {"品名", "itemname"}, {"加工内容", "work"},
-	{"材質", "material"}, {"形状", "shape"}, {"寸法", "size"}, {"表面", "color"},
-	{"仕様", "spec"}, {"支給", "supplied"},
-}

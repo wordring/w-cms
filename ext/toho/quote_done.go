@@ -75,7 +75,7 @@ func (q quotedLookup) of(orderPage, itemNo, itemName string) int {
 
 // quoteCaseNote は見積の依頼の案件ページの足元の文です——全部の行が出した見積書に載っていれば「完了」。
 func quoteCaseNote(ctx *cms.MirrorContext, el *html.Node) string {
-	const base = "見積の依頼の案件です（まだ注文ではないので、受注残高・赤字の知らせ・必要部材表には入りません）"
+	const base = "見積の依頼の案件です（まだ注文ではないので、受注残高・赤字の知らせには入りません）"
 	rows := rowsOf(el)
 	if len(rows) < 2 {
 		return base

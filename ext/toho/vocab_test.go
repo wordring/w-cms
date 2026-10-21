@@ -66,15 +66,11 @@ func TestBusinessVocabIsRegistered(t *testing.T) {
 		//    宣言は残します——既にある本文の節が「知らない形式」にならないように。
 		OrderLinkType,
 		// ⚠ **ビューの器**（2026-09-21）——材質・形状・寸法で材料を探す欄。
-		MaterialSearchViewType, UnorderedViewType,
+		MaterialSearchViewType,
 		// **未発注の部材発注書**（2026-09-24）——DBから数える一覧。
 		UnsentOrdersViewType,
-		// **臨時部材表**（2026-09-25）——加工製品ページに無い材料を人が書く表。
-		TempPartsType,
 		// **加工製品の一覧**（2026-09-29）——社名の下の「加工製品」の箱で、区分と装置名称で絞る鏡。
 		ProductListViewType,
-		// **手配不要表**（2026-10-01）——必要部材表で「不要にする」を押した部材の記録（skip.go）。
-		SkipType,
 		// **見積明細表**（2026-10-01）——顧客へ出す見積書の明細（estimate_doc.go）。
 		EstimateItemsType,
 		// **見積表**（2026-10-15）——見積計算表の結果（ロット・表面処理・原価・利益率・単価）の1行（estimate.go）。

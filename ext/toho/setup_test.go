@@ -80,7 +80,7 @@ func seedBoxTemplates(t *testing.T) {
 	write("000902", "000901", "<h1>"+CustomerBoxTitle+"</h1>"+cms.ViewMarkerHTML(UnlinkedViewType))
 	write("000903", "000901", "<h1>"+OrderBoxTitle+"</h1>"+cms.ViewMarkerHTML(BacklogViewType))
 	write("000904", "000901", "<h1>"+PurchaseOrderBoxTitle+"</h1>"+
-		cms.ViewMarkerHTML(UnorderedViewType)+cms.ViewMarkerHTML(UnsentOrdersViewType))
+		cms.ViewMarkerHTML(UnsentOrdersViewType))
 	write("000905", "000900", "<h1>通信</h1>")
 	write("000906", "000905", "<h1>"+contacts.ContactsBoxTitle+"</h1>"+cms.ViewMarkerHTML(contacts.ContactsViewType))
 	// 機械が作るページのテンプレート（2026-09-27〜・templates_test.go）。

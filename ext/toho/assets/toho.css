@@ -465,34 +465,12 @@
 /* ⚠ **未手配を黙らない**（空欄だと「発注済み」に見える）。色だけに頼らず `⚠` も付く。 */
 #w-editor-content .proc-none { color: var(--text-muted, #6b7280); font-style: italic; }
 
-/* ── 未手配の一覧（2026-09-21）──────────────────────────────────────────
-   ⚠ **受注を横断する表**です。ここから部材発注書を1枚作ります。 */
+/* ── 未手配の一覧（2026-09-21。必要部材表は 2026-10-21 に外した——残るのは差出人の欄の断り〔unorder-help〕と、部材見積依頼の欄の答え〔unorder-result〕）── */
 #w-editor-content .unorder-help {
     margin: 0 0 8px;
     color: var(--text-muted, #6b7280);
     font-size: 0.9em;
 }
-#w-editor-content .unorder-pick { width: 2.5em; text-align: center; }
-/* **必要部材表のセルは折り返さない**（2026-09-28 利用者:「必要部材表（受注横断）のセルの文字が折り返され、
-   行の高さが大きくなりすぎます」）。表を本文の欄（666px まで）に収めようと列が細らされ、客先・装置・品名が
-   4〜7行に折れて1行が 121px になっていた（実測）。折り返さず、**表の中で横へスクロール**する——本文の表と
-   同じ形（`#w-editor-content table` の overflow-x・自由文の列だけ折る決まり）。この表に自由文の列は無い。 */
-#w-editor-content table.unorder-table th,
-#w-editor-content table.unorder-table td { white-space: nowrap; }
-#w-editor-content .unorder-cost { white-space: nowrap; }
-/* 材料以外の行の種類の札（外注加工・購入部品・支給部品・2026-09-28）。1枚の部材発注書は1社なので、
-   選ぶときに種類が要る。色だけに頼らず、札の文字で種類を言う。 */
-#w-editor-content .unorder-kind {
-    display: inline-block;
-    padding: 0 4px;
-    margin-right: 2px;
-    border: 1px solid #94a3b8;
-    border-radius: 3px;
-    font-size: 0.8em;
-    color: #475569;
-    white-space: nowrap;
-}
-#w-editor-content .unorder-form { margin-top: 10px; }
 #w-editor-content .unorder-result { margin-top: 8px; font-size: 0.95em; }
 
 /* ── 部材発注書を送る・発注済みの印（2026-09-22）──────────────────────────────

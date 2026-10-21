@@ -69,9 +69,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 	if err != nil {
 		prices = map[string]materialPrice{}
 	}
-	// ⚠ **臨時部材表の行も並べます**（2026-09-25・temp_parts.go）——計算の鎖に乗らない
-	//    材料は、人が書いたこの表が「必要」の記録です。⚠ **受注明細表が0件でも出します**。
-	temp := TempPartItems(user, prices)
+	// （臨時部材表の行を並べる道〔2026-09-25〕は、2026-10-21 に臨時部材表ごと外した。）
 	canView := viewCheck(user)
 	// 手配の対象になる受注の行（受注残表と同じ線引き——移行中・完了・出し終えた行は入れない・2026-10-01 に出し終えた行も）。
 	open, err := openOrderRows(db, canView)
@@ -79,7 +77,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 		return nil, err
 	}
 	if len(open) == 0 {
-		return temp, nil
+		return nil, nil
 	}
 	// ⚠ **手当て（部材発注明細表・発注部材表・手配不要表）は受注ごとに当てます**（2026-10-01・procure_ledger.go）。それまでは
 	//    加工製品ごとの通算を、どの受注の行からも引いていました（2つの受注が同時に残ると両方0に見える・納め終えた
@@ -107,9 +105,7 @@ func UnorderedItems(user *auth.User) ([]UnorderedItem, error) {
 		}
 	}
 	sortUnordered(out)
-	// ⚠ **臨時部材は先頭にまとめます**——納期も装置も無いので、並べ替えに混ぜると
-	//    計算の行の間に散ります。書いた順のまま出します。
-	return append(temp, out...), nil
+	return out, nil
 }
 
 // fillUnorderedMaterial は材料の3つ組と参考単価を埋めます。

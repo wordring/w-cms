@@ -69,14 +69,7 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "戻す行がありません（画面を読み直してください）")
 		return
 	}
-	returned := false
-	if needsTempParts(first) {
-		if err := returnToTempParts(user, first); err != nil {
-			cms.JSONFail(w, createFailStatus(err, http.StatusConflict), "臨時部材表へ戻せません: "+err.Error())
-			return
-		}
-		returned = true
-	}
+	// （弊社品番の無い行を臨時部材表へ戻す道は、2026-10-21 に臨時部材表ごと外した——いまは外すだけ。）
 	// ⚠ **外すのは、読んだときと同じ中身の行だけ**です（2026-10-20）——行は錠の外で読んで臨時部材表へ写したので、そのあいだに
 	//    ほかの人の保存で行がずれると、番号だけで外すと**写した行とは別の行が消えていた**。中身が違えば外さずに断ります。
 	removed, moved := false, false
@@ -98,19 +91,11 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if moved || !removed {
-		msg := "戻す行が変わっています（画面を読み直してください）"
-		if returned {
-			msg += "。臨時部材表へは写しました——部材発注書に残った行と重なっていれば、片方を消してください"
-		}
-		cms.JSONFail(w, http.StatusConflict, msg)
+		cms.JSONFail(w, http.StatusConflict, "戻す行が変わっています（画面を読み直してください）")
 		return
 	}
-	to := "必要部材表"
-	if returned {
-		to = "臨時部材表"
-	}
-	auth.Audit(user.Username, "our-order.return-row", pageID+" 行"+strconv.Itoa(req.Row)+" → "+to)
-	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "to": to})
+	auth.Audit(user.Username, "our-order.return-row", pageID+" 行"+strconv.Itoa(req.Row))
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID})
 }
 
 // removeOrderRow は最初の部材発注明細表から、`row` 番目のデータ行を取り除きます。

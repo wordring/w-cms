@@ -304,9 +304,10 @@ func TestCancelAsksOnlyAfterThePaperWentOut(t *testing.T) {
 			t.Errorf("状態 %q の確認が %v です（%v を期待）:\n%s",
 				tc.status, asks, tc.asks, got)
 		}
-		// ⚠ **取り消したらどうなるかを書くこと**——「必要部材表へは戻りません」が
+		// ⚠ **取り消したらどうなるかを書くこと**——「また出てきません」が
 		//    無いと、09-22 までの意味（戻る）で読まれ、**誰も買わないまま納期が来ます**。
-		if tc.asks && !strings.Contains(got, "必要部材表へは戻りません") {
+		// （2026-10-21 に必要部材表を外したので、文は「製造ページの「📦 …」にも、また出てきません」になった。）
+		if tc.asks && !strings.Contains(got, "また出てきません") {
 			t.Errorf("状態 %q の確認に、戻り先が書かれていません:\n%s", tc.status, got)
 		}
 	}

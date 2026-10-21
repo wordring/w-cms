@@ -108,35 +108,6 @@ func TestLedgerSurplusBecomesStock(t *testing.T) {
 	}
 }
 
-// TestSkipRemovesFromRequiredList は「不要にする」が受注ごとに引き、「↩ 戻す」で戻ることを固定します（2026-10-01
-// 利用者:「必要なくなった時に消すのはどうしましょう？」）。
-func TestSkipRemovesFromRequiredList(t *testing.T) {
-	seedLedger(t)
-	addPage(t, 60, 0, "部材発注", "root", "302", true)
-	body := `<h1>部材発注</h1><section data-type="` + UnorderedViewType + `"></section>`
-	out, n := addSkipRows(body, []ourOrderLine{{ProductID: "000041", ForOrder: "000042", Kind: "材料",
-		Material: "鉄", Shape: "板", Size: "t3.2*100*200", Quantity: "6"}}, "在庫あり", "2026-10-01")
-	if n != 1 || !strings.Contains(out, "<caption>手配不要表</caption>") || !strings.Contains(out, "<td>在庫あり</td>") {
-		t.Fatalf("手配不要表に入っていません:\n%s", out)
-	}
-	if strings.Index(out, "<caption>手配不要表</caption>") < strings.Index(out, UnorderedViewType) {
-		t.Errorf("手配不要表は必要部材表の下のはず:\n%s", out)
-	}
-	syncBody(t, 60, out)
-	got := remainingByOrder(t)
-	if got[40] != 4 || got[42] != 0 {
-		t.Errorf("受注Bの6枚だけが不要になるはず: %v（A 4・B 0）", got)
-	}
-	back, ln, ok := takeSkipRow(out, 1)
-	if !ok || ln.ForOrder != "000042" || strings.Contains(back, "手配不要") {
-		t.Fatalf("戻すと行（と空になった表）が消えるはず: %v %#v\n%s", ok, ln, back)
-	}
-	syncBody(t, 60, back)
-	if got := remainingByOrder(t); got[42] != 6 {
-		t.Errorf("戻すと受注Bの6枚が必要部材表へ戻るはず: %v", got)
-	}
-}
-
 // TestAppendToDraftFollowsHeader は、列を足す前に作った発注部材表へ足しても、見出しと値がずれないことを固定します。
 func TestAppendToDraftFollowsHeader(t *testing.T) {
 	old := `<section><table><caption>発注部材表</caption><tbody>` +

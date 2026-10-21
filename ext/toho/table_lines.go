@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
 )
 
@@ -177,4 +178,67 @@ func emptyRowNode(vocabType string) *html.Node {
 		tr.AppendChild(&html.Node{Type: html.ElementNode, Data: "td"})
 	}
 	return tr
+}
+
+// tempPartsColumns は臨時部材表の列です——発注部材表の列から `弊社品番` と `状態` を除いたもの
+// （`案件`〔2026-10-01 に足した列・2026-10-19 までの名前は `受注`〕と、下の種類・番号などの5つも除きます）。
+//
+// ⚠ `弊社品番` を除くのは、弊社品番のある部材は**計算の側**（必要部材表）に出るから。
+// ⚠ `状態` を除くのは、この表に**在ること自体**が「まだ発注していない」だから。
+// ⚠ **同じ列の宣言から作ります**——写して書くと、列を足した日に移すときに落ちます。
+func tempPartsColumns() []cms.VocabColumn {
+	var out []cms.VocabColumn
+	for _, c := range orderItemColumns() {
+		if c.Field == "our-item-id" || c.Field == "status" || c.Field == "for-order" {
+			continue
+		}
+		// ⚠ 種類・番号・加工内容・仕様・支給（2026-09-28 に発注の列へ足した）も入れません——
+		//    臨時部材表は加工製品ページに無い材料・消耗品を人が書く表で、種類の運び方の外です。
+		switch c.Field {
+		case "kind", "no", "work", "spec", "supplied":
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func emptyRowHTML(vocabType string) string {
+	return `<tr>` + strings.Repeat(`<td></td>`, len(columnsOf(vocabType))) + `</tr>`
+}
+
+// lineOfRow は表の1行を、見出しの表示文字で読んで1行ぶんにします。
+//
+// ⚠ **鍵は見出しの表示文字**です（列の並びは表ごとに違ってよい）。
+// 部材発注書・発注部材表・臨時部材表のどれから読んでも同じ形になります。
+func lineOfRow(head, tr *html.Node) ourOrderLine {
+	idx := headerIndex(head)
+	cells := cellTexts(tr)
+	at := func(label string) string {
+		if i, ok := idx[label]; ok && i < len(cells) {
+			return strings.TrimSpace(cells[i])
+		}
+		return ""
+	}
+	return ourOrderLine{
+		ProductID: at("弊社品番"), ForOrder: at("案件"), ItemID: at("品番"), ItemName: at("品名"),
+		Material: at("材質"), Shape: at("形状"), Size: at("寸法"), Color: at("表面"),
+		Quantity: at("数量"), Unit: at("単位"), Cost: at("単価"), Note: at("備考"),
+		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・部材見積依頼の表は部材発注明細表と同じ列——行を移しても落とさない）。
+		Kind: at("種類"), No: at("番号"), Work: at("加工内容"), Spec: at("仕様"), Supplied: at("支給"),
+		// ロットは見積依頼必要部材表・見積依頼部材表だけの列（2026-10-14・rfq.go）——列の無い表では空。
+		Lot: at("ロット"),
+	}
+}
+
+// lineIsEmpty は「書き足す取っ掛かりとして置いた空の行」かを返します。
+func lineIsEmpty(ln ourOrderLine) bool {
+	return strings.TrimSpace(ln.ItemID+ln.ItemName+ln.Material+ln.Shape+ln.Size+
+		ln.Color+ln.Quantity+ln.Unit+ln.Cost+ln.Note+ln.Kind+ln.No+ln.Work+ln.Spec+ln.Supplied) == ""
+}
+
+// tempPart は臨時部材表の1行です。Row は**見出しを除いた何行目か**（1始まり）。
+type tempPart struct {
+	Row  int
+	Line ourOrderLine
 }

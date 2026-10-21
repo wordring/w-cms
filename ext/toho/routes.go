@@ -18,8 +18,6 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/estimate/rows", Handler: EstimateRowsAPIHandler},
 		{Pattern: "/api/estimate/put-cost", Handler: EstimatePutCostAPIHandler},
 		// 必要部材表から「不要にする」・戻す（2026-10-01・skip.go）。
-		{Pattern: "/api/our-order/skip", Handler: SkipAPIHandler},
-		{Pattern: "/api/our-order/skip/remove", Handler: SkipRemoveAPIHandler},
 		// 顧客へ出す見積書（2026-10-01・estimate_doc.go・estimate_pdf.go）。
 		{Pattern: "/api/estimate/add", Handler: AddToEstimateAPIHandler},
 		{Pattern: "/api/estimate-pdf", Handler: EstimatePDFAPIHandler},
@@ -121,7 +119,6 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 未発注の表（いまの名前は必要部材表）から**発注部材表**を1つ作る口（2026-09-22・order_draft.go）。
 		// ⚠ **行が0でも作ります**——空の表から始められることが、加工製品ページに
 		// 無い部材（消耗品・治具）だけを買うときの道です。
-		{Pattern: "/api/our-order/draft", Handler: NewOrderDraftAPIHandler},
 		// 発注部材表から1行を外す口（2026-09-22・order_draft.go）。
 		// ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、
 		// ここから消せば**自動的に一覧へ戻ってきます**。

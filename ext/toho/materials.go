@@ -42,8 +42,6 @@ func init() {
 	cms.RegisterView("required-materials", procurementViewHTML)
 	// 材料を探す欄（2026-09-21・view_material_search.go）。
 	cms.RegisterView(MaterialSearchViewType, materialSearchViewHTML)
-	// 未手配の一覧（2026-09-21・view_unordered.go）。ここから部材発注書を1枚作ります。
-	cms.RegisterView(UnorderedViewType, unorderedViewHTML)
 	// 未発注の部材発注書（2026-09-24・unsent_orders.go）。DBから毎回数える鏡。
 	cms.RegisterView(UnsentOrdersViewType, unsentOrdersViewHTML)
 	// 加工製品の一覧（2026-09-29・product_list.go）。区分と装置名称で絞って見る鏡。

@@ -1397,35 +1397,6 @@ delegateClick([
 //
 // ⚠ **選ばれていない行は何もしません**——既定は未選択で、押した行だけが入ります。
 (function wireUnorderedOrder() {
-    // ⚠ **送る値は属性から採ります**（表示は丸めることがあるので本文から読まない）。
-    function lineOf(tr) {
-        const d = tr.dataset;
-        // ⚠ **臨時部材表から来た行**（2026-09-25）は、品番・表面・単位・備考と
-        //    「何行目から来たか」も運びます——発注部材表へ入れたら、サーバーが
-        //    臨時部材表からその行を消します（移す・引き算しない）。
-        return {
-            product_id: d.product || '',
-            // どの受注のための部材か（2026-10-01・受注ごとに数える——サーバーの procure_ledger.go）。
-            for_order: d.forOrder || '',
-            item_id: d.itemid || '',
-            material: d.material || '',
-            shape: d.shape || '',
-            size: d.size || '',
-            color: d.color || '',
-            item_name: d.itemname || '',
-            // 種類・番号・加工内容・仕様・支給（2026-09-28・部材の種類ごとの運び方——サーバーの
-            // orderLineAttrs が属性に載せる）。
-            kind: d.kind || '', no: d.no || '', work: d.work || '',
-            spec: d.spec || '', supplied: d.supplied || '',
-            quantity: d.qty || '',
-            unit: d.unit || '',
-            cost: d.cost && d.cost !== '0' ? d.cost : '',
-            note: d.note || '',
-            temp_page: d.tempPage || '',
-            temp_row: Number(d.tempRow || 0),
-        };
-    }
-
     // 発注部材表の足元から**部材発注書ページ**を作る（2026-09-22・ユーザーの流れ）。
     //
     // ⚠ **ボタンは発注部材表の下に居ます**——「発注部材表から発注書を作るので
@@ -1530,116 +1501,12 @@ delegateClick([
         return out;
     }
 
-    // pickedOf は押したボタンの欄（.unorder-form）・答えを出す欄・未発注の表でチェックした行を返します（欄が無ければ null）。
-    // 「発注部材表を作る」と「不要にする」が写していた（2026-10-09 に寄せた）。
-    function pickedOf(btn) {
-        const form = btn.closest('.unorder-form');
-        const root = form && form.parentElement;
-        const box = root ? root.querySelector('[data-unorder-result]') : null;
-        const table = root ? root.querySelector('.unorder-table') : null;
-        if (!form || !box) return null;
-        const lines = table
-            ? [...table.querySelectorAll('.unorder-check')].filter((c) => c.checked).map((c) => lineOf(c.closest('tr')))
-            : [];
-        return { form, box, lines };
-    }
-
-    // 未発注の表から**発注部材表**を1つ作る（2026-09-22・ユーザーの流れ）。
-    //
-    // ⚠ **何も選ばなくても押せます**——空の表から始める道（加工製品ページに無い
-    //    部材だけを買うとき）。だから `create` と違って「0件なら断る」をしません。
-    async function draft(btn) {
-        const at = pickedOf(btn);
-        if (!at) return;
-        const { form, box, lines: picked } = at;
-        btn.disabled = true;
-        sayIn(box,'発注部材表を作っています…');
-        try {
-            const r = await postJSON('/api/our-order/draft', {
-                // ⚠ **ページIDはサーバーが描いた属性から**——この配線は別の
-                //    スコープに居るので `currentPageId` が見えません。
-                page_id: form.getAttribute('data-unorder-page') || '',
-                lines: picked,
-                // ⚠ **入れる先**（空なら新しく作る）。2026-09-22 に**これを
-                //    送り忘れていて**、「1枚目へ足す」を選んでも**別の表が
-                //    できていました**（ユーザー報告）——サーバーは正しく、
-                //    **画面が値を送っていなかった**のです。
-                into: valueIn(form, '[data-unorder="into"]'),
-            });
-            if (!r.ok) {
-                sayIn(box,'⚠ ' + (r.data.message || '発注部材表を作れませんでした'), 'proc-why-ng');
-                return;
-            }
-            const d = r.data;
-            // ⚠ **本文が変わったのでページを読み直します**——表は本文の一部なので、
-            //    画面で組み立てず、サーバーが描いたものを受け取ります。
-            sayIn(box,(d.into ? d.into + '枚目へ ' : '新しい表に ') + d.rows + '行入れました。読み直しています…');
-            location.reload();
-        } catch (err) {
-            sayIn(box,'⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    // ⚠ **document へ委譲します**——ビューはサーバーが描き直すので、要素ごとに
-    //    配線すると描き直しのたびに切れます。
-    // 必要部材表から「不要にする」（2026-10-01・サーバーの skip.go）——選んだ行を手配不要表へ。理由は任意。
-    async function skip(btn) {
-        const at = pickedOf(btn);
-        if (!at) return;
-        const { form, box, lines: picked } = at;
-        if (picked.length === 0) {
-            sayIn(box, '⚠ 不要にする行を選んでください', 'proc-why-ng');
-            return;
-        }
-        btn.disabled = true;
-        sayIn(box, '手配不要表へ移しています…');
-        try {
-            const r = await postJSON('/api/our-order/skip', {
-                page_id: form.getAttribute('data-unorder-page') || '',
-                lines: picked,
-                reason: valueIn(form, '[data-unorder="reason"]'),
-            });
-            if (!r.ok) {
-                sayIn(box, '⚠ ' + (r.data.message || '不要にできませんでした'), 'proc-why-ng');
-                return;
-            }
-            sayIn(box, r.data.rows + '行を手配不要表へ移しました。読み直しています…');
-            location.reload();
-        } catch (err) {
-            sayIn(box, '⚠ 通信に失敗しました: ' + err, 'proc-why-ng');
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    // 手配不要表から1行を外す＝必要部材表へ戻す（2026-10-01）。
-    async function removeSkipRow(btn) {
-        btn.disabled = true;
-        try {
-            const r = await postJSON('/api/our-order/skip/remove', {
-                page_id: btn.getAttribute('data-skip-page') || '',
-                row: Number(btn.getAttribute('data-skip-row') || 0),
-            });
-            if (!r.ok) {
-                alert('⚠ ' + (r.data.message || '戻せませんでした'));
-                btn.disabled = false;
-                return;
-            }
-            location.reload();
-        } catch (err) {
-            alert('⚠ 通信に失敗しました: ' + err);
-            btn.disabled = false;
-        }
-    }
+    // （必要部材表の「発注部材表を作る」「不要にする」と、手配不要表の「↩ 戻す」は、2026-10-21 に表ごと外した——
+    //  利用者:「臨時部材表と手配不要表もなくし、必要部材表もなくしてください。」「一度無くして、適切な形で作り直します」）
 
     delegateClick([
         ['[data-draft-go]', create],
-        ['[data-unorder-draft]', draft],
-        ['[data-unorder-skip]', skip],
         ['.draft-row-back', removeDraftRow],
-        ['.skip-row-back', removeSkipRow],
     ]);
 
     // 発注部材表から1行を外す＝**未手配の一覧へ戻す**（2026-09-22）。
