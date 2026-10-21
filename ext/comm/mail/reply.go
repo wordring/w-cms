@@ -25,8 +25,10 @@ import (
 	"html"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/ext/comm"
@@ -107,6 +109,12 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 2026-10-12 から「エディタで開いている」は、道具〔`/api/lock`〕が握っているときだけ）。
 	draftID := ""
 	if raw := strings.TrimSpace(sreq.DraftID); raw != "" {
+		// 同じ下書きを送るのは1つずつ——2つのタブ・送り直しで同時に送ると、どちらも下書きを確かめて2通出た
+		// （2026-10-22 の見直し）。あとの1つは、送って片付いた下書きを「下書きではありません」と断られる。
+		if norm, okN := page.NormalizeID(raw); okN {
+			unlock := lockDraftSend(norm)
+			defer unlock()
+		}
 		if draftID, ok = checkDraftWritable(w, r, user, raw); !ok {
 			return
 		}
@@ -374,5 +382,41 @@ func sourceMessageID(sourcePageID string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(cms.PageTagValue(database.DB, idInt, comm.MessageIDTag))
+	// <…> の1つだけを使う（タグは人が直せる値——改行や余計な文字をヘッダーへ持ち込まない・2026-10-22 の見直し）。
+	return messageIDTokenRe.FindString(cms.PageTagValue(database.DB, idInt, comm.MessageIDTag))
+}
+
+// messageIDTokenRe は Message-ID の形（<…>・空白を含まない）です。
+var messageIDTokenRe = regexp.MustCompile(`<[^<>\s]+>`)
+
+// draftSendLocks は、下書きごとの送信を1つずつ通すロックです（使っている人がいなくなったら捨てる）。
+var draftSendLocks = struct {
+	sync.Mutex
+	m map[string]*draftSendLock
+}{m: map[string]*draftSendLock{}}
+
+type draftSendLock struct {
+	sync.Mutex
+	users int
+}
+
+// lockDraftSend は下書き id のロックを取り、外す関数を返します。
+func lockDraftSend(id string) func() {
+	draftSendLocks.Lock()
+	l := draftSendLocks.m[id]
+	if l == nil {
+		l = &draftSendLock{}
+		draftSendLocks.m[id] = l
+	}
+	l.users++
+	draftSendLocks.Unlock()
+	l.Lock()
+	return func() {
+		l.Unlock()
+		draftSendLocks.Lock()
+		if l.users--; l.users == 0 {
+			delete(draftSendLocks.m, id)
+		}
+		draftSendLocks.Unlock()
+	}
 }

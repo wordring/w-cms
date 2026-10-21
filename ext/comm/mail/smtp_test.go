@@ -132,3 +132,28 @@ func TestXOAUTH2InitialResponse(t *testing.T) {
 		t.Errorf("初手が違います: %q", string(init))
 	}
 }
+
+// 名前の付いた宛先・改行の混じった値・長い件名でも、ヘッダーが崩れない（2026-10-22 の見直し）。
+func TestBuildMIMEHeadersAreSafe(t *testing.T) {
+	msg := comm.OutgoingMail{To: []string{"山田 <a@b.jp>", "c@d.jp"}, Subject: strings.Repeat("長い件名", 80),
+		InReplyTo: "<x@y>\r\nBcc: evil@z", BodyText: "本文"}
+	raw, err := buildMIME("me@example.com", "<m@example.com>", msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := string(raw)
+	if i := strings.Index(head, "\r\n\r\n"); i >= 0 {
+		head = head[:i]
+	}
+	for _, line := range strings.Split(head, "\r\n") {
+		if len(line) > 998 {
+			t.Errorf("⚠ 998 バイトを超える行: %d", len(line))
+		}
+		if strings.HasPrefix(line, "Bcc:") {
+			t.Errorf("⚠ 値の改行でヘッダーが足されました: %q", line)
+		}
+	}
+	if !strings.Contains(head, "=?utf-8?") || !strings.Contains(head, "<a@b.jp>") || strings.Contains(head, "山田") {
+		t.Errorf("⚠ 名前の付いた宛先の書き方が違います:\n%s", head)
+	}
+}

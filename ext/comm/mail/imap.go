@@ -42,6 +42,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"w-cms/internal/cms"
 )
 
 // envIMAPHost は接続先の差し替え口です（`ホスト:ポート`）。
@@ -261,6 +263,11 @@ func (s *imapSession) fetch(cmd string, onItem func(attrs string, body []byte)) 
 		if !ok {
 			continue // リテラルを伴わない情報行（* OK …）は読み飛ばす
 		}
+		// 名乗る大きさのままメモリを取らない（壊れた・悪いサーバーが {9999999999} と書けば、プロセスが落ちる・2026-10-22 の見直し）。
+		// 上限を超えたら、そこで読むのをやめて誤りにする（流れの続きは読み直せないので、呼ぶ側は接続を捨てる）。
+		if limit := maxIMAPLiteral(); n > limit {
+			return fmt.Errorf("メールが大きすぎます（%d MiB・%d MiB まで）", n>>20, limit>>20)
+		}
 		body := make([]byte, n)
 		if _, err := io.ReadFull(s.r, body); err != nil {
 			return err
@@ -315,4 +322,13 @@ func imapDate(iso string) string {
 		}
 	}
 	return ""
+}
+
+// maxIMAPLiteral は、1通のメールとして受け取る大きさの上限です（添付の上限の2倍——base64 で膨らむぶん。少なくとも 64 MiB）。
+func maxIMAPLiteral() int {
+	n := int(cms.MaxUploadBytes()) * 2
+	if n < 64<<20 {
+		n = 64 << 20
+	}
+	return n
 }

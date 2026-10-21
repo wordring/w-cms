@@ -34,6 +34,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net"
+	netmail "net/mail"
 	"net/smtp"
 	"net/textproto"
 	"os"
@@ -119,7 +120,14 @@ func sendViaSMTP(ctx context.Context, username string, msg comm.OutgoingMail) (s
 		return "", err
 	}
 
-	rcpt := append(append([]string{}, msg.To...), msg.Cc...)
+	// 封筒（RCPT TO）には素のアドレスだけ——「名前 <addr>」をそのまま渡すと、送る欄が受け付ける形なのに必ず断られた
+	// （2026-10-22 の見直し）。
+	var rcpt []string
+	for _, a := range append(append([]string{}, msg.To...), msg.Cc...) {
+		if v := comm.BareAddress(a); v != "" {
+			rcpt = append(rcpt, v)
+		}
+	}
 	if err := smtpDeliver(ctx, from, token, rcpt, body); err != nil {
 		return "", err
 	}
@@ -172,15 +180,19 @@ func smtpDeliver(ctx context.Context, from, token string, rcpt []string, body []
 // buildMIME は1通ぶんのMIMEを組みます。
 func buildMIME(from, messageID string, msg comm.OutgoingMail) ([]byte, error) {
 	var b strings.Builder
+	// 値の中の改行は空白にする（タグから来る値——返信元の Message-ID など——に改行が混じると、ヘッダーを足せた・
+	// 本文が早く始まった）。長い行は空白のところで折る（1行 998 バイトを超えると、断る・壊す MTA がある・2026-10-22 の見直し）。
 	head := func(name, value string) {
-		if strings.TrimSpace(value) == "" {
+		value = strings.Join(strings.Fields(strings.NewReplacer("\r", " ", "\n", " ").Replace(value)), " ")
+		if value == "" {
 			return
 		}
-		b.WriteString(name + ": " + value + "\r\n")
+		b.WriteString(foldHeader(name + ": " + value))
+		b.WriteString("\r\n")
 	}
 	head("From", from)
-	head("To", strings.Join(msg.To, ", "))
-	head("Cc", strings.Join(msg.Cc, ", "))
+	head("To", strings.Join(headerAddrs(msg.To), ", "))
+	head("Cc", strings.Join(headerAddrs(msg.Cc), ", "))
 	// 件名は RFC 2047 の符号化語（和文をそのまま置くと経路で壊れます）。
 	head("Subject", mime.BEncoding.Encode("UTF-8", msg.Subject))
 	head("Date", time.Now().Format(time.RFC1123Z))
@@ -265,4 +277,52 @@ func newMessageID(from string) string {
 	var buf [16]byte
 	rand.Read(buf[:])
 	return fmt.Sprintf("<%d.%s@%s>", time.Now().UnixNano(), hex.EncodeToString(buf[:]), domain)
+}
+
+// foldHeader は、ヘッダーの1行を 76 字ほどで、空白のところで折ります（続きの行は空白で始める——RFC 5322 の折り返し）。
+// 空白の無い長い塊（符号化語の1つ）は、そのまま置く（符号化語は 75 字までなので、ふつうは収まる）。
+func foldHeader(line string) string {
+	const width = 76
+	if len(line) <= width {
+		return line
+	}
+	var b strings.Builder
+	cur := 0
+	for i, w := range strings.Split(line, " ") {
+		if i > 0 {
+			if cur+1+len(w) > width {
+				b.WriteString("\r\n ")
+				cur = 1
+			} else {
+				b.WriteString(" ")
+				cur++
+			}
+		}
+		b.WriteString(w)
+		cur += len(w)
+	}
+	return b.String()
+}
+
+// headerAddrs は、To・Cc に書く形のアドレスです——名前の付いたもの（「山田 <a@b.jp>」）は、名前を符号化語にする
+// （和文の名前を 8 ビットのまま書いていた・2026-10-22 の見直し）。読めないものは素のアドレスにする。
+func headerAddrs(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, a := range in {
+		if strings.TrimSpace(a) == "" {
+			continue
+		}
+		if ad, err := netmail.ParseAddress(a); err == nil {
+			if ad.Name == "" {
+				out = append(out, ad.Address)
+			} else {
+				out = append(out, ad.String())
+			}
+			continue
+		}
+		if v := comm.BareAddress(a); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

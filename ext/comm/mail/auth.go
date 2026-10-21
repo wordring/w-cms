@@ -27,6 +27,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -189,14 +190,20 @@ func PollForToken(ctx context.Context, username string, dc *DeviceCode) (string,
 			if err != nil {
 				return "", err
 			}
-			if err := saveToken(username, storedToken{
+			// 取り直し（accessTokenFor）と重ならないように、同じロックの中で書く。
+			unlock := lockUserToken(username)
+			err = saveToken(username, storedToken{
 				RefreshToken: t.RefreshToken,
 				Address:      addr,
 				UpdatedAt:    time.Now().In(time.Local).Format(time.RFC3339),
-			}); err != nil {
+			})
+			if err == nil {
+				cacheAccess(username, t.AccessToken, t.ExpiresIn)
+			}
+			unlock()
+			if err != nil {
 				return "", err
 			}
-			cacheAccess(username, t.AccessToken, t.ExpiresIn)
 			return addr, nil
 		case "authorization_pending":
 			continue // まだサインインしていない
@@ -257,6 +264,14 @@ func accessTokenFor(ctx context.Context, username string, scopes []string) (stri
 	if err != nil {
 		return "", err
 	}
+	// 同じ利用者の取り直しは1つずつ。待っているあいだにほかが取っていれば、それを使う。
+	unlock := lockUserToken(username)
+	defer unlock()
+	if v, ok := accessCache.Load(key); ok {
+		if c := v.(cachedAccess); time.Now().Before(c.expiresAt) {
+			return c.token, nil
+		}
+	}
 	st, ok := loadToken(username)
 	if !ok {
 		return "", errNotSignedIn
@@ -297,13 +312,32 @@ func accessTokenFor(ctx context.Context, username string, scopes []string) (stri
 	}
 	// **リフレッシュトークンは共有**です（リソースに依らない）。新しいものが
 	// 返ってきたら差し替えます。
+	// ⚠ 書き戻すのは、取り直しに使ったトークンがまだ保管にあるときだけ——取り直しのあいだに人がサインインし直していたら
+	// （別の口座でも）、古い口座のトークンと宛先で上書きして、サインインが黙って戻っていた（2026-10-22 の見直し）。
+	cur, still := loadToken(username)
+	if !still || cur.RefreshToken != st.RefreshToken {
+		return t.AccessToken, nil // 使う分は返すが、覚えない（次はサインインし直した口座で取る）
+	}
 	if t.RefreshToken != "" && t.RefreshToken != st.RefreshToken {
-		st.RefreshToken = t.RefreshToken
-		st.UpdatedAt = time.Now().In(time.Local).Format(time.RFC3339)
-		saveToken(username, st)
+		cur.RefreshToken = t.RefreshToken
+		cur.UpdatedAt = time.Now().In(time.Local).Format(time.RFC3339)
+		if err := saveToken(username, cur); err != nil {
+			log.Printf("メールのトークンを保管できません（%s）: %v", username, err)
+		}
 	}
 	cacheAccessKey(key, t.AccessToken, t.ExpiresIn)
 	return t.AccessToken, nil
+}
+
+// userTokenLocks は、利用者ごとのトークンの取り直し・サインインを1つずつ通すロックです。
+var userTokenLocks sync.Map
+
+// lockUserToken は利用者 username のロックを取り、外す関数を返します（利用者の数だけしか増えない）。
+func lockUserToken(username string) func() {
+	v, _ := userTokenLocks.LoadOrStore(username, &sync.Mutex{})
+	m := v.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
 }
 
 // firstLine は Microsoft の長い説明から先頭の1行だけを取ります
