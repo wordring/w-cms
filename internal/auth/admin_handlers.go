@@ -112,6 +112,17 @@ func UserDisableAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// 自分と、最後の有効な管理者は無効にしない（2026-10-02 に a を無効にして、だれも入れなくなった・2026-10-22 の見直し）。
+	if req.Disabled {
+		if req.Username == actor {
+			http.Error(w, "自分を無効にはできません（ほかの管理者で入って、無効にしてください）", http.StatusConflict)
+			return
+		}
+		if lastEnabledAdmin(req.Username) {
+			http.Error(w, "最後の有効な管理者は無効にできません（先にほかの管理者を作ってください）", http.StatusConflict)
+			return
+		}
+	}
 	if err := SetDisabled(req.Username, req.Disabled); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

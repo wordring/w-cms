@@ -1279,6 +1279,9 @@ delegateClick([
             value: valueOf(el),
         };
         if (body.old === body.value) return; // 変わっていないなら送らない
+        // 送っている最中は送らない——欄を離れると change と blur の両方が来て、同じ値を2回送り、あとの1回が「ほかの人が
+        // 変えました」と断られて、保存できたのに元へ戻して見せていた（2026-10-22 の見直し）。
+        if (el.disabled) return;
         el.classList.remove('order-edit-ng', 'order-edit-ok');
         el.disabled = true;
         try {

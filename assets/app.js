@@ -8841,12 +8841,19 @@ async function postJSON(url, body) {
     if (window.wcmsFlushSave && (await window.wcmsFlushSave()) === false) {
         return { ok: false, status: 0, data: { message: '書きかけを保存できなかったので、送っていません（保存の印・決めていない2つの版を確かめて、もう一度押してください）' } };
     }
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify(body),
-    });
+    // 通信の失敗でも例外を投げずに {ok:false} を返す（.catch の無い呼び手で、ボタンが押せないまま・知らせも無いまま
+    // 止まっていた・2026-10-22 の見直し）。
+    let res;
+    try {
+        res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+    } catch (e) {
+        return { ok: false, status: 0, data: { message: '通信に失敗しました: ' + e } };
+    }
     const data = await res.json().catch(() => ({}));
     return { ok: res.ok && !!data.success, status: res.status, data };
 }

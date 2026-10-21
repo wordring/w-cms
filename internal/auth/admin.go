@@ -180,3 +180,18 @@ func RecentAudit(limit int) ([]AuditEntry, error) {
 	}
 	return entries, nil
 }
+
+// lastEnabledAdmin は、username が有効な管理者のうち最後の1人かを返します（読めなければ「最後」とみなして守る）。
+func lastEnabledAdmin(username string) bool {
+	var isAdmin, disabled, others int
+	if err := database.AuthDB.QueryRow(`SELECT is_admin, disabled FROM users WHERE username = ?`, username).Scan(&isAdmin, &disabled); err != nil {
+		return false // いない人（無効にする口が「いません」と答える）
+	}
+	if isAdmin == 0 || disabled != 0 {
+		return false
+	}
+	if err := database.AuthDB.QueryRow(`SELECT COUNT(*) FROM users WHERE is_admin = 1 AND disabled = 0 AND username <> ?`, username).Scan(&others); err != nil {
+		return true
+	}
+	return others == 0
+}

@@ -175,6 +175,10 @@ func RequiredPageStatuses() []RequiredPageStatus {
 // ⚠ **テンプレートの無い置き場は作りません**（2026-09-27）——ほかの置き場は作り続け、最後に
 // 「テンプレートが無くて作れなかったもの」をまとめて返します（`ErrNoBoxTemplate` を包む）。
 func CreateMissingRequiredPages(owner string) (created []RequiredPageStatus, err error) {
+	// 1つずつ通す（二度押しで、同じ題の置き場がトップ直下に2つでき、新しい方へ書いたものが見えなくなった・2026-10-22 の見直し）。
+	// トップ直下の箱を作るほかの道（EnsureTopLevelBox）と同じロック。
+	folderMu.Lock()
+	defer folderMu.Unlock()
 	var noTemplate []string
 	for _, st := range RequiredPageStatuses() {
 		if st.Exists {

@@ -22,7 +22,9 @@ function setHidden(el, hidden) {
 async function init() {
   let me;
   try { const r = await fetch('/api/me'); if (r.ok) me = await r.json(); } catch (e) {}
-  if (!me) { window.location.href = '/login'; return; }
+  // 未ログインでも /api/me は 200（authenticated:false）を返す——それも見る（2026-10-22 の見直し）。
+  if (!me || me.authenticated === false) { window.location.href = '/login'; return; }
+  window.wcmsAdminMe = me.username;
   document.getElementById('whoami').textContent = 'ログイン中: ' + me.username + (me.is_admin ? '（管理者）' : '');
   if (!me.is_admin) { setHidden(document.getElementById('denied'), false); return; }
   setHidden(document.getElementById('console'), false);
@@ -125,11 +127,18 @@ async function createUser() {
 async function resetPw(username) {
   const pw = prompt(`${username} の新しいパスワード:`);
   if (!pw) return;
+  // 打ち間違いで、だれも知らないパスワードにならないように、もう一度打ってもらう（2026-10-22 の見直し）。
+  if (prompt(`確かめのため、もう一度打ってください（${username}）:`) !== pw) { alert('2回の入力が違うので、変えていません'); return; }
   const res = await api('POST', '/api/admin/users/password', { username, password: pw });
   alert(res.ok ? '再設定しました' : '失敗: ' + await res.text());
 }
 
 async function toggleDisable(username, disabled) {
+  // 無効にする前に確かめる。自分は無効にしない（2026-10-02 に a を無効にして、だれも入れなくなった・2026-10-22 の見直し）。
+  if (disabled) {
+    if (username === window.wcmsAdminMe) { alert('自分を無効にはできません（ほかの管理者で入って、無効にしてください）'); return; }
+    if (!confirm(`${username} を無効にします（ログインできなくなります）。よろしいですか？`)) return;
+  }
   const res = await api('POST', '/api/admin/users/disable', { username, disabled });
   if (res.ok) loadUsers(); else alert('失敗: ' + await res.text());
 }
@@ -273,7 +282,14 @@ function renderPageTemplates(list) {
   });
 }
 
+let reqPagesBusy = false, rebuildBusy = false; // 二度押しで2回走らせない（2026-10-22 の見直し）
 async function createRequiredPages() {
+  if (reqPagesBusy) return;
+  if (!confirm('足りない置き場を、テンプレートから作ります。よろしいですか？')) return;
+  reqPagesBusy = true;
+  try { await createRequiredPagesNow(); } finally { reqPagesBusy = false; }
+}
+async function createRequiredPagesNow() {
   const el = document.getElementById('reqpages-msg');
   el.style.color = '#64748b'; el.textContent = '作成中...';
   const res = await api('POST', '/api/admin/pages');
@@ -292,7 +308,12 @@ async function createRequiredPages() {
 }
 
 async function rebuildDatabase() {
+  if (rebuildBusy) return;
   if (!confirm('HTMLファイルからデータベースのインデックスを完全に再構築します。よろしいですか？')) return;
+  rebuildBusy = true;
+  try { await rebuildDatabaseNow(); } finally { rebuildBusy = false; }
+}
+async function rebuildDatabaseNow() {
   const el = document.getElementById('rebuild-msg');
   el.style.color = '#64748b'; el.textContent = '再構築中...';
   const res = await api('POST', '/api/rebuild-db');
