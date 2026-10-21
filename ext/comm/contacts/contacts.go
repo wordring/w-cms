@@ -461,6 +461,9 @@ func partnerHits(user *auth.User, addr string) (exact, byDomain []partnerMatch) 
 		if !ok || title == "" {
 			continue // 連絡帳の外のページに書かれた値は連絡先ではない
 		}
+		if user != nil && !page.CanView(user, companyID) {
+			continue // 組織のページが見えなければ、その題も出さない（2026-10-22 の見直し）
+		}
 		switch h.Name {
 		case EmailTag:
 			if normalizeEmail(h.Value) == mail {
@@ -539,12 +542,25 @@ func addContactTags(pageID, author, tagName string, values []string) (int, error
 		added = 0 // 呼び直されても数が増えないように
 		var pairs strings.Builder
 		dt := `<dt>` + stdhtml.EscapeString(tagName) + `</dt>`
+		// ⚠ **同じ組で並んでいるかを見ます**——値だけで探すと、`メールアドレス` の
+		// 値と `ドメイン` の値がたまたま同じ文字のときに取りこぼします。
+		// 字下げのある形・大小の違いも同じとみなす（同じアドレスが2つ書かれていた・2026-10-22 の見直し）。
+		same := func(v string) string {
+			if tagName == EmailTag {
+				return normalizeEmail(v)
+			}
+			return strings.ToLower(cms.NormalizeText(v))
+		}
+		have := map[string]bool{}
+		for _, m := range tagPairRe(tagName).FindAllStringSubmatch(current, -1) {
+			have[same(tagText(m[1]))] = true
+		}
 		for _, a := range values {
 			dd := `<dd>` + stdhtml.EscapeString(a) + `</dd>`
-			// ⚠ **同じ組で並んでいるかを見ます**——値だけで探すと、`メールアドレス` の
-			// 値と `ドメイン` の値がたまたま同じ文字のときに取りこぼします。
-			if strings.Contains(current, dt+dd) {
+			if k := same(a); have[k] {
 				continue
+			} else {
+				have[k] = true
 			}
 			pairs.WriteString(dt + dd)
 			added++

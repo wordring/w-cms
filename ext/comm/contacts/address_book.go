@@ -73,7 +73,11 @@ func AddressBook(user *auth.User) []AddressEntry {
 		case me.parent == boxInt: // 組織のページ自身のアドレス
 			e = AddressEntry{Org: me.title, Address: addr}
 		case me.parent != 0 && info(me.parent).parent == boxInt: // 組織の下の人
-			e = AddressEntry{Name: me.title, Org: info(me.parent).title, Address: addr}
+			org := info(me.parent).title
+			if !page.CanView(user, me.parent) {
+				org = "" // 組織のページが見えなければ、その題は出さない（2026-10-22 の見直し）
+			}
+			e = AddressEntry{Name: me.title, Org: org, Address: addr}
 		default:
 			continue // 連絡帳の外
 		}

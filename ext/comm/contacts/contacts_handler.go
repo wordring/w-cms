@@ -17,10 +17,12 @@ package contacts
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	stdhtml "html"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -74,6 +76,10 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 	person := cms.NormalizeNameForIngest(req.PersonName)
 	doms := normalizeDomains(req.Domains)
 
+	// 登録は1つずつ通す——2つ同時に（二度押し・2人）登録すると、どちらも「まだ無い」と見て、同じ名前の組織・人の
+	// ページが2枚できた（2026-10-22 の見直し）。登録はまれなので、全部で1つのロックにする。
+	registerMu.Lock()
+	defer registerMu.Unlock()
 	target, orgTitle, ok := resolveContactOrg(w, user, req.PageID, req.Name)
 	if !ok {
 		return
@@ -125,7 +131,9 @@ func RegisterContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		dest, destTitle = pid, orgTitle+"／"+person
-		if !cms.RefuseTemplateArea(w, dest) || !editlock.RefuseWhileEditing(w, dest) {
+		// 既にある人のページへ書くときも、そのページに書けるかを見る（組織に書ければ、読めない人のページへも書き込めた・
+		// 2026-10-22 の見直し）。
+		if !page.RequirePageWrite(w, r, dest) || !cms.RefuseTemplateArea(w, dest) || !editlock.RefuseWhileEditing(w, dest) {
 			return
 		}
 		added, err = AddContactAddresses(dest, user.Username, addrs)
@@ -193,10 +201,20 @@ func resolveContactOrg(w http.ResponseWriter, user *auth.User, pageID, name stri
 		}
 		if id, ok := PartnerByTitle(user, orgTitle); ok {
 			target = id
+		} else if box, found := contactsBoxInt(); found {
+			// 同じ名前の組織が既にある（見えない・2枚あって決められない）のに作ると、同じ名前のページが増え続けた
+			// （2026-10-22 の見直し）。作らずに、一覧から選んでもらう。
+			if _, exists := cms.FindChildByTitle(page.FormatID(box), orgTitle); exists {
+				cms.JSONFail(w, http.StatusConflict, "「"+orgTitle+"」という組織のページが既にあります（見えないか、同じ名前が2つあります）。候補から選ぶか、管理者に聞いてください")
+				return "", "", false
+			}
 		}
 	}
 	return target, orgTitle, true
 }
+
+// registerMu は連絡先の登録（探して無ければ作る）を1つずつ通すロックです。
+var registerMu sync.Mutex
 
 // requireContactTemplates は、作る前に要るテンプレートがあるかを確かめます（無ければ断りを書いて false）。
 func requireContactTemplates(w http.ResponseWriter, target, person string) bool {
@@ -352,10 +370,11 @@ func UnfileContactAPIHandler(w http.ResponseWriter, r *http.Request) {
 // ⚠ **詰めた形（`</dt><dd>`）しか探しません**——エディタで一度保存したページは `</dt>` と `<dd>` のあいだが
 // 字下げされるので当たらず、「そのアドレスはこのページにありません」と断ります（2026-10-20 に見つけた・直していない）。
 func removeEmailTag(body, addr string, removed *int) string {
-	re := regexp.MustCompile(`<dt>` + regexp.QuoteMeta(EmailTag) + `</dt><dd>([^<]*)</dd>`)
+	// 字下げのある形も拾う（エディタで保存した本文で「そのアドレスはこのページにありません」になっていた・2026-10-22 の見直し）。
+	re := tagPairRe(EmailTag)
 	out := re.ReplaceAllStringFunc(body, func(m string) string {
 		sub := re.FindStringSubmatch(m)
-		if sub != nil && normalizeEmail(sub[1]) == addr {
+		if sub != nil && normalizeEmail(tagText(sub[1])) == addr {
 			*removed++
 			return ""
 		}
@@ -389,4 +408,15 @@ func domainsForAudit(domains []string) string {
 		return ""
 	}
 	return " domains=" + strings.Join(domains, ",")
+}
+
+// tagPairRe は、本文の名前 name のタグの組（dt と dd）です——字下げ・属性があっても拾う（エディタで保存した本文は字下げされる）。
+// 中の文字は1つ目の組（タグを足した印・<br> などを含むことがある）。
+func tagPairRe(name string) *regexp.Regexp {
+	return regexp.MustCompile(`(?s)<dt[^>]*>\s*` + regexp.QuoteMeta(stdhtml.EscapeString(name)) + `\s*</dt>\s*<dd[^>]*>(.*?)</dd>`)
+}
+
+// tagText は dd の中身を文字にします（タグを落として、実体参照を戻す）。
+func tagText(inner string) string {
+	return strings.TrimSpace(stdhtml.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(inner, "")))
 }

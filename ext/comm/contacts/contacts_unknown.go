@@ -224,8 +224,8 @@ func ownersByDomainTag(user *auth.User) map[string][]PartnerRef {
 			continue
 		}
 		companyID, title, ok := PartnerOfPage(h.PageID)
-		if !ok || title == "" {
-			continue
+		if !ok || title == "" || !page.CanView(user, companyID) {
+			continue // 組織のページが見えなければ、その題も出さない（2026-10-22 の見直し）
 		}
 		id := page.FormatID(companyID)
 		dup := false
@@ -269,8 +269,8 @@ func partnersByDomain(user *auth.User) map[string]partnerRefByDomain {
 			continue
 		}
 		companyID, title, ok := PartnerOfPage(h.PageID)
-		if !ok || title == "" {
-			continue
+		if !ok || title == "" || !page.CanView(user, companyID) {
+			continue // 組織のページが見えなければ、その題も出さない（2026-10-22 の見直し）
 		}
 		d := domainOf(v)
 		if d == "" {
@@ -373,7 +373,14 @@ func displayNameOf(raw string) string {
 //
 // **大小の違いだけ**を畳みます。アドレスのローカル部は理屈のうえでは大小を
 // 区別しますが、実際に区別する事業者はまずおらず、**同じ人を2人に見せる**ほうが害が大きい。
+//
+// 「名前 <addr>」の形なら <…> の中を取り、全角（＠・英数字）は半角へ揃える——タグの値は人が書くので両方が来る。
+// 揃えないと、未登録に残り続け・リンクにならず・登録し直すと同じアドレスが2つ書かれた（2026-10-22 の見直し）。
 func normalizeEmail(v string) string {
+	v = cms.NormalizeText(v)
+	if i, j := strings.LastIndex(v, "<"), strings.LastIndex(v, ">"); i >= 0 && j > i {
+		v = v[i+1 : j]
+	}
 	s := strings.ToLower(strings.Trim(strings.TrimSpace(v), `<>'"`))
 	if !strings.Contains(s, "@") || strings.HasPrefix(s, "@") || strings.HasSuffix(s, "@") {
 		return ""

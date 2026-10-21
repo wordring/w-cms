@@ -273,10 +273,12 @@ func linkEmailDD(dd *html.Node) bool {
 		dd.AppendChild(&html.Node{Type: html.TextNode, Data: before})
 	}
 	a := &html.Node{Type: html.ElementNode, Data: "a"}
+	// 相手のページの題は出さない（title 属性に入れていた）——解決係は見ている人を知らないので、読めない人や匿名の公開
+	// ページの閲覧者にも題が見えた（2026-10-22 の見直し）。リンクの先は、踏んだ先の関門が見せ分ける。
+	_ = title
 	a.Attr = []html.Attribute{
 		{Key: "href", Val: "/" + pageID},
 		{Key: "class", Val: "ref-link"},
-		{Key: "title", Val: title + " のページへ"},
 	}
 	a.AppendChild(&html.Node{Type: html.TextNode, Data: text[at:end]})
 	dd.AppendChild(a)

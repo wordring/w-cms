@@ -82,9 +82,11 @@ function contactOrgCandidate(td) {
     const text = org ? org.value.trim() : '';
     const list = org ? org.list : null;
     if (!text || !list) return null;
-    for (const opt of list.options) {
-        if (opt.value === text) return { id: opt.dataset.id || '', title: opt.value };
-    }
+    // 同じ題の候補が2つ以上なら、どちらとも決めない（id を送らず、サーバーに断ってもらう）——先の1つを黙って選ぶと、
+    // 別の組織へ足していた（2026-10-22 の見直し）。
+    const hits = Array.from(list.options).filter((opt) => opt.value === text);
+    if (hits.length > 1) return { id: '', title: text };
+    if (hits.length === 1) return { id: hits[0].dataset.id || '', title: hits[0].value };
     return null;
 }
 
