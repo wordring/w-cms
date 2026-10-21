@@ -58,6 +58,8 @@ func mfgItemColumns() []cms.VocabColumn {
 		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
 		{Field: "due", Label: "納期", Type: cms.ColText},
 		{Field: "made", Label: "製造完了", Type: cms.ColEnum, Enum: []string{MarkDone}},
+		// 加工時間は、この行のぶんを作るのにかかった時間（2026-10-21 夜・work_hours.go——加工製品ページに鏡で出す）。
+		{Field: "work-hours", Label: WorkHoursLabel, Type: cms.ColNumber},
 		{Field: "note", Label: "備考", Type: cms.ColText},
 	}
 }

@@ -81,6 +81,7 @@
     "製造待ち": { "type": "number" },
     "材料発注": { "type": "enum", "values": ["済"] },
     "製造完了": { "type": "enum", "values": ["済"] },
+    "加工時間": { "type": "number" },
     "納品書発行": { "type": "enum", "values": ["済"] },
     "請求書発行": { "type": "enum", "values": ["済"] }
   },

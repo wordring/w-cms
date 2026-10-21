@@ -279,7 +279,8 @@ func insertOrderPrices(ctx *cms.MirrorContext, tbl *html.Node, sectionEnd bool) 
 	case PageKindOurEstimateCalc:
 		return
 	case PageKindProduct:
-		frag = estimateCalcsHTML(ctx.PageID, estimateCalcsOf(ctx.Viewer, ctx.PageID)) + frag
+		// 加工製品ページでは、下に「⏱ 加工時間」も添える（2026-10-21 夜・work_hours.go——見積もりと実績を同じページに）。
+		frag = estimateCalcsHTML(ctx.PageID, estimateCalcsOf(ctx.Viewer, ctx.PageID)) + frag + workHoursHTML(workHoursForProduct(ctx.Viewer, ctx.PageID))
 	}
 	if p := tbl.Parent; sectionEnd && p != nil && p.Data == "section" {
 		appendHTML(p, frag)
