@@ -59,6 +59,7 @@ func (mailPlugin) Routes() []cms.Route {
 		// 新しいメールの読み込みを裏で続ける（fetch_job.go・2026-10-09——ページを閉じても止まらない）。
 		{Pattern: "/api/mail/fetch-new", Handler: MailFetchAPIHandler},
 		{Pattern: "/api/mail/fetch-new/status", Handler: MailFetchStatusAPIHandler},
+		{Pattern: "/api/mail/auto-fetch", Handler: MailAutoFetchAPIHandler}, // 自動の読み込みの様子（2026-10-21 夜・auto_fetch.go）
 		// 送信——控えは通信箱（2026-09-05 に送信箱と受信箱を1つにした）、返信元へは参照タグ `親ページID` で繋ぐ（reply.go）。
 		{Pattern: "/api/mail/send", Handler: MailSendAPIHandler},
 		// 送る欄の中身（用件の初期値・保存した下書き）と、下書きの保存（compose.go・2026-09-30）。

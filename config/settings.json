@@ -167,6 +167,9 @@
     "skip_types": ["ref", "date", "datetime", "image", "email", "number"]
   },
   "extensions": {
+    "mail": {
+      "auto_fetch": { "day_start_hour": 8, "day_end_hour": 20, "day_minutes": 5, "night_minutes": 60, "weekend_as_night": true }
+    },
     "toho": {
       "product_code_tags": [
         "図面番号",

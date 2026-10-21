@@ -32,6 +32,32 @@ function wireMailFetch() {
     btn.addEventListener('click', () => fetchNewMail(btn));
     wireMailSignIn(btn);
     resumeMailFetch(btn);
+    showMailAutoFetch(btn);
+}
+
+// showMailAutoFetch は、決まった間隔の自動の読み込みの様子を、読み込みのボタンのそばに1行で出します（2026-10-21 夜・
+// ext/comm/mail/auto_fetch.go・【考察】通信箱の改善 §7.1）。動いていれば間隔と前回の時刻、休んでいればわけ。
+async function showMailAutoFetch(after) {
+    let a;
+    try {
+        a = ((await (await fetch('/api/mail/auto-fetch')).json()) || {}).auto;
+    } catch (e) {
+        return;
+    }
+    if (!a || document.getElementById('w-mail-auto')) return;
+    const hm = (s) => {
+        const d = new Date(s);
+        return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    };
+    let text;
+    if (a.enabled && a.user) {
+        text = '🔄 自動の読み込み: ' + a.address + ' を ' + a.interval_minutes + '分ごと' + (a.last_run ? '（前回 ' + hm(a.last_run) + '）' : '');
+    } else {
+        text = '🔄 自動の読み込みは休んでいます: ' + (a.reason || '');
+    }
+    const p = makeEl('span', 'mail-auto-fetch', text);
+    p.id = 'w-mail-auto';
+    after.insertAdjacentElement('afterend', p);
 }
 
 // resumeMailFetch は、開いたときに裏の読み込みが動いていれば、その様子を見続けます（閉じたあいだも続いていた回）。
