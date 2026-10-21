@@ -663,7 +663,7 @@ func orderItemColumns() []cms.VocabColumn {
 		{Field: "breakdown", Label: "内訳", Type: cms.ColText},
 		// ⚠ **種類・番号・加工内容・仕様・支給は 2026-09-28 に足しました**（【考察】部材の種類ごとの
 		//    発注項目 §3・§9）——材料・外注加工・購入部品・支給部品で要る項目が違うので、表は
-		//    **すべての項目の集合**（【要求】部材発注フォルダ）。紙に刷るかは設定（order_print_columns）。
+		//    **すべての項目の集合**（【要求】製造 §8）。紙に刷るかは設定（order_print_columns）。
 		//    **種類**は手配済みを数える鍵の種類で、紙には出しない。臨時部材表には入れない（tempPartsColumns）。
 		{Field: "kind", Label: "種類", Type: cms.ColText},
 		{Field: "no", Label: "番号", Type: cms.ColText},
