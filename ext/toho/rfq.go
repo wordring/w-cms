@@ -396,15 +396,16 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	idx := ctx.Counter(RFQDraftType) + 1
 	pageID := page.FormatID(ctx.PageID)
-	addRowChromeCells(el, "draft-row-act", func(row int, _ *html.Node) string {
-		return `<button type="button" class="chip-btn rfq-draft-back"` +
-			` data-rfq-page="` + pageID + `" data-rfq-table="` + strconv.Itoa(idx) + `" data-rfq-row="` + strconv.Itoa(row) + `"` +
-			` title="見積依頼必要部材表へ戻します（この行を外します）">↩ 戻す</button>`
+	// 2026-10-21 夕から、行ごとのボタンは表の中に置かない——行の先頭にチェック、「↩ 外す」は表の下の欄（mfg_work.go と同じ形）。
+	prependRowChromeCells(el, "draft-pick-cell", func(n int, _ *html.Node) string {
+		return pickHTML("rfq-draft-pick", map[string]string{"row": strconv.Itoa(n + 1)})
 	})
+	rowBar := `<div class="draft-row-bar">選んだ行を: <button type="button" class="chip-btn rfq-sel-back" data-rfq-page="` + pageID + `" data-rfq-table="` + strconv.Itoa(idx) + `"` +
+		` title="見積依頼部材表から外します（製造ページでは外すだけ——必要部材表に残っています）">↩ 外す</button> <span class="draft-row-say"></span></div>`
 	// 「部材見積依頼書ページを作る」の欄は表の外（包む節の中・表の直後）へ——発注部材表の「部材発注書を作る」と同じ（rfq_doc.go）。
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
-	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+
+	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+rowBar+
 		rfqDocFormHTML(ctx.Viewer, pageID, idx)+`</div>`)
 	return false, nil
 }

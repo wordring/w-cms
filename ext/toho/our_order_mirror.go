@@ -128,7 +128,7 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 	// ⚠ **取り消しても必要部材表へは戻りません**（2026-09-23 に意味が変わった・
 	//    order_status.go）。**確認の文にそう書くこと**——09-22 まで「戻ります」だったので、
 	//    書かないと人は「どこかに戻った」と思い、**誰も買わないまま納期が来ます**。
-	const backNote = "取り消すと、この部材はもう発注しません（製造ページの「📦 この製造の部材を発注部材表へ」にも、また出てきません）。\n" +
+	const backNote = "取り消すと、この部材はもう発注しません（製造ページの「🧾 部材」にも、また出てきません）。\n" +
 		"もう一度発注したいときは「↩ 発注から外す」を押してください。"
 	return orderRowStatusButtonsHTML(btn, status, backNote) + orderRowReturnButtonHTML(orderID, row, status)
 }
@@ -143,7 +143,7 @@ func orderRowButtonsHTML(orderID string, row int, status string) string {
 // （【考察】編集モードの再考 §6）。押す前に書きかけを保存し（postJSON）、サーバーは書き込みの錠の中で行を外す。
 // 2026-10-19 利用者:「順にお願いします」（筆者の案「画面に残る古い文と、隠れたままのボタン」——【考察】文書の食い違い §3.1）
 func orderRowReturnButtonHTML(orderID string, row int, status string) string {
-	ask := "この行を部材発注書から外します（製造ページの「📦 この製造の部材を発注部材表へ」で、また入れられます）。"
+	ask := "この行を部材発注書から外します（製造ページの「🧾 部材」で、また入れられます）。"
 	if orderLineSent(status) { // 出した行（発注済・納品済・それまでの未納品——order_status.go の決まり）
 		ask = "⚠ この行は既に相手に送った部材発注書に載っています。\n" +
 			"外したら、訂正した部材発注書を再送してください。\n\n" + ask
@@ -152,7 +152,7 @@ func orderRowReturnButtonHTML(orderID string, row int, status string) string {
 		` data-order-page="` + stdhtml.EscapeString(orderID) + `"` +
 		` data-order-row="` + strconv.Itoa(row) + `"` +
 		` data-order-confirm="` + stdhtml.EscapeString(ask) + `"` +
-		` title="この行を部材発注書から外し、製造ページの「📦 この製造の部材を発注部材表へ」で、また入れられるようにします">↩ 発注から外す</button>`
+		` title="この行を部材発注書から外し、製造ページの「🧾 部材」で、また入れられるようにします">↩ 発注から外す</button>`
 }
 
 // orderRowStatusButtonsHTML は `状態` を変えるボタンです（上の説明のとおり）。
@@ -172,6 +172,6 @@ func orderRowStatusButtonsHTML(btn func(value, label, title, confirm string) str
 	default: // 未発注・空欄
 		// ⚠ **ここだけ確認を出しません**（ユーザー:「発注前なら**単純に**取り消します」）。
 		return btn(OrderLineSent, "✓ 発注済", "この行だけ発注済みにします", "") +
-			btn(OrderLineCancelled, "✕ 取消", "この部材はもう発注しません（製造ページの「📦 この製造の部材を発注部材表へ」にも、また出てきません）", "")
+			btn(OrderLineCancelled, "✕ 取消", "この部材はもう発注しません（製造ページの「🧾 部材」にも、また出てきません）", "")
 	}
 }

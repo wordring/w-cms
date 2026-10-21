@@ -849,17 +849,21 @@ async function openQuotePutPanel(btn) {
             sayIn(box, '部材見積依頼書ページ /' + r.data.page_id + ' を作りました（' + r.data.rows + ' 行）。開いています…');
             location.href = '/' + r.data.page_id;
         }],
-        ['.rfq-draft-back', async (btn) => {
+        // 見積依頼部材表の下の「選んだ行を: ↩ 外す」（2026-10-21 夕——表の中にボタンを置かない）。行は下から送る。
+        // 製造ページでは外すだけ、ほかでは見積依頼必要部材表へ戻す（サーバーの /api/rfq/draft/back が決める）。
+        ['.rfq-sel-back', async (btn) => {
+            const box = btn.closest('.draft-form-box');
+            const say = box ? box.querySelector('.draft-row-say') : null;
+            const sec = box ? box.closest('section') : null;
+            const table = sec ? sec.querySelector(':scope > table') : null;
+            const rows = table ? Array.from(table.querySelectorAll('.rfq-draft-pick:checked')).map((c) => Number(c.dataset.row)).sort((x, y) => y - x) : [];
+            if (!rows.length) { sayIn(say, '見積依頼部材表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
             btn.disabled = true;
-            const r = await postJSON('/api/rfq/draft/back', {
-                page_id: btn.getAttribute('data-rfq-page') || '',
-                table: Number(btn.getAttribute('data-rfq-table') || 0),
-                row: Number(btn.getAttribute('data-rfq-row') || 0),
-            });
-            if (!r.ok) {
-                btn.disabled = false;
-                alert('⚠ ' + (r.data.message || '戻せませんでした'));
-                return;
+            for (const row of rows) {
+                const r = await postJSON('/api/rfq/draft/back', {
+                    page_id: btn.getAttribute('data-rfq-page') || '', table: Number(btn.getAttribute('data-rfq-table') || 0), row,
+                }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+                if (!r.ok) { btn.disabled = false; sayIn(say, '⚠ ' + ((r.data && r.data.message) || '外せませんでした')); return; }
             }
             location.reload();
         }],
@@ -1780,12 +1784,25 @@ delegateClick([
 // 利用者:「製造明細表を作業開始という見出しの下にいれ、行の先頭にチェックボックスを付け」「表の下にあるボタンを押すとその作業を開始する
 // マナーにしたいです」。表の中には値と行の先頭のチェックだけ、ボタンは表の下の帯（サーバーが表の直後に置く .mfg-bar）。
 // 帯は、すぐ前の表のチェックした行に効く。製造ページの番号は帯の中の [data-mfg]。
+// tableBefore は、el より前にある最後の表を返します（el から上へたどり、各段の前の兄弟の中を探す）。
+// ⚠ エディタは本文の上の段の要素を1つずつ .editor-block で包むので、帯（鏡）と表は別の包みに入る——帯の
+//    previousElementSibling は空になる（2026-10-21 夕に E2E で見つかった）。
+function tableBefore(el) {
+    for (let n = el; n && n.id !== 'w-editor-content'; n = n.parentElement) {
+        for (let p = n.previousElementSibling; p; p = p.previousElementSibling) {
+            if (p.tagName === 'TABLE') return p;
+            const inner = p.querySelectorAll ? p.querySelectorAll('table') : [];
+            if (inner.length) return inner[inner.length - 1];
+        }
+    }
+    return null;
+}
 function mfgBarOf(btn) {
     const bar = btn.closest('.mfg-bar');
-    const table = bar ? bar.previousElementSibling : null;
+    const table = bar ? tableBefore(bar) : null;
     const pageEl = bar ? bar.querySelector('[data-mfg]') : null;
     return {
-        bar, table: table && table.tagName === 'TABLE' ? table : null,
+        bar, table,
         mfg: pageEl ? pageEl.getAttribute('data-mfg') || '' : '',
         say: bar ? bar.querySelector('.mfg-bar-say') : null,
     };

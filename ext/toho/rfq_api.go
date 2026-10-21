@@ -350,6 +350,10 @@ func RFQDraftBackAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return cur
 		}
 		done = true
+		// 製造ページでは外すだけ（2026-10-21 夕——部材は必要部材表に残っている・mfg_work.go）。ほかでは見積依頼必要部材表へ戻す。
+		if pageKindOf(pageNum(pageID)) == PageKindMfg {
+			return next
+		}
 		out, _ := appendRFQNeeds(next, lines)
 		return out
 	}) {
