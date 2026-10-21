@@ -531,7 +531,7 @@
 
     // --- 認証・権限まわり ---
     let currentUserIsAdmin = false;
-    let currentUsername = ''; // ページの更新の知らせで「あなたの操作で」と言い分けるため（2026-10-07）
+    let currentUsername = ''; // ページの更新の通知で「あなたの操作で」と言い分けるため（2026-10-07）
 
     // loadMe は認証状態を取得し、未認証（匿名）なら読み取り専用モードへ切り替える。
     // /api/me は OptionalAuth 配下で、未認証時も 200 で {authenticated:false} を返す。
@@ -1111,7 +1111,7 @@
         return queueSync(false);
     }
 
-    // pullFromServer は、変えていなくても送って、相手の変更を受け取る（ページの更新の知らせを受けたとき・業務のボタンのあと）。
+    // pullFromServer は、変えていなくても送って、相手の変更を受け取る（ページの更新の通知を受けたとき・業務のボタンのあと）。
     function pullFromServer() {
         if (!document.body.hasAttribute('edit-mode')) return Promise.resolve();
         return queueSync(true);
@@ -2494,7 +2494,7 @@
         const wasEditing = document.body.hasAttribute('edit-mode');
         if (wasEditing) { await flushPendingSave(); await checkpointVersion(false); }
         syncReady = false;
-        // ページの更新の知らせが比べる相手を覚え直す（閲覧の描き方で——2026-10-07）。
+        // ページの更新の通知が比べる相手を覚え直す（閲覧の描き方で——2026-10-07）。
         // ⚠ 書ける形から出るときだけ——ページを開いたときもここを通る（閲覧で始まる）が、そのときは開いたときの姿を
         //    覚え済み（window.onload）なので、読み直しを1回余計に走らせない（鏡の計算を含む）。
         if (wasEditing) await adoptViewSourceFromServer();
@@ -2513,7 +2513,7 @@
         const toggle = document.getElementById('w-mode-toggle');
         const ok = await loadForEditing();
         if (!ok) { toggle.checked = false; applyMode(); return false; }
-        // 書ける形では「ページの更新の知らせ」の札は出さない（届いた変更はその場で差し替える）。
+        // 書ける形では「ページの更新の通知」の札は出さない（届いた変更はその場で差し替える）。
         clearTimeout(pageCheckTimer); pageCheckTimer = null; pendingPageHTML = null;
         dismissToast('page-updated');
         toggle.checked = true;
@@ -2556,7 +2556,7 @@
     }
 
     // populateEditor は本文HTMLをエディタへ流し込みブロック化する（ロード時・書ける形に入るときに共用）。
-    // view は閲覧の描き方（/api/load?view=1）で読んだ本文か——そうなら、ページの更新の知らせが比べる相手として
+    // view は閲覧の描き方（/api/load?view=1）で読んだ本文か——そうなら、ページの更新の通知が比べる相手として
     // 覚える（そうでなければ捨てる——編集用の素の本文は閲覧の描き方と比べられない・2026-10-07）。
     function populateEditor(htmlStr, view) {
         const editorContent = document.getElementById('w-editor-content');
@@ -2598,7 +2598,7 @@
         } catch (e) {}
     }
 
-    // ── ページの更新の知らせ（2026-10-07） ─────────────────────────────────
+    // ── ページの更新の通知（2026-10-07） ─────────────────────────────────
     //
     // 利用者:「誰かが書き込むと、同じページを見ているほかの人に再読み込み通知が送られて、
     // 編集されたブロックだけ再読み込みできますか？」
@@ -2802,7 +2802,7 @@
     // 利用者:「他人が同じブロックにキャレットを置いている、あるいはすでに文字を打ち込んでいるような場合は、早期に警告して欲しいです」
     // →「置いただけで背景色を黄色系の彩度の低い色にしては？説明が多すぎるのでシンプルに」「表ごと」（【考察】編集モードの再考 §8）。
     //   - このタブは、キャレットのある上の段のブロックが変わるたびに POST /api/presence で知らせる（表は表ごと——セルを移っても同じ
-    //     ブロック）。タブを隠したら「どこにも置いていない」。サーバーはページの更新の知らせの購読ごとに覚え、同じページのタブへ配る
+    //     ブロック）。タブを隠したら「どこにも置いていない」。サーバーはページの更新の通知の購読ごとに覚え、同じページのタブへ配る
     //     （{type:"presence"}・つないだ直後の hello にも）——タブを閉じれば購読が切れて消える。
     //   - 受けたタブは、ほかのタブのいるブロックの背景を薄い黄色にするだけ（.w-block-others・名前はマウスを載せると出る）。書ける形のときだけ。
     let presenceSent = null;   // 送った（このタブのキャレットのある）ブロック——null はまだ送っていない
@@ -2867,7 +2867,7 @@
         // タブを閉じたら、購読（/api/page-events）が切れてサーバーが印を消す——ここで送らなくてよい。
     }
 
-    // openPageEvents は、このページの更新の知らせを購読する（タブを開いているあいだずっと・EventSource は自分でつなぎ直す）。
+    // openPageEvents は、このページの更新の通知を購読する（タブを開いているあいだずっと・EventSource は自分でつなぎ直す）。
     function openPageEvents() {
         if (pageES || !window.EventSource) return;
         // tab はこのタブの印（2026-10-12）——自分の保存の知らせを見分ける・ページを消すときに「開いている人」に数えられる。
@@ -3215,7 +3215,7 @@
             // ⚠ **同じ要素を2度数えない**（2026-10-07 に直した）——上の段の表・節・定義リストは、上の段の巡りと
             //    下の「入れ子」の巡り（`.block-content table` は上の段の表にも当たる）の両方に来る。2度目は自分の ID を
             //    「重複」とみなして振り直していたので、**編集して保存するたびに上の段の表と節の ID が変わり**、
-            //    「ページID-ブロックID」の参照が切れ、ページの更新の知らせが触っていない表まで「変わった」に数えていた。
+            //    「ページID-ブロックID」の参照が切れ、ページの更新の通知が触っていない表まで「変わった」に数えていた。
             if (seen.has(el)) return;
             seen.add(el);
             const id = el.getAttribute(BLOCK_ID_ATTR);
@@ -8746,7 +8746,7 @@
         // 本文はサーバーが #w-editor-content へ埋め込み済み（合成方式）。fetch はせず、
         // 既にあるDOMをそのまま初期コンテンツとしてブロック化する。認可・404・
         // 匿名のログイン誘導はサーバー側で解決済みなので、ここでは扱わない。
-        // ページの更新の知らせが比べる相手を、包みと飾り付けの前に覚える（サーバーが描いたままの姿・2026-10-07）。
+        // ページの更新の通知が比べる相手を、包みと飾り付けの前に覚える（サーバーが描いたままの姿・2026-10-07）。
         adoptViewSource(null, true);
         initBlocks();
         buildToc();

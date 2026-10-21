@@ -145,7 +145,7 @@ const SessionAPIPath = "/api/session"
 // passivePaths は、印が無くても寿命を延ばさない口です——画面が裏で自動につなぐもので、
 // EventSource のように印（ヘッダ）を付けられないものも入ります。
 var passivePaths = map[string]bool{
-	"/api/page-events": true, // ページの更新の知らせの購読（タブを開いているあいだずっと）
+	"/api/page-events": true, // ページの更新の通知の購読（タブを開いているあいだずっと）
 	"/api/lock-events": true, // 編集ロックの知らせの購読（2026-10-12 から画面は張らない——道具のための口が残っている）
 	"/api/presence":    true, // キャレットのあるブロックの知らせ（キャレットが動くと自動に飛ぶ）
 }

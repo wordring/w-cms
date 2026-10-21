@@ -119,7 +119,7 @@ func TestSessionBackgroundRequestsDoNotExtend(t *testing.T) {
 		name, method, path string
 		header             map[string]string
 	}{
-		{"ページの更新の知らせの購読", "GET", "/api/page-events", nil},
+		{"ページの更新の通知の購読", "GET", "/api/page-events", nil},
 		{"編集ロックの知らせの購読", "GET", "/api/lock-events", nil},
 		{"キャレットのあるブロックの知らせ", "POST", "/api/presence", nil},
 		{"残り時間を見る", "GET", SessionAPIPath, nil},

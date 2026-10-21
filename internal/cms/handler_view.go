@@ -71,7 +71,7 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// エディタのDOMへ入ると、シリアライザが本文として保存してしまう（anchor.go の冒頭）。
 	body := RenderComputedViews(r, idInt, Sanitize(string(content)))
 	// **閲覧の画面が読み直すときだけ**、ページを開いたときと同じ描き方にします（`view=1`・2026-10-07）
-	// ——ページの更新の知らせ（page_events.go）を受けた画面が、前に読んだものと比べて変わったブロック
+	// ——ページの更新の通知（page_events.go）を受けた画面が、前に読んだものと比べて変わったブロック
 	// だけを差し替えるため。描き方が違うと、変わっていない見出しやタグまで「変わった」に見え、差し替えた
 	// ブロックからは参照リンクが消えます。⚠ 素の /api/load には付けません——合成した
 	// アンカーとリンクが本文として保存されるので（2026-10-12 までは編集モードの読み直し acquireLock が素の方を

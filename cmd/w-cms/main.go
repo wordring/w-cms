@@ -227,7 +227,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/lock-events", editlock.LockEventsAPIHandler)
 	protected.HandleFunc("/api/unlock", editlock.UnlockAPIHandler)
 	protected.HandleFunc("/api/lock/force", editlock.LockForceAPIHandler)
-	// ページの更新の知らせ（SSE・読める人なら誰でも——閲覧中のタブが変わったブロックだけ読み直す。page_events.go）
+	// ページの更新の通知（SSE・読める人なら誰でも——閲覧中のタブが変わったブロックだけ読み直す。page_events.go）
 	protected.HandleFunc("/api/page-events", cms.PageEventsAPIHandler)
 	// そのページを開いている人（ページを消す前の確かめ・2026-10-12）。
 	protected.HandleFunc("/api/page-watchers", cms.PageWatchersAPIHandler)
