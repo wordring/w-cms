@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/tools/boundary-hook.js\"",
+            "timeout": 120,
+            "statusMessage": "コアと拡張の境を確かめています"
+          }
+        ]
+      }
+    ]
+  }
+}
