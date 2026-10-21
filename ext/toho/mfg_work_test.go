@@ -96,6 +96,35 @@ func TestMfgWorkPartsOrderQuoteSkip(t *testing.T) {
 }
 
 
+// TestGrossQuoteLinesDoNotSubtractArranged は、見積もりへ写す数が手配済みを引かない数になることを固定します（2026-10-21 夜）。
+//
+// > 2026-10-21 利用者:「手配済みをひきません」
+//
+//   - 必要部材表の数が手配済みを引いた 1 でも、見積依頼部材表へは「作る数 2 × 1個あたり 1」の 2 を写す
+//   - 内訳のある行は、内訳の数も直す
+//   - 部材が読めない行（人が寸法を直した行）は、表の数のまま
+//   - 備考の「追加」は外す
+func TestGrossQuoteLinesDoNotSubtractArranged(t *testing.T) {
+	mfg := seedMfgWork(t)
+	u := adminUser()
+	fb := ourOrderLine{ProductID: "000031", ForOrder: "000030", Kind: "材料", Material: "鉄", Shape: "FB", Size: "t4.5*75*1090", Quantity: "1", Note: ExtraNote}
+	withBreakdown := fb
+	withBreakdown.Note = ""
+	withBreakdown.Breakdown = "000030/000031:1"
+	edited := fb
+	edited.Size = "t4.5*75*999"
+	got := grossQuoteLines(u, pageNum(mfg), []ourOrderLine{fb, withBreakdown, edited})
+	if got[0].Quantity != "2" || got[0].Note != "" {
+		t.Errorf("⚠ 見積もりの数が手配済みを引いたまま（%q）か、備考の「追加」が残っています（%q）", got[0].Quantity, got[0].Note)
+	}
+	if got[1].Quantity != "2" || got[1].Breakdown != "000030/000031:2" {
+		t.Errorf("⚠ 内訳のある行の数・内訳が直っていません: %q %q", got[1].Quantity, got[1].Breakdown)
+	}
+	if got[2].Quantity != "1" {
+		t.Errorf("⚠ 部材の読めない行の数を変えています: %q", got[2].Quantity)
+	}
+}
+
 // TestMfgWorkDeliveryDraft は、
 //   - 製造ページを作ると、製造明細表は見出し「作業開始」の下
 //   - 「納品」で、選んだ行のまだ納めていない数の納品表が「納品作業」の下にできる

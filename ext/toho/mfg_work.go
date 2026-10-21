@@ -257,7 +257,7 @@ func renderMfgNeeds(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 	appendBarAfter(el, "mfg-needs-bar", `<span data-mfg="`+pid+`"></span>`+
 		barButton("mfg-needs-order", "🛒 発注", "選んだ行を、推奨業者ごとの発注部材表へ移します（「発注作業」の見出しの下）")+
-		barButton("mfg-needs-quote", "📨 見積もり", "選んだ行を、見積依頼部材表へ写します（「見積依頼作業」の見出しの下・必要部材表には残す）")+
+		barButton("mfg-needs-quote", "📨 見積もり", "選んだ行を、見積依頼部材表へ写します（「見積依頼作業」の見出しの下・必要部材表には残す。数は手配済みを引かない、この製造で作るぶん）")+
 		barButton("mfg-needs-skip", "🚫 不要", "選んだ行を、この製造では手配しません（理由と日付つきで手配不要表へ）")+
 		barButton("mfg-needs-drop", "↩ 外す", "選んだ行を必要部材表から外します（「部材」でまた集められます）")+
 		`<span class="mfg-bar-say"></span>`)
@@ -419,6 +419,7 @@ func MfgNeedsAPIHandler(w http.ResponseWriter, r *http.Request) {
 				out = placeUnderHeading(out, MfgHeadOrder, orderDraftHTML(g))
 			}
 		case "quote":
+			lines = grossQuoteLines(user, pageNum(pageID), lines)
 			if merged, _, ok := appendLinesToTable(out, RFQDraftType, 1, lines); ok {
 				out = merged
 			} else {
@@ -439,6 +440,65 @@ func MfgNeedsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "mfg.needs."+req.Action, pageID+" "+strconv.Itoa(n)+"行")
 	cms.WriteJSON(w, map[string]any{"success": true, "rows": n})
+}
+
+// grossQuoteLines は、見積もりへ写す行の数を「手配済みを引かない数」に直します（2026-10-21 夜）。
+//
+// > 2026-10-21 利用者:「手配済みをひきません」（部材見積依頼の数。2026-10-02 の「機械は、依頼済みを数えません」と同じ向き）
+//
+// 必要部材表の数は、発注のために手配済みを引いた残りです。見積もりでは、行の内訳（無ければ案件と弊社品番）の案件×加工製品ごとに、
+// 「この製造で作る数 × 1個あたりの数」（mfgExtraLines と同じ数え方）を足し直します。部材が読めない行（人が材質や寸法を直した行など）は、
+// 表の数のまま写します。備考の「追加」は、見積もりでは意味が無いので外します。
+func grossQuoteLines(user *auth.User, mfgID int, lines []ourOrderLine) []ourOrderLine {
+	gross, _, err := mfgExtraLines(user, mfgID, nil)
+	if err != nil {
+		return lines
+	}
+	partKey := func(ln ourOrderLine) string {
+		parts := []string{ln.Kind, ln.No, ln.ItemID, ln.ItemName, ln.Work, ln.Material, ln.Shape, ln.Size, ln.Color, ln.Spec, ln.Supplied}
+		for i, p := range parts {
+			parts[i] = cms.NormalizeText(strings.TrimSpace(p))
+		}
+		return strings.Join(parts, "\x1f")
+	}
+	need := map[string]int{}
+	for _, g := range gross {
+		q, err := strconv.Atoi(strings.TrimSpace(g.Quantity))
+		if err != nil {
+			continue
+		}
+		need[partKey(g)+"|"+g.ForOrder+"|"+g.ProductID] += q
+	}
+	out := make([]ourOrderLine, 0, len(lines))
+	for _, ln := range lines {
+		if strings.TrimSpace(ln.Note) == ExtraNote {
+			ln.Note = ""
+		}
+		es, ok := entriesOf(ln)
+		if !ok {
+			out = append(out, ln)
+			continue
+		}
+		total, found := 0, true
+		next := make([]breakdownEntry, 0, len(es))
+		for _, e := range es {
+			q, has := need[partKey(ln)+"|"+e.Order+"|"+e.Product]
+			if !has {
+				found = false
+				break
+			}
+			total += q
+			next = append(next, breakdownEntry{Order: e.Order, Product: e.Product, Qty: q})
+		}
+		if found {
+			ln.Quantity = strconv.Itoa(total)
+			if strings.TrimSpace(ln.Breakdown) != "" {
+				ln.Breakdown = formatBreakdown(next)
+			}
+		}
+		out = append(out, ln)
+	}
+	return out
 }
 
 // MfgDeliveryDraftAPIHandler は POST /api/mfg/delivery-draft です。入力: {page_id, items:[{row, item}]}（製造ページ）。
