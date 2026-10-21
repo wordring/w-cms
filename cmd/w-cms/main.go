@@ -159,6 +159,8 @@ func main() {
 	// 待ち受けは WCMS_ADDR（無ければ :8080、TLS のときは :8443——listen.go）。
 	// オートコンプリートの候補を、暇なときに数え直す見張り（2026-10-19・autocomplete.go。設定 autocomplete が無ければ数えない）。
 	cms.StartAutocompleteSurvey()
+	// 拡張が登録した裏の仕事（2026-10-21 夜・internal/cms/background.go——メールの決まった間隔の読み込みなど）。
+	cms.StartBackgroundTasks()
 	switch {
 	case cert != "" && key != "":
 		addr := listenAddr(true)
