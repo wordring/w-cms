@@ -44,7 +44,7 @@ async function showMailAutoFetch(after) {
     } catch (e) {
         return;
     }
-    if (!a || document.getElementById('w-mail-auto')) return;
+    if (!a || document.getElementById('mail-auto-fetch')) return;
     const hm = (s) => {
         const d = new Date(s);
         return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -56,7 +56,7 @@ async function showMailAutoFetch(after) {
         text = '🔄 自動の読み込みは休んでいます: ' + (a.reason || '');
     }
     const p = makeEl('span', 'mail-auto-fetch', text);
-    p.id = 'w-mail-auto';
+    p.id = 'mail-auto-fetch';
     after.insertAdjacentElement('afterend', p);
 }
 

@@ -7,6 +7,18 @@
 // この JS を読み込ませる（置き場の決まりで拾う・internal/cms/ext_scripts.go——2026-10-20 夕までは cms.RegisterScript で名乗っていた）。
 // ⚠ **鏡の配線は、サーバーが描いた属性だけで動くように書きます**・**配線は document へ委譲します**（コアの「鏡のボタンに共通の道具」と同じ決まり）。
 // ⚠ **`innerHTML` へ文字列を入れません**（createElement＋textContent・保存型XSSの前科）。
+// failPartway は、何行かを1つずつ送る操作が途中で失敗したときの始末です（2026-10-22 の見直し）。
+// 1行でも済んでいれば、行の番号が変わっているので、知らせてから読み直す（そのまま押し直すと、選んでいない行に効く）。
+function failPartway(btn, say, message, done) {
+    if (done > 0) {
+        alert('⚠ ' + message + '\n\n' + done + ' 行は済みました。表が変わったので読み直します。残りは選び直してください。');
+        location.reload();
+        return;
+    }
+    btn.disabled = false;
+    window.wcms.sayIn(say, '⚠ ' + message, 'proc-why-ng');
+}
+
 (function () {
 'use strict';
 const w = window.wcms;
@@ -326,8 +338,13 @@ delegateClick([['.rfq-reply-ocr', async (btn) => {
     const sel = row && row.querySelector('.rfq-reply-ocr-src');
     const say = row && row.querySelector('.rfq-reply-ocr-say');
     const [sourcePage, sourceFile] = ((sel && sel.value) || '|').split('|');
+    // 置き換える枠は、畳める枠（details）のほか、同じ題の見出しの節のこともある（サーバーの d.Container）——どちらも見る
+    // （2026-10-22 の見直しまで、見出しの形だと確かめずに中身を置き換えた）。
+    const TITLE = '業者の返事（読んだまま）';
     const has = [...document.querySelectorAll('#w-editor-content details summary')]
-        .some((s) => s.textContent.trim() === '業者の返事（読んだまま）' && s.parentElement.querySelector('table td'));
+        .some((s) => s.textContent.trim() === TITLE && s.parentElement.querySelector('table td'))
+        || [...document.querySelectorAll('#w-editor-content section > h1, #w-editor-content section > h2, #w-editor-content section > h3')]
+            .some((h) => h.textContent.trim() === TITLE && h.parentElement.querySelector('table td, p'));
     if (has && !confirm('「業者の返事（読んだまま）」の表を、Gemini が読んだもので置き換えます（前の中身は版に残ります）。よろしいですか？')) return;
     btn.disabled = true;
     sayIn(say, '🤖 読んでいます…（数十秒かかることがあります）');
@@ -879,11 +896,14 @@ async function openQuotePutPanel(btn) {
             const rows = table ? Array.from(table.querySelectorAll('.rfq-draft-pick:checked')).map((c) => Number(c.dataset.row)).sort((x, y) => y - x) : [];
             if (!rows.length) { sayIn(say, '見積依頼部材表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
             btn.disabled = true;
+            // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
+            let done = 0;
             for (const row of rows) {
                 const r = await postJSON('/api/rfq/draft/back', {
                     page_id: btn.getAttribute('data-rfq-page') || '', table: Number(btn.getAttribute('data-rfq-table') || 0), row,
                 }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-                if (!r.ok) { btn.disabled = false; sayIn(say, '⚠ ' + ((r.data && r.data.message) || '外せませんでした')); return; }
+                if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || '外せませんでした', done); return; }
+                done++;
             }
             location.reload();
         }],
@@ -1557,10 +1577,13 @@ delegateClick([
         const page = btn.getAttribute('data-draft-page') || '';
         const tableNo = Number(btn.getAttribute('data-draft-table') || 0);
         btn.disabled = true;
+        // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
+        let done = 0;
         for (const row of rows) {
             const r = await postJSON(what === 'skip' ? '/api/mfg/skip' : '/api/our-order/draft/remove', { page_id: page, table: tableNo, row, reason })
                 .catch((e) => ({ ok: false, data: { message: String(e) } }));
-            if (!r.ok) { btn.disabled = false; sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'できませんでした')); return; }
+            if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || 'できませんでした', done); return; }
+            done++;
         }
         location.reload();
     }
@@ -1603,12 +1626,15 @@ delegateClick([
         const rows = ok.map((c) => Number(c.dataset.row)).sort((x, y) => y - x);
         btn.disabled = true;
         sayIn(say, '書いています…');
+        // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
+        let done = 0;
         for (const row of rows) {
             const r = act === 'return'
                 ? await postJSON('/api/our-order/return-row', { page_id: page, row }).catch((e) => ({ ok: false, data: { message: String(e) } }))
                 : await postJSON('/api/our-order/line-status', { page_id: page, row, value: btn.getAttribute('data-order-status') || '' })
                     .catch((e) => ({ ok: false, data: { message: String(e) } }));
-            if (!r.ok) { btn.disabled = false; sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'できませんでした'), 'proc-why-ng'); return; }
+            if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || 'できませんでした', done); return; }
+            done++;
         }
         // ⚠ **本文が変わったので読み直します**——印は本文の列なので、画面で組み立てず、サーバーが描いたものを受け取ります。
         location.reload();
@@ -1908,8 +1934,14 @@ delegateClick([
         const ctx = mfgBarOf(btn);
         const rows = mfgPicked(ctx, '.skip-pick').map((c) => Number(c.dataset.row)).sort((x, y) => y - x);
         if (!rows.length) { sayIn(ctx.say, '手配不要表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
+        // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
+        let done = 0;
         for (const row of rows) {
-            if (!await mfgPost(ctx, btn, '/api/mfg/skip/remove', { page_id: ctx.mfg, row }, '戻しています…', '戻せませんでした')) return;
+            if (!await mfgPost(ctx, btn, '/api/mfg/skip/remove', { page_id: ctx.mfg, row }, '戻しています…', '戻せませんでした')) {
+                if (done > 0) failPartway(btn, ctx.say, '途中で止まりました', done);
+                return;
+            }
+            done++;
         }
         location.reload();
     }],

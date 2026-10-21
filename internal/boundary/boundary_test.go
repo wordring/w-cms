@@ -167,8 +167,6 @@ func isCoreScreen(rel string) bool {
 var (
 	blockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
 	htmlComment  = regexp.MustCompile(`(?s)<!--.*?-->`)
-	// 行のコメント（// …）——文字列の中の「://」（URL）は落とさない。
-	lineComment = regexp.MustCompile(`(?m)(^|[^:'"\x60\\])//.*$`)
 )
 
 func stripComments(rel, s string) string {
@@ -178,7 +176,7 @@ func stripComments(rel, s string) string {
 	case ".css":
 		return blockComment.ReplaceAllString(s, "")
 	}
-	return lineComment.ReplaceAllString(blockComment.ReplaceAllString(s, ""), "$1")
+	return stripJSComments(s)
 }
 
 // TestCoreScreenHasNoBusinessWords は、コアの画面（assets/ の JS・CSS・HTML。コメントは除く）に業務の言葉が無いことを固定します。
