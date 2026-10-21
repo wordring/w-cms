@@ -1,0 +1,23 @@
+# 電話の道具 w-cms-phone の systemd の設定（2026-10-21 夜・docs/考察/【考察】通信箱の改善.md §7.3）。
+# 置き場所: /etc/systemd/system/w-cms-phone.service → `sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-phone`
+#
+# 鍵は /etc/w-cms/phone.env に `WCMS_MACHINE_TOKEN=<w-cms と同じ鍵>` と書きます（持ち主 root・0600）。
+# ND6 を抜いても、道具は数秒おきに開き直し続けます。道具そのものが落ちたら、systemd が起こし直します。
+
+[Unit]
+Description=w-cms 電話の着信の記録（アロハ ND6）
+After=network-online.target w-cms.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=w-cms
+Group=dialout
+EnvironmentFile=/etc/w-cms/phone.env
+# w-cms と同じ機械なら https://localhost:8443。自分で作った証明書なら -insecure（同じ機械の中だけの通り道）。
+ExecStart=/opt/w-cms/w-cms-phone -dev /dev/aloha-nd6 -base https://localhost:8443 -insecure
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

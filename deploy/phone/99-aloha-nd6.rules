@@ -1,0 +1,14 @@
+# アロハ ND6（電話の着信を知らせる装置）の udev の決まり（2026-10-21 夜・docs/考察/【考察】通信箱の改善.md §7.3）。
+# 置き場所: /etc/udev/rules.d/99-aloha-nd6.rules → `sudo udevadm control --reload && sudo udevadm trigger`
+#
+# ND6 の USB は Prolific の USB シリアル（PL2303 系）として見えます（製造元の資料: 「Prolific USB-to-Serial Comm Port」
+# 「Prolific PL2303GC USB Serial COM Port」）。
+#
+# ⚠ 同じ Prolific の部品を使うほかの機械（USB シリアルの変換器など）がつながっていると、そちらにも当たります。実機をつないだら
+#    `udevadm info -a -n /dev/ttyUSB0 | grep -E 'idVendor|idProduct|serial'` で値を確かめ、ATTRS{serial} を足して絞ってください。
+
+# 1. 決まった名前 /dev/aloha-nd6 を付ける（差し直してもポートの名前が変わらない）。ダイヤルアウトの組の人が読める。
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="2303|23a3|23c3|23d3", SYMLINK+="aloha-nd6", GROUP="dialout", MODE="0660"
+
+# 2. USB の省電力（オートサスペンド）を切る——眠ったまま着信を取りこぼさないように。
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="2303|23a3|23c3|23d3", TEST=="power/control", ATTR{power/control}="on"
