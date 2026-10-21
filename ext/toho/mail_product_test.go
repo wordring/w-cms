@@ -41,12 +41,17 @@ func TestRecordMakersListKindsByDirection(t *testing.T) {
 	setupExtTest(t, id, page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	u := &auth.User{Username: "alice"}
 	seedBody(t, id, mailRecordBody("見積のお願い", "図面を送ります。"))
-	if kinds, _ := getRecordMakers(t, u, id); strings.Join(kinds, "・") != MailOrderKind+"・"+MailQuoteKind+"・"+MailProductKind+"・"+RFQReplyMailKind+"・"+RFQReplyByHandKind {
+	if kinds, _ := getRecordMakers(t, u, id); strings.Join(kinds, "・") != MailOrderKind+"・"+MailQuoteKind+"・"+MailOwnCaseKind+"・"+MailProductKind+"・"+RFQReplyMailKind+"・"+RFQReplyByHandKind {
 		t.Errorf("受信のメールの種類が違います: %v", kinds)
 	}
 	seedBody(t, id, strings.Replace(mailRecordBody("送った控え", "本文"), "<dd>受信</dd>", "<dd>送信</dd>", 1))
 	if kinds, _ := getRecordMakers(t, u, id); len(kinds) != 0 {
 		t.Errorf("送信の控えに種類が出ています: %v", kinds)
+	}
+	// 向きの無い記録（手書きのメモ）には、自社案件ページだけ（2026-10-21・own_case.go）。
+	seedBody(t, id, strings.Replace(mailRecordBody("治具の材料", "メモ"), "<dd>受信</dd>", "<dd></dd>", 1))
+	if kinds, _ := getRecordMakers(t, u, id); strings.Join(kinds, "・") != MailOwnCaseKind {
+		t.Errorf("向きの無い記録の種類が違います: %v", kinds)
 	}
 	seedBody(t, id, strings.Replace(mailRecordBody("下書き", "本文"), "</dl>", "<dt>"+comm.DraftTag+"</dt><dd>はい</dd></dl>", 1))
 	if kinds, _ := getRecordMakers(t, u, id); len(kinds) != 0 {

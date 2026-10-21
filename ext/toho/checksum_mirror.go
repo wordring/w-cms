@@ -47,6 +47,11 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		appendFootRow(el, headerCellCount(el), "order-checksum checksum-note", quoteCaseNote(ctx, el))
 		return true, nil
 	}
+	// **自社案件**（2026-10-21・own_case.go）——売上ではないので、受注残高・赤字・検算は出さず、そう添えるだけ。
+	if pageKindOf(ctx.PageID) == PageKindOwnCase {
+		appendFootRow(el, headerCellCount(el), "order-checksum checksum-note", "自社案件です（売上ではないので、受注残高・赤字・検算は出しません。製造ページは手で閉じます）")
+		return true, nil
+	}
 	// **赤字の警告**（2026-10-17・order_loss.go）——行の末尾に「見積との差」。⚠ 足元の行の colspan が列の数に合うよう、先に足す。
 	appendLossColumn(ctx, el)
 	// **出荷済数量は納品書から数える**（2026-10-17・delivery_shipped.go）——欄にクロームで出し、受注残高もそれで数える。

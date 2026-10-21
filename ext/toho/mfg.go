@@ -149,8 +149,8 @@ type mfgLine struct {
 
 // mfgLineOf は受注残表で選んだ1行を、受注明細表の索引から製造明細の行にします（読めない・合わないなら理由）。
 func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machineLookup) (mfgLine, string) {
-	// 見積の依頼からも始められる（2026-10-19）。
-	id, r, why := pickedOrderRow(user, p, func(k string) bool { return k == PageKindCustomerOrder || k == PageKindCustomerQuote }, false)
+	// 見積の依頼（2026-10-19）と自社案件（2026-10-21）からも始められる。
+	id, r, why := pickedOrderRow(user, p, orderOrQuote, false)
 	if why != "" {
 		return mfgLine{}, why
 	}

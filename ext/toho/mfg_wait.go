@@ -54,8 +54,10 @@ func init() {
 	cms.RegisterView(MfgWaitViewType, mfgWaitViewHTML)
 }
 
-// orderOrQuote は、製造に入れてよい案件ページの種類か（注文と見積の依頼・2026-10-19 から）。
-func orderOrQuote(k string) bool { return k == PageKindCustomerOrder || k == PageKindCustomerQuote }
+// orderOrQuote は、製造に入れてよい案件ページの種類か（注文と見積の依頼・2026-10-19 から。自社案件も・2026-10-21）。
+func orderOrQuote(k string) bool {
+	return k == PageKindCustomerOrder || k == PageKindCustomerQuote || k == PageKindOwnCase
+}
 
 // waitOf は案件明細の行の「製造待ち」の数です（空・読めなければ 0）。
 func waitOf(v map[string]string) float64 {

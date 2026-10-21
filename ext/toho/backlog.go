@@ -117,6 +117,8 @@ type backlogRow struct {
 	Loss string
 	// Quote は見積の依頼の案件（`ページ種類：顧客見積依頼`・2026-10-19）の行か——受注残高・赤字に入れず、納品できない。
 	Quote bool
+	// Own は自社案件（`ページ種類：自社案件`・2026-10-21・own_case.go）の行か——売上ではないので納品できない（単価も無い）。
+	Own bool
 	// InMfg は製造ページに入れた数、MfgPages はその製造ページです（2026-10-19・mfg.go）。
 	InMfg    int
 	MfgPages []string
@@ -159,8 +161,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	// `:memory:` では別の空DBに当たります（2026-09-03 に本番で踏んだ罠）。
 	rows, err := db.Query(
 		`SELECT DISTINCT v.page_id FROM vocab_index v
-		  JOIN page_tags t ON t.page_id = v.page_id AND t.name = ? AND t.value IN (?, ?)
-		 WHERE v.data_type = ?`, PageKindTag, PageKindCustomerOrder, PageKindCustomerQuote, clientOrderItemsType)
+		  JOIN page_tags t ON t.page_id = v.page_id AND t.name = ? AND t.value IN (?, ?, ?)
+		 WHERE v.data_type = ?`, PageKindTag, PageKindCustomerOrder, PageKindCustomerQuote, PageKindOwnCase, clientOrderItemsType)
 	if err != nil {
 		return nil, 0
 	}
@@ -198,6 +200,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 		}
 		client := cms.FirstTag(tags, OrderClientTag)
 		quote := strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindCustomerQuote
+		own := strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindOwnCase
 		pageDue := cms.FirstTag(tags, DueDateTag)
 		orderNo := cms.FirstTag(tags, OrderNoTag)
 
@@ -263,8 +266,9 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 				Made:            madeText(mfgBy.doneOf(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty), // 製造ページから（2026-10-19）
 				DeliveryNote:    madeText(issuedDlv.of(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty),
 				Invoice:         madeText(issuedInv.of(page.FormatID(id), r.Values["item-id"], r.Values["item-name"]), qty),
-				Loss:            quoteless(quote, backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice)),
+				Loss:            quoteless(quote || own, backlogLossText(losses, r.Values["our-item-id"], qty, price, hasPrice)),
 				Quote:           quote,
+				Own:             own,
 				InMfg:           inMfg,
 				MfgPages:        mfgPages,
 				Waiting:         int(waitOf(r.Values)),
@@ -613,6 +617,9 @@ func orderLabel(r backlogRow) string {
 	}
 	if r.Quote {
 		return "見積 " + label // 見積の依頼の案件（2026-10-19）
+	}
+	if r.Own {
+		return "自社 " + label // 自社案件（2026-10-21）
 	}
 	return label
 }

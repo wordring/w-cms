@@ -34,6 +34,9 @@ const (
 	// まだ注文ではないので、受注残高・赤字・必要部材表・受注の単価には入らず、納品書も作れない（isQuoteCase）。
 	// 2026-10-19 利用者:「見積もりは、見積もりを受注したということにして、受注ページに並べてそこから作るのはどうですか？」
 	PageKindCustomerQuote = "顧客見積依頼"
+	// PageKindOwnCase は自社案件の値です（2026-10-21・own_case.go）——消耗品・工具・社内用など、客先の注文に結び付かない部材の案件。
+	// 案件残表に並び、製造へ入れられるが、売上ではないので受注残高・赤字・検算は出さず、納品書も作れない。
+	PageKindOwnCase = "自社案件"
 	// PageKindProduct は加工製品ページ（品物の台帳）の値です——加工製品の一覧が集めます（product_list.go）。
 	PageKindProduct = "加工製品"
 	// PageKindCompany・PageKindMachine は製造台帳の社名と装置名のフォルダの値です。

@@ -275,6 +275,9 @@ func deliveryPickHTML(r backlogRow, client string) string {
 	if r.Quote {
 		return `<input type="checkbox" disabled title="見積の依頼です（注文が来たら納品できます）">`
 	}
+	if r.Own {
+		return `<input type="checkbox" disabled title="自社案件です（納品書は作りません）">`
+	}
 	if r.Remaining <= 0 {
 		return `<input type="checkbox" disabled title="案件残がありません">`
 	}
