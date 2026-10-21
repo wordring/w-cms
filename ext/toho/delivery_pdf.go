@@ -202,6 +202,8 @@ func makeDeliveryPDF(w http.ResponseWriter, user *auth.User, pageID string) (mad
 		}
 		return head[DeliveryIssuedTag]
 	})
+	// 全部納めた製造ページを記録へ（2026-10-21・mfg_close.go——納品までは製造の管理下）。
+	closeFinishedMfgPages(user, pageNum(pageID), time.Now())
 	return made, true
 }
 

@@ -1,21 +1,23 @@
 package toho
 
 // ─────────────────────────────────────────────────────────────────────────
-// 製造ページを記録へ移す（2026-10-19・【考察】製造ページ・作る順の5番）
+// 製造ページを記録へ移す（2026-10-19・【考察】製造ページ・作る順の5番。2026-10-21 に、移す時を「全部納めたとき」に替えた）
 //
 //	2026-10-19 利用者（§7 の答え）: 製造ページは、請求書の発行の時点で 記録／年／月 へ移す。
 //	（5番の案に）「その三つはそのままで良いです」——
 //	  1. 請求書を発行したとき、全部の行を納め終えて請求も済んだ製造ページだけを移す
 //	  2. 移す先は `記録／年／月／製造記録`（年月は請求書の請求日）
 //	  3. 手でも閉じられる（「この製造を閉じる」——見積だけで終わった製造は請求書が無い）
+//	2026-10-21 利用者:「製造が終わったものが納品されるので、納品までは製造の管理下にあると思います」
+//	（【考察】製造単位の部材発注 §5.5 問い4・§6.5）——だから 1 と 2 を改めた:
+//	  1. 納品書の PDF を作ったとき（`発行日` を書いたとき）、全部の行を納め終えた製造ページを移す（請求書とは切り離す）
+//	  2. 移す先は `記録／年／月／製造記録`（年月はその日）
 //
 //   - 「済んだ」は、製造明細の行ごとに、この製造の納品書（`ページ種類：弊社納品書`・mfgDeliveryRows）で数量ぶん納めていて、
-//     その納品書の行が全部どれかの請求書に載っていること（deliveredUnder・billedKeys）。
-//     ⚠ いまの billedKeys は、まだ紙を作っていない（`発行日` の空い）請求書に載った行も「載っている」と数えます。
-//     納品書のほうは、発行済かどうかを見ません（deliveredUnder）——請求書に載るのは発行済の納品書の行だけなので、
-//     「全部が請求書に載った」なら納品書も発行済です。
+//     その納品書が全部発行済（`発行日` がある）であること（mfgFinished）。
 //   - 移すのは、トップ直下の「製造」の直下にある製造ページだけ（もう閉じたものは動かさない）。書けない製造ページは飛ばす。
-//   - 移しても、製造ページの中身・子の書類はそのまま（案件残表の「製造中」のリンクも、ページ番号は変わらないので切れない）。
+//   - 移しても、製造ページの中身はそのまま（案件残表の「製造中」のリンクも、ページ番号は変わらないので切れない）。
+//     書類は 2026-10-21 から記録の年月にあり、製造ページとは明細の「製造」の列でつながる（それまでに子に作った書類は一緒に動く）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -40,8 +42,8 @@ func mfgIsOpen(mfgID int) bool {
 	return has && meta.ParentID == box
 }
 
-// mfgFinished は、製造ページ mfgID の製造明細を全部納め、その納品書の行が全部請求書に載っているかです。
-func mfgFinished(mfgID int, billed map[string]bool) bool {
+// mfgFinished は、製造ページ mfgID の製造明細を全部納め、その納品書が全部発行済（`発行日` がある）かです（2026-10-21——それまでは「全部請求書に載った」）。
+func mfgFinished(mfgID int) bool {
 	rows, err := cms.VocabTableRowsOf(database.DB, mfgID, MfgItemsType)
 	if err != nil {
 		return false
@@ -61,12 +63,14 @@ func mfgFinished(mfgID int, billed map[string]bool) bool {
 	if !some {
 		return false
 	}
-	// この製造の納品書の行が、全部どれかの請求書に載っているか。
+	// この製造の納品書が、全部発行済か。
+	seen := map[int]bool{}
 	for _, r := range mfgDeliveryRows(mfgID) {
-		if q, okQ := estimateNumber(r.Values["quantity"]); !okQ || q <= 0 {
+		if seen[r.PageID] {
 			continue
 		}
-		if !billed[invoiceKey(page.FormatID(r.PageID), r.Values["order"], r.Values["item-id"], r.Values["item-name"])] {
+		seen[r.PageID] = true
+		if strings.TrimSpace(cms.PageTagValue(database.DB, r.PageID, DeliveryIssuedTag)) == "" {
 			return false
 		}
 	}
@@ -111,27 +115,18 @@ func moveMfgToRecord(user *auth.User, mfgID int, t time.Time) error {
 	return err
 }
 
-// closeFinishedMfgPages は、請求書（本文 body）が指す製造ページのうち、済んだものを記録へ移します（請求書の発行のとき）。
-// 年月は請求書の請求日（読めなければ today）。移したページの番号を返します。
-func closeFinishedMfgPages(user *auth.User, body string, today time.Time) []int {
-	head, rows, err := readInvoiceDoc(body)
-	if err != nil {
-		return nil
-	}
-	when := today
-	if t, err := time.Parse("2006-01-02", strings.TrimSpace(head[InvoiceDateTag])); err == nil {
-		when = t
-	}
-	billed := billedKeys(false) // ⚠ 発行した請求書だけにする直し（billedKeys(true)）は途中（2026-10-20・試験 TestCloseFinishedMfgPagesOnInvoice が落ちた）
+// closeFinishedMfgPages は、納品書 dlvID の製造ページのうち、済んだものを記録へ移します（納品書の PDF を作ったとき・2026-10-21）。
+// 年月は today。移したページの番号を返します。
+func closeFinishedMfgPages(user *auth.User, dlvID int, today time.Time) []int {
 	var moved []int
-	for _, id := range mfgPagesOfInvoice(rows) {
-		if !mfgIsOpen(id) || !canWritePage(user, id) || !mfgFinished(id, billed) {
+	for _, id := range mfgsOfDoc(dlvID, DeliveryItemsType) {
+		if !mfgIsOpen(id) || !canWritePage(user, id) || !mfgFinished(id) {
 			continue
 		}
-		if err := moveMfgToRecord(user, id, when); err != nil {
+		if err := moveMfgToRecord(user, id, today); err != nil {
 			continue
 		}
-		auth.Audit(user.Username, "mfg.close", page.FormatID(id)+" ← 請求書の発行")
+		auth.Audit(user.Username, "mfg.close", page.FormatID(id)+" ← 全部納めた（納品書 "+page.FormatID(dlvID)+" の発行）")
 		moved = append(moved, id)
 	}
 	return moved

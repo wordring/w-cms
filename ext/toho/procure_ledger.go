@@ -141,6 +141,10 @@ func collectSupplies(db cms.ReadOnlyDB, canView func(int) bool) map[string][]*su
 //     増えたぶんは案件の無い手当て（在庫）として最初の加工製品に足す。減らしたら、後ろのぶんから減らす。
 //   - 内訳が無ければ（読めなければ）、弊社品番と案件の列の1つ。弊社品番の無い行は、どの加工製品のぶんか語らないので数えない（混ぜない）。
 func rowSupplies(r cms.VocabRow) []breakdownEntry {
+	// 追加の発注の行（備考「追加」・2026-10-21・order_unsend.go）は数えない——作り直しに使うぶんで、余りとして回さない。
+	if isExtraLine(r.Values["note"]) {
+		return nil
+	}
 	q := cms.VocabQuantity(r)
 	if es, ok := parseBreakdown(r.Values["breakdown"]); ok {
 		sum := 0

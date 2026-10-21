@@ -30,13 +30,14 @@ func invoiceBodyOf(deliveries ...[2]string) string {
 	return b + `</tbody></table>`
 }
 
-// TestCloseFinishedMfgPagesOnInvoice は、請求書の発行のとき、
+// TestCloseFinishedMfgPagesOnDelivery は、納品書の PDF を作ったとき（2026-10-21——納品までは製造の管理下）、
 //   - 納め終えていない製造ページは動かさない
-//   - 納め終えても、請求書に載っていない納品書があれば動かさない
-//   - 全部納めて全部請求したら `記録／年／月／製造記録`（年月は請求日）へ移す・2回目は動かさない
+//   - 納め終えても、発行していない（`発行日` の空い）納品書があれば動かさない
+//   - 全部納めて全部発行したら `記録／年／月／製造記録`（年月はその日）へ移す・2回目は動かさない
+//   - 請求書の足元には、記録へ移したことが出る（請求書とは切り離したが、見せるのは続ける）
 //
 // ことを固定します。
-func TestCloseFinishedMfgPagesOnInvoice(t *testing.T) {
+func TestCloseFinishedMfgPagesOnDelivery(t *testing.T) {
 	setupExtTest(t, "000940", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	u := adminUser()
 	box, err := cms.EnsureTopLevelBox(MfgBoxTitle, "alice")
@@ -46,35 +47,34 @@ func TestCloseFinishedMfgPagesOnInvoice(t *testing.T) {
 	addPage(t, 951, pageNum(box), "ブラケット", "alice", "302", true)
 	syncBody(t, 951, mfgBody(`<tr><td></td><td>000900</td><td>A-1</td><td>ブラケット</td><td>10</td><td></td></tr>`))
 	seedIssuedDelivery(t, 952, 951, "あけぼの精工", "2026-10-05", "2026-10-05", [5]string{"000900", "A-1", "ブラケット", "6", "100"})
-	addPage(t, 953, -1, "請求書", "alice", "302", true)
-	inv := invoiceBodyOf([2]string{"000952", "6"})
-	syncBody(t, 953, inv)
 	now := time.Date(2026, 11, 2, 9, 0, 0, 0, time.Local)
 
-	if moved := closeFinishedMfgPages(u, inv, now); len(moved) != 0 {
+	if moved := closeFinishedMfgPages(u, 952, now); len(moved) != 0 {
 		t.Errorf("⚠ 納め終えていない製造ページを移しました: %v", moved)
 	}
-	// 残りの4を納めた——でも、まだ請求書に載っていない。
-	seedIssuedDelivery(t, 954, 951, "あけぼの精工", "2026-10-20", "2026-10-20", [5]string{"000900", "A-1", "ブラケット", "4", "100"})
-	if moved := closeFinishedMfgPages(u, inv, now); len(moved) != 0 {
-		t.Errorf("⚠ 請求書に載っていない納品書があるのに移しました: %v", moved)
+	// 残りの4を納めた——でも、その納品書はまだ発行していない。
+	seedIssuedDelivery(t, 954, 951, "あけぼの精工", "2026-10-20", "", [5]string{"000900", "A-1", "ブラケット", "4", "100"})
+	if moved := closeFinishedMfgPages(u, 954, now); len(moved) != 0 {
+		t.Errorf("⚠ 発行していない納品書があるのに移しました: %v", moved)
 	}
-	inv = invoiceBodyOf([2]string{"000952", "6"}, [2]string{"000954", "4"})
-	syncBody(t, 953, inv)
-	moved := closeFinishedMfgPages(u, inv, now)
+	syncBody(t, 954, issuedDeliveryBody("あけぼの精工", "2026-10-20", "2026-11-02", [5]string{"000900", "A-1", "ブラケット", "4", "100"}))
+	moved := closeFinishedMfgPages(u, 954, now)
 	if len(moved) != 1 || moved[0] != 951 {
 		t.Fatalf("⚠ 済んだ製造ページを移しません: %v", moved)
 	}
-	if got := placeOf("000951"); !strings.HasSuffix(got, "2026年／10月／"+RecordWorkFolder) {
-		t.Errorf("⚠ 移した先が %s です（記録／2026年／10月／製造記録——年月は請求日のはず）", got)
+	if got := placeOf("000951"); !strings.HasSuffix(got, "2026年／11月／"+RecordWorkFolder) {
+		t.Errorf("⚠ 移した先が %s です（記録／2026年／11月／製造記録——年月はその日のはず）", got)
 	}
 	if mfgIsOpen(951) {
 		t.Errorf("⚠ 移したのに、まだ「製造」の下と言います")
 	}
-	if again := closeFinishedMfgPages(u, inv, now); len(again) != 0 {
+	if again := closeFinishedMfgPages(u, 954, now); len(again) != 0 {
 		t.Errorf("⚠ 閉じた製造ページをもう一度動かしました: %v", again)
 	}
 	// 請求明細表の足元に「記録へ移しました」。
+	addPage(t, 953, -1, "請求書", "alice", "302", true)
+	inv := invoiceBodyOf([2]string{"000952", "6"}, [2]string{"000954", "4"})
+	syncBody(t, 953, inv)
 	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/000953", nil), u), 953, inv)
 	if !strings.Contains(got, "は記録へ移しました") {
 		t.Errorf("⚠ 請求明細表の足元に、製造ページを移したことが出ていません:\n%s", got)

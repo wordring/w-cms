@@ -128,6 +128,8 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		// 部材を発注部材表へ（2026-10-19・作る順の3番）——この製造の、まだ手配していない部材を、この製造ページの発注部材表へ。
 		parts := `<button type="button" class="chip-btn mfg-parts-go" data-mfg="` + pid + `">📦 この製造の部材を発注部材表へ</button> <span class="mfg-parts-say"></span>`
 		// 部材の見積を頼む（2026-10-19・mfg_more.go）——この製造の部材を、この製造ページの見積依頼必要部材表へ。
+		// 追加の発注（2026-10-21・order_unsend.go）——加工の失敗などで作り直すぶんを、手配済みを引かずに。
+		parts += ` <button type="button" class="chip-btn mfg-extra-go" data-mfg="` + pid + `" title="この製造の部材を、手配済みを引かずに発注部材表へ出します（備考は「追加」・要らない行は外す）">➕ 追加の発注</button> <span class="mfg-extra-say"></span>`
 		parts += ` <button type="button" class="chip-btn mfg-rfq-go" data-mfg="` + pid + `">📨 この製造の部材を見積依頼必要部材表へ</button> <span class="mfg-rfq-say"></span>`
 		// 見積の依頼の行があれば、この製造の見積書（2026-10-19・quote_done.go）。
 		if mfgHasQuoteRows(el) {

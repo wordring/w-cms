@@ -246,6 +246,8 @@ func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, n
 		`" title="FAXサーバーはまだありません。送ったら押してください">📠 FAXで送った</button>`)
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByHand +
 		`" title="印刷して手渡し・郵送したら押してください">🤝 手渡した</button>`)
+	// 送ったことを取り消す（2026-10-21・order_unsend.go）——送った行があるときだけ。
+	b.WriteString(unsendButtonHTML(counts))
 	b.WriteString(`</div>`)
 
 	// ── メールの箱（はじめは畳んでおく） ──────────────────────────────

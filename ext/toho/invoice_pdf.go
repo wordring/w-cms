@@ -201,10 +201,7 @@ func makeInvoicePDF(w http.ResponseWriter, user *auth.User, pageID string) (made
 		}
 		return head[DeliveryIssuedTag]
 	})
-	// 済んだ製造ページを記録へ（2026-10-19・mfg_close.go——請求書の発行のとき）。移したかは請求明細表の足元に出る。
-	if body, err := cms.ReadPageBody(pageID); err == nil {
-		closeFinishedMfgPages(user, body, time.Now())
-	}
+	// （済んだ製造ページを記録へ移すのは、2026-10-21 から納品書の PDF を作ったとき——mfg_close.go。請求書とは切り離した。）
 	return made, true
 }
 
@@ -232,7 +229,7 @@ func renderInvoiceItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	for _, id := range mfgPagesOfInvoice(rows) {
 		link := `<a href="/` + page.FormatID(id) + `">` + stdhtml.EscapeString(cms.PageTitleByID(id)) + `</a>`
 		if mfgIsOpen(id) {
-			appendFootHTML(el, span, "estimate-note", `製造 `+link+` はまだ「`+MfgBoxTitle+`」にあります（納め終えていない行か、請求書に載っていない納品書があります）`)
+			appendFootHTML(el, span, "estimate-note", `製造 `+link+` はまだ「`+MfgBoxTitle+`」にあります（納め終えていない行か、発行していない納品書があります）`)
 		} else {
 			appendFootHTML(el, span, "estimate-note", `製造 `+link+` は記録へ移しました`)
 		}

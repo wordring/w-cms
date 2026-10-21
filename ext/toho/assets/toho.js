@@ -1737,6 +1737,25 @@ delegateClick([
         location.reload();
     }
 
+    // 送ったことを取り消す（2026-10-21・ext/toho/order_unsend.go）——発注済の行を未発注に戻す。なぜ戻したかは人がメモに書く。
+    async function unsend(btn) {
+        const root = btn.closest('.order-send');
+        const box = root ? root.querySelector('[data-order-result]') : null;
+        if (!confirm('この部材発注書を、送っていないことにします（発注済の行を未発注に戻します）。\n' +
+            '相手に届いたものは取り消せません。必要なら相手に連絡し、なぜ戻したかをメモに書いてください。よろしいですか？')) return;
+        btn.disabled = true;
+        sayIn(box, '戻しています…');
+        const r = await postJSON('/api/our-order/unsend', {
+            page_id: root ? root.getAttribute('data-order-page') || '' : '',
+        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        if (!r.ok) {
+            sayIn(box, '⚠ ' + (r.data.message || '戻せませんでした'), 'proc-why-ng');
+            btn.disabled = false;
+            return;
+        }
+        location.reload();
+    }
+
     // ⚠ **document へ委譲します**——鏡はサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
     delegateClick([
@@ -1745,6 +1764,7 @@ delegateClick([
         ['[data-order-pdf]', makePDF],
         ['[data-order-pdf-docs]', makePDFWithDocs],
         ['[data-order-sent]', markSent],
+        ['[data-order-unsend]', unsend],
         // メールで送る欄は部品です（2026-09-30・ext/comm/mail/assets/mail-compose.js——「PDFを作る → 送る → 発注済みにする」は
         // サーバーの用件「部材発注書」が受け持つ・ext/toho/order_mail.go）。
     ]);
@@ -1901,11 +1921,23 @@ delegateClick([['.mfg-parts-go', async (btn) => {
     location.reload();
 }]]);
 
+// 製造ページの「➕ 追加の発注」（2026-10-21・ext/toho/order_unsend.go）——手配済みを引かずに、備考「追加」で発注部材表へ。
+delegateClick([['.mfg-extra-go', async (btn) => {
+    const say = btn.parentElement && btn.parentElement.querySelector('.mfg-extra-say');
+    if (!confirm('この製造の部材を、手配済みを引かずに全部、発注部材表へ出します（備考は「追加」）。\n要らない行は「↩ 外す」で外し、数を直してください。よろしいですか？')) return;
+    btn.disabled = true;
+    sayIn(say, '部材を集めています…');
+    const r = await postJSON('/api/mfg/extra', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '発注部材表へ入れられませんでした')); return; }
+    location.reload();
+}]]);
+
 // 製造ページの「📁 この製造を閉じる」（2026-10-19・ext/toho/mfg_close.go）——確かめてから、記録／年／月／製造記録へ移して読み直す。
 delegateClick([['.mfg-close-go', async (btn) => {
     const say = btn.parentElement && btn.parentElement.querySelector('.mfg-close-say');
-    if (!confirm('この製造ページを「記録／年／月／製造記録」へ移します（中身と下の書類はそのままです）。よろしいですか？\n' +
-        '納め終えて請求書を発行した製造は、請求書の PDF を作ったときに自動で移ります。')) return;
+    if (!confirm('この製造ページを「記録／年／月／製造記録」へ移します（中身はそのままです。書類は記録の年月にあります）。よろしいですか？\n' +
+        '全部納めた製造は、最後の納品書の PDF を作ったときに自動で移ります。')) return;
     btn.disabled = true;
     sayIn(say, '移しています…');
     const r = await postJSON('/api/mfg/close', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
