@@ -47,7 +47,6 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
-	"w-cms/internal/database"
 )
 
 // 部材発注明細表の `状態` の値です。
@@ -158,7 +157,8 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		out, n := setOrderLineStatus(cur, req.Row, value)
 		changed = n
-		if n > 0 && value == OrderLineDelivered && strings.TrimSpace(cms.PageTagValue(database.DB, pageNum(pageID), DeliveredAtTag)) == "" {
+		// 納品日が空かは、ロックの中で読んだ本文で見る（索引が遅れていると、人の書いた納品日を今日で上書きした・2026-10-22 の見直し）。
+		if n > 0 && value == OrderLineDelivered && strings.TrimSpace(bodyTagValue(cur, DeliveredAtTag)) == "" {
 			out = fillDeliveredAtWhenAllIn(out, time.Now().In(time.Local).Format("2006-01-02"))
 		}
 		return out
@@ -199,7 +199,12 @@ func setOrderLineStatus(body string, row int, value string) (string, int) {
 		return body, 0
 	}
 	changed := 0
-	for _, t := range tables {
+	for ti, t := range tables {
+		// 行の番号で選ぶのは1つ目の表だけ（画面のチェックも1つ目の表にだけ出る）。2つ目の表の同じ番号の行まで
+		// 変えていた（2026-10-22 の見直し）。番号なし（0）の「全部」は、どの表にも効く。
+		if row > 0 && ti > 0 {
+			break
+		}
 		rows := rowsOf(t)
 		if len(rows) < 2 {
 			continue

@@ -227,7 +227,10 @@ func renderInvoiceItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	// この請求書の製造ページ（2026-10-19・mfg_close.go）——記録へ移したか、まだ製造にあるか。
 	for _, id := range mfgPagesOfInvoice(rows) {
-		link := `<a href="/` + page.FormatID(id) + `">` + stdhtml.EscapeString(cms.PageTitleByID(id)) + `</a>`
+		if !page.CanView(ctx.Viewer, id) {
+			continue // 見られない製造ページは、題も出さない（2026-10-22 の見直し）
+		}
+		link :=`<a href="/` + page.FormatID(id) + `">` + stdhtml.EscapeString(cms.PageTitleByID(id)) + `</a>`
 		if mfgIsOpen(id) {
 			appendFootHTML(el, span, "estimate-note", `製造 `+link+` はまだ「`+MfgBoxTitle+`」にあります（納め終えていない行か、発行していない納品書があります）`)
 		} else {

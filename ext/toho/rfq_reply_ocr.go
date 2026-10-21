@@ -87,18 +87,22 @@ func parseRFQReplyFile(resp string) (*rfqReplyJudgment, error) {
 }
 
 // applyRFQReplyOCR は返事ページの本文 body に、読んだもの r を入れます——「業者の返事（読んだまま）」を r の表で置き換え
-// （枠が無ければ末尾に作る）、仕入先・読んだ部材見積依頼番号は、いまのタグ tags で空のときだけ埋めます。
+// （枠が無ければ末尾に作る）、仕入先・読んだ部材見積依頼番号は、本文で空のときだけ埋めます。
 // 表が読めなければ ok=false（何も変えない）。
-func applyRFQReplyOCR(body string, r *rfqReplyJudgment, supplier string, tags map[string][]string) (string, bool) {
+//
+// 仕入先・読んだ番号が空かは、渡された body（ロックの中で読んだ本文）で見る——索引で見ると、読んでいる何十秒かのあいだに
+// 人が書いた値を上書きした（2026-10-22 の見直し）。
+func applyRFQReplyOCR(body string, r *rfqReplyJudgment, supplier string) (string, bool) {
 	tbl := sourceTableHTML(r.SourceTable)
 	if tbl == "" {
 		return body, false
 	}
+	have := func(name string) bool { return strings.TrimSpace(bodyTagValue(body, name)) != "" }
 	d := cms.EditBody(body)
-	if strings.TrimSpace(cms.FirstTag(tags, SupplierTag)) == "" && strings.TrimSpace(supplier) != "" {
+	if !have(SupplierTag) && strings.TrimSpace(supplier) != "" {
 		d.SetTag(SupplierTag, supplier)
 	}
-	if no := cms.NormalizeNameForIngest(r.RFQNo); no != "" && strings.TrimSpace(cms.FirstTag(tags, RFQReplyReadNoTag)) == "" {
+	if no := cms.NormalizeNameForIngest(r.RFQNo); no != "" && !have(RFQReplyReadNoTag) {
 		d.SetTag(RFQReplyReadNoTag, no)
 	}
 	if box, ok := d.Container(rfqReplySourceCaption); ok {
@@ -189,7 +193,7 @@ func RFQReplyOCRAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	applied := false
 	if !rewriteBodyOrFail(w, replyID, user.Username, func(cur string) string {
-		out, ok := applyRFQReplyOCR(cur, j, supplier, tags)
+		out, ok := applyRFQReplyOCR(cur, j, supplier)
 		applied = ok
 		return out
 	}) {

@@ -52,15 +52,16 @@ type caseProfit struct {
 	SalesNoPrice int // 数量はあるのに単価の読めない案件明細の行
 	CostSent     float64
 	CostUnsent   float64
-	CostNoPrice  int // この案件に当たるのに単価の読めない部材発注の行
+	CostNoPrice  int // この案件に当たるのに単価か数量の読めない部材発注の行
 	CostRows     int // この案件に当たる部材発注の行（単価の無い行も）——0なら原価は「記録なし」
 }
 
 func (p caseProfit) cost() float64   { return p.CostSent + p.CostUnsent }
 func (p caseProfit) profit() float64 { return p.Sales - p.cost() }
 
-// hasCost は、この案件に当たる部材発注の行があるかです。無ければ原価は分からない（0円ではない）ので、粗利と利益率も出しません。
-func (p caseProfit) hasCost() bool { return p.CostRows > 0 }
+// hasCost は、この案件に当たる部材発注の行のうち、値段の分かる行があるかです。無ければ原価は分からない（0円ではない）ので、
+// 粗利と利益率も出しません（2026-10-22 の見直しまで、単価の無い行だけでも「原価 0円・利益率 100%」と出ていた）。
+func (p caseProfit) hasCost() bool { return p.CostRows-p.CostNoPrice > 0 }
 
 // rate は利益率（%）です。売上が0か、原価の記録が無ければ ok=false。
 func (p caseProfit) rate() (float64, bool) {
@@ -129,6 +130,10 @@ func caseProfits(db cms.ReadOnlyDB, canView func(int) bool) (out map[int]*casePr
 				continue
 			}
 			price, okP := parseMoney(r.Values["cost"])
+			// 数量の空は「分からない」——1個とは数えない（rowSupplies は空を1と読むので、お金に使う前にここで見る）。
+			if strings.TrimSpace(r.Values["quantity"]) == "" {
+				okP = false
+			}
 			hit := false
 			for _, e := range costEntries(r) {
 				id, err := strconv.Atoi(e.Order)
@@ -136,6 +141,10 @@ func caseProfits(db cms.ReadOnlyDB, canView func(int) bool) (out map[int]*casePr
 					continue
 				}
 				hit = true
+				// 見られない案件（とテンプレートの中）は、題も原価も出さない（2026-10-22 の見直し）。
+				if !ok(id) {
+					continue
+				}
 				p := of(id)
 				p.CostRows++
 				switch {
@@ -248,6 +257,8 @@ func caseProfitListHTML(user *auth.User, pageIDInt int) string {
 			total.CostSent += p.CostSent
 			total.CostUnsent += p.CostUnsent
 			total.CostRows += p.CostRows
+			total.CostNoPrice += p.CostNoPrice
+			total.SalesNoPrice += p.SalesNoPrice
 		}
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -265,6 +276,10 @@ func caseProfitListHTML(user *auth.User, pageIDInt int) string {
 	if withCost > 0 {
 		b.WriteString(`<p class="unorder-help">合計（部材の記録のある案件 ` + strconv.Itoa(withCost) + ` 件）: 売上 ` + signedYen(total.Sales) + `・部材の原価 ` + signedYen(total.cost()) +
 			`・粗利 ` + signedYen(total.profit()) + `・利益率 ` + profitRateText(total) + `</p>`)
+		if total.CostNoPrice > 0 || total.SalesNoPrice > 0 {
+			b.WriteString(`<p class="unorder-help">⚠ 単価か数量の読めない行が、部材発注 ` + strconv.Itoa(total.CostNoPrice) + ` 行・案件明細 ` +
+				strconv.Itoa(total.SalesNoPrice) + ` 行あります（合計に入っていません）。</p>`)
+		}
 	} else {
 		b.WriteString(`<p class="unorder-help">部材の記録のある案件が、まだありません（粗利と利益率は出せません）。</p>`)
 	}

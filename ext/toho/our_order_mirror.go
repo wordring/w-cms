@@ -52,7 +52,9 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		docs, _ = orderDocs(ctx.Viewer, rows)
 	}
 	bar := ""
-	if writableMirror(ctx) {
+	// 行の操作は1つ目の表だけ——サーバーの行の操作（状態・外す）は行の番号だけを受け取り、1つ目の表に効く。2つ目の表に
+	// チェックを出すと、選んだのと違う表の行が変わった（2026-10-22 の見直し）。
+	if writableMirror(ctx) && first {
 		addOrderRowPicks(el)
 		bar = orderRowBarHTML(orderID)
 	}

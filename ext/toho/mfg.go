@@ -89,14 +89,15 @@ func init() {
 
 // mfgLookup は描画1回ぶんの「受注ページ×品番（品番が空なら品名） → 製造に入れた数・製造ページ」です。
 type mfgLookup struct {
-	qty   map[string]float64
-	done  map[string]float64 // 製造完了（済）の行の数（2026-10-19・案件明細の製造完了の鏡）
-	pages map[string][]string
+	qty     map[string]float64
+	done    map[string]float64 // 製造完了（済）の行の数（2026-10-19・案件明細の製造完了の鏡）
+	pages   map[string][]string
+	shipped shippedLookup // 納品書で納めた数（handled が使う）
 }
 
 // newMfgLookup は、製造ページ（`ページ種類：製造`・テンプレートの外）の製造明細表の行を全部数えます。
 func newMfgLookup() *mfgLookup {
-	m := &mfgLookup{qty: map[string]float64{}, done: map[string]float64{}, pages: map[string][]string{}}
+	m := &mfgLookup{qty: map[string]float64{}, done: map[string]float64{}, pages: map[string][]string{}, shipped: newShippedLookup(database.DB)}
 	rows, err := cms.VocabRowsOfType(database.DB, MfgItemsType)
 	if err != nil {
 		return m
@@ -138,6 +139,20 @@ func (m *mfgLookup) of(order, itemNo, itemName string) (float64, []string) {
 	return m.qty[k], m.pages[k]
 }
 
+// handled は、案件の行のうち、もう手の付いた数です——製造ページに入れた数と、納品書で納めた数の大きいほう。
+//
+// 納めた数も見るのは、製造ページを通らずに納めたぶん（移行用の仮納品書など）があるため——製造ページに入れた数だけ
+// 引いていたので、もう納めた行を全数で製造待ちへ入れ、製造ページも全数で作っていた（2026-10-22 の見直し）。
+// 大きいほうを取るのは、製造ページを通って納めたぶんを二重に引かないため（製造ページの外で納めたぶんと製造ページの数が
+// 両方あるときは、少なめに引く——多く作る側に倒す）。
+func (m *mfgLookup) handled(order, itemNo, itemName string) float64 {
+	in, _ := m.of(order, itemNo, itemName)
+	if s := m.shipped.of(order, itemNo, itemName); s > in {
+		return s
+	}
+	return in
+}
+
 // （受注残表の「製造」の欄〔mfgCellHTML〕は 2026-10-21 に外した——先頭のチェックと「進み」の列へ・mfg_wait.go・backlog.go。）
 
 // ── 製造ページを作る ────────────────────────────────────────────────────
@@ -166,8 +181,7 @@ func mfgLineOf(user *auth.User, p deliveryPick, mfg *mfgLookup, machines *machin
 	if !okQ || q <= 0 {
 		return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回作る数が読めません: " + p.Qty
 	}
-	inMfg, _ := mfg.of(id, v["item-id"], v["item-name"])
-	free := r.Num("quantity") - int(inMfg)
+	free := r.Num("quantity") - int(mfg.handled(id, v["item-id"], v["item-name"]))
 	if int(q) > free {
 		return mfgLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」は、まだ製造に入っていない数が " + strconv.Itoa(free) + " です（" + p.Qty + " は多すぎます）"
 	}
@@ -249,6 +263,9 @@ func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
+	// 「▶ 開始」と同じく1つずつ通す（同時に押すと、同じ数の製造ページが2枚できる）。
+	mfgStartMu.Lock()
+	defer mfgStartMu.Unlock()
 	if len(req.Items) == 0 {
 		cms.JSONFail(w, http.StatusBadRequest, "製造を始める行を1つ以上選んでください")
 		return

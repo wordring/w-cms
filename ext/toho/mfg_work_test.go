@@ -113,15 +113,25 @@ func TestGrossQuoteLinesDoNotSubtractArranged(t *testing.T) {
 	withBreakdown.Breakdown = "000030/000031:1"
 	edited := fb
 	edited.Size = "t4.5*75*999"
-	got := grossQuoteLines(u, pageNum(mfg), []ourOrderLine{fb, withBreakdown, edited})
-	if got[0].Quantity != "2" || got[0].Note != "" {
-		t.Errorf("⚠ 見積もりの数が手配済みを引いたまま（%q）か、備考の「追加」が残っています（%q）", got[0].Quantity, got[0].Note)
+	got := grossQuoteLines(u, pageNum(mfg), []ourOrderLine{fb, edited})
+	if len(got) != 2 || got[0].Quantity != "2" || got[0].Note != "" {
+		t.Fatalf("⚠ 見積もりの数が手配済みを引いたままか、備考の「追加」が残っています: %+v", got)
 	}
-	if got[1].Quantity != "2" || got[1].Breakdown != "000030/000031:2" {
-		t.Errorf("⚠ 内訳のある行の数・内訳が直っていません: %q %q", got[1].Quantity, got[1].Breakdown)
+	if got[1].Quantity != "1" {
+		t.Errorf("⚠ 部材の読めない行の数を変えています: %q", got[1].Quantity)
 	}
-	if got[2].Quantity != "1" {
-		t.Errorf("⚠ 部材の読めない行の数を変えています: %q", got[2].Quantity)
+	if got := grossQuoteLines(u, pageNum(mfg), []ourOrderLine{withBreakdown}); got[0].Quantity != "2" || got[0].Breakdown != "000030/000031:2" {
+		t.Errorf("⚠ 内訳のある行の数・内訳が直っていません: %q %q", got[0].Quantity, got[0].Breakdown)
+	}
+	// ふだんの行と「追加」の行を両方選んでも、同じ部材×案件×加工製品は1行だけ（どちらも作る数の全部になり、倍に写っていた・2026-10-22 の見直し）。
+	if got := grossQuoteLines(u, pageNum(mfg), []ourOrderLine{fb, withBreakdown}); len(got) != 1 || got[0].Quantity != "2" {
+		t.Errorf("⚠ 同じ部材を2行写しています: %+v", got)
+	}
+	// 材料の行に品名が入っていても（移した古いページ）、加工製品の材料表の行と合わせる。
+	named := fb
+	named.ItemName = "鉄板"
+	if got := grossQuoteLines(u, pageNum(mfg), []ourOrderLine{named}); got[0].Quantity != "2" {
+		t.Errorf("⚠ 品名のある材料の行を、加工製品の材料表と合わせられません: %q", got[0].Quantity)
 	}
 }
 

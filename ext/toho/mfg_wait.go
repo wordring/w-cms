@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/internal/auth"
@@ -114,7 +115,8 @@ func decodeWaitPicks(w http.ResponseWriter, r *http.Request, none string) ([]wai
 }
 
 // MfgWaitAPIHandler は POST /api/mfg/wait です（案件残表の「🏭 製造」）。入力: {items:[{order, row, item}]}。
-// 選んだ行の、まだ製造に入っていない数（数量 − 製造ページに入れた数 − いまの製造待ち）を、その行の「製造待ち」へ足します。
+// 選んだ行の、まだ製造に入っていない数（数量 − 手の付いた数〔製造ページに入れた数か納めた数の大きいほう〕 − いまの製造待ち）を、
+// その行の「製造待ち」へ足します。
 func MfgWaitAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -132,9 +134,8 @@ func MfgWaitAPIHandler(w http.ResponseWriter, r *http.Request) {
 			cms.JSONFail(w, http.StatusConflict, why)
 			return
 		}
-		inMfg, _ := mfg.of(id, row.Values["item-id"], row.Values["item-name"])
 		cur := waitOf(row.Values)
-		free := float64(row.Num("quantity")) - inMfg - cur
+		free := float64(row.Num("quantity")) - mfg.handled(id, row.Values["item-id"], row.Values["item-name"]) - cur
 		if free <= 0 {
 			continue // もう全部、製造に入っている
 		}
@@ -194,7 +195,12 @@ func MfgStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 開始は1つずつ通す。製造待ちを先に外してから製造ページを作る（作れなければ戻す）——2つのタブで同時に押すと、
+	// どちらも製造待ちを見て、同じ数の製造ページが2枚できていた（2026-10-22 の見直し）。
+	mfgStartMu.Lock()
+	defer mfgStartMu.Unlock()
 	mfg, machines := newMfgLookup(), newMachineLookup()
+	picked := map[string]bool{}
 	type started struct {
 		order, item, old string
 		row              int
@@ -207,6 +213,11 @@ func MfgStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if why != "" {
 			cms.JSONFail(w, http.StatusConflict, why)
 			return
+		}
+		if k := id + "#" + strconv.Itoa(row.RowNo); picked[k] {
+			continue // 同じ行が2度来ても1度だけ
+		} else {
+			picked[k] = true
 		}
 		wait := waitOf(row.Values)
 		if wait <= 0 {
@@ -226,25 +237,44 @@ func MfgStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 		lines = append(lines, ln)
 		done = append(done, started{order: id, item: row.Values["item-id"], old: row.Values["mfg-wait"], row: row.RowNo})
 	}
+	// 先に製造待ちから外す（いまの値のときだけ外す——ほかの人が替えていたら止める）。
+	var cleared []started
+	restore := func() []string {
+		var notes []string
+		for _, s := range cleared {
+			if _, err := writeWait(user, s.order, s.row, s.item, "", s.old); err != nil {
+				notes = append(notes, err.Error())
+			}
+		}
+		return notes
+	}
+	for _, s := range done {
+		if code, err := writeWait(user, s.order, s.row, s.item, s.old, ""); err != nil {
+			notes := restore()
+			msg := "製造待ちを外せません（開き直してください）: " + err.Error()
+			if len(notes) > 0 {
+				msg += "。⚠ 戻せなかった製造待ちがあります: " + strings.Join(notes, "／")
+			}
+			cms.JSONFail(w, code, msg)
+			return
+		}
+		cleared = append(cleared, s)
+	}
 	newID, code, err := createMfgPage(user, client, lines)
 	if err != nil {
-		cms.JSONFail(w, code, err.Error())
+		msg := err.Error()
+		if notes := restore(); len(notes) > 0 {
+			msg += "。⚠ 製造待ちを戻せなかった行があります（案件ページの「" + MfgWaitLabel + "」を書き戻してください）: " + strings.Join(notes, "／")
+		}
+		cms.JSONFail(w, code, msg)
 		return
 	}
-	// 製造ページへ移した数を、製造待ちから外す。⚠ 外せなかった行があっても製造ページは残す（数えるのは製造ページが先・下の注意を添える）。
-	var notes []string
-	for _, s := range done {
-		if _, err := writeWait(user, s.order, s.row, s.item, s.old, ""); err != nil {
-			notes = append(notes, err.Error())
-		}
-	}
 	auth.Audit(user.Username, "mfg.start", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")
-	res := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
-	if len(notes) > 0 {
-		res["warning"] = "製造ページは作りましたが、製造待ちから外せなかった行があります（案件ページの「" + MfgWaitLabel + "」を空にしてください）: " + strings.Join(notes, "／")
-	}
-	cms.WriteJSON(w, res)
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": newID, "url": "/" + newID})
 }
+
+// mfgStartMu は製造の開始（/api/mfg/start）を1つずつ通すロックです。
+var mfgStartMu sync.Mutex
 
 // createMfgPage は、客先 client の製造ページを「製造」の置き場の下に作り、そのページ番号を返します
 // （作れなければ、状態の番号と理由）。案件残表の「🏭 製造開始」（/api/mfg/new）と「▶ 開始」が使います。

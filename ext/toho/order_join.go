@@ -296,6 +296,12 @@ func joinOurOrder(w http.ResponseWriter, user *auth.User, joinIn, supplier strin
 	added, summed := 0, 0
 	var fail string
 	if !rewriteBodyOrFail(w, id, user.Username, func(cur string) string {
+		// 送ったかは、ロックの中で読んだ本文でもう一度見る（索引で確かめてからここまでのあいだに送られると、送った行へ数が足された・
+		// 2026-10-22 の見直し）。
+		if orderBodyHasSentLine(cur) {
+			fail = "/" + id + " の部材発注書は送ってあるので足せません（新しい部材発注書を作ってください）"
+			return cur
+		}
 		out, a, s, ok := mergeIntoOrderTable(cur, lines)
 		if !ok {
 			fail = "/" + id + " に部材発注明細表がありません"
@@ -316,4 +322,28 @@ func joinOurOrder(w http.ResponseWriter, user *auth.User, joinIn, supplier strin
 		out["draft_note"] = note
 	}
 	cms.WriteJSON(w, out)
+}
+
+// orderBodyHasSentLine は、本文の部材発注明細表に送った行（発注済・納品済）があるかです。
+func orderBodyHasSentLine(body string) bool {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return false
+	}
+	for _, table := range tablesOfType(nodes, ourOrderItemsType) {
+		rows := rowsOf(table)
+		if len(rows) == 0 {
+			continue
+		}
+		si := headerIndexOf(rows[0], "状態")
+		if si < 0 {
+			continue
+		}
+		for _, tr := range rows[1:] {
+			if orderLineSent(strings.TrimSpace(cellText(tr, si))) {
+				return true
+			}
+		}
+	}
+	return false
 }

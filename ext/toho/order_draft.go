@@ -205,6 +205,11 @@ func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string
 	if err != nil || n < 1 {
 		return "⚠ 元の発注部材表を片付けられません（何枚目か分かりません）"
 	}
+	// 画面が送ってくるページなので、書ける人のページでなければ触らない（2026-10-22 の見直しまで確かめておらず、
+	// 読めないページの表まで消せた）。テンプレートの中も触らない。
+	if pid, _ := strconv.Atoi(pageID); !canWritePage(user, pid) || cms.IsTemplateArea(pageID) {
+		return "⚠ 元の発注部材表を片付けられません（そのページに書けません）"
+	}
 	// ⚠ **開いている人が居たら触りません**——オートセーブと上書きし合います。
 	// （2026-10-12 から、ブラウザは編集権を取らないので、触らないのは道具〔`/api/lock`〕が握っているときだけ。
 	// 人の保存とは `cms.RewriteBody` の錠で順に並びます。）

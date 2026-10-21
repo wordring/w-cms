@@ -8,6 +8,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
 
@@ -55,4 +56,13 @@ func movePage(user *auth.User, pageID, newParent, title string) error {
 	}
 	_, _, err := cms.SetPageParent(user, pageID, newParent)
 	return err
+}
+
+// bodyTagValue は本文 body のタグ name の値です（索引ではなく本文を読む——ロックの中で「空か」を見るとき）。
+func bodyTagValue(body, name string) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return ""
+	}
+	return cms.TagValue(wrapInDiv(nodes), name)
 }

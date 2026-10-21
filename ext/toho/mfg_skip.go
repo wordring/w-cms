@@ -34,12 +34,16 @@ func init() {
 	cms.RegisterMirror(SkipType, cms.MirrorHandlerFunc(renderSkipTable))
 }
 
-// skipColumns は手配不要表の列です——発注の列のうち部材を言い当てるもの（単価・状態・仕様・支給・備考は除く）と、理由・日付。
+// skipColumns は手配不要表の列です——発注の列のうち部材を言い当てるもの（単価・状態は除く）と、理由・日付。
+//
+// ⚠ 仕様・支給・備考は残す（2026-10-22 の見直しまで落としていた）——購入部品・支給部品は仕様まで含めて部材を言い当てる
+// ので、落とすと手配不要が必要な数から引かれず、同じ部品をまた発注できた。備考の「追加」も、落とすと追加のぶんが
+// ふだんの必要な数から引かれた。
 func skipColumns() []cms.VocabColumn {
 	var out []cms.VocabColumn
 	for _, c := range orderItemColumns() {
 		switch c.Field {
-		case "cost", "status", "spec", "supplied", "note":
+		case "cost", "status":
 			continue
 		}
 		out = append(out, c)
@@ -184,7 +188,7 @@ func MfgSkipRemoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
+	if !okID || !requireMfgPage(w, pageID) {
 		return
 	}
 	done := false

@@ -142,10 +142,12 @@ func takeTableRows(body, vocabType string, n int, rows []int, dropEmpty bool) (s
 	}
 	var out []ourOrderLine
 	var gone []*html.Node
+	seen := map[int]bool{} // 同じ行番号が2度来ても1度だけ（2度運ぶと数が倍になる・2026-10-22 の見直し）
 	for _, r := range rows {
-		if r < 1 || r >= len(trs) {
+		if r < 1 || r >= len(trs) || seen[r] {
 			continue
 		}
+		seen[r] = true
 		out = append(out, lineOfRow(trs[0], trs[r]))
 		gone = append(gone, trs[r])
 	}

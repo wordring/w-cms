@@ -454,8 +454,10 @@ func grossQuoteLines(user *auth.User, mfgID int, lines []ourOrderLine) []ourOrde
 	if err != nil {
 		return lines
 	}
+	// 品名は itemNameOf で揃える（材料の行は品名を持たない——必要部材表の行と、加工製品の材料表から読んだ行で
+	// 品名の有無が違い、合わずに手配済みを引いた数のまま写っていた・2026-10-22 の見直し）。
 	partKey := func(ln ourOrderLine) string {
-		parts := []string{ln.Kind, ln.No, ln.ItemID, ln.ItemName, ln.Work, ln.Material, ln.Shape, ln.Size, ln.Color, ln.Spec, ln.Supplied}
+		parts := []string{ln.Kind, ln.No, ln.ItemID, itemNameOf(ln), ln.Work, ln.Material, ln.Shape, ln.Size, ln.Color, ln.Spec, ln.Supplied}
 		for i, p := range parts {
 			parts[i] = cms.NormalizeText(strings.TrimSpace(p))
 		}
@@ -470,6 +472,7 @@ func grossQuoteLines(user *auth.User, mfgID int, lines []ourOrderLine) []ourOrde
 		need[partKey(g)+"|"+g.ForOrder+"|"+g.ProductID] += q
 	}
 	out := make([]ourOrderLine, 0, len(lines))
+	seen := map[string]bool{} // ふだんの行と「追加」の行を両方選ぶと、どちらも作る数の全部になる——1つだけ写す
 	for _, ln := range lines {
 		if strings.TrimSpace(ln.Note) == ExtraNote {
 			ln.Note = ""
@@ -491,6 +494,11 @@ func grossQuoteLines(user *auth.User, mfgID int, lines []ourOrderLine) []ourOrde
 			next = append(next, breakdownEntry{Order: e.Order, Product: e.Product, Qty: q})
 		}
 		if found {
+			k := partKey(ln) + "|" + formatBreakdown(next)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
 			ln.Quantity = strconv.Itoa(total)
 			if strings.TrimSpace(ln.Breakdown) != "" {
 				ln.Breakdown = formatBreakdown(next)
