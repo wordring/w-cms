@@ -158,6 +158,12 @@ func CSRFProtect(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// 機械専用の入口（2026-10-21 夜・machine.go）は Origin を見ません——ブラウザのログインを使わず、鍵（Authorization）で
+		// 確かめるので、別のサイトのページから送らせても鍵が付かず通りません。
+		if strings.HasPrefix(r.URL.Path, MachinePathPrefix) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !sameOrigin(r) {
 			http.Error(w, "CSRF検証に失敗しました（オリジン不一致）", http.StatusForbidden)
 			return

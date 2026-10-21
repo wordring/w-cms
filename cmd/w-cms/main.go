@@ -291,7 +291,14 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/file-ref", cms.FileRefAPIHandler)
 
 	// プラグインが提供するAPI（例: /api/required-materials）を登録する
+	// 前置き /api/machine/ の口は、機械専用の入口（2026-10-21 夜・internal/auth/machine.go——ログインではなく鍵で通す）。
+	machine := http.NewServeMux()
 	for _, route := range cms.PluginRoutes() {
+		if strings.HasPrefix(route.Pattern, auth.MachinePathPrefix) {
+			machine.HandleFunc(route.Pattern, route.Handler)
+			log.Printf("機械の入口を登録: %s", route.Pattern)
+			continue
+		}
 		protected.HandleFunc(route.Pattern, route.Handler)
 		log.Printf("プラグインAPI登録: %s", route.Pattern)
 	}
@@ -342,6 +349,9 @@ func buildHandler() http.Handler {
 	// 常駐ヘルパー（cmd/w-cms-edit）がファイルを受け渡す口——ブラウザのログインを持たないので、ログインの外で
 	// **鍵だけ**を確かめる（鍵はそのファイル1つに限る・使い捨て・2026-09-29）。
 	root.HandleFunc("/api/local-edit/file", cms.LocalEditFileAPIHandler)
+
+	// 機械専用の入口（鍵・呼んだ機械のアドレス・書き手を確かめる——internal/auth/machine.go）。/api/ より長い前置きなので先に当たる。
+	root.Handle(auth.MachinePathPrefix, auth.MachineAuth(machine))
 
 	// 要認証のAPI群（/api/ 配下のうち上記の例外を除く全て）。
 	root.Handle("/api/", auth.RequireAuth(protected))

@@ -44,6 +44,7 @@
     "メールアドレス": { "type": "text" },
     "ドメイン": { "type": "code" },
     "電話番号": { "type": "text" },
+    "通話終了": { "type": "datetime" },
     "FAX番号": { "type": "text" },
     "住所": { "type": "text" },
     "役職": { "type": "text" },
