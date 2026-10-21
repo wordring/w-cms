@@ -35,7 +35,20 @@ const CallEndTag = "通話終了"
 var callerMarks = map[string]string{"P": "非通知", "O": "表示圏外", "C": "公衆電話", "S": "サービス競合", "E": "番号を受けられませんでした"}
 
 // digitsOf は数字だけを残します（全角の数字も半角へ）。
+//
+// 国の番号で始まる番号（「+81 3 1234 5678」——FAX の機械はよくこう名乗る）は、国内の形（03…）にする
+// （連絡帳の番号と合わせるため・2026-10-22 の見直し）。「+81 (0)3…」の括弧の 0 も1つにまとめる。
 func digitsOf(s string) string {
+	if t := strings.TrimSpace(s); strings.HasPrefix(t, "+") || strings.HasPrefix(t, "＋") {
+		if d := plainDigits(t); strings.HasPrefix(d, "81") && len(d) > 3 {
+			return "0" + strings.TrimPrefix(d[2:], "0")
+		}
+	}
+	return plainDigits(s)
+}
+
+// plainDigits は数字だけを残します（全角の数字は半角に）。
+func plainDigits(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		if r >= '０' && r <= '９' {

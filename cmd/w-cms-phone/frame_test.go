@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -42,7 +44,10 @@ func TestFrames(t *testing.T) {
 func TestCallFlow(t *testing.T) {
 	now := time.Date(2026, 10, 21, 10, 16, 0, 0, time.Local)
 	var calls []string
+	var mu sync.Mutex
 	c := &caller{now: func() time.Time { return now }, send: func(ev string, number string, at time.Time, pageID string) (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		calls = append(calls, ev+":"+number+":"+pageID)
 		if ev == "answered" {
 			return "002100", nil
@@ -56,6 +61,7 @@ func TestCallFlow(t *testing.T) {
 	c.handle(event{Kind: evRing, At: now, Number: "0312345678"})
 	c.handle(event{Kind: evOffHook, At: now})
 	c.handle(event{Kind: evOnHook, At: now})
+	c.wg.Wait()
 	want := []string{"answered:0312345678:", "hangup::002100"}
 	if len(calls) != len(want) || calls[0] != want[0] || calls[1] != want[1] {
 		t.Errorf("w-cms への知らせが %q です（%q を期待）", calls, want)
@@ -65,7 +71,39 @@ func TestCallFlow(t *testing.T) {
 	c.handle(event{Kind: evRing, At: now.Add(-10 * time.Minute), Number: "0399999999"})
 	c.lastRingAt = now.Add(-10 * time.Minute)
 	c.handle(event{Kind: evOffHook, At: now})
+	c.wg.Wait()
 	if len(calls) != 1 || calls[0] != "answered::" {
 		t.Errorf("古い着信の番号を使っています: %q", calls)
+	}
+}
+
+// w-cms が一度答えなくても送り直す。記録を作り終える前に電話を置いても、通話終了をその記録に書く（2026-10-22 の見直し）。
+func TestCallRetriesAndLateHangup(t *testing.T) {
+	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.Local)
+	var mu sync.Mutex
+	var calls []string
+	fails := 1
+	release := make(chan struct{})
+	c := &caller{now: func() time.Time { return now }, retry: []time.Duration{time.Millisecond},
+		send: func(ev, number string, at time.Time, pageID string) (string, error) {
+			if ev == "answered" {
+				<-release
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if ev == "answered" && fails > 0 {
+				fails--
+				return "", errors.New("503")
+			}
+			calls = append(calls, ev+":"+pageID)
+			return "002200", nil
+		}}
+	c.handle(event{Kind: evRing, Number: "0312345678"})
+	c.handle(event{Kind: evOffHook})
+	c.handle(event{Kind: evOnHook}) // 記録を作る前に置いた
+	close(release)
+	c.wg.Wait()
+	if len(calls) != 2 || calls[0] != "answered:" || calls[1] != "hangup:002200" {
+		t.Errorf("⚠ 送り方が違います: %q", calls)
 	}
 }

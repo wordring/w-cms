@@ -3,20 +3,46 @@
 # 置き場所: /usr/local/bin/w-cms-fax-retry（chmod 755）。w-cms-fax-retry.timer が5分ごとに動かします。
 #
 # ⚠ 覚え書き（番号と時刻）は、ただの文字として読みます（シェルに取り込まない——番号は相手が書ける文字）。
+#
+# 2026-10-22 の見直しで直したこと:
+#   - 受信番号（ファイル名の fax-<番号>.pdf）を w-cms へ渡す（同じ FAX を2度渡しても、記録を増やさない）。
+#   - w-cms が「受けられない」（4xx）と答えた FAX は、送り直さずに failed/ へ移す（5分ごとに、いつまでも送り直していた）。
+#   - 鍵はコマンドの引数に書かず、自分だけが読めるファイルから curl に渡す。
 
 set -u
 . /etc/w-cms/fax.env
 BASE="${WCMS_BASE:-https://localhost:8443}"
 PENDING=/var/spool/w-cms-fax
 
+WORK=$(mktemp -d) || exit 1
+trap 'rm -rf "$WORK"' EXIT
+umask 077
+printf 'Authorization: Bearer %s\n' "$WCMS_MACHINE_TOKEN" > "$WORK/auth"
+
 for PDF in "$PENDING"/fax-*.pdf; do
 	[ -e "$PDF" ] || continue
+	JOB=$(basename "$PDF" .pdf | sed 's/^fax-//' | tr -cd '0-9A-Za-z')
 	FROM=$(cat "$PDF.from" 2>/dev/null | tr -cd '0-9+ ')
 	AT=$(cat "$PDF.at" 2>/dev/null | tr -cd '0-9T:+-')
-	if curl -fsS -k -H "Authorization: Bearer $WCMS_MACHINE_TOKEN" \
-		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" \
-		"$BASE/api/machine/fax" > /dev/null; then
+	CODE=$(curl -sS -k -o /dev/null -w '%{http_code}' -H "@$WORK/auth" \
+		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" --form-string "job=$JOB" \
+		"$BASE/api/machine/fax")
+	case "$CODE" in
+	2??)
 		rm -f "$PDF" "$PDF.from" "$PDF.at"
 		logger -t w-cms-fax-retry "送り直しました: $PDF"
-	fi
+		;;
+	4??)
+		# 鍵が違う（401）・入口が閉じている（503 は 5xx）などは、直れば送れるので残す。中身で断られたものだけ退ける。
+		if [ "$CODE" = 401 ] || [ "$CODE" = 403 ]; then
+			logger -t w-cms-fax-retry "⚠ w-cms が $CODE と答えました（鍵か書き手の設定を見てください）: $PDF"
+			continue
+		fi
+		mkdir -p "$PENDING/failed" && mv "$PDF" "$PDF.from" "$PDF.at" "$PENDING/failed/" 2>/dev/null
+		logger -t w-cms-fax-retry "⚠ w-cms が受けません（$CODE）——$PENDING/failed/ へ移しました: $PDF"
+		;;
+	*)
+		logger -t w-cms-fax-retry "まだ渡せません（$CODE）: $PDF"
+		;;
+	esac
 done

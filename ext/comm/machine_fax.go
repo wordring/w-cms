@@ -28,6 +28,21 @@ import (
 // FaxNumberTag は FAX 番号のタグです（連絡帳の相手のページと、FAX の記録に書く）。
 const FaxNumberTag = "FAX番号"
 
+// FaxJobTag は、FAX サーバーが受けた FAX ごとに付ける番号のタグです（HylaFAX の commID）。
+// 同じ番号で送り直されたら、記録を作り直さずに続きから（2026-10-22 の見直し——それまでは送り直しのたびに記録が増えた）。
+const FaxJobTag = "FAX受信番号"
+
+// faxJobOf は、送られてきた受信番号を英数字だけに絞ります（40字まで）。
+func faxJobOf(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x80 && (r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z') && b.Len() < 40 {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // faxKinds は FAX として受けるファイルの種類です（FAX サーバーの側で PDF にして渡す決まり。画像も受ける）。
 // ⚠ TIFF は受けません——ブラウザも Gemini も読めないので、FAX サーバーの側で PDF にしてから渡します（deploy/fax/）。
 var faxKinds = map[string]bool{".pdf": true, ".png": true, ".jpg": true, ".jpeg": true}
@@ -96,6 +111,11 @@ func MachineFaxAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	at := parseCallTime(r.FormValue("at"))
 	from := strings.TrimSpace(r.FormValue("from"))
+	job := faxJobOf(r.FormValue("job"))
+	if job != "" {
+		unlock := lockIntakeRef(FaxJobTag + "=" + job)
+		defer unlock()
+	}
 
 	boxID, ok := MailBoxPageID()
 	if !ok {
@@ -122,11 +142,25 @@ func MachineFaxAPIHandler(w http.ResponseWriter, r *http.Request) {
 		label = "番号なし"
 	}
 	title := ChannelFax + " " + label + " " + at.In(time.Local).Format("2006-01-02 15:04")
-	body := memoBodyHTML(tmpl, ChannelFax, title, DirectionIn, "", counterpart, at)
-	pageID, err := CreateRecordPage(boxID, user.Username, at, body)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "記録を作れません: "+err.Error())
-		return
+	// 同じ受信番号の記録があれば、それを使う（FAX がもう表示されていれば、何もしない）。
+	pageID, dup := ExistingIntakePage(FaxJobTag, job)
+	if dup {
+		if cur, _ := cms.ReadPageBody(pageID); strings.Contains(cur, `data-type="file-view"`) {
+			auth.Audit(user.Username, "intake.duplicate", pageID+" ("+FaxJobTag+"="+job+")")
+			cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "url": "/" + pageID, "title": cms.PageTitleByID(atoiPage(pageID)), "duplicate": true})
+			return
+		}
+	} else {
+		body := memoBodyHTML(tmpl, ChannelFax, title, DirectionIn, "", counterpart, at)
+		if job != "" {
+			d := cms.EditBody(body)
+			d.SetTag(FaxJobTag, job)
+			body = d.HTML()
+		}
+		if pageID, err = CreateRecordPage(boxID, user.Username, at, body); err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "記録を作れません: "+err.Error())
+			return
+		}
 	}
 	// FAX を添付に置き、本文に表示する。番号もタグに。
 	attachID, _, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "fax:"+digitsOf(from), content)

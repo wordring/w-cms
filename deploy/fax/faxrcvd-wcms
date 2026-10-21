@@ -13,10 +13,16 @@
 #   WCMS_BASE=https://localhost:8443
 #
 # w-cms が応えないときは、PDF を /var/spool/w-cms-fax/ に残します（w-cms-fax-retry が5分ごとに送り直す）。FAX の原本（TIFF）は
-# HylaFAX の recvq にも残ります。
+# HylaFAX の recvq にも残ります。/var/spool/w-cms-fax/ は、置くときに作っておきます（README の 4）。
 #
 # ⚠ 送ってきた番号（発信者番号・相手の FAX が名乗る TSI）は、相手が好きに書ける文字です。数字と + と空白だけに絞り、
 #    curl には --form-string で渡し（-F だと「@」で始まる値がファイルとして読まれる）、覚え書きはシェルに取り込みません。
+#
+# 2026-10-22 の見直しで直したこと:
+#   - PDF は自分だけの一時の置き場で作り、渡せなかったときだけ /var/spool/w-cms-fax/ へ移す（作っている途中や送っている途中の
+#     PDF を、送り直しのタイマーが一緒に送っていた——記録が2つ・片方は切れた FAX になる）。
+#   - 鍵はコマンドの引数に書かず、自分だけが読めるファイルから curl に渡す（引数は、同じ機械のだれでも ps で見える）。
+#   - 受信番号（commID）を w-cms へ渡す（同じ FAX を送り直しても、記録を増やさない）。
 #
 # 要るもの: tiff2pdf（パッケージ libtiff-tools）・curl・faxinfo（hylafax-server）。
 
@@ -28,9 +34,13 @@ CIDNUMBER="${5:-}"
 . /etc/w-cms/fax.env
 BASE="${WCMS_BASE:-https://localhost:8443}"
 PENDING=/var/spool/w-cms-fax
-mkdir -p "$PENDING"
 
 cd /var/spool/hylafax || exit 1
+
+WORK=$(mktemp -d) || exit 1
+trap 'rm -rf "$WORK"' EXIT
+umask 077
+printf 'Authorization: Bearer %s\n' "$WCMS_MACHINE_TOKEN" > "$WORK/auth"
 
 # 送ってきた番号: 発信者番号（モデムが受けられたとき）が無ければ、相手の FAX が名乗った番号（TSI）。
 FROM="$CIDNUMBER"
@@ -40,27 +50,30 @@ fi
 FROM=$(printf '%s' "$FROM" | tr -cd '0-9+ ' | cut -c1-32)
 AT=$(date -Iseconds)
 
-PDF="$PENDING/fax-$COMMID.pdf"
+PDF="$WORK/fax-$COMMID.pdf"
 if ! tiff2pdf -o "$PDF" "$QFILE"; then
-	logger -t faxrcvd-wcms "FAX $COMMID を PDF にできません"
+	logger -t faxrcvd-wcms "FAX $COMMID を PDF にできません（原本は recvq の $QFILE）"
 	exit 1
 fi
-# 送り直しのための覚え（ただの文字として置く）。
-printf '%s' "$FROM" > "$PDF.from"
-printf '%s' "$AT" > "$PDF.at"
 
 # 送る（5回まで・10秒おき）。自分で作った証明書なので -k（同じ機械の中だけの通り道）。
 i=0
 while [ $i -lt 5 ]; do
-	if curl -fsS -k -H "Authorization: Bearer $WCMS_MACHINE_TOKEN" \
-		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" \
+	if curl -fsS -k -H "@$WORK/auth" \
+		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" --form-string "job=$COMMID" \
 		"$BASE/api/machine/fax" > /dev/null; then
-		rm -f "$PDF" "$PDF.from" "$PDF.at"
 		logger -t faxrcvd-wcms "FAX $COMMID を w-cms へ渡しました"
 		exit 0
 	fi
 	i=$((i + 1))
 	sleep 10
 done
-logger -t faxrcvd-wcms "FAX $COMMID を w-cms へ渡せません——$PDF に残して、あとで送り直します"
+
+# 渡せなかった——送り直しの置き場へ。覚え（番号・時刻）を先に置き、PDF は最後に移す（送り直しは PDF を見て動くため）。
+if ! mkdir -p "$PENDING" 2>/dev/null || ! printf '%s' "$FROM" > "$PENDING/fax-$COMMID.pdf.from" ||
+	! printf '%s' "$AT" > "$PENDING/fax-$COMMID.pdf.at" || ! mv "$PDF" "$PENDING/fax-$COMMID.pdf"; then
+	logger -t faxrcvd-wcms "⚠ FAX $COMMID を w-cms へ渡せず、送り直しの置き場 $PENDING にも置けません（原本は recvq の $QFILE）"
+	exit 1
+fi
+logger -t faxrcvd-wcms "FAX $COMMID を w-cms へ渡せません——$PENDING に残して、あとで送り直します"
 exit 0

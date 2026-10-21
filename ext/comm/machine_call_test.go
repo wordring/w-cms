@@ -138,12 +138,14 @@ func TestMachineFax(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := &auth.User{Username: "alice"}
+	job := ""
 	post := func(name string, content []byte, from string) (int, map[string]any) {
 		var buf bytes.Buffer
 		mw := multipart.NewWriter(&buf)
 		fw, _ := mw.CreateFormFile("file", name)
 		fw.Write(content)
 		mw.WriteField("from", from)
+		mw.WriteField("job", job)
 		mw.WriteField("at", "2026-10-21T13:05:00+09:00")
 		mw.Close()
 		req := auth.WithUser(httptest.NewRequest("POST", "/api/machine/fax", &buf), u)
@@ -173,5 +175,18 @@ func TestMachineFax(t *testing.T) {
 	}
 	if code, _ := post("fax.tif", []byte("II*\x00"), ""); code != http.StatusBadRequest {
 		t.Errorf("⚠ TIFF を受けました（%d）", code)
+	}
+	// 同じ受信番号で送り直されたら、記録を増やさない（国の番号で名乗っても、連絡帳の番号に合う）。
+	job = "000123"
+	_, first := post("fax-000123.pdf", []byte("%PDF-1.4 again"), "+81 6 9876 5432")
+	_, second := post("fax-000123.pdf", []byte("%PDF-1.4 again"), "+81 6 9876 5432")
+	if first["page_id"] == nil || first["page_id"] != second["page_id"] || second["duplicate"] != true {
+		t.Errorf("⚠ 送り直しで記録が増えました: %v / %v", first, second)
+	}
+	if id2, _ := first["page_id"].(string); id2 != "" {
+		b, _ := os.ReadFile(filepath.Join(page.GetPageDir(id2), id2+".html"))
+		if !strings.Contains(string(b), "<dd>000301</dd>") || len(cms.ReadAttachmentMetas(id2)) != 1 {
+			t.Errorf("⚠ +81 の番号で相手を引けないか、添付が増えました:\n%s", b)
+		}
 	}
 }

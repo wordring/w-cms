@@ -50,15 +50,77 @@ import (
 const ringFresh = 5 * time.Minute
 
 // caller は電文の流れから w-cms へ知らせる部分です（試験では send を差し替える）。
+//
+// 送るのは裏で（電文を読む流れを止めない）。w-cms が止まっている（入れ替え中など）あいだは、retry の間隔で
+// 送り直す——それまでは、そのあいだの着信が消えていた（2026-10-22 の見直し）。
+// 時刻は、機器の時計ではなくこのパソコンの時計で記録する（機器の時計は進み遅れ、電源が切れると戻る）。
 type caller struct {
-	now  func() time.Time
-	send func(event, number string, at time.Time, pageID string) (string, error)
-	open func(pageID string) // 出た着信の記録を開く（nil なら開かない）
+	now   func() time.Time
+	send  func(event, number string, at time.Time, pageID string) (string, error)
+	open  func(pageID string) // 出た着信の記録を開く（nil なら開かない）
+	retry []time.Duration     // 送れなかったときに待つ間隔（尽きたら諦める・空なら1回だけ）
 
 	mu         sync.Mutex
 	lastRing   string
 	lastRingAt time.Time
-	current    string // いまの通話の記録（answered で作ったページ）
+	current    *callRec // いまの通話（出たときに作る）
+	wg         sync.WaitGroup
+}
+
+// callRec は通話1つです。id は w-cms の記録（作れたら入る）、ended は記録を作る前に電話を置いたか。
+type callRec struct {
+	id    string
+	ended bool
+	endAt time.Time
+}
+
+// deliver は f を、成功するまで retry の間隔で繰り返します（諦めたら最後の誤りを返す）。
+func (c *caller) deliver(what string, f func() error) error {
+	err := f()
+	for _, d := range c.retry {
+		if err == nil {
+			return nil
+		}
+		log.Printf("⚠ %s を送れません（%v 後にもう一度）: %v", what, d, err)
+		time.Sleep(d)
+		err = f()
+	}
+	return err
+}
+
+// answer は出た着信の記録を作り、そのあいだに電話を置いていたら通話終了も書きます（裏で動く）。
+func (c *caller) answer(rec *callRec, number string, at time.Time) {
+	defer c.wg.Done()
+	var id string
+	err := c.deliver("出た着信", func() (err error) {
+		id, err = c.send("answered", number, at, "")
+		return err
+	})
+	if err != nil {
+		log.Printf("⚠ 記録を作れません（%s）: %v", number, err)
+		return
+	}
+	log.Printf("出た着信を記録しました: /%s（%s）", id, number)
+	c.mu.Lock()
+	rec.id = id
+	ended, endAt := rec.ended, rec.endAt
+	c.mu.Unlock()
+	if c.open != nil && id != "" && !ended {
+		go c.open(id)
+	}
+	if ended && id != "" {
+		c.hangup(id, endAt)
+	}
+}
+
+// hangup は通話終了を書きます。
+func (c *caller) hangup(id string, at time.Time) {
+	if err := c.deliver("通話終了", func() error {
+		_, err := c.send("hangup", "", at, id)
+		return err
+	}); err != nil {
+		log.Printf("⚠ 通話終了を書けません（/%s）: %v", id, err)
+	}
 }
 
 // handle は電文1つを処理します。
@@ -78,24 +140,25 @@ func (c *caller) handle(e event) {
 			number = c.lastRing
 		}
 		c.lastRing = ""
-		id, err := c.send("answered", number, e.At, "")
-		if err != nil {
-			log.Printf("⚠ 記録を作れません（%s）: %v", number, err)
-			return
-		}
-		c.current = id
-		log.Printf("出た着信を記録しました: /%s（%s）", id, number)
-		if c.open != nil && id != "" {
-			go c.open(id)
-		}
+		rec := &callRec{}
+		c.current = rec // 前の通話の「置いた」が来なかったときも、前の記録へは書かない
+		c.wg.Add(1)
+		go c.answer(rec, number, c.now())
 	case evOnHook:
-		if c.current == "" {
+		rec := c.current
+		c.current = nil
+		if rec == nil {
 			return
 		}
-		if _, err := c.send("hangup", "", e.At, c.current); err != nil {
-			log.Printf("⚠ 通話終了を書けません（/%s）: %v", c.current, err)
+		if rec.id == "" {
+			rec.ended, rec.endAt = true, c.now() // 記録を作り終えたら書く（answer）
+			return
 		}
-		c.current = ""
+		c.wg.Add(1)
+		go func(id string, at time.Time) {
+			defer c.wg.Done()
+			c.hangup(id, at)
+		}(rec.id, c.now())
 	}
 }
 
@@ -237,7 +300,10 @@ func main() {
 	}
 	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: *insecure}}
 	cl := &client{base: *base, token: token, http: &http.Client{Timeout: 20 * time.Second, Transport: tr}}
-	c := &caller{now: time.Now, send: cl.call}
+	c := &caller{now: time.Now, send: cl.call,
+		// 合わせて1時間ほど送り直す（サーバーの入れ替え・再起動を待てる長さ）。
+		retry: []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute,
+			5 * time.Minute, 10 * time.Minute, 10 * time.Minute, 15 * time.Minute, 15 * time.Minute}}
 	if *open {
 		c.open = func(id string) { openBrowser(strings.TrimRight(*base, "/") + "/" + id) }
 	}
