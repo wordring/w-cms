@@ -116,13 +116,41 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	return false, nil
 }
 
-// appendMfgPageEnd は、ページの末尾（作業の見出しの外）に「この製造の書類」と「閉じる」を置きます（鏡）。
+// appendMfgPageEnd は「この製造の書類」と「閉じる」を置きます（鏡）。
+//
+// 書類は、種類ごとに、それを作る作業の見出しの節の末尾に置きます（2026-10-21 夜——mfgDocHeading）。
+//
+// > 2026-10-21 利用者:「部材発注書は納品作業ではなく、発注作業です」
+//
+// それまでは全部をページの末尾に置いていて、末尾は最後の見出し「納品作業」の節の中なので、部材発注書も納品作業の下に見えていました。
+// 見出しの無いページ（作業の見出しを足す前の形）の書類と「閉じる」は、いままでどおりページの末尾です。
 func appendMfgPageEnd(ctx *cms.MirrorContext, el *html.Node, writable, open bool) {
 	root := rootOf(el)
 	if root == el {
 		return
 	}
-	end := mfgDocsHTML(mfgDocs(ctx.Viewer, ctx.PageID))
+	var rest []mfgDoc
+	byHeading := map[string][]mfgDoc{}
+	for _, d := range mfgDocs(ctx.Viewer, ctx.PageID) {
+		h := mfgDocHeading(d.Kind)
+		if h == "" || !hasTopHeading(root, h) {
+			rest = append(rest, d)
+			continue
+		}
+		byHeading[h] = append(byHeading[h], d)
+	}
+	for _, h := range []string{MfgHeadStart, MfgHeadOrder, MfgHeadQuote, MfgHeadDelivery} {
+		if docs := byHeading[h]; len(docs) > 0 {
+			div := &html.Node{Type: html.ElementNode, Data: "div",
+				Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome w-no-print mfg-docs-under"}, {Key: "contenteditable", Val: "false"}}}
+			appendHTML(div, mfgDocsHTML(docs))
+			insertAtSectionEnd(root, h, div)
+		}
+	}
+	end := ""
+	if len(rest) > 0 || len(byHeading) == 0 {
+		end = mfgDocsHTML(rest)
+	}
 	switch {
 	case !open:
 		end += `<p class="mfg-closed">この製造は閉じています（記録へ移しました）</p>`

@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/html"
+
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -203,4 +205,54 @@ func mfgDocsHTML(docs []mfgDoc) string {
 	}
 	b.WriteString(`</ul></div>`)
 	return b.String()
+}
+
+// mfgDocHeading は、書類の種類を作る作業の見出しです（2026-10-21 夜・appendMfgPageEnd）。
+// 見積計算書と見積書は製造明細表の「🧮 見積計算書」「📄 見積書」で作るので「作業開始」、部材見積依頼書は「見積依頼作業」、
+// 部材発注書は「発注作業」、納品書は「納品作業」。
+func mfgDocHeading(kind string) string {
+	switch kind {
+	case PageKindOurEstimateCalc, PageKindOurEstimate:
+		return MfgHeadStart
+	case PageKindOurRFQ:
+		return MfgHeadQuote
+	case PageKindOurPurchase:
+		return MfgHeadOrder
+	case PageKindOurDelivery:
+		return MfgHeadDelivery
+	}
+	return ""
+}
+
+// hasTopHeading は、root の直下に h2「heading」があるかです。
+func hasTopHeading(root *html.Node, heading string) bool {
+	for c := root.FirstChild; c != nil; c = c.NextSibling {
+		if headingLevel(c) == 2 && strings.TrimSpace(textOf(c)) == heading {
+			return true
+		}
+	}
+	return false
+}
+
+// insertAtSectionEnd は、root の直下の h2「heading」の節の末尾（次の h1・h2 の前）に n を置きます（placeUnderHeading の木の版）。
+func insertAtSectionEnd(root *html.Node, heading string, n *html.Node) {
+	var h *html.Node
+	for c := root.FirstChild; c != nil; c = c.NextSibling {
+		if headingLevel(c) == 2 && strings.TrimSpace(textOf(c)) == heading {
+			h = c
+			break
+		}
+	}
+	if h == nil {
+		root.AppendChild(n)
+		return
+	}
+	at := h.NextSibling
+	for at != nil {
+		if l := headingLevel(at); l == 1 || l == 2 {
+			break
+		}
+		at = at.NextSibling
+	}
+	root.InsertBefore(n, at)
 }
