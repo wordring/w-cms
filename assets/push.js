@@ -1,6 +1,6 @@
-// この端末で知らせを受けるかの切り替え（Web Push・2026-10-21 夜・internal/cms/webpush.go）。
+// この端末で通知を受けるかの切り替え（Web Push・2026-10-21 夜・internal/cms/webpush.go）。
 //
-// 画面の上の帯（ログアウトの隣）に「🔔」を置きます。押すと、この端末のブラウザに知らせの受け口を作って w-cms に覚えさせます
+// 画面の上の帯（ログアウトの隣）に「🔔」を置きます。押すと、この端末のブラウザに通知の受け口を作って w-cms に覚えさせます
 // （ブラウザが「通知を許可するか」を聞きます）。もう一度押すと、受け口を捨てます。受けているあいだは「🔔 受けています」。
 //
 // ⚠ 受け口を作れるのは、正しい証明書の HTTPS で開いたページだけです（自分で作った証明書を信頼していない端末・http では
@@ -31,15 +31,15 @@
         return reg.pushManager.getSubscription();
     }
     function show(on) {
-        btn.textContent = on ? '🔔 受けています' : '🔕 知らせを受ける';
-        btn.title = on ? 'この端末で、届いたことの知らせを受けています（押すとやめます）'
-            : 'この端末で、届いたことの知らせを受けます（ブラウザが許可を聞きます）';
+        btn.textContent = on ? '🔔 受けています' : '🔕 通知を受ける';
+        btn.title = on ? 'この端末で、届いたことの通知を受けています（押すとやめます）'
+            : 'この端末で、届いたことの通知を受けます（ブラウザが許可を聞きます）';
         btn.dataset.on = on ? '1' : '';
     }
     async function turnOn() {
         const perm = await Notification.requestPermission();
         if (perm !== 'granted') {
-            alert('知らせが許可されませんでした（ブラウザの設定で、このサイトの通知を許可してください）。');
+            alert('通知が許可されませんでした（ブラウザの設定で、このサイトの通知を許可してください）。');
             return false;
         }
         const key = await (await fetch('/api/push/key')).json();
@@ -66,7 +66,7 @@
                 show(await turnOn());
             }
         } catch (e) {
-            alert('知らせの設定ができませんでした: ' + e.message);
+            alert('通知の設定ができませんでした: ' + e.message);
         } finally {
             btn.disabled = false;
         }

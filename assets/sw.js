@@ -1,7 +1,7 @@
-// 知らせを受けて出す、ブラウザの裏の働き（Service Worker・2026-10-21 夜・internal/cms/webpush.go）。
+// 通知を受けて出す、ブラウザの裏の働き（Service Worker・2026-10-21 夜・internal/cms/webpush.go）。
 //
 // サーバーは GET /sw.js で配ります（置き場が「/」の直下でないと、ほかのページに働かない）。
-// 届いた知らせ（JSON: title・body・url・tag）を端末の知らせに出し、押されたらその url を開きます（開いているタブがあれば、そこへ）。
+// 届いた通知（JSON: title・body・url・tag）を端末の通知に出し、押されたらその url を開きます（開いているタブがあれば、そこへ）。
 'use strict';
 
 self.addEventListener('push', (event) => {

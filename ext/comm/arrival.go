@@ -38,7 +38,7 @@ func NotifyArrival(a Arrival) {
 		go func(fn func(Arrival)) {
 			defer func() {
 				if p := recover(); p != nil {
-					log.Printf("届いた知らせの聞き手が落ちました: %v", p)
+					log.Printf("届いた通知の聞き手が落ちました: %v", p)
 				}
 			}()
 			fn(a)

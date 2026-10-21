@@ -17,8 +17,8 @@ import (
 	"w-cms/internal/database"
 )
 
-// TestEncryptPushMatchesRFC8291 は、知らせの中身の暗号が RFC 8291 の例（5章・付録A）と1バイトも違わないことを固定します
-// （2026-10-21 夜）。手で書いた暗号が、本物のブラウザの知らせの道と食い違わないための試験です。
+// TestEncryptPushMatchesRFC8291 は、通知の中身の暗号が RFC 8291 の例（5章・付録A）と1バイトも違わないことを固定します
+// （2026-10-21 夜）。手で書いた暗号が、本物のブラウザの通知の道と食い違わないための試験です。
 func TestEncryptPushMatchesRFC8291(t *testing.T) {
 	d := func(s string) []byte {
 		b, err := base64.RawURLEncoding.DecodeString(strings.ReplaceAll(s, " ", ""))
@@ -83,7 +83,7 @@ func TestVAPIDHeaderVerifies(t *testing.T) {
 	}
 }
 
-// TestSendPushPostsAndDropsGone は、知らせを送ると届け先へ暗号の頭（aes128gcm）と名乗り（vapid）を付けて届け、
+// TestSendPushPostsAndDropsGone は、通知を送ると届け先へ暗号の頭（aes128gcm）と名乗り（vapid）を付けて届け、
 // 届け先が「もう無い」（410）と答えた受け口は捨てることを固定します。
 func TestSendPushPostsAndDropsGone(t *testing.T) {
 	database.SetDataDir(t.TempDir())
@@ -124,6 +124,6 @@ func TestSendPushPostsAndDropsGone(t *testing.T) {
 		t.Errorf("⚠ 「もう無い」と答えた受け口を捨てていません")
 	}
 	if got := PushSubscribers(); len(got) != 0 {
-		t.Errorf("受け口の無い人が知らせを受ける人に残っています: %v", got)
+		t.Errorf("受け口の無い人が通知を受ける人に残っています: %v", got)
 	}
 }

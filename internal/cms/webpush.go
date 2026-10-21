@@ -1,6 +1,6 @@
 package cms
 
-// ブラウザの知らせ（Web Push・2026-10-21 夜・docs/考察/【考察】通信箱の改善.md §7.5）。
+// ブラウザの通知（Web Push・2026-10-21 夜・docs/考察/【考察】通信箱の改善.md §7.5）。
 //
 // > 2026-10-21 利用者:「スマホに知らせて貰えれば最高です。」
 //
@@ -10,8 +10,8 @@ package cms
 //   - 送り手の名乗り: RFC 8292（VAPID・ES256 の JWT）。鍵は初めて使うときに作り、data/webpush/vapid.pem に置く。
 //   - 受け口（購読）は利用者ごと・端末ごとに data/webpush/subscriptions.json へ。届け先が「もう無い」（404・410）と答えたら捨てる。
 //
-// 知らせを届けるのは、スマホやパソコンのブラウザの会社の知らせの道（Google・Apple など）です。中身は暗号にして渡すので、道の
-// 会社には読めません。画面の側（assets/push.js・assets/sw.js）が受け口を作り、届いた知らせを出し、押すとそのページを開きます。
+// 通知を届けるのは、スマホやパソコンのブラウザの会社の通知の道（Google・Apple など）です。中身は暗号にして渡すので、道の
+// 会社には読めません。画面の側（assets/push.js・assets/sw.js）が受け口を作り、届いた通知を出し、押すとそのページを開きます。
 //
 // ⚠ ブラウザが受け口を作れるのは、正しい証明書の HTTPS で開いたページだけです（自分で作った証明書を信頼していない端末では作れない）。
 //    iPhone は、w-cms をホーム画面に追加したときだけ受けられます。
@@ -21,7 +21,7 @@ package cms
 //	GET  /api/push/key          … 送り手の公開鍵（受け口を作るときに使う）
 //	POST /api/push/subscribe    … この端末の受け口を覚える {endpoint, keys:{p256dh, auth}}
 //	POST /api/push/unsubscribe  … この端末の受け口を捨てる {endpoint}
-//	POST /api/push/test         … 自分の端末へ試しの知らせを送る
+//	POST /api/push/test         … 自分の端末へ試しの通知を送る
 //
 // 送るのは SendPush（拡張が呼ぶ——通信の拡張は、電話・FAX・メールが届いたときに）。
 
@@ -57,12 +57,12 @@ import (
 	"w-cms/internal/database"
 )
 
-// PushMessage は知らせ1つです（端末の知らせに出る題・本文と、押したときに開く場所）。
+// PushMessage は通知1つです（端末の通知に出る題・本文と、押したときに開く場所）。
 type PushMessage struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
 	URL   string `json:"url"`
-	Tag   string `json:"tag,omitempty"` // 同じ印の知らせは、端末で1つにまとまる
+	Tag   string `json:"tag,omitempty"` // 同じ印の通知は、端末で1つにまとまる
 }
 
 // pushSubscription は端末1つの受け口です。
@@ -244,7 +244,7 @@ func savePushSubs(m map[string][]pushSubscription) error {
 // pushHTTP は送るときの HTTP の口です（試験で差し替える）。
 var pushHTTP = &http.Client{Timeout: 20 * time.Second}
 
-// SendPush は利用者 username の全部の端末へ知らせを送ります（届け先が「もう無い」と答えた受け口は捨てる）。送れた端末の数を返します。
+// SendPush は利用者 username の全部の端末へ通知を送ります（届け先が「もう無い」と答えた受け口は捨てる）。送れた端末の数を返します。
 func SendPush(username string, m PushMessage) int {
 	pushMu.Lock()
 	subs := append([]pushSubscription{}, loadPushSubs()[username]...)
@@ -254,7 +254,7 @@ func SendPush(username string, m PushMessage) int {
 	}
 	k, err := loadVAPID()
 	if err != nil {
-		log.Printf("知らせを送れません（送り手の鍵）: %v", err)
+		log.Printf("通知を送れません（送り手の鍵）: %v", err)
 		return 0
 	}
 	payload, _ := json.Marshal(m)
@@ -268,7 +268,7 @@ func SendPush(username string, m PushMessage) int {
 		case code == http.StatusNotFound || code == http.StatusGone:
 			gone = append(gone, s.Endpoint)
 		default:
-			log.Printf("知らせを送れません（%s・%d）: %v", username, code, err)
+			log.Printf("通知を送れません（%s・%d）: %v", username, code, err)
 		}
 	}
 	if len(gone) > 0 {
@@ -338,7 +338,7 @@ func sendOnePush(k *ecdsa.PrivateKey, s pushSubscription, payload []byte) (int, 
 	return resp.StatusCode, nil
 }
 
-// PushSubscribers は、知らせを受ける端末を持つ利用者の名前です（拡張が、だれに送るかを選ぶのに使う）。
+// PushSubscribers は、通知を受ける端末を持つ利用者の名前です（拡張が、だれに送るかを選ぶのに使う）。
 func PushSubscribers() []string {
 	pushMu.Lock()
 	defer pushMu.Unlock()
@@ -444,17 +444,17 @@ func PushUnsubscribeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, map[string]any{"success": true})
 }
 
-// PushTestAPIHandler は POST /api/push/test です——自分の端末へ試しの知らせを送ります。
+// PushTestAPIHandler は POST /api/push/test です——自分の端末へ試しの通知を送ります。
 func PushTestAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := GateJSONPost(w, r)
 	if !ok {
 		return
 	}
-	n := SendPush(user.Username, PushMessage{Title: "w-cms", Body: "知らせの試しです（この端末で受けられます）", URL: "/", Tag: "test"})
+	n := SendPush(user.Username, PushMessage{Title: "w-cms", Body: "通知の試しです（この端末で受けられます）", URL: "/", Tag: "test"})
 	WriteJSON(w, map[string]any{"success": true, "sent": n})
 }
 
-// ServiceWorkerHandler は GET /sw.js です（知らせを受けて出す画面の側の働き・assets/sw.js）。
+// ServiceWorkerHandler は GET /sw.js です（通知を受けて出す画面の側の働き・assets/sw.js）。
 // ⚠ 置き場は「/」の直下——ブラウザは、置いた場所より上のページには働かせないため。
 func ServiceWorkerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
