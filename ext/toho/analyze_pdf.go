@@ -228,8 +228,10 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 表計算（.xlsx）も受けます（2026-09-30・Excel の注文リスト——文字にして判定する・judgeOrderSheet）。
+	// 画像（.png・.jpg・.webp）も受けます（2026-10-21 夜・FAX と写真——judgeOrderImage。【考察】通信箱の改善 §4.1）。
 	fileName, err := cms.SafeAttachmentName(pageID, req.File,
-		map[string]bool{".pdf": true, ".xlsx": true}, "解析できるのは .pdf と .xlsx だけです")
+		map[string]bool{".pdf": true, ".xlsx": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true},
+		"解析できるのは .pdf・.xlsx・画像（.png・.jpg・.webp）だけです")
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
@@ -269,6 +271,8 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 			return
 		}
 		j, err = judgeOrderSheet(sheetMailContext(pageID) + text)
+	} else if mime, ok := analyzeImageMIME[strings.ToLower(filepath.Ext(fileName))]; ok {
+		j, err = judgeOrderImage(mime, pdf)
 	} else {
 		j, err = judgeOrderPDF(pdf)
 	}
@@ -544,6 +548,21 @@ drawings の各項目は次のとおりです:
 // judgeOrderPDFWithGemini は判定＋抽出を1コールで行います。
 // プロンプト（＝解釈）は本セットの持ち物、呼び出しの型（キー・クライアント・
 // フェンス剥がし）はコア（gemini.go）。
+// analyzeImageMIME は、解析に渡せる画像の拡張子と MIME です（2026-10-21 夜）。
+var analyzeImageMIME = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+// imagePreamble は画像を渡すときに頼み文の頭へ足す断りです。
+const imagePreamble = "（ここで渡すのはPDFではなく、画像（FAX・写真・スキャン）です。下の「このPDF」はこの画像のことと読んでください。）\n\n"
+
+// judgeOrderImage は画像（FAX・写真）の判定の入口です（2026-10-21 夜・試験が差し替えられるよう変数）。判定の頼み文は PDF と同じ。
+var judgeOrderImage = func(mime string, data []byte) (*orderJudgment, error) {
+	respText, err := cms.GeminiGenerate(imagePreamble+orderJudgePrompt, genai.Blob{MIMEType: mime, Data: data})
+	if err != nil {
+		return nil, err
+	}
+	return parseOrderJudgment(respText)
+}
+
 func judgeOrderPDFWithGemini(pdf []byte) (*orderJudgment, error) {
 	respText, err := cms.GeminiGenerate(orderJudgePrompt, genai.Blob{MIMEType: "application/pdf", Data: pdf})
 	if err != nil {

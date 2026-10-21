@@ -9,16 +9,14 @@ package toho
 
 import (
 	stdhtml "html"
-	"regexp"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
-
-	"golang.org/x/net/html"
 
 	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
-	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
 
@@ -57,62 +55,78 @@ func filingSlotHTML(user *auth.User, pageIDInt int, draft bool) string {
 		label + `</button></div>`
 }
 
-var recordAttachRe = regexp.MustCompile(`^/([0-9]{6})/([0-9a-z]+)\.(pdf|xlsx|zip)$`)
+// analyzeKinds は、記録の箱の 🤖 解析に並べる添付の拡張子です（2026-10-21 夜から画像も——FAX と写真のため）。
+var analyzeKinds = map[string]bool{".pdf": true, ".xlsx": true, ".zip": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true}
 
 // analyzeSectionHTML は「🤖 解析」の節です（解析できる添付が無ければ出さない）。
+//
+// 並べるのは、**この記録に置いた添付の全部**です（2026-10-21 夜・【考察】通信箱の改善 §4.1）。
+//
+// > 2026-10-21 利用者:「どの方法で作られたとしても解析ボタンが必要です。そしてメモのように人が書き込んで作るものは、人がPDFを挿入する場合があります。それにも解析ボタンが必要になります。」
+//
+// それまでは本文の中の添付へのリンク（`<a href="/<ページ>/<ID>.pdf">`）だけを拾っていたので、メールの取り込みが書いた添付には出るが、
+// 人がエディタで入れた PDF（ファイル表示の印）と画像（本文の中の絵）には出なかった。いまは添付の目録（files/）を見るので、
+// 本文にどう置いたか（リンク・ファイル表示・絵）や、どの入口で作った記録か（メール・電話・FAX・メモ）によらず並ぶ。
+// 並びは置いた順（目録の保存時刻）。ZIP の中から取り出したものは「↳ 中のパス」。
 func analyzeSectionHTML(user *auth.User, pageIDInt int, draft bool) string {
 	if draft {
 		return ""
 	}
 	pageID := page.FormatID(pageIDInt)
-	body, err := cms.ReadPageBody(pageID)
-	if err != nil {
+	type file struct {
+		stored string
+		meta   cms.AttachmentMeta
+	}
+	var files []file
+	for stored, m := range cms.ReadAttachmentMetas(pageID) {
+		if analyzeKinds[strings.ToLower(filepath.Ext(stored))] {
+			files = append(files, file{stored, m})
+		}
+	}
+	if len(files) == 0 {
 		return ""
 	}
-	nodes, err := htmldoc.ParseFragment(body)
-	if err != nil {
-		return ""
-	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].meta.SavedAt != files[j].meta.SavedAt {
+			return files[i].meta.SavedAt < files[j].meta.SavedAt
+		}
+		return files[i].stored < files[j].stored
+	})
 	done, _ := analyzedAttachments(user, pageID)
 	zips := zipPDFsOf(pageID)
-	seen := map[string]bool{}
 	var items strings.Builder
-	for _, n := range nodes {
-		cms.WalkElements(n, func(el *html.Node) {
-			if el.Data != "a" {
-				return
+	for _, f := range files {
+		id := strings.TrimSuffix(f.stored, filepath.Ext(f.stored))
+		ext := strings.ToLower(filepath.Ext(f.stored))
+		var btn string
+		if ext == ".zip" {
+			btn = zipAnalyzeButtonHTML(pageID, id, zips[id], done)
+			if btn == "" {
+				continue // 中に PDF の無い ZIP・中の PDF が全部解析済みの ZIP は、解析するものが無い
 			}
-			m := recordAttachRe.FindStringSubmatch(cms.Attr(el, "href"))
-			if m == nil || m[1] != pageID || seen[m[2]] {
-				return
+		} else {
+			label := "🤖 解析"
+			if _, ok := done[id]; ok {
+				label = "🤖 再解析" // 読み違いはあるので、解析済みでも押し直せる
 			}
-			file := m[2] + "." + m[3]
-			var btn string
-			if m[3] == "zip" {
-				btn = zipAnalyzeButtonHTML(pageID, m[2], zips[m[2]], done)
-				if btn == "" {
-					return // 中に PDF の無い ZIP・中の PDF が全部解析済みの ZIP は、解析するものが無い
-				}
-			} else {
-				label := "🤖 解析"
-				if _, ok := done[m[2]]; ok {
-					label = "🤖 再解析" // 読み違いはあるので、解析済みでも押し直せる
-				}
-				btn = `<button type="button" class="vocab-chrome attach-analyze" data-page="` + pageID +
-					`" data-file="` + stdhtml.EscapeString(file) + `">` + label + `</button>`
+			btn = `<button type="button" class="vocab-chrome attach-analyze" data-page="` + pageID +
+				`" data-file="` + stdhtml.EscapeString(f.stored) + `">` + label + `</button>`
+		}
+		name := strings.TrimSpace(f.meta.Name)
+		if src, ok := strings.CutPrefix(f.meta.Source, "zip:"); ok {
+			if _, inner, ok := strings.Cut(src, "/"); ok && strings.TrimSpace(inner) != "" {
+				name = "↳ " + inner
 			}
-			seen[m[2]] = true
-			name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(textOf(el)), "📎"))
-			if name == "" {
-				name = file
-			}
-			mark := ""
-			if r, ok := done[m[2]]; ok {
-				mark = ` ` + comm.MadeMarkHTML(r.PageID, r.Title, r.Kind)
-			}
-			items.WriteString(`<li><a href="/` + pageID + `/` + stdhtml.EscapeString(file) + `" target="_blank" rel="noopener">` +
-				stdhtml.EscapeString(name) + `</a> ` + btn + mark + `</li>`)
-		})
+		}
+		if name == "" {
+			name = f.stored
+		}
+		mark := ""
+		if r, ok := done[id]; ok {
+			mark = ` ` + comm.MadeMarkHTML(r.PageID, r.Title, r.Kind)
+		}
+		items.WriteString(`<li><a href="/` + pageID + `/` + stdhtml.EscapeString(f.stored) + `" target="_blank" rel="noopener">` +
+			stdhtml.EscapeString(name) + `</a> ` + btn + mark + `</li>`)
 	}
 	if items.Len() == 0 {
 		return ""
