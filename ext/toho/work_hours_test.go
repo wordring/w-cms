@@ -27,7 +27,7 @@ func TestWorkHoursOnProductPage(t *testing.T) {
 	}
 	mfg(40, "2026-10-01", "3", PageKindMfg)
 	mfg(41, "2026-10-15", "5", PageKindMfg)
-	mfg(42, "2026-10-20", "", PageKindMfg)     // 書いていない行は出ない
+	mfg(42, "2026-10-20", "", PageKindMfg)      // 書いていない行は出ない
 	mfg(43, "2026-10-21", "9", PageKindProduct) // 製造ページでないものは数えない
 
 	list := workHoursForProduct(adminUser(), 31)

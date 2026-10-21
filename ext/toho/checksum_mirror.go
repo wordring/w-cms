@@ -82,6 +82,8 @@ func renderOrderChecksum(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		}
 		appendChecksumRow(el, span, class, n)
 	}
+	// **原価と利益**（2026-10-21 夜・case_profit.go）——表の直後に（表の中には入れない）。
+	appendCaseProfit(ctx, el)
 	return true, nil
 }
 
