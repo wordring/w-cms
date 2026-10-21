@@ -15,6 +15,7 @@ package cms
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,11 @@ func SaveAttachment(pageID, username, origName string, content []byte) (attachID
 // 失敗を返すと利用者が押し直して同じファイルが2つになるので、監査に残して続けます。
 func SaveAttachmentFrom(pageID, username, origName, source string, content []byte) (attachID, fileName string, err error) {
 	attachDir := page.AttachmentDir(pageID)
+	// 消したページへは置かない——MkdirAll が、ごみ箱へ移したページのフォルダを files/ だけで作り直していた
+	// （本文も属性も無いフォルダが残る・2026-10-22 の見直し）。
+	if _, ok := page.ReadSidecar(pageID); !ok {
+		return "", "", fmt.Errorf("ページ %s がありません（消されたかもしれません）", pageID)
+	}
 	if err := os.MkdirAll(attachDir, 0755); err != nil {
 		return "", "", err
 	}

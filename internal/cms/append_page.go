@@ -120,19 +120,23 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 
 // SetPageH1 はページの見出し（h1）を書き換えます。**題はページ名**なので、
 // 整理の画面で図面名称を直したらページの題も揃える必要があります。
+//
+// ⚠ 見出しは属性を持つことがある（エディタで保存すると `<h1 data-id="…">`）。`<h1>` の字だけで探すと見つからず、
+// 2つ目の題を頭に足していた（2026-10-22 の見直し）。属性は残して、中身だけ替える。
+// title は HTML として入れる（呼ぶ側がエスケープ済みの題を渡す——ext/toho の movePage）。
 func SetPageH1(pageID, author, title string) error {
 	return rewritePageBody(pageID, author, func(current string) string {
-		open := strings.Index(current, "<h1>")
-		if open < 0 {
+		loc := firstH1Re.FindStringSubmatchIndex(current)
+		if loc == nil {
 			return "<h1>" + title + "</h1>" + current
 		}
-		close := strings.Index(current[open:], "</h1>")
-		if close < 0 {
-			return "<h1>" + title + "</h1>" + current
-		}
-		return current[:open] + "<h1>" + title + "</h1>" + current[open+close+len("</h1>"):]
+		// loc[2]:loc[3] は開きタグ・loc[1] は閉じタグの後ろ
+		return current[:loc[0]] + current[loc[2]:loc[3]] + title + "</h1>" + current[loc[1]:]
 	})
 }
+
+// firstH1Re は最初の h1 です（開きタグを捕まえる）。
+var firstH1Re = regexp.MustCompile(`(?is)(<h1(?:\s[^>]*)?>).*?</h1\s*>`)
 
 // IndexSectionTag は from 以降で最初の `<section` **開始タグ**の位置を返します
 // （無ければ -1）。`</section>` には当たりません（`<` の次が `/` なので）。

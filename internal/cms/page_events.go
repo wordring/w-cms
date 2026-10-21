@@ -3,6 +3,7 @@ package cms
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"regexp"
 	"sort"
 	"sync"
@@ -252,6 +253,15 @@ func PresenceAPIHandler(w http.ResponseWriter, r *http.Request) {
 // pageEventsKeepalive は、つないだままの線を中継の機器に切られないための間隔です。
 const pageEventsKeepalive = 25 * time.Second
 
+// pageEventsWriteTimeout は、知らせ1つを書き終えるまでの期限です（読まない相手で止まり続けない）。
+const pageEventsWriteTimeout = 30 * time.Second
+
+// atoiOr0 はページ番号を数にします（読めなければ 0——0 のページは無いので、読めないと判定される）。
+func atoiOr0(id string) int {
+	n, _ := strconv.Atoi(id)
+	return n
+}
+
 // PageEventsAPIHandler は、ページの更新を SSE（text/event-stream）で知らせます。
 // GET /api/page-events?id= 。対象ページの read 権限を要求します。
 func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
@@ -282,10 +292,22 @@ func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	send := func(ev pageEvent) {
-		b, _ := json.Marshal(ev)
-		w.Write([]byte("data: " + string(b) + "\n\n"))
+	// 書けない相手で止まり続けないよう、書くたびに期限を置く。読めなくなった人（権限を替えた・読めない所へ動かした）には
+	// 流し続けない——知らせには、だれがいつ書いたか・ほかの人の名前が入るため（2026-10-22 の見直し）。
+	rc := http.NewResponseController(w)
+	user, idInt := auth.CurrentUser(r), atoiOr0(id)
+	stillReadable := func() bool { return page.CanView(user, idInt) }
+	write := func(s string) bool {
+		rc.SetWriteDeadline(time.Now().Add(pageEventsWriteTimeout))
+		if _, err := w.Write([]byte(s)); err != nil {
+			return false
+		}
 		flusher.Flush()
+		return true
+	}
+	send := func(ev pageEvent) bool {
+		b, _ := json.Marshal(ev)
+		return write("data: " + string(b) + "\n\n")
 	}
 	hello := pageEvent{Type: "hello", Presence: watchers.presence(id)}
 	if meta, ok := page.ReadSidecar(id); ok {
@@ -298,10 +320,13 @@ func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case ev := <-ch:
-			send(ev)
+			if !stillReadable() || !send(ev) {
+				return
+			}
 		case <-keepalive.C:
-			w.Write([]byte(": ping\n\n"))
-			flusher.Flush()
+			if !stillReadable() || !write(": ping\n\n") {
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}

@@ -128,14 +128,13 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 // 「見た目は健全なサイドカー」を新造してしまう（2026-08-21 決定）。what は断り文に入る
 // 対象の呼び名（「権限」「所有者」）。
 func rewriteSidecarPerms(w http.ResponseWriter, id, what string, change func(*page.PageMeta)) (page.PageMeta, bool) {
-	p, ok := page.ReadSidecar(id)
+	p, ok, err := page.UpdateSidecar(id, func(m *page.PageMeta) bool { change(m); return true })
 	if !ok {
 		http.Error(w, "ページ属性ファイルを読めないため"+what+"を変更できません。管理者が手作業で修復してください。",
 			http.StatusConflict)
 		return page.PageMeta{}, false
 	}
-	change(&p)
-	if err := page.WriteSidecar(id, p); err != nil {
+	if err != nil {
 		http.Error(w, "サイドカーの書き込みに失敗しました: "+err.Error(), http.StatusInternalServerError)
 		return page.PageMeta{}, false
 	}

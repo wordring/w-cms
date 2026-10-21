@@ -251,6 +251,13 @@ func writeLocalEdit(user *auth.User, pageID, stored, realPath, ifMatch string, b
 	if len(content) == 0 {
 		return "", httpError{code: http.StatusBadRequest, msg: "中身が空です（差し替えません）"}
 	}
+	// 種類ごとの守り（画像は写真の位置情報を落とす——**戻り値のほうを保存する**）。
+	// ロックを取る前に済ませる——画像の作り直しは重く、ロックの中ですると、そのあいだだれのローカル編集も止まった
+	// （2026-10-22 の見直し）。「変わっていないか」は、守りを通す前の中身で比べる。
+	rawETag := fileETag(content)
+	if content, err = GuardUploadContent(stored, content); err != nil {
+		return "", httpError{code: http.StatusBadRequest, msg: err.Error()}
+	}
 	// 同じ添付への上書きは1つずつ（ETag の確かめと差し替えの間に割り込ませない）。
 	localEditMu.Lock()
 	defer localEditMu.Unlock()
@@ -262,12 +269,8 @@ func writeLocalEdit(user *auth.User, pageID, stored, realPath, ifMatch string, b
 		return "", httpError{code: http.StatusConflict, etag: now,
 			msg: "ほかの誰かが先に書き換えています（上書きしません）——w-cms の画面から開き直してください"}
 	}
-	if fileETag(content) == fileETag(current) {
-		return fileETag(content), nil // 変わっていない（版を積まない）
-	}
-	// 種類ごとの守り（画像は写真の位置情報を落とす——**戻り値のほうを保存する**）。
-	if content, err = GuardUploadContent(stored, content); err != nil {
-		return "", httpError{code: http.StatusBadRequest, msg: err.Error()}
+	if rawETag == fileETag(current) {
+		return rawETag, nil // 変わっていない（版を積まない）
 	}
 	// 1. いまの中身を版として残す（差し替える前に。ここで失敗したら上書きしない）。
 	if err := saveAttachmentVersion(pageID, stored); err != nil {

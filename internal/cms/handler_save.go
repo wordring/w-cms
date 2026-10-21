@@ -351,6 +351,10 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return "", false
 		}
+		// 全文の保存と同じく版を残す（2026-10-22 の見直しまで、ここだけ版を残していなかった）。
+		if err := RecordVersion(id, auth.UsernameOf(r), merged, false); err != nil {
+			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
+		}
 		if !syncBody(w, id, merged) {
 			return "", false
 		}

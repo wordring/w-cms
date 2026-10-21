@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/internal/auth"
@@ -147,6 +148,8 @@ func requireSidecar(id string) (PageMeta, error) {
 // **読めないなら書きません**（保存は失敗させて運用者に知らせる。requireSidecar）。
 // 既存ページの属性を一部だけ更新する口（更新日時・親）はすべてここを通ります。
 func touchSidecar(id string, change func(*PageMeta)) (string, error) {
+	sidecarMu.Lock()
+	defer sidecarMu.Unlock()
 	meta, err := requireSidecar(id)
 	if err != nil {
 		return "", err
@@ -157,6 +160,24 @@ func touchSidecar(id string, change func(*PageMeta)) (string, error) {
 		return "", err
 	}
 	return meta.UpdatedAt, nil
+}
+
+// sidecarMu は、サイドカーの「読んで・一部を変えて・書き戻す」を1つずつ通すロックです。
+// ⚠ 保存（更新日時を進める）と移動（親を替える）が重なると、先に読んだほうが古い親を書き戻し、サイドカーと
+// cms.db の親が食い違った（2026-10-22 の見直し）。読み書きは速いので、全部のページで1つにする。
+var sidecarMu sync.Mutex
+
+// UpdateSidecar は、サイドカーを読んで change で変えて書き戻します（sidecarMu の中で）。
+// 読めなければ書かずに ok=false（派生から組み立て直さない——requireSidecar と同じ決まり）。
+// change が false を返したら書きません。
+func UpdateSidecar(id string, change func(*PageMeta) bool) (meta PageMeta, ok bool, err error) {
+	sidecarMu.Lock()
+	defer sidecarMu.Unlock()
+	meta, ok = ReadSidecar(id)
+	if !ok || !change(&meta) {
+		return meta, ok, nil
+	}
+	return meta, true, WriteSidecar(id, meta)
 }
 
 // BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。

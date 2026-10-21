@@ -90,18 +90,23 @@ func ReorderAPIHandler(w http.ResponseWriter, r *http.Request) {
 			JSONFail(w, http.StatusBadRequest, "この親の子ではありません: "+childID)
 			return
 		}
-		meta, ok := page.ReadSidecar(childID)
-		if !ok {
-			continue // サイドカーが無いページは飛ばす（正本が無いものは触らない）
-		}
 		key := ReorderKey(i)
-		if meta.SortKey == key {
-			continue
-		}
-		meta.SortKey = key
-		if err := page.WriteSidecar(childID, meta); err != nil {
+		wrote := false
+		// サイドカーが無いページは飛ばす（正本が無いものは触らない）。読み書きは UpdateSidecar の中で（保存・移動と重ねない）。
+		_, _, err := page.UpdateSidecar(childID, func(meta *page.PageMeta) bool {
+			if meta.SortKey == key {
+				return false
+			}
+			meta.SortKey = key
+			wrote = true
+			return true
+		})
+		if err != nil {
 			JSONFail(w, http.StatusInternalServerError, "並び順を保存できません: "+err.Error())
 			return
+		}
+		if !wrote {
+			continue
 		}
 		changed++
 	}

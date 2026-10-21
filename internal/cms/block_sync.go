@@ -193,6 +193,14 @@ func canonBlock(s string) string {
 func canonNode(n *html.Node) {
 	if n.Type == html.ElementNode {
 		sort.SliceStable(n.Attr, func(i, j int) bool { return n.Attr[i].Key < n.Attr[j].Key })
+		// ファイル表示の印の中身（ファイルの名前）はサーバーが埋めるもので、描いた形では空になる——比べるときは中身を見ない
+		// （見ていたので、図面の節を2人で書くと、合わせられるのに衝突と出ていた・2026-10-22 の見直し）。
+		if n.Data == "section" && Attr(n, "data-type") == "file-view" {
+			for n.FirstChild != nil {
+				n.RemoveChild(n.FirstChild)
+			}
+			return
+		}
 		if whitespaceInsensitive[n.Data] {
 			for c := n.FirstChild; c != nil; {
 				next := c.NextSibling

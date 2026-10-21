@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/internal/auth"
@@ -97,6 +98,8 @@ func DateFolderTitles(t time.Time) (year, month string) {
 // bodyHTML は作るときだけ使います（既にあれば触りません）。本文に何を入れるか（タグなど）は呼び手の言葉です
 // ——コアは置き方だけを持ちます（2026-10-16）。
 func EnsureFolder(parentID, owner, title, bodyHTML string) (string, error) {
+	folderMu.Lock()
+	defer folderMu.Unlock()
 	if id, found := FindChildByTitle(parentID, title); found {
 		return id, nil
 	}
@@ -107,6 +110,11 @@ func EnsureFolder(parentID, owner, title, bodyHTML string) (string, error) {
 	auth.Audit(owner, "intake.folder", newID+" under "+parentID+" ("+title+")")
 	return newID, nil
 }
+
+// folderMu は、フォルダと箱の「探して無ければ作る」を1つずつ通すロックです。
+// ⚠ メールの自動の読み込み・FAX・電話が同時に届くと、どちらも「11月が無い」と見て2つ作り、あとの記録は
+// 古いほうへ入って、新しいほうへ入った記録が置き去りになる（2026-10-22 の見直し）。
+var folderMu sync.Mutex
 
 // IsDateFolderTitle は年・月フォルダの題かを返します（`2026年` / `09月`）。
 //
@@ -144,6 +152,8 @@ func ensureFolderUnder(parentID, owner, title string) (string, error) {
 // **ただの置き場（製造・案件など）は行き止まりにする理由がありません**。
 // 業務の言葉（「案件」——2026-10-19 までは「受注」）を持つのは拡張の側で、ここには置きません。
 func EnsureTopLevelBox(title, owner string) (string, error) {
+	folderMu.Lock()
+	defer folderMu.Unlock()
 	if id, ok := TopLevelPageByTitle(title); ok {
 		return id, nil
 	}

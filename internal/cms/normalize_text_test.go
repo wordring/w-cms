@@ -186,3 +186,12 @@ func TestCharFoldingFoldsDiameterMarks(t *testing.T) {
 		t.Errorf("NormalizeNameForIngest = %q", got)
 	}
 }
+
+// マイナス記号と水平線も、ハイフンに揃える（NFKC が変えない・2026-10-22 の見直し）。
+func TestNormalizeCodeFoldsMinusAndBar(t *testing.T) {
+	for _, s := range []string{"P103−227", "P103―227", "p103-227"} {
+		if got := NormalizeCode(s); got != "P103-227" {
+			t.Errorf("NormalizeCode(%q) = %q", s, got)
+		}
+	}
+}
