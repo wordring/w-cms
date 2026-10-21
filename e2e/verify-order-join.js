@@ -2,8 +2,9 @@
 //
 // 2026-10-21 利用者:「相乗りする発注書のページIDを指定で良いと思います。「同じ仕入れ先の～」のような相乗り候補を知らせてくれる機能があればさらに良いです」
 //
-//   ① 製造A（8台）の「📦 この製造の部材を発注部材表へ」→「部材発注書を作る」で部材発注書（材料 2個/台 × 8 = 16）
-//   ② 製造B（5台）の「📦」→ 発注部材表の足元に、①の部材発注書が相乗りの候補として出る・押すと欄にページ番号が入る
+//   ① 製造A（8台）の製造明細表で行を選んで「🧾 部材」→ 必要部材表で行を選んで「🛒 発注」→ 発注部材表の下の「部材発注書を作る」で
+//      部材発注書（材料 2個/台 × 8 = 16）
+//   ② 製造B（5台）も「🧾 部材」→「🛒 発注」→ 発注部材表の下の欄に、①の部材発注書が相乗りの候補として出る・押すと欄にページ番号が入る
 //   ③ 「部材発注書を作る」で、新しく作らず①の部材発注書に足す——同じ部材の行の数量は 26、「製造」の列に A と B、製造Bの発注部材表は消える
 //   ④ 製造Bの「この製造の書類」にも①の部材発注書が並ぶ
 //
@@ -52,12 +53,21 @@ const SUP = '【E2E】相乗りの業者';
     mfgB = (await start('5')).page_id || '';
     check('当て先を作れた', !!root && !!product && !!order && !!mfgA && !!mfgB, mfgA + ' ' + mfgB);
 
-    const parts = async (mfg) => {
+    // 製造ページを開き、picks のチェックを全部入れて btn を押す（押すと読み直す）。
+    const press = async (mfg, picks, btn) => {
       await page.goto(BASE + '/' + mfg);
+      const b = page.locator('#w-editor-content ' + btn);
+      await b.first().waitFor({ timeout: 10000 }).catch(() => {});
+      for (const c of await page.locator('#w-editor-content ' + picks).all()) await c.check();
       await Promise.all([
         page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
-        page.click('#w-editor-content .mfg-parts-go'),
+        b.first().click().catch(() => {}),
       ]);
+    };
+    // 「🧾 部材」で必要部材表 →「🛒 発注」で発注部材表（下に「部材発注書を作る」の欄）。
+    const parts = async (mfg) => {
+      await press(mfg, '.mfg-pick', '.mfg-act-parts');
+      await press(mfg, '.mfg-needs-pick', '.mfg-needs-order');
       await page.waitForSelector('#w-editor-content .draft-form', { timeout: 10000 }).catch(() => {});
     };
 

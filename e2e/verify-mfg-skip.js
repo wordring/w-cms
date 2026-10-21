@@ -1,9 +1,10 @@
 // 製造ページの手配不要（2026-10-21・ext/toho/mfg_skip.go・【考察】製造単位の部材発注 §6.3 の7番）を画面から確かめる。
 //
-//   ① 「📦 この製造の部材を発注部材表へ」で発注部材表（材料 2個/台 × 6 = 12）
-//   ② 行の「🚫 不要」（理由を入れる）→ 手配不要表へ移る（理由・日付）・発注部材表は消える
-//   ③ もう一度「📦」を押しても出ない（手配不要のぶんを引く）
-//   ④ 手配不要表の「↩ 戻す」→ 表が消え、「📦」でまた発注部材表に出る
+//   ① 製造明細表で行を選んで「🧾 部材」→ 必要部材表（材料 2個/台 × 6 = 12）
+//   ② 必要部材表で行を選んで「🚫 不要」（理由を入れる）→ 手配不要表へ移る（理由・日付）・必要部材表は消える
+//   ③ もう一度「🧾 部材」を押しても集まらない（手配不要のぶんを引く）・「ありません」と言う
+//   ④ 手配不要表で行を選んで「↩ 戻す」→ 表が消え、「🧾 部材」でまた必要部材表に出る
+//   ⑤ 「🛒 発注」で発注部材表へ移し、発注部材表で行を選んで下の欄の「🚫 不要」→ 手配不要表へ移る・発注部材表は消える
 //
 // 当て先は全部自分で作って最後に消します（案件ページ・加工製品・製造ページ）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-skip.js
@@ -41,51 +42,59 @@ const bodyOf = (page, id) => page.evaluate(async (pid) => (await fetch('/api/loa
     mfg = made.page_id || '';
     check('当て先を作れた', !!root && !!product && !!order && !!mfg, JSON.stringify(made));
 
-    const parts = async () => {
+    // 製造ページを開き、picks のチェックを全部入れて btn を押す（押すと読み直す。prompt があれば理由を入れる）。
+    const press = async (picks, btn, opts = {}) => {
       await page.goto(BASE + '/' + mfg);
+      const bt = page.locator('#w-editor-content ' + btn);
+      await bt.first().waitFor({ timeout: 10000 }).catch(() => {});
+      for (const c of await page.locator('#w-editor-content ' + picks).all()) await c.check();
+      if (opts.prompt !== undefined) page.once('dialog', (d) => d.accept(opts.prompt));
       await Promise.all([
-        page.waitForNavigation({ timeout: 8000 }).catch(() => {}),
-        page.click('#w-editor-content .mfg-parts-go'),
+        page.waitForNavigation({ timeout: opts.wait || 15000 }).catch(() => {}),
+        bt.first().click().catch(() => {}),
       ]);
-      await page.waitForTimeout(800);
     };
+    const parts = (wait) => press('.mfg-pick', '.mfg-act-parts', { wait });
+    const has = (body, caption) => body.includes('<caption>' + caption + '</caption>');
     // ①
     await parts();
     let b = await bodyOf(page, mfg);
-    check('① 発注部材表（【E2E】銅 を 12）', b.includes('<caption>発注部材表</caption>') && b.includes('【E2E】銅') && />\s*12\s*</.test(b));
+    check('① 必要部材表（【E2E】銅 を 12）', has(b, '必要部材表') && b.includes('【E2E】銅') && />\s*12\s*</.test(b));
     // ②
     await page.goto(BASE + '/' + mfg);
-    const skip = page.locator('#w-editor-content .draft-row-skip');
-    await skip.first().waitFor({ timeout: 8000 }).catch(() => {});
-    check('② 行に「🚫 不要」', (await skip.count()) === 1);
-    page.once('dialog', (d) => d.accept('【E2E】在庫で足りる'));
-    await Promise.all([
-      page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
-      skip.first().click().catch(() => {}),
-    ]);
+    check('② 必要部材表の下に「🚫 不要」', (await page.locator('#w-editor-content .mfg-needs-bar .mfg-needs-skip').count()) === 1);
+    await press('.mfg-needs-pick', '.mfg-needs-skip', { prompt: '【E2E】在庫で足りる' });
     b = await bodyOf(page, mfg);
-    const at = b.indexOf('<caption>手配不要表</caption>');
-    check('② 手配不要表へ移った（理由つき）', at >= 0 && b.slice(at).includes('【E2E】在庫で足りる') && b.slice(at).includes('【E2E】銅'));
-    check('② 発注部材表は消えた', !b.includes('<caption>発注部材表</caption>'));
+    let at = b.indexOf('<caption>手配不要表</caption>');
+    check('② 手配不要表へ移った（理由・日付つき）', at >= 0 && b.slice(at).includes('【E2E】在庫で足りる') && b.slice(at).includes('【E2E】銅') && /\d{4}-\d{2}-\d{2}/.test(b.slice(at, b.indexOf('</table>', at))));
+    check('② 必要部材表は消えた', !has(b, '必要部材表'));
     // ③
-    await parts();
+    await parts(4000);
     b = await bodyOf(page, mfg);
-    check('③ もう一度「📦」を押しても出ない', !b.includes('<caption>発注部材表</caption>'));
-    const say = await page.locator('#w-editor-content .mfg-parts-say').textContent().catch(() => '');
-    check('③ 「発注する部材はありません」と言う', (say || '').includes('ありません'), say);
+    check('③ もう一度「🧾 部材」を押しても集まらない', !has(b, '必要部材表'));
+    const say = await page.locator('#w-editor-content .mfg-items-bar .mfg-bar-say').textContent().catch(() => '');
+    check('③ 「手配する部材はありません」と言う', (say || '').includes('ありません'), say);
     // ④
     await page.goto(BASE + '/' + mfg);
-    const back = page.locator('#w-editor-content .skip-row-back');
-    await back.first().waitFor({ timeout: 8000 }).catch(() => {});
-    await Promise.all([
-      page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
-      back.first().click().catch(() => {}),
-    ]);
+    check('④ 手配不要表の行の先頭にチェック・下に「↩ 戻す」', (await page.locator('#w-editor-content table input.skip-pick').count()) === 1 &&
+      (await page.locator('#w-editor-content .mfg-skip-bar .skip-sel-back').count()) === 1);
+    await press('.skip-pick', '.skip-sel-back');
     b = await bodyOf(page, mfg);
-    check('④ 「↩ 戻す」で手配不要表が消えた', !b.includes('手配不要表'));
+    check('④ 「↩ 戻す」で手配不要表が消えた', !has(b, '手配不要表'));
     await parts();
     b = await bodyOf(page, mfg);
-    check('④ 「📦」でまた発注部材表に出る', b.includes('<caption>発注部材表</caption>') && b.includes('【E2E】銅'));
+    check('④ 「🧾 部材」でまた必要部材表に出る', has(b, '必要部材表') && b.includes('【E2E】銅'));
+    // ⑤
+    await press('.mfg-needs-pick', '.mfg-needs-order');
+    b = await bodyOf(page, mfg);
+    check('⑤ 「🛒 発注」で発注部材表へ', has(b, '発注部材表') && !has(b, '必要部材表'));
+    await press('.draft-pick', '.draft-form-box .draft-sel-skip', { prompt: '【E2E】自社で作る' });
+    b = await bodyOf(page, mfg);
+    at = b.indexOf('<caption>手配不要表</caption>');
+    check('⑤ 発注部材表の「🚫 不要」で手配不要表へ（理由つき）', at >= 0 && b.slice(at).includes('【E2E】自社で作る') && b.slice(at).includes('【E2E】銅'));
+    check('⑤ 発注部材表は消えた', !has(b, '発注部材表'));
+    const inTable = await page.evaluate(() => document.querySelectorAll('#w-editor-content table button').length);
+    check('⑤ 表の中にボタンは無い', inTable === 0, String(inTable));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

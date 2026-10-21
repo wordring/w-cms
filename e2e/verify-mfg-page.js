@@ -1,16 +1,23 @@
-// 製造ページの作業の帯（2026-10-19・ext/toho/mfg_view.go・assets/app.js）を画面から確かめる。
+// 製造ページの作業（2026-10-21 夕・ext/toho/mfg_work.go・mfg_view.go・toho.js の mfgBarOf）を画面から確かめる。
 //
 // 利用者:「一つの製造ページに案件の見積もり依頼、部材発注、製造記録（工数など）、納品書、請求書を並べるのはどうですか？」
 // 「2．勧め通りで」（製造完了は製造ページで付け、案件明細の製造完了は鏡）。
+// 2026-10-21 利用者:「製造明細表を作業開始という見出しの下にいれ、行の先頭にチェックボックスを付け、選択した行について,」
+// 「表の下にあるボタンを押すとその作業を開始するマナーにしたいです。」
 //
-//   ① 製造ページの製造明細表の「製造完了」にチェック——押すと本文の欄に「済」
-//   ② 案件残表の製造完了は 8/20（製造完了の製造に入ったのは8）・案件ページの製造完了の欄にも 8/20 の鏡
-//   ③ 「納品」の欄で選んで「🚚 選んだ行で納品書を作る」——今回納める数の欄（まだ納めていない 8 が入っている）を 5 にして作る
-//   ④ 納品書は 記録／年／月／製造記録 にでき（2026-10-21 から）、製造ページの「この製造の書類」に並ぶ・「納品」の欄は 残り 3
-//   ⑤ 「📦 この製造の部材を発注部材表へ」——製造ページに発注部材表（材料 2個/台 × 8台 = 16）。「部材発注書を作る」で、部材発注書は記録にでき、明細の「製造」の列にこの製造ページ・「この製造の書類」に並ぶ
-//   ⑥ 「📨 この製造の部材を見積依頼必要部材表へ」——製造ページに見積依頼必要部材表（ロット 8・案件つき）
-//   ⑦ 「見積計算」の欄の「➕ 見積計算書」——見積計算書は記録にでき（タグ「製造」）、欄にリンクが出る
-//   ⑧ 「📁 この製造を閉じる」——記録／年／月／製造記録へ移り、足元に「閉じています」
+//   ⓪ 新しい製造ページに見出し「作業開始」・製造明細表の行の先頭にチェック・表の下に帯（表の中にボタンは無い）
+//   ① 製造明細の行を選んで「✓ 製造完了」——本文の欄に「済」
+//   ② 案件残表の「進み」に 製造完了 8/20（製造完了の製造に入ったのは8）・案件ページの製造完了の欄にも 8/20 の鏡
+//   ③ 行を選んで「🚚 納品」——「納品作業」の見出しの下に納品表（まだ納めていない 8）
+//   ④ 納品表の数量を 5 に直して「🚚 納品書を作る」——納品書は 記録／年／月／製造記録 にでき（数量 5）、「この製造の書類」に並ぶ・納品表は消える
+//   ⑤ もう一度「🚚 納品」——納品表は 残りの 3
+//   ⑥ 行を選んで「🧾 部材」——「部材作業」の見出しの下に必要部材表（材料 2個/台 × 8台 = 16）
+//   ⑦ 必要部材表の行を選んで「📨 見積もり」——「見積依頼作業」の見出しの下に見積依頼部材表（ロット 8・案件つき）・必要部材表は残る
+//   ⑧ 必要部材表の行を選んで「🛒 発注」——「発注作業」の見出しの下に発注部材表（16）・必要部材表は消える
+//   ⑨ 見出し5つがそろい、どの表の中にもボタンが無い
+//   ⑩ 発注部材表の下の欄で「部材発注書を作る」——部材発注書は記録にでき、明細の「製造」の列にこの製造ページ・「この製造の書類」に並ぶ（差出人が無ければ飛ばす）
+//   ⑪ 行を選んで「🧮 見積計算書」——見積計算書が 記録／年／月／製造記録 にできて開き、「この製造の書類」に並ぶ
+//   ⑫ ページの末尾の「📁 この製造を閉じる」——記録／年／月／製造記録へ移り、足元に「閉じています」
 //
 // 当て先は全部自分で作って最後に消します（案件残表を置いたページ・案件ページ・製造ページと、記録に置いた書類——「この製造の書類」から拾う）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-page.js
@@ -25,6 +32,18 @@ const check = (label, ok, note = '') => {
 };
 const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch('/api/page-meta?id=' + pid)).json()).parent_id, id);
 const titleOf = (page, id) => page.evaluate(async (pid) => ((await (await fetch('/api/load?id=' + pid)).text()).match(/<h1[^>]*>([^<]*)</) || [, ''])[1], id);
+const bodyOf = (page, id) => page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);
+// 本文から、キャプションが caption の表を切り出す（無ければ空）。
+const tableIn = (body, caption) => {
+  const at = body.indexOf('<caption>' + caption + '</caption>');
+  return at < 0 ? '' : body.slice(at, body.indexOf('</table>', at));
+};
+// 見出し h2「head」が、キャプション caption の表より前にあるか。
+const under = (body, head, caption) => {
+  const h = body.indexOf('<h2>' + head + '</h2>');
+  const t = body.indexOf('<caption>' + caption + '</caption>');
+  return h >= 0 && t > h;
+};
 // 製造ページの「この製造の書類」に並ぶページ番号（2026-10-21・ext/toho/mfg_docs.go）。
 const docsOf = (page, id) => page.evaluate(async (pid) => {
   const v = await (await fetch('/api/load?view=1&id=' + pid)).text();
@@ -40,6 +59,20 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
   page.on('pageerror', (e) => errs.push(String(e)));
   let root = '', order = '', mfg = '', dlv = '', product = '';
   const docs = new Set(); // 記録に置いた書類（最後に消す）
+
+  // 製造ページを開き、picks に当たるチェックを全部入れて、btn を押す（押すと読み直すか、別のページへ移る）。
+  const press = async (picks, btn, opts = {}) => {
+    await page.goto(BASE + '/' + mfg);
+    const b = page.locator('#w-editor-content ' + btn);
+    await b.first().waitFor({ timeout: 10000 }).catch(() => {});
+    if (picks) for (const c of await page.locator('#w-editor-content ' + picks).all()) await c.check();
+    if (opts.dialog !== undefined) page.once('dialog', (d) => d.accept(opts.dialog));
+    await Promise.all([
+      opts.url ? page.waitForURL(opts.url, { timeout: 15000 }).catch(() => {}) : page.waitForNavigation({ timeout: opts.wait || 15000 }).catch(() => {}),
+      b.first().click().catch(() => {}),
+    ]);
+  };
+
   try {
     await login(page, BASE);
     root = await makePage(page, '<h1>【E2E】製造ページの帯</h1><section data-mirror="案件残"></section>');
@@ -57,14 +90,40 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     mfg = made.page_id || '';
     check('当て先を作れた', !!root && !!order && !!mfg, JSON.stringify(made));
 
-    // ①
+    // ⓪
     await page.goto(BASE + '/' + mfg);
-    const box = page.locator('#w-editor-content input.mfg-made');
-    await box.waitFor({ timeout: 10000 }).catch(() => {});
-    await box.click();
-    await page.waitForTimeout(1500);
-    const raw = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), mfg);
-    check('① 製造完了のチェックで、本文の欄に「済」', /<td>\s*済/.test(raw.replace(/<input[^>]*>/g, '')), raw.replace(/\s+/g, ' ').slice(0, 400));
+    await page.locator('#w-editor-content .mfg-items-bar').waitFor({ timeout: 10000 }).catch(() => {});
+    const b0 = await bodyOf(page, mfg);
+    check('⓪ 新しい製造ページに見出し「作業開始」（製造明細表の前）', under(b0, '作業開始', '製造明細表'));
+    const s0 = await page.evaluate(() => {
+      const bar = document.querySelector('#w-editor-content .mfg-items-bar');
+      // ⚠ エディタはブロックごとに包むので、隣り合わせではなく文書の順で見る（表 → 帯 → 次の表・見出し）。
+      const all = Array.from(document.querySelectorAll('#w-editor-content table, #w-editor-content h2, #w-editor-content .mfg-items-bar'));
+      const i = all.indexOf(bar);
+      const prev = i > 0 ? all[i - 1] : null;
+      return {
+        picks: document.querySelectorAll('#w-editor-content table input.mfg-pick').length,
+        barAfterTable: !!prev && prev.tagName === 'TABLE' && !!prev.querySelector('caption') && prev.querySelector('caption').textContent.trim() === '製造明細表',
+        buttons: bar ? Array.from(bar.querySelectorAll('button')).map((x) => x.className.replace('chip-btn ', '')).join(' ') : '',
+        inTable: document.querySelectorAll('#w-editor-content table button').length,
+      };
+    });
+    check('⓪ 製造明細表の行の先頭にチェック', s0.picks === 1, String(s0.picks));
+    check('⓪ 表の下に帯（部材・追加の発注・納品・製造完了・見積計算書・取り消し）', s0.barAfterTable &&
+      ['mfg-act-parts', 'mfg-act-extra', 'mfg-act-dlv', 'mfg-act-made', 'mfg-act-calc', 'mfg-act-back'].every((c) => s0.buttons.includes(c)), s0.buttons);
+    check('⓪ 表の中にボタンは無い', s0.inTable === 0, String(s0.inTable));
+    check('⓪ ページの末尾に「この製造の書類」と「閉じる」', (await page.locator('#w-editor-content .mfg-page-end .mfg-docs').count()) === 1 &&
+      (await page.locator('#w-editor-content .mfg-page-end .mfg-close-go').count()) === 1);
+    // 何も選ばずに押すと、選ぶように言う。
+    await page.click('#w-editor-content .mfg-act-made');
+    await page.waitForTimeout(300);
+    const say0 = (await page.locator('#w-editor-content .mfg-items-bar .mfg-bar-say').textContent().catch(() => '')) || '';
+    check('⓪ 何も選ばずに押すと、選ぶように言う', say0.includes('選んでください'), say0);
+
+    // ①
+    await press('.mfg-pick', '.mfg-act-made');
+    const raw = await bodyOf(page, mfg);
+    check('① 「✓ 製造完了」で、本文の欄に「済」', /<td>\s*済/.test(raw.replace(/<input[^>]*>/g, '')), raw.replace(/\s+/g, ' ').slice(0, 400));
 
     // ②
     await page.goto(BASE + '/' + root);
@@ -72,7 +131,7 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     const bl = await page.evaluate((oid) => {
       // 2026-10-21 から、製造完了は「進み」の列に文で出る（「製造完了 8/20」）。
       const tr = document.querySelector('#w-editor-content tr[data-order-page="' + oid + '"]');
-      return tr ? tr.textContent.replace(/s+/g, ' ').trim() : null;
+      return tr ? tr.textContent.replace(/\s+/g, ' ').trim() : null;
     }, order);
     check('② 案件残表の「進み」に 製造完了 8/20', (bl || '').includes('製造完了 8/20'), String(bl));
     const view = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), order);
@@ -80,111 +139,125 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     check('② 案件ページの製造完了の欄にも 8/20 の鏡', !!m && m[1] === '8/20', m ? m[1] : '');
 
     // ③
+    await press('.mfg-pick', '.mfg-act-dlv');
+    let b = await bodyOf(page, mfg);
+    let t = tableIn(b, '納品表');
+    check('③ 「納品作業」の見出しの下に納品表（まだ納めていない 8）', under(b, '納品作業', '納品表') && t.includes('E2E-MP-A') && />\s*8\s*</.test(t), t.replace(/\s+/g, ' ').slice(0, 400));
+
+    // ④ 数量を 5 に直して（画面の表のセル）、「納品書を作る」。
     await page.goto(BASE + '/' + mfg);
-    await page.locator('#w-editor-content .mfg-dlv-pick').check();
-    await page.click('#w-editor-content .mfg-dlv-go');
-    const qty = page.locator('#w-editor-content .mfg-dlv-panel .mfg-dlv-qty');
-    await qty.waitFor({ timeout: 5000 }).catch(() => {});
-    check('③ 今回納める数の欄に、まだ納めていない 8', (await qty.inputValue().catch(() => '')) === '8');
-    await qty.fill('5');
+    await page.locator('#w-editor-content .mfg-dlvdraft-make').waitFor({ timeout: 10000 }).catch(() => {});
+    const edited = await page.evaluate(() => {
+      const table = Array.from(document.querySelectorAll('#w-editor-content table')).find((x) => x.querySelector('caption') && x.querySelector('caption').textContent.trim() === '納品表');
+      if (!table) return false;
+      const rows = Array.from(table.querySelectorAll('tr'));
+      const i = Array.from(rows[0].children).map((c) => c.textContent.trim()).indexOf('数量');
+      if (i < 0 || !rows[1] || !rows[1].children[i]) return false;
+      rows[1].children[i].textContent = '5';
+      return true;
+    });
+    check('④ 納品表の数量を 5 に直せた', edited);
     await Promise.all([
       page.waitForURL((u) => !u.pathname.endsWith('/' + mfg), { timeout: 15000 }).catch(() => {}),
-      page.click('#w-editor-content .mfg-dlv-make'),
+      page.click('#w-editor-content .mfg-dlvdraft-make'),
     ]);
     dlv = (page.url().match(/\/(\d{6})(?:[?#]|$)/) || [])[1] || '';
     check('④ 納品書ページが開く', !!dlv && dlv !== mfg, page.url());
     if (dlv) {
       docs.add(dlv);
       check('④ 納品書は 記録／年／月／製造記録', (await titleOf(page, await parentOf(page, dlv))) === '製造記録');
+      const db = await bodyOf(page, dlv);
+      const at = db.indexOf('E2E-MP-A');
+      const row = at < 0 ? '' : db.slice(db.lastIndexOf('<tr', at), db.indexOf('</tr>', at));
+      check('④ 納品書の数量は直した 5', />\s*5\s*</.test(row) && !/>\s*8\s*</.test(row), row.replace(/\s+/g, ' '));
       check('④ 製造ページの「この製造の書類」に納品書', (await docsOf(page, mfg)).includes(dlv));
-      await page.goto(BASE + '/' + mfg);
-      const left = await page.evaluate(() => {
-        const td = document.querySelector('#w-editor-content td.mfg-dlv');
-        return td ? td.textContent.trim() : null;
-      });
-      check('④ 製造ページの「納品」の欄は 残り 3', (left || '').includes('残り 3'), String(left));
+      check('④ 納品表は消えた', !(await bodyOf(page, mfg)).includes('<caption>納品表</caption>'));
     }
+
     // ⑤
-    if (mfg) {
-      await page.goto(BASE + '/' + mfg);
+    await press('.mfg-pick', '.mfg-act-dlv');
+    t = tableIn(await bodyOf(page, mfg), '納品表');
+    check('⑤ もう一度「🚚 納品」で、納品表は残りの 3', t.includes('E2E-MP-A') && />\s*3\s*</.test(t), t.replace(/\s+/g, ' ').slice(0, 400));
+
+    // ⑥
+    await press('.mfg-pick', '.mfg-act-parts');
+    b = await bodyOf(page, mfg);
+    t = tableIn(b, '必要部材表');
+    check('⑥ 「部材作業」の見出しの下に必要部材表（【E2E】鉄 FB を 16）', under(b, '部材作業', '必要部材表') && t.includes('【E2E】鉄') && />\s*16\s*</.test(t), t.replace(/\s+/g, ' ').slice(0, 600));
+    await page.goto(BASE + '/' + mfg);
+    await page.locator('#w-editor-content .mfg-needs-bar').waitFor({ timeout: 10000 }).catch(() => {});
+    const s6 = await page.evaluate(() => ({
+      picks: document.querySelectorAll('#w-editor-content table input.mfg-needs-pick').length,
+      buttons: Array.from(document.querySelectorAll('#w-editor-content .mfg-needs-bar button')).map((x) => x.className.replace('chip-btn ', '')).join(' '),
+    }));
+    check('⑥ 必要部材表の行の先頭にチェック・表の下に 発注・見積もり・不要・外す', s6.picks === 1 &&
+      ['mfg-needs-order', 'mfg-needs-quote', 'mfg-needs-skip', 'mfg-needs-drop'].every((c) => s6.buttons.includes(c)), JSON.stringify(s6));
+
+    // ⑦
+    await press('.mfg-needs-pick', '.mfg-needs-quote');
+    b = await bodyOf(page, mfg);
+    t = tableIn(b, '見積依頼部材表');
+    check('⑦ 「見積依頼作業」の見出しの下に見積依頼部材表（【E2E】鉄 FB・ロット 8・案件つき）', under(b, '見積依頼作業', '見積依頼部材表') &&
+      t.includes('【E2E】鉄') && />\s*8\s*</.test(t) && t.includes(order), t.replace(/\s+/g, ' ').slice(0, 600));
+    check('⑦ 必要部材表は残る', tableIn(b, '必要部材表').includes('【E2E】鉄'));
+
+    // ⑧
+    await press('.mfg-needs-pick', '.mfg-needs-order');
+    b = await bodyOf(page, mfg);
+    t = tableIn(b, '発注部材表');
+    check('⑧ 「発注作業」の見出しの下に発注部材表（【E2E】鉄 FB を 16）', under(b, '発注作業', '発注部材表') && t.includes('【E2E】鉄') && />\s*16\s*</.test(t), t.replace(/\s+/g, ' ').slice(0, 600));
+    check('⑧ 必要部材表は消えた', !b.includes('<caption>必要部材表</caption>'));
+
+    // ⑨
+    check('⑨ 見出し5つ（作業開始・部材作業・発注作業・見積依頼作業・納品作業）', ['作業開始', '部材作業', '発注作業', '見積依頼作業', '納品作業'].every((h) => b.includes('<h2>' + h + '</h2>')));
+    await page.goto(BASE + '/' + mfg);
+    await page.locator('#w-editor-content .draft-form').waitFor({ timeout: 10000 }).catch(() => {});
+    const inTable = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content table button')).map((x) => {
+      const cap = x.closest('table').querySelector('caption');
+      return (cap ? cap.textContent.trim() : '?') + ':' + x.textContent.trim();
+    }));
+    check('⑨ どの表の中にもボタンが無い（製造明細表・納品表・見積依頼部材表・発注部材表）', inTable.length === 0, inTable.join(' | '));
+
+    // ⑩
+    const signer = page.locator('#w-editor-content .draft-form select[data-unorder="signer"] option');
+    if ((await signer.count()) < 2) {
+      console.log('- ⑩ 差出人（署名のある人）が連絡帳に無いので、部材発注書を作る所は飛ばします');
+    } else {
+      await page.selectOption('#w-editor-content .draft-form select[data-unorder="signer"]', { index: 1 });
+      await page.fill('#w-editor-content .draft-form input[data-draft="supplier"]', '【E2E】部材の業者');
       await Promise.all([
-        page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
-        page.click('#w-editor-content .mfg-parts-go'),
+        page.waitForNavigation({ timeout: 20000 }).catch(() => {}),
+        page.click('#w-editor-content .draft-form [data-draft-go]'),
       ]);
-      await page.waitForSelector('#w-editor-content .draft-form', { timeout: 10000 }).catch(() => {});
-      const draft = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), mfg);
-      check('⑤ 製造ページに発注部材表（【E2E】鉄 FB を 16）', draft.includes('<caption>発注部材表</caption>') && draft.includes('【E2E】鉄') && />\s*16\s*</.test(draft), draft.replace(/\s+/g, ' ').slice(-600));
-      const signer = page.locator('#w-editor-content .draft-form select[data-unorder="signer"] option');
-      if ((await signer.count()) < 2) {
-        console.log('- ⑤ 差出人（署名のある人）が連絡帳に無いので、部材発注書を作る所は飛ばします');
-      } else {
-        await page.selectOption('#w-editor-content .draft-form select[data-unorder="signer"]', { index: 1 });
-        await page.fill('#w-editor-content .draft-form input[data-draft="supplier"]', '【E2E】部材の業者');
-        await Promise.all([
-          page.waitForNavigation({ timeout: 20000 }).catch(() => {}),
-          page.click('#w-editor-content .draft-form [data-draft-go]'),
-        ]);
-        const listed = await docsOf(page, mfg);
-        let po = '';
-        for (const d of listed) {
-          docs.add(d);
-          if ((await titleOf(page, d)).includes('【E2E】部材の業者')) po = d;
-        }
-        check('⑤ 製造ページの「この製造の書類」に部材発注書', !!po, listed.join(','));
-        if (po) {
-          check('⑤ 部材発注書は 記録／年／月／製造記録', (await titleOf(page, await parentOf(page, po))) === '製造記録');
-          const body5 = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), po);
-          check('⑤ 部材発注明細表の「製造」にこの製造ページ', body5.includes('<th>製造</th>') && body5.includes('>' + mfg + '<'), body5.replace(/\s+/g, ' ').slice(-500));
-        }
+      const listed = await docsOf(page, mfg);
+      let po = '';
+      for (const d of listed) {
+        docs.add(d);
+        if ((await titleOf(page, d)).includes('【E2E】部材の業者')) po = d;
+      }
+      check('⑩ 製造ページの「この製造の書類」に部材発注書', !!po, listed.join(','));
+      if (po) {
+        check('⑩ 部材発注書は 記録／年／月／製造記録', (await titleOf(page, await parentOf(page, po))) === '製造記録');
+        const body10 = await bodyOf(page, po);
+        check('⑩ 部材発注明細表の「製造」にこの製造ページ', body10.includes('<th>製造</th>') && body10.includes('>' + mfg + '<'), body10.replace(/\s+/g, ' ').slice(-500));
+        check('⑩ 製造ページの発注部材表は消えた', !(await bodyOf(page, mfg)).includes('<caption>発注部材表</caption>'));
       }
     }
-    // ⑥ 「📨 この製造の部材を見積依頼必要部材表へ」（2026-10-19・mfg_more.go）——ロットは製造明細の数量（8）。
-    if (mfg) {
-      await page.goto(BASE + '/' + mfg);
-      await Promise.all([
-        page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
-        page.click('#w-editor-content .mfg-rfq-go'),
-      ]);
-      const body6 = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), mfg);
-      const at = body6.indexOf('<caption>見積依頼必要部材表</caption>');
-      const tbl = at < 0 ? '' : body6.slice(at, body6.indexOf('</table>', at));
-      check('⑥ 製造ページに見積依頼必要部材表（【E2E】鉄 FB・ロット 8・案件つき）', tbl.includes('【E2E】鉄') && />\s*8\s*</.test(tbl) && tbl.includes(order), tbl.replace(/\s+/g, ' ').slice(0, 600));
-    }
-    // ⑦ 「見積計算」の欄の「➕ 見積計算書」——見積計算書がこの製造ページの子にできて開く。
-    if (mfg) {
-      await page.goto(BASE + '/' + mfg);
-      const add = page.locator('#w-editor-content .estimate-calc-new[data-mfg="' + mfg + '"]');
-      await add.first().waitFor({ timeout: 8000 }).catch(() => {});
-      check('⑦ 製造明細表に「➕ 見積計算書」', (await add.count()) === 1);
-      await Promise.all([
-        page.waitForURL((u) => !u.pathname.endsWith('/' + mfg), { timeout: 15000 }).catch(() => {}),
-        add.first().click().catch(() => {}),
-      ]);
-      const calc = (page.url().match(/\/(\d{6})(?:[?#]|$)/) || [])[1] || '';
-      if (calc && calc !== mfg) docs.add(calc);
-      check('⑦ 見積計算書ができて開く・記録／年／月／製造記録', !!calc && calc !== mfg && (await titleOf(page, await parentOf(page, calc))) === '製造記録', page.url());
-      if (calc) {
-        await page.goto(BASE + '/' + mfg);
-        const link = await page.locator('#w-editor-content td.mfg-calc a[href="/' + calc + '"]').count();
-        check('⑦ 製造ページの「見積計算」の欄にリンク', link === 1);
-      }
-    }
-    // ⑧ 「📁 この製造を閉じる」（2026-10-19・mfg_close.go）——確かめのダイアログで「はい」、記録／年／月／製造記録へ移る。
-    if (mfg) {
-      await page.goto(BASE + '/' + mfg);
-      const close = page.locator('#w-editor-content .mfg-close-go');
-      await close.waitFor({ timeout: 8000 }).catch(() => {});
-      page.once('dialog', (d) => d.accept());
-      await Promise.all([
-        page.waitForNavigation({ timeout: 15000 }).catch(() => {}),
-        close.click().catch(() => {}),
-      ]);
-      const p8 = await parentOf(page, mfg);
-      const t8 = await page.evaluate(async (pid) => ((await (await fetch('/api/load?id=' + pid)).text()).match(/<h1[^>]*>([^<]*)</) || [, ''])[1], p8);
-      check('⑧ 閉じると 記録／年／月／製造記録 へ移る', t8 === '製造記録', String(p8) + ' ' + t8);
-      const v8 = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), mfg);
-      check('⑧ 閉じた製造ページの足元に「閉じています」', v8.includes('この製造は閉じています') && !v8.includes('mfg-close-go'));
-    }
+
+    // ⑪
+    await press('.mfg-pick', '.mfg-act-calc', { url: (u) => !u.pathname.endsWith('/' + mfg) });
+    const calc = (page.url().match(/\/(\d{6})(?:[?#]|$)/) || [])[1] || '';
+    if (calc && calc !== mfg) docs.add(calc);
+    check('⑪ 「🧮 見積計算書」で見積計算書ができて開く・記録／年／月／製造記録', !!calc && calc !== mfg && (await titleOf(page, await parentOf(page, calc))) === '製造記録', page.url());
+    if (calc && calc !== mfg) check('⑪ 製造ページの「この製造の書類」に見積計算書', (await docsOf(page, mfg)).includes(calc));
+
+    // ⑫ 「📁 この製造を閉じる」（2026-10-19・mfg_close.go）——確かめのダイアログで「はい」、記録／年／月／製造記録へ移る。
+    await press(null, '.mfg-page-end .mfg-close-go', { dialog: '' });
+    const p12 = await parentOf(page, mfg);
+    const t12 = await titleOf(page, p12);
+    check('⑫ 閉じると 記録／年／月／製造記録 へ移る', t12 === '製造記録', String(p12) + ' ' + t12);
+    const v12 = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), mfg);
+    check('⑫ 閉じた製造ページの足元に「閉じています」・「取り消し」は出ない', v12.includes('この製造は閉じています') && !v12.includes('mfg-close-go') && !v12.includes('mfg-act-back'));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));

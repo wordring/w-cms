@@ -5,7 +5,7 @@
 //   ① 受信の記録の「作るページ」に「見積依頼ページ」——作ると、見積依頼ページ（ページ種類：顧客見積依頼）が 記録／年／月／依頼 にできて開く
 //   ② 案件残表に「見積」として並ぶ・納品の欄は押せない・製造の欄は選べる
 //   ③ 案件ページの足元は「見積の依頼の案件です」（受注残高は出さない）
-//   ④ 製造を始めて、製造ページの「📄 この製造の見積書を作る」——見積書が製造ページの子にでき、行に案件が写る（2026-10-19・quote_done.go）
+//   ④ 製造を始めて、製造ページの製造明細表の下の「📄 見積書」——見積書は 記録／年／月／依頼 にでき（2026-10-21 から）、「この製造の書類」に並び、行に案件が写る（quote_done.go）
 //   ⑤ 見積書に送付日を付けると、案件残表から外れ、案件ページの足元に「完了」と出る
 //
 // 当て先は全部自分で作って最後に消します（記録・見積依頼ページ・案件残表を置いたページ）。
@@ -36,7 +36,9 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
     const box = await findMailbox(page);
     if (!box) { console.log('通信箱が無いので飛ばします'); await browser.close(); process.exit(0); }
     mail = await makePage(page, '<h1>【E2E】見積のお願い</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd>' +
-      '<dt>差出人</dt><dd>試験 &lt;e2e@invalid.example&gt;</dd></dl><section><h2>本文</h2><pre>図面の品を 50 個で見積もってください。</pre></section>', box);
+      '<dt>差出人</dt><dd>試験 &lt;e2e@invalid.example&gt;</dd></dl><section><h2>本文</h2><pre>図面の品を 50 個で見積もってください。</pre></section>' +
+      // 「作るページ」は記録の箱の中に出る（2026-10-20 から・印の無い記録には出ない——ext/comm/record_box.go）。
+      '<section data-mirror="記録の箱"></section>', box);
     check('当て先を作れた', !!mail);
 
     // ①
@@ -81,8 +83,8 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
         return {
           label: [...tr.querySelectorAll('a')].map((a) => a.textContent.trim()).find((t) => t.startsWith('見積')) || '',
           dlv: !!tr.querySelector('input[disabled][title^="見積の依頼です"]'),
-          mfg: !!tr.querySelector('.backlog-mfg-pick'),
-          row: Number((tr.querySelector('.backlog-mfg-pick') || { dataset: {} }).dataset.row || 0),
+          mfg: !!tr.querySelector('.backlog-wait-pick'),
+          row: Number((tr.querySelector('.backlog-wait-pick') || { dataset: {} }).dataset.row || 0),
         };
       }, row);
       check('② 案件残表に「見積」として並ぶ・納品は押せない・製造は選べる', !!r && r.label.startsWith('見積') && r.dlv && r.mfg, JSON.stringify(r));
@@ -100,19 +102,25 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
       check('④ 製造ページを始められた', mr.status === 200 && !!mfg, JSON.stringify(mr));
       if (mfg) {
         await page.goto(BASE + '/' + mfg);
-        const go = page.locator('#w-editor-content .mfg-estimate-go');
+        const go = page.locator('#w-editor-content .mfg-items-bar .mfg-act-estimate');
         await go.waitFor({ timeout: 8000 }).catch(() => {});
-        check('④ 製造ページに「この製造の見積書を作る」', await go.count() === 1);
+        check('④ 製造明細表の下の帯に「📄 見積書」', await go.count() === 1);
         await go.click().catch(() => {});
         // 弊社品番の無い行なので、単価が無いと言って、開くリンクを出す。
-        const link = page.locator('#w-editor-content .mfg-estimate-say a');
+        const link = page.locator('#w-editor-content .mfg-items-bar .mfg-bar-say a');
         await link.waitFor({ timeout: 10000 }).catch(() => {});
-        const sayText = await page.locator('#w-editor-content .mfg-estimate-say').textContent().catch(() => '');
+        const sayText = await page.locator('#w-editor-content .mfg-items-bar .mfg-bar-say').textContent().catch(() => '');
         est = ((await link.getAttribute('href').catch(() => '')) || '').replace(/^\//, '');
         check('④ 見積書ができて、単価の無い行を知らせる', !!est && sayText.includes('単価の無い行が 1 行'), sayText);
         if (est) {
           const pe = await parentOf(page, est);
-          check('④ 見積書は製造ページの子', String(pe) === mfg, String(pe));
+          check('④ 見積書は 記録／年／月／依頼', (await titleOf(page, pe)) === '依頼', String(pe));
+          const listed = await page.evaluate(async (pid) => {
+            const v = await (await fetch('/api/load?view=1&id=' + pid)).text();
+            const at = v.indexOf('class="mfg-docs"');
+            return at < 0 ? [] : [...v.slice(at, v.indexOf('</div>', at)).matchAll(/href="\/(\d{6})"/g)].map((m) => m[1]);
+          }, mfg);
+          check('④ 製造ページの「この製造の書類」に見積書', listed.includes(est), listed.join(','));
           const eb = await page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), est);
           check('④ 見積明細表の行に案件が写る', eb.includes('<th>案件</th>') && eb.includes('>' + quote + '<') && eb.includes('E2E-QC-1'), eb.replace(/\s+/g, ' ').slice(0, 600));
           // ⑤ 送付日を付ける（口で）。

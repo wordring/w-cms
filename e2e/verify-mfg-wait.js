@@ -8,7 +8,7 @@
 //   ② 何も選ばずに「🏭 製造」を押すと、選ぶように言う
 //   ③ 選んで押すと、その行が打ち消し線になり、「進み」に「製造待ち 20」
 //   ④ 製造待ちのビューに並ぶ——選んで「▶ 選んだ行で開始」で製造ページが開く（製造明細表に 20）
-//   ⑤ 製造明細表の「↩ 製造待ちへ」で、行が外れて製造待ちへ戻る
+//   ⑤ 製造明細表で行を選んで、表の下の「↩ 取り消し」（確かめで「はい」）で、行が外れて製造待ちへ戻る
 //   ⑥ 製造待ちの「↩ 選んだ行を案件へ戻す」で、案件残表で選べる形に戻る（打ち消し線が消える）
 //
 // 当て先は全部自分で作って最後に消します（ビューを置いたページ・案件ページ・できた製造ページ）。置き場「製造」は消しません。
@@ -76,10 +76,11 @@ const check = (label, ok, note = '') => {
     const mbody = mfg ? await bodyOf(page, mfg) : '';
     check('④ 製造明細表に製造待ちの数（20）', /<td>E2E-WAIT-A<\/td>[\s\S]*?<td>20<\/td>/.test(mbody));
     // ⑤
-    await page.waitForSelector('#w-editor-content .mfg-back-go', { timeout: 10000 }).catch(() => {});
-    await Promise.all([page.waitForNavigation({ timeout: 10000 }).catch(() => {}), page.locator('#w-editor-content .mfg-back-go').first().click()]);
+    await page.waitForSelector('#w-editor-content .mfg-items-bar .mfg-act-back', { timeout: 10000 }).catch(() => {});
+    await page.locator('#w-editor-content input.mfg-pick[data-item="E2E-WAIT-A"]').check();
+    await Promise.all([page.waitForNavigation({ timeout: 10000 }).catch(() => {}), page.locator('#w-editor-content .mfg-items-bar .mfg-act-back').first().click()]);
     const after = mfg ? await bodyOf(page, mfg) : '';
-    check('⑤ 「↩ 製造待ちへ」で製造明細から外れる', !after.includes('E2E-WAIT-A'));
+    check('⑤ 「↩ 取り消し」で製造明細から外れる', !after.includes('E2E-WAIT-A'));
     const obody = await bodyOf(page, order);
     check('⑤ 案件明細の製造待ちに 20 が戻る', /<td>未着手<\/td>\s*<td>20<\/td>/.test(obody));
     // ⑥
@@ -98,6 +99,6 @@ const check = (label, ok, note = '') => {
     for (const id of [mfg, order, root]) await deletePage(page, id);
     await browser.close();
   }
-  console.log(fails ? '✗ ' + fails + ' 件' : '✓ ぜんぶ通りました');
+  console.log(fails === 0 ? '\n結果: すべて通りました' : '\n結果: ' + fails + ' 件落ちました');
   process.exit(fails ? 1 : 0);
 })();
