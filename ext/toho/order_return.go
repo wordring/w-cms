@@ -72,7 +72,7 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	returned := false
 	if needsTempParts(first) {
 		if err := returnToTempParts(user, first); err != nil {
-			cms.JSONFail(w, http.StatusConflict, "臨時部材表へ戻せません: "+err.Error())
+			cms.JSONFail(w, createFailStatus(err, http.StatusConflict), "臨時部材表へ戻せません: "+err.Error())
 			return
 		}
 		returned = true

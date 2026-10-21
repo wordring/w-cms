@@ -393,7 +393,7 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if cur, err := cms.ReadPageBody(pageID); err == nil {
 			if _, ln, ok := takeDraftRow(cur, req.Table, req.Row); ok && needsTempParts(ln) {
 				if err := returnToTempParts(user, ln); err != nil {
-					cms.JSONFail(w, http.StatusConflict, "臨時部材表へ戻せません: "+err.Error())
+					cms.JSONFail(w, createFailStatus(err, http.StatusConflict), "臨時部材表へ戻せません: "+err.Error())
 					return
 				}
 				copied = &ln

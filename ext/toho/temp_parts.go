@@ -293,6 +293,10 @@ func returnToTempParts(user *auth.User, ln ourOrderLine) error {
 	if err != nil {
 		return err
 	}
+	// ⚠ 「製造」へ書けない人は、臨時部材表へ戻せない（2026-10-21・書類を作る API と同じ直し・handler_gate.go の requireWriteTo）。
+	if err := requireWriteTo(user, boxID); err != nil {
+		return err
+	}
 	err = cms.RewriteBodyUnlessHeld(boxID, user.Username, func(cur string) string {
 		out, _ := addTempParts(cur, []ourOrderLine{ln})
 		return out
