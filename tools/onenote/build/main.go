@@ -293,7 +293,7 @@ func main() {
 	if root == "" {
 		root = filepath.Join(wcms.Desktop(), "w-cms", "ワンノート", *notebook)
 	}
-	e := &env{root: root, mutool: *mutool, gemini: *gemini, fresh: *fresh, seen: map[string]string{}, machineNotes: map[string]string{}}
+	e := &env{root: root, mutool: *mutool, gemini: *gemini, fresh: *fresh, seen: map[string]string{}, machineNotes: map[string]string{}, machineOwner: map[string]string{}}
 	e.state = root
 	if *stateFlag != "" {
 		e.state = *stateFlag
@@ -428,6 +428,20 @@ func run(e *env, dry bool) error {
 		return a.Title < b.Title
 	})
 	var built []runPage // この回に作った加工製品ページ（foldRunRevisions）
+	e.titles = map[string]string{}
+	for k, p := range cat.Pages {
+		e.titles[k] = p.Section + " / " + p.Title
+	}
+	// 装置のページを前の回に書いたワンノートのページ（装置のページ → 鍵・いちばん早く書いたもの）——別のワンノートのページで
+	// 上書きしない（2026-10-22——02 記録のまとめが、標準品のまとめを書いた装置のページを丸ごと書き直して消した）。
+	for k, r := range rec.Pages {
+		if r.Kind != kindMachine || r.WCMS == "" {
+			continue
+		}
+		if o, ok := e.machineOwner[r.WCMS]; !ok || r.Built < rec.Pages[o].Built {
+			e.machineOwner[r.WCMS] = k
+		}
+	}
 	for _, id := range ids {
 		p := cat.Pages[id]
 		if p.Gone {
@@ -474,6 +488,7 @@ func run(e *env, dry bool) error {
 		}
 		e.dests = destOf[id]
 		e.hint = set.drawingNoHintFor(p.Section, p.Title)
+		e.curKey = id
 		rule, err := set.ruleFor(pl.Partner)
 		if err != nil {
 			return err
@@ -1414,6 +1429,12 @@ func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, 
 			note.warn("⚠ 装置のページ（/" + pageID + "）には、この回にワンノートの「" + t + "」を書きました——こちらは書いていません（人が移す）")
 			return nil
 		}
+		if o, ok := e.machineOwner[pageID]; ok && o != e.curKey {
+			note.warn("⚠ 装置のページ（/" + pageID + "）には、前の回に別のワンノートのページ（" + e.titleOf(o) + "）を書きました——" +
+				"こちらは書いていません。上書きすると前の中身が消えます（人が移す）")
+			note.ask("装置のページに、別のワンノートのページの「まとめ」が既に書かれているので書かなかったページがあります（人が移す）")
+			return nil
+		}
 		e.machineNotes[pageID] = pg.Title
 		if pr.WCMS != pageID {
 			pr.Files = map[string]upload{}
@@ -1435,7 +1456,8 @@ func buildMachineNote(e *env, c *client, dir string, pl placement, pg *onePage, 
 	defer reportLeft()
 	var b strings.Builder
 	b.WriteString("<h1>" + stdhtml.EscapeString(machine) + "</h1>")
-	b.WriteString(`<dl data-type="tags"><dt>` + migrateTag + `</dt><dd>` + migrateValue + `</dd></dl>`)
+	// ページ種類は「装置」（2026-10-22——書き直すたびに落としていた。ext/toho/page_kind.go の PageKindMachine と同じ値）。
+	b.WriteString(`<dl data-type="tags"><dt>` + migrateTag + `</dt><dd>` + migrateValue + `</dd><dt>ページ種類</dt><dd>装置</dd></dl>`)
 	for _, s := range sectionsOf(pg) {
 		// **材料の空の表は落とす**（2026-09-29 利用者:「装置のページの材料の項目は表が空なら見出し表共に消して
 		// よいです。表の中身があれば消さずに、表にキャプションを付けずDBに入らないようにしてください」）——
@@ -1476,8 +1498,14 @@ func machinePageWritable(body string) bool {
 	if i := strings.Index(rest, "</h1>"); strings.HasPrefix(rest, "<h1>") && i >= 0 {
 		rest = strings.TrimSpace(rest[i+len("</h1>"):])
 	}
+	// 題の下のタグが「ページ種類：装置」だけ（w-cms が装置のフォルダを作るときに書く——ext/toho/record_box.go の kindFolderBody）なら、
+	// 作ったばかりと同じ（2026-10-22——2026-10-16 にタグが付くようになってから、新しい装置のページに「まとめ」を書けていなかった）。
+	rest = strings.TrimSpace(onlyMachineKindTags.ReplaceAllString(rest, ""))
 	return rest == ""
 }
+
+// onlyMachineKindTags は「ページ種類：装置」だけのタグの並びです。
+var onlyMachineKindTags = regexp.MustCompile(`^<dl data-type="tags">s*<dt>ページ種類</dt>s*<dd>装置</dd>s*</dl>`)
 
 // imageExt は画像の中身から拡張子を決めます（ブラウザで表示できる形式なら ok）。
 func imageExt(path string) (string, bool) {

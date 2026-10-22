@@ -116,3 +116,19 @@ func TestFoldRunRevisionsDry(t *testing.T) {
 		t.Errorf("いちばん新しい版か、別の図面に触っています: %v %v", b.note.infos, d.note.infos)
 	}
 }
+
+// TestMachinePageWritable は、装置のページに「まとめ」を書いてよいのは、題だけか「ページ種類：装置」だけのページ（作ったばかり）か、
+// 「移行中」のタグが残っているページだけであることを固定します（2026-10-22）。
+func TestMachinePageWritable(t *testing.T) {
+	for body, want := range map[string]bool{
+		`<h1>装置A</h1>`: true,
+		`<h1>装置A</h1><dl data-type="tags"><dt>ページ種類</dt><dd>装置</dd></dl>`:                       true,
+		`<h1>装置A</h1><dl data-type="tags"><dt>移行中</dt><dd>確認待ち</dd></dl><h2>データ</h2>`:           true,
+		`<h1>装置A</h1><dl data-type="tags"><dt>ページ種類</dt><dd>装置</dd></dl><p>人が書いた</p>`:           false,
+		`<h1>装置A</h1><dl data-type="tags"><dt>ページ種類</dt><dd>装置</dd><dt>区分</dt><dd>試作</dd></dl>`: false,
+	} {
+		if got := machinePageWritable(body); got != want {
+			t.Errorf("machinePageWritable(%q) = %v", body, got)
+		}
+	}
+}

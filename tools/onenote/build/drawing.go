@@ -95,6 +95,11 @@ type env struct {
 	byBase map[string][]productDrawing
 	// hint は、いま作っているページの「図面番号の当て」です（製造の設定.json・無ければ空）。
 	hint drawingNoHint
+	// curKey は、いま作っているワンノートのページの鍵です。machineOwner は装置のページ → 前の回にそこへ書いたワンノートのページの鍵、
+	// titles は鍵 → ワンノートの題です（buildMachineNote が、別のワンノートのページの書いた装置のページを上書きしないため・2026-10-22）。
+	curKey       string
+	machineOwner map[string]string
+	titles       map[string]string
 }
 
 var errNoMutool = errors.New("mutool がありません")
@@ -682,4 +687,12 @@ func (c *client) makeOldVersion(id, parent, no string) error {
 		return fmt.Errorf("親を /%s にできません（%d %s）", parent, res.StatusCode, strings.TrimSpace(string(b)))
 	}
 	return nil
+}
+
+// titleOf はワンノートのページの鍵を「セクション / 題」にします（報告のため・無ければ鍵のまま）。
+func (e *env) titleOf(key string) string {
+	if t, ok := e.titles[key]; ok {
+		return t
+	}
+	return key
 }
