@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	stdhtml "html"
 	"os"
 	"os/exec"
@@ -571,4 +572,114 @@ func extraDrawingBlock(tmplTitle, tmpl string, reads []drawingRead, machine, par
 		n.Parent.RemoveChild(n)
 	}
 	return n, nil
+}
+
+// ── この回に作ったページの中の改訂違い（2026-10-22）──────────────────────────────
+//
+// 利用者:「旧版に揃えます。道具を治しても良いですし、Claudeが書き換えても良いです。私は何もしたくないです。」——ワンノートの中だけに、
+// 同じ部品の古い版と新しい版がある（02 記録の別々の仕事の記録など）。olderRevisionOf は w-cms に既にあるページとしか比べないので、
+// どちらも新しいページになる。そこで、この回に作ったページを全部作り終えてから、改訂記号の前が同じ組を探し、いちばん新しい版の
+// ページを残して、ほかをその子の旧版に書き換える（題「旧版 <図面番号> <名前>」・ページ種類「加工製品の旧版」・品番・品名・
+// 弊社品番のタグを外す——ext/toho/revision.go の createOldVersionPage と同じ形）。どれが新しいか決まらない組は人に聞く。
+
+// runPage はこの回に作った加工製品ページ1枚です。
+type runPage struct {
+	key, title string // ワンノートのページの鍵と題
+	pr         *pageRecord
+	note       *pageNote
+}
+
+// foldRunRevisions は、この回に作ったページの改訂違いを旧版にそろえます（下見では、そうすると報告するだけ）。
+// 製造の記録を書き換えたら true。
+func foldRunRevisions(c *client, built []runPage, dry bool) bool {
+	groups := map[string][]runPage{}
+	var bases []string
+	for _, b := range built {
+		base, _ := revisionSplit(b.pr.DrawingNo)
+		if _, ok := groups[base]; !ok {
+			bases = append(bases, base)
+		}
+		groups[base] = append(groups[base], b)
+	}
+	changed := false
+	for _, base := range bases {
+		g := groups[base]
+		if len(g) < 2 {
+			continue
+		}
+		newest := g[0]
+		for _, b := range g[1:] {
+			if _, r := revisionSplit(b.pr.DrawingNo); revNewer(r, revOf(newest.pr.DrawingNo)) {
+				newest = b
+			}
+		}
+		for _, b := range g {
+			if b.key == newest.key {
+				continue
+			}
+			if !revNewer(revOf(newest.pr.DrawingNo), revOf(b.pr.DrawingNo)) {
+				b.note.ask("改訂記号の前が同じ図面番号のページがこの回に2枚以上あり、どれが新しい版か決まりません（" + b.pr.DrawingNo + "・" +
+					newest.pr.DrawingNo + "）——人が決める")
+				continue
+			}
+			if dry {
+				b.note.info("本番では、この回に作る「" + newest.title + "」（" + newest.pr.DrawingNo + "）の旧版として、その子ページにします")
+				continue
+			}
+			if err := c.makeOldVersion(b.pr.WCMS, newest.pr.WCMS, b.pr.DrawingNo); err != nil {
+				b.note.warn("⚠ 旧版にできませんでした: " + err.Error())
+				continue
+			}
+			b.pr.Kind = kindOldVersion
+			changed = true
+			b.note.info("この回に作った /" + newest.pr.WCMS + "（" + newest.pr.DrawingNo + "）の旧版として、その子ページにしました")
+		}
+	}
+	return changed
+}
+
+// revOf は図面番号の改訂記号です。
+func revOf(no string) string {
+	_, rev := revisionSplit(no)
+	return rev
+}
+
+// h1TextRe は本文の題です。
+var h1TextRe = regexp.MustCompile(`<h1\b[^>]*>([\s\S]*?)</h1>`)
+
+// makeOldVersion は、作ったばかりの加工製品ページ id を、parent の子の旧版に書き換えます（ロックの中で読んで書く）。
+func (c *client) makeOldVersion(id, parent, no string) error {
+	token, err := c.lock(id)
+	if err != nil {
+		return err
+	}
+	defer c.unlock(id, token)
+	body, ok := c.readBody(id)
+	if !ok {
+		return fmt.Errorf("/%s の本文を読めません", id)
+	}
+	name := ""
+	if m := h1TextRe.FindStringSubmatch(body); m != nil {
+		name = strings.TrimSpace(stdhtml.UnescapeString(regexp.MustCompile(`<[^>]+>`).ReplaceAllString(m[1], "")))
+	}
+	name = strings.TrimSpace(strings.TrimPrefix(name, no)) // 題が「図面番号 図面名称」の取引先
+	d := cms.EditBody(body)
+	d.SetTitle(strings.TrimSpace("旧版 " + no + " " + name))
+	d.ReplaceTag("ページ種類", "加工製品の旧版")
+	for _, tag := range []string{"品番", "品名", "弊社品番"} {
+		d.ReplaceTag(tag)
+	}
+	if err := c.save(id, token, d.HTML()); err != nil {
+		return err
+	}
+	res, err := c.do("POST", "/api/set-parent?id="+id+"&parent="+parent, nil, "", token)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		b, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("親を /%s にできません（%d %s）", parent, res.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
 }

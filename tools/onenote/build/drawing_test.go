@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestOwnReads は、1つの PDF に一式の図面が入っていたとき、**このページのものだけ**を名乗ることを固定します
 // （2026-09-30 利用者:「一つのPDFに複数の図面が入っている場合もあり得ます」）。
@@ -91,5 +94,25 @@ func TestDrawingNoHintFor(t *testing.T) {
 	}
 	if h := s.drawingNoHintFor("02 記録 / 2024 / 07月 / 試作C", "本体補強"); h.No != "" {
 		t.Errorf("書いていないセクションに当てています: %+v", h)
+	}
+}
+
+// TestFoldRunRevisionsDry は、この回に作ったページの中の改訂違いを見つけて、古い版だけを「旧版にする」と報告すること
+// （いちばん新しい版は残す・改訂記号の前が違うページは触らない）を、下見の形で固定します（2026-10-22・foldRunRevisions）。
+func TestFoldRunRevisionsDry(t *testing.T) {
+	mk := func(key, no string) runPage {
+		return runPage{key: key, title: key, pr: &pageRecord{DrawingNo: no}, note: &pageNote{title: key}}
+	}
+	a, b, c, d := mk("a", "A100-H01-12-00A"), mk("b", "A100-H01-12-00D"), mk("c", "A100-H01-12-00"), mk("d", "K120-77")
+	if foldRunRevisions(nil, []runPage{a, b, c, d}, true) {
+		t.Error("下見で製造の記録を書き換えたことになっています")
+	}
+	for _, old := range []runPage{a, c} {
+		if len(old.note.infos) != 1 || !strings.Contains(old.note.infos[0], "旧版") || !strings.Contains(old.note.infos[0], "A100-H01-12-00D") {
+			t.Errorf("%s を 00D の旧版にすると言っていません: %v", old.key, old.note.infos)
+		}
+	}
+	if len(b.note.infos) != 0 || len(d.note.infos) != 0 {
+		t.Errorf("いちばん新しい版か、別の図面に触っています: %v %v", b.note.infos, d.note.infos)
 	}
 }

@@ -427,6 +427,7 @@ func run(e *env, dry bool) error {
 		}
 		return a.Title < b.Title
 	})
+	var built []runPage // この回に作った加工製品ページ（foldRunRevisions）
 	for _, id := range ids {
 		p := cat.Pages[id]
 		if p.Gone {
@@ -487,11 +488,21 @@ func run(e *env, dry bool) error {
 			note.warn("⚠ 製造できませんでした: " + err.Error())
 			continue
 		}
+		// この回に作った加工製品ページ（改訂違いを旧版にそろえる——foldRunRevisions）。
+		if !note.kept && !note.duplicate && !note.asOld && note.wcms != "" && pr.Kind == "" && pr.DrawingNo != "" && !set.isMachineNote(p.Title) {
+			built = append(built, runPage{key: id, title: p.Title, pr: pr, note: note})
+		}
 		if !dry && !note.kept {
 			pr.Built = time.Now().Format(time.RFC3339)
 			if err := writeJSON(recPath, rec); err != nil { // 1ページごとに残す（途中で止まっても二度上げない）
 				return err
 			}
+		}
+	}
+	// この回に作ったページの中の改訂違いを、いちばん新しい版の子の旧版にそろえる（2026-10-22）。
+	if foldRunRevisions(c, built, dry) && !dry {
+		if err := writeJSON(recPath, rec); err != nil {
+			return err
 		}
 	}
 	// 受注の行（`弊社品番` の空いているもの）は、**受注フォルダを開いたときに**サーバーが結ぶ（2026-10-19 から「案件」の行・「案件」のフォルダ。2026-10-01——それまでは
@@ -977,6 +988,7 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 		}
 	}
 	if asOld {
+		note.asOld = true
 		title = strings.TrimSpace("旧版 " + drawingNo + " " + mark + name) // ext/toho/revision.go の createOldVersionPage と同じ題
 	}
 
@@ -1892,6 +1904,8 @@ type pageNote struct {
 	// kept は「作ったあとに保存されているので触らなかった」です（2026-10-04）——製造の記録の「製造」の時刻を
 	// 進めない（進めると、次の回にその編集が「製造より前」に見えて守れなくなる）。
 	kept  bool
+	// asOld は、w-cms の新しい版のページの子に旧版として作った（作る）ページです（2026-10-22——下見でも立つ。foldRunRevisions の外）。
+	asOld bool
 	infos []string
 	warns []string
 	asks  []string
