@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
@@ -276,5 +277,40 @@ func TestFileViewNameTagNeedsReadPermission(t *testing.T) {
 	}
 	if got := FillFileViewNames(&auth.User{Username: "alice", IsAdmin: true}, body); !strings.Contains(got, ">c3p7.pdf</section>") {
 		t.Errorf("読める人の保存で名札が書かれていません:\n%s", got)
+	}
+}
+
+// TestFileViewSrcChangesWhenFileIsRewritten は、同じ添付を上書きすると、埋め込む住所（`?v=`）が変わることを固定します
+// （2026-10-23）。利用者:「PDFを一度作ると修正できないのは辛いので、再度作れるようにしてください」——部材発注書の「PDF作成」は
+// 送る前は同じ添付を上書きするので、住所が同じだとブラウザが前の中身を手元の写しから出し続け、作り直せないように見えました。
+func TestFileViewSrcChangesWhenFileIsRewritten(t *testing.T) {
+	fileViewFixture(t, "000001", "c3p7.pdf")
+	body := `<h1>部品</h1><section data-type="file-view" data-ref="000001-c3p7"></section>`
+	admin := &auth.User{Username: "alice", IsAdmin: true}
+	srcOf := func() string {
+		out := renderFileViewBody(t, admin, 1, body)
+		i := strings.Index(out, `src="/000001/c3p7.pdf`)
+		if i < 0 {
+			t.Fatalf("埋め込みがありません:\n%s", out)
+		}
+		return out[i : i+strings.Index(out[i:], "#")]
+	}
+	before := srcOf()
+	if !strings.Contains(before, "?v=") {
+		t.Fatalf("⚠ 埋め込む住所に版（?v=）がありません: %s", before)
+	}
+	if again := srcOf(); again != before {
+		t.Errorf("⚠ 書き換えていないのに住所が変わります（手元の写しが使えない）: %s → %s", before, again)
+	}
+	f := filepath.Join(page.GetPageDir("000001"), "files", "c3p7.pdf")
+	later := time.Now().Add(2 * time.Second)
+	if err := os.WriteFile(f, []byte("%PDF-1.4 作り直した"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(f, later, later); err != nil {
+		t.Fatal(err)
+	}
+	if after := srcOf(); after == before {
+		t.Errorf("⚠ 上書きしても埋め込む住所が変わりません（ブラウザが前の PDF を出し続ける）: %s", after)
 	}
 }

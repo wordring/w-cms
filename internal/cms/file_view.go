@@ -70,6 +70,7 @@ package cms
 
 import (
 	stdhtml "html"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -250,6 +251,11 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 	head := `<summary class="file-view-head">📄 <a href="/` + stdhtml.EscapeString(pageID) +
 		`#` + stdhtml.EscapeString(blockID) + `">` + name + `</a></summary>`
 
+	// 埋め込む住所には、ファイルを書いた時刻を `?v=` で添えます（2026-10-23）。同じ添付を上書きしたとき（部材発注書の
+	// 「PDF作成」・📝 ローカル編集など）、住所が変わらないとブラウザが前の中身を手元の写しから出し続け、
+	// 作り直しても直っていないように見えました。配信の側のキャッシュの扱いは変えません（変わっていなければ写しが使える）。
+	embedSrc := src + stdhtml.EscapeString(attachmentVersionQuery(pageID, url))
+
 	var body string
 	switch kind {
 	case kindPDF:
@@ -258,13 +264,13 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 		// **ツールバーは残します**——印刷・ダウンロード・回転はここにしかありません
 		// （ユーザー:「印刷ボタンなどが無くなったのですが、べんりなのでふっかつしたい」）。
 		body = `<embed class="file-view-body" type="application/pdf" src="` +
-			src + `#navpanes=0&amp;view=FitH">`
+			embedSrc + `#navpanes=0&amp;view=FitH">`
 	case kindImage:
-		body = `<img class="file-view-body" src="` + src + `" alt="` + name + `">`
+		body = `<img class="file-view-body" src="` + embedSrc + `" alt="` + name + `">`
 	case kindVideo:
-		body = `<video class="file-view-body" src="` + src + `" controls preload="metadata"></video>`
+		body = `<video class="file-view-body" src="` + embedSrc + `" controls preload="metadata"></video>`
 	case kindAudio:
-		body = `<audio class="file-view-body" src="` + src + `" controls preload="metadata"></audio>`
+		body = `<audio class="file-view-body" src="` + embedSrc + `" controls preload="metadata"></audio>`
 	}
 	return `<details class="file-view-fold" open` + fileData + `>` + head +
 		`<div class="file-view" title="右下をつまむと大きさを変えられます">` + body + `</div></details>`
@@ -342,4 +348,14 @@ func appendChrome(el *html.Node, innerHTML string) {
 	for _, n := range nodes {
 		el.AppendChild(n)
 	}
+}
+
+// attachmentVersionQuery は、添付の住所 url（/ページ番号/保存名）に添える「?v=書いた時刻」です。読めなければ空。
+func attachmentVersionQuery(pageID, url string) string {
+	name := url[strings.LastIndexByte(url, '/')+1:]
+	fi, err := os.Stat(filepath.Join(page.AttachmentDir(pageID), name))
+	if err != nil {
+		return ""
+	}
+	return "?v=" + strconv.FormatInt(fi.ModTime().UnixMilli(), 36)
 }
