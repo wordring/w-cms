@@ -121,6 +121,28 @@ type settings struct {
 	// 「今の版の図面番号」を書くと、その図面番号の加工製品ページの子に旧版として作る（改訂記号の前の書き方が違って、
 	// olderRevisionOf が見つけられない古い版のため——2026-10-22 利用者:「wｰcmsの方が新しいです。」）。
 	DrawingNoHints []drawingNoHint `json:"図面番号の当て,omitempty"`
+	// SkipPages は**移さないと決めたページ**です（2026-10-22）——セクションの中の、部品ではないページ（業者の見積り・製造リスト・
+	// 見積もりのまとめなど）を、ページごとに外す。セクションごとに外すのは置き場の「移さない」。ページはセクションと題で選ぶ。
+	// 利用者:「製造の設定にページごとの「移さない」を足して、部品ではないページを外した案で4回目の下見をしてください。」例:
+	//	[{"セクション": "<セクション>", "題": "<ワンノートの題>", "理由": "<なぜ移さないか>"}]
+	SkipPages []skipPageRule `json:"移さないページ,omitempty"`
+}
+
+// skipPageRule は「移さないページ」の1件です。理由は報告に出す（空でもよい）。
+type skipPageRule struct {
+	Section string `json:"セクション"`
+	Title   string `json:"題"`
+	Why     string `json:"理由,omitempty"`
+}
+
+// skipPageFor は、そのワンノートのページ（セクションと題）を移さないかと、その理由です。
+func (s settings) skipPageFor(section, title string) (bool, string) {
+	for _, r := range s.SkipPages {
+		if strings.TrimSpace(r.Section) == strings.TrimSpace(section) && strings.TrimSpace(r.Title) == strings.TrimSpace(title) {
+			return true, strings.TrimSpace(r.Why)
+		}
+	}
+	return false, ""
 }
 
 // drawingNoHint は「図面番号の当て」の1件です。
@@ -422,6 +444,10 @@ func run(e *env, dry bool) error {
 		}
 		if !ok || strings.TrimSpace(pl.Partner) == "" {
 			rep.skip(p.Title, "置き場が決まっていません（"+settingsName+" の「"+p.Section+"」）")
+			continue
+		}
+		if skip, why := set.skipPageFor(p.Section, p.Title); skip {
+			rep.skip(p.Title, "移さないと決めたページです（"+settingsName+" の「移さないページ」・"+why+"）")
 			continue
 		}
 		pg, err := parsePage(filepath.Join(root, p.Dir, "page.xml"))

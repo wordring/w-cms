@@ -65,6 +65,17 @@ func TestRevisionSplit(t *testing.T) {
 	}
 }
 
+// TestSkipPageFor は「移さないページ」をセクションと題で引くことを固定します（2026-10-22）——別のセクションの同じ題は外さない。
+func TestSkipPageFor(t *testing.T) {
+	s := settings{SkipPages: []skipPageRule{{Section: "02 記録 / 2024 / 10月 / 試作B", Title: "製造リスト", Why: "部品ではない"}}}
+	if skip, why := s.skipPageFor("02 記録 / 2024 / 10月 / 試作B", " 製造リスト"); !skip || why != "部品ではない" {
+		t.Errorf("外していません: %v %q", skip, why)
+	}
+	if skip, _ := s.skipPageFor("02 記録 / 2024 / 06月 / 試作A", "製造リスト"); skip {
+		t.Error("書いていないセクションのページを外しています")
+	}
+}
+
 // TestDrawingNoHintFor は「図面番号の当て」をセクションと題で引くこと（前後の空白は見ない・別のセクションの同じ題には当てない）を
 // 固定します（2026-10-22）。
 func TestDrawingNoHintFor(t *testing.T) {
