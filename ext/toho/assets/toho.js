@@ -155,6 +155,7 @@ async function estimateBlockPost(btn, url, sayClass, doing) {
     const r = await postJSON(url, {
         page_id: location.pathname.replace(/^\//, '').slice(0, 6),
         block: Number(btn.getAttribute('data-estimate-block')),
+        sig: btn.getAttribute('data-estimate-sig') || '', // 描いたときの組の指紋（番号がずれても同じ組に効く・2026-10-22）
     }).catch(e => ({ ok: false, data: { message: String(e) } }));
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '書けませんでした')); return; }
@@ -177,6 +178,7 @@ delegateClick([['.estimate-add-go', async (btn) => {
     const r = await postJSON('/api/estimate/add', {
         product: form.getAttribute('data-estimate-product') || '',
         index: Number(form.getAttribute('data-estimate-index') || 0),
+        sig: form.getAttribute('data-estimate-sig') || '',
         into, client,
         person: valueIn(form, '.estimate-add-person'),
         signer: valueIn(form, '.estimate-add-signer'),
@@ -655,7 +657,7 @@ async function openQuotePutPanel(btn) {
         if (cur && cur.price && !window.confirm('「' + step + '」のいまの値 ' + cur.price + ' を ' + val.value.trim() + ' 円に置き換えます。よろしいですか？')) return;
         go.disabled = true;
         msg.textContent = ' 写しています…';
-        const res = await postJSON('/api/estimate/put-cost', { page_id: target, index: t.index, step, add, value: val.value.trim(), note })
+        const res = await postJSON('/api/estimate/put-cost', { page_id: target, index: t.index, sig: t.sig || '', step, add, value: val.value.trim(), note })
             .catch((e) => ({ ok: false, data: { message: String(e) } }));
         go.disabled = false;
         if (!res.ok) { msg.textContent = ' ⚠ ' + ((res.data && res.data.message) || '写せませんでした'); return; }
@@ -966,7 +968,7 @@ async function openQuotePutPanel(btn) {
                     rows.push({ pick: null, cells: [pageLink(p.id), name, part, '', '', '⚠ 単価がありません: ' + t.why] });
                     return;
                 }
-                rows.push({ pick: p.id + ':' + t.index, cells: [pageLink(p.id), name, part,
+                rows.push({ pick: p.id + ':' + t.index + ':' + (t.sig || ''), cells: [pageLink(p.id), name, part,
                     (t.quantity || '') + (t.quantity ? ' ' + (t.unit || '') : ''),
                     Number(t.price).toLocaleString('ja-JP') + '円', t.note || ''] });
             });
@@ -1004,9 +1006,9 @@ async function openQuotePutPanel(btn) {
             const { box, make, say } = partsOf(btn);
             const items = [];
             box.querySelectorAll('input[data-estf-pick]:checked').forEach((c) => {
-                const v = c.getAttribute('data-estf-pick');
-                const at = v.lastIndexOf(':');
-                items.push({ product: v.slice(0, at), index: Number(v.slice(at + 1)) });
+                // 「ページ:番号:指紋」（指紋は一覧を出したときの見積表——番号がずれても同じ表を入れる・2026-10-22）。
+                const [product, index, sig] = c.getAttribute('data-estf-pick').split(':');
+                items.push({ product, index: Number(index), sig: sig || '' });
             });
             if (!items.length) {
                 sayIn(say, '⚠ 見積書に入れる見積表をチェックしてください', 'proc-why-ng');

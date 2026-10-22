@@ -52,14 +52,14 @@ func TestWithEstimateCost(t *testing.T) {
 	}
 
 	// 既にある行へ——価格を置き換え、前に写した「見積 …」は置き換え、人の備考は残す。
-	out, err := withEstimateCost(body, 0, "材料", false, "１，５００円", "見積 わかば鋼業 2026-10-05")
+	out, err := withEstimateCost(body, 0, "", "材料", false, "１，５００円", "見積 わかば鋼業 2026-10-05")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := estimateRowsOf(t, out, 0)[0]; got != "材料|1500|板取り4／見積 わかば鋼業 2026-10-05" {
 		t.Errorf("材料の行が %q です", got)
 	}
-	out, err = withEstimateCost(out, 0, "塗装", false, "298", "見積 ふじ鍍金 2026-10-05")
+	out, err = withEstimateCost(out, 0, "", "塗装", false, "298", "見積 ふじ鍍金 2026-10-05")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestWithEstimateCost(t *testing.T) {
 	}
 
 	// 新しい行——表の末尾へ。
-	out, err = withEstimateCost(out, 1, "メッキ", true, "300", "見積 ふじ鍍金 2026-10-05")
+	out, err = withEstimateCost(out, 1, "", "メッキ", true, "300", "見積 ふじ鍍金 2026-10-05")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestWithEstimateCost(t *testing.T) {
 		add   bool
 		value string
 	}{{0, "単価", false, "1"}, {0, "ロット", false, "1"}, {0, "曲げ", false, "1"}, {0, "材料", true, "1"}, {0, "材料", false, "要相談"}, {5, "材料", false, "1"}} {
-		if _, err := withEstimateCost(body, c.index, c.step, c.add, c.value, "見積 x"); err == nil {
+		if _, err := withEstimateCost(body, c.index, "", c.step, c.add, c.value, "見積 x"); err == nil {
 			t.Errorf("%+v は断るはず", c)
 		}
 	}
@@ -146,5 +146,53 @@ func TestEstimatePutCostAPIAndButton(t *testing.T) {
 	}
 	if got := show(&auth.User{Username: "bob"}); !strings.Contains(got, "298円") || strings.Contains(got, "rfq-quote-put") {
 		t.Errorf("書けない人の見積回答に「計算表へ」が出ています（一覧は出る）:\n%s", got)
+	}
+}
+
+// TestWithEstimateCostFollowsSig は、一覧を出したあとにほかの人が見積計算表を前へ足しても、写す先が一覧で選んだ表（指紋の
+// 合う表）になることを固定します（2026-10-22 の見直し）。それまでは番号だけで選んでいて、別のロットの表に写していた。
+// 指紋の合う表が無ければ断る。
+func TestWithEstimateCostFollowsSig(t *testing.T) {
+	body := estimatePutBody()
+	tables, _ := estimateTablesOf(body)
+	sig40 := tables[1].Sig
+	// ほかの人が、いちばん前にロット10の組を足した（ロット40の表は 2 枚目→3 枚目）。
+	moved := strings.Replace(body, `<h1>ブラケット</h1>`, `<h1>ブラケット</h1><h3>ロット10</h3><table><caption>見積計算表</caption><tbody>`+
+		`<tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td>900</td><td></td></tr></tbody></table>`+recordTable("10"), 1)
+	out, err := withEstimateCost(moved, 1, sig40, "塗装", false, "298", "見積 ふじ鍍金 2026-10-05")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := estimateRowsOf(t, out, 2)[1]; !strings.HasPrefix(got, "塗装|298|") {
+		t.Errorf("⚠ ロット40の表に写っていません: %q", got)
+	}
+	if got := estimateRowsOf(t, out, 1)[1]; strings.HasPrefix(got, "塗装|298") {
+		t.Errorf("⚠ 番号だけでロット20の表に写しました: %q", got)
+	}
+	if _, err := withEstimateCost(moved, 1, "0123456789abcdef", "塗装", false, "298", "x"); err != errTableMoved {
+		t.Errorf("指紋の合う表が無いのに断りません: %v", err)
+	}
+}
+
+// TestPickBySig は、番号と指紋から表を選ぶ決まりを固定します。
+func TestPickBySig(t *testing.T) {
+	sigs := []string{"a", "b", "c", "b"}
+	at := func(i int) string { return sigs[i] }
+	cases := []struct {
+		index int
+		sig   string
+		want  int
+	}{
+		{2, "c", 2},  // 合っている
+		{0, "c", 2},  // ずれた——同じ指紋の1つへ
+		{0, "b", -1}, // 同じ指紋が2つ——決められない
+		{0, "z", -1}, // 無い
+		{1, "", 1},   // 指紋を送らない古い画面——番号のまま
+		{9, "", -1},
+	}
+	for _, c := range cases {
+		if got := pickBySig(len(sigs), at, c.index, c.sig); got != c.want {
+			t.Errorf("pickBySig(%d, %q) = %d（%d のはず）", c.index, c.sig, got, c.want)
+		}
 	}
 }

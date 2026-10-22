@@ -63,7 +63,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     await page.locator('[data-estf-list]').click();
     await page.waitForSelector('.estimate-folder-table', { timeout: 8000 }).catch(() => {});
     const picks = await page.locator('.estimate-folder-table input[data-estf-pick]').evaluateAll((els) => els.map((e) => e.getAttribute('data-estf-pick')));
-    check('① 単価を記録した見積表だけ選べる（部品1の2枚）', picks.length === 2 && picks.includes(p1 + ':0') && picks.includes(p1 + ':1'), picks.join(','));
+    check('① 単価を記録した見積表だけ選べる（部品1の2枚）', picks.length === 2 && picks.some((v) => v.startsWith(p1 + ':0:')) && picks.some((v) => v.startsWith(p1 + ':1:')), picks.join(','));
     const text = (await page.locator('[data-estf-box]').innerText()).replace(/\s+/g, ' ');
     check('① ロットと単価が出る（20個 402円・40個 550円 塗装あり）', text.includes('402円') && text.includes('550円') && text.includes('塗装あり'), text.slice(0, 300));
     check('① 単価の無い見積表・表の無い加工製品も理由つきで並ぶ', text.includes('単価がありません') && text.includes('見積表なし'));
@@ -76,8 +76,8 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     check('③ 開き直しても憶えた番号で一覧がまた並ぶ', await page.locator('.estimate-folder-table input[data-estf-pick]').count() === 2);
 
     // ② 40個の表 → 20個の表の順に押しても、見積明細表は一覧の順（20個 → 40個）。
-    await page.locator('input[data-estf-pick="' + p1 + ':1"]').check();
-    await page.locator('input[data-estf-pick="' + p1 + ':0"]').check();
+    await page.locator('input[data-estf-pick^="' + p1 + ':1:"]').check();
+    await page.locator('input[data-estf-pick^="' + p1 + ':0:"]').check();
     await Promise.all([
       page.waitForURL((u) => !u.pathname.endsWith('/' + box), { timeout: 15000 }).catch(() => {}),
       page.locator('[data-estf-make-go]').click(),

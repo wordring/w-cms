@@ -94,12 +94,17 @@ func (l estimateLine) values() map[string]string {
 }
 
 // estimateLineOf はページ productID（加工製品ページか見積計算書）の index 枚目（0から）の見積表から、見積明細表の1行を組みます。
-func estimateLineOf(productID int, index int) (estimateLine, error) {
+func estimateLineOf(productID int, index int, sig string) (estimateLine, error) {
 	opts, err := estimateOptionsOf(productID)
 	if err != nil {
 		return estimateLine{}, err
 	}
-	if index < 0 || index >= len(opts) {
+	// 番号は描いたときのもの——指紋の合う見積表を引き直す（2026-10-22 の見直し・table_read.go の pickBySig）。
+	index = pickBySig(len(opts), func(i int) string { return opts[i].Sig }, index, sig)
+	if index < 0 {
+		if sig != "" {
+			return estimateLine{}, errTableMoved
+		}
 		return estimateLine{}, errString("その見積表が見つかりません（ページを開き直してください）")
 	}
 	if why := opts[index].Why; why != "" {
@@ -113,6 +118,7 @@ type estimateOption struct {
 	Index int
 	Line  estimateLine
 	Why   string
+	Sig   string // 見積表の指紋（tableSig・2026-10-22——番号でなく中身で確かめる）
 }
 
 // estimateOptionsOf はページ pageID の見積表を全部、表の順に見積明細表の行にします（見積表が無ければ空）。
@@ -140,12 +146,12 @@ func estimateOptionsOf(pageID int) ([]estimateOption, error) {
 	for i, t := range recs {
 		ln, why := estimateLineFromRecord(estimateRecordOf(t))
 		if why != "" {
-			out = append(out, estimateOption{Index: i, Why: why})
+			out = append(out, estimateOption{Index: i, Why: why, Sig: tableSig(t)})
 			continue
 		}
 		ln.ProductID = page.FormatID(productID)
 		ln.ItemID, ln.ItemName = itemID, itemName
-		out = append(out, estimateOption{Index: i, Line: ln})
+		out = append(out, estimateOption{Index: i, Line: ln, Sig: tableSig(t)})
 	}
 	return out, nil
 }
@@ -308,6 +314,7 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Product string `json:"product"`
 		Index   int    `json:"index"`
+		Sig     string `json:"sig"`
 		Into    string `json:"into"`
 		Client  string `json:"client"`
 		Person  string `json:"person"`
@@ -325,7 +332,7 @@ func AddToEstimateAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusNotFound, "加工製品ページが見つかりません")
 		return
 	}
-	ln, err := estimateLineOf(pid, req.Index)
+	ln, err := estimateLineOf(pid, req.Index, req.Sig)
 	if err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
@@ -404,12 +411,12 @@ func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn,
 
 // estimateAddFormHTML は見積表の足元の「見積書に入れる」欄です（書ける人にだけ出す）。productID は見積表のあるページ
 // （加工製品ページか見積計算書）で、index はそのページの何枚目の見積表か（0から）。
-func estimateAddFormHTML(user *auth.User, productID int, index int) string {
+func estimateAddFormHTML(user *auth.User, productID int, index int, sig string) string {
 	db := database.DB
 	client := productCustomerOf(db, productID)
 	var b strings.Builder
 	b.WriteString(`<div class="estimate-add-form" data-estimate-product="` + page.FormatID(productID) +
-		`" data-estimate-index="` + strconv.Itoa(index) + `">`)
+		`" data-estimate-index="` + strconv.Itoa(index) + `" data-estimate-sig="` + sig + `">`)
 	b.WriteString(`<span class="estimate-add-head">📄 見積書に入れる</span> `)
 	b.WriteString(`<select class="estimate-add-into">`)
 	b.WriteString(`<option value="">新しい見積書</option>`)

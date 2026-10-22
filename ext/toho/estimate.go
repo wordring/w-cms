@@ -385,7 +385,7 @@ func renderEstimateCalc(ctx *cms.MirrorContext, el *html.Node) {
 	}
 	appendFootRow(el, span, "estimate-plan", planText(p))
 	if ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID) {
-		appendFootHTML(el, span, "estimate-record", estimateRecordButtonHTML(bi, "📌 見積表を作って記録",
+		appendFootHTML(el, span, "estimate-record", estimateRecordButtonHTML(bi, estimateBlockSig(blocks[bi]), "📌 見積表を作って記録",
 			"この見積計算表のすぐ後ろに見積表を足して、原価・利益率・単価を書きます（ロットと表面処理は書いてください）"))
 	}
 }
@@ -421,16 +421,16 @@ func renderEstimateRecord(ctx *cms.MirrorContext, el *html.Node) {
 		appendFootRow(el, span, "estimate-plan", planText(p))
 		appendFootRow(el, span, "estimate-stale", say)
 		if canWrite {
-			appendFootHTML(el, span, "estimate-record", estimateRecordButtonHTML(bi, "📌 この単価を記録",
+			appendFootHTML(el, span, "estimate-record", estimateRecordButtonHTML(bi, estimateBlockSig(blocks[bi]), "📌 この単価を記録",
 				"見積計算表から計算した原価・利益率・単価を、この見積表に書きます"))
 		}
 	}
 	if canWrite {
 		appendFootHTML(el, span, "estimate-dup", `<button type="button" class="estimate-dup-go" data-estimate-block="`+
-			strconv.Itoa(bi)+`" title="見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置きます（ロット・原価・単価は空にします）">⧉ このロットを写す</button>`+
+			strconv.Itoa(bi)+`" data-estimate-sig="`+estimateBlockSig(blocks[bi])+`" title="見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置きます（ロット・原価・単価は空にします）">⧉ このロットを写す</button>`+
 			` <span class="estimate-dup-say"></span>`)
 		// 見積書に入れる（2026-10-01・estimate_doc.go）——見積表の単価・ロット・表面処理と備考を見積書の見積明細表へ写す。
-		appendFootHTML(el, span, "estimate-add", estimateAddFormHTML(ctx.Viewer, ctx.PageID, k))
+		appendFootHTML(el, span, "estimate-add", estimateAddFormHTML(ctx.Viewer, ctx.PageID, k, tableSig(blocks[bi].Record)))
 	}
 }
 
@@ -441,8 +441,14 @@ func orBlank(s string) string {
 	return s
 }
 
-func estimateRecordButtonHTML(block int, label, title string) string {
-	return `<button type="button" class="estimate-record-go" data-estimate-block="` + strconv.Itoa(block) + `" title="` +
+// estimateBlockSig は見積の組（見積計算表と見積表）の指紋です（table_read.go の tableSig・2026-10-22 の見直し）。
+func estimateBlockSig(b estimateBlock) string {
+	return tableSig(b.Calc) + "/" + tableSig(b.Record)
+}
+
+func estimateRecordButtonHTML(block int, sig, label, title string) string {
+	return `<button type="button" class="estimate-record-go" data-estimate-block="` + strconv.Itoa(block) +
+		`" data-estimate-sig="` + sig + `" title="` +
 		stdhtml.EscapeString(title) + `">` + stdhtml.EscapeString(label) + `</button> <span class="estimate-record-say"></span>`
 }
 
@@ -471,6 +477,7 @@ func estimateBlockAPI(w http.ResponseWriter, r *http.Request, audit string, edit
 	var req struct {
 		PageID string `json:"page_id"`
 		Block  int    `json:"block"`
+		Sig    string `json:"sig"` // 描いたときの組の指紋（estimateBlockSig・2026-10-22）
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -478,6 +485,23 @@ func estimateBlockAPI(w http.ResponseWriter, r *http.Request, audit string, edit
 	pageID, ok := gateWritablePage(w, r, req.PageID)
 	if !ok {
 		return
+	}
+	// 番号は描いたときのもの——いまの本文で、指紋の合う組を引き直す（ほかの人がロットを写すと、番号がずれて別の組に効いていた）。
+	edit0 := edit
+	edit = func(body string, block int) (string, error) {
+		nodes, err := htmldoc.ParseFragment(body)
+		if err != nil {
+			return "", errString("本文を読めません")
+		}
+		blocks := estimateBlocksOf(nodes)
+		i := pickBySig(len(blocks), func(i int) string { return estimateBlockSig(blocks[i]) }, block, req.Sig)
+		if i < 0 {
+			if req.Sig == "" {
+				return "", errString("その見積計算表が見つかりません（ページを開き直してください）")
+			}
+			return "", errTableMoved
+		}
+		return edit0(body, i)
 	}
 	body, err := cms.ReadPageBody(pageID)
 	if err != nil {

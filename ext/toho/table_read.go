@@ -13,6 +13,8 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"sort"
 	"strconv"
 	"strings"
@@ -336,3 +338,53 @@ func fillVocabTable(b cms.DraftBlock, vocabType string, rows []map[string]string
 	}
 	return b.FillTable(displayNameOf(vocabType), labels, vals)
 }
+
+// tableSig は表の中身の指紋です（足元〔tfoot〕を除く行の、セルの文字。nil なら空）。
+//
+// 画面の操作が「何番目の表・組」で場所を指すとき、描いたときの指紋を一緒に送ってもらい、書く直前に同じ表かを確かめます
+// （2026-10-22 の見直し）——番号だけだと、ほかの人が表を足した・写した・消したあとで、別の表に効いていた。
+// ⚠ 鏡が描いたときの本文（ファイル）から作ること。画面の DOM から作ると、飾りが混ざって合いません。
+func tableSig(t *html.Node) string {
+	if t == nil {
+		return ""
+	}
+	h := sha256.New()
+	for _, tr := range rowsOf(t) {
+		if tr.Parent != nil && tr.Parent.Data == "tfoot" {
+			continue
+		}
+		for _, c := range cellTexts(tr) {
+			h.Write([]byte(c))
+			h.Write([]byte{0})
+		}
+		h.Write([]byte{1})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// pickBySig は、index 番目の指紋が sig と合えばそのまま、合わなければ同じ指紋のものがちょうど1つならその番号を返します
+// （無い・2つ以上なら -1）。sig が空なら index のまま（指紋を送らない古い画面）。n は数、sigAt は i 番目の指紋。
+func pickBySig(n int, sigAt func(int) string, index int, sig string) int {
+	if sig == "" {
+		if index < 0 || index >= n {
+			return -1
+		}
+		return index
+	}
+	if index >= 0 && index < n && sigAt(index) == sig {
+		return index
+	}
+	found := -1
+	for i := 0; i < n; i++ {
+		if sigAt(i) == sig {
+			if found >= 0 {
+				return -1
+			}
+			found = i
+		}
+	}
+	return found
+}
+
+// errTableMoved は、指紋の合う表が見つからないときの断りです。
+const errTableMoved = errString("その表は、ほかの人が書き換えたか、足したり写したりして場所が変わりました。ページを開き直してください")

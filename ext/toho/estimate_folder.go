@@ -82,6 +82,7 @@ func EstimateFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	type table struct {
 		Index    int    `json:"index"`
+		Sig      string `json:"sig"`
 		Quantity string `json:"quantity"`
 		Unit     string `json:"unit"`
 		Price    string `json:"price"`
@@ -98,7 +99,7 @@ func EstimateFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// いちばん新しい見積計算書の見積表を読む（無ければ加工製品ページ・2026-10-17・estimate_calc_doc.go）。
 		opts, _ := estimateOptionsOf(estimateSourceOf(user, p.PageID))
 		for _, o := range opts {
-			item.Tables = append(item.Tables, table{Index: o.Index, Quantity: o.Line.Quantity, Unit: o.Line.Unit,
+			item.Tables = append(item.Tables, table{Index: o.Index, Sig: o.Sig, Quantity: o.Line.Quantity, Unit: o.Line.Unit,
 				Price: o.Line.Price, Note: o.Line.Note, Why: o.Why})
 		}
 		out = append(out, item)
@@ -126,6 +127,7 @@ func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Items []struct {
 			Product string `json:"product"`
 			Index   int    `json:"index"`
+			Sig     string `json:"sig"`
 		} `json:"items"`
 		Client string `json:"client"`
 		Person string `json:"person"`
@@ -147,7 +149,7 @@ func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// 一覧と同じ読む先（いちばん新しい見積計算書・無ければ加工製品ページ）の index 枚目。
-		ln, err := estimateLineOf(estimateSourceOf(user, pageNum(pid)), it.Index)
+		ln, err := estimateLineOf(estimateSourceOf(user, pageNum(pid)), it.Index, it.Sig)
 		if err != nil {
 			// 1枚でも欠けるなら作らない（顧客へ出す紙が黙って欠けないように）。
 			cms.JSONFail(w, http.StatusConflict, "/"+pid+" の見積表（"+strconv.Itoa(it.Index+1)+"枚目）: "+err.Error())

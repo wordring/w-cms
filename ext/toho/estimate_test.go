@@ -7,6 +7,7 @@ import (
 	"golang.org/x/net/html"
 
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 )
 
@@ -169,5 +170,38 @@ func TestWithEstimateDuplicate(t *testing.T) {
 	}
 	if strings.Count(got, "<td>板</td>") != 2 {
 		t.Errorf("見積計算表の中身を写していません:\n%s", got)
+	}
+}
+
+// TestEstimateRecordFollowsSig は、「📌 この単価を記録」を押す前に、ほかの人が前の組を「⧉ このロットを写す」で写しても、
+// 押した組（描いたときの指紋の合う組）に記録することを固定します（2026-10-22 の見直し）。それまでは番号だけで選んでいて、
+// 写しの組（別のロット）に書いていた。
+func TestEstimateRecordFollowsSig(t *testing.T) {
+	setupExtTest(t, "000030", page.PageMeta{Owner: "root", Mode: "330"})
+	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "1000", "20", "1200", "") +
+		`<h3>ロット20</h3>` + calcTable([2]string{"材料", "900"})
+	blocks := estimateBlocksOf(parseBody(t, body))
+	sig20 := estimateBlockSig(blocks[1])
+	moved, err := withEstimateDuplicate(body, 0) // ほかの人が写した——ロット20の組は 2 番目→3 番目
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBodyFile(t, 30, moved)
+	u := &auth.User{Username: "root", IsAdmin: true}
+	if code, out := postRFQ(t, u, EstimateRecordAPIHandler, map[string]any{"page_id": "000030", "block": 1, "sig": sig20}); code != 200 {
+		t.Fatalf("記録できません: %d %v", code, out)
+	}
+	recs := tablesOfType(parseBody(t, readPageBody(t, "000030")), estimateRecordType)
+	if len(recs) != 3 {
+		t.Fatalf("見積表が %d 枚（3のはず）", len(recs))
+	}
+	if r := estimateRecordOf(recs[1]); r.Cost != "" {
+		t.Errorf("⚠ 写しの組（番号の合う組）に記録しました: %+v", r)
+	}
+	if r := estimateRecordOf(recs[2]); r.Cost != "900" {
+		t.Errorf("⚠ ロット20の組に記録していません: %+v", r)
+	}
+	if code, _ := postRFQ(t, u, EstimateRecordAPIHandler, map[string]any{"page_id": "000030", "block": 1, "sig": "x/y"}); code == 200 {
+		t.Errorf("指紋の合う組が無いのに記録しました")
 	}
 }

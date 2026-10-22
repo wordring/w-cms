@@ -34,6 +34,7 @@ import (
 // estimateTableRows は見積計算表1枚の、写せる行の一覧です。
 type estimateTableRows struct {
 	Index int               `json:"index"`
+	Sig   string            `json:"sig"` // 見積計算表の指紋（tableSig・2026-10-22）
 	Lot   string            `json:"lot"` // 組の見積表のロット
 	Rows  []estimateCostRow `json:"rows"`
 	Why   string            `json:"why,omitempty"` // 写せない形の表の理由
@@ -58,7 +59,7 @@ func estimateTablesOf(body string) ([]estimateTableRows, error) {
 	}
 	var out []estimateTableRows
 	for i, t := range tablesOfType(nodes, estimateType) {
-		tr := estimateTableRows{Index: i, Lot: lotOf[t], Rows: []estimateCostRow{}}
+		tr := estimateTableRows{Index: i, Sig: tableSig(t), Lot: lotOf[t], Rows: []estimateCostRow{}}
 		rows := rowsOf(t)
 		if len(rows) == 0 {
 			tr.Why = "行がありません"
@@ -108,7 +109,7 @@ func mergeQuoteNote(existing, note string) string {
 }
 
 // withEstimateCost は本文の index 枚目の見積計算表の工程 step の行（add なら新しい行を表の末尾に）に単価を写した本文を返します。
-func withEstimateCost(body string, index int, step string, add bool, value, note string) (string, error) {
+func withEstimateCost(body string, index int, sig, step string, add bool, value, note string) (string, error) {
 	step = strings.TrimSpace(step)
 	value = cleanPrice(value)
 	if _, err := strconv.ParseFloat(value, 64); err != nil {
@@ -122,7 +123,12 @@ func withEstimateCost(body string, index int, step string, add bool, value, note
 		return "", errString("本文を読めません")
 	}
 	tables := tablesOfType(nodes, estimateType)
-	if index < 0 || index >= len(tables) {
+	// 番号は一覧を出したときのもの——指紋の合う見積計算表を引き直す（2026-10-22 の見直し）。
+	index = pickBySig(len(tables), func(i int) string { return tableSig(tables[i]) }, index, sig)
+	if index < 0 {
+		if sig != "" {
+			return "", errTableMoved
+		}
 		return "", errString("その見積計算表が見つかりません（ページを開き直してください）")
 	}
 	rows := rowsOf(tables[index])
@@ -213,6 +219,7 @@ func EstimatePutCostAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PageID string `json:"page_id"`
 		Index  int    `json:"index"`
+		Sig    string `json:"sig"`
 		Step   string `json:"step"`
 		Add    bool   `json:"add"`
 		Value  string `json:"value"`
@@ -226,7 +233,7 @@ func EstimatePutCostAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeRFQRewrite(w, user, pageID, "estimate.put-cost", func(cur string) (string, int, error) {
-		out, err := withEstimateCost(cur, req.Index, req.Step, req.Add, req.Value, req.Note)
+		out, err := withEstimateCost(cur, req.Index, req.Sig, req.Step, req.Add, req.Value, req.Note)
 		if err != nil {
 			return cur, 0, err
 		}
