@@ -118,6 +118,8 @@ type settings struct {
 	// 利用者:「これは、まとめのページに発注書があり、それを解析すると品名と図番の対応が出来ます。それによって対応できませんか？」
 	// ——客先の発注書から作った案件ページの品名と品番から案を作り、人が確かめてここへ書く。例:
 	//	[{"セクション": "<セクション>", "題": "<ワンノートの題>", "図面番号": "<図面番号>", "出どころ": "<どこから当てたか>"}]
+	// 「今の版の図面番号」を書くと、その図面番号の加工製品ページの子に旧版として作る（改訂記号の前の書き方が違って、
+	// olderRevisionOf が見つけられない古い版のため——2026-10-22 利用者:「wｰcmsの方が新しいです。」）。
 	DrawingNoHints []drawingNoHint `json:"図面番号の当て,omitempty"`
 }
 
@@ -127,16 +129,17 @@ type drawingNoHint struct {
 	Title   string `json:"題"`
 	No      string `json:"図面番号"`
 	From    string `json:"出どころ,omitempty"`
+	Newer   string `json:"今の版の図面番号,omitempty"`
 }
 
-// drawingNoHintFor は、そのワンノートのページ（セクションと題）に当てる図面番号です（無ければ空）。
-func (s settings) drawingNoHintFor(section, title string) (no, from string) {
+// drawingNoHintFor は、そのワンノートのページ（セクションと題）の「図面番号の当て」です（無ければ空）。
+func (s settings) drawingNoHintFor(section, title string) drawingNoHint {
 	for _, h := range s.DrawingNoHints {
 		if strings.TrimSpace(h.Section) == strings.TrimSpace(section) && strings.TrimSpace(h.Title) == strings.TrimSpace(title) {
-			return strings.TrimSpace(h.No), strings.TrimSpace(h.From)
+			return drawingNoHint{No: strings.TrimSpace(h.No), From: strings.TrimSpace(h.From), Newer: strings.TrimSpace(h.Newer)}
 		}
 	}
-	return "", ""
+	return drawingNoHint{}
 }
 
 // isMachineNote はワンノートのページを装置名称のページに書くかです（題の頭の●などは除いて比べる）。
@@ -443,7 +446,7 @@ func run(e *env, dry bool) error {
 			note.warn("⚠ ワンノートでも失われているファイルがあります——入りません（" + strings.Join(p.LostInOneNote, "・") + "）")
 		}
 		e.dests = destOf[id]
-		e.noHint, e.noHintFrom = set.drawingNoHintFor(p.Section, p.Title)
+		e.hint = set.drawingNoHintFor(p.Section, p.Title)
 		rule, err := set.ruleFor(pl.Partner)
 		if err != nil {
 			return err
@@ -864,9 +867,9 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 		}
 		secs[si].Items = kept
 	}
-	if drawingNo == "" && e.noHint != "" {
-		drawingNo = cms.NormalizeNameForIngest(e.noHint)
-		note.info("図面番号は製造の設定の「図面番号の当て」から「" + drawingNo + "」（" + e.noHintFrom + "）")
+	if drawingNo == "" && e.hint.No != "" {
+		drawingNo = cms.NormalizeNameForIngest(e.hint.No)
+		note.info("図面番号は製造の設定の「図面番号の当て」から「" + drawingNo + "」（" + e.hint.From + "）")
 	}
 	if drawingNo == "" {
 		note.ask("図面番号がありません（■図面番号 も表題欄も）——題は図面名称だけにしました（人が書く）")
@@ -933,6 +936,9 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 	oldParent := ""
 	if pageID == "" && !asOld {
 		parent, parentNo, refuse := e.olderRevisionOf(drawingNo)
+		if e.hint.Newer != "" { // 人が「今の版の図面番号」を書いた（製造の設定の「図面番号の当て」）
+			parent, parentNo, refuse = e.pageOfDrawing(e.hint.Newer)
+		}
 		if refuse != "" {
 			note.warn("⚠ " + refuse + "——このページは作っていません")
 			note.ask("改訂記号だけ違う図面のページがあるので作らなかったワンノートのページがあります（どれを今の版にするかは人が決める）")

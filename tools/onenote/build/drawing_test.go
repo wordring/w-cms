@@ -72,13 +72,13 @@ func TestDrawingNoHintFor(t *testing.T) {
 		{Section: "02 記録 / 2024 / 06月 / 試作A", Title: "本体補強", No: "A100-002", From: "案件ページの品番"},
 		{Section: "02 記録 / 2024 / 10月 / 試作B", Title: "本体補強", No: "A200-002"},
 	}}
-	if no, from := s.drawingNoHintFor("02 記録 / 2024 / 06月 / 試作A", " 本体補強 "); no != "A100-002" || from != "案件ページの品番" {
-		t.Errorf("当たりません: %q %q", no, from)
+	if h := s.drawingNoHintFor("02 記録 / 2024 / 06月 / 試作A", " 本体補強 "); h.No != "A100-002" || h.From != "案件ページの品番" {
+		t.Errorf("当たりません: %+v", h)
 	}
-	if no, _ := s.drawingNoHintFor("02 記録 / 2024 / 10月 / 試作B", "本体補強"); no != "A200-002" {
-		t.Errorf("セクションで分けていません: %q", no)
+	if h := s.drawingNoHintFor("02 記録 / 2024 / 10月 / 試作B", "本体補強"); h.No != "A200-002" {
+		t.Errorf("セクションで分けていません: %+v", h)
 	}
-	if no, _ := s.drawingNoHintFor("02 記録 / 2024 / 07月 / 試作C", "本体補強"); no != "" {
-		t.Errorf("書いていないセクションに当てています: %q", no)
+	if h := s.drawingNoHintFor("02 記録 / 2024 / 07月 / 試作C", "本体補強"); h.No != "" {
+		t.Errorf("書いていないセクションに当てています: %+v", h)
 	}
 }

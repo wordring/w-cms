@@ -92,8 +92,8 @@ type env struct {
 	geminiOff     bool
 	// byBase は w-cms の加工製品ページの図面番号を改訂記号の前（基）ごとに並べたもの（olderRevisionOf・1回だけ読む）。
 	byBase map[string][]productDrawing
-	// noHint・noHintFrom は、いま作っているページに人が当てた図面番号とその出どころです（製造の設定.json の「図面番号の当て」）。
-	noHint, noHintFrom string
+	// hint は、いま作っているページの「図面番号の当て」です（製造の設定.json・無ければ空）。
+	hint drawingNoHint
 }
 
 var errNoMutool = errors.New("mutool がありません")
@@ -440,6 +440,25 @@ func (e *env) olderRevisionOf(drawingNo string) (parent, parentNo, refuse string
 		}
 		sort.Strings(l)
 		return "", "", "改訂記号だけ違う図面の新しい版のページが2枚以上あります（" + strings.Join(l, "・") + "）"
+	}
+	for p, n := range pages {
+		return p, n, ""
+	}
+	return "", "", ""
+}
+
+// pageOfDrawing は、図面番号がちょうど no の加工製品ページ（ちょうど1枚）です——人が「今の版の図面番号」を書いたとき、
+// その子に旧版として作る。無い・2枚以上なら作らない理由を返します。
+func (e *env) pageOfDrawing(no string) (parent, parentNo, refuse string) {
+	base, _ := revisionSplit(no)
+	pages := map[string]string{}
+	for _, d := range e.productDrawings()[base] {
+		if normNo(d.no) == normNo(no) {
+			pages[d.page] = d.no
+		}
+	}
+	if len(pages) != 1 {
+		return "", "", "「今の版の図面番号」" + no + " の加工製品ページが " + strconv.Itoa(len(pages)) + " 枚です（ちょうど1枚のときだけ、その子に旧版として作ります）"
 	}
 	for p, n := range pages {
 		return p, n, ""
