@@ -386,7 +386,14 @@ func MfgBackAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.Audit(user.Username, "mfg.back", pageID+" → /"+id+" "+strings.TrimSpace(v["item-name"])+" "+fmtQty(qty))
-	cms.WriteJSON(w, map[string]any{"success": true})
+	// 最後の行を外したら、消しても何も失わない製造ページはごみ箱へ（2026-10-23・mfg_drop.go）。
+	res := map[string]any{"success": true}
+	if d := dropEmptyMfgPage(user, pageID); d.Dropped {
+		res["dropped"], res["box"] = true, d.Box
+	} else if d.Kept != "" {
+		res["kept"] = d.Kept
+	}
+	cms.WriteJSON(w, res)
 }
 
 // removeItemTableRow は、形式 vocabType の明細表（ページに1つ）の row 行目（見出しを除いて0から）を消した本文を返します。

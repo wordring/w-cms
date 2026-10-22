@@ -1839,10 +1839,18 @@ delegateClick([
         const picks = mfgPicked(ctx, '.mfg-pick').sort((x, y) => Number(y.dataset.row) - Number(x.dataset.row));
         if (!picks.length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
         if (!confirm('選んだ ' + picks.length + ' 行を製造明細から外して、「製造」の製造待ちへ戻します（この製造で作った書類はそのまま残ります）。よろしいですか？')) return;
+        let last = null;
         for (const c of picks) {
-            const ok = await mfgPost(ctx, btn, '/api/mfg/back', { page_id: ctx.mfg, row: Number(c.dataset.row), item: c.dataset.item || '' }, '戻しています…', '戻せませんでした');
-            if (!ok) return;
+            last = await mfgPost(ctx, btn, '/api/mfg/back', { page_id: ctx.mfg, row: Number(c.dataset.row), item: c.dataset.item || '' }, '戻しています…', '戻せませんでした');
+            if (!last) return;
         }
+        // 最後の行を外して製造ページをごみ箱へ移したら「製造」へ。空になっても残したときは、その理由を伝える（2026-10-23・mfg_drop.go）。
+        if (last.dropped) {
+            alert('製造明細表が空になったので、この製造ページをごみ箱へ移しました。「製造」へ移ります。');
+            location.href = '/' + (last.box || '');
+            return;
+        }
+        if (last.kept) alert(last.kept);
         location.reload();
     }],
     // 手配不要表の帯の「↩ 戻す」——選んだ行を外す（下の行から）。

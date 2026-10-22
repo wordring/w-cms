@@ -81,8 +81,12 @@ const check = (label, ok, note = '') => {
     await page.waitForSelector('#w-editor-content .mfg-items-bar .mfg-act-back', { timeout: 10000 }).catch(() => {});
     await page.locator('#w-editor-content input.mfg-pick[data-item="E2E-WAIT-A"]').check();
     await Promise.all([page.waitForNavigation({ timeout: 10000 }).catch(() => {}), page.locator('#w-editor-content .mfg-items-bar .mfg-act-back').first().click()]);
-    const after = mfg ? await bodyOf(page, mfg) : '';
+    const after = mfg ? await bodyOf(page, mfg).catch(() => '') : '';
     check('⑤ 「↩ 取り消し」で製造明細から外れる', !after.includes('E2E-WAIT-A'));
+    // 最後の行を外した、何も書き足していない製造ページは、ごみ箱へ移って「製造」へ移る（2026-10-23・mfg_drop.go）。
+    const gone = mfg ? await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).status, mfg) : 0;
+    check('⑤ 空になった製造ページはごみ箱へ移る', gone === 404 || gone === 403, 'load の答え ' + gone);
+    check('⑤ 「製造」の置き場へ移る', !page.url().endsWith('/' + mfg), page.url());
     const obody = await bodyOf(page, order);
     check('⑤ 案件明細の製造待ちに 20 が戻る', /<td>未着手<\/td>\s*<td>20<\/td>/.test(obody));
     // ⑥
