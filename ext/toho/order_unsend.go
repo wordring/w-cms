@@ -102,7 +102,7 @@ func mfgExtraLines(user *auth.User, mfgID int, sel map[int]bool) (lines []ourOrd
 		for _, it := range productNeeds(database.DB, pageNum(pid), int(qty)) {
 			v := it.Values
 			lines = append(lines, ourOrderLine{
-				ProductID: pid, ForOrder: order, Mfg: mfg, Kind: it.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], WorkPartNo: v["加工部品番号"], Work: v["加工内容"],
+				ProductID: pid, ForOrder: order, Mfg: mfg, Kind: it.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], WorkPartNo: v["加工部品番号"], WorkPartName: v["加工部品名"], Work: v["加工内容"],
 				Material: v["材質"], Shape: v["形状"], Size: v["寸法"], Color: v["表面"], Spec: v["仕様"], Supplied: v["支給"],
 				Quantity: strconv.Itoa(it.Required), Vendor: strings.TrimSpace(it.Vendor), Note: ExtraNote, Lot: fmtQty(qty),
 			})

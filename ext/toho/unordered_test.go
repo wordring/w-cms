@@ -260,9 +260,9 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 		`<dl data-type="tags"><dt>図面番号</dt><dd>A100-B01-001</dd>`+
 		`<dt>図面名称</dt><dd>ブラケット</dd></dl>`+
 		`<section><h2>外注加工</h2><table><caption>外注加工表</caption><tbody>`+
-		`<tr><th>番号</th><th>加工部品番号</th><th>加工内容</th><th>材質</th><th>表面</th><th>個数</th><th>支給</th><th>推奨業者</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
-		`<tr><td>1</td><td></td><td>レーザー切断</td><td>SS400</td><td></td><td>1</td><td>材料支給</td><td>ひかりレーザー</td><td></td><td></td><td></td></tr>`+
-		`<tr><td>2</td><td>カバー</td><td>塗装</td><td></td><td>緑</td><td>2</td><td></td><td></td><td></td><td></td><td></td></tr>`+
+		`<tr><th>番号</th><th>加工部品番号</th><th>加工部品名</th><th>加工内容</th><th>材質</th><th>表面</th><th>個数</th><th>支給</th><th>推奨業者</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
+		`<tr><td>1</td><td></td><td></td><td>レーザー切断</td><td>SS400</td><td></td><td>1</td><td>材料支給</td><td>ひかりレーザー</td><td></td><td></td><td></td></tr>`+
+		`<tr><td>2</td><td>K120-3</td><td>カバー</td><td>塗装</td><td></td><td>緑</td><td>2</td><td></td><td></td><td></td><td></td><td></td></tr>`+
 		`</tbody></table></section>`+
 		`<section><h2>支給部品</h2><table><caption>支給部品表</caption><tbody>`+
 		`<tr><th>品名</th><th>仕様</th><th>個数</th><th>備考</th><th>区分</th></tr>`+
@@ -305,8 +305,8 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	if !ok {
 		t.Fatalf("2つ目の外注加工が出ていません: %#v", list)
 	}
-	if paint.Values["品名"] != "ブラケット" || paint.Values["加工部品番号"] != "カバー" || paint.Values["表面"] != "緑" || paint.Remaining != 6 ||
-		paint.Name != "2 カバー 塗装 緑" {
+	if paint.Values["品名"] != "ブラケット" || paint.Values["加工部品番号"] != "K120-3" || paint.Values["加工部品名"] != "カバー" || paint.Values["表面"] != "緑" || paint.Remaining != 6 ||
+		paint.Name != "2 K120-3 カバー 塗装 緑" {
 		t.Errorf("⚠ 加工部品番号と表面が運ばれていません（品名は加工製品の図面名称のまま）: %#v", paint)
 	}
 	// ⚠ 推奨業者は運ばない（発注の表の列ではない——設定の columns に無い）。

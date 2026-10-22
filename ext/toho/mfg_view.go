@@ -319,7 +319,7 @@ func mfgPartLines(user *auth.User, mfgID int, sel map[int]bool) (lines []ourOrde
 				vend = strings.TrimSpace(u.Supplier)
 			}
 			lines = append(lines, ourOrderLine{
-				ProductID: pid, ForOrder: order, Mfg: page.FormatID(mfgID), Kind: u.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], WorkPartNo: v["加工部品番号"], Work: v["加工内容"],
+				ProductID: pid, ForOrder: order, Mfg: page.FormatID(mfgID), Kind: u.Kind, No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], WorkPartNo: v["加工部品番号"], WorkPartName: v["加工部品名"], Work: v["加工内容"],
 				Material: u.Material, Shape: u.Shape, Size: u.Size, Color: v["表面"], Spec: v["仕様"], Supplied: v["支給"],
 				Quantity: strconv.Itoa(q), Cost: unorderedCostValue(u), Vendor: vend, Lot: fmtQty(qty), // ロットは製造明細の数量（見積もりに要る・2026-10-21 夕）
 			})
