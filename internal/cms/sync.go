@@ -107,6 +107,11 @@ func SyncIndex(id string, htmlContent string) error {
 		return err
 	}
 
+	// コア3: 本文のリンクとファイル表示（ほかのページを指す所）の索引——消す前の確かめが引く（page_links.go・2026-10-23）
+	if err = syncPageLinks(tx, pageIDInt, root, IsTemplateArea(id)); err != nil {
+		return err
+	}
+
 	// 手順5: 回覧（観察係の段）——各プラグインがユースケース固有テーブルを洗い替え。
 	//
 	// 走査はコアの配送係が**1回だけ**行い、引き金（`data-type`）に当たった要素を
