@@ -199,7 +199,7 @@ func MfgStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// どちらも製造待ちを見て、同じ数の製造ページが2枚できていた（2026-10-22 の見直し）。
 	mfgStartMu.Lock()
 	defer mfgStartMu.Unlock()
-	mfg, machines := newMfgLookup(), newMachineLookup()
+	mfg, machines := newMfgLookup(), newMachineLookup(viewCheck(user))
 	picked := map[string]bool{}
 	type started struct {
 		order, item, old string

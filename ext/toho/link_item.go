@@ -315,7 +315,9 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	idInt, _ := strconv.Atoi(id)
 	customer := cms.PageTagValue(database.DB, idInt, OrderClientTag)
 	// まず錠の外で、結ぶものがあるかだけを見ます（無ければ書かない——RewriteBody は変わらなくても版を足す）。
-	if _, links := linkOrderBody(id, body, customer); len(links) == 0 {
+	// 候補は、結ぶ人が読める加工製品ページだけ（2026-10-22 の見直し——読めないページの番号と題を、受注ページと監査に書いていた）。
+	canView := viewCheck(user)
+	if _, links := linkOrderBody(id, body, customer, canView); len(links) == 0 {
 		return nil
 	}
 	// ⚠ **書くときは、錠の中で読み直した本文から組み直します**（2026-10-19・【考察】文書の食い違い §3.3）——それまでは錠の外で
@@ -326,7 +328,7 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 	}
 	var links []orderLink
 	if err := cms.RewriteBody(id, user.Username, func(cur string) string {
-		fixed, got := linkOrderBody(id, cur, customer)
+		fixed, got := linkOrderBody(id, cur, customer, canView)
 		links = got
 		return fixed
 	}); err != nil {
@@ -346,14 +348,16 @@ func linkProductsToOrder(user *auth.User, orderPageID string) []orderLink {
 var linkBeforeWrite func(orderPageID string)
 
 // linkOrderBody は受注ページの本文 body の空いている `弊社品番` を、客先 customer の加工製品ページで埋めた本文と、結んだものを返します。
-func linkOrderBody(id, body, customer string) (string, []orderLink) {
+func linkOrderBody(id, body, customer string, canView func(int) bool) (string, []orderLink) {
 	var links []orderLink
 	// 品番と品名の組ごとに照合します（2026-10-01 利用者:「最初に品番と品名で行うべきです」——product_customer.go）。
 	for _, k := range orderItemKeysOf(body) {
 		code := k.Code
 		cands := productPagesForCustomer(database.DB, customer, code, k.Name)
 		// ⚠ **1件でなければ触りません**（同じ客先で同じ品番が2枚——人が直す・鏡が ⚠ で知らせる）。
-		if len(cands) != 1 {
+		// ⚠ 1件に決まっても、結ぶ人が読めないページなら結ばない（読めない番号と題を書かない）。読めるものだけで数え直すと、
+		// 2枚あるのに1枚に見えて結んでしまうので、数えるのは全部・確かめるのは決まった1枚。
+		if len(cands) != 1 || !canView(cands[0]) {
 			continue
 		}
 		target := page.FormatID(cands[0])

@@ -270,7 +270,7 @@ func MfgNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "製造を始める行を1つ以上選んでください")
 		return
 	}
-	mfg, machines := newMfgLookup(), newMachineLookup()
+	mfg, machines := newMfgLookup(), newMachineLookup(viewCheck(user))
 	var lines []mfgLine
 	client := ""
 	for _, p := range req.Items {

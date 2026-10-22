@@ -18,6 +18,7 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"strconv"
 	"strings"
 
 	stdhtml "html"
@@ -34,6 +35,8 @@ var machineHeaders = map[string]bool{"機種": true, "装置": true, "装置名"
 type machineLookup struct {
 	product map[string]string            // 弊社品番 → 置き場の装置名
 	source  map[int]*sourceMachineIndex // 受注ページ → 読んだままの表から引いた装置名
+	// canView は見る人が読めるページかです——読めない加工製品ページの置き場から装置名を出さない（2026-10-22 の見直し）。
+	canView func(int) bool
 }
 
 // sourceMachineIndex は1枚の受注ページの読んだままの表から作った「品番／品名 → 装置名」です。
@@ -42,8 +45,8 @@ type sourceMachineIndex struct {
 	byName map[string]string
 }
 
-func newMachineLookup() *machineLookup {
-	return &machineLookup{product: map[string]string{}, source: map[int]*sourceMachineIndex{}}
+func newMachineLookup(canView func(int) bool) *machineLookup {
+	return &machineLookup{product: map[string]string{}, source: map[int]*sourceMachineIndex{}, canView: canView}
 }
 
 // machineOf は受注ページ orderID の1行の装置名を返します（無ければ空）。fromProduct は加工製品ページから引いたか。
@@ -76,6 +79,10 @@ func (m *machineLookup) ofProduct(ourItemNo string) string {
 		return v
 	}
 	v := ""
+	if n, err := strconv.Atoi(id); err != nil || m.canView == nil || !m.canView(n) {
+		m.product[id] = v
+		return v
+	}
 	if meta, ok := page.ReadSidecar(id); ok && meta.ParentID != "" && isMachineFolder(meta.ParentID) {
 		v = strings.TrimSpace(pageTitleOf(meta.ParentID))
 	}

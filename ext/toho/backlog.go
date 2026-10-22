@@ -177,7 +177,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 
 	byKey := map[string]*backlogGroup{}
 	migrating := 0
-	machines := newMachineLookup()
+	machines := newMachineLookup(viewCheck(user))
 	losses := newLossLookup(db, user) // 赤字の警告（2026-10-17・order_loss.go）
 	// 出荷済数量は納品書から数える（2026-10-17・delivery_shipped.go——受注明細表の欄は読まない）。
 	shippedBy := newShippedLookup(db)

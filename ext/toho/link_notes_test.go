@@ -446,3 +446,18 @@ func TestLinkProductsToOrderKeepsConcurrentSave(t *testing.T) {
 		t.Errorf("結びとほかの人の保存の両方が残っていません:\n%s", body)
 	}
 }
+
+// TestLinkOrderBodySkipsUnreadableProduct は、結ぶ人が読めない加工製品ページへは結ばないことを固定します（2026-10-22 の見直し
+// ——読めないページの番号と題を、受注ページと監査に書いていた）。
+func TestLinkOrderBodySkipsUnreadableProduct(t *testing.T) {
+	setupExtTest(t, "000090", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	withProductCodeTags(t, "図面番号", "品番")
+	seedProductPage(t, 91, "K120-01-211 留めブラケット", "K120-01-211")
+	body := orderBody([2]string{"", "K120-01-211"})
+	if _, links := linkOrderBody("000090", body, "南北スポーツ", func(int) bool { return false }); len(links) != 0 {
+		t.Errorf("⚠ 読めない加工製品ページへ結びました: %+v", links)
+	}
+	if _, links := linkOrderBody("000090", body, "南北スポーツ", func(int) bool { return true }); len(links) != 1 {
+		t.Errorf("読めるなら結ぶはずです: %+v", links)
+	}
+}

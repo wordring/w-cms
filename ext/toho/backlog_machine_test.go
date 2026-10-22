@@ -53,7 +53,7 @@ func TestMachineOfProductFolder(t *testing.T) {
 	p := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "南北スポーツ")
 	postFiling(t, u, []filingRequest{secondRow(p, "取付ベース", "")})
 
-	m := newMachineLookup()
+	m := newMachineLookup(viewCheck(u))
 	if got, fromProduct := m.machineOf(0, p, "", ""); got != "標準2輪" || !fromProduct {
 		t.Errorf("置き場の装置名を引けていません: %q %v", got, fromProduct)
 	}
@@ -61,5 +61,9 @@ func TestMachineOfProductFolder(t *testing.T) {
 	loose := makeDrawingPage(t, inbox, "K120-2", "カバー", "標準2輪", "南北スポーツ")
 	if got, _ := m.machineOf(0, loose, "", ""); got != "" {
 		t.Errorf("置き場の外のページに装置名を付けています: %q", got)
+	}
+	// 読めない加工製品ページの置き場の装置名は出さない（2026-10-22 の見直し）。
+	if got, _ := newMachineLookup(func(int) bool { return false }).machineOf(0, p, "", ""); got != "" {
+		t.Errorf("⚠ 読めない加工製品ページの装置名を出しています: %q", got)
 	}
 }
