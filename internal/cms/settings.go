@@ -453,6 +453,14 @@ func validateVocabWord(path, where string, w VocabWord) error {
 		}
 		seen[v] = true
 	}
+	// **範囲を持てるのは number だけ**です（選択肢と同じく、効かない所に書いたら黙って無視しない）。
+	if (w.Min != nil || w.Max != nil || w.Integer) && w.Type != ColNumber {
+		return fmt.Errorf("%s: %s は型が %q なのに範囲（min・max・integer）があります"+
+			"（範囲を持てるのは %q だけです）", path, where, w.Type, ColNumber)
+	}
+	if w.Min != nil && w.Max != nil && *w.Min > *w.Max {
+		return fmt.Errorf("%s: %s の min（%v）が max（%v）より大きいです", path, where, *w.Min, *w.Max)
+	}
 	return nil
 }
 
@@ -472,7 +480,7 @@ func ColumnWord(table, column string) VocabWord {
 	pick := func(words map[string]VocabWord) (VocabWord, bool) {
 		for word, w := range words {
 			if asciiFold(TableName(word)) == ck {
-				return VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...)}, true
+				return w.clone(), true
 			}
 		}
 		return VocabWord{}, false
@@ -521,7 +529,7 @@ func VocabularyDict() map[string]VocabWord {
 		return out
 	}
 	for word, w := range settings.Vocabulary {
-		out[word] = VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...)}
+		out[word] = w.clone()
 	}
 	return out
 }
@@ -542,7 +550,7 @@ func TableVocabularyDict() map[string]map[string]VocabWord {
 	for table, words := range settings.TableVocabulary {
 		m := map[string]VocabWord{}
 		for word, w := range words {
-			m[word] = VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...)}
+			m[word] = w.clone()
 		}
 		out[table] = m
 	}

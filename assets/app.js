@@ -3094,10 +3094,17 @@
                     + '型は決まりません。決めるなら config/settings.json へ）';
             }
 
-            // ② 値——選択肢が決まっている名前なら、その中にあるか。
-            if (!values || !values.length) return;
             const dd = dt.nextElementSibling;
             if (!dd || dd.tagName.toLowerCase() !== 'dd') return;
+            // ③ 値の範囲（2026-10-22・設定の min・max・integer）——表のセルと同じ薄い橙と ⚠。
+            const why = (type === 'number' && dd.textContent.trim() !== '') ? outOfRangeReason(dd.textContent, rangeOf(word)) : '';
+            const wasOut = dd.classList.contains('tag-out-of-range');
+            dd.classList.toggle('tag-out-of-range', !!why);
+            if (why) dd.title = '⚠ ' + name + ': ' + why;
+            else if (wasOut) dd.removeAttribute('title');
+
+            // ② 値——選択肢が決まっている名前なら、その中にあるか。
+            if (!values || !values.length) return;
             const text = dd.textContent.trim();
             if (text === '') return; // 空欄は「まだ書いていない」で、間違いではない
             dd.classList.toggle('tag-known', values.indexOf(text) >= 0);
@@ -5322,12 +5329,21 @@
             for (const t of Object.keys(tableWords)) {
                 if (wordKey(t) !== tk) continue;
                 const w = pickWord(tableWords[t], column);
-                if (w) return { type: w.type, values: w.values || [], from: 'table' };
+                if (w) return { type: w.type, values: w.values || [], from: 'table', range: rangeOf(w) };
             }
         }
         const w = pickWord(vocabWords, column);
-        if (w) return { type: w.type, values: w.values || [], from: 'word' };
-        return { type: 'text', values: [], from: '' };
+        if (w) return { type: w.type, values: w.values || [], from: 'word', range: rangeOf(w) };
+        return { type: 'text', values: [], from: '', range: null };
+    }
+
+    // rangeOf は語の値の範囲（設定の min・max・integer・2026-10-22）を返します（どれも無ければ null）。
+    // 2026-10-22 利用者:「個数の値が小数点の場合、警告として背景色を変えては？これを一般化して、名前と値が対応する場合に、
+    // ある名前の値の範囲を設定できるように出来ませんか」——縛りではなく知らせるだけ（範囲の外の値も書ける）。
+    function rangeOf(w) {
+        if (!w || w.type !== 'number') return null;
+        const r = { min: typeof w.min === 'number' ? w.min : null, max: typeof w.max === 'number' ? w.max : null, integer: !!w.integer };
+        return (r.min === null && r.max === null && !r.integer) ? null : r;
     }
 
     // tableNameOf は表の名前です——**キャプションが正**、無ければ文脈から解決した形式の
@@ -5356,7 +5372,8 @@
         const word = columnWord(tableNameOf(table), key);
         const type = (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) ? explicit : word.type;
         // `label` は見出しの表示文字（＝項目の鍵）。折り返しの判定に使う。
-        return { label: key, type, enum: word.values };
+        // `range` は語の値の範囲（2026-10-22）。th で型を明示して number 以外にした列には当てない。
+        return { label: key, type, enum: word.values, range: type === 'number' ? word.range : null };
     }
 
     // 値の解釈可否。サーバーの NormalizeValue と同じ規則（全角→半角・通貨記号と
@@ -5370,6 +5387,23 @@
         let s = toHalfWidthJS(raw.trim()).replace(/[¥￥$,，\s　]/g, '');
         s = s.replace(/円$/, '');
         return /^-?[0-9]+(\.[0-9]+)?$/.test(s);
+    }
+
+    // numberOfText は数の欄の文字を数にします（読めなければ NaN。isValidNumberText と同じ規則）。
+    function numberOfText(raw) {
+        if (!isValidNumberText(raw)) return NaN;
+        return parseFloat(toHalfWidthJS(raw.trim()).replace(/[¥￥$,，s　]/g, '').replace(/円$/, ''));
+    }
+
+    // outOfRangeReason は、値が範囲の外ならその理由を返します（内か、範囲が無ければ空）。
+    function outOfRangeReason(raw, range) {
+        if (!range) return '';
+        const n = numberOfText(raw);
+        if (isNaN(n)) return ''; // 読めない値は .cell-invalid の受け持ち
+        if (range.integer && Math.abs(n - Math.round(n)) > 1e-9) return '整数ではありません（小数）';
+        if (range.min !== null && n < range.min) return range.min + ' より小さい値です';
+        if (range.max !== null && n > range.max) return range.max + ' より大きい値です';
+        return '';
     }
 
     function isValidDateText(raw) {
@@ -5419,6 +5453,13 @@
         }
         cell.classList.toggle('cell-invalid', bad);
         cell.classList.toggle('cell-known', typed && text !== '' && !bad);
+        // 値の範囲の外（2026-10-22・設定の min・max・integer）——薄い橙と ⚠（色だけで分けない・CSS）。理由はマウスを載せると出る
+        // （td の title は保存の許可リストに無いので、本文には入らない）。閲覧モードでも出す。
+        const why = (typed && text !== '' && !bad && col.type === 'number') ? outOfRangeReason(text, col.range) : '';
+        const wasOut = cell.classList.contains('cell-out-of-range');
+        cell.classList.toggle('cell-out-of-range', !!why);
+        if (why) cell.title = '⚠ ' + col.label + ': ' + why;
+        else if (wasOut) cell.removeAttribute('title');
         // 折り返し制御（2026-09-21 ユーザー:「備考欄以外は改行しないようにして、
         // テーブルが横に大きくなりますから、テーブルだけスクロールに出来ますか？」）。
         //

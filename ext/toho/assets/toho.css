@@ -186,10 +186,6 @@
     text-decoration-color: var(--w-danger, #c0392b);
 }
 
-/* 1台あたりの個数が小数のセル（2026-10-22・ext/toho/per_unit_warn.go）——色だけで分けず、表の足元に「⚠ …行目」の文を出す。 */
-#w-editor-content td.cell-fraction { background: #fef3c7; }
-#w-editor-content tr.per-unit-fraction > td { color: #92400e; }
-
 /* 見積依頼必要部材表（2026-10-03・ext/toho/rfq.go）——重複は薄い赤＋「⚠ 重複」（色だけで分けない）、臨時部材表の行は薄い灰。 */
 #w-editor-content tr.rfq-dup > td { background: #fee2e2; }
 #w-editor-content .rfq-dup-mark { margin-left: 4px; color: #b91c1c; font-size: 0.85em; white-space: nowrap; }

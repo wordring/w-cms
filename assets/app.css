@@ -1932,6 +1932,26 @@ dialog.w-confirm::backdrop { background: rgba(0, 0, 0, 0.35); }
     padding: 0 4px;
 }
 
+/* 値の範囲の外（2026-10-22・設定の語彙の min・max・integer・app.js の outOfRangeReason）。
+   2026-10-22 利用者:「個数の値が小数点の場合、警告として背景色を変えては？これを一般化して、名前と値が対応する場合に、
+   ある名前の値の範囲を設定できるように出来ませんか」。
+   **警告です**（薄黄の「表に無い値」とは別の、薄い橙）。色だけで分けないので ⚠ を前に付ける（::before は保存されない）。
+   表のセルもタグの値も、閲覧と書ける形の両方で出す。読めた値の薄青（.cell-known）より強くするため、セレクタを1段重くする。 */
+body #w-editor-content td.cell-out-of-range.cell-out-of-range,
+#w-editor-content dl[data-type="tags"] > dd.tag-out-of-range {
+    background: #ffedd5;
+    box-shadow: inset 0 0 0 1px #fdba74;
+}
+#w-editor-content dl[data-type="tags"] > dd.tag-out-of-range {
+    border-radius: 4px;
+    padding: 0 4px;
+}
+#w-editor-content td.cell-out-of-range::before,
+#w-editor-content dl[data-type="tags"] > dd.tag-out-of-range::before {
+    content: "⚠ ";
+    color: #c2410c;
+}
+
 /* 辞書が知っている語（2026-09-13 ユーザー:「タグの標準機能として語彙にあれば
    色付けしてはどうでしょう？汎用的な機能と思います」）。
 

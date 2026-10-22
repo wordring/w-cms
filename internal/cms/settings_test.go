@@ -93,6 +93,9 @@ func TestSettingsRejectsBrokenFile(t *testing.T) {
 		// 書いたのに型が enum でないとき。黙って無視すると、書いた人は色分けが
 		// 出ない理由に気づけません。
 		{"enum でないのに選択肢がある", `{"vocabulary": {"在籍": {"type": "text", "values": ["在籍"]}}}`},
+		// 値の範囲（2026-10-22）——number でない語に書いた・min が max より大きい。
+		{"number でないのに範囲がある", `{"vocabulary": {"品番": {"type": "code", "integer": true}}}`},
+		{"min が max より大きい", `{"vocabulary": {"個数": {"type": "number", "min": 5, "max": 1}}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -354,5 +357,26 @@ func TestSettingsAbsentSectionGetsNil(t *testing.T) {
 	}
 	if !called || !gotNil {
 		t.Errorf("節が無いときに nil で呼ばれていません: called=%v nil=%v", called, gotNil)
+	}
+}
+
+// 値の範囲（min・max・integer）は、語の辞書の写しにそのまま載る（画面が使う・2026-10-22）。表ごとの例外も同じ。
+func TestSettingsVocabularyRange(t *testing.T) {
+	useTempSettings(t)
+	writeTestSettings(t, `{"vocabulary": {"個数": {"type": "number", "integer": true, "min": 0}},`+
+		`"table_vocabulary": {"材料表": {"個数": {"type": "number", "max": 99}}}}`)
+	if err := LoadSettings(); err != nil {
+		t.Fatal(err)
+	}
+	w := VocabularyDict()["個数"]
+	if !w.Integer || w.Min == nil || *w.Min != 0 || w.Max != nil {
+		t.Errorf("範囲が辞書に載っていません: %+v", w)
+	}
+	*w.Min = 7 // 写しを書き換えても設定は変わらない
+	if again := VocabularyDict()["個数"]; *again.Min != 0 {
+		t.Errorf("⚠ 写しではなく設定そのものを返しています")
+	}
+	if tw := ColumnWord("材料表", "個数"); tw.Max == nil || *tw.Max != 99 || tw.Integer {
+		t.Errorf("表ごとの例外の範囲が違います: %+v", tw)
 	}
 }

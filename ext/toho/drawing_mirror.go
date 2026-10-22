@@ -80,8 +80,6 @@ func init() {
 							return true, err
 						}
 					}
-					// 1台あたりの個数が小数の行を知らせる（2026-10-22・per_unit_warn.go）。最新単価の列を足したあとに置く（足元の行の幅を揃える）。
-					markFractionalPerUnit(t, tbl)
 				}
 				return true, nil
 			}))

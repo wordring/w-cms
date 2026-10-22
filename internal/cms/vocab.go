@@ -136,6 +136,28 @@ type VocabWord struct {
 	// Values は `enum` のときの選択肢です。**縛りではなく見分けるための表**で、
 	// ここに無い値も書けます（画面が薄黄で知らせるだけ）。
 	Values []string `json:"values,omitempty"`
+	// Min・Max・Integer は `number` の値の範囲です（2026-10-22）。**縛りではなく知らせるため**で、範囲の外の値も書けます
+	// （画面が表のセルとタグの値の背景色と ⚠ で知らせるだけ）。Integer は小数を範囲の外とみなします（個数に 0.5 と書いた など）。
+	//
+	// > 2026-10-22 利用者:「加工製品ページの部材の表の個数というより、個数の値が小数点の場合、警告として背景色を変えては？
+	// > これを一般化して、名前と値が対応する場合に、ある名前の値の範囲を設定できるように出来ませんか」
+	Min     *float64 `json:"min,omitempty"`
+	Max     *float64 `json:"max,omitempty"`
+	Integer bool     `json:"integer,omitempty"`
+}
+
+// clone は語の写しを返します（選択肢と範囲まで複製する——受け取った側が書き換えても設定は壊れない）。
+func (w VocabWord) clone() VocabWord {
+	out := VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...), Integer: w.Integer}
+	if w.Min != nil {
+		v := *w.Min
+		out.Min = &v
+	}
+	if w.Max != nil {
+		v := *w.Max
+		out.Max = &v
+	}
+	return out
 }
 
 // VocabDef は1つの形式（data-type）の定義です。

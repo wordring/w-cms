@@ -57,7 +57,7 @@
     "返信先": { "type": "email" },
     "在籍": { "type": "enum", "values": ["在籍", "休職", "出向", "退社"] },
     "移行中": { "type": "enum", "values": ["確認待ち"] },
-    "個数": { "type": "number" },
+    "個数": { "type": "number", "integer": true, "min": 0 },
     "数": { "type": "number" },
     "出荷済数量": { "type": "number" },
     "受領日": { "type": "date" },
