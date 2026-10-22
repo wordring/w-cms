@@ -129,7 +129,7 @@ func estimateCalcsHTML(productID int, list []estimateCalc) string {
 		}
 		var parts []string
 		for _, l := range c.Lots {
-			s := "ロット" + esc(l.Lot)
+			s := esc(l.Lot) + "個"
 			if l.Surface != "" {
 				s += "（" + esc(l.Surface) + "）"
 			}
@@ -153,7 +153,7 @@ func estimateCalcsHTML(productID int, list []estimateCalc) string {
 		}
 		b.WriteString(`<p class="estimate-calc-latest">最新: <a href="/` + page.FormatID(latest.PageID) + `">` + esc(date) + `</a>　` + lots(latest) + `</p>`)
 		if len(list) > 1 {
-			b.WriteString(`<table class="materials-table estimate-calc-table"><thead><tr><th>見積計算日</th><th>ロットと単価</th></tr></thead><tbody>`)
+			b.WriteString(`<table class="materials-table estimate-calc-table"><thead><tr><th>見積計算日</th><th>個数と単価</th></tr></thead><tbody>`)
 			for _, c := range list[1:] {
 				d := c.Date
 				if d == "" {

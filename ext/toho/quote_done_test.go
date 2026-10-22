@@ -98,7 +98,7 @@ func TestMfgEstimateCompletesQuoteCase(t *testing.T) {
 		t.Errorf("⚠ 単価の無い行の数が %v です（1 のはず）", out["missing"])
 	}
 	body := readPageBody(t, est)
-	for _, want := range []string{"<td>600</td>", "ロット 20 の単価", "<td>000993</td>", "<td>30</td>", "⚠ 弊社品番がありません", "<dd>あけぼの精工</dd>"} {
+	for _, want := range []string{"<td>600</td>", "20 個の単価", "<td>000993</td>", "<td>30</td>", "⚠ 弊社品番がありません", "<dd>あけぼの精工</dd>"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("⚠ 見積書に %q がありません:\n%s", want, body)
 		}

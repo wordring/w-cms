@@ -80,7 +80,7 @@ func rfqColumns() []cms.VocabColumn {
 // ロットを失わないため。部材見積依頼明細表（紙）には置きません（紙の列は部材発注書と同じ・数量で足りる）。
 // ⚠ 型は設定（`config/settings.json` の table_vocabulary）と同じ number——変えるときは両方。
 func rfqLotColumn() cms.VocabColumn {
-	return cms.VocabColumn{Field: "lot", Label: "ロット", Type: cms.ColNumber}
+	return cms.VocabColumn{Field: "lot", Label: "製品個数", Type: cms.ColNumber} // 2026-10-22 までの名前は「ロット」
 }
 
 // withLotBeforeQuantity は列の並びの `数量` の前に `ロット` を挟みます（`数量` が無ければ末尾）。
@@ -319,7 +319,7 @@ func renderRFQNeeds(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	for _, tp := range temps {
 		count[rfqDupKey(tp.Line)]++
 	}
-	dupMark := `<span class="rfq-dup-mark" title="同じもの・同じロットが、この表の中に2つ以上あります（ロットの無い行は同じ数）">⚠ 重複</span>`
+	dupMark := `<span class="rfq-dup-mark" title="同じもの・同じ製品個数が、この表の中に2つ以上あります（製品個数の無い行は同じ数）">⚠ 重複</span>`
 	addRowChromeCells(el, "rfq-pick", func(row int, tr *html.Node) string {
 		ln := lines[row]
 		if lineIsEmpty(ln) {
@@ -376,7 +376,7 @@ func rfqNeedsFormHTML(pageID string, pageIDInt int) string {
 	var b strings.Builder
 	b.WriteString(`<p class="unorder-help">行を選んで「見積依頼部材表へ入れる」を押すと、下に<strong>見積依頼部材表</strong>ができます` +
 		`（部材見積依頼書は<strong>1枚に1社</strong>——同じ業者へ聞くものだけを選ぶ）。` +
-		`<strong>⚠ 重複</strong>は同じもの・同じロットが表の中に2つ以上あるもの（ロットの無い行は同じ数で見ます）——要らなければ選んで「不要」で消します。` +
+		`<strong>⚠ 重複</strong>は同じもの・同じ製品個数が表の中に2つ以上あるもの（製品個数の無い行は同じ数で見ます）——要らなければ選んで「不要」で消します。` +
 		`数は表を直接直せます（書ける形で）。</p>`)
 	b.WriteString(`<div class="matsearch-form rfq-needs-form" data-rfq-page="` + pageID + `">`)
 	b.WriteString(`<label class="matsearch-field"><span>入れる先</span><select class="matsearch-input" data-rfq="into">` +
@@ -414,11 +414,11 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 func rfqRequoteViewHTML(_ *auth.User, pageIDInt int) string {
 	return `<h3 class="materials-title">🔁 再部材見積依頼</h3>` +
 		`<p class="unorder-help">弊社品番（加工製品ページの番号）を書いて「集める」を押すと、その加工製品の材料・購入部品・外注加工が` +
-		`下の<strong>見積依頼必要部材表</strong>に入ります。数は<strong>ロット × 部材の数量</strong>——ロットが空なら見積表の` +
-		`ロット（見積表がロットごとに何枚もあれば、その数だけ行になる・無ければ1個分）。</p>` +
+		`下の<strong>見積依頼必要部材表</strong>に入ります。数は<strong>製品個数 × 部材の数量</strong>——製品個数が空なら見積表の` +
+		`個数（見積表が個数ごとに何枚もあれば、その数だけ行になる・無ければ1個分）。</p>` +
 		`<div class="matsearch-form rfq-collect-form" data-rfq-page="` + page.FormatID(pageIDInt) + `">` +
 		`<label class="matsearch-field"><span>弊社品番</span><input type="text" class="matsearch-input" data-rfq="product" placeholder="001234"/></label>` +
-		`<label class="matsearch-field"><span>ロット</span><input type="number" min="1" class="matsearch-input" data-rfq="lot" placeholder="空なら見積表"/></label>` +
+		`<label class="matsearch-field"><span>製品個数</span><input type="number" min="1" class="matsearch-input" data-rfq="lot" placeholder="空なら見積表"/></label>` +
 		`<button type="button" class="matsearch-go" data-rfq-collect="1">集める</button>` +
 		`</div><div class="unorder-result" data-rfq-collect-result="1"></div>` +
 		// 装置フォルダから選ぶ（2026-10-03）——利用者:「装置フォルダのページ番号を入力する欄を作り、その下にある加工製品を
@@ -426,7 +426,7 @@ func rfqRequoteViewHTML(_ *auth.User, pageIDInt int) string {
 		// （本文に残さない・app.js の wireRFQ）。番号はブラウザに憶える（data-w-remember）——入れたあとに読み直しても、
 		// 同じ装置の残りを続けて選べる。
 		`<p class="unorder-help">装置フォルダのページ番号を書いて「一覧を出す」を押すと、その下の加工製品が並びます。` +
-		`チェックしたものを、それぞれのロット（空なら見積表のロット）で見積依頼必要部材表へ入れます。</p>` +
+		`チェックしたものを、それぞれの製品個数（空なら見積表の個数）で見積依頼必要部材表へ入れます。</p>` +
 		`<div class="matsearch-form rfq-folder-form" data-rfq-page="` + page.FormatID(pageIDInt) + `" data-w-remember="1">` +
 		`<label class="matsearch-field"><span>装置フォルダ</span><input type="text" class="matsearch-input" data-rfq="folder" placeholder="001234"/></label>` +
 		`<button type="button" class="matsearch-go" data-rfq-folder="1">一覧を出す</button>` +

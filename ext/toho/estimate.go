@@ -16,14 +16,15 @@ package toho
 // 利用者の構成（「という構成はどうでしょう？」→ 筆者の提案を足して「提案通りの構成でお願いします」）:
 //
 //	見積もり計算（H2）
-//	ロット1（H3）
+//	1個（H3）
 //	  見積計算表  工程｜価格｜備考          … 加工製品1個あたりの原価の内訳（総計の行は置かない）
-//	  見積表      ロット｜表面処理｜原価｜利益率｜単価｜備考  … 1行だけ。これが結果（DB に入る単価）
-//	ロット20（H3）
+//	  見積表      個数｜表面処理｜原価｜利益率｜単価｜備考  … 1行だけ。これが結果（DB に入る単価）
+//	20個（H3）
 //	  …
 //
 //   - **見積表は、すぐ上の見積計算表の結果です**（文書の順で組にする——見積計算表のあとに来た最初の見積表）。
-//     見出し（ロット1）は人のための名前で、機械が読むのは見積表のロット・表面処理の列だけ。
+//     見出し（1個）は人のための名前で、機械が読むのは見積表の個数・表面処理の列だけ。
+//     （2026-10-22 に「ロット」を「個数」に改めた——見出しも「ロット1」から「1個」へ。単価はどれも1個あたり。）
 //   - **原価＝見積計算表の価格の列の合計**（空は飛ばす・式は計算した値——コアの FormulaTableValues）。
 //     **利益は円未満を四捨五入**、単価＝原価＋利益（2026-10-01 と同じ計算）。利益率は見積表の利益率の欄、空なら設定の既定
 //     （`extensions.toho.estimate_profit_rate`・10）。
@@ -33,7 +34,7 @@ package toho
 //     2026-10-19 から、テンプレート「見積計算書」の見積表の単価に式（`=ROUND(原価*(1+利益率/100))`）があれば、📌 は原価と
 //     利益率だけを書き、単価には式を書く（計算した数は書かない——withEstimateRecord・templateRecordFormulas）。
 //   - 見積表が無い見積計算表の下には「📌 見積表を作って記録」を出す（押すと、計算表のすぐ後ろに見積表を足して記録する）。
-//   - 「⧉ このロットを写す」で、見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置く（ロット・原価・単価は空にする）。
+//   - 「⧉ この組を写す」で、見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置く（個数・原価・単価は空にする）。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -62,7 +63,7 @@ const estimateRecordType = "part-estimate-record"
 const (
 	estimateStepCol    = "工程"
 	estimatePriceCol   = "価格"
-	estimateLotCol     = "ロット"
+	estimateLotCol     = "個数" // 2026-10-22 までの名前は「ロット」（利用者:「業者の見積もりは1個当たりの単価で来るので、ロットという表現をやめて、個数に統一したほうが分かりやすいでしょうか？」）
 	estimateSurfaceCol = "表面処理"
 	estimateCostCol    = "原価"
 	estimateRateCol    = "利益率"
@@ -386,12 +387,12 @@ func renderEstimateCalc(ctx *cms.MirrorContext, el *html.Node) {
 	appendFootRow(el, span, "estimate-plan", planText(p))
 	if ctx.Viewer != nil && canWritePage(ctx.Viewer, ctx.PageID) {
 		appendFootHTML(el, span, "estimate-record", estimateRecordButtonHTML(bi, estimateBlockSig(blocks[bi]), "📌 見積表を作って記録",
-			"この見積計算表のすぐ後ろに見積表を足して、原価・利益率・単価を書きます（ロットと表面処理は書いてください）"))
+			"この見積計算表のすぐ後ろに見積表を足して、原価・利益率・単価を書きます（個数と表面処理は書いてください）"))
 	}
 }
 
 // renderEstimateRecord は見積表の足元です——計算表から計算した値と、記録が合っているか・「📌 この単価を記録」・
-// 「⧉ このロットを写す」・「📄 見積書に入れる」。
+// 「⧉ この組を写す」（2026-10-22 までの名前は「⧉ このロットを写す」）・「📄 見積書に入れる」。
 func renderEstimateRecord(ctx *cms.MirrorContext, el *html.Node) {
 	cms.DropChrome(el)
 	k := ctx.Counter(estimateRecordType)
@@ -427,7 +428,7 @@ func renderEstimateRecord(ctx *cms.MirrorContext, el *html.Node) {
 	}
 	if canWrite {
 		appendFootHTML(el, span, "estimate-dup", `<button type="button" class="estimate-dup-go" data-estimate-block="`+
-			strconv.Itoa(bi)+`" data-estimate-sig="`+estimateBlockSig(blocks[bi])+`" title="見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置きます（ロット・原価・単価は空にします）">⧉ このロットを写す</button>`+
+			strconv.Itoa(bi)+`" data-estimate-sig="`+estimateBlockSig(blocks[bi])+`" title="見出し・見積計算表・見積表を組ごと写して、すぐ後ろに置きます（個数・原価・単価は空にします）">⧉ この組を写す</button>`+
 			` <span class="estimate-dup-say"></span>`)
 		// 見積書に入れる（2026-10-01・estimate_doc.go）——見積表の単価・ロット・表面処理と備考を見積書の見積明細表へ写す。
 		appendFootHTML(el, span, "estimate-add", estimateAddFormHTML(ctx.Viewer, ctx.PageID, k, tableSig(blocks[bi].Record)))

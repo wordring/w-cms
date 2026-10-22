@@ -119,10 +119,10 @@ func (l *lossLookup) lossOf(ourItemNo string, qty, price float64) (orderLoss, bo
 
 // lossText は赤字の見立ての1文です（⚠ と差額・比べた見積の単価とロット）。
 func lossText(x orderLoss) string {
-	s := "⚠ 赤字 " + comma(int(math.Round(x.Diff))) + "円（見積 " + comma(int(math.Round(x.Estimate))) + "円・ロット" +
-		strconv.FormatFloat(x.Lot, 'f', -1, 64)
+	s := "⚠ 赤字 " + comma(int(math.Round(x.Diff))) + "円（見積 " + comma(int(math.Round(x.Estimate))) + "円・" +
+		strconv.FormatFloat(x.Lot, 'f', -1, 64) + "個"
 	if x.Fallback {
-		s += "——数量より小さいロットが無いので、いちばん小さいロットと比べた"
+		s += "——数量より小さい個数の見積が無いので、いちばん小さい個数の見積と比べた"
 	}
 	return s + "）"
 }

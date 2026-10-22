@@ -112,7 +112,7 @@ func RFQCollectAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		lines = append(lines, ls...)
 		done = append(done, map[string]any{"product": pid, "lots": lots, "rows": len(ls)})
-		log = append(log, pid+" ロット"+joinInts(lots))
+		log = append(log, pid+" 製品個数"+joinInts(lots))
 	}
 	if len(lines) == 0 {
 		cms.JSONFail(w, http.StatusConflict, "集められるものがありません——"+strings.Join(skipped, "／"))
@@ -168,7 +168,7 @@ func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, l
 	if s := strings.TrimSpace(it.Lot); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < 1 {
-			return pid, nil, nil, http.StatusBadRequest, "/" + pid + " のロットは1以上の数で書いてください（空なら見積表のロット）"
+			return pid, nil, nil, http.StatusBadRequest, "/" + pid + " の製品個数は1以上の数で書いてください（空なら見積表の個数）"
 		}
 		lots = []int{n}
 	} else if lots = estimateLotsOf(estimateSourceOf(user, productID)); len(lots) == 0 { // いちばん新しい見積計算書のロット（無ければ加工製品ページ・2026-10-17）

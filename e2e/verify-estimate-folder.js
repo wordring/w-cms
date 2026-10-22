@@ -29,7 +29,7 @@ const FOLDER = '<h1>【E2E】見積の装置フォルダ</h1><dl data-type="tags
 const tags = (no) => '<dl data-type="tags"><dt>品番</dt><dd>' + no + '</dd></dl>';
 const calc = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
   rows.map((r) => '<tr>' + r.map((c) => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
-const rec = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>' + cells.map((c) => '<td>' + c + '</td>').join('') + '</tr></tbody></table>';
+const rec = (cells) => '<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>' + cells.map((c) => '<td>' + c + '</td>').join('') + '</tr></tbody></table>';
 const P1 = '<h1>【E2E】見積の部品1</h1>' + tags('E2E-ESTF-1') +
   calc([['材料', '55', ''], ['板金', '310', '']]) + rec(['20', '', '365', '10', '402', '']) +
   calc([['材料', '500', '']]) + rec(['40', '塗装あり', '500', '10', '550', '']);

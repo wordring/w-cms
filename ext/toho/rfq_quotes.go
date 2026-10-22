@@ -98,7 +98,7 @@ func quotesListHTML(list []quoteRow, productID string) string {
 		return b.String()
 	}
 	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>日付</th><th>業者</th><th>種類</th><th>何の値段か</th>` +
-		`<th>表面</th><th class="num">ロット</th><th class="num">単価</th><th>状態</th>`)
+		`<th>表面</th><th class="num">製品個数</th><th class="num">単価</th><th>状態</th>`)
 	if productID != "" {
 		b.WriteString(`<th class="no-print"></th>`)
 	}

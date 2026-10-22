@@ -609,7 +609,7 @@ async function openQuotePutPanel(btn) {
     tables.forEach((t) => {
         const o = document.createElement('option');
         o.value = String(t.index);
-        o.textContent = (t.index + 1) + '枚目' + (t.lot ? '（ロット ' + t.lot + '）' : '');
+        o.textContent = (t.index + 1) + '枚目' + (t.lot ? '（' + t.lot + '個）' : '');
         tSel.appendChild(o);
     });
     const rSel = makeEl('select', 'rfq-quote-put-row');
@@ -728,7 +728,7 @@ async function openQuotePutPanel(btn) {
                 lot,
             ] };
         });
-        list.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '見積表のロット', 'ロット'], rows,
+        list.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '見積表の個数', '製品個数'], rows,
             'data-rfq-folder-pick', 'rfq-folder-table'));
         const foot = cell('div');
         foot.className = 'matsearch-form';
@@ -778,7 +778,7 @@ async function openQuotePutPanel(btn) {
                 sayIn(box, '⚠ ' + (r.data.message || '集められませんでした'), 'proc-why-ng');
                 return;
             }
-            sayIn(box, r.data.rows + ' 行を見積依頼必要部材表へ入れました（ロット ' + (r.data.lots || []).join('・') + '）。読み直しています…');
+            sayIn(box, r.data.rows + ' 行を見積依頼必要部材表へ入れました（製品個数 ' + (r.data.lots || []).join('・') + '）。読み直しています…');
             location.reload();
         }],
         ['[data-rfq-move]', async (btn) => {
@@ -979,7 +979,7 @@ async function openQuotePutPanel(btn) {
         const head = makeEl('p', '', '/' + data.folder + ' ' + (data.title || '') + ' の下の加工製品: ' + products.length + ' 件');
         box.appendChild(head);
         if (rows.length) {
-            box.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '数量（ロット）', '単価', '備考'], rows,
+            box.appendChild(folderPickTable(['弊社品番', '加工製品', '品番・図番', '数量（個数）', '単価', '備考'], rows,
                 'data-estf-pick', 'estimate-folder-table'));
         }
         const pickable = rows.some((x) => x.pick !== null);

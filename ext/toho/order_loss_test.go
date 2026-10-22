@@ -18,7 +18,7 @@ import (
 func seedLossProduct(t *testing.T, id, parent int) {
 	t.Helper()
 	body := `<h1>ブラケット</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindProduct + `</dd></dl>` +
-		`<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr>` +
+		`<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr>` +
 		`<tr><td>1</td><td></td><td>900</td><td>10</td><td>1000</td><td></td></tr>` +
 		`<tr><td>20</td><td></td><td>540</td><td>10</td><td>600</td><td></td></tr></tbody></table>`
 	addPage(t, id, parent, "ブラケット", "alice", "302", true)
@@ -50,11 +50,11 @@ func TestLossOfUsesLargestLotNotOverQuantity(t *testing.T) {
 		if ok != c.loss || (ok && x.Lot != c.lot) {
 			t.Errorf("%s: ok=%v x=%+v", c.why, ok, x)
 		}
-		if ok && c.qty < 1 && (!x.Fallback || !strings.Contains(lossText(x), "いちばん小さいロット")) {
+		if ok && c.qty < 1 && (!x.Fallback || !strings.Contains(lossText(x), "いちばん小さい個数")) {
 			t.Errorf("いちばん小さいロットと比べたことを添えていません: %s", lossText(x))
 		}
 	}
-	if x, ok := look.lossOf("000882", 30, 550); !ok || lossText(x) != "⚠ 赤字 50円（見積 600円・ロット20）" {
+	if x, ok := look.lossOf("000882", 30, 550); !ok || lossText(x) != "⚠ 赤字 50円（見積 600円・20個）" {
 		t.Errorf("文が違います: %q", lossText(x))
 	}
 	if _, ok := look.lossOf("", 30, 1); ok {
@@ -85,7 +85,7 @@ func TestLossShowsOnOrderPageAndBacklog(t *testing.T) {
 	body := orderBody(row("30", "550"))
 	req := auth.WithUser(httptest.NewRequest("GET", "/000894", nil), adminUser())
 	view := cms.RenderComputedViews(req, 894, body)
-	if !strings.Contains(view, "見積との差") || !strings.Contains(view, "⚠ 赤字 50円（見積 600円・ロット20）") {
+	if !strings.Contains(view, "見積との差") || !strings.Contains(view, "⚠ 赤字 50円（見積 600円・20個）") {
 		t.Errorf("案件ページの明細に赤字の文がありません:\n%s", view)
 	}
 	body2 := orderBody(row("30", "700"))

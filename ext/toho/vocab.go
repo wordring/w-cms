@@ -268,7 +268,7 @@ var businessVocab = []cms.VocabDef{
 		Icon:        "🏷️",
 		Element:     "table",
 		Columns: []cms.VocabColumn{
-			{Field: "lot", Label: "ロット", Type: cms.ColNumber},
+			{Field: "lot", Label: "個数", Type: cms.ColNumber}, // 2026-10-22 までの名前は「ロット」
 			{Field: "surface", Label: "表面処理", Type: cms.ColText},
 			{Field: "cost", Label: "原価", Type: cms.ColNumber},
 			{Field: "rate", Label: "利益率", Type: cms.ColNumber},

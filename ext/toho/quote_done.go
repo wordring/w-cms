@@ -269,7 +269,7 @@ func mfgEstimateLines(user *auth.User, mfgID int) (lines []estimateLine, missing
 				ln.ItemID, ln.ItemName = got.ItemID, got.ItemName
 			}
 			if lot, ok := estimateNumber(got.Quantity); ok && lot != qty {
-				ln.Note = strings.TrimSpace("ロット " + got.Quantity + " の単価　" + ln.Note)
+				ln.Note = strings.TrimSpace(got.Quantity + " 個の単価　" + ln.Note)
 			}
 		}
 		lines = append(lines, ln)

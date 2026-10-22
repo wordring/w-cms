@@ -152,8 +152,8 @@ func TestOrderPricesUnderLastRecord(t *testing.T) {
 	addPage(t, 721, -1, "カバー", "root", "302", true)
 	product := `<h1>カバー</h1><dl data-type="tags"><dt>品番</dt><dd>K-3</dd></dl>` +
 		productWithSupplied[len(`<h1>カバー</h1>`):] +
-		`<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "500"}) + recordTable("1", "", "500", "10", "550") +
-		`<h3>ロット20</h3>` + calcTable([2]string{"材料", "400"}) + recordTable("20", "", "400", "10", "440") +
+		`<h2>見積もり計算</h2><h3>1個</h3>` + calcTable([2]string{"材料", "500"}) + recordTable("1", "", "500", "10", "550") +
+		`<h3>20個</h3>` + calcTable([2]string{"材料", "400"}) + recordTable("20", "", "400", "10", "440") +
 		`<p>メモ</p><h2>工程</h2><p>ケガキ</p>`
 	seedBody(t, "000721", product)
 	addPage(t, 722, -1, "受注", "root", "302", true)

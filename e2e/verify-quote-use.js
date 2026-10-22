@@ -40,7 +40,7 @@ const check = (label, ok, note = '') => {
       '<tr><td></td><td></td><td></td><td></td></tr></tbody></table></section>' +
       '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
       '<tr><td>材料</td><td>1200</td><td></td></tr><tr><td>塗装</td><td></td><td></td></tr></tbody></table>' +
-      '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>');
+      '<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>');
     const rfq = await makePage(page, '<h1>部材見積依頼　【E2E】業者</h1><p>x</p>', box);
     made.unshift(rfq);
     await saveBody(rfq, '<h1>部材見積依頼　【E2E】業者</h1><dl data-type="tags"><dt>部材見積依頼番号</dt><dd>' + rfq + '</dd>' +
@@ -67,7 +67,7 @@ const check = (label, ok, note = '') => {
       row: (document.querySelector('#w-editor-content .rfq-quote-put-row') || {}).value,
       value: (document.querySelector('#w-editor-content .rfq-quote-put-value') || {}).value,
     }));
-    check('③ 写す欄——表（ロット）・同じ工程の行・単価', sel.table === '1枚目（ロット 20）' && sel.row === '塗装' && sel.value === '298', JSON.stringify(sel));
+    check('③ 写す欄——表（ロット）・同じ工程の行・単価', sel.table === '1枚目（20個）' && sel.row === '塗装' && sel.value === '298', JSON.stringify(sel));
     // ④
     await Promise.all([page.waitForNavigation({ timeout: 10000 }).catch(() => {}), page.click('#w-editor-content .rfq-quote-put-go')]);
     const rows = await page.evaluate(async (pid) => {

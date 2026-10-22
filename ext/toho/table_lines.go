@@ -229,7 +229,7 @@ func lineOfRow(head, tr *html.Node) ourOrderLine {
 		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・部材見積依頼の表は部材発注明細表と同じ列——行を移しても落とさない）。
 		Kind: at("種類"), No: at("番号"), WorkPartNo: at("加工部品番号"), WorkPartName: at("加工部品名"), Work: at("加工内容"), Spec: at("仕様"), Supplied: at("支給"),
 		// ロットは見積依頼必要部材表・見積依頼部材表だけの列（2026-10-14・rfq.go）——列の無い表では空。
-		Lot: at("ロット"),
+		Lot: at("製品個数"), // 2026-10-22 までの名前は「ロット」
 	}
 }
 

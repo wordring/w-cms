@@ -27,9 +27,9 @@ func TestEstimateCalcNewCopiesLatest(t *testing.T) {
 	addPage(t, 801, -1, CustomerBoxTitle, "alice", "302", true)
 	productBody := `<h1>ブラケット</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindProduct + `</dd></dl>` +
 		`<h2>部材</h2><p>材料の話</p>` +
-		`<h2>` + estimateSectionHeading + `</h2><h3>ロット1</h3>` +
+		`<h2>` + estimateSectionHeading + `</h2><h3>1個</h3>` +
 		`<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td>620</td><td></td></tr></tbody></table>` +
-		`<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr>` +
+		`<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr>` +
 		`<tr><td>1</td><td></td><td>620</td><td>10</td><td>682</td><td></td></tr></tbody></table>` +
 		`<h2>写真</h2><p>写真の話</p>`
 	addPage(t, 802, 801, "ブラケット", "alice", "302", true)
@@ -83,7 +83,7 @@ func TestEstimateCalcNewCopiesLatest(t *testing.T) {
 		t.Fatalf("見積計算書の並びが違います: %+v", list)
 	}
 	html := estimateCalcsHTML(802, list)
-	for _, want := range []string{"🧮 見積計算書", "最新:", `href="/` + second + `"`, `href="/` + first + `"`, "ロット1: <strong>700円</strong>", `data-ecalc-new="000802"`} {
+	for _, want := range []string{"🧮 見積計算書", "最新:", `href="/` + second + `"`, `href="/` + first + `"`, "1個: <strong>700円</strong>", `data-ecalc-new="000802"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("鏡に %q がありません:\n%s", want, html)
 		}

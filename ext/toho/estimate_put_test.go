@@ -15,7 +15,7 @@ import (
 // estimatePutBody は見積計算表2枚の加工製品ページです（組の見積表のロットは20と40）。
 func estimatePutBody() string {
 	table := func(lot, matNote string) string {
-		return `<h3>ロット` + lot + `</h3><table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>` +
+		return `<h3>` + lot + `個</h3><table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>` +
 			`<tr><td>材料</td><td>1200</td><td>` + matNote + `</td></tr>` +
 			`<tr><td>塗装</td><td></td><td></td></tr></tbody></table>` + recordTable(lot)
 	}
@@ -157,7 +157,7 @@ func TestWithEstimateCostFollowsSig(t *testing.T) {
 	tables, _ := estimateTablesOf(body)
 	sig40 := tables[1].Sig
 	// ほかの人が、いちばん前にロット10の組を足した（ロット40の表は 2 枚目→3 枚目）。
-	moved := strings.Replace(body, `<h1>ブラケット</h1>`, `<h1>ブラケット</h1><h3>ロット10</h3><table><caption>見積計算表</caption><tbody>`+
+	moved := strings.Replace(body, `<h1>ブラケット</h1>`, `<h1>ブラケット</h1><h3>10個</h3><table><caption>見積計算表</caption><tbody>`+
 		`<tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td>900</td><td></td></tr></tbody></table>`+recordTable("10"), 1)
 	out, err := withEstimateCost(moved, 1, sig40, "塗装", false, "298", "見積 ふじ鍍金 2026-10-05")
 	if err != nil {

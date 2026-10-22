@@ -90,7 +90,7 @@ func TestRFQOldNeedsTableStillReads(t *testing.T) {
 		t.Fatalf("古い表へ集められません: %d %v", code, out)
 	}
 	body := boxBody(t)
-	if !strings.Contains(body, `<th>支給</th><th>ロット</th><th>数量</th>`) {
+	if !strings.Contains(body, `<th>支給</th><th>製品個数</th><th>数量</th>`) {
 		t.Errorf("ロットの列が数量の前に足されていません:\n%s", body)
 	}
 	got = rfqRows(t, body, RFQNeedsType, 1)
@@ -112,7 +112,7 @@ func TestRFQOldNeedsTableStillReads(t *testing.T) {
 
 	// ③ もう一度足しても、列は1つのまま。
 	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"})
-	if body := boxBody(t); strings.Count(body, `<th>ロット</th>`) != 1 {
+	if body := boxBody(t); strings.Count(body, `<th>製品個数</th>`) != 1 {
 		t.Errorf("ロットの列が2つできました:\n%s", body)
 	}
 }

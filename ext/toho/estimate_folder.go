@@ -54,7 +54,7 @@ func estimateFolderViewHTML(user *auth.User, pageIDInt int) string {
 	var b strings.Builder
 	b.WriteString(`<h3 class="materials-title">📄 見積書を作る（装置フォルダから）</h3>`)
 	b.WriteString(`<p class="unorder-help">装置フォルダのページ番号を書いて「一覧を出す」を押すと、その下の加工製品の<strong>見積表</strong>が` +
-		`1枚1行で並びます（ロットと単価）。チェックして「見積書を作る」を押すと、見積書ページ（記録／年／月／依頼）ができて開きます——` +
+		`1枚1行で並びます（個数と単価）。チェックして「見積書を作る」を押すと、見積書ページ（記録／年／月／依頼）ができて開きます——` +
 		`PDF はそのページの「📄 PDFを作る」で。</p>`)
 	b.WriteString(`<div class="matsearch-form estimate-folder-form" data-w-remember="1">`)
 	b.WriteString(`<label class="matsearch-field"><span>装置フォルダ</span><input type="text" class="matsearch-input" data-estf="folder" placeholder="001234"/></label>`)

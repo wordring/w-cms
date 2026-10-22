@@ -37,7 +37,7 @@ const check = (label, ok, note = '') => {
       '<dt>品名</dt><dd>【E2E】カバー</dd><dt>客先</dt><dd>【E2E】客先</dd></dl>' +
       '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
       '<tr><td>材料</td><td>55</td><td></td></tr><tr><td>板金</td><td>310</td><td></td></tr></tbody></table>' +
-      '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td>塗装無し</td><td>365</td><td>10</td><td>402</td><td></td></tr></tbody></table>');
+      '<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td>塗装無し</td><td>365</td><td>10</td><td>402</td><td></td></tr></tbody></table>');
     await page.goto(BASE + '/' + product);
     const form = page.locator('#w-editor-content .estimate-add-form');
     await form.waitFor({ timeout: 10000 }).catch(() => {});

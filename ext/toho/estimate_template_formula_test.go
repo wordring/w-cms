@@ -31,7 +31,7 @@ func TestEstimateRecordUsesTemplateFormula(t *testing.T) {
 	withCalcTemplate(t)
 
 	// 見積表の無い組——📌 で作ると、単価はテンプレートの式。
-	body := `<h2>見積もり計算</h2><h3>ロット12</h3>` + calcTable([2]string{"材料", "62727"})
+	body := `<h2>見積もり計算</h2><h3>12個</h3>` + calcTable([2]string{"材料", "62727"})
 	got, err := withEstimateRecord(body, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestEstimateRecordUsesTemplateFormula(t *testing.T) {
 		t.Errorf("⚠ 読んだ記録が違います（原価 62727・利益率 10・単価は式の値 69000）: %+v", r)
 	}
 	// 数の単価の見積表——📌 で記録し直すと、式になる。
-	body = `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "", "20", "999", "")
+	body = `<h2>見積もり計算</h2><h3>1個</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "", "20", "999", "")
 	got, err = withEstimateRecord(body, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -53,12 +53,12 @@ func TestEstimateRecordUsesTemplateFormula(t *testing.T) {
 	}
 	// 式の単価——📌 は式を残す（テンプレートと違う式でも、人が書いた式を上書きしない）。
 	mine := "=原価*2"
-	body = `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "", "20", mine, "")
+	body = `<h2>見積もり計算</h2><h3>1個</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "", "20", mine, "")
 	if got, err = withEstimateRecord(body, 0); err != nil || !strings.Contains(got, "<td>"+mine+"</td>") {
 		t.Errorf("⚠ 人が書いた単価の式を上書きしました（%v）:\n%s", err, got)
 	}
 	// ⧉ の写しも式を残す。
-	body = `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "1000", "10", unitFormula, "")
+	body = `<h2>見積もり計算</h2><h3>1個</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "1000", "10", unitFormula, "")
 	got, err = withEstimateDuplicate(body, 0)
 	if err != nil {
 		t.Fatal(err)

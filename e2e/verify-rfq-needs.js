@@ -36,9 +36,9 @@ const PRODUCT = '<h1>【E2E】見積依頼の加工製品</h1>' +
   '<tr><td>E2E-RFQ-鉄</td><td>板</td><td>t3.2*100*200</td><td>2</td></tr>' +
   '<tr><td>E2E-RFQ-SUS</td><td>丸棒</td><td>φ20*50</td><td>1</td></tr></tbody></table>' +
   '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td></td><td></td></tr></tbody></table>' +
-  '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>' +
+  '<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>20</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>' +
   '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td></td><td></td></tr></tbody></table>' +
-  '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>40</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>';
+  '<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr><td>40</td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>';
 
 // tableRows は本文 HTML の、キャプション caption の n 枚目の表の行（見出しを除く・空の行を除く）を文字の配列で返す。
 const tableRows = (html, caption, n = 1) => {

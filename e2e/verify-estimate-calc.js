@@ -36,9 +36,9 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
     if (!ledger) { console.log('製造台帳が無いので飛ばします'); await browser.close(); process.exit(0); }
     cust = await makePage(page, '<h1>【E2E】見積計算の会社</h1><dl data-type="tags"><dt>ページ種類</dt><dd>社名</dd></dl>', ledger);
     product = await makePage(page, '<h1>【E2E】見積計算の部品</h1><dl data-type="tags"><dt>ページ種類</dt><dd>加工製品</dd></dl>' +
-      '<h2>見積もり計算</h2><h3>ロット1</h3>' +
+      '<h2>見積もり計算</h2><h3>1個</h3>' +
       '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr><tr><td>材料</td><td>620</td><td></td></tr></tbody></table>' +
-      '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr>' +
+      '<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr>' +
       '<tr><td>1</td><td></td><td>620</td><td>10</td><td>682</td><td></td></tr></tbody></table>', cust);
     check('当て先を作れた', !!cust && !!product);
 
@@ -72,7 +72,7 @@ const titleOf = (page, id) => page.evaluate(async (pid) => {
     await box.waitFor({ timeout: 10000 }).catch(() => {});
     const t3 = (await box.textContent().catch(() => '')) || '';
     const link = await box.locator('.estimate-calc-latest a').getAttribute('href').catch(() => '');
-    check('③ 戻ると「最新:」にその見積計算書（ロットと単価）', t3.includes('最新:') && link === '/' + calc && t3.includes('ロット1: 682円'), t3.slice(0, 160));
+    check('③ 戻ると「最新:」にその見積計算書（個数と単価）', t3.includes('最新:') && link === '/' + calc && t3.includes('1個: 682円'), t3.slice(0, 160));
 
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

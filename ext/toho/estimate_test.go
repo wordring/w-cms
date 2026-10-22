@@ -25,7 +25,7 @@ func calcTable(rows ...[2]string) string {
 
 // recordTable は見積表を1枚組みます（ロット・表面処理・原価・利益率・単価・備考の1行）。
 func recordTable(cells ...string) string {
-	b := `<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>`
+	b := `<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>`
 	for i := 0; i < 6; i++ {
 		v := ""
 		if i < len(cells) {
@@ -47,9 +47,9 @@ func parseBody(t *testing.T, body string) []*html.Node {
 
 // TestEstimateBlocksPairInOrder は、見積表がすぐ上の見積計算表と組になることを固定します（文書の順・見積計算表の無い見積表は1組）。
 func TestEstimateBlocksPairInOrder(t *testing.T) {
-	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "100"}) + recordTable("1") +
-		`<h3>ロット20</h3>` + calcTable([2]string{"材料", "80"}) + // 見積表がまだ無い
-		`<section><h3>ロット40</h3>` + calcTable([2]string{"材料", "70"}) + recordTable("40") + `</section>` +
+	body := `<h2>見積もり計算</h2><h3>1個</h3>` + calcTable([2]string{"材料", "100"}) + recordTable("1") +
+		`<h3>20個</h3>` + calcTable([2]string{"材料", "80"}) + // 見積表がまだ無い
+		`<section><h3>40個</h3>` + calcTable([2]string{"材料", "70"}) + recordTable("40") + `</section>` +
 		recordTable("99") // 計算表の無い見積表
 	b := estimateBlocksOf(parseBody(t, body))
 	if len(b) != 4 {
@@ -108,8 +108,8 @@ func TestEstimateCostAndPlan(t *testing.T) {
 // TestWithEstimateRecord は「📌 この単価を記録」を固定します——見積表があればその行へ、無ければ見積計算表のすぐ後ろに作る。
 func TestWithEstimateRecord(t *testing.T) {
 	setupExtTest(t, "000030", page.PageMeta{Owner: "root", Mode: "330"})
-	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "塗装あり", "", "20", "999", "メモ") +
-		`<h3>ロット20</h3>` + calcTable([2]string{"材料", "900"}) + `<p>あと</p>`
+	body := `<h2>見積もり計算</h2><h3>1個</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "塗装あり", "", "20", "999", "メモ") +
+		`<h3>20個</h3>` + calcTable([2]string{"材料", "900"}) + `<p>あと</p>`
 	got, err := withEstimateRecord(body, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestWithEstimateRecord(t *testing.T) {
 	if r := estimateRecordOf(recs[1]); r.Cost != "900" || r.Rate != "10" || r.Unit != "990" || r.Lot != "" {
 		t.Errorf("作った見積表の記録が違います: %+v", r)
 	}
-	if strings.Index(got, "<caption>見積表</caption><tbody><tr><th>ロット") > strings.LastIndex(got, "<p>あと</p>") {
+	if strings.Index(got, "<caption>見積表</caption><tbody><tr><th>個数") > strings.LastIndex(got, "<p>あと</p>") {
 		t.Errorf("見積表が見積計算表のすぐ後ろにありません:\n%s", got)
 	}
 	// 計算できない組は理由を返す。
@@ -145,10 +145,10 @@ func TestWithEstimateRecord(t *testing.T) {
 // TestWithEstimateDuplicate は「⧉ このロットを写す」を固定します——見出し・見積計算表・見積表を写して組のすぐ後ろへ。
 // ロット・原価・単価は空にし、data-id は写さない。
 func TestWithEstimateDuplicate(t *testing.T) {
-	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` +
+	body := `<h2>見積もり計算</h2><h3>1個</h3>` +
 		`<table data-id="ab12"><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>` +
 		`<tr data-id="cd34"><td>材料</td><td>100</td><td>板</td></tr></tbody></table>` +
-		recordTable("1", "黒", "100", "10", "110", "メモ") + `<h3>ロット20</h3>` + calcTable([2]string{"材料", "90"})
+		recordTable("1", "黒", "100", "10", "110", "メモ") + `<h3>20個</h3>` + calcTable([2]string{"材料", "90"})
 	got, err := withEstimateDuplicate(body, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestWithEstimateDuplicate(t *testing.T) {
 	if strings.Count(got, `data-id="ab12"`) != 1 || strings.Count(got, `data-id="cd34"`) != 1 {
 		t.Errorf("data-id を写しました:\n%s", got)
 	}
-	i1, i2 := strings.Index(got, "ロット1（写し）"), strings.Index(got, "<h3>ロット20</h3>")
+	i1, i2 := strings.Index(got, "1個（写し）"), strings.Index(got, "<h3>20個</h3>")
 	if i1 < 0 || i1 > i2 {
 		t.Errorf("写しの見出しが組のすぐ後ろにありません:\n%s", got)
 	}
@@ -178,8 +178,8 @@ func TestWithEstimateDuplicate(t *testing.T) {
 // 写しの組（別のロット）に書いていた。
 func TestEstimateRecordFollowsSig(t *testing.T) {
 	setupExtTest(t, "000030", page.PageMeta{Owner: "root", Mode: "330"})
-	body := `<h2>見積もり計算</h2><h3>ロット1</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "1000", "20", "1200", "") +
-		`<h3>ロット20</h3>` + calcTable([2]string{"材料", "900"})
+	body := `<h2>見積もり計算</h2><h3>1個</h3>` + calcTable([2]string{"材料", "1000"}) + recordTable("1", "", "1000", "20", "1200", "") +
+		`<h3>20個</h3>` + calcTable([2]string{"材料", "900"})
 	blocks := estimateBlocksOf(parseBody(t, body))
 	sig20 := estimateBlockSig(blocks[1])
 	moved, err := withEstimateDuplicate(body, 0) // ほかの人が写した——ロット20の組は 2 番目→3 番目

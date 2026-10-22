@@ -7,7 +7,7 @@
 //   ② 「📌 この単価を記録」で見積表に 原価・利益率・単価 が入り、足元が ✓（記録と合っています）
 //   ③ 見積表の無い見積計算表の下の「📌 見積表を作って記録」で、すぐ後ろに見積表ができる（原価 565・単価 622）
 //   ④ 記録と計算表が合わない見積表は「⚠ 記録が計算表と合いません」——価格の式（=材料*2）も計算に入る
-//   ⑤ 「⧉ このロットを写す」で、見出し（写し）・見積計算表・見積表が組ごと増える（写しのロット・単価は空）
+//   ⑤ 「⧉ この組を写す」で、見出し（写し）・見積計算表・見積表が組ごと増える（写しのロット・単価は空）
 //   ⑥ 見積表の足元に「📄 見積書に入れる」
 //
 // 当て先はトップ直下に自分で作り、最後に消します。東邦の拡張が無い組では飛ばします。
@@ -32,7 +32,7 @@ const cellsOk = (cells, want) => {
 const calc = (rows) => '<table><caption>見積計算表</caption><tbody><tr><th>工程</th><th>価格</th><th>備考</th></tr>' +
   rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + (r[2] || '') + '</td></tr>').join('') +
   '</tbody></table>';
-const record = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロット</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>' +
+const record = (cells) => '<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr><tr>' +
   [0, 1, 2, 3, 4, 5].map(i => '<td>' + (cells[i] || '') + '</td>').join('') + '</tr></tbody></table>';
 
 (async () => {
@@ -68,9 +68,9 @@ const record = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロ
       process.exit(0);
     }
     id = await makePage(page, '<h1>【E2E】見積の品</h1><h2>見積もり計算</h2>' +
-      '<h3>ロット1</h3>' + calc([['材料', '55'], ['板金', '310'], ['ブランク', '']]) + record(['1']) +
-      '<h3>ロット20</h3>' + calc([['材料', '55'], ['板金', '310'], ['塗装', '200']]) +
-      '<h3>ロット5</h3>' + calc([['材料', '100'], ['塗装', '=材料*2']]) + record(['5', '黒', '300', '10', '999']));
+      '<h3>1個</h3>' + calc([['材料', '55'], ['板金', '310'], ['ブランク', '']]) + record(['1']) +
+      '<h3>20個</h3>' + calc([['材料', '55'], ['板金', '310'], ['塗装', '200']]) +
+      '<h3>5個</h3>' + calc([['材料', '100'], ['塗装', '=材料*2']]) + record(['5', '黒', '300', '10', '999']));
     check('当て先を作れた', !!id, id);
     await open();
     let r = await recs();
@@ -95,13 +95,13 @@ const record = (cells) => '<table><caption>見積表</caption><tbody><tr><th>ロ
     check('③ 見積表ができて記録される（原価 565・単価 622）', r.length === 3 && cellsOk(r[1].cells, '||565|10|622|') && r[1].plan.endsWith('（記録と合っています）'), JSON.stringify(r));
     const order = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content h3, #w-editor-content table > caption')]
       .map(e => e.tagName === 'H3' ? e.textContent : '[' + e.textContent + ']').join(' '));
-    check('③ 見積表は見積計算表のすぐ後ろ', order.startsWith('ロット1 [見積計算表] [見積表] ロット20 [見積計算表] [見積表] ロット5'), order);
+    check('③ 見積表は見積計算表のすぐ後ろ', order.startsWith('1個 [見積計算表] [見積表] 20個 [見積計算表] [見積表] 5個'), order);
 
     // ⑤ 写す
     await click(page.locator('#w-editor-content .estimate-dup-go').first());
     r = await recs();
     const order2 = await page.evaluate(() => [...document.querySelectorAll('#w-editor-content h3')].map(e => e.textContent).join(','));
-    check('⑤ 見出し（写し）と組が増える', r.length === 4 && order2 === 'ロット1,ロット1（写し）,ロット20,ロット5', order2);
+    check('⑤ 見出し（写し）と組が増える', r.length === 4 && order2 === '1個,1個（写し）,20個,5個', order2);
     check('⑤ 写しのロット・原価・単価は空（利益率は残す・単価の式は残す）', r[1] && cellsOk(r[1].cells, '|||10||'), JSON.stringify(r[1]));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
