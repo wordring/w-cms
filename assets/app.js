@@ -3097,7 +3097,8 @@
             const dd = dt.nextElementSibling;
             if (!dd || dd.tagName.toLowerCase() !== 'dd') return;
             // ③ 値の範囲（2026-10-22・設定の min・max・integer）——表のセルと同じ薄い橙と ⚠。
-            const why = (type === 'number' && dd.textContent.trim() !== '') ? outOfRangeReason(dd.textContent, rangeOf(word)) : '';
+            const rg = rangeOf(word);
+            const why = (rg && dd.textContent.trim() !== '') ? outOfRangeReason(dd.textContent.trim(), rg) : '';
             const wasOut = dd.classList.contains('tag-out-of-range');
             dd.classList.toggle('tag-out-of-range', !!why);
             if (why) dd.title = '⚠ ' + name + ': ' + why;
@@ -5340,8 +5341,14 @@
     // rangeOf は語の値の範囲（設定の min・max・integer・2026-10-22）を返します（どれも無ければ null）。
     // 2026-10-22 利用者:「個数の値が小数点の場合、警告として背景色を変えては？これを一般化して、名前と値が対応する場合に、
     // ある名前の値の範囲を設定できるように出来ませんか」——縛りではなく知らせるだけ（範囲の外の値も書ける）。
+    // text・code の語は、決まった文字の並び（allowed）を範囲に持てます（2026-10-22）。
+    //   2026-10-22 利用者:「語の値の範囲として、材質という名前に対して、SS400、SUS304と言った文字列の行列も許容できると良いです」
     function rangeOf(w) {
-        if (!w || w.type !== 'number') return null;
+        if (!w) return null;
+        if ((w.type === 'text' || w.type === 'code') && Array.isArray(w.allowed) && w.allowed.length) {
+            return { allowed: w.allowed.slice(), code: w.type === 'code' };
+        }
+        if (w.type !== 'number') return null;
         const r = { min: typeof w.min === 'number' ? w.min : null, max: typeof w.max === 'number' ? w.max : null, integer: !!w.integer };
         return (r.min === null && r.max === null && !r.integer) ? null : r;
     }
@@ -5372,8 +5379,8 @@
         const word = columnWord(tableNameOf(table), key);
         const type = (explicit && VALID_COL_TYPES.indexOf(explicit) !== -1) ? explicit : word.type;
         // `label` は見出しの表示文字（＝項目の鍵）。折り返しの判定に使う。
-        // `range` は語の値の範囲（2026-10-22）。th で型を明示して number 以外にした列には当てない。
-        return { label: key, type, enum: word.values, range: type === 'number' ? word.range : null };
+        // `range` は語の値の範囲（2026-10-22）。th で型を明示して語と違う型にした列には当てない。
+        return { label: key, type, enum: word.values, range: type === word.type ? word.range : null };
     }
 
     // 値の解釈可否。サーバーの NormalizeValue と同じ規則（全角→半角・通貨記号と
@@ -5395,9 +5402,22 @@
         return parseFloat(toHalfWidthJS(raw.trim()).replace(/[¥￥$,，s　]/g, '').replace(/円$/, ''));
     }
 
+    // foldAllowed は決まった文字の並びと比べる形に畳みます（全角半角・大小。code はさらに空白・ハイフン・長音・下線も落とす）。
+    function foldAllowed(s, code) {
+        let k = String(s || '').normalize('NFKC').trim().toLowerCase();
+        if (code) k = k.replace(/[s-‐‑‒–—―−ー_]/g, '');
+        return k;
+    }
+
     // outOfRangeReason は、値が範囲の外ならその理由を返します（内か、範囲が無ければ空）。
     function outOfRangeReason(raw, range) {
         if (!range) return '';
+        if (range.allowed) {
+            const k = foldAllowed(raw, range.code);
+            if (range.allowed.some(v => foldAllowed(v, range.code) === k)) return '';
+            const list = range.allowed.slice(0, 8).join('・') + (range.allowed.length > 8 ? ' …' : '');
+            return '決まった値（' + list + '）にありません';
+        }
         const n = numberOfText(raw);
         if (isNaN(n)) return ''; // 読めない値は .cell-invalid の受け持ち
         if (range.integer && Math.abs(n - Math.round(n)) > 1e-9) return '整数ではありません（小数）';
@@ -5455,7 +5475,7 @@
         cell.classList.toggle('cell-known', typed && text !== '' && !bad);
         // 値の範囲の外（2026-10-22・設定の min・max・integer）——薄い橙と ⚠（色だけで分けない・CSS）。理由はマウスを載せると出る
         // （td の title は保存の許可リストに無いので、本文には入らない）。閲覧モードでも出す。
-        const why = (typed && text !== '' && !bad && col.type === 'number') ? outOfRangeReason(text, col.range) : '';
+        const why = (col && col.range && text !== '' && !bad && !isFormulaText(text)) ? outOfRangeReason(text, col.range) : '';
         const wasOut = cell.classList.contains('cell-out-of-range');
         cell.classList.toggle('cell-out-of-range', !!why);
         if (why) cell.title = '⚠ ' + col.label + ': ' + why;
@@ -5560,8 +5580,10 @@
             });
             menu.appendChild(b);
         }
-        if (cellKey) { fillCellChoiceMenu(menu, td, cellKey); return; } // 候補は届いてから開く
-        if (tagSuggest) fillTagValueMenu(menu, cell, tagLabel, isEnum ? col.enum : []);
+        // 決まった文字の並び（allowed・2026-10-22）があれば、候補はその並び（使った数の順）。
+        const allowed = (col && col.range && col.range.allowed) || [];
+        if (cellKey) { fillCellChoiceMenu(menu, td, cellKey, allowed); return; } // 候補は届いてから開く
+        if (tagSuggest) fillTagValueMenu(menu, cell, tagLabel, isEnum ? col.enum : allowed);
         else if (isEnum) col.enum.forEach(v => {
             const b = makeButton('');
             b.dataset.choice = '1'; // 打った字で絞る対象（filterEnumMenu）
@@ -5673,12 +5695,18 @@
     //   2026-10-19 利用者:「オートコンプリートのコンボボックスは、一回しか入力されたことが無い値は出さないようにしましょう。何度も入力される定型的な値をDBから拾って決定する仕組みを作りましょう。」
     //   - 候補はサーバーが暇なときに数えた定型の値（何度も入力された値・読めるページだけ）。定型の欄でない列・まだ数えていない列は何も出さない。
     //   - ⚠ 候補は縛りではない（手で打てる）。⚠ 遅れて届くので、セルが変わっていたら捨てる（fillTagValueMenu と同じ）。
-    async function fillCellChoiceMenu(menu, td, key) {
+    async function fillCellChoiceMenu(menu, td, key, allowed) {
         menu.classList.remove('active');
         const all = await loadAutocomplete();
         if (enumMenuCell !== td) return; // 別のセルへ移っていたら捨てる
         const cols = all && all.cells.get(autoFold(key.table));
-        const got = (cols && cols.get(autoFold(key.column))) || [];
+        let got = (cols && cols.get(autoFold(key.column))) || [];
+        if (allowed && allowed.length) {
+            // 決まった文字の並び（allowed）だけを、使った数の多い順に（タグの選択肢と同じ並べ方——fillTagValueMenu）。
+            const counts = new Map(got.map(x => [x.value, x.count]));
+            got = allowed.map((v, i) => ({ value: v, count: counts.get(v) || 0, i }))
+                .sort((a, b) => (b.count - a.count) || (a.i - b.i));
+        }
         if (!got.length) { hideEnumMenu(); enumMenuCell = td; return; }
         got.forEach(({ value, count }) => {
             const b = makeButton('');
@@ -5729,7 +5757,7 @@
         const label = dt.textContent.trim();
         const word = vocabWords[label];
         if (!word) return null;
-        return { label, type: word.type || (word.values ? 'enum' : ''), enum: word.values || [] };
+        return { label, type: word.type || (word.values ? 'enum' : ''), enum: word.values || [], range: rangeOf(word) };
     }
 
     // ── PDF付きブロックのエンハンサ（語彙モデル §3: マーカー要素へ振る舞いを配線） ──

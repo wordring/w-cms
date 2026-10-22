@@ -144,11 +144,18 @@ type VocabWord struct {
 	Min     *float64 `json:"min,omitempty"`
 	Max     *float64 `json:"max,omitempty"`
 	Integer bool     `json:"integer,omitempty"`
+	// Allowed は `text`・`code` の値の範囲です（決まった文字の並び・2026-10-22）。ここに無い値を、Min・Max と同じく画面が知らせます
+	// （比べるときは全角半角・大小を畳む。`code` は空白・ハイフンも）。選んで入れられるよう、入力の候補にも出します。
+	//
+	// > 2026-10-22 利用者:「語の値の範囲として、材質という名前に対して、SS400、SUS304と言った文字列の行列も許容できると良いです」
+	//
+	// ⚠ `enum` の Values とは別です。Values は「見分けるための表」（無い値は薄黄・警告ではない）、Allowed は範囲（無い値は警告）。
+	Allowed []string `json:"allowed,omitempty"`
 }
 
 // clone は語の写しを返します（選択肢と範囲まで複製する——受け取った側が書き換えても設定は壊れない）。
 func (w VocabWord) clone() VocabWord {
-	out := VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...), Integer: w.Integer}
+	out := VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...), Integer: w.Integer, Allowed: append([]string(nil), w.Allowed...)}
 	if w.Min != nil {
 		v := *w.Min
 		out.Min = &v

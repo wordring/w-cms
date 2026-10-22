@@ -461,6 +461,21 @@ func validateVocabWord(path, where string, w VocabWord) error {
 	if w.Min != nil && w.Max != nil && *w.Min > *w.Max {
 		return fmt.Errorf("%s: %s の min（%v）が max（%v）より大きいです", path, where, *w.Min, *w.Max)
 	}
+	// 決まった文字の並び（allowed）を持てるのは text と code だけです（enum は values で足りる・number は min・max）。
+	if len(w.Allowed) > 0 && w.Type != ColText && w.Type != ColCode {
+		return fmt.Errorf("%s: %s は型が %q なのに allowed があります"+
+			"（allowed を持てるのは %q と %q だけです）", path, where, w.Type, ColText, ColCode)
+	}
+	seenAllowed := map[string]bool{}
+	for _, v := range w.Allowed {
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("%s: %s の allowed に空の値があります", path, where)
+		}
+		if seenAllowed[v] {
+			return fmt.Errorf("%s: %s の allowed に %q が重複しています", path, where, v)
+		}
+		seenAllowed[v] = true
+	}
 	return nil
 }
 

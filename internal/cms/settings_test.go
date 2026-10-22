@@ -96,6 +96,9 @@ func TestSettingsRejectsBrokenFile(t *testing.T) {
 		// 値の範囲（2026-10-22）——number でない語に書いた・min が max より大きい。
 		{"number でないのに範囲がある", `{"vocabulary": {"品番": {"type": "code", "integer": true}}}`},
 		{"min が max より大きい", `{"vocabulary": {"個数": {"type": "number", "min": 5, "max": 1}}}`},
+		{"number に allowed", `{"vocabulary": {"個数": {"type": "number", "allowed": ["1"]}}}`},
+		{"allowed に空の値", `{"vocabulary": {"材質": {"type": "text", "allowed": ["SS400", " "]}}}`},
+		{"allowed の重複", `{"vocabulary": {"材質": {"type": "text", "allowed": ["SS400", "SS400"]}}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -378,5 +381,22 @@ func TestSettingsVocabularyRange(t *testing.T) {
 	}
 	if tw := ColumnWord("材料表", "個数"); tw.Max == nil || *tw.Max != 99 || tw.Integer {
 		t.Errorf("表ごとの例外の範囲が違います: %+v", tw)
+	}
+}
+
+// 決まった文字の並び（allowed）は text・code の語に書けて、辞書の写しに載る（2026-10-22）。
+func TestSettingsVocabularyAllowed(t *testing.T) {
+	useTempSettings(t)
+	writeTestSettings(t, `{"vocabulary": {"材質": {"type": "text", "allowed": ["SS400", "SUS304"]}}}`)
+	if err := LoadSettings(); err != nil {
+		t.Fatal(err)
+	}
+	w := VocabularyDict()["材質"]
+	if len(w.Allowed) != 2 || w.Allowed[1] != "SUS304" {
+		t.Fatalf("allowed が辞書に載っていません: %+v", w)
+	}
+	w.Allowed[0] = "X"
+	if VocabularyDict()["材質"].Allowed[0] != "SS400" {
+		t.Errorf("⚠ 写しではなく設定そのものを返しています")
 	}
 }
