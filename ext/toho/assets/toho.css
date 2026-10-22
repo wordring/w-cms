@@ -557,3 +557,7 @@
 #w-editor-content td.mfg-pick-cell, #w-editor-content th.mfg-pick-cell,
 #w-editor-content td.mfg-needs-pick-cell, #w-editor-content th.mfg-needs-pick-cell { width: 1.8em; text-align: center; }
 #w-editor-content .mfg-page-end { margin-top: 18px; padding-top: 8px; border-top: 1px solid #e5e7eb; }
+
+/* 「🧾 受注・見積の単価」の表の上の「最新の受注単価」の1行（2026-10-22・ext/toho/order_prices.go の latestOrderPriceHTML）。 */
+#w-editor-content .order-prices-latest { margin: 4px 0 8px; }
+#w-editor-content .order-prices-latest strong { font-size: 1.15em; }

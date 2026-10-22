@@ -96,7 +96,15 @@ func TestProductPageListsOrderPrices(t *testing.T) {
 	if strings.Contains(got, "666円") {
 		t.Errorf("⚠ 別の加工製品の見積が出ています:\n%s", got)
 	}
-	if strings.Index(got, "480円") > strings.Index(got, "520円") {
+	// 最新の受注単価（2026-10-22）——いちばん上の行は見積（2026-08-15）でも、受注のいちばん新しい行（A-2・品番で当てた ※）を表の上に出す。
+	latest := `最新の受注単価: <strong>520円※</strong>（<a href="/000703">2026-07-01</a>・No.A-2・20）`
+	if i := strings.Index(got, latest); i < 0 || i > strings.Index(got, "rfq-quotes-table") {
+		t.Errorf("⚠ 表の上に最新の受注単価（受注の行のいちばん新しいもの）が出ていません: %q\n%s", latest, got)
+	}
+	if admin := show(&auth.User{Username: "root", IsAdmin: true}); !strings.Contains(admin, `最新の受注単価: <strong>888円</strong>`) {
+		t.Errorf("⚠ 読める人には /000706（2026-09-15）が最新の受注のはず:\n%s", admin)
+	}
+	if rows := got[strings.Index(got, "rfq-quotes-table"):]; strings.Index(rows, "480円") > strings.Index(rows, "520円") { // 表の行どうしで比べる（表の上の最新の受注単価は除く）
 		t.Errorf("⚠ 見積（2026-08-15）が受注（2026-07-01）より後ろです——日付順に混ぜるはず:\n%s", got)
 	}
 }

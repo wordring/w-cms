@@ -172,6 +172,7 @@ func orderPricesHTML(list []orderPriceRow) string {
 		b.WriteString(`<p class="materials-empty w-view-empty">まだありません（案件明細表・見積明細表の弊社品番がこのページの行と、客先と品番が合う受注の行がここに並びます）。</p></div>`)
 		return b.String()
 	}
+	b.WriteString(latestOrderPriceHTML(list))
 	b.WriteString(`<div class="rfq-quotes-scroll"><table class="materials-table rfq-quotes-table"><thead><tr><th>日付</th><th>種類</th><th>番号</th>` +
 		`<th>品番</th><th class="num">数量</th><th class="num">単価</th><th>状態</th></tr></thead><tbody>`)
 	marked := false
@@ -208,6 +209,48 @@ func orderPricesHTML(list []orderPriceRow) string {
 	}
 	b.WriteString(`</div>`)
 	return b.String()
+}
+
+// 最新の受注単価（2026-10-22）——利用者:「案件明細表から最新の受注価格を検索し加工製品ページに表示する機能を付けてください」。
+// 下の表は受注と見積を日付順に混ぜて並べるので、いちばん上が見積のこともある。そこで表の上に、受注の行のうちいちばん新しい
+// 1行の単価を、日付・番号・数量と一緒に1行で出す。単価の空いた行と、状態が「取消」の行は飛ばす。品番で当てた行なら ※ を付ける。
+
+// latestOrderPrice は、新しい順の list から最新の受注の行を返します（無ければ false）。
+func latestOrderPrice(list []orderPriceRow) (orderPriceRow, bool) {
+	for _, q := range list {
+		if q.Kind == orderPriceKindOrder && q.Price != "" && q.Status != "取消" {
+			return q, true
+		}
+	}
+	return orderPriceRow{}, false
+}
+
+// latestOrderPriceHTML は「最新の受注単価」の1行を描きます。
+func latestOrderPriceHTML(list []orderPriceRow) string {
+	q, ok := latestOrderPrice(list)
+	if !ok {
+		return `<p class="order-prices-latest w-view-empty">最新の受注単価: まだ受注がありません（下は見積の値段です）。</p>`
+	}
+	price := q.Price
+	if !strings.HasSuffix(price, "円") {
+		price += "円"
+	}
+	if q.ByCode {
+		price += "※"
+	}
+	var notes []string
+	label := q.Date
+	if label == "" {
+		label = "日付なし"
+	}
+	notes = append(notes, `<a href="/`+page.FormatID(q.OrderPage)+`">`+stdhtml.EscapeString(label)+`</a>`)
+	if q.No != "" {
+		notes = append(notes, "No."+stdhtml.EscapeString(q.No))
+	}
+	if q.Qty != "" {
+		notes = append(notes, stdhtml.EscapeString(q.Qty+q.Unit))
+	}
+	return `<p class="order-prices-latest">最新の受注単価: <strong>` + stdhtml.EscapeString(price) + `</strong>（` + strings.Join(notes, "・") + `）</p>`
 }
 
 // 置き場所（2026-10-04 利用者:「受注の単価は見積もり計算表の下が良いかもしれませんね」）——売る値段なので、確定単価の出る
