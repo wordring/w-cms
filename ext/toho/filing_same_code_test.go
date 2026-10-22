@@ -78,3 +78,32 @@ func TestProductLookupPrefersFiledPages(t *testing.T) {
 		t.Errorf("整理を待つページしか無いのに当たりません: %v", got)
 	}
 }
+
+// TestFileDrawingsMakesNoFolderBeforeConfirm は、確かめで止まった整理が、行き先の装置のフォルダを作らないことを固定します
+// （2026-10-22 の見直し）。それまでは確かめより先にフォルダを作っていて、「やめる」を選ぶと空のフォルダが残った。
+func TestFileDrawingsMakesNoFolderBeforeConfirm(t *testing.T) {
+	const inbox = "000012"
+	setupFilingTest(t, inbox)
+	u := &auth.User{Username: "alice"}
+	first := makeDrawingPage(t, inbox, "K120-1", "取付ベース", "標準2輪", "みなと商店")
+	if res := postFiling(t, u, []filingRequest{{PageID: first, Customer: "みなと商店", MachineName: "標準2輪", DrawingName: "取付ベース"}}); len(res) != 1 || res[0].Outcome != "moved" {
+		t.Fatalf("1枚目を収められません: %+v", res)
+	}
+	second := makeDrawingPageFrom(t, inbox, "pdf002", "K120-1", "取付ベース", "新型3輪", "みなと商店")
+	row := filingRequest{PageID: second, Customer: "みなと商店", MachineName: "新型3輪", DrawingName: "取付ベース"}
+	if res := postFiling(t, u, []filingRequest{row}); len(res) != 1 || res[0].Confirm != "same_code" {
+		t.Fatalf("同じ品番の確かめが出ません: %+v", res)
+	}
+	for _, m := range machineFoldersOf(u, "みなと商店") {
+		if m == "新型3輪" {
+			t.Fatalf("⚠ 確かめの前に装置のフォルダを作りました: %v", machineFoldersOf(u, "みなと商店"))
+		}
+	}
+	row.ConfirmSameCode = true
+	if res := postFiling(t, u, []filingRequest{row}); len(res) != 1 || res[0].Outcome != "moved" {
+		t.Fatalf("確かめのあとに収めていません: %+v", res)
+	}
+	if got := strings.Join(machineFoldersOf(u, "みなと商店"), ","); !strings.Contains(got, "新型3輪") {
+		t.Errorf("確かめのあとに装置のフォルダを作っていません: %s", got)
+	}
+}

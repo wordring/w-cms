@@ -221,6 +221,26 @@ func ensureProductPath(user *auth.User, customer, machine string) (string, error
 	return machineID, nil
 }
 
+// findProductPath は `製造台帳／社名／装置名称` を辿るだけで、作りません（無ければ ok=false）。customerID は社名のページ（無ければ空）。
+//
+// 整理は、確かめ（同じ題のどれに入れるか・同じ品番）を済ませるまで、これで行き先を見ます（2026-10-22 の見直し）——それまでは
+// 確かめより先に ensureProductPath でフォルダを作っていて、確かめで「やめる」を選ぶと、空の社名・装置のフォルダが残った。
+func findProductPath(customer, machine string) (machineID, customerID string, ok bool) {
+	boxID, found := CustomerBoxPageID()
+	if !found {
+		return "", "", false
+	}
+	customerID, found = findFolderChild(boxID, customer)
+	if !found {
+		return "", "", false
+	}
+	if machine == "" {
+		return customerID, customerID, true
+	}
+	machineID, found = findFolderChild(customerID, machine)
+	return machineID, customerID, found
+}
+
 // machineFoldersOf は、社名 customer の直下にある装置名のフォルダの題を返します（読めるものだけ・作らない）。
 func machineFoldersOf(user *auth.User, customer string) []string {
 	boxID, ok := CustomerBoxPageID()

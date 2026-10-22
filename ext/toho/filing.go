@@ -444,10 +444,10 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// ——整理の画面は「機械が出して人が直す」場所なので、**打ち替えた結果が正**です。
 	//
 	// **装置は社名の直下**です（2026-10-16 に「加工製品」の箱をなくした・product_tree.go）。
-	machineID, err := ensureProductPath(user, customer, machine)
-	if err != nil {
-		return filingResult{PageID: pageID, Outcome: "skipped", Message: err.Error()}
-	}
+	//
+	// ⚠ **ここでは辿るだけで、作りません**（2026-10-22 の見直し）。作るのは、確かめを済ませて新しく置くとき（fileAsNewProduct）——
+	// 確かめで「やめる」を選ぶと、空の社名・装置のフォルダが残っていた。行き先が無ければ、同じ題のページも無い。
+	machineID, customerID, found := findProductPath(customer, machine)
 	where := customer + "／" + machine + "／" + name
 	if machine == "" {
 		where = customer + "／" + name // 装置名の分からない品物は社名の直下
@@ -464,7 +464,10 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	// ⚠ **同じ題の別の品物もあります**（2026-10-01 利用者:「品名がかぶると加工製品ページが追加できないようですが、
 	// 実際には同じ品名があります」）——「新規」を選べば、同じ題のページが在っても隣に置きます。そのため行き先に同じ題が
 	// **何枚も**ありえるので、図面追加・図面改定の相手は人が押した候補（`Target`）で決めます（1枚だけなら題で引く）。
-	sameTitle := childrenByTitle(machineID, name, pageID)
+	var sameTitle []string
+	if found {
+		sameTitle = childrenByTitle(machineID, name, pageID)
+	}
 	// 読めないページは候補にしない（番号を「選んでください」に並べ、図面番号を確かめの文に書いていた・2026-10-22 の見直し）。
 	visible := sameTitle[:0]
 	for _, sid := range sameTitle {
@@ -474,9 +477,10 @@ func fileOneDrawing(user *auth.User, row filingRequest) filingResult {
 	}
 	sameTitle = visible
 	if len(sameTitle) > 0 && row.Merge != "new" {
+		linkPartner(user, customerID, customer) // 2つの木を結ぶ（ensureProductPath と同じ・行き先はもうある）
 		return fileIntoSameTitle(user, row, in, sameTitle, where)
 	}
-	return fileAsNewProduct(user, row, in, machineID, where, sameTitle)
+	return fileAsNewProduct(user, row, in, machine, where, sameTitle)
 }
 
 // filingInput は整理の1行を正規化して確かめた値です（readFilingInput が組む・2026-10-20 に fileOneDrawing から分けた）。
@@ -628,7 +632,7 @@ func fileIntoSameTitle(user *auth.User, row filingRequest, in filingInput, sameT
 }
 
 // fileAsNewProduct は、新しい加工製品として行き先へ置く整理です（2026-10-20 に fileOneDrawing から分けた）。
-func fileAsNewProduct(user *auth.User, row filingRequest, in filingInput, machineID, where string, sameTitle []string) filingResult {
+func fileAsNewProduct(user *auth.User, row filingRequest, in filingInput, machine, where string, sameTitle []string) filingResult {
 	pageID, idInt, customer, name := in.pageID, in.idInt, in.customer, in.name
 	kindsNote := func(target string, replace bool) string { return filingKindsNote(user, target, in.kinds, replace) }
 	// ⚠ **改定・追加を選んだのに行き先が無いときは、作りません**（2026-09-30）——それまでは黙って新しい加工製品
@@ -652,6 +656,11 @@ func fileAsNewProduct(user *auth.User, row filingRequest, in filingInput, machin
 			ids = append(ids, page.FormatID(h))
 		}
 		auth.Audit(user.Username, "file-drawing.same-code-accepted", pageID+" beside "+strings.Join(ids, ","))
+	}
+	// 確かめを済ませてから、行き先のフォルダを用意します（無ければ作る）。
+	machineID, err := ensureProductPath(user, customer, machine)
+	if err != nil {
+		return filingResult{PageID: pageID, Outcome: "skipped", Message: err.Error()}
 	}
 	if err := movePage(user, pageID, machineID, name); err != nil {
 		return filingResult{PageID: pageID, Outcome: "skipped", Message: "移動できません: " + err.Error()}
