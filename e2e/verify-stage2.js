@@ -66,7 +66,7 @@ async function deleteCreatedPages(page) {
     for (const id of createdPages) {
         const opts = { headers: { "Origin": BASE } };
         await page.request.post(BASE + "/api/lock/force?id=" + id, opts).catch(() => {});
-        await page.request.post(BASE + "/api/delete-page?id=" + id, opts).catch(() => {});
+        await page.request.post(BASE + "/api/delete-page?force=1&id=" + id, opts).catch(() => {});
     }
 }
 

@@ -76,7 +76,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     for (const id of created) {
       const del = await page.evaluate(async (i) => {
         await fetch('/api/lock/force?id=' + i, { method: 'POST' });
-        return (await fetch('/api/delete-page?id=' + encodeURIComponent(i), { method: 'POST' })).status;
+        return (await fetch('/api/delete-page?force=1&id=' + encodeURIComponent(i), { method: 'POST' })).status;
       }, id);
       console.log('    後始末: 削除 ' + del + '（' + id + '）');
     }

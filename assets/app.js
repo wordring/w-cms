@@ -1084,10 +1084,26 @@
             if (w.ok) others = ((await w.json()).users || []);
         } catch (e) { /* 分からなければ名前を出さずに確かめる */ }
         const opened = others.length ? '「' + others.join('」「') + '」さんがこのページを開いています。\n' : '';
-        if (!confirm(opened + 'このページをゴミ箱（data/trash）へ移します。よろしいですか。')) return;
+        // 消す前の確かめ（2026-10-23・delete_impact.go）——このページを指しているページと、索引に入っている自分の表を見せる。
+        // 何か起きるなら、それでも消せるのは管理者だけ（サーバーも force=1 を管理者にしか許さない）。分からなければ、サーバーの確かめに任せる。
+        let check = null;
+        try {
+            const c = await fetch('/api/delete-check?id=' + currentPageId);
+            if (c.ok) check = await c.json();
+        } catch (e) { /* 分からなければ、消すときにサーバーが確かめる */ }
+        let force = false;
+        if (check && !check.empty) {
+            const warn = '⚠ このページを消すと、次のことが起きます。\n' + (check.lines || []).join('\n') + '\n\n';
+            if (!check.can_force) {
+                alert(warn + 'それでも消すときは、管理者に頼んでください（管理者だけが消せます）。');
+                return;
+            }
+            if (!confirm(opened + warn + '管理者として、それでもこのページをゴミ箱（data/trash）へ移しますか。')) return;
+            force = true;
+        } else if (!confirm(opened + 'このページをゴミ箱（data/trash）へ移します。よろしいですか。')) return;
         try {
             await flushPendingSave();
-            const res = await fetch('/api/delete-page?id=' + currentPageId, { method: 'POST' });
+            const res = await fetch('/api/delete-page?id=' + currentPageId + (force ? '&force=1' : ''), { method: 'POST' });
             if (!res.ok) {
                 notify('削除できませんでした: ' + (await res.text()).trim(), { type: 'warn', duration: 10000 });
                 return;

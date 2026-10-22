@@ -62,7 +62,7 @@ async function cleanup(page) {
     for (const id of made.slice().reverse()) {
         try {
             await page.request.post(BASE + '/api/lock/force?id=' + id, { headers: { 'Origin': BASE } });
-            await page.request.post(BASE + '/api/delete-page?id=' + id, { headers: { 'Origin': BASE } });
+            await page.request.post(BASE + '/api/delete-page?force=1&id=' + id, { headers: { 'Origin': BASE } });
         } catch (e) { /* 片付けの失敗で試験を落とさない */ }
     }
 }

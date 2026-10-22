@@ -131,7 +131,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     // （本文なし）なので、JSONとして読まないこと。
     const del = await page.evaluate(async (i) => {
       await fetch('/api/lock/force?id=' + i, { method: 'POST' });
-      const res = await fetch('/api/delete-page?id=' + encodeURIComponent(i), { method: 'POST' });
+      const res = await fetch('/api/delete-page?force=1&id=' + encodeURIComponent(i), { method: 'POST' });
       return res.status;
     }, id);
     console.log('    後始末: 削除 ' + del + '（' + id + '）');

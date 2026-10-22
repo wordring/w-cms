@@ -132,7 +132,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
 
   // 後始末——作った検証用ページを消す。
   const del = await page.evaluate(async (id) => {
-    const res = await fetch('/api/delete-page?id=' + encodeURIComponent(id), { method: 'POST' });
+    const res = await fetch('/api/delete-page?force=1&id=' + encodeURIComponent(id), { method: 'POST' });
     return res.status + ' ' + (await res.text()).slice(0, 80);
   }, newId);
   console.log('    後始末: 削除 ' + del + '（' + newId + '）');

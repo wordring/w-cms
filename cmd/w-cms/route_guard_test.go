@@ -41,6 +41,7 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/analyze-attachment", "POST", 401, "添付PDFの判定→案件ページ生成（外部LLMへ送る）"},
 		{"/api/new-page", "POST", 401, "ページ作成"},
 		{"/api/delete-page", "POST", 401, "ページ削除"},
+		{"/api/delete-check", "GET", 401, "消す前の確かめ"},
 		{"/api/set-parent", "POST", 401, "親の付け替え"},
 		{"/api/reorder", "POST", 401, "子ページの並べ替え"},
 		{"/api/filing-proposal", "GET", 401, "加工製品ページの整理の提案"},

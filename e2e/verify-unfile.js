@@ -78,7 +78,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
       const m = /"token"\s*:\s*"([^"]+)"/.exec(body);
       if (m) { token = m[1]; break; }
     }
-    const r = await fetch('/api/delete-page?id=' + id + '&token=' + token, { method: 'POST' });
+    const r = await fetch('/api/delete-page?force=1&id=' + id + '&token=' + token, { method: 'POST' });
     return r.status;
   }, made.page_id);
   console.log('  片付け ' + made.page_id + ': ' + (cleaned === 200 ? '削除' : 'status ' + cleaned));

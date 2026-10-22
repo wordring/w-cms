@@ -106,7 +106,7 @@ const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
   // **自分で作ったものは自分で片付けます**（添付ごとゴミ箱へ）。
   if (madePage) {
     const gone = await page.evaluate(async (id) => {
-      const res = await fetch('/api/delete-page?id=' + id, { method: 'POST' });
+      const res = await fetch('/api/delete-page?force=1&id=' + id, { method: 'POST' });
       return res.status;
     }, madePage);
     console.log('  片付け ' + madePage + ': ' + (gone === 200 ? '削除' : 'HTTP ' + gone));

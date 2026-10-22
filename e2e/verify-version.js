@@ -142,7 +142,7 @@ async function versionsOf(page, id) {
     finally {
         if (madeId) {
             await page.request.post(BASE + '/api/lock/force?id=' + madeId, { headers: H }).catch(() => {});
-            await page.request.post(BASE + '/api/delete-page?id=' + madeId, { headers: H }).catch(() => {});
+            await page.request.post(BASE + '/api/delete-page?force=1&id=' + madeId, { headers: H }).catch(() => {});
         }
         await browser.close();
     }

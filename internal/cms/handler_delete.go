@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/editlock"
@@ -68,6 +69,26 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 消すと何かが起きるなら、ふつうは断る。それでも消す（force=1）のは管理者だけ（2026-10-23・delete_impact.go）。
+	imp, err := DeleteImpactOf(database.DB, auth.CurrentUser(r), id)
+	if err != nil {
+		http.Error(w, "消す前の確かめができません: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	forced := ""
+	if !imp.Empty() {
+		msg := strings.Join(imp.Lines(), "\n")
+		if r.URL.Query().Get("force") != "1" {
+			http.Error(w, msg+"\n（それでも消すときは、管理者が確かめてから消します）", http.StatusConflict)
+			return
+		}
+		if u := auth.CurrentUser(r); u == nil || !u.IsAdmin {
+			http.Error(w, msg+"\nそれでも消せるのは管理者だけです。", http.StatusForbidden)
+			return
+		}
+		forced = "（警告を承知で: 指しているページ " + strconv.Itoa(len(imp.Refs)+imp.Hidden) + " 枚・表 " + strconv.Itoa(len(imp.Tables)) + " つ）"
+	}
+
 	trashPath, err := moveToTrash(id)
 	if err != nil {
 		http.Error(w, "ゴミ箱への移動に失敗しました: "+err.Error(), http.StatusInternalServerError)
@@ -81,7 +102,7 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	editlock.Locks.ForceRelease(pageID) // 消えたページのロックは残さない
-	auth.AuditRequest(r, "delete-page", id+" -> "+trashPath)
+	auth.AuditRequest(r, "delete-page", id+" -> "+trashPath+forced)
 
 	WriteJSON(w, map[string]any{
 		"success": true,

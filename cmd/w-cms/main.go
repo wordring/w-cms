@@ -229,6 +229,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
 	// 削除は物理削除でなく data/trash への移動（取り消せることが要件。handler_delete.go）
 	protected.HandleFunc("/api/delete-page", cms.DeletePageAPIHandler)
+	protected.HandleFunc("/api/delete-check", cms.DeleteCheckAPIHandler) // 消す前の確かめ（2026-10-23）
 
 	// 同時編集の悲観ロック（ページ単位・競合トリガー方式・SSEプッシュ）
 	// 2026-10-12 から画面は取らない——/api/lock → /api/save で書く道具のために残してある（editlock/lock.go の冒頭）。

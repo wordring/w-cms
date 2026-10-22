@@ -141,7 +141,7 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
     for (const i of ids) {
       const del = await page.evaluate(async (id) => {
         await fetch('/api/lock/force?id=' + id, { method: 'POST' });
-        const res = await fetch('/api/delete-page?id=' + encodeURIComponent(id), { method: 'POST' });
+        const res = await fetch('/api/delete-page?force=1&id=' + encodeURIComponent(id), { method: 'POST' });
         return res.status;
       }, i);
       console.log('    後始末: 削除 ' + del + '（' + i + '）');

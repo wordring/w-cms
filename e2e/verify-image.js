@@ -166,7 +166,7 @@ const HEIC_HEAD = Buffer.concat([
         // 作ったページは消す（2026-10-01 まではトップ直下に残していた）。
         if (pageId) {
             await page.request.post(BASE + '/api/lock/force?id=' + pageId, { headers: { 'Origin': BASE } }).catch(() => {});
-            await page.request.post(BASE + '/api/delete-page?id=' + pageId, { headers: { 'Origin': BASE } }).catch(() => {});
+            await page.request.post(BASE + '/api/delete-page?force=1&id=' + pageId, { headers: { 'Origin': BASE } }).catch(() => {});
         }
         await browser.close();
     }

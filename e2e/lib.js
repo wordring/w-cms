@@ -102,11 +102,12 @@ function minimalPDF(mediaBox = '0 0 1190.55 841.89', line = '40 40 m 1100 800 l 
 
 // deletePage は makePage で作ったページを消します（ロックが残っていても外してから）。
 // 空のIDなら何もしません（作れなかった当て先の後片付けを、呼ぶ側で場合分けしないため）。
+// 2026-10-23 から、消すと何か起きるページは force=1（管理者だけ）で消す——試験の後片付けは a（管理者）で行う。
 async function deletePage(page, id) {
   if (!id) return;
   await page.evaluate(async (pid) => {
     await fetch('/api/lock/force?id=' + pid, { method: 'POST' });
-    await fetch('/api/delete-page?id=' + encodeURIComponent(pid), { method: 'POST' });
+    await fetch('/api/delete-page?force=1&id=' + encodeURIComponent(pid), { method: 'POST' });
   }, id);
 }
 

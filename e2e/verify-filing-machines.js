@@ -196,7 +196,7 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
           const m = /"token"\s*:\s*"([^"]+)"/.exec(body);
           if (m) token = m[1];
         } catch (e) { /* 取れなければトークン無しで試す */ }
-        const r = await fetch('/api/delete-page?id=' + pid + '&token=' + token, { method: 'POST' });
+        const r = await fetch('/api/delete-page?force=1&id=' + pid + '&token=' + token, { method: 'POST' });
         return { status: r.status, text: (await r.text()).slice(0, 60) };
       }, id);
       console.log('  片付け ' + id + ': ' + (res.status === 200 ? '削除' : res.status + ' ' + res.text));

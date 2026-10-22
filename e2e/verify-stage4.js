@@ -293,7 +293,7 @@ async function openSlashMenu(page) {
         for (const id of created.filter(Boolean).reverse()) {
             try {
                 await page.request.post(BASE + '/api/lock/force?id=' + id, { headers: { 'Origin': BASE } });
-                await page.request.post(BASE + '/api/delete-page?id=' + id, { headers: { 'Origin': BASE } });
+                await page.request.post(BASE + '/api/delete-page?force=1&id=' + id, { headers: { 'Origin': BASE } });
             } catch (e) { console.error('片付けに失敗: ' + id + ' ' + e.message); }
         }
         await browser.close();
