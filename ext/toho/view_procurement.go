@@ -100,7 +100,7 @@ func procItemsTable(p ProcurementProduct) string {
 	for _, it := range p.Items {
 		sb.WriteString(`<tr><td>` + stdhtml.EscapeString(it.Name) + `</td>` +
 			`<td>` + stdhtml.EscapeString(it.Kind) + `</td>` +
-			`<td class="num">` + strconv.Itoa(it.Per) + `</td>` +
+			`<td class="num">` + procPer(it) + `</td>` +
 			`<td class="num">` + strconv.Itoa(it.Required) + `</td>` +
 			`<td class="num">` + strconv.Itoa(it.Ordered) + `</td>` +
 			`<td class="num">` + procRemaining(it) + `</td>` +
@@ -108,6 +108,14 @@ func procItemsTable(p ProcurementProduct) string {
 	}
 	sb.WriteString(`</tbody></table>`)
 	return sb.String()
+}
+
+// procPer は一台あたりを描きます——表の値が小数なら、切り上げたことを ⚠ で示す（2026-10-22・per_unit_warn.go）。
+func procPer(it ProcurementItem) string {
+	if isFractional(it.PerExact) {
+		return `<span class="badge ng">⚠ ` + fmtQty(it.PerExact) + ` → ` + strconv.Itoa(it.Per) + `</span>`
+	}
+	return strconv.Itoa(it.Per)
 }
 
 // procRemaining は残りを描きます（0 なら手配完了の印）。

@@ -47,7 +47,7 @@ type ProcurementOrder struct {
 type ProcurementItem struct {
 	Name      string             `json:"name"` // 必要部材表に出す名前（種類の display）
 	Kind      string             `json:"kind"` // 種類（設定 order_kinds の kind）
-	Per       int                `json:"per"`  // 一台あたり
+	Per       int                `json:"per"`  // 一台あたり（切り上げた整数）
 	Required  int                `json:"required"`
 	Ordered   int                `json:"ordered"`
 	Drafted   int                `json:"drafted,omitempty"` // 発注部材表に入れた分（2026-10-01）
@@ -61,6 +61,8 @@ type ProcurementItem struct {
 	Key string `json:"-"`
 	// Vendor は部材の表の「推奨業者」です（2026-10-21・§6.3——発注部材表の仕入先の初めの値。列の無い表〔材料表〕は空）。
 	Vendor string `json:"-"`
+	// PerExact は表に書いてある1台あたり（小数のまま・2026-10-22）——小数なら画面に ⚠ を出す（per_unit_warn.go）。
+	PerExact float64 `json:"-"`
 	// Values は発注の表の列ごとの値です（2026-09-28・種類の columns から組む）——必要部材表の行が
 	// 発注部材表へ運ぶ値。数量は含まない（残要手配数を運ぶ）。
 	Values map[string]string `json:"values,omitempty"`
@@ -198,7 +200,7 @@ func productNeeds(db cms.ReadOnlyDB, productID, orderQty int) []ProcurementItem 
 			per := k.perUnit(def, m)
 			// 要る数は「1台あたり × 台数」を切り上げる（1台あたり 0.5 枚 × 3台 = 1.5 → 2枚）。表に出す1台あたりも切り上げた整数。
 			need := int(math.Ceil(per*float64(orderQty) - 1e-9))
-			out = append(out, ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: int(math.Ceil(per - 1e-9)), Key: key,
+			out = append(out, ProcurementItem{Name: k.displayOf(vals), Kind: k.Kind, Per: int(math.Ceil(per - 1e-9)), PerExact: per, Key: key,
 				Values: vals, Required: need, Remaining: need, Vendor: labelValue(def, m, vendorLabel)})
 		}
 	}

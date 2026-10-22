@@ -75,12 +75,13 @@ func init() {
 						appendQuotesList(ctx, tbl)
 						appendOrderPrices(ctx, tbl) // 見積計算表の無いページはその後ろに「受注・見積の単価」（2026-10-04・order_prices.go）
 					}
-					if t != partMaterialsType {
-						continue
+					if t == partMaterialsType {
+						if _, err := renderMaterialPrices(ctx, tbl); err != nil {
+							return true, err
+						}
 					}
-					if _, err := renderMaterialPrices(ctx, tbl); err != nil {
-						return true, err
-					}
+					// 1台あたりの個数が小数の行を知らせる（2026-10-22・per_unit_warn.go）。最新単価の列を足したあとに置く（足元の行の幅を揃える）。
+					markFractionalPerUnit(t, tbl)
 				}
 				return true, nil
 			}))
