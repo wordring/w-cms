@@ -1086,99 +1086,8 @@ delegateClick([['.backlog-print', (btn) => {
     printOnly(copy);
 }]]);
 
-// openPickQtyPanel は、案件残表で選んだ行（`.<cls>-pick:checked`）と、今回の数の欄（初めは data-<qty> の数・直せる）を
-// 欄 `.<cls>-panel` に開きます。押すボタンは `.<cls>-make`、数の欄は `.<cls>-qty`、知らせは `.<cls>-msg` です。
-// ⚠ 1回に1社（客先の違う行は画面でも止める）。納品書〔10-17〕と製造〔10-19〕が同じ組み立てを写していたので寄せた（2026-10-19）。
-// 表の class はどちらも `backlog-dlv-table`（見た目は納品書の欄と同じ）。
-function openPickQtyPanel(btn, cfg) {
-    const bar = btn.parentElement;
-    const say = bar.querySelector('.' + cfg.cls + '-say');
-    const panel = bar.querySelector('.' + cfg.cls + '-panel');
-    const picks = Array.from(document.querySelectorAll('#w-editor-content .' + cfg.cls + '-pick:checked'));
-    if (!picks.length) {
-        sayIn(say, cfg.none, 'warn');
-        return;
-    }
-    const clients = Array.from(new Set(picks.map((c) => c.dataset.client || '')));
-    if (clients.length > 1) {
-        sayIn(say, cfg.mixed(clients.join('・')), 'warn');
-        return;
-    }
-    sayIn(say, '');
-    panel.textContent = '';
-    const head = makeEl('p', '', cfg.head(clients[0] || '（発注元なし）'));
-    panel.appendChild(head);
-    const table = makeEl('table', 'materials-table backlog-dlv-table');
-    const tr0 = document.createElement('tr');
-    cfg.cols.forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr0.appendChild(th); });
-    table.appendChild(tr0);
-    picks.forEach((c) => {
-        const tr = document.createElement('tr');
-        [c.dataset.item, c.dataset.name, c.dataset[cfg.qty]].forEach((v) => { const td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
-        const td = document.createElement('td');
-        const inp = document.createElement('input');
-        inp.type = 'number';
-        inp.min = '1';
-        inp.value = c.dataset[cfg.qty] || '';
-        inp.className = cfg.cls + '-qty';
-        inp.dataset.order = c.dataset.order;
-        inp.dataset.row = c.dataset.row;
-        inp.dataset.item = c.dataset.item || '';
-        td.appendChild(inp);
-        tr.appendChild(td);
-        table.appendChild(tr);
-    });
-    panel.appendChild(table);
-    const make = makeButton('');
-    make.className = cfg.cls + '-make';
-    make.textContent = cfg.make;
-    panel.appendChild(make);
-    const msg = document.createElement('span');
-    msg.className = cfg.cls + '-msg';
-    panel.appendChild(msg);
-    panel.hidden = false;
-}
-
-// ── 受注残表から納品書を作る（2026-10-17・ext/toho/delivery.go） ──────────────────
-//
-// 利用者:「分納はよくあります。」「納品書をまとめることはあります。まとめない場合もあります。」。受注残表の「納品」の欄で選んだ
-// 行（受注ページ・行・品番・残——サーバーが描いた data-*）について、今回納める数（残りが初めから入っていて直せる）の欄を開き、
-// 「納品書を作る」で /api/delivery/new へ送って、できた納品書ページを開く。⚠ 1枚に1社（客先の違う行は画面でも止める）。
-delegateClick([
-    ['.backlog-dlv-go', (btn) => openPickQtyPanel(btn, {
-        cls: 'backlog-dlv',
-        none: '案件残表の右端の「納品」の欄で、納める行を選んでください。',
-        mixed: (names) => '納品書は1枚に1社です（' + names + ' が混ざっています）。',
-        head: (client) => '「' + client + '」への納品書——今回納める数を確かめてください:',
-        cols: ['品番', '品名', '残', '今回納める数'],
-        qty: 'remaining',
-        make: '🚚 納品書を作る',
-    })],
-    // （受注残表の「🏭 選んだ行で製造開始」〔2026-10-19〕は 2026-10-21 に外した——表の先頭のチェックと「🏭 製造」で製造待ちへ・下の配線。）
-    ['.backlog-dlv-make', async (btn) => {
-        const panel = btn.closest('.backlog-dlv-panel');
-        const msg = panel.querySelector('.backlog-dlv-msg');
-        const items = Array.from(panel.querySelectorAll('.backlog-dlv-qty')).map((i) => ({
-            order: i.dataset.order, row: Number(i.dataset.row), item: i.dataset.item, qty: i.value.trim(),
-        }));
-        btn.disabled = true;
-        msg.textContent = ' 作っています…';
-        let r;
-        try {
-            r = await postJSON('/api/delivery/new', { items });
-        } catch (e) {
-            msg.textContent = ' ⚠ 通信に失敗しました: ' + e;
-            btn.disabled = false;
-            return;
-        }
-        if (!r.ok) {
-            msg.textContent = ' ⚠ ' + ((r.data && r.data.message) || ('作れませんでした（' + r.status + '）'));
-            btn.disabled = false;
-            return;
-        }
-        location.href = '/' + r.data.page_id;
-    }],
-]);
+// （案件残表の「🚚 選んだ行で納品書を作る」〔2026-10-17〕と、その数の欄を開く openPickQtyPanel は 2026-10-22 に外した——
+// 納品書は製造ページの納品作業から作る。利用者:「案件フォルダに「選んだ行で納品書を作る」というボタンがありますが無用です。」）
 
 // ── 案件残表から製造待ちへ・製造待ちから開始・取り消し（2026-10-21・ext/toho/mfg_wait.go）─────────────────
 //
@@ -1206,7 +1115,7 @@ async function sendCheckedRows(btn, cfg) {
 }
 
 delegateClick([
-    // 案件残表の表の下の「🏭 製造」——先頭にチェックした行を、「製造」の製造待ちへ入れる。
+    // 案件残表の表の下の「🏭 製造開始」（2026-10-22 までの名前は「🏭 製造」）——先頭にチェックした行を、「製造」の製造待ちへ入れる。
     ['.backlog-wait-go', (btn) => sendCheckedRows(btn, {
         pick: '.backlog-wait-pick', say: '.backlog-wait-say', url: '/api/mfg/wait',
         none: 'この表の先頭のチェックで、製造へ入れる行を選んでください。',

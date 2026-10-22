@@ -55,12 +55,13 @@ func TestBacklogRFQPick(t *testing.T) {
 	seedOrderUnder(t, 602, 601, [2]string{"000777", "K120-01-211"}, [2]string{"", "K120-99-999"})
 
 	out := backlogViewHTML(adminUser(), 601)
-	for _, gone := range []string{"部材見積依頼</th>", "backlog-rfq-pick", "backlog-rfq-go"} {
+	// 「🚚 選んだ行で納品書を作る」と「納品」の列も 2026-10-22 に外した（納品書は製造ページから）。
+	for _, gone := range []string{"部材見積依頼</th>", "backlog-rfq-pick", "backlog-rfq-go", "backlog-dlv-go", "backlog-dlv-pick", "納品</th>"} {
 		if strings.Contains(out, gone) {
 			t.Errorf("⚠ 案件残表に %q が残っています:\n%s", gone, out)
 		}
 	}
-	for _, want := range []string{"backlog-wait-go", "backlog-dlv-go"} {
+	for _, want := range []string{"backlog-wait-go", ">🏭 製造開始</button>"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("⚠ 案件残表の帯から %q まで消えています:\n%s", want, out)
 		}

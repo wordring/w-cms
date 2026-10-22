@@ -44,7 +44,7 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/estimate/import", Handler: EstimateImportAPIHandler},
 		// 見積計算書を作る（2026-10-16・estimate_calc_doc.go——加工製品ページの「🧮 見積計算書」の「➕ 新しい見積計算書を作る」）。
 		{Pattern: "/api/estimate-calc/new", Handler: EstimateCalcNewAPIHandler},
-		// 納品書を作る（2026-10-17・delivery.go——受注残表の「🚚 選んだ行で納品書を作る」）。
+		// 納品書を作る（2026-10-17・delivery.go——2026-10-22 からは製造ページの納品作業からだけ。案件残表の「🚚 選んだ行で納品書を作る」は外した）。
 		{Pattern: "/api/delivery/new", Handler: DeliveryNewAPIHandler},
 		{Pattern: "/api/delivery-pdf", Handler: DeliveryPDFAPIHandler}, // 納品書の紙（2026-10-17・delivery_pdf.go）
 		{Pattern: "/api/mfg/estimate", Handler: MfgEstimateAPIHandler}, // 製造の見積書（2026-10-19・quote_done.go）

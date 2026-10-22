@@ -375,15 +375,13 @@ func backlogViewHTML(user *auth.User, _ int) string {
 	mfgBox, _ := cms.TopLevelPageByTitle(MfgBoxTitle) // 「進み」の製造待ちのリンクの先（2026-10-21）
 	b.WriteString(backlogTotalHTML(backlogTotalOf(groups)))
 	b.WriteString(migNote)
-	// 選んだ行で作業を始める帯。紙には出さない（no-print——案件残表は1枚ずつ印刷する作業の紙）。配線は assets/app.js。
+	// 表の上にあった帯は、2026-10-22 になくした。
 	// ⚠ 「☑ 選んだ行を部材見積依頼へ」（2026-10-04〜）は 2026-10-19 に外した——部材見積依頼は製造ページから（mfg_more.go）。
 	// 2026-10-19 利用者:「案件残表の「部材見積依頼」の欄を外して、部材見積依頼の置き場を消してください」
-	b.WriteString(`<div class="backlog-rfq-bar no-print">` +
-		// 選んだ行で納品書を作る（2026-10-17・delivery.go）——押すと、選んだ行と今回納める数（残りが初めから入っていて直せる）の欄が開く。
-		`<button type="button" class="backlog-dlv-go">🚚 選んだ行で納品書を作る</button> <span class="backlog-dlv-say"></span>` +
-		// （「🏭 選んだ行で製造開始」〔2026-10-19〕は 2026-10-21 に外した——表の先頭のチェックと、表の下の「🏭 製造」で製造待ちへ入れ、
-		// 「製造」の置き場で開始する・mfg_wait.go。利用者:「チェックしてボタンを押すと「製造」フォルダへ入ります」）
-		`<div class="backlog-dlv-panel" hidden></div></div>`)
+	// ⚠ 「🚚 選んだ行で納品書を作る」（2026-10-17〜）と右端の「納品」の列は 2026-10-22 に外した——納品書は製造ページの納品作業から（mfg_work.go）。
+	// 2026-10-22 利用者:「案件フォルダに「選んだ行で納品書を作る」というボタンがありますが無用です。」
+	// （「🏭 選んだ行で製造開始」〔2026-10-19〕は 2026-10-21 に外した——表の先頭のチェックと、表の下の「🏭 製造開始」で製造待ちへ入れ、
+	// 「製造」の置き場で開始する・mfg_wait.go。利用者:「チェックしてボタンを押すと「製造」フォルダへ入ります」）
 	for i, g := range groups {
 		b.WriteString(`<section class="backlog-sheet w-no-table-menu" data-backlog="` + strconv.Itoa(i) + `">`) // 自分の印刷のボタンを持つ（コアの表の「⋯」を付けない）
 		title := g.Client
@@ -415,7 +413,7 @@ func backlogViewHTML(user *auth.User, _ int) string {
 			`<tr><th class="no-print">製造</th><th>装置名</th><th>弊社品番</th><th>品番</th><th>品名</th><th>残</th>` +
 			`<th class="no-print">数量</th><th class="no-print">出荷済数量</th>` +
 			`<th>進み</th>` +
-			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">案件</th><th class="no-print">納品</th></tr>`)
+			`<th>備考</th><th class="no-print">まだ無いもの</th><th class="no-print">案件</th></tr>`)
 		for _, r := range g.Rows {
 			// ⚠ **折り返しの印はサーバーが付けます。** 本文の表は `app.js` の
 			// `validateTypedTables` が付けますが、**あれはサーバー所有の表を意図的に
@@ -461,12 +459,12 @@ func backlogViewHTML(user *auth.User, _ int) string {
 				`<td class="cell-atomic no-print backlog-gap">` + stdhtml.EscapeString(strings.Join(backlogGaps(r), "・")) + `</td>` +
 				noPrintCell(`<a href="/`+stdhtml.EscapeString(r.OrderPageID)+`">`+
 					stdhtml.EscapeString(orderLabel(r))+`</a>`) +
-				noPrintCell(deliveryPickHTML(r, g.Client)) +
 				`</tr>`)
 		}
 		b.WriteString(`</tbody></table>`)
-		// 表の下の「🏭 製造」（2026-10-21・mfg_wait.go）——この表で先頭にチェックした行を、「製造」の製造待ちへ入れる。紙には出さない。
-		b.WriteString(`<div class="backlog-wait-bar no-print"><button type="button" class="chip-btn backlog-wait-go">🏭 製造</button> ` +
+		// 表の下の「🏭 製造開始」（2026-10-21・mfg_wait.go）——この表で先頭にチェックした行を、「製造」の製造待ちへ入れる。紙には出さない。
+		// （2026-10-22 に「🏭 製造」から改めた——利用者:「「製造」ボタンを「製造開始」に変えましょう」）
+		b.WriteString(`<div class="backlog-wait-bar no-print"><button type="button" class="chip-btn backlog-wait-go">🏭 製造開始</button> ` +
 			`<span class="backlog-wait-say"></span></div></section>`)
 	}
 	return b.String()

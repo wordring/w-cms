@@ -31,15 +31,17 @@ func TestOwnCaseInBacklogAndProcurement(t *testing.T) {
 		t.Fatal(err)
 	}
 	view := backlogViewHTML(u, 701)
-	for _, want := range []string{`>自社 000703</a>`, `<p class="backlog-total">受注残高: 2,000円</p>`, `title="自社案件です（納品書は作りません）"`} {
+	for _, want := range []string{`>自社 000703</a>`, `<p class="backlog-total">受注残高: 2,000円</p>`} {
 		if !strings.Contains(view, want) {
 			t.Errorf("⚠ 案件残表に %q がありません:\n%s", want, view)
 		}
 	}
-	if code, out := postRFQ(t, u, MfgNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000703", "row": 0, "item": "J-1", "qty": "3"}}}); code != 200 {
+	code, out := postRFQ(t, u, MfgNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000703", "row": 0, "item": "J-1", "qty": "3"}}})
+	if code != 200 {
 		t.Errorf("⚠ 自社案件から製造ページを始められません: %d %v", code, out)
 	}
-	if code, _ := postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000703", "row": 0, "item": "J-1", "qty": "1"}}}); code == 200 {
+	mfg, _ := out["page_id"].(string)
+	if code, _ := postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "items": []map[string]any{{"order": "000703", "row": 0, "item": "J-1", "qty": "1"}}}); code == 200 {
 		t.Errorf("⚠ 自社案件から納品書を作れてしまいます")
 	}
 }

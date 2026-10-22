@@ -21,7 +21,6 @@ package toho
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	stdhtml "html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -78,12 +77,12 @@ func init() {
 	cms.RegisterPageTemplate(cms.PageTemplate{
 		Title:     DeliveryTemplate,
 		Extension: "toho",
-		Why: "案件残表の「🚚 選んだ行で納品書を作る」が、納品書ページ（記録／年／月／製造記録）を作るときに写します。" +
+		Why: "製造ページの納品作業の「納品書を作る」が、納品書ページ（記録／年／月／製造記録）を作るときに写します。" +
 			"キャプション「納品明細表」の表が要ります（タグ 納品書番号・客先・納品日・発行日・納品担当・納品場所・ページ種類〔弊社納品書〕は、あれば埋めます）。",
 	})
 }
 
-// deliveryPick は案件残表で選んだ1行です（どの案件のどの行か・今回納める数）。
+// deliveryPick は選んだ案件明細の1行です（どの案件のどの行か・今回納める数）。製造待ち・製造ページを作る口と、納品書を作る口が使う。
 type deliveryPick struct {
 	Order string `json:"order"` // 案件ページ
 	Row   int    `json:"row"`   // 案件明細表のデータ行の番号（索引の RowNo）
@@ -196,8 +195,11 @@ func buildDeliveryHTML(tmpl, pageID, client, signer string, lines []deliveryLine
 	return d.HTML(), nil
 }
 
-// DeliveryNewAPIHandler は POST /api/delivery/new です。入力: {items:[{order, row, item, qty}]}。納品書ページを作り、そのIDを返します。
-// （2026-10-19 から、製造ページからは {items:[{order, row:-1, item, name, qty}], mfg}——行番号の代わりに品番か品名で行を探し、明細の「製造」の列にその製造ページを書く（2026-10-21 から置き場は記録・明細の「製造」の列でつながる）。）
+// DeliveryNewAPIHandler は POST /api/delivery/new です。入力: {items:[{order, row, item, name, qty}], mfg}。納品書ページを作り、そのIDを返します。
+// 製造ページからは row:-1——行番号の代わりに品番か品名で行を探し、明細の「製造」の列にその製造ページを書く（2026-10-19。2026-10-21 から置き場は記録・明細の「製造」の列でつながる）。
+// ⚠ **2026-10-22 から mfg は必須**です。それまでは案件残表の「🚚 選んだ行で納品書を作る」が mfg 無しで呼んでいたが、そのボタンを外した
+// （利用者:「案件フォルダに「選んだ行で納品書を作る」というボタンがありますが無用です。」「まつわる余分なコードも削除しましょう」）。
+// 納品書はいつも製造ページから作る——明細の「製造」の列で製造とつながり、全部納めた製造を閉じる（mfg_close.go）のも、それで数える。
 func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -213,14 +215,14 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	mfgID := ""
-	if strings.TrimSpace(req.Mfg) != "" {
-		id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.Mfg), "/"))
-		if !ok || pageKindOf(pageNum(id)) != PageKindMfg || !canWritePage(user, pageNum(id)) {
-			cms.JSONFail(w, http.StatusBadRequest, "製造ページが見つからないか、書けません: "+req.Mfg)
-			return
-		}
-		mfgID = id
+	if strings.TrimSpace(req.Mfg) == "" {
+		cms.JSONFail(w, http.StatusBadRequest, "納品書は製造ページの納品作業から作ります（製造ページがありません）")
+		return
+	}
+	mfgID, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.Mfg), "/"))
+	if !ok || pageKindOf(pageNum(mfgID)) != PageKindMfg || !canWritePage(user, pageNum(mfgID)) {
+		cms.JSONFail(w, http.StatusBadRequest, "製造ページが見つからないか、書けません: "+req.Mfg)
+		return
 	}
 	if len(req.Items) == 0 {
 		cms.JSONFail(w, http.StatusBadRequest, "納める行を1つ以上選んでください")
@@ -271,26 +273,10 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "delivery.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")
 	out := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
 	// 製造ページの納品表から作ったなら、その納品表を消す（2026-10-21 夕）。⚠ 消せなくても納品書は取り消さない——理由を添えるだけ。
-	if req.FromDraft && mfgID != "" {
+	if req.FromDraft {
 		if err := cms.RewriteBody(mfgID, user.Username, func(cur string) string { return dropTablesOfType(cur, MfgDeliveryDraftType) }); err != nil {
 			out["draft_note"] = "⚠ 製造ページの納品表を消せませんでした: " + err.Error()
 		}
 	}
 	cms.WriteJSON(w, out)
-}
-
-// deliveryPickHTML は受注残表の1行の「納品」の選ぶ欄です（残りが無い行は選べない）。
-func deliveryPickHTML(r backlogRow, client string) string {
-	if r.Quote {
-		return `<input type="checkbox" disabled title="見積の依頼です（注文が来たら納品できます）">`
-	}
-	if r.Own {
-		return `<input type="checkbox" disabled title="自社案件です（納品書は作りません）">`
-	}
-	if r.Remaining <= 0 {
-		return `<input type="checkbox" disabled title="案件残がありません">`
-	}
-	return `<input type="checkbox" class="backlog-dlv-pick" title="この行を納品書に載せる" data-order="` + stdhtml.EscapeString(r.OrderPageID) +
-		`" data-row="` + strconv.Itoa(r.RowNo) + `" data-item="` + stdhtml.EscapeString(r.ItemNo) + `" data-name="` +
-		stdhtml.EscapeString(r.ItemName) + `" data-remaining="` + strconv.Itoa(r.Remaining) + `" data-client="` + stdhtml.EscapeString(client) + `">`
 }

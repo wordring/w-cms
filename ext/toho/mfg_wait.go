@@ -8,7 +8,7 @@ package toho
 //	ここで開始した案件は製造のひとまとまりとなります。ただし、開始した案件はいつでも単体で取り消せるようにします。」
 //	2026-10-21 利用者:「製造フォルダの表に入った案件もキャンセルして案件フォルダに戻すことが出来ます。」
 //
-//   - 案件残表の先頭のチェックと「🏭 製造」（/api/mfg/wait）: 選んだ案件明細の行の、まだ製造に入っていない数を、その行の「製造待ち」の欄へ書く。
+//   - 案件残表の先頭のチェックと「🏭 製造開始」（/api/mfg/wait・2026-10-22 までの名前は「🏭 製造」）: 選んだ案件明細の行の、まだ製造に入っていない数を、その行の「製造待ち」の欄へ書く。
 //   - 「製造」の置き場の「製造待ち」のビュー: 製造待ちの行を客先ごとの表に並べる。先頭のチェックと「▶ 開始」（/api/mfg/start）で、
 //     製造ページ（製造のひとまとまり・1社）を作り、製造待ちの欄を空に戻す。「↩ 案件へ戻す」（/api/mfg/unwait）は欄を空にするだけ。
 //   - 製造ページの製造明細表の「↩ 製造待ちへ」（/api/mfg/back）: その行を製造明細から外し、数を案件明細の「製造待ち」へ戻す。
@@ -114,7 +114,7 @@ func decodeWaitPicks(w http.ResponseWriter, r *http.Request, none string) ([]wai
 	return req.Items, true
 }
 
-// MfgWaitAPIHandler は POST /api/mfg/wait です（案件残表の「🏭 製造」）。入力: {items:[{order, row, item}]}。
+// MfgWaitAPIHandler は POST /api/mfg/wait です（案件残表の「🏭 製造開始」）。入力: {items:[{order, row, item}]}。
 // 選んだ行の、まだ製造に入っていない数（数量 − 手の付いた数〔製造ページに入れた数か納めた数の大きいほう〕 − いまの製造待ち）を、
 // その行の「製造待ち」へ足します。
 func MfgWaitAPIHandler(w http.ResponseWriter, r *http.Request) {
@@ -443,7 +443,7 @@ func mfgWaitViewHTML(user *auth.User, _ int) string {
 		}
 	}
 	if len(clients) == 0 {
-		return `<p class="child-list-empty">製造待ちはありません（案件残表で行の先頭にチェックを付けて「🏭 製造」を押すと、ここに並びます）。</p>`
+		return `<p class="child-list-empty">製造待ちはありません（案件残表で行の先頭にチェックを付けて「🏭 製造開始」を押すと、ここに並びます）。</p>`
 	}
 	var b strings.Builder
 	for _, c := range clients {

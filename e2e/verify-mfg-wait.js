@@ -1,11 +1,12 @@
-// 案件残表 →「🏭 製造」→ 製造待ち →「▶ 開始」→ 製造ページ と、取り消し（2026-10-21・ext/toho/mfg_wait.go）を画面から確かめる。
+// 案件残表 →「🏭 製造開始」（2026-10-22 までの名前は「🏭 製造」）→ 製造待ち →「▶ 開始」→ 製造ページ と、取り消し（2026-10-21・ext/toho/mfg_wait.go）を画面から確かめる。
 //
 // 利用者:「表の先頭にチェックボックスを付け、表の下に「製造」ボタンを付けます。チェックしてボタンを押すと「製造」フォルダへ入ります」
 // 「製造フォルダに入った案件は表で分かるように表示します。この表の先頭にはチェックボックスがあり、表の下には「開始」ボタンがあります。」
 // 「開始した案件はいつでも単体で取り消せるようにします。」「製造フォルダの表に入った案件もキャンセルして案件フォルダに戻すことが出来ます。」
 //
-//   ① 案件残表の先頭の列はチェック（紙に出さない）・「進み」の列・表の下に「🏭 製造」。古い「🏭 選んだ行で製造開始」は無い
-//   ② 何も選ばずに「🏭 製造」を押すと、選ぶように言う
+//   ① 案件残表の先頭の列はチェック（紙に出さない）・「進み」の列・表の下に「🏭 製造開始」。古い「🏭 選んだ行で製造開始」と、
+//     「🚚 選んだ行で納品書を作る」・右端の「納品」の列（2026-10-22 に外した）は無い
+//   ② 何も選ばずに「🏭 製造開始」を押すと、選ぶように言う
 //   ③ 選んで押すと、その行が打ち消し線になり、「進み」に「製造待ち 20」
 //   ④ 製造待ちのビューに並ぶ——選んで「▶ 選んだ行で開始」で製造ページが開く（製造明細表に 20）
 //   ⑤ 製造明細表で行を選んで、表の下の「↩ 取り消し」（確かめで「はい」）で、行が外れて製造待ちへ戻る
@@ -51,9 +52,10 @@ const check = (label, ok, note = '') => {
       return { first: ths[0] ? ths[0].textContent.trim() + '|' + ths[0].className : '', heads: ths.map((x) => x.textContent.trim()) };
     });
     check('① 先頭の列は製造へのチェック（紙に出さない）', /^製造|.*no-print/.test(head.first), head.first);
-    check('① 「進み」の列があり、状態・材料発注などの列は無い', head.heads.includes('進み') && !head.heads.includes('状態') && !head.heads.includes('材料発注'), head.heads.join('|'));
-    check('① 表の下に「🏭 製造」・古い「製造開始」は無い',
-      (await sheetOf(row).locator('.backlog-wait-go').count()) === 1 && (await page.locator('.backlog-mfg-go').count()) === 0);
+    check('① 「進み」の列があり、状態・材料発注・納品などの列は無い', head.heads.includes('進み') && !head.heads.includes('状態') && !head.heads.includes('材料発注') && !head.heads.includes('納品'), head.heads.join('|'));
+    check('① 表の下に「🏭 製造開始」・古い「選んだ行で製造開始」と「選んだ行で納品書を作る」は無い',
+      (await sheetOf(row).locator('.backlog-wait-go').count()) === 1 && ((await sheetOf(row).locator('.backlog-wait-go').textContent()) || '').trim() === '🏭 製造開始' &&
+      (await page.locator('.backlog-mfg-go').count()) === 0 && (await page.locator('.backlog-dlv-go, .backlog-dlv-pick').count()) === 0);
     // ②
     await sheetOf(row).locator('.backlog-wait-go').click();
     await page.waitForTimeout(300);

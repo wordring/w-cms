@@ -40,15 +40,17 @@ func TestQuoteCaseInBacklog(t *testing.T) {
 	seedQuoteCase(t, 703, 701, "あけぼの精工", "2026-11-01", pricedItem("Q-1", "見積の品", "50", "9999", "", "未着手"))
 
 	view := backlogViewHTML(u, 701)
-	for _, want := range []string{`>見積 000703</a>`, `<p class="backlog-total">受注残高: 2,000円</p>`, `title="見積の依頼です（注文が来たら納品できます）"`} {
+	for _, want := range []string{`>見積 000703</a>`, `<p class="backlog-total">受注残高: 2,000円</p>`} {
 		if !strings.Contains(view, want) {
 			t.Errorf("⚠ 案件残表に %q がありません:\n%s", want, view)
 		}
 	}
-	if code, out := postRFQ(t, u, MfgNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000703", "row": 0, "item": "Q-1", "qty": "50"}}}); code != 200 {
+	code, out := postRFQ(t, u, MfgNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000703", "row": 0, "item": "Q-1", "qty": "50"}}})
+	if code != 200 {
 		t.Errorf("⚠ 見積の依頼から製造ページを始められません: %d %v", code, out)
 	}
-	if code, _ := postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000703", "row": 0, "item": "Q-1", "qty": "1"}}}); code == 200 {
+	mfg, _ := out["page_id"].(string)
+	if code, _ := postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "items": []map[string]any{{"order": "000703", "row": 0, "item": "Q-1", "qty": "1"}}}); code == 200 {
 		t.Errorf("⚠ 見積の依頼から納品書を作れてしまいます")
 	}
 }
