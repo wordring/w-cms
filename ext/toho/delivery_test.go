@@ -105,3 +105,24 @@ func TestDeliveryPDFRoundTrips(t *testing.T) {
 		t.Errorf("⚠ 決まっていない単価の行がある紙が違います（合計を刷らない・注文番号は列）:\n%s", got2)
 	}
 }
+
+// 貴社注文番号は、全部の行が同じ番号のときだけ紙の上に1つ刷る。番号の無い行が混ざれば列にする（2026-10-22 の見直し）。
+func TestDeliveryOrderNos(t *testing.T) {
+	row := func(no string) map[string]string { return map[string]string{OrderNoTag: no} }
+	cases := []struct {
+		name     string
+		rows     []map[string]string
+		single   string
+		asColumn bool
+	}{
+		{"全部同じ", []map[string]string{row("A-1"), row("A-1")}, "A-1", false},
+		{"1行だけに番号", []map[string]string{row("A-1"), row("")}, "", true},
+		{"いくつもある", []map[string]string{row("A-1"), row("B-2")}, "", true},
+		{"どこにも無い", []map[string]string{row(""), row("")}, "", false},
+	}
+	for _, c := range cases {
+		if s, col := deliveryOrderNos(c.rows); s != c.single || col != c.asColumn {
+			t.Errorf("%s: (%q, %v) のはずが (%q, %v)", c.name, c.single, c.asColumn, s, col)
+		}
+	}
+}

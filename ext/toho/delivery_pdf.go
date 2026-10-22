@@ -130,17 +130,8 @@ func buildDeliveryPDF(body string, viewer *auth.User) ([]byte, error) {
 	y += 6
 	y = pdfText(p, pdfLeft, y, pdfFontSz, "下記のとおり納品いたします。")
 	// 貴社注文番号——明細の発注書番号が1つなら上に、いくつもあるなら列に（2026-10-16 付の実物から）。
-	nos := map[string]bool{}
-	for _, r := range rows {
-		if n := r[OrderNoTag]; n != "" {
-			nos[n] = true
-		}
-	}
-	single := ""
-	if len(nos) == 1 {
-		for n := range nos {
-			single = n
-		}
+	single, asColumn := deliveryOrderNos(rows)
+	if single != "" {
 		y = pdfText(p, pdfLeft, y, pdfFontSz, "貴社注文番号： "+single)
 	}
 	if pl := head[DeliveryPlaceTag]; pl != "" {
@@ -149,7 +140,7 @@ func buildDeliveryPDF(body string, viewer *auth.User) ([]byte, error) {
 	y += 10
 	sub, okTotal, anyPrice := deliveryTotals(rows)
 	cols := []orderPDFColumn{{Label: "No."}}
-	if len(nos) > 1 {
+	if asColumn {
 		cols = append(cols, orderPDFColumn{Label: "注文番号"})
 	}
 	cols = append(cols, orderPDFColumn{Label: "品番"}, orderPDFColumn{Label: "品名"},
@@ -260,4 +251,27 @@ func renderDeliveryItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	appendFootHTML(el, span, "delivery-actions", pdfButtonHTML("delivery", page.FormatID(ctx.PageID)))
 	return false, nil
+}
+
+// deliveryOrderNos は、貴社注文番号を紙の上に1つ刷るか（single）、明細の列にするか（asColumn）を決めます。
+//
+// ⚠ 上に1つ刷るのは、全部の行が同じ番号のときだけ——1行だけに番号があると、番号の無い行もその注文のように刷っていた
+// （2026-10-22 の見直し）。番号の無い行が混ざるときは列にする（その行は空欄）。どの行にも無ければ、どちらにも出さない。
+func deliveryOrderNos(rows []map[string]string) (single string, asColumn bool) {
+	nos := map[string]bool{}
+	blank := false
+	for _, r := range rows {
+		if n := r[OrderNoTag]; n != "" {
+			nos[n] = true
+		} else {
+			blank = true
+		}
+	}
+	if len(nos) == 1 && !blank {
+		for n := range nos {
+			single = n
+		}
+		return single, false
+	}
+	return "", len(nos) > 0
 }
