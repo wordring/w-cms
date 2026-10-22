@@ -426,3 +426,40 @@ func TestConcurrentWritesLoseNothing(t *testing.T) {
 		}
 	}
 }
+
+// TestSyncCheckpointSealsAfterWrite は、ページを去るときの最後の保存（checkpoint の印）が、書いたあとで版を閉じることを
+// 固定します（2026-10-22 の見直し）。それまでは区切りを別の要求で送っていて、ページを去るときは最後の保存より先に届き、
+// 最後の書きかけが自分の版に閉じなかった（次の保存に畳まれた）。
+func TestSyncCheckpointSealsAfterWrite(t *testing.T) {
+	setupSaveTest(t)
+	const id = "000905"
+	setupSyncPage(t, id, syncTestBody)
+	alice := openScreen(t, "alice", id)
+	h := ""
+	for _, b := range alice.base {
+		if b.ID == "aaaa" {
+			h = b.H
+		}
+	}
+	code, r := postSync(t, "alice", SyncRequest{PageID: id, Base: alice.base, Order: alice.order, Checkpoint: true,
+		Changes: []SyncChange{{ID: "aaaa", BaseH: h, BaseHTML: alice.html["aaaa"], HTML: `<p data-id="aaaa">最後に書いた形</p>`}}})
+	if code != 200 || !r.Written {
+		t.Fatalf("書けない: %d %+v", code, r)
+	}
+	list := versionsOf(t, id)
+	if len(list) == 0 || !list[0].Sealed {
+		t.Fatalf("⚠ 最後の保存の版が閉じていません: %+v", list)
+	}
+	body, _ := ReadVersion(id, list[0].ID)
+	if !strings.Contains(string(body), "最後に書いた形") {
+		t.Errorf("閉じた版が最後の形ではありません: %s", body)
+	}
+	before := len(list)
+	alice2 := openScreen(t, "alice", id)
+	if code, _ := alice2.edit(t, "bbbb", `<p data-id="bbbb">次の日</p>`); code != 200 {
+		t.Fatalf("次の保存: %d", code)
+	}
+	if got := len(versionsOf(t, id)); got != before+1 {
+		t.Errorf("⚠ 閉じた版へ畳みました（版の数 %d→%d）", before, got)
+	}
+}

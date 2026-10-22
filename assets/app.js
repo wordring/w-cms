@@ -1150,7 +1150,7 @@
         if (beacon && navigator.sendBeacon) { navigator.sendBeacon(url); return Promise.resolve(); }
         return fetch(url, { method: 'POST' }).catch(() => {});
     }
-    window.addEventListener('pagehide', () => checkpointVersion(true));
+    // ページを去るときの区切りは setupSaveOnLeave の pagehide が打つ（書きかけがあれば、最後の保存に区切りを載せる——runSync）。
     // 決めていない2つの版・失敗したままの保存があれば、去る前に確かめる（そのまま閉じると消える・2026-10-22 の見直し）。
     // ふだんの書きかけは、去るときに送る（setupSaveOnLeave）ので確かめない。
     window.addEventListener('beforeunload', (e) => {
@@ -1219,6 +1219,7 @@
         if (!pull && !changes.length && sameOrder) {
             if (editSeq === seqAtSend) unsaved = false;
             setSyncStatus();
+            if (leavingPage) checkpointVersion(true); // 送るものが無かった——前に書いていれば、ここで区切る
             return;
         }
         if (changes.length || !sameOrder) setSaveStatus("保存中...", "#f59e0b");
@@ -1228,7 +1229,11 @@
                 page_id: currentPageId,
                 base: syncOrder.map(id => ({ id, h: (syncBase.get(id) || {}).h || '' })),
                 order, changes, tab: TAB_ID,
+                // ページを去るときの最後の保存は、書いたあとで版を閉じる（サーバーが同じ錠の中で、書く → 版 → 区切り の順に打つ）。
+                // それまでは区切りを別に送っていて、最後の保存より先に届き、最後の書きかけが自分の版に閉じなかった（2026-10-22 の見直し）。
+                checkpoint: leavingPage || undefined,
             });
+            if (leavingPage) syncWrote = false; // 区切りはこの保存が打つ（checkpointVersion を二度送らない）
             // タブを隠したとき・ページを去るときの保存は、ページが閉じても届くように keepalive（中身が 64KB を超えると使えない）。
             // ⚠ ページを去るとき（pagehide）は、visibilityState がまだ visible のことがある——印（leavingPage）でも見る。
             // ⚠ 上限はバイトで数える（和文は1字3バイト——字の数で見ていて、大きな表で keepalive が断られ、保存できなかった・
@@ -2379,7 +2384,9 @@
         });
         window.addEventListener('pagehide', () => {
             leavingPage = true;
-            if (document.body.hasAttribute('edit-mode')) flushPendingSave();
+            // 書きかけがあれば送る——その保存が版の区切りも打つ（runSync の checkpoint）。無ければ、ここで区切る。
+            if (document.body.hasAttribute('edit-mode') && unsaved) flushPendingSave();
+            else checkpointVersion(true);
         });
         // 戻る・進むでページがそのまま戻ってきたら（bfcache）印を外す。
         window.addEventListener('pageshow', () => { leavingPage = false; });

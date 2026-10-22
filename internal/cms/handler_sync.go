@@ -58,6 +58,10 @@ type SyncRequest struct {
 	Order   []string     `json:"order"`
 	Changes []SyncChange `json:"changes"`
 	Tab     string       `json:"tab"` // 書いたタブ（知らせを自分のタブで受けないため）
+	// Checkpoint は、書いたあとに版の区切りを打つ印です（ページを去るときの最後の保存・2026-10-22 の見直し）。それまでは画面が
+	// 保存とは別に /api/version-checkpoint を送っていて、ページを去るときは区切りが最後の保存より先に届き、最後の書きかけが
+	// 自分の版に閉じなかった。同じ錠の中で、書く → 版 → 区切り、の順にします。
+	Checkpoint bool `json:"checkpoint,omitempty"`
 }
 
 // SyncBlockOut は仕上がりの1ブロックです。HTML は画面が描き直す（足す）ときだけ。
@@ -388,14 +392,26 @@ func syncLocked(w http.ResponseWriter, id string, user *auth.User, username stri
 		res.updatedAt = ua
 		if err := RecordVersion(id, username, res.finalBody, false); err != nil {
 			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
+		} else if req.Checkpoint {
+			// 同じ中身で force を通すと、いまの版を閉じる（新しい版は作らない——RecordVersion）。
+			if err := RecordVersion(id, username, res.finalBody, true); err != nil {
+				log.Printf("版の区切りに失敗しました page=%s: %v", id, err)
+			}
 		}
 		if !syncBody(w, id, res.finalBody) {
 			return res, false
 		}
 		noteBlockWriters(id, username, string(original), res.finalBody)
 		res.written = true
-	} else if meta, ok := page.ReadSidecar(id); ok {
-		res.updatedAt = meta.UpdatedAt
+	} else {
+		if meta, ok := page.ReadSidecar(id); ok {
+			res.updatedAt = meta.UpdatedAt
+		}
+		if req.Checkpoint {
+			if err := RecordVersion(id, username, string(original), true); err != nil {
+				log.Printf("版の区切りに失敗しました page=%s: %v", id, err)
+			}
+		}
 	}
 	return res, true
 }
