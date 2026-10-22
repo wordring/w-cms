@@ -47,7 +47,7 @@ var rfqReadReplyAI = cms.GeminiGenerateBlobs
 const rfqReplyMaxBytes = 18 << 20
 
 // rfqReplyWhatLabels は「何の値段か」の文に並べる列です（部材見積依頼明細表の列の名前）。
-var rfqReplyWhatLabels = []string{"種類", "品番", "品名", "加工内容", "材質", "形状", "寸法", "表面", "仕様"}
+var rfqReplyWhatLabels = []string{"種類", "品番", "品名", "加工部品番号", "加工内容", "材質", "形状", "寸法", "表面", "仕様"}
 
 // rfqTableView は部材見積依頼書ページの本文の、部材見積依頼明細表を読んだものです（書き換えは nodes を描き直す）。
 type rfqTableView struct {

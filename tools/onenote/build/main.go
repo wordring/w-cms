@@ -765,7 +765,8 @@ var tableMap = map[string]struct {
 	Number  bool // 番号（1から）を振る
 }{
 	"材料":   {Section: "材料", Caption: "材料表"},
-	"外注加工": {Section: "外注加工", Caption: "外注加工表", Rename: map[string]string{"加工": "加工内容"}, Number: true},
+	// 外注加工の「名称」は、2026-10-22 から「加工部品番号」（外注先へ出す部品の番号や名前——加工製品の品名と取り違えないため・ext/toho/vocab.go）。
+	"外注加工": {Section: "外注加工", Caption: "外注加工表", Rename: map[string]string{"加工": "加工内容", "名称": "加工部品番号"}, Number: true},
 	"購入品":  {Section: "購入部品", Caption: "購入部品表"},
 	"支給品":  {Section: "支給部品", Caption: "支給部品表"},
 }

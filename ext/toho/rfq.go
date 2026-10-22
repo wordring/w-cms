@@ -164,7 +164,7 @@ func init() {
 // rfqLineFromValues は、加工製品の構成部品の1行の値（列の名前ごと——`productNeeds` の Values）を1行にします。
 func rfqLineFromValues(v map[string]string) ourOrderLine {
 	return ourOrderLine{
-		Kind: v["種類"], No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], Work: v["加工内容"],
+		Kind: v["種類"], No: v["番号"], ItemID: v["品番"], ItemName: v["品名"], WorkPartNo: v["加工部品番号"], Work: v["加工内容"],
 		Material: v["材質"], Shape: v["形状"], Size: v["寸法"], Color: v["表面"], Spec: v["仕様"], Supplied: v["支給"],
 		Unit: v["単位"],
 	}

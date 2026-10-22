@@ -227,7 +227,7 @@ func lineOfRow(head, tr *html.Node) ourOrderLine {
 		Material: at("材質"), Shape: at("形状"), Size: at("寸法"), Color: at("表面"),
 		Quantity: at("数量"), Unit: at("単位"), Cost: at("単価"), Note: at("備考"),
 		// 種類・番号・加工内容・仕様・支給も読む（2026-10-03・部材見積依頼の表は部材発注明細表と同じ列——行を移しても落とさない）。
-		Kind: at("種類"), No: at("番号"), Work: at("加工内容"), Spec: at("仕様"), Supplied: at("支給"),
+		Kind: at("種類"), No: at("番号"), WorkPartNo: at("加工部品番号"), Work: at("加工内容"), Spec: at("仕様"), Supplied: at("支給"),
 		// ロットは見積依頼必要部材表・見積依頼部材表だけの列（2026-10-14・rfq.go）——列の無い表では空。
 		Lot: at("ロット"),
 	}
@@ -238,7 +238,7 @@ func lineIsEmpty(ln ourOrderLine) bool {
 	// 弊社品番・案件・製造・内訳・業者・ロットだけを書いた行も、空ではない（書きかけの行を「空の行」として消していた・
 	// 2026-10-22 の見直し）。
 	return strings.TrimSpace(ln.ItemID+ln.ItemName+ln.Material+ln.Shape+ln.Size+
-		ln.Color+ln.Quantity+ln.Unit+ln.Cost+ln.Note+ln.Kind+ln.No+ln.Work+ln.Spec+ln.Supplied+
+		ln.Color+ln.Quantity+ln.Unit+ln.Cost+ln.Note+ln.Kind+ln.No+ln.WorkPartNo+ln.Work+ln.Spec+ln.Supplied+
 		ln.ProductID+ln.ForOrder+ln.Mfg+ln.Breakdown+ln.Vendor+ln.Lot) == ""
 }
 

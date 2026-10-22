@@ -57,18 +57,20 @@ type ourOrderLine struct {
 	ItemName string `json:"item_name"`
 	// Kind・No・Work・Spec・Supplied は `種類`・`番号`・`加工内容`・`仕様`・`支給`（2026-09-28・
 	// 部材の種類ごとの運び方——order_kinds.go）。`種類` は手配済みを数える鍵の種類。
-	Kind     string `json:"kind,omitempty"`
-	No       string `json:"no,omitempty"`
-	Work     string `json:"work,omitempty"`
-	Spec     string `json:"spec,omitempty"`
-	Supplied string `json:"supplied,omitempty"`
-	Quantity string `json:"quantity"`
+	Kind string `json:"kind,omitempty"`
+	No   string `json:"no,omitempty"`
+	// WorkPartNo は `加工部品番号`（外注加工で外注先へ出す部品・2026-10-22）。品番・品名（加工製品）とは別。
+	WorkPartNo string `json:"work_part_no,omitempty"`
+	Work       string `json:"work,omitempty"`
+	Spec       string `json:"spec,omitempty"`
+	Supplied   string `json:"supplied,omitempty"`
+	Quantity   string `json:"quantity"`
 	// Lot は「どのロットのための数か」（2026-10-14・見積依頼必要部材表と見積依頼部材表だけの列 `ロット`——rfq.go）。
 	// 部材見積依頼の重複を「同じもの・同じロット」で見るために運びます。発注の表には列が無いので書かれません。
-	Lot      string `json:"lot,omitempty"`
-	Unit     string `json:"unit"`
-	Cost     string `json:"cost"`
-	Note     string `json:"note"`
+	Lot  string `json:"lot,omitempty"`
+	Unit string `json:"unit"`
+	Cost string `json:"cost"`
+	Note string `json:"note"`
 	// TempPage・TempRow は「**臨時部材表の何行目から来たか**」（2026-09-25）。
 	// 発注部材表へ入れたら、その行を臨時部材表から消します（移す・引き算しない）。
 	TempPage string `json:"temp_page,omitempty"`
@@ -303,25 +305,26 @@ func ourOrderRowValues(ln ourOrderLine) map[string]string {
 	return map[string]string{
 		// for-order は案件（どの案件のための部材か）——2026-10-19 から写す。それまでは発注部材表から部材発注書へ移すときに落ち、
 		// 手配済みの数え方（procure_ledger.go）は案件の無い発注を「在庫」として納期の早い案件から当てていた。紙には刷らない。
-		"our-item-id": ln.ProductID,
-		"for-order":   ln.ForOrder,
-		"mfg":         ln.Mfg,
-		"breakdown":   ln.Breakdown,
-		"kind":        ln.Kind,
-		"no":          ln.No,
-		"work":        ln.Work,
-		"spec":        ln.Spec,
-		"supplied":    ln.Supplied,
-		"item-id":     ln.ItemID,
-		"item-name":   itemNameOf(ln),
-		"material":    ln.Material,
-		"shape":       ln.Shape,
-		"size":        ln.Size,
-		"color":       ln.Color,
-		"quantity":    ln.Quantity,
-		"unit":        ln.Unit,
-		"cost":        costCell(ln.Cost),
-		"note":        ln.Note,
+		"our-item-id":  ln.ProductID,
+		"for-order":    ln.ForOrder,
+		"mfg":          ln.Mfg,
+		"breakdown":    ln.Breakdown,
+		"kind":         ln.Kind,
+		"no":           ln.No,
+		"work-part-no": ln.WorkPartNo,
+		"work":         ln.Work,
+		"spec":         ln.Spec,
+		"supplied":     ln.Supplied,
+		"item-id":      ln.ItemID,
+		"item-name":    itemNameOf(ln),
+		"material":     ln.Material,
+		"shape":        ln.Shape,
+		"size":         ln.Size,
+		"color":        ln.Color,
+		"quantity":     ln.Quantity,
+		"unit":         ln.Unit,
+		"cost":         costCell(ln.Cost),
+		"note":         ln.Note,
 		// ⚠ **状態は「未発注」から始めます**（2026-09-22）。紙はできましたが、
 		//    **まだ外へ出ていません**——メール・FAX・手渡しのどれかで出したときに
 		//    `発注済` へ進みます（[order_status.go](order_status.go)）。

@@ -260,7 +260,7 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 		`<dl data-type="tags"><dt>図面番号</dt><dd>A100-B01-001</dd>`+
 		`<dt>図面名称</dt><dd>ブラケット</dd></dl>`+
 		`<section><h2>外注加工</h2><table><caption>外注加工表</caption><tbody>`+
-		`<tr><th>番号</th><th>名称</th><th>加工内容</th><th>材質</th><th>表面</th><th>個数</th><th>支給</th><th>推奨業者</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
+		`<tr><th>番号</th><th>加工部品番号</th><th>加工内容</th><th>材質</th><th>表面</th><th>個数</th><th>支給</th><th>推奨業者</th><th>資料</th><th>備考</th><th>区分</th></tr>`+
 		`<tr><td>1</td><td></td><td>レーザー切断</td><td>SS400</td><td></td><td>1</td><td>材料支給</td><td>ひかりレーザー</td><td></td><td></td><td></td></tr>`+
 		`<tr><td>2</td><td>カバー</td><td>塗装</td><td></td><td>緑</td><td>2</td><td></td><td></td><td></td><td></td><td></td></tr>`+
 		`</tbody></table></section>`+
@@ -291,21 +291,23 @@ func TestUnorderedIncludesOutsourcing(t *testing.T) {
 	if laser.Remaining != 3 || laser.ProductPageID != 31 {
 		t.Errorf("外注加工の行が違います（残＝1個×受注3・弊社品番）: %#v", laser)
 	}
-	// ⚠ **品番と品名はタグから来ること**——名称が空なら図面名称（外注先の紙に図番と名前が要る）。
+	// ⚠ **品番と品名はタグから来ること**——加工製品の図番と名前（外注先の紙に要る）。外注先へ出す部品は「加工部品番号」の列へ
+	// （2026-10-22——それまでは外注加工表の「名称」を品名に入れていて、加工製品の品名と取り違えた）。
 	if laser.Values["番号"] != "1" || laser.Values["品番"] != "A100-B01-001" ||
 		laser.Values["品名"] != "ブラケット" || laser.Values["材質"] != "SS400" ||
 		laser.Values["支給"] != "材料支給" {
 		t.Errorf("⚠ 外注加工の運ぶ値が違います: %#v", laser.Values)
 	}
-	if laser.Name != "1 ブラケット レーザー切断" {
-		t.Errorf("必要部材表の名前は 番号・品名・加工内容・表面 のはずです: %q", laser.Name)
+	if laser.Name != "1 レーザー切断" {
+		t.Errorf("必要部材表の名前は 番号・加工部品番号・加工内容・表面 のはずです: %q", laser.Name)
 	}
 	paint, ok := byWork["塗装"]
 	if !ok {
 		t.Fatalf("2つ目の外注加工が出ていません: %#v", list)
 	}
-	if paint.Values["品名"] != "カバー" || paint.Values["表面"] != "緑" || paint.Remaining != 6 {
-		t.Errorf("⚠ 名称と表面が運ばれていません（名称があれば図面名称より先）: %#v", paint)
+	if paint.Values["品名"] != "ブラケット" || paint.Values["加工部品番号"] != "カバー" || paint.Values["表面"] != "緑" || paint.Remaining != 6 ||
+		paint.Name != "2 カバー 塗装 緑" {
+		t.Errorf("⚠ 加工部品番号と表面が運ばれていません（品名は加工製品の図面名称のまま）: %#v", paint)
 	}
 	// ⚠ 推奨業者は運ばない（発注の表の列ではない——設定の columns に無い）。
 	if _, carried := laser.Values["推奨業者"]; carried {

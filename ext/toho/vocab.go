@@ -152,7 +152,11 @@ var businessVocab = []cms.VocabDef{
 		//     （機械キーも `spec`）。設定の `order_kinds` の外注加工が、部材発注の表の `仕様` へ運ぶ。
 		Columns: []cms.VocabColumn{
 			{Field: "no", Label: "番号", Type: cms.ColText},
-			{Field: "item-name", Label: "名称", Type: cms.ColText},
+			// ⚠ 2026-10-22 に「名称」を「加工部品番号」に改めた（機械キーも item-name → work-part-no）。利用者:「外注加工表の列名の「名称」を
+			// 「加工部品番号」に変えてはどうでしょう？名称を部材見積依頼明細表の品番に入れると加工製品の品番と誤認するので、列名は分けたほうが
+			// 良さそうです」「全体に品名に加工部品の名称が入っていて、加工製品の品名と誤認の恐れがあります」——外注先へ出す部品（加工製品の
+			// 部品）の番号や名前。部材発注・部材見積依頼の表では、品番・品名（加工製品）とは別の列「加工部品番号」へ運ぶ。
+			{Field: "work-part-no", Label: "加工部品番号", Type: cms.ColCode},
 			{Field: "work", Label: "加工内容", Type: cms.ColText},
 			{Field: "material", Label: "材質", Type: cms.ColText},
 			{Field: "color", Label: "表面", Type: cms.ColText},
@@ -672,6 +676,8 @@ func orderItemColumns() []cms.VocabColumn {
 		{Field: "no", Label: "番号", Type: cms.ColText},
 		{Field: "item-id", Label: "品番", Type: cms.ColCode},
 		{Field: "item-name", Label: "品名", Type: cms.ColText},
+		// 加工部品番号は、外注加工で外注先へ出す部品の番号や名前（外注加工表の同じ名前の列から・2026-10-22）。品番・品名は加工製品のもの。
+		{Field: "work-part-no", Label: "加工部品番号", Type: cms.ColCode},
 		{Field: "work", Label: "加工内容", Type: cms.ColText},
 		// 材料のときだけ使う3つ（`材料` 表と同じ名前・同じ意味）。
 		{Field: "material", Label: "材質", Type: cms.ColText},

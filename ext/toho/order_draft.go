@@ -132,6 +132,8 @@ func orderLineValue(ln ourOrderLine, field string) string {
 		return strings.TrimSpace(ln.Kind)
 	case "no":
 		return strings.TrimSpace(ln.No)
+	case "work-part-no":
+		return strings.TrimSpace(ln.WorkPartNo)
 	case "work":
 		return strings.TrimSpace(ln.Work)
 	case "spec":
