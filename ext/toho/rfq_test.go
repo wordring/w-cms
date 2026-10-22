@@ -406,6 +406,18 @@ func TestRFQDocFooterAndSend(t *testing.T) {
 			t.Errorf("部材見積依頼書ページに %q がありません:\n%s", want, shown)
 		}
 	}
+	// 備考・PDF・返事のボタンは、表の中（足元）ではなく表の下の帯（2026-10-22 利用者:「部材見積依頼明細表について、現在のマナーで
+	// 表の中に機能のボタン等を入れず分離してください。備考欄も表の一部ではなく、見積依頼の一部として表と備考があります」）。
+	capAt := strings.Index(shown, "<caption>部材見積依頼明細表</caption>")
+	tableEnd := capAt + strings.Index(shown[capAt:], "</table>")
+	for _, w := range []string{`data-note-url="/api/rfq/note"`, `rfq-pdf-go`, `rfq-answered-go`, `rfq-read-go`} {
+		if at := strings.Index(shown, w); at < tableEnd {
+			t.Errorf("⚠ %q が部材見積依頼明細表の中にあります", w)
+		}
+	}
+	if !strings.Contains(shown, `rfq-bar`) {
+		t.Errorf("表の下の帯がありません")
+	}
 	// 送る欄は PDF の下——ファイル表示は明細の直後、「部材見積依頼を送る」は末尾（テンプレートの最後）。
 	if strings.Index(shown, "部材見積依頼を送る") < strings.Index(shown, "<caption>部材見積依頼明細表</caption>") {
 		t.Errorf("「部材見積依頼を送る」が明細より上にあります")

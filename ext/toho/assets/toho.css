@@ -242,6 +242,9 @@
    作ったときの理由は「編集中はサーバーが断る」だった。2026-10-12 からサーバーは書ける形のタブがあっても断らない
    （gateWritablePage が断るのは、道具が /api/lock で握っているときだけ）——隠す理由はもう無いが、隠したまま。 */
 #w-editor-content .rfq-reply-actions td { padding: 4px 8px; font-size: 0.9em; }
+/* 部材見積依頼明細表の下の帯（2026-10-22——それまでは表の足元）。備考・PDF・返事を縦に並べる（備考は帯の幅いっぱい）。 */
+#w-editor-content .mfg-bar.rfq-bar { flex-direction: column; align-items: stretch; gap: 6px; }
+#w-editor-content .rfq-bar > .rfq-bar-pdf, #w-editor-content .rfq-bar > .rfq-reply-actions { font-size: 0.9em; text-align: left; }
 #w-editor-content .rfq-reply-sources { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
 #w-editor-content .rfq-reply-id { width: 22em; max-width: 100%; }
 #w-editor-content .rfq-reply-table { margin: 6px 0; font-size: 0.95em; }

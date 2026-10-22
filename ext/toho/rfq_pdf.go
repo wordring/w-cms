@@ -245,10 +245,12 @@ func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		return true, nil
 	}
 	cms.DropChrome(el)
-	if !writableMirror(ctx) {
+	// ⚠ 2026-10-22 から、表の中（足元）にボタンと備考の欄を置かない——表の下の帯に分ける（部材発注書と同じ形・appendBarAfter）。
+	// 利用者:「部材見積依頼明細表について、現在のマナーで表の中に機能のボタン等を入れず分離してください。備考欄も表の一部ではなく、
+	// 見積依頼の一部として表と備考があります」。帯は1つ目の表の下だけ（2つ目の表に同じ欄を出さない）。
+	if !writableMirror(ctx) || ctx.Counter(RFQItemsType) != 0 {
 		return false, nil
 	}
-	span := headerCellCount(el)
 	pid := page.FormatID(ctx.PageID)
 	note := ""
 	if body, err := cms.ReadPageBody(pid); err == nil {
@@ -256,16 +258,15 @@ func renderRFQItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			note = strings.Join(lines, "\n")
 		}
 	}
-	appendFootHTML(el, span, "estimate-note-row", noteBoxHTML(pid, note, "/api/rfq/note", "備考（「○○用」など——紙では明細の下に刷ります）"))
-	appendFootHTML(el, span, "estimate-actions",
-		pdfButtonHTML("rfq", pid))
-	// 業者の返事（2026-10-05・rfq_reply.go）——手で単価を書いたら「回答を記録」・返事の FAX／PDF／メールを 🤖 で読む。
-	appendFootHTML(el, span, "rfq-reply-actions",
-		`返事: <button type="button" class="chip-btn rfq-answered-go" data-rfq-page="`+pid+`"`+
+	// 備考（部材見積依頼の一部）・PDF・業者の返事（2026-10-05・rfq_reply.go——手で単価を書いたら「回答を記録」・返事の FAX／PDF／メールを
+	// 🤖 で読む）。画面の配線は押したボタンの親（btn.parentElement）から引くので、まとまりごとに div で包む。
+	appendBarAfter(el, "rfq-bar", noteBoxHTML(pid, note, "/api/rfq/note", "備考（「○○用」など——紙では明細の下に刷ります）")+
+		`<div class="rfq-bar-pdf">`+pdfButtonHTML("rfq", pid)+`</div>`+
+		`<div class="rfq-reply-actions">返事: <button type="button" class="chip-btn rfq-answered-go" data-rfq-page="`+pid+`"`+
 			` title="単価を書いた未回答の行を「回答あり」にし、回答日に今日の日付を書きます">✓ 回答を記録</button> `+
 			`<button type="button" class="chip-btn rfq-read-go" data-rfq-page="`+pid+`"`+
 			` title="返事（このページに置いた FAX・PDF・写真、または返事のメール）を 🤖 で読み、確かめてから単価を書きます">🤖 返事を読む</button> `+
-			`<span class="rfq-reply-say"></span><div class="rfq-reply-panel"></div>`)
+			`<span class="rfq-reply-say"></span><div class="rfq-reply-panel"></div></div>`)
 	return false, nil
 }
 
