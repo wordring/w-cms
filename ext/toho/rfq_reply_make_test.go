@@ -176,4 +176,14 @@ func TestProductByCodeInTextNeedsOne(t *testing.T) {
 	if pid, code := productByCodeInText(rfqReplyRoot, "台 D200-12/SS400"); pid != one || code != "D200-12" {
 		t.Errorf("図面番号の1枚を当てていません: %s %s（%s のはず）", pid, code, one)
 	}
+	// 末尾の版の印（_rev0 など）が付いた番号でも、外して当てる（2026-10-22——業者の返事は表題欄のとおり rev を付けて書く）。
+	// 「D200-12 rev2」のように空白で離れた rev は、別の並びに分かれるので、番号はそのままで当たる。
+	for _, s := range []string{"D200-12_rev0", "D200-12-REV1", "D200-12 rev2"} {
+		if pid, code := productByCodeInText(rfqReplyRoot, s); pid != one || code != "D200-12" {
+			t.Errorf("%q で図面番号の1枚を当てていません: %s %s", s, pid, code)
+		}
+	}
+	if pid, _ := productByCodeInText(rfqReplyRoot, "D200-11_rev0"); pid != "" {
+		t.Errorf("rev を外しても2枚に当たる番号に %s を当てました", pid)
+	}
 }

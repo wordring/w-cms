@@ -107,10 +107,24 @@ var replyTotalRe = regexp.MustCompile(`^(合計|小計|総計|消費税|税|値�
 // codeTokenRe は品名の中の図面番号・品番らしい並びです（英字か数字で始まり、数字を含む4字以上）。
 var codeTokenRe = regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9_\-]{3,}`)
 
+// revTailRe は図面番号の末尾の版の印（`_rev0`・`-rev1` など）です（2026-10-22）。
+var revTailRe = regexp.MustCompile(`(?i)[_\-\s]?rev\d+$`)
+
 // productByCodeInText は文の中の図面番号・品番から、加工製品ページがちょうど1つに決まればそのページ番号と当てた番号を返します。
+//
+// 当たらなければ、末尾の版の印（`_rev0` など）を外した番号でも探します（2026-10-22）——業者の返事は図面の表題欄のとおり
+// `…-0013_rev0` と書くが、加工製品ページの品番・図面番号は `…-0013` のことがある。利用者:「リンクする相手が無くても
+// 記録してDBに入れることは出来ませんか？」（返事から部材見積依頼書ページを作る案で、15 行のうち 11 行に弊社品番が当たらなかった）。
 func productByCodeInText(user *auth.User, texts ...string) (string, string) {
 	for _, t := range texts {
+		var toks []string
 		for _, tok := range codeTokenRe.FindAllString(cms.NormalizeText(t), -1) {
+			toks = append(toks, tok)
+			if bare := revTailRe.ReplaceAllString(tok, ""); bare != tok && len(bare) >= 4 {
+				toks = append(toks, bare)
+			}
+		}
+		for _, tok := range toks {
 			if !strings.ContainsAny(tok, "0123456789") {
 				continue
 			}
