@@ -25,6 +25,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/generative-ai-go/genai"
@@ -87,6 +90,10 @@ type env struct {
 
 	mutoolMissing bool
 	geminiOff     bool
+	// byBase は w-cms の加工製品ページの図面番号を改訂記号の前（基）ごとに並べたもの（olderRevisionOf・1回だけ読む）。
+	byBase map[string][]productDrawing
+	// noHint・noHintFrom は、いま作っているページに人が当てた図面番号とその出どころです（製造の設定.json の「図面番号の当て」）。
+	noHint, noHintFrom string
 }
 
 var errNoMutool = errors.New("mutool がありません")
@@ -325,6 +332,119 @@ func mainDrawing(secs []section, oneNo, oneName string) (drawingRead, bool) {
 		return fromPrint[0], true
 	}
 	return drawingRead{}, false
+}
+
+// ── 改訂記号だけ違う図面（2026-10-22）──────────────────────────────────────
+//
+// 利用者:「旧版として子ページに入れる（道具を直します）出お願いします」——ワンノートの 02 記録（2024 年の試作・製造の記録）には、
+// w-cms に今ある加工製品の**古い版の図面**（今の版が …-02B なのに …-02A の図面など）が多い。図面番号が完全に同じでないと
+// duplicate は当たらないので、そのままだと同じ品物のページが2枚できる。そこで、改訂記号の前（基）が同じで改訂の**新しい**
+// 加工製品ページがちょうど1枚あれば、そのページの子に**旧版**として作る（w-cms の図面改定と同じ形——ext/toho/revision.go の
+// createOldVersionPage: 題「旧版 <図面番号> <図面名称>」・ページ種類「加工製品の旧版」・品番などの題の下のタグは持たない）。
+// ワンノートの方が新しい版のときと、候補が2枚以上のときは作らずに報告する（どちらを今の版にするかは人が決める）。
+
+// revSuffixRe は図面番号の末尾の改訂記号です（`…-02A`・`…-1-C`・`… B`・`…_rev0`）。数字のすぐ後ろの英字1字か rev＋数字だけ。
+var revSuffixRe = regexp.MustCompile(`^(.*?\d)[\s_-]*(?:REV\s*(\d+)|([A-Z]))$`)
+
+// revisionSplit は図面番号を、改訂記号の前（正規化した基）と改訂記号に分けます。改訂記号が無ければ rev は空。
+func revisionSplit(no string) (base, rev string) {
+	s := strings.ToUpper(strings.TrimSpace(cms.NormalizeNameForIngest(no)))
+	if m := revSuffixRe.FindStringSubmatch(s); m != nil {
+		rev = m[2]
+		if rev == "" {
+			rev = m[3]
+		}
+		return normNo(m[1]), rev
+	}
+	return normNo(s), ""
+}
+
+// revNewer は改訂記号 a が b より新しいかです（記号なし ＜ A ＜ B …・rev の数字は数で比べる）。
+func revNewer(a, b string) bool {
+	if a == b {
+		return false
+	}
+	if b == "" {
+		return true
+	}
+	if a == "" {
+		return false
+	}
+	if x, err := strconv.Atoi(a); err == nil {
+		if y, err := strconv.Atoi(b); err == nil {
+			return x > y
+		}
+	}
+	if len(a) != len(b) {
+		return len(a) > len(b)
+	}
+	return a > b
+}
+
+// productDrawing は w-cms の加工製品ページの図面番号1つです。
+type productDrawing struct {
+	page, no, rev string
+}
+
+// productDrawings は w-cms の加工製品ページ（ページ種類が加工製品）の図面番号を、基ごとに返します（1回だけ読む）。
+func (e *env) productDrawings() map[string][]productDrawing {
+	if e.byBase != nil || e.db == nil {
+		return e.byBase
+	}
+	e.byBase = map[string][]productDrawing{}
+	rows, err := e.db.Query(`SELECT t.page_id, t.value FROM page_tags t WHERE t.name = '図面番号' AND t.page_id IN
+		(SELECT k.page_id FROM page_tags k WHERE k.name = 'ページ種類' AND k.value = '加工製品')`)
+	if err != nil {
+		return e.byBase
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var v string
+		if rows.Scan(&id, &v) != nil || strings.TrimSpace(v) == "" {
+			continue
+		}
+		base, rev := revisionSplit(v)
+		e.byBase[base] = append(e.byBase[base], productDrawing{page: fmt.Sprintf("%06d", id), no: strings.TrimSpace(v), rev: rev})
+	}
+	return e.byBase
+}
+
+// olderRevisionOf は、drawingNo が w-cms の加工製品ページの古い版の図面かを見ます。
+// 親にする今の版のページ（ちょうど1枚）を返すか、作らない理由（ワンノートの方が新しい・候補が2枚以上）を返します。
+// どちらも空なら、改訂記号だけ違う図面はありません（いつもどおり作る）。
+func (e *env) olderRevisionOf(drawingNo string) (parent, parentNo, refuse string) {
+	if strings.TrimSpace(drawingNo) == "" {
+		return "", "", ""
+	}
+	base, rev := revisionSplit(drawingNo)
+	pages := map[string]string{} // 今の版のページ → その図面番号
+	var newerHere []string
+	for _, d := range e.productDrawings()[base] {
+		if normNo(d.no) == normNo(drawingNo) {
+			continue // 同じ図面番号は duplicate が見る
+		}
+		if revNewer(d.rev, rev) {
+			pages[d.page] = d.no
+		} else {
+			newerHere = append(newerHere, "/"+d.page+"（"+d.no+"）")
+		}
+	}
+	if len(newerHere) > 0 {
+		return "", "", "改訂記号だけ違う図面の w-cms のページ " + strings.Join(newerHere, "・") + " より、ワンノートの方が新しい版です"
+	}
+	if len(pages) > 1 {
+		var l []string
+		for p, n := range pages {
+			l = append(l, "/"+p+"（"+n+"）")
+		}
+		sort.Strings(l)
+		return "", "", "改訂記号だけ違う図面の新しい版のページが2枚以上あります（" + strings.Join(l, "・") + "）"
+	}
+	for p, n := range pages {
+		return p, n, ""
+	}
+	return "", "", ""
 }
 
 // duplicate は同じ図面番号のページが既にあるかです（この回に作ったもの・w-cms の索引）。own は自分が前に

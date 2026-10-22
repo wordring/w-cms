@@ -113,6 +113,30 @@ type settings struct {
 	// MachineNotes は装置名称のページに書くワンノートのページの題です（既定は「まとめ」——ワンノートはセクションの
 	// ページに書けなかったので、装置の話を「まとめ」というページに書いていた）。
 	MachineNotes []string `json:"装置のページに書く題"`
+	// DrawingNoHints は**人が確かめて書いた図面番号**です（2026-10-22）——■図面番号 も図面の表題欄も無いワンノートのページ
+	// （図面が無く、見積もりだけのページなど）に、図面番号を当てる。ページはセクションと題で選ぶ（ページ番号では選ばない）。
+	// 利用者:「これは、まとめのページに発注書があり、それを解析すると品名と図番の対応が出来ます。それによって対応できませんか？」
+	// ——客先の発注書から作った案件ページの品名と品番から案を作り、人が確かめてここへ書く。例:
+	//	[{"セクション": "<セクション>", "題": "<ワンノートの題>", "図面番号": "<図面番号>", "出どころ": "<どこから当てたか>"}]
+	DrawingNoHints []drawingNoHint `json:"図面番号の当て,omitempty"`
+}
+
+// drawingNoHint は「図面番号の当て」の1件です。
+type drawingNoHint struct {
+	Section string `json:"セクション"`
+	Title   string `json:"題"`
+	No      string `json:"図面番号"`
+	From    string `json:"出どころ,omitempty"`
+}
+
+// drawingNoHintFor は、そのワンノートのページ（セクションと題）に当てる図面番号です（無ければ空）。
+func (s settings) drawingNoHintFor(section, title string) (no, from string) {
+	for _, h := range s.DrawingNoHints {
+		if strings.TrimSpace(h.Section) == strings.TrimSpace(section) && strings.TrimSpace(h.Title) == strings.TrimSpace(title) {
+			return strings.TrimSpace(h.No), strings.TrimSpace(h.From)
+		}
+	}
+	return "", ""
 }
 
 // isMachineNote はワンノートのページを装置名称のページに書くかです（題の頭の●などは除いて比べる）。
@@ -419,6 +443,7 @@ func run(e *env, dry bool) error {
 			note.warn("⚠ ワンノートでも失われているファイルがあります——入りません（" + strings.Join(p.LostInOneNote, "・") + "）")
 		}
 		e.dests = destOf[id]
+		e.noHint, e.noHintFrom = set.drawingNoHintFor(p.Section, p.Title)
 		rule, err := set.ruleFor(pl.Partner)
 		if err != nil {
 			return err
@@ -839,6 +864,10 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 		}
 		secs[si].Items = kept
 	}
+	if drawingNo == "" && e.noHint != "" {
+		drawingNo = cms.NormalizeNameForIngest(e.noHint)
+		note.info("図面番号は製造の設定の「図面番号の当て」から「" + drawingNo + "」（" + e.noHintFrom + "）")
+	}
 	if drawingNo == "" {
 		note.ask("図面番号がありません（■図面番号 も表題欄も）——題は図面名称だけにしました（人が書く）")
 	}
@@ -898,6 +927,27 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 		e.seen[normNo(drawingNo)] = pg.Title
 	}
 
+	// 改訂記号だけ違う図面（2026-10-22・drawing.go の olderRevisionOf）——w-cms に新しい版の加工製品ページがあれば、
+	// その子に旧版として作る。前に旧版として作ったページは、作り直しても旧版のまま（製造の記録の「種類」）。
+	asOld := pr.Kind == kindOldVersion
+	oldParent := ""
+	if pageID == "" && !asOld {
+		parent, parentNo, refuse := e.olderRevisionOf(drawingNo)
+		if refuse != "" {
+			note.warn("⚠ " + refuse + "——このページは作っていません")
+			note.ask("改訂記号だけ違う図面のページがあるので作らなかったワンノートのページがあります（どれを今の版にするかは人が決める）")
+			note.duplicate = true
+			return nil
+		}
+		if parent != "" {
+			asOld, oldParent = true, parent
+			note.info("w-cms の /" + parent + "（" + parentNo + "）の旧版として、その子ページに作ります")
+		}
+	}
+	if asOld {
+		title = strings.TrimSpace("旧版 " + drawingNo + " " + mark + name) // ext/toho/revision.go の createOldVersionPage と同じ題
+	}
+
 	// w-cms のページを決める（作る・やり直す・確定済みなら触らない）。
 	if !dry {
 		if pageID != "" {
@@ -913,9 +963,13 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			}
 		}
 		if pageID == "" {
-			parent, err := c.productFolder(pl.Partner, folder)
-			if err != nil {
-				return err
+			parent := oldParent
+			if parent == "" {
+				p, err := c.productFolder(pl.Partner, folder)
+				if err != nil {
+					return err
+				}
+				parent = p
 			}
 			id, err := c.newPage(parent, "<h1>"+stdhtml.EscapeString(title)+"</h1>")
 			if err != nil {
@@ -924,6 +978,9 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 			pageID = id
 			pr.WCMS = id
 			pr.Files = map[string]upload{}
+			if asOld {
+				pr.Kind = kindOldVersion
+			}
 		}
 	} else if pageID == "" {
 		pageID = "000000" // 下見の仮
@@ -945,15 +1002,22 @@ func buildOne(e *env, c *client, dir, tmpl, tmplTitle string, pl placement, rule
 
 	d := cms.NewPageDraft(tmplTitle, tmpl)
 	d.SetTitle(title)
-	if rule.PartNo == "図面番号" {
+	if asOld {
+		// 旧版は品番・品名・弊社品番を持たない（品番で引いたときに旧版も当たると、案件の行が結べない——ext/toho/revision.go の
+		// oldVersionSnapshot と同じ決まり）。ページ種類は「加工製品の旧版」（ext/toho/page_kind.go の PageKindProductOld）。
+		d.ReplaceTag("ページ種類", "加工製品の旧版")
+	}
+	if rule.PartNo == "図面番号" && !asOld {
 		d.SetTag("品番", drawingNo) // この取引先の品番は図面番号（題の下のタグ——案件明細表〔2026-10-19 までは受注明細表〕の品番と結ぶ）
 	}
-	if rule.ItemName == "図面名称" {
+	if rule.ItemName == "図面名称" && !asOld {
 		d.SetTag("品名", name) // この取引先の品名は図面名称（題の下のタグ）
 	}
 	// 弊社品番＝このページの番号（2026-09-28 利用者:「弊社品番としてタグにページ番号を入れてください。
 	// 検索できるようにです」）。
-	d.SetTag("弊社品番", pageID)
+	if !asOld {
+		d.SetTag("弊社品番", pageID)
+	}
 	// 区分（試作・見積・旧型）はセクションの置き場から（2026-09-29・段のフォルダの代わり）。
 	d.SetTag("区分", pl.Kinds...)
 	d.SetTag(migrateTag, migrateValue)
@@ -1251,6 +1315,9 @@ func sectionHTML(pageID string, s section, up func(string, item) (upload, bool))
 
 // kindMachine は製造の記録の「種類」——ワンノートのページを装置名称のページに書いた印。
 const kindMachine = "装置のページ"
+
+// kindOldVersion は製造の記録の「種類」——w-cms の新しい版の加工製品ページの子に、旧版として作った印（2026-10-22・olderRevisionOf）。
+const kindOldVersion = "旧版"
 
 // unknownMachine は装置の区別が無い品目の置き場の題です（製造台帳／社名／不明・2026-09-29 利用者。2026-10-16 から「加工製品」の箱は無い）。
 const unknownMachine = "不明"
