@@ -148,12 +148,15 @@ var businessVocab = []cms.VocabDef{
 		//     在ったのに、w-cms の表に無かった。名称は外注先へ渡す品物の名前（紙の品名）。
 		//   - **表面**——塗装の色・艶・鍍金の種類（利用者:「塗装色は可能であれば、外注加工の表にマージしたい」）。
 		//     部材発注明細表の `表面` と同じ名前（機械キーも `color`）。
+		//   - **仕様**（2026-10-22・利用者:「外注加工表に「仕様」という列を足してください」）——部材発注明細表の `仕様` と同じ名前
+		//     （機械キーも `spec`）。設定の `order_kinds` の外注加工が、部材発注の表の `仕様` へ運ぶ。
 		Columns: []cms.VocabColumn{
 			{Field: "no", Label: "番号", Type: cms.ColText},
 			{Field: "item-name", Label: "名称", Type: cms.ColText},
 			{Field: "work", Label: "加工内容", Type: cms.ColText},
 			{Field: "material", Label: "材質", Type: cms.ColText},
 			{Field: "color", Label: "表面", Type: cms.ColText},
+			{Field: "spec", Label: "仕様", Type: cms.ColText},
 			{Field: "quantity", Label: "個数", Type: cms.ColNumber},
 			{Field: "supplied", Label: "支給", Type: cms.ColText},
 			{Field: "vendor", Label: "推奨業者", Type: cms.ColText},
