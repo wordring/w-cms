@@ -233,3 +233,29 @@ func TestRFQReplySources(t *testing.T) {
 		t.Errorf("候補が違います:\n got  %v\n want %v", strings.Join(labels, "|"), want)
 	}
 }
+
+// TestApplyRFQReplyFollowsOurItem は、同じ材料・同じ数の行が別の加工製品に2つあるとき、読んだあとにほかの人が前へ行を足しても、
+// 返事の単価が読んだ行（弊社品番の合う行）に書かれることを固定します（2026-10-22 の見直し）。それまでは「何の値段か」だけで
+// 確かめていて、行がずれると別の加工製品の行に書いていた。
+func TestApplyRFQReplyFollowsOurItem(t *testing.T) {
+	rowFor := func(item string) string {
+		return strings.Replace(rfqReplyRowHTML("SS400", "t6*80*120", "6", "", "", rfqLineUnanswered), "<td>000031</td>", "<td>"+item+"</td>", 1)
+	}
+	read := rfqReplyBody(rowFor("000031"), rowFor("000032"))
+	v, _ := readRFQTable(read)
+	rows := v.replyRows()
+	if rows[0].What != rows[1].What || rows[1].OurItem != "000032" {
+		t.Fatalf("前提が違います: %+v", rows)
+	}
+	// ほかの人が、いちばん前に同じ材料の行（加工製品 000033）を足した。
+	moved := rfqReplyBody(rowFor("000033"), rowFor("000031"), rowFor("000032"))
+	out, n, err := applyRFQReply(moved, "2026-10-22", []rfqReplyLine{{Row: 2, What: rows[1].What, OurItem: rows[1].OurItem, Price: "1500"}})
+	if err != nil || n != 1 {
+		t.Fatalf("書けません: %v %d", err, n)
+	}
+	v, _ = readRFQTable(out)
+	got := v.replyRows()
+	if got[2].OurItem != "000032" || got[2].Price != "1500" || got[1].Price != "" {
+		t.Errorf("⚠ 弊社品番 000032 の行に書いていません: %+v", got)
+	}
+}

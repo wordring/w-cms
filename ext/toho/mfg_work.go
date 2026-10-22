@@ -228,7 +228,7 @@ func appendBarAfter(el *html.Node, class, innerHTML string) {
 func pickHTML(class string, attrs map[string]string) string {
 	var b strings.Builder
 	b.WriteString(`<input type="checkbox" class="` + class + `" aria-label="この行を選ぶ"`)
-	for _, k := range []string{"row", "item", "name", "order", "left", "made", "product"} {
+	for _, k := range []string{"row", "sig", "item", "name", "order", "left", "made", "product"} {
 		if v, ok := attrs[k]; ok {
 			b.WriteString(` data-` + k + `="` + stdhtml.EscapeString(v) + `"`)
 		}

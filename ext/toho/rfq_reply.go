@@ -123,12 +123,15 @@ type rfqReplyRow struct {
 	What   string `json:"what"`
 	Price  string `json:"price"`
 	Status string `json:"status"`
+	// OurItem は行の弊社品番です（行の見分けにだけ使う——What には入れない。画面の文と 🤖 へ渡す文にページ番号を混ぜないため）。
+	// 同じ材料・同じ数の行が別の加工製品に2つあると、What だけでは見分けられない（2026-10-22 の見直し）。
+	OurItem string `json:"our_item,omitempty"`
 }
 
 func (v *rfqTableView) replyRows() []rfqReplyRow {
 	out := make([]rfqReplyRow, 0, len(v.rows))
 	for i, tr := range v.rows {
-		out = append(out, rfqReplyRow{Row: i + 1, What: v.what(tr), Price: v.text(tr, "単価"), Status: v.text(tr, "状態")})
+		out = append(out, rfqReplyRow{Row: i + 1, What: v.what(tr), Price: v.text(tr, "単価"), Status: v.text(tr, "状態"), OurItem: v.text(tr, OurItemNoTag)})
 	}
 	return out
 }
@@ -167,6 +170,7 @@ func markRFQAnswered(body, today string) (string, int, error) {
 type rfqReplyLine struct {
 	Row      int    `json:"row"`
 	What     string `json:"what"`
+	OurItem  string `json:"our_item"` // 読んだときの弊社品番（rfqReplyRow.OurItem）
 	Price    string `json:"price"`
 	Declined bool   `json:"declined"`
 	Note     string `json:"note"`
@@ -194,13 +198,37 @@ func applyRFQReply(body, today string, lines []rfqReplyLine) (string, int, error
 			return body, 0, errors.New("部材見積依頼明細表に「" + need + "」の列がありません")
 		}
 	}
-	for _, l := range lines {
-		if l.Row < 1 || l.Row > len(v.rows) {
-			return body, 0, errors.New(strconv.Itoa(l.Row) + "行目はありません（ページが変わったかもしれません——読み直してください）")
+	// 行は、読んだときの「何の値段か」と弊社品番で確かめる。番号の行が違えば、同じ2つを持つ行がちょうど1つならそちらへ
+	// （ほかの人が行を足す・消したとき）。それも無ければ何も書かない（2026-10-22 の見直し——弊社品番を見ていなかったので、
+	// 同じ材料・同じ数の行が別の加工製品に2つあると、行がずれたときに別の加工製品の行へ書いていた）。
+	same := func(tr *html.Node, l rfqReplyLine) bool {
+		return v.what(tr) == l.What && (l.OurItem == "" || v.text(tr, OurItemNoTag) == l.OurItem)
+	}
+	used := map[int]bool{}
+	for i, l := range lines {
+		at := -1
+		if l.Row >= 1 && l.Row <= len(v.rows) && same(v.rows[l.Row-1], l) {
+			at = l.Row
+		} else if l.OurItem != "" { // 弊社品番を送らない古い画面は、引き直さない（何の値段かだけでは別の加工製品の行に当たる）
+			for j, tr := range v.rows {
+				if same(tr, l) {
+					if at > 0 {
+						at = -2 // 2つ以上——決められない
+						break
+					}
+					at = j + 1
+				}
+			}
 		}
-		if got := v.what(v.rows[l.Row-1]); got != l.What {
-			return body, 0, errors.New(strconv.Itoa(l.Row) + "行目が読んだときと違います（いま「" + got + "」——ページが変わったかもしれません。読み直してください）")
+		if at < 1 || used[at] {
+			got := ""
+			if l.Row >= 1 && l.Row <= len(v.rows) {
+				got = "（いま「" + v.what(v.rows[l.Row-1]) + "」）"
+			}
+			return body, 0, errors.New(strconv.Itoa(l.Row) + "行目が読んだときと違います" + got + "——ページが変わったかもしれません。読み直してください")
 		}
+		used[at] = true
+		lines[i].Row = at
 	}
 	n := 0
 	for _, l := range lines {

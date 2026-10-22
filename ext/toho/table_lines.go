@@ -246,4 +246,5 @@ func lineIsEmpty(ln ourOrderLine) bool {
 type tempPart struct {
 	Row  int
 	Line ourOrderLine
+	Sig  string // 行の指紋（rowSig・2026-10-22——行の操作がずれた行に効かないよう、チェックが持つ）
 }

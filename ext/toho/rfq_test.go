@@ -555,3 +555,35 @@ func TestRFQSetCellsChecksFirst(t *testing.T) {
 		t.Errorf("1行目の数量だけ空欄のはず: %+v", got)
 	}
 }
+
+// TestRFQPickFollowsRowSig は、見積依頼必要部材表の行を選んでから押すまでのあいだに、ほかの人が前の行を消しても、選んだ行（描いた
+// ときの指紋の合う行）に効くことを固定します（2026-10-22 の見直し）。それまでは行の番号だけで選んでいて、選んでいない行を消していた。
+// 指紋の合う行が無ければ断り、本文は変えない。
+func TestRFQPickFollowsRowSig(t *testing.T) {
+	u := seedRFQ(t)
+	postRFQ(t, u, RFQCollectAPIHandler, map[string]any{"page_id": "000050", "product": "000051", "lot": "5"})
+	nodes, _ := htmldoc.ParseFragment(boxBody(t))
+	trs := rowsOf(tablesOfType(nodes, RFQNeedsType)[0])
+	if len(trs) < 3 {
+		t.Fatalf("行が足りません: %d", len(trs))
+	}
+	second := lineOfRow(trs[0], trs[2])
+	sig2 := rowSig(trs[2])
+	// ほかの人が1行目を消した（2行目は1行目へ）。
+	if code, _ := postRFQ(t, u, RFQNeedsRemoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{1}}); code != 200 {
+		t.Fatal("1行目を消せません")
+	}
+	if code, out := postRFQ(t, u, RFQNeedsMoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{2}, "row_sigs": []string{sig2}}); code != 200 || out["rows"] != float64(1) {
+		t.Fatalf("選んだ行を移せません: %d %v", code, out)
+	}
+	if got := rfqRows(t, boxBody(t), RFQDraftType, 1); len(got) != 1 || got[0].Material != second.Material {
+		t.Errorf("⚠ 選んだ行（%s）ではない行を移しました: %+v", second.Material, got)
+	}
+	before := boxBody(t)
+	if code, _ := postRFQ(t, u, RFQNeedsRemoveAPIHandler, map[string]any{"page_id": "000050", "rows": []int{1}, "row_sigs": []string{"0000000000000000"}}); code != 409 {
+		t.Errorf("指紋の合う行が無いのに消しました: %d", code)
+	}
+	if boxBody(t) != before {
+		t.Errorf("断ったのに本文が変わりました")
+	}
+}

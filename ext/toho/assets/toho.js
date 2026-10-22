@@ -563,7 +563,7 @@ function renderRFQReplyProposal(out, pageId, d) {
     out.append(apply, document.createTextNode(' '), msg);
     apply.addEventListener('click', async () => {
         const send = lines.filter((l) => l.use.checked).map((l) => ({
-            row: l.row.row, what: l.row.what, price: l.price.value.trim(), declined: l.declined.checked, note: l.memo.value.trim(),
+            row: l.row.row, what: l.row.what, our_item: l.row.our_item || '', price: l.price.value.trim(), declined: l.declined.checked, note: l.memo.value.trim(),
         }));
         if (!send.length) { sayIn(msg, '⚠ 書き込む行に印を付けてください'); return; }
         apply.disabled = true;
@@ -748,14 +748,15 @@ async function openQuotePutPanel(btn) {
         const input = e.target instanceof Element && e.target.closest('.rfq-folder-form [data-rfq="folder"]');
         if (input) listFolder(input.closest('.rfq-folder-form'));
     });
+    // 行の指紋（data-rfq-sig）も送る——サーバーが、描いたときと同じ行かを確かめて引き直す（ほかの人が行を足す・消しても、選んだ行に効く・2026-10-22）。
     const picked = (table) => {
-        const rows = [], tempRows = [];
-        if (!table) return { rows, tempRows };
+        const rows = [], tempRows = [], rowSigs = [], tempSigs = [];
+        if (!table) return { rows, tempRows, rowSigs, tempSigs };
         table.querySelectorAll('input.rfq-check:checked').forEach((c) => {
-            if (c.dataset.rfqRow) rows.push(Number(c.dataset.rfqRow));
-            if (c.dataset.rfqTempRow) tempRows.push(Number(c.dataset.rfqTempRow));
+            if (c.dataset.rfqRow) { rows.push(Number(c.dataset.rfqRow)); rowSigs.push(c.dataset.rfqSig || ''); }
+            if (c.dataset.rfqTempRow) { tempRows.push(Number(c.dataset.rfqTempRow)); tempSigs.push(c.dataset.rfqSig || ''); }
         });
-        return { rows, tempRows };
+        return { rows, tempRows, rowSigs, tempSigs };
     };
     delegateClick([
         ['[data-rfq-collect]', async (btn) => {
@@ -784,11 +785,11 @@ async function openQuotePutPanel(btn) {
             const form = btn.closest('.rfq-needs-form');
             if (!form) return;
             const box = resultOf(form, '[data-rfq-result]');
-            const { rows, tempRows } = picked(rfqTableOf(form));
+            const { rows, tempRows, rowSigs, tempSigs } = picked(rfqTableOf(form));
             btn.disabled = true;
             sayIn(box, '見積依頼部材表へ入れています…');
             const r = await postJSON('/api/rfq/needs/move', {
-                page_id: form.getAttribute('data-rfq-page') || '', rows, temp_rows: tempRows,
+                page_id: form.getAttribute('data-rfq-page') || '', rows, temp_rows: tempRows, row_sigs: rowSigs, temp_sigs: tempSigs,
                 into: valueIn(form, '[data-rfq="into"]'),
             });
             btn.disabled = false;
@@ -803,7 +804,7 @@ async function openQuotePutPanel(btn) {
             const form = btn.closest('.rfq-needs-form');
             if (!form) return;
             const box = resultOf(form, '[data-rfq-result]');
-            const { rows, tempRows } = picked(rfqTableOf(form));
+            const { rows, tempRows, rowSigs, tempSigs } = picked(rfqTableOf(form));
             const n = rows.length + tempRows.length;
             if (!n) {
                 sayIn(box, '⚠ 消す行を選んでください', 'proc-why-ng');
@@ -812,7 +813,7 @@ async function openQuotePutPanel(btn) {
             if (!window.confirm('選んだ ' + n + ' 行を消します（記録は残りません）。よろしいですか？')) return;
             btn.disabled = true;
             const r = await postJSON('/api/rfq/needs/remove', {
-                page_id: form.getAttribute('data-rfq-page') || '', rows, temp_rows: tempRows,
+                page_id: form.getAttribute('data-rfq-page') || '', rows, temp_rows: tempRows, row_sigs: rowSigs, temp_sigs: tempSigs,
             });
             btn.disabled = false;
             if (!r.ok) {
@@ -895,14 +896,15 @@ async function openQuotePutPanel(btn) {
             const say = box ? box.querySelector('.draft-row-say') : null;
             const sec = box ? box.closest('section') : null;
             const table = sec ? sec.querySelector(':scope > table') : null;
-            const rows = table ? Array.from(table.querySelectorAll('.rfq-draft-pick:checked')).map((c) => Number(c.dataset.row)).sort((x, y) => y - x) : [];
+            // 行の番号と指紋（data-sig——サーバーが同じ行かを確かめる・2026-10-22）。下の行から送る。
+            const rows = table ? Array.from(table.querySelectorAll('.rfq-draft-pick:checked')).map((c) => ({ row: Number(c.dataset.row), sig: c.dataset.sig || '' })).sort((x, y) => y.row - x.row) : [];
             if (!rows.length) { sayIn(say, '見積依頼部材表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
             btn.disabled = true;
             // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
             let done = 0;
-            for (const row of rows) {
+            for (const { row, sig } of rows) {
                 const r = await postJSON('/api/rfq/draft/back', {
-                    page_id: btn.getAttribute('data-rfq-page') || '', table: Number(btn.getAttribute('data-rfq-table') || 0), row,
+                    page_id: btn.getAttribute('data-rfq-page') || '', table: Number(btn.getAttribute('data-rfq-table') || 0), row, sig,
                 }).catch((e) => ({ ok: false, data: { message: String(e) } }));
                 if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || '外せませんでした', done); return; }
                 done++;

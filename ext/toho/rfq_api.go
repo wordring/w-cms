@@ -219,13 +219,38 @@ func RFQFolderProductsAPIHandler(w http.ResponseWriter, r *http.Request) {
 // rfqPickRequest は見積依頼必要部材表の選んだ行です（行番号は見出しを除いた何行目か・1始まり）。
 type rfqPickRequest struct {
 	PageID   string `json:"page_id"`
-	Rows     []int  `json:"rows"`
-	TempRows []int  `json:"temp_rows"`
-	Into     string `json:"into"`
+	Rows     []int    `json:"rows"`
+	TempRows []int    `json:"temp_rows"`
+	RowSigs  []string `json:"row_sigs"`  // 行の指紋（rows と同じ並び・rowSig・2026-10-22）
+	TempSigs []string `json:"temp_sigs"` // 臨時部材表の行の指紋（temp_rows と同じ並び）
+	Into     string   `json:"into"`
+}
+
+// resolveRowsIn は、本文の n 枚目の vocabType の表について、行の番号と指紋をいまの行の番号へ引き直します（resolveRowsBySig）。
+func resolveRowsIn(body, vocabType string, n int, rows []int, sigs []string) ([]int, bool) {
+	if len(rows) == 0 {
+		return rows, true
+	}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return nil, false
+	}
+	tables := tablesOfType(nodes, vocabType)
+	if n < 1 || n > len(tables) {
+		return nil, false
+	}
+	return resolveRowsBySig(tables[n-1], rows, sigs)
 }
 
 // takeRFQPicked は本文から、選んだ必要部材表の行と臨時部材表の行を抜いて、行の中身を返します（必要部材表の順→臨時の順）。
-func takeRFQPicked(cur string, rows, tempRows []int) (string, []ourOrderLine) {
+// 行は、画面が描いたときの指紋で引き直します（2026-10-22 の見直し——番号だけだと、ほかの人が行を足す・消すと、選んでいない
+// 行を運んだり消したりしていた）。合わなければ ok=false（何もしない）。
+func takeRFQPicked(cur string, rows, tempRows []int, rowSigs, tempSigs []string) (string, []ourOrderLine, bool) {
+	rows, okR := resolveRowsIn(cur, RFQNeedsType, 1, rows, rowSigs)
+	tempRows, okT := resolveRowsIn(cur, RFQTempPartsType, 1, tempRows, tempSigs)
+	if !okR || !okT {
+		return cur, nil, false
+	}
 	var out []ourOrderLine
 	if len(rows) > 0 {
 		next, lines, ok := takeTableRows(cur, RFQNeedsType, 1, sortedInts(rows), false)
@@ -241,7 +266,7 @@ func takeRFQPicked(cur string, rows, tempRows []int) (string, []ourOrderLine) {
 			out = append(out, lines...)
 		}
 	}
-	return cur, out
+	return cur, out, true
 }
 
 // RFQNeedsMoveAPIHandler は POST /api/rfq/needs/move です——選んだ行を見積依頼部材表へ移します。
@@ -261,9 +286,13 @@ func RFQNeedsMoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	into := strings.TrimSpace(req.Into)
-	moved, found := 0, true
+	moved, found, same := 0, true, true
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		next, lines := takeRFQPicked(cur, req.Rows, req.TempRows)
+		next, lines, ok := takeRFQPicked(cur, req.Rows, req.TempRows, req.RowSigs, req.TempSigs)
+		if !ok {
+			same = false
+			return cur
+		}
 		for i := range lines {
 			lines[i].Cost = "" // 単価は聞くもの——見積依頼部材表には書かない
 		}
@@ -284,6 +313,10 @@ func RFQNeedsMoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		moved = k
 		return out
 	}) {
+		return
+	}
+	if !same {
+		cms.JSONFail(w, http.StatusConflict, errTableMoved.Error())
 		return
 	}
 	if !found {
@@ -312,12 +345,20 @@ func RFQNeedsRemoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !okID {
 		return
 	}
-	removed := 0
+	removed, same := 0, true
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		next, lines := takeRFQPicked(cur, req.Rows, req.TempRows)
+		next, lines, ok := takeRFQPicked(cur, req.Rows, req.TempRows, req.RowSigs, req.TempSigs)
+		if !ok {
+			same = false
+			return cur
+		}
 		removed = len(lines)
 		return next
 	}) {
+		return
+	}
+	if !same {
+		cms.JSONFail(w, http.StatusConflict, errTableMoved.Error())
 		return
 	}
 	auth.Audit(user.Username, "rfq.needs.remove", pageID+" "+strconv.Itoa(removed)+"行")
@@ -335,6 +376,7 @@ func RFQDraftBackAPIHandler(w http.ResponseWriter, r *http.Request) {
 		PageID string `json:"page_id"`
 		Table  int    `json:"table"`
 		Row    int    `json:"row"`
+		Sig    string `json:"sig"` // 行の指紋（rowSig・2026-10-22）
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -345,7 +387,12 @@ func RFQDraftBackAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	done := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		next, lines, ok := takeTableRows(cur, RFQDraftType, req.Table, []int{req.Row}, true)
+		// 行は指紋で引き直す（その表に無ければ、ほかの見積依頼部材表から——前の表が消えて番号がずれたとき）。
+		table, row, okRow := findDraftRow(cur, req.Table, req.Row, req.Sig)
+		if !okRow {
+			return cur
+		}
+		next, lines, ok := takeTableRows(cur, RFQDraftType, table, []int{row}, true)
 		if !ok || len(lines) == 0 {
 			return cur
 		}
@@ -388,4 +435,32 @@ func joinInts(in []int) string {
 		s[i] = strconv.Itoa(v)
 	}
 	return strings.Join(s, "・")
+}
+
+// findDraftRow は、見積依頼部材表の table 枚目の row 行目（指紋 sig）を、いまの本文で引き直します。その表で合わなければ、ほかの
+// 見積依頼部材表で指紋の合う行がちょうど1つならそれ（前の表が消えて、表の番号がずれたとき）。指紋が空なら番号のまま。
+func findDraftRow(body string, table, row int, sig string) (int, int, bool) {
+	if rows, ok := resolveRowsIn(body, RFQDraftType, table, []int{row}, []string{sig}); ok {
+		return table, rows[0], true
+	}
+	if sig == "" {
+		return 0, 0, false
+	}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return 0, 0, false
+	}
+	foundT, foundR := 0, 0
+	for i, t := range tablesOfType(nodes, RFQDraftType) {
+		for j, tr := range rowsOf(t) {
+			if j == 0 || (tr.Parent != nil && tr.Parent.Data == "tfoot") || rowSig(tr) != sig {
+				continue
+			}
+			if foundT != 0 {
+				return 0, 0, false // 2つ以上——決められない
+			}
+			foundT, foundR = i+1, j
+		}
+	}
+	return foundT, foundR, foundT != 0
 }

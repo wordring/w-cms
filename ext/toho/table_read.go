@@ -362,6 +362,48 @@ func tableSig(t *html.Node) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
+// rowSig は表の1行の中身の指紋です（画面の飾りのセル〔vocab-chrome〕は数えない）。行の先頭のチェックが持ち、操作の直前に
+// サーバーが同じ行かを確かめます（2026-10-22 の見直し——行の番号だけだと、ほかの人が行を足す・消すと別の行に効いていた）。
+func rowSig(tr *html.Node) string {
+	h := sha256.New()
+	for _, c := range cellsOf(tr) {
+		if strings.Contains(" "+cms.Attr(c, "class")+" ", " vocab-chrome ") {
+			continue
+		}
+		h.Write([]byte(strings.TrimSpace(textOf(c))))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// resolveRowsBySig は、表 table の行の番号（見出しを除いた何行目か・1始まり）と指紋の組を、いまの本文の行の番号へ引き直します
+// （指紋が空なら番号のまま・pickBySig）。合う行が無い・2つの組が同じ行に当たるときは ok=false。
+func resolveRowsBySig(table *html.Node, rows []int, sigs []string) ([]int, bool) {
+	trs := rowsOf(table)
+	var body []*html.Node
+	for i, tr := range trs {
+		if i == 0 || (tr.Parent != nil && tr.Parent.Data == "tfoot") {
+			continue
+		}
+		body = append(body, tr)
+	}
+	out := make([]int, 0, len(rows))
+	seen := map[int]bool{}
+	for i, r := range rows {
+		sig := ""
+		if i < len(sigs) {
+			sig = sigs[i]
+		}
+		k := pickBySig(len(body), func(j int) string { return rowSig(body[j]) }, r-1, sig)
+		if k < 0 || seen[k+1] {
+			return nil, false
+		}
+		seen[k+1] = true
+		out = append(out, k+1)
+	}
+	return out, true
+}
+
 // pickBySig は、index 番目の指紋が sig と合えばそのまま、合わなければ同じ指紋のものがちょうど1つならその番号を返します
 // （無い・2つ以上なら -1）。sig が空なら index のまま（指紋を送らない古い画面）。n は数、sigAt は i 番目の指紋。
 func pickBySig(n int, sigAt func(int) string, index int, sig string) int {

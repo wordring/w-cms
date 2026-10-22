@@ -99,11 +99,11 @@ const tableRows = (html, caption, n = 1) => {
     check('③ 元の表から消える', (tableRows(body, '見積依頼必要部材表') || []).length === 5 &&
       (tableRows(body, '部材見積依頼の臨時部材表') || []).length === 0);
 
-    // ④ ↩ 戻す——2行とも戻すと表ごと消える。
-    for (let i = 0; i < 2; i++) {
-      await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('#w-editor-content .rfq-draft-back').first().click()]);
-      await waitReload();
-    }
+    // ④ ↩ 戻す——2行とも戻すと表ごと消える。2026-10-21 夕から、行の先頭のチェックで選び、表の下の「選んだ行を: ↩ 外す」を押す
+    //    （表の中にボタンを置かない）。チェックは行の指紋を持ち、サーバーが同じ行かを確かめる（2026-10-22）。
+    for (const c of await page.locator('#w-editor-content .rfq-draft-pick').all()) await c.check();
+    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('#w-editor-content .rfq-sel-back').first().click()]);
+    await waitReload();
     body = await bodyOf(page, box);
     check('④ ↩ 戻すで見積依頼必要部材表へ戻り、空の見積依頼部材表は残らない',
       !tableRows(body, '見積依頼部材表') && (tableRows(body, '見積依頼必要部材表') || []).length === 7);
