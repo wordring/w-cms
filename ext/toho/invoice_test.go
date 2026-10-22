@@ -198,3 +198,31 @@ func TestBilledKeysIssuedOnly(t *testing.T) {
 		t.Errorf("⚠ 紙の無い請求書に載っただけの行を、発行した請求書の行と数えています")
 	}
 }
+
+// TestInvoiceSameKeyTwoRows は、1枚の納品書に同じ案件・同じ品番の行が2つあるとき、1行目を請求書に載せても、2行目（単価が
+// あとで決まった行）が次の請求書に載ることを固定します（2026-10-22 の見直し）。それまでは「載ったかどうか」だけを見ていて、
+// 2行目は二度と請求書に出なかった。単価のまだ無い行が先にあっても、載ったのは単価の合う行だと見分ける。
+func TestInvoiceSameKeyTwoRows(t *testing.T) {
+	setupExtTest(t, "000950", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	addPage(t, 951, -1, "記録の外", "alice", "302", true)
+	seedIssuedDelivery(t, 952, 951, "あけぼの精工", "2026-09-25", "2026-09-25",
+		[5]string{"000900", "X-1", "ブラケット", "4", ""}, [5]string{"000900", "X-1", "ブラケット", "10", "100"})
+	if code, out := postRFQ(t, u, InvoiceNewAPIHandler, map[string]any{"client": "あけぼの精工", "close": "2026-09-30"}); code != 200 || out["rows"].(float64) != 1 {
+		t.Fatalf("1枚目を作れません: %d %v", code, out)
+	}
+	// 1行目の単価が決まった。
+	syncBody(t, 952, issuedDeliveryBody("あけぼの精工", "2026-09-25", "2026-09-25",
+		[5]string{"000900", "X-1", "ブラケット", "4", "120"}, [5]string{"000900", "X-1", "ブラケット", "10", "100"}))
+	code, out := postRFQ(t, u, InvoiceNewAPIHandler, map[string]any{"client": "あけぼの精工", "close": "2026-09-30"})
+	if code != 200 || out["rows"].(float64) != 1 {
+		t.Fatalf("⚠ 同じ品番の2行目が2枚目に載りません: %d %v", code, out)
+	}
+	if body := readPageBody(t, out["page_id"].(string)); !strings.Contains(body, "<td>120</td>") || strings.Contains(body, "<td>100</td>") {
+		t.Errorf("⚠ 2枚目の行が単価の決まった行ではありません:\n%s", body)
+	}
+	// 3枚目は作らない（どちらも載った）。
+	if code, out := postRFQ(t, u, InvoiceNewAPIHandler, map[string]any{"client": "あけぼの精工", "close": "2026-09-30"}); code == 200 {
+		t.Errorf("⚠ 載せ終えたのに3枚目ができました: %v", out)
+	}
+}

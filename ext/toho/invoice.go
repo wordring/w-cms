@@ -194,6 +194,21 @@ func invoiceKey(delivery, order, itemNo, itemName string) string {
 // 新しい請求書に載せる行を選ぶときは、まだ紙を作っていない請求書に載った行も「載っている」と数えます（二重に載せない）。
 func billedKeys(issuedOnly bool) map[string]bool {
 	out := map[string]bool{}
+	for k := range billedLines(issuedOnly) {
+		out[k] = true
+	}
+	return out
+}
+
+// billedLine は、請求明細表に載った納品書の行1つです（数量と単価——同じ鍵の行が2つあるとき、どれが載ったかを見分ける）。
+type billedLine struct{ Qty, Price string }
+
+// billedLines は、請求書に載った納品書の行を、鍵ごとに数えて返します（同じ鍵が2行あれば2つ）。
+//
+// ⚠ 数えます（2026-10-22 の見直し）——それまでは「載ったかどうか」だけだったので、同じ納品書に同じ案件・品番の行が2つあると、
+// 1行目を請求書に載せた時点で2行目も載ったと見なされ、二度と請求書に出なかった。
+func billedLines(issuedOnly bool) map[string][]billedLine {
+	out := map[string][]billedLine{}
 	rows, err := cms.VocabRowsOfType(database.DB, InvoiceItemsType)
 	if err != nil {
 		return out
@@ -210,10 +225,49 @@ func billedKeys(issuedOnly bool) map[string]bool {
 			kinds[r.PageID] = ok
 		}
 		if ok {
-			out[invoiceKey(r.Values["delivery"], r.Values["order"], r.Values["item-id"], r.Values["item-name"])] = true
+			k := invoiceKey(r.Values["delivery"], r.Values["order"], r.Values["item-id"], r.Values["item-name"])
+			out[k] = append(out[k], billedLine{Qty: r.Values["quantity"], Price: r.Values["price"]})
 		}
 	}
 	return out
+}
+
+// sameNumber は、2つの欄が同じ数かを返します（読めなければ文字で比べる）。
+func sameNumber(a, b string) bool {
+	x, okA := estimateNumber(a)
+	y, okB := estimateNumber(b)
+	if okA && okB {
+		return x == y
+	}
+	return strings.TrimSpace(a) == strings.TrimSpace(b)
+}
+
+// billedRows は、納品書の行（同じ鍵ごと・行の順）のうち、請求書に載ったものの印を返します（rows と同じ並び）。
+// 請求明細の行1つが、同じ鍵の納品書の行1つを使います——数量と単価が合う行を先に、無ければ前の行から。
+func billedRows(rows []cms.VocabRow, billed []billedLine) []bool {
+	used := make([]bool, len(rows))
+	var rest []billedLine
+	for _, b := range billed {
+		hit := false
+		for i, r := range rows {
+			if !used[i] && sameNumber(r.Values["quantity"], b.Qty) && sameNumber(r.Values["price"], b.Price) {
+				used[i], hit = true, true
+				break
+			}
+		}
+		if !hit {
+			rest = append(rest, b)
+		}
+	}
+	for range rest {
+		for i := range rows {
+			if !used[i] {
+				used[i] = true
+				break
+			}
+		}
+	}
+	return used
 }
 
 // unbilledLines は、user が読める発行済の納品書の行のうち、まだ請求書に載っていないものです（客先ごと・日付の順）。
@@ -224,13 +278,42 @@ func unbilledLines(user *auth.User) (lines map[string][]invoiceLine, noPrice map
 	if err != nil {
 		return
 	}
-	billed := billedKeys(false)
+	billed := billedLines(false)
 	type head struct {
 		ok           bool
 		client, date string
 	}
 	heads := map[int]head{}
-	for _, r := range rows {
+	// 同じ鍵の納品書の行を集めてから、請求書に載ったものを数えて外す（billedRows）。
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].PageID != rows[j].PageID {
+			return rows[i].PageID < rows[j].PageID
+		}
+		return rows[i].RowNo < rows[j].RowNo
+	})
+	byKey := map[string][]int{}
+	for i, r := range rows {
+		k := invoiceKey(page.FormatID(r.PageID), r.Values["order"], r.Values["item-id"], r.Values["item-name"])
+		byKey[k] = append(byKey[k], i)
+	}
+	done := make([]bool, len(rows))
+	for k, idx := range byKey {
+		bl := billed[k]
+		if len(bl) == 0 {
+			continue
+		}
+		group := make([]cms.VocabRow, len(idx))
+		for j, i := range idx {
+			group[j] = rows[i]
+		}
+		for j, used := range billedRows(group, bl) {
+			done[idx[j]] = used
+		}
+	}
+	for i, r := range rows {
+		if done[i] {
+			continue
+		}
 		h, seen := heads[r.PageID]
 		if !seen {
 			if !cms.IsTemplateArea(page.FormatID(r.PageID)) && pageKindOf(r.PageID) == PageKindOurDelivery && page.CanView(user, r.PageID) {
@@ -253,9 +336,6 @@ func unbilledLines(user *auth.User) (lines map[string][]invoiceLine, noPrice map
 		}
 		dlv := page.FormatID(r.PageID)
 		v := r.Values
-		if billed[invoiceKey(dlv, v["order"], v["item-id"], v["item-name"])] {
-			continue
-		}
 		if q, ok := estimateNumber(v["quantity"]); !ok || q <= 0 {
 			continue
 		}
