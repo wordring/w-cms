@@ -15,7 +15,7 @@ import (
 // 製造ページから部材見積依頼・見積計算書を作る（2026-10-19・mfg_more.go）。
 
 // TestMfgPartLinesCarryLot は、製造の部材を集めるとき、ロット＝製造明細の数量・案件・弊社品番を運ぶことを固定します（2026-10-21 夕——
-// 必要部材表の「📨 見積もり」が見積依頼部材表へ写すのにロットが要る）。弊社品番の無い行は飛ばす。
+// 必要部材表の「📨 見積依頼作業」が見積依頼部材表へ写すのにロットが要る）。弊社品番の無い行は飛ばす。
 func TestMfgPartLinesCarryLot(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)

@@ -4,7 +4,7 @@
 //   ② 必要部材表で行を選んで「🚫 不要」（理由を入れる）→ 手配不要表へ移る（理由・日付）・必要部材表は消える
 //   ③ もう一度「🧾 部材作業」を押しても集まらない（手配不要のぶんを引く）・「ありません」と言う
 //   ④ 手配不要表で行を選んで「↩ 戻す」→ 表が消え、「🧾 部材作業」でまた必要部材表に出る
-//   ⑤ 「🛒 発注」で発注部材表へ移し、発注部材表で行を選んで下の欄の「🚫 不要」→ 手配不要表へ移る・発注部材表は消える
+//   ⑤ 「🛒 発注作業」で発注部材表へ移し、発注部材表で行を選んで下の欄の「🚫 不要」→ 手配不要表へ移る・発注部材表は消える
 //
 // 当て先は全部自分で作って最後に消します（案件ページ・加工製品・製造ページ）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-skip.js
@@ -95,7 +95,7 @@ const bodyOf = (page, id) => page.evaluate(async (pid) => (await fetch('/api/loa
     // ⑤
     await press('.mfg-needs-pick', '.mfg-needs-order');
     b = await bodyOf(page, mfg);
-    check('⑤ 「🛒 発注」で発注部材表へ', has(b, '発注部材表') && !has(b, '必要部材表'));
+    check('⑤ 「🛒 発注作業」で発注部材表へ', has(b, '発注部材表') && !has(b, '必要部材表'));
     await press('.draft-pick', '.draft-form-box .draft-sel-skip', { prompt: '【E2E】自社で作る' });
     b = await bodyOf(page, mfg);
     at = b.indexOf('<caption>手配不要表</caption>');

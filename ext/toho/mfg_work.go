@@ -275,10 +275,10 @@ func renderMfgNeeds(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	})
 	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 	appendBarAfter(el, "mfg-needs-bar", `<span data-mfg="`+pid+`"></span>`+
-		barButton("mfg-needs-order", "🛒 発注", "選んだ行を、推奨業者ごとの発注部材表へ移します（「発注作業」の見出しの下）")+
-		barButton("mfg-needs-quote", "📨 見積もり", "選んだ行を、見積依頼部材表へ写します（「見積依頼作業」の見出しの下・必要部材表には残す。数は手配済みを引かない、この製造で作るぶん）")+
+		barButton("mfg-needs-order", "🛒 発注作業", "選んだ行を、推奨業者ごとの発注部材表へ移します（「発注作業」の見出しの下）")+
+		barButton("mfg-needs-quote", "📨 見積依頼作業", "選んだ行を、見積依頼部材表へ写します（「見積依頼作業」の見出しの下・必要部材表には残す。数は手配済みを引かない、この製造で作るぶん）")+
 		barButton("mfg-needs-skip", "🚫 不要", "選んだ行を、この製造では手配しません（理由と日付つきで手配不要表へ）")+
-		barButton("mfg-needs-drop", "↩ 外す", "選んだ行を必要部材表から外します（「部材」でまた集められます）")+
+		barButton("mfg-needs-drop", "↩ 作業開始へ戻す", "選んだ行を必要部材表から外します（作業開始の「🧾 部材作業」でまた集められます）")+
 		`<span class="mfg-bar-say"></span>`)
 	return false, nil
 }

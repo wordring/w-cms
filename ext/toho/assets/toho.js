@@ -1878,7 +1878,7 @@ delegateClick([
         }
         location.reload();
     }],
-    // 必要部材表の帯——「発注」「見積もり」「不要」「外す」（/api/mfg/needs）。
+    // 必要部材表の帯——「発注作業」「見積依頼作業」「不要」「作業開始へ戻す」（/api/mfg/needs。2026-10-23 までの名前は「発注」「見積もり」「外す」）。
     ...[['.mfg-needs-order', 'order'], ['.mfg-needs-quote', 'quote'], ['.mfg-needs-skip', 'skip'], ['.mfg-needs-drop', 'drop']].map(([sel, action]) => [sel, async (btn) => {
         const ctx = mfgBarOf(btn);
         const rows = mfgPicked(ctx, '.mfg-needs-pick').map((c) => Number(c.dataset.row));
