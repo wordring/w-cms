@@ -47,6 +47,11 @@ type supply struct {
 	left     int // まだ当てていない数
 	doc      ProcurementOrder
 	stock    bool // いま当てているのが、ほかの受注のために買った余り（在庫）か
+	// src は手当ての元の行、product はどの加工製品のぶんか（在庫表へ入れるとき・stock_in.go）。
+	src     cms.VocabRow
+	product int
+	// excess は、その案件の必要（開いている行・閉じた行）に当てたあとの余りです（手順2のあと・stock_in.go が在庫表へ入れる数）。
+	excess int
 }
 
 // orderRowRef は受注の行の名札です（ページ・何番目のブロック・何行目）。
@@ -72,10 +77,10 @@ func (c coverage) total() int { return c.ordered + c.drafted + c.skipped }
 
 // procLedger は帳簿です。
 type procLedger struct {
-	supplies map[string][]*supply                   // procKey(加工製品, 鍵) → 手当て
-	cover    map[orderRowRef]map[string]*coverage   // 受注の行 → 部材の鍵 → 当てた分
-	needs    map[orderRowRef][]ProcurementItem      // 受注の行 → 必要（当てる前）
-	closed   map[int]map[string]int                 // 閉じた受注ページ → 部材 → まだ引いていない必要
+	supplies map[string][]*supply                 // procKey(加工製品, 鍵) → 手当て
+	cover    map[orderRowRef]map[string]*coverage // 受注の行 → 部材の鍵 → 当てた分
+	needs    map[orderRowRef][]ProcurementItem    // 受注の行 → 必要（当てる前）
+	closed   map[int]map[string]int               // 閉じた受注ページ → 部材 → まだ引いていない必要
 }
 
 // coverOf は受注の行×部材の当てた分です（無ければ空）。
@@ -113,7 +118,7 @@ func collectSupplies(db cms.ReadOnlyDB, canView func(int) bool) map[string][]*su
 			}
 			// 1行が、いくつかの案件・加工製品のぶんを持つことがある（内訳・2026-10-21・order_merge.go）——ぶんごとに手当てを分ける。
 			for _, e := range rowSupplies(r) {
-				s := &supply{kind: kind, qty: e.Qty, left: e.Qty}
+				s := &supply{kind: kind, qty: e.Qty, left: e.Qty, src: r, product: pageNum(e.Product)}
 				if e.Order != "" {
 					s.forOrder = pageNum(e.Order)
 				}
@@ -301,6 +306,11 @@ func buildLedger(db cms.ReadOnlyDB, canView func(int) bool, open []openOrderRow)
 				continue
 			}
 			s.left -= closedTake(db, s.forOrder, pk, s.left, l)
+		}
+	}
+	for _, list := range l.supplies {
+		for _, s := range list {
+			s.excess = s.left
 		}
 	}
 	// 3. 余り（在庫）と `受注` の無い手当てを、納期の早い順に（日付として読めない納期は先頭——必要部材表と同じ並び）。

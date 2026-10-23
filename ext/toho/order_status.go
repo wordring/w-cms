@@ -47,6 +47,8 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // 部材発注明細表の `状態` の値です。
@@ -154,9 +156,10 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	changed := 0
+	var changes []lineStatusChange
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, n := setOrderLineStatus(cur, req.Row, value)
-		changed = n
+		out, n, ch := setOrderLineStatusTracked(cur, req.Row, value)
+		changed, changes = n, ch
 		// 納品日が空かは、ロックの中で読んだ本文で見る（索引が遅れていると、人の書いた納品日を今日で上書きした・2026-10-22 の見直し）。
 		if n > 0 && value == OrderLineDelivered && strings.TrimSpace(bodyTagValue(cur, DeliveredAtTag)) == "" {
 			out = fillDeliveredAtWhenAllIn(out, time.Now().In(time.Local).Format("2006-01-02"))
@@ -172,7 +175,40 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "our-order.line-status",
 		pageID+" 行"+strconv.Itoa(req.Row)+" → "+value+"（"+strconv.Itoa(changed)+"行）")
-	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "rows": changed})
+	stocked, notes := stockOnDelivery(user, pageID, value, changes)
+	cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "rows": changed,
+		"stocked": stocked, "stock_notes": notes})
+}
+
+// stockOnDelivery は、行が「納品済」になった（から戻った）ときに、案件の必要を超えて届いた分を在庫表へ足し（引き）ます
+// （2026-10-23・stock_in.go）。足し引きした件数と、書けなかったものの断りを返します。
+func stockOnDelivery(user *auth.User, pageID, value string, changes []lineStatusChange) (int, []string) {
+	in, out := map[[2]int]bool{}, map[[2]int]bool{}
+	for _, c := range changes {
+		switch {
+		case value == OrderLineDelivered && c.from != OrderLineDelivered:
+			in[[2]int{c.table, c.row}] = true
+		case value != OrderLineDelivered && c.from == OrderLineDelivered:
+			out[[2]int{c.table, c.row}] = true
+		}
+	}
+	if len(in) == 0 && len(out) == 0 {
+		return 0, nil
+	}
+	canView := func(id int) bool { return page.CanView(user, id) }
+	n := pageNum(pageID)
+	moves := append(stockMovesOfOrderLines(database.DB, canView, n, in),
+		negateStockMoves(stockMovesOfOrderLines(database.DB, canView, n, out))...)
+	if len(moves) == 0 {
+		return 0, nil
+	}
+	notes := writeStockMoves(user.Username, moves)
+	var parts []string
+	for _, m := range moves {
+		parts = append(parts, stockMoveName(m)+" "+formatStockQty(m.qty))
+	}
+	auth.Audit(user.Username, "stock.order-delivered", pageID+" "+strings.Join(parts, "、"))
+	return len(moves), notes
 }
 
 // isOrderLineStatus は登録されている値かを返します。
@@ -190,13 +226,26 @@ func isOrderLineStatus(s string) bool {
 // row が 0 なら**取消でない行すべて**。⚠ **取消の行は巻き込みません**——
 // まとめて「発注済」にする操作で、**取り消したはずのものが復活します**。
 func setOrderLineStatus(body string, row int, value string) (string, int) {
+	out, n, _ := setOrderLineStatusTracked(body, row, value)
+	return out, n
+}
+
+// lineStatusChange は書き換えた行1つです（表の順・データ行は0から・書き換える前の値）。
+type lineStatusChange struct {
+	table, row int
+	from       string
+}
+
+// setOrderLineStatusTracked は setOrderLineStatus と同じで、書き換えた行も返します（在庫表へ入れる行を選ぶため・stock_in.go）。
+func setOrderLineStatusTracked(body string, row int, value string) (string, int, []lineStatusChange) {
+	var changes []lineStatusChange
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
-		return body, 0
+		return body, 0, nil
 	}
 	tables := tablesOfType(nodes, ourOrderItemsType)
 	if len(tables) == 0 {
-		return body, 0
+		return body, 0, nil
 	}
 	changed := 0
 	for ti, t := range tables {
@@ -235,12 +284,13 @@ func setOrderLineStatus(body string, row int, value string) (string, int) {
 			}
 			setCellText(cells[si], value)
 			changed++
+			changes = append(changes, lineStatusChange{table: ti, row: i, from: cur})
 		}
 	}
 	if changed == 0 {
-		return body, 0
+		return body, 0, nil
 	}
-	return htmldoc.Render(nodes), changed
+	return htmldoc.Render(nodes), changed, changes
 }
 
 // fillDeliveredAtWhenAllIn は、部材発注明細表の取消でない行が全部「納品済」になったら、部材発注書の `納品日` に today を書きます

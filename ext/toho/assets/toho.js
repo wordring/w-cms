@@ -1543,7 +1543,8 @@ delegateClick([
         btn.disabled = true;
         sayIn(say, '書いています…');
         // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
-        let done = 0;
+        let done = 0, stocked = 0;
+        const stockNotes = [];
         for (const row of rows) {
             const r = act === 'return'
                 ? await postJSON('/api/our-order/return-row', { page_id: page, row }).catch((e) => ({ ok: false, data: { message: String(e) } }))
@@ -1551,6 +1552,13 @@ delegateClick([
                     .catch((e) => ({ ok: false, data: { message: String(e) } }));
             if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || 'できませんでした', done); return; }
             done++;
+            // 案件の必要を超えて届いた分は、置き場「在庫」の在庫表へ入る（2026-10-23・stock_in.go）——入れた・戻したことを知らせる。
+            stocked += Number((r.data && r.data.stocked) || 0);
+            for (const n of ((r.data && r.data.stock_notes) || [])) stockNotes.push(n);
+        }
+        if (stocked || stockNotes.length) {
+            alert((stocked ? '案件の必要を超えた分で、置き場「在庫」の在庫表を直しました（' + stocked + ' 件）。' : '') +
+                (stockNotes.length ? '\n\n⚠ 在庫表に書けなかったもの:\n' + stockNotes.join('\n') : ''));
         }
         // ⚠ **本文が変わったので読み直します**——印は本文の列なので、画面で組み立てず、サーバーが描いたものを受け取ります。
         location.reload();
