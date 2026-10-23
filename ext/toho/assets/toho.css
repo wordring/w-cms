@@ -607,7 +607,7 @@ body:not([edit-mode]) #w-editor-content > .mfg-start-frame.mfg-start-first:has(.
    2026-10-23 利用者:「加工製品の見積回答、見積計算書、受注・見積の単価、加工時間のブロックもわかりやすく枠で囲って欲しいです」 */
 #w-editor-content .rfq-quotes,
 #w-editor-content .estimate-calcs {
-    border: 1px solid #dde5f0;
+    border: 1px solid #ccd7e5; /* 作業開始の枠（#dde5f0）より少し濃く（2026-10-23 利用者:「ほんのちょっと枠のコントラストを付けて欲しいです」） */
     border-radius: 8px;
     background: #fcfdff;
     padding: 8px 12px;
