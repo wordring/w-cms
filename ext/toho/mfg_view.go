@@ -69,20 +69,10 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	// ⚠ 表の中には、本文の値と行の先頭のチェックだけを置く（2026-10-21 夕・mfg_work.go——利用者:「この表はご法度のはずの一緒にボタンを入れています」）。
 	//    ボタンは表の下の帯に、「この製造の書類」と「閉じる」はページの末尾に。
 	delivered := deliveredUnder(ctx.PageID)
-	done, total := 0, 0
-	for _, tr := range rows[1:] {
-		if _, ok := estimateNumber(at(tr, qi)); !ok {
-			continue
-		}
-		total++
-		if at(tr, mi) == MarkDone {
-			done++
-		}
-	}
 	quote := mfgHasQuoteRows(el) // 列を足す前に数える
 	open := mfgIsOpen(ctx.PageID)
 	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
-	state := `<span class="mfg-state">製造完了: ` + strconv.Itoa(done) + ` / ` + strconv.Itoa(total) + ` 行</span> `
+	// 帯の頭の「製造完了: N / M 行」は 2026-10-23 に外した（利用者:「製造完了: 0 / 1 行　は必要ないです」）。
 	if writable {
 		prependRowChromeCells(el, "mfg-pick-cell", func(n int, tr *html.Node) string {
 			left := 0.0
@@ -95,22 +85,21 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 			return pickHTML("mfg-pick", map[string]string{"row": strconv.Itoa(n), "item": at(tr, ii), "name": at(tr, ni), "order": at(tr, oi),
 				"left": fmtQty(left), "made": at(tr, mi), "product": strings.TrimPrefix(at(tr, pi), "/")})
 		})
-		bar := `<span class="mfg-bar-page" data-mfg="` + pid + `"></span>` + state +
-			barButton("mfg-act-parts", "🧾 部材", "選んだ行の、まだ手配していない部材を集めて、「部材作業」の見出しの下に必要部材表を作ります") +
-			barButton("mfg-act-extra", "➕ 追加の発注", "選んだ行の部材を、手配済みを引かずに必要部材表へ足します（備考「追加」——加工の失敗などで作り直すぶん）") +
-			barButton("mfg-act-dlv", "🚚 納品", "選んだ行の、まだ納めていない数で、「納品作業」の見出しの下に納品表を作ります") +
+		bar := `<span class="mfg-bar-page" data-mfg="` + pid + `"></span>` +
+			// 「➕ 追加の発注」は 2026-10-23 に外した——もう部材を手配した行で押すと、警告して「追加の発注」を選べる（mfg_work.go の mfgStartedRows）。
+			barButton("mfg-act-parts", "🧾 部材作業", "選んだ行の、まだ手配していない部材を集めて、「部材作業」の見出しの下に必要部材表を作ります（もう手配した行があれば、確かめます）") +
+			barButton("mfg-act-dlv", "🚚 納品作業", "選んだ行の、まだ納めていない数で、「納品作業」の見出しの下に納品表を作ります") +
 			barButton("mfg-act-made", "✓ 製造完了", "選んだ行の「製造完了」に「済」を書きます") +
-			barButton("mfg-act-calc", "🧮 見積計算書", "選んだ行の加工製品の、新しい見積計算書を作ります（記録の年月・タグ「製造」でこの製造とつながる）")
+			barButton("mfg-act-calc", "🧮 見積もり計算作業", "選んだ行の加工製品の、新しい見積計算書を作ります（記録の年月・タグ「製造」でこの製造とつながる）")
 		if quote {
 			bar += barButton("mfg-act-estimate", "📄 見積書", "この製造の見積の依頼の行から、見積書を作ります")
 		}
 		if open { // 製造待ちへ戻すのは「製造」の直下にあるあいだだけ（mfg_wait.go の MfgBackAPIHandler）
-			bar += barButton("mfg-act-back", "↩ 取り消し", "選んだ行を製造明細から外して、製造待ちへ戻します（この製造で納めた分がある行は戻せません）")
+			// 2026-10-23 までの名前は「↩ 取り消し」（利用者:「取り消しボタンは製造フォルダへ戻すに改名します」）。
+			bar += barButton("mfg-act-back", "↩ 製造フォルダへ戻す", "選んだ行を製造明細から外して、「製造」の製造待ちへ戻します（この製造で納めた分がある行は戻せません）")
 		}
 		bar += `<span class="mfg-bar-say"></span>`
 		appendBarAfter(el, "mfg-items-bar", bar)
-	} else {
-		appendBarAfter(el, "mfg-items-bar", state)
 	}
 	appendMfgPageEnd(ctx, el, writable, open)
 	return false, nil
@@ -139,7 +128,7 @@ func appendMfgPageEnd(ctx *cms.MirrorContext, el *html.Node, writable, open bool
 		}
 		byHeading[h] = append(byHeading[h], d)
 	}
-	for _, h := range []string{MfgHeadStart, MfgHeadOrder, MfgHeadQuote, MfgHeadDelivery} {
+	for _, h := range []string{MfgHeadStart, MfgHeadOrder, MfgHeadQuote, MfgHeadDelivery, MfgHeadCalc} {
 		if docs := byHeading[h]; len(docs) > 0 {
 			div := &html.Node{Type: html.ElementNode, Data: "div",
 				Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome w-no-print mfg-docs-under"}, {Key: "contenteditable", Val: "false"}}}

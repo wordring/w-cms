@@ -8,15 +8,15 @@
 //   ⓪ 新しい製造ページに見出し「作業開始」・製造明細表の行の先頭にチェック・表の下に帯（表の中にボタンは無い）
 //   ① 製造明細の行を選んで「✓ 製造完了」——本文の欄に「済」
 //   ② 案件残表の「進み」に 製造完了 8/20（製造完了の製造に入ったのは8）・案件ページの製造完了の欄にも 8/20 の鏡
-//   ③ 行を選んで「🚚 納品」——「納品作業」の見出しの下に納品表（まだ納めていない 8）
+//   ③ 行を選んで「🚚 納品作業」——「納品作業」の見出しの下に納品表（まだ納めていない 8）
 //   ④ 納品表の数量を 5 に直して「🚚 納品書を作る」——納品書は 記録／年／月／製造記録 にでき（数量 5）、「この製造の書類」に並ぶ・納品表は消える
-//   ⑤ もう一度「🚚 納品」——納品表は 残りの 3
-//   ⑥ 行を選んで「🧾 部材」——「部材作業」の見出しの下に必要部材表（材料 2個/台 × 8台 = 16）
+//   ⑤ もう一度「🚚 納品作業」——納品表は 残りの 3
+//   ⑥ 行を選んで「🧾 部材作業」——「部材作業」の見出しの下に必要部材表（材料 2個/台 × 8台 = 16）
 //   ⑦ 必要部材表の行を選んで「📨 見積もり」——「見積依頼作業」の見出しの下に見積依頼部材表（ロット 8・案件つき）・必要部材表は残る
 //   ⑧ 必要部材表の行を選んで「🛒 発注」——「発注作業」の見出しの下に発注部材表（16）・必要部材表は消える
 //   ⑨ 見出し5つがそろい、どの表の中にもボタンが無い
 //   ⑩ 発注部材表の下の欄で「部材発注書を作る」——部材発注書は記録にでき、明細の「製造」の列にこの製造ページ・「この製造の書類」に並ぶ（差出人が無ければ飛ばす）
-//   ⑪ 行を選んで「🧮 見積計算書」——見積計算書が 記録／年／月／製造記録 にできて開き、「この製造の書類」に並ぶ
+//   ⑪ 行を選んで「🧮 見積もり計算作業」——見積計算書が 記録／年／月／製造記録 にできて開き、「この製造の書類」に並ぶ
 //   ⑫ ページの末尾の「📁 この製造を閉じる」——記録／年／月／製造記録へ移り、足元に「閉じています」
 //
 // 当て先は全部自分で作って最後に消します（案件残表を置いたページ・案件ページ・製造ページと、記録に置いた書類——「この製造の書類」から拾う）。
@@ -47,9 +47,12 @@ const under = (body, head, caption) => {
 // 製造ページの「この製造の書類」に並ぶページ番号（2026-10-21・ext/toho/mfg_docs.go）。
 const docsOf = (page, id) => page.evaluate(async (pid) => {
   const v = await (await fetch('/api/load?view=1&id=' + pid)).text();
-  const at = v.indexOf('class="mfg-docs"');
-  if (at < 0) return [];
-  return [...v.slice(at, v.indexOf('</div>', at)).matchAll(/href="\/(\d{6})"/g)].map((m) => m[1]);
+  // 書類は作業の見出しごとに分かれて並ぶ（見積計算書は 2026-10-23 から「見積もり計算作業」の下）ので、全部の欄から集める。
+  const out = [];
+  for (let at = v.indexOf('class="mfg-docs"'); at >= 0; at = v.indexOf('class="mfg-docs"', at + 1)) {
+    for (const m of v.slice(at, v.indexOf('</div>', at)).matchAll(/href="\/(\d{6})"/g)) out.push(m[1]);
+  }
+  return out;
 }, id);
 
 (async () => {
@@ -109,8 +112,12 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
       };
     });
     check('⓪ 製造明細表の行の先頭にチェック', s0.picks === 1, String(s0.picks));
-    check('⓪ 表の下に帯（部材・追加の発注・納品・製造完了・見積計算書・取り消し）', s0.barAfterTable &&
-      ['mfg-act-parts', 'mfg-act-extra', 'mfg-act-dlv', 'mfg-act-made', 'mfg-act-calc', 'mfg-act-back'].every((c) => s0.buttons.includes(c)), s0.buttons);
+    check('⓪ 表の下に帯（部材作業・納品・製造完了・見積計算書・製造フォルダへ戻す）', s0.barAfterTable &&
+      ['mfg-act-parts', 'mfg-act-dlv', 'mfg-act-made', 'mfg-act-calc', 'mfg-act-back'].every((c) => s0.buttons.includes(c)), s0.buttons);
+    // 2026-10-23: 「➕ 追加の発注」と「製造完了: N / M 行」を外し、「🧾 部材」を「🧾 部材作業」に、「↩ 取り消し」を「↩ 製造フォルダへ戻す」に。
+    const barText = await page.evaluate(() => (document.querySelector('#w-editor-content .mfg-items-bar') || {}).textContent || '');
+    check('⓪ 帯に「追加の発注」「製造完了: 」が無く、新しい名前になっている', !s0.buttons.includes('mfg-act-extra') && !barText.includes('製造完了: ') &&
+      barText.includes('🧾 部材作業') && barText.includes('↩ 製造フォルダへ戻す'), barText.replace(/\s+/g, ' '));
     check('⓪ 表の中にボタンは無い', s0.inTable === 0, String(s0.inTable));
     check('⓪ ページの末尾に「この製造の書類」と「閉じる」', (await page.locator('#w-editor-content .mfg-page-end .mfg-docs').count()) === 1 &&
       (await page.locator('#w-editor-content .mfg-page-end .mfg-close-go').count()) === 1);
@@ -177,7 +184,7 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     // ⑤
     await press('.mfg-pick', '.mfg-act-dlv');
     t = tableIn(await bodyOf(page, mfg), '納品表');
-    check('⑤ もう一度「🚚 納品」で、納品表は残りの 3', t.includes('E2E-MP-A') && />\s*3\s*</.test(t), t.replace(/\s+/g, ' ').slice(0, 400));
+    check('⑤ もう一度「🚚 納品作業」で、納品表は残りの 3', t.includes('E2E-MP-A') && />\s*3\s*</.test(t), t.replace(/\s+/g, ' ').slice(0, 400));
 
     // ⑥
     await press('.mfg-pick', '.mfg-act-parts');
@@ -248,8 +255,13 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     await press('.mfg-pick', '.mfg-act-calc', { url: (u) => !u.pathname.endsWith('/' + mfg) });
     const calc = (page.url().match(/\/(\d{6})(?:[?#]|$)/) || [])[1] || '';
     if (calc && calc !== mfg) docs.add(calc);
-    check('⑪ 「🧮 見積計算書」で見積計算書ができて開く・記録／年／月／製造記録', !!calc && calc !== mfg && (await titleOf(page, await parentOf(page, calc))) === '製造記録', page.url());
+    check('⑪ 「🧮 見積もり計算作業」で見積計算書ができて開く・記録／年／月／製造記録', !!calc && calc !== mfg && (await titleOf(page, await parentOf(page, calc))) === '製造記録', page.url());
     if (calc && calc !== mfg) check('⑪ 製造ページの「この製造の書類」に見積計算書', (await docsOf(page, mfg)).includes(calc));
+    if (calc && calc !== mfg) { // 2026-10-23 から、見積計算書は見出し「見積もり計算作業」（納品作業の下）の書類に並ぶ
+      const v = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), mfg);
+      const h = v.search(/>\s*見積もり計算作業\s*<\/h2>/), d = v.search(/>\s*納品作業\s*<\/h2>/);
+      check('⑪ 見積計算書は「見積もり計算作業」の下（納品作業の下の見出し）', d >= 0 && h > d && v.indexOf('href="/' + calc + '"', h) > h, 'h=' + h + ' d=' + d);
+    }
 
     // ⑫ 「📁 この製造を閉じる」（2026-10-19・mfg_close.go）——確かめのダイアログで「はい」、記録／年／月／製造記録へ移る。
     await press(null, '.mfg-page-end .mfg-close-go', { dialog: '' });

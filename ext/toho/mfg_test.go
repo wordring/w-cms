@@ -143,8 +143,8 @@ func TestMfgMadeAndDeliveryFromMfgPage(t *testing.T) {
 	}
 	// 製造明細表の「納品」の欄は、残り 25（40 − 15）。
 	got := cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/"+mfg, nil), u), pageNum(mfg), readPageBody(t, mfg))
-	if !strings.Contains(got, `data-left="25"`) || !strings.Contains(got, "製造完了: 1 / 1 行") {
-		t.Errorf("⚠ 製造ページの「納品」の残りが 25 になっていないか、製造完了の数がありません:\n%s", got)
+	if !strings.Contains(got, `data-left="25"`) || strings.Contains(got, "製造完了: ") {
+		t.Errorf("⚠ 製造ページの「納品」の残りが 25 になっていないか、外した「製造完了: N / M 行」が出ています:\n%s", got)
 	}
 }
 

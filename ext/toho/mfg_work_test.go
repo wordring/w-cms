@@ -170,3 +170,71 @@ func TestMfgWorkDeliveryDraft(t *testing.T) {
 		t.Errorf("⚠ 納品書を作ったのに納品表が残っています:\n%s", body)
 	}
 }
+
+// TestMfgPartsWarnsWhenStarted は、「🧾 部材作業」が、もう部材を手配した行を確かめで返し（check）、
+// 「追加の発注」を選んだときは、その行だけ手配済みを引かずに全部を備考「追加」で集めることを固定します（2026-10-23）。
+//
+// > 2026-10-23 利用者:「製造明細表の下にある「追加の発注」ぼ異端は無くし、開始済みの部材を作業開始すると警告するようにします。」
+func TestMfgPartsWarnsWhenStarted(t *testing.T) {
+	mfg := seedMfgWork(t)
+	syncBody(t, 32, `<h1>発注 みなと商店</h1>`) // seedProcurement の前からの部材発注（板 6）を外す——何も手配していない形から始める
+	u := adminUser()
+	pick := []map[string]any{{"row": 0, "item": "K-1"}}
+	startedOf := func() []any {
+		t.Helper()
+		before := readPageBody(t, mfg)
+		code, out := postRFQ(t, u, MfgPartsAPIHandler, map[string]any{"page_id": mfg, "items": pick, "check": true})
+		if code != 200 {
+			t.Fatalf("確かめられません: %d %v", code, out)
+		}
+		if readPageBody(t, mfg) != before {
+			t.Fatalf("⚠ 確かめだけなのに本文を書き換えています")
+		}
+		l, _ := out["started"].([]any)
+		return l
+	}
+	if l := startedOf(); len(l) != 0 {
+		t.Fatalf("⚠ まだ何も手配していない行を「始めた」と言っています: %v", l)
+	}
+	// 部材を集めて発注部材表へ入れる（手配済みになる）。
+	if code, out := postRFQ(t, u, MfgPartsAPIHandler, map[string]any{"page_id": mfg, "items": pick}); code != 200 {
+		t.Fatalf("部材を集められません: %d %v", code, out)
+	}
+	if code, out := postRFQ(t, u, MfgNeedsAPIHandler, map[string]any{"page_id": mfg, "rows": []int{1}, "action": "order"}); code != 200 {
+		t.Fatalf("発注へ移せません: %d %v", code, out)
+	}
+	l := startedOf()
+	if len(l) != 1 || !strings.Contains(stringOf(l[0]), "ブラケット") {
+		t.Fatalf("⚠ もう手配した行を返していません: %v", l)
+	}
+	// 追加の発注を選ぶと、手配済みを引かずに全部（2台 × FB）を備考「追加」で。
+	if code, out := postRFQ(t, u, MfgPartsAPIHandler, map[string]any{"page_id": mfg, "items": pick, "extra": true}); code != 200 {
+		t.Fatalf("追加の発注で集められません: %d %v", code, out)
+	}
+	body := readPageBody(t, mfg)
+	at := strings.Index(body, "<caption>必要部材表</caption>")
+	if at < 0 || !strings.Contains(body[at:], ">"+ExtraNote+"<") {
+		t.Errorf("⚠ 追加の発注の行（備考「%s」）が必要部材表にありません:\n%s", ExtraNote, body)
+	}
+}
+
+// stringOf は確かめの答えの1件（{row, name}）を文字にします。
+func stringOf(v any) string {
+	if m, ok := v.(map[string]any); ok {
+		s, _ := m["name"].(string)
+		return s
+	}
+	return ""
+}
+
+// TestEnsureCalcHeading は、見出し「見積もり計算作業」が無ければ末尾に足し、あれば（data-id つきでも）足さないことを固定します（2026-10-23）。
+func TestEnsureCalcHeading(t *testing.T) {
+	got := ensureCalcHeading(`<h1>製造</h1><h2>作業開始</h2><h2>納品作業</h2>`)
+	if !strings.HasSuffix(got, `<h2>納品作業</h2><h2>見積もり計算作業</h2>`) {
+		t.Errorf("⚠ 納品作業の下に「見積もり計算作業」がありません:\n%s", got)
+	}
+	in := `<h1>製造</h1><h2 data-id="ab12">見積もり計算作業</h2>`
+	if got := ensureCalcHeading(in); got != in {
+		t.Errorf("⚠ もうある見出しを2つにしています:\n%s", got)
+	}
+}

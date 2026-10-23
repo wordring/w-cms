@@ -248,7 +248,8 @@ func buildMfgHTML(tmpl, pageID, client, start string, lines []mfgLine) (string, 
 		return "", err
 	}
 	// 製造明細表は見出し「作業開始」の下（2026-10-21 夕・mfg_work.go）——テンプレートに見出しが無ければ足す。
-	return ensureStartHeading(d.HTML()), nil
+	// 見出し「見積もり計算作業」は末尾（納品作業の下）——テンプレートに無ければ足す（2026-10-23）。
+	return ensureCalcHeading(ensureStartHeading(d.HTML())), nil
 }
 
 // MfgNewAPIHandler は POST /api/mfg/new です。入力: {items:[{order, row, item, qty}]}。製造ページを作り、そのIDを返します。

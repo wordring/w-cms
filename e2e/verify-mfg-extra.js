@@ -1,8 +1,9 @@
 // 逃げ道（2026-10-21・ext/toho/order_unsend.go・【考察】製造単位の部材発注 §6.4）を画面から確かめる。
 //
-//   ① 製造明細表で行を選んで「🧾 部材」→ 必要部材表で「🛒 発注」→「部材発注書を作る」で部材発注書（材料 2個/台 × 6 = 12）。
-//      もう一度「🧾 部材」を押しても集まらない
-//   ② 行を選んで「➕ 追加の発注」（確かめで「はい」）→ 手配済みを引かずに必要部材表（12・備考「追加」）
+//   ① 製造明細表で行を選んで「🧾 部材作業」→ 必要部材表で「🛒 発注」→「部材発注書を作る」で部材発注書（材料 2個/台 × 6 = 12）。
+//      もう一度「🧾 部材作業」を押しても集まらない
+//   ① の続き: もう一度「🧾 部材作業」を押すと、もう始めていると警告して選ばせる（2026-10-23 から。まだの分だけ → 集まらない）
+//   ② 警告で「追加の発注として…」を選ぶ（2026-10-23 までは「➕ 追加の発注」のボタン）→ 手配済みを引かずに必要部材表（12・備考「追加」）
 //      →「🛒 発注」で発注部材表（備考「追加」のまま）
 //   ③ 部材発注書で「📠 FAXで送った」→「↩ 未送付に戻す」が出る → 押すと行が未発注に戻る
 //
@@ -49,16 +50,24 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     check('当て先を作れた', !!root && !!product && !!order && !!mfg);
 
     // 製造ページを開き、picks のチェックを全部入れて sel を押す（dialog なら確かめで「はい」）。
-    const press = async (picks, sel, dialog, wait) => {
+    // choice を渡すと、押したあとの選ぶ欄（w.askChoice・「🧾 部材作業」の警告）で choice 番目を選ぶ。出なければ shown が false。
+    let shown = false;
+    const press = async (picks, sel, dialog, wait, choice) => {
       await page.goto(BASE + '/' + mfg);
       const btn = page.locator('#w-editor-content ' + sel);
       await btn.first().waitFor({ timeout: 8000 }).catch(() => {});
       for (const c of await page.locator('#w-editor-content ' + picks).all()) await c.check();
       if (dialog) page.once('dialog', (d) => d.accept());
-      await Promise.all([
-        page.waitForNavigation({ timeout: wait || 15000 }).catch(() => {}),
-        btn.first().click().catch(() => {}),
-      ]);
+      shown = false;
+      const nav = page.waitForNavigation({ timeout: wait || 15000 }).catch(() => {});
+      await btn.first().click().catch(() => {});
+      if (choice !== undefined) {
+        const opt = page.locator('dialog.w-confirm .w-choice-list button');
+        await opt.first().waitFor({ timeout: 6000 }).catch(() => {});
+        shown = (await opt.count()) > 0;
+        if (shown) await opt.nth(choice).click();
+      }
+      await nav;
     };
     const tableIn = (body, caption) => {
       const at = body.indexOf('<caption>' + caption + '</caption>');
@@ -81,13 +90,14 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
       const po = (await docsOf(page, mfg))[0] || '';
       if (po) docs.add(po);
       check('① 部材発注書ができた', !!po);
-      await press('.mfg-pick', '.mfg-act-parts', false, 4000);
+      await press('.mfg-pick', '.mfg-act-parts', false, 4000, 0);
+      check('① もう一度「🧾 部材作業」を押すと、もう始めていると警告して選ばせる', shown);
       const b1 = await bodyOf(page, mfg);
-      check('① もう一度「🧾 部材」を押しても集まらない', !b1.includes('<caption>必要部材表</caption>') && !b1.includes('<caption>発注部材表</caption>'));
+      check('① もう一度「🧾 部材作業」を押しても集まらない', !b1.includes('<caption>必要部材表</caption>') && !b1.includes('<caption>発注部材表</caption>'));
       // ②
-      await press('.mfg-pick', '.mfg-act-extra', true);
+      await press('.mfg-pick', '.mfg-act-parts', false, 15000, 1); // 警告で「追加の発注として…全部もう一度集める」
       let tbl = tableIn(await bodyOf(page, mfg), '必要部材表');
-      check('② 「➕ 追加の発注」で必要部材表（【E2E】真鍮 12・備考「追加」）', tbl.includes('【E2E】真鍮') && />\s*12\s*</.test(tbl) && tbl.includes('>追加<'), tbl.replace(/\s+/g, ' ').slice(0, 500));
+      check('② 警告で「追加の発注」を選ぶと必要部材表（【E2E】真鍮 12・備考「追加」）', tbl.includes('【E2E】真鍮') && />\s*12\s*</.test(tbl) && tbl.includes('>追加<'), tbl.replace(/\s+/g, ' ').slice(0, 500));
       await press('.mfg-needs-pick', '.mfg-needs-order');
       tbl = tableIn(await bodyOf(page, mfg), '発注部材表');
       check('② 「🛒 発注」で発注部材表（【E2E】真鍮 12・備考「追加」のまま）', tbl.includes('【E2E】真鍮') && />\s*12\s*</.test(tbl) && tbl.includes('>追加<'), tbl.replace(/\s+/g, ' ').slice(0, 500));

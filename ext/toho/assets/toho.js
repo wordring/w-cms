@@ -1774,18 +1774,27 @@ const mfgItems = (picks) => picks.map((c) => ({ row: Number(c.dataset.row), item
 
 delegateClick([
     // 作業開始の帯——「部材」「追加の発注」は必要部材表へ、「納品」は納品表へ（どれも作ったら読み直す）。
+    // 「🧾 部材作業」（2026-10-23 までの名前は「🧾 部材」）——先に、もう部材を手配した行が無いかを確かめ、あれば警告して選ばせる。
+    // 2026-10-23 利用者:「製造明細表の下にある「追加の発注」ぼ異端は無くし、開始済みの部材を作業開始すると警告するようにします。」
+    // 「追加の発注」（加工の失敗などで作り直すぶん）は、ここで選ぶ（それまでの「➕ 追加の発注」のボタンは外した）。
     ['.mfg-act-parts', async (btn) => {
         const ctx = mfgBarOf(btn);
         const picks = mfgPicked(ctx, '.mfg-pick');
         if (!picks.length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
-        if (await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items: mfgItems(picks) }, '部材を集めています…', '部材を集められませんでした')) location.reload();
-    }],
-    ['.mfg-act-extra', async (btn) => {
-        const ctx = mfgBarOf(btn);
-        const picks = mfgPicked(ctx, '.mfg-pick');
-        if (!picks.length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
-        if (!confirm('選んだ行の部材を、手配済みを引かずに必要部材表へ足します（備考は「追加」）。よろしいですか？')) return;
-        if (await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items: mfgItems(picks), extra: true }, '部材を集めています…', '部材を集められませんでした')) location.reload();
+        const items = mfgItems(picks);
+        const c = await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items, check: true }, '確かめています…', '確かめられませんでした');
+        if (!c) return;
+        let extra = false;
+        const started = c.started || [];
+        if (started.length) {
+            const names = started.map((s) => s.name || ('行 ' + (s.row + 1))).join('・');
+            const i = await w.askChoice('⚠ 選んだ行のうち ' + started.length + ' 行は、部材の作業をもう始めています（' + names + '）。\n' +
+                'その行の部材は、もう手配済みのものがあります。どうしますか？',
+                ['まだ手配していない部材だけ集める', '追加の発注として、その行の部材を全部もう一度集める（備考「追加」）']);
+            if (i < 0) { sayIn(ctx.say, 'やめました。'); return; }
+            extra = i === 1;
+        }
+        if (await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items, extra }, '部材を集めています…', '部材を集められませんでした')) location.reload();
     }],
     ['.mfg-act-dlv', async (btn) => {
         const ctx = mfgBarOf(btn);
@@ -1833,7 +1842,7 @@ delegateClick([
         }
         location.href = '/' + d.page_id;
     }],
-    // 取り消し——選んだ行を製造待ちへ戻す（下の行から——行番号がずれないように）。
+    // 製造フォルダへ戻す（2026-10-23 までの名前は「取り消し」）——選んだ行を製造待ちへ戻す（下の行から——行番号がずれないように）。
     ['.mfg-act-back', async (btn) => {
         const ctx = mfgBarOf(btn);
         const picks = mfgPicked(ctx, '.mfg-pick').sort((x, y) => Number(y.dataset.row) - Number(x.dataset.row));
@@ -1911,6 +1920,51 @@ delegateClick([['.mfg-close-go', async (btn) => {
 
 // 返事ページの「部材見積依頼書で単価を写す」から来たら、🤖 返事を読む の欄を開く（モードを切り替えるたび——それまでは applyMode が名指しで呼んでいた）。
 w.onChrome(openRFQReplyFromHash);
+
+// ── 製造ページの「作業開始」を枠で囲む（2026-10-23）──────────────────────────────────────
+//
+// 2026-10-23 利用者:「作業開始の項目ですが、ほかの項目とは違い作業ではなく、さぎょする案件を指定するものですので、目立つように枠で囲みます」
+//
+// 本文は見出しと表が平らに並ぶだけなので、本文には手を入れません。見出し「作業開始」のブロックから、次の h1・h2 のブロックの手前までの
+// エディタのブロック（本文を包む画面の入れ物・保存されない）に印を付け、toho.css が枠を描きます。印は class なので自動保存は動きません。
+// 描き直し（モードの切り替え・読み直し）のたびと、書ける形でブロックが増減したときに付け直します。
+const MFG_START_HEADING = '作業開始';
+function frameMfgStart() {
+    const root = w.editorContent();
+    if (!root) return;
+    root.querySelectorAll(':scope > .mfg-start-frame').forEach((b) => b.classList.remove('mfg-start-frame', 'mfg-start-first', 'mfg-start-last'));
+    if (w.tagValue('ページ種類') !== '製造') return;
+    const headingOf = (b) => {
+        const el = b.matches('h1, h2') ? b : b.querySelector(':scope > .block-content > h1, :scope > .block-content > h2');
+        return el ? el.textContent.trim() : null;
+    };
+    const run = [];
+    let on = false;
+    for (const b of root.children) {
+        const h = headingOf(b);
+        if (h !== null) {
+            if (on) break;
+            on = h === MFG_START_HEADING;
+        }
+        if (on) run.push(b);
+    }
+    if (!run.length) return;
+    run.forEach((b) => b.classList.add('mfg-start-frame'));
+    run[0].classList.add('mfg-start-first');
+    run[run.length - 1].classList.add('mfg-start-last');
+}
+w.onChrome(frameMfgStart);
+// 書ける形でブロックを足し・消したとき（本文の直下の並びが変わったとき）にも付け直す。
+(() => {
+    const root = w.editorContent();
+    if (!root || typeof MutationObserver === 'undefined') return;
+    let queued = false;
+    new MutationObserver(() => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; frameMfgStart(); });
+    }).observe(root, { childList: true });
+})();
 
 // ── 版 4 から東邦の JS が持つ部分（2026-10-20 に app.js の前半から移した）——加工製品ページの整理の欄・🤖 解析と解析済みの印・
 // あとから改定にする。ファイルの「⋯」には onFileMenu の口で足す（🤖 解析のボタンは記録の箱の中・2026-10-20 夕から）。

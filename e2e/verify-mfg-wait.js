@@ -9,7 +9,7 @@
 //   ② 何も選ばずに「🏭 製造開始」を押すと、選ぶように言う
 //   ③ 選んで押すと、その行が打ち消し線になり、「進み」に「製造待ち 20」
 //   ④ 製造待ちのビューに並ぶ——選んで「▶ 選んだ行で開始」で製造ページが開く（製造明細表に 20）
-//   ⑤ 製造明細表で行を選んで、表の下の「↩ 取り消し」（確かめで「はい」）で、行が外れて製造待ちへ戻る
+//   ⑤ 製造明細表で行を選んで、表の下の「↩ 製造フォルダへ戻す」（確かめで「はい」）で、行が外れて製造待ちへ戻る
 //   ⑥ 製造待ちの「↩ 選んだ行を案件へ戻す」で、案件残表で選べる形に戻る（打ち消し線が消える）
 //
 // 当て先は全部自分で作って最後に消します（ビューを置いたページ・案件ページ・できた製造ページ）。置き場「製造」は消しません。
@@ -82,7 +82,7 @@ const check = (label, ok, note = '') => {
     await page.locator('#w-editor-content input.mfg-pick[data-item="E2E-WAIT-A"]').check();
     await Promise.all([page.waitForNavigation({ timeout: 10000 }).catch(() => {}), page.locator('#w-editor-content .mfg-items-bar .mfg-act-back').first().click()]);
     const after = mfg ? await bodyOf(page, mfg).catch(() => '') : '';
-    check('⑤ 「↩ 取り消し」で製造明細から外れる', !after.includes('E2E-WAIT-A'));
+    check('⑤ 「↩ 製造フォルダへ戻す」で製造明細から外れる', !after.includes('E2E-WAIT-A'));
     // 最後の行を外した、何も書き足していない製造ページは、ごみ箱へ移って「製造」へ移る（2026-10-23・mfg_drop.go）。
     const gone = mfg ? await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).status, mfg) : 0;
     check('⑤ 空になった製造ページはごみ箱へ移る', gone === 404 || gone === 403, 'load の答え ' + gone);

@@ -208,12 +208,14 @@ func mfgDocsHTML(docs []mfgDoc) string {
 }
 
 // mfgDocHeading は、書類の種類を作る作業の見出しです（2026-10-21 夜・appendMfgPageEnd）。
-// 見積計算書と見積書は製造明細表の「🧮 見積計算書」「📄 見積書」で作るので「作業開始」、部材見積依頼書は「見積依頼作業」、
-// 部材発注書は「発注作業」、納品書は「納品作業」。
+// 見積書は製造明細表の「📄 見積書」で作るので「作業開始」、部材見積依頼書は「見積依頼作業」、部材発注書は「発注作業」、
+// 納品書は「納品作業」。見積計算書は「🧮 見積もり計算作業」で作り、見出し「見積もり計算作業」（2026-10-23 までは「作業開始」）。
 func mfgDocHeading(kind string) string {
 	switch kind {
-	case PageKindOurEstimateCalc, PageKindOurEstimate:
+	case PageKindOurEstimate:
 		return MfgHeadStart
+	case PageKindOurEstimateCalc:
+		return MfgHeadCalc
 	case PageKindOurRFQ:
 		return MfgHeadQuote
 	case PageKindOurPurchase:

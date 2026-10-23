@@ -23,6 +23,7 @@ package toho
 import (
 	stdhtml "html"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,8 @@ const (
 	MfgHeadOrder    = "発注作業"
 	MfgHeadQuote    = "見積依頼作業"
 	MfgHeadDelivery = "納品作業"
+	// MfgHeadCalc は見積計算書の見出し（2026-10-23・納品作業の下。利用者:「納品作業の下に見積もり計算作業の項目を追加します」）。
+	MfgHeadCalc = "見積もり計算作業"
 )
 
 // MfgNeedsType は製造ページの必要部材表、MfgDeliveryDraftType は納品表の形式です。
@@ -197,6 +200,22 @@ func ensureStartHeading(body string) string {
 	return body
 }
 
+// ensureCalcHeading は、見出し「見積もり計算作業」が無ければ本文の末尾に足します（2026-10-23・新しい製造ページ・テンプレートに見出しが無いとき）。
+//
+// > 2026-10-23 利用者:「納品作業の下に見積もり計算作業の項目を追加します」
+func ensureCalcHeading(body string) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return body
+	}
+	for _, n := range nodes { // 見出しは data-id を持つことがある（エディタで保存したテンプレート）ので、字で見る
+		if headingLevel(n) == 2 && strings.TrimSpace(textOf(n)) == MfgHeadCalc {
+			return body
+		}
+	}
+	return body + "<h2>" + MfgHeadCalc + "</h2>"
+}
+
 // ── 表の先頭のチェックと、表の下の帯 ───────────────────────────────────────
 
 // prependRowChromeCells は表の各行の先頭にセルを足します（見出し行は空の th・データ行は inner(row 0始まり, tr) の HTML）。
@@ -306,9 +325,52 @@ func pickedMfgRows(mfgID int, picks []mfgPick) (map[int]bool, string) {
 	return sel, ""
 }
 
-// MfgPartsAPIHandler は POST /api/mfg/parts です。入力: {page_id, items:[{row, item}], extra}（製造ページ）。
+// mfgStartedRows は、選んだ製造明細の行のうち、部材の作業をもう始めた行（部材の1つでも手配済み——部材発注明細表・発注部材表・
+// 手配不要表に当たっている）を、行番号 → 品名で返します（2026-10-23）。部材の表に行の無い品物は、始めたとは数えません。
+//
+// > 2026-10-23 利用者:「製造明細表の下にある「追加の発注」ぼ異端は無くし、開始済みの部材を作業開始すると警告するようにします。」
+func mfgStartedRows(user *auth.User, mfgID int, sel map[int]bool) (map[int]string, error) {
+	rows, err := cms.VocabTableRowsOf(database.DB, mfgID, MfgItemsType)
+	if err != nil {
+		return nil, err
+	}
+	lines, _, err := mfgPartLines(user, mfgID, sel)
+	if err != nil {
+		return nil, err
+	}
+	left := map[string]int{} // 案件|弊社品番 → まだ手配していない数の合計
+	for _, l := range lines {
+		if q, ok := estimateNumber(l.Quantity); ok {
+			left[l.ForOrder+"|"+l.ProductID] += int(q)
+		}
+	}
+	out := map[int]string{}
+	for i, r := range rows {
+		if sel != nil && !sel[i] {
+			continue
+		}
+		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
+		order, okO := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
+		qty, okQ := estimateNumber(r.Values["quantity"])
+		if !ok || !okO || !okQ || qty <= 0 {
+			continue
+		}
+		need := 0
+		for _, it := range productNeeds(database.DB, pageNum(pid), int(qty)) {
+			need += it.Required
+		}
+		if need > 0 && left[order+"|"+pid] < need {
+			out[i] = strings.TrimSpace(r.Values["item-name"])
+		}
+	}
+	return out, nil
+}
+
+// MfgPartsAPIHandler は POST /api/mfg/parts です。入力: {page_id, items:[{row, item}], check, extra}（製造ページ）。
 // 選んだ製造明細の行の、まだ手配していない部材を集めて、「部材作業」の見出しの下に必要部材表を作り直します。
-// extra なら、手配済みを引かずに全部を、備考「追加」で必要部材表へ足します（追加の発注・order_unsend.go）。
+//   - check なら何も書かず、部材の作業をもう始めた行（mfgStartedRows）を返します（画面が「🧾 部材作業」の前に確かめて警告する・2026-10-23）。
+//   - extra なら、もう始めた行は手配済みを引かずに全部を備考「追加」で、まだの行はいつもどおり手配していない分を集めます
+//     （追加の発注・order_unsend.go。2026-10-23 までは「➕ 追加の発注」のボタンが、選んだ行を全部「追加」で必要部材表へ足していた）。
 func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
 	if !ok {
@@ -317,6 +379,7 @@ func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PageID string    `json:"page_id"`
 		Items  []mfgPick `json:"items"`
+		Check  bool      `json:"check"`
 		Extra  bool      `json:"extra"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
@@ -331,11 +394,45 @@ func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, why)
 		return
 	}
+	started, err := mfgStartedRows(user, pageNum(pageID), sel)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "部材を数えられません: "+err.Error())
+		return
+	}
+	if req.Check {
+		type row struct {
+			Row  int    `json:"row"`
+			Name string `json:"name"`
+		}
+		list := []row{}
+		for i, n := range started {
+			list = append(list, row{Row: i, Name: n})
+		}
+		sort.Slice(list, func(a, b int) bool { return list[a].Row < list[b].Row })
+		cms.WriteJSON(w, map[string]any{"success": true, "started": list})
+		return
+	}
 	var lines []ourOrderLine
 	var skipped int
-	var err error
 	if req.Extra {
-		lines, skipped, err = mfgExtraLines(user, pageNum(pageID), sel)
+		// もう始めた行は全部を「追加」で、まだの行は手配していない分を。
+		again, rest := map[int]bool{}, map[int]bool{}
+		for i := range sel {
+			if _, ok := started[i]; ok {
+				again[i] = true
+			} else {
+				rest[i] = true
+			}
+		}
+		var more []ourOrderLine
+		var s1, s2 int
+		if len(rest) > 0 {
+			lines, s1, err = mfgPartLines(user, pageNum(pageID), rest)
+		}
+		if err == nil && len(again) > 0 {
+			more, s2, err = mfgExtraLines(user, pageNum(pageID), again)
+		}
+		lines, skipped = append(lines, more...), s1+s2
 	} else {
 		lines, skipped, err = mfgPartLines(user, pageNum(pageID), sel)
 	}
@@ -352,14 +449,9 @@ func MfgPartsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lines = mergeOrderLines(lines)
+	// 必要部材表は、選んだ行のぶんで作り直す（追加の発注のときも——2026-10-23 から「🧾 部材作業」の確かめの中で選ぶので、同じ表の作り方にそろえた）。
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		if req.Extra {
-			if out, _, ok := appendLinesToTable(cur, MfgNeedsType, 1, lines); ok {
-				return out
-			}
-		} else {
-			cur = dropTablesOfType(cur, MfgNeedsType)
-		}
+		cur = dropTablesOfType(cur, MfgNeedsType)
 		return placeUnderHeading(cur, MfgHeadParts, tableOfLinesHTML(MfgNeedsType, lines, false))
 	}) {
 		return

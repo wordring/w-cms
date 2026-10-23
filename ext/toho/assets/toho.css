@@ -559,3 +559,37 @@
 /* 「🧾 受注・見積の単価」の表の上の「最新の受注単価」の1行（2026-10-22・ext/toho/order_prices.go の latestOrderPriceHTML）。 */
 #w-editor-content .order-prices-latest { margin: 4px 0 8px; }
 #w-editor-content .order-prices-latest strong { font-size: 1.15em; }
+
+/* 製造ページの「作業開始」の枠（2026-10-23・toho.js の frameMfgStart）——作業ではなく、作業する案件を指定する所なので目立たせる。
+   2026-10-23 利用者:「作業開始の項目ですが、ほかの項目とは違い作業ではなく、さぎょする案件を指定するものですので、目立つように枠で囲みます」
+   印はエディタのブロック（本文を包む画面の入れ物）に付く。上の端・左右・下の端を、続いたブロックで1つの枠に見せる。 */
+#w-editor-content > .mfg-start-frame {
+    border-left: 1px solid #dde5f0;
+    border-right: 1px solid #dde5f0;
+    background: #fcfdff;
+    margin-bottom: 0;
+    padding: 0 12px;
+}
+#w-editor-content > .mfg-start-frame.mfg-start-first {
+    border-top: 1px solid #dde5f0;
+    border-radius: 8px 8px 0 0;
+    padding-top: 8px;
+    margin-top: 14px;
+}
+#w-editor-content > .mfg-start-frame.mfg-start-last {
+    border-bottom: 1px solid #dde5f0;
+    border-radius: 0 0 8px 8px;
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+}
+#w-editor-content > .mfg-start-frame.mfg-start-first.mfg-start-last { border-radius: 8px; }
+/* 閲覧で「作業開始」を畳んだら、見出しの段だけで枠を閉じる（残りは w-fold-hidden で消える）。 */
+body:not([edit-mode]) #w-editor-content > .mfg-start-frame.mfg-start-first:has(.w-heading-folded) {
+    border-bottom: 1px solid #dde5f0;
+    border-radius: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+}
+@media print {
+    #w-editor-content > .mfg-start-frame { background: none; }
+}

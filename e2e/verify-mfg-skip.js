@@ -1,9 +1,9 @@
 // 製造ページの手配不要（2026-10-21・ext/toho/mfg_skip.go・【考察】製造単位の部材発注 §6.3 の7番）を画面から確かめる。
 //
-//   ① 製造明細表で行を選んで「🧾 部材」→ 必要部材表（材料 2個/台 × 6 = 12）
+//   ① 製造明細表で行を選んで「🧾 部材作業」→ 必要部材表（材料 2個/台 × 6 = 12）
 //   ② 必要部材表で行を選んで「🚫 不要」（理由を入れる）→ 手配不要表へ移る（理由・日付）・必要部材表は消える
-//   ③ もう一度「🧾 部材」を押しても集まらない（手配不要のぶんを引く）・「ありません」と言う
-//   ④ 手配不要表で行を選んで「↩ 戻す」→ 表が消え、「🧾 部材」でまた必要部材表に出る
+//   ③ もう一度「🧾 部材作業」を押しても集まらない（手配不要のぶんを引く）・「ありません」と言う
+//   ④ 手配不要表で行を選んで「↩ 戻す」→ 表が消え、「🧾 部材作業」でまた必要部材表に出る
 //   ⑤ 「🛒 発注」で発注部材表へ移し、発注部材表で行を選んで下の欄の「🚫 不要」→ 手配不要表へ移る・発注部材表は消える
 //
 // 当て先は全部自分で作って最後に消します（案件ページ・加工製品・製造ページ）。
@@ -49,10 +49,16 @@ const bodyOf = (page, id) => page.evaluate(async (pid) => (await fetch('/api/loa
       await bt.first().waitFor({ timeout: 10000 }).catch(() => {});
       for (const c of await page.locator('#w-editor-content ' + picks).all()) await c.check();
       if (opts.prompt !== undefined) page.once('dialog', (d) => d.accept(opts.prompt));
-      await Promise.all([
-        page.waitForNavigation({ timeout: opts.wait || 15000 }).catch(() => {}),
-        bt.first().click().catch(() => {}),
-      ]);
+      const nav = page.waitForNavigation({ timeout: opts.wait || 15000 }).catch(() => {});
+      await bt.first().click().catch(() => {});
+      // 「🧾 部材作業」の警告（もう部材を手配した行・2026-10-23）が出たら opts.choice 番目を選ぶ。
+      if (opts.choice !== undefined) {
+        const opt = page.locator('dialog.w-confirm .w-choice-list button');
+        await opt.first().waitFor({ timeout: 6000 }).catch(() => {});
+        opts.shown = (await opt.count()) > 0;
+        if (opts.shown) await opt.nth(opts.choice).click();
+      }
+      await nav;
     };
     const parts = (wait) => press('.mfg-pick', '.mfg-act-parts', { wait });
     const has = (body, caption) => body.includes('<caption>' + caption + '</caption>');
@@ -69,9 +75,11 @@ const bodyOf = (page, id) => page.evaluate(async (pid) => (await fetch('/api/loa
     check('② 手配不要表へ移った（理由・日付つき）', at >= 0 && b.slice(at).includes('【E2E】在庫で足りる') && b.slice(at).includes('【E2E】銅') && /\d{4}-\d{2}-\d{2}/.test(b.slice(at, b.indexOf('</table>', at))));
     check('② 必要部材表は消えた', !has(b, '必要部材表'));
     // ③
-    await parts(4000);
+    const again = { wait: 4000, choice: 0 }; // 手配不要にしたぶんも手配済み——警告で「まだ手配していない部材だけ」を選ぶ
+    await press('.mfg-pick', '.mfg-act-parts', again);
+    check('③ もう一度「🧾 部材作業」を押すと、もう始めていると警告する', again.shown === true);
     b = await bodyOf(page, mfg);
-    check('③ もう一度「🧾 部材」を押しても集まらない', !has(b, '必要部材表'));
+    check('③ 「まだ手配していない部材だけ」では集まらない', !has(b, '必要部材表'));
     const say = await page.locator('#w-editor-content .mfg-items-bar .mfg-bar-say').textContent().catch(() => '');
     check('③ 「手配する部材はありません」と言う', (say || '').includes('ありません'), say);
     // ④
@@ -83,7 +91,7 @@ const bodyOf = (page, id) => page.evaluate(async (pid) => (await fetch('/api/loa
     check('④ 「↩ 戻す」で手配不要表が消えた', !has(b, '手配不要表'));
     await parts();
     b = await bodyOf(page, mfg);
-    check('④ 「🧾 部材」でまた必要部材表に出る', has(b, '必要部材表') && b.includes('【E2E】銅'));
+    check('④ 「🧾 部材作業」でまた必要部材表に出る', has(b, '必要部材表') && b.includes('【E2E】銅'));
     // ⑤
     await press('.mfg-needs-pick', '.mfg-needs-order');
     b = await bodyOf(page, mfg);
