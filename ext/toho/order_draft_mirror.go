@@ -49,6 +49,8 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	prependRowChromeCells(el, "draft-pick-cell", func(n int, _ *html.Node) string {
 		return pickHTML("draft-pick", map[string]string{"row": strconv.Itoa(n + 1)})
 	})
+	// 数量の右に、部材の在庫数（2026-10-23・stock_mirror.go）。
+	insertStockColumn(el, stockLevels(ctx.DB, ctx.Viewer), partStockKey)
 	rowBar := draftRowBarHTML(page.FormatID(ctx.PageID), idx, pageKindOf(ctx.PageID) == PageKindMfg)
 	// 「部材発注書を作る」の欄は**表の外（包む節の中・表の直後）**へ（2026-09-28・`draftBoxOf`）。
 	box := draftBoxOf(el)

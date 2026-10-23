@@ -47,7 +47,7 @@ func stockRowKey(k stockKind, vals map[string]string) string {
 		}
 	}
 	if k.PerProduct {
-		id, ok := page.NormalizeID(strings.TrimSpace(vals[OurItemNoTag]))
+		id, ok := page.NormalizeID(trimSlash(vals[OurItemNoTag]))
 		if !ok || id == "" {
 			return ""
 		}

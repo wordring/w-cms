@@ -101,6 +101,8 @@ func renderMfgItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		bar += `<span class="mfg-bar-say"></span>`
 		appendBarAfter(el, "mfg-items-bar", bar)
 	}
+	// 数量の右に、加工製品の在庫数（2026-10-23・stock_mirror.go）。位置で読むところ（上の at）が済んでから足す。
+	insertStockColumn(el, stockLevels(ctx.DB, ctx.Viewer), productStockKey)
 	appendMfgPageEnd(ctx, el, writable, open)
 	return false, nil
 }
@@ -197,7 +199,33 @@ func MfgMadeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireWritableIdle(w, r, pageID) {
 		return
 	}
-	editItemCell(w, user, pageID, MfgItemsType, req.Row, req.ItemNo, "製造完了", req.Old, strings.TrimSpace(req.Value), "製造ページ", "mfg.made")
+	// 製造完了にしたら、空の製造数に数量を入れ、納める案件を超えて作った分を加工製品在庫表へ（2026-10-23・mfg_made_stock.go）。
+	value := strings.TrimSpace(req.Value)
+	body, err := cms.ReadPageBody(pageID)
+	if err != nil {
+		cms.JSONFail(w, http.StatusNotFound, "製造ページを読めません: "+err.Error())
+		return
+	}
+	var vals map[string]string
+	changed, cellErr, err := rebuildBody(pageID, user.Username, body, func(cur string) (string, error) {
+		out, v, err := setMfgMade(cur, req.Row, req.ItemNo, req.Old, value)
+		vals = v
+		return out, err
+	})
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
+		return
+	}
+	if cellErr != nil {
+		failCellEdit(w, cellErr)
+		return
+	}
+	stocked, notes := 0, []string(nil)
+	if changed {
+		auth.Audit(user.Username, "mfg.made", pageID+" 行"+req.ItemNo+" 製造完了="+value)
+		stocked, notes = stockOnMade(user, pageID, vals, value)
+	}
+	cms.WriteJSON(w, map[string]any{"success": true, "changed": changed, "stocked": stocked, "stock_notes": notes})
 }
 
 // madeText は案件明細の1行の製造完了の見せ方です（2026-10-19）——全部の数が製造完了の製造に入ったら「済」、一部なら「N/M」、無ければ空。
