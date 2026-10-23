@@ -86,6 +86,8 @@
     "材料発注": { "type": "enum", "values": ["済"] },
     "製造完了": { "type": "enum", "values": ["済"] },
     "加工時間": { "type": "number" },
+    "在庫数": { "type": "number", "min": 0 },
+    "棚卸し日": { "type": "date" },
     "納品書発行": { "type": "enum", "values": ["済"] },
     "請求書発行": { "type": "enum", "values": ["済"] }
   },
