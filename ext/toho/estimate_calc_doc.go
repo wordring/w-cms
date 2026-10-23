@@ -33,6 +33,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -210,6 +211,38 @@ func calcContentOf(body string) string {
 	return firstTagListRe.ReplaceAllString(body, "")
 }
 
+// withTemplateRecords は、写す中身 content の見積計算表のうち、すぐ後ろに見積表の無いものへ、テンプレート tmpl の最初の見積表
+// （単価の式などを持つ）の写しを足します（2026-10-23）。テンプレートに見積表が無ければ、中身のまま。
+//
+// 加工製品ページの「見積もり計算」の節には見積表の無いものがあり、そこから写した最初の見積計算書には、テンプレートの単価の式が
+// 届いていませんでした（人が見積表と式を手で書いていた）。
+// > 2026-10-23 利用者:「見積表の単価に=原価*(1+利益率/100)と入れています。これをテンプレートに入れて欲しいです。出来ますか？」
+func withTemplateRecords(content, tmpl string) string {
+	tnodes, err := htmldoc.ParseFragment(tmpl)
+	if err != nil {
+		return content
+	}
+	recs := tablesOfType(tnodes, estimateRecordType)
+	if len(recs) == 0 {
+		return content
+	}
+	nodes, err := htmldoc.ParseFragment(content)
+	if err != nil {
+		return content
+	}
+	changed := false
+	for _, b := range estimateBlocksOf(nodes) {
+		if b.Calc != nil && b.Record == nil {
+			nodes = insertAfter(nodes, b.Calc, cloneTree(recs[0]))
+			changed = true
+		}
+	}
+	if !changed {
+		return content
+	}
+	return htmldoc.Render(nodes)
+}
+
 // EstimateCalcNewAPIHandler は POST /api/estimate-calc/new です。入力: {product, mfg}。新しい見積計算書を作り、そのページIDを返します。
 // mfg（書ける製造ページ）があれば、タグ「製造」にその製造ページを書きます（2026-10-21 から。それまでは製造ページの子に作っていた・mfg_more.go）。
 // 置き場はいつも 記録／年／月／製造記録 です。
@@ -290,6 +323,7 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(content) == "" {
 		content = "<h2>" + estimateSectionHeading + "</h2><p><br/></p>"
 	}
+	content = withTemplateRecords(content, tmpl)
 	body := head + content
 	monthID, err := recordFolderOr("", user, RecordWorkFolder, now)
 	if err != nil {
