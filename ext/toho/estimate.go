@@ -369,6 +369,11 @@ func planText(p estimatePlan) string {
 // 「📌 見積表を作って記録」。
 func renderEstimateCalc(ctx *cms.MirrorContext, el *html.Node) {
 	cms.DropChrome(el)
+	// 足元のいちばん上に、価格の列の合計（2026-10-23・見積表があってもなくても出す。鏡なので本文には書かない）。
+	// 利用者:「【弊社】見積計算書の見積もり計算表の下に価格の合計を入れてください。」
+	if c := estimateCostOf(el); c.OK {
+		appendFootRow(el, headerCellCount(el), "estimate-calc-total", "価格の合計: "+yen(c.Cost))
+	}
 	k := ctx.Counter(estimateType)
 	_, blocks, err := estimateBlocksOfPage(pageIDOf(ctx))
 	if err != nil {
