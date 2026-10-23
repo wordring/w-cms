@@ -602,6 +602,23 @@ body:not([edit-mode]) #w-editor-content > .mfg-start-frame.mfg-start-first:has(.
 @media print {
     #w-editor-content > .mfg-start-frame { background: none; }
 }
+/* 加工製品ページの鏡の欄を枠で囲む（2026-10-23）——💴 見積回答・🧮 見積計算書・🧾 受注・見積の単価・⏱ 加工時間。
+   色は「作業開始」の枠と同じ。どれも機械が出す欄なので、人が書く本文と見分けやすくする。
+   2026-10-23 利用者:「加工製品の見積回答、見積計算書、受注・見積の単価、加工時間のブロックもわかりやすく枠で囲って欲しいです」 */
+#w-editor-content .rfq-quotes,
+#w-editor-content .estimate-calcs {
+    border: 1px solid #dde5f0;
+    border-radius: 8px;
+    background: #fcfdff;
+    padding: 8px 12px;
+    margin: 14px 0 18px;
+}
+#w-editor-content .rfq-quotes > .materials-title:first-child,
+#w-editor-content .estimate-calcs > .materials-title:first-child { margin-top: 0; }
+@media print {
+    #w-editor-content .rfq-quotes,
+    #w-editor-content .estimate-calcs { background: none; }
+}
 /* 「🔗 加工製品の行に結ぶ」の欄（2026-10-23・order_bind.go）——部材発注明細表の下の帯の中に開く。候補は押せる行で並べる。 */
 #w-editor-content .order-bind-panel { margin-top: 6px; padding: 8px; border: 1px solid var(--w-border, #d1d5db); border-radius: 6px; }
 #w-editor-content .order-bind-search { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
