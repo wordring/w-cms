@@ -2113,6 +2113,19 @@ body[edit-mode] #w-editor-content section[data-type="carousel"] {
     border: 2px dashed #93c5fd; border-radius: 6px; padding: 6px 8px; margin: 8px 0; min-height: 48px;
 }
 body[edit-mode] #w-editor-content section[data-type="carousel"] img { max-height: 160px; }
+/* カルーセルの中のファイル表示（2026-10-23・internal/cms/file_view.go の fileViewSlideHTML）——画像はほかの枚と同じ形、
+   PDF・描けない形式はファイル名の札（押すと開く）。札は画像の枚と高さをそろえる。 */
+#w-editor-content section[data-type="carousel"] > section[data-type="file-view"] { margin: 0; }
+#w-editor-content .file-view-slide-img { cursor: zoom-in; }
+#w-editor-content .file-view-card {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    width: 150px; height: min(40vh, 200px); padding: 8px; box-sizing: border-box;
+    border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1e293b; text-decoration: none; text-align: center;
+}
+#w-editor-content .file-view-card:hover { background: #f8fafc; border-color: #94a3b8; }
+#w-editor-content .file-view-card-icon { font-size: 40px; line-height: 1; }
+#w-editor-content .file-view-card-name { font-size: 12px; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+body[edit-mode] #w-editor-content .file-view-card { height: 120px; }
 #w-editor-content .car-edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; }
 #w-editor-content .car-label { color: #1e40af; font-weight: 600; }
 #w-editor-content .car-edit-bar button {

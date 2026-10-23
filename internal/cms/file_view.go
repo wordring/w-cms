@@ -149,9 +149,52 @@ func renderFileView(ctx *MirrorContext, el *html.Node) (bool, error) {
 		return false, nil
 	}
 
+	if inCarousel(el) {
+		appendChrome(el, fileViewSlideHTML(refPage, blockID, fileName, url, kind))
+		return false, nil
+	}
 	appendChrome(el, fileViewInnerHTML(refPage, blockID, fileName, url, kind))
 	// 中身はサーバーの所有物なので、その先へは配らない。
 	return false, nil
+}
+
+// inCarousel は、ファイル表示がカルーセル（`section[data-type="carousel"]`）の中にあるかです。
+func inCarousel(el *html.Node) bool {
+	for p := el.Parent; p != nil; p = p.Parent {
+		if p.Type == html.ElementNode && p.Data == "section" && Attr(p, "data-type") == "carousel" {
+			return true
+		}
+	}
+	return false
+}
+
+// fileViewSlideHTML は、カルーセルの中のファイル表示の中身です（2026-10-23）——カルーセルの1枚として見せる。
+//   - 画像は、ほかの枚と同じ `<img>` だけ（頭の行や枠は付けない。押すと拡大表示——assets/app.js の lightboxImages）。
+//   - PDF・動画・描けない形式は、ファイル名の札。押すと開く（PDF は新しいタブのブラウザの表示・描けない形式は保存）。
+//
+// > 2026-10-23 利用者:「カルーセルにファイル参照も入れたい」
+// > （問いへの答え）入れるのは「ファイル表示（添付）」・PDF は「ファイル名の札（押すと開く）」
+func fileViewSlideHTML(pageID, blockID, fileName, url string, kind fileViewKind) string {
+	ref := stdhtml.EscapeString(pageID + "-" + blockID)
+	name := stdhtml.EscapeString(fileName)
+	src := stdhtml.EscapeString(url)
+	fileData := ` data-file-url="` + src + `" data-file-name="` + name + `"`
+	embedSrc := src + stdhtml.EscapeString(attachmentVersionQuery(pageID, url))
+	if kind == kindImage {
+		return `<div class="file-view-slide"` + fileData + `><img class="file-view-slide-img" src="` + embedSrc +
+			`" alt="` + name + `" title="` + name + `（` + ref + `）"></div>`
+	}
+	icon, open := "📄", ` target="_blank" rel="noopener"`
+	switch kind {
+	case kindVideo:
+		icon = "🎞"
+	case kindAudio:
+		icon = "🎵"
+	case kindOther:
+		icon, open = "📎", ` download="`+name+`"` // ブラウザで開けない形式は保存（fileViewInnerHTML と同じ）
+	}
+	return `<a class="file-view-card" href="` + embedSrc + `"` + open + fileData + ` title="` + name + `（` + ref + `）を開きます">` +
+		`<span class="file-view-card-icon">` + icon + `</span><span class="file-view-card-name">` + name + `</span></a>`
 }
 
 // fileViewKind は開き方の種別です（拡張子から決まります）。

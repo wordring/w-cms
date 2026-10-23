@@ -314,3 +314,41 @@ func TestFileViewSrcChangesWhenFileIsRewritten(t *testing.T) {
 		t.Errorf("⚠ 上書きしても埋め込む住所が変わりません（ブラウザが前の PDF を出し続ける）: %s", after)
 	}
 }
+
+// TestFileViewInCarouselIsASlide は（2026-10-23）、カルーセルの中のファイル表示が1枚として描かれることを固定します——
+// 画像は `<img>` だけ（頭の行・枠・details は付けない）、PDF と描けない形式はファイル名の札（PDF は新しいタブで開く・
+// 描けない形式は保存）。カルーセルの外のファイル表示は今までどおり。
+// > 2026-10-23 利用者:「カルーセルにファイル参照も入れたい」
+func TestFileViewInCarouselIsASlide(t *testing.T) {
+	fileViewFixture(t, "000001", "c3p7.pdf")
+	dir := filepath.Join(page.GetPageDir("000001"), "files")
+	for _, f := range []string{"c3p8.png", "c3pb.csv"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u := &auth.User{Username: "alice", IsAdmin: true}
+	body := `<section data-type="carousel">` +
+		`<section data-type="file-view" data-ref="000001-c3p8"></section>` +
+		`<section data-type="file-view" data-ref="000001-c3p7"></section>` +
+		`<section data-type="file-view" data-ref="000001-c3pb"></section></section>` +
+		`<section data-type="file-view" data-ref="000001-c3p7"></section>`
+	out := renderFileViewBody(t, u, 1, body)
+	car := out[:strings.Index(out, "</section></section>")]
+	for _, want := range []string{
+		`<img class="file-view-slide-img" src="/000001/c3p8.png`,
+		// 属性の並びは描き出しで変わるので、1つずつ見る。
+		`class="file-view-card"`, `href="/000001/c3p7.pdf`, `target="_blank"`,
+		`href="/000001/c3pb.csv`, `download="c3pb.csv"`,
+	} {
+		if !strings.Contains(car, want) {
+			t.Errorf("⚠ カルーセルの中に %q がありません:\n%s", want, car)
+		}
+	}
+	if strings.Contains(car, "<details") || strings.Contains(car, "<embed") {
+		t.Errorf("⚠ カルーセルの中に、ふつうのファイル表示（枠・埋め込み）が出ています:\n%s", car)
+	}
+	if rest := out[len(car):]; !strings.Contains(rest, `type="application/pdf"`) {
+		t.Errorf("⚠ カルーセルの外のファイル表示が、今までどおり埋め込みになっていません:\n%s", rest)
+	}
+}

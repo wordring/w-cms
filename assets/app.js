@@ -4668,7 +4668,13 @@
             (n.nodeType === 1 && (n.tagName === 'IMG' || n.tagName === 'BR')));
     }
 
-    // nextImageBlocks は、カルーセルのすぐ下に続く「画像だけの段落」を返す（上の段なら包みごと・節の中ならその要素）。
+    // isCarouselItemBlock は、カルーセルの1枚にできる要素か——画像だけの段落か、ファイル表示（2026-10-23）。
+    // > 2026-10-23 利用者:「カルーセルにファイル参照も入れたい」
+    function isCarouselItemBlock(el) {
+        return isImageOnlyBlock(el) || !!(el && el.tagName === 'SECTION' && el.getAttribute('data-type') === FILE_VIEW_TYPE);
+    }
+
+    // nextImageBlocks は、カルーセルのすぐ下に続く「画像だけの段落」とファイル表示を返す（上の段なら包みごと・節の中ならその要素）。
     function nextImageBlocks(car) {
         const top = car.parentElement && car.parentElement.classList.contains('block-content') ? car.closest('.editor-block') : null;
         const out = [];
@@ -4678,7 +4684,7 @@
                 const box = n.classList.contains('editor-block') ? n.querySelector(':scope > .block-content') : null;
                 el = box ? firstContentChild(box) : null;
             }
-            if (!isImageOnlyBlock(el)) break;
+            if (!isCarouselItemBlock(el)) break;
             out.push({ el, wrap: top ? n : null });
         }
         return out;
@@ -4699,7 +4705,7 @@
     function takeImagesBelow(car) {
         const below = nextImageBlocks(car);
         if (!below.length) {
-            notify('このカルーセルのすぐ下に画像がありません（画像だけの段落が続いているところを入れます）。', { type: 'info', duration: 5000 });
+            notify('このカルーセルのすぐ下に画像・ファイル表示がありません（画像だけの段落かファイル表示が続いているところを入れます）。', { type: 'info', duration: 5000 });
             return;
         }
         below.forEach(({ el, wrap }) => {
@@ -4710,7 +4716,20 @@
         });
         updateHtmlPreview();
         triggerAutoSave();
-        notify('すぐ下の画像 ' + below.length + ' 枚をカルーセルに入れました（戻すなら Ctrl+Z）。', { type: 'success', duration: 4000 });
+        decorateFileViews(); // 入れたファイル表示の札を、カルーセルの中で付け直す
+        notify('すぐ下の画像・ファイル表示 ' + below.length + ' 枚をカルーセルに入れました（戻すなら Ctrl+Z）。', { type: 'success', duration: 4000 });
+    }
+
+    // addFileViewToCarousel は「📄 ファイル表示を足す」（2026-10-23）——空のファイル表示を中の末尾へ足し、参照の欄を開く。
+    // 参照（ページID-添付ID・「🔗 ID」で写した値）を貼ると、閲覧モードでその1枚になる（画像はそのまま・PDF などはファイル名の札）。
+    function addFileViewToCarousel(car) {
+        const sec = document.createElement('section');
+        sec.setAttribute('data-type', FILE_VIEW_TYPE);
+        car.appendChild(sec);
+        decorateFileViews();
+        updateHtmlPreview();
+        triggerAutoSave();
+        openFileViewPopover(sec, sec.querySelector(':scope > .fv-wire'));
     }
 
     // addImagesToCarousel は「🖼 画像を足す」——選んだ画像を添付して中の末尾へ足す。
@@ -4787,7 +4806,8 @@
                     const label = makeEl('span', 'car-label', '🎠 カルーセル');
                     bar.append(label,
                         carouselButton('car-add', '🖼 画像を足す', '画像を選んで、このカルーセルの末尾へ足します', () => addImagesToCarousel(car)),
-                        carouselButton('car-take', '⬇ すぐ下の画像を入れる', 'このカルーセルのすぐ下に続く画像（画像だけの段落）を中へ移します', () => takeImagesBelow(car)));
+                        carouselButton('car-add-file', '📄 ファイル表示を足す', 'ほかのページの添付も、ページID-添付ID で指して1枚にします（PDF などはファイル名の札）', () => addFileViewToCarousel(car)),
+                        carouselButton('car-take', '⬇ すぐ下を入れる', 'このカルーセルのすぐ下に続く画像（画像だけの段落）とファイル表示を中へ移します', () => takeImagesBelow(car)));
                     car.insertBefore(bar, car.firstChild);
                 }
                 return;
@@ -4828,9 +4848,12 @@
     let lightboxAt = 0;
     let lightboxSwipe = null;
 
+    // カルーセルの中のファイル表示の画像（img.file-view-slide-img・2026-10-23）も、本文の画像と同じく数える——サーバーが描く飾りの中だが、
+    // カルーセルの1枚なので押せば拡大して前後に送れるようにする。
+    const isLightboxImage = img => !!img.getAttribute('src') &&
+        (img.classList.contains('file-view-slide-img') || !img.closest('a, button, .vocab-chrome, .file-view'));
     function lightboxImages() {
-        return Array.from(document.querySelectorAll('#w-editor-content img'))
-            .filter(img => img.getAttribute('src') && !img.closest('a, button, .vocab-chrome, .file-view'));
+        return Array.from(document.querySelectorAll('#w-editor-content img')).filter(isLightboxImage);
     }
 
     function lightboxEl() {
@@ -4919,7 +4942,7 @@
     document.addEventListener('click', e => {
         if (document.body.hasAttribute('edit-mode')) return;
         const img = e.target instanceof Element && e.target.closest('#w-editor-content img');
-        if (!img || img.closest('a, button, .vocab-chrome, .file-view')) return;
+        if (!img || !isLightboxImage(img)) return;
         e.preventDefault();
         openLightbox(img);
     });
