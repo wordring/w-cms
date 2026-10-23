@@ -228,8 +228,8 @@
     background: var(--bg-subtle, #f8fafc);
 }
 #w-editor-content .estimate-note td { color: var(--w-muted, #6b7280); font-style: italic; }
-/* 見積計算表の足元の「価格の合計」（2026-10-23・estimate.go の renderEstimateCalc）。受注残高と同じく太く読ませる。 */
-#w-editor-content .estimate-calc-total td { padding: 6px 8px; font-weight: 600; background: var(--bg-subtle, #f8fafc); }
+/* 見積計算表のすぐ後ろの「価格の合計」（2026-10-23・estimate.go の renderEstimateCalc——表とは別の1行）。太く読ませる。 */
+#w-editor-content .estimate-calc-total { margin: 4px 0 12px; font-weight: 600; }
 /* 見積書に入れる（見積計算表の足元）・見積明細表の合計と PDF・メール（2026-10-01）。 */
 #w-editor-content .estimate-add td, #w-editor-content .estimate-actions td { padding: 4px 8px; font-size: 0.9em; }
 #w-editor-content .estimate-add-form input[type="text"] { width: 9em; }

@@ -132,6 +132,11 @@ func TestEstimateCalcNewAddsTemplateRecord(t *testing.T) {
 			t.Errorf("⚠ 見積計算表の足元に %q がありません:\n%s", want, view)
 		}
 	}
+	// 表とは別の1行（表の足元の行ではない——利用者:「価格の合計は表とは別に出して欲しいです」）。
+	if !strings.Contains(view, `</table><div class="vocab-chrome estimate-calc-total" contenteditable="false">価格の合計: 1,980円</div>`) ||
+		strings.Contains(view, "<tfoot><tr class=\"estimate-calc-total\"") {
+		t.Errorf("⚠ 価格の合計が、見積計算表のすぐ後ろの表の外の1行になっていません:\n%s", view)
+	}
 	if strings.Contains(readPageBody(t, id), "価格の合計") {
 		t.Errorf("⚠ 価格の合計が本文に書かれました")
 	}
