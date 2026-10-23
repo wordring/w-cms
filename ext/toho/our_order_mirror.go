@@ -154,7 +154,7 @@ func addOrderRowPicks(table *html.Node) {
 				can = append(can, k)
 			}
 		}
-		return `<input type="checkbox" class="order-pick" aria-label="この行を選ぶ" data-row="` + strconv.Itoa(n+1) + `" data-status="` +
+		return `<input type="checkbox" class="order-pick" aria-label="この行を選ぶ" data-row="` + strconv.Itoa(n+1) + `" data-sig="` + rowSig(tr) + `" data-status="` +
 			stdhtml.EscapeString(status) + `" data-can="` + strings.Join(can, " ") + `" data-ask-cancel="` + stdhtml.EscapeString(acts[orderActCancel]) +
 			`" data-ask-return="` + stdhtml.EscapeString(acts[orderActReturn]) + `">`
 	})
@@ -172,5 +172,7 @@ func orderRowBarHTML(orderID string) string {
 		b(orderActUnsent, OrderLineUnsent, "↩ 取消をやめる", "取り消した行を「未発注」に戻します") +
 		b(orderActCancel, OrderLineCancelled, "✕ 取消", "選んだ行を取り消します（送ったあとの行は、相手の了解が要ります）") +
 		b(orderActReturn, "", "↩ 発注から外す", "選んだ行を部材発注書から外し、製造ページの「🧾 部材作業」で、また入れられるようにします") +
+		// 加工製品の部材の行に結ぶ（2026-10-23・order_bind.go——業者の納品書から作った行は、どの部材かを人が選ぶ）。1行ずつ。
+		`<button type="button" class="chip-btn order-bind-open" data-order-page="` + stdhtml.EscapeString(orderID) + `" title="選んだ1行を、加工製品ページの部材の行（材料表・外注加工表など）に結びます。結ぶと、その部材の最新単価に出ます">🔗 加工製品の行に結ぶ</button> ` +
 		`<span class="order-row-say"></span></div>`
 }

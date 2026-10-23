@@ -80,6 +80,12 @@ func init() {
 							return true, err
 						}
 					}
+					// 外注加工表にも最新単価（2026-10-23・part_price.go——加工製品＋種類の鍵で当てる）。
+					if t == "part-outsourcing" {
+						if kind := orderKindNameOfTable(t); kind != "" {
+							renderPartPrices(ctx, tbl, kind)
+						}
+					}
 				}
 				return true, nil
 			}))

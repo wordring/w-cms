@@ -118,6 +118,9 @@ type orderJudgment struct {
 	// RFQReply は**業者の部材見積依頼の返事**と判定したときの中身です（2026-10-05・rfq_reply_page.go——doc_type が "rfq_reply"）。
 	// 利用者:「見積依頼の返事は通信記録に入るので、解析ボタンを押して解析し、見積依頼の返事とわかれば、見積依頼の返事ページを作り」。
 	RFQReply *rfqReplyJudgment `json:"rfq_reply"`
+	// SupplierDelivery は**業者から当社宛ての納品書**と判定したときの中身です（2026-10-23・supplier_delivery.go——doc_type が
+	// "supplier_delivery"）。読んだ明細で、納品済の部材発注書ページを作る。
+	SupplierDelivery *supplierDeliveryJudgment `json:"supplier_delivery"`
 }
 
 // orderList は判定結果を**発注書1枚ずつ**に並べ直します（`drawingList` と同じ形）。
@@ -327,6 +330,23 @@ func analyzeWithTemplates(w http.ResponseWriter, r *http.Request, pageID, fileNa
 		return
 	}
 
+	// **業者の納品書の枝**（2026-10-23・supplier_delivery.go）——読んだ明細で、納品済の部材発注書ページを記録に作る。
+	if j.DocType == "supplier_delivery" && j.SupplierDelivery != nil {
+		id, err := makeSupplierDelivery(user, pageID, attachID, j.SupplierDelivery)
+		if err != nil {
+			var me *comm.MakeError
+			if errors.As(err, &me) {
+				cms.JSONFail(w, me.Status, me.Message)
+			} else {
+				cms.JSONFail(w, http.StatusInternalServerError, "業者の納品書から部材発注書を作れません: "+err.Error())
+			}
+			return
+		}
+		cms.WriteJSON(w, map[string]any{"success": true, "is_client_order": false, "doc_type": "supplier_delivery",
+			"page_id": id, "title": pageTitleOf(id)})
+		return
+	}
+
 	// **図面PDFの枝**——同じページに付いているDXFと図面番号で突き合わせ、
 	// 同じ部品の図面として1枚の加工製品ページにまとめる（drawing_match.go）。
 	if !j.IsClientOrder && j.DocType == "drawing" {
@@ -472,7 +492,7 @@ func loadPDFForAnalysis(pageID, fileName string) ([]byte, error) {
 //
 // **関数の外に出してあるのは、その番人が読めるようにするため**です（2026-09-21）。
 const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応じた項目を抽出してください。
-判定する種類は次の4つです:
+判定する種類は次の5つです:
   - "order"     : 顧客（取引先）が当社宛てに発行した発注書（注文書）——当社が売る側
   - "drawing"   : 部品や製品の図面（表題欄に図面番号・図面名称があるもの）
   - "rfq_reply" : 業者（仕入先）から当社への見積・見積依頼への返事——当社が買う側（当社が送った見積依頼書に単価を書き込んで
@@ -482,10 +502,12 @@ const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応
                   なく "rfq_reply" です（業者が図面を見て値段を答えてきたもの）
                   ⚠ 当社が送った品物の一覧（図面番号・品名・数量など）に、**業者が単価や希望価格の列を書き足して返してきた表**も
                   "rfq_reply" です（№ も宛名も無い、値段の入った表だけのことがあります）
+  - "supplier_delivery" : 業者（仕入先）が**当社宛てに**発行した納品書——当社が買った品物が届いたときの紙（宛名が当社で、
+                  発行元が業者。品名・寸法・数量・単価・金額の明細がある）。控え（「納品書（控）」）が同じ紙に並んでいても1通です
   - "other"     : 上記以外（当社が発行した見積書・請求書・納品書・カタログ・案内など）
 次の形式のJSONオブジェクトのみを出力してください（マークダウンのコードブロック修飾は付けない）:
 {
-  "doc_type": "order" または "drawing" または "rfq_reply" または "other",
+  "doc_type": "order" または "drawing" または "rfq_reply" または "supplier_delivery" または "other",
   "is_client_order": doc_type が "order" のとき true、それ以外は false,
   "orders": [{
     "order_no": "発注書番号（記載が無ければ空文字）",
@@ -499,10 +521,13 @@ const orderJudgePrompt = `このPDFが何の文書かを判定し、種類に応
     "items": [{"item_no": "品番（下の規則で選ぶ）", "item_no_source": "item_no を採った列の見出し（先方に書かれている文字のまま。見出しが無い列から採ったときは空文字）", "item_name": "品名", "price": "単価（カンマを除いた数値文字列）", "quantity": "数量（数値文字列）", "unit": "数量の単位（個・セットなど。記載が無ければ空文字）"}]
   }],
   "drawings": [{"drawing_no": "図面番号", "drawing_name": "図面名称", "machine_name": "装置名称", "customer": "客先"}],
-  "rfq_reply": doc_type が "rfq_reply" のときだけ {"rfq_no": "当社の見積依頼書の番号（「№」の後ろの数字。読めなければ空文字）", "supplier": "返事をくれた業者の会社名", "date": "返事の日付を YYYY-MM-DD で（無ければ空文字）", "source_table": {"headers": ["見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]}}、それ以外は null
+  "rfq_reply": doc_type が "rfq_reply" のときだけ {"rfq_no": "当社の見積依頼書の番号（「№」の後ろの数字。読めなければ空文字）", "supplier": "返事をくれた業者の会社名", "date": "返事の日付を YYYY-MM-DD で（無ければ空文字）", "source_table": {"headers": ["見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]}}、それ以外は null,
+  "supplier_delivery": doc_type が "supplier_delivery" のときだけ {"supplier": "納品書を発行した業者の会社名", "delivery_no": "納品書の番号（無ければ空文字）", "date": "納品書の日付を YYYY-MM-DD で（無ければ空文字）", "note": "摘要・注文番号などの添え書き（無ければ空文字）", "total": "合計（書かれているまま）", "items": [{"item_name": "商品名・品名", "size": "寸法・規格", "quantity": "数量（数値文字列）", "unit": "単位（無ければ空文字）", "price": "単価（カンマを除いた数値文字列）", "note": "その行の備考"}], "source_table": {"headers": ["見出しを書かれているまま"], "rows": [["1行ぶんの値を書かれているまま"]]}}、それ以外は null
 }
 ⚠ rfq_reply の source_table には、品物の欄（品名・材質・寸法・数量など）と、業者が書き込んだ単価・金額・備考を**書かれているまま**
 入れてください。手書きの数字も読んで入れてください。**計算はしないでください**（書かれていない欄は空文字）。
+⚠ supplier_delivery は、控え（「納品書（控）」）が同じ紙に並んでいても、明細は1通ぶんだけ入れてください（二重にしない）。空の行は入れないでください。
+⚠ 宛名が当社ではなく、当社が発行した納品書（当社から客先へ）は "other" です。
 ⚠ rfq_reply の表に値段の列が2つ以上あるときは、**業者が答えた値段**の列の見出しの頭に「単価：」を、**当社が示した参考の値段**
 （参考価格・ほかの業者の価格・昨年の価格など）の列の見出しの頭に「参考：」を付けてください（例: 「単価：希望価格」「参考：昨年価格」）。
 見出しの無い列には、中身から短い見出しを付けてください（例: 色）。表の途中に見出しの行が繰り返されていたら、その行は入れないでください。
@@ -687,6 +712,9 @@ func parseOrderJudgment(respText string) (*orderJudgment, error) {
 	}
 	if j.RFQReply != nil {
 		j.RFQReply.SourceTable = parseSourceTable(j.RFQReply.SourceTableRaw)
+	}
+	if j.SupplierDelivery != nil {
+		j.SupplierDelivery.SourceTable = parseSourceTable(j.SupplierDelivery.SourceTableRaw)
 	}
 	return &j, nil
 }

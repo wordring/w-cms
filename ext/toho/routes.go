@@ -54,6 +54,8 @@ func (materialsPlugin) Routes() []cms.Route {
 		{Pattern: "/api/mfg/delivery-draft", Handler: MfgDeliveryDraftAPIHandler}, // 選んだ製造明細の行で納品表を作る（2026-10-21 夕・mfg_work.go）
 		{Pattern: "/api/mfg/skip", Handler: MfgSkipAPIHandler},              // 発注部材表の行を手配不要表へ（2026-10-21・mfg_skip.go）
 		{Pattern: "/api/our-order/unsend", Handler: OrderUnsendAPIHandler}, // 送ったことを取り消す（2026-10-21・order_unsend.go）
+		{Pattern: "/api/our-order/bind-candidates", Handler: OrderBindCandidatesAPIHandler}, // 行を結ぶ相手の候補（2026-10-23・order_bind.go）
+		{Pattern: "/api/our-order/bind", Handler: OrderBindAPIHandler},                       // 行を加工製品の部材の行に結ぶ（同）
 		{Pattern: "/api/mfg/skip/remove", Handler: MfgSkipRemoveAPIHandler}, // 手配不要表の行を外す（2026-10-21・mfg_skip.go）
 		{Pattern: "/api/mfg/made", Handler: MfgMadeAPIHandler},         // 製造完了（2026-10-19・mfg_view.go）
 		{Pattern: "/api/mfg/new", Handler: MfgNewAPIHandler},           // 製造ページ（2026-10-19・mfg.go）

@@ -1661,9 +1661,65 @@ delegateClick([
         location.reload();
     }
 
+    // 「🔗 加工製品の行に結ぶ」（2026-10-23・ext/toho/order_bind.go）——選んだ1行を、加工製品ページの部材の行に結ぶ。
+    // 表の下に候補の欄を開く。候補はサーバーが、行の数（寸法など）の重なりと推奨業者で並べる。言葉で探し直せる。
+    // 押すと、行は部材の行と同じ値になり（もとの品名・寸法は備考へ）、その部材の最新単価に出る。
+    async function openBind(btn) {
+        const bar = btn.closest('.order-bar');
+        const say = bar ? bar.querySelector('.order-row-say') : null;
+        const table = bar ? tableBefore(bar) : null;
+        const picks = table ? Array.from(table.querySelectorAll('.order-pick:checked')) : [];
+        if (picks.length !== 1) { sayIn(say, '結ぶ行を1つだけ選んでください（行の先頭のチェック）。', 'warn'); return; }
+        const page = btn.getAttribute('data-order-page') || '';
+        const row = picks[0].dataset.row || '';
+        const sig = picks[0].dataset.sig || '';
+        const old = bar.querySelector('.order-bind-panel');
+        if (old) old.remove();
+        const panel = makeEl('div', 'order-bind-panel');
+        panel.appendChild(makeEl('div', 'order-bind-head', row + '行目を結ぶ相手（加工製品ページの部材の行）:'));
+        const form = makeEl('div', 'order-bind-search');
+        const q = makeEl('input');
+        q.type = 'search';
+        q.placeholder = '探す（品番・題・部材の名前）——空なら寸法の数が合うもの';
+        const go = makeButton('chip-btn', '探す');
+        const close = makeButton('chip-btn', '閉じる');
+        form.append(q, go, close);
+        panel.appendChild(form);
+        const list = makeEl('div', 'order-bind-list');
+        panel.appendChild(list);
+        bar.appendChild(panel);
+        close.addEventListener('click', () => panel.remove());
+        const load = async () => {
+            list.replaceChildren(makeEl('div', 'order-bind-note', '探しています…'));
+            const r = await getJSON('/api/our-order/bind-candidates?page_id=' + encodeURIComponent(page) + '&row=' + encodeURIComponent(row) +
+                '&sig=' + encodeURIComponent(sig) + '&q=' + encodeURIComponent(q.value.trim()));
+            list.replaceChildren();
+            if (!r.ok) { list.appendChild(makeEl('div', 'order-bind-note', '⚠ ' + ((r.data && r.data.message) || '候補を出せません'))); return; }
+            const cands = (r.data && r.data.candidates) || [];
+            if (!cands.length) { list.appendChild(makeEl('div', 'order-bind-note', '候補がありません。品番や加工製品の題で探してください。')); return; }
+            for (const c of cands) {
+                const b = makeButton('order-bind-cand');
+                b.appendChild(makeEl('span', 'order-bind-prod', (c.product_title || c.product_id) + '（/' + c.product_id + '）'));
+                b.appendChild(makeEl('span', 'order-bind-part', (c.kind ? c.kind + ': ' : '') + c.label + (c.vendor ? '（推奨業者 ' + c.vendor + '）' : '')));
+                b.addEventListener('click', async () => {
+                    if (!confirm(row + '行目を、/' + c.product_id + ' の「' + c.label + '」に結びます。\n行の品名・寸法などは、この部材の値になります（もとの記載は備考に残します）。')) return;
+                    b.disabled = true;
+                    const p = await postJSON('/api/our-order/bind', { page_id: page, row: Number(row), sig, product_id: c.product_id, key: c.key });
+                    if (!p.ok) { b.disabled = false; sayIn(say, '⚠ ' + ((p.data && p.data.message) || '結べませんでした'), 'proc-why-ng'); return; }
+                    location.reload();
+                });
+                list.appendChild(b);
+            }
+        };
+        go.addEventListener('click', load);
+        q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); load(); } });
+        await load();
+    }
+
     // ⚠ **document へ委譲します**——鏡はサーバーが描き直すので、要素ごとに
     //    配線すると描き直しのたびに切れます。
     delegateClick([
+        ['.order-bind-open', openBind],
         ['.order-sel-act', rowAct],
         ['[data-order-pdf]', makePDF],
         ['[data-order-pdf-docs]', makePDFWithDocs],
@@ -2783,6 +2839,10 @@ async function analyzeOne(pageId, file) {
         if (d.doc_type === 'rfq_reply' && d.page_id) {
             return { kind: 'rfq_reply', made: [{ page_id: d.page_id, title: d.title }], say: d.say || '', linked: d.linked_rfq || '' };
         }
+        // 業者の納品書（2026-10-23・ext/toho/supplier_delivery.go）——読んだ明細で、納品済の部材発注書を作った。
+        if (d.doc_type === 'supplier_delivery' && d.page_id) {
+            return { kind: 'supplier_delivery', made: [{ page_id: d.page_id, title: d.title }] };
+        }
         if (!d.is_client_order) return { kind: 'none', made: [] };
         // 1つのPDFに発注書が何枚も入っていれば1枚につき1ページ（2026-09-30・`pages`）。
         return { kind: 'order', made: (d.pages || []).length ? d.pages : [{ page_id: d.page_id, title: d.title }] };
@@ -2816,7 +2876,7 @@ async function runZipAnalyze(pageId, zipID, btn) {
         '回呼びます・1件に数十秒）。' + (skipped ? '解析済みの ' + skipped + '件は飛ばします。' : '') +
         '途中でページを離れると止まります（押し直せば残りから）。')) return;
     if (btn) btn.disabled = true;
-    let drawings = 0, orders = 0, replies = 0;
+    let drawings = 0, orders = 0, replies = 0, deliveries = 0;
     const none = [], failed = [];
     for (let i = 0; i < todo.length; i++) {
         say('🤖 解析中… ' + (i + 1) + '/' + todo.length);
@@ -2825,16 +2885,18 @@ async function runZipAnalyze(pageId, zipID, btn) {
         else if (r.kind === 'drawing') drawings += r.made.length;
         else if (r.kind === 'order') orders += r.made.length;
         else if (r.kind === 'rfq_reply') replies += r.made.length;
+        else if (r.kind === 'supplier_delivery') deliveries += r.made.length;
         else none.push(todo[i].path);
     }
     const lines = ['まとめて解析しました（' + todo.length + '件）: 加工製品ページ ' + drawings + '枚' +
-        (orders ? '・案件ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') + '。'];
-    if (none.length) lines.push('発注書・図面・部材見積依頼の返事のどれでもない（ページは作っていない）: ' + none.join('・') + '\n' + BY_HAND_REPLY_HINT);
+        (orders ? '・案件ページ ' + orders + '枚' : '') + (replies ? '・部材見積依頼の返事ページ ' + replies + '枚' : '') +
+        (deliveries ? '・業者の納品書から部材発注書 ' + deliveries + '枚' : '') + '。'];
+    if (none.length) lines.push('発注書・図面・部材見積依頼の返事・業者の納品書のどれでもない（ページは作っていない）: ' + none.join('・') + '\n' + BY_HAND_REPLY_HINT);
     if (failed.length) lines.push('⚠ 解析できなかった: ' + failed.join('・'));
     if (drawings) lines.push('📁 整理で行き先を決めてください。');
     notify(lines.join('\n'), { type: failed.length ? 'warn' : 'success', duration: 0, id: 'analyze-pdf' });
     if (btn) { btn.disabled = false; btn.textContent = label; }
-    if (drawings || orders || replies) {
+    if (drawings || orders || replies || deliveries) {
         await reloadContent(); // 本文の鏡と、解析済みの印（applyMode 経由）
         loadChildNav();        // 左レールの子ページ一覧
     }
@@ -2885,8 +2947,14 @@ async function runAnalyze(pageId, file, btn) {
         notify('部材見積依頼の返事ページを作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' + d.say,
             { type: d.linked ? 'success' : 'warn', duration: 0, id: 'analyze-pdf' });
         born = true;
+    } else if (d.kind === 'supplier_delivery') {
+        const p = d.made[0];
+        notify('業者の納品書から、納品済の部材発注書を作りました: ' + (p.title || p.page_id) + '（/' + p.page_id + '）\n' +
+            '開いて、行を選んで「🔗 加工製品の行に結ぶ」でどの部材かを選ぶと、その部材の最新単価に出ます。',
+            { type: 'success', duration: 0, id: 'analyze-pdf' });
+        born = true;
     } else if (d.kind === 'none') {
-        notify('発注書・図面・部材見積依頼の返事のどれでもないと判定されました（ページは作っていません）。\n' + BY_HAND_REPLY_HINT, { type: 'warn', duration: 0 });
+        notify('発注書・図面・部材見積依頼の返事・業者の納品書のどれでもないと判定されました（ページは作っていません）。\n' + BY_HAND_REPLY_HINT, { type: 'warn', duration: 0 });
     } else {
         const list = d.made.map(o => (o.title || o.page_id) + '（/' + o.page_id + '）').join('\n');
         notify((d.made.length > 1

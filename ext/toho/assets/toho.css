@@ -600,3 +600,12 @@ body:not([edit-mode]) #w-editor-content > .mfg-start-frame.mfg-start-first:has(.
 @media print {
     #w-editor-content > .mfg-start-frame { background: none; }
 }
+/* 「🔗 加工製品の行に結ぶ」の欄（2026-10-23・order_bind.go）——部材発注明細表の下の帯の中に開く。候補は押せる行で並べる。 */
+#w-editor-content .order-bind-panel { margin-top: 6px; padding: 8px; border: 1px solid var(--w-border, #d1d5db); border-radius: 6px; }
+#w-editor-content .order-bind-search { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+#w-editor-content .order-bind-search input { flex: 1 1 220px; min-width: 0; }
+#w-editor-content .order-bind-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+#w-editor-content .order-bind-cand { display: block; width: 100%; text-align: left; padding: 4px 8px; cursor: pointer; }
+#w-editor-content .order-bind-prod { display: block; font-weight: 500; }
+#w-editor-content .order-bind-part { display: block; font-size: 0.9em; color: var(--w-muted, #6b7280); }
+#w-editor-content .order-bind-note { color: var(--w-muted, #6b7280); }
