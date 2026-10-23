@@ -50,6 +50,7 @@
     "役職": { "type": "text" },
     "部署": { "type": "text" },
     "氏名": { "type": "text" },
+    "正式名称": { "type": "text" },
     "推奨業者": { "type": "text" },
     "差出人": { "type": "email" },
     "宛先": { "type": "email" },

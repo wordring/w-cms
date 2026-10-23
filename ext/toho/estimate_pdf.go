@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
@@ -115,7 +116,9 @@ func buildEstimatePDF(body string, viewer *auth.User) ([]byte, error) {
 	y := pdfTop + 34
 
 	// ── 宛名 ──
-	to := strings.TrimSpace(head[EstimateClientTag])
+	// 連絡帳の組織に「正式名称」があれば、それを刷る（2026-10-23・ext/comm/contacts の OfficialName——見積先のタグは短い名前のまま）。
+	// 2026-10-23 利用者:「見積書には正式名を入れたいです。正式名称をどこかに書いておいて入れられるでしょうか？」
+	to := contacts.OfficialName(viewer, head[EstimateClientTag])
 	if person := strings.TrimSpace(head[EstimatePersonTag]); person != "" {
 		to += "　" + person + "　様"
 	} else {
