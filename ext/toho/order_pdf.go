@@ -29,6 +29,7 @@ import (
 	"github.com/signintech/gopdf"
 	"golang.org/x/net/html"
 
+	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
@@ -152,7 +153,9 @@ func buildOrderPDF(body string, viewer *auth.User) ([]byte, error) {
 	// `仕入先`（`SupplierTag`）なので、**「御中」の前がずっと空**だったはずです。
 	// ⚠ **試験が不具合を固定していました**——`pdfOrderBody` も `発注先` と書いていたので、
 	// 読み返しの番人は緑のまま。**生の文字列は、取り違えてもコンパイルが通ります。**
-	y = pdfText(p, pdfLeft, y, 12, head[SupplierTag]+"　御中")
+	// 連絡帳の組織に「正式名称」があればそれ（2026-10-23・ext/comm/contacts の OfficialName——仕入先のタグは短い名前のまま）。
+	// 2026-10-23 利用者:「さらに、業者への見積依頼や発注書も正式名称が必要です。」
+	y = pdfText(p, pdfLeft, y, 12, contacts.OfficialName(viewer, head[SupplierTag])+"　御中")
 	y += 4
 
 	// ── 差出人（右側）──

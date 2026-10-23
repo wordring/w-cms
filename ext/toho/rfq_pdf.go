@@ -136,7 +136,9 @@ func buildRFQPDF(body string, viewer *auth.User) ([]byte, error) {
 
 	// ── 宛名 ──
 	// 宛名は見本の欄のとおり「（宛先） 様」（【要求】部材見積依頼 §1・2026-10-14 に「御中」から改めた）。
-	y = pdfText(p, pdfLeft, y, 13, strings.TrimSpace(head[SupplierTag])+"　様")
+	// 連絡帳の組織に「正式名称」があればそれ（2026-10-23・ext/comm/contacts の OfficialName——仕入先のタグは短い名前のまま）。
+	// 2026-10-23 利用者:「さらに、業者への見積依頼や発注書も正式名称が必要です。」
+	y = pdfText(p, pdfLeft, y, 13, contacts.OfficialName(viewer, head[SupplierTag])+"　様")
 	p.SetLineWidth(0.6)
 	p.Line(pdfLeft, y-2, pdfLeft+260, y-2)
 	y += 6
@@ -319,7 +321,8 @@ func rfqMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) 
 	}
 	supplier := strings.TrimSpace(head[SupplierTag])
 	var b strings.Builder
-	b.WriteString(supplier + "\nご担当者様\n\nいつもお世話になっております。\n見積依頼書をお送りいたします。お手数ですが、単価をご記入のうえ、" +
+	// メールの宛名も正式名称（2026-10-23）。宛先のアドレスを引くのは短い名前のまま。
+	b.WriteString(contacts.OfficialName(user, supplier) + "\nご担当者様\n\nいつもお世話になっております。\n見積依頼書をお送りいたします。お手数ですが、単価をご記入のうえ、" +
 		"ご返送くださいますようお願いいたします。\n\n")
 	if sig := contacts.MySignature(user, "メールの署名"); len(sig) > 0 {
 		b.WriteString(strings.Join(sig, "\n") + "\n")

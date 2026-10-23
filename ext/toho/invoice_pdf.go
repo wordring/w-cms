@@ -123,7 +123,9 @@ func buildInvoicePDF(body string, viewer *auth.User) ([]byte, error) {
 	pdfTextRight(p, pdfRight, pdfTop, pdfFontSz, jpDate(date))
 	pdfTextRight(p, pdfRight, pdfTop+pdfLine, pdfFontSz, "№ "+head[InvoiceNoTag])
 	y := pdfTop + 34
-	y = pdfText(p, pdfLeft, y, 13, strings.TrimSpace(head[DeliveryClientTag])+"　御中")
+	// 宛名は、連絡帳の客先と同じ題の組織に「正式名称」があればそれ（2026-10-23・ext/comm/contacts の OfficialName——客先のタグは短い名前のまま）。
+	// 2026-10-23 利用者:「納品書と請求書の紙の宛名にも、連絡帳の正式名称を刷ってください。」
+	y = pdfText(p, pdfLeft, y, 13, contacts.OfficialName(viewer, head[DeliveryClientTag])+"　御中")
 	p.SetLineWidth(0.6)
 	p.Line(pdfLeft, y-2, pdfLeft+260, y-2)
 	regNo, bank := ownCompanyOf(head, viewer)

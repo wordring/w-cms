@@ -71,9 +71,11 @@ func estimateMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, er
 		return comm.ComposeDraft{}, err
 	}
 	client, person := head[EstimateClientTag], head[EstimatePersonTag]
-	to := client + "\n"
+	// メールの宛名は正式名称（2026-10-23・紙と同じ）。宛先のアドレスを引くのは見積先のまま。
+	official := contacts.OfficialName(user, client)
+	to := official + "\n"
 	if person != "" {
-		to = client + "\n" + person + " 様\n"
+		to = official + "\n" + person + " 様\n"
 	}
 	var b strings.Builder
 	b.WriteString(to + "\nいつもお世話になっております。\n御見積書をお送りいたします。ご査収のほど、よろしくお願いいたします。\n\n")
