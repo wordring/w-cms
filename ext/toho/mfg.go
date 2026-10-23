@@ -55,6 +55,8 @@ func mfgItemColumns() []cms.VocabColumn {
 		{Field: "item-name", Label: "品名", Type: cms.ColText},
 		{Field: "machine", Label: "装置名", Type: cms.ColText},
 		{Field: "quantity", Label: "数量", Type: cms.ColNumber},
+		// 製造数は実際に作った数（2026-10-23・mfg_made_stock.go）——製造完了で空なら数量を入れ、数量を超えた分は加工製品在庫表へ入る。
+		{Field: "made-qty", Label: MfgMadeQtyLabel, Type: cms.ColNumber},
 		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
 		{Field: "due", Label: "納期", Type: cms.ColText},
 		{Field: "made", Label: "製造完了", Type: cms.ColEnum, Enum: []string{MarkDone}},

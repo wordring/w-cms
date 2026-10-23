@@ -88,6 +88,7 @@
     "加工時間": { "type": "number" },
     "在庫数": { "type": "number", "min": 0 },
     "棚卸し日": { "type": "date" },
+    "製造数": { "type": "number", "min": 0 },
     "納品書発行": { "type": "enum", "values": ["済"] },
     "請求書発行": { "type": "enum", "values": ["済"] }
   },

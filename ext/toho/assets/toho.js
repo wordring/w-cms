@@ -1556,10 +1556,7 @@ delegateClick([
             stocked += Number((r.data && r.data.stocked) || 0);
             for (const n of ((r.data && r.data.stock_notes) || [])) stockNotes.push(n);
         }
-        if (stocked || stockNotes.length) {
-            alert((stocked ? '案件の必要を超えた分で、置き場「在庫」の在庫表を直しました（' + stocked + ' 件）。' : '') +
-                (stockNotes.length ? '\n\n⚠ 在庫表に書けなかったもの:\n' + stockNotes.join('\n') : ''));
-        }
+        tellStockChanges(stocked, stockNotes, '案件の必要を超えた分');
         // ⚠ **本文が変わったので読み直します**——印は本文の列なので、画面で組み立てず、サーバーが描いたものを受け取ります。
         location.reload();
     }
@@ -1776,7 +1773,13 @@ async function mfgPost(ctx, btn, url, body, busy, fail) {
     if (!r.ok) { sayIn(ctx.say, '⚠ ' + ((r.data && r.data.message) || fail)); return null; }
     return r.data || {};
 }
-const MFG_NONE = '製造明細表の行の先頭のチェックで、行を選んでください。';
+// tellStockChanges は、置き場「在庫」の在庫表を直したこと（部材の納品済・製造完了——2026-10-23・stock_in.go）と、書けなかったものを知らせる。
+function tellStockChanges(stocked, notes, what) {
+    if (!stocked && !(notes && notes.length)) return;
+    alert((stocked ? what + 'で、置き場「在庫」の在庫表を直しました（' + stocked + ' 件）。' : '') +
+        (notes && notes.length ? '\n\n⚠ 在庫表に書けなかったもの:\n' + notes.join('\n') : ''));
+}
+const MFG_NONE ='製造明細表の行の先頭のチェックで、行を選んでください。';
 const NEEDS_NONE = '必要部材表の行の先頭のチェックで、行を選んでください。';
 const mfgItems = (picks) => picks.map((c) => ({ row: Number(c.dataset.row), item: c.dataset.item || '' }));
 
@@ -1815,11 +1818,17 @@ delegateClick([
         const ctx = mfgBarOf(btn);
         const picks = mfgPicked(ctx, '.mfg-pick').filter((c) => (c.dataset.made || '') !== '済');
         if (!mfgPicked(ctx, '.mfg-pick').length) { sayIn(ctx.say, MFG_NONE, 'warn'); return; }
+        let stocked = 0;
+        const notes = [];
         for (const c of picks) {
             const ok = await mfgPost(ctx, btn, '/api/mfg/made', { page_id: ctx.mfg, row: Number(c.dataset.row), item_no: c.dataset.item || '', old: c.dataset.made || '', value: '済' },
                 '製造完了を書いています…', '製造完了を書けませんでした');
             if (!ok) return;
+            // 数量を超えて作った分（製造数 − 数量）は、加工製品在庫表へ入る（2026-10-23・mfg_made_stock.go）。
+            stocked += Number(ok.stocked || 0);
+            for (const n of (ok.stock_notes || [])) notes.push(n);
         }
+        tellStockChanges(stocked, notes, '数量を超えて作った分');
         location.reload();
     }],
     // 見積計算書——選んだ行の加工製品ごとに作る（1つなら開く）。

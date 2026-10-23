@@ -1,8 +1,13 @@
 package toho
 
 import (
+	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
+
+	"w-cms/internal/auth"
+	"w-cms/internal/cms"
 )
 
 // 届いた部材を在庫表へ入れる（2026-10-23・stock_in.go）——
@@ -77,5 +82,100 @@ func TestApplyStockMovesKeepsABlankRow(t *testing.T) {
 	// 無い行は引けない（断る）。
 	if _, notes := applyStockMoves(out, []stockMove{{kind: sk, key: stockRowKey(sk, cells), cells: cells, qty: -1}}); len(notes) != 1 {
 		t.Errorf("⚠ 在庫表に無い行を引いたのに断りません: %v", notes)
+	}
+}
+
+// 製造明細表と発注部材表の、数量のすぐ右に「在庫数」の鏡の列が出る（2026-10-23・stock_mirror.go）。
+// 在庫表に行の無いものは空欄。本文には書かない。
+func TestStockColumnNextToQuantity(t *testing.T) {
+	mfg := seedMfgWork(t)
+	addPage(t, 40, 0, StockBoxTitle, "root", "302", true)
+	stock := `<h1>在庫</h1>` +
+		`<table><caption>材料在庫表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>在庫数</th></tr>` +
+		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>7</td></tr></tbody></table>` +
+		`<table><caption>加工製品在庫表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>在庫数</th></tr>` +
+		`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>4</td></tr></tbody></table>`
+	writeBodyFile(t, 40, stock)
+	syncBody(t, 40, stock)
+	u := adminUser()
+	render := func(id string) string {
+		return cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/"+id, nil), u), pageNum(id), readPageBody(t, id))
+	}
+	view := render(mfg)
+	if !strings.Contains(view, `<th>数量</th><th class="vocab-chrome w-no-print stock-qty"`) {
+		t.Errorf("⚠ 製造明細表の数量の右に在庫数の見出しがありません:\n%s", view)
+	}
+	if !regexp.MustCompile(`<td>2</td><td class="vocab-chrome w-no-print stock-qty"[^>]*>4</td>`).MatchString(view) {
+		t.Errorf("⚠ ブラケット（000031）の在庫数 4 が数量の右にありません:\n%s", view)
+	}
+	if !regexp.MustCompile(`<td>5</td><td class="vocab-chrome w-no-print stock-qty"[^>]*></td>`).MatchString(view) {
+		t.Errorf("⚠ 弊社品番の無い行の在庫数が空欄ではありません:\n%s", view)
+	}
+	// 発注部材表（製造ページの部材作業から入れる）。
+	if code, out := postRFQ(t, u, MfgPartsAPIHandler, map[string]any{"page_id": mfg, "items": []map[string]any{{"row": 0, "item": "K-1"}}}); code != 200 {
+		t.Fatalf("部材を集められません: %d %v", code, out)
+	}
+	if code, out := postRFQ(t, u, MfgNeedsAPIHandler, map[string]any{"page_id": mfg, "rows": []int{1, 2}, "action": "order"}); code != 200 {
+		t.Fatalf("発注へ移せません: %d %v", code, out)
+	}
+	view = render(mfg)
+	at := strings.Index(view, "<caption>発注部材表</caption>")
+	if at < 0 {
+		t.Fatalf("発注部材表がありません:\n%s", view)
+	}
+	draft := view[at : strings.Index(view[at:], "</table>")+at]
+	if !regexp.MustCompile(`<td>FB</td><td>t4.5\*75\*1090</td>.*?<td class="vocab-chrome w-no-print stock-qty"[^>]*>7</td>`).MatchString(draft) {
+		t.Errorf("⚠ 発注部材表の FB の行に在庫数 7 がありません:\n%s", draft)
+	}
+	if strings.Contains(readPageBody(t, mfg), "stock-qty") {
+		t.Errorf("⚠ 在庫数の列が本文に書かれました")
+	}
+}
+
+// 製造完了で加工製品を在庫表へ入れる（2026-10-23・mfg_made_stock.go）——
+//   - 製造数が空なら数量を入れ、在庫表は変わらない（作った数＝納める数）
+//   - 製造数が数量より多ければ、その差を加工製品在庫表へ。製造完了を外すと同じ数を引く
+//   - 自社案件の行は、作った数が全部在庫
+func TestMadeProductsGoIntoStock(t *testing.T) {
+	seedMfgWork(t)
+	addPage(t, 40, 0, StockBoxTitle, "root", "302", true)
+	stock := `<h1>在庫</h1><table><caption>加工製品在庫表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>在庫数</th></tr>` +
+		`<tr><td></td><td></td><td></td><td></td></tr></tbody></table>`
+	writeBodyFile(t, 40, stock)
+	syncBody(t, 40, stock)
+	mfg := `<h1>ブラケット</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindMfg + `</dd></dl>` +
+		`<table><caption>製造明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>品番</th><th>品名</th><th>数量</th><th>製造数</th><th>製造完了</th></tr>` +
+		`<tr><td>000031</td><td>000030</td><td>K-1</td><td>ブラケット</td><td>2</td><td></td><td></td></tr>` +
+		`<tr><td>000031</td><td>000030</td><td>K-3</td><td>ブラケット</td><td>2</td><td>5</td><td></td></tr></tbody></table>`
+	writeBodyFile(t, 33, mfg)
+	syncBody(t, 33, mfg)
+	u := adminUser()
+	made := func(row int, item, old, value string) map[string]any {
+		t.Helper()
+		code, out := postRFQ(t, u, MfgMadeAPIHandler, map[string]any{"page_id": "000033", "row": row, "item_no": item, "old": old, "value": value})
+		if code != 200 {
+			t.Fatalf("製造完了を書けません: %d %v", code, out)
+		}
+		return out
+	}
+	if out := made(0, "K-1", "", MarkDone); out["stocked"].(float64) != 0 {
+		t.Errorf("⚠ 数量どおり作った行で在庫表を直しました: %v", out)
+	}
+	if body := readPageBody(t, "000033"); !strings.Contains(body, "<td>K-1</td><td>ブラケット</td><td>2</td><td>2</td><td>済</td>") {
+		t.Errorf("⚠ 空の製造数に数量が入っていません:\n%s", body)
+	}
+	made(1, "K-3", "", MarkDone)
+	if body := readPageBody(t, "000040"); !strings.Contains(body, "<td>000031</td><td>K-3</td><td>ブラケット</td><td>3</td>") {
+		t.Errorf("⚠ 多く作った 5 − 2 = 3 が加工製品在庫表にありません:\n%s", body)
+	}
+	made(1, "K-3", MarkDone, "")
+	if body := readPageBody(t, "000040"); strings.Contains(body, "K-3") {
+		t.Errorf("⚠ 製造完了を外したのに、在庫表の行が残っています:\n%s", body)
+	}
+	// 自社案件の行は、作った数が全部在庫。
+	syncBody(t, 30, `<h1>受注</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindOwnCase+`</dd></dl>`)
+	made(1, "K-3", "", MarkDone)
+	if body := readPageBody(t, "000040"); !strings.Contains(body, "<td>000031</td><td>K-3</td><td>ブラケット</td><td>5</td>") {
+		t.Errorf("⚠ 自社案件で作った 5 が、全部は在庫表に入っていません:\n%s", body)
 	}
 }

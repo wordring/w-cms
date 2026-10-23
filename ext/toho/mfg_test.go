@@ -58,7 +58,7 @@ func TestMfgNewFromBacklogRows(t *testing.T) {
 		"<dt>" + DeliveryClientTag + "</dt><dd>あけぼの精工</dd>",
 		"<dt>" + PageKindTag + "</dt><dd>" + PageKindMfg + "</dd>",
 		"<caption>製造明細表</caption>",
-		"<td>000972</td><td>A-1</td><td>ブラケット</td><td></td><td>40</td><td>個</td><td>2026-11-01</td>",
+		"<td>000972</td><td>A-1</td><td>ブラケット</td><td></td><td>40</td><td></td><td>個</td><td>2026-11-01</td>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("製造ページに %q がありません:\n%s", want, body)
