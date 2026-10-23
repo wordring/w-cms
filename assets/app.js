@@ -6937,6 +6937,10 @@
     //     `2026/10/15`）。**空のセルはどちら向きでも最後**。同じ値は元の並びのまま。
     const tableSortState = new WeakMap(); // table → { col, dir }（dir: 1 昇順・-1 降順）
     const tableSortKeys = new WeakMap();  // table → 憶える鍵
+    // tableSortSeen は refreshTableSort が見た表です（2026-10-23）。描き直しの巡りのあとに画面が足した表（欄のボタンで出す一覧など）は
+    // 入っていないので、見出しにポインタが来た・押したときに refreshTableSort をやり直して、並べられるようにする。
+    // > 2026-10-23 利用者:「列の見出しをクリックしても並べ替えが出来ません。一度保存するとできるようですが、最初からできて欲しいです。」
+    let tableSortSeen = new WeakSet();
     const tableSortCollator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
 
     // sortHeaderRow は表の見出しの行（全部が th の最初の行）を返します。並べられない表なら null。
@@ -7050,7 +7054,9 @@
         const editing = document.body.hasAttribute('edit-mode');
         const st = ViewState.get(currentPageId);
         const seen = {};
+        tableSortSeen = new WeakSet();
         document.querySelectorAll('#w-editor-content table').forEach(table => {
+            tableSortSeen.add(table);
             unsortTable(table);
             table.querySelectorAll(':scope th.w-sortable').forEach(th => th.classList.remove('w-sortable'));
             tableSortKeys.delete(table);
@@ -7071,9 +7077,19 @@
         });
     }
 
+    // prepareLateTable は、巡りのあとに足された表の見出しに来たとき、印を付け直します（並べ替えの印・憶えた並び）。
+    function prepareLateTable(target) {
+        if (document.body.hasAttribute('edit-mode') || !(target instanceof Element)) return;
+        const th = target.closest('#w-editor-content th');
+        const table = th && th.closest('table');
+        if (table && !tableSortSeen.has(table)) refreshTableSort();
+    }
+    document.addEventListener('pointerover', e => prepareLateTable(e.target));
+
     document.addEventListener('click', e => {
         if (document.body.hasAttribute('edit-mode')) return;
         if (!(e.target instanceof Element)) return;
+        prepareLateTable(e.target); // 指で触る端末はポインタが来ないので、押したときにも
         const th = e.target.closest('#w-editor-content th.w-sortable');
         if (!th || e.target.closest('a, button, input, select, textarea, summary')) return;
         const table = th.closest('table');

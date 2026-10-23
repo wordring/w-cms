@@ -69,6 +69,13 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     check('① 単価の無い見積表・表の無い加工製品も理由つきで並ぶ', text.includes('単価がありません') && text.includes('見積表なし'));
     check('① 見積先にその装置の客先が入る', await page.locator('[data-estf="client"]').inputValue() === '【E2E】客先');
     check('① 一時的な表は本文に入らない', !(await page.evaluate(() => document.getElementById('w-html-preview').value)).includes('E2E-ESTF'));
+    // 一覧の列の題を押すと、保存せずに並べ替えられる（2026-10-23——それまでは一度保存するまで押せなかった）。
+    const prodHead = page.locator('.estimate-folder-table th', { hasText: '加工製品' }).first();
+    await prodHead.click();
+    await page.waitForTimeout(200);
+    check('① 一覧の題を押すと、保存せずに並べ替えられる', ((await prodHead.getAttribute('class')) || '').includes('w-sorted'), await prodHead.getAttribute('class'));
+    await prodHead.click(); // 降順 → もう一度で元の並び（後の確かめは一覧の順を見るので戻す）
+    await prodHead.click();
 
     // ③（作る前に）開き直しても一覧がまた並ぶ。
     await page.reload();

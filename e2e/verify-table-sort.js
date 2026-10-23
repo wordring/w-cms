@@ -119,6 +119,22 @@ const ORIGINAL = ['E2E-SORT-B', 'E2E-SORT-A', 'E2E-SORT-C', 'E2E-SORT-D'];
     await page.waitForTimeout(500);
     check(same(await order(), ['E2E-SORT-A', 'E2E-SORT-B', 'E2E-SORT-C', 'E2E-SORT-D']),
       '閲覧モードへ戻すと憶えた並べ替えがまた効く', JSON.stringify(await order()));
+
+    // ⑤ 描いたあとに画面が足した表（欄のボタンで出す一覧など）も、保存せずに題を押して並べられる（2026-10-23）
+    await page.evaluate(() => {
+      const box = document.createElement('div');
+      box.className = 'vocab-chrome';
+      box.innerHTML = '<table class="e2e-late"><tbody><tr><th>名</th><th>数</th></tr>' +
+        '<tr><td>LATE-B</td><td>2</td></tr><tr><td>LATE-A</td><td>1</td></tr><tr><td>LATE-C</td><td>3</td></tr></tbody></table>';
+      document.querySelector('#w-editor-content').appendChild(box);
+    });
+    const late = () => page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content table.e2e-late tbody tr'))
+      .map((r) => r.cells[0].textContent.trim()).filter((s) => s.startsWith('LATE-')));
+    await page.click('#w-editor-content table.e2e-late th:first-child');
+    await page.waitForTimeout(200);
+    check(same(await late(), ['LATE-A', 'LATE-B', 'LATE-C']), '⑤ あとから足した表も、保存せずに題を押して並べられる', JSON.stringify(await late()));
+    check(same(await order(), ['E2E-SORT-A', 'E2E-SORT-B', 'E2E-SORT-C', 'E2E-SORT-D']),
+      '⑤ ほかの表の憶えた並べ替えはそのまま', JSON.stringify(await order()));
   };
   try {
     await run();
