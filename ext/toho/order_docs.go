@@ -457,6 +457,10 @@ func importPDFPages(p *gopdf.GoPdf, data []byte) (err error) {
 			err = fmt.Errorf("%v", rec)
 		}
 	}()
+	// 展開すると大きすぎる PDF（展開爆弾）は gofpdi に渡さない（pdf_inflate_guard.go・2026-10-26）。
+	if !pdfInflateWithinBudget(data) {
+		return fmt.Errorf("中身を広げると大きすぎます（%d MB を超える）", pdfInflateBudget>>20)
+	}
 	rs := io.ReadSeeker(&guardedReader{Reader: bytes.NewReader(data),
 		deadline: time.Now().Add(pdfImportTimeLimit)})
 	sizes := p.GetStreamPageSizes(&rs)
@@ -481,6 +485,10 @@ func placeImagePage(p *gopdf.GoPdf, data []byte) error {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || cfg.Width == 0 || cfg.Height == 0 {
 		return fmt.Errorf("画像を読めません")
+	}
+	// 大きさを名乗るだけの小さな画像（復号すると何 GB にもなる）は綴じない（2026-10-26・取り込みの JPEG と同じ上限）。
+	if err := cms.CheckImageSize(cfg.Width, cfg.Height); err != nil {
+		return err
 	}
 	holder, err := gopdf.ImageHolderByBytes(data)
 	if err != nil {

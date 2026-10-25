@@ -208,6 +208,10 @@ const (
 )
 
 // checkImageSize は、復号する前に大きさを確かめます。
+// CheckImageSize は、画像の大きさ（幅 w・高さ h）が、復号してよい大きさの内かを確かめます（拡張が画像を復号する前にも使う——
+// 小さなファイルが巨大な大きさを名乗ると、復号が何 GB も取ってサーバーが落ちる）。
+func CheckImageSize(w, h int) error { return checkImageSize(w, h) }
+
 func checkImageSize(w, h int) error {
 	if w <= 0 || h <= 0 || w > maxImageSide || h > maxImageSide || w*h > maxImagePixels {
 		return fmt.Errorf("画像が大きすぎます（%d×%d）。%d 万画素・1辺 %d 画素までにしてください", w, h, maxImagePixels/10000, maxImageSide)
