@@ -19,7 +19,7 @@
 //
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-order-send.js
 const { chromium } = require('playwright');
-const { login, childrenOf, makePage, deletePage } = require('./lib');
+const { login, childrenOf, makePage, deletePage, sendWay } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 // ⚠ 2行とも `未発注` で始めます——① 1行目に「✓ 発注済」→ ③ 2行目に「✕ 取消」→
@@ -83,6 +83,8 @@ async function statusesOf(page) {
       ['[data-fax-purpose="部材発注書"]', 'w-cms の FAX で送る（2026-10-25 夜）'],
       ['[data-order-sent="FAX"]', '別の FAX 機で送った'],
       ['[data-order-sent="手渡し"]', '手渡した'],
+      ['.send-way-pick', '送り方の欄（2026-10-26）'],
+      ['.send-way-go', '「▶ 送る」（2026-10-26）'],
       ['.order-pick', '行の先頭のチェック'],
       ['.order-bar .order-sel-act', '表の下の行の操作'],
     ]) {
@@ -129,10 +131,10 @@ async function statusesOf(page) {
         bad++;
       }
       await page.goto(BASE + '/' + found);
-      await page.waitForSelector('[data-order-sent="手渡し"]', { timeout: 8000 }).catch(() => {});
+      // 送り方の欄で「手渡し」を選んで「✓ 記録する」（2026-10-26 から、いままでのボタンは隠してある）。
       page.once('dialog', (d) => d.accept());
       await Promise.all([page.waitForNavigation({ timeout: 8000 }).catch(() => {}),
-        page.locator('[data-order-sent="手渡し"]').first().click()]);
+        sendWay(page, '[data-order-sent="手渡し"]')]);
       await page.waitForTimeout(800);
       const done = await statusesOf(page);
       if (!done || done[1] !== '取消') {

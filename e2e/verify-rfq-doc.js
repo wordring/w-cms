@@ -11,7 +11,7 @@
 // 年月のフォルダは最後に消します。差出人（署名を持つ人）が居なければ飛ばします。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-rfq-doc.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, childrenOf } = require('./lib');
+const { login, makePage, deletePage, childrenOf, sendWay } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -111,7 +111,7 @@ const parentOf = (page, id) => page.evaluate(async (x) => (await (await fetch('/
     check('⑤ 送る欄が開いていて、部材見積依頼書のPDFが添付に印つきで並ぶ', genText.includes('見積依頼書 ' + doc + '.pdf') &&
       await page.locator('.mail-compose input[data-mc-generated]').isChecked().catch(() => false), genText);
     check('⑤ 件名は「見積依頼（№ ページ番号）」', (await page.locator('.mail-compose [data-mc="subject"]').inputValue().catch(() => '')) === '見積依頼（№ ' + doc + '）');
-    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), page.locator('#w-editor-content .rfq-sent-go').click()]);
+    await Promise.all([page.waitForEvent('load', { timeout: 15000 }).catch(() => {}), sendWay(page, '.rfq-sent-go')]); // 送り方の欄で「手渡し」（2026-10-26 から、いままでのボタンは隠してある）
     await page.waitForTimeout(1000);
     raw5 = await page.evaluate(async (id) => (await fetch('/api/load?id=' + id)).text(), doc);
     check('⑤ 「送った（FAX・手渡し）」で送付日に今日', /<dt>送付日<\/dt><dd>\d{4}-\d{2}-\d{2}<\/dd>/.test(raw5));

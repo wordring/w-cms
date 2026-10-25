@@ -247,7 +247,23 @@ async function findPageWithTag(page, tagName, opts = {}) {
   return '';
 }
 
+// sendWay は、書類の送る欄で送り方を選んで「▶ 送る」を押します（2026-10-26・ext/toho/send_way.go）。target は選択肢の
+// data-target（押す先のセレクタ。例 '[data-order-sent="手渡し"]'・'.rfq-sent-go'）。選んだ送り方のいままでのボタンは
+// 隠してあるので、直に押さずにこれを通す。
+async function sendWay(page, target, scope = '#w-editor-content') {
+  const pick = page.locator(scope + ' .send-way-pick').first();
+  await pick.waitFor({ timeout: 8000 });
+  await pick.evaluate((el, t) => {
+    const i = [...el.options].findIndex((o) => o.getAttribute('data-target') === t);
+    if (i < 0) throw new Error('送り方の選択肢がありません: ' + t);
+    el.selectedIndex = i;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, target);
+  await pick.locator('xpath=..').locator('.send-way-go').click();
+}
+
 module.exports = {
+  sendWay,
   deleteTree,
   topChildID,
   MAILBOX_TITLE, CHANNEL_TAG,

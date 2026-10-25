@@ -10,7 +10,7 @@
 // 当て先は全部自分で作って最後に消します（案件ページ・加工製品・製造ページ・部材発注書）。
 // 使い方: WCMS_BASE=https://localhost:8443 node verify-mfg-extra.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage } = require('./lib');
+const { login, makePage, deletePage, sendWay } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -104,10 +104,9 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
       // ③
       if (po) {
         await page.goto(BASE + '/' + po);
-        const fax = page.locator('#w-editor-content [data-order-sent="FAX"]');
-        await fax.waitFor({ timeout: 8000 }).catch(() => {});
+        // 送り方の欄で「別の FAX 機で送った」を選んで「✓ 記録する」（2026-10-26 から、いままでのボタンは隠してある）。
         page.once('dialog', (d) => d.accept());
-        await Promise.all([page.waitForNavigation({ timeout: 10000 }).catch(() => {}), fax.click().catch(() => {})]);
+        await Promise.all([page.waitForNavigation({ timeout: 10000 }).catch(() => {}), sendWay(page, '[data-order-sent="FAX"]').catch(() => {})]);
         check('③ FAXで送った → 発注済', (await bodyOf(page, po)).includes('>発注済<'));
         await page.goto(BASE + '/' + po);
         const un = page.locator('#w-editor-content [data-order-unsend]');
