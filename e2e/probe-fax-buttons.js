@@ -30,6 +30,8 @@ const { login, sendWay } = require('./lib');
     // 送り方の欄で FAX を選んで「▶ 送る」（2026-10-26 から、FAX のボタンは隠してある）。
     await sendWay(page, '[data-fax-purpose]');
     await page.waitForTimeout(800);
+    const go = await page.locator('#w-editor-content .send-way-go').first().textContent();
+    if (go !== '▶ 送る') { console.log('✗ /' + id + ': FAX を選んだのに、ボタンの文字が ' + go); bad++; }
     // 候補があれば選ぶ欄が出る。出ていれば閉じる（Escape）。
     const dlg = await page.locator('dialog[open], .w-dialog, [role="dialog"]').count();
     if (!dlg && prompts === before) { console.log('✗ /' + id + ': FAX を選んで押しても、番号を尋ねません'); bad++; continue; }
