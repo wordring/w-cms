@@ -372,15 +372,22 @@ func (p PageMeta) OwnedBy(u *auth.User) bool {
 }
 
 // CanRead はユーザー u がページ p を閲覧できるかを返します（adminはバイパス）。
+// u が nil（ログインしていない人）なら false——匿名の判定は CanView（実効公開）です。それまでは nil で落ちた（2026-10-26）。
 func (p PageMeta) CanRead(u *auth.User) bool {
+	if u == nil {
+		return false
+	}
 	if u.IsAdmin {
 		return true
 	}
 	return classDigit(p.Mode, effectiveClass(p, u))&2 != 0
 }
 
-// CanWrite はユーザー u がページ p を編集できるかを返します（adminはバイパス）。
+// CanWrite はユーザー u がページ p を編集できるかを返します（adminはバイパス）。u が nil なら false（ログインしていない人は書けない）。
 func (p PageMeta) CanWrite(u *auth.User) bool {
+	if u == nil {
+		return false
+	}
 	if u.IsAdmin {
 		return true
 	}

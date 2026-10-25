@@ -25,3 +25,11 @@ func TestDefaultOwnerIsNobodyByName(t *testing.T) {
 		t.Errorf("ふつうの持ち主が持ち主になりません")
 	}
 }
+
+// TestCanReadWriteNilUser は、ログインしていない人（nil）で CanRead・CanWrite が落ちずに false を返すことを固定します。
+func TestCanReadWriteNilUser(t *testing.T) {
+	p := PageMeta{Owner: "alice", Mode: "333"}
+	if p.CanRead(nil) || p.CanWrite(nil) {
+		t.Errorf("ログインしていない人に読む・書くを許しました")
+	}
+}
