@@ -37,13 +37,27 @@ func newRFQDoc(t *testing.T, supplier string) string {
 // newReplyMail は返事のメールの記録（件名 subject・PDF の添付 rp01.pdf）を作って、そのページ番号を返します。
 func newReplyMail(t *testing.T, subject, bodyText string) string {
 	t.Helper()
-	id, err := cms.CreateChildPage(rfqReplyBox, "root", `<h1>`+subject+`</h1><dl data-type="tags"><dt>`+comm.DirectionTag+`</dt><dd>`+
+	id, err := cms.CreateChildPage(replyMailBox(t), "root", `<h1>`+subject+`</h1><dl data-type="tags"><dt>`+comm.DirectionTag+`</dt><dd>`+
 		comm.DirectionIn+`</dd><dt>`+comm.ChannelTag+`</dt><dd>メール</dd><dt>`+comm.FromTag+`</dt><dd>sales@example.jp</dd><dt>`+
 		comm.ReceivedAtTag+`</dt><dd>2026-10-05T09:00:00+09:00</dd></dl><section><h2>`+comm.MailBodyHeading+`</h2><pre>`+bodyText+`</pre></section>`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	putAttachment(t, id, "rp01.pdf", []byte("%PDF-1.4 返事"))
+	return id
+}
+
+// replyMailBox は通信箱（トップ直下）のページIDを返します（無ければ作る）。通信の記録は通信箱の下にしか数えない
+// （2026-10-26——comm.InMailBox）ので、試験の記録もそこに置きます。
+func replyMailBox(t *testing.T) string {
+	t.Helper()
+	if id, ok := comm.MailBoxPageID(); ok {
+		return id
+	}
+	id, err := cms.CreateChildPage("000000", "root", "<h1>"+comm.MailBoxTitle+"</h1>")
+	if err != nil {
+		t.Fatal(err)
+	}
 	return id
 }
 
@@ -173,7 +187,7 @@ func TestAnalyzeRFQReplyNeedsHumanWhenUnsure(t *testing.T) {
 	}
 
 	// ④ 件名に№が無くても、こちらが送った部材見積依頼のメール（控え）への返信なら、控えの件名の№で結ぶ。
-	sent, err := cms.CreateChildPage(rfqReplyBox, "root", `<h1>見積依頼（№ `+w2+`）</h1><dl data-type="tags"><dt>`+comm.DirectionTag+
+	sent, err := cms.CreateChildPage(replyMailBox(t), "root", `<h1>見積依頼（№ `+w2+`）</h1><dl data-type="tags"><dt>`+comm.DirectionTag+
 		`</dt><dd>`+comm.DirectionOut+`</dd><dt>`+comm.MessageIDTag+`</dt><dd>&lt;rfq-`+w2+`@example.jp&gt;</dd></dl>`)
 	if err != nil {
 		t.Fatal(err)

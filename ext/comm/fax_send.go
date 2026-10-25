@@ -156,6 +156,11 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
+	// 送った FAX の記録は通信箱の下に作る——書けないなら送らない（2026-10-26。送ってから記録を作れないと、送った事実が残らない）。
+	if _, err := WritableMailBox(user); err != nil {
+		cms.JSONFail(w, http.StatusConflict, "FAX の記録を作れないので、送っていません: "+err.Error())
+		return
+	}
 	// 番号は紙を用意する前に確かめる（用件の Prepare は PDF を作ることがある）。
 	number := faxSendNumber(req.Number)
 	if number == "" {
@@ -256,9 +261,9 @@ func purposeFaxSource(w http.ResponseWriter, r *http.Request, pageID, purpose st
 // recordSentFax は、送った FAX の記録を通信箱に作り、送った PDF を写して表示します（記録のページ番号を返す）。
 func recordSentFax(user *auth.User, src faxSource, number, job string) (string, error) {
 	srcPage, fileName, path := src.PageID, src.File, src.Path
-	boxID, ok := MailBoxPageID()
-	if !ok {
-		return "", ErrNoMailBox
+	boxID, err := WritableMailBox(user)
+	if err != nil {
+		return "", err
 	}
 	tmpl, err := cms.PageTemplateBody(MemoTemplate)
 	if err != nil {
