@@ -3,6 +3,7 @@ package page
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -85,6 +86,20 @@ func ReadSidecar(id string) (PageMeta, bool) {
 // いればそれを尊重）。権限フィールド（Owner/Group/Mode）の変更は chmod/chown 経由のみ、
 // 更新日時の前進は BumpUpdatedAt 経由のみ、という規律で自己認可を防ぎます。
 func WriteSidecar(id string, p PageMeta) error {
+	return writeSidecar(id, p, true)
+}
+
+// rewriteSidecar は、もうあるページのサイドカーを書き替えます。⚠ ページのフォルダを作らない（2026-10-26）——
+// 読んでから書くまでのあいだにページがごみ箱へ移ると、フォルダを作り直して、属性のファイルだけの幽霊のページが
+// できた（【考察】コードの矛盾 §2.1）。フォルダが無ければ書かずに断る。
+func rewriteSidecar(id string, p PageMeta) error {
+	return writeSidecar(id, p, false)
+}
+
+// ErrPageGone は、書き替えようとしたページのフォルダが無い（ごみ箱へ移った）ことです。
+var ErrPageGone = errors.New("ページがありません（ごみ箱へ移ったかもしれません）")
+
+func writeSidecar(id string, p PageMeta, create bool) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if p.CreatedAt == "" {
 		p.CreatedAt = now
@@ -99,10 +114,14 @@ func WriteSidecar(id string, p PageMeta) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(GetPageDir(id), 0755); err != nil {
-		return err
+	if create {
+		if err := os.MkdirAll(GetPageDir(id), 0755); err != nil {
+			return err
+		}
+	} else if fi, err := os.Stat(GetPageDir(id)); err != nil || !fi.IsDir() {
+		return ErrPageGone
 	}
-	// 一時ファイル＋rename。サイドカーは読めなくなっても自動修復しない決定
+	// 一時ファイル＋rename（フォルダがあとでごみ箱へ移っても、一時ファイルはそのフォルダと一緒に移り、rename は落ちる）。サイドカーは読めなくなっても自動修復しない決定
 	// （運用者が手で直す）なので、書き込み自身が切り詰め破損を作ってはいけない。
 	return WriteFileAtomic(sidecarPath(id), data, 0644)
 }
@@ -156,7 +175,7 @@ func touchSidecar(id string, change func(*PageMeta)) (string, error) {
 	}
 	change(&meta)
 	meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := WriteSidecar(id, meta); err != nil {
+	if err := rewriteSidecar(id, meta); err != nil {
 		return "", err
 	}
 	return meta.UpdatedAt, nil
@@ -177,7 +196,7 @@ func UpdateSidecar(id string, change func(*PageMeta) bool) (meta PageMeta, ok bo
 	if !ok || !change(&meta) {
 		return meta, ok, nil
 	}
-	return meta, true, WriteSidecar(id, meta)
+	return meta, true, rewriteSidecar(id, meta)
 }
 
 // BumpUpdatedAt は本文保存時に更新日時を「今」に進めます（権限・親などは保持）。

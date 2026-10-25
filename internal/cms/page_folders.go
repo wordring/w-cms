@@ -64,12 +64,8 @@ func SetSortKey(pageID, key string) {
 	if key == "" {
 		return
 	}
-	meta, ok := page.ReadSidecar(pageID)
-	if !ok {
-		return
-	}
-	meta.SortKey = key
-	if err := page.WriteSidecar(pageID, meta); err != nil {
+	// 読んで書き戻すのは UpdateSidecar の中で（ほかの書き替えと重ならない・消えたページのフォルダを作り直さない——2026-10-26）。
+	if _, _, err := page.UpdateSidecar(pageID, func(m *page.PageMeta) bool { m.SortKey = key; return true }); err != nil {
 		log.Printf("並び順キーを書けませんでした page=%s: %v", pageID, err)
 	}
 }
