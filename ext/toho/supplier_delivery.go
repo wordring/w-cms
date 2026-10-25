@@ -131,7 +131,12 @@ func makeSupplierDelivery(user *auth.User, hostPageID, attachID string, j *suppl
 		ref = hostPageID + "-" + attachID
 	}
 	if id := supplierDeliveryMadeFrom(ref); id != "" {
-		return "", &comm.MakeError{Status: http.StatusConflict, Message: "この納品書からは、もう部材発注書 /" + id + " を作ってあります（同じ値段を二重に数えないため、2枚目は作りません）"}
+		// 読めない部材発注書の番号は出さない（2026-10-26）。
+		which := "部材発注書 /" + id
+		if !page.CanView(user, pageNum(id)) {
+			which = "部材発注書（あなたには見えないページ）"
+		}
+		return "", &comm.MakeError{Status: http.StatusConflict, Message: "この納品書からは、もう" + which + "を作ってあります（同じ値段を二重に数えないため、2枚目は作りません）"}
 	}
 	supplier := contacts.OrgNameForPage(user, j.Supplier)
 	if strings.TrimSpace(supplier) == "" {

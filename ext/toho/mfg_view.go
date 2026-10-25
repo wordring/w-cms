@@ -223,7 +223,11 @@ func MfgMadeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	stocked, notes := 0, []string(nil)
 	if changed {
 		auth.Audit(user.Username, "mfg.made", pageID+" 行"+req.ItemNo+" 製造完了="+value)
-		stocked, notes = stockOnMade(user, pageID, vals, value)
+		// 在庫が動くのは「済」になったときと「済」から外したときだけ（2026-10-26。それまでは人が書いた「途中」などを消しても、
+		// 足していない在庫を引いた）。changed のときの前の値は req.Old（setMfgMade がいまの値と合うのを確かめている）。
+		if (value == MarkDone) != (strings.TrimSpace(req.Old) == MarkDone) {
+			stocked, notes = stockOnMade(user, pageID, vals, value)
+		}
 	}
 	cms.WriteJSON(w, map[string]any{"success": true, "changed": changed, "stocked": stocked, "stock_notes": notes})
 }

@@ -42,6 +42,7 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PageID string `json:"page_id"`
 		Row    int    `json:"row"`
+		Sig    string `json:"sig"` // 行の中身の指紋（画面が描いたときの rowSig・2026-10-26）
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -68,7 +69,12 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusNotFound, "部材発注書のページを読めません: "+err.Error())
 		return
 	}
-	_, first, ok := takeOrderRow(cur, req.Row)
+	row, ok := resolveOrderRow(cur, req.Row, req.Sig)
+	if !ok {
+		cms.JSONFail(w, http.StatusConflict, "戻す行が変わっています（画面を読み直してください）")
+		return
+	}
+	_, first, ok := takeOrderRow(cur, row)
 	if !ok {
 		cms.JSONFail(w, http.StatusConflict, "戻す行がありません（画面を読み直してください）")
 		return
@@ -81,7 +87,12 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		rebuildBeforeWrite(pageID) // 試験だけ（読んでから書くまでのあいだに、ほかの人の保存を挟む）
 	}
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, ln, ok := takeOrderRow(cur, req.Row)
+		r2, ok := resolveOrderRow(cur, req.Row, req.Sig)
+		if !ok {
+			moved = true
+			return cur
+		}
+		out, ln, ok := takeOrderRow(cur, r2)
 		if !ok {
 			return cur
 		}

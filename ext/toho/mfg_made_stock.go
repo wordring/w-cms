@@ -102,7 +102,10 @@ func stockOnMade(user *auth.User, pageID string, vals map[string]string, value s
 	}
 	cells := map[string]string{OurItemNoTag: id, ItemNoTag: vals[ItemNoTag], "品名": vals["品名"]}
 	mv := stockMove{kind: sk, key: stockRowKey(sk, cells), cells: cells, qty: delta}
-	notes := writeStockMoves(user.Username, []stockMove{mv})
+	written, notes := writeStockMoves(user, []stockMove{mv})
+	if !written {
+		return 0, notes
+	}
 	auth.Audit(user.Username, "stock.mfg-made", pageID+" "+stockMoveName(mv)+" "+formatStockQty(delta))
 	return 1, notes
 }

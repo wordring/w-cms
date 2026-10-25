@@ -1,6 +1,7 @@
 package toho
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"regexp"
 	"strings"
@@ -97,6 +98,12 @@ func TestStockColumnNextToQuantity(t *testing.T) {
 		`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>4</td></tr></tbody></table>`
 	writeBodyFile(t, 40, stock)
 	syncBody(t, 40, stock)
+	// 置き場「在庫」の外の在庫表は数えない（2026-10-26）。
+	addPage(t, 41, 0, "自分のページ", "root", "302", true)
+	other := `<h1>自分のページ</h1><table><caption>加工製品在庫表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>在庫数</th></tr>` +
+		`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>100</td></tr></tbody></table>`
+	writeBodyFile(t, 41, other)
+	syncBody(t, 41, other)
 	u := adminUser()
 	render := func(id string) string {
 		return cms.RenderComputedViews(auth.WithUser(httptest.NewRequest("GET", "/"+id, nil), u), pageNum(id), readPageBody(t, id))
@@ -177,5 +184,68 @@ func TestMadeProductsGoIntoStock(t *testing.T) {
 	made(1, "K-3", "", MarkDone)
 	if body := readPageBody(t, "000040"); !strings.Contains(body, "<td>000031</td><td>K-3</td><td>ブラケット</td><td>5</td>") {
 		t.Errorf("⚠ 自社案件で作った 5 が、全部は在庫表に入っていません:\n%s", body)
+	}
+	// 「済」でない人の書いた値（途中）を消しても、在庫は動かない（2026-10-26）。
+	cur := readPageBody(t, "000033")
+	cur = strings.Replace(cur, "<td>K-3</td><td>ブラケット</td><td>2</td><td>5</td><td>済</td>", "<td>K-3</td><td>ブラケット</td><td>2</td><td>5</td><td>途中</td>", 1)
+	writeBodyFile(t, 33, cur)
+	syncBody(t, 33, cur)
+	if out := made(1, "K-3", "途中", ""); out["stocked"].(float64) != 0 {
+		t.Errorf("⚠ 「済」でなかった行を消して在庫を動かしました: %v", out)
+	}
+	if body := readPageBody(t, "000040"); !strings.Contains(body, "<td>000031</td><td>K-3</td><td>ブラケット</td><td>5</td>") {
+		t.Errorf("⚠ 「済」でなかった行を消して在庫が変わりました:\n%s", body)
+	}
+}
+
+// TestStockNeedsWriteOnStockBox は、在庫の置き場を読むだけの人が部材発注書を「納品済」にしても、在庫表は変えず、そう断る
+// ことを固定します（2026-10-26。それまでは部材発注書に書ければ、在庫表も書き替えられた）。
+func TestStockNeedsWriteOnStockBox(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	addPage(t, 40, 0, StockBoxTitle, "bob", "302", true) // root は読むだけ
+	stock := `<h1>在庫</h1><table><caption>材料在庫表</caption><tbody><tr><th>材質</th><th>形状</th><th>寸法</th><th>在庫数</th><th>単位</th><th>棚卸し日</th><th>備考</th></tr>` +
+		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>1</td><td></td><td></td><td></td></tr></tbody></table>`
+	writeBodyFile(t, 40, stock)
+	syncBody(t, 40, stock)
+	order := `<h1>発注 みなと商店</h1><table><caption>部材発注明細表</caption><tbody>` +
+		`<tr><th>弊社品番</th><th>案件</th><th>種類</th><th>品名</th><th>仕様</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>状態</th></tr>` +
+		`<tr><td>000031</td><td></td><td>材料</td><td></td><td></td><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>5</td><td>発注済</td></tr></tbody></table>`
+	writeBodyFile(t, 32, order)
+	syncBody(t, 32, order)
+	code, out := postRFQ(t, &auth.User{Username: "root"}, OrderLineStatusAPIHandler, map[string]any{"page_id": "000032", "row": 1, "value": OrderLineDelivered})
+	if code != 200 {
+		t.Fatalf("納品済にできません: %d %v", code, out)
+	}
+	if body := readPageBody(t, "000040"); !strings.Contains(body, "<td>t4.5*75*1090</td><td>1</td>") {
+		t.Errorf("⚠ 在庫の置き場に書けない人が在庫表を変えました:\n%s", body)
+	}
+	if !strings.Contains(fmt.Sprint(out), "権限") {
+		t.Errorf("在庫表を変えなかったことを言っていません: %v", out)
+	}
+}
+
+// TestStockWithAnEmptyTableFirst は、行の無い部材発注明細表が前にあっても、届いた行が在庫表へ入ることを固定します
+// （2026-10-26。それまでは表の番号が1つずれて、入らなかった）。
+func TestStockWithAnEmptyTableFirst(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	addPage(t, 40, 0, StockBoxTitle, "root", "302", true)
+	stock := `<h1>在庫</h1><table><caption>購入部品在庫表</caption><tbody><tr><th>品名</th><th>仕様</th><th>在庫数</th><th>単位</th><th>棚卸し日</th><th>備考</th></tr>` +
+		`<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr></tbody></table>`
+	writeBodyFile(t, 40, stock)
+	syncBody(t, 40, stock)
+	head := `<tr><th>弊社品番</th><th>案件</th><th>種類</th><th>品名</th><th>仕様</th><th>材質</th><th>形状</th><th>寸法</th><th>数量</th><th>状態</th></tr>`
+	order := `<h1>発注 みなと商店</h1><table><caption>部材発注明細表</caption><tbody>` + head + `</tbody></table>` +
+		`<table><caption>部材発注明細表</caption><tbody>` + head +
+		`<tr><td>000031</td><td></td><td>購入部品</td><td>ボルト</td><td>M8</td><td></td><td></td><td></td><td>4</td><td>発注済</td></tr></tbody></table>`
+	writeBodyFile(t, 32, order)
+	syncBody(t, 32, order)
+	code, out := postRFQ(t, adminUser(), OrderLineStatusAPIHandler, map[string]any{"page_id": "000032", "row": 0, "value": OrderLineDelivered})
+	if code != 200 {
+		t.Fatalf("納品済にできません: %d %v", code, out)
+	}
+	if body := readPageBody(t, "000040"); !strings.Contains(body, "<td>ボルト</td><td>M8</td><td>4</td>") {
+		t.Errorf("⚠ 2つ目の表の届いた行が在庫表に入っていません: %v\n%s", out, body)
 	}
 }

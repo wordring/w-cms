@@ -70,7 +70,24 @@ func dropEmptyMfgPage(user *auth.User, pageID string) mfgDropResult {
 		return keep("ほかのページから指されているかを確かめられなかった")
 	}
 	if len(refs) > 0 {
-		return keep(strings.Join(pageRefList(refs), "・") + " がこの製造ページを指している")
+		// 読めないページの番号は出さない（2026-10-26・コアの DeleteImpactOf と同じく、数だけ）。
+		var seen []int
+		hidden := 0
+		for _, id := range refs {
+			if page.CanView(user, id) {
+				seen = append(seen, id)
+			} else {
+				hidden++
+			}
+		}
+		who := strings.Join(pageRefList(seen), "・")
+		if hidden > 0 {
+			if who != "" {
+				who += "・"
+			}
+			who += "あなたが見られないページ " + strconv.Itoa(hidden) + " 枚"
+		}
+		return keep(who + " がこの製造ページを指している")
 	}
 	if !mfgBodyIsBlank(pageID, body) {
 		return keep("テンプレートに無い書き込みがある")

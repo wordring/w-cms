@@ -19,8 +19,16 @@ import (
 )
 
 // stockLevels は在庫表の行を、鍵（stockRowKey）→ 在庫数で読みます（見る人が読める在庫表だけ）。
+//
+// ⚠ 数えるのは置き場「在庫」の在庫表だけ（2026-10-26。それまではどのページの在庫表も数えていて、だれかが自分のページに
+// 「材料在庫表」を作ると、ほかの人の製造明細表・発注部材表の在庫数にその数が混ざった——書くのは置き場「在庫」だけ）。
 func stockLevels(db cms.ReadOnlyDB, viewer *auth.User) map[string]float64 {
 	out := map[string]float64{}
+	boxID, ok := cms.TopLevelPageByTitle(StockBoxTitle)
+	if !ok {
+		return out
+	}
+	box := pageNum(boxID)
 	for _, k := range stockKinds {
 		rows, err := cms.VocabRowsOfType(db, k.Type)
 		if err != nil {
@@ -28,7 +36,7 @@ func stockLevels(db cms.ReadOnlyDB, viewer *auth.User) map[string]float64 {
 		}
 		def, _ := cms.VocabDefByType(k.Type)
 		for _, r := range rows {
-			if viewer == nil || !page.CanView(viewer, r.PageID) {
+			if r.PageID != box || viewer == nil || !page.CanView(viewer, r.PageID) {
 				continue
 			}
 			vals := map[string]string{}

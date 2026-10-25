@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
@@ -78,27 +79,15 @@ func stockMovesOfOrderLines(db cms.ReadOnlyDB, canView func(int) bool, pageID in
 	if len(picked) == 0 {
 		return nil
 	}
-	// 索引の行の名札（ブロックの番号）を、表の順に並べ直す。
+	// 索引の行の名札（BlockNo）は、同じ形式の表の文書順の番号（見出しだけの表も数える）で、picked の表の番号と同じ。
+	// ⚠ 2026-10-26 まで、行のある表だけで番号を振り直していて、行の無い表が前にあると1つずれ、届いた行が在庫に入らなかった。
 	rows, err := cms.VocabTableRowsOf(db, pageID, ourOrderItemsType)
 	if err != nil {
 		return nil
 	}
-	var blocks []int
-	seen := map[int]bool{}
-	for _, r := range rows {
-		if !seen[r.BlockNo] {
-			seen[r.BlockNo] = true
-			blocks = append(blocks, r.BlockNo)
-		}
-	}
-	sort.Ints(blocks)
-	tableOf := map[int]int{}
-	for i, b := range blocks {
-		tableOf[b] = i
-	}
 	want := map[orderRowRef]bool{}
 	for _, r := range rows {
-		if picked[[2]int{tableOf[r.BlockNo], r.RowNo}] {
+		if picked[[2]int{r.BlockNo, r.RowNo}] {
 			want[refOf(r)] = true
 		}
 	}
@@ -223,8 +212,10 @@ func applyStockMoves(body string, moves []stockMove) (string, []string) {
 			if qi < len(cells) {
 				s := strings.TrimSpace(textOf(cells[qi]))
 				if s != "" {
-					f, err := strconv.ParseFloat(strings.ReplaceAll(s, ",", ""), 64)
-					if err != nil {
+					// 読み方は在庫数の列（stockLevels）と同じ estimateNumber（全角の数字も読み、NaN・Inf は数としない——2026-10-26。
+					// それまでは「NaN」を読めてしまい、在庫表に NaN と書いた）。
+					f, ok := estimateNumber(s)
+					if !ok {
 						notes = append(notes, "「"+mv.kind.Caption+"」の在庫数「"+s+"」を数として読めません（直していません）")
 						continue
 					}
@@ -322,21 +313,27 @@ func negateStockMoves(moves []stockMove) []stockMove {
 }
 
 // writeStockMoves は置き場「在庫」の在庫表に moves を書き、断りを返します（在庫の置き場が無ければ、その断りだけ）。
-func writeStockMoves(author string, moves []stockMove) []string {
+//
+// ⚠ 在庫の置き場に書ける人だけが書く（2026-10-26。それまでは部材発注書・製造ページに書ける人なら、在庫の置き場を
+// 読むだけにしていても在庫表を書き替えられた）。書けなければ在庫表は変えず、そう断る（元の操作は済んでいる）。
+// written は在庫表に書いたか（監査に残すのは書いたときだけ）。
+func writeStockMoves(user *auth.User, moves []stockMove) (written bool, notes []string) {
 	if len(moves) == 0 {
-		return nil
+		return false, nil
 	}
 	id, ok := cms.TopLevelPageByTitle(StockBoxTitle)
 	if !ok {
-		return []string{"置き場「" + StockBoxTitle + "」がありません（管理画面の「足りない置き場を作る」）"}
+		return false, []string{"置き場「" + StockBoxTitle + "」がありません（管理画面の「足りない置き場を作る」）"}
 	}
-	var notes []string
-	if err := cms.RewriteBody(id, author, func(cur string) string {
+	if user == nil || !canWritePage(user, pageNum(id)) || cms.IsTemplateArea(id) {
+		return false, []string{"置き場「" + StockBoxTitle + "」に書く権限が無いので、在庫表は変えていません"}
+	}
+	if err := cms.RewriteBody(id, user.Username, func(cur string) string {
 		out, n := applyStockMoves(cur, moves)
 		notes = n
 		return out
 	}); err != nil {
-		return []string{"在庫表に書けません: " + err.Error()}
+		return false, []string{"在庫表に書けません: " + err.Error()}
 	}
-	return notes
+	return true, notes
 }

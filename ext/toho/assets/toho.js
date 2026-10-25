@@ -1539,16 +1539,17 @@ delegateClick([
         if (asks.length && !confirm((ok.length > 1 ? '選んだ ' + ok.length + ' 行について:\n\n' : '') + asks.join('\n\n―――\n\n'))) return;
         const page = btn.getAttribute('data-order-page') || '';
         // 外すと行が消えるので、下の行から送る（行番号がずれないように）。
-        const rows = ok.map((c) => Number(c.dataset.row)).sort((x, y) => y - x);
+        // 行の中身の指紋（data-sig）も送る——サーバーが同じ行かを確かめ、ほかの人が行を足した・外したあとなら断る（2026-10-26）。
+        const rows = ok.map((c) => ({ row: Number(c.dataset.row), sig: c.dataset.sig || '' })).sort((x, y) => y.row - x.row);
         btn.disabled = true;
         sayIn(say, '書いています…');
         // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
         let done = 0, stocked = 0;
         const stockNotes = [];
-        for (const row of rows) {
+        for (const { row, sig } of rows) {
             const r = act === 'return'
-                ? await postJSON('/api/our-order/return-row', { page_id: page, row }).catch((e) => ({ ok: false, data: { message: String(e) } }))
-                : await postJSON('/api/our-order/line-status', { page_id: page, row, value: btn.getAttribute('data-order-status') || '' })
+                ? await postJSON('/api/our-order/return-row', { page_id: page, row, sig }).catch((e) => ({ ok: false, data: { message: String(e) } }))
+                : await postJSON('/api/our-order/line-status', { page_id: page, row, sig, value: btn.getAttribute('data-order-status') || '' })
                     .catch((e) => ({ ok: false, data: { message: String(e) } }));
             if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || 'できませんでした', done); return; }
             done++;

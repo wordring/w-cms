@@ -70,6 +70,29 @@ func bindScore(line, cand map[string]bool) int {
 	return score
 }
 
+// resolveOrderRow は、部材発注書の本文 body の1つ目の部材発注明細表で、画面が送った行の番号 row（1から）と指紋 sig から、
+// いまのその行の番号を引き直します（sig が空なら番号のまま・合う行がちょうど1つでなければ ok=false）。
+// 行の状態を変える・行を外す口が、ロックの中で読んだ本文で使う（2026-10-26。それまでは番号だけで、ほかの人が行を足したり
+// 外したりしたあとに押すと、別の行が「納品済」になって在庫表へ入る・別の行が外れることがあった）。
+func resolveOrderRow(body string, row int, sig string) (int, bool) {
+	if row < 1 {
+		return row, row == 0 && sig == "" // 0（全部の行）は指紋を持たない
+	}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return 0, false
+	}
+	tables := tablesOfType(nodes, ourOrderItemsType)
+	if len(tables) == 0 {
+		return 0, false
+	}
+	rows, ok := resolveRowsBySig(tables[0], []int{row}, []string{sig})
+	if !ok || len(rows) != 1 {
+		return 0, false
+	}
+	return rows[0], true
+}
+
 // orderLineAt は部材発注書 pageID の1つ目の部材発注明細表の、データ行 row（1から）を指紋 sig で引き直して返します。
 func orderLineAt(nodes []*html.Node, row int, sig string) (table, tr *html.Node, ok bool) {
 	tables := tablesOfType(nodes, ourOrderItemsType)

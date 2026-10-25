@@ -135,6 +135,7 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PageID string `json:"page_id"`
 		Row    int    `json:"row"`
+		Sig    string `json:"sig"` // 行の中身の指紋（画面が描いたときの rowSig・空なら番号のまま）
 		Value  string `json:"value"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
@@ -157,8 +158,14 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	changed := 0
 	var changes []lineStatusChange
+	moved := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, n, ch := setOrderLineStatusTracked(cur, req.Row, value)
+		row, ok := resolveOrderRow(cur, req.Row, req.Sig)
+		if !ok {
+			moved = true
+			return cur
+		}
+		out, n, ch := setOrderLineStatusTracked(cur, row, value)
 		changed, changes = n, ch
 		// 納品日が空かは、ロックの中で読んだ本文で見る（索引が遅れていると、人の書いた納品日を今日で上書きした・2026-10-22 の見直し）。
 		if n > 0 && value == OrderLineDelivered && strings.TrimSpace(bodyTagValue(cur, DeliveredAtTag)) == "" {
@@ -166,6 +173,10 @@ func OrderLineStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return out
 	}) {
+		return
+	}
+	if moved {
+		cms.JSONFail(w, http.StatusConflict, "選んだ行が変わっています（ほかの人が行を足したか外しました。画面を読み直してください）")
 		return
 	}
 	if changed == 0 {
@@ -202,7 +213,10 @@ func stockOnDelivery(user *auth.User, pageID, value string, changes []lineStatus
 	if len(moves) == 0 {
 		return 0, nil
 	}
-	notes := writeStockMoves(user.Username, moves)
+	written, notes := writeStockMoves(user, moves)
+	if !written {
+		return 0, notes
+	}
 	var parts []string
 	for _, m := range moves {
 		parts = append(parts, stockMoveName(m)+" "+formatStockQty(m.qty))
