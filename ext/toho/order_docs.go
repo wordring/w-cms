@@ -296,15 +296,18 @@ func hasPrintableDoc(docs []orderDoc) bool {
 // 保存して開くURLを返します。⚠ **本文は触りません**（表示中の部材発注書のPDFは差し替えない）——
 // だから編集中でも断りません（write 権限とテンプレートの外、だけを見る）。
 func OrderPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	serveBoundPaper(w, r, boundKind{
-		rows: func(body string) ([]map[string]string, error) {
-			_, rows, _, err := readOrderDoc(body)
-			return rows, err
-		},
-		build: buildOrderPDF,
-		name:  func(rows []map[string]string, _ string) string { return orderPaperTitle(rows) },
-		audit: "order-pdf-docs",
-	})
+	serveBoundPaper(w, r, orderBoundKind)
+}
+
+// orderBoundKind は部材発注書の、資料を綴じた1本の作り方です（この口と、FAX で送る紙——fax_paper.go）。
+var orderBoundKind = boundKind{
+	rows: func(body string) ([]map[string]string, error) {
+		_, rows, _, err := readOrderDoc(body)
+		return rows, err
+	},
+	build: buildOrderPDF,
+	name:  func(rows []map[string]string, _ string) string { return orderPaperTitle(rows) },
+	audit: "order-pdf-docs",
 }
 
 // boundKind は資料を綴じた1本（FAX・印刷用）の、紙の種類ごとに違うところです（部材発注書・部材見積依頼書）。
@@ -352,8 +355,7 @@ func serveBoundPaper(w http.ResponseWriter, r *http.Request, k boundKind) {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	docs, notes := orderDocs(user, rows)
-	if !hasPrintableDoc(docs) {
+	if docs, _ := orderDocs(user, rows); !hasPrintableDoc(docs) {
 		cms.JSONFail(w, http.StatusBadRequest, "紙に綴じられる資料（PDF・画像）がありません")
 		return
 	}
@@ -362,22 +364,39 @@ func serveBoundPaper(w http.ResponseWriter, r *http.Request, k boundKind) {
 		failPaper(w, err)
 		return
 	}
+	b, err := bindAndSave(user, pageID, rows, paper, k.name(rows, pageID), k.audit)
+	if err != nil {
+		cms.JSONFail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	cms.WriteJSON(w, map[string]any{
+		"success": true, "attach_id": b.AttachID, "file": b.File,
+		"url": "/" + pageID + "/" + b.File, "skipped": b.Skipped,
+	})
+}
+
+// boundPaper は、資料を綴じてページの添付に残した1本です（Skipped は綴じなかったものの一言）。
+type boundPaper struct {
+	AttachID, File, Name string
+	Skipped              []string
+}
+
+// bindAndSave は、紙 paper のうしろに明細の行 rows が指す資料を綴じ、ページ pageID の添付に残します
+// （名前は「<namePrefix>＋資料 日時.pdf」）。綴じられる資料があるかは呼ぶ側が見る（「資料を綴じる」の口と、FAX で送る紙——
+// fax_paper.go——で共通・2026-10-25 夜に寄せた）。
+func bindAndSave(user *auth.User, pageID string, rows []map[string]string, paper []byte, namePrefix, audit string) (boundPaper, error) {
+	docs, notes := orderDocs(user, rows)
 	bound, skipped, err := bindOrderDocs(paper, docs)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "綴じられません: "+err.Error())
-		return
+		return boundPaper{}, fmt.Errorf("綴じられません: %w", err)
 	}
-	name := k.name(rows, pageID) + "＋資料 " + time.Now().Format("20060102-150405") + ".pdf"
+	name := namePrefix + "＋資料 " + time.Now().Format("20060102-150405") + ".pdf"
 	attachID, fileName, err := cms.SaveAttachmentFrom(pageID, user.Username, name, "pdf", bound)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "保存できません: "+err.Error())
-		return
+		return boundPaper{}, fmt.Errorf("保存できません: %w", err)
 	}
-	auth.Audit(user.Username, k.audit, pageID+" "+fileName)
-	cms.WriteJSON(w, map[string]any{
-		"success": true, "attach_id": attachID, "file": fileName,
-		"url": "/" + pageID + "/" + fileName, "skipped": append(skipped, notes...),
-	})
+	auth.Audit(user.Username, audit, pageID+" "+fileName)
+	return boundPaper{AttachID: attachID, File: fileName, Name: name, Skipped: append(skipped, notes...)}, nil
 }
 
 // bindOrderDocs は部材発注書のPDFのうしろに資料を綴じます。skipped は綴じなかったものの一言。

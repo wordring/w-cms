@@ -61,6 +61,7 @@ func init() {
 		Prepare:    prepareRFQMail,
 		AfterSent:  afterRFQMail,
 		AfterFaxed: afterRFQFaxed,
+		FaxPrepare: faxPaperWithDocs(prepareRFQMail, rfqBoundKind),
 		NeedsPage:  true,
 	})
 }
@@ -201,21 +202,24 @@ func RFQPDFAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 綴じるのは `bindOrderDocs`。⚠ **本文は触りません**（表示中の部材見積依頼書の PDF は差し替えない）——編集中でも断らない。
 // 辞退の行の資料は綴じない（readRFQDoc が外す）。
 func RFQPDFDocsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	serveBoundPaper(w, r, boundKind{
-		check: func(pageID string) string {
-			if !isRFQPage(pageID) {
-				return "部材見積依頼書のページではありません"
-			}
-			return ""
-		},
-		rows: func(body string) ([]map[string]string, error) {
-			_, rows, _, err := readRFQDoc(body)
-			return rows, err
-		},
-		build: buildRFQPDF,
-		name:  func(_ []map[string]string, pageID string) string { return "見積依頼書 " + pageID },
-		audit: "rfq-pdf-docs",
-	})
+	serveBoundPaper(w, r, rfqBoundKind)
+}
+
+// rfqBoundKind は部材見積依頼書の、資料を綴じた1本の作り方です（この口と、FAX で送る紙——fax_paper.go）。
+var rfqBoundKind = boundKind{
+	check: func(pageID string) string {
+		if !isRFQPage(pageID) {
+			return "部材見積依頼書のページではありません"
+		}
+		return ""
+	},
+	rows: func(body string) ([]map[string]string, error) {
+		_, rows, _, err := readRFQDoc(body)
+		return rows, err
+	},
+	build: buildRFQPDF,
+	name:  func(_ []map[string]string, pageID string) string { return "見積依頼書 " + pageID },
+	audit: "rfq-pdf-docs",
 }
 
 // RFQNoteAPIHandler は POST /api/rfq/note です（入力: {page_id, note}）——部材見積依頼書ページの「備考」の節を書き換えます。
@@ -307,7 +311,7 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 	}
 	// w-cms の FAX で送る（2026-10-25 夜・ext/comm/fax_send.go）——送れたと分かったときだけ送付日を書く。
 	b.WriteString(`<p class="unorder-help">FAX: ` + comm.FaxSendButtonHTML(RFQMailPurpose, pid) +
-		`（部材見積依頼書の PDF を作って送ります。送れたら送付日に今日の日付を書きます）</p>`)
+		`（部材見積依頼書の PDF を作り、外注加工の図面があればうしろに綴じて送ります。送れたら送付日に今日の日付を書きます）</p>`)
 	b.WriteString(`<p class="unorder-help">別の FAX 機・手渡しで送ったら: ` +
 		`<button type="button" class="chip-btn rfq-sent-go" data-rfq-page="` + pid + `">送った（FAX・手渡し）</button> ` +
 		`<span class="rfq-sent-say"></span>（送付日に今日の日付を書きます）</p>`)

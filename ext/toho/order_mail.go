@@ -47,6 +47,8 @@ func init() {
 		// FAX で送れたとき（2026-10-25 夜・ext/comm/fax_send.go）——メールと同じく、取消でない行を発注済みにし、
 		// 送った PDF を記録の節へ。送れなかったら呼ばれない。
 		AfterFaxed: afterOrderFaxed,
+		// FAX は1本の紙なので、外注加工の資料（紙にできるもの）があれば、部材発注書のうしろに綴じて送る（fax_paper.go）。
+		FaxPrepare: faxPaperWithDocs(prepareOrderMail, orderBoundKind),
 		NeedsPage:  true,
 	})
 }
