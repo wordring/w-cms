@@ -93,6 +93,11 @@ type SendPurpose struct {
 	// AfterSent は送れたあとに呼ばれます。⚠ **ここで失敗しても送信は成功のまま**です（出た事実を
 	// 隠さない）——エラーは理由として人に見せます。recordID は送信の控えのページ（作れなければ空）。
 	AfterSent func(user *auth.User, pageID, recordID string) error
+	// AfterFaxed は、この用件を FAX で送り（`/api/fax/send` の purpose・fax_send.go）、HylaFAX が「送れた」と答えたあとに
+	// 呼ばれます（2026-10-25 夜）。⚠ **送れなかったときは呼びません**——送付日などは送れたときだけ書く。nil の用件は FAX で
+	// 送れない。file は送ったファイル（用件の元のページの添付の保存名・Prepare が返した1つ目の PDF）、recordID は送った FAX の
+	// 記録。AfterSent と同じく、ここで失敗しても送れたことは取り消さず、理由を記録に書いて人に知らせる。
+	AfterFaxed func(user *auth.User, pageID, recordID, file string) error
 	// InReplyTo は用件の元のページへの返信として送るかです（In-Reply-To と `親ページID` が付く。2026-10-09 までは `返信元`）。
 	InReplyTo bool
 	// NeedsPage は用件の元のページが要るかです（新規以外は要る）。

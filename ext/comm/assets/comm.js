@@ -268,8 +268,14 @@ if (w.version >= 4) {
     const { askConfirm, askChoice } = w;
     w.onFileMenu((info, items, f) => {
         if (info.kind !== 'pdf' || !f.pageId || !f.file) return;
-        items.push({ icon: '📠', label: 'FAX で送る', title: 'この PDF を、業務サーバーのモデムから FAX で送ります', run: () => sendFax(f.pageId, f.file, info.name || f.file) });
+        items.push({ icon: '📠', label: 'FAX で送る', title: 'この PDF を、業務サーバーのモデムから FAX で送ります', run: () => sendFax(f.pageId, { file: f.file }, info.name || f.file) });
     });
+    // 送る欄の「📠 FAX で送る」（部材発注書・部材見積依頼書・見積書——2026-10-25 夜・comm.FaxSendButtonHTML）。紙はサーバーが
+    // 用件の決まりで用意し（メールで添える PDF と同じ）、送れたと分かったときだけ送付日などを書く。
+    w.delegateClick([['[data-fax-purpose]', (btn) => {
+        const purpose = btn.dataset.faxPurpose, pageId = btn.dataset.faxPage;
+        if (purpose && pageId) sendFax(pageId, { purpose }, purpose);
+    }]]);
     // askFaxNumber は送り先の番号を決めます。そのページの相手の FAX 番号（連絡帳など・/api/fax/numbers）があれば選ばせ、
     // 無ければ（または「別の番号」なら）打ってもらう。やめたら空。
     async function askFaxNumber(pageId, name) {
@@ -286,19 +292,21 @@ if (w.version >= 4) {
         }
         return (window.prompt('「' + name + '」を FAX で送ります。\n送り先の FAX の番号を入れてください（例 06-1234-5678）', '') || '').trim();
     }
-    async function sendFax(pageId, file, name) {
+    // sendFax は、ページ pageId から what（{file} か {purpose}）を FAX で送ります。
+    async function sendFax(pageId, what, name) {
         const number = await askFaxNumber(pageId, name);
         if (!number) return;
         if (!await askConfirm('「' + name + '」を、FAX の番号 ' + number + ' へ送ります。よろしいですか？', '送る', 'やめる')) return;
-        const res = await fetch('/api/fax/send', w.jsonPost({ page_id: pageId, file, number }));
-        const d = await w.readResult(res);
-        if (!res.ok || !d || !d.success) {
-            w.notify('FAX を送れませんでした: ' + w.failMessage(res, d), { type: 'alert', duration: 0, id: 'fax-send' });
+        // 書きかけを保存してから頼む（用件の紙は、保存した本文から作る——postJSON が先に保存する）。
+        const r = await w.postJSON('/api/fax/send', Object.assign({ page_id: pageId, number }, what));
+        const d = r.data;
+        if (!r.ok) {
+            w.notify('FAX を送れませんでした: ' + ((d && (d.message || d.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0, id: 'fax-send' });
             return;
         }
         // 送った FAX は通信箱の記録になる（送れたかは、サーバーがその記録の「FAX送信の様子」に書く——画面を閉じてもよい）。
         const rec = d.record ? '記録 /' + d.record + '。' : (d.record_error ? '記録は作れませんでした（' + d.record_error + '）。' : '');
-        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。' + rec + '送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
+        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。' + rec + (what.purpose ? '送れたら、送付日などをサーバーが書きます。' : '') + '送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
         watchFax(d.job, d.number);
     }
     // watchFax は仕事の様子を15秒おきに見て、送れた・送れなかったを知らせます（10分まで）。

@@ -151,7 +151,10 @@ func TestFaxSendRecordsAndWatches(t *testing.T) {
 	waitFor(rec, "<dd>"+faxStateDone+"</dd>")
 
 	// 送れなかった場合: 理由・未処理・知らせ。
-	_, out = send(map[string]any{"page_id": "000400", "file": pdfName, "number": "0312345678"})
+	code, out = send(map[string]any{"page_id": "000400", "file": pdfName, "number": "0312345678"})
+	if out["record"] == nil {
+		t.Fatalf("2通目: %d %v", code, out)
+	}
 	rec2 := out["record"].(string)
 	mu.Lock()
 	status["9"] = "F  alice 0312345678 0:1 1:12 Busy signal detected"
@@ -209,6 +212,168 @@ func TestFaxCandidates(t *testing.T) {
 	for i, w := range want {
 		if got[i].Number != w {
 			t.Errorf("候補[%d] = %+v, want %s", i, got[i], w)
+		}
+	}
+}
+
+// TestFaxSendPurposeAfterFaxed は、送る欄の用件から送った FAX で、用件の Prepare の PDF を送り、HylaFAX が「送れた」と
+// 答えたときだけ AfterFaxed を送った人として呼ぶこと（送れなかったら呼ばない・AfterFaxed の無い用件は断る・後始末に
+// 失敗したら記録を未処理に戻す）を固定します（2026-10-25 夜・利用者:「送れたときだけ送付日を書いてください」）。
+func TestFaxSendPurposeAfterFaxed(t *testing.T) {
+	setupIntakeTest(t)
+	if err := page.WriteSidecar("000410", page.PageMeta{Owner: "alice", Mode: "330", ParentID: "000000"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cms.SyncIndex("000410", `<h1>見積書</h1>`); err != nil {
+		t.Fatal(err)
+	}
+	_, pdfName, err := cms.SaveAttachment("000410", "alice", "御見積書 20261025.pdf", []byte("%PDF-1.4\n%%EOF\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type call struct{ user, page, rec, file string }
+	var mu sync.Mutex
+	var calls []call
+	afterErr := error(nil)
+	sendPurposes["試験の紙"] = SendPurpose{
+		Prepare: func(w http.ResponseWriter, r *http.Request, pageID string) ([]ComposeAttachment, bool) {
+			return []ComposeAttachment{{PageID: pageID, File: pdfName, Name: "御見積書 " + pageID + ".pdf"}}, true
+		},
+		AfterFaxed: func(user *auth.User, pageID, recordID, file string) error {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, call{user.Username, pageID, recordID, file})
+			return afterErr
+		},
+	}
+	sendPurposes["メールだけの紙"] = SendPurpose{
+		Prepare: func(w http.ResponseWriter, r *http.Request, pageID string) ([]ComposeAttachment, bool) {
+			t.Error("FAX で送れない用件の Prepare が呼ばれた")
+			return nil, false
+		},
+	}
+	t.Cleanup(func() { delete(sendPurposes, "試験の紙"); delete(sendPurposes, "メールだけの紙") })
+
+	nextJob := 20
+	status := map[string]string{}
+	oldSend, oldStat, oldInt, oldLookup := runSendfax, readFaxStat, faxWatchInterval, lookupFaxSender
+	t.Cleanup(func() { runSendfax, readFaxStat, faxWatchInterval, lookupFaxSender = oldSend, oldStat, oldInt, oldLookup })
+	var sentPath string
+	runSendfax = func(_ context.Context, number, path string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		sentPath = path
+		nextJob++
+		return []byte(fmt.Sprintf("request id is %d (group id %d) for host localhost (1 file)\n", nextJob, nextJob)), nil
+	}
+	readFaxStat = func(context.Context) string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := "JID  Pri S  Owner Number       Pages Dials     TTS Status\n"
+		for job, st := range status {
+			out += job + "    127 " + st + "\n"
+		}
+		return out
+	}
+	lookupFaxSender = func(name string) (*auth.User, error) { return &auth.User{Username: name}, nil }
+	faxWatchInterval = 10 * time.Millisecond
+
+	u := &auth.User{Username: "alice"}
+	send := func(body map[string]any) (int, map[string]any) {
+		b, _ := json.Marshal(body)
+		req := auth.WithUser(httptest.NewRequest("POST", "/api/fax/send", bytes.NewReader(b)), u)
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		FaxSendAPIHandler(rr, req)
+		var out map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Logf("応答が JSON でない: %d %q", rr.Code, rr.Body.String())
+		}
+		return rr.Code, out
+	}
+	bodyOf := func(id string) string {
+		b, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	waitFor := func(id, want string) string {
+		for i := 0; i < 200; i++ {
+			if b := bodyOf(id); strings.Contains(b, want) {
+				return b
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("記録 %s に %q が書かれない: %s", id, want, bodyOf(id))
+		return ""
+	}
+	setStatus := func(job, st string) {
+		mu.Lock()
+		status[job] = st
+		mu.Unlock()
+	}
+	nCalls := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(calls)
+	}
+
+	// 送れた場合: 用件の PDF を送り、記録に用件とファイル、送れたら AfterFaxed を1回。
+	code, out := send(map[string]any{"page_id": "000410", "purpose": "試験の紙", "number": "0312345678"})
+	if code != http.StatusOK || out["record"] == nil {
+		t.Fatalf("送れない: %d %v", code, out)
+	}
+	if !strings.HasSuffix(filepath.ToSlash(sentPath), "/"+pdfName) {
+		t.Errorf("sendfax に渡した紙: %s", sentPath)
+	}
+	rec := out["record"].(string)
+	b := bodyOf(rec)
+	for _, want := range []string{"<dd>試験の紙</dd>", "<dd>" + pdfName + "</dd>", "<dd>000410</dd>"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("記録に %q が無い: %s", want, b)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := nCalls(); n != 0 {
+		t.Fatalf("送り終わる前に AfterFaxed が呼ばれた: %d", n)
+	}
+	setStatus("21", "D  alice 0312345678 1:1 1:12")
+	waitFor(rec, "<dd>"+faxStateDone+"</dd>")
+	mu.Lock()
+	if len(calls) != 1 || calls[0] != (call{"alice", "000410", rec, pdfName}) {
+		t.Errorf("AfterFaxed の呼ばれ方: %+v", calls)
+	}
+	mu.Unlock()
+
+	// 送れなかった場合: AfterFaxed は呼ばない。
+	code, out = send(map[string]any{"page_id": "000410", "purpose": "試験の紙", "number": "0312345678"})
+	if out["record"] == nil {
+		t.Fatalf("2通目: %d %v", code, out)
+	}
+	rec2 := out["record"].(string)
+	setStatus("22", "F  alice 0312345678 0:1 1:12 No answer from remote")
+	waitFor(rec2, faxStateFailed+"：No answer from remote")
+	if n := nCalls(); n != 1 {
+		t.Errorf("送れなかったのに AfterFaxed が呼ばれた: %d", n)
+	}
+
+	// 後始末に失敗した場合: 送れたことは残し、理由を書いて未処理に戻す。
+	mu.Lock()
+	afterErr = fmt.Errorf("送付日を書けませんでした")
+	mu.Unlock()
+	_, out = send(map[string]any{"page_id": "000410", "purpose": "試験の紙", "number": "0312345678"})
+	rec3 := out["record"].(string)
+	setStatus("23", "D  alice 0312345678 1:1 1:12")
+	b = waitFor(rec3, faxStateDone+"：⚠ 送付日を書けませんでした")
+	if !strings.Contains(b, "<dd>"+HandledPending+"</dd>") {
+		t.Errorf("後始末に失敗したのに未処理に戻らない: %s", b)
+	}
+
+	// 断る場合: FAX の後始末の無い用件・知らない用件。
+	for _, p := range []string{"メールだけの紙", "無い用件"} {
+		if code, _ := send(map[string]any{"page_id": "000410", "purpose": p, "number": "0312345678"}); code != http.StatusBadRequest {
+			t.Errorf("用件 %q を断らない: %d", p, code)
 		}
 	}
 }

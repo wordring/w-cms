@@ -7,6 +7,8 @@ package comm
 //
 //	POST /api/fax/send   {page_id, file, number} … ページに添付した PDF を、その番号へ送る仕事を HylaFAX に頼む。
 //	                                              送った FAX を通信箱の記録にして {job, record} を返す。
+//	                     {page_id, purpose, number} … 送る欄の用件（部材発注書など・SendPurpose）の紙を送る。紙は用件の
+//	                                              Prepare が返す PDF（メールで添えるものと同じ）。送れたら用件の AfterFaxed。
 //	GET  /api/fax/status?job=N                  … その仕事の様子（HylaFAX の faxstat の1行）。{state, line} を返す。
 //
 // 画面は、PDF のファイル表示の「⋯」の「📠 FAX で送る」（ext/comm/assets/comm.js・window.wcms.onFileMenu）。
@@ -16,12 +18,17 @@ package comm
 // 書き替える。送れなかったら対応を未処理に戻し、通知（スマホと画面）で知らせる。サーバーを起こし直しても、送っている途中の
 // 記録の見張りは続きから（init の裏の仕事）。
 //
-// ⚠ まだ足りないもの: 部材発注書などの「送る」から送ること。
+// 用件の紙を送る（2026-10-25 夜）: 利用者:「部材発注書・部材見積依頼書・見積書の「送る」から FAX で送れるようにしてください。
+// 送れたときだけ送付日を書いてください。」——記録に用件と送ったファイル（FAX送信の用件・FAX送信のファイル）を書き、見張りが
+// 「送れた」を見たときだけ、用件の AfterFaxed（送付日・発注済みの印など）を、送った人として呼ぶ。送れなかったら呼ばない。
+// サーバーを起こし直しても、記録のタグから続きを呼べる。
 import (
 	"context"
+	"html"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,6 +46,13 @@ const FaxSendJobTag = "FAX送信番号"
 
 // FaxSendStateTag は、送った FAX の様子です（送っている・送れた・送れなかった：理由）。
 const FaxSendStateTag = "FAX送信の様子"
+
+// FaxSendPurposeTag・FaxSendFileTag は、送る欄の用件から送った FAX の、用件の名前と、送ったファイル（元のページの添付の
+// 保存名）です。送れたときに用件の AfterFaxed を呼ぶために記録へ書く。元のページは 親ページID。
+const (
+	FaxSendPurposeTag = "FAX送信の用件"
+	FaxSendFileTag    = "FAX送信のファイル"
+)
 
 const (
 	faxStateSending = "送っている"
@@ -105,9 +119,15 @@ func faxSendNumber(s string) string {
 var sendfaxJobRe = regexp.MustCompile(`request id is (\d+)`)
 
 type faxSendRequest struct {
-	PageID string `json:"page_id"`
-	File   string `json:"file"`
-	Number string `json:"number"`
+	PageID  string `json:"page_id"`
+	File    string `json:"file"`
+	Purpose string `json:"purpose"` // 送る欄の用件（file の代わり）
+	Number  string `json:"number"`
+}
+
+// faxSource は送る紙です（元のページ・その添付の保存名・ディスクの場所・記録に写すときの名前・用件）。
+type faxSource struct {
+	PageID, File, Path, Name, Purpose string
 }
 
 // FaxSendAPIHandler は POST /api/fax/send です。
@@ -128,21 +148,31 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
-	fileName, err := cms.SafeAttachmentName(pageID, req.File, map[string]bool{".pdf": true}, "FAX で送れるのは PDF だけです")
-	if err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	path, found := page.AttachmentPath(pageID, fileName)
-	if !found {
-		cms.JSONFail(w, http.StatusNotFound, "添付が見つかりません")
-		return
-	}
+	// 番号は紙を用意する前に確かめる（用件の Prepare は PDF を作ることがある）。
 	number := faxSendNumber(req.Number)
 	if number == "" {
 		cms.JSONFail(w, http.StatusBadRequest, "FAX の番号が読めません（数字6〜15桁。ハイフンは入れてもよい）")
 		return
 	}
+	var src faxSource
+	if strings.TrimSpace(req.Purpose) != "" {
+		if src, ok = purposeFaxSource(w, r, pageID, strings.TrimSpace(req.Purpose)); !ok {
+			return
+		}
+	} else {
+		fileName, err := cms.SafeAttachmentName(pageID, req.File, map[string]bool{".pdf": true}, "FAX で送れるのは PDF だけです")
+		if err != nil {
+			cms.JSONFail(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		path, found := page.AttachmentPath(pageID, fileName)
+		if !found {
+			cms.JSONFail(w, http.StatusNotFound, "添付が見つかりません")
+			return
+		}
+		src = faxSource{PageID: pageID, File: fileName, Path: path}
+	}
+	fileName, path := src.File, src.Path
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	out, err := runSendfax(ctx, number, path)
@@ -154,7 +184,7 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "fax.send", pageID+"/"+fileName+" -> "+number+" (job "+m[1]+")")
 	resp := map[string]any{"success": true, "job": m[1], "number": number}
 	// 送った FAX を記録にする。記録を作れなくても、FAX はもう頼んであるので、成功として返し、わけを添える。
-	if recID, err := recordSentFax(user, pageID, fileName, path, number, m[1]); err != nil {
+	if recID, err := recordSentFax(user, src, number, m[1]); err != nil {
 		resp["record_error"] = err.Error()
 	} else {
 		resp["record"] = recID
@@ -163,8 +193,35 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, resp)
 }
 
+// purposeFaxSource は、送る欄の用件 purpose の紙を用意します（用件の Prepare——メールで添えるものと同じ PDF）。
+// ⚠ 断るときは応答を書いて false（Prepare の作法と同じ）。
+func purposeFaxSource(w http.ResponseWriter, r *http.Request, pageID, purpose string) (faxSource, bool) {
+	p, ok := SendPurposeOf(purpose)
+	if !ok || p.AfterFaxed == nil || p.Prepare == nil {
+		cms.JSONFail(w, http.StatusBadRequest, "「"+purpose+"」は FAX で送れません")
+		return faxSource{}, false
+	}
+	atts, ok := p.Prepare(w, r, pageID)
+	if !ok {
+		return faxSource{}, false
+	}
+	for _, a := range atts {
+		if a.PageID != pageID || !strings.EqualFold(filepath.Ext(a.File), ".pdf") {
+			continue
+		}
+		path, found := page.AttachmentPath(pageID, a.File)
+		if !found {
+			continue
+		}
+		return faxSource{PageID: pageID, File: a.File, Path: path, Name: a.Name, Purpose: purpose}, true
+	}
+	cms.JSONFail(w, http.StatusInternalServerError, "FAX で送る紙（PDF）を用意できませんでした")
+	return faxSource{}, false
+}
+
 // recordSentFax は、送った FAX の記録を通信箱に作り、送った PDF を写して表示します（記録のページ番号を返す）。
-func recordSentFax(user *auth.User, srcPage, fileName, path, number, job string) (string, error) {
+func recordSentFax(user *auth.User, src faxSource, number, job string) (string, error) {
+	srcPage, fileName, path := src.PageID, src.File, src.Path
 	boxID, ok := MailBoxPageID()
 	if !ok {
 		return "", ErrNoMailBox
@@ -185,6 +242,10 @@ func recordSentFax(user *auth.User, srcPage, fileName, path, number, job string)
 	d.SetTag(FaxSendJobTag, job)
 	d.SetTag(FaxSendStateTag, faxStateSending)
 	d.SetTag(ParentPageTag, srcPage)
+	if src.Purpose != "" {
+		d.SetTag(FaxSendPurposeTag, src.Purpose)
+		d.SetTag(FaxSendFileTag, fileName)
+	}
 	recID, err := CreateRecordPage(boxID, user.Username, now, d.HTML())
 	if err != nil {
 		return "", err
@@ -194,7 +255,9 @@ func recordSentFax(user *auth.User, srcPage, fileName, path, number, job string)
 		return recID, err
 	}
 	name := fileName
-	if m, ok := cms.ReadAttachmentMetas(srcPage)[fileName]; ok && strings.TrimSpace(m.Name) != "" {
+	if strings.TrimSpace(src.Name) != "" {
+		name = src.Name // 用件の紙は、メールで添えるときと同じ名前（部材発注書 N.pdf など）
+	} else if m, ok := cms.ReadAttachmentMetas(srcPage)[fileName]; ok && strings.TrimSpace(m.Name) != "" {
 		name = m.Name // 届いたときの名前で写す
 	}
 	attachID, _, err := cms.SaveAttachmentFrom(recID, user.Username, name, "fax-send:"+srcPage+"/"+fileName, content)
@@ -224,13 +287,73 @@ func watchFaxJob(job, recID string) {
 		cancel()
 		switch state, line := faxJobState(out, job); state {
 		case "done":
-			setFaxSendState(recID, faxStateDone, false)
+			// 送れたときだけ、用件の後始末（送付日など）。済ませてから「送れた」と書く——後始末の途中でサーバーが止まっても、
+			// 起き直したときに続きから呼べるように（二度呼ぶことはあっても、呼び落とさない）。
+			setFaxSendState(recID, faxStateDone+afterFaxedNote(recID), false)
 			return
 		case "failed":
 			setFaxSendState(recID, faxStateFailed+"："+faxJobReason(line), true)
 			return
 		}
 	}
+}
+
+// afterFaxedNote は、記録 recID が送る欄の用件から送った FAX なら、用件の AfterFaxed を送った人として呼びます。
+// うまくいけば空、失敗したら「：⚠ 理由」を返し、対応を未処理に戻して知らせる（送れたことは取り消さない）。
+func afterFaxedNote(recID string) string {
+	n := atoiPage(recID)
+	purpose := strings.TrimSpace(cms.PageTagValue(database.DB, n, FaxSendPurposeTag))
+	if purpose == "" {
+		return ""
+	}
+	fail := func(why string) string {
+		markFaxPending(recID, "⚠ FAX は送れましたが、"+why)
+		return "：⚠ " + why
+	}
+	p, ok := SendPurposeOf(purpose)
+	if !ok || p.AfterFaxed == nil {
+		return fail("用件「" + purpose + "」の後始末がありません")
+	}
+	src, _ := page.NormalizeID(cms.PageTagValue(database.DB, n, ParentPageTag))
+	file := strings.TrimSpace(cms.PageTagValue(database.DB, n, FaxSendFileTag))
+	user := faxSender(recID)
+	if src == "" || user == nil {
+		return fail("送った元のページか、送った人が分かりません")
+	}
+	if err := p.AfterFaxed(user, src, recID, file); err != nil {
+		return fail(err.Error())
+	}
+	return ""
+}
+
+// lookupFaxSender は利用者を名前で引きます（利用者の DB の無い試験で差し替える）。
+var lookupFaxSender = auth.LookupUser
+
+// faxSender は、送った FAX の記録を作った人（＝送った人）です。分からなければ nil。
+func faxSender(recID string) *auth.User {
+	meta, ok := page.ReadSidecar(recID)
+	if !ok {
+		return nil
+	}
+	name := meta.CreatedBy
+	if name == "" {
+		name = meta.Owner
+	}
+	u, err := lookupFaxSender(name)
+	if err != nil {
+		return nil
+	}
+	return u
+}
+
+// markFaxPending は、記録の対応を未処理に戻し、title で知らせます。
+func markFaxPending(recID, title string) {
+	_ = cms.RewriteBody(recID, "FAX", func(cur string) string {
+		d := cms.EditBody(cur)
+		d.SetTag(HandledTag, HandledPending)
+		return d.HTML()
+	})
+	NotifyArrival(Arrival{PageID: recID, Title: title + " " + cms.PageTitleByID(atoiPage(recID)), Channel: ChannelFax})
 }
 
 // setFaxSendState は、記録の「FAX送信の様子」を書き替えます。failed なら対応を未処理に戻して知らせます。
@@ -327,4 +450,12 @@ func firstFaxLine(out string, err error) string {
 		return err.Error()
 	}
 	return "応答がありません"
+}
+
+// FaxSendButtonHTML は、送る欄の用件 purpose の紙をページ pageID から FAX で送るボタンです（拡張の送る欄に置く）。
+// 押すと、画面（comm.js）が番号を尋ね、`/api/fax/send` に purpose を付けて頼む。送れたかは記録と画面の通知で分かる。
+func FaxSendButtonHTML(purpose, pageID string) string {
+	return `<button type="button" class="chip-btn" data-fax-purpose="` + html.EscapeString(purpose) +
+		`" data-fax-page="` + html.EscapeString(pageID) +
+		`" title="この紙を w-cms の FAX で送ります。送れたと分かったときだけ、送付日などを書きます">📠 FAX で送る</button>`
 }
