@@ -47,7 +47,6 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
-	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -206,7 +205,9 @@ func stockOnDelivery(user *auth.User, pageID, value string, changes []lineStatus
 	if len(in) == 0 && len(out) == 0 {
 		return 0, nil
 	}
-	canView := func(id int) bool { return page.CanView(user, id) }
+	// 在庫表は皆の表なので、案件の必要は、押した人が読めるかによらず全部で数える（2026-10-26。それまでは押した人の見える案件
+	// だけで数え、同じ納品でも押す人によって在庫表に入る数が違った）。押した人に見せるのは、この部材発注書の部材の名前と数だけ。
+	canView := func(int) bool { return true }
 	n := pageNum(pageID)
 	moves := append(stockMovesOfOrderLines(database.DB, canView, n, in),
 		negateStockMoves(stockMovesOfOrderLines(database.DB, canView, n, out))...)
