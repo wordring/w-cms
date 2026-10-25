@@ -21,6 +21,7 @@ printf 'Authorization: Bearer %s\n' "$WCMS_MACHINE_TOKEN" > "$WORK/auth"
 
 for PDF in "$PENDING"/fax-*.pdf; do
 	[ -e "$PDF" ] || continue
+	[ -L "$PDF" ] && { logger -t w-cms-fax-retry "⚠ リンクは送りません: $PDF"; continue; }
 	JOB=$(basename "$PDF" .pdf | sed 's/^fax-//' | tr -cd '0-9A-Za-z')
 	FROM=$(cat "$PDF.from" 2>/dev/null | tr -cd '0-9+ ')
 	AT=$(cat "$PDF.at" 2>/dev/null | tr -cd '0-9T:+-')

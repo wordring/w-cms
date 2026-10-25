@@ -11,5 +11,6 @@ Type=oneshot
 Environment=DATA=/var/lib/w-cms/data
 Environment=DEST=/srv/backup/w-cms/data
 ExecStart=/usr/local/bin/w-cms-backup
+UMask=0077
 Nice=10
 IOSchedulingClass=idle

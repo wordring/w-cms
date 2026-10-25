@@ -52,6 +52,16 @@ func machineAllowed(remote string) bool {
 	return false
 }
 
+// viaProxy は、要求が前段のプロキシを通ってきたかです（転送の見出しのどれかがある）。
+func viaProxy(r *http.Request) bool {
+	for _, h := range []string{"X-Forwarded-For", "Forwarded", "X-Real-Ip", "X-Forwarded-Host"} {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // machineTokenOK は、要求の鍵が WCMS_MACHINE_TOKEN と一致するかです（鍵が決まっていなければ常に false）。
 func machineTokenOK(r *http.Request) bool {
 	want := strings.TrimSpace(os.Getenv("WCMS_MACHINE_TOKEN"))
@@ -72,6 +82,12 @@ func MachineAuth(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if strings.TrimSpace(os.Getenv("WCMS_MACHINE_TOKEN")) == "" {
 			http.Error(w, "機械の入口は閉じています（WCMS_MACHINE_TOKEN がありません）", http.StatusServiceUnavailable)
+			return
+		}
+		// 前段のプロキシを通った要求は入れない（2026-10-26）。VPS からのトンネルが同じ機械で終わると、外からの要求も 127.0.0.1 に
+		// 見え、アドレスの確かめが効かない。機械（電話の道具・FAX の台本）は同じ機械から直に呼び、この見出しを付けない。
+		if viaProxy(r) {
+			http.Error(w, "前段のプロキシを通った要求は、機械の入口に入れません", http.StatusForbidden)
 			return
 		}
 		if !machineAllowed(r.RemoteAddr) {

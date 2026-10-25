@@ -116,6 +116,12 @@ func faxSendNumber(s string) string {
 	return n
 }
 
+// costlyFaxNumber は、料金の高くなる番号かです（2026-10-26）。010（国際）・00（事業者を選ぶ番号）・0990（有料の情報）で
+// 始まる番号は、管理者だけが送れる——ページに書ける人ならだれでも、どこへでも送れた（モデムの設定は国際の番号も掛ける）。
+func costlyFaxNumber(n string) bool {
+	return strings.HasPrefix(n, "010") || strings.HasPrefix(n, "00") || strings.HasPrefix(n, "0990")
+}
+
 var sendfaxJobRe = regexp.MustCompile(`request id is (\d+)`)
 
 type faxSendRequest struct {
@@ -153,6 +159,10 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	number := faxSendNumber(req.Number)
 	if number == "" {
 		cms.JSONFail(w, http.StatusBadRequest, "FAX の番号が読めません（数字6〜15桁。ハイフンは入れてもよい）")
+		return
+	}
+	if costlyFaxNumber(number) && !user.IsAdmin {
+		cms.JSONFail(w, http.StatusForbidden, "国際・事業者を選ぶ番号・有料の番号（010・00・0990 で始まる番号）へ送れるのは管理者だけです")
 		return
 	}
 	var src faxSource

@@ -12,6 +12,9 @@
 #   例 DATA=/var/lib/w-cms/data DEST=/srv/backup/w-cms/data w-cms-backup
 # root で動かします（w-cms のデータは持ち主しか読めない）。
 set -euo pipefail
+# 控えは、だれにも読ませない（2026-10-26。本文・添付・パスワードの指紋・監査が入る——データの置き場は 0700 で守っているが、
+# 控えの中のファイルは 0644 のままだった。いまは /srv/backup が 0700 なので外から読めないが、それに頼らない）。
+umask 077
 
 DATA=${DATA:?DATA（データの場所）がありません}
 DEST=${DEST:?DEST（控えの置き場）がありません}

@@ -577,3 +577,13 @@ func TestFaxWatchUsesStoreNotTags(t *testing.T) {
 		t.Errorf("⚠ 一覧から消えた仕事を見張り続けています: %+v\n%s", j, b)
 	}
 }
+
+// TestCostlyFaxNumber は、料金の高くなる番号（国際・事業者を選ぶ・有料）を見分けることを固定します（2026-10-26）。
+func TestCostlyFaxNumber(t *testing.T) {
+	for n, want := range map[string]bool{"0312345678": false, "0667537225": false, "0120123456": false,
+		"0101234567890": true, "0033123456": true, "0990123456": true} {
+		if got := costlyFaxNumber(n); got != want {
+			t.Errorf("costlyFaxNumber(%q) = %v（%v のはず）", n, got, want)
+		}
+	}
+}

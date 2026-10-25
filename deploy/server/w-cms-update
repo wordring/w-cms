@@ -34,15 +34,22 @@ check() {
 }
 
 # build は、版 rev を別の作業場所で組み立て、実行ファイルの場所を返します（いま動いている写しの中身を触らない）。
+# 実行ファイルは mktemp の作業場所の中に置く（2026-10-26。それまでは /tmp/w-cms.<版> で、ほかの利用者が先に同じ名前を
+# 作れた）。入れたあとは呼ぶ側が done_build で消す。
 build() {
-  local rev=$1 work out
+  local rev=$1 work
   work=$(mktemp -d /tmp/w-cms-build.XXXXXX)
-  out=/tmp/w-cms.$rev
   git -C "$REPO" worktree add -q --detach "$work/src" "$rev"
-  (cd "$work/src" && go build -o "$out" ./cmd/w-cms)
+  (cd "$work/src" && go build -o "$work/w-cms" ./cmd/w-cms)
   git -C "$REPO" worktree remove --force "$work/src"
-  rm -rf "$work"
-  echo "$out"
+  echo "$work/w-cms"
+}
+
+# done_build は build の作業場所を消します（out は build の返した実行ファイル）。
+done_build() {
+  case "$1" in
+  /tmp/w-cms-build.*/w-cms) rm -rf "$(dirname "$1")" ;;
+  esac
 }
 
 case "${1:-}" in
@@ -51,6 +58,7 @@ test)
   rev=$(git -C "$REPO" rev-parse --short HEAD)
   out=$(build "$rev")
   sudo install -m 0755 "$out" "$BIN/w-cms-test"
+  done_build "$out"
   echo "$rev" | sudo tee "$BIN/w-cms-test.rev" >/dev/null
   sudo systemctl restart w-cms-test
   check 9443 w-cms-test "$BIN/w-cms-test"
@@ -71,6 +79,7 @@ prod)
   fi
   git -C "$PROD" checkout -q --detach "$full"
   sudo install -m 0755 "$out" "$BIN/w-cms"
+  done_build "$out"
   echo "$rev" | sudo tee "$BIN/w-cms.rev" >/dev/null
   if ! systemctl is-enabled -q w-cms 2>/dev/null; then
     say "本番の実行ファイルと写しを $rev にしました（本番はまだ起こしていません・deploy/server/README.md）"

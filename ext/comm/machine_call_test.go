@@ -122,6 +122,18 @@ func TestMachineAuthGate(t *testing.T) {
 	if c := call("192.168.1.20:5000", "wrong-token-xxxxxxx"); c != http.StatusUnauthorized {
 		t.Errorf("⚠ 許した網からでも、鍵が違えば断ること（%d）", c)
 	}
+	// 前段のプロキシを通った要求（同じ機械で終わるトンネルでも 127.0.0.1 に見える）は、鍵が合っても入れない（2026-10-26）。
+	for _, hdr := range []string{"X-Forwarded-For", "Forwarded", "X-Real-Ip"} {
+		req := httptest.NewRequest("POST", "/api/machine/call", nil)
+		req.RemoteAddr = "127.0.0.1:5000"
+		req.Header.Set("Authorization", "Bearer 0123456789abcdef-test")
+		req.Header.Set(hdr, "203.0.113.5")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("⚠ %s の付いた要求を機械の入口に入れました（%d）", hdr, rr.Code)
+		}
+	}
 }
 
 // TestMachineFax は FAX の受信の口を固定します（2026-10-21 夜・【考察】通信箱の改善 §7.4）。

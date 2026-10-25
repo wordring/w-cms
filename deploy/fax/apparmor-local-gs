@@ -2,11 +2,15 @@
 # 置き場所: /etc/apparmor.d/local/gs → `sudo apparmor_parser -r /etc/apparmor.d/gs`
 #
 # Ubuntu 26.04 の gs には AppArmor の決まりが掛かっていて、HylaFAX の作業場所（/var/spool/hylafax）のファイルを読めない。
-# HylaFAX は送る PDF を gs で FAX の形（TIFF）に直すので、ここだけ読み書きを許す。
-# 書き先は faxq が先に作る（持ち主 uucp）ので、持ち主でなくても書けるようにする（2026-10-25 夜・owner だけだと gs〔root〕が書けなかった）。
-/var/spool/hylafax/** rwk,
-# HylaFAX（faxq）は gs を root で動かし、作業場所の PDF（持ち主 uucp・0640）を読ませる。root が持ち主の決まりを越えて読む力
-# （dac_override・dac_read_search）を、gs の決まりは禁じているので、ここで許す（読み書きできる場所は、上と元の決まりのまま）。
-# 足さないと、送る PDF の直しが「CONVERT DOCUMENT: exit status 0x100」で落ちる（2026-10-25 夜に業務サーバーで見た）。
+# HylaFAX は送る PDF を gs で FAX の形（TIFF）に直すので、作業場所を読むことと、直した紙を書く docq・tmp への書き込みを許す。
+# ⚠ 書けるのは docq と tmp だけ（2026-10-26。それまでは作業場所の全部に書けて、gs が乗っ取られると HylaFAX の bin や etc
+# ——FAX を w-cms へ渡す台本や設定——を書き替えられた。gs は受け取ったメールの添付の PDF も読む）。
+/var/spool/hylafax/** r,
+/var/spool/hylafax/docq/** rwk,
+/var/spool/hylafax/tmp/** rwk,
+# HylaFAX（faxq）は gs を root で動かし、作業場所の PDF（持ち主 uucp・0640）を読ませ、uucp の作った書き先へ書かせる。root が
+# 持ち主の決まりを越えて読み書きする力（dac_override・dac_read_search）を、gs の決まりは禁じているので、ここで許す
+# （読み書きできる場所は、上の決まりのまま）。足さないと、送る PDF の直しが「CONVERT DOCUMENT: exit status 0x100」で落ちる
+# （2026-10-25 夜に業務サーバーで見た）。
 capability dac_override,
 capability dac_read_search,

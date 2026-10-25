@@ -6,3 +6,7 @@ Description=w-cms へ渡せなかった FAX を送り直す
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/w-cms-fax-retry
+# root では動かさない（2026-10-26）。送り直す FAX の置き場は uucp のもの——root で読むと、置き場に root しか読めない
+# ファイルへのリンクを置かれたとき、それを w-cms へ送ってしまう。鍵の設定（fax.env）は root:uucp 0640 で読める。
+User=uucp
+Group=uucp
