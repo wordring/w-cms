@@ -182,7 +182,7 @@ func setupIntakeTest(t *testing.T) {
 	// **ファイルDBを使います。** `:memory:` は接続ごとに別のDBになり、
 	// 行を読みながら中で引く処理（権限・先祖辿り）が空のDBに当たります
 	// （作業引き継ぎに記録済みの罠）。
-	db, err := sql.Open("sqlite", "test.db")
+	db, err := sql.Open("sqlite", "test.db?_pragma=busy_timeout(5000)") // 裏の見張りと試験が同時に書くので待たせる
 	if err != nil {
 		t.Fatalf("DB接続エラー: %v", err)
 	}
