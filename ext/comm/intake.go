@@ -220,11 +220,30 @@ func ExistingIntakePage(tagName, value string) (string, bool) {
 	if err != nil || len(ids) == 0 {
 		return "", false
 	}
-	norm, ok := page.NormalizeID(strconv.Itoa(ids[0]))
-	if !ok {
-		return "", false
+	// 取り込みで作るページは通信箱の下にしか無い。通信箱の外で同じ鍵を書いたページは数えない（2026-10-26。それまでは
+	// どこかのページに Message-ID を1つ書くだけで、そのメールが「取り込み済み」と見なされて入らなかった）。
+	for _, id := range ids {
+		if !InMailBox(id) {
+			continue
+		}
+		if norm, ok := page.NormalizeID(strconv.Itoa(id)); ok {
+			return norm, true
+		}
 	}
-	return norm, true
+	return "", false
+}
+
+// InMailBox は、ページ id が通信箱の下（子孫）にあるかを返します。通信箱が無ければ false。
+func InMailBox(id int) bool {
+	root, ok := MailBoxPageID()
+	if !ok {
+		return false
+	}
+	r, err := strconv.Atoi(root)
+	if err != nil {
+		return false
+	}
+	return cms.IsDescendantOf(database.DB, id, r)
 }
 
 // intakeRegistry は取り込み係の登録表です（拡張子ごとに1人・表引き）。

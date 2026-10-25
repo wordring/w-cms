@@ -74,7 +74,7 @@ func ParentRecordOf(inReplyTo string, self int) string {
 			continue
 		}
 		for _, id := range ids {
-			if id != self {
+			if id != self && InMailBox(id) { // 親は通信箱の記録だけ（外のページに Message-ID を書いても親にならない・2026-10-26）
 				return page.FormatID(id)
 			}
 		}
@@ -143,6 +143,9 @@ func FixRecordTags(by string) (renamed, linked int, err error) {
 	}
 	rows.Close()
 	for _, id := range olds {
+		if !InMailBox(id) { // 直すのは通信箱の記録だけ（2026-10-26。外のページの本文は書き換えない・読み切ってから絞る）
+			continue
+		}
 		changed := false
 		if cms.RewriteBodyUnlessHeld(page.FormatID(id), by, func(cur string) string {
 			out := renameLegacyTags(cur)
@@ -173,6 +176,9 @@ func FixRecordTags(by string) (renamed, linked int, err error) {
 	}
 	rows.Close()
 	for _, o := range orphans {
+		if !InMailBox(o.id) {
+			continue
+		}
 		if parent := ParentRecordOf(o.inReplyTo, o.id); parent != "" && addParent(o.id, parent, by) {
 			linked++
 		}

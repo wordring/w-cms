@@ -127,3 +127,34 @@ func TestFixRecordTagsRenamesLegacy(t *testing.T) {
 		t.Errorf("直したあとの記録を引けません: %q %v", id, dup)
 	}
 }
+
+// TestOutsideMailBoxIsNotARecord は、⚠ **通信箱の外のページは、Message-ID を書いても記録として数えない**ことを固定します
+// （2026-10-26）——取り込み済みと見なしてメールを入れない・親にする・FixRecordTags で本文を書き換える、のどれもしない。
+func TestOutsideMailBoxIsNotARecord(t *testing.T) {
+	setupSaveTest(t)
+	inbox := setupInbox(t)
+	outside, err := cms.CreateChildPage("000000", "alice",
+		`<h1>外のページ</h1><dl data-type="tags"><dt>Message-ID</dt><dd>&lt;planted@example.jp&gt;</dd>`+
+			`<dt>メッセージID</dt><dd>&lt;planted-old@example.jp&gt;</dd></dl><p>本文</p>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := readRecord(t, outside)
+	if id, dup := ExistingMailRecord("<planted@example.jp>"); dup {
+		t.Errorf("⚠ 通信箱の外のページ /%s を取り込み済みと見なしました", id)
+	}
+	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
+	child, _, err := emlIntake{}.OnFile(ctx, "c.eml", replyEml("<c2@example.jp>", "<planted@example.jp>", "Re: 外"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(readRecord(t, child), ParentPageTag) {
+		t.Errorf("⚠ 通信箱の外のページを親にしました:\n%s", readRecord(t, child))
+	}
+	if _, _, err := FixRecordTags("alice"); err != nil {
+		t.Fatal(err)
+	}
+	if after := readRecord(t, outside); after != before {
+		t.Errorf("⚠ 通信箱の外のページの本文を書き換えました:\n%s", after)
+	}
+}
