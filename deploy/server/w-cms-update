@@ -1,0 +1,97 @@
+#!/bin/bash
+# w-cms の入れ替えの道具（2026-10-25・docs/考察/【考察】職場のサーバー機と社外からの接続.md §6・deploy/server/README.md）。
+#
+#   w-cms-update test      GitHub から取ってきて組み立て、試験用（:9443）を入れ替える
+#   w-cms-update prod      試験用で確かめた版で、本番（:8443）を入れ替える
+#   w-cms-update rollback  本番を、ひとつ前の版に戻す
+#
+# 人の管理用の利用者（例 toho）で動かします（入れ替えと起こし直しに sudo を使う）。
+# 入れ替えたら、応えるか（/login が 200）と、起動の時刻が実行ファイルより新しいか（古い実行ファイルのまま動いていないか）を確かめます。
+#
+# ⚠ 本番は、試験用のリポジトリ（/opt/w-cms/repo）とは別の写し /opt/w-cms/prod（git worktree）で動きます。
+#    画面のファイル（assets/）と設定（config/）も実行ファイルと同じ版にそろえるためです（w-cms.service の注記）。
+set -euo pipefail
+
+REPO=/opt/w-cms/repo
+PROD=/opt/w-cms/prod
+BIN=/opt/w-cms
+
+say() { logger -t w-cms-update "$*"; echo "$*"; }
+
+# check は、unit が port で応え、exe より後に起きたかを確かめます。
+check() {
+  local port=$1 unit=$2 exe=$3 code=000
+  for _ in $(seq 1 60); do
+    code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 3 "https://localhost:$port/login" || true)
+    [ "$code" = 200 ] && break
+    sleep 2
+  done
+  [ "$code" = 200 ] || { say "⚠ $unit が応えません（$code）。journalctl -u $unit を見てください"; return 1; }
+  local started built
+  started=$(date -d "$(systemctl show -p ActiveEnterTimestamp --value "$unit")" +%s)
+  built=$(stat -c %Y "$exe")
+  [ "$started" -ge "$built" ] || { say "⚠ $unit は、入れ替える前の実行ファイルのまま動いています"; return 1; }
+}
+
+# build は、版 rev を別の作業場所で組み立て、実行ファイルの場所を返します（いま動いている写しの中身を触らない）。
+build() {
+  local rev=$1 work out
+  work=$(mktemp -d /tmp/w-cms-build.XXXXXX)
+  out=/tmp/w-cms.$rev
+  git -C "$REPO" worktree add -q --detach "$work/src" "$rev"
+  (cd "$work/src" && go build -o "$out" ./cmd/w-cms)
+  git -C "$REPO" worktree remove --force "$work/src"
+  rm -rf "$work"
+  echo "$out"
+}
+
+case "${1:-}" in
+test)
+  git -C "$REPO" pull --ff-only -q
+  rev=$(git -C "$REPO" rev-parse --short HEAD)
+  out=$(build "$rev")
+  sudo install -m 0755 "$out" "$BIN/w-cms-test"
+  echo "$rev" | sudo tee "$BIN/w-cms-test.rev" >/dev/null
+  sudo systemctl restart w-cms-test
+  check 9443 w-cms-test "$BIN/w-cms-test"
+  say "試験用を $rev に入れ替えました（$(git -C "$REPO" log -1 --format=%s "$rev" | cut -c1-60)）"
+  ;;
+prod)
+  rev=$(cat "$BIN/w-cms-test.rev" 2>/dev/null) || { say "試験用の版が分かりません。先に w-cms-update test を流してください"; exit 1; }
+  full=$(git -C "$REPO" rev-parse "$rev^{commit}")
+  out=$(build "$rev")
+  if [ ! -e "$PROD/.git" ]; then
+    sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 "$PROD"   # /opt/w-cms は root のもの
+    git -C "$REPO" worktree add -q --detach "$PROD" "$full"
+  fi
+  # ひとつ前の版を控える（rollback で戻す）。
+  if [ -f "$BIN/w-cms" ]; then
+    sudo cp -p "$BIN/w-cms" "$BIN/w-cms.prev"
+    sudo cp -p "$BIN/w-cms.rev" "$BIN/w-cms.rev.prev" 2>/dev/null || true
+  fi
+  git -C "$PROD" checkout -q --detach "$full"
+  sudo install -m 0755 "$out" "$BIN/w-cms"
+  echo "$rev" | sudo tee "$BIN/w-cms.rev" >/dev/null
+  if ! systemctl is-enabled -q w-cms 2>/dev/null; then
+    say "本番の実行ファイルと写しを $rev にしました（本番はまだ起こしていません・deploy/server/README.md）"
+    exit 0
+  fi
+  sudo systemctl restart w-cms
+  check 8443 w-cms "$BIN/w-cms"
+  say "本番を $rev に入れ替えました（$(git -C "$REPO" log -1 --format=%s "$rev" | cut -c1-60)）"
+  ;;
+rollback)
+  [ -f "$BIN/w-cms.prev" ] && [ -f "$BIN/w-cms.rev.prev" ] || { say "戻す先（ひとつ前の版）がありません"; exit 1; }
+  prev=$(cat "$BIN/w-cms.rev.prev")
+  git -C "$PROD" checkout -q --detach "$(git -C "$REPO" rev-parse "$prev^{commit}")"
+  sudo install -m 0755 "$BIN/w-cms.prev" "$BIN/w-cms"
+  echo "$prev" | sudo tee "$BIN/w-cms.rev" >/dev/null
+  sudo systemctl restart w-cms
+  check 8443 w-cms "$BIN/w-cms"
+  say "本番を $prev に戻しました"
+  ;;
+*)
+  echo "使い方: w-cms-update test | prod | rollback" >&2
+  exit 2
+  ;;
+esac

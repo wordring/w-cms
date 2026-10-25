@@ -6,7 +6,8 @@
 
 | もの | 場所 | 持ち主 |
 |---|---|---|
-| リポジトリ（画面のファイルと設定もここから読む） | `/opt/w-cms/repo` | 人の管理用の利用者（例 toho） |
+| リポジトリ（試験用の画面のファイルと設定もここから読む） | `/opt/w-cms/repo` | 人の管理用の利用者（例 toho） |
+| 本番の写し（本番の画面のファイルと設定。試験用で確かめた版に止める） | `/opt/w-cms/prod`（git worktree） | 同上 |
 | 本番の実行ファイル | `/opt/w-cms/w-cms` | root |
 | 試験用の実行ファイル | `/opt/w-cms/w-cms-test` | root |
 | 本番のデータ | `/var/lib/w-cms/data` | w-cms（0700） |
@@ -28,14 +29,19 @@ sudo install -d -o w-cms -g w-cms -m 0700 /var/lib/w-cms /var/lib/w-cms/data-tes
 sudo install -d -o root -g root -m 0755 /etc/w-cms
 ```
 
-## 組み立てて入れ替える
+## 組み立てて入れ替える（w-cms-update）
+
+入れ替えは、道具 `w-cms-update` で行います（はじめに `sudo install -m 0755 /opt/w-cms/repo/deploy/server/w-cms-update /usr/local/bin/`）。
 
 ```bash
-cd /opt/w-cms/repo && git pull
-go build -o /tmp/w-cms-test.new ./cmd/w-cms
-sudo install -m 0755 /tmp/w-cms-test.new /opt/w-cms/w-cms-test
-sudo systemctl restart w-cms-test
+w-cms-update test       # GitHub から取ってきて組み立て、試験用を入れ替える
+w-cms-update prod       # 試験用で確かめた版で、本番を入れ替える（ひとつ前の版は控える）
+w-cms-update rollback   # 本番を、ひとつ前の版に戻す
 ```
+
+- 入れ替えたら、応えるか（`/login` が 200）と、起動の時刻が実行ファイルより新しいか（古い実行ファイルのまま動いていないか）を、道具が確かめます。
+- ⚠ 本番は、試験用のリポジトリとは別の写し `/opt/w-cms/prod`（git worktree）で動きます。画面のファイルと設定も、実行ファイルと同じ版にそろえるためです。`/opt/w-cms/prod` の中を手で書き換えないこと。
+- 記録は `journalctl -t w-cms-update`。どの版が動いているかは `/opt/w-cms/w-cms-test.rev`・`/opt/w-cms/w-cms.rev`。
 
 ## 試験用の証明書
 

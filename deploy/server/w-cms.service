@@ -4,6 +4,9 @@
 # ⚠ 本番を起こすのは、いまの PC（HP405）から引っ越すとき（§2.4）。2つの本番が同時に動くと、データが分かれます。
 # 設定は /etc/w-cms/w-cms.env（持ち主 root・0600）。中身は deploy/server/README.md。
 # 画面のファイル（assets/）と設定（config/）は、WorkingDirectory のリポジトリから読みます。
+# ⚠ 本番は、試験用（/opt/w-cms/repo）とは別の写し /opt/w-cms/prod を使います（git worktree・試験用で確かめた版に止めておく）。
+#   同じ写しを使うと、試験用のために取ってきた新しい画面のファイルが、本番の実行ファイルを替える前に本番にも出てしまうため。
+#   入れ替えは w-cms-update prod（deploy/server/w-cms-update）。
 
 [Unit]
 Description=w-cms 本番（:8443）
@@ -14,7 +17,7 @@ Wants=network-online.target
 Type=simple
 User=w-cms
 Group=w-cms
-WorkingDirectory=/opt/w-cms/repo
+WorkingDirectory=/opt/w-cms/prod
 EnvironmentFile=/etc/w-cms/w-cms.env
 ExecStart=/opt/w-cms/w-cms
 Restart=always
