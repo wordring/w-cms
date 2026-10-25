@@ -449,9 +449,24 @@ func checkDraftWritable(w http.ResponseWriter, r *http.Request, user *auth.User,
 		cms.JSONFail(w, http.StatusConflict, "このページは下書きではありません")
 		return "", false
 	}
+	// 下書きは通信箱の下に作る（handleDraft）。通信箱の外のページは、タグに「下書き」があっても下書きとして扱わない
+	// （2026-10-26。それまでは、書けるページにタグを1つ書けば、送ったあとにそのページがごみ箱へ移った）。
+	if root, ok := comm.MailBoxPageID(); !ok || !cms.IsDescendantOf(database.DB, n, rootInt(root)) {
+		cms.JSONFail(w, http.StatusConflict, "このページは通信箱の下書きではありません")
+		return "", false
+	}
 	// テンプレートの中へは書かない（2026-10-20 にほかの口とそろえた——コアの RefuseTemplateArea）。
 	if !cms.RefuseTemplateArea(w, id) || !editlock.RefuseWhileEditing(w, id) {
 		return "", false
 	}
 	return id, true
+}
+
+// rootInt は通信箱のページIDを数にします（読めなければ 0——0 の子孫は無いので、下書きと認めない）。
+func rootInt(id string) int {
+	n, err := strconv.Atoi(id)
+	if err != nil {
+		return 0
+	}
+	return n
 }

@@ -397,3 +397,56 @@ func TestDraftResaveKeepsWhatPeopleWrote(t *testing.T) {
 		t.Errorf("外した添付の控えが残っています:\n%s", b)
 	}
 }
+
+// TestSendRefusesDraftOutsideMailBox は、⚠ **通信箱の外のページは、タグ「下書き」があっても下書きとして扱わない**ことを固定します
+// （2026-10-26。それまでは書けるページにタグを1つ書けば、送ったあとにそのページがごみ箱へ移った）。
+func TestSendRefusesDraftOutsideMailBox(t *testing.T) {
+	setupMailTest(t)
+	seedSourceMail(t)
+	putPage(t, "000300", "000000", "alice", "330",
+		`<h1>大事なページ</h1><dl data-type="tags"><dt>`+comm.DraftTag+`</dt><dd>`+comm.PurposeReply+`</dd></dl>`)
+	called := false
+	orig := sendMail
+	sendMail = func(_ *auth.User, m comm.OutgoingMail) (string, error) { called = true; return "<x@example.jp>", nil }
+	t.Cleanup(func() { sendMail = orig })
+	code, _ := callJSON(t, MailSendAPIHandler, "POST", "/api/mail/send", map[string]any{
+		"draft_id": "000300", "to": []string{"t@example.jp"}, "body": "本文",
+	}, alice)
+	if code != 409 || called {
+		t.Errorf("通信箱の外のページを draft_id にして %d・送った=%v です（409 で送らないはず）", code, called)
+	}
+	if _, err := os.Stat(page.GetPageDir("000300")); err != nil {
+		t.Errorf("⚠ 通信箱の外のページ /000300 が消えました: %v", err)
+	}
+}
+
+// TestSendKeepsDraftWithChildren は、⚠ **子ページのある下書きは、送ったあとも残す**ことを固定します（2026-10-26。それまでは
+// ごみ箱へ移し、子がごみ箱の親を指して残った）。
+func TestSendKeepsDraftWithChildren(t *testing.T) {
+	setupMailTest(t)
+	seedSourceMail(t)
+	orig := sendMail
+	sendMail = func(_ *auth.User, m comm.OutgoingMail) (string, error) { return "<new@example.jp>", nil }
+	t.Cleanup(func() { sendMail = orig })
+	_, out := callJSON(t, DraftSaveAPIHandler, "POST", "/api/mail/draft", map[string]any{
+		"purpose": comm.PurposeReply, "page_id": "000200", "to": []string{"t@example.jp"}, "subject": "試験", "body": "本文",
+	}, alice)
+	draftID, _ := out["draft_id"].(string)
+	if draftID == "" {
+		t.Fatalf("下書きを作れません: %v", out)
+	}
+	putPage(t, "000400", draftID, "alice", "330", "<h1>下書きの子</h1>")
+	code, out := callJSON(t, MailSendAPIHandler, "POST", "/api/mail/send", map[string]any{
+		"purpose": comm.PurposeReply, "page_id": "000200", "draft_id": draftID,
+		"to": []string{"t@example.jp"}, "subject": "試験", "body": "本文",
+	}, alice)
+	if code != 200 || out["success"] != true {
+		t.Fatalf("送れません: %d %v", code, out)
+	}
+	if _, err := os.Stat(page.GetPageDir(draftID)); err != nil {
+		t.Errorf("⚠ 子のある下書き /%s がごみ箱へ移りました", draftID)
+	}
+	if s, _ := out["draft_error"].(string); !strings.Contains(s, "子ページ") {
+		t.Errorf("draft_error が %q です（子ページがあると知らせるはず）", s)
+	}
+}

@@ -225,8 +225,10 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// 4. 下書きを片付ける（控えは送った日の月に新しく作ったので、下書きはごみ箱へ）。
+	// 子ページが在る・ほかのページから指されている下書きは残す（2026-10-26。それまでは確かめずにごみ箱へ移し、子が
+	// ごみ箱の親を指して残り、指していたページのリンクが切れた）。
 	if draftID != "" && !keepDraft {
-		if _, err := cms.DeletePageToTrash(draftID); err != nil {
+		if _, err := cms.DeleteLeafPageToTrash(user, draftID); err != nil {
 			resp["draft_error"] = "メールは送りましたが、下書き（/" + draftID + "）を片付けられませんでした: " + err.Error()
 		} else {
 			auth.Audit(user.Username, "mail.draft.sent", draftID)

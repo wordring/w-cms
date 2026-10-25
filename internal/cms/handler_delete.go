@@ -149,6 +149,41 @@ func moveToTrash(id string) (string, error) {
 	return dst, nil
 }
 
+// DeleteLeafPageToTrash は、子ページが無く、ほかのページから指されていないときだけ、ページをごみ箱へ移します
+// （機械が後片付けで消すとき用・2026-10-26）。子が在る・指されているときは、消さずに理由を error で返します。
+// 数えるのと移すのは木の見張りの中で（tree_lock.go）——数えてから移すまでに子を足させない。
+// 自分の表（DeleteImpact.Tables）は見ません——消すのはそのページの中身ごとだからです。権限の確かめは呼ぶ側です。
+func DeleteLeafPageToTrash(user *auth.User, id string) (string, error) {
+	pageID, err := strconv.Atoi(id)
+	if err != nil {
+		return "", errors.New("ページIDが不正です")
+	}
+	childless, children, done, err := beginDeleteIfChildless(pageID)
+	if err != nil {
+		return "", err
+	}
+	if !childless {
+		return "", fmt.Errorf("子ページが %d 件あるので消しません", children)
+	}
+	defer done()
+	imp, err := DeleteImpactOf(database.DB, user, id)
+	if err != nil {
+		return "", err
+	}
+	if n := len(imp.Refs) + imp.Hidden; n > 0 {
+		return "", fmt.Errorf("ほかのページ %d 枚から指されているので消しません", n)
+	}
+	trashPath, err := moveToTrash(id)
+	if err != nil {
+		return "", err
+	}
+	if err := PurgePageIndex(id); err != nil {
+		return trashPath, err
+	}
+	editlock.Locks.ForceRelease(pageID)
+	return trashPath, nil
+}
+
 // DeletePageToTrash はページ削除の**芯**です（ゴミ箱へ移動・索引の掃除・ロック解放）。
 //
 // HTTPの口（DeletePageAPIHandler）と、加工製品ページの整理（ext/toho/filing.go）が
