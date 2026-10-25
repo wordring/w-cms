@@ -1177,13 +1177,22 @@
     // ページを去るときの区切りは setupSaveOnLeave の pagehide が打つ（書きかけがあれば、最後の保存に区切りを載せる——runSync）。
     // 決めていない2つの版・失敗したままの保存があれば、去る前に確かめる（そのまま閉じると消える・2026-10-22 の見直し）。
     // ふだんの書きかけは、去るときに送る（setupSaveOnLeave）ので確かめない。
+    // ⚠ 書きかけがあっても、去るときの保存が届かないときは確かめる（2026-10-26）——前の保存がまだ送っている・待っている
+    // （去るときの保存はその後ろに並び、ページが閉じると始まらない）、または送る中身が keepalive の上限（約 60KB）を超える
+    // （閉じると取り消される）。それまでは確かめずに閉じて、最後の書きかけが消えた。
     window.addEventListener('beforeunload', (e) => {
-        if (syncConflicts.size > 0 || saveFailed) { e.preventDefault(); e.returnValue = ''; }
+        const leaveSaveMayBeLost = unsaved && (syncInFlight > 0 || bigSync);
+        if (syncConflicts.size > 0 || saveFailed || leaveSaveMayBeLost) { e.preventDefault(); e.returnValue = ''; }
     });
 
+    // syncInFlight は送っている・待っている保存の数、bigSync は最後に送った保存が keepalive の上限を超えたか（beforeunload）。
+    let syncInFlight = 0;
+    let bigSync = false;
     function queueSync(pull) {
+        syncInFlight++;
         const run = syncChain.then(() => runSync(pull));
         syncChain = run.catch(() => {});
+        run.then(() => { syncInFlight--; }, () => { syncInFlight--; });
         return run;
     }
 
@@ -1262,7 +1271,9 @@
             // ⚠ ページを去るとき（pagehide）は、visibilityState がまだ visible のことがある——印（leavingPage）でも見る。
             // ⚠ 上限はバイトで数える（和文は1字3バイト——字の数で見ていて、大きな表で keepalive が断られ、保存できなかった・
             //    2026-10-22 の見直し）。
-            const keepalive = (document.visibilityState === 'hidden' || leavingPage) && new Blob([body]).size < 60000;
+            const bodyBytes = new Blob([body]).size;
+            if (changes.length) bigSync = bodyBytes >= 60000; // 次に去るときも同じくらい大きい見込み（beforeunload で確かめる）
+            const keepalive = (document.visibilityState === 'hidden' || leavingPage) && bodyBytes < 60000;
             // 受け取りに行くだけ（自分の変更を送らない）ときは、知らせを受けて自動に飛ぶ要求——セッションを延ばさない（2026-10-14）。
             const headers = (pull && !changes.length) ? Object.assign({ 'Content-Type': 'application/json' }, BG_HEADERS)
                 : { 'Content-Type': 'application/json' };
