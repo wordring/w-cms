@@ -32,6 +32,11 @@ func TestWatchUploadsOnSave(t *testing.T) {
 			http.Error(w, "x", http.StatusMethodNotAllowed)
 			return
 		}
+		// 鍵は見出しで届き、住所には載らない（2026-10-26）。
+		if r.Header.Get("X-WCMS-Edit-Token") != "x" || r.URL.RawQuery != "" {
+			http.Error(w, "鍵が違います", http.StatusUnauthorized)
+			return
+		}
 		if r.Header.Get("If-Match") != tag(content) {
 			http.Error(w, "ほかの誰かが先に書き換えています", http.StatusConflict)
 			return
@@ -48,7 +53,7 @@ func TestWatchUploadsOnSave(t *testing.T) {
 	os.WriteFile(local, []byte("v1"), 0o644)
 	t.Setenv("LOCALAPPDATA", t.TempDir()) // 記録.log を試験の置き場へ
 	done := make(chan error, 1)
-	go func() { done <- watch(local, srv.URL+"/api/local-edit/file?token=x", srv.URL, tag([]byte("v1")), []byte("v1")) }()
+	go func() { done <- watch(local, srv.URL+"/api/local-edit/file", "x", srv.URL, tag([]byte("v1")), []byte("v1")) }()
 
 	save := func(s string) {
 		time.Sleep(1200 * time.Millisecond) // 時刻の刻みが変わるように

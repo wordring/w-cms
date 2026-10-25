@@ -94,8 +94,15 @@ func edit(link string, allowed []string) error {
 	if err != nil {
 		return err
 	}
-	fileURL := base + "/api/local-edit/file?token=" + url.QueryEscape(token)
-	res, err := httpClient.Get(fileURL)
+	// 鍵は見出し（X-WCMS-Edit-Token）で送る（2026-10-26。それまでは住所の ?token= に入れていて、前段のプロキシの記録に残ると、
+	// それを読んだ人が12時間そのファイルを読み書きできた）。
+	fileURL := base + "/api/local-edit/file"
+	getReq, err := http.NewRequest(http.MethodGet, fileURL, nil)
+	if err != nil {
+		return err
+	}
+	getReq.Header.Set(editTokenHeader, token)
+	res, err := httpClient.Do(getReq)
 	if err != nil {
 		return fmt.Errorf("w-cms に繋がりません（%s）: %v", base, err)
 	}
@@ -132,11 +139,14 @@ func edit(link string, allowed []string) error {
 	if !writable {
 		return nil // 見るだけ——見張らない
 	}
-	return watch(local, fileURL, base, etag, content)
+	return watch(local, fileURL, token, base, etag, content)
 }
 
+// editTokenHeader は鍵を送る見出しです（w-cms の internal/cms/local_edit.go と同じ名前）。
+const editTokenHeader = "X-WCMS-Edit-Token"
+
 // watch は手元のファイルを見張り、保存で中身が変わるたびに上げます。
-func watch(local, fileURL, base, etag string, last []byte) error {
+func watch(local, fileURL, token, base, etag string, last []byte) error {
 	lastSum := sha256.Sum256(last)
 	st, _ := os.Stat(local)
 	var lastMod time.Time
@@ -184,7 +194,7 @@ func watch(local, fileURL, base, etag string, last []byte) error {
 		if sum == lastSum {
 			continue
 		}
-		newTag, err := put(fileURL, base, etag, b)
+		newTag, err := put(fileURL, token, base, etag, b)
 		if err != nil {
 			var stop stopError
 			if errors.As(err, &stop) {
@@ -207,11 +217,12 @@ type stopError struct{ msg string }
 
 func (e stopError) Error() string { return e.msg }
 
-func put(fileURL, base, etag string, content []byte) (string, error) {
+func put(fileURL, token, base, etag string, content []byte) (string, error) {
 	req, err := http.NewRequest(http.MethodPut, fileURL, bytes.NewReader(content))
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set(editTokenHeader, token)
 	req.Header.Set("If-Match", etag)
 	req.Header.Set("Origin", base) // w-cms の CSRF の守り（同じオリジンか）を通す
 	req.Header.Set("Content-Type", "application/octet-stream")
