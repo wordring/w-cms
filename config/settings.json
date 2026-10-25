@@ -147,7 +147,8 @@
     ".eml",
     ".pub",
     ".lbx",
-    ".mp4"
+    ".mp4",
+    ".crt"
   ],
   "char_folding": {
     "Φ": "φ",
