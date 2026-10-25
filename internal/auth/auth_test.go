@@ -2,6 +2,7 @@ package auth
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,5 +185,39 @@ func TestBootstrapAdmin(t *testing.T) {
 	}
 	if _, err := Authenticate("root2", "another"); err != ErrAuthFailed {
 		t.Error("ユーザーが存在するのに2人目の管理者が作成されました")
+	}
+}
+
+// TestLoginAttemptsPruned は、失敗の記録が古くなったら消えること（打たれた名前ごとの行が増え続けない）を固定します
+// （2026-10-26）。新しい失敗を記録するときに、loginAttemptsKeep より古い行を消す。
+func TestLoginAttemptsPruned(t *testing.T) {
+	setupAuthDB(t)
+	for _, name := range []string{"ghost1", "ghost2", "ghost3"} {
+		Authenticate(name, "x")
+	}
+	count := func() int {
+		var n int
+		database.AuthDB.QueryRow(`SELECT COUNT(*) FROM login_attempts`).Scan(&n)
+		return n
+	}
+	if n := count(); n != 3 {
+		t.Fatalf("失敗の記録が %d 行（3 のはず）", n)
+	}
+	advanceClock(loginAttemptsKeep + time.Minute)
+	Authenticate("ghost4", "x")
+	if n := count(); n != 1 {
+		t.Errorf("古い失敗の記録が消えていません: %d 行（1 のはず）", n)
+	}
+}
+
+// TestBadUsername は、作れない利用者名（前後の空白・制御文字・長すぎ）を断り、中の空白と日本語は通すことを固定します（2026-10-26）。
+func TestBadUsername(t *testing.T) {
+	for name, bad := range map[string]bool{
+		"山田 太郎": false, "a": false, " a": true, "a ": true, "a\nb": true, "a\x00": true,
+		strings.Repeat("あ", 64): false, strings.Repeat("あ", 65): true,
+	} {
+		if got := badUsername(name) != ""; got != bad {
+			t.Errorf("%q: 断る=%v（%v のはず）", name, got, bad)
+		}
 	}
 }

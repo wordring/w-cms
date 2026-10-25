@@ -3,6 +3,9 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // 管理API（すべて admin 限定）。フェーズ3。
@@ -60,6 +63,10 @@ func UsersAPIHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "username は必須です", http.StatusBadRequest)
 			return
 		}
+		if why := badUsername(req.Username); why != "" {
+			http.Error(w, why, http.StatusBadRequest)
+			return
+		}
 		if err := CreateUser(req.Username, req.Password, req.IsAdmin, req.PrimaryGroup); err != nil {
 			http.Error(w, "ユーザー作成に失敗しました: "+err.Error(), http.StatusBadRequest)
 			return
@@ -72,6 +79,23 @@ func UsersAPIHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// badUsername は、作れない利用者名なら理由を返します（2026-10-26。それまでは何でも作れた——前後の空白は、ログインで打つ
+// 名前と一致せず入れない利用者になり、制御文字は監査の記録を崩した）。中の空白は使える（連絡帳の人の題「姓 名」に合わせる）。
+func badUsername(name string) string {
+	if strings.TrimSpace(name) != name {
+		return "利用者名の前後に空白は入れられません"
+	}
+	if utf8.RuneCountInString(name) > 64 {
+		return "利用者名は64文字までです"
+	}
+	for _, c := range name {
+		if unicode.IsControl(c) {
+			return "利用者名に制御文字は入れられません"
+		}
+	}
+	return ""
 }
 
 // UserPasswordAPIHandler はユーザーのパスワードをリセットします（admin限定）。

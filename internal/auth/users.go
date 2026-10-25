@@ -23,6 +23,9 @@ const (
 	backoffBase       = 1 * time.Second  // 1回目の失敗のあとの待ち（以後、失敗のたびに倍）
 )
 
+// loginAttemptsKeep は、失敗の記録を残す長さです（ロックアウトより十分に長く）。
+const loginAttemptsKeep = 24 * time.Hour
+
 // nowFunc は今の時刻です（試験が時計を進めるため）。
 var nowFunc = time.Now
 
@@ -243,6 +246,10 @@ func isLockedOut(username string) (bool, time.Time) {
 }
 
 func recordFailure(username string) {
+	// 古い失敗の記録を消す（2026-10-26。それまでは消しておらず、打たれた名前ごとに1行ずつ増え続けた——存在しない名前を
+	// 次々に打てば、認証の DB をいくらでも太らせられた）。待ちもロックアウトも最後の失敗から lockoutDuration で明けるので、
+	// それより十分に古い行は何も止めていない。
+	database.AuthDB.Exec(`DELETE FROM login_attempts WHERE last_fail < ?`, nowFunc().Add(-loginAttemptsKeep))
 	database.AuthDB.Exec(`
 		INSERT INTO login_attempts (username, fail_count, last_fail) VALUES (?, 1, ?)
 		ON CONFLICT(username) DO UPDATE SET fail_count = fail_count + 1, last_fail = excluded.last_fail

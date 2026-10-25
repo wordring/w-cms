@@ -15,6 +15,12 @@ import (
 // argon2idは1回あたり約64MiBを使うため、ピークメモリを抑える（認証認可設計.md 2.1節）。
 var loginSem = make(chan struct{}, 4)
 
+// ログインの欄の長さの上限です（利用者名は管理画面で作る名前より十分に長く・パスワードは貼り付けた長い文も入る長さ）。
+const (
+	maxLoginNameBytes = 256
+	maxPasswordBytes  = 1024
+)
+
 // loginPageHTML はログインフォームです。スタイルは /assets/login.css（認証不要で
 // 配信される self のCSS）。かつてはインラインstyleの自己完結だったが、
 // CSP strict 化（'unsafe-inline' 除去）に伴い外部化した。
@@ -96,6 +102,11 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	username := r.FormValue("username")
 	password := r.FormValue("password")
+	// 長すぎる名前・パスワードは、確かめずに断る（2026-10-26。名前は失敗の記録と監査に残るので、長さを抑える）。
+	if len(username) > maxLoginNameBytes || len(password) > maxPasswordBytes {
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
 
 	// argon2idの同時実行を制限してメモリのピークを抑える
 	loginSem <- struct{}{}
