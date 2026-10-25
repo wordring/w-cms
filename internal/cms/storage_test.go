@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -615,5 +616,28 @@ func TestRewriteBodyKeepsTheBodyBefore(t *testing.T) {
 	// 人が続けて書いても、機械の書き換えの版に混ざらない（機械の版は閉じている）。
 	if len(list) == 0 || !list[0].Sealed {
 		t.Errorf("機械の書き換えの版が閉じていません: %+v", list)
+	}
+}
+
+// TestResyncPagesChangedSince は、作り直しの2周目が、始めたあとに書かれたページだけを入れ直すことを固定します（2026-10-26）。
+func TestResyncPagesChangedSince(t *testing.T) {
+	newTestFileDB(t)
+	newPage(t, "000090", "<h1>古い題</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
+	newPage(t, "000091", "<h1>触らない題</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
+	old := time.Now().Add(-time.Hour)
+	for _, id := range []string{"000090", "000091"} {
+		os.Chtimes(page.BodyPath(id), old, old)
+		os.Chtimes(filepath.Join(page.GetPageDir(id), id+".meta.json"), old, old)
+	}
+	since := time.Now().Add(-time.Minute)
+	// 作り直しのあいだに 000090 が書かれた（本文だけ・索引は古いまま）。
+	if err := os.WriteFile(page.BodyPath("000090"), []byte("<h1>新しい題</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n := resyncPagesChangedSince(since); n != 1 {
+		t.Errorf("入れ直したページが %d（1 のはず）", n)
+	}
+	if got := PageTitleByID(90); got != "新しい題" {
+		t.Errorf("作り直しのあいだに書かれたページの索引が古いまま: %q", got)
 	}
 }

@@ -221,6 +221,9 @@ func RebuildDatabase() error {
 	if err != nil {
 		return err // 印は残したまま＝次の起動でやり直す
 	}
+	// 3b. 作り直しのあいだに書かれたページを、もう一度入れる（2026-10-26）。歩きが通り過ぎたあとに保存されたページは、
+	//    保存の索引づけが表を消した瞬間に重なって失敗すると、古い索引のまま残った（本文は書けている）。
+	resyncPagesChangedSince(started)
 
 	// 4. 終わった印を、件数と所要時間つきで残す。
 	ms := time.Since(started).Milliseconds()
@@ -404,7 +407,17 @@ func hasHTMLFiles(dir string) bool {
 // resyncAllPages は data/master 配下の全 .html を走査して SyncIndex を実行します。
 // 個々のファイルのエラーは握り潰して他ファイルの処理を継続します（冪等な再実行で回復可能）。
 // 取り込んだページ数を返します（完了の記録に使う）。
-func resyncAllPages() (int, error) {
+func resyncAllPages() (int, error) { return resyncPages(time.Time{}) }
+
+// resyncPagesChangedSince は、本文かサイドカーが since より後に書かれたページだけを入れ直します（失敗は数えない）。
+func resyncPagesChangedSince(since time.Time) int {
+	n, _ := resyncPages(since)
+	return n
+}
+
+// resyncPages は data/master の本文を歩いて索引へ入れます。since が空でなければ、本文かサイドカーが since 以降に
+// 書かれたページだけ。
+func resyncPages(since time.Time) (int, error) {
 	count := 0
 	err := filepath.Walk(page.MasterDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -421,8 +434,16 @@ func resyncAllPages() (int, error) {
 			return filepath.SkipDir
 		}
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".html") {
+			if !since.IsZero() && info.ModTime().Before(since) {
+				if mi, err := os.Stat(strings.TrimSuffix(path, ".html") + ".meta.json"); err != nil || mi.ModTime().Before(since) {
+					return nil
+				}
+			}
 			content, err := os.ReadFile(path)
 			if err != nil {
+				if !since.IsZero() {
+					return nil // 2周目は、作り直しのあいだにごみ箱へ移ったページなどを飛ばす
+				}
 				return err
 			}
 			id := strings.TrimSuffix(info.Name(), ".html")
