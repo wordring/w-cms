@@ -33,6 +33,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
 )
 
 // ourOrderLine は部材発注書へ入れる1行です（画面から送られてくる形）。
@@ -104,6 +105,9 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// ページに『⚠ まだ発注していません（4行）』と言ったゴミが残っています」）。
 		DraftPage  string `json:"draft_page"`
 		DraftIndex string `json:"draft_index"`
+		// DraftSig はその表の中身の指紋です（2026-10-26）。合う表がもう無ければ作らない——押し直し（応答が届かなかった）で
+		// 2枚目の部材発注書を作り、番号のずれた別の表を消していた。ほかの人が表を直したあとも断る。
+		DraftSig string `json:"draft_sig"`
 		// Join は相乗りする部材発注書のページ番号です（2026-10-21・order_join.go）。あれば新しく作らず、その部材発注書に足す。
 		Join string `json:"join"`
 	}
@@ -125,8 +129,20 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 発注部材表が製造ページにあれば、明細の「製造」の列にその製造ページを書く（2026-10-21）。
 	req.Lines = withMfg(req.Lines, mfgParentOr(user, req.DraftPage))
+	// 作るのに使う発注部材表が、いまも画面の見た表のままかを確かめる（指紋・1つずつ通す——draftOrderMu）。
+	draftOrderMu.Lock()
+	defer draftOrderMu.Unlock()
+	if strings.TrimSpace(req.DraftSig) != "" && strings.TrimSpace(req.DraftPage) != "" {
+		n, _ := strconv.Atoi(strings.TrimSpace(req.DraftIndex))
+		pid, okID := page.NormalizeID(req.DraftPage)
+		body, err := cms.ReadPageBody(pid)
+		if !okID || err != nil || draftIndexBySig(body, n, strings.TrimSpace(req.DraftSig)) < 1 {
+			cms.JSONFail(w, http.StatusConflict, "この発注部材表は、もう部材発注書にしたか、ほかの人が直しました。ページを読み直してから押してください。")
+			return
+		}
+	}
 	if strings.TrimSpace(req.Join) != "" {
-		joinOurOrder(w, user, req.Join, supplier, req.Lines, req.DraftPage, req.DraftIndex)
+		joinOurOrder(w, user, req.Join, supplier, req.Lines, req.DraftPage, req.DraftIndex, req.DraftSig)
 		return
 	}
 
@@ -171,7 +187,7 @@ func NewOurOrderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	//    ⚠ **失敗しても部材発注書は取り消しません**——**紙のほうが重い**ので、
 	//    「表が残ってしまった」は人が消せば済みます。理由を添えるだけにします。
 	out := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
-	if note := removeDraftAfterOrder(user, req.DraftPage, req.DraftIndex); note != "" {
+	if note := removeDraftAfterOrder(user, req.DraftPage, req.DraftIndex, req.DraftSig); note != "" {
 		out["draft_note"] = note
 	}
 	cms.WriteJSON(w, out)

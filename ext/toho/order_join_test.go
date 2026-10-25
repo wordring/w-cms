@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 )
 
@@ -72,5 +73,36 @@ func TestJoinOurOrderMergesAndRefuses(t *testing.T) {
 		"supplier": "みなと商店", "draft_page": "000992", "draft_index": "1", "join": po, "lines": []map[string]any{fb("000032", "000035", "3", "")},
 	}); code != 409 || !strings.Contains(out["message"].(string), "送ってある") {
 		t.Errorf("⚠ 送った部材発注書に足せます: %d %v", code, out)
+	}
+}
+
+// TestOurOrderNewRefusesRepeatByDraftSig は、⚠ **同じ発注部材表から2枚目の部材発注書を作らず、消すのは作るのに使った表だけ**
+// であることを固定します（2026-10-26——応答が届かず押し直すと、2枚目を作り、番号のずれたほかの業者の表を消した）。
+func TestOurOrderNewRefusesRepeatByDraftSig(t *testing.T) {
+	setupExtTest(t, "000990", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 993, -1, "製造000993", "root", "302", true)
+	lineA := ourOrderLine{ProductID: "000031", Kind: "購入部品", ItemName: "ボルトA", Quantity: "8"}
+	lineB := ourOrderLine{ProductID: "000032", Kind: "購入部品", ItemName: "ナットB", Quantity: "4"}
+	body := `<h1>製造</h1>` + tableOfLinesHTML(OrderDraftType, []ourOrderLine{lineA}, true) + tableOfLinesHTML(OrderDraftType, []ourOrderLine{lineB}, true)
+	seedBody(t, "000993", body)
+	nodes, _ := htmldoc.ParseFragment(body)
+	tables := tablesOfType(nodes, OrderDraftType)
+	if len(tables) != 2 {
+		t.Fatalf("前提: 発注部材表が %d 枚", len(tables))
+	}
+	sigA := tableSig(tables[0])
+	req := map[string]any{
+		"supplier": "みなと商店", "draft_page": "000993", "draft_index": "1", "draft_sig": sigA,
+		"lines": []map[string]any{{"product_id": "000031", "kind": "購入部品", "item_name": "ボルトA", "quantity": "8"}},
+	}
+	if code, out := postRFQ(t, adminUser(), NewOurOrderAPIHandler, req); code != 200 {
+		t.Fatalf("部材発注書を作れません: %d %v", code, out)
+	}
+	if code, out := postRFQ(t, adminUser(), NewOurOrderAPIHandler, req); code != 409 {
+		t.Errorf("⚠ 同じ表からもう1枚作りました: %d %v", code, out)
+	}
+	after := readPageBody(t, "000993")
+	if strings.Contains(after, "ボルトA") || !strings.Contains(after, "ナットB") {
+		t.Errorf("⚠ 消す表を取り違えました（ボルトA の表だけ消えるはず）:\n%s", after)
 	}
 }

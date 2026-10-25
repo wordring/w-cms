@@ -39,6 +39,8 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	// この表が何枚目かを数えます（画面が「どの表から作るか」を送るため）。
 	idx := draftIndexOf(ctx)
+	// 表の中身の指紋（画面が送り、サーバーが同じ表かを確かめる・2026-10-26）。画面の部品を足す前に数える。
+	sig := tableSig(el)
 	// 仕入先の初めの値は、表の「推奨業者」が1社にそろっていればその社（2026-10-21・§6.3）。行ごとの「外す」を足す前に読む。
 	vendor := draftVendorOf(el)
 	// ⚠ **行ごとに「戻す」を付けます**（2026-09-22 ユーザー:「**発注部材表から
@@ -56,7 +58,7 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
 	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+rowBar+
-		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx, vendor)+`</div>`)
+		draftFormHTML(ctx.Viewer, page.FormatID(ctx.PageID), idx, sig, vendor)+`</div>`)
 	return false, nil
 }
 
@@ -109,12 +111,12 @@ func draftIndexOf(ctx *cms.MirrorContext) int {
 // ⚠ **仕入先と差出人はここで決めます**——未発注の表ではありません。
 // **部材発注書は1枚に1社**で、その1社が決まるのは**この表を作り終えたとき**だからです。
 // supplier は仕入先の欄の初めの値です（空なら空の欄）。
-func draftFormHTML(user *auth.User, pageID string, idx int, supplier string) string {
+func draftFormHTML(user *auth.User, pageID string, idx int, sig, supplier string) string {
 	f := func(id, label, ph, typ string) string {
 		return searchFieldHTML("draft", id, label, ph, typ)
 	}
 	return `<div class="matsearch-form draft-form" data-draft-page="` +
-		stdhtml.EscapeString(pageID) + `" data-draft-index="` + strconv.Itoa(idx) + `">` +
+		stdhtml.EscapeString(pageID) + `" data-draft-index="` + strconv.Itoa(idx) + `" data-draft-sig="` + stdhtml.EscapeString(sig) + `">` +
 		signerFieldHTML(user) +
 		strings.Replace(f("supplier", "仕入先", "みなと商店", "text"), `/></label>`, ` value="`+stdhtml.EscapeString(supplier)+`"/></label>`, 1) +
 		// 相乗り（2026-10-21・order_join.go）——ページ番号を書けば、新しく作らずその部材発注書に足す。候補は同じ仕入先のまだ送っていない部材発注書。

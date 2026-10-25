@@ -34,6 +34,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 
@@ -197,7 +198,7 @@ func isTableOfTypeInBody(body, vocabType string) bool {
 //
 // ⚠ **うまくいかなくても部材発注書は取り消しません**——**紙のほうが重い**ので、
 // 「表が残ってしまった」は人が消せば済みます。返すのは**添える一文**だけです。
-func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string {
+func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex, draftSig string) string {
 	if strings.TrimSpace(draftPage) == "" || strings.TrimSpace(draftIndex) == "" {
 		return "" // どの表から作ったか分からない（画面が古いときなど）
 	}
@@ -219,7 +220,12 @@ func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string
 	// 人の保存とは `cms.RewriteBody` の錠で順に並びます。）
 	done := false
 	if werr := cms.RewriteBodyUnlessHeld(pageID, user.Username, func(cur string) string {
-		out, ok := replaceDraftTable(cur, n, "")
+		// 消すのは、作るのに使った表（指紋が合う表）だけ——番号のままだと、表が減ったあとの別の表を消した（2026-10-26）。
+		at := draftIndexBySig(cur, n, draftSig)
+		if at < 1 {
+			return cur
+		}
+		out, ok := replaceDraftTable(cur, at, "")
 		done = ok
 		if !ok {
 			return cur
@@ -236,6 +242,21 @@ func removeDraftAfterOrder(user *auth.User, draftPage, draftIndex string) string
 	}
 	return ""
 }
+
+// draftIndexBySig は、本文の発注部材表のうち、指紋 sig の表が何枚目かを返します（1始まり・n 枚目を先に見る）。
+// sig が空なら n のまま。合う表が無い・2つ以上あるなら 0。
+func draftIndexBySig(body string, n int, sig string) int {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return 0
+	}
+	tables := tablesOfType(nodes, OrderDraftType)
+	return pickBySig(len(tables), func(i int) string { return tableSig(tables[i]) }, n-1, sig) + 1
+}
+
+// draftOrderMu は、発注部材表から部材発注書を作る仕事を1つずつ通します（2026-10-26）——表を確かめてから消すまでに、
+// 同じ表から2枚目を作らせない（押し直し・2つのタブ）。
+var draftOrderMu sync.Mutex
 
 // replaceDraftTable は本文の n 枚目の発注部材表を、渡したHTMLで置き換えます。
 //

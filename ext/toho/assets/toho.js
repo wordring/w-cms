@@ -1379,6 +1379,8 @@ delegateClick([
             //    リンクに化けます（ユーザー決定）。
             draft_page: form.getAttribute('data-draft-page') || '',
             draft_index: form.getAttribute('data-draft-index') || '',
+            // 表の中身の指紋——サーバーが同じ表かを確かめ、作ったあとの押し直しを断る（2026-10-26）。
+            draft_sig: form.getAttribute('data-draft-sig') || '',
             // 相乗りする部材発注書（2026-10-21・ext/toho/order_join.go）——空なら新しく作る。
             join: val('join'),
         };

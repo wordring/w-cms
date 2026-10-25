@@ -283,7 +283,7 @@ func joinFieldHTML(user *auth.User, supplier string) string {
 }
 
 // joinOurOrder は NewOurOrderAPIHandler の相乗りの道です——発注部材表の lines を、部材発注書 joinIn に足して、元の表を消します。
-func joinOurOrder(w http.ResponseWriter, user *auth.User, joinIn, supplier string, lines []ourOrderLine, draftPage, draftIndex string) {
+func joinOurOrder(w http.ResponseWriter, user *auth.User, joinIn, supplier string, lines []ourOrderLine, draftPage, draftIndex, draftSig string) {
 	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(joinIn), "/"))
 	if !ok {
 		cms.JSONFail(w, http.StatusBadRequest, "相乗りする部材発注書のページ番号が読めません: "+joinIn)
@@ -318,7 +318,7 @@ func joinOurOrder(w http.ResponseWriter, user *auth.User, joinIn, supplier strin
 	}
 	auth.Audit(user.Username, "our-order.join", id+" "+supplier+" 足した "+strconv.Itoa(added)+"行・数を足した "+strconv.Itoa(summed)+"行")
 	out := map[string]any{"success": true, "page_id": id, "url": "/" + id, "joined": true, "added": added, "summed": summed}
-	if note := removeDraftAfterOrder(user, draftPage, draftIndex); note != "" {
+	if note := removeDraftAfterOrder(user, draftPage, draftIndex, draftSig); note != "" {
 		out["draft_note"] = note
 	}
 	cms.WriteJSON(w, out)
