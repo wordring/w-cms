@@ -38,7 +38,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 )
 
 const idleLimit = 12 * time.Hour // 最後に保存してから、これだけ何も無ければ見張りを終える
@@ -299,8 +301,19 @@ func run(name string, args ...string) error {
 }
 
 // showMessage は知らせを小さな窓で出します（黒い窓を出さない組み立てなので、標準出力は見えない）。
+//
+// ⚠ Windows の MessageBoxW を直に呼びます（2026-10-26）。それまでは PowerShell の命令の文字列に知らせの文を埋め込んで
+// いて、ASCII の「'」だけを二重にしていました。PowerShell は全角の引用符（‘ ’ “ ”）も文字列の区切りに読むので、
+// どのウェブページからでも w-cms-edit: のリンクを開かせて、知らせの文（登録していない住所の断り）に紛れ込ませた命令を、
+// この PC の利用者として動かせました。知らせの文は、命令の文字列に決して入れないこと。
 func showMessage(text string) {
-	q := strings.ReplaceAll(text, "'", "''")
-	exec.Command("powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command",
-		"Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('"+q+"', 'w-cms-edit') | Out-Null").Run()
+	msg, err := syscall.UTF16PtrFromString(strings.ReplaceAll(text, "\x00", " "))
+	if err != nil {
+		return
+	}
+	title, _ := syscall.UTF16PtrFromString("w-cms-edit")
+	const mbOK, mbTopmost = 0x0, 0x40000
+	messageBoxW.Call(0, uintptr(unsafe.Pointer(msg)), uintptr(unsafe.Pointer(title)), mbOK|mbTopmost)
 }
+
+var messageBoxW = syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW")
