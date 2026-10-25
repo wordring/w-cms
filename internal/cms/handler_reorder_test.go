@@ -129,3 +129,24 @@ func TestReorderRejectsForeignChild(t *testing.T) {
 		t.Errorf("よその子のキーが書き換わりました: %q -> %q", before.SortKey, after.SortKey)
 	}
 }
+
+// TestReorderRejectsUnreadableChild は、読めない子を並べても「この親の子ではありません」と同じに断り、その子のキーも
+// 書き換えないことを固定します（2026-10-26——成功するかどうかで、読めないページがこの親の下にあると分かった）。
+func TestReorderRejectsUnreadableChild(t *testing.T) {
+	setupReorderTree(t)
+	putReorderChild(t, "000201", "000100", "見える子", "", "")
+	if err := page.WriteSidecar("000202", page.PageMeta{Owner: "bob", Mode: "300", ParentID: "000100"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncIndex("000202", "<h1>読めない子</h1>"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := page.ReadSidecar("000202")
+	rr := postReorder(t, &auth.User{Username: "alice"}, "000100", []string{"000202", "000201"})
+	if rr.Code != 400 || !bytes.Contains(rr.Body.Bytes(), []byte("この親の子ではありません")) {
+		t.Fatalf("読めない子の並べ替えを %d %s で返しました（よその子と同じ断りのはず）", rr.Code, rr.Body.String())
+	}
+	if after, _ := page.ReadSidecar("000202"); after.SortKey != before.SortKey {
+		t.Errorf("読めない子のキーが書き換わりました: %q -> %q", before.SortKey, after.SortKey)
+	}
+}

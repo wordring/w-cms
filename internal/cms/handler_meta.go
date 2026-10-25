@@ -117,12 +117,18 @@ func PageMetaAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 作った人（ログイン名）は、ログインしている人にだけ返す（2026-10-26。公開のページを見に来た社外の人にも、
+	// 社内のログイン名——人の名前——を返していた）。
+	by := createdBy.String
+	if auth.CurrentUser(r) == nil {
+		by = ""
+	}
 	WriteJSON(w, map[string]any{
 		"id":           id,
 		"parent_id":    parentStr,
 		"parent_title": parentTitle,
 		"created_at":   createdAt.String,
-		"created_by":   createdBy.String,
+		"created_by":   by,
 		"updated_at":   updatedAt.String,
 	})
 }

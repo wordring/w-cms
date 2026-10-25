@@ -86,7 +86,9 @@ func ReorderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		var actual int
 		if err := database.DB.QueryRow(
 			`SELECT COALESCE(parent_id, -1) FROM pages WHERE id = ?`,
-			mustAtoi(childID)).Scan(&actual); err != nil || actual != parentInt {
+			mustAtoi(childID)).Scan(&actual); err != nil || actual != parentInt || !page.CanView(user, mustAtoi(childID)) {
+			// 読めない子も同じ断りにする（2026-10-26。それまでは、読めない子の番号を並べると成功し、読めないページが
+			// この親の下にあると分かった——子の一覧〔/api/children〕は読めない子を隠している）。
 			JSONFail(w, http.StatusBadRequest, "この親の子ではありません: "+childID)
 			return
 		}
