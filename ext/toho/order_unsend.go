@@ -60,11 +60,24 @@ func OrderUnsendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	changed := 0
+	delivered := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		var out string
-		out, changed = setOrderLineStatus(cur, 0, OrderLineUnsent)
+		out, n, changes := setOrderLineStatusTracked(cur, 0, OrderLineUnsent)
+		// 納品済の行は、錠の中のいまの本文でも確かめる（2026-10-26——上の確かめは索引で、錠の外。あいだに納品済になった行を
+		// 未発注へ戻し、在庫を戻さず、届いた記録を消した）。
+		for _, c := range changes {
+			if strings.TrimSpace(c.from) == OrderLineDelivered {
+				delivered = true
+				return cur
+			}
+		}
+		changed = n
 		return out
 	}) {
+		return
+	}
+	if delivered {
+		cms.JSONFail(w, http.StatusConflict, "納品済の行があるので戻せません（届いた行は、行ごとに状態を直してください）")
 		return
 	}
 	auth.Audit(user.Username, "our-order.unsend", pageID+" "+strconv.Itoa(changed)+"行を未発注に戻した")

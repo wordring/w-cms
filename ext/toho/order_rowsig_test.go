@@ -64,3 +64,21 @@ func TestOrderRowOpsFollowTheSig(t *testing.T) {
 		t.Errorf("⚠ 合わない指紋で行を外しました: %d", code)
 	}
 }
+
+// TestOrderReturnRowRefusesDelivered は、⚠ **納品済の行は「発注から外す」で外さない**ことを固定します（2026-10-26——届いた余りは
+// もう在庫表へ入っていて、外すと必要部材表に戻ってまた発注され、在庫は多いまま残った）。
+func TestOrderReturnRowRefusesDelivered(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	seedProcurement(t, "root", "302", true)
+	body := `<h1>発注 みなと商店</h1><table><caption>部材発注明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>種類</th><th>品名</th><th>数量</th><th>状態</th></tr>` +
+		`<tr><td>000031</td><td></td><td>購入部品</td><td>ボルト</td><td>4</td><td>` + OrderLineDelivered + `</td></tr></tbody></table>`
+	writeBodyFile(t, 32, body)
+	syncBody(t, 32, body)
+	sigs := orderRowSigs(t, body)
+	if code, out := postRFQ(t, adminUser(), OrderReturnRowAPIHandler, map[string]any{"page_id": "000032", "row": 1, "sig": sigs[0]}); code != 409 {
+		t.Errorf("⚠ 納品済の行を外しました: %d %v", code, out)
+	}
+	if b := readPageBody(t, "000032"); !strings.Contains(b, "<td>ボルト</td>") {
+		t.Errorf("⚠ 納品済の行が消えました:\n%s", b)
+	}
+}

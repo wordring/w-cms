@@ -82,7 +82,7 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// （弊社品番の無い行を臨時部材表へ戻す道は、2026-10-21 に臨時部材表ごと外した——いまは外すだけ。）
 	// ⚠ **外すのは、読んだときと同じ中身の行だけ**です（2026-10-20）——行は錠の外で読んで臨時部材表へ写したので、そのあいだに
 	//    ほかの人の保存で行がずれると、番号だけで外すと**写した行とは別の行が消えていた**。中身が違えば外さずに断ります。
-	removed, moved := false, false
+	removed, moved, delivered := false, false, false
 	if rebuildBeforeWrite != nil {
 		rebuildBeforeWrite(pageID) // 試験だけ（読んでから書くまでのあいだに、ほかの人の保存を挟む）
 	}
@@ -90,6 +90,12 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		r2, ok := resolveOrderRow(cur, req.Row, req.Sig)
 		if !ok {
 			moved = true
+			return cur
+		}
+		// 納品済の行は外さない（2026-10-26——届いた余りはもう在庫表へ入っていて、外すと必要部材表に戻ってまた発注され、
+		// 在庫は多いまま残った）。届いた行は、状態を直してから外す。
+		if orderRowStatusOf(cur, r2) == OrderLineDelivered {
+			delivered = true
 			return cur
 		}
 		out, ln, ok := takeOrderRow(cur, r2)
@@ -103,6 +109,10 @@ func OrderReturnRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		removed = true
 		return out
 	}) {
+		return
+	}
+	if delivered {
+		cms.JSONFail(w, http.StatusConflict, "納品済の行は外せません（届いた行です。外すなら、先に状態を発注済に戻してください——在庫表から余りを引きます）")
 		return
 	}
 	if moved || !removed {

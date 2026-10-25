@@ -356,3 +356,25 @@ func fillDeliveredAtWhenAllIn(body, today string) string {
 	d.ReplaceTag(DeliveredAtTag, today)
 	return d.HTML()
 }
+
+// orderRowStatusOf は、本文の1つ目の部材発注明細表の row 行目（見出しを除いて1始まり）の「状態」を返します（無ければ空）。
+func orderRowStatusOf(body string, row int) string {
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return ""
+	}
+	tables := tablesOfType(nodes, ourOrderItemsType)
+	if len(tables) == 0 {
+		return ""
+	}
+	rows := rowsOf(tables[0])
+	if row < 1 || row >= len(rows) {
+		return ""
+	}
+	si := headerIndexOf(rows[0], "状態")
+	cells := cellsOf(rows[row])
+	if si < 0 || si >= len(cells) {
+		return ""
+	}
+	return strings.TrimSpace(textOf(cells[si]))
+}
