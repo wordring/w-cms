@@ -351,7 +351,7 @@ func classDigit(mode string, class int) int {
 
 // effectiveClass はユーザー u がページ p に対してどのクラスで判定されるかを返します。
 func effectiveClass(p PageMeta, u *auth.User) int {
-	if u.Username == p.Owner {
+	if p.OwnedBy(u) {
 		return 0 // owner
 	}
 	for _, g := range u.Groups {
@@ -360,6 +360,15 @@ func effectiveClass(p PageMeta, u *auth.User) int {
 		}
 	}
 	return 2 // other
+}
+
+// OwnedBy は、利用者 u がページ p の持ち主かを返します。
+//
+// ⚠ 持ち主が DefaultOwner（"admin"——サイドカーの無いページとトップページの既定）のときは、だれも名前では持ち主に
+// なりません（2026-10-26）。それまでは、管理者でない利用者「admin」を作る・管理者から外すと、トップページ（公開の
+// 切り替え）とサイドカーの無いページの持ち主になった。管理者は持ち主でなくても全部できるので、困らない。
+func (p PageMeta) OwnedBy(u *auth.User) bool {
+	return u != nil && p.Owner != DefaultOwner && u.Username == p.Owner
 }
 
 // CanRead はユーザー u がページ p を閲覧できるかを返します（adminはバイパス）。

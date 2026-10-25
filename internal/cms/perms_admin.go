@@ -37,7 +37,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "このページの権限を参照できません", http.StatusForbidden)
 			return
 		}
-		canPublish := u.IsAdmin || u.Username == cur.Owner
+		canPublish := u.IsAdmin || cur.OwnedBy(u)
 		WriteJSON(w, map[string]any{
 			"owner": cur.Owner, "group": cur.Group, "mode": cur.Mode,
 			"can_chmod": canPublish, "can_chown": u.IsAdmin,
@@ -53,7 +53,7 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !u.IsAdmin && u.Username != cur.Owner {
+	if !u.IsAdmin && !cur.OwnedBy(u) {
 		http.Error(w, "権限を変更できるのは所有者または管理者のみです", http.StatusForbidden)
 		return
 	}
