@@ -126,9 +126,19 @@ func TestEditLockVerification(t *testing.T) {
 
 func TestPageChownHandler(t *testing.T) {
 	setupPermsDB(t, "000005", page.PageMeta{Owner: "alice", Group: "", Mode: "300"})
+	setupAuditDB(t) // 持ち主は実在する利用者だけ（2026-10-26）——利用者の表が要る
+	if err := auth.CreateUser("bob", "pw", false, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// いない利用者は持ち主にできない（打ち間違えた名前で、だれも持ち主として書けないページになる）。
+	rr := postPerms(PageChownHandler, "/api/page-chown?id=000005", `{"owner":"bbo"}`, &auth.User{Username: "root", IsAdmin: true})
+	if rr.Code != http.StatusBadRequest || page.GetPerms(5).Owner != "alice" {
+		t.Errorf("いない利用者へ chown できてしまう: code=%d owner=%s", rr.Code, page.GetPerms(5).Owner)
+	}
 
 	// admin が chown alice -> bob
-	rr := postPerms(PageChownHandler, "/api/page-chown?id=000005", `{"owner":"bob"}`, &auth.User{Username: "root", IsAdmin: true})
+	rr = postPerms(PageChownHandler, "/api/page-chown?id=000005", `{"owner":"bob"}`, &auth.User{Username: "root", IsAdmin: true})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("adminのchownが失敗: code=%d body=%s", rr.Code, rr.Body.String())
 	}

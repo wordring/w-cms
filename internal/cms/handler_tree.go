@@ -314,6 +314,13 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 	if !page.GetPerms(parentID).CanWrite(user) {
 		return "新しい親ページへの書き込み権限がありません", http.StatusForbidden
 	}
+	// いまの親から外すのも、いまの親の中身を変えること（2026-10-26。それまでは新しい親だけを見ていて、書けない置き場から
+	// ページを持ち出せた——【考察】コードの矛盾 §4.2）。親の無いページ（トップ）は見ない。
+	var oldParent sql.NullInt64
+	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", childID).Scan(&oldParent)
+	if oldParent.Valid && int(oldParent.Int64) != parentID && !page.GetPerms(int(oldParent.Int64)).CanWrite(user) {
+		return "いまの親ページへの書き込み権限がありません（書けない置き場からは動かせません）", http.StatusForbidden
+	}
 	return "", 0
 }
 

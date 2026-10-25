@@ -120,6 +120,10 @@ func TestValidateParentChange(t *testing.T) {
 	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (10, 'other', NULL)`)
 	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (1, 'alice', '', '300')`) // owner rw
 	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (10, 'bob', '', '300')`)  // alice はother(不可)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (2, 'alice', '', '300')`) // 3 のいまの親
+	// 11 は bob の置き場 10 の子で、alice が書けるページ（alice は 11 に書けても、10 からは持ち出せない——2026-10-26）。
+	db.Exec(`INSERT INTO pages (id, title, parent_id) VALUES (11, 'in-bob', 10)`)
+	db.Exec(`INSERT INTO page_perms (page_id, owner, grp, mode) VALUES (11, 'alice', '', '300')`)
 
 	alice := &auth.User{Username: "alice"}
 	admin := &auth.User{Username: "root", IsAdmin: true}
@@ -137,6 +141,8 @@ func TestValidateParentChange(t *testing.T) {
 		{"子孫を親にする循環は不可", alice, 1, "3", false},    // 1の子孫3を1の親に→循環
 		{"write権限の無い親は不可", alice, 3, "10", false}, // 10はaliceがother(不可)
 		{"write権限のある親はOK", alice, 3, "1", true},   // 1はalice所有
+		{"いまの親に書けないと持ち出せない", alice, 11, "1", false},
+		{"adminは書けない置き場からも動かせる", admin, 11, "1", true},
 		{"トップページ以外の親なし化はadminでも不可", admin, 3, "", false},
 		{"トップページ自身の親なしはOK", admin, 0, "", true},
 		{"adminは任意の親へ付け替え可", admin, 3, "10", true},

@@ -2,6 +2,7 @@ package cms
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 
 	"w-cms/internal/auth"
@@ -197,6 +198,13 @@ func PageChownHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Owner == "" {
 		http.Error(w, "owner は必須です", http.StatusBadRequest)
+		return
+	}
+	// 持ち主は実在する利用者だけ（2026-10-26。それまでは見ていなかった——打ち間違えた名前を持ち主にすると、だれも持ち主として
+	// 書けないページになる。あとで同じ名前の利用者を作ると、その人が持ち主になる——【考察】コードの矛盾 §4.2）。
+	// 無効にした利用者は、実在するので受ける（持ち主のまま無効にするのと同じ）。
+	if _, err := auth.LookupUser(req.Owner); err != nil && !errors.Is(err, auth.ErrAuthFailed) {
+		http.Error(w, "利用者「"+req.Owner+"」はいません", http.StatusBadRequest)
 		return
 	}
 
