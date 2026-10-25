@@ -48,3 +48,25 @@ func TestXLSXText(t *testing.T) {
 		t.Errorf("読めないものに理由を言っていません: %v", err)
 	}
 }
+
+// TestXLSXTextSheetsByRels は、シートの名前とファイルを workbook.xml.rels で結ぶこと（番号の飛んだファイル・並べ替えたブックで
+// 名前を取り違えない）を固定します（2026-10-26）。
+func TestXLSXTextSheetsByRels(t *testing.T) {
+	b := buildXLSX(t, map[string]string{
+		"xl/workbook.xml": `<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>` +
+			`<sheet name="注文リスト" sheetId="3" r:id="rId3"/><sheet name="メモ" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		"xl/_rels/workbook.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+			`<Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/>` +
+			`<Relationship Id="rId3" Type="worksheet" Target="/xl/worksheets/sheet5.xml"/></Relationships>`,
+		"xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>メモの中身</t></is></c></row></sheetData></worksheet>`,
+		"xl/worksheets/sheet5.xml": `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>注文の中身</t></is></c></row></sheetData></worksheet>`,
+	})
+	got, err := XLSXText(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "=== シート 注文リスト\nA=注文の中身\n=== シート メモ\nA=メモの中身\n"
+	if got != want {
+		t.Errorf("⚠ シートの名前と中身を取り違えました:\n%q\n%q", got, want)
+	}
+}

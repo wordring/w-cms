@@ -24,6 +24,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -69,28 +70,38 @@ func XLSXText(b []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	names := xlsxSheetNames(read)
-	var sheets []string
-	for name := range files {
-		if xlsxSheetRe.MatchString(name) {
-			sheets = append(sheets, name)
+	// シートは、ブックの並び（workbook.xml）と、その r:id が指すファイル（workbook.xml.rels）で引く（2026-10-26。それまでは
+	// sheetN.xml の番号の順と名前の並びを順に当てていて、番号の飛んだファイル・並べ替えたブックでは名前を取り違えた）。
+	// 引けなければ、いままでどおり番号の順に読む。
+	sheets := xlsxSheetsByRels(read, files)
+	if len(sheets) == 0 {
+		names := xlsxSheetNames(read)
+		var paths []string
+		for name := range files {
+			if xlsxSheetRe.MatchString(name) {
+				paths = append(paths, name)
+			}
+		}
+		sort.Slice(paths, func(i, j int) bool { return xlsxSheetNo(paths[i]) < xlsxSheetNo(paths[j]) })
+		for i, p := range paths {
+			name := p
+			if i < len(names) {
+				name = names[i]
+			}
+			sheets = append(sheets, xlsxSheet{Name: name, Path: p})
 		}
 	}
 	if len(sheets) == 0 {
 		return "", errors.New("シートがありません")
 	}
-	sort.Slice(sheets, func(i, j int) bool { return xlsxSheetNo(sheets[i]) < xlsxSheetNo(sheets[j]) })
 
 	var out strings.Builder
-	for i, s := range sheets {
-		data, err := read(s)
+	for _, sh := range sheets {
+		data, err := read(sh.Path)
 		if err != nil {
 			return "", err
 		}
-		name := s
-		if i < len(names) {
-			name = names[i]
-		}
+		name := sh.Name
 		out.WriteString("=== シート " + name + "\n")
 		if err := xlsxWriteRows(&out, data, shared); err != nil {
 			return "", err
@@ -143,6 +154,59 @@ func xlsxSharedStrings(read func(string) ([]byte, error)) ([]string, error) {
 		out[i] = s
 	}
 	return out, nil
+}
+
+// xlsxSheet はシート1つの名前と、中身のファイルの場所です。
+type xlsxSheet struct{ Name, Path string }
+
+// xlsxSheetsByRels は、ブックの並びのシートを、名前と中身のファイル（workbook.xml.rels で r:id を引いた先）で返します。
+// どれか1つでも引けなければ空（呼ぶ側が番号の順に読む）。
+func xlsxSheetsByRels(read func(string) ([]byte, error), files map[string]*zip.File) []xlsxSheet {
+	wb, err := read("xl/workbook.xml")
+	if err != nil || wb == nil {
+		return nil
+	}
+	var doc struct {
+		Sheets []struct {
+			Name string `xml:"name,attr"`
+			RID  string `xml:"http://schemas.openxmlformats.org/officeDocument/2006/relationships id,attr"`
+		} `xml:"sheets>sheet"`
+	}
+	if xml.Unmarshal(wb, &doc) != nil || len(doc.Sheets) == 0 {
+		return nil
+	}
+	rels, err := read("xl/_rels/workbook.xml.rels")
+	if err != nil || rels == nil {
+		return nil
+	}
+	var rd struct {
+		Rels []struct {
+			ID     string `xml:"Id,attr"`
+			Target string `xml:"Target,attr"`
+		} `xml:"Relationship"`
+	}
+	if xml.Unmarshal(rels, &rd) != nil {
+		return nil
+	}
+	target := map[string]string{}
+	for _, r := range rd.Rels {
+		t := r.Target
+		if strings.HasPrefix(t, "/") {
+			t = strings.TrimPrefix(t, "/") // 根からの書き方（/xl/worksheets/…）
+		} else {
+			t = path.Clean("xl/" + t) // xl/ からの書き方（worksheets/…）
+		}
+		target[r.ID] = t
+	}
+	var out []xlsxSheet
+	for _, s := range doc.Sheets {
+		p, ok := target[s.RID]
+		if !ok || !xlsxSheetRe.MatchString(p) || files[p] == nil {
+			return nil
+		}
+		out = append(out, xlsxSheet{Name: s.Name, Path: p})
+	}
+	return out
 }
 
 // xlsxSheetNames はシートの名前を並び順に返します（読めなければ空）。
