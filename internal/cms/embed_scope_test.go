@@ -19,7 +19,6 @@ func TestEmbedURLsLimitedToDataDir(t *testing.T) {
 	keep := []struct{ name, html, want string }{
 		{"添付の絶対パス", `<img src="/data/master/00/000001/a.png">`, `/data/master/00/000001/a.png`},
 		{"同じページの相対パス", `<img src="a.png">`, `src="a.png"`},
-		{"下位の相対パス", `<img src="img/a.png">`, `src="img/a.png"`},
 	}
 	for _, tc := range keep {
 		t.Run("通す/"+tc.name, func(t *testing.T) {
@@ -41,6 +40,9 @@ func TestEmbedURLsLimitedToDataDir(t *testing.T) {
 		{"親をたどって外へ出る", `<img src="/data/../api/logout">`},
 		{"video の src", `<video src="/api/logout"></video>`},
 		{"poster", `<video poster="/api/logout"></video>`},
+		// 相対の名前もサイトのルートから解かれるので、「/」を含む相対は /api/… などに届く（2026-10-26 から落とす）。
+		{"相対でアプリの口", `<img src="api/logout">`},
+		{"相対で殻", `<img src="assets/app.js">`},
 	}
 	for _, tc := range drop {
 		t.Run("落とす/"+tc.name, func(t *testing.T) {
@@ -88,5 +90,18 @@ func TestEmbedSrcsetAndBackslash(t *testing.T) {
 	ok := `<video><source srcset="/data/master/00/000001/a.png 1x, /data/master/00/000001/b.png 2x"></video>`
 	if out := Sanitize(ok); !strings.Contains(out, "b.png") {
 		t.Errorf("添付だけの srcset が落ちました: %s", out)
+	}
+}
+
+// TestRelativeEmbedNamesOnly は、相対の埋め込みは名前1つ（「/」も「?」も無い）だけを通すことを固定します（2026-10-26）。
+// 相対はサイトのルートから解かれるので、api/logout は /api/logout になる。
+func TestRelativeEmbedNamesOnly(t *testing.T) {
+	for _, bad := range []string{"api/logout", "assets/app.js", "img/a.png", "a.png?x=1"} {
+		if got := Sanitize(`<img src="` + bad + `">`); strings.Contains(got, "src=") {
+			t.Errorf("⚠ 相対の %q を通しました: %s", bad, got)
+		}
+	}
+	if got := Sanitize(`<img src="a.png">`); !strings.Contains(got, `src="a.png"`) {
+		t.Errorf("名前1つの相対を落としました: %s", got)
 	}
 }

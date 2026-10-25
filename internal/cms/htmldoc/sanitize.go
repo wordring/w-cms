@@ -503,7 +503,7 @@ func safeEmbedURL(v string) bool {
 	// （page.DataFileHandler）。
 	// ⚠ ただしページのアドレスは `/000012`（末尾の `/` なし）なので、相対名は**サイトのルート**から
 	// 解かれます（`a.png` → `/a.png`・`api/x` → `/api/x`——upload_image.go の冒頭の注記と同じ事情）。
-	// つまりこの枝は「宛先を /data/ ときれいなURLに限る」の外にあります（2026-10-20 に気づいた・未対処）。
+	// つまりこの枝は「宛先を /data/ ときれいなURLに限る」の外にありました（2026-10-20 に気づいた・2026-10-26 に名前1つだけに絞った——下）。
 	// リンク（a[href]）は別扱いで制限しない——
 	// 押さないと何も起きず、埋め込みのように自動取得されないため。
 	if strings.HasPrefix(s, "/") {
@@ -515,7 +515,9 @@ func safeEmbedURL(v string) bool {
 		// 推測されたくない」）。どちらも認可つきのハンドラが配る。
 		return strings.HasPrefix(s, dataDirPrefix) || attachmentURLRe.MatchString(s)
 	}
-	return true
+	// 相対の名前は、名前1つだけ（「/」も「?」も無い）を通す（2026-10-26）。サイトのルートから解かれるので、「api/x」の形は
+	// /api/x になり、開くたびに読む人みんなの手でアプリの口を叩けた。名前1つなら /a.png のような根の名前にしかならない。
+	return !strings.ContainsAny(s, "/?#")
 }
 
 // safeSrcset は srcset（「URL 幅, URL 幅, …」）の候補のURLを1つずつ確かめます。

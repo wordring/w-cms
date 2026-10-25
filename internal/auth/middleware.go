@@ -144,6 +144,9 @@ const cspPolicy = "default-src 'self'; " +
 func CSPProtect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", cspPolicy)
+		// 中身の種類を推し量らせない（2026-10-26。どの応答にも——いまは個々の口で付けていた。JSON や添付が、いつか本文に
+		// 紛れ込んだ <script src> から script として読まれないように）。
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		next.ServeHTTP(w, r)
 	})
 }

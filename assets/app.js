@@ -5817,11 +5817,23 @@
     //   - **file 容器**（互換・単独のPDF添付ブロック）——所在は data-src の配線
     // かつては file 容器だけが取り付け台で、受発注は必ず容器に包まれていた
     // （「data-typeがfileのsectionは必要ないのでは？」——2026-08-31 に廃止）。
-    function pdfSrcOf(sec) {
-        if (sec.getAttribute('data-type') === 'file') return sec.getAttribute('data-src') || '';
+    // ⚠ 埋め込む先は、ページの添付の住所（/<6桁>/<名前>.pdf）か、data-src の名前だけ（2026-10-26）。それまでは本文のリンクが
+    // .pdf で終われば、どこでも（/000123?x=.pdf・/api/…?.pdf など）埋め込み、data-src の ../ で /data/ の外も指せた
+    // ——読む人みんなが開くたびに、書いた人の選んだ住所を読みに行った。
+    const PDF_EMBED_HREF_RE = /^\/[0-9]{6}\/[^/?#\\]+\.pdf$/i;
+    function pdfEmbedHref(sec) {
         const a = sec.querySelector('a[href]');
-        if (a && /[.]pdf$/i.test(a.getAttribute('href'))) {
-            const parts = a.getAttribute('href').split('/');
+        const href = a ? a.getAttribute('href') || '' : '';
+        return PDF_EMBED_HREF_RE.test(href) ? href : '';
+    }
+    function pdfSrcOf(sec) {
+        if (sec.getAttribute('data-type') === 'file') {
+            const s = sec.getAttribute('data-src') || '';
+            return /[/\\]|\.\./.test(s) ? '' : s;
+        }
+        const href = pdfEmbedHref(sec);
+        if (href) {
+            const parts = href.split('/');
             return decodeURIComponent(parts[parts.length - 1]);
         }
         return '';
@@ -5842,10 +5854,8 @@
                 const embed = makeEl('embed', 'vocab-chrome file-preview');
                 // リンクがあればその href（新旧どちらの置き場でも正しい）。
                 // 無ければ旧data-src互換（ページフォルダ直下）。
-                const link = sec.querySelector('a[href]');
-                embed.src = (link && /[.]pdf$/i.test(link.getAttribute('href')))
-                    ? link.getAttribute('href')
-                    : '/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + src;
+                const href = pdfEmbedHref(sec);
+                embed.src = href || '/data/master/' + currentPageId.substring(0, 2) + '/' + currentPageId + '/' + encodeURIComponent(src);
                 embed.type = 'application/pdf';
                 sec.appendChild(embed);
             }
