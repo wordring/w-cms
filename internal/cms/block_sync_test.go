@@ -375,3 +375,26 @@ func TestPlanSyncBaseFormattingOnly(t *testing.T) {
 		t.Fatalf("字面だけの違いでぶつかった: %v %s", p.conflicts, p.final[0].HTML)
 	}
 }
+
+// TestMergeBlock3RowShiftIsConflict は、⚠ **片方が行を消して足し（セルの数は同じ）、相手がずれた行のセルを直したら、
+// 黙って合わせず並べる**ことを固定します（2026-10-26——位置で合わせて、B の数量 5 が C の行に入った）。
+// ずれていない行のセルなら、これまでどおり合わせる。
+func TestMergeBlock3RowShiftIsConflict(t *testing.T) {
+	row := func(a, b string) string { return "<tr><td>" + a + "</td><td>" + b + "</td></tr>" }
+	table := func(rows ...string) string {
+		return "<table><caption>部品表</caption><tbody><tr><th>品名</th><th>数量</th></tr>" + strings.Join(rows, "") + "</tbody></table>"
+	}
+	base := table(row("A", ""), row("B", ""), row("C", ""))
+	mine := table(row("B", ""), row("C", ""), row("D", ""))   // 自分は A を消して D を足した
+	theirs := table(row("A", ""), row("B", "5"), row("C", "")) // 相手は B の数量に 5
+	if got, ok := mergeBlock3(base, mine, theirs); ok {
+		t.Fatalf("⚠ 行がずれたのに黙って合わせた（並べるはず）: %s", got)
+	}
+	// 自分が C の数量を直し、相手が A の数量を直した——違う行なので合わせる。
+	mine2 := table(row("A", ""), row("B", ""), row("C", "9"))
+	theirs2 := table(row("A", "1"), row("B", ""), row("C", ""))
+	got, ok := mergeBlock3(base, mine2, theirs2)
+	if !ok || !strings.Contains(got, row("A", "1")) || !strings.Contains(got, row("C", "9")) {
+		t.Fatalf("違う行のセルが合わない: ok=%v %s", ok, got)
+	}
+}

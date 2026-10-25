@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"regexp"
 	"crypto/rand"
 	"fmt"
 	"hash/fnv"
@@ -296,9 +297,32 @@ func mergeBlock3(base, mine, theirs string) (string, bool) {
 	if len(cellsB) != len(cellsM) || len(cellsB) != len(cellsT) {
 		return "", false
 	}
+	// ⚠ 行（<tr> とその属性——行の ID）の並びを変えた側があれば、セルを位置で合わせない（2026-10-26）——行を並べ替えると、
+	// 相手のセルが別の行に入る。キャプションや見出しの属性だけの変化は、行を動かさないので合わせてよい。
+	if rowTags(skM) != rowTags(skB) || rowTags(skT) != rowTags(skB) {
+		return "", false
+	}
 	sk, ok := pick3(skB, skM, skT)
 	if !ok {
 		return "", false
+	}
+	// ⚠ 両方が同じ行のセルを変えていたら合わせない（2026-10-26）。セルは位置で合わせるので、片方が行を消して足すと
+	// （セルの数は同じ）、あとの行が全部ずれ、相手が直したセルの値が別の行に入った——「B の数量 5」が C の行に入った。
+	// 行のずれは、ずれた行が全部「変わった」に見えるので、同じ行を両方が変えたら並べることで止まる。
+	rowOf := cellRows(skB, len(cellsB))
+	if rowOf == nil {
+		return "", false
+	}
+	changedM := map[int]bool{}
+	for i := range cellsB {
+		if cellsM[i] != cellsB[i] {
+			changedM[rowOf[i]] = true
+		}
+	}
+	for i := range cellsB {
+		if cellsT[i] != cellsB[i] && changedM[rowOf[i]] {
+			return "", false
+		}
 	}
 	merged := make([]string, len(cellsB))
 	for i := range cellsB {
@@ -320,6 +344,32 @@ func mergeBlock3(base, mine, theirs string) (string, bool) {
 		}
 	}
 	return sb.String(), true
+}
+
+// trOpenRe は骨組みの中の行の始まり（<tr> か <tr …>）です。
+var trOpenRe = regexp.MustCompile(`<tr[\s>]`)
+
+// trTagRe は行の開きタグ全体（属性つき）です。
+var trTagRe = regexp.MustCompile(`<tr(?:\s[^>]*)?>`)
+
+// rowTags は骨組みの行の開きタグを順に並べたものです（行の数・ID・並びを比べるため）。
+func rowTags(sk string) string {
+	return strings.Join(trTagRe.FindAllString(sk, -1), "\x00")
+}
+
+// cellRows は、骨組み sk の n 個のセルそれぞれが何行目にあるかを返します（骨組みとセルの数が合わなければ nil）。
+func cellRows(sk string, n int) []int {
+	parts := strings.Split(sk, cellMark)
+	if len(parts) != n+1 {
+		return nil
+	}
+	rowOf := make([]int, n)
+	r := 0
+	for i := 0; i < n; i++ {
+		r += len(trOpenRe.FindAllStringIndex(parts[i], -1))
+		rowOf[i] = r
+	}
+	return rowOf
 }
 
 // ── 誰がそのブロックを書いたか（ぶつかったときの「○○さん」）──────────────────
