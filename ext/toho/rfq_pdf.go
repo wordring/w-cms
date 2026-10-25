@@ -57,10 +57,11 @@ func init() {
 	})
 	cms.RegisterView(RFQSendViewType, rfqSendViewHTML)
 	comm.RegisterSendPurpose(RFQMailPurpose, comm.SendPurpose{
-		Defaults:  rfqMailDefaults,
-		Prepare:   prepareRFQMail,
-		AfterSent: afterRFQMail,
-		NeedsPage: true,
+		Defaults:   rfqMailDefaults,
+		Prepare:    prepareRFQMail,
+		AfterSent:  afterRFQMail,
+		AfterFaxed: afterRFQFaxed,
+		NeedsPage:  true,
 	})
 }
 
@@ -304,7 +305,10 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 			}
 		}
 	}
-	b.WriteString(`<p class="unorder-help">FAX・手渡しで送ったら: ` +
+	// w-cms の FAX で送る（2026-10-25 夜・ext/comm/fax_send.go）——送れたと分かったときだけ送付日を書く。
+	b.WriteString(`<p class="unorder-help">FAX: ` + comm.FaxSendButtonHTML(RFQMailPurpose, pid) +
+		`（部材見積依頼書の PDF を作って送ります。送れたら送付日に今日の日付を書きます）</p>`)
+	b.WriteString(`<p class="unorder-help">別の FAX 機・手渡しで送ったら: ` +
 		`<button type="button" class="chip-btn rfq-sent-go" data-rfq-page="` + pid + `">送った（FAX・手渡し）</button> ` +
 		`<span class="rfq-sent-say"></span>（送付日に今日の日付を書きます）</p>`)
 	return b.String()
@@ -352,6 +356,11 @@ func prepareRFQMail(w http.ResponseWriter, r *http.Request, pageID string) ([]co
 		return nil, false
 	}
 	return []comm.ComposeAttachment{{PageID: pageID, File: made.File, Name: "見積依頼書 " + pageID + ".pdf", Checked: true}}, true
+}
+
+// afterRFQFaxed は FAX で送れたあとに送付日を書きます（2026-10-25 夜・送れなかったら呼ばれない）。
+func afterRFQFaxed(user *auth.User, pageID, _, _ string) error {
+	return markSent(user, pageID, "部材見積依頼書", "rfq.sent", "fax")
 }
 
 func afterRFQMail(user *auth.User, pageID, _ string) error {

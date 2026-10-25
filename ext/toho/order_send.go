@@ -242,8 +242,10 @@ func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, n
 			` title="部材発注書のうしろに外注加工の資料（PDF・画像）を綴じた1本を作ります。部材発注書のPDFはそのまま"` +
 			`>📠 FAX・印刷用（資料を綴じる）</button>`)
 	}
+	// w-cms の FAX で送る（2026-10-25 夜・ext/comm/fax_send.go）——表示中の PDF を送り、送れたと分かったときだけ発注済みにする。
+	b.WriteString(comm.FaxSendButtonHTML(OrderMailPurpose, orderID))
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByFax +
-		`" title="FAXサーバーはまだありません。送ったら押してください">📠 FAXで送った</button>`)
+		`" title="別の FAX 機で送ったら押してください">📠 別の FAX 機で送った</button>`)
 	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByHand +
 		`" title="印刷して手渡し・郵送したら押してください">🤝 手渡した</button>`)
 	// 送ったことを取り消す（2026-10-21・order_unsend.go）——送った行があるときだけ。

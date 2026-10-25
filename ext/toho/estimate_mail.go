@@ -34,6 +34,10 @@ func init() {
 		Defaults:  estimateMailDefaults,
 		Prepare:   prepareEstimateMail,
 		AfterSent: afterEstimateMail,
+		// FAX で送れたときだけ送付日を書く（2026-10-25 夜・ext/comm/fax_send.go）。
+		AfterFaxed: func(user *auth.User, pageID, _, _ string) error {
+			return markSent(user, pageID, "見積書", "estimate.sent", "fax")
+		},
 		NeedsPage: true,
 	})
 }
@@ -120,6 +124,11 @@ func afterEstimateMail(user *auth.User, pageID, _ string) error {
 // 人が「送った」を押す）。paper は断りの文に入れる紙の名前、audit は監査の名前。書けなければ理由を返します（送ったことは
 // 取り消さない）。2026-10-09 に見積書と部材見積依頼書の写しを寄せた。
 func markSentByMail(user *auth.User, pageID, paper, audit string) error {
+	return markSent(user, pageID, paper, audit, "mail")
+}
+
+// markSent は markSentByMail の中身で、how は監査に残す送り方（mail・fax）です（2026-10-25 夜に FAX のために分けた）。
+func markSent(user *auth.User, pageID, paper, audit, how string) error {
 	n, err := strconv.Atoi(pageID)
 	if err != nil {
 		return errors.New(paper + "のページIDが不正です")
@@ -136,6 +145,6 @@ func markSentByMail(user *auth.User, pageID, paper, audit string) error {
 		}
 		return errors.New("送付日を書けませんでした: " + err.Error())
 	}
-	auth.Audit(user.Username, audit, pageID+" mail")
+	auth.Audit(user.Username, audit, pageID+" "+how)
 	return nil
 }

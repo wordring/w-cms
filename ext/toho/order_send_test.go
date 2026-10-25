@@ -233,10 +233,11 @@ func TestOurOrderMirrorPutsTheSendForm(t *testing.T) {
 	got := showPage(t, &auth.User{Username: "root", IsAdmin: true}, 41, body)
 
 	for _, want := range []string{
-		"FAXで送った", "手渡した", "メールで送る",
-		`data-mail-compose="` + OrderMailPurpose + `"`, // メールの送る欄（部品・2026-09-30）
+		"別の FAX 機で送った", "手渡した", "メールで送る",
+		`data-fax-purpose="` + OrderMailPurpose + `"`,               // w-cms の FAX で送る（2026-10-25 夜・comm.FaxSendButtonHTML）
+		`data-mail-compose="` + OrderMailPurpose + `"`,              // メールの送る欄（部品・2026-09-30）
 		`data-act="sent" data-order-status="` + OrderLineSent + `"`, // 表の下の「✓ 発注済」（2026-10-21 夕から、行の末尾のボタンではない）
-		`class="order-pick" aria-label="この行を選ぶ" data-row="1"`,   // 行の先頭のチェック
+		`class="order-pick" aria-label="この行を選ぶ" data-row="1"`,       // 行の先頭のチェック
 		`class="vocab-chrome order-pick-cell"`,
 	} {
 		if !strings.Contains(got, want) {
@@ -244,7 +245,7 @@ func TestOurOrderMirrorPutsTheSendForm(t *testing.T) {
 		}
 	}
 	// ⚠ 表の中にボタンを置かない（2026-10-21 夕）——送る欄も行の操作も、表の後ろ。
-	if i, j := strings.Index(got, "FAXで送った"), strings.Index(got, "</table>"); i < j {
+	if i, j := strings.Index(got, "data-fax-purpose"), strings.Index(got, "</table>"); i < j {
 		t.Errorf("⚠ 送る欄が表の中にあります")
 	}
 	if i, j := strings.Index(got, "order-sel-act"), strings.Index(got, "</table>"); i < j {

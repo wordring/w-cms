@@ -80,7 +80,8 @@ async function statusesOf(page) {
     // ① 送信の欄
     for (const [sel, name] of [
       ['[data-mail-compose="部材発注書"]', 'メールの送る欄（部品・2026-09-30）'],
-      ['[data-order-sent="FAX"]', 'FAXで送った'],
+      ['[data-fax-purpose="部材発注書"]', 'w-cms の FAX で送る（2026-10-25 夜）'],
+      ['[data-order-sent="FAX"]', '別の FAX 機で送った'],
       ['[data-order-sent="手渡し"]', '手渡した'],
       ['.order-pick', '行の先頭のチェック'],
       ['.order-bar .order-sel-act', '表の下の行の操作'],

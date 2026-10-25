@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/ext/comm"
 	"w-cms/ext/comm/contacts"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -234,6 +235,8 @@ func renderEstimateItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	appendFootHTML(el, span, "estimate-note-row", estimateNoteBoxHTML(pid, estimateNoteOf(page.FormatID(ctx.PageID))))
 	appendFootHTML(el, span, "estimate-actions",
 		pdfButtonHTML("estimate", page.FormatID(ctx.PageID))+
+			// w-cms の FAX で送る（2026-10-25 夜・ext/comm/fax_send.go）——見積書の PDF を作って送り、送れたら送付日を書く。
+			" "+comm.FaxSendButtonHTML(EstimateMailPurpose, page.FormatID(ctx.PageID))+
 			`<details class="estimate-mail"><summary>✉️ メールで送る</summary>`+
 			`<div data-mail-compose="`+EstimateMailPurpose+`" data-mail-page="`+pid+`"></div></details>`)
 	return false, nil

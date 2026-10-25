@@ -44,7 +44,10 @@ func init() {
 		Defaults:  orderMailDefaults,
 		Prepare:   prepareOrderMail,
 		AfterSent: afterOrderMail,
-		NeedsPage: true,
+		// FAX で送れたとき（2026-10-25 夜・ext/comm/fax_send.go）——メールと同じく、取消でない行を発注済みにし、
+		// 送った PDF を記録の節へ。送れなかったら呼ばれない。
+		AfterFaxed: afterOrderFaxed,
+		NeedsPage:  true,
 	})
 }
 
@@ -158,6 +161,25 @@ func isOrderSending(pageID string) bool {
 // ⚠ **ここはもう応答を書けません**（メールは出たあと）——書けない・編集中なら理由を返し、送る欄が
 // 「送りましたが、発注済みの印を付けられませんでした」と人に伝えます。
 func afterOrderMail(user *auth.User, pageID, recordID string) error {
+	return afterOrderSent(user, pageID, recordID, sendByMail, mailedOrderFiles(user, pageID, recordID))
+}
+
+// afterOrderFaxed は FAX で送れたあとの後始末です。送った PDF は、FAX で送った添付 file（送った FAX の記録には写しがあるが、
+// 記録の節に載せるのはこのページの添付）。
+func afterOrderFaxed(user *auth.User, pageID, recordID, file string) error {
+	var files []sentOrderFile
+	if file != "" {
+		display := file
+		if m, ok := cms.ReadAttachmentMetas(pageID)[file]; ok && strings.TrimSpace(m.Name) != "" {
+			display = m.Name
+		}
+		files = []sentOrderFile{{Stored: file, Display: display}}
+	}
+	return afterOrderSent(user, pageID, recordID, sendByFax, files)
+}
+
+// afterOrderSent は、送り方 method で送れたあとに印と記録を書きます（メール・FAX で共通）。
+func afterOrderSent(user *auth.User, pageID, recordID, method string, files []sentOrderFile) error {
 	defer orderSending.Delete(pageID)
 	n, err := strconv.Atoi(pageID)
 	if err != nil {
@@ -168,9 +190,8 @@ func afterOrderMail(user *auth.User, pageID, recordID string) error {
 	}
 	changed := 0
 	sentOn := time.Now().Format("2006-01-02")
-	files := mailedOrderFiles(user, pageID, recordID)
 	if err := cms.RewriteBodyUnlessHeld(pageID, user.Username, func(cur string) string {
-		out, c := recordOrderSent(cur, user, pageID, sentOn, sendByMail, recordID, files)
+		out, c := recordOrderSent(cur, user, pageID, sentOn, method, recordID, files)
 		changed = c
 		return out
 	}); err != nil {
@@ -179,6 +200,6 @@ func afterOrderMail(user *auth.User, pageID, recordID string) error {
 		}
 		return errors.New("発注済みの印を付けられませんでした: " + err.Error() + "　行ごとの「✓ 発注済」を押してください。")
 	}
-	auth.Audit(user.Username, "our-order.sent", pageID+" "+sendByMail+" "+strconv.Itoa(changed)+"行")
+	auth.Audit(user.Username, "our-order.sent", pageID+" "+method+" "+strconv.Itoa(changed)+"行")
 	return nil
 }
