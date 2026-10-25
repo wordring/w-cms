@@ -6264,6 +6264,11 @@
         }
         // 拡張が項目を足す口（2026-10-20・window.wcms.onFileMenu）——東邦の「🤖 解析」「📐 この図面で改定する」（ext/toho/assets/toho.js）。
         fileMenuHooks.forEach((fn) => { try { fn(info, items, { pageId: pid, attachId: aid, file }); } catch (e) { console.error('拡張の項目が落ちました:', e); } });
+        // ほかのページの添付を指すファイル表示なら、書き換える・送る項目に、どのページのファイルかを添える（2026-10-26——
+        // このページを書いた人が、ほかのページのファイルを指す表示を置ける。押す人が、このページのファイルと取り違えないように）。
+        if (pid && pid !== currentPageId) {
+            items.forEach((it) => { if (it.icon === '📝' || it.icon === '📠') it.label += '（/' + pid + ' のファイル）'; });
+        }
         return items;
     }
 
