@@ -16,12 +16,13 @@ package comm
 // 送った FAX の記録（2026-10-25 夜）: 通信箱に、向き送信・チャネル FAX・対応 済の記録を作り、送った PDF を写して表示する。
 // 親ページID は送った元のページ。送れたかはサーバーが見張り（watchFaxJob）、記録の「FAX送信の様子」を送れた・送れなかったに
 // 書き替える。送れなかったら対応を未処理に戻し、通知（スマホと画面）で知らせる。サーバーを起こし直しても、送っている途中の
-// 記録の見張りは続きから（init の裏の仕事）。
+// 仕事の見張りは続きから（init の裏の仕事）。見張りが見るのは、サーバーの仕事の控え（fax_jobs.go）だけ。
 //
 // 用件の紙を送る（2026-10-25 夜）: 利用者:「部材発注書・部材見積依頼書・見積書の「送る」から FAX で送れるようにしてください。
 // 送れたときだけ送付日を書いてください。」——記録に用件と送ったファイル（FAX送信の用件・FAX送信のファイル）を書き、見張りが
 // 「送れた」を見たときだけ、用件の AfterFaxed（送付日・発注済みの印など）を、送った人として呼ぶ。送れなかったら呼ばない。
-// サーバーを起こし直しても、記録のタグから続きを呼べる。
+// サーバーを起こし直しても、仕事の控えから続きを呼べる。⚠ 2026-10-26 から、用件・元のページ・紙・送った人は控えから取る
+// （それまでは記録のタグから読んでいて、タグを書き替えると、書けないページへ記録を作った人として書けた）。
 import (
 	"context"
 	"html"
@@ -38,7 +39,6 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
 
 // FaxSendJobTag は、w-cms から送った FAX の、HylaFAX の仕事の番号です（送った FAX の記録に書く）。
@@ -48,7 +48,7 @@ const FaxSendJobTag = "FAX送信番号"
 const FaxSendStateTag = "FAX送信の様子"
 
 // FaxSendPurposeTag・FaxSendFileTag は、送る欄の用件から送った FAX の、用件の名前と、送ったファイル（元のページの添付の
-// 保存名）です。送れたときに用件の AfterFaxed を呼ぶために記録へ書く。元のページは 親ページID。
+// 保存名）です。人が読むための写し（送れたときの後始末は、サーバーの仕事の控えを見る——fax_jobs.go）。元のページは 親ページID。
 const (
 	FaxSendPurposeTag = "FAX送信の用件"
 	FaxSendFileTag    = "FAX送信のファイル"
@@ -189,7 +189,17 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		resp["record_error"] = err.Error()
 	} else {
 		resp["record"] = recID
-		go watchFaxJob(m[1], recID)
+		// 見張りと後始末は、サーバーの控えだけを見る（fax_jobs.go——記録のタグは書き替えられる）。
+		paper := src.Paper
+		if paper == "" {
+			paper = src.File
+		}
+		if err := putFaxJob(faxJob{Job: m[1], Record: recID, User: user.Username, Page: src.PageID,
+			Purpose: src.Purpose, File: paper, Number: number, Started: time.Now()}); err != nil {
+			resp["record_error"] = "仕事の控えを書けませんでした（送れたかは記録に書かれません）: " + err.Error()
+		} else {
+			go watchFaxJob(m[1])
+		}
 	}
 	cms.WriteJSON(w, resp)
 }
@@ -290,54 +300,78 @@ func recordSentFax(user *auth.User, src faxSource, number, job string) (string, 
 	return recID, nil
 }
 
-// watchFaxJob は、仕事 job が済むまで様子を見て、記録 recID の「FAX送信の様子」を書き替えます。
-func watchFaxJob(job, recID string) {
+// faxUnknownFor は、HylaFAX の一覧に仕事が見つからないまま待つ長さです。それを過ぎたら「送れたか分からない」として
+// 見張りをやめる（済んだ仕事が一覧から消されたあとに起き直したとき、いつまでも見張り続けないため・2026-10-26）。試験で縮める。
+var faxUnknownFor = 10 * time.Minute
+
+// watchFaxJob は、仕事 job（サーバーの控え）が済むまで様子を見て、記録の「FAX送信の様子」を書き替えます。
+func watchFaxJob(job string) {
 	if _, busy := faxWatching.LoadOrStore(job, true); busy {
 		return
 	}
 	defer faxWatching.Delete(job)
+	j, ok := sentFaxJobOf(job)
+	if !ok || j.Done || j.Record == "" {
+		return
+	}
 	end := time.Now().Add(faxWatchFor)
+	var unknownSince time.Time
 	for time.Now().Before(end) {
 		time.Sleep(faxWatchInterval)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		out := readFaxStat(ctx)
 		cancel()
-		switch state, line := faxJobState(out, job); state {
+		state, line := faxJobState(out, job)
+		if state != "unknown" {
+			unknownSince = time.Time{}
+		}
+		switch state {
 		case "done":
 			// 送れたときだけ、用件の後始末（送付日など）。済ませてから「送れた」と書く——後始末の途中でサーバーが止まっても、
 			// 起き直したときに続きから呼べるように（二度呼ぶことはあっても、呼び落とさない）。
-			setFaxSendState(recID, faxStateDone+afterFaxedNote(recID), false)
+			setFaxSendState(j.Record, faxStateDone+afterFaxedNote(j), false)
+			finishFaxJob(job)
 			return
 		case "failed":
-			setFaxSendState(recID, faxStateFailed+"："+faxJobReason(line), true)
+			setFaxSendState(j.Record, faxStateFailed+"："+faxJobReason(line), true)
+			finishFaxJob(job)
 			return
+		case "unknown":
+			if unknownSince.IsZero() {
+				unknownSince = time.Now()
+			} else if time.Since(unknownSince) > faxUnknownFor {
+				setFaxSendState(j.Record, faxStateFailed+"：送れたか分かりません（FAX の道具の一覧に仕事 "+job+" がありません）", true)
+				finishFaxJob(job)
+				return
+			}
 		}
 	}
+	// 見張る長さを過ぎた——送れたか分からないまま、人に知らせて終える。
+	setFaxSendState(j.Record, faxStateFailed+"：送れたか分かりません（"+faxWatchFor.String()+" 待っても済みませんでした）", true)
+	finishFaxJob(job)
 }
 
-// afterFaxedNote は、記録 recID が送る欄の用件から送った FAX なら、用件の AfterFaxed を送った人として呼びます。
+// afterFaxedNote は、送る欄の用件から送った FAX（控え j）なら、用件の AfterFaxed を送った人として呼びます。
 // うまくいけば空、失敗したら「：⚠ 理由」を返し、対応を未処理に戻して知らせる（送れたことは取り消さない）。
-func afterFaxedNote(recID string) string {
-	n := atoiPage(recID)
-	purpose := strings.TrimSpace(cms.PageTagValue(database.DB, n, FaxSendPurposeTag))
-	if purpose == "" {
+// ⚠ 用件・元のページ・送った紙・送った人は、控えだけから取る（記録のタグは、記録に書ける人ならだれでも書き替えられる）。
+func afterFaxedNote(j faxJob) string {
+	if j.Purpose == "" {
 		return ""
 	}
 	fail := func(why string) string {
-		markFaxPending(recID, "⚠ FAX は送れましたが、"+why)
+		markFaxPending(j.Record, "⚠ FAX は送れましたが、"+why)
 		return "：⚠ " + why
 	}
-	p, ok := SendPurposeOf(purpose)
+	p, ok := SendPurposeOf(j.Purpose)
 	if !ok || p.AfterFaxed == nil {
-		return fail("用件「" + purpose + "」の後始末がありません")
+		return fail("用件「" + j.Purpose + "」の後始末がありません")
 	}
-	src, _ := page.NormalizeID(cms.PageTagValue(database.DB, n, ParentPageTag))
-	file := strings.TrimSpace(cms.PageTagValue(database.DB, n, FaxSendFileTag))
-	user := faxSender(recID)
-	if src == "" || user == nil {
+	src, _ := page.NormalizeID(j.Page)
+	user, err := lookupFaxSender(j.User)
+	if src == "" || err != nil || user == nil {
 		return fail("送った元のページか、送った人が分かりません")
 	}
-	if err := p.AfterFaxed(user, src, recID, file); err != nil {
+	if err := p.AfterFaxed(user, src, j.Record, j.File); err != nil {
 		return fail(err.Error())
 	}
 	return ""
@@ -345,23 +379,6 @@ func afterFaxedNote(recID string) string {
 
 // lookupFaxSender は利用者を名前で引きます（利用者の DB の無い試験で差し替える）。
 var lookupFaxSender = auth.LookupUser
-
-// faxSender は、送った FAX の記録を作った人（＝送った人）です。分からなければ nil。
-func faxSender(recID string) *auth.User {
-	meta, ok := page.ReadSidecar(recID)
-	if !ok {
-		return nil
-	}
-	name := meta.CreatedBy
-	if name == "" {
-		name = meta.Owner
-	}
-	u, err := lookupFaxSender(name)
-	if err != nil {
-		return nil
-	}
-	return u
-}
 
 // markFaxPending は、記録の対応を未処理に戻し、title で知らせます。
 func markFaxPending(recID, title string) {
@@ -390,18 +407,11 @@ func setFaxSendState(recID, state string, failed bool) {
 	}
 }
 
-// resumeFaxWatches は、サーバーが起きたときに、送っている途中の記録の見張りを始め直します。
+// resumeFaxWatches は、サーバーが起きたときに、まだ見張っている仕事（サーバーの控え）の見張りを始め直します。
+// ⚠ 記録のタグからは探さない（タグは書き替えられる——fax_jobs.go の冒頭）。
 func resumeFaxWatches() {
-	ids, err := cms.PagesByTag(database.DB, FaxSendStateTag, faxStateSending)
-	if err != nil {
-		return
-	}
-	for _, id := range ids {
-		job := strings.TrimSpace(cms.PageTagValue(database.DB, id, FaxSendJobTag))
-		if job == "" {
-			continue
-		}
-		go watchFaxJob(job, page.FormatID(id))
+	for _, j := range activeFaxJobs() {
+		go watchFaxJob(j.Job)
 	}
 }
 
@@ -420,13 +430,21 @@ func faxJobReason(line string) string {
 
 // FaxStatusAPIHandler は GET /api/fax/status?job=N です。state は「送っている・待っている」（queued）・「送れた」（done）・
 // 「送れなかった」（failed）・「分からない」（unknown）のどれか。line は HylaFAX の faxstat の1行（理由の文が入る）。
+//
+// 見せるのは、その仕事の記録を読める人にだけ（2026-10-26。それまではログインしている人ならだれでも、仕事の番号を順に
+// 引いて、ほかの人の送り先の番号と様子を読めた）。控えの無い仕事は「見つからない」。
 func FaxStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
-	if _, ok := cms.GateJSONGet(w, r); !ok {
+	user, ok := cms.GateJSONGet(w, r)
+	if !ok {
 		return
 	}
 	job := r.URL.Query().Get("job")
 	if job == "" || strings.Trim(job, "0123456789") != "" || len(job) > 9 {
 		cms.JSONFail(w, http.StatusBadRequest, "job が読めません")
+		return
+	}
+	if j, found := sentFaxJobOf(job); !found || j.Record == "" || !page.CanView(user, atoiPage(j.Record)) {
+		cms.JSONFail(w, http.StatusNotFound, "その仕事は見つかりません")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)

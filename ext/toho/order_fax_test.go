@@ -104,3 +104,23 @@ func TestFaxPaperBindsDocs(t *testing.T) {
 		t.Errorf("綴じる資料が無いのに紙と違うものを送ります: %v %+v %+v %s", ok, paper, send, w.Body.String())
 	}
 }
+
+// TestOrderFaxKeepsSendingMark は、FAX で送った部材発注書は、FAX の見張りより長いあいだ送っている最中とみなされる
+// （表示中の PDF を「PDF作成」で上書きしない）ことと、メールのときは短いことを固定します（2026-10-26）。
+func TestOrderFaxKeepsSendingMark(t *testing.T) {
+	t.Cleanup(func() { orderSending.Delete("000070") })
+	markOrderSending("000070")
+	v, _ := orderSending.Load("000070")
+	if d := time.Until(v.(time.Time)); d > orderSendingFor || !isOrderSending("000070") {
+		t.Errorf("メールの送っている最中の期限: %v", d)
+	}
+	markOrderSendingFor("000070", orderFaxingFor)
+	v, _ = orderSending.Load("000070")
+	if d := time.Until(v.(time.Time)); d < 12*time.Hour || !isOrderSending("000070") {
+		t.Errorf("⚠ FAX の送っている最中が、FAX の見張り（12 時間）より短い: %v", d)
+	}
+	markOrderSendingFor("000070", -time.Second)
+	if isOrderSending("000070") {
+		t.Errorf("期限を過ぎても送っている最中のまま")
+	}
+}

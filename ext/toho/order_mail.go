@@ -48,7 +48,7 @@ func init() {
 		// 送った PDF を記録の節へ。送れなかったら呼ばれない。
 		AfterFaxed: afterOrderFaxed,
 		// FAX は1本の紙なので、外注加工の資料（紙にできるもの）があれば、部材発注書のうしろに綴じて送る（fax_paper.go）。
-		FaxPrepare: faxPaperWithDocs(prepareOrderMail, orderBoundKind),
+		FaxPrepare: prepareOrderFax,
 		NeedsPage:  true,
 	})
 }
@@ -140,20 +140,41 @@ func prepareOrderMail(w http.ResponseWriter, r *http.Request, pageID string) ([]
 	return []comm.ComposeAttachment{{PageID: pageID, File: made.File, Name: orderMailFileName(pageID), Checked: true}}, true
 }
 
-// orderSending は、送っている最中の部材発注書です（ページ → 送り始めた時刻）。そのあいだ「PDF作成」は上書きせずに
+// orderSending は、送っている最中の部材発注書です（ページ → 送っている最中とみなす期限）。そのあいだ「PDF作成」は上書きせずに
 // 新しい版を作る——送っている PDF を上書きすると、残した PDF と相手に届いた PDF が違った（2026-10-22 の見直し）。
 // 送れたら外す（afterOrderMail）。送れなかったときは、orderSendingFor で消える。
 var orderSending sync.Map
 
-// orderSendingFor は、送り始めてから送れたか分かるまでの、長くて十分な時間です。
-const orderSendingFor = 10 * time.Minute
+// orderSendingFor は、メールで送り始めてから送れたか分かるまでの、長くて十分な時間です。
+// orderFaxingFor は FAX のときの長さです（話し中のかけ直しを含めて、FAX の見張りの長さ 12 時間より長く——2026-10-26。
+// それまでは FAX でも 10 分で、送っている途中に「PDF作成」を押すと送った PDF が上書きされ、「送った部材発注書」に
+// 送ったものと違う PDF が残った）。送れたら外す（afterOrderSent）。
+const (
+	orderSendingFor = 10 * time.Minute
+	orderFaxingFor  = 13 * time.Hour
+)
 
-func markOrderSending(pageID string) { orderSending.Store(pageID, time.Now()) }
+func markOrderSending(pageID string) { markOrderSendingFor(pageID, orderSendingFor) }
+
+// markOrderSendingFor は、ページ pageID を、いまから d のあいだ送っている最中とします。
+func markOrderSendingFor(pageID string, d time.Duration) {
+	orderSending.Store(pageID, time.Now().Add(d))
+}
 
 // isOrderSending は、いま送っている最中かです。
 func isOrderSending(pageID string) bool {
 	v, ok := orderSending.Load(pageID)
-	return ok && time.Since(v.(time.Time)) < orderSendingFor
+	return ok && time.Now().Before(v.(time.Time))
+}
+
+// prepareOrderFax は、FAX で送る部材発注書の紙を用意し（資料を綴じる——fax_paper.go）、送れたか分かるまで
+// 表示中の PDF を上書きさせない。
+func prepareOrderFax(w http.ResponseWriter, r *http.Request, pageID string) (comm.ComposeAttachment, comm.ComposeAttachment, bool) {
+	paper, send, ok := faxPaperWithDocs(prepareOrderMail, orderBoundKind)(w, r, pageID)
+	if ok {
+		markOrderSendingFor(pageID, orderFaxingFor)
+	}
+	return paper, send, ok
 }
 
 // afterOrderMail は送れたあとに、取消でない行を発注済みにして部材発注日を送った日にし、送った PDF を記録の節

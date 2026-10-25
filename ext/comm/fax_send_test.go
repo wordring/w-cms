@@ -66,6 +66,7 @@ JID  Pri S  Owner Number       Pages Dials     TTS Status
 //   - 書けないページからは送れない・PDF でなければ送れない
 func TestFaxSendRecordsAndWatches(t *testing.T) {
 	setupIntakeTest(t)
+	resetFaxJobs(t)
 	if err := page.WriteSidecar("000400", page.PageMeta{Owner: "alice", Mode: "330", ParentID: "000000"}); err != nil {
 		t.Fatal(err)
 	}
@@ -227,6 +228,7 @@ func TestFaxCandidates(t *testing.T) {
 // 失敗したら記録を未処理に戻す）を固定します（2026-10-25 夜・利用者:「送れたときだけ送付日を書いてください」）。
 func TestFaxSendPurposeAfterFaxed(t *testing.T) {
 	setupIntakeTest(t)
+	resetFaxJobs(t)
 	if err := page.WriteSidecar("000410", page.PageMeta{Owner: "alice", Mode: "330", ParentID: "000000"}); err != nil {
 		t.Fatal(err)
 	}
@@ -421,5 +423,157 @@ func TestFaxSendPurposeAfterFaxed(t *testing.T) {
 		if code, _ := send(map[string]any{"page_id": "000410", "purpose": p, "number": "0312345678"}); code != http.StatusBadRequest {
 			t.Errorf("用件 %q を断らない: %d", p, code)
 		}
+	}
+}
+
+// resetFaxJobs は、送った FAX の仕事の控えを空から始めます（控えは試験ごとの一時の置き場の data/fax に書く）。
+func resetFaxJobs(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		faxJobs.Lock()
+		faxJobs.loaded, faxJobs.m = false, nil
+		faxJobs.Unlock()
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
+// TestFaxWatchUsesStoreNotTags は、送れたかの見張りと後始末が、記録のタグではなくサーバーの控えだけを見ることを固定します
+// （2026-10-26）。タグを書き替えて「送っている」の記録を作っても、起き直したときの見張りは始まらず、用件の後始末は
+// 呼ばれない。控えのある仕事は、タグを書き替えても、控えの元のページ・送った人で後始末を呼ぶ。様子を見る口は、記録を
+// 読める人にだけ答える。HylaFAX の一覧から消えた仕事は、しばらくして「送れたか分からない」で見張りをやめる。
+func TestFaxWatchUsesStoreNotTags(t *testing.T) {
+	setupIntakeTest(t)
+	resetFaxJobs(t)
+	var mu sync.Mutex
+	var calls []string
+	sendPurposes["控えの紙"] = SendPurpose{AfterFaxed: func(user *auth.User, pageID, recordID, file string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, user.Username+" "+pageID+" "+file)
+		return nil
+	}}
+	t.Cleanup(func() { delete(sendPurposes, "控えの紙") })
+	status := map[string]string{}
+	oldStat, oldInt, oldLookup, oldUnknown := readFaxStat, faxWatchInterval, lookupFaxSender, faxUnknownFor
+	t.Cleanup(func() { readFaxStat, faxWatchInterval, lookupFaxSender, faxUnknownFor = oldStat, oldInt, oldLookup, oldUnknown })
+	readFaxStat = func(context.Context) string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := "JID  Pri S  Owner Number       Pages Dials     TTS Status\n"
+		for job, st := range status {
+			out += job + "    127 " + st + "\n"
+		}
+		return out
+	}
+	lookupFaxSender = func(name string) (*auth.User, error) { return &auth.User{Username: name}, nil }
+	faxWatchInterval = 10 * time.Millisecond
+	tagged := func(id, job, parent string) {
+		if err := page.WriteSidecar(id, page.PageMeta{Owner: "a", CreatedBy: "a", Mode: "333", ParentID: "000100"}); err != nil {
+			t.Fatal(err)
+		}
+		body := `<h1>FAX 送信</h1><dl data-type="tags"><dt>` + FaxSendStateTag + `</dt><dd>` + faxStateSending + `</dd><dt>` + FaxSendJobTag +
+			`</dt><dd>` + job + `</dd><dt>` + FaxSendPurposeTag + `</dt><dd>控えの紙</dd><dt>` + ParentPageTag + `</dt><dd>` + parent +
+			`</dd><dt>` + FaxSendFileTag + `</dt><dd>x.pdf</dd></dl>`
+		if err := os.MkdirAll(page.GetPageDir(id), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(page.GetPageDir(id), id+".html"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := cms.SyncIndex(id, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitCalls := func(n int) []string {
+		for i := 0; i < 200; i++ {
+			mu.Lock()
+			c := append([]string(nil), calls...)
+			mu.Unlock()
+			if len(c) >= n {
+				return c
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), calls...)
+	}
+
+	// タグだけで作った「送っている」の記録——控えが無いので、起き直しても見張らない。
+	tagged("000420", "31", "000999")
+	mu.Lock()
+	status["31"] = "D  a 0312345678 1:1 1:12"
+	mu.Unlock()
+	resumeFaxWatches()
+	time.Sleep(100 * time.Millisecond)
+	if c := waitCalls(0); len(c) != 0 {
+		t.Fatalf("⚠ タグだけの記録で後始末が呼ばれた: %v", c)
+	}
+
+	// 控えのある仕事——タグに別の元のページを書いても、控えの元のページ・送った人で呼ぶ。
+	tagged("000421", "32", "000999")
+	if err := putFaxJob(faxJob{Job: "32", Record: "000421", User: "bob", Page: "000410", Purpose: "控えの紙", File: "paper.pdf", Started: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	status["32"] = "D  bob 0312345678 1:1 1:12"
+	mu.Unlock()
+	resumeFaxWatches()
+	if c := waitCalls(1); len(c) != 1 || c[0] != "bob 000410 paper.pdf" {
+		t.Fatalf("⚠ 後始末の呼ばれ方: %v（控えの bob 000410 paper.pdf のはず）", c)
+	}
+	for i := 0; i < 100; i++ {
+		if j, _ := sentFaxJobOf("32"); j.Done {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if j, _ := sentFaxJobOf("32"); !j.Done {
+		t.Errorf("送れた仕事の控えが終わりになっていません: %+v", j)
+	}
+
+	// 様子を見る口: 記録を読める人にだけ（000421 は mode 333 でだれでも読める・000422 は a だけ）。
+	if err := page.WriteSidecar("000422", page.PageMeta{Owner: "a", Mode: "300", ParentID: "000100"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cms.SyncIndex("000422", `<h1>秘密の FAX</h1>`); err != nil {
+		t.Fatal(err)
+	}
+	if err := putFaxJob(faxJob{Job: "33", Record: "000422", User: "a", Started: time.Now(), Done: true, Ended: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	statusOf := func(job string) int {
+		req := auth.WithUser(httptest.NewRequest("GET", "/api/fax/status?job="+job, nil), &auth.User{Username: "bob"})
+		rr := httptest.NewRecorder()
+		FaxStatusAPIHandler(rr, req)
+		return rr.Code
+	}
+	if c := statusOf("32"); c != http.StatusOK {
+		t.Errorf("読める記録の仕事の様子が見えません: %d", c)
+	}
+	if c := statusOf("33"); c != http.StatusNotFound {
+		t.Errorf("⚠ 読めない記録の仕事の様子が見えます: %d", c)
+	}
+	if c := statusOf("99"); c != http.StatusNotFound {
+		t.Errorf("控えの無い仕事の様子に答えています: %d", c)
+	}
+
+	// 一覧から消えた仕事——しばらくして「送れたか分からない」で見張りをやめる。
+	faxUnknownFor = 50 * time.Millisecond
+	tagged("000423", "34", "000410")
+	if err := putFaxJob(faxJob{Job: "34", Record: "000423", User: "a", Started: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	go watchFaxJob("34")
+	for i := 0; i < 200; i++ {
+		if j, _ := sentFaxJobOf("34"); j.Done {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	b, _ := os.ReadFile(filepath.Join(page.GetPageDir("000423"), "000423.html"))
+	if j, _ := sentFaxJobOf("34"); !j.Done || !strings.Contains(string(b), "送れたか分かりません") {
+		t.Errorf("⚠ 一覧から消えた仕事を見張り続けています: %+v\n%s", j, b)
 	}
 }
