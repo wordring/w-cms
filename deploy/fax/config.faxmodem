@@ -19,6 +19,8 @@ FaxRcvdCmd:		bin/faxrcvd-wcms
 # ひかり電話（IP の電話）では、速さを 9600bps までに抑えると安定すると言われている
 Class1TMQueryCmd:	"!24,48,72,96"
 Class1RMQueryCmd:	"!24,48,72,96"
+# ひかり電話では ECM（誤り訂正）のページが空で届いたので切る（2026-10-25 に業務サーバーで試した）
+Class1ECMSupport:	no
 ModemRate:		19200
 ModemFlowControl:	rtscts
 # END-SERVER
