@@ -205,12 +205,14 @@ func (f MirrorHandlerFunc) OnElement(ctx *MirrorContext, el *html.Node) (bool, e
 type walkRegistry struct {
 	observers map[string][]ObserveHandler // 引き金 → 担当（何人でも）
 	mirrors   map[string]MirrorHandler    // 引き金 → 担当（1人だけ）
+	public    map[string]bool             // ログインしていない人にも描いてよい鏡の引き金（RegisterPublicMirror）
 }
 
 func newWalkRegistry() *walkRegistry {
 	return &walkRegistry{
 		observers: map[string][]ObserveHandler{},
 		mirrors:   map[string]MirrorHandler{},
+		public:    map[string]bool{},
 	}
 }
 
@@ -225,6 +227,16 @@ var walkers = newWalkRegistry()
 // RegisterMirror は鏡型（表示時）を登録します。**引き金ごとに1人**——
 // 「順番」に意味を持たせないための構造的な保証で、重複は起動時に落とします。
 func RegisterMirror(trigger string, h MirrorHandler) { walkers.mirror(trigger, h) }
+
+// RegisterPublicMirror は、ログインしていない人（公開のページを見に来た人）にも描いてよい鏡を登録します（2026-10-26）。
+//
+// ⚠ ほかの鏡（RegisterMirror）と計算ビューは、ログインしていない人には描きません。鏡は見ている人（MirrorContext.Viewer）で
+// 見せ分けますが、多くは Viewer が nil のときを考えておらず、nil で見せ分けを飛ばす作り（だれのものでも返す）や、
+// nil で落ちる作りがあったためです。ここで登録する鏡は、Viewer が nil でも、公開しているものだけを描くこと。
+func RegisterPublicMirror(trigger string, h MirrorHandler) {
+	walkers.mirror(trigger, h)
+	walkers.public[trigger] = true
+}
 
 func (r *walkRegistry) observe(trigger string, h ObserveHandler) {
 	r.observers[trigger] = append(r.observers[trigger], h)
@@ -519,12 +531,16 @@ func (r *walkRegistry) walkObserve(ctx *ObserveContext, nodes []*html.Node) erro
 // walkMirror は鏡型の段を1周し、書き換わった木を返します（引き金ごとに担当は1人）。
 func (r *walkRegistry) walkMirror(ctx *MirrorContext, nodes []*html.Node) ([]*html.Node, error) {
 	return walkFragment(nodes, &ctx.walkState, func(el *html.Node) (bool, error) {
-		h := r.mirrors[triggerOf(el)]
+		t := triggerOf(el)
+		h := r.mirrors[t]
 		if h == nil {
-			if all := r.mirrors[TriggerAll]; all != nil {
-				return all.OnElement(ctx, el)
-			}
+			t, h = TriggerAll, r.mirrors[TriggerAll]
+		}
+		if h == nil {
 			return true, nil
+		}
+		if ctx.Viewer == nil && !r.public[t] {
+			return true, nil // ログインしていない人には、公開してよいと登録した鏡だけ（RegisterPublicMirror）
 		}
 		return h.OnElement(ctx, el)
 	})

@@ -35,13 +35,16 @@ func RegisterTagDecorator(name string, fn TagDecorator) {
 }
 
 func init() {
-	RegisterMirror(TagsDataType, MirrorHandlerFunc(decorateTags))
+	RegisterPublicMirror(TagsDataType, MirrorHandlerFunc(decorateTags)) // 飾りは拡張のものなので、中でログインしていない人を飛ばす
 }
 
 // decorateTags は、タグの並びの dt/dd の組のうち、飾りの登録された名前の値の欄へ飾りを足します。
 func decorateTags(ctx *MirrorContext, el *html.Node) (bool, error) {
 	if el.Data != "dl" || len(tagDecorators) == 0 {
 		return true, nil
+	}
+	if ctx.Viewer == nil {
+		return true, nil // 飾りは拡張の持ち物——ログインしていない人には付けない（RegisterPublicMirror・2026-10-26）
 	}
 	for dt := el.FirstChild; dt != nil; dt = dt.NextSibling {
 		if dt.Type != html.ElementNode || dt.Data != "dt" {

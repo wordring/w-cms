@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/htmldoc"
 )
 
@@ -164,7 +165,7 @@ func TestMirrorReplaceStopsRecursion(t *testing.T) {
 		return false, nil
 	}))
 
-	nodes, err := reg.walkMirror(&MirrorContext{}, parseFrag(t, `<section data-type="view"></section>`))
+	nodes, err := reg.walkMirror(&MirrorContext{Viewer: &auth.User{Username: "alice"}}, parseFrag(t, `<section data-type="view"></section>`))
 	if err != nil {
 		t.Fatalf("walkMirrorエラー: %v", err)
 	}

@@ -58,6 +58,16 @@ var viewRenderers = map[string]func(user *auth.User, pageIDInt int) string{
 // 必ず目に見えます**（無言の空白にはならない）。
 //
 // 二重登録はその場で落とします（どちらが描いているか分からなくなるため）。
+// publicViews は、ログインしていない人にも描く計算ビューです——コアが初めから持つもの（子ページ一覧など）だけ。
+// 拡張が RegisterView で足すビューは、見ている人が nil のときを考えていないことがあるので、描きません（2026-10-26）。
+var publicViews = func() map[string]bool {
+	m := map[string]bool{}
+	for k := range viewRenderers {
+		m[k] = true
+	}
+	return m
+}()
+
 func RegisterView(vocabType string, render func(user *auth.User, pageIDInt int) string) {
 	if _, dup := viewRenderers[vocabType]; dup {
 		panic("計算ビューの描画が重複しています: " + vocabType)
@@ -100,7 +110,7 @@ func init() {
 	// `View: true` 宣言で自分の担当かを判定**します。形式名ごとに登録しないのは、
 	// 判定の正本をレジストリ1箇所に保つため——形式を足したとき、ここへ書き足す
 	// 必要がありません（足し忘れが起きない）。
-	RegisterMirror(TriggerAll, MirrorHandlerFunc(
+	RegisterPublicMirror(TriggerAll, MirrorHandlerFunc(
 		func(ctx *MirrorContext, el *html.Node) (bool, error) {
 			if el.Data != "section" {
 				return true, nil
@@ -114,6 +124,9 @@ func init() {
 			}
 			inner := missingViewHTML(vocabType)
 			if render, ok := viewRenderers[vocabType]; ok {
+				if ctx.Viewer == nil && !publicViews[vocabType] {
+					return false, nil // 拡張の計算ビューは、ログインしていない人には描かない（RegisterPublicMirror・2026-10-26）
+				}
 				inner = render(ctx.Viewer, ctx.PageID)
 			}
 			fillViewMarker(el, inner)

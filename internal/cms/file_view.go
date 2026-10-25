@@ -107,7 +107,7 @@ func init() {
 		// 札を押すと `openFileViewPopover` が欄を開き、`applyFileViewRef` が書き戻す）。
 		// （以前はエディタ側の `usesHeadingForm` の例外に入れていた。見出しで形式を名乗る読み方と一緒に 2026-09-29 に消えた。）
 	})
-	RegisterMirror(FileViewType, MirrorHandlerFunc(renderFileView))
+	RegisterPublicMirror(FileViewType, MirrorHandlerFunc(renderFileView)) // 公開のページの図や写真も出す（読めるページの添付だけ）
 }
 
 // renderFileView はマーカーの `data-ref` を読み、指す先のファイルを開く枠を足します。
