@@ -326,6 +326,9 @@ func EstimateCalcNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	content = withTemplateRecords(content, tmpl)
 	body := head + content
 	monthID, err := recordFolderOr("", user, RecordWorkFolder, now)
+	if err == nil {
+		err = requireWriteTo(user, monthID) // 作る先のフォルダにも書けること（ほかの書類と同じ・2026-10-26）
+	}
 	if err != nil {
 		cms.JSONFail(w, createFailStatus(err, http.StatusInternalServerError), err.Error())
 		return

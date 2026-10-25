@@ -231,6 +231,10 @@ func AnalyzeAttachmentAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, pageID) {
 		return
 	}
+	// テンプレートの中では解析しない（作ったページがテンプレートの木に入り、テンプレートから作る全部のページに写る・2026-10-26）。
+	if !cms.RefuseTemplateArea(w, pageID) {
+		return
+	}
 	// 表計算（.xlsx）も受けます（2026-09-30・Excel の注文リスト——文字にして判定する・judgeOrderSheet）。
 	// 画像（.png・.jpg・.webp）も受けます（2026-10-21 夜・FAX と写真——judgeOrderImage。【考察】通信箱の改善 §4.1）。
 	fileName, err := cms.SafeAttachmentName(pageID, req.File,

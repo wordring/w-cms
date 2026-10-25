@@ -30,7 +30,9 @@ import (
 
 	stdhtml "html"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -49,13 +51,14 @@ type partnerRule struct {
 	Unknown               []string // 分からない値（「品番の決め方：○○」の形で）
 }
 
-// partnerRuleFor は取引先の名前（`製造台帳／社名` のページの題）から決まりを読みます（ページが無ければ決まり無し）。
-func partnerRuleFor(customer string) partnerRule {
+// partnerRuleFor は取引先の名前（`製造台帳／社名` のページの題）から決まりを読みます（ページが無い・読めなければ決まり無し）。
+// 読めるかは user で見る（2026-10-26。それまでは読めない社名のページの決まりも返していた）。
+func partnerRuleFor(user *auth.User, customer string) partnerRule {
 	if customer == "" {
 		return partnerRule{}
 	}
 	if boxID, ok := CustomerBoxPageID(); ok {
-		if customerID, found := findChildByTitle(boxID, customer); found {
+		if customerID, found := findChildByTitle(boxID, customer); found && page.CanView(user, pageNum(customerID)) {
 			return partnerRuleOf(customerID)
 		}
 	}

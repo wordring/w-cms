@@ -176,7 +176,7 @@ func orderMailSubject(orderID, supplier string) string {
 //
 // ⚠ **引けなくても黙って空にしません**——署名の無いメールが出てしまうので、
 // どこに書けばよいかを本文の中に残します（送る前に人が消せます）。
-func orderMailBody(head map[string]string, supplier, orderID string) string {
+func orderMailBody(user *auth.User, head map[string]string, supplier, orderID string) string {
 	var b strings.Builder
 	if supplier != "" {
 		b.WriteString(supplier + "　御中\n\n")
@@ -186,7 +186,7 @@ func orderMailBody(head map[string]string, supplier, orderID string) string {
 	b.WriteString("添付のPDFをご確認ください。\n\n")
 	b.WriteString("よろしくお願いいたします。\n\n")
 
-	lines := signerLinesFor(head, MailSignatureHeading)
+	lines := signerLinesFor(user, head, MailSignatureHeading)
 	if len(lines) == 0 {
 		b.WriteString("（⚠ 署名がありません。連絡帳の担当者ページに「" +
 			MailSignatureHeading + "」の見出しで署名を書くと、ここに入ります）\n")
@@ -198,11 +198,11 @@ func orderMailBody(head map[string]string, supplier, orderID string) string {
 
 // signerLinesFor は部材発注書ページのタグ（`部材発注担当`）から、その人の署名を読みます。
 //
-// ⚠ **読めるかは見ません**——メールの下書きは、書いている人自身がその署名を
-// 選んだ部材発注書ページで組むものです。紙に刷る側（`senderLines`）は見ます。
-func signerLinesFor(head map[string]string, heading string) []string {
+// 下書きを開いた人が読める人のページだけ（2026-10-26。それまでは読めるかを見ておらず、部材発注担当に読めない人のページの
+// 番号を書くと、その人の署名が下書きに出た——紙に刷る側 `senderLines` と同じに）。
+func signerLinesFor(user *auth.User, head map[string]string, heading string) []string {
 	n, ok := signerPage(head)
-	if !ok {
+	if !ok || user == nil || !page.CanView(user, n) {
 		return nil
 	}
 	return SignatureOf(n, heading)

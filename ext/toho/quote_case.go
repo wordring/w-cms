@@ -75,6 +75,9 @@ func makeQuoteCaseFromRecord(user *auth.User, pageID string) (comm.MakeResult, e
 	}
 	body := buildQuoteCaseHTML(tmpl, pageTitleOf(pageID), client, pageID)
 	folder, err := recordFolderOr("", user, RecordRequestFolder, time.Now())
+	if err == nil {
+		err = requireWriteTo(user, folder) // 作る先のフォルダにも書けること（ほかの書類と同じ・2026-10-26）
+	}
 	if err != nil {
 		return comm.MakeResult{}, &comm.MakeError{Status: createFailStatus(err, http.StatusInternalServerError), Message: err.Error()}
 	}

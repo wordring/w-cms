@@ -352,7 +352,8 @@ func mfgStartedRows(user *auth.User, mfgID int, sel map[int]bool) (map[int]strin
 		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
 		order, okO := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
 		qty, okQ := estimateNumber(r.Values["quantity"])
-		if !ok || !okO || !okQ || qty <= 0 {
+		// 読めない加工製品ページの部材は見ない（2026-10-26。それまでは、読めない加工製品に手配の残りがあるかが分かった）。
+		if !ok || !okO || !okQ || qty <= 0 || !page.CanView(user, pageNum(pid)) {
 			continue
 		}
 		need := 0

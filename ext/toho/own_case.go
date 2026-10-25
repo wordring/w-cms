@@ -86,6 +86,9 @@ func makeOwnCaseFromRecord(user *auth.User, pageID string) (comm.MakeResult, err
 	}
 	body := buildOwnCaseHTML(tmpl, pageTitleOf(pageID), ownCompanyTitle(user), pageID)
 	folder, err := recordFolderOr("", user, RecordRequestFolder, time.Now())
+	if err == nil {
+		err = requireWriteTo(user, folder) // 作る先のフォルダにも書けること（ほかの書類と同じ・2026-10-26）
+	}
 	if err != nil {
 		return comm.MakeResult{}, &comm.MakeError{Status: createFailStatus(err, http.StatusInternalServerError), Message: err.Error()}
 	}

@@ -69,7 +69,7 @@ func orderMailDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error
 		To:      supplierAddresses(user, supplier),
 		// 件名と本文の宛名は正式名称（2026-10-23・宛先のアドレスを引くのは短い名前のまま）。
 		Subject: orderMailSubject(pageID, contacts.OfficialName(user, supplier)),
-		Body:    orderMailBody(head, contacts.OfficialName(user, supplier), pageID),
+		Body:    orderMailBody(user, head, contacts.OfficialName(user, supplier), pageID),
 		// ⚠ **送るのはページに表示している PDF**（2026-10-14・【要求】製造 §8「部材発注書を送信」——送る直前に
 		//    作り直さない）。まだ無いときだけ送るときに作る（下書きを開いただけで添付を増やさない）。
 		SendNote: "印の付いた部材発注書のPDFは、このページに表示しているものを添えます（作り直しません——明細や備考を直したら、" +

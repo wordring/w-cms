@@ -159,7 +159,7 @@ func FilingTargetAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	out["candidates"] = cands
 	// 取引先の決まり（2026-10-01・partner_rules.go）——画面の「図面番号を品番に」「図面名称を品名に」の印の初期値。
-	rule := partnerRuleFor(customer)
+	rule := partnerRuleFor(user, customer)
 	out["rule"] = map[string]any{"part_no": rule.PartNoIsDrawingNo, "item_name": rule.ItemNameIsDrawingName}
 	// 装置名称は空でもよい（2026-10-16 利用者:「装置名は新仕様とし…」——装置名の分からない品物は社名の直下）。
 	if customer == "" || name == "" {
@@ -685,7 +685,7 @@ func fileAsNewProduct(user *auth.User, row filingRequest, in filingInput, machin
 // applyPartnerRules は整理で新しく置いた加工製品ページに、弊社品番と取引先の決まりのタグを書き、知らせる一言を返します
 // （書けなくても整理は済んでいる）。partNo・itemName は画面の印——あればそちらが決まりより先。
 func applyPartnerRules(user *auth.User, pageID string, idInt int, customer, name string, partNo, itemName *bool) string {
-	rule := partnerRuleFor(customer)
+	rule := partnerRuleFor(user, customer)
 	if partNo != nil {
 		rule.PartNoIsDrawingNo = *partNo
 	}
@@ -759,6 +759,11 @@ func pickMergeTarget(sameTitle []string, target, name string) (string, string) {
 // （2026-10-12 から）ブラウザは編集権を取らないので、諦めるのは道具（`/api/lock`）が握っているときだけです。
 // 書き込みは `cms.RewriteBody` の錠の中なので、人の保存とは順に並びます。
 func linkPartner(user *auth.User, customerID, title string) {
+	// 社名のフォルダに書けない人は結ばない（2026-10-26。それまでは確かめずに書いていて、書けない人の整理でも、ほかの人の
+	// 社名のフォルダにタグを書き、その人を書き手として版を残した）。結ぶのは、書ける人が次に整理したとき。
+	if user == nil || !canWritePage(user, pageNum(customerID)) || cms.IsTemplateArea(customerID) {
+		return
+	}
 	partnerID, ok := contacts.PartnerByTitle(user, title)
 	if !ok {
 		return // まだ連絡帳に居ない（新しい顧客の1通目。異常ではない）

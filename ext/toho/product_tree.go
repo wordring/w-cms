@@ -382,6 +382,11 @@ func ProductFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, status, err.Error())
 		return
 	}
+	// 読めないフォルダの番号は返さない（2026-10-26。それまでは在ることと番号が分かった）。
+	if !page.CanView(user, pageNum(id)) {
+		cms.JSONFail(w, http.StatusForbidden, "そのフォルダを見る権限がありません")
+		return
+	}
 	cms.WriteJSON(w, map[string]any{"success": true, "page_id": id})
 }
 
