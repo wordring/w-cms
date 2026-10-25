@@ -35,15 +35,36 @@ type PageSummary struct {
 func reserveNewPageID(parent sql.NullInt64) (string, error) {
 	// 番号は、いまのページとごみ箱のページのどちらよりも大きくする（page_id_floor.go——消したページの番号を使い回さない）。
 	// 1つの文の中で数えて入れるので、同時に作っても重ならない（書き込みは SQLite が1つずつ通す）。
-	result, err := database.DB.Exec(
-		`INSERT INTO pages (id, title, parent_id, file_path) VALUES ((SELECT MAX(COALESCE((SELECT MAX(id) FROM pages), 0), ?) + 1), ?, ?, '')`,
-		trashHighWater(), "新しいページ", parent,
-	)
-	if err != nil {
-		return "", err
+	floor := trashHighWater()
+	for try := 0; try < 3; try++ {
+		result, err := database.DB.Exec(
+			`INSERT INTO pages (id, title, parent_id, file_path) VALUES ((SELECT MAX(COALESCE((SELECT MAX(id) FROM pages), 0), ?) + 1), ?, ?, '')`,
+			floor, "新しいページ", parent,
+		)
+		if err != nil {
+			if try == 0 && strings.Contains(err.Error(), "UNIQUE") {
+				floor = masterHighWater() // DB の作り直しが同じ番号を入れた——ディスクの番号の上から取り直す
+				continue
+			}
+			return "", err
+		}
+		idInt64, _ := result.LastInsertId()
+		id := page.FormatID(int(idInt64))
+		// ⚠ 索引（cms.db）は作り直しの途中や、索引に入れられなかったページがあると、ディスクのページより少ない。
+		// その番号のフォルダがもうディスクに在れば、いまあるページなので使わない——使うと、そのページの本文を
+		// 新しいページで上書きしていた（2026-10-26）。入れた行を戻し、ディスクのいちばん大きい番号の上から取り直す。
+		if _, statErr := os.Stat(page.GetPageDir(id)); statErr == nil {
+			database.DB.Exec(`DELETE FROM pages WHERE id = ? AND file_path = '' AND title = ?`, idInt64, "新しいページ")
+			if m := masterHighWater(); m > floor {
+				floor = m
+			} else {
+				floor = int(idInt64)
+			}
+			continue
+		}
+		return id, nil
 	}
-	idInt, _ := result.LastInsertId()
-	return page.FormatID(int(idInt)), nil
+	return "", errors.New("新しいページの番号を決められません（ディスクのページと重なります）")
 }
 
 // ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。

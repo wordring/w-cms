@@ -548,3 +548,44 @@ func TestReserveNewPageIDSkipsTrashedIDs(t *testing.T) {
 		t.Errorf("⚠ 消したページの番号 %s を使い回しました", id)
 	}
 }
+
+// TestReserveNewPageIDSkipsPagesOnDisk は、⚠ **索引に無くてもディスクに在るページの番号は使わない**ことを固定します
+// （2026-10-26——DB の作り直しの途中にページを作ると、まだ索引に戻っていない在るページの本文を上書きした）。
+func TestReserveNewPageIDSkipsPagesOnDisk(t *testing.T) {
+	newTestFileDB(t)
+	trashFloor.Lock()
+	trashFloor.loaded, trashFloor.n = false, 0
+	trashFloor.Unlock()
+	t.Cleanup(func() {
+		trashFloor.Lock()
+		trashFloor.loaded, trashFloor.n = false, 0
+		trashFloor.Unlock()
+	})
+	// 000070 と 000071 はディスクに在るが、索引にはまだ無い（作り直しの途中）。
+	for _, id := range []string{"000070", "000071"} {
+		if err := os.MkdirAll(page.GetPageDir(id), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(page.BodyPath(id), []byte("<h1>在るページ "+id+"</h1>"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.DB.Exec(`INSERT INTO pages (id, title, file_path) VALUES (69, '索引に在る', '')`); err != nil {
+		t.Fatal(err)
+	}
+	id, err := reserveNewPageID(sql.NullInt64{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "000072" {
+		t.Errorf("ディスクに在るページの番号と重なりました: %s（000072 のはず）", id)
+	}
+	var placeholders int
+	database.DB.QueryRow(`SELECT COUNT(*) FROM pages WHERE id IN (70, 71)`).Scan(&placeholders)
+	if placeholders != 0 {
+		t.Errorf("重なった番号の仮の行が %d 残っています", placeholders)
+	}
+	if b, _ := os.ReadFile(page.BodyPath("000070")); !strings.Contains(string(b), "在るページ 000070") {
+		t.Errorf("在るページの本文が変わりました: %s", b)
+	}
+}

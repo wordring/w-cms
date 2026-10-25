@@ -104,9 +104,10 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 初回起動時の 000000 ページ自動生成
 	if id == "000000" {
-		var exists bool
-		database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM pages WHERE id = 0)").Scan(&exists)
-		if !exists {
+		// 在るかはファイルで見る（2026-10-26。それまでは索引で見ていて、DB の作り直しの途中に開くと、在るトップページの
+		// 本文と権限を初めの形で上書きした）。
+		_, statErr := os.Stat(page.BodyPath("000000"))
+		if os.IsNotExist(statErr) {
 			defaultHTML := `<h1>w-cms Wiki トップページ</h1>
 <p>ここはすべての起点となるトップページです。</p>
 <p>パソコンでは、開いたページをそのまま書けます（右上の「閲覧」を入れると、読むだけの形になります）。Notionのようにブロックベースで編集できます。子ページは左のサイドパネルから辿れます。</p>`

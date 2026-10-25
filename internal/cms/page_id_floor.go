@@ -49,10 +49,17 @@ func noteTrashed(id string) {
 	}
 }
 
+// masterHighWater は、正本（data/master）のフォルダの名前から、いちばん大きいページ番号を数えます（2026-10-26）。
+// 新しい番号がディスクのページと重なったときだけ呼ぶ（reserveNewPageID）——索引が作り直しの途中でも、ディスクが正本。
+func masterHighWater() int { return scanHighWater(page.MasterDir()) }
+
 // scanTrashHighWater はごみ箱のフォルダの名前から、いちばん大きいページ番号を数えます。
-func scanTrashHighWater() int {
+func scanTrashHighWater() int { return scanHighWater(page.TrashDir()) }
+
+// scanHighWater は、base/<2桁>/<番号>[-n] の形のフォルダの名前から、いちばん大きいページ番号を数えます。
+func scanHighWater(base string) int {
 	max := 0
-	shards, err := os.ReadDir(page.TrashDir())
+	shards, err := os.ReadDir(base)
 	if err != nil {
 		return 0
 	}
@@ -60,7 +67,7 @@ func scanTrashHighWater() int {
 		if !s.IsDir() {
 			continue
 		}
-		entries, err := os.ReadDir(page.TrashDir() + string(os.PathSeparator) + s.Name())
+		entries, err := os.ReadDir(base + string(os.PathSeparator) + s.Name())
 		if err != nil {
 			continue
 		}
