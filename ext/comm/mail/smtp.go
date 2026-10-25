@@ -235,9 +235,11 @@ func buildMIME(from, messageID string, msg comm.OutgoingMail) ([]byte, error) {
 		}
 		h.Set("Content-Type", ct)
 		h.Set("Content-Transfer-Encoding", "base64")
-		// ファイル名も符号化語にします（和文のファイル名は実際に来ます）。
+		// ファイル名も符号化語にします（和文のファイル名は実際に来ます）。英数だけの名前は符号化されないので、引用の中を壊す
+		// 「"」「\」は落とす（2026-10-26。名前の「"」で filename の値が途中で閉じていた）。
+		name := strings.NewReplacer(`"`, "_", `\`, "_").Replace(a.Name)
 		h.Set("Content-Disposition",
-			`attachment; filename="`+mime.BEncoding.Encode("UTF-8", a.Name)+`"`)
+			`attachment; filename="`+mime.BEncoding.Encode("UTF-8", name)+`"`)
 		p, err := mw.CreatePart(h)
 		if err != nil {
 			return nil, err

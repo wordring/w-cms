@@ -157,3 +157,18 @@ func TestBuildMIMEHeadersAreSafe(t *testing.T) {
 		t.Errorf("⚠ 名前の付いた宛先の書き方が違います:\n%s", head)
 	}
 }
+
+// TestBuildMIMEAttachmentNameQuote は、添付の名前の「"」で Content-Disposition の filename が途中で閉じないことを固定します
+// （2026-10-26）。英数だけの名前は符号化されないので、そのまま入っていた。
+func TestBuildMIMEAttachmentNameQuote(t *testing.T) {
+	out, err := buildMIME("me@example.com", "<m@example.com>", comm.OutgoingMail{
+		To: []string{"you@example.com"}, Subject: "s", BodyText: "b",
+		Attachments: []comm.MailAttachment{{Name: `a"; filename="evil.exe`, MIMEType: "application/pdf", Content: []byte("%PDF")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(out); strings.Contains(s, `filename="evil.exe`) || !strings.Contains(s, `filename="a_; filename=_evil.exe"`) {
+		t.Errorf("⚠ 添付の名前の「\"」がそのまま入りました:\n%s", s)
+	}
+}
