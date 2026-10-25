@@ -463,3 +463,31 @@ func TestSyncCheckpointSealsAfterWrite(t *testing.T) {
 		t.Errorf("⚠ 閉じた版へ畳みました（版の数 %d→%d）", before, got)
 	}
 }
+
+// TestSyncKeepsAllPiecesOfASplitBlock は、⚠ **読み直すと2つ以上になる書き出し（段落の中に div を貼った形）を、
+// 最初の要素だけにして黙って捨てない**ことを固定します（2026-10-26）。全部を残し、包んだ形を画面へ返す。
+func TestSyncKeepsAllPiecesOfASplitBlock(t *testing.T) {
+	setupSaveTest(t)
+	const id = "000905"
+	setupSyncPage(t, id, syncTestBody)
+	alice := openScreen(t, "alice", id)
+	code, r := alice.edit(t, "aaaa", `<p data-id="aaaa">一つ目<div>二つ目</div>三つ目</p>`)
+	if code != 200 || !r.Written {
+		t.Fatalf("書けない: %d %+v", code, r)
+	}
+	body := bodyOfFile(t, id)
+	for _, want := range []string{"一つ目", "二つ目", "三つ目"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("⚠ %q が消えました:\n%s", want, body)
+		}
+	}
+	var got *SyncBlockOut
+	for i := range r.Blocks {
+		if r.Blocks[i].ID == "aaaa" {
+			got = &r.Blocks[i]
+		}
+	}
+	if got == nil || !strings.Contains(got.HTML, "三つ目") {
+		t.Errorf("包んだ形を画面へ返していません（描き直さない）: %+v", got)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"golang.org/x/net/html"
 
@@ -443,6 +444,13 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var rawChanged, safeChanged string
 	for _, c := range req.Changes {
 		safe, changed := SanitizeReport(c.HTML)
+		// ⚠ 1つのブロックのはずが、読み直すと上の段に2つ以上になる書き出し（段落の中に div・表・別の段落を貼った など）は、
+		// 最初の要素だけを残して、あとを黙って捨てていた（画面は「保存済」のまま・2026-10-26）。全部を1つの div に包んで残し、
+		// 包んだ形を画面へ返して描き直させる。
+		if topLevelPieces(safe) > 1 {
+			safe = "<div>" + safe + "</div>"
+			changed = true
+		}
 		b, ok := storedFormOf(safe, c.ID)
 		if !ok {
 			continue
@@ -548,4 +556,24 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 		resp["kept_by"] = names
 	}
 	WriteJSON(w, resp)
+}
+
+// topLevelPieces は、HTML の断片を読んだときの上の段の要素と、空白でない文字の数です。
+func topLevelPieces(s string) int {
+	nodes, err := htmldoc.ParseFragment(s)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, x := range nodes {
+		switch x.Type {
+		case html.ElementNode:
+			n++
+		case html.TextNode:
+			if strings.TrimSpace(x.Data) != "" {
+				n++
+			}
+		}
+	}
+	return n
 }
