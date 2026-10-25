@@ -13,6 +13,8 @@ FAX サーバーは、w-cms と同じ Ubuntu の機械に置きます（利用�
 送る向きも、同じ夜に確かめました。サーバー機で `sendfax -n -d <番号> <FAX の形の TIFF>` と打つと、モデムが TEL2 からかけ、社内の複合機に1枚届きました（相手の受け取りの返事 MCF まで）。w-cms から送る画面は、まだありません。
 - ⚠ 相手の電話が転送の設定だと、出る前に転送されて「話し中」と受け取り、HylaFAX は少しあとでかけ直します（かけ直しで転送先の携帯を鳴らした）。試しで送るときは、失敗したら `faxrm <番号>` で取り消します。
 - ⚠ Ubuntu 26.04 では、Ghostscript（gs）に AppArmor の決まりが掛かっていて、HylaFAX の作業場所のファイルを読めないことがあります（業務サーバーで、/tmp や /var/lib のファイルを読めなかった）。PDF を送るとき HylaFAX は gs で FAX の形に直すので、w-cms から送る機能を作るときは、ここを先に確かめます。試しは、FAX の形の TIFF を直に渡して避けました。
+- → 2026-10-25 夜に、`apparmor-local-gs`（このフォルダ）を `/etc/apparmor.d/local/gs` に置き、`sudo apparmor_parser -r /etc/apparmor.d/gs` で、gs が HylaFAX の作業場所を読み書きできるようにしました。FAX の利用者で PDF を FAX の形に直せることを確かめました。
+- w-cms から送るのは、PDF のファイル表示の「⋯」の「📠 FAX で送る」です（`ext/comm/fax_send.go`・`/api/fax/send`・`/api/fax/status`）。w-cms（利用者 w-cms）が同じ機械の `sendfax` を呼びます。
 
 ## 1. モデムが使えるかを確かめる
 

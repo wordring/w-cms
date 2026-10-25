@@ -1,0 +1,7 @@
+# Ghostscript（gs）の AppArmor の決まりに足す分（2026-10-25・deploy/fax/README.md）。
+# 置き場所: /etc/apparmor.d/local/gs → `sudo apparmor_parser -r /etc/apparmor.d/gs`
+#
+# Ubuntu 26.04 の gs には AppArmor の決まりが掛かっていて、HylaFAX の作業場所（/var/spool/hylafax）のファイルを読めない。
+# HylaFAX は送る PDF を gs で FAX の形（TIFF）に直すので、ここだけ読み書きを許す。
+/var/spool/hylafax/** r,
+owner /var/spool/hylafax/** rwk,

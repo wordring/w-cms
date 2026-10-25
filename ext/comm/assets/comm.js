@@ -260,4 +260,40 @@ if (w.version >= 4) {
         tables.insertAdjacentElement('afterend', link);
     }
 }
+
+// ── 版 4 から: PDF の「⋯」の「📠 FAX で送る」（2026-10-25 夜・ext/comm/fax_send.go）。
+// 利用者:「とりあえず実装してみて、間に合わなかったらまた明日の夜やりましょう」——複合機を FAX の線から外したので、w-cms から送る。
+// 番号を聞き、確かめてから HylaFAX へ頼む。送れたかは、しばらく様子を見て知らせる（画面を閉じても、送ること自体は続く）。
+if (w.version >= 4) {
+    const { askConfirm } = w;
+    w.onFileMenu((info, items, f) => {
+        if (info.kind !== 'pdf' || !f.pageId || !f.file) return;
+        items.push({ icon: '📠', label: 'FAX で送る', title: 'この PDF を、業務サーバーのモデムから FAX で送ります', run: () => sendFax(f.pageId, f.file, info.name || f.file) });
+    });
+    async function sendFax(pageId, file, name) {
+        const number = (window.prompt('「' + name + '」を FAX で送ります。\n送り先の FAX の番号を入れてください（例 06-1234-5678）', '') || '').trim();
+        if (!number) return;
+        if (!await askConfirm('「' + name + '」を、FAX の番号 ' + number + ' へ送ります。よろしいですか？', '送る', 'やめる')) return;
+        const res = await fetch('/api/fax/send', w.jsonPost({ page_id: pageId, file, number }));
+        const d = await w.readResult(res);
+        if (!res.ok || !d || !d.success) {
+            w.notify('FAX を送れませんでした: ' + w.failMessage(res, d), { type: 'alert', duration: 0, id: 'fax-send' });
+            return;
+        }
+        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
+        watchFax(d.job, d.number);
+    }
+    // watchFax は仕事の様子を15秒おきに見て、送れた・送れなかったを知らせます（10分まで）。
+    async function watchFax(job, number) {
+        for (let i = 0; i < 40; i++) {
+            await new Promise(r => setTimeout(r, 15000));
+            let d;
+            try { d = await (await fetch('/api/fax/status?job=' + encodeURIComponent(job))).json(); } catch (e) { continue; }
+            if (!d || !d.success) continue;
+            if (d.state === 'done') { w.notify('📠 FAX を送れました（' + number + '）', { type: 'success', duration: 0, id: 'fax-send' }); return; }
+            if (d.state === 'failed') { w.notify('📠 FAX を送れませんでした（' + number + '）: ' + d.line, { type: 'alert', duration: 0, id: 'fax-send' }); return; }
+        }
+        w.notify('📠 FAX はまだ送っている途中か、待っています（' + number + '・仕事 ' + job + '）。話し中なら、少しあとで自動でかけ直します。', { type: 'warn', duration: 0, id: 'fax-send' });
+    }
+}
 })();
