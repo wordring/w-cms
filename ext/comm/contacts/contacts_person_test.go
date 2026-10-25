@@ -279,7 +279,13 @@ func TestEmailTagLinksToContactPage(t *testing.T) {
 	body := `<dl data-type="tags">` +
 		`<dt>差出人</dt><dd>山田 太郎 &lt;` + addr + `&gt;</dd>` +
 		`<dt>宛先</dt><dd>知らない人 &lt;nobody@example.invalid&gt;</dd></dl>`
-	got := cms.RenderReferenceLinks(body)
+	got := cms.RenderReferenceLinks(user, body)
+	// 見ている人が読めない連絡帳・ログインしていない人には、リンクにしない（2026-10-26——連絡帳に載っていると分かった）。
+	for _, who := range []*auth.User{nil, {Username: "mallory"}} {
+		if s := cms.RenderReferenceLinks(who, body); strings.Contains(s, `href="/`+personID+`"`) {
+			t.Errorf("⚠ 読めない人（%v）に連絡帳のページへのリンクを描きました: %s", who, s)
+		}
+	}
 
 	// ① 登録済み——アドレスだけがリンクになり、名前はそのまま残る。
 	if !strings.Contains(got, `href="/`+personID+`"`) {

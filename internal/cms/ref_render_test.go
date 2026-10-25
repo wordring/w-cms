@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -25,7 +26,7 @@ func TestRenderReferenceLinks(t *testing.T) {
 		`<dt>図番</dt><dd>123-45</dd>` + // 6桁でない → 普通の値（触らない）
 		`<dt>型式</dt><dd>SUS304</dd>` + // 文法外 → 触らない
 		`</dl>`
-	out := RenderReferenceLinks(body)
+	out := RenderReferenceLinks(refTestViewer, body)
 
 	if !strings.Contains(out, `<a href="/000002#12" class="ref-link">000002-12</a>`) {
 		t.Errorf("実在ページへの参照がリンクになっていません:\n%s", out)
@@ -54,7 +55,7 @@ func TestRenderReferenceLinksFoldsHyphens(t *testing.T) {
 	// 長音記号 ー（U+30FC）・半角長音 ｰ（U+FF70）・全角ハイフン −（U+2212）
 	for _, sep := range []string{"ー", "ｰ", "−"} {
 		body := `<dl data-type="tags"><dt>原発注書</dt><dd>000002` + sep + `12</dd></dl>`
-		out := RenderReferenceLinks(body)
+		out := RenderReferenceLinks(refTestViewer, body)
 		if !strings.Contains(out, `href="/000002#12"`) {
 			t.Errorf("区切り %q が畳まれていません:\n%s", sep, out)
 		}
@@ -77,7 +78,7 @@ func TestRenderReferenceLinksNotInLoadAPI(t *testing.T) {
 	if strings.Contains(Sanitize(body), "ref-link") {
 		t.Error("サニタイズだけでリンクが合成されています（保存経路が汚れる）")
 	}
-	if !strings.Contains(RenderReferenceLinks(Sanitize(body)), "ref-link") {
+	if !strings.Contains(RenderReferenceLinks(refTestViewer, Sanitize(body)), "ref-link") {
 		t.Error("描画経路でリンクが合成されていません")
 	}
 }
@@ -102,7 +103,7 @@ func TestRenderReferenceLinksPageRefTag(t *testing.T) {
 		`<dt>親ページID</dt><dd>000002</dd>` + // 宣言済み → ページへのリンク
 		`<dt>発注書番号</dt><dd>000002</dd>` + // 宣言していない → 素通り
 		`</dl>`
-	out := RenderReferenceLinks(body)
+	out := RenderReferenceLinks(refTestViewer, body)
 
 	if !strings.Contains(out, `<a href="/000002" class="ref-link">000002</a>`) {
 		t.Errorf("宣言したタグがページへのリンクになっていません:\n%s", out)
@@ -129,7 +130,7 @@ func TestOrderNumberIsNotMistakenForReference(t *testing.T) {
 		`</section>` +
 		`<dl data-type="tags"><dt>受信元</dt><dd>000002-12</dd></dl>`
 
-	got := RenderReferenceLinks(body)
+	got := RenderReferenceLinks(refTestViewer, body)
 	// 発注書番号の升目は**素のまま**（印もリンクも付かない）。
 	if !strings.Contains(got, "<dd>250401-203</dd>") {
 		t.Errorf("発注書番号が参照として扱われました:\n%s", got)
@@ -158,5 +159,30 @@ func TestLastIndexFold(t *testing.T) {
 	}
 	if at, _ := lastIndexFold("名前だけ", "a@b.jp"); at != -1 {
 		t.Errorf("無いのに %d を返しました", at)
+	}
+}
+
+// TestAnonymousSeesOnlyPublicRefs は、⚠ **ログインしていない人には、公開していないページへの参照をリンクにも
+// 「見つかりません」にもしない**ことを固定します（2026-10-26——リンクか印かで、公開していないページが在るかどうかが
+// 分かった）。公開しているページはリンクにする。
+func TestAnonymousSeesOnlyPublicRefs(t *testing.T) {
+	newTestFileDB(t)
+	newPage(t, "000000", `<h1>トップ</h1>`, page.PageMeta{Owner: "alice", Mode: "302", Public: true})
+	newPage(t, "000047", `<h1>社内</h1>`, page.PageMeta{Owner: "alice", Mode: "300", ParentID: "000000"})
+	newPage(t, "000048", `<h1>公開</h1>`, page.PageMeta{Owner: "alice", Mode: "302", ParentID: "000000", Public: true})
+	body := `<dl data-type="tags"><dt>原発注書</dt><dd>000047-ab12</dd><dt>前版</dt><dd>000099-zz99</dd>` +
+		`<dt>資料</dt><dd>000048-cd34</dd></dl>`
+	if !page.EffectivePublic(48) {
+		t.Skip("公開の道が作れません（試験の下ごしらえ）")
+	}
+	out := RenderReferenceLinks(nil, body)
+	if strings.Contains(out, `href="/000047`) || strings.Contains(out, "ref-missing") {
+		t.Errorf("⚠ ログインしていない人に、公開していないページの在る・無いが見えます:\n%s", out)
+	}
+	if !strings.Contains(out, `href="/000048#cd34"`) {
+		t.Errorf("公開しているページの参照がリンクになっていません:\n%s", out)
+	}
+	if in := RenderReferenceLinks(refTestViewer, body); !strings.Contains(in, `href="/000047#ab12"`) || !strings.Contains(in, "ref-missing") {
+		t.Errorf("ログインしている人には、リンクと印を描くはずです:\n%s", in)
 	}
 }

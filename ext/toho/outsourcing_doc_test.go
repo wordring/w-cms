@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
 )
@@ -61,7 +62,7 @@ func TestOutsourcingDocCellLinks(t *testing.T) {
 		`<tr><td>塗装(黒半ツヤ)</td><td>支給</td><td>1</td><td>000037-a1b2</td><td></td><td>現行</td></tr>` +
 		`</tbody></table>`
 
-	got := cms.RenderReferenceLinks(body)
+	got := cms.RenderReferenceLinks(&auth.User{Username: "alice"}, body)
 	if !strings.Contains(got, `href="/000037`) {
 		t.Errorf("⚠ 資料が押せません（加工業者へ渡す図面へ飛べません）:\n%s", got)
 	}

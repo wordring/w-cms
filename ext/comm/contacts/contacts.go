@@ -91,9 +91,13 @@ import (
 func init() {
 	cms.RegisterVocab(contactsVocab...)
 	cms.RegisterView(ContactsViewType, contactsViewHTML)
-	// 描画は匿名でも通る経路なので `user` は nil——認可は解決の中で見ます。
-	cms.RegisterContactResolver(func(addr string) (string, string, bool) {
-		return ContactPageForAddress(nil, addr)
+	// 描画は見ている人を渡す（2026-10-26。それまでは nil で、だれにでも連絡帳のページの番号が見えた）。コアは
+	// ログインしていない人には呼ばないが、念のため nil なら見つからない扱いにする。
+	cms.RegisterContactResolver(func(user *auth.User, addr string) (string, string, bool) {
+		if user == nil {
+			return "", "", false
+		}
+		return ContactPageForAddress(user, addr)
 	})
 
 	// **連絡帳は管理画面のボタンで作れます**（2026-09-16）。

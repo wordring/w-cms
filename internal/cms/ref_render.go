@@ -40,9 +40,43 @@ import (
 
 	"golang.org/x/net/html"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
+
+// refViewer は、参照のリンクを描くときの「見ている人」です（2026-10-26）。user が nil なら、ログインしていない人
+// （公開のページを見に来た社外の人）です。
+//
+// それまでの描き方は見ている人を知らず、匿名の人にも、公開していないページの番号がリンクか「見つかりません」かで
+// 在るかどうかが分かり、メールのアドレスが連絡帳のページの番号へのリンクになった（連絡帳に載っていると分かった）。
+type refViewer struct{ user *auth.User }
+
+// canLink は、そのページへのリンクを描いてよいかを返します。ログインしている人には、在るページならリンクにします
+// （読めないページでも、踏んだ先の関門が断る——ログインしている人には、在るかどうかは秘密ではない）。
+// 匿名の人には、公開しているページだけです。
+func (v refViewer) canLink(pageID string) bool {
+	if !pageExists(pageID) {
+		return false
+	}
+	if v.user != nil {
+		return true
+	}
+	n, err := strconv.Atoi(pageID)
+	return err == nil && page.EffectivePublic(n)
+}
+
+// markMissing は、指す先が無いことを知らせる印を付けます。匿名の人には付けません——「無い」と「公開していない」を
+// 見分けさせないため（どちらも素の文字のまま）。印を付けたら true。
+func (v refViewer) markMissing(n *html.Node, title string) bool {
+	if v.user == nil {
+		return false
+	}
+	setAttr(n, "class", "ref-missing")
+	setAttr(n, "title", title)
+	return true
+}
 
 // refValueRe は参照値の文法です（6桁のページID・ハイフン類・英数字のブロックID）。
 var refValueRe = regexp.MustCompile(`^([0-9]{6})[-‐−－ーｰ]([0-9A-Za-z]+)$`)
@@ -73,7 +107,9 @@ func parseRefValue(s string) (pageID, blockID string, ok bool) {
 // 一致するものをリンクへ合成して返します。指す先のページが無ければ
 // `ref-missing` の印を付けます（見た目は assets の CSS が担う）。
 // 2026-09-20 からは、登録された表の**参照の列**のセルも同じようにリンクにします（linkRefCells）。
-func RenderReferenceLinks(bodyHTML string) string {
+// user は見ている人です（nil はログインしていない人——refViewer）。
+func RenderReferenceLinks(user *auth.User, bodyHTML string) string {
+	v := refViewer{user: user}
 	// 早道: dl も table も無ければ参照は無い（普通のページにパースの費用を掛けない）。
 	if !strings.Contains(bodyHTML, "<dl") && !strings.Contains(bodyHTML, "<table") {
 		return bodyHTML
@@ -99,7 +135,7 @@ func RenderReferenceLinks(bodyHTML string) string {
 			// 桁を6に絞っても足りなかった、というのがここの学びです。**値の形だけでは
 			// 参照と番号を見分けられない**ので、置き場所（可変タグかどうか）も条件にします。
 			if n.Data == "table" {
-				if linkRefCells(n) {
+				if linkRefCells(v, n) {
 					changed = true
 				}
 				return
@@ -116,7 +152,7 @@ func RenderReferenceLinks(bodyHTML string) string {
 				// 描画のときだけリンクを被せます。登録・解除がその場で効き、
 				// 登録していない相手は素のまま出ます（壊れない）。
 				if InferColumnType(key) == ColEmail {
-					if linkEmailDD(dd) {
+					if linkEmailDD(v, dd) {
 						changed = true
 					}
 					return true
@@ -130,15 +166,14 @@ func RenderReferenceLinks(bodyHTML string) string {
 					}
 					blockID = ""
 				}
-				if pageExists(pageID) {
+				if v.canLink(pageID) {
 					linkRefDD(dd, pageID, blockID)
-				} else {
+					changed = true
+				} else if v.markMissing(dd, "参照先のページ "+pageID+" が見つかりません") {
 					// 宙ぶらりん——打ち間違いか、参照先をまだ作っていない。
 					// 「先に参照を書く」運用があるので拒否はせず、背景で知らせる。
-					setAttr(dd, "class", "ref-missing")
-					setAttr(dd, "title", "参照先のページ "+pageID+" が見つかりません")
+					changed = true
 				}
-				changed = true
 				return true
 			})
 		})
@@ -151,7 +186,7 @@ func RenderReferenceLinks(bodyHTML string) string {
 
 // linkRefList は、参照をいくつも並べたセルを、1つずつのリンク（「、」で区切る）に描き直します。
 // 形の合わない値・無いページを指す値があれば、セルに ref-missing の印と、どれかを添えます。
-func linkRefList(cell *html.Node, refs []string) bool {
+func linkRefList(v refViewer, cell *html.Node, refs []string) bool {
 	for cell.FirstChild != nil {
 		cell.RemoveChild(cell.FirstChild)
 	}
@@ -166,7 +201,7 @@ func linkRefList(cell *html.Node, refs []string) bool {
 				pageID, blockID, ok = m[1], "", true
 			}
 		}
-		if !ok || !pageExists(pageID) {
+		if !ok || !v.canLink(pageID) {
 			bad = append(bad, r)
 			cell.AppendChild(&html.Node{Type: html.TextNode, Data: r})
 			continue
@@ -181,8 +216,7 @@ func linkRefList(cell *html.Node, refs []string) bool {
 		}
 	}
 	if len(bad) > 0 {
-		setAttr(cell, "class", "ref-missing")
-		setAttr(cell, "title", "参照の形でないか、ページが見つからない値があります: "+strings.Join(bad, "、"))
+		v.markMissing(cell, "参照の形でないか、ページが見つからない値があります: "+strings.Join(bad, "、"))
 	}
 	return true
 }
@@ -209,7 +243,9 @@ func linkRefDD(dd *html.Node, pageID, blockID string) {
 
 // ContactResolver は「このアドレスは誰のページか」に答える口です。
 // 返すのは（ページID・題・見つかったか）。
-type ContactResolver func(addr string) (pageID, title string, ok bool)
+// user は見ている人です（ログインしている人だけ——匿名の人には連絡帳のリンクを描かない）。読めない相手は
+// 見つからない扱いにすること。
+type ContactResolver func(user *auth.User, addr string) (pageID, title string, ok bool)
 
 // contactResolver は登録された解決係です（未登録なら nil）。
 var contactResolver ContactResolver
@@ -245,16 +281,19 @@ func RegisterContactResolver(r ContactResolver) {
 // 認可は解決係の中で見ます（読めない相手は見つからない扱い）。
 // ここは**匿名でも通る描画経路**なので、利用者はまだ分かりません——
 // リンクを踏んだ先で通常の関門が判定します（`linkRefDD` と同じ考え方）。
-func linkEmailDD(dd *html.Node) bool {
+func linkEmailDD(v refViewer, dd *html.Node) bool {
 	if contactResolver == nil {
 		return false // アドレス帳を持たない構成——素のまま出す
+	}
+	if v.user == nil {
+		return false // ログインしていない人には、連絡帳に載っているかを見せない（2026-10-26）
 	}
 	text := strings.TrimSpace(nodeText(dd))
 	addr, ok := normalizeEmailTag(text)
 	if !ok {
 		return false // アドレスが無い（名前だけのヘッダ）
 	}
-	pageID, title, found := contactResolver(addr)
+	pageID, title, found := contactResolver(v.user, addr)
 	if !found {
 		return false // まだアドレス帳に無い——素のまま出す
 	}
@@ -313,6 +352,7 @@ func lastIndexFold(text, sub string) (int, int) {
 // pageExists は派生索引でページの存在を引きます（描画のたびに呼ぶので索引で足りる。
 // 認可はしない——リンクを踏んだ先で通常の関門が判定する。存在の秘匿は匿名にだけ
 // 意味があり、匿名へ返る公開ページに書かれた参照はどのみち書き手が可視化している）。
+// 匿名の人に在るかどうかを見せないのは、呼び手の refViewer です（2026-10-26）。
 func pageExists(pageID string) bool {
 	idInt, err := strconv.Atoi(pageID)
 	if err != nil {
@@ -389,7 +429,7 @@ func parsePageRef(tagName, value string) (pageID string, ok bool) {
 //
 // ⚠ **登録されていない形式の表は触りません。** 索引に載らないのと同じ線引きで、
 // 普通の文章の表に書かれた `000047` のような数をリンクにしないためです。
-func linkRefCells(table *html.Node) bool {
+func linkRefCells(v refViewer, table *html.Node) bool {
 	if inVocabChrome(table) {
 		return false
 	}
@@ -438,7 +478,7 @@ func linkRefCells(table *html.Node) bool {
 			}
 			// 参照をいくつも並べたセル（2026-10-19）——1つずつリンクにする。
 			if refs := SplitRefList(nodeText(cell)); len(refs) > 1 {
-				if linkRefList(cell, refs) {
+				if linkRefList(v, cell, refs) {
 					changed = true
 				}
 				continue
@@ -460,18 +500,17 @@ func linkRefCells(table *html.Node) bool {
 			}
 			if !ok {
 				// 形が合わない値（打ちかけ・別の番号）も、宙ぶらりんとして知らせる。
-				setAttr(cell, "class", "ref-missing")
-				setAttr(cell, "title", "参照の形（ページID または ページID-ブロックID）ではありません")
-				changed = true
+				if v.markMissing(cell, "参照の形（ページID または ページID-ブロックID）ではありません") {
+					changed = true
+				}
 				continue
 			}
-			if pageExists(pageID) {
+			if v.canLink(pageID) {
 				linkRefDD(cell, pageID, blockID)
-			} else {
-				setAttr(cell, "class", "ref-missing")
-				setAttr(cell, "title", "参照先のページ "+pageID+" が見つかりません")
+				changed = true
+			} else if v.markMissing(cell, "参照先のページ "+pageID+" が見つかりません") {
+				changed = true
 			}
-			changed = true
 		}
 	}
 	return changed

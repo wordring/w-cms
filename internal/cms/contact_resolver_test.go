@@ -3,6 +3,8 @@ package cms
 import (
 	"strings"
 	"testing"
+
+	"w-cms/internal/auth"
 )
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ const resolverTestBody = `<dl data-type="tags">` +
 func TestEmailTagWithoutResolverStaysPlain(t *testing.T) {
 	withContactResolver(t, nil)
 
-	got := RenderReferenceLinks(resolverTestBody)
+	got := RenderReferenceLinks(refTestViewer, resolverTestBody)
 
 	if strings.Contains(got, "<a ") {
 		t.Errorf("解決係が居ないのにリンクが作られています: %s", got)
@@ -56,12 +58,12 @@ func TestEmailTagWithoutResolverStaysPlain(t *testing.T) {
 // **見える文字を変えない**ことを固定します。
 func TestEmailTagUsesRegisteredResolver(t *testing.T) {
 	var asked string
-	withContactResolver(t, func(addr string) (string, string, bool) {
+	withContactResolver(t, func(_ *auth.User, addr string) (string, string, bool) {
 		asked = addr
 		return "010999", "株式会社南北スポーツ機械", true
 	})
 
-	got := RenderReferenceLinks(resolverTestBody)
+	got := RenderReferenceLinks(refTestViewer, resolverTestBody)
 
 	// ① 解決係には**畳んだアドレスだけ**が渡る（表示名は付かない）。
 	if asked != "yamada@example-sports.co.jp" {
@@ -83,9 +85,12 @@ func TestEmailTagUsesRegisteredResolver(t *testing.T) {
 // TestEmailTagResolverMissIsPlain は、解決係が「知らない」と答えたときに
 // 素のまま出ることを固定します（薄赤にもしない——未登録は異常ではない）。
 func TestEmailTagResolverMissIsPlain(t *testing.T) {
-	withContactResolver(t, func(string) (string, string, bool) { return "", "", false })
+	withContactResolver(t, func(*auth.User, string) (string, string, bool) { return "", "", false })
 
-	if got := RenderReferenceLinks(resolverTestBody); strings.Contains(got, "<a ") {
+	if got := RenderReferenceLinks(refTestViewer, resolverTestBody); strings.Contains(got, "<a ") {
 		t.Errorf("知らない相手までリンクになっています: %s", got)
 	}
 }
+
+// refTestViewer は、参照のリンクの試験で見ている人です（ログインしている人——リンクと「見つかりません」の印を描く）。
+var refTestViewer = &auth.User{Username: "alice"}

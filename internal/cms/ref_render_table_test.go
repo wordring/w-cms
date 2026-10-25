@@ -40,7 +40,7 @@ func TestTableRefCellBecomesLink(t *testing.T) {
 		`<td>100</td><td>2026-10-15</td><td>材質変更</td><td>未着手</td></tr>` +
 		`</tbody></table>`
 
-	got := RenderReferenceLinks(body)
+	got := RenderReferenceLinks(refTestViewer, body)
 	if !strings.Contains(got, `href="/000047"`) {
 		t.Errorf("弊社品番がリンクになっていません:\n%s", got)
 	}
@@ -61,7 +61,7 @@ func TestTableRefCellMarksMissing(t *testing.T) {
 		`<td>100</td><td></td><td></td><td>未着手</td></tr>` +
 		`</tbody></table>`
 
-	got := RenderReferenceLinks(body)
+	got := RenderReferenceLinks(refTestViewer, body)
 	if !strings.Contains(got, `ref-missing`) {
 		t.Errorf("宙ぶらりんの参照が知らされていません:\n%s", got)
 	}
@@ -79,7 +79,7 @@ func TestTableRefCellIgnoresEmpty(t *testing.T) {
 		`<td>100</td><td></td><td></td><td>未着手</td></tr>` +
 		`</tbody></table>`
 
-	if got := RenderReferenceLinks(body); strings.Contains(got, `ref-missing`) {
+	if got := RenderReferenceLinks(refTestViewer, body); strings.Contains(got, `ref-missing`) {
 		t.Errorf("空欄を宙ぶらりん扱いしています:\n%s", got)
 	}
 }
@@ -104,7 +104,7 @@ func TestTableRefLeavesPlainTablesAlone(t *testing.T) {
 		`<tr><td>250401-203</td><td>発注書番号</td></tr>` +
 		`</tbody></table>`
 
-	got := RenderReferenceLinks(body)
+	got := RenderReferenceLinks(refTestViewer, body)
 	if strings.Contains(got, "ref-link") || strings.Contains(got, "ref-missing") {
 		t.Errorf("登録されていない表に手を入れています:\n%s", got)
 	}
@@ -124,7 +124,7 @@ func TestTableRefIgnoresNonRefColumns(t *testing.T) {
 		`<td>100</td><td></td><td></td><td>未着手</td></tr>` +
 		`</tbody></table>`
 
-	got := RenderReferenceLinks(body)
+	got := RenderReferenceLinks(refTestViewer, body)
 	if strings.Contains(got, "ref-link") || strings.Contains(got, "ref-missing") {
 		t.Errorf("⚠ 参照でない列を参照として扱っています（2026-09-04 の事故の再来）:\n%s", got)
 	}
@@ -151,7 +151,7 @@ func TestTableRefSkipsChromeRows(t *testing.T) {
 		`<tr class="order-checksum checksum-ok"><td colspan="8">✓ 検算: 合っています</td></tr>` +
 		`</tfoot></table>`
 
-	got := RenderReferenceLinks(body)
+	got := RenderReferenceLinks(refTestViewer, body)
 	if strings.Contains(got, "ref-missing") {
 		t.Errorf("⚠ 鏡の行を宙ぶらりんの参照として塗っています（合格が警告の色になります）:\n%s", got)
 	}
@@ -176,7 +176,7 @@ func TestTableRefCellListsSeveral(t *testing.T) {
 			`<td>1</td><td></td><td></td><td>未着手</td></tr></tbody></table>`
 	}
 	for _, v := range []string{"000047-ab12、000048-cd34", "000047-ab12 000048-cd34", "000047-ab12,　000048-cd34"} {
-		got := RenderReferenceLinks(row(v))
+		got := RenderReferenceLinks(refTestViewer, row(v))
 		if !strings.Contains(got, `<a href="/000047#ab12" class="ref-link">000047-ab12</a>、<a href="/000048#cd34" class="ref-link">000048-cd34</a>`) {
 			t.Errorf("%q: 並べた参照が1つずつのリンクになっていません:\n%s", v, got)
 		}
@@ -186,7 +186,7 @@ func TestTableRefCellListsSeveral(t *testing.T) {
 	}
 
 	// 1つでも無いページ・形の合わない値があれば、セルは薄赤。在る方はリンクのまま。
-	got := RenderReferenceLinks(row("000047-ab12、000999-zz99、メモ"))
+	got := RenderReferenceLinks(refTestViewer, row("000047-ab12、000999-zz99、メモ"))
 	if !strings.Contains(got, `ref-missing`) || !strings.Contains(got, `000999-zz99、メモ`) {
 		t.Errorf("無いページを指す値が知らされていません:\n%s", got)
 	}
