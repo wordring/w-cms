@@ -3,8 +3,8 @@
 #
 # Ubuntu 26.04 の gs には AppArmor の決まりが掛かっていて、HylaFAX の作業場所（/var/spool/hylafax）のファイルを読めない。
 # HylaFAX は送る PDF を gs で FAX の形（TIFF）に直すので、ここだけ読み書きを許す。
-/var/spool/hylafax/** r,
-owner /var/spool/hylafax/** rwk,
+# 書き先は faxq が先に作る（持ち主 uucp）ので、持ち主でなくても書けるようにする（2026-10-25 夜・owner だけだと gs〔root〕が書けなかった）。
+/var/spool/hylafax/** rwk,
 # HylaFAX（faxq）は gs を root で動かし、作業場所の PDF（持ち主 uucp・0640）を読ませる。root が持ち主の決まりを越えて読む力
 # （dac_override・dac_read_search）を、gs の決まりは禁じているので、ここで許す（読み書きできる場所は、上と元の決まりのまま）。
 # 足さないと、送る PDF の直しが「CONVERT DOCUMENT: exit status 0x100」で落ちる（2026-10-25 夜に業務サーバーで見た）。
