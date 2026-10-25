@@ -186,7 +186,7 @@
       ],
       "pdf_font": [
         "C:/Windows/Fonts/BIZ-UDGothicB.ttc",
-        "/usr/share/fonts/truetype/fonts-morisawa-bizud-gothic/BIZUDGothic-Bold.ttf",
+        "/usr/share/fonts/truetype/bizud-gothic/BIZUDGothic-Bold.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
       ],
       "pdf_font_face": 0,
