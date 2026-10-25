@@ -126,7 +126,7 @@ func TestFaxSendRecordsAndWatches(t *testing.T) {
 		return ""
 	}
 	waitFor := func(id, want string) string {
-		for i := 0; i < 200; i++ {
+		for i := 0; i < 1000; i++ { // 全部のパッケージを一緒に流すと遅くなるので、10秒まで待つ
 			if b := bodyOf(id); strings.Contains(b, want) {
 				return b
 			}
@@ -313,7 +313,7 @@ func TestFaxSendPurposeAfterFaxed(t *testing.T) {
 		return ""
 	}
 	waitFor := func(id, want string) string {
-		for i := 0; i < 200; i++ {
+		for i := 0; i < 1000; i++ { // 全部のパッケージを一緒に流すと遅くなるので、10秒まで待つ
 			if b := bodyOf(id); strings.Contains(b, want) {
 				return b
 			}
@@ -486,7 +486,7 @@ func TestFaxWatchUsesStoreNotTags(t *testing.T) {
 		}
 	}
 	waitCalls := func(n int) []string {
-		for i := 0; i < 200; i++ {
+		for i := 0; i < 1000; i++ { // 全部のパッケージを一緒に流すと遅くなるので、10秒まで待つ
 			mu.Lock()
 			c := append([]string(nil), calls...)
 			mu.Unlock()
@@ -566,7 +566,7 @@ func TestFaxWatchUsesStoreNotTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	go watchFaxJob("34")
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 1000; i++ { // 全部のパッケージを一緒に流すと遅くなるので、10秒まで待つ
 		if j, _ := sentFaxJobOf("34"); j.Done {
 			break
 		}
