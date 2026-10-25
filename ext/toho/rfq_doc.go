@@ -64,12 +64,12 @@ func init() {
 }
 
 // rfqDocFormHTML は見積依頼部材表の足元の「部材見積依頼書ページを作る」欄です（idx は何枚目の見積依頼部材表か・1始まり）。
-func rfqDocFormHTML(user *auth.User, pageID string, idx int) string {
+func rfqDocFormHTML(user *auth.User, pageID string, idx int, sig string) string {
 	f := func(id, label, ph, typ string) string {
 		return searchFieldHTML("rfqdoc", id, label, ph, typ)
 	}
 	return `<div class="matsearch-form rfq-doc-form" data-rfq-page="` + stdhtml.EscapeString(pageID) +
-		`" data-rfq-table="` + strconv.Itoa(idx) + `">` +
+		`" data-rfq-table="` + strconv.Itoa(idx) + `" data-rfq-table-sig="` + stdhtml.EscapeString(sig) + `">` +
 		signerFieldHTML(user) +
 		f("supplier", "仕入先", "みなと商店", "text") +
 		f("date", "部材見積依頼日", "", "date") +
@@ -189,6 +189,9 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Signer   string `json:"signer"`
 		Date     string `json:"date"`
 		Note     string `json:"note"`
+		// TableSig はその見積依頼部材表の中身の指紋です（2026-10-26）。番号だけだと、作ったあとの押し直しで、番号のずれた
+		// ほかの業者の表から部材見積依頼書を作って、その表を消した。
+		TableSig string `json:"table_sig"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -209,6 +212,16 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		cms.JSONFail(w, http.StatusInternalServerError, "本文を読めません: "+err.Error())
 		return
+	}
+	if sig := strings.TrimSpace(req.TableSig); sig != "" {
+		nodes, _ := htmldoc.ParseFragment(cur)
+		tables := tablesOfType(nodes, RFQDraftType)
+		at := pickBySig(len(tables), func(i int) string { return tableSig(tables[i]) }, req.Table-1, sig)
+		if at < 0 {
+			cms.JSONFail(w, http.StatusConflict, "この見積依頼部材表は、もう部材見積依頼書にしたか、ほかの人が直しました。ページを読み直してから押してください。")
+			return
+		}
+		req.Table = at + 1
 	}
 	lines, found := rfqDraftLinesOf(cur, req.Table)
 	// 片付けるときに比べるのは、表から読んだままの行（下の withMfg は行を書き換える——比べると製造ページでは

@@ -106,3 +106,30 @@ func TestOurOrderNewRefusesRepeatByDraftSig(t *testing.T) {
 		t.Errorf("⚠ 消す表を取り違えました（ボルトA の表だけ消えるはず）:\n%s", after)
 	}
 }
+
+// TestRFQNewRefusesRepeatByTableSig は、⚠ **同じ見積依頼部材表から2枚目の部材見積依頼書を作らない**ことを固定します
+// （2026-10-26——押し直しで、番号のずれたほかの業者の表から作り、その表を消した）。
+func TestRFQNewRefusesRepeatByTableSig(t *testing.T) {
+	setupExtTest(t, "000990", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 994, -1, "製造000994", "root", "302", true)
+	lineA := ourOrderLine{ProductID: "000031", Kind: "購入部品", ItemName: "ボルトA", Quantity: "8"}
+	lineB := ourOrderLine{ProductID: "000032", Kind: "購入部品", ItemName: "ナットB", Quantity: "4"}
+	body := `<h1>製造</h1>` + tableOfLinesHTML(RFQDraftType, []ourOrderLine{lineA}, true) + tableOfLinesHTML(RFQDraftType, []ourOrderLine{lineB}, true)
+	seedBody(t, "000994", body)
+	nodes, _ := htmldoc.ParseFragment(body)
+	tables := tablesOfType(nodes, RFQDraftType)
+	if len(tables) != 2 {
+		t.Fatalf("前提: 見積依頼部材表が %d 枚", len(tables))
+	}
+	req := map[string]any{"page_id": "000994", "table": 1, "table_sig": tableSig(tables[0]), "supplier": "わかば鋼業"}
+	if code, out := postRFQ(t, adminUser(), RFQNewDocAPIHandler, req); code != 200 {
+		t.Fatalf("部材見積依頼書を作れません: %d %v", code, out)
+	}
+	if code, out := postRFQ(t, adminUser(), RFQNewDocAPIHandler, req); code != 409 {
+		t.Errorf("⚠ 同じ表からもう1枚作りました: %d %v", code, out)
+	}
+	after := readPageBody(t, "000994")
+	if strings.Contains(after, "ボルトA") || !strings.Contains(after, "ナットB") {
+		t.Errorf("⚠ 消す表を取り違えました:\n%s", after)
+	}
+}

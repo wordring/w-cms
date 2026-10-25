@@ -396,6 +396,7 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	cms.DropChrome(el)
 	idx := ctx.Counter(RFQDraftType) + 1
 	pageID := page.FormatID(ctx.PageID)
+	sig := tableSig(el) // 表の中身の指紋（部材見積依頼書を作るとき、サーバーが同じ表かを確かめる・2026-10-26）
 	// 2026-10-21 夕から、行ごとのボタンは表の中に置かない——行の先頭にチェック、「↩ 外す」は表の下の欄（mfg_work.go と同じ形）。
 	prependRowChromeCells(el, "draft-pick-cell", func(n int, tr *html.Node) string {
 		return pickHTML("rfq-draft-pick", map[string]string{"row": strconv.Itoa(n + 1), "sig": rowSig(tr)})
@@ -406,7 +407,7 @@ func renderRFQDraft(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	box := draftBoxOf(el)
 	cms.DropChrome(box)
 	appendHTML(box, `<div class="vocab-chrome draft-form-box w-no-print" contenteditable="false">`+rowBar+
-		rfqDocFormHTML(ctx.Viewer, pageID, idx)+`</div>`)
+		rfqDocFormHTML(ctx.Viewer, pageID, idx, sig)+`</div>`)
 	return false, nil
 }
 

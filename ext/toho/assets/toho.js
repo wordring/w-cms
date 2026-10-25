@@ -864,6 +864,7 @@ async function openQuotePutPanel(btn) {
             const body = {
                 page_id: form.getAttribute('data-rfq-page') || '',
                 table: Number(form.getAttribute('data-rfq-table') || 0),
+                table_sig: form.getAttribute('data-rfq-table-sig') || '', // 表の中身の指紋（2026-10-26）
                 supplier: valueIn(form, '[data-rfqdoc="supplier"]'),
                 signer: valueIn(form, '[data-unorder="signer"]'),
                 date: valueIn(form, '[data-rfqdoc="date"]'),
