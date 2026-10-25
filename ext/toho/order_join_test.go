@@ -133,3 +133,18 @@ func TestRFQNewRefusesRepeatByTableSig(t *testing.T) {
 		t.Errorf("⚠ 消す表を取り違えました:\n%s", after)
 	}
 }
+
+// TestDeliveryNewRefusesWhenDraftGone は、⚠ **納品表から作る納品書は、その納品表がもう無ければ作らない**ことを固定します
+// （2026-10-26——作ったあと納品表は消すので、押し直すと2枚目の納品書ができ、出荷済数量と請求が二重になった）。
+func TestDeliveryNewRefusesWhenDraftGone(t *testing.T) {
+	setupExtTest(t, "000990", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 995, -1, "製造000995", "root", "302", true)
+	syncBody(t, 995, `<h1>製造</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`)
+	seedBody(t, "000995", `<h1>製造</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`)
+	code, out := postRFQ(t, adminUser(), DeliveryNewAPIHandler, map[string]any{
+		"mfg": "000995", "from_draft": true, "items": []map[string]any{{"order": "000030", "row": 1}},
+	})
+	if code != 409 || !strings.Contains(out["message"].(string), "納品表") {
+		t.Errorf("⚠ 納品表の無い製造ページから納品書を作ろうとして %d %v", code, out)
+	}
+}

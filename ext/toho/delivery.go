@@ -24,10 +24,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
+	"w-cms/internal/cms/htmldoc"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -228,6 +230,18 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "納める行を1つ以上選んでください")
 		return
 	}
+	// 1つずつ通し、納品表から作るときは、その納品表がまだ在るかを確かめる（2026-10-26）——作ったあと納品表は消すので、
+	// 応答が届かずに押し直すと、2枚目の納品書ができて出荷済数量と請求が二重になっていた。
+	deliveryNewMu.Lock()
+	defer deliveryNewMu.Unlock()
+	if req.FromDraft {
+		body, err := cms.ReadPageBody(mfgID)
+		nodes, perr := htmldoc.ParseFragment(body)
+		if err != nil || perr != nil || len(tablesOfType(nodes, MfgDeliveryDraftType)) == 0 {
+			cms.JSONFail(w, http.StatusConflict, "この製造ページの納品表は、もう納品書にしました（または消されています）。ページを読み直してください。")
+			return
+		}
+	}
 	var lines []deliveryLine
 	client := ""
 	for _, p := range req.Items {
@@ -280,3 +294,6 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	cms.WriteJSON(w, out)
 }
+
+// deliveryNewMu は、納品書を作る仕事を1つずつ通します（納品表を確かめてから消すまでに、同じ納品表から2枚目を作らせない）。
+var deliveryNewMu sync.Mutex
