@@ -265,13 +265,29 @@ if (w.version >= 4) {
 // 利用者:「とりあえず実装してみて、間に合わなかったらまた明日の夜やりましょう」——複合機を FAX の線から外したので、w-cms から送る。
 // 番号を聞き、確かめてから HylaFAX へ頼む。送れたかは、しばらく様子を見て知らせる（画面を閉じても、送ること自体は続く）。
 if (w.version >= 4) {
-    const { askConfirm } = w;
+    const { askConfirm, askChoice } = w;
     w.onFileMenu((info, items, f) => {
         if (info.kind !== 'pdf' || !f.pageId || !f.file) return;
         items.push({ icon: '📠', label: 'FAX で送る', title: 'この PDF を、業務サーバーのモデムから FAX で送ります', run: () => sendFax(f.pageId, f.file, info.name || f.file) });
     });
+    // askFaxNumber は送り先の番号を決めます。そのページの相手の FAX 番号（連絡帳など・/api/fax/numbers）があれば選ばせ、
+    // 無ければ（または「別の番号」なら）打ってもらう。やめたら空。
+    async function askFaxNumber(pageId, name) {
+        let cands = [];
+        try {
+            const d = await (await fetch('/api/fax/numbers?page_id=' + encodeURIComponent(pageId))).json();
+            if (d && d.success) cands = d.numbers || [];
+        } catch (e) { /* 候補が無くても、打てば送れる */ }
+        if (cands.length) {
+            const labels = cands.map(c => c.number + (c.label ? '（' + c.label + '）' : '')).concat(['別の番号を入れる']);
+            const i = await askChoice('「' + name + '」を FAX で送ります。送り先を選んでください。', labels);
+            if (i < 0) return '';
+            if (i < cands.length) return cands[i].number;
+        }
+        return (window.prompt('「' + name + '」を FAX で送ります。\n送り先の FAX の番号を入れてください（例 06-1234-5678）', '') || '').trim();
+    }
     async function sendFax(pageId, file, name) {
-        const number = (window.prompt('「' + name + '」を FAX で送ります。\n送り先の FAX の番号を入れてください（例 06-1234-5678）', '') || '').trim();
+        const number = await askFaxNumber(pageId, name);
         if (!number) return;
         if (!await askConfirm('「' + name + '」を、FAX の番号 ' + number + ' へ送ります。よろしいですか？', '送る', 'やめる')) return;
         const res = await fetch('/api/fax/send', w.jsonPost({ page_id: pageId, file, number }));

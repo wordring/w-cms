@@ -180,3 +180,35 @@ func TestFaxSendRecordsAndWatches(t *testing.T) {
 		t.Error("書けないページから送れてしまう")
 	}
 }
+
+// TestFaxCandidates は、FAX 番号の候補が、ページ自身の FAX番号・相手のページの FAX番号・登録された出どころから、
+// 同じ番号を1つにまとめて出ることを固定します（2026-10-25 夜・fax_numbers.go）。
+func TestFaxCandidates(t *testing.T) {
+	setupIntakeTest(t)
+	for id, body := range map[string]string{
+		"000500": `<h1>連絡帳の相手</h1><dl data-type="tags"><dt>` + FaxNumberTag + `</dt><dd>06-1111-2222</dd></dl>`,
+		"000501": `<h1>書類</h1><dl data-type="tags"><dt>` + FaxNumberTag + `</dt><dd>03-3333-4444</dd><dt>` + CounterpartTag + `</dt><dd>000500</dd></dl>`,
+	} {
+		if err := page.WriteSidecar(id, page.PageMeta{Owner: "alice", Mode: "330", ParentID: "000000"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := cms.SyncIndex(id, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := faxNumberSources.fns
+	t.Cleanup(func() { faxNumberSources.fns = old })
+	RegisterFaxNumberSource(func(_ *auth.User, pid int) []FaxCandidate {
+		return []FaxCandidate{{Number: "0611112222", Label: "重なり"}, {Number: "0455556666", Label: "拡張"}}
+	})
+	got := faxCandidates(&auth.User{Username: "alice"}, 501)
+	want := []string{"0333334444", "0611112222", "0455556666"}
+	if len(got) != len(want) {
+		t.Fatalf("候補 = %+v", got)
+	}
+	for i, w := range want {
+		if got[i].Number != w {
+			t.Errorf("候補[%d] = %+v, want %s", i, got[i], w)
+		}
+	}
+}
