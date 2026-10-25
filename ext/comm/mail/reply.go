@@ -156,6 +156,9 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		_, err = sentRecordBody(tmpl, "", source, "", "", time.Now(), req)
 	}
+	if err == nil {
+		_, err = comm.WritableMailBox(user) // 控えは通信箱の下に作る——書けないなら送らない（2026-10-26）
+	}
 	if err != nil {
 		cms.JSONFail(w, http.StatusConflict, "送信の控えを作れないので、送っていません: "+err.Error())
 		return
@@ -242,9 +245,9 @@ func MailSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 // **受信と同じ箱・同じ年月フォルダ**です（2026-09-05 の統合）。向きは置き場所ではなく
 // `向き：送信` のタグが表します。
 func recordSentMail(user *auth.User, tmpl, sourcePageID, messageID string, req ReplyRequest) (string, error) {
-	rootID, ok := comm.MailBoxPageID()
-	if !ok {
-		return "", comm.ErrNoMailBox
+	rootID, err := comm.WritableMailBox(user)
+	if err != nil {
+		return "", err
 	}
 	// 時刻は1回だけ取ります——年月フォルダと `送信日時` が、日付の変わり目で食い違わないように。
 	now := time.Now()

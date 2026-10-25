@@ -59,9 +59,14 @@ const listAllMax = 5000
 func ImportMessages(ctx context.Context, username string, opt ListOptions) (ImportSummary, error) {
 	var sum ImportSummary
 
-	inboxID, ok := comm.MailBoxPageID()
-	if !ok {
-		return sum, comm.ErrNoMailBox
+	// 取り込んだ記録は通信箱の下に作る——読み込む人が通信箱に書けなければ、何も読まない（2026-10-26）。
+	usr, err := auth.LookupUser(username)
+	if err != nil || usr == nil {
+		return sum, comm.ErrMailBoxNotWritable
+	}
+	inboxID, err := comm.WritableMailBox(usr)
+	if err != nil {
+		return sum, err
 	}
 	// **Max は「取り込む上限」であって「見る上限」ではありません。**
 	// 見るほうを絞ると、押し直しても同じ新しい50件を見て「全部重複」で止まり、

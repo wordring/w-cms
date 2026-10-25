@@ -450,3 +450,32 @@ func TestSendKeepsDraftWithChildren(t *testing.T) {
 		t.Errorf("draft_error が %q です（子ページがあると知らせるはず）", s)
 	}
 }
+
+// TestMailBoxReadersCannotCreateRecords は、⚠ **通信箱を読むだけの人は、下書きも送信の控えも作れない（送らない）**ことを
+// 固定します（2026-10-26。それまでは通信箱に書けない人も、通信箱の下に記録を作れた）。
+func TestMailBoxReadersCannotCreateRecords(t *testing.T) {
+	setupMailTest(t)
+	seedSourceMail(t)
+	putPage(t, "000100", "000000", "alice", "332", "<h1>"+comm.MailBoxTitle+"</h1>") // ほかの人は読むだけ
+	bob := &auth.User{Username: "bob"}
+	called := false
+	orig := sendMail
+	sendMail = func(_ *auth.User, m comm.OutgoingMail) (string, error) { called = true; return "<x@example.jp>", nil }
+	t.Cleanup(func() { sendMail = orig })
+	if code, out := callJSON(t, DraftSaveAPIHandler, "POST", "/api/mail/draft", map[string]any{
+		"purpose": comm.PurposeNew, "to": []string{"t@example.jp"}, "subject": "試験", "body": "本文",
+	}, bob); code != 409 {
+		t.Errorf("通信箱を読むだけの人が下書きを作れました: %d %v", code, out)
+	}
+	if code, out := callJSON(t, MailSendAPIHandler, "POST", "/api/mail/send", map[string]any{
+		"purpose": comm.PurposeNew, "to": []string{"t@example.jp"}, "subject": "試験", "body": "本文",
+	}, bob); code != 409 || called {
+		t.Errorf("通信箱を読むだけの人の送信が %d・送った=%v です（409 で送らないはず）: %v", code, called, out)
+	}
+	// 書ける人は送れる（断りが効きすぎていない）。
+	if code, out := callJSON(t, MailSendAPIHandler, "POST", "/api/mail/send", map[string]any{
+		"purpose": comm.PurposeNew, "to": []string{"t@example.jp"}, "subject": "試験", "body": "本文",
+	}, alice); code != 200 || !called {
+		t.Errorf("書ける人が送れません: %d %v", code, out)
+	}
+}

@@ -233,6 +233,23 @@ func ExistingIntakePage(tagName, value string) (string, bool) {
 	return "", false
 }
 
+// ErrMailBoxNotWritable は、通信箱へ書けない利用者が記録を作ろうとしたときの断りです。
+var ErrMailBoxNotWritable = errors.New("通信箱に書けないので、記録を作れません")
+
+// WritableMailBox は、利用者 user が書ける通信箱のページIDを返します（2026-10-26。それまでは、通信箱を読むだけの人も
+// 下書き・送信の控え・取り込んだメールの記録を通信箱の下に作れた）。
+func WritableMailBox(user *auth.User) (string, error) {
+	root, ok := MailBoxPageID()
+	if !ok {
+		return "", ErrNoMailBox
+	}
+	n, err := strconv.Atoi(root)
+	if err != nil || user == nil || !page.GetPerms(n).CanWrite(user) {
+		return "", ErrMailBoxNotWritable
+	}
+	return root, nil
+}
+
 // InMailBox は、ページ id が通信箱の下（子孫）にあるかを返します。通信箱が無ければ false。
 func InMailBox(id int) bool {
 	root, ok := MailBoxPageID()

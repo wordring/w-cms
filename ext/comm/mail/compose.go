@@ -421,9 +421,9 @@ func DraftSaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rootID, ok := comm.MailBoxPageID()
-	if !ok {
-		cms.JSONFail(w, http.StatusConflict, comm.ErrNoMailBox.Error())
+	rootID, err := comm.WritableMailBox(user)
+	if err != nil {
+		cms.JSONFail(w, http.StatusConflict, err.Error())
 		return
 	}
 	id, err := comm.CreateRecordPage(rootID, user.Username, time.Now(), body)
