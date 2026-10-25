@@ -157,6 +157,12 @@ func DeleteCheckAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// 消せる人（書ける人）だけに見せる（2026-10-26。それまでは読めるだけの人にも、読めないページから指されている数と、
+	// 読めない子ページも含めた子の数を返していて、見えないページがあることが分かった）。
+	if !page.GetPerms(pageID).CanWrite(user) {
+		http.Error(w, "このページを消す権限がありません", http.StatusForbidden)
+		return
+	}
 	imp, err := DeleteImpactOf(database.DB, user, id)
 	if err != nil {
 		JSONFail(w, http.StatusInternalServerError, "消す前の確かめができません: "+err.Error())

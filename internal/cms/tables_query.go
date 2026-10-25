@@ -143,7 +143,10 @@ func readableTable(tx *sql.Tx, table string, canView func(int) bool) (pages []in
 	for _, c := range names {
 		sel = append(sel, `COUNT(`+quoteIdent(c)+`)`)
 	}
-	in, args := inClause(pages)
+	in, args, err := inClause(tx, pages)
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	counts := make([]any, len(sel))
 	nums := make([]int, len(sel))
 	for i := range counts {
@@ -161,13 +164,39 @@ func readableTable(tx *sql.Tx, table string, canView func(int) bool) (pages []in
 	return pages, cols, nums[0], nil
 }
 
-// inClause は `(?, ?, …)` と束ねる値を返します。
-func inClause(ids []int) (string, []any) {
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
+// inClauseMax は、IN の中に値を並べる数の上限です。これより多いときは、一時の表に入れて引く（試験で縮める）。
+var inClauseMax = 500
+
+// inClause は、ページ番号 ids の IN の右側（`(?, ?, …)` か一時の表を引く副問い合わせ）と、束ねる値を返します。
+//
+// ⚠ 2026-10-26 まで、読めるページを全部 `?` で並べていました。SQLite の束ねる値の上限（32766）を超える数のページを
+// 読める人では、表の一覧も表を探すのも落ちました（【考察】コードの矛盾 §4.2）。多いときは、この取引の中だけの
+// 一時の表（temp.wcms_readable）に入れて引く。
+func inClause(tx *sql.Tx, ids []int) (string, []any, error) {
+	if len(ids) <= inClauseMax {
+		args := make([]any, len(ids))
+		for i, id := range ids {
+			args[i] = id
+		}
+		return `(` + strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ") + `)`, args, nil
 	}
-	return `(` + strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ") + `)`, args
+	if _, err := tx.Exec(`CREATE TEMP TABLE IF NOT EXISTS wcms_readable (id INTEGER PRIMARY KEY)`); err != nil {
+		return "", nil, err
+	}
+	if _, err := tx.Exec(`DELETE FROM temp.wcms_readable`); err != nil {
+		return "", nil, err
+	}
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO temp.wcms_readable (id) VALUES (?)`)
+	if err != nil {
+		return "", nil, err
+	}
+	defer stmt.Close()
+	for _, id := range ids {
+		if _, err := stmt.Exec(id); err != nil {
+			return "", nil, err
+		}
+	}
+	return `(SELECT id FROM temp.wcms_readable)`, nil, nil
 }
 
 // TablesFor は、閲覧者が探せる表と列を名前順に返します。
@@ -258,7 +287,10 @@ func QueryTable(user *auth.User, q TableQuery) (TableResult, error) {
 		}
 	}
 
-	in, args := inClause(pages)
+	in, args, err := inClause(tx, pages)
+	if err != nil {
+		return TableResult{}, err
+	}
 	where := []string{colPageID + ` IN ` + in}
 	var shown []string // 表示用の SQL の条件（値は埋め込み・読めるページの絞りは無し）
 	for _, cond := range q.Where {

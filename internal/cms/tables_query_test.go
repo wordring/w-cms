@@ -163,3 +163,24 @@ func TestQueryTableLimitAndSQL(t *testing.T) {
 		t.Errorf("行の出どころが違います: %+v", res.Rows[0])
 	}
 }
+
+// TestQueryTableManyReadablePages は、読めるページが多いとき（IN に並べず一時の表で引く）も、読めるページの行だけが返り、
+// 一覧と探すが動くことを固定します（2026-10-26。それまでは束ねる値の上限を超えると落ちた）。
+func TestQueryTableManyReadablePages(t *testing.T) {
+	seedQueryPages(t)
+	old := inClauseMax
+	inClauseMax = 0 // どのページの数でも一時の表を通す
+	t.Cleanup(func() { inClauseMax = old })
+	res := mustQuery(t, alice, TableQuery{Table: "受注明細表", Columns: []string{"品番"},
+		Where: []TableCondition{{Column: "数量", Op: "gte", Value: "5"}}})
+	if got := strings.Join(firstColumn(res), ","); got != "A100-B01-002" {
+		t.Errorf("⚠ 一時の表で引くと、読めない行が見えるか条件が効きません: %s", got)
+	}
+	tables, err := TablesFor(alice)
+	if err != nil || len(tables) != 1 || tables[0].Rows != 2 {
+		t.Fatalf("⚠ 一時の表で引くと、一覧が違います: %+v %v", tables, err)
+	}
+	if n := len(mustQuery(t, admin, TableQuery{Table: "受注明細表"}).Rows); n != 3 {
+		t.Errorf("管理者には3行のはず: %d", n)
+	}
+}

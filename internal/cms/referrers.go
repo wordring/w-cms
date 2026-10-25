@@ -22,13 +22,17 @@ import (
 //   - 自分自身と、テンプレートの下のページは数えません。
 // ─────────────────────────────────────────────────────────────────────────
 
-// refIDRe は参照の値の中のページ番号（6桁）です。
-var refIDRe = regexp.MustCompile(`(?:^|[^0-9])([0-9]{6})(?:[^0-9]|$)`)
+// digitRunRe は値の中の数字の続きです（参照の値の中のページ番号は、ちょうど6桁の続き）。
+//
+// ⚠ 2026-10-26 まで、前後の区切りを含めて「6桁」を探していました。区切りが1つ前の当たりに食われるので、
+// 「001234、001235」の2つ目以降が見えず、相乗りの部材発注書が指している製造ページを、指されていないとして
+// ごみ箱へ移せました（mfg_drop.go）。いまは数字の続きを全部拾って、6桁のものだけを比べる。
+var digitRunRe = regexp.MustCompile(`[0-9]+`)
 
 // refValueNames は値が id を含むかです（6桁の番号として）。
 func refValueNames(value, id string) bool {
-	for _, m := range refIDRe.FindAllStringSubmatch(value, -1) {
-		if m[1] == id {
+	for _, run := range digitRunRe.FindAllString(value, -1) {
+		if len(run) == 6 && run == id {
 			return true
 		}
 	}

@@ -119,4 +119,12 @@ func TestDeletePageRefusesWhenItBreaksSomething(t *testing.T) {
 	if out.Empty || out.CanForce || !strings.Contains(strings.Join(out.Lines, "\n"), "/000054") {
 		t.Errorf("⚠ 確かめの答えが違います: %+v", out)
 	}
+	// 読めるだけの人には見せない（見えないページから指されている数・子の数が分かるので・2026-10-26）。
+	newPage(t, "000055", `<h1>読むだけ</h1>`, page.PageMeta{Owner: "bob", Mode: "302", ParentID: TopPageID})
+	req = auth.WithUser(httptest.NewRequest("GET", "/api/delete-check?id=000055", nil), alice)
+	rr = httptest.NewRecorder()
+	DeleteCheckAPIHandler(rr, req)
+	if rr.Code != 403 {
+		t.Errorf("⚠ 消せない人に消す前の確かめを返しています: %d %s", rr.Code, rr.Body.String())
+	}
 }
