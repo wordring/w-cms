@@ -874,8 +874,15 @@
         if (!confirm(formatDateTime(v.at) + ' の版に本文を戻します。よろしいですか？\n'
             + '（いまの内容も履歴に残るので、戻すことができます）')) return;
         msg.textContent = '戻しています…';
+        // 書きかけを先に保存し、保存できなければ戻さない（2026-10-26。戻すと本文を載せ替えるので、送れていない書きかけと
+        // 決めていない2つの版が消えた——「いまの内容も履歴に残る」は、送れた内容にしか当たらない）。
+        if (document.body.hasAttribute('edit-mode') && !(await flushPendingSave())) {
+            msg.textContent = '';
+            notify('書きかけを保存できない（または決めていない2つの版がある）ので、戻していません。先に保存してください。', { type: 'error', duration: 8000 });
+            return;
+        }
         try {
-            const res = await lockedFetch('/api/revert', jsonPost({ page_id: currentPageId, version: v.id }));
+            const res = await fetch('/api/revert', jsonPost({ page_id: currentPageId, version: v.id }));
             const d = await readResult(res);
             if (!res.ok || !d.success) throw new Error(failMessage(res, d));
             msg.textContent = '';
