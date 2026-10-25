@@ -125,6 +125,12 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		tmp.Close()
 		return err
 	}
+	// 名前を替える前にディスクへ書き切る（2026-10-26。サーバー機に UPS が無く、停電の直後に新しく作ったファイルが
+	// 空で戻ることがあった——ext4 は置き換えには備えがあるが、新しいファイルには無い）。
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
