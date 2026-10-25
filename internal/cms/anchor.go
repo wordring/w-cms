@@ -169,10 +169,16 @@ func anchorSlug(s string) string {
 
 // stripShellPrefix は殻の接頭辞を無くなるまで剥がします（サニタイザと同じ規則）。
 func stripShellPrefix(v string) string {
-	for strings.HasPrefix(v, htmldoc.ShellIDPrefix) {
-		v = v[len(htmldoc.ShellIDPrefix):]
+	for {
+		switch {
+		case strings.HasPrefix(v, htmldoc.ShellIDPrefix):
+			v = v[len(htmldoc.ShellIDPrefix):]
+		case strings.HasPrefix(v, htmldoc.ScriptGlobalPrefix):
+			v = v[len(htmldoc.ScriptGlobalPrefix):]
+		default:
+			return v
+		}
 	}
-	return v
 }
 
 // uniqueAnchor は未使用のアンカー名を返します（重複は -2, -3 … と連番）。

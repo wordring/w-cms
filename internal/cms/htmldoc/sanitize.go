@@ -102,11 +102,22 @@ const ShellIDPrefix = "w-"
 // 1回目のサニタイズで "w-x"、2回目で "x" となり、
 // Sanitize(Sanitize(v)) == Sanitize(v) が崩れて保存時エコーバックが収束しません。
 func stripShellIDPrefix(v string) string {
-	for strings.HasPrefix(v, ShellIDPrefix) {
-		v = v[len(ShellIDPrefix):]
+	for {
+		switch {
+		case strings.HasPrefix(v, ShellIDPrefix):
+			v = v[len(ShellIDPrefix):]
+		case strings.HasPrefix(v, ScriptGlobalPrefix):
+			v = v[len(ScriptGlobalPrefix):]
+		default:
+			return v
+		}
 	}
-	return v
 }
+
+// ScriptGlobalPrefix は、画面の JS が window に置く名前の頭です（window.wcmsMailCompose など）。
+// ブラウザは id を持つ要素を同じ名前で window から引けるので、本文に id="wcmsMailCompose" があると、その名前の JS が
+// 要素に化けて、送る欄などが黙って動かなくなりました（2026-10-26）。本文の id からは、この頭も剥がします。
+const ScriptGlobalPrefix = "wcms"
 
 // globalAttributes はどの許可要素にも共通で通す属性です。
 // 要素ごとの許可リスト（構造HTML＋`data-*` マーカー）に加えて評価されます。

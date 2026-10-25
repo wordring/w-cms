@@ -25,7 +25,8 @@
     'use strict';
     // 2度読み込まれたら、2度目は何もしない（2026-10-20 に置き場を移したとき、入れ替えの途中で殻の古い <script> と、拡張が
     // 登録した <script> の両方から読まれることがある——送る欄を2度配線しない）。
-    if (window.wcmsMailCompose) return;
+    // 本文の id="wcmsMailCompose" の要素も window から同じ名前で引けるので、中身（open）まで見る（2026-10-26）。
+    if (window.wcmsMailCompose && typeof window.wcmsMailCompose.open === 'function') return;
 
     function el(tag, cls, text) {
         const e = document.createElement(tag);

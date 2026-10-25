@@ -39,3 +39,17 @@ func TestShellIDsAreNamespaced(t *testing.T) {
 			htmldoc.ShellIDPrefix, bad)
 	}
 }
+
+// TestBodyIDsDoNotShadowScriptGlobals は、本文の id から画面の JS の名前の頭（wcms）も剥がすことを固定します（2026-10-26）。
+// 剥がさないと、id="wcmsMailCompose" の要素が window.wcmsMailCompose に化けて、送る欄が黙って動かなくなった。
+func TestBodyIDsDoNotShadowScriptGlobals(t *testing.T) {
+	out := Sanitize(`<p id="wcmsMailCompose">x</p><p id="w-wcmsFlushSave">y</p><h2>wcmsBeforeLogout</h2>`)
+	for _, bad := range []string{`id="wcmsMailCompose"`, `id="wcmsFlushSave"`, `id="w-`} {
+		if strings.Contains(out, bad) {
+			t.Errorf("⚠ 本文に %s が残りました: %s", bad, out)
+		}
+	}
+	if a := anchorSlug("wcmsBeforeLogout"); strings.HasPrefix(a, "wcms") {
+		t.Errorf("⚠ 見出しのアンカーが wcms で始まります: %q", a)
+	}
+}
