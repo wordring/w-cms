@@ -142,6 +142,7 @@ func moveToTrash(id string) (string, error) {
 	if err := os.Rename(src, dst); err != nil {
 		return "", err
 	}
+	noteTrashed(id) // 消したページの番号を使い回さない（page_id_floor.go）
 	return dst, nil
 }
 

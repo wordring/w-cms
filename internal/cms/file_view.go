@@ -396,7 +396,13 @@ func appendChrome(el *html.Node, innerHTML string) {
 // attachmentVersionQuery は、添付の住所 url（/ページ番号/保存名）に添える「?v=書いた時刻」です。読めなければ空。
 func attachmentVersionQuery(pageID, url string) string {
 	name := url[strings.LastIndexByte(url, '/')+1:]
-	fi, err := os.Stat(filepath.Join(page.AttachmentDir(pageID), name))
+	// 古い置き場（ページのフォルダの直下）の添付も見る（2026-10-26。それまでは files/ だけを見ていて、古い置き場の添付は
+	// 上書きしても ?v= が付かず、ブラウザが前の中身を見せ続けた）。
+	p, ok := page.AttachmentPath(pageID, name)
+	if !ok {
+		return ""
+	}
+	fi, err := os.Stat(p)
 	if err != nil {
 		return ""
 	}

@@ -510,3 +510,41 @@ func TestRebuildIfNeeded(t *testing.T) {
 		t.Errorf("DBが空でないのに再構築が走りました: title=%s", title)
 	}
 }
+
+// TestReserveNewPageIDSkipsTrashedIDs は、いちばん大きい番号のページを消しても、次のページがその番号を使い回さないこと・
+// ごみ箱にある番号より大きい番号を出すことを固定します（2026-10-26。それまでは消した番号をすぐ使い回し、本番のごみ箱に
+// 同じ番号が何度も入っていた）。
+func TestReserveNewPageIDSkipsTrashedIDs(t *testing.T) {
+	newTestFileDB(t)
+	trashFloor.Lock()
+	trashFloor.loaded, trashFloor.n = false, 0
+	trashFloor.Unlock()
+	t.Cleanup(func() {
+		trashFloor.Lock()
+		trashFloor.loaded, trashFloor.n = false, 0
+		trashFloor.Unlock()
+	})
+	// ごみ箱に 000050 がある（作り直した索引には無い）。
+	if err := os.MkdirAll(page.GetTrashDir("000050"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id, err := reserveNewPageID(sql.NullInt64{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "000051" {
+		t.Errorf("ごみ箱の番号より大きくなっていません: %s（000051 のはず）", id)
+	}
+	// いちばん大きいページ（000051）を消してから作っても、000051 を使い回さない。
+	newPage(t, id, "<h1>消す</h1>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
+	if _, err := DeletePageToTrash(id); err != nil {
+		t.Fatal(err)
+	}
+	again, err := reserveNewPageID(sql.NullInt64{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again == id {
+		t.Errorf("⚠ 消したページの番号 %s を使い回しました", id)
+	}
+}

@@ -33,9 +33,11 @@ type PageSummary struct {
 // IDが得られ、ID衝突（[docs/考察/【考察】同時編集の競合対策.md] シナリオE）を防ぎます。
 // parent は親ページID（トップレベルは無効値 sql.NullInt64{}）。属性の正本はサイドカーです。
 func reserveNewPageID(parent sql.NullInt64) (string, error) {
+	// 番号は、いまのページとごみ箱のページのどちらよりも大きくする（page_id_floor.go——消したページの番号を使い回さない）。
+	// 1つの文の中で数えて入れるので、同時に作っても重ならない（書き込みは SQLite が1つずつ通す）。
 	result, err := database.DB.Exec(
-		`INSERT INTO pages (title, parent_id, file_path) VALUES (?, ?, '')`,
-		"新しいページ", parent,
+		`INSERT INTO pages (id, title, parent_id, file_path) VALUES ((SELECT MAX(COALESCE((SELECT MAX(id) FROM pages), 0), ?) + 1), ?, ?, '')`,
+		trashHighWater(), "新しいページ", parent,
 	)
 	if err != nil {
 		return "", err
