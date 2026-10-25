@@ -295,8 +295,13 @@ func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 書けない相手で止まり続けないよう、書くたびに期限を置く。読めなくなった人（権限を替えた・読めない所へ動かした）には
 	// 流し続けない——知らせには、だれがいつ書いたか・ほかの人の名前が入るため（2026-10-22 の見直し）。
 	rc := http.NewResponseController(w)
-	user, idInt := auth.CurrentUser(r), atoiOr0(id)
-	stillReadable := func() bool { return page.CanView(user, idInt) }
+	// 利用者は毎回いまの状態で引き直す（2026-10-26。受けたときの写しのままだと、ログアウト・無効・グループから外す・
+	// 管理者から外す、のあとも流し続けた）。
+	idInt := atoiOr0(id)
+	stillReadable := func() bool {
+		u := auth.FreshUser(r)
+		return u != nil && page.CanView(u, idInt)
+	}
 	write := func(s string) bool {
 		rc.SetWriteDeadline(time.Now().Add(pageEventsWriteTimeout))
 		if _, err := w.Write([]byte(s)); err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // ページの更新の通知（page_events.go・2026-10-07）の番人です。
@@ -146,6 +147,12 @@ func TestPageEventsPublishDoesNotWaitForStuckTabs(t *testing.T) {
 // 書き込みで updated。読めない人は断られ、購読も残らない。
 func TestPageEventsStream(t *testing.T) {
 	setupSaveTest(t)
+	setupAuditDB(t) // 流すたびに利用者を引き直す（auth.FreshUser）ので、利用者は DB に要る
+	for _, name := range []string{"alice", "mallory"} {
+		if err := auth.CreateUser(name, "pw-"+name, false, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
 	newPage(t, "000055", `<h1>流れ</h1>`, page.PageMeta{Owner: "alice", Mode: "300"}) // 持ち主だけ読める
 	var user *auth.User
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,13 +214,28 @@ func TestPageEventsStream(t *testing.T) {
 	if ev := read(); ev.Type != "updated" || ev.By != "alice" {
 		t.Errorf("書き込みの知らせ = %+v", ev)
 	}
+	// 無効にした人には、つないだままでも流さない（2026-10-26——受けたときの写しで見ていた）。
+	if _, err := database.AuthDB.Exec(`UPDATE users SET disabled = 1 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := RewriteBody("000055", "bob", func(cur string) string { return cur + "<p>また足した</p>" }); err != nil {
+		t.Fatalf("RewriteBody: %v", err)
+	}
+	select {
+	case s := <-lines:
+		t.Errorf("⚠ 無効にした人に知らせを流しました: %s", s)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if _, err := database.AuthDB.Exec(`UPDATE users SET disabled = 0 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
 
 	// 断った人の購読は残っていない（読める人の1本だけ）。
 	watchers.mu.Lock()
 	n := len(watchers.subs["000055"])
 	watchers.mu.Unlock()
-	if n != 1 {
-		t.Errorf("購読の数 = %d（読める人の1本のはず）", n)
+	if n != 0 {
+		t.Errorf("購読の数 = %d（無効にした人の1本も切れて 0 のはず）", n)
 	}
 }
 

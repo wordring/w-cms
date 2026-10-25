@@ -186,18 +186,27 @@ func LockEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(": connected\n\n")) // 初期コメント（接続確立）
 	flusher.Flush()
 
+	// 流すたびに、いまも書ける人かを確かめる（2026-10-26。それまでは、権限を替えた・ログアウトした・無効にしたあとも、
+	// ロックの様子と持ち主の名前を流し続けた）。
+	stillWriter := func() bool {
+		u := auth.FreshUser(r)
+		return u != nil && page.CanView(u, idInt) && page.GetPerms(idInt).CanWrite(u)
+	}
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
 	for {
 		select {
 		case ev, open := <-s.ch:
-			if !open {
+			if !open || !stillWriter() {
 				return
 			}
 			b, _ := json.Marshal(ev)
 			w.Write([]byte("data: " + string(b) + "\n\n"))
 			flusher.Flush()
 		case <-keepalive.C:
+			if !stillWriter() {
+				return
+			}
 			w.Write([]byte(": ping\n\n"))
 			flusher.Flush()
 		case <-r.Context().Done():
