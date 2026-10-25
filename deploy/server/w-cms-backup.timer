@@ -1,0 +1,12 @@
+# w-cms の夜の控えを、毎晩 2時30分に動かします（2026-10-25）。
+# 止まっていて時刻を過ぎたら、次に起きたときに動かします（Persistent）。
+
+[Unit]
+Description=w-cms の夜の控え（毎晩 2:30）
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

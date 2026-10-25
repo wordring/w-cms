@@ -1,0 +1,15 @@
+# w-cms の夜の控え（2026-10-25・deploy/server/w-cms-backup・README.md）。
+# 置き場所: /etc/systemd/system/w-cms-backup.service と w-cms-backup.timer → `sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-backup.timer`
+# 本番のデータを、控え用の SSD（/srv/backup）へ写します。試験用で試すときは、DATA と DEST を替えて手で動かします（README）。
+
+[Unit]
+Description=w-cms の夜の控え
+RequiresMountsFor=/srv/backup
+
+[Service]
+Type=oneshot
+Environment=DATA=/var/lib/w-cms/data
+Environment=DEST=/srv/backup/w-cms/data
+ExecStart=/usr/local/bin/w-cms-backup
+Nice=10
+IOSchedulingClass=idle

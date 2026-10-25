@@ -1,0 +1,64 @@
+#!/bin/bash
+# w-cms の夜の控え（2026-10-25・docs/考察/【考察】職場のサーバー機と社外からの接続.md §7.1・deploy/server/README.md）。
+#
+# 利用者:「過去のデータが全部なくなるのはマズいです」——控え用の SSD（/srv/backup）へ、日ごとの写しを残す。
+#   - 写すもの: master（本文・添付・版）・trash（ごみ箱）・mail（メールのサインイン）・webpush（通知の鍵）・tls・autocomplete.json、
+#     それに auth.db（利用者）を SQLite のバックアップの形で。
+#   - 写さないもの: cms.db・tables.db（本文から作り直せる）・_reset-*（古い控え）。
+#   - 日ごとの写しは、前の日の写しと変わらないファイルを共有する（rsync --link-dest）。大きさは変わった分しか増えない。
+#   - 残すのは、日ごと14日ぶんと、月ごと12か月ぶん。
+#
+# 使い方: DATA=<データの場所> DEST=<控えの置き場> w-cms-backup
+#   例 DATA=/var/lib/w-cms/data DEST=/srv/backup/w-cms/data w-cms-backup
+# root で動かします（w-cms のデータは持ち主しか読めない）。
+set -euo pipefail
+
+DATA=${DATA:?DATA（データの場所）がありません}
+DEST=${DEST:?DEST（控えの置き場）がありません}
+KEEP_DAILY=${KEEP_DAILY:-14}
+KEEP_MONTHLY=${KEEP_MONTHLY:-12}
+MOUNT=${MOUNT:-/srv/backup}
+
+say() { logger -t w-cms-backup "$*"; echo "$*"; }
+
+# 控え用の SSD がマウントされていなければ止める（SSD が外れているのに / へ写して、システムのディスクを埋めないため）。
+mountpoint -q "$MOUNT" || { say "控え用の SSD（$MOUNT）がマウントされていません"; exit 1; }
+case "$DEST" in "$MOUNT"/*) ;; *) say "控えの置き場 $DEST が $MOUNT の下にありません"; exit 1 ;; esac
+[ -d "$DATA/master" ] || { say "データの場所 $DATA に master がありません"; exit 1; }
+
+today=$(date +%F)
+month=$(date +%Y-%m)
+mkdir -p "$DEST/daily" "$DEST/monthly"
+work="$DEST/daily/.$today.partial"
+rm -rf "$work"
+mkdir -p "$work"
+
+# 利用者の DB は、動いているあいだも書かれるので、SQLite のバックアップの形で写す（そのまま写すと壊れた写しになることがある）。
+if [ -f "$DATA/auth.db" ]; then
+  sqlite3 "$DATA/auth.db" ".backup '$work/auth.db'"
+fi
+
+link=()
+[ -d "$DEST/latest" ] && link=(--link-dest="$(readlink -f "$DEST/latest")")
+items=()
+for x in master trash mail webpush tls autocomplete.json; do
+  [ -e "$DATA/$x" ] && items+=("$DATA/$x")
+done
+rsync -a --delete "${link[@]}" "${items[@]}" "$work/"
+
+rm -rf "$DEST/daily/$today"
+mv "$work" "$DEST/daily/$today"
+ln -sfn "daily/$today" "$DEST/latest"
+
+# 月ごと: その月の最初の控えを残す（ファイルは日ごとの写しと共有する）。
+if [ ! -e "$DEST/monthly/$month" ]; then
+  cp -al "$DEST/daily/$today" "$DEST/monthly/$month"
+fi
+
+# 古いものを消す（名前が日付なので、名前の順が古い順）。
+prune() { local dir=$1 keep=$2; ls -1 "$dir" | grep -E '^[0-9]{4}-[0-9]{2}' | sort | head -n -"$keep" | while read -r old; do rm -rf "${dir:?}/$old"; done; }
+prune "$DEST/daily" "$KEEP_DAILY"
+prune "$DEST/monthly" "$KEEP_MONTHLY"
+
+files=$(find "$DEST/daily/$today" -type f | wc -l)
+say "控えを作りました: $DEST/daily/$today（$files ファイル）・置き場の空き $(df -h --output=avail "$DEST" | tail -1 | tr -d ' ')"

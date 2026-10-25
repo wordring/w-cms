@@ -13,6 +13,7 @@
 | 試験用のデータ | `/var/lib/w-cms/data-test` | w-cms（0700） |
 | 本番の設定 | `/etc/w-cms/w-cms.env` | root（0600） |
 | 試験用の設定 | `/etc/w-cms/test.env` | root（0600） |
+| 夜の控え | `/srv/backup/w-cms/<data か data-test>/`（控え用の SSD） | root |
 
 w-cms を動かすのは、専用の利用者 `w-cms` です（ログインできない利用者）。電話の道具（`deploy/phone`）も同じ利用者で動きます。
 
@@ -67,3 +68,42 @@ journalctl -u w-cms-test -f
 
 - 落ちたら3秒で起こし直します。書けるのはデータの場所だけです（`ProtectSystem=strict`）。
 - 本番の `w-cms.service` は、いまの PC から引っ越すときに起こします（2つの本番を同時に動かさない）。
+
+## 夜の控え（控え用の SSD）
+
+控え用の SSD を `/srv/backup` にマウントし、毎晩 2時30分に `w-cms-backup` が写します。日ごとの写しを14日ぶん、月ごとの写しを12か月ぶん残します。変わらないファイルは前の日の写しと共有するので、大きさは変わった分しか増えません。
+
+### 控え用の SSD を整える（はじめに1回）
+
+⚠ 選んだ SSD の中身は消えます。`lsblk` で、パーティションの無い控え用の SSD（例 `nvme0n1`）であることを確かめてから流します。
+
+```bash
+sudo parted -s /dev/nvme0n1 mklabel gpt mkpart backup ext4 0% 100%
+sudo mkfs.ext4 -L w-cms-backup /dev/nvme0n1p1
+sudo mkdir -p /srv/backup
+echo "LABEL=w-cms-backup /srv/backup ext4 defaults,nofail,x-systemd.device-timeout=10 0 2" | sudo tee -a /etc/fstab
+sudo systemctl daemon-reload && sudo mount /srv/backup
+```
+
+`nofail` なので、控え用の SSD が壊れても、サーバー機は起き上がります（控えは止まり、`w-cms-backup` がそう記録します）。
+
+### 仕掛けを置く
+
+```bash
+sudo apt install -y sqlite3 rsync
+sudo install -m 0755 /opt/w-cms/repo/deploy/server/w-cms-backup /usr/local/bin/
+sudo cp /opt/w-cms/repo/deploy/server/w-cms-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-backup.timer
+```
+
+- 本番を起こすまでは、`w-cms-backup.service` の `DATA`（本番のデータ）がまだ無いので、毎晩「master がありません」と記録して終わります。
+- 試験用を手で控えるとき: `sudo DATA=/var/lib/w-cms/data-test DEST=/srv/backup/w-cms/data-test /usr/local/bin/w-cms-backup`
+- 記録は `journalctl -t w-cms-backup`。
+
+### 控えから戻す
+
+1. `sudo systemctl stop w-cms`（試験用なら `w-cms-test`）。
+2. いまのデータを脇へ移す（消さない）: `sudo mv /var/lib/w-cms/data /var/lib/w-cms/data.before-restore`
+3. 控えを写す: `sudo cp -a /srv/backup/w-cms/data/daily/<日付> /var/lib/w-cms/data`（`latest` なら前の夜）。
+4. 証明書を本番の外に置いているなら、その場所も確かめる。`sudo chown -R w-cms:w-cms /var/lib/w-cms/data`。
+5. `sudo systemctl start w-cms`。cms.db・tables.db は無いので、起きるときに本文から作り直します。
