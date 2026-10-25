@@ -1,0 +1,30 @@
+# w-cms 試験用の systemd の設定（2026-10-25・docs/考察/【考察】職場のサーバー機と社外からの接続.md §2.3・§4）。
+# 置き場所: /etc/systemd/system/w-cms-test.service → `sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-test`
+#
+# 本番（w-cms.service）と同じ形で、データの場所・ポート・実行ファイルだけが違います。
+# 設定は /etc/w-cms/test.env（持ち主 root・0600）。中身は deploy/server/README.md。
+# 画面のファイル（assets/）と設定（config/）は、WorkingDirectory のリポジトリから読みます。
+
+[Unit]
+Description=w-cms 試験用（:9443）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=w-cms
+Group=w-cms
+WorkingDirectory=/opt/w-cms/repo
+EnvironmentFile=/etc/w-cms/test.env
+ExecStart=/opt/w-cms/w-cms-test
+Restart=always
+RestartSec=3
+# 守り: 書けるのはデータの場所だけ。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/w-cms/data-test
+
+[Install]
+WantedBy=multi-user.target

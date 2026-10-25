@@ -1,0 +1,30 @@
+# w-cms 本番の systemd の設定（2026-10-25・docs/考察/【考察】職場のサーバー機と社外からの接続.md §2.3・§4）。
+# 置き場所: /etc/systemd/system/w-cms.service → `sudo systemctl daemon-reload && sudo systemctl enable --now w-cms`
+#
+# ⚠ 本番を起こすのは、いまの PC（HP405）から引っ越すとき（§2.4）。2つの本番が同時に動くと、データが分かれます。
+# 設定は /etc/w-cms/w-cms.env（持ち主 root・0600）。中身は deploy/server/README.md。
+# 画面のファイル（assets/）と設定（config/）は、WorkingDirectory のリポジトリから読みます。
+
+[Unit]
+Description=w-cms 本番（:8443）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=w-cms
+Group=w-cms
+WorkingDirectory=/opt/w-cms/repo
+EnvironmentFile=/etc/w-cms/w-cms.env
+ExecStart=/opt/w-cms/w-cms
+Restart=always
+RestartSec=3
+# 守り: 書けるのはデータの場所だけ。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/w-cms/data
+
+[Install]
+WantedBy=multi-user.target
