@@ -589,3 +589,31 @@ func TestReserveNewPageIDSkipsPagesOnDisk(t *testing.T) {
 		t.Errorf("在るページの本文が変わりました: %s", b)
 	}
 }
+
+// TestRewriteBodyKeepsTheBodyBefore は、⚠ **機械の書き換えの前の中身が版に残る**ことを固定します（2026-10-26——版の無い
+// ページは元の中身が版に無く、版のあるページでも押した人の10分の版にまとめて、押す直前の中身が消えた）。
+func TestRewriteBodyKeepsTheBodyBefore(t *testing.T) {
+	newTestFileDB(t)
+	// 版の無いページ（取り込みで作ったページの形——本文のファイルだけ）。
+	newPage(t, "000080", "<h1>届いた記録</h1><p>元の中身</p>", page.PageMeta{Owner: "alice", Mode: page.DefaultMode, ParentID: TopPageID})
+	if err := RewriteBody("000080", "alice", func(cur string) string { return strings.Replace(cur, "元の中身", "機械が直した", 1) }); err != nil {
+		t.Fatal(err)
+	}
+	list, err := ListVersions("000080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, v := range list {
+		if b, err := ReadVersion("000080", v.ID); err == nil && strings.Contains(string(b), "元の中身") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("⚠ 書き換える前の中身が版にありません（%d 版）", len(list))
+	}
+	// 人が続けて書いても、機械の書き換えの版に混ざらない（機械の版は閉じている）。
+	if len(list) == 0 || !list[0].Sealed {
+		t.Errorf("機械の書き換えの版が閉じていません: %+v", list)
+	}
+}

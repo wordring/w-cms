@@ -103,6 +103,14 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 	safeHTML := fillFileViewNamesAs(author, Sanitize(rewrite(string(current))))
 	// ぶつかったときの「○○さん」——機械が変えたブロックは押した人が書いたと覚える（block_sync.go）。
 	noteBlockWriters(pageID, author, string(current), safeHTML)
+	// 書き換える前の中身を、区切りの版として残す（2026-10-26）。それまでは書いたあとの中身だけを、押した人の10分の版に
+	// まとめていたので、版の無いページ（取り込み・機械が作ったページ）は元の中身が版に無く、版のあるページでも押す直前の
+	// 中身が消えて、機械の書き換えを戻すと、その人の10分ぶんの書き込みも一緒に戻った。中身が最新の版と同じなら閉じるだけ。
+	if safeHTML != string(current) {
+		if err := RecordVersion(pageID, author, string(current), true); err != nil {
+			return err
+		}
+	}
 	updatedAt, err := page.BumpUpdatedAt(pageID)
 	if err != nil {
 		return err
@@ -112,7 +120,12 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 	}
 	// 開いている人へ知らせる——版と索引まで済ませてから（page_events.go）。
 	defer notifyPageUpdated(pageID, author, updatedAt)
-	if err := RecordVersion(pageID, author, safeHTML, false); err != nil {
+	// 機械の書き換えは、それだけで1つの版にする（区切り——このあとの人の保存がこの版に混ざらない）。
+	if err := RecordVersion(pageID, author, safeHTML, true); err != nil {
+		return err
+	}
+	// 新しく切った版は開いたまま作られるので、同じ中身でもう一度区切って閉じる（RecordVersion は同じ中身なら閉じるだけ）。
+	if err := RecordVersion(pageID, author, safeHTML, true); err != nil {
 		return err
 	}
 	return SyncIndex(pageID, safeHTML)
