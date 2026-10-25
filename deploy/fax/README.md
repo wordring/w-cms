@@ -8,7 +8,7 @@ FAX サーバーは、w-cms と同じ Ubuntu の機械に置きます（利用�
 - 送ってきた番号から、連絡帳などの `FAX番号` のタグで相手を引きます。
 - 判定（🤖 解析）は、記録の箱の「🤖 解析（添付）」で人が押します。
 
-⚠ 実機では、まだ確かめていません。とくに、このモデムが Linux で FAX モデム（Class 1）として使えるかは、最初に確かめます（下の 1）。
+2026-10-25 に業務サーバー（Ubuntu 26.04）で、モデムが Class 1 の FAX モデムとして動くこと（Conexant CX93001）と、受けた FAX を w-cms へ渡す道（試験用の w-cms で、見本の1枚から FAX の記録ができた）を確かめました。⚠ 本物の電話の線で FAX を受けるのは、まだです。
 
 ## 1. モデムが使えるかを確かめる
 
@@ -25,10 +25,14 @@ FAX サーバーは、w-cms と同じ Ubuntu の機械に置きます（利用�
 ## 3. HylaFAX+
 
 1. `sudo apt install hylafax-server libtiff-tools curl`。
-2. `sudo faxsetup` と `sudo faxaddmodem faxmodem` で、モデム `faxmodem` を足します（Class 1 を選ぶ）。
-3. `faxgetty-faxmodem.service` を `/etc/systemd/system/` に置き、`sudo systemctl daemon-reload && sudo systemctl enable --now faxgetty-faxmodem`。
+2. モデムの設定 `config.faxmodem`（このフォルダ）を `/etc/hylafax/config.faxmodem` に置きます（`sudo install -m 0644`）。
+   - 対話の道具（`faxsetup`・`faxaddmodem`）は使わずに、型紙 `config/class1` にこの会社の設定（国番号・応答までの呼び出し回数・FaxRcvdCmd・速さの上限）を足したものです。
+   - ⚠ Ubuntu 26.04 の HylaFAX は、設定を `/etc/hylafax` に置き、動くときだけ `/var/spool/hylafax/etc` に重ねます（`BindPaths`）。`/var/spool/hylafax/etc` に直に置いても読まれません。
+3. `sudo systemctl enable --now hylafax.service faxq.service hfaxd.service`。
+4. `faxgetty-faxmodem.service` を `/etc/systemd/system/` に置き、`sudo systemctl daemon-reload && sudo systemctl enable --now faxgetty-faxmodem`。
    モデムが消えたら止まり、戻ったら起きます。落ちたら起こし直します。
-   ⚠ パッケージが自前で faxgetty を起こしているなら、二重に起こさないこと。
+   ⚠ パッケージの `faxgetty@.service` とは二重に起こさないこと（こちらだけを使う）。
+5. 確かめる: `faxstat -s` が「Modem faxmodem (): Running and idle」になり、`journalctl -t FaxGetty` に「MODEM CX93001…」が出ます（2026-10-25 に業務サーバーで確かめた）。
 
 ## 4. w-cms へ渡す
 

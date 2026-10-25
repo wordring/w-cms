@@ -14,6 +14,10 @@ Wants=hylafax.service
 [Service]
 Type=simple
 ExecStart=/usr/sbin/faxgetty faxmodem
+# Ubuntu 26.04 の HylaFAX は、設定を /etc/hylafax に置き、動くときだけ spool の etc に重ねる（パッケージの faxgetty@.service と同じ）。
+# 重ねないと、faxgetty が etc/config.faxmodem を見つけられない（2026-10-25 に業務サーバーで確かめた）。
+BindPaths=/etc/hylafax:/var/spool/hylafax/etc
+WorkingDirectory=/var/spool/hylafax
 Restart=always
 RestartSec=5
 
