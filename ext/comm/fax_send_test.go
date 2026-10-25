@@ -111,12 +111,18 @@ func TestFaxSendRecordsAndWatches(t *testing.T) {
 		json.Unmarshal(rr.Body.Bytes(), &out)
 		return rr.Code, out
 	}
+	// bodyOf は記録の本文を読みます。裏の見張りが書き替えている最中は Windows では開けないので、少し待って読み直す。
 	bodyOf := func(id string) string {
-		b, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
-		if err != nil {
-			t.Fatal(err)
+		var err error
+		for i := 0; i < 50; i++ {
+			var b []byte
+			if b, err = os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html")); err == nil {
+				return string(b)
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		return string(b)
+		t.Fatal(err)
+		return ""
 	}
 	waitFor := func(id, want string) string {
 		for i := 0; i < 200; i++ {
@@ -291,12 +297,18 @@ func TestFaxSendPurposeAfterFaxed(t *testing.T) {
 		}
 		return rr.Code, out
 	}
+	// bodyOf は記録の本文を読みます。裏の見張りが書き替えている最中は Windows では開けないので、少し待って読み直す。
 	bodyOf := func(id string) string {
-		b, err := os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html"))
-		if err != nil {
-			t.Fatal(err)
+		var err error
+		for i := 0; i < 50; i++ {
+			var b []byte
+			if b, err = os.ReadFile(filepath.Join(page.GetPageDir(id), id+".html")); err == nil {
+				return string(b)
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		return string(b)
+		t.Fatal(err)
+		return ""
 	}
 	waitFor := func(id, want string) string {
 		for i := 0; i < 200; i++ {
@@ -369,6 +381,40 @@ func TestFaxSendPurposeAfterFaxed(t *testing.T) {
 	if !strings.Contains(b, "<dd>"+HandledPending+"</dd>") {
 		t.Errorf("後始末に失敗したのに未処理に戻らない: %s", b)
 	}
+
+	// FaxPrepare のある用件: 送る1本（資料を綴じたもの）と、送ったと記録する紙が違う。
+	_, boundName, err := cms.SaveAttachment("000410", "alice", "御見積書＋資料.pdf", []byte("%PDF-1.4\n%%EOF\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendPurposes["綴じる紙"] = SendPurpose{
+		FaxPrepare: func(w http.ResponseWriter, r *http.Request, pageID string) (ComposeAttachment, ComposeAttachment, bool) {
+			return ComposeAttachment{PageID: pageID, File: pdfName}, ComposeAttachment{PageID: pageID, File: boundName, Name: "綴じた1本.pdf"}, true
+		},
+		AfterFaxed: sendPurposes["試験の紙"].AfterFaxed,
+	}
+	t.Cleanup(func() { delete(sendPurposes, "綴じる紙") })
+	mu.Lock()
+	afterErr = nil
+	mu.Unlock()
+	_, out = send(map[string]any{"page_id": "000410", "purpose": "綴じる紙", "number": "0312345678"})
+	if out["record"] == nil {
+		t.Fatalf("綴じる紙を送れない: %v", out)
+	}
+	rec4 := out["record"].(string)
+	if !strings.HasSuffix(filepath.ToSlash(sentPath), "/"+boundName) {
+		t.Errorf("綴じた1本を送っていない: %s", sentPath)
+	}
+	if b := bodyOf(rec4); !strings.Contains(b, "<dt>"+FaxSendFileTag+"</dt><dd>"+pdfName+"</dd>") {
+		t.Errorf("記録の「%s」が綴じる前の紙でない: %s", FaxSendFileTag, b)
+	}
+	setStatus("24", "D  alice 0312345678 1:1 1:12")
+	waitFor(rec4, "<dd>"+faxStateDone+"</dd>")
+	mu.Lock()
+	if last := calls[len(calls)-1]; last.rec != rec4 || last.file != pdfName {
+		t.Errorf("AfterFaxed に渡した紙: %+v", last)
+	}
+	mu.Unlock()
 
 	// 断る場合: FAX の後始末の無い用件・知らない用件。
 	for _, p := range []string{"メールだけの紙", "無い用件"} {

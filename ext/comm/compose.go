@@ -98,6 +98,11 @@ type SendPurpose struct {
 	// 送れない。file は送ったファイル（用件の元のページの添付の保存名・Prepare が返した1つ目の PDF）、recordID は送った FAX の
 	// 記録。AfterSent と同じく、ここで失敗しても送れたことは取り消さず、理由を記録に書いて人に知らせる。
 	AfterFaxed func(user *auth.User, pageID, recordID, file string) error
+	// FaxPrepare は FAX で送る紙を用意します（任意・2026-10-25 夜）。無ければ Prepare の1つ目の PDF を送る。paper は送ったことを
+	// 記録する紙（AfterFaxed の file）、send は実際に送る1本（外注加工の資料を綴じた FAX 用など——メールでは資料を別の添付で
+	// 渡せるが、FAX は1本の紙になる）。どちらも pageID の添付の PDF。paper と send が同じでもよい。断るときは Prepare と同じく
+	// 自分で応答を書いて false。
+	FaxPrepare func(w http.ResponseWriter, r *http.Request, pageID string) (paper, send ComposeAttachment, ok bool)
 	// InReplyTo は用件の元のページへの返信として送るかです（In-Reply-To と `親ページID` が付く。2026-10-09 までは `返信元`）。
 	InReplyTo bool
 	// NeedsPage は用件の元のページが要るかです（新規以外は要る）。

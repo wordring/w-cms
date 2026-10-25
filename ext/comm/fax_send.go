@@ -125,9 +125,10 @@ type faxSendRequest struct {
 	Number  string `json:"number"`
 }
 
-// faxSource は送る紙です（元のページ・その添付の保存名・ディスクの場所・記録に写すときの名前・用件）。
+// faxSource は送る紙です（元のページ・送る添付の保存名・ディスクの場所・記録に写すときの名前・用件・用件の後始末に渡す紙）。
+// Paper は、送る1本（File）と別の紙を「送った」と記録するとき（資料を綴じた FAX 用を送り、部材発注書の PDF を記録する）。
 type faxSource struct {
-	PageID, File, Path, Name, Purpose string
+	PageID, File, Path, Name, Purpose, Paper string
 }
 
 // FaxSendAPIHandler は POST /api/fax/send です。
@@ -197,9 +198,21 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 // ⚠ 断るときは応答を書いて false（Prepare の作法と同じ）。
 func purposeFaxSource(w http.ResponseWriter, r *http.Request, pageID, purpose string) (faxSource, bool) {
 	p, ok := SendPurposeOf(purpose)
-	if !ok || p.AfterFaxed == nil || p.Prepare == nil {
+	if !ok || p.AfterFaxed == nil || (p.Prepare == nil && p.FaxPrepare == nil) {
 		cms.JSONFail(w, http.StatusBadRequest, "「"+purpose+"」は FAX で送れません")
 		return faxSource{}, false
+	}
+	if p.FaxPrepare != nil {
+		paper, send, ok := p.FaxPrepare(w, r, pageID)
+		if !ok {
+			return faxSource{}, false
+		}
+		path, found := page.AttachmentPath(pageID, send.File)
+		if send.PageID != pageID || !strings.EqualFold(filepath.Ext(send.File), ".pdf") || !found || paper.PageID != pageID {
+			cms.JSONFail(w, http.StatusInternalServerError, "FAX で送る紙（PDF）を用意できませんでした")
+			return faxSource{}, false
+		}
+		return faxSource{PageID: pageID, File: send.File, Path: path, Name: send.Name, Purpose: purpose, Paper: paper.File}, true
 	}
 	atts, ok := p.Prepare(w, r, pageID)
 	if !ok {
@@ -243,8 +256,12 @@ func recordSentFax(user *auth.User, src faxSource, number, job string) (string, 
 	d.SetTag(FaxSendStateTag, faxStateSending)
 	d.SetTag(ParentPageTag, srcPage)
 	if src.Purpose != "" {
+		paper := src.Paper
+		if paper == "" {
+			paper = fileName
+		}
 		d.SetTag(FaxSendPurposeTag, src.Purpose)
-		d.SetTag(FaxSendFileTag, fileName)
+		d.SetTag(FaxSendFileTag, paper)
 	}
 	recID, err := CreateRecordPage(boxID, user.Username, now, d.HTML())
 	if err != nil {
