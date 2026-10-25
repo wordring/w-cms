@@ -27,7 +27,10 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const url = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
+    let url = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin);
+    // 開くのは w-cms の中だけ（よその住所が届いても開かない・2026-10-26）。
+    if (url.origin !== self.location.origin) url = new URL('/', self.location.origin);
+    url = url.href;
     event.waitUntil((async () => {
         const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
         for (const w of wins) {

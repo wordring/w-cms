@@ -383,7 +383,7 @@ async function dryThenRename(say, endpoint, body, skippedOf, none, ask) {
 }
 
 function val(id) { return document.getElementById(id).value.trim(); }
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function msg(id, res) {
   const el = document.getElementById(id);
   if (res.ok) { el.style.color = '#16a34a'; el.textContent = 'OK'; }

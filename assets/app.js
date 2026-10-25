@@ -564,6 +564,14 @@
             try { await window.wcmsBeforeLogout(); } catch (e) {}
         }
         try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+        // このタブのアンドゥの記録（sessionStorage の wcms.undo.<ページ>）を捨てる——共用の PC で、次にこのタブで入った人に
+        // 前の人の書きかけの写しが残らないように（2026-10-26）。
+        try {
+            for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                const k = sessionStorage.key(i);
+                if (k && k.indexOf('wcms.undo.') === 0) sessionStorage.removeItem(k);
+            }
+        } catch (e) {}
         window.location.href = '/login';
     }
 
