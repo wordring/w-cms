@@ -173,9 +173,18 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. ページレコードを原子的にINSERTしてIDを採番する（reserveNewPageID）。
-	newID, err := reserveNewPageID(parentID)
-	if err != nil {
-		http.Error(w, "Failed to create page: "+err.Error(), http.StatusInternalServerError)
+	// 親が在って消されかけていないことを確かめてから、行を足す（tree_lock.go・2026-10-26）。
+	var newID string
+	if err := withLiveParent(int(parentID.Int64), func() error {
+		var err error
+		newID, err = reserveNewPageID(parentID)
+		return err
+	}); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, ErrParentGone) {
+			code = http.StatusConflict
+		}
+		http.Error(w, "Failed to create page: "+err.Error(), code)
 		return
 	}
 
@@ -430,8 +439,40 @@ func SetPageParent(user *auth.User, id, newParent string) (parentStore, updatedA
 		if msg, code := validateParentChange(user, childID, newParent); code != 0 {
 			return "", "", errors.New(msg)
 		}
+		// 新しい親が在って消されかけていないことを、木の見張りの中で確かめてから付け替える（tree_lock.go・2026-10-26）。
+		if pid, e := strconv.Atoi(newParent); e == nil {
+			var res struct{ store, at string }
+			err := withLiveParent(pid, func() error {
+				var err error
+				res.store, res.at, err = setPageParentRows(childID, id, newParent)
+				return err
+			})
+			if err != nil {
+				return "", "", err
+			}
+			parentStore, updatedAt = res.store, res.at
+			resyncSubtree(id)
+			if user != nil {
+				auth.Audit(user.Username, "set-parent", id+"->"+parentStore)
+			}
+			return parentStore, updatedAt, nil
+		}
 	}
+	parentStore, updatedAt, err = setPageParentRows(childID, id, newParent)
+	if err != nil {
+		return "", "", err
+	}
+	if parentChanged(oldParent, newParent) {
+		resyncSubtree(id)
+	}
+	if user != nil {
+		auth.Audit(user.Username, "set-parent", id+"->"+parentStore)
+	}
+	return parentStore, updatedAt, nil
+}
 
+// setPageParentRows は、ページ id（数は childID）の親をサイドカーと pages に書きます（SetPageParent の中身）。
+func setPageParentRows(childID int, id, newParent string) (parentStore, updatedAt string, err error) {
 	if newParent != "" {
 		if pid, e := strconv.Atoi(newParent); e == nil {
 			parentStore = page.FormatID(pid)
@@ -451,13 +492,7 @@ func SetPageParent(user *auth.User, id, newParent string) (parentStore, updatedA
 		parentDB, updatedAt, childID); err != nil {
 		return "", "", errors.New("インデックスの更新に失敗しました: " + err.Error())
 	}
-	// 親が変わると、テンプレート領域への出入り（②索引・③計算に載るか）も変わる。
-	// 判定は先祖辿り（サイドカー）なので、動かしたページとその配下を同期し直す。
-	if parentChanged(oldParent, newParent) {
-		resyncSubtree(id)
-	}
-	if user != nil {
-		auth.Audit(user.Username, "set-parent", id+"->"+parentStore)
-	}
+	// 親が変わると、テンプレート領域への出入り（②索引・③計算に載るか）も変わる。判定は先祖辿り（サイドカー）なので、
+	// 動かしたページとその配下を同期し直す——呼ぶ側（SetPageParent）が、木の見張りの外で行う。
 	return parentStore, updatedAt, nil
 }

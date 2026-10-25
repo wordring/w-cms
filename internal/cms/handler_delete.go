@@ -58,16 +58,19 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 子ページがあるなら消さない。再帰削除は「取り消せる範囲」を一気に広げるので採らない。
-	var children int
-	if err := database.DB.QueryRow("SELECT COUNT(*) FROM pages WHERE parent_id = ?", pageID).Scan(&children); err != nil {
+	// 数えるのと「消している」の印は木の見張りの中で（tree_lock.go——数えてから移すまでに子が足されると、子が
+	// ごみ箱の親を指したまま残った・2026-10-26）。印を付けたあとは、このページの下に子を足せない。
+	childless, children, doneDelete, err := beginDeleteIfChildless(pageID)
+	if err != nil {
 		http.Error(w, "子ページの確認に失敗しました: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if children > 0 {
+	if !childless {
 		http.Error(w, fmt.Sprintf("子ページが %d 件あります。先に移動するか削除してください。", children),
 			http.StatusConflict)
 		return
 	}
+	defer doneDelete()
 
 	// 消すと何かが起きるなら、ふつうは断る。それでも消す（force=1）のは管理者だけ（2026-10-23・delete_impact.go）。
 	imp, err := DeleteImpactOf(database.DB, auth.CurrentUser(r), id)
@@ -160,6 +163,7 @@ func DeletePageToTrash(id string) (string, error) {
 	if err != nil {
 		return "", errors.New("ページIDが不正です")
 	}
+	defer beginDelete(pageID)() // 移しているあいだ、このページの下に子を足させない（tree_lock.go）
 	trashPath, err := moveToTrash(id)
 	if err != nil {
 		return "", err

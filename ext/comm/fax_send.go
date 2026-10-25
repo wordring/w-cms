@@ -26,6 +26,7 @@ package comm
 import (
 	"context"
 	"html"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -326,6 +327,17 @@ func watchFaxJob(job string) {
 	}
 	end := time.Now().Add(faxWatchFor)
 	var unknownSince time.Time
+	// 記録へ書けなかったら（DB が混んでいた など）、見張りを終えずに次の回でもう一度書く（2026-10-26。それまでは書けなくても
+	// 終えていて、記録が「送っている」のまま残った）。用件の後始末は1回だけ（afterDone）。
+	afterDone, note := false, ""
+	finish := func(state string, failed bool) bool {
+		if err := setFaxSendState(j.Record, state, failed); err != nil {
+			log.Printf("FAX の仕事 %s の様子を記録 %s に書けません（次の回にもう一度）: %v", job, j.Record, err)
+			return false
+		}
+		finishFaxJob(job)
+		return true
+	}
 	for time.Now().Before(end) {
 		time.Sleep(faxWatchInterval)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -339,26 +351,30 @@ func watchFaxJob(job string) {
 		case "done":
 			// 送れたときだけ、用件の後始末（送付日など）。済ませてから「送れた」と書く——後始末の途中でサーバーが止まっても、
 			// 起き直したときに続きから呼べるように（二度呼ぶことはあっても、呼び落とさない）。
-			setFaxSendState(j.Record, faxStateDone+afterFaxedNote(j), false)
-			finishFaxJob(job)
-			return
+			if !afterDone {
+				note, afterDone = afterFaxedNote(j), true
+			}
+			if finish(faxStateDone+note, false) {
+				return
+			}
 		case "failed":
-			setFaxSendState(j.Record, faxStateFailed+"："+faxJobReason(line), true)
-			finishFaxJob(job)
-			return
+			if finish(faxStateFailed+"："+faxJobReason(line), true) {
+				return
+			}
 		case "unknown":
 			if unknownSince.IsZero() {
 				unknownSince = time.Now()
 			} else if time.Since(unknownSince) > faxUnknownFor {
-				setFaxSendState(j.Record, faxStateFailed+"：送れたか分かりません（FAX の道具の一覧に仕事 "+job+" がありません）", true)
-				finishFaxJob(job)
-				return
+				if finish(faxStateFailed+"：送れたか分かりません（FAX の道具の一覧に仕事 "+job+" がありません）", true) {
+					return
+				}
 			}
 		}
 	}
 	// 見張る長さを過ぎた——送れたか分からないまま、人に知らせて終える。
-	setFaxSendState(j.Record, faxStateFailed+"：送れたか分かりません（"+faxWatchFor.String()+" 待っても済みませんでした）", true)
-	finishFaxJob(job)
+	if !finish(faxStateFailed+"：送れたか分かりません（"+faxWatchFor.String()+" 待っても済みませんでした）", true) {
+		finishFaxJob(job) // 書けなくても、見張りは終える（起き直すたびに12時間見張り直さない）
+	}
 }
 
 // afterFaxedNote は、送る欄の用件から送った FAX（控え j）なら、用件の AfterFaxed を送った人として呼びます。
@@ -401,7 +417,7 @@ func markFaxPending(recID, title string) {
 }
 
 // setFaxSendState は、記録の「FAX送信の様子」を書き替えます。failed なら対応を未処理に戻して知らせます。
-func setFaxSendState(recID, state string, failed bool) {
+func setFaxSendState(recID, state string, failed bool) error {
 	if err := cms.RewriteBody(recID, "FAX", func(cur string) string {
 		d := cms.EditBody(cur)
 		d.SetTag(FaxSendStateTag, state)
@@ -410,11 +426,12 @@ func setFaxSendState(recID, state string, failed bool) {
 		}
 		return d.HTML()
 	}); err != nil {
-		return
+		return err
 	}
 	if failed {
 		NotifyArrival(Arrival{PageID: recID, Title: "⚠ FAX を送れませんでした " + cms.PageTitleByID(atoiPage(recID)), Channel: ChannelFax})
 	}
+	return nil
 }
 
 // resumeFaxWatches は、サーバーが起きたときに、まだ見張っている仕事（サーバーの控え）の見張りを始め直します。

@@ -31,8 +31,13 @@ func CreateChildPage(parentID, owner, bodyHTML string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	newID, err := reserveNewPageID(sql.NullInt64{Int64: int64(parentInt), Valid: true})
-	if err != nil {
+	// 親が在って消されかけていないことを確かめてから、行を足す（tree_lock.go・2026-10-26）。
+	var newID string
+	if err := withLiveParent(parentInt, func() error {
+		var err error
+		newID, err = reserveNewPageID(sql.NullInt64{Int64: int64(parentInt), Valid: true})
+		return err
+	}); err != nil {
 		return "", err
 	}
 
