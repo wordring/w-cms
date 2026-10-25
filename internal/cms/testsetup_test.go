@@ -36,7 +36,10 @@ func newTestDB(t *testing.T) *sql.DB { return openTestDB(t, ":memory:") }
 // `visibleChildren`・`page.CanView` を通る試験はこちらを使うこと
 // （理由は `newTestDB` のコメント）。置き場は一時ディレクトリなので、
 // 後片付けは `t.TempDir()` が引き受けます。
-func newTestFileDB(t *testing.T) *sql.DB { return openTestDB(t, "test.db") }
+// ⚠ 本番（database.openSQLite）と同じく busy_timeout を付けます（2026-10-25）——付けないと、同時に書く試験
+// （TestConcurrentWritesLoseNothing）が、コアの多い機械（業務サーバー・12スレッド）で SQLITE_BUSY になって10回に8回落ちた。
+// 本番の DSN には前から付いているので、落ちていたのは試験の側だけ。
+func newTestFileDB(t *testing.T) *sql.DB { return openTestDB(t, "test.db?_pragma=busy_timeout(5000)") }
 
 func openTestDB(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
