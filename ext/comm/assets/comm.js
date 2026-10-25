@@ -280,7 +280,9 @@ if (w.version >= 4) {
             w.notify('FAX を送れませんでした: ' + w.failMessage(res, d), { type: 'alert', duration: 0, id: 'fax-send' });
             return;
         }
-        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
+        // 送った FAX は通信箱の記録になる（送れたかは、サーバーがその記録の「FAX送信の様子」に書く——画面を閉じてもよい）。
+        const rec = d.record ? '記録 /' + d.record + '。' : (d.record_error ? '記録は作れませんでした（' + d.record_error + '）。' : '');
+        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。' + rec + '送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
         watchFax(d.job, d.number);
     }
     // watchFax は仕事の様子を15秒おきに見て、送れた・送れなかったを知らせます（10分まで）。
