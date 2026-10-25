@@ -287,6 +287,9 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 	answered := cms.PageTagValue(database.DB, pageIDInt, RFQAnsweredTag)
 	var b strings.Builder
 	b.WriteString(`<h3 class="materials-title">✉️ 部材見積依頼を送る</h3>`)
+	// 仕入先の連絡帳の送り方の勧め（2026-10-26・send_way.go）——送り方の欄で最初に選ぶもの。
+	way := sendWayFor(user, pageIDInt, rfqDocName, SupplierTag, "")
+	b.WriteString(`<div class="rfq-send send-way-box">` + sendWayNoteHTML(way))
 	// 送る欄は、まだ送っていなくて返事も来ていないときだけ最初から開く（返事の来た見積——過去の見積もりを移したものも——は閉じておく）。
 	open := ` open`
 	if strings.TrimSpace(sent) != "" {
@@ -297,6 +300,17 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 		b.WriteString(`<p class="unorder-help">回答日: ` + stdhtml.EscapeString(answered) + `</p>`)
 		open = ""
 	}
+	// 送り方を選んで「▶ 送る」（2026-10-26・send_way.go）。選んだ送り方のボタンは同じ行に隠して置く（「▶ 送る」が押す）。
+	b.WriteString(`<p class="unorder-help send-way-row">送り方: ` + sendWayPickHTML(way, []sendWayOpt{
+		mailWayOpt("details.rfq-mail"),
+		faxWayOpt,
+		{Way: contacts.SendWayHand, Label: "🤝 手渡し（送ったと記録する）", Target: ".rfq-sent-go", Go: "✓ 記録する"},
+		{Label: "📠 別の FAX 機で送った（記録する）", Target: ".rfq-sent-go", Go: "✓ 記録する"},
+	}) + comm.FaxSendButtonHTML(RFQMailPurpose, pid) +
+		`<button type="button" class="chip-btn rfq-sent-go send-way-act" data-rfq-page="` + pid + `">送った（FAX・手渡し）</button> ` +
+		`<span class="rfq-sent-say"></span></p>`)
+	b.WriteString(`<p class="unorder-help">FAX は、部材見積依頼書の PDF を作り、外注加工の図面があればうしろに綴じて送ります。` +
+		`送れたら（記録するものは押したときに）送付日に今日の日付を書きます。</p>`)
 	b.WriteString(`<details class="estimate-mail rfq-mail"` + open + `><summary>✉️ メールで送る</summary>` +
 		`<div data-mail-compose="` + RFQMailPurpose + `" data-mail-page="` + pid + `"></div></details>`)
 	// FAX・印刷用（資料を綴じる）——綴じられる資料（外注加工の「資料 <番号>」の PDF・画像）があるときだけ（2026-10-05）。
@@ -309,12 +323,7 @@ func rfqSendViewHTML(user *auth.User, pageIDInt int) string {
 			}
 		}
 	}
-	// w-cms の FAX で送る（2026-10-25 夜・ext/comm/fax_send.go）——送れたと分かったときだけ送付日を書く。
-	b.WriteString(`<p class="unorder-help">FAX: ` + comm.FaxSendButtonHTML(RFQMailPurpose, pid) +
-		`（部材見積依頼書の PDF を作り、外注加工の図面があればうしろに綴じて送ります。送れたら送付日に今日の日付を書きます）</p>`)
-	b.WriteString(`<p class="unorder-help">別の FAX 機・手渡しで送ったら: ` +
-		`<button type="button" class="chip-btn rfq-sent-go" data-rfq-page="` + pid + `">送った（FAX・手渡し）</button> ` +
-		`<span class="rfq-sent-say"></span>（送付日に今日の日付を書きます）</p>`)
+	b.WriteString(`</div>`)
 	return b.String()
 }
 

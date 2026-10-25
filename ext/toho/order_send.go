@@ -218,11 +218,13 @@ func signerLinesFor(head map[string]string, heading string) []string {
 //
 // noteBox は備考の入力欄です（書ける人にだけ・空なら出さない——2026-10-14・【要求】製造 §8の並びの 4
 // 「『備考』入力欄のブロック。備考欄は複数行書けます。その下に『PDF作成』ボタンがあります」）。
-func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, noteBox string) string {
+// way は仕入先の連絡帳の「送り方」の勧め（2026-10-26・send_way.go）——頭に一言を出し、その送り方を最初に選んだ形にする。
+func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, noteBox string, way contacts.SendWay) string {
 	orderID := page.FormatID(pageIDInt)
 
 	var b strings.Builder
-	b.WriteString(`<div class="order-send" data-order-page="` + orderID + `">`)
+	b.WriteString(`<div class="order-send send-way-box" data-order-page="` + orderID + `">`)
+	b.WriteString(sendWayNoteHTML(way))
 	b.WriteString(`<p class="order-send-state">` + orderSendStateHTML(counts) + `</p>`)
 	b.WriteString(noteBox)
 	// ⚠ **PDFを作る道が画面にありませんでした**（2026-09-22 ユーザー報告:「発注書の
@@ -234,7 +236,14 @@ func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, n
 	b.WriteString(`<div class="order-pdf-row"><button type="button" class="chip-btn" data-order-pdf="1"` +
 		` title="部材発注書のPDFを作って、このページに表示します（送る前は前のPDFを上書きし、送ったあとは新しい版を作ります）">` +
 		`📄 PDF作成</button></div>`)
-	b.WriteString(`<div class="order-send-ways">`)
+	// 送り方を選んで「▶ 送る」（2026-10-26・send_way.go）。選んだ送り方のボタンは、この下に隠して置く（「▶ 送る」が押す）。
+	b.WriteString(`<div class="order-send-ways send-way-row">送り方: `)
+	b.WriteString(sendWayPickHTML(way, []sendWayOpt{
+		mailWayOpt("details.order-mail"),
+		faxWayOpt,
+		{Way: contacts.SendWayHand, Label: "🤝 手渡し・郵送（送ったと記録する）", Target: `[data-order-sent="` + sendByHand + `"]`, Go: "✓ 記録する"},
+		{Label: "📠 別の FAX 機で送った（記録する）", Target: `[data-order-sent="` + sendByFax + `"]`, Go: "✓ 記録する"},
+	}))
 	// 資料を綴じた FAX・印刷用（2026-09-28・order_docs.go）——**綴じられる資料があるときだけ**。
 	// ⚠ 部材発注書のPDF（7年保存の正本）とは別の1本（利用者の選択）。
 	if hasPrintableDoc(docs) {
@@ -244,9 +253,9 @@ func orderSendFormHTML(pageIDInt int, counts OrderSendCounts, docs []orderDoc, n
 	}
 	// w-cms の FAX で送る（2026-10-25 夜・ext/comm/fax_send.go）——表示中の PDF（外注加工の資料があれば、うしろに綴じた1本・fax_paper.go）を送り、送れたと分かったときだけ発注済みにする。
 	b.WriteString(comm.FaxSendButtonHTML(OrderMailPurpose, orderID))
-	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByFax +
+	b.WriteString(`<button type="button" class="chip-btn send-way-act" data-order-sent="` + sendByFax +
 		`" title="別の FAX 機で送ったら押してください">📠 別の FAX 機で送った</button>`)
-	b.WriteString(`<button type="button" class="chip-btn" data-order-sent="` + sendByHand +
+	b.WriteString(`<button type="button" class="chip-btn send-way-act" data-order-sent="` + sendByHand +
 		`" title="印刷して手渡し・郵送したら押してください">🤝 手渡した</button>`)
 	// 送ったことを取り消す（2026-10-21・order_unsend.go）——送った行があるときだけ。
 	b.WriteString(unsendButtonHTML(counts))

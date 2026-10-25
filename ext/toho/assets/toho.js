@@ -3074,4 +3074,30 @@ w.onFileMenu((info, items, f) => {
 });
 
 }
+// ── 送る欄の「送り方」と「▶ 送る」（2026-10-26・ext/toho/send_way.go）──────────────────────────────
+// 利用者:「fax、メールなどのメソッドをコンボボックスにして送るボタンにしてはどうでしょう」。最初に選ばれているのは、相手の
+// 連絡帳の送り方（サーバーが selected を付ける）。選んだ送り方の、いままでのボタン（同じ送る欄に隠して置いてある）を押す——
+// メールは「メールで送る」の欄を開く（宛先と本文を確かめて、その欄の送信で送る）。押した先の配線は、いままでのまま。
+delegateClick([['.send-way-go', (btn) => {
+    const row = btn.closest('.send-way-row');
+    const box = btn.closest('.send-way-box') || (row && row.parentElement);
+    const pick = row && row.querySelector('.send-way-pick');
+    const opt = pick && pick.options[pick.selectedIndex];
+    const target = opt && box && box.querySelector(opt.getAttribute('data-target') || '');
+    if (!target) { notify('この送り方のボタンが見つかりません。読み直してください。', { type: 'alert' }); return; }
+    if (target.tagName === 'DETAILS') {
+        target.open = true;
+        target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return;
+    }
+    target.click();
+}]]);
+// 選び直したら、ボタンの文字をその送り方のもの（▶ 送る・▶ メールを書く・✓ 記録する）にする。
+document.addEventListener('change', (e) => {
+    const pick = e.target && e.target.closest && e.target.closest('.send-way-pick');
+    if (!pick) return;
+    const opt = pick.options[pick.selectedIndex];
+    const btn = pick.parentElement && pick.parentElement.querySelector('.send-way-go');
+    if (opt && btn) btn.textContent = opt.getAttribute('data-go') || '▶ 送る';
+});
 })();

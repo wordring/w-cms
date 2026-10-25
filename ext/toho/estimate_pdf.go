@@ -233,11 +233,16 @@ func renderEstimateItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 	// 備考の欄（2026-10-03・estimate_note.go）——合計の下・PDF を作るの上（備考を書いてから紙にするので）。
 	appendFootHTML(el, span, "estimate-note-row", estimateNoteBoxHTML(pid, estimateNoteOf(page.FormatID(ctx.PageID))))
+	// 見積先担当（無ければ見積先の組織）の連絡帳の「送り方」の勧め（2026-10-26・send_way.go）。
+	way := sendWayFor(ctx.Viewer, ctx.PageID, estimateDocName, EstimateClientTag, EstimatePersonTag)
 	appendFootHTML(el, span, "estimate-actions",
-		pdfButtonHTML("estimate", page.FormatID(ctx.PageID))+
-			// w-cms の FAX で送る（2026-10-25 夜・ext/comm/fax_send.go）——見積書の PDF を作って送り、送れたら送付日を書く。
-			" "+comm.FaxSendButtonHTML(EstimateMailPurpose, page.FormatID(ctx.PageID))+
+		sendWayNoteHTML(way)+pdfButtonHTML("estimate", page.FormatID(ctx.PageID))+
+			// 送り方を選んで「▶ 送る」（2026-10-26・send_way.go）。FAX は見積書の PDF を作って送り、送れたら送付日を書く
+			// （2026-10-25 夜・ext/comm/fax_send.go）。FAX のボタンは同じ行に隠して置く。
+			`<div class="send-way-box"><span class="send-way-row"> 送り方: `+
+			sendWayPickHTML(way, []sendWayOpt{mailWayOpt("details.estimate-mail"), faxWayOpt})+
+			comm.FaxSendButtonHTML(EstimateMailPurpose, page.FormatID(ctx.PageID))+`</span>`+
 			`<details class="estimate-mail"><summary>✉️ メールで送る</summary>`+
-			`<div data-mail-compose="`+EstimateMailPurpose+`" data-mail-page="`+pid+`"></div></details>`)
+			`<div data-mail-compose="`+EstimateMailPurpose+`" data-mail-page="`+pid+`"></div></details></div>`)
 	return false, nil
 }

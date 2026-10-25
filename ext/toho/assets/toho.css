@@ -498,6 +498,13 @@
 }
 /* 備考の欄とその下の「PDF作成」（2026-10-14・our_order_mirror.go——部品は見積書の備考の欄と同じ）。 */
 #w-editor-content .order-send .estimate-note-box { margin-bottom: 6px; }
+/* 送り方の欄と「▶ 送る」（2026-10-26・send_way.go）。選んだ送り方のいままでのボタンは隠して置く（「▶ 送る」が押す）。
+   w-cms の FAX のボタン（ext/comm の FaxSendButtonHTML）は class を持たないので、属性で隠す。 */
+#w-editor-content .send-way-row { align-items: center; }
+#w-editor-content .send-way-row .send-way-act,
+#w-editor-content .send-way-row [data-fax-purpose] { display: none; }
+#w-editor-content .send-way-pick { font: inherit; padding: 2px 4px; }
+#w-editor-content .send-way-note { margin: 0 0 6px; color: var(--text-muted); }
 #w-editor-content .order-pdf-row { margin-bottom: 8px; }
 #w-editor-content .order-mail { margin-top: 4px; }
 #w-editor-content .order-mail > summary { cursor: pointer; }

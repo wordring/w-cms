@@ -59,7 +59,8 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 		bar = orderRowBarHTML(orderID)
 	}
 	if first {
-		bar += orderSendFormHTML(ctx.PageID, OrderSendStateOf(ctx.DB, ctx.PageID), docs, orderNoteBoxFor(ctx))
+		bar += orderSendFormHTML(ctx.PageID, OrderSendStateOf(ctx.DB, ctx.PageID), docs, orderNoteBoxFor(ctx),
+			sendWayFor(ctx.Viewer, ctx.PageID, orderDocName, SupplierTag, "")) // 仕入先の連絡帳の「送り方」の勧め（2026-10-26）
 	}
 	if bar != "" {
 		appendBarAfter(el, "order-bar", bar)
