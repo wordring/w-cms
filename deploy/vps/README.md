@@ -33,7 +33,7 @@ VPS の会社の画面の「セキュリティグループ」と、VPS の中の
 | TCP 443 | どこからでも | HTTPS |
 | TCP 80 | どこからでも | 証明書の取得・HTTPS への案内 |
 | UDP 51820 | どこからでも | WireGuard（鍵の合わない相手には何も返さない） |
-| TCP 22 | どこからでも（組むあいだ） | SSH。トンネルの中からも入れる（ufw の `in on wg0`） |
+| TCP 22 | トンネルの中（10.8.0.2）からだけ | SSH。外からは閉じた（2026-10-26）。セキュリティグループには書かない |
 | ICMP | どこからでも | ping（確かめ用） |
 
 - 送信は全部通します（更新・証明書・トンネル）。外へ出る 25番は VPS の会社が止めていて（OP25B）、解除しません。
@@ -44,7 +44,11 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 51820/udp
 ufw allow in on wg0 from 10.8.0.2 to any port 22 proto tcp comment 'SSH (トンネルの中から)'
+ufw delete allow OpenSSH   # 外からの 22番を閉じる（トンネルの中から入れるのを確かめてから）
 ```
+
+- 外からの 22番は、2026-10-26 に閉じました（利用者:「ではSSHは外します」）。入れるのは、職場の LAN から業務サーバーを踏み台にして、トンネルの中を通る道だけです（下の WireGuard の節）。
+- 社外から VPS に入りたくなったら、その PC を WireGuard の相手として足します。締め出されたときは、VPS の会社の画面のコンソール（root のパスワード）から入ります。
 
 ## 入れたもの（Ubuntu 26.04 LTS）
 
@@ -68,7 +72,7 @@ EOF
 sshd -t && systemctl reload ssh
 ```
 
-- 職場の PC から入る: `ssh -i ~/.ssh/id_ed25519_wcms root@〈公開の名前〉`（PowerShell なら `ssh -i $HOME.sshid_ed25519_wcms root@〈公開の名前〉`）。
+- 職場の PC から入る: `ssh -i ~/.ssh/id_ed25519_wcms -J wcms-server root@10.8.0.1`（PowerShell なら `ssh -i $HOME.sshid_ed25519_wcms -J wcms-server root@10.8.0.1`。`wcms-server` は `~/.ssh/config` に書いた業務サーバーの呼び名）。
 - ⚠ 鍵を無くしたら SSH では入れません。VPS の会社の画面のコンソール（root のパスワード）から入って、鍵を足し直します。
 - ほかの PC から入るときは、その PC で鍵を作り、公開鍵を `/root/.ssh/authorized_keys` に足します。
 
@@ -157,7 +161,6 @@ ssh -i ~/.ssh/id_ed25519_wcms -J wcms-server root@10.8.0.1
 ## まだのこと
 
 - 管理者 `a` のパスワードを決める（利用者）。それまで中継しない。
-- 外からの 22番を閉じるか（トンネルの中からだけにするか）を決める（SSH は 2026-10-26 から鍵だけ）。
 - 業務サーバーの証明書を〈公開の名前〉のものにする（VPS で取って写す）。
 - 社内からも〈公開の名前〉で繋ぐ（split-horizon。考察 §3.4）。
 - 見張り（VPS から1分ごとにログインの画面を見に行く・考察 §6）。
