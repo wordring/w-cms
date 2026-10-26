@@ -136,6 +136,20 @@ ssh -i ~/.ssh/id_ed25519_wcms -J wcms-server root@10.8.0.1
 		Strict-Transport-Security "max-age=31536000"
 		-Server
 	}
+	# 画面（HTML・CSS・JS・JSON）を圧縮して送る（2026-10-27）。写真・PDF はもとから圧縮済み。
+	# 知らせの流れ（text/event-stream）を溜めないように、圧縮する種類を名指しする。
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/javascript*
+			header Content-Type application/javascript*
+			header Content-Type application/json*
+			header Content-Type image/svg+xml*
+		}
+	}
 	reverse_proxy https://10.8.0.2:8443 {
 		# 元の名前（Host）をそのまま渡す。
 		header_up Host {host}
@@ -154,6 +168,7 @@ ssh -i ~/.ssh/id_ed25519_wcms -J wcms-server root@10.8.0.1
 - 中継の先（業務サーバー）は、名前 `wcms-server` で来た接続に、いままでの自己署名の証明書を渡します（業務サーバーの w-cms は名前で証明書を使い分ける——`cmd/w-cms/cert_reload.go` の certChooser）。Caddy はその証明書そのもの（`/etc/caddy/wcms-upstream.pem`・公開の部分だけ）を信じて確かめます。⚠ 業務サーバーの `data/tls/cert.pem` を作り直したら、ここへ写し直します（写さないと中継が止まる）。
 - 業務サーバーの `w-cms.env` に `WCMS_TRUSTED_PROXIES=10.8.0.1` を書いてあります。書かないと、社外の全員が1つの接続元に見えます（ログインの失敗の数え方・監査の接続元）。
 - 試験用（:9443）は中継しません。
+- 画面の圧縮（`encode`・2026-10-27）で、app.js は 577 KB から 174 KB（zstd）になりました。`encode` に種類を名指ししないと、Caddy は `text/*` をまとめて圧縮し、知らせの流れ（`text/event-stream`）が溜まって届かなくなるおそれがあります。社内から直に開くとき（業務サーバーの w-cms）は圧縮しません（社内の線は速いため）。
 
 ## 証明書を業務サーバーへ写す
 
