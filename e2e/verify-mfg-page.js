@@ -156,16 +156,33 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     // ④ 数量を 5 に直して（画面の表のセル）、「納品書を作る」。
     await page.goto(BASE + '/' + mfg);
     await page.locator('#w-editor-content .mfg-dlvdraft-make').waitFor({ timeout: 10000 }).catch(() => {});
-    const edited = await page.evaluate(() => {
+    // 人と同じに、書ける形にしてセルを選んで打つ（2026-10-26 夕から、サーバーは本文の納品表と送った行が同じかを確かめる——
+    // DOM を書き換えるだけでは保存されず、本文は 8 のままで断られる）。
+    await page.evaluate(() => { if (!document.body.hasAttribute('edit-mode')) document.getElementById('w-mode-toggle').click(); });
+    await page.waitForFunction(() => document.body.hasAttribute('edit-mode'), null, { timeout: 8000 }).catch(() => {});
+    const qtyCell = await page.evaluateHandle(() => {
       const table = Array.from(document.querySelectorAll('#w-editor-content table')).find((x) => x.querySelector('caption') && x.querySelector('caption').textContent.trim() === '納品表');
-      if (!table) return false;
+      if (!table) return null;
       const rows = Array.from(table.querySelectorAll('tr'));
       const i = Array.from(rows[0].children).map((c) => c.textContent.trim()).indexOf('数量');
-      if (i < 0 || !rows[1] || !rows[1].children[i]) return false;
-      rows[1].children[i].textContent = '5';
-      return true;
+      return i >= 0 && rows[1] ? rows[1].children[i] || null : null;
     });
-    check('④ 納品表の数量を 5 に直せた', edited);
+    let edited = false;
+    let why = '';
+    if (await qtyCell.evaluate((c) => !!c)) {
+      await qtyCell.asElement().click({ clickCount: 3 });
+      await page.keyboard.type('5');
+      edited = await qtyCell.evaluate((c) => c.textContent.trim() === '5');
+      why = await qtyCell.evaluate((c) => 'edit-mode=' + document.body.hasAttribute('edit-mode') + ' editable=' + c.isContentEditable + ' text=' + c.textContent.trim());
+    }
+    check('④ 納品表の数量を 5 に直せた', edited, why);
+    // 閲覧へ戻す（戻すときに書きかけを保存する）。⚠ 書ける形に入ると、サーバーが描く帯（「🚚 納品書を作る」など）が消え、
+    // 閲覧へ戻しても読み直すまで出ない（2026-10-26 に見つけた・前からある）——読み直してから押す。
+    await page.evaluate(() => { if (document.body.hasAttribute('edit-mode')) document.getElementById('w-mode-toggle').click(); });
+    await page.waitForFunction(() => !document.body.hasAttribute('edit-mode'), null, { timeout: 8000 }).catch(() => {});
+    await page.goto(BASE + '/' + mfg);
+    await page.locator('#w-editor-content .mfg-dlvdraft-make').waitFor({ timeout: 10000 }).catch(() => {});
+    check('④ 直した数量 5 が保存されている', tableIn(await bodyOf(page, mfg), '納品表').replace(/\s+/g, '').includes('<td>5</td>'));
     await Promise.all([
       page.waitForURL((u) => !u.pathname.endsWith('/' + mfg), { timeout: 15000 }).catch(() => {}),
       page.click('#w-editor-content .mfg-dlvdraft-make'),
