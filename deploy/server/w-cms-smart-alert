@@ -1,0 +1,17 @@
+#!/bin/bash
+# w-cms-smart-alert — smartd（SSD の見張り）が異常を見つけたときに呼ぶ台本。ntfy でスマホへ知らせる（2026-10-26）。
+#
+# 業務サーバーの2本の SSD（データと夜の控え）の、壊れかけ・誤り・熱すぎに気づくため。利用者:「過去のデータが全部なくなるのはマズいです」。
+# smartd の設定（/etc/smartd.conf・deploy/server/README.md の「SSD の見張り」）の `-M exec /usr/local/sbin/w-cms-smart-alert` で呼ばれ、
+# smartd が SMARTD_DEVICE（どの SSD）・SMARTD_FAILTYPE（何の種類）・SMARTD_MESSAGE（中身）を渡す。
+# ntfy の行き先は見張りと同じ /etc/w-cms/watch.env。
+set -uo pipefail
+. /etc/w-cms/watch.env
+dev=${SMARTD_DEVICE:-?}
+kind=${SMARTD_FAILTYPE:-?}
+msg=${SMARTD_MESSAGE:-（中身なし）}
+body=$(jq -n --arg t "$NTFY_TOPIC" --arg ti "⚠ SSD の見張り（$dev・$kind）" \
+	--arg m "$msg 控えが新しいかを確かめ、SSD の取り替えを考えてください。" \
+	'{topic:$t, title:$ti, message:$m, priority:5, tags:["floppy_disk"]}')
+curl -s -m 20 -o /dev/null -H "Content-Type: application/json" -d "$body" "$NTFY_SERVER" || logger -t w-cms-smart-alert "ntfy へ送れません"
+logger -t w-cms-smart-alert "$dev $kind: $msg"

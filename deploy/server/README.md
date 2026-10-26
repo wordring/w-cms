@@ -272,3 +272,18 @@ AUDIT_VPS_CMD=〈VPS の要点を出す命令（任意）〉
 試し方:
 - `sudo w-cms-audit collect` — 集めた要点を出すだけ（API へは送らない）。
 - `sudo env WCMS_AUDIT_SOCK=/run/w-cms-test/local.sock WCMS_AUDIT_PARENT=… w-cms-audit fake` — API を呼ばず、決まった試しの答えで、ファイルと試験用の w-cms へ残す所まで流す（知らせは送らない）。
+
+## SSD の見張り（smartmontools・2026-10-26）
+
+業務サーバーの2本の SSD（`nvme1` はシステムとデータ・`nvme0` は夜の控え `/srv/backup`）の、壊れかけ・誤り・熱すぎに気づくための見張りです。
+
+- `sudo apt install smartmontools`。設定 `/etc/smartd.conf`（もとの設定は `/etc/smartd.conf.dist` に控えた）:
+
+  ```
+  DEVICESCAN -a -n standby -W 0,65,75 -s S/../../7/03 -m root -M exec /usr/local/sbin/w-cms-smart-alert
+  ```
+
+  全部の SSD を見て（`-a`）、65℃ で記録・75℃ で知らせ、毎週日曜 3時に短い自己診断を流します。
+- 異常のときは `deploy/server/w-cms-smart-alert`（`/usr/local/sbin/`・755）が、見張りと同じ ntfy でスマホへ知らせます（重さ5）。
+- 毎朝の監査（w-cms-audit）にも、SSD の健康の要点（判定・温度・寿命の使用・誤り・安全でない電源断）が入ります。
+- 試し: `sudo env SMARTD_DEVICE=/dev/nvme1 SMARTD_FAILTYPE=試し SMARTD_MESSAGE=… w-cms-smart-alert`。

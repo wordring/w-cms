@@ -118,6 +118,15 @@ collect_server() {
 	section "ディスク"
 	df -h / /var/lib/w-cms /srv/backup 2>/dev/null | sed 1d | sort -u
 
+	section "SSD の健康（smartctl）"
+	local d
+	for d in $(smartctl --scan 2>/dev/null | awk '{print $1}'); do
+		echo "### $d（$(lsblk -no MOUNTPOINTS "${d}n1" 2>/dev/null | grep -v '^$' | tr '\n' ' ')）"
+		smartctl -H -A "$d" 2>/dev/null | grep -E 'overall-health|Critical Warning|Temperature:|Available Spare:|Percentage Used|Media and Data Integrity Errors|Error Information Log Entries|Unsafe Shutdowns|Power On Hours' | sed -E 's/ {2,}/ /g'
+	done
+	echo "### 見張り（smartd）の記録"
+	journalctl -u smartmontools -t w-cms-smart-alert --since "$since" --no-pager -o cat -p warning 2>/dev/null | top 10
+
 	section "いまのログイン（loginctl）"
 	loginctl list-sessions --no-legend --no-pager 2>/dev/null | head -n 15 || true
 	echo "（以上・ログインの記録は SSH の節）"
