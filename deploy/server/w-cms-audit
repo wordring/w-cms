@@ -46,13 +46,24 @@ top() {
 	return 0
 }
 
+# timed_top N: SSH のログの行（journalctl -o short-iso）を同じ中身ごとに数え、最初と最後の時刻を添えて多い順に N 行（2026-10-27）。
+# 時刻が無いと、前の日にもう確かめた接続（VPS を組んだ日の職場からのパスワードのログイン）を、読み手が今のことと読んだ。
+timed_top() {
+	local n=$1 all kinds
+	all=$(sed -E 's/^[0-9]{4}-([0-9-]{5})T([0-9:]{5})[^ ]* [^ ]+ [^ ]+: /\1 \2\t/; s/ port [0-9]+//; s/ ssh2.*//' |
+		awk -F'\t' 'NF==2{k=$2; c[k]++; if(!(k in f)) f[k]=$1; l[k]=$1} END{for(k in c) printf "%7d %s〜%s %s\n", c[k], f[k], l[k], k}' | sort -rn)
+	printf '%s\n' "$all" | sed '/^$/d' | head -n "$n"
+	kinds=$(printf '%s\n' "$all" | sed '/^$/d' | wc -l)
+	[ "$kinds" -gt "$n" ] && echo "（ほかに $((kinds - n)) 種類を省いた）"
+	return 0
+}
+
 collect_server() {
 	echo "# 業務サーバー $(date '+%F %T %Z') までの24時間"
 
-	section "SSH のログイン（受け入れた・断った・知らない利用者）"
-	journalctl -u ssh --since "$since" --no-pager -o cat 2>/dev/null |
-		grep -E 'Accepted|Failed|Invalid user|authentication failure|maximum authentication' |
-		sed -E 's/ port [0-9]+//; s/sshd-session\[[0-9]+\]: //; s/ ssh2.*//' | top 30
+	section "SSH のログイン（受け入れた・断った・知らない利用者。数・最初〜最後の時刻）"
+	journalctl -u ssh --since "$since" --no-pager -o short-iso 2>/dev/null |
+		grep -E 'Accepted|Failed|Invalid user|authentication failure|maximum authentication' | timed_top 30
 
 	section "sudo（だれが・何を）"
 	journalctl _COMM=sudo --since "$since" --no-pager -o cat 2>/dev/null | grep 'COMMAND=' |
@@ -70,8 +81,9 @@ collect_server() {
 	if command -v sqlite3 >/dev/null && sqlite3 "$db" 'select 1' >/dev/null 2>&1; then
 		echo "### 操作ごとの数"
 		sqlite3 -separator ' ' "$db" "select count(*), action from audit_log where substr(ts,1,19) >= '$from' group by action order by 1 desc limit 40"
-		echo "### ログイン・ログインの失敗（利用者・接続元）"
-		sqlite3 -separator ' ' "$db" "select action, username, substr(target,1,60) from audit_log where substr(ts,1,19) >= '$from' and action in ('login','login.fail','logout')" | top 25
+		echo "### ログイン・ログインの失敗（数・最初〜最後の時刻・利用者・接続元）"
+		# 時刻を添える（2026-10-27。無いと、無効にする前のログインか後のかを読み手が分けられなかった）。
+		sqlite3 -separator ' ' "$db" "select count(*), substr(min(ts),6,11) || '〜' || substr(max(ts),6,11), action, username, substr(target,1,60) from audit_log where substr(ts,1,19) >= '$from' and action in ('login','login.fail','logout') group by action, username, substr(target,1,60) order by 1 desc limit 25"
 		echo "### 持ち主の付け替え（だれが・だれへ・何件）"
 		sqlite3 -separator ' ' "$db" "select count(*), username, '→', substr(target, instr(target,'->')+2) from audit_log where substr(ts,1,19) >= '$from' and action = 'chown' group by 2, 4 order by 1 desc limit 20"
 		echo "### 利用者・権限・削除・機械の入口にかかわる操作（新しい順に40件まで）"
