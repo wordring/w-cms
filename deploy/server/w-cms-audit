@@ -110,8 +110,9 @@ collect_server() {
 	section "ディスク"
 	df -h / /var/lib/w-cms /srv/backup 2>/dev/null | sed 1d | sort -u
 
-	section "最近のログイン（last）"
-	last -n 10 -F 2>/dev/null | sed -E 's/ +/ /g' | head -n 10
+	section "いまのログイン（loginctl）"
+	loginctl list-sessions --no-legend --no-pager 2>/dev/null | head -n 15 || true
+	echo "（以上・ログインの記録は SSH の節）"
 }
 
 collect_vps() {

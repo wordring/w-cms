@@ -192,4 +192,6 @@ command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2"
 - Caddy の受けた要求の記録: Caddyfile のサイトの中に `log { output file /var/log/caddy/access.log { roll_size 20MiB; roll_keep 14; roll_keep_for 336h } format json }`。Cookie と Authorization は Caddy が伏せます。
   ⚠ `caddy validate` を root で流すと、記録のファイルを root の持ち物として先に作り、Caddy が開けずに読み直しが断られます（2026-10-26 に踏んだ）。`chown caddy:caddy /var/log/caddy/access.log` で直ります。
 - 要点を出す台本: `deploy/vps/wcms-audit-collect` を `/usr/local/sbin/` に置く（root・755）。前の24時間の SSH・受信の壁・Caddy の要求（状態の番号・送り元・失敗した道・探りに見える要求・利用者の道具）・Caddy の警告・トンネル・止まった仕事・誤り・守りの更新・ディスク・最近のログインを出します。
-- 業務サーバーから呼ぶ道（`AUDIT_VPS_CMD`）は、まだ決めていません。
+- 業務サーバーから呼ぶ道: 業務サーバーの root の鍵 `/root/.ssh/wcms_audit_vps` を、VPS の `/root/.ssh/authorized_keys` に `restrict,command="/usr/local/sbin/wcms-audit-collect",from="10.8.0.2"` を付けて置く（2026-10-26）。この鍵では、トンネルの中から、この台本を動かすことしかできません（ほかの命令を頼んでも台本が動くだけ）。業務サーバーの設定は `AUDIT_VPS_CMD="ssh -i /root/.ssh/wcms_audit_vps -o BatchMode=yes -o ConnectTimeout=20 root@10.8.0.1"`（値に空白があるので引用符で囲む）。
+  > 2026-10-26 利用者:「業務サーバーの root に、VPS の wcms-audit-collect だけを動かせる絞った鍵（restrict・command・from=10.8.0.2）を足してよいです。」
+- ⚠ Ubuntu 26.04 には `last` も `wtmpdb` も無い（いまのログインは `loginctl`、ログインの記録は SSH のログで見る）。
