@@ -21,7 +21,20 @@ const (
 	maxFailBeforeLock = 5                // この回数連続失敗でロックアウト
 	lockoutDuration   = 15 * time.Minute // ロックアウト時間
 	backoffBase       = 1 * time.Second  // 1回目の失敗のあとの待ち（以後、失敗のたびに倍）
+	// maxFailPerAddr は、1つの接続元からの失敗（どの名前でも）がこの回数でその接続元をロックアウトする数です（2026-10-26）。
+	maxFailPerAddr = 20
+	// maxFailPerName は、1つの名前への失敗（どの接続元からでも）がこの回数でその名前をロックアウトする数です（2026-10-26）。
+	// 多くの接続元から同じ名前を試す総当たりへの備え——ふつうの打ち間違いや、1つの接続元からの嫌がらせでは届かない高さ。
+	maxFailPerName = 50
 )
+
+// ⚠ **ログインの失敗は、名前と接続元の組ごとに数えます**（2026-10-26 利用者:「接続元ごとにも数えてください」）。
+// それまでは名前ごとだけで、社外から管理者の名前で5回失敗すれば、事務所の管理者も15分入れなかった。いまは:
+//   - 名前と接続元の組: バックオフ（1・2・4・8秒）と、5回でその組の15分のロックアウト（ほかの接続元の同じ名前は止めない）。
+//   - 接続元ごと（どの名前でも）: 20回でその接続元を15分止める（名前を替えて試すのを止める）。
+//   - 名前ごと（どの接続元からでも）: 50回でその名前を15分止める（多くの接続元からの総当たりへの備え）。
+// 接続元は clientIP（前段のプロキシは WCMS_TRUSTED_PROXIES に書いたときだけ信じる）。接続元が分からない呼び手（ip が空）は、
+// それまでどおり名前ごとに数える。
 
 // loginAttemptsKeep は、失敗の記録を残す長さです（ロックアウトより十分に長く）。
 const loginAttemptsKeep = 24 * time.Hour
@@ -63,10 +76,16 @@ var (
 // Authenticate はユーザー名とパスワードを検証し、成功すれば User を返します。
 // 失敗回数のロックアウト判定・記録も行います。
 func Authenticate(username, password string) (*User, error) {
+	return AuthenticateFrom(username, password, "")
+}
+
+// AuthenticateFrom は Authenticate と同じで、失敗を接続元 ip ごとにも数えます（ip が空なら名前ごとだけ）。
+func AuthenticateFrom(username, password, ip string) (*User, error) {
 	// 同じ名前の試行は1つずつ通す——確かめ（0.3〜0.5秒）のあいだに並べて送ると、待ちとロックアウトを
 	// 4つずつ抜けられた（2026-10-22 の見直し）。
 	defer lockLoginName(username)()
-	if locked, _ := isLockedOut(username); locked {
+	keys := attemptKeysFor(username, ip)
+	if keys.lockedOut() {
 		return nil, ErrLockedOut
 	}
 
@@ -83,17 +102,17 @@ func Authenticate(username, password string) (*User, error) {
 		if d := decoyHash(); d != "" {
 			VerifyPassword(password, d)
 		}
-		recordFailure(username)
+		keys.recordFailure()
 		return nil, ErrAuthFailed
 	}
 
 	ok, err := VerifyPassword(password, hash.String)
 	if err != nil || !ok {
-		recordFailure(username)
+		keys.recordFailure()
 		return nil, ErrAuthFailed
 	}
 
-	clearFailures(username)
+	keys.clear()
 	return loadUser(username, isAdmin != 0, primaryGroup.String)
 }
 
@@ -227,6 +246,62 @@ func BootstrapAdmin() error {
 }
 
 // --- ログイン失敗のロックアウト管理 ---
+
+// attemptKeys は、1回のログインの失敗を数える鍵です（login_attempts の username の列に入れる。名前には制御文字が入らない
+// ——badUsername——ので、\x00 で区切った鍵がほかの名前と重ならない）。
+type attemptKeys struct {
+	pair string // 名前と接続元の組（接続元が分からなければ名前）——バックオフと5回のロックアウト
+	addr string // 接続元（空なら数えない）——20回
+	name string // 名前（接続元が分からなければ空——pair が名前なので）——50回
+}
+
+func attemptKeysFor(username, ip string) attemptKeys {
+	if ip == "" {
+		return attemptKeys{pair: username}
+	}
+	return attemptKeys{pair: username + "\x00" + ip, addr: "\x00addr\x00" + ip, name: username}
+}
+
+func (k attemptKeys) lockedOut() bool {
+	if locked, _ := isLockedOut(k.pair); locked {
+		return true
+	}
+	if k.addr != "" && overLimit(k.addr, maxFailPerAddr) {
+		return true
+	}
+	return k.name != "" && overLimit(k.name, maxFailPerName)
+}
+
+func (k attemptKeys) recordFailure() {
+	recordFailure(k.pair)
+	if k.addr != "" {
+		recordFailure(k.addr)
+	}
+	if k.name != "" {
+		recordFailure(k.name)
+	}
+}
+
+// clear は、入れたときに名前と接続元の組と名前の数を消します（接続元の数は残す——自分の口座で入れる人が、ほかの名前を
+// 試した数を消せないように。最後の失敗から lockoutDuration で明ける）。
+func (k attemptKeys) clear() {
+	clearFailures(k.pair)
+	if k.name != "" {
+		clearFailures(k.name)
+	}
+}
+
+// overLimit は、鍵 key の失敗が limit 回以上で、最後の失敗から lockoutDuration たっていないかを返します。
+func overLimit(key string, limit int) bool {
+	var failCount int
+	var lastFail sql.NullTime
+	if err := database.AuthDB.QueryRow(
+		`SELECT fail_count, last_fail FROM login_attempts WHERE username = ?`, key,
+	).Scan(&failCount, &lastFail); err != nil || !lastFail.Valid {
+		return false
+	}
+	return failCount >= limit && nowFunc().Before(lastFail.Time.Add(lockoutDuration))
+}
 
 func isLockedOut(username string) (bool, time.Time) {
 	var failCount int

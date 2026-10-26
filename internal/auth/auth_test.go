@@ -221,3 +221,41 @@ func TestBadUsername(t *testing.T) {
 		}
 	}
 }
+
+// TestLoginLockoutPerAddress は、⚠ **ログインの失敗を名前と接続元の組で数え、ほかの接続元の同じ名前は止めない**ことと、
+// 1つの接続元が名前を替えて試すのを止めることを固定します（2026-10-26 利用者:「接続元ごとにも数えてください」——それまでは
+// 社外から管理者の名前で5回失敗すれば、事務所の管理者も入れなかった）。
+func TestLoginLockoutPerAddress(t *testing.T) {
+	setupAuthDB(t)
+	if err := CreateUser("boss", "right-pass", true, ""); err != nil {
+		t.Fatal(err)
+	}
+	fail := func(name, ip string) error {
+		advanceClock(30 * time.Second) // バックオフの待ちを越える
+		_, err := AuthenticateFrom(name, "wrong", ip)
+		return err
+	}
+	for i := 0; i < maxFailBeforeLock; i++ {
+		fail("boss", "203.0.113.9")
+	}
+	advanceClock(30 * time.Second)
+	if _, err := AuthenticateFrom("boss", "right-pass", "203.0.113.9"); err != ErrLockedOut {
+		t.Errorf("社外の接続元が止まっていません: %v", err)
+	}
+	if _, err := AuthenticateFrom("boss", "right-pass", "192.168.1.20"); err != nil {
+		t.Errorf("⚠ 社外からの失敗で、事務所の管理者が入れません: %v", err)
+	}
+	// 1つの接続元が名前を替えて試す——maxFailPerAddr 回でその接続元を止める（初めて打つ名前でも）。
+	for i := 0; i < maxFailPerAddr; i++ {
+		fail("ghost"+string(rune('a'+i)), "198.51.100.7")
+	}
+	advanceClock(30 * time.Second)
+	if _, err := AuthenticateFrom("boss", "right-pass", "198.51.100.7"); err != ErrLockedOut {
+		t.Errorf("名前を替えて試す接続元が止まっていません: %v", err)
+	}
+	// 15分たてば明ける。
+	advanceClock(lockoutDuration + time.Minute)
+	if _, err := AuthenticateFrom("boss", "right-pass", "198.51.100.7"); err != nil {
+		t.Errorf("ロックアウトが明けません: %v", err)
+	}
+}

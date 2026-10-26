@@ -110,7 +110,7 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	// argon2idの同時実行を制限してメモリのピークを抑える
 	loginSem <- struct{}{}
-	user, err := Authenticate(username, password)
+	user, err := AuthenticateFrom(username, password, clientIP(r))
 	<-loginSem
 	// 失敗しても戻り先は保つ（打ち間違いのたびに目的地を見失わないため）。
 	next := safeNextPath(r.FormValue("next"))
