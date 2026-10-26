@@ -300,3 +300,37 @@ AUDIT_VPS_CMD=〈VPS の要点を出す命令（任意）〉
 - HP405: `deploy/office-pc/copy-backup.ps1` を `C:\w-cms-控え\copy-backup.ps1` に置き（BOM 付きの UTF-8）、Windows のタスク「w-cms の控えを写す」（毎日 8:00・電源が切れていたら次に入れたとき）が流します。置き場は `C:\w-cms-控え\restic-pc`（OneDrive の外）、記録は `C:\w-cms-控え\写した記録.log`。取ってきたファイルは、名前（中身の SHA-256）で壊れていないかを確かめます。鍵は `~\.ssh\id_ed25519_wcms_pc`。
 - 毎朝の監査（w-cms-audit）が、HP405 が写し終えた記録を読みます（古くなっていれば気づける）。
 - 戻すとき: `C:\w-cms-控え\restic-pc` を業務サーバー（または新しい機械）へ写し、`restic -r <置き場> --password-file <パスワード> restore latest --target <戻す先>`。パスワードは、職場の PC のデスクトップの「秘密の設定」の `w-cms-社外の控えのパスワード.txt` にもあります。
+
+## 控えから戻す練習（2026-10-26）
+
+利用者:「控えから戻す練習やりましょう」。本番には触らず、戻したものを脇の置き場（`/srv/restore-drill`・700）で確かめました。
+
+### HP405 の控えから
+
+1. HP405 の `C:\w-cms-控え\restic-pc` を業務サーバーの `/srv/restore-drill/hp405-repo` へ写す。
+2. `restic -r /srv/restore-drill/hp405-repo --password-file /etc/w-cms/offsite.pass check` → 誤りなし。
+3. `restic … restore latest --target /srv/restore-drill/hp405` → 13 秒。夜の写し（`/srv/backup/w-cms/data/latest`）と `diff -rq` で比べて、違い 0。
+4. 戻したデータで、試しの w-cms を本番の実行ファイルのまま脇で起こす（社内にも出さない・利用者の DB は戻したもの）:
+
+   ```bash
+   sudo systemd-run --unit=w-cms-drill --uid=w-cms --gid=w-cms -p WorkingDirectory=/opt/w-cms/prod \
+     -p RuntimeDirectory=w-cms-drill -p RuntimeDirectoryMode=0700 \
+     -E WCMS_DATA_DIR=<戻した data> -E WCMS_ADDR=127.0.0.1:9444 -E WCMS_SECURE_COOKIES=0 \
+     -E WCMS_LOCAL_SOCKET=/run/w-cms-drill/local.sock -E WCMS_LOCAL_SOCKET_USER=Claude /opt/w-cms/w-cms
+   ```
+
+   起きるときに索引を本文から作り直した（1,899 ページ・6 秒）。ページ・添付（本番と同じ SHA-256）・版（いちばん古い版も開ける）・表の検索を、中の入口（`curl --unix-socket /run/w-cms-drill/local.sock`）で確かめた。
+5. `sudo systemctl stop w-cms-drill`、`sudo rm -rf /srv/restore-drill`。
+
+⚠ 戻した `data/` には利用者の DB（パスワードの控え）とメールのサインインが入っています。練習の置き場は 700 にして、終わったら消します。
+
+### VPS（社外）の控えから
+
+`sudo w-cms-offsite restic restore latest --target /srv/restore-drill/vps`。
+
+- ⚠ はじめは毎秒 0.07 MB しか出ず、6 GB に丸1日以上かかる見込みでした。職場 ⇔ VPS の道で、夜に 5〜6% の取りこぼしがあり（トンネルの外の ping でも同じ）、TCP の既定の加減（cubic）が速さを大きく下げていたためです。VPS と業務サーバーの TCP の加減を BBR にして、同じファイルが毎秒 2.5 MB になりました（下の「TCP の加減」）。
+- 送る向き（控えを送る）は、昼に 6 GB を 18 分で送れていました。戻す向きだけが遅く、練習するまで気づけませんでした。
+
+## TCP の加減（BBR・2026-10-26）
+
+`deploy/vps/60-wcms-bbr.conf` を `/etc/sysctl.d/` に置き、`echo tcp_bbr > /etc/modules-load.d/wcms-bbr.conf`、`sysctl --system`。業務サーバーと VPS の両方に置いています。確かめる: `sysctl -n net.ipv4.tcp_congestion_control`（`bbr`）。

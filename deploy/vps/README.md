@@ -181,10 +181,6 @@ command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2"
 
 業務サーバーと同じ `w-cms-watch` を置いています（`deploy/server/README.md` の「見張り」）。VPS の `/etc/w-cms/watch.env` の `CHECK_RESOLVE` は `〈公開の名前〉:443:127.0.0.1`（Caddy から先を見る）。
 
-## まだのこと
-
-- 社外の控え（オブジェクトストレージと restic）。
-
 ## サーバーの監査のための記録（2026-10-26）
 
 業務サーバーの `w-cms-audit`（`deploy/server/README.md` の「サーバーの監査」）が、VPS のログの要点も読みます。
@@ -195,3 +191,15 @@ command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2"
 - 業務サーバーから呼ぶ道: 業務サーバーの root の鍵 `/root/.ssh/wcms_audit_vps` を、VPS の `/root/.ssh/authorized_keys` に `restrict,command="/usr/local/sbin/wcms-audit-collect",from="10.8.0.2"` を付けて置く（2026-10-26）。この鍵では、トンネルの中から、この台本を動かすことしかできません（ほかの命令を頼んでも台本が動くだけ）。業務サーバーの設定は `AUDIT_VPS_CMD="ssh -i /root/.ssh/wcms_audit_vps -o BatchMode=yes -o ConnectTimeout=20 root@10.8.0.1"`（値に空白があるので引用符で囲む）。
   > 2026-10-26 利用者:「業務サーバーの root に、VPS の wcms-audit-collect だけを動かせる絞った鍵（restrict・command・from=10.8.0.2）を足してよいです。」
 - ⚠ Ubuntu 26.04 には `last` も `wtmpdb` も無い（いまのログインは `loginctl`、ログインの記録は SSH のログで見る）。
+
+## TCP の加減（BBR・2026-10-26）
+
+この VPS から職場へ送る向き（社外の控えを戻す・社外の人へ画面を返す）は、夜に 5〜6% の取りこぼしがある道を通ります。既定の cubic では毎秒 0.07 MB まで落ちたので、BBR にしました（同じ道で毎秒 2.5 MB）。
+
+```bash
+install -m 644 deploy/vps/60-wcms-bbr.conf /etc/sysctl.d/
+echo tcp_bbr > /etc/modules-load.d/wcms-bbr.conf
+sysctl --system
+```
+
+業務サーバーにも同じものを置いています（`deploy/server/README.md` の「TCP の加減」）。
