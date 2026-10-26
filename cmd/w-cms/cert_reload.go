@@ -89,3 +89,39 @@ func (r *certReloader) reloadIfChanged() {
 	r.cert, r.loaded = &c, mods
 	log.Println("証明書を読み直しました: " + r.certPath)
 }
+
+// newOptionalCertReloader は、まだファイルが無い・読めないかもしれない証明書の読み直しです（2026-10-26）。
+// 読めなければ証明書なし（nil）で始め、ファイルが替わったら（写されてきたら）読みます。
+func newOptionalCertReloader(certPath, keyPath string) *certReloader {
+	r := &certReloader{certPath: certPath, keyPath: keyPath, now: time.Now}
+	r.checked = r.now()
+	r.reloadIfChanged()
+	if r.cert == nil {
+		log.Printf("公開の名前の証明書はまだ読めません（写されてきたら読みます）: %s", certPath)
+	}
+	return r
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 証明書を名前で使い分ける（2026-10-26・【考察】職場のサーバー機と社外からの接続 §3.3・§3.4）
+//
+// 社内からは、いままでの住所（https://192.168.1.100:8443）でも、公開の名前（社内の名前引きで業務サーバーを指す）でも
+// 開けるようにします。公開の名前の証明書（Let's Encrypt・VPS で取って写す——WCMS_TLS_PUBLIC_CERT / WCMS_TLS_PUBLIC_KEY）には
+// 社内の住所が入らないので、1枚では両方を警告なしにできません。そこで、接続のあいさつで求められた名前（SNI）が公開の名前の
+// 証明書に合えばそれを、合わなければ（住所で開いた・名前を送らない・VPS の中継の wcms-server）いままでの証明書を渡します。
+// ─────────────────────────────────────────────────────────────────────────
+
+// certChooser は、求められた名前で証明書を選ぶ tls.Config.GetCertificate です。pub は無くてよい（nil）。
+type certChooser struct {
+	def, pub *certReloader
+}
+
+// GetCertificate は tls.Config.GetCertificate です。
+func (c *certChooser) GetCertificate(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if c.pub != nil && h != nil && h.ServerName != "" {
+		if pc, _ := c.pub.GetCertificate(h); pc != nil && pc.Leaf != nil && pc.Leaf.VerifyHostname(h.ServerName) == nil {
+			return pc, nil
+		}
+	}
+	return c.def.GetCertificate(h)
+}

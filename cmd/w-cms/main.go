@@ -171,8 +171,13 @@ func main() {
 		if err != nil {
 			log.Fatalf("証明書を読めません: %v", err)
 		}
+		// 公開の名前の証明書（あれば）は、求められた名前で使い分ける（2026-10-26・cert_reload.go の certChooser）。
+		chooser := &certChooser{def: reloader}
+		if pc, pk := os.Getenv("WCMS_TLS_PUBLIC_CERT"), os.Getenv("WCMS_TLS_PUBLIC_KEY"); pc != "" && pk != "" {
+			chooser.pub = newOptionalCertReloader(pc, pk)
+		}
 		srv := newServer(addr, handler)
-		srv.TLSConfig = &tls.Config{GetCertificate: reloader.GetCertificate}
+		srv.TLSConfig = &tls.Config{GetCertificate: chooser.GetCertificate}
 		if err := srv.ListenAndServeTLS("", ""); err != nil {
 			log.Fatalf("サーバー終了: %v", err)
 		}
