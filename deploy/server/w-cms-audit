@@ -93,8 +93,16 @@ collect_server() {
 		systemctl cat "$u.service" >/dev/null 2>&1 || continue
 		printf '%s: %s\n' "$u" "$(systemctl show "$u.service" -p ActiveState -p Result -p ExecMainExitTimestamp -p NRestarts --value 2>/dev/null | tr '\n' ' ')"
 	done
-	echo "### 見張りが送った知らせ（応えません・戻りました）"
+	echo "### 見張りの記録（応えません・戻りました・トンネルの変化）"
 	journalctl -t w-cms-watch --since "$since" --no-pager -o short-iso 2>/dev/null | tail -n 20
+
+	section "トンネル（WireGuard）——相手ごとの、いまの様子"
+	now=$(date +%s)
+	wg show all dump 2>/dev/null | awk -F'\t' -v now="$now" 'NF > 5 {
+		age = ($6 > 0) ? (now - $6) " 秒前" : "まだつながっていない"
+		printf "%s の相手: 住所 %s・最後のつながり %s・受けた %.1f MB・送った %.1f MB\n", $1, $4, age, $7 / 1048576, $8 / 1048576
+	}'
+	echo "（見張りが1分ごとに記録した、住所の変化・つながらなかったあいだは「見張りの記録」の節）"
 
 	section "止まっている仕事（systemd）"
 	systemctl --failed --no-legend --no-pager 2>/dev/null | sed '/^$/d' || true

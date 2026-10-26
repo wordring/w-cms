@@ -58,3 +58,33 @@ else
 	fi
 fi
 printf 'fails=%s\ndown_since=%s\nlast_alert=%s\n' "$fails" "$down_since" "$last_alert" > "$state"
+
+# トンネル（WireGuard）の変化を記録する（2026-10-26・翌朝のサーバーの監査 w-cms-audit が読む）。知らせはしない。
+#   - 相手の住所（IP）が変わった。ポートは NAT で変わるので見ない。
+#   - 最後のつながりから 5 分を過ぎた（WireGuard は、やりとりがあれば2分ごとにつなぎ直す）・またつながった。
+# 利用者:「Wiregurdなどのログも監査できますか？」
+if command -v wg >/dev/null 2>&1; then
+	wgstate=/var/lib/w-cms-watch/wg
+	declare -A wg_ep=() wg_down=()
+	[ -f "$wgstate" ] && while read -r k ep dn; do wg_ep[$k]=$ep; wg_down[$k]=$dn; done < "$wgstate"
+	: > "$wgstate.new"
+	while IFS=$'\t' read -r ifc peer _psk ep _ips hs _rest; do
+		k="$ifc:${peer:0:8}"
+		ip=${ep%:*}
+		[ "$ip" = "(none)" ] && ip="-"
+		prev=${wg_ep[$k]:-}
+		if [ -n "$prev" ] && [ "$prev" != "$ip" ]; then
+			logger -t w-cms-watch "トンネル $ifc の相手の住所が変わった: $prev → $ip"
+		fi
+		dn=${wg_down[$k]:-0}
+		if [ "${hs:-0}" -eq 0 ] || [ $(( now - hs )) -gt 300 ]; then
+			[ "$dn" = 0 ] && logger -t w-cms-watch "トンネル $ifc が 5 分を過ぎてもつながっていない（相手の住所 $ip）"
+			dn=1
+		else
+			[ "$dn" = 1 ] && logger -t w-cms-watch "トンネル $ifc がまたつながった（相手の住所 $ip）"
+			dn=0
+		fi
+		printf '%s %s %s\n' "$k" "$ip" "$dn" >> "$wgstate.new"
+	done < <(wg show all dump 2>/dev/null | awk -F'\t' 'NF > 5')
+	mv "$wgstate.new" "$wgstate"
+fi
