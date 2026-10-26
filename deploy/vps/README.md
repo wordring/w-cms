@@ -22,6 +22,7 @@
 - VPS は中継だけです。w-cms のデータは VPS に置きません。
 - トンネルは業務サーバーから VPS へ張ります。職場のインターネットの住所は固定でないので、VPS の側には職場の住所を書きません（業務サーバーの側の `PersistentKeepalive = 25` で、住所が変わっても VPS が覚え直します）。
 - 職場のルーターに受信の穴は開けません。
+- ⚠ `header_up Host {host}` を外さないこと。HTTPS の中継先には、Caddy は既定で中継先の住所（`10.8.0.2:8443`）を Host にします。w-cms は画面の住所と Host が合わない書き込みを断る（CSRF・`internal/auth/middleware.go` の sameOrigin）ので、社外からはログインまではできても、書ける形にできず、保存もできませんでした（2026-10-26 に利用者が社外のモバイル回線で試して見つけた）。
 - 試験用（:9443）は中継しません。
 
 ## 受信の壁
@@ -136,6 +137,8 @@ ssh -i ~/.ssh/id_ed25519_wcms -J wcms-server root@10.8.0.1
 		-Server
 	}
 	reverse_proxy https://10.8.0.2:8443 {
+		# 元の名前（Host）をそのまま渡す。
+		header_up Host {host}
 		# 知らせの流れ（SSE）を溜めずにすぐ流す。
 		flush_interval -1
 		transport http {
