@@ -43,7 +43,9 @@ umask 077
 printf 'Authorization: Bearer %s\n' "$WCMS_MACHINE_TOKEN" > "$WORK/auth"
 
 # 送ってきた番号: 発信者番号（モデムが受けられたとき）が無ければ、相手の FAX が名乗った番号（TSI）。
-FROM="$CIDNUMBER"
+# 発信者番号は先に数字に絞る——非通知（P）・表示圏外（O）・公衆電話（C）などの文字だけが来たら空になり、名乗った番号へ切り替える
+# （2026-10-26。それまでは絞る前に空かを見ていたので、P が来ると名乗りへ切り替えずに空のまま渡した）。
+FROM=$(printf '%s' "$CIDNUMBER" | tr -cd '0-9+ ' | sed 's/^ *//; s/ *$//')
 if [ -z "$FROM" ]; then
 	FROM=$(faxinfo -n "$QFILE" 2>/dev/null | sed -n 's/^ *Sender: *//p' | head -n 1)
 fi

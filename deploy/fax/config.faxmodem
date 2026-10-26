@@ -23,6 +23,13 @@ Class1RMQueryCmd:	"!24,48,72,96"
 Class1ECMSupport:	no
 ModemRate:		19200
 ModemFlowControl:	rtscts
+# ナンバー・ディスプレイ（2026-10-26・deploy/fax/README.md の 6）: モデムに発信者番号を知らせるよう頼み（AT+VCID=1・CX93001 は 0〜2 を
+# 受ける・国は日本 +GCI: 00）、知らせの行を読む。1つ目（NMBR）が番号、2つ目（NAME）が名前で、faxrcvd-wcms の5番目・6番目の引数になる。
+# 契約が無い・ホームゲートウェイで TEL2 が「使用しない」のあいだは、知らせが来ないだけ（番号は FAX 機の名乗り＝TSI を使う）。
+# 利用者:「では通知番号を読むように出来ますか？ナンバーディスプレーの申し込みは明日やります」
+ModemResetCmds:		AT+VCID=1
+CallIDPattern:		"NMBR = "
+CallIDPattern:		"NAME = "
 # END-SERVER
 #
 # Modem-related stuff: should reflect modem command interface
