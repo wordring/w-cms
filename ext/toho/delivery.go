@@ -148,7 +148,11 @@ func oneClient(client, next string) (string, bool) {
 }
 
 // deliveryLineOf は選んだ1行を、受注明細表の索引から納品明細の行にします（読めない・合わないなら理由）。
-func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
+//
+// ⚠ 今回納める数は、案件明細の数量から、ほかの納品書で納めた数（shipped）と、この納品書のほかの行で納める数（pending）を
+// 引いた残りまで（2026-10-26）。それまでは見ておらず、押し直しや数え違いで、注文より多い数の納品書ができ、出荷済数量と
+// 請求が多すぎた。案件明細の数量が読めない行は見ない。pending には、この行の数を足して返す。
+func deliveryLineOf(user *auth.User, p deliveryPick, shipped shippedLookup, pending map[string]float64) (deliveryLine, string) {
 	id, r, why := pickedOrderRow(user, p, func(k string) bool { return k == PageKindCustomerOrder }, true)
 	if why != "" {
 		return deliveryLine{}, why
@@ -156,9 +160,19 @@ func deliveryLineOf(user *auth.User, p deliveryPick) (deliveryLine, string) {
 	v := r.Values
 	tags, _ := cms.TagsOfPage(database.DB, pageNum(id))
 	qty := strings.TrimSpace(p.Qty)
-	if n, ok := estimateNumber(qty); !ok || n <= 0 {
+	n, ok := estimateNumber(qty)
+	if !ok || n <= 0 {
 		return deliveryLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回納める数が読めません: " + qty
 	}
+	key := shippedKey(id, v["item-id"], v["item-name"])
+	if ordered, okO := estimateNumber(v["quantity"]); okO && ordered > 0 {
+		done := shipped[key] + pending[key]
+		if n > ordered-done+1e-9 {
+			return deliveryLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」は、注文 " + fmtQty(ordered) + " のうち " +
+				fmtQty(done) + " を納めた（ほかの納品書・この納品書のほかの行）ので、今回は " + fmtQty(ordered-done) + " までです（今回 " + qty + "）"
+		}
+	}
+	pending[key] += n
 	return deliveryLine{
 		OurItemNo: strings.TrimSpace(v["our-item-id"]), Order: id, OrderNo: strings.TrimSpace(cms.FirstTag(tags, OrderNoTag)),
 		ItemNo: strings.TrimSpace(v["item-id"]), ItemName: strings.TrimSpace(v["item-name"]), Qty: qty,
@@ -244,8 +258,10 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var lines []deliveryLine
 	client := ""
+	// 納めた数は、1つずつ通している中で数える（deliveryNewMu——直前に作った納品書も数に入る）。
+	shipped, pending := newShippedLookup(database.DB), map[string]float64{}
 	for _, p := range req.Items {
-		ln, why := deliveryLineOf(user, p)
+		ln, why := deliveryLineOf(user, p, shipped, pending)
 		if why != "" {
 			cms.JSONFail(w, http.StatusConflict, why)
 			return

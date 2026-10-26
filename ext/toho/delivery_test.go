@@ -136,3 +136,39 @@ func TestDeliveryOrderNos(t *testing.T) {
 		}
 	}
 }
+
+// TestDeliveryNewCapsAtRemaining は、⚠ **納品書に、注文の数からもう納めた数を引いた残りより多くは載せない**ことを固定します
+// （2026-10-26——それまでは見ておらず、押し直しや数え違いで注文より多く納め、出荷済数量と請求が多すぎた）。
+// ほかの納品書で納めた数も、同じ納品書のほかの行で納める数も数える。
+func TestDeliveryNewCapsAtRemaining(t *testing.T) {
+	setupExtTest(t, "000870", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	addPage(t, 871, -1, "受注", "alice", "302", true)
+	seedOrder(t, 872, 871, "あけぼの精工", "2026-11-01", `<tr><td>000777</td><td>A-1</td><td>ブラケット</td><td>20</td><td>個</td><td>1500</td>`+
+		`<td>2026-11-01</td><td></td><td></td><td>未着手</td></tr>`)
+	addPage(t, 879, 871, "製造", "alice", "302", true)
+	syncBody(t, 879, `<h1>ブラケット</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`)
+	deliver := func(qtys ...string) (int, map[string]any) {
+		var items []map[string]any
+		for _, q := range qtys {
+			items = append(items, map[string]any{"order": "000872", "row": 0, "item": "A-1", "qty": q})
+		}
+		return postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": "000879", "items": items})
+	}
+	if code, out := deliver("21"); code != 409 || !strings.Contains(out["message"].(string), "20 までです") {
+		t.Errorf("⚠ 注文の20より多い21で作れました: %d %v", code, out)
+	}
+	if code, out := deliver("15"); code != 200 {
+		t.Fatalf("15 で作れません: %d %v", code, out)
+	}
+	// 残りは5——1枚の中で 3＋3 は断る。
+	if code, out := deliver("3", "3"); code != 409 || !strings.Contains(out["message"].(string), "2 までです") {
+		t.Errorf("⚠ 同じ納品書の行の合計で残りを超えました: %d %v", code, out)
+	}
+	if code, out := deliver("5"); code != 200 {
+		t.Fatalf("残りの5で作れません: %d %v", code, out)
+	}
+	if code, out := deliver("1"); code != 409 {
+		t.Errorf("⚠ 全部納めたあとにまた作れました: %d %v", code, out)
+	}
+}
