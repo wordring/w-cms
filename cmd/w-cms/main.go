@@ -300,6 +300,9 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/tag-rename", cms.TagRenameAPIHandler)
 	// 表の列の名前を置き換える（語彙で列の名前を変えたとき・キャプションで表を選ぶ・版が残る・admin限定・2026-10-15）。
 	protected.HandleFunc("/api/admin/column-rename", cms.ColumnRenameAPIHandler)
+	// 写真をまとめて小さくする（設定 photo_shrink・裏で動く・admin限定・2026-10-27）と、写真ごとの「⋯」から1枚（書ける人）。
+	protected.HandleFunc("/api/admin/photo-shrink", cms.PhotoShrinkAllAPIHandler)
+	protected.HandleFunc("/api/photo-shrink", cms.PhotoShrinkAPIHandler)
 	// 表を探す（検索画面 assets/tables.html と AI の口・DBの日本語化 §7 の3段目）。
 	// **読めるページの行だけ**返す。自由な SQL は受けない（tables_query.go）。
 	protected.HandleFunc("/api/tables", cms.TablesAPIHandler)

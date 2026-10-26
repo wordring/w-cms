@@ -20,12 +20,17 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 )
 
@@ -45,7 +50,26 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// EXIF などのメタデータをここで落とす（保存する正本が無害化済みになる）。
-	content, err := StripImageMetadata(kind, up.content)
+	// 写真（JPEG）は、設定 photo_shrink の大きさより長ければ、同じ作り直しで縮める（2026-10-27・photo_shrink.go——
+	// 利用者:「これから上げる写真は自動で」）。届いた事実を残す範囲（attachment_readonly）では縮めない。
+	var (
+		content           []byte
+		shrunk            *ShrunkPhoto
+		conf              = PhotoShrinkConfig()
+		shrinkHere        = kind == "jpeg" && conf != nil && !inReadOnlyArea(up.pageID)
+		beforePx, afterPx image.Point
+		resized           bool
+	)
+	if shrinkHere {
+		content, beforePx, afterPx, resized, err = reencodeJPEG(up.content, conf.LongSide, conf.Quality)
+		if err == nil && resized {
+			sum := sha256.Sum256(up.content)
+			shrunk = &ShrunkPhoto{Size: int64(len(up.content)), SHA256: hex.EncodeToString(sum[:]), Width: beforePx.X, Height: beforePx.Y,
+				At: time.Now().In(time.Local).Format(time.RFC3339), By: up.username}
+		}
+	} else {
+		content, err = StripImageMetadata(kind, up.content)
+	}
 	if err != nil {
 		http.Error(w, "画像を処理できませんでした: "+err.Error(), http.StatusBadRequest)
 		return
@@ -56,6 +80,14 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 	if saveErr != nil {
 		JSONFail(w, http.StatusInternalServerError, "画像を保存できませんでした")
 		return
+	}
+	if shrunk != nil {
+		// 縮める前の事実を目録に残す（写真ごとに縮めたときと同じ形・中身の指紋で元の写真を見分けられるように）。
+		if err := UpdateAttachmentMeta(up.pageID, fileName, func(m *AttachmentMeta) { m.ShrunkFrom = shrunk }); err != nil {
+			auth.Audit(up.username, "attach.meta-failed", up.pageID+"/"+fileName+": "+err.Error())
+		}
+		auth.Audit(up.username, "attach.shrink", fmt.Sprintf("%s/%s %d→%d バイト（%d×%d → %d×%d・上げたとき）",
+			up.pageID, fileName, shrunk.Size, len(content), beforePx.X, beforePx.Y, afterPx.X, afterPx.Y))
 	}
 
 	WriteJSON(w, map[string]any{

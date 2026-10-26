@@ -6271,6 +6271,9 @@
         case 'image':
             items.push({ icon: '🔍', label: '原寸で開く', run: () => window.open(info.url, '_blank', 'noopener') });
             items.push({ icon: '📝', label: 'ローカル編集', run: b => startLocalEdit(ref, b) });
+            // 写真（JPEG）を小さくする（2026-10-27・internal/cms/photo_shrink.go）。もう小さい・書けない写真は、押したときにサーバーが断る。
+            if (/\.jpe?g$/i.test(file)) items.push({ icon: '🗜', label: '写真を小さくする', title: '長い辺を設定の大きさ（2000 px など）まで縮めます',
+                run: () => shrinkPhoto(ref, info.url) });
             break;
         case 'cad':
             items.push({ icon: '📝', label: 'CAD で開く', run: b => startLocalEdit(ref, b) });
@@ -6331,6 +6334,31 @@
         const menu = document.getElementById('w-file-menu');
         if (menu) { menu.classList.remove('active'); menu.wcmsAnchor = null; }
     }
+
+    // shrinkPhoto は写真を小さくします（POST /api/photo-shrink・2026-10-27——利用者:「ワンクリックで容量を小さくする方法」）。
+    // 縮めた写真は同じ住所のまま中身が替わるので、ブラウザの手元の写しを取り直してから、同じ住所の絵を描き直す
+    // （本文の src に `?v=` などを足すと、それが本文に保存されてしまう）。
+    async function shrinkPhoto(ref, url) {
+        if (!await askConfirm('この写真を小さくします（長い辺を設定の大きさまで縮めます）。\n'
+            + '元の大きさには、w-cms の画面からは戻せません（夜の控えと社外の控えには残ります）。', '小さくする', 'やめる')) return;
+        try {
+            const res = await fetch('/api/photo-shrink', jsonPost({ ref }));
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.success) {
+                notify(d.message || ('写真を小さくできません（' + res.status + '）'), { type: 'warn' });
+                return;
+            }
+            notify('写真を小さくしました（' + mb(d.before) + ' → ' + mb(d.after) + '・' + d.from + ' → ' + d.to + '）');
+            await fetch(url, { cache: 'reload', credentials: 'same-origin' }).catch(() => {});
+            document.querySelectorAll('img').forEach((img) => {
+                if (img.getAttribute('src') === url) img.src = url;
+            });
+        } catch (e) {
+            notify('写真を小さくできません: ' + e.message, { type: 'warn' });
+        }
+    }
+
+    function mb(bytes) { return (Number(bytes || 0) / 1e6).toFixed(1) + ' MB'; }
 
     // downloadFile は添付を届いたときの名前で保存します（同じ場所のリンクに download を付けて押す）。
     function downloadFile(url, name) {

@@ -28,7 +28,7 @@ async function init() {
   document.getElementById('whoami').textContent = 'ログイン中: ' + me.username + (me.is_admin ? '（管理者）' : '');
   if (!me.is_admin) { setHidden(document.getElementById('denied'), false); return; }
   setHidden(document.getElementById('console'), false);
-  loadUsers(); loadGroups(); loadRequiredPages(); loadTablesReport(); loadAudit();
+  loadUsers(); loadGroups(); loadRequiredPages(); loadTablesReport(); loadAudit(); loadPhotoShrink();
 }
 
 // ── 表の写し（data/tables.db）——「列の揃っていない表」の一覧（2026-09-25）──────
@@ -382,6 +382,54 @@ async function dryThenRename(say, endpoint, body, skippedOf, none, ask) {
   }
 }
 
+// 写真をまとめて小さくする（2026-10-27・/api/admin/photo-shrink）。数と大きさを見せて確かめてから始める。
+// 裏で動くので、動いているあいだは2秒ごとに進み具合を読み直す。
+let photoShrinkTimer = 0;
+const mb = (n) => (Number(n || 0) / 1e6).toFixed(1) + ' MB';
+
+async function loadPhotoShrink() {
+  const el = document.getElementById('ps-msg');
+  const btn = document.getElementById('ps-go');
+  const say = (color, text) => { el.style.color = color; el.textContent = text; };
+  try {
+    const res = await api('GET', '/api/admin/photo-shrink');
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.success) { say('#dc2626', d.message || ('HTTP ' + res.status)); return null; }
+    const j = d.job || {};
+    clearTimeout(photoShrinkTimer);
+    if (!d.enabled) { btn.disabled = true; say('#64748b', '設定 photo_shrink がありません（縮めません）'); return d; }
+    if (j.running) {
+      btn.disabled = true;
+      say('#64748b', `縮めています… ${j.done} / ${j.total} 枚（${mb(j.before)} → ${mb(j.after)}）`);
+      photoShrinkTimer = setTimeout(loadPhotoShrink, 2000);
+      return d;
+    }
+    btn.disabled = !d.count;
+    const last = j.finished ? `前回: ${j.shrunk} 枚を縮めた（${mb(j.before)} → ${mb(j.after)}）` +
+      (j.skipped ? `・そのまま ${j.skipped} 枚` : '') + (j.failed ? `・失敗 ${j.failed} 枚（${(j.errors || []).join(' / ')}）` : '') + '。' : '';
+    say(j.failed ? '#dc2626' : '#64748b', (d.count ? `縮められる写真: ${d.count} 枚・${mb(d.bytes)}（長い辺 ${d.long_side} px より長いもの）。` : '縮める写真はありません。') + last);
+    return d;
+  } catch (e) {
+    say('#dc2626', '数えられませんでした: ' + e.message);
+    return null;
+  }
+}
+
+async function startPhotoShrink() {
+  const d = await loadPhotoShrink();
+  if (!d || !d.count) return;
+  if (!confirm(`写真 ${d.count} 枚（${mb(d.bytes)}）を、長い辺 ${d.long_side} px に縮めます。\n元の大きさには w-cms からは戻せません（夜の控えと社外の控えには残ります）。よろしいですか？`)) return;
+  const res = await api('POST', '/api/admin/photo-shrink', { action: 'start' });
+  const r = await res.json().catch(() => ({}));
+  if (!res.ok || !r.success) {
+    const el = document.getElementById('ps-msg');
+    el.style.color = '#dc2626'; el.textContent = r.message || ('始められませんでした（HTTP ' + res.status + '）');
+    return;
+  }
+  loadPhotoShrink();
+  loadAudit();
+}
+
 function val(id) { return document.getElementById(id).value.trim(); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function msg(id, res) {
@@ -400,6 +448,7 @@ function bindActions() {
   document.getElementById('rebuild-btn').addEventListener('click', rebuildDatabase);
   document.getElementById('tr-go').addEventListener('click', renameTagValue);
   document.getElementById('cr-go').addEventListener('click', renameColumn);
+  document.getElementById('ps-go').addEventListener('click', startPhotoShrink);
   document.getElementById('audit-reload').addEventListener('click', loadAudit);
   document.getElementById('reqpages-create').addEventListener('click', createRequiredPages);
   document.getElementById('reqpages-reload').addEventListener('click', loadRequiredPages);

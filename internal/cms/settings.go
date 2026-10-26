@@ -179,6 +179,9 @@ type Settings struct {
 
 	// Autocomplete はオートコンプリート（表のセルとタグの値の候補）の数え方です（2026-10-19・autocomplete.go）。無ければ候補を数えません。
 	Autocomplete *AutocompleteSettings `json:"autocomplete,omitempty"`
+
+	// PhotoShrink は写真（JPEG）を小さくするときの大きさです（2026-10-27・photo_shrink.go）。無ければ縮めません。
+	PhotoShrink *PhotoShrinkSettings `json:"photo_shrink,omitempty"`
 }
 
 // settings は読み込み済みの設定です。**nil のあいだは設定が空のものとして振る舞います**
@@ -395,6 +398,9 @@ func (s Settings) validate(path string) error {
 		}
 	}
 	if err := validateAutocomplete(path, s.Autocomplete); err != nil {
+		return err
+	}
+	if err := validatePhotoShrink(path, s.PhotoShrink); err != nil {
 		return err
 	}
 	if s.MaxUploadMiB < 0 {

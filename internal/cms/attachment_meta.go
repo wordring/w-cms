@@ -82,6 +82,19 @@ type AttachmentMeta struct {
 	Size    int64  `json:"size"`             // バイト
 	SHA256  string `json:"sha256"`           // 中身のハッシュ（同じファイルかを後で確かめる）
 	Source  string `json:"source,omitempty"` // 由来
+	// ShrunkFrom は写真を小さくする前の事実です（2026-10-27・photo_shrink.go）。縮めていなければ nil。
+	// 2回縮めても、いちばん初めの形を残します（中身の指紋で同じ写真かを確かめる道具が、元の写真を見分けられるように）。
+	ShrunkFrom *ShrunkPhoto `json:"shrunk_from,omitempty"`
+}
+
+// ShrunkPhoto は縮める前の写真の事実です。
+type ShrunkPhoto struct {
+	Size   int64  `json:"size"`   // バイト
+	SHA256 string `json:"sha256"` // 中身のハッシュ
+	Width  int    `json:"width"`  // 画素（向きを直したあと）
+	Height int    `json:"height"`
+	At     string `json:"at"` // 縮めた時刻（RFC 3339）
+	By     string `json:"by"` // 縮めた利用者
 }
 
 // NewAttachmentMeta は中身から事実を組み立てます（保存時刻は今）。

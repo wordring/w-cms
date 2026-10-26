@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
-	"image/jpeg"
 	"io"
 	"strings"
 )
@@ -176,29 +175,12 @@ func StripImageMetadata(kind string, content []byte) ([]byte, error) {
 
 // stripJPEG は EXIF の向きを画素へ反映してから再符号化します。
 // 復号→再符号化なので、EXIF・XMP・ICC を含む全メタデータが落ちます。
+// 大きさの検査・向きの反映・再符号化は reencodeJPEG（photo_shrink.go・2026-10-27 に写真を小さくするのと寄せた）。
+// 品質は既定（75）より高めに取る（stripJPEGQuality）。再符号化は一度きりなので、
+// 画質の劣化より「メタデータが確実に落ちること」を優先する。
 func stripJPEG(content []byte) ([]byte, error) {
-	// 先に大きさだけ読む——数百バイトのファイルが 65535×65535 を名乗ると、復号が何 GB も取ってサーバーが落ちる
-	// （メールの添付は自動で取り込むので、外のだれでも送れる・2026-10-22 の見直し）。
-	cfg, err := jpeg.DecodeConfig(bytes.NewReader(content))
-	if err != nil {
-		return nil, fmt.Errorf("JPEGとして読めません: %v", err)
-	}
-	if err := checkImageSize(cfg.Width, cfg.Height); err != nil {
-		return nil, err
-	}
-	orientation := jpegOrientation(content)
-	img, err := jpeg.Decode(bytes.NewReader(content))
-	if err != nil {
-		return nil, fmt.Errorf("JPEGとして読めません: %v", err)
-	}
-	img = applyOrientation(img, orientation)
-	var buf bytes.Buffer
-	// 品質は既定（75）より高めに取る。再符号化は一度きりなので、
-	// 画質の劣化より「メタデータが確実に落ちること」を優先する。
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
-		return nil, fmt.Errorf("JPEGを書き出せません: %v", err)
-	}
-	return buf.Bytes(), nil
+	out, _, _, _, err := reencodeJPEG(content, 0, 0)
+	return out, err
 }
 
 // 復号してよい画像の大きさです（スマホの写真は 5000 万画素ほど・紙の図面のスキャンも収まる）。
