@@ -1,0 +1,34 @@
+#!/bin/bash
+# w-cms-pcrepo-export — 事務所の PC（HP405）が、暗号化した控えのファイルを取っていくための窓口（2026-10-26・利用者 wcmspc で）。
+#
+# 業務サーバーの wcmspc の /home/wcmspc/.ssh/authorized_keys で、HP405 の鍵を `restrict,command="/usr/local/sbin/w-cms-pcrepo-export",
+# from="192.168.1.0/24"` に絞って置きます。この鍵でできるのは、次の3つだけです（SSH_ORIGINAL_COMMAND で選ぶ）。
+#   list         置き場のファイルの一覧（大きさ<TAB>置き場の中の道）。locks は出さない。
+#   get <道>     そのファイルの中身を出す。道は restic の形（config・keys/<指紋>・snapshots/<指紋>・index/<指紋>・data/<2字>/<指紋>）だけ。
+#   done <数>    写し終えたことを業務サーバーの記録に残す（毎朝の監査 w-cms-audit が「HP405 の写し」として読む）。
+# 中身は暗号化したまま（restic）。wcmspc は置き場を読めるだけで、書けない。
+set -uo pipefail
+repo=/srv/backup/restic-pc
+read -r cmd arg extra <<< "${SSH_ORIGINAL_COMMAND:-}"
+[ -z "${extra:-}" ] || { echo "引数が多すぎます" >&2; exit 2; }
+case "$cmd" in
+list)
+	cd "$repo" || exit 1
+	find config keys snapshots index data -type f -printf '%s\t%p\n' 2>/dev/null
+	;;
+get)
+	if [[ "$arg" =~ ^(config|(keys|snapshots|index)/[0-9a-f]{64}|data/[0-9a-f]{2}/[0-9a-f]{64})$ ]]; then
+		exec cat -- "$repo/$arg"
+	fi
+	echo "読めない道です" >&2
+	exit 2
+	;;
+done)
+	[[ "$arg" =~ ^[0-9]{1,9}$ ]] || { echo "数が読めません" >&2; exit 2; }
+	logger -t w-cms-pcrepo "HP405 が写し終えた（取ってきたファイル $arg）"
+	;;
+*)
+	echo "使えるのは list・get <道>・done <数> だけです" >&2
+	exit 2
+	;;
+esac

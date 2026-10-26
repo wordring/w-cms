@@ -55,12 +55,13 @@ cd /opt/w-cms/repo && sudo -u w-cms env WCMS_DATA_DIR=/var/lib/w-cms/data-test /
 
 ```
 WCMS_DATA_DIR=/var/lib/w-cms/data-test
-WCMS_ADDR=:9443
+WCMS_ADDR=127.0.0.1:9443
 WCMS_TLS_CERT=/var/lib/w-cms/data-test/tls/cert.pem
 WCMS_TLS_KEY=/var/lib/w-cms/data-test/tls/key.pem
 WCMS_SECURE_COOKIES=1
 ```
 
+- ⚠ 試験用は業務サーバーの中（127.0.0.1）だけで待ち受けます（2026-10-26。それまでは社内の LAN から `a`/`a` で本番の写しが読めた）。受信の壁の 9443 の許しも外しました。職場の PC から使うときは、SSH の中継を張ってから `https://localhost:9443` を開きます: `ssh -f -N -L 9443:127.0.0.1:9443 wcms-server`。E2E も `WCMS_BASE=https://localhost:9443` で流します。
 - 最初の起動のときだけ、`WCMS_ADMIN_USER` と `WCMS_ADMIN_PASSWORD` を足して管理者を作ります。作ったら消します。
 - メール・Gemini・機械専用の入口の鍵は、使うときに足します（中身はチャットやリポジトリに書かない）。
 
@@ -287,3 +288,15 @@ AUDIT_VPS_CMD=〈VPS の要点を出す命令（任意）〉
 - 異常のときは `deploy/server/w-cms-smart-alert`（`/usr/local/sbin/`・755）が、見張りと同じ ntfy でスマホへ知らせます（重さ5）。
 - 毎朝の監査（w-cms-audit）にも、SSD の健康の要点（判定・温度・寿命の使用・誤り・安全でない電源断）が入ります。
 - 試し: `sudo env SMARTD_DEVICE=/dev/nvme1 SMARTD_FAILTYPE=試し SMARTD_MESSAGE=… w-cms-smart-alert`。
+
+
+## 事務所の PC（HP405）への控え（2026-10-26）
+
+夜の控えを、暗号化したまま、毎朝 HP405 へも写します（利用者:「過去のデータが全部なくなるのはマズいです」——サーバー機の外の控えは、事務所の別の PC と社外の両方）。
+
+- 業務サーバー: `deploy/server/w-cms-pcrepo`（`/usr/local/sbin/`・root で毎朝 5:30・`w-cms-pcrepo.timer`）が、その日の写しを restic で暗号化して `/srv/backup/restic-pc` に入れます。パスワードは社外の控えと同じ `/etc/w-cms/offsite.pass`。古い控えは自動では消しません。
+- 窓口: 利用者 `wcmspc`（`useradd --system --create-home --shell /bin/sh wcmspc`）の `/home/wcmspc/.ssh/authorized_keys` に、HP405 の鍵を `restrict,command="/usr/local/sbin/w-cms-pcrepo-export",from="192.168.1.0/24"` を付けて置きます。この鍵でできるのは、一覧（`list`）・1つのファイルを読む（`get <道>`）・写し終えたことを残す（`done <数>`）だけです（`deploy/server/w-cms-pcrepo-export`）。
+- ⚠ 置き場の持ち主: `/srv/backup` は `root:wcmspc` の 710（wcmspc は通り抜けるだけ）、`/srv/backup/restic-pc` は wcmspc の組から読める（書けない）、暗号化していない夜の写し `/srv/backup/w-cms` は 700（w-cms-backup が毎晩 700 に保つ）。`/srv/backup/w-cms` を 755 にすると、wcmspc から本文や利用者の DB の写しが読めてしまいます。
+- HP405: `deploy/office-pc/copy-backup.ps1` を `C:\w-cms-控え\copy-backup.ps1` に置き（BOM 付きの UTF-8）、Windows のタスク「w-cms の控えを写す」（毎日 8:00・電源が切れていたら次に入れたとき）が流します。置き場は `C:\w-cms-控え\restic-pc`（OneDrive の外）、記録は `C:\w-cms-控え\写した記録.log`。取ってきたファイルは、名前（中身の SHA-256）で壊れていないかを確かめます。鍵は `~\.ssh\id_ed25519_wcms_pc`。
+- 毎朝の監査（w-cms-audit）が、HP405 が写し終えた記録を読みます（古くなっていれば気づける）。
+- 戻すとき: `C:\w-cms-控え\restic-pc` を業務サーバー（または新しい機械）へ写し、`restic -r <置き場> --password-file <パスワード> restore latest --target <戻す先>`。パスワードは、職場の PC のデスクトップの「秘密の設定」の `w-cms-社外の控えのパスワード.txt` にもあります。

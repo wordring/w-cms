@@ -1,0 +1,43 @@
+#!/bin/bash
+# w-cms-pcrepo — 夜の控えを、事務所の PC（HP405）へ写すための、暗号化した控えの置き場に入れる（2026-10-26・root で・毎朝 5:30）。
+#
+# 利用者:「過去のデータが全部なくなるのはマズいです」——サーバー機の外の控えは、事務所の別の PC と社外の両方（社外は w-cms-offsite）。
+# 2026-10-26 利用者: 写す PC は「職場の PC（HP405）」。形は「暗号化したまま・毎朝の Windows のタスク・読むことしかできない絞った鍵」。
+#
+#   - 入れるのは、w-cms-backup が作ったその日の写し（w-cms-offsite と同じ SRC）。置き場は業務サーバーの /srv/backup/restic-pc。
+#   - restic が暗号化する。パスワードは社外の控えと同じ（/etc/w-cms/offsite.pass）。
+#   - HP405 は、利用者 wcmspc の絞った鍵で、増えたファイルだけを取っていく（w-cms-pcrepo-export・deploy/server/README.md）。
+#     そのため、置き場を wcmspc の組から読めるようにする（書けない）。
+#   - 古い控えは自動では消さない（restic の forget / prune はしない——HP405 の写しも足すだけで済むように）。
+#
+# 使い方: w-cms-pcrepo [backup|snapshots|check|restic <restic の引数…>]
+set -euo pipefail
+. /etc/w-cms/offsite.env
+: "${SRC:?SRC（入れる写し）がありません}"
+export RESTIC_REPOSITORY=/srv/backup/restic-pc
+export RESTIC_PASSWORD_FILE=/etc/w-cms/offsite.pass
+export RESTIC_CACHE_DIR=/var/cache/w-cms-pcrepo
+say() { logger -t w-cms-pcrepo "$*"; echo "$*"; }
+
+# share は、置き場を wcmspc の組から読めるようにする（restic は持ち主だけが読める形で作る）。
+share() {
+	chgrp -R wcmspc "$RESTIC_REPOSITORY"
+	find "$RESTIC_REPOSITORY" -type d -exec chmod 750 {} +
+	find "$RESTIC_REPOSITORY" -type f -exec chmod 640 {} +
+}
+
+case "${1:-backup}" in
+backup)
+	src=$(readlink -f "$SRC")
+	[ -d "$src/master" ] || { say "入れる写し $SRC に master がありません（夜の控えが無い？）"; exit 1; }
+	[ -f "$RESTIC_REPOSITORY/config" ] || restic init >/dev/null
+	cd "$src"
+	restic backup --host w-cms --tag nightly --one-file-system . 2>&1 | tail -3
+	share
+	say "事務所の PC へ写す控えに入れました（$(basename "$src")）"
+	;;
+snapshots) restic snapshots ;;
+check) restic check --read-data-subset=1/20 ;;
+restic) shift; restic "$@"; share ;;
+*) echo "使い方: w-cms-pcrepo [backup|snapshots|check|restic …]" >&2; exit 2 ;;
+esac

@@ -32,6 +32,9 @@ case "$DEST" in "$MOUNT"/*) ;; *) say "控えの置き場 $DEST が $MOUNT の�
 today=$(date +%F)
 month=$(date +%Y-%m)
 mkdir -p "$DEST/daily" "$DEST/monthly"
+# 写しは暗号化していないので、root だけが入れる形に保つ（2026-10-26——事務所の PC へ写す利用者 wcmspc が $MOUNT を通り抜けられるように
+# したので、ここが 755 だと wcmspc から本文や利用者の DB の写しが読めた）。
+chmod 700 "$DEST"
 work="$DEST/daily/.$today.partial"
 rm -rf "$work"
 mkdir -p "$work"

@@ -1,0 +1,10 @@
+[Unit]
+Description=w-cms: 毎朝、事務所の PC へ写す控えを作る（社外の控え 4:30 のあと）
+
+[Timer]
+OnCalendar=*-*-* 05:30
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

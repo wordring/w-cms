@@ -89,10 +89,12 @@ collect_server() {
 
 	section "決まった時刻の仕事（控え・社外の控え・証明書・見張り）"
 	local u
-	for u in w-cms-backup w-cms-offsite w-cms-cert-pull w-cms-watch w-cms w-cms-test w-cms-phone hylafax faxgetty@ttyACM0; do
+	for u in w-cms-backup w-cms-offsite w-cms-pcrepo w-cms-cert-pull w-cms-watch w-cms w-cms-test w-cms-phone hylafax faxgetty@ttyACM0; do
 		systemctl cat "$u.service" >/dev/null 2>&1 || continue
 		printf '%s: %s\n' "$u" "$(systemctl show "$u.service" -p ActiveState -p Result -p ExecMainExitTimestamp -p NRestarts --value 2>/dev/null | tr '\n' ' ')"
 	done
+	echo "### 事務所の PC（HP405）へ写す控え（2日ぶん・HP405 が写し終えると「写し終えた」と残る）"
+	journalctl -t w-cms-pcrepo --since "48 hours ago" --no-pager -o short-iso 2>/dev/null | tail -n 8
 	echo "### 見張りの記録（応えません・戻りました・トンネルの変化）"
 	journalctl -t w-cms-watch --since "$since" --no-pager -o short-iso 2>/dev/null | tail -n 20
 

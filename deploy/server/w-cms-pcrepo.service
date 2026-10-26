@@ -1,0 +1,9 @@
+[Unit]
+Description=w-cms: 夜の控えを、事務所の PC へ写すための暗号化した置き場に入れる
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/w-cms-pcrepo backup
+Nice=10
+IOSchedulingClass=idle
