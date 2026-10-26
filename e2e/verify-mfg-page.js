@@ -176,12 +176,20 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
       why = await qtyCell.evaluate((c) => 'edit-mode=' + document.body.hasAttribute('edit-mode') + ' editable=' + c.isContentEditable + ' text=' + c.textContent.trim());
     }
     check('④ 納品表の数量を 5 に直せた', edited, why);
-    // 閲覧へ戻す（戻すときに書きかけを保存する）。⚠ 書ける形に入ると、サーバーが描く帯（「🚚 納品書を作る」など）が消え、
-    // 閲覧へ戻しても読み直すまで出ない（2026-10-26 に見つけた・前からある）——読み直してから押す。
+    // 書ける形でも、サーバーが描く帯（「🚚 納品書を作る」「🚚 納品作業」）が出ている（2026-10-26——それまでは書ける形に入ると消え、
+    // 閲覧へ戻しても読み直すまで出なかった）。帯に ⠿・🗑 は出ない。
+    check('④ 書ける形でも帯が出る（納品表と製造明細表の下）',
+      await page.locator('#w-editor-content .mfg-dlvdraft-make').count() === 1 && await page.locator('#w-editor-content .mfg-act-dlv').count() === 1);
+    check('④ 帯に ⠿・🗑 が出ない', await page.evaluate(() => {
+      const bar = document.querySelector('#w-editor-content .mfg-dlvdraft-bar');
+      const wrap = bar && bar.closest('.editor-block');
+      const ctl = wrap && wrap.querySelector(':scope > .block-controls');
+      return !!ctl && getComputedStyle(ctl).display === 'none';
+    }));
+    // 閲覧へ戻す（戻すときに書きかけを保存する）——読み直さずに、そのまま押せる。
     await page.evaluate(() => { if (document.body.hasAttribute('edit-mode')) document.getElementById('w-mode-toggle').click(); });
     await page.waitForFunction(() => !document.body.hasAttribute('edit-mode'), null, { timeout: 8000 }).catch(() => {});
-    await page.goto(BASE + '/' + mfg);
-    await page.locator('#w-editor-content .mfg-dlvdraft-make').waitFor({ timeout: 10000 }).catch(() => {});
+    check('④ 閲覧へ戻しても帯が出ている', await page.locator('#w-editor-content .mfg-dlvdraft-make').count() === 1);
     check('④ 直した数量 5 が保存されている', tableIn(await bodyOf(page, mfg), '納品表').replace(/\s+/g, '').includes('<td>5</td>'));
     await Promise.all([
       page.waitForURL((u) => !u.pathname.endsWith('/' + mfg), { timeout: 15000 }).catch(() => {}),

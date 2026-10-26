@@ -52,6 +52,52 @@ func splitStoredBlocks(body string) ([]storedBlock, error) {
 	return out, nil
 }
 
+// ChromeOfAttr は、鏡がブロックの直後（上の段）に置いた飾り付け（.vocab-chrome）が、どのブロックに付いているかの印です
+// （画面へ返すときだけ付ける——本文には書かない）。
+const ChromeOfAttr = "data-chrome-of"
+
+// renderedBlocksWithChrome は、鏡を埋めた本文 body を、ブロック ID → 画面へ返す書き出しにします。
+//
+// ⚠ 鏡がブロックの直後（上の段）に置いた ID の無い飾り付け（.vocab-chrome——表の下の操作の帯など）は、直前のブロックの
+// 書き出しの後ろへ足し、ChromeOfAttr でそのブロックの ID を付ける（2026-10-26）。それまでは ID が無いのでどのブロックにも
+// 入らず捨てていて、書ける形に入ると業務の帯が消え、閲覧へ戻しても読み直すまで出なかった。最初のブロックより前の飾り付けは
+// 付ける先が無いので、いままでどおり返さない。
+func renderedBlocksWithChrome(body string) map[string]string {
+	out := map[string]string{}
+	nodes, err := htmldoc.ParseFragment(body)
+	if err != nil {
+		return out
+	}
+	last := ""
+	for _, n := range nodes {
+		if n.Type != html.ElementNode {
+			continue
+		}
+		id := Attr(n, htmldoc.BlockIDAttr)
+		if id == "" && last != "" && hasClassName(n, "vocab-chrome") {
+			setAttr(n, ChromeOfAttr, last)
+			out[last] += renderNode(n)
+			continue
+		}
+		if id == "" {
+			continue
+		}
+		out[id] = renderNode(n)
+		last = id
+	}
+	return out
+}
+
+// hasClassName は要素 n の class に name があるかです。
+func hasClassName(n *html.Node, name string) bool {
+	for _, c := range strings.Fields(Attr(n, "class")) {
+		if c == name {
+			return true
+		}
+	}
+	return false
+}
+
 // renderNode は1つのノードを書き出します。
 func renderNode(n *html.Node) string {
 	var sb strings.Builder

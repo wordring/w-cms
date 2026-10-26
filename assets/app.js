@@ -1350,6 +1350,7 @@
         let sanitizedSeen = false;
         const sanitizedList = []; // サニタイズで差し替えたブロック: { id, before, after }（アンドゥの記録の「後」を直す）
         const restoreCaretSoon = []; // 差し替えたブロックにあったキャレット（applyMode のあとで戻す）
+        const chromeLater = []; // 描き直したブロックの [id, 書き出し]——サーバーが直後に添えた飾り付けを置き直す（placeServerChrome）
         let touched = false;
         const wasQuiet = quietDomChange, wasSuppressed = suppressSnapshot;
         quietDomChange = true;
@@ -1391,6 +1392,7 @@
                 } else {
                     fresh.set(b.id, node);
                 }
+                chromeLater.push([b.id, b.html]);
                 const after = serializeBlock(node);
                 syncBase.set(b.id, { h: b.h, html: after });
                 if (b.why !== 'sanitized' && b.why !== 'full') remote.push({ id: b.id, before, after });
@@ -1409,6 +1411,7 @@
                 touched = true;
             });
             if (placeBlocks(finalIds, fresh)) touched = true;
+            chromeLater.forEach(([id, html]) => placeServerChrome(id, html));
             // 仕上がりに無いブロックの元は捨てる（聞いているものは残す）——残すと、あとで同じ中身で戻ったときに送られない。
             Array.from(syncBase.keys()).forEach(id => { if (!finalSet.has(id) && !syncConflicts.has(id)) syncBase.delete(id); });
             syncOrder = finalIds.filter(id => !syncConflicts.has(id) || syncConflicts.get(id).kind !== 'deleted');
@@ -1825,6 +1828,24 @@
     }
 
     // elementFromHTML は書き出した1ブロックの HTML から要素を作る（populateEditor と同じく DOMParser——スクリプトは走らない）。
+    // placeServerChrome は、サーバーがブロック id の直後に添えた飾り付け（表の下の操作の帯など——data-chrome-of・block_sync.go の
+    // renderedBlocksWithChrome）を、そのブロックの後ろへ置き直します（前の飾り付けは外す）。⚠ 2026-10-26 まではサーバーが
+    // 添えず、書ける形に入ると業務の帯が消え、閲覧へ戻しても読み直すまで出なかった。閲覧と同じに、1つずつ包みに入れて置く。
+    function placeServerChrome(id, html) {
+        document.querySelectorAll('#w-editor-content [data-chrome-of="' + CSS.escape(id) + '"]')
+            .forEach(c => (c.closest('.editor-block') || c).remove());
+        const el = topLevelBlocks().find(x => x.getAttribute(BLOCK_ID_ATTR) === id);
+        if (!el) return;
+        let after = el.closest('.editor-block') || el;
+        const extras = Array.from(new DOMParser().parseFromString(html, 'text/html').body.children).slice(1)
+            .filter(c => c.getAttribute('data-chrome-of') === id);
+        extras.forEach(c => {
+            const node = document.importNode(c, true);
+            after.after(node);
+            after = wrapInBlock(node);
+        });
+    }
+
     function elementFromHTML(html) {
         const el = new DOMParser().parseFromString(html, 'text/html').body.firstElementChild;
         return el ? document.importNode(el, true) : null;

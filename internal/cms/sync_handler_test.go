@@ -542,3 +542,20 @@ func TestMachineRewriteKeepsIDOfIDlessBlock(t *testing.T) {
 		t.Errorf("⚠ 何も変えない書き替えで ID を書きました: %s", bodyOfFile(t, id))
 	}
 }
+
+// TestRenderedBlocksKeepTrailingChrome は、鏡がブロックの直後に置いた ID の無い飾り付け（.vocab-chrome——表の下の操作の帯）を、
+// 直前のブロックの書き出しへ添えて返すことを固定します（2026-10-26——それまでは捨てていて、書ける形に入ると業務の帯が消えた）。
+func TestRenderedBlocksKeepTrailingChrome(t *testing.T) {
+	body := `<div class="vocab-chrome">先頭の飾り</div><h2 data-id="aaaa">見出し</h2>` +
+		`<table data-id="bbbb"><tbody><tr><td>1</td></tr></tbody></table><div class="vocab-chrome bar">帯</div><p>ID の無い本文</p><p data-id="cccc">次</p>`
+	got := renderedBlocksWithChrome(body)
+	if !strings.Contains(got["bbbb"], `<table data-id="bbbb">`) || !strings.Contains(got["bbbb"], `data-chrome-of="bbbb"`) || !strings.Contains(got["bbbb"], "帯") {
+		t.Errorf("⚠ 表の直後の帯を表に添えていません: %q", got["bbbb"])
+	}
+	if !strings.HasPrefix(got["bbbb"], "<table") {
+		t.Errorf("⚠ ブロックの書き出しの先頭が表でありません（画面は先頭の要素をブロックとする）: %q", got["bbbb"])
+	}
+	if strings.Contains(got["aaaa"], "飾り") || strings.Contains(got["cccc"], "ID の無い本文") || strings.Contains(got["bbbb"], "ID の無い本文") {
+		t.Errorf("⚠ 飾り付けでないもの・先頭の飾り付けを、ほかのブロックに添えました: %v", got)
+	}
+}

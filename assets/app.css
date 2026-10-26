@@ -640,6 +640,11 @@ body[edit-mode] .editor-block:hover .block-controls {
     opacity: 1;
 }
 
+/* サーバーがブロックの直後に添えた飾り付け（表の下の操作の帯など——data-chrome-of・2026-10-26）は本文ではないので、
+   ⠿・🗑・＋ を出さない（消しても動かしても保存されない）。 */
+body[edit-mode] .editor-block:has(> .block-content > [data-chrome-of]) > .block-controls,
+body[edit-mode] .editor-block:has(> .block-content > [data-chrome-of]) > .add-btn { display: none; }
+
 /* 削除は破壊的な操作なので、ホバーで赤く変えて他のボタンと区別する */
 .block-controls .delete-btn:hover {
     color: #ef4444;

@@ -511,12 +511,7 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 		out = append(out, o)
 	}
 	if needRender {
-		rendered := map[string]string{}
-		if rb, err := splitStoredBlocks(RenderComputedViews(r, idInt, finalBody)); err == nil {
-			for _, b := range rb {
-				rendered[b.ID] = b.HTML
-			}
-		}
+		rendered := renderedBlocksWithChrome(RenderComputedViews(r, idInt, finalBody))
 		for i := range out {
 			if out[i].Why != "" {
 				out[i].HTML = rendered[out[i].ID]
