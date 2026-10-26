@@ -1,0 +1,6 @@
+[Unit]
+Description=w-cms: 応えるかを見て、止まったらスマホへ知らせる（ntfy）
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/w-cms-watch

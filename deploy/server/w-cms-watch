@@ -1,0 +1,60 @@
+#!/bin/bash
+# w-cms-watch — w-cms が応えるかを見て、止まったとき・戻ったときに ntfy でスマホへ知らせる（2026-10-26・root で1分ごと）。
+#
+# 利用者:「ntfy に替えます」（UptimeRobot は登録の CAPTCHA を越えられなかった）。
+# 業務サーバーと VPS の両方に置き、互いの道を見ます（deploy/server/README.md・deploy/vps/README.md の「見張り」）。
+#   - 業務サーバー: 社外の道（VPS → トンネル → w-cms）を見る。VPS が止まっても気づける。
+#   - VPS: Caddy → トンネル → w-cms を見る。職場の停電・インターネットの切断でも気づける。
+# 2台が同時に止まると、どちらも知らせられない。
+#
+# 設定は /etc/w-cms/watch.env:
+#   NTFY_SERVER=https://ntfy.sh   NTFY_TOPIC=〈長いでたらめの話題の名前〉（リポジトリに書かない——知っている人は誰でも読める）
+#   WHO=〈この機械の呼び名〉       CHECK_URL=https://…/login
+#   CHECK_RESOLVE=〈名前:443:住所〉（任意——curl --resolve。名前引きを通さず、決まった住所へ行かせる）
+#   CHECK_CACERT=〈信じる証明書〉（任意）
+# 知らせるのは、続けて FAILS_TO_ALERT 回（既定 2）失敗したときと、戻ったときだけ。止まっているあいだは REMIND_MIN 分（既定 360）ごとに念押し。
+set -uo pipefail
+. /etc/w-cms/watch.env
+: "${NTFY_SERVER:?}" "${NTFY_TOPIC:?}" "${WHO:?}" "${CHECK_URL:?}"
+FAILS_TO_ALERT=${FAILS_TO_ALERT:-2}
+REMIND_MIN=${REMIND_MIN:-360}
+state=/var/lib/w-cms-watch/state
+mkdir -p "$(dirname "$state")"
+fails=0; down_since=""; last_alert=0
+[ -f "$state" ] && . "$state"
+
+notify() { # notify <題> <本文> <重さ 1〜5>
+	local body
+	body=$(printf '{"topic":"%s","title":"%s","message":"%s","priority":%s,"tags":["%s"]}' \
+		"$NTFY_TOPIC" "$1" "$2" "$3" "$([ "$3" -ge 4 ] && echo rotating_light || echo white_check_mark)")
+	curl -s -m 20 -o /dev/null -H "Content-Type: application/json" -d "$body" "$NTFY_SERVER" || logger -t w-cms-watch "ntfy へ送れません"
+}
+
+if [ "${1:-}" = "test" ]; then
+	notify "w-cms の見張り（${WHO}）" "試しの知らせです。これが届けば、止まったときにもスマホへ届きます。" 3
+	exit 0
+fi
+
+args=(-s -o /dev/null -w '%{http_code}' -m 20)
+[ -n "${CHECK_RESOLVE:-}" ] && args+=(--resolve "$CHECK_RESOLVE")
+[ -n "${CHECK_CACERT:-}" ] && args+=(--cacert "$CHECK_CACERT")
+code=$(curl "${args[@]}" "$CHECK_URL" 2>/dev/null || true)
+now=$(date +%s)
+
+if [ "$code" = "200" ]; then
+	if [ "$fails" -ge "$FAILS_TO_ALERT" ] && [ -n "$down_since" ]; then
+		mins=$(( (now - down_since) / 60 ))
+		notify "w-cms が戻りました（${WHO}）" "${CHECK_URL} がまた応えています（止まっていたのは約${mins}分）。" 3
+		logger -t w-cms-watch "戻りました（約${mins}分）"
+	fi
+	fails=0; down_since=""; last_alert=0
+else
+	fails=$((fails + 1))
+	[ -z "$down_since" ] && down_since=$now
+	if [ "$fails" -eq "$FAILS_TO_ALERT" ] || { [ "$fails" -gt "$FAILS_TO_ALERT" ] && [ $(( now - last_alert )) -ge $(( REMIND_MIN * 60 )) ]; }; then
+		notify "⚠ w-cms が応えません（${WHO}）" "${CHECK_URL} が応えません（返事: ${code:-なし}・${fails}回続けて）。" 5
+		logger -t w-cms-watch "応えません（返事 ${code:-なし}・${fails}回）"
+		last_alert=$now
+	fi
+fi
+printf 'fails=%s\ndown_since=%s\nlast_alert=%s\n' "$fails" "$down_since" "$last_alert" > "$state"

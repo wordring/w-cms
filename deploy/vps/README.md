@@ -174,7 +174,10 @@ command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2"
 - 1時間たったファイルに `chattr +i` を付けます（`wcms-restic-seal` とタイマー）。業務サーバーの鍵では、送った控えを消せも書き換えもできません。⚠ 古い控えを整理するときは、VPS の root で `chattr -R -i /srv/restic-chroot/repo` を外してから、業務サーバーで `w-cms-offsite restic forget --prune …`、終わったら封じ直します。
 - 追記専用の受け口（restic の rest-server）は Ubuntu の部品に無く、インターネットからソースを取る作業がこの会話の決まりで止められたので、OpenSSH と chattr で同じ守りを作りました。
 
+## 見張り
+
+業務サーバーと同じ `w-cms-watch` を置いています（`deploy/server/README.md` の「見張り」）。VPS の `/etc/w-cms/watch.env` の `CHECK_RESOLVE` は `〈公開の名前〉:443:127.0.0.1`（Caddy から先を見る）。
+
 ## まだのこと
 
-- 見張り（VPS から1分ごとにログインの画面を見に行く・考察 §6）。
 - 社外の控え（オブジェクトストレージと restic）。

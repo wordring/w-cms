@@ -187,3 +187,34 @@ sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-offsite.timer
 - 見る: `sudo w-cms-offsite snapshots`。確かめる（20分の1を読む）: `sudo w-cms-offsite check`。
 - 戻す（例）: `sudo w-cms-offsite restic restore latest --target /tmp/restore`（その日の写しの形で戻る——`deploy/server/README.md` の「控えから戻す」と同じ置き方）。
 - 古い控えは自動では消しません（VPS が書き換えられなくしているため）。整理は VPS の側の注意を読んでから。
+
+## 見張り（w-cms-watch・2026-10-26）
+
+w-cms が応えるかを1分ごとに見て、止まったとき・戻ったときに ntfy でスマホへ知らせます（利用者:「ntfy に替えます」——UptimeRobot は登録の CAPTCHA を越えられなかった）。同じスクリプトを業務サーバーと VPS の両方に置き、互いの道を見ます。
+
+| 置き場 | 見る道 | 気づけること |
+|---|---|---|
+| 業務サーバー | 社外の道（VPS の住所へ `--resolve` → Caddy → トンネル → w-cms） | VPS・Caddy・トンネルが止まった |
+| VPS | Caddy → トンネル → w-cms | w-cms・業務サーバー・職場の回線や電気が止まった |
+
+```bash
+sudo install -m 0755 deploy/server/w-cms-watch /usr/local/sbin/
+sudo install -m 0644 deploy/server/w-cms-watch.service deploy/server/w-cms-watch.timer /etc/systemd/system/
+sudo install -m 0600 /dev/null /etc/w-cms/watch.env   # 中身は下
+sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-watch.timer
+sudo w-cms-watch test   # 試しの知らせ
+```
+
+`/etc/w-cms/watch.env`（値に空白があれば引用符で囲む）:
+
+```text
+NTFY_SERVER=https://ntfy.sh
+NTFY_TOPIC=〈長いでたらめの話題の名前〉
+WHO="業務サーバーから"
+CHECK_URL=https://〈公開の名前〉/login
+CHECK_RESOLVE=〈公開の名前〉:443:〈VPS の住所〉   # VPS では 〈公開の名前〉:443:127.0.0.1
+```
+
+- ⚠ 話題の名前は、知っている人なら誰でも読めて送れます。リポジトリに書かず、デスクトップの構成メモにだけ残します。知らせの中身に業務のことは書きません（「応えません」と住所だけ）。
+- 知らせるのは、続けて2回（約2分）失敗したときと、戻ったときだけ。止まっているあいだは6時間ごとに念押しします。
+- 2台が同時に止まると、どちらも知らせられません。
