@@ -24,6 +24,20 @@ top() {
 	return 0
 }
 
+# 職場の住所（トンネルの相手の住所）には「（職場）」と添える——読み手が、職場からの接続とほかを見分けられるように（2026-10-26。
+# 初めての監査が、組んだ日の職場からの SSH を「トンネルの外から」と読んだ）。住所が変わっても、その日の相手の住所で添える。
+office=$(wg show all endpoints 2>/dev/null | awk '{print $3}' | sed -E 's/:[0-9]+$//' | tr -d '[]' | grep -v '(none)' | head -n 1)
+label_office() {
+	if [ -n "$office" ]; then
+		local re
+		re=$(printf '%s' "$office" | sed 's/[.]/[.]/g') # 住所の点を、どの1字でもなく点そのものに
+		sed -E "s/(^|[^0-9.])($re)([^0-9]|$)/\1\2（職場）\3/g"
+	else
+		cat
+	fi
+}
+
+{
 echo "# VPS $(date '+%F %T %Z') までの24時間"
 
 section "SSH のログイン（受け入れた・断った・知らない利用者）"
@@ -88,3 +102,4 @@ df -h / | tail -1
 section "いまのログイン（loginctl）"
 loginctl list-sessions --no-legend --no-pager 2>/dev/null | head -n 15 || true
 echo "（以上・ログインの記録は SSH の節）"
+} | label_office
