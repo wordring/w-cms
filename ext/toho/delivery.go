@@ -138,6 +138,27 @@ func pickedOrderRow(user *auth.User, p deliveryPick, kindOK func(string) bool, b
 	return "", cms.VocabRow{}, "/" + id + " の " + strconv.Itoa(p.Row+1) + " 行目が見つかりません（案件フォルダを開き直してください）"
 }
 
+// orderedOfItem は案件ページ pid の案件明細表で、案件と品物の鍵が key の行の数量の合計です（読めない行が1つでもあれば false）。
+func orderedOfItem(pid int, key string) (float64, bool) {
+	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
+	if err != nil {
+		return 0, false
+	}
+	id := page.FormatID(pid)
+	sum, found := 0.0, false
+	for _, r := range rows {
+		if shippedKey(id, r.Values["item-id"], r.Values["item-name"]) != key {
+			continue
+		}
+		q, ok := estimateNumber(r.Values["quantity"])
+		if !ok {
+			return 0, false
+		}
+		sum, found = sum+q, true
+	}
+	return sum, found
+}
+
 // oneClient は、行の客先が1つにそろっているかを見ます（client は今までの客先・空なら初めの行）。
 // そろっていなければ、混ざった2つの名前を返します（断りの文は呼び手が組む）。
 func oneClient(client, next string) (string, bool) {
@@ -152,6 +173,7 @@ func oneClient(client, next string) (string, bool) {
 // ⚠ 今回納める数は、案件明細の数量から、ほかの納品書で納めた数（shipped）と、この納品書のほかの行で納める数（pending）を
 // 引いた残りまで（2026-10-26）。それまでは見ておらず、押し直しや数え違いで、注文より多い数の納品書ができ、出荷済数量と
 // 請求が多すぎた。案件明細の数量が読めない行は見ない。pending には、この行の数を足して返す。
+// 納めた数は案件と品物で数える（出荷済数量の鏡と同じ）ので、同じ案件に同じ品物の行が2つ以上あれば、注文の数もその行の合計で比べる。
 func deliveryLineOf(user *auth.User, p deliveryPick, shipped shippedLookup, pending map[string]float64) (deliveryLine, string) {
 	id, r, why := pickedOrderRow(user, p, func(k string) bool { return k == PageKindCustomerOrder }, true)
 	if why != "" {
@@ -165,7 +187,7 @@ func deliveryLineOf(user *auth.User, p deliveryPick, shipped shippedLookup, pend
 		return deliveryLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の今回納める数が読めません: " + qty
 	}
 	key := shippedKey(id, v["item-id"], v["item-name"])
-	if ordered, okO := estimateNumber(v["quantity"]); okO && ordered > 0 {
+	if ordered, okO := orderedOfItem(pageNum(id), key); okO && ordered > 0 {
 		done := shipped[key] + pending[key]
 		if n > ordered-done+1e-9 {
 			return deliveryLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」は、注文 " + fmtQty(ordered) + " のうち " +

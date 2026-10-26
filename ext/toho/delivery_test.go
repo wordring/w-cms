@@ -172,3 +172,29 @@ func TestDeliveryNewCapsAtRemaining(t *testing.T) {
 		t.Errorf("⚠ 全部納めたあとにまた作れました: %d %v", code, out)
 	}
 }
+
+// TestDeliveryNewCapCountsBothRowsOfAnItem は、同じ案件に同じ品物の行が2つ（納期を分けた）あるとき、
+// 上限を2行の数量の合計で比べることを固定します（納めた数は案件と品物で数えるので、1行の数量で比べると、2行目を納められない）。
+func TestDeliveryNewCapCountsBothRowsOfAnItem(t *testing.T) {
+	setupExtTest(t, "000880", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	addPage(t, 881, -1, "受注", "alice", "302", true)
+	line := func(qty, due string) string {
+		return `<tr><td>000777</td><td>A-1</td><td>ブラケット</td><td>` + qty + `</td><td>個</td><td>1500</td><td>` + due + `</td><td></td><td></td><td>未着手</td>`
+	}
+	seedOrder(t, 882, 881, "あけぼの精工", "2026-11-01", line("10", "2026-11-01")+line("20", "2026-11-20"))
+	addPage(t, 889, 881, "製造", "alice", "302", true)
+	syncBody(t, 889, `<h1>ブラケット</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`)
+	deliver := func(row int, qty string) (int, map[string]any) {
+		return postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": "000889", "items": []map[string]any{{"order": "000882", "row": row, "item": "A-1", "qty": qty}}})
+	}
+	if code, out := deliver(0, "10"); code != 200 {
+		t.Fatalf("1行目の10を納められません: %d %v", code, out)
+	}
+	if code, out := deliver(1, "20"); code != 200 {
+		t.Errorf("⚠ 2行目の20を納められません（1行目の数量だけで比べている）: %d %v", code, out)
+	}
+	if code, out := deliver(1, "1"); code != 409 || !strings.Contains(out["message"].(string), "30 のうち 30") {
+		t.Errorf("⚠ 2行の合計 30 を納めたあとにまた作れました: %d %v", code, out)
+	}
+}
