@@ -127,40 +127,45 @@ ssh -i ~/.ssh/id_ed25519_wcms -J wcms-server root@10.8.0.1
 
 ## Caddy
 
-`/etc/caddy/Caddyfile`。証明書は Caddy が Let's Encrypt から取り、自分で更新します。
-
-⚠ 2026-10-26 の時点では、まだ w-cms へ中継していません（管理者 `a` のパスワードを決めるまで）。「準備中」だけを返します。
+`/etc/caddy/Caddyfile`。証明書は Caddy が Let's Encrypt から取り、自分で更新します。2026-10-26 午後から、w-cms へ中継しています（それまでは「準備中」だけ・設定の控えは `/etc/caddy/Caddyfile.bak-placeholder`）。
 
 ```caddyfile
 〈公開の名前〉 {
 	header {
 		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options "nosniff"
 		-Server
 	}
-	respond "準備中です（w-cms）" 503
+	reverse_proxy https://10.8.0.2:8443 {
+		# 知らせの流れ（SSE）を溜めずにすぐ流す。
+		flush_interval -1
+		transport http {
+			tls_server_name wcms-server
+			tls_trust_pool file /etc/caddy/wcms-upstream.pem
+			dial_timeout 10s
+			response_header_timeout 300s
+		}
+	}
 }
 ```
 
-中継するときは、`respond` の行を次に替えます（考察 §3.2 の、知らせの流れを溜めない・待ち時間を長めにする、を入れた形）。
+- 中継の先（業務サーバー）は、名前 `wcms-server` で来た接続に、いままでの自己署名の証明書を渡します（業務サーバーの w-cms は名前で証明書を使い分ける——`cmd/w-cms/cert_reload.go` の certChooser）。Caddy はその証明書そのもの（`/etc/caddy/wcms-upstream.pem`・公開の部分だけ）を信じて確かめます。⚠ 業務サーバーの `data/tls/cert.pem` を作り直したら、ここへ写し直します（写さないと中継が止まる）。
+- 業務サーバーの `w-cms.env` に `WCMS_TRUSTED_PROXIES=10.8.0.1` を書いてあります。書かないと、社外の全員が1つの接続元に見えます（ログインの失敗の数え方・監査の接続元）。
+- 試験用（:9443）は中継しません。
 
-```caddyfile
-	reverse_proxy https://10.8.0.2:8443 {
-		flush_interval -1
-		transport http {
-			tls_server_name 〈公開の名前〉
-			read_timeout 300s
-			write_timeout 300s
-		}
-	}
+## 証明書を業務サーバーへ写す
+
+社内からも〈公開の名前〉で開くので、業務サーバーにも〈公開の名前〉の証明書が要ります。Caddy が取った証明書を、業務サーバーがトンネルの中から毎日取りに来ます（`deploy/server/w-cms-cert-pull`・タイマー `w-cms-cert-pull.timer`）。
+
+- VPS の側は `/usr/local/sbin/wcms-cert-export`（`deploy/vps/wcms-cert-export`）。root の `authorized_keys` に、業務サーバーの写し用の鍵を、この命令だけを許して書きます。
+
+```text
+command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2",restrict ssh-ed25519 AAAA… w-cms-cert-pull
 ```
 
-- 業務サーバーの w-cms の証明書を〈公開の名前〉のものにするまでは、`tls_server_name` で確かめが通りません（今の業務サーバーの証明書は自己署名）。VPS が取った証明書を業務サーバーへ写す形は、考察 §3.3 の A です。
-- 中継を始めるときは、業務サーバーの `w-cms.env` の `WCMS_TRUSTED_PROXIES` に `10.8.0.1` を書きます。書かないと、社外の全員が1つの接続元に見えます（ログインの失敗の数え方・監査の接続元）。
+- ほかの命令を頼んでも、この命令しか動きません（2026-10-26 に `id; cat /etc/shadow` を頼んで、証明書だけが返るのを確かめた）。
+- VPS に業務サーバーへの鍵は置きません（VPS が乗っ取られても、業務サーバーへは入れない）。
 
 ## まだのこと
 
-- 管理者 `a` のパスワードを決める（利用者）。それまで中継しない。
-- 業務サーバーの証明書を〈公開の名前〉のものにする（VPS で取って写す）。
-- 社内からも〈公開の名前〉で繋ぐ（split-horizon。考察 §3.4）。
 - 見張り（VPS から1分ごとにログインの画面を見に行く・考察 §6）。
+- 社外の控え（オブジェクトストレージと restic）。

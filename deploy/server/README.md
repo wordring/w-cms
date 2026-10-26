@@ -113,3 +113,57 @@ sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-backup.timer
 3. 控えを写す: `sudo cp -a /srv/backup/w-cms/data/daily/<日付> /var/lib/w-cms/data`（`latest` なら前の夜）。
 4. 証明書を本番の外に置いているなら、その場所も確かめる。`sudo chown -R w-cms:w-cms /var/lib/w-cms/data`。
 5. `sudo systemctl start w-cms`。cms.db・tables.db は無いので、起きるときに本文から作り直します。
+
+## 公開の名前で開く（2026-10-26）
+
+社外からは VPS を通って〈公開の名前〉で開きます（`deploy/vps/README.md`）。社内からも同じ〈公開の名前〉で、VPS を通らずに直に開けるようにしました。いままでの `https://〈業務サーバーの社内の住所〉:8443` も、そのまま開けます。
+
+### 証明書を名前で使い分ける
+
+`/etc/w-cms/w-cms.env` に、公開の名前の証明書の場所を書きます。
+
+```text
+WCMS_TLS_PUBLIC_CERT=/var/lib/w-cms/data/tls/public.crt
+WCMS_TLS_PUBLIC_KEY=/var/lib/w-cms/data/tls/public.key
+```
+
+- 接続のあいさつで〈公開の名前〉を求められたらこの証明書、住所で開いた・名前を送らない・`wcms-server`（VPS の中継）ならいままでの証明書（`WCMS_TLS_CERT`）を渡します（`cmd/w-cms/cert_reload.go` の certChooser）。
+- ファイルが替わったら、次の接続から読み直します（起こし直さない）。起動のときに無くても止まりません。
+
+### 証明書を VPS から写す（w-cms-cert-pull）
+
+VPS の Caddy が取った証明書を、トンネルの中から毎日写します。
+
+```bash
+sudo install -m 0755 deploy/server/w-cms-cert-pull /usr/local/sbin/
+sudo install -m 0644 deploy/server/w-cms-cert-pull.service deploy/server/w-cms-cert-pull.timer /etc/systemd/system/
+echo "PUBLIC_NAME=〈公開の名前〉" | sudo install -m 0644 /dev/stdin /etc/w-cms/cert-pull.env
+sudo ssh-keygen -t ed25519 -N "" -C w-cms-cert-pull -f /root/.ssh/w-cms-cert-pull
+sudo sh -c 'ssh-keyscan -t ed25519 10.8.0.1 > /root/.ssh/known_hosts-w-cms-vps'   # 指紋を VPS の画面のものと照らす
+sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-cert-pull.timer
+```
+
+- 鍵の公開の部分を、VPS の root の `authorized_keys` に、写すだけの命令に絞って書きます（`deploy/vps/README.md` の「証明書を業務サーバーへ写す」）。
+- 名前・期限（1日以上）・鍵の組が合わなければ写しません。中身が同じなら何もしません。
+
+### 社内の 443 番
+
+社内（`eno1`）から 443 番に来たら、8443 番（本番）へ回します。`/etc/ufw/before.rules` の頭（`*filter` より前）に足して `sudo ufw reload`。
+
+```text
+*nat
+:PREROUTING ACCEPT [0:0]
+-A PREROUTING -i eno1 -p tcp --dport 443 -j REDIRECT --to-ports 8443
+COMMIT
+```
+
+- 業務サーバーの中から自分の 443 番へは回りません（自分の出す通信はこの道を通らない）。確かめは社内の別の PC から。
+
+### 社内の名前引き（dnsmasq）
+
+業務サーバーに dnsmasq を立て、〈公開の名前〉だけを社内の住所で答えます（手本は `dnsmasq-w-cms.conf.example`）。
+
+- ルーター（NTT のホームゲートウェイ）の「ローカルドメイン問合せテーブル」に、ドメイン名〈公開の名前〉・問合せ先に業務サーバーの IPv6 の住所を書きました（この欄は IPv6 の住所しか受け付けない）。各 PC はルーターを DNS に使ったまま、〈公開の名前〉を引いたときだけ、ルーターが業務サーバーに聞きます。
+- ⚠ IPv6 の住所の前半は NTT から配られた番号です。NTT が替えると、ルーターの欄が古くなり、社内で〈公開の名前〉が引けなくなります。そのときは業務サーバーの新しい IPv6 の住所（`ip -6 addr show dev eno1` の global）に書き替えます。dnsmasq の側は `bind-dynamic` なので付いていきます。ufw の IPv6 の決まり（53 番・その /64 から）も書き替えます。
+- ルーターの「DHCP で配る DNS」は替えていません（ローカルドメイン問合せテーブルで足りた。業務サーバーが止まっても、ほかの名前の引き方に響かない）。
+- 「DHCP 固定 IP アドレス設定」と「LAN 側静的ルーティングエントリ」は、名前引きには使えません（2026-10-26 に確かめた）。
