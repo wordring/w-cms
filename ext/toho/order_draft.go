@@ -301,6 +301,7 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		PageID string `json:"page_id"`
 		Table  int    `json:"table"` // 何枚目の発注部材表か（1始まり）
 		Row    int    `json:"row"`   // 見出しを除いた何行目か（1始まり）
+		Sig    string `json:"sig"`   // 行の中身の指紋（2026-10-26——番号だけだと、押し直しで選んでいない行を外した）
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -313,7 +314,11 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 利用者:「臨時部材表と手配不要表もなくし、必要部材表もなくしてください。」「一度無くして、適切な形で作り直します」）
 	done := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, _, ok := takeDraftRow(cur, req.Table, req.Row)
+		rows, okR := resolveRowsIfSigned(cur, OrderDraftType, req.Table, []int{req.Row}, []string{req.Sig})
+		if !okR {
+			return cur
+		}
+		out, _, ok := takeDraftRow(cur, req.Table, rows[0])
 		if !ok {
 			return cur
 		}
@@ -323,8 +328,7 @@ func RemoveOrderDraftRowAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !done {
-		cms.JSONFail(w, http.StatusConflict,
-			"その行が見つかりません（画面を読み直してください）")
+		cms.JSONFail(w, http.StatusConflict, "選んだ行が見つからないか、ほかの人が変えました（画面を読み直してください）")
 		return
 	}
 	auth.Audit(user.Username, "order-draft.remove",

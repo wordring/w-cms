@@ -140,6 +140,7 @@ func MfgSkipAPIHandler(w http.ResponseWriter, r *http.Request) {
 		PageID string `json:"page_id"`
 		Table  int    `json:"table"`
 		Row    int    `json:"row"`
+		Sig    string `json:"sig"` // 行の中身の指紋（2026-10-26）
 		Reason string `json:"reason"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
@@ -156,7 +157,11 @@ func MfgSkipAPIHandler(w http.ResponseWriter, r *http.Request) {
 	date := time.Now().Format("2006-01-02")
 	done := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, ln, ok := takeDraftRow(cur, req.Table, req.Row)
+		rows, okR := resolveRowsIfSigned(cur, OrderDraftType, req.Table, []int{req.Row}, []string{req.Sig})
+		if !okR {
+			return cur
+		}
+		out, ln, ok := takeDraftRow(cur, req.Table, rows[0])
 		if !ok {
 			return cur
 		}
@@ -167,7 +172,7 @@ func MfgSkipAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !done {
-		cms.JSONFail(w, http.StatusConflict, "その行が見つかりません（画面を読み直してください）")
+		cms.JSONFail(w, http.StatusConflict, "選んだ行が見つからないか、ほかの人が変えました（画面を読み直してください）")
 		return
 	}
 	auth.Audit(user.Username, "mfg.skip", pageID+" 表"+strconv.Itoa(req.Table)+" 行"+strconv.Itoa(req.Row)+" "+reason)
@@ -183,6 +188,7 @@ func MfgSkipRemoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PageID string `json:"page_id"`
 		Row    int    `json:"row"`
+		Sig    string `json:"sig"` // 行の中身の指紋（2026-10-26）
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -193,7 +199,11 @@ func MfgSkipRemoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	done := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
-		out, ok := takeSkipRow(cur, req.Row)
+		rows, okR := resolveRowsIfSigned(cur, SkipType, 1, []int{req.Row}, []string{req.Sig})
+		if !okR {
+			return cur
+		}
+		out, ok := takeSkipRow(cur, rows[0])
 		done = ok
 		if !ok {
 			return cur
@@ -203,7 +213,7 @@ func MfgSkipRemoveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !done {
-		cms.JSONFail(w, http.StatusConflict, "その行が見つかりません（画面を読み直してください）")
+		cms.JSONFail(w, http.StatusConflict, "選んだ行が見つからないか、ほかの人が変えました（画面を読み直してください）")
 		return
 	}
 	auth.Audit(user.Username, "mfg.skip-remove", pageID+" 行"+strconv.Itoa(req.Row))
@@ -221,8 +231,8 @@ func renderSkipTable(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	}
 	// 2026-10-21 夕から、行の先頭にチェック・「↩ 戻す」は表の下（表の中にボタンを置かない）。
 	pageID := page.FormatID(ctx.PageID)
-	prependRowChromeCells(el, "skip-pick-cell", func(n int, _ *html.Node) string {
-		return pickHTML("skip-pick", map[string]string{"row": strconv.Itoa(n + 1)})
+	prependRowChromeCells(el, "skip-pick-cell", func(n int, tr *html.Node) string {
+		return pickHTML("skip-pick", map[string]string{"row": strconv.Itoa(n + 1), "sig": rowSig(tr)})
 	})
 	appendBarAfter(el, "mfg-skip-bar", `<span data-mfg="`+stdhtml.EscapeString(pageID)+`"></span>`+
 		barButton("skip-sel-back", "↩ 戻す", "選んだ行を手配不要表から外します（製造明細表の「部材」で、また集められます）")+`<span class="mfg-bar-say"></span>`)

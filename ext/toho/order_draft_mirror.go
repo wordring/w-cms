@@ -48,8 +48,8 @@ func renderOrderDraftForm(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	//    ⚠ **「戻す」は「外す」です**——一覧は毎回計算される鏡なので、ここから消せば
 	//    **自動的に戻ってきます**。戻す先へ何かを書く必要はありません。
 	// 2026-10-21 夕から、行ごとのボタンは表の中に置かない——行の先頭にチェック、「不要」「外す」は表の下の欄（利用者:「この表はご法度のはずの一緒にボタンを入れています」）。
-	prependRowChromeCells(el, "draft-pick-cell", func(n int, _ *html.Node) string {
-		return pickHTML("draft-pick", map[string]string{"row": strconv.Itoa(n + 1)})
+	prependRowChromeCells(el, "draft-pick-cell", func(n int, tr *html.Node) string {
+		return pickHTML("draft-pick", map[string]string{"row": strconv.Itoa(n + 1), "sig": rowSig(tr)})
 	})
 	// 数量の右に、部材の在庫数（2026-10-23・stock_mirror.go）。
 	insertStockColumn(el, stockLevels(ctx.DB, ctx.Viewer), partStockKey)

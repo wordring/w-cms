@@ -1486,7 +1486,8 @@ delegateClick([
         const box = btn.closest('.draft-form-box');
         const say = box ? box.querySelector('.draft-row-say') : null;
         const table = box ? draftTableOf(box) : null;
-        const rows = table ? Array.from(table.querySelectorAll('.draft-pick:checked')).map((c) => Number(c.dataset.row)).sort((x, y) => y - x) : [];
+        // 行の中身の指紋（data-sig）も送る——サーバーが同じ行かを確かめ、押し直し・ほかの人が行を変えたあとなら断る（2026-10-26）。
+        const rows = table ? Array.from(table.querySelectorAll('.draft-pick:checked')).map((c) => ({ row: Number(c.dataset.row), sig: c.dataset.sig || '' })).sort((x, y) => y.row - x.row) : [];
         if (!rows.length) { sayIn(say, '発注部材表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
         let reason = '';
         if (what === 'skip') {
@@ -1498,8 +1499,8 @@ delegateClick([
         btn.disabled = true;
         // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
         let done = 0;
-        for (const row of rows) {
-            const r = await postJSON(what === 'skip' ? '/api/mfg/skip' : '/api/our-order/draft/remove', { page_id: page, table: tableNo, row, reason })
+        for (const { row, sig } of rows) {
+            const r = await postJSON(what === 'skip' ? '/api/mfg/skip' : '/api/our-order/draft/remove', { page_id: page, table: tableNo, row, sig, reason })
                 .catch((e) => ({ ok: false, data: { message: String(e) } }));
             if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || 'できませんでした', done); return; }
             done++;
@@ -1942,12 +1943,12 @@ delegateClick([
     // 手配不要表の帯の「↩ 戻す」——選んだ行を外す（下の行から）。
     ['.skip-sel-back', async (btn) => {
         const ctx = mfgBarOf(btn);
-        const rows = mfgPicked(ctx, '.skip-pick').map((c) => Number(c.dataset.row)).sort((x, y) => y - x);
+        const rows = mfgPicked(ctx, '.skip-pick').map((c) => ({ row: Number(c.dataset.row), sig: c.dataset.sig || '' })).sort((x, y) => y.row - x.row);
         if (!rows.length) { sayIn(ctx.say, '手配不要表の行の先頭のチェックで、行を選んでください。', 'warn'); return; }
         // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
         let done = 0;
-        for (const row of rows) {
-            if (!await mfgPost(ctx, btn, '/api/mfg/skip/remove', { page_id: ctx.mfg, row }, '戻しています…', '戻せませんでした')) {
+        for (const { row, sig } of rows) {
+            if (!await mfgPost(ctx, btn, '/api/mfg/skip/remove', { page_id: ctx.mfg, row, sig }, '戻しています…', '戻せませんでした')) {
                 if (done > 0) failPartway(btn, ctx.say, '途中で止まりました', done);
                 return;
             }
@@ -1958,14 +1959,16 @@ delegateClick([
     // 必要部材表の帯——「発注作業」「見積依頼作業」「不要」「作業開始へ戻す」（/api/mfg/needs。2026-10-23 までの名前は「発注」「見積もり」「外す」）。
     ...[['.mfg-needs-order', 'order'], ['.mfg-needs-quote', 'quote'], ['.mfg-needs-skip', 'skip'], ['.mfg-needs-drop', 'drop']].map(([sel, action]) => [sel, async (btn) => {
         const ctx = mfgBarOf(btn);
-        const rows = mfgPicked(ctx, '.mfg-needs-pick').map((c) => Number(c.dataset.row));
+        const picks = mfgPicked(ctx, '.mfg-needs-pick');
+        const rows = picks.map((c) => Number(c.dataset.row));
+        const sigs = picks.map((c) => c.dataset.sig || ''); // 行の中身の指紋（rows と同じ並び・2026-10-26）
         if (!rows.length) { sayIn(ctx.say, NEEDS_NONE, 'warn'); return; }
         let reason = '';
         if (action === 'skip') {
             reason = window.prompt('選んだ部材を、この製造では手配しません。理由（任意）: 在庫で足りる・自社で作る など', '');
             if (reason === null) return;
         }
-        if (await mfgPost(ctx, btn, '/api/mfg/needs', { page_id: ctx.mfg, rows, action, reason }, '書いています…', 'できませんでした')) location.reload();
+        if (await mfgPost(ctx, btn, '/api/mfg/needs', { page_id: ctx.mfg, rows, sigs, action, reason }, '書いています…', 'できませんでした')) location.reload();
     }]),
     // 納品表の帯——「納品書を作る」。表のいまの値（人が直した数量）で /api/delivery/new へ送り、作れたら納品書を開く（納品表はサーバーが消す）。
     ['.mfg-dlvdraft-make', async (btn) => {

@@ -464,3 +464,14 @@ func findDraftRow(body string, table, row int, sig string) (int, int, bool) {
 	}
 	return foundT, foundR, foundT != 0
 }
+
+// resolveRowsIfSigned は resolveRowsIn と同じで、指紋が1つも無ければ番号のまま返します（指紋を送らない古い画面・道具——
+// これまでどおり。画面は 2026-10-26 から指紋を送る）。
+func resolveRowsIfSigned(body, vocabType string, n int, rows []int, sigs []string) ([]int, bool) {
+	for _, s := range sigs {
+		if strings.TrimSpace(s) != "" {
+			return resolveRowsIn(body, vocabType, n, rows, sigs)
+		}
+	}
+	return rows, true
+}

@@ -270,8 +270,10 @@ func renderMfgNeeds(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	if !writableMirror(ctx) || pageKindOf(ctx.PageID) != PageKindMfg {
 		return false, nil
 	}
+	// 行の中身の指紋（data-sig）も添える——サーバーが同じ行かを確かめる（2026-10-26。番号だけだと、押し直しや、ほかの人の
+	// 「🧾 部材作業」のあとに押すと、選んでいない行を発注作業・不要へ動かした）。
 	prependRowChromeCells(el, "mfg-needs-pick-cell", func(n int, tr *html.Node) string {
-		return pickHTML("mfg-needs-pick", map[string]string{"row": strconv.Itoa(n + 1)})
+		return pickHTML("mfg-needs-pick", map[string]string{"row": strconv.Itoa(n + 1), "sig": rowSig(tr)})
 	})
 	pid := stdhtml.EscapeString(page.FormatID(ctx.PageID))
 	appendBarAfter(el, "mfg-needs-bar", `<span data-mfg="`+pid+`"></span>`+
@@ -473,10 +475,11 @@ func MfgNeedsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		PageID string `json:"page_id"`
-		Rows   []int  `json:"rows"`
-		Action string `json:"action"`
-		Reason string `json:"reason"`
+		PageID string   `json:"page_id"`
+		Rows   []int    `json:"rows"`
+		Sigs   []string `json:"sigs"` // 行の中身の指紋（rows と同じ並び・2026-10-26）
+		Action string   `json:"action"`
+		Reason string   `json:"reason"`
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -499,7 +502,11 @@ func MfgNeedsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	done := false
 	if !rewriteBodyOrFail(w, pageID, user.Username, func(cur string) string {
 		keep := req.Action == "quote" // 見積もりは写すだけ（必要部材表に残す）
-		out, lines, ok := takeTableRows(cur, MfgNeedsType, 1, req.Rows, true)
+		rows, okR := resolveRowsIfSigned(cur, MfgNeedsType, 1, req.Rows, req.Sigs)
+		if !okR {
+			return cur
+		}
+		out, lines, ok := takeTableRows(cur, MfgNeedsType, 1, sortedInts(rows), true)
 		if !ok || len(lines) == 0 {
 			return cur
 		}
@@ -528,7 +535,7 @@ func MfgNeedsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !done {
-		cms.JSONFail(w, http.StatusConflict, "選んだ行が見つかりません（ページを読み直してください）")
+		cms.JSONFail(w, http.StatusConflict, "選んだ行が見つからないか、ほかの人が変えました（画面を読み直してください）")
 		return
 	}
 	auth.Audit(user.Username, "mfg.needs."+req.Action, pageID+" "+strconv.Itoa(n)+"行")
