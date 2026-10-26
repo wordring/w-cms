@@ -28,6 +28,14 @@ FAX サーバーは、w-cms と同じ Ubuntu の機械に置きます（利用�
 2. `/etc/udev/rules.d/` に置き、`sudo udevadm control --reload && sudo udevadm trigger`。
 3. モデムを差すと `/dev/faxmodem` ができ、USB の省電力が切れます。
 
+USB が省電力で眠ると、モデムと ND6 が着信を取りこぼします（利用者:「USBが省電力設定に代わるとFAXモデムが休止すると聞いています」「ND6もUSB接続なので対処が必要です」）。業務サーバーでは、次の3つを重ねて切っています（2026-10-26 に確かめた）。
+
+- 1台ずつ: FAX モデム（`99-faxmodem.rules`）と ND6（`deploy/phone/99-aloha-nd6.rules` を `/etc/udev/rules.d/` に）の udev の決まりが `power/control=on` にします。差し直しても、再起動しても切れたまま。
+- 全体: `/etc/default/grub` の `GRUB_CMDLINE_LINUX_DEFAULT` に `usbcore.autosuspend=-1`（`sudo update-grub` 済み・次の起動から効く）。
+- 機械が眠らない: `sleep.target`・`suspend.target`・`hibernate.target`・`hybrid-sleep.target` は `masked`。
+
+毎朝の監査（w-cms-audit）の「電話と FAX の USB」の節が、ND6 とモデムの省電力が `on`・いまの様子が `active` かを見ます。
+
 ## 3. HylaFAX+
 
 1. `sudo apt install hylafax-server libtiff-tools curl`。

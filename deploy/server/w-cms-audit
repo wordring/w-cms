@@ -126,6 +126,19 @@ collect_server() {
 		echo "### $d（$(lsblk -no MOUNTPOINTS "${d}n1" 2>/dev/null | grep -v '^$' | tr '\n' ' ')）"
 		smartctl -H -A "$d" 2>/dev/null | grep -E 'overall-health|Critical Warning|Temperature:|Available Spare:|Percentage Used|Media and Data Integrity Errors|Error Information Log Entries|Unsafe Shutdowns|Power On Hours' | sed -E 's/ {2,}/ /g'
 	done
+	section "電話と FAX の USB（省電力で眠っていないか）"
+	echo "全体の USB の自動の休止: $(cat /sys/module/usbcore/parameters/autosuspend 2>/dev/null)（-1 なら切ってある）"
+	local u v
+	for u in /sys/bus/usb/devices/*; do
+		[ -f "$u/idVendor" ] || continue
+		v="$(cat "$u/idVendor"):$(cat "$u/idProduct")"
+		case $v in
+			0572:1329) echo "FAX モデム: 省電力 $(cat "$u/power/control")（on なら切ってある）・いま $(cat "$u/power/runtime_status")" ;;
+			067b:*) echo "ND6（USB-Serial）: 省電力 $(cat "$u/power/control")（on なら切ってある）・いま $(cat "$u/power/runtime_status")" ;;
+		esac
+	done
+	[ -e /dev/faxmodem ] || echo "⚠ /dev/faxmodem が無い（FAX モデムが外れている？）"
+	[ -e /dev/aloha-nd6 ] || echo "⚠ /dev/aloha-nd6 が無い（ND6 が外れている？）"
 	echo "### 見張り（smartd）の記録"
 	journalctl -u smartmontools -t w-cms-smart-alert --since "$since" --no-pager -o cat -p warning 2>/dev/null | top 10
 
