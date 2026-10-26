@@ -165,6 +165,15 @@ command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2"
 - ほかの命令を頼んでも、この命令しか動きません（2026-10-26 に `id; cat /etc/shadow` を頼んで、証明書だけが返るのを確かめた）。
 - VPS に業務サーバーへの鍵は置きません（VPS が乗っ取られても、業務サーバーへは入れない）。
 
+## 社外の控えの受け口（2026-10-26）
+
+業務サーバーの夜の控えを、restic で暗号化してここへも送ります（`deploy/server/w-cms-offsite`）。オブジェクトストレージではなく VPS に置きます（利用者:「オブジェクトストレージとＶＰＳの価格がだいたい同じです」）。
+
+- 受け口は SFTP だけの利用者 `wcmsbak`。トンネルの中（10.8.0.2）から、鍵でだけ。自分のフォルダ（`/srv/restic-chroot`）の外は見えません（`/etc/ssh/sshd_config.d/20-wcmsbak.conf`・鍵は `/etc/ssh/authorized_keys.d/wcmsbak` に `from="10.8.0.2",restrict` を付けて）。
+- 控えは業務サーバーで暗号化されて届きます。VPS が乗っ取られても中身は読めません。
+- 1時間たったファイルに `chattr +i` を付けます（`wcms-restic-seal` とタイマー）。業務サーバーの鍵では、送った控えを消せも書き換えもできません。⚠ 古い控えを整理するときは、VPS の root で `chattr -R -i /srv/restic-chroot/repo` を外してから、業務サーバーで `w-cms-offsite restic forget --prune …`、終わったら封じ直します。
+- 追記専用の受け口（restic の rest-server）は Ubuntu の部品に無く、インターネットからソースを取る作業がこの会話の決まりで止められたので、OpenSSH と chattr で同じ守りを作りました。
+
 ## まだのこと
 
 - 見張り（VPS から1分ごとにログインの画面を見に行く・考察 §6）。

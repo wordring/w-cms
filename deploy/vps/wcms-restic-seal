@@ -1,0 +1,16 @@
+#!/bin/sh
+# wcms-restic-seal — 社外の控え（restic の置き場）の、書き終わったファイルを書き換えられなくする（VPS の側・root で・1時間ごと）。
+#
+# 業務サーバーの restic は、控えを足すだけで、送ったファイルを書き換えない（古い控えを消す prune はしない）。
+# 1時間たったファイルに chattr +i を付けると、業務サーバーの鍵（SFTP の wcmsbak）では消せも書き換えもできない——
+# 業務サーバーが乗っ取られても、送った控えは残る。消せるのは VPS の root だけ（chattr -i してから）。
+# locks（使っている印）は restic が消すので、付けない。
+set -eu
+repo=/srv/restic-chroot/repo
+[ -d "$repo" ] || exit 0
+for d in config keys snapshots index data; do
+	[ -e "$repo/$d" ] || continue
+	find "$repo/$d" -type f -mmin +60 -print0 | xargs -0 -r lsattr 2>/dev/null | awk '$1 !~ /i/ {sub(/^[^ ]+ /,""); print}' | while IFS= read -r f; do
+		chattr +i "$f"
+	done
+done

@@ -1,0 +1,10 @@
+[Unit]
+Description=w-cms: 毎晩、社外の控えを送る（夜の控え 2:30 のあと）
+
+[Timer]
+OnCalendar=*-*-* 04:30
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

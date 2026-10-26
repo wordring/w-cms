@@ -1,0 +1,9 @@
+[Unit]
+Description=w-cms: 社外の控えを1時間ごとに封じる
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

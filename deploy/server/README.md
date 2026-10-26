@@ -167,3 +167,23 @@ COMMIT
 - ⚠ IPv6 の住所の前半は NTT から配られた番号です。NTT が替えると、ルーターの欄が古くなり、社内で〈公開の名前〉が引けなくなります。そのときは業務サーバーの新しい IPv6 の住所（`ip -6 addr show dev eno1` の global）に書き替えます。dnsmasq の側は `bind-dynamic` なので付いていきます。ufw の IPv6 の決まり（53 番・その /64 から）も書き替えます。
 - ルーターの「DHCP で配る DNS」は替えていません（ローカルドメイン問合せテーブルで足りた。業務サーバーが止まっても、ほかの名前の引き方に響かない）。
 - 「DHCP 固定 IP アドレス設定」と「LAN 側静的ルーティングエントリ」は、名前引きには使えません（2026-10-26 に確かめた）。
+
+## 社外の控え（w-cms-offsite・2026-10-26）
+
+夜の控え（2:30・`w-cms-backup`）のあと、その日の写し（`/srv/backup/w-cms/data/latest`）を restic で暗号化して VPS へ送ります（4:30・`w-cms-offsite.timer`）。VPS の側は `deploy/vps/README.md` の「社外の控えの受け口」。
+
+```bash
+sudo apt-get install restic
+sudo install -m 0755 deploy/server/w-cms-offsite /usr/local/sbin/
+sudo install -m 0644 deploy/server/w-cms-offsite.service deploy/server/w-cms-offsite.timer /etc/systemd/system/
+echo "SRC=/srv/backup/w-cms/data/latest" | sudo install -m 0600 /dev/stdin /etc/w-cms/offsite.env
+sudo sh -c "umask 077; head -c 48 /dev/urandom | base64 > /etc/w-cms/offsite.pass"   # 控えを開くパスワード
+sudo ssh-keygen -t ed25519 -N "" -C w-cms-offsite -f /root/.ssh/w-cms-offsite      # 公開の部分を VPS の wcmsbak へ
+sudo w-cms-offsite restic init
+sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-offsite.timer
+```
+
+- ⚠ **控えを開くパスワード（`/etc/w-cms/offsite.pass`）が無いと、控えは誰にも開けません。** 写しを職場の PC のデスクトップの「秘密の設定」に置きました（`w-cms-社外の控えのパスワード.txt`）。業務サーバーが壊れたら、新しい機械にこのパスワードと restic を入れて、VPS から戻します。
+- 見る: `sudo w-cms-offsite snapshots`。確かめる（20分の1を読む）: `sudo w-cms-offsite check`。
+- 戻す（例）: `sudo w-cms-offsite restic restore latest --target /tmp/restore`（その日の写しの形で戻る——`deploy/server/README.md` の「控えから戻す」と同じ置き方）。
+- 古い控えは自動では消しません（VPS が書き換えられなくしているため）。整理は VPS の側の注意を読んでから。

@@ -1,0 +1,37 @@
+#!/bin/bash
+# w-cms-offsite — 夜の控えを、暗号化して社外（VPS）へも送る（2026-10-26・root で）。
+#
+# 利用者:「オブジェクトストレージではなく、VPSに保存できませんか？」「オブジェクトストレージとＶＰＳの価格がだいたい同じです」
+#   - 送るのは、w-cms-backup が作ったその日の写し（$SRC——本文・添付・版・ごみ箱・利用者の DB の写しなど）。
+#   - 送り先は VPS の SFTP だけの利用者 wcmsbak（トンネルの中・鍵だけ・自分のフォルダの外は見えない）。
+#   - restic が業務サーバーの側で暗号化する。VPS が乗っ取られても中身は読めない。
+#   - VPS は1日たった控えのファイルを書き換えられなくする（chattr +i・deploy/vps/wcms-restic-seal）。業務サーバーが乗っ取られても、
+#     送った控えは消せない（足せるだけ）。古い控えは自動では消さない——何年かに1度、人が VPS の root で整理する。
+#   - ⚠ 控えを開くパスワード（/etc/w-cms/offsite.pass）が無いと、控えは誰にも開けない。業務サーバーの外にも写しを置く
+#     （職場の PC のデスクトップの「秘密の設定」）。
+#
+# 使い方: w-cms-offsite [backup|snapshots|check|restic <restic の引数…>]
+set -euo pipefail
+. /etc/w-cms/offsite.env
+: "${SRC:?SRC（送る写し）がありません}"
+export RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-sftp:wcmsbak@10.8.0.1:/repo}"
+export RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/etc/w-cms/offsite.pass}"
+export RESTIC_CACHE_DIR=/var/cache/w-cms-offsite
+sftp_args="-i /root/.ssh/w-cms-offsite -o UserKnownHostsFile=/root/.ssh/known_hosts-w-cms-vps -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=30"
+r() { restic -o sftp.args="$sftp_args" "$@"; }
+say() { logger -t w-cms-offsite "$*"; echo "$*"; }
+
+case "${1:-backup}" in
+backup)
+	src=$(readlink -f "$SRC")
+	[ -d "$src/master" ] || { say "送る写し $SRC に master がありません（夜の控えが無い？）"; exit 1; }
+	# 写しの中の日付のフォルダ名ではなく、いつも同じ場所として送る（restic が前の控えとの違いだけを送れるように）。
+	cd "$src"
+	r backup --host w-cms --tag nightly --one-file-system . 2>&1 | tail -4
+	say "社外の控えを送りました（$(basename "$src")）"
+	;;
+snapshots) r snapshots ;;
+check) r check --read-data-subset=1/20 ;;
+restic) shift; r "$@" ;;
+*) echo "使い方: w-cms-offsite [backup|snapshots|check|restic …]" >&2; exit 2 ;;
+esac

@@ -1,0 +1,6 @@
+[Unit]
+Description=w-cms: 社外の控えの書き終わったファイルを書き換えられなくする
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wcms-restic-seal
