@@ -297,8 +297,15 @@ func PhotoShrinkAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "attach.shrink", fmt.Sprintf("%s/%s %d→%d バイト（%d×%d → %d×%d）",
 		pageID, stored, res.Before, res.After, res.From.X, res.From.Y, res.To.X, res.To.Y))
+	v := ""
+	if p, ok := page.AttachmentPath(pageID, stored); ok {
+		if fi, err := os.Stat(p); err == nil {
+			v = page.AttachmentVersion(fi) // 画面が閲覧の描き方の住所（?v=）を描き直すため
+		}
+	}
 	WriteJSON(w, map[string]any{
 		"success": true,
+		"v":       v,
 		"before":  res.Before,
 		"after":   res.After,
 		"from":    fmt.Sprintf("%d×%d", res.From.X, res.From.Y),

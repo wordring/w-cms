@@ -8,6 +8,7 @@
 //   ③ 写真の「⋯」に「🗜 写真を小さくする」が出て、確かめて押すと縮み、ページを開き直さずに絵が描き直る
 //   ④ もう一度押すと「もう小さい」と断る
 //   ⑤ 管理画面に「🗜 写真を小さくする」と、縮められる写真の数が出る（押さない——全ページの写真を縮めてしまう）
+//   ⑥ 閲覧の写真の住所に版の印（?v=）が付き、その住所はブラウザの手元に残せる・印の無い住所は毎回確かめる
 //
 // 作ったページは最後に消します。設定 photo_shrink が無いサーバーでは飛ばします。
 // 使い方: WCMS_BASE=https://localhost:9443 node verify-photo-shrink.js
@@ -93,9 +94,9 @@ const check = (label, ok, note = '') => {
     // ③
     await writeBody(page, id, '<h1>【E2E】写真を小さくする</h1><p><img src="' + u.src + '" alt="【E2E】現場.jpg"></p>');
     await page.goto(BASE + '/' + id);
-    const img = page.locator('#w-editor-content img[src="' + u.src + '"]');
+    const img = page.locator('#w-editor-content img[src^="' + u.src + '"]');
     await img.waitFor({ timeout: 10000 });
-    await page.waitForFunction((src) => { const i = document.querySelector('#w-editor-content img[src="' + src + '"]'); return i && i.complete && i.naturalWidth > 0; }, u.src);
+    await page.waitForFunction((src) => { const i = document.querySelector('#w-editor-content img[src^="' + src + '"]'); return i && i.complete && i.naturalWidth > 0; }, u.src);
     const before = await img.evaluate((i) => i.naturalWidth);
     const openMenu = async () => {
       await img.hover();
@@ -112,7 +113,7 @@ const check = (label, ok, note = '') => {
     const d3 = await dimsOf(u.src);
     check('③ 写真が縮んだ', Math.max(d3.w, d3.h) === long && d3.size < d2.size, JSON.stringify(d3));
     const redrawn = await page.waitForFunction(([src, long]) => {
-      const i = document.querySelector('#w-editor-content img[src="' + src + '"]');
+      const i = document.querySelector('#w-editor-content img[src^="' + src + '"]');
       return i && i.complete && Math.max(i.naturalWidth, i.naturalHeight) === long;
     }, [u.src, long], { timeout: 10000 }).then(() => true).catch(() => false);
     check('③ 開き直さずに絵が描き直る', redrawn, '前の幅 ' + before);
@@ -129,6 +130,15 @@ const check = (label, ok, note = '') => {
     await page.waitForFunction(() => /写真|設定 photo_shrink/.test((document.getElementById('ps-msg') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => {});
     const ps = await page.evaluate(() => ({ btn: (document.getElementById('ps-go') || {}).textContent, msg: (document.getElementById('ps-msg') || {}).textContent }));
     check('⑤ 管理画面に「🗜 写真を小さくする」と数', /写真を小さくする/.test(ps.btn || '') && /(縮められる写真: \d+ 枚|縮める写真はありません)/.test(ps.msg || ''), JSON.stringify(ps));
+
+    // ⑥ 閲覧の描き方の写真には版の印（?v=）が付き、その住所はブラウザの手元に残せる・印の無い住所は毎回確かめる（2026-10-27）。
+    await page.goto(BASE + '/' + id);
+    const shown = await page.locator('#w-editor-content img[src^="' + u.src + '"]').first().getAttribute('src').catch(() => '');
+    const ccOf = async (url) => (await page.request.get(BASE + url)).headers()['cache-control'] || '';
+    const ccV = shown && shown.includes('?v=') ? await ccOf(shown) : '';
+    const ccPlain = await ccOf(u.src);
+    check('⑥ 閲覧の写真に版の印が付き、手元に残せる', /\?v=/.test(shown || '') && /private/.test(ccV) && /immutable/.test(ccV), shown + ' ' + ccV);
+    check('⑥ 印の無い住所は毎回確かめる', /private/.test(ccPlain) && /no-cache/.test(ccPlain), ccPlain);
 
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

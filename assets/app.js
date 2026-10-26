@@ -6350,8 +6350,11 @@
             }
             notify('写真を小さくしました（' + mb(d.before) + ' → ' + mb(d.after) + '・' + d.from + ' → ' + d.to + '）');
             await fetch(url, { cache: 'reload', credentials: 'same-origin' }).catch(() => {});
+            // 閲覧の描き方では住所に版の印（?v=）が付いているので、印を外して比べる。描き直すときは、書ける形なら素の住所
+            // （本文に保存される）、閲覧なら新しい印の住所にする。
+            const editing = document.body.hasAttribute('edit-mode');
             document.querySelectorAll('img').forEach((img) => {
-                if (img.getAttribute('src') === url) img.src = url;
+                if ((img.getAttribute('src') || '').split(/[?#]/)[0] === url) img.src = editing || !d.v ? url : url + '?v=' + d.v;
             });
         } catch (e) {
             notify('写真を小さくできません: ' + e.message, { type: 'warn' });
@@ -6412,7 +6415,8 @@
     // 📝 を1つ浮かべる（本文の外に置く1つの札・閲覧でも編集でも）。住所 `/<6桁>/<添付ID>.<拡張子>` の添付ID が
     // そのままファイル表示の参照（`ページ番号-添付ID`）なので、同じ口（startLocalEdit）で開く。
     // ⚠ ファイル表示の中の絵（頭の行に 📝 がある）とタッチ端末（載せる操作が無い）には出さない。
-    const IMG_ATTACH_SRC = /^\/(\d{6})\/([0-9a-z]+)\.[0-9a-z]+$/i;
+    // 閲覧の描き方では、住所の後ろに版の印 `?v=…` が付く（2026-10-27・internal/cms/attachment_cache.go）。
+    const IMG_ATTACH_SRC = /^\/(\d{6})\/([0-9a-z]+)\.[0-9a-z]+(?:\?[^#]*)?$/i;
     let imgEditTarget = null;
     let imgEditHideTimer = 0;
 
@@ -6434,7 +6438,8 @@
             const src = img ? img.getAttribute('src') || '' : '';
             const m = src.match(IMG_ATTACH_SRC);
             if (!m) return;
-            openFileMenu(btn, { ref: m[1] + '-' + m[2], url: src, name: (img.getAttribute('alt') || '').trim() || src.split('/').pop(),
+            const path = src.split(/[?#]/)[0]; // 版の印を外した住所（形式・名前は住所の末尾で決める）
+            openFileMenu(btn, { ref: m[1] + '-' + m[2], url: path, name: (img.getAttribute('alt') || '').trim() || path.split('/').pop(),
                 kind: 'image', host: img });
         });
         btn.addEventListener('mouseenter', () => clearTimeout(imgEditHideTimer));

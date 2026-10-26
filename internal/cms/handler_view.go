@@ -77,7 +77,7 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// アンカーとリンクが本文として保存されるので（2026-10-12 までは編集モードの読み直し acquireLock が素の方を
 	// 読んでいました。いまの書ける形は /api/sync の書き出しで受け取り、そちらも同じ理由で付けません）。
 	if r.URL.Query().Get("view") == "1" {
-		body = RenderAnchors(RenderReferenceLinks(auth.CurrentUser(r), body))
+		body = RenderAttachmentVersions(RenderAnchors(RenderReferenceLinks(auth.CurrentUser(r), body)))
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -187,7 +187,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// 参照タグ（名前：値の `ページID-ブロックID`）はリンクへ合成し、指す先の無いものへ
 	// 印を付ける（ref_render.go）。アンカー合成と同じく**この経路だけ**——/api/load へ
 	// 入れると合成した <a> が本文として保存される。
-	body := RenderAnchors(RenderReferenceLinks(auth.CurrentUser(r), RenderComputedViews(r, pageID, Sanitize(string(content)))))
+	body := RenderAttachmentVersions(RenderAnchors(RenderReferenceLinks(auth.CurrentUser(r), RenderComputedViews(r, pageID, Sanitize(string(content))))))
 
 	// 体裁は**相手で分ける**（要件定義書 §4.4）。匿名の訪問者へは編集用クロームを
 	// 一切含まない公開専用ビューを返し、認証済みには従来どおり編集できる殻を返す。

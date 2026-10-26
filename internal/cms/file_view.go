@@ -296,7 +296,8 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 
 	// 埋め込む住所には、ファイルを書いた時刻を `?v=` で添えます（2026-10-23）。同じ添付を上書きしたとき（部材発注書の
 	// 「PDF作成」・📝 ローカル編集など）、住所が変わらないとブラウザが前の中身を手元の写しから出し続け、
-	// 作り直しても直っていないように見えました。配信の側のキャッシュの扱いは変えません（変わっていなければ写しが使える）。
+	// 作り直しても直っていないように見えました。2026-10-27 から、配信の側は、今の印の付いた住所ならブラウザの手元の写しを
+	// 確かめずに使わせます（page.setAttachmentCache・本文の写真も閲覧の描き方で印を添える——attachment_cache.go）。
 	embedSrc := src + stdhtml.EscapeString(attachmentVersionQuery(pageID, url))
 
 	var body string
@@ -406,5 +407,5 @@ func attachmentVersionQuery(pageID, url string) string {
 	if err != nil {
 		return ""
 	}
-	return "?v=" + strconv.FormatInt(fi.ModTime().UnixMilli(), 36)
+	return "?v=" + page.AttachmentVersion(fi)
 }

@@ -504,7 +504,11 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	setAttachmentHeaders(w, name)
 	// URLの `/data/master` は名前で、置き場所ではありません——データの場所（WCMS_DATA_DIR・
 	// 既定 data）の下の master へ読み替えます（2026-10-14）。parts は path.Clean 済みなので `..` を含みません。
-	http.ServeFile(w, r, filepath.Join(append([]string{MasterDir()}, parts[2:]...)...))
+	fp := filepath.Join(append([]string{MasterDir()}, parts[2:]...)...)
+	if fi, err := os.Stat(fp); err == nil {
+		setAttachmentCache(w, r, fi)
+	}
+	http.ServeFile(w, r, fp)
 }
 
 // setAttachmentHeaders は添付の応答ヘッダを種別で決めます。
@@ -570,12 +574,37 @@ func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name s
 		return
 	}
 	fp := filepath.Join(AttachmentDir(pageID), name)
-	if _, err := os.Stat(fp); err != nil {
+	fi, err := os.Stat(fp)
+	if err != nil {
 		notFound(w, r)
 		return
 	}
 	setAttachmentHeaders(w, name)
+	setAttachmentCache(w, r, fi)
 	http.ServeFile(w, r, fp)
+}
+
+// AttachmentVersion は添付の版の印です（書いた時刻のミリ秒・36進）。住所に `?v=<印>` で添えます。
+// 上書き（📝 ローカル編集・写真を小さくする・PDF の作り直し）で書いた時刻が変わると、印も変わります。
+func AttachmentVersion(fi os.FileInfo) string {
+	return strconv.FormatInt(fi.ModTime().UnixMilli(), 36)
+}
+
+// setAttachmentCache は、添付をブラウザの手元にどう残すかを決めます（2026-10-27）。
+//
+// 利用者:「単なるトンネルではなく、画像のキャッシュなどはできますか」→（VPS に貯めず、ブラウザに残す案に）「作ってください」。
+//
+//   - 住所の `?v=` が今の版の印と合う → その人のブラウザだけが、確かめずに使ってよい（中身は版の印で決まるので変わらない）。
+//   - 印が無い・古い → 使う前に毎回「変わったか」を聞く（変わっていなければ 304 で中身を送らない）。上書きしたあとも
+//     前の中身を見せ続けない。それまでは何も言っていなかったので、ブラウザが自分の判断で古い写しを使うことがありました。
+//
+// どちらも `private`——途中の中継（VPS の Caddy など）には残させません。添付は、読める人だけに配るものだからです。
+func setAttachmentCache(w http.ResponseWriter, r *http.Request, fi os.FileInfo) {
+	if v := r.URL.Query().Get("v"); v != "" && v == AttachmentVersion(fi) {
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-cache")
 }
 
 // inlineImageTypes はインライン配信を許すラスタ画像の拡張子と Content-Type です。
