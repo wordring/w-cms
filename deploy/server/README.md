@@ -239,3 +239,35 @@ Claude が本番のデータを、版と監査の残る保存の道で直すた�
   ```
 
   POST も同じ形です（Origin の確かめはしない・ブラウザはこのファイルを開けないため）。
+
+## サーバーの監査（w-cms-audit・2026-10-26）
+
+毎朝 6:30 ごろ、業務サーバーと VPS の前の24時間のログを要点に絞り、Claude（API・`claude-opus-5-5`）に危ないことが無いかを読ませます。
+
+- 集めるもの: SSH のログイン・sudo・受信の壁が止めた通信・w-cms の監査の記録（ログイン・利用者・権限・持ち主・削除）・w-cms の警告と誤り・決まった時刻の仕事の結果・見張りの知らせ・止まった仕事・誤りの記録・守りの更新・ディスク。VPS の分は VPS の `wcms-audit-collect` が出します（`deploy/vps/README.md`）。
+- 送る前に、鍵や合言葉に見える長い文字の並び（32字以上）を伏せます。本文の中身は送りません。
+- 残す所: `/var/lib/w-cms-audit/<日付>.txt`（送った要点）・`.json`（API の答え）・`.answer.json`・`.md`（90日）。w-cms の `WCMS_AUDIT_PARENT` のページの下の「サーバーの監査 <年-月>」へも書き足します（業務サーバーの中だけで開く入口・利用者 Claude）。
+- 知らせ: 「見ておく」「危ない」のときと、流せなかったときに、見張りと同じ ntfy でスマホへ。
+- 料金の目安: 1回 0.1〜0.2 ドルほど（入力2〜3万トークン）。Max プランの毎月の API クレジットを結んだ Console の組織の鍵なら、そこから引かれます。
+
+置き方:
+
+```bash
+sudo install -m 755 deploy/server/w-cms-audit /usr/local/sbin/w-cms-audit
+sudo cp deploy/server/w-cms-audit.service deploy/server/w-cms-audit.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-audit.timer
+```
+
+設定 `/etc/w-cms/audit.env`（持ち主 root・0600）:
+
+```
+ANTHROPIC_API_KEY=〈Claude Console で作った鍵——利用者が書く。チャットに貼らない〉
+WCMS_AUDIT_PARENT=〈まとめを置くページの番号〉
+AUDIT_VPS_CMD=〈VPS の要点を出す命令（任意）〉
+```
+
+この環境のこと（ふだんの利用者・社内の住所の当てはめ など、リポジトリに書かないもの）は `/etc/w-cms/audit-context.txt` に書けます（任意）。
+
+試し方:
+- `sudo w-cms-audit collect` — 集めた要点を出すだけ（API へは送らない）。
+- `sudo env WCMS_AUDIT_SOCK=/run/w-cms-test/local.sock WCMS_AUDIT_PARENT=… w-cms-audit fake` — API を呼ばず、決まった試しの答えで、ファイルと試験用の w-cms へ残す所まで流す（知らせは送らない）。

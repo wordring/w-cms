@@ -184,3 +184,12 @@ command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2"
 ## まだのこと
 
 - 社外の控え（オブジェクトストレージと restic）。
+
+## サーバーの監査のための記録（2026-10-26）
+
+業務サーバーの `w-cms-audit`（`deploy/server/README.md` の「サーバーの監査」）が、VPS のログの要点も読みます。
+
+- Caddy の受けた要求の記録: Caddyfile のサイトの中に `log { output file /var/log/caddy/access.log { roll_size 20MiB; roll_keep 14; roll_keep_for 336h } format json }`。Cookie と Authorization は Caddy が伏せます。
+  ⚠ `caddy validate` を root で流すと、記録のファイルを root の持ち物として先に作り、Caddy が開けずに読み直しが断られます（2026-10-26 に踏んだ）。`chown caddy:caddy /var/log/caddy/access.log` で直ります。
+- 要点を出す台本: `deploy/vps/wcms-audit-collect` を `/usr/local/sbin/` に置く（root・755）。前の24時間の SSH・受信の壁・Caddy の要求（状態の番号・送り元・失敗した道・探りに見える要求・利用者の道具）・Caddy の警告・トンネル・止まった仕事・誤り・守りの更新・ディスク・最近のログインを出します。
+- 業務サーバーから呼ぶ道（`AUDIT_VPS_CMD`）は、まだ決めていません。

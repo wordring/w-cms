@@ -1,0 +1,84 @@
+#!/bin/bash
+# wcms-audit-collect — VPS の前の24時間のログを、要点に絞って出す（VPS の側・root で）。
+#
+# 業務サーバーの w-cms-audit（deploy/server/w-cms-audit）が、トンネルの中から決まった鍵で呼びます。その鍵は
+# /root/.ssh/authorized_keys で `command="/usr/local/sbin/wcms-audit-collect"` に絞ってあり、ほかのことはできません。
+# 出すのは数と並びだけ（住所・利用者の名前・要求の道・状態の番号）。Cookie・鍵・本文は出しません。
+# 1つの節は多くて決まった行数まで。省いたときは、そう書きます（読み手に、全部を見たと思わせない）。
+#
+# 2026-10-26 利用者:「Claudeが業務サーバーとVPSのログを読み危険性を監査する仕組みは作れますか？」
+set -uo pipefail
+since="24 hours ago"
+cut=$(date -d "$since" +%s)
+access=/var/log/caddy/access.log
+
+section() { printf '\n## %s\n' "$1"; }
+# top N: 同じ行を数えて多い順に N 行。省いた種類の数も添える。
+top() {
+	local n=$1 all
+	all=$(sort | uniq -c | sort -rn)
+	printf '%s\n' "$all" | sed '/^$/d' | head -n "$n"
+	local kinds
+	kinds=$(printf '%s\n' "$all" | sed '/^$/d' | wc -l)
+	[ "$kinds" -gt "$n" ] && echo "（ほかに $((kinds - n)) 種類を省いた）"
+	return 0
+}
+
+echo "# VPS $(date '+%F %T %Z') までの24時間"
+
+section "SSH のログイン（受け入れた・断った・知らない利用者）"
+journalctl -u ssh --since "$since" --no-pager -o cat 2>/dev/null |
+	grep -E 'Accepted|Failed|Invalid user|authentication failure|maximum authentication' |
+	sed -E 's/ port [0-9]+//; s/sshd-session\[[0-9]+\]: //; s/ ssh2.*//' | top 30
+
+section "受信の壁が止めた通信（送り元 → 宛先のポート）"
+blocks=$(journalctl -k --since "$since" --no-pager -o cat 2>/dev/null | grep 'UFW BLOCK')
+echo "合計 $(printf '%s' "$blocks" | grep -c . ) 件"
+printf '%s\n' "$blocks" | sed -nE 's/.*SRC=([^ ]+).*PROTO=([^ ]+).*DPT=([0-9]+).*/\1 → \2\/\3/p' | top 25
+
+section "Caddy が受けた要求"
+if [ -r "$access" ]; then
+	reqs=$(cat "$access" "$access".* 2>/dev/null | jq -r --argjson c "$cut" \
+		'select(.ts >= $c) | [.request.remote_ip, (.status|tostring), .request.method, (.request.uri|.[0:100]), ((.request.headers["User-Agent"] // ["-"])[0]|.[0:60])] | @tsv' 2>/dev/null)
+	echo "合計 $(printf '%s' "$reqs" | grep -c .) 件"
+	echo "### 状態の番号ごと"
+	printf '%s\n' "$reqs" | awk -F'\t' 'NF{print $2}' | top 15
+	echo "### 送り元の住所ごと（多い順）"
+	printf '%s\n' "$reqs" | awk -F'\t' 'NF{print $1}' | top 20
+	echo "### 失敗した要求（400 番台・500 番台）の道"
+	printf '%s\n' "$reqs" | awk -F'\t' 'NF && $2 >= 400 {print $2, $3, $4}' | top 25
+	echo "### 探りに見える要求（.env・.git・wp-・.php・cgi-bin・../ など）"
+	printf '%s\n' "$reqs" | awk -F'\t' 'NF{print $1, $2, $4}' |
+		grep -iE '\.env|\.git|wp-|\.php|cgi-bin|\.\./|%2e%2e|/etc/passwd|select%20|<script|/actuator|/vendor/|\.aspx?' | top 25
+	echo "### 利用者の道具（User-Agent）"
+	printf '%s\n' "$reqs" | awk -F'\t' 'NF{print $5}' | top 12
+else
+	echo "（$access を読めない）"
+fi
+
+section "Caddy の警告と誤り"
+journalctl -u caddy --since "$since" --no-pager -o cat -p warning 2>/dev/null |
+	jq -r '[.level, .logger // "-", (.msg // "" | .[0:120]), (.error // "" | .[0:120])] | join(" ")' 2>/dev/null | top 20
+
+section "トンネル（WireGuard）"
+now=$(date +%s)
+wg show all latest-handshakes 2>/dev/null | while read -r ifc peer t; do
+	if [ "${t:-0}" -gt 0 ]; then echo "$ifc の相手: 最後のつながりから $(( (now - t) )) 秒"; else echo "$ifc の相手: まだつながっていない"; fi
+done
+
+section "止まっている仕事（systemd）"
+systemctl --failed --no-legend --no-pager 2>/dev/null | sed '/^$/d' || true
+echo "（以上）"
+
+section "誤りの記録（重さ err 以上・同じものは数える）"
+journalctl --since "$since" --no-pager -o cat -p err 2>/dev/null | sed -E 's/[0-9]{2,}/N/g' | top 20
+
+section "まだ当てていない守りの更新"
+apt list --upgradable 2>/dev/null | grep -ci security | sed 's/^/守りの更新: /'
+[ -f /var/run/reboot-required ] && echo "再起動が要る（$(cat /var/run/reboot-required.pkgs 2>/dev/null | tr '\n' ' ')）"
+
+section "ディスク"
+df -h / | tail -1
+
+section "最近のログイン（last）"
+last -n 10 -F 2>/dev/null | sed -E 's/ +/ /g' | head -n 10

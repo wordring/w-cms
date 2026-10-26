@@ -1,0 +1,320 @@
+#!/bin/bash
+# w-cms-audit — 業務サーバーと VPS の前の24時間のログを要点に絞り、Claude（API）に危ないことが無いかを読ませる（root で・1日1回）。
+#
+# 2026-10-26 利用者:「Claudeが業務サーバーとVPSのログを読み危険性を監査する仕組みは作れますか？これは定期的に自動実行されると
+# 良いと思います。」——間隔は1日1回、ログの要点（接続元の住所・利用者の名前など。パスワードや鍵は除く）を Anthropic の API へ
+# 送ってよい、まとめはファイルと w-cms に残す（どれも利用者の答え）。
+#
+# 流れ:
+#   1. 業務サーバーのログを要点に絞る（collect_server）。VPS の要点は、設定 AUDIT_VPS_CMD があれば取る（VPS の wcms-audit-collect）。
+#   2. Claude の API（claude-opus-5-5）に読ませ、決まった形（JSON）で答えさせる。
+#   3. 毎回、/var/lib/w-cms-audit/<日付>.{txt,json,md} に残す（90日）。w-cms の業務サーバーのページの下の「サーバーの監査 <年-月>」へ
+#      書き足す（業務サーバーの中だけで開く入口・利用者 Claude）。
+#   4. 気になること（watch）・危ないこと（danger）があれば、見張りと同じ ntfy でスマホへ知らせる。流せなかったときも知らせる。
+#
+# 使い方: w-cms-audit（全部）・w-cms-audit collect（集めた要点を出すだけ・API へは送らない）
+#        w-cms-audit fake（API を呼ばずに、決まった試しの答えで残す所まで流す・知らせは送らない。
+#        WCMS_AUDIT_SOCK=/run/w-cms-test/local.sock と WCMS_AUDIT_PARENT=… を付けて試験用で試す）
+#
+# 設定 /etc/w-cms/audit.env（持ち主 root・0600）:
+#   ANTHROPIC_API_KEY=〈Claude Console で作った鍵〉（利用者が書く。チャットに貼らない）
+#   WCMS_AUDIT_PARENT=〈まとめを置くページの番号〉（業務サーバーのページ）
+#   AUDIT_VPS_CMD=〈VPS の要点を出す命令〉（任意。無ければ VPS は見ない——そう書いて送る）
+# この環境のこと（社名・名前・住所の当てはめなど・リポジトリに書かないもの）は /etc/w-cms/audit-context.txt（任意）。
+# ntfy の行き先は見張りと同じ /etc/w-cms/watch.env。
+set -uo pipefail
+umask 077
+. /etc/w-cms/audit.env
+[ -f /etc/w-cms/watch.env ] && . /etc/w-cms/watch.env
+SOCK=${WCMS_AUDIT_SOCK:-/run/w-cms/local.sock}
+mode=${1:-}
+OUT=/var/lib/w-cms-audit
+mkdir -p "$OUT"
+day=$(date +%F)
+since="24 hours ago"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+section() { printf '\n## %s\n' "$1"; }
+# top N: 同じ行を数えて多い順に N 行。省いた種類の数も添える（読み手に、全部を見たと思わせない）。
+top() {
+	local n=$1 all kinds
+	all=$(sort | uniq -c | sort -rn | sed '/^ *$/d')
+	printf '%s\n' "$all" | sed '/^$/d' | head -n "$n"
+	kinds=$(printf '%s\n' "$all" | sed '/^$/d' | wc -l)
+	[ "$kinds" -gt "$n" ] && echo "（ほかに $((kinds - n)) 種類を省いた）"
+	return 0
+}
+
+collect_server() {
+	echo "# 業務サーバー $(date '+%F %T %Z') までの24時間"
+
+	section "SSH のログイン（受け入れた・断った・知らない利用者）"
+	journalctl -u ssh --since "$since" --no-pager -o cat 2>/dev/null |
+		grep -E 'Accepted|Failed|Invalid user|authentication failure|maximum authentication' |
+		sed -E 's/ port [0-9]+//; s/sshd-session\[[0-9]+\]: //; s/ ssh2.*//' | top 30
+
+	section "sudo（だれが・何を）"
+	journalctl _COMM=sudo --since "$since" --no-pager -o cat 2>/dev/null | grep 'COMMAND=' |
+		sed -E 's/^ *([^ ]+) : .*USER=([^ ]+) ; COMMAND=(.{0,100}).*/\1 → \2: \3/' | top 25
+
+	section "受信の壁が止めた通信（送り元 → 宛先のポート）"
+	local blocks
+	blocks=$(journalctl -k --since "$since" --no-pager -o cat 2>/dev/null | grep 'UFW BLOCK')
+	echo "合計 $(printf '%s' "$blocks" | grep -c .) 件"
+	printf '%s\n' "$blocks" | sed -nE 's/.*SRC=([^ ]+).*PROTO=([^ ]+).*DPT=([0-9]+).*/\1 → \2\/\3/p' | top 25
+
+	section "w-cms の監査の記録（本番）"
+	local db="file:/var/lib/w-cms/data/auth.db?mode=ro" from
+	from=$(date -d "$since" '+%Y-%m-%d %H:%M:%S')
+	if command -v sqlite3 >/dev/null && sqlite3 "$db" 'select 1' >/dev/null 2>&1; then
+		echo "### 操作ごとの数"
+		sqlite3 -separator ' ' "$db" "select count(*), action from audit_log where substr(ts,1,19) >= '$from' group by action order by 1 desc limit 40"
+		echo "### ログイン・ログインの失敗（利用者・接続元）"
+		sqlite3 -separator ' ' "$db" "select action, username, substr(target,1,60) from audit_log where substr(ts,1,19) >= '$from' and action in ('login','login.fail','logout')" | top 25
+		echo "### 持ち主の付け替え（だれが・だれへ・何件）"
+		sqlite3 -separator ' ' "$db" "select count(*), username, '→', substr(target, instr(target,'->')+2) from audit_log where substr(ts,1,19) >= '$from' and action = 'chown' group by 2, 4 order by 1 desc limit 20"
+		echo "### 利用者・権限・削除・機械の入口にかかわる操作（新しい順に40件まで）"
+		sqlite3 -separator ' | ' "$db" "select substr(ts,1,19), username, action, substr(target,1,100) from audit_log where substr(ts,1,19) >= '$from' and (action like 'user.%' or action like 'group.%' or action like '%perm%' or action like '%delete%' or action like 'machine.%' or action like 'admin.%' or action like 'lock.force%' or action like 'data.%') order by rowid desc limit 40"
+	else
+		echo "（監査の記録を読めない）"
+	fi
+
+	section "w-cms の警告と誤り（本番と試験用）"
+	journalctl -u w-cms -u w-cms-test --since "$since" --no-pager -o cat -p warning 2>/dev/null |
+		sed -E 's/^[0-9\/]+ [0-9:]+ //; s/[0-9]{4,}/N/g' | cut -c1-160 | top 20
+	echo "### w-cms のログの「失敗」「できません」「エラー」を含む行"
+	journalctl -u w-cms --since "$since" --no-pager -o cat 2>/dev/null | grep -E '失敗|できません|エラー|error|panic' |
+		sed -E 's/^[0-9\/]+ [0-9:]+ //; s/[0-9]{4,}/N/g' | cut -c1-160 | top 20
+
+	section "決まった時刻の仕事（控え・社外の控え・証明書・見張り）"
+	local u
+	for u in w-cms-backup w-cms-offsite w-cms-cert-pull w-cms-watch w-cms w-cms-test w-cms-phone hylafax faxgetty@ttyACM0; do
+		systemctl cat "$u.service" >/dev/null 2>&1 || continue
+		printf '%s: %s\n' "$u" "$(systemctl show "$u.service" -p ActiveState -p Result -p ExecMainExitTimestamp -p NRestarts --value 2>/dev/null | tr '\n' ' ')"
+	done
+	echo "### 見張りが送った知らせ（応えません・戻りました）"
+	journalctl -t w-cms-watch --since "$since" --no-pager -o short-iso 2>/dev/null | tail -n 20
+
+	section "止まっている仕事（systemd）"
+	systemctl --failed --no-legend --no-pager 2>/dev/null | sed '/^$/d' || true
+	echo "（以上）"
+
+	section "誤りの記録（重さ err 以上・同じものは数える）"
+	journalctl --since "$since" --no-pager -o cat -p err 2>/dev/null | sed -E 's/[0-9]{2,}/N/g' | cut -c1-160 | top 25
+
+	section "まだ当てていない守りの更新"
+	apt list --upgradable 2>/dev/null | grep -ci security | sed 's/^/守りの更新: /'
+	[ -f /var/run/reboot-required ] && echo "再起動が要る（$(tr '\n' ' ' < /var/run/reboot-required.pkgs 2>/dev/null)）"
+
+	section "ディスク"
+	df -h / /var/lib/w-cms /srv/backup 2>/dev/null | sed 1d | sort -u
+
+	section "最近のログイン（last）"
+	last -n 10 -F 2>/dev/null | sed -E 's/ +/ /g' | head -n 10
+}
+
+collect_vps() {
+	if [ -z "${AUDIT_VPS_CMD:-}" ]; then
+		printf '\n# VPS\n（VPS のログは、まだ集めていない——設定 AUDIT_VPS_CMD が無い）\n'
+		return 0
+	fi
+	printf '\n'
+	if ! timeout 120 bash -c "$AUDIT_VPS_CMD" 2>&1; then
+		echo "（VPS のログを取れなかった）"
+	fi
+}
+
+# collect は両方の機械の要点を出します。⚠ 送る前に、鍵や合言葉に見える長い文字の並び（英数字と記号が32字以上）を伏せる
+# ——ログに紛れ込んだ秘密を Anthropic へ送らないため（例: sudo の引数に書いた鍵）。
+collect() {
+	{ collect_server; collect_vps; } | sed -E 's/[A-Za-z0-9_+/=-]{32,}/<長い文字列を伏せた>/g'
+}
+
+if [ "$mode" = "collect" ]; then
+	collect
+	exit 0
+fi
+
+# ── 知らせ・w-cms ──────────────────────────────────────────────────────────
+
+notify() { # notify <題> <本文> <重さ 1〜5>
+	[ -n "${NTFY_SERVER:-}" ] && [ -n "${NTFY_TOPIC:-}" ] || return 0
+	local body
+	body=$(jq -n --arg t "$NTFY_TOPIC" --arg ti "$1" --arg m "$2" --argjson p "$3" \
+		'{topic:$t, title:$ti, message:$m, priority:$p, tags:[if $p >= 4 then "rotating_light" else "mag" end]}')
+	curl -s -m 20 -o /dev/null -H "Content-Type: application/json" -d "$body" "$NTFY_SERVER" || logger -t w-cms-audit "ntfy へ送れません"
+}
+
+# wcms <方法> <道> [JSON]: 業務サーバーの中の入口（利用者 Claude）で w-cms を呼ぶ。応答の本文を出す（2xx でなければ失敗）。
+wcms() {
+	local method=$1 path=$2 data=${3:-}
+	if [ -n "$data" ]; then
+		curl -s -f -X "$method" --unix-socket "$SOCK" -H 'Content-Type: application/json' --data-binary "$data" "http://localhost$path"
+	else
+		curl -s -f -X "$method" --unix-socket "$SOCK" "http://localhost$path"
+	fi
+}
+
+newid() { tr -dc 'a-z0-9' < /dev/urandom | head -c 4; }
+
+# record_wcms <まとめの HTML のブロックを1行1つ並べたファイル>: その月のページ（無ければ作る）の末尾へ書き足す。
+record_wcms() {
+	local blocksfile=$1 parent=${WCMS_AUDIT_PARENT:-} title page full req
+	[ -n "$parent" ] && [ -S "$SOCK" ] || { echo "（w-cms には書かない——WCMS_AUDIT_PARENT か入口が無い）" >&2; return 1; }
+	title="サーバーの監査 $(date +%Y-%m)"
+	page=$(wcms GET "/api/children?parent_id=$parent" | jq -r --arg t "$title" '[.[] | select(.Title == $t)][0].ID // empty') || return 1
+	if [ -z "$page" ]; then
+		# 新しいページを作り（302 の行き先がページ）、題と最初の段落を替える。
+		local loc
+		loc=$(curl -s -o /dev/null -w '%{redirect_url}' -X POST --unix-socket "$SOCK" "http://localhost/api/new-page?parent=$parent")
+		page=$(printf '%s' "$loc" | sed -nE 's#.*/([0-9]{6})([?].*)?$#\1#p')
+		[ -n "$page" ] || { echo "（w-cms にページを作れない）" >&2; return 1; }
+		full=$(wcms POST /api/sync "$(jq -n --arg p "$page" '{page_id:$p, full:true}')") || return 1
+		req=$(printf '%s' "$full" | jq --arg p "$page" --arg t "$title" '
+			.blocks as $b
+			| ($b | map(select(.html | startswith("<h1"))) | .[0]) as $h
+			| ($b | map(select(.html | startswith("<p"))) | .[0]) as $q
+			| {page_id:$p, base:[$b[] | {id, h}], order:[$b[].id], checkpoint:true,
+			   changes:([{id:$h.id, base_h:$h.h, base_html:$h.html, html:("<h1 data-id=\"" + $h.id + "\">" + ($t|@html) + "</h1>")}]
+			     + (if $q then [{id:$q.id, base_h:$q.h, base_html:$q.html,
+			         html:("<p data-id=\"" + $q.id + "\">業務サーバーと VPS のログを、毎朝 Claude が読んだまとめです（w-cms-audit・deploy/server/README.md）。新しい日が下です。</p>")}] else [] end))}')
+		wcms POST /api/sync "$req" >/dev/null || return 1
+	fi
+	full=$(wcms POST /api/sync "$(jq -n --arg p "$page" '{page_id:$p, full:true}')") || return 1
+	# 足すブロックに ID を振る（中身の先頭のタグに data-id を入れる）。
+	local adds="[]" line id
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		id=$(newid)
+		line=$(printf '%s' "$line" | sed -E "s/^<([a-z0-9]+)/<\\1 data-id=\"$id\"/")
+		adds=$(jq -c --arg id "$id" --arg h "$line" '. + [{id:$id, html:$h}]' <<< "$adds")
+	done < "$blocksfile"
+	req=$(printf '%s' "$full" | jq --arg p "$page" --argjson a "$adds" '
+		.blocks as $b
+		| {page_id:$p, base:[$b[] | {id, h}], order:([$b[].id] + [$a[].id]), checkpoint:true, changes:$a}')
+	wcms POST /api/sync "$req" | jq -e '.written == true' >/dev/null || return 1
+	echo "$page"
+}
+
+# ── 集めて、読ませる ────────────────────────────────────────────────────────
+
+collect > "$work/logs.txt" 2>&1
+cp "$work/logs.txt" "$OUT/$day.txt"
+ctx=""
+[ -r /etc/w-cms/audit-context.txt ] && ctx=$(cat /etc/w-cms/audit-context.txt)
+
+fail() { # fail <わけ>
+	logger -t w-cms-audit "流せませんでした: $1"
+	printf '%s\n' "$1" > "$OUT/$day.error"
+	notify "⚠ サーバーの監査を流せませんでした" "$1" 4
+	exit 1
+}
+
+[ "$mode" = "fake" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] || fail "API の鍵（/etc/w-cms/audit.env の ANTHROPIC_API_KEY）がありません"
+
+read -r -d '' SYSTEM <<'EOF'
+あなたは、小さな町工場の社内のサーバーを見張る、セキュリティの担当です。
+渡すのは、2台の機械の前の24時間のログを、要点に絞ったものです。
+- 業務サーバー: 社内の Ubuntu。w-cms という社内の文書のシステム（本番と試験用）、電話と FAX の受け口、夜の控え（社内の SSD と、VPS への暗号化した控え）が動いている。
+- VPS: 社外の入口。Caddy が公開の名前の証明書を持ち、WireGuard のトンネルで業務サーバーの w-cms へ中継する。SSH はトンネルの中からだけ受ける。
+この会社にはセキュリティの専門家がいません。危ないことを見落とさず、しかし、ふつうの出来事で人を驚かせないでください。
+
+見つけてほしいもの:
+- 押し入りの試みが中まで届いたしるし（ログインの成功・探りの要求に 200 が返った・知らない利用者や鍵での SSH・ふだんと違う sudo）。
+- 認証や権限の変化（利用者を作った・無効にした・管理者にした・権限や持ち主を大きく変えた）と、だれがそれをしたか。
+- 守りが弱まったしるし（受信の壁・証明書・トンネル・控え・見張りが止まった、失敗した、更新が溜まっている）。
+- 機械の不調で、データを失うおそれのあるもの（ディスクの残り・止まった仕事・繰り返す誤り）。
+
+ふつうの出来事として扱うもの（問題にしない）:
+- インターネットのどこからでも来る探り（.env・wp-・.php などへの要求、22番への接続）で、断られたもの（受信の壁が止めた・404 などを返した）。
+- 決まった時刻の仕事（控え・社外の控え・証明書の写し・見張り）が成功したこと。
+- 管理者や Claude（w-cms の利用者の1人。業務サーバーの中だけの入口から書く）の、ふだんの操作。
+
+書き方:
+- 日本語で、短く書く。根拠は、渡したログの行から書く。ログに無いことを推し量って書かない。
+- 読めなかった節・集めていない節があれば、そう書く（見ていないものを「問題なし」としない）。
+- level は、ok（気にすることは無い）・watch（人が見ておくとよい）・danger（すぐ見るべき）のどれか。全体の level は、いちばん重いものに合わせる。
+EOF
+
+SCHEMA='{"type":"object","additionalProperties":false,"required":["level","summary","findings"],"properties":{
+ "level":{"type":"string","enum":["ok","watch","danger"]},
+ "summary":{"type":"string","description":"全体のまとめ。2〜4文。"},
+ "findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["level","where","what","evidence","action"],"properties":{
+   "level":{"type":"string","enum":["info","watch","danger"]},
+   "where":{"type":"string","description":"業務サーバー・VPS など"},
+   "what":{"type":"string","description":"何が起きたか"},
+   "evidence":{"type":"string","description":"根拠にしたログの行（短く）"},
+   "action":{"type":"string","description":"人がすること。無ければ「なし」"}}}}}}'
+
+jq -n --arg sys "$SYSTEM" --arg ctx "$ctx" --rawfile logs "$work/logs.txt" --argjson schema "$SCHEMA" '{
+	model: "claude-opus-5-5",
+	max_tokens: 16000,
+	fallbacks: "default",
+	output_config: {effort: "high", format: {type: "json_schema", schema: $schema}},
+	system: $sys,
+	messages: [{role: "user", content: ((if $ctx != "" then "# この環境のこと\n" + $ctx + "\n\n" else "" end) + "# ログの要点\n" + $logs)}]
+}' > "$work/body.json" || fail "送る中身を組めません"
+
+if [ "$mode" = "fake" ]; then
+	# 試し: API を呼ばず、決まった答えを返したことにする（残す所・w-cms へ書く所を確かめる）。
+	jq -n '{model:"（試し）", stop_reason:"end_turn", usage:{input_tokens:0, output_tokens:0},
+		content:[{type:"text", text:({level:"watch", summary:"これは試しです。API は呼んでいません。",
+		findings:[{level:"info", where:"業務サーバー", what:"試しの項目 <b>太字にならない</b>", evidence:"なし", action:"なし"}]}|tojson)}]}' > "$work/resp.json"
+	code=200
+else
+# 鍵は命令の引数に出さない（ほかの人の ps に見える）——見出しのファイル（0600）で渡す。
+printf 'x-api-key: %s\nanthropic-version: 2026-10-21\nanthropic-beta: server-side-fallback-2026-07-01\ncontent-type: application/json\n' \
+	"$ANTHROPIC_API_KEY" > "$work/headers"
+code=$(curl -sS --max-time 900 -o "$work/resp.json" -w '%{http_code}' -H @"$work/headers" \
+	--data-binary @"$work/body.json" https://api.anthropic.com/v1/messages 2>"$work/curl.err")
+rm -f "$work/headers"
+fi
+cp "$work/resp.json" "$OUT/$day.json" 2>/dev/null
+[ "$code" = "200" ] || fail "Claude の API が $code を返しました: $(jq -r '.error.message? // empty' "$work/resp.json" 2>/dev/null | head -c 200)$(head -c 200 "$work/curl.err")"
+
+stop=$(jq -r '.stop_reason' "$work/resp.json")
+[ "$stop" = "refusal" ] && fail "Claude が読むのを断りました（$(jq -r '.stop_details.category // "わけ不明"' "$work/resp.json")）"
+[ "$stop" = "max_tokens" ] && fail "答えが長すぎて途中で切れました"
+jq -r '[.content[] | select(.type == "text") | .text] | join("")' "$work/resp.json" > "$work/answer.json"
+jq -e '.level and .summary and (.findings | type == "array")' "$work/answer.json" >/dev/null || fail "答えの形が読めません"
+cp "$work/answer.json" "$OUT/$day.answer.json"
+model=$(jq -r '.model' "$work/resp.json")
+cost_in=$(jq -r '.usage.input_tokens // 0' "$work/resp.json")
+cost_out=$(jq -r '.usage.output_tokens // 0' "$work/resp.json")
+level=$(jq -r '.level' "$work/answer.json")
+summary=$(jq -r '.summary' "$work/answer.json")
+label() { case "$1" in ok) echo "問題なし";; watch) echo "見ておく";; danger) echo "危ない";; info) echo "参考";; *) echo "$1";; esac; }
+
+# ── 残す ───────────────────────────────────────────────────────────────────
+
+{
+	echo "# サーバーの監査 $day（$(label "$level")）"
+	echo
+	echo "$summary"
+	echo
+	jq -r '.findings[] | "- [\(.level)] \(.where): \(.what)（根拠: \(.evidence)）→ \(.action)"' "$work/answer.json"
+	echo
+	echo "（$model・入力 $cost_in・出力 $cost_out トークン）"
+} > "$OUT/$day.md"
+
+# w-cms へ（1行1ブロック）。
+{
+	printf '<h2>%s（%s）</h2>\n' "$day" "$(label "$level")"
+	jq -r '.summary | @html | "<p>" + . + "</p>"' "$work/answer.json"
+	jq -r 'if (.findings | length) > 0 then "<ul>" + ([.findings[] | "<li>【" + (.level|@html) + "】" + (.where|@html) + ": " + (.what|@html) + "（根拠: " + (.evidence|@html) + "）→ " + (.action|@html) + "</li>"] | join("")) + "</ul>" else empty end' "$work/answer.json" |
+		sed -e 's/【info】/【参考】/g; s/【watch】/【見ておく】/g; s/【danger】/【危ない】/g'
+	printf '<p>（%s・入力 %s・出力 %s トークン）</p>\n' "$model" "$cost_in" "$cost_out"
+} > "$work/blocks.html"
+page=$(record_wcms "$work/blocks.html") || { logger -t w-cms-audit "w-cms に書けませんでした"; page=""; }
+
+find "$OUT" -type f -mtime +90 -delete 2>/dev/null
+logger -t w-cms-audit "監査 $day: $level（$model・$cost_in/$cost_out）${page:+ w-cms /$page}"
+
+if [ "$mode" != "fake" ]; then # 試しでは知らせない
+	case "$level" in
+		danger) notify "⚠ サーバーの監査: 危ないことがあります" "$summary" 5 ;;
+		watch) notify "サーバーの監査: 見ておくことがあります" "$summary" 3 ;;
+	esac
+fi
+echo "監査 $day: $(label "$level")${page:+（w-cms /$page）}"
