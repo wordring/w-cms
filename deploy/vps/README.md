@@ -53,6 +53,25 @@ ufw allow in on wg0 from 10.8.0.2 to any port 22 proto tcp comment 'SSH (トン�
 
 ⚠ 入れ直した直後は、自動の更新（unattended-upgrades）が apt のロックを持っています。終わるのを待ってから入れます。
 
+## SSH は鍵だけ
+
+2026-10-26 から、パスワードでは入れません（利用者:「VPS の SSH を鍵だけにしてください」）。root も鍵でだけ入れます。
+
+VPS の会社の Ubuntu のイメージは `/etc/ssh/sshd_config.d/50-cloud-init.conf` に `PasswordAuthentication yes` を書いています。sshd は最初に読んだ値を使うので、それより先に読まれる名前のファイルに書きます。
+
+```bash
+cat > /etc/ssh/sshd_config.d/00-wcms.conf <<"EOF"
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+EOF
+sshd -t && systemctl reload ssh
+```
+
+- 職場の PC から入る: `ssh -i ~/.ssh/id_ed25519_wcms root@〈公開の名前〉`（PowerShell なら `ssh -i $HOME.sshid_ed25519_wcms root@〈公開の名前〉`）。
+- ⚠ 鍵を無くしたら SSH では入れません。VPS の会社の画面のコンソール（root のパスワード）から入って、鍵を足し直します。
+- ほかの PC から入るときは、その PC で鍵を作り、公開鍵を `/root/.ssh/authorized_keys` に足します。
+
 ## WireGuard
 
 秘密の鍵は、それぞれの機械の中で作り、外へ出しません（`/etc/wireguard/wg0.key`・0600）。設定のファイルには公開鍵だけを書きます。
@@ -138,7 +157,7 @@ ssh -i ~/.ssh/id_ed25519_wcms -J wcms-server root@10.8.0.1
 ## まだのこと
 
 - 管理者 `a` のパスワードを決める（利用者）。それまで中継しない。
-- SSH をパスワードでは入れないようにする。外からの 22番を閉じるか（トンネルの中からだけにするか）を決める。
+- 外からの 22番を閉じるか（トンネルの中からだけにするか）を決める（SSH は 2026-10-26 から鍵だけ）。
 - 業務サーバーの証明書を〈公開の名前〉のものにする（VPS で取って写す）。
 - 社内からも〈公開の名前〉で繋ぐ（split-horizon。考察 §3.4）。
 - 見張り（VPS から1分ごとにログインの画面を見に行く・考察 §6）。
