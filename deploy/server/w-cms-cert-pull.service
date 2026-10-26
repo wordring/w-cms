@@ -1,0 +1,8 @@
+[Unit]
+Description=w-cms: VPS から公開の名前の証明書を写す
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/w-cms-cert-pull

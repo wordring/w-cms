@@ -1,0 +1,15 @@
+#!/bin/sh
+# wcms-cert-export <公開の名前> — Caddy が取った証明書と鍵を、tar にして標準出力へ出す（VPS の側）。
+#
+# 業務サーバーがトンネルの中から SSH でこれを呼び、写していきます（deploy/server/w-cms-cert-pull）。
+# root の authorized_keys で、業務サーバーの写し用の鍵に、この命令だけを許します:
+#   command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2",restrict ssh-ed25519 AAAA… w-cms-cert-pull
+# VPS に業務サーバーへの鍵は置きません（VPS が乗っ取られても、業務サーバーへは入れない）。
+set -eu
+name="${1:-}"
+case "$name" in
+	''|*[!a-z0-9.-]*) echo "名前が不正です" >&2; exit 2 ;;
+esac
+dir="/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/$name"
+[ -f "$dir/$name.crt" ] && [ -f "$dir/$name.key" ] || { echo "証明書がまだありません: $name" >&2; exit 1; }
+exec tar -C "$dir" -cf - "$name.crt" "$name.key"

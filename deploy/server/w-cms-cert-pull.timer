@@ -1,0 +1,11 @@
+[Unit]
+Description=w-cms: 公開の名前の証明書を毎日写す
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*-*-* 04:10
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

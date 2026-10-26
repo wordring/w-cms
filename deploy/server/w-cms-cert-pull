@@ -1,0 +1,28 @@
+#!/bin/bash
+# w-cms-cert-pull — VPS が取った公開の名前の証明書を、トンネルの中から写してくる（業務サーバーの側・root で）。
+#
+# 設定は /etc/w-cms/cert-pull.env（PUBLIC_NAME=〈公開の名前〉）。鍵は /root/.ssh/w-cms-cert-pull（VPS の側では
+# wcms-cert-export だけを許す——deploy/vps/wcms-cert-export）。写す先は w-cms の WCMS_TLS_PUBLIC_CERT・KEY。
+# w-cms はファイルが替わったら次の接続から読み直す（cmd/w-cms/cert_reload.go）——起こし直さない。
+# 中身が同じなら何もしない。名前・期限・鍵の組が合わなければ写さない（いまのものを使い続ける）。
+set -euo pipefail
+. /etc/w-cms/cert-pull.env
+: "${PUBLIC_NAME:?PUBLIC_NAME がありません}"
+dest_dir=/var/lib/w-cms/data/tls
+crt="$dest_dir/public.crt"; key="$dest_dir/public.key"
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+ssh -i /root/.ssh/w-cms-cert-pull -o BatchMode=yes -o ConnectTimeout=20 \
+	-o UserKnownHostsFile=/root/.ssh/known_hosts-w-cms-vps -o StrictHostKeyChecking=yes \
+	root@10.8.0.1 > "$tmp/cert.tar"
+tar -C "$tmp" -xf "$tmp/cert.tar" "$PUBLIC_NAME.crt" "$PUBLIC_NAME.key"
+c="$tmp/$PUBLIC_NAME.crt"; k="$tmp/$PUBLIC_NAME.key"
+openssl x509 -in "$c" -noout -checkhost "$PUBLIC_NAME" | grep -q "does match" || { echo "名前が合いません" >&2; exit 1; }
+openssl x509 -in "$c" -noout -checkend 86400 >/dev/null || { echo "期限が切れかけています（写しません）" >&2; exit 1; }
+[ "$(openssl x509 -in "$c" -noout -pubkey | sha256sum)" = "$(openssl pkey -in "$k" -pubout | sha256sum)" ] || { echo "証明書と鍵の組が合いません" >&2; exit 1; }
+if [ -f "$crt" ] && [ -f "$key" ] && cmp -s "$c" "$crt" && cmp -s "$k" "$key"; then
+	exit 0 # 替わっていない
+fi
+# 鍵を先に、証明書をあとに（w-cms は組が合わないあいだ古いものを使い続ける）。どちらも名前を替えて一度に置く。
+install -o w-cms -g w-cms -m 0600 "$k" "$key.new" && mv -f "$key.new" "$key"
+install -o w-cms -g w-cms -m 0644 "$c" "$crt.new" && mv -f "$crt.new" "$crt"
+echo "公開の名前の証明書を写しました（$(openssl x509 -in "$crt" -noout -enddate)）"
