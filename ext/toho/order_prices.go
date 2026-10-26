@@ -317,13 +317,26 @@ func insertOrderPrices(ctx *cms.MirrorContext, tbl *html.Node, sectionEnd bool) 
 	}
 	// 見積計算書のページ（2026-10-16・estimate_calc_doc.go）には出さない——受注・見積の単価は品物の台帳（加工製品ページ）の鏡。
 	// 加工製品ページでは、上に「🧮 見積計算書」（最新の計算と過去の計算・新しく作るボタン）を添える。
-	frag := orderPricesHTML(orderPricesForProduct(ctx.DB, ctx.Viewer, ctx.PageID))
-	switch pageKindOf(ctx.PageID) {
-	case PageKindOurEstimateCalc:
+	// 本文に印のある欄は、その印の所に出す（2026-10-26・product_views.go）——ここでは、印の無い欄だけを出す。
+	kind := pageKindOf(ctx.PageID)
+	if kind == PageKindOurEstimateCalc {
 		return
-	case PageKindProduct:
+	}
+	frag := ""
+	if !hasMirrorMarker(tbl, OrderPricesViewType) {
+		frag = orderPricesHTML(orderPricesForProduct(ctx.DB, ctx.Viewer, ctx.PageID))
+	}
+	if kind == PageKindProduct {
 		// 加工製品ページでは、下に「⏱ 加工時間」も添える（2026-10-21 夜・work_hours.go——見積もりと実績を同じページに）。
-		frag = estimateCalcsHTML(ctx.PageID, estimateCalcsOf(ctx.Viewer, ctx.PageID)) + frag + workHoursHTML(workHoursForProduct(ctx.Viewer, ctx.PageID))
+		if !hasMirrorMarker(tbl, EstimateCalcsViewType) {
+			frag = estimateCalcsHTML(ctx.PageID, estimateCalcsOf(ctx.Viewer, ctx.PageID)) + frag
+		}
+		if !hasMirrorMarker(tbl, WorkHoursViewType) {
+			frag += workHoursHTML(workHoursForProduct(ctx.Viewer, ctx.PageID))
+		}
+	}
+	if frag == "" {
+		return
 	}
 	if p := tbl.Parent; sectionEnd && p != nil && p.Data == "section" {
 		appendHTML(p, frag)

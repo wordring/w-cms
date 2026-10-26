@@ -151,16 +151,13 @@ func appendQuotesList(ctx *cms.MirrorContext, tbl *html.Node) {
 	if ctx.Counter("rfq-quotes") > 0 || cms.IsTemplateArea(page.FormatID(ctx.PageID)) {
 		return
 	}
-	// 「計算表へ」は、写す先（いちばん新しい見積計算書。無ければこのページ——estimateSourceOf・/api/estimate/rows と同じ）に
-	// 見積計算表があって、そこへ書ける人にだけ出す。
-	// ⚠ 2026-10-19 まではこのページそのものを見ていたので、見積計算表を見積計算書へ移した加工製品ページ（職場の 23枚）では出なかった。
-	put := ""
-	if ctx.Viewer != nil {
-		if src := estimateSourceOf(ctx.Viewer, ctx.PageID); canWritePage(ctx.Viewer, src) && estimateTablesIn(src) > 0 {
-			put = page.FormatID(ctx.PageID) // 画面は加工製品ページの番号で /api/estimate/rows を引き、写す先はサーバーが決める
-		}
+	// 本文に「見積回答」の印があれば、そこに出す（2026-10-26・product_views.go）——ここでは出さない。
+	if hasMirrorMarker(tbl, QuotesViewType) {
+		return
 	}
-	frag := quotesListHTML(quotesForProduct(ctx.DB, ctx.Viewer, ctx.PageID), put)
+	// 中身は印のビューと同じ（quotesFor）。⚠ 2026-10-19 までは「計算表へ」を出すかをこのページそのものを見て決めていたので、
+	// 見積計算表を見積計算書へ移した加工製品ページ（職場の 23枚）では出なかった。
+	frag := quotesFor(ctx.Viewer, ctx.PageID)
 	if p := tbl.Parent; p != nil && p.Data == "section" {
 		appendHTML(p, frag)
 		return
