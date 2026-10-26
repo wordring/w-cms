@@ -85,10 +85,10 @@ const check = (label, ok, note = '') => {
     const leToken = link.split('#')[1] || '';
     const get = await page.request.get(BASE + '/api/local-edit/file?token=' + leToken);
     const put = await page.request.put(BASE + '/api/local-edit/file?token=' + leToken, {
-      headers: { 'If-Match': get.headers()['etag'] || '' }, data: big,
+      headers: { Origin: BASE, 'If-Match': get.headers()['etag'] || '' }, data: big,
     });
     const d2 = await dimsOf(u.src);
-    check('② ローカル編集で大きな写真に上書きできた', put.status() === 204 && Math.max(d2.w, d2.h) > long, put.status() + ' ' + JSON.stringify(d2));
+    check('② ローカル編集で大きな写真に上書きできた', put.status() === 204 && Math.max(d2.w, d2.h) > long, put.status() + ' ' + (await put.text()).slice(0, 200) + ' ' + JSON.stringify(d2) + ' ' + JSON.stringify(get.headers()['x-wcms-writable']));
 
     // ③
     await writeBody(page, id, '<h1>【E2E】写真を小さくする</h1><p><img src="' + u.src + '" alt="【E2E】現場.jpg"></p>');
