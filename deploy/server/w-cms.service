@@ -28,6 +28,10 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/w-cms/data
+# 業務サーバーの中だけで開く入口（2026-10-26・cmd/w-cms/local_socket.go）の置き場。持ち主（w-cms）だけが入れる——root は sudo で入る。
+# 設定の WCMS_LOCAL_SOCKET=/run/w-cms/local.sock と WCMS_LOCAL_SOCKET_USER（この入口の利用者）で開く。
+RuntimeDirectory=w-cms
+RuntimeDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target

@@ -162,6 +162,10 @@ func main() {
 	cms.StartAutocompleteSurvey()
 	// 拡張が登録した裏の仕事（2026-10-21 夜・internal/cms/background.go——メールの決まった間隔の読み込みなど）。
 	cms.StartBackgroundTasks()
+	// 業務サーバーの中だけで開く入口（2026-10-26・local_socket.go——設定が無ければ開かない）。
+	if err := startLocalSocket(handler); err != nil {
+		log.Fatalf("業務サーバーの中の入口を開けません: %v", err)
+	}
 	switch {
 	case cert != "" && key != "":
 		addr := listenAddr(true)

@@ -218,3 +218,24 @@ CHECK_RESOLVE=〈公開の名前〉:443:〈VPS の住所〉   # VPS では 〈�
 - ⚠ 話題の名前は、知っている人なら誰でも読めて送れます。リポジトリに書かず、デスクトップの構成メモにだけ残します。知らせの中身に業務のことは書きません（「応えません」と住所だけ）。
 - 知らせるのは、続けて2回（約2分）失敗したときと、戻ったときだけ。止まっているあいだは6時間ごとに念押しします。
 - 2台が同時に止まると、どちらも知らせられません。
+
+## 業務サーバーの中だけで開く入口（2026-10-26）
+
+w-cms は、ふだんの待ち受け（:8443・:9443）に加えて、業務サーバーの中のファイル（Unix ソケット）でも待ち受けられます。
+この入口から来た要求は、決めた1人の w-cms の利用者として扱います（パスワードもセッションも使わない）。
+Claude が本番のデータを、版と監査の残る保存の道で直すための入口です（`internal/auth/local_socket.go`・`cmd/w-cms/local_socket.go`）。
+
+- 開けるのは、w-cms を動かしている利用者（w-cms）と root だけ（フォルダは `RuntimeDirectoryMode=0700`・ファイルは 0600）。
+  つまり、業務サーバーへ SSH の鍵で入って sudo できる人だけが使えます。社外からも社内の LAN からも見えません。
+- 監査には、その利用者の名前が残ります。権限は、その利用者の権限のままです。利用者を無効にすれば、入口も閉じます（401）。
+- 設定（両方そろったときだけ開く・片方だけなら起動を止める）:
+  - 本番 `/etc/w-cms/w-cms.env`: `WCMS_LOCAL_SOCKET=/run/w-cms/local.sock`・`WCMS_LOCAL_SOCKET_USER=Claude`
+  - 試験用 `/etc/w-cms/test.env`: `WCMS_LOCAL_SOCKET=/run/w-cms-test/local.sock`・`WCMS_LOCAL_SOCKET_USER=a`
+- systemd の設定（`w-cms.service`・`w-cms-test.service`）に `RuntimeDirectory` を足したので、入れ替えたら写して `daemon-reload` する。
+- 使い方（業務サーバーで）:
+
+  ```bash
+  sudo curl -s --unix-socket /run/w-cms/local.sock http://localhost/api/me
+  ```
+
+  POST も同じ形です（Origin の確かめはしない・ブラウザはこのファイルを開けないため）。

@@ -60,6 +60,14 @@ func clearSessionCookie(w http.ResponseWriter) {
 // 利用者の操作（isOperation）なら寿命を延ばし、延ばしたときは Cookie も出し直します。
 // 裏で自動に飛ぶ要求では延ばしません（【要求】権限 §1「最後の操作から8時間」）。
 func userFromRequest(w http.ResponseWriter, r *http.Request) *User {
+	// 業務サーバーの中の入口から来た要求は、決めた利用者（local_socket.go）。無効なら nil。
+	if name, ok := localSocketUser(r); ok {
+		u, err := LookupUser(name)
+		if err != nil {
+			return nil
+		}
+		return u
+	}
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return nil
@@ -164,6 +172,11 @@ func CSRFProtect(next http.Handler) http.Handler {
 		// 機械専用の入口（2026-10-21 夜・machine.go）は Origin を見ません——ブラウザのログインを使わず、鍵（Authorization）で
 		// 確かめるので、別のサイトのページから送らせても鍵が付かず通りません。
 		if strings.HasPrefix(r.URL.Path, MachinePathPrefix) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// 業務サーバーの中の入口（local_socket.go）は、ブラウザが開けないファイルなので Origin を見ない。
+		if _, ok := localSocketUser(r); ok {
 			next.ServeHTTP(w, r)
 			return
 		}
