@@ -23,6 +23,7 @@ package toho
 import (
 	stdhtml "html"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -180,9 +181,14 @@ func onlyTableIn(p *html.Node) bool {
 	return n == 1
 }
 
+// startHeadingRe は見出し「作業開始」です。
+var startHeadingRe = regexp.MustCompile(`<h2(?:\s[^>]*)?>\s*` + regexp.QuoteMeta(MfgHeadStart) + `\s*</h2>`)
+
 // ensureStartHeading は、製造明細表の前に見出し「作業開始」が無ければ足します（新しい製造ページ・テンプレートに見出しが無いとき）。
 func ensureStartHeading(body string) string {
-	if strings.Contains(body, "<h2>"+MfgHeadStart+"</h2>") {
+	// 見出しの属性（data-id）と空白を許す（2026-10-26。それまでは詰めた形だけを見ていたので、人が保存したページ・機械が ID を
+	// 入れたページでは見出しを見落とし、もう1つ足した）。
+	if startHeadingRe.MatchString(body) {
 		return body
 	}
 	nodes, err := htmldoc.ParseFragment(body)

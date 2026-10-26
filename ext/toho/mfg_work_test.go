@@ -238,3 +238,13 @@ func TestEnsureCalcHeading(t *testing.T) {
 		t.Errorf("⚠ もうある見出しを2つにしています:\n%s", got)
 	}
 }
+
+// TestEnsureStartHeadingSeesHeadingWithID は、見出し「作業開始」に data-id が付いていても（人が保存した・機械が ID を入れた）
+// もう1つ足さないことを固定します（2026-10-26）。
+func TestEnsureStartHeadingSeesHeadingWithID(t *testing.T) {
+	body := `<h1 data-id="aaaa">製造</h1><h2 data-id="bbbb">` + MfgHeadStart + `</h2>` + "\n" +
+		`<table data-id="cccc"><caption>製造明細表</caption><tbody><tr><th>品番</th></tr></tbody></table>`
+	if got := ensureStartHeading(body); strings.Count(got, MfgHeadStart) != 1 {
+		t.Errorf("⚠ ID の付いた見出しを見落として、もう1つ足しました:\n%s", got)
+	}
+}

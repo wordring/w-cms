@@ -39,8 +39,10 @@ const tableIn = (body, caption) => {
   return at < 0 ? '' : body.slice(at, body.indexOf('</table>', at));
 };
 // 見出し h2「head」が、キャプション caption の表より前にあるか。
+// 見出しの属性（data-id——機械が書き替えると ID の無いブロックに ID が入る・2026-10-26）は許す。
+const headAt = (body, head) => body.search(new RegExp('<h2(?:\\s[^>]*)?>' + head + '</h2>'));
 const under = (body, head, caption) => {
-  const h = body.indexOf('<h2>' + head + '</h2>');
+  const h = headAt(body, head);
   const t = body.indexOf('<caption>' + caption + '</caption>');
   return h >= 0 && t > h;
 };
@@ -216,7 +218,7 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
     check('⑧ 必要部材表は消えた', !b.includes('<caption>必要部材表</caption>'));
 
     // ⑨
-    check('⑨ 見出し5つ（作業開始・部材作業・発注作業・見積依頼作業・納品作業）', ['作業開始', '部材作業', '発注作業', '見積依頼作業', '納品作業'].every((h) => b.includes('<h2>' + h + '</h2>')));
+    check('⑨ 見出し5つ（作業開始・部材作業・発注作業・見積依頼作業・納品作業）', ['作業開始', '部材作業', '発注作業', '見積依頼作業', '納品作業'].every((h) => headAt(b, h) >= 0));
     await page.goto(BASE + '/' + mfg);
     await page.locator('#w-editor-content .draft-form').waitFor({ timeout: 10000 }).catch(() => {});
     const inTable = await page.evaluate(() => Array.from(document.querySelectorAll('#w-editor-content table button')).map((x) => {

@@ -21,7 +21,8 @@ const check = (label, ok, note = '') => {
 };
 const bodyOf = (page, id) => page.evaluate(async (pid) => (await fetch('/api/load?id=' + pid)).text(), id);
 // 空のセルは <td></td> と <td><br/></td> のどちらでもよい（エディタは <br/> を書く）。
-const flat = (s) => s.replace(/\s+/g, '').replace(/<td><br\/?><\/td>/g, '<td></td>');
+// ブロックの ID は比べない（機械が書き替えると、ID の無いブロックに ID が入る——2026-10-26・cms.RewriteBody）。
+const flat = (s) => s.replace(/ data-id="[0-9a-z]+"/g, '').replace(/\s+/g, '').replace(/<td><br\/?><\/td>/g, '<td></td>');
 
 (async () => {
   const browser = await chromium.launch();
