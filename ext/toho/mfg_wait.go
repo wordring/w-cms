@@ -31,6 +31,7 @@ import (
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
+	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
 
@@ -353,8 +354,8 @@ func MfgBackAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "この行は、この製造で納めた分があるので戻せません")
 		return
 	}
-	// 戻す先の案件明細の行（品番、品番が空なら品名で探す）。
-	id, orow, why := pickedOrderRow(user, deliveryPick{Order: order, Row: -1, Item: v["item-id"], Name: v["item-name"]}, orderOrQuote, true)
+	// 戻す先の案件明細の行（品番、品番が空なら品名で探し、同じ品物の行が2つ以上なら納期の合う行）。
+	id, orow, why := pickedOrderRow(user, deliveryPick{Order: order, Row: backOrderRow(order, v), Item: v["item-id"], Name: v["item-name"]}, orderOrQuote, true)
 	if why != "" {
 		cms.JSONFail(w, http.StatusConflict, why)
 		return
@@ -394,6 +395,44 @@ func MfgBackAPIHandler(w http.ResponseWriter, r *http.Request) {
 		res["kept"] = d.Kept
 	}
 	cms.WriteJSON(w, res)
+}
+
+// backOrderRow は、製造明細の行 v を戻す先の、案件 order の案件明細の行の番号です（見つからなければ -1）。
+//
+// ⚠ 同じ案件に同じ品物の行が2つ以上ある（納期を分けた）とき、製造明細の行と納期の合う行へ戻す（2026-10-26。それまでは
+// 最初の行へ戻し、納期の違う行の製造待ちが増え、元の行は製造待ちに戻らなかった）。納期の合う行が無ければ最初の行。
+func backOrderRow(order string, v map[string]string) int {
+	id, ok := page.NormalizeID(order)
+	if !ok {
+		return -1
+	}
+	rows, err := cms.VocabTableRowsOf(database.DB, pageNum(id), clientOrderItemsType)
+	if err != nil {
+		return -1
+	}
+	want := shippedKey(id, v["item-id"], v["item-name"])
+	due := normDue(v["due"])
+	first := -1
+	for _, r := range rows {
+		if shippedKey(id, r.Values["item-id"], r.Values["item-name"]) != want {
+			continue
+		}
+		if first < 0 {
+			first = r.RowNo
+		}
+		if normDue(r.Values["due"]) == due {
+			return r.RowNo
+		}
+	}
+	return first
+}
+
+// normDue は納期を比べる形にします（日付として読めれば日付、読めなければ空白を詰めた文字）。
+func normDue(s string) string {
+	if d, ok := cms.NormalizeValue(cms.ColDate, s); ok {
+		return d
+	}
+	return strings.Join(strings.Fields(s), "")
 }
 
 // removeItemTableRow は、形式 vocabType の明細表（ページに1つ）の row 行目（見出しを除いて0から）を消した本文を返します。

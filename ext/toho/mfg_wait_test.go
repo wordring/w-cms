@@ -144,3 +144,41 @@ func TestMfgWaitFlow(t *testing.T) {
 		t.Errorf("⚠ 案件へ戻した行（A-2）を、また選べません:\n%s", view)
 	}
 }
+
+// TestMfgBackToTheRowOfTheSameDue は、⚠ 同じ案件に同じ品物の行が2つ（納期を分けた）あるとき、「↩ 製造待ちへ」が
+// 製造明細の行と納期の合う行へ戻すことを固定します（2026-10-26——それまでは最初の行へ戻していた）。
+func TestMfgBackToTheRowOfTheSameDue(t *testing.T) {
+	setupExtTest(t, "000990", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	addPage(t, 991, -1, "案件", "alice", "302", true)
+	seedWaitOrder(t, 992, 991, "あけぼの精工", "2026-11-01", waitItem("A-1", "ブラケット", "10", "2026-11-01")+waitItem("A-1", "ブラケット", "20", "2026/11/20"))
+	waitByRow := func() []float64 {
+		rows, err := cms.VocabTableRowsOf(database.DB, 992, clientOrderItemsType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]float64, len(rows))
+		for i, r := range rows {
+			out[i] = waitOf(r.Values)
+		}
+		return out
+	}
+	pick := map[string]any{"order": "000992", "row": 1, "item": "A-1"}
+	if code, out := postRFQ(t, u, MfgWaitAPIHandler, map[string]any{"items": []any{pick}}); code != 200 {
+		t.Fatalf("製造待ちへ入れられません: %d %v", code, out)
+	}
+	code, out := postRFQ(t, u, MfgStartAPIHandler, map[string]any{"items": []any{pick}})
+	if code != 200 {
+		t.Fatalf("開始できません: %d %v", code, out)
+	}
+	mfg := out["page_id"].(string)
+	if w := waitByRow(); w[0] != 0 || w[1] != 0 {
+		t.Fatalf("開始したのに製造待ちが残っています: %v", w)
+	}
+	if code, out := postRFQ(t, u, MfgBackAPIHandler, map[string]any{"page_id": mfg, "row": 0, "item": "A-1"}); code != 200 {
+		t.Fatalf("製造待ちへ戻せません: %d %v", code, out)
+	}
+	if w := waitByRow(); w[0] != 0 || w[1] != 20 {
+		t.Errorf("⚠ 納期 11/20 の行から始めた製造を、別の行へ戻しました（行ごとの製造待ち %v・2行目に 20 のはず）", w)
+	}
+}
