@@ -131,7 +131,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	// ページURLの下の名前空間で、物理配置（data/master/…/files/）はURLに出ない。
 	if slash := strings.IndexByte(id, '/'); slash > 0 {
 		pid, name := id[:slash], id[slash+1:]
-		if norm, ok := page.NormalizeID(pid); ok && len(pid) == 6 {
+		if norm, ok := page.NormalizeID(pid); ok && isCanonicalPageID(pid) {
 			page.ServeCleanAttachment(w, r, norm, name, pageNotFound)
 			return
 		}
@@ -139,12 +139,13 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// id が英数字ハイフンのみか簡易チェック
-	for _, c := range id {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
-			pageNotFound(w, r)
-			return
-		}
+	// ページの住所はゼロ詰めの6桁だけ（2026-10-26）。それまでは数として読めれば通したので、/002240 が /2240・/02240 でも
+	// 開けた（同じページが幾つもの住所を持っていた）。添付のきれいな URL（上）も6桁だけ。
+	//
+	// > 2026-10-26 利用者:「002240へのアクセスが2240でも出来るのを002240以外でアクセスできないように変更したいです。」
+	if !isCanonicalPageID(id) {
+		pageNotFound(w, r)
+		return
 	}
 
 	// ページの実体（本文・タイトル）を取り出し、認可のうえで殻へ埋め込んで返す。
@@ -355,4 +356,17 @@ func pageNotFound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// isCanonicalPageID は s がページの正規の住所（ゼロ詰めの page.IDLength 桁の数字）かです。
+func isCanonicalPageID(s string) bool {
+	if len(s) != page.IDLength {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

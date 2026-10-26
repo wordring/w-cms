@@ -139,3 +139,17 @@ func TestNotFoundPageOffersLogin(t *testing.T) {
 		t.Error("不存在ページの404だけ体裁が違います（区別が付いてしまう）")
 	}
 }
+
+// TestPageURLOnlyCanonical は、ページの住所がゼロ詰めの6桁だけであることを固定します（2026-10-26——それまでは /6・/00006 でも
+// /000006 が開けた）。
+func TestPageURLOnlyCanonical(t *testing.T) {
+	setupAnonTest(t)
+	if rr := getAnon(t, RootHandler, "/000005"); rr.Code == http.StatusNotFound {
+		t.Fatalf("前提: /000005 が開けません: %d", rr.Code)
+	}
+	for _, p := range []string{"/5", "/00005", "/0000005", "/+00005", "/5/x.pdf", "/00005/x.pdf"} {
+		if rr := getAnon(t, RootHandler, p); rr.Code != http.StatusNotFound {
+			t.Errorf("⚠ %q で開けました（%d）——住所は6桁だけ", p, rr.Code)
+		}
+	}
+}
