@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/html"
+
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/htmldoc"
@@ -270,11 +272,18 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 応答が届かずに押し直すと、2枚目の納品書ができて出荷済数量と請求が二重になっていた。
 	deliveryNewMu.Lock()
 	defer deliveryNewMu.Unlock()
+	// 2026-10-26 夕から、在るだけでなく、画面が送った行（案件・品番・品名・数量）と同じ中身の納品表かも確かめる——送った行が納品表の
+	// 指紋。ほかの人が作り直した納品表から、描き直す前の古い行で納品書を作らない（画面は送る前に書きかけを保存するので、直した数量は
+	// 本文に入っている）。
 	if req.FromDraft {
 		body, err := cms.ReadPageBody(mfgID)
 		nodes, perr := htmldoc.ParseFragment(body)
 		if err != nil || perr != nil || len(tablesOfType(nodes, MfgDeliveryDraftType)) == 0 {
 			cms.JSONFail(w, http.StatusConflict, "この製造ページの納品表は、もう納品書にしました（または消されています）。ページを読み直してください。")
+			return
+		}
+		if !anyDraftMatches(nodes, req.Items) {
+			cms.JSONFail(w, http.StatusConflict, "この製造ページの納品表が、画面の表と違います（ほかの人が作り直したか、直しました）。ページを読み直してください。")
 			return
 		}
 	}
@@ -325,12 +334,67 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	auth.Audit(user.Username, "delivery.new", newID+" "+client+" "+strconv.Itoa(len(lines))+"行")
 	out := map[string]any{"success": true, "page_id": newID, "url": "/" + newID}
 	// 製造ページの納品表から作ったなら、その納品表を消す（2026-10-21 夕）。⚠ 消せなくても納品書は取り消さない——理由を添えるだけ。
+	// ⚠ 消すのは、送った行と同じ中身の納品表だけ（2026-10-26 夕）。それまでは納品表を全部消していたので、作っているあいだにほかの人が
+	// 「納品」で作り直した納品表（まだ納めていない別の行）まで消えた。
 	if req.FromDraft {
-		if err := cms.RewriteBody(mfgID, user.Username, func(cur string) string { return dropTablesOfType(cur, MfgDeliveryDraftType) }); err != nil {
+		dropped := 0
+		if err := cms.RewriteBody(mfgID, user.Username, func(cur string) string {
+			out, n := dropTablesWhere(cur, MfgDeliveryDraftType, func(t *html.Node) bool { return draftMatchesPicks(t, req.Items) })
+			dropped = n
+			return out
+		}); err != nil {
 			out["draft_note"] = "⚠ 製造ページの納品表を消せませんでした: " + err.Error()
+		} else if dropped == 0 {
+			out["draft_note"] = "⚠ 製造ページの納品表は、作っているあいだにほかの人が作り直したので、消さずに残しました（この納品書で納めた分を確かめてください）"
 		}
 	}
 	cms.WriteJSON(w, out)
+}
+
+// anyDraftMatches は本文の納品表のどれかが、送った行 items と同じ中身かです。
+func anyDraftMatches(nodes []*html.Node, items []deliveryPick) bool {
+	for _, t := range tablesOfType(nodes, MfgDeliveryDraftType) {
+		if draftMatchesPicks(t, items) {
+			return true
+		}
+	}
+	return false
+}
+
+// draftMatchesPicks は、納品表 t の数量のある行（表の順）が、画面が送った行 items と同じか（案件・品番・品名・数量）です。
+// 画面（toho.js の mfg-dlvdraft-make）も、数量のある行だけを表の順に送る。
+func draftMatchesPicks(t *html.Node, items []deliveryPick) bool {
+	rows := rowsOf(t)
+	if len(rows) == 0 {
+		return false
+	}
+	head := headerIndex(rows[0])
+	n := 0
+	for _, tr := range rows[1:] {
+		if tr.Parent != nil && tr.Parent.Data == "tfoot" {
+			continue
+		}
+		cells := cellsOf(tr)
+		at := func(label string) string {
+			if i, ok := head[label]; ok && i < len(cells) {
+				return strings.TrimSpace(textOf(cells[i]))
+			}
+			return ""
+		}
+		if at("数量") == "" {
+			continue
+		}
+		if n >= len(items) {
+			return false
+		}
+		p := items[n]
+		if trimSlash(at("案件")) != trimSlash(p.Order) || at(ItemNoTag) != strings.TrimSpace(p.Item) ||
+			at("品名") != strings.TrimSpace(p.Name) || at("数量") != strings.TrimSpace(p.Qty) {
+			return false
+		}
+		n++
+	}
+	return n == len(items)
 }
 
 // deliveryNewMu は、納品書を作る仕事を1つずつ通します（納品表を確かめてから消すまでに、同じ納品表から2枚目を作らせない）。

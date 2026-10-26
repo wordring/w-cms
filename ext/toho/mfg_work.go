@@ -145,13 +145,24 @@ func placeUnderHeading(body, heading, fragment string) string {
 
 // dropTablesOfType は本文から vocabType の表を全部外します（表を包む節があれば節ごと）。
 func dropTablesOfType(body, vocabType string) string {
+	out, _ := dropTablesWhere(body, vocabType, func(*html.Node) bool { return true })
+	return out
+}
+
+// dropTablesWhere は本文から vocabType の表のうち drop が真のものを外し（表を包む節があれば節ごと）、外した数を返します。
+func dropTablesWhere(body, vocabType string, drop func(*html.Node) bool) (string, int) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
-		return body
+		return body, 0
 	}
-	tables := tablesOfType(nodes, vocabType)
+	var tables []*html.Node
+	for _, t := range tablesOfType(nodes, vocabType) {
+		if drop(t) {
+			tables = append(tables, t)
+		}
+	}
 	if len(tables) == 0 {
-		return body
+		return body, 0
 	}
 	root := wrapInDiv(nodes)
 	for _, t := range tables {
@@ -163,7 +174,7 @@ func dropTablesOfType(body, vocabType string) string {
 			target.Parent.RemoveChild(target)
 		}
 	}
-	return htmldoc.Render(childrenOf(root))
+	return htmldoc.Render(childrenOf(root)), len(tables)
 }
 
 // onlyTableIn は節 p の中身が表1つ（と空白）だけかです。

@@ -1981,6 +1981,7 @@ delegateClick([
             .map((cells) => ({ order: at(cells, '案件'), row: -1, item: at(cells, '品番'), name: at(cells, '品名'), qty: at(cells, '数量') }));
         if (!items.length) { sayIn(ctx.say, '納品表に数量のある行がありません。', 'warn'); return; }
         const d = await mfgPost(ctx, btn, '/api/delivery/new', { items, mfg: ctx.mfg, from_draft: true }, '納品書を作っています…', '納品書を作れませんでした');
+        if (d && d.draft_note) alert(d.draft_note); // 納品表を消せなかった・ほかの人が作り直したので残した（2026-10-26）
         if (d && d.page_id) location.href = '/' + d.page_id;
     }],
 ]);

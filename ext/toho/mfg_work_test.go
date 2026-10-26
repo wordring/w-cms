@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/net/html"
+
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -161,8 +163,19 @@ func TestMfgWorkDeliveryDraft(t *testing.T) {
 	if !strings.Contains(body, "<h2>納品作業</h2><table><caption>納品表</caption>") || !strings.Contains(body, "<td>A-1</td><td>ブラケット</td><td>40</td>") {
 		t.Fatalf("⚠ 納品表（A-1 を 40）が「納品作業」の下にありません:\n%s", body)
 	}
-	code, out = postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "from_draft": true,
-		"items": []map[string]any{{"order": "000982", "row": -1, "item": "A-1", "name": "ブラケット", "qty": "15"}}})
+	// 人が納品表の数量を 40 から 15 に直す（画面は「納品書を作る」を送る前に保存する）。
+	if err := cms.RewriteBody(mfg, "alice", func(cur string) string {
+		return strings.Replace(cur, "<td>ブラケット</td><td>40</td>", "<td>ブラケット</td><td>15</td>", 1)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pick15 := []map[string]any{{"order": "000982", "row": -1, "item": "A-1", "name": "ブラケット", "qty": "15"}}
+	// 画面の表と本文の納品表が違えば（ほかの人が作り直した・直した）作らない。
+	if code, out := postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "from_draft": true,
+		"items": []map[string]any{{"order": "000982", "row": -1, "item": "A-1", "name": "ブラケット", "qty": "40"}}}); code != 409 {
+		t.Errorf("⚠ 本文の納品表（15）と違う画面の表（40）で納品書を作りました: %d %v", code, out)
+	}
+	code, out = postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "from_draft": true, "items": pick15})
 	if code != 200 {
 		t.Fatalf("納品書を作れません: %d %v", code, out)
 	}
@@ -246,5 +259,28 @@ func TestEnsureStartHeadingSeesHeadingWithID(t *testing.T) {
 		`<table data-id="cccc"><caption>製造明細表</caption><tbody><tr><th>品番</th></tr></tbody></table>`
 	if got := ensureStartHeading(body); strings.Count(got, MfgHeadStart) != 1 {
 		t.Errorf("⚠ ID の付いた見出しを見落として、もう1つ足しました:\n%s", got)
+	}
+}
+
+// TestDropOnlyTheDraftThatWasDelivered は、納品書を作ったあとに消す納品表が、送った行と同じ中身のものだけであることを固定します
+// （2026-10-26 夕——それまでは納品表を全部消していたので、作っているあいだにほかの人が作り直した納品表まで消えた）。
+func TestDropOnlyTheDraftThatWasDelivered(t *testing.T) {
+	draft := func(qty string) string {
+		return deliveryDraftHTML([]map[string]string{{"our-item-id": "000777", "order": "000982", "item-id": "A-1", "item-name": "ブラケット", "quantity": qty, "unit": "個"}})
+	}
+	picks := []deliveryPick{{Order: "/000982", Item: "A-1", Name: "ブラケット", Qty: "15"}}
+	match := func(t *html.Node) bool { return draftMatchesPicks(t, picks) }
+	body := "<h2>" + MfgHeadDelivery + "</h2>" + draft("15")
+	if out, n := dropTablesWhere(body, MfgDeliveryDraftType, match); n != 1 || strings.Contains(out, "<caption>納品表</caption>") {
+		t.Errorf("⚠ 送った行と同じ納品表を消していません（%d）:\n%s", n, out)
+	}
+	rebuilt := "<h2>" + MfgHeadDelivery + "</h2>" + draft("25")
+	if out, n := dropTablesWhere(rebuilt, MfgDeliveryDraftType, match); n != 0 || !strings.Contains(out, "<td>25</td>") {
+		t.Errorf("⚠ ほかの人が作り直した納品表（25）を消しました（%d）:\n%s", n, out)
+	}
+	// 数量の空いた行は、画面も送らない——数えない。
+	withBlank := deliveryDraftHTML([]map[string]string{{"order": "000982", "item-id": "A-1", "item-name": "ブラケット", "quantity": "15"}, {"order": "000982", "item-id": "A-2", "item-name": "カバー", "quantity": ""}})
+	if _, n := dropTablesWhere(withBlank, MfgDeliveryDraftType, match); n != 1 {
+		t.Errorf("⚠ 数量の空いた行があると同じ納品表と見ません")
 	}
 }
