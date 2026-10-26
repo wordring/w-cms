@@ -312,7 +312,7 @@ func TestEstimateNoteBox(t *testing.T) {
 	if code := post(est, "塗装は別途\n納期はご相談"); code != 200 {
 		t.Fatalf("備考を保存できません: %d", code)
 	}
-	body := readPageBody(t, est)
+	body := shapeOf(readPageBody(t, est))
 	if !strings.Contains(body, "<section><h2>"+estimateNoteHeading+"</h2><p>塗装は別途</p><p>納期はご相談</p></section>") {
 		t.Errorf("備考の節が書き換わっていません:\n%s", body)
 	}

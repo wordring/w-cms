@@ -67,7 +67,7 @@ func TestMfgWorkPartsOrderQuoteSkip(t *testing.T) {
 			t.Fatalf("部材を集められません: %d %v", code, out)
 		}
 	}
-	body := readPageBody(t, mfg)
+	body := shapeOf(readPageBody(t, mfg))
 	if strings.Count(body, "<caption>必要部材表</caption>") != 1 || !strings.Contains(body, "<h2>部材作業</h2><table><caption>必要部材表</caption>") {
 		t.Fatalf("⚠ 必要部材表が「部材作業」の下に1枚ありません:\n%s", body)
 	}

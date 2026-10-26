@@ -1,6 +1,7 @@
 package toho
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -29,6 +30,13 @@ func betweenReadAndWrite(t *testing.T, change func(cur string) string) func() in
 }
 
 func appendBob(cur string) string { return cur + "<p>bob の書き込み</p>" }
+
+// shapeOf は、本文から上の段のブロック ID とタグのあいだの空白を外した形です（機械の書き替えは、ID の無いブロックに
+// 画面と同じ ID を入れる——2026-10-26・cms.RewriteBody。試験が本文の形を文字で比べるとき用）。
+func shapeOf(body string) string {
+	body = regexp.MustCompile(` data-id="[0-9a-z]+"`).ReplaceAllString(body, "")
+	return regexp.MustCompile(`>[ \t\r\n]+<`).ReplaceAllString(body, "><")
+}
 
 // TestSyncDrawingFieldsKeepsConcurrentSave は、整理が図面の項目を揃えるあいだのほかの人の保存が残ることを固定します。
 func TestSyncDrawingFieldsKeepsConcurrentSave(t *testing.T) {
@@ -213,7 +221,9 @@ func TestRFQNewDocKeepsOtherDraftTable(t *testing.T) {
 	second := tableOfLinesHTML(RFQDraftType, []ourOrderLine{{Kind: "購入部品", ItemID: "M6-10", ItemName: "なべ小ねじ", Quantity: "40", Unit: "本"}}, true)
 	seedBody(t, box, `<h1>`+RFQBoxTitle+`</h1>`+first+second)
 	// ほかの人が先に1枚目から作って片付けた（2枚目が1枚目になる）。
-	betweenReadAndWrite(t, func(cur string) string { return strings.Replace(cur, first, "", 1) })
+	betweenReadAndWrite(t, func(cur string) string {
+		return regexp.MustCompile(`(?s)<table[^>]*>(?:(?:[^<]|<[^/]|</[^t]|</t[^a])*?)六角ボルト.*?</table>`).ReplaceAllString(cur, "")
+	})
 	code, out := postRFQ(t, &auth.User{Username: "root", IsAdmin: true}, RFQNewDocAPIHandler,
 		map[string]any{"page_id": box, "table": 1, "supplier": "わかば鋼業"})
 	if code != 200 {

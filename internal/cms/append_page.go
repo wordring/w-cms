@@ -59,6 +59,16 @@ func RewriteBody(pageID, author string, rewrite func(current string) string) err
 	return rewritePageBody(pageID, author, rewrite)
 }
 
+// stampBlockIDs は、本文の上の段の ID の無いブロック（と重なった ID の2つ目以降）に、画面へ渡すのと同じ ID を入れた本文を返します
+// （振るものが無ければ body のまま）。
+func stampBlockIDs(body string) string {
+	blocks, err := splitStoredBlocks(body)
+	if err != nil || ensureStoredBlockIDs(blocks) == 0 {
+		return body
+	}
+	return joinStoredBlocks(blocks)
+}
+
 // HeldError は、道具（`/api/lock` → `/api/save`）がページの編集権を握っていたので書かなかったことを表します。
 // Holder は握っている人です。
 type HeldError struct{ Holder string }
@@ -100,7 +110,16 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 
 	// 保存経路と同じ順序（handler_save.go）——サニタイズ → 更新日時 → 書き込み →
 	// 版 → 索引。版を残すので、機械が足したものは人がリバートで取り消せる。
-	safeHTML := fillFileViewNamesAs(author, Sanitize(rewrite(string(current))))
+	// ID の無いブロックには、画面が使っている ID（中身から決まる・block_sync.go の ensureStoredBlockIDs）を先に入れてから渡す
+	// （2026-10-26）。それまでは ID の無いまま書き替えたので、変わったブロックの ID も変わり（中身から決まるため）、そのブロックを
+	// 書きかけていた人の保存が「相手が消した」のぶつかりになり、「残す」を選ぶと同じものが2つになった。
+	// 書き替えが何も変えなければ、ID を入れただけの本文は書かない（いままでどおり）。
+	stamped := stampBlockIDs(string(current))
+	out := rewrite(stamped)
+	if out == stamped {
+		out = string(current) // rewrite は1回だけ呼ぶ（呼び手は外の変数に結果を書くので）
+	}
+	safeHTML := fillFileViewNamesAs(author, Sanitize(out))
 	// ぶつかったときの「○○さん」——機械が変えたブロックは押した人が書いたと覚える（block_sync.go）。
 	noteBlockWriters(pageID, author, string(current), safeHTML)
 	// 書き換える前の中身を、区切りの版として残す（2026-10-26）。それまでは書いたあとの中身だけを、押した人の10分の版に

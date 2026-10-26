@@ -491,3 +491,54 @@ func TestSyncKeepsAllPiecesOfASplitBlock(t *testing.T) {
 		t.Errorf("包んだ形を画面へ返していません（描き直さない）: %+v", got)
 	}
 }
+
+// TestMachineRewriteKeepsIDOfIDlessBlock は、⚠ ID の無いブロック（テンプレートから作ったページ）を機械が書き替えても、
+// 画面が持っている ID のままにすることを固定します（2026-10-26——それまでは ID が変わり、そのブロックを書きかけていた人の
+// 保存が「相手が消した」のぶつかりになった）。違うブロックを書いていた人は、ぶつからずに入る。
+func TestMachineRewriteKeepsIDOfIDlessBlock(t *testing.T) {
+	setupSaveTest(t)
+	const id = "000915"
+	setupSyncPage(t, id, `<h1>題</h1><p>機械が書く段落</p><p>人が書く段落</p>`)
+	if err := os.WriteFile(page.BodyPath(id), []byte(`<h1>題</h1><p>機械が書く段落</p><p>人が書く段落</p>`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	alice := openScreen(t, "alice", id)
+	if len(alice.order) != 3 {
+		t.Fatalf("開けない: %+v", alice.order)
+	}
+	machineID, humanID := alice.order[1], alice.order[2]
+	if err := RewriteBody(id, "machine", func(cur string) string {
+		return strings.Replace(cur, "機械が書く段落", "機械が書き替えた段落", 1)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := bodyOfFile(t, id)
+	if !strings.Contains(body, `data-id="`+machineID+`">機械が書き替えた段落`) {
+		t.Fatalf("⚠ 機械が書き替えたブロックの ID が、画面の持つ %s と違います: %s", machineID, body)
+	}
+	// alice は、機械が変えたブロックを書きかけていた——ぶつかりは「相手が変えた」（並べる）で、「消した」ではない。
+	_, r := alice.edit(t, machineID, `<p data-id="`+machineID+`">alice が書いた</p>`)
+	for _, c := range r.Conflicts {
+		if c.Kind == "deleted" {
+			t.Fatalf("⚠ 機械が書き替えただけのブロックを「相手が消した」と言いました: %+v", r.Conflicts)
+		}
+	}
+	// 別のブロックは、ぶつからずに入る。
+	alice = openScreen(t, "alice", id)
+	if code, r := alice.edit(t, humanID, `<p data-id="`+humanID+`">人が直した</p>`); code != 200 || len(r.Conflicts) != 0 || !r.Written {
+		t.Fatalf("別のブロックが入りません: %d %+v", code, r)
+	}
+	if n := strings.Count(bodyOfFile(t, id), "<p"); n != 2 {
+		t.Errorf("⚠ 段落が %d 個になりました: %s", n, bodyOfFile(t, id))
+	}
+	// 何も変えない書き替えは、ID を入れただけの本文を書かない。
+	if err := os.WriteFile(page.BodyPath(id), []byte(`<h1>題</h1><p>ID の無い段落</p>`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RewriteBody(id, "machine", func(cur string) string { return cur }); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(bodyOfFile(t, id), "data-id") {
+		t.Errorf("⚠ 何も変えない書き替えで ID を書きました: %s", bodyOfFile(t, id))
+	}
+}
