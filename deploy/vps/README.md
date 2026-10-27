@@ -200,7 +200,7 @@ command="/usr/local/sbin/wcms-cert-export 〈公開の名前〉",from="10.8.0.2"
 
 業務サーバーの `w-cms-audit`（`deploy/server/README.md` の「サーバーの監査」）が、VPS のログの要点も読みます。
 
-- Caddy の受けた要求の記録: Caddyfile のサイトの中に `log { output file /var/log/caddy/access.log { roll_size 20MiB; roll_keep 14; roll_keep_for 336h } format json }`。Cookie と Authorization は Caddy が伏せます。
+- Caddy の受けた要求の記録: Caddyfile のサイトの中に `log { output file /var/log/caddy/access.log { roll_size 20MiB; roll_keep 14; roll_keep_for 336h } format filter { wrap json; fields { request>headers>X-Wcms-Edit-Token delete } } }`。Cookie と Authorization は Caddy が伏せます。ローカル編集の鍵の見出し（X-WCMS-Edit-Token）は、2026-10-27 から filter で消します（それまでは記録に残っていた）。
   ⚠ `caddy validate` を root で流すと、記録のファイルを root の持ち物として先に作り、Caddy が開けずに読み直しが断られます（2026-10-26 に踏んだ）。`chown caddy:caddy /var/log/caddy/access.log` で直ります。
 - 要点を出す台本: `deploy/vps/wcms-audit-collect` を `/usr/local/sbin/` に置く（root・755）。前の24時間の SSH・受信の壁・Caddy の要求（状態の番号・送り元・失敗した道・探りに見える要求・利用者の道具）・Caddy の警告・トンネル・止まった仕事・誤り・守りの更新・ディスク・最近のログインを出します。
 - 業務サーバーから呼ぶ道: 業務サーバーの root の鍵 `/root/.ssh/wcms_audit_vps` を、VPS の `/root/.ssh/authorized_keys` に `restrict,command="/usr/local/sbin/wcms-audit-collect",from="10.8.0.2"` を付けて置く（2026-10-26）。この鍵では、トンネルの中から、この台本を動かすことしかできません（ほかの命令を頼んでも台本が動くだけ）。業務サーバーの設定は `AUDIT_VPS_CMD="ssh -i /root/.ssh/wcms_audit_vps -o BatchMode=yes -o ConnectTimeout=20 root@10.8.0.1"`（値に空白があるので引用符で囲む）。
