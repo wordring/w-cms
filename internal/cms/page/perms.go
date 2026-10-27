@@ -599,13 +599,36 @@ func AttachmentVersion(fi os.FileInfo) string {
 //     前の中身を見せ続けない。それまでは何も言っていなかったので、ブラウザが自分の判断で古い写しを使うことがありました。
 //
 // どちらも `private`——途中の中継（VPS の Caddy など）には残させません。添付は、読める人だけに配るものだからです。
+//
+// ただし、ログインしていない訪問者に配るとき（ここまで来た＝実効公開のページの添付）は `public` にして、途中の中継にも
+// 残させてよいことにします（2026-10-27・【考察】キャッシュ制御 案C）。印が合っても **10分**（PublicCacheSeconds）までです——
+// 非公開に戻したら10分で外から見えなくなる、ページと同じ決まりにするため（利用者:「公開の添付は10分にとどめる（勧め）でお願いします。」）。
+// Vary: Cookie で、ログインした人の応答と取り違えさせません。
 func setAttachmentCache(w http.ResponseWriter, r *http.Request, fi os.FileInfo) {
+	current := false
 	if v := r.URL.Query().Get("v"); v != "" && v == AttachmentVersion(fi) {
+		current = true
+	}
+	if auth.CurrentUser(r) == nil {
+		w.Header().Set("Vary", "Cookie")
+		if current {
+			w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(PublicCacheSeconds))
+			return
+		}
+		w.Header().Set("Cache-Control", "public, no-cache")
+		return
+	}
+	if current {
 		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 		return
 	}
 	w.Header().Set("Cache-Control", "private, no-cache")
 }
+
+// PublicCacheSeconds は、ログインしていない訪問者への公開の応答（ページ・添付・sitemap.xml・robots.txt）を取っておかせてよい
+// 秒数です（10分・2026-08-21 利用者:「キャッシュにとって必要な時間を知りませんが、10分程度でどうでしょう？」）。
+// 公開⇄非公開の切り替えが外から見えるまでの遅れでもあります。cms の publicCacheSeconds はこの値です。
+const PublicCacheSeconds = 600
 
 // inlineImageTypes はインライン配信を許すラスタ画像の拡張子と Content-Type です。
 // SVG はここに入れません（上の分岐で不活性化して配るため）。

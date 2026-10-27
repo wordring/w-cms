@@ -33,7 +33,8 @@ import (
 // 取り消せないので、「公開→非公開だけ即時」という非対称は原理的に作れません
 // （要件 §4.4 の「実装時に判断すること」への回答）。即時性が要るなら、この値を 0 に
 // して `no-cache` 相当（毎回再検証・ETag で 304）へ倒すのが現実的な選択肢です。
-const publicCacheSeconds = 600
+// （2026-10-27 から、値は公開の添付と共通の page.PublicCacheSeconds に置きました。）
+const publicCacheSeconds = page.PublicCacheSeconds
 
 // SitemapHandler は実効公開のページだけを載せた sitemap.xml を返します。
 func SitemapHandler(w http.ResponseWriter, r *http.Request) {

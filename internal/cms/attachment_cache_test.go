@@ -92,3 +92,41 @@ func TestLoadViewAddsAttachmentVersions(t *testing.T) {
 	}
 }
 
+// TestPublicAttachmentCacheTenMinutes は、ログインしていない訪問者に配る公開ページの添付を、途中の中継にも残させてよい（public）が、
+// 印が合っても10分まで（PublicCacheSeconds）にとどめ、Vary: Cookie を付けることを固定します（2026-10-27・【考察】キャッシュ制御 案C）。
+// 利用者:「公開の添付は10分にとどめる（勧め）でお願いします。」——非公開に戻したら10分で外から見えなくなる、ページと同じ決まり。
+// ログインした人には、いままでどおり private で配ります。
+func TestPublicAttachmentCacheTenMinutes(t *testing.T) {
+	setupAttachmentTest(t)
+	newPage(t, TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: "333", Public: true})
+	newPage(t, "000105", "<h1>公開</h1>", page.PageMeta{Owner: "alice", Mode: "333", ParentID: TopPageID, Public: true})
+	p := putAttachment(t, "000105", "ph31.jpg", noisyJPEG(t, 300, 200))
+	fi, _ := os.Stat(p)
+	v := page.AttachmentVersion(fi)
+	get := func(url string, user *auth.User) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", url, nil)
+		if user != nil {
+			req = auth.WithUser(req, user)
+		}
+		rr := httptest.NewRecorder()
+		page.ServeCleanAttachment(rr, req, "000105", "ph31.jpg", http.NotFound)
+		return rr
+	}
+	if rr := get("/000105/ph31.jpg?v="+v, nil); rr.Code != 200 || rr.Header().Get("Cache-Control") != "public, max-age=600" || !strings.Contains(rr.Header().Get("Vary"), "Cookie") {
+		t.Errorf("⚠ 匿名への公開の添付が public・10分・Vary: Cookie ではありません: %d %q %q", rr.Code, rr.Header().Get("Cache-Control"), rr.Header().Get("Vary"))
+	}
+	if rr := get("/000105/ph31.jpg", nil); rr.Code != 200 || rr.Header().Get("Cache-Control") != "public, no-cache" {
+		t.Errorf("⚠ 印の無い住所を毎回確かめさせていません: %d %q", rr.Code, rr.Header().Get("Cache-Control"))
+	}
+	if rr := get("/000105/ph31.jpg?v="+v, &auth.User{Username: "alice"}); rr.Header().Get("Cache-Control") != "private, max-age=31536000, immutable" {
+		t.Errorf("⚠ ログインした人への配り方が変わりました: %q", rr.Header().Get("Cache-Control"))
+	}
+	// 非公開のページの添付は、匿名には配らない（いままでどおり）。
+	putAttachment(t, "000103", "ph32.jpg", noisyJPEG(t, 300, 200))
+	req := httptest.NewRequest("GET", "/000103/ph32.jpg", nil)
+	rr := httptest.NewRecorder()
+	page.ServeCleanAttachment(rr, req, "000103", "ph32.jpg", http.NotFound)
+	if rr.Code == 200 {
+		t.Errorf("⚠ 非公開のページの添付を匿名に配りました")
+	}
+}
