@@ -138,6 +138,10 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 				ServePDFPage(w, r, norm, name) // PDF の1ページの絵（2026-10-27・pdf_pages.go）
 				return
 			}
+			if r.URL.Query().Get("view") == "1" {
+				ServePhotoView(w, r, norm, name, pageNotFound) // 表示用の写真（2026-10-27・photo_view.go）
+				return
+			}
 			page.ServeCleanAttachment(w, r, norm, name, pageNotFound)
 			return
 		}

@@ -30,21 +30,25 @@ import (
 // 本文はサニタイズで書き直したあとなので、属性は二重引用符で囲まれています。
 var bodyImgAttachmentRe = regexp.MustCompile(`(<img\b[^>]*?\ssrc=")/([0-9]{6})/([^"/?#&]+)"`)
 
-// bodyImgVersionRe は、本文の写真のうち、添付のきれいな住所に版の印だけを添えたものです（StripAttachmentVersions が外す）。
-// 印の形は page.AttachmentVersion（36進の数字と小文字）。ほかの問い合わせが付いた住所には触りません。
-var bodyImgVersionRe = regexp.MustCompile(`(<img\b[^>]*?\ssrc="/[0-9]{6}/[^"/?#&]+)\?v=[0-9a-z]+"`)
+// bodyImgVersionRe は、本文の写真のうち、添付のきれいな住所に版の印（と表示用の印 `view=1`——photo_view.go）だけを
+// 添えたものです（StripAttachmentVersions が外す）。印の形は page.AttachmentVersion（36進の数字と小文字）。
+// ほかの問い合わせが付いた住所には触りません。書き出しでは `&` が `&amp;` になるので、どちらも受けます。
+var bodyImgVersionRe = regexp.MustCompile(`(<img\b[^>]*?\ssrc="/[0-9]{6}/[^"/?#&]+)\?(?:view=1&(?:amp;)?)?v=[0-9a-z]+"`)
 
-// StripAttachmentVersions は、本文の写真の住所から版の印（`?v=`）を外します。印の無い本文は1バイトも変えません。
+// StripAttachmentVersions は、本文の写真の住所から版の印（`?v=`・`?view=1&v=`）を外します。印の無い本文は1バイトも変えません。
 func StripAttachmentVersions(body string) string {
-	if !strings.Contains(body, "?v=") {
+	if !strings.Contains(body, "v=") {
 		return body
 	}
 	return bodyImgVersionRe.ReplaceAllString(body, `$1"`)
 }
 
-// RenderAttachmentVersions は本文の写真の住所に `?v=<版の印>` を添えます。
+// RenderAttachmentVersions は本文の写真の住所に `?v=<版の印>` を添えます。JPEG の写真は、表示用の写し（photo_view.go）を
+// 指す `?view=1&v=<版の印>` にし、設定 `photo_view` の `lazy` なら `loading="lazy"`（画面に近づくまで読まない）も添えます
+// （どちらも設定 photo_view があるときだけ。loading はサニタイズが許さない属性なので、本文には残らない）。
 // 読めない添付（無い・消えた）はそのまま。
 func RenderAttachmentVersions(body string) string {
+	conf := PhotoViewConfig()
 	return bodyImgAttachmentRe.ReplaceAllStringFunc(body, func(m string) string {
 		sub := bodyImgAttachmentRe.FindStringSubmatch(m)
 		p, ok := page.AttachmentPath(sub[2], sub[3])
@@ -55,6 +59,14 @@ func RenderAttachmentVersions(body string) string {
 		if err != nil || !fi.Mode().IsRegular() {
 			return m
 		}
-		return sub[1] + "/" + sub[2] + "/" + sub[3] + "?v=" + page.AttachmentVersion(fi) + `"`
+		q := "?v="
+		if conf != nil && isViewablePhoto(sub[3]) {
+			q = "?view=1&amp;v="
+		}
+		head := sub[1]
+		if conf != nil && conf.Lazy {
+			head = strings.Replace(head, "<img", `<img loading="lazy"`, 1)
+		}
+		return head + "/" + sub[2] + "/" + sub[3] + q + page.AttachmentVersion(fi) + `"`
 	})
 }

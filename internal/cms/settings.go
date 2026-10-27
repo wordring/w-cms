@@ -185,6 +185,9 @@ type Settings struct {
 
 	// PDFPages は PDF を絵にして見せるときの道具と大きさです（2026-10-27・pdf_pages.go）。無ければ埋め込みのまま。
 	PDFPages *PDFPagesSettings `json:"pdf_pages,omitempty"`
+
+	// PhotoView は本文の写真の表示用の写しの大きさと、見えるまで読まないかです（2026-10-27・photo_view.go）。無ければ元の写真のまま。
+	PhotoView *PhotoViewSettings `json:"photo_view,omitempty"`
 }
 
 // settings は読み込み済みの設定です。**nil のあいだは設定が空のものとして振る舞います**
@@ -407,6 +410,9 @@ func (s Settings) validate(path string) error {
 		return err
 	}
 	if err := validatePDFPages(path, s.PDFPages); err != nil {
+		return err
+	}
+	if err := validatePhotoView(path, s.PhotoView); err != nil {
 		return err
 	}
 	if s.MaxUploadMiB < 0 {

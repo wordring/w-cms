@@ -3411,10 +3411,10 @@
     // formulaOriginal は、閲覧モードで式の結果を見せている `td` → 式のときの子ノード（下の「表のセルの式」・書き出しは式で）。
     const formulaOriginal = new WeakMap();
 
-    // IMG_VERSION_SRC は、添付の写真の住所に版の印（?v=）だけを添えたものです（2026-10-27）。
-    // サーバーは書くための本文にも印を添えて返す（internal/cms/attachment_cache.go）ので、書き出すときに印を外します
+    // IMG_VERSION_SRC は、添付の写真の住所に版の印（?v=）と表示用の印（view=1・internal/cms/photo_view.go）だけを添えたものです
+    // （2026-10-27）。サーバーは書くための本文にも印を添えて返す（internal/cms/attachment_cache.go）ので、書き出すときに印を外します
     // （本文に印を書き込まない。サーバーも保存の手前で外す——両方で外す）。
-    const IMG_VERSION_SRC = /^(\/\d{6}\/[^\/?#&]+)\?v=[0-9a-z]+$/;
+    const IMG_VERSION_SRC = /^(\/\d{6}\/[^\/?#&]+)\?(?:view=1&)?v=[0-9a-z]+$/;
 
     function serializeAttrs(el, allowed, extraAttrs) {
         let attrs = extraAttrs || '';
@@ -4977,7 +4977,8 @@
         const src = lightboxList[lightboxAt];
         const box = lightboxEl();
         const img = box.querySelector('.lb-img');
-        img.src = src.getAttribute('src');
+        // 本文の写真は表示用の写し（?view=1・internal/cms/photo_view.go）——拡大表示は元の写真を出す（2026-10-27）。
+        img.src = (src.getAttribute('src') || '').replace('?view=1&', '?');
         img.alt = src.getAttribute('alt') || '';
         box.querySelector('.lb-caption').textContent = src.getAttribute('alt') || '';
         box.querySelector('.lb-count').textContent = (lightboxAt + 1) + ' / ' + lightboxList.length;
@@ -6379,7 +6380,8 @@
             // 住所には版の印（?v=）が付いているので、印を外して比べ、新しい印の住所で描き直す（2026-10-27 からは書ける形でも
             // 印を使う——書き出すときに serializeAttrs が外す）。
             document.querySelectorAll('img').forEach((img) => {
-                if ((img.getAttribute('src') || '').split(/[?#]/)[0] === url) img.src = d.v ? url + '?v=' + d.v : url;
+                const cur = img.getAttribute('src') || '';
+                if (cur.split(/[?#]/)[0] === url) img.src = d.v ? url + (cur.includes('view=1') ? '?view=1&v=' : '?v=') + d.v : url;
             });
         } catch (e) {
             notify('写真を小さくできません: ' + e.message, { type: 'warn' });

@@ -175,6 +175,11 @@
     "long_side": 2000,
     "quality": 85
   },
+  "photo_view": {
+    "long_side": 1200,
+    "quality": 85,
+    "lazy": true
+  },
   "pdf_pages": {
     "tool": "mutool",
     "width": 1600,

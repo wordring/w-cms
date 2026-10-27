@@ -98,6 +98,7 @@ const check = (label, ok, note = '') => {
     await img.waitFor({ timeout: 10000 });
     await page.waitForFunction((src) => { const i = document.querySelector('#w-editor-content img[src^="' + src + '"]'); return i && i.complete && i.naturalWidth > 0; }, u.src);
     const before = await img.evaluate((i) => i.naturalWidth);
+    const srcBefore = await img.getAttribute('src');
     const openMenu = async () => {
       await img.hover();
       await page.locator('#w-img-menu.active').click({ timeout: 5000 });
@@ -112,11 +113,13 @@ const check = (label, ok, note = '') => {
     check('③ 「写真を小さくしました」と出る', note);
     const d3 = await dimsOf(u.src);
     check('③ 写真が縮んだ', Math.max(d3.w, d3.h) === long && d3.size < d2.size, JSON.stringify(d3));
-    const redrawn = await page.waitForFunction(([src, long]) => {
+    // 本文の写真は表示用の写し（?view=1・2026-10-27・internal/cms/photo_view.go）なので、縮める前も後も絵の大きさは同じことがある。
+    // 描き直したかは、住所の版の印（v=）が新しくなって読み終えたかで見る。
+    const redrawn = await page.waitForFunction(([src, prev]) => {
       const i = document.querySelector('#w-editor-content img[src^="' + src + '"]');
-      return i && i.complete && Math.max(i.naturalWidth, i.naturalHeight) === long;
-    }, [u.src, long], { timeout: 10000 }).then(() => true).catch(() => false);
-    check('③ 開き直さずに絵が描き直る', redrawn, '前の幅 ' + before);
+      return i && i.getAttribute('src') !== prev && /[?&]v=/.test(i.getAttribute('src')) && i.complete && i.naturalWidth > 0;
+    }, [u.src, srcBefore], { timeout: 10000 }).then(() => true).catch(() => false);
+    check('③ 開き直さずに絵が描き直る', redrawn, '前の住所 ' + srcBefore + '・前の幅 ' + before);
 
     // ④
     await openMenu();
@@ -135,9 +138,9 @@ const check = (label, ok, note = '') => {
     await page.goto(BASE + '/' + id);
     const shown = await page.locator('#w-editor-content img[src^="' + u.src + '"]').first().getAttribute('src').catch(() => '');
     const ccOf = async (url) => (await page.request.get(BASE + url)).headers()['cache-control'] || '';
-    const ccV = shown && shown.includes('?v=') ? await ccOf(shown) : '';
+    const ccV = shown && /[?&]v=/.test(shown) ? await ccOf(shown) : '';
     const ccPlain = await ccOf(u.src);
-    check('⑥ 閲覧の写真に版の印が付き、手元に残せる', /\?v=/.test(shown || '') && /private/.test(ccV) && /immutable/.test(ccV), shown + ' ' + ccV);
+    check('⑥ 閲覧の写真に版の印が付き、手元に残せる', /[?&]v=/.test(shown || '') && /private/.test(ccV) && /immutable/.test(ccV), shown + ' ' + ccV);
     check('⑥ 印の無い住所は毎回確かめる', /private/.test(ccPlain) && /no-cache/.test(ccPlain), ccPlain);
 
     check('JSエラーなし', errs.length === 0, errs.join(' | '));

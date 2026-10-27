@@ -40,5 +40,7 @@ func TestMain(m *testing.M) {
 	// PDF を絵にする設定（pdf_pages）は外しておく——その機械に mutool があるかで、ほかの試験の結果が変わらないように。
 	// 試すときは pdf_pages_test.go が当てる。
 	settings.PDFPages = nil
+	// 表示用の写真（photo_view）も外しておく——写真の住所の形がいままでの試験と変わるため。試すときは photo_view_test.go が当てる。
+	settings.PhotoView = nil
 	os.Exit(m.Run())
 }

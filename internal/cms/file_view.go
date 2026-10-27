@@ -188,8 +188,8 @@ func fileViewSlideHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 	fileData := ` data-file-url="` + src + `" data-file-name="` + name + `"`
 	embedSrc := src + stdhtml.EscapeString(attachmentVersionQuery(pageID, url))
 	if kind == kindImage {
-		return `<div class="file-view-slide"` + fileData + `><img class="file-view-slide-img" src="` + embedSrc +
-			`" alt="` + name + `" title="` + name + `（` + ref + `）"></div>`
+		return `<div class="file-view-slide"` + fileData + `><img class="file-view-slide-img"` + photoLazyAttr() + ` src="` + src +
+			stdhtml.EscapeString(photoViewQuery(pageID, url)) + `" alt="` + name + `" title="` + name + `（` + ref + `）"></div>`
 	}
 	icon, open := "📄", ` target="_blank" rel="noopener"`
 	switch kind {
@@ -322,7 +322,8 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind,
 		body = `<embed class="file-view-body" type="application/pdf" src="` +
 			embedSrc + `#navpanes=0&amp;view=FitH">`
 	case kindImage:
-		body = `<img class="file-view-body" src="` + embedSrc + `" alt="` + name + `">`
+		// 写真は表示用の写し（photo_view.go）——押すと拡大表示で元の写真（app.js の lightbox）。
+		body = `<img class="file-view-body"` + photoLazyAttr() + ` src="` + src + stdhtml.EscapeString(photoViewQuery(pageID, url)) + `" alt="` + name + `">`
 	case kindVideo:
 		body = `<video class="file-view-body" src="` + embedSrc + `" controls preload="metadata"></video>`
 	case kindAudio:
@@ -404,6 +405,24 @@ func appendChrome(el *html.Node, innerHTML string) {
 	for _, n := range nodes {
 		el.AppendChild(n)
 	}
+}
+
+// photoViewQuery は、写真の住所 url に添える問い合わせです。JPEG で設定 photo_view があれば表示用の写し（photo_view.go）を
+// 指す「?view=1&v=版の印」、ほかは attachmentVersionQuery と同じ「?v=版の印」。読めなければ空。
+func photoViewQuery(pageID, url string) string {
+	q := attachmentVersionQuery(pageID, url)
+	if q != "" && PhotoViewConfig() != nil && isViewablePhoto(url) {
+		return "?view=1&" + q[1:]
+	}
+	return q
+}
+
+// photoLazyAttr は、設定 photo_view の lazy なら ` loading="lazy"` です（画面に近づくまで読まない）。
+func photoLazyAttr() string {
+	if c := PhotoViewConfig(); c != nil && c.Lazy {
+		return ` loading="lazy"`
+	}
+	return ""
 }
 
 // attachmentVersionQuery は、添付の住所 url（/ページ番号/保存名）に添える「?v=書いた時刻」です。読めなければ空。

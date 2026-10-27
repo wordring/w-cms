@@ -160,7 +160,7 @@ async function bodyOf(page, pageID) {
     const res = await fetch('/api/load?id=' + encodeURIComponent(id));
     return res.ok ? res.text() : '';
   }, pageID);
-  return body.replace(/(<img\b[^>]*?\ssrc="\/\d{6}\/[^"\/?#&]+)\?v=[0-9a-z]+"/g, '$1"');
+  return body.replace(/(<img\b[^>]*?\ssrc="\/\d{6}\/[^"\/?#&]+)\?(?:view=1&(?:amp;)?)?v=[0-9a-z]+"/g, '$1"').replace(/<img loading="lazy"/g, '<img');
 }
 
 // findMailbox は通信箱のページIDを返します（無ければ空）。
