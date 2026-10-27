@@ -127,6 +127,10 @@ func TestFileViewDrawsPDFPages(t *testing.T) {
 	if strings.Contains(out, "<embed") || strings.Contains(out, "ほかに") {
 		t.Errorf("⚠ 絵にできたのに埋め込んだか、余計な「ほかに」があります:\n%s", out)
 	}
+	// 絵の枠は大きさを変えない——「右下をつまむ」の案内を付けない（2026-10-27）。
+	if strings.Contains(out, "右下をつまむ") {
+		t.Errorf("⚠ 絵の枠に大きさを変える案内が残っています:\n%s", out)
+	}
 
 	// 上限（2枚）より多いページの PDF。
 	writePDF(t, "000001", "m4n5.pdf", "%PDF PAGES=5")
@@ -138,8 +142,8 @@ func TestFileViewDrawsPDFPages(t *testing.T) {
 	// 描けない PDF は埋め込む。
 	writePDF(t, "000001", "f6g7.pdf", "%PDF FAIL")
 	out = renderFileViewBody(t, alice, 1, `<section data-type="file-view" data-ref="000001-f6g7"></section>`)
-	if !strings.Contains(out, `<embed class="file-view-body" type="application/pdf"`) {
-		t.Errorf("⚠ 描けない PDF を埋め込んでいません:\n%s", out)
+	if !strings.Contains(out, `<embed class="file-view-body" type="application/pdf"`) || !strings.Contains(out, "右下をつまむ") {
+		t.Errorf("⚠ 描けない PDF を、大きさを変えられる枠に埋め込んでいません:\n%s", out)
 	}
 }
 

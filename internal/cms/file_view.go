@@ -329,8 +329,13 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind,
 	case kindAudio:
 		body = `<audio class="file-view-body" src="` + embedSrc + `" controls preload="metadata"></audio>`
 	}
+	// PDF を絵にした枠は大きさを変えない（2026-10-27・app.css）——「右下をつまむ」の案内も付けない。
+	grip := ` title="右下をつまむと大きさを変えられます"`
+	if pdfPages != "" {
+		grip = ""
+	}
 	return `<details class="file-view-fold" open` + fileData + `>` + head +
-		`<div class="file-view" title="右下をつまむと大きさを変えられます">` + body + `</div></details>`
+		`<div class="file-view"` + grip + `>` + body + `</div></details>`
 }
 
 // FillFileViewNames は、本文のファイル表示の印の中へ、指す添付の**短縮ファイル名**を書き込みます

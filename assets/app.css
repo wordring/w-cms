@@ -1553,9 +1553,12 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
 /* PDF を絵にして見せる枠（2026-10-27・internal/cms/pdf_pages.go）。埋め込みと同じ高さの枠の中で、ページの絵を縦に並べて
    巻物のように送る。絵を押すと本物の PDF を新しいタブで開く。 */
 /* 枠の高さは絵に合わせる（1ページの図面で下に空きを作らない）。ページが多くて高くなるときは、画面の 8 割で止めて中を送る。
-   右下をつまんで決めた高さ（この端末に憶える）があれば、そちらが勝つ。 */
+   右下をつまんで大きさを変える手立て（resize とその余白）は付けない（2026-10-27 利用者:「大きさを変えるハンドルが残っています。
+   必要ないので外して」——絵は幅に合わせて描かれ、押せば本物の PDF が開く）。 */
 #w-editor-content .file-view:has(> .file-view-pages) {
     height: auto;
+    resize: none;
+    padding-bottom: 0;
 }
 #w-editor-content .file-view-pages {
     max-height: 80vh;

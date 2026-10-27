@@ -85,18 +85,20 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
     console.log('■ 既定');
     ok(!!a, 'ファイル表示の枠がある');
     if (!a) throw new Error('枠が出ていません');
-    ok(a.resize === 'vertical', 'つまんで縦に変えられる', a.resize);
+    // PDF を絵にした枠は大きさを変えない（2026-10-27 利用者:「大きさを変えるハンドルが残っています。必要ないので外して」）。
+    ok(a.pages ? a.resize === 'none' : a.resize === 'vertical', a.pages ? '絵の枠は大きさを変えない（ハンドルが無い）' : 'つまんで縦に変えられる', a.resize);
     if (a.pages) {
       ok(a.imgs > 0 && a.target === '_blank', 'PDF を絵にして並べ、押すと PDF を開く', a.imgs + ' 枚');
     } else {
       ok(/navpanes=0&view=FitH/.test(a.src || ''), 'サムネイル欄を閉じ幅に合わせている（ツールバーは残す）',
          (a.src || '').split('#')[1]);
     }
-    ok(a.title.length > 0, '操作の手掛かり（tooltip）がある');
+    ok(a.pages ? a.title === '' : a.title.length > 0, a.pages ? '大きさを変える案内（tooltip）が無い' : '操作の手掛かり（tooltip）がある', a.title);
     ok(a.pages ? a.h > 200 : a.h > 400, a.pages ? '既定の高さは絵の高さ（画面の8割まで）' : '既定の高さは 70vh 相当', a.h + 'px');
-    ok(a.embedH > 0 && a.embedH < a.h, 'つまみの余地を残して PDF が収まっている',
+    ok(a.embedH > 0 && (a.pages ? a.embedH <= a.h : a.embedH < a.h), a.pages ? '絵が枠に収まっている' : 'つまみの余地を残して PDF が収まっている',
        '枠' + a.h + ' / PDF' + a.embedH);
 
+    if (!a.pages) { // 絵の枠はつまめないので、ここから先（つまんで伸ばす・開き直す）は埋め込みの枠だけ
     // ── つまんで伸ばす
     console.log('■ つまんで伸ばす');
     // **つまみが画面の中に来るまでスクロールします**——枠は700px あるので、
@@ -137,6 +139,7 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
     const c = await page.evaluate(() => Math.round(
       document.querySelector('#w-editor-content .file-view').getBoundingClientRect().height));
     ok(Math.abs(c - a.h) <= 2, '開き直すと、つまむ前の高さに戻る', c + 'px（つまむ前 ' + a.h + 'px）');
+    }
   } finally {
     for (const i of ids) {
       const del = await page.evaluate(async (id) => {

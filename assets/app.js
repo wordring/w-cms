@@ -6257,7 +6257,8 @@
             // つまむたびに聞き手が増えます（作り直していた頃は起きませんでした）。
             if (wrap.dataset.wResize === '1') return;
             const body = wrap.querySelector('.file-view-body');
-            if (!body) return;
+            // PDF を絵にした枠は大きさを変えない（2026-10-27・app.css）——つまむ配線も付けない。
+            if (!body || body.classList.contains('file-view-pages')) return;
             wrap.dataset.wResize = '1';
             wireFileViewResize(wrap, body);
         });
