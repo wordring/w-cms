@@ -121,6 +121,10 @@ func TestFileViewPhotoUsesViewCopy(t *testing.T) {
 	if n := strings.Count(out, `/000001/c3p7.jpg?view=1&amp;v=`); n != 2 {
 		t.Errorf("⚠ ファイル表示とカルーセルの写真が表示用の写しを指していません（%d か所）:\n%s", n, out)
 	}
+	// 写真の枠は大きさを変えない（2026-10-27）——「右下をつまむ」の案内を付けない。
+	if strings.Contains(out, "右下をつまむ") {
+		t.Errorf("⚠ 写真の枠に大きさを変える案内が残っています:\n%s", out)
+	}
 	if n := strings.Count(out, `loading="lazy"`); n != 2 {
 		t.Errorf("⚠ loading=\"lazy\" が %d か所（2 のはず）:\n%s", n, out)
 	}

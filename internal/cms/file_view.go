@@ -329,10 +329,11 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind,
 	case kindAudio:
 		body = `<audio class="file-view-body" src="` + embedSrc + `" controls preload="metadata"></audio>`
 	}
-	// PDF を絵にした枠は大きさを変えない（2026-10-27・app.css）——「右下をつまむ」の案内も付けない。
-	grip := ` title="右下をつまむと大きさを変えられます"`
-	if pdfPages != "" {
-		grip = ""
+	// 大きさを変えられるのは、PDF をそのまま埋め込む枠だけ（2026-10-27・app.css）——PDF を絵にした枠と、写真・動画・音声の枠は
+	// 中身に合わせた高さで、「右下をつまむ」の案内も付けない。
+	grip := ""
+	if kind == kindPDF && pdfPages == "" {
+		grip = ` title="右下をつまむと大きさを変えられます"`
 	}
 	return `<details class="file-view-fold" open` + fileData + `>` + head +
 		`<div class="file-view"` + grip + `>` + body + `</div></details>`

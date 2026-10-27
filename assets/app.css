@@ -1560,6 +1560,28 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     resize: none;
     padding-bottom: 0;
 }
+/* 写真・動画・音声の枠も、高さを中身に合わせる（2026-10-27 利用者:「写真と動画のファイル表示の枠を、写真の大きさに合わせる形に
+   直してください。ハンドルも外してください。」）。それまでは PDF の埋め込みと同じく高さが画面の 70% に決まっていて、写真がその枠に
+   合わせて押しつぶされていた（縦横の比を保っていなかった）。中身は縦横の比を保ち、幅いっぱい（元より大きくはしない）、
+   とても縦長なものは画面の 8 割で止める。押すと拡大表示で元の写真。 */
+#w-editor-content .file-view:has(> img.file-view-body),
+#w-editor-content .file-view:has(> video.file-view-body),
+#w-editor-content .file-view:has(> audio.file-view-body) {
+    height: auto;
+    min-height: 0;
+    resize: none;
+    padding-bottom: 0;
+}
+#w-editor-content img.file-view-body,
+#w-editor-content video.file-view-body {
+    flex: none;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 80vh;
+    margin: 0 auto;
+    align-self: center; /* 枠は縦並び（flex）——横いっぱいに引き伸ばさない（縦を止めたときに比が崩れる） */
+}
 #w-editor-content .file-view-pages {
     max-height: 80vh;
     overflow-y: auto;
