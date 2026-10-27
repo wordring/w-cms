@@ -149,7 +149,9 @@
         } catch (e) {
             // テンプレート一覧が取れなくても新規作成そのものは行えるようにする
         }
-        if (!hasTemplateLeaf(tree)) { openNewPage(''); return; }
+        // 使えるテンプレートが無くても、作るときに決める語（書類の種類など・2026-10-27）を選べるなら、メニューを開く。
+        const hasFixedChoice = Object.values(vocabWords).some(w => w && w.fixed && (w.creatable || []).length);
+        if (!hasTemplateLeaf(tree) && !hasFixedChoice) { openNewPage(''); return; }
         showTemplateMenu(tree);
     }
 
@@ -336,10 +338,11 @@
         blank.addEventListener('click', () => { hideTemplateMenu(); openNewPage('', fixedPick); });
         menu.appendChild(blank);
 
-        const sep = makeEl('div', 'template-menu-group', 'テンプレートから');
-        menu.appendChild(sep);
-
-        appendTemplateNodes(menu, tree, 0);
+        if (hasTemplateLeaf(tree)) {
+            const sep = makeEl('div', 'template-menu-group', 'テンプレートから');
+            menu.appendChild(sep);
+            appendTemplateNodes(menu, tree, 0);
+        }
 
         menu.classList.add('active');
         const rect = btn.getBoundingClientRect();
