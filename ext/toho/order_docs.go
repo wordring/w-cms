@@ -457,8 +457,15 @@ func importPDFPages(p *gopdf.GoPdf, data []byte) (err error) {
 			err = fmt.Errorf("%v", rec)
 		}
 	}()
-	// 展開すると大きすぎる PDF（展開爆弾）は gofpdi に渡さない（pdf_inflate_guard.go・2026-10-26）。
-	if !pdfInflateWithinBudget(data) {
+	// 外から届いた PDF は、gofpdi に渡す前に mutool で作り直す（2026-10-27 の見直し・cms.CleanPDF）——gofpdi は /Length を
+	// 信じてメモリを取るので、偽の /Length だけでプロセスごと落ちた（recover では拾えない）。道具が無い所（家の開発機）では作り直さない。
+	cleaned, ok, cerr := cms.CleanPDF(data, pdfInflateBudget)
+	if cerr != nil {
+		return cerr
+	}
+	data = cleaned
+	// 展開すると大きすぎる PDF（展開爆弾）・ファイルより大きな /Length は gofpdi に渡さない（pdf_inflate_guard.go・2026-10-26）。
+	if !pdfInflateWithinBudget(data, ok) {
 		return fmt.Errorf("中身を広げると大きすぎます（%d MB を超える）", pdfInflateBudget>>20)
 	}
 	rs := io.ReadSeeker(&guardedReader{Reader: bytes.NewReader(data),
