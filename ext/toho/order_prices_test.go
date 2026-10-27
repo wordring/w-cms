@@ -173,3 +173,27 @@ func TestOrderPricesUnderLastRecord(t *testing.T) {
 		t.Errorf("見積表の足元に計算が出ていません:\n%s", got)
 	}
 }
+
+// TestLatestOrderPriceWithoutPrice は、⚠ 単価の空いた受注しか無いとき「まだ受注がありません」と言わず、いちばん新しい受注を挙げて
+// 単価が空だと言うことを固定します（2026-10-27 利用者:「受注しているのに最新の受注単価: まだ受注がありません（下は見積の値段です）。と出ています」）。
+func TestLatestOrderPriceWithoutPrice(t *testing.T) {
+	order := orderPriceRow{Kind: orderPriceKindOrder, OrderPage: 1452, Date: "2026-09-14", No: "P-1", Qty: "5", Unit: "個", Status: "未着手"}
+	estimate := orderPriceRow{Kind: orderPriceKindEstimate, OrderPage: 1827, Date: "2025-03-04", Price: "2299"}
+	got := latestOrderPriceHTML([]orderPriceRow{order, estimate})
+	if strings.Contains(got, "まだ受注がありません") {
+		t.Errorf("⚠ 受注があるのに「まだ受注がありません」と出ています: %s", got)
+	}
+	for _, want := range []string{"単価の書かれた受注がありません", `<a href="/001452">2026-09-14</a>・No.P-1・5個`, "単価が空です", "下は見積の値段です"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("⚠ %q が出ていません: %s", want, got)
+		}
+	}
+	if got := latestOrderPriceHTML([]orderPriceRow{estimate}); !strings.Contains(got, "まだ受注がありません（下は見積の値段です）") {
+		t.Errorf("受注が無く見積だけなら、今までどおりのはず: %s", got)
+	}
+	cancelled := order
+	cancelled.Status = "取消"
+	if got := latestOrderPriceHTML([]orderPriceRow{cancelled}); !strings.Contains(got, "まだ受注がありません。") || strings.Contains(got, "見積") {
+		t.Errorf("取消の受注だけで見積も無ければ「まだ受注がありません。」のはず: %s", got)
+	}
+}

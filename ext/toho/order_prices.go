@@ -226,10 +226,33 @@ func latestOrderPrice(list []orderPriceRow) (orderPriceRow, bool) {
 }
 
 // latestOrderPriceHTML は「最新の受注単価」の1行を描きます。
+//
+// 単価の書かれた受注が無いときに「まだ受注がありません」とだけ言うと、受注の行が表に並んでいても受注が無いように読める
+// （2026-10-27 利用者:「受注しているのに最新の受注単価: まだ受注がありません（下は見積の値段です）。と出ています」——
+// 客先の発注書に単価が無く、案件明細表の単価も空の受注だった）。受注の行があれば、いちばん新しい受注を挙げて単価が空だと言う。
 func latestOrderPriceHTML(list []orderPriceRow) string {
 	q, ok := latestOrderPrice(list)
 	if !ok {
-		return `<p class="order-prices-latest w-view-empty">最新の受注単価: まだ受注がありません（下は見積の値段です）。</p>`
+		estimates := ""
+		for _, r := range list {
+			if r.Kind == orderPriceKindEstimate {
+				estimates = "下は見積の値段です"
+				break
+			}
+		}
+		for _, r := range list {
+			if r.Kind == orderPriceKindOrder && r.Status != "取消" {
+				note := "単価の書かれた受注がありません——いちばん新しい受注（" + strings.Join(orderPriceNotes(r), "・") + "）は単価が空です"
+				if estimates != "" {
+					note += "。" + estimates
+				}
+				return `<p class="order-prices-latest w-view-empty">最新の受注単価: ` + note + `。</p>`
+			}
+		}
+		if estimates == "" {
+			return `<p class="order-prices-latest w-view-empty">最新の受注単価: まだ受注がありません。</p>`
+		}
+		return `<p class="order-prices-latest w-view-empty">最新の受注単価: まだ受注がありません（` + estimates + `）。</p>`
 	}
 	price := q.Price
 	if !strings.HasSuffix(price, "円") {
@@ -238,19 +261,23 @@ func latestOrderPriceHTML(list []orderPriceRow) string {
 	if q.ByCode {
 		price += "※"
 	}
-	var notes []string
+	return `<p class="order-prices-latest">最新の受注単価: <strong>` + stdhtml.EscapeString(price) + `</strong>（` + strings.Join(orderPriceNotes(q), "・") + `）</p>`
+}
+
+// orderPriceNotes は、受注の行の日付（案件ページへのリンク）・番号・数量を、添え書きの並びにします。
+func orderPriceNotes(q orderPriceRow) []string {
 	label := q.Date
 	if label == "" {
 		label = "日付なし"
 	}
-	notes = append(notes, `<a href="/`+page.FormatID(q.OrderPage)+`">`+stdhtml.EscapeString(label)+`</a>`)
+	notes := []string{`<a href="/` + page.FormatID(q.OrderPage) + `">` + stdhtml.EscapeString(label) + `</a>`}
 	if q.No != "" {
 		notes = append(notes, "No."+stdhtml.EscapeString(q.No))
 	}
 	if q.Qty != "" {
 		notes = append(notes, stdhtml.EscapeString(q.Qty+q.Unit))
 	}
-	return `<p class="order-prices-latest">最新の受注単価: <strong>` + stdhtml.EscapeString(price) + `</strong>（` + strings.Join(notes, "・") + `）</p>`
+	return notes
 }
 
 // 置き場所（2026-10-04 利用者:「受注の単価は見積もり計算表の下が良いかもしれませんね」）——売る値段なので、確定単価の出る
