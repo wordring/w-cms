@@ -50,7 +50,7 @@ USB が省電力で眠ると、モデムと ND6 が着信を取りこぼしま�
 
 ## 4. w-cms へ渡す
 
-1. w-cms の秘密の設定 `w-cms.env` に `WCMS_MACHINE_TOKEN`（16文字以上）と `WCMS_MACHINE_USER`（機械の書き手）を書いて、w-cms を起こし直します。
+1. w-cms の秘密の設定 `w-cms.env` に `WCMS_MACHINE_TOKEN`（16文字以上）と `WCMS_MACHINE_USER`（機械の書き手・管理者でない機械専用の利用者。deploy/phone/README.md の 1）を書いて、w-cms を起こし直します。
 2. `/etc/w-cms/fax.env` に、同じ鍵と行き先を書きます（`sudo chown root:uucp` と `sudo chmod 640`）。
 
    ```
