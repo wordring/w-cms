@@ -48,6 +48,7 @@ func init() {
 func buildBlankProductHTML(tmpl, hostPageID, customer string) (string, error) {
 	d := cms.NewPageDraft(ProductTemplate, tmpl)
 	d.SetTitle(blankProductTitle)
+	setHeaderTag(d.DraftBlock, comm.RecordRefTag, hostPageID) // ページの頭に通信記録（2026-10-27）
 	blk, err := d.RequireContainer(drawingHeading)
 	if err != nil {
 		return "", err

@@ -259,6 +259,10 @@ func discardDuplicate(user *auth.User, pageID, dupRaw string) filingResult {
 	noted := ""
 	if src := draft.Source; src != "" && !strings.Contains(dupBody, src) {
 		pair := `<dt>` + htmlEscape(SourceRefTag) + `</dt><dd>` + htmlEscape(src) + `</dd>`
+		// 同じ図面が届いたメールの本文も読めるように、通信記録も付ける（2026-10-27・record_tag.go）。
+		if rec := recordPageOfSource(src); rec != "" && !hasRecordTag(dupBody, rec) {
+			pair += recordTagPair(rec)
+		}
 		wrote := false
 		if err := cms.RewriteBody(dupID, user.Username, func(current string) string {
 			out, ok := addTagToDrawing(current, m.Index, pair)

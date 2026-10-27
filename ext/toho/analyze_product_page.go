@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/cms"
 )
 
@@ -42,6 +43,9 @@ func buildProductPageHTML(tmpl, hostPageID, attachID string, j *orderJudgment, m
 
 	d := cms.NewPageDraft(ProductTemplate, tmpl)
 	d.SetTitle(title)
+	// メールから加工製品ページを作ったので、ページの頭のタグに通信記録（2026-10-27・comm.RecordRefTag）。整理で既にある
+	// ページへ図面として運ぶときは、図面のブロックへ付け直す（revision.go の mergeInputs）。
+	setHeaderTag(d.DraftBlock, comm.RecordRefTag, hostPageID)
 	if err := fillDrawingBlock(d, j, hostPageID, attachID, matches); err != nil {
 		return "", err
 	}

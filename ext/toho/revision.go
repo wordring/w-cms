@@ -152,6 +152,8 @@ func mergeInputs(user *auth.User, srcPageID, dstPageID string) (block, dstBody s
 	if strings.TrimSpace(block) == "" {
 		return "", "", errors.New("移す図面ブロックが見つかりません")
 	}
+	// メールから図面を足す・改定するので、運ぶ図面のブロックに通信記録を付ける（2026-10-27・record_tag.go）。
+	block = withRecordTag(block, recordOfMovingBlock(block, srcPageID))
 	dstInt, err := strconv.Atoi(dstPageID)
 	if err != nil || !canWritePage(user, dstInt) {
 		return "", "", errors.New("合流先へ書き込む権限がありません")
