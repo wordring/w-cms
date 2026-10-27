@@ -22,6 +22,20 @@
     let bar = null;
     let ended = false;
 
+    // firstAnswer は、サーバーがページに埋めた最初の答え（#w-boot-data の /api/session・2026-10-27・internal/cms/boot_data.go）を
+    // 1回だけ返します（無ければ null——いつもどおり問い合わせる）。埋めたのはページを返したときの残りなので、開いた直後に使う。
+    let bootUsed = false;
+    function firstAnswer() {
+        if (bootUsed) return null;
+        bootUsed = true;
+        try {
+            const el = document.getElementById('w-boot-data');
+            const d = el ? JSON.parse(el.textContent) : null;
+            if (!d || !Object.prototype.hasOwnProperty.call(d, API)) return null;
+            return new Response(JSON.stringify(d[API]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } catch (e) { return null; }
+    }
+
     function schedule(ms) {
         clearTimeout(timer);
         timer = setTimeout(check, Math.max(1000, ms));
@@ -32,7 +46,7 @@
         if (ended) return;
         let res;
         try {
-            res = await fetch(API, { cache: 'no-store', credentials: 'same-origin' });
+            res = firstAnswer() || await fetch(API, { cache: 'no-store', credentials: 'same-origin' });
         } catch (e) {
             schedule(60 * 1000); // 通信の失敗——少し待って聞き直す
             return;

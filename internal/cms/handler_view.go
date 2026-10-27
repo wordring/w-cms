@@ -211,6 +211,8 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ページの生成に失敗しました", http.StatusInternalServerError)
 		return
 	}
+	// 立ち上がりで画面が問い合わせる API の答えを、ページと一緒に送る（2026-10-27・boot_data.go）。
+	shellHTML = strings.Replace(shellHTML, bootPlaceholder, bootDataHTML(r, page.FormatID(pageID)), 1)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// 認証済みの応答は**絶対にキャッシュさせない**（要件 §4.4）。

@@ -389,6 +389,9 @@ func buildHandler() http.Handler {
 	// 認可はハンドラ内で行い、権限無し=403・匿名×非公開=404（不存在と同じ体裁。
 	// トップページだけ /login へ302）を返す。
 	root.Handle("/", auth.OptionalAuth(http.HandlerFunc(cms.RootHandler)))
+	// ページを返すときに、立ち上がりで画面が問い合わせる API の答えを一緒に送る——その答えは、この口を内側で呼んで作る
+	// （2026-10-27・internal/cms/boot_data.go）。
+	cms.SetBootHandler(root)
 
 	// CSRF対策（状態変更系のオリジン検証）と CSP（Content-Security-Policy）を
 	// 全体に適用する。CSP は最外周に置き、全レスポンスへヘッダを付与する。

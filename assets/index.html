@@ -9,6 +9,8 @@
          CSP strict 化（'unsafe-inline' 除去）に伴いインラインから移した
          （per-request nonce 案より単純で、静的配信とも両立する）。 -->
     <script src="/assets/boot.js"></script>
+    <!-- 立ち上がりで画面が問い合わせる API の答え（サーバーが埋める・2026-10-27・internal/cms/boot_data.go） -->
+    <!--WCMS_BOOT-->
     <!-- 殻のスタイル（外部CSS＝CSPの self）。2026-08-06 にインラインのスタイルブロックから切り出し -->
     <link rel="stylesheet" href="/assets/app.css">
     <!-- 拡張の画面の CSS（2026-10-20・サーバーが載っている拡張の ext/<拡張>/assets/*.css を差し込む——internal/cms/ext_scripts.go）。コアの app.css のあと。 -->

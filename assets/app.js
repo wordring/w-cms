@@ -81,6 +81,25 @@
         pathId = '000000';
     }
     let currentPageId = pathId;
+
+    // ── 最初の答え（2026-10-27・internal/cms/boot_data.go） ─────────────────────────
+    // 利用者:「外部回線からのアクセスがちょっと遅いように感じます」——ページを開くたびに、本文のあとで問い合わせを3段つなげて
+    // 往復していた。サーバーは、立ち上がりで問い合わせる API の答えをページに埋めて送る（#w-boot-data）。bootFetch は、
+    // 住所が同じ答えがあれば**最初の1回だけ**それを使い、なければ（2回目からも）いままでどおり問い合わせる。
+    const bootData = (() => {
+        try {
+            const el = document.getElementById('w-boot-data');
+            return el ? JSON.parse(el.textContent) || {} : {};
+        } catch (e) { return {}; }
+    })();
+    function bootFetch(url) {
+        if (Object.prototype.hasOwnProperty.call(bootData, url)) {
+            const body = bootData[url];
+            delete bootData[url];
+            return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+        }
+        return fetch(url);
+    }
     // unsaved は、まだ保存していない変更がある印（表示だけ——保存は書き出しを元と比べて決める）。editSeq は変えた回数
     // （保存の最中に打った分を見分ける）。2026-10-12 昼に1.5秒止まるたびの保存をやめた（triggerAutoSave）。
     let unsaved = false;
@@ -399,7 +418,7 @@
         if (!list) return;
         list.innerHTML = '';
         try {
-            const res = await fetch('/api/children?parent_id=' + currentPageId);
+            const res = await bootFetch('/api/children?parent_id=' + currentPageId);
             if (!res.ok) { list.innerHTML = '<li class="child-nav-empty">読み込めません</li>'; return; }
             const items = await res.json() || [];
             if (items.length === 0) { list.innerHTML = '<li class="child-nav-empty">子ページはありません</li>'; return; }
@@ -537,7 +556,7 @@
     // /api/me は OptionalAuth 配下で、未認証時も 200 で {authenticated:false} を返す。
     async function loadMe() {
         try {
-            const res = await fetch('/api/me');
+            const res = await bootFetch('/api/me');
             const me = res.ok ? await res.json() : { authenticated: false };
             if (!me.authenticated) {
                 // 匿名: 編集UI・権限カード・レール操作を隠し（CSS body.anonymous）、ログイン導線を出す。
@@ -619,7 +638,7 @@
         const msg = document.getElementById('w-pp-msg');
         msg.textContent = '';
         try {
-            const res = await fetch('/api/page-perms?id=' + currentPageId);
+            const res = await bootFetch('/api/page-perms?id=' + currentPageId);
             if (!res.ok) { msg.style.color = '#dc2626'; msg.textContent = '権限を取得できません'; return; }
             const p = await res.json();
             document.getElementById('w-pp-owner').textContent = p.owner || '(なし)';
@@ -698,7 +717,7 @@
     async function loadPageMeta() {
         document.getElementById('w-pi-id').textContent = currentPageId;
         try {
-            const res = await fetch('/api/page-meta?id=' + currentPageId);
+            const res = await bootFetch('/api/page-meta?id=' + currentPageId);
             if (!res.ok) return;
             const m = await res.json();
             const parent = m.parent_id || '';
@@ -750,7 +769,7 @@
         const isEdit = document.body.hasAttribute('edit-mode');
         setHidden(document.getElementById('w-vh-view-hint'), isEdit);
         try {
-            const res = await fetch('/api/versions?id=' + encodeURIComponent(currentPageId));
+            const res = await bootFetch('/api/versions?id=' + encodeURIComponent(currentPageId));
             if (!res.ok) return;
             const versions = await res.json();
             list.textContent = '';
@@ -3073,7 +3092,7 @@
 
     async function loadTagSchema() {
         try {
-            const res = await fetch('/api/tag-schema');
+            const res = await bootFetch('/api/tag-schema');
             if (!res.ok) throw new Error('tag-schema ' + res.status);
             const d = await res.json();
             tagSchema = (d && d.elements) || {};
@@ -9044,7 +9063,8 @@
         loadPageMeta();
         loadPerms();
         loadChildNav();
-        loadVersions();
+        // 版の一覧（loadVersions）は、上の onModeToggle が当てる applyMode の中で読む（2026-10-27 に、ここでも読んで
+        // 同じ問い合わせが2回出ていたのを1回にした）。
         openPageEvents(); // ほかの人の書き込みを知らせる（2026-10-07）
     };
 
