@@ -479,3 +479,31 @@ func TestMailBoxReadersCannotCreateRecords(t *testing.T) {
 		t.Errorf("書ける人が送れません: %d %v", code, out)
 	}
 }
+
+// TestReplyDefaultsWarnsSender は、送り元の確かめに失敗したメール・返信先が差出人と違う会社のメールへの返信で、送る欄に ⚠ の
+// 注意が出ることを固定します（2026-10-27・comm/sender_check.go）。宛先は返信先のまま（直すのは人）。
+func TestReplyDefaultsWarnsSender(t *testing.T) {
+	setupMailTest(t)
+	seedSourceMail(t)
+	putPage(t, "000202", "000100", "alice", "330", `<h1>振込先変更のお知らせ</h1><dl data-type="tags">`+
+		`<dt>`+comm.DirectionTag+`</dt><dd>`+comm.DirectionIn+`</dd>`+
+		`<dt>`+comm.ChannelTag+`</dt><dd>`+comm.ChannelMail+`</dd>`+
+		`<dt>`+comm.FromTag+`</dt><dd>銀行 &lt;info@bank.example&gt;</dd>`+
+		`<dt>`+comm.ReplyToTag+`</dt><dd>pay@evil.example</dd>`+
+		`<dt>`+comm.SenderCheckTag+`</dt><dd>`+comm.SenderCheckFailed+`</dd></dl>`)
+	d, err := replyDefaults(alice, "000202")
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := strings.Join(d.Notes, "\n")
+	if !strings.Contains(notes, "送り元の確かめに失敗") || !strings.Contains(notes, "pay@evil.example") {
+		t.Errorf("送る欄に ⚠ が出ていない: %q", d.Notes)
+	}
+	if strings.Join(d.To, ",") != "pay@evil.example" {
+		t.Errorf("宛先が %v です（返信先のまま）", d.To)
+	}
+	// ふつうのメール（000200）には出さない。
+	if d, _ := replyDefaults(alice, "000200"); len(d.Notes) != 0 {
+		t.Errorf("ふつうのメールに注意が出た: %q", d.Notes)
+	}
+}

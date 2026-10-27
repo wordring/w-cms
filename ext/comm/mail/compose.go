@@ -118,6 +118,8 @@ func replyDefaults(user *auth.User, pageID string) (comm.ComposeDraft, error) {
 	}
 	d.Body = b.String()
 	d.Attachments = attachmentLinks(body)
+	// 送り元の確かめに失敗した・返信先が差出人と違う会社——送る前に見せる（2026-10-27・comm/sender_check.go）。
+	d.Notes = append(d.Notes, comm.SenderWarnings(tags)...)
 	return d, nil
 }
 

@@ -6,6 +6,16 @@
 .mail-chrome {
     margin: 1.5rem 0 0.5rem;
 }
+/* 送り元の確かめに失敗した・返信先が差出人と違う会社（2026-10-27・ext/comm/sender_check.go）。✓ は出さない。 */
+.mail-warn {
+    margin: 0 0 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #f59e0b;
+    border-radius: 6px;
+    background: #fffbeb;
+    color: #92400e;
+}
+#w-editor-content .unhandled-warn { color: #b45309; font-weight: 700; cursor: help; }
 /* この記録から作るページ（2026-10-01・選ぶ欄と「作成」・作った印〔✓ 受注・✓ 加工製品〕は横に並ぶ）。 */
 .record-make { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
 .record-make[hidden] { display: none; } /* 種類も印も無いときは出さない（display: flex が hidden に勝つため） */

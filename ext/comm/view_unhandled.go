@@ -113,6 +113,7 @@ type unhandledRow struct {
 	Attachments string // 添付の数（無ければ空）
 	Direction   string // 向き（受信／送信。メモや社内案件では空）
 	Draft       string // 下書きなら用件（返信・新規・部材発注書）——まだ送っていない（2026-09-30）
+	SenderCheck string // 送り元の確かめ（失敗なら題の前に ⚠・2026-10-27・sender_check.go）
 }
 
 // UnhandledIntakes は未処理の通信記録を新しい順に返します（総数も返す）。
@@ -157,7 +158,9 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 		       COALESCE((SELECT d.value FROM page_tags d
 		                  WHERE d.page_id = p.id AND d.name = ? LIMIT 1), ''),
 		       COALESCE((SELECT g.value FROM page_tags g
-		                  WHERE g.page_id = p.id AND g.name = ? LIMIT 1), '')
+		                  WHERE g.page_id = p.id AND g.name = ? LIMIT 1), ''),
+		       COALESCE((SELECT s.value FROM page_tags s
+		                  WHERE s.page_id = p.id AND s.name = ? LIMIT 1), '')
 		  FROM pages p
 		 WHERE NOT EXISTS (SELECT 1 FROM page_tags h
 		                    WHERE h.page_id = p.id AND h.name = ? AND TRIM(h.value) <> ?)
@@ -166,7 +169,7 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 	// ⚠ **`?` は現れた順に対応します**——SELECT の途中に欄を足したら、ここへ同じ
 	// 位置で足すこと。名前が1つずれても SQL は通り、**その欄だけ静かに空**になります。
 	dbRows, err := database.DB.Query(q,
-		ChannelTag, ReceivedAtTag, FromTag, AttachmentCountTag, DirectionTag, DraftTag, HandledTag, HandledPending)
+		ChannelTag, ReceivedAtTag, FromTag, AttachmentCountTag, DirectionTag, DraftTag, SenderCheckTag, HandledTag, HandledPending)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -181,7 +184,7 @@ func UnhandledIntakes(user *auth.User, limit int) (rows []unhandledRow, total in
 	for dbRows.Next() {
 		var c candidate
 		if err := dbRows.Scan(&c.id, &c.row.Title, &c.row.Channel,
-			&c.row.Received, &c.row.From, &c.row.Attachments, &c.row.Direction, &c.row.Draft); err != nil {
+			&c.row.Received, &c.row.From, &c.row.Attachments, &c.row.Direction, &c.row.Draft, &c.row.SenderCheck); err != nil {
 			dbRows.Close()
 			return nil, 0, err
 		}
@@ -398,6 +401,10 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 		draft := ""
 		if r.Draft != "" {
 			draft = `<span class="unhandled-draft">📝 下書き</span> `
+		}
+		// 送り元の確かめに失敗したメールは、題の前に ⚠（2026-10-27・sender_check.go——✓ は出さない）。
+		if strings.TrimSpace(r.SenderCheck) == SenderCheckFailed {
+			draft = `<span class="unhandled-warn" title="送り元の確かめに失敗しています（なりすましかもしれません）">⚠</span> ` + draft
 		}
 		// 添付の数は題の後ろに小さく（2026-09-30——専用の列をやめて、題の幅に回す）。
 		clip := ""

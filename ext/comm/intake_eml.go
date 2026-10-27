@@ -225,6 +225,10 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	d.SetTag(CcTag, addressTagValues(msg.Header.Get("Cc"))...)
 	// 返信の宛先（差出人と違う窓口を指定してくることがある）。アドレス欄なので同じ扱い。
 	d.SetTag(ReplyToTag, addressTagValues(msg.Header.Get("Reply-To"))...)
+	// 送り元の確かめ（受け取ったメールサーバーの判定・2026-10-27・sender_check.go）。受け取ったメールだけ。
+	if !out {
+		d.SetTag(SenderCheckTag, senderCheckOf(msg.Header))
+	}
 	// **日時は向きに応じて片方だけ**（両方書くと「どちらが本当か」が生まれる）。
 	if out {
 		d.SetTag(SentAtTag, dateISO)

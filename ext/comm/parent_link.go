@@ -23,6 +23,7 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"log"
 	"regexp"
 	"strings"
 
@@ -182,6 +183,12 @@ func FixRecordTags(by string) (renamed, linked int, err error) {
 		if parent := ParentRecordOf(o.inReplyTo, o.id); parent != "" && addParent(o.id, parent, by) {
 			linked++
 		}
+	}
+	// ③ 送り元の確かめを書いていない受け取ったメールに、原本から読んで書き足す（2026-10-27・sender_check.go）。
+	if n, err := FillSenderChecks(by); err != nil {
+		log.Printf("送り元の確かめを書き足せませんでした: %v", err)
+	} else if n > 0 {
+		log.Printf("送り元の確かめを %d 件の記録に書き足しました", n)
 	}
 	return renamed, linked, nil
 }
