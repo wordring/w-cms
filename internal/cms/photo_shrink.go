@@ -78,6 +78,9 @@ func PhotoShrinkConfig() *PhotoShrinkSettings {
 	return settings.PhotoShrink
 }
 
+// jpegDecodeSlots は、JPEG の復号と作り直しを同時に動かす数の上限です。
+var jpegDecodeSlots = make(chan struct{}, 2)
+
 // stripJPEGQuality は、縮めずにメタデータだけ落とすときの品質です（再符号化は一度きりなので高めに取る）。
 const stripJPEGQuality = 90
 
@@ -95,6 +98,10 @@ func reencodeJPEG(content []byte, longSide, quality int) (out []byte, before, af
 	if err := checkImageSize(cfg.Width, cfg.Height); err != nil {
 		return nil, before, after, false, err
 	}
+	// 復号は全体で同時に2つまで（2026-10-27 の見直し）——1枚で 0.5〜1 GB を取るので、写真を小さくする・上げる・メールの取り込みが
+	// 並ぶとメモリが詰まった。
+	jpegDecodeSlots <- struct{}{}
+	defer func() { <-jpegDecodeSlots }()
 	orientation := jpegOrientation(content)
 	img, err := jpeg.Decode(bytes.NewReader(content))
 	if err != nil {

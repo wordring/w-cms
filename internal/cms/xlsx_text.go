@@ -32,8 +32,11 @@ import (
 )
 
 const (
-	xlsxPartLimit = 20 << 20 // 1つの XML の展開の上限
-	xlsxTextLimit = 200000   // 出力の文字数の上限
+	xlsxPartLimit  = 20 << 20 // 1つの XML の展開の上限
+	xlsxTotalLimit = 60 << 20 // 全部の XML の展開の合計の上限（2026-10-27 の見直し）
+	xlsxTextLimit  = 200000   // 出力の文字数の上限
+	xlsxSheetLimit = 50       // 読むシートの数の上限（同じファイルを指すシートは1つに数える）
+	xlsxCellLimit  = 500000   // 読むセルの数の上限（空のセルも数える）
 )
 
 // XLSXText は .xlsx の全シートを「=== シート 名前」と「A=値 | B=値」の行で返します（空のセル・空の行は書かない）。
@@ -46,6 +49,9 @@ func XLSXText(b []byte) (string, error) {
 	for _, f := range zr.File {
 		files[f.Name] = f
 	}
+	// ⚠ 2026-10-27 の見直し: 同じシートのファイルを指す並びを数千入れると、20 MB の XML を何千回も展開して、21 KB のファイルで
+	// 何分も止まった。展開の合計にも上限を置き、同じファイルは1回だけ読む。
+	var total int64
 	read := func(name string) ([]byte, error) {
 		f, ok := files[name]
 		if !ok {
@@ -62,6 +68,9 @@ func XLSXText(b []byte) (string, error) {
 		}
 		if len(data) > xlsxPartLimit {
 			return nil, errors.New(name + " が大きすぎます")
+		}
+		if total += int64(len(data)); total > xlsxTotalLimit {
+			return nil, errors.New("表計算のファイルの中身が大きすぎます")
 		}
 		return data, nil
 	}
@@ -96,14 +105,24 @@ func XLSXText(b []byte) (string, error) {
 	}
 
 	var out strings.Builder
+	seen := map[string]bool{}
+	cells := 0
 	for _, sh := range sheets {
+		if seen[sh.Path] {
+			continue
+		}
+		seen[sh.Path] = true
+		if len(seen) > xlsxSheetLimit {
+			out.WriteString("…（シートが多いので途中まで）\n")
+			break
+		}
 		data, err := read(sh.Path)
 		if err != nil {
 			return "", err
 		}
 		name := sh.Name
 		out.WriteString("=== シート " + name + "\n")
-		if err := xlsxWriteRows(&out, data, shared); err != nil {
+		if err := xlsxWriteRows(&out, data, shared, &cells); err != nil {
 			return "", err
 		}
 		if out.Len() > xlsxTextLimit {
@@ -230,53 +249,104 @@ func xlsxSheetNames(read func(string) ([]byte, error)) []string {
 	return out
 }
 
-// xlsxWriteRows はシートの行を書きます。
-func xlsxWriteRows(out *strings.Builder, data []byte, shared []string) error {
-	var doc struct {
-		Rows []struct {
-			C []struct {
-				R  string `xml:"r,attr"`
-				T  string `xml:"t,attr"`
-				V  string `xml:"v"`
-				IS struct {
-					T string `xml:"t"`
-					R []struct {
-						T string `xml:"t"`
-					} `xml:"r"`
-				} `xml:"is"`
-			} `xml:"c"`
-		} `xml:"sheetData>row"`
-	}
-	if err := xml.Unmarshal(data, &doc); err != nil {
-		return errors.New("シートを読めません: " + err.Error())
-	}
-	for _, row := range doc.Rows {
-		var cells []string
-		for _, c := range row.C {
-			v := c.V
-			switch c.T {
-			case "s":
-				if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 && n < len(shared) {
-					v = shared[n]
-				}
-			case "inlineStr":
-				v = c.IS.T
-				for _, r := range c.IS.R {
-					v += r.T
-				}
+// xlsxWriteRows はシートの行を書きます。cells は、ここまでに読んだセルの数です（全部のシートで数える）。
+//
+// ⚠ 2026-10-27 の見直し: xml.Unmarshal で1枚を丸ごと構造に読むと、20 MB の <c/> の並びで数百 MB を取り、出力の上限も行ごとに
+// しか見ていなかったので、長い文字を指すセルを1行に数千並べるだけで、1行を組むのに何 GB も取った。いまは1つずつ読んで、
+// セルを書くたびに出力の長さを見る。セルの数（xlsxCellLimit）でも止める。
+func xlsxWriteRows(out *strings.Builder, data []byte, shared []string, cells *int) error {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	var (
+		inRow, inCell, inV, inIS, inT bool
+		cellR, cellT                  string
+		val                           strings.Builder
+		rowStarted                    bool
+	)
+	flushCell := func() {
+		v := val.String()
+		if cellT == "s" {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 && n < len(shared) {
+				v = shared[n]
 			}
-			v = strings.TrimSpace(strings.ReplaceAll(v, "\n", " "))
-			if v == "" {
-				continue
+		}
+		v = strings.TrimSpace(strings.ReplaceAll(v, "\n", " "))
+		if v == "" {
+			return
+		}
+		if rowStarted {
+			out.WriteString(" | ")
+		}
+		rowStarted = true
+		out.WriteString(strings.TrimRight(cellR, "0123456789") + "=")
+		if room := xlsxTextLimit + 1 - out.Len(); len(v) > room && room >= 0 {
+			v = v[:room]
+		}
+		out.WriteString(v)
+	}
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return errors.New("シートを読めません: " + err.Error())
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "row":
+				inRow, rowStarted = true, false
+			case "c":
+				if !inRow {
+					continue
+				}
+				if *cells++; *cells > xlsxCellLimit {
+					out.WriteString("\n…（セルが多いので途中まで）")
+					return nil
+				}
+				inCell, cellR, cellT = true, "", ""
+				val.Reset()
+				for _, a := range t.Attr {
+					switch a.Name.Local {
+					case "r":
+						cellR = a.Value
+					case "t":
+						cellT = a.Value
+					}
+				}
+			case "v":
+				inV = inCell && cellT != "inlineStr"
+			case "is":
+				inIS = inCell
+			case "t":
+				inT = inIS
 			}
-			col := strings.TrimRight(c.R, "0123456789")
-			cells = append(cells, col+"="+v)
-		}
-		if len(cells) > 0 {
-			out.WriteString(strings.Join(cells, " | ") + "\n")
-		}
-		if out.Len() > xlsxTextLimit {
-			return nil
+		case xml.CharData:
+			if (inV || inT) && val.Len() < xlsxTextLimit {
+				val.Write(t)
+			}
+		case xml.EndElement:
+			switch t.Name.Local {
+			case "v":
+				inV = false
+			case "t":
+				inT = false
+			case "is":
+				inIS = false
+			case "c":
+				if inCell {
+					flushCell()
+				}
+				inCell = false
+			case "row":
+				if rowStarted {
+					out.WriteString("\n")
+				}
+				inRow = false
+			}
+			if out.Len() > xlsxTextLimit {
+				return nil
+			}
 		}
 	}
 	return nil

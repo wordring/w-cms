@@ -327,6 +327,9 @@ func SendPush(username string, m PushMessage) int {
 	payload, _ := json.Marshal(m)
 	sent := 0
 	var gone []string
+	if len(subs) > pushMaxPerUser {
+		subs = subs[len(subs)-pushMaxPerUser:] // 前に溜まった分も、新しい pushMaxPerUser 個だけに送る
+	}
 	for _, s := range subs {
 		code, err := sendOnePush(k, s, payload)
 		switch {
@@ -449,6 +452,9 @@ func PushKeyAPIHandler(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, map[string]any{"success": true, "key": pub})
 }
 
+// pushMaxPerUser は、1人の利用者が持てる通知の受け口（端末）の数の上限です。
+const pushMaxPerUser = 10
+
 // PushSubscribeAPIHandler は POST /api/push/subscribe です（同じ endpoint は1つにまとめる）。
 func PushSubscribeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := GateJSONPost(w, r)
@@ -490,6 +496,11 @@ func PushSubscribeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	all[user.Username] = append(all[user.Username], pushSubscription{Endpoint: req.Endpoint, P256dh: req.Keys.P256dh, Auth: req.Keys.Auth,
 		Added: time.Now().Format(time.RFC3339), Agent: r.UserAgent()})
+	// 1人の受け口は新しい pushMaxPerUser 個まで（2026-10-27 の見直し）——応えない住所を何千も登録すると、1件ごとに待つ送り方の
+	// せいで、ほかの人への電話・FAX の通知が何時間も遅れた。端末を替えたときは、古いものから落とす。
+	if subs := all[user.Username]; len(subs) > pushMaxPerUser {
+		all[user.Username] = subs[len(subs)-pushMaxPerUser:]
+	}
 	if err := savePushSubs(all); err != nil {
 		JSONFail(w, http.StatusInternalServerError, "覚えられません: "+err.Error())
 		return
