@@ -199,7 +199,7 @@ func autoFetchNow(now time.Time) autoFetchState {
 	for _, addr := range addrs {
 		a := autoFetchAddress{Address: addr, User: autoFetchUser(addr)}
 		if a.User == "" {
-			a.Reason = addr + " でサインインしている人がいません（通信箱の「✉️ メールにサインイン」で、その口座でサインインしてください）"
+			a.Reason = "サインインしている人がいません（通信箱の「✉️ メールにサインイン」で、その口座でサインインしてください）"
 		}
 		if last := autoFetchStatus.last[addr]; !last.IsZero() {
 			a.LastRun = last.Format(time.RFC3339)

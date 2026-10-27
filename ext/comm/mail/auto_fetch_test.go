@@ -99,8 +99,8 @@ func TestAutoFetchAddresses(t *testing.T) {
 		t.Fatalf("⚠ アドレスごとの様子が4つありません: %+v", st)
 	}
 	for _, a := range st.Addresses {
-		if a.User != "" || !strings.Contains(a.Reason, a.Address) {
-			t.Errorf("⚠ %s の様子が違います（わけにアドレスが無い）: %+v", a.Address, a)
+		if a.User != "" || !strings.Contains(a.Reason, "サインインしている人がいません") {
+			t.Errorf("⚠ %s の様子が違います: %+v", a.Address, a)
 		}
 	}
 }
