@@ -260,7 +260,7 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mfgID, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.Mfg), "/"))
-	if !ok || pageKindOf(pageNum(mfgID)) != PageKindMfg || !canWritePage(user, pageNum(mfgID)) {
+	if !ok || pageKindOf(pageNum(mfgID)) != PageKindMfg || !canWritePage(user, pageNum(mfgID)) || cms.IsTemplateArea(mfgID) {
 		cms.JSONFail(w, http.StatusBadRequest, "製造ページが見つからないか、書けません: "+req.Mfg)
 		return
 	}

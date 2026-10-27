@@ -172,6 +172,10 @@ func requireWriteTo(user *auth.User, pageID string) error {
 	if !canWritePage(user, pageNum(pageID)) {
 		return &errNoWrite{pageID: pageID}
 	}
+	// テンプレートの中は、業務の操作では書き換えない（2026-10-27 の見直し——requireWritableIdle と揃える）。
+	if cms.IsTemplateArea(pageID) {
+		return cms.ErrTemplateArea
+	}
 	return nil
 }
 

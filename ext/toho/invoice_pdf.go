@@ -76,7 +76,7 @@ func ownCompanyOf(head map[string]string, viewer *auth.User) (regNo string, bank
 		return "", nil
 	}
 	org, _, ok := contacts.PartnerOfPage(pageNum(id))
-	if !ok || (viewer != nil && !page.CanView(viewer, org)) {
+	if !ok || !page.CanView(viewer, org) { // 見る人が居なければ公開のページだけ（2026-10-27 の見直し）
 		return "", nil
 	}
 	if tags, err := cms.TagsOfPage(database.DB, org); err == nil {

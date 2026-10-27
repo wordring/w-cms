@@ -151,10 +151,9 @@ func showQuoteInOrderTable(ctx *cms.MirrorContext, el *html.Node) {
 	if oi < 0 || pi < 0 {
 		return
 	}
-	canView := func(id int) bool { return true }
-	if ctx.Viewer != nil {
-		canView = viewCheck(ctx.Viewer)
-	}
+	// 見る人が居ない（ログインしていない）ときは、公開のページだけ（2026-10-27 の見直し——それまでは全部を見せる形だった。
+	// 拡張の鏡はログインしていない人には描かないので、届いてはいなかった）。
+	canView := viewCheck(ctx.Viewer)
 	for _, tr := range rows[1:] {
 		cells := cellsOf(tr)
 		if pi >= len(cells) {

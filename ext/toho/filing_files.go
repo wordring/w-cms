@@ -160,6 +160,9 @@ func FilingAttachAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	recordInt, _ := strconv.Atoi(recordID)
 	targetInt, _ := strconv.Atoi(targetID)
+	if !cms.RefuseTemplateArea(w, targetID) { // テンプレートの中へは足さない（2026-10-27 の見直し）
+		return
+	}
 	if !page.CanView(user, recordInt) {
 		cms.JSONFail(w, http.StatusNotFound, "記録が見つかりません")
 		return
