@@ -27,7 +27,11 @@ sudo install -d -o "$USER" -g "$USER" -m 0755 /opt/w-cms/repo
 git clone https://github.com/wordring/w-cms.git /opt/w-cms/repo
 sudo install -d -o w-cms -g w-cms -m 0700 /var/lib/w-cms /var/lib/w-cms/data-test
 sudo install -d -o root -g root -m 0755 /etc/w-cms
+# PDF のファイル表示を絵にする道具（2026-10-27・設定 pdf_pages・internal/cms/pdf_pages.go）。無ければ、いままでどおり PDF を埋め込む。
+sudo apt install -y mupdf-tools
 ```
+
+- 描いた PDF の絵は、データの置き場の `cache/pdf-pages/` に貯まります。夜の控えには入りません（消しても、次に開いたときに描き直す）。
 
 ## 組み立てて入れ替える（w-cms-update）
 
