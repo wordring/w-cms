@@ -49,9 +49,13 @@ async function showMailAutoFetch(after) {
         const d = new Date(s);
         return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     };
+    // 読むアドレスはいくつもある（2026-10-27）。アドレスごとに、前回の時刻か、読めないわけ。
     let text;
-    if (a.enabled && a.user) {
-        text = '🔄 自動の読み込み: ' + a.address + ' を ' + a.interval_minutes + '分ごと' + (a.last_run ? '（前回 ' + hm(a.last_run) + '）' : '');
+    const addrs = a.addresses || [];
+    if (a.enabled && addrs.length) {
+        text = '🔄 自動の読み込み（' + a.interval_minutes + '分ごと）: ' + addrs.map((x) =>
+            x.user ? x.address + (x.last_run ? '（前回 ' + hm(x.last_run) + '）' : '')
+                : x.address + '（休み: ' + (x.reason || '') + '）').join('・');
     } else {
         text = '🔄 自動の読み込みは休んでいます: ' + (a.reason || '');
     }

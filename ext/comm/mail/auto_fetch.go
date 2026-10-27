@@ -8,10 +8,13 @@ package mail
 //
 // それまでの決まり「起動は人が押したときだけ」（fetch_job.go の冒頭）を、利用者が変えたものです。押して読む口は残します。
 //
-//   - 読むのは、環境変数 WCMS_MAIL_AUTO_ADDRESS の代表のアドレスです（会社の実在のアドレスなので、リポジトリの設定には書かない
-//     ——秘密の設定 w-cms.env に人が書く）。
-//   - そのアドレスの M365 の口座で、だれか1人の w-cms の利用者が「✉️ メールにサインイン」でサインインしておきます。読み込みは、
+//   - 読むのは、環境変数 WCMS_MAIL_AUTO_ADDRESS のアドレスです（会社の実在のアドレスなので、リポジトリの設定には書かない
+//     ——秘密の設定 w-cms.env に人が書く）。「,」か空白で区切って、いくつも書けます（2026-10-27 利用者:「自動で読むアドレスを
+//     いくつも書けるように直してください」——代表のアドレスと、担当者のアドレス）。
+//   - アドレスごとに、その M365 の口座で、だれか1人の w-cms の利用者が「✉️ メールにサインイン」でサインインしておきます。読み込みは、
 //     その利用者のサインインで動きます（取り込んだ記録の書き手もその人）。
+//     ⚠ サインインは w-cms の利用者1人に1つなので、アドレスが2つなら、サインインする w-cms の利用者も2人要ります。
+//   - 間隔はアドレスごとに数えます。同じメールが2つのアドレスに届いても、Message-ID で弾くので記録は1つです。
 //   - 間隔は設定 `extensions.mail.auto_fetch`（平日の日中と、それ以外）。
 //   - 読み込みの本体は、押したときと同じ startFetch（同じ口座の読み込みは同時に1つ・重複は Message-ID で弾く）。
 //   - 様子は GET /api/mail/auto-fetch（通信箱の読み込みのボタンのそばに出す）。
@@ -27,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -108,12 +112,24 @@ func autoFetchInterval(c autoFetchSettings, now time.Time) time.Duration {
 	return time.Duration(c.NightMinutes) * time.Minute
 }
 
-// autoFetchAddress は代表のアドレスです（環境変数 WCMS_MAIL_AUTO_ADDRESS・前後の空白と大小をそろえる）。
-func autoFetchAddress() string {
-	return strings.ToLower(strings.TrimSpace(os.Getenv("WCMS_MAIL_AUTO_ADDRESS")))
+// autoFetchAddresses は自動で読むアドレスです（環境変数 WCMS_MAIL_AUTO_ADDRESS・「,」「;」か空白で区切る・大小をそろえ、
+// 同じものは1つにまとめる・書いた順）。
+func autoFetchAddresses() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, a := range strings.FieldsFunc(os.Getenv("WCMS_MAIL_AUTO_ADDRESS"), func(r rune) bool {
+		return r == ',' || r == ';' || r == '、' || unicode.IsSpace(r)
+	}) {
+		a = strings.ToLower(a)
+		if !seen[a] {
+			seen[a] = true
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
-// autoFetchUser は、代表のアドレスでサインインしている w-cms の利用者です（いなければ空）。2人以上なら、名前の順で先の人。
+// autoFetchUser は、address でサインインしている w-cms の利用者です（いなければ空）。2人以上なら、名前の順で先の人。
 // 無効にした利用者は使いません（取り込んだ記録の書き手になるため）。
 func autoFetchUser(address string) string {
 	if address == "" {
@@ -142,69 +158,85 @@ func autoFetchUser(address string) string {
 
 // autoFetchState は自動の読み込みの様子です（GET /api/mail/auto-fetch）。
 type autoFetchState struct {
-	Enabled  bool   `json:"enabled"`            // 設定があり、代表のアドレスが決まっている
-	Address  string `json:"address,omitempty"`  // 代表のアドレス
-	User     string `json:"user,omitempty"`     // 代表のアドレスでサインインしている w-cms の利用者
-	Reason   string `json:"reason,omitempty"`   // 休んでいるわけ
-	LastRun  string `json:"last_run,omitempty"` // 前に始めた時刻
-	NextRun  string `json:"next_run,omitempty"` // 次に始める時刻（目安）
-	Interval int    `json:"interval_minutes,omitempty"`
+	Enabled   bool               `json:"enabled"`          // 設定があり、読むアドレスが1つ以上決まっている
+	Reason    string             `json:"reason,omitempty"` // 全体が休んでいるわけ
+	Interval  int                `json:"interval_minutes,omitempty"`
+	Addresses []autoFetchAddress `json:"addresses,omitempty"` // 読むアドレスごとの様子（書いた順）
+}
+
+// autoFetchAddress は、読むアドレス1つの様子です。
+type autoFetchAddress struct {
+	Address string `json:"address"`
+	User    string `json:"user,omitempty"`     // そのアドレスでサインインしている w-cms の利用者
+	Reason  string `json:"reason,omitempty"`   // そのアドレスを読めないわけ
+	LastRun string `json:"last_run,omitempty"` // 前に始めた時刻
+	NextRun string `json:"next_run,omitempty"` // 次に始める時刻（目安）
 }
 
 var autoFetchStatus = struct {
 	sync.Mutex
-	last time.Time
-}{}
+	last map[string]time.Time // アドレス → 前に始めた時刻
+}{last: map[string]time.Time{}}
 
 // autoFetchNow は、いまの自動の読み込みの様子です。
 func autoFetchNow(now time.Time) autoFetchState {
 	c := autoFetchConfig()
-	addr := autoFetchAddress()
-	st := autoFetchState{Address: addr}
+	addrs := autoFetchAddresses()
+	st := autoFetchState{}
 	switch {
 	case c == nil:
 		st.Reason = "設定 extensions.mail.auto_fetch がありません"
 		return st
-	case addr == "":
-		st.Reason = "代表のアドレス（WCMS_MAIL_AUTO_ADDRESS）が決まっていません"
+	case len(addrs) == 0:
+		st.Reason = "自動で読むアドレス（WCMS_MAIL_AUTO_ADDRESS）が決まっていません"
 		return st
 	}
 	st.Enabled = true
-	st.User = autoFetchUser(addr)
-	if st.User == "" {
-		st.Reason = "代表のアドレス " + addr + " でサインインしている人がいません（通信箱の「✉️ メールにサインイン」で、その口座でサインインしてください）"
-	}
 	iv := autoFetchInterval(*c, now)
 	st.Interval = int(iv / time.Minute)
 	autoFetchStatus.Lock()
-	last := autoFetchStatus.last
-	autoFetchStatus.Unlock()
-	if !last.IsZero() {
-		st.LastRun = last.Format(time.RFC3339)
-		st.NextRun = last.Add(iv).Format(time.RFC3339)
+	defer autoFetchStatus.Unlock()
+	for _, addr := range addrs {
+		a := autoFetchAddress{Address: addr, User: autoFetchUser(addr)}
+		if a.User == "" {
+			a.Reason = addr + " でサインインしている人がいません（通信箱の「✉️ メールにサインイン」で、その口座でサインインしてください）"
+		}
+		if last := autoFetchStatus.last[addr]; !last.IsZero() {
+			a.LastRun = last.Format(time.RFC3339)
+			a.NextRun = last.Add(iv).Format(time.RFC3339)
+		}
+		st.Addresses = append(st.Addresses, a)
 	}
 	return st
 }
 
-// autoFetchTick は1分ごとに呼ばれ、間隔が経っていれば読み込みを始めます（始めたら true）。
-func autoFetchTick(now time.Time) bool {
+// autoFetchTick は1分ごとに呼ばれ、間隔が経ったアドレスの読み込みを始めます（始めた数を返す）。
+func autoFetchTick(now time.Time) int {
 	st := autoFetchNow(now)
-	if !st.Enabled || st.User == "" {
-		return false
+	if !st.Enabled {
+		return 0
 	}
-	autoFetchStatus.Lock()
-	due := autoFetchStatus.last.IsZero() || now.Sub(autoFetchStatus.last) >= time.Duration(st.Interval)*time.Minute
-	if due {
-		autoFetchStatus.last = now
+	n := 0
+	for _, a := range st.Addresses {
+		if a.User == "" {
+			continue
+		}
+		autoFetchStatus.Lock()
+		last := autoFetchStatus.last[a.Address]
+		due := last.IsZero() || now.Sub(last) >= time.Duration(st.Interval)*time.Minute
+		if due {
+			autoFetchStatus.last[a.Address] = now
+		}
+		autoFetchStatus.Unlock()
+		if !due {
+			continue
+		}
+		n++
+		if _, started := startFetch(a.User); !started {
+			log.Printf("メールの自動の読み込み: %s（%s）の読み込みが動いているので、この回は飛ばします", a.Address, a.User)
+		}
 	}
-	autoFetchStatus.Unlock()
-	if !due {
-		return false
-	}
-	if _, started := startFetch(st.User); !started {
-		log.Printf("メールの自動の読み込み: %s の読み込みが動いているので、この回は飛ばします", st.User)
-	}
-	return true
+	return n
 }
 
 // startAutoFetch は1分ごとの見張りを始めます（cms.StartBackgroundTasks から）。

@@ -62,16 +62,45 @@ func TestAutoFetchSettingsAndReasons(t *testing.T) {
 
 	t.Setenv("WCMS_MAIL_AUTO_ADDRESS", "")
 	if st := autoFetchNow(time.Now()); st.Enabled || !strings.Contains(st.Reason, "WCMS_MAIL_AUTO_ADDRESS") {
-		t.Errorf("⚠ 代表のアドレスが無いのに動くか、わけが違います: %+v", st)
+		t.Errorf("⚠ 読むアドレスが無いのに動くか、わけが違います: %+v", st)
 	}
 	t.Setenv("WCMS_MAIL_AUTO_ADDRESS", " Daihyo@Example.COM ")
 	database.SetDataDir(t.TempDir()) // サインインの保管は空
 	t.Cleanup(func() { database.SetDataDir("") })
 	st := autoFetchNow(time.Now())
-	if !st.Enabled || st.Address != "daihyo@example.com" || st.User != "" || !strings.Contains(st.Reason, "サインインしている人がいません") {
+	if !st.Enabled || len(st.Addresses) != 1 || st.Addresses[0].Address != "daihyo@example.com" || st.Addresses[0].User != "" ||
+		!strings.Contains(st.Addresses[0].Reason, "サインインしている人がいません") {
 		t.Errorf("⚠ サインインしている人がいないときの様子が違います: %+v", st)
 	}
-	if autoFetchTick(time.Now()) {
-		t.Errorf("⚠ サインインしている人がいないのに読み込みを始めました")
+	if n := autoFetchTick(time.Now()); n != 0 {
+		t.Errorf("⚠ サインインしている人がいないのに読み込みを %d 件始めました", n)
+	}
+}
+
+// TestAutoFetchAddresses は、自動で読むアドレスをいくつも書けることを固定します（2026-10-27）。
+//
+// > 2026-10-27 利用者:「自動で読むアドレスをいくつも書けるように直してください」
+func TestAutoFetchAddresses(t *testing.T) {
+	t.Setenv("WCMS_MAIL_AUTO_ADDRESS", " Daihyo@Example.COM, tanto@example.com;bankin@example.com  daihyo@example.com、x@example.com ")
+	got := strings.Join(autoFetchAddresses(), " ")
+	if got != "daihyo@example.com tanto@example.com bankin@example.com x@example.com" {
+		t.Errorf("⚠ アドレスの読み方が違います（区切り・大小・同じものは1つ・書いた順）: %q", got)
+	}
+	apply, err := parseMailSettings(json.RawMessage(`{"auto_fetch":{"day_start_hour":8,"day_end_hour":20,"day_minutes":5,"night_minutes":60}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply()
+	t.Cleanup(func() { autoFetchMu.Lock(); autoFetchCfg = nil; autoFetchMu.Unlock() })
+	database.SetDataDir(t.TempDir())
+	t.Cleanup(func() { database.SetDataDir("") })
+	st := autoFetchNow(time.Now())
+	if !st.Enabled || len(st.Addresses) != 4 {
+		t.Fatalf("⚠ アドレスごとの様子が4つありません: %+v", st)
+	}
+	for _, a := range st.Addresses {
+		if a.User != "" || !strings.Contains(a.Reason, a.Address) {
+			t.Errorf("⚠ %s の様子が違います（わけにアドレスが無い）: %+v", a.Address, a)
+		}
 	}
 }
