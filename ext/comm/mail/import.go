@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"w-cms/ext/comm"
@@ -111,6 +112,13 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 				continue
 			}
 		}
+		// 前に取り込めなかったメール（壊れた形など）は、サーバーを起こし直すまで落とし直さない（2026-10-27 の見直し——
+		// 外の人が壊れた大きなメールを送ると、自動の読み込みのたびに最大 64 MiB を落とし直していた）。
+		failKey := fmt.Sprintf("%s\x00%s\x00%v", username, opt.Folder, r.UID)
+		if mailFailedBefore(failKey) {
+			sum.Failed++
+			continue
+		}
 		raw, err := sess.fetchRaw(r.UID)
 		if err != nil {
 			log.Printf("メールを取得できませんでした subject=%q: %v", r.Subject, err)
@@ -129,6 +137,7 @@ func ImportMessages(ctx context.Context, username string, opt ListOptions) (Impo
 			if err != nil {
 				log.Printf("メールを取り込めませんでした subject=%q: %v", r.Subject, err)
 			}
+			markMailFailed(failKey)
 			sum.Failed++
 			continue
 		}
@@ -216,4 +225,25 @@ func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
 		sum.Listed, sum.Imported, sum.Duplicate, sum.Failed))
 
 	cms.WriteJSON(w, map[string]any{"success": true, "summary": sum})
+}
+
+// 取り込めなかったメール（利用者・箱・UID）の覚え（サーバーを起こし直すと消える）。多すぎたら空にする。
+var (
+	mailFailedMu sync.Mutex
+	mailFailed   = map[string]bool{}
+)
+
+func mailFailedBefore(key string) bool {
+	mailFailedMu.Lock()
+	defer mailFailedMu.Unlock()
+	return mailFailed[key]
+}
+
+func markMailFailed(key string) {
+	mailFailedMu.Lock()
+	defer mailFailedMu.Unlock()
+	if len(mailFailed) > 10000 {
+		mailFailed = map[string]bool{}
+	}
+	mailFailed[key] = true
 }

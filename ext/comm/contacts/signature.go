@@ -160,7 +160,7 @@ func MySignature(user *auth.User, heading string) []string {
 			continue
 		}
 		for _, p := range people {
-			if cms.NormalizeText(p.Title) != want || !page.CanView(user, p.ID) {
+			if cms.NormalizeText(p.Title) != want || !page.CanView(user, p.ID) || !trustedSignaturePage(user, p.ID) {
 				continue
 			}
 			if lines := SignatureOf(p.ID, heading); len(lines) > 0 {
@@ -224,4 +224,16 @@ func sectionTextLines(section *html.Node) []string {
 		return nil
 	}
 	return out
+}
+
+// trustedSignaturePage は、人のページ pageID の署名を user の署名として使ってよいかです（2026-10-27 の見直し）。
+// 持ち主が本人か管理者のページだけ——それまでは、連絡帳に書ける人がどこかの組織の下に、ほかの人のログイン名と同じ題の
+// ページを作って署名（偽の振込先など）を書けば、その人の新しいメールの署名に前もって入った。
+func trustedSignaturePage(user *auth.User, pageID int) bool {
+	owner := page.GetPerms(pageID).Owner
+	if owner == user.Username {
+		return true
+	}
+	u, err := auth.LookupUser(owner)
+	return err == nil && u != nil && u.IsAdmin
 }

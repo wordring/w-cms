@@ -537,13 +537,17 @@ func TestEmlIntakeDetectsDuplicate(t *testing.T) {
 // 取り込みが止まらないことを固定します。**鍵が無いことは異常ではない**
 // （手で組んだメール・一部のFAXゲートウェイ）——重複検知が効かないだけで、
 // 記録が残らないほうが困ります。
+//
+// 2026-10-27 の見直しから、Message-ID の無いメールには中身の指紋から代わりの ID を付けます——鍵が無いと、自動の読み込みの
+// たびに同じ記録が新しく作られた。同じメールは同じ代わりの ID になり、2回目は重複として見分けられる。
 func TestEmlIntakeWithoutMessageIDStillWorks(t *testing.T) {
 	setupSaveTest(t)
 	inbox := setupInbox(t)
 
 	eml := []byte(buildEml("", "鍵なし"))
-	if _, _, ok := (emlIntake{}).SourceRef("m.eml", eml); ok {
-		t.Error("Message-ID が無いのに鍵があると答えました")
+	name, value, ok := (emlIntake{}).SourceRef("m.eml", eml)
+	if !ok || !strings.HasPrefix(value, "<w-cms-") {
+		t.Fatalf("Message-ID が無いメールに代わりの ID がありません: %q %q %v", name, value, ok)
 	}
 	ctx := &IntakeContext{InboxID: inbox, Uploader: "alice"}
 	pageID, title, err := emlIntake{}.OnFile(ctx, "m.eml", eml)
@@ -552,6 +556,9 @@ func TestEmlIntakeWithoutMessageIDStillWorks(t *testing.T) {
 	}
 	if pageID == "" || title != "鍵なし" {
 		t.Errorf("鍵が無くても取り込めるべきです: %q %q", pageID, title)
+	}
+	if existing, dup := ExistingIntakePage(name, value); !dup || existing != pageID {
+		t.Errorf("⚠ 同じメールの2回目を重複として見分けられません: %q %v", existing, dup)
 	}
 }
 

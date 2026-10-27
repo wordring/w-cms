@@ -26,7 +26,9 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"html"
 	"io"
@@ -133,11 +135,18 @@ func (emlIntake) SourceRef(fileName string, content []byte) (string, string, boo
 	if err != nil {
 		return "", "", false // 壊れたメールは OnFile が理由つきで断る
 	}
-	id := strings.TrimSpace(msg.Header.Get("Message-ID"))
-	if id == "" {
-		return "", "", false
+	return MessageIDTag, messageIDOf(msg.Header.Get("Message-ID"), content), true
+}
+
+// messageIDOf はメールの Message-ID です。無いメールには、中身の指紋から作った代わりの ID を返します（2026-10-27 の見直し）
+// ——Message-ID の無いメールは取り込み済みかを見分けられず、自動の読み込みのたびに同じ記録が新しく作られ、通知も飛んだ。
+// 同じメールは IMAP から同じ中身で届くので、代わりの ID も同じになる。
+func messageIDOf(header string, content []byte) string {
+	if id := strings.TrimSpace(header); id != "" {
+		return id
 	}
-	return MessageIDTag, id, true
+	sum := sha256.Sum256(content)
+	return "<w-cms-" + hex.EncodeToString(sum[:16]) + "@w-cms.invalid>"
 }
 
 // OnFile は .eml を通信記録ページにします。
@@ -153,7 +162,13 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	}
 	dateISO := ""
 	var received time.Time
-	if t, err := msg.Header.Date(); err == nil {
+	// ⚠ 先の日付（明後日より先）は信じない（2026-10-27 の見直し）——Date は送り手が自由に書けるので、2099 年と書けば未処理の
+	// 一覧の先頭に居座り、ほかのメールを100件の外へ押し出せた。先の日付なら、取り込んだ時刻にする（過去の日付は、昔のメールを
+	// 取り込むときに要るので、そのまま）。
+	if t, err := msg.Header.Date(); err == nil && t.After(time.Now().Add(48*time.Hour)) {
+		received = time.Now()
+		dateISO = received.In(time.Local).Format(time.RFC3339)
+	} else if err == nil {
 		// **届いた時刻**は置き場所（年フォルダ／月フォルダ）にも効きます
 		// ——2024年のメールを今日取り込んでも2024年へ入るように。
 		received = t
@@ -220,7 +235,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 	// （`cms.PagesByTag`——ExistingMailRecord）が判定そのものになる。人にとっては普段読まない値だが、
 	// 「機械が使う値も本文にある」という原則を曲げてまで隠す理由が無い。
 	// ⚠ テンプレートに欄が無くても足します（`SetTag`）——無いと重複検知が黙って効かない。
-	d.SetTag(MessageIDTag, strings.TrimSpace(msg.Header.Get("Message-ID")))
+	d.SetTag(MessageIDTag, messageIDOf(msg.Header.Get("Message-ID"), content))
 	// In-Reply-To ヘッダの写し。値は親メールの Message-ID なので、PagesByTag(MessageIDTag, この値) で親の記録ページが引ける。
 	inReplyTo := strings.TrimSpace(msg.Header.Get("In-Reply-To"))
 	d.SetTag(InReplyToTag, inReplyTo)

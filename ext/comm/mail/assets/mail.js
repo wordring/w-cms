@@ -44,7 +44,7 @@ async function showMailAutoFetch(after) {
     } catch (e) {
         return;
     }
-    if (!a || document.getElementById('mail-auto-fetch')) return;
+    if (!a || document.getElementById('w-mail-auto-fetch')) return;
     const hm = (s) => {
         const d = new Date(s);
         return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -60,7 +60,7 @@ async function showMailAutoFetch(after) {
         text = '🔄 自動の読み込みは休んでいます: ' + (a.reason || '');
     }
     const p = makeEl('span', 'mail-auto-fetch', text);
-    p.id = 'mail-auto-fetch';
+    p.id = 'w-mail-auto-fetch'; // 殻の印 w- で始める——本文の id で乗っ取られないように（2026-10-27 の見直し）
     after.insertAdjacentElement('afterend', p);
 }
 

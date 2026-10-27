@@ -119,8 +119,19 @@ func faxSendNumber(s string) string {
 
 // costlyFaxNumber は、料金の高くなる番号かです（2026-10-26）。010（国際）・00（事業者を選ぶ番号）・0990（有料の情報）で
 // 始まる番号は、管理者だけが送れる——ページに書ける人ならだれでも、どこへでも送れた（モデムの設定は国際の番号も掛ける）。
+//
+// 2026-10-27 の見直しで広げた: 0 の次が 1〜9 でない番号（1 で始まる 104・110 など・00・010）と、0570（ナビダイヤル）・
+// 0180（テレドーム）・020（ポケベルなど）も、管理者だけ。ふつうの市外局番（03・06・0120 など）は、だれでも送れる。
 func costlyFaxNumber(n string) bool {
-	return strings.HasPrefix(n, "010") || strings.HasPrefix(n, "00") || strings.HasPrefix(n, "0990")
+	if len(n) < 2 || n[0] != '0' || n[1] < '1' || n[1] > '9' {
+		return true
+	}
+	for _, p := range []string{"010", "0570", "0180", "0990", "020"} {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return false
 }
 
 var sendfaxJobRe = regexp.MustCompile(`request id is (\d+)`)

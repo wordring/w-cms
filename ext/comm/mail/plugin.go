@@ -13,6 +13,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"w-cms/ext/comm"
@@ -145,9 +146,16 @@ func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// **待つのは背後で。** 応答を返してから利用者が Microsoft の画面を開くので、
 	// ここで待つと画面が固まります。完了は /api/mail/status で確かめます。
 	username := user.Username
+	// 待つのは1人に1つ（2026-10-27 の見直し——押すたびに、最大15分 Microsoft へ問い合わせ続ける仕事が増えた）。
+	// 押し直したら、前の待ちはやめる（前に出た番号は使えなくなる）。
+	bg, cancel := context.WithTimeout(context.Background(), time.Duration(dc.ExpiresIn+30)*time.Second)
+	signInMu.Lock()
+	if prev := signInPending[username]; prev != nil {
+		prev()
+	}
+	signInPending[username] = cancel
+	signInMu.Unlock()
 	go func() {
-		bg, cancel := context.WithTimeout(context.Background(),
-			time.Duration(dc.ExpiresIn+30)*time.Second)
 		defer cancel()
 		addr, err := PollForToken(bg, username, dc)
 		if err != nil {
@@ -166,3 +174,9 @@ func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"expires_in":       dc.ExpiresIn,
 	})
 }
+
+// signInPending は、利用者ごとに待っているサインインのやめ方です（MailSignInAPIHandler）。
+var (
+	signInMu      sync.Mutex
+	signInPending = map[string]context.CancelFunc{}
+)

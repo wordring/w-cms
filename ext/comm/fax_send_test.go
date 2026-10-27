@@ -581,7 +581,9 @@ func TestFaxWatchUsesStoreNotTags(t *testing.T) {
 // TestCostlyFaxNumber は、料金の高くなる番号（国際・事業者を選ぶ・有料）を見分けることを固定します（2026-10-26）。
 func TestCostlyFaxNumber(t *testing.T) {
 	for n, want := range map[string]bool{"0312345678": false, "0667537225": false, "0120123456": false,
-		"0101234567890": true, "0033123456": true, "0990123456": true} {
+		"0101234567890": true, "0033123456": true, "0990123456": true,
+		// 2026-10-27 の見直しで足した: 1 で始まる番号（104 など）・ナビダイヤル・テレドーム・020。
+		"1040000": true, "1100000000": true, "0570123456": true, "0180123456": true, "0201234567": true, "0901234567": false} {
 		if got := costlyFaxNumber(n); got != want {
 			t.Errorf("costlyFaxNumber(%q) = %v（%v のはず）", n, got, want)
 		}
