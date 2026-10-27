@@ -152,11 +152,15 @@ async function topChildID(page, title) {
   return (top.find((c) => (c.Title || '').trim() === title) || {}).ID || '';
 }
 
+//
+// 2026-10-27 から、素の /api/load は写真の住所に版の印（?v=）を添えて返します（保存の手前で外れるので、本文には無い——
+// 【考察】キャッシュ制御 案A）。試験が本文と比べやすいよう、ここで印を外して返します。
 async function bodyOf(page, pageID) {
-  return page.evaluate(async (id) => {
+  const body = await page.evaluate(async (id) => {
     const res = await fetch('/api/load?id=' + encodeURIComponent(id));
     return res.ok ? res.text() : '';
   }, pageID);
+  return body.replace(/(<img\b[^>]*?\ssrc="\/\d{6}\/[^"\/?#&]+)\?v=[0-9a-z]+"/g, '$1"');
 }
 
 // findMailbox は通信箱のページIDを返します（無ければ空）。

@@ -69,23 +69,31 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
 
     const a = await page.evaluate(() => {
       const w = document.querySelector('#w-editor-content .file-view');
-      const e = w && w.querySelector('embed');
+      // 中身は PDF の埋め込みか、PDF を描いた絵の並び（2026-10-27・internal/cms/pdf_pages.go）のどちらか。
+      const e = w && w.querySelector('.file-view-body');
       if (!w) return null;
       const s = getComputedStyle(w);
       return {
         h: Math.round(w.getBoundingClientRect().height), resize: s.resize,
         src: e ? e.getAttribute('src') : null, title: w.title,
         embedH: e ? Math.round(e.getBoundingClientRect().height) : 0,
+        pages: !!(e && e.classList.contains('file-view-pages')),
+        target: (w.querySelector('.file-view-pages-link') || {}).target || '',
+        imgs: w.querySelectorAll('img.file-view-page').length,
       };
     });
     console.log('■ 既定');
     ok(!!a, 'ファイル表示の枠がある');
     if (!a) throw new Error('枠が出ていません');
     ok(a.resize === 'vertical', 'つまんで縦に変えられる', a.resize);
-    ok(/navpanes=0&view=FitH/.test(a.src || ''), 'サムネイル欄を閉じ幅に合わせている（ツールバーは残す）',
-       (a.src || '').split('#')[1]);
+    if (a.pages) {
+      ok(a.imgs > 0 && a.target === '_blank', 'PDF を絵にして並べ、押すと PDF を開く', a.imgs + ' 枚');
+    } else {
+      ok(/navpanes=0&view=FitH/.test(a.src || ''), 'サムネイル欄を閉じ幅に合わせている（ツールバーは残す）',
+         (a.src || '').split('#')[1]);
+    }
     ok(a.title.length > 0, '操作の手掛かり（tooltip）がある');
-    ok(a.h > 400, '既定の高さは 70vh 相当', a.h + 'px');
+    ok(a.pages ? a.h > 200 : a.h > 400, a.pages ? '既定の高さは絵の高さ（画面の8割まで）' : '既定の高さは 70vh 相当', a.h + 'px');
     ok(a.embedH > 0 && a.embedH < a.h, 'つまみの余地を残して PDF が収まっている',
        '枠' + a.h + ' / PDF' + a.embedH);
 
@@ -114,7 +122,7 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
       return {
         h: Math.round(r.height), w: r.width,
         ratio: (p.r || {})['f:' + arg.ref],
-        pe: getComputedStyle(w.querySelector('embed')).pointerEvents,
+        pe: getComputedStyle(w.querySelector('.file-view-body')).pointerEvents,
       };
     }, { id: ids[0], ref: HOST + '-' + ATTACH });
     ok(b.h > a.h + 150, '高さが伸びた', a.h + ' → ' + b.h + 'px');
