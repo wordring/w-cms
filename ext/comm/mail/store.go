@@ -26,6 +26,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
 )
@@ -134,6 +135,11 @@ func loadToken(username string) (storedToken, bool) {
 	}
 	var st storedToken
 	if err := json.Unmarshal(b, &st); err != nil || st.RefreshToken == "" {
+		return storedToken{}, false
+	}
+	// 管理者が決めたアドレスでなければ、保存した鍵も使わない（2026-10-27——利用者:「管理者が対応を決める」。
+	// それまでは、だれの口座でも自分の w-cms の利用者に結べた）。
+	if !auth.MailAddressAllowed(username, st.Address) {
 		return storedToken{}, false
 	}
 	return st, true

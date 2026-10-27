@@ -102,13 +102,16 @@ async function loadUsers() {
     tr.innerHTML =
       `<td>${esc(u.username)}</td><td>${u.is_admin ? '✓' : ''}</td><td>${esc(u.primary_group || '')}</td>` +
       `<td>${u.disabled ? '<span class="disabled-mark">無効</span>' : '有効'}</td>` +
+      `<td>${esc((u.mail_addresses || []).join(', '))}</td>` +
       `<td>
         <button class="sub" data-action="reset-pw">パスワード再設定</button>
+        <button class="sub" data-action="set-mail">アドレスを決める</button>
         <button class="sub" data-action="toggle-disable">${u.disabled ? '有効化' : '無効化'}</button>
       </td>`;
     // 操作対象は属性で持たせる（onclick へ値を文字列展開しないので引用符の心配が要らない）。
     tr.querySelectorAll('button[data-action]').forEach(btn => {
       btn.dataset.username = u.username;
+      btn.dataset.addresses = (u.mail_addresses || []).join(', ');
       btn.dataset.disabled = u.disabled ? '1' : '';
     });
     tb.appendChild(tr);
@@ -122,6 +125,17 @@ async function createUser() {
   };
   const res = await api('POST', '/api/admin/users', body);
   msg('nu-msg', res); if (res.ok) { document.getElementById('nu-name').value=''; document.getElementById('nu-pass').value=''; loadUsers(); loadGroups(); }
+}
+
+// setMailAddresses は、利用者が外の口座でサインインしてよいアドレスを決めます（2026-10-27・/api/admin/users/mail）。
+// 利用者:「管理者が対応を決める」——ここに無い口座でサインインしても、鍵を保存しない。「,」で区切って幾つでも。空なら全部外す。
+async function setMailAddresses(username, current) {
+  const v = prompt(`${username} がサインインしてよいアドレス（「,」で区切る・空なら外す）:`, current);
+  if (v === null) return;
+  const addresses = v.split(/[,\s、]+/).map(s => s.trim()).filter(Boolean);
+  const res = await api('POST', '/api/admin/users/mail', { username, addresses });
+  if (!res.ok) { alert('決められませんでした: ' + await res.text()); return; }
+  loadUsers(); loadAudit();
 }
 
 async function resetPw(username) {
@@ -460,6 +474,7 @@ function bindActions() {
     if (!btn) return;
     const username = btn.dataset.username;
     if (btn.dataset.action === 'reset-pw') resetPw(username);
+    else if (btn.dataset.action === 'set-mail') setMailAddresses(username, btn.dataset.addresses || '');
     else if (btn.dataset.action === 'toggle-disable') toggleDisable(username, !btn.dataset.disabled);
   });
 }

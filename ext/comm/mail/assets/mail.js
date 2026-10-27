@@ -126,7 +126,8 @@ async function startMailSignIn(btn, box) {
     a.rel = 'noopener';
     a.textContent = 'Microsoft の画面を開く';
     const code = makeEl('strong', 'mail-signin-code', d.user_code);
-    box.append('① ', a, '　② 番号 ', code, ' を入れて、メールのアカウントでサインイン（このページはそのまま待ちます）');
+    const allowed = (d.allowed || []).join('・');
+    box.append('① ', a, '　② 番号 ', code, ' を入れて、' + (allowed ? allowed + ' のアカウント' : 'メールのアカウント') + 'でサインイン（このページはそのまま待ちます）');
     // 済むのを待つ（番号の期限まで・3秒おき）。
     const until = Date.now() + (Number(d.expires_in) || 900) * 1000;
     while (Date.now() < until) {
@@ -136,6 +137,13 @@ async function startMailSignIn(btn, box) {
             st = await (await fetch('/api/mail/status', { headers: w.bgHeaders })).json(); // 待つあいだの見張り——操作ではない
         } catch (e) {
             continue;
+        }
+        if (st && st.refused) {
+            // 管理者が決めたアドレスでない口座でサインインした（2026-10-27）——鍵は保存していない。
+            box.textContent = '⚠ ' + st.refused + ' は、あなたがサインインしてよいアドレスではありません（' +
+                ((st.allowed || []).join('・') || '管理者がまだ決めていません') + '）。その口座でサインインし直してください';
+            btn.disabled = false;
+            return;
         }
         if (st && st.address) {
             btn.remove();

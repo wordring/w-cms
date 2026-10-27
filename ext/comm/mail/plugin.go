@@ -118,6 +118,9 @@ func MailStatusAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"success":    true,
 		"configured": Configured(),
 		"address":    SignedInAddress(user.Username),
+		// サインインしてよいアドレス（管理者が決める・2026-10-27）と、決めていないアドレスで断ったサインイン（1回だけ返す）。
+		"allowed": auth.MailAddressesOf(user.Username),
+		"refused": takeSignInRefused(user.Username),
 	})
 }
 
@@ -132,6 +135,11 @@ func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if !Configured() {
 		cms.JSONFail(w, http.StatusServiceUnavailable, "サーバーに "+envClientID+" と "+envTenantID+" が設定されていません")
+		return
+	}
+	// サインインしてよいアドレスは管理者が決める（2026-10-27）。1つも無ければ、番号を出さない。
+	if len(auth.MailAddressesOf(user.Username)) == 0 {
+		cms.JSONFail(w, http.StatusForbidden, "管理者が、あなたがメールにサインインしてよいアドレスを決めていません（管理画面の利用者の「サインインしてよいアドレス」）")
 		return
 	}
 
@@ -169,6 +177,7 @@ func MailSignInAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	cms.WriteJSON(w, map[string]any{
 		"success":          true,
+		"allowed":          auth.MailAddressesOf(username),
 		"verification_uri": dc.VerificationURI,
 		"user_code":        dc.UserCode,
 		"expires_in":       dc.ExpiresIn,

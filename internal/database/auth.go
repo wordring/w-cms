@@ -76,6 +76,13 @@ var AuthTables = []string{
 		last_fail DATETIME
 	);`,
 
+	// 利用者ごとの、メールにサインインしてよいアドレス（2026-10-27・internal/auth/mail_address.go）。決めるのは管理者。
+	`CREATE TABLE IF NOT EXISTS user_mail_addresses (
+		username TEXT NOT NULL,
+		address TEXT NOT NULL,
+		PRIMARY KEY (username, address)
+	);`,
+
 	// 監査ログ（書き込み・権限変更・管理操作を記録）。
 	`CREATE TABLE IF NOT EXISTS audit_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

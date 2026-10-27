@@ -17,6 +17,8 @@ type UserInfo struct {
 	IsAdmin      bool   `json:"is_admin"`
 	PrimaryGroup string `json:"primary_group"`
 	Disabled     bool   `json:"disabled"`
+	// MailAddresses は、メールにサインインしてよいアドレスです（2026-10-27・mail_address.go）。
+	MailAddresses []string `json:"mail_addresses"`
 }
 
 // RequireAdmin はadmin権限を要求します（auth側のHTTPハンドラ用）。
@@ -82,6 +84,10 @@ func ListUsers() ([]UserInfo, error) {
 			u.Disabled = disabled != 0
 			users = append(users, u)
 		}
+	}
+	rows.Close()
+	for i := range users {
+		users[i].MailAddresses = MailAddressesOf(users[i].Username)
 	}
 	return users, nil
 }

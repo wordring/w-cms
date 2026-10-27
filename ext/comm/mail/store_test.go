@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/database"
 )
 
@@ -27,6 +28,7 @@ func TestTokenStoreFollowsDataDir(t *testing.T) {
 	other := filepath.Join(t.TempDir(), "site", "data")
 	database.SetDataDir(other)
 	t.Cleanup(func() { database.SetDataDir("") })
+	allowMail(t, map[string]string{"a": "a@example.com"}) // 管理者が決めたアドレス（2026-10-27）
 
 	if err := saveToken("a", storedToken{RefreshToken: "r", Address: "a@example.com"}); err != nil {
 		t.Fatal(err)
@@ -91,6 +93,7 @@ func TestTokenStoreRoundTripsJapaneseName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chdir(origWd) })
+	allowMail(t, map[string]string{"山田 太郎": "yamada@example.com", "a": "a@example.com"})
 
 	if err := saveToken("山田 太郎", storedToken{RefreshToken: "r1", Address: "yamada@example.com"}); err != nil {
 		t.Fatalf("日本語の名前で保管できません: %v", err)
@@ -106,5 +109,46 @@ func TestTokenStoreRoundTripsJapaneseName(t *testing.T) {
 	sort.Strings(got)
 	if strings.Join(got, ",") != "a@example.com,yamada@example.com" {
 		t.Errorf("サインインしている人のアドレスが %v です", got)
+	}
+}
+
+// allowMail は、利用者の DB を作業ディレクトリの data に用意し、利用者ごとのサインインしてよいアドレスを決めます
+// （2026-10-27・auth.SetMailAddresses——管理者が決めたアドレスの鍵だけを使う）。
+func allowMail(t *testing.T, addrs map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(database.DataDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.InitAuthDB(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { database.AuthDB.Close(); database.AuthDB = nil })
+	for u, a := range addrs {
+		if err := auth.SetMailAddresses(u, []string{a}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestTokenNeedsAllowedAddress は、管理者が決めたアドレスでない鍵は、保存してあっても使わないことを固定します
+// （2026-10-27 利用者:「管理者が対応を決める」——それまでは、ほかの人に番号を入れてもらうと、その人の口座を自分に結べた）。
+func TestTokenNeedsAllowedAddress(t *testing.T) {
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origWd) })
+	allowMail(t, map[string]string{"a": "a@example.com"})
+	if err := saveToken("a", storedToken{RefreshToken: "r", Address: "boss@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadToken("a"); ok || SignedInAddress("a") != "" {
+		t.Errorf("⚠ 決めていないアドレス（boss@）の鍵を使いました")
+	}
+	if !auth.MailAddressAllowed("a", " A@Example.COM ") || auth.MailAddressAllowed("a", "boss@example.com") {
+		t.Errorf("アドレスの照らし方が違います（大小・前後の空白をそろえる）")
+	}
+	if err := auth.SetMailAddresses("a", []string{"not an address"}); err == nil {
+		t.Errorf("アドレスでない値を通しました")
 	}
 }

@@ -287,6 +287,8 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/admin/users", auth.UsersAPIHandler)
 	protected.HandleFunc("/api/admin/users/password", auth.UserPasswordAPIHandler)
 	protected.HandleFunc("/api/admin/users/disable", auth.UserDisableAPIHandler)
+	// 利用者ごとの、サインインしてよいアドレス（メールのサインイン・2026-10-27・admin限定）。
+	protected.HandleFunc("/api/admin/users/mail", auth.UserMailAPIHandler)
 	protected.HandleFunc("/api/admin/groups", auth.GroupsAPIHandler)
 	protected.HandleFunc("/api/admin/groups/members", auth.GroupMembersAPIHandler)
 	protected.HandleFunc("/api/admin/audit", auth.AuditAPIHandler)

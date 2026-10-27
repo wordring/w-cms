@@ -27,6 +27,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -34,6 +35,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"w-cms/internal/auth"
 )
 
 // 環境変数——**どちらも秘密ではありません**（アプリとテナントを識別する GUID で、
@@ -189,6 +192,13 @@ func PollForToken(ctx context.Context, username string, dc *DeviceCode) (string,
 			addr, err := idTokenAddress(t.IDToken)
 			if err != nil {
 				return "", err
+			}
+			// 管理者が決めたアドレスでなければ、鍵を保存しない（2026-10-27——ほかの人に番号を入れてもらうと、その人の口座を
+			// 自分に結べた）。
+			if !auth.MailAddressAllowed(username, addr) {
+				noteSignInRefused(username, addr)
+				auth.Audit(username, "mail.signin.refused", addr)
+				return "", fmt.Errorf("%s でのサインインは、管理者が決めていません", addr)
 			}
 			// 取り直し（accessTokenFor）と重ならないように、同じロックの中で書く。
 			unlock := lockUserToken(username)
@@ -407,4 +417,25 @@ func postForm(ctx context.Context, endpoint string, form url.Values, out any) er
 	defer resp.Body.Close()
 	// エラーでも本文に理由が入るので、状態コードでは切らずに読みます。
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// 断ったサインイン（利用者 → アドレス）。画面の待ちに知らせるため（/api/mail/status の refused）。
+var (
+	signInRefusedMu sync.Mutex
+	signInRefused   = map[string]string{}
+)
+
+func noteSignInRefused(username, addr string) {
+	signInRefusedMu.Lock()
+	defer signInRefusedMu.Unlock()
+	signInRefused[username] = addr
+}
+
+// takeSignInRefused は、利用者の断ったサインインのアドレスを返して消します（無ければ空）。
+func takeSignInRefused(username string) string {
+	signInRefusedMu.Lock()
+	defer signInRefusedMu.Unlock()
+	a := signInRefused[username]
+	delete(signInRefused, username)
+	return a
 }

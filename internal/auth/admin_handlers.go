@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"w-cms/internal/database"
 )
 
 // 管理API（すべて admin 限定）。フェーズ3。
@@ -121,6 +122,40 @@ func UserPasswordAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	Audit(actor, "user.password", req.Username)
 	writeJSON(w, map[string]interface{}{"success": true})
+}
+
+// UserMailAPIHandler は、利用者がメールにサインインしてよいアドレスを決めます（POST・admin限定・2026-10-27・mail_address.go）。
+// 入力: {username, addresses: ["…", …]}（空なら全部外す——その利用者はメールにサインインできない）。
+func UserMailAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if !RequireAdmin(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Username  string   `json:"username"`
+		Addresses []string `json:"addresses"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Username == "" {
+		http.Error(w, "username は必須です", http.StatusBadRequest)
+		return
+	}
+	var n int
+	if err := database.AuthDB.QueryRow(`SELECT COUNT(*) FROM users WHERE username = ?`, req.Username).Scan(&n); err != nil || n == 0 {
+		http.Error(w, "その利用者はいません", http.StatusNotFound)
+		return
+	}
+	if err := SetMailAddresses(req.Username, req.Addresses); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	Audit(CurrentUser(r).Username, "user.mail", req.Username+": "+strings.Join(MailAddressesOf(req.Username), ", "))
+	writeJSON(w, map[string]interface{}{"success": true, "addresses": MailAddressesOf(req.Username)})
 }
 
 // UserDisableAPIHandler はユーザーの有効/無効を切り替えます（admin限定）。
