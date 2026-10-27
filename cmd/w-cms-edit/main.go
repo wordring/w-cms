@@ -243,7 +243,11 @@ func put(fileURL, token, base, etag string, content []byte) (string, error) {
 }
 
 // httpClient は w-cms と話す口です（時間の上限つき——応えないサーバーで、見張りがいつまでも止まらないように）。
-var httpClient = &http.Client{Timeout: 5 * time.Minute}
+// ⚠ 転送はたどらない（2026-10-27 の見直し）——Go の http.Client は、鍵の見出し（X-WCMS-Edit-Token）を転送先のほかのホストへも送る。
+// w-cms の鍵の口は転送を返さないので、転送が来たらそのまま失敗にする。
+var httpClient = &http.Client{Timeout: 5 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
+}}
 
 // maxEditBytes は落とすファイルの大きさの上限です。
 const maxEditBytes = 512 << 20

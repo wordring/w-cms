@@ -8,7 +8,12 @@
 set -euo pipefail
 . /etc/w-cms/cert-pull.env
 : "${PUBLIC_NAME:?PUBLIC_NAME がありません}"
-dest_dir=/var/lib/w-cms/data/tls
+# ⚠ 置き場は root の持ち物（2026-10-27 の見直し）。それまでは w-cms が書ける /var/lib/w-cms/data/tls に root が書いていて、
+# 乗っ取られた w-cms がそこをほかの場所へのリンクに替えると、root がたどって、どこにでも w-cms の持ち物のファイルを置けた。
+# w-cms は組で読む（フォルダ 0750・鍵 0640 root:w-cms）。設定の WCMS_TLS_PUBLIC_CERT・KEY もここを指す。
+dest_dir=/etc/w-cms/tls-public
+install -d -o root -g w-cms -m 0750 "$dest_dir"
+[ -L "$dest_dir" ] && { echo "$dest_dir がリンクです（写しません）" >&2; exit 1; }
 crt="$dest_dir/public.crt"; key="$dest_dir/public.key"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 ssh -i /root/.ssh/w-cms-cert-pull -o BatchMode=yes -o ConnectTimeout=20 \
@@ -23,6 +28,6 @@ if [ -f "$crt" ] && [ -f "$key" ] && cmp -s "$c" "$crt" && cmp -s "$k" "$key"; t
 	exit 0 # 替わっていない
 fi
 # 鍵を先に、証明書をあとに（w-cms は組が合わないあいだ古いものを使い続ける）。どちらも名前を替えて一度に置く。
-install -o w-cms -g w-cms -m 0600 "$k" "$key.new" && mv -f "$key.new" "$key"
-install -o w-cms -g w-cms -m 0644 "$c" "$crt.new" && mv -f "$crt.new" "$crt"
+install -o root -g w-cms -m 0640 "$k" "$key.new" && mv -f "$key.new" "$key"
+install -o root -g w-cms -m 0644 "$c" "$crt.new" && mv -f "$crt.new" "$crt"
 echo "公開の名前の証明書を写しました（$(openssl x509 -in "$crt" -noout -enddate)）"

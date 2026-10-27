@@ -29,6 +29,32 @@ ReadWritePaths=/var/lib/w-cms/data-test
 # 設定の WCMS_LOCAL_SOCKET=/run/w-cms-test/local.sock と WCMS_LOCAL_SOCKET_USER（この入口の利用者）で開く。
 RuntimeDirectory=w-cms-test
 RuntimeDirectoryMode=0700
+# 守りを重ねる（2026-10-27 の見直し）——外から届いた PDF を描く mutool も、この中で動く。乗っ取られても、機械の設定・
+# ほかの仕事・機械の部品には触れない。
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# メモリの上限（2026-10-27 の見直し）——壊れた PDF・写真・表計算でメモリを食っても、機械ごと詰まらせない（業務サーバーは 30 GB）。
+MemoryHigh=3G
+MemoryMax=4G
+# ⚠ 試験用からは本番のデータと本番の中の入口（管理者 Claude）に届かないようにする（2026-10-27 の見直し）。試験用と本番は同じ
+# 利用者 w-cms で動くので、これが無いと、試験用を乗っ取った者が本番の利用者の DB・メールの鍵を読み、本番の管理者になれた。
+InaccessiblePaths=-/var/lib/w-cms/data -/run/w-cms -/etc/w-cms/tls-public
 
 [Install]
 WantedBy=multi-user.target

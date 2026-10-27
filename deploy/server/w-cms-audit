@@ -76,18 +76,21 @@ collect_server() {
 	printf '%s\n' "$blocks" | sed -nE 's/.*SRC=([^ ]+).*PROTO=([^ ]+).*DPT=([0-9]+).*/\1 → \2\/\3/p' | top 25
 
 	section "w-cms の監査の記録（本番）"
+	# ⚠ auth.db は w-cms が書ける。root の sqlite3 で開くと、w-cms を乗っ取った者が表を VIEW に替えて、root の中で
+	# writefile() などを動かせた（2026-10-27 の見直し）。w-cms の利用者・安全の形（-safe）で開く。
 	local db="file:/var/lib/w-cms/data/auth.db?mode=ro" from
+	adb() { runuser -u w-cms -- sqlite3 -safe "$@"; }
 	from=$(date -d "$since" '+%Y-%m-%d %H:%M:%S')
-	if command -v sqlite3 >/dev/null && sqlite3 "$db" 'select 1' >/dev/null 2>&1; then
+	if command -v sqlite3 >/dev/null && adb "$db" 'select 1' >/dev/null 2>&1; then
 		echo "### 操作ごとの数"
-		sqlite3 -separator ' ' "$db" "select count(*), action from audit_log where substr(ts,1,19) >= '$from' group by action order by 1 desc limit 40"
+		adb -separator ' ' "$db" "select count(*), action from audit_log where substr(ts,1,19) >= '$from' group by action order by 1 desc limit 40"
 		echo "### ログイン・ログインの失敗（数・最初〜最後の時刻・利用者・接続元）"
 		# 時刻を添える（2026-10-27。無いと、無効にする前のログインか後のかを読み手が分けられなかった）。
-		sqlite3 -separator ' ' "$db" "select count(*), substr(min(ts),6,11) || '〜' || substr(max(ts),6,11), action, username, substr(target,1,60) from audit_log where substr(ts,1,19) >= '$from' and action in ('login','login.fail','logout') group by action, username, substr(target,1,60) order by 1 desc limit 25"
+		adb -separator ' ' "$db" "select count(*), substr(min(ts),6,11) || '〜' || substr(max(ts),6,11), action, username, substr(target,1,60) from audit_log where substr(ts,1,19) >= '$from' and action in ('login','login.fail','logout') group by action, username, substr(target,1,60) order by 1 desc limit 25"
 		echo "### 持ち主の付け替え（だれが・だれへ・何件）"
-		sqlite3 -separator ' ' "$db" "select count(*), username, '→', substr(target, instr(target,'->')+2) from audit_log where substr(ts,1,19) >= '$from' and action = 'chown' group by 2, 4 order by 1 desc limit 20"
+		adb -separator ' ' "$db" "select count(*), username, '→', substr(target, instr(target,'->')+2) from audit_log where substr(ts,1,19) >= '$from' and action = 'chown' group by 2, 4 order by 1 desc limit 20"
 		echo "### 利用者・権限・削除・機械の入口にかかわる操作（新しい順に40件まで）"
-		sqlite3 -separator ' | ' "$db" "select substr(ts,1,19), username, action, substr(target,1,100) from audit_log where substr(ts,1,19) >= '$from' and (action like 'user.%' or action like 'group.%' or action like '%perm%' or action like '%delete%' or action like 'machine.%' or action like 'admin.%' or action like 'lock.force%' or action like 'data.%') order by rowid desc limit 40"
+		adb -separator ' | ' "$db" "select substr(ts,1,19), username, action, substr(target,1,100) from audit_log where substr(ts,1,19) >= '$from' and (action like 'user.%' or action like 'group.%' or action like '%perm%' or action like '%delete%' or action like 'machine.%' or action like 'admin.%' or action like 'lock.force%' or action like 'data.%') order by rowid desc limit 40"
 	else
 		echo "（監査の記録を読めない）"
 	fi

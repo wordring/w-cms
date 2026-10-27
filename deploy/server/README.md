@@ -128,8 +128,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-backup.timer
 `/etc/w-cms/w-cms.env` に、公開の名前の証明書の場所を書きます。
 
 ```text
-WCMS_TLS_PUBLIC_CERT=/var/lib/w-cms/data/tls/public.crt
-WCMS_TLS_PUBLIC_KEY=/var/lib/w-cms/data/tls/public.key
+WCMS_TLS_PUBLIC_CERT=/etc/w-cms/tls-public/public.crt
+WCMS_TLS_PUBLIC_KEY=/etc/w-cms/tls-public/public.key
 ```
 
 - 接続のあいさつで〈公開の名前〉を求められたらこの証明書、住所で開いた・名前を送らない・`wcms-server`（VPS の中継）ならいままでの証明書（`WCMS_TLS_CERT`）を渡します（`cmd/w-cms/cert_reload.go` の certChooser）。

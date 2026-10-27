@@ -32,6 +32,9 @@ try {
 		$size, $path = $line -split "`t", 2
 		if ($path -notmatch '^(config|(keys|snapshots|index)/[0-9a-f]{64}|data/[0-9a-f]{2}/[0-9a-f]{64})$') { throw "知らない道です: $path" }
 		$dest = Join-Path $repo ($path -replace '/', '\')
+		# config（控えの置き場の鍵の入れ物）は、一度写したら替えない（2026-10-27 の見直し）——中身の指紋で確かめられない唯一の
+		# ファイルなので、乗っ取られた業務サーバーが別の config を渡すと、この PC の控えを開けなくできた。
+		if ($path -eq 'config' -and (Test-Path $dest)) { continue }
 		if ((Test-Path $dest) -and ((Get-Item $dest).Length -eq [int64]$size)) { continue }
 		New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
 		$tmp = "$dest.part"

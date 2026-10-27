@@ -10,7 +10,9 @@ repo=/srv/restic-chroot/repo
 [ -d "$repo" ] || exit 0
 for d in config keys snapshots index data; do
 	[ -e "$repo/$d" ] || continue
-	find "$repo/$d" -type f -mmin +60 -print0 | xargs -0 -r lsattr 2>/dev/null | awk '$1 !~ /i/ {sub(/^[^ ]+ /,""); print}' | while IFS= read -r f; do
-		chattr +i "$f"
-	done
+	# ⚠ 名前を行に分けて読まない（2026-10-27 の見直し）——それまでは lsattr の出力を行ごとに読んでいたので、業務サーバーを
+	# 乗っ取った者が改行入りの名前のファイル（中身が「改行＋/etc/passwd」など）を置くと、VPS の root が好きなファイルに
+	# chattr +i を付けた（証明書の更新・記録・控えを止められた）。find が名前を直に chattr へ渡す。もう封じたファイルに
+	# もう一度付けても害は無い。リンクはたどらない（-type f はリンクそのものを選ばない）。
+	find "$repo/$d" -type f -mmin +60 -exec chattr +i -- {} + 2>/dev/null || true
 done

@@ -21,12 +21,22 @@ var blockedExts = map[string]bool{
 	".lnk": true, ".url": true, ".scr": true, ".pif": true, ".hta": true, ".cpl": true, ".reg": true, ".jar": true,
 	".appref-ms": true, ".application": true, ".gadget": true, ".inf": true, ".scf": true, ".dll": true,
 	".sys": true, ".msc": true, ".settingcontent-ms": true, ".library-ms": true, ".search-ms": true,
+	// 2026-10-27 の見直しで足した——落としたファイルには「インターネットから来た」印（MOTW）が付かないので、開くと警告なしに
+	// 動くもの: 書庫（中の .exe・.lnk が SmartScreen を通らずに動く）・ディスクの像・マクロの付く Office の形・証明書（入れる画面が
+	// 開く）・ブラウザで開く文書（ローカルのファイルとして台本が動く）・メール・ヘルプ・新しい形のアプリの包み。
+	".zip": true, ".7z": true, ".rar": true, ".cab": true, ".tar": true, ".gz": true, ".iso": true, ".img": true, ".vhd": true, ".vhdx": true,
+	".pub": true, ".xll": true, ".xlam": true, ".ppam": true, ".docm": true, ".dotm": true, ".xlsm": true, ".xltm": true, ".pptm": true, ".potm": true,
+	".crt": true, ".cer": true, ".der": true, ".p7b": true, ".p7c": true, ".pfx": true, ".p12": true, ".sst": true,
+	".htm": true, ".html": true, ".mht": true, ".mhtml": true, ".xhtml": true, ".svg": true, ".chm": true,
+	".eml": true, ".msg": true, ".ics": true, ".vcf": true,
+	".msix": true, ".msixbundle": true, ".appx": true, ".appxbundle": true, ".appinstaller": true, ".diagcab": true, ".ps1xml": true, ".psc1": true,
 }
 
 // normBase は w-cms のアドレスを比べられる形（`https://localhost:8443`・小文字・末尾の / なし）にします。
 func normBase(address string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(address))
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+	// https だけ（2026-10-27 の見直し——http では鍵が道の途中で読める）。
+	if err != nil || u.Host == "" || u.Scheme != "https" {
 		return "", errors.New("w-cms のアドレスは https://ホスト:ポート の形で渡してください: " + address)
 	}
 	return strings.ToLower(u.Scheme + "://" + u.Host), nil

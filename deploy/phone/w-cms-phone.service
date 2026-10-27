@@ -18,6 +18,22 @@ EnvironmentFile=/etc/w-cms/phone.env
 ExecStart=/opt/w-cms/w-cms-phone -dev /dev/aloha-nd6 -base https://localhost:8443 -insecure
 Restart=always
 RestartSec=5
+# 守り（2026-10-27 の見直し）: 電話の道具は w-cms の利用者で動くが、本番のデータと中の入口には触れさせない
+# （機械の入口へは TCP で送るだけ）。ND6 から読む文は外の電話の番号なので、乗っ取られたときに届く所を絞る。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+InaccessiblePaths=-/var/lib/w-cms -/run/w-cms -/run/w-cms-test -/opt/w-cms/prod -/opt/w-cms/repo
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
 
 [Install]
 WantedBy=multi-user.target
