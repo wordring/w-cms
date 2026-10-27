@@ -4188,6 +4188,58 @@
             triggerAutoSave();
         }, true);
         document.addEventListener('dragend', () => { if (draggedInner) endInnerDrag(); clearInnerDropMarks(); }, true);
+        setupDragAutoScroll();
+    }
+
+    // ── ブロックを動かしているあいだ、画面の端でページを送る（2026-10-27） ──────────────
+    //
+    // 利用者:「ブロックを移動するとき、画面に表示されている範囲外に移動させることが出来ません。可能にする方法はありませんか？」
+    // ブラウザ組み込みのドラッグは、画面の端でページを送らないことがある（上には固定の帯があって、端まで届かない）。そこで、
+    // ブロック（や中の要素）を動かしているあいだ、ポインタが画面の上の端（固定の帯の下から DRAG_SCROLL_ZONE）か下の端に入ったら、
+    // 端に近いほど速くページを送る。ポインタを止めていても送り続ける（dragover は止めていても届くが、間が空くので自分で回す）。
+    const DRAG_SCROLL_ZONE = 70;   // 端から何 px で送り始めるか
+    const DRAG_SCROLL_MAX = 22;    // 1コマで送る最大の px
+    function setupDragAutoScroll() {
+        let y = -1;
+        let running = false;
+        // topEdge は、画面の上で本文を覆っている固定の部品（帯・ヘッダー）の下の端です。画面の上の真ん中から下へ、
+        // 固定（fixed・sticky）の部品をたどる（ページの全部の要素は見ない——大きなページで掴んだときに引っかかるため）。
+        const topEdge = () => {
+            let edge = 0;
+            for (let at = 1, n = 0; at < window.innerHeight / 2 && n < 6; n++) {
+                let el = document.elementFromPoint(window.innerWidth / 2, at);
+                while (el && el !== document.body && el !== document.documentElement) {
+                    const st = getComputedStyle(el).position;
+                    if (st === 'fixed' || st === 'sticky') break;
+                    el = el.parentElement;
+                }
+                if (!el || el === document.body || el === document.documentElement) break;
+                const b = el.getBoundingClientRect().bottom;
+                if (b <= at) break;
+                edge = b;
+                at = b + 1;
+            }
+            return edge;
+        };
+        let top = 0;
+        const step = () => {
+            if (!(draggedBlock || draggedInner) || y < 0) { running = false; return; }
+            const bottom = window.innerHeight;
+            let dy = 0;
+            if (y < top + DRAG_SCROLL_ZONE) dy = -Math.ceil(DRAG_SCROLL_MAX * Math.min(1, (top + DRAG_SCROLL_ZONE - y) / DRAG_SCROLL_ZONE));
+            else if (y > bottom - DRAG_SCROLL_ZONE) dy = Math.ceil(DRAG_SCROLL_MAX * Math.min(1, (y - (bottom - DRAG_SCROLL_ZONE)) / DRAG_SCROLL_ZONE));
+            if (dy) window.scrollBy(0, dy);
+            requestAnimationFrame(step);
+        };
+        document.addEventListener('dragstart', () => { top = topEdge(); y = -1; }, true);
+        document.addEventListener('dragover', e => {
+            if (!draggedBlock && !draggedInner) return;
+            y = e.clientY;
+            if (!running) { running = true; requestAnimationFrame(step); }
+        }, true);
+        const stop = () => { y = -1; };
+        document.addEventListener('dragend', stop, true);
+        document.addEventListener('drop', stop, true);
     }
 
     // ── 汎用表エディタ: 行・列操作ツールバー（docs/考察/【考察】語彙モデル.md §5.2） ──
