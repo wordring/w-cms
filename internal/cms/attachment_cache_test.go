@@ -67,8 +67,9 @@ func TestRenderAttachmentVersions(t *testing.T) {
 	}
 }
 
-// TestLoadViewAddsAttachmentVersions は、閲覧の描き方（/api/load?view=1 とページを開いたとき）だけが写真の住所に版の印を添え、
-// 書くための素の /api/load には添えない（添えると本文として保存される）ことを固定します（2026-10-27）。
+// TestLoadViewAddsAttachmentVersions は、閲覧の描き方（/api/load?view=1 とページを開いたとき）が写真の住所に版の印を添えることを
+// 固定します（2026-10-27）。同じ日の午後からは、書くための素の /api/load にも添えます（保存の手前で外す——
+// attachment_version_edit_test.go。それまでは「添えない」を固定していた）。
 func TestLoadViewAddsAttachmentVersions(t *testing.T) {
 	setupAttachmentTest(t)
 	putAttachment(t, "000101", "ph13.jpg", noisyJPEG(t, 300, 200))
@@ -83,10 +84,11 @@ func TestLoadViewAddsAttachmentVersions(t *testing.T) {
 		}
 		return rr.Body.String()
 	}
-	if plain := load(""); strings.Contains(plain, "ph13.jpg?v=") {
-		t.Errorf("素の /api/load に版の印が入っています（本文として保存されてしまう）: %s", plain)
+	if plain := load(""); !strings.Contains(plain, `src="/000101/ph13.jpg?v=`) {
+		t.Errorf("素の /api/load に版の印がありません（書ける形の写真が手元に残らない）: %s", plain)
 	}
 	if view := load("&view=1"); !strings.Contains(view, `src="/000101/ph13.jpg?v=`) {
 		t.Errorf("閲覧の描き方に版の印がありません: %s", view)
 	}
 }
+

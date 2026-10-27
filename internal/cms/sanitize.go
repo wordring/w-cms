@@ -31,9 +31,12 @@ var sanitizer = htmldoc.New()
 //
 // ⚠ **表示専用クローム（`.vocab-chrome`）を先に落とします**（[chrome_strip.go]）。
 // 順序が要ります——サニタイズは `class` を落とすので、**後では印が残っていません**。
+//
+// ⚠ 写真の住所に添えた版の印（`?v=`・[attachment_cache.go]）も、サニタイズのあとで外します（2026-10-27）。書くための本文にも
+// 印を添えるようになったので、画面が書き出した本文に印が混ざっても、本文には書き込まないためです。
 func Sanitize(s string) string {
 	stripped, _ := StripChrome(s)
-	return sanitizer.Sanitize(stripped)
+	return StripAttachmentVersions(sanitizer.Sanitize(stripped))
 }
 
 // SanitizeReport はサニタイズ結果と、内容が変化したか（＝何かを除去したか）を返します。
@@ -43,7 +46,8 @@ func Sanitize(s string) string {
 func SanitizeReport(s string) (out string, changed bool) {
 	stripped, dropped := StripChrome(s)
 	out, changed = sanitizer.SanitizeReport(stripped)
-	return out, changed || dropped > 0
+	// 版の印を外したことは「変化した」に数えない——画面が添えた印を外しただけで、書き手の書いたものは変わらないので。
+	return StripAttachmentVersions(out), changed || dropped > 0
 }
 
 // AllowedVocabulary は「要素名 → 許可属性（ソート済み）」を返します。

@@ -3392,11 +3392,18 @@
     // formulaOriginal は、閲覧モードで式の結果を見せている `td` → 式のときの子ノード（下の「表のセルの式」・書き出しは式で）。
     const formulaOriginal = new WeakMap();
 
+    // IMG_VERSION_SRC は、添付の写真の住所に版の印（?v=）だけを添えたものです（2026-10-27）。
+    // サーバーは書くための本文にも印を添えて返す（internal/cms/attachment_cache.go）ので、書き出すときに印を外します
+    // （本文に印を書き込まない。サーバーも保存の手前で外す——両方で外す）。
+    const IMG_VERSION_SRC = /^(\/\d{6}\/[^\/?#&]+)\?v=[0-9a-z]+$/;
+
     function serializeAttrs(el, allowed, extraAttrs) {
         let attrs = extraAttrs || '';
         allowed.forEach(a => {
             if (!el.hasAttribute(a)) return;
-            attrs += ` ${a}="${esc(el.getAttribute(a))}"`;
+            let v = el.getAttribute(a);
+            if (a === 'src' && el.tagName === 'IMG') v = v.replace(IMG_VERSION_SRC, '$1');
+            attrs += ` ${a}="${esc(v)}"`;
         });
         return attrs;
     }
@@ -6350,11 +6357,10 @@
             }
             notify('写真を小さくしました（' + mb(d.before) + ' → ' + mb(d.after) + '・' + d.from + ' → ' + d.to + '）');
             await fetch(url, { cache: 'reload', credentials: 'same-origin' }).catch(() => {});
-            // 閲覧の描き方では住所に版の印（?v=）が付いているので、印を外して比べる。描き直すときは、書ける形なら素の住所
-            // （本文に保存される）、閲覧なら新しい印の住所にする。
-            const editing = document.body.hasAttribute('edit-mode');
+            // 住所には版の印（?v=）が付いているので、印を外して比べ、新しい印の住所で描き直す（2026-10-27 からは書ける形でも
+            // 印を使う——書き出すときに serializeAttrs が外す）。
             document.querySelectorAll('img').forEach((img) => {
-                if ((img.getAttribute('src') || '').split(/[?#]/)[0] === url) img.src = editing || !d.v ? url : url + '?v=' + d.v;
+                if ((img.getAttribute('src') || '').split(/[?#]/)[0] === url) img.src = d.v ? url + '?v=' + d.v : url;
             });
         } catch (e) {
             notify('写真を小さくできません: ' + e.message, { type: 'warn' });

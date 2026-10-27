@@ -511,7 +511,7 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 		out = append(out, o)
 	}
 	if needRender {
-		rendered := renderedBlocksWithChrome(RenderComputedViews(r, idInt, finalBody))
+		rendered := renderedBlocksWithChrome(RenderAttachmentVersions(RenderComputedViews(r, idInt, finalBody))) // 写真の版の印も添える（attachment_cache.go）
 		for i := range out {
 			if out[i].Why != "" {
 				out[i].HTML = rendered[out[i].ID]
