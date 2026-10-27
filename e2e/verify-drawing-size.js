@@ -126,25 +126,17 @@ function ok(c, m, extra) { console.log((c ? '  ✓ ' : '  ✗ ') + m + (extra ? 
       };
     }, { id: ids[0], ref: HOST + '-' + ATTACH });
     ok(b.h > a.h + 150, '高さが伸びた', a.h + ' → ' + b.h + 'px');
-    ok(typeof b.ratio === 'number' && Math.abs(b.ratio * b.w - b.h) <= 2, 'この枠の縦横比を憶えた',
-       'ratio=' + b.ratio + '（' + (typeof b.ratio === 'number' ? Math.round(b.ratio * b.w) + 'px' : '-') + '）');
+    // ⚠ 2026-10-27 から、つまんだ高さは憶えない（利用者:「PDFのインライン表示が無くなったので、インライン表示の縦横比を
+    //    ブラウザに覚えさせる必要が無くなりました。削除できますか？」）。
+    ok(b.ratio === undefined, '縦横比は憶えない', 'ratio=' + b.ratio);
     ok(b.pe !== 'none', '離したらPDFへの操作が戻る', b.pe);
 
-    // ── 開き直しても同じ高さか
+    // ── 開き直すと、つまむ前の高さに戻る（憶えない・2026-10-27）
     console.log('■ 開き直す');
     await page.goto(BASE + '/' + ids[0]); await page.waitForTimeout(2500);
     const c = await page.evaluate(() => Math.round(
       document.querySelector('#w-editor-content .file-view').getBoundingClientRect().height));
-    ok(Math.abs(c - b.h) <= 2, '前の高さで開く', c + 'px');
-
-    // ── 別のページには効かないか（記憶は物ごと——同じ添付を指していても、別のページの枠は既定の高さのまま）
-    //    ⚠ 2026-10-14 に期待を逆にした——09-29 まで記憶は端末に1つで、ページをまたいで効いた（「別のページも同じ高さ」）。
-    //    1枚を変えるとほかの PDF まで変わったので、物ごとの縦横比だけになった（利用者:「一枚のPDFの大きさを変えると、
-    //    ページを再読み込みすると同じページのほかのPDFの大きさも変わってしまいます」）。
-    await page.goto(BASE + '/' + ids[1]); await page.waitForTimeout(2500);
-    const d = await page.evaluate(() => Math.round(
-      document.querySelector('#w-editor-content .file-view').getBoundingClientRect().height));
-    ok(Math.abs(d - a.h) <= 2, '別のページは既定の高さのまま（記憶は物ごと）', d + 'px');
+    ok(Math.abs(c - a.h) <= 2, '開き直すと、つまむ前の高さに戻る', c + 'px（つまむ前 ' + a.h + 'px）');
   } finally {
     for (const i of ids) {
       const del = await page.evaluate(async (id) => {

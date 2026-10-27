@@ -1,10 +1,10 @@
-// 物ごとの見え方（折りたたみの開閉・ファイル表示の縦横比）をこの端末に憶えて戻すことを確かめる（2026-09-28）。
+// 物ごとの見え方（折りたたみの開閉・絞り込みの欄）をこの端末に憶えて戻すことを確かめる（2026-09-28）。
 //
 // 利用者:「各ページのPDFなどの埋め込みの縦横比や、ブロックの開閉状態をブラウザに記録して再生することは出来ますか？」
 // 「開いてから長く経ったページの記録は、古い順に捨ててください」。
 //
 //   ① 閲覧モードで閉じた折りたたみは、開き直しても閉じたまま
-//   ② ファイル表示の枠の縦横比を憶えていれば、その比で高さが決まる（窓の幅を変えても比が保たれる）
+//   ② ファイル表示の枠の縦横比は憶えない（2026-10-27 に外した）——つまんで変えても記録せず、前に憶えた分（欄 r）は捨てる
 //   ③ 記録のページが上限（2000）を超えると、古い順に捨てる（開いているページは残る）
 //   ④ 鏡の中の絞り込みの欄（data-w-remember）を憶え、開き直すと戻して表も絞り直す（2026-09-30）
 //
@@ -74,49 +74,32 @@ const check = (label, ok, note = '') => {
     const docOpen = await page.locator('#w-editor-content details:has(> summary:text-is("資料 1"))').evaluate(d => d.open);
     check('触っていない折りたたみは開いたまま', docOpen === true);
 
-    // ② 枠の右下をつまんで縮める → 開き直すと同じ縦横比
+    // ② 枠の縦横比は憶えない（2026-10-27 利用者:「PDFのインライン表示が無くなったので、インライン表示の縦横比をブラウザに
+    //    覚えさせる必要が無くなりました。削除できますか？」）。つまんで変えても記録せず、前に憶えた分（欄 r）は、
+    //    次にそのページの記録を書くときに捨てる。
+    await page.evaluate((pid) => {
+      const v = JSON.parse(localStorage.getItem('wcms.view') || 'null') || { v: 1, pages: {} };
+      v.pages[pid] = Object.assign(v.pages[pid] || { t: Date.now(), o: {} }, { r: { 'f:000000-xxxx': 2 } });
+      localStorage.setItem('wcms.view', JSON.stringify(v));
+    }, id);
+    await page.reload();
+    await page.waitForTimeout(800);
     const wrap = page.locator('#w-editor-content .file-view').first();
-    const second = () => page.locator('#w-editor-content details:has(> summary:text-is("資料 2")) .file-view').first().boundingBox();
-    const s0 = await second();
     await wrap.scrollIntoViewIfNeeded();
     const b0 = await wrap.boundingBox();
     await page.mouse.move(b0.x + b0.width - 4, b0.y + b0.height - 4);
     await page.mouse.down();
-    await page.mouse.move(b0.x + b0.width - 4, b0.y + b0.height - 204, { steps: 8 });
+    await page.mouse.move(b0.x + b0.width - 4, b0.y + b0.height - 104, { steps: 8 });
     await page.mouse.up();
     await page.waitForTimeout(300);
-    const b1 = await wrap.boundingBox();
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('wcms.view') || 'null'));
-    const rec = saved && saved.pages && saved.pages[id];
-    const ratioKey = rec && Object.keys(rec.r || {}).find(k => k.startsWith('f:'));
-    check('つまんで変えた枠の縦横比を憶えた', !!ratioKey, JSON.stringify(rec && rec.r));
-    await page.reload();
-    await page.waitForTimeout(1000);
-    const b2 = await page.locator('#w-editor-content .file-view').first().boundingBox();
-    check('開き直しても同じ高さ（縦横比）', Math.abs(b2.height - b1.height) <= 3, b1.height + ' → ' + b2.height);
-    // ⚠ ほかの枠は変わらない（2026-09-29 利用者:「一枚のPDFの大きさを変えると、ページを再読み込みすると同じページの
-    //    ほかのPDFの大きさも変わってしまいます」——最後につまんだ高さを全部の枠に当てていた）。
-    const s2 = await second();
-    check('1枚目を変えても、2枚目の高さは変わらない', s0 && s2 && Math.abs(s2.height - s0.height) <= 3,
-      (s0 && s0.height) + ' → ' + (s2 && s2.height));
-    // ⚠ **その場で追従する**（2026-09-29 利用者:「ブラウザの幅を変えたような場合は、動的に追従できません」）。
-    //    それまでは 150ms 待ってから決め直していた——**待たずに**（2コマ程度で）測る。
-    await page.setViewportSize({ width: 1000, height: 900 });
-    await page.waitForTimeout(50);
-    const b3 = await page.locator('#w-editor-content .file-view').first().boundingBox();
-    const r2 = b2.height / b2.width, r3 = b3.height / b3.width;
-    check('窓の幅を変えても縦横比が保たれる（その場で）', Math.abs(r3 - r2) < 0.02 || b3.height <= 201,
-      r2.toFixed(3) + ' → ' + r3.toFixed(3));
-    // 窓は変わらずに**本文の欄だけ**が細くなっても追従する（レールの開け閉めなど・resize は出ない）。
-    await page.evaluate(() => { document.getElementById('w-editor-content').style.maxWidth = '420px'; });
-    await page.waitForTimeout(50);
-    const b4 = await page.locator('#w-editor-content .file-view').first().boundingBox();
-    const r4 = b4.height / b4.width;
-    check('欄の幅だけが変わっても縦横比が保たれる', Math.abs(r4 - r2) < 0.02 || b4.height <= 201,
-      r2.toFixed(3) + ' → ' + r4.toFixed(3) + '（幅 ' + Math.round(b4.width) + 'px）');
-    await page.evaluate(() => { document.getElementById('w-editor-content').style.maxWidth = ''; });
-    await page.setViewportSize({ width: 1280, height: 900 });
-
+    // 記録を書かせる（折りたたみを開け閉めする——開閉は憶える）。
+    const memo = page.locator('#w-editor-content details:has(> summary:text-is("メモ")) > summary');
+    await memo.click();
+    await page.waitForTimeout(200);
+    await memo.click();
+    await page.waitForTimeout(300);
+    const rec2 = await page.evaluate((pid) => { const v = JSON.parse(localStorage.getItem('wcms.view') || 'null'); return v && v.pages && v.pages[pid]; }, id);
+    check('枠の縦横比を憶えず、前に憶えた分も捨てた', !!rec2 && !('r' in rec2), JSON.stringify(rec2));
     // ④ **PDF の枠の開閉も1枚ずつ憶える**（2026-09-29 利用者:「各ページの各PDFファイルの開閉も個別に
     //    ブラウザに記録して再生したいです」）——枠はサーバーが描く飾りの中なので、それまでは記録の外だった。
     //    題の中には添付へのリンクがあるので、左端（📄）を押す。

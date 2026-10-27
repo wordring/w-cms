@@ -2571,7 +2571,7 @@
         enhanceFileSections(); // ファイル容器のクロームをモードに合わせて作り直す
         refreshAttachmentPreviews(); // 添付のクリック展開（閲覧モード限定）
         wireFileViewResizes();    // ファイル表示の枠の右下をつまんで高さを変える配線（両方の形）
-        restoreViewState();          // 物ごとに憶えた開閉と縦横比（この端末・2026-09-28）
+        restoreViewState();          // 物ごとに憶えた開閉と絞り込みの欄（この端末・2026-09-28）
         decorateLocalEdit();         // ファイル表示の「📝 ローカル編集」（2026-09-29）
         // 「書ける形でも」の業務のボタンは、2026-10-12 まで閲覧モード限定だった（いまは押す前に書きかけを保存する）。
         runChromeHooks();            // 拡張が登録した飾り（window.wcms.onChrome・2026-10-20。何を足すかは各拡張の assets/*.js）
@@ -6264,16 +6264,12 @@
     }
 
     // ファイル表示の枠（図面の PDF など）の大きさは**見る人が決めます**（2026-09-10 ユーザー:「PDFインライン表示の
-    // 大きさを変えられるように出来ますか？」）。枠の右下をつまんで縦に伸ばすと、
-    // **次に開いたときも同じ高さ**です。
+    // 大きさを変えられるように出来ますか？」）。枠の右下をつまんで縦に伸ばせます（CSS の resize）。
     //
-    // 置き場は**枠ごとの縦横比**（`wcms.view`・この端末のブラウザ・2026-09-28〜）。09-29 までは `wcms.ui` の
-    // `drawing.height`（全部の枠で1つの高さ）にも書いていて、1枚を変えるとほかの PDF まで変わった——いまは使わない。
-    // **本文にもサーバーにも残しません**——枠はクロームで、A3の図面を大きく見たいか
-    // 一覧しやすく小さくしたいかは**見る人と画面の都合**だからです。他の人の画面を
-    // 動かしてしまわない、という意味でもあります。
-    const FILE_VIEW_H_MIN = 200;   // これ以下だと図面が判別できない
-    const FILE_VIEW_H_MAX = 4000;  // 壊れた値でページを埋めない柵
+    // ⚠ 2026-09-28〜10-27 は、つまんで決めた枠ごとの縦横比をこの端末のブラウザに憶えて、次に開いたときも同じ高さにしていた。
+    // PDF を絵にして見せる（internal/cms/pdf_pages.go・枠の高さは絵に合わせる）ようになったので、外した
+    // （2026-10-27 利用者:「PDFのインライン表示が無くなったので、インライン表示の縦横比をブラウザに覚えさせる必要が無くなりました。削除できますか？」）。
+    // いまは、つまんだ高さはそのページを開いているあいだだけ。
     const FILE_VIEW_GRIP = 24;     // 右下の「つまみ」とみなす範囲（px）
 
     // ── 「📝 ローカル編集」（2026-09-29） ───────────────────────────────
@@ -6567,10 +6563,10 @@
     // 記録は、古い順に捨ててください」。
     //
     //   - 置き場は localStorage の `wcms.view`（UI設定の `wcms.ui` とは分ける——ページが増えるほど大きくなるので、
-    //     レールの開閉などの小さな設定を重くしない）。形は {v:1, pages:{ページ番号:{t:最後に開いた時刻, r:{物:縦横比},
-    //     o:{物:開閉}}}}。1つの物が数十バイトなので、localStorage（1サイト約5MB）には十分入る。
+    //     レールの開閉などの小さな設定を重くしない）。形は {v:1, pages:{ページ番号:{t:最後に開いた時刻, o:{物:開閉}, …}}}。
+    //     1つの物が数十バイトなので、localStorage（1サイト約5MB）には十分入る。
     //   - 物の鍵: ファイル表示は `f:`＋添付の参照（data-ref）、本文の折りたたみは `d:`＋題の文字＋同じ題の何番目か。
-    //   - **縦横比**（高さ÷幅）で憶える——窓の幅を変えても図面の形が保たれる。つまんで大きさを変えたときに記録する。
+    //   - ⚠ 2026-10-27 まではファイル表示の枠の**縦横比**（欄 `r`）も憶えていた。PDF を絵にして見せるようになったので外した。
     //   - **古いページから捨てる**——憶えるのは最近開いた VIEW_MAX_PAGES ページまで（記録のあるページを開くたびに
     //     時刻を新しくする）。書けない（容量超え・無効な環境）ときは古いほうの半分を捨てて書き直し、それでも駄目なら
     //     憶えないだけ——画面は壊さない。
@@ -6609,20 +6605,15 @@
         function page(id, create) {
             const c = load();
             let p = c.pages[id];
-            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, r: {}, o: {}, i: {}, s: {}, h: {} };
-            if (p) { p.r = p.r || {}; p.o = p.o || {}; p.i = p.i || {}; p.s = p.s || {}; p.h = p.h || {}; }
+            if ((!p || typeof p !== 'object') && create) p = c.pages[id] = { t: 0, o: {}, i: {}, s: {}, h: {} };
+            // 縦横比（r）は 2026-10-27 に憶えるのをやめた——前に憶えた分は、ここで捨てる（次に書くときに消える）。
+            if (p) { delete p.r; p.o = p.o || {}; p.i = p.i || {}; p.s = p.s || {}; p.h = p.h || {}; }
             return p;
         }
         return {
             get(id) { return page(id, false); },
             // touch は記録のあるページの時刻を新しくします（開いたページは捨てられにくく）。
             touch(id) { const p = page(id, false); if (p) { p.t = Date.now(); persist(); } },
-            setRatio(id, key, ratio) {
-                const p = page(id, true);
-                p.t = Date.now();
-                p.r[key] = Math.round(ratio * 10000) / 10000;
-                persist();
-            },
             setOpen(id, key, open) {
                 const p = page(id, true);
                 p.t = Date.now();
@@ -6668,30 +6659,16 @@
         return 'd:' + mine + '#' + same.indexOf(el);
     }
 
-    // applyViewRatios は憶えた縦横比でファイル表示の枠の高さを決めます（幅は窓で決まる）。閉じている枠は幅が0なので
-    // 飛ばし、開いたとき（toggle）にもう一度呼ぶ。
-    function applyViewRatios() {
-        const st = ViewState.get(currentPageId);
-        if (!st) return;
-        document.querySelectorAll('#w-editor-content .file-view').forEach(wrap => {
-            const r = st.r[viewKeyOf(wrap)];
-            if (!r) return;
-            const w = wrap.getBoundingClientRect().width;
-            if (w <= 0) return;
-            wrap.style.height = Math.min(FILE_VIEW_H_MAX, Math.max(FILE_VIEW_H_MIN, Math.round(w * r))) + 'px';
-        });
-    }
-
     // viewTrackable は開閉を憶える折りたたみかです——本文の折りたたみと、**ファイル表示（PDF など）の枠**。
     // ⚠ ファイル表示の枠はサーバーが描く飾り（.vocab-chrome）の中にあるので、飾りを一律に除くと外れる
     //    （2026-09-29 利用者:「各ページの各PDFファイルの開閉も個別にブラウザに記録して再生したいです」）。
-    //    鍵は縦横比と同じ添付の参照（viewKeyOf の `f:ページID-添付ID`）——開閉と縦横比は別の欄に入る。
+    //    鍵は添付の参照（viewKeyOf の `f:ページID-添付ID`）。
     function viewTrackable(d) {
         if (d.classList.contains('file-view-fold')) return !!d.closest('section[data-type="file-view"][data-ref]');
         return !d.closest('.vocab-chrome');
     }
 
-    // restoreViewState は憶えた開閉と縦横比を戻します（描き直しの巡りのたびに呼ぶ）。
+    // restoreViewState は憶えた開閉と絞り込みの欄を戻します（描き直しの巡りのたびに呼ぶ）。
     let viewTouchedFor = '';
     function restoreViewState() {
         const st = ViewState.get(currentPageId);
@@ -6707,7 +6684,6 @@
             const want = !!st.o[k];
             if (d.open !== want) d.open = want;
         });
-        applyViewRatios();
         restoreRememberedInputs(st);
     }
 
@@ -7487,59 +7463,22 @@
             const k = viewKeyOf(d);
             if (k) ViewState.setOpen(currentPageId, k, d.open);
         }
-        if (d.open) applyViewRatios();
     }, true);
-    // 本文の欄の幅が変わったら、縦横比から高さを決め直す。
-    // ⚠ **その場で追従します**（2026-09-29 利用者:「ブラウザの幅を変えたような場合は、動的に追従できません」）。
-    //    それまでは窓の resize を 150ms 待ってから1回だけ決め直していたので、**引いているあいだは高さが古いまま**で、
-    //    窓の大きさは変わらずに欄だけが変わるとき（左右のレールの開け閉め・スクロールバーの出入り）は決め直しも
-    //    しませんでした。いまは**欄そのものの幅**を見て（ResizeObserver）、描く前の1コマで決め直します。
-    //    幅が変わったときだけ動くので、高さを変えたこと自体では回りません（高さ→幅の輪にならない）。
-    let viewRatioFrame = 0;
-    const applyViewRatiosSoon = () => {
-        if (viewRatioFrame) return;
-        viewRatioFrame = requestAnimationFrame(() => { viewRatioFrame = 0; applyViewRatios(); });
-    };
-    window.addEventListener('resize', applyViewRatiosSoon);
-    const viewContent = document.getElementById('w-editor-content');
-    if (viewContent && typeof ResizeObserver === 'function') {
-        let lastWidth = -1;
-        new ResizeObserver(entries => {
-            const w = Math.round(entries[0].contentRect.width);
-            if (w === lastWidth) return;
-            lastWidth = w;
-            applyViewRatiosSoon();
-        }).observe(viewContent);
-    }
-
+    // wireFileViewResize は、枠の右下をつまんで引いているあいだ、中の PDF の埋め込みへマウスを渡さないようにします
+    // （プラグインが受け取ると、ポインタが枠の中へ入った瞬間に引くのが切れる）。PDF を絵で見せるときも同じ形で害は無い。
     function wireFileViewResize(wrap, embed) {
-        // ⚠ **記録の無い枠は CSS の既定（70vh）のまま**（2026-09-29）。それまでは「最後につまんだ高さ」（UI設定の
-        //    `drawing.height`）を全部の枠に当てていたので、1枚の大きさを変えると、開き直したときに同じページのほかの
-        //    PDF まで同じ高さになった（利用者:「一枚のPDFの大きさを変えると、ページを再読み込みすると同じページの
-        //    ほかのPDFの大きさも変わってしまいます」）。大きさは物ごとの縦横比だけが持つ（restoreViewState）。
-
         let dragging = false;
         wrap.addEventListener('pointerdown', (e) => {
-            // **つまみの上で押したときだけ**反応します。PDFの中の操作（スクロール・
-            // 拡大）を横取りしないためで、隅から離れた押下はそのまま通します。
+            // **つまみの上で押したときだけ**反応します。PDFの中の操作（スクロール・拡大）を横取りしないためです。
             const r = wrap.getBoundingClientRect();
             if (e.clientX < r.right - FILE_VIEW_GRIP || e.clientY < r.bottom - FILE_VIEW_GRIP) return;
             dragging = true;
-            // **引いているあいだ PDF へマウスを渡しません**——プラグインが受け取ると、
-            // ポインタが枠の中へ入った瞬間にドラッグが切れます。
             embed.style.pointerEvents = 'none';
         });
         document.addEventListener('pointerup', () => {
-            embed.style.pointerEvents = '';
             if (!dragging) return;
             dragging = false;
-            const rect = wrap.getBoundingClientRect();
-            const px = Math.round(rect.height);
-            if (px >= FILE_VIEW_H_MIN && px <= FILE_VIEW_H_MAX) {
-                // この枠の縦横比（物ごと・2026-09-28）。ほかの枠には使わない。
-                const k = viewKeyOf(wrap);
-                if (k && rect.width > 0) ViewState.setRatio(currentPageId, k, px / rect.width);
-            }
+            embed.style.pointerEvents = '';
         });
     }
 
