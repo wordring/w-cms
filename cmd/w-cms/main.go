@@ -337,10 +337,9 @@ func buildHandler() http.Handler {
 	// no-cache は「使う前に毎回再検証」——FileServer が Last-Modified を返すので、
 	// 変わっていなければ 304 で済み、変わっていれば即座に新しい版が届く。
 	assets := http.StripPrefix("/assets/", http.FileServer(noDirListing{http.Dir("assets")}))
-	root.Handle("/assets/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
-		assets.ServeHTTP(w, r)
-	}))
+	// 2026-10-27 からは、住所に版の印（?v=）があって今の印と合えば1年たずねずに使わせ、HTML のページ（管理画面など）は
+	// 読むファイルの住所に印を添えて配る（internal/cms/asset_version.go・【考察】キャッシュ制御 案B）。
+	root.Handle("/assets/", cms.AssetsHandler(assets))
 	// 拡張の画面の JS（2026-10-20・internal/cms/ext_scripts.go）——登録した1本ずつだけを、ディスクから配る。
 	root.HandleFunc(cms.ExtScriptPrefix, cms.ExtScriptHandler)
 	root.HandleFunc("/login", auth.LoginPageHandler)

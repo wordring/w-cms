@@ -64,7 +64,8 @@ func RenderPublicShell(bodyHTML string, seo PageSEO) (string, error) {
 		return "", err
 	}
 	out := strings.Replace(shell, contentPlaceholder, bodyHTML, 1)
-	return strings.Replace(out, headPlaceholder, buildHeadTags(seo), 1), nil
+	// 画面のファイルの住所に版の印を添える（asset_version.go）——応答の ETag は印を含めた中身で取るので、印が変われば ETag も変わる。
+	return StampAssetURLs(strings.Replace(out, headPlaceholder, buildHeadTags(seo), 1)), nil
 }
 
 // buildHeadTags は head へ差し込むメタ情報を組み立てます。

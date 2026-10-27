@@ -163,7 +163,11 @@ func ExtScriptHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "no-cache") // assets/ と同じ（使う前に毎回確かめる・変わっていなければ 304）
+	if path.Ext(a.URL) == ".html" {
+		ServeStampedHTML(w, r, a.Path) // 拡張の画面（メールの一覧など）——読むファイルの住所に版の印を添える（asset_version.go）
+		return
+	}
+	SetAssetCache(w, r) // assets/ と同じ（印が合えば1年・合わなければ使う前に毎回確かめる——asset_version.go）
 	w.Header().Set("Content-Type", a.Type)
 	http.ServeFile(w, r, a.Path)
 }

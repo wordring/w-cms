@@ -118,5 +118,6 @@ func RenderPageShell(bodyHTML, breadcrumbHTML, title string) (string, error) {
 		out = strings.Replace(out, titlePlaceholder,
 			"<title>"+html.EscapeString(t)+" - "+html.EscapeString(suffix)+"</title>", 1)
 	}
-	return out, nil
+	// 画面のファイルの住所に版の印を添える（asset_version.go・殻は no-store なので、いつも今の印を指す）。
+	return StampAssetURLs(out), nil
 }
