@@ -115,7 +115,7 @@
     // 素通しするうえ、本文へ <img src="/api/new-page?parent=..."> を保存しておくだけで
     // 閲覧者にページを作らせられる（保存型CSRF）。別タブで開く挙動は form の target で保つ
     // （CSP strict なのでインラインの on* は使わず、DOM APIで組み立てて submit する）。
-    function openNewPage(templateId) {
+    function openNewPage(templateId, fixed) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = '/api/new-page';
@@ -129,6 +129,8 @@
         };
         addField('parent', currentPageId);
         if (templateId) addField('template', templateId);
+        // 作るときに決める語の値（空のページのとき・fixed_tag.go）。テンプレートから作るときは、テンプレートの値のまま（サーバーが欄を見ない）。
+        Object.entries(fixed || {}).forEach(([name, v]) => { if (v) addField('fixed.' + name, v); });
         document.body.appendChild(form);
         form.submit();
         form.remove();
@@ -313,8 +315,25 @@
         if (!menu || !btn) { openNewPage(''); return; }
 
         menu.textContent = ''; // 前回の項目を消す
+        // 作るときに決める語（設定の語彙の fixed——書類の種類など・2026-10-27）は、空のページでも選べる。選べるのは creatable の値だけ
+        // （ボタンが作る書類は出さない）。テンプレートから作るときは、テンプレートの値のまま。
+        const fixedPick = {};
+        Object.keys(vocabWords).sort().forEach(name => {
+            const word = vocabWords[name];
+            const vals = (word && word.fixed && word.creatable) || [];
+            if (!vals.length) return;
+            const row = makeEl('label', 'template-menu-fixed');
+            row.appendChild(makeEl('span', '', name + ' '));
+            const sel = document.createElement('select');
+            sel.dataset.fixedName = name;
+            sel.appendChild(new Option('（なし）', ''));
+            vals.forEach(v => sel.appendChild(new Option(v, v)));
+            sel.addEventListener('change', () => { fixedPick[name] = sel.value; });
+            row.appendChild(sel);
+            menu.appendChild(row);
+        });
         const blank = makeButton('', '空のページ');
-        blank.addEventListener('click', () => { hideTemplateMenu(); openNewPage(''); });
+        blank.addEventListener('click', () => { hideTemplateMenu(); openNewPage('', fixedPick); });
         menu.appendChild(blank);
 
         const sep = makeEl('div', 'template-menu-group', 'テンプレートから');
@@ -1060,6 +1079,12 @@
         return (d && d.message) || res.statusText || String(res.status);
     }
 
+    // notifyFixedTags は、作るときに決める語（設定の語彙の fixed・2026-10-27）を書き換えたので、サーバーが元の値へ戻したことを知らせる。
+    function notifyFixedTags(names) {
+        notify('「' + names.join('」「') + '」はページを作ったときに決まり、替えられるのは管理者だけです。元の値に戻しました。',
+            { type: 'warn', duration: 8000, id: 'fixed-tags' });
+    }
+
     function notifySanitized() {
         notify('安全でない記述（スクリプトやイベント属性など）を除去して保存しました。',
             { type: 'warn', duration: 8000, id: 'sanitized' });
@@ -1394,7 +1419,8 @@
                     syncBase.set(b.id, { h: b.h, html });
                     return;
                 }
-                if (el && typedSince(b.id)) {
+                // 'fixed'（作るときに決める語を、サーバーが元の値へ戻した・2026-10-27）は、書きかけでも描き直す——戻した値を見せる。
+                if (el && typedSince(b.id) && b.why !== 'fixed') {
                     if (b.why === 'sanitized') { syncBase.set(b.id, { h: b.h, html: sent.get(b.id) }); return; }
                     openConflict(b.id, { id: b.id, kind: 'changed', html: b.html, h: b.h, by: data.by || '' });
                     return;
@@ -1417,9 +1443,10 @@
                 chromeLater.push([b.id, b.html]);
                 const after = serializeBlock(node);
                 syncBase.set(b.id, { h: b.h, html: after });
-                if (b.why !== 'sanitized' && b.why !== 'full') remote.push({ id: b.id, before, after });
+                if (b.why !== 'sanitized' && b.why !== 'full' && b.why !== 'fixed') remote.push({ id: b.id, before, after });
                 if (b.why === 'other' || b.why === 'new' || b.why === 'kept' || b.why === 'merged') flashed.push(node);
                 if (b.why === 'sanitized') { sanitizedSeen = true; sanitizedList.push({ id: b.id, before, after }); }
+                if (b.why === 'fixed') sanitizedList.push({ id: b.id, before, after }); // やり直しで替えた値へ戻れないように（サニタイズと同じ）
                 touched = true;
             });
             // 仕上がりに無いブロック——相手が消した。
@@ -1448,7 +1475,8 @@
             // 相手の変更は記録へ写す（コマンドにしない——アンドゥは自分の変更だけを戻す・問い2）。
             if (remote.length) adoptExternal(remote.map(r => r.id));
             // サニタイズで除いたあとの姿を、そのブロックを最後に変えたコマンドの「後」にする（やり直しで除く前の危険な中身へ戻れない）。
-            if (sanitizedSeen) { notifySanitized(); adoptMachineEdits(sanitizedList); }
+            if (sanitizedSeen) notifySanitized();
+            if (sanitizedList.length) adoptMachineEdits(sanitizedList);
             restoreCaretSoon.forEach(c => restoreCaret(c));
             flashed.forEach(n => {
                 const w = n.closest('.editor-block') || n;
@@ -1456,6 +1484,7 @@
                 setTimeout(() => w.classList.remove('w-block-updated'), 4000);
             });
         }
+        if ((data.fixed_tags || []).length) notifyFixedTags(data.fixed_tags);
         if ((data.kept || []).length) {
             const by = data.kept_by || {};
             const names = Array.from(new Set(data.kept.map(id => by[id]).filter(Boolean)));
@@ -5740,6 +5769,8 @@
         // 2026-10-19 利用者:「いま、表の推奨業者に候補が出る仕組みがあると思いますが、これは冗長です。削除してオートコンプリートの
         // コンボボックスで統一しましょう。」——それまでの候補の出どころ（suggest・/api/suggest）は外した。
         const tagLabel = tagDD ? tagLabelOf(tagDD) : '';
+        // 作るときに決める語（2026-10-27）は、管理者でない人には候補を出さない——替えても、保存のときにサーバーが元の値へ戻す。
+        if (tagLabel && vocabWords[tagLabel] && vocabWords[tagLabel].fixed && !currentUserIsAdmin) { hideEnumMenu(); return; }
         const tagSuggest = !!tagLabel;
         const cellKey = (td && !isEnum && !isImage) ? cellChoiceKey(td) : null;
         if (!isEnum && !isImage && !tagSuggest && !cellKey) { hideEnumMenu(); return; }

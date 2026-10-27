@@ -11,6 +11,7 @@ package cms
 
 import (
 	"encoding/json"
+	"os"
 	"net/http"
 	"strconv"
 
@@ -78,10 +79,20 @@ func templateChildren(user *auth.User, parentID string, depth int) []TemplateNod
 	}
 	out := make([]TemplateNode, 0, len(kids))
 	for _, k := range kids {
+		children := templateChildren(user, k.ID, depth+1)
+		if isLeafPage(k.ID) {
+			// 作るときに決める語の値が、人の選べない値（ボタンが作る書類など）のテンプレートは出さない（2026-10-27・fixed_tag.go）。
+			if body, err := os.ReadFile(page.BodyPath(k.ID)); err == nil && !templateCreatable(Sanitize(string(body))) {
+				continue
+			}
+		} else if len(children) == 0 {
+			// 中のテンプレートが全部出せない分類は、分類ごと出さない（子の無い分類は、メニューで葉に見えてしまう）。
+			continue
+		}
 		out = append(out, TemplateNode{
 			ID:       k.ID,
 			Title:    k.Title,
-			Children: templateChildren(user, k.ID, depth+1),
+			Children: children,
 		})
 	}
 	return out

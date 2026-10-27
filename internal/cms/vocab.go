@@ -151,11 +151,22 @@ type VocabWord struct {
 	//
 	// ⚠ `enum` の Values とは別です。Values は「見分けるための表」（無い値は薄黄・警告ではない）、Allowed は範囲（無い値は警告）。
 	Allowed []string `json:"allowed,omitempty"`
+	// Fixed は「作るときに決め、あとは管理者だけが替えられる」タグです（2026-10-27・fixed_tag.go）。ページの新規作成で値を選び、
+	// 作ったあとに管理者でない人が本文で替えても、保存のときに元の値へ戻します（機械のコードが書く値はそのまま）。
+	//
+	// > 2026-10-27 利用者:「パージの新規作成時は書類の種類を指定できるように出来ますか？」→（案を出して）「案の1〜3（作るときに種類を選ぶ・
+	// > 作ったあとは管理者だけが替えられる・ボタンから作る書類は人のメニューに出さない）で作ってください」
+	Fixed bool `json:"fixed,omitempty"`
+	// Creatable は Fixed のタグの値のうち、人が新規作成のメニューで選べるものです（2026-10-27）。ここに無い値（ボタンが作る書類など）は、
+	// 新規作成のメニューに出さず、テンプレートがその値を持っていれば、そのテンプレートもメニューに出しません。管理者でない人が API で
+	// 頼んでも断ります。空なら、人はどの値も選べません。
+	Creatable []string `json:"creatable,omitempty"`
 }
 
 // clone は語の写しを返します（選択肢と範囲まで複製する——受け取った側が書き換えても設定は壊れない）。
 func (w VocabWord) clone() VocabWord {
-	out := VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...), Integer: w.Integer, Allowed: append([]string(nil), w.Allowed...)}
+	out := VocabWord{Type: w.Type, Values: append([]string(nil), w.Values...), Integer: w.Integer, Allowed: append([]string(nil), w.Allowed...),
+		Fixed: w.Fixed, Creatable: append([]string(nil), w.Creatable...)}
 	if w.Min != nil {
 		v := *w.Min
 		out.Min = &v

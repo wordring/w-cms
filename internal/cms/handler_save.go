@@ -133,6 +133,8 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 	updatedAt, ok := func() (string, bool) {
 		defer LockPageBody(id)()
 		before, _ := os.ReadFile(page.BodyPath(id))
+		// 作るときに決める語は、管理者でない人には替えさせない（2026-10-27・fixed_tag.go）。
+		safeHTML, _ = KeepFixedTags(auth.CurrentUser(r), string(before), safeHTML)
 		updatedAt, ok := writeBody(w, id, safeHTML)
 		if !ok {
 			return "", false
@@ -346,6 +348,8 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return "", false
 		}
 		merged = FillFileViewNames(auth.CurrentUser(r), merged)
+		// 作るときに決める語は、管理者でない人には替えさせない（2026-10-27・fixed_tag.go）。
+		merged, _ = KeepFixedTags(auth.CurrentUser(r), string(current), merged)
 
 		updatedAt, ok := writeBody(w, id, merged)
 		if !ok {

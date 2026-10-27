@@ -1089,6 +1089,17 @@ body.w-fixed-bars #w-fixed-bar .table-toolbar { border-left: 1px solid #475569; 
     color: #64748b;
 }
 
+/* 空のページで選ぶ、作るときに決める語（書類の種類など・2026-10-27・fixed_tag.go）。 */
+.template-menu-fixed {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px 2px;
+    font-size: 12px;
+    color: #475569;
+}
+.template-menu-fixed select { flex: 1; min-width: 0; }
+
 /* 本文の表の基本スタイル。ブラウザ既定の表は枠が無く、挿入直後の空セルが
  * 見えず編集もできないため、文書としての最小の体裁をここで与える（閲覧・編集共通）。
  *

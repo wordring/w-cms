@@ -361,6 +361,7 @@ type syncLockedResult struct {
 	finalBody string // 合わせたあとの本文（書いたときはサニタイズと名札のあと）
 	updatedAt string
 	written   bool
+	fixed     []string // 管理者でない人が替えたので元へ戻した、作るときに決める語の名前（fixed_tag.go）
 }
 
 // syncLocked は /api/sync の、ページごとの書き込みの錠の中の仕事です（読む → 合わせる → 書く → 版 → 索引）。
@@ -385,6 +386,33 @@ func syncLocked(w http.ResponseWriter, id string, user *auth.User, username stri
 	res = syncLockedResult{current: current, plan: plan, finalBody: joinStoredBlocks(plan.final)}
 	if plan.dirty {
 		res.finalBody = FillFileViewNames(user, Sanitize(res.finalBody))
+		// 作るときに決める語（ページの種類など）は、管理者でない人には替えさせない——元の値へ戻し、戻したブロックを画面へ描き直させる
+		// （2026-10-27・fixed_tag.go）。戻したら何も変わらないときは、書かない。
+		if body, kept := KeepFixedTags(user, string(original), res.finalBody); len(kept) > 0 {
+			res.fixed = kept
+			if fb, err := splitStoredBlocks(body); err == nil {
+				// 消されたタグの並びを戻したときは、ID の無いブロックができる——ID を振ってから書く（block_sync.go）。
+				ensureStoredBlockIDs(fb)
+				body = joinStoredBlocks(fb)
+				had := map[string]bool{}
+				for _, b := range current {
+					had[b.ID] = true
+				}
+				for _, b := range fb {
+					m, sent := mine[b.ID]
+					if plan.why[b.ID] == "" && ((sent && m.Hash != b.Hash) || (!sent && !had[b.ID])) {
+						plan.why[b.ID] = "fixed"
+					}
+				}
+			}
+			res.finalBody = body
+			if body == string(original) {
+				plan.dirty = false
+			}
+			res.plan = plan
+		}
+	}
+	if plan.dirty {
 		// writeBody が「トップ直下の置き場の題は1枚だけ」も見る（断れば 409 を書いて ok=false）。
 		ua, ok := writeBody(w, id, res.finalBody)
 		if !ok {
@@ -544,6 +572,7 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"unknown_types":     UnknownVocabTypes(safeChanged),
 		"unresolved_fields": UnresolvedVocabFields(safeChanged),
 		"stripped_ids":      ShellPrefixedIDs(rawChanged),
+		"fixed_tags":        locked.fixed,
 	}
 	if len(plan.kept) > 0 {
 		names := map[string]string{}

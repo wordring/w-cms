@@ -494,6 +494,28 @@ func validateVocabWord(path, where string, w VocabWord) error {
 		}
 		seenAllowed[v] = true
 	}
+	// 人が作るときに選べる値（creatable）は、固定のタグ（fixed）だけが持てます。enum なら、選択肢の中の値だけです
+	// （打ち間違えた値は、メニューに出ても集計の値と合わない）。
+	if len(w.Creatable) > 0 && !w.Fixed {
+		return fmt.Errorf("%s: %s は fixed でないのに creatable があります（creatable を持てるのは fixed の語だけです）", path, where)
+	}
+	inValues := map[string]bool{}
+	for _, v := range w.Values {
+		inValues[v] = true
+	}
+	seenCreatable := map[string]bool{}
+	for _, v := range w.Creatable {
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("%s: %s の creatable に空の値があります", path, where)
+		}
+		if seenCreatable[v] {
+			return fmt.Errorf("%s: %s の creatable に %q が重複しています", path, where, v)
+		}
+		seenCreatable[v] = true
+		if w.Type == ColEnum && !inValues[v] {
+			return fmt.Errorf("%s: %s の creatable の %q が選択肢（values）にありません", path, where, v)
+		}
+	}
 	return nil
 }
 

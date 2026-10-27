@@ -359,17 +359,20 @@ func RevertToVersion(pageID, version, author string) error {
 	// ページごとの書き込みの錠（body_lock.go・2026-10-12）——戻すのも「ほかの書き手の1人」（問い7）。
 	defer LockPageBody(pageID)()
 	htmlPath := page.BodyPath(pageID)
-	if current, err := os.ReadFile(htmlPath); err == nil {
-		defer noteBlockWriters(pageID, author, string(current), Sanitize(string(body)))
+	current, curErr := os.ReadFile(htmlPath)
+
+	// 書き戻す本文もサニタイズを通す。過去の版は当時の許可リストで通ったもので、
+	// 許可が狭まっていれば**いまの規則で**濾すのが正しい（保存経路と同じ扱い）。
+	safeHTML := Sanitize(string(body))
+	if curErr == nil {
+		// 作るときに決める語は、古い版へ戻しても、管理者でない人にはいまの値のまま（2026-10-27・fixed_tag.go）。
+		safeHTML, _ = keepFixedTagsByName(author, string(current), safeHTML)
+		defer noteBlockWriters(pageID, author, string(current), safeHTML)
 		// いまの内容を必ず残す（窓の内側でも force で切る）。
 		if err := RecordVersion(pageID, author, string(current), true); err != nil {
 			return err
 		}
 	}
-
-	// 書き戻す本文もサニタイズを通す。過去の版は当時の許可リストで通ったもので、
-	// 許可が狭まっていれば**いまの規則で**濾すのが正しい（保存経路と同じ扱い）。
-	safeHTML := Sanitize(string(body))
 	if err := page.WriteFileAtomic(htmlPath, []byte(safeHTML), 0644); err != nil {
 		return err
 	}

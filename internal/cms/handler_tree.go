@@ -193,6 +193,26 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return // loadTemplateBody が応答済み
 	}
 
+	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
+	//    子ページ一覧は左サイドパネル（クローム）が担うため、本文には埋め込まない
+	//    （必要なら子ページ一覧のビュー <section><h2>子ページ一覧</h2></section> を後から挿せる）。
+	//
+	//    テンプレート指定があれば、読んだ本文を**そのまま写す**（ブロックIDだけ外す）。
+	//    ⚠ 2026-09-25 まで空欄を列型の既定値で埋めていた（新規化）——いまは純粋なコピー
+	//    （template_new.go に経緯）。
+	//
+	//    ⚠ 採番より前に組みます（2026-10-27）——作るときに決める語（書類の種類など・fixed_tag.go）の値をここで入れて確かめ、
+	//    断るときにファイルの無いページ行を残さないため（上の 1-2 と同じ理由）。
+	html := "<h1>新しいページ</h1>\n<p>ここから編集を始めてください。</p>"
+	if templateBody != "" {
+		html = CopyTemplateBody(templateBody)
+	}
+	html, why, ok := fixedTagsOfNewPage(creator, html, r.FormValue)
+	if !ok {
+		http.Error(w, why, http.StatusForbidden)
+		return
+	}
+
 	// 2. ページレコードを原子的にINSERTしてIDを採番する（reserveNewPageID）。
 	// 親が在って消されかけていないことを確かめてから、行を足す（tree_lock.go・2026-10-26）。
 	var newID string
@@ -213,18 +233,6 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	parentStr := ""
 	if parentID.Valid {
 		parentStr = page.FormatID(int(parentID.Int64))
-	}
-
-	// 3. デフォルトHTMLを構築。HTMLは「内容」のみ（属性はサイドカーが正本）。
-	//    子ページ一覧は左サイドパネル（クローム）が担うため、本文には埋め込まない
-	//    （必要なら子ページ一覧のビュー <section><h2>子ページ一覧</h2></section> を後から挿せる）。
-	//
-	//    テンプレート指定があれば、読んだ本文を**そのまま写す**（ブロックIDだけ外す）。
-	//    ⚠ 2026-09-25 まで空欄を列型の既定値で埋めていた（新規化）——いまは純粋なコピー
-	//    （template_new.go に経緯）。
-	html := "<h1>新しいページ</h1>\n<p>ここから編集を始めてください。</p>"
-	if templateBody != "" {
-		html = CopyTemplateBody(templateBody)
 	}
 
 	// 4. HTMLファイルを物理保存
