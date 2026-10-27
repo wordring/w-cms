@@ -188,7 +188,7 @@ sudo w-cms-offsite restic init
 sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-offsite.timer
 ```
 
-- ⚠ **控えを開くパスワード（`/etc/w-cms/offsite.pass`）が無いと、控えは誰にも開けません。** 写しを職場の PC のデスクトップの「秘密の設定」に置きました（`w-cms-社外の控えのパスワード.txt`）。業務サーバーが壊れたら、新しい機械にこのパスワードと restic を入れて、VPS から戻します。
+- ⚠ **控えを開くパスワード（`/etc/w-cms/offsite.pass`）が無いと、控えは誰にも開けません。** 2026-10-27 から、写しは **USB メモリーと印刷した紙**の2つ（別々の場所に置く）。職場の PC のデスクトップ（OneDrive）には置かない——HP405 1台か OneDrive の口座が乗っ取られると、控えの全部が開けたため（【考察】コードの矛盾 §7.2）。USB には、業務サーバーの設定と鍵（`/etc/w-cms`・`/etc/wireguard`・`/root/.ssh`——夜の控えに入っていないもの）と構成メモも入れた（`はじめに読む.txt`）。業務サーバーが壊れたら、新しい機械にこのパスワードと restic を入れて、VPS から戻します。
 - 見る: `sudo w-cms-offsite snapshots`。確かめる（20分の1を読む）: `sudo w-cms-offsite check`。
 - 戻す（例）: `sudo w-cms-offsite restic restore latest --target /tmp/restore`（その日の写しの形で戻る——`deploy/server/README.md` の「控えから戻す」と同じ置き方）。
 - 古い控えは自動では消しません（VPS が書き換えられなくしているため）。整理は VPS の側の注意を読んでから。
@@ -303,7 +303,7 @@ AUDIT_VPS_CMD=〈VPS の要点を出す命令（任意）〉
 - ⚠ 置き場の持ち主: `/srv/backup` は `root:wcmspc` の 710（wcmspc は通り抜けるだけ）、`/srv/backup/restic-pc` は wcmspc の組から読める（書けない）、暗号化していない夜の写し `/srv/backup/w-cms` は 700（w-cms-backup が毎晩 700 に保つ）。`/srv/backup/w-cms` を 755 にすると、wcmspc から本文や利用者の DB の写しが読めてしまいます。
 - HP405: `deploy/office-pc/copy-backup.ps1` を `C:\w-cms-控え\copy-backup.ps1` に置き（BOM 付きの UTF-8）、Windows のタスク「w-cms の控えを写す」（毎日 8:00・電源が切れていたら次に入れたとき）が流します。置き場は `C:\w-cms-控え\restic-pc`（OneDrive の外）、記録は `C:\w-cms-控え\写した記録.log`。取ってきたファイルは、名前（中身の SHA-256）で壊れていないかを確かめます。鍵は `~\.ssh\id_ed25519_wcms_pc`。
 - 毎朝の監査（w-cms-audit）が、HP405 が写し終えた記録を読みます（古くなっていれば気づける）。
-- 戻すとき: `C:\w-cms-控え\restic-pc` を業務サーバー（または新しい機械）へ写し、`restic -r <置き場> --password-file <パスワード> restore latest --target <戻す先>`。パスワードは、職場の PC のデスクトップの「秘密の設定」の `w-cms-社外の控えのパスワード.txt` にもあります。
+- 戻すとき: `C:\w-cms-控え\restic-pc` を業務サーバー（または新しい機械）へ写し、`restic -r <置き場> --password-file <パスワード> restore latest --target <戻す先>`。パスワードは、USB メモリーと印刷した紙にもあります（2026-10-27 から・デスクトップには置かない）。
 
 ## 控えから戻す練習（2026-10-26）
 
