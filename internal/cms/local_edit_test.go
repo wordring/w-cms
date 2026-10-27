@@ -111,3 +111,33 @@ func TestLocalEditRespectsWritePermission(t *testing.T) {
 		t.Errorf("読み取り専用の範囲への上書きを断っていません: %d", rr.Code)
 	}
 }
+
+// TestLocalEditKeyEndsWithSession は、ローカル編集の鍵が、出したときのログインのセッションに結ばれ、ログアウトで効かなくなる
+// ことを固定します（2026-10-27 の見直し——それまではログアウトしても12時間ずつ延びて使えた）。
+func TestLocalEditKeyEndsWithSession(t *testing.T) {
+	setupAttachmentTest(t)
+	sess, err := auth.CreateSession("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("POST", "/api/local-edit/start", strings.NewReader(`{"ref":"000101-a1b2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "wcms_session", Value: sess})
+	req = auth.WithUser(req, &auth.User{Username: "alice"})
+	rr := httptest.NewRecorder()
+	LocalEditStartAPIHandler(rr, req)
+	body := rr.Body.String()
+	i := strings.Index(body, "#")
+	j := strings.Index(body[i:], `"`)
+	if rr.Code != http.StatusOK || i < 0 || j < 0 {
+		t.Fatalf("鍵を出せません: %d %s", rr.Code, body)
+	}
+	token := body[i+1 : i+j]
+	if get := localEditFile("GET", token, "", ""); get.Code != http.StatusOK {
+		t.Fatalf("ログイン中なのに落とせません: %d", get.Code)
+	}
+	auth.DeleteSession(sess) // ログアウト
+	if get := localEditFile("GET", token, "", ""); get.Code == http.StatusOK {
+		t.Errorf("⚠ ログアウトしたあとも鍵で添付を読めました")
+	}
+}

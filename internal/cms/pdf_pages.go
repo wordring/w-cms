@@ -186,7 +186,9 @@ func drawPDFPages(conf PDFPagesSettings, pdfPath, pageID, name, ver, dir string,
 	defer os.RemoveAll(tmp)
 	// mutool draw -q -w <横幅> -F png -o <置き場>/p%d.png <PDF> 1-<上限>
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, conf.Tool, "draw", "-q", "-w", strconv.Itoa(conf.Width), "-F", "png",
+	// 高さにも上限（横幅の3倍）——縦に極端に長いページ（10×500pt など）を横幅に合わせると、1ページで何 GB もの絵になった
+	// （2026-10-27 の見直し）。mutool は -w と -h の枠に収まるよう縮める。
+	cmd := exec.CommandContext(ctx, conf.Tool, "draw", "-q", "-w", strconv.Itoa(conf.Width), "-h", strconv.Itoa(conf.Width*3), "-F", "png",
 		"-o", filepath.Join(tmp, "p%d.png"), pdfPath, "1-"+strconv.Itoa(conf.MaxPages))
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -262,6 +264,10 @@ func ServePDFPage(w http.ResponseWriter, r *http.Request, pageID, name string) {
 		return
 	}
 	if !page.RequirePageReadOrPublic(w, r, pageID) {
+		return
+	}
+	if !page.AnonymousMayFetch(r, pageID, name) { // ログインしていない人には、本文が指す添付だけ（2026-10-27）
+		http.NotFound(w, r)
 		return
 	}
 	p, ok := page.AttachmentPath(pageID, name)

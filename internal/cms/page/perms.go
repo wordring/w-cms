@@ -503,12 +503,17 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// 本文と属性サイドカーは「添付ファイル」ではない。本文は画面／API が、属性は
 	// /api/page-meta と権限APIが、それぞれの認可のもとで返す。ここからは配らない。
 	name := parts[len(parts)-1]
-	if aliasedFileName(name) || strings.EqualFold(name, pageID+".html") || strings.EqualFold(filepath.Ext(name), ".json") {
+	// 「.」で始まる名前（書きかけの一時ファイル .<名前>.tmp-N など）も配らない（2026-10-27 の見直し・きれいな URL の口と揃える）。
+	if aliasedFileName(name) || strings.HasPrefix(name, ".") || strings.EqualFold(name, pageID+".html") || strings.EqualFold(filepath.Ext(name), ".json") {
 		// .json は本文の属性サイドカーか添付の目録（files/meta.json）で、どちらも配らない。
 		http.NotFound(w, r)
 		return
 	}
 
+	if !AnonymousMayFetch(r, pageID, name) {
+		http.NotFound(w, r)
+		return
+	}
 	setAttachmentHeaders(w, name)
 	// URLの `/data/master` は名前で、置き場所ではありません——データの場所（WCMS_DATA_DIR・
 	// 既定 data）の下の master へ読み替えます（2026-10-14）。parts は path.Clean 済みなので `..` を含みません。
@@ -584,6 +589,10 @@ func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name s
 	if !RequirePageReadOrPublic(w, r, pageID) {
 		return
 	}
+	if !AnonymousMayFetch(r, pageID, name) {
+		notFound(w, r)
+		return
+	}
 	fp := filepath.Join(AttachmentDir(pageID), name)
 	fi, err := os.Stat(fp)
 	if err != nil || !fi.Mode().IsRegular() {
@@ -593,6 +602,26 @@ func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name s
 	setAttachmentHeaders(w, name)
 	setAttachmentCache(w, r, fi)
 	http.ServeFile(w, r, fp)
+}
+
+// AnonymousMayFetch は、ログインしていない訪問者に、公開のページ pageID の添付 name を配ってよいかです（2026-10-27 の見直し）。
+// ログインした人は、ページを読めれば（呼び手が確かめる）よい。ログインしていない人には、**いまの本文が指している添付だけ**を配る
+// ——添付の名前は4文字（約168万通り）なので、公開のページの files/ に残った、本文から消した添付や公開する前に上げたものを、
+// 総当たりで取れた。指し方は、きれいな URL（/ページ番号/名前）か、ファイル表示の参照（ページ番号-添付ID）。
+func AnonymousMayFetch(r *http.Request, pageID, name string) bool {
+	if auth.CurrentUser(r) != nil {
+		return true
+	}
+	body, err := os.ReadFile(filepath.Join(GetPageDir(pageID), pageID+".html"))
+	if err != nil {
+		return false
+	}
+	b := string(body)
+	if strings.Contains(b, "/"+pageID+"/"+name) {
+		return true
+	}
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	return stem != "" && strings.Contains(b, pageID+"-"+stem+`"`)
 }
 
 // AttachmentVersion は添付の版の印です（書いた時刻のミリ秒・36進）。住所に `?v=<印>` で添えます。

@@ -71,6 +71,22 @@ func ResolveSession(token string) (username string, ok bool) {
 	return username, ok
 }
 
+// TouchSession は ResolveSession と同じで、そのセッションの「最後の操作」を今にします（2026-10-27・ローカル編集の上書き——
+// CAD で保存するのも、その人の操作）。
+func TouchSession(token string) (username string, ok bool) {
+	username, _, _, ok = resolveSession(token, true)
+	return username, ok
+}
+
+// SessionTokenOf は、要求のセッションの Cookie の値です（無ければ空）。
+func SessionTokenOf(r *http.Request) string {
+	c, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
 // SessionRemaining は、そのセッションが失効するまでの残り時間を返します（寿命は延ばしません）。
 // 画面の告知（GET /api/session）が使います。
 func SessionRemaining(token string) (time.Duration, bool) {

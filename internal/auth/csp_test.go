@@ -25,7 +25,7 @@ func TestCSPPolicyIsStrict(t *testing.T) {
 	}
 	for _, want := range []string{
 		"default-src 'self'", "script-src 'self'", "style-src 'self'",
-		"object-src 'self'", "base-uri 'self'", "frame-ancestors 'self'",
+		"object-src 'self'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'self'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("CSP に %q がありません: %s", want, got)

@@ -96,7 +96,8 @@ func TestEmbedSrcsetAndBackslash(t *testing.T) {
 // TestRelativeEmbedNamesOnly は、相対の埋め込みは名前1つ（「/」も「?」も無い）だけを通すことを固定します（2026-10-26）。
 // 相対はサイトのルートから解かれるので、api/logout は /api/logout になる。
 func TestRelativeEmbedNamesOnly(t *testing.T) {
-	for _, bad := range []string{"api/logout", "assets/app.js", "img/a.png", "a.png?x=1"} {
+	// 2026-10-27: 拡張子の無い名前（ページの住所）と、符号にした点・区切り（ブラウザが .. と読む）も断る。
+	for _, bad := range []string{"api/logout", "assets/app.js", "img/a.png", "a.png?x=1", "002025", "/data/%2e%2e/api/versions?id=000123", "/data/%2E%2E/api/x", "/data/a%2fb", "/000012/%2e%2e"} {
 		if got := Sanitize(`<img src="` + bad + `">`); strings.Contains(got, "src=") {
 			t.Errorf("⚠ 相対の %q を通しました: %s", bad, got)
 		}

@@ -511,7 +511,9 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 		out = append(out, o)
 	}
 	if needRender {
-		rendered := renderedBlocksWithChrome(RenderAttachmentVersions(RenderComputedViews(r, idInt, finalBody))) // 写真の版の印も添える（attachment_cache.go）
+		// 描く前にサニタイズを通す（2026-10-27 の見直し）——書かなかったとき finalBody は保存されたままの本文で、閲覧・/api/load と
+		// 違って読むときのサニタイズを通っていなかった（前のゆるい決まりのときに保存された形が、書ける形の画面にだけそのまま届いた）。
+		rendered := renderedBlocksWithChrome(RenderAttachmentVersions(RenderComputedViews(r, idInt, Sanitize(finalBody)))) // 写真の版の印も添える（attachment_cache.go）
 		for i := range out {
 			if out[i].Why != "" {
 				out[i].HTML = rendered[out[i].ID]

@@ -50,7 +50,7 @@ func fakeMutool(args []string) int {
 				i++
 				continue
 			}
-			if args[i] == "-w" || args[i] == "-F" {
+			if args[i] == "-w" || args[i] == "-h" || args[i] == "-F" {
 				i++
 				continue
 			}

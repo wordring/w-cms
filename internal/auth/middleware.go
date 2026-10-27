@@ -144,6 +144,8 @@ const cspPolicy = "default-src 'self'; " +
 	"style-src 'self'; " +
 	"object-src 'self'; " +
 	"base-uri 'self'; " +
+	// フォームの送り先も同じオリジンだけ（2026-10-27 の見直し）——本文や貼り付けで <form> が紛れ込んでも、社外へ送らせない。
+	"form-action 'self'; " +
 	"frame-ancestors 'self'"
 
 // CSPProtect は全レスポンスへ Content-Security-Policy ヘッダを付与します。

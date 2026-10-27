@@ -47,9 +47,12 @@ const localEditTTL = 12 * time.Hour
 
 type localEditGrant struct {
 	username string
-	pageID   string
-	stored   string
-	expires  time.Time
+	// session は鍵を出したときのログインのセッション（Cookie の値）です。ログアウトでセッションが消えると、鍵も効かなくなる
+	// （2026-10-27 の見直し——それまではログアウトしても12時間ずつ延びて使えた）。業務サーバーの中の入口から出した鍵は空。
+	session string
+	pageID  string
+	stored  string
+	expires time.Time
 }
 
 var (
@@ -83,6 +86,11 @@ func grantOf(token string) *localEditGrant {
 
 // localEditUser は鍵の持ち主です（権限はいまの状態で確かめ直す——鍵を出したあとに権限が変わることがある）。
 func localEditUser(g *localEditGrant) *auth.User {
+	if g.session != "" {
+		if name, ok := auth.TouchSession(g.session); !ok || name != g.username {
+			return nil // ログアウトした・セッションが切れた
+		}
+	}
 	u, err := auth.LookupUser(g.username)
 	if err != nil {
 		return nil
@@ -135,7 +143,7 @@ func LocalEditStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 			delete(localEditGrants, k)
 		}
 	}
-	localEditGrants[token] = &localEditGrant{username: user.Username, pageID: pageID, stored: stored,
+	localEditGrants[token] = &localEditGrant{username: user.Username, session: auth.SessionTokenOf(r), pageID: pageID, stored: stored,
 		expires: time.Now().Add(localEditTTL)}
 	localEditMu.Unlock()
 	scheme := "http"

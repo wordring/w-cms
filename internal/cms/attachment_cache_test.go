@@ -99,8 +99,9 @@ func TestLoadViewAddsAttachmentVersions(t *testing.T) {
 func TestPublicAttachmentCacheTenMinutes(t *testing.T) {
 	setupAttachmentTest(t)
 	newPage(t, TopPageID, "<h1>トップ</h1>", page.PageMeta{Owner: "alice", Mode: "333", Public: true})
-	newPage(t, "000105", "<h1>公開</h1>", page.PageMeta{Owner: "alice", Mode: "333", ParentID: TopPageID, Public: true})
+	newPage(t, "000105", "<h1>公開</h1><p><img src=\"/000105/ph31.jpg\"></p>", page.PageMeta{Owner: "alice", Mode: "333", ParentID: TopPageID, Public: true})
 	p := putAttachment(t, "000105", "ph31.jpg", noisyJPEG(t, 300, 200))
+	putAttachment(t, "000105", "ph33.jpg", noisyJPEG(t, 300, 200)) // 本文が指していない添付
 	fi, _ := os.Stat(p)
 	v := page.AttachmentVersion(fi)
 	get := func(url string, user *auth.User) *httptest.ResponseRecorder {
@@ -120,6 +121,16 @@ func TestPublicAttachmentCacheTenMinutes(t *testing.T) {
 	}
 	if rr := get("/000105/ph31.jpg?v="+v, &auth.User{Username: "alice"}); rr.Header().Get("Cache-Control") != "private, max-age=31536000, immutable" {
 		t.Errorf("⚠ ログインした人への配り方が変わりました: %q", rr.Header().Get("Cache-Control"))
+	}
+	// 公開のページでも、本文が指していない添付は、匿名には配らない（2026-10-27 の見直し——名前の総当たりで取れた）。
+	if rr := httptest.NewRecorder(); true {
+		page.ServeCleanAttachment(rr, httptest.NewRequest("GET", "/000105/ph33.jpg", nil), "000105", "ph33.jpg", http.NotFound)
+		if rr.Code == 200 {
+			t.Errorf("⚠ 本文が指していない公開のページの添付を匿名に配りました")
+		}
+	}
+	if rr := get("/000105/ph31.jpg", &auth.User{Username: "alice"}); rr.Code != 200 {
+		t.Errorf("ログインした人に、本文が指す添付を配りません: %d", rr.Code)
 	}
 	// 非公開のページの添付は、匿名には配らない（いままでどおり）。
 	putAttachment(t, "000103", "ph32.jpg", noisyJPEG(t, 300, 200))

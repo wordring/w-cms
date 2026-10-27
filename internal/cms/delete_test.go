@@ -112,3 +112,22 @@ func TestDeletePageRequiresLock(t *testing.T) {
 		t.Errorf("他者ロック中に削除できました: code=%d body=%s", rr.Code, rr.Body.String())
 	}
 }
+
+// TestDeletePageNeedsParentWrite は、消すには親にも書けることを固定します（2026-10-27 の見直し——移す口と同じ決まり。
+// それまでは、書けない置き場から自分のページをごみ箱へ持ち出せた）。
+func TestDeletePageNeedsParentWrite(t *testing.T) {
+	setupSaveTest(t)
+	newPage(t, "000030", "<h1>書けない置き場</h1>", page.PageMeta{Owner: "bob", Mode: "300"})
+	newPage(t, "000031", "<h1>自分のページ</h1>", page.PageMeta{Owner: "alice", Mode: "300", ParentID: "000030"})
+	alice := &auth.User{Username: "alice"}
+	if rr := postDelete(t, "000031", lockAs(t, 31, "alice"), alice); rr.Code != 403 {
+		t.Errorf("⚠ 書けない置き場からページを消せました: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if _, err := os.Stat(page.GetPageDir("000031")); err != nil {
+		t.Errorf("断ったのにページが消えています: %v", err)
+	}
+	bob := &auth.User{Username: "bob", IsAdmin: true}
+	if rr := postDelete(t, "000031", lockAs(t, 31, "bob"), bob); rr.Code != 200 {
+		t.Errorf("親に書ける人が消せません: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+}

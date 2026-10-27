@@ -490,6 +490,11 @@ func safeEmbedURL(v string) bool {
 	if !isRelativeURL(s) {
 		return false
 	}
+	// 符号にした点・区切り（%2e・%2f・%5c）も断る——ブラウザは `/data/%2e%2e/api/x` の %2e%2e を「..」と読み、/api/x を
+	// 叩いた（2026-10-27 の見直し。下の「..」の検査は文字どおりの点しか見ていなかった）。添付の名前に符号は入らない。
+	if l := strings.ToLower(s); strings.Contains(l, "%2e") || strings.Contains(l, "%2f") || strings.Contains(l, "%5c") {
+		return false
+	}
 	// **絶対パスの宛先は添付置き場（/data/）に限る**（2026-08-21 ユーザー決定）。
 	//
 	// 相対URLというだけで通していたころ、本文へ `<img src="/api/logout">` を1つ保存すると
@@ -517,7 +522,9 @@ func safeEmbedURL(v string) bool {
 	}
 	// 相対の名前は、名前1つだけ（「/」も「?」も無い）を通す（2026-10-26）。サイトのルートから解かれるので、「api/x」の形は
 	// /api/x になり、開くたびに読む人みんなの手でアプリの口を叩けた。名前1つなら /a.png のような根の名前にしかならない。
-	return !strings.ContainsAny(s, "/?#")
+	// ⚠ 名前1つでも、拡張子の無い名前（`002025`）は断る（2026-10-27 の見直し）——/002025 はページの住所で、開いた人みんなの
+	// 手でそのページを描かせ（描くときに書き換える鏡・PDF の絵づくり・写真の写しづくりが走る）られた。
+	return !strings.ContainsAny(s, "/?#") && strings.Contains(strings.TrimPrefix(s, "."), ".")
 }
 
 // safeSrcset は srcset（「URL 幅, URL 幅, …」）の候補のURLを1つずつ確かめます。

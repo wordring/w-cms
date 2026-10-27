@@ -170,6 +170,10 @@ func ServePhotoView(w http.ResponseWriter, r *http.Request, pageID, name string,
 	if !page.RequirePageReadOrPublic(w, r, pageID) {
 		return
 	}
+	if !page.AnonymousMayFetch(r, pageID, name) { // ログインしていない人には、本文が指す添付だけ（2026-10-27）
+		notFound(w, r)
+		return
+	}
 	orig, ok := page.AttachmentPath(pageID, name)
 	if !ok {
 		notFound(w, r)

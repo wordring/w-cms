@@ -17,6 +17,7 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -49,6 +50,14 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !page.RequirePageWrite(w, r, id) {
+		return
+	}
+	// 消すのは、親の中身（子の並び）を変えること——親にも書けること（2026-10-27 の見直し。移す口は 10-26 からそう確かめて
+	// いたのに、消す口だけ見ていなかったので、書けない置き場から自分のページをごみ箱へ持ち出せた）。
+	var parent sql.NullInt64
+	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", pageID).Scan(&parent)
+	if parent.Valid && !page.GetPerms(int(parent.Int64)).CanWrite(auth.CurrentUser(r)) {
+		http.Error(w, "親ページへの書き込み権限がありません（書けない置き場のページは消せません）", http.StatusForbidden)
 		return
 	}
 	// エディタ内の変更操作と同じ編集ロックで直列化する（他者保持中なら409）。
