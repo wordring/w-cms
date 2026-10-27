@@ -126,7 +126,8 @@ async function pasteText(page, selector, plain, htmlText) {
     // ③ 保存した本文に残る
     await page.waitForTimeout(2500); // 自動保存（1.5秒のデバウンス）
     const saved = await page.evaluate(async (pid) => (await (await fetch('/api/load?id=' + pid)).text()), id);
-    check('保存した本文に絵が残る', saved.includes('src="' + src + '"'), saved.slice(0, 300));
+    // 素の /api/load は写真の住所に版の印（?v=）を添えて返す（2026-10-27・【考察】キャッシュ制御 案A）——印の有無を問わず見る。
+    check('保存した本文に絵が残る', saved.includes('src="' + src + '"') || saved.includes('src="' + src + '?v='), saved.slice(0, 300));
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {
     check('例外なく流れた', false, String(e));
