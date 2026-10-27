@@ -257,6 +257,20 @@ func TestDataFileHandlerDoesNotServeExecutableTypes(t *testing.T) {
 			t.Errorf("%s が配信されました: status=%d", name, rr.Code)
 		}
 	}
+
+	// 4. 版の控え（versions/）とフォルダそのものは配らない（2026-10-27 の見直し——フォルダの一覧と版の中身が読めた）。
+	os.MkdirAll(filepath.Join(dir, "versions"), 0755)
+	os.WriteFile(filepath.Join(dir, "versions", "20261027T000000Z.html.gz"), []byte("old"), 0644)
+	os.MkdirAll(filepath.Join(dir, "files"), 0755)
+	os.WriteFile(filepath.Join(dir, "files", "abcd.pdf"), []byte("%PDF-1.4\n"), 0644)
+	for _, p := range []string{base + "versions/", base + "versions/20261027T000000Z.html.gz", base + "files/", base, "/data/master/01/" + id + "/doc.pdf"} {
+		if rr := getData(t, p, user); rr.Code != 404 {
+			t.Errorf("⚠ %s が配信されました: status=%d", p, rr.Code)
+		}
+	}
+	if rr := getData(t, base+"files/abcd.pdf", user); rr.Code != 200 {
+		t.Errorf("files/ の添付が配信されません: status=%d", rr.Code)
+	}
 }
 
 // TestUploadRequiresEditLock は、添付の追加が本文編集と同じ編集ロックで

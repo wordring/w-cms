@@ -487,6 +487,14 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageID := parts[3]
+	// 配るのは、ページのフォルダの直下（旧い添付の置き場）と files/ の直下（添付）のファイルだけです。
+	// ⚠ それより深い所・フォルダそのものは配らない——versions/ の版の控えが、フォルダの一覧（text/html）と中身ごと読めました。
+	// 公開のページなら、ログインしていない人にも、公開する前に消した文まで読めていた（2026-10-27 の見直し）。
+	rest := parts[4:]
+	if parts[2] != filepath.Base(filepath.Dir(GetPageDir(pageID))) || !(len(rest) == 1 || (len(rest) == 2 && rest[0] == "files")) {
+		http.NotFound(w, r)
+		return
+	}
 	// 公開ページの添付（PDF原本など）は匿名でも配信する（実効公開のときのみ）。
 	if !RequirePageReadOrPublic(w, r, pageID) {
 		return
@@ -505,9 +513,12 @@ func DataFileHandler(w http.ResponseWriter, r *http.Request) {
 	// URLの `/data/master` は名前で、置き場所ではありません——データの場所（WCMS_DATA_DIR・
 	// 既定 data）の下の master へ読み替えます（2026-10-14）。parts は path.Clean 済みなので `..` を含みません。
 	fp := filepath.Join(append([]string{MasterDir()}, parts[2:]...)...)
-	if fi, err := os.Stat(fp); err == nil {
-		setAttachmentCache(w, r, fi)
+	fi, err := os.Stat(fp)
+	if err != nil || !fi.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
 	}
+	setAttachmentCache(w, r, fi)
 	http.ServeFile(w, r, fp)
 }
 
@@ -575,7 +586,7 @@ func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name s
 	}
 	fp := filepath.Join(AttachmentDir(pageID), name)
 	fi, err := os.Stat(fp)
-	if err != nil {
+	if err != nil || !fi.Mode().IsRegular() {
 		notFound(w, r)
 		return
 	}
