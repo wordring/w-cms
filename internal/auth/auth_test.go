@@ -259,3 +259,35 @@ func TestLoginLockoutPerAddress(t *testing.T) {
 		t.Errorf("ロックアウトが明けません: %v", err)
 	}
 }
+
+// TestLoginNameWithControlCharsCannotLockOthers は、名前に制御文字（NUL）を入れたログインが、ほかの人の「名前と接続元の組」の
+// 鍵を数え上げられないことと、IPv6 は /64 でまとめて数えることを固定します（2026-10-27 の見直し）。
+func TestLoginNameWithControlCharsCannotLockOthers(t *testing.T) {
+	setupAuthDB(t)
+	if err := CreateUser("boss", "right-pass", true, ""); err != nil {
+		t.Fatal(err)
+	}
+	nul := string([]byte{0})
+	for i := 0; i < maxFailBeforeLock+2; i++ {
+		advanceClock(30 * time.Second)
+		if _, err := AuthenticateFrom("boss"+nul+"192.168.1.2", "wrong", "203.0.113.9"); err == nil {
+			t.Fatal("制御文字の名前で入れました")
+		}
+	}
+	advanceClock(30 * time.Second)
+	if _, err := AuthenticateFrom("boss", "right-pass", "192.168.1.2"); err != nil {
+		t.Errorf("⚠ 名前に NUL を入れた失敗で、事務所の管理者が止められました: %v", err)
+	}
+	// IPv6 は /64 でまとめる——同じ /64 の中で住所を替えても、同じ接続元として止まる。
+	for i := 0; i < maxFailPerAddr; i++ {
+		advanceClock(30 * time.Second)
+		AuthenticateFrom("ghost"+string(rune('a'+i)), "wrong", "2001:db8:1:2::"+string(rune('a'+i%6)))
+	}
+	advanceClock(30 * time.Second)
+	if _, err := AuthenticateFrom("boss", "right-pass", "2001:db8:1:2::ffff"); err != ErrLockedOut {
+		t.Errorf("⚠ 同じ /64 の中で住所を替えた試しが止まっていません: %v", err)
+	}
+	if _, err := AuthenticateFrom("boss", "right-pass", "2001:db8:1:3::1"); err != nil {
+		t.Errorf("ほかの /64 まで止まりました: %v", err)
+	}
+}

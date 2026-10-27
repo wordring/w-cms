@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"net/netip"
 	"os"
 	"sync"
 	"time"
+	"unicode"
 
 	"w-cms/internal/database"
 )
@@ -83,8 +85,16 @@ func Authenticate(username, password string) (*User, error) {
 func AuthenticateFrom(username, password, ip string) (*User, error) {
 	// 同じ名前の試行は1つずつ通す——確かめ（0.3〜0.5秒）のあいだに並べて送ると、待ちとロックアウトを
 	// 4つずつ抜けられた（2026-10-22 の見直し）。
+	// ⚠ 名前に制御文字（\x00 など）があれば、確かめも数えもせずに断る（2026-10-27 の見直し）。失敗を数える鍵は \x00 で
+	// 区切るので、名前に \x00 を入れると、ほかの人の「名前と接続元の組」の鍵と同じ文字列になり、社外から管理者のログインを
+	// 止められた。作れる名前（badUsername）に制御文字は無いので、正しい人が困ることは無い。
+	for _, c := range username {
+		if unicode.IsControl(c) {
+			return nil, ErrAuthFailed
+		}
+	}
 	defer lockLoginName(username)()
-	keys := attemptKeysFor(username, ip)
+	keys := attemptKeysFor(username, attemptAddr(ip))
 	if keys.lockedOut() {
 		return nil, ErrLockedOut
 	}
@@ -253,6 +263,20 @@ type attemptKeys struct {
 	pair string // 名前と接続元の組（接続元が分からなければ名前）——バックオフと5回のロックアウト
 	addr string // 接続元（空なら数えない）——20回
 	name string // 名前（接続元が分からなければ空——pair が名前なので）——50回
+}
+
+// attemptAddr は、接続元ごとに数える住所です。IPv6 は前の 64 ビット（/64）でまとめる——1つの回線は /64 を丸ごと持つので、
+// 住所を替えながら送れば数えられずに済んだ（2026-10-27 の見直し）。
+func attemptAddr(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil || !a.Is6() || a.Is4In6() {
+		return ip
+	}
+	p, err := a.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
 }
 
 func attemptKeysFor(username, ip string) attemptKeys {
