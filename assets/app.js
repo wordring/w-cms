@@ -567,6 +567,14 @@
             }
             currentUserIsAdmin = !!me.is_admin;
             currentUsername = me.username || '';
+            // この端末で前に入っていた人と違えば、前の人の写し（アンドゥ・絞り込みの値など）を捨てる（2026-10-27 の見直し）。
+            try {
+                const prevWho = localStorage.getItem('wcms.who');
+                if (prevWho !== null && prevWho !== currentUsername && typeof window.wcmsClearPerUserState === 'function') {
+                    window.wcmsClearPerUserState();
+                }
+                localStorage.setItem('wcms.who', currentUsername);
+            } catch (e) { /* 憶えられない環境——捨てる仕組みが効かないだけ */ }
             document.getElementById('w-user-bar').textContent =
                 '👤 ' + me.username + (me.is_admin ? '（管理者）' : '');
             if (me.is_admin) setHidden(document.getElementById('w-admin-link'), false);
@@ -583,14 +591,9 @@
             try { await window.wcmsBeforeLogout(); } catch (e) {}
         }
         try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
-        // このタブのアンドゥの記録（sessionStorage の wcms.undo.<ページ>）を捨てる——共用の PC で、次にこのタブで入った人に
-        // 前の人の書きかけの写しが残らないように（2026-10-26）。
-        try {
-            for (let i = sessionStorage.length - 1; i >= 0; i--) {
-                const k = sessionStorage.key(i);
-                if (k && k.indexOf('wcms.undo.') === 0) sessionStorage.removeItem(k);
-            }
-        } catch (e) {}
+        // このタブのアンドゥの記録と、この端末に憶えた絞り込みの値などを捨てる——共用の PC で、次に入った人に前の人の
+        // 写しが残らないように（2026-10-26・2026-10-27 から session.js の wcmsClearPerUserState にまとめた）。
+        if (typeof window.wcmsClearPerUserState === 'function') window.wcmsClearPerUserState();
         window.location.href = '/login';
     }
 

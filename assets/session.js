@@ -131,6 +131,25 @@
         return '/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash);
     }
 
+    // clearPerUserState は、この端末に残した、その人の操作の写しを捨てます（2026-10-27 の見直し）。共用の PC で、次にこの
+    // タブ・この端末で入った人に、前の人のものが見えないように——
+    //   - このタブのアンドゥの記録（sessionStorage の wcms.undo.<ページ>・ブロックの変更前と変更後の HTML）
+    //   - 物ごとに憶えた開閉と絞り込みの欄（localStorage の wcms.view——社名などの値が入る）・表を探す画面の最後の表
+    // ログアウトの押しボタン（app.js）・切れてログインへ移るとき・別の人が入ったと分かったとき（app.js の loadMe）に呼ぶ。
+    function clearPerUserState() {
+        try {
+            for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                const k = sessionStorage.key(i);
+                if (k && k.indexOf('wcms.undo.') === 0) sessionStorage.removeItem(k);
+            }
+        } catch (e) {}
+        try {
+            localStorage.removeItem('wcms.view');
+            localStorage.removeItem('w-tables-last');
+        } catch (e) {}
+    }
+    window.wcmsClearPerUserState = clearPerUserState;
+
     // expired は切れたとき——ログインへ。書きかけがあればその場に残して知らせる。
     function expired() {
         if (ended) return;
@@ -138,6 +157,7 @@
         clearTimeout(timer);
         hideBar();
         if (!hasUnsaved()) {
+            clearPerUserState(); // 切れてログインへ移るときも、前の人の写しを残さない（2026-10-27 の見直し）
             location.href = loginURL();
             return;
         }
