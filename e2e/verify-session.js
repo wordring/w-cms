@@ -46,6 +46,13 @@ const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
     // ②〜④: 答えを差し替える。state で返すものを切り替える。
     let state = 'near';
     let posted = 0;
+    // ページに埋めた最初の答え（#w-boot-data・2026-10-27・internal/cms/boot_data.go）を外して開く——session.js は最初の1回だけ
+    // 埋めた本物の答え（残り8時間）を使うので、外さないと下の差し替えが最初に効かない。
+    await page.route((u) => /^\/\d{6}$/.test(u.pathname), async (route) => {
+      const res = await route.fetch();
+      const body = (await res.text()).replace(/<script type="application\/json" id="w-boot-data">[\s\S]*?<\/script>/, '');
+      return route.fulfill({ response: res, body });
+    });
     await page.route('**/api/session', async (route) => {
       const req = route.request();
       if (req.method() === 'POST') { posted++; state = 'far'; return route.fulfill({ status: 204, body: '' }); }
