@@ -126,8 +126,10 @@ func ensurePhotoView(conf PhotoViewSettings, pageID, name, origPath, ver string)
 	if err := os.MkdirAll(filepath.Dir(img), 0o755); err != nil {
 		return "", err
 	}
-	// 同じ写真の古い版の写しを消す。
-	if ents, err := os.ReadDir(filepath.Dir(img)); err == nil {
+	// 同じ写真の古い版の写しを消す。⚠ 縮めているあいだに元が上書きされていたら、自分が古い版なので、ほかを消さない（2026-10-27 の見直し）。
+	if fi, err := os.Stat(origPath); err != nil || page.AttachmentVersion(fi) != ver {
+		// 消さずに進む（自分の写しは、新しい版の写しが作られたときに消える）。
+	} else if ents, err := os.ReadDir(filepath.Dir(img)); err == nil {
 		for _, e := range ents {
 			if strings.HasPrefix(e.Name(), name+".") && !strings.HasPrefix(e.Name(), name+"."+ver+".") {
 				os.Remove(filepath.Join(filepath.Dir(img), e.Name()))

@@ -38,7 +38,9 @@ const assetDir = "assets"
 // 拾った名簿から引きます。外へ出る住所（..）・無いファイルは false。
 func assetDiskPath(urlPath string) (string, bool) {
 	p := path.Clean(urlPath)
-	if !strings.HasPrefix(p, "/assets/") {
+	// 逆スラッシュは断る——Windows（家の開発機）では区切りとして読まれ、`..\` で assets/ の外の HTML を読めた
+	// （2026-10-27 の見直し・http.Dir も同じ理由で断る）。
+	if !strings.HasPrefix(p, "/assets/") || strings.ContainsRune(p, '\\') {
 		return "", false
 	}
 	if strings.HasPrefix(p, ExtScriptPrefix) {

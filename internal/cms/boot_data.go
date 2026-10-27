@@ -15,7 +15,7 @@ package cms
 //     問い合わせたときと同じになるように——別に組み立てると、片方だけ直して食い違う。
 //   - 埋めるのは GET で、200 で JSON（として読めるもの）を返したものだけ。失敗したものは埋めない（画面がいつもどおり問い合わせる）。
 //   - ⚠ `<script type="application/json">` はデータで、実行されません（CSP の script-src に当たらない）。中の `<` は
-//     `<` にして、`</script>` で閉じられないようにします。
+//     `\u003c` にして、`</script>` で閉じられないようにします。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -114,7 +114,9 @@ func bootDataHTML(r *http.Request, pageID string) string {
 	if err != nil {
 		return ""
 	}
-	// json.Marshal は < > & を < などにするが、念のため `<` は必ず消す（`</script>` で閉じられないように）。
-	s := strings.ReplaceAll(string(b), "<", `<`)
+	// json.Marshal は < > & を \u003c などにするが、念のため `<` は必ず消す（`</script>` で閉じられないように）。
+	// ⚠ 2026-10-27 の見直しまで、ここは `<` を `<` に替える（何もしない）形になっていた（書いたときに `\u003c` の逆スラッシュが
+	// 落ちた）。json.Marshal が文字列の中の `<` を替えていたので、`</script>` で閉じられることはなかった。
+	s := strings.ReplaceAll(string(b), "<", `\u003c`) // ⚠ `\u003c`（6文字）——書き換えの道具が `<` に戻すことがある。直したら od -c で確かめる
 	return `<script type="application/json" id="w-boot-data">` + s + `</script>`
 }

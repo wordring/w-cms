@@ -221,7 +221,11 @@ func drawPDFPages(conf PDFPagesSettings, pdfPath, pageID, name, ver, dir string,
 		return
 	}
 	ok = true
-	// 同じ PDF の古い版の絵を消す。
+	// 同じ PDF の古い版の絵を消す。⚠ 描いているあいだに PDF が上書きされていたら、自分が古い版なので、ほかを消さない
+	// （新しい版の絵を「古い」として消していた・2026-10-27 の見直し）。自分の絵は、新しい版の絵が描けたときに消える。
+	if fi, err := os.Stat(pdfPath); err != nil || page.AttachmentVersion(fi) != ver {
+		return
+	}
 	parent := filepath.Dir(dir)
 	if ents, err := os.ReadDir(parent); err == nil {
 		for _, e := range ents {
