@@ -13,7 +13,7 @@
 //
 // 使い方（リポジトリの根で）:
 //
-//	set -a; . ~/OneDrive/デスクトップ/w-cms/秘密の設定/w-cms.env; set +a
+//	set -a; . ~/.w-cms/w-cms.env; set +a
 //	go run ./tools/mail/fetch                  # 受信と送信を全部（新しいものから）
 //	go run ./tools/mail/fetch -max 100         # 1つの箱につき100通まで（残りは次の回）
 //	go run ./tools/mail/fetch -since 2025-01-01
