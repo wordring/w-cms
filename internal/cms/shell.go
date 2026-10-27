@@ -37,7 +37,19 @@ const (
 	// titlePlaceholder は差し替える既定のタイトル要素です。
 	// index.html を単体で開いても壊れないよう、実在するタイトルをそのまま目印にします。
 	titlePlaceholder = "<title>w-cms エディタ</title>"
+
+	// siteNamePlaceholder は画面の左上のサイトの名前です（2026-10-27）。
+	siteNamePlaceholder = `<h1 class="title">w-cms Wiki Editor</h1>`
 )
+
+// siteName は、環境変数 WCMS_SITE_NAME に書いたサイトの名前です（2026-10-27・空ならいままでどおり）。
+// 画面の左上の名前と、タブの題の末尾（「ページの題 - 名前」）に使います。動いている w-cms ごとの値なので、
+// Git の設定（config/settings.json）ではなく環境変数に置きます——本番と試験用で名前を変えられるように。
+//
+// 利用者:「本番サーバーのw-cmsページのタイトルをw-cms Wiki Editorから板金部に変えます」
+func siteName() string {
+	return strings.TrimSpace(os.Getenv("WCMS_SITE_NAME"))
+}
 
 // shellFile は殻HTMLの読み込み口です。mtime を見て変化時だけ読み直すため、
 // 開発中に殻を編集しても再起動なしで反映されます。編集用と公開用の2枚
@@ -97,9 +109,14 @@ func RenderPageShell(bodyHTML, breadcrumbHTML, title string) (string, error) {
 	out = strings.Replace(out, extScriptsPlaceholder, extScriptTags(), 1) // 拡張の画面の JS（ext_scripts.go）
 	out = strings.Replace(out, extStylesPlaceholder, extStyleTags(), 1)   // 拡張の画面の CSS（同じ）
 
+	suffix := "w-cms"
+	if name := siteName(); name != "" {
+		suffix = name
+		out = strings.Replace(out, siteNamePlaceholder, `<h1 class="title">`+html.EscapeString(name)+`</h1>`, 1)
+	}
 	if t := strings.TrimSpace(title); t != "" {
 		out = strings.Replace(out, titlePlaceholder,
-			"<title>"+html.EscapeString(t)+" - w-cms</title>", 1)
+			"<title>"+html.EscapeString(t)+" - "+html.EscapeString(suffix)+"</title>", 1)
 	}
 	return out, nil
 }
