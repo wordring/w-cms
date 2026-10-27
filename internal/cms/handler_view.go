@@ -134,6 +134,10 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	if slash := strings.IndexByte(id, '/'); slash > 0 {
 		pid, name := id[:slash], id[slash+1:]
 		if norm, ok := page.NormalizeID(pid); ok && isCanonicalPageID(pid) {
+			if r.URL.Query().Has("pdfpage") {
+				ServePDFPage(w, r, norm, name) // PDF の1ページの絵（2026-10-27・pdf_pages.go）
+				return
+			}
 			page.ServeCleanAttachment(w, r, norm, name, pageNotFound)
 			return
 		}

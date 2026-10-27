@@ -254,3 +254,7 @@ body.public {
     margin: 0;
 }
 .public-content section[data-type="carousel"] img { display: block; max-width: 100%; max-height: min(40vh, 260px); width: auto; height: auto; object-fit: contain; }
+
+/* PDF を絵にして見せる枠（2026-10-27・internal/cms/pdf_pages.go）。公開ページでは高さを決めずに、ページの絵をそのまま縦に並べる。 */
+.public-content .file-view-page { display: block; width: 100%; height: auto; border: 1px solid #ddd; margin-bottom: 8px; }
+.public-content .file-view-pages-more { font-size: 0.85em; color: #666; }

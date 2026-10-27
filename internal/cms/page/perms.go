@@ -625,6 +625,12 @@ func setAttachmentCache(w http.ResponseWriter, r *http.Request, fi os.FileInfo) 
 	w.Header().Set("Cache-Control", "private, no-cache")
 }
 
+// SetAttachmentCache は、添付から作ったもの（PDF の絵——cms の pdf_pages.go）の応答に、元の添付 fi と同じ残し方を付けます。
+// 住所の ?v= は元の添付の版の印です。
+func SetAttachmentCache(w http.ResponseWriter, r *http.Request, fi os.FileInfo) {
+	setAttachmentCache(w, r, fi)
+}
+
 // PublicCacheSeconds は、ログインしていない訪問者への公開の応答（ページ・添付・sitemap.xml・robots.txt）を取っておかせてよい
 // 秒数です（10分・2026-08-21 利用者:「キャッシュにとって必要な時間を知りませんが、10分程度でどうでしょう？」）。
 // 公開⇄非公開の切り替えが外から見えるまでの遅れでもあります。cms の publicCacheSeconds はこの値です。

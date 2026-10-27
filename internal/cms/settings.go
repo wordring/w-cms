@@ -182,6 +182,9 @@ type Settings struct {
 
 	// PhotoShrink は写真（JPEG）を小さくするときの大きさです（2026-10-27・photo_shrink.go）。無ければ縮めません。
 	PhotoShrink *PhotoShrinkSettings `json:"photo_shrink,omitempty"`
+
+	// PDFPages は PDF を絵にして見せるときの道具と大きさです（2026-10-27・pdf_pages.go）。無ければ埋め込みのまま。
+	PDFPages *PDFPagesSettings `json:"pdf_pages,omitempty"`
 }
 
 // settings は読み込み済みの設定です。**nil のあいだは設定が空のものとして振る舞います**
@@ -401,6 +404,9 @@ func (s Settings) validate(path string) error {
 		return err
 	}
 	if err := validatePhotoShrink(path, s.PhotoShrink); err != nil {
+		return err
+	}
+	if err := validatePDFPages(path, s.PDFPages); err != nil {
 		return err
 	}
 	if s.MaxUploadMiB < 0 {

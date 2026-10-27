@@ -153,7 +153,14 @@ func renderFileView(ctx *MirrorContext, el *html.Node) (bool, error) {
 		appendChrome(el, fileViewSlideHTML(refPage, blockID, fileName, url, kind))
 		return false, nil
 	}
-	appendChrome(el, fileViewInnerHTML(refPage, blockID, fileName, url, kind))
+	pdf := ""
+	if kind == kindPDF {
+		// PDF は、描いた絵があれば絵を並べる（pdf_pages.go）。まだ・描けなければ、いままでどおり埋め込む。
+		if res, ver, ok := PDFPagesFor(refPage, url[strings.LastIndexByte(url, '/')+1:], ctx.pdfWait()); ok {
+			pdf = pdfPagesHTML(url, fileName, ver, res)
+		}
+	}
+	appendChrome(el, fileViewInnerHTML(refPage, blockID, fileName, url, kind, pdf))
 	// 中身はサーバーの所有物なので、その先へは配らない。
 	return false, nil
 }
@@ -261,7 +268,8 @@ func attachmentURLFor(user *auth.User, pageID, blockID string) (url, fileName st
 
 // fileViewInnerHTML は枠のHTMLを組みます。**サニタイズの後に足すので、自前で
 // エスケープの責任を負います**（RenderComputedViews と同じ規律）。
-func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind) string {
+// pdfPages は PDF の絵を並べた中身（pdfPagesHTML）です。空なら PDF を埋め込みます。
+func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind, pdfPages string) string {
 	// 出どころの1行。押すと元の添付のあるページへ飛びます。
 	ref := stdhtml.EscapeString(pageID + "-" + blockID)
 	name := stdhtml.EscapeString(fileName)
@@ -303,6 +311,10 @@ func fileViewInnerHTML(pageID, blockID, fileName, url string, kind fileViewKind)
 	var body string
 	switch kind {
 	case kindPDF:
+		if pdfPages != "" {
+			body = pdfPages
+			break
+		}
 		// **サムネイル欄を閉じ、幅に合わせて開きます**（2026-09-10）。既定の23%だと
 		// 左のサムネイル欄と黒い余白が枠の3/4を占め、図面を見に来た人の邪魔になります。
 		// **ツールバーは残します**——印刷・ダウンロード・回転はここにしかありません

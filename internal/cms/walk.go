@@ -41,6 +41,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 
@@ -140,6 +141,21 @@ type MirrorContext struct {
 	DB     ReadOnlyDB
 	Viewer *auth.User // 見せ分け（読めないページ由来の行を落とす）はここで効かせる
 	PageID int
+
+	// pdfWaitUntil は、この1回の描き方で PDF の絵（pdf_pages.go）を待ってよい時刻です（初めて PDF を描くときに決める）。
+	// PDF が多いページで、待ち時間が積み重ならないように（2026-10-27）。
+	pdfWaitUntil time.Time
+}
+
+// pdfWait は、いまから PDF の絵を待ってよい長さです。
+func (c *MirrorContext) pdfWait() time.Duration {
+	if c.pdfWaitUntil.IsZero() {
+		c.pdfWaitUntil = time.Now().Add(pdfPagesWait)
+	}
+	if d := time.Until(c.pdfWaitUntil); d > 0 {
+		return d
+	}
+	return 0
 }
 
 // Replace は el を nodes で置き換えます（鏡型）。

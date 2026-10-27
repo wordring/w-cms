@@ -175,6 +175,11 @@
     "long_side": 2000,
     "quality": 85
   },
+  "pdf_pages": {
+    "tool": "mutool",
+    "width": 1600,
+    "max_pages": 20
+  },
   "autocomplete": {
     "min_value_count": 2,
     "min_share": 0.8,

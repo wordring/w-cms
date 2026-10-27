@@ -29,9 +29,16 @@ func repoSettingsPath() string {
 func loadRepoSettings() error { return LoadSettingsFrom(repoSettingsPath()) }
 
 func TestMain(m *testing.M) {
+	// PDF を描く道具の代わりに呼ばれたとき（pdf_pages_test.go）は、試験を走らせずに道具として振る舞う。
+	if os.Getenv(fakeMutoolEnv) == "1" {
+		os.Exit(fakeMutool(os.Args[1:]))
+	}
 	if err := loadRepoSettings(); err != nil {
 		// 設定が読めないなら、ほとんどのテストは意味を成しません。
 		panic("テストの設定を読み込めません: " + err.Error())
 	}
+	// PDF を絵にする設定（pdf_pages）は外しておく——その機械に mutool があるかで、ほかの試験の結果が変わらないように。
+	// 試すときは pdf_pages_test.go が当てる。
+	settings.PDFPages = nil
 	os.Exit(m.Run())
 }

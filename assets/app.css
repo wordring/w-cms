@@ -1550,6 +1550,28 @@ body[edit-mode] #w-editor-content section[data-mirror]:empty::before {
     border: 1px solid var(--border);
     border-radius: var(--radius);
 }
+/* PDF を絵にして見せる枠（2026-10-27・internal/cms/pdf_pages.go）。埋め込みと同じ高さの枠の中で、ページの絵を縦に並べて
+   巻物のように送る。絵を押すと本物の PDF を新しいタブで開く。 */
+#w-editor-content .file-view-pages {
+    overflow-y: auto;
+    background: var(--bg-subtle, #f4f4f4);
+}
+#w-editor-content .file-view-pages-link {
+    display: block;
+    cursor: zoom-in;
+}
+#w-editor-content .file-view-page {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+}
+#w-editor-content .file-view-pages-more {
+    margin: 6px 10px;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
 /* 描けない形式（DXF・Excel・ZIP など）の枠。**開く口だけ**なので、
    PDFや画像のように高さを取らない（2026-09-15）。 */
 #w-editor-content .file-view-plain {
