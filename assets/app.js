@@ -2908,6 +2908,48 @@
         return skipped;
     }
 
+    // ── 鏡の中身だけの描き直し（2026-10-28）──────────────────────────────────────
+    // 利用者:「再描画でスクロールしたり、開いていたパネルが閉じたりしないなら、描き直してください。」
+    // サーバーが「鏡の中身だけが変わった」（{type:"views"}・cms.NotifyViewsChanged）と知らせたら、閲覧の描き方で読み直し、本文の鏡の印
+    // （section[data-mirror]）の中の .vocab-chrome だけを差し替える。本文のブロック・スクロール・左右の欄・ほかのブロックには触らない。
+    // 鏡の中で入力中（欄にキャレットがある・欄を書き換えた）なら、その鏡は描き直さず、少し待ってからもう一度見る。
+    let viewsTimer = null;
+    function scheduleViewsRefresh(wait) {
+        clearTimeout(viewsTimer);
+        viewsTimer = setTimeout(refreshViews, wait || 300);
+    }
+    async function refreshViews() {
+        viewsTimer = null;
+        const live = Array.from(document.querySelectorAll('#w-editor-content section[data-mirror]'));
+        if (!live.length) return;
+        let html;
+        try {
+            // 知らせを受けて自動に読む——操作ではない（セッションを延ばさない）。
+            const res = await fetch('/api/load?id=' + currentPageId + '&view=1', { headers: BG_HEADERS });
+            if (!res.ok) return;
+            html = await res.text();
+        } catch (e) { return; }
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        let busy = false, touched = false;
+        live.forEach(sec => {
+            const id = sec.getAttribute(BLOCK_ID_ATTR);
+            if (!id) return;
+            const fresh = Array.from(doc.querySelectorAll('section[data-mirror]')).find(s => s.getAttribute(BLOCK_ID_ATTR) === id);
+            if (!fresh) return;
+            const oldChrome = Array.from(sec.children).filter(c => c.classList.contains('vocab-chrome'));
+            if (oldChrome.some(blockIsBusy)) { busy = true; return; }
+            const newChrome = Array.from(fresh.children).filter(c => c.classList.contains('vocab-chrome'));
+            oldChrome.forEach(c => c.remove());
+            newChrome.forEach(c => sec.appendChild(document.importNode(c, true)));
+            touched = true;
+        });
+        if (touched) {
+            decorateVocabBlocks();
+            runChromeHooks(); // 拡張のボタンの配線（描き直した中身の）
+        }
+        if (busy) scheduleViewsRefresh(5000);
+    }
+
     // schedulePageCheck は知らせを受けて、少し待ってから読み直す（続けて来たら待ち直す・長くても PAGE_CHECK_MAX_MS）。
     function schedulePageCheck(by) {
         if (by) pageUpdateBy = by;
@@ -3038,6 +3080,8 @@
             if (ev.type === 'presence') { othersPresence = ev.presence || []; renderPresence(); return; }
             if (ev.type === 'hello') { othersPresence = ev.presence || []; renderPresence(); presenceSent = null; updatePresence(true); }
             if (ev.type === 'updated' && ev.tab === TAB_ID) return; // このタブ自身の保存
+            // 鏡の中身だけが変わった（本文は同じ・2026-10-28）——どちらの形でも、鏡の中身だけをその場で描き直す。
+            if (ev.type === 'views') { scheduleViewsRefresh(); return; }
             if (document.body.hasAttribute('edit-mode')) {
                 // 書ける形では、ほかの人（業務のボタンを含む）の書き込みをその場で受け取る。少し待つのは相手の保存が続くあいだ。
                 // 書いている最中のブロックは送らず、相手の版も受け取らない——並べるのは去って送ったとき（2026-10-12 昼。

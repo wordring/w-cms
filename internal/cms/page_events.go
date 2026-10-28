@@ -51,7 +51,7 @@ import (
 
 // pageEvent は購読者へ送る1件です。
 type pageEvent struct {
-	Type      string `json:"type"` // hello（つないだ直後）・updated（本文が書き換わった）・presence（キャレットの場所——2026-10-12 昼）
+	Type      string `json:"type"` // hello（つないだ直後）・updated（本文が書き換わった）・presence（キャレットの場所——2026-10-12 昼）・views（鏡の中身だけが変わった——2026-10-28）
 	By        string `json:"by,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 	// Tab は書いたタブ（2026-10-12）——書ける形のタブは自分の保存の知らせを受けても読み直さない。
@@ -175,6 +175,18 @@ func (p *pageWatchers) publish(id string, ev pageEvent) {
 // 購読の鍵と揃えるため、id はゼロ詰め6桁へ畳んでから配ります。
 func notifyPageUpdated(id, by, updatedAt string) {
 	notifyPageUpdatedFrom(id, by, "", updatedAt)
+}
+
+// NotifyViewsChanged は、そのページの鏡（計算ビュー）の中身だけが変わったことを、開いているタブへ知らせます（2026-10-28）。
+// 本文は変わらないので、画面は鏡の中身だけをその場で描き直します（スクロールや開いている欄は動かさない）。
+// 拡張が、そのページの本文を書かずに、鏡が描くもとのデータを変えたときに呼びます。
+//
+// > 2026-10-28 利用者:「再描画でスクロールしたり、開いていたパネルが閉じたりしないなら、描き直してください。」
+func NotifyViewsChanged(id string) {
+	if norm, ok := page.NormalizeID(id); ok {
+		id = norm
+	}
+	watchers.publish(id, pageEvent{Type: "views"})
 }
 
 // notifyPageUpdatedFrom は書いたタブを添えて知らせます（/api/sync——2026-10-12）。

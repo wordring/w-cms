@@ -198,6 +198,7 @@ func MachineCallAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		auth.Audit(user.Username, "intake.call.ring", m.ID)
+		cms.NotifyViewsChanged(boxID) // 開いている通信箱を描き直す（2026-10-28 利用者:「再描画でスクロールしたり、開いていたパネルが閉じたりしないなら、描き直してください。」）
 		cms.WriteJSON(w, map[string]any{"success": true, "id": m.ID})
 	default:
 		cms.JSONFail(w, http.StatusBadRequest, "event は answered・hangup・missed のどれかです")

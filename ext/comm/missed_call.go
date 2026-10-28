@@ -232,6 +232,9 @@ func MissedCallMakeAPIHandler(w http.ResponseWriter, r *http.Request) {
 		m.PageID, m.MadeBy, made, title = id, user.Username, id, t
 		return nil
 	})
+	if title != "" {
+		cms.NotifyViewsChanged(boxID) // 開いている通信箱から、この行を消す
+	}
 	if made != "" {
 		if title != "" {
 			auth.Audit(user.Username, "intake.call.missed", made+" ("+digitsOf(m.Number)+")")
@@ -269,7 +272,9 @@ func MissedCallDismissAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := updateMissed(strings.TrimSpace(req.ID), func(m *MissedCall) error {
 		m.Dismissed, m.By = true, user.Username
 		return nil
-	}); err != nil {
+	}); err == nil {
+		cms.NotifyViewsChanged(boxID) // 開いているほかの通信箱からも、この行を消す
+	} else {
 		code := http.StatusInternalServerError
 		if errors.Is(err, errMissedNotFound) {
 			code = http.StatusNotFound
@@ -280,7 +285,7 @@ func MissedCallDismissAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true})
 }
 
-// missedRowHTML は、出ていない着信1つを通信箱の未処理の表の1行にします（2026-10-28——はじめは別の表にしていたが、
+// missedRowHTML は、出ていない着信1つを通信箱の未処理の表の1行にします（ボタンは「記録」「不要」——2026-10-28 利用者:「記録にすると外すボタンを記録と不要に変えてください」）（2026-10-28——はじめは別の表にしていたが、
 // 利用者:「出てましたが、違う表なので気が付きませんでした」）。選ぶ升目は付けない（「済」「不要」のまとめての対象ではない）。
 func missedRowHTML(user *auth.User, m MissedCall) string {
 	who := ""
@@ -293,6 +298,11 @@ func missedRowHTML(user *auth.User, m MissedCall) string {
 	} else {
 		who = "番号なし"
 	}
+	// 名前は短く（未処理のほかの行と同じ）、電話番号は切らない（2026-10-28 利用者:「電話番号が省略されていますが、もう少し文字数が在っても良いと思います」——11桁まで）。
+	shown := ellipsize(who, unhandledFromMax)
+	if who == digitsOf(m.Number) {
+		shown = ellipsize(who, 15)
+	}
 	ring := ""
 	if m.RingSec > 0 {
 		ring = "呼び出し " + strconv.Itoa(m.RingSec) + "秒"
@@ -302,11 +312,11 @@ func missedRowHTML(user *auth.User, m MissedCall) string {
 		`<td class="vocab-chrome unhandled-pick"></td>` +
 		`<td class="unhandled-channel">` + channelWithDirection(ChannelPhone, DirectionIn) + `</td>` +
 		`<td class="unhandled-when">` + stdhtml.EscapeString(shortTime(m.At)) + `</td>` +
-		`<td class="unhandled-from" title="` + stdhtml.EscapeString(digitsOf(m.Number)) + `">` + stdhtml.EscapeString(ellipsize(who, unhandledFromMax)) + `</td>` +
-		`<td class="unhandled-subject"><span class="unhandled-missed" title="出る前に鳴りやんだ着信です（携帯へ転送して出た電話も、こう見えます）。要るものは「記録にする」で電話の記録のページにします">☎ 出ていない着信</span> ` +
+		`<td class="unhandled-from" title="` + stdhtml.EscapeString(digitsOf(m.Number)) + `">` + stdhtml.EscapeString(shown) + `</td>` +
+		`<td class="unhandled-subject"><span class="unhandled-missed" title="出る前に鳴りやんだ着信です（携帯へ転送して出た電話も、こう見えます）。要るものは「記録」で電話の記録のページにします">☎ 出ていない着信</span> ` +
 		stdhtml.EscapeString(ring) + `</td>` +
 		`<td class="vocab-chrome unhandled-act">` +
-		`<button type="button" class="chip-btn missed-make" data-missed-id="` + id + `" title="電話の記録のページを作って開きます">記録にする</button>` +
-		`<button type="button" class="chip-btn unhandled-skip missed-dismiss" data-missed-id="` + id + `" title="一覧から外します（履歴には残ります）">外す</button></td>` +
+		`<button type="button" class="chip-btn missed-make" data-missed-id="` + id + `" title="電話の記録のページを作って開きます">記録</button>` +
+		`<button type="button" class="chip-btn unhandled-skip missed-dismiss" data-missed-id="` + id + `" title="記録にせず、一覧から外します（履歴には残ります）">不要</button></td>` +
 		`</tr>`
 }

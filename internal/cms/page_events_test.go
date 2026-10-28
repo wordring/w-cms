@@ -283,3 +283,17 @@ func TestPageEventsNotifyFoldsID(t *testing.T) {
 		t.Errorf("知らせ = %+v", ev)
 	}
 }
+
+// TestNotifyViewsChanged は「鏡の中身だけが変わった」の知らせ（2026-10-28）を固定します——揺れた表記の ID でも、
+// そのページの購読に {type:"views"} が届き、ほかのページには届かない。
+func TestNotifyViewsChanged(t *testing.T) {
+	mine := watchers.subscribe("000061", pageWatcher{})
+	defer watchers.unsubscribe("000061", mine)
+	other := watchers.subscribe("000062", pageWatcher{})
+	defer watchers.unsubscribe("000062", other)
+	NotifyViewsChanged("61")
+	if ev := nextEvent(t, mine); ev.Type != "views" {
+		t.Errorf("知らせ = %+v（views のはず）", ev)
+	}
+	noEvent(t, other, "ほかのページを開いているタブ")
+}

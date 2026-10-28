@@ -8,6 +8,8 @@ package comm
 import (
 	"log"
 	"sync"
+
+	"w-cms/internal/cms"
 )
 
 // Arrival は届いた記録1つです。
@@ -31,6 +33,10 @@ func RegisterArrivalListener(fn func(Arrival)) {
 
 // NotifyArrival は、記録が届いたことを聞き手へ裏で知らせます（聞き手が落ちても入口は止めない）。
 func NotifyArrival(a Arrival) {
+	// 開いている通信箱の未処理の表を描き直す（届いた記録が並ぶ・2026-10-28——cms.NotifyViewsChanged）。
+	if box, ok := MailBoxPageID(); ok {
+		cms.NotifyViewsChanged(box)
+	}
 	arrivalListeners.Lock()
 	fns := append([]func(Arrival){}, arrivalListeners.fns...)
 	arrivalListeners.Unlock()

@@ -100,6 +100,23 @@ func TestMissedCallLogAndMake(t *testing.T) {
 	if strings.Count(view, "<table") != 1 {
 		t.Errorf("表が1つでない（別の表に出している）:\n%s", view)
 	}
+	// ボタンは「記録」「不要」（2026-10-28 利用者:「記録にすると外すボタンを記録と不要に変えてください」）。
+	if !strings.Contains(view, `title="電話の記録のページを作って開きます">記録</button>`) || !strings.Contains(view, `>不要</button>`) {
+		t.Errorf("ボタンの名前が違う:\n%s", view)
+	}
+	// 連絡帳に無い番号は、11桁でも切らない（利用者:「電話番号が省略されていますが、もう少し文字数が在っても良いと思います」）。
+	if code, _ := post(MachineCallAPIHandler, "/api/machine/call", map[string]any{"event": "missed", "number": "09012345678",
+		"at": time.Now().Format(time.RFC3339), "ended": time.Now().Format(time.RFC3339)}); code != http.StatusOK {
+		t.Fatalf("携帯の番号の出ていない着信を残せません: %d", code)
+	}
+	if v := inboxView(); !strings.Contains(v, `>09012345678</td>`) {
+		t.Errorf("11桁の番号を切っている:\n%s", v)
+	}
+	for _, m := range RecentMissedCalls() {
+		if m.Number == "09012345678" {
+			updateMissed(m.ID, func(m *MissedCall) error { m.Dismissed = true; return nil })
+		}
+	}
 
 	// 記録にする → 電話の記録のページ（着信の結果・呼び出し）
 	code, out := post(MissedCallMakeAPIHandler, "/api/phone/missed/make", map[string]any{"id": target.ID})
