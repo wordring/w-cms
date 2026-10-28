@@ -89,9 +89,16 @@ func TestMissedCallLogAndMake(t *testing.T) {
 	if all != 2 {
 		t.Errorf("送り直しで行が増えた: %d 行（2のはず）", all)
 	}
-	view := missedCallsHTML(u)
-	if !strings.Contains(view, "出ていない着信") || !strings.Contains(view, "非通知") || !strings.Contains(view, "missed-make") {
-		t.Errorf("一覧に出ていない:\n%s", view)
+	box, _ := MailBoxPageID()
+	inboxView := func() string { return unhandledViewHTML(u, atoiPage(box)) }
+	// 未処理の表の行として出る（別の表にしない——利用者:「出てましたが、違う表なので気が付きませんでした」）。
+	view := inboxView()
+	if strings.Count(view, `class="missed-row"`) < 1 || !strings.Contains(view, "非通知") || !strings.Contains(view, "missed-make") ||
+		!strings.Contains(view, `<table class="materials-table unhandled-table">`) || strings.Contains(view, "未処理はありません") {
+		t.Errorf("未処理の表に出ていない:\n%s", view)
+	}
+	if strings.Count(view, "<table") != 1 {
+		t.Errorf("表が1つでない（別の表に出している）:\n%s", view)
 	}
 
 	// 記録にする → 電話の記録のページ（着信の結果・呼び出し）
@@ -128,7 +135,7 @@ func TestMissedCallLogAndMake(t *testing.T) {
 	if code, _ := post(MissedCallDismissAPIHandler, "/api/phone/missed/dismiss", map[string]any{"id": other}); code != http.StatusOK {
 		t.Fatalf("外せません: %d", code)
 	}
-	if len(RecentMissedCalls()) != 0 || missedCallsHTML(u) != "" {
+	if len(RecentMissedCalls()) != 0 || strings.Contains(inboxView(), "missed-row") {
 		t.Errorf("外したのに一覧に残った")
 	}
 	if code, _ := post(MissedCallDismissAPIHandler, "/api/phone/missed/dismiss", map[string]any{"id": "nope"}); code != http.StatusNotFound {

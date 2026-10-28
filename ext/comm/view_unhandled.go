@@ -310,6 +310,17 @@ func channelIcon(channel string) string {
 // **タグの無い記録（メモ・社内案件）だけが UTC で出ていました**（2026-09-05 ユーザー指摘）。
 //
 // 読めない値はそのまま返します（捏造しない）。
+// isoTime は記録の時刻（RFC 3339 など shortTime と同じ形）を読みます（読めなければゼロ——いちばん古い扱い）。
+func isoTime(iso string) time.Time {
+	iso = strings.TrimSpace(iso)
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05Z07:00", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, iso); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 func shortTime(iso string) string {
 	iso = strings.TrimSpace(iso)
 	for _, layout := range []string{
@@ -365,14 +376,19 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 		return `<p class="view-error">未処理の一覧を作れませんでした。</p>`
 	}
 
+	// 出ていない着信（2026-10-28・missed_call.go）も、同じ表の行として時刻の順に混ぜる（利用者:「出てましたが、違う表なので気が付きませんでした」）。
+	missed := RecentMissedCalls()
+
 	var sb strings.Builder
-	sb.WriteString(`<h3 class="materials-title">📥 未処理（` +
-		strconv.Itoa(total) + `件）</h3>`)
+	head := `📥 未処理（` + strconv.Itoa(total) + `件）`
+	if len(missed) > 0 {
+		head = `📥 未処理（` + strconv.Itoa(total) + `件・出ていない着信 ` + strconv.Itoa(len(missed)) + `件）`
+	}
+	sb.WriteString(`<h3 class="materials-title">` + head + `</h3>`)
 	// **記録を作る口は、一覧が空でも出します。** 片付いた日にボタンごと消えると、
 	// 電話が鳴ったときに置き場所が見つかりません。
 	sb.WriteString(newRecordChromeHTML())
-	sb.WriteString(missedCallsHTML(user)) // 出ていない着信（2026-10-28・missed_call.go——押したら記録のページにする）
-	if total == 0 {
+	if total == 0 && len(missed) == 0 {
 		sb.WriteString(`<p class="child-list-empty">未処理はありません</p>`)
 		return sb.String()
 	}
@@ -383,7 +399,12 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 	}
 	sb.WriteString(`<table class="materials-table unhandled-table"><tbody>`)
 	names := map[string]string{} // 同じ相手を何度も引かない（この描画の中だけの控え）
+	mi := 0
 	for _, r := range rows {
+		// この行より新しい出ていない着信を、先に並べる。
+		for ; mi < len(missed) && !isoTime(missed[mi].At).Before(isoTime(r.Received)); mi++ {
+			sb.WriteString(missedRowHTML(user, missed[mi]))
+		}
 		id := stdhtml.EscapeString(r.PageID)
 		sb.WriteString(`<tr data-page-id="` + id + `">`)
 		// 選択の升目とボタンは**クローム**（本文ではない）。
@@ -423,6 +444,9 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 			`" data-value="` + HandledNotNeeded +
 			`" title="何も生まれない記録（案内・お礼など）。ここで終わりです">不要</button></td>`)
 		sb.WriteString(`</tr>`)
+	}
+	for ; mi < len(missed); mi++ {
+		sb.WriteString(missedRowHTML(user, missed[mi]))
 	}
 	sb.WriteString(`</tbody></table>`)
 	sb.WriteString(`<p class="vocab-chrome unhandled-bulk">` +

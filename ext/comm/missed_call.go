@@ -10,7 +10,7 @@ package comm
 //   - 電話の道具（cmd/w-cms-phone）は、出る前に鳴りやんだ着信を {event:"missed", number, at（鳴り始め）, ended（鳴りやみ）} で
 //     知らせます（machine_call.go）。ND6 には、携帯へ転送されたのか、相手が切ったのかは見分けられません。
 //   - ここでは**ページを作りません**。履歴（data/phone/missed.json）に1行残すだけです。
-//   - 通信箱の未処理の一覧の上に「☎ 出ていない着信」として並べ、人が「📝 記録にする」を押したときに初めて、電話の記録のページを
+//   - 通信箱の未処理の表に「☎ 出ていない着信」の行として時刻の順に混ぜ、人が「記録にする」を押したときに初めて、電話の記録のページを
 //     作ります（出た着信と同じ形・`着信の結果：出ていない`・`呼び出し`）。「✕ 外す」は一覧から外すだけです（履歴には残る）。
 //   - 履歴は 90 日・1000 件まで残します。
 // ─────────────────────────────────────────────────────────────────────────
@@ -280,43 +280,33 @@ func MissedCallDismissAPIHandler(w http.ResponseWriter, r *http.Request) {
 	cms.WriteJSON(w, map[string]any{"success": true})
 }
 
-// missedCallsHTML は通信箱の未処理の一覧の上に出す「☎ 出ていない着信」です（無ければ空）。
-func missedCallsHTML(user *auth.User) string {
-	list := RecentMissedCalls()
-	if len(list) == 0 {
-		return ""
+// missedRowHTML は、出ていない着信1つを通信箱の未処理の表の1行にします（2026-10-28——はじめは別の表にしていたが、
+// 利用者:「出てましたが、違う表なので気が付きませんでした」）。選ぶ升目は付けない（「済」「不要」のまとめての対象ではない）。
+func missedRowHTML(user *auth.User, m MissedCall) string {
+	who := ""
+	if _, title, found := phoneOwner(user, m.Number); found {
+		who = title
+	} else if mark, ok := callerMarks[m.Number]; ok {
+		who = mark
+	} else if d := digitsOf(m.Number); d != "" {
+		who = d
+	} else {
+		who = "番号なし"
 	}
-	var sb strings.Builder
-	sb.WriteString(`<div class="vocab-chrome missed-calls" contenteditable="false">`)
-	sb.WriteString(`<p class="missed-calls-head">☎ 出ていない着信（` + strconv.Itoa(len(list)) +
-		`件）——携帯へ転送して出た電話も、ここに並びます。要るものは「📝 記録にする」で記録のページに。</p>`)
-	sb.WriteString(`<table class="materials-table missed-calls-table"><tbody>`)
-	for _, m := range list {
-		who := ""
-		if _, title, found := phoneOwner(user, m.Number); found {
-			who = title
-		} else if mark, ok := callerMarks[m.Number]; ok {
-			who = mark
-		} else if d := digitsOf(m.Number); d != "" {
-			who = d
-		} else {
-			who = "番号なし"
-		}
-		when := m.At
-		if t, err := time.Parse(time.RFC3339, m.At); err == nil {
-			when = shortTime(t.Format(time.RFC3339))
-		}
-		ring := ""
-		if m.RingSec > 0 {
-			ring = "呼び出し " + strconv.Itoa(m.RingSec) + "秒"
-		}
-		id := stdhtml.EscapeString(m.ID)
-		sb.WriteString(`<tr><td class="missed-when">` + stdhtml.EscapeString(when) + `</td>` +
-			`<td class="missed-who" title="` + stdhtml.EscapeString(digitsOf(m.Number)) + `">` + stdhtml.EscapeString(who) + `</td>` +
-			`<td class="missed-ring">` + stdhtml.EscapeString(ring) + `</td>` +
-			`<td class="missed-act"><button type="button" class="missed-make" data-missed-id="` + id + `">📝 記録にする</button> ` +
-			`<button type="button" class="missed-dismiss" data-missed-id="` + id + `">✕ 外す</button></td></tr>`)
+	ring := ""
+	if m.RingSec > 0 {
+		ring = "呼び出し " + strconv.Itoa(m.RingSec) + "秒"
 	}
-	sb.WriteString(`</tbody></table></div>`)
-	return sb.String()
+	id := stdhtml.EscapeString(m.ID)
+	return `<tr class="missed-row" data-missed-id="` + id + `">` +
+		`<td class="vocab-chrome unhandled-pick"></td>` +
+		`<td class="unhandled-channel">` + channelWithDirection(ChannelPhone, DirectionIn) + `</td>` +
+		`<td class="unhandled-when">` + stdhtml.EscapeString(shortTime(m.At)) + `</td>` +
+		`<td class="unhandled-from" title="` + stdhtml.EscapeString(digitsOf(m.Number)) + `">` + stdhtml.EscapeString(ellipsize(who, unhandledFromMax)) + `</td>` +
+		`<td class="unhandled-subject"><span class="unhandled-missed" title="出る前に鳴りやんだ着信です（携帯へ転送して出た電話も、こう見えます）。要るものは「記録にする」で電話の記録のページにします">☎ 出ていない着信</span> ` +
+		stdhtml.EscapeString(ring) + `</td>` +
+		`<td class="vocab-chrome unhandled-act">` +
+		`<button type="button" class="chip-btn missed-make" data-missed-id="` + id + `" title="電話の記録のページを作って開きます">記録にする</button>` +
+		`<button type="button" class="chip-btn unhandled-skip missed-dismiss" data-missed-id="` + id + `" title="一覧から外します（履歴には残ります）">外す</button></td>` +
+		`</tr>`
 }

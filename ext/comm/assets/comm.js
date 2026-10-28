@@ -54,10 +54,10 @@ w.delegateClick([['.mail-chrome .record-make-go', (btn) => {
     if (sel) makeFromRecord(sel.value, btn);
 }]]);
 
-// 通信箱の「☎ 出ていない着信」（2026-10-28・ext/comm/missed_call.go）——「📝 記録にする」で電話の記録のページを作って開き、
-// 「✕ 外す」で一覧から外す（履歴には残る）。並びはサーバーが描く。
+// 通信箱の未処理の表の「☎ 出ていない着信」の行（2026-10-28・ext/comm/missed_call.go）——「記録にする」で電話の記録のページを作って開き、
+// 「外す」で一覧から外す（履歴には残る）。行はサーバーが描く。
 w.delegateClick([
-    ['.missed-calls .missed-make', async (btn) => {
+    ['.unhandled-table .missed-make', async (btn) => {
         btn.disabled = true;
         const r = await w.postJSON('/api/phone/missed/make', { id: btn.dataset.missedId });
         if (!r.ok || !r.data || !r.data.page_id) {
@@ -67,7 +67,7 @@ w.delegateClick([
         }
         location.href = '/' + r.data.page_id + '?edit=true'; // 電話のメモを書き始められるように開く
     }],
-    ['.missed-calls .missed-dismiss', async (btn) => {
+    ['.unhandled-table .missed-dismiss', async (btn) => {
         btn.disabled = true;
         const r = await w.postJSON('/api/phone/missed/dismiss', { id: btn.dataset.missedId });
         if (!r.ok) {
