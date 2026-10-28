@@ -1,8 +1,12 @@
 package wcms
 
 import (
+	"crypto/tls"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -61,5 +65,35 @@ func TestLoginRefused(t *testing.T) {
 	t.Setenv("WCMS_BASE", srv.URL)
 	if _, err := Login(time.Minute); err == nil {
 		t.Error("ログインに失敗したのに係を返しています")
+	}
+}
+
+// TestTrustedRootsFromWCMSCA は、ほかの機械の自己署名の証明書を、WCMS_CA のファイルで信じて繋げること・
+// 信じる証明書が無ければ断ることを固定します（2026-10-28——それまで道具は確かめを切るか、この機械の信頼ストアだけを見ていた）。
+func TestTrustedRootsFromWCMSCA(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	get := func() error {
+		c := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: trustedRoots()}}}
+		res, err := c.Get(srv.URL)
+		if err == nil {
+			res.Body.Close()
+		}
+		return err
+	}
+
+	t.Setenv("WCMS_CA", filepath.Join(t.TempDir(), "無い.crt"))
+	if err := get(); err == nil {
+		t.Fatal("⚠ 信じる証明書が無いのに、自己署名のサーバーへ繋がりました")
+	}
+
+	ca := filepath.Join(t.TempDir(), "server.crt")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(ca, pemBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WCMS_CA", ca)
+	if err := get(); err != nil {
+		t.Fatalf("WCMS_CA の証明書で繋がりません: %v", err)
 	}
 }

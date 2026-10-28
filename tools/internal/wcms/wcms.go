@@ -6,6 +6,7 @@ package wcms
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net/http"
@@ -27,6 +28,32 @@ func Desktop() string {
 		}
 	}
 	return home
+}
+
+// trustedRoots は、ほかの機械へ繋ぐときに信じる証明書です（2026-10-28）——この機械の信頼ストアに、WCMS_CA（CA の
+// 証明書のファイル）か、無ければデスクトップの w-cms/サーバー機/ の *.crt（業務サーバーの証明書・リポジトリには入れない）を足す。
+// 足すものが無ければ nil（この機械の信頼ストアだけ）。JS の道具の tools/tls-trust.js と同じ形。
+func trustedRoots() *x509.CertPool {
+	var files []string
+	if f := os.Getenv("WCMS_CA"); f != "" {
+		files = []string{f}
+	} else {
+		files, _ = filepath.Glob(filepath.Join(Desktop(), "w-cms", "サーバー機", "*.crt"))
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	added := false
+	for _, f := range files {
+		if b, err := os.ReadFile(f); err == nil && pool.AppendCertsFromPEM(b) {
+			added = true
+		}
+	}
+	if !added {
+		return nil
+	}
+	return pool
 }
 
 // Client は手元の w-cms へログインした係です。
@@ -55,7 +82,7 @@ func Login(timeout time.Duration) (*Client, error) {
 	}
 	c := &Client{base: base, hc: &http.Client{
 		Jar:           jar,
-		Transport:     &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}},
+		Transport:     &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure, RootCAs: trustedRoots()}},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Timeout:       timeout,
 	}}

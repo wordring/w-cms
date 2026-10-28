@@ -11,11 +11,12 @@
 // 当て先は WCMS_BASE（既定 https://localhost:8443）。サーバーを動かしたまま、リポジトリの根で流します。
 // ログインは a / a（ローカル検証専用）。運ぶファイルは OneDrive の
 // `デスクトップ/w-cms/テンプレート/` に置く（開発方針 §2 の置き場・リポジトリには入れない）。
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // 自己署名の :8443 に繋ぐため（ローカル専用）
 const fs = require('fs');
 const path = require('path');
 
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
+// 証明書は、同じ機械のときだけ確かめない（業務サーバーへは確かめる・tls-trust.js・2026-10-28）。
+require('./tls-trust').trustFor(BASE);
 const MASTER = path.join(process.cwd(), 'data', 'master');
 const ROOT_TITLE = 'テンプレート';
 let cookie = '';

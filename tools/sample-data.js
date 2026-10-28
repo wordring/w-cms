@@ -21,12 +21,13 @@
 // ⚠ 職場の実データ（data）に向けて流さないこと——WCMS_DATA_DIR が空か data なら止まる（サーバーの側も同じ
 //    WCMS_DATA_DIR で動かす。サーバーと道具の data の場所が違うと、同じ図面番号の見張りが外れる）。
 // ⚠ Gemini は呼ばない（図面の表題欄は、職場で読んだ控えのあるものだけ使う）。
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // 自己署名の :8443 に繋ぐため（ローカル専用）
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
 
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
+// 証明書は、同じ機械のときだけ確かめない（業務サーバーへは確かめる・tls-trust.js・2026-10-28）。
+require('./tls-trust').trustFor(BASE);
 const DATA = process.env.WCMS_DATA_DIR || '';
 const DESKTOP = path.join(os.homedir(), 'OneDrive', 'デスクトップ', 'w-cms');
 const STATE = process.env.WCMS_SAMPLE_STATE ||
