@@ -11,6 +11,8 @@ package comm
 //	POST /api/machine/call {event:"answered", number, at}  … 出た着信。チャネル電話・向き受信・対応：未処理の記録を作り、
 //	                                                        {page_id, url, title} を返す（道具はその URL を開ける）
 //	POST /api/machine/call {event:"hangup", page_id, at}    … 受話器を置いた。その記録に「通話終了」の時刻を書き足す
+//	POST /api/machine/call {event:"missed", number, at, ended} … 出る前に鳴りやんだ（2026-10-28）。ページは作らず、出ていない着信の
+//	                                                        履歴に残す（missed_call.go・人が通信箱で「記録にする」を押したら作る）
 //
 // 番号の代わりに ND6 が送る印（P＝非通知・O＝表示圏外・C＝公衆電話・S＝サービス競合・E＝受信の誤り）は、言葉にして題に入れる。
 // 番号は、連絡帳などの `電話番号` のタグと数字だけで比べて、相手（ページ参照）を引く（phoneOwner）。
@@ -130,6 +132,7 @@ func MachineCallAPIHandler(w http.ResponseWriter, r *http.Request) {
 		Number string `json:"number"`
 		At     string `json:"at"`
 		PageID string `json:"page_id"`
+		Ended  string `json:"ended"` // missed のときの鳴りやんだ時刻
 	}
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
@@ -145,25 +148,12 @@ func MachineCallAPIHandler(w http.ResponseWriter, r *http.Request) {
 		if !page.RequirePageWrite(w, r, boxID) {
 			return
 		}
-		tmpl, err := cms.PageTemplateBody(MemoTemplate)
+		pageID, title, err := createCallRecord(user, req.Number, at, false, nil)
 		if err != nil {
-			cms.JSONFail(w, http.StatusConflict, "記録を作れません: "+err.Error())
+			cms.JSONFail(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		number := strings.TrimSpace(req.Number)
-		counterpart, who := "", ""
-		if id, title, found := phoneOwner(user, number); found {
-			counterpart, who = page.FormatID(id), title
-		}
-		phone := digitsOf(number)
-		title := callTitle(number, who, at)
-		body := memoBodyHTML(tmpl, ChannelPhone, title, DirectionIn, phone, counterpart, at)
-		pageID, err := CreateRecordPage(boxID, user.Username, at, body)
-		if err != nil {
-			cms.JSONFail(w, http.StatusInternalServerError, "記録を作れません: "+err.Error())
-			return
-		}
-		auth.Audit(user.Username, "intake.call", pageID+" ("+phone+")")
+		auth.Audit(user.Username, "intake.call", pageID+" ("+digitsOf(req.Number)+")")
 		NotifyArrival(Arrival{PageID: pageID, Title: title, Channel: ChannelPhone})
 		cms.WriteJSON(w, map[string]any{"success": true, "page_id": pageID, "url": "/" + pageID, "title": title})
 	case "hangup":
@@ -188,8 +178,29 @@ func MachineCallAPIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cms.WriteJSON(w, map[string]any{"success": true, "page_id": id})
+	case "missed":
+		// ページは作らない（2026-10-28 利用者:「なった記録だけして、編集者がページにするか選択すればよい」）。書き手が通信箱に書けることは見る。
+		boxID, ok := MailBoxPageID()
+		if !ok {
+			cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
+			return
+		}
+		if !page.RequirePageWrite(w, r, boxID) {
+			return
+		}
+		ended := at
+		if strings.TrimSpace(req.Ended) != "" {
+			ended = parseCallTime(req.Ended)
+		}
+		m, err := addMissedCall(req.Number, at, ended)
+		if err != nil {
+			cms.JSONFail(w, http.StatusInternalServerError, "履歴に残せません: "+err.Error())
+			return
+		}
+		auth.Audit(user.Username, "intake.call.ring", m.ID)
+		cms.WriteJSON(w, map[string]any{"success": true, "id": m.ID})
 	default:
-		cms.JSONFail(w, http.StatusBadRequest, "event は answered か hangup です")
+		cms.JSONFail(w, http.StatusBadRequest, "event は answered・hangup・missed のどれかです")
 	}
 }
 

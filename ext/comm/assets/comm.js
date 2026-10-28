@@ -54,6 +54,32 @@ w.delegateClick([['.mail-chrome .record-make-go', (btn) => {
     if (sel) makeFromRecord(sel.value, btn);
 }]]);
 
+// 通信箱の「☎ 出ていない着信」（2026-10-28・ext/comm/missed_call.go）——「📝 記録にする」で電話の記録のページを作って開き、
+// 「✕ 外す」で一覧から外す（履歴には残る）。並びはサーバーが描く。
+w.delegateClick([
+    ['.missed-calls .missed-make', async (btn) => {
+        btn.disabled = true;
+        const r = await w.postJSON('/api/phone/missed/make', { id: btn.dataset.missedId });
+        if (!r.ok || !r.data || !r.data.page_id) {
+            btn.disabled = false;
+            w.notify('記録にできませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0, id: 'missed-call' });
+            return;
+        }
+        location.href = '/' + r.data.page_id + '?edit=true'; // 電話のメモを書き始められるように開く
+    }],
+    ['.missed-calls .missed-dismiss', async (btn) => {
+        btn.disabled = true;
+        const r = await w.postJSON('/api/phone/missed/dismiss', { id: btn.dataset.missedId });
+        if (!r.ok) {
+            btn.disabled = false;
+            w.notify('外せませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0, id: 'missed-call' });
+            return;
+        }
+        const tr = btn.closest('tr');
+        if (tr) tr.remove();
+    }],
+]);
+
 // ── 版 3 から通信の JS が持つ部分（2026-10-20 に app.js から移した）——☎ 発信・未処理の一覧の「済」「不要」・「＋ 記録する」。
 if (w.version >= 3) {
 const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, failMessage, tagValue, hasExtension, reloadContent, loadChildNav } = w;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -105,5 +106,42 @@ func TestCallRetriesAndLateHangup(t *testing.T) {
 	c.wg.Wait()
 	if len(calls) != 2 || calls[0] != "answered:" || calls[1] != "hangup:002200" {
 		t.Errorf("⚠ 送り方が違います: %q", calls)
+	}
+}
+
+// TestMissedCallIsReported は、出る前に鳴りやんだ着信を「出ていない着信」として知らせることを固定します（2026-10-28）。
+// 記録のページは作らない（answered は送らない）。番号の来ていない未応答は、番号なし・鳴り始めは分からない（鳴りやみと同じ）で知らせる。
+//
+// > 2026-10-28 利用者:「電話が鳴るだけでページを作るということではなく、なった記録だけして、編集者がページにするか選択すればよいと思うのです」
+func TestMissedCallIsReported(t *testing.T) {
+	ring := time.Date(2026, 10, 28, 10, 7, 26, 0, time.Local)
+	now := ring
+	var mu sync.Mutex
+	var sent []string
+	var got []string
+	c := &caller{now: func() time.Time { return now },
+		send: func(ev, number string, at time.Time, pageID string) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			sent = append(sent, ev)
+			return "", nil
+		},
+		missed: func(number string, ringAt, endAt time.Time) error {
+			mu.Lock()
+			defer mu.Unlock()
+			got = append(got, number+":"+endAt.Sub(ringAt).String())
+			return nil
+		}}
+	c.handle(event{Kind: evRing, Number: "0312345678"})
+	now = ring.Add(16 * time.Second)
+	c.handle(event{Kind: evMissed})
+	c.handle(event{Kind: evMissed}) // 番号の来ていない未応答
+	c.wg.Wait()
+	if len(sent) != 0 {
+		t.Errorf("⚠ 出ていない着信で記録のページを作ろうとした: %q", sent)
+	}
+	sort.Strings(got) // 知らせは裏で送るので、並びは決まらない
+	if len(got) != 2 || got[0] != "0312345678:16s" || got[1] != ":0s" {
+		t.Errorf("出ていない着信の知らせが %q です", got)
 	}
 }

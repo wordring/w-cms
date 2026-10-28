@@ -16,6 +16,11 @@
     color: #92400e;
 }
 #w-editor-content .unhandled-warn { color: #b45309; font-weight: 700; cursor: help; }
+/* 出ていない着信（2026-10-28・ext/comm/missed_call.go）。 */
+#w-editor-content .missed-calls { margin: 0.5rem 0 1rem; }
+#w-editor-content .missed-calls-head { margin: 0 0 0.3rem; font-size: 13px; color: #475569; }
+#w-editor-content .missed-calls-table td { white-space: nowrap; }
+#w-editor-content .missed-calls-table .missed-ring { color: #64748b; font-size: 12px; }
 /* この記録から作るページ（2026-10-01・選ぶ欄と「作成」・作った印〔✓ 受注・✓ 加工製品〕は横に並ぶ）。 */
 .record-make { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 0.6rem; }
 .record-make[hidden] { display: none; } /* 種類も印も無いときは出さない（display: flex が hidden に勝つため） */

@@ -40,6 +40,9 @@ func (commPlugin) Routes() []cms.Route {
 		{Pattern: "/api/intake/memo", Handler: NewMemoAPIHandler},
 		{Pattern: "/api/machine/call", Handler: MachineCallAPIHandler}, // 電話の着信（機械専用の入口・2026-10-21 夜・machine_call.go）
 		{Pattern: "/api/machine/fax", Handler: MachineFaxAPIHandler}, // FAX の受信（機械専用の入口・2026-10-21 夜・machine_fax.go）
+		// 出ていない着信を記録にする・一覧から外す（2026-10-28・missed_call.go）。
+		{Pattern: "/api/phone/missed/make", Handler: MissedCallMakeAPIHandler},
+		{Pattern: "/api/phone/missed/dismiss", Handler: MissedCallDismissAPIHandler},
 		// FAX を送る（ページの PDF を HylaFAX へ頼む）と、その様子（2026-10-25 夜・fax_send.go）。
 		{Pattern: "/api/fax/send", Handler: FaxSendAPIHandler},
 		{Pattern: "/api/fax/status", Handler: FaxStatusAPIHandler},

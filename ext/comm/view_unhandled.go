@@ -371,6 +371,7 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 	// **記録を作る口は、一覧が空でも出します。** 片付いた日にボタンごと消えると、
 	// 電話が鳴ったときに置き場所が見つかりません。
 	sb.WriteString(newRecordChromeHTML())
+	sb.WriteString(missedCallsHTML(user)) // 出ていない着信（2026-10-28・missed_call.go——押したら記録のページにする）
 	if total == 0 {
 		sb.WriteString(`<p class="child-list-empty">未処理はありません</p>`)
 		return sb.String()

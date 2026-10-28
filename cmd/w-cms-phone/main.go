@@ -11,7 +11,10 @@
 //   - 着信（番号）を覚えておき、受話器を上げた（OF）ら w-cms の POST /api/machine/call {event:"answered"} を呼ぶ
 //     → w-cms がチャネル電話の記録を作る（相手は電話番号で引く）。-open なら、その記録をこのパソコンのブラウザで開く。
 //   - 受話器を置いた（ON）ら {event:"hangup"} で「通話終了」を書く。
-//   - 出る前に切れた（未応答 UR）着信は、記録にしない（利用者の答え「出た着信だけ記録にします」）。
+//   - 出る前に切れた（未応答 UR）着信は、記録のページにしない（利用者の答え「出た着信だけ記録にします」）。2026-10-28 からは、
+//     {event:"missed"} で w-cms の「出ていない着信」の履歴に残す（ページは人が通信箱で「記録にする」を押したら作る）。携帯へ転送された
+//     電話も、ND6 には鳴りやんだように見えるため（利用者:「電話が鳴るだけでページを作るということではなく、なった記録だけして、
+//     編集者がページにするか選択すればよいと思うのです」）。
 //
 // USB の電源が切れたときの対策:
 //   - ポートが無くなったり読めなくなったりしたら、閉じて、数秒おきに開き直し続けます。
@@ -58,6 +61,8 @@ type caller struct {
 	now   func() time.Time
 	send  func(event, number string, at time.Time, pageID string) (string, error)
 	open  func(pageID string) // 出た着信の記録を開く（nil なら開かない）
+	// missed は出ていない着信を知らせます（鳴り始めと鳴りやみ・nil なら知らせない）。
+	missed func(number string, ringAt, endAt time.Time) error
 	retry []time.Duration     // 送れなかったときに待つ間隔（尽きたら諦める・空なら1回だけ）
 
 	mu         sync.Mutex
@@ -132,8 +137,21 @@ func (c *caller) handle(e event) {
 		c.lastRing, c.lastRingAt = e.Number, c.now()
 		log.Printf("着信: %s", e.Number)
 	case evMissed:
-		log.Printf("未応答（記録しません）: %s", c.lastRing)
+		number, ringAt, endAt := c.lastRing, c.lastRingAt, c.now()
+		if number == "" || endAt.Sub(ringAt) > ringFresh {
+			number, ringAt = "", endAt // 着信の番号が来ていない・古い（鳴り始めは分からない）
+		}
 		c.lastRing = ""
+		log.Printf("未応答（出ていない着信として残します）: %s", number)
+		if c.missed != nil {
+			c.wg.Add(1)
+			go func() {
+				defer c.wg.Done()
+				if err := c.deliver("出ていない着信", func() error { return c.missed(number, ringAt, endAt) }); err != nil {
+					log.Printf("⚠ 出ていない着信を残せません（%s）: %v", number, err)
+				}
+			}()
+		}
 	case evOffHook:
 		number := ""
 		if c.lastRing != "" && c.now().Sub(c.lastRingAt) <= ringFresh {
@@ -192,6 +210,27 @@ func (cl *client) call(ev, number string, at time.Time, pageID string) (string, 
 	}
 	json.Unmarshal(b, &out)
 	return out.PageID, nil
+}
+
+// missed は出ていない着信を POST /api/machine/call {event:"missed"} で知らせます（ページは作られない）。
+func (cl *client) missed(number string, ringAt, endAt time.Time) error {
+	body, _ := json.Marshal(map[string]string{"event": "missed", "number": number, "at": ringAt.Format(time.RFC3339), "ended": endAt.Format(time.RFC3339)})
+	req, err := http.NewRequest("POST", strings.TrimRight(cl.base, "/")+"/api/machine/call", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cl.token)
+	resp, err := cl.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%d %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
 }
 
 // openBrowser は記録をこのパソコンの既定のブラウザで開きます。
@@ -300,7 +339,7 @@ func main() {
 	}
 	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: *insecure}}
 	cl := &client{base: *base, token: token, http: &http.Client{Timeout: 20 * time.Second, Transport: tr}}
-	c := &caller{now: time.Now, send: cl.call,
+	c := &caller{now: time.Now, send: cl.call, missed: cl.missed,
 		// 合わせて1時間ほど送り直す（サーバーの入れ替え・再起動を待てる長さ）。
 		retry: []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute,
 			5 * time.Minute, 10 * time.Minute, 10 * time.Minute, 15 * time.Minute, 15 * time.Minute}}
