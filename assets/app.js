@@ -2912,7 +2912,7 @@
     // 利用者:「再描画でスクロールしたり、開いていたパネルが閉じたりしないなら、描き直してください。」
     // サーバーが「鏡の中身だけが変わった」（{type:"views"}・cms.NotifyViewsChanged）と知らせたら、閲覧の描き方で読み直し、本文の鏡の印
     // （section[data-mirror]）の中の .vocab-chrome だけを差し替える。本文のブロック・スクロール・左右の欄・ほかのブロックには触らない。
-    // 鏡の中で入力中（欄にキャレットがある・欄を書き換えた）なら、その鏡は描き直さず、少し待ってからもう一度見る。
+    // 鏡の中の欄にキャレットがあるあいだは、その鏡は描き直さず、少し待ってからもう一度見る（欄の値と升目の印は描き直したあとへ写す）。
     let viewsTimer = null;
     function scheduleViewsRefresh(wait) {
         clearTimeout(viewsTimer);
@@ -2937,10 +2937,26 @@
             const fresh = Array.from(doc.querySelectorAll('section[data-mirror]')).find(s => s.getAttribute(BLOCK_ID_ATTR) === id);
             if (!fresh) return;
             const oldChrome = Array.from(sec.children).filter(c => c.classList.contains('vocab-chrome'));
-            if (oldChrome.some(blockIsBusy)) { busy = true; return; }
+            // 鏡の中の欄に入力中（キャレットがある）なら待つ。欄の値・選び・升目の印は、描き直したあとへ写す（入力も選んだ行も消さない）。
+            // ⚠ 「欄の値が最初と違う」では待たない——拡張の JS が描いたあとに欄を合わせる（選択肢など）ので、いつまでも描き直せなかった。
+            const a = document.activeElement;
+            if (a && a !== document.body && sec.contains(a) && (a.matches('input, textarea, select') || a.isContentEditable)) { busy = true; return; }
+            const fieldKey = f => f.id || f.name || (f.className + '|' + JSON.stringify(Object.assign({}, f.dataset)));
+            const kept = new Map();
+            oldChrome.forEach(c => c.querySelectorAll('input, textarea, select').forEach(f => {
+                kept.set(fieldKey(f), (f.type === 'checkbox' || f.type === 'radio') ? f.checked : f.value);
+            }));
             const newChrome = Array.from(fresh.children).filter(c => c.classList.contains('vocab-chrome'));
             oldChrome.forEach(c => c.remove());
-            newChrome.forEach(c => sec.appendChild(document.importNode(c, true)));
+            newChrome.forEach(c => {
+                const node = document.importNode(c, true);
+                node.querySelectorAll('input, textarea, select').forEach(f => {
+                    const k = fieldKey(f);
+                    if (!kept.has(k)) return;
+                    if (f.type === 'checkbox' || f.type === 'radio') f.checked = kept.get(k); else f.value = kept.get(k);
+                });
+                sec.appendChild(node);
+            });
             touched = true;
         });
         if (touched) {
