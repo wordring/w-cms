@@ -1,0 +1,23 @@
+#!/bin/bash
+# w-cms-claude-notify — Claude（開発の手伝い）が、作業の区切り・問いがあることを ntfy でスマホへ知らせる台本（2026-10-28）。
+#
+# 利用者:「Claude アプリがフォアグラウンドでもスマホに通知されるようにしたいです。常に通知が来るように出来ますか？」
+# アプリの通知は、アプリが手前にあると送られない。見張りと同じ ntfy（/etc/w-cms/watch.env）なら、いつでも届く。
+#
+# ⚠ 中身を書かない（2026-10-28——公開の ntfy は話題の名前を知るだけで読める）。種類だけを送り、くわしいことはアプリで読む。
+#
+# 使い方: sudo w-cms-claude-notify done   … 作業が終わった
+#         sudo w-cms-claude-notify ask    … 問いがある（答えを待っている）
+#         sudo w-cms-claude-notify step   … 区切りがついた（続けている）
+set -uo pipefail
+. /etc/w-cms/watch.env
+: "${NTFY_SERVER:?}" "${NTFY_TOPIC:?}"
+case "${1:-}" in
+done) title="Claude: 作業が終わりました"; prio=3; tag=white_check_mark ;;
+ask) title="Claude: 答えを待っています"; prio=4; tag=question ;;
+step) title="Claude: 区切りがつきました"; prio=2; tag=arrow_forward ;;
+*) echo "使い方: w-cms-claude-notify done|ask|step" >&2; exit 2 ;;
+esac
+body=$(jq -n --arg t "$NTFY_TOPIC" --arg ti "$title" --argjson p "$prio" --arg tag "$tag" \
+	'{topic:$t, title:$ti, message:"くわしくは Claude のアプリで読んでください。", priority:$p, tags:[$tag]}')
+curl -s -m 20 -o /dev/null -H "Content-Type: application/json" -d "$body" "$NTFY_SERVER" || { logger -t w-cms-claude-notify "ntfy へ送れません"; exit 1; }
