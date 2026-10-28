@@ -12,6 +12,7 @@
 #   WHO=〈この機械の呼び名〉       CHECK_URL=https://…/login
 #   CHECK_RESOLVE=〈名前:443:住所〉（任意——curl --resolve。名前引きを通さず、決まった住所へ行かせる）
 #   CHECK_CACERT=〈信じる証明書〉（任意）
+# ⚠ 知らせに住所（CHECK_URL）を書かない（2026-10-28——公開の ntfy は話題の名前を知るだけで読めるので、公開の名前を知らせない）。
 # 知らせるのは、続けて FAILS_TO_ALERT 回（既定 2）失敗したときと、戻ったときだけ。止まっているあいだは REMIND_MIN 分（既定 360）ごとに念押し。
 set -uo pipefail
 . /etc/w-cms/watch.env
@@ -44,7 +45,7 @@ now=$(date +%s)
 if [ "$code" = "200" ]; then
 	if [ "$fails" -ge "$FAILS_TO_ALERT" ] && [ -n "$down_since" ]; then
 		mins=$(( (now - down_since) / 60 ))
-		notify "w-cms が戻りました（${WHO}）" "${CHECK_URL} がまた応えています（止まっていたのは約${mins}分）。" 3
+		notify "w-cms が戻りました（${WHO}）" "また応えています（止まっていたのは約${mins}分）。" 3
 		logger -t w-cms-watch "戻りました（約${mins}分）"
 	fi
 	fails=0; down_since=""; last_alert=0
@@ -52,7 +53,7 @@ else
 	fails=$((fails + 1))
 	[ -z "$down_since" ] && down_since=$now
 	if [ "$fails" -eq "$FAILS_TO_ALERT" ] || { [ "$fails" -gt "$FAILS_TO_ALERT" ] && [ $(( now - last_alert )) -ge $(( REMIND_MIN * 60 )) ]; }; then
-		notify "⚠ w-cms が応えません（${WHO}）" "${CHECK_URL} が応えません（返事: ${code:-なし}・${fails}回続けて）。" 5
+		notify "⚠ w-cms が応えません（${WHO}）" "応えません（返事: ${code:-なし}・${fails}回続けて）。" 5
 		logger -t w-cms-watch "応えません（返事 ${code:-なし}・${fails}回）"
 		last_alert=$now
 	fi

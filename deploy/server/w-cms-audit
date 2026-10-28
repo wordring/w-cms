@@ -11,6 +11,8 @@
 #   3. 毎回、/var/lib/w-cms-audit/<日付>.{txt,json,md} に残す（90日）。w-cms の業務サーバーのページの下の「サーバーの監査 <年-月>」へ
 #      書き足す（業務サーバーの中だけで開く入口・利用者 Claude）。
 #   4. 気になること（watch）・危ないこと（danger）があれば、見張りと同じ ntfy でスマホへ知らせる。流せなかったときも知らせる。
+#      ⚠ 知らせには中身を書かない（2026-10-28——公開の ntfy は話題の名前を知るだけで読めるので、重さと読む場所だけ。
+#      くわしくは w-cms のページか、業務サーバーの /var/lib/w-cms-audit/<日付>.md を読む）。
 #
 # 使い方: w-cms-audit（全部）・w-cms-audit collect（集めた要点を出すだけ・API へは送らない）
 #        w-cms-audit fake（API を呼ばずに、決まった試しの答えで残す所まで流す・知らせは送らない。
@@ -255,7 +257,7 @@ ctx=""
 fail() { # fail <わけ>
 	logger -t w-cms-audit "流せませんでした: $1"
 	printf '%s\n' "$1" > "$OUT/$day.error"
-	notify "⚠ サーバーの監査を流せませんでした" "$1" 4
+	notify "⚠ サーバーの監査を流せませんでした" "わけは業務サーバーの記録にあります（journalctl -t w-cms-audit）。" 4
 	exit 1
 }
 
@@ -363,10 +365,13 @@ page=$(record_wcms "$work/blocks.html") || { logger -t w-cms-audit "w-cms に書
 find "$OUT" -type f -mtime +90 -delete 2>/dev/null
 logger -t w-cms-audit "監査 $day: $level（$model・$cost_in/$cost_out）${page:+ w-cms /$page}"
 
+# 知らせに書く「どこで読むか」（中身は書かない・2026-10-28）。
+if [ -n "$page" ]; then where="くわしくは w-cms の /$page を開いてください（$day）。"; else where="くわしくは業務サーバーの $OUT/$day.md を読んでください。"; fi
+
 if [ "$mode" != "fake" ]; then # 試しでは知らせない
 	case "$level" in
-		danger) notify "⚠ サーバーの監査: 危ないことがあります" "$summary" 5 ;;
-		watch) notify "サーバーの監査: 見ておくことがあります" "$summary" 3 ;;
+		danger) notify "⚠ サーバーの監査: 危ないことがあります" "$where" 5 ;;
+		watch) notify "サーバーの監査: 見ておくことがあります" "$where" 3 ;;
 	esac
 fi
 echo "監査 $day: $(label "$level")${page:+（w-cms /$page）}"

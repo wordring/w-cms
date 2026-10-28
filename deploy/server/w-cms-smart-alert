@@ -10,8 +10,10 @@ set -uo pipefail
 dev=${SMARTD_DEVICE:-?}
 kind=${SMARTD_FAILTYPE:-?}
 msg=${SMARTD_MESSAGE:-（中身なし）}
-body=$(jq -n --arg t "$NTFY_TOPIC" --arg ti "⚠ SSD の見張り（$dev・$kind）" \
-	--arg m "$msg 控えが新しいかを確かめ、SSD の取り替えを考えてください。" \
+# ⚠ 知らせには smartd の文（型番・製造番号などを含む）を書かない（2026-10-28——公開の ntfy は話題の名前を知るだけで読める）。
+# 中身は下の logger で業務サーバーの記録に残す。
+body=$(jq -n --arg t "$NTFY_TOPIC" --arg ti "⚠ SSD の見張り（$kind）" \
+	--arg m "SSD に異常があります（くわしくは業務サーバーの journalctl -t w-cms-smart-alert）。控えが新しいかを確かめ、SSD の取り替えを考えてください。" \
 	'{topic:$t, title:$ti, message:$m, priority:5, tags:["floppy_disk"]}')
 curl -s -m 20 -o /dev/null -H "Content-Type: application/json" -d "$body" "$NTFY_SERVER" || logger -t w-cms-smart-alert "ntfy へ送れません"
 logger -t w-cms-smart-alert "$dev $kind: $msg"
