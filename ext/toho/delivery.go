@@ -94,6 +94,10 @@ type deliveryPick struct {
 	Qty   string `json:"qty"`   // 今回納める数
 	// Name は品名です。Row が負のとき（製造ページから——案件明細の行番号を持たない）、品番か、品番が空なら品名で行を探す（2026-10-19）。
 	Name string `json:"name"`
+	// Price・Note は納品表の「単価」「備考」です（2026-10-28・無ければ nil——案件の単価のまま）。タップ無し・塗装無しで先に納めるときなど、
+	// 今回の分だけ単価を変える（利用者:「一部を納品して価格が変わる（タップ無しや塗装無しで早く出す）ことがあるので、定型作業として可能にしたいのです。」）。空の単価は「まだ決まっていない」。
+	Price *string `json:"price,omitempty"`
+	Note  *string `json:"note,omitempty"`
 }
 
 // deliveryLine は納品明細表の1行です。
@@ -196,11 +200,22 @@ func deliveryLineOf(user *auth.User, p deliveryPick, shipped shippedLookup, pend
 				fmtQty(done) + " を納めた（ほかの納品書・この納品書のほかの行）ので、今回は " + fmtQty(ordered-done) + " までです（今回 " + qty + "）"
 		}
 	}
+	price := strings.TrimSpace(v["price"])
+	if p.Price != nil { // 納品表で今回の単価を決めた（2026-10-28）
+		price = strings.TrimSpace(*p.Price)
+		if pv, okP := estimateNumber(price); price != "" && (!okP || pv < 0) {
+			return deliveryLine{}, "/" + id + " の「" + strings.TrimSpace(v["item-name"]) + "」の単価が読めません: " + price
+		}
+	}
+	note := ""
+	if p.Note != nil {
+		note = strings.TrimSpace(*p.Note)
+	}
 	pending[key] += n
 	return deliveryLine{
 		OurItemNo: strings.TrimSpace(v["our-item-id"]), Order: id, OrderNo: strings.TrimSpace(cms.FirstTag(tags, OrderNoTag)),
 		ItemNo: strings.TrimSpace(v["item-id"]), ItemName: strings.TrimSpace(v["item-name"]), Qty: qty,
-		Unit: strings.TrimSpace(v["unit"]), Price: strings.TrimSpace(v["price"]),
+		Unit: strings.TrimSpace(v["unit"]), Price: price, Note: note,
 		Client: strings.TrimSpace(cms.FirstTag(tags, OrderClientTag)),
 	}, ""
 }
@@ -390,6 +405,13 @@ func draftMatchesPicks(t *html.Node, items []deliveryPick) bool {
 		p := items[n]
 		if trimSlash(at("案件")) != trimSlash(p.Order) || at(ItemNoTag) != strings.TrimSpace(p.Item) ||
 			at("品名") != strings.TrimSpace(p.Name) || at("数量") != strings.TrimSpace(p.Qty) {
+			return false
+		}
+		// 単価・備考も、送ってきたなら同じであること（2026-10-28——画面の古い単価で納品書を作らない）。
+		if p.Price != nil && at("単価") != strings.TrimSpace(*p.Price) {
+			return false
+		}
+		if p.Note != nil && at("備考") != strings.TrimSpace(*p.Note) {
 			return false
 		}
 		n++

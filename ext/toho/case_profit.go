@@ -7,6 +7,8 @@ package toho
 // 下書きの式のうち、記録から数えられる「確定」の分を出します（筆者の決め——違えば直します）。
 //
 //	売上   ＝ 案件明細表の 単価 × 数量（状態が「完了」の行は入れない——もう出さない行・改定で差し替えた行。受注残表と同じ線）
+//	         ただし、もう納めた分は納品書の行の 単価 × 数量（2026-10-28——タップ無し・塗装無しで先に納めて単価を下げた分が、売上に出るように。
+//	         利用者:「原価と利益の売上を、納めた分は納品書の単価で数えるように直してよいですか？」に「直す」）。まだ納めていない分は案件の単価。
 //	原価   ＝ 部材発注明細表の 単価 × 数量のうち、この案件に当たるぶん（行の「案件」の列、まとめた行は「内訳」で分ける——rowSupplies と同じ）
 //	         取消の行は入れない。発注済・納品済は「発注済」、未発注の行は「未発注」として分けて見せる。備考「追加」の行（作り直し）も入れる。
 //	粗利   ＝ 売上 − 原価（発注済＋未発注）
@@ -106,6 +108,7 @@ func caseProfits(db cms.ReadOnlyDB, canView func(int) bool) (out map[int]*casePr
 		}
 		return v
 	}
+	delivered := newShippedAmounts(db)
 	if rows, err := cms.VocabRowsOfType(db, clientOrderItemsType); err == nil {
 		for _, r := range rows {
 			if !ok(r.PageID) || strings.TrimSpace(r.Values["status"]) == StatusDone {
@@ -115,12 +118,22 @@ func caseProfits(db cms.ReadOnlyDB, canView func(int) bool) (out map[int]*casePr
 			if !okQ || qty <= 0 {
 				continue
 			}
+			// 納めた分は納品書の単価で（2026-10-28）、まだ納めていない分は案件の単価で。
+			d := delivered[shippedKey(page.FormatID(r.PageID), r.Values["item-id"], r.Values["item-name"])]
+			of(r.PageID).Sales += d.Amount
+			if d.NoPrice > 0 {
+				of(r.PageID).SalesNoPrice++
+			}
+			left := qty - d.Qty
+			if left <= 0 {
+				continue
+			}
 			price, okP := parseMoney(r.Values["price"])
 			if !okP {
 				of(r.PageID).SalesNoPrice++
 				continue
 			}
-			of(r.PageID).Sales += qty * price
+			of(r.PageID).Sales += left * price
 		}
 	}
 	if rows, err := cms.VocabRowsOfType(db, ourOrderItemsType); err == nil {
@@ -190,7 +203,7 @@ func caseProfitHTML(p caseProfit) string {
 	if p.SalesNoPrice > 0 {
 		sales += `（⚠ 単価の無い行 ` + strconv.Itoa(p.SalesNoPrice) + ` は入っていません）`
 	}
-	b.WriteString(`<li>売上（案件明細表の 単価 × 数量）: ` + sales + `</li>`)
+	b.WriteString(`<li>売上（納めた分は納品書の 単価 × 数量・まだの分は案件明細表の 単価 × 数量）: ` + sales + `</li>`)
 	cost := signedYen(p.cost()) + `（発注済 ` + signedYen(p.CostSent) + `・未発注 ` + signedYen(p.CostUnsent) + `）`
 	if !p.hasCost() {
 		cost = `記録なし（この案件を「案件」の列に書いた部材発注書の行がありません）`

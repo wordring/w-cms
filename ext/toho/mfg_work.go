@@ -76,6 +76,9 @@ func mfgDeliveryDraftColumns() []cms.VocabColumn {
 		{Field: "item-name", Label: "品名", Type: cms.ColText},
 		{Field: "quantity", Label: "数量", Type: cms.ColNumber},
 		{Field: "unit", Label: "単位", Type: cms.ColEnum, Enum: unitChoices()},
+		// 単価は今回納める分の単価（2026-10-28）。初めは案件の単価で、タップ無し・塗装無しで先に納めるときなどは直して、備考にわけを書く。
+		// 2026-10-28 利用者:「一部を納品して価格が変わる（タップ無しや塗装無しで早く出す）ことがあるので、定型作業として可能にしたいのです。」
+		{Field: "price", Label: "単価", Type: cms.ColNumber},
 		{Field: "note", Label: "備考", Type: cms.ColText},
 	}
 }
@@ -670,7 +673,7 @@ func MfgDeliveryDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		data = append(data, map[string]string{
 			"our-item-id": v["our-item-id"], "order": v["order"], "item-id": v["item-id"], "item-name": v["item-name"],
-			"quantity": fmtQty(left), "unit": v["unit"],
+			"quantity": fmtQty(left), "unit": v["unit"], "price": caseUnitPrice(user, v["order"], v["item-id"], v["item-name"]),
 		})
 	}
 	if len(data) == 0 {
@@ -685,6 +688,25 @@ func MfgDeliveryDraftAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.Audit(user.Username, "mfg.delivery-draft", pageID+" "+strconv.Itoa(len(data))+"行")
 	cms.WriteJSON(w, map[string]any{"success": true, "rows": len(data)})
+}
+
+// caseUnitPrice は案件ページ order の、品番 itemNo（空なら品名 itemName）の行の単価です（無い・読めなければ空——user が読めない案件も空）。
+func caseUnitPrice(user *auth.User, order, itemNo, itemName string) string {
+	pid := pageNumOrZero(order)
+	if pid == 0 || !page.CanView(user, pid) {
+		return ""
+	}
+	rows, err := cms.VocabTableRowsOf(database.DB, pid, clientOrderItemsType)
+	if err != nil {
+		return ""
+	}
+	want := shippedKey(order, itemNo, itemName)
+	for _, r := range rows {
+		if shippedKey(order, r.Values["item-id"], r.Values["item-name"]) == want {
+			return strings.TrimSpace(r.Values["price"])
+		}
+	}
+	return ""
 }
 
 // deliveryDraftHTML は納品表の HTML です（見出し行は宣言から）。

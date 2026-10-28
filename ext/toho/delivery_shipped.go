@@ -63,6 +63,47 @@ func newShippedLookup(db cms.ReadOnlyDB) shippedLookup {
 	return out
 }
 
+// shippedAmount は、案件の1つの品物の、納品書に載った数と金額です（2026-10-28・原価と利益の売上——case_profit.go）。
+type shippedAmount struct {
+	Qty     float64 // 納めた数（単価の無い行も）
+	Amount  float64 // 単価のある行の 単価 × 数量 の和
+	NoPrice int     // 単価の無い行の数
+}
+
+// newShippedAmounts は、納品書の納品明細表の行を、案件×品番ごとに数と金額で数えます（newShippedLookup と同じ行を数える）。
+func newShippedAmounts(db cms.ReadOnlyDB) map[string]shippedAmount {
+	out := map[string]shippedAmount{}
+	rows, err := cms.VocabRowsOfType(db, DeliveryItemsType)
+	if err != nil {
+		return out
+	}
+	kinds := map[int]bool{}
+	for _, r := range rows {
+		ok, seen := kinds[r.PageID]
+		if !seen {
+			ok = !cms.IsTemplateArea(page.FormatID(r.PageID)) && pageKindOf(r.PageID) == PageKindOurDelivery
+			kinds[r.PageID] = ok
+		}
+		if !ok {
+			continue
+		}
+		q, okQ := estimateNumber(r.Values["quantity"])
+		if !okQ || q <= 0 {
+			continue
+		}
+		k := shippedKey(r.Values["order"], r.Values["item-id"], r.Values["item-name"])
+		a := out[k]
+		a.Qty += q
+		if p, okP := estimateNumber(r.Values["price"]); okP {
+			a.Amount += q * p
+		} else {
+			a.NoPrice++
+		}
+		out[k] = a
+	}
+	return out
+}
+
 // of は受注ページ orderPage の品番 itemNo（空なら品名 itemName）の、納めた数の合計です。
 func (s shippedLookup) of(orderPage, itemNo, itemName string) float64 {
 	return s[shippedKey(orderPage, itemNo, itemName)]

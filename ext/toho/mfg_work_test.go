@@ -1,6 +1,7 @@
 package toho
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -181,6 +182,60 @@ func TestMfgWorkDeliveryDraft(t *testing.T) {
 	}
 	if body := readPageBody(t, mfg); strings.Contains(body, "<caption>納品表</caption>") {
 		t.Errorf("⚠ 納品書を作ったのに納品表が残っています:\n%s", body)
+	}
+}
+
+// TestMfgDeliveryDraftPrice は、納品表に今回の単価の列があり、初めは案件の単価で、人が直した単価と備考が
+// そのまま納品書の行に入ることを固定します（2026-10-28）。読めない単価の納品書は作りません。
+//
+// > 2026-10-28 利用者:「一部を納品して価格が変わる（タップ無しや塗装無しで早く出す）ことがあるので、定型作業として可能にしたいのです。」
+func TestMfgDeliveryDraftPrice(t *testing.T) {
+	setupExtTest(t, "000980", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	u := adminUser()
+	addPage(t, 981, -1, "案件", "alice", "302", true)
+	seedOrder(t, 982, 981, "あけぼの精工", "2026-11-01", item("A-1", "プーリー", "100", "2026-11-01", ""))
+	code, out := postRFQ(t, u, MfgNewAPIHandler, map[string]any{"items": []map[string]any{{"order": "000982", "row": 0, "item": "A-1", "qty": "100"}}})
+	if code != 200 {
+		t.Fatalf("製造ページを作れません: %d %v", code, out)
+	}
+	mfg := out["page_id"].(string)
+	if code, out := postRFQ(t, u, MfgDeliveryDraftAPIHandler, map[string]any{"page_id": mfg, "items": []map[string]any{{"row": 0, "item": "A-1"}}}); code != 200 {
+		t.Fatalf("納品表を作れません: %d %v", code, out)
+	}
+	body := readPageBody(t, mfg)
+	if !strings.Contains(body, "<th>単価</th><th>備考</th>") || !strings.Contains(body, "<td>100</td><td></td></tr>") {
+		t.Fatalf("⚠ 納品表に単価の列（案件の単価 100）がありません:\n%s", body)
+	}
+	// 人が「80 個・タップ無しで単価 60」に直す。
+	setDraft := func(price string) {
+		t.Helper()
+		if err := cms.RewriteBody(mfg, "alice", func(cur string) string {
+			i := strings.Index(cur, "<caption>納品表</caption>")
+			head, tail := cur[:i], cur[i:]
+			tail = strings.Replace(tail, "<td>プーリー</td><td>100</td>", "<td>プーリー</td><td>80</td>", 1)
+			tail = strings.Replace(tail, "<td>100</td><td></td></tr>", "<td>"+price+"</td><td>タップ無</td></tr>", 1)
+			tail = strings.Replace(tail, "<td>abc</td><td>タップ無</td></tr>", "<td>"+price+"</td><td>タップ無</td></tr>", 1)
+			return head + tail
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pick := func(price string) []map[string]any {
+		return []map[string]any{{"order": "000982", "row": -1, "item": "A-1", "name": "プーリー", "qty": "80", "price": price, "note": "タップ無"}}
+	}
+	setDraft("abc")
+	if code, out := postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "from_draft": true, "items": pick("abc")}); code == 200 ||
+		!strings.Contains(fmt.Sprint(out), "単価が読めません") {
+		t.Errorf("⚠ 読めない単価で納品書を作りました（または断りの文が違う）: %d %v", code, out)
+	}
+	setDraft("60")
+	code, out = postRFQ(t, u, DeliveryNewAPIHandler, map[string]any{"mfg": mfg, "from_draft": true, "items": pick("60")})
+	if code != 200 {
+		t.Fatalf("納品書を作れません: %d %v", code, out)
+	}
+	dn := readPageBody(t, out["page_id"].(string))
+	if !strings.Contains(dn, "<td>80</td>") || !strings.Contains(dn, "<td>60</td><td>タップ無</td>") {
+		t.Errorf("⚠ 納品書の行に直した単価（60）と備考がありません:\n%s", dn)
 	}
 }
 

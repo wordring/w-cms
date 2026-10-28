@@ -71,3 +71,36 @@ func TestCaseProfit(t *testing.T) {
 		t.Errorf("負の金額: %q", signedYen(-1234.4))
 	}
 }
+
+// TestCaseProfitDeliveredAtDeliveryPrice は、もう納めた分の売上を納品書の行の単価で数えることを固定します（2026-10-28）。
+// 100 個のうち 80 個をタップ無しで単価を下げて先に納めたら、売上は 80 × 下げた単価 ＋ 残り 20 × 案件の単価。
+func TestCaseProfitDeliveredAtDeliveryPrice(t *testing.T) {
+	setupMaterialsPermsTest(t)
+	addPage(t, 0, -1, "トップ", "admin", "302", true)
+	addPage(t, 60, 0, "案件", "root", "302", true)
+	caseBody := `<h1>案件</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindCustomerOrder + `</dd></dl>` +
+		`<table><caption>案件明細表</caption><tbody><tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>単価</th><th>状態</th></tr>` +
+		`<tr><td>000031</td><td>K-1</td><td>プーリー</td><td>100</td><td>1,000</td><td></td></tr></tbody></table>`
+	writeBodyFile(t, 60, caseBody)
+	syncBody(t, 60, caseBody)
+	dn := func(id int, qty, price string) {
+		t.Helper()
+		body := `<h1>【弊社】納品書</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindOurDelivery + `</dd></dl>` +
+			`<table><caption>納品明細表</caption><tbody><tr><th>案件</th><th>品番</th><th>品名</th><th>数量</th><th>単価</th><th>備考</th></tr>` +
+			`<tr><td>000060</td><td>K-1</td><td>プーリー</td><td>` + qty + `</td><td>` + price + `</td><td>タップ無</td></tr></tbody></table>`
+		addPage(t, id, 0, "納品書", "root", "302", false)
+		syncBody(t, id, body)
+	}
+	dn(62, "30", "600")
+	dn(63, "50", "600")
+	all, _ := caseProfits(database.DB, func(int) bool { return true })
+	if p := all[60]; p == nil || p.Sales != 80*600+20*1000 || p.SalesNoPrice != 0 {
+		t.Fatalf("⚠ 売上 %+v——80×600＋20×1000＝68000 を期待", p)
+	}
+	// 単価の無い納品書の行は、数は引いて「単価の無い行」に数える（案件の単価で数え直さない）。
+	dn(64, "20", "")
+	all, _ = caseProfits(database.DB, func(int) bool { return true })
+	if p := all[60]; p == nil || p.Sales != 80*600 || p.SalesNoPrice != 1 {
+		t.Errorf("⚠ 売上 %+v——48000（単価の無い行 1）を期待", p)
+	}
+}
