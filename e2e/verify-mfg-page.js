@@ -176,6 +176,22 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
       why = await qtyCell.evaluate((c) => 'edit-mode=' + document.body.hasAttribute('edit-mode') + ' editable=' + c.isContentEditable + ' text=' + c.textContent.trim());
     }
     check('④ 納品表の数量を 5 に直せた', edited, why);
+    // 今回の単価と備考も直す（2026-10-28——タップ無し・塗装無しで先に納めて単価を下げるとき）。
+    const typeInto = async (label, text) => {
+      const cell = await page.evaluateHandle((lb) => {
+        const table = Array.from(document.querySelectorAll('#w-editor-content table')).find((x) => x.querySelector('caption') && x.querySelector('caption').textContent.trim() === '納品表');
+        if (!table) return null;
+        const rows = Array.from(table.querySelectorAll('tr'));
+        const i = Array.from(rows[0].children).map((c) => c.textContent.trim()).indexOf(lb);
+        return i >= 0 && rows[1] ? rows[1].children[i] || null : null;
+      }, label);
+      if (!(await cell.evaluate((c) => !!c))) return false;
+      await cell.asElement().click({ clickCount: 3 });
+      if (await cell.evaluate((c) => c.textContent.trim() !== '')) await page.keyboard.press('Delete');
+      await page.keyboard.type(text);
+      return cell.evaluate((c, t) => c.textContent.trim() === t, text);
+    };
+    check('④ 納品表の単価を 300・備考を「タップ無」に直せた', (await typeInto('単価', '300')) && (await typeInto('備考', 'タップ無')));
     // 書ける形でも、サーバーが描く帯（「🚚 納品書を作る」「🚚 納品作業」）が出ている（2026-10-26——それまでは書ける形に入ると消え、
     // 閲覧へ戻しても読み直すまで出なかった）。帯に ⠿・🗑 は出ない。
     check('④ 書ける形でも帯が出る（納品表と製造明細表の下）',
@@ -204,6 +220,7 @@ const docsOf = (page, id) => page.evaluate(async (pid) => {
       const at = db.indexOf('E2E-MP-A');
       const row = at < 0 ? '' : db.slice(db.lastIndexOf('<tr', at), db.indexOf('</tr>', at));
       check('④ 納品書の数量は直した 5', />\s*5\s*</.test(row) && !/>\s*8\s*</.test(row), row.replace(/\s+/g, ' '));
+      check('④ 納品書の行に直した単価 300 と備考「タップ無」', />\s*300\s*</.test(row) && row.includes('タップ無'), row.replace(/\s+/g, ' '));
       check('④ 製造ページの「この製造の書類」に納品書', (await docsOf(page, mfg)).includes(dlv));
       check('④ 納品表は消えた', !(await bodyOf(page, mfg)).includes('<caption>納品表</caption>'));
     }
