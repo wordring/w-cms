@@ -77,6 +77,31 @@ const check = (label, ok, note = '') => {
     await page.waitForFunction(() => document.body.innerText.includes('FAX を送る仕事を受けました'), null, { timeout: 8000 }).catch(() => {});
     check('③ ファイルと番号を送った', faxes.length === 1 && faxes[0].includes('name="number"') && faxes[0].includes('03-1111-3333') && faxes[0].includes('%PDF-1.4'), String(faxes.length));
     check('③ 受けたと知らせる', (await page.locator('body').innerText()).includes('FAX を送る仕事を受けました'));
+
+    // ④ 業務サーバーのモデムでかける（2026-10-28・道具がある組だけ「かけ方」に出る）。口は試験のブラウザの中で止める。
+    const dials = [];
+    await page.route('**/api/phone/dial/info', (route) => route.fulfill({ json: { success: true, available: true } }));
+    await page.route('**/api/phone/dial', (route) => { dials.push('dial ' + JSON.stringify(route.request().postDataJSON())); route.fulfill({ json: { success: true, number: '0311112222', hold_sec: 30 } }); });
+    await page.route('**/api/phone/dial/release', (route) => { dials.push('release'); route.fulfill({ json: { success: true } }); });
+    await page.goto(BASE + '/' + box); // info を1回だけ聞くので、読み直してから
+    await page.locator('#w-dial-how').waitFor({ timeout: 15000 });
+    await page.click('#w-dial-how');
+    const howDlg = page.locator('dialog.w-confirm[open]');
+    await howDlg.waitFor({ timeout: 8000 });
+    check('④ 道具があれば、かけ方に「業務サーバーのモデム」が出る', (await howDlg.innerText()).includes('業務サーバーのモデム'));
+    await howDlg.locator('.w-choice-list button', { hasText: '業務サーバーのモデム' }).click();
+    check('④ かけ方 modem を憶えた', await page.evaluate(() => localStorage.getItem('wcms.dialHow')) === 'modem');
+    await page.uncheck('#w-dial-record');
+    await page.fill('#w-dial-to', '03-1111-2222');
+    await page.click('#w-dial-go');
+    await page.waitForFunction(() => document.querySelector('dialog.w-confirm[open]') && document.querySelector('dialog.w-confirm[open]').innerText.includes('受話器'), null, { timeout: 8000 });
+    const modemMsg = await page.locator('dialog.w-confirm[open]').innerText();
+    check('④ モデムに番号を回させ、受話器を上げるよう言う（30 秒で離れる）', dials[0] === 'dial {"number":"03-1111-2222"}' && modemMsg.includes('受話器を上げ') && modemMsg.includes('30 秒'), dials.join(' | ') + ' / ' + modemMsg.replace(/\s+/g, ' '));
+    await page.locator('dialog.w-confirm[open] .w-choice-list button', { hasText: '受話器を上げた' }).click();
+    await page.waitForFunction(() => true);
+    for (let i = 0; i < 40 && !dials.includes('release'); i++) await page.waitForTimeout(100);
+    check('④ 「受話器を上げた」でモデムを離す', dials.includes('release'), dials.join(' | '));
+    await page.evaluate(() => { try { localStorage.removeItem('wcms.dialHow'); } catch (e) {} });
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } finally {
     await browser.close();

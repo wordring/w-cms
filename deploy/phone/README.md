@@ -51,3 +51,27 @@ ND6 は、w-cms と同じ Ubuntu のサーバー機につなぎます（2026-10-
 - Linux では1分ごとに「CON」を送り、「ALOHA」が2分以上返らなければ開き直します。
 - 道具そのものが落ちたら、systemd（`Restart=always`）が起こし直します。
 - ✅ 2026-10-27 に、ナンバー・ディスプレイの契約のあと、実物の ND6 と本物の線で確かめました（着信の番号を読む・会社の電話機で出ると記録ができる・切ると「通話終了」が入る・出る前に切れた着信は記録しない）。USB の電源が切れたときの開き直しは、まだ確かめていません。電文の形は製造元の機能仕様書（アロハND6 機能仕様書 9章）に合わせて、試験で確かめました（`cmd/w-cms-phone/frame_test.go`）。
+
+## 電話をかける（業務サーバーのモデム・w-cms-dial）
+
+2026-10-28 に作りました（まだ本物の線では試していない）。w-cms の通信箱の「☎ かける」で、かけ方「業務サーバーのモデムでかける」を選んだ端末は、
+業務サーバーの USB モデムが番号を回します。会社の電話機の受話器を上げ、画面の「受話器を上げた」を押すと、モデムは線から離れ、そのまま電話機で話します。
+押さなくても 30 秒（`-hold`）で離れます（そのとき受話器を上げていなければ、電話は切れます）。
+
+- ⚠ ND6 は電話をかける命令を持っていません（製造元の機能仕様書 第2版）。そのため、会社の電話の線を分配器で分け、モデムと電話機（ND6）の両方につなぎます。
+- モデムは FAX と同じ型（Conexant CX93001・0572:1329）にします。製造番号も同じことが多いので、**差してある USB の口**で見分けます（FAX のモデムは口 1-9 に決めてある・`deploy/fax/99-faxmodem.rules`）。
+- 番号の確かめ（通信箱に書ける人だけ・料金の高い番号は管理者だけ）は w-cms がします（`ext/comm/phone_dial.go`）。道具は数字6〜15桁だけを受けます。
+- 試験用（w-cms-test）は、道具のソケットの組に入らないので、本物の電話をかけられません。
+
+モデムが届いたら:
+
+1. 会社の電話の線（TEL1）に分配器を付け、片方を ND6（と電話機）、もう片方をモデムにつなぎます。モデムを業務サーバーの空いた USB の口に差します（⚠ FAX のモデムは抜かない・口を替えない）。
+2. 新しいポートと口を見ます: `ls -l /dev/ttyACM*`（新しくできたもの・例 ttyACM1）→ `udevadm info -q path -n /dev/ttyACM1` の `…/usb1/<口>/…`（例 1-10）。
+3. `99-wcms-dialer.rules` の `XXXX` を口に書き換え、行頭の `#` を外して `/etc/udev/rules.d/` に置きます。`sudo udevadm control --reload && sudo udevadm trigger` → `/dev/wcms-dialer` ができたかを見ます。`/dev/faxmodem` が前のまま ttyACM0 を指していること・`faxstat` が「Running and idle」のことも見ます。
+4. 利用者を作ります: `sudo useradd --system --no-create-home --shell /usr/sbin/nologin --groups dialout wcms-dial`。
+5. 道具を組み立てて置きます: `cd /opt/w-cms/prod && go build -o /tmp/w-cms-dial ./cmd/w-cms-dial && sudo install -m 0755 /tmp/w-cms-dial /opt/w-cms/w-cms-dial`。
+6. `w-cms-dial.service` を `/etc/systemd/system/` に置き、`sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-dial`。`journalctl -u w-cms-dial` に「待っています」。
+7. 本番の w-cms をソケットの組に入れます: `sudo systemctl edit w-cms` で `[Service]` に `SupplementaryGroups=wcms-dial`。`/etc/w-cms/w-cms.env` に `WCMS_DIAL_SOCK=/run/w-cms-dial/dial.sock`。`sudo systemctl restart w-cms`。
+8. 板金部のパソコンで通信箱を開き、「かけ方」→「業務サーバーのモデムでかける」を選び、自分の携帯へかけて確かめます。
+   - 受話器を上げる前に相手が出ると、相手には無音が聞こえます（受話器を上げれば話せる）。
+   - モデムが「NO DIALTONE」と答えるときは、`ATX3`（発信音を待たない）が効いていないか、線がつながっていません。

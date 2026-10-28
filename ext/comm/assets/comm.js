@@ -351,8 +351,9 @@ if (w.version >= 4) {
     // ── 通信箱の「☎ 電話をかける」「📠 FAX を送る」（2026-10-28・ext/comm/view_unhandled.go の boxSendChromeHTML）。
     // 利用者:「FAXの送信と電話のダイヤルを通信フォルダから出来るようにしたいです。」
     // 「そのパソコンによってかけ方が違うので、ブラウザにかけ方を記憶させておくのはどうですか？」——かけ方はこの端末に憶える
-    // （link＝電話のリンク〔スマホの電話・パソコンのソフトフォン〕・show＝番号を出して会社の電話機で押す）。
-    // ⚠ ND6 は番号を聞くだけで、電話をかける命令を持たない（製造元の機能仕様書の命令の一覧）——会社の回線へ w-cms からはかけられない。
+    // （link＝電話のリンク〔スマホの電話・パソコンのソフトフォン〕・show＝番号を出して会社の電話機で押す・
+    // modem＝業務サーバーのモデムが回し、会社の電話機の受話器を上げて話す〔道具 cmd/w-cms-dial が動いているときだけ出す〕）。
+    // ⚠ ND6 は番号を聞くだけで、電話をかける命令を持たない（製造元の機能仕様書の命令の一覧）——会社の回線へは、ND6 と分けてつないだモデムで回す。
     const DIAL_HOW_KEY = 'wcms.dialHow';
     const numberCache = {};
     const digitsOf = (s) => String(s || '').replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[^0-9]/g, '');
@@ -387,11 +388,22 @@ if (w.version >= 4) {
         return { number: '' };
     }
     function savedDialHow() { try { return localStorage.getItem(DIAL_HOW_KEY) || ''; } catch (e) { return ''; } }
+    // modemAvailable は、業務サーバーのモデムでかけられるか（cmd/w-cms-dial が動いているか）を1回だけ聞きます。
+    let modemAvailableP = null;
+    function modemAvailable() {
+        if (!modemAvailableP) modemAvailableP = fetch('/api/phone/dial/info').then((r) => r.json()).then((d) => !!(d && d.success && d.available)).catch(() => false);
+        return modemAvailableP;
+    }
     async function chooseDialHow() {
-        const i = await askChoice('この端末で電話をかけるとき、どの電話を使いますか？（この端末のブラウザに憶えます。あとで「かけ方」で変えられます）',
-            ['📱 この端末の電話のアプリでかける（スマホの電話・パソコンのソフトフォン）', '☎ 会社の電話機で番号を押す（番号を大きく出します）']);
+        const hows = ['link', 'show'];
+        const labels = ['📱 この端末の電話のアプリでかける（スマホの電話・パソコンのソフトフォン）', '☎ 会社の電話機で番号を押す（番号を大きく出します）'];
+        if (await modemAvailable()) { // 2026-10-28——業務サーバーのモデムが番号を回し、会社の電話機の受話器を上げて話す
+            hows.unshift('modem');
+            labels.unshift('☎ 業務サーバーのモデムでかける（番号は自動で回し、会社の電話機の受話器を上げて話す）');
+        }
+        const i = await askChoice('この端末で電話をかけるとき、どの電話を使いますか？（この端末のブラウザに憶えます。あとで「かけ方」で変えられます）', labels);
         if (i < 0) return '';
-        const how = i === 0 ? 'link' : 'show';
+        const how = hows[i];
         try { localStorage.setItem(DIAL_HOW_KEY, how); } catch (e) { /* 憶えられなくても、今回はかけられる */ }
         return how;
     }
@@ -407,6 +419,17 @@ if (w.version >= 4) {
         if (!how) return;
         btn.disabled = true;
         let rec = '';
+        // モデムでかけるときは、先に回す（回せなかったら記録を作らない）。
+        let held = 0;
+        if (how === 'modem') {
+            const r = await w.postJSON('/api/phone/dial', { number: t.number });
+            if (!r.ok || !r.data || !r.data.success) {
+                btn.disabled = false;
+                w.notify('かけられませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0 });
+                return;
+            }
+            held = r.data.hold_sec || 0;
+        }
         try {
             const box = document.getElementById('w-dial-record');
             if (box && box.checked) {
@@ -417,6 +440,13 @@ if (w.version >= 4) {
                 else w.notify('発信の記録を作れませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'warn' });
             }
         } finally { btn.disabled = false; }
+        if (how === 'modem') {
+            const i = await askChoice('業務サーバーのモデムが ☎ ' + t.number + (t.label ? '（' + t.label + '）' : '') + ' を回しました。\n\n会社の電話機の受話器を上げて、「受話器を上げた」を押してください。' +
+                (held ? '\n（押さなくても ' + held + ' 秒でモデムは線から離れます）' : '') + (rec ? '\n\n発信の記録 /' + rec + ' を作りました。' : ''), ['受話器を上げた']);
+            await w.postJSON('/api/phone/dial/release', {}); // やめても離す（受話器を上げていなければ、電話は切れる）
+            if (rec && i === 0) location.href = '/' + rec + '?edit=true';
+            return;
+        }
         if (how === 'link') {
             location.href = 'tel:' + digitsOf(t.number);
             if (rec) setTimeout(() => { location.href = '/' + rec + '?edit=true'; }, 1200); // 電話のアプリが開いたあと、記録を開いて書けるように
@@ -470,7 +500,11 @@ if (w.version >= 4) {
         const how = document.getElementById('w-dial-how');
         if (how && !how.dataset.wired) {
             how.dataset.wired = '1';
-            how.addEventListener('click', async () => { const v = await chooseDialHow(); if (v) w.notify(v === 'link' ? 'この端末では、電話のアプリでかけます' : 'この端末では、番号を出して会社の電話機で押します', { type: 'success' }); });
+            how.addEventListener('click', async () => {
+                const v = await chooseDialHow();
+                const said = { modem: 'この端末では、業務サーバーのモデムでかけます（会社の電話機で話す）', link: 'この端末では、電話のアプリでかけます', show: 'この端末では、番号を出して会社の電話機で押します' };
+                if (v) w.notify(said[v], { type: 'success' });
+            });
         }
         [['w-dial-to', 'phone', 'w-dial-list'], ['w-fax-to', 'fax', 'w-fax-list']].forEach(([id, kind, list]) => {
             const el = document.getElementById(id);

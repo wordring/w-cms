@@ -1,0 +1,46 @@
+# 電話をかける道具 w-cms-dial の systemd の設定（2026-10-28・cmd/w-cms-dial）。
+# 置き場所: /etc/systemd/system/w-cms-dial.service → `sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-dial`
+#
+# 業務サーバーの USB モデム（/dev/wcms-dialer・deploy/phone/99-wcms-dialer.rules）で番号を回し、会社の電話機の受話器を上げて話す。
+# w-cms とは Unix ソケット /run/w-cms-dial/dial.sock だけでやりとりする（網には出ない）。
+#
+# ⚠ 利用者 wcms-dial で動かす（w-cms の利用者ではない）。ソケットは wcms-dial:wcms-dial の 0660 で、組 wcms-dial に入れるのは
+#   本番の w-cms だけ（w-cms.service の SupplementaryGroups=wcms-dial）。試験用（w-cms-test）は同じ利用者 w-cms で動くが、
+#   組に入らないので、本物の電話をかけられない。
+#   用意: sudo useradd --system --no-create-home --shell /usr/sbin/nologin --groups dialout wcms-dial
+
+[Unit]
+Description=w-cms 電話をかける（業務サーバーのモデム）
+After=network.target
+
+[Service]
+Type=simple
+User=wcms-dial
+Group=wcms-dial
+SupplementaryGroups=dialout
+UMask=0007
+RuntimeDirectory=w-cms-dial
+RuntimeDirectoryMode=0750
+ExecStart=/opt/w-cms/w-cms-dial -dev /dev/wcms-dialer -sock /run/w-cms-dial/dial.sock -hold 30s
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+InaccessiblePaths=-/var/lib/w-cms -/run/w-cms -/run/w-cms-test -/opt/w-cms/prod -/opt/w-cms/repo -/etc/w-cms
+DevicePolicy=closed
+DeviceAllow=char-ttyACM rw
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

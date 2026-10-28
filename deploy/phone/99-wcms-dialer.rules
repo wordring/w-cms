@@ -1,0 +1,9 @@
+# 電話をかけるモデム（cmd/w-cms-dial）の udev の決まり（2026-10-28）。
+# 置き場所: /etc/udev/rules.d/99-wcms-dialer.rules → `sudo udevadm control --reload && sudo udevadm trigger`
+#
+# FAX のモデムと同じ型（Conexant CX93001・0572:1329）で、製造番号も同じことが多いので、差してある USB の口で見分けます。
+# 差したら、`ls -l /dev/ttyACM*` で新しくできたポートを見て、`udevadm info -q path -n /dev/ttyACM1` の …/usb1/<ここ>/… の口
+# （例 1-10）を、下の XXXX に書き、行頭の # を外します。⚠ FAX のモデムの口（1-9・deploy/fax/99-faxmodem.rules）と取り違えないこと。
+#
+# 決まった名前 /dev/wcms-dialer を付ける（w-cms-dial はこの名前で使う）。ModemManager には触らせない。
+#SUBSYSTEM=="tty", KERNELS=="XXXX", ATTRS{idVendor}=="0572", ATTRS{idProduct}=="1329", SYMLINK+="wcms-dialer", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1", TAG+="systemd"

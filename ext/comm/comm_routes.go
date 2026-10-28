@@ -50,6 +50,10 @@ func (commPlugin) Routes() []cms.Route {
 		// 通信箱の「📠 FAX を送る」（パソコンの PDF をそのまま・fax_send_file.go）と「☎ 電話をかける」「📠」の相手の候補（box_numbers.go）——2026-10-28。
 		{Pattern: "/api/fax/send-file", Handler: FaxSendFileAPIHandler},
 		{Pattern: "/api/comm/numbers", Handler: BoxNumbersAPIHandler},
+		// 業務サーバーのモデムで電話をかける（会社の電話機で話す・phone_dial.go・cmd/w-cms-dial——2026-10-28）。
+		{Pattern: "/api/phone/dial/info", Handler: PhoneDialInfoAPIHandler},
+		{Pattern: "/api/phone/dial", Handler: PhoneDialAPIHandler},
+		{Pattern: "/api/phone/dial/release", Handler: PhoneDialReleaseAPIHandler},
 		// `.eml` を通信箱の記録にする（道具 tools/mail/push が叩く・2026-09-30——通信箱へ落とす道をやめた代わり）。
 		{Pattern: "/api/intake/eml", Handler: IntakeEMLAPIHandler},
 		// 記録から作るページ（選ぶ欄と「作成」・種類は拡張が登録する・2026-10-01・record_make.go）。
