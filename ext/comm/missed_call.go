@@ -43,10 +43,11 @@ const (
 )
 
 const (
-	missedKeepDays = 90             // 履歴を残す日数
-	missedKeepMax  = 1000           // 履歴を残す件数
-	missedShowDays = 14             // 一覧に並べる日数
-	missedRingMax  = 10 * time.Minute // 呼び出しの長さの上限（時刻が狂っていても変な数を書かない）
+	missedKeepDays  = 90               // 履歴を残す日数
+	missedKeepMax   = 1000             // 履歴を残す件数
+	missedShowDays  = 14               // 一覧に並べる日数
+	missedRingMax   = 10 * time.Minute // 呼び出しの長さの上限（時刻が狂っていても変な数を書かない）
+	missedNumberMax = 40               // 番号（と印）の長さの上限
 )
 
 // MissedCall は出ていない着信1つです。
@@ -104,8 +105,13 @@ func addMissedCall(number string, at, ended time.Time) (MissedCall, error) {
 	if ring < 0 || ring > missedRingMax {
 		ring = 0
 	}
+	// 番号の長さに上限を置く（履歴に何千行も残すので、1行の大きさを抑える・2026-10-28 のセキュリティの点検）。
+	number = strings.TrimSpace(number)
+	if r := []rune(number); len(r) > missedNumberMax {
+		number = string(r[:missedNumberMax])
+	}
 	m := MissedCall{
-		Number:  strings.TrimSpace(number),
+		Number:  number,
 		At:      at.In(time.Local).Format(time.RFC3339),
 		RingSec: int(ring.Round(time.Second) / time.Second),
 	}

@@ -130,7 +130,14 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 	}
 	// 芯は `IntakeFile`（重複検知・ページ生成）——メールの取り込みと同じ道です。
 	// ここはHTTPの応答に直すだけ。
-	res, handled, err := IntakeFile(inboxID, uploader, header.Filename, content)
+	// 差出人が自社のアドレスなら「送信」の記録にするのは、管理者が上げたときだけ（2026-10-28 のセキュリティの点検・【考察】コードの矛盾 §7.3）。
+	// ほかの人が上げたものは「受信」——自社を名乗るメールを上げて、送ったことにした控えを作れないように（過去の送信の控えを
+	// 入れる道具 tools/mail/push は管理者で動かす）。
+	direction := ""
+	if u := auth.CurrentUser(r); u == nil || !u.IsAdmin {
+		direction = DirectionIn
+	}
+	res, handled, err := IntakeFileAs(inboxID, uploader, header.Filename, content, direction)
 	if !handled {
 		return false
 	}

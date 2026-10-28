@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"w-cms/internal/auth"
@@ -92,5 +93,37 @@ func TestDropOnMailboxIsJustAttachment(t *testing.T) {
 	idInt, _ := strconv.Atoi(inbox)
 	if kids, err := cms.ChildPages(database.DB, idInt); err != nil || len(kids) != 0 {
 		t.Errorf("通信箱に子ページが生まれています: %+v %v", kids, err)
+	}
+}
+
+// TestIntakeEMLOwnAddressOnlyAdminBecomesSent は、手で上げたメールの差出人が自社のアドレスでも、「送信」の記録になるのは管理者が
+// 上げたときだけであることを固定します（2026-10-28 のセキュリティの点検）。ほかの人が上げると「受信」——自社を名乗るメールを
+// 上げて、送ったことにした控えを作れないように。
+func TestIntakeEMLOwnAddressOnlyAdminBecomesSent(t *testing.T) {
+	setupSaveTest(t)
+	setupInbox(t)
+	RegisterOwnAddresses(func() []string { return []string{"me@example.co.jp"} })
+	t.Cleanup(func() { RegisterOwnAddresses(nil) })
+	own := func(id string) string {
+		return "From: me@example.co.jp\r\nTo: a@example.jp\r\nSubject: 自社から\r\nDate: Mon, 01 Sep 2026 10:30:00 +0900\r\nMessage-ID: " + id + "\r\n\r\nhonbun\r\n"
+	}
+	dirOf := func(out map[string]any) string {
+		id, _ := out["page_id"].(string)
+		return strings.TrimSpace(cms.PageTagValue(database.DB, atoiPage(id), DirectionTag))
+	}
+	// alice は通信箱の持ち主だが、管理者ではない。
+	code, out := postEML(t, &auth.User{Username: "alice"}, "a.eml", []byte(own("<own-a@example.co.jp>")))
+	if code != 200 {
+		t.Fatalf("取り込めない: %d %v", code, out)
+	}
+	if d := dirOf(out); d != DirectionIn {
+		t.Errorf("⚠ 管理者でない人が上げた自社のメールが %q になった（受信のはず）", d)
+	}
+	code, out = postEML(t, &auth.User{Username: "root", IsAdmin: true}, "b.eml", []byte(own("<own-b@example.co.jp>")))
+	if code != 200 {
+		t.Fatalf("取り込めない: %d %v", code, out)
+	}
+	if d := dirOf(out); d != DirectionOut {
+		t.Errorf("管理者が上げた自社のメールが %q（送信のはず）", d)
 	}
 }
