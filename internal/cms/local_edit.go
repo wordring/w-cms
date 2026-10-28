@@ -162,17 +162,14 @@ func LocalEditStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// LocalEditFileAPIHandler は /api/local-edit/file?token= です（ヘルパーが使う・ログインの外で鍵だけを確かめる）。
+// LocalEditFileAPIHandler は /api/local-edit/file です（ヘルパーが使う・ログインの外で鍵だけを確かめる）。
 //
 //	GET  … 中身を返す（`ETag`・`X-WCMS-Name`＝表示の名前〔URL エンコード〕・`X-WCMS-Writable`）
 //	PUT  … 中身を上書きする（`If-Match` が要る——いまの ETag と違えば 409・書けなければ 403）
 func LocalEditFileAPIHandler(w http.ResponseWriter, r *http.Request) {
-	// 鍵は見出し X-WCMS-Edit-Token で受ける（2026-10-26 から。住所の ?token= はプロキシの記録に残るので、古いヘルパーのため
-	// だけに残す）。
+	// 鍵は見出し X-WCMS-Edit-Token だけで受ける（2026-10-26 から見出し。住所の ?token= はプロキシの記録に残るので、
+	// 古いヘルパーのためだけに残していた——2026-10-28 に外した。社内の PC は HP405 だけで、その道具は 10-27 の見出しで送るもの）。
 	token := r.Header.Get("X-WCMS-Edit-Token")
-	if token == "" {
-		token = r.URL.Query().Get("token")
-	}
 	g := grantOf(token)
 	if g == nil {
 		http.Error(w, "鍵が切れています（w-cms の画面から開き直してください）", http.StatusUnauthorized)

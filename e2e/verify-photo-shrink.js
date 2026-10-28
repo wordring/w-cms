@@ -84,9 +84,9 @@ const check = (label, ok, note = '') => {
     const st = await page.request.post(BASE + '/api/local-edit/start', { headers: { Origin: BASE }, data: { ref } });
     const link = (await st.json()).link || '';
     const leToken = link.split('#')[1] || '';
-    const get = await page.request.get(BASE + '/api/local-edit/file?token=' + leToken);
-    const put = await page.request.put(BASE + '/api/local-edit/file?token=' + leToken, {
-      headers: { Origin: BASE, 'If-Match': get.headers()['etag'] || '' }, data: big,
+    const get = await page.request.get(BASE + '/api/local-edit/file', { headers: { 'X-WCMS-Edit-Token': leToken } });
+    const put = await page.request.put(BASE + '/api/local-edit/file', {
+      headers: { Origin: BASE, 'X-WCMS-Edit-Token': leToken, 'If-Match': get.headers()['etag'] || '' }, data: big,
     });
     const d2 = await dimsOf(u.src);
     check('② ローカル編集で大きな写真に上書きできた', put.status() === 204 && Math.max(d2.w, d2.h) > long, put.status() + ' ' + (await put.text()).slice(0, 200) + ' ' + JSON.stringify(d2) + ' ' + JSON.stringify(get.headers()['x-wcms-writable']));

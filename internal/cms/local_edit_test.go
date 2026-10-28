@@ -32,7 +32,8 @@ func startLocalEdit(t *testing.T, user, ref string) (token string, writable bool
 }
 
 func localEditFile(method, token, ifMatch, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, "/api/local-edit/file?token="+token, strings.NewReader(body))
+	req := httptest.NewRequest(method, "/api/local-edit/file", strings.NewReader(body))
+	req.Header.Set("X-WCMS-Edit-Token", token)
 	if ifMatch != "" {
 		req.Header.Set("If-Match", ifMatch)
 	}
@@ -55,6 +56,12 @@ func TestLocalEditRoundTrip(t *testing.T) {
 		t.Fatalf("落とせません: %d %q", get.Code, get.Body.String())
 	}
 	etag := get.Header().Get("ETag")
+	// ⚠ 住所の ?token= では受けない（2026-10-28——前段のプロキシの記録に鍵が残るので、見出しだけにした）。
+	byQuery := httptest.NewRecorder()
+	LocalEditFileAPIHandler(byQuery, httptest.NewRequest("GET", "/api/local-edit/file?token="+token, nil))
+	if byQuery.Code != http.StatusUnauthorized {
+		t.Errorf("住所の鍵で落とせました: %d", byQuery.Code)
+	}
 
 	put := localEditFile("PUT", token, etag, "0\nSECTION\nEDITED\n")
 	if put.Code != http.StatusNoContent || put.Header().Get("ETag") == etag {
