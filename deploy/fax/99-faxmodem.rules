@@ -7,9 +7,14 @@
 #      lsusb                                   … 例 「ID 0572:1329 Conexant Systems ...」なら 0572 が idVendor・1329 が idProduct
 #      udevadm info -a -n /dev/ttyACM0 | grep -E 'idVendor|idProduct|serial'
 #    /dev/ttyACM0 が出なければ、Linux の標準の USB モデム（CDC-ACM）として動かない型です（その場合は別のモデムを考えます）。
+#
+# ⚠ 2026-10-28 から、差してある USB の口（KERNELS=="1-9"）でも見分けます。電話をかけるモデム（deploy/phone/99-wcms-dialer.rules）が
+#   同じ型で、製造番号も同じ（24680246）なので、型と番号だけでは2台を見分けられないため。FAX のモデムは、いまの口（1-9）から
+#   差し替えないこと。差し替えたら、`udevadm info -q path -n /dev/ttyACM0` の …/usb1/<ここ>/… を見て、下の 1-9 を書き換える。
+#   ModemManager には触らせない（ID_MM_DEVICE_IGNORE）——HylaFAX が使っている最中に AT の命令を送らないように。
 
 # 1. 決まった名前 /dev/faxmodem を付ける（HylaFAX はこの名前で使う。差し直しても名前が変わらない）。
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0572", ATTRS{idProduct}=="1329", SYMLINK+="faxmodem", GROUP="dialout", MODE="0660", TAG+="systemd"
+SUBSYSTEM=="tty", KERNELS=="1-9", ATTRS{idVendor}=="0572", ATTRS{idProduct}=="1329", SYMLINK+="faxmodem", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1", TAG+="systemd"
 
-# 2. USB の省電力（オートサスペンド）を切る——眠ったまま着信を取りこぼさないように。
+# 2. USB の省電力（オートサスペンド）を切る——眠ったまま着信を取りこぼさないように（電話をかけるモデムも同じ型なので、両方に効く）。
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0572", ATTR{idProduct}=="1329", TEST=="power/control", ATTR{power/control}="on"
