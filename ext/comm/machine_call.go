@@ -12,7 +12,7 @@ package comm
 //	                                                        {page_id, url, title} を返す（道具はその URL を開ける）
 //	POST /api/machine/call {event:"hangup", page_id, at}    … 受話器を置いた。その記録に「通話終了」の時刻を書き足す
 //	POST /api/machine/call {event:"missed", number, at, ended} … 出る前に鳴りやんだ（2026-10-28）。ページは作らず、出ていない着信の
-//	                                                        履歴に残す（missed_call.go・人が通信箱で「記録にする」を押したら作る）
+//	                                                        履歴に残す（missed_call.go・人が通信箱で「記録」を押したら作る）
 //
 // 番号の代わりに ND6 が送る印（P＝非通知・O＝表示圏外・C＝公衆電話・S＝サービス競合・E＝受信の誤り）は、言葉にして題に入れる。
 // 番号は、連絡帳などの `電話番号` のタグと数字だけで比べて、相手（ページ参照）を引く（phoneOwner）。
