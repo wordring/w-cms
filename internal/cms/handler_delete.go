@@ -52,6 +52,11 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !page.RequirePageWrite(w, r, id) {
 		return
 	}
+	// 拡張が消させないページ（届いた記録など・removal_guard.go・2026-10-28）。
+	if why := removalRefusal(auth.CurrentUser(r), pageID, -1); why != "" {
+		http.Error(w, why, http.StatusForbidden)
+		return
+	}
 	// 消すのは、親の中身（子の並び）を変えること——親にも書けること（2026-10-27 の見直し。移す口は 10-26 からそう確かめて
 	// いたのに、消す口だけ見ていなかったので、書けない置き場から自分のページをごみ箱へ持ち出せた）。
 	var parent sql.NullInt64

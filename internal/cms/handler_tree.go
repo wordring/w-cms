@@ -361,6 +361,12 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 	if oldParent.Valid && int(oldParent.Int64) != parentID && !page.GetPerms(int(oldParent.Int64)).CanWrite(user) {
 		return "いまの親ページへの書き込み権限がありません（書けない置き場からは動かせません）", http.StatusForbidden
 	}
+	// 拡張が動かさせないページ（届いた記録を置き場の外へ・removal_guard.go・2026-10-28）。いまの親のままなら見ない。
+	if !oldParent.Valid || int(oldParent.Int64) != parentID {
+		if why := removalRefusal(user, childID, parentID); why != "" {
+			return why, http.StatusForbidden
+		}
+	}
 	return "", 0
 }
 
