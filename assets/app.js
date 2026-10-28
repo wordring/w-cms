@@ -2943,7 +2943,9 @@
             if (a && a !== document.body && sec.contains(a) && (a.matches('input, textarea, select') || a.isContentEditable)) { busy = true; return; }
             const fieldKey = f => f.id || f.name || (f.className + '|' + JSON.stringify(Object.assign({}, f.dataset)));
             const kept = new Map();
+            const keptFiles = new Map(); // ファイルを選ぶ欄は値を写せない（選んだファイルは欄そのものが持つ）——欄ごと移す（2026-10-28）
             oldChrome.forEach(c => c.querySelectorAll('input, textarea, select').forEach(f => {
+                if (f.type === 'file') { if (f.files && f.files.length) keptFiles.set(fieldKey(f), f); return; }
                 kept.set(fieldKey(f), (f.type === 'checkbox' || f.type === 'radio') ? f.checked : f.value);
             }));
             const newChrome = Array.from(fresh.children).filter(c => c.classList.contains('vocab-chrome'));
@@ -2952,6 +2954,7 @@
                 const node = document.importNode(c, true);
                 node.querySelectorAll('input, textarea, select').forEach(f => {
                     const k = fieldKey(f);
+                    if (f.type === 'file') { if (keptFiles.has(k)) f.replaceWith(keptFiles.get(k)); return; }
                     if (!kept.has(k)) return;
                     if (f.type === 'checkbox' || f.type === 'radio') f.checked = kept.get(k); else f.value = kept.get(k);
                 });

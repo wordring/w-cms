@@ -262,6 +262,29 @@ func newRecordChromeHTML() string {
 	return sb.String()
 }
 
+// boxSendChromeHTML は、通信箱から電話をかける・FAX を送る2行です（2026-10-28）。
+//
+// > 2026-10-28 利用者:「FAXの送信と電話のダイヤルを通信フォルダから出来るようにしたいです。」
+// > 同じ日（かけ方を）:「そのパソコンによってかけ方が違うので、ブラウザにかけ方を記憶させておくのはどうですか？」
+//
+// 相手の候補（`電話番号`・`FAX番号` のあるページ）は、画面が欄に触れたときに /api/comm/numbers から読む（box_numbers.go）。
+// かけ方（この端末の電話のアプリで・会社の電話機で押す）はブラウザに憶える。動きは comm.js が与える。
+func boxSendChromeHTML() string {
+	return `<p class="vocab-chrome unhandled-dial">` +
+		`<input type="text" id="w-dial-to" list="w-dial-list" placeholder="☎ 電話をかける相手（名前か番号）" maxlength="80" autocomplete="off">` +
+		`<datalist id="w-dial-list"></datalist>` +
+		`<label class="unhandled-dial-record" title="かけた電話の記録（発信）を通信箱に作ります"><input type="checkbox" id="w-dial-record" checked> 記録を作る</label>` +
+		`<button type="button" id="w-dial-go">☎ かける</button>` +
+		`<button type="button" id="w-dial-how" class="unhandled-dial-how" title="この端末での電話のかけ方を選び直します">かけ方</button>` +
+		`</p>` +
+		`<p class="vocab-chrome unhandled-faxsend">` +
+		`<input type="file" id="w-fax-file" accept=".pdf,application/pdf" title="送る PDF">` +
+		`<input type="text" id="w-fax-to" list="w-fax-list" placeholder="📠 FAX の送り先（名前か番号）" maxlength="80" autocomplete="off">` +
+		`<datalist id="w-fax-list"></datalist>` +
+		`<button type="button" id="w-fax-go">📠 FAX を送る</button>` +
+		`</p>`
+}
+
 // channelWithDirection はチャネルの記号に向きの矢印を添えます。
 //
 // **矢印の向きではなく、置く側で読ませます**（2026-09-05 ユーザー:「通信箱の受信
@@ -388,6 +411,7 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 	// **記録を作る口は、一覧が空でも出します。** 片付いた日にボタンごと消えると、
 	// 電話が鳴ったときに置き場所が見つかりません。
 	sb.WriteString(newRecordChromeHTML())
+	sb.WriteString(boxSendChromeHTML())
 	if total == 0 && len(missed) == 0 {
 		sb.WriteString(`<p class="child-list-empty">未処理はありません</p>`)
 		return sb.String()

@@ -291,7 +291,9 @@ func recordSentFax(user *auth.User, src faxSource, number, job string) (string, 
 	d.SetTag(FaxNumberTag, number)
 	d.SetTag(FaxSendJobTag, job)
 	d.SetTag(FaxSendStateTag, faxStateSending)
-	d.SetTag(ParentPageTag, srcPage)
+	if srcPage != "" { // 通信箱から送ったパソコンのファイルには、元のページが無い（fax_send_file.go・2026-10-28）
+		d.SetTag(ParentPageTag, srcPage)
+	}
 	if src.Purpose != "" {
 		paper := src.Paper
 		if paper == "" {
@@ -311,10 +313,16 @@ func recordSentFax(user *auth.User, src faxSource, number, job string) (string, 
 	name := fileName
 	if strings.TrimSpace(src.Name) != "" {
 		name = src.Name // 用件の紙は、メールで添えるときと同じ名前（部材発注書 N.pdf など）
-	} else if m, ok := cms.ReadAttachmentMetas(srcPage)[fileName]; ok && strings.TrimSpace(m.Name) != "" {
-		name = m.Name // 届いたときの名前で写す
+	} else if srcPage != "" {
+		if m, ok := cms.ReadAttachmentMetas(srcPage)[fileName]; ok && strings.TrimSpace(m.Name) != "" {
+			name = m.Name // 届いたときの名前で写す
+		}
 	}
-	attachID, _, err := cms.SaveAttachmentFrom(recID, user.Username, name, "fax-send:"+srcPage+"/"+fileName, content)
+	origin := "fax-send:" + srcPage + "/" + fileName
+	if srcPage == "" {
+		origin = "fax-send-file:" + fileName // パソコンから送ったファイル
+	}
+	attachID, _, err := cms.SaveAttachmentFrom(recID, user.Username, name, origin, content)
 	if err != nil {
 		return recID, err
 	}

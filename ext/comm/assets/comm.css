@@ -125,6 +125,31 @@
 }
 #w-editor-content .unhandled-new input { flex: 1 1 auto; min-width: 0; max-width: 24em; }
 
+/* 通信箱から ☎ 電話をかける・📠 FAX を送る2行（2026-10-28・view_unhandled.go の boxSendChromeHTML）。記録を作る行と同じ並べ方。 */
+#w-editor-content .unhandled-dial,
+#w-editor-content .unhandled-faxsend {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 0 0 10px;
+    flex-wrap: wrap;
+}
+#w-editor-content .unhandled-dial input[type="text"],
+#w-editor-content .unhandled-faxsend input[type="text"] {
+    flex: 1 1 12em;
+    min-width: 0;
+    max-width: 24em;
+    padding: 3px 8px;
+    font-size: 13px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg-paper);
+    color: var(--text);
+}
+#w-editor-content .unhandled-faxsend input[type="file"] { max-width: 100%; font-size: 13px; }
+#w-editor-content .unhandled-dial-record { font-size: 13px; white-space: nowrap; }
+#w-editor-content .unhandled-dial-how { font-size: 12px; }
+
 /* ☎ 発信（電話番号のタグがあるページ・閲覧モード限定）。返信のクロームと同じ
  * 「本文の外に出す帯」で、記録を作るかはチェック1つで決める。 */
 #w-editor-content .phone-chrome {

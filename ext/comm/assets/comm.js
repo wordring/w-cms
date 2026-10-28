@@ -347,5 +347,139 @@ if (w.version >= 4) {
         }
         w.notify('📠 FAX はまだ送っている途中か、待っています（' + number + '・仕事 ' + job + '）。話し中なら、少しあとで自動でかけ直します。', { type: 'warn', duration: 0, id: 'fax-send' });
     }
+
+    // ── 通信箱の「☎ 電話をかける」「📠 FAX を送る」（2026-10-28・ext/comm/view_unhandled.go の boxSendChromeHTML）。
+    // 利用者:「FAXの送信と電話のダイヤルを通信フォルダから出来るようにしたいです。」
+    // 「そのパソコンによってかけ方が違うので、ブラウザにかけ方を記憶させておくのはどうですか？」——かけ方はこの端末に憶える
+    // （link＝電話のリンク〔スマホの電話・パソコンのソフトフォン〕・show＝番号を出して会社の電話機で押す）。
+    // ⚠ ND6 は番号を聞くだけで、電話をかける命令を持たない（製造元の機能仕様書の命令の一覧）——会社の回線へ w-cms からはかけられない。
+    const DIAL_HOW_KEY = 'wcms.dialHow';
+    const numberCache = {};
+    const digitsOf = (s) => String(s || '').replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[^0-9]/g, '');
+    // boxNumbers は相手の候補（kind: phone・fax）を読み、datalist に並べます（1回だけ）。
+    async function boxNumbers(kind, listId) {
+        if (numberCache[kind]) return numberCache[kind];
+        let list = [];
+        try {
+            const d = await (await fetch('/api/comm/numbers?kind=' + kind)).json();
+            if (d && d.success) list = d.numbers || [];
+        } catch (e) { /* 候補が無くても、番号を打てばかけられる */ }
+        numberCache[kind] = list;
+        const dl = document.getElementById(listId);
+        if (dl && !dl.childElementCount) list.forEach((n) => { const o = document.createElement('option'); o.value = n.label + ' ' + n.number; dl.appendChild(o); });
+        return list;
+    }
+    // pickTarget は欄の文字から相手を決めます（{number, label, page}・決められなければ number が空）。名前が何件にも当たれば選ばせる。
+    async function pickTarget(text, list, what) {
+        const exact = list.find((n) => n.label + ' ' + n.number === text);
+        if (exact) return exact;
+        const d = digitsOf(text);
+        if (d.length >= 6 && d.length >= text.replace(/[\s\-ー－()（）]/g, '').length) {
+            const owner = list.find((n) => digitsOf(n.number) === d);
+            return { number: text, label: owner ? owner.label : '', page: owner ? owner.page : '' };
+        }
+        const hits = list.filter((n) => n.label.includes(text));
+        if (hits.length === 1) return hits[0];
+        if (hits.length > 1) {
+            const i = await askChoice('「' + text + '」の' + what + 'が ' + hits.length + ' 件あります。どれにしますか？', hits.map((n) => n.label + ' ' + n.number));
+            return i >= 0 ? hits[i] : { number: '' };
+        }
+        return { number: '' };
+    }
+    function savedDialHow() { try { return localStorage.getItem(DIAL_HOW_KEY) || ''; } catch (e) { return ''; } }
+    async function chooseDialHow() {
+        const i = await askChoice('この端末で電話をかけるとき、どの電話を使いますか？（この端末のブラウザに憶えます。あとで「かけ方」で変えられます）',
+            ['📱 この端末の電話のアプリでかける（スマホの電話・パソコンのソフトフォン）', '☎ 会社の電話機で番号を押す（番号を大きく出します）']);
+        if (i < 0) return '';
+        const how = i === 0 ? 'link' : 'show';
+        try { localStorage.setItem(DIAL_HOW_KEY, how); } catch (e) { /* 憶えられなくても、今回はかけられる */ }
+        return how;
+    }
+    // dialFromBox は「☎ かける」です。記録（発信）を作ってから、かけ方に合わせてかける。
+    async function dialFromBox(btn) {
+        const input = document.getElementById('w-dial-to');
+        const text = input ? input.value.trim() : '';
+        if (!text) { w.notify('電話をかける相手か番号を入れてください', { type: 'warn' }); return; }
+        const t = await pickTarget(text, await boxNumbers('phone', 'w-dial-list'), '電話番号');
+        if (!t.number || digitsOf(t.number).length < 6) { w.notify('電話番号が分かりません（連絡帳に電話番号のある相手を選ぶか、番号を打ってください）', { type: 'warn' }); return; }
+        let how = savedDialHow();
+        if (!how) how = await chooseDialHow();
+        if (!how) return;
+        btn.disabled = true;
+        let rec = '';
+        try {
+            const box = document.getElementById('w-dial-record');
+            if (box && box.checked) {
+                const now = new Date(), p2 = (n) => String(n).padStart(2, '0');
+                const stamp = now.getFullYear() + '-' + p2(now.getMonth() + 1) + '-' + p2(now.getDate()) + ' ' + p2(now.getHours()) + ':' + p2(now.getMinutes());
+                const r = await w.postJSON('/api/intake/memo', { channel: '電話', direction: '送信', phone: t.number, counterpart: t.page || '', title: '電話 送信 ' + (t.label || t.number) + ' ' + stamp });
+                if (r.ok && r.data && r.data.success) rec = r.data.page_id;
+                else w.notify('発信の記録を作れませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'warn' });
+            }
+        } finally { btn.disabled = false; }
+        if (how === 'link') {
+            location.href = 'tel:' + digitsOf(t.number);
+            if (rec) setTimeout(() => { location.href = '/' + rec + '?edit=true'; }, 1200); // 電話のアプリが開いたあと、記録を開いて書けるように
+            return;
+        }
+        const i = await askChoice('会社の電話機で、次の番号を押してください。\n\n☎ ' + t.number + (t.label ? '（' + t.label + '）' : '') + (rec ? '\n\n発信の記録 /' + rec + ' を作りました。' : ''), rec ? ['記録を開く'] : ['閉じる']);
+        if (rec && i === 0) location.href = '/' + rec + '?edit=true';
+    }
+    // faxFromBox は「📠 FAX を送る」です。パソコンの PDF を、ページに置かずに送る（/api/fax/send-file・送った FAX は通信箱の記録になる）。
+    async function faxFromBox(btn) {
+        const fileInput = document.getElementById('w-fax-file');
+        const file = fileInput && fileInput.files && fileInput.files[0];
+        if (!file) { w.notify('送る PDF を選んでください', { type: 'warn' }); return; }
+        if (!/\.pdf$/i.test(file.name)) { w.notify('FAX で送れるのは PDF だけです', { type: 'warn' }); return; }
+        const input = document.getElementById('w-fax-to');
+        const text = input ? input.value.trim() : '';
+        if (!text) { w.notify('FAX の送り先（名前か番号）を入れてください', { type: 'warn' }); return; }
+        const t = await pickTarget(text, await boxNumbers('fax', 'w-fax-list'), 'FAX 番号');
+        if (!t.number || digitsOf(t.number).length < 6) { w.notify('FAX の番号が分かりません（連絡帳に FAX 番号のある相手を選ぶか、番号を打ってください）', { type: 'warn' }); return; }
+        if (!await askConfirm('「' + file.name + '」を、FAX の番号 ' + t.number + (t.label ? '（' + t.label + '）' : '') + ' へ送ります。よろしいですか？', '送る', 'やめる')) return;
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('number', t.number);
+        btn.disabled = true;
+        let d = null, ok = false, status = 0;
+        try {
+            const res = await fetch('/api/fax/send-file', { method: 'POST', body: fd });
+            status = res.status;
+            ok = res.ok;
+            try { d = await res.json(); } catch (e) { d = null; }
+        } catch (e) {
+            w.notify('FAX を送れませんでした: ' + e.message, { type: 'alert', duration: 0, id: 'fax-send' });
+            return;
+        } finally { btn.disabled = false; }
+        if (!ok || !d || !d.success) {
+            w.notify('FAX を送れませんでした: ' + ((d && (d.message || d.error)) || ('HTTP ' + status)), { type: 'alert', duration: 0, id: 'fax-send' });
+            return;
+        }
+        if (fileInput) fileInput.value = '';
+        const rec = d.record ? '記録 /' + d.record + '。' : (d.record_error ? '記録は作れませんでした（' + d.record_error + '）。' : '');
+        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。' + rec + '送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
+        watchFax(d.job, d.number);
+    }
+    // wireBoxSend は2行に配線します（描き直されたら、そのたびに・1回だけ）。
+    function wireBoxSend() {
+        const pairs = [['w-dial-go', dialFromBox], ['w-fax-go', faxFromBox]];
+        pairs.forEach(([id, fn]) => {
+            const b = document.getElementById(id);
+            if (b && !b.dataset.wired) { b.dataset.wired = '1'; b.addEventListener('click', () => fn(b)); }
+        });
+        const how = document.getElementById('w-dial-how');
+        if (how && !how.dataset.wired) {
+            how.dataset.wired = '1';
+            how.addEventListener('click', async () => { const v = await chooseDialHow(); if (v) w.notify(v === 'link' ? 'この端末では、電話のアプリでかけます' : 'この端末では、番号を出して会社の電話機で押します', { type: 'success' }); });
+        }
+        [['w-dial-to', 'phone', 'w-dial-list'], ['w-fax-to', 'fax', 'w-fax-list']].forEach(([id, kind, list]) => {
+            const el = document.getElementById(id);
+            if (!el || el.dataset.wired) return;
+            el.dataset.wired = '1';
+            el.addEventListener('focus', () => { boxNumbers(kind, list); }, { once: false });
+            el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = document.getElementById(kind === 'phone' ? 'w-dial-go' : 'w-fax-go'); if (b) b.click(); } });
+        });
+    }
+    w.onChrome(wireBoxSend);
 }
 })();
