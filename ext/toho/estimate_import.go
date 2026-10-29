@@ -31,12 +31,8 @@ import (
 // EstimateImportAPIHandler は POST /api/estimate/import です。
 // 入力: {client（空なら加工製品の取引先）, date（YYYY-MM-DD）, note, lines: [{product_id, quantity, unit, price, note}]}。
 func EstimateImportAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, ok := cms.GateJSONAdminPost(w, r, "過去の販売価格の移し")
 	if !ok {
-		return
-	}
-	if !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます（過去の販売価格の移し）")
 		return
 	}
 	var req struct {

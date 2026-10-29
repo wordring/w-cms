@@ -89,12 +89,8 @@ func appendTableRows(body, caption string, rows []map[string]string) (string, in
 
 // AppendTableRowsAPIHandler は POST /api/table/append-rows です（管理者だけ）。入力: {page_id, caption, rows: [{見出し: 値}]}。
 func AppendTableRowsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, ok := cms.GateJSONAdminPost(w, r, "")
 	if !ok {
-		return
-	}
-	if !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます")
 		return
 	}
 	var req struct {

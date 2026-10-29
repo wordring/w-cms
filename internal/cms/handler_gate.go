@@ -66,6 +66,26 @@ func GateJSONPost(w http.ResponseWriter, r *http.Request) (user *auth.User, ok b
 	return user, true
 }
 
+// GateJSONAdminPost は、JSONで答える**管理者だけの書き込み口**の入口です: GateJSONPost → 管理者か。
+// 断ったときは応答を書き終えていて ok=false。use は断りの文に添える用途（空なら添えない）。
+//
+// 同じ6行（GateJSONPost のあとに `!user.IsAdmin` → 403）が拡張の5つの口に写されていた（2026-10-29 に寄せた）。
+// 写した口に確かめを書き忘れると、管理者だけの道具（過去のデータの移し・表への行の追加）がだれでも使えてしまう。
+func GateJSONAdminPost(w http.ResponseWriter, r *http.Request, use string) (user *auth.User, ok bool) {
+	if user, ok = GateJSONPost(w, r); !ok {
+		return nil, false
+	}
+	if !user.IsAdmin {
+		msg := "管理者だけが使えます"
+		if use != "" {
+			msg += "（" + use + "）"
+		}
+		JSONFail(w, http.StatusForbidden, msg)
+		return nil, false
+	}
+	return user, true
+}
+
 // GateJSONGet は、JSONで答える**ログインが要る読み取り口**（ページを名指ししないもの）の入口です:
 // `Content-Type` → GET の確認 → 利用者。断ったときは応答を書き終えていて ok=false。
 // ページを名指しする口は `GateJSONPageRead`（匿名でも公開ページは読める）。

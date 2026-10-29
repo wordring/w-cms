@@ -12,11 +12,8 @@ package comm
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"w-cms/internal/auth"
@@ -33,39 +30,15 @@ func FaxSendFileAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusConflict, "FAX の記録を作れないので、送っていません: "+err.Error())
 		return
 	}
-	limit := cms.MaxUploadBytes()
-	r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, "ファイルを受け取れません: "+err.Error())
+	if !cms.ParseUploadForm(w, r) {
 		return
 	}
-	number := faxSendNumber(r.FormValue("number"))
-	if number == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "FAX の番号が読めません（数字6〜15桁。ハイフンは入れてもよい）")
+	number, ok := outboundNumber(w, user, r.FormValue("number"), "FAX の番号", "送れる")
+	if !ok {
 		return
 	}
-	if costlyFaxNumber(number) && !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "国際・事業者を選ぶ番号・有料の番号（010・00・0990 で始まる番号）へ送れるのは管理者だけです")
-		return
-	}
-	f, hdr, err := r.FormFile("file")
-	if err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, "送るファイルがありません")
-		return
-	}
-	defer f.Close()
-	name := filepath.Base(strings.TrimSpace(hdr.Filename))
-	if !strings.EqualFold(filepath.Ext(name), ".pdf") {
-		cms.JSONFail(w, http.StatusBadRequest, "FAX で送れるのは PDF だけです: "+name)
-		return
-	}
-	content, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil || int64(len(content)) > limit {
-		cms.JSONFail(w, http.StatusRequestEntityTooLarge, "ファイルが大きすぎます")
-		return
-	}
-	if content, err = cms.GuardUploadContent(name, content); err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, err.Error())
+	name, content, ok := cms.UploadedFile(w, r, "file", map[string]bool{".pdf": true}, "FAX で送れるのは PDF だけです")
+	if !ok {
 		return
 	}
 	// 送る道具（sendfax）はファイルの場所を受けるので、一時のファイルに置く（送る仕事に写したあと消す）。

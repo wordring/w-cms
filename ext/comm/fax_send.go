@@ -126,12 +126,35 @@ func costlyFaxNumber(n string) bool {
 	if len(n) < 2 || n[0] != '0' || n[1] < '1' || n[1] > '9' {
 		return true
 	}
-	for _, p := range []string{"010", "0570", "0180", "0990", "020"} {
+	for _, p := range costlyPrefixes {
 		if strings.HasPrefix(n, p) {
 			return true
 		}
 	}
 	return false
+}
+
+// costlyPrefixes は、管理者だけが送れる・かけられる番号の頭です（costlyFaxNumber と断りの文が同じ表を見る）。
+var costlyPrefixes = []string{"010", "0570", "0180", "0990", "020"}
+
+// outboundNumber は、FAX を送る・電話をかける口の、相手の番号の関門です（2026-10-29 にまとめた）。
+// 数字だけにする（faxSendNumber）→ 料金の高い番号は管理者だけ（costlyFaxNumber）。断ったときは応答を書き終えていて ok=false。
+// what は番号の呼び名（「FAX の番号」「電話番号」）、verb は断りの文の動き（「送れる」「かけられる」）。
+//
+// それまでは、FAX の2つの口とモデムで電話をかける口に同じ8行が写されていて、断りの文に挙げる番号の頭が
+// 口ごとに違い、どれも本当の決まり（costlyPrefixes）より少なかった。
+func outboundNumber(w http.ResponseWriter, user *auth.User, raw, what, verb string) (number string, ok bool) {
+	number = faxSendNumber(raw)
+	if number == "" {
+		cms.JSONFail(w, http.StatusBadRequest, what+"が読めません（数字6〜15桁。ハイフンは入れてもよい）")
+		return "", false
+	}
+	if costlyFaxNumber(number) && (user == nil || !user.IsAdmin) {
+		cms.JSONFail(w, http.StatusForbidden, "国際・事業者を選ぶ番号・有料の番号など（0 の次が 1〜9 でない番号と、"+
+			strings.Join(costlyPrefixes, "・")+" で始まる番号）へ"+verb+"のは管理者だけです")
+		return "", false
+	}
+	return number, true
 }
 
 var sendfaxJobRe = regexp.MustCompile(`request id is (\d+)`)
@@ -173,13 +196,8 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 番号は紙を用意する前に確かめる（用件の Prepare は PDF を作ることがある）。
-	number := faxSendNumber(req.Number)
-	if number == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "FAX の番号が読めません（数字6〜15桁。ハイフンは入れてもよい）")
-		return
-	}
-	if costlyFaxNumber(number) && !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "国際・事業者を選ぶ番号・有料の番号（010・00・0990 で始まる番号）へ送れるのは管理者だけです")
+	number, ok := outboundNumber(w, user, req.Number, "FAX の番号", "送れる")
+	if !ok {
 		return
 	}
 	var src faxSource

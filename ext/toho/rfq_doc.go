@@ -302,12 +302,8 @@ func RFQNewDocAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 回答日は date（部材見積依頼日も date——依頼した日は分からない）。置き場は 記録／年／月／製造記録（date の年月）。
 // 1回で1枚（業者×日付）。何枚も作り、二重に作らない記録を持つのは移す道具の仕事（実名を含む一覧を読むのでリポジトリの外）。
 func RFQImportAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, ok := cms.GateJSONAdminPost(w, r, "過去の見積もりの移し")
 	if !ok {
-		return
-	}
-	if !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます（過去の見積もりの移し）")
 		return
 	}
 	var req struct {
@@ -437,12 +433,8 @@ func fillRFQItemNames(body string) (string, int) {
 // RFQFillNamesAPIHandler は POST /api/rfq/fill-names です（2026-10-04・管理者だけ）——部材見積依頼書ページの部材見積依頼明細表の空の品番・品名を
 // 加工製品ページから埋めます（過去の見積もりを移したページの後始末。新しく移すぶんは RFQImportAPIHandler が埋める）。
 func RFQFillNamesAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, ok := cms.GateJSONAdminPost(w, r, "")
 	if !ok {
-		return
-	}
-	if !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます")
 		return
 	}
 	var req struct {
@@ -479,12 +471,8 @@ func RFQFillNamesAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 過去の見積もりを移した行の後始末に使う（利用者 10-04:「数量の記述が無いと1個にしているようですが、ちょっとまずいです…空欄にするのが
 // 妥当では？」——1回目の移しで数の無い行に 1 を入れていた）。
 func RFQSetCellsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, ok := cms.GateJSONAdminPost(w, r, "")
 	if !ok {
-		return
-	}
-	if !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "管理者だけが使えます")
 		return
 	}
 	var req struct {

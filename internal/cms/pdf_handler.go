@@ -35,6 +35,8 @@ func attachmentFileName(pageID, raw string) (string, error) {
 // 受け取るので、PDF の口（allowedAttachmentExts）と画像の口（allowedImageExts）で
 // 共有できます。**名前の守りは1箇所**にしておかないと、口を増やすたびに
 // 「サイドカーを上書きできる穴」が復活します。
+// pageID が空のとき（ページに置く前に名前だけを確かめる口・UploadedFile）は、本文と属性の名前の確かめは当たりません
+// （`.html` などはドットで始まるので、もとから断る）。
 func SafeAttachmentName(pageID, raw string, allowed map[string]bool, extError string) (string, error) {
 	// パス要素を落とす。filepath.Base は実行中のOSの区切りしか見ないため、
 	// Linux上での "..\\..\\evil.pdf" のような名前に備えて両方の区切りで切る。

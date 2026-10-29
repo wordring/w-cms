@@ -589,3 +589,44 @@ func TestCostlyFaxNumber(t *testing.T) {
 		}
 	}
 }
+
+// TestOutboundNumber は、FAX を送る・電話をかける口の番号の関門（outboundNumber・2026-10-29 にまとめた）を固定します。
+//
+//   - 読めない番号は 400・料金の高い番号は管理者でなければ 403・管理者とふつうの番号は数字だけにして通す
+//   - 断りの文には、本当に断っている番号の頭が全部出る（それまでは口ごとに違い、0570・0180・020 が抜けていた）
+func TestOutboundNumber(t *testing.T) {
+	call := func(u *auth.User, raw string) (int, string, string) {
+		rr := httptest.NewRecorder()
+		n, ok := outboundNumber(rr, u, raw, "電話番号", "かけられる")
+		if ok {
+			return 0, n, ""
+		}
+		var out struct {
+			Message string `json:"message"`
+		}
+		json.Unmarshal(rr.Body.Bytes(), &out)
+		return rr.Code, "", out.Message
+	}
+	alice, admin := &auth.User{Username: "alice"}, &auth.User{Username: "a", IsAdmin: true}
+	if code, n, _ := call(alice, "03-1234-5678"); code != 0 || n != "0312345678" {
+		t.Errorf("ふつうの番号: %d %q", code, n)
+	}
+	if code, _, msg := call(alice, "abc"); code != http.StatusBadRequest || !strings.HasPrefix(msg, "電話番号が読めません") {
+		t.Errorf("読めない番号: %d %q", code, msg)
+	}
+	code, _, msg := call(alice, "0570-123-456")
+	if code != http.StatusForbidden || !strings.HasSuffix(msg, "かけられるのは管理者だけです") {
+		t.Errorf("料金の高い番号（管理者でない）: %d %q", code, msg)
+	}
+	for _, p := range costlyPrefixes {
+		if !strings.Contains(msg, p) {
+			t.Errorf("断りの文に %s が出ていません: %q", p, msg)
+		}
+	}
+	if code, _, _ := call(nil, "0570-123-456"); code != http.StatusForbidden {
+		t.Errorf("利用者の無い要求: %d（403 のはず）", code)
+	}
+	if code, n, _ := call(admin, "0570-123-456"); code != 0 || n != "0570123456" {
+		t.Errorf("管理者は料金の高い番号へもかけられる: %d %q", code, n)
+	}
+}

@@ -85,13 +85,8 @@ func PhoneDialAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusForbidden, "通信箱に書けないので、かけられません: "+err.Error())
 		return
 	}
-	number := faxSendNumber(req.Number) // 数字だけにする（モデムの命令に人の書いた文字を混ぜない）
-	if number == "" {
-		cms.JSONFail(w, http.StatusBadRequest, "電話番号が読めません（数字6〜15桁。ハイフンは入れてもよい）")
-		return
-	}
-	if costlyFaxNumber(number) && !user.IsAdmin {
-		cms.JSONFail(w, http.StatusForbidden, "国際・事業者を選ぶ番号・有料の番号（010・00・0570・0990 などで始まる番号）へかけられるのは管理者だけです")
+	number, ok := outboundNumber(w, user, req.Number, "電話番号", "かけられる") // 数字だけにする（モデムの命令に人の書いた文字を混ぜない）
+	if !ok {
 		return
 	}
 	if !dialAvailable() {

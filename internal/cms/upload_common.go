@@ -84,3 +84,46 @@ func openUpload(w http.ResponseWriter, r *http.Request, formField string,
 		pageID: pageID, fileName: fileName, content: content, username: auth.UsernameOf(r),
 	}, true
 }
+
+// ParseUploadForm は、JSON で答える口が multipart のフォームを受けるときの入口です（2026-10-29）。
+// 本文の大きさに上限（添付の上限＋フォームの欄のぶん 1MiB）を置いてから読みます。断ったときは JSON の応答を
+// 書き終えていて false。フォームの欄（FormValue）は、これを通したあとに読みます。
+func ParseUploadForm(w http.ResponseWriter, r *http.Request) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes()+1<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		JSONFail(w, http.StatusBadRequest, "ファイルを受け取れません: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// UploadedFile は、ParseUploadForm を通したフォームから、欄 field のファイルを1つ受け取ります（2026-10-29）。
+// 名前の検査（SafeAttachmentName・許す拡張子は allowed）→ 添付の上限で読む → 中身の守り（GuardUploadContent）の順。
+// 断ったときは JSON の応答を書き終えていて ok=false。name は検査を通った、届いたときの名前です（保存名は採番する）。
+//
+// **同じ手順が FAX の2つの口（通信箱から送る・機械の FAX の入口）に写されていて**、名前は `filepath.Base` で
+// 落としていました——実行中の OS の区切りしか見ない（Linux では `..\x.pdf` の逆スラッシュを残す）うえ、制御文字も
+// 通していました。名前は監査と記録の本文に写るので、人のアップロードと同じ関門を通します。
+func UploadedFile(w http.ResponseWriter, r *http.Request, field string, allowed map[string]bool, extError string) (name string, content []byte, ok bool) {
+	f, hdr, err := r.FormFile(field)
+	if err != nil {
+		JSONFail(w, http.StatusBadRequest, "ファイルがありません（フォーム欄 "+field+"）")
+		return "", nil, false
+	}
+	defer f.Close()
+	if name, err = SafeAttachmentName("", hdr.Filename, allowed, extError); err != nil {
+		JSONFail(w, http.StatusBadRequest, err.Error())
+		return "", nil, false
+	}
+	limit := MaxUploadBytes()
+	content, err = io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil || int64(len(content)) > limit {
+		JSONFail(w, http.StatusRequestEntityTooLarge, "ファイルが大きすぎます（上限 "+strconv.FormatInt(limit>>20, 10)+"MiB）")
+		return "", nil, false
+	}
+	if content, err = GuardUploadContent(name, content); err != nil {
+		JSONFail(w, http.StatusBadRequest, err.Error())
+		return "", nil, false
+	}
+	return name, content, true
+}

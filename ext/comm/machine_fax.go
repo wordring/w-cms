@@ -12,9 +12,7 @@ package comm
 // 判定（🤖 解析）は、記録の箱の「🤖 解析（添付）」で人が押します（メールの添付と同じ・2026-10-21 夜から画像も読む）。
 
 import (
-	"io"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -82,31 +80,12 @@ func MachineFaxAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limit := cms.MaxUploadBytes()
-	r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, "FAX を受け取れません（multipart）: "+err.Error())
+	if !cms.ParseUploadForm(w, r) {
 		return
 	}
-	f, hdr, err := r.FormFile("file")
-	if err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, "file がありません")
-		return
-	}
-	defer f.Close()
-	name := filepath.Base(strings.TrimSpace(hdr.Filename))
-	if !faxKinds[strings.ToLower(filepath.Ext(name))] {
-		cms.JSONFail(w, http.StatusBadRequest, "FAX は PDF か画像で渡してください: "+name)
-		return
-	}
-	content, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil || int64(len(content)) > limit {
-		cms.JSONFail(w, http.StatusRequestEntityTooLarge, "FAX が大きすぎます")
-		return
-	}
-	// 人のアップロードと同じ守り（PDF は先頭の印・画像は種別とメタデータの除去）。
-	if content, err = cms.GuardUploadContent(name, content); err != nil {
-		cms.JSONFail(w, http.StatusBadRequest, err.Error())
+	// 人のアップロードと同じ守り（名前の検査・PDF は先頭の印・画像は種別とメタデータの除去）。
+	name, content, ok := cms.UploadedFile(w, r, "file", faxKinds, "FAX は PDF か画像で渡してください")
+	if !ok {
 		return
 	}
 	at := parseCallTime(r.FormValue("at"))
