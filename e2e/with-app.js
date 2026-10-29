@@ -6,7 +6,7 @@
 //    差し替えた app.js が一度も配られなければ「!!」の行を出します（道具が効いていない）。
 //
 // 使い方: APP_JS=<直した app.js> WCMS_BASE=https://localhost:8443 node with-app.js verify-cell-select.js
-//         ほかの assets のファイルは ASSETS="mails.js=<直した mails.js>,app.css=<…>" で（2026-10-09）。
+//         ほかの assets のファイルは ASSETS="tables.js=<直した tables.js>,app.css=<…>" で（2026-10-09）。
 // ⚠ 効いているかは、わざと壊した写しで E2E が落ちることを1度見て確かめる。
 const fs = require('fs');
 const path = require('path');

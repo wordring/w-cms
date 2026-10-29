@@ -13,6 +13,10 @@ package comm
 // 1件ずつ辿るのと同じ鎖を、全部まとめて。ext/comm/assets/pages/mails.js）。2026-10-09 までは Message-ID と In-Reply-To を
 // 突き合わせていました。絞り込みも画面でします（千通ほどなら十分速い）。
 //
+//   - 2026-10-29 から、**メールだけでなく通信記録の全部**（FAX・電話・メモも——チャネルのタグを持つページ）を返します。
+//     画面は通信箱の見え方「スレッド」（ext/comm/assets/comm-threads.js）で、メール一覧のページ（mails.html）はなくした
+//     （利用者:「メール一覧は通信箱に統合して、見え方を選択できるようにしたいです」・【考察】通信箱とメール一覧の統合）。
+//     テンプレートの中の記録は出しません。日時の無い記録（メモ）は発信日時、それも無ければページを作った日時。
 //   - **読めるものだけ**（`page.CanView`）。読めない記録は黙って落ちる（見せ分けC案）。
 //   - 索引は**先に読み切ってから絞る**（`cms.TagRowsNamed`——行を読みながら別のクエリを投げない）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -20,6 +24,7 @@ package comm
 import (
 	"net/http"
 	"sort"
+	"strings"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -31,6 +36,7 @@ import (
 type MailListItem struct {
 	PageID      string   `json:"page_id"`
 	Title       string   `json:"title"`
+	Channel     string   `json:"channel"`   // チャネル（メール・FAX・電話・メモ・2026-10-29）
 	Direction   string   `json:"direction"` // 受信／送信
 	When        string   `json:"when"`      // 受信日時か送信日時（向きに応じて片方）
 	From        []string `json:"from"`
@@ -44,15 +50,16 @@ type MailListItem struct {
 	Draft       string   `json:"draft"`       // 下書きなら用件（返信・新規・部材発注書）。送った記録は空（2026-09-30）
 }
 
-// MailList は user が読めるメールの記録を、新しい順に返します。
+// MailList は user が読める通信記録（2026-10-29 からはメールだけでなく全部のチャネル）を、新しい順に返します。
 func MailList(user *auth.User) ([]MailListItem, error) {
-	rows, err := cms.TagRowsNamed(database.DB, ChannelTag, DirectionTag, ReceivedAtTag, SentAtTag,
+	rows, err := cms.TagRowsNamed(database.DB, ChannelTag, DirectionTag, ReceivedAtTag, SentAtTag, SentOutAtTag,
 		FromTag, ToTag, CcTag, MessageIDTag, InReplyToTag, ParentPageTag, AttachmentCountTag, HandledTag, DraftTag)
 	if err != nil {
 		return nil, err
 	}
 	byPage := map[int]*MailListItem{}
-	isMail := map[int]bool{}
+	isRecord := map[int]bool{}
+	outAt := map[int]string{} // 発信日時（手で書いた記録——受信日時・送信日時が無いとき）
 	for _, r := range rows {
 		it := byPage[r.PageID]
 		if it == nil {
@@ -61,14 +68,19 @@ func MailList(user *auth.User) ([]MailListItem, error) {
 		}
 		switch r.Name {
 		case ChannelTag:
-			if r.Value == ChannelMail {
-				isMail[r.PageID] = true
+			if v := strings.TrimSpace(r.Value); v != "" && it.Channel == "" {
+				it.Channel = v
+				isRecord[r.PageID] = true
 			}
 		case DirectionTag:
 			it.Direction = r.Value
 		case ReceivedAtTag, SentAtTag:
 			if it.When == "" {
 				it.When = r.Value
+			}
+		case SentOutAtTag:
+			if outAt[r.PageID] == "" {
+				outAt[r.PageID] = r.Value
 			}
 		case FromTag:
 			it.From = append(it.From, r.Value)
@@ -93,14 +105,22 @@ func MailList(user *auth.User) ([]MailListItem, error) {
 		}
 	}
 	// 読み切ったあとで絞る（読めるか・題）。
-	out := make([]MailListItem, 0, len(isMail))
-	for id := range isMail {
-		if !page.CanView(user, id) {
+	out := make([]MailListItem, 0, len(isRecord))
+	for id := range isRecord {
+		if !page.CanView(user, id) || cms.IsTemplateArea(page.FormatID(id)) {
 			continue
 		}
 		it := byPage[id]
 		it.PageID = page.FormatID(id)
 		it.Title = cms.PageTitleByID(id)
+		if it.When == "" {
+			it.When = outAt[id]
+		}
+		if it.When == "" && it.Draft == "" {
+			if meta, ok := page.ReadSidecar(it.PageID); ok {
+				it.When = meta.CreatedAt
+			}
+		}
 		out = append(out, *it)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -112,7 +132,7 @@ func MailList(user *auth.User) ([]MailListItem, error) {
 	return out, nil
 }
 
-// MailListAPIHandler は GET /api/mails です（読めるメールの記録を全部・新しい順）。
+// MailListAPIHandler は GET /api/mails です（読める通信記録を全部・新しい順。2026-10-29 からはメールだけでなく全部のチャネル）。
 func MailListAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONGet(w, r)
 	if !ok {
@@ -120,8 +140,23 @@ func MailListAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := MailList(user)
 	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "メールの一覧を読めません: "+err.Error())
+		cms.JSONFail(w, http.StatusInternalServerError, "通信の一覧を読めません: "+err.Error())
 		return
 	}
 	cms.WriteJSON(w, map[string]any{"success": true, "mails": list})
+}
+
+// ThreadsRedirectAPIHandler は GET /api/comm/threads です——通信箱の見え方「スレッド」へ送ります（2026-10-29）。
+// 上のメニューの「✉️ 通信の一覧」と、なくしたメール一覧の古い住所（mails.html が送ってくる）の行き先。通信箱が無ければ 404。
+func ThreadsRedirectAPIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id, ok := MailBoxPageID()
+	if !ok {
+		http.Error(w, ErrNoMailBox.Error(), http.StatusNotFound)
+		return
+	}
+	http.Redirect(w, r, "/"+id+"?view=threads", http.StatusFound)
 }

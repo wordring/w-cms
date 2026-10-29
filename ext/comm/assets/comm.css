@@ -359,3 +359,34 @@
     font-size: 11px;
     color: var(--text-muted);
 }
+
+/* 通信箱の見え方——「作業待ち」と「スレッド」（2026-10-29・comm-threads.js・view_unhandled.go の commViewSwitchHTML）。
+ * スレッドの形は、なくしたメール一覧（ext/comm/assets/pages/mails.css）から移した。インラインの style は書かない（CSP strict）
+ * ——字下げの深さだけは描画のあとに CSSOM で当てる。 */
+.comm-view-switch { margin: 6px 0; font-size: 13px; color: var(--text-muted); }
+.comm-view-switch .comm-view-btn { margin-left: 4px; }
+.comm-view-switch .comm-view-btn.is-on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.comm-threads-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; font-size: 13px; }
+.comm-threads-bar .comm-threads-q { width: 16em; max-width: 100%; }
+.comm-threads-check { display: inline-flex; align-items: center; gap: 2px; color: #475569; }
+.comm-threads-count { color: var(--text-muted); }
+.comm-threads-say.is-warn { color: #b45309; }
+.comm-threads-scroll { overflow-x: auto; }
+.comm-threads-table td.subject { white-space: normal; min-width: 14em; }
+.comm-threads-table td.who { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comm-threads-table td.when { white-space: nowrap; }
+/* 向きの札（文字の色だけに頼らない——受信／送信の字を添える）。 */
+.comm-threads .dir { font-size: 12px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; background: #f1f5f9; color: #334155; }
+.comm-threads .dir-in { background: #e0f2fe; color: #075985; }
+.comm-threads .dir-out { background: #fef3c7; color: #92400e; }
+.comm-threads .dir-draft { background: #ede9fe; color: #5b21b6; }
+/* スレッドの境目と、返信の字下げの目印。 */
+.comm-threads tr.thread-start td { border-top: 2px solid #cbd5e1; }
+.comm-threads .reply-mark { color: #94a3b8; margin-right: 4px; }
+.comm-threads .thread-count { font-size: 11px; color: #475569; background: #f1f5f9; border-radius: 8px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
+.comm-threads button.fold { background: none; border: none; color: #475569; padding: 0 4px; margin-right: 2px; font-size: 12px; cursor: pointer; }
+/* 絞り込みに当たらないが、同じスレッドなので並べている行。 */
+.comm-threads tr.dim td { opacity: 0.45; }
+/* 未処理（対応が未処理）の印——色だけに頼らない（⚠ を添える）。 */
+.comm-threads .unhandled { color: #b45309; white-space: nowrap; }
+.comm-threads-more { margin-top: 6px; }

@@ -412,6 +412,23 @@ func unhandledViewHTML(user *auth.User, pageIDInt int) string {
 	// 電話が鳴ったときに置き場所が見つかりません。
 	sb.WriteString(newRecordChromeHTML())
 	sb.WriteString(boxSendChromeHTML())
+	// 見え方（2026-10-29 利用者:「メール一覧は通信箱に統合して、見え方を選択できるようにしたいです」）——「作業待ち」がこの表、
+	// 「スレッド」は通信記録を全部、返信の鎖に束ねて並べる（画面が /api/mails から組む・comm-threads.js）。選んだ見え方は端末に憶える。
+	sb.WriteString(commViewSwitchHTML)
+	sb.WriteString(`<div class="comm-queue">`)
+	sb.WriteString(unhandledQueueHTML(user, rows, total, missed))
+	sb.WriteString(`</div><div class="vocab-chrome comm-threads is-hidden"></div>`)
+	return sb.String()
+}
+
+// commViewSwitchHTML は通信箱の見え方の切り替えです（2026-10-29・comm-threads.js が配線する）。
+const commViewSwitchHTML = `<p class="vocab-chrome comm-view-switch">見え方: ` +
+	`<button type="button" class="chip-btn comm-view-btn is-on" data-comm-view="queue" title="対応が未処理の記録を、届いた順に">作業待ち</button>` +
+	`<button type="button" class="chip-btn comm-view-btn" data-comm-view="threads" title="通信記録を全部、返信の鎖（親ページID）に束ねて">スレッド</button></p>`
+
+// unhandledQueueHTML は見え方「作業待ち」——未処理の表と、まとめて片付けるボタンです。
+func unhandledQueueHTML(user *auth.User, rows []unhandledRow, total int, missed []MissedCall) string {
+	var sb strings.Builder
 	if total == 0 && len(missed) == 0 {
 		sb.WriteString(`<p class="child-list-empty">未処理はありません</p>`)
 		return sb.String()

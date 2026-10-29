@@ -31,7 +31,7 @@ func TestMailListReturnsBothDirectionsAndChain(t *testing.T) {
 		// 読めない受信（他人には閉じている）
 		{"000503", "300", "<h1>内緒</h1>" + tags(ChannelTag, ChannelMail, DirectionTag, DirectionIn,
 			ReceivedAtTag, "2026-09-03T09:00:00+09:00", MessageIDTag, "&lt;c@x&gt;")},
-		// メールではない記録（電話）は出さない
+		// メールではない記録（電話）も出す（2026-10-29 から——通信箱の見え方「スレッド」）。日時の無い記録はページを作った日時。
 		{"000504", "333", "<h1>電話</h1>" + tags(ChannelTag, "電話", DirectionTag, DirectionIn)},
 	} {
 		if err := page.WriteSidecar(p.id, page.PageMeta{Owner: "alice", Mode: p.mode, ParentID: "000100"}); err != nil {
@@ -46,11 +46,26 @@ func TestMailListReturnsBothDirectionsAndChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MailList エラー: %v", err)
 	}
-	if len(list) != 2 {
-		t.Fatalf("読めるメールは2通のはず（読めない記録と電話は出さない）: %+v", list)
+	if len(list) != 3 {
+		t.Fatalf("読める記録は3つのはず（読めない記録は出さない・電話は出す）: %+v", list)
+	}
+	var phone MailListItem
+	var mails []MailListItem
+	for _, it := range list {
+		if it.Channel == ChannelPhone {
+			phone = it
+		} else {
+			mails = append(mails, it)
+		}
+	}
+	if phone.PageID != "000504" || phone.When == "" {
+		t.Errorf("電話の記録が違います（日時はページを作った日時のはず）: %+v", phone)
+	}
+	if len(mails) != 2 || mails[0].Channel != ChannelMail {
+		t.Fatalf("メールの記録が2つ・チャネルはメールのはず: %+v", mails)
 	}
 	// 新しい順——送信（返信）が先、受信（頭）が後。
-	out, in := list[0], list[1]
+	out, in := mails[0], mails[1]
 	if out.PageID != "000502" || out.Direction != DirectionOut || out.When != "2026-09-02T09:00:00+09:00" ||
 		out.InReplyTo != "<a@x>" || out.Handled != HandledNotNeeded || len(out.To) != 1 {
 		t.Errorf("送信の記録が違います: %+v", out)

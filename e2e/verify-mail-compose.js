@@ -181,19 +181,22 @@ const check = (label, ok, note = '') => {
     check('未処理の一覧に並ぶ', await row.count() === 1);
     check('「📝 下書き」の印', (await row.locator('.unhandled-draft').count()) === 1);
 
-    // ④ メール一覧
-    await page.goto(BASE + '/assets/ext/comm/pages/mails.html');
-    await page.waitForFunction(() => document.querySelectorAll('#ml-body tr').length > 0, null, { timeout: 15000 });
+    // ④ 通信箱の見え方「スレッド」（2026-10-29 までは メール一覧 mails.html）
+    await page.goto(BASE + '/' + box + '?view=threads');
+    await page.waitForFunction(() => document.querySelectorAll('#w-editor-content .comm-threads tbody tr').length > 0, null, { timeout: 15000 });
     const listed = await page.evaluate((id) => {
-      const a = document.querySelector('#ml-body a[href="/' + id + '"]');
+      const a = document.querySelector('#w-editor-content .comm-threads a[href="/' + id + '"]');
       const tr = a && a.closest('tr');
       return tr ? tr.textContent : '';
     }, draft);
-    check('メール一覧に「📝 下書き」で並ぶ', listed.includes('📝 下書き'), listed.slice(0, 80));
-    await page.locator('#ml-new').click();
-    await page.waitForSelector('#ml-compose .mail-compose [data-mc="subject"]', { timeout: 8000 });
-    check('「✉️ 新しいメール」で空の送る欄', (await page.locator('#ml-compose [data-mc="subject"]').inputValue()) === '' &&
-      (await page.locator('#ml-compose [data-mc="to"]').inputValue()) === '');
+    check('スレッドの見え方に「📝 下書き」で並ぶ', listed.includes('📝 下書き'), listed.slice(0, 80));
+    const composeHost = page.locator('#w-editor-content .comm-threads-compose');
+    await page.locator('#w-editor-content .comm-threads-new-mail').click();
+    await composeHost.locator('.mail-compose [data-mc="subject"]').waitFor({ timeout: 8000 });
+    check('「✉️ 新しいメール」で空の送る欄', (await composeHost.locator('[data-mc="subject"]').inputValue()) === '' &&
+      (await composeHost.locator('[data-mc="to"]').inputValue()) === '');
+    // 見え方を作業待ちに戻しておく（この端末に憶えるので、あとの確かめが作業待ちを見られるように）。
+    await page.locator('#w-editor-content .comm-view-switch [data-comm-view="queue"]').click();
 
     // ⑤ 送る——口は差し止める（本物のメールは出さない）
     await page.goto(BASE + '/' + draft);
