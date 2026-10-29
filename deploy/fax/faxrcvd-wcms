@@ -58,10 +58,12 @@ if ! tiff2pdf -o "$PDF" "$QFILE"; then
 	exit 1
 fi
 
-# 送る（5回まで・10秒おき）。自分で作った証明書なので -k（同じ機械の中だけの通り道）。
+# 送る（5回まで・10秒おき）。自分で作った証明書は、本番が起こすたびに写す CA の証明書で確かめる（WCMS_CA・既定
+# /etc/w-cms/local-ca.pem——deploy/server/w-cms.service の ExecStartPre。2026-10-29 までは -k で確かめていなかった）。
+CA="${WCMS_CA:-/etc/w-cms/local-ca.pem}"
 i=0
 while [ $i -lt 5 ]; do
-	if curl -fsS -k -H "@$WORK/auth" \
+	if curl -fsS --cacert "$CA" -H "@$WORK/auth" \
 		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" --form-string "job=$COMMID" \
 		"$BASE/api/machine/fax" > /dev/null; then
 		logger -t faxrcvd-wcms "FAX $COMMID を w-cms へ渡しました"

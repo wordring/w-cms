@@ -14,8 +14,9 @@ Type=simple
 User=w-cms
 Group=dialout
 EnvironmentFile=/etc/w-cms/phone.env
-# w-cms と同じ機械なら https://localhost:8443。自分で作った証明書なら -insecure（同じ機械の中だけの通り道）。
-ExecStart=/opt/w-cms/w-cms-phone -dev /dev/aloha-nd6 -base https://localhost:8443 -insecure
+# w-cms と同じ機械なら https://localhost:8443。自分で作った証明書は、本番が起こすたびに写す CA の証明書で確かめる
+# （-ca・deploy/server/w-cms.service の ExecStartPre。2026-10-29 までは -insecure で確かめていなかった）。
+ExecStart=/opt/w-cms/w-cms-phone -dev /dev/aloha-nd6 -base https://localhost:8443 -ca /etc/w-cms/local-ca.pem
 Restart=always
 RestartSec=5
 # 守り（2026-10-27 の見直し）: 電話の道具は w-cms の利用者で動くが、本番のデータと中の入口には触れさせない

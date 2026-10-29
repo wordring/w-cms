@@ -24,7 +24,7 @@
 //
 // 使い方:
 //
-//	WCMS_MACHINE_TOKEN=<鍵> w-cms-phone -dev /dev/aloha-nd6 -base https://localhost:8443 [-open] [-insecure]
+//	WCMS_MACHINE_TOKEN=<鍵> w-cms-phone -dev /dev/aloha-nd6 -base https://localhost:8443 [-open] [-ca <証明書>] [-insecure]
 //	（Windows なら -dev COM3）
 //
 // 鍵は w-cms の WCMS_MACHINE_TOKEN と同じもの。別の機械から呼ぶなら、w-cms の側の WCMS_MACHINE_ALLOW にこの機械のアドレスを足す。
@@ -34,6 +34,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -331,13 +332,18 @@ func main() {
 	dev := flag.String("dev", "/dev/aloha-nd6", "ND6 のポート（Linux は /dev/ttyUSB0 か udev で付けた名前・Windows は COM3 など）")
 	base := flag.String("base", "https://localhost:8443", "w-cms の場所")
 	open := flag.Bool("open", false, "出た着信の記録を、このパソコンのブラウザで開く（電話機のそばのパソコンで動かすとき）")
-	insecure := flag.Bool("insecure", false, "w-cms の証明書を確かめない（自分で作った証明書のとき・同じ機械か社内の網だけで使う）")
+	ca := flag.String("ca", "", "w-cms の証明書を確かめるのに使う CA の証明書（PEM・自分で作った証明書のとき。業務サーバーでは /etc/w-cms/local-ca.pem）")
+	insecure := flag.Bool("insecure", false, "w-cms の証明書を確かめない（古い置き方のため残す・-ca を使うこと）")
 	flag.Parse()
 	token := strings.TrimSpace(os.Getenv("WCMS_MACHINE_TOKEN"))
 	if token == "" {
 		log.Fatal("環境変数 WCMS_MACHINE_TOKEN（w-cms と同じ鍵）がありません")
 	}
-	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: *insecure}}
+	tlsConf, err := tlsConfig(*ca, *insecure)
+	if err != nil {
+		log.Fatal(err)
+	}
+	tr := &http.Transport{TLSClientConfig: tlsConf}
 	cl := &client{base: *base, token: token, http: &http.Client{Timeout: 20 * time.Second, Transport: tr}}
 	c := &caller{now: time.Now, send: cl.call, missed: cl.missed,
 		// 合わせて1時間ほど送り直す（サーバーの入れ替え・再起動を待てる長さ）。
@@ -360,4 +366,25 @@ func main() {
 			wait *= 2
 		}
 	}
+}
+
+// tlsConfig は w-cms へ繋ぐときの TLS の設定です（2026-10-29）。ca があれば、この機械の信頼ストアにその CA を足して確かめる
+// ——それまでは業務サーバーでも -insecure で、同じ機械の w-cms へ証明書を確かめずに機械の鍵を送っていた（【考察】コードの矛盾 §7.4）。
+// 読めない・証明書が無いファイルは誤り（黙って確かめない形に落ちない）。
+func tlsConfig(ca string, insecure bool) (*tls.Config, error) {
+	if ca == "" {
+		return &tls.Config{InsecureSkipVerify: insecure}, nil
+	}
+	b, err := os.ReadFile(ca)
+	if err != nil {
+		return nil, fmt.Errorf("CA の証明書を読めません: %w", err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(b) {
+		return nil, fmt.Errorf("CA の証明書がありません: %s", ca)
+	}
+	return &tls.Config{RootCAs: pool}, nil
 }

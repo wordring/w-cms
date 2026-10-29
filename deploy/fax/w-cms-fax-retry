@@ -13,6 +13,8 @@ set -u
 . /etc/w-cms/fax.env
 BASE="${WCMS_BASE:-https://localhost:8443}"
 PENDING=/var/spool/w-cms-fax
+# 自分で作った証明書は、本番が起こすたびに写す CA の証明書で確かめる（faxrcvd-wcms と同じ・2026-10-29 までは -k）。
+CA="${WCMS_CA:-/etc/w-cms/local-ca.pem}"
 
 WORK=$(mktemp -d) || exit 1
 trap 'rm -rf "$WORK"' EXIT
@@ -25,7 +27,7 @@ for PDF in "$PENDING"/fax-*.pdf; do
 	JOB=$(basename "$PDF" .pdf | sed 's/^fax-//' | tr -cd '0-9A-Za-z')
 	FROM=$(cat "$PDF.from" 2>/dev/null | tr -cd '0-9+ ')
 	AT=$(cat "$PDF.at" 2>/dev/null | tr -cd '0-9T:+-')
-	CODE=$(curl -sS -k -o /dev/null -w '%{http_code}' -H "@$WORK/auth" \
+	CODE=$(curl -sS --cacert "$CA" -o /dev/null -w '%{http_code}' -H "@$WORK/auth" \
 		-F "file=@$PDF;type=application/pdf" --form-string "from=$FROM" --form-string "at=$AT" --form-string "job=$JOB" \
 		"$BASE/api/machine/fax")
 	case "$CODE" in

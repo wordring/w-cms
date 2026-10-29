@@ -19,6 +19,9 @@ User=w-cms
 Group=w-cms
 WorkingDirectory=/opt/w-cms/prod
 EnvironmentFile=/etc/w-cms/w-cms.env
+# 自分で作った証明書（CA）の写しを、同じ機械の道具（電話の道具・FAX の台本）が読める所へ置く（2026-10-29）。写すのは証明書だけで、
+# 鍵は写さない。起こすたびに写すので、証明書を作り直しても追いつく。写せなくても本番は止めない（先頭の「-」・「+」は root で）。
+ExecStartPre=-+/usr/bin/install -m 0644 -o root -g root ${WCMS_TLS_CERT} /etc/w-cms/local-ca.pem
 ExecStart=/opt/w-cms/w-cms
 Restart=always
 RestartSec=3
