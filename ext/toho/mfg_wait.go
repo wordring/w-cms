@@ -278,7 +278,8 @@ func MfgStartAPIHandler(w http.ResponseWriter, r *http.Request) {
 var mfgStartMu sync.Mutex
 
 // createMfgPage は、客先 client の製造ページを「製造」の置き場の下に作り、そのページ番号を返します
-// （作れなければ、状態の番号と理由）。案件残表の「🏭 製造開始」（/api/mfg/new）と「▶ 開始」が使います。
+// （作れなければ、状態の番号と理由）。製造待ちの「▶ 開始」と /api/mfg/new が使います（2026-10-21 から、案件残表の「🏭 製造開始」は製造待ちへ入れるだけ——/api/mfg/wait。
+// /api/mfg/new を呼ぶのは、いまは E2E だけ）。
 func createMfgPage(user *auth.User, client string, lines []mfgLine) (string, int, error) {
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].Due < lines[j].Due })
 	tmpl, err := cms.PageTemplateBody(MfgTemplate)

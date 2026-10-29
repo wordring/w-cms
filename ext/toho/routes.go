@@ -17,7 +17,6 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 見積回答の単価を見積計算表へ写す（2026-10-05・estimate_put.go）。
 		{Pattern: "/api/estimate/rows", Handler: EstimateRowsAPIHandler},
 		{Pattern: "/api/estimate/put-cost", Handler: EstimatePutCostAPIHandler},
-		// 必要部材表から「不要にする」・戻す（2026-10-01・skip.go）。
 		// 顧客へ出す見積書（2026-10-01・estimate_doc.go・estimate_pdf.go）。
 		{Pattern: "/api/estimate/add", Handler: AddToEstimateAPIHandler},
 		{Pattern: "/api/estimate-pdf", Handler: EstimatePDFAPIHandler},

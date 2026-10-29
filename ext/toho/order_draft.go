@@ -69,7 +69,8 @@ func fieldsOfHeader(table *html.Node, vocabType string) []string {
 
 // CountOrderDrafts はページの本文にある発注部材表の数を返します。
 //
-// ⚠ **画面が「新しく作る／1枚目へ足す／2枚目へ足す」を出すため**に要ります。
+// 画面が「新しく作る／1枚目へ足す／2枚目へ足す」を出すために作った。⚠ いま本体にも試験にも呼び手はありません
+// （消すかは利用者に聞く——【考察】コードの矛盾 §8.1）。
 func CountOrderDrafts(pageID int) int {
 	body, err := cms.ReadPageBody(page.FormatID(pageID))
 	if err != nil {
