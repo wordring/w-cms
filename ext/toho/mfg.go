@@ -95,11 +95,13 @@ type mfgLookup struct {
 	done    map[string]float64 // 製造完了（済）の行の数（2026-10-19・案件明細の製造完了の鏡）
 	pages   map[string][]string
 	shipped shippedLookup // 納品書で納めた数（handled が使う）
+	outside shippedLookup // そのうち、どの製造ページの分でもない数（移行用の仮納品書など・handled が使う・2026-10-29）
 }
 
 // newMfgLookup は、製造ページ（`ページ種類：製造`・テンプレートの外）の製造明細表の行を全部数えます。
 func newMfgLookup() *mfgLookup {
-	m := &mfgLookup{qty: map[string]float64{}, done: map[string]float64{}, pages: map[string][]string{}, shipped: newShippedLookup(database.DB)}
+	m := &mfgLookup{qty: map[string]float64{}, done: map[string]float64{}, pages: map[string][]string{}, shipped: newShippedLookup(database.DB),
+		outside: newShippedOutsideMfg(database.DB)}
 	rows, err := cms.VocabRowsOfType(database.DB, MfgItemsType)
 	if err != nil {
 		return m
@@ -141,18 +143,22 @@ func (m *mfgLookup) of(order, itemNo, itemName string) (float64, []string) {
 	return m.qty[k], m.pages[k]
 }
 
-// handled は、案件の行のうち、もう手の付いた数です——製造ページに入れた数と、納品書で納めた数の大きいほう。
+// handled は、案件の行のうち、もう手の付いた数です——製造ページに入れた数に、製造ページの外で納めた数（移行用の仮納品書など・
+// 納品書の行の「製造」の列が空で、製造ページの子でもないもの）を足した数（2026-10-29 から）。
 //
-// 納めた数も見るのは、製造ページを通らずに納めたぶん（移行用の仮納品書など）があるため——製造ページに入れた数だけ
-// 引いていたので、もう納めた行を全数で製造待ちへ入れ、製造ページも全数で作っていた（2026-10-22 の見直し）。
-// 大きいほうを取るのは、製造ページを通って納めたぶんを二重に引かないため（製造ページの外で納めたぶんと製造ページの数が
-// 両方あるときは、少なめに引く——多く作る側に倒す）。
+// 納めた数も見るのは、製造ページを通らずに納めたぶんがあるため——製造ページに入れた数だけ引いていたので、もう納めた行を
+// 全数で製造待ちへ入れ、製造ページも全数で作っていた（2026-10-22 の見直し）。2026-10-22 から 10-29 までは、製造ページに入れた
+// 数と納めた数の大きいほうを取っていた——製造ページの外で納めたぶんと製造ページの数が両方あり、製造ページの分をまだ納めて
+// いないあいだ、外で納めたぶん多く製造に入れられた（2026-10-29 利用者の答え「直す」・【考察】コードの矛盾 §2.3）。
+// 製造ページを通って納めたぶんは、製造ページに入れた数の中にあるので足さない。製造ページの数より多く納めたとき（数え違い）は、
+// 納めた数の合計を下限にする（多く作る側に倒さない）。
 func (m *mfgLookup) handled(order, itemNo, itemName string) float64 {
 	in, _ := m.of(order, itemNo, itemName)
-	if s := m.shipped.of(order, itemNo, itemName); s > in {
+	n := in + m.outside.of(order, itemNo, itemName)
+	if s := m.shipped.of(order, itemNo, itemName); s > n {
 		return s
 	}
-	return in
+	return n
 }
 
 // （受注残表の「製造」の欄〔mfgCellHTML〕は 2026-10-21 に外した——先頭のチェックと「進み」の列へ・mfg_wait.go・backlog.go。）

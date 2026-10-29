@@ -67,3 +67,25 @@ func TestShippedCountsDeliveries(t *testing.T) {
 		}
 	}
 }
+
+// TestMfgHandledAddsDeliveriesOutsideMfg は、案件の行の「手の付いた数」が、製造ページに入れた数に、製造ページの外で納めた数
+// （移行用の仮納品書など——納品明細の「製造」が空の行）を足した数になることを固定します（2026-10-29 利用者の答え「直す」）。
+// 製造ページの分の納品（「製造」がその製造ページを指す行）は、製造ページに入れた数の中にあるので足さない。
+// それまでは2つの大きいほうで、外で納めた 30 と製造ページの 50 があると 50 しか引かず、30 多く製造に入れられた。
+func TestMfgHandledAddsDeliveriesOutsideMfg(t *testing.T) {
+	setupExtTest(t, "000940", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	syncBody(t, 941, `<h1>ブラケット</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindMfg+`</dd></dl>`+
+		`<table><caption>製造明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>品番</th><th>品名</th><th>数量</th><th>製造完了</th></tr>`+
+		`<tr><td></td><td>000950</td><td>A-1</td><td>ブラケット</td><td>50</td><td></td></tr></tbody></table>`)
+	seedDelivery(t, 942, [3]string{"000950", "A-1", "30"}) // 製造ページの外（移行用の仮納品書）
+	if got := newMfgLookup().handled("000950", "A-1", ""); got != 80 {
+		t.Errorf("⚠ 手の付いた数が %v です（製造ページの 50 + 外で納めた 30 = 80 を期待）", got)
+	}
+	// 製造ページから 20 を納めても、二重に引かない（80 のまま）。
+	syncBody(t, 943, `<h1>【弊社】納品書</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindOurDelivery+`</dd></dl>`+
+		`<table><caption>納品明細表</caption><tbody><tr><th>弊社品番</th><th>案件</th><th>品番</th><th>品名</th><th>数量</th><th>製造</th></tr>`+
+		`<tr><td></td><td>000950</td><td>A-1</td><td></td><td>20</td><td>000941</td></tr></tbody></table>`)
+	if got := newMfgLookup().handled("000950", "A-1", ""); got != 80 {
+		t.Errorf("⚠ 製造ページから納めた分を二重に数えています: %v（80 を期待）", got)
+	}
+}

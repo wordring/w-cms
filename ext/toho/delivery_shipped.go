@@ -105,6 +105,44 @@ func newShippedAmounts(db cms.ReadOnlyDB) map[string]shippedAmount {
 }
 
 // of は受注ページ orderPage の品番 itemNo（空なら品名 itemName）の、納めた数の合計です。
+// newShippedOutsideMfg は、納品書の行のうち、どの製造ページの分でもないもの（移行用の仮納品書・製造ページを通らずに作った
+// 納品書）だけを数えます（2026-10-29・mfgLookup.handled）。製造ページの分は、行の「製造」の列が製造ページを指す行（2026-10-21
+// から）と、列が空でも納品書が製造ページの子の行（2026-10-20 までに作った納品書——mfgDeliveryRows と同じ読み方）です。
+func newShippedOutsideMfg(db cms.ReadOnlyDB) shippedLookup {
+	out := shippedLookup{}
+	rows, err := cms.VocabRowsOfType(db, DeliveryItemsType)
+	if err != nil {
+		return out
+	}
+	kinds, underMfg := map[int]bool{}, map[int]bool{}
+	for _, r := range rows {
+		ok, seen := kinds[r.PageID]
+		if !seen {
+			ok = !cms.IsTemplateArea(page.FormatID(r.PageID)) && pageKindOf(r.PageID) == PageKindOurDelivery
+			kinds[r.PageID] = ok
+		}
+		if !ok || strings.TrimSpace(r.Values["mfg"]) != "" {
+			continue
+		}
+		under, seenU := underMfg[r.PageID]
+		if !seenU {
+			if meta, okM := page.ReadSidecar(page.FormatID(r.PageID)); okM {
+				if pid, okP := page.NormalizeID(meta.ParentID); okP {
+					under = pageKindOf(pageNum(pid)) == PageKindMfg
+				}
+			}
+			underMfg[r.PageID] = under
+		}
+		if under {
+			continue
+		}
+		if q, okQ := estimateNumber(r.Values["quantity"]); okQ && q > 0 {
+			out[shippedKey(r.Values["order"], r.Values["item-id"], r.Values["item-name"])] += q
+		}
+	}
+	return out
+}
+
 func (s shippedLookup) of(orderPage, itemNo, itemName string) float64 {
 	return s[shippedKey(orderPage, itemNo, itemName)]
 }
