@@ -11,12 +11,9 @@ package comm
 // > 2026-10-28 利用者:「FAXの送信と電話のダイヤルを通信フォルダから出来るようにしたいです。」
 
 import (
-	"context"
 	"net/http"
 	"os"
-	"time"
 
-	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 )
 
@@ -56,26 +53,6 @@ func FaxSendFileAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	tmp.Close()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	out, err := runSendfax(ctx, number, path)
-	m := sendfaxJobRe.FindStringSubmatch(string(out))
-	if err != nil || m == nil {
-		cms.JSONFail(w, http.StatusServiceUnavailable, "FAX の道具に頼めませんでした: "+firstFaxLine(string(out), err))
-		return
-	}
-	auth.Audit(user.Username, "fax.send", "（パソコンのファイル）"+name+" -> "+number+" (job "+m[1]+")")
-	resp := map[string]any{"success": true, "job": m[1], "number": number}
-	src := faxSource{File: name, Path: path, Name: name}
-	if recID, err := recordSentFax(user, src, number, m[1]); err != nil {
-		resp["record_error"] = err.Error()
-	} else {
-		resp["record"] = recID
-		if err := putFaxJob(faxJob{Job: m[1], Record: recID, User: user.Username, File: name, Number: number, Started: time.Now()}); err != nil {
-			resp["record_error"] = "仕事の控えを書けませんでした（送れたかは記録に書かれません）: " + err.Error()
-		} else {
-			go watchFaxJob(m[1])
-		}
-	}
-	cms.WriteJSON(w, resp)
+	// 元のページは無い（記録に 親ページID は付かない）。控えの紙は送ったファイルそのもの（paperFile）。
+	dispatchFax(w, r, user, faxSource{File: name, Path: path, Name: name}, number, "（パソコンのファイル）"+name)
 }

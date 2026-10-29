@@ -63,14 +63,19 @@ func plainDigits(s string) string {
 	return b.String()
 }
 
-// phoneOwner は、番号 number を `電話番号` のタグに持つページ（通信記録は除く）を引きます。見えるもののうちページ番号の
-// 小さいもの（連絡帳の先にできたページ）。無ければ ok=false。
+// phoneOwner は、番号 number を `電話番号` のタグに持つページ（通信記録は除く）を引きます（numberOwner）。
 func phoneOwner(user *auth.User, number string) (id int, title string, ok bool) {
+	return numberOwner(user, PhoneTag, number)
+}
+
+// numberOwner は、番号 number（数字が6けた以上）をタグ tag に持つページ（通信記録は除く）を引きます。見えるもののうちページ番号の
+// 小さいもの（連絡帳の先にできたページ）。無ければ ok=false。電話と FAX の写し（phoneOwner・faxOwner）を寄せた（2026-10-29）。
+func numberOwner(user *auth.User, tag, number string) (id int, title string, ok bool) {
 	want := digitsOf(number)
 	if len(want) < 6 {
 		return 0, "", false
 	}
-	rows, err := database.DB.Query(`SELECT page_id, value FROM page_tags WHERE name = ?`, PhoneTag)
+	rows, err := database.DB.Query(`SELECT page_id, value FROM page_tags WHERE name = ?`, tag)
 	if err != nil {
 		return 0, "", false
 	}
@@ -140,12 +145,7 @@ func MachineCallAPIHandler(w http.ResponseWriter, r *http.Request) {
 	at := parseCallTime(req.At)
 	switch strings.TrimSpace(req.Event) {
 	case "answered":
-		boxID, ok := MailBoxPageID()
-		if !ok {
-			cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
-			return
-		}
-		if !page.RequirePageWrite(w, r, boxID) {
+		if _, ok := mailBoxForWrite(w, r); !ok {
 			return
 		}
 		pageID, title, err := createCallRecord(user, req.Number, at, false, nil)
@@ -180,12 +180,8 @@ func MachineCallAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.WriteJSON(w, map[string]any{"success": true, "page_id": id})
 	case "missed":
 		// ページは作らない（2026-10-28 利用者:「なった記録だけして、編集者がページにするか選択すればよい」）。書き手が通信箱に書けることは見る。
-		boxID, ok := MailBoxPageID()
+		boxID, ok := mailBoxForWrite(w, r)
 		if !ok {
-			cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
-			return
-		}
-		if !page.RequirePageWrite(w, r, boxID) {
 			return
 		}
 		ended := at

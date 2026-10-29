@@ -26,6 +26,8 @@ package comm
 //
 // 送信メールの控えだけは、作った側（`recordSentMail`）が `対応：不要` を書きます
 // ——**送るという仕事はその場で終わっている**ので、人に押させる意味がありません。
+// （送信の箱から取り込んだメールも `不要`〔intake_eml.go〕、送った FAX の控えは `済`〔fax_send.go——送れなかったら見張りが
+// `未処理` に戻す〕から始まります。）
 //
 // ⚠ **以下の段落は 2026-09-03 の判断で、上のとおり撤回済みです**（記録として残します。
 // 2026-09-16 に「現行と読めてしまう」ことに気づいて印を付けました——上で「子ページの
@@ -225,7 +227,6 @@ func isDescendantOf(childID, rootID int) bool {
 	return cms.IsDescendantOf(database.DB, childID, rootID)
 }
 
-// unhandledViewHTML は「未処理の受信」ビューの中身を描きます。
 // newRecordChromeHTML は「手で記録を作る」一行を組み立てます。
 //
 // **チャネルは人が選びます**（2026-09-05 ユーザー:「受信箱にメモを作るボタンを付けて、
@@ -326,37 +327,36 @@ func channelIcon(channel string) string {
 	return stdhtml.EscapeString(channel)
 }
 
+// parseRecordTime は記録の時刻を読みます（RFC 3339・T の無い形・地方時の無い形——isoTime と shortTime が同じ形の並びを
+// 写していたのを寄せた・2026-10-29）。前後の空白は落とします。
+func parseRecordTime(iso string) (time.Time, bool) {
+	iso = strings.TrimSpace(iso)
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05Z07:00", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, iso); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// isoTime は記録の時刻を読みます（読めなければゼロ——いちばん古い扱い）。
+func isoTime(iso string) time.Time {
+	t, _ := parseRecordTime(iso)
+	return t
+}
+
 // shortTime は ISO 8601 を一覧用に詰めます（`09-05 09:12`）。
 //
 // **必ず地方時へ直します。** 保存は UTC（`…Z`）で正しいのですが、切り出すだけだと
 // 9時間ずれた時刻が並びます——受信日時のタグは `+09:00` を持っているので気づかず、
 // **タグの無い記録（メモ・社内案件）だけが UTC で出ていました**（2026-09-05 ユーザー指摘）。
 //
-// 読めない値はそのまま返します（捏造しない）。
-// isoTime は記録の時刻（RFC 3339 など shortTime と同じ形）を読みます（読めなければゼロ——いちばん古い扱い）。
-func isoTime(iso string) time.Time {
-	iso = strings.TrimSpace(iso)
-	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05Z07:00", "2006-01-02 15:04:05"} {
-		if t, err := time.Parse(layout, iso); err == nil {
-			return t
-		}
-	}
-	return time.Time{}
-}
-
+// 読めない値はそのまま返します（捏造しない・前後の空白は落とす）。
 func shortTime(iso string) string {
-	iso = strings.TrimSpace(iso)
-	for _, layout := range []string{
-		time.RFC3339,
-		"2006-01-02T15:04:05",
-		"2006-01-02 15:04:05Z07:00",
-		"2006-01-02 15:04:05",
-	} {
-		if t, err := time.Parse(layout, iso); err == nil {
-			return t.In(time.Local).Format("01-02 15:04")
-		}
+	if t, ok := parseRecordTime(iso); ok {
+		return t.In(time.Local).Format("01-02 15:04")
 	}
-	return iso
+	return strings.TrimSpace(iso)
 }
 
 // UnhandledViewType は「未処理の受信」の形式名です。

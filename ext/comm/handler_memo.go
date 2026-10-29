@@ -101,13 +101,9 @@ func NewMemoAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "チャネルが不正です")
 		return
 	}
-	boxID, ok := MailBoxPageID()
-	if !ok {
-		cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
-		return
-	}
 	// **通信箱への write を要求します**（取り込みと同じ関門）。
-	if !page.RequirePageWrite(w, r, boxID) {
+	boxID, ok := mailBoxForWrite(w, r)
+	if !ok {
 		return
 	}
 

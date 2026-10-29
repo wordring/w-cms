@@ -30,12 +30,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/keylock"
 	"w-cms/internal/database"
 )
 
@@ -128,7 +128,7 @@ func serveIntake(w http.ResponseWriter, r *http.Request, inboxID, formField stri
 	if uploader == "" {
 		uploader = "system"
 	}
-	// 芯は `IntakeFile`（重複検知・ページ生成）——メールの取り込みと同じ道です。
+	// 芯は `IntakeFileAs`（重複検知・ページ生成）——メールの取り込みと同じ道です。
 	// ここはHTTPの応答に直すだけ。
 	// 差出人が自社のアドレスなら「送信」の記録にするのは、管理者が上げたときだけ（2026-10-28 のセキュリティの点検・【考察】コードの矛盾 §7.3）。
 	// ほかの人が上げたものは「受信」——自社を名乗るメールを上げて、送ったことにした控えを作れないように（過去の送信の控えを
@@ -182,6 +182,21 @@ var ErrNoMailBox = errors.New("通信箱ページがありません（トップ�
 // リクエスト時にしか呼ばれないためDBで足ります（テンプレートの isLeafPage と同じ理由）。
 func MailBoxPageID() (string, bool) {
 	return cms.TopLevelPageByTitle(MailBoxTitle)
+}
+
+// mailBoxForWrite は、通信箱のページ番号を返します——通信箱が無ければ 409、見る人が書けなければ RequirePageWrite の断りを書いて
+// ok=false。記録を作る・通信箱の中身を変える口の入口です（同じ7行が6か所に写されていた・2026-10-29 に寄せた）。
+// ⚠ .eml の取り込み（IntakeEMLAPIHandler）は断りの文が違うので、ここを通しません。
+func mailBoxForWrite(w http.ResponseWriter, r *http.Request) (string, bool) {
+	boxID, ok := MailBoxPageID()
+	if !ok {
+		cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
+		return "", false
+	}
+	if !page.RequirePageWrite(w, r, boxID) {
+		return "", false
+	}
+	return boxID, true
 }
 
 // IntakeHandler は取り込み係の受け口です。宣言した拡張子のファイルが通信箱へ
@@ -392,40 +407,19 @@ type IntakeResult struct {
 	Duplicate bool // 既に取り込み済みだった
 }
 
-// intakeRefLocks は、取り込みの印ごとのロックです（使っている人がいなくなったら捨てる）。
-var intakeRefLocks = struct {
-	sync.Mutex
-	m map[string]*intakeRefLock
-}{m: map[string]*intakeRefLock{}}
-
-type intakeRefLock struct {
-	sync.Mutex
-	users int
-}
+// intakeRefLocks は、取り込みの印ごとのロックです（使っている人がいなくなったら捨てる——internal/keylock）。
+var intakeRefLocks keylock.Set
 
 // lockIntakeRef は印 key のロックを取り、外す関数を返します。
-func lockIntakeRef(key string) func() {
-	intakeRefLocks.Lock()
-	l := intakeRefLocks.m[key]
-	if l == nil {
-		l = &intakeRefLock{}
-		intakeRefLocks.m[key] = l
-	}
-	l.users++
-	intakeRefLocks.Unlock()
-	l.Lock()
-	return func() {
-		l.Unlock()
-		intakeRefLocks.Lock()
-		l.users--
-		if l.users == 0 {
-			delete(intakeRefLocks.m, key)
-		}
-		intakeRefLocks.Unlock()
-	}
+func lockIntakeRef(key string) func() { return intakeRefLocks.Lock(key) }
+
+// IntakeFile は IntakeFileAs の、向きを中身から決める形です（2026-10-29 の時点で呼び手は無い——HTTP の口もメールの取り込みも
+// IntakeFileAs を通す。消すかは利用者に聞く〔作業引き継ぎ「本体に呼び手の無い公開関数」〕）。
+func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResult, bool, error) {
+	return IntakeFileAs(inboxID, uploader, fileName, content, "")
 }
 
-// IntakeFile は通信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
+// IntakeFileAs は通信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
 //
 // HTTPの口（serveIntake）と、メールの取り込み（ext/comm/mail）が共有します
 // ——メールをIMAPで取ってきたときも、人が .eml をドロップしたときと**同じ道**を
@@ -435,11 +429,8 @@ func lockIntakeRef(key string) func() {
 // **中身の検査は呼ぶ側の責任**です（HTTPの口は cms.GuardUploadContent を通す。
 // 2026-09-15 まで checkIntakeContent という名前でコアの非公開関数でした）。
 // 担当が居ない拡張子なら ok=false を返します。
-func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResult, bool, error) {
-	return IntakeFileAs(inboxID, uploader, fileName, content, "")
-}
-
-// IntakeFileAs は IntakeFile の、向き（DirectionIn／DirectionOut）が分かっているときの形です（空なら中身から決める）。
+//
+// direction は向き（DirectionIn／DirectionOut）が分かっているときに渡します（空なら中身から決める）。
 // メールの読み込みは、どの箱から読んだかで向きを渡します——差出人で決めると、受信の箱に届いた自分のアドレスを名乗るメール
 // （なりすまし・複合機のスキャンの送り先・同じアドレスを使う人）が「送信・対応 不要」になり、未処理に出なかった（2026-10-22 の見直し）。
 func IntakeFileAs(inboxID, uploader, fileName string, content []byte, direction string) (IntakeResult, bool, error) {

@@ -147,7 +147,7 @@ func RecentMissedCalls() []MissedCall {
 
 var errMissedNotFound = errors.New("その着信が履歴に見つかりません")
 
-// updateMissed は id の着信を書き換えます（fn が false を返したら書かない）。
+// updateMissed は id の着信を書き換えます（fn が誤りを返したら書かない）。
 func updateMissed(id string, fn func(*MissedCall) error) (MissedCall, error) {
 	missedMu.Lock()
 	defer missedMu.Unlock()
@@ -208,12 +208,8 @@ func MissedCallMakeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	boxID, ok := MailBoxPageID()
+	boxID, ok := mailBoxForWrite(w, r)
 	if !ok {
-		cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
-		return
-	}
-	if !page.RequirePageWrite(w, r, boxID) {
 		return
 	}
 	var made, title string
@@ -267,12 +263,8 @@ func MissedCallDismissAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !cms.DecodeJSONBody(w, r, &req) {
 		return
 	}
-	boxID, ok := MailBoxPageID()
+	boxID, ok := mailBoxForWrite(w, r)
 	if !ok {
-		cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
-		return
-	}
-	if !page.RequirePageWrite(w, r, boxID) {
 		return
 	}
 	if _, err := updateMissed(strings.TrimSpace(req.ID), func(m *MissedCall) error {

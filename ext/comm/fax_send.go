@@ -172,6 +172,14 @@ type faxSource struct {
 	PageID, File, Path, Name, Purpose, Paper string
 }
 
+// paperFile は、控えに「送った紙」として書くファイルです（綴じた紙があればそれ、無ければ送ったファイル）。
+func (s faxSource) paperFile() string {
+	if s.Paper != "" {
+		return s.Paper
+	}
+	return s.File
+}
+
 // FaxSendAPIHandler は POST /api/fax/send です。
 func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
@@ -218,7 +226,14 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		src = faxSource{PageID: pageID, File: fileName, Path: path}
 	}
-	fileName, path := src.File, src.Path
+	dispatchFax(w, r, user, src, number, pageID+"/"+src.File)
+}
+
+// dispatchFax は、用意した紙 src を number へ送るよう FAX の道具に頼み、送った FAX を記録にして、送れたかの見張りを始めます
+// （応答もここで書く）。auditTarget は監査に書く「何を」。ページの PDF から送る口と、パソコンの PDF から送る口が同じ手順を
+// 写していたのを寄せた（2026-10-29）。⚠ src.Path のファイルは、呼ぶ側が返るまで残しておくこと（記録へ写す）。
+func dispatchFax(w http.ResponseWriter, r *http.Request, user *auth.User, src faxSource, number, auditTarget string) {
+	path := src.Path
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	out, err := runSendfax(ctx, number, path)
@@ -227,7 +242,7 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusServiceUnavailable, "FAX の道具に頼めませんでした: "+firstFaxLine(string(out), err))
 		return
 	}
-	auth.Audit(user.Username, "fax.send", pageID+"/"+fileName+" -> "+number+" (job "+m[1]+")")
+	auth.Audit(user.Username, "fax.send", auditTarget+" -> "+number+" (job "+m[1]+")")
 	resp := map[string]any{"success": true, "job": m[1], "number": number}
 	// 送った FAX を記録にする。記録を作れなくても、FAX はもう頼んであるので、成功として返し、わけを添える。
 	if recID, err := recordSentFax(user, src, number, m[1]); err != nil {
@@ -235,12 +250,8 @@ func FaxSendAPIHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["record"] = recID
 		// 見張りと後始末は、サーバーの控えだけを見る（fax_jobs.go——記録のタグは書き替えられる）。
-		paper := src.Paper
-		if paper == "" {
-			paper = src.File
-		}
 		if err := putFaxJob(faxJob{Job: m[1], Record: recID, User: user.Username, Page: src.PageID,
-			Purpose: src.Purpose, File: paper, Number: number, Started: time.Now()}); err != nil {
+			Purpose: src.Purpose, File: src.paperFile(), Number: number, Started: time.Now()}); err != nil {
 			resp["record_error"] = "仕事の控えを書けませんでした（送れたかは記録に書かれません）: " + err.Error()
 		} else {
 			go watchFaxJob(m[1])
@@ -313,12 +324,8 @@ func recordSentFax(user *auth.User, src faxSource, number, job string) (string, 
 		d.SetTag(ParentPageTag, srcPage)
 	}
 	if src.Purpose != "" {
-		paper := src.Paper
-		if paper == "" {
-			paper = fileName
-		}
 		d.SetTag(FaxSendPurposeTag, src.Purpose)
-		d.SetTag(FaxSendFileTag, paper)
+		d.SetTag(FaxSendFileTag, src.paperFile())
 	}
 	recID, err := CreateRecordPage(boxID, user.Username, now, d.HTML())
 	if err != nil {

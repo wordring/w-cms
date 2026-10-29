@@ -6,11 +6,11 @@ import (
 	"log"
 	"net/netip"
 	"os"
-	"sync"
 	"time"
 	"unicode"
 
 	"w-cms/internal/database"
+	"w-cms/internal/keylock"
 )
 
 // 総当たり対策のしきい値（認証認可設計.md 2.3節）。
@@ -126,37 +126,12 @@ func AuthenticateFrom(username, password, ip string) (*User, error) {
 	return loadUser(username, isAdmin != 0, primaryGroup.String)
 }
 
-// loginNameLocks は、ログインの名前ごとのロックです（使っている人がいなくなったら捨てる——でたらめの名前で増え続けない）。
-var loginNameLocks = struct {
-	sync.Mutex
-	m map[string]*loginNameLock
-}{m: map[string]*loginNameLock{}}
-
-type loginNameLock struct {
-	sync.Mutex
-	users int
-}
+// loginNameLocks は、ログインの名前ごとのロックです（使っている人がいなくなったら捨てる——でたらめの名前で増え続けない・
+// internal/keylock）。
+var loginNameLocks keylock.Set
 
 // lockLoginName は名前 name のロックを取り、外す関数を返します。
-func lockLoginName(name string) func() {
-	loginNameLocks.Lock()
-	l := loginNameLocks.m[name]
-	if l == nil {
-		l = &loginNameLock{}
-		loginNameLocks.m[name] = l
-	}
-	l.users++
-	loginNameLocks.Unlock()
-	l.Lock()
-	return func() {
-		l.Unlock()
-		loginNameLocks.Lock()
-		if l.users--; l.users == 0 {
-			delete(loginNameLocks.m, name)
-		}
-		loginNameLocks.Unlock()
-	}
-}
+func lockLoginName(name string) func() { return loginNameLocks.Lock(name) }
 
 // loadUser は所属グループを解決して User を組み立てます。
 func loadUser(username string, isAdmin bool, primaryGroup string) (*User, error) {

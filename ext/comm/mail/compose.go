@@ -192,7 +192,7 @@ func draftOf(draftID string) (comm.ComposeDraft, bool) {
 			d.PageID = norm
 		}
 	}
-	if d.Subject == "（件名なし）" {
+	if d.Subject == comm.NoSubject {
 		d.Subject = ""
 	}
 	// 下書きに書いた添付は、送るつもりで選んだもの（印を付けて戻す）。
@@ -215,10 +215,7 @@ func nonEmpty(in []string) []string {
 
 // draftRecordBody は下書きのページの本文を組みます（送信の控えと同じテンプレート）。
 func draftRecordBody(tmpl, from, purpose, sourcePageID string, req ReplyRequest) (string, error) {
-	subject := strings.TrimSpace(req.Subject)
-	if subject == "" {
-		subject = "（件名なし）"
-	}
+	subject := comm.SubjectOrNone(req.Subject)
 	d := cms.NewPageDraft(SentTemplate, tmpl)
 	d.SetTitle(subject)
 	d.SetTag(comm.DirectionTag, comm.DirectionOut)
@@ -231,13 +228,20 @@ func draftRecordBody(tmpl, from, purpose, sourcePageID string, req ReplyRequest)
 	d.SetTag(comm.CcTag, cleanAddrs(req.Cc)...)
 	// ⚠ **`<pre>` の直後の改行は、HTML として読むと1つ落ちます**（仕様）。書いたとき空行で始まる本文
 	// （返信の初期値は空行から始まる）が、開き直すたびに1行ずつ詰まらないよう1つ補います。
-	if strings.HasPrefix(strings.ReplaceAll(req.Body, "\r\n", "\n"), "\n") {
-		req.Body = "\n" + req.Body
-	}
+	req.Body = keepPreLeadingNewline(req.Body)
 	if err := fillMailBody(d, req); err != nil {
 		return "", err
 	}
 	return d.HTML(), nil
+}
+
+// keepPreLeadingNewline は、空行で始まる本文の頭に改行を1つ補います——`<pre>` の直後の改行は HTML として読むと1つ落ちる
+// （仕様）ので、返信の初期値のように空行で始まる本文が、開き直すたびに1行ずつ詰まらないように（2か所の写しを寄せた・2026-10-29）。
+func keepPreLeadingNewline(body string) string {
+	if strings.HasPrefix(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		return "\n" + body
+	}
+	return body
 }
 
 // redraftBody は、既にある下書きのページの本文 cur を、送る欄の中身で書き換えた本文を返します（2026-10-20）。
@@ -245,10 +249,7 @@ func draftRecordBody(tmpl, from, purpose, sourcePageID string, req ReplyRequest)
 // ページに直に書き足したもの（ほかのタグ・段落・`対応` の印）——は残します。ブロックIDも残す（cms.EditBody）。
 // それまでは送る欄の中身からテンプレートで丸ごと組み直していたので、人が直に書いたものが次の保存で消えていた。
 func redraftBody(cur, from, purpose, sourcePageID string, req ReplyRequest) (string, error) {
-	subject := strings.TrimSpace(req.Subject)
-	if subject == "" {
-		subject = "（件名なし）"
-	}
+	subject := comm.SubjectOrNone(req.Subject)
 	d := cms.EditBody(cur)
 	d.SetTitle(subject)
 	d.ReplaceTag(comm.DraftTag, purpose)
@@ -257,9 +258,7 @@ func redraftBody(cur, from, purpose, sourcePageID string, req ReplyRequest) (str
 	d.ReplaceTag(comm.ToTag, cleanAddrs(req.To)...)
 	d.ReplaceTag(comm.CcTag, cleanAddrs(req.Cc)...)
 	// ⚠ `<pre>` の直後の改行は1つ落ちる（draftRecordBody と同じ補い）。
-	if strings.HasPrefix(strings.ReplaceAll(req.Body, "\r\n", "\n"), "\n") {
-		req.Body = "\n" + req.Body
-	}
+	req.Body = keepPreLeadingNewline(req.Body)
 	if err := fillMailBodyWith(d, req, true); err != nil {
 		return "", err
 	}
@@ -453,7 +452,7 @@ func checkDraftWritable(w http.ResponseWriter, r *http.Request, user *auth.User,
 	}
 	// 下書きは通信箱の下に作る（handleDraft）。通信箱の外のページは、タグに「下書き」があっても下書きとして扱わない
 	// （2026-10-26。それまでは、書けるページにタグを1つ書けば、送ったあとにそのページがごみ箱へ移った）。
-	if root, ok := comm.MailBoxPageID(); !ok || !cms.IsDescendantOf(database.DB, n, rootInt(root)) {
+	if !comm.InMailBox(n) {
 		cms.JSONFail(w, http.StatusConflict, "このページは通信箱の下書きではありません")
 		return "", false
 	}
@@ -464,11 +463,3 @@ func checkDraftWritable(w http.ResponseWriter, r *http.Request, user *auth.User,
 	return id, true
 }
 
-// rootInt は通信箱のページIDを数にします（読めなければ 0——0 の子孫は無いので、下書きと認めない）。
-func rootInt(id string) int {
-	n, err := strconv.Atoi(id)
-	if err != nil {
-		return 0
-	}
-	return n
-}

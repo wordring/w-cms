@@ -11,11 +11,10 @@ package contacts
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
-	"strings"
 
+	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
@@ -57,13 +56,7 @@ func AddressBook(user *auth.User) []AddressEntry {
 	seen := map[string]bool{}
 	var out []AddressEntry
 	for _, r := range rows {
-		v := r.Value
-		if i := strings.LastIndex(v, "<"); i >= 0 { // `名前 <アドレス>` の形でも素のアドレスを
-			if j := strings.Index(v[i:], ">"); j > 0 {
-				v = v[i+1 : i+j]
-			}
-		}
-		addr := normalizeEmail(v)
+		addr := normalizeEmail(comm.BareAddress(r.Value)) // `名前 <アドレス>` の形でも素のアドレスを
 		if addr == "" || !page.CanView(user, r.PageID) {
 			continue
 		}
@@ -111,5 +104,5 @@ func AddressBookAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []AddressEntry{}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "entries": entries})
+	cms.WriteJSON(w, map[string]any{"success": true, "entries": entries})
 }

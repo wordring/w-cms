@@ -13,14 +13,12 @@ package comm
 
 import (
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
 
 // FaxNumberTag は FAX 番号のタグです（連絡帳の相手のページと、FAX の記録に書く）。
@@ -45,33 +43,9 @@ func faxJobOf(s string) string {
 // ⚠ TIFF は受けません——ブラウザも Gemini も読めないので、FAX サーバーの側で PDF にしてから渡します（deploy/fax/）。
 var faxKinds = map[string]bool{".pdf": true, ".png": true, ".jpg": true, ".jpeg": true}
 
-// faxOwner は、番号 number を `FAX番号` のタグに持つページ（通信記録は除く）を引きます（phoneOwner と同じ形）。
+// faxOwner は、番号 number を `FAX番号` のタグに持つページ（通信記録は除く）を引きます（numberOwner）。
 func faxOwner(user *auth.User, number string) (int, string, bool) {
-	want := digitsOf(number)
-	if len(want) < 6 {
-		return 0, "", false
-	}
-	rows, err := database.DB.Query(`SELECT page_id, value FROM page_tags WHERE name = ?`, FaxNumberTag)
-	if err != nil {
-		return 0, "", false
-	}
-	var ids []int
-	for rows.Next() {
-		var pid int
-		var v string
-		if rows.Scan(&pid, &v) == nil && digitsOf(v) == want {
-			ids = append(ids, pid)
-		}
-	}
-	rows.Close()
-	sort.Ints(ids)
-	for _, pid := range ids {
-		if !page.CanView(user, pid) || strings.TrimSpace(cms.PageTagValue(database.DB, pid, ChannelTag)) != "" {
-			continue
-		}
-		return pid, cms.PageTitleByID(pid), true
-	}
-	return 0, "", false
+	return numberOwner(user, FaxNumberTag, number)
 }
 
 // MachineFaxAPIHandler は POST /api/machine/fax です（機械専用の入口・鍵で通す）。
@@ -96,12 +70,8 @@ func MachineFaxAPIHandler(w http.ResponseWriter, r *http.Request) {
 		defer unlock()
 	}
 
-	boxID, ok := MailBoxPageID()
+	boxID, ok := mailBoxForWrite(w, r)
 	if !ok {
-		cms.JSONFail(w, http.StatusConflict, ErrNoMailBox.Error())
-		return
-	}
-	if !page.RequirePageWrite(w, r, boxID) {
 		return
 	}
 	tmpl, err := cms.PageTemplateBody(MemoTemplate)

@@ -18,7 +18,6 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -132,7 +131,7 @@ func RecordMakersAPIHandler(w http.ResponseWriter, r *http.Request) {
 			made = append(made, m.Made(user, pageID)...)
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "kinds": kinds, "made": made})
+	cms.WriteJSON(w, map[string]any{"success": true, "kinds": kinds, "made": made})
 }
 
 // RecordMakeAPIHandler は POST /api/record-make です。入力: {page_id, kind}。
@@ -181,5 +180,5 @@ func RecordMakeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if res.Pages == nil {
 		res.Pages = []MadePage{}
 	}
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "pages": res.Pages, "say": res.Say, "open": res.Open})
+	cms.WriteJSON(w, map[string]any{"success": true, "pages": res.Pages, "say": res.Say, "open": res.Open})
 }

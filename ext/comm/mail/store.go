@@ -171,6 +171,18 @@ func deleteToken(username string) {
 // signedInAddresses はサインインしている全員のアドレスです（保管のファイルを見る・トークンには触れない）。
 // 通信箱の `.eml` の取り込みが「自分が出したメール」を見分けるために使います（comm.RegisterOwnAddresses）。
 func signedInAddresses() []string {
+	var out []string
+	for _, u := range tokenUsernames() {
+		if a := SignedInAddress(u); a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// tokenUsernames は、メールのサインインの保管（data/mail/*.json）を持つ利用者の名前を、ディレクトリの並びの順に返します
+// （読めない名前の保管は飛ばす）。サインインしているアドレスの一覧と、自動の読み込みの書き手探しが写していた（2026-10-29 に寄せた）。
+func tokenUsernames() []string {
 	entries, err := os.ReadDir(mailStoreDir())
 	if err != nil {
 		return nil
@@ -181,12 +193,8 @@ func signedInAddresses() []string {
 		if e.IsDir() || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		u := usernameOfTokenFile(strings.TrimSuffix(name, ".json"))
-		if u == "" {
-			continue
-		}
-		if a := SignedInAddress(u); a != "" {
-			out = append(out, a)
+		if u := usernameOfTokenFile(strings.TrimSuffix(name, ".json")); u != "" {
+			out = append(out, u)
 		}
 	}
 	return out

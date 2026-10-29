@@ -135,17 +135,8 @@ func autoFetchUser(address string) string {
 	if address == "" {
 		return ""
 	}
-	entries, err := os.ReadDir(mailStoreDir())
-	if err != nil {
-		return ""
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".json") {
-			continue
-		}
-		u := usernameOfTokenFile(strings.TrimSuffix(name, ".json"))
-		if u == "" || !strings.EqualFold(strings.TrimSpace(SignedInAddress(u)), address) {
+	for _, u := range tokenUsernames() {
+		if !strings.EqualFold(strings.TrimSpace(SignedInAddress(u)), address) {
 			continue
 		}
 		if usr, err := auth.LookupUser(u); err != nil || usr == nil {

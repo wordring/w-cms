@@ -16,8 +16,8 @@ package comm
 //     ときに書き足す（FixRecordTags）。
 //     （2026-10-12 から、ブラウザは編集権を取らないので、飛ばすのは道具〔`/api/lock`〕が子を握っているときだけ。
 //     人の保存とは `cms.RewriteBody` の書き込みの錠で順に並びます。）
-//     いま書き足すのは、メールの読み込みのたびの `FixRecordTags` の②です。`LinkChildrenOf`（親を取り込んだその場で
-//     書き足す口）は、どこからも呼ばれていません。
+//     いま書き足すのは、メールの読み込みのたびの `FixRecordTags` の②です（親を取り込んだその場で書き足す口 `LinkChildrenOf` は、
+//     どこからも呼ばれていなかったので 2026-10-20 に消した）。
 //   - 取り込み済みの記録（それまでの名前「メッセージID」「返信元メッセージID」「返信元」）は、メールの読み込みのたびに
 //     最初に直す（FixRecordTags——直すものが無ければ索引を引くだけ）。
 // ─────────────────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ func ParentRecordOf(inReplyTo string, self int) string {
 	// 値そのままで引き、無ければ中の <…> を1つずつ引く（「<a@x> <b@y>」「<a@x> (コメント)」の形でも親へつながる・
 	// 2026-10-22 の見直し）。
 	tries := []string{inReplyTo}
-	for _, m := range angleIDRe.FindAllString(inReplyTo, -1) {
+	for _, m := range MessageIDTokenRe.FindAllString(inReplyTo, -1) {
 		if m != inReplyTo {
 			tries = append(tries, m)
 		}
@@ -83,8 +83,20 @@ func ParentRecordOf(inReplyTo string, self int) string {
 	return ""
 }
 
-// angleIDRe は、ヘッダの中の <…> の1つです（Message-ID の形）。
-var angleIDRe = regexp.MustCompile(`<[^<>\s]+>`)
+// MessageIDTokenRe は、ヘッダの中の <…> の1つです（Message-ID の形・空白を含まない）。取り込みの親子の結びと、メールの返信が
+// 同じ形を別々に書いていたのを寄せた（2026-10-29）。
+var MessageIDTokenRe = regexp.MustCompile(`<[^<>\s]+>`)
+
+// NoSubject は、件名の無いメールの記録の題です（取り込み・下書き・送信の控えで同じ文字）。
+const NoSubject = "（件名なし）"
+
+// SubjectOrNone は、件名 s の前後の空白を落とし、空なら NoSubject を返します。
+func SubjectOrNone(s string) string {
+	if s = strings.TrimSpace(s); s == "" {
+		return NoSubject
+	}
+	return s
+}
 
 // withParentTag は本文の最初の可変タグの並びに 親ページID を足した本文を返します（既にあるか、並びが無ければ何もしない）。
 func withParentTag(body, parentID string) (string, bool) {

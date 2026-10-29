@@ -25,16 +25,15 @@ import (
 	"html"
 	"log"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"w-cms/ext/comm"
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/keylock"
 	"w-cms/internal/database"
 )
 
@@ -271,10 +270,7 @@ const SentTemplate = comm.MailOutTemplate
 // 本文を入れる節（`comm.MailBodyHeading`）が無い・添えたファイルがあるのに添付の節
 // （`comm.MailFilesHeading`）が無いときは、組めません（`cms.TemplateSlotError`）。
 func sentRecordBody(tmpl, from, sourcePageID, sourceMsgID, messageID string, now time.Time, req ReplyRequest) (string, error) {
-	subject := strings.TrimSpace(req.Subject)
-	if subject == "" {
-		subject = "（件名なし）"
-	}
+	subject := comm.SubjectOrNone(req.Subject)
 
 	d := cms.NewPageDraft(SentTemplate, tmpl)
 	d.SetTitle(subject)
@@ -388,40 +384,12 @@ func sourceMessageID(sourcePageID string) string {
 		return ""
 	}
 	// <…> の1つだけを使う（タグは人が直せる値——改行や余計な文字をヘッダーへ持ち込まない・2026-10-22 の見直し）。
-	return messageIDTokenRe.FindString(cms.PageTagValue(database.DB, idInt, comm.MessageIDTag))
+	return comm.MessageIDTokenRe.FindString(cms.PageTagValue(database.DB, idInt, comm.MessageIDTag))
 }
 
-// messageIDTokenRe は Message-ID の形（<…>・空白を含まない）です。
-var messageIDTokenRe = regexp.MustCompile(`<[^<>\s]+>`)
 
-// draftSendLocks は、下書きごとの送信を1つずつ通すロックです（使っている人がいなくなったら捨てる）。
-var draftSendLocks = struct {
-	sync.Mutex
-	m map[string]*draftSendLock
-}{m: map[string]*draftSendLock{}}
-
-type draftSendLock struct {
-	sync.Mutex
-	users int
-}
+// draftSendLocks は、下書きごとの送信を1つずつ通すロックです（使っている人がいなくなったら捨てる——internal/keylock）。
+var draftSendLocks keylock.Set
 
 // lockDraftSend は下書き id のロックを取り、外す関数を返します。
-func lockDraftSend(id string) func() {
-	draftSendLocks.Lock()
-	l := draftSendLocks.m[id]
-	if l == nil {
-		l = &draftSendLock{}
-		draftSendLocks.m[id] = l
-	}
-	l.users++
-	draftSendLocks.Unlock()
-	l.Lock()
-	return func() {
-		l.Unlock()
-		draftSendLocks.Lock()
-		if l.users--; l.users == 0 {
-			delete(draftSendLocks.m, id)
-		}
-		draftSendLocks.Unlock()
-	}
-}
+func lockDraftSend(id string) func() { return draftSendLocks.Lock(id) }

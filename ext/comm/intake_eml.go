@@ -156,10 +156,7 @@ func (emlIntake) OnFile(ctx *IntakeContext, fileName string, content []byte) (st
 		return "", "", fmt.Errorf("メールとして読めません: %w", err)
 	}
 
-	subject := strings.TrimSpace(decodeHeader(msg.Header.Get("Subject")))
-	if subject == "" {
-		subject = "（件名なし）"
-	}
+	subject := SubjectOrNone(decodeHeader(msg.Header.Get("Subject")))
 	dateISO := ""
 	var received time.Time
 	// ⚠ 先の日付（明後日より先）は信じない（2026-10-27 の見直し）——Date は送り手が自由に書けるので、2099 年と書けば未処理の
