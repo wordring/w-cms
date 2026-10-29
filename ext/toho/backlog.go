@@ -162,7 +162,7 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 	rows, err := db.Query(
 		`SELECT DISTINCT v.page_id FROM vocab_index v
 		  JOIN page_tags t ON t.page_id = v.page_id AND t.name = ? AND t.value IN (?, ?, ?)
-		 WHERE v.data_type = ?`, PageKindTag, PageKindCustomerOrder, PageKindCustomerQuote, PageKindOwnCase, clientOrderItemsType)
+		 WHERE v.data_type = ?`, PageKindTag, caseKinds[0], caseKinds[1], caseKinds[2], clientOrderItemsType) // 手配の対象と同じ種類（caseKinds）
 	if err != nil {
 		return nil, 0
 	}

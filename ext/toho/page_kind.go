@@ -89,6 +89,22 @@ func pageKindOf(id int) string {
 
 // kindOfTags は、ページのタグ（TagsOfPage）から `ページ種類` の値を返します（前後の空白は落とす）。
 // 同じ式が8か所ほどに写されていた（2026-10-29 に寄せた）。
+// caseKinds は、案件明細表を案件として読むページの種類です——案件残表（backlog.go の backlogScan）と手配の対象
+// （procure_ledger.go の openOrderRows）が同じ線で選びます（2026-10-30 に揃えた。それまで手配の対象は、案件明細表を持つ
+// ページ全部から見積の依頼を外していたので、ページ種類の無い古いページの行が手配にだけ出ることがありえた）。
+// 2026-10-30 利用者:「揃えたいです」
+var caseKinds = []string{PageKindCustomerOrder, PageKindCustomerQuote, PageKindOwnCase}
+
+// isCaseKind は、ページ種類 kind が caseKinds の1つかを返します。
+func isCaseKind(kind string) bool {
+	for _, k := range caseKinds {
+		if kind == k {
+			return true
+		}
+	}
+	return false
+}
+
 func kindOfTags(tags map[string][]string) string {
 	return strings.TrimSpace(cms.FirstTag(tags, PageKindTag))
 }

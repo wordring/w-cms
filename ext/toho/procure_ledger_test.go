@@ -12,6 +12,10 @@ import (
 // 下ごしらえ: 加工製品 41（材料 板 t3.2 を1台に2枚）・受注 40（2台・納期 10-10）と 42（3台・納期 10-20）。
 // 板の必要は 受注40 が 4枚、受注42 が 6枚。
 
+// caseKindTags は案件ページのタグ（ページ種類：顧客発注書）です——手配の対象は、案件残表と同じくページ種類で案件を選ぶ
+// （caseKinds・2026-10-30）ので、下ごしらえの案件ページにも書く。
+const caseKindTags = `<dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindCustomerOrder + `</dd></dl>`
+
 func seedLedger(t *testing.T) {
 	t.Helper()
 	setupMaterialsPermsTest(t)
@@ -32,7 +36,7 @@ func seedLedger(t *testing.T) {
 func setOrder(t *testing.T, id int, qty, shipped, due string) {
 	t.Helper()
 	syncBody(t, id, `<h1>受注</h1>`+
-		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		caseKindTags+`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>納期</th></tr>`+
 		`<tr><td>000041</td><td>K-9</td><td>カバー</td><td>`+qty+`</td><td>`+shipped+`</td><td>`+due+`</td></tr>`+
 		`</tbody></table>`)
@@ -126,7 +130,7 @@ func TestAppendToDraftFollowsHeader(t *testing.T) {
 func TestLedgerPartlyClosedOrderKeepsItsPurchase(t *testing.T) {
 	seedLedger(t)
 	syncBody(t, 40, `<h1>受注</h1>`+
-		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		caseKindTags+`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>状態</th><th>納期</th></tr>`+
 		`<tr><td>000041</td><td>K-9</td><td>カバー</td><td>2</td><td>完了</td><td>2026-10-10</td></tr>`+
 		`<tr><td>000041</td><td>K-9</td><td>カバー</td><td>1</td><td></td><td>2026-10-10</td></tr>`+
@@ -135,5 +139,28 @@ func TestLedgerPartlyClosedOrderKeepsItsPurchase(t *testing.T) {
 	got := remainingByOrder(t)
 	if got[40] != 0 || got[42] != 6 {
 		t.Errorf("⚠ 受注A のための6枚は受注A の中で使い切るはず: %v（A 0・B 6）", got)
+	}
+}
+
+// TestLedgerSkipsPagesWithoutCaseKind は、手配の対象が案件残表と同じ種類のページ（caseKinds）だけを読むことを固定します
+// （2026-10-30・利用者:「揃えたいです」）。それまでは案件明細表を持つページ全部から見積の依頼だけを外していたので、
+// ページ種類の無い古いページの行は、案件残表には出ないのに手配にだけ出た。
+func TestLedgerSkipsPagesWithoutCaseKind(t *testing.T) {
+	seedLedger(t)
+	syncBody(t, 42, `<h1>受注</h1>`+
+		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>納期</th></tr>`+
+		`<tr><td>000041</td><td>K-9</td><td>カバー</td><td>3</td><td>2026-10-20</td></tr>`+
+		`</tbody></table>`)
+	if got := remainingByOrder(t); got[40] != 4 || got[42] != 0 {
+		t.Errorf("ページ種類の無い受注B は手配の対象に入らないはず: %v（A 4・B なし）", got)
+	}
+	backlog, _ := backlogScan(&auth.User{Username: "root", IsAdmin: true})
+	for _, g := range backlog {
+		for _, r := range g.Rows {
+			if r.OrderPageID == "000042" {
+				t.Errorf("ページ種類の無い受注B が案件残表に出ています（手配の対象と食い違う）")
+			}
+		}
 	}
 }

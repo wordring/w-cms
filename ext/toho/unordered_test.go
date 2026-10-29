@@ -57,7 +57,7 @@ func TestUnorderedSkipsDoneLines(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	syncBody(t, 30, `<h1>受注</h1>`+
-		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		caseKindTags+`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>状態</th></tr>`+
 		`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>3</td><td>`+StatusDone+`</td></tr>`+
 		`</tbody></table>`)
@@ -78,7 +78,7 @@ func TestUnorderedSkipsShippedLines(t *testing.T) {
 	setupMaterialsPermsTest(t)
 	seedProcurement(t, "root", "302", true)
 	order := func(shipped string) string {
-		return `<h1>受注</h1><table data-type="`+clientOrderItemsType+`"><tbody>`+
+		return `<h1>受注</h1>`+caseKindTags+`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 			`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th><th>出荷済数量</th><th>状態</th></tr>`+
 			`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>3</td><td>`+shipped+`</td><td>納品済</td></tr>`+
 			`</tbody></table>`
@@ -116,7 +116,7 @@ func TestUnorderedHidesUnreadableProducts(t *testing.T) {
 		`<tr><td>鉄</td><td>FB</td><td>t4.5*75*1090</td><td>1</td></tr>`+
 		`</tbody></table>`)
 	syncBody(t, 50, `<h1>受注</h1>`+
-		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		caseKindTags+`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
 		`<tr><td>000051</td><td>K-1</td><td>ブラケット</td><td>3</td></tr>`+
 		`</tbody></table>`)

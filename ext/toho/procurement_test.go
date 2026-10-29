@@ -43,7 +43,7 @@ func seedProcurement(t *testing.T, orderOwner, orderMode string, orderPublic boo
 		`<tr><td>000031</td><td>鉄</td><td>板</td><td>t3.2*100*200</td><td>6</td><td>800</td></tr>`+
 		`</tbody></table>`)
 	syncBody(t, 30, `<h1>受注</h1>`+
-		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		caseKindTags+`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
 		`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>3</td></tr>`+
 		`</tbody></table>`)
@@ -135,7 +135,7 @@ func TestProcurementSaysWhenProductIsUnknown(t *testing.T) {
 	addPage(t, 0, -1, "トップ", "admin", "302", true)
 	addPage(t, 40, 0, "受注", "root", "302", true)
 	syncBody(t, 40, `<h1>受注</h1>`+
-		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
+		caseKindTags+`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
 		`<tr><td></td><td>謎-1</td><td>正体不明</td><td>3</td></tr>`+
 		`</tbody></table>`)

@@ -60,7 +60,7 @@ func TestUnorderedSkipsMigratingOrders(t *testing.T) {
 		t.Fatalf("下ごしらえ: 印の無いときは1件のはずです: %#v", list)
 	}
 	// 同じ受注ページに「移行中」を付ける。
-	syncBody(t, 30, `<h1>受注</h1><dl data-type="tags"><dt>`+MigratingTag+`</dt><dd>確認待ち</dd></dl>`+
+	syncBody(t, 30, `<h1>受注</h1><dl data-type="tags"><dt>`+PageKindTag+`</dt><dd>`+PageKindCustomerOrder+`</dd><dt>`+MigratingTag+`</dt><dd>確認待ち</dd></dl>`+
 		`<table data-type="`+clientOrderItemsType+`"><tbody>`+
 		`<tr><th>弊社品番</th><th>品番</th><th>品名</th><th>数量</th></tr>`+
 		`<tr><td>000031</td><td>K-1</td><td>ブラケット</td><td>3</td></tr>`+
