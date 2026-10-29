@@ -58,6 +58,8 @@ USB が省電力で眠ると、モデムと ND6 が着信を取りこぼしま�
    WCMS_BASE=https://localhost:8443
    ```
 
+   w-cms の証明書は、本番が起こすたびに写す CA の写し `/etc/w-cms/local-ca.pem` で確かめます（2026-10-29 から・台本の `--cacert`）。別の CA で確かめるときは、ここに `WCMS_CA=<CA の証明書>` も書きます。
+
 3. `faxrcvd-wcms` を `/var/spool/hylafax/bin/` に置き（`chmod 755`）、`/var/spool/hylafax/etc/config.faxmodem` に `FaxRcvdCmd: bin/faxrcvd-wcms` を足します。
 4. 渡せなかった FAX の置き場を作ります（HylaFAX の利用者は /var/spool の下にフォルダを作れないため）:
    `sudo install -d -o uucp -g uucp -m 0750 /var/spool/w-cms-fax`。

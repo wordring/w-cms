@@ -32,7 +32,7 @@ ND6 は、w-cms と同じ Ubuntu のサーバー機につなぎます（2026-10-
 2. udev の決まりを置きます: `99-aloha-nd6.rules` → `/etc/udev/rules.d/`。`sudo udevadm control --reload && sudo udevadm trigger`。
    ND6 を差すと `/dev/aloha-nd6` ができ、USB の省電力が切れます。
 3. 鍵を置きます: `/etc/w-cms/phone.env` に `WCMS_MACHINE_TOKEN=<鍵>`（`sudo chmod 600`）。
-4. systemd に載せます: `w-cms-phone.service` → `/etc/systemd/system/`。`sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-phone`。
+4. systemd に載せます（w-cms の証明書は、本番が起こすたびに写す CA の写し `/etc/w-cms/local-ca.pem` で確かめる——`-ca`・2026-10-29 から）: `w-cms-phone.service` → `/etc/systemd/system/`。`sudo systemctl daemon-reload && sudo systemctl enable --now w-cms-phone`。
 5. 確かめます: `journalctl -u w-cms-phone -f` に「/dev/aloha-nd6 を開きました」。電話がかかってくると「着信: 番号」と出ます（記録は受話器を上げたときだけできます）。
    - 2026-10-25 に業務サーバーで、ND6 が「CON」に「ALOHA」と返すこと（USB でのやりとり）は確かめました。
    - ⚠ 以前ここに書いた「PC TEST」のボタンは、実物の ND6 に見当たりませんでした（仕様書の記憶で書いたもの）。
