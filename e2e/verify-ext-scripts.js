@@ -32,7 +32,8 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
     await page.waitForTimeout(1500);
 
     const order = await page.evaluate(() => Array.from(document.scripts).map((s) => s.getAttribute('src') || ''));
-    const app = order.indexOf('/assets/app.js');
+    // 画面のファイルの住所には版の印（?v=…）が付く（2026-10-27 から）——住所の頭で見つける。
+    const app = order.findIndex((s) => s.split('?')[0] === '/assets/app.js');
     const ext = order.filter((s) => s.startsWith('/assets/ext/'));
     ok(app >= 0 && ext.length > 0, '① 拡張の JS が差し込まれている', ext.join(' '));
     ok(ext.every((s) => order.indexOf(s) > app), '① 拡張の JS はコアの app.js のあと');

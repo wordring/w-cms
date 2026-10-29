@@ -18,7 +18,9 @@
 //     開いたときに描く（部材発注書の送信欄）。
 //   - `window.wcmsMailCompose.open(host, { purpose, pageId, draftId })` で直に描く（返信・下書き・新規）。
 //
-// ⚠ **app.js に頼りません**（メール一覧 mails.html からも読み込むため・道具は中に持つ）。
+// ⚠ **app.js の道具（postJSON・getJSON）を使わず、中に持ちます**——もとはメール一覧（mails.html）からも読み込んだため。
+//   2026-10-29 にメール一覧は通信箱の「スレッド」になり、いまは編集の画面からだけ読みます。ただ、コアの postJSON は書きかけを
+//   先に保存してから送り、getJSON は通信の失敗を握るので、そのまま入れ替えると振る舞いが変わります（入れ替えるときは確かめてから）。
 // ⚠ **`innerHTML` へ文字列を入れません**（`createElement`＋`textContent`・保存型XSSの前科）。
 // ⚠ **インラインの script/style・on*= は書けません**（CSP strict）——配線は addEventListener。
 (function () {

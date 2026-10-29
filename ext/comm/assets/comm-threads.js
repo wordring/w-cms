@@ -29,12 +29,7 @@ function rememberView(v) {
     try { localStorage.setItem(VIEW_KEY, v); } catch (e) { /* 憶えられなくても見え方は切り替わる */ }
 }
 
-const el = (tag, cls, text) => {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text !== undefined && text !== null) e.textContent = text;
-    return e;
-};
+const el = w.makeEl; // 要素を作る（class・文字は textContent）——コアの道具
 
 // who はアドレス欄の値（`名前 <アドレス>`）から見せる名前を取ります（名前が無ければアドレス）。
 function who(v) {

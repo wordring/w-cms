@@ -441,9 +441,9 @@
         list.innerHTML = '';
         try {
             const res = await bootFetch('/api/children?parent_id=' + currentPageId);
-            if (!res.ok) { list.innerHTML = '<li class="child-nav-empty">読み込めません</li>'; return; }
+            if (!res.ok) { list.replaceChildren(makeEl('li', 'child-nav-empty', '読み込めません')); return; }
             const items = await res.json() || [];
-            if (items.length === 0) { list.innerHTML = '<li class="child-nav-empty">子ページはありません</li>'; return; }
+            if (items.length === 0) { list.replaceChildren(makeEl('li', 'child-nav-empty', '子ページはありません')); return; }
             items.forEach(p => {
                 const li = document.createElement('li');
                 li.dataset.pageId = p.ID;
@@ -457,7 +457,7 @@
                 list.appendChild(li);
             });
             wireChildDrag(list);
-        } catch (e) { list.innerHTML = '<li class="child-nav-empty">通信エラー</li>'; }
+        } catch (e) { list.replaceChildren(makeEl('li', 'child-nav-empty', '通信エラー')); }
     }
 
     // ── 左レールの並べ替え（2026-09-03）────────────────────────────────
@@ -555,7 +555,7 @@
             .filter(h => h.text);
         list.innerHTML = '';
         if (headings.length === 0) {
-            list.innerHTML = '<li class="toc-nav-empty">見出しがありません</li>';
+            list.replaceChildren(makeEl('li', 'toc-nav-empty', '見出しがありません'));
             return;
         }
         headings.forEach(({ el, text }) => {
@@ -584,7 +584,11 @@
                 // 匿名: 編集UI・権限カード・レール操作を隠し（CSS body.anonymous）、ログイン導線を出す。
                 document.body.classList.add('anonymous');
                 const ub = document.getElementById('w-user-bar');
-                if (ub) ub.innerHTML = '<a href="/login" class="login-link">ログイン</a>';
+                if (ub) {
+                    const login = makeEl('a', 'login-link', 'ログイン');
+                    login.href = '/login';
+                    ub.replaceChildren(login);
+                }
                 return;
             }
             currentUserIsAdmin = !!me.is_admin;
@@ -2750,9 +2754,9 @@
                 loadPageMeta();
                 return;
             }
-            const res = await fetch('/api/load?id=' + currentPageId + '&view=1');
-            if (!res.ok) return;
-            populateEditor(await res.text(), true);
+            const html = await loadViewHTML(false);
+            if (html === null) return;
+            populateEditor(html, true);
             applyMode();
             loadPageMeta(); // 更新日時などの属性表示も最新化
         } catch (e) {}
@@ -2822,17 +2826,30 @@
     // ⚠ 2026-10-12 までは編集権を放す前に読んだので、そのあいだほかの人は書けなかった。いまはほかの人がいつでも書けるので、
     //    読んだ直後の書き込みは次の知らせで比べる。
     async function adoptViewSourceFromServer() {
+        const html = await loadViewHTML(false); // 覚えられなければ、次の知らせで全部を取り直す
+        if (html !== null) adoptViewSource(serverBlocksOf(html).map(c => c.outerHTML));
+    }
+
+    // loadViewHTML は、いまのページを閲覧の描き方（/api/load?view=1）で読み、本文の HTML を返します（読めなければ null・投げない）。
+    // background なら、知らせを受けて自動に読む印（BG_HEADERS——操作ではないのでセッションを延ばさない）を付けます。
+    // 同じ4行が4か所（読み直し・元の控え・鏡の描き直し・ほかの人の書き込みの確かめ）に写されていた（2026-10-29 に寄せた）。
+    async function loadViewHTML(background) {
         try {
-            const res = await fetch('/api/load?id=' + currentPageId + '&view=1');
-            if (res.ok) adoptViewSource(serverBlocksOf(await res.text()).map(c => c.outerHTML));
-        } catch (e) { /* 覚えられなければ、次の知らせで全部を取り直す */ }
+            const res = await fetch('/api/load?id=' + currentPageId + '&view=1', background ? { headers: BG_HEADERS } : undefined);
+            return res.ok ? await res.text() : null;
+        } catch (e) { return null; }
+    }
+
+    // typingIn は、el の中の欄（入力・選び・書ける文字）にキャレットがあるか——描き直すと打っている途中が消える（2か所の写しを寄せた）。
+    function typingIn(el) {
+        const a = document.activeElement;
+        return !!(a && a !== document.body && el.contains(a) && (a.matches('input, textarea, select') || a.isContentEditable));
     }
 
     // blockIsBusy は、そのブロックの中で人が入力している途中か（差し替えると消える）を返す。
     // 鏡の絞り込み（data-w-remember）は差し替えたあと戻るので数えない。
     function blockIsBusy(el) {
-        const a = document.activeElement;
-        if (a && a !== document.body && el.contains(a) && (a.matches('input, textarea, select') || a.isContentEditable)) return true;
+        if (typingIn(el)) return true;
         return Array.from(el.querySelectorAll('input, textarea, select')).some(f => {
             if (f.closest('[data-w-remember]')) return false;
             if (f.tagName === 'SELECT') return Array.from(f.options).some(o => o.selected !== o.defaultSelected);
@@ -2922,13 +2939,9 @@
         viewsTimer = null;
         const live = Array.from(document.querySelectorAll('#w-editor-content section[data-mirror]'));
         if (!live.length) return;
-        let html;
-        try {
-            // 知らせを受けて自動に読む——操作ではない（セッションを延ばさない）。
-            const res = await fetch('/api/load?id=' + currentPageId + '&view=1', { headers: BG_HEADERS });
-            if (!res.ok) return;
-            html = await res.text();
-        } catch (e) { return; }
+        // 知らせを受けて自動に読む——操作ではない（セッションを延ばさない）。
+        const html = await loadViewHTML(true);
+        if (html === null) return;
         const doc = new DOMParser().parseFromString(html, 'text/html');
         let busy = false, touched = false;
         live.forEach(sec => {
@@ -2939,8 +2952,7 @@
             const oldChrome = Array.from(sec.children).filter(c => c.classList.contains('vocab-chrome'));
             // 鏡の中の欄に入力中（キャレットがある）なら待つ。欄の値・選び・升目の印は、描き直したあとへ写す（入力も選んだ行も消さない）。
             // ⚠ 「欄の値が最初と違う」では待たない——拡張の JS が描いたあとに欄を合わせる（選択肢など）ので、いつまでも描き直せなかった。
-            const a = document.activeElement;
-            if (a && a !== document.body && sec.contains(a) && (a.matches('input, textarea, select') || a.isContentEditable)) { busy = true; return; }
+            if (typingIn(sec)) { busy = true; return; }
             const fieldKey = f => f.id || f.name || (f.className + '|' + JSON.stringify(Object.assign({}, f.dataset)));
             const kept = new Map();
             const keptFiles = new Map(); // ファイルを選ぶ欄は値を写せない（選んだファイルは欄そのものが持つ）——欄ごと移す（2026-10-28）
@@ -2983,13 +2995,9 @@
     async function checkPageUpdate() {
         pageCheckTimer = null;
         if (document.body.hasAttribute('edit-mode')) return;
-        let html;
-        try {
-            // 知らせを受けて自動に読む——操作ではない（セッションを延ばさない）。
-            const res = await fetch('/api/load?id=' + currentPageId + '&view=1', { headers: BG_HEADERS });
-            if (!res.ok) return;
-            html = await res.text();
-        } catch (e) { return; }
+        // 知らせを受けて自動に読む——操作ではない（セッションを延ばさない）。
+        const html = await loadViewHTML(true);
+        if (html === null) return;
         if (document.body.hasAttribute('edit-mode')) return; // 読んでいるあいだに編集へ入った
         const plan = planPageUpdate(html);
         if (!plan.places) { pendingPageHTML = null; dismissToast('page-updated'); return; }
@@ -3971,7 +3979,7 @@
         };
         
         const dragHandle = makeEl('div', 'drag-handle');
-        dragHandle.innerHTML = '⠿';
+        dragHandle.textContent = '⠿';
         dragHandle.draggable = true;
         dragHandle.title = 'ドラッグして移動';
 
@@ -9218,8 +9226,8 @@
 // ⚠ **`innerHTML` へ文字列を入れません**（`createElement`＋`textContent`）。
 
 // postJSON は JSON を POST して `{ ok, status, data }` を返します。
-// `ok` は **HTTP が 2xx で、かつ本文の `success` が真**のとき。⚠ **通信の失敗は
-// 投げます**（呼ぶ側が「通信に失敗しました」と言い分けるため・握り潰さない）。
+// `ok` は **HTTP が 2xx で、かつ本文の `success` が真**のとき。**投げません**——通信の失敗も、書きかけを保存できなかったときも、
+// `{ ok: false, status: 0, data: { message } }` を返します（2026-10-22 から・下）。呼ぶ側に `.catch` は要りません。
 
 async function postJSON(url, body) {
     // 書ける形で押したときは、書きかけを先に保存してから送る（2026-10-12・問い5——直してすぐ押せる。ボタンが読む本文に
@@ -9282,7 +9290,7 @@ function delegateClick(handlers) {
 
 // printOnly は node（写し）だけを紙に刷ります。受注残表の印刷と、どの表にも付く「⋯」の「🖨 この表を印刷」が使います。
 //
-// **見えない別の枠（iframe `#w-print-frame`）に写しを置き、その枠だけを刷ります**（2026-10-03）。枠の中は app.css を読み、
+// **見えない別の枠（iframe `#w-print-frame`）に写しを置き、その枠だけを刷ります**（2026-10-03）。枠の中は殻の CSS（app.css と拡張の CSS）を読み、
 // `body.w-printing-sheet` と `#w-print-area` の形で受注残表と同じ紙の決まり（`@media print`）が効きます。
 //
 // ⚠ **ページそのものを刷ってはいけません**——ページに図面の PDF の埋め込みがあると、Chrome は print() を「まだ読み込み中」
@@ -9322,7 +9330,7 @@ function printOnly(node) {
     area.appendChild(doc.importNode(node, true));
     doc.body.appendChild(area);
 
-    // 紙の決まり（app.css）を読み終えてから刷る。読めなくても刷る（罫線が無いだけ）。
+    // 紙の決まり（写した CSS のいちばん後ろの1本）を読み終えてから刷る。読めなくても刷る（罫線が無いだけ）。
     let started = false;
     const go = () => {
         if (started) return;

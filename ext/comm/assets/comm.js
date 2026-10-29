@@ -11,6 +11,9 @@
 const w = window.wcms;
 if (!w) return; // コアが古い（読み込む順が崩れた）——何もしない
 
+// whyFailed は、断られた答えの理由の1行です（本文の message か error、無ければ HTTP の番号）。同じ式が6か所に写されていた（2026-10-29）。
+const whyFailed = (data, status) => (data && (data.message || data.error)) || ('HTTP ' + status);
+
 
 // makeFromRecord は選んだ種類のページを作ります（POST /api/record-make）。案件ページ（2026-10-19 まで受注ページ）は Gemini が本文を読むので時間がかかる。
 async function makeFromRecord(kind, btn) {
@@ -62,7 +65,7 @@ w.delegateClick([
         const r = await w.postJSON('/api/phone/missed/make', { id: btn.dataset.missedId });
         if (!r.ok || !r.data || !r.data.page_id) {
             btn.disabled = false;
-            w.notify('記録にできませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0, id: 'missed-call' });
+            w.notify('記録にできませんでした: ' + whyFailed(r.data, r.status), { type: 'alert', duration: 0, id: 'missed-call' });
             return;
         }
         location.href = '/' + r.data.page_id + '?edit=true'; // 電話のメモを書き始められるように開く
@@ -72,7 +75,7 @@ w.delegateClick([
         const r = await w.postJSON('/api/phone/missed/dismiss', { id: btn.dataset.missedId });
         if (!r.ok) {
             btn.disabled = false;
-            w.notify('外せませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0, id: 'missed-call' });
+            w.notify('外せませんでした: ' + whyFailed(r.data, r.status), { type: 'alert', duration: 0, id: 'missed-call' });
             return;
         }
         const tr = btn.closest('tr');
@@ -82,7 +85,7 @@ w.delegateClick([
 
 // ── 版 3 から通信の JS が持つ部分（2026-10-20 に app.js から移した）——☎ 発信・未処理の一覧の「済」「不要」・「＋ 記録する」。
 if (w.version >= 3) {
-const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, failMessage, tagValue, hasExtension, reloadContent, loadChildNav } = w;
+const { notify, jsonPost } = w;
 
 // ── 電話をかける（tel: リンク・2026-09-05）───────────────────────────
 //
@@ -328,12 +331,16 @@ if (w.version >= 4) {
         const r = await w.postJSON('/api/fax/send', Object.assign({ page_id: pageId, number }, what));
         const d = r.data;
         if (!r.ok) {
-            w.notify('FAX を送れませんでした: ' + ((d && (d.message || d.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0, id: 'fax-send' });
+            w.notify('FAX を送れませんでした: ' + whyFailed(d, r.status), { type: 'alert', duration: 0, id: 'fax-send' });
             return;
         }
-        // 送った FAX は通信箱の記録になる（送れたかは、サーバーがその記録の「FAX送信の様子」に書く——画面を閉じてもよい）。
+        announceFaxJob(d, what.purpose ? '送れたら、送付日などをサーバーが書きます。' : '');
+    }
+    // announceFaxJob は、FAX を送る仕事を受けたことを知らせ、送れたかを見張り始めます（2か所の写しを寄せた・2026-10-29）。
+    // 送った FAX は通信箱の記録になる（送れたかは、サーバーがその記録の「FAX送信の様子」に書く——画面を閉じてもよい）。
+    function announceFaxJob(d, extra) {
         const rec = d.record ? '記録 /' + d.record + '。' : (d.record_error ? '記録は作れませんでした（' + d.record_error + '）。' : '');
-        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。' + rec + (what.purpose ? '送れたら、送付日などをサーバーが書きます。' : '') + '送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
+        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。' + rec + extra + '送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
         watchFax(d.job, d.number);
     }
     // watchFax は仕事の様子を15秒おきに見て、送れた・送れなかったを知らせます（10分まで）。
@@ -426,7 +433,7 @@ if (w.version >= 4) {
             const r = await w.postJSON('/api/phone/dial', { number: t.number });
             if (!r.ok || !r.data || !r.data.success) {
                 btn.disabled = false;
-                w.notify('かけられませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'alert', duration: 0 });
+                w.notify('かけられませんでした: ' + whyFailed(r.data, r.status), { type: 'alert', duration: 0 });
                 return;
             }
             held = r.data.hold_sec || 0;
@@ -438,7 +445,7 @@ if (w.version >= 4) {
                 const stamp = now.getFullYear() + '-' + p2(now.getMonth() + 1) + '-' + p2(now.getDate()) + ' ' + p2(now.getHours()) + ':' + p2(now.getMinutes());
                 const r = await w.postJSON('/api/intake/memo', { channel: '電話', direction: '送信', phone: t.number, counterpart: t.page || '', title: '電話 送信 ' + (t.label || t.number) + ' ' + stamp });
                 if (r.ok && r.data && r.data.success) rec = r.data.page_id;
-                else w.notify('発信の記録を作れませんでした: ' + ((r.data && (r.data.message || r.data.error)) || ('HTTP ' + r.status)), { type: 'warn' });
+                else w.notify('発信の記録を作れませんでした: ' + whyFailed(r.data, r.status), { type: 'warn' });
             }
         } finally { btn.disabled = false; }
         if (how === 'modem') {
@@ -483,13 +490,11 @@ if (w.version >= 4) {
             return;
         } finally { btn.disabled = false; }
         if (!ok || !d || !d.success) {
-            w.notify('FAX を送れませんでした: ' + ((d && (d.message || d.error)) || ('HTTP ' + status)), { type: 'alert', duration: 0, id: 'fax-send' });
+            w.notify('FAX を送れませんでした: ' + whyFailed(d, status), { type: 'alert', duration: 0, id: 'fax-send' });
             return;
         }
         if (fileInput) fileInput.value = '';
-        const rec = d.record ? '記録 /' + d.record + '。' : (d.record_error ? '記録は作れませんでした（' + d.record_error + '）。' : '');
-        w.notify('📠 FAX を送る仕事を受けました（番号 ' + d.number + '・仕事 ' + d.job + '）。' + rec + '送れたかを確かめています…', { type: 'info', duration: 0, id: 'fax-send' });
-        watchFax(d.job, d.number);
+        announceFaxJob(d, '');
     }
     // wireBoxSend は2行に配線します（描き直されたら、そのたびに・1回だけ）。
     function wireBoxSend() {

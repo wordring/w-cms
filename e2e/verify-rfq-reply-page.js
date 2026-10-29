@@ -48,7 +48,9 @@ const check = (label, ok, note = '') => {
     await page.request.post(BASE + '/api/lock/force?id=' + mail, { headers: { Origin: BASE } });
     const attach = ((await up.json().catch(() => ({}))).id) || '';
     await saveBody(mail, '<h1>お見積りの件</h1><dl data-type="tags"><dt>向き</dt><dd>受信</dd><dt>チャネル</dt><dd>メール</dd></dl>' +
-      '<section data-type="file-view" data-ref="' + mail + '-' + attach + '"></section>');
+      '<section data-type="file-view" data-ref="' + mail + '-' + attach + '"></section>' +
+      // 記録の箱の印——「⋯」の 🤖 解析は、記録の箱のある記録にだけ出る（2026-10-20 夕から・toho.js の analyzableHere）。
+      '<section data-mirror="記録の箱"></section>');
 
     // ① 解析の口は止めて「返事」と答える。
     await page.route('**/api/analyze-attachment', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({

@@ -8,7 +8,7 @@
 const w = window.wcms;
 // コアが古い（この部分をまだ app.js が持っている版 3 より前）なら何もしない——二重に配線しない。
 if (!w || !(w.version >= 3)) return;
-const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, failMessage, tagValue, hasExtension, reloadContent, loadChildNav } = w;
+const { makeEl, makeButton, notify, postJSON, hasExtension, reloadContent, loadChildNav } = w;
 
 // ── 通信箱の「📥 新しいメールを読み込む」（2026-09-29） ─────────────────
 //

@@ -8,7 +8,7 @@
 const w = window.wcms;
 // コアが古い（この部分をまだ app.js が持っている版 3 より前）なら何もしない——二重に配線しない。
 if (!w || !(w.version >= 3)) return;
-const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, failMessage, tagValue, hasExtension, reloadContent, loadChildNav } = w;
+const { notify, jsonPost } = w;
 
 // ── 分類の取り消し（2026-09-13）─────────────────────────────────────
 //
@@ -20,8 +20,8 @@ const { makeEl, makeButton, notify, jsonPost, postJSON, getJSON, readResult, fai
 // タグの組を消して保存。**押し間違いの取り消しが、いちばん面倒**という形です。
 //
 // そこで、取引先の下のページでは `メールアドレス` の隣に小さな口を出します（2026-09-16 から連絡先の置き場は
-// 「連絡帳」で、サーバーの口〔/api/contacts/unfile〕も連絡帳の下のページだけを受け付けます。⚠ この画面は置き場を
-// 確かめず、`メールアドレス` のタグがあるページならどこでも出します）。
+// 「連絡帳」で、サーバーの口〔/api/contacts/unfile〕も連絡帳の下のページだけを受け付けます。⚠ 口は置き場を確かめず、
+// `メールアドレス` のタグがあるページならどこでも出ます——2026-10-20 から、描くのはサーバーのタグの飾り〔unfile_decor.go〕）。
 // 押すとそのタグだけ外れ、未登録の一覧へ戻ります。**ページは消しません**
 // （空になったら、そう伝えるだけ）。
 

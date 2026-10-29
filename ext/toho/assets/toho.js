@@ -26,6 +26,18 @@ const w = window.wcms;
 if (!w || !(w.version >= 2)) return;
 const { makeEl, makeButton, notify, postJSON, getJSON, sayIn, valueIn, delegateClick, printOnly } = w;
 
+// postSaying は、ボタンを押せなくして busy を言い（空なら言わない）、postJSON で送ります。断られたら say に「⚠ 理由」（無ければ fail）を
+// 出して null、通れば結果 r（{ ok, status, data }）を返します。どちらでもボタンは押せるように戻します（2026-10-29——同じ5行が
+// 二十か所あまりに写されていたのを寄せた。postJSON は投げないので .catch は要らない）。
+async function postSaying(btn, say, url, body, busy, fail) {
+    btn.disabled = true;
+    if (busy) sayIn(say, busy);
+    const r = await postJSON(url, body);
+    btn.disabled = false;
+    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || fail)); return null; }
+    return r;
+}
+
 // sayBoundPDF は、資料を綴じた1本（FAX・印刷用）ができたことを欄に出し、開くリンクを添えます（部材発注書・部材見積依頼書——
 // 2026-10-09 に2つの写しを寄せた）。⚠ **綴じなかったものを黙りません**——紙にできない形式・読めないPDF・資料の無い行。
 function sayBoundPDF(box, data) {
@@ -156,7 +168,7 @@ async function estimateBlockPost(btn, url, sayClass, doing) {
         page_id: location.pathname.replace(/^\//, '').slice(0, 6),
         block: Number(btn.getAttribute('data-estimate-block')),
         sig: btn.getAttribute('data-estimate-sig') || '', // 描いたときの組の指紋（番号がずれても同じ組に効く・2026-10-22）
-    }).catch(e => ({ ok: false, data: { message: String(e) } }));
+    });
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '書けませんでした')); return; }
     location.reload();
@@ -182,7 +194,7 @@ delegateClick([['.estimate-add-go', async (btn) => {
         into, client,
         person: valueIn(form, '.estimate-add-person'),
         signer: valueIn(form, '.estimate-add-signer'),
-    }).catch(e => ({ ok: false, data: { message: String(e) } }));
+    });
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '入れられませんでした')); return; }
     if (say) {
@@ -194,32 +206,20 @@ delegateClick([['.estimate-add-go', async (btn) => {
     }
 }], ['.estimate-pdf-go', async (btn) => {
     const say = btn.parentElement && btn.parentElement.querySelector('.estimate-pdf-say');
-    btn.disabled = true;
-    sayIn(say, 'PDFを作っています…');
-    const r = await postJSON('/api/estimate-pdf', { page_id: btn.getAttribute('data-estimate-page') || '' })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/estimate-pdf', { page_id: btn.getAttribute('data-estimate-page') || '' }, 'PDFを作っています…', 'PDFを作れませんでした');
+    if (!r) return;
     location.reload();
 }], ['.delivery-pdf-go', async (btn) => {
     // 納品書の紙（2026-10-17・ext/toho/delivery_pdf.go）——作ると、ページに表示し、発行日に今日を書く（未発行 → 発行済）。
     const say = btn.parentElement && btn.parentElement.querySelector('.delivery-pdf-say');
-    btn.disabled = true;
-    sayIn(say, 'PDFを作っています…');
-    const r = await postJSON('/api/delivery-pdf', { page_id: btn.getAttribute('data-delivery-page') || '' })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/delivery-pdf', { page_id: btn.getAttribute('data-delivery-page') || '' }, 'PDFを作っています…', 'PDFを作れませんでした');
+    if (!r) return;
     location.reload();
 }], ['.invoice-pdf-go', async (btn) => {
     // 請求書の紙（2026-10-17・ext/toho/invoice_pdf.go）——作ると、ページに表示し、発行日に今日を書く（未発行 → 発行済）。
     const say = btn.parentElement && btn.parentElement.querySelector('.invoice-pdf-say');
-    btn.disabled = true;
-    sayIn(say, 'PDFを作っています…');
-    const r = await postJSON('/api/invoice-pdf', { page_id: btn.getAttribute('data-invoice-page') || '' })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/invoice-pdf', { page_id: btn.getAttribute('data-invoice-page') || '' }, 'PDFを作っています…', 'PDFを作れませんでした');
+    if (!r) return;
     location.reload();
 }], ['.invoice-make', async (btn) => {
     // 「請求書を作る」（2026-10-17・ext/toho/invoice.go）——その客先の、締めまでの請求書にしていない行で請求書ページを作って開く。
@@ -227,12 +227,8 @@ delegateClick([['.estimate-add-go', async (btn) => {
     const say = row && row.querySelector('.invoice-make-say');
     const close = row && row.querySelector('.invoice-close');
     if (!row || !close || !close.value) { sayIn(say, '締めの日付を選んでください'); return; }
-    btn.disabled = true;
-    sayIn(say, '作っています…');
-    const r = await postJSON('/api/invoice/new', { client: row.getAttribute('data-client') || '', close: close.value })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '請求書を作れませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/invoice/new', { client: row.getAttribute('data-client') || '', close: close.value }, '作っています…', '請求書を作れませんでした');
+    if (!r) return;
     location.href = r.data.url;
 }], ['.estimate-note-save', async (btn) => {
     // 備考を見積明細表の下で書く（2026-10-03・ext/toho/estimate_note.go）——利用者:「見積書ページの見積明細テーブルの下に
@@ -245,41 +241,29 @@ delegateClick([['.estimate-add-go', async (btn) => {
     sayIn(say, '保存しています…');
     // 保存する口は欄が持つ（見積書は /api/estimate/note・部材見積依頼書は /api/rfq/note——2026-10-03）。
     const url = btn.getAttribute('data-note-url') || '/api/estimate/note';
-    const r = await postJSON(url, { page_id: btn.getAttribute('data-estimate-page') || '', note: input.value })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    const r = await postJSON(url, { page_id: btn.getAttribute('data-estimate-page') || '', note: input.value });
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '備考を保存できませんでした')); return; }
     location.reload();
 }], ['.rfq-pdf-go', async (btn) => {
     // 部材見積依頼書の「📄 PDFを作る」（2026-10-03・ext/toho/rfq_pdf.go）——作ったら読み直す（PDF は明細の下に出る）。
     const say = btn.parentElement && btn.parentElement.querySelector('.rfq-pdf-say');
-    btn.disabled = true;
-    sayIn(say, 'PDFを作っています…');
-    const r = await postJSON('/api/rfq-pdf', { page_id: btn.getAttribute('data-rfq-page') || '' })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || 'PDFを作れませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/rfq-pdf', { page_id: btn.getAttribute('data-rfq-page') || '' }, 'PDFを作っています…', 'PDFを作れませんでした');
+    if (!r) return;
     location.reload();
 }], ['.rfq-pdf-docs-go', async (btn) => {
     // 部材見積依頼書の「📠 FAX・印刷用（資料を綴じる）」（2026-10-05・ext/toho/rfq_pdf.go）——部材発注書の makePDFWithDocs と同じ。
     // 部材見積依頼書の PDF（表示中のもの）は差し替えないので読み直さず、できた1本へのリンクを出す（押して印刷・FAX）。
     const say = btn.parentElement && btn.parentElement.querySelector('.rfq-pdf-docs-say');
-    btn.disabled = true;
-    sayIn(say, '部材見積依頼書に資料を綴じています…');
-    const r = await postJSON('/api/rfq-pdf-docs', { page_id: btn.getAttribute('data-rfq-page') || '' })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '綴じられませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/rfq-pdf-docs', { page_id: btn.getAttribute('data-rfq-page') || '' }, '部材見積依頼書に資料を綴じています…', '綴じられませんでした');
+    if (!r) return;
     sayBoundPDF(say, r.data);
 }], ['.rfq-sent-go', async (btn) => {
     // 部材見積依頼書を FAX・手渡しで送った（2026-10-03）——送付日に今日。
     if (!window.confirm('FAX・手渡しで送ったことにして、送付日に今日の日付を書きます。よろしいですか？')) return;
     const say = btn.parentElement && btn.parentElement.querySelector('.rfq-sent-say');
-    btn.disabled = true;
-    const r = await postJSON('/api/rfq/sent', { page_id: btn.getAttribute('data-rfq-page') || '' })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '書けませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/rfq/sent', { page_id: btn.getAttribute('data-rfq-page') || '' }, null, '書けませんでした');
+    if (!r) return;
     location.reload();
 }]]);
 
@@ -293,12 +277,8 @@ delegateClick([['.estimate-add-go', async (btn) => {
 //                   （/api/rfq/apply-reply——読んだあとに行がずれていたら断られる）。
 delegateClick([['.rfq-answered-go', async (btn) => {
     const say = btn.parentElement && btn.parentElement.querySelector('.rfq-reply-say');
-    btn.disabled = true;
-    sayIn(say, '記録しています…');
-    const r = await postJSON('/api/rfq/answered', { page_id: btn.getAttribute('data-rfq-page') || '' })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '記録できませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/rfq/answered', { page_id: btn.getAttribute('data-rfq-page') || '' }, '記録しています…', '記録できませんでした');
+    if (!r) return;
     location.reload();
 }], ['.rfq-read-go', (btn) => openRFQReplyPanel(btn)]]);
 
@@ -322,8 +302,7 @@ delegateClick([['.rfq-reply-link', async (btn) => {
     const say = row && row.querySelector('.rfq-reply-link-say');
     if (!rfq) { sayIn(say, '⚠ 部材見積依頼番号を入れてください'); return; }
     btn.disabled = true;
-    const r = await postJSON('/api/rfq-reply/link', { page_id: btn.getAttribute('data-reply') || '', rfq })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    const r = await postJSON('/api/rfq-reply/link', { page_id: btn.getAttribute('data-reply') || '', rfq });
     btn.disabled = false;
     if (!r.ok) {
         if (say) sayIn(say, '⚠ ' + ((r.data && r.data.message) || '結べませんでした'));
@@ -350,8 +329,7 @@ delegateClick([['.rfq-reply-ocr', async (btn) => {
     if (has && !confirm('「業者の返事（読んだまま）」の表を、Gemini が読んだもので置き換えます（前の中身は版に残ります）。よろしいですか？')) return;
     btn.disabled = true;
     sayIn(say, '🤖 読んでいます…（数十秒かかることがあります）');
-    const r = await postJSON('/api/rfq-reply/ocr', { page_id: btn.getAttribute('data-reply') || '', source_page: sourcePage, source_file: sourceFile })
-        .catch(e => ({ ok: false, data: { message: String(e) } }));
+    const r = await postJSON('/api/rfq-reply/ocr', { page_id: btn.getAttribute('data-reply') || '', source_page: sourcePage, source_file: sourceFile });
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '読めませんでした'), 'proc-why-ng'); return; }
     sayIn(say, (r.data && r.data.say) || '読みました');
@@ -428,8 +406,7 @@ async function openRFQReplyMakePanel(btn) {
         if (!rows.length) { msg.textContent = ' ⚠ 入れる行に印を付けてください'; return; }
         go.disabled = true;
         msg.textContent = ' 作っています…';
-        const res = await postJSON('/api/rfq-reply/make-rfq', { page_id: replyId, rows })
-            .catch((e) => ({ ok: false, data: { message: String(e) } }));
+        const res = await postJSON('/api/rfq-reply/make-rfq', { page_id: replyId, rows });
         go.disabled = false;
         if (!res.ok) { msg.textContent = ' ⚠ ' + ((res.data && res.data.message) || '作れませんでした'); return; }
         location.href = '/' + res.data.page_id;
@@ -500,8 +477,7 @@ async function openRFQReplyPanel(btn) {
         }
         go.disabled = true;
         sayIn(out, '🤖 読んでいます…（数十秒かかることがあります）');
-        const rr = await postJSON('/api/rfq/read-reply', Object.assign({ page_id: pageId }, src))
-            .catch(e => ({ ok: false, data: { message: String(e) } }));
+        const rr = await postJSON('/api/rfq/read-reply', Object.assign({ page_id: pageId }, src));
         go.disabled = false;
         if (!rr.ok) { sayIn(out, '⚠ ' + ((rr.data && rr.data.message) || '読めませんでした')); return; }
         renderRFQReplyProposal(out, pageId, rr.data);
@@ -568,8 +544,7 @@ function renderRFQReplyProposal(out, pageId, d) {
         if (!send.length) { sayIn(msg, '⚠ 書き込む行に印を付けてください'); return; }
         apply.disabled = true;
         sayIn(msg, '書き込んでいます…');
-        const r = await postJSON('/api/rfq/apply-reply', { page_id: pageId, lines: send })
-            .catch(e => ({ ok: false, data: { message: String(e) } }));
+        const r = await postJSON('/api/rfq/apply-reply', { page_id: pageId, lines: send });
         apply.disabled = false;
         if (!r.ok) { sayIn(msg, '⚠ ' + ((r.data && r.data.message) || '書き込めませんでした')); return; }
         location.reload();
@@ -657,8 +632,7 @@ async function openQuotePutPanel(btn) {
         if (cur && cur.price && !window.confirm('「' + step + '」のいまの値 ' + cur.price + ' を ' + val.value.trim() + ' 円に置き換えます。よろしいですか？')) return;
         go.disabled = true;
         msg.textContent = ' 写しています…';
-        const res = await postJSON('/api/estimate/put-cost', { page_id: target, index: t.index, sig: t.sig || '', step, add, value: val.value.trim(), note })
-            .catch((e) => ({ ok: false, data: { message: String(e) } }));
+        const res = await postJSON('/api/estimate/put-cost', { page_id: target, index: t.index, sig: t.sig || '', step, add, value: val.value.trim(), note });
         go.disabled = false;
         if (!res.ok) { msg.textContent = ' ⚠ ' + ((res.data && res.data.message) || '写せませんでした'); return; }
         location.reload();
@@ -906,7 +880,7 @@ async function openQuotePutPanel(btn) {
             for (const { row, sig } of rows) {
                 const r = await postJSON('/api/rfq/draft/back', {
                     page_id: btn.getAttribute('data-rfq-page') || '', table: Number(btn.getAttribute('data-rfq-table') || 0), row, sig,
-                }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+                });
                 if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || '外せませんでした', done); return; }
                 done++;
             }
@@ -1109,7 +1083,7 @@ async function sendCheckedRows(btn, cfg) {
     if (cfg.confirm && !confirm(cfg.confirm(items.length))) return;
     btn.disabled = true;
     sayIn(say, cfg.busy);
-    const r = await postJSON(cfg.url, { items }).catch((e) => ({ ok: false, data: { message: String(e) } }));
+    const r = await postJSON(cfg.url, { items });
     btn.disabled = false;
     if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || cfg.fail)); return; }
     cfg.done(r.data || {});
@@ -1165,9 +1139,8 @@ delegateClick([
 
     // showWhyHere は理由をそのセルの中に出します（空なら消す）。
     //
-    // ⚠ **`title` だけでは伝わりません**（指で触る画面では出ません）。⚠ そして
-    // トーストは使えません——`showToast` はこのファイルの IIFE の中にあり、
-    // **外からは呼べません**（`typeof` で守ると、黙って何も出ない形になります）。
+    // ⚠ **`title` だけでは伝わりません**（指で触る画面では出ません）。理由は、押したセルのそばに出します
+    // （2026-10-29 まで「トーストは IIFE の中にあって使えない」と書いていたが、いまは notify が使える——セルのそばに出す形はそのまま）。
     function showWhyHere(el, why) {
         const cell = el.closest('td');
         if (!cell) return;
@@ -1500,8 +1473,7 @@ delegateClick([
         // 途中で失敗したら、それまでに済んだ行がある限り読み直す——行の番号が変わったまま押し直すと、選んでいない行に効く（2026-10-22 の見直し）。
         let done = 0;
         for (const { row, sig } of rows) {
-            const r = await postJSON(what === 'skip' ? '/api/mfg/skip' : '/api/our-order/draft/remove', { page_id: page, table: tableNo, row, sig, reason })
-                .catch((e) => ({ ok: false, data: { message: String(e) } }));
+            const r = await postJSON(what === 'skip' ? '/api/mfg/skip' : '/api/our-order/draft/remove', { page_id: page, table: tableNo, row, sig, reason });
             if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || 'できませんでした', done); return; }
             done++;
         }
@@ -1552,9 +1524,8 @@ delegateClick([
         const stockNotes = [];
         for (const { row, sig } of rows) {
             const r = act === 'return'
-                ? await postJSON('/api/our-order/return-row', { page_id: page, row, sig }).catch((e) => ({ ok: false, data: { message: String(e) } }))
-                : await postJSON('/api/our-order/line-status', { page_id: page, row, sig, value: btn.getAttribute('data-order-status') || '' })
-                    .catch((e) => ({ ok: false, data: { message: String(e) } }));
+                ? await postJSON('/api/our-order/return-row', { page_id: page, row, sig })
+                : await postJSON('/api/our-order/line-status', { page_id: page, row, sig, value: btn.getAttribute('data-order-status') || '' });
             if (!r.ok) { failPartway(btn, say, (r.data && r.data.message) || 'できませんでした', done); return; }
             done++;
             // 案件の必要を超えて届いた分は、置き場「在庫」の在庫表へ入る（2026-10-23・stock_in.go）——入れた・戻したことを知らせる。
@@ -1582,7 +1553,7 @@ delegateClick([
             sayIn(box, '備考を保存しています…');
             const s = await postJSON(noteBtn.getAttribute('data-note-url') || '/api/our-order/note', {
                 page_id: noteBtn.getAttribute('data-estimate-page') || '', note: note.value,
-            }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+            });
             if (!s.ok) {
                 sayIn(box, '⚠ ' + ((s.data && s.data.message) || '備考を保存できませんでした') + '（PDFは作っていません）', 'proc-why-ng');
                 btn.disabled = false;
@@ -1593,7 +1564,7 @@ delegateClick([
         sayIn(box,'部材発注書のPDFを作っています…');
         const r = await postJSON('/api/order-pdf', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
-        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        });
         if (!r.ok) {
             sayIn(box,'⚠ ' + (r.data.message || 'PDFを作れませんでした'), 'proc-why-ng');
             btn.disabled = false;
@@ -1618,7 +1589,7 @@ delegateClick([
         sayIn(box, '部材発注書に資料を綴じています…');
         const r = await postJSON('/api/order-pdf-docs', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
-        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        });
         btn.disabled = false;
         if (!r.ok) {
             sayIn(box, '⚠ ' + (r.data.message || '綴じられませんでした'), 'proc-why-ng');
@@ -1638,7 +1609,7 @@ delegateClick([
         const r = await postJSON('/api/our-order/sent', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
             method,
-        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        });
         if (!r.ok) {
             sayIn(box,'⚠ ' + (r.data.message || '印を付けられませんでした'), 'proc-why-ng');
             btn.disabled = false;
@@ -1657,7 +1628,7 @@ delegateClick([
         sayIn(box, '戻しています…');
         const r = await postJSON('/api/our-order/unsend', {
             page_id: root ? root.getAttribute('data-order-page') || '' : '',
-        }).catch((err) => ({ ok: false, data: { message: '通信に失敗しました: ' + err } }));
+        });
         if (!r.ok) {
             sayIn(box, '⚠ ' + (r.data.message || '戻せませんでした'), 'proc-why-ng');
             btn.disabled = false;
@@ -1827,12 +1798,8 @@ function mfgPicked(ctx, sel) {
     return ctx.table ? Array.from(ctx.table.querySelectorAll(sel + ':checked')) : [];
 }
 async function mfgPost(ctx, btn, url, body, busy, fail) {
-    btn.disabled = true;
-    sayIn(ctx.say, busy);
-    const r = await postJSON(url, body).catch((e) => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(ctx.say, '⚠ ' + ((r.data && r.data.message) || fail)); return null; }
-    return r.data || {};
+    const r = await postSaying(btn, ctx.say, url, body, busy, fail);
+    return r ? (r.data || {}) : null;
 }
 // tellStockChanges は、置き場「在庫」の在庫表を直したこと（部材の納品済・製造完了——2026-10-23・stock_in.go）と、書けなかったものを知らせる。
 function tellStockChanges(stocked, notes, what) {
@@ -2001,11 +1968,8 @@ delegateClick([['.mfg-close-go', async (btn) => {
     const say = btn.parentElement && btn.parentElement.querySelector('.mfg-close-say');
     if (!confirm('この製造ページを「記録／年／月／製造記録」へ移します（中身はそのままです。書類は記録の年月にあります）。よろしいですか？\n' +
         '全部納めた製造は、最後の納品書の PDF を作ったときに自動で移ります。')) return;
-    btn.disabled = true;
-    sayIn(say, '移しています…');
-    const r = await postJSON('/api/mfg/close', { page_id: btn.dataset.mfg || '' }).catch((e) => ({ ok: false, data: { message: String(e) } }));
-    btn.disabled = false;
-    if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '移せませんでした')); return; }
+    const r = await postSaying(btn, say, '/api/mfg/close', { page_id: btn.dataset.mfg || '' }, '移しています…', '移せませんでした');
+    if (!r) return;
     location.reload();
 }]]);
 
