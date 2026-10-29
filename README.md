@@ -103,11 +103,14 @@ go test ./...
 |---|---|
 | `cmd/w-cms/` | サーバーの入口。ルートの表（`main.go` の `buildHandler()`）と、拡張を取り付ける `ext_*_gen.go`（`go generate ./cmd/w-cms` で作るファイル） |
 | `cmd/w-cms-edit/` | 添付ファイルを、パソコンのアプリで開いて編集するための常駐ヘルパー（Windows 用） |
+| `cmd/w-cms-phone/` | 電話の着信を通信箱に記録する常駐の道具（業務サーバーで、電話の装置から USB で読みます） |
+| `cmd/w-cms-dial/` | 業務サーバーの USB モデムで電話をかける道具（w-cms の「☎ かける」から頼まれます） |
 | `cmd/list-models/` | Gemini のモデルの一覧を引く、補助のコマンド |
 | `internal/cms/` | コア。ページ・保存・タグと表・版・鏡（表示するときにサーバーが埋める、保存されない部分）など |
 | `internal/auth/` | 認証・セッション・CSRF と CSP・管理の API |
 | `internal/database/` | データベースの初期化と、データの場所 |
 | `internal/extgen/` | 拡張の取り付けのファイルを作る仕組み（`go generate` から呼ばれます） |
+| `internal/keylock/` | 名前ごとのロック（同じ名前の処理を1つずつ通す小さな包み） |
 | `internal/boundary/` | コアと拡張の境を見張る試験と、業務の言葉の表（`rules.json`） |
 | `ext/comm/` | 通信の拡張。`contacts/` は連絡帳、`mail/` はメールの送受信 |
 | `ext/toho/` | 東邦の業務の拡張 |
@@ -117,6 +120,7 @@ go test ./...
 | `docs/` | 文書（下の「文書の案内」） |
 | `e2e/` | ブラウザで確かめる試験 |
 | `tools/` | 道具（テンプレートの出し入れ・ワンノートからの移行・メールの取り込み・拡張の取り付けのファイルづくり・文書の書き直しの確かめ など） |
+| `deploy/` | 業務サーバー・VPS・電話・FAX・事務所の PC の置き方の手順（README と設定の雛形） |
 | `data/` | 動かすと作られるデータ。Git には入れません |
 
 `data/` の中身は次のとおりです。
