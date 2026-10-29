@@ -1,7 +1,7 @@
 // 分類の取り消し（2026-09-13）——「間違えてアドレスを分類した場合、どうやって未分類に戻しますか？」
 const { chromium } = require('playwright');
 const lib = require('./lib');
-// **取引先ページは走るときに探します**（2026-09-16）——データを入れ直すと
+// **連絡帳のページは走るときに探します**（2026-09-16。それまでの置き場の名前は「取引先」）——データを入れ直すと
 // ページIDが変わるため（詳しくは lib.js の冒頭）。
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 let fail = 0;
@@ -15,8 +15,8 @@ const ok = (c, m, x) => { console.log((c ? '  ✓ ' : '  ✗ ') + m + (x ? '  ' 
   page.on('pageerror', e => errs.push(String(e)));
   await lib.login(page, BASE);
   const BOX = process.env.WCMS_PARTNER_BOX ||
-    ((await lib.childrenOf(page, '000000')).find(c => (c.Title || '').trim() === '取引先') || {}).ID || '';
-  if (!BOX) { console.log('取引先ページがありません（連絡先を1件登録すると作られます）'); await browser.close(); process.exit(1); }
+    ((await lib.childrenOf(page, '000000')).find(c => (c.Title || '').trim() === '連絡帳') || {}).ID || '';
+  if (!BOX) { console.log('飛ばします: 連絡帳のページがありません'); await browser.close(); return; }
 
   // ⚠ **当て先の住所が未登録の一覧に無ければ飛ばします**（2026-09-23）——通信記録を
   //    取り込んでいない環境（自宅）では「戻った」を確かめようがなく、落ちていました。

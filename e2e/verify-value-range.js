@@ -7,9 +7,7 @@
 //   2026-10-22 利用者:「語の値の範囲として、材質という名前に対して、SS400、SUS304と言った文字列の行列も許容できると良いです」
 // 自分で作ったページ（【E2E】）の上だけで動かし、最後に消す。
 const { chromium } = require('playwright');
-const fs = require('fs');
-const path = require('path');
-const { login, makePage, deletePage, saveNow } = require('./lib');
+const { login, makePage, deletePage, saveNow, bodyOf } = require('./lib');
 
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 
@@ -34,6 +32,12 @@ const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
     d.vocabulary = d.vocabulary || {};
     d.vocabulary['材質'] = { type: 'text', allowed: ['SS400', 'SUS304'] };
     await route.fulfill({ response: res, json: d });
+  });
+  // 2026-10-27 から、立ち上がりの API の答えはページに埋めてある（#w-boot-data）。埋めた答えを外して、上の差し替えを通らせる。
+  await page.route((url) => /^\/\d{6}$/.test(url.pathname), async (route) => {
+    const res = await route.fetch();
+    const html = (await res.text()).replace(/<script type="application\/json" id="w-boot-data">[\s\S]*?<\/script>/, '');
+    await route.fulfill({ response: res, body: html });
   });
   try {
     await login(page, BASE);
@@ -88,8 +92,7 @@ const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
     m = await marks();
     check(m.cells.map((c) => c.text).join() === '-1', '直したセルの印が消える: ' + JSON.stringify(m.cells.map((c) => c.text)));
     await saveNow(page);
-    const file = path.join(__dirname, '..', 'data', 'master', id.slice(0, 2), id, id + '.html');
-    const saved = fs.readFileSync(file, 'utf8');
+    const saved = await bodyOf(page, id); // 手元の data/ ではなく API で読む（試験用の業務サーバーでも流せる）
     check(/<td>3<\/td>/.test(saved), '直したセルは保存された');
     check(!/out-of-range|title=|⚠/.test(saved), '印と理由は本文に保存されていない');
   } finally {

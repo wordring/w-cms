@@ -2,7 +2,8 @@
 //
 // 2026-10-16 利用者:「では、作業の進捗は工数を測定したいときだけにして、もっと大雑把に製造完了だけにします。」
 //
-//   ① 受注残表に「製造完了」の欄がある（材料発注の右・紙に出さない）
+//   ① 受注残表に「製造完了」の欄は無い——2026-10-21 から、状態・材料発注・製造完了・納品書発行・請求書発行は「進み」の1列
+//      （backlog.go の progressHTML。紙にも出す）
 //   ② 2026-10-19 から、受注残表の製造完了は鏡（製造ページで付ける）——押せるチェックは無い（製造ページの確かめは verify-mfg-page.js）
 //
 // 当て先は全部自分で作って最後に消します（受注残表を置いたページ・受注ページ）。
@@ -47,9 +48,9 @@ const madeCell = (page, id) => page.evaluate(async (pid) => {
     const head = await page.evaluate(() => {
       const ths = [...document.querySelector('#w-editor-content .backlog-table tr').children].map((x) => x.textContent.trim());
       const th = [...document.querySelectorAll('#w-editor-content .backlog-table th')].find((x) => x.textContent.trim() === '製造完了');
-      return { at: ths.indexOf('製造完了') - ths.indexOf('材料発注'), cls: th ? th.className : null };
+      return { made: ths.indexOf('製造完了'), order: ths.indexOf('材料発注'), progress: ths.indexOf('進み'), cls: th ? th.className : null };
     });
-    check('① 「製造完了」の欄が材料発注の右・紙に出さない', head.at === 1 && (head.cls || '').includes('no-print'), JSON.stringify(head));
+    check('① 「製造完了」「材料発注」の欄は無く、「進み」の1列にまとまる', head.made < 0 && head.order < 0 && head.progress >= 0, JSON.stringify(head));
     // 「まだ無いもの」（2026-10-17・backlogGaps）——この受注明細には単価の列が無いので「単価」。紙には出さない。
     const gap = await page.evaluate((oid) => {
       const th = [...document.querySelectorAll('#w-editor-content .backlog-table th')].find((x) => x.textContent.trim() === 'まだ無いもの');

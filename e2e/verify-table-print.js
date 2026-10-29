@@ -86,7 +86,7 @@ const BODY = '<h1>【E2E】表の印刷</h1>' +
           html: area ? area.innerHTML : '',
           text: area ? area.textContent : '',
           printing: d.body.classList.contains('w-printing-sheet'),
-          css: !!d.querySelector('link[rel="stylesheet"][href$="/assets/app.css"]'),
+          css: !!d.querySelector('link[rel="stylesheet"][href*="/assets/app.css"]'), // 2026-10-27 から住所に版の印（?v=）が付く
           pageMarked: document.body.classList.contains('w-printing-sheet'),
         };
       });

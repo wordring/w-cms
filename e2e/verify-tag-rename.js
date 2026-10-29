@@ -47,7 +47,7 @@ const check = (label, ok, note = '') => {
 
     for (const id of made) {
       const b = await bodyOf(page, id);
-      check('③ ' + id + ' のタグが新しい値・地の文は元のまま', b.includes('<dd>E2E新</dd>') && !b.includes('<dd>E2E旧</dd>') && b.includes('<p>E2E旧</p>'), b.slice(0, 160));
+      check('③ ' + id + ' のタグが新しい値・地の文は元のまま', b.includes('<dd>E2E新</dd>') && !b.includes('<dd>E2E旧</dd>') && /<p( data-id="[^"]*")?>E2E旧<.p>/.test(b), b.slice(0, 160)); // 段落にはブロックの ID が付く
     }
     check('JSエラーなし', errs.length === 0, errs.join(' | '));
   } catch (e) {

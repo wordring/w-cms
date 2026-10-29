@@ -52,6 +52,13 @@ const FAKE_DRAFT = '009999';
     const file = 'f' + attaches.length + name.slice(name.lastIndexOf('.'));
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, page_id: draft, file, name }) });
   });
+  // 送る欄は、メールにサインインしていないと「送信」を押せなくする（ready）。送るのは上で止めているので、
+  // サインインの無い試験の利用者（業務サーバーの試験用など）でも ready として開く。
+  await page.route('**/api/mail/compose*', async (route) => {
+    const res = await route.fetch();
+    const d = await res.json();
+    await route.fulfill({ response: res, json: Object.assign(d, { ready: true }) });
+  });
   await page.route('**/api/mail/send', (route) => {
     sent = route.request().postDataJSON();
     route.fulfill({ status: 200, contentType: 'application/json',

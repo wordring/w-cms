@@ -136,6 +136,13 @@ const countEditable = page => page.evaluate(() =>
         await login(page2);
         // 語彙の取得だけを落とす
         await page2.route('**/api/tag-schema', route => route.abort());
+        // 2026-10-27 から、立ち上がりの API の答えはページに埋めてある（#w-boot-data・internal/cms/boot_data.go）。
+        // 埋めた答えを外さないと、上の abort が効かず、語彙は取れてしまう。
+        await page2.route(url => url.pathname === '/' + id2, async route => {
+            const res = await route.fetch();
+            const html = (await res.text()).replace(/<script type="application\/json" id="w-boot-data">[\s\S]*?<\/script>/, '');
+            await route.fulfill({ response: res, body: html });
+        });
         await page2.goto(BASE + '/' + id2 + '?edit=true');
         await page2.waitForTimeout(2000); // 語彙の取得失敗と編集モード投入を待つ
 

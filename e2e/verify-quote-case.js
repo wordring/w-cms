@@ -3,7 +3,7 @@
 // 利用者:「見積もりは、見積もりを受注したということにして、受注ページに並べてそこから作るのはどうですか？」
 //
 //   ① 受信の記録の「作るページ」に「見積依頼ページ」——作ると、見積依頼ページ（ページ種類：顧客見積依頼）が 記録／年／月／依頼 にできて開く
-//   ② 案件残表に「見積」として並ぶ・納品の欄は押せない・製造の欄は選べる
+//   ② 案件残表に「見積」として並ぶ・製造の欄は選べる（「納品」の列は 2026-10-22 に案件残表から外した——納品書は製造ページから）
 //   ③ 案件ページの足元は「見積の依頼の案件です」（受注残高は出さない）
 //   ④ 製造を始めて、製造ページの製造明細表の下の「📄 見積書」——見積書は 記録／年／月／依頼 にでき（2026-10-21 から）、「この製造の書類」に並び、行に案件が写る（quote_done.go）
 //   ⑤ 見積書に送付日を付けると、案件残表から外れ、案件ページの足元に「完了」と出る
@@ -82,12 +82,12 @@ const parentOf = (page, id) => page.evaluate(async (pid) => (await (await fetch(
         if (!tr) return null;
         return {
           label: [...tr.querySelectorAll('a')].map((a) => a.textContent.trim()).find((t) => t.startsWith('見積')) || '',
-          dlv: !!tr.querySelector('input[disabled][title^="見積の依頼です"]'),
+          dlv: !!tr.querySelector('input[title^="見積の依頼です"]'),
           mfg: !!tr.querySelector('.backlog-wait-pick'),
           row: Number((tr.querySelector('.backlog-wait-pick') || { dataset: {} }).dataset.row || 0),
         };
       }, row);
-      check('② 案件残表に「見積」として並ぶ・納品は押せない・製造は選べる', !!r && r.label.startsWith('見積') && r.dlv && r.mfg, JSON.stringify(r));
+      check('② 案件残表に「見積」として並ぶ・納品の欄は無い・製造は選べる', !!r && r.label.startsWith('見積') && !r.dlv && r.mfg, JSON.stringify(r));
 
       // ③
       const view = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), quote);
