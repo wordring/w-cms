@@ -17,7 +17,6 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
-	"w-cms/internal/database"
 )
 
 // TemplateNode はテンプレートツリーの1ノードです。
@@ -50,17 +49,7 @@ func TemplatesAPIHandler(w http.ResponseWriter, r *http.Request) {
 // ここはリクエスト時にしか呼ばれないのでDBを見て構いません
 // （索引除外の判定＝IsTemplateArea は再構築中にも呼ばれるためサイドカーを使う。同書 §6.1）。
 func templateRootID() (string, bool) {
-	topID, err := strconv.Atoi(TopPageID)
-	if err != nil {
-		return "", false
-	}
-	var id int
-	if err := database.DB.QueryRow(
-		`SELECT id FROM pages WHERE parent_id = ? AND title = ? ORDER BY id ASC LIMIT 1`,
-		topID, TemplateRootTitle).Scan(&id); err != nil {
-		return "", false
-	}
-	return page.NormalizeID(strconv.Itoa(id))
+	return FindChildByTitle(TopPageID, TemplateRootTitle) // 同じ SQL の写しだった（2026-10-29 に寄せた）
 }
 
 // templateChildren は親の配下を再帰的にツリー化します。

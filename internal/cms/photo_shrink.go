@@ -29,8 +29,6 @@ package cms
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -69,14 +67,7 @@ func validatePhotoShrink(path string, c *PhotoShrinkSettings) error {
 }
 
 // PhotoShrinkConfig は設定 `photo_shrink` を返します（無ければ nil＝縮めない）。
-func PhotoShrinkConfig() *PhotoShrinkSettings {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return nil
-	}
-	return settings.PhotoShrink
-}
+func PhotoShrinkConfig() *PhotoShrinkSettings { return settingsField(func(s *Settings) *PhotoShrinkSettings { return s.PhotoShrink }) }
 
 // jpegDecodeSlots は、JPEG の復号と作り直しを同時に動かす数の上限です。
 var jpegDecodeSlots = make(chan struct{}, 2)
@@ -165,13 +156,7 @@ func downscaleArea(src image.Image, longSide int) image.Image {
 }
 
 // isPhotoName は、縮める対象の名前（JPEG）かを返します。
-func isPhotoName(name string) bool {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".jpg", ".jpeg":
-		return true
-	}
-	return false
-}
+func isPhotoName(name string) bool { return isViewablePhoto(name) } // JPEG だけ（photo_view.go と同じ決まり——写しを寄せた・2026-10-29）
 
 // 縮めなかった理由です。
 var (
@@ -220,15 +205,14 @@ func shrinkPhotoFile(user *auth.User, pageID, stored string) (photoShrinkResult,
 	if len(out) >= len(current) {
 		return res, errPhotoNotSmaller
 	}
-	sum := sha256.Sum256(current)
-	origSHA := hex.EncodeToString(sum[:])
+	origSHA := sha256Hex(current)
 	localEditMu.Lock() // 「📝 ローカル編集」の上書きと重ならないように（同じ添付を1つずつ）。
 	defer localEditMu.Unlock()
 	now, err := os.ReadFile(path)
 	if err != nil {
 		return res, err
 	}
-	if nowSum := sha256.Sum256(now); hex.EncodeToString(nowSum[:]) != origSHA {
+	if sha256Hex(now) != origSHA {
 		return res, errPhotoChanged
 	}
 	if err := page.WriteFileAtomic(path, out, 0o644); err != nil {

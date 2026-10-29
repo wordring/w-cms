@@ -243,9 +243,7 @@ func canonNode(n *html.Node) {
 		// ファイル表示の印の中身（ファイルの名前）はサーバーが埋めるもので、描いた形では空になる——比べるときは中身を見ない
 		// （見ていたので、図面の節を2人で書くと、合わせられるのに衝突と出ていた・2026-10-22 の見直し）。
 		if n.Data == "section" && Attr(n, "data-type") == "file-view" {
-			for n.FirstChild != nil {
-				n.RemoveChild(n.FirstChild)
-			}
+			clearChildren(n)
 			return
 		}
 		if whitespaceInsensitive[n.Data] {

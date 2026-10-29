@@ -57,8 +57,6 @@ package cms
 import (
 	"bytes"
 	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -169,8 +167,7 @@ func RecordVersion(pageID, author, html string, force bool) error {
 		return err
 	}
 
-	sum := sha256.Sum256([]byte(html))
-	hash := hex.EncodeToString(sum[:])
+	hash := sha256Hex([]byte(html))
 
 	if len(list) > 0 {
 		newest := list[0]
@@ -231,8 +228,7 @@ func RecordVersion(pageID, author, html string, force bool) error {
 func writeVersionFiles(dir, id string, info VersionInfo, body []byte) error {
 	info.ID = id
 	if info.Hash == "" {
-		sum := sha256.Sum256(body)
-		info.Hash = hex.EncodeToString(sum[:])
+		info.Hash = sha256Hex(body)
 	}
 	if info.Size == 0 {
 		info.Size = len(body)

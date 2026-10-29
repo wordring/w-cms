@@ -598,11 +598,7 @@ func (b DraftBlock) SetFileView(ref string) bool {
 		return false
 	}
 	setAttr(fv, FileRefAttr, ref)
-	for c := fv.FirstChild; c != nil; {
-		next := c.NextSibling
-		fv.RemoveChild(c) // 名札は作るときに付け直す（FillFileViewNames）
-		c = next
-	}
+	clearChildren(fv) // 名札は作るときに付け直す（FillFileViewNames）
 	return true
 }
 
@@ -693,11 +689,7 @@ func newElement(tag string) *html.Node {
 
 // setNodeText は n の中身を文字 s だけにします。
 func setNodeText(n *html.Node, s string) {
-	for c := n.FirstChild; c != nil; {
-		next := c.NextSibling
-		n.RemoveChild(c)
-		c = next
-	}
+	clearChildren(n)
 	n.AppendChild(&html.Node{Type: html.TextNode, Data: s})
 }
 

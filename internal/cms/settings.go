@@ -672,15 +672,20 @@ func newCharFolder(m map[string]string) *strings.Replacer {
 	return strings.NewReplacer(pairs...)
 }
 
-// AttachmentReadOnly は添付を書き換えられないページの題です（設定 `attachment_readonly`）。
-func AttachmentReadOnly() []string {
+// settingsField は、いまの設定から get で1つの欄を読みます（読む錠の中で・設定がまだ無ければゼロの値）。
+// 欄ごとの読み口が同じ7行を写していた（2026-10-29 に寄せた）。
+func settingsField[T any](get func(*Settings) T) T {
 	settingsMu.RLock()
 	defer settingsMu.RUnlock()
+	var zero T
 	if settings == nil {
-		return nil
+		return zero
 	}
-	return settings.AttachmentReadOnly
+	return get(settings)
 }
+
+// AttachmentReadOnly は添付を書き換えられないページの題です（設定 `attachment_readonly`）。
+func AttachmentReadOnly() []string { return settingsField(func(s *Settings) []string { return s.AttachmentReadOnly }) }
 
 // readOnlyAttachmentTitles は引きやすい形（集合）で返します。
 func readOnlyAttachmentTitles() map[string]bool {
@@ -698,11 +703,4 @@ func readOnlyAttachmentTitles() map[string]bool {
 //
 // ⚠ **索引には効きません**——候補を探すときだけに使います（理由は
 // normalize_company.go の冒頭）。既定は**空**で、何も落としません。
-func CompanyForms() []string {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return nil
-	}
-	return settings.CompanyForms
-}
+func CompanyForms() []string { return settingsField(func(s *Settings) []string { return s.CompanyForms }) }

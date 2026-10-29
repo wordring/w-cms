@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -313,17 +314,7 @@ func clientReordered(baseOrder, order []string) bool {
 	return !sameOrder(a, b)
 }
 
-func sameOrder(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
+func sameOrder(a, b []string) bool { return slices.Equal(a, b) }
 
 func idsOf(blocks []storedBlock) []string {
 	ids := make([]string, len(blocks))
@@ -418,23 +409,11 @@ func syncLocked(w http.ResponseWriter, id string, user *auth.User, username stri
 	}
 	if plan.dirty {
 		// writeBody が「トップ直下の置き場の題は1枚だけ」も見る（断れば 409 を書いて ok=false）。
-		ua, ok := writeBody(w, id, res.finalBody)
+		ua, ok := commitBody(w, id, username, string(original), res.finalBody, req.Checkpoint)
 		if !ok {
 			return res, false
 		}
 		res.updatedAt = ua
-		if err := RecordVersion(id, username, res.finalBody, false); err != nil {
-			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
-		} else if req.Checkpoint {
-			// 同じ中身で force を通すと、いまの版を閉じる（新しい版は作らない——RecordVersion）。
-			if err := RecordVersion(id, username, res.finalBody, true); err != nil {
-				log.Printf("版の区切りに失敗しました page=%s: %v", id, err)
-			}
-		}
-		if !syncBody(w, id, res.finalBody) {
-			return res, false
-		}
-		noteBlockWriters(id, username, string(original), res.finalBody)
 		res.written = true
 	} else {
 		if meta, ok := page.ReadSidecar(id); ok {

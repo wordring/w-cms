@@ -254,6 +254,13 @@ func AtoiSafe(s string) int {
 	return v
 }
 
+// clearChildren は n の子を全部外します（同じ2〜5行の写しが8か所にあった・2026-10-29 に寄せた）。
+func clearChildren(n *html.Node) {
+	for n.FirstChild != nil {
+		n.RemoveChild(n.FirstChild)
+	}
+}
+
 // WalkElements はノード木 root を先行順（document order）で走査し、
 // すべての要素ノードに対して fn を呼び出します。
 func WalkElements(root *html.Node, fn func(*html.Node)) {

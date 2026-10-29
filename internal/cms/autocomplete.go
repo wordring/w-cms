@@ -85,14 +85,7 @@ func validateAutocomplete(path string, c *AutocompleteSettings) error {
 }
 
 // AutocompleteConfig は設定 `autocomplete` を返します（無ければ nil＝候補を数えない）。
-func AutocompleteConfig() *AutocompleteSettings {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return nil
-	}
-	return settings.Autocomplete
-}
+func AutocompleteConfig() *AutocompleteSettings { return settingsField(func(s *Settings) *AutocompleteSettings { return s.Autocomplete }) }
 
 // autoChoice は定型の値1つと、それを持つ行の数（ページごと）です（data/autocomplete.json の1件）。
 type autoChoice struct {

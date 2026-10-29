@@ -99,13 +99,12 @@ type ShrunkPhoto struct {
 
 // NewAttachmentMeta は中身から事実を組み立てます（保存時刻は今）。
 func NewAttachmentMeta(name, by, source string, content []byte) AttachmentMeta {
-	sum := sha256.Sum256(content)
 	return AttachmentMeta{
 		Name:    name,
 		SavedAt: time.Now().In(time.Local).Format(time.RFC3339),
 		By:      by,
 		Size:    int64(len(content)),
-		SHA256:  hex.EncodeToString(sum[:]),
+		SHA256:  sha256Hex(content),
 		Source:  source,
 	}
 }
@@ -237,4 +236,10 @@ func AttachmentDisplayName(pageID, storedName string) string {
 func IsAttachmentMetaFile(name string) bool {
 	return strings.EqualFold(name, AttachmentMetaFile) ||
 		strings.EqualFold(filepath.Ext(name), ".json")
+}
+
+// sha256Hex は中身の指紋（SHA-256 の16進）です——添付の目録・写真の縮め・版が同じ2行を写していた（2026-10-29 に寄せた）。
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }

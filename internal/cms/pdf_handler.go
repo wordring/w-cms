@@ -1,7 +1,6 @@
 package cms
 
 import (
-	"bytes"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -82,8 +81,8 @@ func UploadPDFHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 拡張子は名乗りにすぎないので、中身がPDFであることも確認する
 	// （.pdf という名前のHTMLを置かれると配信側の判定を欺ける）。
-	if !bytes.HasPrefix(up.content, []byte("%PDF-")) {
-		http.Error(w, "PDFファイルではありません（先頭が %PDF- ではありません）", http.StatusBadRequest)
+	if !isPDF(up.content) {
+		http.Error(w, errNotPDF.Error(), http.StatusBadRequest)
 		return
 	}
 

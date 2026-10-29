@@ -13,7 +13,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -135,23 +134,7 @@ func SaveAPIHandler(w http.ResponseWriter, r *http.Request) {
 		before, _ := os.ReadFile(page.BodyPath(id))
 		// 作るときに決める語は、管理者でない人には替えさせない（2026-10-27・fixed_tag.go）。
 		safeHTML, _ = KeepFixedTags(auth.CurrentUser(r), string(before), safeHTML)
-		updatedAt, ok := writeBody(w, id, safeHTML)
-		if !ok {
-			return "", false
-		}
-
-		// 版として残す（コアレッシングが効くので、オートセーブの連打では増えない。
-		// version.go 参照）。**保存そのものは止めない**——履歴が取れないことを理由に
-		// 書けなくするほうが害が大きい（監査記録と同じ判断）。
-		if err := RecordVersion(id, auth.UsernameOf(r), safeHTML, false); err != nil {
-			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
-		}
-
-		if !syncBody(w, id, safeHTML) {
-			return "", false
-		}
-		noteBlockWriters(id, auth.UsernameOf(r), string(before), safeHTML)
-		return updatedAt, true
+		return commitBody(w, id, auth.UsernameOf(r), string(before), safeHTML, false)
 	}()
 	if !ok {
 		return
@@ -184,6 +167,30 @@ func gateSave(w http.ResponseWriter, r *http.Request, rawID, token string) (id s
 	return id, true
 }
 
+// commitBody は、ロックの中で本文 body を書き、版を残し、索引に入れ、だれがどのブロックを書いたかを覚えます
+// （全文の保存・ブロックの保存・/api/sync が同じ手順を写していた——2026-10-29 に寄せた。ブロックの保存だけ版を残していなかった
+// ことがあり、写しはずれる）。順はこのまま: 書く → 版（失敗しても保存は止めない——履歴が取れないことを理由に書けなくするほうが
+// 害が大きい） →（checkpoint なら、版を残せたときだけ区切る——同じ中身で force を通すと、いまの版を閉じる） → 索引 → 書いた人。
+// 断ったときは応答を書き終えていて ok=false。⚠ ロック（LockPageBody）は呼ぶ側が持つ。
+func commitBody(w http.ResponseWriter, id, author, before, body string, checkpoint bool) (updatedAt string, ok bool) {
+	updatedAt, ok = writeBody(w, id, body)
+	if !ok {
+		return "", false
+	}
+	if err := RecordVersion(id, author, body, false); err != nil {
+		log.Printf("版の記録に失敗しました page=%s: %v", id, err)
+	} else if checkpoint {
+		if err := RecordVersion(id, author, body, true); err != nil {
+			log.Printf("版の区切りに失敗しました page=%s: %v", id, err)
+		}
+	}
+	if !syncBody(w, id, body) {
+		return "", false
+	}
+	noteBlockWriters(id, author, before, body)
+	return updatedAt, true
+}
+
 // writeBody は更新日時を進めて本文を正本ファイルへ書きます（失敗は応答に書いて ok=false）。
 // 更新日時は保存のたびにサーバーが「今」を刻みます（サイドカーが正本）。
 func writeBody(w http.ResponseWriter, id, htmlBody string) (updatedAt string, ok bool) {
@@ -196,8 +203,7 @@ func writeBody(w http.ResponseWriter, id, htmlBody string) (updatedAt string, ok
 	}
 	// ⚠ **消されたページへは書きません**（2026-10-19・handler_delete.go の moveToTrash）——呼び手は錠の中で読んでから来るが、
 	// ここでもう一度見る。フォルダを作り直すと、ごみ箱へ移したはずのページが本文だけで生き返る（それまでは MkdirAll していた）。
-	pageDir := page.GetPageDir(id)
-	if _, err := os.Stat(filepath.Join(pageDir, id+".meta.json")); err != nil {
+	if _, err := os.Stat(page.SidecarPath(id)); err != nil {
 		http.Error(w, "このページは削除されています（保存しませんでした）", http.StatusNotFound)
 		return "", false
 	}
@@ -206,7 +212,7 @@ func writeBody(w http.ResponseWriter, id, htmlBody string) (updatedAt string, ok
 		http.Error(w, "Failed to update metadata", http.StatusInternalServerError)
 		return "", false
 	}
-	if err := page.WriteFileAtomic(filepath.Join(pageDir, id+".html"), []byte(htmlBody), 0644); err != nil {
+	if err := page.WriteFileAtomic(page.BodyPath(id), []byte(htmlBody), 0644); err != nil {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return "", false
 	}
@@ -351,19 +357,8 @@ func SaveBlockAPIHandler(w http.ResponseWriter, r *http.Request) {
 		// 作るときに決める語は、管理者でない人には替えさせない（2026-10-27・fixed_tag.go）。
 		merged, _ = KeepFixedTags(auth.CurrentUser(r), string(current), merged)
 
-		updatedAt, ok := writeBody(w, id, merged)
-		if !ok {
-			return "", false
-		}
-		// 全文の保存と同じく版を残す（2026-10-22 の見直しまで、ここだけ版を残していなかった）。
-		if err := RecordVersion(id, auth.UsernameOf(r), merged, false); err != nil {
-			log.Printf("版の記録に失敗しました page=%s: %v", id, err)
-		}
-		if !syncBody(w, id, merged) {
-			return "", false
-		}
-		noteBlockWriters(id, auth.UsernameOf(r), string(current), merged)
-		return updatedAt, true
+		// 全文の保存と同じく版を残す（2026-10-22 の見直しまで、ここだけ版を残していなかった——いまは commitBody の1つ）。
+		return commitBody(w, id, auth.UsernameOf(r), string(current), merged, false)
 	}()
 	if !ok {
 		return

@@ -118,9 +118,7 @@ func init() {
 // ——書ける形（2026-10-12 までの編集モード）で保存すると中は一度空になりますが、サーバーがまた書き込みます。
 func renderFileView(ctx *MirrorContext, el *html.Node) (bool, error) {
 	// 名札と前回のクロームを落とす（毎回描き直す）。
-	for el.FirstChild != nil {
-		el.RemoveChild(el.FirstChild)
-	}
+	clearChildren(el)
 
 	ref := strings.TrimSpace(Attr(el, FileRefAttr))
 	if ref == "" {
@@ -372,9 +370,7 @@ func FillFileViewNames(user *auth.User, bodyHTML string) string {
 				el.FirstChild.Type == html.TextNode && el.FirstChild.Data == name {
 				return // 既に同じ名札
 			}
-			for el.FirstChild != nil {
-				el.RemoveChild(el.FirstChild)
-			}
+			clearChildren(el)
 			el.AppendChild(&html.Node{Type: html.TextNode, Data: name})
 			changed = true
 		})

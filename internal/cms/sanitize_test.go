@@ -223,9 +223,8 @@ func TestSanitizeDropsDangerousAdditions(t *testing.T) {
 	}
 }
 
-// 旧形式の <m-tag name="親ページID"> を取り込まない規則は、m-tag を所有する
-// plugin_page_tags.go の責務に移した（サニタイザはカスタム要素の意味に立ち入らない）。
-// 検証は page_tags_test.go の TestSyncSkipsLegacyParentTag を参照。
+// 旧形式の <m-tag>（カスタム要素）は、いまはサニタイザがそのまま落とします（上の試験）。
+// （かつては「m-tag を所有する plugin_page_tags.go の責務」と書いていたが、そのファイルも試験 TestSyncSkipsLegacyParentTag も、もう無い。）
 
 // TestSanitizeIsIdempotent は冪等性を検証します。保存時にサニタイズ結果をエディタへ返す
 // エコーバック方式は、これが成り立たないと保存のたびに内容が変化して収束しません。

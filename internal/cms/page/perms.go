@@ -62,6 +62,11 @@ type PageMeta struct {
 
 // sidecarPath は <id>.meta.json の物理パスを返します。
 func sidecarPath(id string) string {
+	return SidecarPath(id)
+}
+
+// SidecarPath はページの属性のファイル（<id>.meta.json）の場所です（BodyPath と対——場所を組むのはここだけ）。
+func SidecarPath(id string) string {
 	return filepath.Join(GetPageDir(id), id+".meta.json")
 }
 
@@ -612,7 +617,7 @@ func AnonymousMayFetch(r *http.Request, pageID, name string) bool {
 	if auth.CurrentUser(r) != nil {
 		return true
 	}
-	body, err := os.ReadFile(filepath.Join(GetPageDir(pageID), pageID+".html"))
+	body, err := os.ReadFile(BodyPath(pageID))
 	if err != nil {
 		return false
 	}

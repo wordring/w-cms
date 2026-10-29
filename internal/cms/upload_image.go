@@ -20,8 +20,6 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -63,8 +61,7 @@ func UploadImageHandler(w http.ResponseWriter, r *http.Request) {
 	if shrinkHere {
 		content, beforePx, afterPx, resized, err = reencodeJPEG(up.content, conf.LongSide, conf.Quality)
 		if err == nil && resized {
-			sum := sha256.Sum256(up.content)
-			shrunk = &ShrunkPhoto{Size: int64(len(up.content)), SHA256: hex.EncodeToString(sum[:]), Width: beforePx.X, Height: beforePx.Y,
+			shrunk = &ShrunkPhoto{Size: int64(len(up.content)), SHA256: sha256Hex(up.content), Width: beforePx.X, Height: beforePx.Y,
 				At: time.Now().In(time.Local).Format(time.RFC3339), By: up.username}
 		}
 	} else {
@@ -119,10 +116,9 @@ func imageAttachmentName(pageID, raw string) (string, error) {
 func unsupportedImageMessage(rawName string) string {
 	switch strings.ToLower(filepath.Ext(rawName)) {
 	case ".heic", ".heif":
-		return "HEIC形式の画像は扱えません。端末の設定で「互換性優先（JPEG）」にして撮り直すか、" +
-			"JPEG / PNG に変換してからアップロードしてください"
+		return heicRefusal
 	case ".avif":
-		return "AVIF形式の画像は扱えません。JPEG / PNG / WebP に変換してください"
+		return avifRefusal
 	case ".tif", ".tiff":
 		return "TIFF形式の画像は扱えません。JPEG / PNG に変換してください"
 	case ".bmp":
@@ -131,17 +127,22 @@ func unsupportedImageMessage(rawName string) string {
 	return ""
 }
 
+// heicRefusal・avifRefusal は、扱えない画像の断りの文です（名前で見るとき・中身で見るときの両方で同じ文——2026-10-29 に1つにした）。
+const (
+	heicRefusal = "HEIC形式の画像は扱えません。端末の設定で「互換性優先（JPEG）」にして撮り直すか、" +
+		"JPEG / PNG に変換してからアップロードしてください"
+	avifRefusal = "AVIF形式の画像は扱えません。JPEG / PNG / WebP に変換してください"
+)
+
 // checkImageContent は中身から種別を決め、名乗り（拡張子）と一致するかを確かめます。
 // 許可外の形式は、利用者が理由を読んで次の手が打てる文言で拒否します。
 func checkImageContent(fileName string, content []byte) (string, error) {
 	kind := SniffImageKind(content)
 	switch kind {
 	case "heic":
-		return "", fmt.Errorf(
-			"HEIC形式の画像は扱えません。端末の設定で「互換性優先（JPEG）」にして撮り直すか、" +
-				"JPEG / PNG に変換してからアップロードしてください")
+		return "", errors.New(heicRefusal)
 	case "avif":
-		return "", fmt.Errorf("AVIF形式の画像は扱えません。JPEG / PNG / WebP に変換してください")
+		return "", errors.New(avifRefusal)
 	case "":
 		return "", fmt.Errorf("画像ファイルではありません（png / jpeg / webp / gif / svg のいずれかを指定してください）")
 	}

@@ -3,7 +3,6 @@ package cms
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"regexp"
 	"sort"
 	"sync"
@@ -269,11 +268,6 @@ const pageEventsKeepalive = 25 * time.Second
 const pageEventsWriteTimeout = 30 * time.Second
 
 // atoiOr0 はページ番号を数にします（読めなければ 0——0 のページは無いので、読めないと判定される）。
-func atoiOr0(id string) int {
-	n, _ := strconv.Atoi(id)
-	return n
-}
-
 // PageEventsAPIHandler は、ページの更新を SSE（text/event-stream）で知らせます。
 // GET /api/page-events?id= 。対象ページの read 権限を要求します。
 func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
@@ -309,7 +303,7 @@ func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	// 利用者は毎回いまの状態で引き直す（2026-10-26。受けたときの写しのままだと、ログアウト・無効・グループから外す・
 	// 管理者から外す、のあとも流し続けた）。
-	idInt := atoiOr0(id)
+	idInt := AtoiSafe(id)
 	stillReadable := func() bool {
 		u := auth.FreshUser(r)
 		return u != nil && page.CanView(u, idInt)

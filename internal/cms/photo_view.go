@@ -57,14 +57,7 @@ func validatePhotoView(path string, c *PhotoViewSettings) error {
 }
 
 // PhotoViewConfig は設定 `photo_view` を返します（無ければ nil＝表示用の写しを使わない）。
-func PhotoViewConfig() *PhotoViewSettings {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return nil
-	}
-	return settings.PhotoView
-}
+func PhotoViewConfig() *PhotoViewSettings { return settingsField(func(s *Settings) *PhotoViewSettings { return s.PhotoView }) }
 
 // isViewablePhoto は、表示用の写しを作る写真（JPEG）の名前かです。
 func isViewablePhoto(name string) bool {

@@ -21,7 +21,6 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"bytes"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -81,8 +80,8 @@ func genericAttachmentName(pageID, raw string) (string, error) {
 func GuardUploadContent(fileName string, content []byte) ([]byte, error) {
 	switch ext := strings.ToLower(filepath.Ext(fileName)); {
 	case ext == ".pdf":
-		if !bytes.HasPrefix(content, []byte("%PDF-")) {
-			return nil, errors.New("PDFファイルではありません（先頭が %PDF- ではありません）")
+		if !isPDF(content) {
+			return nil, errNotPDF
 		}
 		return content, nil
 	case allowedImageExts[ext]:

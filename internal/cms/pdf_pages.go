@@ -66,14 +66,7 @@ func validatePDFPages(path string, c *PDFPagesSettings) error {
 }
 
 // PDFPagesConfig は設定 `pdf_pages` を返します（無ければ nil＝絵にしない）。
-func PDFPagesConfig() *PDFPagesSettings {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-	if settings == nil {
-		return nil
-	}
-	return settings.PDFPages
-}
+func PDFPagesConfig() *PDFPagesSettings { return settingsField(func(s *Settings) *PDFPagesSettings { return s.PDFPages }) }
 
 const (
 	// pdfPagesWait は、ページを描くときに PDF の絵を待つ長さです。間に合わなければ、その回は埋め込みで見せる。

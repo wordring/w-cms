@@ -119,7 +119,4 @@ func ReorderAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // mustAtoi はゼロ詰めIDを数値にします（NormalizeID を通った値だけを渡すこと）。
-func mustAtoi(id string) int {
-	n, _ := strconv.Atoi(id)
-	return n
-}
+func mustAtoi(id string) int { return AtoiSafe(id) } // 試験も使う名前（AtoiSafe と同じ）

@@ -187,9 +187,7 @@ func RenderReferenceLinks(user *auth.User, bodyHTML string) string {
 // linkRefList は、参照をいくつも並べたセルを、1つずつのリンク（「、」で区切る）に描き直します。
 // 形の合わない値・無いページを指す値があれば、セルに ref-missing の印と、どれかを添えます。
 func linkRefList(v refViewer, cell *html.Node, refs []string) bool {
-	for cell.FirstChild != nil {
-		cell.RemoveChild(cell.FirstChild)
-	}
+	clearChildren(cell)
 	var bad []string
 	for i, r := range refs {
 		if i > 0 {
@@ -224,9 +222,7 @@ func linkRefList(v refViewer, cell *html.Node, refs []string) bool {
 // linkRefDD は dd（表のセルにも使う）の中身を参照リンクへ置き換えます（表示文字は元の値のまま）。
 func linkRefDD(dd *html.Node, pageID, blockID string) {
 	text := strings.TrimSpace(nodeText(dd))
-	for dd.FirstChild != nil {
-		dd.RemoveChild(dd.FirstChild)
-	}
+	clearChildren(dd)
 	a := &html.Node{Type: html.ElementNode, Data: "a"}
 	// **ブロックIDが無ければページの先頭へ**（名前で宣言された参照＝ページ全体を指す）。
 	href := "/" + pageID
@@ -305,9 +301,7 @@ func linkEmailDD(v refViewer, dd *html.Node) bool {
 	}
 	before, after := text[:at], text[end:]
 
-	for dd.FirstChild != nil {
-		dd.RemoveChild(dd.FirstChild)
-	}
+	clearChildren(dd)
 	if before != "" {
 		dd.AppendChild(&html.Node{Type: html.TextNode, Data: before})
 	}

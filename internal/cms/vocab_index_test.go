@@ -23,7 +23,7 @@ type vocabRow struct {
 // 2026-09-13 にタグを `page_tags` へ分けました（ユーザー決定）。このヘルパーは
 // 「本文がどう索引されたか」を見るためのものなので、**書き込み先が分かれても
 // 1つの目で見えるほう**が試験の意図に合います（どちらの表に入ったかを確かめたい
-// 試験は、下の `queryTagRows` を使います）。
+// 試験は、page_tags_test.go の `queryTags` を使います）。
 func queryVocabRows(t *testing.T, pageID int) []vocabRow {
 	t.Helper()
 	// **列の形が違うので、タグ側は足りないものを埋めて揃えます**

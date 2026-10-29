@@ -4,7 +4,7 @@ package cms
 // 添付の口3本（PDF・画像・汎用）に共通の入口（2026-09-21）
 //
 // **同じ入口の十数行が3本に写されていました**——メソッド → 本文上限 → ページID →
-// write 権限 →（受け口）→ 編集ロック → フォームのファイル → 名前の検査 → 読み込み。
+// write 権限 → 編集ロック → フォームのファイル → 名前の検査 → 読み込み（2026-09-30 までは write 権限のあとに「受け口」があった）。
 // 保存の作法（attachment_save.go）は 09-14 に寄せてありましたが、入口はそのままでした。
 //
 // 中身の検査（PDF の先頭・画像のマジックナンバー）と**応答の組み立て**は、3本とも
@@ -12,6 +12,8 @@ package cms
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -127,3 +129,8 @@ func UploadedFile(w http.ResponseWriter, r *http.Request, field string, allowed 
 	}
 	return name, content, true
 }
+
+// isPDF は中身が PDF の先頭の印（%PDF-）で始まるかです。errNotPDF はその断り（PDF の口とファイルの口で同じ文——2026-10-29 に寄せた）。
+func isPDF(b []byte) bool { return bytes.HasPrefix(b, []byte("%PDF-")) }
+
+var errNotPDF = errors.New("PDFファイルではありません（先頭が %PDF- ではありません）")
