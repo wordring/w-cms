@@ -1422,6 +1422,13 @@ body[edit-mode] #w-editor-content td.cell-known {
 #w-editor-content td.w-cell-selected,
 #w-editor-content th.w-cell-selected { background: #dbeafe !important; box-shadow: inset 0 0 0 1px #60a5fa; }
 body.w-cell-dragging #w-editor-content table { user-select: none; }
+/* 押した行（2026-10-29・app.js「押した行に色を付ける」）——横へスクロールしても、どの行を見ていたか分かるように。
+ * 行の色（警告の薄赤・型の印など）を消さないように、背景の色ではなく背景の絵として薄い青を重ね、上下に線を引く。 */
+#w-editor-content tr.w-row-picked > td,
+#w-editor-content tr.w-row-picked > th {
+    background-image: linear-gradient(rgba(59, 130, 246, 0.16), rgba(59, 130, 246, 0.16));
+    box-shadow: inset 0 1px 0 #60a5fa, inset 0 -1px 0 #60a5fa;
+}
 #w-editor-content td.w-formula-error-cell { background: #fee2e2; }
 #w-editor-content td .w-formula-error { color: #b91c1c; font-weight: 700; }
 body[edit-mode] #w-editor-content td.cell-formula { color: #1d4ed8; }

@@ -7118,6 +7118,46 @@
         return n;
     }
 
+    // ── 押した行に色を付ける（2026-10-29）──────────────────────────────────────
+    //
+    // 利用者:「表を横スクロールしたときの問題点として、どの行を見ていたかわからなくなることがあります。表全般について、
+    // クリックした行に背景に色を付けると良いのかもしれません」。
+    //
+    //   - 本文の表も鏡の表も、押した行（見出しだけの行は除く）に印 `w-row-picked` を付ける。書ける形ではキャレットのある行にも
+    //     （矢印キーで動いたとき）。印は1つだけ——ほかの行を押すと移る。Esc で外れる。
+    //   - 印は class なので保存されない（serializeAttrs は語彙の属性だけを書き、未保存の見張りも class を見ない——セルの矩形の
+    //     選択 `w-cell-selected` と同じ）。描き直した表（鏡の描き直し・同期の差し替え）では消える。
+    //   - 色は行の色（警告の薄赤など）を消さないように、背景の上へ薄く重ねる（app.css）。
+    function markPickedRow(tr) {
+        const cur = document.querySelector('#w-editor-content tr.w-row-picked');
+        if (cur === tr) return;
+        if (cur) cur.classList.remove('w-row-picked');
+        if (tr) tr.classList.add('w-row-picked');
+    }
+
+    // pickableRowOf は el の行のうち、印を付ける行を返します（表の外・見出しだけの行は null）。
+    function pickableRowOf(el) {
+        const tr = el && el.closest && el.closest('#w-editor-content tr');
+        if (!tr || !tr.cells.length || Array.from(tr.cells).every(c => c.tagName === 'TH')) return null;
+        return tr;
+    }
+
+    document.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        const tr = pickableRowOf(e.target instanceof Element ? e.target : null);
+        if (tr) markPickedRow(tr);
+    });
+    document.addEventListener('selectionchange', () => {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        const s = window.getSelection();
+        const n = s && s.rangeCount ? s.getRangeAt(0).startContainer : null;
+        const tr = pickableRowOf(n && (n.nodeType === Node.ELEMENT_NODE ? n : n.parentElement));
+        if (tr) markPickedRow(tr);
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') markPickedRow(null);
+    });
+
     document.addEventListener('mousedown', e => {
         if (e.button !== 0) return;
         const t = e.target instanceof Element ? e.target : null;
