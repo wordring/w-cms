@@ -108,7 +108,7 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string, pick *drawing
 		if onlyPick {
 			// 選んだ図面だけを外し、新しい図面をその場所へ（「📐 この図面で改定する」と同じ並び）。
 			now, open, end, found := drawingSectionAt(cur, *pick)
-			if !found || strings.TrimSpace(now) != strings.TrimSpace(oldBlocks[0]) {
+			if !found || !sameDrawingBlock(now, oldBlocks[0]) {
 				moved = errors.New("合流先の図面が、このあいだに変わりました。もう一度やり直してください")
 				return cur
 			}
@@ -116,7 +116,7 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string, pick *drawing
 			body = cur[:open] + reassignBlockIDIfTaken(block, rest) + cur[end:]
 		} else {
 			curOld, curRest := extractDrawingSections(cur)
-			if strings.Join(curOld, "") != strings.Join(oldBlocks, "") {
+			if !sameDrawingBlocks(curOld, oldBlocks) {
 				moved = errors.New("合流先の図面が、このあいだに変わりました。もう一度やり直してください")
 				return cur
 			}
@@ -157,6 +157,39 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string, pick *drawing
 		return err
 	}
 	return nil
+}
+
+// sameDrawingBlock は、錠の外で読んだ図面ブロック b と、錠の中で読み直した a が同じかを返します——ブロックの頭の `data-id` は
+// 見ません。⚠ `cms.RewriteBody` は、ID の無い上の段のブロックへ ID を入れてから本文を渡すので（2026-10-26・stampBlockIDs）、
+// エディタで保存したことの無いページ（機械が作ったまま）では、同じブロックでも ID の分だけ違って見え、「このあいだに変わりました」
+// と断っていた（2026-10-29 に E2E で見つけた）。
+func sameDrawingBlock(a, b string) bool {
+	return strings.TrimSpace(withoutHeadID(a)) == strings.TrimSpace(withoutHeadID(b))
+}
+
+func sameDrawingBlocks(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !sameDrawingBlock(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// headIDRe はブロックの頭のタグの `data-id` 属性です。
+var headIDRe = regexp.MustCompile(`\s+data-id="[^"]*"`)
+
+// withoutHeadID は、ブロックの頭のタグ（最初の `>` まで）から `data-id` を外します（中の要素の ID はそのまま）。
+func withoutHeadID(sec string) string {
+	s := strings.TrimLeft(sec, " \t\r\n")
+	end := strings.IndexByte(s, '>')
+	if end < 0 {
+		return s
+	}
+	return headIDRe.ReplaceAllString(s[:end], "") + s[end:]
 }
 
 // errNeedDrawingPick は、合流先に図面が2つ以上あり、どれの改定かを人に選んでもらう必要があることです（2026-10-29）。

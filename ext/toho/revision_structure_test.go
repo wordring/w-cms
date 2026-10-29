@@ -3,6 +3,7 @@ package toho
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -202,5 +203,43 @@ func TestRevisionMergeAsksWhichDrawingWhenSeveral(t *testing.T) {
 	src2 := makeDrawingPageFrom(t, inbox, "pdf-c", "P1C", "ブラケット", "装置A", "客A")
 	if err := mergeAsRevision(user, src2, dst, &drawingPick{Index: p1.Index, No: "P1"}); err == nil {
 		t.Errorf("図面番号の合わない選び方を通しています")
+	}
+}
+
+// TestRevisionMergeOnPageWithoutBlockIDs は、エディタで保存したことの無いページ（上の段のブロックに data-id が無い）でも、
+// 選んだ図面で改定できることを固定します（2026-10-29 に E2E で見つけた——cms.RewriteBody が ID を入れてから本文を渡すので、
+// 錠の外で読んだ図面と比べると違って見え、「このあいだに変わりました」と断っていた）。
+func TestRevisionMergeOnPageWithoutBlockIDs(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "Q1", "ブラケット", "装置A", "客A")
+	weld := makeDrawingPageFrom(t, inbox, "pdf-w", "QW", "ブラケット", "装置A", "客A")
+	if err := mergeAsDrawing(user, weld, dst); err != nil {
+		t.Fatalf("mergeAsDrawing: %v", err)
+	}
+	// 上の段のブロックの ID を外して、機械が作ったままのページにする。
+	body, _ := cms.ReadPageBody(dst)
+	blocks := drawingChoicesOf(body)
+	noIDs := regexp.MustCompile(`(<(?:section|h1|dl|table|p)\b[^>]*?)\s+data-id="[^"]*"`).ReplaceAllString(body, "$1")
+	if strings.Contains(noIDs, `<section data-id=`) || len(blocks) != 2 {
+		t.Fatalf("前提が崩れています: %d\n%s", len(blocks), noIDs)
+	}
+	writeBodyFile(t, pageNum(dst), noIDs)
+	if err := cms.SyncIndex(dst, noIDs); err != nil {
+		t.Fatal(err)
+	}
+	src := makeDrawingPageFrom(t, inbox, "pdf-b", "Q1B", "ブラケット", "装置A", "客A")
+	var pick drawingPick
+	for _, d := range drawingChoicesOf(noIDs) {
+		if d.No == "Q1" {
+			pick = drawingPick{Index: d.Index, No: d.No}
+		}
+	}
+	if err := mergeAsRevision(user, src, dst, &pick); err != nil {
+		t.Fatalf("ID の無いページで改定できません: %v", err)
+	}
+	if after, _ := cms.ReadPageBody(dst); !strings.Contains(after, "Q1B") || !strings.Contains(after, "QW") {
+		t.Errorf("新しい図面と溶接図がありません:\n%s", after)
 	}
 }

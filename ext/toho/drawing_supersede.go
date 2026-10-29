@@ -94,7 +94,7 @@ func supersedeDrawing(user *auth.User, pageID string, newPick, oldPick drawingPi
 	if err := cms.RewriteBody(pageID, user.Username, func(cur string) string {
 		// 旧版ページへ写した古い図面のブロックが、そのあいだに書き換わっていたら書かない（書き換えたぶんが、旧版ページにも
 		// このページにも残らずに消えた・2026-10-22 の見直し）。
-		if now, _, _, found := drawingSectionAt(cur, oldPick); found && strings.TrimSpace(now) != strings.TrimSpace(oldSec) {
+		if now, _, _, found := drawingSectionAt(cur, oldPick); found && !sameDrawingBlock(now, oldSec) {
 			buildErr = errors.New("古い図面のブロックが、いま書き換わりました（開き直して、もう一度押してください。旧版ページ " + oldPageID + " はできています——要らなければ消してください）")
 			return cur
 		}
