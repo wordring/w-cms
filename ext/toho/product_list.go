@@ -122,7 +122,7 @@ func productListRows(user *auth.User, hostID int) ([]productListRow, error) {
 	// 種類の無いページ（人が作ったもの・それより前のもの）だけを、タグで読みます。
 	isProduct := func(id int) bool {
 		t := tags[id]
-		if k := strings.TrimSpace(cms.FirstTag(t, PageKindTag)); k != "" {
+		if k := kindOfTags(t); k != "" {
 			return k == PageKindProduct || k == PageKindProductOld
 		}
 		for _, n := range names {

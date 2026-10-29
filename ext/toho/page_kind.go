@@ -84,5 +84,11 @@ func pageKindOf(id int) string {
 	if err != nil {
 		return ""
 	}
+	return kindOfTags(tags)
+}
+
+// kindOfTags は、ページのタグ（TagsOfPage）から `ページ種類` の値を返します（前後の空白は落とす）。
+// 同じ式が8か所ほどに写されていた（2026-10-29 に寄せた）。
+func kindOfTags(tags map[string][]string) string {
 	return strings.TrimSpace(cms.FirstTag(tags, PageKindTag))
 }

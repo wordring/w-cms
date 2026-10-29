@@ -246,42 +246,8 @@ func madeText(done float64, qty int) string {
 // showMadeInOrderTable は案件ページの案件明細表の「製造完了」の欄に、製造ページから数えた製造完了をクロームで出します（鏡）。
 // ⚠ 本文の欄には書きません。人が欄に書いた値は使わないので、そう添えます。
 func showMadeInOrderTable(ctx *cms.MirrorContext, el *html.Node, mfg *mfgLookup) {
-	rows := rowsOf(el)
-	if len(rows) < 2 {
-		return
-	}
-	head := rows[0]
-	mi, ii, ni, qi := headerIndexOf(head, "製造完了"), headerIndexOf(head, ItemNoTag), headerIndexOf(head, "品名"), headerIndexOf(head, "数量")
-	if mi < 0 || qi < 0 {
-		return
-	}
-	order := page.FormatID(ctx.PageID)
-	for _, tr := range rows[1:] {
-		cells := cellsOf(tr)
-		if mi >= len(cells) {
-			continue
-		}
-		name := ""
-		if ni >= 0 {
-			name = cellText(tr, ni)
-		}
-		item := ""
-		if ii >= 0 {
-			item = cellText(tr, ii)
-		}
-		qty, _ := estimateNumber(cellText(tr, qi))
-		text := madeText(mfg.doneOf(order, item, name), int(qty))
-		if typed := strings.TrimSpace(textOf(cells[mi])); typed != "" {
-			text += "（⚠ 欄に書いた " + typed + " は使いません——製造ページで付けます）"
-		}
-		if text == "" {
-			continue
-		}
-		cells[mi].AppendChild(&html.Node{Type: html.ElementNode, Data: "span",
-			Attr: []html.Attribute{{Key: "class", Val: "vocab-chrome made-mirror"}, {Key: "contenteditable", Val: "false"},
-				{Key: "title", Val: "製造ページの製造完了から数えた（人は書きません）"}},
-			FirstChild: &html.Node{Type: html.TextNode, Data: text}})
-	}
+	// 同じ形の showCountInOrderTable（issued_marks.go）を通す——行を読む手順の写しだった（2026-10-29 に寄せた）。
+	showCountInOrderTable(ctx, el, "製造完了", "製造ページの製造完了から数えた（人は書きません）", "製造ページで付けます", mfg.doneOf)
 }
 
 // mfgPartLines は製造ページ mfgID の製造明細の行ごとに、まだ手配していない部材を、この製造で作る数ぶんまで集めます（2026-10-19・作る順の3番）。
@@ -303,8 +269,8 @@ func mfgPartLines(user *auth.User, mfgID int, sel map[int]bool) (lines []ourOrde
 		if sel != nil && !sel[i] {
 			continue
 		}
-		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
-		order, okO := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
+		pid, ok := refPageID(r.Values["our-item-id"])
+		order, okO := refPageID(r.Values["order"])
 		qty, okQ := estimateNumber(r.Values["quantity"])
 		if !ok || !okO || !okQ || qty <= 0 {
 			skipped++

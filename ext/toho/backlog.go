@@ -199,8 +199,8 @@ func backlogScan(user *auth.User) ([]backlogGroup, int) {
 			continue
 		}
 		client := cms.FirstTag(tags, OrderClientTag)
-		quote := strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindCustomerQuote
-		own := strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindOwnCase
+		quote := kindOfTags(tags) == PageKindCustomerQuote
+		own := kindOfTags(tags) == PageKindOwnCase
 		pageDue := cms.FirstTag(tags, DueDateTag)
 		orderNo := cms.FirstTag(tags, OrderNoTag)
 

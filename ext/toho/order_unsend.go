@@ -34,18 +34,8 @@ func isExtraLine(note string) bool {
 
 // OrderUnsendAPIHandler は POST /api/our-order/unsend です。入力: {page_id}——部材発注書の発注済の行を未発注に戻します。
 func OrderUnsendAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
+	user, pageID, ok := gatePagePost(w, r)
 	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	pageID, okID := gateWritablePage(w, r, req.PageID)
-	if !okID {
 		return
 	}
 	if pageKindOf(pageNum(pageID)) != PageKindOurPurchase {
@@ -105,8 +95,8 @@ func mfgExtraLines(user *auth.User, mfgID int, sel map[int]bool) (lines []ourOrd
 		if sel != nil && !sel[i] {
 			continue
 		}
-		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
-		order, _ := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
+		pid, ok := refPageID(r.Values["our-item-id"])
+		order, _ := refPageID(r.Values["order"])
 		qty, okQ := estimateNumber(r.Values["quantity"])
 		if !ok || !okQ || qty <= 0 || !page.CanView(user, pageNum(pid)) {
 			skipped++

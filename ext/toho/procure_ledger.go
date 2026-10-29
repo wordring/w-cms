@@ -183,7 +183,8 @@ func rowSupplies(r cms.VocabRow) []breakdownEntry {
 	return []breakdownEntry{e}
 }
 
-// openOrderRows は手配の対象になる受注の行を集めます（受注残表と同じ線引き）——移行中の受注ページ・状態が完了・
+// openOrderRows は手配の対象になる受注の行を集めます（受注残表に近い線引き。⚠ 同じではない——受注残表〔backlogScan〕はページ種類
+// 〔顧客発注書・顧客見積依頼・自社案件〕で選び、ここは明細表を持つページから見積の依頼だけを外す）——移行中の受注ページ・状態が完了・
 // 出し終えた（数量 − 出荷済数量 ≤ 0）・どの加工製品か分からない・読めない行は入れません。
 func openOrderRows(db cms.ReadOnlyDB, canView func(int) bool) ([]openOrderRow, error) {
 	orders, err := cms.VocabRowsOfType(db, clientOrderItemsType)
@@ -203,7 +204,7 @@ func openOrderRows(db cms.ReadOnlyDB, canView func(int) bool) ([]openOrderRow, e
 		tags, err := cms.TagsOfPage(db, id)
 		_, mig := tags[MigratingTag]
 		// 見積の依頼（`ページ種類：顧客見積依頼`）は、まだ注文ではないので手配の対象にしない（2026-10-19）——移行中と同じく止める。
-		quote := strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindCustomerQuote
+		quote := kindOfTags(tags) == PageKindCustomerQuote
 		h := head{client: cms.FirstTag(tags, OrderClientTag), due: cms.FirstTag(tags, DueDateTag),
 			migrating: mig || quote || err != nil} // 読めないときも止める側（isMigrating と同じ）
 		heads[id] = h

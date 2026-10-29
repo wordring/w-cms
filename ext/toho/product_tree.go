@@ -95,7 +95,7 @@ func isProductPage(id int) bool {
 	if err != nil {
 		return false
 	}
-	k := strings.TrimSpace(cms.FirstTag(tags, PageKindTag))
+	k := kindOfTags(tags)
 	return k == PageKindProduct || k == PageKindProductOld
 }
 
@@ -112,7 +112,7 @@ func isMachineFolder(id string) bool {
 	if err != nil {
 		return false
 	}
-	switch strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) {
+	switch kindOfTags(tags) {
 	case PageKindMachine:
 		return true
 	case "":
@@ -133,7 +133,7 @@ func isCompanyFolder(id string) bool {
 		return false
 	}
 	if tags, err := cms.TagsOfPage(database.DB, idInt); err == nil {
-		switch strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) {
+		switch kindOfTags(tags) {
 		case PageKindCompany:
 			return true
 		case "":

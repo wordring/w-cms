@@ -123,7 +123,7 @@ func productPagesForCustomer(db cms.ReadOnlyDB, customer, code, name string) []i
 // isOldVersionPage は、ページが `ページ種類：加工製品の旧版` かです。
 func isOldVersionPage(db cms.ReadOnlyDB, id int) bool {
 	tags, err := cms.TagsOfPage(db, id)
-	return err == nil && strings.TrimSpace(cms.FirstTag(tags, PageKindTag)) == PageKindProductOld
+	return err == nil && kindOfTags(tags) == PageKindProductOld
 }
 
 // itemNameKey は品名を比べる形にします（空白・ハイフン類・長音・全角半角・大小を畳む）。

@@ -160,7 +160,7 @@ type rfqCollectItem struct {
 
 // rfqItemLines は加工製品1つの部材を行にします。集められなければ断る理由（msg）と、そのときの状態の番号を返します。
 func rfqItemLines(user *auth.User, it rfqCollectItem) (pid string, lots []int, lines []ourOrderLine, status int, msg string) {
-	pid, okP := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(it.Product), "/"))
+	pid, okP := refPageID(it.Product)
 	if !okP || !page.CanView(user, pageNum(pid)) {
 		return "", nil, nil, http.StatusBadRequest, "弊社品番（加工製品ページの番号）を書いてください"
 	}

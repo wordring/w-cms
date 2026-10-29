@@ -184,8 +184,8 @@ func progressBoardHTML(user *auth.User, _ int) string {
 				mfg = strings.Join(ls, " ")
 			}
 			po := "—"
-			prod, _ := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.OurItemNo), "/"))
-			order, _ := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.OrderPageID), "/"))
+			prod, _ := refPageID(r.OurItemNo)
+			order, _ := refPageID(r.OrderPageID)
 			if links := parts[order+"|"+prod]; prod != "" && len(links) > 0 {
 				var ls []string
 				for _, l := range links {

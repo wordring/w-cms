@@ -112,7 +112,7 @@ type deliveryLine struct {
 // ⚠ 見つけた行の品番が p.Item と違えば断ります（行の取り違えを防ぐ照合）。
 // 2026-10-19 に寄せた（納品書と製造ページを作る口が、同じ探し方と同じ断りの文を写していた）。
 func pickedOrderRow(user *auth.User, p deliveryPick, kindOK func(string) bool, byName bool) (string, cms.VocabRow, string) {
-	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(p.Order), "/"))
+	id, ok := refPageID(p.Order)
 	if !ok {
 		return "", cms.VocabRow{}, "案件ページの番号が読めません: " + p.Order
 	}
@@ -274,7 +274,7 @@ func DeliveryNewAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "納品書は製造ページの納品作業から作ります（製造ページがありません）")
 		return
 	}
-	mfgID, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(req.Mfg), "/"))
+	mfgID, ok := refPageID(req.Mfg)
 	if !ok || pageKindOf(pageNum(mfgID)) != PageKindMfg || !canWritePage(user, pageNum(mfgID)) || cms.IsTemplateArea(mfgID) {
 		cms.JSONFail(w, http.StatusBadRequest, "製造ページが見つからないか、書けません: "+req.Mfg)
 		return

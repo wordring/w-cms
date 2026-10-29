@@ -94,8 +94,8 @@ func OrderItemEditAPIHandler(w http.ResponseWriter, r *http.Request) {
 	editItemCell(w, user, pageID, clientOrderItemsType, req.Row, req.ItemNo, req.Field, req.Old, req.Value, "案件ページ", "order-item.edit")
 }
 
-// editItemCell は、形式 vocabType の明細表の1セルを書き換えて答えます（案件明細の口と製造完了の口〔mfg_view.go〕が写していた
-// 後半を 2026-10-20 に寄せた）。関門（書けるか・道具が握っていないか）は呼ぶ側が先に通します。
+// editItemCell は、形式 vocabType の明細表の1セルを書き換えて答えます（2026-10-20 に寄せた後半——⚠ いま使うのは案件明細の口で、
+// 製造完了の口〔mfg_view.go の MfgMadeAPIHandler〕は同じ手順を自分で書いている）。関門（書けるか・道具が握っていないか）は呼ぶ側が先に通します。
 //   - 値が同じなら書きません（版と更新日時を無駄に進めない）。
 //   - ⚠ 照合（行番号・品番・いまの値）は、書くときに錠の中で読み直した本文でやり直します（2026-10-19 夜・rebuildBody）
 //     ——錠の外で組んだものを書くと、読んでから書くまでのあいだのほかの人の保存が消えます。

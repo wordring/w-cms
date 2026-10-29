@@ -159,7 +159,7 @@ func showQuoteInOrderTable(ctx *cms.MirrorContext, el *html.Node) {
 		if pi >= len(cells) {
 			continue
 		}
-		pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(cellText(tr, oi)), "/"))
+		pid, ok := refPageID(cellText(tr, oi))
 		if !ok {
 			continue
 		}
@@ -242,7 +242,7 @@ func mfgEstimateLines(user *auth.User, mfgID int) (lines []estimateLine, missing
 	}
 	kinds := map[string]string{}
 	for _, r := range rows {
-		order, okO := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
+		order, okO := refPageID(r.Values["order"])
 		qty, okQ := estimateNumber(r.Values["quantity"])
 		if !okO || !okQ || qty <= 0 {
 			continue
@@ -257,7 +257,7 @@ func mfgEstimateLines(user *auth.User, mfgID int) (lines []estimateLine, missing
 		}
 		ln := estimateLine{Order: order, ItemID: strings.TrimSpace(r.Values["item-id"]), ItemName: strings.TrimSpace(r.Values["item-name"]),
 			Quantity: fmtQty(qty), Unit: strings.TrimSpace(r.Values["unit"])}
-		pid, okP := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
+		pid, okP := refPageID(r.Values["our-item-id"])
 		if !okP || !page.CanView(user, pageNum(pid)) {
 			ln.Note = "⚠ 弊社品番がありません——単価を書いてください"
 			missing++
@@ -299,7 +299,7 @@ func mfgHasQuoteRows(el *html.Node) bool {
 	}
 	seen := map[string]bool{}
 	for _, tr := range rows[1:] {
-		id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(cellText(tr, oi)), "/"))
+		id, ok := refPageID(cellText(tr, oi))
 		if !ok || seen[id] {
 			continue
 		}

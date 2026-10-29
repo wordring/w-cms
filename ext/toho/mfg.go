@@ -106,14 +106,9 @@ func newMfgLookup() *mfgLookup {
 	if err != nil {
 		return m
 	}
-	kinds := map[int]bool{}
+	isKind := pageOfKind(PageKindMfg)
 	for _, r := range rows {
-		ok, seen := kinds[r.PageID]
-		if !seen {
-			ok = !cms.IsTemplateArea(page.FormatID(r.PageID)) && pageKindOf(r.PageID) == PageKindMfg
-			kinds[r.PageID] = ok
-		}
-		if !ok {
+		if !isKind(r.PageID) {
 			continue
 		}
 		q, okQ := estimateNumber(r.Values["quantity"])

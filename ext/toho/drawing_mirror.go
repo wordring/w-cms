@@ -62,7 +62,7 @@ func init() {
 	//
 	// ⚠ **引き金ごとに鏡は1人**です（2人目を登録すると起動時に panic します）。
 	// 材料表には2つ要る（廃版の印＋参考単価・2026-09-21）ので、**ここで束ねます**。
-	for _, t := range []string{partMaterialsType, "part-outsourcing", "part-purchased", "part-supplied"} {
+	for _, t := range []string{partMaterialsType, partOutsourcingType, partPurchasedType, "part-supplied"} {
 		t := t
 		cms.RegisterMirror(t, cms.MirrorHandlerFunc(
 			func(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
@@ -81,7 +81,7 @@ func init() {
 						}
 					}
 					// 外注加工表にも最新単価（2026-10-23・part_price.go——加工製品＋種類の鍵で当てる）。
-					if t == "part-outsourcing" {
+					if t == partOutsourcingType {
 						if kind := orderKindNameOfTable(t); kind != "" {
 							renderPartPrices(ctx, tbl, kind)
 						}

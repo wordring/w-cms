@@ -81,12 +81,12 @@ func entriesOf(ln ourOrderLine) ([]breakdownEntry, bool) {
 		return es, true
 	}
 	qty, err := strconv.Atoi(strings.TrimSpace(ln.Quantity))
-	prod, okP := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(ln.ProductID), "/"))
+	prod, okP := refPageID(ln.ProductID)
 	if err != nil || !okP {
 		return nil, false
 	}
 	order := ""
-	if id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(ln.ForOrder), "/")); ok {
+	if id, ok := refPageID(ln.ForOrder); ok {
 		order = id
 	}
 	return []breakdownEntry{{Order: order, Product: prod, Qty: qty}}, true

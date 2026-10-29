@@ -143,7 +143,7 @@ func EstimateFromFolderAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var lines []estimateLine
 	var from []string
 	for _, it := range req.Items {
-		pid, okP := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(it.Product), "/"))
+		pid, okP := refPageID(it.Product)
 		if !okP || !page.CanView(user, pageNum(pid)) {
 			cms.JSONFail(w, http.StatusNotFound, "加工製品ページが見つかりません: "+it.Product)
 			return

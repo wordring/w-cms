@@ -371,7 +371,7 @@ func productOfEstimatePage(pageID int) int {
 	if err != nil {
 		return pageID
 	}
-	if id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(cms.FirstTag(tags, OurItemNoTag)), "/")); ok {
+	if id, ok := refPageID(cms.FirstTag(tags, OurItemNoTag)); ok {
 		return pageNum(id)
 	}
 	return pageID

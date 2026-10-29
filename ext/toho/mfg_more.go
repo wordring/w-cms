@@ -19,12 +19,11 @@ import (
 	"strings"
 
 	"w-cms/internal/auth"
-	"w-cms/internal/cms/page"
 )
 
 // mfgParentOr は、page_id が書ける製造ページならその番号を、そうでなければ空を返します（作る書類の「製造」の列に書くか）。
 func mfgParentOr(user *auth.User, id string) string {
-	pid, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(id), "/"))
+	pid, ok := refPageID(id)
 	if !ok || pageKindOf(pageNum(pid)) != PageKindMfg || !canWritePage(user, pageNum(pid)) {
 		return ""
 	}

@@ -45,7 +45,7 @@ func workHoursForProduct(user *auth.User, productID int) []workHoursRow {
 	ok := map[int]bool{}
 	var out []workHoursRow
 	for _, r := range rows {
-		pid, okP := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["our-item-id"]), "/"))
+		pid, okP := refPageID(r.Values["our-item-id"])
 		if !okP || pid != want {
 			continue
 		}
@@ -62,7 +62,7 @@ func workHoursForProduct(user *auth.User, productID int) []workHoursRow {
 			continue
 		}
 		q, _ := estimateNumber(r.Values["quantity"])
-		order, _ := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.Values["order"]), "/"))
+		order, _ := refPageID(r.Values["order"])
 		started := ""
 		if tags, err := cms.TagsOfPage(database.DB, r.PageID); err == nil {
 			started = strings.TrimSpace(cms.FirstTag(tags, MfgStartTag))

@@ -284,7 +284,7 @@ func joinFieldHTML(user *auth.User, supplier string) string {
 
 // joinOurOrder は NewOurOrderAPIHandler の相乗りの道です——発注部材表の lines を、部材発注書 joinIn に足して、元の表を消します。
 func joinOurOrder(w http.ResponseWriter, user *auth.User, joinIn, supplier string, lines []ourOrderLine, draftPage, draftIndex, draftSig string) {
-	id, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(joinIn), "/"))
+	id, ok := refPageID(joinIn)
 	if !ok {
 		cms.JSONFail(w, http.StatusBadRequest, "相乗りする部材発注書のページ番号が読めません: "+joinIn)
 		return

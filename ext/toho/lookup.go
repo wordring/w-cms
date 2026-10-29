@@ -50,3 +50,25 @@ func productOfOrderRow(db cms.ReadOnlyDB, r cms.VocabRow) (int, bool) {
 	return productByCode(db, cms.PageTagValue(db, r.PageID, OrderClientTag), strings.TrimSpace(r.Values["item-id"]),
 		strings.TrimSpace(r.Values["item-name"]))
 }
+
+// refPageID は参照の値 v（`002050`・`/002050`・前後の空白）をゼロ詰め6桁のページ番号にします（読めなければ ok=false）。
+// 同じ式 page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v), "/")) が30か所ほどに写されていた（2026-10-29 に寄せた）。
+// ⚠ 頭の「/」を落とさない NormalizeID(TrimSpace(v)) の所は、「/000123」を断る——振る舞いが違うので、こちらへ寄せない。
+func refPageID(v string) (string, bool) {
+	return page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v), "/"))
+}
+
+// pageOfKind は、ページがテンプレートの外で、ページ種類が kind かを答える関数を返します（ページごとに1度だけ調べて覚える——
+// 描画1回・集計1回ぶんの控え）。索引の行を全部のページから読んで、種類で絞る所が同じ7行を写していた（2026-10-29 に寄せた）。
+// ⚠ 調べる順はテンプレートの外か → 種類（pageKindOf は database.DB を読む）。テンプレートの中も数える所（mfgDeliveryRows）には使わない。
+func pageOfKind(kind string) func(id int) bool {
+	seen := map[int]bool{}
+	return func(id int) bool {
+		ok, done := seen[id]
+		if !done {
+			ok = !cms.IsTemplateArea(page.FormatID(id)) && pageKindOf(id) == kind
+			seen[id] = ok
+		}
+		return ok
+	}
+}

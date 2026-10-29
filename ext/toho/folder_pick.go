@@ -12,7 +12,6 @@ package toho
 
 import (
 	"net/http"
-	"strings"
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms"
@@ -32,7 +31,7 @@ func folderProductsOrFail(w http.ResponseWriter, r *http.Request) (user *auth.Us
 		cms.JSONFail(w, http.StatusForbidden, "ログインが必要です")
 		return nil, "", nil, false
 	}
-	fid, okID := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(r.URL.Query().Get("folder")), "/"))
+	fid, okID := refPageID(r.URL.Query().Get("folder"))
 	exists := 0
 	if okID {
 		// ⚠ 管理者には CanView が無いページでも通るので、在るかを別に見る（無い番号に「0 件」と答えない）。

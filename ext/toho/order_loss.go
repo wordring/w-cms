@@ -25,7 +25,6 @@ import (
 	stdhtml "html"
 	"math"
 	"strconv"
-	"strings"
 
 	"golang.org/x/net/html"
 
@@ -87,7 +86,7 @@ func (l *lossLookup) records(productID int) ([]estimateLotPrice, int) {
 
 // lossOf は、弊社品番 ourItemNo の品物を数量 qty・単価 price で受けたときの赤字の見立てを返します（赤字でなければ ok=false）。
 func (l *lossLookup) lossOf(ourItemNo string, qty, price float64) (orderLoss, bool) {
-	id, okID := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(ourItemNo), "/"))
+	id, okID := refPageID(ourItemNo)
 	if !okID || qty <= 0 || price <= 0 {
 		return orderLoss{}, false
 	}

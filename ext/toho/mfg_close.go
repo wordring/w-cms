@@ -92,7 +92,7 @@ func mfgPagesOfInvoice(rows []map[string]string) []int {
 		out = append(out, id)
 	}
 	for _, v := range rows {
-		dlv, ok := page.NormalizeID(strings.TrimPrefix(strings.TrimSpace(v["納品書"]), "/"))
+		dlv, ok := refPageID(v["納品書"])
 		if !ok || read[dlv] {
 			continue
 		}

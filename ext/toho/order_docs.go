@@ -321,21 +321,10 @@ type boundKind struct {
 
 // serveBoundPaper は資料を綴じた1本を作る口（POST・入力 {page_id}）の共通の形です。
 //
-// ⚠ **本文は触りません**（表示中の紙の PDF は差し替えない）——だから編集中でも断らず、write 権限とテンプレートの
-// 外だけを見ます。
+// ⚠ **本文は触りません**（表示中の紙の PDF は差し替えない）。関門はほかの口と同じ gatePagePost（書ける・テンプレートの外・
+// 道具が握っていない——2026-10-20 まで、道具が握っているかを見ていなかった）。
 func serveBoundPaper(w http.ResponseWriter, r *http.Request, k boundKind) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		PageID string `json:"page_id"`
-	}
-	if !cms.DecodeJSONBody(w, r, &req) {
-		return
-	}
-	// 書ける・テンプレートの外・道具が握っていない（2026-10-20 まで、道具が握っているかを見ていなかった——ほかの口と同じ gateWritablePage に）。
-	pageID, ok := gateWritablePage(w, r, req.PageID)
+	user, pageID, ok := gatePagePost(w, r)
 	if !ok {
 		return
 	}
