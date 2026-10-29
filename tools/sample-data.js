@@ -76,7 +76,9 @@ function run(cmd, args) {
     const r = await req('POST', '/api/admin/pages');
     const d = await r.json().catch(() => ({}));
     const made = (d.created || []).map((x) => x.title); // この回に作ったもの（在ったものは入らない）
-    console.log('\n置き場: ' + (r.status === 200 ? (made.length ? '作った ' + made.join('・') : 'みな在る') : '失敗 ' + r.status));
+    // 200 でも success:false（作れなかった置き場がある）なら失敗と言う（それまでは「みな在る」と出ていた・2026-10-29）。
+    const ok = r.status === 200 && d.success !== false;
+    console.log('\n置き場: ' + (ok ? (made.length ? '作った ' + made.join('・') : 'みな在る') : '失敗 ' + r.status + (d.message ? '（' + d.message + '）' : '')));
   }
   if (only.includes('mail')) {
     run('go', ['run', './tools/mail/push', '-handled-before', '2026-05-01']);

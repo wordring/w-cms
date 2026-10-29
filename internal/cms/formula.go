@@ -793,7 +793,9 @@ func (p *fParser) sum() (fNode, error) {
 // ── 閲覧の表示へ ─────────────────────────────────────────────────────────
 
 // formulaCellRe は本文に式のセルがありそうかの早道です（無ければパースしない）。
-var formulaCellRe = regexp.MustCompile(`<td[^>]*>\s*(?:<[^>]+>\s*)*(?:=|＝)`)
+// ⚠ 頭の空白は、セルを読むときの strings.TrimSpace と同じだけ許す——全角の空白・NBSP（`&nbsp;` も）。正規表現の `\s` は
+// ASCII の空白だけなので、それまでは「　=個数*単価」のセルが早道で落ちて、計算されなかった（【考察】コードの矛盾 §2.3・2026-10-29）。
+var formulaCellRe = regexp.MustCompile(`<td[^>]*>(?:[\s\x{00A0}\x{3000}]|&nbsp;|&#160;|<[^>]+>)*(?:=|＝)`)
 
 // renderFormulaCells は本文の表の式のセルに、計算した結果を属性で添えます——`data-w-value`（値・空のセルを
 // 参照したら空）か `data-w-error`（理由）。画面は閲覧モードでこれを見せ、書ける形では式のまま（app.js

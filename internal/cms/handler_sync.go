@@ -71,6 +71,10 @@ type SyncBlockOut struct {
 	H    string `json:"h"`
 	HTML string `json:"html,omitempty"`
 	Why  string `json:"why,omitempty"` // other（相手が変えた）・new（相手が足した）・kept（消したが残した）・merged・sanitized・full
+	// By は、相手が変えた・足したブロック（other・new）を最後に書いた人です（分からなければ空）。画面は、書きかけのブロックを相手が
+	// 変えていたときに並べる枠へ、この名前を出す（それまでは応答の頭の by を読んでいて、頭には無かったので名前が出なかった——
+	// 【考察】コードの矛盾 §2.4・2026-10-29）。
+	By string `json:"by,omitempty"`
 }
 
 // SyncConflict はぶつかったブロックです。kind は changed（相手が変えた——HTML は相手の版）か deleted（相手が消した）。
@@ -532,6 +536,9 @@ func SyncAPIHandler(w http.ResponseWriter, r *http.Request) {
 			// 画面の書き出しのまま当たった——描き直さない。
 		case baseH[b.ID] != b.Hash:
 			o.Why = "other"
+		}
+		if o.Why == "other" || o.Why == "new" {
+			o.By = blockWriterOf(id, b.ID)
 		}
 		if o.Why != "" {
 			needRender = true

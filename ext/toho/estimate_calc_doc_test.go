@@ -113,3 +113,26 @@ func TestEstimateCalcNewCopiesLatest(t *testing.T) {
 		t.Errorf("見積計算書から見積計算書を作れてしまいます: %d", code)
 	}
 }
+
+// TestEstimateAddFormCustomerFromCalcDoc は、見積計算書のページの「📄 見積書に入れる」の客先が、タグ「弊社品番」の
+// 加工製品ページの社名から入ることを固定します（2026-10-29——それまでは見積計算書が製造台帳の下に無いので空だった）。
+// 加工製品ページを読めない人には出しません。
+func TestEstimateAddFormCustomerFromCalcDoc(t *testing.T) {
+	setupExtTest(t, "000820", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 821, 0, CustomerBoxTitle, "alice", "302", true) // トップ直下（parent_id = 0）
+	addPage(t, 822, 821, "みなと商店", "alice", "302", true)
+	addPage(t, 823, 822, "ブラケット", "alice", "300", false)
+	calc := `<h1>【弊社】見積計算書　ブラケット</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindOurEstimateCalc +
+		`</dd><dt>` + OurItemNoTag + `</dt><dd>000823</dd></dl>`
+	addPage(t, 824, -1, "【弊社】見積計算書　ブラケット", "alice", "302", true)
+	writeBodyFile(t, 824, calc)
+	if err := cms.SyncIndex("000824", calc); err != nil {
+		t.Fatal(err)
+	}
+	if got := estimateAddFormHTML(adminUser(), 824, 0, ""); !strings.Contains(got, `class="estimate-add-client" placeholder="客先" value="みなと商店"`) {
+		t.Errorf("見積計算書で客先が入っていません:\n%s", got)
+	}
+	if got := estimateAddFormHTML(&auth.User{Username: "bob"}, 824, 0, ""); !strings.Contains(got, `placeholder="客先" value=""`) {
+		t.Errorf("加工製品ページを読めない人に客先が出ています:\n%s", got)
+	}
+}

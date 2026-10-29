@@ -215,7 +215,7 @@
             if (res.status === 401 || res.status === 403) { location.href = '/login'; return; }
             if (res.status === 404) { msg('この w-cms には通信の拡張が入っていません。', true); return; }
             const d = await res.json();
-            if (!res.ok || !d.success) throw new Error((d && d.error) || ('HTTP ' + res.status));
+            if (!res.ok || !d.success) throw new Error((d && (d.message || d.error)) || ('HTTP ' + res.status));
             mails = d.mails || [];
             buildThreads();
             msg('');

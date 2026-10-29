@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/html"
@@ -20,6 +21,9 @@ import (
 // コア（pages / page_perms）を同期したあと、配送係（walk.go）が本文を1回歩いて
 // 観察係（汎用索引 vocab_index）へ要素を届けます。
 func SyncIndex(id string, htmlContent string) error {
+	// DB の作り直しが表を消して作り直しているあいだは待つ（rebuildGate）。
+	rebuildGate.RLock()
+	defer rebuildGate.RUnlock()
 	markIndexWritten() // オートコンプリートの候補を、暇になったら数え直す（autocomplete.go）
 	// 手順1: HTMLをノード木にパースする
 	root, err := html.Parse(strings.NewReader(htmlContent))
@@ -177,6 +181,12 @@ func SyncIndex(id string, htmlContent string) error {
 	return nil
 }
 
+// rebuildGate は、DB の作り直しが表を消してから作り直すまでのあいだ、索引への書き込み（SyncIndex）を待たせる関門です
+// （2026-10-29）。それまでは、その一瞬に保存すると、本文は書けても索引づけが「表が無い」で落ちて 500 が返った
+// （【考察】コードの矛盾 §5.1）。⚠ 閉じるのは表を消して作り直す短いあいだだけ——ページを入れ直す歩き（resyncAllPages）は
+// 自分も SyncIndex を呼ぶので、その前に開ける（閉じたまま呼ぶと止まる）。
+var rebuildGate sync.RWMutex
+
 // RebuildDatabase は、HTMLファイル群（data/master配下）を正として、
 // データベースのインデックスを完全に再構築します。
 //
@@ -199,20 +209,8 @@ func RebuildDatabase() error {
 		return err
 	}
 
-	// 1. 現在DBに存在する全テーブルを sqlite_master から列挙してDROPする。
-	//    表の写し（data/tables.db）も空にする（ページを入れ直すときに作り直される）。
-	if err := dropAllTables(database.DB); err != nil {
-		return err
-	}
-	if err := ResetTablesDB(); err != nil {
-		return err
-	}
-
-	// 2. コアテーブルと全プラグインのテーブルを作り直す。
-	if err := database.CreateCoreTables(database.DB); err != nil {
-		return err
-	}
-	if err := ApplySchema(database.DB); err != nil {
+	// 1〜2. 表を消して作り直す（そのあいだは、保存の索引づけを待たせる——rebuildGate）。
+	if err := recreateTables(); err != nil {
 		return err
 	}
 
@@ -232,6 +230,26 @@ func RebuildDatabase() error {
 	}
 	log.Printf("索引を再構築しました: %dページ / %dミリ秒", pages, ms)
 	return nil
+}
+
+// recreateTables は、作り直しの 1〜2 の手順です（関門を閉じたまま）。
+//
+//  1. 現在DBに存在する全テーブルを sqlite_master から列挙してDROPする。
+//     表の写し（data/tables.db）も空にする（ページを入れ直すときに作り直される）。
+//  2. コアテーブルと全プラグインのテーブルを作り直す。
+func recreateTables() error {
+	rebuildGate.Lock()
+	defer rebuildGate.Unlock()
+	if err := dropAllTables(database.DB); err != nil {
+		return err
+	}
+	if err := ResetTablesDB(); err != nil {
+		return err
+	}
+	if err := database.CreateCoreTables(database.DB); err != nil {
+		return err
+	}
+	return ApplySchema(database.DB)
 }
 
 // rebuildStateTable は再構築の進行状況を残す1行テーブルです。

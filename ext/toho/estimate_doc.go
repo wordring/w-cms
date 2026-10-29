@@ -414,6 +414,13 @@ func newEstimatePage(w http.ResponseWriter, user *auth.User, clientIn, personIn,
 func estimateAddFormHTML(user *auth.User, productID int, index int, sig string) string {
 	db := database.DB
 	client := productCustomerOf(db, productID)
+	// 見積計算書（記録／年／月）は製造台帳の下に無いので、タグ「弊社品番」の加工製品ページから客先を引く（それまでは
+	// 見積計算書のページで開くと客先が空だった——【考察】コードの矛盾 §2.3・2026-10-29）。読めない加工製品の客先は出さない。
+	if client == "" && cms.PageTagValue(db, productID, PageKindTag) == PageKindOurEstimateCalc {
+		if pid, err := strconv.Atoi(strings.TrimSpace(cms.PageTagValue(db, productID, OurItemNoTag))); err == nil && pid > 0 && viewCheck(user)(pid) {
+			client = productCustomerOf(db, pid)
+		}
+	}
 	var b strings.Builder
 	b.WriteString(`<div class="estimate-add-form" data-estimate-product="` + page.FormatID(productID) +
 		`" data-estimate-index="` + strconv.Itoa(index) + `" data-estimate-sig="` + sig + `">`)

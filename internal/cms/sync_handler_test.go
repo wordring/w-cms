@@ -133,6 +133,10 @@ func TestSyncTwoUsersDifferentBlocks(t *testing.T) {
 	if got == nil || got.Why != "other" || !strings.Contains(got.HTML, "A-alice") {
 		t.Fatalf("相手の変更が応答に無い: %+v", got)
 	}
+	// 相手が変えたブロックには、書いた人の名前が付く（書きかけと並べる枠に出す・2026-10-29）。
+	if got.By != "alice" {
+		t.Errorf("相手が変えたブロックに書いた人の名前がありません: %q", got.By)
+	}
 	// bob が自分で書いたブロックは描き直さない（書き出しを返さない）。
 	for _, b := range r.Blocks {
 		if b.ID == "bbbb" && b.HTML != "" {

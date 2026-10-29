@@ -250,18 +250,20 @@ func GroupMembersAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
+	action := "group.add"
 	switch req.Action {
 	case "remove":
+		action = "group.remove"
 		err = RemoveGroupMember(req.Username, req.Group)
-		Audit(actor, "group.remove", req.Username+"@"+req.Group)
 	default: // add
 		err = AddGroupMember(req.Username, req.Group)
-		Audit(actor, "group.add", req.Username+"@"+req.Group)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// 監査は、変えられたときだけ残す（それまでは失敗した追加・削除も残っていた——【考察】コードの矛盾 §2.5・2026-10-29）。
+	Audit(actor, action, req.Username+"@"+req.Group)
 	writeJSON(w, map[string]interface{}{"success": true})
 }
 

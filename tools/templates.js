@@ -17,7 +17,9 @@ const path = require('path');
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
 // 証明書は、同じ機械のときだけ確かめない（業務サーバーへは確かめる・tls-trust.js・2026-10-28）。
 require('./tls-trust').trustFor(BASE);
-const MASTER = path.join(process.cwd(), 'data', 'master');
+// 本文の正本はサーバーのデータの場所から読む（WCMS_DATA_DIR・サーバーと同じ既定 data——2026-10-29 まで data を決め打ちしていた）。
+// ⚠ 書き出しは、サーバーと同じ機械で流すこと（業務サーバーなら WCMS_DATA_DIR=/var/lib/w-cms/data）。
+const MASTER = path.join(path.resolve(process.env.WCMS_DATA_DIR || 'data'), 'master');
 const ROOT_TITLE = 'テンプレート';
 let cookie = '';
 

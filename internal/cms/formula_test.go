@@ -94,6 +94,13 @@ func TestRenderFormulaCellsAddsResult(t *testing.T) {
 	if out := renderFormulaCells(plain); out != plain {
 		t.Errorf("式の無い本文が変わりました:\n%s", out)
 	}
+	// 頭に全角の空白・NBSP のある式も、早道で落とさない（セルを読むときの TrimSpace と同じだけ許す・2026-10-29）。
+	for _, lead := range []string{"　", " ", "&nbsp;", "<br/>　"} {
+		b := `<table><tbody><tr><th>単価</th><th>価格</th></tr><tr><td>2</td><td>` + lead + `=単価*3</td></tr></tbody></table>`
+		if out := renderFormulaCells(b); !strings.Contains(out, `data-w-value="6"`) {
+			t.Errorf("頭が %q の式が計算されません:\n%s", lead, out)
+		}
+	}
 }
 
 // TestFormulaValuesGoToTablesDBAndIndex は、⚠ **DB には計算した値が入る**こと（表の写しと索引の両方）を固定します

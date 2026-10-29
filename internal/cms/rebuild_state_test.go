@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"w-cms/internal/cms/page"
 	"w-cms/internal/database"
@@ -119,5 +120,47 @@ func TestRebuildIfNeededStillHandlesEmptyDB(t *testing.T) {
 	}
 	if n := countPages(t); n != 2 {
 		t.Errorf("空のDBから再構築されていません: pages=%d (期待 2)", n)
+	}
+}
+
+// TestSyncIndexWaitsWhileTablesAreRecreated は、DB の作り直しが表を消して作り直しているあいだの保存の索引づけが、
+// 「表が無い」で落ちずに待つことを固定します（2026-10-29・rebuildGate——それまでは本文は書けても 500 が返った）。
+func TestSyncIndexWaitsWhileTablesAreRecreated(t *testing.T) {
+	setupUploadTest(t, "000001", page.PageMeta{Owner: "alice", Mode: "330"})
+	seedMasterPages(t, "000001")
+
+	// recreateTables の中と同じ形: 関門を閉じて表を消す。
+	rebuildGate.Lock()
+	if err := dropAllTables(database.DB); err != nil {
+		rebuildGate.Unlock()
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- SyncIndex("000001", "<h1>作り直しのあいだの保存</h1>") }()
+	select {
+	case err := <-done:
+		rebuildGate.Unlock()
+		t.Fatalf("表が無いあいだに索引づけが走りました（待つはず）: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	if err := database.CreateCoreTables(database.DB); err != nil {
+		rebuildGate.Unlock()
+		t.Fatal(err)
+	}
+	if err := ApplySchema(database.DB); err != nil {
+		rebuildGate.Unlock()
+		t.Fatal(err)
+	}
+	rebuildGate.Unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("作り直したあとの索引づけが落ちました: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("関門を開けても索引づけが終わりません")
+	}
+	if countPages(t) != 1 {
+		t.Errorf("待った保存が索引に入っていません: pages=%d", countPages(t))
 	}
 }

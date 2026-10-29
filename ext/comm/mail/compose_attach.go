@@ -72,6 +72,13 @@ func MailAttachAPIHandler(w http.ResponseWriter, r *http.Request) {
 		cms.JSONFail(w, http.StatusBadRequest, "中身が空のファイルです（"+name+"）")
 		return
 	}
+	// 1つで送れる合計（maxTotalAttachBytes）を超えるファイルは、置いても送れない——置く前に断る（それまでは 32MiB まで置けて、
+	// 送るときに「合計25MBまで」で止まった——【考察】コードの矛盾 §2.3・2026-10-29）。
+	if len(content) > maxTotalAttachBytes {
+		cms.JSONFail(w, http.StatusRequestEntityTooLarge, "メールに添えられるのは合計 "+strconv.Itoa(maxTotalAttachBytes>>20)+
+			"MB までです（"+name+" は "+strconv.Itoa((len(content)+(1<<20)-1)>>20)+"MB）")
+		return
+	}
 	if content, err = cms.GuardUploadContent(name, content); err != nil {
 		cms.JSONFail(w, http.StatusBadRequest, err.Error())
 		return

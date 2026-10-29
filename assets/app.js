@@ -1425,7 +1425,7 @@
                 // 'fixed'（作るときに決める語を、サーバーが元の値へ戻した・2026-10-27）は、書きかけでも描き直す——戻した値を見せる。
                 if (el && typedSince(b.id) && b.why !== 'fixed') {
                     if (b.why === 'sanitized') { syncBase.set(b.id, { h: b.h, html: sent.get(b.id) }); return; }
-                    openConflict(b.id, { id: b.id, kind: 'changed', html: b.html, h: b.h, by: data.by || '' });
+                    openConflict(b.id, { id: b.id, kind: 'changed', html: b.html, h: b.h, by: b.by || '' });
                     return;
                 }
                 // キャレットのあるブロックはサニタイズでは差し替えない（それまでの保存と同じ——差し替えるとキャレットと折りたたみの
