@@ -53,7 +53,7 @@ import (
 type ThreadRef struct {
 	PageID    string `json:"page_id"`
 	Title     string `json:"title"`
-	When      string `json:"when"`      // 受信日時、無ければ送信日時（どちらも無ければ空）
+	When      string `json:"when"`      // 受信日時、無ければ送信日時、無ければ発信日時（どれも無ければ空）
 	Direction string `json:"direction"` // `向き` タグ（受信／送信）。画面の矢印に使う
 }
 
