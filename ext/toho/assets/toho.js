@@ -1866,7 +1866,11 @@ delegateClick([
             if (i < 0) { sayIn(ctx.say, 'やめました。'); return; }
             extra = i === 1;
         }
-        if (await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items, extra }, '部材を集めています…', '部材を集められませんでした')) location.reload();
+        const r = await mfgPost(ctx, btn, '/api/mfg/parts', { page_id: ctx.mfg, items, extra }, '部材を集めています…', '部材を集められませんでした');
+        if (!r) return;
+        // 弊社品番の無い行は飛ばしている——読み直すと消えるので、先に知らせる（それまでは黙って捨てていた・【考察】コードの矛盾 §2.4・2026-10-29）。
+        if (r.skipped > 0) alert(r.rows + ' 行を必要部材表に入れました。\n⚠ 弊社品番（加工製品）の無い行が ' + r.skipped + ' 行あり、その部材は集めていません。');
+        location.reload();
     }],
     ['.mfg-act-dlv', async (btn) => {
         const ctx = mfgBarOf(btn);
