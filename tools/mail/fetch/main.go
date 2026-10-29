@@ -118,11 +118,7 @@ func run(user, root, since string, max int, boxes []string) error {
 		if err != nil {
 			return err
 		}
-		tmp := catPath + ".tmp"
-		if err := os.WriteFile(tmp, b, 0o644); err != nil {
-			return err
-		}
-		return os.Rename(tmp, catPath)
+		return writeAtomic(catPath, b)
 	}
 
 	logf("メールを落とし始めます（%s・期間 %s・上限 %s）", addr, orAll(since), orNone(max))

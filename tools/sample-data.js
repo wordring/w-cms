@@ -21,15 +21,19 @@
 // ⚠ 職場の実データ（data）に向けて流さないこと——WCMS_DATA_DIR が空か data なら止まる（サーバーの側も同じ
 //    WCMS_DATA_DIR で動かす。サーバーと道具の data の場所が違うと、同じ図面番号の見張りが外れる）。
 // ⚠ Gemini は呼ばない（図面の表題欄は、職場で読んだ控えのあるものだけ使う）。
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
 
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-// 証明書は、同じ機械のときだけ確かめない（業務サーバーへは確かめる・tls-trust.js・2026-10-28）。
-require('./tls-trust').trustFor(BASE);
+// 繋ぐ係（クッキー・ログイン）と証明書の確かめは wcms-client.js（同じ機械のときだけ確かめない・2026-10-28〜29）。
+const wcms = require('./wcms-client').client(BASE);
+const req = wcms.req;
 const DATA = process.env.WCMS_DATA_DIR || '';
-const DESKTOP = path.join(os.homedir(), 'OneDrive', 'デスクトップ', 'w-cms');
+// デスクトップは OneDrive へ移されていればそちら（Go の道具の wcms.Desktop() と同じ順・2026-10-29 まで OneDrive の和名だけを見ていた）。
+const DESKTOP = path.join([path.join(os.homedir(), 'OneDrive', 'デスクトップ'), path.join(os.homedir(), 'OneDrive', 'Desktop'),
+  path.join(os.homedir(), 'Desktop')].find((d) => fs.existsSync(d)) || path.join(os.homedir(), 'OneDrive', 'デスクトップ'), 'w-cms');
 const STATE = process.env.WCMS_SAMPLE_STATE ||
   path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'w-cms', 'サンプルの製造');
 const STEPS = ['templates', 'boxes', 'mail', 'onenote', 'rebuild'];
@@ -47,16 +51,6 @@ if (!DATA || path.resolve(DATA) === path.resolve('data')) {
   process.exit(2);
 }
 
-let cookie = '';
-async function req(method, p, { body, headers = {} } = {}) {
-  const res = await fetch(BASE + p, { method, body, redirect: 'manual', headers: { Origin: BASE, Cookie: cookie, ...headers } });
-  for (const c of (res.headers.getSetCookie ? res.headers.getSetCookie() : [])) {
-    const kv = c.split(';')[0], name = kv.split('=')[0];
-    cookie = cookie.split('; ').filter((x) => x && !x.startsWith(name + '=')).concat(kv).join('; ');
-  }
-  return res;
-}
-
 function run(cmd, args) {
   console.log('\n$ ' + cmd + ' ' + args.join(' '));
   const r = spawnSync(cmd, args, { stdio: 'inherit', env: process.env });
@@ -64,8 +58,8 @@ function run(cmd, args) {
 }
 
 (async () => {
-  const lr = await req('POST', '/api/login', { body: 'username=a&password=a', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  if (!cookie) throw new Error('ログインできません（' + BASE + '・' + lr.status + '）——サーバーを動かしてから流してください');
+  const lr = await wcms.login();
+  if (!wcms.cookie()) throw new Error('ログインできません（' + BASE + '・' + lr.status + '）——サーバーを動かしてから流してください');
   // サーバーが同じデータの場所で動いているかを、起動ログの代わりに確かめる口は無いので、人に見せて確かめる。
   console.log('当て先: ' + BASE + '・データ: ' + DATA + '・製造の記録: ' + STATE);
 

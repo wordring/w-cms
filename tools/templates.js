@@ -15,24 +15,12 @@ const fs = require('fs');
 const path = require('path');
 
 const BASE = process.env.WCMS_BASE || 'https://localhost:8443';
-// 証明書は、同じ機械のときだけ確かめない（業務サーバーへは確かめる・tls-trust.js・2026-10-28）。
-require('./tls-trust').trustFor(BASE);
+// 繋ぐ係（クッキー・ログイン）と証明書の確かめは wcms-client.js（同じ機械のときだけ確かめない・2026-10-28〜29）。
+const { req, login } = require('./wcms-client').client(BASE);
 // 本文の正本はサーバーのデータの場所から読む（WCMS_DATA_DIR・サーバーと同じ既定 data——2026-10-29 まで data を決め打ちしていた）。
 // ⚠ 書き出しは、サーバーと同じ機械で流すこと（業務サーバーなら WCMS_DATA_DIR=/var/lib/w-cms/data）。
 const MASTER = path.join(path.resolve(process.env.WCMS_DATA_DIR || 'data'), 'master');
 const ROOT_TITLE = 'テンプレート';
-let cookie = '';
-
-async function req(method, p, { body, headers = {} } = {}) {
-  const res = await fetch(BASE + p, { method, body, redirect: 'manual', headers: { Origin: BASE, Cookie: cookie, ...headers } });
-  for (const c of (res.headers.getSetCookie ? res.headers.getSetCookie() : [])) {
-    const kv = c.split(';')[0], name = kv.split('=')[0];
-    cookie = cookie.split('; ').filter(x => x && !x.startsWith(name + '=')).concat(kv).join('; ');
-  }
-  return res;
-}
-const login = () => req('POST', '/api/login', { body: 'username=a&password=a',
-  headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 const bodyOf = id => fs.readFileSync(path.join(MASTER, id.slice(0, 2), id, id + '.html'), 'utf8');
 async function children(id) {
   const r = await req('GET', '/api/children?parent_id=' + id);

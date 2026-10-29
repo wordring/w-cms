@@ -3,6 +3,9 @@ package wcms
 import (
 	"crypto/tls"
 	"encoding/pem"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,5 +98,36 @@ func TestTrustedRootsFromWCMSCA(t *testing.T) {
 	t.Setenv("WCMS_CA", ca)
 	if err := get(); err != nil {
 		t.Fatalf("WCMS_CA の証明書で繋がりません: %v", err)
+	}
+}
+
+// TestFileForm は、ファイル1つを送る multipart を、前に書く欄の順・ファイルの欄の名前と送る名前・中身のとおりに組むことを固定します
+// （2026-10-29——メールの取り込みとワンノートの製造が写していた手順を寄せた）。
+func TestFileForm(t *testing.T) {
+	body, ctype, err := FileForm("pdf_file", "図面.pdf", []byte("%PDF-1.4"), [2]string{"page_id", "000123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, params, err := mime.ParseMediaType(ctype)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := multipart.NewReader(body, params["boundary"])
+	p, err := r.NextPart()
+	if err != nil || p.FormName() != "page_id" {
+		t.Fatalf("1つ目は page_id の欄のはず: %v %v", p, err)
+	}
+	if b, _ := io.ReadAll(p); string(b) != "000123" {
+		t.Errorf("page_id の値が違います: %q", b)
+	}
+	p, err = r.NextPart()
+	if err != nil || p.FormName() != "pdf_file" || p.FileName() != "図面.pdf" {
+		t.Fatalf("2つ目はファイルの欄のはず: %v %v", p, err)
+	}
+	if b, _ := io.ReadAll(p); string(b) != "%PDF-1.4" {
+		t.Errorf("中身が違います: %q", b)
+	}
+	if _, err := r.NextPart(); err != io.EOF {
+		t.Errorf("欄が多すぎます: %v", err)
 	}
 }

@@ -5,10 +5,12 @@
 package wcms
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -32,7 +34,8 @@ func Desktop() string {
 
 // trustedRoots は、ほかの機械へ繋ぐときに信じる証明書です（2026-10-28）——この機械の信頼ストアに、WCMS_CA（CA の
 // 証明書のファイル）か、無ければデスクトップの w-cms/サーバー機/ の *.crt（業務サーバーの証明書・リポジトリには入れない）を足す。
-// 足すものが無ければ nil（この機械の信頼ストアだけ）。JS の道具の tools/tls-trust.js と同じ形。
+// 足すものが無ければ nil（この機械の信頼ストアだけ）。JS の道具の tools/tls-trust.js とほぼ同じ形——違うのは、ここは見つかった
+// 最初のデスクトップの w-cms/サーバー機/ だけを見ること（JS は、そのフォルダが無ければ次のデスクトップを見る）。
 func trustedRoots() *x509.CertPool {
 	var files []string
 	if f := os.Getenv("WCMS_CA"); f != "" {
@@ -54,6 +57,29 @@ func trustedRoots() *x509.CertPool {
 		return nil
 	}
 	return pool
+}
+
+// FileForm は、ファイル1つを送る multipart の本文とその Content-Type を組みます（2026-10-29——メールの取り込みとワンノートの
+// 製造が同じ手順を写していた）。fields は、ファイルより前に書く欄（名前と値・書いた順）。中身はメモリーに持ちます。
+func FileForm(field, filename string, content []byte, fields ...[2]string) (io.Reader, string, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	for _, kv := range fields {
+		if err := w.WriteField(kv[0], kv[1]); err != nil {
+			return nil, "", err
+		}
+	}
+	fw, err := w.CreateFormFile(field, filename)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := fw.Write(content); err != nil {
+		return nil, "", err
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	return &buf, w.FormDataContentType(), nil
 }
 
 // Client は手元の w-cms へログインした係です。

@@ -188,23 +188,33 @@ type client struct {
 	http  *http.Client
 }
 
-// call は POST /api/machine/call を呼び、作った記録のページ番号を返します。
-func (cl *client) call(ev, number string, at time.Time, pageID string) (string, error) {
-	body, _ := json.Marshal(map[string]string{"event": ev, "number": number, "at": at.Format(time.RFC3339), "page_id": pageID})
+// post は POST /api/machine/call へ payload を送り、200 の応答の中身を返します（ほかの答えは「番号 中身」の誤り）。
+// call と missed が同じ手順を写していた（2026-10-29 に寄せた）。
+func (cl *client) post(payload map[string]string) ([]byte, error) {
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest("POST", strings.TrimRight(cl.base, "/")+"/api/machine/call", bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cl.token)
 	resp, err := cl.http.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%d %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, fmt.Errorf("%d %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return b, nil
+}
+
+// call は POST /api/machine/call を呼び、作った記録のページ番号を返します。
+func (cl *client) call(ev, number string, at time.Time, pageID string) (string, error) {
+	b, err := cl.post(map[string]string{"event": ev, "number": number, "at": at.Format(time.RFC3339), "page_id": pageID})
+	if err != nil {
+		return "", err
 	}
 	var out struct {
 		PageID string `json:"page_id"`
@@ -215,23 +225,8 @@ func (cl *client) call(ev, number string, at time.Time, pageID string) (string, 
 
 // missed は出ていない着信を POST /api/machine/call {event:"missed"} で知らせます（ページは作られない）。
 func (cl *client) missed(number string, ringAt, endAt time.Time) error {
-	body, _ := json.Marshal(map[string]string{"event": "missed", "number": number, "at": ringAt.Format(time.RFC3339), "ended": endAt.Format(time.RFC3339)})
-	req, err := http.NewRequest("POST", strings.TrimRight(cl.base, "/")+"/api/machine/call", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cl.token)
-	resp, err := cl.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%d %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
-	return nil
+	_, err := cl.post(map[string]string{"event": "missed", "number": number, "at": ringAt.Format(time.RFC3339), "ended": endAt.Format(time.RFC3339)})
+	return err
 }
 
 // openBrowser は記録をこのパソコンの既定のブラウザで開きます。

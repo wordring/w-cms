@@ -29,7 +29,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -264,15 +263,11 @@ func (c *client) upload(path string) (uploadResult, error) {
 	if err != nil {
 		return uploadResult{}, err
 	}
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
-	fw, err := w.CreateFormFile("file", "mail.eml")
+	form, ctype, err := wcms.FileForm("file", "mail.eml", content)
 	if err != nil {
 		return uploadResult{}, err
 	}
-	fw.Write(content)
-	w.Close()
-	res, err := c.do("POST", "/api/intake/eml", &buf, w.FormDataContentType())
+	res, err := c.do("POST", "/api/intake/eml", form, ctype)
 	if err != nil {
 		return uploadResult{}, err
 	}

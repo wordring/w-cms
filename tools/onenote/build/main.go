@@ -43,7 +43,6 @@ import (
 	"fmt"
 	stdhtml "html"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -1685,7 +1684,7 @@ func editedSince(id, since string) (bool, string) {
 	limit := t0.Add(5 * time.Second)
 	// 本文がこの機械に無ければ、「人が直した」とみなす（データの場所がサーバーと違うと、版の履歴も無いので、確かめが
 	// 黙って効かなくなっていた・2026-10-22 の見直し）。
-	if _, err := os.Stat(page.BodyPath(id)); err != nil {
+	if _, err := os.Stat(bodyPath(id)); err != nil {
 		return true, "（この機械に本文がありません——データの場所がサーバーと違うかもしれません）"
 	}
 	dir := filepath.Join(page.GetPageDir(id), "versions")
@@ -1890,16 +1889,11 @@ func (c *client) upload(pageID, token, path, shown string) (upload, error) {
 	if err != nil {
 		return upload{}, err
 	}
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
-	w.WriteField("page_id", pageID)
-	fw, err := w.CreateFormFile(field, shown)
+	form, ctype, err := wcms.FileForm(field, shown, content, [2]string{"page_id", pageID})
 	if err != nil {
 		return upload{}, err
 	}
-	fw.Write(content)
-	w.Close()
-	res, err := c.do("POST", endpoint, &buf, w.FormDataContentType(), token)
+	res, err := c.do("POST", endpoint, form, ctype, token)
 	if err != nil {
 		return upload{}, err
 	}
