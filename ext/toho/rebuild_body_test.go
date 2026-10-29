@@ -154,7 +154,7 @@ func TestMergeRevisionKeepsConcurrentSave(t *testing.T) {
 	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "Q1", "ブラケット", "装置A", "客A")
 	src := makeDrawingPageFrom(t, inbox, "pdf-b", "Q2", "ブラケット", "装置A", "客A")
 	hit := betweenReadAndWrite(t, appendBob)
-	if err := mergeAsRevision(user, src, dst); err != nil {
+	if err := mergeAsRevision(user, src, dst, nil); err != nil {
 		t.Fatalf("mergeAsRevision: %v", err)
 	}
 	if hit() != 1 {
@@ -176,7 +176,7 @@ func TestMergeRevisionRefusesWhenDrawingMoved(t *testing.T) {
 	src := makeDrawingPageFrom(t, inbox, "pdf-b", "Q2", "ブラケット", "装置A", "客A")
 
 	betweenReadAndWrite(t, func(cur string) string { return strings.Replace(cur, "<dd>Q1</dd>", "<dd>Q1-bob</dd>", 1) })
-	if err := mergeAsRevision(user, src, dst); err == nil {
+	if err := mergeAsRevision(user, src, dst, nil); err == nil {
 		t.Fatalf("図面が変わったのに断りませんでした")
 	}
 	body := readPageBody(t, dst)

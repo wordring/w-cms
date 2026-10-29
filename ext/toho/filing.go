@@ -47,6 +47,7 @@ package toho
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -304,6 +305,9 @@ type filingRequest struct {
 	// Target は図面追加・図面改定の行き先のページIDです（2026-10-01）——行き先に同じ題の加工製品が何枚もあるとき、
 	// 人が候補を押して決めたもの。空なら題で引く（1枚だけならそれ）。
 	Target string `json:"target"`
+	// Supersede は図面改定で、行き先に図面が2つ以上あるとき、人が選んだ「改定する前の図面」です（2026-10-29・mergeAsRevision）。
+	// 空なら、図面が2つ以上の行き先では needs_drawing（図面の一覧つき）を返して選んでもらう。
+	Supersede *drawingPick `json:"supersede,omitempty"`
 	// PartNoFromDrawing・ItemNameFromDrawing は「図面番号を品番に」「図面名称を品名に」の印です（2026-10-01 利用者:
 	// 「図面名称を品名、図面番号を品番にするチェックボックスがあっても良いのかもしれません」）。新規のときだけ効く。
 	// 無ければ（道具など印を送らない口）取引先のページの決まり（partner_rules.go）に従う。
@@ -322,6 +326,8 @@ type filingResult struct {
 	// Confirm は needs_confirm のとき、何の確かめか（"no_machine"＝装置名称が空・2026-10-16／"same_code"＝同じ客先に同じ品番・2026-10-19）。空なら図面の確かめ
 	// （画面は「承知のうえで進める」〔confirm_revision〕の印を付けて送り直す）。
 	Confirm string `json:"confirm,omitempty"`
+	// Drawings は needs_drawing（図面改定で、行き先に図面が2つ以上あり、どれの改定かを選ぶ・2026-10-29）のときの、行き先の図面です。
+	Drawings []drawingChoice `json:"drawings,omitempty"`
 }
 
 // FileDrawingsAPIHandler は POST /api/file-drawings です。
@@ -620,7 +626,12 @@ func fileIntoSameTitle(user *auth.User, row filingRequest, in filingInput, sameT
 			}
 			return filingResult{PageID: pageID, Outcome: outcome, TargetID: existing, Message: reason}
 		}
-		if err := mergeAsRevision(user, pageID, existing); err != nil {
+		if err := mergeAsRevision(user, pageID, existing, row.Supersede); err != nil {
+			var need errNeedDrawingPick
+			if errors.As(err, &need) {
+				return filingResult{PageID: pageID, Outcome: "needs_drawing", TargetID: existing, Drawings: need.Drawings,
+					Message: "「" + name + "」に図面が " + strconv.Itoa(len(need.Drawings)) + " つあります。どの図面の改定ですか？（選んだ図面だけを旧版の子ページへ移します）"}
+			}
 			return filingResult{PageID: pageID, Outcome: "skipped",
 				Message: "改定として合流できません: " + err.Error()}
 		}

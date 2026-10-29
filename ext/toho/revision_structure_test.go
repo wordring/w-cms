@@ -1,6 +1,7 @@
 package toho
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -41,7 +42,7 @@ func TestRevisionMergeKeepsSiblingBlocks(t *testing.T) {
 		t.Errorf("入れ子のファイル表示が落ちています: %s", block)
 	}
 
-	if err := mergeAsRevision(user, src, dst); err != nil {
+	if err := mergeAsRevision(user, src, dst, nil); err != nil {
 		t.Fatalf("mergeAsRevision: %v", err)
 	}
 
@@ -78,7 +79,7 @@ func TestRevisionMergeSameNumberLinksOldRow(t *testing.T) {
 	user := &auth.User{Username: "alice"}
 	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "R1", "ブラケット", "装置A", "客A")
 	src := makeDrawingPageFrom(t, inbox, "pdf-b", "R1", "ブラケット", "装置A", "客A")
-	if err := mergeAsRevision(user, src, dst); err != nil {
+	if err := mergeAsRevision(user, src, dst, nil); err != nil {
 		t.Fatalf("mergeAsRevision: %v", err)
 	}
 	oldPage, ok := findChildByTitle(dst, "旧版 R1 ブラケット")
@@ -135,7 +136,7 @@ func TestRevisionOldPageIsNotLinkCandidate(t *testing.T) {
 	user := &auth.User{Username: "alice"}
 	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "R7", "ブラケット", "装置A", "客A")
 	src := makeDrawingPageFrom(t, inbox, "pdf-b", "R7", "ブラケット", "装置A", "客A")
-	if err := mergeAsRevision(user, src, dst); err != nil {
+	if err := mergeAsRevision(user, src, dst, nil); err != nil {
 		t.Fatalf("mergeAsRevision: %v", err)
 	}
 	if _, ok := findChildByTitle(dst, "旧版 R7 ブラケット"); !ok {
@@ -144,5 +145,62 @@ func TestRevisionOldPageIsNotLinkCandidate(t *testing.T) {
 	got := productPagesForCustomer(database.DB, "客A", "R7", "")
 	if len(got) != 1 || fmt.Sprintf("%06d", got[0]) != dst {
 		t.Errorf("⚠ 候補が新しい版の1枚ではありません: %v（新しい版 %s）", got, dst)
+	}
+}
+
+// TestRevisionMergeAsksWhichDrawingWhenSeveral は、行き先に図面が2つ以上あるとき（部品図と溶接図など）、
+//   - 選んでいなければ図面の一覧を返して断る（何も動かさない）
+//   - 選んだ図面だけを旧版の子ページへ移し、新しい図面はその場所へ入る・ほかの図面はそのまま
+//
+// ことを固定します（2026-10-29 利用者:「これは編集者が選択すると良いと思います」——それまでは断って、図面追加のあとの
+// 「📐 この図面で改定する」へ回していた）。
+func TestRevisionMergeAsksWhichDrawingWhenSeveral(t *testing.T) {
+	const inbox = "000042"
+	setupFilingTest(t, inbox)
+	user := &auth.User{Username: "alice"}
+	dst := makeDrawingPageFrom(t, inbox, "pdf-a", "P1", "ブラケット", "装置A", "客A")
+	weld := makeDrawingPageFrom(t, inbox, "pdf-w", "W1", "ブラケット", "装置A", "客A")
+	if err := mergeAsDrawing(user, weld, dst); err != nil {
+		t.Fatalf("mergeAsDrawing: %v", err)
+	}
+	src := makeDrawingPageFrom(t, inbox, "pdf-b", "P1B", "ブラケット", "装置A", "客A")
+	before, _ := cms.ReadPageBody(dst)
+
+	err := mergeAsRevision(user, src, dst, nil)
+	var need errNeedDrawingPick
+	if !errors.As(err, &need) || len(need.Drawings) != 2 {
+		t.Fatalf("図面が2つの行き先で、図面の一覧を返していません: %v", err)
+	}
+	if after, _ := cms.ReadPageBody(dst); after != before {
+		t.Errorf("選ぶ前に本文を変えています")
+	}
+	var p1 drawingChoice
+	for _, d := range need.Drawings {
+		if d.No == "P1" {
+			p1 = d
+		}
+	}
+	if p1.No == "" {
+		t.Fatalf("一覧に P1 がありません: %+v", need.Drawings)
+	}
+
+	if err := mergeAsRevision(user, src, dst, &drawingPick{Index: p1.Index, No: p1.No}); err != nil {
+		t.Fatalf("選んだ図面で改定できません: %v", err)
+	}
+	if _, ok := findChildByTitle(dst, "旧版 P1 ブラケット"); !ok {
+		t.Errorf("選んだ図面の旧版ページがありません")
+	}
+	after, _ := cms.ReadPageBody(dst)
+	got := drawingChoicesOf(after)
+	if len(got) != 2 || got[p1.Index].No != "P1B" {
+		t.Errorf("新しい図面が古い図面の場所に入っていません（溶接図はそのまま残るはず）: %+v", got)
+	}
+	if _, ok := findChildByTitle(dst, "旧版 W1 ブラケット"); ok {
+		t.Errorf("選んでいない図面まで旧版へ移しています")
+	}
+	// 図面番号の合わない選び方（ページが変わった）は断る。
+	src2 := makeDrawingPageFrom(t, inbox, "pdf-c", "P1C", "ブラケット", "装置A", "客A")
+	if err := mergeAsRevision(user, src2, dst, &drawingPick{Index: p1.Index, No: "P1"}); err == nil {
+		t.Errorf("図面番号の合わない選び方を通しています")
 	}
 }

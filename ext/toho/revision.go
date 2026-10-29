@@ -53,7 +53,11 @@ import (
 //
 // **順序に意味があります**——旧版ページを先に作り、次に加工製品ページを書き換え、
 // 最後に仮のページを片付けます。途中で失敗しても、図面がどこにも無い状態は生まれません。
-func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
+//
+// pick は、合流先に図面が2つ以上あるとき、人が選んだ「改定する前の図面」です（2026-10-29）。選んだ図面だけを旧版へ移し、
+// 新しい図面はその図面のいた場所へ入ります（ほかの図面はそのまま）。図面が2つ以上で pick が無ければ、図面の一覧を持った
+// errNeedDrawingPick を返します（画面が人に選ばせて送り直す）。図面が1つ以下なら pick は見ません。
+func mergeAsRevision(user *auth.User, srcPageID, dstPageID string, pick *drawingPick) error {
 	block, dstBody, err := mergeInputs(user, srcPageID, dstPageID)
 	if err != nil {
 		return err
@@ -62,9 +66,18 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	// 1. いま載っている図面ブロックを外し、旧版ページへ移す。旧版ページには、そのときのページの写し（工程・部材など）も残す（2026-10-19）。
 	oldBlocks, _ := extractDrawingSections(dstBody) // 合流先に残す本文は、錠の中で読み直してから組む（下）
 	// 図面が2つ以上（部品図と溶接図など）あると、どれの改定かを機械では決められない——全部を旧版へ移すと、いまも使う
-	// 図面まで消えた（2026-10-22 の見直し）。図面追加で入れてから、ページの「📐 この図面で改定する」で人が選ぶ。
+	// 図面まで消えた（2026-10-22 の見直し）。2026-10-29 から、整理の中で人が選ぶ（利用者:「これは編集者が選択すると良いと
+	// 思います」——それまでは断って、図面追加のあとの「📐 この図面で改定する」へ回していた）。
+	onlyPick := false
 	if len(oldBlocks) > 1 {
-		return errors.New("合流先に図面が " + strconv.Itoa(len(oldBlocks)) + " つあり、どれの改定か決められません。「図面追加」で入れてから、そのページの図面の「⋯」→「📐 この図面で改定する」で選んでください")
+		if pick == nil {
+			return errNeedDrawingPick{Drawings: drawingChoicesOf(dstBody)}
+		}
+		sec, _, _, ok := drawingSectionAt(dstBody, *pick)
+		if !ok {
+			return errors.New("選んだ図面が合流先に見つかりません（ページが変わったかもしれません——もう一度やり直してください）")
+		}
+		oldBlocks, onlyPick = []string{sec}, true
 	}
 	snapshot := oldVersionSnapshot(dstBody)
 	oldPageID, oldNo, oldName := "", "", ""
@@ -91,13 +104,25 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 	// そのあいだに図面ブロックそのものが変わっていたら、旧版へ運んだものと食い違うので、書かずに断ります。
 	var moved error
 	if err := cms.RewriteBody(dstPageID, user.Username, func(cur string) string {
-		curOld, curRest := extractDrawingSections(cur)
-		if strings.Join(curOld, "") != strings.Join(oldBlocks, "") {
-			moved = errors.New("合流先の図面が、このあいだに変わりました。もう一度やり直してください")
-			return cur
+		var body string
+		if onlyPick {
+			// 選んだ図面だけを外し、新しい図面をその場所へ（「📐 この図面で改定する」と同じ並び）。
+			now, open, end, found := drawingSectionAt(cur, *pick)
+			if !found || strings.TrimSpace(now) != strings.TrimSpace(oldBlocks[0]) {
+				moved = errors.New("合流先の図面が、このあいだに変わりました。もう一度やり直してください")
+				return cur
+			}
+			rest := cur[:open] + cur[end:]
+			body = cur[:open] + reassignBlockIDIfTaken(block, rest) + cur[end:]
+		} else {
+			curOld, curRest := extractDrawingSections(cur)
+			if strings.Join(curOld, "") != strings.Join(oldBlocks, "") {
+				moved = errors.New("合流先の図面が、このあいだに変わりました。もう一度やり直してください")
+				return cur
+			}
+			blk := reassignBlockIDIfTaken(block, curRest)
+			body = cms.InsertAfterH1(curRest, blk)
 		}
-		blk := reassignBlockIDIfTaken(block, curRest)
-		body := cms.InsertAfterH1(curRest, blk)
 		// ⚠ **リンクを先に付けてから行を足す**（2026-10-04）——図面番号を変えない改定では、足した新しい行も同じ
 		// 番号なので、足してから探すと**新しい行が旧版へのリンクになっていた**（新しい行は先頭に入るため）。
 		if oldPageID != "" {
@@ -132,6 +157,33 @@ func mergeAsRevision(user *auth.User, srcPageID, dstPageID string) error {
 		return err
 	}
 	return nil
+}
+
+// errNeedDrawingPick は、合流先に図面が2つ以上あり、どれの改定かを人に選んでもらう必要があることです（2026-10-29）。
+type errNeedDrawingPick struct{ Drawings []drawingChoice }
+
+func (e errNeedDrawingPick) Error() string {
+	return "合流先に図面が " + strconv.Itoa(len(e.Drawings)) + " つあります。どの図面の改定かを選んでください"
+}
+
+// drawingChoice は、人に選んでもらう図面の1つです（本文の最上位の図面の何番目か〔0から〕・図面番号・図面名称）。
+type drawingChoice struct {
+	Index int    `json:"index"`
+	No    string `json:"no"`
+	Name  string `json:"name"`
+}
+
+// drawingChoicesOf は本文の最上位の図面ブロックを、文書の順に並べます（drawingSectionAt と同じ数え方）。
+func drawingChoicesOf(body string) []drawingChoice {
+	var out []drawingChoice
+	eachSection(body, func(s string, _, _ int) {
+		if !isDrawingSection(s) {
+			return
+		}
+		out = append(out, drawingChoice{Index: len(out), No: strings.TrimSpace(html.UnescapeString(drawingNoOf(s))),
+			Name: strings.TrimSpace(html.UnescapeString(drawingNameOf(s)))})
+	})
+	return out
 }
 
 // mergeInputs は、合流（mergeAsRevision・mergeAsDrawing）の前に、仮のページの図面ブロックと合流先の本文を読みます

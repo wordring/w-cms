@@ -2757,6 +2757,8 @@ async function runFiling(inputs, pickedOrders, run, panel, keep) {
         duplicate_of: i.dupOf ? i.dupOf() : '',
         // 図面追加・図面改定の行き先（同じ題が何枚もあるとき・候補を押したとき・2026-10-01）。空なら題で引く。
         target: i.target ? i.target() : '',
+        // 図面改定で、行き先に図面が2つ以上あるとき、人が選んだ「改定する前の図面」（2026-10-29・下の needs_drawing で聞く）。
+        supersede: i.supersede || undefined,
         // 「図面番号を品番に」「図面名称を品名に」（新規のときだけ効く・2026-10-01）。
         part_no_from_drawing: !!(i.rules && i.rules.partNo.checked),
         item_name_from_drawing: !!(i.rules && i.rules.itemName.checked),
@@ -2791,7 +2793,9 @@ async function runFiling(inputs, pickedOrders, run, panel, keep) {
         const choosing = new Set(results
             .filter(r => r.outcome === 'needs_choice').map(r => r.page_id));
         inputs.forEach(i => { if (choosing.has(i.page_id)) i.choice.hidden = false; });
-        const stay = pending.size + choosing.size + noMachine;
+        // 図面改定で、行き先に図面が2つ以上ある行（2026-10-29）——どれの改定かを下のダイアログで聞く。
+        const drawingAsks = results.filter(r => r.outcome === 'needs_drawing');
+        const stay = pending.size + choosing.size + noMachine + drawingAsks.length;
         notify(lines.join('\n') || '対象がありませんでした。',
             { type: stay ? 'warn' : 'success', duration: 0, id: 'filing' });
         // **確かめが要る行は、1行ずつダイアログで聞く**（2026-10-03）——進めるなら印を付けてその行だけ送り直す。
@@ -2823,6 +2827,18 @@ async function runFiling(inputs, pickedOrders, run, panel, keep) {
             const yes = m === 'drawing' ? '追加する' : m === 'revision' ? '改定する' : m === 'folder' ? '足す' : '進める';
             if (await askConfirm(r.message, yes, 'やめる')) {
                 i.box.checked = true;
+                again.push(i);
+            }
+        }
+        // どの図面の改定か（2026-10-29 利用者:「これは編集者が選択すると良いと思います」）——選んだ図面だけを旧版へ移して送り直す。
+        // やめた行は表に残る（図面追加を選び直してもよい）。
+        for (const r of drawingAsks) {
+            const i = inputs.find(x => x.page_id === r.page_id);
+            const ds = r.drawings || [];
+            if (!i || !ds.length) continue;
+            const k = await askChoice(r.message, ds.map(d => [d.no, d.name].filter(Boolean).join('　') || ('図面 ' + (d.index + 1))));
+            if (k >= 0) {
+                i.supersede = { index: ds[k].index, no: ds[k].no };
                 again.push(i);
             }
         }
