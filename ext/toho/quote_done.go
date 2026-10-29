@@ -186,12 +186,23 @@ func showQuoteInOrderTable(ctx *cms.MirrorContext, el *html.Node) {
 
 // pickEstimateOption は見積表の中から、数量 qty に使う1枚を選びます——ロットが数量と同じ表、無ければ数量以下で
 // いちばん大きいロット、無ければいちばん小さいロット（ロットの無い表は最後の手）。単価の無い表は選びません。
+// 同じロット・同じ表面処理の見積表が何枚もあれば、新しい方（表の順の後ろ）だけを数える（estimateSpecKey・2026-10-29——
+// それまでは先に見つけた1枚、つまり古い方を使っていた）。
 func pickEstimateOption(opts []estimateOption, qty float64) (estimateLine, bool) {
 	var exact, below, above, nolot *estimateLine
 	var belowLot, aboveLot float64
+	newest := map[string]int{}
+	for i := range opts {
+		if lot, ok := estimateNumber(opts[i].Line.Quantity); ok && opts[i].Why == "" {
+			newest[estimateSpecKey(lot, opts[i].Surface)] = i
+		}
+	}
 	for i := range opts {
 		if opts[i].Why != "" {
 			continue
+		}
+		if lot, ok := estimateNumber(opts[i].Line.Quantity); ok && newest[estimateSpecKey(lot, opts[i].Surface)] != i {
+			continue // 同じ仕様・同じロットの新しい見積表がある
 		}
 		ln := &opts[i].Line
 		lot, ok := estimateNumber(ln.Quantity)

@@ -128,3 +128,23 @@ func TestMfgEstimateCompletesQuoteCase(t *testing.T) {
 		t.Errorf("⚠ 注文の案件明細に、前の見積の単価と見積書へのリンクがありません:\n%s", got)
 	}
 }
+
+// TestPickEstimateOptionNewestOfSameSpec は、製造ページの見積書の単価に、同じロット・同じ表面処理の見積表のうち新しい方
+// （表の順の後ろ）を使うことを固定します（2026-10-29——それまでは先に見つけた古い方）。
+func TestPickEstimateOptionNewestOfSameSpec(t *testing.T) {
+	opt := func(lot, surface, price string) estimateOption {
+		return estimateOption{Line: estimateLine{Quantity: lot, Price: price}, Surface: surface}
+	}
+	same := []estimateOption{opt("20", "塗装", "500"), opt("20", "塗装", "600")}
+	if got, ok := pickEstimateOption(same, 20); !ok || got.Price != "600" {
+		t.Errorf("同じ仕様・同じロットの新しい方（600）を選んでいません: %+v", got)
+	}
+	// 新しい方に単価が無ければ（📌 で記録する前の写し）、古い方の単価で作る。
+	if got, ok := pickEstimateOption([]estimateOption{opt("20", "塗装", "500"), {Why: "単価がまだ記録されていません"}}, 20); !ok || got.Price != "500" {
+		t.Errorf("新しい方に単価が無いのに、古い方を使っていません: %+v %v", got, ok)
+	}
+	diff := []estimateOption{opt("20", "塗装", "500"), opt("20", "生地", "400")}
+	if got, ok := pickEstimateOption(diff, 20); !ok || got.Price != "500" {
+		t.Errorf("仕様の違う見積表は、いままでどおり先の1枚: %+v", got)
+	}
+}

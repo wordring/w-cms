@@ -115,10 +115,18 @@ func estimateLineOf(productID int, index int, sig string) (estimateLine, error) 
 
 // estimateOption は加工製品ページの見積表1枚から組んだ見積明細表の1行です（単価が無ければ Why に理由）。
 type estimateOption struct {
-	Index int
-	Line  estimateLine
-	Why   string
-	Sig   string // 見積表の指紋（tableSig・2026-10-22——番号でなく中身で確かめる）
+	Index   int
+	Line    estimateLine
+	Why     string
+	Sig     string // 見積表の指紋（tableSig・2026-10-22——番号でなく中身で確かめる）
+	Surface string // 見積表の表面処理（同じロット・同じ表面処理の見積表から新しい方を選ぶため——estimateSpecKey）
+}
+
+// estimateSpecKey は、見積表の「同じ仕様・同じロット」を見分ける鍵です（ロットと表面処理・2026-10-29）。
+// 利用者:「表面処理などの仕様が同じでロットも同じなら新しい方です。」——同じ鍵の見積表が何枚もあれば、新しい方
+// （ページの下の方。「⧉ この組を写す」は組のすぐ下に写す）だけを使う。
+func estimateSpecKey(lot float64, surface string) string {
+	return strconv.FormatFloat(lot, 'f', -1, 64) + "|" + cms.NormalizeText(strings.TrimSpace(surface))
 }
 
 // estimateOptionsOf はページ pageID の見積表を全部、表の順に見積明細表の行にします（見積表が無ければ空）。
@@ -144,14 +152,15 @@ func estimateOptionsOf(pageID int) ([]estimateOption, error) {
 	itemID, itemName := estimateItemNamesOf(productID)
 	out := make([]estimateOption, 0, len(recs))
 	for i, t := range recs {
-		ln, why := estimateLineFromRecord(estimateRecordOf(t))
+		rec := estimateRecordOf(t)
+		ln, why := estimateLineFromRecord(rec)
 		if why != "" {
 			out = append(out, estimateOption{Index: i, Why: why, Sig: tableSig(t)})
 			continue
 		}
 		ln.ProductID = page.FormatID(productID)
 		ln.ItemID, ln.ItemName = itemID, itemName
-		out = append(out, estimateOption{Index: i, Line: ln, Sig: tableSig(t)})
+		out = append(out, estimateOption{Index: i, Line: ln, Sig: tableSig(t), Surface: rec.Surface})
 	}
 	return out, nil
 }
@@ -175,6 +184,7 @@ func estimateLineFromRecord(r estimateRecord) (estimateLine, string) {
 	ln.Note = strings.Join(note, "　")
 	return ln, ""
 }
+
 // estimateItemNamesOf は見積明細表に書く品番・品名を加工製品ページのタグから引きます（品番→図面番号、品名→図面名称→題）。
 func estimateItemNamesOf(productID int) (itemID, itemName string) {
 	tags, _ := cms.TagsOfPage(database.DB, productID)

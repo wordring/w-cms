@@ -12,6 +12,8 @@ package toho
 //   - ロットは、**受注の数量以下でいちばん大きいロット**。それより小さいロットが無ければ、いちばん小さいロットと比べ、
 //     そう添えます（筆者の案・利用者はまだ確かめていない）。同じロットに表面処理の違う見積表が何枚もあれば、
 //     **いちばん安い単価**と比べます（どれでも赤字のときだけ言う——言い過ぎない）。
+//     表面処理も同じなら、**新しい方**（ページの下の方——「⧉ この組を写す」は組のすぐ下に写す）だけを使います
+//     （2026-10-29 利用者:「表面処理などの仕様が同じでロットも同じなら新しい方です。」——それまでは古い方とも比べていた）。
 //   - 出す所は2つ: 受注ページの受注明細表の行（⚠ と差額のセル・checksum_mirror.go）と、受注残表の行（薄赤と ⚠・backlog.go）。
 //     （2026-10-19 から、案件ページの案件明細表と案件残表。見積の依頼の案件〔`ページ種類：顧客見積依頼`〕には出さない——quoteless・
 //     renderOrderChecksum の早期戻り。）
@@ -63,10 +65,18 @@ func (l *lossLookup) records(productID int) ([]estimateLotPrice, int) {
 	src := estimateSourceOf(l.user, productID)
 	var out []estimateLotPrice
 	if rows, err := cms.VocabTableRowsOf(l.db, src, estimateRecordType); err == nil {
+		// 同じロット・同じ表面処理の見積表は、新しい方（文書の後ろ）だけ（estimateSpecKey）。行は文書の順に来る。
+		at := map[string]int{}
 		for _, r := range rows {
 			lot, okL := estimateNumber(r.Values["lot"])
 			price, okP := estimateNumber(r.Values["price"])
 			if okL && okP && lot > 0 {
+				k := estimateSpecKey(lot, r.Values["surface"])
+				if i, seen := at[k]; seen {
+					out[i] = estimateLotPrice{Lot: lot, Price: price}
+					continue
+				}
+				at[k] = len(out)
 				out = append(out, estimateLotPrice{Lot: lot, Price: price})
 			}
 		}

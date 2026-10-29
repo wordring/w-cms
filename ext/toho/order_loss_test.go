@@ -114,3 +114,30 @@ func TestLossShowsOnOrderPageAndBacklog(t *testing.T) {
 		t.Errorf("案件残表に赤字の印がありません")
 	}
 }
+
+// TestLossUsesNewestOfSameSpecAndLot は、同じロット・同じ表面処理の見積表が何枚もあれば、新しい方（ページの下の方）と
+// 比べることを固定します（2026-10-29 利用者:「表面処理などの仕様が同じでロットも同じなら新しい方です。」）。
+// それまでは古い方とも比べて、いちばん安い単価で決めていた。表面処理の違う見積表は、いままでどおりいちばん安い単価。
+func TestLossUsesNewestOfSameSpecAndLot(t *testing.T) {
+	setupExtTest(t, "000890", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
+	addPage(t, 891, -1, CustomerBoxTitle, "alice", "302", true)
+	head := `<table><caption>見積表</caption><tbody><tr><th>個数</th><th>表面処理</th><th>原価</th><th>利益率</th><th>単価</th><th>備考</th></tr>`
+	row := func(lot, surface, price string) string {
+		return head + `<tr><td>` + lot + `</td><td>` + surface + `</td><td></td><td></td><td>` + price + `</td><td></td></tr></tbody></table>`
+	}
+	body := `<h1>ブラケット</h1><dl data-type="tags"><dt>` + PageKindTag + `</dt><dd>` + PageKindProduct + `</dd></dl>` +
+		row("20", "塗装", "500") + row("20", "塗装", "600") + // 同じ仕様の古い 500 と、写して直した新しい 600
+		row("50", "塗装", "450") + row("50", "生地", "400") // 仕様の違う2枚——安い方
+	addPage(t, 892, 891, "ブラケット", "alice", "302", true)
+	writeBodyFile(t, 892, body)
+	if err := cms.SyncIndex("000892", body); err != nil {
+		t.Fatal(err)
+	}
+	look := newLossLookup(database.DB, adminUser())
+	if x, ok := look.lossOf("000892", 30, 550); !ok || x.Estimate != 600 {
+		t.Errorf("同じ仕様・同じロットの新しい見積表（600円）と比べていません: ok=%v %+v", ok, x)
+	}
+	if _, ok := look.lossOf("000892", 60, 420); ok {
+		t.Errorf("仕様の違う見積表は、いちばん安い単価（400円）と比べるはず")
+	}
+}
