@@ -3,7 +3,7 @@
 // 利用者:「表を横スクロールしたときの問題点として、どの行を見ていたかわからなくなることがあります。表全般について、
 // クリックした行に背景に色を付けると良いのかもしれません」。
 //
-//   閲覧モード: ① 押した行に印（背景に薄い青を重ねる）② 印は1つ——ほかの行を押すと移る ③ 見出しだけの行は印を付けない
+//   閲覧モード: ① 押した行に印（背景に薄い灰色を重ね、左の端に濃い帯——セルの矩形の選択の青と見分けがつく）② 印は1つ——ほかの行を押すと移る ③ 見出しだけの行は印を付けない
 //     ④ Esc で外れる ⑤ 横に長い表を横へ送っても、印の行はそのまま
 //   書ける形: ⑥ 押した行に印・矢印キーで動いた行にも印 ⑦ 印は書き出し（保存されるもの）に入らず、「未保存」にもならない
 //
@@ -52,7 +52,25 @@ const BODY = '<h1>【E2E】押した行</h1>' +
     await cell(2, 1).click();
     check(JSON.stringify(await picked()) === '[2]', '① 押した行に印が付く', JSON.stringify(await picked()));
     const bg = await cell(2, 3).evaluate((td) => getComputedStyle(td).backgroundImage);
-    check(bg.includes('gradient'), '① 印の行のセルに薄い青を重ねる', bg);
+    check(bg.includes('gradient') && bg.includes('71, 85, 105'), '① 印の行のセルに薄い灰色を重ねる', bg);
+    const bar = await cell(2, 0).evaluate((td) => getComputedStyle(td).boxShadow);
+    check(/4px 0px 0px/.test(bar) && bar.includes('71, 85, 105'), '① 行の左の端に濃い帯', bar);
+    // セルの矩形の選択（薄い青と青い枠）と見分けがつく（2026-10-29 利用者:「表のクリック行強調表示と矩形選択の見分けがつかなくなっています」）。
+    const a = await cell(2, 2).boundingBox(), b = await cell(2, 4).boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 6 });
+    await page.mouse.up();
+    const look = (c) => cell(2, c).evaluate((td) => {
+      const s = getComputedStyle(td);
+      return { sel: td.classList.contains('w-cell-selected'), color: s.backgroundColor, image: s.backgroundImage, shadow: s.boxShadow };
+    });
+    const sel = await look(3), rowOnly = await look(6);
+    check(sel.sel && sel.color === 'rgb(219, 234, 254)' && sel.image === 'none' && /96, 165, 250/.test(sel.shadow),
+      '① 矩形で選んだセルは薄い青と青い枠（行の灰色は重ねない）', JSON.stringify(sel));
+    check(!rowOnly.sel && rowOnly.image.includes('71, 85, 105') && !/96, 165, 250/.test(rowOnly.shadow) && rowOnly.color !== sel.color,
+      '① 同じ行の選んでいないセルは灰色だけ（青も枠も無い）', JSON.stringify(rowOnly));
+    await page.keyboard.press('Escape');
     await cell(3, 0).click();
     check(JSON.stringify(await picked()) === '[3]', '② ほかの行を押すと印が移る（1つだけ）', JSON.stringify(await picked()));
     // ③

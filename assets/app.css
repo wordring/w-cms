@@ -1423,12 +1423,15 @@ body[edit-mode] #w-editor-content td.cell-known {
 #w-editor-content th.w-cell-selected { background: #dbeafe !important; box-shadow: inset 0 0 0 1px #60a5fa; }
 body.w-cell-dragging #w-editor-content table { user-select: none; }
 /* 押した行（2026-10-29・app.js「押した行に色を付ける」）——横へスクロールしても、どの行を見ていたか分かるように。
- * 行の色（警告の薄赤・型の印など）を消さないように、背景の色ではなく背景の絵として薄い青を重ね、上下に線を引く。 */
+ * 行の色（警告の薄赤・型の印など）を消さないように、背景の色ではなく背景の絵として薄い灰色を重ね、行の左の端に濃い帯を付ける。
+ * ⚠ セルの矩形の選択（上の w-cell-selected——薄い青と青い枠）と見分けがつくように、青と枠は使わない（2026-10-29 利用者:
+ * 「表のクリック行強調表示と矩形選択の見分けがつかなくなっています」——はじめは薄い青と上下の青い線だった）。黄色（ほかの人の
+ * いるブロック）・赤と緑（警告と ✓）も意味があるので使わない。 */
 #w-editor-content tr.w-row-picked > td,
 #w-editor-content tr.w-row-picked > th {
-    background-image: linear-gradient(rgba(59, 130, 246, 0.16), rgba(59, 130, 246, 0.16));
-    box-shadow: inset 0 1px 0 #60a5fa, inset 0 -1px 0 #60a5fa;
+    background-image: linear-gradient(rgba(71, 85, 105, 0.13), rgba(71, 85, 105, 0.13));
 }
+#w-editor-content tr.w-row-picked > :first-child { box-shadow: inset 4px 0 0 #475569; }
 #w-editor-content td.w-formula-error-cell { background: #fee2e2; }
 #w-editor-content td .w-formula-error { color: #b91c1c; font-weight: 700; }
 body[edit-mode] #w-editor-content td.cell-formula { color: #1d4ed8; }
