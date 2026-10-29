@@ -191,8 +191,9 @@ func invoiceKey(delivery, order, itemNo, itemName string) string {
 
 // billedKeys は、請求書（`ページ種類：弊社請求書`）に載った納品書の行の鍵です。
 // issuedOnly なら、発行した（`発行日` のある）請求書に載った行だけです（2026-10-20・製造ページを閉じるときのために作った——
-// 2026-10-21 から、製造ページを閉じるのは納品書の発行で決める〔mfg_close.go〕ので、issuedOnly を使うのは試験だけ）。
+// 2026-10-21 から、製造ページを閉じるのは納品書の発行で決める〔mfg_close.go〕）。
 // 新しい請求書に載せる行を選ぶときは、まだ紙を作っていない請求書に載った行も「載っている」と数えます（二重に載せない）。
+// ⚠ いま本体に呼び手はありません（試験だけが使う）。消すかは利用者に聞く（【考察】コードの矛盾 §8.1）。
 func billedKeys(issuedOnly bool) map[string]bool {
 	out := map[string]bool{}
 	for k := range billedLines(issuedOnly) {
