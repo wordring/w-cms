@@ -189,27 +189,15 @@ func invoiceKey(delivery, order, itemNo, itemName string) string {
 	return strings.TrimPrefix(strings.TrimSpace(delivery), "/") + "|" + shippedKey(order, itemNo, itemName)
 }
 
-// billedKeys は、請求書（`ページ種類：弊社請求書`）に載った納品書の行の鍵です。
-// issuedOnly なら、発行した（`発行日` のある）請求書に載った行だけです（2026-10-20・製造ページを閉じるときのために作った——
-// 2026-10-21 から、製造ページを閉じるのは納品書の発行で決める〔mfg_close.go〕）。
-// 新しい請求書に載せる行を選ぶときは、まだ紙を作っていない請求書に載った行も「載っている」と数えます（二重に載せない）。
-// ⚠ いま本体に呼び手はありません（試験だけが使う）。消すかは利用者に聞く（【考察】コードの矛盾 §8.1）。
-func billedKeys(issuedOnly bool) map[string]bool {
-	out := map[string]bool{}
-	for k := range billedLines(issuedOnly) {
-		out[k] = true
-	}
-	return out
-}
-
 // billedLine は、請求明細表に載った納品書の行1つです（数量と単価——同じ鍵の行が2つあるとき、どれが載ったかを見分ける）。
 type billedLine struct{ Qty, Price string }
 
-// billedLines は、請求書に載った納品書の行を、鍵ごとに数えて返します（同じ鍵が2行あれば2つ）。
+// billedLines は、請求書（`ページ種類：弊社請求書`）に載った納品書の行を、鍵ごとに数えて返します（同じ鍵が2行あれば2つ）。
+// まだ紙を作っていない請求書に載った行も「載っている」と数えます（新しい請求書に二重に載せない）。
 //
 // ⚠ 数えます（2026-10-22 の見直し）——それまでは「載ったかどうか」だけだったので、同じ納品書に同じ案件・品番の行が2つあると、
 // 1行目を請求書に載せた時点で2行目も載ったと見なされ、二度と請求書に出なかった。
-func billedLines(issuedOnly bool) map[string][]billedLine {
+func billedLines() map[string][]billedLine {
 	out := map[string][]billedLine{}
 	rows, err := cms.VocabRowsOfType(database.DB, InvoiceItemsType)
 	if err != nil {
@@ -220,10 +208,6 @@ func billedLines(issuedOnly bool) map[string][]billedLine {
 		ok, seen := kinds[r.PageID]
 		if !seen {
 			ok = !cms.IsTemplateArea(page.FormatID(r.PageID)) && pageKindOf(r.PageID) == PageKindOurInvoice
-			if ok && issuedOnly {
-				tags, err := cms.TagsOfPage(database.DB, r.PageID)
-				ok = err == nil && strings.TrimSpace(cms.FirstTag(tags, DeliveryIssuedTag)) != ""
-			}
 			kinds[r.PageID] = ok
 		}
 		if ok {
@@ -280,7 +264,7 @@ func unbilledLines(user *auth.User) (lines map[string][]invoiceLine, noPrice map
 	if err != nil {
 		return
 	}
-	billed := billedLines(false)
+	billed := billedLines()
 	type head struct {
 		ok           bool
 		client, date string

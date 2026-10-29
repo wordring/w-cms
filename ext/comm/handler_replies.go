@@ -10,11 +10,10 @@ package comm
 //
 // 逆引きの鍵は記録に書かれた `親ページID` タグ（値＝親の記録のページID・2026-10-09——それまでは w-cms が送った控えに
 // だけ書く `返信元`）。出すのは**こちらが送った**返信（`向き`＝送信）——Outlook から送って取り込んだ返信も入る。
-// 相手からの返信も含めた前後は `/api/thread`。索引を1回引くだけで、専用のテーブルも、返信元側への書き込みも要りません。
+// 相手からの返信も含めた前後は ThreadOf（handler_thread.go）。描くのは記録の箱（record_box.go の repliesHTML）。索引を1回引くだけで、専用のテーブルも、返信元側への書き込みも要りません。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"net/http"
 	"w-cms/internal/cms"
 
 	"w-cms/internal/auth"
@@ -52,20 +51,4 @@ func RepliesTo(user *auth.User, pageID string) ([]ReplyRef, error) {
 		out = append(out, r)
 	}
 	return out, nil
-}
-
-// RepliesAPIHandler は GET /api/replies?page_id=X です。
-func RepliesAPIHandler(w http.ResponseWriter, r *http.Request) {
-	// **メソッド確認もここに入りました**——写していたころは、この2つの口だけ
-	// 抜けていました（GET専用のつもりで書いて、書き忘れに誰も気づかない形）。
-	pageID, _, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
-	if !ok {
-		return
-	}
-	replies, err := RepliesTo(user, pageID)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "返信を引けません: "+err.Error())
-		return
-	}
-	cms.WriteJSON(w, map[string]any{"success": true, "replies": replies})
 }

@@ -67,22 +67,6 @@ func fieldsOfHeader(table *html.Node, vocabType string) []string {
 	return out
 }
 
-// CountOrderDrafts はページの本文にある発注部材表の数を返します。
-//
-// 画面が「新しく作る／1枚目へ足す／2枚目へ足す」を出すために作った。⚠ いま本体にも試験にも呼び手はありません
-// （消すかは利用者に聞く——【考察】コードの矛盾 §8.1）。
-func CountOrderDrafts(pageID int) int {
-	body, err := cms.ReadPageBody(page.FormatID(pageID))
-	if err != nil {
-		return 0
-	}
-	nodes, perr := htmldoc.ParseFragment(body)
-	if perr != nil {
-		return 0
-	}
-	return len(tablesOfType(nodes, OrderDraftType))
-}
-
 // orderDraftHTML は発注部材表のHTMLを組みます。
 //
 // ⚠ **見出し行は宣言から組みます**（`headerRowHTML`）——手書きに戻すと、列を足した日に

@@ -16,7 +16,7 @@ package comm
 //	前（親）  = メッセージID が、このページの 返信元メッセージID と一致するページ
 //	次（子）  = 返信元メッセージID が、このページの メッセージID と一致するページ
 //
-// **`/api/replies` とは別の鎖です。** あちらは w-cms **自身が送った**返信を
+// **RepliesTo（handler_replies.go・2026-10-30 までは `/api/replies`）とは別の鎖でした。** あちらは w-cms **自身が送った**返信を
 // `返信元`（値＝返信元のページID）で引きます——相手のメールソフトの都合に依らず
 // 確実ですが、**w-cms を通っていない往復は見えません**。こちらはメールヘッダの鎖なので、
 // **受信どうしの返り**（お客様が自分の前のメールに返信した、など）も繋がります。
@@ -33,7 +33,7 @@ package comm
 //	前（親）  = このページの 親ページID が指すページ
 //	次（子）  = 親ページID がこのページを指すページ
 //
-// `/api/replies`（handler_replies.go）も、いまは同じ `親ページID` を引きます。違いは、あちらが子のうち
+// RepliesTo（handler_replies.go）も、いまは同じ `親ページID` を引きます。違いは、あちらが子のうち
 // こちらから送った返信（`向き`＝送信）だけを出すことです。
 //
 // 親があとから取り込まれた子には、読み込みの仕事の最後に 親ページID が書き足される（FixRecordTags）——上の「順に
@@ -41,7 +41,6 @@ package comm
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
-	"net/http"
 	"strconv"
 	"w-cms/internal/cms"
 
@@ -108,20 +107,4 @@ func ThreadOf(user *auth.User, idInt int) (prev *ThreadRef, next []ThreadRef, er
 		}
 	}
 	return prev, next, nil
-}
-
-// ThreadAPIHandler は GET /api/thread?page_id=X です。
-func ThreadAPIHandler(w http.ResponseWriter, r *http.Request) {
-	// **メソッド確認もここに入りました**——写していたころは、この2つの口だけ
-	// 抜けていました（GET専用のつもりで書いて、書き忘れに誰も気づかない形）。
-	_, idInt, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
-	if !ok {
-		return
-	}
-	prev, next, err := ThreadOf(user, idInt)
-	if err != nil {
-		cms.JSONFail(w, http.StatusInternalServerError, "スレッドを引けません: "+err.Error())
-		return
-	}
-	cms.WriteJSON(w, map[string]any{"success": true, "prev": prev, "next": next})
 }

@@ -179,10 +179,10 @@ func TestInvoiceKeyIncludesOrder(t *testing.T) {
 	}
 }
 
-// TestBilledKeysIssuedOnly は、製造ページを閉じるときに数える「請求済み」が、発行した（`発行日` のある）請求書だけであることを
-// 固定します（2026-10-20）。それまでは、まだ紙を作っていない請求書に載っただけの行も数えて製造ページを記録へ移し、
-// 案件明細の「請求書発行」の印（発行済だけを数える）と食い違っていた。新しい請求書に載せる行を選ぶときは、紙の無い請求書も数える。
-func TestBilledKeysIssuedOnly(t *testing.T) {
+// TestBilledLinesCountsUnissued は、新しい請求書に載せる行を選ぶとき、まだ紙を作っていない（`発行日` の無い）請求書に載った行も
+// 「載っている」と数えることを固定します（二重に載せない）。2026-10-30 まで、発行した請求書だけを数える形も持っていた
+// （製造ページを閉じるとき用・2026-10-21 から使われなくなったので消した）。
+func TestBilledLinesCountsUnissued(t *testing.T) {
 	setupExtTest(t, "000950", page.PageMeta{Owner: "alice", Group: "sales", Mode: "330"})
 	addPage(t, 951, -1, "記録の外", "alice", "302", true)
 	seedIssuedDelivery(t, 952, 951, "あけぼの精工", "2026-09-25", "2026-09-25", [5]string{"000900", "X-1", "ブラケット", "10", "100"})
@@ -191,11 +191,8 @@ func TestBilledKeysIssuedOnly(t *testing.T) {
 		t.Fatalf("請求書を作れません: %d %v", code, out)
 	}
 	key := invoiceKey("000952", "000900", "X-1", "ブラケット")
-	if !billedKeys(false)[key] {
+	if len(billedLines()[key]) != 1 {
 		t.Errorf("紙の無い請求書に載った行を、新しい請求書の選びで数えていません（二重に載る）")
-	}
-	if billedKeys(true)[key] {
-		t.Errorf("⚠ 紙の無い請求書に載っただけの行を、発行した請求書の行と数えています")
 	}
 }
 

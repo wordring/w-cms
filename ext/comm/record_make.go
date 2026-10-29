@@ -9,7 +9,8 @@ package comm
 // メールの記録のページに「作るページ [選ぶ] [作成]」の欄を出します。選べる種類は**拡張が登録します**
 // （`RegisterRecordMaker`）——通信は種類の名前も作り方も知らず、選ぶ欄と口だけを持ちます。
 //
-//	GET  /api/record-makers?page_id=X … そのページで選べる種類と、もう作ったページ（印）
+//	RecordMakersOf … そのページで選べる種類と、もう作ったページ（印）——記録の箱が描く（record_box.go・
+//	                 2026-10-30 までは GET /api/record-makers でも返していた）
 //	POST /api/record-make {page_id, kind} … 作る（できたページ・言うこと・開くページを返す）
 //
 //   - 押すのは人。作るのは記録の子（取り込みで生まれたページには家が要る——通信箱の下）。
@@ -109,29 +110,20 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// RecordMakersAPIHandler は GET /api/record-makers?page_id=X です——選べる種類（名前・説明）と、もう作ったページ。
-func RecordMakersAPIHandler(w http.ResponseWriter, r *http.Request) {
-	pageID, idInt, user, ok := cms.GateJSONPageRead(w, r, r.URL.Query().Get("page_id"))
-	if !ok {
-		return
-	}
-	type kind struct {
-		Name string `json:"name"`
-		Hint string `json:"hint"`
-	}
-	kinds := []kind{}
-	made := []MadePage{}
-	// 書けない人には選ぶ欄を出さない（押しても 403 になるだけ）——印だけは見せる。
-	canWrite := page.GetPerms(idInt).CanWrite(user)
-	for _, m := range makersFor(idInt) {
+// RecordMakersOf は、ページ pageIDInt で user が選べる種類（書けない人には空——押しても 403 になるだけ）と、
+// もう作ったページ（印。書けない人にも見せる）を返します。
+func RecordMakersOf(user *auth.User, pageIDInt int) (kinds []RecordMaker, made []MadePage) {
+	pageID := page.FormatID(pageIDInt)
+	canWrite := page.GetPerms(pageIDInt).CanWrite(user)
+	for _, m := range makersFor(pageIDInt) {
 		if canWrite {
-			kinds = append(kinds, kind{Name: m.Name, Hint: m.Hint})
+			kinds = append(kinds, m)
 		}
 		if m.Made != nil {
 			made = append(made, m.Made(user, pageID)...)
 		}
 	}
-	cms.WriteJSON(w, map[string]any{"success": true, "kinds": kinds, "made": made})
+	return kinds, made
 }
 
 // RecordMakeAPIHandler は POST /api/record-make です。入力: {page_id, kind}。

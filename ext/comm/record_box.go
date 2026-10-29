@@ -84,20 +84,14 @@ func recordMakeHTML(user *auth.User, pageIDInt int, draft bool) string {
 	if draft {
 		return ""
 	}
-	pageID := page.FormatID(pageIDInt)
-	canWrite := page.GetPerms(pageIDInt).CanWrite(user)
+	kinds, made := RecordMakersOf(user, pageIDInt)
 	var opts, marks strings.Builder
-	n := 0
-	for _, m := range makersFor(pageIDInt) {
-		if canWrite {
-			opts.WriteString(`<option value="` + stdhtml.EscapeString(m.Name) + `" title="` + stdhtml.EscapeString(m.Hint) + `">` + stdhtml.EscapeString(m.Name) + `</option>`)
-			n++
-		}
-		if m.Made != nil {
-			for _, p := range m.Made(user, pageID) {
-				marks.WriteString(` ` + MadeMarkHTML(p.PageID, p.Title, p.Kind))
-			}
-		}
+	n := len(kinds)
+	for _, m := range kinds {
+		opts.WriteString(`<option value="` + stdhtml.EscapeString(m.Name) + `" title="` + stdhtml.EscapeString(m.Hint) + `">` + stdhtml.EscapeString(m.Name) + `</option>`)
+	}
+	for _, p := range made {
+		marks.WriteString(` ` + MadeMarkHTML(p.PageID, p.Title, p.Kind))
 	}
 	if n == 0 && marks.Len() == 0 {
 		return ""

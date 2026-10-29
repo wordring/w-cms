@@ -234,7 +234,6 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/new-page", cms.NewPageAPIHandler)
 	// テンプレート選択メニューの中身（「テンプレート」フォルダ配下のツリー）
 	protected.HandleFunc("/api/templates", cms.TemplatesAPIHandler)
-	protected.HandleFunc("/api/validate-parent", cms.ValidateParentAPIHandler)
 	protected.HandleFunc("/api/set-parent", cms.SetParentAPIHandler)
 	// 削除は物理削除でなく data/trash への移動（取り消せることが要件。handler_delete.go）
 	protected.HandleFunc("/api/delete-page", cms.DeletePageAPIHandler)
@@ -263,7 +262,7 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/revert", cms.RevertAPIHandler)
 
 	protected.HandleFunc("/api/reorder", cms.ReorderAPIHandler)
-	// 通信の口（`/api/replies`・`/api/thread`・`/api/intake/…`）も**ここにありません**
+	// 通信の口（`/api/intake/…`・`/api/fax/…` など）も**ここにありません**
 	// ——通信のプラグインが `Routes()` で持ち込みます（2026-09-15・comm_routes.go）。
 	// アドレス帳の口（`/api/contacts/…`）は**ここにありません**——`ext/comm/contacts` が
 	// プラグインの `Routes()` で持ち込みます（2026-09-15）。ルートも拡張と一緒に

@@ -413,12 +413,6 @@ var intakeRefLocks keylock.Set
 // lockIntakeRef は印 key のロックを取り、外す関数を返します。
 func lockIntakeRef(key string) func() { return intakeRefLocks.Lock(key) }
 
-// IntakeFile は IntakeFileAs の、向きを中身から決める形です（2026-10-29 の時点で呼び手は無い——HTTP の口もメールの取り込みも
-// IntakeFileAs を通す。消すかは利用者に聞く〔作業引き継ぎ「本体に呼び手の無い公開関数」〕）。
-func IntakeFile(inboxID, uploader, fileName string, content []byte) (IntakeResult, bool, error) {
-	return IntakeFileAs(inboxID, uploader, fileName, content, "")
-}
-
 // IntakeFileAs は通信箱への到着を処理する**芯**です（担当探し・重複検知・ページ生成）。
 //
 // HTTPの口（serveIntake）と、メールの取り込み（ext/comm/mail）が共有します

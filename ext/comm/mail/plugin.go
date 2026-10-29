@@ -55,8 +55,6 @@ func (mailPlugin) Routes() []cms.Route {
 	return []cms.Route{
 		{Pattern: "/api/mail/status", Handler: MailStatusAPIHandler},
 		{Pattern: "/api/mail/signin", Handler: MailSignInAPIHandler},
-		// 取り込みは**人が押したときだけ**走ります（自動で回し続けない）。
-		{Pattern: "/api/mail/import", Handler: MailImportAPIHandler},
 		// 新しいメールの読み込みを裏で続ける（fetch_job.go・2026-10-09——ページを閉じても止まらない）。
 		{Pattern: "/api/mail/fetch-new", Handler: MailFetchAPIHandler},
 		{Pattern: "/api/mail/fetch-new/status", Handler: MailFetchStatusAPIHandler},

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,23 +16,19 @@ import (
 // メールの記録から作るページ（2026-10-01・ext/comm/record_make.go・mail_product.go）。利用者:「「受注ページ」「加工製品ページ」を
 // コンボボックスで選択して「作成」ボタンを押せばいいかも」。
 
-// getRecordMakers は GET /api/record-makers を呼びます。
+// getRecordMakers は、記録の箱が描く選ぶ欄の種類と、もう作ったページを引きます（comm.RecordMakersOf・2026-10-30 までは
+// GET /api/record-makers を呼んでいた）。
 func getRecordMakers(t *testing.T, u *auth.User, pageID string) (kinds []string, made []comm.MadePage) {
 	t.Helper()
-	req := auth.WithUser(httptest.NewRequest("GET", "/api/record-makers?page_id="+pageID, nil), u)
-	rr := httptest.NewRecorder()
-	comm.RecordMakersAPIHandler(rr, req)
-	var got struct {
-		Kinds []struct{ Name string } `json:"kinds"`
-		Made  []comm.MadePage         `json:"made"`
+	id, err := strconv.Atoi(pageID)
+	if err != nil {
+		t.Fatalf("ページ番号ではありません: %q", pageID)
 	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil || rr.Code != 200 {
-		t.Fatalf("種類を引けません: %d %s", rr.Code, rr.Body.String())
+	ms, made := comm.RecordMakersOf(u, id)
+	for _, m := range ms {
+		kinds = append(kinds, m.Name)
 	}
-	for _, k := range got.Kinds {
-		kinds = append(kinds, k.Name)
-	}
-	return kinds, got.Made
+	return kinds, made
 }
 
 // TestRecordMakersListKindsByDirection は、選ぶ欄の種類が受信のメールにだけ・並びの順に出て、送信の控え・下書きには

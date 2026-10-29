@@ -19,18 +19,14 @@ package mail
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"w-cms/ext/comm"
 	"w-cms/internal/auth"
-	"w-cms/internal/cms"
 )
 
 // ImportSummary は取り込み1回の結果です。
@@ -47,7 +43,7 @@ type ImportSummary struct {
 // importMax は1回の取り込みの上限です。**押すたびに少しずつ**進める形にして、
 // 1回の要求が長く居座らないようにします（過去分は繰り返し押せば追いつく）。
 // （2026-10-09 から、画面の「📥 新しいメールを読み込む」は裏の仕事〔fetch_job.go〕がこの1回分を尽きるまで繰り返すので、
-// 人が押し直すのは `/api/mail/import` を直に叩くときだけです。）
+// 1回分ずつ押す口 `/api/mail/import` は、画面から呼ぶ所が無くなったので 2026-10-30 に外しました。）
 const importMax = 50
 
 // listAllMax は一覧で見る上限です。**取り込む上限とは別**——一覧は封筒の見出し
@@ -181,50 +177,6 @@ func openImportBox(ctx context.Context, username, folder string) (*imapSession, 
 		return s, nil
 	}
 	return nil, errors.New("箱「" + folder + "」は分かりません（受信・送信）")
-}
-
-// MailImportAPIHandler は POST /api/mail/import です。
-// 入力（省略可）: {folder, max, since}
-func MailImportAPIHandler(w http.ResponseWriter, r *http.Request) {
-	user, ok := cms.GateJSONPost(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		Folder string `json:"folder"`
-		Max    int    `json:"max"`
-		Since  string `json:"since"`
-	}
-	// 本体が空でも既定で動きます（50件）。
-	// ⚠ 本体の大きさに上限を置きます（2026-10-19・【考察】文書の食い違い §3.3——それまでは上限なしで読んでいた）。欄は3つだけなので小さくてよい。
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			cms.JSONFail(w, http.StatusRequestEntityTooLarge, "リクエスト本文が大きすぎます")
-			return
-		}
-	}
-
-	// ⚠ **要求が切れても、始めた1回分は最後まで取り込みます**（2026-10-09——ページを閉じると途中で止まっていた）。
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
-	defer cancel()
-
-	sum, err := ImportMessages(ctx, user.Username, ListOptions{
-		Folder: req.Folder, Max: req.Max, Since: req.Since,
-	})
-	if err != nil {
-		if err == errNotSignedIn {
-			cms.JSONFail(w, http.StatusConflict, "メールアカウントにサインインしていません")
-			return
-		}
-		cms.JSONFail(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	auth.Audit(user.Username, "mail.import", fmt.Sprintf("listed=%d imported=%d duplicate=%d failed=%d",
-		sum.Listed, sum.Imported, sum.Duplicate, sum.Failed))
-
-	cms.WriteJSON(w, map[string]any{"success": true, "summary": sum})
 }
 
 // 取り込めなかったメール（利用者・箱・UID）の覚え（サーバーを起こし直すと消える）。多すぎたら空にする。

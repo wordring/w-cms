@@ -370,26 +370,6 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 	return "", 0
 }
 
-// ValidateParentAPIHandler は、編集中ページの親ページ変更が妥当かを返します（クライアントの即時検証用）。
-// 権威的な検証は付け替えの口（SetParentAPIHandler → SetPageParent）でも行われます（保存APIは親を扱いません）。
-// 対象ページのwrite権限を前提とします。
-func ValidateParentAPIHandler(w http.ResponseWriter, r *http.Request) {
-	id, childID, ok := queryPageID(w, r)
-	if !ok {
-		return
-	}
-	if !page.RequirePageWrite(w, r, id) {
-		return
-	}
-	newParent := strings.TrimSpace(r.URL.Query().Get("parent"))
-
-	if msg, code := validateParentChange(auth.CurrentUser(r), childID, newParent); code != 0 {
-		WriteJSON(w, map[string]any{"ok": false, "error": msg})
-		return
-	}
-	WriteJSON(w, map[string]any{"ok": true})
-}
-
 // resyncSubtree はページとその配下すべての索引を本文から同期し直します
 // （親の付け替えでテンプレート領域へ出入りしたときに使う）。
 func resyncSubtree(rootID string) {

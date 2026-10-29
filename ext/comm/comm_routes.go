@@ -27,11 +27,8 @@ func (commPlugin) Tables() []string { return nil }
 // Routes は通信の口です。
 func (commPlugin) Routes() []cms.Route {
 	return []cms.Route{
-		// この記録への返信（こちらが送った返信の一覧——親ページID がこの記録を指す送信の記録。Outlook から送って取り込んだ返信も入る）。
-		{Pattern: "/api/replies", Handler: RepliesAPIHandler},
-		// スレッドの前後（親と子）。2026-10-09 から `/api/replies` と同じ `親ページID` の鎖で、違いは
-		// **受信どうしの返り**も出すこと（handler_thread.go の冒頭に違いを書いた。それまでは In-Reply-To の鎖）。
-		{Pattern: "/api/thread", Handler: ThreadAPIHandler},
+		// この記録への返信（RepliesTo）とスレッドの前後（ThreadOf）は、記録の箱がサーバーの中で描く（record_box.go）。
+		// それを JSON で返す `/api/replies`・`/api/thread` は、画面から呼ぶ所が無くなったので 2026-10-30 に外した。
 		// メールの一覧（受信も送信も・スレッドは画面が `親ページID` で組む——2026-10-09 までは In-Reply-To・2026-09-29）。
 		{Pattern: "/api/mails", Handler: MailListAPIHandler}, // 通信の一覧（2026-10-29 からは全部のチャネル——通信箱の見え方「スレッド」）
 		{Pattern: "/api/comm/threads", Handler: ThreadsRedirectAPIHandler}, // 通信箱の「スレッド」へ送る（2026-10-29）
@@ -57,8 +54,8 @@ func (commPlugin) Routes() []cms.Route {
 		{Pattern: "/api/phone/dial/release", Handler: PhoneDialReleaseAPIHandler},
 		// `.eml` を通信箱の記録にする（道具 tools/mail/push が叩く・2026-09-30——通信箱へ落とす道をやめた代わり）。
 		{Pattern: "/api/intake/eml", Handler: IntakeEMLAPIHandler},
-		// 記録から作るページ（選ぶ欄と「作成」・種類は拡張が登録する・2026-10-01・record_make.go）。
-		{Pattern: "/api/record-makers", Handler: RecordMakersAPIHandler},
+		// 記録から作るページ（「作成」・種類は拡張が登録する・2026-10-01・record_make.go）。選ぶ欄は記録の箱が描く
+		// （選べる種類を JSON で返す `/api/record-makers` は、画面から呼ぶ所が無くなったので 2026-10-30 に外した）。
 		{Pattern: "/api/record-make", Handler: RecordMakeAPIHandler},
 	}
 }

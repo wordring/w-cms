@@ -26,10 +26,11 @@ const check = (label, ok, note = '') => {
   let memo = '', made = '';
   try {
     await login(page, BASE);
-    memo = await makePage(page, '<h1>【E2E】治具の材料</h1><dl data-type="tags"><dt>チャネル</dt><dd>メモ</dd><dt>対応</dt><dd>未処理</dd></dl><p>治具を作る。材料を買う。</p>');
+    memo = await makePage(page, '<h1>【E2E】治具の材料</h1><dl data-type="tags"><dt>チャネル</dt><dd>メモ</dd><dt>対応</dt><dd>未処理</dd></dl><p>治具を作る。材料を買う。</p><section data-mirror="記録の箱"></section>');
     check('当て先を作れた', !!memo);
-    const kinds = await page.evaluate(async (pid) => (await (await fetch('/api/record-makers?page_id=' + pid)).json()), memo).catch(() => ({}));
-    const names = ((kinds && kinds.kinds) || []).map((k) => k.name || k.Name);
+    // 選べる種類は、記録の箱がサーバーの中で描く選ぶ欄（2026-10-30 までは /api/record-makers でも引けた）。
+    const view0 = await page.evaluate(async (pid) => (await fetch('/api/load?view=1&id=' + pid)).text(), memo).catch(() => '');
+    const names = Array.from(view0.matchAll(/<option value="([^"]*)"/g)).map((m) => m[1]);
     check('① メモの「作るページ」に「自社案件ページ」', names.includes('自社案件ページ'), names.join('・'));
     const r = await page.evaluate(async (pid) => {
       const res = await fetch('/api/record-make', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pid, kind: '自社案件ページ' }) });
