@@ -1,4 +1,4 @@
-// ファイルの ID を写す道を画面から確かめる（2026-10-01）。
+// ファイルの IDコピー道を画面から確かめる（2026-10-01）。
 //
 // 利用者:「メール送信にファイル添付が無いです。PDFや画像の表示にIDが在ると思いますが、それをクリック程度で簡単に
 // クリップボードへコピーできると、ほかの場所にスラッシュメニューから貼りつけたり、メールに添付できるのでは」。
@@ -47,14 +47,14 @@ const check = (label, ok, note = '') => { console.log((ok ? '✓ ' : '✗ ') + l
     const img = page.locator('#w-editor-content img').first();
     await img.waitFor({ timeout: 8000 });
     await img.hover();
-    // 2026-10-01 から写真の札は「⋯」1つ——押すと形式に合った操作のメニュー（🔗 ID を写す はその中）。
+    // 2026-10-01 から写真の札は「⋯」1つ——押すと形式に合った操作のメニュー（🔗 IDコピー はその中）。
     const dots = page.locator('#w-img-menu.active');
     await dots.waitFor({ timeout: 5000 }).catch(() => {});
     check('写真に載せると「⋯」が出る', await dots.count() === 1);
     await dots.click();
-    const idItem = page.locator('#w-file-menu.active .file-menu-item', { hasText: 'ID を写す' });
+    const idItem = page.locator('#w-file-menu.active .file-menu-item', { hasText: 'IDコピー' });
     await idItem.waitFor({ timeout: 5000 }).catch(() => {});
-    check('「⋯」のメニューに「🔗 ID を写す」', await idItem.count() === 1);
+    check('「⋯」のメニューに「🔗 IDコピー」', await idItem.count() === 1);
     await idItem.click();
     await page.waitForTimeout(300);
     const clip = await page.evaluate(() => navigator.clipboard.readText()).catch((e) => 'ERR ' + e);

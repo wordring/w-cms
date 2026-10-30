@@ -3,7 +3,7 @@
 // 利用者:「STEPファイルも加工製品ページで参照してダウンロードできるようにしたい」。
 //
 //   ① .step と .stp を添付に上げられる（設定 attachment_extensions）
-//   ② 添付のリンク（📎）の横に「🔗 参照」——ID を写せる（PDF・ZIP 以外にも）
+//   ② 添付のリンク（📎）の横に「🔗 IDコピー」——ID を写せる（PDF・ZIP 以外にも）
 //   ③ 別のページ（加工製品ページの代わり）の 📄 ファイル表示にその ID を書くと、届いたときの名前で保存するリンク
 //      （download 属性）が出て、押すと保存（Content-Disposition: attachment）になる
 //
@@ -56,7 +56,7 @@ const STEP = Buffer.from('ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((\'E2E\'),\'2
     const copy = page.locator('#w-editor-content .attach-copyref');
     await copy.first().waitFor({ timeout: 8000 }).catch(() => {});
     const ref = host + '-' + a.id;
-    check('② 📎 の横に「🔗 参照」', await copy.count() === 1 && ((await copy.first().getAttribute('title')) || '').startsWith(ref), ref);
+    check('② 📎 の横に「🔗 IDコピー」', await copy.count() === 1 && ((await copy.first().getAttribute('title')) || '').startsWith(ref), ref);
 
     // ③
     const product = await makePage(page, '<h1>【E2E】STEP を参照する品</h1><section data-type="file-view" data-ref="' + ref + '"></section>');

@@ -144,7 +144,7 @@ function buildZip(files) { // files: [{name, data}]
         await setEditMode(page, false);
         check('添付2つに ▶ が出る',
             await page.locator('.attach-expand:not(.attach-analyze):not(.attach-copyref):not(.attach-analyzed)').count() === 2);
-        check('添付2つに 🔗 参照 が出る', await page.locator('.attach-copyref').count() === 2);
+        check('添付2つに 🔗 IDコピー が出る', await page.locator('.attach-copyref').count() === 2);
 
         // PDF: ▶表示 → embed が差し込まれ、▼閉じる → 消える。
         // クリックでボタン文字が「閉じる」へ変わるので、文字ではなく位置で掴む

@@ -3881,7 +3881,7 @@
     }
 
     // openNewFileViewWire は、挿したばかりの**空のファイル表示**なら参照の欄をすぐ開いて true を返します
-    // （2026-10-01）——ファイル表示・写真の「🔗 ID」で写した ID を貼るだけで済むように（利用者:「…クリップボードへ
+    // （2026-10-01）——ファイル表示・写真の「🔗 IDコピー」で写した ID を貼るだけで済むように（利用者:「…クリップボードへ
     // コピーできると、ほかの場所にスラッシュメニューから貼りつけたり…」）。
     function openNewFileViewWire(newEl) {
         if (newEl.tagName !== 'SECTION' || newEl.getAttribute('data-type') !== FILE_VIEW_TYPE ||
@@ -5009,7 +5009,7 @@
     }
 
     // addFileViewToCarousel は「📄 ファイル表示を足す」（2026-10-23）——空のファイル表示を中の末尾へ足し、参照の欄を開く。
-    // 参照（ページID-添付ID・「🔗 ID」で写した値）を貼ると、閲覧モードでその1枚になる（画像はそのまま・PDF などはファイル名の札）。
+    // 参照（ページID-添付ID・「🔗 IDコピー」で写した値）を貼ると、閲覧モードでその1枚になる（画像はそのまま・PDF などはファイル名の札）。
     function addFileViewToCarousel(car) {
         const sec = document.createElement('section');
         sec.setAttribute('data-type', FILE_VIEW_TYPE);
@@ -6577,12 +6577,12 @@
             // 拡張が添付の札を足す口（2026-10-20・window.wcms.onAttachment）。
             runAttachmentHooks({ link: a, pageId: m[1], attachId: m[2], ext: kind, viewButton: btn, refButton: copyRef });
         });
-        // PDF・ZIP 以外の添付（STEP・DXF・Excel …）にも「🔗 参照」（2026-10-01 利用者:「STEPファイルも加工製品ページで参照して
+        // PDF・ZIP 以外の添付（STEP・DXF・Excel …）にも「🔗 IDコピー」（2026-10-01 利用者:「STEPファイルも加工製品ページで参照して
         // ダウンロードできるようにしたい」）——写した ID を加工製品ページの 📄 ファイル表示へ貼ると、そこから保存できる。
         document.querySelectorAll('#w-editor-content a[href]').forEach(a => {
             if (a.closest('.vocab-chrome')) return;
             const m = /^\/([0-9]{6})\/([0-9a-z]+)\.([0-9a-z_]+)$/.exec(a.getAttribute('href') || '');
-            // PDF・ZIP は上で付けた。画像は写真の「🔗 ID」がある（decorateLocalEdit と同じ札を二重にしない）。
+            // PDF・ZIP は上で付けた。画像は写真の「🔗 IDコピー」がある（decorateLocalEdit と同じ札を二重にしない）。
             if (!m || /^(pdf|zip|jpe?g|png|gif|webp|svg|bmp)$/.test(m[3])) return;
             const copyRef = makeCopyRefButton(m[1], m[2]);
             a.insertAdjacentElement('afterend', copyRef);
@@ -6600,7 +6600,7 @@
     // 同じ値は `受信元` タグの中身でもあるので、参照を手で書きたい場面すべてに効きます。
     function makeCopyRefButton(pageID, attachID) {
         const ref = pageID + '-' + attachID;
-        const btn = makeButton('vocab-chrome attach-expand attach-copyref', '🔗 参照');
+        const btn = makeButton('vocab-chrome attach-expand attach-copyref', '🔗 IDコピー');
         btn.title = copyRefTitle(ref);
         btn.addEventListener('click', () => copyFileRef(ref));
         return btn;
@@ -6613,16 +6613,16 @@
     // ID（`ページ番号-添付ID`）の貼り先は2つ——📄 ファイル表示の欄（スラッシュメニューで挿して札を押す）と、メールの
     // 送る欄の「🔗 ID で添付を足す」（mail-compose.js・サーバーの GET /api/file-ref が添付の組へ引く）。
     // ⚠ const にしない（本文を描く処理がこの行より上で先に走りうる——関数の宣言は先に立つ）。
-    function copyRefTitle(ref) { return ref + ' を写します（別のページの 📄 ファイル表示 の欄や、ID で添付を足せる欄へ貼れます）'; }
+    function copyRefTitle(ref) { return ref + ' をコピーします（別のページの 📄 ファイル表示 の欄や、ID で添付を足せる欄へ貼れます）'; }
 
     async function copyFileRef(ref) {
         try {
             await navigator.clipboard.writeText(ref);
-            notify(ref + ' を写しました。📄 ファイル表示 の欄や、ID で添付を足せる欄へ貼れます。',
+            notify(ref + ' をコピーしました。📄 ファイル表示 の欄や、ID で添付を足せる欄へ貼れます。',
                 { type: 'success', duration: 6000, id: 'copyref' });
         } catch (e) {
             // **写せない環境でも詰ませません**——値そのものを見せて、手で選べるように。
-            notify('写せませんでした。この値を手で控えてください: ' + ref,
+            notify('コピーできませんでした。この値を手で控えてください: ' + ref,
                 { type: 'warn', duration: 0, id: 'copyref' });
         }
     }
@@ -6733,12 +6733,12 @@
             const head = sec.querySelector('.file-view-head');
             const data = sec.querySelector('[data-file-url]');
             if (!head || !data || head.querySelector('.file-menu-btn')) return;
-            // 「⋯」1つ（2026-10-01）——押すと形式に合った操作のメニュー（🔗 ID・⬇ 保存・📝 ローカル編集・🤖 解析…・openFileMenu）。
+            // 「⋯」1つ（2026-10-01）——押すと形式に合った操作のメニュー（🔗 IDコピー・⬇ 保存・📝 ローカル編集・🤖 解析…・openFileMenu）。
             // それまでは「🔗 ID」と「📝 ローカル編集」を全部の形式に並べていた。頭の行（summary）の中なので、押しても畳まない。
             const btn = makeButton('vocab-chrome file-menu-btn');
             btn.contentEditable = 'false';
             btn.textContent = '⋯';
-            btn.title = 'このファイルの操作（ID を写す・保存・ローカル編集…）';
+            btn.title = 'このファイルの操作（IDコピー・保存・ローカル編集…）';
             btn.addEventListener('mousedown', e => e.preventDefault());
             btn.addEventListener('click', e => {
                 e.preventDefault();
@@ -6757,7 +6757,7 @@
     // クリックメニューを搭載してはどうでしょう？」→（出し方を聞いて）「⋯」1つにまとめる・🤖 解析はメールのページだけ。
     // ファイル表示の頭と、写真（マウスを載せたとき）に出す。項目は形式で決まる（fileMenuItems）。
     //
-    //   どれも     … 🔗 ID を写す・⬇ 保存（届いたときの名前で）
+    //   どれも     … 🔗 IDコピー・⬇ 保存（届いたときの名前で）
     //   PDF        … ＋📝 ローカル編集・🤖 解析（メールのページだけ——作るページはそのページの子に生まれ、整理で置き場へ）
     //   画像       … ＋🔍 原寸で開く・📝 ローカル編集
     //   Excel      … ＋📝 Excel で開く・🤖 解析（同上）
@@ -6782,7 +6782,7 @@
         const aid = ref.split('-')[1] || '';
         const file = String(info.url || '').split('/').pop();
         const items = [];
-        items.push({ icon: '🔗', label: 'ID を写す（' + ref + '）', title: copyRefTitle(ref), run: () => copyFileRef(ref) });
+        items.push({ icon: '🔗', label: 'IDコピー（' + ref + '）', title: copyRefTitle(ref), run: () => copyFileRef(ref) });
         items.push({ icon: '⬇', label: '保存', title: '届いたときの名前で保存します', run: () => downloadFile(info.url, info.name) });
         switch (info.kind) {
         case 'pdf':
@@ -6947,7 +6947,7 @@
     let imgEditTarget = null;
     let imgEditHideTimer = 0;
 
-    // 写真の「⋯」（2026-10-01）——マウスを載せると右上に1つ浮かべ、押すと形式に合った操作のメニュー（🔗 ID・⬇ 保存・
+    // 写真の「⋯」（2026-10-01）——マウスを載せると右上に1つ浮かべ、押すと形式に合った操作のメニュー（🔗 IDコピー・⬇ 保存・
     // 🔍 原寸で開く・📝 ローカル編集——openFileMenu）。それまでは「🔗 ID」と「📝 ローカル編集」の2つを浮かべていた。
     function imgMenuButton() {
         let btn = document.getElementById('w-img-menu');
@@ -6957,7 +6957,7 @@
         btn.id = 'w-img-menu';
         btn.className = 'img-edit-btn';
         btn.textContent = '⋯';
-        btn.title = 'この写真の操作（ID を写す・保存・原寸・ローカル編集）';
+        btn.title = 'この写真の操作（IDコピー・保存・原寸・ローカル編集）';
         btn.addEventListener('mousedown', e => e.preventDefault());
         btn.addEventListener('click', e => {
             e.preventDefault();
@@ -9697,7 +9697,7 @@ const attachmentHooks = [];
 const fileMenuHooks = [];
 
 // runAttachmentHooks は、添付のリンク1つごとに、拡張が札を足す口を呼びます（refreshAttachmentPreviews から・閲覧モードだけ）。
-// at は { link, pageId, attachId, ext, viewButton（▶ 表示・無ければ null）, refButton（🔗 参照） }。
+// at は { link, pageId, attachId, ext, viewButton（▶ 表示・無ければ null）, refButton（🔗 IDコピー） }。
 function runAttachmentHooks(at) {
     attachmentHooks.forEach((fn) => { try { fn(at); } catch (e) { console.error('拡張の札が落ちました:', e); } });
 }

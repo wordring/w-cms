@@ -4,7 +4,7 @@
 // 埋め込む場合はどうしますか？」
 //
 // 確かめるのは8つです（2026-09-15 に配線を属性へ移し、同日のコードレビューで4つ足した）:
-//   ① 添付の隣に「🔗 参照」が出て、`ページID-添付ID` を写せる
+//   ① 添付の隣に「🔗 IDコピー」が出て、`ページID-添付ID` を写せる
 //   ② 📄 ファイル表示 は列を持たず、`section[data-ref]` がエディタの語彙に載っている
 //   ③ 無関係なページに、属性1つで貼っても開く
 //   ④ 編集モードに配線の札が出て、押すと欄が開く
@@ -47,12 +47,12 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
   ok(!!HOST && !!ATTACH, '当て先を見つけた（PDFを持つ通信記録）', HOST + '-' + ATTACH);
   if (!HOST || !ATTACH) { console.log('通信箱にPDF付きの記録がありません'); await browser.close(); process.exit(1); }
 
-  // ① 添付の隣の「🔗 参照」
+  // ① 添付の隣の「🔗 IDコピー」
   await page.goto(BASE + '/' + HOST);
   await page.waitForTimeout(2000);
   const hasCopy = await page.evaluate(() =>
     document.querySelectorAll('#w-editor-content .attach-copyref').length);
-  ok(hasCopy > 0, '添付の隣に「🔗 参照」が出る', hasCopy + '個');
+  ok(hasCopy > 0, '添付の隣に「🔗 IDコピー」が出る', hasCopy + '個');
   let copied = '';
   if (hasCopy) {
     await page.click('#w-editor-content .attach-copyref');

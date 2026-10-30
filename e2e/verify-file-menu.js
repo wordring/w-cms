@@ -4,7 +4,7 @@
 // クリックメニューを搭載してはどうでしょう？」→（出し方を聞いて）「⋯」1つにまとめる・🤖 解析はメールのページだけ。
 //
 //   ① ファイル表示の頭は「⋯」1つ（それまでの「🔗 ID」「📝 ローカル編集」は並べない）
-//   ② PDF: 🔗 ID を写す・⬇ 保存・📝 ローカル編集——ふつうのページには 🤖 解析を出さない
+//   ② PDF: 🔗 IDコピー・⬇ 保存・📝 ローカル編集——ふつうのページには 🤖 解析を出さない
 //   ③ STEP: 🔗・⬇・📝 CAD で開く／ZIP: 🔗・⬇・🗂 中身を見る
 //   ④ ⬇ 保存は届いたときの名前で落ちる
 //   ⑤ メールのページ（チャネルのタグ）に置いた PDF には 🤖 解析が出る（押さない——Gemini を呼ばない）
@@ -69,7 +69,7 @@ const check = (label, ok, note = '') => {
     check('① ファイル表示の頭は「⋯」1つ', heads.length === 3 && heads.every(h => h === '⋯'), JSON.stringify(heads));
     // ②
     const pm = await menuOf(plain + '-' + pdf);
-    check('② PDF: 🔗 ID・⬇ 保存・📝 ローカル編集', pm.includes('ID を写す（' + plain + '-' + pdf + '）') && pm.includes('保存') &&
+    check('② PDF: 🔗 ID・⬇ 保存・📝 ローカル編集', pm.includes('IDコピー（' + plain + '-' + pdf + '）') && pm.includes('保存') &&
       pm.includes('ローカル編集'), pm);
     check('② ふつうのページの PDF に 🤖 解析を出さない', !pm.includes('解析'), pm);
     // ③

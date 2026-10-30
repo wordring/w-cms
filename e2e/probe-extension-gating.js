@@ -59,7 +59,7 @@ const ok = (c, m, x) => { console.log((c ? '  OK ' : '  NG ') + m + (x ? '  ' + 
     phoneCall: document.querySelectorAll('#w-editor-content .phone-call').length,
     phoneRec: document.querySelectorAll('#w-editor-content .phone-record').length,
   }));
-  ok(host.copyref > 0, '前提: 添付が描かれている（コアの「🔗 参照」）', host.copyref + '個');
+  ok(host.copyref > 0, '前提: 添付が描かれている（コアの「🔗 IDコピー」）', host.copyref + '個');
   ok((host.analyze > 0) === has('toho'),
      has('toho') ? '下請けが載っている → 「🤖 解析」が出る' : '下請けが無い → 「🤖 解析」は出ない', host.analyze + '個');
   ok((host.reply > 0) === has('comm/mail'),
