@@ -153,6 +153,9 @@ func etagOf(content string) string {
 // 設定が無ければリクエストから組み立てます。本番はリバースプロキシの背後なので
 // `X-Forwarded-Proto` を見ますが、**前段がプロキシのときだけ**採用します
 // （監査記録の接続元と同じ理由——無条件に信じると外から表記を操作できる）。
+// RequestBaseURL は requestBaseURL の拡張向けの入口です（紙や札に刷る QR の住所を、画面の QR と同じ表記にする・2026-10-30）。
+func RequestBaseURL(r *http.Request) string { return requestBaseURL(r) }
+
 func requestBaseURL(r *http.Request) string {
 	if base := strings.TrimRight(os.Getenv("WCMS_BASE_URL"), "/"); base != "" {
 		return base
