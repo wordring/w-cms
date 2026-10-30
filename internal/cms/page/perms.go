@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -33,7 +34,7 @@ import (
 // DefaultMode は新規ページの既定権限（owner=rw, group=rw, other=なし）。認証認可設計.md 3.4節【確定】。
 const DefaultMode = "330"
 
-// DefaultOwner はサイドカーが無いページのフォールバック所有者（admin相当の扱い）。
+// DefaultOwner はサイドカーが無いページのフォールバック所有者です（2026-10-26 から、この名前ではだれも持ち主にならない——OwnedBy）。
 const DefaultOwner = "admin"
 
 // PageMeta はページの属性です。サイドカー <id>.meta.json の正本となります。
@@ -138,6 +139,10 @@ func writeSidecar(id string, p PageMeta, create bool) error {
 func EnsureSidecar(id, owner, group, mode, parent string) error {
 	if _, ok := ReadSidecar(id); ok {
 		return nil
+	}
+	// 在るのに読めない（壊れた）サイドカーを上書きしない（2026-10-30・下の requireSidecar と同じ考え——権限の正本を黙って作り直さない）。
+	if _, err := os.Stat(SidecarPath(id)); err == nil {
+		return fmt.Errorf("ページ %s のサイドカーが読めません（上書きしません）", id)
 	}
 	if mode == "" {
 		mode = DefaultMode
@@ -290,6 +295,10 @@ func GetPerms(pageID int) PageMeta {
 		`SELECT owner, grp, mode, public FROM page_perms WHERE page_id = ?`, pageID,
 	).Scan(&p.Owner, &p.Group, &p.Mode, &public)
 	if err != nil {
+		// 閉じる側に倒す（既定は管理者だけ）。DB が読めなかったときはログに残す——利用者には理由の分からない 403・404 に見える（2026-10-30）。
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("ページ %d の権限を読めませんでした（管理者だけとして扱います）: %v", pageID, err)
+		}
 		return defaultMeta()
 	}
 	p.Public = public != 0
@@ -622,11 +631,27 @@ func AnonymousMayFetch(r *http.Request, pageID, name string) bool {
 		return false
 	}
 	b := string(body)
-	if strings.Contains(b, "/"+pageID+"/"+name) {
+	if mentionsWhole(b, "/"+pageID+"/"+name) {
 		return true
 	}
 	stem := strings.TrimSuffix(name, filepath.Ext(name))
 	return stem != "" && strings.Contains(b, pageID+"-"+stem+`"`)
+}
+
+// mentionsWhole は、body に needle が住所として丸ごと出てくるかを返します（2026-10-30）。後ろに続きがあるもの（/000001/a.pdf に対する
+// /000001/a.pdf.bak）は数えない——名前の前方一致で、本文が指していない添付まで匿名に配っていた。
+func mentionsWhole(body, needle string) bool {
+	for from := 0; ; {
+		i := strings.Index(body[from:], needle)
+		if i < 0 {
+			return false
+		}
+		end := from + i + len(needle)
+		if end == len(body) || strings.ContainsRune("\"'?#&<> \t\r\n", rune(body[end])) {
+			return true
+		}
+		from = end
+	}
 }
 
 // AttachmentVersion は添付の版の印です（書いた時刻のミリ秒・36進）。住所に `?v=<印>` で添えます。

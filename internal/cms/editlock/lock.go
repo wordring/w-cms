@@ -20,7 +20,8 @@
 //   - 無競合なら無期限保持。**待機者が現れてから2分**の猶予で明け渡します
 //     （競合トリガー方式——誰も待っていないのに時間で切らない）。
 //
-// ページの状態を変えるAPIは、この [RequireEditLock] か [Locks].Validate を通ります。
+// 道具が使う保存の口は、この [RequireEditLock] か [Locks].Validate を通ります（画面の保存 /api/sync は通らない——ロックを使わず、
+// ブロック単位で合わせる・2026-10-12）。
 // 検証規約はどちらも同じで、**ロックが無ければ許可**（無競合）、保持者本人で
 // トークンが一致すれば許可、それ以外は 409 です。
 //
@@ -208,7 +209,7 @@ func (m *lockManager) TryAcquire(pageID int, user, token string) AcquireResult {
 		m.broadcast(pageID, now)
 		return AcquireResult{Acquired: true, Token: tk}
 	}
-	if token != "" && l.token == token {
+	if token != "" && l.token == token && l.holder == user { // 名前も見る（Validate・Release と同じ）
 		l.acquiredAt = now
 		return AcquireResult{Acquired: true, Token: l.token}
 	}

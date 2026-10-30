@@ -300,12 +300,76 @@ func (s *Sanitizer) Sanitize(str string) string {
 func (s *Sanitizer) SanitizeReport(str string) (out string, changed bool) {
 	nodes, err := ParseFragment(str)
 	if err != nil {
-		// パースできない入力は安全側に倒して全部落とす（通常は到達しない）。
-		return "", str != ""
+		// 読めない入力は、深すぎる所の枠を外して読み直す（2026-10-30）。読めない理由は入れ子の深さです——x/net の html は開いた要素が
+		// 512 を超えると読むのをやめます。それまでは全部を捨てていたので、1か所が深いだけで、保存した本文や開いたページが丸ごと空になった。
+		// 枠を外しても読めなければ、文字だけを1つの段落に残す。文字は捨てない。
+		if nodes, err = ParseFragment(flattenDeepNesting(str)); err != nil {
+			if nodes, err = ParseFragment("<p>" + html.EscapeString(textOfMarkup(str)) + "</p>"); err != nil {
+				return "", str != ""
+			}
+		}
+		return renderNodes(s.cleanNodes(nodes)), true
 	}
 	before := renderNodes(nodes)
 	out = renderNodes(s.cleanNodes(nodes))
 	return out, out != before
+}
+
+// maxNesting は、読めない入力の枠を外すときに残す入れ子の深さです（x/net の上限 512 より十分に低く）。
+const maxNesting = 256
+
+// voidTags は閉じタグを持たない要素です（入れ子に数えない）。
+var voidTags = map[string]bool{"area": true, "base": true, "br": true, "col": true, "embed": true, "hr": true, "img": true,
+	"input": true, "link": true, "meta": true, "source": true, "track": true, "wbr": true}
+
+// flattenDeepNesting は、入れ子が maxNesting より深い所のタグだけを外した文字列を返します（中の文字は残す）。
+// 閉じていないタグも1段に数えるので、実際より浅くは数えません（読めなかった入力にだけ使うので、多めに外しても困らない）。
+func flattenDeepNesting(str string) string {
+	var sb strings.Builder
+	depth := 0
+	z := html.NewTokenizer(strings.NewReader(str))
+	for {
+		tt := z.Next()
+		if tt == html.ErrorToken {
+			return sb.String()
+		}
+		raw := z.Raw()
+		switch tt {
+		case html.StartTagToken:
+			name, _ := z.TagName()
+			if voidTags[string(name)] {
+				break
+			}
+			depth++
+			if depth > maxNesting {
+				continue
+			}
+		case html.EndTagToken:
+			depth--
+			if depth >= maxNesting {
+				continue
+			}
+			if depth < 0 {
+				depth = 0
+			}
+		}
+		sb.Write(raw)
+	}
+}
+
+// textOfMarkup は、タグを外した文字だけを返します（ブロックの間は改行）。
+func textOfMarkup(str string) string {
+	var sb strings.Builder
+	z := html.NewTokenizer(strings.NewReader(str))
+	for {
+		switch z.Next() {
+		case html.ErrorToken:
+			return strings.TrimSpace(sb.String())
+		case html.TextToken:
+			sb.Write(z.Text())
+			sb.WriteByte('\n')
+		}
+	}
 }
 
 // ParseFragment は本文（body の中身に相当する断片）をノード列としてパースします。

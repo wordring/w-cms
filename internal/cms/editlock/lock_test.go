@@ -212,3 +212,18 @@ func TestAbandonedLockExpires(t *testing.T) {
 		t.Error("⚠ 見回りが寿命を過ぎたロックを捨てません")
 	}
 }
+
+// TestTryAcquireTokenIsNotEnoughForAnotherUser は、取り直しがトークンだけでは通らず、名前も見ることを固定します（2026-10-30——Validate・Release と同じ）。
+func TestTryAcquireTokenIsNotEnoughForAnotherUser(t *testing.T) {
+	m := newLockManager()
+	a := m.TryAcquire(1, "alice", "")
+	if !a.Acquired {
+		t.Fatal("取れるはず")
+	}
+	if b := m.TryAcquire(1, "bob", a.Token); b.Acquired {
+		t.Error("⚠ 別の人が、トークンだけで取り直せました")
+	}
+	if again := m.TryAcquire(1, "alice", a.Token); !again.Acquired {
+		t.Error("本人の取り直しは通るはず")
+	}
+}

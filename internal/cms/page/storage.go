@@ -10,7 +10,8 @@
 //
 // **サイドカーが権限の正本**で、cms.db の page_perms はそこから再生成される派生です。
 // 本文保存APIは権限に一切触れません——「本文を編集できる人が自分の権限を昇格させる」
-// 経路を構造的に断つためで、サイドカーを書き換えるのは権限変更APIとページ新規作成だけです。
+// 経路を構造的に断つためで、サイドカーの権限の欄を書き換えるのは権限変更APIとページ新規作成だけです
+// （ほかの欄は、本文の保存が更新日時〔BumpUpdatedAt〕を、付け替えが親を、並べ替えが並び順を書きます）。
 //
 // 認可の関門（[RequirePageRead]・[RequirePageWrite]・[RequirePageReadOrPublic]・
 // [RequireAdmin]）と、添付の配信（[DataFileHandler]）もここにあります。
@@ -138,7 +139,16 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err := os.Chmod(tmpName, perm); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	// フォルダの項目もディスクへ書き切る（2026-10-30。中身を書き切っても、新しい名前がジャーナルに載る前に電源が落ちると、ファイルごと
+	// 無かったことになる——サーバー機に UPS は無い）。書けなくても、書いたものは在るので誤りにしない（Windows はフォルダを同期できない）。
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 // AttachmentsDirName は添付ファイルの置き場（ページフォルダ内のサブフォルダ）です。
