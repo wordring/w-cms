@@ -5,6 +5,8 @@
 //   ③ 箱の合計が数量と合わないと、見本の欄に断りが出る
 //   ④ プリンターの道具が無い（試験用）ときは「🖨 QL-800 で刷る」が押せず、そう書いてある
 //   ⑤ 部材発注書（自分で作ったページ）は外注加工の行だけが並ぶ・欄は本文に入らない
+//   ⑥ 開いたときは刷れても、押したときに電源が切れていれば、電源を入れるよう知らせて送らない
+//      （/api/label/state の答えは試験のブラウザの中で差し替える・刷る口は止める——本物の札は刷らない）
 //
 // 当て先はトップ直下に自分で作るページ2枚で、最後に消します。本物の札は刷りません（試験用は道具の組に入っていない）。
 // 使い方: WCMS_BASE=https://localhost:9443 node verify-genpin.js
@@ -66,6 +68,27 @@ const order = '<h1>【E2E】部材発注 ' + MARK + '</h1><dl data-type="tags"><
     const printer = await panel.locator('.genpin-printer').textContent();
     const disabled = await panel.locator('.genpin-print').isDisabled();
     check('④ 道具が無ければ刷るボタンは押せない', printer.startsWith('⚠') ? disabled : !disabled, printer);
+
+    // ⑥ 電源が押したときに切れていた
+    let stateCalls = 0;
+    let printCalls = 0;
+    await page.route('**/api/label/state', (route) => {
+      stateCalls++;
+      const on = stateCalls === 1;
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, available: true, connected: on, width_mm: on ? 62 : 0, error: on ? '' : 'QL-800 の電源が切れているか、USB が抜けています' }) });
+    });
+    await page.route('**/api/genpin/print', (route) => { printCalls++; route.fulfill({ contentType: 'application/json', body: '{"success":true,"printed":1}' }); });
+    await page.goto(BASE + '/' + did);
+    await page.locator('.genpin-bar .genpin-go').click();
+    await page.locator('.genpin-panel .genpin-table tr').nth(1).waitFor({ timeout: 15000 });
+    check('⑥ 開いたときは刷れる', (await page.locator('.genpin-printer').textContent()).startsWith('✓') && !(await page.locator('.genpin-print').isDisabled()));
+    await page.locator('.genpin-print').click();
+    await page.waitForFunction(() => (document.querySelector('.genpin-say') || {}).textContent.includes('電源'), null, { timeout: 15000 });
+    const toast = await page.locator('#w-toast-host').textContent();
+    check('⑥ 押したときに電源が切れていれば知らせる', toast.includes('電源ボタンを押して電源を入れて') && (await page.locator('.genpin-printer').textContent()).includes('電源が入っていません'));
+    check('⑥ 電源が切れていれば刷る口へ送らない', printCalls === 0, String(printCalls));
+    await page.unroute('**/api/label/state');
+    await page.unroute('**/api/genpin/print');
 
     const oid = await makePage(page, order);
     ids.push(oid);
