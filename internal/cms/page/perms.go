@@ -642,6 +642,16 @@ func AnonymousMayFetch(r *http.Request, pageID, name string) bool {
 	return stem != "" && strings.Contains(b, pageID+"-"+stem+`"`)
 }
 
+// InheritablePerms は、ページ parentID の子が継ぐ group と mode を返します。読むのは正本（サイドカー）です（2026-10-30。派生の DB から
+// 読んでいたので、作り直しの途中や親の行が無いときに既定へ倒れ、届いた記録や機械が作る書類がグループの人に読めないページになった）。
+func InheritablePerms(parentID int) (group, mode string) {
+	if m, ok := ReadSidecar(FormatID(parentID)); ok && m.Mode != "" {
+		return m.Group, m.Mode
+	}
+	p := GetPerms(parentID)
+	return p.Group, p.Mode
+}
+
 // mentionsWhole は、body に needle が住所として丸ごと出てくるかを返します（2026-10-30）。後ろに続きがあるもの（/000001/a.pdf に対する
 // /000001/a.pdf.bak）は数えない——名前の前方一致で、本文が指していない添付まで匿名に配っていた。
 func mentionsWhole(body, needle string) bool {

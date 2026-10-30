@@ -108,6 +108,8 @@ type RequiredPageStatus struct {
 	// テンプレート置き場そのものはテンプレートの入れ物なので、テンプレートは要りません。
 	Template   string `json:"template,omitempty"`
 	NoTemplate bool   `json:"no_template,omitempty"`
+	// TemplateProblem は、テンプレートが無いのではなく引けないときの理由です（2枚ある など・2026-10-30）。
+	TemplateProblem string `json:"template_problem,omitempty"`
 }
 
 // IsRequiredPageTitle は、その題が**登録された置き場**のものかを返します。
@@ -159,6 +161,9 @@ func RequiredPageStatuses() []RequiredPageStatus {
 				st.Template = tid
 			} else {
 				st.NoTemplate = true
+				if !errors.Is(err, ErrNoBoxTemplate) {
+					st.TemplateProblem = err.Error()
+				}
 			}
 		}
 		out = append(out, st)

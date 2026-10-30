@@ -182,7 +182,8 @@ func loadVAPID() (*ecdsa.PrivateKey, error) {
 	if err := os.MkdirAll(pushDir(), 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+	// 書き切ってから置く（2026-10-30。欠けた鍵が残ると「在る」ので作り直さず、人が消すまで通知が全部止まった）。
+	if err := page.WriteFileAtomic(path, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), 0o600); err != nil {
 		return nil, err
 	}
 	vapidKey.key = k

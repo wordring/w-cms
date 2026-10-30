@@ -44,14 +44,16 @@ func CreateChildPage(parentID, owner, bodyHTML string) (string, error) {
 	safeHTML := fillFileViewNamesAs(owner, Sanitize(bodyHTML))
 	dir := page.GetPageDir(newID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		forgetReservedPage(newID)
 		return "", err
 	}
 	if err := page.WriteFileAtomic(page.BodyPath(newID), []byte(safeHTML), 0644); err != nil {
+		forgetReservedPage(newID)
 		return "", err
 	}
 
-	pp := page.GetPerms(parentInt)
-	if err := page.EnsureSidecar(newID, owner, pp.Group, pp.Mode, parentID); err != nil {
+	group, mode := page.InheritablePerms(parentInt)
+	if err := page.EnsureSidecar(newID, owner, group, mode, parentID); err != nil {
 		log.Printf("取り込みページのサイドカー作成に失敗 page=%s: %v", newID, err)
 	}
 	if err := SyncIndex(newID, safeHTML); err != nil {

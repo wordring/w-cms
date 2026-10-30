@@ -35,7 +35,7 @@ import (
 // 取り込みの UpdatePage（ext/comm）も知らせません（作った直後のページで、まだ誰も開いていないため）。
 //
 // 編集ロック（editlock）の SSE とは別の流れです——あちらは編集権を持つ人・待つ人のための
-// もので write 権限が要り、こちらは読める人なら誰でも購読できます。2026-10-12 から画面は
+// もので write 権限が要り、こちらは読める人なら誰でも購読できます（公開のページを開いている、read の無いログイン済みの人も・2026-10-30）。2026-10-12 から画面は
 // 編集ロックを取らないので、あちらの SSE（/api/lock-events）は、いまは誰も張っていません
 // （道具は /api/lock で握るだけです）。
 //
@@ -267,16 +267,15 @@ const pageEventsKeepalive = 25 * time.Second
 // pageEventsWriteTimeout は、知らせ1つを書き終えるまでの期限です（読まない相手で止まり続けない）。
 const pageEventsWriteTimeout = 30 * time.Second
 
-// atoiOr0 はページ番号を数にします（読めなければ 0——0 のページは無いので、読めないと判定される）。
 // PageEventsAPIHandler は、ページの更新を SSE（text/event-stream）で知らせます。
-// GET /api/page-events?id= 。対象ページの read 権限を要求します。
+// GET /api/page-events?id= 。ページを開ける人（read か公開）を要求します——流しているあいだの確かめ（stillReadable の CanView）と同じ線。
 func PageEventsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	id, ok := page.NormalizeID(r.URL.Query().Get("id"))
 	if !ok {
 		http.Error(w, "ページIDが不正です", http.StatusBadRequest)
 		return
 	}
-	if !page.RequirePageRead(w, r, id) {
+	if !page.RequirePageReadOrPublic(w, r, id) {
 		return
 	}
 	flusher, ok := w.(http.Flusher)

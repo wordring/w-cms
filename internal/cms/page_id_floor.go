@@ -1,11 +1,15 @@
 package cms
 
 import (
+	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -16,7 +20,9 @@ import (
 // リンク・ファイル表示が指す名前なので、使い回すと、消したページを指していた所が、関係の無い新しいページを開きます。
 //
 // 新しい番号は「いまのページ」と「ごみ箱のページ」のどちらよりも大きくします。ごみ箱は data/trash/<2桁>/<番号>[-n] の形。
-// 索引（cms.db）は作り直せるので、番号の上限を DB には持たない——ごみ箱のフォルダが正本です。
+// 索引（cms.db）は作り直せるので、番号の上限を DB には持たない——ごみ箱のフォルダと、data/page_id_floor.txt が正本です。
+// ⚠ ごみ箱を片付けると、いちばん大きい番号のフォルダが消えて、起こし直したあとにその番号をまた配っていました（2026-10-30）。
+// そこで、覚えた上限をファイルにも残します。
 // ─────────────────────────────────────────────────────────────────────────
 
 var trashFloor struct {
@@ -29,12 +35,37 @@ var trashFloor struct {
 func trashHighWater() int {
 	trashFloor.Lock()
 	defer trashFloor.Unlock()
-	if !trashFloor.loaded {
-		trashFloor.loaded = true
-		trashFloor.n = scanTrashHighWater()
-	}
+	loadTrashFloorLocked()
 	return trashFloor.n
 }
+
+// loadTrashFloorLocked は、初めの1回だけ、フォルダと残した上限から番号の上限を決めます（trashFloor を持ったまま呼ぶ）。
+func loadTrashFloorLocked() {
+	if trashFloor.loaded {
+		return
+	}
+	trashFloor.loaded = true
+	trashFloor.n = scanTrashHighWater()
+	kept := 0
+	if b, err := os.ReadFile(floorFilePath()); err == nil {
+		kept, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+	}
+	if kept > trashFloor.n {
+		trashFloor.n = kept
+	} else if trashFloor.n > kept {
+		saveTrashFloorLocked()
+	}
+}
+
+// saveTrashFloorLocked は番号の上限をファイルに残します（残せなくても、動いているあいだは覚えている）。
+func saveTrashFloorLocked() {
+	os.MkdirAll(filepath.Dir(floorFilePath()), 0o755)
+	if err := page.WriteFileAtomic(floorFilePath(), []byte(strconv.Itoa(trashFloor.n)), 0o644); err != nil {
+		log.Printf("ページ番号の上限を残せませんでした: %v", err)
+	}
+}
+
+func floorFilePath() string { return database.DataPath("page_id_floor.txt") }
 
 // noteTrashed は、ページ id をごみ箱へ移したことを、番号の上限に入れます。
 func noteTrashed(id string) {
@@ -44,8 +75,10 @@ func noteTrashed(id string) {
 	}
 	trashFloor.Lock()
 	defer trashFloor.Unlock()
-	if trashFloor.loaded && n > trashFloor.n {
+	loadTrashFloorLocked()
+	if n > trashFloor.n {
 		trashFloor.n = n
+		saveTrashFloorLocked()
 	}
 }
 

@@ -248,6 +248,8 @@ async function loadRequiredPages() {
         a3.href = '/' + p.template;
         a3.textContent = p.template;
         tp.appendChild(a3);
+      } else if (p.template_problem) {
+        tp.textContent = '⚠ ' + p.template_problem;
       } else if (p.no_template) {
         tp.textContent = '⚠ テンプレートがありません——テンプレート置き場の下に、題が「' + p.title +
           '」のテンプレートを作ってください（無いと' + (p.exists ? '消したときに作り直せません' : '作れません') + '）';

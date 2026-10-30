@@ -370,6 +370,7 @@ func watchFaxJob(job string) {
 		return
 	}
 	defer faxWatching.Delete(job)
+	defer cms.RecoverBackground("FAX の見張り " + job) // 落ちても w-cms ごと止めない（2026-10-30）
 	j, ok := sentFaxJobOf(job)
 	if !ok || j.Done || j.Record == "" {
 		return

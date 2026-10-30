@@ -166,6 +166,7 @@ type formulaValue struct {
 type fPos struct{ r, c int }
 
 type tableEval struct {
+	sumCells int // 合計が見たセルの数（maxSumCells まで）
 	rows  [][]string
 	col   map[string]int // 見出しの言葉 → 列
 	row   map[string]int // 行の先頭の言葉 → 行
@@ -380,6 +381,9 @@ func (n fBin) eval(e *tableEval, at fPos) formulaValue {
 }
 
 func (n fSum) eval(e *tableEval, at fPos) formulaValue {
+	if e.sumCells > maxSumCells {
+		return formulaValue{err: "この表は合計が多すぎて計算できません（合計の式を減らしてください）"}
+	}
 	var cells []fPos
 	vertical := true // 縦に足すか（理由の言い方を決める）
 	switch n.kind {
@@ -430,6 +434,7 @@ func (n fSum) eval(e *tableEval, at fPos) formulaValue {
 			}
 		}
 	}
+	e.sumCells += len(cells)
 	sum, any := 0.0, false
 	for _, p := range cells {
 		if p == at {
@@ -638,6 +643,10 @@ func parseFormula(s string) (fNode, error) {
 const (
 	maxFormulaBytes = 4000
 	maxFormulaDepth = 100
+	// maxSumCells は、1つの表の合計の式が見るセルの数の上限です（2026-10-30）。全部の行に `合計(上)` を書くと、行の数の2乗に増えます。
+	// 式は保存のたび（錠の中）と表示のたびに走るので、20 万行の表でそのページの保存が止まり、CPU を1つ食い潰しました。
+	// 2000 行の全部に書いても届く高さです。
+	maxSumCells = 2_000_000
 )
 
 type fParser struct {

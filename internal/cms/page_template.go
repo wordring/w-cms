@@ -549,12 +549,21 @@ func (b DraftBlock) FillTable(caption string, columns []string, rows [][]string)
 		return nil, nil
 	}
 	for _, tr := range tableRows(t) {
-		if tr != head {
+		// 足元の行（合計など）は残す（2026-10-30。それまでは一緒に消えた）。
+		if tr != head && tr.Parent.Data != "tfoot" {
 			tr.Parent.RemoveChild(tr)
 		}
 	}
 	made := make([]*html.Node, 0, len(rows))
 	after := head
+	// 見出しの行が <thead> にあるとき、データの行は <tbody> へ入れる（2026-10-30。それまでは <thead> に入った）。
+	var body *html.Node
+	if head.Parent.Data == "thead" {
+		if body = directChild(t, "tbody"); body == nil {
+			body = newElement("tbody")
+			insertAfter(head.Parent, body)
+		}
+	}
 	for _, row := range rows {
 		cells := make([]string, len(labels))
 		for ci, col := range columns {
@@ -570,8 +579,12 @@ func (b DraftBlock) FillTable(caption string, columns []string, rows [][]string)
 			}
 			tr.AppendChild(td)
 		}
-		insertAfter(after, tr)
-		after = tr
+		if body != nil {
+			body.AppendChild(tr)
+		} else {
+			insertAfter(after, tr)
+			after = tr
+		}
 		made = append(made, tr)
 	}
 	return made, nil

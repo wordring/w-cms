@@ -144,15 +144,23 @@ func StartAutocompleteSurvey() {
 			if cfg == nil || !autocompleteDue(time.Now(), time.Duration(cfg.IdleMinutes)*time.Minute) {
 				continue
 			}
-			if err := SurveyAutocomplete(); err != nil {
-				log.Printf("オートコンプリートの候補を数えられません: %v", err)
-			}
+			func() {
+				defer RecoverBackground("オートコンプリートの数え直し")
+				if err := SurveyAutocomplete(); err != nil {
+					log.Printf("オートコンプリートの候補を数えられません: %v", err)
+				}
+			}()
 		}
 	}()
 }
 
+var autoSurveyMu sync.Mutex
+
 // SurveyAutocomplete は表のセルとタグの値を数えて、定型の欄の候補を置き直します（data/autocomplete.json にも書く）。
 func SurveyAutocomplete() error {
+	// 1本ずつ通す（2026-10-30。見張りと管理画面の口が重なると、結果の書き出しが前後した）。
+	autoSurveyMu.Lock()
+	defer autoSurveyMu.Unlock()
 	cfg := AutocompleteConfig()
 	if cfg == nil {
 		return nil

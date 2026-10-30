@@ -33,6 +33,9 @@ type PageSummary struct {
 // IDが得られ、ID衝突（[docs/考察/【考察】同時編集の競合対策.md] シナリオE）を防ぎます。
 // parent は親ページID（トップレベルは無効値 sql.NullInt64{}）。属性の正本はサイドカーです。
 func reserveNewPageID(parent sql.NullInt64) (string, error) {
+	// DB の作り直しが表を消しているあいだは待つ（2026-10-30。保存の索引づけと同じ関門・その一瞬に作ると 500 だった）。
+	rebuildGate.RLock()
+	defer rebuildGate.RUnlock()
 	// 番号は、いまのページとごみ箱のページのどちらよりも大きくする（page_id_floor.go——消したページの番号を使い回さない）。
 	// 1つの文の中で数えて入れるので、同時に作っても重ならない（書き込みは SQLite が1つずつ通す）。
 	floor := trashHighWater()
@@ -65,6 +68,13 @@ func reserveNewPageID(parent sql.NullInt64) (string, error) {
 		return id, nil
 	}
 	return "", errors.New("新しいページの番号を決められません（ディスクのページと重なります）")
+}
+
+// forgetReservedPage は、番号を取ったのに本文を書けなかったページの行を消します（本文の無い行を残さない・2026-10-30）。
+func forgetReservedPage(id string) {
+	if n, err := strconv.Atoi(id); err == nil {
+		database.DB.Exec(`DELETE FROM pages WHERE id = ? AND file_path = ''`, n)
+	}
 }
 
 // ChildPagesAPIHandler は指定された親ページIDを持つ子ページの一覧を返します。
@@ -120,6 +130,9 @@ func visibleChildren(user *auth.User, parentIDInt int) ([]PageSummary, error) {
 				pages = append(pages, p)
 			}
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	sortChildren(pages)
 	return pages, nil
@@ -213,6 +226,16 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// トップ直下の置き場の題は1枚だけ（2026-10-30）。作り終えるまで、置き場を作るほかの口を待たせる。
+	if parentID.Int64 == 0 {
+		folderMu.Lock()
+		defer folderMu.Unlock()
+		if why, bad := boxTitleRefusal("", html); bad {
+			http.Error(w, why, http.StatusConflict)
+			return
+		}
+	}
+
 	// 2. ページレコードを原子的にINSERTしてIDを採番する（reserveNewPageID）。
 	// 親が在って消されかけていないことを確かめてから、行を足す（tree_lock.go・2026-10-26）。
 	var newID string
@@ -238,6 +261,7 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 4. HTMLファイルを物理保存
 	os.MkdirAll(page.GetPageDir(newID), 0755)
 	if err := page.WriteFileAtomic(page.BodyPath(newID), []byte(html), 0644); err != nil {
+		forgetReservedPage(newID)
 		http.Error(w, "Failed to write file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -252,8 +276,7 @@ func NewPageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	inheritGroup, inheritMode := "", ""
 	if parentID.Valid {
-		pp := page.GetPerms(int(parentID.Int64))
-		inheritGroup, inheritMode = pp.Group, pp.Mode
+		inheritGroup, inheritMode = page.InheritablePerms(int(parentID.Int64))
 	}
 	// サイドカーは権限・親の正本。失敗すると作成者が自分のページを触れなくなるため
 	// （page.GetPerms が admin 所有の既定へフェイルクローズする）、原因追跡用にログへ残す。
@@ -348,11 +371,19 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 	if parentID == childID {
 		return "自分自身を親ページに指定できません", http.StatusBadRequest
 	}
+	if childID == 0 {
+		return "トップページは動かせません", http.StatusForbidden
+	}
 	if parentCreatesCycle(childID, parentID) {
 		return "自分の子孫ページを親に指定できません（循環します）", http.StatusBadRequest
 	}
 	if !page.GetPerms(parentID).CanWrite(user) {
 		return "新しい親ページへの書き込み権限がありません", http.StatusForbidden
+	}
+	// 公開の印のあるページを公開の親の下へ動かすと、実効公開になる。公開を決められるのは持ち主か管理者だけ（2026-10-30。それまでは
+	// 権限の口だけが見ていて、書ける人が動かすだけで公開できた）。
+	if cur := page.GetPerms(childID); cur.Public && !user.IsAdmin && !cur.OwnedBy(user) && !page.EffectivePublic(childID) && page.EffectivePublic(parentID) {
+		return "公開の印のあるページを公開のページの下へ動かせるのは、持ち主か管理者だけです", http.StatusForbidden
 	}
 	// いまの親から外すのも、いまの親の中身を変えること（2026-10-26。それまでは新しい親だけを見ていて、書けない置き場から
 	// ページを持ち出せた——【考察】コードの矛盾 §4.2）。親の無いページ（トップ）は見ない。
@@ -374,9 +405,14 @@ func validateParentChange(user *auth.User, childID int, newParentStr string) (st
 // （親の付け替えでテンプレート領域へ出入りしたときに使う）。
 func resyncSubtree(rootID string) {
 	queue := []string{rootID}
+	seen := map[string]bool{} // 木が壊れて輪になっていても終わるように（2026-10-30）
 	for len(queue) > 0 {
 		id := queue[0]
 		queue = queue[1:]
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
 		if content, err := os.ReadFile(page.BodyPath(id)); err == nil {
 			if err := SyncIndex(id, string(content)); err != nil {
 				log.Printf("親の付け替え後の再同期に失敗 page=%s: %v", id, err)
@@ -439,8 +475,8 @@ func SetParentAPIHandler(w http.ResponseWriter, r *http.Request) {
 // 共有します——整理は「解析で生まれたページを顧客名／装置名称の下へ移す」ために
 // 同じことをする必要があり、**作法を2箇所に持つと必ず片方が古くなる**ため。
 //
-// 権限と編集ロックの確認は**呼ぶ側の責任**です（AppendToPageBody と同じ線引き。
-// エディタからの操作はロックが要り、整理は作った直後のページを動かすので要らない）。
+// ここが見るのは新旧の親への write・拡張の確かめ・公開・輪です。**動かすページ自身の write と編集ロックの確認は呼ぶ側の責任**です
+// （AppendToPageBody と同じ線引き。エディタからの操作はロックが要り、整理は作った直後のページを動かすので要らない）。
 // （AppendToPageBody はいまは無く、同じ線引きは append_page.go の冒頭にあります。編集ロックは
 // 2026-10-12 から画面が取らないので、道具が握るとき以外は素通りです。）
 func SetPageParent(user *auth.User, id, newParent string) (parentStore, updatedAt string, err error) {
@@ -456,8 +492,22 @@ func SetPageParent(user *auth.User, id, newParent string) (parentStore, updatedA
 		}
 		// 新しい親が在って消されかけていないことを、木の見張りの中で確かめてから付け替える（tree_lock.go・2026-10-26）。
 		if pid, e := strconv.Atoi(newParent); e == nil {
+			// トップ直下へ動かすときは、置き場の題が2枚にならないこと（2026-10-30）。置き場を作るほかの口を待たせて確かめる。
+			if pid == 0 {
+				folderMu.Lock()
+				defer folderMu.Unlock()
+				if body, err := ReadPageBody(id); err == nil {
+					if why, bad := boxTitleRefusal(id, body); bad {
+						return "", "", errors.New(why)
+					}
+				}
+			}
 			var res struct{ store, at string }
 			err := withLiveParent(pid, func() error {
+				// 輪の確かめは見張りの中でもう一度（2026-10-30。A を B の下へ・B を A の下へ、が同時に来ると、どちらも上の確かめを通って輪ができた）。
+				if parentCreatesCycle(childID, pid) {
+					return errors.New("自分の子孫ページを親に指定できません（循環します）")
+				}
 				var err error
 				res.store, res.at, err = setPageParentRows(childID, id, newParent)
 				return err

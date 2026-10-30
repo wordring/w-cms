@@ -86,7 +86,7 @@ func RobotsHandler(w http.ResponseWriter, r *http.Request) {
 	base := requestBaseURL(r)
 	// アプリの口（/api/・/login）はクロールさせない。中身が無いか、
 	// 認証を要求するだけで検索結果に載る価値が無い。
-	// 添付（/data/）は本文の画像がここから配られるので閉じない。
+	// 添付（/<ページID>/<ファイル名>）は本文の画像がここから配られるので閉じない。
 	w.Write([]byte("User-agent: *\n" +
 		"Disallow: /api/\n" +
 		"Disallow: /login\n" +
@@ -110,6 +110,10 @@ func publicPages() []publicPageEntry {
 	if database.DB == nil {
 		return nil // 索引が使えないなら何も案内しない（フェイルクローズ）
 	}
+	// トップが非公開なら、どのページも実効公開にならない（2026-10-30。匿名が叩くたびに全ページを調べていた）。
+	if !page.EffectivePublic(0) {
+		return nil
+	}
 	rows, err := database.DB.Query(`SELECT id, COALESCE(updated_at, '') FROM pages ORDER BY id`)
 	if err != nil {
 		return nil
@@ -126,6 +130,9 @@ func publicPages() []publicPageEntry {
 		if err := rows.Scan(&rw.id, &rw.updatedAt); err == nil {
 			all = append(all, rw)
 		}
+	}
+	if rows.Err() != nil {
+		return nil
 	}
 
 	var out []publicPageEntry

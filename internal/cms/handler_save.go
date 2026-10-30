@@ -239,6 +239,12 @@ func refuseDuplicateBoxTitle(id, htmlBody string) (string, bool) {
 	if !ok || meta.ParentID != TopPageID {
 		return "", false // トップ直下でなければ関係ない
 	}
+	return boxTitleRefusal(id, htmlBody)
+}
+
+// boxTitleRefusal は、本文 htmlBody のページをトップ直下に置くと、置き場の題が2枚になるなら理由を返します（id は自分・作る前は空）。
+// 保存・版を戻す・新しいページ・親の付け替えの4つの口が通ります（2026-10-30。それまでは前の2つだけで、作る口と動かす口からは2枚目ができた）。
+func boxTitleRefusal(id, htmlBody string) (string, bool) {
 	root, err := html.Parse(strings.NewReader(htmlBody))
 	if err != nil {
 		return "", false
@@ -258,7 +264,7 @@ func refuseDuplicateBoxTitle(id, htmlBody string) (string, bool) {
 
 // syncBody は書いた本文で索引を同期します（失敗は応答に書いて false）。
 func syncBody(w http.ResponseWriter, id, html string) bool {
-	if err := syncIndexOrRetry(id, html); err != nil {
+	if err := SyncIndex(id, html); err != nil {
 		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
 		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
 		return false

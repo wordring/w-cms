@@ -38,3 +38,11 @@ func StartBackgroundTasks() {
 		}()
 	}
 }
+
+// RecoverBackground は、裏の goroutine の panic を拾ってログに書きます（`defer cms.RecoverBackground("名前")` で使う）。
+// goroutine の panic はサーバーごと落とすので、外から届いたものを扱う裏の仕事に付けます（2026-10-30）。
+func RecoverBackground(name string) {
+	if p := recover(); p != nil {
+		log.Printf("裏の仕事 %s が落ちました: %v", name, p)
+	}
+}

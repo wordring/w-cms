@@ -58,7 +58,9 @@ const (
 )
 
 // linkPathRe はページを指す道（/NNNNNN・/NNNNNN/添付・/NNNNNN#ブロック）です。
-var linkPathRe = regexp.MustCompile(`^/([0-9]{6})(?:/([^/?#]+))?(?:[?#](.*))?$`)
+// 住所つき（https://…/NNNNNN）・古い添付の住所（/data/master/NN/NNNNNN/files/添付）・末尾の / も数えます（2026-10-30。数えないと、消す前の
+// 確かめが「指されていない」と答えた）。住所の中の名前は見ません——ほかのサイトの同じ形の住所も数えますが、消す前に多めに知らせるだけです。
+var linkPathRe = regexp.MustCompile(`^(?:https?://[^/]+)?(?:/data/master/[0-9]{2})?/([0-9]{6})(?:/(?:files/)?([^/?#]+))?/?(?:[?#](.*))?$`)
 
 // dataRefRe は印の参照（NNNNNN-xxxx）です。
 var dataRefRe = regexp.MustCompile(`^([0-9]{6})(?:-([A-Za-z0-9]+))?$`)

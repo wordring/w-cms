@@ -275,8 +275,8 @@ func RegisterContactResolver(r ContactResolver) {
 // 「利用者が、書いた通りに入っていると信じられる」ための条件だからです。
 //
 // 認可は解決係の中で見ます（読めない相手は見つからない扱い）。
-// ここは**匿名でも通る描画経路**なので、利用者はまだ分かりません——
-// リンクを踏んだ先で通常の関門が判定します（`linkRefDD` と同じ考え方）。
+// ここは**匿名でも通る描画経路**です。見る人は v で分かるので、読めない相手はリンクにしません（2026-10-26 の refViewer）。
+// 踏んだ先でも通常の関門が判定します（`linkRefDD` と同じ考え方）。
 func linkEmailDD(v refViewer, dd *html.Node) bool {
 	if contactResolver == nil {
 		return false // アドレス帳を持たない構成——素のまま出す
@@ -306,7 +306,7 @@ func linkEmailDD(v refViewer, dd *html.Node) bool {
 		dd.AppendChild(&html.Node{Type: html.TextNode, Data: before})
 	}
 	a := &html.Node{Type: html.ElementNode, Data: "a"}
-	// 相手のページの題は出さない（title 属性に入れていた）——解決係は見ている人を知らないので、読めない人や匿名の公開
+	// 相手のページの題は出さない（title 属性に入れていた）——当時の解決係は見ている人を知らないので、読めない人や匿名の公開
 	// ページの閲覧者にも題が見えた（2026-10-22 の見直し）。リンクの先は、踏んだ先の関門が見せ分ける。
 	_ = title
 	a.Attr = []html.Attribute{

@@ -136,7 +136,7 @@ func startPhotoShrinkAll(user *auth.User, list []photoCandidate) bool {
 	auth.Audit(user.Username, "attach.shrink-all.start", fmt.Sprintf("%d 枚", len(list)))
 	go func() {
 		for _, c := range list {
-			res, err := shrinkPhotoFile(user, c.PageID, c.Stored)
+			res, err := shrinkPhotoGuarded(user, c.PageID, c.Stored)
 			photoJobMu.Lock()
 			photoJob.Done++
 			switch {
@@ -233,4 +233,14 @@ func PhotoShrinkAllAPIHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// shrinkPhotoGuarded は shrinkPhotoFile で、落ちたら誤りとして返します（2026-10-30。外から届いた写真を読むので、1枚で w-cms ごと止めない）。
+func shrinkPhotoGuarded(user *auth.User, pageID, stored string) (res photoShrinkResult, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("落ちました: %v", p)
+		}
+	}()
+	return shrinkPhotoFile(user, pageID, stored)
 }

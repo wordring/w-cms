@@ -389,7 +389,7 @@ func RevertToVersion(pageID, version, author string) error {
 	}
 	// 開いている人へ知らせる——索引と版まで済ませてから（page_events.go）。
 	defer notifyPageUpdated(pageID, author, updatedAt)
-	if err := syncIndexOrRetry(pageID, safeHTML); err != nil {
+	if err := SyncIndex(pageID, safeHTML); err != nil {
 		return err
 	}
 	// 戻した内容も版として残す（履歴が「いま何が正本か」で終わるように）。

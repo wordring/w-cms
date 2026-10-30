@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"errors"
 	"database/sql"
 	"fmt"
 	"log"
@@ -20,7 +21,19 @@ import (
 // SyncIndex はHTMLファイルを解析し、その結果をSQLiteのインデックス用テーブルに保存します。
 // コア（pages / page_perms）を同期したあと、配送係（walk.go）が本文を1回歩いて
 // 観察係（汎用索引 vocab_index）へ要素を届けます。
+//
+// 失敗したら（表の写しだけの失敗も）、少し待って直し直します（index_retry.go）。
 func SyncIndex(id string, htmlContent string) error {
+	var tablesErr error
+	err := syncPageIndex(id, htmlContent, &tablesErr)
+	if err != nil || tablesErr != nil {
+		scheduleIndexRetry(id)
+	}
+	return err
+}
+
+// syncPageIndex は SyncIndex の中身です。表の写しの失敗は tablesErr に入れます（誤りとしては返さない）。
+func syncPageIndex(id string, htmlContent string, tablesErr *error) error {
 	// DB の作り直しが表を消して作り直しているあいだは待つ（rebuildGate）。
 	rebuildGate.RLock()
 	defer rebuildGate.RUnlock()
@@ -174,9 +187,10 @@ func SyncIndex(id string, htmlContent string) error {
 
 	// 手順6: 表の写し（data/tables.db・キャプションの名前の表）——tables_db.go。
 	// ⚠ **派生なので、失敗しても保存は止めません**（運用者が SQL の道具で書き込みロックを
-	// 握っていることがある）。ログに残し、DB再構築で直ります。
+	// 握っていることがある）。ログに残し、少し待って直し直します（index_retry.go）。
 	if err := syncCaptionTables(id, pageIDInt, root); err != nil {
 		log.Printf("表の写し（tables.db）の同期に失敗 page=%s: %v", id, err)
+		*tablesErr = err
 	}
 	return nil
 }
@@ -187,6 +201,9 @@ func SyncIndex(id string, htmlContent string) error {
 // 自分も SyncIndex を呼ぶので、その前に開ける（閉じたまま呼ぶと止まる）。
 var rebuildGate sync.RWMutex
 
+// rebuildMu は、DB の作り直しを1本ずつ通すロックです。
+var rebuildMu sync.Mutex
+
 // RebuildDatabase は、HTMLファイル群（data/master配下）を正として、
 // データベースのインデックスを完全に再構築します。
 //
@@ -195,6 +212,11 @@ var rebuildGate sync.RWMutex
 // 削除せず、接続を開いたまま実行することで、Windowsでのファイルロックや
 // リビルド中の他リクエストとの競合を避けています。処理は冪等です。
 func RebuildDatabase() error {
+	// 1本ずつ通す（2026-10-30。二度押すと、2本目が1本目の歩きの途中で表を消した）。
+	if !rebuildMu.TryLock() {
+		return errors.New("いま DB を作り直しています。終わってからもう一度押してください")
+	}
+	defer rebuildMu.Unlock()
 	// 0. 設定を読み直す。**語→型の推論辞書がここに入っている**ので、先に読まないと
 	//    「辞書へ語を足してDB再構築」（ユーザー決定 2026-08-30）が効かない
 	//    ——再起動なしで反映されるのは、この1行のおかげ。
@@ -488,16 +510,25 @@ func resyncPages(since time.Time) (int, error) {
 // そのあとコアテーブル（pages / page_perms）の行を消します
 // （SyncIndex は pages を upsert するため、順序はこの通りでなければなりません）。
 func PurgePageIndex(id string) error {
-	if err := SyncIndex(id, ""); err != nil {
-		return err
+	tablesErr, err := purgePageIndex(id)
+	if err != nil || tablesErr != nil {
+		scheduleIndexRetry(id) // 本文はもうごみ箱にあるので、索引だけが残っている——直し直す（index_retry.go）
+	}
+	return err
+}
+
+// purgePageIndex は PurgePageIndex の中身です（表の写しの失敗は tablesErr に返す）。
+func purgePageIndex(id string) (tablesErr, err error) {
+	if err := syncPageIndex(id, "", &tablesErr); err != nil {
+		return tablesErr, err
 	}
 	pageID, err := strconv.Atoi(id)
 	if err != nil {
-		return err
+		return tablesErr, err
 	}
 	if _, err := database.DB.Exec(`DELETE FROM page_perms WHERE page_id = ?`, pageID); err != nil {
-		return err
+		return tablesErr, err
 	}
 	_, err = database.DB.Exec(`DELETE FROM pages WHERE id = ?`, pageID)
-	return err
+	return tablesErr, err
 }

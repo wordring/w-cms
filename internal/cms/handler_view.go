@@ -84,6 +84,8 @@ func LoadAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// 見る人の権限で描いた本文なので、手元にも途中にも残させない（2026-10-30。ページの応答と同じ。一律の no-store が掛からない口）。
+	w.Header().Set("Cache-Control", "no-store")
 	w.Write([]byte(body))
 }
 
@@ -120,8 +122,11 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 			page.WriteFileAtomic(htmlPath, []byte(defaultHTML), 0644)
 			// トップページは全員が閲覧できるよう other に read を付与（owner rw / other r）。
 			// 書き込みは admin（owner）のみ。
-			if err := page.WriteSidecar("000000", page.PageMeta{Owner: page.DefaultOwner, Mode: "302"}); err != nil {
-				log.Printf("トップページのサイドカー作成に失敗しました: %v", err)
+			// 在るサイドカーは上書きしない（2026-10-30。本文だけが無いときに、権限まで初めの形へ戻した）。
+			if _, err := os.Stat(page.SidecarPath("000000")); os.IsNotExist(err) {
+				if err := page.WriteSidecar("000000", page.PageMeta{Owner: page.DefaultOwner, Mode: "302"}); err != nil {
+					log.Printf("トップページのサイドカー作成に失敗しました: %v", err)
+				}
 			}
 			if err := SyncIndex("000000", defaultHTML); err != nil {
 				log.Printf("トップページの同期に失敗しました: %v", err)

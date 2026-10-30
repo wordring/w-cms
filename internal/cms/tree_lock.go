@@ -80,7 +80,7 @@ func withLiveParent(parent int, add func() error) error {
 	if parent == 0 {
 		return add() // トップページは消せない
 	}
-	// 在るかは、ページのフォルダ（正本）か索引の行のどちらかで見る（ごみ箱へ移すとフォルダが無くなる・消し終えると行も無くなる）。
+	// 在るかは、ページのフォルダ（正本）か索引の行のどちらかで見る（ごみ箱へ移すとフォルダが無くなる・消し終えると行も無くなる——行を消せなかったときは、index_retry.go が直し直すまで行が残る）。
 	var exists bool
 	if fi, err := os.Stat(page.GetPageDir(page.FormatID(parent))); err == nil && fi.IsDir() {
 		exists = true

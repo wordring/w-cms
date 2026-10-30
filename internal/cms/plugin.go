@@ -274,7 +274,7 @@ func WalkElements(root *html.Node, fn func(*html.Node)) {
 
 // TagValue はページ横断メタ（可変タグ）から名前 tagName の値を返します。
 // 同名タグが複数ある場合は最初の1つ。見つからなければ空文字列。
-// 読む形式はページのタグ（セクション外の素の dl。属性 data-type="tags" も互換で可）の
+// 読む形式は `<dl data-type="tags">` の中の（素の dl は読みません）
 // <dt>{tagName}</dt><dd>値</dd>
 // （鍵は dt の表示文字）。
 func TagValue(root *html.Node, tagName string) string {

@@ -47,16 +47,23 @@ func renameTagValue(body, name, from, to string) string {
 	pair := func(v string) *regexp.Regexp {
 		return regexp.MustCompile(`(` + dt + `\s*)<dd>\s*` + regexp.QuoteMeta(stdhtml.EscapeString(v)) + `\s*</dd>`)
 	}
-	old := pair(from)
-	if !old.MatchString(body) {
-		return body
-	}
-	if pair(to).MatchString(body) {
-		// 新しい値の組が既にある——古い組（dt と dd）を消す。
-		return regexp.MustCompile(dt+`\s*<dd>\s*`+regexp.QuoteMeta(stdhtml.EscapeString(from))+`\s*</dd>`).ReplaceAllString(body, "")
-	}
-	return old.ReplaceAllString(body, `${1}<dd>`+strings.ReplaceAll(stdhtml.EscapeString(to), "$", "$$")+`</dd>`)
+	old, next := pair(from), pair(to)
+	gone := regexp.MustCompile(dt + `\s*<dd>\s*` + regexp.QuoteMeta(stdhtml.EscapeString(from)) + `\s*</dd>`)
+	// 当てるのは可変タグの dl の中だけ（2026-10-30。本文全体に当てていたので、素の dl や表のセルの中の同じ組も置き換えた）。
+	return tagListRe.ReplaceAllStringFunc(body, func(dl string) string {
+		if !old.MatchString(dl) {
+			return dl
+		}
+		if next.MatchString(dl) {
+			// 新しい値の組が既にある——古い組（dt と dd）を消す。
+			return gone.ReplaceAllString(dl, "")
+		}
+		return old.ReplaceAllString(dl, `${1}<dd>`+strings.ReplaceAll(stdhtml.EscapeString(to), "$", "$$")+`</dd>`)
+	})
 }
+
+// tagListRe は可変タグの dl です。
+var tagListRe = regexp.MustCompile(`(?is)<dl\b[^>]*\bdata-type\s*=\s*"tags"[^>]*>.*?</dl>`)
 
 // renameTagValueEverywhere は、可変タグ name の値が from のページ全部で to に置き換えます（dry なら数えるだけ）。
 func renameTagValueEverywhere(author, name, from, to string, dry bool) (tagRenameResult, error) {

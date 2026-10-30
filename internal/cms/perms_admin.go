@@ -12,11 +12,11 @@ import (
 )
 
 // ページ権限の管理API（フェーズ3）。サイドカー（正本）を書き換えてから
-// page_perms を更新します。サイドカーの**権限の欄**（owner・group・mode・public）を書き換えるのは、これらのAPIだけです
+// page_perms を更新します。在るサイドカーの**権限の欄**（owner・group・mode・public）を書き換えるのは、これらのAPIだけです（新しいページの分は EnsureSidecar が書きます）
 // （更新日時・親・並び順キーは、保存・付け替え・並べ替えの口が別に書きます——page.WriteSidecar の注記）。
 
 // PagePermsHandler は GET で現在の権限を返し、POST で mode / group を変更します（chmod / chgrp）。
-// GET: read 権限。POST: 対象ページの owner または admin（認証認可設計.md 3.5節）。
+// GET: ページを開けること（read か公開）。POST: 対象ページの owner または admin（認証認可設計.md 3.5節）。
 func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 	u := auth.CurrentUser(r)
 	if u == nil {
@@ -33,7 +33,8 @@ func PagePermsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// GET: 現在の権限を返す（read権限が必要）
 	if r.Method == http.MethodGet {
-		if !cur.CanRead(u) {
+		// 開けるページの権限は見られる（2026-10-30。公開のページを開いた read の無い人に 403 を返していた）。
+		if !page.CanView(u, pageID) {
 			http.Error(w, "このページの権限を参照できません", http.StatusForbidden)
 			return
 		}
