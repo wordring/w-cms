@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
 )
 
@@ -151,5 +152,50 @@ func TestPageURLOnlyCanonical(t *testing.T) {
 		if rr := getAnon(t, RootHandler, p); rr.Code != http.StatusNotFound {
 			t.Errorf("⚠ %q で開けました（%d）——住所は6桁だけ", p, rr.Code)
 		}
+	}
+}
+
+// TestLoggedInCanReadPublicPageWithoutRead は、read の権限が無い人も、ログインしたまま公開のページを読めることを固定します
+// （2026-10-30 利用者:「読めるようにする」）。添付は匿名の人と同じく本文が指すものだけで、公開でないページは今までどおり読めない。
+func TestLoggedInCanReadPublicPageWithoutRead(t *testing.T) {
+	setupAnonTest(t)
+	// 公開のページだが、持ち主だけが read を持つ（mode 300）。
+	if err := page.WriteSidecar("000007", page.PageMeta{Owner: "alice", Mode: "300", Public: true, ParentID: "000000"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncIndex("000007", `<h1>公開</h1><p><img src="/000007/shown.png"></p>`); err != nil {
+		t.Fatal(err)
+	}
+	if err := page.WriteFileAtomic(page.BodyPath("000007"), []byte(`<h1>公開</h1><p><img src="/000007/shown.png"></p>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bob := &auth.User{Username: "bob"}
+	if !page.CanView(bob, 7) {
+		t.Error("公開のページは、read が無くても読めるはず")
+	}
+	if page.CanView(bob, 6) {
+		t.Error("⚠ 公開でないページが読めています")
+	}
+	req := func(id string) (*httptest.ResponseRecorder, bool) {
+		r := auth.WithUser(httptest.NewRequest("GET", "/x", nil), bob)
+		rr := httptest.NewRecorder()
+		return rr, page.RequirePageReadOrPublic(rr, r, id)
+	}
+	if _, ok := req("000007"); !ok {
+		t.Error("関門が公開のページを通していません")
+	}
+	if rr, ok := req("000006"); ok || rr.Code != http.StatusForbidden {
+		t.Errorf("公開でないページは 403 のはず: %v %d", ok, rr.Code)
+	}
+	r := auth.WithUser(httptest.NewRequest("GET", "/x", nil), bob)
+	if !page.AnonymousMayFetch(r, "000007", "shown.png") {
+		t.Error("本文が指す添付は配るはず")
+	}
+	if page.AnonymousMayFetch(r, "000007", "hidden.png") {
+		t.Error("⚠ read の無い人に、本文が指していない添付を配っています")
+	}
+	owner := auth.WithUser(httptest.NewRequest("GET", "/x", nil), &auth.User{Username: "alice"})
+	if !page.AnonymousMayFetch(owner, "000007", "hidden.png") {
+		t.Error("read のある人は、今までどおり添付を取れるはず")
 	}
 }

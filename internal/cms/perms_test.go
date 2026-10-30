@@ -272,7 +272,7 @@ func TestParentIsPublishable(t *testing.T) {
 }
 
 // TestRequirePageReadOrPublic は匿名でも実効公開なら閲覧可、非公開は401、
-// 認証済みは通常のread判定になることを検証します。
+// 認証済みは read か実効公開で読めることを検証します。
 func TestRequirePageReadOrPublic(t *testing.T) {
 	db := setupPublicTree(t)
 	defer db.Close()
@@ -297,6 +297,8 @@ func TestRequirePageReadOrPublic(t *testing.T) {
 	check("匿名×公開ページ→可", "1", nil, true, 0)
 	// 匿名には「読めない」と「存在しない」を区別させない（2026-08-16 決定・要件定義書 §2.1）。
 	check("匿名×非公開ページ→404", "2", nil, false, http.StatusNotFound)
-	check("認証×other不可ページ→403", "1", stranger, false, http.StatusForbidden) // 1は mode 300（other なし）
+	// 2026-10-30 利用者:「読めるようにする」——公開のページは、read が無くてもログインしたまま読める。
+	check("認証×other不可の公開ページ→可", "1", stranger, true, 0) // 1は mode 300（other なし）・実効公開
+	check("認証×other不可の非公開ページ→403", "2", stranger, false, http.StatusForbidden)
 	check("認証×other可ページ→可", "0", stranger, true, 0)                        // 0は mode 302（other read）
 }

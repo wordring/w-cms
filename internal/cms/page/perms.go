@@ -336,15 +336,16 @@ func EffectivePublic(pageID int) bool {
 }
 
 // CanView は「この閲覧者にそのページの内容を見せてよいか」を1箇所で判定します。
-// 認証済みなら read 権限（admin は無条件）、匿名なら実効公開。どちらもフェイルクローズ。
+// 認証済みなら read 権限（admin は無条件）か実効公開、匿名なら実効公開。どちらもフェイルクローズ。
+// （2026-10-30 利用者:「読めるようにする」——公開のページは、ログインしていても読める。それまでは、読む権限の無い社員はログアウトすれば読めた。）
 //
 // 一覧の絞り込み（visibleChildren）と派生索引の集計（RequiredMaterials）が同じ
 // 判定を別々に持っていたため、派生索引側だけが判定を持たず越境していた
 // （設計総点検の「派生索引にページ単位認可が及んでいない」）。判定を増やすときは
 // ここへ足し、呼び手を増やさないこと。
 func CanView(user *auth.User, pageID int) bool {
-	if user != nil {
-		return GetPerms(pageID).CanRead(user)
+	if user != nil && GetPerms(pageID).CanRead(user) {
+		return true
 	}
 	return EffectivePublic(pageID)
 }
@@ -447,7 +448,7 @@ func RequirePageRead(w http.ResponseWriter, r *http.Request, idStr string) bool 
 // RequirePageReadOrPublic は read 権限を要求しますが、未認証（匿名）でも対象ページが
 // 実効公開（EffectivePublic）なら閲覧を許可します（認証認可設計.md 10.5）。
 // 公開ページの本文・添付ファイル配信に使います。書き込み系には使いません。
-//   - 認証済み: 通常の read 判定（不可なら403）。
+//   - 認証済み: read か実効公開なら許可（不可なら403・2026-10-30 に CanView と同じ線にした）。
 //   - 匿名: 実効公開なら許可、そうでなければ404（「読めない」と「存在しない」を区別させない）。
 func RequirePageReadOrPublic(w http.ResponseWriter, r *http.Request, idStr string) bool {
 	pageID, err := strconv.Atoi(idStr)
@@ -457,7 +458,7 @@ func RequirePageReadOrPublic(w http.ResponseWriter, r *http.Request, idStr strin
 	}
 	u := auth.CurrentUser(r)
 	if u != nil {
-		if !GetPerms(pageID).CanRead(u) {
+		if !CanView(u, pageID) {
 			http.Error(w, "このページを閲覧する権限がありません", http.StatusForbidden)
 			return false
 		}
@@ -619,12 +620,15 @@ func ServeCleanAttachment(w http.ResponseWriter, r *http.Request, pageID, name s
 }
 
 // AnonymousMayFetch は、ログインしていない訪問者に、公開のページ pageID の添付 name を配ってよいかです（2026-10-27 の見直し）。
-// ログインした人は、ページを読めれば（呼び手が確かめる）よい。ログインしていない人には、**いまの本文が指している添付だけ**を配る
+// ページの read を持つ人は、呼び手の確かめだけでよい。ログインしていない人と、read を持たず公開だから読めている人（2026-10-30）には、
+// **いまの本文が指している添付だけ**を配る
 // ——添付の名前は4文字（約168万通り）なので、公開のページの files/ に残った、本文から消した添付や公開する前に上げたものを、
 // 総当たりで取れた。指し方は、きれいな URL（/ページ番号/名前）か、ファイル表示の参照（ページ番号-添付ID）。
 func AnonymousMayFetch(r *http.Request, pageID, name string) bool {
-	if auth.CurrentUser(r) != nil {
-		return true
+	if u := auth.CurrentUser(r); u != nil {
+		if n, err := strconv.Atoi(pageID); err == nil && GetPerms(n).CanRead(u) {
+			return true
+		}
 	}
 	body, err := os.ReadFile(BodyPath(pageID))
 	if err != nil {

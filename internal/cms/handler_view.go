@@ -272,13 +272,14 @@ func etagMatches(header, etag string) bool {
 }
 
 // requirePageViewable は画面表示のための read 認可を行います。
-// 認証済みで権限が無ければ403、匿名で実効公開でなければ「ありません」の404です
+// 認証済みで権限が無く公開でもなければ403、匿名で実効公開でなければ「ありません」の404です
 // （/login へリダイレクトするのはトップページだけ——下の本文）。
 func requirePageViewable(w http.ResponseWriter, r *http.Request, pageID int) bool {
 	if u := auth.CurrentUser(r); u != nil {
 		// 認証済み×read不可は 403 のまま。「存在は分かるが読めない」という
 		// Unix の作法で、社内では相手が誰かも分かっているので隠す意味が薄い。
-		if !page.GetPerms(pageID).CanRead(u) {
+		// 公開のページは、read が無くても読める（2026-10-30・page.CanView）。
+		if !page.CanView(u, pageID) {
 			forbiddenPage(w)
 			return false
 		}
