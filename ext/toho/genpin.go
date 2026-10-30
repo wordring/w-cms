@@ -411,7 +411,7 @@ func drawGenpin(p *gopdf.GoPdf, l genpinLabel, w, h float64) {
 	if l.Work != "" {
 		y = fitText(p, x, y, textW, 16, 9, l.Work)
 	}
-	qty := l.Qty
+	qty := "数量　" + l.Qty
 	if l.Box != "" {
 		qty += "　（" + l.Box + "）"
 	}

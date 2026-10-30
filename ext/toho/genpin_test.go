@@ -127,7 +127,7 @@ func TestGenpinPDFRoundTrips(t *testing.T) {
 		t.Fatalf("PDF を作れません: %v", err)
 	}
 	got := pdfTextOf(t, pdf)
-	for _, want := range []string{"現品票", "A100-B01-001", "カバー", "20 個", "1/2 箱", "2/2 箱", "注文番号 PO-1"} {
+	for _, want := range []string{"現品票", "A100-B01-001", "カバー", "数量　20 個", "1/2 箱", "2/2 箱", "注文番号 PO-1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("PDF に %q が入っていません:\n%s", want, got)
 		}
