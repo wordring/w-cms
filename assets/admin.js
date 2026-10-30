@@ -139,7 +139,7 @@ async function setMailAddresses(username, current) {
 }
 
 async function resetPw(username) {
-  const pw = prompt(`${username} の新しいパスワード:`);
+  const pw = prompt(`${username} の新しいパスワード（12文字以上）:`);
   if (!pw) return;
   // 打ち間違いで、だれも知らないパスワードにならないように、もう一度打ってもらう（2026-10-22 の見直し）。
   if (prompt(`確かめのため、もう一度打ってください（${username}）:`) !== pw) { alert('2回の入力が違うので、変えていません'); return; }

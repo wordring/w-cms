@@ -231,3 +231,35 @@ func TestShortMachineTokenIsClosed(t *testing.T) {
 		t.Errorf("閉じていると答えるはず: %d %s", rr.Code, rr.Body.String())
 	}
 }
+
+// TestPasswordNeedsTwelveChars は、管理画面で決めるパスワードが12文字以上で、文字で数えることを固定します（2026-10-30 利用者:「12文字以上にする」）。
+func TestPasswordNeedsTwelveChars(t *testing.T) {
+	setupAuthDB(t)
+	if err := CreateUser("bob", "", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	post := func(h http.HandlerFunc, path, body string) int {
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
+		req = WithUser(req, &User{Username: "root", IsAdmin: true})
+		rr := httptest.NewRecorder()
+		h(rr, req)
+		return rr.Code
+	}
+	for _, c := range []struct {
+		pw   string
+		want int
+	}{{"short", 400}, {"12345678901", 400}, {"123456789012", 200}, {"日本語のとても長い合言葉です", 200}, {"あいう", 400}} {
+		if got := post(UserPasswordAPIHandler, "/api/admin/users/password", `{"username":"bob","password":"`+c.pw+`"}`); got != c.want {
+			t.Errorf("再設定 %q: %d（%d のはず）", c.pw, got, c.want)
+		}
+	}
+	if got := post(UsersAPIHandler, "/api/admin/users", `{"username":"carol","password":"short"}`); got != 400 {
+		t.Errorf("短いパスワードで作れています: %d", got)
+	}
+	if got := post(UsersAPIHandler, "/api/admin/users", `{"username":"dan","password":"123456789012"}`); got != 200 {
+		t.Errorf("12文字で作れません: %d", got)
+	}
+	if got := post(UsersAPIHandler, "/api/admin/users", `{"username":"erin","password":""}`); got != 200 {
+		t.Errorf("ローカルのパスワードなしの利用者が作れません: %d", got)
+	}
+}

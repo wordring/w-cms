@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -69,6 +70,13 @@ func UsersAPIHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, why, http.StatusBadRequest)
 			return
 		}
+		// 空はローカルのパスワードなし（CreateUser）——それでは入れないので、長さは見ない。
+		if req.Password != "" {
+			if why := badPassword(req.Password); why != "" {
+				http.Error(w, why, http.StatusBadRequest)
+				return
+			}
+		}
 		if err := CreateUser(req.Username, req.Password, req.IsAdmin, req.PrimaryGroup); err != nil {
 			http.Error(w, "ユーザー作成に失敗しました: "+err.Error(), http.StatusBadRequest)
 			return
@@ -81,6 +89,19 @@ func UsersAPIHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// minPasswordChars は、管理画面で決めるパスワードの最低の文字数です（2026-10-30 利用者:「12文字以上にする」）。
+// 社外に開いているので、短いパスワードを断ります。⚠ 今あるパスワードは、そのまま使えます（次に決め直すときから効く）。
+// 初回の管理者（WCMS_ADMIN_PASSWORD）と、業務サーバーで直に呼ぶ auth.SetPassword は見ません（開発の a/a と、忘れたときの道）。
+const minPasswordChars = 12
+
+// badPassword は、決められないパスワードなら理由を返します（文字で数える——日本語も1文字）。
+func badPassword(pw string) string {
+	if utf8.RuneCountInString(pw) < minPasswordChars {
+		return "パスワードは " + strconv.Itoa(minPasswordChars) + " 文字以上にしてください"
+	}
+	return ""
 }
 
 // badUsername は、作れない利用者名なら理由を返します（2026-10-26。それまでは何でも作れた——前後の空白は、ログインで打つ
@@ -115,6 +136,10 @@ func UserPasswordAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Username == "" || req.Password == "" {
 		http.Error(w, "username と password は必須です", http.StatusBadRequest)
+		return
+	}
+	if why := badPassword(req.Password); why != "" {
+		http.Error(w, why, http.StatusBadRequest)
 		return
 	}
 	if err := SetPassword(req.Username, req.Password); err != nil {
