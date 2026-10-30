@@ -82,6 +82,13 @@ const setMode = async (page, edit) => {
   await page.waitForTimeout(600);
 };
 
+const setPublic = (page, id, value) => page.evaluate(async (a) => {
+  const lock = await (await fetch('/api/lock?id=' + a.id, { method: 'POST' })).json().catch(() => ({}));
+  const r = await fetch('/api/page-perms?id=' + a.id, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Lock-Token': lock.token || '' }, body: JSON.stringify({ public: a.value }) });
+  await fetch('/api/unlock?id=' + a.id + '&token=' + encodeURIComponent(lock.token || ''), { method: 'POST' });
+  return r.status;
+}, { id, value });
+
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
@@ -248,6 +255,27 @@ const setMode = async (page, edit) => {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(200);
     if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/desktop-caption.png' });
+
+    // 公開のページ（app.js が動かない）でも、画像の下に出る。
+    const pub = await setPublic(page, id, true);
+    if (pub === 200) {
+      const anon = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
+      const ap = await anon.newPage();
+      await ap.goto(BASE + '/' + id);
+      await ap.waitForTimeout(600);
+      const pc = await ap.evaluate(() => {
+        const ps = Array.from(document.querySelectorAll('.public-content p')).filter((p) => p.querySelector('img'));
+        const rng = (el) => { const r = document.createRange(); r.selectNode(Array.from(el.childNodes).find((n) => n.nodeType === 3 && n.textContent.trim())); return r.getBoundingClientRect(); };
+        const main = ps.find((x) => x.textContent.includes('溶接')), car = ps.find((x) => x.textContent.includes('カルーセル'));
+        return { under: rng(main).top >= main.querySelector('img').getBoundingClientRect().bottom - 1,
+          carUnder: rng(car).top >= car.querySelector('img').getBoundingClientRect().bottom - 1, carImgW: Math.round(car.querySelector('img').getBoundingClientRect().width) };
+      });
+      check('公開のページでも画像の下に出る', pc.under && pc.carUnder && pc.carImgW > 200, JSON.stringify(pc));
+      await anon.close();
+      await setPublic(page, id, false);
+    } else {
+      check('公開にできた', false, String(pub));
+    }
 
     // ⑦ スマホの幅
     const phone = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });

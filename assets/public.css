@@ -254,6 +254,10 @@ body.public {
     margin: 0;
 }
 .public-content section[data-type="carousel"] img { display: block; max-width: 100%; max-height: min(40vh, 260px); width: auto; height: auto; object-fit: contain; }
+/* 画像の下のコメント（2026-10-30・本文は <p><img>コメント</p>・assets/app.css と同じ見せ方）。 */
+.public-content p:has(> img:first-child) > img { display: block; }
+.public-content section[data-type="carousel"] > p:has(> img:first-child) { width: min-content; min-width: 120px; overflow-wrap: anywhere; }
+.public-content section[data-type="carousel"] > p:has(> img:first-child) > img { max-width: none; }
 
 /* PDF を絵にして見せる枠（2026-10-27・internal/cms/pdf_pages.go）。公開ページでは高さを決めずに、ページの絵をそのまま縦に並べる。 */
 .public-content .file-view-page { display: block; width: 100%; height: auto; border: 1px solid #ddd; margin-bottom: 8px; }
