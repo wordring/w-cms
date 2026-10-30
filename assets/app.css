@@ -2271,7 +2271,10 @@ body.w-lightbox-open { overflow: hidden; }
 #w-editor-content p.w-img-cap { font-size: 13px; color: #475569; }
 #w-editor-content p.w-img-cap > img { display: block; }
 body[edit-mode] #w-editor-content p.w-img-nocap::after { content: 'コメントを書く'; display: block; color: #94a3b8; cursor: text; }
-#w-editor-content section[data-type="carousel"] > p.w-img-cap { width: min-content; overflow-wrap: anywhere; }
+/* カルーセルの1枚の幅は画像の幅（コメントはその幅で折り返す）。⚠ 画像の max-width: 100% を外さないと、幅を中身で決める段落の中で画像がつぶれる。
+   読み込む前の画像は幅が無いので、下限を置く。 */
+#w-editor-content section[data-type="carousel"] > p.w-img-cap { width: min-content; min-width: 120px; overflow-wrap: anywhere; }
+#w-editor-content section[data-type="carousel"] > p.w-img-cap > img { max-width: none; }
 
 /* ── 帯のブロックの種類（2026-10-07・assets/app.js の「ブロックの種類を替える」） ──
    いまの種類は青い背景（押した印）。文字のブロックの外では押せない（薄く）。スマホの帯は上の端に全幅の1列（上の .is-docked）。 */

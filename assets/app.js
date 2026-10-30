@@ -5275,10 +5275,9 @@
         return box;
     }
 
-    // lbClampCenter は、拡大した絵の真ん中の位置を丸めます（絵の外が空かないように。画面より小さい向きは真ん中に置く）。
+    // lbClampCenter は、拡大した絵の真ん中の位置を丸めます（絵のどの点も画面の真ん中まで来られて、絵が画面の外へ消えない範囲）。
     function lbClampCenter(center, half, view) {
-        if (half * 2 <= view) return view / 2;
-        return Math.min(half, Math.max(view - half, center));
+        return Math.min(view / 2 + half, Math.max(view / 2 - half, center));
     }
 
     // lbBaseOf は、拡大する前の絵の真ん中と大きさを返します（offset は transform の影響を受けない。#w-lightbox は画面の左上にある）。

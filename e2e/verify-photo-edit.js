@@ -19,7 +19,7 @@
 // ページは自分で作り、最後に消します。本物の置き場には書きません。
 // 使い方: WCMS_BASE=https://localhost:9443 NODE_TLS_REJECT_UNAUTHORIZED=0 node verify-photo-edit.js
 const { chromium } = require('playwright');
-const { login, makePage, deletePage, saveNow } = require('./lib');
+const { login, makePage, deletePage, saveNow, writeBody } = require('./lib');
 const BASE = process.env.WCMS_BASE || 'http://localhost:8080';
 
 let fails = 0;
@@ -44,13 +44,6 @@ const uploadQuad = (page, id, w, h, name) => page.evaluate(async (a) => {
   const d = await r.json().catch(() => ({}));
   return d.src || '';
 }, { id, w, h, name });
-
-const writeBody = (page, id, body) => page.evaluate(async (a) => {
-  const lr = await fetch('/api/lock?id=' + a.id, { method: 'POST' });
-  const lj = await lr.json();
-  await fetch('/api/save?id=' + a.id, { method: 'POST', headers: { 'Content-Type': 'text/html', 'X-Lock-Token': lj.token }, body: a.body });
-  await fetch('/api/unlock?id=' + a.id + '&token=' + encodeURIComponent(lj.token), { method: 'POST' });
-}, { id, body });
 
 // lbState は拡大表示の絵の様子（画素の大きさ・拡大・絵の場所）。
 const lbState = (page) => page.evaluate(() => {
@@ -245,13 +238,16 @@ const setMode = async (page, edit) => {
       return { under: c.top >= iBottom - 1, carUnder: cc.top >= ci.bottom - 1, carW: Math.round(cc.width), imgW: Math.round(ci.width), hint: getComputedStyle(p, '::after').content };
     });
     check('閲覧で画像の下に出る', viewCap.under, JSON.stringify(viewCap));
-    check('カルーセルでも画像の下に出て、画像の幅で折り返す', viewCap.carUnder && viewCap.carW <= viewCap.imgW + 1, JSON.stringify(viewCap));
+    check('カルーセルでも画像の下に出て、画像の幅で折り返す', viewCap.carUnder && viewCap.imgW > 200 && viewCap.carW <= viewCap.imgW + 1, JSON.stringify(viewCap));
     await openBox(page, '#w-editor-content p.w-img-cap img');
     check('拡大表示にコメントが出る', (await page.locator('#w-lightbox .lb-caption').innerText()) === '溶接の跡');
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(300);
     check('カルーセルの枚のコメントも拡大表示に出る', (await page.locator('#w-lightbox .lb-caption').innerText()).startsWith('カルーセルの写真'));
+    if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/desktop-box.png' });
     await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/desktop-caption.png' });
 
     // ⑦ スマホの幅
     const phone = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
@@ -287,6 +283,7 @@ const setMode = async (page, edit) => {
     });
     check('スマホ: 編集の道具が画面に収まり、絵に重ならない', layout.n >= 6 && layout.inView && !layout.over, JSON.stringify(layout));
     check('スマホ: 横にはみ出さない', layout.scroll);
+    if (process.env.SHOT_DIR) await pp.screenshot({ path: process.env.SHOT_DIR + '/phone-edit.png' });
     await pp.locator('#w-lightbox .lb-rotate-left').tap();
     await waitSaid(pp, '保存しました');
     await pp.waitForTimeout(100);
