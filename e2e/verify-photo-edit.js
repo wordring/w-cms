@@ -257,6 +257,8 @@ const setPublic = (page, id, value) => page.evaluate(async (a) => {
     if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/desktop-caption.png' });
 
     // 公開のページ（app.js が動かない）でも、画像の下に出る。
+    // 親（トップ）も公開しないと公開できない（verify-public.js と同じ）。最後に戻す。
+    await setPublic(page, '000000', true);
     const pub = await setPublic(page, id, true);
     if (pub === 200) {
       const anon = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
@@ -276,6 +278,7 @@ const setPublic = (page, id, value) => page.evaluate(async (a) => {
     } else {
       check('公開にできた', false, String(pub));
     }
+    await setPublic(page, '000000', false);
 
     // ⑦ スマホの幅
     const phone = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
