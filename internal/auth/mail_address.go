@@ -14,6 +14,7 @@ package auth
 
 import (
 	"errors"
+	"log"
 	"net/mail"
 	"strings"
 
@@ -41,6 +42,9 @@ func MailAddressesOf(username string) []string {
 		if rows.Scan(&a) == nil {
 			out = append(out, a)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("利用者のアドレスを読み切れませんでした（%s）: %v", username, err)
 	}
 	return out
 }

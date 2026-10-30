@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 	"w-cms/internal/database"
@@ -158,6 +159,9 @@ func UserMailAPIHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{"success": true, "addresses": MailAddressesOf(req.Username)})
 }
 
+// userDisableMu は、利用者を無効にする操作を1つずつ通します。
+var userDisableMu sync.Mutex
+
 // UserDisableAPIHandler はユーザーの有効/無効を切り替えます（admin限定）。
 func UserDisableAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !RequireAdmin(w, r) {
@@ -171,6 +175,9 @@ func UserDisableAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// 確かめと書き込みのあいだに、ほかの管理者の無効化を挟まない（2026-10-30。2人が同時に互いを無効にすると、管理者が0人になりえた）。
+	userDisableMu.Lock()
+	defer userDisableMu.Unlock()
 	// 自分と、最後の有効な管理者は無効にしない（2026-10-02 に a を無効にして、だれも入れなくなった・2026-10-22 の見直し）。
 	if req.Disabled {
 		if req.Username == actor {
@@ -250,20 +257,24 @@ func GroupMembersAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
+	var changed bool
 	action := "group.add"
 	switch req.Action {
 	case "remove":
 		action = "group.remove"
-		err = RemoveGroupMember(req.Username, req.Group)
+		changed, err = removeGroupMember(req.Username, req.Group)
 	default: // add
-		err = AddGroupMember(req.Username, req.Group)
+		changed, err = addGroupMember(req.Username, req.Group)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// 監査は、変えられたときだけ残す（それまでは失敗した追加・削除も残っていた——【考察】コードの矛盾 §2.5・2026-10-29）。
-	Audit(actor, action, req.Username+"@"+req.Group)
+	// 監査は、変えられたときだけ残す（それまでは失敗した追加・削除も残っていた——【考察】コードの矛盾 §2.5・2026-10-29。
+	// もう入っている人の追加・もともといない人の削除も、変わっていないので残さない・2026-10-30）。
+	if changed {
+		Audit(actor, action, req.Username+"@"+req.Group)
+	}
 	writeJSON(w, map[string]interface{}{"success": true})
 }
 

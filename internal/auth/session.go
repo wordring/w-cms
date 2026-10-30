@@ -53,6 +53,9 @@ func CreateSession(username string) (string, error) {
 	token := base64.RawURLEncoding.EncodeToString(raw)
 
 	now := nowFunc()
+	// 失効したセッションを片付ける（2026-10-30）。消えるのは同じトークンがまた来たときとログアウトだけだったので、二度と来ない
+	// ブラウザの行が増え続けた。失敗しても発行は止めない。
+	database.AuthDB.Exec(`DELETE FROM sessions WHERE last_seen < ?`, now.Add(-SessionIdleTTL))
 	_, err := database.AuthDB.Exec(
 		`INSERT INTO sessions (token_hash, username, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?, ?)`,
 		hashToken(token), username, now, now.Add(SessionIdleTTL), now,

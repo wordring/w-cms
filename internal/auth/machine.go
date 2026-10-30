@@ -62,10 +62,19 @@ func viaProxy(r *http.Request) bool {
 	return false
 }
 
+// machineToken は WCMS_MACHINE_TOKEN の鍵です。短すぎる鍵は決まっていないのと同じに扱う（打ち間違い・試しの値で開けない）。
+func machineToken() string {
+	want := strings.TrimSpace(os.Getenv("WCMS_MACHINE_TOKEN"))
+	if len(want) < 16 {
+		return ""
+	}
+	return want
+}
+
 // machineTokenOK は、要求の鍵が WCMS_MACHINE_TOKEN と一致するかです（鍵が決まっていなければ常に false）。
 func machineTokenOK(r *http.Request) bool {
-	want := strings.TrimSpace(os.Getenv("WCMS_MACHINE_TOKEN"))
-	if len(want) < 16 { // 短すぎる鍵は決まっていないのと同じに扱う（打ち間違い・試しの値で開けない）
+	want := machineToken()
+	if want == "" {
 		return false
 	}
 	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -80,8 +89,8 @@ func machineTokenOK(r *http.Request) bool {
 func MachineAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if strings.TrimSpace(os.Getenv("WCMS_MACHINE_TOKEN")) == "" {
-			http.Error(w, "機械の入口は閉じています（WCMS_MACHINE_TOKEN がありません）", http.StatusServiceUnavailable)
+		if machineToken() == "" {
+			http.Error(w, "機械の入口は閉じています（WCMS_MACHINE_TOKEN が無いか、16文字より短い）", http.StatusServiceUnavailable)
 			return
 		}
 		// 前段のプロキシを通った要求は入れない（2026-10-26）。VPS からのトンネルが同じ機械で終わると、外からの要求も 127.0.0.1 に

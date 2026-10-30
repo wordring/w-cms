@@ -291,3 +291,113 @@ func TestLoginNameWithControlCharsCannotLockOthers(t *testing.T) {
 		t.Errorf("ほかの /64 まで止まりました: %v", err)
 	}
 }
+
+// TestLockoutCountsAgainAfterItEnds は、ロックアウトが明けたら1回目から数え直すことを固定します（2026-10-30・【要求】権限 §1）。
+// それまでは数が残り、明けたあとの1回の失敗でまた15分止まった——社外から15分に1回失敗させるだけで、接続元や管理者の名前を止め続けられた。
+func TestLockoutCountsAgainAfterItEnds(t *testing.T) {
+	setupAuthDB(t)
+	if err := CreateUser("boss", "right-pass", true, ""); err != nil {
+		t.Fatal(err)
+	}
+	const ip = "203.0.113.9"
+	fail := func() error {
+		advanceClock(30 * time.Second) // バックオフの待ちを越える
+		_, err := AuthenticateFrom("boss", "wrong", ip)
+		return err
+	}
+	for i := 0; i < maxFailBeforeLock; i++ {
+		fail()
+	}
+	if _, err := AuthenticateFrom("boss", "right-pass", ip); err != ErrLockedOut {
+		t.Fatalf("5回で止まるはず: %v", err)
+	}
+	// 明けたあとの1回の失敗では、待ちはバックオフの1秒だけ（15分ではない）。
+	advanceClock(lockoutDuration + time.Minute)
+	if err := fail(); err != ErrAuthFailed {
+		t.Fatalf("明けたあとの失敗: %v", err)
+	}
+	advanceClock(2 * backoffBase)
+	if _, err := AuthenticateFrom("boss", "right-pass", ip); err != nil {
+		t.Errorf("⚠ 明けたあとの1回の失敗で、また止まっています: %v", err)
+	}
+
+	// 接続元の数も数え直す（入れても接続元の数は消えないので、ここが効く）。
+	const nat = "198.51.100.7"
+	for i := 0; i < maxFailPerAddr; i++ {
+		advanceClock(30 * time.Second)
+		AuthenticateFrom("ghost"+string(rune('a'+i)), "wrong", nat)
+	}
+	advanceClock(lockoutDuration + time.Minute)
+	advanceClock(30 * time.Second)
+	AuthenticateFrom("ghost-next", "wrong", nat)
+	advanceClock(2 * backoffBase)
+	if _, err := AuthenticateFrom("boss", "right-pass", nat); err != nil {
+		t.Errorf("⚠ 同じ接続元のだれかの1回の間違いで、また全員が止まっています: %v", err)
+	}
+}
+
+// TestLoginDoesNotHoldSlotWhileLockedOut は、止められている試行が argon2id の枠を使わないことを固定します（2026-10-30）。
+func TestLoginDoesNotHoldSlotWhileLockedOut(t *testing.T) {
+	setupAuthDB(t)
+	if err := CreateUser("boss", "right-pass", true, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AuthenticateFrom("boss", "wrong", "203.0.113.9"); err != ErrAuthFailed {
+		t.Fatal(err)
+	}
+	// 枠を全部ふさいでも、バックオフ中の試行は待たずに断られる。
+	for i := 0; i < cap(loginSem); i++ {
+		loginSem <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(loginSem); i++ {
+			<-loginSem
+		}
+	}()
+	done := make(chan error, 1)
+	go func() {
+		_, err := AuthenticateFrom("boss", "right-pass", "203.0.113.9")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != ErrLockedOut {
+			t.Errorf("バックオフのはず: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("⚠ 止められている試行が、枠を待っています")
+	}
+}
+
+// TestExpiredSessionsAreSwept は、新しいログインのときに失効したセッションの行が消えることを固定します（2026-10-30）。
+func TestExpiredSessionsAreSwept(t *testing.T) {
+	setupAuthDB(t)
+	if _, err := CreateSession("old"); err != nil {
+		t.Fatal(err)
+	}
+	live, err := CreateSession("live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func() (n int) {
+		database.AuthDB.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n)
+		return n
+	}
+	if count() != 2 {
+		t.Fatalf("2行のはず: %d", count())
+	}
+	advanceClock(SessionIdleTTL - time.Minute)
+	if _, ok := TouchSession(live); !ok { // live だけ操作で延びる
+		t.Fatal("まだ有効のはず")
+	}
+	advanceClock(2 * time.Minute)
+	if _, err := CreateSession("new"); err != nil {
+		t.Fatal(err)
+	}
+	if count() != 2 { // old が消え、live と new が残る
+		t.Errorf("失効した行が消えていません: %d 行", count())
+	}
+	if _, ok := ResolveSession(live); !ok {
+		t.Error("⚠ 有効なセッションまで消えています")
+	}
+}

@@ -13,6 +13,7 @@ import (
 
 // loginSem はログイン処理（argon2id検証）の同時実行数を制限します。
 // argon2idは1回あたり約64MiBを使うため、ピークメモリを抑える（認証認可設計.md 2.1節）。
+// 握るのは AuthenticateFrom の中です（名前の錠を取り、止められていないと分かってから）。
 var loginSem = make(chan struct{}, 4)
 
 // ログインの欄の長さの上限です（利用者名は管理画面で作る名前より十分に長く・パスワードは貼り付けた長い文も入る長さ）。
@@ -103,24 +104,25 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	// 長すぎる名前・パスワードは、確かめずに断る（2026-10-26。名前は失敗の記録と監査に残るので、長さを抑える）。
-	if len(username) > maxLoginNameBytes || len(password) > maxPasswordBytes {
+	// 制御文字の入った名前も同じ（2026-10-30。監査に改行や NUL が残り、数えられないまま何度でも監査の行を増やせた）。
+	if len(username) > maxLoginNameBytes || len(password) > maxPasswordBytes || hasControlChar(username) {
 		http.Redirect(w, r, "/login?error=1", http.StatusFound)
 		return
 	}
 
-	// argon2idの同時実行を制限してメモリのピークを抑える
-	loginSem <- struct{}{}
 	user, err := AuthenticateFrom(username, password, clientIP(r))
-	<-loginSem
 	// 失敗しても戻り先は保つ（打ち間違いのたびに目的地を見失わないため）。
 	next := safeNextPath(r.FormValue("next"))
 	if err != nil {
 		// 失敗も記録する。総当たりや、辞めた人の試行が見えるのはここだけ。
 		// 入力されたパスワードは記録しない（記録そのものが漏洩経路になる）。
-		Audit(username, "login.fail", clientIP(r))
+		// 止められているあいだの試行は記録しない（2026-10-30。パスワードを確かめずに速く断るので、外から1秒に何百行でも監査を
+		// 増やせた）。止まるまでの失敗は残るので、総当たりは見える。
 		code := "1"
 		if errors.Is(err, ErrLockedOut) {
 			code = "wait"
+		} else {
+			Audit(username, "login.fail", clientIP(r))
 		}
 		http.Redirect(w, r, "/login?error="+code+"&next="+url.QueryEscape(next), http.StatusFound)
 		return
@@ -217,8 +219,8 @@ func SessionAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 // clientIP はリクエストの接続元アドレスを返します（監査記録用）。
 //
-// 本番はリバースプロキシの背後で動く（[【ガイド】デプロイ・運用.md] §6.2）ため、
-// RemoteAddr は常にプロキシ自身になり「誰が事務所の外から入ってきたか」が分かりません。
+// 社外からの要求は VPS のリバースプロキシを通る（社内からは業務サーバーへ直に来る）ため、
+// RemoteAddr がプロキシ自身になり「誰が事務所の外から入ってきたか」が分かりません。
 // そこで X-Forwarded-For を見ますが、**無条件に信じると接続元を利用者が詐称できる**
 // （記録が意味を失う）ので、リクエスト自体が信じるプロキシ（ループバックと環境変数 WCMS_TRUSTED_PROXIES のアドレス——
 // isTrustedProxy）から来たときだけ採用します（2026-10-22 までは私設のアドレスも全部信じていた）。

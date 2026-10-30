@@ -21,6 +21,7 @@ type entry struct {
 }
 
 // Lock は名前 key の錠を取り、外す関数を返します（defer s.Lock(key)() の形で使う）。
+// ⚠ 外す関数は1回だけ呼ぶこと（2回呼ぶと sync.Mutex の二重解放で、プロセスごと落ちる）。
 func (s *Set) Lock(key string) func() {
 	s.mu.Lock()
 	if s.m == nil {

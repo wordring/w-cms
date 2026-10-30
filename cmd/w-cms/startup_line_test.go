@@ -36,3 +36,19 @@ func TestEffectiveSettingsLineHasNoWebDAV(t *testing.T) {
 		t.Errorf("有効な設定の1行に WebDAV が残っています: %s", line)
 	}
 }
+
+// TestEffectiveSettingsLineSaysNewerSettings は、2026-10-14 より後に増えた設定の有無も1行に出し、値は出さないことを固定します（2026-10-30）。
+func TestEffectiveSettingsLineSaysNewerSettings(t *testing.T) {
+	t.Setenv("WCMS_MACHINE_TOKEN", "secret-machine-token")
+	t.Setenv("WCMS_LOCAL_SOCKET", "/run/secret-sock")
+	t.Setenv("WCMS_TRUSTED_PROXIES", "")
+	line := effectiveSettingsLine("cert.pem", "key.pem")
+	for _, want := range []string{"機械の入口の鍵 あり", "中の入口 あり", "信じるプロキシ なし", "ラベルプリンターの道具"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("有効な設定の1行に %q がありません: %s", want, line)
+		}
+	}
+	if strings.Contains(line, "secret-") {
+		t.Errorf("⚠ 値がログに出ています: %s", line)
+	}
+}

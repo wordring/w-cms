@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	_ "modernc.org/sqlite"
+
+	"w-cms/internal/database"
 )
 
 // 認証イベント（ログインの成功・失敗・ログアウト）の監査記録を固定します。
@@ -151,5 +153,81 @@ func TestClientIPTrustsProxyOnlyFromLocal(t *testing.T) {
 				t.Errorf("clientIP = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// TestLockedOutAndBadNamesAreNotAudited は、止められているあいだの試行と制御文字の名前が監査の行を増やさないことを固定します（2026-10-30）。
+// どちらもパスワードを確かめずに速く断るので、外から1秒に何百行でも増やせた。止まるまでの失敗は残る。
+func TestLockedOutAndBadNamesAreNotAudited(t *testing.T) {
+	setupAuthDB(t)
+	if err := CreateUser("alice", "秘密のことば", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	count := func() (n int) {
+		database.AuthDB.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action = 'login.fail'`).Scan(&n)
+		return n
+	}
+	postLogin(t, "alice", "ちがうことば", "203.0.113.9:51000")
+	if count() != 1 {
+		t.Fatalf("最初の失敗は残るはず: %d", count())
+	}
+	for i := 0; i < 5; i++ { // バックオフの待ちのあいだ
+		postLogin(t, "alice", "ちがうことば", "203.0.113.9:51000")
+	}
+	if count() != 1 {
+		t.Errorf("⚠ 止められている試行が監査に残っています: %d 行", count())
+	}
+	if rr := postLogin(t, "al\nice\x00", "x", "203.0.113.9:51000"); rr.Code != 302 {
+		t.Errorf("制御文字の名前も、ほかの失敗と同じ形で断るはず: %d", rr.Code)
+	}
+	if count() != 1 {
+		t.Errorf("⚠ 制御文字の名前が監査に残っています: %d 行", count())
+	}
+}
+
+// TestGroupMemberAuditsOnlyChanges は、もう入っている人の追加・もともといない人の削除を監査に残さないことを固定します（2026-10-30）。
+func TestGroupMemberAuditsOnlyChanges(t *testing.T) {
+	setupAuthDB(t)
+	post := func(action string) {
+		t.Helper()
+		body := `{"username":"bob","group":"sales","action":"` + action + `"}`
+		req := httptest.NewRequest("POST", "/api/admin/group-members", strings.NewReader(body))
+		req = WithUser(req, &User{Username: "root", IsAdmin: true})
+		rr := httptest.NewRecorder()
+		GroupMembersAPIHandler(rr, req)
+		if rr.Code != 200 {
+			t.Fatalf("%s: %d %s", action, rr.Code, rr.Body.String())
+		}
+	}
+	count := func(action string) (n int) {
+		database.AuthDB.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action = ?`, action).Scan(&n)
+		return n
+	}
+	post("remove") // もともといない
+	if count("group.remove") != 0 {
+		t.Error("いない人の削除が監査に残っています")
+	}
+	post("add")
+	post("add") // もう入っている
+	if count("group.add") != 1 {
+		t.Errorf("group.add は1行のはず: %d", count("group.add"))
+	}
+	post("remove")
+	if count("group.remove") != 1 {
+		t.Errorf("group.remove は1行のはず: %d", count("group.remove"))
+	}
+}
+
+// TestShortMachineTokenIsClosed は、短すぎる鍵のとき入口を「閉じている」と答えることを固定します（2026-10-30。それまでは「鍵が違います」で、
+// 設定の間違いが呼び手の間違いに見えた）。
+func TestShortMachineTokenIsClosed(t *testing.T) {
+	t.Setenv("WCMS_MACHINE_TOKEN", "short")
+	req := httptest.NewRequest("POST", MachinePathPrefix+"x", nil)
+	req.RemoteAddr = "127.0.0.1:1000"
+	req.Header.Set("Authorization", "Bearer short")
+	rr := httptest.NewRecorder()
+	MachineAuth(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("通ってはいけない") })).ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable || !strings.Contains(rr.Body.String(), "閉じています") {
+		t.Errorf("閉じていると答えるはず: %d %s", rr.Code, rr.Body.String())
 	}
 }

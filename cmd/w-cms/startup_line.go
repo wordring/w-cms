@@ -40,5 +40,14 @@ func effectiveSettingsLine(cert, key string) string {
 		"・データ " + filepath.ToSlash(database.DataDir()) + "/・設定 " + cms.SettingsPath +
 		"・Gemini のキー " + has("GEMINI_API_KEY") +
 		"・メールのアプリ登録 " + has("WCMS_MAIL_CLIENT_ID") +
+		// 2026-10-14 より後に増えた設定（2026-10-30 に足した）。どれも有無だけ。
+		"・信じるプロキシ " + has("WCMS_TRUSTED_PROXIES") +
+		"・中の入口 " + has("WCMS_LOCAL_SOCKET") +
+		"・機械の入口の鍵 " + has("WCMS_MACHINE_TOKEN") +
+		"・機械の書き手 " + has("WCMS_MACHINE_USER") +
+		"・機械の許す先 " + has("WCMS_MACHINE_ALLOW") +
+		"・公開の名前の証明書 " + has("WCMS_TLS_PUBLIC_CERT") +
+		"・電話をかける道具 " + has("WCMS_DIAL_SOCK") +
+		"・ラベルプリンターの道具 " + has("WCMS_LABEL_SOCK") +
 		"・拡張 " + ext
 }

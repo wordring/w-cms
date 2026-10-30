@@ -85,6 +85,9 @@ func ListUsers() ([]UserInfo, error) {
 			users = append(users, u)
 		}
 	}
+	if err := rows.Err(); err != nil { // 途中で読めなくなったら、短い一覧を成功として返さない（2026-10-30）
+		return nil, err
+	}
 	rows.Close()
 	for i := range users {
 		users[i].MailAddresses = MailAddressesOf(users[i].Username)
@@ -100,19 +103,39 @@ func CreateGroup(name string) error {
 
 // AddGroupMember はユーザーをグループに追加します（グループは無ければ作成）。
 func AddGroupMember(username, group string) error {
-	if err := CreateGroup(group); err != nil {
-		return err
-	}
-	_, err := database.AuthDB.Exec(
-		`INSERT OR IGNORE INTO group_members (username, group_name) VALUES (?, ?)`, username, group)
+	_, err := addGroupMember(username, group)
 	return err
 }
 
 // RemoveGroupMember はユーザーをグループから外します。
 func RemoveGroupMember(username, group string) error {
-	_, err := database.AuthDB.Exec(
-		`DELETE FROM group_members WHERE username = ? AND group_name = ?`, username, group)
+	_, err := removeGroupMember(username, group)
 	return err
+}
+
+// addGroupMember は AddGroupMember で、実際に増えたか（もう入っていれば false）も返します。
+func addGroupMember(username, group string) (bool, error) {
+	if err := CreateGroup(group); err != nil {
+		return false, err
+	}
+	res, err := database.AuthDB.Exec(
+		`INSERT OR IGNORE INTO group_members (username, group_name) VALUES (?, ?)`, username, group)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// removeGroupMember は RemoveGroupMember で、実際に減ったか（もともといなければ false）も返します。
+func removeGroupMember(username, group string) (bool, error) {
+	res, err := database.AuthDB.Exec(
+		`DELETE FROM group_members WHERE username = ? AND group_name = ?`, username, group)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // ListGroups は全グループ名を返します。
@@ -128,6 +151,9 @@ func ListGroups() ([]string, error) {
 		if err := rows.Scan(&g); err == nil {
 			groups = append(groups, g)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return groups, nil
 }
@@ -183,6 +209,9 @@ func RecentAudit(limit int) ([]AuditEntry, error) {
 			e.TS = ts.UTC().Format(time.RFC3339)
 			entries = append(entries, e)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return entries, nil
 }

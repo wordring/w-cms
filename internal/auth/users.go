@@ -18,7 +18,7 @@ import (
 // **バックオフ**（2026-10-01 利用者:「バックオフも作る」——【要求】権限 §1 の「バックオフ／ロックアウト」のうち、それまで
 // ロックアウトだけだった）: 続けて失敗するたびに、次を試せるまでの待ちを倍にします（1・2・4・8秒）。待ちのあいだの試行は
 // パスワードを確かめずに断り、数えません。5回続けて失敗したら、それまでどおり15分のロックアウト。
-// 数えるのは**打たれた利用者名ごと**（存在しない名前も同じ）なので、待ちの有無から利用者の有無は分かりません。
+// 数えるのは名前と接続元の組ごと（下の説明・存在しない名前も同じ）なので、待ちの有無から利用者の有無は分かりません。
 const (
 	maxFailBeforeLock = 5                // この回数連続失敗でロックアウト
 	lockoutDuration   = 15 * time.Minute // ロックアウト時間
@@ -37,6 +37,10 @@ const (
 //   - 名前ごと（どの接続元からでも）: 50回でその名前を15分止める（多くの接続元からの総当たりへの備え）。
 // 接続元は clientIP（前段のプロキシは WCMS_TRUSTED_PROXIES に書いたときだけ信じる）。接続元が分からない呼び手（ip が空）は、
 // それまでどおり名前ごとに数える。
+//
+// どの数も、最後の失敗から15分たったら数え直します（recordFailure・2026-10-30）。それまでは数が残り、明けたあとの1回の失敗で
+// また15分止まっていた——社外から15分に1回失敗させるだけで管理者の名前を止め続けられ、同じ NAT の全員も止まった。
+// 【要求】権限 §1 の「5回・20回・50回で15分」に合わせた。
 
 // loginAttemptsKeep は、失敗の記録を残す長さです（ロックアウトより十分に長く）。
 const loginAttemptsKeep = 24 * time.Hour
@@ -88,16 +92,18 @@ func AuthenticateFrom(username, password, ip string) (*User, error) {
 	// ⚠ 名前に制御文字（\x00 など）があれば、確かめも数えもせずに断る（2026-10-27 の見直し）。失敗を数える鍵は \x00 で
 	// 区切るので、名前に \x00 を入れると、ほかの人の「名前と接続元の組」の鍵と同じ文字列になり、社外から管理者のログインを
 	// 止められた。作れる名前（badUsername）に制御文字は無いので、正しい人が困ることは無い。
-	for _, c := range username {
-		if unicode.IsControl(c) {
-			return nil, ErrAuthFailed
-		}
+	if hasControlChar(username) {
+		return nil, ErrAuthFailed
 	}
 	defer lockLoginName(username)()
 	keys := attemptKeysFor(username, attemptAddr(ip))
 	if keys.lockedOut() {
 		return nil, ErrLockedOut
 	}
+	// argon2id の同時実行の枠は、名前の錠を取ってから握る（2026-10-30）。枠を握ったまま錠を待つと、同じ名前に4つ並べて送るだけで
+	// ほかの全員のログインが待たされた。止められている試行は枠を使わない。
+	loginSem <- struct{}{}
+	defer func() { <-loginSem }()
 
 	var hash sql.NullString
 	var isAdmin, disabled int
@@ -124,6 +130,16 @@ func AuthenticateFrom(username, password, ip string) (*User, error) {
 
 	keys.clear()
 	return loadUser(username, isAdmin != 0, primaryGroup.String)
+}
+
+// hasControlChar は、名前に制御文字があるかを返します（作れる名前には無い——badUsername）。
+func hasControlChar(username string) bool {
+	for _, c := range username {
+		if unicode.IsControl(c) {
+			return true
+		}
+	}
+	return false
 }
 
 // loginNameLocks は、ログインの名前ごとのロックです（使っている人がいなくなったら捨てる——でたらめの名前で増え続けない・
@@ -177,6 +193,9 @@ func GroupsFor(username string) []string {
 		if err := rows.Scan(&g); err == nil {
 			groups = append(groups, g)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("グループを読み切れませんでした（%s）: %v", username, err)
 	}
 	return groups
 }
@@ -324,10 +343,13 @@ func recordFailure(username string) {
 	// 次々に打てば、認証の DB をいくらでも太らせられた）。待ちもロックアウトも最後の失敗から lockoutDuration で明けるので、
 	// それより十分に古い行は何も止めていない。
 	database.AuthDB.Exec(`DELETE FROM login_attempts WHERE last_fail < ?`, nowFunc().Add(-loginAttemptsKeep))
+	// 最後の失敗から lockoutDuration たっていれば、1回目から数え直す（2026-10-30・上の説明）。
 	database.AuthDB.Exec(`
 		INSERT INTO login_attempts (username, fail_count, last_fail) VALUES (?, 1, ?)
-		ON CONFLICT(username) DO UPDATE SET fail_count = fail_count + 1, last_fail = excluded.last_fail
-	`, username, nowFunc())
+		ON CONFLICT(username) DO UPDATE SET
+			fail_count = CASE WHEN last_fail < ? THEN 1 ELSE fail_count + 1 END,
+			last_fail = excluded.last_fail
+	`, username, nowFunc(), nowFunc().Add(-lockoutDuration))
 }
 
 func clearFailures(username string) {
