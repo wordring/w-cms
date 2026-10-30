@@ -517,6 +517,25 @@ func GenpinPreviewAPIHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(png)
 }
 
+// genpinPowerOff は、QL-800 の電源が入っていないときの言葉です（画面も同じ言葉で知らせる——toho.js の GENPIN_POWER_OFF）。
+const genpinPowerOff = "QL-800 の電源が入っていません。電源ボタンを押して電源を入れてから、もう一度「🖨 QL-800 で刷る」を押してください（USB が抜けていることもあります）"
+
+// genpinPrinterProblem は、いま刷れないわけを返します（刷れるなら空）。
+func genpinPrinterProblem(parent context.Context) string {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	s, err := label.GetState(ctx)
+	switch {
+	case err != nil:
+		return err.Error()
+	case !s.Connected:
+		return genpinPowerOff
+	case s.Error != "":
+		return "QL-800 で刷れません: " + s.Error
+	}
+	return ""
+}
+
 // GenpinPrintAPIHandler は POST /api/genpin/print です。
 func GenpinPrintAPIHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := cms.GateJSONPost(w, r)
@@ -529,6 +548,12 @@ func GenpinPrintAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if !label.Available() { // 絵にする前に断る（道具が無いのに mutool を回さない）
 		cms.JSONFail(w, http.StatusServiceUnavailable, label.ErrUnavailable.Error())
+		return
+	}
+	// 刷る前にプリンターの電源を確かめる（2026-10-30 利用者:「印刷ボタンを押したときにプリンターの電源を調べて、電源を入れるように警告できますか？」）。
+	// QL-800 は自動で電源が切れることがあり、切れると USB の機器ごと消える（w-cms からは入れられない）。
+	if msg := genpinPrinterProblem(r.Context()); msg != "" {
+		cms.JSONFail(w, http.StatusServiceUnavailable, msg)
 		return
 	}
 	pageID, bms, ok := genpinRender(w, r, user, req, false)

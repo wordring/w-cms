@@ -3103,6 +3103,9 @@ document.addEventListener('change', (e) => {
 // 欄は帯（.vocab-chrome）の中に作るので、本文には入らない。見本は <img> で GET（CSP が blob: の絵を許さないため）。
 delegateClick([['.genpin-go', (btn) => openGenpinPanel(btn)]]);
 
+// GENPIN_POWER_OFF は電源が入っていないときの言葉です（サーバーの genpinPowerOff と同じ）。
+const GENPIN_POWER_OFF = 'QL-800 の電源が入っていません。電源ボタンを押して電源を入れてから、もう一度「🖨 QL-800 で刷る」を押してください（USB が抜けていることもあります）';
+
 async function openGenpinPanel(btn) {
     const host = btn.closest('.mfg-bar');
     if (!host) return;
@@ -3121,15 +3124,18 @@ async function openGenpinPanel(btn) {
     const kindName = rows.data.kind === 'surface' ? '表面処理用' : '納品用';
     head.textContent = kindName + 'の現品票（横 ' + rows.data.length_mm + 'mm × 62mm）。刷る行・枚数・箱の分け方（例「20,20」）・一言を決めてください。';
     const printerSay = makeEl('p', 'genpin-printer');
-    let canPrint = false;
-    if (!state.ok || !state.data.available) {
-        printerSay.textContent = '⚠ ラベルプリンターの道具が動いていません（見本だけ作れます）';
-    } else if (!state.data.connected || state.data.error) {
-        printerSay.textContent = '⚠ ' + (state.data.error || 'QL-800 につながりません') + '（直してから、もう一度開いてください）';
-    } else {
-        canPrint = true;
-        printerSay.textContent = '✓ QL-800（' + state.data.width_mm + 'mm のロール）で刷れます';
-    }
+    // 刷るボタンは、道具が動いていれば押せる。電源が切れていても押せて、押したときに確かめ直して知らせる
+    // （2026-10-30 利用者:「印刷ボタンを押したときにプリンターの電源を調べて、電源を入れるように警告できますか？」）。
+    const canPrint = !!(state.ok && state.data.available);
+    const showPrinter = (st) => {
+        const d = (st && st.data) || {};
+        if (!st || !st.ok || !d.available) printerSay.textContent = '⚠ ラベルプリンターの道具が動いていません（見本だけ作れます）';
+        else if (!d.connected) printerSay.textContent = '⚠ ' + GENPIN_POWER_OFF;
+        else if (d.error) printerSay.textContent = '⚠ ' + d.error + '（直してから刷ってください）';
+        else printerSay.textContent = '✓ QL-800（' + d.width_mm + 'mm のロール）で刷れます';
+        return d;
+    };
+    showPrinter(state);
     panel.appendChild(printerSay);
 
     const table = makeEl('table', 'genpin-table');
@@ -3205,6 +3211,15 @@ async function openGenpinPanel(btn) {
         }));
         if (!items.length) { sayIn(say, '⚠ 刷る行に印を付けてください', 'proc-why-ng'); return; }
         go.disabled = true;
+        sayIn(say, 'プリンターを確かめています…');
+        const d = showPrinter(await getJSON('/api/label/state'));
+        if (d.available && (!d.connected || d.error)) {
+            go.disabled = false;
+            const msg = !d.connected ? GENPIN_POWER_OFF : 'QL-800 で刷れません: ' + d.error;
+            sayIn(say, '⚠ ' + msg, 'proc-why-ng');
+            notify(msg, { type: 'alert' });
+            return;
+        }
         sayIn(say, '刷っています…');
         const r = await postJSON('/api/genpin/print', { page_id: pageId, items });
         go.disabled = false;

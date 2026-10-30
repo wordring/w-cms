@@ -1,9 +1,11 @@
 package toho
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"w-cms/ext/label"
 	"w-cms/internal/cms/page"
 )
 
@@ -147,6 +149,29 @@ func TestSplitBoxes(t *testing.T) {
 	for _, bad := range []string{"a", "0", "-1"} {
 		if _, err := splitBoxes(bad); err == nil {
 			t.Errorf("%q は断るはず", bad)
+		}
+	}
+}
+
+// TestGenpinPrinterProblem は、刷る前の確かめで、電源が入っていなければ電源を入れるよう言うことを固定します
+// （2026-10-30 利用者:「印刷ボタンを押したときにプリンターの電源を調べて、電源を入れるように警告できますか？」）。
+func TestGenpinPrinterProblem(t *testing.T) {
+	old := label.GetState
+	defer func() { label.GetState = old }()
+	for _, c := range []struct {
+		state label.State
+		err   error
+		want  string
+	}{
+		{label.State{Connected: false, Error: "QL-800 の電源が切れているか、USB が抜けています"}, nil, "電源ボタンを押して電源を入れて"},
+		{label.State{Connected: true, WidthMM: 62, Error: "ふたが開いています"}, nil, "ふたが開いています"},
+		{label.State{}, label.ErrUnavailable, "道具が動いていません"},
+		{label.State{Connected: true, WidthMM: 62, Dots: 696}, nil, ""},
+	} {
+		label.GetState = func(context.Context) (label.State, error) { return c.state, c.err }
+		got := genpinPrinterProblem(context.Background())
+		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
+			t.Errorf("%+v %v → %q（%q を含むはず）", c.state, c.err, got, c.want)
 		}
 	}
 }

@@ -103,8 +103,8 @@ var call = func(ctx context.Context, method, path string, body any) (int, []byte
 // ErrUnavailable は、プリンターの道具が動いていないときの誤りです。
 var ErrUnavailable = errors.New("ラベルプリンターの道具が動いていません")
 
-// GetState はプリンターの様子を道具に聞きます。
-func GetState(ctx context.Context) (State, error) {
+// GetState はプリンターの様子を道具に聞きます。試験で差し替える。
+var GetState = func(ctx context.Context) (State, error) {
 	if !Available() {
 		return State{}, ErrUnavailable
 	}
