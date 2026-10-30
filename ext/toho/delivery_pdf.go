@@ -249,6 +249,10 @@ func renderDeliveryItems(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	} else if len(rows) > 0 {
 		appendFootRow(el, span, "estimate-note", "小計を出せません（単価の決まっていない行があります）")
 	}
+	// 現品票（2026-10-30・genpin.go）は表の下の帯に——読める人なら刷れる（本文は変わらない）。
+	if pid := page.FormatID(ctx.PageID); len(rows) > 0 && !cms.IsTemplateArea(pid) {
+		appendBarAfter(el, "genpin-bar", genpinButtonHTML(pid))
+	}
 	if !writableMirror(ctx) {
 		return false, nil
 	}

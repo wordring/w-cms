@@ -76,6 +76,10 @@ func TestRoutesRequireAuth(t *testing.T) {
 		{"/api/file-ref", "GET", 401, "ファイルの ID を添付の組へ引く"},
 		{"/api/session", "GET", 401, "失効までの残り時間（告知のため）"},
 		{"/api/session", "POST", 401, "告知の「続ける」（寿命を延ばす）"},
+		{"/api/label/state", "GET", 401, "ラベルプリンターの様子"},
+		{"/api/genpin", "GET", 401, "現品票にできる行"},
+		{"/api/genpin/preview", "GET", 401, "現品票の見本"},
+		{"/api/genpin/print", "POST", 401, "現品票を刷る"},
 
 		// 認証不要（公開ルート）。401 にはならない。
 		{"/login", "GET", 200, "ログイン画面"},

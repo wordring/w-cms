@@ -3098,4 +3098,119 @@ document.addEventListener('change', (e) => {
     const btn = pick.parentElement && pick.parentElement.querySelector('.send-way-go');
     if (opt && btn) btn.textContent = opt.getAttribute('data-go') || '▶ 送る';
 });
+// ── 現品票（2026-10-30・ext/toho/genpin.go）──────────────────────────────
+// 納品書・部材発注書の表の下の「🏷 現品票」で、行ごとの枚数・箱の分け方・一言を決め、見本を見て、業務サーバーの QL-800 で刷る。
+// 欄は帯（.vocab-chrome）の中に作るので、本文には入らない。見本は <img> で GET（CSP が blob: の絵を許さないため）。
+delegateClick([['.genpin-go', (btn) => openGenpinPanel(btn)]]);
+
+async function openGenpinPanel(btn) {
+    const host = btn.closest('.mfg-bar');
+    if (!host) return;
+    const old = host.querySelector('.genpin-panel');
+    if (old) { old.remove(); return; }
+    const pageId = btn.getAttribute('data-genpin-page') || '';
+    const panel = makeEl('div', 'genpin-panel');
+    const head = makeEl('p', 'genpin-head', '読んでいます…');
+    panel.appendChild(head);
+    btn.insertAdjacentElement('afterend', panel);
+    const [rows, state] = await Promise.all([
+        getJSON('/api/genpin?page_id=' + encodeURIComponent(pageId)),
+        getJSON('/api/label/state'),
+    ]);
+    if (!rows.ok) { head.textContent = '⚠ ' + ((rows.data && rows.data.message) || '現品票にできる行を読めません'); return; }
+    const kindName = rows.data.kind === 'surface' ? '表面処理用' : '納品用';
+    head.textContent = kindName + 'の現品票（横 ' + rows.data.length_mm + 'mm × 62mm）。刷る行・枚数・箱の分け方（例「20,20」）・一言を決めてください。';
+    const printerSay = makeEl('p', 'genpin-printer');
+    let canPrint = false;
+    if (!state.ok || !state.data.available) {
+        printerSay.textContent = '⚠ ラベルプリンターの道具が動いていません（見本だけ作れます）';
+    } else if (!state.data.connected || state.data.error) {
+        printerSay.textContent = '⚠ ' + (state.data.error || 'QL-800 につながりません') + '（直してから、もう一度開いてください）';
+    } else {
+        canPrint = true;
+        printerSay.textContent = '✓ QL-800（' + state.data.width_mm + 'mm のロール）で刷れます';
+    }
+    panel.appendChild(printerSay);
+
+    const table = makeEl('table', 'genpin-table');
+    const hr = document.createElement('tr');
+    ['刷る', '品番', '品名・ほか', '数量', '枚数', '箱に分ける', '一言', ''].forEach((h) => { const th = document.createElement('th'); th.textContent = h; hr.appendChild(th); });
+    table.appendChild(hr);
+    const img = document.createElement('img');
+    img.className = 'genpin-preview';
+    img.alt = '現品票の見本';
+    const previewSay = makeEl('span', 'genpin-preview-say');
+    const lines = [];
+    const showPreview = (line) => {
+        lines.forEach((l) => l.tr.classList.toggle('genpin-current', l === line));
+        const q = new URLSearchParams({ page_id: pageId, row: String(line.row.row), item: line.row.item || '',
+            boxes: line.boxes.value.trim(), note: line.note.value.trim(), t: String(Date.now()) });
+        previewSay.textContent = '見本を作っています…';
+        const url = '/api/genpin/preview?' + q.toString();
+        img.onload = () => { previewSay.textContent = ''; };
+        img.onerror = async () => {
+            img.removeAttribute('src');
+            const r = await getJSON(url);
+            previewSay.textContent = '⚠ ' + ((r.data && r.data.message) || '見本を作れません');
+        };
+        img.src = url;
+    };
+    (rows.data.rows || []).forEach((row) => {
+        const tr = document.createElement('tr');
+        const td = (el) => { const c = document.createElement('td'); if (typeof el === 'string') c.textContent = el; else c.appendChild(el); tr.appendChild(c); return c; };
+        const use = document.createElement('input');
+        use.type = 'checkbox';
+        use.checked = true;
+        use.setAttribute('aria-label', 'この行を刷る');
+        td(use);
+        td(row.item || '');
+        td([row.name, row.sub].filter((s) => s).join('　'));
+        td(((row.qty || '') + ' ' + (row.unit || '')).trim());
+        const copies = document.createElement('input');
+        copies.type = 'number';
+        copies.min = '1';
+        copies.max = '50';
+        copies.value = '1';
+        copies.className = 'genpin-copies';
+        td(copies);
+        const boxes = document.createElement('input');
+        boxes.type = 'text';
+        boxes.placeholder = '20,20';
+        boxes.className = 'genpin-boxes';
+        td(boxes);
+        const note = document.createElement('input');
+        note.type = 'text';
+        note.placeholder = '上下注意 など';
+        note.className = 'genpin-note';
+        td(note);
+        const see = makeButton('chip-btn genpin-see', '👁 見本');
+        td(see);
+        table.appendChild(tr);
+        const line = { tr, use, copies, boxes, note, row };
+        see.addEventListener('click', () => showPreview(line));
+        lines.push(line);
+    });
+    panel.appendChild(table);
+    const preview = makeEl('div', 'genpin-preview-box');
+    preview.append(img, previewSay);
+    panel.appendChild(preview);
+    const go = makeButton('chip-btn genpin-print', '🖨 QL-800 で刷る');
+    go.disabled = !canPrint;
+    const say = makeEl('span', 'genpin-say');
+    panel.append(go, document.createTextNode(' '), say);
+    go.addEventListener('click', async () => {
+        const items = lines.filter((l) => l.use.checked).map((l) => ({
+            row: l.row.row, item: l.row.item || '', copies: parseInt(l.copies.value, 10) || 1,
+            boxes: l.boxes.value.trim(), note: l.note.value.trim(),
+        }));
+        if (!items.length) { sayIn(say, '⚠ 刷る行に印を付けてください', 'proc-why-ng'); return; }
+        go.disabled = true;
+        sayIn(say, '刷っています…');
+        const r = await postJSON('/api/genpin/print', { page_id: pageId, items });
+        go.disabled = false;
+        if (!r.ok) { sayIn(say, '⚠ ' + ((r.data && r.data.message) || '刷れませんでした'), 'proc-why-ng'); return; }
+        sayIn(say, '✓ ' + r.data.printed + ' 枚を刷りました');
+    });
+    if (lines.length) showPreview(lines[0]);
+}
 })();

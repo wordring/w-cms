@@ -635,3 +635,18 @@ body:not([edit-mode]) #w-editor-content > .mfg-start-frame.mfg-start-first:has(.
 #w-editor-content .order-bind-prod { display: block; font-weight: 500; }
 #w-editor-content .order-bind-part { display: block; font-size: 0.9em; color: var(--w-muted, #6b7280); }
 #w-editor-content .order-bind-note { color: var(--w-muted, #6b7280); }
+
+/* 現品票（2026-10-30・genpin.go・toho.js の openGenpinPanel）——表の下の帯に開く欄。見本は刷るのと同じ白黒の絵。 */
+#w-editor-content .genpin-row { margin-top: 6px; }
+#w-editor-content .genpin-panel { margin-top: 8px; padding: 8px; border: 1px solid var(--w-border, #d1d5db); border-radius: 6px; }
+#w-editor-content .genpin-panel .genpin-head,
+#w-editor-content .genpin-panel .genpin-printer { margin: 0 0 6px; }
+#w-editor-content .genpin-table { border-collapse: collapse; margin-bottom: 8px; }
+#w-editor-content .genpin-table th,
+#w-editor-content .genpin-table td { border: 1px solid var(--w-border, #d1d5db); padding: 2px 6px; vertical-align: middle; }
+#w-editor-content .genpin-table tr.genpin-current td { background: #fef9c3; }
+#w-editor-content .genpin-table .genpin-copies { width: 4em; }
+#w-editor-content .genpin-table .genpin-boxes { width: 7em; }
+#w-editor-content .genpin-table .genpin-note { width: 10em; }
+#w-editor-content .genpin-preview-box { margin-bottom: 8px; }
+#w-editor-content .genpin-preview { display: block; max-width: 100%; width: 420px; border: 1px solid #9ca3af; background: #fff; }

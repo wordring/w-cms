@@ -46,6 +46,10 @@ func (materialsPlugin) Routes() []cms.Route {
 		// 納品書を作る（2026-10-17・delivery.go——2026-10-22 からは製造ページの納品作業からだけ。案件残表の「🚚 選んだ行で納品書を作る」は外した）。
 		{Pattern: "/api/delivery/new", Handler: DeliveryNewAPIHandler},
 		{Pattern: "/api/delivery-pdf", Handler: DeliveryPDFAPIHandler}, // 納品書の紙（2026-10-17・delivery_pdf.go）
+		// 現品票（2026-10-30・genpin.go——納品書と部材発注書の外注加工の行から、QL-800 で札を刷る）。
+		{Pattern: "/api/genpin", Handler: GenpinAPIHandler},
+		{Pattern: "/api/genpin/preview", Handler: GenpinPreviewAPIHandler},
+		{Pattern: "/api/genpin/print", Handler: GenpinPrintAPIHandler},
 		{Pattern: "/api/mfg/estimate", Handler: MfgEstimateAPIHandler}, // 製造の見積書（2026-10-19・quote_done.go）
 		{Pattern: "/api/mfg/close", Handler: MfgCloseAPIHandler}, // 製造を閉じる（記録へ・2026-10-19・mfg_close.go）
 		{Pattern: "/api/mfg/parts", Handler: MfgPartsAPIHandler},                  // 選んだ製造明細の行の部材を必要部材表へ（2026-10-21 夕・mfg_work.go）

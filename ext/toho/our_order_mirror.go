@@ -47,16 +47,23 @@ func renderOurOrderChrome(ctx *cms.MirrorContext, el *html.Node) (bool, error) {
 	// 外注加工の資料（2026-09-28・order_docs.go）——取り消していない行の「資料 <番号>」から（読むのはチェックを足す前）。
 	// ⚠ ここでは「FAX・印刷用（資料を綴じる）」を出すかだけに使う（メールの添付の候補は送る欄の初期値）。
 	var docs []orderDoc
+	surface := false // 外注加工の行があれば「🏷 現品票」（2026-10-30・genpin.go）
 	if first {
 		rows, _ := orderTableRows(el)
 		docs, _ = orderDocs(ctx.Viewer, rows)
+		for _, r := range rows {
+			surface = surface || isSurfaceRow(r)
+		}
 	}
 	bar := ""
 	// 行の操作は1つ目の表だけ——サーバーの行の操作（状態・外す）は行の番号だけを受け取り、1つ目の表に効く。2つ目の表に
 	// チェックを出すと、選んだのと違う表の行が変わった（2026-10-22 の見直し）。
 	if writableMirror(ctx) && first {
 		addOrderRowPicks(el)
-		bar = orderRowBarHTML(orderID)
+		bar += orderRowBarHTML(orderID)
+	}
+	if surface && !cms.IsTemplateArea(orderID) {
+		bar += `<div class="genpin-row">` + genpinButtonHTML(orderID) + `</div>`
 	}
 	if first {
 		bar += orderSendFormHTML(ctx.PageID, OrderSendStateOf(ctx.DB, ctx.PageID), docs, orderNoteBoxFor(ctx),
