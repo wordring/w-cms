@@ -436,7 +436,7 @@ func resyncPagesChangedSince(since time.Time) int {
 // resyncPages は data/master の本文を歩いて索引へ入れます。since が空でなければ、本文かサイドカーが since 以降に
 // 書かれたページだけ。
 func resyncPages(since time.Time) (int, error) {
-	count := 0
+	count, failed := 0, 0
 	err := filepath.Walk(page.MasterDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// data/master が存在しない場合などは、再構築対象なしとして正常終了する。
@@ -465,11 +465,19 @@ func resyncPages(since time.Time) (int, error) {
 				return err
 			}
 			id := strings.TrimSuffix(info.Name(), ".html")
-			_ = SyncIndex(id, string(content))
+			// 入らなかったページはログに書き、数えない（2026-10-30。それまでは誤りを捨てて「入った」と数えていた）。
+			if err := SyncIndex(id, string(content)); err != nil {
+				log.Printf("⚠ 索引に入れられませんでした page=%s: %v", id, err)
+				failed++
+				return nil
+			}
 			count++
 		}
 		return nil
 	})
+	if failed > 0 {
+		log.Printf("⚠ 索引に入れられなかったページが %d 枚あります（入ったのは %d 枚）", failed, count)
+	}
 	return count, err
 }
 

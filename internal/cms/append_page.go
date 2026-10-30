@@ -147,7 +147,7 @@ func rewritePageBody(pageID, author string, rewrite func(current string) string)
 	if err := RecordVersion(pageID, author, safeHTML, true); err != nil {
 		return err
 	}
-	return SyncIndex(pageID, safeHTML)
+	return syncIndexOrRetry(pageID, safeHTML)
 }
 
 // SetPageH1 はページの見出し（h1）を書き換えます。**題はページ名**なので、

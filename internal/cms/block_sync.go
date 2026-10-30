@@ -36,6 +36,8 @@ type storedBlock struct {
 
 // splitStoredBlocks は本文を上の段の要素に分けます（空白だけの文字・コメントは捨てる——画面の書き出しも
 // 上の段の要素だけを保存するので、同じ扱い）。
+// ⚠ 空白でない素の文字は、段落に包んで残します（2026-10-30。それまでは捨てていたので、機械が要素で包まずに置いた文字は、閲覧では
+// 見えるのに、だれかが /api/sync で1回書くと消えた）。
 func splitStoredBlocks(body string) ([]storedBlock, error) {
 	nodes, err := htmldoc.ParseFragment(body)
 	if err != nil {
@@ -43,6 +45,13 @@ func splitStoredBlocks(body string) ([]storedBlock, error) {
 	}
 	var out []storedBlock
 	for _, n := range nodes {
+		if n.Type == html.TextNode && strings.TrimSpace(n.Data) != "" {
+			p := &html.Node{Type: html.ElementNode, Data: "p"}
+			p.AppendChild(&html.Node{Type: html.TextNode, Data: strings.TrimSpace(n.Data)})
+			h := renderNode(p)
+			out = append(out, storedBlock{HTML: h, Hash: blockHash(h)})
+			continue
+		}
 		if n.Type != html.ElementNode {
 			continue
 		}

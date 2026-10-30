@@ -116,7 +116,7 @@ func RevertAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// 本文を書き換える操作なので、保存とまったく同じ守りを掛ける
+	// 本文を書き換える操作なので、保存と同じ守りを掛ける（置き場の題の重複は RevertToVersion が見る）
 	// （編集ロックは道具が握るとき以外は素通り・2026-10-12。同時の書き込みは RevertToVersion の錠が1つずつ通す）。
 	if !page.RequirePageWrite(w, r, id) {
 		return
@@ -133,7 +133,8 @@ func RevertAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// 監査記録: どの版へ戻したかが分からないと後から追えない。
 	auth.AuditRequest(r, "revert", id+" -> "+req.Version)
 
-	body, err := ReadVersion(id, req.Version)
+	// 実際に書いた本文を返す（2026-10-30。版をそのまま返していたので、作るときに決める語を今の値へ戻した本文と、画面の本文が違った）。
+	body, err := os.ReadFile(page.BodyPath(id))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

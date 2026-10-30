@@ -258,7 +258,7 @@ func refuseDuplicateBoxTitle(id, htmlBody string) (string, bool) {
 
 // syncBody は書いた本文で索引を同期します（失敗は応答に書いて false）。
 func syncBody(w http.ResponseWriter, id, html string) bool {
-	if err := SyncIndex(id, html); err != nil {
+	if err := syncIndexOrRetry(id, html); err != nil {
 		log.Printf("SyncIndex failed for page %s: %v\n", id, err)
 		http.Error(w, "Failed to sync database: "+err.Error(), http.StatusInternalServerError)
 		return false

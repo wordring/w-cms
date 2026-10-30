@@ -218,6 +218,8 @@ func RecordVersion(pageID, author, html string, force bool) error {
 		By:   author,
 		Size: len(html),
 		Hash: hash,
+		// 区切り（force）で作った版は閉じる（2026-10-30。閉じていなかったので、同じ人の10分以内の次の保存が、戻した版などを置き換えていた）。
+		Sealed: force,
 	}
 	return writeVersionFiles(dir, id, info, []byte(html))
 }
@@ -256,7 +258,11 @@ func writeVersionFiles(dir, id string, info VersionInfo, body []byte) error {
 		return err
 	}
 	if err := page.WriteFileAtomic(filepath.Join(dir, id+".json"), meta, 0644); err != nil {
-		os.Remove(gzPath)
+		// 新しい版のときだけ本文を消す（情報の無い本文を残さない）。置き換えのときは本文を消さない——古い中身はもう無いので、消すと版が丸ごと
+		// 無くなる（2026-10-30）。情報は前のままだが、本文は読める。
+		if _, statErr := os.Stat(filepath.Join(dir, id+".json")); statErr != nil {
+			os.Remove(gzPath)
+		}
 		return err
 	}
 	return nil
@@ -360,6 +366,10 @@ func RevertToVersion(pageID, version, author string) error {
 	// 書き戻す本文もサニタイズを通す。過去の版は当時の許可リストで通ったもので、
 	// 許可が狭まっていれば**いまの規則で**濾すのが正しい（保存経路と同じ扱い）。
 	safeHTML := Sanitize(string(body))
+	// トップ直下の置き場の題は1枚だけ——古い版へ戻すのも同じ（2026-10-30。保存の writeBody だけが見ていて、題が別の置き場と同じだった版へ戻すと2枚になった）。
+	if why, bad := refuseDuplicateBoxTitle(pageID, safeHTML); bad {
+		return errors.New(why)
+	}
 	if curErr == nil {
 		// 作るときに決める語は、古い版へ戻しても、管理者でない人にはいまの値のまま（2026-10-27・fixed_tag.go）。
 		safeHTML, _ = keepFixedTagsByName(author, string(current), safeHTML)
@@ -379,7 +389,7 @@ func RevertToVersion(pageID, version, author string) error {
 	}
 	// 開いている人へ知らせる——索引と版まで済ませてから（page_events.go）。
 	defer notifyPageUpdated(pageID, author, updatedAt)
-	if err := SyncIndex(pageID, safeHTML); err != nil {
+	if err := syncIndexOrRetry(pageID, safeHTML); err != nil {
 		return err
 	}
 	// 戻した内容も版として残す（履歴が「いま何が正本か」で終わるように）。

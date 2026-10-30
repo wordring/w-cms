@@ -7,7 +7,7 @@ package cms
 // 要件だからで、経緯は docs/考察/【考察】通信記録処理.md §2.7④「常に柔軟性」。
 // DB再構築（RebuildDatabase）は data/master だけを走査するので、移すだけで索引からも消えます。
 //
-// 守りは3つ:
+// 守りは次のとおり（親に書けること・拡張が消させないページ・消す前の確かめは、DeletePageAPIHandler の中）:
 //   - トップページは削除できない（親を持てない唯一のページで、消すと復旧導線が無くなる）
 //   - 子ページを持つページは削除できない（子を道連れにするより、先に移すか消すよう促す）
 //   - 編集ロックが要る（他者が編集中のページを消せない。他の変更操作と同じ直列化）
@@ -61,6 +61,14 @@ func DeletePageAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// いたのに、消す口だけ見ていなかったので、書けない置き場から自分のページをごみ箱へ持ち出せた）。
 	var parent sql.NullInt64
 	database.DB.QueryRow("SELECT parent_id FROM pages WHERE id = ?", pageID).Scan(&parent)
+	if !parent.Valid {
+		// 索引に無いページは、正本（サイドカー）の親を見る（2026-10-30。それまでは親を引けないと確かめを飛ばしていた）。
+		if meta, ok := page.ReadSidecar(id); ok {
+			if n, err := strconv.Atoi(meta.ParentID); err == nil {
+				parent = sql.NullInt64{Int64: int64(n), Valid: true}
+			}
+		}
+	}
 	if parent.Valid && !page.GetPerms(int(parent.Int64)).CanWrite(auth.CurrentUser(r)) {
 		http.Error(w, "親ページへの書き込み権限がありません（書けない置き場のページは消せません）", http.StatusForbidden)
 		return
