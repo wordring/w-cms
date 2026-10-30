@@ -168,6 +168,9 @@ func moveToTrash(id string) (string, error) {
 		return "", err
 	}
 	noteTrashed(id) // 消したページの番号を使い回さない（page_id_floor.go）
+	// 表示用の写しと PDF の絵は派生なので消す（2026-10-30。残り続けてディスクだけが減った）。戻したら、また作られる。
+	os.RemoveAll(database.DataPath("cache", "photo-view", id))
+	os.RemoveAll(database.DataPath("cache", "pdf-pages", id))
 	return dst, nil
 }
 

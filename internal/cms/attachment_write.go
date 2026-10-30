@@ -32,7 +32,6 @@ package cms
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -122,21 +121,15 @@ func saveAttachmentVersion(pageID, name string) error {
 		}
 		dst = filepath.Join(dir, stamp+"-"+strconv.Itoa(i)+filepath.Ext(name))
 	}
-	in, err := os.Open(src)
+	// 控えは上書きする前の中身の唯一の写しなので、書き切ってから置く（2026-10-30。写している途中で電源が落ちると、切れた控えが本物として残った）。
+	content, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	return page.WriteFileAtomic(dst, content, 0o644)
 }
 
-// attachmentVersions は添付の版を新しい順に返します（画面や復元の口が使えます）。
+// attachmentVersions は添付の版を新しい順に返します（いまは試験だけが使う。控えを戻す口は無く、戻すのは手作業）。
 func attachmentVersions(pageID, name string) []string {
 	dir := filepath.Join(page.AttachmentDir(pageID), attachmentVersionsDir, name)
 	entries, err := os.ReadDir(dir)

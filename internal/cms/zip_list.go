@@ -15,8 +15,8 @@ package cms
 // 和文ZIPの実情: Windows の右クリック圧縮はエントリ名を Shift_JIS で書き、
 // UTF-8フラグを立てません（NonUTF8）。x/text で復号します（開発方針 §1 の承認済み依存）。
 //
-// 認可は添付の配信（ServeCleanAttachment）と同じ**閲覧側**の関門
-// （RequirePageReadOrPublic）——読めるページの添付は目録も読める、それだけ。
+// 認可は添付の配信（ServeCleanAttachment）と同じ**閲覧側**の関門（RequirePageReadOrPublic と AnonymousMayFetch）
+// ——配ってよい添付は目録も読める、それだけ。
 // ─────────────────────────────────────────────────────────────────────────
 
 import (
@@ -62,6 +62,12 @@ func ZipListAPIHandler(w http.ResponseWriter, r *http.Request) {
 		map[string]bool{".zip": true}, "ZIP以外の目録は返せません")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 本文が指していない ZIP の中身は、read の無い人に見せない（2026-10-30。配信の口は 10-27 から確かめていて、ここだけ抜けていた）。
+	if !page.AnonymousMayFetch(r, pageID, fileName) {
+		http.Error(w, "添付が見つかりません", http.StatusNotFound)
 		return
 	}
 

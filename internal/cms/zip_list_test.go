@@ -14,6 +14,7 @@ import (
 
 	"w-cms/internal/auth"
 	"w-cms/internal/cms/page"
+	"w-cms/internal/database"
 )
 
 // ZIP添付の目録のテスト。固定するのは:
@@ -139,5 +140,60 @@ func TestZipListRequiresRead(t *testing.T) {
 	}
 	if rr := getZipList(t, id, name, nil); rr.Code == 200 {
 		t.Errorf("匿名に目録が漏れます: code=%d", rr.Code)
+	}
+}
+
+// TestZipListHidesUnreferencedZip は、ログインしていない人に、本文が指していない ZIP の目録を見せないことを固定します（2026-10-30）。
+// 添付の配信は 10-27 から確かめていて、目録の口だけ抜けていた。
+func TestZipListHidesUnreferencedZip(t *testing.T) {
+	setupAnonTest(t)
+	const id = "000005" // 公開のページ
+	name := writeTestZip(t, id, func(zw *zip.Writer) {
+		w, _ := zw.Create("秘密の図面.dxf")
+		w.Write([]byte("x"))
+	})
+	if err := page.WriteFileAtomic(page.BodyPath(id), []byte("<h1>公開</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rr := getZipList(t, id, name, nil); rr.Code != 404 || strings.Contains(rr.Body.String(), "秘密") {
+		t.Errorf("⚠ 本文が指していない ZIP の目録が見えます: %d %s", rr.Code, rr.Body.String())
+	}
+	body := `<h1>公開</h1><p><a href="/` + id + `/` + name + `">zip</a></p>`
+	if err := page.WriteFileAtomic(page.BodyPath(id), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rr := getZipList(t, id, name, nil); rr.Code != 200 {
+		t.Errorf("本文が指す ZIP の目録は見えるはず: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestLongAttachmentNameIsRefused は、長すぎるファイル名を断り、ふつうに長い和文の名前は通すことを固定します（2026-10-30）。
+func TestLongAttachmentNameIsRefused(t *testing.T) {
+	allowed := map[string]bool{".pdf": true}
+	if _, err := SafeAttachmentName("000001", strings.Repeat("あ", 200)+".pdf", allowed, "x"); err != nil {
+		t.Errorf("200字の和文の名前は通るはず: %v", err)
+	}
+	if _, err := SafeAttachmentName("000001", strings.Repeat("a", 2000)+".pdf", allowed, "x"); err == nil {
+		t.Error("⚠ 長すぎる名前が通っています")
+	}
+}
+
+// TestTrashRemovesDerivedCaches は、ページをごみ箱へ移すと、表示用の写しと PDF の絵の置き場を消すことを固定します（2026-10-30）。
+func TestTrashRemovesDerivedCaches(t *testing.T) {
+	const id = "000013"
+	setupUploadTest(t, id, page.PageMeta{Owner: "alice", Mode: "330"})
+	dirs := []string{database.DataPath("cache", "photo-view", id), database.DataPath("cache", "pdf-pages", id)}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := moveToTrash(id); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range dirs {
+		if _, err := os.Stat(d); err == nil {
+			t.Errorf("⚠ 残っています: %s", d)
+		}
 	}
 }

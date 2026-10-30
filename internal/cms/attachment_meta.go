@@ -40,7 +40,7 @@ package cms
 //
 //   - **配信しません**——`.json` は添付にならない拡張子で（設定の検査）、配信の口
 //     （`ServeCleanAttachment`・`DataFileHandler`）はこの名前を素通しします。
-//   - **書き手は1か所**（`SaveAttachmentFrom`）＋「📝 ローカル編集」の上書き。読み書きは1プロセス内の
+//   - **書き手は** `SaveAttachmentFrom`・`OverwriteAttachment`・「📝 ローカル編集」・写真を縮める口。読み書きは1プロセス内の
 //     ロックで直列化し、書くのは原子的（`WriteFileAtomic`）。
 //   - 書けなくても添付の保存は失敗にしません（監査に `attach.meta-failed` を残す）——
 //     失敗を返すと利用者が押し直し、同じファイルが2つになるほうが害が大きい。

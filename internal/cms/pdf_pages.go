@@ -71,6 +71,8 @@ func PDFPagesConfig() *PDFPagesSettings { return settingsField(func(s *Settings)
 const (
 	// pdfPagesWait は、ページを描くときに PDF の絵を待つ長さです。間に合わなければ、その回は埋め込みで見せる。
 	pdfPagesWait = 4 * time.Second
+	// pdfDrawMemBytes は、PDF を描く道具の使ってよいメモリです（大きな図面も描けるように、作り直しの 1 GiB より多め）。
+	pdfDrawMemBytes = 2 << 30
 	// pdfPagesTimeout は1つの PDF を描く長さの上限です。
 	pdfPagesTimeout = time.Minute
 	// pdfPagesDoneFile は、描き終えた置き場に書く印のファイルです（中身は「描いた枚数 全部の枚数」）。
@@ -181,7 +183,9 @@ func drawPDFPages(conf PDFPagesSettings, pdfPath, pageID, name, ver, dir string,
 	var stderr bytes.Buffer
 	// 高さにも上限（横幅の3倍）——縦に極端に長いページ（10×500pt など）を横幅に合わせると、1ページで何 GB もの絵になった
 	// （2026-10-27 の見直し）。mutool は -w と -h の枠に収まるよう縮める。
-	cmd := exec.CommandContext(ctx, conf.Tool, "draw", "-q", "-w", strconv.Itoa(conf.Width), "-h", strconv.Itoa(conf.Width*3), "-F", "png",
+	// メモリも絞る（2026-10-30。外から届いた PDF を描くので、絞らないと w-cms の上限を食いつぶして、w-cms ごと止まりうる）。
+	// 描けなければ埋め込みで見せるので、絞っても見えなくはならない。
+	cmd := limitedCommand(ctx, conf.Tool, pdfDrawMemBytes, "draw", "-q", "-w", strconv.Itoa(conf.Width), "-h", strconv.Itoa(conf.Width*3), "-F", "png",
 		"-o", filepath.Join(tmp, "p%d.png"), pdfPath, "1-"+strconv.Itoa(conf.MaxPages))
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

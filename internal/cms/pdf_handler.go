@@ -30,6 +30,9 @@ func attachmentFileName(pageID, raw string) (string, error) {
 		"PDFファイル（.pdf）のみアップロードできます")
 }
 
+// maxAttachmentNameBytes は、届いたときのファイル名の長さの上限です。
+const maxAttachmentNameBytes = 1024
+
 // SafeAttachmentName はファイル名の正規化と検査の本体です。許可する拡張子の集合を
 // 受け取るので、PDF の口（allowedAttachmentExts）と画像の口（allowedImageExts）で
 // 共有できます。**名前の守りは1箇所**にしておかないと、口を増やすたびに
@@ -47,6 +50,10 @@ func SafeAttachmentName(pageID, raw string, allowed map[string]bool, extError st
 
 	if name == "" || name == "." || name == ".." {
 		return "", errors.New("ファイル名が不正です")
+	}
+	// 長すぎる名前は断る（2026-10-30。名前は目録と監査に残るので、数万字の名前で太らせられた）。上限は、ふつうの長い和文の名前を断らない高さ。
+	if len(name) > maxAttachmentNameBytes {
+		return "", errors.New("ファイル名が長すぎます")
 	}
 	if strings.HasPrefix(name, ".") {
 		return "", errors.New("ドットで始まるファイル名は使用できません")

@@ -31,6 +31,14 @@ const (
 // ErrPDFUnreadable は、作り直せなかった PDF です（壊れている・大きすぎる・時間切れ）。
 var ErrPDFUnreadable = errors.New("PDF を読めません（壊れているか、大きすぎます）")
 
+// limitedCommand は、使ってよいメモリを memBytes に絞って道具を動かす命令を返します（prlimit が無ければ絞らない）。
+func limitedCommand(ctx context.Context, tool string, memBytes int, args ...string) *exec.Cmd {
+	if pl, err := exec.LookPath("prlimit"); err == nil {
+		return exec.CommandContext(ctx, pl, append([]string{"--as=" + strconv.Itoa(memBytes), "--", tool}, args...)...)
+	}
+	return exec.CommandContext(ctx, tool, args...)
+}
+
 // CleanPDF は、外から届いた PDF を mutool で作り直して返します。cleaned は作り直したか（道具が無ければ false で data を返す）。
 // 作り直した PDF が maxBytes を超えたら ErrPDFUnreadable。
 func CleanPDF(data []byte, maxBytes int64) (out []byte, cleaned bool, err error) {
@@ -53,13 +61,7 @@ func CleanPDF(data []byte, maxBytes int64) (out []byte, cleaned bool, err error)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), pdfCleanTimeout)
 	defer cancel()
-	args := []string{"clean", "-gg", "-D", in, outPath}
-	name := tool
-	if pl, err := exec.LookPath("prlimit"); err == nil {
-		args = append([]string{"--as=" + strconv.Itoa(pdfCleanMemBytes), "--", tool}, args...)
-		name = pl
-	}
-	if err := exec.CommandContext(ctx, name, args...).Run(); err != nil {
+	if err := limitedCommand(ctx, tool, pdfCleanMemBytes, "clean", "-gg", "-D", in, outPath).Run(); err != nil {
 		return nil, false, ErrPDFUnreadable
 	}
 	fi, err := os.Stat(outPath)

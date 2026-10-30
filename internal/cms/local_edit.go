@@ -287,14 +287,8 @@ func writeLocalEdit(user *auth.User, pageID, stored, realPath, ifMatch string, b
 	if err := saveAttachmentVersion(pageID, stored); err != nil {
 		return "", err
 	}
-	// 2. 差し替える（書き終わってから rename——途中で切れたファイルを正本の位置に置かない）。
-	tmp := realPath + ".local-edit.tmp"
-	if err := os.WriteFile(tmp, content, 0o644); err != nil {
-		os.Remove(tmp)
-		return "", err
-	}
-	if err := os.Rename(tmp, realPath); err != nil {
-		os.Remove(tmp)
+	// 2. 差し替える（書き切ってから rename——途中で切れたファイルを正本の位置に置かない。一時ファイルは点で始まるので、残っても配らない）。
+	if err := page.WriteFileAtomic(realPath, content, 0o644); err != nil {
 		return "", err
 	}
 	// 3. 目録を進める。
